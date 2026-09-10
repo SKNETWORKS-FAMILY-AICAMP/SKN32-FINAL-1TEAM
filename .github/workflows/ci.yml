@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  pr-title:
+    name: PR Title Convention
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: "PR 제목에 이슈 키 포함 확인 (예: [SB-12] 로그인 기능 구현)"
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if ! echo "$PR_TITLE" | grep -qE '^\[[A-Z]+-[0-9]+\]'; then
+            echo "::error::PR 제목은 '[이슈키] 설명' 형식이어야 합니다. 예: [SB-12] 로그인 기능 구현"
+            exit 1
+          fi
+
+  backend:
+    name: Backend (Python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: backend 존재 여부 확인
+        id: check
+        run: |
+          if [ -f web/backend/requirements.txt ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::web/backend/requirements.txt 가 아직 없어 backend 검사를 건너뜁니다."
+          fi
+
+      - name: Set up Python 3.12
+        if: steps.check.outputs.exists == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: web/backend/requirements.txt
+
+      - name: Install dependencies
+        if: steps.check.outputs.exists == 'true'
+        working-directory: web/backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          pip install ruff pytest
+
+      - name: Lint (ruff)
+        if: steps.check.outputs.exists == 'true'
+        working-directory: web/backend
+        run: ruff check .
+
+      - name: Test (pytest)
+        if: steps.check.outputs.exists == 'true'
+        working-directory: web/backend
+        run: pytest
+
+  frontend:
+    name: Frontend (React/Vite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: frontend 존재 여부 확인
+        id: check
+        run: |
+          if [ -f web/frontend/package.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::web/frontend/package.json 이 아직 없어 frontend 검사를 건너뜁니다."
+          fi
+
+      - name: Set up Node.js
+        if: steps.check.outputs.exists == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/frontend/package-lock.json
+
+      - name: Install dependencies
+        if: steps.check.outputs.exists == 'true'
+        working-directory: web/frontend
+        run: npm ci
+
+      - name: Lint (eslint)
+        if: steps.check.outputs.exists == 'true'
+        working-directory: web/frontend
+        run: npm run lint --if-present
+
+      - name: Test (vitest)
+        if: steps.check.outputs.exists == 'true'
+        working-directory: web/frontend
+        run: npm run test --if-present -- --run
+
+      - name: Build
+        if: steps.check.outputs.exists == 'true'
+        working-directory: web/frontend
+        run: npm run build --if-present
