@@ -1,0 +1,23 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# ── 비밀값 ───────────────────────────────────────────────
+.env
+*.key
+secrets.*
+
+# ── 배치 산출물 ──────────────────────────────────────────
+data/raw/
+data/normalized/
+data/history/
+data/attachments/
+data/*.log
+data/*.jsonl
+data/*.lock
+
+.idea/
+.vscode/
+Thumbs.db
+desktop.ini

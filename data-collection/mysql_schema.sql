@@ -1,0 +1,90 @@
+-- 공고 정규화 schema_version=1 저장. MySQL 8.0 / InnoDB / UTF-8.
+-- 기존 테이블 삭제·변경 없이 없는 테이블만 생성한다.
+CREATE TABLE IF NOT EXISTS import_runs (
+    run_id CHAR(32) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY COMMENT '성공한 저장 작업 식별자(UUID 32자리)',
+    input_sha256 CHAR(64) CHARACTER SET ascii NOT NULL COMMENT '입력 정규화 JSON 파일의 SHA-256 해시',
+    generated_at DATETIME(6) NOT NULL COMMENT '입력 정규화 파일 생성 시각(UTC), 원본 공고 수정 시각과 다름',
+    imported_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT 'MySQL 저장 작업 기록 생성 시각(UTC)',
+    notice_count INT UNSIGNED NOT NULL COMMENT '입력 공고 수, 실제 처리 및 과거 자료 건너뛰기 수는 report 참조',
+    report JSON NOT NULL COMMENT '입력 메타데이터, 정제 집계, 중복 후보 및 저장 결과(JSON)'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+CREATE TABLE IF NOT EXISTS notices (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '공고 내부 기본 키, 첨부 테이블에서 참조',
+    notice_id VARCHAR(320) NOT NULL COMMENT '통합 공고 식별자: 출처:원본ID',
+    source VARCHAR(32) NOT NULL COMMENT '공고 출처: kstartup 또는 bizinfo',
+    source_id VARCHAR(255) NOT NULL COMMENT '출처 API의 원본 공고 ID, source와 함께 고유 키',
+    schema_version INT NOT NULL COMMENT '정규화 데이터 구조 버전',
+    title TEXT NOT NULL COMMENT '정제한 공고 제목',
+    body LONGTEXT NULL COMMENT 'HTML 및 공백을 정제한 API 사업개요, 첨부문서 전문 아님',
+    target_text LONGTEXT NULL COMMENT '지원대상 자유서술 원문을 정제한 텍스트, 미확보 시 NULL',
+    target_text_status VARCHAR(32) NOT NULL COMMENT '지원대상 원문 확보 상태: available 또는 not_available',
+    target_category TEXT NULL COMMENT 'API가 제공한 지원대상 분류, 예: 중소기업',
+    exclude_text LONGTEXT NULL COMMENT '지원 제외 조건 텍스트, 미확보 시 NULL',
+    age_condition_raw TEXT NULL COMMENT 'API 업력 조건 문자열, 미확보는 제한 없음을 뜻하지 않음',
+    region TEXT NULL COMMENT 'API 지원 지역 값, 기관명으로 추정하지 않으며 미확보 시 NULL',
+    category TEXT NULL COMMENT '출처별 지원사업 대분류, 기술 분야 판정값과 구분',
+    subcategory TEXT NULL COMMENT '출처별 지원사업 중분류, 미제공 시 NULL',
+    organizer TEXT NULL COMMENT 'K-Startup 공고 기관명',
+    supervising_org TEXT NULL COMMENT '기업마당 소관기관명',
+    executing_org TEXT NULL COMMENT '기업마당 수행기관명',
+    apply_start DATE NULL COMMENT '유효한 접수 시작일, 미확보 또는 해석 불가 시 NULL',
+    apply_end DATE NULL COMMENT '유효한 접수 종료일, 미확보 또는 고정 종료일 없으면 NULL',
+    apply_period_raw JSON NOT NULL COMMENT '접수기간 원본(JSON), 출처별 객체 또는 문자열 보존',
+    apply_period_type VARCHAR(32) NOT NULL COMMENT '기간 유형: fixed, budget_exhaustion, rolling, until_filled, unknown',
+    recruitment_status VARCHAR(32) NOT NULL COMMENT 'API 모집 상태: open, closed, unknown, 날짜로 추정하지 않음',
+    url TEXT NULL COMMENT '공고 원문 페이지 URL',
+    apply_url TEXT NULL COMMENT '지원사업 신청 페이지 URL, 미제공 시 NULL',
+    attachment_discovery_status VARCHAR(32) NOT NULL COMMENT '첨부 탐색 상태: pending_crawl, api_links_available, not_available',
+    source_updated_at_raw JSON NOT NULL COMMENT 'API 원본 수정 시각 값(JSON), 미제공은 JSON null',
+    issues JSON NOT NULL COMMENT '날짜 및 URL 등 정규화 경고 목록(JSON)',
+    raw JSON NOT NULL COMMENT '출처 API 공고 행 전체 원본(JSON)',
+    snapshot_at DATETIME(6) NOT NULL COMMENT '마지막 반영 정규화 파일 생성 시각(UTC), 과거 입력 덮어쓰기 방지 기준',
+    last_import_id CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '이 공고를 마지막으로 저장한 import_runs.run_id',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '공고 행 최초 생성 시각(UTC)',
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '공고 행 마지막 변경 시각(UTC)',
+    UNIQUE KEY uq_notice_id (notice_id),
+    UNIQUE KEY uq_notice_source (source, source_id),
+    KEY ix_notice_end (apply_end),
+    KEY ix_notice_status (recruitment_status),
+    FOREIGN KEY (last_import_id) REFERENCES import_runs(run_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+CREATE TABLE IF NOT EXISTS notice_attachments (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '첨부 링크 내부 기본 키',
+    notice_fk BIGINT UNSIGNED NOT NULL COMMENT '첨부가 속한 notices.id',
+    attachment_key CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '첨부 역할과 URL의 SHA-256 해시, 공고 내 중복 방지',
+    role VARCHAR(32) NOT NULL COMMENT '첨부 용도: notice 공고문, form 서식',
+    url TEXT NOT NULL COMMENT '첨부 다운로드 URL, 파일 자체가 아닌 링크',
+    name TEXT NULL COMMENT 'API가 제공한 첨부 파일명',
+    source_status VARCHAR(32) NOT NULL COMMENT '정규화 입력의 첨부 상태, 현재 not_downloaded',
+    download_status VARCHAR(32) NOT NULL DEFAULT 'pending' COMMENT '실제 다운로드 처리 상태, 기본 pending, 재수집으로 초기화하지 않음',
+    active BOOLEAN NOT NULL DEFAULT TRUE COMMENT '현재 확인된 첨부 목록에서 사용 여부, 비활성 행도 보존',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '첨부 행 최초 생성 시각(UTC)',
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '첨부 행 마지막 변경 시각(UTC)',
+    UNIQUE KEY uq_attachment (notice_fk, attachment_key),
+    FOREIGN KEY (notice_fk) REFERENCES notices(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+CREATE TABLE IF NOT EXISTS attachment_texts (
+    attachment_fk BIGINT UNSIGNED PRIMARY KEY COMMENT '추출 대상 notice_attachments.id, 첨부 한 건당 한 행',
+    last_status VARCHAR(32) NOT NULL COMMENT '최근 시도 결과: ok, image_only, unsupported, download_fail, parse_error, empty_text',
+    last_kind VARCHAR(16) NULL COMMENT '최근 판별 형식: pdf, hwp, hwpx, docx, image, zip, rtf, unknown 또는 NULL',
+    last_attempt_started_at DATETIME(6) NOT NULL COMMENT '최근 시도 시작 시각(UTC), 과거 응답 덮어쓰기 방지',
+    last_attempted_at DATETIME(6) NOT NULL COMMENT '최근 시도 완료 시각(UTC)',
+    last_source_updated_at TEXT NULL COMMENT '최근 시도 시작 시 관측한 API 원본 수정 시각 문자열',
+    last_extractor_version VARCHAR(64) NOT NULL COMMENT '최근 시도의 추출기 및 의존성 버전',
+    last_error TEXT NULL COMMENT '최근 실패 사유, URL 및 비밀값 제거 후 저장',
+    last_result_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '정규화한 시도 결과 해시, 동일 시도 재전송 검증',
+    extracted_text LONGTEXT NULL COMMENT '마지막 성공 본문, 최근 재시도 실패 시에도 보존',
+    text_chars INT UNSIGNED NULL COMMENT '성공 본문의 문자 수, 성공 이력 없으면 NULL',
+    text_kind VARCHAR(16) NULL COMMENT '마지막 성공 파일 형식: pdf, hwp, hwpx, docx',
+    extracted_at DATETIME(6) NULL COMMENT '마지막 성공 시도 완료 시각(UTC)',
+    text_source_updated_at TEXT NULL COMMENT '마지막 성공 본문에 대응하는 API 수정 시각 문자열',
+    text_extractor_version VARCHAR(64) NULL COMMENT '마지막 성공 본문을 만든 추출기 버전',
+    content_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL COMMENT '마지막 성공 다운로드 파일 바이트의 SHA-256',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '추출 저장 행 최초 생성 시각(UTC)',
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '추출 저장 행 마지막 변경 시각(UTC)',
+    KEY ix_attachment_text_status (last_status),
+    FOREIGN KEY (attachment_fk) REFERENCES notice_attachments(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
