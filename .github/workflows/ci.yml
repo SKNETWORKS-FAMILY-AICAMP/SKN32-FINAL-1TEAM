@@ -24,16 +24,13 @@ jobs:
   backend:
     name: Backend (Python 3.12)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web/backend
     steps:
       - uses: actions/checkout@v4
 
       - name: backend 존재 여부 확인
         id: check
         run: |
-          if [ -f requirements.txt ]; then
+          if [ -f web/backend/requirements.txt ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
@@ -50,6 +47,7 @@ jobs:
 
       - name: Install dependencies
         if: steps.check.outputs.exists == 'true'
+        working-directory: web/backend
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -58,25 +56,24 @@ jobs:
 
       - name: Lint (ruff)
         if: steps.check.outputs.exists == 'true'
+        working-directory: web/backend
         run: ruff check .
 
       - name: Test (pytest)
         if: steps.check.outputs.exists == 'true'
+        working-directory: web/backend
         run: pytest
 
   frontend:
     name: Frontend (React/Vite)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web/frontend
     steps:
       - uses: actions/checkout@v4
 
       - name: frontend 존재 여부 확인
         id: check
         run: |
-          if [ -f package.json ]; then
+          if [ -f web/frontend/package.json ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
@@ -93,16 +90,20 @@ jobs:
 
       - name: Install dependencies
         if: steps.check.outputs.exists == 'true'
+        working-directory: web/frontend
         run: npm ci
 
       - name: Lint (eslint)
         if: steps.check.outputs.exists == 'true'
+        working-directory: web/frontend
         run: npm run lint --if-present
 
       - name: Test (vitest)
         if: steps.check.outputs.exists == 'true'
+        working-directory: web/frontend
         run: npm run test --if-present -- --run
 
       - name: Build
         if: steps.check.outputs.exists == 'true'
+        working-directory: web/frontend
         run: npm run build --if-present
