@@ -12,12 +12,15 @@
   재수행발생률처럼 집계된 숫자를 보고, 진행 현황은 실행 건 하나하나의 현재 단계·시도 횟수·
   마지막 갱신 시각·정체 여부를 확인한다.
   중앙 서브탭 pill 없이 헤더 내비게이션 클릭만으로 JS showTab()이 한 파일 안에서 패널을 전환한다(서버 호출 없음).
-  검증 정책 탭은 문서층·코드 기준 자동 검증·계획서 대조 배점을 입력창으로 직접 조정할 수 있게 하며,
-  합이 100점이 아니면 "정책 저장"이 막힌다(updatePolicyScoreSum()/savePolicy()). "판정 기준" 카드는
-  통과 Threshold·재수행 횟수 상한·문서층 재채점 편차 상한을 관리자가 설정하는 값으로 둔다(상수 아님).
-  코드 기준 자동 검증 항목은 판정 방식·구분·가중치·사용 여부를 표로 확인·조정할 수 있고(모든 항목은
-  파싱·계산으로만 판정, LLM 미호출), 문서층 채점 재현성 장치(rubric 고정, 근거 위치 출력 필수,
-  채점 온도 0 고정)는 별도 카드로 보여준다.
+  검증 정책 탭은 여러 카드로 나뉘고 각 카드마다 저장 버튼이 따로 있다(한 번에 전부 저장하지 않음).
+  "2차 검증 배점 구성" 카드는 문서층·코드 기준 자동 검증·계획서 대조 배점을 입력창으로 직접 조정하며,
+  합이 100점이 아니면 "배점 저장"이 막힌다(updatePolicyScoreSum()/savePolicyScores()). "판정 기준"
+  카드는 통과 Threshold·재수행 횟수 상한·검수 문단 재시도 상한·문서층 재채점 편차 상한을 관리자가
+  설정하는 값으로 두고 "판정 기준 저장"으로 반영한다(savePolicyThresholds(), 편차 상한 초과 이력이
+  있으면 저장 시 토스트 알림도 같이 띄운다). 코드 기준 자동 검증 항목은 판정 방식·구분·가중치·사용
+  여부를 표로 확인·조정하고 "검증 항목 저장"으로 반영하며(모든 항목은 파싱·계산으로만 판정, LLM
+  미호출), 문서층 채점 재현성 장치(rubric 고정, 근거 위치 출력 필수, 채점 온도 0 고정)는 전부 고정값이라
+  별도 카드로 보여주기만 하고 저장 버튼은 두지 않는다.
   에이전트 테스크 탭은 우측 상단 토글로 Task 중심 뷰(Agent별 담당 업무·정의된 태스크 수·사용 모델·
   배치 기준)와 Execution 중심 뷰(실행 세션별 Agent·프로젝트·토큰 사용량·재수행 여부·상태)를 전환한다
   (showAgentView()). 조율·전략·작성·구현·검증-1·검증-2는 Claude 모델 드롭다운으로, 검수(표현)는
@@ -29,8 +32,14 @@
   성능이 좋아졌는지 나빠졌는지 비교할 수 있게 한다(Task/Execution 뷰와 무관하게 항상 노출).
   검증 정책의 "문서층 재채점 편차 상한"을 초과하는 재채점 이력이 있으면 화면 우측 하단에 토스트
   알림이 뜬다(showToast()/notifyRecheckCapViolations()). 알림은 자동으로 사라지지 않고 ×를 눌러야
-  닫힌다. 페이지 로드 시 자동 점검하며, "정책 저장" 버튼을 누르면(배점 합계 100점 검증 통과 시)
-  변경된 상한값으로 다시 점검한다.
+  닫힌다. 페이지 로드 시 자동 점검하며, "판정 기준 저장" 버튼을 누르면 변경된 상한값으로 다시
+  점검한다(카드별 독립 저장 원칙에 따라 "2차 검증 배점 구성" 카드의 배점 합계 검증과는 무관하게 동작한다).
+  코드 기준 자동 검증 항목의 가중치는 상수가 아니라 서로 대비된 비중이며, 체크박스를 해제/재선택하면
+  handleCodeCheckToggle()이 사용 중인 항목끼리 가중치를 합 100으로 다시 배분한다
+  (redistributeChecklistWeights(), 최대 나머지법으로 반올림 오차를 배분). 저장 전까지는 화면에서만
+  미리보기로 반영되며 "검증 항목 저장"을 눌러야 확정된다. "2차 검증 배점 구성" 카드와 마찬가지로
+  사용 중인 항목의 가중치 합이 100점이 아니면 저장이 막힌다(saveChecklistItems()). 가중치를 직접
+  입력해 합이 깨진 경우 체크박스를 한 번 더 토글하면 자동으로 100점에 맞게 재배분된다.
   사용자 관리 탭은 이름·이메일·가입일, 매칭/알림 수신 상태, 계정 상태(활성/정지/휴면),
   권한(일반 유저/관리자)을 보여주고 상세보기·정지(해제)·삭제 액션을 제공한다. 정지 계정은
   danger 강조, 휴면 계정은 opacity로 흐리게 표시해 공고 수집 카드와 동일하게
@@ -855,6 +864,9 @@
           <p class="text-[11px] text-[var(--muted-fg)] mt-1">검증대상: 산출물 ↔ 계획서 내용 일치 여부</p>
         </div>
       </div>
+      <div class="flex justify-end mt-4">
+        <button onclick="savePolicyScores()" class="rounded-xl bg-[var(--primary)] text-white px-4 py-2 text-[13px] font-semibold hover:bg-[var(--primary-dim)] transition-colors">배점 저장</button>
+      </div>
     </div>
 
     <!-- 판정 기준 -->
@@ -895,13 +907,19 @@
           <span class="text-[12.5px] text-[var(--muted-fg)]">점</span>
         </div>
       </div>
+      <div class="p-4 border-t border-[var(--border)] flex justify-end">
+        <button onclick="savePolicyThresholds()" class="rounded-xl bg-[var(--primary)] text-white px-4 py-2 text-[13px] font-semibold hover:bg-[var(--primary-dim)] transition-colors">판정 기준 저장</button>
+      </div>
     </div>
 
     <!-- 코드 기준 자동 검증 항목 -->
     <div class="mb-8">
       <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h2 class="font-display font-bold text-[20px]">코드 기준 자동 검증 항목</h2>
-        <span class="text-[11.5px] text-[var(--muted-fg)]">모든 항목은 파싱·계산으로만 판정하며 LLM을 호출하지 않습니다.</span>
+        <div class="flex items-center gap-2">
+          <span id="code-weight-sum" class="text-[12px] font-semibold px-2.5 py-0.5 rounded-full bg-[color-mix(in_srgb,var(--ok)_12%,white)] text-[var(--ok)]">사용 중 가중치 합계 90점</span>
+          <span class="text-[11.5px] text-[var(--muted-fg)]">모든 항목은 파싱·계산으로만 판정하며 LLM을 호출하지 않습니다.</span>
+        </div>
       </div>
       <div class="rounded-2xl border border-[var(--border)] bg-white overflow-hidden">
         <div class="grid grid-cols-[1.6fr_2fr_0.9fr_0.9fr_0.8fr] text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]">
@@ -917,10 +935,10 @@
           <div class="p-4 text-[var(--muted-fg)]">파일 존재 여부 + 브라우저 렌더링 성공 여부 확인</div>
           <div class="p-4 text-center text-[var(--muted-fg)]">정적분석</div>
           <div class="p-4 flex justify-center">
-            <input type="number" value="30" class="w-16 border border-[var(--border)] rounded-lg px-2 py-1 text-center text-[13px] focus:border-[var(--primary)] focus:border-2 outline-none">
+            <input id="code-weight-1" type="number" value="30" data-base-weight="30" oninput="handleWeightInput(this)" class="w-16 border border-[var(--border)] rounded-lg px-2 py-1 text-center text-[13px] focus:border-[var(--primary)] focus:border-2 outline-none">
           </div>
           <div class="p-4 flex justify-center">
-            <input type="checkbox" checked class="w-4 h-4 accent-[var(--primary)]">
+            <input type="checkbox" checked onchange="handleCodeCheckToggle(this)" class="code-check-item w-4 h-4 accent-[var(--primary)]">
           </div>
         </div>
         <div class="grid grid-cols-[1.6fr_2fr_0.9fr_0.9fr_0.8fr] text-[13.5px] border-t border-[var(--border)] items-center">
@@ -928,10 +946,10 @@
           <div class="p-4 text-[var(--muted-fg)]">viewport meta·media query 존재 여부 파싱</div>
           <div class="p-4 text-center text-[var(--muted-fg)]">정적분석</div>
           <div class="p-4 flex justify-center">
-            <input type="number" value="20" class="w-16 border border-[var(--border)] rounded-lg px-2 py-1 text-center text-[13px] focus:border-[var(--primary)] focus:border-2 outline-none">
+            <input id="code-weight-2" type="number" value="20" data-base-weight="20" oninput="handleWeightInput(this)" class="w-16 border border-[var(--border)] rounded-lg px-2 py-1 text-center text-[13px] focus:border-[var(--primary)] focus:border-2 outline-none">
           </div>
           <div class="p-4 flex justify-center">
-            <input type="checkbox" checked class="w-4 h-4 accent-[var(--primary)]">
+            <input type="checkbox" checked onchange="handleCodeCheckToggle(this)" class="code-check-item w-4 h-4 accent-[var(--primary)]">
           </div>
         </div>
         <div class="grid grid-cols-[1.6fr_2fr_0.9fr_0.9fr_0.8fr] text-[13.5px] border-t border-[var(--border)] items-center">
@@ -939,10 +957,10 @@
           <div class="p-4 text-[var(--muted-fg)]">alt 속성·시맨틱 태그·명도 대비 파싱</div>
           <div class="p-4 text-center text-[var(--muted-fg)]">정적분석</div>
           <div class="p-4 flex justify-center">
-            <input type="number" value="20" class="w-16 border border-[var(--border)] rounded-lg px-2 py-1 text-center text-[13px] focus:border-[var(--primary)] focus:border-2 outline-none">
+            <input id="code-weight-3" type="number" value="20" data-base-weight="20" oninput="handleWeightInput(this)" class="w-16 border border-[var(--border)] rounded-lg px-2 py-1 text-center text-[13px] focus:border-[var(--primary)] focus:border-2 outline-none">
           </div>
           <div class="p-4 flex justify-center">
-            <input type="checkbox" checked class="w-4 h-4 accent-[var(--primary)]">
+            <input type="checkbox" checked onchange="handleCodeCheckToggle(this)" class="code-check-item w-4 h-4 accent-[var(--primary)]">
           </div>
         </div>
         <div class="grid grid-cols-[1.6fr_2fr_0.9fr_0.9fr_0.8fr] text-[13.5px] border-t border-[var(--border)] items-center">
@@ -950,25 +968,28 @@
           <div class="p-4 text-[var(--muted-fg)]">브라우저 콘솔 로그 스캔</div>
           <div class="p-4 text-center text-[var(--muted-fg)]">실행검증</div>
           <div class="p-4 flex justify-center">
-            <input type="number" value="20" class="w-16 border border-[var(--border)] rounded-lg px-2 py-1 text-center text-[13px] focus:border-[var(--primary)] focus:border-2 outline-none">
+            <input id="code-weight-4" type="number" value="20" data-base-weight="20" oninput="handleWeightInput(this)" class="w-16 border border-[var(--border)] rounded-lg px-2 py-1 text-center text-[13px] focus:border-[var(--primary)] focus:border-2 outline-none">
           </div>
           <div class="p-4 flex justify-center">
-            <input type="checkbox" checked class="w-4 h-4 accent-[var(--primary)]">
+            <input type="checkbox" checked onchange="handleCodeCheckToggle(this)" class="code-check-item w-4 h-4 accent-[var(--primary)]">
           </div>
         </div>
-        <div class="grid grid-cols-[1.6fr_2fr_0.9fr_0.9fr_0.8fr] text-[13.5px] border-t border-[var(--border)] items-center opacity-50">
+        <div id="code-check-row-5" class="grid grid-cols-[1.6fr_2fr_0.9fr_0.9fr_0.8fr] text-[13.5px] border-t border-[var(--border)] items-center opacity-50">
           <div class="p-4 font-medium">인포그래픽 포함 여부</div>
           <div class="p-4 text-[var(--muted-fg)]">이미지·SVG 파일 존재 여부 파싱</div>
           <div class="p-4 text-center text-[var(--muted-fg)]">정적분석</div>
           <div class="p-4 flex justify-center">
-            <input type="number" value="10" disabled class="w-16 border border-[var(--border)] rounded-lg px-2 py-1 text-center text-[13px] bg-[var(--muted)] outline-none">
+            <input id="code-weight-5" type="number" value="10" data-base-weight="10" disabled oninput="handleWeightInput(this)" class="w-16 border border-[var(--border)] rounded-lg px-2 py-1 text-center text-[13px] bg-[var(--muted)] outline-none">
           </div>
           <div class="p-4 flex justify-center">
-            <input type="checkbox" class="w-4 h-4 accent-[var(--primary)]">
+            <input type="checkbox" onchange="handleCodeCheckToggle(this)" class="code-check-item w-4 h-4 accent-[var(--primary)]">
           </div>
         </div>
+        <div class="p-4 border-t border-[var(--border)] flex justify-end">
+          <button onclick="saveChecklistItems()" class="rounded-xl bg-[var(--primary)] text-white px-4 py-2 text-[13px] font-semibold hover:bg-[var(--primary-dim)] transition-colors">검증 항목 저장</button>
+        </div>
       </div>
-      <p class="mt-2 text-[11px] text-[var(--muted-fg)]">체크를 해제하면 해당 항목은 채점에서 제외되고, 가중치는 사용 중인 항목끼리 다시 배분됩니다.</p>
+      <p class="mt-2 text-[11px] text-[var(--muted-fg)]">체크를 해제하면 해당 항목은 채점에서 제외되고, 가중치는 사용 중인 항목끼리 다시 배분됩니다. 사용 중인 항목의 가중치 합이 100점이 아니면 저장되지 않습니다.</p>
     </div>
 
     <!-- 문서층 채점 재현성 장치 -->
@@ -999,10 +1020,8 @@
           <span class="text-[12px] font-semibold px-3 py-1 rounded-full bg-[var(--muted)] text-[var(--muted-fg)]">0 (고정)</span>
         </div>
       </div>
-      <div class="p-4 border-t border-[var(--border)] flex justify-end">
-        <button onclick="savePolicy()" class="rounded-xl bg-[var(--primary)] text-white px-4 py-2 text-[13px] font-semibold hover:bg-[var(--primary-dim)] transition-colors">정책 저장</button>
-      </div>
     </div>
+    <p class="mt-2 text-[11px] text-[var(--muted-fg)]">이 항목들은 재현성을 위한 고정값이라 별도로 저장할 설정이 없습니다.</p>
   </section>
 
   <!-- 검수 회수 문단 -->
@@ -1639,7 +1658,7 @@
     return violations;
   }
 
-  function showToast(title, message, tone){
+  function showToast(title, message, tone, groupClass){
     var container = document.getElementById('toast-container');
     if(!container) return;
     var borderColor = tone === 'danger' ? 'var(--danger)' : 'var(--border)';
@@ -1647,7 +1666,8 @@
     var icon = tone === 'danger' ? '⚠' : '✓';
 
     var el = document.createElement('div');
-    el.className = 'pointer-events-auto w-full bg-white rounded-xl shadow-lg p-3.5 flex items-start gap-2.5 transition-opacity duration-300';
+    el.className = 'pointer-events-auto w-full bg-white rounded-xl shadow-lg p-3.5 flex items-start gap-2.5 transition-opacity duration-300' +
+      (groupClass ? ' ' + groupClass : '');
     el.style.border = '1px solid ' + borderColor;
     el.innerHTML =
       '<span style="color:' + iconColor + '" class="flex-shrink-0 mt-0.5 text-[14px]">' + icon + '</span>' +
@@ -1663,13 +1683,18 @@
     container.appendChild(el);
   }
 
+  // 재채점 편차 상한 위반 알림은 "재점검" 성격이라, 호출될 때마다(페이지 로드 1회 +
+  // "판정 기준 저장" 클릭마다) 이전에 띄운 알림을 먼저 지우고 최신 위반 목록으로 다시 그린다.
+  // 그렇지 않으면 값 변경 없이 반복 저장할 때마다 동일한 알림이 계속 쌓인다.
   function notifyRecheckCapViolations(cap){
+    document.querySelectorAll('.toast-recheck-violation').forEach(function(el){ el.remove(); });
     var violations = checkRecheckCapViolations(cap);
     violations.forEach(function(v){
       showToast(
         '재채점 편차 상한 초과',
         v.title + ' · ' + v.category + ' — 1회 ' + v.round1 + '점 → 2회 ' + v.round2 + '점 (Δ' + v.delta + '점 > 상한 ' + cap + '점)',
-        'danger'
+        'danger',
+        'toast-recheck-violation'
       );
     });
     return violations.length;
@@ -1692,20 +1717,122 @@
       (isValid ? 'bg-[color-mix(in_srgb,var(--ok)_12%,white)] text-[var(--ok)]' : 'bg-[color-mix(in_srgb,var(--danger)_10%,white)] text-[var(--danger)]');
   }
 
-  function savePolicy(){
+  function savePolicyScores(){
     var sum = readPolicyScoreSum();
     if(sum !== 100){
-      showToast('정책을 저장하지 못했습니다', '문서층·코드 기준·계획서 대조 배점의 합이 100점이어야 합니다. (현재 ' + sum + '점)', 'danger');
+      showToast('배점을 저장하지 못했습니다', '문서층·코드 기준·계획서 대조 배점의 합이 100점이어야 합니다. (현재 ' + sum + '점)', 'danger');
       return;
     }
+    var doc = document.getElementById('policy-score-doc').value;
+    var code = document.getElementById('policy-score-code').value;
+    var plan = document.getElementById('policy-score-plan').value;
+    renderOpsMetrics();
+    showToast('배점이 저장되었습니다', '문서층 ' + doc + '점 · 코드 기준 ' + code + '점 · 계획서 대조 ' + plan + '점으로 반영됩니다.', 'info');
+  }
 
-    var capInput = document.getElementById('policy-recheck-cap');
-    var cap = parseFloat(capInput.value);
-    if(isNaN(cap)) cap = 0;
-    var violationCount = notifyRecheckCapViolations(cap);
-    if(violationCount === 0){
-      showToast('정책이 저장되었습니다', '현재 편차 상한(' + cap + '점)을 초과한 재채점 이력이 없습니다.', 'info');
+  function savePolicyThresholds(){
+    var threshold = parseFloat(document.getElementById('policy-threshold').value);
+    if(isNaN(threshold)) threshold = 0;
+    var rerunCap = parseFloat(document.getElementById('policy-rerun-cap').value);
+    if(isNaN(rerunCap)) rerunCap = 0;
+    var tokenCap = parseFloat(document.getElementById('policy-token-retry-cap').value);
+    if(isNaN(tokenCap)) tokenCap = 0;
+    var recheckCap = parseFloat(document.getElementById('policy-recheck-cap').value);
+    if(isNaN(recheckCap)) recheckCap = 0;
+
+    renderOpsMetrics();
+    var violationCount = notifyRecheckCapViolations(recheckCap);
+    var msg = '통과 Threshold ' + threshold + '점 · 재수행 상한 ' + rerunCap + '회 · 검수 문단 재시도 상한 ' + tokenCap + '회 · 재채점 편차 상한 ' + recheckCap + '점으로 반영됩니다.';
+    if(violationCount > 0){
+      msg += ' 단, 이 편차 상한을 초과한 재채점 이력이 있어 위 알림을 별도로 띄웠습니다.';
     }
+    showToast('판정 기준이 저장되었습니다', msg, 'info');
+  }
+
+  function getCodeCheckRows(){
+    var checkboxes = document.querySelectorAll('.code-check-item');
+    var rows = [];
+    checkboxes.forEach(function(cb){
+      var row = cb.closest('.grid');
+      var input = row ? row.querySelector('input[type="number"]') : null;
+      if(input) rows.push({ checkbox: cb, input: input, row: row });
+    });
+    return rows;
+  }
+
+  function updateCodeWeightSum(){
+    var el = document.getElementById('code-weight-sum');
+    var sum = 0;
+    getCodeCheckRows().forEach(function(r){
+      if(r.checkbox.checked) sum += parseFloat(r.input.value) || 0;
+    });
+    if(el){
+      var isValid = sum === 100;
+      el.textContent = '사용 중 가중치 합계 ' + sum + '점';
+      el.className = 'text-[12px] font-semibold px-2.5 py-0.5 rounded-full ' +
+        (isValid ? 'bg-[color-mix(in_srgb,var(--ok)_12%,white)] text-[var(--ok)]' : 'bg-[color-mix(in_srgb,var(--danger)_10%,white)] text-[var(--danger)]');
+    }
+    return sum;
+  }
+
+  // 체크박스를 해제/재선택하면 사용 중인 항목끼리 base 가중치 비율대로 합 100을 다시 배분한다.
+  // 반올림 오차는 최대 나머지법(largest remainder method)으로 배분해 정확히 100을 맞춘다.
+  function redistributeChecklistWeights(){
+    var rows = getCodeCheckRows();
+    var checkedRows = rows.filter(function(r){ return r.checkbox.checked; });
+    var totalBase = checkedRows.reduce(function(sum, r){ return sum + (parseFloat(r.input.dataset.baseWeight) || 0); }, 0);
+    if(totalBase <= 0){
+      updateCodeWeightSum();
+      return;
+    }
+    var plans = checkedRows.map(function(r){
+      var base = parseFloat(r.input.dataset.baseWeight) || 0;
+      var exact = base / totalBase * 100;
+      var floor = Math.floor(exact);
+      return { row: r, floor: floor, remainder: exact - floor };
+    });
+    var flooredSum = plans.reduce(function(sum, p){ return sum + p.floor; }, 0);
+    var leftover = 100 - flooredSum;
+    plans.slice().sort(function(a, b){ return b.remainder - a.remainder; })
+      .slice(0, Math.max(leftover, 0))
+      .forEach(function(p){ p.floor += 1; });
+    plans.forEach(function(p){ p.row.input.value = p.floor; });
+    updateCodeWeightSum();
+  }
+
+  function handleWeightInput(input){
+    if(!input.disabled){
+      input.dataset.baseWeight = input.value;
+    }
+    updateCodeWeightSum();
+  }
+
+  function handleCodeCheckToggle(checkbox){
+    var row = checkbox.closest('.grid');
+    var input = row ? row.querySelector('input[type="number"]') : null;
+    if(input){
+      input.disabled = !checkbox.checked;
+      if(!checkbox.checked){
+        input.value = input.dataset.baseWeight;
+      }
+    }
+    if(row) row.classList.toggle('opacity-50', !checkbox.checked);
+    redistributeChecklistWeights();
+  }
+
+  function saveChecklistItems(){
+    var boxes = document.querySelectorAll('.code-check-item');
+    var enabled = document.querySelectorAll('.code-check-item:checked').length;
+    var sum = updateCodeWeightSum();
+    if(sum !== 100){
+      showToast(
+        '검증 항목을 저장하지 못했습니다',
+        '사용 중인 항목의 가중치 합이 100점이어야 합니다. (현재 ' + sum + '점) 체크박스를 한 번 더 토글하면 자동으로 100점에 맞게 재배분됩니다.',
+        'danger'
+      );
+      return;
+    }
+    showToast('검증 항목이 저장되었습니다', '현재 ' + enabled + ' / ' + boxes.length + '개 항목이 코드 기준 자동 검증에 사용되며, 가중치 합계 100점으로 반영됩니다.', 'info');
   }
 
   var FAQ_ITEMS = {
@@ -2385,6 +2512,7 @@
   renderDeviationOverview();
   renderOpsMetrics();
   applyInitialArchivedStates();
+  updateCodeWeightSum();
   Object.keys(FAQ_ITEMS).forEach(updateFaqBadge);
   Object.keys(RECOVERY_ITEMS).forEach(updateRecoveryBadge);
 
