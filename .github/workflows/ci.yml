@@ -12,7 +12,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: PR 제목에 이슈 키 포함 확인 (예: [SB-12] 로그인 기능 구현)
+      - name: "PR 제목에 이슈 키 포함 확인 (예: [SB-12] 로그인 기능 구현)"
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
