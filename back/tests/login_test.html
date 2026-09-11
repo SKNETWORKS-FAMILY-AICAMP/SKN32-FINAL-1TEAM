@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>S-Brain 로그인 테스트 (임시)</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  body { font-family: sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; }
+  pre { background: #f4f4f4; padding: 12px; white-space: pre-wrap; word-break: break-all; }
+</style>
+</head>
+<body>
+  <h3>S-Brain 로그인 테스트 (프론트 완성 전 임시용)</h3>
+  <p>아래 버튼으로 진짜 구글 로그인 → 받은 id_token을 백엔드 <code>/auth/google</code>에 그대로 던져본다.</p>
+
+  <!-- data-client_id 에 .env의 GOOGLE_CLIENT_ID 값을 그대로 넣는다 -->
+  <div id="g_id_onload"
+       data-client_id="여기에_GOOGLE_CLIENT_ID_붙여넣기"
+       data-callback="handleCredentialResponse">
+  </div>
+  <div class="g_id_signin" data-type="standard"></div>
+
+  <h4>결과</h4>
+  <pre id="result">(로그인하면 여기 표시됨)</pre>
+
+  <script>
+    const BACKEND_URL = 'http://localhost:8000'; // uvicorn --port 8000 기준
+
+    async function handleCredentialResponse(response) {
+      const out = document.getElementById('result');
+      out.textContent = '로그인 중...';
+
+      try {
+        const loginRes = await fetch(`${BACKEND_URL}/auth/google`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include', // httpOnly 쿠키를 받으려면 필수
+          body: JSON.stringify({
+            id_token: response.credential,
+            aiTrainingAgreed: true,
+            notifyAgreed: true,
+          }),
+        });
+        const loginBody = await loginRes.json();
+
+        let text = `[POST /auth/google] status ${loginRes.status}\n${JSON.stringify(loginBody, null, 2)}`;
+
+        // 로그인 직후 쿠키가 실제로 실려가는지 /auth/me 로 한 번 더 확인
+        const meRes = await fetch(`${BACKEND_URL}/auth/me`, { credentials: 'include' });
+        const meBody = await meRes.json();
+        text += `\n\n[GET /auth/me] status ${meRes.status}\n${JSON.stringify(meBody, null, 2)}`;
+
+        out.textContent = text;
+      } catch (err) {
+        out.textContent = '에러: ' + err + '\n(CORS/네트워크 문제일 수 있음 — 콘솔도 확인)';
+      }
+    }
+  </script>
+</body>
+</html>
