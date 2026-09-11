@@ -902,9 +902,10 @@ function evaluateEligibility(rule, company){
 
 // 목업 수정 요청서 v3 §4: reason(매칭 사유)은 모델이 생성한 요약이라 기획서 6-1이
 // 출처 표기 + 원문 링크를 함께 요구한다. sourceNotice는 시연 로그(steps[2].data.
-// candidates[].sourceNotice)와 동일하게 모든 공고에 같은 문구를 쓰고, originalUrl은
-// 공고별로 다르다(초기창업패키지·예비창업패키지·창업도약패키지 3건은 시연 로그의
-// 실제 K-Startup 공고 ID를 그대로 썼다).
+// candidates[].sourceNotice)와 동일하게 모든 공고에 같은 문구를 쓴다. 시연 로그의
+// 공고 ID로 만든 주소(/notice/KS-2026-xxxx)는 실제 K-Startup에 없는 경로라 404가
+// 나서, 공고별 실제 주소가 연결되기 전까지는 K-Startup "모집중 사업공고" 목록으로 보낸다.
+const K_STARTUP_ONGOING_URL = 'https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do';
 const AI_SUMMARY_SOURCE_NOTICE = '본 AI 요약 정보는 K-Startup 공고 내용을 바탕으로 생성되었습니다.';
 
 const ANNOUNCEMENTS = [
@@ -916,7 +917,7 @@ const ANNOUNCEMENTS = [
     fit: 92,
     reason: '제조·서비스 기반 창업 아이템과 지원 분야가 일치합니다',
     eligibility: { applicantType: '창업 3년 이내 기업', ageLimitYears: 3, deadline: '2026-10-15' },
-    originalUrl: 'https://www.k-startup.go.kr/notice/KS-2026-0388',
+    originalUrl: K_STARTUP_ONGOING_URL,
   },
   {
     title: '예비창업패키지',
@@ -926,7 +927,7 @@ const ANNOUNCEMENTS = [
     fit: 81,
     reason: '예비창업자 대상 지원 요건과 일치합니다',
     eligibility: { applicantType: '예비창업자', ageLimitYears: null, deadline: '2026-09-30' },
-    originalUrl: 'https://www.k-startup.go.kr/notice/KS-2026-0412',
+    originalUrl: K_STARTUP_ONGOING_URL,
   },
   {
     title: '지역특화 스마트상점 기술보급 지원사업',
@@ -936,7 +937,7 @@ const ANNOUNCEMENTS = [
     fit: 68,
     reason: '오프라인 매장 디지털 전환 지원 항목과 부합합니다',
     eligibility: { applicantType: '제한없음', ageLimitYears: null, deadline: '2026-11-01' },
-    originalUrl: 'https://www.k-startup.go.kr/notice/KS-2026-0501',
+    originalUrl: K_STARTUP_ONGOING_URL,
   },
   {
     title: '창업도약패키지',
@@ -946,7 +947,7 @@ const ANNOUNCEMENTS = [
     fit: 64,
     reason: '업력 3~7년차 성장기 창업기업 지원 요건과 유사합니다',
     eligibility: { applicantType: '창업 3년 이내 기업', ageLimitYears: 7, deadline: '2026-10-30' },
-    originalUrl: 'https://www.k-startup.go.kr/notice/KS-2026-0455',
+    originalUrl: K_STARTUP_ONGOING_URL,
   },
   {
     title: '소상공인 디지털전환 지원사업',
@@ -956,7 +957,7 @@ const ANNOUNCEMENTS = [
     fit: 58,
     reason: '소상공인 대상 디지털 전환 지원 항목과 유사합니다',
     eligibility: { applicantType: '제한없음', ageLimitYears: null, deadline: '2026-12-01' },
-    originalUrl: 'https://www.k-startup.go.kr/notice/KS-2026-0523',
+    originalUrl: K_STARTUP_ONGOING_URL,
   },
   {
     title: '여성기업 창업경진대회',
@@ -966,7 +967,7 @@ const ANNOUNCEMENTS = [
     fit: 51,
     reason: '창업 경진대회형 지원사업으로 심사 방식이 다릅니다',
     eligibility: { applicantType: '예비창업자', ageLimitYears: null, deadline: '2026-09-20' },
-    originalUrl: 'https://www.k-startup.go.kr/notice/KS-2026-0547',
+    originalUrl: K_STARTUP_ONGOING_URL,
   },
 ];
 
@@ -1137,7 +1138,7 @@ function EligibilityGate({ announcement, itemInfo, onProceed, onLeave }){
 // 공용으로 뺐다. "큰 틀"만 먼저 잡는 단계라 필드 구성은 최소로 둔다.
 function RepeatableRow({ values, fields, onChange, onRemove, removable }){
   return (
-    <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] items-start bg-white border border-[var(--border)] rounded-xl p-4">
+    <div className={`relative grid gap-3 ${fields.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} items-start bg-white border border-[var(--border)] rounded-xl p-4 pr-11`}>
       {fields.map((f) => (
         <label key={f.key} className="block">
           <span className="block text-[11.5px] font-semibold text-[var(--muted-fg)] mb-1">{f.label}</span>
@@ -1146,7 +1147,7 @@ function RepeatableRow({ values, fields, onChange, onRemove, removable }){
         </label>
       ))}
       <button type="button" onClick={onRemove} disabled={!removable} aria-label="행 삭제"
-        className="justify-self-end sm:justify-self-auto sm:mt-6 text-[var(--muted-fg)] hover:text-[var(--danger)] disabled:opacity-30 disabled:cursor-not-allowed transition-[color,scale] duration-150 ease-out active:scale-[0.9]">
+        className="absolute top-3 right-3 p-0.5 text-[var(--muted-fg)] hover:text-[var(--danger)] disabled:opacity-30 disabled:cursor-not-allowed transition-[color,scale] duration-150 ease-out active:scale-[0.9]">
         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
           <path d="M6 6l12 12M18 6L6 18"/>
         </svg>
@@ -1716,6 +1717,32 @@ function buildCodeCheckItems(category, scoreOutcome){
 
 // 기획서 4-5: "산출물 확인" 화면은 합격선을 표기하지 않는다 — 코드 검증 8항목과 계획서
 // 대조 누락 기능을 항목별로 보여주고, 판정(통과 여부)은 종합 평가에서 한 번만 말한다.
+// 산출물 카드 미리보기 — 목업이라 실제 파일 대신 카드에 쓰는 같은 목업 화면을 크게 보여준다.
+function ResultPreviewModal({ kind, onClose }){
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-label={kind === 'site' ? '화면 흐름 미리보기' : '인포그래픽 미리보기'}>
+      <div className="absolute inset-0 bg-[var(--fg)]/40 backdrop-blur-sm" onClick={onClose} aria-hidden="true"></div>
+      <div className="relative w-full max-w-2xl rounded-2xl bg-white p-6 shadow-[0_24px_64px_-24px_rgba(15,23,42,.4)]">
+        <div className="flex items-center justify-between mb-4">
+          <p className="font-display font-bold text-[18px]">{kind === 'site' ? EXECUTABLE_COPY.title : '인포그래픽'}</p>
+          <button onClick={onClose} aria-label="미리보기 닫기" className="text-[var(--muted-fg)] hover:text-[var(--fg)] transition-[color,scale] duration-150 ease-out active:scale-[0.96]">
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+        <div className="relative aspect-[4/3] rounded-xl overflow-hidden bg-[var(--bg)]">
+          <div className="absolute inset-0 scale-[1.6]">{kind === 'site' ? <SiteMock /> : <InfographicMock />}</div>
+        </div>
+        <p className="mt-3 text-[12px] text-[var(--muted-fg)]">목업 화면입니다 — 실제 산출물 파일은 연결되지 않았습니다</p>
+      </div>
+    </div>
+  );
+}
+
 function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, scoreOutcome = 'fail' }){
   const category = detectItemCategory(itemInfo && itemInfo.item);
   const hasExecutable = category !== 'onepage';
@@ -1724,6 +1751,7 @@ function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, scoreOutco
   const codeCheckItems = buildCodeCheckItems(category, scoreOutcome);
   const missingFeatures = artifactScore.crossCheck.reasons;
   const subtasks = ARTIFACT_SUBTASKS_BY_CATEGORY[category] || ARTIFACT_SUBTASKS_BY_CATEGORY.webdev;
+  const [preview, setPreview] = useState(null);
   const [checkedTasks, setCheckedTasks] = useState([]);
   const [runningTasks, setRunningTasks] = useState([]);
   // 재작성 스피너가 끝나도 완료 표시가 없어 헷갈린다는 지적에 따라, 방금 재작성한
@@ -1769,7 +1797,7 @@ function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, scoreOutco
                 <p className="text-[12.5px] text-[var(--muted-fg)] mb-3">사업계획서에 삽입할 요약 인포그래픽입니다</p>
                 <div className="flex items-center justify-between text-[12px] font-mono text-[var(--muted-fg)]">
                   <span>infographic.png</span>
-                  <button className="font-semibold text-[var(--primary)] hover:underline">다운로드</button>
+                  <button onClick={() => setPreview('info')} className="font-semibold text-[var(--primary)] hover:underline">미리보기</button>
                 </div>
               </div>
             </div>
@@ -1784,13 +1812,15 @@ function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, scoreOutco
                   <p className="text-[12.5px] text-[var(--muted-fg)] mb-3">{EXECUTABLE_COPY.desc}</p>
                   <div className="flex items-center justify-between text-[12px] font-mono text-[var(--muted-fg)]">
                     <span>index.html</span>
-                    <button className="font-semibold text-[var(--primary)] hover:underline">열어보기 ↗</button>
+                    <button onClick={() => setPreview('site')} className="font-semibold text-[var(--primary)] hover:underline">크게 보기</button>
                   </div>
                 </div>
               </div>
             )}
           </div>
         </div>
+
+        {preview && <ResultPreviewModal kind={preview} onClose={() => setPreview(null)} />}
 
         {/* 우측 — 산출물 점검: 합격선은 물론 점수 자체도 표기하지 않는다(사용자 요청) —
             판정에 쓰일 숫자는 종합 평가에서만 보여주고, 여기서는 항목별 통과 여부만
@@ -2344,6 +2374,7 @@ function ReviewScreen({ announcement, docOutcome = 'fail', artifactOutcome = 'fa
   const artifactScore = ARTIFACT_SCORE_BY_OUTCOME[artifactOutcome];
   const finalTotal = docScore.raw + artifactScore.autoCheck.raw + artifactScore.crossCheck.raw;
   const passed = finalTotal >= FINAL_THRESHOLD;
+  const [allRequested, setAllRequested] = useState(false);
 
   return (
     <section className="max-w-3xl mx-auto px-6 py-16">
@@ -2397,7 +2428,16 @@ function ReviewScreen({ announcement, docOutcome = 'fail', artifactOutcome = 'fa
       </div>
 
       <div className="border-t border-[var(--border)] pt-8">
-        <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide mb-2">결과물</p>
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide">결과물</p>
+          <button onClick={() => setAllRequested(true)}
+            className="rounded-lg bg-[var(--primary)] text-white px-4 py-2 text-[13px] font-semibold hover:bg-[var(--primary-dim)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.96]">
+            전체 다운로드
+          </button>
+        </div>
+        {allRequested && (
+          <p className="text-[12.5px] text-[var(--muted-fg)] mb-4">파일 {DOWNLOAD_FILES.length}개를 S-Brain_결과물.zip 하나로 받는 자리입니다 — 목업이라 실제 파일은 내려받지 않습니다</p>
+        )}
         {!passed && (
           <p className="text-[13px] text-[var(--fg)] mb-4">현재 {finalTotal}점으로 저장됩니다 — 검수는 표현만 다듬으므로 종합 평가에서 확인한 점수가 그대로 기록됩니다</p>
         )}
