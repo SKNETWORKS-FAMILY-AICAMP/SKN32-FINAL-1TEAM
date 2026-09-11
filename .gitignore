@@ -4,3 +4,15 @@
 # 발표·검토를 위해 내려받은 원본 자료
 /docs/공유자료/
 /docs/발표자료/
+
+# 로컬 비밀 설정
+/.env
+/.env.*
+!.env.example
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# 개인 문서 추출 결과
+/test/docextract/results/
