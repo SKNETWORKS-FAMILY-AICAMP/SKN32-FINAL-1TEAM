@@ -1,0 +1,8 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+sqlalchemy>=2.0
+pydantic>=2.0
+pyjwt>=2.8
+google-auth>=2.30
+requests>=2.31
+pymysql>=1.1

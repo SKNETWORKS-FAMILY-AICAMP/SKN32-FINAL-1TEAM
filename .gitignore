@@ -1,0 +1,36 @@
+# --- 비밀값 (절대 커밋 금지) ---
+.env
+*.env.local
+
+# --- 파이썬 ---
+__pycache__/
+*.py[cod]
+*.pyc
+*.egg-info/
+.eggs/
+
+# --- 가상환경 ---
+venv/
+.venv/
+env/
+
+# --- 테스트/린트 캐시 ---
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# --- IDE / 에디터 ---
+.vscode/
+.idea/
+*.swp
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- 로그/임시 파일 ---
+*.log
+*.db
+*.sqlite3
