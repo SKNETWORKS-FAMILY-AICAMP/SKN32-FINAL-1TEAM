@@ -22,7 +22,7 @@ from sqlalchemy.dialects.mysql import INTEGER as MySQLInteger
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database import Base
+from app.database import IS_SQLITE, Base
 
 # app_schema.sql엔 MySQL 전용 타입(LONGTEXT, INT UNSIGNED)으로 선언된 컬럼이 있는데,
 # 이 타입들을 그대로 쓰면 SQLite(tests/conftest.py가 만드는 테스트 DB)에서 컴파일 에러가 난다.
@@ -53,13 +53,21 @@ class Notice(Base):
     recruitment_status: Mapped[str] = mapped_column(String(32))
     url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # ── 아래 3개는 2026-09-11 시점 실제 mysql_schema.sql엔 아직 없는 컬럼이다(확인 완료).
-    # 이근준님께 notices 테이블에 추가해달라고 요청한 상태를 가정하고 활성화해둔 "있는
-    # 버전" — 실제로 컬럼이 반영됐는지 다시 확인 전까지는 이 3줄을 주석 처리해서
-    # "없는 버전"으로 되돌려야 실제 DB와 어긋나지 않는다.
-    embedding_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    embedding_updated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
-    embedding_fail_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # ── 아래 3개는 실제 mysql_schema.sql(AWS 공유 DB)엔 없는 컬럼이다 — 2026-09-11 재확인 결과도
+    # 여전히 없음. 이근준님께 추가를 요청한 상태지만 아직 반영 전이라, MySQL 모드에서는 이
+    # 3개를 아예 컬럼으로 만들지 않는다 — 그래야 items.py의 db.query(Notice)가 실제 AWS
+    # MySQL에서 "Unknown column 'notices.embedding_status'" 에러로 죽는 사고를 막는다.
+    #
+    # 다만 로컬 SQLite 개발 모드(DB_BACKEND=sqlite)는 dev.db를 매번 모델 그대로 새로 만드는
+    # 거라 실제 DB와 어긋날 일이 없어서, 여기서만 이 3개를 켜둔다 — embedding_status 기반
+    # 매칭/필터링 로직을 미리 로컬에서 짜보고 싶을 때 쓰라고. IS_SQLITE가 False인 MySQL
+    # 모드에서는 클래스 본문이 아예 실행 안 되니 컬럼 자체가 없는 걸로 취급된다.
+    # 이근준님이 실제로 컬럼을 추가해주면, 이 if 블록을 지우고 들여쓰기 없이 항상 켜진
+    # 상태로 바꿀 것 (backend_decisions.md #16 참고).
+    if IS_SQLITE:
+        embedding_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+        embedding_updated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+        embedding_fail_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 # ---------------------------------------------------------------------------
