@@ -1,0 +1,20 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's own idiom is Depends(...)/Query(...)/Body(...)/Form(...)/File(...) as an argument
+# default — that's not the mutable-default footgun B008 is meant to catch, so it's whitelisted.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body", "fastapi.Form", "fastapi.File"]
+
+[tool.ruff.lint.per-file-ignores]
+# config.py is a verbatim copy of the collection pipeline's own config.py (geunlee00/skn32_test).
+# Leave its style exactly as the original so the two copies stay diffable/mergeable.
+"config.py" = ["UP031"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

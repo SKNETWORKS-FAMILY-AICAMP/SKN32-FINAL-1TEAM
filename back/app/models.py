@@ -96,65 +96,75 @@ class Company(Base):
     __tablename__ = 'companies'
 
     company_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('users.user_id'))
+    # unique=True: "계정당 회사 프로필 1건" 가정을 주석이 아니라 DB 제약으로 강제한다.
+    # POST /projects의 동시 실행 제한 로직(backend_decisions.md #11)이 이 가정 위에서
+    # 동작하므로, 동시 요청으로 회사 프로필이 2건 생기면 그 가정이 깨져 제한 로직도
+    # 같이 무력화된다 — 그래서 유니크 제약 + 코드의 insert-then-catch 패턴으로 막는다.
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('users.user_id'), unique=True)
     start_type: Mapped[str] = mapped_column(String(32))
     biz_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     ceo_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     founded_at: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
 
     user: Mapped['User'] = relationship(back_populates='companies')
-    items: Mapped[list['Item']] = relationship(back_populates='company')
+    projects: Mapped[list['Project']] = relationship(back_populates='company')
 
 
-class Item(Base):
-    __tablename__ = 'items'
+class Project(Base):
+    """DB 테이블/컬럼 이름까지 전부 'project'로 통일했다 (backend_decisions.md #5 개정).
+    원래는 '설계문서 그대로 items 테이블 유지, URL만 /projects'로 정했었는데, API
+    표면(URL, 응답 필드)과 DB 이름이 다르면 헷갈린다는 이유로 DB까지 다 바꾸기로 했다.
+    이미 AWS에 예전 이름(items/item_id)으로 스키마를 적용했다면, app_schema.sql 을
+    이 버전으로 다시 적용하기 전에 rename_items_to_projects.sql 로 먼저 이름을 바꾸거나,
+    drop_tables.sql 로 지우고 새로 적용해야 한다."""
+    __tablename__ = 'projects'
 
-    item_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     company_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('companies.company_id'))
     description: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
     notify_region: Mapped[str] = mapped_column(String(32))
     notify_industry: Mapped[str] = mapped_column(String(32))
 
-    company: Mapped['Company'] = relationship(back_populates='items')
-    attachments: Mapped[list['ItemAttachment']] = relationship(back_populates='item')
-    team_members: Mapped[list['TeamMember']] = relationship(back_populates='item')
-    pricing_items: Mapped[list['PricingItem']] = relationship(back_populates='item')
-    matches: Mapped[list['MatchResult']] = relationship(back_populates='item')
+    company: Mapped['Company'] = relationship(back_populates='projects')
+    attachments: Mapped[list['ProjectAttachment']] = relationship(back_populates='project')
+    team_members: Mapped[list['TeamMember']] = relationship(back_populates='project')
+    pricing_items: Mapped[list['PricingItem']] = relationship(back_populates='project')
+    matches: Mapped[list['MatchResult']] = relationship(back_populates='project')
 
 
-class ItemAttachment(Base):
-    __tablename__ = 'item_attachments'
+class ProjectAttachment(Base):
+    __tablename__ = 'project_attachments'
 
     attachment_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    item_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('items.item_id'))
+    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
     file_name: Mapped[str] = mapped_column(String(255))
     file_url: Mapped[str] = mapped_column(String(500))
 
-    item: Mapped['Item'] = relationship(back_populates='attachments')
+    project: Mapped['Project'] = relationship(back_populates='attachments')
 
 
 class TeamMember(Base):
     __tablename__ = 'team_members'
 
     member_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    item_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('items.item_id'))
+    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
     name: Mapped[str] = mapped_column(String(100))
     role: Mapped[str | None] = mapped_column(String(100), nullable=True)
     experience: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    item: Mapped['Item'] = relationship(back_populates='team_members')
+    project: Mapped['Project'] = relationship(back_populates='team_members')
 
 
 class PricingItem(Base):
     __tablename__ = 'pricing_items'
 
     pricing_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    item_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('items.item_id'))
+    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
     service_name: Mapped[str] = mapped_column(String(255))
     unit_price: Mapped[decimal.Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
 
-    item: Mapped['Item'] = relationship(back_populates='pricing_items')
+    project: Mapped['Project'] = relationship(back_populates='pricing_items')
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +174,7 @@ class NoticeAlert(Base):
     __tablename__ = 'notice_alerts'
 
     alert_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    item_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('items.item_id'))
+    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
     notice_id: Mapped[str] = mapped_column(String(320), ForeignKey('notices.notice_id'))
     similarity_score: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2))
     detected_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
@@ -174,7 +184,7 @@ class MatchResult(Base):
     __tablename__ = 'match_results'
 
     match_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    item_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('items.item_id'))
+    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
     notice_id: Mapped[str] = mapped_column(String(320), ForeignKey('notices.notice_id'))
     fit_score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -182,7 +192,7 @@ class MatchResult(Base):
     archived_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     archived_by: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
-    item: Mapped['Item'] = relationship(back_populates='matches')
+    project: Mapped['Project'] = relationship(back_populates='matches')
     eligibility_checks: Mapped[list['EligibilityCheck']] = relationship(back_populates='match')
     business_plans: Mapped[list['BusinessPlan']] = relationship(back_populates='match')
 

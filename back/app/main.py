@@ -5,19 +5,23 @@
 Swagger 문서: http://127.0.0.1:8000/docs
 (기술스택 선정서 2-3-2 — 6인 팀 인터페이스 합의 비용을 줄이는 용도로 그대로 확인용)
 
-지금은 auth 라우터만 등록돼 있다. items/admin/faqs 라우터는 아직 만들기 전이라
-빼놨다 — 그 라우터들을 만들면, 아래 import 한 줄이랑 include_router 세 줄을
+지금은 auth/projects 라우터만 등록돼 있다. admin/faqs 라우터는 아직 만들기 전이라
+빼놨다 — 그 라우터들을 만들면, 아래 import 한 줄이랑 include_router 두 줄을
 주석 풀어서(또는 새로 추가해서) 다시 등록하면 된다.
 """
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.database import init_sqlite_dev_db
-from app.routers import auth
+from app.routers import auth, projects
+from app.routers.projects import UPLOAD_DIR
 
-# items/admin/faqs 라우터를 만들면 위 줄을 아래처럼 바꾸고,
-# 밑의 app.include_router(...) 3줄의 주석을 풀면 된다.
-# from app.routers import admin, auth, faqs, items
+# admin/faqs 라우터를 만들면 위 줄을 아래처럼 바꾸고,
+# 밑의 app.include_router(...) 두 줄의 주석을 풀면 된다.
+# from app.routers import admin, auth, faqs, projects
 
 app = FastAPI(title='S-Brain API', version='0.1.0')
 
@@ -39,8 +43,13 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
+# projects.py 의 POST /projects 가 로컬 디스크(/uploads)에 저장한 첨부파일을
+# 그대로 URL로 접근 가능하게 정적 서빙한다 (backend_decisions.md #6).
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount('/uploads', StaticFiles(directory=UPLOAD_DIR), name='uploads')
+
 app.include_router(auth.router)
-# app.include_router(items.router)
+app.include_router(projects.router)
 # app.include_router(admin.router)
 # app.include_router(faqs.router)
 

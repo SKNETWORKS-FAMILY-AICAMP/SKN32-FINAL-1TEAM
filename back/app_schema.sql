@@ -39,47 +39,47 @@ CREATE TABLE IF NOT EXISTS companies (
     biz_type VARCHAR(100) NULL COMMENT '업종',
     ceo_name VARCHAR(100) NULL COMMENT '대표자명',
     founded_at DATE NULL COMMENT '설립일(예비창업자는 NULL 가능)',
-    KEY ix_companies_user (user_id),
+    UNIQUE KEY ux_companies_user (user_id) COMMENT '계정당 회사 프로필 1건 — 동시 요청으로 중복 생성되는 것을 DB 레벨에서 차단',
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
-CREATE TABLE IF NOT EXISTS items (
-    item_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '지원 아이템(사업 아이디어) 고유 식별자',
+CREATE TABLE IF NOT EXISTS projects (
+    project_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '프로젝트(지원 아이템/사업 아이디어) 고유 식별자',
     company_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES companies(company_id)',
     description TEXT NOT NULL COMMENT '아이템 설명(사용자가 입력한 사업 아이디어 서술)',
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '등록 일시',
     notify_region VARCHAR(32) NOT NULL COMMENT '유사 공고 알림 대상 소재 지역',
     notify_industry VARCHAR(32) NOT NULL COMMENT '유사 공고 알림 대상 업종',
-    KEY ix_items_company (company_id),
+    KEY ix_projects_company (company_id),
     FOREIGN KEY (company_id) REFERENCES companies(company_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
-CREATE TABLE IF NOT EXISTS item_attachments (
+CREATE TABLE IF NOT EXISTS project_attachments (
     attachment_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '첨부파일 고유 식별자',
-    item_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES items(item_id)',
+    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
     file_name VARCHAR(255) NOT NULL COMMENT '첨부파일 원본 파일명',
     file_url VARCHAR(500) NOT NULL COMMENT '첨부파일 저장 경로/URL',
-    KEY ix_item_attachments_item (item_id),
-    FOREIGN KEY (item_id) REFERENCES items(item_id) ON DELETE CASCADE
+    KEY ix_project_attachments_project (project_id),
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS team_members (
     member_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '팀원 고유 식별자',
-    item_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES items(item_id)',
+    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
     name VARCHAR(100) NOT NULL COMMENT '팀원 이름',
     role VARCHAR(100) NULL COMMENT '담당 역할',
     experience TEXT NULL COMMENT '경력/역량 서술(자유 서술, NULL 가능)',
-    KEY ix_team_members_item (item_id),
-    FOREIGN KEY (item_id) REFERENCES items(item_id) ON DELETE CASCADE
+    KEY ix_team_members_project (project_id),
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS pricing_items (
     pricing_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '단가 항목 고유 식별자',
-    item_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES items(item_id)',
+    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
     service_name VARCHAR(255) NOT NULL COMMENT '서비스/상품명',
     unit_price DECIMAL(12,2) NULL COMMENT '단가(원, NULL 가능)',
-    KEY ix_pricing_items_item (item_id),
-    FOREIGN KEY (item_id) REFERENCES items(item_id) ON DELETE CASCADE
+    KEY ix_pricing_items_project (project_id),
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- ---------------------------------------------------------------------------
@@ -87,28 +87,28 @@ CREATE TABLE IF NOT EXISTS pricing_items (
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS notice_alerts (
     alert_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '유사 공고 알림 고유 식별자',
-    item_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES items(item_id)',
+    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
     notice_id VARCHAR(320) NOT NULL COMMENT 'REFERENCES notices(notice_id)',
     similarity_score DECIMAL(5,2) NOT NULL COMMENT '임베딩 기반 유사도 점수',
     detected_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '알림 감지 일시',
-    KEY ix_notice_alerts_item (item_id),
+    KEY ix_notice_alerts_project (project_id),
     KEY ix_notice_alerts_notice (notice_id),
-    FOREIGN KEY (item_id) REFERENCES items(item_id) ON DELETE CASCADE,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE,
     FOREIGN KEY (notice_id) REFERENCES notices(notice_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS match_results (
     match_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '매칭 결과 고유 식별자',
-    item_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES items(item_id)',
+    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
     notice_id VARCHAR(320) NOT NULL COMMENT 'REFERENCES notices(notice_id)',
     fit_score DECIMAL(5,2) NULL COMMENT '매칭 적합도 점수',
     reason TEXT NULL COMMENT '매칭 사유/근거 서술',
     status VARCHAR(20) NOT NULL DEFAULT 'in_progress' COMMENT '프로젝트 진행 상태(in_progress/completed/halted)',
     archived_at DATETIME(6) NULL COMMENT '사용자가 프로젝트를 삭제해 보관 처리된 일시(NULL 가능)',
     archived_by VARCHAR(20) NULL COMMENT "보관 처리 주체('user' 고정, NULL 가능)",
-    KEY ix_match_results_item (item_id),
+    KEY ix_match_results_project (project_id),
     KEY ix_match_results_notice (notice_id),
-    FOREIGN KEY (item_id) REFERENCES items(item_id) ON DELETE CASCADE,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE,
     FOREIGN KEY (notice_id) REFERENCES notices(notice_id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 

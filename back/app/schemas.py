@@ -65,12 +65,14 @@ class PricingItemIn(BaseModel):
     unit_price: float | None = Field(None, description='단가(원), 미정이면 NULL')
 
 
-class ItemAttachmentIn(BaseModel):
-    file_name: str = Field(..., max_length=255)
-    file_url: str = Field(..., max_length=500)
+class ProjectCreateRequest(BaseModel):
+    """POST /projects 의 본문. 연동합의서 #6(첨부파일 처리) 확정에 따라 실제 요청은
+    JSON이 아니라 multipart/form-data 로 오고, 이 스키마는 그 안의 'payload' 폼 필드에
+    JSON 문자열로 담겨 온다 — 실제 파일 바이트는 별도의 'files' 폼 필드로 온다
+    (app/routers/projects.py 의 create_project 참고). 그래서 여기엔 attachments 필드가 없다 —
+    첨부파일 메타데이터(file_name/file_url)는 클라이언트가 보내는 게 아니라, 서버가
+    실제로 저장한 뒤 직접 만들어서 ProjectAttachment 로 적재한다."""
 
-
-class ItemCreateRequest(BaseModel):
     # 회사(예비창업자/기업) 프로필 — 계정에 이미 프로필이 있으면 이 값들은 무시되고 기존 프로필을 재사용한다.
     start_type: str = Field(..., description='시작 유형: 온라인/오프라인/전자상거래 등')
     biz_type: str | None = Field(None, max_length=100)
@@ -84,7 +86,6 @@ class ItemCreateRequest(BaseModel):
 
     team_members: list[TeamMemberIn] = Field(default_factory=list)
     pricing_items: list[PricingItemIn] = Field(default_factory=list, description='수익모델 단가 — 4-6 정책상 최소 1건 권장')
-    attachments: list[ItemAttachmentIn] = Field(default_factory=list)
 
 
 class TeamMemberOut(BaseModel):
@@ -102,17 +103,17 @@ class PricingItemOut(BaseModel):
     unit_price: float | None = None
 
 
-class ItemAttachmentOut(BaseModel):
+class ProjectAttachmentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     attachment_id: int
     file_name: str
     file_url: str
 
 
-class ItemOut(BaseModel):
+class ProjectOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    item_id: int
+    project_id: int
     company_id: int
     description: str
     notify_region: str
@@ -120,10 +121,10 @@ class ItemOut(BaseModel):
     created_at: datetime.datetime
 
 
-class ItemDetailOut(ItemOut):
+class ProjectDetailOut(ProjectOut):
     team_members: list[TeamMemberOut] = Field(default_factory=list)
     pricing_items: list[PricingItemOut] = Field(default_factory=list)
-    attachments: list[ItemAttachmentOut] = Field(default_factory=list)
+    attachments: list[ProjectAttachmentOut] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +200,7 @@ class AgentExecutionOut(BaseModel):
 
 
 class DemoGenerateResponse(BaseModel):
-    item_id: int
+    project_id: int
     match: MatchResultOut
     plan: BusinessPlanOut
     verdict: VerdictOut
