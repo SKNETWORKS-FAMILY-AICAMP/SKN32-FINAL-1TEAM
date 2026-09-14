@@ -30,11 +30,11 @@ jobs:
       - name: backend 존재 여부 확인
         id: check
         run: |
-          if [ -f web/backend/requirements.txt ]; then
+          if [ -f back/requirements.txt ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::web/backend/requirements.txt 가 아직 없어 backend 검사를 건너뜁니다."
+            echo "::notice::back/requirements.txt 가 아직 없어 backend 검사를 건너뜁니다."
           fi
 
       - name: Set up Python 3.12
@@ -43,11 +43,11 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: web/backend/requirements.txt
+          cache-dependency-path: back/requirements.txt
 
       - name: Install dependencies
         if: steps.check.outputs.exists == 'true'
-        working-directory: web/backend
+        working-directory: back
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -56,12 +56,12 @@ jobs:
 
       - name: Lint (ruff)
         if: steps.check.outputs.exists == 'true'
-        working-directory: web/backend
+        working-directory: back
         run: ruff check .
 
       - name: Test (pytest)
         if: steps.check.outputs.exists == 'true'
-        working-directory: web/backend
+        working-directory: back
         run: pytest
 
   frontend:
