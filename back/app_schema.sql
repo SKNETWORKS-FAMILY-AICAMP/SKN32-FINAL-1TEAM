@@ -104,6 +104,8 @@ CREATE TABLE IF NOT EXISTS match_results (
     fit_score DECIMAL(5,2) NULL COMMENT '매칭 적합도 점수',
     reason TEXT NULL COMMENT '매칭 사유/근거 서술',
     status VARCHAR(20) NOT NULL DEFAULT 'in_progress' COMMENT '프로젝트 진행 상태(in_progress/completed/halted)',
+    stage VARCHAR(30) NULL COMMENT '이어하기용 세부 진행 단계(app/pipeline_stages.py의 STAGE_* 상수 중 하나). NULL이면 아직 매칭만 되고 계획서 작성 전',
+    progress_percent TINYINT UNSIGNED NULL COMMENT 'stage 안에서도 오래 걸리는 구간(계획서 작성/프로토타입 제작)의 진행률 0~100. 해당 없는 stage에서는 NULL',
     archived_at DATETIME(6) NULL COMMENT '사용자가 프로젝트를 삭제해 보관 처리된 일시(NULL 가능)',
     archived_by VARCHAR(20) NULL COMMENT "보관 처리 주체('user' 고정, NULL 가능)",
     KEY ix_match_results_project (project_id),
@@ -116,6 +118,9 @@ CREATE TABLE IF NOT EXISTS eligibility_checks (
     check_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '자격요건 게이트 결과 고유 식별자',
     match_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES match_results(match_id)',
     passed BOOLEAN NOT NULL COMMENT '자격요건 통과 여부',
+    failed_conditions JSON NULL COMMENT '불통과 사유 목록(문자열 배열) — undecidable=TRUE면 의미 없음',
+    missing_inputs JSON NULL COMMENT '판정에 필요한데 빠진 입력값 목록(되묻기 대상)',
+    undecidable BOOLEAN NOT NULL DEFAULT FALSE COMMENT '공고문 정형화 실패 등으로 판정 자체가 불가능한 경우(E-G1-UNPARSED) — TRUE면 passed 값은 무시',
     checked_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '검증 일시',
     KEY ix_eligibility_checks_match (match_id),
     FOREIGN KEY (match_id) REFERENCES match_results(match_id) ON DELETE CASCADE
@@ -147,6 +152,10 @@ CREATE TABLE IF NOT EXISTS plan_score_reasons (
     reason_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '사유 고유 식별자',
     plan_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES business_plans(plan_id)',
     reason_text TEXT NOT NULL COMMENT '문서 적합도 판단 사유',
+    item_code VARCHAR(50) NULL COMMENT '채점 항목 코드 — rubric_items.item_code와 매칭(FK로 강제하지 않음)',
+    score DECIMAL(5,2) NULL COMMENT '해당 항목 획득 점수',
+    max_score DECIMAL(5,2) NULL COMMENT '해당 항목 배점',
+    evidence_locator VARCHAR(500) NULL COMMENT '근거 위치(계획서 원문 내 위치) — 없으면 감점 무효(E-V1-EVIDENCE)',
     KEY ix_plan_score_reasons_plan (plan_id),
     FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
@@ -166,8 +175,41 @@ CREATE TABLE IF NOT EXISTS artifact_score_reasons (
     reason_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '사유 고유 식별자',
     artifact_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES artifacts(artifact_id)',
     reason_text TEXT NOT NULL COMMENT '산출물 적합도 판단 사유',
+    item_code VARCHAR(50) NULL COMMENT '채점/체크 항목 코드',
+    score DECIMAL(5,2) NULL COMMENT '해당 항목 획득 점수',
+    max_score DECIMAL(5,2) NULL COMMENT '해당 항목 배점',
+    evidence_locator VARCHAR(500) NULL COMMENT '근거 위치(코드 경로, 화면 위치 등)',
     KEY ix_artifact_score_reasons_artifact (artifact_id),
     FOREIGN KEY (artifact_id) REFERENCES artifacts(artifact_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+CREATE TABLE IF NOT EXISTS format_findings (
+    finding_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT 'T-P1(문장 형식 검수) 지적 사항 고유 식별자',
+    plan_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES business_plans(plan_id)',
+    section_id BIGINT UNSIGNED NULL COMMENT 'REFERENCES plan_sections(section_id), nullable',
+    finding_type VARCHAR(50) NOT NULL COMMENT '문제 유형(punctuation/spacing/tone_mismatch 등)',
+    location VARCHAR(500) NULL COMMENT '근거 위치(문단/문장 스니펫 등)',
+    message TEXT NOT NULL COMMENT '지적 내용 설명',
+    severity VARCHAR(20) NULL COMMENT '심각도(info/warning 등)',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '생성 일시',
+    KEY ix_format_findings_plan (plan_id),
+    KEY ix_format_findings_section (section_id),
+    FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE,
+    FOREIGN KEY (section_id) REFERENCES plan_sections(section_id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+CREATE TABLE IF NOT EXISTS proofread_logs (
+    log_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT 'T-P2(윤문) 교정 기록 고유 식별자',
+    plan_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES business_plans(plan_id)',
+    section_id BIGINT UNSIGNED NULL COMMENT 'REFERENCES plan_sections(section_id), nullable',
+    original_text LONGTEXT NOT NULL COMMENT '윤문 전 원문',
+    corrected_text LONGTEXT NOT NULL COMMENT '윤문 후 교정문',
+    reason TEXT NULL COMMENT '교정 사유',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '생성 일시',
+    KEY ix_proofread_logs_plan (plan_id),
+    KEY ix_proofread_logs_section (section_id),
+    FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE,
+    FOREIGN KEY (section_id) REFERENCES plan_sections(section_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS verdicts (
@@ -205,6 +247,8 @@ CREATE TABLE IF NOT EXISTS agent_executions (
     execution_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '에이전트 실행 세션 고유 식별자',
     match_id BIGINT UNSIGNED NULL COMMENT 'REFERENCES match_results(match_id), nullable',
     agent_name VARCHAR(50) NOT NULL COMMENT '실행 Agent 이름(조율/전략/작성/구현/검증-1/검증-2/검수)',
+    task_key VARCHAR(50) NULL COMMENT 'app/models.py FIXED_TASK_SEQUENCE의 세부 Task 키 — 같은 agent_name이 여러 Task를 맡을 때 구분용',
+    attempt_no INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '같은 task_key 안에서 몇 번째 실행인지(1=최초, 2=재시도 1회차, ...)',
     model_used VARCHAR(50) NOT NULL COMMENT '사용 모델명(Claude Opus/Sonnet/Haiku 또는 자체 파인튜닝 모델 버전)',
     rerun_type VARCHAR(20) NOT NULL COMMENT '최초 실행/선별 재수행/전체 재실행 구분',
     token_usage INT UNSIGNED NOT NULL COMMENT '실행에 사용된 토큰 수',
@@ -225,7 +269,7 @@ CREATE TABLE IF NOT EXISTS verification_policies (
     doc_weight DECIMAL(5,2) NOT NULL DEFAULT 70 COMMENT '2차 검증 배점 - 문서층',
     code_weight DECIMAL(5,2) NOT NULL DEFAULT 15 COMMENT '2차 검증 배점 - 코드 기준 자동 검증',
     plan_weight DECIMAL(5,2) NOT NULL DEFAULT 15 COMMENT '2차 검증 배점 - 계획서 대조',
-    pass_threshold DECIMAL(5,2) NOT NULL DEFAULT 70 COMMENT '통과 Threshold(100점 만점 기준)',
+    pass_threshold DECIMAL(5,2) NOT NULL DEFAULT 80 COMMENT '통과 Threshold(100점 만점 기준) — 기능명세 G-02 기준으로 80 확정(2026-09-13, 이전엔 70이었음)',
     rerun_cap INT UNSIGNED NOT NULL DEFAULT 3 COMMENT 'Threshold 미달 시 자동 재수행 최대 횟수',
     deviation_cap DECIMAL(5,2) NOT NULL DEFAULT 5 COMMENT '문서층 재채점 편차 상한(경고 알림 기준)',
     updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '정책 마지막 수정 일시'
@@ -253,13 +297,29 @@ SELECT * FROM (SELECT
 ) seed
 WHERE NOT EXISTS (SELECT 1 FROM verification_checklist_items);
 
+-- T-V1(문서층 채점)이 참조하는 전역 고정 채점 기준표. verification_checklist_items와
+-- 달리 이쪽은 산출물(코드)이 아니라 계획서 문서를 채점하는 기준이다.
+CREATE TABLE IF NOT EXISTS rubric_items (
+    rubric_item_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '채점 기준 항목 고유 식별자',
+    item_code VARCHAR(50) NOT NULL UNIQUE COMMENT 'plan_score_reasons.item_code와 매칭되는 항목 코드',
+    category VARCHAR(50) NOT NULL COMMENT '분류(예: 문제인식/실현가능성/성장전략)',
+    criterion TEXT NOT NULL COMMENT '채점 기준 설명',
+    max_score DECIMAL(5,2) NOT NULL COMMENT '배점',
+    enabled BOOLEAN NOT NULL DEFAULT TRUE COMMENT '사용 여부(해제 시 채점에서 제외)'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 CREATE TABLE IF NOT EXISTS verification_score_history (
     history_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '점수 이력 고유 식별자',
     plan_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES business_plans(plan_id)',
     layer VARCHAR(20) NOT NULL COMMENT '채점 층 구분(doc/code/plan)',
     score DECIMAL(5,2) NOT NULL COMMENT '해당 회차 점수',
     is_rerun BOOLEAN NOT NULL DEFAULT FALSE COMMENT '재수행에 의한 재채점 여부',
+    policy_id BIGINT UNSIGNED NULL COMMENT 'REFERENCES verification_policies(policy_id) — 참고용, verification_policies는 단일 행 UPDATE라 재현 근거는 아래 스냅샷 컬럼이 진짜',
+    applied_weight DECIMAL(5,2) NULL COMMENT '판정 당시 이 layer에 적용된 weight 스냅샷',
+    applied_pass_threshold DECIMAL(5,2) NULL COMMENT '판정 당시 pass_threshold 스냅샷',
+    applied_rerun_cap INT UNSIGNED NULL COMMENT '판정 당시 rerun_cap 스냅샷',
     scored_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '채점 일시',
     KEY ix_verification_score_history_plan (plan_id),
-    FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE
+    FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE,
+    FOREIGN KEY (policy_id) REFERENCES verification_policies(policy_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;

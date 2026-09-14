@@ -34,3 +34,9 @@ Thumbs.db
 *.log
 *.db
 *.sqlite3
+
+# --- 업로드된 첨부파일 (로컬 디스크 저장, backend_decisions.md #6) ---
+**/uploads/
+
+# --- 개인 로컬 테스트용 ---
+login_test.html

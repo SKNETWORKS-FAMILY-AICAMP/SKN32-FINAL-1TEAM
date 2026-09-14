@@ -11,11 +11,22 @@
 </head>
 <body>
   <h3>S-Brain 로그인 테스트 (프론트 완성 전 임시용)</h3>
-  <p>아래 버튼으로 진짜 구글 로그인 → 받은 id_token을 백엔드 <code>/auth/google</code>에 그대로 던져본다.</p>
+  <p>아래 버튼으로 진짜 구글 로그인 → 받은 id_token을 백엔드 <code>/auth/google</code>에 그대로 던져본다.
+  로그인 성공하면 밑에 <b>프로젝트 만들기</b> 폼이 나타난다 — 실제 브라우저 세션(쿠키)으로
+  <code>POST /projects</code>까지 그대로 테스트할 수 있다.</p>
+
+  <p style="color:#555; font-size:0.9em;">
+    이 페이지는 <code>http://localhost:5174/login_test.html</code>로 열어야 한다(<code>127.0.0.1</code> 아님) —
+    백엔드가 쿠키를 <code>localhost:8000</code> 기준으로 내려주는데, 브라우저 SameSite 판정에서
+    <code>localhost</code>와 <code>127.0.0.1</code>은 서로 다른 site로 취급돼서, 페이지를 127.0.0.1로
+    열면 로그인은 돼도 그다음 요청(프로젝트 생성 등)에 쿠키가 안 실려간다(<code>app/security.py</code>의
+    <code>set_session_cookie</code> 주석 참고). <code>python -m http.server 5174</code>로 띄운 뒤
+    반드시 <code>localhost</code>로 접속할 것.
+  </p>
 
   <!-- data-client_id 에 .env의 GOOGLE_CLIENT_ID 값을 그대로 넣는다 -->
   <div id="g_id_onload"
-       data-client_id="여기에_GOOGLE_CLIENT_ID_붙여넣기"
+       data-client_id="852512860506-22jmr1ln6ethj528i0d3i0clkg4i547i.apps.googleusercontent.com"
        data-callback="handleCredentialResponse">
   </div>
   <div class="g_id_signin" data-type="standard"></div>
@@ -23,7 +34,29 @@
   <h4>결과</h4>
   <pre id="result">(로그인하면 여기 표시됨)</pre>
 
+  <div id="project-section" style="display:none; margin-top:24px; padding-top:16px; border-top:1px solid #ddd;">
+    <h4>프로젝트 만들기 (POST /projects)</h4>
+    <p style="font-size:0.9em; color:#555;">로그인 세션(쿠키)으로 진짜 프로젝트 생성 API를 호출한다.
+    성공하면 project_id가 나오는데, 그걸로 <code>python seed_dummy_pipeline.py &lt;project_id&gt;</code>를
+    돌리면 된다.</p>
+    <div>
+      <label>아이디어 설명<br>
+        <textarea id="p_description" rows="2" style="width:100%;">로그인 테스트 페이지에서 만든 프로젝트</textarea>
+      </label>
+    </div>
+    <div style="margin-top:8px;">
+      <label>시작 유형 <input id="p_start_type" value="온라인" size="10"></label>
+      <label style="margin-left:8px;">업종 <input id="p_biz_type" value="AI 서비스" size="12"></label>
+      <label style="margin-left:8px;">알림 지역 <input id="p_region" value="서울" size="8"></label>
+      <label style="margin-left:8px;">알림 업종 <input id="p_industry" value="IT" size="8"></label>
+    </div>
+    <button type="button" onclick="createProject()" style="margin-top:12px;">프로젝트 생성</button>
+    <h4>프로젝트 생성 결과</h4>
+    <pre id="project-result">(버튼을 누르면 여기 표시됨)</pre>
+  </div>
+
   <script>
+    // 반드시 이 페이지를 http://localhost:5174 로 열 때와 짝이 맞아야 한다 (위 안내 참고).
     const BACKEND_URL = 'http://localhost:8000'; // uvicorn --port 8000 기준
 
     async function handleCredentialResponse(response) {
@@ -50,6 +83,52 @@
         const meBody = await meRes.json();
         text += `\n\n[GET /auth/me] status ${meRes.status}\n${JSON.stringify(meBody, null, 2)}`;
 
+        out.textContent = text;
+
+        // 로그인 성공(+쿠키가 실제로 실려간 것까지 /auth/me 200으로 확인)했을 때만
+        // 프로젝트 생성 폼을 보여준다.
+        if (loginRes.status === 200 && meRes.status === 200) {
+          document.getElementById('project-section').style.display = 'block';
+        }
+      } catch (err) {
+        out.textContent = '에러: ' + err + '\n(CORS/네트워크 문제일 수 있음 — 콘솔도 확인)';
+      }
+    }
+
+    async function createProject() {
+      const out = document.getElementById('project-result');
+      out.textContent = '생성 중...';
+
+      // POST /projects는 multipart/form-data 로 받는다(app/routers/projects.py 참고) —
+      // 'payload' 폼 필드에 ProjectCreateRequest와 동일한 필드를 JSON 문자열로 담아 보낸다.
+      // 파일 첨부는 이 테스트 폼에서는 생략(files 필드를 아예 안 보내면 빈 리스트로 처리됨).
+      const payload = {
+        start_type: document.getElementById('p_start_type').value,
+        biz_type: document.getElementById('p_biz_type').value,
+        description: document.getElementById('p_description').value,
+        notify_region: document.getElementById('p_region').value,
+        notify_industry: document.getElementById('p_industry').value,
+        team_members: [],
+        pricing_items: [{ service_name: '기본 서비스', unit_price: 1000000 }],
+      };
+
+      const form = new FormData();
+      form.append('payload', JSON.stringify(payload));
+
+      try {
+        const res = await fetch(`${BACKEND_URL}/projects`, {
+          method: 'POST',
+          credentials: 'include', // 로그인 쿠키를 같이 보내야 함
+          body: form, // Content-Type은 브라우저가 multipart boundary와 함께 자동으로 설정
+        });
+        const body = await res.json();
+        let text = `[POST /projects] status ${res.status}\n${JSON.stringify(body, null, 2)}`;
+        if (res.status === 201) {
+          text += `\n\n다음 단계:\n  python seed_dummy_pipeline.py ${body.project_id}\n` +
+                  `그리고 GET /projects/${body.project_id}/status 로 확인.`;
+        } else if (res.status === 409) {
+          text += '\n\n(이미 진행 중인 프로젝트가 있어서 막힌 것 — 동시 실행 1건 제한이 정상 동작 중인 것.)';
+        }
         out.textContent = text;
       } catch (err) {
         out.textContent = '에러: ' + err + '\n(CORS/네트워크 문제일 수 있음 — 콘솔도 확인)';

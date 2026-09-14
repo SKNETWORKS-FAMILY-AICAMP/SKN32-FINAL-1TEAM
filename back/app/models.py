@@ -7,6 +7,7 @@ import datetime
 import decimal
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     Date,
@@ -192,6 +193,16 @@ class MatchResult(Base):
     archived_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     archived_by: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
+    # 이어하기(기획서 4-7절 p.20, 8케이스) 대응 — existing_user_resume_test_report.md에서
+    # 확인한 대로, 기존 컬럼(자식 행 존재 여부)만으로는 8케이스 중 6개가 서로 구분되지
+    # 않았다. stage는 app/pipeline_stages.py의 상수 중 하나(또는 아직 파이프라인 시작
+    # 전이라 match_results 행 자체가 없으면 NULL이 아니라 행 자체가 없음)이고,
+    # progress_percent는 stage='plan_writing'/'prototype_building'처럼 한 단계 안에서도
+    # 오래 걸리는 구간의 진행률(0~100)을 담는다 — 실제 Agent 파이프라인이 각 Task를
+    # 처리할 때마다 이 두 컬럼을 갱신하게 될 자리다.
+    stage: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    progress_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     project: Mapped['Project'] = relationship(back_populates='matches')
     eligibility_checks: Mapped[list['EligibilityCheck']] = relationship(back_populates='match')
     business_plans: Mapped[list['BusinessPlan']] = relationship(back_populates='match')
@@ -203,6 +214,21 @@ class EligibilityCheck(Base):
     check_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     match_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('match_results.match_id'))
     passed: Mapped[bool] = mapped_column(Boolean)
+
+    # db_review_response.md 2장 (B)-1 대응. 기능정의서의 GateResult는 passed 하나로는
+    # 못 담는 두 가지를 요구한다:
+    #   - undecidable: 공고문 자체가 정형화 실패라 "판정 불가"인 경우(E-G1-UNPARSED).
+    #     이건 "불통과"(E-G1-REJECT, 진짜 자격 미달)와 사용자에게 보여줄 문구도 후속
+    #     처리도 달라야 해서, undecidable=True일 땐 passed 값은 의미 없는 값(False)으로
+    #     채워 넣고 이 플래그로 구분한다 — 기존 passed 컬럼 타입은 그대로 둬서(bool),
+    #     이미 passed만 보고 있던 기존 코드를 깨지 않는다.
+    #   - failed_conditions / missing_inputs: 불통과 사유 목록과 되묻기 대상 목록.
+    #     MySQL/SQLite 둘 다 되는 JSON 컬럼으로 저장 — 예: failed_conditions는
+    #     ["ageMax 초과", "regionCodes 불일치"] 같은 문자열 리스트를 그대로 넣는다.
+    failed_conditions: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    missing_inputs: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    undecidable: Mapped[bool] = mapped_column(Boolean, default=False)
+
     checked_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
 
     match: Mapped['MatchResult'] = relationship(back_populates='eligibility_checks')
@@ -224,6 +250,8 @@ class BusinessPlan(Base):
     score_reasons: Mapped[list['PlanScoreReason']] = relationship(back_populates='plan')
     artifacts: Mapped[list['Artifact']] = relationship(back_populates='plan')
     score_history: Mapped[list['VerificationScoreHistory']] = relationship(back_populates='plan')
+    proofread_logs: Mapped[list['ProofreadLog']] = relationship(back_populates='plan')
+    format_findings: Mapped[list['FormatFinding']] = relationship(back_populates='plan')
 
 
 class PlanSection(Base):
@@ -244,6 +272,20 @@ class PlanScoreReason(Base):
     reason_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     plan_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('business_plans.plan_id'))
     reason_text: Mapped[str] = mapped_column(Text)
+
+    # db_review_response.md 2장 (B)-2 대응. T-V1 성공 조건은 "모든 채점 항목에 점수와
+    # evidenceLocator가 함께 출력"이고, E-V1-EVIDENCE는 "evidenceLocator 없는 감점은
+    # 무효 처리하고 점수를 복원한다"고 명시한다 — 즉 evidence_locator는 감점의 유효성을
+    # 좌우하는 값이라 reason_text(자유 텍스트)만으로는 부족하다. 항목 단위로 쪼갠다.
+    #   - item_code: rubric_items.item_code(아래 RubricItem)와 1:1 대응하는 채점 항목 코드.
+    #     지금 당장은 어느 RubricItem인지 FK로 강제하지 않고 문자열만 둔다 — rubric_items가
+    #     이번에 막 생겨서 기존 문항 코드 체계가 아직 안 잡혀 있기 때문(넣고 싶으면 나중에
+    #     FK 추가). 기존 reason_text 전용 행(항목 단위로 안 쪼개는 경우)도 계속 쓸 수 있게
+    #     전부 nullable로 둔다.
+    item_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    max_score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    evidence_locator: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     plan: Mapped['BusinessPlan'] = relationship(back_populates='score_reasons')
 
@@ -269,6 +311,15 @@ class ArtifactScoreReason(Base):
     artifact_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('artifacts.artifact_id'))
     reason_text: Mapped[str] = mapped_column(Text)
 
+    # PlanScoreReason과 같은 이유(db_review_response.md 2장 (B)-2) — 여기서는 T-B2
+    # FeatureMatchResult.missingFeatures(계획서엔 있는데 프로토타입엔 없는 기능)처럼
+    # 항목 단위 근거가 필요하다. item_code에 어떤 기능/체크 항목인지, evidence_locator에
+    # 어디서 그렇게 판단했는지(코드 경로, 화면 위치 등)를 넣는다.
+    item_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    max_score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    evidence_locator: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     artifact: Mapped['Artifact'] = relationship(back_populates='score_reasons')
 
 
@@ -281,6 +332,46 @@ class Verdict(Base):
     overall_passed: Mapped[bool] = mapped_column(Boolean)
     model_version: Mapped[str] = mapped_column(String(50))  # v1 | v2 | v3
     first_pass_passed: Mapped[bool] = mapped_column(Boolean)
+
+
+# ---------------------------------------------------------------------------
+# 표현 검수 (화면 10 — STAGE_REVIEWING, 기능정의서 T-P1/T-P2)
+# ---------------------------------------------------------------------------
+# db_review_response.md에서 짚었던 대로, 검수 단계(T-P1 문장 형식 검수, T-P2 윤문)의
+# 산출물을 담을 테이블이 아예 없었다. 둘 다 business_plans 문서를 대상으로 하고,
+# 어느 섹션에서 나온 결과인지 알면 좋아서 plan_sections에도 nullable FK를 걸어둔다
+# (Agent가 섹션 단위로 결과를 못 주면 그냥 NULL로 두면 됨).
+class FormatFinding(Base):
+    """T-P1(문장 형식 검수) 결과 — 문장부호/띄어쓰기/문체 불일치 같은 "형식" 문제를
+    지적만 하고 고치지는 않는 항목. 실제로 고친 결과는 ProofreadLog 쪽에 남는다."""
+    __tablename__ = 'format_findings'
+
+    finding_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    plan_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('business_plans.plan_id'))
+    section_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('plan_sections.section_id'), nullable=True)
+    finding_type: Mapped[str] = mapped_column(String(50))  # 예: 'punctuation' | 'spacing' | 'tone_mismatch'
+    location: Mapped[str | None] = mapped_column(String(500), nullable=True)  # 근거 위치(문단/문장 스니펫 등)
+    message: Mapped[str] = mapped_column(Text)
+    severity: Mapped[str | None] = mapped_column(String(20), nullable=True)  # 예: 'info' | 'warning'
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    plan: Mapped['BusinessPlan'] = relationship(back_populates='format_findings')
+
+
+class ProofreadLog(Base):
+    """T-P2(윤문) 결과 — 실제로 문장을 고친 전/후 텍스트 쌍을 남긴다. FormatFinding이
+    "문제를 지적"한다면 이쪽은 "실제로 고친 기록"이라 원문/수정문을 통째로 담는다."""
+    __tablename__ = 'proofread_logs'
+
+    log_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    plan_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('business_plans.plan_id'))
+    section_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('plan_sections.section_id'), nullable=True)
+    original_text: Mapped[str] = mapped_column(_LongText)  # app_schema.sql: LONGTEXT
+    corrected_text: Mapped[str] = mapped_column(_LongText)  # app_schema.sql: LONGTEXT
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)  # 왜 고쳤는지(윤문 사유)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    plan: Mapped['BusinessPlan'] = relationship(back_populates='proofread_logs')
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +421,19 @@ class AgentExecution(Base):
     execution_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     match_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('match_results.match_id'), nullable=True)
     agent_name: Mapped[str] = mapped_column(String(50))
+
+    # 재시도 로그 구분 문제 대응 — FIXED_TASK_SEQUENCE(위)엔 '구현', '검증-1', '검증-2'
+    # 처럼 같은 agent_name이 두 번씩 나온다. agent_name만으로는 "구현(프로토타입)이
+    # 재시도됐는지 구현(인포그래픽)이 재시도됐는지" 구분이 안 됐던 문제(existing_user_
+    # resume_test_report.md에서 지적)를, FIXED_TASK_SEQUENCE의 첫 번째 값(task_key,
+    # 예: 'implement_prototype')을 그대로 같이 남기는 걸로 해결한다. 기존 행엔 이 값이
+    # 없을 수 있어 nullable로 둔다.
+    task_key: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # 같은 task_key 안에서 몇 번째 실행인지(1=최초, 2=재시도 1회차, ...). rerun_type이
+    # 'initial'/'rerun'만 구분해서 재시도가 여러 번(verification_policies.rerun_cap
+    # 기본 3까지 허용) 있었을 때 서로 구분이 안 됐던 것까지 같이 해결한다.
+    attempt_no: Mapped[int] = mapped_column(_UnsignedInt, default=1)
+
     model_used: Mapped[str] = mapped_column(String(50))
     rerun_type: Mapped[str] = mapped_column(String(20))
     token_usage: Mapped[int] = mapped_column(_UnsignedInt)  # app_schema.sql: INT UNSIGNED
@@ -347,13 +451,20 @@ class VerificationPolicy(Base):
     doc_weight: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2), default=70)
     code_weight: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2), default=15)
     plan_weight: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2), default=15)
-    pass_threshold: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2), default=70)
+    # 기본값 80 — 기능명세 G-02 기준으로 팀 확정(2026-09-13). 예전엔 70으로 돼 있었는데
+    # 실제 배포된 DB에 이미 70으로 만들어진 행이 있다면 이 default는 새로 INSERT되는
+    # 행에만 적용되니, 기존 행은 관리자 화면(admin-dashboard.html 검증 정책 탭)이나
+    # UPDATE verification_policies SET pass_threshold = 80 WHERE ...; 로 직접 맞춰야 한다.
+    pass_threshold: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2), default=80)
     rerun_cap: Mapped[int] = mapped_column(_UnsignedInt, default=3)  # app_schema.sql: INT UNSIGNED
     deviation_cap: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2), default=5)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
 class VerificationChecklistItem(Base):
+    """R-4(코드 8항목 자동 검증)가 쓰는 체크리스트 — LLM 없이 기계적으로 통과/실패만
+    판정하는 항목들(진입 파일 존재 여부 등). 아래 RubricItem과 헷갈리기 쉬운데, 이쪽은
+    산출물층(코드) 검증용이고 RubricItem은 문서층(계획서) 채점용으로 대상이 다르다."""
     __tablename__ = 'verification_checklist_items'
 
     check_item_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -361,6 +472,25 @@ class VerificationChecklistItem(Base):
     method: Mapped[str] = mapped_column(Text)
     category: Mapped[str] = mapped_column(String(20))
     weight: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class RubricItem(Base):
+    """db_review_response.md 2장 (A) 대응 — T-V1(문서층 채점)이 참조하는 "여기에 없는
+    기준으로 감점하면 무효"인 고정 채점 기준표. 공고마다 달라지는 값이 아니라 전역
+    고정값이라(기능정의서 원문: "Rubric은 전역 고정값") verification_policies와
+    비슷한 성격으로 우리 쪽에 둔다 — EligibilityRule/FormSpec/EvalItem(공고별로 달라지는
+    값)과 달리 공고 수집팀과 소유권을 따로 맞출 필요가 없어서 이번에 바로 추가했다.
+
+    plan_score_reasons.item_code가 이 테이블의 item_code를 가리키는 게 원칙이지만,
+    아직 문항 체계가 막 생긴 단계라 지금 당장 FK로 강제하진 않는다(문자열만 맞추면 됨)."""
+    __tablename__ = 'rubric_items'
+
+    rubric_item_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    item_code: Mapped[str] = mapped_column(String(50), unique=True)  # plan_score_reasons.item_code와 매칭
+    category: Mapped[str] = mapped_column(String(50))  # 예: '문제인식' | '실현가능성' | '성장전략'
+    criterion: Mapped[str] = mapped_column(Text)  # 채점 기준 설명
+    max_score: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
@@ -372,6 +502,19 @@ class VerificationScoreHistory(Base):
     layer: Mapped[str] = mapped_column(String(20))  # doc | code | plan
     score: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2))
     is_rerun: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # db_review_response.md 2장 (B)-3 대응. G-02/R-6: "층별 배점·Threshold·재수행 상한은
+    # 관리자 설정값이므로 판정 시점의 설정값을 함께 기록해야 한다 — 없으면 과거 점수를
+    # 재현할 수 없다". db_review_response.md는 policy_id FK 하나면 될 거라고 봤는데,
+    # verification_policies는 "운영 중 정책은 1행만 유지, 변경 시 UPDATE로 반영"하는
+    # 설계라(app_schema.sql 주석) FK만 걸면 나중에 그 행이 UPDATE될 때 과거 기록이 같이
+    # 바뀐 것처럼 보이는 문제가 있다 — FK는 참고용으로만 남기고, 실제로 재현 가능하려면
+    # 판정 당시 값 자체를 이 행에 그대로 복사(스냅샷)해둬야 한다.
+    policy_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('verification_policies.policy_id'), nullable=True)
+    applied_weight: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)  # layer에 해당하는 weight
+    applied_pass_threshold: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    applied_rerun_cap: Mapped[int | None] = mapped_column(_UnsignedInt, nullable=True)
+
     scored_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
 
     plan: Mapped['BusinessPlan'] = relationship(back_populates='score_history')
