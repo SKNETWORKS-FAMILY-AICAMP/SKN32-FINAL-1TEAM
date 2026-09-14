@@ -1,0 +1,15 @@
+# cmd.exe 는 LF 만 있는 .bat 을 제대로 읽지 못한다. REM 주석줄이 명령으로 실행되며
+# 종료 코드 1 로 죽는다. 실제로 그 사고가 있었으므로 형식을 여기서 못 박는다.
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# Windows PowerShell 5.1 은 BOM 없는 UTF-8 을 ANSI 로 읽어 한글이 깨지고
+# 따옴표 안에서 토큰이 부서져 파싱이 실패한다. BOM 은 파일에 직접 넣어두었다.
+*.ps1   text eol=crlf
+
+*.py    text eol=lf
+*.sql   text eol=lf
+*.md    text eol=lf
+
+# 리눅스에서 도는 스크립트. CRLF 가 섞이면 bash 가  을 명령 일부로 읽는다.
+*.sh    text eol=lf

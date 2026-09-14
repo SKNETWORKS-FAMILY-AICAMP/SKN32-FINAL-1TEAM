@@ -1,0 +1,283 @@
+<!-- 공고 매칭 시험용 화면. app.py 가 이 파일을 그대로 내려준다. -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S-Brain 공고 매칭</title>
+<style>
+  :root {
+    --bg: #faf8f5; --card: #fff; --ink: #2b2724; --muted: #7a716a;
+    --line: #e6ded4; --accent: #a4362f; --accent-soft: #fdf0ee;
+    --ok: #1f7a4d; --no: #b4342b; --unknown: #9a7b21;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.6 -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 28px 20px 80px; }
+  h1 { font-size: 27px; margin: 6px 0 8px; letter-spacing: -.4px; }
+  .eyebrow { color: var(--accent); font-size: 13px; font-weight: 700; }
+  .lede { color: var(--muted); margin: 0 0 26px; }
+  .panel { background: var(--card); border: 1px solid var(--line);
+           border-radius: 12px; padding: 20px; margin-bottom: 18px; }
+  label.h { display: block; font-weight: 700; font-size: 14px; margin: 18px 0 8px; }
+  label.h:first-child { margin-top: 0; }
+  .hint { color: var(--muted); font-size: 12.5px; margin: 6px 0 0; }
+  input, textarea, select {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--line);
+    border-radius: 8px; font: inherit; background: #fff; color: inherit; }
+  textarea { min-height: 96px; resize: vertical; }
+  .types { display: flex; gap: 10px; }
+  .types button { flex: 1; padding: 12px; border: 1px solid var(--line);
+    background: #fff; border-radius: 8px; font: inherit; cursor: pointer; }
+  .types button[aria-pressed="true"] { border-color: var(--accent);
+    border-width: 2px; color: var(--accent); font-weight: 700; background: var(--accent-soft); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .row { display: grid; gap: 8px; margin-bottom: 8px; align-items: start; }
+  .row.team { grid-template-columns: 1fr 1fr 1.4fr auto; }
+  .row.rev  { grid-template-columns: 2fr 1fr auto; }
+  .row button.x { border: 1px solid var(--line); background: #fff; border-radius: 8px;
+    width: 36px; height: 40px; cursor: pointer; color: var(--muted); }
+  .add { border: 0; background: none; color: var(--accent); font: inherit;
+    font-weight: 700; cursor: pointer; padding: 0; float: right; }
+  .cta { width: 100%; padding: 15px; margin-top: 22px; border: 0; border-radius: 10px;
+    background: var(--accent); color: #fff; font: inherit; font-weight: 700;
+    font-size: 16px; cursor: pointer; }
+  .cta:disabled { background: #d8b9b5; cursor: not-allowed; }
+  .cta-note { text-align: center; color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  @media (max-width: 800px) { .cards, .two { grid-template-columns: 1fr; }
+    .row.team, .row.rev { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+  .card:hover { border-color: var(--accent); }
+  .card .no { color: var(--muted); font-size: 13px; }
+  .card .band { float: right; color: var(--accent); font-weight: 700; font-size: 13px; }
+  .card h3 { font-size: 16px; margin: 10px 0 8px; line-height: 1.4; }
+  .card .meta { color: var(--muted); font-size: 12.5px; }
+  .card .sim { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 13px 12px; border-bottom: 1px solid var(--line);
+    text-align: left; vertical-align: top; font-size: 14px; }
+  th { background: #f4efe8; color: var(--muted); font-size: 12.5px; font-weight: 700; }
+  td.v { font-weight: 700; white-space: nowrap; }
+  .ok { color: var(--ok); } .no { color: var(--no); } .unk { color: var(--unknown); }
+  .why { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .back { border: 0; background: none; color: var(--accent); font: inherit;
+    font-weight: 700; cursor: pointer; padding: 0; margin-bottom: 14px; }
+  .banner { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
+    margin-top: 16px; background: #f2f7f3; }
+  .banner.warn { background: #fdf9ec; }
+  a { color: var(--accent); }
+  .spin { color: var(--muted); }
+  .err { color: var(--no); }
+  [hidden] { display: none !important; }
+</style>
+
+<div class="wrap">
+  <!-- ── 입력 ───────────────────────────────────────── -->
+  <section id="step-input">
+    <p class="eyebrow">사전 정보 입력</p>
+    <h1>아이템과 신청자 정보를 알려주세요</h1>
+    <p class="lede">받은 정보로 공고 매칭과 자격요건 확인을 진행합니다.</p>
+
+    <div class="panel">
+      <label class="h">신청자 유형</label>
+      <div class="types" id="types">
+        <button type="button" data-t="예비창업자" aria-pressed="false">예비창업자</button>
+        <button type="button" data-t="개인사업자" aria-pressed="true">개인사업자</button>
+        <button type="button" data-t="법인" aria-pressed="false">법인</button>
+      </div>
+
+      <div id="founded-wrap" class="two" style="margin-top:12px">
+        <input id="owner" placeholder="대표자명">
+        <input id="founded" type="date">
+      </div>
+
+      <label class="h">아이디어 설명</label>
+      <textarea id="idea" placeholder="예) 반려견 산책 도우미를 구해주는 매칭 플랫폼을 만들고 있어요"></textarea>
+
+      <label class="h">팀 구성원 경력
+        <button class="add" type="button" id="add-team">+ 팀원 추가</button></label>
+      <div id="team"></div>
+
+      <label class="h">수익모델 단가
+        <button class="add" type="button" id="add-rev">+ 항목 추가</button></label>
+      <p class="hint">단가는 그대로 보관만 합니다. 공고 데이터에 금액 항목이 없어 매칭에는 쓰지 않습니다.</p>
+      <div id="rev"></div>
+
+      <button class="cta" id="go" disabled>다음 단계로 — 공고 매칭 시작하기</button>
+      <p class="cta-note" id="go-note">아이디어 설명을 입력해주세요</p>
+    </div>
+  </section>
+
+  <!-- ── 결과 ───────────────────────────────────────── -->
+  <section id="step-list" hidden>
+    <button class="back" id="back-input">‹ 아이템 정보 다시 입력하기</button>
+    <p class="eyebrow">매칭 결과</p>
+    <h1 id="list-title">공고를 찾았습니다</h1>
+    <p class="lede" id="list-lede"></p>
+    <div class="cards" id="cards"></div>
+    <p class="hint" id="list-foot"></p>
+  </section>
+
+  <!-- ── 자격요건 ────────────────────────────────────── -->
+  <section id="step-gate" hidden>
+    <button class="back" id="back-list">‹ 매칭 결과로 돌아가기</button>
+    <p class="eyebrow">자격요건 게이트</p>
+    <h1 id="gate-title"></h1>
+    <p class="lede">공고 기준과 입력 정보를 항목별로 대조합니다 — 파싱·계산만 하며 LLM은 쓰지 않습니다.</p>
+    <div class="panel" style="padding:0;overflow:hidden">
+      <table><thead><tr>
+        <th>항목</th><th>공고 기준</th><th>내 정보</th><th>판정</th>
+      </tr></thead><tbody id="gate-body"></tbody></table>
+    </div>
+    <div class="banner" id="gate-banner"></div>
+    <p class="hint" id="gate-link"></p>
+  </section>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const show = (id) => ['step-input','step-list','step-gate']
+  .forEach(s => $('#' + s).hidden = (s !== id));
+
+let type = '개인사업자';
+let last = null;
+
+// 신청자 유형
+$('#types').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-t]');
+  if (!b) return;
+  type = b.dataset.t;
+  [...$('#types').children].forEach(x =>
+    x.setAttribute('aria-pressed', String(x === b)));
+  // 예비창업자는 설립 전이므로 대표자명·설립일자를 묻지 않는다
+  $('#founded-wrap').hidden = (type === '예비창업자');
+  validate();
+});
+
+// 팀원 · 수익모델 행
+function addRow(host, kind) {
+  const div = document.createElement('div');
+  div.className = 'row ' + kind;
+  div.innerHTML = kind === 'team'
+    ? `<input placeholder="이름"><input placeholder="대표 · 개발"><input placeholder="백엔드 경력 5년"><button class="x" type="button">×</button>`
+    : `<input placeholder="주문 1건당 수수료"><input placeholder="500"><button class="x" type="button">×</button>`;
+  div.querySelector('.x').onclick = () => div.remove();
+  host.appendChild(div);
+}
+$('#add-team').onclick = () => addRow($('#team'), 'team');
+$('#add-rev').onclick = () => addRow($('#rev'), 'rev');
+addRow($('#team'), 'team');
+addRow($('#rev'), 'rev');
+
+// 필수 입력 검사
+function validate() {
+  const needFounded = (type !== '예비창업자');
+  const ok = $('#idea').value.trim().length >= 5
+    && (!needFounded || ($('#owner').value.trim() && $('#founded').value));
+  $('#go').disabled = !ok;
+  $('#go-note').textContent = ok ? ''
+    : (!$('#idea').value.trim() ? '아이디어 설명을 입력해주세요'
+       : '대표자명과 설립일자를 입력해주세요');
+}
+['#idea', '#owner', '#founded'].forEach(s =>
+  $(s).addEventListener('input', validate));
+validate();
+
+function collect() {
+  const rows = (host, keys) => [...host.children].map(r => {
+    const v = [...r.querySelectorAll('input')].map(i => i.value.trim());
+    return Object.fromEntries(keys.map((k, i) => [k, v[i] || '']));
+  });
+  return {
+    applicant_type: type,
+    owner_name: $('#owner').value.trim(),
+    founded_at: $('#founded').value || '',
+    idea: $('#idea').value.trim(),
+    team: rows($('#team'), ['name','role','career']).filter(m => m.career || m.name),
+    revenue: rows($('#rev'), ['item','price']).filter(r => r.item),
+    top: 3, hide_expired: true,
+  };
+}
+
+async function post(path, body) {
+  const r = await fetch(path, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)});
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+// 매칭
+$('#go').onclick = async () => {
+  last = collect();
+  $('#go').disabled = true;
+  $('#go-note').textContent = '검색 중…';
+  try {
+    const d = await post('/api/match', last);
+    $('#list-title').textContent =
+      `지금 신청 가능한 공고 ${d.count}건을 찾았습니다`;
+    $('#list-lede').textContent =
+      '유사도가 높은 순서입니다 — 공고를 선택하면 자격요건 확인으로 넘어갑니다.';
+    $('#cards').innerHTML = '';
+    d.results.forEach((n, i) => {
+      const period = n.apply_end ? `${n.apply_end} 마감`
+        : ({budget_exhaustion:'예산 소진 시까지', rolling:'상시·수시 접수',
+            until_filled:'선착순 마감', unknown:'접수기간 정보 없음'}[n.apply_period_type]
+           || '접수기간 정보 없음');
+      const b = document.createElement('button');
+      b.className = 'card';
+      b.innerHTML =
+        `<span class="no">0${i+1}</span><span class="band">${n.band}</span>
+         <h3>${esc(n.title)}</h3>
+         <p class="meta">${esc(n.organizer || '기관 정보 없음')} · ${period}</p>
+         <p class="meta">${esc(n.target_category || '')}${n.category ? ' · ' + esc(n.category) : ''}</p>
+         <p class="sim">유사도 ${n.score} · 출처 ${n.source}</p>`;
+      b.onclick = () => openGate(n);
+      $('#cards').appendChild(b);
+    });
+    $('#list-foot').textContent =
+      `질의: "${d.query}"  ·  인코딩 ${d.encode_ms}ms + 벡터DB ${d.search_ms}ms`;
+    show('step-list');
+  } catch (e) {
+    $('#go-note').innerHTML = `<span class="err">실패: ${esc(String(e.message).slice(0,200))}</span>`;
+  } finally { validate(); }
+};
+
+// 자격요건
+async function openGate(n) {
+  $('#gate-title').textContent = `『${n.title}』 신청 자격을 확인합니다`;
+  $('#gate-body').innerHTML = `<tr><td colspan="4" class="spin">확인 중…</td></tr>`;
+  $('#gate-banner').textContent = '';
+  show('step-gate');
+  try {
+    const d = await post('/api/eligibility', {
+      notice_id: n.notice_id, applicant_type: last.applicant_type,
+      founded_at: last.founded_at});
+    const cls = (v) => v === true ? 'ok' : v === false ? 'no' : 'unk';
+    const word = (v) => v === true ? '통과' : v === false ? '미달' : '확인 필요';
+    $('#gate-body').innerHTML = d.checks.map(c => `
+      <tr><td><b>${esc(c['조건'])}</b></td>
+          <td>${esc(c['요구'])}${c['설명'] ? `<div class="why">${esc(c['설명'])}</div>` : ''}</td>
+          <td>${esc(c['내 값'])}</td>
+          <td class="v ${cls(c['판정'])}">${word(c['판정'])}</td></tr>`).join('');
+    const warn = d.unknown > 0;
+    $('#gate-banner').className = 'banner' + (warn ? ' warn' : '');
+    $('#gate-banner').innerHTML = d.passed
+      ? (warn ? `<b>미달 항목은 없습니다.</b> 다만 ${d.unknown}개 항목은 데이터가 없어 판정하지 못했습니다 — 자격 충족을 보장하지 않으니 원문을 확인하세요.`
+              : '<b>자격요건을 충족합니다.</b>')
+      : '<b>미달 항목이 있습니다.</b> 신청이 어려울 수 있습니다.';
+    $('#gate-link').innerHTML = d.url
+      ? `<a href="${esc(d.url)}" target="_blank" rel="noopener">원문 공고 보기 ↗</a>`
+      : '원문 링크가 없습니다.';
+  } catch (e) {
+    $('#gate-body').innerHTML =
+      `<tr><td colspan="4" class="err">실패: ${esc(String(e.message).slice(0,200))}</td></tr>`;
+  }
+}
+
+$('#back-input').onclick = () => show('step-input');
+$('#back-list').onclick = () => show('step-list');
+function esc(s) { return String(s == null ? '' : s)
+  .replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+</script>

@@ -16,6 +16,13 @@ data/attachments/
 data/*.log
 data/*.jsonl
 data/*.lock
+data/notices.json
+data/*.npz
+data/vecstore/
+data/labeling/
+data/recommendation_*
+data/backup_*.sql
+data/conditions_sample_*.json
 
 .idea/
 .vscode/

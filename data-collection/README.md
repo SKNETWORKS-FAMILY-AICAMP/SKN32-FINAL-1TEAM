@@ -12,9 +12,11 @@ K-Startup·기업마당 오픈API 에서 지원사업 공고를 매일 한 번 �
   5  첨부 받기 · 본문 추출  바뀐 공고의 첨부만
   6  임베딩 생성           벡터가 없거나 내용이 바뀐 공고만
   7  벡터 색인 갱신        Chroma 에 그것만 넣는다
+  8  벡터 업로드           공용 MySQL 로. 팀이 같은 벡터를 쓴다
+  9  첨부 파일 업로드      공용 MySQL 로. 팀이 파일로 개발한다
 ```
 
-**5·6·7단계는 바뀐 것만 처리합니다.** 실측으로 신규 49건이 들어온 날
+**5·6·7·8·9단계는 바뀐 것만 처리합니다.** 실측으로 신규 49건이 들어온 날
 첨부 49건 · 임베딩 49건만 처리하고 나머지 1,951건은 건너뛰었습니다.
 
 ---
@@ -38,6 +40,8 @@ K-Startup·기업마당 오픈API 에서 지원사업 공고를 매일 한 번 �
 | `job_lock.py` | 중복 실행 방지 (파일 잠금) |
 | `embed.py` | 공고 요약 임베딩 생성 (BGE-M3) |
 | `vecstore.py` | Chroma 벡터 색인 |
+| `upload_vectors.py` | 벡터를 공용 MySQL 로 올린다 |
+| `upload_attachments.py` | 첨부 원본 파일을 공용 MySQL 로 올린다 |
 
 📄 **[FLOW.md](FLOW.md)** — 배치가 도는 동안 이 파일들이 서로 무엇을 주고받나
 
@@ -55,9 +59,12 @@ K-Startup·기업마당 오픈API 에서 지원사업 공고를 매일 한 번 �
 | 파일 | 하는 일 |
 |---|---|
 | `mysql_schema.sql` | 테이블 생성문 (DDL) |
+| `mysql_migration_002_embedding.sql` | `notices` 에 임베딩 컬럼 5개 추가 |
+| `mysql_migration_003_attachment_files.sql` | 첨부 원본 파일 보관 테이블 |
 
 📄 **[QUERIES.md](QUERIES.md)** — 배치가 실행하는 SQL 전체와 그 뜻
 📄 **[FIELD_MAP.md](FIELD_MAP.md)** — API 필드가 어느 DB 컬럼이 되는지
+📄 **[TEAM_DATA.md](TEAM_DATA.md)** — **팀원용.** 공고·첨부 파일·벡터를 개발에 쓰는 법
 
 ---
 
@@ -94,6 +101,8 @@ DB 를 처음 만든다면,
 --attach-limit N   이번 실행에서 받을 첨부 상한
 --skip-embed       임베딩 생략 (torch·chromadb 없이도 돈다)
 --embed-limit N    이번 실행에서 만들 벡터 상한
+--skip-upload      벡터를 공용 DB 로 올리지 않는다
+--skip-files       첨부 원본 파일을 올리지 않는다
 --force            건수 급감 경고 무시
 ```
 

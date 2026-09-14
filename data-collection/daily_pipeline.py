@@ -7,6 +7,9 @@
   python daily_pipeline.py --force         건수 급감 경고를 무시한다
   python daily_pipeline.py --skip-attach   첨부 수집을 건너뛴다
   python daily_pipeline.py --skip-embed    임베딩을 건너뛴다
+  python daily_pipeline.py --skip-upload   벡터를 공용 DB 로 올리지 않는다
+  python daily_pipeline.py --skip-files    첨부 원본 파일을 올리지 않는다
+  python daily_pipeline.py --skip-conditions  자격요건 추출(LLM)을 건너뛴다
 
 기존 `daily_job.py` 는 K-Startup → `data/notices.json` 경로만 담당한다.
 화면(`chat_app.py`)과 추천(`match.py`)이 아직 그 파일을 읽으므로 그대로 두고,
@@ -181,19 +184,22 @@ def write_log(entry):
 
 def run(dry_run=False, skip_store=False, force=False, say=print,
         skip_attach=False, attach_limit=None, attach_interval=1.0,
-        skip_embed=False, embed_limit=None):
+        skip_embed=False, embed_limit=None, skip_upload=False,
+        skip_files=False, skip_conditions=False, conditions_limit=None):
     try:
         with job_lock.acquire(LOCK):
             return _run(dry_run, skip_store, force, say,
                         skip_attach, attach_limit, attach_interval,
-                        skip_embed, embed_limit)
+                        skip_embed, embed_limit, skip_upload, skip_files,
+                        skip_conditions, conditions_limit)
     except job_lock.JobBusy as exc:
         return {'status': 'busy', 'job': 'pipeline', 'error': str(exc)}
 
 
 def _run(dry_run, skip_store, force, say,
          skip_attach=False, attach_limit=None, attach_interval=1.0,
-         skip_embed=False, embed_limit=None):
+         skip_embed=False, embed_limit=None, skip_upload=False,
+         skip_files=False, skip_conditions=False, conditions_limit=None):
     started = time.time()
     sources = {}
 
@@ -278,6 +284,58 @@ def _run(dry_run, skip_store, force, say,
     elif skip_embed:
         say('--skip-embed — 임베딩을 건너뛴다')
 
+    # ── 8. 벡터를 공용 MySQL 로 올리기 ────────────────────────
+    # 6단계가 만든 벡터는 이 PC 에만 있다. 팀이 쓰려면 DB 로 올려야 한다.
+    # 올릴 것은 DB 와 npz 를 대조해 스스로 고른다. 그래서 임베딩이 실패하거나
+    # 건너뛴 날에도, 지난번에 못 올린 것이 있으면 여기서 따라잡는다.
+    upload_result = None
+    if stored and not skip_upload:
+        say('벡터 업로드')
+        try:
+            import upload_vectors
+            upload_result = upload_vectors.run(say=lambda line: say('  ' + line))
+        except Exception as exc:
+            say('  벡터 업로드 실패: %s' % type(exc).__name__)
+            upload_result = {'error': '%s: %s' % (type(exc).__name__, str(exc)[:200])}
+    elif skip_upload:
+        say('--skip-upload — 벡터 업로드를 건너뛴다')
+
+    # ── 9. 첨부 원본 파일을 공용 MySQL 로 ─────────────────────
+    # 팀원이 파일 자체를 개발에 쓸 수 있게 올린다. 해시가 곧 내용이라
+    # 이미 있는 것은 건너뛴다. 첫 실행만 620MB 이고 그 뒤로는 그날 받은 것뿐이다.
+    file_result = None
+    if stored and not skip_files:
+        say('첨부 파일 업로드')
+        try:
+            import upload_attachments
+            file_result = upload_attachments.run(say=lambda line: say('  ' + line))
+        except Exception as exc:
+            say('  첨부 파일 업로드 실패: %s' % type(exc).__name__)
+            file_result = {'error': '%s: %s' % (type(exc).__name__, str(exc)[:200])}
+    elif skip_files:
+        say('--skip-files — 첨부 파일 업로드를 건너뛴다')
+
+    # ── 10. 첨부 본문에서 자격요건 뽑기 (LLM) ──────────────────
+    # 5단계가 첨부 본문을 채운 뒤에 와야 한다. 지원금액·사업자 형태처럼
+    # API 가 주지 않는 값을 공고문에서 뽑아 notice_conditions 에 넣는다.
+    #
+    # **바뀐 것만 부른다.** 문서 해시(input_sha256)가 같으면 건너뛰므로
+    # 하루 비용은 신규 공고 수십 건 분량이다. 최초 1,542건이 약 $1 이었다.
+    #
+    # 실패해도 1~9단계는 이미 끝나 있다. 다음 실행이 못 뽑은 것을 다시 고른다.
+    conditions_result = None
+    if stored and not skip_conditions:
+        say('자격요건 추출')
+        try:
+            import extract_conditions
+            conditions_result = extract_conditions.run_batch(
+                limit=conditions_limit, say=lambda line: say('  ' + line))
+        except Exception as exc:
+            say('  자격요건 추출 실패: %s' % type(exc).__name__)
+            conditions_result = {'error': '%s: %s' % (type(exc).__name__, str(exc)[:200])}
+    elif skip_conditions:
+        say('--skip-conditions — 자격요건 추출을 건너뛴다')
+
     removed = prune('bizinfo') + prune('kstartup')
     if removed:
         say('오래된 원본 스냅샷 %d개 정리' % removed)
@@ -299,6 +357,9 @@ def _run(dry_run, skip_store, force, say,
         'store_result': store_result,
         'attachments': attach,
         'embeddings': embed_result,
+        'vector_upload': upload_result,
+        'file_upload': file_result,
+        'conditions': conditions_result,
         'elapsed_sec': round(time.time() - started, 1),
     })
 
@@ -314,12 +375,23 @@ def main():
                     help='첨부 요청 간격(초). 기본 1.0')
     ap.add_argument('--skip-embed', action='store_true', help='임베딩을 건너뛴다')
     ap.add_argument('--embed-limit', type=int, help='이번 실행에서 만들 벡터 상한')
+    ap.add_argument('--skip-upload', action='store_true',
+                    help='벡터를 공용 DB 로 올리지 않는다')
+    ap.add_argument('--skip-files', action='store_true',
+                    help='첨부 원본 파일을 공용 DB 로 올리지 않는다')
+    ap.add_argument('--skip-conditions', action='store_true',
+                    help='자격요건 추출(LLM)을 건너뛴다')
+    ap.add_argument('--conditions-limit', type=int,
+                    help='이번 실행에서 추출할 공고 상한')
     args = ap.parse_args()
 
     r = run(dry_run=args.dry_run, skip_store=args.skip_store, force=args.force,
             skip_attach=args.skip_attach, attach_limit=args.attach_limit,
             attach_interval=args.attach_interval,
-            skip_embed=args.skip_embed, embed_limit=args.embed_limit)
+            skip_embed=args.skip_embed, embed_limit=args.embed_limit,
+            skip_upload=args.skip_upload, skip_files=args.skip_files,
+            skip_conditions=args.skip_conditions,
+            conditions_limit=args.conditions_limit)
 
     if r['status'] == 'busy':
         print('이미 수집 작업이 실행 중이다.', file=sys.stderr)
@@ -346,6 +418,27 @@ def main():
               ('새로 %d건 · 색인 %d건%s'
                % (e.get('made', 0), idx.get('indexed', 0),
                   '  ⚠ 색인 누락 %d건' % idx['missing'] if idx.get('missing') else ''))))
+    u = r.get('vector_upload') or {}
+    if u:
+        # 공고가 없어 못 올린 벡터는 조용히 넘기지 않는다. 그 공고는 검색에서 빠진다.
+        print('  %-10s %s' % ('벡터 업로드', u.get('error') or
+              ('올림 %d건 · DB %d건%s'
+               % (u.get('uploaded', 0), u.get('remote', 0),
+                  '  ⚠ 공고 없어 건너뜀 %d건' % u['skipped_no_notice']
+                  if u.get('skipped_no_notice') else ''))))
+    fu = r.get('file_upload') or {}
+    if fu:
+        print('  %-10s %s' % ('첨부 파일', fu.get('error') or
+              ('올림 %d개 %.1fMB%s'
+               % (fu.get('uploaded', 0), fu.get('sent_mb', 0),
+                  '  ⚠ 해시 불일치 %d개' % fu['hash_mismatch']
+                  if fu.get('hash_mismatch') else ''))))
+    cd = r.get('conditions') or {}
+    if cd:
+        print('  %-10s %s' % ('자격요건', cd.get('error') or
+              ('추출 %d건 · 금액 %d · 형태 %d%s'
+               % (cd.get('extracted', 0), cd.get('amount', 0), cd.get('types', 0),
+                  '  ⚠ 실패 %d건' % cd['failed'] if cd.get('failed') else ''))))
     if r['status'] == 'partial':
         print('\n일부 소스가 갱신되지 않았다. 해당 소스는 직전 데이터를 유지한다.')
         return 2

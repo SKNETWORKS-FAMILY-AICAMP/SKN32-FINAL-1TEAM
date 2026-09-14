@@ -1,4 +1,4 @@
-# 일 1회 공고 수집 배치를 Windows 작업 스케줄러에 등록/조회/실행한다.
+﻿# 일 1회 공고 수집 배치를 Windows 작업 스케줄러에 등록/조회/실행한다.
 #
 #   .\schedule-task.ps1                        미리보기 (기본, 아무것도 바꾸지 않음)
 #   .\schedule-task.ps1 -Mode Install          등록
