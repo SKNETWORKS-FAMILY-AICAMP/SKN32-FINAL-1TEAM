@@ -1,0 +1,331 @@
+# 2026 웹디자인 트렌드 TOP 30
+
+## 1. 3D and immersive elements (WD-2026-001)
+
+- description: 정적 이미지 대신 입체 모델과 몰입형 상호작용으로 제품·공간을 보여준다
+- webApplicationExample: 3D 제품 회전 미리보기
+- secondBrainApplication: 문서 미리보기의 3D 커버
+- keywords: 3D, WebGL, immersive
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Designers are leaning into depth and interaction, moving beyond static images to immersive, 3D-driven experiences.
+
+## 2. Interactive 3D models (WD-2026-002)
+
+- description: 사용자가 화면 안의 대상을 직접 회전·탐색한다
+- webApplicationExample: 가구 360도 뷰
+- secondBrainApplication: 프로젝트 아티팩트 3D 뷰
+- keywords: 3D, model, interaction
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Using technologies like WebGL, sites now feature interactive models, scroll-triggered animations, and AR previews.
+
+## 3. Scroll-triggered animation (WD-2026-003)
+
+- description: 스크롤을 콘텐츠 진행 신호로 쓰는 애니메이션
+- webApplicationExample: 스크롤 기반 제품 스토리
+- secondBrainApplication: 프로젝트 단계 전환
+- keywords: scroll, animation, storytelling
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Using technologies like WebGL, sites now feature interactive models, scroll-triggered animations, and AR previews.
+
+## 4. AR previews (WD-2026-004)
+
+- description: 실제 맥락에서 대상을 확인하는 증강현실 미리보기
+- webApplicationExample: 공간 배치 AR
+- secondBrainApplication: 회의실 레이아웃 AR
+- keywords: AR, preview, spatial
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Using technologies like WebGL, sites now feature interactive models, scroll-triggered animations, and AR previews.
+
+## 5. Experimental navigation (WD-2026-005)
+
+- description: 탐색 경험 자체를 차별화하는 비선형 내비게이션
+- webApplicationExample: 탐색형 브랜드 사이트
+- secondBrainApplication: 프로젝트 맵 탐색
+- keywords: navigation, exploration, nonlinear
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Designers are experimenting with layouts that feel more like exploration than navigation.
+
+## 6. Radial menus (WD-2026-006)
+
+- description: 선택지를 방사형으로 배치해 탐색 동선을 압축한다
+- webApplicationExample: 원형 도구 메뉴
+- secondBrainApplication: 빠른 작업 메뉴
+- keywords: radial, menu, navigation
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Think radial menus, hidden drawers, interactive maps, or nonlinear journeys.
+
+## 7. Interactive maps (WD-2026-007)
+
+- description: 장소·주제·관계를 지도형 화면으로 탐색한다
+- webApplicationExample: 매장 지도
+- secondBrainApplication: 지식·프로젝트 관계 지도
+- keywords: map, interactive, navigation
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Think radial menus, hidden drawers, interactive maps, or nonlinear journeys.
+
+## 8. Vibrant color palettes (WD-2026-008)
+
+- description: 밝고 채도 높은 색상으로 강한 첫인상을 만든다
+- webApplicationExample: 고대비 Hero 섹션
+- secondBrainApplication: 프로젝트 상태 색상 체계
+- keywords: color, vibrant, palette
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Bright, saturated color palettes are making a comeback, fueled by Y2K nostalgia, retro patterns, and “dopamine design” aesthetics.
+
+## 9. Neon gradients (WD-2026-009)
+
+- description: 네온 계열 그라데이션으로 디지털 인상을 만든다
+- webApplicationExample: 그라데이션 배경
+- secondBrainApplication: AI 실행 상태 배경
+- keywords: neon, gradient, color
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Neon gradients, high-contrast pairings, and playful hues are replacing minimal or muted tones.
+
+## 10. High-contrast pairings (WD-2026-010)
+
+- description: 색상 간 강한 대비로 주목도와 구분을 높인다
+- webApplicationExample: 강조 CTA
+- secondBrainApplication: 우선순위 알림
+- keywords: contrast, color, CTA
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Neon gradients, high-contrast pairings, and playful hues are replacing minimal or muted tones.
+
+## 11. Bold typography (WD-2026-011)
+
+- description: 큰 제목과 독자적 서체로 텍스트를 스토리텔링 수단으로 쓴다
+- webApplicationExample: 대형 Hero 제목
+- secondBrainApplication: 프로젝트 핵심 목표 제목
+- keywords: typography, headline, variable-font
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Typography is taking center stage in 2026, moving beyond legibility into storytelling.
+
+## 12. Kinetic lettering (WD-2026-012)
+
+- description: 움직이는 글자로 진입과 상태 변화를 강조한다
+- webApplicationExample: 인트로 타이틀 모션
+- secondBrainApplication: 작업 완료 타이틀 모션
+- keywords: kinetic, type, motion
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Hero sections now often feature kinetic lettering, dynamic font pairings, and variable fonts that respond to interaction or context.
+
+## 13. Variable fonts (WD-2026-013)
+
+- description: 상황과 상호작용에 반응하는 가변 서체를 쓴다
+- webApplicationExample: 반응형 헤드라인
+- secondBrainApplication: 확대 가능한 문서 제목
+- keywords: variable-font, responsive, type
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Hero sections now often feature kinetic lettering, dynamic font pairings, and variable fonts that respond to interaction or context.
+
+## 14. Dark mode personalization (WD-2026-014)
+
+- description: 라이트·다크 전환을 개인화와 접근성의 일부로 제공한다
+- webApplicationExample: 테마 토글
+- secondBrainApplication: 업무 공간 테마 설정
+- keywords: dark-mode, theme, accessibility
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Many well-known brands like YouTube, X, and Slack offer a toggle for switching between light and dark modes.
+
+## 15. Motion design and animation (WD-2026-015)
+
+- description: 상태와 흐름을 설명하는 모션을 사용한다
+- webApplicationExample: 버튼 상태 모션
+- secondBrainApplication: Agent 진행 상태 모션
+- keywords: motion, animation, microinteraction
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Motion design adds rhythm and storytelling to Web experiences.
+
+## 16. Scrollytelling (WD-2026-016)
+
+- description: 스크롤 진행을 정보 공개의 순서로 활용한다
+- webApplicationExample: 제품 기능 스토리
+- secondBrainApplication: 프로젝트 타임라인
+- keywords: scrollytelling, scroll, narrative
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: From subtle hover effects to full scroll-based narratives (“scrollytelling”), motion helps guide attention and build immersion.
+
+## 17. Micro animations (WD-2026-017)
+
+- description: 작은 애니메이션으로 입력·전환·완료를 알린다
+- webApplicationExample: 버튼 리플
+- secondBrainApplication: 작업 완료 체크 모션
+- keywords: microanimation, feedback, state
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Brands use micro animations—scroll triggers, button ripples, animated states—to enhance the user journey without slowing performance.
+
+## 18. Gamified design (WD-2026-018)
+
+- description: 포인트·레벨·보상으로 참여와 동기를 높인다
+- webApplicationExample: 온보딩 체크리스트
+- secondBrainApplication: 작업 목표·배지
+- keywords: gamification, progress, badge
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Think points, levels, badges, progress bars, leaderboards, challenges, and micro-rewards woven into the user journey to boost engagement and motivation.
+
+## 19. Neumorphism (WD-2026-019)
+
+- description: 부드러운 그림자와 미세한 그라데이션으로 촉각적 표면을 만든다
+- webApplicationExample: 입체 카드
+- secondBrainApplication: 노트·태스크 카드
+- keywords: neumorphism, tactile, shadow
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Soft shadows and subtle gradients create raised or inset elements that look almost touchable.
+
+## 20. Retrofuturism (WD-2026-020)
+
+- description: 레트로한 미래 이미지와 현대 웹 인터랙션을 결합한다
+- webApplicationExample: 크롬·네온 랜딩
+- secondBrainApplication: AI 실험 공간 테마
+- keywords: retrofuturism, neon, chrome
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Retrofuturism fuses nostalgia with optimism, bringing vintage visions of the future into modern Web design.
+
+## 21. Maximalism (WD-2026-021)
+
+- description: 강한 색·중첩 시각물·굵은 글자로 에너지 높은 화면을 만든다
+- webApplicationExample: 캠페인 랜딩
+- secondBrainApplication: 중요 프로젝트 발표 화면
+- keywords: maximalism, layering, bold
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Rich colors, overlapping visuals, bold fonts, and dense compositions are key ingredients in this high-energy trend.
+
+## 22. Collage (WD-2026-022)
+
+- description: 스티커·찢어진 질감·컷아웃 사진으로 스크랩북 개성을 만든다
+- webApplicationExample: 크리에이터 포트폴리오
+- secondBrainApplication: 프로젝트 무드보드
+- keywords: collage, scrapbook, texture
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Collage Web design brings scrapbook-style creativity into digital experiences.
+
+## 23. Neo-brutalism (WD-2026-023)
+
+- description: 거칠고 비정형적인 표현으로 강한 개성을 만든다
+- webApplicationExample: 실험적 브랜드 페이지
+- secondBrainApplication: 실험 기능 베타 화면
+- keywords: neo-brutalism, anti-design, raw
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Neo-brutalism embraces raw, unpolished visuals that stand out in a sea of sleek, minimalist templates.
+
+## 24. Sustainable web design (WD-2026-024)
+
+- description: 가벼운 코드와 최적화 자산으로 환경 부담을 줄인다
+- webApplicationExample: 최적화 이미지 랜딩
+- secondBrainApplication: 가벼운 문서 목록 화면
+- keywords: sustainable, performance, images
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Leaner code, optimized images, and low-impact hosting help reduce the carbon footprint of digital products.
+
+## 25. Accessible and inclusive design (WD-2026-025)
+
+- description: 고대비·스크린리더·키보드 흐름을 함께 고려한다
+- webApplicationExample: 접근성 설정
+- secondBrainApplication: 키보드 중심 Command Palette
+- keywords: accessibility, screen-reader, keyboard
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Designers are also prioritizing accessibility and inclusion: high contrast color palettes, screen reader support, voice navigation, and keyboard-only flows are becoming standard.
+
+## 26. AI chatbots (WD-2026-026)
+
+- description: 대화형 AI가 다단계 작업과 사용자 요구 예측을 수행한다
+- webApplicationExample: 고객 지원 챗봇
+- secondBrainApplication: Second Brain Chat Workspace
+- keywords: AI, chatbot, agentic
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Today’s AI chatbots are proactive, conversational, and often agentic—capable of handling multi-step tasks and anticipating user needs.
+
+## 27. Voice-activated interfaces (WD-2026-027)
+
+- description: 음성으로 기능 제어·메뉴 탐색·도움 요청을 수행한다
+- webApplicationExample: 음성 검색
+- secondBrainApplication: 음성 기반 노트 추가
+- keywords: voice, hands-free, navigation
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: It now goes beyond search, letting you control site features, talk to helpful chatbots, or browse menus naturally.
+
+## 28. Progressive lead nurturing (WD-2026-028)
+
+- description: 상호작용에 맞춰 폼과 추천을 조정한다
+- webApplicationExample: 단계형 가입 폼
+- secondBrainApplication: 점진적 프로젝트 설정
+- keywords: forms, personalization, progressive
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Instead of overwhelming users, AI tailors form questions, follow-ups, and product recommendations based on each interaction.
+
+## 29. AI-driven personalization (WD-2026-029)
+
+- description: AI가 개인화된 웹 경험을 만든다
+- webApplicationExample: 맞춤 추천
+- secondBrainApplication: 개인화된 작업 시작 화면
+- keywords: AI, personalization, recommendation
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: AI is shaking up Web design, making sites smarter and more personalized.
+
+## 30. Responsive components (WD-2026-030)
+
+- description: 반응형 컴포넌트로 여러 화면에서 일관된 경험을 만든다
+- webApplicationExample: 반응형 카드 그리드
+- secondBrainApplication: 반응형 사이드바·패널
+- keywords: responsive, components, interaction
+- sourceTitle: Figma — Top Web design trends for 2026
+- sourceUrl: https://www.figma.com/resource-library/web-design-trends/
+- sourceType: 2026_web_design_report
+- supportingText: Launch your next website through Figma Sites, complete with its own CMS plus responsive components and preset interactions like marquee scrolling, custom cursors, and hover effects.
