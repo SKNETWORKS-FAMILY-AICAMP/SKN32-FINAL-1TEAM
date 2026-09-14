@@ -16,3 +16,6 @@ __pycache__/
 
 # 개인 문서 추출 결과
 /test/docextract/results/
+
+# 크롤링 원문 보관 폴더 (깊이에 관계없이)
+**/raw/
