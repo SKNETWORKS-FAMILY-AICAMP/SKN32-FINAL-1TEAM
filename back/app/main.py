@@ -5,9 +5,11 @@
 Swagger 문서: http://127.0.0.1:8000/docs
 (기술스택 선정서 2-3-2 — 6인 팀 인터페이스 합의 비용을 줄이는 용도로 그대로 확인용)
 
-지금은 auth/projects 라우터만 등록돼 있다. admin/faqs 라우터는 아직 만들기 전이라
-빼놨다 — 그 라우터들을 만들면, 아래 import 한 줄이랑 include_router 두 줄을
-주석 풀어서(또는 새로 추가해서) 다시 등록하면 된다.
+auth/projects/admin 라우터가 등록돼 있다. faqs 라우터(로그인한 유저가 새 질문을
+직접 올리는 공개용 `POST /faqs`)는 아직 안 만들었다 — FaqCreateRequest 스키마는
+이미 있지만 그걸 쓰는 라우터가 없다. 지금 admin.py 쪽 FAQ 목록/답변 기능은 동작하니
+질문 자체는 seed_dummy_admin_data.py로 채워서 테스트하면 된다. faqs.py를 만들면
+아래 import 한 줄이랑 include_router 한 줄을 추가하면 된다.
 """
 import os
 
@@ -16,12 +18,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.database import init_sqlite_dev_db
-from app.routers import auth, projects
+from app.routers import admin, auth, projects
 from app.routers.projects import UPLOAD_DIR
 
-# admin/faqs 라우터를 만들면 위 줄을 아래처럼 바꾸고,
-# 밑의 app.include_router(...) 두 줄의 주석을 풀면 된다.
-# from app.routers import admin, auth, faqs, projects
+# faqs 라우터를 만들면 위 import에 faqs를 추가하고,
+# 밑에 app.include_router(faqs.router)를 추가하면 된다.
 
 app = FastAPI(title='S-Brain API', version='0.1.0')
 
@@ -50,8 +51,7 @@ app.mount('/uploads', StaticFiles(directory=UPLOAD_DIR), name='uploads')
 
 app.include_router(auth.router)
 app.include_router(projects.router)
-# app.include_router(admin.router)
-# app.include_router(faqs.router)
+app.include_router(admin.router)
 
 
 @app.get('/health')

@@ -293,6 +293,7 @@ class PolicyThresholdsIn(BaseModel):
     pass_threshold: float
     rerun_cap: int
     deviation_cap: float
+    token_retry_cap: int
 
 
 class ChecklistItemIn(BaseModel):
@@ -319,6 +320,7 @@ class VerificationPolicyOut(BaseModel):
     pass_threshold: float
     rerun_cap: int
     deviation_cap: float
+    token_retry_cap: int
 
 
 class ItemOut(BaseModel):

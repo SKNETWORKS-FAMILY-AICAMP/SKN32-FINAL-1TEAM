@@ -2,10 +2,11 @@
 체크리스트 배열, 진행 현황, 사용자 관리, FAQ, 에이전트 테스크)에 맞춰 대응한다.
 프론트를 React로 다시 짜더라도 이 응답 계약은 유지하면 된다.
 
-[알아둘 것 — admin-dashboard.html 목업과의 차이]
-설계 문서의 verification_policies 테이블에는 목업에 있던 "검수 문단 재시도 상한"
-(token_retry_cap)에 대응하는 컬럼이 없다. DB에 없는 값이라 이 라우터도 다루지 않는다 —
-목업 쪽 필드를 뺄지, 스키마에 컬럼을 추가할지는 정재희님과 맞춰봐야 한다.
+[알아둘 것 — admin-dashboard.html 목업과의 차이 (해결됨)]
+목업에 있던 "검수(표현) Task 내부 보호 토큰 위반 문단 재시도 상한"(token_retry_cap)은
+원래 설계 문서 스키마엔 없었는데, 2026-09-14 정재희님과 논의 후 verification_policies에
+컬럼을 추가하기로 확정했다(add_token_retry_cap.sql 참고). 이제 GET/PUT 둘 다 이 필드를
+그대로 다룬다.
 """
 import datetime
 
@@ -71,6 +72,7 @@ def save_policy_thresholds(body: PolicyThresholdsIn, db: Session = Depends(get_d
     policy.pass_threshold = body.pass_threshold
     policy.rerun_cap = body.rerun_cap
     policy.deviation_cap = body.deviation_cap
+    policy.token_retry_cap = body.token_retry_cap
     db.commit()
     db.refresh(policy)
     # TODO: notifyRecheckCapViolations() 에 해당하는 재채점 편차 점검을

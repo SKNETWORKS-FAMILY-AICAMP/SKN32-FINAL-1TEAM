@@ -32,6 +32,18 @@ python verify_retry_task.py         # POST /projects/{id}/retry-task — 재시�
 
 이 4개는 각자 자기만의 임시 `dev.db`를 지우고 새로 만들기 때문에, **2번에서 만든 프로젝트 데이터와는 무관**하다 — 이 스크립트들을 돌리고 나면 2번에서 만든 project_id는 지워진다는 뜻. 순서를 꼭 지킬 필요는 없지만, 같은 `dev.db`를 계속 쓰면서 테스트하고 싶으면 이 4개를 먼저 돌리고 나서 2번을 진행하는 게 깔끔하다.
 
+### 1-1. admin.py는 `verify_admin.py`가 아니라 pytest로 (2026-09-14부터)
+
+`app/routers/admin.py`(정책/체크리스트/진행현황/유저/FAQ/에이전트로그)는 원래 `python verify_admin.py`로 확인했는데, 지금은 `tests/test_admin.py`로 옮겨서 `verify_admin.py`는 지웠다 — 실행은 아래처럼 `pytest`로 한다(`tests/conftest.py`가 `DB_BACKEND=sqlite`로 자동 전환해주는 것도 그대로, 위 4개 스크립트와 달리 `back/dev.db`가 아니라 `back/test.db`라는 별도 파일을 쓰고 테스트가 끝나면 테이블 내용을 비워서 다음 테스트에 안 새게 해준다).
+
+```
+pytest tests/test_admin.py -v
+```
+
+정책 배점 100 검증/체크리스트 가중치 100 검증/`GET /admin/items` 진행현황/유저 승격(얼굴인증 게이트)/FAQ(미답변 조회·답변 저장)/에이전트 실행로그, 그리고 일반 계정 403·정지 계정 401 구분까지 총 11개 테스트로 나뉘어 있다 — `python verify_admin.py` 한 덩어리로 돌리던 것과 확인 내용은 동일하지만, 중간에 하나가 깨져도 나머지가 계속 실행돼서 pytest 리포트에 한 번에 다 보인다는 게 다르다.
+
+나머지 4개(`verify_resume_cases.py` 등)도 언젠가 `test_*.py`로 옮길 계획이지만 아직은 그대로다 — 옮겨지면 여기도 같이 업데이트할 것.
+
 ---
 
 ## 2. 실제 흐름으로 테스트 (구글 로그인 없이)
@@ -179,6 +191,7 @@ python verify_new_schema_mysql.py
 | 하고 싶은 것 | 쓸 것 |
 |---|---|
 | 스키마/로직이 안 깨졌는지 빠르게 확인 | 1번 (`verify_*.py` 4개) |
+| admin.py(정책/체크리스트/유저/FAQ 등)가 안 깨졌는지 확인 | 1-1번 (`pytest tests/test_admin.py`) |
 | 재시도가 진짜로 값을 바꿔서 반환하는지 확인 | 2-4번 (Swagger) 또는 `verify_retry_task.py` |
 | 화면 테스트용 더미 프로젝트 하나 빨리 만들기 (로그인 안 되는 지금) | 2번 (`create_test_project.py` → `seed_dummy_pipeline.py` → `check_project_status.py`) |
 | 진짜 구글 로그인 플로우 자체를 확인 | 3번 (`login_test.html`, origin 등록 필요) |

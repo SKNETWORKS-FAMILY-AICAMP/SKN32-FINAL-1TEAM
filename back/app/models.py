@@ -458,6 +458,10 @@ class VerificationPolicy(Base):
     pass_threshold: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2), default=80)
     rerun_cap: Mapped[int] = mapped_column(_UnsignedInt, default=3)  # app_schema.sql: INT UNSIGNED
     deviation_cap: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2), default=5)
+    # 검수(표현) Task 내부에서 보호 토큰(수치/날짜/고유명사/기능명) 위반 문단을 재시도하는
+    # 최대 횟수 — rerun_cap(Task 단위 재수행 상한)과는 별개로 관리된다. admin-dashboard.html
+    # 목업 기본값 2를 그대로 따름. 2026-09-14 정재희님과 논의 후 컬럼 추가 확정.
+    token_retry_cap: Mapped[int] = mapped_column(_UnsignedInt, default=2)  # app_schema.sql: INT UNSIGNED
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
