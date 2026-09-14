@@ -5,8 +5,9 @@
 [알아둘 것 — admin-dashboard.html 목업과의 차이 (해결됨)]
 목업에 있던 "검수(표현) Task 내부 보호 토큰 위반 문단 재시도 상한"(token_retry_cap)은
 원래 설계 문서 스키마엔 없었는데, 2026-09-14 정재희님과 논의 후 verification_policies에
-컬럼을 추가하기로 확정했다(add_token_retry_cap.sql 참고). 이제 GET/PUT 둘 다 이 필드를
-그대로 다룬다.
+컬럼을 추가하기로 확정했다 — app_schema.sql의 verification_policies CREATE TABLE 정의에
+처음부터 포함시켰다(과도기용 ALTER TABLE 마이그레이션은 두지 않았다). 이제 GET/PUT 둘 다
+이 필드를 그대로 다룬다.
 """
 import datetime
 
