@@ -38,19 +38,24 @@ def login_with_google(body: GoogleLoginRequest, response: Response, db: Session 
             role='user',
             status='active',
             notify_enabled=body.notify_agreed,
+            ai_training_agreed=body.ai_training_agreed,
         )
         db.add(user)
         db.commit()
         db.refresh(user)
-    elif user.status != 'active':
-        raise HTTPException(status_code=403, detail='정지되었거나 사용할 수 없는 계정입니다')
+    else:
+        if user.status != 'active':
+            raise HTTPException(status_code=403, detail='정지되었거나 사용할 수 없는 계정입니다')
+        # 로그인 화면에서 동의 체크를 매번 거치는 구조라, 재로그인 시에도 최신 동의
+        # 값으로 갱신한다(users.ai_training_agreed — schemas.GoogleLoginRequest 참고).
+        if user.ai_training_agreed != body.ai_training_agreed:
+            user.ai_training_agreed = body.ai_training_agreed
+            db.commit()
+            db.refresh(user)
 
     token = issue_access_token(user.user_id)
     set_session_cookie(response, token)
 
-    # NOTE: aiTrainingAgreed는 users 테이블에 저장할 컬럼이 없어서 지금은 영속화하지
-    # 않는다(schemas.GoogleLoginRequest 설명 참고). 로그인 화면에서 동의 체크를 거쳐야만
-    # 이 엔드포인트가 호출되는 구조라, 여기 도달했다면 이번 로그인에 한해 동의 완료로 본다.
     has_agreed_terms = True
     return GoogleLoginResponse(user=UserOut.model_validate(user), has_agreed_terms=has_agreed_terms)
 

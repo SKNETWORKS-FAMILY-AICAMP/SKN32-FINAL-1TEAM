@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
     name VARCHAR(100) NOT NULL COMMENT '사용자 이름',
     google_sub VARCHAR(255) NOT NULL COMMENT 'Google OAuth 식별자(sub)',
     notify_enabled BOOLEAN NOT NULL DEFAULT TRUE COMMENT '유사 공고 알림 on/off 전역 설정',
+    ai_training_agreed BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'AI 학습 데이터 활용 동의(연동합의서 #3) — 로그인마다 갱신',
     role VARCHAR(20) NOT NULL DEFAULT 'user' COMMENT '권한(user/admin)',
     status VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '계정 상태(active/suspended/dormant)',
     face_verified_at DATETIME(6) NULL COMMENT '관리자 권한 전환 시 얼굴 등록 완료 일시(NULL 가능)',

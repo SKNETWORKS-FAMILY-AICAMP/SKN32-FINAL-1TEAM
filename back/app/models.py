@@ -82,6 +82,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(100))
     google_sub: Mapped[str] = mapped_column(String(255), unique=True)
     notify_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    ai_training_agreed: Mapped[bool] = mapped_column(Boolean, default=False)
     role: Mapped[str] = mapped_column(String(20), default='user')
     status: Mapped[str] = mapped_column(String(20), default='active')
     face_verified_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)

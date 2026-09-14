@@ -15,9 +15,8 @@ class GoogleLoginRequest(BaseModel):
         default=False,
         alias='aiTrainingAgreed',
         description=(
-            'AI 학습 데이터 활용 동의. 연동합의서 #3(동의 이력)에 해당하지만, '
-            'users 테이블에 이 값을 저장할 컬럼이 아직 없어서 지금은 영속화하지 않는다 '
-            '(회의에서 컬럼 추가 여부 논의 필요 — backend_decisions.md 참고).'
+            'AI 학습 데이터 활용 동의(연동합의서 #3). users.ai_training_agreed 로 저장되며, '
+            '로그인 화면에서 동의 체크를 매번 거치는 구조라 로그인할 때마다 최신 값으로 갱신한다.'
         ),
     )
     notify_agreed: bool = Field(
@@ -36,6 +35,7 @@ class UserOut(BaseModel):
     role: str
     status: str
     notify_enabled: bool
+    ai_training_agreed: bool
     face_verified_at: datetime.datetime | None = None
 
 
