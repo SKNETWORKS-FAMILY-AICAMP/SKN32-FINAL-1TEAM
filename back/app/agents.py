@@ -180,7 +180,7 @@ def run_implement_agent_retry(*, artifact_kind: str, project_description: str) -
         f'<!doctype html><html><body><h1>{label} 재시도 결과물 (더미)</h1>'
         f'<p>{project_description}</p>'
         f'<p>generated: {uuid.uuid4().hex[:8]}</p></body></html>'
-    ).encode('utf-8')
+    ).encode()
     return ImplementArtifactResult(file_bytes=html, file_ext='.html')
 
 

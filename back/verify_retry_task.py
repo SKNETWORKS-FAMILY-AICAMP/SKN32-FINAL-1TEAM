@@ -39,6 +39,8 @@ os.environ.setdefault('JWT_SECRET', 'ci-dummy-secret-not-for-production')
 
 import json  # noqa: E402
 
+from fastapi.testclient import TestClient  # noqa: E402
+
 import app.routers.auth as auth_router  # noqa: E402
 import app.security as security  # noqa: E402
 from app.database import IS_SQLITE, SessionLocal, init_sqlite_dev_db  # noqa: E402
@@ -49,11 +51,9 @@ from app.models import (  # noqa: E402
     FormatFinding,
     MatchResult,
     Notice,
-    PlanScoreReason,
     PlanSection,
     ProofreadLog,
 )
-from fastapi.testclient import TestClient  # noqa: E402
 from seed_dummy_pipeline import seed_dummy_pipeline  # noqa: E402
 
 assert IS_SQLITE, 'DB_BACKEND=sqlite 가 아니다 — AWS 공유 DB로 보여서 중단.'
@@ -150,7 +150,7 @@ try:
     assert section.body == sec_31_after_2, 'DB에 실제로 반영이 안 됨(응답값과 DB값이 다름)'
 finally:
     db.close()
-print(f'[OK] strategy 재시도: plan_sections[3-1] 본문이 매번 실제로 바뀜(DB 반영 확인, attempt_no 2 -> 3)')
+print('[OK] strategy 재시도: plan_sections[3-1] 본문이 매번 실제로 바뀜(DB 반영 확인, attempt_no 2 -> 3)')
 
 # ============================================================================
 # 2) 작성(writing) — plan_sections '1-1'/'2-1' 본문이 실제로 달라지는지
@@ -163,7 +163,7 @@ _record('writing', body2)
 assert set(body2['changed']['sections'].keys()) == {'1-1', '2-1'}
 for tag in ('1-1', '2-1'):
     assert body2['changed']['sections'][tag]['after'] != body2['changed']['sections'][tag]['before']
-print(f"[OK] writing 재시도: plan_sections['1-1'/'2-1'] 본문이 둘 다 실제로 바뀜(attempt_no 2)")
+print("[OK] writing 재시도: plan_sections['1-1'/'2-1'] 본문이 둘 다 실제로 바뀜(attempt_no 2)")
 
 # ============================================================================
 # 3) 검증-1 · rubric(verify1_rubric) — plan_score_reasons 점수 + doc_score 합계 재계산
@@ -196,7 +196,7 @@ for _ in range(20):
     status_e, body_e = retry('verify1_evidence')
     assert status_e == 200, f'verify1_evidence 재시도 실패: {status_e} {body_e}'
     evidence_attempts.append(body_e['attempt_no'])
-    for item_code, change in body_e['changed']['scores'].items():
+    for _item_code, change in body_e['changed']['scores'].items():
         after = change['after']
         if after['evidence_locator'] is None:
             saw_evidence_restored = True
@@ -285,7 +285,7 @@ try:
     )
 finally:
     db.close()
-print(f"[OK] verify2_static 재시도: CHECK-ENTRY-FILE만 재채점, FEATURE-MATCH는 안 건드림")
+print("[OK] verify2_static 재시도: CHECK-ENTRY-FILE만 재채점, FEATURE-MATCH는 안 건드림")
 
 # ============================================================================
 # 8) 검증-2 · crosscheck(verify2_crosscheck) — 'FEATURE-' 접두어만 갈아치움
@@ -320,7 +320,7 @@ try:
     )
 finally:
     db.close()
-print(f"[OK] verify2_crosscheck 재시도: FEATURE-MATCH만 재채점, CHECK-ENTRY-FILE은 안 건드림")
+print("[OK] verify2_crosscheck 재시도: FEATURE-MATCH만 재채점, CHECK-ENTRY-FILE은 안 건드림")
 
 # ============================================================================
 # 9) 검수 · 표현(review_expression) — format_findings에 새 행이 실제로 쌓이는지
@@ -402,7 +402,7 @@ assert db_by_task.get('verify2_static') == [2], db_by_task.get('verify2_static')
 assert db_by_task.get('verify2_crosscheck') == [2], db_by_task.get('verify2_crosscheck')
 assert db_by_task.get('review_expression') == [2], db_by_task.get('review_expression')
 assert db_by_task.get('review_token_check') == [2], db_by_task.get('review_token_check')
-print(f'[OK] agent_executions 재시도 로그(rerun_type=rerun)가 10개 task_key 전부 정확히 쌓임')
+print('[OK] agent_executions 재시도 로그(rerun_type=rerun)가 10개 task_key 전부 정확히 쌓임')
 
 # ============================================================================
 # 12) 오류 케이스 — 잘못된 task_key(400, '조율'은 재시도 대상 아님)

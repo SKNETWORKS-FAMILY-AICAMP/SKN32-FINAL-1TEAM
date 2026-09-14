@@ -38,14 +38,15 @@ security.verify_google_id_token = lambda id_token_str: {
     'sub': 'google-sub-abc', 'email': 'hjwon2001@gmail.com', 'name': '하정원',
 }
 import app.routers.auth as auth_router  # noqa: E402
+
 auth_router.verify_google_id_token = security.verify_google_id_token
 
 from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy.exc import IntegrityError  # noqa: E402
 
 import app.database as appdb  # noqa: E402
 from app import pipeline_stages as ps  # noqa: E402
 from app.models import EligibilityCheck, MatchResult, Notice  # noqa: E402
-from sqlalchemy.exc import IntegrityError  # noqa: E402
 
 PAYLOAD = {
     'start_type': '온라인',

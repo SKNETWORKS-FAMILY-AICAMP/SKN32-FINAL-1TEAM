@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """환경설정 로더 — .env 파일에서 비밀값을 읽는다.
 
   import config

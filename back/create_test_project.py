@@ -33,12 +33,12 @@ os.environ.setdefault('DB_BACKEND', 'sqlite')
 os.environ.setdefault('GOOGLE_CLIENT_ID', 'ci-dummy-client-id')
 os.environ.setdefault('JWT_SECRET', 'ci-dummy-secret-not-for-production')
 
-import app.security as security  # noqa: E402
-from app.main import app  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
 import app.routers.auth as auth_router  # noqa: E402
+import app.security as security  # noqa: E402
 from app.database import IS_SQLITE  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
+from app.main import app  # noqa: E402
 
 
 def main() -> None:
