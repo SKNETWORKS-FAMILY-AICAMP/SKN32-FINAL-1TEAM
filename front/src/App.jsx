@@ -2,7 +2,7 @@ import React,{useState,useEffect,Suspense,lazy} from 'react';
 import Landing from './components/Landing.jsx';
 import {WorkspaceShell,Dashboard} from './components/Workspace.jsx';
 import {LoginModal,fetchCurrentUser,logout} from './components/Login.jsx';
-import AdminDashboard,{isAdminEmail} from './features/Admin.jsx';
+import AdminDashboard from './features/Admin.jsx';
 import {IntakeForm,MatchProgress,MatchResults,EligibilityGate,PlanForm,ArtifactResult,FinalVerdict,ReviewScreen,SIMILAR_ANNOUNCEMENT_ALERTS} from './features/Workflow.jsx';
 import {createProject,getProjectResult} from './api.js';
 
@@ -19,9 +19,9 @@ export default function App(){
  const [view,setView]=useState('landing');
  const [itemInfo,setItemInfo]=useState(null); const [announcement,setAnnouncement]=useState(null);
  const [checkedFailedTitles,setCheckedFailedTitles]=useState([]);const [notifyEnabled,setNotifyEnabled]=useState(true);
- const [isNewUser,setIsNewUser]=useState(false);const [returnToDashboard,setReturnToDashboard]=useState(false);
+ const [returnToDashboard,setReturnToDashboard]=useState(false);
  const [scoreOutcome,setScoreOutcome]=useState('fail');const [docOutcome,setDocOutcome]=useState('fail');const [artifactOutcome,setArtifactOutcome]=useState('fail');
- const [user,setUser]=useState(null);const [loginOpen,setLoginOpen]=useState(false);
+ const [user,setUser]=useState(null);const [loginOpen,setLoginOpen]=useState(false);const [authChecked,setAuthChecked]=useState(false);
  // [2026-09-15, 프론트 통합] projectId는 IntakeForm 제출로 만든 실제 project_id, pipelineResult는
  // POST /projects/{id}/generate(또는 이어보기용 GET /result) 응답을 그대로 들고 있는 값 —
  // eligibility-gate부터는 이 값을 화면에 그대로 뿌린다(app/routers/projects.py _build_demo_response 참고).
@@ -34,7 +34,8 @@ export default function App(){
  // 안 된 상태) fetchCurrentUser가 null을 돌려주므로 아무 것도 안 하고 기존처럼 로그인 버튼을 보여준다.
  useEffect(()=>{
   let cancelled=false;
-  fetchCurrentUser().then(u=>{if(!cancelled&&u){setUser(u);setNotifyEnabled(u.notify_enabled)}});
+  fetchCurrentUser().then(u=>{if(!cancelled&&u){setUser(u);setNotifyEnabled(u.notify_enabled)}})
+   .finally(()=>{if(!cancelled)setAuthChecked(true)});
   return ()=>{cancelled=true};
  },[]);
  const resetScoreOutcome=v=>{setScoreOutcome(v);setDocOutcome(v);setArtifactOutcome(v)};
@@ -107,11 +108,13 @@ export default function App(){
  // /auth/logout)는 기다리지 않고 백그라운드로 보낸다 — 실패해도(오프라인 등) 어차피 프론트
  // 쪽에서는 로그아웃된 것처럼 보여주면 되고, logout() 내부에서 에러를 삼키게 해뒀다.
  const handleLogout=()=>{logout();setUser(null);setView('landing')};
- const isAdmin=isAdminEmail(user?.email);
+ // 관리자 판별은 프론트 이메일 목록이 아니라 백엔드가 내려주는 실제 role로 한다.
+ const isAdmin=user?.role==='admin';
+ if(!authChecked)return null; // 세션 확인 전 깜빡임(로그인 화면 잠깐 보였다 사라짐) 방지
  if(view==='admin')return <AdminDashboard user={user} onExit={()=>setView('landing')}/>;
  if(view==='landing')return <React.Fragment><Landing onStart={startFlow} user={user} isAdmin={isAdmin} onOpenAdmin={()=>setView('admin')} onLogin={()=>setLoginOpen(true)} onLogout={handleLogout}/><LoginModal open={loginOpen} onClose={()=>setLoginOpen(false)} onSuccess={handleLoginSuccess}/></React.Fragment>;
  return <WorkspaceShell view={view} user={user} onHome={()=>setView('landing')} onDashboard={()=>setView('dashboard')} onNewProject={startNewProject} onLogout={handleLogout} notifyEnabled={notifyEnabled} onToggleNotify={()=>setNotifyEnabled(x=>!x)}>
-  {view==='dashboard'&&<Dashboard onNewProject={startNewProject} onOpenProject={handleOpenProject} notifyEnabled={notifyEnabled} alerts={SIMILAR_ANNOUNCEMENT_ALERTS} isNewUser={isNewUser} onToggleNewUser={setIsNewUser}/>}
+  {view==='dashboard'&&<Dashboard onNewProject={startNewProject} onOpenProject={handleOpenProject} notifyEnabled={notifyEnabled} alerts={SIMILAR_ANNOUNCEMENT_ALERTS}/>}
   {view==='intake'&&<IntakeForm onSubmit={handleIntakeSubmit} onBack={()=>setView('dashboard')} backLabel="내 프로젝트로 돌아가기"/>}
   {view==='match-progress'&&<MatchProgress onComplete={()=>setView('match-results')}/>}
   {view==='match-results'&&<MatchResults projectId={projectId} onBack={()=>setView(returnToDashboard?'dashboard':'intake')} backLabel={returnToDashboard?'내 프로젝트로 돌아가기':'아이템 정보 다시 입력하기'} onCheckEligibility={handleCheckEligibility} disabledTitles={checkedFailedTitles}/>}
