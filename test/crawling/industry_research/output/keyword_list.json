@@ -1,0 +1,146 @@
+{
+  "researchYear": 2026,
+  "sourcePublisher": "중소벤처기업부",
+  "dataType": "keyword_list",
+  "scopeNote": "KIET 검색에 사용할 기본 산업 검색어와 사용자 키워드를 저장한다. 사용자 키워드는 공식 지원 분야가 아니다.",
+  "programs": [
+    {
+      "programId": "pre_startup",
+      "programName": "예비창업패키지",
+      "track": "2026 모집공고",
+      "industryRestriction": "all_technology_fields_with_non_exhaustive_examples",
+      "industries": [
+        {
+          "industryId": "PRE-EXAMPLE-01",
+          "industryName": "정보·통신",
+          "classificationType": "official_non_exhaustive_example",
+          "idOrigin": "internal_generated",
+          "sourceUrl": "https://www.mss.go.kr/common/board/Download.do?bcIdx=1066579&cbIdx=310&streFileNm=236d517e-fc4d-4607-8ba0-6b2557afeb62.pdf"
+        },
+        {
+          "industryId": "PRE-EXAMPLE-02",
+          "industryName": "전기·전자",
+          "classificationType": "official_non_exhaustive_example",
+          "idOrigin": "internal_generated",
+          "sourceUrl": "https://www.mss.go.kr/common/board/Download.do?bcIdx=1066579&cbIdx=310&streFileNm=236d517e-fc4d-4607-8ba0-6b2557afeb62.pdf"
+        },
+        {
+          "industryId": "PRE-EXAMPLE-03",
+          "industryName": "기계·소재(재료)",
+          "classificationType": "official_non_exhaustive_example",
+          "idOrigin": "internal_generated",
+          "sourceUrl": "https://www.mss.go.kr/common/board/Download.do?bcIdx=1066579&cbIdx=310&streFileNm=236d517e-fc4d-4607-8ba0-6b2557afeb62.pdf"
+        },
+        {
+          "industryId": "PRE-EXAMPLE-04",
+          "industryName": "바이오·의료(생명·식품)",
+          "classificationType": "official_non_exhaustive_example",
+          "idOrigin": "internal_generated",
+          "sourceUrl": "https://www.mss.go.kr/common/board/Download.do?bcIdx=1066579&cbIdx=310&streFileNm=236d517e-fc4d-4607-8ba0-6b2557afeb62.pdf"
+        },
+        {
+          "industryId": "PRE-EXAMPLE-05",
+          "industryName": "에너지·자원(환경·에너지)",
+          "classificationType": "official_non_exhaustive_example",
+          "idOrigin": "internal_generated",
+          "sourceUrl": "https://www.mss.go.kr/common/board/Download.do?bcIdx=1066579&cbIdx=310&streFileNm=236d517e-fc4d-4607-8ba0-6b2557afeb62.pdf"
+        },
+        {
+          "industryId": "PRE-EXAMPLE-06",
+          "industryName": "화학(화공·섬유)",
+          "classificationType": "official_non_exhaustive_example",
+          "idOrigin": "internal_generated",
+          "sourceUrl": "https://www.mss.go.kr/common/board/Download.do?bcIdx=1066579&cbIdx=310&streFileNm=236d517e-fc4d-4607-8ba0-6b2557afeb62.pdf"
+        },
+        {
+          "industryId": "PRE-EXAMPLE-07",
+          "industryName": "공예·디자인",
+          "classificationType": "official_non_exhaustive_example",
+          "idOrigin": "internal_generated",
+          "sourceUrl": "https://www.mss.go.kr/common/board/Download.do?bcIdx=1066579&cbIdx=310&streFileNm=236d517e-fc4d-4607-8ba0-6b2557afeb62.pdf"
+        }
+      ],
+      "specializedTracks": [
+        "여성",
+        "소셜벤처",
+        "사내벤처"
+      ],
+      "note": "일반분야는 전 기술 분야 지원이며 industries는 공고에 든 예시다. 특화분야 3개는 산업이 아닌 신청 유형이고 사내벤처는 별도 공고 예정이다.",
+      "sourceUrl": "https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1066579&cbIdx=310",
+      "classificationSourceUrl": "https://www.mss.go.kr/common/board/Download.do?bcIdx=1066579&cbIdx=310&streFileNm=236d517e-fc4d-4607-8ba0-6b2557afeb62.pdf"
+    },
+    {
+      "programId": "restart",
+      "programName": "재도전성공패키지",
+      "track": "2026 모집공고",
+      "industryRestriction": "not_enumerated_in_notice_pdf",
+      "industries": [],
+      "note": "공고 PDF는 예비재창업자 또는 7년 이내 재창업기업을 지원하며 산업별 모집표는 제시하지 않는다. 제외 업종은 공고 PDF 확인.",
+      "sourceUrl": "https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1065552&cbIdx=310"
+    },
+    {
+      "programId": "early_general",
+      "programName": "초기창업패키지",
+      "track": "일반형",
+      "industryRestriction": "all_fields_subject_to_notice_eligibility",
+      "industries": [],
+      "note": "중기부 2026 창업패키지 유형표에서 일반형은 전 분야 창업기업으로 표기한다. 공고상 제외 업종은 별도 확인.",
+      "sourceUrl": "https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1065015&cbIdx=310",
+      "classificationSourceUrl": "https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1064518&cbIdx=86&parentSeq=1064518"
+    },
+    {
+      "programId": "early_deeptech",
+      "programName": "초기창업패키지",
+      "track": "딥테크 특화형",
+      "industryRestriction": "five_official_fields",
+      "industries": [
+        {
+          "industryId": "EARLY-DEEPTECH-01",
+          "industryName": "빅데이터·AI",
+          "classificationType": "official_program_field",
+          "idOrigin": "internal_generated",
+          "sourceUrl": "https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1064518&cbIdx=86&parentSeq=1064518"
+        },
+        {
+          "industryId": "EARLY-DEEPTECH-02",
+          "industryName": "바이오헬스",
+          "classificationType": "official_program_field",
+          "idOrigin": "internal_generated",
+          "sourceUrl": "https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1064518&cbIdx=86&parentSeq=1064518"
+        },
+        {
+          "industryId": "EARLY-DEEPTECH-03",
+          "industryName": "미래모빌리티",
+          "classificationType": "official_program_field",
+          "idOrigin": "internal_generated",
+          "sourceUrl": "https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1064518&cbIdx=86&parentSeq=1064518"
+        },
+        {
+          "industryId": "EARLY-DEEPTECH-04",
+          "industryName": "친환경에너지",
+          "classificationType": "official_program_field",
+          "idOrigin": "internal_generated",
+          "sourceUrl": "https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1064518&cbIdx=86&parentSeq=1064518"
+        },
+        {
+          "industryId": "EARLY-DEEPTECH-05",
+          "industryName": "로봇",
+          "classificationType": "official_program_field",
+          "idOrigin": "internal_generated",
+          "sourceUrl": "https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1064518&cbIdx=86&parentSeq=1064518"
+        }
+      ],
+      "sourceUrl": "https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1064566&cbIdx=310",
+      "classificationSourceUrl": "https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1064518&cbIdx=86&parentSeq=1064518"
+    }
+  ],
+  "userKeywords": [
+    {
+      "keyword": "기업용 AI 문서 검색",
+      "classificationType": "user_keyword",
+      "programEligibility": "not_assessed",
+      "addedAt": "2026-09-14T01:35:04.524758+00:00"
+    }
+  ],
+  "collectedAt": "2026-09-15T06:15:02.919371+00:00"
+}
