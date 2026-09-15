@@ -3,6 +3,7 @@ import Preparation from '../components/Preparation.jsx';
 import {Icon} from '../components/Icons.jsx';
 import {getMatchCandidates,generatePipeline} from '../api.js';
 import {downloadPlanDocx,downloadPrototypeZip,downloadVerificationPdf} from '../dummyDeliverables.js';
+import {downloadPlanDocument} from '../api.js';
 function FloatingInput({inputRef,type,value,onChange,label}){
   return <label className="block text-[14px] text-[var(--muted-fg)]"><span className="block mb-2">{label}</span><input ref={inputRef} type={type} value={value} onChange={onChange} onInput={onChange} onBlur={onChange} className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg)]"/></label>;
 }
@@ -1699,7 +1700,7 @@ const EN_DOC_ITEM_LABEL = {
 // "검수와 내려받기를 별도 단계로 세지만 화면을 쪼갤 이유는 없다."
 // 점수는 다시 표시하지 않는다 — 검수가 점수를 바꾼 것처럼 보이면 안 되기 때문에,
 // 종합 평가에서 본 점수가 최종이라는 사실이 화면에서도 드러나야 한다(v3 §3).
-function ReviewScreen({ announcement, docOutcome = 'fail', artifactOutcome = 'fail', onGoDashboard }){
+function ReviewScreen({ announcement, docOutcome = 'fail', artifactOutcome = 'fail', onGoDashboard, projectId }){
   const docScore = DOC_SCORE_BY_OUTCOME[docOutcome];
   const artifactScore = ARTIFACT_SCORE_BY_OUTCOME[artifactOutcome];
   const finalTotal = docScore.raw + artifactScore.autoCheck.raw + artifactScore.crossCheck.raw;
@@ -1708,6 +1709,21 @@ function ReviewScreen({ announcement, docOutcome = 'fail', artifactOutcome = 'fa
 
   function handleDownload(file){
     if (file.name === '사업계획서.docx') {
+      // [2026-09-15] projectId가 있으면 실제 백엔드가 초기창업패키지(일반형) 공식 양식(별첨1)
+      // 구조로 채운 진짜 .docx를 내려준다(app/plan_document_export.py). projectId가 없는
+      // 경우(데모 화면을 프로젝트 없이 미리보기로 연 경우 등)에만 예전 클라이언트 더미로
+      // 폴백한다 — 실패 시에도 마찬가지로 폴백해서 다운로드 버튼 자체가 죽지 않게 한다.
+      if (projectId) {
+        downloadPlanDocument(projectId).catch((err) => {
+          console.error('실제 사업계획서 다운로드 실패, 더미로 대체합니다:', err);
+          downloadPlanDocx({
+            title: `${itemTitle || '사업계획서'} 사업계획서`,
+            sections: PLAN_DOCUMENT_SECTIONS_REWORKED,
+            footer: DELIVERABLE_NOTICES.find((n) => n.label === '계획서')?.text,
+          });
+        });
+        return;
+      }
       downloadPlanDocx({
         title: `${itemTitle || '사업계획서'} 사업계획서`,
         sections: PLAN_DOCUMENT_SECTIONS_REWORKED,

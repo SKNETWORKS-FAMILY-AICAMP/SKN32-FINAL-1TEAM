@@ -98,11 +98,15 @@ class Company(Base):
     __tablename__ = 'companies'
 
     company_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    # unique=True: "계정당 회사 프로필 1건" 가정을 주석이 아니라 DB 제약으로 강제한다.
-    # POST /projects의 동시 실행 제한 로직(backend_decisions.md #11)이 이 가정 위에서
-    # 동작하므로, 동시 요청으로 회사 프로필이 2건 생기면 그 가정이 깨져 제한 로직도
-    # 같이 무력화된다 — 그래서 유니크 제약 + 코드의 insert-then-catch 패턴으로 막는다.
-    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('users.user_id'), unique=True)
+    # [2026-09-15 개정] 예전엔 여기 unique=True를 걸어 "계정당 회사 프로필 1건"을 DB로
+    # 강제하고, 그 유일한 행을 POST /projects 동시 실행 제한(기획서 4-7, backend_decisions.md
+    # #11)의 락 대상으로도 같이 썼다 — 그런데 그러면 프로젝트마다 다른 신청자 유형/대표자명/
+    # 설립일자를 입력해도 두 번째 프로젝트부터 값이 조용히 무시되는 부작용이 있었다(회사
+    # 프로필이 project 1건과 매칭되는 게 아니라 계정과 매칭되니까). 동시 실행 제한은 이제
+    # User 행 자체를 잠그는 방식으로 분리했으므로(app/routers/projects.py의 create_project),
+    # 여기 unique 제약은 더 이상 그 락의 전제조건이 아니다 — 프로젝트마다 회사 프로필을
+    # 새로 만들 수 있도록 제거한다. user_id로 조회는 여전히 자주 하니 인덱스는 남긴다.
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('users.user_id'), index=True)
     start_type: Mapped[str] = mapped_column(String(32))
     biz_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     ceo_name: Mapped[str | None] = mapped_column(String(100), nullable=True)

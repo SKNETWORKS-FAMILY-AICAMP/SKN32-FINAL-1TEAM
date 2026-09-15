@@ -91,14 +91,27 @@ def test_ai_training_agreed_persisted_on_signup(db_session):
     assert user.ai_training_agreed is True
 
 
-def test_ai_training_agreed_updates_on_relogin(db_session):
+def test_ai_training_agreed_survives_relogin_and_changes_only_via_patch(db_session):
+    """[2026-09-15 개정] 예전엔 재로그인할 때마다 body의 동의값으로 덮어썼는데(그래서
+    이 테스트 이름도 원래 '...updates_on_relogin'이었다) — 그러면 프론트가 재로그인 시
+    동의 화면을 건너뛰고 기본값을 보내는 순간 이미 저장해둔 동의가 조용히 꺼져버리는
+    문제가 있었다. 이제 재로그인은 저장된 값을 그대로 두고, 바꾸려면 PATCH /auth/consent를
+    명시적으로 호출해야 한다."""
     client = _new_client()
     _login(client, 'consent-changes@example.com', True)
     user = db_session.query(User).filter(User.email == 'consent-changes@example.com').one()
     assert user.ai_training_agreed is True
 
-    # 같은 계정이 동의를 철회하고 다시 로그인 -> 최신 값으로 갱신돼야 한다.
+    # 같은 계정이 재로그인하면서 body에 반대 값(False)을 실어 보내도 -> 저장된 값(True)은 유지.
     _login(client, 'consent-changes@example.com', False)
+    db_session.expire_all()
+    user = db_session.query(User).filter(User.email == 'consent-changes@example.com').one()
+    assert user.ai_training_agreed is True
+
+    # 동의를 실제로 철회하려면 PATCH /auth/consent를 써야 한다.
+    res = client.patch('/auth/consent', json={'aiTrainingAgreed': False})
+    assert res.status_code == 200, res.text
+    assert res.json()['ai_training_agreed'] is False
     db_session.expire_all()
     user = db_session.query(User).filter(User.email == 'consent-changes@example.com').one()
     assert user.ai_training_agreed is False
