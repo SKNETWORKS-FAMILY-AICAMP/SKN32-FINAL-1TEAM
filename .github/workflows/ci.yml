@@ -73,11 +73,11 @@ jobs:
       - name: frontend 존재 여부 확인
         id: check
         run: |
-          if [ -f web/frontend/package.json ]; then
+          if [ -f front/package.json ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::web/frontend/package.json 이 아직 없어 frontend 검사를 건너뜁니다."
+            echo "::notice::front/package.json 이 아직 없어 frontend 검사를 건너뜁니다."
           fi
 
       - name: Set up Node.js
@@ -86,24 +86,24 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-          cache-dependency-path: web/frontend/package-lock.json
+          cache-dependency-path: front/package-lock.json
 
       - name: Install dependencies
         if: steps.check.outputs.exists == 'true'
-        working-directory: web/frontend
+        working-directory: front
         run: npm ci
 
       - name: Lint (eslint)
         if: steps.check.outputs.exists == 'true'
-        working-directory: web/frontend
+        working-directory: front
         run: npm run lint --if-present
 
       - name: Test (vitest)
         if: steps.check.outputs.exists == 'true'
-        working-directory: web/frontend
+        working-directory: front
         run: npm run test --if-present -- --run
 
       - name: Build
         if: steps.check.outputs.exists == 'true'
-        working-directory: web/frontend
+        working-directory: front
         run: npm run build --if-present

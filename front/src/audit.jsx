@@ -1,0 +1,14 @@
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import Landing from './components/Landing.jsx';
+import {WorkspaceShell,Dashboard} from './components/Workspace.jsx';
+import * as W from './features/Workflow.jsx';
+import './styles.css';
+const names=['landing','dashboard','empty','intake','match-progress','match-results','eligibility-gate','eligibility-fail','plan-progress','plan-form','artifact-progress','artifact-result','final-verdict','final-pass','review'];
+const page=new URLSearchParams(location.search).get('page')||'landing';
+const noop=()=>{};
+const info={item:'동네 헬스장 예약 서비스',ceoName:'김창업',foundedAt:page==='eligibility-fail'?'2010-01-10':'2025-01-10',applicantType:'individual',files:[],team:[],pricing:[]};
+const props={announcement:W.ANNOUNCEMENTS[0],itemInfo:info,onBack:noop,onSubmit:noop,onProceed:noop,onLeave:noop,onGenerate:noop,onFinalize:noop,onGoDashboard:noop,onCheckEligibility:noop,onComplete:noop,disabledTitles:[],docOutcome:page==='final-pass'?'pass':'fail',artifactOutcome:page==='final-pass'?'pass':'fail',setDocOutcome:noop,setArtifactOutcome:noop};
+const components={'intake':W.IntakeForm,'match-progress':W.MatchProgress,'match-results':W.MatchResults,'eligibility-gate':W.EligibilityGate,'eligibility-fail':W.EligibilityGate,'plan-progress':W.PipelineProgress,'plan-form':W.PlanForm,'artifact-progress':W.ArtifactProgress,'artifact-result':W.ArtifactResult,'final-verdict':W.FinalVerdict,'final-pass':W.FinalVerdict,'review':W.ReviewScreen};
+const C=components[page];
+createRoot(document.getElementById('root')).render(<><nav aria-label="화면 검토" style={{padding:10,background:'#fff',display:'flex',flexWrap:'wrap',gap:12,position:'relative',zIndex:100,fontSize:12}}>{names.map(n=><a key={n} href={'?page='+n}>{n}</a>)}</nav>{page==='landing'?<Landing onStart={noop}/>:<WorkspaceShell view={page==='empty'?'dashboard':page} notifyEnabled onToggleNotify={noop} onHome={noop} onDashboard={noop} onNewProject={noop} onLogout={noop}>{C?<C {...props}/>:<Dashboard onNewProject={noop} onOpenProject={noop} notifyEnabled alerts={W.SIMILAR_ANNOUNCEMENT_ALERTS} isNewUser={page==='empty'} onToggleNewUser={noop}/>}</WorkspaceShell>}</>);

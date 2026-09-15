@@ -1,0 +1,23 @@
+{
+  "name": "s-brain-workspace",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --configLoader native",
+    "build": "vite build --configLoader native",
+    "preview": "vite preview --host 127.0.0.1 --configLoader native",
+    "check:render": "node scripts/render-check.mjs",
+    "standalone": "npm run build && node scripts/standalone.mjs"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "vite": "8.2.2",
+    "tailwindcss": "3.4.17",
+    "postcss": "8.5.6",
+    "autoprefixer": "10.4.21"
+  }
+}
