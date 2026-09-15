@@ -51,6 +51,7 @@ from app.models import (
 from app.schemas import (
     ProjectCreateRequest,
     ProjectDetailOut,
+    ProjectOut,
     ProjectStatusOut,
     RetryTaskRequest,
     RetryTaskResponse,
@@ -156,6 +157,26 @@ def _get_or_create_company(db: Session, current_user: User, body: ProjectCreateR
             # 이론상 도달 불가(IntegrityError가 났다는 건 이미 행이 있다는 뜻) — 방어적으로만 둠.
             raise HTTPException(status_code=500, detail='회사 프로필 생성 중 오류가 발생했습니다') from None
     return company
+
+
+@router.get('', response_model=list[ProjectOut])
+def list_my_projects(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """내 프로젝트 목록 — 프론트가 "신규 사용자"인지 "이어서 준비 중인 프로젝트가 있는지"를
+    서버 기준으로 판단하는 데 쓴다(로컬 저장소에 project_id를 기억해두는 임시방편 대신).
+    회사 프로필 자체가 없으면(한 번도 프로젝트를 만든 적 없음) 빈 배열."""
+    company = db.query(Company).filter(Company.user_id == current_user.user_id).first()
+    if company is None:
+        return []
+    projects = (
+        db.query(Project)
+        .filter(Project.company_id == company.company_id)
+        .order_by(Project.created_at.desc())
+        .all()
+    )
+    return [ProjectOut.model_validate(p) for p in projects]
 
 
 @router.post('', response_model=ProjectDetailOut, status_code=201)

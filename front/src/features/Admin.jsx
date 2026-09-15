@@ -1,10 +1,15 @@
-import React,{useState,useMemo} from 'react';
+import React,{useState,useMemo,useEffect} from 'react';
 import {Brand,Icon} from '../components/Icons.jsx';
+import {api,ApiError} from '../api.js';
 
-// 관리자 판별은 .env의 목록으로만 한다 — 브라우저로 내려가는 값이라 시연용 구분이며,
-// 실제 권한 차단은 백엔드가 계정의 역할을 확인하는 방식으로 옮겨야 한다.
-const ADMIN_EMAILS=(import.meta.env.VITE_ADMIN_EMAILS||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
-export function isAdminEmail(email){return !!email&&ADMIN_EMAILS.includes(String(email).toLowerCase())}
+// 관리자 판별은 이제 App.jsx에서 /auth/me가 내려주는 실제 role로 한다(props.user.role).
+// 이 파일 안에서는 이미 관리자로 확인된 사용자만 보고 있다고 가정한다.
+
+// 아래 7개 탭 중 실제 백엔드(/admin/*)가 있는 건 "검증 정책"(policy+checklist),
+// "사용자 관리·FAQ"(users+faqs), "에이전트 테스크"의 Execution별 보기(agent-executions)뿐이다.
+// 나머지(공고 관리/운영 현황/진행 현황/검수 회수 문단, 그리고 에이전트 테스크의 Task별 보기)는
+// 대응하는 API 자체가 없어서(다른 팀원의 오케스트레이터/공고수집 파이프라인 작업 영역) 지금도
+// 아래 예시 데이터 그대로 둔다 — 실제 연동 시점에 이 파일에서 해당 탭만 바꾸면 된다.
 
 const TABS=[['ann','공고 관리'],['ops','운영 현황'],['progress','진행 현황'],['agents','에이전트 테스크'],['policy','검증 정책'],['recovery','검수 회수 문단'],['users','사용자 관리·FAQ']];
 
@@ -86,24 +91,16 @@ const AGENT_ROWS=[
   {name:'검수 (표현)',work:'사업계획서 문장 형식 적합성 검수 및 한국어 윤문. 자체 파인튜닝 모델을 사용',tasks:'2개',recent:'전체 프로젝트',models:['자체 파인튜닝 모델 v1','자체 파인튜닝 모델 v2','자체 파인튜닝 모델 v3 (최신)'],model:'자체 파인튜닝 모델 v3 (최신)',policy:'비용효율 우선'},
 ];
 
-const EXECUTION_ROWS=[
-  {id:'EXEC-1042',agent:'작성',project:'2026 초기창업패키지 매칭',tokens:'8,200',rerun:'최초 실행',rerunTone:'muted',status:'성공',statusTone:'ok'},
-  {id:'EXEC-1041',agent:'구현',project:'지자체 통합공고 매칭',tokens:'3,500',rerun:'선별 재수행',rerunTone:'primary',status:'실패',statusTone:'danger',tone:'danger'},
-  {id:'EXEC-1036',agent:'구현',project:'지자체 통합공고 매칭',tokens:'15,000',rerun:'전체 재실행 (비교용)',rerunTone:'warn',status:'실패',statusTone:'danger',dim:true},
-  {id:'EXEC-1040',agent:'전략',project:'기업마당 매칭',tokens:'2,100',rerun:'선별 재수행',rerunTone:'primary',status:'성공',statusTone:'ok'},
-  {id:'EXEC-1039',agent:'검증-2',project:'기업마당 매칭',tokens:'1,800',rerun:'선별 재수행',rerunTone:'primary',status:'성공',statusTone:'ok'},
-  {id:'EXEC-1038',agent:'검증-1',project:'지자체 통합공고 매칭',tokens:'2,400',rerun:'선별 재수행',rerunTone:'primary',status:'성공',statusTone:'ok'},
-];
+// GET /admin/agent-executions 응답(dict 목록, AgentExecutionOut 고정 스키마가 아니라 유연한 형태)을
+// 이 화면 행 모양으로 바꾼다. project(프로젝트명)는 API가 안 내려줘서 match_id로 대신 표시한다.
+const executionRowFromServer=r=>({
+  id:'EXEC-'+r.execution_id,matchId:r.match_id,agent:r.agent_name,tokens:Number(r.token_usage).toLocaleString(),
+  rerun:r.rerun_type,rerunTone:r.rerun_type==='rerun'?'primary':'muted',
+  status:r.status,statusTone:r.status==='completed'||r.status==='성공'?'ok':'danger',
+  tone:(r.status!=='completed'&&r.status!=='성공')?'danger':undefined,
+});
 
 const TOKEN_VIOLATION_RATES=[{ver:'v1',rate:18,note:'기준'},{ver:'v2',rate:11,note:'▼ -7%p',good:true},{ver:'v3 (사용 중)',rate:6,note:'▼ -5%p',good:true,current:true}];
-
-const CODE_CHECK_DEFS=[
-  {id:1,name:'실행 파일 정상 로드',how:'파일 존재 여부 + 브라우저 렌더링 성공 여부 확인',kind:'정적분석',base:30,on:true},
-  {id:2,name:'반응형 레이아웃 구현',how:'viewport meta·media query 존재 여부 파싱',kind:'정적분석',base:20,on:true},
-  {id:3,name:'접근성 기본 준수',how:'alt 속성·시맨틱 태그·명도 대비 파싱',kind:'정적분석',base:20,on:true},
-  {id:4,name:'콘솔 에러 없음',how:'브라우저 콘솔 로그 스캔',kind:'실행검증',base:20,on:true},
-  {id:5,name:'인포그래픽 포함 여부',how:'이미지·SVG 파일 존재 여부 파싱',kind:'정적분석',base:10,on:false},
-];
 
 const REPRODUCIBILITY=[
   ['평가항목 Rubric 고정','검증-1은 상수로 고정된 rubric 밖의 기준으로는 감점하지 않습니다.','고정됨','muted'],
@@ -125,18 +122,18 @@ const RECOVERY_SEED={
 };
 const RECOVERY_LABELS={pending:'라벨링 대기',labeled:'라벨링 완료',excluded:'동의 없음(제외)'};
 
-const USER_SEED=[
-  {id:1,name:'김도윤',email:'doyun.kim@email.com',joined:'2026-08-12',notify:'수신중',notifyTone:'ok',runs:'2건',archives:'2개',status:'활성',role:'관리자'},
-  {id:2,name:'박서연',email:'seoyeon.park@email.com',joined:'2026-07-02',notify:'알림 꺼짐',notifyTone:'muted',runs:'2건',archives:'3개',status:'활성',role:'일반 유저'},
-  {id:3,name:'이하늘',email:'haneul.lee@email.com',joined:'2026-05-20',notify:'수신중',notifyTone:'ok',runs:'1건',archives:'1개',status:'정지',role:'일반 유저'},
-  {id:4,name:'최민준',email:'minjun.choi@email.com',joined:'2026-01-15',notify:'수신 중단',notifyTone:'muted',runs:'1건',archives:'3개',status:'휴면',role:'일반 유저'},
-];
-
-const FAQ_SEED={
-  '1':{no:3,question:'매칭 알림은 하루 중 몇 시에 오나요?',asker:'김도윤',date:'2026-09-01',answer:'매일 오전 6시에 신규 수집 공고를 기준으로 매칭 알림이 발송됩니다.',visible:true,answered:true},
-  '2':{no:2,question:'정지된 계정은 언제 다시 풀리나요?',asker:'박서연',date:'2026-09-05',answer:'',visible:false,answered:false},
-  '3':{no:1,question:'사업계획서를 다시 받아볼 수 있나요?',asker:'이하늘',date:'2026-08-20',answer:'완료된 프로젝트의 산출물은 프로젝트 관리 > 이력보기에서 언제든 다시 확인하실 수 있습니다.',visible:false,answered:true},
-};
+// GET /admin/users, GET /admin/faqs 응답 -> 이 화면 행 모양. 목업 시절엔 가입일/실행건수/
+// 보관 산출물 컬럼이 있었는데, UserOut엔 그 필드가 없어서(오케스트레이터·프로젝트 집계 쪽
+// 작업 영역) 뺐다. 얼굴 인증(관리자 전환 게이트)은 팀 결정으로 아예 안 하기로 해서
+// 화면에도 넣지 않는다 — role 변경은 바로 반영된다.
+const userRowFromServer=u=>({id:u.user_id,name:u.name,email:u.email,
+  notify:u.notify_enabled?'수신중':'알림 꺼짐',notifyTone:u.notify_enabled?'ok':'muted',
+  status:u.status==='active'?'활성':u.status==='suspended'?'정지':'휴면',statusRaw:u.status,
+  role:u.role==='admin'?'관리자':'일반 유저',roleRaw:u.role});
+// FaqOut엔 작성자 정보가 없어서(faqs 테이블에 user_id는 있지만 관리자 응답에 조인해 내려주지
+// 않음) 목업의 "작성자" 컬럼은 뺐다.
+const faqRowFromServer=(f,idx,total)=>({id:f.faq_id,no:total-idx,question:f.question,
+  date:f.created_at?.slice(0,10),answer:f.answer||'',visible:f.is_visible,answered:f.answer!=null});
 
 const toneText={ok:'text-[var(--ok)]',warn:'text-[var(--warn)]',danger:'text-[var(--danger)]',muted:'text-[var(--muted-fg)]',primary:'text-[var(--primary)]'};
 const toneBg={ok:'bg-[color-mix(in_srgb,var(--ok)_12%,white)] text-[var(--ok)]',warn:'bg-[color-mix(in_srgb,var(--warn)_12%,white)] text-[var(--warn)]',
@@ -532,6 +529,13 @@ function ProgressTab(){
 
 function AgentsTab(){
   const [view,setView]=useState('task');
+  const [executions,setExecutions]=useState(null);
+  const [execError,setExecError]=useState('');
+  useEffect(()=>{
+    if(view!=='execution'||executions!==null)return;
+    api.get('/admin/agent-executions?limit=100').then(rows=>setExecutions(rows.map(executionRowFromServer)))
+      .catch(e=>setExecError(e instanceof ApiError?String(e.detail):'실행 세션을 불러오지 못했어요'));
+  },[view,executions]);
   return (
     <div>
       <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
@@ -597,34 +601,54 @@ function AgentsTab(){
       ):(
         <>
           <h2 className="text-[20px] font-bold mb-4">실행 세션</h2>
-          <Panel>
+          {execError?<p className="text-[13.5px] text-[var(--danger)]">{execError}</p>
+          :executions===null?<p className="text-[13.5px] text-[var(--muted-fg)]">불러오는 중…</p>
+          :(<Panel>
             <div className="grid grid-cols-[1fr_1fr_1.6fr_1fr_1.2fr_0.9fr] text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]">
-              <div className="p-4">세션 ID</div><div className="p-4 text-center">Agent</div><div className="p-4 text-center">프로젝트</div>
+              <div className="p-4">세션 ID</div><div className="p-4 text-center">Agent</div><div className="p-4 text-center">매칭 ID</div>
               <div className="p-4 text-center">토큰 사용량</div><div className="p-4 text-center">재수행 여부</div><div className="p-4 text-center">상태</div>
             </div>
-            {EXECUTION_ROWS.map(r=>(
+            {executions.length===0&&<p className="p-6 text-center text-[13px] text-[var(--muted-fg)]">실행 로그가 아직 없어요.</p>}
+            {executions.map(r=>(
               <div key={r.id} className={'grid grid-cols-[1fr_1fr_1.6fr_1fr_1.2fr_0.9fr] text-[13px] border-t border-[var(--border)] items-center '+
-                (r.tone==='danger'?'bg-[color-mix(in_srgb,var(--danger)_5%,white)] border-l-4 border-l-[var(--danger)] ':'')+(r.dim?'opacity-70':'')}>
+                (r.tone==='danger'?'bg-[color-mix(in_srgb,var(--danger)_5%,white)] border-l-4 border-l-[var(--danger)] ':'')}>
                 <div className="p-4 font-medium">{r.id}</div>
                 <div className="p-4 text-center text-[var(--muted-fg)]">{r.agent}</div>
-                <div className="p-4 text-center text-[var(--muted-fg)]">{r.project}</div>
+                <div className="p-4 text-center text-[var(--muted-fg)]">{r.matchId??'—'}</div>
                 <div className="p-4 text-center text-[var(--muted-fg)]">{r.tokens}</div>
                 <div className={'p-4 text-center font-semibold '+toneText[r.rerunTone]}>{r.rerun}</div>
                 <div className={'p-4 text-center font-semibold '+toneText[r.statusTone]}>{r.status}</div>
               </div>
             ))}
-          </Panel>
-          <p className="mt-3 text-[12px] text-[var(--muted-fg)]"><span className="text-[var(--warn)]">⚠</span> "전체 재실행 (비교용)" 행은 선별 재수행 도입 전 동일 태스크의 실제 비용을 보여주는 참고 기록입니다.</p>
+          </Panel>)}
         </>
       )}
     </div>
   );
 }
 
+// 서버 필드명 <-> 이 화면 상태 키. GET/PUT /admin/policy가 doc_weight/code_weight/... 처럼
+// snake_case로 주고받아서, 화면 안에서는 기존 mock 시절 키(doc/code/plan, threshold/rerun/...)
+// 그대로 쓰고 여기서만 변환한다.
+const policyFromServer=p=>({scores:{doc:p.doc_weight,code:p.code_weight,plan:p.plan_weight},
+  limits:{threshold:p.pass_threshold,rerun:p.rerun_cap,tokenRetry:p.token_retry_cap,recheck:p.deviation_cap}});
+const checklistFromServer=list=>list.map(i=>({id:i.check_item_id,name:i.name,how:i.method,kind:i.category,weight:i.weight,base:i.weight,on:i.enabled}));
+
 function PolicyTab({pushToast}){
-  const [scores,setScores]=useState({doc:70,code:15,plan:15});
-  const [limits,setLimits]=useState({threshold:70,rerun:3,tokenRetry:2,recheck:5});
-  const [items,setItems]=useState(CODE_CHECK_DEFS.map(d=>({...d,weight:d.base})));
+  const [scores,setScores]=useState(null);
+  const [limits,setLimits]=useState(null);
+  const [items,setItems]=useState(null);
+  const [loadError,setLoadError]=useState('');
+
+  useEffect(()=>{
+    Promise.all([api.get('/admin/policy'),api.get('/admin/checklist')])
+      .then(([policy,checklist])=>{const {scores,limits}=policyFromServer(policy);setScores(scores);setLimits(limits);setItems(checklistFromServer(checklist))})
+      .catch(e=>setLoadError(e instanceof ApiError?String(e.detail):'검증 정책을 불러오지 못했어요'));
+  },[]);
+
+  if(loadError)return <div><h1 className="text-[28px] font-bold mb-4">검증 정책</h1><p className="text-[13.5px] text-[var(--danger)]">{loadError}</p></div>;
+  if(!scores||!limits||!items)return <div><h1 className="text-[28px] font-bold mb-4">검증 정책</h1><p className="text-[13.5px] text-[var(--muted-fg)]">불러오는 중…</p></div>;
+
   const scoreSum=Number(scores.doc)+Number(scores.code)+Number(scores.plan);
   const weightSum=items.filter(i=>i.on).reduce((s,i)=>s+Number(i.weight||0),0);
 
@@ -642,24 +666,25 @@ function PolicyTab({pushToast}){
   const toggleItem=id=>setItems(list=>redistribute(list.map(i=>i.id===id?{...i,on:!i.on}:i)));
   const setWeight=(id,v)=>setItems(list=>list.map(i=>i.id===id?{...i,weight:v,base:Number(v)||0}:i));
 
-  const saveScores=()=>{
+  const saveScores=async()=>{
     if(scoreSum!==100){pushToast('배점을 저장하지 못했습니다','문서층·코드 기준·계획서 대조 배점의 합이 100점이어야 합니다. (현재 '+scoreSum+'점)','danger');return}
-    pushToast('배점이 저장되었습니다','문서층 '+scores.doc+'점 · 코드 기준 '+scores.code+'점 · 계획서 대조 '+scores.plan+'점으로 반영됩니다.','info');
+    try{
+      await api.put('/admin/policy/scores',{doc_weight:Number(scores.doc),code_weight:Number(scores.code),plan_weight:Number(scores.plan)});
+      pushToast('배점이 저장되었습니다','문서층 '+scores.doc+'점 · 코드 기준 '+scores.code+'점 · 계획서 대조 '+scores.plan+'점으로 반영됩니다.','info');
+    }catch(e){pushToast('배점을 저장하지 못했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
   };
-  const saveLimits=()=>{
-    const violations=[];
-    Object.keys(SCORE_HISTORY).forEach(id=>{
-      DEVIATION_CATEGORIES.forEach(([key,label])=>{
-        const r=roundDelta(SCORE_HISTORY[id][key]);
-        if(r&&r.delta>Number(limits.recheck))violations.push(SCORE_HISTORY[id].title+' · '+label+' — 1회 '+r.round1+'점 → 2회 '+r.round2+'점 (Δ'+r.delta+'점)');
-      });
-    });
-    violations.forEach(v=>pushToast('재채점 편차 상한 초과',v+' > 상한 '+limits.recheck+'점','danger'));
-    pushToast('판정 기준이 저장되었습니다','통과 Threshold '+limits.threshold+'점 · 재수행 상한 '+limits.rerun+'회 · 검수 재시도 상한 '+limits.tokenRetry+'회 · 재채점 편차 상한 '+limits.recheck+'점으로 반영됩니다.','info');
+  const saveLimits=async()=>{
+    try{
+      await api.put('/admin/policy/thresholds',{pass_threshold:Number(limits.threshold),rerun_cap:Number(limits.rerun),deviation_cap:Number(limits.recheck),token_retry_cap:Number(limits.tokenRetry)});
+      pushToast('판정 기준이 저장되었습니다','통과 Threshold '+limits.threshold+'점 · 재수행 상한 '+limits.rerun+'회 · 검수 재시도 상한 '+limits.tokenRetry+'회 · 재채점 편차 상한 '+limits.recheck+'점으로 반영됩니다.','info');
+    }catch(e){pushToast('판정 기준을 저장하지 못했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
   };
-  const saveItems=()=>{
+  const saveItems=async()=>{
     if(weightSum!==100){pushToast('검증 항목을 저장하지 못했습니다','사용 중인 항목의 가중치 합이 100점이어야 합니다. (현재 '+weightSum+'점) 체크박스를 한 번 더 토글하면 100점에 맞게 재배분됩니다.','danger');return}
-    pushToast('검증 항목이 저장되었습니다',items.filter(i=>i.on).length+' / '+items.length+'개 항목이 사용되며 가중치 합계 100점으로 반영됩니다.','info');
+    try{
+      await api.put('/admin/checklist',items.map(i=>({check_item_id:i.id,weight:Number(i.weight),enabled:i.on})));
+      pushToast('검증 항목이 저장되었습니다',items.filter(i=>i.on).length+' / '+items.length+'개 항목이 사용되며 가중치 합계 100점으로 반영됩니다.','info');
+    }catch(e){pushToast('검증 항목을 저장하지 못했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
   };
 
   return (
@@ -861,34 +886,53 @@ function RecoveryTab({pushToast}){
 }
 
 function UsersTab({pushToast}){
-  const [users,setUsers]=useState(USER_SEED);
-  const [pendingRole,setPendingRole]=useState(null);
-  const [faq,setFaq]=useState(FAQ_SEED);
+  const [users,setUsers]=useState(null);
+  const [usersError,setUsersError]=useState('');
+  const [faq,setFaq]=useState(null);
+  const [faqError,setFaqError]=useState('');
   const [faqId,setFaqId]=useState(null);
   const [answer,setAnswer]=useState('');
   const [query,setQuery]=useState('');
 
-  const changeRole=(id,role)=>{
-    if(role==='관리자'){setPendingRole({id,role});return}
-    setUsers(list=>list.map(u=>u.id===id?{...u,role}:u));
+  useEffect(()=>{
+    api.get('/admin/users').then(rows=>setUsers(rows.map(userRowFromServer))).catch(e=>setUsersError(e instanceof ApiError?String(e.detail):'사용자 목록을 불러오지 못했어요'));
+    api.get('/admin/faqs').then(rows=>setFaq(rows.map((f,i)=>faqRowFromServer(f,i,rows.length)))).catch(e=>setFaqError(e instanceof ApiError?String(e.detail):'FAQ를 불러오지 못했어요'));
+  },[]);
+
+  const changeRole=(id,roleLabel)=>saveRole(id,roleLabel==='관리자'?'admin':'user');
+  const saveRole=async(id,roleRaw)=>{
+    try{
+      const updated=await api.put('/admin/users/'+id,{role:roleRaw});
+      setUsers(list=>list.map(u=>u.id===id?userRowFromServer(updated):u));
+      if(roleRaw==='admin')pushToast('관리자 권한이 부여되었습니다','','info');
+    }catch(e){pushToast('권한 변경에 실패했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
   };
-  const confirmRole=()=>{
-    setUsers(list=>list.map(u=>u.id===pendingRole.id?{...u,role:'관리자'}:u));
-    setPendingRole(null);
-    pushToast('관리자 권한이 부여되었습니다','보안 정책에 따라 얼굴 등록 절차가 필요합니다.','info');
+  const toggleStatus=async(u)=>{
+    const nextStatus=u.statusRaw==='suspended'?'active':'suspended';
+    try{
+      const updated=await api.put('/admin/users/'+u.id,{status:nextStatus});
+      setUsers(list=>list.map(x=>x.id===u.id?userRowFromServer(updated):x));
+    }catch(e){pushToast('상태 변경에 실패했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
   };
-  const openFaq=id=>{setFaqId(id);setAnswer(faq[id].answer)};
-  const saveAnswer=id=>{
+  const openFaq=id=>{setFaqId(id);setAnswer(faq.find(f=>f.id===id).answer)};
+  const saveAnswer=async(id)=>{
     if(!answer.trim()){pushToast('답변을 저장하지 못했습니다','답변 내용을 입력해주세요.','danger');return}
-    setFaq(s=>({...s,[id]:{...s[id],answer:answer.trim(),answered:true}}));
-    pushToast('답변이 저장되었습니다','노출로 전환해야 사용자에게 공개됩니다.','info');
+    const cur=faq.find(f=>f.id===id);
+    try{
+      const updated=await api.put('/admin/faqs/'+id,{answer:answer.trim(),is_visible:cur.visible});
+      setFaq(list=>list.map(f=>f.id===id?{...f,answer:updated.answer,answered:true,visible:updated.is_visible}:f));
+      pushToast('답변이 저장되었습니다','노출로 전환해야 사용자에게 공개됩니다.','info');
+    }catch(e){pushToast('답변을 저장하지 못했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
   };
-  const toggleVisible=id=>{
-    const item=faq[id];
+  const toggleVisible=async(id)=>{
+    const item=faq.find(f=>f.id===id);
     if(!item.visible&&!item.answered){pushToast('노출로 전환하지 못했습니다','답변을 먼저 저장한 뒤 노출로 전환할 수 있습니다.','danger');return}
-    setFaq(s=>({...s,[id]:{...s[id],visible:!s[id].visible}}));
+    try{
+      const updated=await api.put('/admin/faqs/'+id,{answer:item.answer,is_visible:!item.visible});
+      setFaq(list=>list.map(f=>f.id===id?{...f,visible:updated.is_visible}:f));
+    }catch(e){pushToast('노출 전환에 실패했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
   };
-  const shown=users.filter(u=>(u.name+u.email).includes(query));
+  const shown=(users||[]).filter(u=>(u.name+u.email).includes(query));
 
   return (
     <div>
@@ -898,19 +942,18 @@ function UsersTab({pushToast}){
         <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="이름 또는 이메일 검색"
           className="border border-[var(--border)] rounded-lg px-3 py-2 text-[13.5px] w-56 outline-none focus:border-[var(--primary)]"/>
       </div>
-      <Panel>
-        <div className="grid grid-cols-[1.8fr_0.75fr_0.85fr_0.65fr_0.8fr_0.7fr_0.9fr_170px] text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]">
-          <div className="p-4">이름 / 이메일</div><div className="p-4 text-center">가입일</div><div className="p-4 text-center">매칭 알림</div><div className="p-4 text-center">실행건수</div>
-          <div className="p-4 text-center">보관 산출물</div><div className="p-4 text-center">상태</div><div className="p-4 text-center">권한</div><div className="p-4"/>
+      {usersError?<p className="text-[13.5px] text-[var(--danger)]">{usersError}</p>
+      :users===null?<p className="text-[13.5px] text-[var(--muted-fg)]">불러오는 중…</p>
+      :(<Panel>
+        <div className="grid grid-cols-[1.8fr_0.9fr_0.8fr_0.9fr_170px] text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]">
+          <div className="p-4">이름 / 이메일</div><div className="p-4 text-center">매칭 알림</div>
+          <div className="p-4 text-center">상태</div><div className="p-4 text-center">권한</div><div className="p-4"/>
         </div>
         {shown.map(u=>(
-          <div key={u.id} className={'grid grid-cols-[1.8fr_0.75fr_0.85fr_0.65fr_0.8fr_0.7fr_0.9fr_170px] text-[13px] border-t border-[var(--border)] items-center '+
+          <div key={u.id} className={'grid grid-cols-[1.8fr_0.9fr_0.8fr_0.9fr_170px] text-[13px] border-t border-[var(--border)] items-center '+
             (u.status==='정지'?'bg-[color-mix(in_srgb,var(--danger)_5%,white)] border-l-4 border-l-[var(--danger)] ':'')+(u.status==='휴면'?'opacity-60':'')}>
             <div className="p-4"><p className="font-medium">{u.name}</p><p className="text-[12px] text-[var(--muted-fg)]">{u.email}</p></div>
-            <div className="p-4 text-center text-[var(--muted-fg)]">{u.joined}</div>
             <div className={'p-4 text-center font-semibold '+toneText[u.notifyTone]}>{u.notify}</div>
-            <div className="p-4 text-center text-[var(--muted-fg)]">{u.runs}</div>
-            <div className="p-4 text-center text-[var(--muted-fg)]">{u.archives}</div>
             <div className={'p-4 text-center font-semibold '+(u.status==='활성'?'text-[var(--ok)]':u.status==='정지'?'text-[var(--danger)]':'text-[var(--warn)]')}>{u.status}</div>
             <div className="p-4 flex justify-center">
               <select value={u.role} onChange={e=>changeRole(u.id,e.target.value)} aria-label={u.name+' 권한'}
@@ -919,57 +962,45 @@ function UsersTab({pushToast}){
               </select>
             </div>
             <div className="p-4 flex items-center justify-center gap-3">
-              <button className="text-[12.5px] font-semibold text-[var(--primary)] hover:underline">상세</button>
-              <button className={'text-[12.5px] font-semibold hover:underline '+(u.status==='정지'?'text-[var(--ok)]':'text-[var(--muted-fg)] hover:text-[var(--danger)]')}>
+              <button onClick={()=>toggleStatus(u)} className={'text-[12.5px] font-semibold hover:underline '+(u.status==='정지'?'text-[var(--ok)]':'text-[var(--muted-fg)] hover:text-[var(--danger)]')}>
                 {u.status==='정지'?'정지 해제':'정지'}
               </button>
             </div>
           </div>
         ))}
-      </Panel>
-      <p className="mt-3 text-[12px] text-[var(--muted-fg)]"><span className="text-[var(--warn)]">⚠</span> 관리자로 변경하면 보안을 위해 얼굴 등록이 필요합니다.</p>
+        {shown.length===0&&<p className="p-6 text-center text-[13px] text-[var(--muted-fg)]">검색 결과가 없어요.</p>}
+      </Panel>)}
 
       <div className="mt-12">
         <h2 className="text-[20px] font-bold mb-4">FAQ 관리</h2>
-        <Panel>
-          <div className="grid grid-cols-[0.5fr_2.6fr_1fr_1fr_1fr_0.8fr] text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]">
-            <div className="p-4 text-center">번호</div><div className="p-4">질문</div><div className="p-4 text-center">작성자</div>
+        {faqError?<p className="text-[13.5px] text-[var(--danger)]">{faqError}</p>
+        :faq===null?<p className="text-[13.5px] text-[var(--muted-fg)]">불러오는 중…</p>
+        :(<Panel>
+          <div className="grid grid-cols-[0.5fr_3.4fr_1fr_1fr_0.8fr] text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]">
+            <div className="p-4 text-center">번호</div><div className="p-4">질문</div>
             <div className="p-4 text-center">작성일</div><div className="p-4 text-center">상태</div><div className="p-4 text-center">관리</div>
           </div>
-          {Object.keys(faq).map(id=>{
-            const f=faq[id];
-            return (
-              <div key={id} className="grid grid-cols-[0.5fr_2.6fr_1fr_1fr_1fr_0.8fr] text-[13px] border-t border-[var(--border)] items-center">
-                <div className="p-4 text-center text-[var(--muted-fg)]">{f.no}</div>
-                <div className="p-4 font-medium truncate">{f.question}</div>
-                <div className="p-4 text-center text-[var(--muted-fg)]">{f.asker}</div>
-                <div className="p-4 text-center text-[var(--muted-fg)]">{f.date}</div>
-                <div className={'p-4 text-center font-semibold '+(f.visible?'text-[var(--ok)]':'text-[var(--muted-fg)]')}>{f.visible?'노출중':f.answered?'비노출':'답변 대기'}</div>
-                <div className="p-4 flex justify-center">
-                  <button onClick={()=>openFaq(id)} className="text-[12.5px] font-semibold text-[var(--primary)] hover:underline">답변</button>
-                </div>
+          {faq.map(f=>(
+            <div key={f.id} className="grid grid-cols-[0.5fr_3.4fr_1fr_1fr_0.8fr] text-[13px] border-t border-[var(--border)] items-center">
+              <div className="p-4 text-center text-[var(--muted-fg)]">{f.no}</div>
+              <div className="p-4 font-medium truncate">{f.question}</div>
+              <div className="p-4 text-center text-[var(--muted-fg)]">{f.date}</div>
+              <div className={'p-4 text-center font-semibold '+(f.visible?'text-[var(--ok)]':'text-[var(--muted-fg)]')}>{f.visible?'노출중':f.answered?'비노출':'답변 대기'}</div>
+              <div className="p-4 flex justify-center">
+                <button onClick={()=>openFaq(f.id)} className="text-[12.5px] font-semibold text-[var(--primary)] hover:underline">답변</button>
               </div>
-            );
-          })}
-        </Panel>
+            </div>
+          ))}
+          {faq.length===0&&<p className="p-6 text-center text-[13px] text-[var(--muted-fg)]">등록된 질문이 없어요.</p>}
+        </Panel>)}
         <p className="mt-3 text-[11px] text-[var(--muted-fg)]">답변이 없는 질문은 자동으로 비노출이며, 답변을 저장한 뒤 노출로 전환해야 공개됩니다.</p>
       </div>
 
-      {pendingRole&&(
-        <Modal title="관리자 권한 변경" onClose={()=>setPendingRole(null)}>
-          <p className="text-[13.5px] text-[var(--muted-fg)] leading-relaxed mb-5">관리자로 변경하려면 보안을 위해 얼굴 등록이 필요합니다. 지금 등록을 진행하시겠습니까?</p>
-          <div className="flex justify-end gap-2">
-            <button onClick={()=>setPendingRole(null)} className="rounded-xl border border-[var(--border)] px-4 py-2 text-[13px] font-semibold text-[var(--muted-fg)] hover:bg-[var(--bg)]">취소</button>
-            <button onClick={confirmRole} className="rounded-xl bg-[var(--primary)] text-white px-4 py-2 text-[13px] font-semibold hover:bg-[var(--primary-dim)]">얼굴 등록하러 가기</button>
-          </div>
-        </Modal>
-      )}
-
-      {faqId&&(()=>{
-        const f=faq[faqId];
+      {faqId&&faq&&(()=>{
+        const f=faq.find(x=>x.id===faqId);
         return (
           <Modal title="질문 상세 · 답변" onClose={()=>setFaqId(null)}>
-            <p className="text-[12.5px] text-[var(--muted-fg)] mb-4">{f.asker} · {f.date}</p>
+            <p className="text-[12.5px] text-[var(--muted-fg)] mb-4">{f.date}</p>
             <div className="rounded-xl bg-[var(--muted)] p-3.5 mb-4"><p className="text-[13.5px] font-medium">{f.question}</p></div>
             <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1.5">답변</p>
             <textarea rows={4} value={answer} onChange={e=>setAnswer(e.target.value)} placeholder="답변을 입력하세요"

@@ -1,5 +1,6 @@
 import React,{useState,useRef,useEffect} from 'react';
 import {Icon} from './Icons.jsx';
+import {api,ApiError} from '../api.js';
 
 const GOOGLE_CLIENT_ID=import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
@@ -50,6 +51,26 @@ function StepSuccess({account}){
       <span className="inline-flex items-center justify-center w-14 h-14 rounded-full mb-4 bg-[color-mix(in_srgb,var(--primary)_12%,white)] text-[var(--primary)]"><Icon name="check" size={28}/></span>
       <h2 id="login-title" className="font-extrabold text-[18px]">{account?`${account.name}님 환영해요`:'로그인되었어요'}</h2>
       <p className="text-[13px] text-[var(--muted-fg)] mt-1">잠시 후 S-Brain으로 돌아갑니다…</p>
+    </div>
+  );
+}
+
+function StepLoading(){
+  return (
+    <div className="text-center py-10">
+      <span className="inline-block w-6 h-6 rounded-full border-2 border-[var(--muted)] border-t-[var(--primary)] animate-spin"/>
+      <p className="text-[13px] text-[var(--muted-fg)] mt-4">로그인 확인 중…</p>
+    </div>
+  );
+}
+
+function StepError({message,onRetry}){
+  return (
+    <div className="text-center py-4">
+      <span className="inline-flex items-center justify-center w-14 h-14 rounded-full mb-4 bg-[color-mix(in_srgb,#dc2626_10%,white)] text-[#dc2626]"><Icon name="close" size={28}/></span>
+      <h2 id="login-title" className="font-extrabold text-[18px]">로그인에 실패했어요</h2>
+      <p className="text-[13px] text-[var(--muted-fg)] mt-1 leading-relaxed">{message}</p>
+      <button onClick={onRetry} className="w-full mt-6 rounded-xl bg-[var(--primary)] text-white py-3 text-[14.5px] font-semibold hover:bg-[var(--primary-dim)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">다시 시도하기</button>
     </div>
   );
 }
@@ -136,21 +157,43 @@ export function UserPill({user}){
 export function LoginModal({open,onClose,onSuccess}){
   const dialogRef=useRef(null);
   const closeBtnRef=useRef(null);
-  const [step,setStep]=useState('method'); // 'method' | 'consent' | 'success'
+  const [step,setStep]=useState('method'); // 'method' | 'consent' | 'success' | 'error'
   const [account,setAccount]=useState(null);
+  const [errorMsg,setErrorMsg]=useState('');
   // 약관 동의는 "최초 로그인 시"만 받는다 — 이 세션에서 이미 한 번 동의했다면
-  // (로그아웃 후 재로그인 등) 다시 묻지 않고 바로 완료 처리한다.
+  // (로그아웃 후 재로그인 등) 다시 묻지 않고 바로 완료 처리한다. id_token은 백엔드
+  // 검증(POST /auth/google)에 실제로 보내야 하니 credential 자체도 같이 들고 있는다.
   const [hasAgreedBefore,setHasAgreedBefore]=useState(false);
+  const [lastConsent,setLastConsent]=useState({aiTrainingAgreed:false,notifyAgreed:true});
+  const credentialRef=useRef(null);
 
-  useEffect(()=>{if(!open)return;setStep('method');setAccount(null)},[open]);
+  useEffect(()=>{if(!open)return;setStep('method');setAccount(null);setErrorMsg('')},[open]);
 
-  const finishLogin=(acc,consent)=>{setAccount(acc);setHasAgreedBefore(true);setStep('success');onSuccess(acc,consent)};
+  // 실제 인증은 여기서 끝난다 — id_token을 백엔드로 보내 서명 검증 + 세션 쿠키 발급을
+  // 받고, 화면엔 그 결과(UserOut, role 포함)를 반영한다. 로컬 디코드값은 표시용일 뿐이다.
+  const finishLogin=async(consent)=>{
+    setStep('loading');
+    try{
+      const res=await api.post('/auth/google',{
+        id_token:credentialRef.current,
+        ai_training_agreed:consent.aiTrainingAgreed,
+        notify_agreed:consent.notifyAgreed,
+      });
+      setLastConsent(consent);setHasAgreedBefore(true);
+      setAccount(res.user);setStep('success');
+      onSuccess(res.user,consent);
+    }catch(e){
+      const msg=e instanceof ApiError?(typeof e.detail==='string'?e.detail:'로그인에 실패했어요'):'서버에 연결할 수 없어요';
+      setErrorMsg(msg);setStep('error');
+    }
+  };
   const handleCredential=credential=>{
-    console.log('구글 ID 토큰:',credential);
+    credentialRef.current=credential;
     const {name,email,picture}=decodeIdToken(credential);
     const acc={name:name||email.split('@')[0],email,picture};
-    if(hasAgreedBefore){finishLogin(acc);return}
-    setAccount(acc);setStep('consent');
+    setAccount(acc);
+    if(hasAgreedBefore){finishLogin(lastConsent);return}
+    setStep('consent');
   };
 
   useEffect(()=>{
@@ -186,8 +229,10 @@ export function LoginModal({open,onClose,onSuccess}){
           <Icon name="close" size={20}/>
         </button>
         {step==='method'&&<StepMethod onCredential={handleCredential}/>}
-        {step==='consent'&&<StepConsent onAgree={consent=>finishLogin(account,consent)}/>}
+        {step==='consent'&&<StepConsent onAgree={finishLogin}/>}
+        {step==='loading'&&<StepLoading/>}
         {step==='success'&&<StepSuccess account={account}/>}
+        {step==='error'&&<StepError message={errorMsg} onRetry={()=>setStep('method')}/>}
       </div>
     </div>
   );

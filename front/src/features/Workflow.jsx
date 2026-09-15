@@ -1,6 +1,7 @@
 import React, {useState,useRef,useEffect} from 'react';
 import Preparation from '../components/Preparation.jsx';
 import {Icon} from '../components/Icons.jsx';
+import {api,ApiError} from '../api.js';
 function FloatingInput({inputRef,type,value,onChange,label}){
   return <label className="block text-[14px] text-[var(--muted-fg)]"><span className="block mb-2">{label}</span><input ref={inputRef} type={type} value={value} onChange={onChange} onInput={onChange} onBlur={onChange} className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg)]"/></label>;
 }
@@ -168,17 +169,48 @@ function IntakeForm({ onSubmit, onBack, backLabel = '처음으로 돌아가기' 
   const teamValid = noTeam || team.every((r) => r.name.trim() && r.role.trim() && r.experience.trim());
   const pricingValid = pricing.every((r) => r.item.trim() && r.price.trim());
   const valid = applicantValid && companyValid && ideaValid && teamValid && pricingValid;
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const APPLICANT_LABELS = { preliminary: '예비창업자', individual: '개인사업자', corp: '법인' };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!valid) return;
-    onSubmit({
-      applicantType, item, files,
-      ceoName: isPreliminary ? '' : ceoName,
-      foundedAt: isPreliminary ? '' : foundedAt,
-      team: noTeam ? [] : team,
-      pricing,
-    });
+    if (!valid || submitting) return;
+    setSubmitError('');
+    setSubmitting(true);
+    // POST /projects — 실제로 DB에 회사/아이템/팀/단가를 적재한다(다음 화면인 공고
+    // 매칭·계획서·산출물 생성은 오케스트레이터 API가 아직 없어 여전히 데모 데이터로 이어진다).
+    // start_type은 백엔드 필드명이 "온라인/오프라인/전자상거래" 예시라 신청자 유형과 뜻이
+    // 완전히 같진 않지만, 이 폼엔 그 구분이 따로 없어 신청자 유형 라벨을 그대로 보낸다.
+    // notify_region/notify_industry도 이 폼엔 입력칸이 없어 일반적인 기본값을 보낸다.
+    const payload = {
+      start_type: APPLICANT_LABELS[applicantType] || applicantType,
+      ceo_name: isPreliminary ? null : ceoName,
+      founded_at: isPreliminary ? null : (foundedAt || null),
+      description: item,
+      notify_region: '전국',
+      notify_industry: '기타',
+      team_members: noTeam ? [] : team.map((r) => ({ name: r.name, role: r.role, experience: r.experience })),
+      pricing_items: pricing.map((r) => ({ service_name: r.item, unit_price: Number(String(r.price).replace(/[^0-9.]/g, '')) || null })),
+    };
+    const form = new FormData();
+    form.append('payload', JSON.stringify(payload));
+    files.forEach((f) => form.append('files', f));
+    try {
+      const created = await api.post('/projects', form);
+      onSubmit({
+        applicantType, item, files,
+        ceoName: isPreliminary ? '' : ceoName,
+        foundedAt: isPreliminary ? '' : foundedAt,
+        team: noTeam ? [] : team,
+        pricing,
+        projectId: created.project_id,
+      });
+    } catch (err) {
+      setSubmitError(err instanceof ApiError ? String(err.detail) : '서버에 연결할 수 없어요. 로그인이 돼 있는지 확인해주세요.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -271,10 +303,11 @@ function IntakeForm({ onSubmit, onBack, backLabel = '처음으로 돌아가기' 
           </div>
         </div>
 
-        <button type="submit" disabled={!valid}
+        <button type="submit" disabled={!valid || submitting}
           className="w-full rounded-xl bg-[var(--primary)] text-white py-3.5 text-[15px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--primary-dim)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-          맞는 공고 찾기
+          {submitting ? '등록하는 중…' : '맞는 공고 찾기'}
         </button>
+        {submitError && <p className="mt-2 text-[12.5px] text-[var(--danger)] text-center">{submitError}</p>}
         {!valid && (
           <p className="mt-2 text-[12.5px] text-[var(--muted-fg)] text-center">
             {!applicantValid ? '신청자 유형을 선택해주세요'
