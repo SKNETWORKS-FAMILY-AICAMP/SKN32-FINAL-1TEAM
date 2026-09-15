@@ -22,6 +22,7 @@ Agent를 실제로 호출하지 않고, 각 단계가 끝났을 때 남았을 �
 기능정의서 G-02: "이전 결과는 삭제하지 않고 점수 변화 이력으로 보존한다").
 """
 import argparse
+import datetime
 import decimal
 import os
 import sys
@@ -35,6 +36,7 @@ from app.models import (
     Artifact,
     ArtifactScoreReason,
     BusinessPlan,
+    Company,
     EligibilityCheck,
     FormatFinding,
     MatchResult,
@@ -157,6 +159,90 @@ def _ensure_verification_policy(db) -> VerificationPolicy:
     return policy
 
 
+# ---------------------------------------------------------------------------
+# 자격판정 더미 로직 (G-01) — [2026-09-15, 프론트 통합 임시 구현]
+# ---------------------------------------------------------------------------
+# 예전엔 EligibilityCheck(passed=True)로 무조건 통과만 냈는데, 그러면 EligibilityGate
+# 화면의 불통과/미결정 분기를 실제로는 절대 볼 수 없었다(프론트 확인 결과). notices
+# 테이블엔 신청자격을 구조화된 컬럼으로 담을 곳이 없어서(target_text가 자유 텍스트
+# 설명뿐이라), seed_dummy_notices.py가 만든 6개 공고에 한해 이 표에 신청자격을 흉내낸
+# 규칙을 하드코딩해뒀다 — 나중에 공고 수집 파이프라인이 구조화된 자격요건을 내려주게
+# 되면 이 표는 통째로 걷어내고 실제 값으로 바꾸면 된다.
+#
+# applicant_type: '예비창업자'(company.founded_at이 NULL이어야 통과) |
+#   '사업자'(founded_at이 있어야 통과, age_limit_years가 있으면 업력도 그 안이어야
+#   함) | '제한없음'(항상 통과).
+# unverifiable: IntakeForm이 아예 묻지 않는 조건이라 통과/불통과를 정할 수 없는 항목
+#   설명 — 다른 구조화 조건이 전부 통과인데 이게 하나라도 있으면 그 공고는
+#   "미결정"(undecidable)이 된다.
+_DUMMY_ELIGIBILITY_RULES = {
+    'kstartup:PBLN_0001': dict(applicant_type='예비창업자', age_limit_years=None, unverifiable=()),
+    'kstartup:PBLN_0002': dict(applicant_type='사업자', age_limit_years=3, unverifiable=()),
+    'kstartup:PBLN_0003': dict(applicant_type='예비창업자', age_limit_years=None, unverifiable=()),
+    'bizinfo:PBLN_1001': dict(
+        applicant_type='제한없음', age_limit_years=None,
+        unverifiable=('소상공인(매출액·상시근로자 수 기준) 해당 여부',),
+    ),
+    'bizinfo:PBLN_1002': dict(
+        applicant_type='사업자', age_limit_years=None,
+        unverifiable=('수출 실적 보유 여부',),
+    ),
+    'bizinfo:PBLN_1003': dict(
+        applicant_type='사업자', age_limit_years=None,
+        unverifiable=('비수도권 소재 여부',),
+    ),
+}
+
+
+def _years_since(founded_at: datetime.date, today: datetime.date) -> int:
+    years = today.year - founded_at.year
+    if (today.month, today.day) < (founded_at.month, founded_at.day):
+        years -= 1
+    return years
+
+
+def _evaluate_dummy_eligibility(
+    company: Company, notice: Notice,
+) -> tuple[bool, bool, list[str] | None, list[str] | None]:
+    """공고 하나에 대해 회사 프로필(company)이 신청 자격을 충족하는지 더미로 평가한다.
+    구조화 조건(신청자유형·업력·접수기간)은 실제로 비교해서 판정하고, IntakeForm이
+    아예 묻지 않는 조건(_DUMMY_ELIGIBILITY_RULES의 unverifiable)은 "미결정"으로 뺀다.
+    반환값은 EligibilityCheck 컬럼과 그대로 대응한다: (passed, undecidable,
+    failed_conditions, missing_inputs)."""
+    rule = _DUMMY_ELIGIBILITY_RULES.get(notice.notice_id)
+    if rule is None:
+        # 표에 없는 공고(수동으로 만든 테스트용 notice 등) — 조건을 모르니 무조건 통과 처리.
+        return True, False, None, None
+
+    failed_conditions: list[str] = []
+    today = datetime.date.today()
+
+    is_pre_founding = company.founded_at is None
+    age_years = None if is_pre_founding else _years_since(company.founded_at, today)
+
+    applicant_type = rule['applicant_type']
+    if applicant_type == '예비창업자' and not is_pre_founding:
+        failed_conditions.append('신청대상: 예비창업자만 지원 가능 — 설립일자가 입력되어 있어 기업으로 판단됨')
+    elif applicant_type == '사업자':
+        if is_pre_founding:
+            failed_conditions.append('신청대상: 사업자(설립 이력 있는 기업)만 지원 가능 — 예비창업자로 판단됨')
+        elif rule['age_limit_years'] is not None and age_years > rule['age_limit_years']:
+            failed_conditions.append(
+                f"업력 상한: 창업 {rule['age_limit_years']}년 이내만 지원 가능 — 현재 업력 {age_years}년"
+            )
+
+    if notice.apply_end is not None and today > notice.apply_end:
+        failed_conditions.append(f'접수기간: {notice.apply_end} 마감 — 접수 종료된 공고')
+
+    missing_inputs = list(rule['unverifiable'])
+
+    if failed_conditions:
+        return False, False, failed_conditions, (missing_inputs or None)
+    if missing_inputs:
+        return False, True, None, missing_inputs
+    return True, False, None, None
+
+
 def seed_dummy_pipeline(
     db,
     project_id: int,
@@ -206,8 +292,10 @@ def seed_dummy_pipeline(
         if notice is None:
             raise ValueError('notices 테이블이 비어 있습니다 — 먼저 python seed_dummy_notices.py 를 실행하세요')
         notice_id = notice.notice_id
-    elif db.query(Notice).filter(Notice.notice_id == notice_id).one_or_none() is None:
-        raise ValueError(f'notice_id={notice_id!r} 인 공고가 없습니다')
+    else:
+        notice = db.query(Notice).filter(Notice.notice_id == notice_id).one_or_none()
+        if notice is None:
+            raise ValueError(f'notice_id={notice_id!r} 인 공고가 없습니다')
 
     doc_score = decimal.Decimal(str(doc_score))
     artifact_score = decimal.Decimal(str(artifact_score))
@@ -232,12 +320,17 @@ def seed_dummy_pipeline(
     db.add(match)
     db.flush()  # match.match_id 확보
 
-    # 2) 자격판정 (G-01) — passed=True인 정상 흐름. undecidable/failed_conditions는
-    #    이 성공 케이스에선 안 쓰지만(둘 다 기본값 False/NULL), 실패 케이스를 직접
-    #    만들어보고 싶으면 EligibilityCheck(..., passed=False, undecidable=True,
-    #    missing_inputs=[...]) 처럼 넣으면 된다 — verify_new_schema_mysql.py에 실제
-    #    예시가 있다.
-    db.add(EligibilityCheck(match_id=match.match_id, passed=True))
+    # 2) 자격판정 (G-01) — _DUMMY_ELIGIBILITY_RULES(공고별 더미 신청자격)로 회사
+    #    프로필(company.founded_at 기준 예비창업자/사업자 판정 + 업력 + 접수기간)을
+    #    실제로 비교해서 통과/불통과/미결정 세 갈래로 나눈다. 이전엔 무조건
+    #    passed=True로 고정돼 있어서 EligibilityGate의 불통과/미결정 분기를 화면에서
+    #    볼 방법이 없었다.
+    company = db.get(Company, project.company_id)
+    elig_passed, elig_undecidable, elig_failed, elig_missing = _evaluate_dummy_eligibility(company, notice)
+    db.add(EligibilityCheck(
+        match_id=match.match_id, passed=elig_passed, undecidable=elig_undecidable,
+        failed_conditions=elig_failed, missing_inputs=elig_missing,
+    ))
 
     # 3) 사업계획서 (문서층, T-W1~W3 산출물)
     plan = BusinessPlan(match_id=match.match_id, doc_score=doc_score, threshold=threshold)

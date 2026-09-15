@@ -2,11 +2,61 @@ import React,{useState,useRef,useEffect} from 'react';
 import {Icon} from './Icons.jsx';
 
 const GOOGLE_CLIENT_ID=import.meta.env.VITE_GOOGLE_CLIENT_ID;
+// backend_decisions.md #4 확정값: 백엔드 http://localhost:8000 (app/security.py의
+// set_session_cookie 주석 참고 — localhost/127.0.0.1은 SameSite 판정상 서로 다른
+// site라 쿠키가 안 실려갈 수 있어서, 로컬 개발은 프론트·백엔드 둘 다 localhost로
+// 맞추기로 했다). 개발 중 다른 주소를 쓰려면 front/.env에 VITE_API_BASE로 덮어쓴다.
+const API_BASE=import.meta.env.VITE_API_BASE||'http://localhost:8000';
 
-// Decoded only to show the name/email — the backend must verify the token's signature.
+// Decoded only to show the name/email before the backend responds — the backend still
+// verifies the token's signature server-side; this is just for the immediate UI update.
 function decodeIdToken(token){
   const b64=token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
   return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(b64),c=>c.charCodeAt(0))));
+}
+
+// POST /auth/google 호출 — 성공하면 백엔드가 만든 실제 UserOut을 돌려준다(로컬 디코딩 값이 아님).
+// 세션은 httpOnly 쿠키로 내려오므로 여기서 토큰을 따로 저장할 필요가 없다.
+async function loginWithGoogle(idToken,consent){
+  const res=await fetch(`${API_BASE}/auth/google`,{
+    method:'POST',
+    credentials:'include',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id_token:idToken,aiTrainingAgreed:!!consent.aiTrainingAgreed,notifyAgreed:consent.notifyAgreed!==false}),
+  });
+  if(!res.ok){
+    const body=await res.json().catch(()=>({}));
+    throw new Error(body.detail||`로그인 요청이 실패했어요 (${res.status})`);
+  }
+  return res.json(); // GoogleLoginResponse: {user, has_agreed_terms}
+}
+
+// GET /auth/me — 세션 쿠키가 아직 유효한지 확인한다. 새로고침 등으로 App.jsx의 user state가
+// 날아가도, 쿠키가 살아있으면 이걸로 로그인 상태(+ notify_enabled/ai_training_agreed 같은
+// 이미 저장된 선택 동의값)를 복원할 수 있다. 401이면 로그인 안 된 상태이므로 null을 돌려준다
+// (에러로 던지지 않음 — 호출부에서 "로그인 안 됨"과 "네트워크 에러"를 굳이 구분할 필요가 없어서).
+export async function fetchCurrentUser(){
+  try{
+    const res=await fetch(`${API_BASE}/auth/me`,{credentials:'include'});
+    if(!res.ok)return null; // 401 등 — 로그인 안 된 상태
+    return res.json(); // AuthMeOut
+  }catch(e){
+    // fetch 자체가 실패(네트워크 끊김, 백엔드 안 켜짐, CORS 차단 등) — 이것도 "복원 못 함"으로
+    // 취급하고 null을 돌려준다. 여기서 못 잡으면 App.jsx의 호출부가 .catch 없이 .then만 쓰고
+    // 있어서 unhandled promise rejection이 나고, 콘솔에 원인이 안 남아 디버깅이 더 어려워진다.
+    console.error('GET /auth/me 실패(로그인 상태 복원 못 함):',e);
+    return null;
+  }
+}
+
+// POST /auth/logout — 서버 세션 쿠키를 실제로 지운다. 실패해도(오프라인 등) 프론트는 어차피
+// user state를 지우고 로그인 화면으로 보내면 되므로, 에러는 콘솔에만 남기고 삼킨다.
+export async function logout(){
+  try{
+    await fetch(`${API_BASE}/auth/logout`,{method:'POST',credentials:'include'});
+  }catch(e){
+    console.error('POST /auth/logout 실패(무시하고 프론트 상태는 정리):',e);
+  }
 }
 
 // The GSI script loads async, so the modal can open before window.google exists.
@@ -17,7 +67,7 @@ function whenGoogleReady(cb){
   return()=>script?.removeEventListener('load',cb);
 }
 
-function StepMethod({onCredential}){
+function StepMethod({onCredential,error,submitting}){
   const btnRef=useRef(null);
   const cbRef=useRef(onCredential);
   cbRef.current=onCredential;
@@ -36,6 +86,8 @@ function StepMethod({onCredential}){
       {GOOGLE_CLIENT_ID
         ?<div ref={btnRef} className="flex justify-center min-h-[44px]"/>
         :<p className="rounded-xl bg-[var(--muted)] px-4 py-3 text-[13px] text-[var(--muted-fg)] text-center leading-relaxed">구글 로그인 설정이 필요해요<br/>front/.env에 VITE_GOOGLE_CLIENT_ID를 넣어 주세요</p>}
+      {submitting&&<p className="mt-3 text-[12px] text-[var(--muted-fg)] text-center">로그인 처리 중…</p>}
+      {error&&<p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-600 text-center leading-relaxed">{error}<br/>백엔드(uvicorn)가 {API_BASE}에서 실행 중인지 확인해 주세요.</p>}
       <p className="mt-6 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">
         로그인 시 이메일과 프로필 이름(필수)을 수집하며 회원 탈퇴 시까지 보관합니다.
         계속 진행하면 개인정보 수집·이용에 동의하는 것으로 간주합니다.
@@ -79,7 +131,7 @@ const CONSENT_TERMS={
   ]},
 };
 
-function StepConsent({onAgree}){
+function StepConsent({onAgree,submitting,error}){
   const [termsAgreed,setTermsAgreed]=useState(false);
   const [privacyAgreed,setPrivacyAgreed]=useState(false);
   const [aiTrainingAgreed,setAiTrainingAgreed]=useState(false);
@@ -117,9 +169,10 @@ function StepConsent({onAgree}){
         <ConsentRow termKey="notify" checked={notifyAgreed} onChange={setNotifyAgreed} tag="[선택]" tagTone="text-[var(--muted-fg)]" label="유사 공고 알림 수신 동의"/>
       </div>
       <p className="mt-3 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">선택 동의는 이후 언제든 철회할 수 있습니다. 다만 철회 전 이미 학습에 반영된 데이터는 되돌릴 수 없습니다.</p>
-      <button onClick={()=>onAgree({aiTrainingAgreed,notifyAgreed})} disabled={!requiredOk}
-        className="w-full mt-6 rounded-xl bg-[var(--primary)] text-white py-3 text-[14.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--primary-dim)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">동의하고 계속하기</button>
+      <button onClick={()=>onAgree({aiTrainingAgreed,notifyAgreed})} disabled={!requiredOk||submitting}
+        className="w-full mt-6 rounded-xl bg-[var(--primary)] text-white py-3 text-[14.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--primary-dim)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">{submitting?'처리 중…':'동의하고 계속하기'}</button>
       {!requiredOk&&<p className="mt-2 text-[12px] text-[var(--muted-fg)] text-center">필수 항목에 모두 동의해야 계속할 수 있어요</p>}
+      {error&&<p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-600 text-center leading-relaxed">{error}</p>}
     </React.Fragment>
   );
 }
@@ -138,19 +191,42 @@ export function LoginModal({open,onClose,onSuccess}){
   const closeBtnRef=useRef(null);
   const [step,setStep]=useState('method'); // 'method' | 'consent' | 'success'
   const [account,setAccount]=useState(null);
+  const [error,setError]=useState(null);
+  const [submitting,setSubmitting]=useState(false);
+  // 구글 인증이 끝난 뒤에야(=동의 스텝 이후) id_token+동의값을 같이 백엔드로 보낸다 —
+  // POST /auth/google이 둘 다 한 번에 받는 구조라(app/schemas.py GoogleLoginRequest).
+  const idTokenRef=useRef(null);
   // 약관 동의는 "최초 로그인 시"만 받는다 — 이 세션에서 이미 한 번 동의했다면
-  // (로그아웃 후 재로그인 등) 다시 묻지 않고 바로 완료 처리한다.
+  // (로그아웃 후 재로그인 등) 다시 묻지 않고 직전에 보낸 동의값 그대로 재전송한다
+  // (백엔드가 재로그인 때도 매번 최신 동의값으로 갱신하는 구조라 — auth.py 참고).
   const [hasAgreedBefore,setHasAgreedBefore]=useState(false);
+  const lastConsentRef=useRef({aiTrainingAgreed:false,notifyAgreed:true});
 
-  useEffect(()=>{if(!open)return;setStep('method');setAccount(null)},[open]);
+  useEffect(()=>{if(!open)return;setStep('method');setAccount(null);setError(null)},[open]);
 
-  const finishLogin=(acc,consent)=>{setAccount(acc);setHasAgreedBefore(true);setStep('success');onSuccess(acc,consent)};
+  const submitLogin=async(idToken,consent)=>{
+    setSubmitting(true);setError(null);
+    try{
+      const data=await loginWithGoogle(idToken,consent); // {user, has_agreed_terms}
+      lastConsentRef.current=consent;
+      setAccount(data.user);
+      setHasAgreedBefore(true);
+      setStep('success');
+      onSuccess(data.user,consent);
+    }catch(e){
+      console.error('POST /auth/google 실패:',e);
+      setError(e.message||'로그인 중 오류가 발생했어요');
+      setStep(hasAgreedBefore?'method':'consent');
+    }finally{
+      setSubmitting(false);
+    }
+  };
   const handleCredential=credential=>{
-    console.log('구글 ID 토큰:',credential);
+    idTokenRef.current=credential;
     const {name,email,picture}=decodeIdToken(credential);
-    const acc={name:name||email.split('@')[0],email,picture};
-    if(hasAgreedBefore){finishLogin(acc);return}
-    setAccount(acc);setStep('consent');
+    setAccount({name:name||email.split('@')[0],email,picture}); // 백엔드 응답 오기 전 임시 표시용
+    if(hasAgreedBefore){submitLogin(credential,lastConsentRef.current);return}
+    setStep('consent');
   };
 
   useEffect(()=>{
@@ -185,8 +261,8 @@ export function LoginModal({open,onClose,onSuccess}){
         <button ref={closeBtnRef} onClick={onClose} aria-label="닫기" className="absolute top-4 right-4 text-[var(--muted-fg)] hover:text-[var(--fg)] transition-[color,scale] duration-150 ease-out active:scale-[0.96]">
           <Icon name="close" size={20}/>
         </button>
-        {step==='method'&&<StepMethod onCredential={handleCredential}/>}
-        {step==='consent'&&<StepConsent onAgree={consent=>finishLogin(account,consent)}/>}
+        {step==='method'&&<StepMethod onCredential={handleCredential} error={error} submitting={submitting}/>}
+        {step==='consent'&&<StepConsent onAgree={consent=>submitLogin(idTokenRef.current,consent)} error={error} submitting={submitting}/>}
         {step==='success'&&<StepSuccess account={account}/>}
       </div>
     </div>
