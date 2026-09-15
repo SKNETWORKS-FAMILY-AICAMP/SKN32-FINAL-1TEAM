@@ -155,9 +155,9 @@ def update_user(user_id: int, body: UserRoleStatusIn, db: Session = Depends(get_
     if body.role is not None:
         if body.role not in ('user', 'admin'):
             raise HTTPException(status_code=422, detail="role은 'user' 또는 'admin' 이어야 합니다")
-        if body.role == 'admin' and user.face_verified_at is None:
-            # 설계 문서: face_verified_at = "관리자 권한 전환 시 얼굴 등록 완료 일시"
-            raise HTTPException(status_code=422, detail='관리자 전환 전에 얼굴 등록(얼굴 인증)이 먼저 완료되어야 합니다')
+        # 얼굴 인증(face_verified_at) 게이트는 팀 결정으로 안 하기로 해서 뺐다 — 컬럼 자체는
+        # app_schema.sql/users에 남아있지만(공유 DB라 스키마 변경은 안 함) 더 이상 아무 데서도
+        # 참조하지 않는다.
         user.role = body.role
     if body.status is not None:
         if body.status not in ('active', 'suspended', 'dormant'):

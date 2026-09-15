@@ -11,7 +11,6 @@ db_session 픽스처가 테스트 함수마다 DB를 비워주기 때문에, 그
 실행:
     pytest tests/test_admin.py -v
 """
-import datetime
 import json
 
 import pytest
@@ -73,15 +72,13 @@ def seeded_admin_data(db_session):
 
 @pytest.fixture()
 def admin_client(db_session, seeded_admin_data):
-    """role='admin' + face_verified_at 까지 채워서 관리자 API를 바로 호출할 수 있는 세션."""
+    """role='admin'으로 채워서 관리자 API를 바로 호출할 수 있는 세션."""
     ac = _new_client()
     _login(ac, ADMIN_EMAIL, '관리자테스트')
 
-    # 관리자 승격 — admin.py 규칙: role='admin' 전환 전에 face_verified_at(얼굴 등록)이
-    # 먼저 있어야 한다. API로는 얼굴 등록 엔드포인트가 아직 없어서(다른 팀원 작업 범위)
-    # 여기선 DB를 직접 건드려 "이미 얼굴 등록까지 끝낸 관리자"인 것처럼 만든다.
+    # 관리자 승격 — API로 role만 바꾸면 되니(얼굴 인증 게이트는 팀 결정으로 뺐다) DB를
+    # 직접 건드려 "이미 관리자인 계정"인 것처럼 만든다.
     admin_user = db_session.query(User).filter(User.email == ADMIN_EMAIL).one()
-    admin_user.face_verified_at = datetime.datetime.utcnow()
     admin_user.role = 'admin'
     db_session.commit()
     # role은 매 요청 get_current_user에서 DB로 조회하니 재로그인이 꼭 필요하진 않지만,
@@ -192,16 +189,16 @@ def test_get_items_reflects_match_status(admin_client, user_client, db_session):
 # 유저
 # ============================================================================
 
-def test_put_users_role_requires_face_verification(admin_client, user_client):
+def test_put_users_role_and_status(admin_client, user_client):
+    # 얼굴 인증 게이트는 팀 결정으로 뺐다 — role 전환이 바로 반영돼야 한다.
     res = admin_client.get('/admin/users')
     assert res.status_code == 200, res.text
     plain_user = next(u for u in res.json() if u['email'] == USER_EMAIL)
 
-    # face_verified_at 없이 admin 승격 시도 -> 422
-    no_face = admin_client.put(f"/admin/users/{plain_user['user_id']}", json={'role': 'admin'})
-    assert no_face.status_code == 422, f'얼굴 등록 전인데 관리자 승격이 막히지 않음: {no_face.status_code} {no_face.text}'
+    promote = admin_client.put(f"/admin/users/{plain_user['user_id']}", json={'role': 'admin'})
+    assert promote.status_code == 200, promote.text
+    assert promote.json()['role'] == 'admin'
 
-    # status 변경은 얼굴 등록과 무관하게 바로 반영돼야 함
     suspend = admin_client.put(f"/admin/users/{plain_user['user_id']}", json={'status': 'suspended'})
     assert suspend.status_code == 200, suspend.text
     assert suspend.json()['status'] == 'suspended'

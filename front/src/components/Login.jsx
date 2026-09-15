@@ -216,7 +216,7 @@ const DEFAULT_CONSENT={aiTrainingAgreed:false,notifyAgreed:true};
 export function LoginModal({open,onClose,onSuccess}){
   const dialogRef=useRef(null);
   const closeBtnRef=useRef(null);
-  const [step,setStep]=useState('method'); // 'method' | 'consent' | 'success'
+  const [step,setStep]=useState('method'); // 'method' | 'consent' | 'success' | 'error'
   const [account,setAccount]=useState(null);
   const [error,setError]=useState(null);
   const [submitting,setSubmitting]=useState(false);

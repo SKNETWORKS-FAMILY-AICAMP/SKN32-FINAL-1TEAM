@@ -172,6 +172,9 @@ function IntakeForm({ onSubmit, onBack, backLabel = '처음으로 돌아가기' 
   const pricingValid = pricing.every((r) => r.item.trim() && r.price.trim());
   const valid = applicantValid && companyValid && ideaValid && teamValid && pricingValid;
 
+  // 실제 POST /projects 호출은 여기서 하지 않는다 — App.jsx의 handleIntakeSubmit이 이 폼
+  // 정보를 받아서 만든다(project_id를 App 쪽 상태(projectId)로 들고 있어야 다음 화면들
+  // (MatchResults 등)에 넘겨줄 수 있어서). 여기서는 유효성 검사만 하고 폼 값을 그대로 올려보낸다.
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!valid) return;
