@@ -19,6 +19,7 @@ POST /projects 는 #6(첨부파일 처리) 확정대로 multipart/form-data 로 
 import json
 import os
 import random
+import sys
 import uuid
 from decimal import Decimal
 
@@ -37,8 +38,10 @@ from app.models import (
     ArtifactScoreReason,
     BusinessPlan,
     Company,
+    EligibilityCheck,
     FormatFinding,
     MatchResult,
+    Notice,
     PlanScoreReason,
     PlanSection,
     PricingItem,
@@ -47,16 +50,38 @@ from app.models import (
     ProofreadLog,
     TeamMember,
     User,
+    Verdict,
 )
 from app.schemas import (
+    AgentExecutionOut,
+    BusinessPlanOut,
+    DemoGenerateRequest,
+    DemoGenerateResponse,
+    EligibilityCheckOut,
+    MatchCandidateOut,
+    MatchResultOut,
     ProjectCreateRequest,
     ProjectDetailOut,
-    ProjectOut,
+    ProjectListItemOut,
     ProjectStatusOut,
     RetryTaskRequest,
     RetryTaskResponse,
+    VerdictOut,
 )
 from app.security import get_current_user
+
+# [2026-09-15, 프론트 통합 임시 구현] seed_dummy_pipeline.py(repo 루트, back/)를 그대로
+# 불러다 쓴다 — 오케스트레이터가 아직 없어서(app/agents.py 모듈 docstring 참고)
+# "매칭→자격판정→계획서→산출물→최종판정"을 실제로 만들어주는 API가 하나도 없었는데,
+# 이미 이 더미 함수가 정확히 그 모양을 만들어주고 있어서 새로 짜지 않고 재사용한다.
+# database.py의 _REPO_ROOT 계산 방식과 동일하게 __file__ 기준으로 repo 루트를 잡는다.
+# 주의: seed_dummy_pipeline.py 쪽에서 다시 `from app.routers.projects import UPLOAD_DIR`로
+# 이 모듈을 가져오기 때문에, 여기서 모듈 최상단에 바로 import하면 순환 import로 죽는다 —
+# 그래서 generate_pipeline_result() 안에서 실제 호출 시점에만 지연 import한다(이땐 이
+# 모듈이 이미 다 로드된 뒤라 UPLOAD_DIR도 이미 정의돼 있어 안전하다).
+_REPO_ROOT_FOR_SEED = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _REPO_ROOT_FOR_SEED not in sys.path:
+    sys.path.insert(0, _REPO_ROOT_FOR_SEED)
 
 router = APIRouter(prefix='/projects', tags=['projects'])
 
@@ -159,24 +184,196 @@ def _get_or_create_company(db: Session, current_user: User, body: ProjectCreateR
     return company
 
 
-@router.get('', response_model=list[ProjectOut])
-def list_my_projects(
+@router.get('', response_model=list[ProjectListItemOut])
+def list_projects(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """내 프로젝트 목록 — 프론트가 "신규 사용자"인지 "이어서 준비 중인 프로젝트가 있는지"를
-    서버 기준으로 판단하는 데 쓴다(로컬 저장소에 project_id를 기억해두는 임시방편 대신).
-    회사 프로필 자체가 없으면(한 번도 프로젝트를 만든 적 없음) 빈 배열."""
-    company = db.query(Company).filter(Company.user_id == current_user.user_id).first()
+    """대시보드 "내 프로젝트" 목록. 계정당 회사 프로필 1건 가정(Company.user_id UNIQUE)이라
+    회사 프로필이 없으면(아직 프로젝트를 한 번도 안 만든 신규 유저) 빈 목록을 돌려준다.
+    프로젝트마다 가장 최근 매칭(있으면) 요약을 같이 내려서, 목록 화면에서 진행 상태를
+    바로 보여줄 수 있게 한다 — GET /projects/{id}/status와 같은 stage->screen 매핑을 쓴다."""
+    company = db.query(Company).filter(Company.user_id == current_user.user_id).one_or_none()
     if company is None:
         return []
+
     projects = (
         db.query(Project)
         .filter(Project.company_id == company.company_id)
         .order_by(Project.created_at.desc())
         .all()
     )
-    return [ProjectOut.model_validate(p) for p in projects]
+    items = []
+    for project in projects:
+        match = (
+            db.query(MatchResult)
+            .filter(MatchResult.project_id == project.project_id)
+            .order_by(MatchResult.match_id.desc())
+            .first()
+        )
+        notice_title = None
+        screen = ps.NO_MATCH_SCREEN
+        if match is not None:
+            notice = db.query(Notice).filter(Notice.notice_id == match.notice_id).one_or_none()
+            notice_title = notice.title if notice is not None else None
+            screen = ps.STAGE_TO_SCREEN.get(match.stage) if match.stage is not None else None
+        items.append(ProjectListItemOut(
+            project_id=project.project_id,
+            description=project.description,
+            created_at=project.created_at,
+            notice_id=match.notice_id if match is not None else None,
+            notice_title=notice_title,
+            match_status=match.status if match is not None else None,
+            stage=match.stage if match is not None else None,
+            progress_percent=match.progress_percent if match is not None else None,
+            screen=screen,
+        ))
+    return items
+
+
+@router.get('/{project_id}/match-candidates', response_model=list[MatchCandidateOut])
+def get_match_candidates(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """[2026-09-15, 프론트 통합 임시 구현] 실제 임베딩 유사도 매칭(공고 수집팀의
+    notices.embedding_status 반영 이후 예정)이 아직 없어서, 모집중(open)인 공고 중
+    최대 3건을 골라 무작위 적합도(fit_score)를 붙여 후보로 보여준다 — 사용자가 이 중
+    하나를 고르면 POST /projects/{id}/generate 로 실제 match_results 행이 생긴다.
+    그래서 여기서는 아무것도 저장하지 않는다(다시 불러도 매번 새 후보가 나올 수 있음)."""
+    _get_owned_project(db, project_id, current_user)
+
+    candidates = (
+        db.query(Notice)
+        .filter(Notice.recruitment_status == 'open')
+        .order_by(Notice.id.asc())
+        .limit(3)
+        .all()
+    )
+    if not candidates:
+        # 모집중인 공고가 하나도 없으면(로컬 개발 DB가 비어있는 등) 마감된 공고라도 보여준다 —
+        # 화면이 완전히 빈 채로 막히는 것보다는 "일단 흐름을 테스트해볼 수 있는" 쪽이 낫다고 판단.
+        candidates = db.query(Notice).order_by(Notice.id.asc()).limit(3).all()
+
+    results = []
+    for notice in candidates:
+        org = notice.organizer or notice.supervising_org or notice.executing_org
+        results.append(MatchCandidateOut(
+            notice_id=notice.notice_id,
+            title=notice.title,
+            org=org,
+            apply_end=notice.apply_end,
+            fit_score=round(random.uniform(55, 98), 1),
+            reason=f'(더미 매칭 근거) "{notice.title[:30]}" — 아이템 설명과의 키워드 겹침을 임의로 흉내낸 적합도입니다.',
+            url=notice.url,
+        ))
+    results.sort(key=lambda r: r.fit_score, reverse=True)
+    return results
+
+
+def _build_demo_response(db: Session, project_id: int, match: MatchResult) -> DemoGenerateResponse:
+    """match_id 하나로 DemoGenerateResponse를 조립한다 — POST /generate(방금 막 만든 match)와
+    GET /result(예전에 만들어둔 match를 다시 조회) 둘 다 이 함수를 공유한다."""
+    plan = (
+        db.query(BusinessPlan)
+        .filter(BusinessPlan.match_id == match.match_id)
+        .order_by(BusinessPlan.plan_id.desc())
+        .first()
+    )
+    verdict = None
+    if plan is not None:
+        artifact = (
+            db.query(Artifact).filter(Artifact.plan_id == plan.plan_id).order_by(Artifact.artifact_id.desc()).first()
+        )
+        if artifact is not None:
+            verdict = (
+                db.query(Verdict)
+                .filter(Verdict.artifact_id == artifact.artifact_id)
+                .order_by(Verdict.verdict_id.desc())
+                .first()
+            )
+    if plan is None or verdict is None:
+        raise HTTPException(
+            status_code=404,
+            detail='이 프로젝트엔 아직 계획서/산출물/최종판정이 없습니다 — POST /projects/{id}/generate 로 먼저 만들어야 합니다',
+        )
+
+    eligibility = (
+        db.query(EligibilityCheck)
+        .filter(EligibilityCheck.match_id == match.match_id)
+        .order_by(EligibilityCheck.check_id.desc())
+        .first()
+    )
+    executions = (
+        db.query(AgentExecution)
+        .filter(AgentExecution.match_id == match.match_id)
+        .order_by(AgentExecution.execution_id.asc())
+        .all()
+    )
+    return DemoGenerateResponse(
+        project_id=project_id,
+        match=MatchResultOut.model_validate(match),
+        eligibility=EligibilityCheckOut.model_validate(eligibility),
+        plan=BusinessPlanOut.model_validate(plan),
+        verdict=VerdictOut.model_validate(verdict),
+        agent_executions=[AgentExecutionOut.model_validate(e) for e in executions],
+    )
+
+
+@router.post('/{project_id}/generate', response_model=DemoGenerateResponse)
+def generate_pipeline_result(
+    project_id: int,
+    body: DemoGenerateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """[2026-09-15, 프론트 통합 임시 구현] 사용자가 매칭 후보 중 하나를 고른 뒤 호출 —
+    seed_dummy_pipeline.py의 더미 로직으로 매칭+자격판정+계획서+산출물+최종판정을 한 번에
+    만들어서 DB에 저장하고, 화면(매칭결과~검수)이 그대로 쓸 수 있는 모양으로 돌려준다.
+
+    주의(임시 구현의 한계, 나중에 실제 오케스트레이터로 교체 시 참고): seed_dummy_pipeline은
+    "이미 판정까지 끝난 프로젝트"를 한 번에 만드는 스크립트라 stage를 곧장 STAGE_DONE으로
+    채운다 — 그래서 이 호출이 끝난 뒤 사용자가 새로고침하면 GET /projects/{id}/status는
+    항상 "11.결과물 내려받기" 화면으로 돌려보낸다(중간 화면 5~10에서 이어하기는 못 함).
+    지금은 프론트가 이 응답 하나를 화면 상태로 들고 있다가 순서대로 넘기는 방식으로 우회한다.
+    호출할 때마다 새 매칭/계획서/산출물/판정 세트가 하나 더 쌓인다(seed_dummy_pipeline.py
+    자체 동작) — 이미 만든 프로젝트를 다시 보기만 하려면 이 엔드포인트 대신
+    GET /projects/{id}/result 를 쓴다."""
+    _get_owned_project(db, project_id, current_user)
+    import seed_dummy_pipeline as _seed_pipeline  # 지연 import — 위 주석 참고(순환 import 회피)
+
+    try:
+        verdict = _seed_pipeline.seed_dummy_pipeline(db, project_id, notice_id=body.notice_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(verdict)
+
+    plan = db.get(BusinessPlan, verdict.plan_id)
+    match = db.get(MatchResult, plan.match_id)
+    return _build_demo_response(db, project_id, match)
+
+
+@router.get('/{project_id}/result', response_model=DemoGenerateResponse)
+def get_pipeline_result(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """[2026-09-15, 프론트 통합 임시 구현] POST /generate로 이미 만들어둔 결과를 다시
+    불러온다(재생성하지 않음) — 새로고침/재방문 시 "이어서 보기"용. 가장 최근 매칭
+    기준으로 조회한다."""
+    _get_owned_project(db, project_id, current_user)
+    match = (
+        db.query(MatchResult)
+        .filter(MatchResult.project_id == project_id)
+        .order_by(MatchResult.match_id.desc())
+        .first()
+    )
+    if match is None:
+        raise HTTPException(status_code=404, detail='이 프로젝트엔 아직 매칭 결과가 없습니다')
+    return _build_demo_response(db, project_id, match)
 
 
 @router.post('', response_model=ProjectDetailOut, status_code=201)

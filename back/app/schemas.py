@@ -130,10 +130,37 @@ class ProjectDetailOut(ProjectOut):
 # ---------------------------------------------------------------------------
 # 산출물 데모 생성 (매칭 → 자격게이트 → 사업계획서 → 산출물 → 최종판정)
 # ---------------------------------------------------------------------------
+# [2026-09-15, 프론트 통합 임시 구현] 실제 오케스트레이터(Agent 파이프라인)가 아직
+# 다른 팀원 작업이라(app/agents.py 모듈 docstring 참고) 이 아래 스키마들은
+# seed_dummy_pipeline.py의 더미 로직을 POST /projects/{id}/generate 로 감싼 결과를
+# 표현하는 용도다 — 오케스트레이터가 실제로 붙으면 이 스키마들은 그대로 두고
+# projects.py의 라우터 구현부만 바꾸면 된다(agents.py의 재시도 함수들과 같은 패턴).
 class DemoGenerateRequest(BaseModel):
     notice_id: str | None = Field(
         None, description='매칭시킬 공고 notice_id. 생략하면 모집중(open)인 공고 중 하나를 데모용으로 자동 선택한다.',
     )
+
+
+class MatchCandidateOut(BaseModel):
+    """GET /projects/{id}/match-candidates 응답 항목 하나 — 아직 match_results에 저장된
+    행이 아니라, notices 테이블에서 후보로 뽑아 화면에 보여주기 위한 임시 값이다(사용자가
+    고르면 그때 POST /projects/{id}/generate 로 실제 match_results 행이 생긴다)."""
+
+    notice_id: str
+    title: str
+    org: str | None = None
+    apply_end: datetime.date | None = None
+    fit_score: float
+    reason: str
+    url: str | None = None
+
+
+class EligibilityCheckOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    passed: bool
+    undecidable: bool
+    failed_conditions: list | None = None
+    missing_inputs: list | None = None
 
 
 class PlanSectionOut(BaseModel):
@@ -146,6 +173,9 @@ class PlanSectionOut(BaseModel):
 class ArtifactScoreReasonOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     reason_text: str
+    item_code: str | None = None
+    score: float | None = None
+    max_score: float | None = None
 
 
 class ArtifactOut(BaseModel):
@@ -161,6 +191,23 @@ class ArtifactOut(BaseModel):
 class PlanScoreReasonOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     reason_text: str
+    item_code: str | None = None
+    score: float | None = None
+    max_score: float | None = None
+
+
+class FormatFindingOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    finding_type: str
+    message: str
+    severity: str | None = None
+
+
+class ProofreadLogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    original_text: str
+    corrected_text: str
+    reason: str | None = None
 
 
 class BusinessPlanOut(BaseModel):
@@ -171,6 +218,8 @@ class BusinessPlanOut(BaseModel):
     sections: list[PlanSectionOut] = Field(default_factory=list)
     score_reasons: list[PlanScoreReasonOut] = Field(default_factory=list)
     artifacts: list[ArtifactOut] = Field(default_factory=list)
+    format_findings: list[FormatFindingOut] = Field(default_factory=list)
+    proofread_logs: list[ProofreadLogOut] = Field(default_factory=list)
 
 
 class VerdictOut(BaseModel):
@@ -275,9 +324,28 @@ class AgentExecutionOut(BaseModel):
 class DemoGenerateResponse(BaseModel):
     project_id: int
     match: MatchResultOut
+    eligibility: EligibilityCheckOut
     plan: BusinessPlanOut
     verdict: VerdictOut
     agent_executions: list[AgentExecutionOut]
+
+
+# ---------------------------------------------------------------------------
+# 프로젝트 목록 (대시보드 "내 프로젝트")
+# ---------------------------------------------------------------------------
+class ProjectListItemOut(BaseModel):
+    """GET /projects(목록) 응답 항목 하나 — 프로젝트 1건 + 가장 최근 매칭(있으면) 요약."""
+
+    model_config = ConfigDict(from_attributes=True)
+    project_id: int
+    description: str
+    created_at: datetime.datetime
+    notice_id: str | None = None
+    notice_title: str | None = None
+    match_status: str | None = None
+    stage: str | None = None
+    progress_percent: int | None = None
+    screen: int | None = None
 
 
 # ---------------------------------------------------------------------------

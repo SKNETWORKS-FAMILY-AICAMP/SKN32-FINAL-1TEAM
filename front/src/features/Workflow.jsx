@@ -1,7 +1,8 @@
 import React, {useState,useRef,useEffect} from 'react';
 import Preparation from '../components/Preparation.jsx';
 import {Icon} from '../components/Icons.jsx';
-import {api,ApiError} from '../api.js';
+import {getMatchCandidates,generatePipeline} from '../api.js';
+import {downloadPlanDocx,downloadPrototypeZip,downloadVerificationPdf} from '../dummyDeliverables.js';
 function FloatingInput({inputRef,type,value,onChange,label}){
   return <label className="block text-[14px] text-[var(--muted-fg)]"><span className="block mb-2">{label}</span><input ref={inputRef} type={type} value={value} onChange={onChange} onInput={onChange} onBlur={onChange} className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg)]"/></label>;
 }
@@ -169,48 +170,20 @@ function IntakeForm({ onSubmit, onBack, backLabel = '처음으로 돌아가기' 
   const teamValid = noTeam || team.every((r) => r.name.trim() && r.role.trim() && r.experience.trim());
   const pricingValid = pricing.every((r) => r.item.trim() && r.price.trim());
   const valid = applicantValid && companyValid && ideaValid && teamValid && pricingValid;
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState('');
-  const APPLICANT_LABELS = { preliminary: '예비창업자', individual: '개인사업자', corp: '법인' };
 
-  const handleSubmit = async (e) => {
+  // 실제 POST /projects 호출은 여기서 하지 않는다 — App.jsx의 handleIntakeSubmit이 이 폼
+  // 정보를 받아서 만든다(project_id를 App 쪽 상태(projectId)로 들고 있어야 다음 화면들
+  // (MatchResults 등)에 넘겨줄 수 있어서). 여기서는 유효성 검사만 하고 폼 값을 그대로 올려보낸다.
+  const handleSubmit = (e) => {
     e.preventDefault();
-    if (!valid || submitting) return;
-    setSubmitError('');
-    setSubmitting(true);
-    // POST /projects — 실제로 DB에 회사/아이템/팀/단가를 적재한다(다음 화면인 공고
-    // 매칭·계획서·산출물 생성은 오케스트레이터 API가 아직 없어 여전히 데모 데이터로 이어진다).
-    // start_type은 백엔드 필드명이 "온라인/오프라인/전자상거래" 예시라 신청자 유형과 뜻이
-    // 완전히 같진 않지만, 이 폼엔 그 구분이 따로 없어 신청자 유형 라벨을 그대로 보낸다.
-    // notify_region/notify_industry도 이 폼엔 입력칸이 없어 일반적인 기본값을 보낸다.
-    const payload = {
-      start_type: APPLICANT_LABELS[applicantType] || applicantType,
-      ceo_name: isPreliminary ? null : ceoName,
-      founded_at: isPreliminary ? null : (foundedAt || null),
-      description: item,
-      notify_region: '전국',
-      notify_industry: '기타',
-      team_members: noTeam ? [] : team.map((r) => ({ name: r.name, role: r.role, experience: r.experience })),
-      pricing_items: pricing.map((r) => ({ service_name: r.item, unit_price: Number(String(r.price).replace(/[^0-9.]/g, '')) || null })),
-    };
-    const form = new FormData();
-    form.append('payload', JSON.stringify(payload));
-    files.forEach((f) => form.append('files', f));
-    try {
-      const created = await api.post('/projects', form);
-      onSubmit({
-        applicantType, item, files,
-        ceoName: isPreliminary ? '' : ceoName,
-        foundedAt: isPreliminary ? '' : foundedAt,
-        team: noTeam ? [] : team,
-        pricing,
-        projectId: created.project_id,
-      });
-    } catch (err) {
-      setSubmitError(err instanceof ApiError ? String(err.detail) : '서버에 연결할 수 없어요. 로그인이 돼 있는지 확인해주세요.');
-    } finally {
-      setSubmitting(false);
-    }
+    if (!valid) return;
+    onSubmit({
+      applicantType, item, files,
+      ceoName: isPreliminary ? '' : ceoName,
+      foundedAt: isPreliminary ? '' : foundedAt,
+      team: noTeam ? [] : team,
+      pricing,
+    });
   };
 
   return (
@@ -303,11 +276,10 @@ function IntakeForm({ onSubmit, onBack, backLabel = '처음으로 돌아가기' 
           </div>
         </div>
 
-        <button type="submit" disabled={!valid || submitting}
+        <button type="submit" disabled={!valid}
           className="w-full rounded-xl bg-[var(--primary)] text-white py-3.5 text-[15px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--primary-dim)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-          {submitting ? '등록하는 중…' : '맞는 공고 찾기'}
+          맞는 공고 찾기
         </button>
-        {submitError && <p className="mt-2 text-[12.5px] text-[var(--danger)] text-center">{submitError}</p>}
         {!valid && (
           <p className="mt-2 text-[12.5px] text-[var(--muted-fg)] text-center">
             {!applicantValid ? '신청자 유형을 선택해주세요'
@@ -452,10 +424,78 @@ const ANNOUNCEMENTS = [
 // 먼저 훑어보고 거기 맞춰 아이템을 지어내는 흐름이 되지 않도록 하는 게 목적이다.
 const RESULTS_SHOWN_COUNT = 3;
 
-function MatchResults({itemInfo,onBack,onCheckEligibility,disabledTitles=[],backLabel='아이템 정보 다시 입력하기'}){
+// [2026-09-15, 프론트 통합 임시 구현] 예전엔 ANNOUNCEMENTS(하드코딩 6건)를 그대로 3건
+// 잘라 보여줬는데, 이제 마운트 시 GET /projects/{id}/match-candidates(api.js
+// getMatchCandidates)로 실제 후보를 받아온다 — 백엔드가 아직 아무것도 저장하지 않은 채
+// 후보만 계산해서 보여주는 단계라(app/routers/projects.py get_match_candidates 주석 참고),
+// 사용자가 "신청 자격 확인하기"를 누르는 순간에만 POST /generate(generatePipeline)를 호출해
+// 실제 매칭·자격판정·계획서·산출물·최종판정을 한 번에 만든다.
+function MatchResults({projectId,onBack,onCheckEligibility,disabledTitles=[],backLabel='아이템 정보 다시 입력하기'}){
  const [selected,setSelected]=useState(null);
- const results=ANNOUNCEMENTS.slice(0,3);
- return <section data-screen="matches" className="matches-page"><p className="section-label">공고 찾기</p><h1>이런 공고가 잘 맞아요</h1><p>아이템과 잘 맞는 순서로 3건을 골랐어요. 신청 자격을 확인해 보세요.</p><div className="matched-list">{results.map((r,i)=>{const disabled=disabledTitles.includes(r.title);return <article key={r.title} className={'matched-row '+(selected===r.title?'selected':'')+(disabled?'disabled':'')}><button className="matched-select" disabled={disabled} aria-pressed={selected===r.title} onClick={()=>setSelected(r.title)}><span className="match-rank">{i+1}</span><div><span className="match-org">{r.org}</span><h3>{r.title}</h3><p>{r.deadline} · {r.amount}</p></div><span className="match-fit"><b>{r.fit}<small>%</small></b><span>아이템 적합도</span></span></button><div className="matched-detail"><p>{disabled?'신청 자격에 맞지 않는 공고예요. 다른 공고를 선택해 주세요.':r.reason}</p><a href={r.originalUrl} target="_blank" rel="noopener noreferrer">공고 사이트 확인 <Icon name="chevron" size={14}/></a></div>{selected===r.title&&!disabled&&<div className="matched-action"><span>이 공고의 신청 조건을 확인할까요?</span><button className="btn" onClick={()=>onCheckEligibility(r)}>신청 자격 확인하기</button></div>}</article>})}</div><p className="matched-note">체험용 공고와 적합도예요. 실제 접수 여부는 공고 사이트에서 확인해 주세요.</p><button className="text-link back-link" onClick={onBack}>{backLabel}</button></section>;
+ const [results,setResults]=useState([]);
+ const [loading,setLoading]=useState(true);
+ const [loadError,setLoadError]=useState(false);
+ const [confirming,setConfirming]=useState(false);
+ const [confirmError,setConfirmError]=useState('');
+
+ useEffect(()=>{
+  if(!projectId)return;
+  let cancelled=false;
+  setLoading(true);setLoadError(false);
+  getMatchCandidates(projectId).then(rows=>{
+   if(cancelled)return;
+   setResults(rows.slice(0,RESULTS_SHOWN_COUNT));
+   setLoading(false);
+  }).catch(err=>{
+   console.error('매칭 후보를 불러오지 못했어요',err);
+   if(!cancelled){setLoadError(true);setLoading(false);}
+  });
+  return ()=>{cancelled=true};
+ },[projectId]);
+
+ const confirm=async(r)=>{
+  setConfirming(true);setConfirmError('');
+  try{
+   const generateResult=await generatePipeline(projectId,r.notice_id);
+   onCheckEligibility(r,generateResult);
+  }catch(err){
+   console.error('신청 자격을 확인하지 못했어요',err);
+   setConfirmError(err.message||'신청 자격을 확인하지 못했어요. 다시 시도해 주세요.');
+   setConfirming(false);
+  }
+ };
+
+ return <section data-screen="matches" className="matches-page">
+  <p className="section-label">공고 찾기</p>
+  <h1>이런 공고가 잘 맞아요</h1>
+  <p>아이템과 잘 맞는 순서로 {RESULTS_SHOWN_COUNT}건을 골랐어요. 신청 자격을 확인해 보세요.</p>
+  {loading&&<p className="matched-note">공고를 찾는 중이에요…</p>}
+  {loadError&&<p className="matched-note">공고를 불러오지 못했어요. 새로고침해 주세요.</p>}
+  {!loading&&!loadError&&results.length===0&&<p className="matched-note">지금은 모집 중인 공고가 없어요.</p>}
+  <div className="matched-list">
+   {results.map((r,i)=>{
+    const disabled=disabledTitles.includes(r.title);
+    return <article key={r.notice_id} className={'matched-row '+(selected===r.notice_id?'selected':'')+(disabled?'disabled':'')}>
+     <button className="matched-select" disabled={disabled} aria-pressed={selected===r.notice_id} onClick={()=>setSelected(r.notice_id)}>
+      <span className="match-rank">{i+1}</span>
+      <div><span className="match-org">{r.org||'주관기관 정보 없음'}</span><h3>{r.title}</h3><p>{r.apply_end?`${r.apply_end} 마감`:'마감일 정보 없음'}</p></div>
+      <span className="match-fit"><b>{r.fit_score}<small>%</small></b><span>아이템 적합도</span></span>
+     </button>
+     <div className="matched-detail">
+      <p>{disabled?'신청 자격에 맞지 않는 공고예요. 다른 공고를 선택해 주세요.':<React.Fragment>{r.reason}<br/><span className="match-source-notice">{AI_SUMMARY_SOURCE_NOTICE}</span></React.Fragment>}</p>
+      {r.url&&<a href={r.url} target="_blank" rel="noopener noreferrer">공고 사이트 확인 <Icon name="chevron" size={14}/></a>}
+     </div>
+     {selected===r.notice_id&&!disabled&&<div className="matched-action">
+      <span>{confirming?'신청 자격을 확인하는 중이에요…':'이 공고의 신청 조건을 확인할까요?'}</span>
+      <button className="btn" disabled={confirming} onClick={()=>confirm(r)}>{confirming?'확인 중…':'신청 자격 확인하기'}</button>
+     </div>}
+     {selected===r.notice_id&&confirmError&&<p className="matched-note">{confirmError}</p>}
+    </article>;
+   })}
+  </div>
+  <p className="matched-note">AI가 임시로 생성한 공고와 적합도예요. 실제 접수 여부는 공고 사이트에서 확인해 주세요.</p>
+  <button className="text-link back-link" onClick={onBack}>{backLabel}</button>
+ </section>;
 }
 
 function GeneratingOverlay({children}){
@@ -464,11 +504,31 @@ function GeneratingOverlay({children}){
  return <dialog ref={ref} className="generation-dialog" aria-label="결과물 생성 진행" onCancel={e=>e.preventDefault()}>{children}</dialog>;
 }
 
-function EligibilityGate({announcement,itemInfo,onProceed,onLeave}){
- const {rows,passed}=evaluateEligibility(announcement.eligibility,itemInfo||{});
+// [2026-09-15, 프론트 통합 임시 구현] 예전엔 클라이언트에서 evaluateEligibility(공고 조건 3개를
+// 입력값과 비교하는 순수 함수)를 직접 돌렸는데, 이제 MatchResults가 이미 호출해둔
+// POST /generate 응답의 eligibility(EligibilityCheckOut: passed/undecidable/failed_conditions/
+// missing_inputs — app/schemas.py)를 그대로 받아 보여준다. 더미 백엔드(seed_dummy_pipeline.py)는
+// 지금 항상 passed=True를 돌려주므로 실패/미결정 분기는 실제 오케스트레이터가 붙은 뒤에야
+// 흔히 보이게 될 것이다.
+function EligibilityGate({announcement,eligibility,onProceed,onLeave}){
+ const passed=eligibility?.passed??false;
+ const undecidable=eligibility?.undecidable??false;
+ const failedConditions=eligibility?.failed_conditions||[];
+ const missingInputs=eligibility?.missing_inputs||[];
  const [generating,setGenerating]=useState(false);
  const leave=()=>onLeave(announcement.title,!passed);
- return <><section data-screen="eligibility" className="eligibility-page"><BackButton onClick={leave} label="매칭 결과로 돌아가기"/><div className={'eligibility-symbol '+(passed?'':'failed')}><Icon name={passed?'check':'file'} size={32}/></div><p className="section-label">{announcement.title}</p><h1>{passed?'신청 조건을 충족해요':'확인이 필요한 조건이 있어요'}</h1><p>{passed?'입력한 정보로 확인했어요. 이제 사업계획서를 준비해 볼까요?':'이 공고의 조건과 맞지 않는 항목이 있어요. 다른 공고를 확인해 주세요.'}</p><div className="eligibility-list">{rows.map(row=><div className="eligibility-row" key={row.label}><div><b>{row.label}</b><p>공고 기준 · {row.criterion}</p></div><div><span>{row.actual}</span><small className={row.passed?'pass-text':'fail-text'}>{row.passed?'충족':'미충족'}</small></div></div>)}</div><div className="eligibility-action"><p>예시 데이터를 기준으로 확인한 결과예요.</p><button className="btn" onClick={()=>passed?setGenerating(true):leave()}>{passed?'사업계획서 작성하기':'다른 공고 다시 보기'}</button></div></section>{generating&&<GeneratingOverlay><PipelineProgress onComplete={onProceed}/></GeneratingOverlay>}</>;
+ return <><section data-screen="eligibility" className="eligibility-page">
+  <BackButton onClick={leave} label="매칭 결과로 돌아가기"/>
+  <div className={'eligibility-symbol '+(passed?'':'failed')}><Icon name={passed?'check':'file'} size={32}/></div>
+  <p className="section-label">{announcement.title}</p>
+  <h1>{passed?'신청 조건을 충족해요':undecidable?'자격 판정을 확정하지 못했어요':'확인이 필요한 조건이 있어요'}</h1>
+  <p>{passed?'입력한 정보로 확인했어요. 이제 사업계획서를 준비해 볼까요?':undecidable?'입력한 정보만으로는 판단하기 어려운 항목이 있어요.':'이 공고의 조건과 맞지 않는 항목이 있어요. 다른 공고를 확인해 주세요.'}</p>
+  {(failedConditions.length>0||missingInputs.length>0)&&<div className="eligibility-list">
+   {failedConditions.map((c,i)=><div className="eligibility-row" key={'fail-'+i}><div><b>충족하지 않는 조건</b><p>{typeof c==='string'?c:JSON.stringify(c)}</p></div><div><small className="fail-text">미충족</small></div></div>)}
+   {missingInputs.map((m,i)=><div className="eligibility-row" key={'missing-'+i}><div><b>추가로 필요한 정보</b><p>{typeof m==='string'?m:JSON.stringify(m)}</p></div><div><small className="fail-text">확인 필요</small></div></div>)}
+  </div>}
+  <div className="eligibility-action"><p>등록하신 정보를 기준으로 AI가 확인한 결과예요.</p><button className="btn" onClick={()=>passed?setGenerating(true):leave()}>{passed?'사업계획서 작성하기':'다른 공고 다시 보기'}</button></div>
+ </section>{generating&&<GeneratingOverlay><PipelineProgress onComplete={onProceed}/></GeneratingOverlay>}</>;
 }
 
 function RepeatableRow({ values, fields, onChange, onRemove, removable }){
@@ -1625,6 +1685,17 @@ const DOWNLOAD_FILES = [
   { name: '검증결과.pdf', desc: '문서층·산출물층 검증 내역과 대조 결과' },
 ];
 
+// 실제 산출물 생성(Task #14)이 아직 안 붙어서, 이 세 파일은 화면에 이미 있는 더미
+// 데이터(PLAN_DOCUMENT_SECTIONS_REWORKED/ARTIFACT_SCORE_BY_OUTCOME 등)를 그대로 옮겨
+// 그 확장자로 실제 열리는 더미 파일을 즉석 생성해 내려준다(dummyDeliverables.js).
+// 검증결과.pdf만 표준 내장 폰트 한계로 영문 라벨을 쓴다 — 아래는 그 번역표.
+const EN_DOC_ITEM_LABEL = {
+  '문제인식': 'Problem Recognition',
+  '실현가능성': 'Feasibility',
+  '성장전략': 'Growth Strategy',
+  '팀 구성': 'Team Composition',
+};
+
 // 검수 단계 진입은 되돌릴 수 없다(기획서 4-7) — 종합 평가로 돌아가는 경로를 두지
 // 않는다. 그래서 이 화면에는 뒤로가기 버튼이 없다(다른 모든 파이프라인 화면과의
 // 유일한 차이). 다운로드도 이 화면 하단에 함께 둔다 — 목업 수정 요청서 v3 §3:
@@ -1636,6 +1707,60 @@ function ReviewScreen({ announcement, docOutcome = 'fail', artifactOutcome = 'fa
   const artifactScore = ARTIFACT_SCORE_BY_OUTCOME[artifactOutcome];
   const finalTotal = docScore.raw + artifactScore.autoCheck.raw + artifactScore.crossCheck.raw;
   const passed = finalTotal >= FINAL_THRESHOLD;
+  const itemTitle = announcement ? announcement.title : '';
+
+  function handleDownload(file){
+    if (file.name === '사업계획서.docx') {
+      downloadPlanDocx({
+        title: `${itemTitle || '사업계획서'} 사업계획서`,
+        sections: PLAN_DOCUMENT_SECTIONS_REWORKED,
+        footer: DELIVERABLE_NOTICES.find((n) => n.label === '계획서')?.text,
+      });
+      return;
+    }
+    if (file.name === 'prototype.zip') {
+      const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"/><title>${itemTitle || '프로토타입'}</title>
+<style>body{font-family:system-ui,sans-serif;background:#f2f4f6;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+.card{width:350px;background:#fff;border:1px solid #e5e8eb;border-radius:12px;box-shadow:0 8px 24px rgba(20,23,31,.12);overflow:hidden}
+.bar{border-bottom:1px solid #e5e8eb;padding:8px 16px;font-size:12px;color:#6b7684}
+.body{padding:20px}
+.tag{border-radius:4px;background:#f2f4f6;padding:4px 8px;font-size:12px;margin-right:6px}</style>
+</head><body>
+<div class="card">
+  <div class="bar">프로토타입 화면 예시</div>
+  <div class="body">
+    <div style="font-weight:700;font-size:14px">LOCALFIT</div>
+    <h3 style="margin-top:16px;font-size:19px;font-weight:700">오늘, 가까운 곳에서 시작.</h3>
+    <p style="margin-top:8px;font-size:12px;color:#6b7684">우리 동네 운동시설을 한 곳에서.</p>
+    <div style="margin-top:16px">${['피트니스','필라테스','요가'].map((x) => `<span class="tag">${x}</span>`).join('')}</div>
+  </div>
+</div>
+</body></html>`;
+      downloadPrototypeZip({ itemName: itemTitle, html });
+      return;
+    }
+    if (file.name === '검증결과.pdf') {
+      const lines = [
+        { text: 'S-Brain Verification Result (Demo)', size: 16 },
+        { text: `Item: ${itemTitle || '-'}`, size: 10 },
+        { text: `Generated: ${new Date().toISOString()}`, size: 10 },
+        { text: '' },
+        { text: `[Document Layer] ${docScore.raw} / ${docScore.max}`, size: 13 },
+        ...docScore.items.map((it) => ({ text: `  - ${EN_DOC_ITEM_LABEL[it.name] || it.name}: ${it.score} / ${it.max}` })),
+        { text: '' },
+        { text: `[Artifact Layer] Auto-check ${artifactScore.autoCheck.raw}/${artifactScore.autoCheck.max}, Cross-check ${artifactScore.crossCheck.raw}/${artifactScore.crossCheck.max}`, size: 13 },
+        ...artifactScore.autoCheck.reasons.map((r, i) => ({ text: `  - Auto-check issue ${i + 1}` })),
+        ...artifactScore.crossCheck.reasons.map((r, i) => ({ text: `  - Cross-check issue ${i + 1}` })),
+        { text: '' },
+        { text: `Final Score: ${finalTotal} / 100 (threshold ${FINAL_THRESHOLD})`, size: 14 },
+        { text: `Result: ${passed ? 'PASS' : 'BELOW THRESHOLD'}`, size: 14 },
+        { text: '' },
+        { text: 'This score is an internal reference score, not an official screening score.', size: 9 },
+      ];
+      downloadVerificationPdf({ lines });
+      return;
+    }
+  }
 
   return (
     <section data-screen="review" className="max-w-3xl mx-auto px-6 py-16">
@@ -1701,8 +1826,8 @@ function ReviewScreen({ announcement, docOutcome = 'fail', artifactOutcome = 'fa
                 <p className="font-semibold text-[14px] font-mono mb-1">{f.name}</p>
                 <p className="text-[12.5px] text-[var(--muted-fg)]">{f.desc}</p>
               </div>
-              <button disabled title="현재 데모에서는 실제 파일을 생성하지 않습니다" className="flex-shrink-0 rounded-lg border border-[var(--border)] px-4 py-2 text-[13px] font-semibold opacity-50">
-                실제 생성 후 다운로드
+              <button onClick={() => handleDownload(f)} title="더미 데이터로 만든 파일입니다 — 형식만 실제와 같습니다" className="flex-shrink-0 rounded-lg border border-[var(--border)] px-4 py-2 text-[13px] font-semibold hover:bg-[var(--bg)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
+                다운로드
               </button>
             </div>
           ))}
