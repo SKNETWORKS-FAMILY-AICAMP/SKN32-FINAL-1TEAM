@@ -1,8 +1,17 @@
 """프로젝트 생성(DB 적재) + 조회.
 
 설계 문서 기준으로 "프로젝트"는 companies(회사/예비창업자 프로필) 1건 아래
-projects(지원 아이템) N건으로 정규화돼 있다. 계정에 회사 프로필이 없으면 최초 생성 시
-같이 만들고, 이미 있으면 재사용한다(회사 프로필은 계정당 보통 1건을 가정).
+projects(지원 아이템) N건으로 정규화돼 있다.
+
+[2026-09-15 개정] 예전엔 "회사 프로필은 계정당 1건"이라 가정하고 최초 생성 시 만든 뒤
+이후 요청은 재사용했는데(신청자 유형/대표자명/설립일자가 새로 안 바뀜), 프로젝트마다
+다른 신청자 정보로 지원하고 싶은 사용자에게 부작용이 있었다. 이제 companies.user_id는
+더 이상 UNIQUE가 아니고, POST /projects는 매번 그 요청에 담긴 값으로 회사 프로필을
+새로 만든다 — 계정당 여러 프로젝트가 각자 다른 회사 프로필을 가질 수 있다. 계정당 동시
+실행 1건 제한(기획서 4-7, backend_decisions.md #11)은 회사 프로필이 아니라 User 행 자체를
+잠그는 방식으로 분리했다(_lock_user_for_concurrency_check 참고) — 원래 그 제한을 위해
+회사 프로필을 계정당 1건으로 묶었던 건데, 락 대상과 데이터 저장소가 같은 테이블이라 이런
+부작용이 생겼던 것이었다.
 
 URL/DB 테이블/컬럼/응답 필드까지 전부 `project`로 통일했다(backend_decisions.md #5 개정 —
 원래는 URL만 /projects, DB는 items 그대로 두기로 했다가, API 표면과 DB 이름이 다르면
@@ -22,10 +31,10 @@ import random
 import sys
 import uuid
 from decimal import Decimal
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import ValidationError
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import agents
@@ -149,20 +158,34 @@ def _save_attachment(file: UploadFile) -> tuple[str, str]:
     return file.filename or stored_name, file_url
 
 
-def _get_or_create_company(db: Session, current_user: User, body: ProjectCreateRequest) -> Company:
-    """회사 프로필을 조회하거나, 없으면 만든다 — "계정당 회사 프로필 1건"이 동시 요청에서도
-    깨지지 않도록 insert 후 실패하면 잡는 방식(insert-then-catch)을 쓴다.
+def _lock_user_for_concurrency_check(db: Session, current_user: User) -> None:
+    """계정당 동시 실행 1건 제한(기획서 4-7, backend_decisions.md #11)을 위한 락 지점.
 
-    단순히 "조회해서 없으면 생성"만 하면, 같은 유저가 거의 동시에 두 번 요청을 보냈을 때
-    둘 다 "없음"을 보고 각자 회사 프로필을 만들어버리는 race가 생긴다 — 그러면 프로필이
-    2건이 되고, POST /projects의 동시 실행 제한 체크(진행 중 매칭 여부)도 어느 프로필
-    기준으로 봐야 할지 갈라져서 무력화된다. companies.user_id에 건 UNIQUE 제약(app_schema.sql)
-    덕분에 두 번째 INSERT는 DB가 IntegrityError로 막아주므로, 그 경우엔 롤백하고 첫 번째
-    요청이 막 커밋한 행을 다시 조회해서 그걸 재사용한다."""
-    company = db.query(Company).filter(Company.user_id == current_user.user_id).with_for_update().first()
-    if company is not None:
-        return company
+    User 행은 계정마다 정확히 1개, 항상 이미 존재한다(로그인 시점에 만들어짐) — 그래서
+    회사 프로필처럼 "없으면 만드는" 동작이 필요 없고, 그냥 잠그기만 하면 된다. 이 락을
+    create_project()에서 회사/프로젝트를 만들기 전에 가장 먼저 걸어서, 같은 유저가 거의
+    동시에 두 번 요청을 보내도 두 번째 요청은 첫 번째 트랜잭션이 끝날 때까지 대기했다가
+    최신 상태(진행 중 매칭 여부)로 다시 판정하게 한다 — 그렇지 않으면 두 요청이 동시에
+    "진행 중 매칭 없음"을 읽어 둘 다 통과해버리는 race가 이론상 가능하다.
 
+    SQLite는 FOR UPDATE 구문 자체가 없어 이 호출이 조용히 무시되지만, SQLite는 쓰기
+    트랜잭션을 파일 단위로 직렬화하므로 로컬 개발 환경에서는 어차피 문제되지 않는다 —
+    운영(MySQL)에서만 실제로 잠금이 걸린다.
+
+    [2026-09-15 개정] 원래는 companies.user_id UNIQUE 제약 덕분에 항상 존재가 보장되는
+    회사 프로필 행을 락 대상으로 재사용했었다 — 그런데 그러면서 "동시성 제어용 락 앵커"와
+    "신청자 정보 저장소"가 같은 테이블이 돼버려, 프로젝트마다 다른 신청자 정보를 쓰고
+    싶어도 두 번째 프로젝트부터 값이 무시되는 부작용이 생겼다. User 행은 애초에 계정과
+    1:1이라 회사 프로필처럼 "계정당 1건" 가정을 새로 만들 필요도 없고, 회사 프로필 데이터
+    모델도 프로젝트마다 자유롭게 둘 수 있어 더 깔끔하다."""
+    db.query(User).filter(User.user_id == current_user.user_id).with_for_update().first()
+
+
+def _create_company_for_project(db: Session, current_user: User, body: ProjectCreateRequest) -> Company:
+    """이 프로젝트용 회사 프로필을 새로 만든다. 계정당 여러 프로젝트가 각자 다른 신청자
+    유형/대표자명/설립일자를 가질 수 있도록, 재사용하지 않고 매번 새로 만든다 — 동시
+    실행 제한은 이 함수가 아니라 _lock_user_for_concurrency_check()가 담당하므로, 여기선
+    더 이상 동시 요청을 막기 위한 락이나 insert-then-catch가 필요 없다."""
     company = Company(
         user_id=current_user.user_id,
         start_type=body.start_type,
@@ -171,16 +194,7 @@ def _get_or_create_company(db: Session, current_user: User, body: ProjectCreateR
         founded_at=body.founded_at,
     )
     db.add(company)
-    try:
-        db.flush()  # company_id 확보 — 여기서 UNIQUE 제약 위반이면 IntegrityError
-    except IntegrityError:
-        db.rollback()
-        # 동시 요청이 먼저 커밋한 행을 재사용한다. with_for_update()로 잠가서 이후
-        # 진행 중 매칭 체크가 그 요청의 커밋 결과를 확실히 보고 판정하게 한다.
-        company = db.query(Company).filter(Company.user_id == current_user.user_id).with_for_update().first()
-        if company is None:
-            # 이론상 도달 불가(IntegrityError가 났다는 건 이미 행이 있다는 뜻) — 방어적으로만 둠.
-            raise HTTPException(status_code=500, detail='회사 프로필 생성 중 오류가 발생했습니다') from None
+    db.flush()  # company_id 확보
     return company
 
 
@@ -189,17 +203,16 @@ def list_projects(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """대시보드 "내 프로젝트" 목록. 계정당 회사 프로필 1건 가정(Company.user_id UNIQUE)이라
-    회사 프로필이 없으면(아직 프로젝트를 한 번도 안 만든 신규 유저) 빈 목록을 돌려준다.
-    프로젝트마다 가장 최근 매칭(있으면) 요약을 같이 내려서, 목록 화면에서 진행 상태를
-    바로 보여줄 수 있게 한다 — GET /projects/{id}/status와 같은 stage->screen 매핑을 쓴다."""
-    company = db.query(Company).filter(Company.user_id == current_user.user_id).one_or_none()
-    if company is None:
-        return []
-
+    """대시보드 "내 프로젝트" 목록. [2026-09-15 개정] 계정당 회사 프로필이 이제 여러 건일
+    수 있으므로(프로젝트마다 따로 만듦), Company를 거치지 않고 Project를 Company와 join해
+    Company.user_id로 직접 필터링한다 — 프로젝트를 한 번도 안 만든 신규 유저는 join 결과가
+    그냥 빈 목록이라 별도 분기가 필요 없다. 프로젝트마다 가장 최근 매칭(있으면) 요약을
+    같이 내려서, 목록 화면에서 진행 상태를 바로 보여줄 수 있게 한다 — GET /projects/{id}/status와
+    같은 stage->screen 매핑을 쓴다."""
     projects = (
         db.query(Project)
-        .filter(Project.company_id == company.company_id)
+        .join(Company, Company.company_id == Project.company_id)
+        .filter(Company.user_id == current_user.user_id)
         .order_by(Project.created_at.desc())
         .all()
     )
@@ -376,6 +389,117 @@ def get_pipeline_result(
     return _build_demo_response(db, project_id, match)
 
 
+def _build_plan_document_data(db: Session, project: Project, plan: BusinessPlan | None):
+    """project(+company/team_members/pricing_items)와 생성된 계획서(BusinessPlan.sections)를
+    초기창업패키지(일반형) 공식 양식(별첨1) 구조(app/plan_document_export.py의
+    PlanDocumentData)로 옮긴다.
+
+    [2026-09-15] 지금 DB 스키마엔 공식 양식이 요구하는 항목 중 상당수(기업명, 사업자등록번호,
+    지원분야/전문기술분야, 사업비 집행계획 세부, 사업추진일정, 지방우대 지역 등)가 아예
+    저장할 컬럼이 없다 — ProjectCreateRequest에 그런 필드를 받은 적이 없기 때문이다.
+    그 항목들은 원본 양식 자체의 안내 표기('○○○', 'OO.OO' 등)를 그대로 남겨서, 실제로
+    없는 값을 그럴듯하게 지어내지 않는다. 반대로 실제로 DB에 있는 값(프로젝트 설명, 팀원,
+    plan_sections 3개 — 문제인식/실현가능성/성장전략)은 그대로 채운다. 이 함수가 지어내는
+    부분과 실제 DB 값인 부분을 나중에 필드 하나씩 스키마에 추가해가며 줄이면 된다."""
+    from app.plan_document_export import BudgetLineItem, PlanDocumentData, ScheduleRow, TeamRow
+
+    company = db.get(Company, project.company_id)
+    section_by_tag = {s.tag: s for s in (plan.sections if plan is not None else [])}
+
+    def _section_body(tag: str) -> str:
+        section = section_by_tag.get(tag)
+        return section.body if section is not None and section.body else '※ 아직 생성된 계획서 문단이 없습니다.'
+
+    team_members = project.team_members
+    team_rows = [
+        TeamRow(str(i + 1), m.role or '팀원', m.role or '-', m.experience or '-', '-')
+        for i, m in enumerate(team_members)
+    ] or [TeamRow('1', '○○', '○○', '○○', '○○')]
+    team_text = '\n'.join(
+        f'{m.name}({m.role or "역할 미입력"}): {m.experience or "경력 정보 미입력"}' for m in team_members
+    ) or '※ 등록된 팀원 정보가 없습니다.'
+
+    pricing_rows = [
+        BudgetLineItem(p.service_name, p.service_name, f'{p.unit_price:,.0f}원' if p.unit_price else '○○', '○○', '○○', '○○')
+        for p in project.pricing_items
+    ] or [BudgetLineItem('○○', '○○', '○○', '○○', '○○', '○○')]
+
+    item_desc = project.description or ''
+
+    return PlanDocumentData(
+        기업명='○○○',  # companies 테이블에 기업명 컬럼이 아직 없음
+        개업연월일=str(company.founded_at) if company and company.founded_at else '예비창업자(개업 전)',
+        사업자_구분='법인사업자' if company and company.founded_at else '개인사업자',
+        대표자_유형='단독',
+        사업자등록번호='○○○-○○-○○○○○',
+        사업자_소재지=project.notify_region or '○○도 ○○시·군',
+        창업아이템명=item_desc[:60] or '○○기술이 적용된 ○○제품·서비스',
+        산출물='○○ (협약기간 내 목표 — 산출물 형태·수량 입력 필요)',
+        지원분야=project.notify_industry or '○○',
+        전문기술분야='○○·○○',
+        정부지원사업비='○○,○○○천원',
+        자기부담_현금='○,○○○천원',
+        자기부담_현물='○,○○○천원',
+        총사업비='○○,○○○천원',
+        지방우대_지역_해당여부='○○ 지역',
+        팀구성현황=team_rows,
+        아이템_명칭=item_desc[:20] or '○○',
+        아이템_범주=project.notify_industry or '○○',
+        아이템_개요=item_desc,
+        요약_문제인식=_section_body('1-1'),
+        요약_실현가능성=_section_body('2-1'),
+        요약_성장전략=_section_body('3-1'),
+        요약_팀구성=team_text,
+        문제인식_본문=_section_body('1-1'),
+        실현가능성_본문=_section_body('2-1'),
+        실현가능성_일정=[ScheduleRow('1', '○○', '○○.○○ ~ ○○.○○', '○○')],
+        사업비_집행계획=pricing_rows,
+        성장전략_본문=_section_body('3-1'),
+        성장전략_일정=[ScheduleRow('1', '○○', '○○.○○ ~ ○○.○○', '○○')],
+        팀구성_본문=team_text,
+        팀구성_안=team_rows,
+        협력기관=[],
+    )
+
+
+@router.get('/{project_id}/plan-document.docx')
+def download_plan_document(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """사업계획서를 초기창업패키지(일반형) 공식 양식(별첨1) 구조로 채운 진짜 .docx로
+    내려준다(app/plan_document_export.py). 매칭/계획서가 아직 없어도 막지 않는다 —
+    _build_plan_document_data가 없는 값은 원본 양식 안내 표기로 채워서라도 지금
+    입력된 정보(프로젝트 설명·팀원)만으로 미리보기를 볼 수 있게 한다."""
+    from app.plan_document_export import render_plan_docx
+
+    project = _get_owned_project(db, project_id, current_user)
+    match = (
+        db.query(MatchResult)
+        .filter(MatchResult.project_id == project_id)
+        .order_by(MatchResult.match_id.desc())
+        .first()
+    )
+    plan = None
+    if match is not None:
+        plan = (
+            db.query(BusinessPlan)
+            .filter(BusinessPlan.match_id == match.match_id)
+            .order_by(BusinessPlan.plan_id.desc())
+            .first()
+        )
+
+    data = _build_plan_document_data(db, project, plan)
+    docx_bytes = render_plan_docx(data)
+    filename = quote('사업계획서.docx')
+    return Response(
+        content=docx_bytes,
+        media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        headers={'Content-Disposition': f"attachment; filename*=UTF-8''{filename}"},
+    )
+
+
 @router.post('', response_model=ProjectDetailOut, status_code=201)
 async def create_project(
     payload: str = Form(..., description='ProjectCreateRequest 스키마와 동일한 필드를 담은 JSON 문자열'),
@@ -388,21 +512,21 @@ async def create_project(
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=json.loads(exc.json())) from exc
 
-    company = _get_or_create_company(db, current_user, body)
+    # 계정당 동시 실행 1건 제한(기획서 4-7, backend_decisions.md #11)의 락은 회사 프로필이
+    # 아니라 계정(User 행) 자체를 잠가서 건다 — 회사 프로필을 만들기 전에 가장 먼저 걸어야
+    # 같은 유저가 거의 동시에 두 번 요청을 보내도 두 번째 요청이 첫 번째 트랜잭션이 끝날
+    # 때까지 대기했다가 최신 상태로 판정한다(_lock_user_for_concurrency_check 참고).
+    _lock_user_for_concurrency_check(db, current_user)
 
-    # 계정당 동시 실행 1건 제한(기획서 4-7, backend_decisions.md #11) — projects 자체에는
-    # 상태 컬럼이 없어(설계 문서 원안), 진행 중(in_progress) 매칭을 가진 프로젝트가 있는지로
-    # 대신 판단한다. with_for_update()로 해당 행을 잠가서, 같은 유저가 거의 동시에 두 번
-    # 요청을 보내도 두 번째 요청은 첫 번째 트랜잭션이 끝날 때까지 대기했다가 최신 상태로
-    # 다시 판정한다 (그렇지 않으면 두 요청이 동시에 "진행 중 매칭 없음"을 읽어 둘 다
-    # 통과해버리는 race가 이론상 가능하다). SQLite는 FOR UPDATE 구문 자체가 없어 이
-    # 호출이 조용히 무시되지만, SQLite는 쓰기 트랜잭션을 파일 단위로 직렬화하므로 로컬
-    # 개발 환경에서는 어차피 문제되지 않는다 — 운영(MySQL)에서만 실제로 잠금이 걸린다.
+    # 진행 중(in_progress) 매칭을 가진 프로젝트가 있는지로 판단한다(projects 자체엔 상태
+    # 컬럼이 없다 — 설계 문서 원안). [2026-09-15 개정] 계정당 회사 프로필이 이제 여러 건일
+    # 수 있어 Company.company_id 하나로는 못 좁히고, Company.user_id로 전체를 본다. 위에서
+    # 이미 User 행을 잠갔으므로 이 조회 자체엔 with_for_update()가 필요 없다.
     active = (
         db.query(MatchResult)
         .join(Project, Project.project_id == MatchResult.project_id)
-        .filter(Project.company_id == company.company_id, MatchResult.status.in_(ACTIVE_MATCH_STATUSES))
-        .with_for_update()
+        .join(Company, Company.company_id == Project.company_id)
+        .filter(Company.user_id == current_user.user_id, MatchResult.status.in_(ACTIVE_MATCH_STATUSES))
         .first()
     )
     if active is not None:
@@ -410,6 +534,8 @@ async def create_project(
             status_code=409,
             detail=f'진행 중인 프로젝트(project_id={active.project_id})가 있습니다. 이어서 진행하거나 먼저 중단해주세요.',
         )
+
+    company = _create_company_for_project(db, current_user, body)
 
     project = Project(
         company_id=company.company_id,

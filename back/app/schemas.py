@@ -11,18 +11,20 @@ class GoogleLoginRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id_token: str = Field(..., description='Google Identity Services 가 프론트에서 발급한 ID 토큰')
+    # [2026-09-15 개정] 예전엔 로그인할 때마다 이 값으로 users.ai_training_agreed를 덮어썼는데
+    # (재로그인 시 프론트가 동의 화면을 다시 안 보여주면 기본값 False/True가 그대로 실려가서
+    # 이미 저장해둔 동의를 조용히 지워버리는 부작용이 있었다), 이제 이 두 필드는 "신규 가입
+    # 시점"에만 쓰인다 — 기존 유저 로그인에서는 auth.py가 이 값을 아예 무시한다. 기존 유저가
+    # 동의값을 바꾸고 싶으면 PATCH /auth/consent를 따로 쓴다(ConsentUpdateRequest).
     ai_training_agreed: bool = Field(
         default=False,
         alias='aiTrainingAgreed',
-        description=(
-            'AI 학습 데이터 활용 동의(연동합의서 #3). users.ai_training_agreed 로 저장되며, '
-            '로그인 화면에서 동의 체크를 매번 거치는 구조라 로그인할 때마다 최신 값으로 갱신한다.'
-        ),
+        description='AI 학습 데이터 활용 동의(연동합의서 #3) — 신규 가입 시에만 반영된다.',
     )
     notify_agreed: bool = Field(
         default=True,
         alias='notifyAgreed',
-        description='알림 수신 동의 — users.notify_enabled 로 그대로 저장된다.',
+        description='알림 수신 동의 — 신규 가입 시에만 반영된다(users.notify_enabled).',
     )
 
 
@@ -41,14 +43,33 @@ class UserOut(BaseModel):
 
 class GoogleLoginResponse(BaseModel):
     user: UserOut
+    # [2026-09-15 개정] 원래 무조건 True로 고정돼 있던 값이라 프론트가 실질적으로 못 쓰고
+    # 있었다 — 이제 "이번 로그인이 기존 계정이라 필수 약관 동의가 이미 저장돼 있는지"를
+    # 실제로 계산해서 내려준다(= not is_new_user). 프론트(Login.jsx)는 이 값이 True면
+    # 동의 화면을 건너뛰고, False(신규 가입)면 동의 화면을 보여준다.
     has_agreed_terms: bool = Field(
-        ..., description='로그인 시점 약관 동의 여부 (연동합의서 #3, 확정)',
+        ..., description='이 계정이 이전에 이미 필수 약관에 동의한 적이 있는지 (신규 가입이면 False)',
+    )
+    is_new_user: bool = Field(
+        ..., description='이번 로그인으로 계정이 방금 새로 만들어졌는지 (has_agreed_terms의 반대값과 동일)',
     )
 
 
 class AuthMeOut(UserOut):
     """GET /auth/me 응답. 지금은 UserOut과 필드가 같지만, 로그인 응답과
     세션 확인 응답의 용도를 스키마 이름으로 구분해두려고 따로 둔다."""
+
+
+class ConsentUpdateRequest(BaseModel):
+    """[2026-09-15 신규] 로그인 이후(이미 세션이 있는 상태)에 동의값을 바꿀 때 쓴다 —
+    신규 가입 직후 동의 화면 제출, 또는 나중에 설정 화면에서 선택 동의를 바꿀 때 둘 다
+    이 엔드포인트(PATCH /auth/consent) 하나로 처리한다. 둘 다 선택이라(필수 약관은
+    가입 자체를 막는 게 아니라 프론트에서만 체크를 강제하므로 여기 스키마에는 없음)
+    일부만 보내도 된다."""
+    model_config = ConfigDict(populate_by_name=True)
+
+    ai_training_agreed: bool | None = Field(None, alias='aiTrainingAgreed')
+    notify_agreed: bool | None = Field(None, alias='notifyAgreed')
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +94,10 @@ class ProjectCreateRequest(BaseModel):
     첨부파일 메타데이터(file_name/file_url)는 클라이언트가 보내는 게 아니라, 서버가
     실제로 저장한 뒤 직접 만들어서 ProjectAttachment 로 적재한다."""
 
-    # 회사(예비창업자/기업) 프로필 — 계정에 이미 프로필이 있으면 이 값들은 무시되고 기존 프로필을 재사용한다.
+    # 회사(예비창업자/기업) 프로필 — [2026-09-15 개정] 예전엔 계정에 이미 프로필이 있으면
+    # 이 값들이 무시되고 기존 프로필을 재사용했는데(프로젝트마다 다른 신청자 정보를 못 씀),
+    # 이제 POST /projects마다 이 값 그대로 회사 프로필을 새로 만든다(app/routers/projects.py
+    # _create_company_for_project 참고).
     start_type: str = Field(..., description='시작 유형: 온라인/오프라인/전자상거래 등')
     biz_type: str | None = Field(None, max_length=100)
     ceo_name: str | None = Field(None, max_length=100)
