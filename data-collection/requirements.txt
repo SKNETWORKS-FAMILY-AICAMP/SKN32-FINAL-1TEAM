@@ -22,3 +22,14 @@ olefile>=0.47           # 구 HWP (5.0)
 numpy>=1.26
 sentence-transformers>=3.0    # BGE-M3 로 공고·질의를 벡터로
 chromadb>=1.0                 # 벡터 색인
+
+# ── 웹 화면 (app.py) ─────────────────────────────────────
+# 공고 매칭 화면과 시연 화면(/demo · /classify)을 띄운다.
+# 수집 배치만 돌릴 것이면 없어도 된다.
+#
+# /demo 에서 **학습한 리랭커**(ml/models/reranker_lora)를 쓰려면
+# requirements-ml.txt 도 설치해야 한다. peft 가 거기 있다.
+# 안 깔려 있으면 사전학습 모델로 대체 실행되고 화면에 그렇게 표시된다.
+fastapi>=0.110
+uvicorn>=0.27
+pydantic>=2.6

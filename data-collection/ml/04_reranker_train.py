@@ -192,8 +192,10 @@ def main():
         mark = ''
         if te < best['test_loss']:
             best = {'epoch': epoch, 'test_loss': te}
+            # 토크나이저는 저장하지 않는다. 원본 모델에서 그대로 받아 쓰므로
+            # 사본일 뿐인데 tokenizer.json 이 100만 줄(17MB)이라 저장소를 키운다.
+            # 불러올 때는 rerank_common.Scorer 가 MODEL_NAME 에서 가져온다.
             model.save_pretrained(args.out)
-            tokenizer.save_pretrained(args.out)
             mark = '← 지금까지 최선. 저장함'
         say('%-6d %-12.4f %-12.4f %-10s %s' % (epoch, tr, te, '%.0f초' % (time.time() - t0), mark))
 
