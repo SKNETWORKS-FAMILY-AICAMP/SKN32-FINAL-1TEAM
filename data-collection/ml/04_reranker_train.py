@@ -152,9 +152,11 @@ def main():
         return total_loss / max(n, 1)
 
     say('')
-    say('%-6s %-12s %-12s %s' % ('바퀴', '학습 손실', '시험 손실', '걸린 시간'))
-    say('-' * 48)
+    say('%-6s %-12s %-12s %-10s %s' % ('바퀴', '학습 손실', '시험 손실', '걸린 시간', ''))
+    say('-' * 56)
     history = []
+    best = {'epoch': None, 'test_loss': float('inf')}
+    os.makedirs(args.out, exist_ok=True)
     model.train()
     for epoch in range(1, args.epochs + 1):
         t0 = time.time()
@@ -184,11 +186,22 @@ def main():
         tr = running / max(seen, 1)
         te = evaluate_loss()
         history.append({'epoch': epoch, 'train_loss': tr, 'test_loss': te})
-        say('%-6d %-12.4f %-12.4f %.0f초' % (epoch, tr, te, time.time() - t0))
 
-    os.makedirs(args.out, exist_ok=True)
-    model.save_pretrained(args.out)
-    tokenizer.save_pretrained(args.out)
+        # 시험 손실이 가장 낮았던 바퀴를 저장한다. 마지막 바퀴가 최선이 아니다 —
+        # 데이터가 893쌍뿐이라 몇 바퀴 지나면 외우기 시작(과적합)한다.
+        mark = ''
+        if te < best['test_loss']:
+            best = {'epoch': epoch, 'test_loss': te}
+            model.save_pretrained(args.out)
+            tokenizer.save_pretrained(args.out)
+            mark = '← 지금까지 최선. 저장함'
+        say('%-6d %-12.4f %-12.4f %-10s %s' % (epoch, tr, te, '%.0f초' % (time.time() - t0), mark))
+
+    say('')
+    say('가장 좋았던 바퀴 : %d (시험 손실 %.4f)' % (best['epoch'], best['test_loss']))
+    if best['epoch'] < args.epochs:
+        say('그 뒤로는 나빠졌다 — 외우기 시작한 것이다. 저장된 것은 %d바퀴 모델이다.'
+            % best['epoch'])
 
     json.dump({
         'base_model': rc.MODEL_NAME,
@@ -205,6 +218,8 @@ def main():
         'test_pairs': len(test),
         'trainable_params': trainable,
         'total_params': total,
+        'best_epoch': best['epoch'],
+        'best_test_loss': best['test_loss'],
         'history': history,
     }, io.open(os.path.join(args.out, 'train_info.json'), 'w', encoding='utf-8'),
         ensure_ascii=False, indent=1)
