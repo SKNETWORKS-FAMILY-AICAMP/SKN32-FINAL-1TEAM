@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>업력 분류기 시연</title>
+<style>
+  :root {
+    --ink:#17314f; --soft:#3c5570; --muted:#6b7889; --hair:#d7dde6;
+    --bg:#f4f6f8; --card:#fff;
+    --ok:#2f7a45; --ok-bg:#e4f2e8;
+    --no:#9a3b3b; --no-bg:#fbe9e9;
+    --hold:#a8681f; --hold-bg:#fbefdd;
+    --ml:#2f6ab0; --ml-bg:#e4eefb;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:15px/1.7 "맑은 고딕","Malgun Gothic",system-ui,sans-serif; }
+  .wrap { max-width:1000px; margin:0 auto; padding:28px 18px 70px; }
+  h1 { font-size:23px; margin:0 0 6px; letter-spacing:-.01em; }
+  .sub { color:var(--muted); font-size:13.5px; margin:0 0 22px; max-width:66ch; }
+  .card { background:var(--card); border:1px solid var(--hair); border-radius:12px;
+          padding:18px; margin-bottom:16px; }
+  h2 { font-size:15px; margin:0 0 10px; }
+  textarea { width:100%; min-height:72px; padding:11px 13px; border:1px solid var(--hair);
+             border-radius:8px; font:inherit; resize:vertical; background:var(--card); color:inherit; }
+  button { margin-top:12px; padding:10px 20px; border:0; border-radius:7px;
+           background:var(--ink); color:#fff; font:inherit; font-weight:bold; cursor:pointer; }
+  button:disabled { background:#9aa5b8; cursor:default; }
+  .hint { font-size:12.5px; color:var(--muted); margin-top:8px; }
+
+  .verdicts { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; }
+  .v { border:1px solid var(--hair); border-radius:10px; padding:14px 16px; }
+  .v .who { font-size:11.5px; letter-spacing:.09em; text-transform:uppercase;
+            color:var(--muted); font-weight:bold; }
+  .v .say { font-size:19px; font-weight:bold; margin:4px 0 2px; }
+  .v .why { font-size:13px; color:var(--soft); }
+  .v.age { background:var(--ok-bg); border-color:#bcdcc6; } .v.age .say { color:var(--ok); }
+  .v.not { background:var(--no-bg); border-color:#e8c2c2; } .v.not .say { color:var(--no); }
+  .v.hold{ background:var(--hold-bg); border-color:#eccf9e; } .v.hold .say { color:var(--hold); }
+
+  .meter { margin-top:14px; }
+  .meter .track { position:relative; height:26px; background:linear-gradient(90deg,
+      var(--no-bg) 0%, var(--no-bg) 35%, var(--hold-bg) 35%, var(--hold-bg) 65%,
+      var(--ok-bg) 65%, var(--ok-bg) 100%);
+      border:1px solid var(--hair); border-radius:6px; }
+  .meter .mark { position:absolute; top:-5px; bottom:-5px; width:3px; background:var(--ink);
+                 border-radius:2px; }
+  .meter .scale { display:flex; justify-content:space-between; font-size:11.5px;
+                  color:var(--muted); margin-top:5px; }
+  .meter .cap { font-size:12.5px; color:var(--soft); margin-top:6px; }
+
+  .flag { display:inline-block; font-size:12px; font-weight:bold; padding:3px 10px;
+          border-radius:20px; margin-bottom:10px; }
+  .flag.same { background:#eef1f6; color:var(--soft); }
+  .flag.diff { background:var(--ml-bg); color:var(--ml); }
+
+  .samples { display:grid; gap:6px; }
+  .s { text-align:left; width:100%; background:var(--card); border:1px solid var(--hair);
+       border-radius:8px; padding:9px 12px; cursor:pointer; font:inherit; color:inherit;
+       display:flex; gap:10px; align-items:flex-start; margin:0; }
+  .s:hover { border-color:var(--ml); background:var(--ml-bg); }
+  .s .badge { flex:0 0 auto; font-size:11px; font-weight:bold; padding:2px 8px;
+              border-radius:4px; margin-top:2px; white-space:nowrap; }
+  .s .badge.kept { background:var(--ok-bg); color:var(--ok); }
+  .s .badge.drop { background:var(--no-bg); color:var(--no); }
+  .s .t { font-size:13px; line-height:1.5; }
+  .err { background:var(--hold-bg); border:1px solid #eccf9e; padding:10px 12px;
+         border-radius:8px; font-size:13.5px; }
+  .nav { font-size:13px; color:var(--muted); margin-bottom:16px; }
+  .nav a { color:var(--ml); text-decoration:none; }
+  .nav a:hover { text-decoration:underline; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="nav"><a href="/">공고 매칭</a> · <a href="/demo">리랭커 시연</a> · <b>업력 분류기</b></div>
+
+  <h1>업력 분류기 시연</h1>
+  <p class="sub">
+    공고문에서 뽑은 문장 하나가 <b>업력 조건</b>인지 아닌지를 가린다.
+    지금 서비스가 쓰는 <b>정규식 규칙</b>과 학습한 <b>분류기</b>가 같은 문장을 어떻게 보는지 나란히 놓았다.
+    · 내부 검토용이며 분류기는 아직 서비스에 연결되지 않았다.
+  </p>
+
+  <div class="card">
+    <h2>문장 넣기</h2>
+    <textarea id="text">예비창업자(팀) 또는 7년 이내 창업기업</textarea>
+    <button id="go">판단해보기</button>
+    <div class="hint">
+      업력 = 사업을 한 기간. 사람 나이·근로자 근속연수·개월 단위는 업력이 아니다.
+    </div>
+  </div>
+
+  <div id="out"></div>
+
+  <div class="card">
+    <h2>실제 공고에서 뽑힌 문장</h2>
+    <div class="hint" style="margin:0 0 10px">
+      빨간 표시는 규칙이 버린 문장이다. 눌러서 분류기가 어떻게 보는지 확인해 보라.
+    </div>
+    <div class="samples" id="samples">불러오는 중…</div>
+  </div>
+
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const SAY = { age:'업력 조건이다', not:'업력이 아니다', hold:'판단 보류' };
+
+async function judge(text) {
+  $('go').disabled = true;
+  $('out').innerHTML = '<div class="card">판단 중…</div>';
+  try {
+    const r = await fetch('/api/classify', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ text })
+    });
+    const d = await r.json();
+
+    if (!d.ready) {
+      $('out').innerHTML = `<div class="card"><div class="err">${d.message}</div></div>`;
+      return;
+    }
+
+    const pct = (d.proba * 100).toFixed(0);
+    const [lo, hi] = d.abstain;
+    const flag = d.agree === null
+      ? '<span class="flag same">분류기가 판단을 보류했다</span>'
+      : (d.agree
+          ? '<span class="flag same">규칙과 분류기의 판단이 같다</span>'
+          : '<span class="flag diff">규칙과 분류기의 판단이 갈렸다</span>');
+
+    $('out').innerHTML = `
+      <div class="card">
+        ${flag}
+        <div class="verdicts">
+          <div class="v ${d.rule ? 'age' : 'not'}">
+            <div class="who">규칙 (현재 서비스)</div>
+            <div class="say">${d.rule ? '업력 근거로 인정' : '버린다'}</div>
+            <div class="why">${d.rule_why}</div>
+          </div>
+          <div class="v ${d.verdict}">
+            <div class="who">분류기 (${d.exp})</div>
+            <div class="say">${SAY[d.verdict]}</div>
+            <div class="why">업력일 확률 ${pct}%</div>
+          </div>
+        </div>
+        <div class="meter">
+          <div class="track"><div class="mark" style="left:calc(${pct}% - 1.5px)"></div></div>
+          <div class="scale"><span>0% · 업력 아님</span>
+            <span>${(lo*100)}~${(hi*100)}% 보류</span><span>업력 100%</span></div>
+          <div class="cap">
+            확신이 ${(lo*100)}~${(hi*100)}% 사이면 판단하지 않는다 —
+            틀리게 말하는 것보다 “모르겠다”가 낫기 때문이다.
+          </div>
+        </div>
+      </div>`;
+  } catch (e) {
+    $('out').innerHTML = `<div class="card"><div class="err">요청 실패: ${e}</div></div>`;
+  } finally {
+    $('go').disabled = false;
+  }
+}
+
+$('go').onclick = () => judge($('text').value);
+
+fetch('/api/classify/samples?limit=24').then(r => r.json()).then(d => {
+  $('samples').innerHTML = d.samples.map(s => `
+    <button class="s" data-t="${s.text.replace(/"/g, '&quot;')}">
+      <span class="badge ${s.kept ? 'kept' : 'drop'}">${s.kept ? '규칙 통과' : '규칙이 버림'}</span>
+      <span class="t">${s.text}</span>
+    </button>`).join('');
+  $('samples').querySelectorAll('.s').forEach(b => {
+    b.onclick = () => { $('text').value = b.dataset.t; judge(b.dataset.t);
+                        window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  });
+}).catch(() => { $('samples').innerHTML = '<div class="err">표본을 불러오지 못했다</div>'; });
+</script>
+</body>
+</html>

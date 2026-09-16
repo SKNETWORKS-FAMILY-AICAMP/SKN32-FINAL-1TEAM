@@ -382,6 +382,157 @@ def health():
             'on_ec2': ON_EC2, 'source': 'chroma'}
 
 
+# ── 리랭커 시연 (내부 검토용) ────────────────────────────────
+# 서비스 경로가 아니다. 학습한 리랭커가 검색 결과의 순서를 어떻게 바꾸는지,
+# 그리고 그 대가로 얼마나 느려지는지를 눈으로 보기 위한 화면이다.
+# 모델은 처음 요청할 때 한 번만 올린다(수십 초). GPU 가 없으면 매우 느리다.
+
+def _scorer():
+    if STATE.get('scorer') is None:
+        sys.path.insert(0, os.path.join(HERE, 'ml'))
+        import rerank_common as rc
+        adapter = rc.ADAPTER_DIR if os.path.exists(rc.ADAPTER_DIR) else None
+        STATE['scorer'] = rc.Scorer(adapter=adapter)
+        STATE['scorer_kind'] = '학습한 모델' if adapter else '사전학습(학습 전)'
+        STATE['notice_text'] = rc.notice_text
+    return STATE['scorer']
+
+
+@app.post('/api/match_rerank')
+def match_rerank(req: MatchRequest):
+    """검색만 한 결과와 리랭커를 얹은 결과를 **둘 다** 돌려준다."""
+    base = match(req.model_copy(update={'top': 30, 'demote_groups': False}))
+    before = base['results']
+    if not before:
+        return {'query': base['query'], 'before': [], 'after': [], 'ready': False,
+                'message': '후보가 없다'}
+
+    try:
+        scorer = _scorer()
+    except Exception as exc:                      # 모델이 없거나 못 올릴 때
+        return {'query': base['query'], 'before': before[:req.top], 'after': [],
+                'ready': False, 'message': '리랭커를 올리지 못했다: %s' % exc}
+
+    import store_mysql  # noqa: F401  (load_notices 가 쓴다)
+    sys.path.insert(0, os.path.join(HERE, 'eval'))
+    import common
+
+    ids = [r['notice_id'] for r in before]
+    notices = common.load_notices(ids, with_attachment=False)
+    texts = [STATE['notice_text'](notices[n]) if n in notices else '' for n in ids]
+
+    t0 = time.time()
+    scores = scorer.score(base['query'], texts)
+    rerank_ms = (time.time() - t0) * 1000
+
+    rank_before = {r['notice_id']: i + 1 for i, r in enumerate(before)}
+    by_id = {r['notice_id']: r for r in before}
+    ordered = sorted(zip(ids, scores), key=lambda x: -x[1])
+
+    after = []
+    for pos, (nid, sc) in enumerate(ordered[:req.top], 1):
+        row = dict(by_id[nid])
+        row['rerank_score'] = round(float(sc), 4)
+        row['rank_before'] = rank_before[nid]
+        row['moved'] = rank_before[nid] - pos
+        after.append(row)
+
+    return {'query': base['query'], 'ready': True,
+            'before': before[:req.top], 'after': after,
+            'pool': len(before), 'model': STATE.get('scorer_kind'),
+            'device': scorer.device,
+            'encode_ms': base['encode_ms'], 'search_ms': base['search_ms'],
+            'rerank_ms': round(rerank_ms, 0)}
+
+
+@app.get('/demo', response_class=HTMLResponse)
+def demo():
+    with open(os.path.join(HERE, 'demo.html'), encoding='utf-8') as f:
+        return f.read()
+
+
+# ── 업력 분류기 시연 (내부 검토용) ───────────────────────────
+# 규칙(extract_conditions.py)과 학습한 분류기가 같은 문장을 어떻게 판단하는지
+# 나란히 보여준다. 규칙은 지금 서비스가 쓰는 것이고, 분류기는 아직 미연결이다.
+
+ABSTAIN = (0.35, 0.65)
+
+
+class ClassifyRequest(BaseModel):
+    text: str
+
+
+def _classifier():
+    if STATE.get('clf') is None:
+        import joblib
+        path = os.path.join(HERE, 'ml', 'models', 'age_classifier_v2.joblib')
+        if not os.path.exists(path):
+            raise FileNotFoundError('학습한 분류기가 없다: %s' % path)
+        STATE['clf'] = joblib.load(path)
+    return STATE['clf']
+
+
+def _rule_verdict(quote):
+    """extract_conditions.py 의 검산 규칙을 그대로 적용해 본다."""
+    import extract_conditions as ec
+    if not quote.strip():
+        return False, '근거 문장 없음'
+    if ec.AGE_DECOY.search(quote) and not ec.AGE_EVIDENCE.search(quote):
+        return False, '근거가 사람 나이·근속연수로 보임'
+    if not ec.AGE_EVIDENCE.search(quote):
+        return False, '근거에 업력 표현이 없음'
+    if ec.AGE_MONTH_ONLY.search(quote) and not ec.AGE_YEAR.search(quote):
+        return False, '근거가 개월 단위인데 연 단위로 읽음'
+    return True, '업력 근거로 인정'
+
+
+@app.post('/api/classify')
+def classify(req: ClassifyRequest):
+    """한 문장에 대해 규칙과 모델의 판단을 둘 다 돌려준다."""
+    text = ' '.join(req.text.split())
+    rule_ok, rule_why = _rule_verdict(text)
+    out = {'text': text, 'rule': rule_ok, 'rule_why': rule_why}
+    try:
+        bundle = _classifier()
+    except Exception as exc:
+        out.update({'ready': False, 'message': str(exc)})
+        return out
+
+    proba = float(bundle['model'].predict_proba([text])[0][1])
+    low, high = ABSTAIN
+    verdict = 'hold' if low <= proba <= high else ('age' if proba > high else 'not')
+    out.update({'ready': True, 'proba': round(proba, 4), 'verdict': verdict,
+                'abstain': list(ABSTAIN), 'exp': bundle.get('exp'),
+                'agree': (verdict == 'age') == rule_ok if verdict != 'hold' else None})
+    return out
+
+
+@app.get('/api/classify/samples')
+def classify_samples(limit: int = 24):
+    """실제 공고에서 뽑힌 업력 근거 문장. 규칙이 버린 것을 앞에 둔다."""
+    connection = _connect()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                'SELECT age_source_quote, age_years_max, age_rejected '
+                '  FROM notice_conditions '
+                " WHERE age_source_quote IS NOT NULL AND age_source_quote <> '' "
+                ' ORDER BY age_rejected IS NULL, CHAR_LENGTH(age_source_quote) '
+                ' LIMIT %s', (limit,))
+            rows = cursor.fetchall()
+    finally:
+        connection.close()
+    return {'samples': [{'text': ' '.join(str(q).split()),
+                         'kept': y is not None,
+                         'rejected': r} for q, y, r in rows]}
+
+
+@app.get('/classify', response_class=HTMLResponse)
+def classify_page():
+    with open(os.path.join(HERE, 'classify.html'), encoding='utf-8') as f:
+        return f.read()
+
+
 @app.get('/', response_class=HTMLResponse)
 def index():
     with open(os.path.join(HERE, 'app.html'), encoding='utf-8') as f:

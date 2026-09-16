@@ -127,12 +127,13 @@ class Scorer:
       s.score(질의문장, [공고문장, ...])  →  [점수, ...]
     """
 
-    def __init__(self, adapter=None, device=None, batch_size=16):
+    def __init__(self, adapter=None, device=None, batch_size=16, max_len=None):
         import torch
         from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
         self.torch = torch
         self.batch_size = batch_size
+        self.max_len = max_len or MAX_LEN
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
 
         self.tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
@@ -155,7 +156,7 @@ class Scorer:
                 chunk = notice_texts[i:i + self.batch_size]
                 enc = self.tokenizer([query] * len(chunk), chunk,
                                      padding=True, truncation=True,
-                                     max_length=MAX_LEN, return_tensors='pt').to(self.device)
+                                     max_length=self.max_len, return_tensors='pt').to(self.device)
                 logits = self.model(**enc).logits.view(-1).float()
                 out += torch.sigmoid(logits).cpu().tolist()
         return out

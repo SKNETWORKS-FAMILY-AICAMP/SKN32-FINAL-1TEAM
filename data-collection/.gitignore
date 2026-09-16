@@ -31,8 +31,8 @@ Thumbs.db
 desktop.ini
 
 # ── ML 학습 산출물 ───────────────────────────────────────
-# 리랭커 파인튜닝 결과는 수백 MB 라 올리지 않는다. 제출은 파일로 따로 전달한다.
-ml/models/reranker*/
+# 리랭커는 LoRA 어댑터만 저장해 29MB 다. 제출물이자 두 PC 에서 같이 써야 하므로
+# 저장소에 둔다. (원본 5.7억 파라미터 모델은 HuggingFace 에서 받으므로 여기 없다)
 # EC2 DB 에서 언제든 다시 만들 수 있다.
 ml/data/age_labels.jsonl
 .ipynb_checkpoints/

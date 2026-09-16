@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>리랭커 시연 — 공고 검색 · 매칭</title>
+<style>
+  :root {
+    --ink:#1f3864; --line:#d8dee9; --muted:#6b7280; --bg:#f7f8fa;
+    --ml:#e8f0fc; --dl:#ecf6ec; --warn:#fff4e6;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:#222;
+         font:14px/1.6 "맑은 고딕","Malgun Gothic",system-ui,sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font-size:22px; color:var(--ink); margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:10px;
+          padding:16px; margin-bottom:16px; }
+  label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
+  input, textarea, select { width:100%; padding:8px 10px; border:1px solid var(--line);
+          border-radius:6px; font:inherit; background:#fff; }
+  textarea { resize:vertical; min-height:64px; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; }
+  .row > div { flex:1 1 200px; }
+  button { margin-top:14px; padding:10px 18px; border:0; border-radius:6px;
+           background:var(--ink); color:#fff; font:inherit; font-weight:bold; cursor:pointer; }
+  button:disabled { background:#9aa5b8; cursor:default; }
+  .note { font-size:12px; color:var(--muted); margin-top:8px; }
+
+  .timing { display:flex; gap:10px; flex-wrap:wrap; margin:6px 0 14px; }
+  .chip { background:#fff; border:1px solid var(--line); border-radius:20px;
+          padding:5px 12px; font-size:12px; }
+  .chip b { color:var(--ink); }
+  .bar { height:8px; background:#eef1f6; border-radius:4px; overflow:hidden; margin-top:4px; }
+  .bar i { display:block; height:100%; }
+
+  .cols { display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; }
+  .col { flex:1 1 380px; min-width:320px; }
+  .col h2 { font-size:15px; margin:0 0 4px; color:var(--ink); }
+  .col .cap { font-size:12px; color:var(--muted); margin-bottom:10px; }
+  .hit { border:1px solid var(--line); border-radius:8px; padding:10px 12px;
+         margin-bottom:8px; background:#fff; }
+  .hit.up { border-color:#8bc98b; background:var(--dl); }
+  .hit.down { background:#fbfbfb; }
+  .hit .t { font-weight:bold; font-size:13px; }
+  .hit .m { font-size:12px; color:var(--muted); margin-top:3px;
+            display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .pos { display:inline-block; width:22px; height:22px; line-height:22px; text-align:center;
+         border-radius:50%; background:var(--ink); color:#fff; font-size:11px; margin-right:6px; }
+  .move { font-size:11px; padding:2px 7px; border-radius:10px; font-weight:bold; }
+  .move.up { background:#2e7d32; color:#fff; }
+  .move.same { background:#e6e8ec; color:#666; }
+  .move.down { background:#e0e0e0; color:#666; }
+  .badge { font-size:11px; padding:2px 7px; border-radius:4px; background:#eef1f6; color:#445; }
+  .empty { color:var(--muted); padding:20px; text-align:center; }
+  .err { background:var(--warn); border:1px solid #f0c68a; padding:10px 12px;
+         border-radius:6px; font-size:13px; }
+  .legend { font-size:12px; color:var(--muted); margin-top:10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>리랭커 시연</h1>
+  <div class="sub">
+    공고 검색이 뽑은 후보 30건을 리랭커가 다시 읽고 순서를 바꾼다.
+    <b>무엇이 달라지는지</b>와 <b>그 대가로 얼마나 느려지는지</b>를 함께 본다.
+    · 내부 검토용 화면이며 서비스 경로가 아니다.
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label>신청자 유형</label>
+        <select id="type">
+          <option>법인사업자</option>
+          <option>개인사업자</option>
+          <option>예비창업자</option>
+        </select>
+      </div>
+      <div>
+        <label>설립일 (예비창업자는 비움)</label>
+        <input id="founded" placeholder="2023-03-01" value="2023-03-01">
+      </div>
+      <div>
+        <label>보여줄 건수</label>
+        <input id="top" type="number" min="1" max="10" value="5">
+      </div>
+    </div>
+
+    <label>사업 아이디어</label>
+    <textarea id="idea">중소 금형공장의 불량 검출을 위한 비전 AI 검사 장비를 개발한다</textarea>
+
+    <div class="row">
+      <div>
+        <label>팀 경력 (쉼표로 구분)</label>
+        <input id="career" value="금형 설계 10년, 머신비전 개발 5년">
+      </div>
+      <div>
+        <label>수익 모델 (쉼표로 구분)</label>
+        <input id="revenue" value="검사 장비 판매, 유지보수 구독">
+      </div>
+    </div>
+
+    <button id="go">검색하고 비교하기</button>
+    <div class="note" id="note">
+      처음 한 번은 리랭커 모델을 메모리에 올리느라 수십 초 걸린다.
+      GPU 가 없으면 한 번에 30초 이상 걸릴 수 있다.
+    </div>
+  </div>
+
+  <div id="out"></div>
+
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function split(v) {
+  return v.split(',').map(s => s.trim()).filter(Boolean);
+}
+
+function payload() {
+  return {
+    applicant_type: $('type').value,
+    founded_at: $('founded').value.trim(),
+    idea: $('idea').value.trim(),
+    team: split($('career').value).map(c => ({ career: c })),
+    revenue: split($('revenue').value).map(i => ({ item: i })),
+    top: Math.max(1, Math.min(10, parseInt($('top').value, 10) || 5)),
+    hide_expired: true,
+    demote_groups: false
+  };
+}
+
+function bar(ms, total, color) {
+  const pct = total > 0 ? Math.max(1, (ms / total) * 100) : 0;
+  return `<div class="bar"><i style="width:${pct}%;background:${color}"></i></div>`;
+}
+
+function hit(r, withMove) {
+  let move = '';
+  if (withMove) {
+    const d = r.moved;
+    const cls = d > 0 ? 'up' : (d < 0 ? 'down' : 'same');
+    const txt = d > 0 ? `▲ ${r.rank_before}위 → ` : (d < 0 ? `▼ ${r.rank_before}위 → ` : '변동 없음');
+    move = `<span class="move ${cls}">${txt}</span>`;
+  }
+  const score = withMove
+    ? `적합도 <b>${r.rerank_score}</b>`
+    : `유사도 <b>${r.score}</b>`;
+  return `
+    <div class="hit ${withMove && r.moved > 0 ? 'up' : ''}">
+      <div class="t">${r.title || '(제목 없음)'}</div>
+      <div class="m">
+        ${move}
+        <span>${score}</span>
+        <span class="badge">${r.source || ''}</span>
+        <span class="badge">${r.apply_end ? '~' + r.apply_end : (r.apply_period_type || '')}</span>
+      </div>
+    </div>`;
+}
+
+$('go').onclick = async () => {
+  $('go').disabled = true;
+  $('go').textContent = '계산 중…';
+  $('out').innerHTML = '<div class="card empty">모델을 올리고 계산하는 중이다. 기다려 달라.</div>';
+
+  try {
+    const res = await fetch('/api/match_rerank', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload())
+    });
+    const d = await res.json();
+
+    if (!d.ready) {
+      $('out').innerHTML = `
+        <div class="card"><div class="err">${d.message || '리랭커를 쓸 수 없다'}</div>
+        <div class="legend">검색 결과만 아래에 보인다.</div></div>
+        <div class="card"><div class="col">
+          <h2>검색만</h2>${(d.before || []).map(r => hit(r, false)).join('') || '<div class="empty">결과 없음</div>'}
+        </div></div>`;
+      return;
+    }
+
+    const total = d.encode_ms + d.search_ms + d.rerank_ms;
+    const moved = d.after.filter(r => r.moved !== 0).length;
+    const pulled = d.after.filter(r => r.rank_before > d.after.length);
+
+    $('out').innerHTML = `
+      <div class="card">
+        <div class="timing">
+          <span class="chip">모델 <b>${d.model}</b></span>
+          <span class="chip">장치 <b>${d.device}</b></span>
+          <span class="chip">후보 <b>${d.pool}건</b>을 다시 읽음</span>
+          <span class="chip">순위가 바뀐 공고 <b>${moved}건</b></span>
+        </div>
+        <div class="row">
+          <div><b>질의 벡터화</b> ${Math.round(d.encode_ms)} ms ${bar(d.encode_ms, total, '#7f9bd4')}</div>
+          <div><b>검색</b> ${d.search_ms} ms ${bar(d.search_ms, total, '#8bc98b')}</div>
+          <div><b>리랭킹</b> ${Math.round(d.rerank_ms)} ms ${bar(d.rerank_ms, total, '#e0a458')}</div>
+        </div>
+        <div class="legend">
+          리랭커를 빼면 질의당 <b>${Math.round(d.encode_ms + d.search_ms)} ms</b>,
+          넣으면 <b>${Math.round(total)} ms</b> 다.
+          ${d.device === 'cpu' ? ' CPU 라 특히 느리다 — 서비스에 그대로 올릴 수 없는 이유다.' : ''}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="cols">
+          <div class="col">
+            <h2>① 검색만 (현재 서비스)</h2>
+            <div class="cap">공고를 미리 숫자로 바꿔 두고 비슷한 것을 찾는다. 빠르지만 대충 본다.</div>
+            ${d.before.map(r => hit(r, false)).join('')}
+          </div>
+          <div class="col">
+            <h2>② 리랭커 적용</h2>
+            <div class="cap">후보 ${d.pool}건을 질의와 함께 다시 읽고 순서를 매긴다. 정확하지만 느리다.</div>
+            ${d.after.map(r => hit(r, true)).join('')}
+          </div>
+        </div>
+        <div class="legend">
+          ${pulled.length
+            ? `초록색 = 아래쪽에 묻혀 있다가 <b>${pulled.length}건</b>이 화면 안으로 올라왔다.`
+            : '이번 질의에서는 화면 밖에서 올라온 공고가 없다. 순서만 바뀌었다.'}
+        </div>
+      </div>`;
+  } catch (e) {
+    $('out').innerHTML = `<div class="card"><div class="err">요청이 실패했다: ${e}</div></div>`;
+  } finally {
+    $('go').disabled = false;
+    $('go').textContent = '검색하고 비교하기';
+  }
+};
+</script>
+</body>
+</html>
