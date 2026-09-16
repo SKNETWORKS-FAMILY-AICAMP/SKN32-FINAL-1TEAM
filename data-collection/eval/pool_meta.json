@@ -92,10 +92,46 @@
    },
    "snapshot_sha256": "b3821f48d0609e8ca1c721f2b2bf6deda60eb28c891d24d21de0d84170166668",
    "added_pairs": 1657
+  },
+  {
+   "at": "2026-09-16T03:21:08+00:00",
+   "git": "260a637",
+   "qids": [
+    "q001",
+    "q004",
+    "q008",
+    "q010",
+    "q019",
+    "q020",
+    "q022",
+    "q023",
+    "q030",
+    "q031",
+    "q032",
+    "q045",
+    "q046",
+    "q047",
+    "q048",
+    "q049",
+    "q051",
+    "n002",
+    "n007",
+    "n008"
+   ],
+   "method": {
+    "added_from": "rerank_candidates.jsonl",
+    "shuffle_seed": 20260915
+   },
+   "corpus_sha256": "d1ae6efd303e31310d1cf667f31a15ec93a35fa76cd23bcc0491e80833052465",
+   "index": {
+    "skipped": "add-from 경로라 색인 검사를 하지 않았다"
+   },
+   "snapshot_sha256": "6abd1c53e192822ad16f4cf93c8fab0d4d343a1b9e8746e3f374d9700f10981e",
+   "added_pairs": 67
   }
  ],
- "label_version": "topic-v1",
- "pairs": 1657,
+ "label_version": "topic-v2",
+ "pairs": 1724,
  "queries": 60,
- "snapshot_notices": 814
+ "snapshot_notices": 841
 }
