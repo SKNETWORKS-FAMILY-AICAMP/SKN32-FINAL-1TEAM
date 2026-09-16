@@ -1,0 +1,40 @@
+{
+ "base_model": "BAAI/bge-reranker-v2-m3",
+ "method": "LoRA",
+ "seed": 20260916,
+ "epochs": 4,
+ "batch": 4,
+ "accum": 2,
+ "effective_batch": 8,
+ "lr": 0.0002,
+ "lora_rank": 16,
+ "max_len": 512,
+ "train_pairs": 893,
+ "test_pairs": 424,
+ "trainable_params": 3409921,
+ "total_params": 571165698,
+ "best_epoch": 2,
+ "best_test_loss": 0.5540572157445943,
+ "history": [
+  {
+   "epoch": 1,
+   "train_loss": 0.8677259335609326,
+   "test_loss": 0.6013195303813467
+  },
+  {
+   "epoch": 2,
+   "train_loss": 0.37704873987768694,
+   "test_loss": 0.5540572157445943
+  },
+  {
+   "epoch": 3,
+   "train_loss": 0.2982514638303542,
+   "test_loss": 0.6100155816606756
+  },
+  {
+   "epoch": 4,
+   "train_loss": 0.25346866593939177,
+   "test_loss": 0.5677783403475329
+  }
+ ]
+}
