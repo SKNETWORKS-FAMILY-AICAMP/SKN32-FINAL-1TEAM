@@ -166,6 +166,8 @@ class MatchRequest(BaseModel):
     revenue: list[RevenueItem] = []
     top: int = 3
     hide_expired: bool = True
+    # 개선안 B. 특정 대상 집단 공고를 신청자 입력에 근거가 없으면 뒤로 보낸다(rank_rules.py)
+    demote_groups: bool = True
 
 
 class GateRequest(BaseModel):
@@ -184,12 +186,14 @@ def match(req: MatchRequest):
 
     t0 = time.time()
     want = req.top * 8 if req.hide_expired else req.top + 1
+    if req.demote_groups:
+        want = max(want, 30)          # 뒤로 보낼 공고가 있어도 3건이 채워지게 넉넉히
     col = STATE['collection']
     found = col.query(query_embeddings=[qv], n_results=min(want, col.count()))
     search_ms = (time.time() - t0) * 1000
 
     today = date.today().isoformat()
-    results = []
+    candidates = []
     for nid, dist in zip(found['ids'][0], found['distances'][0]):
         if nid == '__watermark__':
             continue
@@ -199,6 +203,25 @@ def match(req: MatchRequest):
         end = row.get('apply_end')
         if req.hide_expired and end is not None and str(end) < today:
             continue
+        candidates.append((nid, dist, row))
+
+    # 개선안 B — Chroma 후보의 순서만 바꾼다. 빼지 않는다.
+    demoted = []
+    if req.demote_groups:
+        import rank_rules
+        applicant = rank_rules.applicant_text(req.idea, [m.career for m in req.team or []])
+        keep, moved = rank_rules.demote_groups(
+            candidates, applicant,
+            key=lambda c: (c[2].get('title'), c[2].get('target_category')))
+        candidates = keep + moved
+        demoted = [{'notice_id': nid, 'title': row.get('title') or '', 'score': round(1.0 - dist, 4),
+                    'groups': rank_rules.groups_not_matched(row.get('title'),
+                                                            row.get('target_category'), applicant)}
+                   for nid, dist, row in moved][:5]
+
+    results = []
+    for nid, dist, row in candidates:
+        end = row.get('apply_end')
         score = 1.0 - dist
         results.append({
             'notice_id': nid,
@@ -220,7 +243,8 @@ def match(req: MatchRequest):
 
     return {'query': query, 'count': len(results),
             'encode_ms': round(encode_ms, 1), 'search_ms': round(search_ms, 2),
-            'source': 'chroma', 'results': results}
+            'source': 'chroma', 'demote_groups': req.demote_groups,
+            'demoted': demoted, 'results': results}
 
 
 @app.post('/api/eligibility')

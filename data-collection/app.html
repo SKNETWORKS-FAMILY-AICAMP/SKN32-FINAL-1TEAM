@@ -67,6 +67,15 @@
     margin-top: 16px; background: #f2f7f3; }
   .banner.warn { background: #fdf9ec; }
   a { color: var(--accent); }
+  .toggle { display: flex; gap: 10px; align-items: flex-start; background: var(--card);
+    border: 1px dashed var(--line); border-radius: 10px; padding: 12px 14px; margin: -8px 0 16px;
+    cursor: pointer; font-size: 14px; }
+  .toggle input { width: auto; margin-top: 4px; }
+  .toggle small { color: var(--muted); }
+  .demoted { margin-top: 14px; border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 16px; background: #fdf9ec; font-size: 13px; }
+  .demoted ul { margin: 6px 0 0; padding-left: 18px; }
+  .demoted li { margin: 2px 0; }
   .spin { color: var(--muted); }
   .err { color: var(--no); }
   [hidden] { display: none !important; }
@@ -115,7 +124,13 @@
     <p class="eyebrow">매칭 결과</p>
     <h1 id="list-title">공고를 찾았습니다</h1>
     <p class="lede" id="list-lede"></p>
+    <label class="toggle">
+      <input type="checkbox" id="demote" checked>
+      <span><b>특정 대상 집단 공고 뒤로 보내기</b> <small>(시험 · 개선안 B)</small><br>
+        <small>장애인·체육인·재창업자 등 대상이 정해진 공고는, 입력에 그 집단이라는 내용이 없으면 뒤로 보냅니다. 끄면 기존 방식으로 다시 검색합니다.</small></span>
+    </label>
     <div class="cards" id="cards"></div>
+    <div class="demoted" id="demoted" hidden></div>
     <p class="hint" id="list-foot"></p>
   </section>
 
@@ -214,7 +229,24 @@ $('#go').onclick = async () => {
   $('#go').disabled = true;
   $('#go-note').textContent = '검색 중…';
   try {
-    const d = await post('/api/match', last);
+    await runMatch();
+    show('step-list');
+  } catch (e) {
+    $('#go-note').innerHTML = `<span class="err">실패: ${esc(String(e.message).slice(0,200))}</span>`;
+  } finally { validate(); }
+};
+
+// 개선안 B 켜고 끄기 — 같은 입력으로 다시 검색해 결과를 바로 비교한다
+$('#demote').addEventListener('change', async () => {
+  if (!last) return;
+  $('#cards').style.opacity = .4;
+  try { await runMatch(); }
+  catch (e) { $('#list-foot').innerHTML = `<span class="err">실패: ${esc(String(e.message).slice(0,200))}</span>`; }
+  finally { $('#cards').style.opacity = 1; }
+});
+
+async function runMatch() {
+    const d = await post('/api/match', {...last, demote_groups: $('#demote').checked});
     $('#list-title').textContent =
       `지금 신청 가능한 공고 ${d.count}건을 찾았습니다`;
     $('#list-lede').textContent =
@@ -236,13 +268,17 @@ $('#go').onclick = async () => {
       b.onclick = () => openGate(n);
       $('#cards').appendChild(b);
     });
+    const box = $('#demoted');
+    if (d.demote_groups && d.demoted.length) {
+      box.innerHTML = `<b>뒤로 보낸 공고 ${d.demoted.length}건</b> — 입력에 해당 집단이라는 내용이 없어서
+        <ul>${d.demoted.map(x => `<li>${esc(x.title)} <small>(유사도 ${x.score} · ${esc(x.groups.join(', '))})</small></li>`).join('')}</ul>`;
+      box.hidden = false;
+    } else {
+      box.hidden = true;
+    }
     $('#list-foot').textContent =
       `질의: "${d.query}"  ·  인코딩 ${d.encode_ms}ms + 벡터DB ${d.search_ms}ms`;
-    show('step-list');
-  } catch (e) {
-    $('#go-note').innerHTML = `<span class="err">실패: ${esc(String(e.message).slice(0,200))}</span>`;
-  } finally { validate(); }
-};
+}
 
 // 자격요건
 async function openGate(n) {

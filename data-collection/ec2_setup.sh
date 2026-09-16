@@ -77,8 +77,10 @@ echo
 "$PY" ec2_vecstore.py --stat
 
 echo "== 5. crontab =="
-# PC 배치가 09:00 에 시작해 약 80초 걸린다. 끝난 뒤인 09:10 에 갱신한다.
-LINE="10 9 * * * cd $DIR && $PY ec2_vecstore.py >> $DIR/data/vecstore.log 2>&1"
+# PC 배치가 09:00 KST 에 시작해 수 분 걸린다. 끝난 뒤인 09:10 KST 에 갱신한다.
+# **EC2 는 UTC 다.** 09:10 KST = 00:10 UTC 이므로 "10 0" 이다. "10 9" 로 적으면
+# 18:10 KST 에 돌아 새 벡터가 9시간 동안 검색에 안 잡힌다(2026-09-14 실제로 겪음).
+LINE="10 0 * * * cd $DIR && $PY ec2_vecstore.py >> $DIR/data/vecstore.log 2>&1"
 if crontab -l 2>/dev/null | grep -qF 'ec2_vecstore.py'; then
     echo "  이미 등록돼 있습니다:"
     crontab -l | grep -F 'ec2_vecstore.py'
@@ -86,7 +88,7 @@ else
     # crontab 이 아직 하나도 없으면 `crontab -l` 이 실패한다. set -e 가 켜져 있어
     # 그대로 두면 서브셸이 거기서 죽고 echo 가 실행되지 않는다. || true 로 막는다.
     { crontab -l 2>/dev/null || true; echo "$LINE"; } | crontab -
-    echo "  등록했습니다: 매일 09:10"
+    echo "  등록했습니다: 매일 09:10 KST (00:10 UTC)"
     crontab -l | grep -F 'ec2_vecstore.py'
 fi
 

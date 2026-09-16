@@ -23,8 +23,16 @@ data/labeling/
 data/recommendation_*
 data/backup_*.sql
 data/conditions_sample_*.json
+eval/snapshot/
 
 .idea/
 .vscode/
 Thumbs.db
 desktop.ini
+
+# ── ML 학습 산출물 ───────────────────────────────────────
+# 리랭커 파인튜닝 결과는 수백 MB 라 올리지 않는다. 제출은 파일로 따로 전달한다.
+ml/models/reranker*/
+# EC2 DB 에서 언제든 다시 만들 수 있다.
+ml/data/age_labels.jsonl
+.ipynb_checkpoints/

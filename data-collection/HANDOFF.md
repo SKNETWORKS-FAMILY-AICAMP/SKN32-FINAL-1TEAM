@@ -26,7 +26,7 @@ EC2  43.201.90.238 · t3.medium 4GB · 스왑 2GB · 탄력적 IP
    MySQL s_brain                    공고·첨부·본문·벡터·자격요건
    ~/s-brain/data/vecstore/chroma   벡터 DB
    ~/s-brain/attachments            첨부 원본 612MB (2026-09-09부터 있었음)
-   crontab 09:10 ec2_vecstore.py    MySQL 벡터 → Chroma 색인 증분 갱신      ← 신규
+   crontab 00:10 UTC (= 09:10 KST) ec2_vecstore.py  MySQL 벡터 → Chroma      ← 신규
 ```
 
 **5~10단계는 모두 바뀐 것만 처리한다.** 두 번째 실행하면 전부 0건이 나온다.
@@ -360,6 +360,9 @@ EC2 쪽 `.env` 는 `MYSQL_HOST=127.0.0.1` + `MYSQL_SSL=1` 이고 API 키는 넣�
 **작업 스케줄러가 `Interactive` 로 등록돼 있다.** `S4U` 등록이 권한 부족으로 거부됐다.
 **로그오프 상태에서는 배치가 돌지 않는다.** 관리자 권한 PowerShell 에서
 `-Mode Uninstall` 후 `-Mode Install` 하면 `S4U` 로 바뀐다.
+
+**EC2 는 UTC 다.** crontab 시각을 한국시간으로 적으면 9시간 밀린다. 처음에 `10 9` 로
+등록해 18:10 KST 에 돌았다. 09:10 KST 는 `10 0 * * *` 이다(2026-09-15 수정).
 
 **`MYSQL_SSL_CA` 를 비우고 평문으로 붙으면 거부된다.** 루프백이라도
 `require_secure_transport=ON` 이 적용된다. EC2 안에서는 `MYSQL_SSL=1` 을 쓴다.
