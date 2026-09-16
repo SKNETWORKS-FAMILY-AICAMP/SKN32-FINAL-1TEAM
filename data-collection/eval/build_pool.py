@@ -81,6 +81,9 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--qids', nargs='*')
     ap.add_argument('--plan', action='store_true')
+    ap.add_argument('--add-from', dest='add_from',
+                    help='다른 검색 방식의 상위 결과 JSONL 을 읽어 쌍만 더한다. '
+                         '{qid, notice_id, rank, system} 행. Dense·BM25 는 다시 돌리지 않는다.')
     args = ap.parse_args()
 
     queries = common.load_queries()
@@ -88,21 +91,63 @@ def main():
     print('질의 %d개' % len(targets))
 
     docs, corpus_hash, shas = corpus()
-    info = index_check(docs, shas, print)
+    if args.add_from:
+        # 쌍만 더하는 경로에서는 Dense·BM25 를 다시 돌리지 않으므로 색인 정합성도 보지 않는다.
+        # (색인 검사는 data/embeddings_v1.npz 를 읽는데, 학습용 PC 에는 그 파일이 없다)
+        info = {'skipped': 'add-from 경로라 색인 검사를 하지 않았다'}
+        print('색인 검사 건너뜀 (쌍 추가 전용 경로)')
+    else:
+        info = index_check(docs, shas, print)
 
     if args.plan:
         for q in targets[:5]:
             print('  %s  %s' % (q['qid'], common.query_text(q)))
         return 0
 
+    existing = common.read_jsonl(common.POOL)
+    have = {(p['qid'], p['notice_id']) for p in existing}
+    added = []
+
+    if args.add_from:
+        # 다른 검색 방식(리랭커 등)이 상위에 올린 공고를 판정 대상에 더한다.
+        # 기존 쌍은 건드리지 않는다. 순서는 여기서도 섞어 판정자가 순위를 못 보게 한다.
+        rows = common.read_jsonl(args.add_from)
+        if not rows:
+            print('⚠ %s 에서 읽은 행이 0개다. 경로를 확인한다.' % args.add_from)
+            return 1
+        want = {q['qid'] for q in targets}
+        max_order = {}
+        for p in existing:
+            max_order[p['qid']] = max(max_order.get(p['qid'], -1), p.get('order', -1))
+        by_qid = {}
+        for r in rows:
+            if r['qid'] in want:
+                by_qid.setdefault(r['qid'], []).append(r)
+        for qid in sorted(by_qid):
+            fresh = sorted({r['notice_id'] for r in by_qid[qid]}
+                           - {n for (q_, n) in have if q_ == qid})
+            random.Random('%s:%s:add' % (SHUFFLE_SEED, qid)).shuffle(fresh)
+            systems = sorted({r.get('system', '?') for r in by_qid[qid]})
+            for i, nid in enumerate(fresh):
+                added.append({
+                    'qid': qid, 'notice_id': nid,
+                    'order': max_order.get(qid, -1) + 1 + i,
+                    'dense_rank': None, 'dense_score': None,
+                    'bm25_rank': None, 'bm25_score': None,
+                    'added_by': '+'.join(systems),
+                })
+            print('  %s  받은 후보 %2d · 새로 %2d  | %s'
+                  % (qid, len(by_qid[qid]), len(fresh), ','.join(systems)))
+        print('\n새 쌍 %d개를 더한다.' % len(added))
+        return finish(existing, added, shas, info, corpus_hash, targets,
+                      method={'added_from': os.path.basename(args.add_from),
+                              'shuffle_seed': SHUFFLE_SEED})
+
     import vecstore
     from bm25 import BM25
     print('BM25 색인...')
     bm25 = BM25(docs)
 
-    existing = common.read_jsonl(common.POOL)
-    have = {(p['qid'], p['notice_id']) for p in existing}
-    added = []
     for q in targets:
         text = common.query_text(q)
         qv = vecstore.embed_query(text)
@@ -133,6 +178,14 @@ def main():
         print('  %s  후보 %2d (겹침 %d) 새로 %2d  | %s'
               % (q['qid'], len(cand), overlap, new, text[:60]))
 
+    return finish(existing, added, shas, info, corpus_hash, targets,
+                  method={'dense': 'chroma@%d' % DENSE_K, 'bm25': 'char2gram@%d' % BM25_K,
+                          'bm25_input': 'embed.build_input (임베딩과 동일)', 'truncate': False,
+                          'shuffle_seed': SHUFFLE_SEED})
+
+
+def finish(existing, added, shas, info, corpus_hash, targets, method):
+    """풀 저장 · 스냅샷 갱신 · 메타 기록. 두 경로(신규 생성 / 쌍 추가)가 같이 쓴다."""
     pool = existing + added
     common.write_jsonl(common.POOL, pool)
 
@@ -158,9 +211,7 @@ def main():
     meta.setdefault('history', []).append({
         'at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
         'git': git_rev(), 'qids': [q['qid'] for q in targets],
-        'method': {'dense': 'chroma@%d' % DENSE_K, 'bm25': 'char2gram@%d' % BM25_K,
-                   'bm25_input': 'embed.build_input (임베딩과 동일)', 'truncate': False,
-                   'shuffle_seed': SHUFFLE_SEED},
+        'method': method,
         'corpus_sha256': corpus_hash, 'index': info,
         'snapshot_sha256': snap_hash, 'added_pairs': len(added)})
     meta.update({'label_version': common.LABEL_VERSION, 'pairs': len(pool),
