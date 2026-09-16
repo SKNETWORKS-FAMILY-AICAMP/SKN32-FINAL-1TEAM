@@ -1,0 +1,126 @@
+{
+ "test_queries": 20,
+ "pool": 30,
+ "train_info": {
+  "base_model": "BAAI/bge-reranker-v2-m3",
+  "method": "LoRA",
+  "seed": 20260916,
+  "epochs": 4,
+  "batch": 4,
+  "accum": 2,
+  "effective_batch": 8,
+  "lr": 0.0002,
+  "lora_rank": 16,
+  "max_len": 512,
+  "train_pairs": 893,
+  "test_pairs": 424,
+  "trainable_params": 3409921,
+  "total_params": 571165698,
+  "best_epoch": 2,
+  "best_test_loss": 0.5540572157445943,
+  "history": [
+   {
+    "epoch": 1,
+    "train_loss": 0.8677259335609326,
+    "test_loss": 0.6013195303813467
+   },
+   {
+    "epoch": 2,
+    "train_loss": 0.37704873987768694,
+    "test_loss": 0.5540572157445943
+   },
+   {
+    "epoch": 3,
+    "train_loss": 0.2982514638303542,
+    "test_loss": 0.6100155816606756
+   },
+   {
+    "epoch": 4,
+    "train_loss": 0.25346866593939177,
+    "test_loss": 0.5677783403475329
+   }
+  ]
+ },
+ "systems": [
+  {
+   "system": "dense (현재 서비스)",
+   "queries": 17,
+   "p3_rec": 0.5490196078431372,
+   "p3_rec_judged": 0.6176470588235294,
+   "p3_rel": 0.7058823529411765,
+   "ndcg3": 0.6953669276788131,
+   "unjudged3": 0.0980392156862745,
+   "p3_rec_ci95": [
+    0.4117647058823529,
+    0.6862745098039216
+   ],
+   "distinct_top3": 48,
+   "max_repeat": [
+    "kstartup:179232",
+    2
+   ],
+   "group_slots": 4,
+   "negative_group_slots": 1
+  },
+  {
+   "system": "rrf (의미+단어)",
+   "queries": 17,
+   "p3_rec": 0.6274509803921569,
+   "p3_rec_judged": 0.6764705882352942,
+   "p3_rel": 0.7254901960784315,
+   "ndcg3": 0.718204911966907,
+   "unjudged3": 0.0980392156862745,
+   "p3_rec_ci95": [
+    0.4509803921568627,
+    0.7843137254901961
+   ],
+   "distinct_top3": 46,
+   "max_repeat": [
+    "kstartup:178831",
+    3
+   ],
+   "group_slots": 3,
+   "negative_group_slots": 2
+  },
+  {
+   "system": "rrf+rerank (사전학습)",
+   "queries": 17,
+   "p3_rec": 0.607843137254902,
+   "p3_rec_judged": 0.6764705882352942,
+   "p3_rel": 0.784313725490196,
+   "ndcg3": 0.7803153315875659,
+   "unjudged3": 0.11764705882352941,
+   "p3_rec_ci95": [
+    0.4313725490196078,
+    0.7843137254901961
+   ],
+   "distinct_top3": 45,
+   "max_repeat": [
+    "kstartup:178937",
+    3
+   ],
+   "group_slots": 0,
+   "negative_group_slots": 1
+  },
+  {
+   "system": "rrf+rerank (학습)",
+   "queries": 17,
+   "p3_rec": 0.6862745098039216,
+   "p3_rec_judged": 0.7941176470588235,
+   "p3_rel": 0.8039215686274509,
+   "ndcg3": 0.8616494679695842,
+   "unjudged3": 0.1372549019607843,
+   "p3_rec_ci95": [
+    0.5294117647058824,
+    0.8235294117647058
+   ],
+   "distinct_top3": 48,
+   "max_repeat": [
+    "bizinfo:PBLN_000000000126482",
+    2
+   ],
+   "group_slots": 1,
+   "negative_group_slots": 2
+  }
+ ]
+}
