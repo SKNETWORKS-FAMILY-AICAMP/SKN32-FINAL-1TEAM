@@ -9,5 +9,8 @@ python -B -m unittest test_crawler
 
 - `output/web_design_trends_2026.json`: 구조화된 30개 목록
 - `output/web_design_trends_2026.md`: 동일 내용의 읽기용 목록
+- `output/collection_report.md`: TOP 30 전체 목록, 적용 우선순위와 근거 한계를 정리한 산출물 보고서
+
+두 수집 데이터의 산출물 보고서는 저장된 JSON에서 `python -B test/collection_reports/generate_reports.py`로 재생성합니다(저장소 루트에서 실행).
 
 모든 항목은 `rank`, `trendId`, `trendName`, `description`, `webApplicationExample`, `secondBrainApplication`, `keywords`, `evidence`를 포함합니다. `evidence.supportingText`는 출처에서 직접 확인한 문구입니다.
