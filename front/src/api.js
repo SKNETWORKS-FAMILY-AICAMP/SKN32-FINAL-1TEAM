@@ -27,6 +27,7 @@ export const api={
   get:(path)=>apiFetch(path),
   post:(path,body)=>apiFetch(path,{method:'POST',body}),
   put:(path,body)=>apiFetch(path,{method:'PUT',body}),
+  delete:(path)=>apiFetch(path,{method:'DELETE'}),
 };
 
 // ---------------------------------------------------------------------------
@@ -40,6 +41,11 @@ export const api={
 
 // 대시보드 "내 프로젝트" 목록.
 export const listProjects=()=>api.get('/projects');
+
+// 대시보드 휴지통 버튼 — 매칭 전이면 실제로 지우고, 매칭 이후면 서버가 보관 처리만
+// 한다(back/app/routers/projects.py delete_project 참고). 어느 쪽이든 프론트 입장에선
+// 그냥 "내 목록에서 사라진다"만 알면 된다.
+export const deleteProject=(projectId)=>api.delete(`/projects/${projectId}`);
 
 // IntakeForm 제출 — multipart/form-data(payload는 JSON 문자열, files는 실제 첨부파일).
 export function createProject(payload,files=[]){

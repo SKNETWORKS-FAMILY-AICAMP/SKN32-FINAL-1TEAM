@@ -98,12 +98,13 @@ def test_ai_training_agreed_survives_relogin_and_changes_only_via_patch(db_sessi
     문제가 있었다. 이제 재로그인은 저장된 값을 그대로 두고, 바꾸려면 PATCH /auth/consent를
     명시적으로 호출해야 한다."""
     client = _new_client()
-    _login(client, 'consent-changes@example.com', True)
-    user = db_session.query(User).filter(User.email == 'consent-changes@example.com').one()
-    assert user.ai_training_agreed is True
+    first = _login(client, 'consent-changes@example.com', True)
+    assert first['ai_training_agreed'] is True
 
-    # 같은 계정이 재로그인하면서 body에 반대 값(False)을 실어 보내도 -> 저장된 값(True)은 유지.
-    _login(client, 'consent-changes@example.com', False)
+    # 같은 계정으로 다른 값(False)을 실어 다시 로그인해도 기존 값(True)이 유지돼야 한다.
+    second = _login(client, 'consent-changes@example.com', False)
+    assert second['ai_training_agreed'] is True
+
     db_session.expire_all()
     user = db_session.query(User).filter(User.email == 'consent-changes@example.com').one()
     assert user.ai_training_agreed is True

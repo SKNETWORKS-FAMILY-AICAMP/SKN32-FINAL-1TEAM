@@ -5,6 +5,7 @@ import {LoginModal,fetchCurrentUser,logout} from './components/Login.jsx';
 import AdminDashboard from './features/Admin.jsx';
 import {IntakeForm,MatchProgress,MatchResults,EligibilityGate,PlanForm,ArtifactResult,FinalVerdict,ReviewScreen,SIMILAR_ANNOUNCEMENT_ALERTS} from './features/Workflow.jsx';
 import {createProject,getProjectResult} from './api.js';
+import {useWorkflowStore} from './store/useWorkflowStore.js';
 
 // [2026-09-15, 프론트 통합 임시 구현] "단가" 입력칸은 자유 텍스트("500원" 등)라서 서버가
 // 기대하는 숫자(unit_price)를 뽑아내려면 이 정도 파싱이 필요하다 — 숫자를 못 찾으면 null(미정)로 보낸다.
@@ -17,15 +18,22 @@ function parsePrice(text){
 
 export default function App(){
  const [view,setView]=useState('landing');
- const [itemInfo,setItemInfo]=useState(null); const [announcement,setAnnouncement]=useState(null);
- const [checkedFailedTitles,setCheckedFailedTitles]=useState([]);const [notifyEnabled,setNotifyEnabled]=useState(true);
- const [returnToDashboard,setReturnToDashboard]=useState(false);
- const [scoreOutcome,setScoreOutcome]=useState('fail');const [docOutcome,setDocOutcome]=useState('fail');const [artifactOutcome,setArtifactOutcome]=useState('fail');
+ const [notifyEnabled,setNotifyEnabled]=useState(true);
  const [user,setUser]=useState(null);const [loginOpen,setLoginOpen]=useState(false);const [authChecked,setAuthChecked]=useState(false);
- // [2026-09-15, 프론트 통합] projectId는 IntakeForm 제출로 만든 실제 project_id, pipelineResult는
- // POST /projects/{id}/generate(또는 이어보기용 GET /result) 응답을 그대로 들고 있는 값 —
- // eligibility-gate부터는 이 값을 화면에 그대로 뿌린다(app/routers/projects.py _build_demo_response 참고).
- const [projectId,setProjectId]=useState(null);const [pipelineResult,setPipelineResult]=useState(null);
+ // 현재 진행 중인 프로젝트/워크플로우 데이터(itemInfo, announcement, projectId, pipelineResult,
+ // matchCandidates, checkedFailedTitles, returnToDashboard, scoreOutcome/docOutcome/artifactOutcome)는
+ // 전역 스토어(store/useWorkflowStore.js, Zustand)가 들고 있다 — 아래 화면들에는 지금처럼 그대로
+ // props로 넘긴다. 매칭 후보(matchCandidates)는 여기서 들고 있는다 — MatchResults 안에 두면 자격
+ // 확인 화면을 다녀올 때마다 컴포넌트가 다시 마운트되면서 후보를 새로 받아오고, 임시 백엔드가
+ // 매번 random으로 점수를 매겨서 공고 목록과 적합도가 통째로 바뀌어 버린다(사용자 지적). 프로젝트가
+ // 바뀔 때만 비운다. projectId/pipelineResult는 eligibility-gate부터 화면에 그대로 뿌린다
+ // (app/routers/projects.py _build_demo_response 참고).
+ const {
+  itemInfo,announcement,checkedFailedTitles,returnToDashboard,scoreOutcome,docOutcome,artifactOutcome,
+  projectId,pipelineResult,matchCandidates,
+  setItemInfo,setAnnouncement,setCheckedFailedTitles,setReturnToDashboard,setDocOutcome,setArtifactOutcome,
+  setProjectId,setPipelineResult,setMatchCandidates,resetScoreOutcome,resetProject,
+ }=useWorkflowStore();
  useEffect(()=>{window.scrollTo({top:0});document.title=(view==='landing'?'아이디어를 다음 단계로':'나의 워크스페이스')+' | S-Brain'},[view]);
  // 새로고침해도 로그인 상태가 유지되게, 마운트 시 세션 쿠키가 아직 유효한지 GET /auth/me로
  // 한 번 확인한다. 유효하면(200) 그 응답으로 user를 복원 — 로그인 화면도, 동의 화면도 다시
@@ -38,12 +46,12 @@ export default function App(){
    .finally(()=>{if(!cancelled)setAuthChecked(true)});
   return ()=>{cancelled=true};
  },[]);
- const resetScoreOutcome=v=>{setScoreOutcome(v);setDocOutcome(v);setArtifactOutcome(v)};
- const startNewProject=()=>{setReturnToDashboard(false);setProjectId(null);setPipelineResult(null);resetScoreOutcome('fail');setView('intake')};
+ const startNewProject=()=>{resetProject();resetScoreOutcome('fail');setView('intake')};
 
  const handleIntakeSubmit=async(info)=>{
   setItemInfo({...info});
   setCheckedFailedTitles([]);
+  setMatchCandidates(null);
   resetScoreOutcome('fail');
   setView('match-progress');
   try{
@@ -73,6 +81,7 @@ export default function App(){
  const handleOpenProject=async(project)=>{
   setReturnToDashboard(true);
   setProjectId(project.id);
+  setMatchCandidates(null);
   setItemInfo({item:project.name});
   if(project.progress>=100){
    try{
@@ -117,11 +126,11 @@ export default function App(){
   {view==='dashboard'&&<Dashboard onNewProject={startNewProject} onOpenProject={handleOpenProject} notifyEnabled={notifyEnabled} alerts={SIMILAR_ANNOUNCEMENT_ALERTS}/>}
   {view==='intake'&&<IntakeForm onSubmit={handleIntakeSubmit} onBack={()=>setView('dashboard')} backLabel="내 프로젝트로 돌아가기"/>}
   {view==='match-progress'&&<MatchProgress onComplete={()=>setView('match-results')}/>}
-  {view==='match-results'&&<MatchResults projectId={projectId} onBack={()=>setView(returnToDashboard?'dashboard':'intake')} backLabel={returnToDashboard?'내 프로젝트로 돌아가기':'아이템 정보 다시 입력하기'} onCheckEligibility={handleCheckEligibility} disabledTitles={checkedFailedTitles}/>}
+  {view==='match-results'&&<MatchResults projectId={projectId} candidates={matchCandidates} onCandidatesLoaded={setMatchCandidates} onBack={()=>setView(returnToDashboard?'dashboard':'intake')} backLabel={returnToDashboard?'내 프로젝트로 돌아가기':'아이템 정보 다시 입력하기'} onCheckEligibility={handleCheckEligibility} disabledTitles={checkedFailedTitles}/>}
   {view==='eligibility-gate'&&<EligibilityGate announcement={announcement} eligibility={pipelineResult?.eligibility} onProceed={()=>setView('plan-form')} onLeave={(title,failed)=>{if(failed)setCheckedFailedTitles(p=>[...new Set([...p,title])]);setView('match-results')}}/>}
   {view==='plan-form'&&<PlanForm announcement={announcement} onGenerate={()=>setView('artifact-result')} scoreOutcome={scoreOutcome} itemInfo={itemInfo}/>}
   {view==='artifact-result'&&<ArtifactResult announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('plan-form')} onFinalize={()=>setView('final-verdict')} scoreOutcome={scoreOutcome}/>}
   {view==='final-verdict'&&<FinalVerdict announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('artifact-result')} onProceed={()=>setView('review')} docOutcome={docOutcome} artifactOutcome={artifactOutcome} setDocOutcome={setDocOutcome} setArtifactOutcome={setArtifactOutcome}/>}
-  {view==='review'&&<ReviewScreen announcement={announcement} docOutcome={docOutcome} artifactOutcome={artifactOutcome} onGoDashboard={()=>setView('dashboard')} projectId={projectId}/>}
+  {view==='review'&&<ReviewScreen announcement={announcement} itemInfo={itemInfo} docOutcome={docOutcome} artifactOutcome={artifactOutcome} onGoDashboard={()=>setView('dashboard')} projectId={projectId}/>}
  </WorkspaceShell>
 }

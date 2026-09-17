@@ -1,7 +1,7 @@
 import React,{useState,useEffect} from 'react';
 import {Brand,Icon} from './Icons.jsx';
 import {NotificationBell,SIMILAR_ANNOUNCEMENT_ALERTS} from '../features/Workflow.jsx';
-import {listProjects} from '../api.js';
+import {listProjects,deleteProject} from '../api.js';
 export const steps=[['intake','아이템 입력'],['match-results','공고 찾기'],['plan-form','사업계획서'],['artifact-result','프로토타입'],['final-verdict','제출 전 점검'],['review','최종 결과물']];
 export function WorkspaceShell({view,user,onHome,onDashboard,onNewProject,onLogout,notifyEnabled,onToggleNotify,children}){
  const index=['match-progress','eligibility-gate','eligibility-fail'].includes(view)?1:view==='plan-progress'?2:view==='artifact-progress'?3:view==='final-pass'?4:steps.findIndex(x=>x[0]===view);
@@ -18,6 +18,7 @@ export function WorkspaceShell({view,user,onHome,onDashboard,onNewProject,onLogo
 export function Dashboard({onNewProject,onOpenProject,notifyEnabled,alerts}){
  const [query,setQuery]=useState('');const [filter,setFilter]=useState('전체');const [guard,setGuard]=useState(false);
  const [projects,setProjects]=useState([]);const [loading,setLoading]=useState(true);const [loadError,setLoadError]=useState(false);
+ const [confirmingId,setConfirmingId]=useState(null);const [deletingId,setDeletingId]=useState(null);
 
  useEffect(()=>{
   let cancelled=false;
@@ -44,6 +45,23 @@ export function Dashboard({onNewProject,onOpenProject,notifyEnabled,alerts}){
  const inProgress=projects.find(p=>p.progress<100)||null;
  const start=()=>{if(inProgress)setGuard(true);else onNewProject()};
 
+ // 휴지통 버튼 — 실수로 바로 지워지지 않게 한 번 더 확인을 거친다(같은 자리에서
+ // "정말 삭제할까요?"로 바뀌었다가 다시 누르면 실제 삭제). 매칭 전이면 서버가 진짜
+ // 지우고, 매칭 이후면 보관 처리만 한다(deleteProject 주석 참고) — 어느 쪽이든
+ // 프론트는 그냥 내 목록에서 빼면 된다.
+ const handleDelete=async(id)=>{
+  setDeletingId(id);
+  try{
+   await deleteProject(id);
+   setProjects(list=>list.filter(p=>p.id!==id));
+  }catch(err){
+   console.error('프로젝트를 지우지 못했어요',err);
+   window.alert('프로젝트를 지우지 못했어요. 다시 시도해 주세요.');
+  }finally{
+   setDeletingId(null);setConfirmingId(null);
+  }
+ };
+
  return <div className="dashboard">
   <div className="dashboard-heading"><div><p>내 프로젝트</p><h1>{isNewUser?'첫 아이디어를 들려주세요':'이어서 준비해 볼까요?'}</h1></div><button className="btn" onClick={start}><Icon name="plus" size={19}/>새 프로젝트</button></div>
 
@@ -60,7 +78,23 @@ export function Dashboard({onNewProject,onOpenProject,notifyEnabled,alerts}){
   <div className="project-toolbar"><div className="filter-tabs" role="group" aria-label="프로젝트 상태">{['전체','진행 중','완료'].map(f=><button key={f} aria-pressed={filter===f} onClick={()=>setFilter(f)} className={filter===f?'active':''}>{f}</button>)}</div>{!isNewUser&&<label className="project-search"><Icon name="search" size={19}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="프로젝트 검색" aria-label="프로젝트 검색"/></label>}</div>
 
   <div className="project-list">
-   {filtered.map(p=><button className="project-row" key={p.id} onClick={()=>onOpenProject(p)}><span className={'project-symbol '+(p.progress===100?'done':'')}><Icon name={p.progress===100?'check':'folder'} size={26}/></span><div className="project-title"><h3>{p.name}</h3><p>{p.announcementTitle}<span>·</span>{(p.updatedAt||'').replaceAll('-','.')} 수정</p></div><span className={'status-pill '+(p.progress===100?'done':'')}>{p.progress===100?'준비 완료':'공고 선택 대기'}</span><Icon name="chevron" size={21}/></button>)}
+   {filtered.map(p=><div className="project-row" key={p.id}>
+     <button className="project-row-main" onClick={()=>onOpenProject(p)}>
+      <span className={'project-symbol '+(p.progress===100?'done':'')}><Icon name={p.progress===100?'check':'folder'} size={26}/></span>
+      <div className="project-title"><h3>{p.name}</h3><p>{p.announcementTitle}<span>·</span>{(p.updatedAt||'').replaceAll('-','.')} 수정</p></div>
+      <span className={'status-pill '+(p.progress===100?'done':'')}>{p.progress===100?'준비 완료':'공고 선택 대기'}</span>
+      <Icon name="chevron" size={21}/>
+     </button>
+     {confirmingId===p.id?(
+      <div className="project-row-confirm">
+       <span>삭제할까요?</span>
+       <button className="text-link" disabled={deletingId===p.id} onClick={()=>handleDelete(p.id)}>{deletingId===p.id?'삭제 중…':'삭제'}</button>
+       <button className="icon-button" aria-label="삭제 취소" onClick={()=>setConfirmingId(null)}><Icon name="close" size={15}/></button>
+      </div>
+     ):(
+      <button className="project-row-delete" aria-label={`${p.name} 삭제`} onClick={()=>setConfirmingId(p.id)}><Icon name="trash" size={17}/></button>
+     )}
+    </div>)}
    {isNewUser
     ? <div className="new-user"><span className="new-user-symbol"><Icon name="folder" size={45}/></span><h3>어떤 아이디어를 준비하고 있나요?</h3><p>아이템을 알려주시면 맞는 공고부터 찾아드릴게요.</p><button className="btn" onClick={onNewProject}>첫 프로젝트 만들기</button></div>
     : !loading&&filtered.length===0
