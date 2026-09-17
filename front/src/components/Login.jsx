@@ -193,30 +193,31 @@ export function LoginModal({open,onClose,onSuccess}){
   const [account,setAccount]=useState(null);
   const [error,setError]=useState(null);
   const [submitting,setSubmitting]=useState(false);
-  // 구글 인증이 끝난 뒤에야(=동의 스텝 이후) id_token+동의값을 같이 백엔드로 보낸다 —
-  // POST /auth/google이 둘 다 한 번에 받는 구조라(app/schemas.py GoogleLoginRequest).
+  // 구글 인증이 끝나자마자 곧바로 백엔드로 id_token을 보낸다(기본 동의값으로) — 동의
+  // 화면을 먼저 보여줄지는 "이 계정이 이미 있는 계정인가"에 달려있는데, 그건 백엔드만
+  // 알 수 있어서(POST /auth/google이 신규면 만들고 기존이면 그대로 로그인) 순서를
+  // 뒤집었다: 로그인부터 하고, 응답의 has_agreed_terms로 신규 여부를 판단한다.
+  // true면(이미 있던 계정) 바로 완료 처리, false면(방금 기본값으로 막 만들어진 신규
+  // 계정) 그제서야 동의 화면을 보여주고, 실제 선택값으로 한 번 더 보내 갱신한다.
   const idTokenRef=useRef(null);
-  // 약관 동의는 "최초 로그인 시"만 받는다 — 이 세션에서 이미 한 번 동의했다면
-  // (로그아웃 후 재로그인 등) 다시 묻지 않고 직전에 보낸 동의값 그대로 재전송한다
-  // (백엔드가 재로그인 때도 매번 최신 동의값으로 갱신하는 구조라 — auth.py 참고).
-  const [hasAgreedBefore,setHasAgreedBefore]=useState(false);
-  const lastConsentRef=useRef({aiTrainingAgreed:false,notifyAgreed:true});
 
   useEffect(()=>{if(!open)return;setStep('method');setAccount(null);setError(null)},[open]);
 
-  const submitLogin=async(idToken,consent)=>{
+  const submitLogin=async(idToken,consent,onErrorStep)=>{
     setSubmitting(true);setError(null);
     try{
       const data=await loginWithGoogle(idToken,consent); // {user, has_agreed_terms}
-      lastConsentRef.current=consent;
       setAccount(data.user);
-      setHasAgreedBefore(true);
-      setStep('success');
-      onSuccess(data.user,consent);
+      if(data.has_agreed_terms){
+        setStep('success');
+        onSuccess(data.user,consent);
+      }else{
+        setStep('consent');
+      }
     }catch(e){
       console.error('POST /auth/google 실패:',e);
       setError(e.message||'로그인 중 오류가 발생했어요');
-      setStep(hasAgreedBefore?'method':'consent');
+      setStep(onErrorStep);
     }finally{
       setSubmitting(false);
     }
@@ -225,8 +226,7 @@ export function LoginModal({open,onClose,onSuccess}){
     idTokenRef.current=credential;
     const {name,email,picture}=decodeIdToken(credential);
     setAccount({name:name||email.split('@')[0],email,picture}); // 백엔드 응답 오기 전 임시 표시용
-    if(hasAgreedBefore){submitLogin(credential,lastConsentRef.current);return}
-    setStep('consent');
+    submitLogin(credential,{aiTrainingAgreed:false,notifyAgreed:true},'method');
   };
 
   useEffect(()=>{
@@ -262,7 +262,7 @@ export function LoginModal({open,onClose,onSuccess}){
           <Icon name="close" size={20}/>
         </button>
         {step==='method'&&<StepMethod onCredential={handleCredential} error={error} submitting={submitting}/>}
-        {step==='consent'&&<StepConsent onAgree={consent=>submitLogin(idTokenRef.current,consent)} error={error} submitting={submitting}/>}
+        {step==='consent'&&<StepConsent onAgree={consent=>submitLogin(idTokenRef.current,consent,'consent')} error={error} submitting={submitting}/>}
         {step==='success'&&<StepSuccess account={account}/>}
       </div>
     </div>

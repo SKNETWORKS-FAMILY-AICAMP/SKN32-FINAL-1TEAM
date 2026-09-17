@@ -16,6 +16,7 @@ POST /projects 는 #6(첨부파일 처리) 확정대로 multipart/form-data 로 
 바꿀 걸 대비해서 저장 로직을 _save_attachment() 함수 하나로 감쌌다 — 나중엔 이 함수
 내부만 바꾸면 된다.
 """
+import datetime
 import json
 import os
 import random
@@ -23,7 +24,7 @@ import sys
 import uuid
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -211,6 +212,8 @@ def list_projects(
             .order_by(MatchResult.match_id.desc())
             .first()
         )
+        if match is not None and match.archived_at is not None:
+            continue  # 사용자가 지운(보관 처리한) 프로젝트는 본인 목록에서 숨긴다 — DELETE /projects/{id} 참고.
         notice_title = None
         screen = ps.NO_MATCH_SCREEN
         if match is not None:
@@ -265,7 +268,10 @@ def get_match_candidates(
             org=org,
             apply_end=notice.apply_end,
             fit_score=round(random.uniform(55, 98), 1),
-            reason=f'(더미 매칭 근거) "{notice.title[:30]}" — 아이템 설명과의 키워드 겹침을 임의로 흉내낸 적합도입니다.',
+            # "(더미 매칭 근거)" 같은 개발용 주석을 문구 안에 직접 넣었었는데, 그대로
+            # 화면에 노출돼 사용자가 봤다(2026-09-16) — 문구 자체에서 뺐다. 더미라는
+            # 사실 자체는 화면 하단 안내 문구("AI가 임시로 생성한...")로 이미 전달된다.
+            reason=f'"{notice.title[:30]}" — 아이템 설명과 키워드가 겹치는 것으로 보입니다.',
             url=notice.url,
         ))
     results.sort(key=lambda r: r.fit_score, reverse=True)
@@ -443,6 +449,44 @@ def get_project(
 ):
     project = _get_owned_project(db, project_id, current_user)
     return ProjectDetailOut.model_validate(project)
+
+
+@router.delete('/{project_id}', status_code=204)
+def delete_project(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """대시보드 "내 프로젝트"의 휴지통 버튼 — 사용자가 자기 프로젝트를 목록에서 지운다.
+
+    아직 공고 매칭 전(match_results 자체가 없음)이면 남길 데이터가 없으니 그냥 실제로
+    지운다. 매칭 이후(계획서·산출물 등 이미 만들어진 뒤)면 실제로 지우지 않고
+    match_results.archived_at/archived_by에 보관 처리만 한다(app_schema.sql 설계 그대로
+    — "사용자가 프로젝트를 삭제해 보관 처리된 일시") — 이미 만든 계획서·산출물 데이터를
+    보존하기 위해서고, 관리자 대시보드(진행 현황 탭)는 이 프로젝트를 계속 "보관중"으로
+    조회·복원할 수 있다. list_projects()는 archived_at이 있는 프로젝트를 걸러서 본인
+    목록에서는 안 보이게 한다."""
+    project = _get_owned_project(db, project_id, current_user)
+    match = (
+        db.query(MatchResult)
+        .filter(MatchResult.project_id == project.project_id)
+        .order_by(MatchResult.match_id.desc())
+        .first()
+    )
+    if match is not None:
+        match.archived_at = datetime.datetime.utcnow()
+        match.archived_by = 'user'
+        db.commit()
+        return Response(status_code=204)
+
+    # 매칭 자체가 없던 프로젝트 — 진짜로 지운다. ORM 관계에 delete cascade를 안 걸어뒀고
+    # SQLite는 기본적으로 FK도 강제 안 하므로, 자식 행을 먼저 지우는 순서를 직접 지킨다.
+    db.query(ProjectAttachment).filter(ProjectAttachment.project_id == project_id).delete()
+    db.query(TeamMember).filter(TeamMember.project_id == project_id).delete()
+    db.query(PricingItem).filter(PricingItem.project_id == project_id).delete()
+    db.query(Project).filter(Project.project_id == project_id).delete()
+    db.commit()
+    return Response(status_code=204)
 
 
 def _get_owned_project(db: Session, project_id: int, user: User) -> Project:

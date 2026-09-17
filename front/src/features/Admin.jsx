@@ -162,6 +162,37 @@ const Bar=({label,pct,tone,right,sub})=>(
   </div>
 );
 
+// 네이티브 <select>는 브라우저 기본 스타일이 그대로 튀어나와 나머지 커스텀 UI와 안 어울린다
+// (사용자 지적) — 버튼+목록으로 된 이 컴포넌트로 관리자 대시보드의 select를 전부 대체한다.
+function Select({value,onChange,options,className='',ariaLabel}){
+  const [open,setOpen]=useState(false);
+  const opts=options.map(o=>typeof o==='string'?{value:o,label:o}:o);
+  const current=opts.find(o=>o.value===value)||opts[0];
+  return (
+    <div className="relative inline-block">
+      <button type="button" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} onClick={()=>setOpen(v=>!v)}
+        className={'flex items-center justify-between gap-2 bg-white text-[var(--fg)] outline-none focus:border-[var(--primary)] transition-colors '+className}>
+        <span className="truncate">{current?current.label:''}</span>
+        <Icon name="chevron" size={12} className="flex-shrink-0 text-[var(--muted-fg)]" style={{transform:open?'rotate(-90deg)':'rotate(90deg)',transition:'transform .15s ease-out'}}/>
+      </button>
+      {open&&(<React.Fragment>
+        <div className="fixed inset-0 z-40" onClick={()=>setOpen(false)}/>
+        <ul role="listbox" aria-label={ariaLabel}
+          className="soft-scroll absolute left-0 top-full mt-1.5 z-50 min-w-full w-max max-h-64 overflow-y-auto rounded-xl border border-[var(--border)] bg-white py-1 shadow-[0_16px_40px_-16px_rgba(20,23,31,.25)]">
+          {opts.map(o=>(
+            <li key={o.value} role="option" aria-selected={o.value===value}>
+              <button type="button" onClick={()=>{onChange(o.value);setOpen(false)}}
+                className={'w-full whitespace-nowrap px-3 py-2 text-left text-[13px] hover:bg-[var(--muted)] '+(o.value===value?'font-semibold text-[var(--primary)]':'text-[var(--fg)]')}>
+                {o.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </React.Fragment>)}
+    </div>
+  );
+}
+
 function Modal({title,onClose,children,wide}){
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center px-4" role="dialog" aria-modal="true">
@@ -187,8 +218,13 @@ const hasRerun=e=>!!(e&&e.some(x=>x.rerun));
 export default function AdminDashboard({user,onExit}){
   const [tab,setTab]=useState('ann');
   const [toasts,setToasts]=useState([]);
-  const pushToast=(title,message,tone)=>setToasts(t=>[...t,{id:Date.now()+Math.random(),title,message,tone}]);
   const closeToast=id=>setToasts(t=>t.filter(x=>x.id!==id));
+  // 10초 뒤 자동으로 닫힌다 — 안 닫으면 계속 쌓여서 다른 작업을 가린다(사용자 지적).
+  const pushToast=(title,message,tone)=>{
+    const id=Date.now()+Math.random();
+    setToasts(t=>[...t,{id,title,message,tone}]);
+    setTimeout(()=>closeToast(id),10000);
+  };
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">
@@ -527,6 +563,13 @@ function ProgressTab(){
   );
 }
 
+// 배치 기준은 백엔드 연동이 없는 예시 값이라(주석 참고) 로컬 상태로만 선택을 유지한다.
+function AgentPolicyCell({policy}){
+  const [value,setValue]=useState(policy);
+  return <Select value={value} onChange={setValue} options={['비용효율 우선','균형','추론성능 우선']}
+    className="rounded-lg border border-[var(--border)] px-2 py-1.5 text-[12.5px] w-[130px]"/>;
+}
+
 function AgentsTab(){
   const [view,setView]=useState('task');
   const [executions,setExecutions]=useState(null);
@@ -548,51 +591,50 @@ function AgentsTab(){
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-        <Card label="총 실행 세션" value="6건" sub="최근 7일 기준"/>
-        <Card label="선별 재수행" value="4건" sub="전체 재실행 1건 · 최초 실행 1건"/>
-        <Card label="토큰 절감률" value="▼ 77%" tone="ok" sub="선별 재수행 기준"/>
-        <Card label="전체 재실행 대비" value="15,000 → 3,500" sub="토큰 (구현 Agent 기준)"/>
-      </div>
-
-      <Panel className="p-5 mb-8">
-        <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1">보호 토큰 위반율</p>
-        <p className="text-[11px] text-[var(--muted-fg)] mb-4">재시도 없이 1차 검수에서 수치·날짜·고유명사·기능명 등 보호 토큰이 훼손된 문단의 비율입니다. 버전 교체 시 이 값이 낮아졌는지로 비교합니다.</p>
-        <div className="flex flex-col gap-2.5">
-          {TOKEN_VIOLATION_RATES.map(v=>(
-            <Bar key={v.ver} label={v.ver} pct={v.rate} tone={v.good?'ok':'muted'} right={v.rate+'%'} sub={v.note}/>
-          ))}
+      {/* 표(Task별 보기/Execution별 보기)를 먼저 보여주는 게 우선이라, 통계 요약은
+          기본적으로 접어두고 필요할 때만 펼쳐보게 한다. */}
+      <details className="admin-accordion mb-8 rounded-2xl border border-[var(--border)] bg-white overflow-hidden">
+        <summary className="flex items-center justify-between gap-3 px-5 py-4 text-[13px] font-semibold text-[var(--muted-fg)] cursor-pointer select-none">
+          <span>운영 지표 요약 (실행 세션·토큰 절감률·보호 토큰 위반율)</span>
+          <Icon name="chevron" size={16}/>
+        </summary>
+        <div className="px-5 pb-5 pt-1 border-t border-[var(--border)]">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6 mt-4">
+            <Card label="총 실행 세션" value="6건" sub="최근 7일 기준"/>
+            <Card label="선별 재수행" value="4건" sub="전체 재실행 1건 · 최초 실행 1건"/>
+            <Card label="토큰 절감률" value="▼ 77%" tone="ok" sub="선별 재수행 기준"/>
+            <Card label="전체 재실행 대비" value="15,000 → 3,500" sub="토큰 (구현 Agent 기준)"/>
+          </div>
+          <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1">보호 토큰 위반율</p>
+          <p className="text-[11px] text-[var(--muted-fg)] mb-4">재시도 없이 1차 검수에서 수치·날짜·고유명사·기능명 등 보호 토큰이 훼손된 문단의 비율입니다. 버전 교체 시 이 값이 낮아졌는지로 비교합니다.</p>
+          <div className="flex flex-col gap-2.5">
+            {TOKEN_VIOLATION_RATES.map(v=>(
+              <Bar key={v.ver} label={v.ver} pct={v.rate} tone={v.good?'ok':'muted'} right={v.rate+'%'} sub={v.note}/>
+            ))}
+          </div>
+          <p className="mt-3 pt-3 border-t border-[var(--border)] text-[11px] text-[var(--muted-fg)]">
+            <span className="text-[var(--warn)]">⚠</span> 위반 문단은 지시를 보강해 재시도하며, 상한을 넘어서도 남으면 해당 문단만 원문을 유지하고 관리자 로그에 기록합니다.
+          </p>
         </div>
-        <p className="mt-3 pt-3 border-t border-[var(--border)] text-[11px] text-[var(--muted-fg)]">
-          <span className="text-[var(--warn)]">⚠</span> 위반 문단은 지시를 보강해 재시도하며, 상한을 넘어서도 남으면 해당 문단만 원문을 유지하고 관리자 로그에 기록합니다.
-        </p>
-      </Panel>
+      </details>
 
       {view==='task'?(
         <>
           <h2 className="text-[20px] font-bold mb-4">Agent별 테스크 구성</h2>
           <Panel>
-            <div className="grid grid-cols-[1fr_1.6fr_0.6fr_1.1fr_1.2fr_0.9fr] text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]">
+            <div className="grid grid-cols-[1fr_1.6fr_0.6fr_1.1fr_0.9fr] text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]">
               <div className="p-4">Agent</div><div className="p-4">담당 업무</div><div className="p-4 text-center">정의된 태스크</div>
-              <div className="p-4 text-center">최근 실행 프로젝트</div><div className="p-4 text-center">사용 모델</div><div className="p-4 text-center">배치 기준</div>
+              <div className="p-4 text-center">최근 실행 프로젝트</div><div className="p-4 text-center">배치 기준</div>
             </div>
             {AGENT_ROWS.map(a=>(
-              <div key={a.name} className={'grid grid-cols-[1fr_1.6fr_0.6fr_1.1fr_1.2fr_0.9fr] text-[13px] border-t border-[var(--border)] items-center '+
+              <div key={a.name} className={'grid grid-cols-[1fr_1.6fr_0.6fr_1.1fr_0.9fr] text-[13px] border-t border-[var(--border)] items-center '+
                 (a.tone==='danger'?'bg-[color-mix(in_srgb,var(--danger)_5%,white)] border-l-4 border-l-[var(--danger)]':'')}>
                 <div className="p-4 font-medium">{a.name}</div>
                 <div className="p-4 text-[var(--muted-fg)]">{a.work}</div>
                 <div className="p-4 text-center text-[var(--muted-fg)]">{a.tasks}</div>
                 <div className={'p-4 text-center '+(a.recentTone==='danger'?'text-[var(--danger)] font-semibold':'text-[var(--muted-fg)]')}>{a.recent}</div>
-                <div className="p-4 flex flex-col items-center gap-1">
-                  <select defaultValue={a.model} className="border border-[var(--border)] rounded-lg px-2 py-1.5 text-[12.5px] w-full max-w-[150px] outline-none focus:border-[var(--primary)]">
-                    {a.models.map(m=><option key={m}>{m}</option>)}
-                  </select>
-                  {a.note&&<span className="text-[10.5px] text-[var(--muted-fg)]">{a.note}</span>}
-                </div>
                 <div className="p-4 flex justify-center">
-                  <select defaultValue={a.policy} className="border border-[var(--border)] rounded-lg px-2 py-1.5 text-[12.5px] w-full max-w-[130px] outline-none focus:border-[var(--primary)]">
-                    <option>비용효율 우선</option><option>균형</option><option>추론성능 우선</option>
-                  </select>
+                  <AgentPolicyCell policy={a.policy}/>
                 </div>
               </div>
             ))}
@@ -816,9 +858,8 @@ function RecoveryTab({pushToast}){
       </div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h2 className="text-[20px] font-bold">회수 문단 목록</h2>
-        <select value={filter} onChange={e=>setFilter(e.target.value)} className="border border-[var(--border)] rounded-lg px-3 py-2 text-[13.5px] outline-none focus:border-[var(--primary)]">
-          <option>전체 상태</option><option>라벨링 대기</option><option>라벨링 완료</option><option>동의 없음(제외)</option>
-        </select>
+        <Select value={filter} onChange={setFilter} options={['전체 상태','라벨링 대기','라벨링 완료','동의 없음(제외)']}
+          className="rounded-lg border border-[var(--border)] px-3 py-2 text-[13.5px]"/>
       </div>
       <Panel>
         <div className="grid grid-cols-[1fr_1.6fr_0.8fr_0.9fr_1fr_0.9fr_0.9fr] text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]">
@@ -956,10 +997,8 @@ function UsersTab({pushToast}){
             <div className={'p-4 text-center font-semibold '+toneText[u.notifyTone]}>{u.notify}</div>
             <div className={'p-4 text-center font-semibold '+(u.status==='활성'?'text-[var(--ok)]':u.status==='정지'?'text-[var(--danger)]':'text-[var(--warn)]')}>{u.status}</div>
             <div className="p-4 flex justify-center">
-              <select value={u.role} onChange={e=>changeRole(u.id,e.target.value)} aria-label={u.name+' 권한'}
-                className="border border-[var(--border)] rounded-lg px-2 py-1.5 text-[12.5px] w-full max-w-[104px] outline-none focus:border-[var(--primary)]">
-                <option>일반 유저</option><option>관리자</option>
-              </select>
+              <Select value={u.role} onChange={v=>changeRole(u.id,v)} options={['일반 유저','관리자']} ariaLabel={u.name+' 권한'}
+                className="rounded-lg border border-[var(--border)] px-2 py-1.5 text-[12.5px] w-[104px]"/>
             </div>
             <div className="p-4 flex items-center justify-center gap-3">
               <button onClick={()=>toggleStatus(u)} className={'text-[12.5px] font-semibold hover:underline '+(u.status==='정지'?'text-[var(--ok)]':'text-[var(--muted-fg)] hover:text-[var(--danger)]')}>

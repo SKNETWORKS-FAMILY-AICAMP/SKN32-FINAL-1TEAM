@@ -91,14 +91,18 @@ def test_ai_training_agreed_persisted_on_signup(db_session):
     assert user.ai_training_agreed is True
 
 
-def test_ai_training_agreed_updates_on_relogin(db_session):
+def test_ai_training_agreed_not_changed_on_relogin(db_session):
+    """[2026-09-15 변경] 이미 있는 계정은 동의 화면을 다시 안 보여주기로 해서(사용자
+    피드백), 재로그인 호출에 실려오는 동의값은 실제 선택이 아니라 프론트 기본값일 수
+    있다 — 그래서 기존 계정의 ai_training_agreed는 더 이상 재로그인으로 갱신되지 않는다."""
     client = _new_client()
-    _login(client, 'consent-changes@example.com', True)
-    user = db_session.query(User).filter(User.email == 'consent-changes@example.com').one()
-    assert user.ai_training_agreed is True
+    first = _login(client, 'consent-changes@example.com', True)
+    assert first['ai_training_agreed'] is True
 
-    # 같은 계정이 동의를 철회하고 다시 로그인 -> 최신 값으로 갱신돼야 한다.
-    _login(client, 'consent-changes@example.com', False)
+    # 같은 계정으로 다른 값(False)을 실어 다시 로그인해도 기존 값(True)이 유지돼야 한다.
+    second = _login(client, 'consent-changes@example.com', False)
+    assert second['ai_training_agreed'] is True
+
     db_session.expire_all()
     user = db_session.query(User).filter(User.email == 'consent-changes@example.com').one()
-    assert user.ai_training_agreed is False
+    assert user.ai_training_agreed is True

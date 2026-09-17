@@ -133,21 +133,58 @@ function escapeXml(s) {
     .replace(/"/g, '&quot;');
 }
 
-// sections: [{ tag, title, body }]
-export function buildPlanDocx({ title, sections, footer }) {
+// 2026-09-16, 사용자가 첨부해준 실제 정부지원사업 서식 — "(별첨1) 2026년도 초기창업패키지
+// (일반형) 사업계획서 양식.docx" — 을 그대로 참고해서 구조를 맞췄다. 그 문서에서 실제로
+// 있는 순서를 그대로 따른다: 제목 → "□ 일반현황"(표) → "□ 창업 아이템 개요(요약)" →
+// "1. 문제 인식 (Problem)" ~ "4. 팀 구성 (Team)". 서식 원본은 값을 모르는 칸에
+// "OOOOO"/"OO.OO.OO" 같은 자리표시자를 그대로 남겨두는데(신청자가 채워 넣으라는 뜻),
+// 우리도 실제로 아는 값(아이템 설명, 대표자명 등)만 채우고 모르는 칸은 그 자리표시자
+// 관례를 그대로 써서 — 지어낸 값을 넣는 대신 "여기는 직접 채우세요"가 보이게 했다.
+const PSST_OFFICIAL_HEADERS = ['1. 문제 인식 (Problem)', '2. 실현 가능성 (Solution)', '3. 성장전략 (Scale-up)', '4. 팀 구성 (Team)'];
+
+function tableXml(rows) {
+  const trs = rows.map(([label, value]) => `<w:tr>
+    <w:tc><w:tcPr><w:tcW w:w="2600" w:type="dxa"/><w:shd w:val="clear" w:fill="F2F4F6"/></w:tcPr>
+      <w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${escapeXml(label)}</w:t></w:r></w:p></w:tc>
+    <w:tc><w:tcPr><w:tcW w:w="6400" w:type="dxa"/></w:tcPr>
+      <w:p><w:r><w:t xml:space="preserve">${escapeXml(value ?? '')}</w:t></w:r></w:p></w:tc>
+  </w:tr>`).join('');
+  return `<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/><w:tblBorders>
+    <w:top w:val="single" w:sz="4" w:color="CCCCCC"/><w:left w:val="single" w:sz="4" w:color="CCCCCC"/>
+    <w:bottom w:val="single" w:sz="4" w:color="CCCCCC"/><w:right w:val="single" w:sz="4" w:color="CCCCCC"/>
+    <w:insideH w:val="single" w:sz="4" w:color="CCCCCC"/><w:insideV w:val="single" w:sz="4" w:color="CCCCCC"/>
+  </w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="2600"/><w:gridCol w:w="6400"/></w:tblGrid>${trs}</w:tbl><w:p/>`;
+}
+
+function headingXml(text) {
+  return `<w:p><w:r><w:rPr><w:b/><w:sz w:val="22"/></w:rPr><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
+}
+function bodyXml(text) {
+  return `<w:p><w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p><w:p/>`;
+}
+
+// sections: [{ tag, title, body }] — PSST 4개, 순서 고정.
+// generalInfo: [[label, value], ...] — "□ 일반현황" 표 행. 값이 없으면(undefined/null)
+// 서식 원본의 자리표시자 관례대로 빈 칸으로 남기지 않고 호출부가 넘겨준 자리표시자 문자열을 쓴다.
+// overview: 개요(요약) 문단 텍스트.
+export function buildPlanDocx({ title, generalInfo, overview, sections, footer }) {
   const paras = [];
   paras.push(
     `<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="40"/></w:rPr>` +
       `<w:t xml:space="preserve">${escapeXml(title)}</w:t></w:r></w:p>`
   );
   paras.push('<w:p/>');
+  if (generalInfo?.length) {
+    paras.push(headingXml('□ 일반현황'));
+    paras.push(tableXml(generalInfo));
+  }
+  if (overview) {
+    paras.push(headingXml('□ 창업 아이템 개요(요약)'));
+    paras.push(bodyXml(overview));
+  }
   sections.forEach((s, i) => {
-    paras.push(
-      `<w:p><w:r><w:rPr><w:b/><w:sz w:val="24"/></w:rPr>` +
-        `<w:t xml:space="preserve">［${escapeXml(s.tag)}］ ${String(i + 1).padStart(2, '0')}. ${escapeXml(s.title)}</w:t></w:r></w:p>`
-    );
-    paras.push(`<w:p><w:r><w:t xml:space="preserve">${escapeXml(s.body)}</w:t></w:r></w:p>`);
-    paras.push('<w:p/>');
+    paras.push(headingXml(PSST_OFFICIAL_HEADERS[i] || `${i + 1}. ${s.title}`));
+    paras.push(bodyXml(s.body));
   });
   if (footer) {
     paras.push(
@@ -183,8 +220,8 @@ ${paras.join('\n')}
   ]);
 }
 
-export function downloadPlanDocx({ title, sections, footer }) {
-  const bytes = buildPlanDocx({ title, sections, footer });
+export function downloadPlanDocx({ title, generalInfo, overview, sections, footer }) {
+  const bytes = buildPlanDocx({ title, generalInfo, overview, sections, footer });
   triggerDownload(
     bytes,
     '사업계획서.docx',
