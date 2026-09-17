@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS companies (
     biz_type VARCHAR(100) NULL COMMENT '업종',
     ceo_name VARCHAR(100) NULL COMMENT '대표자명',
     founded_at DATE NULL COMMENT '설립일(예비창업자는 NULL 가능)',
-    UNIQUE KEY ux_companies_user (user_id) COMMENT '계정당 회사 프로필 1건 — 동시 요청으로 중복 생성되는 것을 DB 레벨에서 차단',
+    KEY ix_companies_user (user_id) COMMENT '[2026-09-15 개정] 계정당 회사 프로필 1건 UNIQUE 제약을 제거했다 — 프로젝트마다 다른 신청자 정보로 회사 프로필을 새로 만들 수 있게 하기 위함(동시 실행 1건 제한은 이제 users 행을 잠그는 방식으로 분리, app/routers/projects.py 참고). 조회는 여전히 잦아 인덱스는 유지',
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 

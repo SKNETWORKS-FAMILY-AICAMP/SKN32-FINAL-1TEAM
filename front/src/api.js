@@ -71,3 +71,23 @@ export const getProjectResult=(projectId)=>api.get(`/projects/${projectId}/resul
 // 'implement_prototype'|'implement_infographic'|'verify2_static'|'verify2_crosscheck'|
 // 'review_expression'|'review_token_check' (app/schemas.py RetryTaskRequest 참고).
 export const retryTask=(projectId,taskKey)=>api.post(`/projects/${projectId}/retry-task`,{task_key:taskKey});
+
+// [2026-09-15] 사업계획서.docx 다운로드 — 응답이 JSON이 아니라 실제 .docx 바이너리라
+// apiFetch(항상 JSON 파싱)를 못 쓰고 별도 함수로 뺐다. 서버가
+// GET /projects/{id}/plan-document.docx 에서 초기창업패키지(일반형) 공식 양식(별첨1)
+// 구조로 채운 진짜 docx를 내려준다(app/plan_document_export.py) — ReviewScreen의
+// 더미(dummyDeliverables.js) 대신 이 함수를 쓰면 실제 양식이 반영된 파일을 받는다.
+export async function downloadPlanDocument(projectId,filename='사업계획서.docx'){
+  const res=await fetch(`${API_BASE}/projects/${projectId}/plan-document.docx`,{credentials:'include'});
+  if(!res.ok){
+    const text=await res.text();
+    const data=text?JSON.parse(text):null;
+    throw new ApiError(res.status,data?.detail??data??res.statusText);
+  }
+  const blob=await res.blob();
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=filename;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

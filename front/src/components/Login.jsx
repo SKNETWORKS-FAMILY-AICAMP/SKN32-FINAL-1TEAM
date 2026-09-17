@@ -17,7 +17,14 @@ function decodeIdToken(token){
 
 // POST /auth/google 호출 — 성공하면 백엔드가 만든 실제 UserOut을 돌려준다(로컬 디코딩 값이 아님).
 // 세션은 httpOnly 쿠키로 내려오므로 여기서 토큰을 따로 저장할 필요가 없다.
-async function loginWithGoogle(idToken,consent){
+//
+// [2026-09-15 개정] 예전엔 로그인 버튼을 누르기 전에 항상 동의 화면(StepConsent)부터 보여주고
+// 그 값을 담아 이 호출을 보냈다 — 그런데 "이미 동의했으면 화면을 건너뛴다"는 판단이 새로고침
+// 하면 날아가는 로컬 state 하나뿐이라, 사실상 매번 동의 화면이 다시 떴다(사용자 리포트: "한번
+// 로그인하면 동의 안 뜨게 왜 안돼"). 이제는 이 호출을 먼저 보내고(신규 가입 여부를 모르는
+// 상태에서는 consent에 안전한 기본값만 실어 보낸다 — 어차피 기존 유저면 백엔드가 무시한다),
+// 응답의 is_new_user로 실제 신규 가입인지 판단해서, 신규일 때만 동의 화면을 보여준다.
+async function loginWithGoogle(idToken,consent={}){
   const res=await fetch(`${API_BASE}/auth/google`,{
     method:'POST',
     credentials:'include',
@@ -28,7 +35,23 @@ async function loginWithGoogle(idToken,consent){
     const body=await res.json().catch(()=>({}));
     throw new Error(body.detail||`로그인 요청이 실패했어요 (${res.status})`);
   }
-  return res.json(); // GoogleLoginResponse: {user, has_agreed_terms}
+  return res.json(); // GoogleLoginResponse: {user, has_agreed_terms, is_new_user}
+}
+
+// PATCH /auth/consent — 신규 가입 직후 동의 화면 제출, 또는 나중에 설정에서 선택 동의를
+// 바꿀 때 쓴다(로그인 자체와 분리 — auth.py 참고). 이미 세션 쿠키가 있어야 호출 가능하다.
+async function updateConsent(consent){
+  const res=await fetch(`${API_BASE}/auth/consent`,{
+    method:'PATCH',
+    credentials:'include',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({aiTrainingAgreed:!!consent.aiTrainingAgreed,notifyAgreed:consent.notifyAgreed!==false}),
+  });
+  if(!res.ok){
+    const body=await res.json().catch(()=>({}));
+    throw new Error(body.detail||`동의값 저장에 실패했어요 (${res.status})`);
+  }
+  return res.json(); // UserOut
 }
 
 // GET /auth/me — 세션 쿠키가 아직 유효한지 확인한다. 새로고침 등으로 App.jsx의 user state가
@@ -186,6 +209,10 @@ export function UserPill({user}){
   );
 }
 
+// 신규 가입 여부를 모르는 상태로 보내는 첫 호출의 기본값 — 진짜 신규 유저라면 바로 이어지는
+// 동의 화면 제출(PATCH /auth/consent)이 실제 값으로 덮어쓰므로 여기 값 자체는 잠깐만 쓰인다.
+const DEFAULT_CONSENT={aiTrainingAgreed:false,notifyAgreed:true};
+
 export function LoginModal({open,onClose,onSuccess}){
   const dialogRef=useRef(null);
   const closeBtnRef=useRef(null);
@@ -193,40 +220,51 @@ export function LoginModal({open,onClose,onSuccess}){
   const [account,setAccount]=useState(null);
   const [error,setError]=useState(null);
   const [submitting,setSubmitting]=useState(false);
-  // 구글 인증이 끝나자마자 곧바로 백엔드로 id_token을 보낸다(기본 동의값으로) — 동의
-  // 화면을 먼저 보여줄지는 "이 계정이 이미 있는 계정인가"에 달려있는데, 그건 백엔드만
-  // 알 수 있어서(POST /auth/google이 신규면 만들고 기존이면 그대로 로그인) 순서를
-  // 뒤집었다: 로그인부터 하고, 응답의 has_agreed_terms로 신규 여부를 판단한다.
-  // true면(이미 있던 계정) 바로 완료 처리, false면(방금 기본값으로 막 만들어진 신규
-  // 계정) 그제서야 동의 화면을 보여주고, 실제 선택값으로 한 번 더 보내 갱신한다.
-  const idTokenRef=useRef(null);
 
   useEffect(()=>{if(!open)return;setStep('method');setAccount(null);setError(null)},[open]);
 
-  const submitLogin=async(idToken,consent,onErrorStep)=>{
+  // [2026-09-15 개정] 동의 화면을 먼저 보여줄지는 더 이상 프론트가 추측하지 않는다(새로고침
+  // 하면 날아가는 state로 판단하던 게 버그 원인이었다) — 일단 로그인부터 보내고, 백엔드가
+  // 실제 DB로 판단한 is_new_user를 보고서야 동의 화면이 필요한지 정한다.
+  const submitLogin=async(idToken)=>{
     setSubmitting(true);setError(null);
     try{
-      const data=await loginWithGoogle(idToken,consent); // {user, has_agreed_terms}
+      const data=await loginWithGoogle(idToken,DEFAULT_CONSENT); // {user, has_agreed_terms, is_new_user}
       setAccount(data.user);
-      if(data.has_agreed_terms){
-        setStep('success');
-        onSuccess(data.user,consent);
+      if(data.is_new_user){
+        setStep('consent'); // 신규 가입 -> 실제 동의값을 받아야 함(아래 submitConsent)
       }else{
-        setStep('consent');
+        setStep('success');
+        onSuccess(data.user);
       }
     }catch(e){
       console.error('POST /auth/google 실패:',e);
       setError(e.message||'로그인 중 오류가 발생했어요');
-      setStep(onErrorStep);
+      setStep('method');
+    }finally{
+      setSubmitting(false);
+    }
+  };
+  // 신규 가입 직후 동의 화면에서 제출 — 로그인은 이미 끝난 상태(세션 쿠키 있음)라
+  // PATCH /auth/consent로 선택 동의값만 따로 저장한다.
+  const submitConsent=async(consent)=>{
+    setSubmitting(true);setError(null);
+    try{
+      const updatedUser=await updateConsent(consent);
+      setAccount(updatedUser);
+      setStep('success');
+      onSuccess(updatedUser);
+    }catch(e){
+      console.error('PATCH /auth/consent 실패:',e);
+      setError(e.message||'동의값 저장 중 오류가 발생했어요');
     }finally{
       setSubmitting(false);
     }
   };
   const handleCredential=credential=>{
-    idTokenRef.current=credential;
     const {name,email,picture}=decodeIdToken(credential);
     setAccount({name:name||email.split('@')[0],email,picture}); // 백엔드 응답 오기 전 임시 표시용
-    submitLogin(credential,{aiTrainingAgreed:false,notifyAgreed:true},'method');
+    submitLogin(credential);
   };
 
   useEffect(()=>{
@@ -262,7 +300,7 @@ export function LoginModal({open,onClose,onSuccess}){
           <Icon name="close" size={20}/>
         </button>
         {step==='method'&&<StepMethod onCredential={handleCredential} error={error} submitting={submitting}/>}
-        {step==='consent'&&<StepConsent onAgree={consent=>submitLogin(idTokenRef.current,consent,'consent')} error={error} submitting={submitting}/>}
+        {step==='consent'&&<StepConsent onAgree={submitConsent} error={error} submitting={submitting}/>}
         {step==='success'&&<StepSuccess account={account}/>}
       </div>
     </div>

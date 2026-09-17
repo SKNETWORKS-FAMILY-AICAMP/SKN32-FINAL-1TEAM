@@ -130,7 +130,7 @@ export default function App(){
   {view==='eligibility-gate'&&<EligibilityGate announcement={announcement} eligibility={pipelineResult?.eligibility} onProceed={()=>setView('plan-form')} onLeave={(title,failed)=>{if(failed)setCheckedFailedTitles(p=>[...new Set([...p,title])]);setView('match-results')}}/>}
   {view==='plan-form'&&<PlanForm announcement={announcement} onGenerate={()=>setView('artifact-result')} scoreOutcome={scoreOutcome} itemInfo={itemInfo}/>}
   {view==='artifact-result'&&<ArtifactResult announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('plan-form')} onFinalize={()=>setView('final-verdict')} scoreOutcome={scoreOutcome}/>}
-  {view==='final-verdict'&&<FinalVerdict announcement={announcement} itemInfo={itemInfo} onProceed={()=>setView('review')} docOutcome={docOutcome} artifactOutcome={artifactOutcome} setDocOutcome={setDocOutcome} setArtifactOutcome={setArtifactOutcome}/>}
-  {view==='review'&&<ReviewScreen announcement={announcement} itemInfo={itemInfo} docOutcome={docOutcome} artifactOutcome={artifactOutcome} onGoDashboard={()=>setView('dashboard')}/>}
+  {view==='final-verdict'&&<FinalVerdict announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('artifact-result')} onProceed={()=>setView('review')} docOutcome={docOutcome} artifactOutcome={artifactOutcome} setDocOutcome={setDocOutcome} setArtifactOutcome={setArtifactOutcome}/>}
+  {view==='review'&&<ReviewScreen announcement={announcement} itemInfo={itemInfo} docOutcome={docOutcome} artifactOutcome={artifactOutcome} onGoDashboard={()=>setView('dashboard')} projectId={projectId}/>}
  </WorkspaceShell>
 }
