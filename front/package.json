@@ -4,9 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host localhost --configLoader native",
+    "dev": "vite --host 127.0.0.1 --configLoader native",
     "build": "vite build --configLoader native",
-    "preview": "vite preview --host localhost --configLoader native",
+    "preview": "vite preview --host 127.0.0.1 --configLoader native",
     "check:render": "node scripts/render-check.mjs",
     "standalone": "npm run build && node scripts/standalone.mjs"
   },

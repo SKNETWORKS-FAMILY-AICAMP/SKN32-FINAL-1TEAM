@@ -11,6 +11,8 @@ npm ci
 npm run dev
 ```
 
+브라우저에서는 **`http://localhost:5174`로 접속** — `127.0.0.1`로 열면 구글 로그인 origin 검증(`origin_mismatch`)에 걸리고, 로그인이 되더라도 세션 쿠키가 `localhost`와 `127.0.0.1`을 다른 site로 취급해 그다음 요청에 실려가지 않습니다. (`vite --host 127.0.0.1`로 서버를 띄우는 건 일부 Windows 환경에서 `--host localhost`가 IPv6(`::1`)에만 바인딩되는 문제를 피하기 위함이고, 브라우저 접속 주소는 여전히 `localhost`여야 합니다.)
+
 배포 파일 생성: `npm run build`. 정적 결과물은 `dist/`에 만들어집니다.
 단일 HTML 생성: `npm run standalone`. 상위 폴더에 `S-Brain-redesign.html`이 생성되며, 브라우저에서 바로 열 수 있습니다.
 

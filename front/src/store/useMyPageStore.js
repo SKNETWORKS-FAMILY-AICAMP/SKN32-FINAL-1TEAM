@@ -18,7 +18,7 @@ const initial = () => ({
   // checkedNo: 조회에 쓴 번호 — 입력칸 값이 바뀌면 이 결과는 무효로 본다.
   bizStatus: null,
   capability: { careers: [], skills: '', soloFounder: false, team: [], hires: [], equipment: [], partners: [] },
-  history: { pastBusinesses: [], yellowUmbrella: false, yellowUmbrellaJoinedAt: '' },
+  history: { pastBusinesses: [] },
 });
 
 export const useMyPageStore = create(

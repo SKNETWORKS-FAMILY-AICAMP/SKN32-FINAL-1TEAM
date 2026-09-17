@@ -142,7 +142,7 @@ Swagger에서 `POST /projects/{project_id}/retry-task`를 찾아 body에 task_ke
 uvicorn app.main:app --reload --port 8000
 ```
 
-`http://127.0.0.1:8000/docs`(Swagger)에서 로그인 없이 되는 API는 바로 호출해볼 수 있다. 로그인이 필요한 API(`POST /projects`, `GET /projects/{id}/status` 등)는 실제 구글 로그인이 돼야 브라우저 세션에 쿠키가 생겨서 Swagger에서도 테스트 가능해진다.
+`http://localhost:8000/docs`(Swagger)에서 로그인 없이 되는 API는 바로 호출해볼 수 있다(`127.0.0.1`이 아니라 `localhost`로 — 아래 로그인 테스트와 같은 이유로 세션 쿠키가 안 실려간다). 로그인이 필요한 API(`POST /projects`, `GET /projects/{id}/status` 등)는 실제 구글 로그인이 돼야 브라우저 세션에 쿠키가 생겨서 Swagger에서도 테스트 가능해진다.
 
 ### 구글 로그인 + 프로젝트 생성 테스트 (`login_test.html`)
 

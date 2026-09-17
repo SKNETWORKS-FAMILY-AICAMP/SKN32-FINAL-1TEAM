@@ -5,7 +5,9 @@ import { careerBadge, regionBadge, youthBadge } from './derive.js';
 import { Badges, Check, ChipSelect, RegionInput, Section, Segmented, Select, TextInput } from './ui.jsx';
 
 const APPLICANT_TYPES = [['preliminary', '예비창업자', '사업자등록 전'], ['individual', '개인사업자'], ['corp', '법인']];
-const CERTS = ['여성기업', '장애인기업', '벤처기업', '이노비즈', '메인비즈', '사회적기업'];
+// 공고마다 요구하는 인증·가입 조건이 계속 늘어날 수 있어 특정 항목을 전용 필드로
+// 박아두지 않고 칩 하나로 다룬다 — 목록에 없는 조건은 ChipSelect의 "+ 직접 입력"으로 추가.
+const CERTS = ['여성기업', '장애인기업', '벤처기업', '이노비즈', '메인비즈', '사회적기업', '노란우산공제'];
 
 export default function BasicInfo({ onGoTab }) {
   const [b, set] = useSection('basic');
