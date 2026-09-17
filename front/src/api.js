@@ -91,3 +91,7 @@ export async function downloadPlanDocument(projectId,filename='사업계획서.d
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+// 마이페이지 사업자등록번호 조회 — 서버가 국세청 상태조회 API를 대신 호출한다
+// (back/app/routers/biz_check.py). 응답: {valid, b_stt_cd, label, tax_type, tax_type_cd, message}
+export const checkBizNo=(bNo)=>api.post('/biz-check',{b_no:bNo});

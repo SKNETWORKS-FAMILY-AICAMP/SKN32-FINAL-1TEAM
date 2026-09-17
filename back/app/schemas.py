@@ -464,3 +464,19 @@ class FaqOut(BaseModel):
     is_visible: bool
     created_at: datetime.datetime
     answered_at: datetime.datetime | None = None
+
+
+# ---------------------------------------------------------------------------
+# 마이페이지 - 사업자등록번호 상태 확인 (국세청 API 중계)
+# ---------------------------------------------------------------------------
+class BizCheckRequest(BaseModel):
+    b_no: str = Field(..., description='사업자등록번호 (하이픈 있어도 됨)')
+
+
+class BizCheckOut(BaseModel):
+    valid: bool
+    b_stt_cd: str | None = Field(None, description="01=계속사업자 02=휴업자 03=폐업자")
+    label: str | None = None
+    tax_type: str | None = None
+    tax_type_cd: str | None = None
+    message: str | None = None
