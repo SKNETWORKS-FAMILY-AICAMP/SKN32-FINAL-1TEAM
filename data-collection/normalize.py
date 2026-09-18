@@ -9,6 +9,8 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
+import region
+
 HERE = Path(__file__).resolve().parent
 BASES = {'kstartup': 'https://www.k-startup.go.kr/', 'bizinfo': 'https://www.bizinfo.go.kr/'}
 
@@ -146,7 +148,11 @@ def normalize_notice(row, source):
         'target_category': text(row.get('aply_trgt' if k else 'trgetNm')),
         'exclude_text': text(row.get('aply_excl_trgt_ctnt')) if k else None,
         'age_condition_raw': text(row.get('biz_enyy')) if k else None,
-        'region': text(row.get('supt_regin')) if k else None,
+        # K-Startup 은 지역 칸이 있다. 기업마당은 hashtags 에서 뽑고, 태그가
+        # 빠뜨린 지역을 제목 앞머리("[부산ㆍ울산ㆍ경남] ...")로 메운다.
+        'region': (region.normalize(text(row.get('supt_regin'))) if k
+                   else region.merge(region.from_tags(text(row.get('hashtags'))),
+                                     region.from_title(title))),
         'category': text(row.get('supt_biz_clsfc' if k else 'pldirSportRealmLclasCodeNm')),
         'subcategory': None if k else text(row.get('pldirSportRealmMlsfcCodeNm')),
         'organizer': text(row.get('pbanc_ntrp_nm')) if k else None,
