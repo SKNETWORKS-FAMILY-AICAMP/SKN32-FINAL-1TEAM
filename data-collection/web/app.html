@@ -32,6 +32,12 @@
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .three { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
   @media (max-width: 800px) { .three { grid-template-columns: 1fr; } }
+  .samples { display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    margin: -14px 0 18px; font-size: 13px; color: var(--muted); }
+  .samples button { border: 1px solid var(--line); background: #fff; border-radius: 20px;
+    padding: 5px 13px; font: inherit; font-size: 12.5px; cursor: pointer; color: var(--ink); }
+  .samples button:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .samples .saved { color: var(--accent); font-size: 12px; }
   .checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
   .checks label { display: flex; gap: 6px; align-items: center; font-size: 13px;
     border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; cursor: pointer; }
@@ -98,6 +104,15 @@
     <p class="eyebrow">사전 정보 입력</p>
     <h1>아이템과 신청자 정보를 알려주세요</h1>
     <p class="lede">받은 정보로 공고 매칭과 자격요건 확인을 진행합니다.</p>
+
+    <div class="samples">
+      <span>시험용 예시:</span>
+      <button type="button" data-sample="0">제조 법인</button>
+      <button type="button" data-sample="1">예비창업자</button>
+      <button type="button" data-sample="2">여성 소상공인</button>
+      <button type="button" id="clear-form">비우기</button>
+      <span class="saved" id="saved-note" hidden>직전 입력을 불러왔습니다</span>
+    </div>
 
     <div class="panel">
       <label class="h">신청자 유형</label>
@@ -277,6 +292,118 @@ function validate() {
 ['#idea', '#owner', '#founded'].forEach(s =>
   $(s).addEventListener('input', validate));
 validate();
+
+// ── 예시 채우기 · 직전 입력 복원 ─────────────────────────────
+// 시험할 때마다 열 몇 개를 다시 치지 않도록 한다. 저장은 이 브라우저에만 남는다.
+const SAMPLES = [
+  { name: '제조 법인', type: '법인',
+    fields: { owner: '김대표', birth: '1985-04-12', gender: '남성', region: '경기',
+              district: '수원시', industry: '제조업', bizno: '1234567890',
+              founded: '2023-03-01', selffund: 'yes', fundbudget: '3000',
+              equipment: '비전 검사 장비, CNC 가공기', partners: '경기테크노파크',
+              idea: '중소 제조기업의 스마트공장 구축과 품질 검사 자동화 솔루션을 개발한다' },
+    certs: ['벤처기업'], hiring: true,
+    team: [['김대표', '대표', '금형 설계 10년'], ['이개발', '개발', '머신비전 5년']],
+    rev: [['검사 장비 판매', '5000'], ['유지보수 구독', '30']] },
+
+  { name: '예비창업자', type: '예비창업자',
+    fields: { owner: '박예비', birth: '1996-08-20', gender: '남성', region: '서울',
+              district: '강남구', industry: '정보통신업', first: 'yes', budget: '2000',
+              partners: '서울창업허브',
+              idea: '반려견 산책 도우미를 구해주는 위치 기반 매칭 플랫폼을 준비하고 있다' },
+    certs: [], hiring: false,
+    team: [['박예비', '대표', '앱 개발 3년']],
+    rev: [['산책 1건당 수수료', '2000']] },
+
+  { name: '여성 소상공인', type: '개인사업자',
+    fields: { owner: '최사장', birth: '1990-11-05', gender: '여성', region: '전남광주',
+              district: '목포시', industry: '식품제조', bizno: '9876543210',
+              founded: '2024-06-01', selffund: 'no',
+              idea: '지역 농산물로 만든 수제 디저트를 온라인으로 판매하고 있다' },
+    certs: ['여성기업'], hiring: true,
+    team: [['최사장', '대표', '제과 경력 8년']],
+    rev: [['온라인 주문 1건', '18000']] },
+];
+
+const TEXT_IDS = ['owner', 'birth', 'gender', 'region', 'district', 'industry', 'idea',
+                  'bizno', 'founded', 'selffund', 'fundbudget', 'first', 'budget',
+                  'equipment', 'partners'];
+
+function pickType(t) {
+  const b = [...$('#types').children].find(x => x.dataset.t === t);
+  if (b) b.click();
+}
+
+function setRows(host, kind, values) {
+  host.innerHTML = '';
+  (values.length ? values : [[]]).forEach(v => {
+    addRow(host, kind);
+    [...host.lastElementChild.querySelectorAll('input')].forEach((input, i) => {
+      input.value = v[i] || '';
+    });
+  });
+}
+
+function fill(data) {
+  pickType(data.type);
+  TEXT_IDS.forEach(id => { if ($('#' + id)) $('#' + id).value = ''; });
+  Object.entries(data.fields).forEach(([id, v]) => { if ($('#' + id)) $('#' + id).value = v; });
+  if (data.fields.region) $('#region').dispatchEvent(new Event('change'));
+  if (data.fields.district) $('#district').value = data.fields.district;
+  document.querySelectorAll('#certs input').forEach(c => {
+    c.checked = (data.certs || []).includes(c.value);
+  });
+  $('#hiring').checked = !!data.hiring;
+  setRows($('#team'), 'team', data.team || []);
+  setRows($('#rev'), 'rev', data.rev || []);
+  validate();
+}
+
+// 인증 체크박스는 서버에서 받아 그려지므로, 예시를 채우려면 그 뒤여야 한다
+function whenFormReady(run) {
+  if (document.querySelector('#certs input')) return run();
+  setTimeout(() => whenFormReady(run), 100);
+}
+
+document.querySelectorAll('[data-sample]').forEach(b => {
+  b.onclick = () => whenFormReady(() => { fill(SAMPLES[Number(b.dataset.sample)]); save(); });
+});
+$('#clear-form').onclick = () => {
+  fill({ type: '개인사업자', fields: {}, certs: [], hiring: false, team: [], rev: [] });
+  try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+  $('#saved-note').hidden = true;
+};
+
+// 직전 입력 저장·복원. 브라우저를 닫아도 남지만 이 브라우저 밖으로는 나가지 않는다
+const SAVE_KEY = 'sbrain-form-v1';
+
+function snapshot() {
+  const rows = (host) => [...host.children].map(
+    r => [...r.querySelectorAll('input')].map(i => i.value));
+  return {
+    type, fields: Object.fromEntries(TEXT_IDS.filter(id => $('#' + id))
+      .map(id => [id, $('#' + id).value])),
+    certs: [...document.querySelectorAll('#certs input:checked')].map(c => c.value),
+    hiring: $('#hiring').checked,
+    team: rows($('#team')), rev: rows($('#rev')),
+  };
+}
+
+function save() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(snapshot())); } catch (e) {}
+}
+
+document.addEventListener('input', save);
+document.addEventListener('change', save);
+
+whenFormReady(() => {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) {}
+  if (saved && (saved.fields?.idea || '').trim()) {
+    fill(saved);
+    $('#saved-note').hidden = false;
+  }
+});
 
 function collect() {
   const rows = (host, keys) => [...host.children].map(r => {

@@ -10,6 +10,9 @@ DB·모델·HTTP 없이 `app.match()` 와 `app.eligibility()` 를 가짜 색인�
   1번  시·도 → 시·군·구 → 집단 순서. 나중 규칙이 앞선 규칙을 덮어쓰지 않는다
   4번  설립일을 모르는 사업자를 예비창업자(미설립)로 보지 않는다
   날짜 잘못된 설립일이 HTTP 500 이 되지 않는다 (형식 오류 + 달력에 없는 날짜)
+  3번  마감 공고를 걸러내 후보가 모자라면 더 깊이 찾는다
+  2번  한 검색 안에서는 한 가지 점수 체계만 쓴다 (RRF 와 코사인을 섞지 않는다)
+  P3   search_ms 가 검색 구간 전체를 담는다 (벡터 추가 조회·결합 시간이 빠지지 않는다)
 """
 import os
 import sys
@@ -100,6 +103,107 @@ class RuleOrderTests(unittest.TestCase):
     def test_order_is_unchanged_without_location(self):
         out = match(self.rows(), top=3)
         self.assertEqual([r['notice_id'] for r in out['results']], ['성남', '서울', '수원'])
+
+
+class CandidateRefillTests(unittest.TestCase):
+    """3번 — 마감 공고를 걸러낸 뒤 후보가 모자라면 더 깊이 찾는다."""
+
+    def rows(self, expired=51, total=60):
+        rows = {}
+        for i in range(1, total + 1):
+            nid = 'n%03d' % i
+            rows[nid] = notice(nid, apply_end='2000-12-31' if i <= expired else '2099-12-31')
+        return rows
+
+    def test_finds_live_notices_beyond_the_first_page(self):
+        out = match(self.rows(), top=3)
+        self.assertEqual(out['count'], 3)
+        self.assertEqual([r['notice_id'] for r in out['results']], ['n052', 'n053', 'n054'])
+        self.assertGreater(out['search_rounds'], 1)      # 더 깊이 찾았다
+
+    def test_hybrid_also_refills(self):
+        out = match(self.rows(), top=3, search='hybrid')
+        self.assertEqual(out['count'], 3)
+
+    def test_no_extra_round_when_first_page_is_enough(self):
+        out = match(self.rows(expired=0), top=3)
+        self.assertEqual(out['search_rounds'], 1)
+
+    def test_stops_when_everything_is_expired(self):
+        out = match(self.rows(expired=60), top=3)
+        self.assertEqual(out['count'], 0)               # 무한히 찾지 않는다
+
+    def test_expired_are_still_shown_when_asked(self):
+        out = match(self.rows(), top=3, hide_expired=False)
+        self.assertEqual([r['notice_id'] for r in out['results']], ['n001', 'n002', 'n003'])
+
+
+class ScoreModeTests(unittest.TestCase):
+    """2번 — score 방식이 RRF 점수와 코사인 유사도를 섞지 않는다."""
+
+    def rows(self, total=60):
+        return {('n%03d' % i): notice('n%03d' % i) for i in range(1, total + 1)}
+
+    def zero_penalty(self):
+        return {'mode': 'score', 'penalty_group': 0, 'penalty_region': 0, 'penalty_district': 0}
+
+    def test_zero_penalty_keeps_the_order(self):
+        rows = self.rows()
+        base = match(rows, top=3, search='hybrid')
+        scored = match(rows, top=3, search='hybrid', weights=self.zero_penalty())
+        self.assertEqual([r['notice_id'] for r in scored['results']],
+                         [r['notice_id'] for r in base['results']])
+
+    def test_weighted_score_uses_rrf_in_hybrid(self):
+        out = match(self.rows(), top=3, search='hybrid', weights=self.zero_penalty())
+        top1 = out['results'][0]
+        self.assertEqual(top1['weighted_score'], top1['rrf_score'])
+        self.assertLess(top1['weighted_score'], 0.1)     # 코사인(0.5~0.8)이 아니다
+
+    def test_penalty_actually_demotes(self):
+        rows = self.rows(total=5)
+        rows['n001'] = notice('n001', region='서울')      # 다른 시·도
+        out = match(rows, top=3, region='경기', weights={'mode': 'score', 'penalty_region': 1.0})
+        self.assertNotEqual(out['results'][0]['notice_id'], 'n001')
+
+
+class SearchTimingTests(unittest.TestCase):
+    """P3 — 화면에 찍히는 검색 시간이 실제 검색 구간을 담는다.
+
+    시간은 눈으로 확인할 수 없어 **모의 시계**로 잰다. 각 단계에 정해진 시간을 부여하고
+    돌려받은 search_ms 가 그 합을 담는지 본다(2026-09-18 Codex 검토의 재현 방식).
+    """
+
+    def test_search_ms_includes_vector_lookup(self):
+        rows = {('n%03d' % i): notice('n%03d' % i) for i in range(1, 61)}
+
+        clock = {'now': 0.0}
+        COSTS = {'query': 0.010, 'bm25': 0.020, 'get': 0.250}
+
+        def tick(kind):
+            clock['now'] += COSTS[kind]
+
+        collection = FakeCollection(list(rows))
+        real_query, real_get = collection.query, collection.get
+        collection.query = lambda **kw: (tick('query'), real_query(**kw))[1]
+        collection.get = lambda **kw: (tick('get'), real_get(**kw))[1]
+
+        # 의미 검색 상위 50 밖(n060)을 BM25 가 찾아야 벡터 추가 조회가 일어난다
+        texts = {n: '지원' for n in rows}
+        texts['n060'] = '창업 지원 창업 지원'
+        bm25 = hybrid.BM25([(n, texts[n]) for n in rows])
+        real_search = bm25.search
+        bm25.search = lambda query, top=10: (tick('bm25'), real_search(query, top=top))[1]
+
+        req = app.MatchRequest(applicant_type='법인사업자', founded_at='2025-01-01',
+                               idea='창업 지원', top=3, search='hybrid')
+        with patch.dict(app.STATE, {'collection': collection, 'rows': rows, 'bm25': bm25},
+                        clear=True),                 patch.object(app, '_encode', lambda text: [0.0, 0.0, 0.0, 0.0]),                 patch.object(app.time, 'time', lambda: clock['now']):
+            out = app.match(req)
+
+        # query 10 + bm25 20 + get 250 = 280ms. 이전 구현은 30ms 만 보고했다
+        self.assertAlmostEqual(out['search_ms'], 280.0, places=6)
+        self.assertGreaterEqual(out['search_ms'], out['dense_ms'] + out['bm25_ms'])
 
 
 class UnknownFoundedDateTests(unittest.TestCase):

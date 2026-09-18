@@ -267,54 +267,71 @@ def match(req: MatchRequest):
     qv = _encode(query)
     encode_ms = (time.time() - t0) * 1000
 
-    t0 = time.time()
-    want = req.top * 8 if req.hide_expired else req.top + 1
-    if req.demote_groups:
-        want = max(want, 30)          # 뒤로 보낼 공고가 있어도 3건이 채워지게 넉넉히
     hybrid_on = req.search != 'dense'
-    if hybrid_on:
-        want = max(want, _hybrid_depth())
     col = STATE['collection']
-    found = col.query(query_embeddings=[qv], n_results=min(want + 1, col.count()))
-    dense = [(nid, dist) for nid, dist in zip(found['ids'][0], found['distances'][0])
-             if nid != '__watermark__']
-    dense_ms = (time.time() - t0) * 1000
+    total = col.count()
 
-    bm25_ms = None
-    ranks = {}
+    # 처음 가져올 후보 수. 마감 공고를 걸러내고도 요청 건수가 남게 넉넉히 잡는다
+    depth = req.top * 8 if req.hide_expired else req.top + 1
+    if req.demote_groups:
+        depth = max(depth, 30)        # 뒤로 보낼 공고가 있어도 요청 건수가 채워지게
     if hybrid_on:
-        from search import hybrid
-        t1 = time.time()
-        lexical = STATE['bm25'].search(query, top=hybrid.DEPTH)
-        bm25_ms = (time.time() - t1) * 1000
-        dense_all, dense = dense, dense[:hybrid.DEPTH]
-        ranks = {nid: {'dense_rank': i} for i, (nid, _) in enumerate(dense, 1)}
-        for i, (nid, _) in enumerate(lexical, 1):
-            ranks.setdefault(nid, {})['bm25_rank'] = i
-        fused = hybrid.rrf(dense, lexical, k=req.weights.rrf_k,
-                           weights=(req.weights.dense, req.weights.bm25))
-        # 표시용 점수(유사도)와 3단 라벨은 예전과 같은 기준으로 둔다. 단어 검색에서만
-        # 올라온 공고는 Chroma 에서 그 공고 벡터를 꺼내 질의 벡터와 코사인을 구한다.
-        dist_of = dict(dense)
-        _fill_distances(col, qv, [nid for nid, _ in fused if nid not in dist_of], dist_of)
-        # 합친 결과 뒤에 의미 검색 51위 이하를 그대로 붙인다. 기한 지난 공고를 걸러내고
-        # 나면 상위 50 만으로는 요청한 건수를 못 채울 수 있다.
-        tail = [h for h in dense_all[len(dense):] if h[0] not in dist_of]
-        dense = [(nid, dist_of[nid]) for nid, _ in fused if nid in dist_of] + tail
-        for nid, sc in fused:
-            ranks[nid]['rrf_score'] = round(sc, 5)
-    search_ms = (time.time() - t0) * 1000
+        depth = max(depth, _hybrid_depth())
 
     today = date.today().isoformat()
-    candidates = []
-    for nid, dist in dense:
-        row = STATE['rows'].get(nid)
-        if row is None:
-            continue
-        end = row.get('apply_end')
-        if req.hide_expired and end is not None and str(end) < today:
-            continue
-        candidates.append((nid, dist, row))
+    # 검색 구간 전체를 바깥에서 잰다. dense·BM25 세부 시간만 더하면 그 사이에 일어나는
+    # 벡터 추가 조회(_fill_distances)·RRF 결합 시간이 빠져 화면에 실제보다 짧게 찍힌다
+    # (2026-09-18 Codex 검토 P3). 세부 시간은 어디에 시간이 쓰였는지 보려고 그대로 둔다.
+    search_started = time.time()
+    dense_ms = bm25_ms = 0.0
+    attempts = 0
+    while True:
+        attempts += 1
+        t0 = time.time()
+        found = col.query(query_embeddings=[qv], n_results=min(depth + 1, total))
+        dense = [(nid, dist) for nid, dist in zip(found['ids'][0], found['distances'][0])
+                 if nid != '__watermark__'][:depth]
+        dense_ms += (time.time() - t0) * 1000
+
+        ranks = {}
+        if hybrid_on:
+            from search import hybrid
+            t1 = time.time()
+            lexical = STATE['bm25'].search(query, top=depth)
+            bm25_ms += (time.time() - t1) * 1000
+            ranks = {nid: {'dense_rank': i} for i, (nid, _) in enumerate(dense, 1)}
+            for i, (nid, _) in enumerate(lexical, 1):
+                ranks.setdefault(nid, {})['bm25_rank'] = i
+            fused = hybrid.rrf(dense, lexical, k=req.weights.rrf_k,
+                               weights=(req.weights.dense, req.weights.bm25))
+            # 표시용 점수(유사도)와 3단 라벨은 예전 기준 그대로다. 단어 검색에서만 올라온
+            # 공고는 Chroma 에서 벡터를 꺼내 질의와의 코사인을 구한다.
+            dist_of = dict(dense)
+            _fill_distances(col, qv, [nid for nid, _ in fused if nid not in dist_of], dist_of)
+            ordered = [(nid, dist_of[nid]) for nid, _ in fused if nid in dist_of]
+            for nid, sc in fused:
+                ranks[nid]['rrf_score'] = round(sc, 5)
+        else:
+            ordered = dense
+
+        candidates = []
+        for nid, dist in ordered:
+            row = STATE['rows'].get(nid)
+            if row is None:
+                continue
+            end = row.get('apply_end')
+            if req.hide_expired and end is not None and str(end) < today:
+                continue
+            candidates.append((nid, dist, row))
+
+        # 마감 공고를 걸러내고 나니 요청 건수가 안 되면 **더 깊이 찾는다.**
+        # 예전에는 의미 검색 51위 이하를 그대로 뒤에 붙였는데, 그 꼬리에는 RRF 점수가
+        # 없어 코사인 유사도로 대신했고 두 점수가 섞여 정렬이 뒤틀렸다
+        # (2026-09-18 Codex 검토 2·3번). 같은 점수 체계를 유지한 채 후보만 넓힌다.
+        if len(candidates) >= req.top or depth >= total:
+            break
+        depth = min(depth * 3, total)
+    search_ms = (time.time() - search_started) * 1000
 
     # ── 규칙 ────────────────────────────────────────────────
     # 어떤 공고가 어떤 규칙에 걸리는지 먼저 한 번에 판정한다. 그 다음
@@ -350,8 +367,9 @@ def match(req: MatchRequest):
                 f *= max(0.0, 1 - w.penalty_district)
             return f
 
-        # 기본 점수는 섞은 점수(RRF), 의미 검색만 쓸 때는 유사도
-        base = {nid: (ranks.get(nid, {}).get('rrf_score') or (1.0 - dist))
+        # 한 검색 안에서는 한 가지 점수만 쓴다. 하이브리드면 RRF, 의미 검색만이면 유사도.
+        # 섞으면 척도가 달라 감점을 하나도 주지 않아도 순서가 바뀐다(검토 2번).
+        base = {nid: (ranks[nid]['rrf_score'] if hybrid_on else (1.0 - dist))
                 for nid, dist, _row in candidates}
         order = {nid: i for i, (nid, _d, _r) in enumerate(candidates)}
         candidates.sort(key=lambda c: (-base[c[0]] * factor(c[0]), order[c[0]]))
@@ -444,6 +462,7 @@ def match(req: MatchRequest):
            'rule_words': applicant_mod.rule_words(req),
            'stored_only': applicant_mod.stored_only(req),
            'why_not_used': applicant_mod.why_not_used()}
+    out.update({'depth': depth, 'search_rounds': attempts})
     if hybrid_on:
         out.update({'dense_ms': round(dense_ms, 2), 'bm25_ms': round(bm25_ms, 2)})
     return out
