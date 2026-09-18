@@ -76,7 +76,13 @@ function ProfileSwitcher() {
               )}
               {profiles.length > 1 && (
                 <button type="button" aria-label={`${p.name} 삭제`}
-                  onClick={() => window.confirm(`"${p.name}"을(를) 삭제할까요?`) && removeProfile(i)}
+                  onClick={() => {
+                    if (!window.confirm(`"${p.name}"을(를) 삭제할까요?`)) return;
+                    removeProfile(i).catch((err) => {
+                      console.error('프로필을 지우지 못했어요', err);
+                      window.alert('프로필을 지우지 못했어요. 다시 시도해 주세요.');
+                    });
+                  }}
                   className="w-7 h-7 flex-shrink-0 grid place-items-center rounded-lg text-[#b0b8c1] hover:text-[var(--danger)] hover:bg-white transition-colors">
                   <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
                 </button>
@@ -90,13 +96,14 @@ function ProfileSwitcher() {
   );
 }
 
-export default function MyPage() {
+export default function MyPage({ onSaved }) {
   const [tab, setTab] = useState('basic');
   const activeIndex = useMyPageStore((s) => s.activeIndex);
   const activeProfile = useMyPageStore((s) => s.profiles[s.activeIndex]);
   const onboarded = useMyPageStore((s) => s.onboarded);
-  const completeOnboarding = useMyPageStore((s) => s.completeOnboarding);
+  const saveActiveProfile = useMyPageStore((s) => s.saveActiveProfile);
   const [justSaved, setJustSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
   const progress = progressOf(activeProfile);
   const [done, total] = Object.values(progress).reduce(([d, t], [a, b]) => [d + a, t + b], [0, 0]);
   const percent = total ? Math.round((done / total) * 100) : 0;
@@ -112,11 +119,26 @@ export default function MyPage() {
   const next = TABS[index + 1];
   const goTab = (key) => { setTab(key); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
-  const handleSave = () => {
-    if (!canSave) return;
-    completeOnboarding();
-    setJustSaved(true);
-    setTimeout(() => setJustSaved(false), 2500);
+  // [2026-09-18] completeOnboarding()은 서버 저장 없이 로컬 onboarded만 true로
+  // 바꾸던 옛 함수라 store에서 없어졌다(saveActiveProfile로 대체) — 여기서 이어서
+  // 부르던 게 남아있어 저장 버튼을 눌러도 실제로는 아무 일도 안 일어나던 버그였다.
+  // onSaved()는 App.jsx가 넘겨준 콜백(/auth/me 재조회로 user.has_profile 갱신) — 이걸
+  // 안 부르면 저장에 성공해도 로그인 시점에 캐시된 has_profile=false가 세션 내내 그대로
+  // 남아 "시작하기"/"내 프로젝트" 이동마다 마이페이지 입력 강제 모달이 계속 떴다(사용자 지적).
+  const handleSave = async () => {
+    if (!canSave || saving) return;
+    setSaving(true);
+    try {
+      await saveActiveProfile();
+      onSaved?.();
+      setJustSaved(true);
+      setTimeout(() => setJustSaved(false), 2500);
+    } catch (err) {
+      console.error('마이페이지 저장에 실패했어요', err);
+      window.alert(err.message || '저장에 실패했어요. 다시 시도해 주세요.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -176,9 +198,9 @@ export default function MyPage() {
               다음
             </button>
           )}
-          <button type="button" onClick={handleSave} disabled={!canSave}
+          <button type="button" onClick={handleSave} disabled={!canSave || saving}
             className="h-11 px-6 rounded-xl bg-[var(--primary)] text-white text-[14.5px] font-semibold hover:bg-[var(--primary-dim)] disabled:opacity-40 disabled:cursor-not-allowed transition-[background-color,scale] active:scale-[0.98]">
-            저장
+            {saving ? '저장 중…' : '저장'}
           </button>
         </div>
       </div>

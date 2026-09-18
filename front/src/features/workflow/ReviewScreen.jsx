@@ -1,5 +1,6 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
-import React from 'react';
+import React, {useState} from 'react';
+import {Icon} from '../../components/Icons.jsx';
 import {downloadPlanDocx,downloadPrototypeZip,downloadVerificationPdf} from '../../dummyDeliverables.js';
 import {ApiError,downloadAttachmentGuide,downloadPlanDocument} from '../../api.js';
 import {buildGeneralInfo,buildOverview,DOC_SCORE_BY_OUTCOME} from './utils.js';
@@ -11,6 +12,10 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
   const finalTotal = docScore.raw + artifactScore.autoCheck.raw + artifactScore.crossCheck.raw;
   const passed = finalTotal >= FINAL_THRESHOLD;
   const itemTitle = announcement ? announcement.title : '';
+  // 문장 다듬기 항목별 수정 내역(p-02, p-09...)은 대부분의 사용자가 신경 안 쓰는
+  // 세부 정보라, 기본은 접어두고 보고 싶은 사람만 눌러서 펼친다(사용자 지적) —
+  // 항목별로 따로따로 펼치는 게 아니라 토글 하나로 전부 한 번에 나온다.
+  const [showDetails, setShowDetails] = useState(false);
 
   function handleDownload(file){
     if (file.name === '사업계획서.docx') {
@@ -105,6 +110,12 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
     }
   }
 
+  // 파일마다 따로 눌러야 했던 걸 한 번에 — 브라우저가 같은 틱에 여러 다운로드를
+  // 팝업 차단처럼 막는 경우가 있어(사용자 지적: 산출물 한번에 받게) 살짝 간격을 둔다.
+  const handleDownloadAll = () => {
+    DOWNLOAD_FILES.forEach((f, i) => setTimeout(() => handleDownload(f), i * 400));
+  };
+
   return (
     <section data-screen="review" className="max-w-3xl mx-auto px-6 py-16">
       <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide mb-2">문장 다듬기</p>
@@ -113,8 +124,20 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
       <p className="text-[14.5px] text-[var(--muted-fg)] mb-1">사업계획서 문장 형식과 한국어 표현만 다듬는 단계라 점수는 바뀌지 않습니다</p>
       <p className="text-[12.5px] text-[var(--muted-fg)] mb-8">이 단계부터는 이전 화면으로 돌아갈 수 없습니다</p>
 
-      <div className="flex flex-col gap-4 mb-10">
-        {REVIEW_PARAGRAPHS.map((p) => (
+      <button type="button" onClick={() => setShowDetails((v) => !v)} aria-expanded={showDetails}
+        className="flex items-center gap-1.5 text-[13.5px] font-semibold text-[var(--muted-fg)] hover:text-[var(--fg)] transition-colors mb-10">
+        <Icon name="chevron" size={14} className={`transition-transform duration-150 ${showDetails ? 'rotate-90' : ''}`} />
+        수정한 문장 {REVIEW_PARAGRAPHS.length}건 {showDetails ? '접기' : '보기'}
+      </button>
+
+      {/* 이 div는 접혀있어도(showDetails=false) DOM에 항상 존재해야 한다 — styles.css의
+          레거시 규칙(.workflow-content [data-screen="review"]>div:first-of-type>div)이
+          "몇 번째 div 자식인지"로 문단 카드를 스타일링하는데, 이 div 자체를 통째로
+          안 그리면 그 자리를 "결과물" 감싸는 div가 대신 차지해서 엉뚱하게 padding:28px가
+          거기 먹혀버린다(사용자 지적: 전체 다운로드가 계속 삐져나옴 — 실제로 이게 원인이었다).
+          그래서 바깥 div는 그대로 두고 안쪽 map만 조건부로 비운다. */}
+      <div className={`flex flex-col gap-4 ${showDetails ? 'mb-10' : ''}`}>
+        {showDetails && REVIEW_PARAGRAPHS.map((p) => (
           <div key={p.id} className={`rounded-2xl border bg-white p-5 ${p.spotlight ? 'border-[var(--primary)]' : 'border-[var(--border)]'}`}>
             <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
               <p className="text-[11px] font-bold text-[var(--muted-fg)] tracking-wide font-mono">{p.id}</p>
@@ -157,8 +180,14 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
         ))}
       </div>
 
-      <div className="border-t border-[var(--border)] pt-8">
-        <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide mb-2">결과물</p>
+      <div className="border-t border-[var(--border)] pt-6">
+        <div className="flex items-center justify-between gap-4 flex-wrap mb-6 px-5">
+          <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide">결과물</p>
+          <button onClick={handleDownloadAll} title="더미 데이터로 만든 파일입니다 — 형식만 실제와 같습니다"
+            className="flex-shrink-0 text-[12.5px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">
+            전체 다운로드
+          </button>
+        </div>
         {!passed && (
           <p className="text-[13px] text-[var(--fg)] mb-4">현재 {finalTotal}점으로 저장됩니다 — 검수는 표현만 다듬으므로 종합 평가에서 확인한 점수가 그대로 기록됩니다</p>
         )}

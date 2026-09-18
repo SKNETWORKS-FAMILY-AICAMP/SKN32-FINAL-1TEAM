@@ -81,6 +81,10 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
   // 재작성 스피너가 끝나도 완료 표시가 없어 헷갈린다는 지적에 따라, 방금 재작성한
   // 항목을 완료 표시로 남긴다 — 같은 항목을 다시 체크하면 완료 표시는 지운다.
   const [completedTasks, setCompletedTasks] = useState([]);
+  // 사업계획서 화면(PlanForm.jsx)과 같은 위치 구성 — 좌측에 산출물 점검, 접었다 펼 수
+  // 있고, 박스(테두리 카드) 대신 구역만 나눈다(사용자 지적: 여백만 커지는 사이드바
+  // 카드 말고 그냥 구역으로).
+  const [panelOpen, setPanelOpen] = useState(true);
 
   const toggleTask = (label) => {
     setCheckedTasks((prev) => (prev.includes(label) ? prev.filter((t) => t !== label) : [...prev, label]));
@@ -112,53 +116,24 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
         ‹ 사업계획서로 돌아가기
       </button>
 
-      <div className="grid md:grid-cols-[1fr_340px] gap-6">
-        <div className="flex flex-col">
-          <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide mb-2">산출물</p>
-          <p className="text-[14px] text-[var(--muted-fg)] leading-snug mb-1.5">『{announcement ? announcement.title : ''}』</p>
-          <h1 className="font-display font-bold text-[26px] md:text-[30px] mb-3">프로토타입이 준비됐어요</h1>
-          <p className="text-[14.5px] text-[var(--muted-fg)] mb-8">
-            {hasExecutable ? '사업계획서와 함께 제출할 실행 파일·인포그래픽입니다' : copy.note}
-          </p>
-
-          <div className={`flex-1 grid gap-6 ${hasExecutable ? 'sm:grid-cols-2' : 'sm:grid-cols-1 max-w-md'}`}>
-            <div className="flex flex-col rounded-2xl border border-[var(--border)] bg-white overflow-hidden">
-              <div className="relative flex-1 aspect-[4/3] overflow-hidden">
-                <InfographicMock />
-              </div>
-              <div className="p-4">
-                <p className="font-bold text-[14.5px] mb-1">인포그래픽</p>
-                <p className="text-[12.5px] text-[var(--muted-fg)] mb-3">사업계획서에 삽입할 요약 인포그래픽입니다</p>
-                <div className="flex items-center justify-between text-[12px] font-mono text-[var(--muted-fg)]">
-                  <span>infographic.png</span>
-                  <button onClick={()=>setPreview("info")} className="font-semibold text-[var(--primary)] hover:underline">미리보기</button>
-                </div>
-              </div>
-            </div>
-
-            {hasExecutable && (
-              <div className="flex flex-col rounded-2xl border border-[var(--border)] bg-white overflow-hidden">
-                <div className="relative flex-1 aspect-[4/3] overflow-hidden">
-                  <SiteMock />
-                </div>
-                <div className="p-4">
-                  <p className="font-bold text-[14.5px] mb-1">{EXECUTABLE_COPY.title}</p>
-                  <p className="text-[12.5px] text-[var(--muted-fg)] mb-3">{EXECUTABLE_COPY.desc}</p>
-                  <div className="flex items-center justify-between text-[12px] font-mono text-[var(--muted-fg)]">
-                    <span>index.html</span>
-                    <button onClick={()=>setPreview("site")} className="font-semibold text-[var(--primary)] hover:underline">크게 보기</button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* 우측 — 산출물 점검: 합격선은 물론 점수 자체도 표기하지 않는다(사용자 요청) —
+      <div className={`grid gap-6 items-start transition-[grid-template-columns] duration-200 ${panelOpen ? 'md:grid-cols-[290px_1fr]' : 'md:grid-cols-[auto_1fr]'}`}>
+        {/* 좌측 — 산출물 점검: 합격선은 물론 점수 자체도 표기하지 않는다(사용자 요청) —
             판정에 쓰일 숫자는 종합 평가에서만 보여주고, 여기서는 항목별 통과 여부만
-            본다. 8항목을 2열로 접어 체크리스트 하나 때문에 사이드바가 길게 늘어지지
-            않게 한다. */}
-        <aside className="rounded-2xl border border-[var(--border)] bg-white p-5 md:sticky md:top-24">
+            본다. 8항목을 2열로 접어 체크리스트 하나 때문에 세로로 길게 늘어지지 않게
+            한다. 사업계획서 화면과 같은 위치·같은 방식(박스 아닌 구역, 접기/펼치기). */}
+        {!panelOpen && (
+          <button type="button" onClick={() => setPanelOpen(true)} aria-label="산출물 점검 펼치기"
+            className="hidden md:flex flex-col items-center gap-3 w-11 py-5 md:sticky md:top-24 text-[var(--muted-fg)] hover:text-[var(--fg)] transition-colors">
+            <Icon name="chevron" size={13} />
+            <span className="font-display font-bold text-[13px] leading-none text-[var(--ok)]">{passedItems.length}</span>
+          </button>
+        )}
+        {panelOpen && (
+        <aside className="relative md:sticky md:top-24">
+          <button type="button" onClick={() => setPanelOpen(false)} aria-label="산출물 점검 접기"
+            className="hidden md:grid absolute -right-3.5 top-0 w-7 h-7 place-items-center rounded-full border border-[var(--border)] bg-white shadow-[0_2px_8px_-1px_rgba(15,23,42,.15)] hover:bg-[var(--muted)] transition-colors z-10">
+            <Icon name="chevron" size={12} className="rotate-180 text-[var(--muted-fg)]" />
+          </button>
           <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1">산출물 점검</p>
           <p className="text-[11.5px] text-[var(--muted-fg)] mb-4">코드 검증과 계획서 대조 결과입니다</p>
 
@@ -233,6 +208,48 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
             </button>
           </div>
         </aside>
+        )}
+
+        <div className="flex flex-col">
+          <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide mb-2">산출물</p>
+          <p className="text-[14px] text-[var(--muted-fg)] leading-snug mb-1.5">『{announcement ? announcement.title : ''}』</p>
+          <h1 className="font-display font-bold text-[26px] md:text-[30px] mb-3">프로토타입이 준비됐어요</h1>
+          <p className="text-[14.5px] text-[var(--muted-fg)] mb-8">
+            {hasExecutable ? '사업계획서와 함께 제출할 실행 파일·인포그래픽입니다' : copy.note}
+          </p>
+
+          <div className={`flex-1 grid gap-6 ${hasExecutable ? 'sm:grid-cols-2' : 'sm:grid-cols-1 max-w-md'}`}>
+            <div className="flex flex-col rounded-2xl border border-[var(--border)] bg-white overflow-hidden">
+              <div className="relative flex-1 aspect-[4/3] overflow-hidden">
+                <InfographicMock />
+              </div>
+              <div className="p-4">
+                <p className="font-bold text-[14.5px] mb-1">인포그래픽</p>
+                <p className="text-[12.5px] text-[var(--muted-fg)] mb-3">사업계획서에 삽입할 요약 인포그래픽입니다</p>
+                <div className="flex items-center justify-between text-[12px] font-mono text-[var(--muted-fg)]">
+                  <span>infographic.png</span>
+                  <button onClick={()=>setPreview("info")} className="font-semibold text-[var(--primary)] hover:underline">미리보기</button>
+                </div>
+              </div>
+            </div>
+
+            {hasExecutable && (
+              <div className="flex flex-col rounded-2xl border border-[var(--border)] bg-white overflow-hidden">
+                <div className="relative flex-1 aspect-[4/3] overflow-hidden">
+                  <SiteMock />
+                </div>
+                <div className="p-4">
+                  <p className="font-bold text-[14.5px] mb-1">{EXECUTABLE_COPY.title}</p>
+                  <p className="text-[12.5px] text-[var(--muted-fg)] mb-3">{EXECUTABLE_COPY.desc}</p>
+                  <div className="flex items-center justify-between text-[12px] font-mono text-[var(--muted-fg)]">
+                    <span>index.html</span>
+                    <button onClick={()=>setPreview("site")} className="font-semibold text-[var(--primary)] hover:underline">크게 보기</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* 다음 단계 버튼 — 파일 미리보기 옆 좁은 사이드바 대신, 화면 하단에 전체 폭으로 둔다.

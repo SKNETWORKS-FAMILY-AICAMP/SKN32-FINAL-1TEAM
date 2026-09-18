@@ -138,10 +138,6 @@ export function FileAttach({ files, onAdd, onRemove }){
         </ul>
       )}
       <p className="mt-2 text-[11.5px] text-[var(--muted-fg)]">사업자등록증·포트폴리오 등 참고자료를 첨부하면 계획서 작성 시 참고합니다 — 선택사항입니다</p>
-      {/* 기획서 6-7 + 목업 수정 요청서 v3 §11: 첨부 원본은 텍스트 추출 직후 파기된다
-          (시연 로그 steps[1].data.referenceDocs[].originalDiscardedAt) — 계정에 남는
-          건 추출된 텍스트뿐, 원본 파일이 아니라는 걸 첨부 시점에 미리 알린다. */}
-      <p className="mt-1 text-[11.5px] text-[var(--muted-fg)]">체험 모드에서는 파일이 서버로 전송되지 않아요.</p>
     </div>
   );
 }

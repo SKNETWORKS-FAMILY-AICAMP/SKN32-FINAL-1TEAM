@@ -165,27 +165,26 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
   return (
     <React.Fragment>
     <section data-screen="plan" className={`max-w-6xl mx-auto px-6 py-12 transition-[filter] duration-300 ${generating ? 'blur-sm pointer-events-none select-none' : ''}`}>
-      <div className={`rounded-2xl border border-[var(--border)] bg-white overflow-hidden grid transition-[grid-template-columns] duration-200 ${scoreOpen ? 'md:grid-cols-[290px_1fr]' : 'md:grid-cols-[56px_1fr]'}`}>
+      <div className={`grid gap-6 items-start transition-[grid-template-columns] duration-200 ${scoreOpen ? 'md:grid-cols-[290px_1fr]' : 'md:grid-cols-[auto_1fr]'}`}>
         {/* 좌측 — 문서 평가: 문서층 70점을 100점 만점으로 환산해 표시 (기획서 4-5).
-            makedeck 레퍼런스의 좌측 히스토리 사이드바처럼 본문과 여백 없이 한 판에
-            바로 붙는 패널로 둔다(카드 두 개가 따로 떠 있는 모양 아님) — 접으면 얇은
+            우측 본문과 한 박스로 묶으면(카드 하나 공유) 내용이 짧은 이쪽이 긴 본문
+            높이에 맞춰 억지로 늘어나면서 빈 여백만 커진다(사용자 지적) — 그래서 서로
+            독립된 카드로 분리하고, 내용 길이만큼만 높이를 차지하게 한다. 접으면 얇은
             칸으로 줄고 우측 본문이 그만큼 넓어진다. 기본은 펼친 상태. */}
-        <div className="relative border-b md:border-b-0 md:border-r border-[var(--border)] bg-[var(--bg)]">
-          {/* 내용은 md:sticky로 뷰포트 안에 붙여둔다 — 바깥 div는 우측 본문과 높이를
-              맞춰 늘어나므로(items-stretch), 안쪽에서 따로 안 붙이면 본문이 길 때
-              토글 버튼이 화면 밖(아래)으로 밀려나 안 보이게 된다(실제로 확인된 문제). */}
-          <div className={`md:sticky md:top-24 relative ${scoreOpen ? 'p-6' : 'flex md:flex-col items-center gap-2 py-4'}`}>
-            <button type="button" onClick={() => setScoreOpen((v) => !v)} aria-label={scoreOpen ? '문서 평가 접기' : '문서 평가 펼치기'}
-              className={scoreOpen
-                ? 'hidden md:grid absolute -right-3.5 top-0 w-7 h-7 place-items-center rounded-full border border-[var(--border)] bg-white shadow-[0_2px_8px_-1px_rgba(15,23,42,.15)] hover:bg-[var(--muted)] transition-colors z-10'
-                : 'w-7 h-7 grid place-items-center rounded-full border border-[var(--border)] bg-white hover:bg-[var(--muted)] transition-colors'}>
-              <Icon name="chevron" size={12} className={scoreOpen ? 'rotate-180 text-[var(--muted-fg)]' : 'text-[var(--muted-fg)]'} />
-            </button>
-            {!scoreOpen && (
-              <span className={`font-display font-bold text-[14px] leading-none ${passed ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>{docScoreScaled}</span>
-            )}
-            {scoreOpen && (<>
-            <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1">문서 평가</p>
+        {!scoreOpen && (
+          <button type="button" onClick={() => setScoreOpen(true)} aria-label="문서 평가 펼치기"
+            className="hidden md:flex flex-col items-center gap-3 w-11 py-5 md:sticky md:top-24 text-[var(--muted-fg)] hover:text-[var(--fg)] transition-colors">
+            <Icon name="chevron" size={13} />
+            <span className={`font-display font-bold text-[14px] leading-none ${passed ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>{docScoreScaled}</span>
+          </button>
+        )}
+        {scoreOpen && (
+        <aside className="relative md:sticky md:top-24">
+          <button type="button" onClick={() => setScoreOpen(false)} aria-label="문서 평가 접기"
+            className="hidden md:grid absolute -right-3.5 top-6 w-7 h-7 place-items-center rounded-full border border-[var(--border)] bg-white shadow-[0_2px_8px_-1px_rgba(15,23,42,.15)] hover:bg-[var(--muted)] transition-colors z-10">
+            <Icon name="chevron" size={12} className="rotate-180 text-[var(--muted-fg)]" />
+          </button>
+          <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1">문서 평가</p>
           <p className="text-[11.5px] text-[var(--muted-fg)] mb-5">문서층 70점을 100점 만점으로 환산, {FINAL_THRESHOLD}점부터 통과</p>
 
           <div className="flex items-end gap-1.5 mb-2">
@@ -260,12 +259,11 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
               </div>
             </div>
           )}
-            </>)}
-          </div>
-        </div>
+        </aside>
+        )}
 
         {/* 우측 — 작성된 사업계획서 미리보기 */}
-        <div>
+        <div className="rounded-2xl border border-[var(--border)] bg-white overflow-hidden">
           <div className="border-b border-[var(--border)] px-9 py-6 flex items-start justify-between gap-4 flex-wrap">
             <div>
               {/* 공고 제목을 제목 문장 안에 끼워 넣으면(『긴 공고명』 사업계획서) 제목이 길 때

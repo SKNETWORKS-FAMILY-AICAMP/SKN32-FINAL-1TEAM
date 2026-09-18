@@ -124,7 +124,12 @@ export default function App(){
   setProjectId(project.id);
   setMatchCandidates(null);
   setItemInfo({item:project.name});
-  if(project.progress>=100){
+  // [2026-09-19] 예전엔 project.progress>=100(=stage==='done')로 "이미 공고 매칭까지
+  // 끝났으니 결과를 불러오자"를 판단했는데, Dashboard가 progress를 "review 화면까지 본
+  // 적 있음" 기준으로 바꾸면서(사용자 지적: 사업계획서만 쓰고 나가도 준비완료로 잘못
+  // 뜨던 버그) 이 조건이 같이 깨졌다 — 매칭은 됐지만 아직 review 전인 프로젝트를 다시
+  // "공고 찾기"로 보내버리는 회귀가 생겨서, 매칭 여부(project.matched)로 따로 판단한다.
+  if(project.matched){
    try{
     const result=await getProjectResult(project.id);
     setPipelineResult(result);
