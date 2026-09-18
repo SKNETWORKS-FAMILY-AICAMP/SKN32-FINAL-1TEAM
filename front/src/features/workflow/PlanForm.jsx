@@ -160,28 +160,28 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
 
   return (
     <React.Fragment>
-    <section data-screen="plan" className={`max-w-6xl mx-auto px-6 py-12 transition-[filter] duration-300 ${generating ? 'blur-sm pointer-events-none select-none' : ''}`}>
-      <div className="grid md:grid-cols-[1fr_340px] gap-6 items-start">
+    <section data-screen="plan" className={`max-w-6xl mx-auto px-6 py-14 transition-[filter] duration-300 ${generating ? 'blur-sm pointer-events-none select-none' : ''}`}>
+      <div className="grid md:grid-cols-[1fr_360px] gap-7 items-start">
         {/* 좌측 — 작성된 사업계획서 미리보기 */}
         <div className="rounded-2xl border border-[var(--border)] bg-white overflow-hidden">
-          <div className="border-b border-[var(--border)] px-8 py-6 flex items-start justify-between gap-4 flex-wrap">
+          <div className="border-b border-[var(--border)] px-10 py-8 flex items-start justify-between gap-4 flex-wrap">
             <div>
               {/* 공고 제목을 제목 문장 안에 끼워 넣으면(『긴 공고명』 사업계획서) 제목이 길 때
                   줄이 어중간하게 끊기고 뒤 단어만 남아 어색해진다(사용자 지적). 공고명은
                   윗줄에 따로 두고, 제목은 길이가 고정된 짧은 문장만 남긴다. */}
-              <p className="text-[12.5px] font-semibold text-[var(--primary-dim)] leading-snug mb-1">『{announcement ? announcement.title : ''}』</p>
-              <h1 className="font-display font-bold text-[21px] mb-1.5">사업계획서</h1>
-              <p className="text-[11.5px] text-[var(--muted-fg)]">{PLAN_AI_NOTICE}</p>
+              <p className="text-[13px] font-semibold text-[var(--primary-dim)] leading-snug mb-1.5">『{announcement ? announcement.title : ''}』</p>
+              <h1 className="font-display font-bold text-[25px] mb-2">사업계획서</h1>
+              <p className="text-[12px] text-[var(--muted-fg)]">{PLAN_AI_NOTICE}</p>
             </div>
           </div>
 
-          <div className="px-8 py-8 flex flex-col gap-8">
+          <div className="px-10 py-10 flex flex-col gap-9">
             <GeneralInfoBlock itemInfo={itemInfo} itemTitle={announcement ? announcement.title : ''} sections={PLAN_DOCUMENT_SECTIONS} />
 
             {PLAN_DOCUMENT_SECTIONS.map((s, i) => (
               <div key={s.title}>
-                <h2 className="font-display font-bold text-[17px] mb-2">{PSST_OFFICIAL_HEADERS[i]}</h2>
-                <p className="text-[14px] leading-relaxed text-[var(--fg)]">{s.body}</p>
+                <h2 className="font-display font-bold text-[18px] mb-2.5">{PSST_OFFICIAL_HEADERS[i]}</h2>
+                <p className="text-[14.5px] leading-[1.85] text-[var(--fg)]">{s.body}</p>
               </div>
             ))}
 
@@ -190,7 +190,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
         </div>
 
         {/* 우측 — 문서 평가: 문서층 70점을 100점 만점으로 환산해 표시 (기획서 4-5) */}
-        <aside className="rounded-2xl border border-[var(--border)] bg-white p-6 md:sticky md:top-24">
+        <aside className="rounded-2xl border border-[var(--border)] bg-white p-7 md:sticky md:top-24">
           <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1">문서 평가</p>
           <p className="text-[11.5px] text-[var(--muted-fg)] mb-5">문서층 70점을 100점 만점으로 환산, {FINAL_THRESHOLD}점부터 통과</p>
 

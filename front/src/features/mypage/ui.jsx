@@ -128,8 +128,16 @@ export function Check({ checked, onChange, children }) {
 // 개인사업자·법인은 이미 사업자등록증에 업종이 정해져 있어 정부지원사업 신청서
 // 표준 목록(지원 분야/전문기술분야) 중에서만 고르게 한다. 예비창업자는 아직 업종이
 // 굳어지지 않은 경우가 많아 자유 입력을 그대로 둔다.
+// 자유입력↔선택형 경계를 넘나들 때 값을 안 지우면, 예비창업자에서 자유롭게 쓴 텍스트가
+// 선택형 쪽엔 없는 항목인데도 "선택된 값"처럼 보이거나(또는 그 반대) 남아 있는 버그가
+// 났었다 — 개인/법인끼리는 같은 목록을 쓰니 유지하고, 그 경계를 넘을 때만 비운다.
 export function IndustryField({ label = '주업종', applicantType, value, onChange }) {
   const selectable = applicantType === 'individual' || applicantType === 'corp';
+  const prevSelectable = useRef(selectable);
+  useEffect(() => {
+    if (prevSelectable.current !== selectable && value) onChange('');
+    prevSelectable.current = selectable;
+  }, [selectable]);
   if (selectable) return <Select label={label} value={value} options={INDUSTRY_OPTIONS} onChange={onChange} />;
   return <TextInput label={label} value={value} placeholder="예) 응용 소프트웨어 개발" onChange={onChange} />;
 }
