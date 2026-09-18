@@ -26,7 +26,11 @@
 | `output/results.json` | 대표 산출물. 사업계획서 Agent가 사용할 구조화 시장조사 결과 |
 | `output/keyword_history.json` | 사용자가 직접 `add-keyword`로 실행한 검색 이력 |
 | `reports/keyword_list_collection_report.md` | 키워드 목록 수집 데이터 보고서 |
+| `reports/raw_kiet_results_collection_report.md` | KIET 원천 결과의 수집 방식, 필드, 분야별 통계와 품질 한계 보고서 |
+| `reports/results_collection_report.md` | 시장조사 결과의 가공 방식, 섹션별 근거 통계와 활용 범위 보고서 |
 | `test_search_quality.py` | 최소 동작 검증 테스트 |
+
+`reports/`의 Markdown 보고서는 저장된 데이터 기준으로 작성한 문서이며 CLI 실행 시 자동 갱신되지 않습니다. 데이터 재수집·가공 후에는 각 보고서의 기준 시각과 통계를 다시 확인해야 합니다.
 
 ## 실행 방법
 
