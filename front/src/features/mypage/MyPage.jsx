@@ -76,7 +76,10 @@ function ProfileSwitcher() {
               )}
               {profiles.length > 1 && (
                 <button type="button" aria-label={`${p.name} 삭제`}
-                  onClick={() => window.confirm(`"${p.name}"을(를) 삭제할까요?`) && removeProfile(i)}
+                  onClick={async () => {
+                    if (!window.confirm(`"${p.name}"을(를) 삭제할까요?`)) return;
+                    try { await removeProfile(i); } catch (err) { window.alert('삭제하지 못했어요. 다시 시도해 주세요.'); }
+                  }}
                   className="w-7 h-7 flex-shrink-0 grid place-items-center rounded-lg text-[#b0b8c1] hover:text-[var(--danger)] hover:bg-white transition-colors">
                   <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
                 </button>
@@ -90,13 +93,15 @@ function ProfileSwitcher() {
   );
 }
 
-export default function MyPage() {
+export default function MyPage({ onSaved }) {
   const [tab, setTab] = useState('basic');
   const activeIndex = useMyPageStore((s) => s.activeIndex);
   const activeProfile = useMyPageStore((s) => s.profiles[s.activeIndex]);
   const onboarded = useMyPageStore((s) => s.onboarded);
-  const completeOnboarding = useMyPageStore((s) => s.completeOnboarding);
+  const saveActiveProfile = useMyPageStore((s) => s.saveActiveProfile);
   const [justSaved, setJustSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const progress = progressOf(activeProfile);
   const [done, total] = Object.values(progress).reduce(([d, t], [a, b]) => [d + a, t + b], [0, 0]);
   const percent = total ? Math.round((done / total) * 100) : 0;
@@ -105,18 +110,27 @@ export default function MyPage() {
 
   // 정보 슬롯을 바꾸거나 새로 추가하면 그 전에 보고 있던 탭(역량·팀 등)이 아니라
   // 항상 기본 정보 탭부터 보여준다 — 슬롯마다 처음 보는 화면이 같아야 헷갈리지 않는다.
-  useEffect(() => { setTab('basic'); }, [activeIndex]);
+  useEffect(() => { setTab('basic'); setSaveError(''); }, [activeIndex]);
 
   const index = TABS.findIndex(([key]) => key === tab);
   const [, , Current] = TABS[index];
   const next = TABS[index + 1];
   const goTab = (key) => { setTab(key); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
-  const handleSave = () => {
-    if (!canSave) return;
-    completeOnboarding();
-    setJustSaved(true);
-    setTimeout(() => setJustSaved(false), 2500);
+  const handleSave = async () => {
+    if (!canSave || saving) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      await saveActiveProfile();
+      setJustSaved(true);
+      setTimeout(() => setJustSaved(false), 2500);
+      onSaved?.();
+    } catch (err) {
+      setSaveError(err?.status === 401 ? '로그인이 끊겼어요. 다시 로그인해 주세요.' : '저장하지 못했어요. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -159,14 +173,16 @@ export default function MyPage() {
 
       <div className="flex items-center justify-between gap-4 mt-6 pt-6 border-t border-[var(--border)]">
         <div className="min-h-5">
-          {justSaved ? (
+          {saveError ? (
+            <p className="text-[12.5px] font-semibold text-[var(--danger)]">{saveError}</p>
+          ) : justSaved ? (
             <p className="text-[12.5px] font-semibold text-[var(--ok)]">저장됐어요.</p>
-          ) : missing.length > 0 ? (
-            <p className="text-[12.5px] text-[var(--warn)]">필수 항목을 먼저 채워 주세요 — {missing.join(', ')}</p>
+          ) : missing.length ? (
+            <p className="text-[12.5px] text-[var(--warn)]">아직 저장 전이에요. {missing.join(', ')}(을)를 채워 주세요.</p>
           ) : !onboarded ? (
-            <p className="text-[12.5px] text-[var(--warn)]">아직 저장 전이에요. 저장을 눌러 주세요.</p>
+            <p className="text-[12.5px] text-[var(--warn)]">아직 저장 전이에요. 저장 버튼을 눌러 주세요.</p>
           ) : (
-            <p className="text-[12.5px] text-[var(--muted-fg)]">입력한 내용은 이 정보 슬롯에 자동으로 저장돼요.</p>
+            <p className="text-[12.5px] text-[var(--muted-fg)]">저장 버튼을 눌러야 이 정보 슬롯이 서버에 반영돼요.</p>
           )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -176,9 +192,9 @@ export default function MyPage() {
               다음
             </button>
           )}
-          <button type="button" onClick={handleSave} disabled={!canSave}
+          <button type="button" onClick={handleSave} disabled={!canSave || saving}
             className="h-11 px-6 rounded-xl bg-[var(--primary)] text-white text-[14.5px] font-semibold hover:bg-[var(--primary-dim)] disabled:opacity-40 disabled:cursor-not-allowed transition-[background-color,scale] active:scale-[0.98]">
-            저장
+            {saving ? '저장 중…' : '저장'}
           </button>
         </div>
       </div>
