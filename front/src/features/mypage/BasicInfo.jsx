@@ -1,18 +1,22 @@
 import React from 'react';
 import { useSection } from '../../store/useMyPageStore.js';
 import BizNoField from './BizNoField.jsx';
-import { careerBadge, regionBadge, youthBadge } from './derive.js';
-import { Badges, Check, ChipSelect, RegionInput, Section, Segmented, Select, TextInput } from './ui.jsx';
+import { CERTS, PRELIMINARY_BUDGET_CAP_MANWON, careerBadge, regionBadge, youthBadge } from './derive.js';
+import { Badge, Badges, Check, ChipSelect, Field, IndustryField, RegionInput, Section, Segmented, Select, TextInput, inputCls } from './ui.jsx';
 
-const APPLICANT_TYPES = [['preliminary', '예비창업자', '사업자등록 전'], ['individual', '개인사업자'], ['corp', '법인']];
-// 공고마다 요구하는 인증·가입 조건이 계속 늘어날 수 있어 특정 항목을 전용 필드로
-// 박아두지 않고 칩 하나로 다룬다 — 목록에 없는 조건은 ChipSelect의 "+ 직접 입력"으로 추가.
-const CERTS = ['여성기업', '장애인기업', '벤처기업', '이노비즈', '메인비즈', '사회적기업', '노란우산공제'];
+const APPLICANT_TYPES = [['preliminary', '예비창업자'], ['individual', '개인사업자'], ['corp', '법인']];
 
-export default function BasicInfo({ onGoTab }) {
+// 만원 단위 숫자만 남기고 2,000(=2,000만원)을 못 넘게 그 자리에서 잘라낸다.
+const clampBudget = (v) => {
+  const digits = v.replace(/\D/g, '');
+  if (!digits) return '';
+  return String(Math.min(PRELIMINARY_BUDGET_CAP_MANWON, parseInt(digits, 10)));
+};
+
+export default function BasicInfo() {
   const [b, set] = useSection('basic');
   const pre = b.applicantType === 'preliminary';
-  const hqSido = pre ? b.home.sido : (b.hqSameAsHome ? b.home.sido : b.hq.sido);
+  const biz = b.applicantType === 'individual' || b.applicantType === 'corp';
 
   return (
     <>
@@ -29,53 +33,57 @@ export default function BasicInfo({ onGoTab }) {
         <Badges items={[youthBadge(b.birthDate), b.gender === '여성' && { tone: 'info', text: '여성 대표자' }]} />
       </Section>
 
-      {b.applicantType && !pre && (
-        <Section title="사업자 정보">
-          <BizNoField value={b.bizNo} onChange={set('bizNo')} />
-          <div className="grid gap-3 sm:grid-cols-2 mt-3">
-            <TextInput label="개업일" type="date" value={b.openedAt} onChange={set('openedAt')} />
-            <TextInput label="주업종" value={b.industry} placeholder="예) 응용 소프트웨어 개발" onChange={set('industry')} />
+      <Section title="지역 · 주업종">
+        <RegionInput label="지역" value={b.region} onChange={set('region')} />
+        <div className="mt-3">
+          <IndustryField applicantType={b.applicantType} value={b.industry} onChange={set('industry')} />
+        </div>
+        <Badges items={[regionBadge(b.region.sido)]} />
+      </Section>
+
+      <Section title="보유 인증 · 가입" desc="해당하는 것을 모두 골라 주세요.">
+        <ChipSelect options={CERTS} values={b.certs} onChange={set('certs')} />
+      </Section>
+
+      {pre && (
+        <Section title="예비창업자 정보">
+          <div className="flex items-center gap-2 mb-4">
+            <Badge tone="info">첫창업</Badge>
+            <p className="text-[13px] text-[var(--muted-fg)]">예비창업자는 첫창업 기준으로 접수돼요.</p>
           </div>
-          <Badges items={[careerBadge(b.openedAt)]} />
+          <Field label="희망 사업 규모">
+            <div className="relative">
+              <input inputMode="numeric" value={b.budgetScale} placeholder="예) 1500"
+                onChange={(e) => set('budgetScale')(clampBudget(e.target.value))}
+                className={`${inputCls} pr-14`} />
+              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[14px] text-[var(--muted-fg)]">만원</span>
+            </div>
+          </Field>
+          <p className="text-[12.5px] text-[var(--muted-fg)] mt-1.5">
+            최대 2,000만원까지 입력할 수 있어요. 실제 상한은 공고마다 다르니 지원 전 다시 확인해 주세요.
+          </p>
         </Section>
       )}
 
-      <Section title="창업 구분" desc="재창업이면 지원 가능한 공고와 가산점이 달라져요.">
-        <Segmented value={b.startType} onChange={set('startType')}
-          options={[['first', '첫 창업', '사업을 운영한 적이 없어요'], ['restart', '재창업', '폐업 후 다시 창업해요']]} />
-        {b.startType === 'restart' && (
-          <div className="mt-4 rounded-2xl bg-[#f9fafb] p-4">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Select label="재창업 횟수" value={b.restartCount} options={['1회', '2회', '3회 이상']} onChange={set('restartCount')} />
-              <TextInput label="직전 폐업일" type="date" value={b.lastClosedAt} onChange={set('lastClosedAt')} />
-              <Select label="채무 상태" value={b.debtStatus} options={['해당 없음', '변제 완료', '조정·변제 중']} onChange={set('debtStatus')} />
-            </div>
-            <button type="button" onClick={() => onGoTab('history')} className="mt-3 text-[13.5px] font-semibold text-[var(--primary)] hover:underline">
-              이전 사업체 정보 입력하기 →
-            </button>
+      {biz && (
+        <Section title="사업자 정보">
+          <BizNoField value={b.bizNo} onChange={set('bizNo')} />
+          <div className="grid gap-3 sm:grid-cols-2 mt-3">
+            <TextInput label="설립일" type="date" value={b.openedAt} onChange={set('openedAt')} />
           </div>
-        )}
-      </Section>
+          <Badges items={[careerBadge(b.openedAt)]} />
 
-      <Section title="지역" desc="공고마다 거주지·본점·사업장 중 기준이 달라서 따로 받아요.">
-        <div className="flex flex-col gap-4">
-          <RegionInput label="거주지" value={b.home} onChange={set('home')} />
-          {b.applicantType && !pre && (
-            <>
-              <Check checked={b.hqSameAsHome} onChange={set('hqSameAsHome')}>본점 소재지가 거주지와 같아요</Check>
-              {!b.hqSameAsHome && <RegionInput label="본점" value={b.hq} onChange={set('hq')} />}
-              <Check checked={b.hasSeparateSite} onChange={set('hasSeparateSite')}>본점과 다른 사업장·공장이 있어요</Check>
-              {b.hasSeparateSite && <RegionInput label="사업장" value={b.site} onChange={set('site')} />}
-            </>
-          )}
-          <Check checked={b.relocationPlanned} onChange={set('relocationPlanned')}>협약 후 지역을 옮길 계획이 있어요</Check>
-        </div>
-        <Badges items={[regionBadge(hqSido)]} />
-      </Section>
-
-      <Section title="보유 인증 · 확인서" desc="해당하는 것을 모두 골라 주세요.">
-        <ChipSelect options={CERTS} values={b.certs} onChange={set('certs')} />
-      </Section>
+          <div className="mt-5 pt-5 border-t border-[var(--border)]">
+            <Check checked={b.selfFunding} onChange={set('selfFunding')}>자기부담금을 부담할 수 있어요</Check>
+            {b.selfFunding && (
+              <div className="grid gap-3 sm:grid-cols-2 mt-3">
+                <TextInput label="최소 금액" value={b.selfFundingMin} placeholder="예) 5,000,000" onChange={set('selfFundingMin')} />
+                <TextInput label="최대 금액" value={b.selfFundingMax} placeholder="예) 10,000,000" onChange={set('selfFundingMax')} />
+              </div>
+            )}
+          </div>
+        </Section>
+      )}
     </>
   );
 }

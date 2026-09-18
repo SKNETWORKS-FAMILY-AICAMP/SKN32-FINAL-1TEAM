@@ -4,6 +4,18 @@
 export const SIDO = ['서울특별시', '부산광역시', '대구광역시', '인천광역시', '광주광역시', '대전광역시', '울산광역시', '세종특별자치시', '경기도', '강원특별자치도', '충청북도', '충청남도', '전북특별자치도', '전라남도', '경상북도', '경상남도', '제주특별자치도'];
 const CAPITAL_AREA = ['서울특별시', '인천광역시', '경기도'];
 
+// 초기창업패키지 등 신청서의 "지원 분야/전문기술분야" 체크박스 목록 그대로 — 개인사업자·
+// 법인은 이미 사업자등록이 돼 있어 업종이 이 표 중 하나로 정해져 있으니 자유 입력 대신
+// 여기서만 고르게 한다. 예비창업자는 업종이 아직 없을 수 있어 자유 입력을 유지한다.
+export const INDUSTRY_OPTIONS = ['제조', '지식서비스', '기계·소재', '전기·전자', '정보·통신', '화공·섬유', '바이오·의료·생명', '에너지·자원', '공예·디자인'];
+
+// 공고마다 요구하는 인증·가입 조건이 계속 늘어날 수 있어 특정 항목을 전용 필드로
+// 박아두지 않고 칩 하나로 다룬다 — 목록에 없는 조건은 ChipSelect의 "+ 직접 입력"으로 추가.
+export const CERTS = ['여성기업', '장애인기업', '벤처기업', '이노비즈', '메인비즈', '사회적기업', '노란우산공제'];
+
+// 마이페이지 "대표자 이력"에서 경력/학력/지원사업/교육/수상을 하나의 목록으로 받을 때 쓰는 구분.
+export const CAREER_TYPES = ['경력', '학력', '정부지원사업', '교육 이수', '수상', '자격증'];
+
 export function monthsBetween(from, to = new Date()) {
   const a = new Date(from);
   const b = new Date(to);
@@ -46,17 +58,79 @@ export const formatBizNo = (v) => {
   return [d.slice(0, 3), d.slice(3, 5), d.slice(5)].filter(Boolean).join('-');
 };
 
-// 탭별 채움 정도 — [채운 개수, 전체]. 예비창업자는 사업자 항목을 세지 않는다.
+// 예비창업패키지류 공고가 흔히 두는 상한(단위 만원) — 정확한 상한은 공고마다 다르므로
+// 입력 자체를 이 값에서 못 넘어가게 막는 안내용 캡으로 쓴다.
+export const PRELIMINARY_BUDGET_CAP_MANWON = 2000;
+
+export function wonToNumber(v) {
+  const d = String(v || '').replace(/[^0-9]/g, '');
+  return d ? Number(d) : null;
+}
+
+export function formatWon(v) {
+  const n = wonToNumber(v);
+  return n == null ? '' : n.toLocaleString('ko-KR') + '원';
+}
+
+// 마이페이지 프로필 → 새 프로젝트 입력 폼(IntakeForm) 값. "내 정보 불러오기"가 쓰는
+// 변환은 여기 한 곳에만 둔다 — 마이페이지 저장소가 나중에 서버로 옮겨가도 이 함수는 그대로.
+// 아이디어·단가·첨부는 프로젝트마다 달라서 옮기지 않는다. 나머지는 전부 옮긴다 — 저장해둔
+// 걸 잊고 프로젝트 화면에서 새로 쓰는 사람이 있을 수 있어, 불러온 뒤 그 자리에서 다 보고
+// 고칠 수 있어야 한다(그래서 프로필 원본이 아니라 복사본을 준다).
+export const EMPTY_TEAM_ROW = { name: '', role: '', career: '' };
+export const CAREER_FIELDS = [
+  { key: 'type', label: '구분', type: 'select', options: CAREER_TYPES },
+  { key: 'title', label: '내용', placeholder: '○○전자 · 백엔드 개발' },
+  { key: 'period', label: '기간', placeholder: '2019.03 – 2023.10' },
+  { key: 'hasProof', label: '증빙 있음', type: 'check' },
+];
+export const HIRE_FIELDS = [
+  { key: 'job', label: '직무', placeholder: '프론트엔드 개발' },
+  { key: 'count', label: '인원', placeholder: '1명' },
+  { key: 'skill', label: '요구 역량', placeholder: 'React 3년 이상' },
+  { key: 'when', label: '채용 시기', type: 'month' },
+];
+export const EQUIPMENT_FIELDS = [
+  { key: 'name', label: '이름', placeholder: 'GPU 서버' },
+  { key: 'status', label: '상태', type: 'select', options: ['보유', '도입 예정'] },
+];
+export const PARTNER_FIELDS = [
+  { key: 'name', label: '기관명 · 협력 내용', placeholder: '○○대학 · 실증 지원' },
+  { key: 'status', label: '상태', type: 'select', options: ['협력 중', '예정'] },
+];
+
+export function profileToIntake(profile) {
+  const { basic: b, capability: c } = profile;
+  const team = c.team.map(({ name, role, career }) => ({ name, role, career }));
+  const copyRows = (rows) => rows.map((r) => ({ ...r }));
+  return {
+    applicantType: b.applicantType,
+    ceoName: b.ceoName,
+    foundedAt: b.applicantType === 'preliminary' ? '' : b.openedAt,
+    noTeam: c.soloFounder,
+    team: team.length ? team : [{ ...EMPTY_TEAM_ROW }],
+    industry: b.industry,
+    region: { ...b.region },
+    certs: [...b.certs],
+    careers: copyRows(c.careers),
+    skills: c.skills,
+    hires: copyRows(c.hires),
+    equipment: copyRows(c.equipment),
+    partners: copyRows(c.partners),
+  };
+}
+
+// 탭별 채움 정도 — [채운 개수, 전체]. 예비창업자와 개인사업자·법인은 서로 다른 항목을 센다.
 export function progressOf(state) {
-  const { basic, bizStatus, capability: cap, history } = state;
+  const { basic, bizStatus, capability: cap } = state;
   const pre = basic.applicantType === 'preliminary';
   const bizChecked = bizStatus?.checkedNo === basic.bizNo && bizStatus?.valid;
   const basicChecks = [
-    basic.applicantType, basic.ceoName, basic.birthDate, basic.gender, basic.home.sido,
-    ...(pre ? [] : [bizChecked, basic.openedAt, basic.industry, basic.hqSameAsHome || basic.hq.sido]),
+    basic.applicantType, basic.ceoName, basic.birthDate, basic.gender,
+    basic.region.sido, basic.industry,
+    ...(pre ? [basic.budgetScale] : [bizChecked, basic.openedAt]),
   ];
   const capChecks = [cap.careers.length, cap.skills.trim(), cap.soloFounder || cap.team.length];
-  const historyChecks = basic.startType === 'restart' ? [history.pastBusinesses.length] : [];
   const count = (arr) => [arr.filter(Boolean).length, arr.length];
-  return { basic: count(basicChecks), capability: count(capChecks), history: count(historyChecks) };
+  return { basic: count(basicChecks), capability: count(capChecks) };
 }

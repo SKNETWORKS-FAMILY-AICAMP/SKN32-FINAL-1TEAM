@@ -1,41 +1,111 @@
-// features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
-import React, {useState,useRef} from 'react';
-import {BackButton,FileAttach,FloatingInput,RepeatableRow} from './shared.jsx';
+// 새 프로젝트 사전 정보 입력. 입력 부품은 마이페이지(features/mypage/ui.jsx)와 같은 것을 써서
+// 두 화면이 같은 모양을 유지한다. 루트를 <section data-screen="intake">로 두면 styles.css의
+// 옛 IntakeForm 전용 규칙(회색 입력칸, 버튼 높이 강제 등)이 걸리므로 <div> + 다른 이름을 쓴다.
+import React, { useEffect, useState } from 'react';
+import { Icon } from '../../components/Icons.jsx';
+import { useMyPageStore } from '../../store/useMyPageStore.js';
+import {
+  CAREER_FIELDS, CERTS, EMPTY_TEAM_ROW, EQUIPMENT_FIELDS, HIRE_FIELDS, PARTNER_FIELDS, profileToIntake,
+} from '../mypage/derive.js';
+import {
+  ChipSelect, Check, Collapsible, IndustryField, ListEditor, RegionInput, Section, Segmented, TextInput, textareaCls,
+} from '../mypage/ui.jsx';
+import { BackButton, FileAttach } from './shared.jsx';
 
-export function IntakeForm({ onSubmit, onBack, backLabel = '처음으로 돌아가기' }){
-  const itemRef = useRef(null);
-  const ceoRef = useRef(null);
-  const foundedRef = useRef(null);
-  const [applicantType, setApplicantType] = useState(null); // 'preliminary' | 'individual' | 'corp'
-  const [item, setItem] = useState('');
-  const [files, setFiles] = useState([]);
+const APPLICANT_TYPES = [['preliminary', '예비창업자'], ['individual', '개인사업자'], ['corp', '법인']];
+const APPLICANT_LABEL = Object.fromEntries(APPLICANT_TYPES);
+const TEAM_FIELDS = [
+  { key: 'name', label: '이름', placeholder: '홍길동' },
+  { key: 'role', label: '역할', placeholder: '대표 · 개발' },
+  { key: 'career', label: '경력 · 학력', placeholder: '제빵 경력 8년' },
+];
+const PRICING_FIELDS = [
+  { key: 'item', label: '상품 · 서비스', placeholder: '주문 1건당 수수료' },
+  { key: 'price', label: '단가', placeholder: '500원' },
+];
+const EMPTY_PRICING_ROW = { item: '', price: '' };
+const EMPTY_EXTRA = { region: { sido: '', sigungu: '' }, industry: '', certs: [], careers: [], skills: '', hires: [], equipment: [], partners: [] };
+
+function LoadProfileModal({ open, profiles, onPick, onClose }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
+      <div className="absolute inset-0 bg-[var(--fg)]/40 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
+      <div role="dialog" aria-modal="true" aria-labelledby="load-profile-title" className="relative w-full max-w-sm rounded-2xl bg-white p-6 shadow-[0_24px_64px_-24px_rgba(15,23,42,.4)]">
+        <div className="flex items-center justify-between mb-2">
+          <h2 id="load-profile-title" className="font-bold text-[18px]">어떤 프로필을 불러올까요?</h2>
+          <button type="button" onClick={onClose} aria-label="닫기" className="text-[var(--muted-fg)] hover:text-[var(--fg)] transition-colors"><Icon name="close" size={18} /></button>
+        </div>
+        <p className="text-[13px] text-[var(--muted-fg)] mb-4">불러온 내용은 이 프로젝트에만 복사돼요. 여기서 고쳐도 마이페이지는 바뀌지 않아요.</p>
+        <div className="rounded-xl border border-[var(--border)] overflow-hidden">
+          {profiles.map((p, i) => {
+            const empty = !p.basic.applicantType;
+            return (
+              <button key={i} type="button" disabled={empty} onClick={() => onPick(p)}
+                className={`w-full flex items-center justify-between gap-3 px-4 py-3 text-left transition-colors ${i > 0 ? 'border-t border-[var(--border)]' : ''} ${empty ? 'cursor-not-allowed' : 'hover:bg-[#f5f9ff]'}`}>
+                <span className="min-w-0">
+                  <span className={`block truncate text-[14.5px] font-semibold ${empty ? 'text-[#b0b8c1]' : ''}`}>{p.name}</span>
+                  <span className="block text-[12.5px] text-[var(--muted-fg)]">
+                    {empty ? '아직 비어 있어요' : [APPLICANT_LABEL[p.basic.applicantType], p.basic.ceoName].filter(Boolean).join(' · ')}
+                  </span>
+                </span>
+                {!empty && <Icon name="chevron" size={16} className="text-[#b0b8c1] flex-shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function IntakeForm({ onSubmit, onBack, backLabel = '처음으로 돌아가기' }) {
+  const profiles = useMyPageStore((s) => s.profiles);
+  const [applicantType, setApplicantType] = useState('');
   const [ceoName, setCeoName] = useState('');
   const [foundedAt, setFoundedAt] = useState('');
-  const [team, setTeam] = useState([{ name: '', role: '', experience: '' }]);
+  const [item, setItem] = useState('');
+  const [files, setFiles] = useState([]);
+  const [team, setTeam] = useState([{ ...EMPTY_TEAM_ROW }]);
   const [noTeam, setNoTeam] = useState(false);
-  const [pricing, setPricing] = useState([{ item: '', price: '' }]);
-
-  
-
-  const addFiles = (added) => setFiles((prev) => [...prev, ...added]);
-  const removeFile = (i) => setFiles((prev) => prev.filter((_, idx) => idx !== i));
-  const updateRow = (list, setList, i, key, value) => {
-    setList(list.map((row, idx) => (idx === i ? { ...row, [key]: value } : row)));
-  };
-  const addRow = (list, setList, empty) => setList([...list, empty]);
-  const removeRow = (list, setList, i) => setList(list.filter((_, idx) => idx !== i));
+  const [pricing, setPricing] = useState([{ ...EMPTY_PRICING_ROW }]);
+  // 아이디어·팀·단가처럼 서버로 보내는 값은 아니지만, "저장해둔 걸 잊고 여기서 새로
+  // 입력하는 사람"이 있을 수 있어 불러온 나머지 마이페이지 항목도 전부 보여주고 고치게 한다.
+  const [extra, setExtra] = useState(EMPTY_EXTRA);
+  const [loadedFrom, setLoadedFrom] = useState('');
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const patchExtra = (key) => (value) => setExtra((prev) => ({ ...prev, [key]: value }));
 
   const isPreliminary = applicantType === 'preliminary';
-  const applicantValid = !!applicantType;
-  const companyValid = isPreliminary || (ceoName.trim().length > 0 && !!foundedAt);
-  const ideaValid = item.trim().length > 5;
-  const teamValid = noTeam || team.every((r) => r.name.trim() && r.role.trim() && r.experience.trim());
-  const pricingValid = pricing.every((r) => r.item.trim() && r.price.trim());
-  const valid = applicantValid && companyValid && ideaValid && teamValid && pricingValid;
+  const hasProfile = profiles.some((p) => p.basic.applicantType);
+  const touched = applicantType || ceoName || foundedAt || team.some((r) => r.name || r.role || r.career);
 
-  // 실제 POST /projects 호출은 여기서 하지 않는다 — App.jsx의 handleIntakeSubmit이 이 폼
-  // 정보를 받아서 만든다(project_id를 App 쪽 상태(projectId)로 들고 있어야 다음 화면들
-  // (MatchResults 등)에 넘겨줄 수 있어서). 여기서는 유효성 검사만 하고 폼 값을 그대로 올려보낸다.
+  const applyProfile = (profile) => {
+    if (touched && !window.confirm('이미 입력한 신청자 정보를 불러온 내용으로 바꿀까요?')) return;
+    const v = profileToIntake(profile);
+    setApplicantType(v.applicantType);
+    setCeoName(v.ceoName);
+    setFoundedAt(v.foundedAt);
+    setNoTeam(v.noTeam);
+    setTeam(v.team);
+    setExtra({ region: v.region, industry: v.industry, certs: v.certs, careers: v.careers, skills: v.skills, hires: v.hires, equipment: v.equipment, partners: v.partners });
+    setLoadedFrom(profile.name);
+    setPickerOpen(false);
+  };
+
+  // 예비창업자로 바꾸면 설립일자는 쓰지 않으므로 남아 있던 값이 제출되지 않게 비운다.
+  useEffect(() => { if (isPreliminary) setFoundedAt(''); }, [isPreliminary]);
+
+  const companyValid = isPreliminary || (ceoName.trim() && foundedAt);
+  const ideaValid = item.trim().length > 5;
+  const teamValid = noTeam || (team.length > 0 && team.every((r) => r.name.trim() && r.role.trim() && r.career.trim()));
+  const pricingValid = pricing.length > 0 && pricing.every((r) => r.item.trim() && r.price.trim());
+  const valid = applicantType && companyValid && ideaValid && teamValid && pricingValid;
+
+  // 실제 POST /projects는 App.jsx의 handleIntakeSubmit이 한다(project_id를 App 상태로 들고
+  // 다음 화면에 넘겨야 해서). 여기서는 유효성 검사 후 값만 올려보낸다. extra의 careers·skills·
+  // hires·equipment·partners·certs는 지금 서버 스키마에 자리가 없어 화면 확인·수정용으로만
+  // 쓰고 제출엔 안 싣는다 — industry·region만 보낸다(업종·알림 지역 기본값 대신 실제 값).
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!valid) return;
@@ -45,113 +115,107 @@ export function IntakeForm({ onSubmit, onBack, backLabel = '처음으로 돌아�
       foundedAt: isPreliminary ? '' : foundedAt,
       team: noTeam ? [] : team,
       pricing,
+      industry: extra.industry,
+      region: extra.region.sido,
     });
   };
 
+  const hint = !applicantType ? '신청자 유형을 선택해 주세요'
+    : !companyValid ? '대표자명과 설립일자를 입력해 주세요'
+    : !ideaValid ? '아이디어 설명을 6자 이상 입력해 주세요'
+    : !teamValid ? '팀원 정보를 모두 입력하거나 팀원 없음을 선택해 주세요'
+    : '수익모델 단가 항목을 모두 입력해 주세요';
+
   return (
-    <section data-screen="intake" className="max-w-2xl mx-auto px-6 py-16">
+    <div data-screen="intake-form" className="max-w-3xl mx-auto px-6 py-14">
       <BackButton onClick={onBack} label={backLabel} />
-      <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide mb-2">사전 정보 입력</p>
-      <h1 className="font-display font-bold text-[28px] md:text-[34px] mb-3">어떤 아이디어를 준비하고 있나요?</h1>
-      <p className="text-[15px] text-[var(--muted-fg)] mb-10">아이템과 신청자 정보를 알려주시면 맞는 공고를 찾아드릴게요.</p>
+      <p className="text-[13px] font-semibold text-[var(--primary-dim)] mb-2">사전 정보 입력</p>
+      <h1 className="font-bold text-[28px] md:text-[32px]">어떤 아이디어를 준비하고 있나요?</h1>
+      <p className="text-[15px] text-[var(--muted-fg)] mt-2 mb-6">아이템과 신청자 정보를 알려주시면 맞는 공고를 찾아드릴게요.</p>
+
+      {hasProfile && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#d6e4fb] bg-[#f5f9ff] px-4 py-3 mb-2">
+          <span className="text-[14px] text-[#1b3f80]">
+            {loadedFrom ? <>‘<b>{loadedFrom}</b>’ 프로필을 불러왔어요 — 아래에서 내용을 확인하고 고칠 수 있어요</> : '마이페이지에 저장된 정보가 있어요'}
+          </span>
+          <button type="button" onClick={() => setPickerOpen(true)}
+            className="h-11 px-5 rounded-xl bg-[var(--primary)] text-white text-[14.5px] font-semibold hover:bg-[var(--primary-dim)] transition-colors">
+            {loadedFrom ? '다른 프로필 불러오기' : '내 정보 불러오기'}
+          </button>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit}>
-        <div className="mb-10">
-          <h2 className="font-bold text-[15px] mb-3">신청자 유형</h2>
-          <div className="grid grid-cols-3 gap-3">
-            {[['preliminary', '예비창업자'], ['individual', '개인사업자'], ['corp', '법인']].map(([val, label]) => (
-              <button key={val} type="button" onClick={() => setApplicantType(val)} aria-pressed={applicantType === val}
-                className={`rounded-xl border-2 py-3.5 text-[14px] font-semibold transition-[border-color,background-color,scale] duration-150 ease-out active:scale-[0.97] ${applicantType === val ? 'border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_6%,white)]' : 'border-[var(--border)] bg-white hover:border-[var(--muted-fg)]'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-
+        <Section title="신청자 유형">
+          <Segmented options={APPLICANT_TYPES} value={applicantType} onChange={setApplicantType} />
           {applicantType && !isPreliminary && (
-            <div className="grid sm:grid-cols-2 gap-4 mt-4">
-              <FloatingInput inputRef={ceoRef} type="text" value={ceoName} onChange={(e) => setCeoName(e.target.value)} label="대표자명" />
-              <FloatingInput inputRef={foundedRef} type="date" value={foundedAt} onChange={(e) => setFoundedAt(e.target.value)} label="설립일자" />
+            <div className="grid gap-3 sm:grid-cols-2 mt-4">
+              <TextInput label="대표자명" value={ceoName} placeholder="홍길동" onChange={setCeoName} />
+              <TextInput label="설립일자" type="date" value={foundedAt} onChange={setFoundedAt} />
             </div>
           )}
-        </div>
+        </Section>
 
-        <div className="mb-10">
-          <label htmlFor="idea" className="block text-[13.5px] font-semibold mb-2">아이디어 설명</label>
-          <textarea id="idea" ref={itemRef} value={item} onChange={(e) => setItem(e.target.value)} rows={5}
-            placeholder="예) 반려견 산책 도우미를 구해주는 매칭 플랫폼을 만들고 있어요"
-            className="w-full border border-[var(--border)] rounded-xl p-4 text-[15px] bg-white focus:border-[var(--primary)] focus:border-2 outline-none resize-none transition-colors placeholder:text-[var(--muted-fg)]" />
-          <FileAttach files={files} onAdd={addFiles} onRemove={removeFile} />
-        </div>
-
-        <div className="mb-10 pt-6 border-t border-[var(--border)]">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-bold text-[15px]">팀 구성원 경력</h2>
-            {!noTeam && (
-              <button type="button" onClick={() => addRow(team, setTeam, { name: '', role: '', experience: '' })}
-                className="text-[13px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">
-                + 팀원 추가
-              </button>
-            )}
-          </div>
-          <label className="flex items-center gap-2 mb-3 text-[13px] font-semibold text-[var(--muted-fg)] cursor-pointer select-none">
-            <input type="checkbox" checked={noTeam} onChange={(e) => setNoTeam(e.target.checked)}
-              className="w-4 h-4 accent-[var(--primary)]" />
-            팀원 없음 (1인 창업)
-          </label>
-          {noTeam ? (
-            <p className="text-[13px] text-[var(--muted-fg)] bg-[var(--muted)] rounded-xl p-4">혼자 준비하고 계시는군요. 팀 정보는 입력하지 않아도 돼요.</p>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {team.map((row, i) => (
-                <RepeatableRow key={i} values={row} removable={team.length > 1}
-                  onRemove={() => removeRow(team, setTeam, i)}
-                  onChange={(key, value) => updateRow(team, setTeam, i, key, value)}
-                  fields={[
-                    { key: 'name', label: '이름', placeholder: '홍길동' },
-                    { key: 'role', label: '역할', placeholder: '대표 · 개발' },
-                    { key: 'experience', label: '경력', placeholder: '제빵 경력 8년' },
-                  ]} />
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="mb-10">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-bold text-[15px]">수익모델 단가</h2>
-            <button type="button" onClick={() => addRow(pricing, setPricing, { item: '', price: '' })}
-              className="text-[13px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">
-              + 항목 추가
-            </button>
-          </div>
-          <p className="text-[12px] text-[var(--muted-fg)] mb-3">매출을 예상하는 데 사용할 상품과 가격을 알려주세요.</p>
-          <div className="flex flex-col gap-3">
-            {pricing.map((row, i) => (
-              <RepeatableRow key={i} values={row} removable={pricing.length > 1}
-                onRemove={() => removeRow(pricing, setPricing, i)}
-                onChange={(key, value) => updateRow(pricing, setPricing, i, key, value)}
-                fields={[
-                  { key: 'item', label: '상품·서비스', placeholder: '주문 1건당 수수료' },
-                  { key: 'price', label: '단가', placeholder: '500원' },
-                ]} />
-            ))}
-          </div>
-        </div>
-
-        <button type="submit" disabled={!valid}
-          className="w-full rounded-xl bg-[var(--primary)] text-white py-3.5 text-[15px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--primary-dim)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-          맞는 공고 찾기
-        </button>
-        {!valid && (
-          <p className="mt-2 text-[12.5px] text-[var(--muted-fg)] text-center">
-            {!applicantValid ? '신청자 유형을 선택해주세요'
-              : !companyValid ? '대표자명과 설립일자를 입력해주세요'
-              : !ideaValid ? '아이디어 설명을 6자 이상 입력해주세요'
-              : !teamValid ? '팀원 정보를 모두 입력하거나 팀원 없음을 선택해주세요'
-              : '수익모델 단가 항목을 모두 입력해주세요'}
-          </p>
+        {loadedFrom && (
+          <Section title="불러온 정보" desc="마이페이지에 저장해둔 나머지 정보예요. 필요하면 여기서 바로 고칠 수 있어요.">
+            <Collapsible title="지역 · 주업종 · 보유 인증">
+              <RegionInput label="지역" value={extra.region} onChange={patchExtra('region')} />
+              <IndustryField applicantType={applicantType} value={extra.industry} onChange={patchExtra('industry')} />
+              <div>
+                <span className="block text-[13px] font-semibold text-[#4e5968] mb-1.5">보유 인증 · 가입</span>
+                <ChipSelect options={CERTS} values={extra.certs} onChange={patchExtra('certs')} />
+              </div>
+            </Collapsible>
+            <Collapsible title="대표자 역량">
+              <ListEditor items={extra.careers} onChange={patchExtra('careers')} cols={4} addLabel="이력 추가" fields={CAREER_FIELDS} />
+              <label className="block">
+                <span className="block text-[13px] font-semibold text-[#4e5968] mb-1.5">기술력 · 노하우 · 인적 네트워크</span>
+                <textarea value={extra.skills} onChange={(e) => patchExtra('skills')(e.target.value)} rows={3} className={textareaCls} />
+              </label>
+            </Collapsible>
+            <Collapsible title="채용 계획 · 장비 · 협력 파트너" defaultOpen={false}>
+              <ListEditor items={extra.hires} onChange={patchExtra('hires')} cols={4} addLabel="채용 계획 추가" fields={HIRE_FIELDS} />
+              <div className="grid gap-6 md:grid-cols-2">
+                <div>
+                  <h3 className="text-[13px] font-semibold text-[#4e5968] mb-2">장비 · 시설</h3>
+                  <ListEditor items={extra.equipment} onChange={patchExtra('equipment')} cols={2} addLabel="장비 추가" fields={EQUIPMENT_FIELDS} />
+                </div>
+                <div>
+                  <h3 className="text-[13px] font-semibold text-[#4e5968] mb-2">협력 파트너 · 기관</h3>
+                  <ListEditor items={extra.partners} onChange={patchExtra('partners')} cols={2} addLabel="파트너 추가" fields={PARTNER_FIELDS} />
+                </div>
+              </div>
+            </Collapsible>
+          </Section>
         )}
+
+        <Section title="팀 구성원 경력">
+          <div className="mb-3"><Check checked={noTeam} onChange={setNoTeam}>팀원 없이 혼자 준비하고 있어요</Check></div>
+          {!noTeam && <ListEditor items={team} onChange={setTeam} cols={3} addLabel="팀원 추가" fields={TEAM_FIELDS} />}
+        </Section>
+
+        <Section title="수익모델 단가" desc="매출을 예상하는 데 사용할 상품과 가격을 알려주세요.">
+          <ListEditor items={pricing} onChange={setPricing} cols={2} addLabel="항목 추가" fields={PRICING_FIELDS} />
+        </Section>
+
+        <Section title="아이디어 설명">
+          <textarea value={item} onChange={(e) => setItem(e.target.value)} rows={5}
+            placeholder="예) 반려견 산책 도우미를 구해주는 매칭 플랫폼을 만들고 있어요"
+            className={textareaCls} />
+          <FileAttach files={files} onAdd={(added) => setFiles((prev) => [...prev, ...added])}
+            onRemove={(i) => setFiles((prev) => prev.filter((_, idx) => idx !== i))} />
+        </Section>
+
+        <div className="pt-6 border-t border-[var(--border)]">
+          <button type="submit" disabled={!valid}
+            className="w-full h-12 rounded-xl bg-[var(--primary)] text-white text-[15px] font-semibold hover:bg-[var(--primary-dim)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+            맞는 공고 찾기
+          </button>
+          {!valid && <p className="mt-2 text-[12.5px] text-[var(--muted-fg)] text-center">{hint}</p>}
+        </div>
       </form>
-    </section>
+
+      <LoadProfileModal open={pickerOpen} profiles={profiles} onPick={applyProfile} onClose={() => setPickerOpen(false)} />
+    </div>
   );
 }
