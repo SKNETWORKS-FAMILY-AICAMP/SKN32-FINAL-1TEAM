@@ -120,6 +120,22 @@ export function profileToIntake(profile) {
   };
 }
 
+// 저장 버튼을 막는 필수 항목 — 신청자 유형만 고르면 바로 저장되던 걸 막는다(사용자 지적).
+// 예비창업자/개인사업자·법인 공통 필수: 신청자 유형·대표자 정보·지역·주업종·대표자 이력.
+// 개인사업자·법인만 추가로 사업자 번호(작성 여부만, 국세청 조회 성공까지는 요구하지 않음).
+export function missingRequiredFields(profile) {
+  const { basic, capability: cap } = profile;
+  const biz = basic.applicantType === 'individual' || basic.applicantType === 'corp';
+  const missing = [];
+  if (!basic.applicantType) missing.push('신청자 유형');
+  if (!basic.ceoName || !basic.birthDate || !basic.gender) missing.push('대표자 정보');
+  if (!basic.region.sido) missing.push('지역');
+  if (!basic.industry) missing.push('주업종');
+  if (!cap.careers.length) missing.push('대표자 이력');
+  if (biz && !basic.bizNo) missing.push('사업자 번호');
+  return missing;
+}
+
 // 탭별 채움 정도 — [채운 개수, 전체]. 예비창업자와 개인사업자·법인은 서로 다른 항목을 센다.
 export function progressOf(state) {
   const { basic, bizStatus, capability: cap } = state;

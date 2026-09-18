@@ -3,7 +3,7 @@ import { Icon } from '../../components/Icons.jsx';
 import { MAX_PROFILES, useMyPageStore } from '../../store/useMyPageStore.js';
 import BasicInfo from './BasicInfo.jsx';
 import CapabilityTeam from './CapabilityTeam.jsx';
-import { progressOf } from './derive.js';
+import { missingRequiredFields, progressOf } from './derive.js';
 import { inputCls } from './ui.jsx';
 
 const TABS = [
@@ -100,7 +100,8 @@ export default function MyPage() {
   const progress = progressOf(activeProfile);
   const [done, total] = Object.values(progress).reduce(([d, t], [a, b]) => [d + a, t + b], [0, 0]);
   const percent = total ? Math.round((done / total) * 100) : 0;
-  const canSave = !!activeProfile.basic.applicantType;
+  const missing = missingRequiredFields(activeProfile);
+  const canSave = missing.length === 0;
 
   // 정보 슬롯을 바꾸거나 새로 추가하면 그 전에 보고 있던 탭(역량·팀 등)이 아니라
   // 항상 기본 정보 탭부터 보여준다 — 슬롯마다 처음 보는 화면이 같아야 헷갈리지 않는다.
@@ -160,8 +161,10 @@ export default function MyPage() {
         <div className="min-h-5">
           {justSaved ? (
             <p className="text-[12.5px] font-semibold text-[var(--ok)]">저장됐어요.</p>
+          ) : missing.length > 0 ? (
+            <p className="text-[12.5px] text-[var(--warn)]">필수 항목을 먼저 채워 주세요 — {missing.join(', ')}</p>
           ) : !onboarded ? (
-            <p className="text-[12.5px] text-[var(--warn)]">아직 저장 전이에요. 신청자 유형을 고르고 저장해 주세요.</p>
+            <p className="text-[12.5px] text-[var(--warn)]">아직 저장 전이에요. 저장을 눌러 주세요.</p>
           ) : (
             <p className="text-[12.5px] text-[var(--muted-fg)]">입력한 내용은 이 정보 슬롯에 자동으로 저장돼요.</p>
           )}

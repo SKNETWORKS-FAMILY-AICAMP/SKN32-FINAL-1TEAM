@@ -11,6 +11,15 @@ import {useWorkflowStore} from './store/useWorkflowStore.js';
 
 // [2026-09-15, 프론트 통합 임시 구현] "단가" 입력칸은 자유 텍스트("500원" 등)라서 서버가
 // 기대하는 숫자(unit_price)를 뽑아내려면 이 정도 파싱이 필요하다 — 숫자를 못 찾으면 null(미정)로 보낸다.
+// 사업계획서~검수 사이에서 나갔다가 "이어서 진행하기"로 돌아오면 항상 검수(끝)로
+// 보내던 버그 수정용. 지금 더미 파이프라인은 공고를 고르는 순간 계획서·프로토타입·
+// 최종판정을 한 번에 다 만들어 버려서(back/app/routers/projects.py의 generate_pipeline_result
+// 주석 참고 — 실제 Agent 파이프라인이 생기기 전까지 stage는 항상 곧장 'done'이 됨) 서버
+// status로는 마지막으로 보던 화면을 구분 못 한다. 그래서 화면 전환 자체를 프로젝트별로
+// localStorage에 남겨두고, 다시 열 때 거기부터 이어서 보여준다.
+const RESUMABLE_VIEWS=['plan-form','artifact-result','final-verdict','review'];
+const lastViewKey=(projectId)=>`sbrain-last-view:${projectId}`;
+
 function parsePrice(text){
  const digits=(text||'').replace(/[^0-9.]/g,'');
  if(!digits)return null;
@@ -38,6 +47,11 @@ export default function App(){
   setProjectId,setPipelineResult,setMatchCandidates,resetScoreOutcome,resetProject,
  }=useWorkflowStore();
  useEffect(()=>{window.scrollTo({top:0});document.title=(view==='landing'?'아이디어를 다음 단계로':'나의 워크스페이스')+' | S-Brain'},[view]);
+ // 위 RESUMABLE_VIEWS 화면에 머무는 동안엔 매번 "지금 보던 화면"을 기록해둔다 — 검수는
+ // 편도(4-7)라 한 번 도달하면 그 뒤로도 계속 검수로 남는 게 맞다.
+ useEffect(()=>{
+  if(projectId&&RESUMABLE_VIEWS.includes(view))localStorage.setItem(lastViewKey(projectId),view);
+ },[view,projectId]);
  // 새로고침해도 로그인 상태가 유지되게, 마운트 시 세션 쿠키가 아직 유효한지 GET /auth/me로
  // 한 번 확인한다. 유효하면(200) 그 응답으로 user를 복원 — 로그인 화면도, 동의 화면도 다시
  // 안 거친다(백엔드가 users 테이블에 이미 행이 있다는 것 자체를 "예전에 필수 동의를 마쳤다"는
@@ -104,7 +118,8 @@ export default function App(){
     setPipelineResult(result);
     setAnnouncement({title:project.announcementTitle,org:'',deadline:'',amount:'',fit:result.match.fit_score,reason:result.match.reason,eligibility:{},originalUrl:''});
     resetScoreOutcome(result.verdict?.overall_passed?'pass':'fail');
-    setView('review');
+    const savedView=localStorage.getItem(lastViewKey(project.id));
+    setView(RESUMABLE_VIEWS.includes(savedView)?savedView:'plan-form');
    }catch(err){
     console.error('결과를 불러오지 못했어요',err);
     window.alert('이 프로젝트 결과를 불러오지 못했어요.');

@@ -173,25 +173,36 @@ export function IntakeForm({ onSubmit, onBack, backLabel = '처음으로 돌아�
                 <textarea value={extra.skills} onChange={(e) => patchExtra('skills')(e.target.value)} rows={3} className={textareaCls} />
               </label>
             </Collapsible>
-            <Collapsible title="채용 계획 · 장비 · 협력 파트너" defaultOpen={false}>
-              <ListEditor items={extra.hires} onChange={patchExtra('hires')} cols={4} addLabel="채용 계획 추가" fields={HIRE_FIELDS} />
-              <div className="grid gap-6 md:grid-cols-2">
-                <div>
-                  <h3 className="text-[13px] font-semibold text-[#4e5968] mb-2">장비 · 시설</h3>
-                  <ListEditor items={extra.equipment} onChange={patchExtra('equipment')} cols={2} addLabel="장비 추가" fields={EQUIPMENT_FIELDS} />
-                </div>
-                <div>
-                  <h3 className="text-[13px] font-semibold text-[#4e5968] mb-2">협력 파트너 · 기관</h3>
-                  <ListEditor items={extra.partners} onChange={patchExtra('partners')} cols={2} addLabel="파트너 추가" fields={PARTNER_FIELDS} />
-                </div>
-              </div>
-            </Collapsible>
           </Section>
         )}
 
-        <Section title="팀 구성원 경력">
-          <div className="mb-3"><Check checked={noTeam} onChange={setNoTeam}>팀원 없이 혼자 준비하고 있어요</Check></div>
-          {!noTeam && <ListEditor items={team} onChange={setTeam} cols={3} addLabel="팀원 추가" fields={TEAM_FIELDS} />}
+        {/* 팀 구성원은 프로필을 안 불러와도 항상 입력해야 하는 필수 항목이라(팀원 없음 예외)
+            "불러온 정보"처럼 조건부로 감추지 않는다 — 대신 같은 접고 펼치는 UI 안에
+            채용 계획·장비·협력 파트너와 한 묶음으로 두고 기본은 펼쳐둔다. */}
+        <Section title="팀 구성 · 채용 계획">
+          <Collapsible title="팀 구성원 · 채용 계획 · 장비 · 협력 파트너" defaultOpen>
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[13px] font-semibold text-[#4e5968]">팀 구성원 경력</span>
+              </div>
+              <div className="mb-3"><Check checked={noTeam} onChange={setNoTeam}>팀원 없이 혼자 준비하고 있어요</Check></div>
+              {!noTeam && <ListEditor items={team} onChange={setTeam} cols={3} addLabel="팀원 추가" fields={TEAM_FIELDS} />}
+            </div>
+            <div>
+              <span className="block text-[13px] font-semibold text-[#4e5968] mb-3">채용 계획</span>
+              <ListEditor items={extra.hires} onChange={patchExtra('hires')} cols={4} addLabel="채용 계획 추가" fields={HIRE_FIELDS} />
+            </div>
+            <div className="grid gap-6 md:grid-cols-2">
+              <div>
+                <h3 className="text-[13px] font-semibold text-[#4e5968] mb-2">장비 · 시설</h3>
+                <ListEditor items={extra.equipment} onChange={patchExtra('equipment')} cols={2} addLabel="장비 추가" fields={EQUIPMENT_FIELDS} />
+              </div>
+              <div>
+                <h3 className="text-[13px] font-semibold text-[#4e5968] mb-2">협력 파트너 · 기관</h3>
+                <ListEditor items={extra.partners} onChange={patchExtra('partners')} cols={2} addLabel="파트너 추가" fields={PARTNER_FIELDS} />
+              </div>
+            </div>
+          </Collapsible>
         </Section>
 
         <Section title="수익모델 단가" desc="매출을 예상하는 데 사용할 상품과 가격을 알려주세요.">
