@@ -7,11 +7,11 @@ import { Badge, Field, inputCls } from './ui.jsx';
 const STATUS_TONE = { '01': 'ok', '02': 'warn', '03': 'danger' };
 const STATUS_HINT = {
   '02': '휴업 중이면 지원이 제한되는 공고가 있어요.',
-  '03': '폐업한 번호예요. 재창업이라면 새 사업자등록번호를 입력해 주세요.',
+  '03': '폐업한 번호예요. 새로 사업체를 냈다면 그 사업자등록번호를 입력해 주세요.',
 };
 
 export default function BizNoField({ value, onChange }) {
-  const bizStatus = useMyPageStore((s) => s.bizStatus);
+  const bizStatus = useMyPageStore((s) => s.profiles[s.activeIndex].bizStatus);
   const setBizStatus = useMyPageStore((s) => s.setBizStatus);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');

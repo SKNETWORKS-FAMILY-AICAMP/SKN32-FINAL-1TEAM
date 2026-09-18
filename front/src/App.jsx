@@ -1,5 +1,5 @@
 import React,{useState,useEffect,Suspense,lazy} from 'react';
-import Landing from './components/Landing.jsx';
+import Landing,{MyPageNudge} from './components/Landing.jsx';
 import {WorkspaceShell,Dashboard} from './components/Workspace.jsx';
 import {LoginModal,fetchCurrentUser,logout} from './components/Login.jsx';
 import AdminDashboard from './features/Admin.jsx';
@@ -22,6 +22,7 @@ export default function App(){
  const [view,setView]=useState('landing');
  const [notifyEnabled,setNotifyEnabled]=useState(true);
  const [user,setUser]=useState(null);const [loginOpen,setLoginOpen]=useState(false);const [authChecked,setAuthChecked]=useState(false);
+ const [myPageNudgeOpen,setMyPageNudgeOpen]=useState(false);
  // 현재 진행 중인 프로젝트/워크플로우 데이터(itemInfo, announcement, projectId, pipelineResult,
  // matchCandidates, checkedFailedTitles, returnToDashboard, scoreOutcome/docOutcome/artifactOutcome)는
  // 전역 스토어(store/useWorkflowStore.js, Zustand)가 들고 있다 — 아래 화면들에는 지금처럼 그대로
@@ -48,6 +49,17 @@ export default function App(){
    .finally(()=>{if(!cancelled)setAuthChecked(true)});
   return ()=>{cancelled=true};
  },[]);
+ // 마이페이지를 "저장"으로 확정하기 전까지는 실제 기능 화면으로 못 들어가게 막는다 — mypage
+ // 스토어의 onboarded가 저장 버튼을 누른 순간에만 true가 된다(useMyPageStore.js
+ // completeOnboarding). 랜딩은 예외라 로그인만 하고 정보 저장 전에도 자유롭게 구경할 수 있다
+ // — 실제로 막는 시점은 "시작하기"를 눌러 대시보드로 들어가려는 순간(아래 startFlow)이다.
+ // 이 effect는 그 이후에도 저장 없이 다른 메뉴로 나가려 하면(홈 제외) 다시 막아주는 안전망이다.
+ // 관리자 계정은 예외로 둔다.
+ useEffect(()=>{
+  if(!authChecked||!user||user.role==='admin'){setMyPageNudgeOpen(false);return}
+  if(view==='landing'||view==='mypage'){setMyPageNudgeOpen(false);return}
+  setMyPageNudgeOpen(!useMyPageStore.getState().onboarded);
+ },[view,user,authChecked]);
  const startNewProject=()=>{resetProject();resetScoreOutcome('fail');setView('intake')};
 
  const handleIntakeSubmit=async(info)=>{
@@ -58,17 +70,18 @@ export default function App(){
   setView('match-progress');
   try{
    const payload={
-    // IntakeForm은 신청자 유형(예비창업자/개인/법인)만 물을 뿐 "온라인/오프라인" 같은
-    // start_type을 따로 묻지 않아서, 팀 테스트 스크립트(create_test_project.py)와 같은
-    // 고정값을 임시로 채운다 — notify_region/notify_industry도 아직 입력칸이 없어 마찬가지다.
+    // IntakeForm은 "온라인/오프라인" 같은 start_type을 따로 묻지 않아서 팀 테스트
+    // 스크립트(create_test_project.py)와 같은 고정값을 임시로 채운다. 업종·알림 지역은
+    // 마이페이지에서 불러왔으면 그 값을, 아니면 예전 기본값을 쓴다(서버 제한 32자).
     start_type:'온라인',
-    biz_type:null,
+    biz_type:info.industry||null,
     ceo_name:info.ceoName||null,
     founded_at:info.foundedAt||null,
     description:info.item,
-    notify_region:'전국',
-    notify_industry:'기타',
-    team_members:(info.team||[]).map(t=>({name:t.name,role:t.role||null,experience:t.experience||null})),
+    notify_region:(info.region||'전국').slice(0,32),
+    notify_industry:(info.industry||'기타').slice(0,32),
+    // 폼의 팀 경력 칸은 마이페이지와 같은 career 키를 쓰고, 서버 필드명(experience)으로는 여기서만 바꾼다.
+    team_members:(info.team||[]).map(t=>({name:t.name,role:t.role||null,experience:t.career||null})),
     pricing_items:(info.pricing||[]).map(p=>({service_name:p.item,unit_price:parsePrice(p.price)})),
    };
    const project=await createProject(payload,info.files||[]);
@@ -110,8 +123,14 @@ export default function App(){
   setView('eligibility-gate');
  };
 
- // 로그인 안 된 상태면 로그인부터, 이미 로그인돼 있으면 바로 내 프로젝트 목록으로 보낸다.
- const startFlow=()=>{if(user)setView('dashboard');else setLoginOpen(true)};
+ // 로그인 안 된 상태면 로그인부터. 로그인된 상태에서 "시작하기"를 누른 시점에만 마이페이지
+ // 저장 여부를 검사한다 — 랜딩을 보는 동안은 막지 않고, 실제로 기능을 쓰려는 순간(여기)에
+ // 저장 안 됐으면 대시보드로 보내는 대신 강제 모달을 띄운다(관리자는 예외).
+ const startFlow=()=>{
+  if(!user){setLoginOpen(true);return}
+  if(user.role!=='admin'&&!useMyPageStore.getState().onboarded){setMyPageNudgeOpen(true);return}
+  setView('dashboard');
+ };
  // acc는 백엔드가 돌려준 실제 UserOut(POST /auth/google 응답) — notify_enabled도 여기 들어있어서
  // 로컬 동의 체크박스값(consent.notifyAgreed) 대신 서버가 실제로 저장한 값을 신뢰한다.
  const handleLoginSuccess=acc=>{setUser(acc);setLoginOpen(false);setNotifyEnabled(acc.notify_enabled)};
@@ -123,9 +142,10 @@ export default function App(){
  // 관리자 판별은 프론트 이메일 목록이 아니라 백엔드가 내려주는 실제 role로 한다.
  const isAdmin=user?.role==='admin';
  if(!authChecked)return null; // 세션 확인 전 깜빡임(로그인 화면 잠깐 보였다 사라짐) 방지
- if(view==='admin')return <AdminDashboard user={user} onExit={()=>setView('landing')}/>;
- if(view==='landing')return <React.Fragment><Landing onStart={startFlow} user={user} isAdmin={isAdmin} onOpenAdmin={()=>setView('admin')} onLogin={()=>setLoginOpen(true)} onLogout={handleLogout}/><LoginModal open={loginOpen} onClose={()=>setLoginOpen(false)} onSuccess={handleLoginSuccess}/></React.Fragment>;
- return <WorkspaceShell view={view} user={user} onHome={()=>setView('landing')} onDashboard={()=>setView('dashboard')} onMyPage={()=>setView('mypage')} onNewProject={startNewProject} onLogout={handleLogout} notifyEnabled={notifyEnabled} onToggleNotify={()=>setNotifyEnabled(x=>!x)}>
+ let body;
+ if(view==='admin')body=<AdminDashboard user={user} onExit={()=>setView('landing')}/>;
+ else if(view==='landing')body=<React.Fragment><Landing onStart={startFlow} user={user} isAdmin={isAdmin} onOpenAdmin={()=>setView('admin')} onMyPage={()=>setView('mypage')} onLogin={()=>setLoginOpen(true)} onLogout={handleLogout}/><LoginModal open={loginOpen} onClose={()=>setLoginOpen(false)} onSuccess={handleLoginSuccess}/></React.Fragment>;
+ else body=<WorkspaceShell view={view} user={user} onHome={()=>setView('landing')} onDashboard={()=>setView('dashboard')} onMyPage={()=>setView('mypage')} onNewProject={startNewProject} onLogout={handleLogout} notifyEnabled={notifyEnabled} onToggleNotify={()=>setNotifyEnabled(x=>!x)}>
   {view==='mypage'&&<MyPage/>}
   {view==='dashboard'&&<Dashboard onNewProject={startNewProject} onOpenProject={handleOpenProject} notifyEnabled={notifyEnabled} alerts={SIMILAR_ANNOUNCEMENT_ALERTS}/>}
   {view==='intake'&&<IntakeForm onSubmit={handleIntakeSubmit} onBack={()=>setView('dashboard')} backLabel="내 프로젝트로 돌아가기"/>}
@@ -136,5 +156,8 @@ export default function App(){
   {view==='artifact-result'&&<ArtifactResult announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('plan-form')} onFinalize={()=>setView('final-verdict')} scoreOutcome={scoreOutcome}/>}
   {view==='final-verdict'&&<FinalVerdict announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('artifact-result')} onProceed={()=>setView('review')} docOutcome={docOutcome} artifactOutcome={artifactOutcome} setDocOutcome={setDocOutcome} setArtifactOutcome={setArtifactOutcome}/>}
   {view==='review'&&<ReviewScreen announcement={announcement} itemInfo={itemInfo} docOutcome={docOutcome} artifactOutcome={artifactOutcome} onGoDashboard={()=>setView('dashboard')} projectId={projectId}/>}
- </WorkspaceShell>
+ </WorkspaceShell>;
+ // 저장 전 강제 이동 모달은 view가 무엇이든(랜딩·워크스페이스 어느 화면 위에도) 뜰 수 있어야
+ // 하므로 세 분기 바깥, 최상위에서 한 번만 렌더한다.
+ return <React.Fragment>{body}<MyPageNudge open={myPageNudgeOpen} onGo={()=>setView('mypage')}/></React.Fragment>;
 }
