@@ -74,6 +74,10 @@ export function IntakeForm({ onSubmit, onBack, backLabel = '처음으로 돌아�
   const [extra, setExtra] = useState(EMPTY_EXTRA);
   const [loadedFrom, setLoadedFrom] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
+  // 접고 펼치는 항목들(지역·주업종·대표자 역량·팀 구성)을 "정보 불러오기"에 맞춰 한 번에
+  // 펼치기 위한 값 — Collapsible이 내부 상태(uncontrolled)라 defaultOpen만 바꿔선 이미
+  // 마운트된 컴포넌트가 안 바뀐다. key에 넣어 불러올 때마다 강제로 다시 마운트시킨다.
+  const [loadNonce, setLoadNonce] = useState(0);
   const patchExtra = (key) => (value) => setExtra((prev) => ({ ...prev, [key]: value }));
 
   const isPreliminary = applicantType === 'preliminary';
@@ -90,6 +94,7 @@ export function IntakeForm({ onSubmit, onBack, backLabel = '처음으로 돌아�
     setTeam(v.team);
     setExtra({ region: v.region, industry: v.industry, certs: v.certs, careers: v.careers, skills: v.skills, hires: v.hires, equipment: v.equipment, partners: v.partners });
     setLoadedFrom(profile.name);
+    setLoadNonce((n) => n + 1);
     setPickerOpen(false);
   };
 
@@ -156,31 +161,29 @@ export function IntakeForm({ onSubmit, onBack, backLabel = '처음으로 돌아�
           )}
         </Section>
 
-        {loadedFrom && (
-          <Section title="불러온 정보" desc="마이페이지에 저장해둔 나머지 정보예요. 필요하면 여기서 바로 고칠 수 있어요.">
-            <Collapsible title="지역 · 주업종 · 보유 인증">
-              <RegionInput label="지역" value={extra.region} onChange={patchExtra('region')} />
-              <IndustryField applicantType={applicantType} value={extra.industry} onChange={patchExtra('industry')} />
-              <div>
-                <span className="block text-[13px] font-semibold text-[#4e5968] mb-1.5">보유 인증 · 가입</span>
-                <ChipSelect options={CERTS} values={extra.certs} onChange={patchExtra('certs')} />
-              </div>
-            </Collapsible>
-            <Collapsible title="대표자 역량">
-              <ListEditor items={extra.careers} onChange={patchExtra('careers')} cols={4} addLabel="이력 추가" fields={CAREER_FIELDS} />
-              <label className="block">
-                <span className="block text-[13px] font-semibold text-[#4e5968] mb-1.5">기술력 · 노하우 · 인적 네트워크</span>
-                <textarea value={extra.skills} onChange={(e) => patchExtra('skills')(e.target.value)} rows={3} className={textareaCls} />
-              </label>
-            </Collapsible>
-          </Section>
-        )}
+        {/* 프로필을 불러왔든 안 불러왔든 화면 구성 자체는 항상 같다(사용자 지적) — "불러온
+            정보"라는 조건부 섹션 대신 늘 같은 자리에 같은 항목을 두고, 새로 시작할 땐
+            접어서 비어 보이지 않게 하고 "정보 불러오기"를 누르면 그때 펼쳐서 보여준다. */}
+        <Section title="지역 · 주업종 · 대표자 역량">
+          <Collapsible key={`region-${loadNonce}`} title="지역 · 주업종 · 보유 인증" defaultOpen={!!loadedFrom}>
+            <RegionInput label="지역" value={extra.region} onChange={patchExtra('region')} />
+            <IndustryField applicantType={applicantType} value={extra.industry} onChange={patchExtra('industry')} />
+            <div>
+              <span className="block text-[13px] font-semibold text-[#4e5968] mb-1.5">보유 인증 · 가입</span>
+              <ChipSelect options={CERTS} values={extra.certs} onChange={patchExtra('certs')} />
+            </div>
+          </Collapsible>
+          <Collapsible key={`career-${loadNonce}`} title="대표자 역량" defaultOpen={!!loadedFrom}>
+            <ListEditor items={extra.careers} onChange={patchExtra('careers')} cols={4} addLabel="이력 추가" fields={CAREER_FIELDS} />
+            <label className="block">
+              <span className="block text-[13px] font-semibold text-[#4e5968] mb-1.5">기술력 · 노하우 · 인적 네트워크</span>
+              <textarea value={extra.skills} onChange={(e) => patchExtra('skills')(e.target.value)} rows={3} className={textareaCls} />
+            </label>
+          </Collapsible>
+        </Section>
 
-        {/* 팀 구성원은 프로필을 안 불러와도 항상 입력해야 하는 필수 항목이라(팀원 없음 예외)
-            "불러온 정보"처럼 조건부로 감추지 않는다 — 대신 같은 접고 펼치는 UI 안에
-            채용 계획·장비·협력 파트너와 한 묶음으로 두고 기본은 펼쳐둔다. */}
         <Section title="팀 구성 · 채용 계획">
-          <Collapsible title="팀 구성원 · 채용 계획 · 장비 · 협력 파트너" defaultOpen>
+          <Collapsible key={`team-${loadNonce}`} title="팀 구성원 · 채용 계획 · 장비 · 협력 파트너" defaultOpen={!!loadedFrom}>
             <div>
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[13px] font-semibold text-[#4e5968]">팀 구성원 경력</span>

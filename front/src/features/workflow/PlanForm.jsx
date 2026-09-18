@@ -1,5 +1,6 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
 import React, {useState} from 'react';
+import {Icon} from '../../components/Icons.jsx';
 import Preparation from '../../components/Preparation.jsx';
 import {GeneratingOverlay} from './shared.jsx';
 import {ArtifactProgress} from './ArtifactResult.jsx';
@@ -126,6 +127,9 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
   // 체크해 재작성을 걸면(toggleTask) 그 항목의 완료 표시는 지운다.
   const [completedTasks, setCompletedTasks] = useState([]);
   const [generating, setGenerating] = useState(false);
+  // 레퍼런스(makedeck)의 좌측 히스토리 사이드바처럼, 문서 평가 패널을 접었다 펼 수 있게 —
+  // 기본은 펼친 상태(사용자 지적: 처음엔 점수가 바로 보여야 함).
+  const [scoreOpen, setScoreOpen] = useState(true);
 
   const handleGenerateClick = () => {
     if (!passed) { setConfirmProceed(true); return; }
@@ -160,38 +164,28 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
 
   return (
     <React.Fragment>
-    <section data-screen="plan" className={`max-w-6xl mx-auto px-6 py-14 transition-[filter] duration-300 ${generating ? 'blur-sm pointer-events-none select-none' : ''}`}>
-      <div className="grid md:grid-cols-[1fr_360px] gap-7 items-start">
-        {/* 좌측 — 작성된 사업계획서 미리보기 */}
-        <div className="rounded-2xl border border-[var(--border)] bg-white overflow-hidden">
-          <div className="border-b border-[var(--border)] px-10 py-8 flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              {/* 공고 제목을 제목 문장 안에 끼워 넣으면(『긴 공고명』 사업계획서) 제목이 길 때
-                  줄이 어중간하게 끊기고 뒤 단어만 남아 어색해진다(사용자 지적). 공고명은
-                  윗줄에 따로 두고, 제목은 길이가 고정된 짧은 문장만 남긴다. */}
-              <p className="text-[13px] font-semibold text-[var(--primary-dim)] leading-snug mb-1.5">『{announcement ? announcement.title : ''}』</p>
-              <h1 className="font-display font-bold text-[25px] mb-2">사업계획서</h1>
-              <p className="text-[12px] text-[var(--muted-fg)]">{PLAN_AI_NOTICE}</p>
-            </div>
-          </div>
-
-          <div className="px-10 py-10 flex flex-col gap-9">
-            <GeneralInfoBlock itemInfo={itemInfo} itemTitle={announcement ? announcement.title : ''} sections={PLAN_DOCUMENT_SECTIONS} />
-
-            {PLAN_DOCUMENT_SECTIONS.map((s, i) => (
-              <div key={s.title}>
-                <h2 className="font-display font-bold text-[18px] mb-2.5">{PSST_OFFICIAL_HEADERS[i]}</h2>
-                <p className="text-[14.5px] leading-[1.85] text-[var(--fg)]">{s.body}</p>
-              </div>
-            ))}
-
-            <PlanExtrasBlock />
-          </div>
-        </div>
-
-        {/* 우측 — 문서 평가: 문서층 70점을 100점 만점으로 환산해 표시 (기획서 4-5) */}
-        <aside className="rounded-2xl border border-[var(--border)] bg-white p-7 md:sticky md:top-24">
-          <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1">문서 평가</p>
+    <section data-screen="plan" className={`max-w-6xl mx-auto px-6 py-12 transition-[filter] duration-300 ${generating ? 'blur-sm pointer-events-none select-none' : ''}`}>
+      <div className={`rounded-2xl border border-[var(--border)] bg-white overflow-hidden grid transition-[grid-template-columns] duration-200 ${scoreOpen ? 'md:grid-cols-[290px_1fr]' : 'md:grid-cols-[56px_1fr]'}`}>
+        {/* 좌측 — 문서 평가: 문서층 70점을 100점 만점으로 환산해 표시 (기획서 4-5).
+            makedeck 레퍼런스의 좌측 히스토리 사이드바처럼 본문과 여백 없이 한 판에
+            바로 붙는 패널로 둔다(카드 두 개가 따로 떠 있는 모양 아님) — 접으면 얇은
+            칸으로 줄고 우측 본문이 그만큼 넓어진다. 기본은 펼친 상태. */}
+        <div className="relative border-b md:border-b-0 md:border-r border-[var(--border)] bg-[var(--bg)]">
+          {/* 내용은 md:sticky로 뷰포트 안에 붙여둔다 — 바깥 div는 우측 본문과 높이를
+              맞춰 늘어나므로(items-stretch), 안쪽에서 따로 안 붙이면 본문이 길 때
+              토글 버튼이 화면 밖(아래)으로 밀려나 안 보이게 된다(실제로 확인된 문제). */}
+          <div className={`md:sticky md:top-24 relative ${scoreOpen ? 'p-6' : 'flex md:flex-col items-center gap-2 py-4'}`}>
+            <button type="button" onClick={() => setScoreOpen((v) => !v)} aria-label={scoreOpen ? '문서 평가 접기' : '문서 평가 펼치기'}
+              className={scoreOpen
+                ? 'hidden md:grid absolute -right-3.5 top-0 w-7 h-7 place-items-center rounded-full border border-[var(--border)] bg-white shadow-[0_2px_8px_-1px_rgba(15,23,42,.15)] hover:bg-[var(--muted)] transition-colors z-10'
+                : 'w-7 h-7 grid place-items-center rounded-full border border-[var(--border)] bg-white hover:bg-[var(--muted)] transition-colors'}>
+              <Icon name="chevron" size={12} className={scoreOpen ? 'rotate-180 text-[var(--muted-fg)]' : 'text-[var(--muted-fg)]'} />
+            </button>
+            {!scoreOpen && (
+              <span className={`font-display font-bold text-[14px] leading-none ${passed ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>{docScoreScaled}</span>
+            )}
+            {scoreOpen && (<>
+            <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1">문서 평가</p>
           <p className="text-[11.5px] text-[var(--muted-fg)] mb-5">문서층 70점을 100점 만점으로 환산, {FINAL_THRESHOLD}점부터 통과</p>
 
           <div className="flex items-end gap-1.5 mb-2">
@@ -266,7 +260,36 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
               </div>
             </div>
           )}
-        </aside>
+            </>)}
+          </div>
+        </div>
+
+        {/* 우측 — 작성된 사업계획서 미리보기 */}
+        <div>
+          <div className="border-b border-[var(--border)] px-9 py-6 flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              {/* 공고 제목을 제목 문장 안에 끼워 넣으면(『긴 공고명』 사업계획서) 제목이 길 때
+                  줄이 어중간하게 끊기고 뒤 단어만 남아 어색해진다(사용자 지적). 공고명은
+                  윗줄에 따로 두고, 제목은 길이가 고정된 짧은 문장만 남긴다. */}
+              <p className="text-[13px] font-semibold text-[var(--primary-dim)] leading-snug mb-1.5">『{announcement ? announcement.title : ''}』</p>
+              <h1 className="font-display font-bold text-[23px] mb-1.5">사업계획서</h1>
+              <p className="text-[12px] text-[var(--muted-fg)]">{PLAN_AI_NOTICE}</p>
+            </div>
+          </div>
+
+          <div className="px-9 py-8 flex flex-col gap-7">
+            <GeneralInfoBlock itemInfo={itemInfo} itemTitle={announcement ? announcement.title : ''} sections={PLAN_DOCUMENT_SECTIONS} />
+
+            {PLAN_DOCUMENT_SECTIONS.map((s, i) => (
+              <div key={s.title}>
+                <h2 className="font-display font-bold text-[17px] mb-2">{PSST_OFFICIAL_HEADERS[i]}</h2>
+                <p className="text-[14px] leading-relaxed text-[var(--fg)]">{s.body}</p>
+              </div>
+            ))}
+
+            <PlanExtrasBlock />
+          </div>
+        </div>
       </div>
     </section>
     {generating && (
