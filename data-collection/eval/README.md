@@ -1,8 +1,8 @@
 # 검색 평가셋 (topic-v1)
 
 공고 매칭 검색이 **좋아졌는지 숫자로 증명**하기 위한 평가셋이다.
-방향은 [ML_DIRECTION.md](../ML_DIRECTION.md) P0, 데이터 계약은
-[ML_CODEX_DESIGN.md](../ML_CODEX_DESIGN.md) 4절을 따른다.
+방향은 [ML_DIRECTION.md](../docs/ML_DIRECTION.md) P0, 데이터 계약은
+[ML_CODEX_DESIGN.md](../docs/ML_CODEX_DESIGN.md) 4절을 따른다.
 
 > 판정 화면(`label_app.py`)은 **내부 검토 전용**이다. 서비스 배포 대상이 아니다.
 
@@ -70,7 +70,7 @@ cd C:\mok_workspace\SKN32-FINAL-1TEAM\data-collection
 
 - `topic_rel` 2 / 1 / 0 / null. **null 과 미판정은 0 이 아니다.** 평가에서 뺀다.
 - 무관 질의(`kind: negative`) 도 자동 0 이 아니라 똑같이 판정한다.
-- `as_of_date` 로 '창업 N년차' 계산을 고정한다. `app.py` 는 고치지 않았다(`common.query_text` 참조).
+- `as_of_date` 로 '창업 N년차' 계산을 고정한다. `search/app.py` 는 고치지 않았다(`common.query_text` 참조).
 - 새 검색 방식이 미판정 공고를 상위에 올리면 `build_pool.py` 에 그 방식을 넣어 쌍을 **추가**하고
   같은 `label_version` 으로 판정을 보충한 뒤 모든 시스템을 다시 평가한다.
 - 판정 기준을 바꾸면 `LABEL_VERSION` 을 올린다. 섞어 쓰지 않는다.

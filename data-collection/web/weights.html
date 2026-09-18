@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>가중치 시험 — 기본 vs 조정</title>
+<style>
+  :root { --ink:#1f3864; --line:#d8dee9; --muted:#6b7280; --bg:#f7f8fa;
+          --up:#2e7d32; --down:#9a3b3b; --soft:#eef4fb; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:#222;
+         font:14px/1.6 "맑은 고딕","Malgun Gothic",system-ui,sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; padding:24px 16px 70px; }
+  h1 { font-size:22px; color:var(--ink); margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:18px; max-width:76ch; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:10px;
+          padding:16px; margin-bottom:16px; }
+  h2 { font-size:15px; margin:0 0 10px; color:var(--ink); }
+  label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
+  input, select, textarea { width:100%; padding:8px 10px; border:1px solid var(--line);
+          border-radius:6px; font:inherit; background:#fff; }
+  textarea { min-height:60px; resize:vertical; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+  button { margin-top:14px; padding:10px 18px; border:0; border-radius:6px;
+           background:var(--ink); color:#fff; font:inherit; font-weight:bold; cursor:pointer; }
+  button:disabled { background:#9aa5b8; cursor:default; }
+  button.ghost { background:#fff; color:var(--ink); border:1px solid var(--line); font-weight:normal; }
+  .note { font-size:12px; color:var(--muted); margin-top:8px; }
+  .cols { display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; }
+  .col { flex:1 1 380px; min-width:310px; }
+  .hit { border:1px solid var(--line); border-radius:8px; padding:10px 12px;
+         margin-bottom:8px; background:#fff; }
+  .hit.up { border-color:#8bc98b; background:#f1f8f1; }
+  .hit.new { border-color:#f0c68a; background:#fffaf0; }
+  .hit .t { font-weight:bold; font-size:13px; }
+  .hit .m { font-size:12px; color:var(--muted); margin-top:3px; display:flex; gap:8px; flex-wrap:wrap; }
+  .pos { display:inline-block; min-width:22px; height:22px; line-height:22px; text-align:center;
+         border-radius:11px; background:var(--ink); color:#fff; font-size:11px; padding:0 6px; }
+  .move { font-size:11px; padding:2px 7px; border-radius:10px; font-weight:bold; }
+  .move.up { background:var(--up); color:#fff; }
+  .move.down { background:#e0e0e0; color:#555; }
+  .move.same { background:#eef1f6; color:#667; }
+  .move.new { background:#e8a33d; color:#fff; }
+  .flag { font-size:11px; padding:2px 7px; border-radius:4px; background:#fbe9e9; color:#9a3b3b; }
+  .same-banner { background:var(--soft); border:1px solid #cfe0f5; border-radius:8px;
+                 padding:12px 14px; font-size:13.5px; }
+  .preset { display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }
+  .preset button { margin-top:0; padding:6px 12px; font-size:12.5px; }
+  .nav { font-size:13px; color:var(--muted); margin-bottom:14px; }
+  .nav a { color:var(--ink); }
+  .err { background:#fff4e6; border:1px solid #f0c68a; padding:10px 12px; border-radius:6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="nav"><a href="/">공고 매칭</a> · <a href="/demo">리랭커 시연</a> ·
+    <a href="/classify">업력 분류기</a> · <b>가중치 시험</b></div>
+
+  <h1>가중치 시험</h1>
+  <p class="sub">
+    같은 질의를 <b>지금 서비스 설정</b>과 <b>조정한 가중치</b>로 각각 돌려 순위를 나란히 본다.
+    기본값은 지금 서비스와 완전히 같아서, 아무것도 건드리지 않으면 두 결과가 같아야 한다.
+    · 내부 검토용이며 여기서 바꾼 값은 서비스에 저장되지 않는다.
+  </p>
+
+  <div class="card">
+    <h2>질의</h2>
+    <div class="grid">
+      <div><label>신청자 유형</label>
+        <select id="type"><option>법인사업자</option><option>개인사업자</option><option>예비창업자</option></select></div>
+      <div><label>설립일</label><input id="founded" value="2023-03-01"></div>
+      <div><label>소재지 시·도</label><input id="region" placeholder="예) 경기"></div>
+      <div><label>시·군·구</label><input id="district" placeholder="예) 수원시"></div>
+      <div><label>성별</label>
+        <select id="gender"><option value="">선택 안 함</option><option>여성</option><option>남성</option></select></div>
+      <div><label>보여줄 건수</label><input id="top" type="number" min="1" max="10" value="5"></div>
+    </div>
+    <label>사업 아이디어</label>
+    <textarea id="idea">중소 제조기업의 스마트공장 구축과 품질 검사 자동화</textarea>
+  </div>
+
+  <div class="card">
+    <h2>가중치</h2>
+    <div class="grid">
+      <div><label>의미 검색 무게</label><input id="w-dense" type="number" step="0.1" value="1.0"></div>
+      <div><label>단어 검색 무게</label><input id="w-bm25" type="number" step="0.1" value="1.0"></div>
+      <div><label>RRF k</label><input id="w-k" type="number" value="60"></div>
+      <div><label>규칙 방식</label>
+        <select id="w-mode">
+          <option value="order">order — 걸리면 맨 뒤로 (지금 서비스)</option>
+          <option value="score">score — 걸린 만큼 점수를 깎음</option>
+        </select></div>
+      <div><label>집단 감점 (score)</label><input id="w-group" type="number" step="0.05" value="0.5"></div>
+      <div><label>다른 시·도 감점</label><input id="w-region" type="number" step="0.05" value="1.0"></div>
+      <div><label>다른 시·군·구 감점</label><input id="w-district" type="number" step="0.05" value="0.3"></div>
+    </div>
+    <div class="preset">
+      <button class="ghost" data-preset="base">기본값으로</button>
+      <button class="ghost" data-preset="dense">의미 검색 2배</button>
+      <button class="ghost" data-preset="bm25">단어 검색 2배</button>
+      <button class="ghost" data-preset="soft">규칙을 감점으로(부드럽게)</button>
+    </div>
+    <div class="note">
+      감점 0.3 = 30% 깎기 · 1.0 = 사실상 배제. <b>order</b> 방식에서는 감점 값이 쓰이지 않는다.
+    </div>
+    <button id="go">두 설정으로 검색해서 비교</button>
+  </div>
+
+  <div id="out"></div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const PRESETS = {
+  base:   { dense:1.0, bm25:1.0, k:60, mode:'order' },
+  dense:  { dense:2.0, bm25:1.0, k:60, mode:'order' },
+  bm25:   { dense:1.0, bm25:2.0, k:60, mode:'order' },
+  soft:   { dense:1.0, bm25:1.0, k:60, mode:'score', group:0.4, region:0.8, district:0.25 },
+};
+document.querySelectorAll('[data-preset]').forEach(b => b.onclick = () => {
+  const p = PRESETS[b.dataset.preset];
+  $('#w-dense').value = p.dense; $('#w-bm25').value = p.bm25; $('#w-k').value = p.k;
+  $('#w-mode').value = p.mode;
+  if (p.group !== undefined) { $('#w-group').value = p.group; $('#w-region').value = p.region;
+                               $('#w-district').value = p.district; }
+});
+
+function payload() {
+  const num = (id) => Number($(id).value);
+  return {
+    applicant_type: $('#type').value,
+    founded_at: $('#founded').value.trim(),
+    idea: $('#idea').value.trim(),
+    region: $('#region').value.trim(),
+    district: $('#district').value.trim(),
+    gender: $('#gender').value,
+    top: Math.max(1, Math.min(10, num('#top') || 5)),
+    hide_expired: true,
+    weights: {
+      dense: num('#w-dense'), bm25: num('#w-bm25'), rrf_k: num('#w-k'),
+      mode: $('#w-mode').value,
+      penalty_group: num('#w-group'), penalty_region: num('#w-region'),
+      penalty_district: num('#w-district'),
+    },
+  };
+}
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function flags(r) {
+  const f = [];
+  if (r.rules?.groups?.length) f.push('집단: ' + r.rules.groups.join(' · '));
+  if (r.rules?.off_region) f.push('다른 시·도');
+  if (r.rules?.off_district) f.push('다른 시·군·구');
+  return f.map(x => `<span class="flag">${esc(x)}</span>`).join(' ');
+}
+
+function baseHit(r, i) {
+  return `<div class="hit"><div class="t"><span class="pos">${i + 1}</span> ${esc(r.title)}</div>
+    <div class="m"><span>유사도 ${r.score}</span>${flags(r)}</div></div>`;
+}
+
+function tunedHit(m, r) {
+  const d = m.moved;
+  const cls = m.rank_before === null ? 'new' : (d > 0 ? 'up' : (d < 0 ? 'down' : 'same'));
+  const txt = m.rank_before === null ? '새로 올라옴'
+    : (d > 0 ? `▲ ${m.rank_before}위 → ` : (d < 0 ? `▼ ${m.rank_before}위 → ` : '변동 없음'));
+  const w = m.weighted_score != null ? ` · 가중 점수 ${m.weighted_score}` : '';
+  return `<div class="hit ${cls === 'up' ? 'up' : (cls === 'new' ? 'new' : '')}">
+    <div class="t"><span class="pos">${m.rank_after}</span> ${esc(m.title)}</div>
+    <div class="m"><span class="move ${cls}">${txt}</span><span>유사도 ${m.score}${w}</span>${flags(r)}</div></div>`;
+}
+
+$('#go').onclick = async () => {
+  $('#go').disabled = true; $('#go').textContent = '계산 중…';
+  $('#out').innerHTML = '<div class="card">두 설정으로 각각 검색하는 중…</div>';
+  try {
+    const res = await fetch('/api/match_compare', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload()) });
+    const d = await res.json();
+    const w = d.weights;
+    const changed = d.moved.filter(m => m.moved !== 0 || m.rank_before === null).length;
+
+    $('#out').innerHTML = `
+      <div class="card">
+        <div class="same-banner">
+          ${d.identical
+            ? '두 설정의 상위 결과가 <b>완전히 같다</b>. 가중치가 이 질의에서는 순위를 바꾸지 못했다.'
+            : `<b>${changed}건</b>의 순위가 달라졌다. ${d.new_in_top.length
+                 ? `그중 <b>${d.new_in_top.length}건</b>은 기본 설정 화면 밖에서 올라왔다.` : ''}`}
+        </div>
+        <div class="note">질의: "${esc(d.query)}" · 가중치 의미 ${w.dense} : 단어 ${w.bm25} ·
+          k ${w.rrf_k} · 방식 ${w.mode}${w.mode === 'score'
+            ? ` (집단 ${w.penalty_group} · 시·도 ${w.penalty_region} · 시·군·구 ${w.penalty_district})` : ''}</div>
+      </div>
+      <div class="card">
+        <div class="cols">
+          <div class="col"><h2>① 기본 (지금 서비스)</h2>
+            ${d.base.map(baseHit).join('') || '<div class="note">결과 없음</div>'}</div>
+          <div class="col"><h2>② 가중치 적용</h2>
+            ${d.moved.map((m, i) => tunedHit(m, d.tuned[i])).join('') || '<div class="note">결과 없음</div>'}</div>
+        </div>
+        ${d.dropped.length ? `<div class="note">기본에서 보이다가 밀려난 공고: ${d.dropped.map(esc).join(' · ')}</div>` : ''}
+      </div>`;
+  } catch (e) {
+    $('#out').innerHTML = `<div class="card"><div class="err">요청 실패: ${esc(e)}</div></div>`;
+  } finally {
+    $('#go').disabled = false; $('#go').textContent = '두 설정으로 검색해서 비교';
+  }
+};
+</script>
+</body>
+</html>

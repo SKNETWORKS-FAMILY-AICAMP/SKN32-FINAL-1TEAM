@@ -113,8 +113,8 @@ def query_text(q):
     app.py 는 고치지 않는다.
     """
     from datetime import date
-    import app
-    import gate
+    from search import app
+    from search import gate
     original = gate.business_age_months
     as_of = date.fromisoformat(q['as_of_date'])
     gate.business_age_months = lambda founded, today=None: original(founded, today or as_of)
@@ -152,7 +152,7 @@ def load_notices(ids=None, with_attachment=True):
     GROUP_CONCAT 을 쓰지 않는다 — 1024바이트에서 조용히 잘린다(HANDOFF 10절).
     첨부는 행별로 받아 파이썬에서 고른다.
     """
-    import store_mysql
+    from shared import store_mysql
     connection = store_mysql.connect()
     try:
         with connection.cursor() as cursor:

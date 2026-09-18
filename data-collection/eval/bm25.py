@@ -10,4 +10,4 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from hybrid import BM25, tokenize  # noqa: E402,F401
+from search.hybrid import BM25, tokenize  # noqa: E402,F401

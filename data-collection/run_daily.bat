@@ -15,7 +15,7 @@ if not exist ".venv\Scripts\python.exe" (
 
 set PYTHONUTF8=1
 echo [%date% %time%] start >> "data\run.log"
-".venv\Scripts\python.exe" daily_pipeline.py %* >> "data\run.log" 2>&1
+".venv\Scripts\python.exe" -m collect.daily_pipeline %* >> "data\run.log" 2>&1
 set "EXITCODE=%errorlevel%"
 echo [%date% %time%] exit=%EXITCODE% >> "data\run.log"
 

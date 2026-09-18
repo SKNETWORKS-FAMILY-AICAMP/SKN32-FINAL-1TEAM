@@ -86,7 +86,7 @@ def main():
     say('질의 (%s)' % source)
     say('  %s' % query[:150])
 
-    import vecstore
+    from search import vecstore
     import common
 
     # 첫 호출에는 모델을 메모리에 올리는 시간(수십 초)이 섞인다.

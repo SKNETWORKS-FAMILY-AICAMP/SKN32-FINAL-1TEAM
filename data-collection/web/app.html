@@ -1,0 +1,469 @@
+<!-- 공고 매칭 시험용 화면. app.py 가 이 파일을 그대로 내려준다. -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S-Brain 공고 매칭</title>
+<style>
+  :root {
+    --bg: #faf8f5; --card: #fff; --ink: #2b2724; --muted: #7a716a;
+    --line: #e6ded4; --accent: #a4362f; --accent-soft: #fdf0ee;
+    --ok: #1f7a4d; --no: #b4342b; --unknown: #9a7b21;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.6 -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 28px 20px 80px; }
+  h1 { font-size: 27px; margin: 6px 0 8px; letter-spacing: -.4px; }
+  .eyebrow { color: var(--accent); font-size: 13px; font-weight: 700; }
+  .lede { color: var(--muted); margin: 0 0 26px; }
+  .panel { background: var(--card); border: 1px solid var(--line);
+           border-radius: 12px; padding: 20px; margin-bottom: 18px; }
+  label.h { display: block; font-weight: 700; font-size: 14px; margin: 18px 0 8px; }
+  label.h:first-child { margin-top: 0; }
+  .hint { color: var(--muted); font-size: 12.5px; margin: 6px 0 0; }
+  input, textarea, select {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--line);
+    border-radius: 8px; font: inherit; background: #fff; color: inherit; }
+  textarea { min-height: 96px; resize: vertical; }
+  .types { display: flex; gap: 10px; }
+  .types button { flex: 1; padding: 12px; border: 1px solid var(--line);
+    background: #fff; border-radius: 8px; font: inherit; cursor: pointer; }
+  .types button[aria-pressed="true"] { border-color: var(--accent);
+    border-width: 2px; color: var(--accent); font-weight: 700; background: var(--accent-soft); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .three { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  @media (max-width: 800px) { .three { grid-template-columns: 1fr; } }
+  .checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+  .checks label { display: flex; gap: 6px; align-items: center; font-size: 13px;
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; cursor: pointer; }
+  .checks input { width: auto; }
+  .checks label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+  .used { margin-top: 14px; border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 16px; font-size: 13px; background: #fff; }
+  .used b { color: var(--ink); }
+  .used .off { color: var(--muted); }
+  .row { display: grid; gap: 8px; margin-bottom: 8px; align-items: start; }
+  .row.team { grid-template-columns: 1fr 1fr 1.4fr auto; }
+  .row.rev  { grid-template-columns: 2fr 1fr auto; }
+  .row button.x { border: 1px solid var(--line); background: #fff; border-radius: 8px;
+    width: 36px; height: 40px; cursor: pointer; color: var(--muted); }
+  .add { border: 0; background: none; color: var(--accent); font: inherit;
+    font-weight: 700; cursor: pointer; padding: 0; float: right; }
+  .cta { width: 100%; padding: 15px; margin-top: 22px; border: 0; border-radius: 10px;
+    background: var(--accent); color: #fff; font: inherit; font-weight: 700;
+    font-size: 16px; cursor: pointer; }
+  .cta:disabled { background: #d8b9b5; cursor: not-allowed; }
+  .cta-note { text-align: center; color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  @media (max-width: 800px) { .cards, .two { grid-template-columns: 1fr; }
+    .row.team, .row.rev { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+  .card:hover { border-color: var(--accent); }
+  .card .no { color: var(--muted); font-size: 13px; }
+  .card .band { float: right; color: var(--accent); font-weight: 700; font-size: 13px; }
+  .card h3 { font-size: 16px; margin: 10px 0 8px; line-height: 1.4; }
+  .card .meta { color: var(--muted); font-size: 12.5px; }
+  .card .sim { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 13px 12px; border-bottom: 1px solid var(--line);
+    text-align: left; vertical-align: top; font-size: 14px; }
+  th { background: #f4efe8; color: var(--muted); font-size: 12.5px; font-weight: 700; }
+  td.v { font-weight: 700; white-space: nowrap; }
+  .ok { color: var(--ok); } .no { color: var(--no); } .unk { color: var(--unknown); }
+  .why { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .back { border: 0; background: none; color: var(--accent); font: inherit;
+    font-weight: 700; cursor: pointer; padding: 0; margin-bottom: 14px; }
+  .banner { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
+    margin-top: 16px; background: #f2f7f3; }
+  .banner.warn { background: #fdf9ec; }
+  a { color: var(--accent); }
+  .toggle { display: flex; gap: 10px; align-items: flex-start; background: var(--card);
+    border: 1px dashed var(--line); border-radius: 10px; padding: 12px 14px; margin: -8px 0 16px;
+    cursor: pointer; font-size: 14px; }
+  .toggle input { width: auto; margin-top: 4px; }
+  .toggle small { color: var(--muted); }
+  .demoted { margin-top: 14px; border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 16px; background: #fdf9ec; font-size: 13px; }
+  .demoted ul { margin: 6px 0 0; padding-left: 18px; }
+  .demoted li { margin: 2px 0; }
+  .spin { color: var(--muted); }
+  .err { color: var(--no); }
+  [hidden] { display: none !important; }
+</style>
+
+<div class="wrap">
+  <!-- ── 입력 ───────────────────────────────────────── -->
+  <section id="step-input">
+    <p class="eyebrow">사전 정보 입력</p>
+    <h1>아이템과 신청자 정보를 알려주세요</h1>
+    <p class="lede">받은 정보로 공고 매칭과 자격요건 확인을 진행합니다.</p>
+
+    <div class="panel">
+      <label class="h">신청자 유형</label>
+      <div class="types" id="types">
+        <button type="button" data-t="예비창업자" aria-pressed="false">예비창업자</button>
+        <button type="button" data-t="개인사업자" aria-pressed="true">개인사업자</button>
+        <button type="button" data-t="법인" aria-pressed="false">법인</button>
+      </div>
+
+      <label class="h">신청자</label>
+      <div class="three">
+        <input id="owner" placeholder="이름">
+        <input id="birth" type="date" title="생년월일">
+        <select id="gender">
+          <option value="">성별 선택 안 함</option>
+          <option>여성</option><option>남성</option>
+        </select>
+      </div>
+      <p class="hint">성별은 <b>여성기업·여성창업 공고</b>가 뒤로 밀리지 않게 하는 데 씁니다.
+        생년월일은 지금은 보관만 합니다.</p>
+
+      <label class="h">소재지</label>
+      <div class="two">
+        <select id="region"><option value="">시·도 선택 안 함</option></select>
+        <select id="district"><option value="">시·군·구 선택 안 함</option></select>
+      </div>
+      <p class="hint">시·군·구는 공고 제목에 적힌 지역과 맞춰 봅니다(공고 2,285건 중 596건).</p>
+
+      <label class="h">주 업종</label>
+      <input id="industry" placeholder="예) 제조업 · 정보통신업 · 식품제조">
+
+      <label class="h">아이디어 설명</label>
+      <textarea id="idea" placeholder="예) 반려견 산책 도우미를 구해주는 매칭 플랫폼을 만들고 있어요"></textarea>
+
+      <label class="h">본인·팀 이력
+        <button class="add" type="button" id="add-team">+ 팀원 추가</button></label>
+      <div id="team"></div>
+
+      <label class="h">보유 인증 · 확인서</label>
+      <div class="checks" id="certs"></div>
+
+      <label class="h">채용 계획</label>
+      <label class="toggle" style="margin:0 0 4px">
+        <input type="checkbox" id="hiring">
+        <span>올해 채용 계획이 있습니다 <small>(고용 관련 공고를 찾는 데 씁니다)</small></span>
+      </label>
+
+      <label class="h">보유 장비 · 협력 기관</label>
+      <div class="two">
+        <input id="equipment" placeholder="보유 장비 (쉼표로 구분)">
+        <input id="partners" placeholder="협력 기관·기업 (쉼표로 구분)">
+      </div>
+      <p class="hint">협력 기관은 매칭에 씁니다. 장비는 아직 보관만 합니다.</p>
+
+      <!-- 예비창업자 전용 -->
+      <div id="pre-wrap" hidden>
+        <label class="h">예비창업자 확인</label>
+        <div class="two">
+          <select id="first">
+            <option value="">첫 창업 여부 선택 안 함</option>
+            <option value="yes">첫 창업입니다</option>
+            <option value="no">재창업·재도전입니다</option>
+          </select>
+          <input id="budget" type="number" min="0" placeholder="희망 사업비 (만원)">
+        </div>
+        <p class="hint">재창업이면 <b>재창업·재도전 공고</b>가 뒤로 밀리지 않습니다.
+          사업비는 보관만 합니다(공고에 금액 칸이 없습니다).</p>
+      </div>
+
+      <!-- 개인·법인 전용 -->
+      <div id="founded-wrap">
+        <label class="h">사업자 정보</label>
+        <div class="two">
+          <input id="bizno" placeholder="사업자등록번호 (숫자 10자리)" inputmode="numeric">
+          <input id="founded" type="date" title="설립일자">
+        </div>
+        <div class="two" style="margin-top:8px">
+          <select id="selffund">
+            <option value="">자기부담금 선택 안 함</option>
+            <option value="yes">자기부담금 가능</option>
+            <option value="no">자기부담금 어려움</option>
+          </select>
+          <input id="fundbudget" type="number" min="0" placeholder="자기부담 가능액 (만원)">
+        </div>
+        <p class="hint">사업자등록번호·자기부담금은 보관만 합니다. 설립일자는 업력 판정에 씁니다.</p>
+      </div>
+
+      <label class="h">수익모델 단가
+        <button class="add" type="button" id="add-rev">+ 항목 추가</button></label>
+      <p class="hint">단가는 그대로 보관만 합니다. 공고 데이터에 금액 항목이 없어 매칭에는 쓰지 않습니다.</p>
+      <div id="rev"></div>
+
+      <button class="cta" id="go" disabled>다음 단계로 — 공고 매칭 시작하기</button>
+      <p class="cta-note" id="go-note">아이디어 설명을 입력해주세요</p>
+    </div>
+  </section>
+
+  <!-- ── 결과 ───────────────────────────────────────── -->
+  <section id="step-list" hidden>
+    <button class="back" id="back-input">‹ 아이템 정보 다시 입력하기</button>
+    <p class="eyebrow">매칭 결과</p>
+    <h1 id="list-title">공고를 찾았습니다</h1>
+    <p class="lede" id="list-lede"></p>
+    <label class="toggle">
+      <input type="checkbox" id="demote" checked>
+      <span><b>특정 대상 집단 공고 뒤로 보내기</b> <small>(시험 · 개선안 B)</small><br>
+        <small>장애인·체육인·재창업자 등 대상이 정해진 공고는, 입력에 그 집단이라는 내용이 없으면 뒤로 보냅니다. 끄면 기존 방식으로 다시 검색합니다.</small></span>
+    </label>
+    <div class="cards" id="cards"></div>
+    <div class="demoted" id="demoted" hidden></div>
+    <div class="used" id="used" hidden></div>
+    <p class="hint" id="list-foot"></p>
+  </section>
+
+  <!-- ── 자격요건 ────────────────────────────────────── -->
+  <section id="step-gate" hidden>
+    <button class="back" id="back-list">‹ 매칭 결과로 돌아가기</button>
+    <p class="eyebrow">자격요건 게이트</p>
+    <h1 id="gate-title"></h1>
+    <p class="lede">공고 기준과 입력 정보를 항목별로 대조합니다 — 파싱·계산만 하며 LLM은 쓰지 않습니다.</p>
+    <div class="panel" style="padding:0;overflow:hidden">
+      <table><thead><tr>
+        <th>항목</th><th>공고 기준</th><th>내 정보</th><th>판정</th>
+      </tr></thead><tbody id="gate-body"></tbody></table>
+    </div>
+    <div class="banner" id="gate-banner"></div>
+    <p class="hint" id="gate-link"></p>
+  </section>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const show = (id) => ['step-input','step-list','step-gate']
+  .forEach(s => $('#' + s).hidden = (s !== id));
+
+let type = '개인사업자';
+let last = null;
+
+// 신청자 유형
+$('#types').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-t]');
+  if (!b) return;
+  type = b.dataset.t;
+  [...$('#types').children].forEach(x =>
+    x.setAttribute('aria-pressed', String(x === b)));
+  // 예비창업자는 설립 전이므로 사업자 정보를 묻지 않는다
+  $('#founded-wrap').hidden = (type === '예비창업자');
+  $('#pre-wrap').hidden = (type !== '예비창업자');
+  validate();
+});
+
+// 팀원 · 수익모델 행
+function addRow(host, kind) {
+  const div = document.createElement('div');
+  div.className = 'row ' + kind;
+  div.innerHTML = kind === 'team'
+    ? `<input placeholder="이름"><input placeholder="대표 · 개발"><input placeholder="백엔드 경력 5년"><button class="x" type="button">×</button>`
+    : `<input placeholder="주문 1건당 수수료"><input placeholder="500"><button class="x" type="button">×</button>`;
+  div.querySelector('.x').onclick = () => div.remove();
+  host.appendChild(div);
+}
+$('#add-team').onclick = () => addRow($('#team'), 'team');
+$('#add-rev').onclick = () => addRow($('#rev'), 'rev');
+addRow($('#team'), 'team');
+addRow($('#rev'), 'rev');
+
+// 필수 입력 검사
+function validate() {
+  const needFounded = (type !== '예비창업자');
+  const ok = $('#idea').value.trim().length >= 5
+    && (!needFounded || ($('#owner').value.trim() && $('#founded').value));
+  $('#go').disabled = !ok;
+  $('#go-note').textContent = ok ? ''
+    : (!$('#idea').value.trim() ? '아이디어 설명을 입력해주세요'
+       : '이름과 설립일자를 입력해주세요');
+}
+['#idea', '#owner', '#founded'].forEach(s =>
+  $(s).addEventListener('input', validate));
+validate();
+
+function collect() {
+  const rows = (host, keys) => [...host.children].map(r => {
+    const v = [...r.querySelectorAll('input')].map(i => i.value.trim());
+    return Object.fromEntries(keys.map((k, i) => [k, v[i] || '']));
+  });
+  return {
+    applicant_type: type,
+    owner_name: $('#owner').value.trim(),
+    founded_at: $('#founded').value || '',
+    idea: $('#idea').value.trim(),
+    team: rows($('#team'), ['name','role','career']).filter(m => m.career || m.name),
+    revenue: rows($('#rev'), ['item','price']).filter(r => r.item),
+    top: 3, hide_expired: true,
+    region: $('#region').value,
+    district: $('#district').value,
+    name: $('#owner').value.trim(),
+    birth_date: $('#birth').value || '',
+    gender: $('#gender').value,
+    main_industry: $('#industry').value.trim(),
+    certifications: [...document.querySelectorAll('#certs input:checked')].map(c => c.value),
+    hiring_plan: $('#hiring').checked,
+    equipment: split($('#equipment').value),
+    partners: split($('#partners').value),
+    first_startup: $('#first').value ? ($('#first').value === 'yes') : null,
+    budget_scale: $('#budget').value ? Number($('#budget').value) : null,
+    business_no: $('#bizno').value.replace(/[^0-9]/g, ''),
+    self_funding: $('#selffund').value ? ($('#selffund').value === 'yes') : null,
+    self_funding_budget: $('#fundbudget').value ? Number($('#fundbudget').value) : null,
+  };
+}
+
+const split = (v) => v.split(',').map(x => x.trim()).filter(Boolean);
+
+// 지역·인증 목록은 서버에서 받는다 (코드와 어휘가 어긋나지 않게)
+let FORM = { regions: [], certifications: [] };
+fetch('/api/form').then(r => r.json()).then(d => {
+  FORM = d;
+  $('#region').insertAdjacentHTML('beforeend', d.regions
+    .map(r => `<option value="${r.value}">${r.label}</option>`).join(''));
+  $('#certs').innerHTML = d.certifications
+    .map(c => `<label><input type="checkbox" value="${c}">${c}</label>`).join('');
+});
+$('#region').addEventListener('change', () => {
+  const r = FORM.regions.find(x => x.value === $('#region').value);
+  $('#district').innerHTML = '<option value="">시·군·구 선택 안 함</option>'
+    + (r ? r.districts.map(d => `<option>${d}</option>`).join('') : '');
+});
+
+// 저장 표기(전남광주, "경북,대구")를 화면 표기로
+function regionLabel(v) {
+  return (v || '').replace('전남광주', '광주·전남').replace(/,/g, ' · ');
+}
+
+// 공고의 대상 지역. 소재지를 골랐으면 해당되는지까지 보여준다
+function regionText(n) {
+  const name = regionLabel(n.region);
+  let extra = '';
+  if (n.district_match === true) extra = ' · 우리 시·군·구 공고';
+  else if (n.district_match === false) extra = ' · 같은 시·도의 다른 시·군·구';
+  if (!name) return '대상 지역 정보 없음';
+  if (n.region_match === true) return `대상 지역 ${name} · 해당됨${extra}`;
+  if (n.region_match === false) return `대상 지역 ${name} · 소재지와 다름`;
+  return `대상 지역 ${name}${extra}`;
+}
+
+async function post(path, body) {
+  const r = await fetch(path, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)});
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+// 매칭
+$('#go').onclick = async () => {
+  last = collect();
+  $('#go').disabled = true;
+  $('#go-note').textContent = '검색 중…';
+  try {
+    await runMatch();
+    show('step-list');
+  } catch (e) {
+    $('#go-note').innerHTML = `<span class="err">실패: ${esc(String(e.message).slice(0,200))}</span>`;
+  } finally { validate(); }
+};
+
+// 개선안 B 켜고 끄기 — 같은 입력으로 다시 검색해 결과를 바로 비교한다
+$('#demote').addEventListener('change', async () => {
+  if (!last) return;
+  $('#cards').style.opacity = .4;
+  try { await runMatch(); }
+  catch (e) { $('#list-foot').innerHTML = `<span class="err">실패: ${esc(String(e.message).slice(0,200))}</span>`; }
+  finally { $('#cards').style.opacity = 1; }
+});
+
+async function runMatch() {
+    const d = await post('/api/match', {...last, demote_groups: $('#demote').checked});
+    $('#list-title').textContent =
+      `지금 신청 가능한 공고 ${d.count}건을 찾았습니다`;
+    $('#list-lede').textContent =
+      '유사도가 높은 순서입니다 — 공고를 선택하면 자격요건 확인으로 넘어갑니다.';
+    $('#cards').innerHTML = '';
+    d.results.forEach((n, i) => {
+      const period = n.apply_end ? `${n.apply_end} 마감`
+        : ({budget_exhaustion:'예산 소진 시까지', rolling:'상시·수시 접수',
+            until_filled:'선착순 마감', unknown:'접수기간 정보 없음'}[n.apply_period_type]
+           || '접수기간 정보 없음');
+      const b = document.createElement('button');
+      b.className = 'card';
+      b.innerHTML =
+        `<span class="no">0${i+1}</span><span class="band">${n.band}</span>
+         <h3>${esc(n.title)}</h3>
+         <p class="meta">${esc(n.organizer || '기관 정보 없음')} · ${period}</p>
+         <p class="meta">${esc(n.target_category || '')}${n.category ? ' · ' + esc(n.category) : ''}</p>
+         <p class="meta">${regionText(n)}</p>
+         <p class="sim">유사도 ${n.score} · 출처 ${n.source}</p>`;
+      b.onclick = () => openGate(n);
+      $('#cards').appendChild(b);
+    });
+    const box = $('#demoted');
+    const parts = [];
+    if (d.demote_region && d.region_demoted.length) {
+      parts.push(`<b>다른 지역 전용이라 뒤로 보낸 공고 ${d.region_demoted.length}건</b> — 소재지가 ${esc(regionLabel(d.region))}라서
+        <ul>${d.region_demoted.map(x => `<li>${esc(x.title)} <small>(대상 ${esc(regionLabel(x.region))})</small></li>`).join('')}</ul>`);
+    }
+    if (d.demote_district && d.district_demoted.length) {
+      parts.push(`<b>다른 시·군·구 공고라 뒤로 보낸 공고 ${d.district_demoted.length}건</b> — 소재지가 ${esc(d.district)}라서
+        <ul>${d.district_demoted.map(x => `<li>${esc(x.title)} <small>(${esc(x.districts.join(' · '))})</small></li>`).join('')}</ul>`);
+    }
+    if (d.demote_groups && d.demoted.length) {
+      parts.push(`<b>뒤로 보낸 공고 ${d.demoted.length}건</b> — 입력에 해당 집단이라는 내용이 없어서
+        <ul>${d.demoted.map(x => `<li>${esc(x.title)} <small>(유사도 ${x.score} · ${esc(x.groups.join(', '))})</small></li>`).join('')}</ul>`);
+    }
+    box.innerHTML = parts.join('<div style="height:10px"></div>');
+    box.hidden = !parts.length;
+    const used = $('#used');
+    const stored = Object.entries(d.stored_only || {});
+    used.innerHTML = `
+      <b>매칭에 쓴 것</b> — 아이디어 · 수익모델 · 업력/유형 · 본인·팀 이력
+      ${d.rule_words && d.rule_words.length ? ' · ' + d.rule_words.map(esc).join(' · ') : ''}
+      ${d.region ? ' · 소재지 ' + esc(regionLabel(d.region)) : ''}${d.district ? ' ' + esc(d.district) : ''}
+      ${stored.length ? `<div class="off" style="margin-top:8px"><b>받아만 둔 것</b> — `
+        + stored.map(([k, v]) => `${esc(k)} ${esc(v)} <small>(${esc((d.why_not_used || {})[k] || '')})</small>`).join(' · ')
+        + '</div>' : ''}`;
+    used.hidden = false;
+    $('#list-foot').textContent =
+      `질의: "${d.query}"  ·  인코딩 ${d.encode_ms}ms + `
+      + (d.search === 'hybrid'
+          ? `의미검색 ${d.dense_ms}ms + 단어검색 ${d.bm25_ms}ms (하이브리드)`
+          : `벡터DB ${d.search_ms}ms`);
+}
+
+// 자격요건
+async function openGate(n) {
+  $('#gate-title').textContent = `『${n.title}』 신청 자격을 확인합니다`;
+  $('#gate-body').innerHTML = `<tr><td colspan="4" class="spin">확인 중…</td></tr>`;
+  $('#gate-banner').textContent = '';
+  show('step-gate');
+  try {
+    const d = await post('/api/eligibility', {
+      notice_id: n.notice_id, applicant_type: last.applicant_type,
+      founded_at: last.founded_at});
+    const cls = (v) => v === true ? 'ok' : v === false ? 'no' : 'unk';
+    const word = (v) => v === true ? '통과' : v === false ? '미달' : '확인 필요';
+    $('#gate-body').innerHTML = d.checks.map(c => `
+      <tr><td><b>${esc(c['조건'])}</b></td>
+          <td>${esc(c['요구'])}${c['설명'] ? `<div class="why">${esc(c['설명'])}</div>` : ''}</td>
+          <td>${esc(c['내 값'])}</td>
+          <td class="v ${cls(c['판정'])}">${word(c['판정'])}</td></tr>`).join('');
+    const warn = d.unknown > 0;
+    $('#gate-banner').className = 'banner' + (warn ? ' warn' : '');
+    $('#gate-banner').innerHTML = d.passed
+      ? (warn ? `<b>미달 항목은 없습니다.</b> 다만 ${d.unknown}개 항목은 데이터가 없어 판정하지 못했습니다 — 자격 충족을 보장하지 않으니 원문을 확인하세요.`
+              : '<b>자격요건을 충족합니다.</b>')
+      : '<b>미달 항목이 있습니다.</b> 신청이 어려울 수 있습니다.';
+    $('#gate-link').innerHTML = d.url
+      ? `<a href="${esc(d.url)}" target="_blank" rel="noopener">원문 공고 보기 ↗</a>`
+      : '원문 링크가 없습니다.';
+  } catch (e) {
+    $('#gate-body').innerHTML =
+      `<tr><td colspan="4" class="err">실패: ${esc(String(e.message).slice(0,200))}</td></tr>`;
+  }
+}
+
+$('#back-input').onclick = () => show('step-input');
+$('#back-list').onclick = () => show('step-list');
+function esc(s) { return String(s == null ? '' : s)
+  .replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+</script>

@@ -45,7 +45,7 @@ JUDGE_LEVELS = {'human': {'human'}, 'llm': {'human', 'llm'},
                 'all': {'human', 'llm', 'llm_old'}}
 
 # 개선안 B 규칙은 서비스(app.py)와 같은 rank_rules.py 를 쓴다.
-import rank_rules  # noqa: E402
+from search import rank_rules  # noqa: E402
 
 CSLS_K = 10
 CANDIDATES = 50
@@ -102,7 +102,7 @@ class Systems:
 
     def notices(self):
         if self._notices is None:
-            import store_mysql
+            from shared import store_mysql
             c = store_mysql.connect()
             try:
                 with c.cursor() as cur:
@@ -123,7 +123,7 @@ class Systems:
         서비스에 넣는다면 이 값을 Chroma 메타데이터로 저장해 두면 된다."""
         if self._csls is None:
             import numpy as np
-            import vecstore
+            from search import vecstore
             ids, vecs, _ = vecstore.load_vectors()
             sims = vecs @ vecs.T
             np.fill_diagonal(sims, -1)
@@ -140,7 +140,7 @@ class Systems:
         return self._bm25
 
     def dense(self, text, k):
-        import vecstore
+        from search import vecstore
         hits, _ = vecstore.search(text, top=k + 1, engine='chroma')
         return [(n, float(s)) for n, s in hits if n != '__watermark__'][:k]
 
@@ -149,7 +149,7 @@ class Systems:
             return self.bm25().search(common.query_text(q), top=k)
         if name == 'rrf':
             # 서비스(app.py 의 search='hybrid')와 같은 hybrid.rrf 를 쓴다
-            import hybrid
+            from search import hybrid
             text = common.query_text(q)
             return hybrid.rrf(self.dense(text, hybrid.DEPTH),
                               self.bm25().search(text, top=hybrid.DEPTH))[:k]

@@ -152,7 +152,7 @@ def main():
         return 0
 
     import openai
-    import config
+    from shared import config
     key = config.get('OPENAI_API_KEY')
     if not key:
         print('OPENAI_API_KEY 가 .env 에 없다')

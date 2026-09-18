@@ -30,8 +30,8 @@ SHUFFLE_SEED = 20260915
 
 def corpus():
     """(docs, 공고집합 해시). 문서 텍스트는 임베딩과 **같은 입력**(embed.build_input)."""
-    import embed
-    import store_mysql
+    from shared import embed
+    from shared import store_mysql
     connection = store_mysql.connect()
     try:
         rows = embed.load_rows(connection)
@@ -50,7 +50,7 @@ def corpus():
 def index_check(docs, shas, say):
     """벡터 파일·Chroma 가 지금 공고와 맞는지. 낡은 색인을 모델 성능 문제로 오인하지 않게."""
     import numpy as np
-    import vecstore
+    from search import vecstore
     data = np.load(vecstore.NPZ, allow_pickle=False)
     vec_sha = dict(zip([str(x) for x in data['notice_ids']], [str(x) for x in data['input_sha256']]))
     meta = json.loads(str(data['meta']))
@@ -143,7 +143,7 @@ def main():
                       method={'added_from': os.path.basename(args.add_from),
                               'shuffle_seed': SHUFFLE_SEED})
 
-    import vecstore
+    from search import vecstore
     from bm25 import BM25
     print('BM25 색인...')
     bm25 = BM25(docs)

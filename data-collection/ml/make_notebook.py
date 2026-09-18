@@ -220,7 +220,7 @@ md("---\n",
    "**약한 라벨**이므로, 나중에 일부를 사람이 검수해 정확도를 확인해야 한다."),
 
 code("# EC2 MySQL 에서 근거 문장을 읽는다. .env 가 있어야 한다.\n",
-     "import store_mysql\n",
+     "from shared import store_mysql\n",
      "\n",
      "conn = store_mysql.connect()\n",
      "cur = conn.cursor()\n",

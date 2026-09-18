@@ -24,7 +24,7 @@ from datetime import date
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
 import evaluate as ev  # noqa: E402
-import gate  # noqa: E402
+from search import gate  # noqa: E402
 
 SYSTEM = 'rrf'
 FIELDS = ('notice_id', 'age_condition_raw', 'apply_start', 'apply_end',
@@ -32,7 +32,7 @@ FIELDS = ('notice_id', 'age_condition_raw', 'apply_start', 'apply_end',
 
 
 def load_notices():
-    import store_mysql
+    from shared import store_mysql
     c = store_mysql.connect()
     try:
         with c.cursor() as cur:

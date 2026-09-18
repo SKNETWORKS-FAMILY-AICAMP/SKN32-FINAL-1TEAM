@@ -27,14 +27,14 @@ from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
 import evaluate as ev  # noqa: E402
-import region  # noqa: E402  (common 이 ROOT 를 sys.path 에 넣는다)
+from shared import region  # noqa: E402  (common 이 ROOT 를 sys.path 에 넣는다)
 
 SYSTEM = 'rrf'          # 서비스 기본 검색(하이브리드)
 POOL_K = 30             # 규칙이 뒤에서 끌어올릴 수 있는 후보 수. app.py 는 이보다 넉넉하다
 
 
 def load_regions():
-    import store_mysql
+    from shared import store_mysql
     c = store_mysql.connect()
     try:
         with c.cursor() as cur:
