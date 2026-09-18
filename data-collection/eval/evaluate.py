@@ -148,12 +148,11 @@ class Systems:
         if name == 'bm25':
             return self.bm25().search(common.query_text(q), top=k)
         if name == 'rrf':
+            # 서비스(app.py 의 search='hybrid')와 같은 hybrid.rrf 를 쓴다
+            import hybrid
             text = common.query_text(q)
-            fused = {}
-            for hits in (self.dense(text, 50), self.bm25().search(text, top=50)):
-                for rank, (n, _) in enumerate(hits, 1):
-                    fused[n] = fused.get(n, 0) + 1 / (60 + rank)
-            return sorted(fused.items(), key=lambda x: (-x[1], x[0]))[:k]
+            return hybrid.rrf(self.dense(text, hybrid.DEPTH),
+                              self.bm25().search(text, top=hybrid.DEPTH))[:k]
 
         base, *flags = name.split('+')
         text = {'dense': common.query_text, 'idea': idea_text}[base](q)

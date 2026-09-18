@@ -101,6 +101,16 @@
         <input id="founded" type="date">
       </div>
 
+      <label class="h">회사 소재지</label>
+      <select id="region">
+        <option value="">선택 안 함 (지역 상관없이 검색)</option>
+        <option>서울</option><option>부산</option><option>대구</option><option>인천</option>
+        <option>대전</option><option>울산</option><option>세종</option><option>경기</option>
+        <option>강원</option><option>충북</option><option>충남</option><option>전북</option>
+        <option value="전남광주">광주·전남</option>
+        <option>경북</option><option>경남</option><option>제주</option>
+      </select>
+
       <label class="h">아이디어 설명</label>
       <textarea id="idea" placeholder="예) 반려견 산책 도우미를 구해주는 매칭 플랫폼을 만들고 있어요"></textarea>
 
@@ -212,7 +222,22 @@ function collect() {
     team: rows($('#team'), ['name','role','career']).filter(m => m.career || m.name),
     revenue: rows($('#rev'), ['item','price']).filter(r => r.item),
     top: 3, hide_expired: true,
+    region: $('#region').value,
   };
+}
+
+// 저장 표기(전남광주, "경북,대구")를 화면 표기로
+function regionLabel(v) {
+  return (v || '').replace('전남광주', '광주·전남').replace(/,/g, ' · ');
+}
+
+// 공고의 대상 지역. 소재지를 골랐으면 해당되는지까지 보여준다
+function regionText(n) {
+  const name = regionLabel(n.region);
+  if (!name) return '대상 지역 정보 없음';
+  if (n.region_match === true) return `대상 지역 ${name} · 해당됨`;
+  if (n.region_match === false) return `대상 지역 ${name} · 소재지와 다름`;
+  return `대상 지역 ${name}`;
 }
 
 async function post(path, body) {
@@ -264,20 +289,28 @@ async function runMatch() {
          <h3>${esc(n.title)}</h3>
          <p class="meta">${esc(n.organizer || '기관 정보 없음')} · ${period}</p>
          <p class="meta">${esc(n.target_category || '')}${n.category ? ' · ' + esc(n.category) : ''}</p>
+         <p class="meta">${regionText(n)}</p>
          <p class="sim">유사도 ${n.score} · 출처 ${n.source}</p>`;
       b.onclick = () => openGate(n);
       $('#cards').appendChild(b);
     });
     const box = $('#demoted');
-    if (d.demote_groups && d.demoted.length) {
-      box.innerHTML = `<b>뒤로 보낸 공고 ${d.demoted.length}건</b> — 입력에 해당 집단이라는 내용이 없어서
-        <ul>${d.demoted.map(x => `<li>${esc(x.title)} <small>(유사도 ${x.score} · ${esc(x.groups.join(', '))})</small></li>`).join('')}</ul>`;
-      box.hidden = false;
-    } else {
-      box.hidden = true;
+    const parts = [];
+    if (d.demote_region && d.region_demoted.length) {
+      parts.push(`<b>다른 지역 전용이라 뒤로 보낸 공고 ${d.region_demoted.length}건</b> — 소재지가 ${esc(regionLabel(d.region))}라서
+        <ul>${d.region_demoted.map(x => `<li>${esc(x.title)} <small>(대상 ${esc(regionLabel(x.region))})</small></li>`).join('')}</ul>`);
     }
+    if (d.demote_groups && d.demoted.length) {
+      parts.push(`<b>뒤로 보낸 공고 ${d.demoted.length}건</b> — 입력에 해당 집단이라는 내용이 없어서
+        <ul>${d.demoted.map(x => `<li>${esc(x.title)} <small>(유사도 ${x.score} · ${esc(x.groups.join(', '))})</small></li>`).join('')}</ul>`);
+    }
+    box.innerHTML = parts.join('<div style="height:10px"></div>');
+    box.hidden = !parts.length;
     $('#list-foot').textContent =
-      `질의: "${d.query}"  ·  인코딩 ${d.encode_ms}ms + 벡터DB ${d.search_ms}ms`;
+      `질의: "${d.query}"  ·  인코딩 ${d.encode_ms}ms + `
+      + (d.search === 'hybrid'
+          ? `의미검색 ${d.dense_ms}ms + 단어검색 ${d.bm25_ms}ms (하이브리드)`
+          : `벡터DB ${d.search_ms}ms`);
 }
 
 // 자격요건

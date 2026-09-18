@@ -10,6 +10,10 @@
 계산하는 경로는 쓰지 않는다. MySQL 은 제목·기관·기간 같은 표시용 값과
 자격 판정용 필드를 가져오는 데만 쓴다.
 
+**기본 검색은 하이브리드다** (search='hybrid'). 의미 검색(Chroma) 결과와 단어 검색
+(BM25) 결과를 순위로 합친다(RRF, hybrid.py). BM25 색인은 서버를 켤 때 한 번 메모리에
+만든다. 예전 방식이 필요하면 search='dense' 로 부른다.
+
 지금 데이터로 안 되는 것은 화면에 넣지 않았다.
   · 지원금액(최대 N원)   금액 컬럼이 DB 에 없다
   · AI 요약 한 줄        LLM 호출이 필요하다
@@ -31,6 +35,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 import gate
+import region as region_mod
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ON_EC2 = sys.platform.startswith('linux')
@@ -81,6 +86,21 @@ def _encode(text):
     return np.asarray(vecstore.embed_query(text), dtype='float32').tolist()
 
 
+def _build_bm25():
+    import embed
+    import hybrid
+    columns = ('notice_id',) + embed.FIELDS
+    connection = _connect()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT ' + ','.join(columns) + ' FROM notices')
+            rows = [dict(zip(columns, r)) for r in cursor.fetchall()]
+    finally:
+        connection.close()
+    docs = [(r['notice_id'], embed.build_input(r)) for r in rows]
+    return hybrid.BM25([(nid, text) for nid, text in docs if text])
+
+
 def boot():
     started = time.time()
     STATE['collection'] = _collection()
@@ -94,6 +114,12 @@ def boot():
     finally:
         connection.close()
     print('공고 정보 %d건' % len(STATE['rows']))
+
+    # 단어 검색 색인. 공고 문장은 임베딩과 **같은 입력**(embed.build_input)을 쓴다.
+    # 평가(eval/build_pool.py corpus)와도 같다. 매일 배치 뒤에는 서버를 다시 켜야 반영된다.
+    t0 = time.time()
+    STATE['bm25'] = _build_bm25()
+    print('BM25 색인 %d건 · %.1f초' % (len(STATE['bm25']), time.time() - t0))
 
     if ON_EC2:
         from sentence_transformers import SentenceTransformer
@@ -166,8 +192,16 @@ class MatchRequest(BaseModel):
     revenue: list[RevenueItem] = []
     top: int = 3
     hide_expired: bool = True
+    # 회사 소재지. 시·도 16개 중 하나(region.REGIONS) 또는 빈 값(고르지 않음).
+    region: str = ''
+    # 소재지를 골랐을 때, 다른 지역 전용 공고를 뒤로 보낸다. 빼지는 않는다.
+    # 지역 정보가 없는 공고는 건드리지 않는다(모른다고 벌주지 않는다).
+    demote_region: bool = True
     # 개선안 B. 특정 대상 집단 공고를 신청자 입력에 근거가 없으면 뒤로 보낸다(rank_rules.py)
     demote_groups: bool = True
+    # 'hybrid' = 의미 검색 + 단어 검색(BM25) 을 RRF 로 합친다 (기본)
+    # 'dense'  = 의미 검색만 (2026-09-17 이전 방식)
+    search: str = 'hybrid'
 
 
 class GateRequest(BaseModel):
@@ -188,15 +222,42 @@ def match(req: MatchRequest):
     want = req.top * 8 if req.hide_expired else req.top + 1
     if req.demote_groups:
         want = max(want, 30)          # 뒤로 보낼 공고가 있어도 3건이 채워지게 넉넉히
+    hybrid_on = req.search != 'dense'
+    if hybrid_on:
+        want = max(want, _hybrid_depth())
     col = STATE['collection']
-    found = col.query(query_embeddings=[qv], n_results=min(want, col.count()))
+    found = col.query(query_embeddings=[qv], n_results=min(want + 1, col.count()))
+    dense = [(nid, dist) for nid, dist in zip(found['ids'][0], found['distances'][0])
+             if nid != '__watermark__']
+    dense_ms = (time.time() - t0) * 1000
+
+    bm25_ms = None
+    ranks = {}
+    if hybrid_on:
+        import hybrid
+        t1 = time.time()
+        lexical = STATE['bm25'].search(query, top=hybrid.DEPTH)
+        bm25_ms = (time.time() - t1) * 1000
+        dense_all, dense = dense, dense[:hybrid.DEPTH]
+        ranks = {nid: {'dense_rank': i} for i, (nid, _) in enumerate(dense, 1)}
+        for i, (nid, _) in enumerate(lexical, 1):
+            ranks.setdefault(nid, {})['bm25_rank'] = i
+        fused = hybrid.rrf(dense, lexical)
+        # 표시용 점수(유사도)와 3단 라벨은 예전과 같은 기준으로 둔다. 단어 검색에서만
+        # 올라온 공고는 Chroma 에서 그 공고 벡터를 꺼내 질의 벡터와 코사인을 구한다.
+        dist_of = dict(dense)
+        _fill_distances(col, qv, [nid for nid, _ in fused if nid not in dist_of], dist_of)
+        # 합친 결과 뒤에 의미 검색 51위 이하를 그대로 붙인다. 기한 지난 공고를 걸러내고
+        # 나면 상위 50 만으로는 요청한 건수를 못 채울 수 있다.
+        tail = [h for h in dense_all[len(dense):] if h[0] not in dist_of]
+        dense = [(nid, dist_of[nid]) for nid, _ in fused if nid in dist_of] + tail
+        for nid, sc in fused:
+            ranks[nid]['rrf_score'] = round(sc, 5)
     search_ms = (time.time() - t0) * 1000
 
     today = date.today().isoformat()
     candidates = []
-    for nid, dist in zip(found['ids'][0], found['distances'][0]):
-        if nid == '__watermark__':
-            continue
+    for nid, dist in dense:
         row = STATE['rows'].get(nid)
         if row is None:
             continue
@@ -219,6 +280,16 @@ def match(req: MatchRequest):
                                                             row.get('target_category'), applicant)}
                    for nid, dist, row in moved][:5]
 
+    # 지역 — 집단 규칙보다 바깥에서 적용한다. 다른 지역 전용 공고는 신청 자체가
+    # 안 되는 경우가 많아 더 강한 조건이다. 여기서도 빼지 않고 뒤로만 보낸다.
+    region_demoted = []
+    if req.demote_region and req.region:
+        keep, moved = region_mod.demote(candidates, req.region, key=lambda c: c[2].get('region'))
+        candidates = keep + moved
+        region_demoted = [{'notice_id': nid, 'title': row.get('title') or '',
+                           'region': row.get('region') or ''}
+                          for nid, _dist, row in moved][:5]
+
     results = []
     for nid, dist, row in candidates:
         end = row.get('apply_end')
@@ -237,14 +308,47 @@ def match(req: MatchRequest):
             'url': row.get('url') or row.get('apply_url') or '',
             'score': round(score, 4),
             'band': band(score),
+            'region': row.get('region') or '',
+            # True 대상 지역 · False 다른 지역 전용 · None 판단 불가(공고에 지역이
+            # 없거나 신청자가 고르지 않음). None 을 False 로 바꾸지 않는다.
+            'region_match': region_mod.matches(row.get('region'), req.region),
         })
+        if hybrid_on:
+            # 어느 검색이 이 공고를 찾았는지. 없으면 그 검색 상위 50 밖이다
+            info = ranks.get(nid, {})
+            results[-1].update({'dense_rank': info.get('dense_rank'),
+                                'bm25_rank': info.get('bm25_rank'),
+                                'rrf_score': info.get('rrf_score')})
         if len(results) >= req.top:
             break
 
-    return {'query': query, 'count': len(results),
-            'encode_ms': round(encode_ms, 1), 'search_ms': round(search_ms, 2),
-            'source': 'chroma', 'demote_groups': req.demote_groups,
-            'demoted': demoted, 'results': results}
+    out = {'query': query, 'count': len(results),
+           'encode_ms': round(encode_ms, 1), 'search_ms': round(search_ms, 2),
+           'source': 'chroma+bm25' if hybrid_on else 'chroma', 'search': 'hybrid' if hybrid_on else 'dense',
+           'demote_groups': req.demote_groups,
+           'demoted': demoted, 'results': results,
+           'region': req.region, 'demote_region': bool(req.demote_region and req.region),
+           'region_demoted': region_demoted}
+    if hybrid_on:
+        out.update({'dense_ms': round(dense_ms, 2), 'bm25_ms': round(bm25_ms, 2)})
+    return out
+
+
+def _hybrid_depth():
+    import hybrid
+    return hybrid.DEPTH
+
+
+def _fill_distances(col, qv, ids, dist_of):
+    """Chroma 에서 공고 벡터를 꺼내 질의와의 코사인 거리(1 - 유사도)를 채운다.
+    벡터는 정규화되어 있어 내적이 코사인이다. 색인에 없는 공고는 건너뛴다."""
+    if not ids:
+        return
+    import numpy as np
+    got = col.get(ids=ids, include=['embeddings'])
+    q = np.asarray(qv, dtype='float32')
+    for nid, vec in zip(got['ids'], got['embeddings']):
+        dist_of[nid] = 1.0 - float(np.dot(q, np.asarray(vec, dtype='float32')))
 
 
 @app.post('/api/eligibility')
@@ -379,7 +483,8 @@ def review():
 def health():
     return {'indexed': STATE['collection'].count(),
             'notices': len(STATE['rows']),
-            'on_ec2': ON_EC2, 'source': 'chroma'}
+            'bm25_indexed': len(STATE['bm25']) if STATE.get('bm25') else 0,
+            'on_ec2': ON_EC2, 'source': 'chroma+bm25', 'default_search': 'hybrid'}
 
 
 # ── 리랭커 시연 (내부 검토용) ────────────────────────────────

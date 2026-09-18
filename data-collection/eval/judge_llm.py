@@ -115,6 +115,7 @@ def main():
     ap.add_argument('--plan', action='store_true')
     ap.add_argument('--limit', type=int, help='쌍 기준 상한')
     ap.add_argument('--qids', nargs='*')
+    ap.add_argument('--pairs', help='이 JSONL 의 (qid, notice_id) 쌍만. 새 검색 방식 상위 결과만 채점할 때')
     ap.add_argument('--blind', action='store_true', help='블라인드 표본 쌍만 (기준을 바꾼 뒤 일치율부터 볼 때)')
     ap.add_argument('--workers', type=int, default=8)
     args = ap.parse_args()
@@ -123,6 +124,9 @@ def main():
     snap = common.load_snapshot()
     pool = [p for p in common.read_jsonl(common.POOL)
             if not args.qids or p['qid'] in args.qids]
+    if args.pairs:
+        want = {(r['qid'], r['notice_id']) for r in common.read_jsonl(args.pairs)}
+        pool = [p for p in pool if (p['qid'], p['notice_id']) in want]
     if args.blind:
         blind = common.blind_sample(common.read_jsonl(common.POOL))
         pool = [p for p in pool if (p['qid'], p['notice_id']) in blind]
