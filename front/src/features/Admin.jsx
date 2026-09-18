@@ -1,94 +1,55 @@
-import React,{useState,useMemo,useEffect} from 'react';
+import React,{useState,useEffect} from 'react';
 import {Brand,Icon} from '../components/Icons.jsx';
 import {api,ApiError} from '../api.js';
 
 // 관리자 판별은 이제 App.jsx에서 /auth/me가 내려주는 실제 role로 한다(props.user.role).
 // 이 파일 안에서는 이미 관리자로 확인된 사용자만 보고 있다고 가정한다.
 
-// 아래 7개 탭 중 실제 백엔드(/admin/*)가 있는 건 "검증 정책"(policy+checklist),
-// "사용자 관리·FAQ"(users+faqs), "에이전트 테스크"의 Execution별 보기(agent-executions)뿐이다.
-// 나머지(공고 관리/운영 현황/진행 현황/검수 회수 문단, 그리고 에이전트 테스크의 Task별 보기)는
-// 대응하는 API 자체가 없어서(다른 팀원의 오케스트레이터/공고수집 파이프라인 작업 영역) 지금도
-// 아래 예시 데이터 그대로 둔다 — 실제 연동 시점에 이 파일에서 해당 탭만 바꾸면 된다.
+// [2026-09-18] 7개 탭 전부 실제 백엔드(/admin/*)에 연동됐다 — "검증 정책"(policy+
+// checklist), "사용자 관리·FAQ"(users+faqs), "에이전트 테스크"의 Execution별 보기
+// (agent-executions)·Task별 보기(agent-tasks)·운영 지표 요약(agent-ops-summary),
+// "진행 현황"(items+items/{id}/archive+items/{id}/score-history), "공고 관리"
+// (notices+collection-status), "운영 현황"(ops-summary), "검수 회수 문단"
+// (recovery-items) 전부.
+// - "진행 현황"의 "지금 Agent가 뭘 하는지"/"오류 로그"는 여전히 안 내려준다 — 실시간
+//   오케스트레이터 상태를 저장하는 테이블이 없다(app/schemas.py ItemOut 주석 참고).
+// - "에이전트 테스크"의 "배치 기준"(모델 선택) 열은 2026-09-18에 아예 뺐다 — 저장할
+//   백엔드가 없어 고르는 척만 하고 실제로 반영되지 않는 값이었다(AGENT_ROWS 주석 참고).
+// - "공고 관리"의 "공고 수집 현황"은 목업의 3번째 카드("지자체 통합공고")가 빠졌다 —
+//   실제 notices.source 값은 kstartup/bizinfo 둘뿐이다(NoticeSourceStatusOut 주석 참고).
+//   "재수집"/"임베딩 재생성" 액션도 다른 팀원의 수집 파이프라인 스크립트를 여기서
+//   실행시킬 방법이 없어 만들지 않았다. "수집 실패 이력"도 "최근 수집 실행 이력"으로
+//   바꿨다 — 실제 배치 기록엔 "실패"가 아니라 데이터 품질 이슈만 있어서다(ImportRunOut
+//   주석 참고).
+// - "운영 현황"의 채점 편차(1회→2회)·"보호 토큰 위반율"은 이제 실제 값이다 —
+//   retry_task가 verification_score_history/proofread_logs에 이력을 남기도록
+//   고쳤다(app/routers/projects.py retry_task, OpsSummaryOut 주석 참고).
+// - "검수 회수 문단"은 proofread_logs.passed=False(보호 토큰 위반 반려 시도)를 그대로
+//   라벨링 대기열로 쓴다 — model_version은 그 plan의 최종 verdicts.model_version을
+//   붙인 근사치다(RecoveryItemOut 주석 참고).
 
 const TABS=[['ann','공고 관리'],['ops','운영 현황'],['progress','진행 현황'],['agents','에이전트 테스크'],['policy','검증 정책'],['recovery','검수 회수 문단'],['users','사용자 관리·FAQ']];
 
-const SOURCES=[
-  {id:'1',name:'K-Startup',tone:'ok',badge:'［정상］',lastSuccess:'2026-09-09 06:00',count:'128건',embed:'완료',action:'수동 재수집'},
-  {id:'2',name:'지자체 통합공고',tone:'warn',badge:'［임베딩 실패 · 매칭·알림에서 누락됨］',lastSuccess:'2026-09-09 06:00',count:'14건 (금일)',embed:'14건 중 3건 실패',
-   cause:'원인: 임베딩 모델 레이트리밋 초과. 수집 자체는 정상이며, 이 3건만 벡터가 없어 매칭 대상에서 조용히 빠짐',action:'임베딩만 재생성'},
-  {id:'3',name:'기업마당',tone:'danger',badge:'［실패 · 전일 데이터로 동작 중］',lastSuccess:'2026-09-07 06:00 (2일 전)',count:'0건 (금일)',embed:'미생성',
-   cause:'원인: 응답 타임아웃 (3회 재시도 실패)',action:'지금 재수집'},
-];
-
-const COLLECT_FAILURES=[
-  ['2026-09-07 06:00','기업마당','응답 타임아웃 (3회 재시도 실패)','관리자 수동 재수집 대기 중','danger'],
-  ['2026-09-05 06:00','지자체 통합공고','임베딩 모델 레이트리밋 초과 (3건)','임베딩 재생성 완료','ok'],
-  ['2026-08-30 06:00','기업마당','응답 타임아웃 (2회 재시도 실패)','자동 복구 (익일 정상화)','muted'],
-  ['2026-08-22 06:00','K-Startup','API 502 오류','자동 복구 (당일 재시도 성공)','muted'],
-];
-
-const ANNOUNCEMENT_ROWS=[
-  {title:'2026 초기창업패키지',src:'K-Startup',period:'09.01~09.30',embed:'완료',embedTone:'ok',status:'모집중',statusTone:'ok'},
-  {title:'기술개발사업 2차',src:'기업마당',period:'09.05~09.25',embed:'지연',embedTone:'warn',status:'모집중',statusTone:'ok'},
-  {title:'지역특화 스마트상점 지원',src:'중소벤처기업부',period:'08.01~08.31',embed:'완료',embedTone:'ok',status:'마감 (자동 제외)',statusTone:'muted',dim:true},
-];
-
-const SCORE_HISTORY={
-  '1':{title:'2026 초기창업패키지 매칭',
-    doc:[{date:'2026-09-05',score:58,note:'평가항목 충족률 개선 (시장분석 챕터 보완)',rerun:true},{date:'2026-08-20',score:50,note:'1차 문서 검증'},{date:'2026-08-01',score:44,note:'최초 문서 검증'}],
-    code:[{date:'2026-09-04',score:12,note:'프로토타입 코드 자동 검증'},{date:'2026-08-19',score:10,note:'1차 코드 검증'},{date:'2026-08-01',score:8,note:'최초 코드 검증'}],
-    plan:[{date:'2026-09-04',score:12,note:'계획서 대조 결과 반영'},{date:'2026-08-19',score:10,note:'1차 계획서 대조'},{date:'2026-08-01',score:8,note:'최초 계획서 대조'}]},
-  '2':{title:'기술개발사업 매칭',
-    doc:[{date:'2026-08-28',score:65,note:'평가항목 전량 충족'},{date:'2026-08-10',score:60,note:'2차 문서 검증'},{date:'2026-07-15',score:54,note:'최초 문서 검증'}],
-    code:[{date:'2026-08-27',score:13,note:'코드 기준 자동 검증 통과'},{date:'2026-08-09',score:12,note:'2차 코드 검증'},{date:'2026-07-15',score:10,note:'최초 코드 검증'}],
-    plan:[{date:'2026-08-27',score:13,note:'계획서 대조 전량 일치'},{date:'2026-08-09',score:12,note:'2차 계획서 대조'},{date:'2026-07-15',score:10,note:'최초 계획서 대조'}]},
-  '3':{title:'지자체 통합공고 매칭',
-    doc:[{date:'2026-06-01',score:48,note:'중단 시점 문서 검증'},{date:'2026-05-20',score:33,note:'2차 문서 검증 (채점 편차 발생)'},{date:'2026-05-10',score:53,note:'최초 문서 검증'}],
-    code:[{date:'2026-05-25',score:8,note:'산출물 저장소 연결 실패로 검증 미완료'},{date:'2026-05-15',score:9,note:'1차 코드 검증'},{date:'2026-05-05',score:10,note:'최초 코드 검증'}],
-    plan:[{date:'2026-05-25',score:9,note:'계획서 대조 보류'},{date:'2026-05-15',score:10,note:'1차 계획서 대조'},{date:'2026-05-05',score:10,note:'최초 계획서 대조'}]},
-  '4':{title:'스마트상점 지원 매칭',
-    doc:[{date:'2026-08-31',score:54,note:'최종 심사 반영'},{date:'2026-08-15',score:50,note:'2차 문서 검증'},{date:'2026-08-01',score:47,note:'최초 문서 검증'}],
-    code:[{date:'2026-08-30',score:10,note:'프로토타입 최종 검증'},{date:'2026-08-14',score:9,note:'2차 코드 검증'},{date:'2026-08-01',score:8,note:'최초 코드 검증'}],
-    plan:[{date:'2026-08-30',score:10,note:'계획서 대조 최종 반영'},{date:'2026-08-14',score:9,note:'2차 계획서 대조'},{date:'2026-08-01',score:8,note:'최초 계획서 대조'}]},
-  '5':{title:'기업마당 매칭',
-    doc:[{date:'2026-09-01',score:42,note:'매칭 재계산 후 재검증',rerun:true},{date:'2026-08-20',score:44,note:'1차 문서 검증'},{date:'2026-08-05',score:40,note:'최초 문서 검증'}],
-    code:[{date:'2026-08-31',score:8,note:'산출물 재검증 (매칭 변경 반영)',rerun:true},{date:'2026-08-19',score:3,note:'1차 코드 검증 (채점 편차 발생)'},{date:'2026-08-05',score:7,note:'최초 코드 검증'}],
-    plan:[{date:'2026-08-31',score:8,note:'계획서 대조 재검증',rerun:true},{date:'2026-08-19',score:9,note:'1차 계획서 대조'},{date:'2026-08-05',score:7,note:'최초 계획서 대조'}]},
-  '6':{title:'기술개발사업 2차 매칭',
-    doc:[{date:'2026-09-08',score:62,note:'1차 문서 검증 완료 (Threshold 미달, 사용자 판단 대기 중)'}],code:[],plan:[]},
-};
-
+// (key, 표시 라벨, 배점) — verification_score_history.layer 값과 1:1 대응. ProgressTab의
+// "이력보기" 모달과 OpsTab의 "채점 편차" 카드가 공유한다.
 const DEVIATION_CATEGORIES=[['doc','문서층 검증',70],['code','코드 기준 검증',15],['plan','계획서 대조',15]];
 
-const PROJECT_STEPS=['전략','작성','구현','검증-1','검증-2','검수'];
-
-const PROJECT_DETAIL={
-  '1':{title:'2026 초기창업패키지 매칭',user:'김도윤',ann:'2026 초기창업패키지',score:82,status:'진행중',currentStep:1,step:'작성',attempts:1,lastUpdated:'2026-09-09 07:40',shortUpdated:'09-09 07:40',stalled:false,
-    agent:{name:'작성',task:'사업계획서 본문 작성 중 (시장분석 챕터 서술·표)',running:true},supervisorTask:'작성 Agent에게 본문 작성을 위임하고 진행 상황을 모니터링 중',errors:[]},
-  '2':{title:'기술개발사업 매칭',user:'박서연',ann:'기술개발사업 2차',score:91,status:'완료',currentStep:6,step:'검수',attempts:1,lastUpdated:'2026-08-30 16:20',shortUpdated:'08-30 16:20',stalled:false,
-    agent:null,supervisorTask:'모든 하위 Agent의 산출물과 검수 결과를 통합 완료',errors:[]},
-  '3':{title:'지자체 통합공고 매칭',user:'이하늘',ann:'지자체 통합공고',score:65,status:'중단',currentStep:2,step:'구현',attempts:2,lastUpdated:'2026-06-01 09:12',shortUpdated:'06-01 09:12',stalled:true,
-    agent:{name:'구현',task:'프로토타입 HTML 실행 파일 생성',running:false,haltReason:'산출물 저장소 연결 실패로 구현 Agent 작업이 중단되었습니다. 조율(Supervisor)이 재실행 대기 중입니다.'},
-    supervisorTask:'구현 Agent 재실행 대기 및 대체 경로 탐색 중',
-    errors:[{time:'2026-06-01 09:12',message:'구현 Agent 산출물 저장소 연결 타임아웃'},{time:'2026-05-25 14:03',message:'검증-2(산출물) 자동 검증 실패 (재시도 후에도 실패)'}]},
-  '4':{title:'스마트상점 지원 매칭',user:'최민준',ann:'지역특화 스마트상점 지원',score:74,status:'완료',currentStep:6,step:'검수',attempts:1,lastUpdated:'2026-08-14 10:05',shortUpdated:'08-14 10:05',stalled:false,
-    agent:null,supervisorTask:'모든 하위 Agent의 산출물과 검수 결과를 통합 완료',errors:[],archived:true},
-  '5':{title:'기업마당 매칭',user:'김도윤',ann:'기업마당 공고',score:58,status:'진행중',currentStep:0,step:'전략',attempts:2,lastUpdated:'2026-08-25 03:05',shortUpdated:'08-25 03:05',stalled:true,
-    agent:{name:'전략',task:'요구사항 분석 및 목표시장 분석',running:true},supervisorTask:'공고 매칭·자격 확인 후 전략 Agent에게 분석 작업을 위임 중',
-    errors:[{time:'2026-08-25 03:00',message:'조율(Supervisor) 공고 매칭 실행 실패 (1회 재시도 후 성공)'}]},
-  '6':{title:'기술개발사업 2차 매칭',user:'박서연',ann:'기술개발사업 2차',score:74,status:'판단 대기',currentStep:3,step:'검증-1',attempts:1,lastUpdated:'2026-09-08 14:32',shortUpdated:'09-08 14:32',stalled:false,
-    agent:null,supervisorTask:'문서 평가 결과를 사용자에게 안내하고 재작성·재제작 여부 선택을 기다리는 중',errors:[]},
-};
-
+// key는 실제 DB agent_executions.agent_name 값(app/models.py FIXED_TASK_SEQUENCE) — GET
+// /admin/agent-tasks 응답과 매칭하는 데 쓴다. name은 화면 표시용(괄호 설명 포함), work는
+// API가 안 내려주는 정적 설명이라 그대로 둔다 — tasks/recent/tone은 이제 서버 값으로
+// 대체되어 여기서 뺐다.
+// [2026-09-18 삭제] 에이전트별 "사용 모델"/"배치 기준"(모델 선택) 열은 그 설정을 저장할
+// 백엔드가 없어 로컬 상태로만 유지되던 기능이었는데, 실제로 값을 만들려면 배치 설정
+// 테이블·저장 API까지 새로 설계해야 해서 일이 커진다는 판단으로 뺐다(하정원님 지시) —
+// 화면에서만 고르는 척하고 저장도 안 되는 값이라 없는 게 낫다.
 const AGENT_ROWS=[
-  {name:'조율 (Supervisor)',work:'요구사항 해석·공고 매칭·자격 확인, 실행할 Agent 선정과 작업 분해, 결과 통합',tasks:'5개',recent:'2026 초기창업패키지 매칭',models:['Claude Opus 5','Claude Sonnet 5','Claude Haiku 4.5'],model:'Claude Opus 5',policy:'추론성능 우선'},
-  {name:'전략',work:'요구사항 분석, 목표시장 분석',tasks:'3개',recent:'기업마당 매칭',models:['Claude Opus 5','Claude Sonnet 5','Claude Haiku 4.5'],model:'Claude Sonnet 5',policy:'균형'},
-  {name:'작성',work:'사업계획서 본문 작성 — 서술, 표, 그래프',tasks:'4개',recent:'2026 초기창업패키지 매칭',models:['Claude Opus 5','Claude Sonnet 5','Claude Haiku 4.5'],model:'Claude Sonnet 5',policy:'균형'},
-  {name:'구현',work:'프로토타입 제작 — HTML 실행 파일, 인포그래픽',tasks:'3개',recent:'지자체 통합공고 매칭 (중단)',recentTone:'danger',models:['Claude Opus 5','Claude Sonnet 5','Claude Haiku 4.5'],model:'Claude Sonnet 5',policy:'균형',tone:'danger'},
-  {name:'검증-1 (문서)',work:'문서층 검증. 공개된 평가항목 기준으로 계획서 서술 충족 여부 판정',tasks:'2개',recent:'전체 프로젝트',models:['Claude Opus 5','Claude Sonnet 5','Claude Haiku 4.5'],model:'Claude Haiku 4.5',policy:'비용효율 우선',note:'온도 0 고정 (재현성)'},
-  {name:'검증-2 (산출물)',work:'산출물층 검증. 코드 기준 자동 검증과 계획서 대조',tasks:'3개',recent:'전체 프로젝트',models:['Claude Opus 5','Claude Sonnet 5','Claude Haiku 4.5'],model:'Claude Haiku 4.5',policy:'비용효율 우선'},
-  {name:'검수 (표현)',work:'사업계획서 문장 형식 적합성 검수 및 한국어 윤문. 자체 파인튜닝 모델을 사용',tasks:'2개',recent:'전체 프로젝트',models:['자체 파인튜닝 모델 v1','자체 파인튜닝 모델 v2','자체 파인튜닝 모델 v3 (최신)'],model:'자체 파인튜닝 모델 v3 (최신)',policy:'비용효율 우선'},
+  {key:'조율',name:'조율 (Supervisor)',work:'요구사항 해석·공고 매칭·자격 확인, 실행할 Agent 선정과 작업 분해, 결과 통합'},
+  {key:'전략',name:'전략',work:'요구사항 분석, 목표시장 분석'},
+  {key:'작성',name:'작성',work:'사업계획서 본문 작성 — 서술, 표, 그래프'},
+  {key:'구현',name:'구현',work:'프로토타입 제작 — HTML 실행 파일, 인포그래픽'},
+  {key:'검증-1',name:'검증-1 (문서)',work:'문서층 검증. 공개된 평가항목 기준으로 계획서 서술 충족 여부 판정'},
+  {key:'검증-2',name:'검증-2 (산출물)',work:'산출물층 검증. 코드 기준 자동 검증과 계획서 대조'},
+  {key:'검수',name:'검수 (표현)',work:'사업계획서 문장 형식 적합성 검수 및 한국어 윤문. 자체 파인튜닝 모델을 사용'},
 ];
 
 // GET /admin/agent-executions 응답(dict 목록, AgentExecutionOut 고정 스키마가 아니라 유연한 형태)을
@@ -100,7 +61,22 @@ const executionRowFromServer=r=>({
   tone:(r.status!=='completed'&&r.status!=='성공')?'danger':undefined,
 });
 
-const TOKEN_VIOLATION_RATES=[{ver:'v1',rate:18,note:'기준'},{ver:'v2',rate:11,note:'▼ -7%p',good:true},{ver:'v3 (사용 중)',rate:6,note:'▼ -5%p',good:true,current:true}];
+// GET /admin/notices(NoticeAdminOut 목록) -> "공고 전체 관리" 표 행. notices는 공고 수집
+// 파이프라인(다른 팀원 레포) 소유라 source 원본값(kstartup/bizinfo)만 내려온다 — 화면
+// 표기용 한글 라벨은 여기서만 붙인다. "공고 수집 현황"/"최근 수집 실행 이력" 카드는
+// GET /admin/collection-status가 담당한다(AnnouncementTab 안에서 직접 매핑).
+const NOTICE_SOURCE_LABEL={kstartup:'K-Startup','k-startup':'K-Startup',bizinfo:'기업마당'};
+const noticeRowFromServer=n=>{
+  const shortDate=d=>d?d.slice(5).replace('-','.'):null;
+  const closed=n.recruitment_status==='closed';
+  return {
+    id:n.notice_id,title:n.title,src:NOTICE_SOURCE_LABEL[n.source]||n.source,
+    period:n.apply_start&&n.apply_end?`${shortDate(n.apply_start)}~${shortDate(n.apply_end)}`:'-',
+    embed:n.has_embedding?'완료':'미생성',embedTone:n.has_embedding?'ok':'warn',
+    status:n.recruitment_status==='open'?'모집중':closed?'마감':n.recruitment_status,
+    statusTone:n.recruitment_status==='open'?'ok':'muted',dim:closed,
+  };
+};
 
 const REPRODUCIBILITY=[
   ['평가항목 Rubric 고정','검증-1은 상수로 고정된 rubric 밖의 기준으로는 감점하지 않습니다.','고정됨','muted'],
@@ -108,18 +84,6 @@ const REPRODUCIBILITY=[
   ['채점 온도(temperature)','재현성을 위해 0으로 고정되며 변경할 수 없습니다.','0 (고정)','muted'],
 ];
 
-const RECOVERY_SEED={
-  '1':{project:'2026 초기창업패키지 매칭',model:'v3',violation:'날짜',occurredAt:'2026-09-08 14:20',consent:true,
-    original:'2026년 3월까지 결제 기능을 구현한다.',attempt:'내년 봄까지 결제 기능을 구현한다.',label:'',status:'pending'},
-  '2':{project:'기업마당 매칭',model:'v3',violation:'수치·금액',occurredAt:'2026-09-07 09:05',consent:false,
-    original:'초기 투자금은 3천만원이며 월 매출 목표는 500만원이다.',attempt:'초기 투자금은 약 3,000만원이며 월 매출 목표는 500만원 수준이다.',label:'',status:'excluded'},
-  '3':{project:'스마트상점 지원 매칭',model:'v2',violation:'기능명',occurredAt:'2026-08-30 11:40',consent:true,
-    original:'결제 기능과 재고 관리 기능을 우선 구현한다.',attempt:'결제 기능과 재고 확인 기능을 우선 구현한다.',label:'결제 기능과 재고 관리 기능을 우선 구현한다.',status:'labeled'},
-  '4':{project:'기술개발사업 매칭',model:'v3',violation:'고유명사',occurredAt:'2026-09-06 17:52',consent:true,
-    original:'본 사업은 기술개발사업 2차 공고 기준으로 작성되었다.',attempt:'본 사업은 정부 기술개발 지원사업 공고 기준으로 작성되었다.',label:'',status:'pending'},
-  '5':{project:'지자체 통합공고 매칭',model:'v1',violation:'날짜',occurredAt:'2026-08-22 10:11',consent:true,
-    original:'접수 마감일인 2026년 9월 30일 이전에 신청을 완료한다.',attempt:'접수 마감일 이전에 신청을 완료한다.',label:'접수 마감일인 2026년 9월 30일 이전에 신청을 완료한다.',status:'labeled'},
-};
 const RECOVERY_LABELS={pending:'라벨링 대기',labeled:'라벨링 완료',excluded:'동의 없음(제외)'};
 
 // GET /admin/users, GET /admin/faqs 응답 -> 이 화면 행 모양. 목업 시절엔 가입일/실행건수/
@@ -134,6 +98,17 @@ const userRowFromServer=u=>({id:u.user_id,name:u.name,email:u.email,
 // 않음) 목업의 "작성자" 컬럼은 뺐다.
 const faqRowFromServer=(f,idx,total)=>({id:f.faq_id,no:total-idx,question:f.question,
   date:f.created_at?.slice(0,10),answer:f.answer||'',visible:f.is_visible,answered:f.answer!=null});
+
+// GET /admin/recovery-items(RecoveryItemOut 목록) -> 이 화면 행 모양. 동의(consent)가
+// False면 백엔드 recovery_status(pending 기본값)와 무관하게 화면 status는 무조건
+// 'excluded'로 취급한다 — "동의 없음(제외)"는 관리자가 고르는 상태가 아니라 계정의
+// 학습데이터 활용 동의 여부에 따라 자동으로 정해지는 상태이기 때문이다.
+const recoveryItemFromServer=r=>({
+  id:r.log_id, project:r.project_description||'(삭제된 프로젝트)', model:r.model_version||'—',
+  violation:r.violation_type||'—', occurredAt:r.occurred_at.slice(0,16).replace('T',' '),
+  consent:r.consent, original:r.original, attempt:r.attempt,
+  status:r.consent?r.recovery_status:'excluded', label:r.label||'',
+});
 
 const toneText={ok:'text-[var(--ok)]',warn:'text-[var(--warn)]',danger:'text-[var(--danger)]',muted:'text-[var(--muted-fg)]',primary:'text-[var(--primary)]'};
 const toneBg={ok:'bg-[color-mix(in_srgb,var(--ok)_12%,white)] text-[var(--ok)]',warn:'bg-[color-mix(in_srgb,var(--warn)_12%,white)] text-[var(--warn)]',
@@ -208,13 +183,6 @@ function Modal({title,onClose,children,wide}){
   );
 }
 
-const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
-const latest=e=>e&&e.length?e[0].score:null;
-const roundDelta=e=>{if(!e||e.length<2)return null;const r1=e[e.length-1].score,r2=e[e.length-2].score;return {round1:r1,round2:r2,delta:Math.abs(r2-r1)}};
-const categoryAvgDelta=key=>{const d=[];Object.keys(SCORE_HISTORY).forEach(id=>{const r=roundDelta(SCORE_HISTORY[id][key]);if(r)d.push(r.delta)});return avg(d)};
-const deviationOf=(entries,key)=>{const r=roundDelta(entries);if(!r)return null;return {...r,isWarning:r.delta>categoryAvgDelta(key)}};
-const hasRerun=e=>!!(e&&e.some(x=>x.rerun));
-
 export default function AdminDashboard({user,onExit}){
   const [tab,setTab]=useState('ann');
   const [toasts,setToasts]=useState([]);
@@ -250,7 +218,7 @@ export default function AdminDashboard({user,onExit}){
       </header>
 
       <main className="w-[min(1180px,calc(100%-48px))] mx-auto py-12">
-        {tab==='ann'&&<AnnouncementTab pushToast={pushToast}/>}
+        {tab==='ann'&&<AnnouncementTab/>}
         {tab==='ops'&&<OpsTab/>}
         {tab==='progress'&&<ProgressTab/>}
         {tab==='agents'&&<AgentsTab/>}
@@ -275,66 +243,88 @@ export default function AdminDashboard({user,onExit}){
   );
 }
 
-function AnnouncementTab({pushToast}){
-  const [sources,setSources]=useState(SOURCES);
-  const [busy,setBusy]=useState(null);
+// GET /admin/collection-status의 issue_counts({"unparsed_period": 53} 등) 딕셔너리를
+// "unparsed_period 53건" 식의 짧은 문자열 목록으로 바꾼다.
+const formatIssueCounts=issues=>Object.entries(issues||{}).map(([k,v])=>`${k} ${v}건`);
+
+function AnnouncementTab(){
   const [query,setQuery]=useState('');
-  const reload=id=>{
-    setBusy(id);
-    setTimeout(()=>{
-      setBusy(null);
-      setSources(list=>list.map(s=>s.id===id?{...s,tone:'ok',badge:'［정상］',embed:'완료',count:'18건 (금일)',cause:null,lastSuccess:new Date().toISOString().slice(0,16).replace('T',' ')}:s));
-      pushToast('재수집이 완료되었습니다','수집과 임베딩 생성이 정상 처리됐어요.','info');
-    },1400);
-  };
-  const rows=ANNOUNCEMENT_ROWS.filter(r=>r.title.includes(query));
+  const [notices,setNotices]=useState(null);
+  const [noticesError,setNoticesError]=useState('');
+  const [collection,setCollection]=useState(null);
+  const [collectionError,setCollectionError]=useState('');
+  useEffect(()=>{
+    api.get('/admin/collection-status').then(setCollection)
+      .catch(e=>setCollectionError(e instanceof ApiError?String(e.detail):'수집 현황을 불러오지 못했어요'));
+  },[]);
+  // 검색어를 입력할 때마다 바로 요청을 쏘지 않고 300ms 디바운스한다 — notices가 2천 건대라
+  // 타이핑 중간중간 불필요한 요청이 쌓이는 걸 막는다.
+  useEffect(()=>{
+    setNotices(null);setNoticesError('');
+    const timer=setTimeout(()=>{
+      const search=query?`?q=${encodeURIComponent(query)}`:'';
+      api.get(`/admin/notices${search}`).then(rows=>setNotices(rows.map(noticeRowFromServer)))
+        .catch(e=>setNoticesError(e instanceof ApiError?String(e.detail):'공고 목록을 불러오지 못했어요'));
+    },300);
+    return ()=>clearTimeout(timer);
+  },[query]);
+  const rows=notices||[];
   return (
     <div>
-      <h1 className="text-[28px] font-bold mb-8">공고 수집 현황</h1>
+      <h1 className="text-[28px] font-bold mb-1">공고 수집 현황</h1>
+      <p className="text-[12px] text-[var(--muted-fg)] mb-6">notices.source 기준 실제 출처만 보여줍니다 — "재수집"/"임베딩 재생성"은 다른 팀원의 수집 파이프라인 스크립트를 이 화면에서 실행시킬 방법이 없어 만들지 않았습니다.</p>
+      {collectionError?<p className="text-[13px] text-[var(--danger)]">{collectionError}</p>
+      :collection===null?<p className="text-[13px] text-[var(--muted-fg)]">불러오는 중…</p>
+      :(<>
       <Panel className="divide-y divide-[var(--border)]">
-        {sources.map((s,i)=>(
-          <div key={s.id} className={'grid grid-cols-[auto_1fr_auto] items-start gap-5 px-6 py-5 '+
-            (s.tone==='warn'?'bg-[color-mix(in_srgb,var(--warn)_6%,white)] border-l-4 border-l-[var(--warn)]':s.tone==='danger'?'bg-[color-mix(in_srgb,var(--danger)_5%,white)] border-l-4 border-l-[var(--danger)]':'')}>
-            <span className={'text-[20px] font-semibold pt-0.5 '+toneText[s.tone==='ok'?'muted':s.tone]} aria-hidden="true">{String(i+1).padStart(2,'0')}</span>
+        {collection.sources.length===0&&<p className="p-6 text-[13px] text-[var(--muted-fg)]">수집된 공고가 없습니다.</p>}
+        {collection.sources.map((s,i)=>{
+          const fullyEmbedded=s.total_count>0&&s.embedded_count===s.total_count;
+          const tone=s.total_count===0?'muted':fullyEmbedded?'ok':'warn';
+          return (
+          <div key={s.source} className={'grid grid-cols-[auto_1fr] items-start gap-5 px-6 py-5 '+
+            (tone==='warn'?'bg-[color-mix(in_srgb,var(--warn)_6%,white)] border-l-4 border-l-[var(--warn)]':'')}>
+            <span className={'text-[20px] font-semibold pt-0.5 '+toneText[tone==='ok'?'muted':tone]} aria-hidden="true">{String(i+1).padStart(2,'0')}</span>
             <div className="min-w-0">
               <div className="flex items-center gap-3 flex-wrap mb-2">
-                <h3 className="font-bold text-[16px]">{s.name}</h3>
-                <span className={'text-[12.5px] font-bold '+toneText[s.tone]}>{s.badge}</span>
+                <h3 className="font-bold text-[16px]">{s.label}</h3>
+                <span className={'text-[12.5px] font-bold '+toneText[tone]}>{fullyEmbedded?'［정상］':s.total_count===0?'［수집된 공고 없음］':'［임베딩 미완료 있음］'}</span>
               </div>
               <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-[13px] text-[var(--muted-fg)]">
-                <p>마지막 성공일 <span className={'font-medium '+(s.tone==='danger'?'text-[var(--danger)]':'text-[var(--fg)]')}>{s.lastSuccess}</span></p>
-                <p>수집건수 <span className="text-[var(--fg)] font-medium">{s.count}</span></p>
-                <p>임베딩 생성 <span className={'font-semibold '+toneText[s.tone]}>{s.embed}</span></p>
+                <p>누적 수집 <span className="text-[var(--fg)] font-medium">{s.total_count}건</span></p>
+                {s.latest_run_input_count!=null&&<p>최근 배치 입력 <span className="text-[var(--fg)] font-medium">{s.latest_run_input_count}건</span></p>}
+                <p>임베딩 생성 <span className={'font-semibold '+toneText[tone]}>{s.embedded_count}/{s.total_count}건</span></p>
               </div>
-              {s.cause&&<p className="text-[12.5px] text-[var(--muted-fg)] mt-2">{s.cause}</p>}
             </div>
-            <button onClick={()=>reload(s.id)} disabled={busy===s.id}
-              className={'flex-shrink-0 self-center min-w-[128px] rounded-xl px-4 py-2 text-[13px] font-semibold disabled:opacity-60 disabled:cursor-wait '+
-                (s.tone==='danger'?'bg-[var(--primary)] text-white hover:bg-[var(--primary-dim)]':s.tone==='warn'?'bg-[var(--warn)] text-white hover:opacity-90':'border border-[var(--border)] text-[var(--muted-fg)] hover:bg-[var(--bg)]')}>
-              {busy===s.id?'처리 중…':s.action}
-            </button>
           </div>
-        ))}
+          );
+        })}
       </Panel>
-      <p className="mt-3 text-[12px] text-[var(--muted-fg)]"><span className="text-[var(--warn)]">⚠</span> 수집 실패 시 전일 수집된 데이터로 동작합니다.</p>
 
       <div className="mt-10">
-        <h2 className="text-[20px] font-bold mb-1">수집 실패 이력</h2>
-        <p className="text-[12px] text-[var(--muted-fg)] mb-4">위 카드는 지금 진행 중인 실패만 보여줍니다. 과거에 언제, 몇 번, 왜 실패했는지는 여기서 확인합니다.</p>
+        <h2 className="text-[20px] font-bold mb-1">최근 수집 실행 이력</h2>
+        <p className="text-[12px] text-[var(--muted-fg)] mb-4">import_runs 실제 배치 기록입니다. "생성"은 수집 파이프라인이 이 배치를 만든 시각, "반영"은 우리 쪽에 실제로 적재된 시각입니다(둘의 차이가 수집→반영 지연 시간). "이슈"는 그 배치에서 일부 항목이 파싱되지 않은 데이터 품질 문제이지, 배치 자체의 실패가 아닙니다 — 지금까지 배치 자체가 실패한 이력은 없습니다.</p>
         <Panel>
-          <div className="grid grid-cols-[1.3fr_1fr_2.2fr_1.5fr] text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]">
-            <div className="p-4">발생 시각</div><div className="p-4 text-center">출처</div><div className="p-4">사유</div><div className="p-4 text-center">처리 결과</div>
+          <div className="grid grid-cols-[1.2fr_1.2fr_1fr_1fr_1.6fr] text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]">
+            <div className="p-4">생성 시각</div><div className="p-4">반영 시각</div><div className="p-4 text-center">입력 건수</div><div className="p-4 text-center">반영 건수</div><div className="p-4">이슈</div>
           </div>
-          {COLLECT_FAILURES.map(([time,src,reason,result,tone])=>(
-            <div key={time+src} className="grid grid-cols-[1.3fr_1fr_2.2fr_1.5fr] text-[13px] border-t border-[var(--border)] items-center">
-              <div className="p-4 text-[var(--muted-fg)]">{time}</div>
-              <div className="p-4 text-center font-medium">{src}</div>
-              <div className="p-4 text-[var(--muted-fg)]">{reason}</div>
-              <div className={'p-4 text-center font-semibold '+toneText[tone]}>{result}</div>
+          {collection.recent_runs.length===0&&<p className="p-6 text-center text-[13px] text-[var(--muted-fg)] border-t border-[var(--border)]">실행 기록이 없습니다.</p>}
+          {collection.recent_runs.map(r=>{
+            const issues=formatIssueCounts(r.issue_counts);
+            const inputTotal=Object.values(r.input_counts||{}).reduce((a,b)=>a+b,0);
+            return (
+            <div key={r.run_id} className="grid grid-cols-[1.2fr_1.2fr_1fr_1fr_1.6fr] text-[13px] border-t border-[var(--border)] items-center">
+              <div className="p-4 text-[var(--muted-fg)]">{r.generated_at?r.generated_at.slice(0,16).replace('T',' '):'-'}</div>
+              <div className="p-4 text-[var(--muted-fg)]">{r.imported_at.slice(0,16).replace('T',' ')}</div>
+              <div className="p-4 text-center font-medium">{inputTotal}건</div>
+              <div className="p-4 text-center font-medium">{r.accepted_count}건</div>
+              <div className={'p-4 '+(issues.length?'text-[var(--warn)]':'text-[var(--muted-fg)]')}>{issues.length?issues.join(', '):'없음'}</div>
             </div>
-          ))}
+            );
+          })}
         </Panel>
       </div>
+      </>)}
 
       <div className="mt-10">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
@@ -347,114 +337,164 @@ function AnnouncementTab({pushToast}){
             <div className="p-4">공고명</div><div className="p-4 text-center">출처</div><div className="p-4 text-center">접수기간</div>
             <div className="p-4 text-center">임베딩</div><div className="p-4 text-center">상태</div><div className="p-4"/>
           </div>
-          {rows.map(r=>(
-            <div key={r.title} className={'grid grid-cols-[2fr_1fr_1fr_1fr_1fr_170px] text-[13px] border-t border-[var(--border)] items-center '+(r.dim?'opacity-50':'')}>
-              <div className="p-4 font-medium">{r.title}</div>
-              <div className="p-4 text-center text-[var(--muted-fg)]">{r.src}</div>
-              <div className="p-4 text-center text-[var(--muted-fg)]">{r.period}</div>
-              <div className={'p-4 text-center font-semibold '+toneText[r.embedTone]}>{r.embed}</div>
-              <div className={'p-4 text-center font-semibold '+toneText[r.statusTone]}>{r.status}</div>
-              <div className="p-4 flex items-center justify-center gap-3">
-                <button className="text-[12.5px] font-semibold text-[var(--primary)] hover:underline">상세</button>
-                <button className="text-[12.5px] font-semibold text-[var(--muted-fg)] hover:text-[var(--danger)]">삭제</button>
+          {noticesError?<p className="p-6 text-[13px] text-[var(--danger)]">{noticesError}</p>
+          :notices===null?<p className="p-6 text-[13px] text-[var(--muted-fg)]">불러오는 중…</p>
+          :(<>
+            {rows.map(r=>(
+              <div key={r.id} className={'grid grid-cols-[2fr_1fr_1fr_1fr_1fr_170px] text-[13px] border-t border-[var(--border)] items-center '+(r.dim?'opacity-50':'')}>
+                <div className="p-4 font-medium">{r.title}</div>
+                <div className="p-4 text-center text-[var(--muted-fg)]">{r.src}</div>
+                <div className="p-4 text-center text-[var(--muted-fg)]">{r.period}</div>
+                <div className={'p-4 text-center font-semibold '+toneText[r.embedTone]}>{r.embed}</div>
+                <div className={'p-4 text-center font-semibold '+toneText[r.statusTone]}>{r.status}</div>
+                {/* 상세·삭제 액션은 안 만들었다 — notices는 이 앱이 아니라 공고 수집
+                    파이프라인이 소유한 테이블이라(app/schemas.py NoticeAdminOut 주석 참고),
+                    그 팀과 상의 없이 여기서 지우는 기능부터 넣는 건 위험하다고 판단했다. */}
+                <div className="p-4"/>
               </div>
-            </div>
-          ))}
-          {rows.length===0&&<p className="p-6 text-center text-[13px] text-[var(--muted-fg)] border-t border-[var(--border)]">검색 결과가 없어요.</p>}
+            ))}
+            {rows.length===0&&<p className="p-6 text-center text-[13px] text-[var(--muted-fg)] border-t border-[var(--border)]">검색 결과가 없어요.</p>}
+          </>)}
         </Panel>
       </div>
     </div>
   );
 }
 
+// status_label(_build_item_out/ItemOut) -> "운영 현황" 실행건수 카드 표시 순서.
+const OPS_STATUS_ORDER=['진행중','판단 대기','완료','중단','공고 매칭 전'];
+const formatStatusCounts=counts=>{
+  const parts=OPS_STATUS_ORDER.filter(k=>counts[k]).map(k=>`${k} ${counts[k]}`);
+  return parts.length?parts.join(' · '):'실행 없음';
+};
+const DEVIATION_LAYER_LABEL={doc:'문서층 검증',code:'코드 기준 검증',plan:'계획서 대조'};
+
 function OpsTab(){
-  const threshold=70;
-  const stats=useMemo(()=>{
-    const docScores=[],totals=[];let pass=0,rerun=0;
-    Object.keys(SCORE_HISTORY).forEach(id=>{
-      const d=SCORE_HISTORY[id];const doc=latest(d.doc),code=latest(d.code),plan=latest(d.plan);
-      if(doc!==null)docScores.push(doc);
-      if(doc!==null&&code!==null&&plan!==null){const t=doc+code+plan;totals.push(t);if(t>=threshold)pass++}
-      if(hasRerun(d.doc)||hasRerun(d.code)||hasRerun(d.plan))rerun++;
-    });
-    const projects=Object.keys(SCORE_HISTORY).length;
-    return {docAvg:avg(docScores).toFixed(1),docCount:docScores.length,totalAvg:totals.length?avg(totals).toFixed(1):null,totalCount:totals.length,
-      pass,passRate:totals.length?Math.round(pass/totals.length*100):0,rerun,rerunRate:projects?Math.round(rerun/projects*100):0,projects};
+  const [summary,setSummary]=useState(null);
+  const [error,setError]=useState('');
+  useEffect(()=>{
+    api.get('/admin/ops-summary').then(setSummary)
+      .catch(e=>setError(e instanceof ApiError?String(e.detail):'운영 현황을 불러오지 못했어요'));
   },[]);
+
+  if(error)return <div><h1 className="text-[28px] font-bold mb-4">운영 현황</h1><p className="text-[13.5px] text-[var(--danger)]">{error}</p></div>;
+  if(!summary)return <div><h1 className="text-[28px] font-bold mb-4">운영 현황</h1><p className="text-[13.5px] text-[var(--muted-fg)]">불러오는 중…</p></div>;
+
+  const totalProjects=Object.values(summary.status_counts).reduce((a,b)=>a+b,0);
+  const maxBucket=Math.max(1,...summary.score_buckets.map(b=>b.count));
+
   return (
     <div>
       <h1 className="text-[28px] font-bold mb-2">운영 현황</h1>
-      <p className="text-[13px] text-[var(--muted-fg)] mb-8">기간을 기준으로 집계한 실행건수·평균 점수·통과율입니다. 실행 건 하나하나의 현재 진행 상태는 "진행 현황" 탭에서 확인하세요.</p>
+      <p className="text-[13px] text-[var(--muted-fg)] mb-8">business_plans·artifacts·verdicts·agent_executions·proofread_logs 실제 집계입니다. 실행 건 하나하나의 현재 진행 상태는 "진행 현황" 탭에서 확인하세요.</p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
-        <Card label="기간 내 실행건수" value="6건" sub="진행중 2 · 완료 2 · 중단 1 · 판단 대기 1"/>
-        <Card label="문서평가 평균점수" value={stats.docAvg+'점'} sub={'만점 70점 · '+stats.docCount+'건 기준'}/>
-        <Card label="종합평가 평균점수" value={stats.totalAvg?stats.totalAvg+'점':'-'} sub={'만점 100점 · 평가가 모두 끝난 '+stats.totalCount+'건 기준'}/>
-        <Card label="통과율" value={stats.totalCount?stats.passRate+'%':'-'} sub={'통과 '+stats.pass+' / '+stats.totalCount+'건 (Threshold '+threshold+'점 기준)'}/>
-        <Card label="재수행 발생률" value={stats.rerunRate+'%'} sub={'재수행 발생 '+stats.rerun+' / '+stats.projects+'건'}/>
-        <Card label="보호 토큰 위반율" value="6%" sub="검수 모델 v3 기준"/>
+        <Card label="전체 프로젝트" value={totalProjects+'건'} sub={formatStatusCounts(summary.status_counts)}/>
+        <Card label="문서평가 평균점수" value={summary.doc_avg!=null?summary.doc_avg+'점':'-'} sub={'만점 70점 · '+summary.doc_count+'건 기준'}/>
+        <Card label="종합평가 평균점수" value={summary.total_avg!=null?summary.total_avg+'점':'-'} sub={'만점 100점 · 평가가 모두 끝난 '+summary.total_count+'건 기준'}/>
+        <Card label="통과율" value={summary.pass_rate!=null?summary.pass_rate+'%':'-'} sub={'통과 '+summary.pass_count+' / '+summary.total_count+'건 (기준 '+summary.pass_threshold+'점)'}/>
+        <Card label="재수행 발생률" value={summary.rerun_rate!=null?summary.rerun_rate+'%':'-'} sub={'재수행 발생 '+summary.rerun_matches+' / '+summary.matches_with_execution+'건'}/>
+        <Card label="보호 토큰 위반율" value={summary.token_violation_rate!=null?summary.token_violation_rate+'%':'-'}
+          tone={summary.token_violation_rate>0?'warn':undefined}
+          sub={'위반 '+summary.token_violation_count+' / 검수 시도 '+summary.token_check_count+'건 (전체 프로젝트 평균)'}/>
       </div>
 
       <Panel className="p-5 mb-8">
         <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-4">검증 점수 분포</p>
-        <div className="flex flex-col gap-2.5">
-          <Bar label="90~100점" pct={20} tone="ok" right="1건"/>
-          <Bar label="80~89점" pct={20} tone="ok" right="1건"/>
-          <Bar label="70~79점" pct={20} tone="warn" right="1건"/>
-          <Bar label="60~69점" pct={20} tone="warn" right="1건"/>
-          <Bar label="60점 미만" pct={20} tone="danger" right="1건"/>
-        </div>
+        {summary.total_count===0
+          ?<p className="text-[13px] text-[var(--muted-fg)]">아직 종합 평가가 끝난 프로젝트가 없습니다.</p>
+          :<div className="flex flex-col gap-2.5">
+            {summary.score_buckets.map(b=>(
+              <Bar key={b.label} label={b.label} pct={b.count/maxBucket*100}
+                tone={b.label.includes('미만')?'danger':b.label.startsWith('9')||b.label.startsWith('8')?'ok':'warn'}
+                right={b.count+'건'}/>
+            ))}
+          </div>}
       </Panel>
 
       <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1">채점 편차 현황 (1회 → 2회 평균 증감)</p>
-      <p className="text-[11px] text-[var(--muted-fg)] mb-3">개별 프로젝트의 편차는 "진행 현황"의 이력보기에서 확인할 수 있습니다.</p>
+      <p className="text-[11px] text-[var(--muted-fg)] mb-3">같은 층을 두 번 이상 채점한 기록이 있어야 계산됩니다 — 개별 프로젝트의 이력은 "진행 현황"의 이력보기에서 확인할 수 있습니다.</p>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {DEVIATION_CATEGORIES.map(([key,label,max])=>{
-          const r1=[],r2=[];let warn=0;
-          Object.keys(SCORE_HISTORY).forEach(id=>{const d=deviationOf(SCORE_HISTORY[id][key],key);if(d){r1.push(d.round1);r2.push(d.round2);if(d.isWarning)warn++}});
-          const a1=Math.round(avg(r1)*10)/10,a2=Math.round(avg(r2)*10)/10,delta=Math.round((a2-a1)*10)/10;
-          return <Card key={key} label={label} tone={delta>0?'ok':delta<0?'danger':'muted'}
-            value={(delta>0?'▲ +':delta<0?'▼ ':'— ')+delta+'점'}
-            sub={'1회 '+a1+'점 → 2회 '+a2+'점 (만점 '+max+'점) · 경고 '+warn+'/'+r1.length+'건'}/>;
-        })}
+        {summary.deviations.map(d=>d.sample_count===0
+          ?<Card key={d.layer} label={DEVIATION_LAYER_LABEL[d.layer]} tone="muted" value="-" sub="재채점 이력이 아직 없습니다"/>
+          :<Card key={d.layer} label={DEVIATION_LAYER_LABEL[d.layer]} tone={d.delta_avg>0?'ok':d.delta_avg<0?'danger':'muted'}
+              value={(d.delta_avg>0?'▲ +':d.delta_avg<0?'▼ ':'— ')+d.delta_avg+'점'}
+              sub={'1회 '+d.round1_avg+'점 → 2회 '+d.round2_avg+'점 · '+d.sample_count+'건 기준'}/>
+        )}
       </div>
     </div>
   );
 }
 
+// GET /admin/items 응답의 last_updated(ISO)를 "MM-DD HH:mm" 짧은 표기로 바꾼다.
+const shortUpdated=iso=>iso?iso.slice(5,16).replace('T',' '):'-';
+
 function ProgressTab(){
+  const [items,setItems]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [loadError,setLoadError]=useState(false);
   const [scoreId,setScoreId]=useState(null);
+  const [scoreHistory,setScoreHistory]=useState(null);
   const [detailId,setDetailId]=useState(null);
-  const [archived,setArchived]=useState(()=>Object.fromEntries(Object.entries(PROJECT_DETAIL).map(([id,d])=>[id,!!d.archived])));
-  const ids=Object.keys(PROJECT_DETAIL);
+  const [restoring,setRestoring]=useState(null);
+
+  const loadItems=()=>{
+    setLoading(true);setLoadError(false);
+    api.get('/admin/items').then(rows=>{setItems(rows);setLoading(false)}).catch(()=>{setLoadError(true);setLoading(false)});
+  };
+  useEffect(loadItems,[]);
+
+  useEffect(()=>{
+    if(scoreId==null)return;
+    setScoreHistory(null);
+    api.get(`/admin/items/${scoreId}/score-history`).then(setScoreHistory).catch(()=>setScoreHistory({doc:[],code:[],plan:[]}));
+  },[scoreId]);
+
+  const handleRestore=async id=>{
+    setRestoring(id);
+    try{
+      const updated=await api.put(`/admin/items/${id}/archive`,{archived:false});
+      setItems(list=>list.map(it=>it.project_id===id?updated:it));
+    }catch(e){
+      window.alert('복원하지 못했어요. 다시 시도해 주세요.');
+    }finally{
+      setRestoring(null);
+    }
+  };
+
   const statusTone=s=>s==='진행중'?'ok':s==='중단'?'danger':s==='판단 대기'?'warn':'muted';
+  const detail=items.find(i=>i.project_id===detailId);
+
   return (
     <div>
       <h1 className="text-[28px] font-bold mb-2">진행 현황</h1>
       <p className="text-[13px] text-[var(--muted-fg)] mb-8">실행 건 하나하나의 현재 단계·시도 횟수·마지막 갱신 시각을 봅니다. 집계된 평균·통과율은 "운영 현황" 탭에서 확인하세요.</p>
+      {loading&&<p className="text-[13px] text-[var(--muted-fg)]">불러오는 중…</p>}
+      {loadError&&<p className="text-[13px] text-[var(--danger)]">목록을 불러오지 못했어요. 새로고침해 주세요.</p>}
+      {!loading&&!loadError&&(
       <Panel>
         <div className="grid grid-cols-[1.7fr_0.8fr_0.85fr_0.6fr_1.15fr_0.9fr_0.85fr_90px] text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]">
           <div className="p-4">프로젝트명</div><div className="p-4 text-center">사용자</div><div className="p-4 text-center">현재 단계</div><div className="p-4 text-center">시도</div>
           <div className="p-4 text-center">마지막 갱신</div><div className="p-4 text-center">점수</div><div className="p-4 text-center">상태</div><div className="p-4 text-center">관리</div>
         </div>
-        {ids.map(id=>{
-          const p=PROJECT_DETAIL[id];const isArchived=archived[id];
-          const warn=Object.keys(SCORE_HISTORY[id]||{}).length?['doc','code','plan'].some(k=>{const d=deviationOf(SCORE_HISTORY[id][k],k);return d&&d.isWarning}):false;
+        {items.length===0&&<div className="p-6 text-[13px] text-[var(--muted-fg)]">등록된 프로젝트가 없습니다.</div>}
+        {items.map(p=>{
+          const id=p.project_id,isArchived=p.archived;
           return (
             <div key={id} className={'grid grid-cols-[1.7fr_0.8fr_0.85fr_0.6fr_1.15fr_0.9fr_0.85fr_90px] text-[13px] border-t border-[var(--border)] items-center '+
-              (isArchived?'opacity-50 ':'')+(p.status==='중단'?'bg-[color-mix(in_srgb,var(--danger)_5%,white)] border-l-4 border-l-[var(--danger)] ':p.status==='판단 대기'?'bg-[color-mix(in_srgb,var(--warn)_5%,white)] border-l-4 border-l-[var(--warn)] ':'')}>
-              <div className="p-4 font-medium">{p.title}</div>
-              <div className="p-4 text-center text-[var(--muted-fg)]">{p.user}</div>
-              <div className="p-4 text-center text-[var(--muted-fg)]">{p.step}</div>
-              <div className="p-4 text-center text-[var(--muted-fg)]">{p.attempts}회</div>
+              (isArchived?'opacity-50 ':'')+(p.status_label==='중단'?'bg-[color-mix(in_srgb,var(--danger)_5%,white)] border-l-4 border-l-[var(--danger)] ':p.status_label==='판단 대기'?'bg-[color-mix(in_srgb,var(--warn)_5%,white)] border-l-4 border-l-[var(--warn)] ':'')}>
+              <div className="p-4 font-medium">{p.description}</div>
+              <div className="p-4 text-center text-[var(--muted-fg)]">{p.user_name}</div>
+              <div className="p-4 text-center text-[var(--muted-fg)]">{p.step||'-'}</div>
+              <div className="p-4 text-center text-[var(--muted-fg)]">{p.attempts!=null?p.attempts+'회':'-'}</div>
               <div className="p-4 text-center text-[var(--muted-fg)] text-[12px]">
-                {p.shortUpdated}
+                {shortUpdated(p.last_updated)}
                 {p.stalled&&<span className="block text-[10.5px] font-semibold text-[var(--warn)] mt-0.5">⏱ 정체</span>}
               </div>
               <div className="p-4 text-center">
-                <p className="font-semibold">{p.score}점 {warn&&<span className="text-[var(--warn)]" title="채점 편차가 다른 프로젝트 평균보다 큽니다">⚠</span>}</p>
+                <p className="font-semibold">{p.score!=null?p.score+'점':'-'}</p>
                 <button onClick={()=>setScoreId(id)} className="text-[11.5px] text-[var(--primary)] hover:underline">이력보기</button>
               </div>
-              <div className={'p-4 text-center font-semibold '+(isArchived?'text-[var(--muted-fg)]':toneText[statusTone(p.status)])}>{isArchived?'보관중':p.status}</div>
+              <div className={'p-4 text-center font-semibold '+(isArchived?'text-[var(--muted-fg)]':toneText[statusTone(p.status_label)])}>{isArchived?'보관중':p.status_label}</div>
               <div className="p-4 flex justify-center">
                 <button onClick={()=>setDetailId(id)} className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-[12.5px] font-semibold text-[var(--muted-fg)] hover:bg-[var(--bg)]">관리</button>
               </div>
@@ -462,97 +502,69 @@ function ProgressTab(){
           );
         })}
       </Panel>
+      )}
       <p className="mt-3 text-[12px] text-[var(--muted-fg)]"><span className="text-[var(--warn)]">●</span> "판단 대기"는 평가 결과가 나와 사용자의 재작성·재제작 선택을 기다리는 정상 상태이며, 오류(중단)가 아닙니다.</p>
-      <p className="mt-1.5 text-[12px] text-[var(--muted-fg)]"><span className="text-[var(--warn)]">⏱</span> "정체"는 마지막 갱신으로부터 48시간이 지났는데도 '진행중' 또는 '판단 대기' 상태가 유지되는 경우입니다.</p>
+      <p className="mt-1.5 text-[12px] text-[var(--muted-fg)]"><span className="text-[var(--warn)]">⏱</span> "정체"는 마지막 갱신으로부터 48시간이 지났는데도 '진행중' 상태가 유지되는 경우입니다.</p>
 
-      {scoreId&&<Modal wide title={SCORE_HISTORY[scoreId].title+' 점수 이력'} onClose={()=>setScoreId(null)}>
+      {scoreId!=null&&<Modal wide title={(items.find(i=>i.project_id===scoreId)?.description||'')+' 점수 이력'} onClose={()=>{setScoreId(null);setScoreHistory(null)}}>
         <p className="text-[12.5px] text-[var(--muted-fg)] mb-4">검증 단계별 이력이 삭제되지 않고 누적됩니다. 최근 변경 순으로 표시됩니다.</p>
+        {!scoreHistory?<p className="text-[13px] text-[var(--muted-fg)]">불러오는 중…</p>:(
         <div className="grid sm:grid-cols-3 gap-4">
           {DEVIATION_CATEGORIES.map(([key,label,max])=>(
             <div key={key}>
               <p className="text-[12px] font-semibold text-[var(--muted-fg)] mb-2">{label} <span className="font-normal">({max}점 만점)</span></p>
               <div className="soft-scroll rounded-xl border border-[var(--border)] divide-y divide-[var(--border)] max-h-64 overflow-y-auto">
-                {(SCORE_HISTORY[scoreId][key]||[]).length===0
+                {(scoreHistory[key]||[]).length===0
                   ?<div className="p-3 text-[12px] text-[var(--muted-fg)]">누적된 이력이 없습니다.</div>
-                  :SCORE_HISTORY[scoreId][key].map((e,i,arr)=>(
-                    <div key={e.date+i} className="p-2.5">
+                  :scoreHistory[key].map((e,i,arr)=>(
+                    <div key={e.scored_at+i} className="p-2.5">
                       <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-[11.5px] text-[var(--muted-fg)]">{e.date}</span>
+                        <span className="text-[11.5px] text-[var(--muted-fg)]">{e.scored_at.slice(0,10)}</span>
                         <span className="font-semibold text-[13px]">
-                          {e.rerun&&i+1<arr.length&&<span className="text-[var(--muted-fg)] font-normal">{arr[i+1].score}점 → </span>}{e.score}점
+                          {e.is_rerun&&i+1<arr.length&&<span className="text-[var(--muted-fg)] font-normal">{arr[i+1].score}점 → </span>}{e.score}점
                         </span>
                       </div>
-                      {e.rerun&&<p className="text-[10.5px] text-[var(--primary)] font-semibold mb-0.5">재수행 결과</p>}
-                      <p className="text-[11.5px] text-[var(--muted-fg)]">{e.note}</p>
+                      {e.is_rerun&&<p className="text-[10.5px] text-[var(--primary)] font-semibold">재수행 결과</p>}
                     </div>
                   ))}
               </div>
             </div>
           ))}
         </div>
+        )}
       </Modal>}
 
-      {detailId&&(()=>{
-        const p=PROJECT_DETAIL[detailId];const isArchived=archived[detailId];
+      {detail&&(()=>{
+        const isArchived=detail.archived;
         return (
-          <Modal title={p.title} onClose={()=>setDetailId(null)}>
-            <p className="text-[12.5px] text-[var(--muted-fg)] mb-5">{p.user} · 기준 공고: {p.ann} · 현재 점수 {p.score}점</p>
-            <div className="flex items-start mb-6">
-              {PROJECT_STEPS.map((label,idx)=>{
-                const done=idx<p.currentStep,current=idx===p.currentStep;
-                const circle=done?'bg-[var(--ok)] text-white':current&&p.status==='중단'?'border-2 border-[var(--danger)] text-[var(--danger)]'
-                  :current&&p.status==='판단 대기'?'border-2 border-[var(--warn)] text-[var(--warn)]':current?'bg-[var(--primary)] text-white':'bg-[var(--muted)] text-[var(--muted-fg)]';
-                return (
-                  <React.Fragment key={label}>
-                    <div className="flex flex-col items-center gap-1 flex-shrink-0 w-[52px]">
-                      <div className={'w-6 h-6 rounded-full flex items-center justify-center text-[10.5px] font-semibold '+circle}>{done?'✓':idx+1}</div>
-                      <span className="text-[10px] text-[var(--muted-fg)] text-center leading-tight">{label}</span>
-                    </div>
-                    {idx<PROJECT_STEPS.length-1&&<div className="flex-1 h-0.5 mt-3" style={{background:idx<p.currentStep?'var(--ok)':'var(--border)'}}/>}
-                  </React.Fragment>
-                );
-              })}
-            </div>
+          <Modal title={detail.description} onClose={()=>setDetailId(null)}>
+            <p className="text-[12.5px] text-[var(--muted-fg)] mb-5">{detail.user_name} · 현재 점수 {detail.score!=null?detail.score+'점':'—'}</p>
             <div className="grid grid-cols-3 gap-3 mb-5 text-[12.5px]">
-              <div className="rounded-xl border border-[var(--border)] p-3"><p className="text-[var(--muted-fg)] mb-1">시도 횟수</p><p className="font-semibold text-[14px]">{p.attempts}회</p></div>
-              <div className="rounded-xl border border-[var(--border)] p-3"><p className="text-[var(--muted-fg)] mb-1">마지막 갱신</p><p className="font-semibold text-[13px]">{p.lastUpdated}</p></div>
-              <div className={'rounded-xl border p-3 '+(p.stalled?'border-[var(--warn)] bg-[color-mix(in_srgb,var(--warn)_6%,white)]':'border-[var(--border)]')}>
+              <div className="rounded-xl border border-[var(--border)] p-3"><p className="text-[var(--muted-fg)] mb-1">현재 단계</p><p className="font-semibold text-[14px]">{detail.step||'-'}</p></div>
+              <div className="rounded-xl border border-[var(--border)] p-3"><p className="text-[var(--muted-fg)] mb-1">시도 횟수</p><p className="font-semibold text-[14px]">{detail.attempts!=null?detail.attempts+'회':'-'}</p></div>
+              <div className={'rounded-xl border p-3 '+(detail.stalled?'border-[var(--warn)] bg-[color-mix(in_srgb,var(--warn)_6%,white)]':'border-[var(--border)]')}>
                 <p className="text-[var(--muted-fg)] mb-1">정체 여부</p>
-                <p className={'font-semibold text-[14px] '+(p.status==='완료'||isArchived?'text-[var(--muted-fg)]':p.stalled?'text-[var(--warn)]':'text-[var(--ok)]')}>
-                  {p.status==='완료'||isArchived?'해당 없음':p.stalled?'정체':'정상'}
-                </p>
+                <p className={'font-semibold text-[14px] '+(detail.stalled?'text-[var(--warn)]':'text-[var(--ok)]')}>{detail.stalled?'정체':'정상'}</p>
               </div>
             </div>
-            <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-2">에이전트 실행 현황</p>
-            <div className="rounded-xl border border-[var(--border)] p-3.5 text-[13px] mb-5">
-              <p className="font-semibold mb-1">조율 (Supervisor)</p>
-              <p className="text-[var(--muted-fg)] mb-2 pb-2 border-b border-[var(--border)]">현재 태스크: {p.supervisorTask}</p>
-              {p.status==='판단 대기'
-                ?<p className="text-[var(--muted-fg)]">평가 결과가 나와 사용자가 재작성·재제작 여부를 선택하기를 기다리는 정상 대기 상태입니다.</p>
-                :!p.agent?<p className="text-[var(--muted-fg)]">모든 단계가 완료되어 실행 중인 하위 Agent가 없습니다.</p>
-                :p.agent.running?<><p className="font-semibold mb-1">{p.agent.name} <span className="text-[var(--ok)]">· 진행중</span></p><p className="text-[var(--muted-fg)]">현재 태스크: {p.agent.task}</p></>
-                :<><p className="font-semibold mb-1">{p.agent.name} <span className="text-[var(--danger)]">· 에러로 중단됨</span></p>
-                   <p className="text-[var(--muted-fg)] mb-1">중단된 태스크: {p.agent.task}</p><p className="text-[var(--danger)]">사유: {p.agent.haltReason}</p></>}
+            <p className="text-[12.5px] text-[var(--muted-fg)] mb-5">마지막 갱신: {shortUpdated(detail.last_updated)}</p>
+            {/* 지금 어느 Agent가 뭘 하고 있는지·오류 로그는 실시간 오케스트레이터가 아직 없어
+                지어낼 수 없다(schemas.py ItemOut 주석 참고) — 안내 문구로만 그 사실을 알린다. */}
+            <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-2">실시간 실행 상태</p>
+            <div className="rounded-xl border border-[var(--border)] p-3.5 text-[13px] mb-5 text-[var(--muted-fg)]">
+              지금 어떤 Agent가 무엇을 하고 있는지와 오류 로그는 오케스트레이터가 실시간으로 연동되면 여기 표시됩니다. 현재는 마지막으로 실행된 단계와 시도 횟수만 확인할 수 있어요.
             </div>
-            <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-2">오류 로그</p>
-            <div className="rounded-xl border border-[var(--border)] divide-y divide-[var(--border)] max-h-40 overflow-y-auto soft-scroll">
-              {p.errors.length===0?<div className="p-3 text-[12.5px] text-[var(--muted-fg)]">누적된 오류가 없습니다.</div>
-                :p.errors.map(e=>(
-                  <div key={e.time} className="p-3 flex items-start gap-2 text-[12.5px]">
-                    <span className="text-[var(--danger)]">⚠</span>
-                    <span className="text-[var(--muted-fg)] whitespace-nowrap">{e.time}</span>
-                    <span>{e.message}</span>
-                  </div>
-                ))}
-            </div>
-            <div className="mt-5 pt-4 border-t border-[var(--border)]">
+            <div className="pt-4 border-t border-[var(--border)]">
               {isArchived
                 ?<div className="flex items-center justify-between gap-4">
                    <div>
                      <span className="inline-block text-[12px] font-semibold px-3 py-1 rounded-full bg-[var(--muted)] text-[var(--muted-fg)] mb-1.5">보관중 · 사용자 삭제</span>
                      <p className="text-[11.5px] text-[var(--muted-fg)]">사용자가 삭제해 보관중입니다. 데이터는 보존되며 관리자만 조회·복원할 수 있습니다.</p>
                    </div>
-                   <button onClick={()=>setArchived(a=>({...a,[detailId]:false}))} className="flex-shrink-0 rounded-xl border border-[var(--border)] px-4 py-2 text-[13px] font-semibold text-[var(--muted-fg)] hover:bg-[var(--bg)]">복원</button>
+                   <button onClick={()=>handleRestore(detailId)} disabled={restoring===detailId}
+                     className="flex-shrink-0 rounded-xl border border-[var(--border)] px-4 py-2 text-[13px] font-semibold text-[var(--muted-fg)] hover:bg-[var(--bg)] disabled:opacity-50">
+                     {restoring===detailId?'복원 중…':'복원'}
+                   </button>
                  </div>
                 :<p className="text-[11.5px] text-[var(--muted-fg)]">보관 처리는 관리자가 직접 하지 않습니다. 사용자가 프로젝트를 삭제하면 "보관중"으로 표시되며 데이터는 보존됩니다.</p>}
             </div>
@@ -563,22 +575,37 @@ function ProgressTab(){
   );
 }
 
-// 배치 기준은 백엔드 연동이 없는 예시 값이라(주석 참고) 로컬 상태로만 선택을 유지한다.
-function AgentPolicyCell({policy}){
-  const [value,setValue]=useState(policy);
-  return <Select value={value} onChange={setValue} options={['비용효율 우선','균형','추론성능 우선']}
-    className="rounded-lg border border-[var(--border)] px-2 py-1.5 text-[12.5px] w-[130px]"/>;
-}
+// GET /admin/agent-tasks 응답(AgentTaskOut 목록) -> 이 화면 행 모양. recent_status가
+// completed/success가 아니면(지금 더미 파이프라인에서는 사실상 안 나오지만, 실패 로그가
+// 남으면 대비) 최근 실행 칸을 강조한다.
+const agentTaskFromServer=r=>({
+  agentName:r.agent_name,definedTasks:r.defined_task_count+'개',totalExecutions:r.total_executions,
+  recent:r.recent_project_description||'실행 이력 없음',
+  recentTone:(r.recent_status&&r.recent_status!=='completed'&&r.recent_status!=='success')?'danger':undefined,
+});
 
 function AgentsTab(){
   const [view,setView]=useState('task');
   const [executions,setExecutions]=useState(null);
   const [execError,setExecError]=useState('');
+  const [agentTasks,setAgentTasks]=useState(null);
+  const [agentTaskError,setAgentTaskError]=useState('');
+  const [opsSummary,setOpsSummary]=useState(null);
+  const [opsSummaryError,setOpsSummaryError]=useState('');
   useEffect(()=>{
     if(view!=='execution'||executions!==null)return;
     api.get('/admin/agent-executions?limit=100').then(rows=>setExecutions(rows.map(executionRowFromServer)))
       .catch(e=>setExecError(e instanceof ApiError?String(e.detail):'실행 세션을 불러오지 못했어요'));
   },[view,executions]);
+  useEffect(()=>{
+    if(view!=='task'||agentTasks!==null)return;
+    api.get('/admin/agent-tasks').then(rows=>setAgentTasks(rows.map(agentTaskFromServer)))
+      .catch(e=>setAgentTaskError(e instanceof ApiError?String(e.detail):'Task 현황을 불러오지 못했어요'));
+  },[view,agentTasks]);
+  useEffect(()=>{
+    api.get('/admin/agent-ops-summary').then(setOpsSummary)
+      .catch(e=>setOpsSummaryError(e instanceof ApiError?String(e.detail):'운영 지표를 불러오지 못했어요'));
+  },[]);
   return (
     <div>
       <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
@@ -595,50 +622,60 @@ function AgentsTab(){
           기본적으로 접어두고 필요할 때만 펼쳐보게 한다. */}
       <details className="admin-accordion mb-8 rounded-2xl border border-[var(--border)] bg-white overflow-hidden">
         <summary className="flex items-center justify-between gap-3 px-5 py-4 text-[13px] font-semibold text-[var(--muted-fg)] cursor-pointer select-none">
-          <span>운영 지표 요약 (실행 세션·토큰 절감률·보호 토큰 위반율)</span>
+          <span>운영 지표 요약 (실행 세션·토큰 사용량·보호 토큰 위반율)</span>
           <Icon name="chevron" size={16}/>
         </summary>
         <div className="px-5 pb-5 pt-1 border-t border-[var(--border)]">
+          {opsSummaryError?<p className="text-[13px] text-[var(--danger)] mb-6 mt-4">{opsSummaryError}</p>
+          :opsSummary===null?<p className="text-[13px] text-[var(--muted-fg)] mb-6 mt-4">불러오는 중…</p>
+          :<>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6 mt-4">
-            <Card label="총 실행 세션" value="6건" sub="최근 7일 기준"/>
-            <Card label="선별 재수행" value="4건" sub="전체 재실행 1건 · 최초 실행 1건"/>
-            <Card label="토큰 절감률" value="▼ 77%" tone="ok" sub="선별 재수행 기준"/>
-            <Card label="전체 재실행 대비" value="15,000 → 3,500" sub="토큰 (구현 Agent 기준)"/>
+            <Card label="총 실행 세션" value={opsSummary.total_executions+'건'} sub="전체 누적 기준"/>
+            <Card label="재시도 실행" value={opsSummary.rerun_executions+'건'} sub={'최초 실행 '+opsSummary.initial_executions+'건'}/>
+            <Card label="최초 실행 평균 토큰" value={opsSummary.initial_avg_tokens!=null?Math.round(opsSummary.initial_avg_tokens).toLocaleString():'-'} sub="token_usage 평균"/>
+            <Card label="재시도 평균 토큰" value={opsSummary.rerun_avg_tokens!=null?Math.round(opsSummary.rerun_avg_tokens).toLocaleString():'-'} sub="token_usage 평균"/>
           </div>
+          {/* "선별/전체 재실행" 구분은 여전히 예시가 아니라 "만들지 않음"이다(그 값을
+              남기는 컬럼이 없음, AgentOpsSummaryOut 주석 참고) — 보호 토큰 위반율은
+              2026-09-18부터 proofread_logs.passed 기준 실제 값이다. 모델 버전별
+              비교(v1/v2/v3)는 그 시도를 만든 모델 버전을 남기는 컬럼이 없어서 못 하고,
+              "운영 현황" 탭과 같은 전체 프로젝트 평균 하나만 보여준다. */}
           <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1">보호 토큰 위반율</p>
-          <p className="text-[11px] text-[var(--muted-fg)] mb-4">재시도 없이 1차 검수에서 수치·날짜·고유명사·기능명 등 보호 토큰이 훼손된 문단의 비율입니다. 버전 교체 시 이 값이 낮아졌는지로 비교합니다.</p>
-          <div className="flex flex-col gap-2.5">
-            {TOKEN_VIOLATION_RATES.map(v=>(
-              <Bar key={v.ver} label={v.ver} pct={v.rate} tone={v.good?'ok':'muted'} right={v.rate+'%'} sub={v.note}/>
-            ))}
-          </div>
+          <p className="text-[11px] text-[var(--muted-fg)] mb-4">검수 시도 중 수치·날짜·고유명사·기능명 등 보호 토큰이 훼손된 채 반려된 비율입니다(전체 프로젝트 평균). 반려된 시도는 "검수 회수 문단" 탭에서 라벨링합니다.</p>
+          <Bar label="전체 평균" pct={opsSummary.token_violation_rate||0}
+            tone={opsSummary.token_violation_rate>0?'warn':'ok'}
+            right={opsSummary.token_violation_rate!=null?opsSummary.token_violation_rate+'%':'-'}
+            sub={opsSummary.token_violation_count+' / '+opsSummary.token_check_count+'건'}/>
           <p className="mt-3 pt-3 border-t border-[var(--border)] text-[11px] text-[var(--muted-fg)]">
-            <span className="text-[var(--warn)]">⚠</span> 위반 문단은 지시를 보강해 재시도하며, 상한을 넘어서도 남으면 해당 문단만 원문을 유지하고 관리자 로그에 기록합니다.
+            <span className="text-[var(--warn)]">⚠</span> 위반 문단은 지시를 보강해 재시도하며, 상한을 넘어서도 남으면 해당 문단만 원문을 유지하고 "검수 회수 문단" 탭에 기록합니다.
           </p>
+          </>}
         </div>
       </details>
 
       {view==='task'?(
         <>
           <h2 className="text-[20px] font-bold mb-4">Agent별 테스크 구성</h2>
-          <Panel>
-            <div className="grid grid-cols-[1fr_1.6fr_0.6fr_1.1fr_0.9fr] text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]">
+          {agentTaskError?<p className="text-[13.5px] text-[var(--danger)]">{agentTaskError}</p>
+          :agentTasks===null?<p className="text-[13.5px] text-[var(--muted-fg)]">불러오는 중…</p>
+          :<Panel>
+            <div className="grid grid-cols-[1fr_1.8fr_0.7fr_1.3fr] text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]">
               <div className="p-4">Agent</div><div className="p-4">담당 업무</div><div className="p-4 text-center">정의된 태스크</div>
-              <div className="p-4 text-center">최근 실행 프로젝트</div><div className="p-4 text-center">배치 기준</div>
+              <div className="p-4 text-center">최근 실행 프로젝트</div>
             </div>
-            {AGENT_ROWS.map(a=>(
-              <div key={a.name} className={'grid grid-cols-[1fr_1.6fr_0.6fr_1.1fr_0.9fr] text-[13px] border-t border-[var(--border)] items-center '+
-                (a.tone==='danger'?'bg-[color-mix(in_srgb,var(--danger)_5%,white)] border-l-4 border-l-[var(--danger)]':'')}>
+            {AGENT_ROWS.map(a=>{
+              const live=agentTasks.find(t=>t.agentName===a.key);
+              return (
+              <div key={a.name} className={'grid grid-cols-[1fr_1.8fr_0.7fr_1.3fr] text-[13px] border-t border-[var(--border)] items-center '+
+                (live?.recentTone==='danger'?'bg-[color-mix(in_srgb,var(--danger)_5%,white)] border-l-4 border-l-[var(--danger)]':'')}>
                 <div className="p-4 font-medium">{a.name}</div>
                 <div className="p-4 text-[var(--muted-fg)]">{a.work}</div>
-                <div className="p-4 text-center text-[var(--muted-fg)]">{a.tasks}</div>
-                <div className={'p-4 text-center '+(a.recentTone==='danger'?'text-[var(--danger)] font-semibold':'text-[var(--muted-fg)]')}>{a.recent}</div>
-                <div className="p-4 flex justify-center">
-                  <AgentPolicyCell policy={a.policy}/>
-                </div>
+                <div className="p-4 text-center text-[var(--muted-fg)]">{live?.definedTasks??'-'}</div>
+                <div className={'p-4 text-center '+(live?.recentTone==='danger'?'text-[var(--danger)] font-semibold':'text-[var(--muted-fg)]')}>{live?.recent??'-'}</div>
               </div>
-            ))}
-          </Panel>
+              );
+            })}
+          </Panel>}
         </>
       ):(
         <>
@@ -833,25 +870,46 @@ function PolicyTab({pushToast}){
 }
 
 function RecoveryTab({pushToast}){
-  const [items,setItems]=useState(RECOVERY_SEED);
+  const [items,setItems]=useState(null);
+  const [loadError,setLoadError]=useState('');
   const [openId,setOpenId]=useState(null);
   const [draft,setDraft]=useState('');
   const [filter,setFilter]=useState('전체 상태');
-  const open=id=>{setOpenId(id);setDraft(items[id].label)};
-  const save=id=>{
+  const [saving,setSaving]=useState(false);
+
+  useEffect(()=>{
+    api.get('/admin/recovery-items').then(rows=>setItems(rows.map(recoveryItemFromServer)))
+      .catch(e=>setLoadError(e instanceof ApiError?String(e.detail):'회수 문단을 불러오지 못했어요'));
+  },[]);
+
+  const open=id=>{setOpenId(id);setDraft(items.find(i=>i.id===id).label)};
+  const save=async id=>{
     if(!draft.trim()){pushToast('저장하지 못했습니다','정답 교정문을 입력해주세요.','danger');return}
-    setItems(s=>({...s,[id]:{...s[id],label:draft.trim(),status:'labeled'}}));
-    setOpenId(null);
-    pushToast('학습 데이터로 저장되었습니다','원문과 정답 교정문 쌍이 재학습 데이터셋 후보에 추가되었습니다.','info');
+    setSaving(true);
+    try{
+      await api.put(`/admin/recovery-items/${id}`,{recovery_status:'labeled',label:draft.trim()});
+      setItems(list=>list.map(it=>it.id===id?{...it,label:draft.trim(),status:'labeled'}:it));
+      setOpenId(null);
+      pushToast('학습 데이터로 저장되었습니다','원문과 정답 교정문 쌍이 재학습 데이터셋 후보에 추가되었습니다.','info');
+    }catch(e){
+      pushToast('저장하지 못했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger');
+    }finally{
+      setSaving(false);
+    }
   };
-  const ids=Object.keys(items).filter(id=>filter==='전체 상태'||RECOVERY_LABELS[items[id].status]===filter);
-  const count=s=>Object.values(items).filter(i=>i.status===s).length;
+
+  if(loadError)return <div><h1 className="text-[28px] font-bold mb-4">검수 회수 문단</h1><p className="text-[13.5px] text-[var(--danger)]">{loadError}</p></div>;
+  if(items===null)return <div><h1 className="text-[28px] font-bold mb-4">검수 회수 문단</h1><p className="text-[13.5px] text-[var(--muted-fg)]">불러오는 중…</p></div>;
+
+  const filtered=items.filter(it=>filter==='전체 상태'||RECOVERY_LABELS[it.status]===filter);
+  const count=s=>items.filter(i=>i.status===s).length;
+  const openItem=openId!=null?items.find(i=>i.id===openId):null;
   return (
     <div>
       <h1 className="text-[28px] font-bold mb-3">검수 회수 문단</h1>
-      <p className="text-[13px] text-[var(--muted-fg)] mb-8 max-w-3xl leading-relaxed">재시도 상한을 넘겨도 보호 토큰(수치·날짜·고유명사·기능명)이 훼손된 채 남은 문단을 모읍니다. 원문에 정답 교정문을 붙이는 라벨링을 거쳐야 재학습에 쓸 수 있고, 학습 데이터 편입에 동의하지 않은 계정의 문단은 제외됩니다.</p>
+      <p className="text-[13px] text-[var(--muted-fg)] mb-8 max-w-3xl leading-relaxed">보호 토큰(수치·날짜·고유명사·기능명)이 훼손된 채 반려된 검수 시도(proofread_logs.passed=False)를 모읍니다. 원문에 정답 교정문을 붙이는 라벨링을 거쳐야 재학습에 쓸 수 있고, 학습 데이터 편입에 동의하지 않은 계정의 문단은 제외됩니다.</p>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-        <Card label="전체 회수 문단" value={Object.keys(items).length+'건'} sub="최근 30일 기준"/>
+        <Card label="전체 회수 문단" value={items.length+'건'} sub="누적 기준"/>
         <Card label="라벨링 대기" value={count('pending')+'건'} tone="warn" sub="정답 교정문 미입력"/>
         <Card label="라벨링 완료" value={count('labeled')+'건'} tone="ok" sub="재학습 데이터셋 후보로 편입"/>
         <Card label="동의 없음(제외)" value={count('excluded')+'건'} sub="학습 데이터 편입 미동의 계정"/>
@@ -866,41 +924,37 @@ function RecoveryTab({pushToast}){
           <div className="p-4">문단 ID</div><div className="p-4">발생 프로젝트</div><div className="p-4 text-center">모델 버전</div><div className="p-4 text-center">위반 항목</div>
           <div className="p-4 text-center">발생일시</div><div className="p-4 text-center">학습 동의</div><div className="p-4 text-center">상태</div>
         </div>
-        {ids.map(id=>{
-          const it=items[id];
-          return (
-            <button key={id} onClick={()=>open(id)}
-              className={'w-full text-left grid grid-cols-[1fr_1.6fr_0.8fr_0.9fr_1fr_0.9fr_0.9fr] text-[13px] border-t border-[var(--border)] items-center hover:bg-[var(--bg)] '+(it.consent?'':'opacity-60')}>
-              <div className="p-4 font-medium">PARA-{id}</div>
-              <div className="p-4 text-[var(--muted-fg)]">{it.project}</div>
-              <div className="p-4 text-center text-[var(--muted-fg)]">{it.model}</div>
-              <div className="p-4 text-center text-[var(--muted-fg)]">{it.violation}</div>
-              <div className="p-4 text-center text-[var(--muted-fg)]">{it.occurredAt.slice(5)}</div>
-              <div className={'p-4 text-center font-semibold '+(it.consent?'text-[var(--ok)]':'text-[var(--muted-fg)]')}>{it.consent?'동의':'미동의'}</div>
-              <div className={'p-4 text-center font-semibold '+(it.status==='labeled'?'text-[var(--ok)]':it.status==='pending'?'text-[var(--warn)]':'text-[var(--muted-fg)]')}>{RECOVERY_LABELS[it.status]}</div>
-            </button>
-          );
-        })}
+        {filtered.length===0&&<p className="p-6 text-center text-[13px] text-[var(--muted-fg)] border-t border-[var(--border)]">회수된 문단이 없습니다.</p>}
+        {filtered.map(it=>(
+          <button key={it.id} onClick={()=>open(it.id)}
+            className={'w-full text-left grid grid-cols-[1fr_1.6fr_0.8fr_0.9fr_1fr_0.9fr_0.9fr] text-[13px] border-t border-[var(--border)] items-center hover:bg-[var(--bg)] '+(it.consent?'':'opacity-60')}>
+            <div className="p-4 font-medium">PARA-{it.id}</div>
+            <div className="p-4 text-[var(--muted-fg)]">{it.project}</div>
+            <div className="p-4 text-center text-[var(--muted-fg)]">{it.model}</div>
+            <div className="p-4 text-center text-[var(--muted-fg)]">{it.violation}</div>
+            <div className="p-4 text-center text-[var(--muted-fg)]">{it.occurredAt.slice(5)}</div>
+            <div className={'p-4 text-center font-semibold '+(it.consent?'text-[var(--ok)]':'text-[var(--muted-fg)]')}>{it.consent?'동의':'미동의'}</div>
+            <div className={'p-4 text-center font-semibold '+(it.status==='labeled'?'text-[var(--ok)]':it.status==='pending'?'text-[var(--warn)]':'text-[var(--muted-fg)]')}>{RECOVERY_LABELS[it.status]}</div>
+          </button>
+        ))}
       </Panel>
       <p className="mt-3 text-[11px] text-[var(--muted-fg)]">동의 없음(제외) 행은 열람만 가능하며 저장되지 않습니다.</p>
 
-      {openId&&(()=>{
-        const it=items[openId];
-        return (
+      {openItem&&(
           <Modal wide title="문단 라벨링" onClose={()=>setOpenId(null)}>
-            <p className="text-[12.5px] text-[var(--muted-fg)] mb-5">{it.project} · 모델 {it.model} · {it.occurredAt}</p>
+            <p className="text-[12.5px] text-[var(--muted-fg)] mb-5">{openItem.project} · 모델 {openItem.model} · {openItem.occurredAt}</p>
             <div className="grid sm:grid-cols-2 gap-4 mb-4">
               <div>
                 <p className="text-[12px] font-semibold text-[var(--muted-fg)] mb-1.5">원문 문단</p>
-                <div className="rounded-xl bg-[var(--muted)] p-3.5 text-[13px] leading-relaxed min-h-[88px]">{it.original}</div>
+                <div className="rounded-xl bg-[var(--muted)] p-3.5 text-[13px] leading-relaxed min-h-[88px]">{openItem.original}</div>
               </div>
               <div>
-                <p className="text-[12px] font-semibold text-[var(--muted-fg)] mb-1.5">1차 검수 시도 (위반 발생)</p>
-                <div className="rounded-xl bg-[color-mix(in_srgb,var(--danger)_6%,white)] border border-[var(--danger)]/30 p-3.5 text-[13px] leading-relaxed min-h-[88px]">{it.attempt}</div>
+                <p className="text-[12px] font-semibold text-[var(--muted-fg)] mb-1.5">검수 시도 (위반 발생)</p>
+                <div className="rounded-xl bg-[color-mix(in_srgb,var(--danger)_6%,white)] border border-[var(--danger)]/30 p-3.5 text-[13px] leading-relaxed min-h-[88px]">{openItem.attempt}</div>
               </div>
             </div>
-            <p className="text-[12px] text-[var(--danger)] font-semibold mb-4">⚠ 보호 토큰 위반: {it.violation} 값이 재시도 후에도 소실·변조된 상태로 남았습니다.</p>
-            {it.consent?(
+            <p className="text-[12px] text-[var(--danger)] font-semibold mb-4">⚠ 보호 토큰 위반: {openItem.violation} 값이 재시도 후에도 소실·변조된 상태로 남았습니다.</p>
+            {openItem.consent?(
               <>
                 <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1.5">정답 교정문 (학습 데이터용)</p>
                 <p className="text-[11px] text-[var(--muted-fg)] mb-2">보호 토큰을 보존하면서 원문 문체를 교정한 정답 문장을 입력합니다.</p>
@@ -913,15 +967,14 @@ function RecoveryTab({pushToast}){
               </div>
             )}
             <div className="flex items-center justify-between gap-4">
-              <span className={'text-[12px] font-semibold px-3 py-1 rounded-full '+(it.status==='labeled'?toneBg.ok:it.status==='pending'?toneBg.warn:toneBg.muted)}>{RECOVERY_LABELS[it.status]}</span>
+              <span className={'text-[12px] font-semibold px-3 py-1 rounded-full '+(openItem.status==='labeled'?toneBg.ok:openItem.status==='pending'?toneBg.warn:toneBg.muted)}>{RECOVERY_LABELS[openItem.status]}</span>
               <div className="flex gap-2">
                 <button onClick={()=>setOpenId(null)} className="rounded-xl border border-[var(--border)] px-4 py-2 text-[13px] font-semibold text-[var(--muted-fg)] hover:bg-[var(--bg)]">닫기</button>
-                {it.consent&&<button onClick={()=>save(openId)} className="rounded-xl bg-[var(--primary)] text-white px-4 py-2 text-[13px] font-semibold hover:bg-[var(--primary-dim)]">학습 데이터로 저장</button>}
+                {openItem.consent&&<button onClick={()=>save(openId)} disabled={saving} className="rounded-xl bg-[var(--primary)] text-white px-4 py-2 text-[13px] font-semibold hover:bg-[var(--primary-dim)] disabled:opacity-50">{saving?'저장 중…':'학습 데이터로 저장'}</button>}
               </div>
             </div>
           </Modal>
-        );
-      })()}
+      )}
     </div>
   );
 }

@@ -2,15 +2,16 @@
 
 DB_BACKEND=sqlite 일 때만 동작한다 — 실수로 팀 공유 AWS MySQL에 가짜 공고를
 넣는 사고를 막으려고, mysql 모드일 때는 아무 것도 안 하고 바로 종료한다.
-notices 테이블은 원래 공고 수집 파이프라인(이근준님 repo)이 채워주는 테이블이라
+notices 테이블은 원래 공고 수집 파이프라인(외부 repo)이 채워주는 테이블이라
 백엔드가 직접 쓸 일이 없지만, 로컬 개발 중 매칭/공고 조회 로직을 테스트해보려면
 행이 몇 개는 있어야 해서 만든 용도다.
 
-embedding_status/embedding_updated_at/embedding_fail_reason 값도 같이 넣는다.
-이 3개는 실제 AWS MySQL엔 아직 없는 컬럼이라 models.py의 Notice에도 SQLite 모드일
-때만 존재한다(app/models.py의 `if IS_SQLITE:` 블록 참고) — 이 스크립트 자체가
-DB_BACKEND=sqlite 가 아니면 아예 실행을 거부하니, 여기서 이 필드들을 채워도
-실제 DB와 어긋날 걱정 없이 항상 안전하다.
+[2026-09-17 갱신] 예전엔 embedding_status/embedding_updated_at/embedding_fail_reason을
+채웠는데, 팀원의 "수집 데이터 보고서"(2026-09-16)로 실제 구현이 그 방식이 아니라
+embedding(벡터 자체)/embedding_fingerprint/embedding_input_sha256라는 걸 확인해서
+models.py의 Notice를 그에 맞게 고쳤다 — 이 더미 데이터는 벡터 값 자체는 안 채운다
+(실제 임베딩 없이 흉내 내봐야 의미가 없어서). 매칭 로직 테스트엔 target_text/category
+등으로 충분하다.
 
 실행:
     python seed_dummy_notices.py
@@ -37,9 +38,6 @@ DUMMY_NOTICES = [
         apply_end=datetime.date(2026, 10, 31),
         recruitment_status='open',
         url='https://www.k-startup.go.kr/example/PBLN_0001',
-        embedding_status='completed',
-        embedding_updated_at=datetime.datetime(2026, 9, 2, 10, 0, 0),
-        embedding_fail_reason=None,
     ),
     dict(
         notice_id='kstartup:PBLN_0002',
@@ -54,9 +52,6 @@ DUMMY_NOTICES = [
         apply_end=datetime.date(2026, 9, 30),
         recruitment_status='open',
         url='https://www.k-startup.go.kr/example/PBLN_0002',
-        embedding_status='pending',
-        embedding_updated_at=None,
-        embedding_fail_reason=None,
     ),
     dict(
         notice_id='kstartup:PBLN_0003',
@@ -71,9 +66,6 @@ DUMMY_NOTICES = [
         apply_end=datetime.date(2026, 4, 30),
         recruitment_status='closed',
         url='https://www.k-startup.go.kr/example/PBLN_0003',
-        embedding_status='completed',
-        embedding_updated_at=datetime.datetime(2026, 3, 2, 9, 0, 0),
-        embedding_fail_reason=None,
     ),
     # 기업마당 공고 — supervising_org/executing_org 중 있는 값만 채워짐 (organizer는 없음)
     dict(
@@ -89,9 +81,6 @@ DUMMY_NOTICES = [
         apply_end=datetime.date(2026, 11, 15),
         recruitment_status='open',
         url='https://www.bizinfo.go.kr/example/PBLN_1001',
-        embedding_status='completed',
-        embedding_updated_at=datetime.datetime(2026, 9, 6, 11, 30, 0),
-        embedding_fail_reason=None,
     ),
     dict(
         notice_id='bizinfo:PBLN_1002',
@@ -106,9 +95,6 @@ DUMMY_NOTICES = [
         apply_end=datetime.date(2026, 9, 20),
         recruitment_status='open',
         url='https://www.bizinfo.go.kr/example/PBLN_1002',
-        embedding_status='failed',
-        embedding_updated_at=datetime.datetime(2026, 7, 2, 8, 0, 0),
-        embedding_fail_reason='임베딩 API 타임아웃',
     ),
     dict(
         notice_id='bizinfo:PBLN_1003',
@@ -123,9 +109,6 @@ DUMMY_NOTICES = [
         apply_end=datetime.date(2026, 3, 31),
         recruitment_status='closed',
         url='https://www.bizinfo.go.kr/example/PBLN_1003',
-        embedding_status='pending',
-        embedding_updated_at=None,
-        embedding_fail_reason=None,
     ),
 ]
 
@@ -160,4 +143,4 @@ def main() -> None:
 
 
 if __name__ == '__main__':
-    main()
+    main()

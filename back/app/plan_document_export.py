@@ -1,5 +1,18 @@
-"""초기창업패키지(일반형) 사업계획서 공식 양식(별첨1)에 내용을 채워 실제 .docx로
-만들어주는 모듈.
+"""초기창업패키지(일반형)·예비창업패키지 사업계획서 공식 양식(별첨1)에 내용을 채워
+실제 .docx로 만들어주는 모듈.
+
+[2026-09-18 신규] 두 공고 양식을 사용자가 준 원본 파일 2종(초기창업패키지(일반형)/
+예비창업패키지)을 직접 비교해서 찾은 실제 차이만 반영했다:
+  - 일반현황: 예비창업패키지는 아직 사업자가 없으므로 기업명/개업연월일/사업자구분/
+    대표자유형/사업자등록번호/사업자소재지/지원분야/전문기술분야/지방우대지역/총사업비
+    항목 자체가 없다 — 대신 "직업(직장명 기재 불가)"/"기업(예정)명" 두 항목만 쓴다.
+  - 사업비 집행계획: 초기창업패키지는 정부지원사업비+자기부담사업비(현금/현물) 3분할
+    표를 쓰지만, 예비창업패키지는 자기부담금 개념이 없어 정부지원사업비 단일 열 표를
+    쓴다(원본은 1단계/2단계로 표를 나누는데, DB에 "단계" 개념이 없어 여기선 한 표로
+    합쳐 렌더한다 — 없는 구분을 지어내지 않는다는 원칙).
+  - 제목: "초기창업패키지 창업기업 사업계획서" vs "예비창업패키지 사업계획서".
+그 외(창업 아이템 개요 요약, PSST 4개 섹션 본문, 사업추진일정, 팀 구성(안), 협력기관)는
+두 양식이 표 구조까지 동일해서 공통으로 쓴다.
 
 [2026-09-15] 사용자가 준 원본 파일(.docx/.hwp)은 텍스트 추출 요약본만 받을 수 있어서
 (표 구조·스타일 정보 없이 순수 텍스트만) 원본 바이트를 그대로 열어 자리표시자만
@@ -115,6 +128,11 @@ class PlanDocumentData:
     팀구성_안: list[TeamRow]
     협력기관: list[PartnerRow] = field(default_factory=list)
 
+    # 예비창업패키지 전용(template='preliminary') — 사업자가 아직 없어 기업명/사업자
+    # 등록번호 대신 이 두 항목을 쓴다. 초기창업패키지(일반형) 렌더링에서는 안 쓰인다.
+    직업: str = '○○○'
+    기업예정명: str = '○○○'
+
 
 def _set_cell_text(cell, text: str, bold: bool = False, shade: str | None = None) -> None:
     cell.text = ''
@@ -174,22 +192,15 @@ def _guide_note(doc: Document, text: str) -> None:
     run.font.color.rgb = _GUIDE_COLOR
 
 
-def render_plan_docx(data: PlanDocumentData) -> bytes:
-    doc = Document()
-    style = doc.styles['Normal']
-    style.font.name = '맑은 고딕'
-    style.font.size = Pt(10.5)
+_TEMPLATE_TITLES = {
+    'early_general': '초기창업패키지 창업기업 사업계획서',
+    'preliminary': '예비창업패키지 사업계획서',
+}
 
-    title = doc.add_heading('초기창업패키지 창업기업 사업계획서', level=0)
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    _guide_note(
-        doc,
-        '※ 사업계획서는 15페이지 내외로 작성(증빙서류는 제한 없음) · 양식은 변경·삭제 불가, '
-        '이미지·표 삽입은 가능 · 개인정보는 마스킹하여 작성 — 본 문서는 S-Brain이 생성한 초안입니다.',
-    )
-
-    _heading(doc, '□ 일반현황', level=1)
+def _add_general_status_early(doc: Document, data: PlanDocumentData) -> None:
+    """초기창업패키지(일반형) — 이미 사업자가 있다는 전제로 기업 정보·사업비 3분할
+    (정부지원+자기부담 현금/현물)을 담는다."""
     _kv_table(doc, [
         ('기업명', data.기업명),
         ('개업연월일', data.개업연월일),
@@ -209,6 +220,47 @@ def render_plan_docx(data: PlanDocumentData) -> bytes:
         [[data.정부지원사업비, data.자기부담_현금, data.자기부담_현물, data.총사업비]],
         caption='총 사업비 구성 계획',
     )
+
+
+def _add_general_status_preliminary(doc: Document, data: PlanDocumentData) -> None:
+    """예비창업패키지 — 아직 사업자등록 전이라는 전제로, 기업명·사업자등록번호·지원분야·
+    전문기술분야·지방우대지역·총사업비 항목 자체가 없다(원본 양식에도 없음). 대신 신청자의
+    현재 직업과 창업 예정 상호(기업(예정)명)만 받는다."""
+    _kv_table(doc, [
+        ('창업아이템명', data.창업아이템명),
+        ('산출물\n(협약기간 내 목표)', data.산출물),
+        ('직업\n(직장명 기재 불가)', data.직업),
+        ('기업(예정)명', data.기업예정명),
+    ])
+
+
+def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') -> bytes:
+    """template: 'early_general'(초기창업패키지 일반형, 기본값) | 'preliminary'(예비창업패키지).
+    두 원본 양식(별첨1)을 비교해 실제로 다른 부분(일반현황 항목, 사업비 집행계획 표 구성,
+    제목)만 갈라 렌더링한다 — 나머지 섹션은 두 양식이 표 구조까지 동일해 공통으로 쓴다
+    (모듈 docstring 참고)."""
+    if template not in _TEMPLATE_TITLES:
+        raise ValueError(f"template은 {tuple(_TEMPLATE_TITLES)} 중 하나여야 합니다: {template!r}")
+
+    doc = Document()
+    style = doc.styles['Normal']
+    style.font.name = '맑은 고딕'
+    style.font.size = Pt(10.5)
+
+    title = doc.add_heading(_TEMPLATE_TITLES[template], level=0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    _guide_note(
+        doc,
+        '※ 사업계획서는 15페이지 내외로 작성(증빙서류는 제한 없음) · 양식은 변경·삭제 불가, '
+        '이미지·표 삽입은 가능 · 개인정보는 마스킹하여 작성 — 본 문서는 S-Brain이 생성한 초안입니다.',
+    )
+
+    _heading(doc, '□ 일반현황', level=1)
+    if template == 'preliminary':
+        _add_general_status_preliminary(doc, data)
+    else:
+        _add_general_status_early(doc, data)
     _grid_table(
         doc,
         ['순번', '직위', '담당 업무', '보유 역량(경력 및 학력 등)', '구성 상태'],
@@ -238,13 +290,25 @@ def render_plan_docx(data: PlanDocumentData) -> bytes:
         [[s.구분, s.추진내용, s.추진기간, s.세부내용] for s in data.실현가능성_일정],
         caption='< 사업추진 일정(협약기간 내) >',
     )
-    _guide_note(doc, '※ 정부지원사업비는 최대 1억원 한도 이내로 작성 · 자기부담사업비는 지방우대 지역 여부에 따라 비율이 다름')
-    _grid_table(
-        doc,
-        ['비목', '집행 계획', '총사업비(ⓐ+ⓑ)', '정부지원사업비(ⓐ)', '자기부담사업비(ⓑ) 현금', '자기부담사업비(ⓑ) 현물'],
-        [[b.비목, b.집행계획, b.총사업비, b.정부지원사업비, b.자기부담_현금, b.자기부담_현물] for b in data.사업비_집행계획],
-        caption='< 사업비 집행 계획 >',
-    )
+    if template == 'preliminary':
+        # 예비창업패키지는 자기부담금 개념이 없어 정부지원사업비 단일 열만 쓴다. 원본
+        # 양식은 이 표를 1단계/2단계로 나누는데, DB(project_budget_items)에 "단계"
+        # 구분이 없어 여기선 한 표로 합쳐 렌더한다(모듈 docstring 참고).
+        _guide_note(doc, '※ 정부지원사업비는 최대 1억원 한도 이내로 작성')
+        _grid_table(
+            doc,
+            ['비목', '산출 근거', '정부지원사업비(원)'],
+            [[b.비목, b.집행계획, b.정부지원사업비] for b in data.사업비_집행계획],
+            caption='< 정부지원사업비 집행계획 >',
+        )
+    else:
+        _guide_note(doc, '※ 정부지원사업비는 최대 1억원 한도 이내로 작성 · 자기부담사업비는 지방우대 지역 여부에 따라 비율이 다름')
+        _grid_table(
+            doc,
+            ['비목', '집행 계획', '총사업비(ⓐ+ⓑ)', '정부지원사업비(ⓐ)', '자기부담사업비(ⓑ) 현금', '자기부담사업비(ⓑ) 현물'],
+            [[b.비목, b.집행계획, b.총사업비, b.정부지원사업비, b.자기부담_현금, b.자기부담_현물] for b in data.사업비_집행계획],
+            caption='< 사업비 집행 계획 >',
+        )
 
     _heading(doc, '3. 성장전략(Scale-up)_사업화 추진 전략', level=1)
     doc.add_paragraph(data.성장전략_본문)

@@ -49,12 +49,9 @@ from app import pipeline_stages as ps  # noqa: E402
 from app.models import EligibilityCheck, MatchResult, Notice  # noqa: E402
 
 PAYLOAD = {
-    'start_type': '온라인',
     'biz_type': 'AI 서비스',
     'ceo_name': '하정원',
     'description': '이어하기 상태 조회 엔드포인트 검증용 프로젝트',
-    'notify_region': '서울',
-    'notify_industry': 'IT',
     'team_members': [],
     'pricing_items': [],
 }

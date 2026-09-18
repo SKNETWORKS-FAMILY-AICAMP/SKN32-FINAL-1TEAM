@@ -5,6 +5,11 @@ import {GeneratingOverlay} from './shared.jsx';
 import {ArtifactProgress} from './ArtifactResult.jsx';
 import {buildGeneralInfo,buildOverview,DOC_SCORE_BY_OUTCOME} from './utils.js';
 import {ANNOUNCEMENTS,FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_DOCUMENT_SECTIONS,PLAN_TABLE_EXAMPLE,PSST_OFFICIAL_HEADERS,SCORE_DISCLAIMER,WRITING_SUBTASKS} from './data.js';
+import {retryTask} from '../../api.js';
+
+// WRITING_SUBTASKS 3개는 전부 PLAN_STAGE_TASKS(data.js)에서 같은 '작성' Agent 몫이라
+// 백엔드에도 별도 task_key 없이 하나(writing)로 묶여 있다 — app/schemas.py RetryTaskRequest 참고.
+const TASK_KEY_BY_LABEL = { '사업계획서 본문 작성': 'writing', '그래프 생성': 'writing', '표 생성': 'writing' };
 
 export function PipelineProgress({onComplete}){return <Preparation kind="plan" onComplete={onComplete} similarAnnouncements={ANNOUNCEMENTS.slice(0,3)}/>;}
 
@@ -109,7 +114,7 @@ export function PlanExtrasBlock({ size = 'full' }){
 // 60/70)의 RB-PSST-2026 루브릭 4항목(EV-01~04)을 그대로 옮겼다 — reasons는 이
 // items에서 만점 미달 항목만 뽑아 만든다(하드코딩된 문구 2줄이던 이전 값보다
 // 항목별 근거가 분명하다).
-export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', itemInfo }){
+export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', itemInfo, projectId }){
   const docScore = DOC_SCORE_BY_OUTCOME[scoreOutcome];
   const docScoreScaled = Math.round((docScore.raw / docScore.max) * 100);
   const passed = docScoreScaled >= FINAL_THRESHOLD;
@@ -132,18 +137,25 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
     setCompletedTasks((prev) => prev.filter((t) => t !== label));
   };
 
-  // 실제 재생성 파이프라인은 없는 목업이라, 체크한 항목을 잠깐 "재작성 중"으로
-  // 보여준 뒤 다시 대기 상태로 되돌린다 — 어떤 조작인지 감만 준다. 끝나면 완료
-  // 표시로 남긴다(재작성 중 → 완료, 무반응으로 끝나지 않도록).
-  const handleRewrite = () => {
+  // POST /projects/{id}/retry-task를 실제로 호출한다(app/routers/projects.py retry_task) —
+  // 예전엔 setTimeout으로 스피너만 흉내 내고 서버 호출이 없어 DB에 아무 변화도 안 남았다.
+  // 체크한 라벨이 전부 같은 task_key('writing')로 묶이므로 중복 없이 한 번만 호출한다.
+  const handleRewrite = async () => {
     if (checkedTasks.length === 0) return;
     const picked = checkedTasks;
     setRunningTasks(picked);
     setCheckedTasks([]);
-    setTimeout(() => {
-      setRunningTasks([]);
+    const taskKeys = [...new Set(picked.map((label) => TASK_KEY_BY_LABEL[label]).filter(Boolean))];
+    try {
+      if (projectId) await Promise.all(taskKeys.map((key) => retryTask(projectId, key)));
       setCompletedTasks((prev) => [...new Set([...prev, ...picked])]);
-    }, 1600);
+    } catch (err) {
+      console.error('재작성 요청이 실패했어요', err);
+      window.alert(err.message || '재작성에 실패했어요. 다시 시도해 주세요.');
+      setCheckedTasks(picked);
+    } finally {
+      setRunningTasks([]);
+    }
   };
 
   return (

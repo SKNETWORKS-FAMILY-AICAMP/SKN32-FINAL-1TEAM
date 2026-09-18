@@ -68,6 +68,20 @@ def test_patch_consent_updates_only_provided_fields(client, monkeypatch):
     assert r3.json()['notify_enabled'] is True
 
 
+def test_login_rejects_google_account_without_email(client, monkeypatch):
+    """[2026-09-18] users.email이 NOT NULL이라, 이메일 없는 구글 계정으로 로그인하면
+    예전엔 여기가 아니라 DB INSERT에서 알 수 없는 500으로 죽었다 — 명확한 4xx로 막는다."""
+    import app.routers.auth as auth_router
+    import app.security as security
+
+    fake = lambda id_token_str: {'sub': 'sub-no-email', 'name': '이메일없음'}  # noqa: E731
+    monkeypatch.setattr(security, 'verify_google_id_token', fake)
+    monkeypatch.setattr(auth_router, 'verify_google_id_token', fake)
+
+    res = client.post('/auth/google', json={'id_token': 'dummy', 'aiTrainingAgreed': True, 'notifyAgreed': True})
+    assert res.status_code == 400, res.text
+
+
 def test_patch_consent_requires_login(client):
     res = client.patch('/auth/consent', json={'aiTrainingAgreed': True})
     assert res.status_code == 401

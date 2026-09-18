@@ -120,6 +120,24 @@ export function profileToIntake(profile) {
   };
 }
 
+// [2026-09-18] 저장 버튼이 눌리려면 다 채워야 하는 항목 — back/app/routers/profile.py의
+// profile_satisfies_required_fields와 반드시 같은 기준이어야 한다(정재희님 인계서: "서버
+// has_profile 계산도 같은 기준으로 맞춰 주세요 — 안 그러면 프론트·백엔드가 서로 다른 걸
+// 저장 완료로 봐요"). 신청자 유형만 채우고 저장되던 예전 문제(canSave=applicantType만 확인)
+// 를 고친다 — 둘 중 하나만 고치면 프론트는 저장되는데 서버 has_profile은 계속 false인
+// 상태가 생긴다.
+export function missingRequiredFields(profile) {
+  const { basic: b, capability: c } = profile;
+  const missing = [];
+  if (!b.applicantType) missing.push('신청자 유형');
+  if (!b.ceoName || !b.birthDate || !b.gender) missing.push('대표자 정보');
+  if (!b.region.sido) missing.push('지역');
+  if (!b.industry) missing.push('주업종');
+  if (!c.careers.length) missing.push('대표자 이력');
+  if ((b.applicantType === 'individual' || b.applicantType === 'corp') && !b.bizNo) missing.push('사업자 번호');
+  return missing;
+}
+
 // 탭별 채움 정도 — [채운 개수, 전체]. 예비창업자와 개인사업자·법인은 서로 다른 항목을 센다.
 export function progressOf(state) {
   const { basic, bizStatus, capability: cap } = state;

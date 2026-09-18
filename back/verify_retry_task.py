@@ -76,9 +76,8 @@ login_res = client.post('/auth/google', json={
 assert login_res.status_code == 200, f'로그인 실패: {login_res.status_code} {login_res.text}'
 
 payload = {
-    'start_type': '온라인', 'biz_type': 'AI 서비스', 'ceo_name': '재시도테스트유저',
+    'biz_type': 'AI 서비스', 'ceo_name': '재시도테스트유저',
     'description': '재시도 API 검증용 프로젝트',
-    'notify_region': '서울', 'notify_industry': 'IT',
     'team_members': [], 'pricing_items': [{'service_name': '기본 서비스', 'unit_price': 1000000}],
 }
 create_res = client.post('/projects', data={'payload': json.dumps(payload)})

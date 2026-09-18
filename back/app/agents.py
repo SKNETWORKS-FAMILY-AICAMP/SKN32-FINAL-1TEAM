@@ -78,10 +78,23 @@ class FormatFindingResult:
 
 @dataclass
 class ProofreadResult:
-    """proofread_logs(T-P2, 윤문) 결과 — 실제로 고친 문장."""
+    """proofread_logs(T-P2, 윤문) 결과 — 실제로 고친 문장.
+
+    [2026-09-18 확장] passed=False면 보호 토큰(수치·날짜·고유명사·기능명) 위반으로
+    이 시도가 반려됐다는 뜻이다 — 이때 corrected_text는 "실제로 반영된 교정문"이
+    아니라 "반려된 시도안"이고, violation_type/violation_note가 왜 반려됐는지 담는다.
+    호출부(projects.py)는 passed=False인 결과를 plan_sections 등 실제 계획서 본문에
+    반영하지 않고 proofread_logs 이력에만 남긴다.
+
+    score(0~100)는 재시도할수록 실제로 나아지는지 숫자로 보여달라는 요청(하정원님)으로
+    추가했다 — business_plans.doc_score와 같은 형식."""
 
     corrected_text: str
     reason: str | None
+    score: Decimal = Decimal('100')
+    passed: bool = True
+    violation_type: str | None = None
+    violation_note: str | None = None
 
 
 def _dummy_rescored_item(item_code: str, max_score: Decimal) -> ScoreItemResult:
@@ -211,9 +224,36 @@ def run_review_expression_retry(project_description: str) -> FormatFindingResult
     )
 
 
-def run_review_token_check_retry(project_description: str) -> ProofreadResult:
-    """검수(윤문, T-P2) 재시도 — 문장을 다시 교정한 전/후 텍스트 쌍을 만든다."""
+_PROTECTED_TOKEN_TYPES = ('날짜', '수치·금액', '고유명사', '기능명')
+
+
+def run_review_token_check_retry(project_description: str, attempt_no: int = 1) -> ProofreadResult:
+    """검수(윤문, T-P2) 재시도 — 문장을 다시 교정한 전/후 텍스트 쌍을 만들고, 그 시도가
+    보호 토큰(수치·날짜·고유명사·기능명)을 훼손했는지도 함께 판정한다.
+
+    [2026-09-18 확장] 더미 판정 규칙: 위반 확률이 attempt_no가 늘수록 낮아진다
+    (1차 시도 40% -> 2차 20% -> 3차 이상 0%) — "재시도할수록 안정화된다"는 재수행의
+    취지를 흉내낸 것으로, 실제 검수 모델이 붙으면 이 함수 내부만 실제 판정 로직으로
+    바꾸면 된다(계약은 동일하게 유지: 위반이면 passed=False + violation_type/note).
+
+    score도 같은 취지로 attempt_no가 늘수록 기본점이 올라가고(60 -> 70 -> 80 -> ...,
+    최대 100), 그 시도에서 위반이 나면 20점을 깎는다 — "재시도할수록 나아지되, 위반이
+    나오면 그 시도는 확실히 낮게 나온다"를 눈으로 보이게 하기 위함(하정원님 지적)."""
+    violation_chance = max(0.0, 0.4 - (attempt_no - 1) * 0.2)
+    base_score = min(100, 60 + (attempt_no - 1) * 10)
+    if random.random() < violation_chance:
+        violation_type = random.choice(_PROTECTED_TOKEN_TYPES)
+        return ProofreadResult(
+            corrected_text=f'(더미 재윤문 시도안 {uuid.uuid4().hex[:8]}) {project_description} — 문장을 다시 교정했습니다.',
+            reason='재검수 교정 시도 (더미) — 보호 토큰 위반으로 반려',
+            score=Decimal(max(0, base_score - 20)),
+            passed=False,
+            violation_type=violation_type,
+            violation_note=f'보호 토큰({violation_type}) 훼손 감지 (더미) — 원문의 {violation_type} 표기가 변경되었거나 누락되었습니다.',
+        )
     return ProofreadResult(
         corrected_text=f'(더미 재윤문 {uuid.uuid4().hex[:8]}) {project_description} — 문장을 다시 교정했습니다.',
         reason='재검수 교정 (더미)',
+        score=Decimal(base_score),
+        passed=True,
     )

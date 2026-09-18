@@ -1,9 +1,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createProfile, deleteProfile, listProfiles, updateProfile } from '../api.js';
 
 // 마이페이지 프로필. 계정당 최대 3개까지 별도로 저장할 수 있다(예: 아이템별로 다른
-// 신청자 정보). 아직 저장용 백엔드 API가 없어서 persist(localStorage)로 새로고침만
-// 버티게 해둔다 — 서버 API가 생기면 patch 시점에 호출만 붙이면 된다.
+// 신청자 정보). [2026-09-18] back/app/routers/profile.py(GET/POST /profile, PUT·DELETE
+// /profile/{id})에 연결했다 — 로그인 직후(App.jsx) loadProfiles()로 서버 값을 끌어와야
+// "다른 기기에서 로그인하면 안 보이던" 문제가 실제로 고쳐진다. persist(localStorage)는
+// 여전히 켜두는데, 서버 응답이 오기 전 깜빡임을 줄이는 용도일 뿐 — loadProfiles()가
+// 끝나면 항상 서버 값이 로컬 값을 덮어쓴다(서버가 항상 최종 진실).
 // 로그아웃 시 reset()을 불러야 같은 브라우저의 다음 사용자에게 값이 안 보인다(App.jsx).
 //
 // 재창업/과거 사업 이력은 추적하지 않는다 — 신청자 유형(예비창업자 / 개인사업자·법인)
@@ -11,6 +15,9 @@ import { persist } from 'zustand/middleware';
 export const MAX_PROFILES = 3;
 
 const emptyProfile = (name) => ({
+  // profileId: 서버에 아직 한 번도 저장 안 한 슬롯이면 null — save()가 null이면 POST(생성),
+  // 있으면 PUT(수정)으로 나눠 호출한다.
+  profileId: null,
   name,
   basic: {
     applicantType: '', ceoName: '', birthDate: '', gender: '',
@@ -28,17 +35,29 @@ const emptyProfile = (name) => ({
   capability: { careers: [], skills: '', soloFounder: false, team: [], hires: [], equipment: [], partners: [] },
 });
 
+// GET /profile 응답(ProfileOut) 한 건 -> 이 스토어의 profile 모양.
+const profileFromServer = (p) => ({
+  profileId: p.profile_id,
+  name: p.name,
+  basic: { ...emptyProfile('').basic, ...p.basic },
+  bizStatus: p.bizStatus ?? null,
+  capability: { ...emptyProfile('').capability, ...p.capability },
+});
+
 const initial = () => ({
   profiles: [emptyProfile('정보 1')],
   activeIndex: 0,
   // 저장 버튼을 눌러야만 true — 계정이 자기 정보를 한 번이라도 확정 저장했는지 나타낸다.
   // App.jsx가 이 값으로 "마이페이지 먼저 채우라" 강제 모달을 계속 띄울지 판단한다.
   onboarded: false,
+  // loadProfiles()가 아직 한 번도 안 끝났으면 true — 로그인 직후 서버 값이 오기 전에
+  // "onboarded:false"로 잘못 판단해 강제 모달을 띄우는 걸 막는 데 쓴다(App.jsx).
+  loading: false,
 });
 
 export const useMyPageStore = create(
   persist(
-    (set) => ({
+    (set, get) => ({
       ...initial(),
 
       patch: (section, values) => set((s) => {
@@ -59,22 +78,69 @@ export const useMyPageStore = create(
         if (s.profiles.length >= MAX_PROFILES) return s;
         return { profiles: [...s.profiles, emptyProfile(name?.trim() || `정보 ${s.profiles.length + 1}`)], activeIndex: s.profiles.length };
       }),
-      removeProfile: (i) => set((s) => {
-        if (s.profiles.length <= 1) return s;
-        const profiles = s.profiles.filter((_, idx) => idx !== i);
-        return { profiles, activeIndex: Math.min(s.activeIndex, profiles.length - 1) };
-      }),
+      // 서버에 저장된 적 있는 슬롯(profileId 있음)이면 DELETE부터 성공해야 로컬에서도 지운다
+      // — 실패하면 그대로 throw해서 호출부(MyPage.jsx)가 사용자에게 알릴 수 있게 한다.
+      removeProfile: async (i) => {
+        const s = get();
+        if (s.profiles.length <= 1) return;
+        const target = s.profiles[i];
+        if (target.profileId != null) await deleteProfile(target.profileId);
+        set((s2) => {
+          const profiles = s2.profiles.filter((_, idx) => idx !== i);
+          return { profiles, activeIndex: Math.min(s2.activeIndex, profiles.length - 1) };
+        });
+      },
       renameProfile: (i, name) => set((s) => {
         const profiles = s.profiles.slice();
         profiles[i] = { ...profiles[i], name };
         return { profiles };
       }),
 
-      completeOnboarding: () => set({ onboarded: true }),
+      // 로그인 직후(App.jsx)와 로그인 상태 복원 시 호출 — 서버가 가진 슬롯 목록으로
+      // 로컬 상태를 완전히 교체한다. 서버에 저장된 슬롯이 하나도 없으면(신규 계정이거나
+      // 아직 저장 전) 빈 슬롯 하나로 초기화하고 onboarded를 false로 되돌린다 — 로그인한
+      // 계정이 바뀌었는데 이전 계정의 로컬 캐시가 "저장된 적 있음"으로 잘못 남아있을 수
+      // 있어서다.
+      loadProfiles: async () => {
+        set({ loading: true });
+        try {
+          const rows = await listProfiles();
+          if (rows.length === 0) {
+            set({ profiles: [emptyProfile('정보 1')], activeIndex: 0, onboarded: false, loading: false });
+          } else {
+            set({ profiles: rows.map(profileFromServer), activeIndex: 0, onboarded: true, loading: false });
+          }
+        } catch (err) {
+          // 오프라인 등으로 못 불러와도 화면은 로컬 캐시(persist)로 그냥 보여준다 —
+          // 다음 저장 시도에서 다시 에러가 나면 그때 사용자에게 알리면 된다.
+          set({ loading: false });
+        }
+      },
+
+      // "저장" 버튼 — 현재 활성 슬롯을 서버에 만들거나(최초) 갱신한다(그 다음부터).
+      // 실패하면 throw하므로 호출부가 try/catch로 사용자에게 알려야 한다.
+      saveActiveProfile: async () => {
+        const s = get();
+        const savingIndex = s.activeIndex;
+        const active = s.profiles[savingIndex];
+        const body = { name: active.name, basic: active.basic, capability: active.capability };
+        const saved = active.profileId == null
+          ? await createProfile(body)
+          : await updateProfile(active.profileId, body);
+        // 저장이 오가는 동안 사용자가 다른 슬롯으로 옮기거나 슬롯을 지웠을 수 있어, 저장을
+        // 누른 시점의 인덱스(savingIndex)를 그대로 써야 한다 — 응답을 받은 시점의
+        // activeIndex(다른 슬롯을 보고 있을 수 있음)에 덮어쓰면 엉뚱한 슬롯이 바뀐다.
+        set((s2) => {
+          if (savingIndex >= s2.profiles.length) return s2;
+          const profiles = s2.profiles.slice();
+          profiles[savingIndex] = profileFromServer(saved);
+          return { profiles, onboarded: true };
+        });
+      },
 
       reset: () => set(initial()),
     }),
-    { name: 'sbrain-mypage' },
+    { name: 'sbrain-mypage', partialize: (s) => ({ profiles: s.profiles, activeIndex: s.activeIndex, onboarded: s.onboarded }) },
   ),
 );
 

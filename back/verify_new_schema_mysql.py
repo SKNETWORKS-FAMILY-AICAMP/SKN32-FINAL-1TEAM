@@ -65,11 +65,11 @@ user = User(email='schema-test@example.com', name='스키마테스트', google_s
 db.add(user)
 db.commit()
 
-company = Company(user_id=user.user_id, start_type='온라인', biz_type='AI 서비스', ceo_name='스키마테스트')
+company = Company(user_id=user.user_id, biz_type='AI 서비스', ceo_name='스키마테스트')
 db.add(company)
 db.commit()
 
-project = Project(company_id=company.company_id, description='스키마 보강 검증용', notify_region='서울', notify_industry='IT')
+project = Project(company_id=company.company_id, description='스키마 보강 검증용')
 db.add(project)
 db.commit()
 

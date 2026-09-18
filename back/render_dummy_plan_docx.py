@@ -1,10 +1,11 @@
 """plan_document_export.py 동작 확인용 — 기존 더미 계획서 내용(front/src/features/
 Workflow.jsx의 PLAN_DOCUMENT_SECTIONS_REWORKED와 같은 LOCALFIT 헬스장 예약 서비스
-시나리오)을 초기창업패키지(일반형) 공식 양식 구조로 채워 실제 .docx로 뽑아본다.
+시나리오)을 초기창업패키지(일반형)·예비창업패키지 두 공식 양식 구조로 각각 채워
+실제 .docx 2개를 뽑아본다(2026-09-18, 두 양식 분기 추가).
 
 실행:
     python render_dummy_plan_docx.py
-결과: repo 루트에 사업계획서_초안.docx 생성.
+결과: repo 루트에 사업계획서_초안_초기창업패키지.docx / 사업계획서_초안_예비창업패키지.docx 생성.
 """
 from app.plan_document_export import (
     BudgetLineItem,
@@ -91,10 +92,17 @@ data = PlanDocumentData(
     협력기관=[
         PartnerRow('1', '○○결제', '결제 시스템 연동', 'PG 연동 개발 용역', '00.00'),
     ],
+    # 예비창업패키지 렌더링에서만 쓰이는 두 항목 — 이 더미 시나리오는 대표가 아직
+    # 개업 전(예비창업자)이라는 설정이라(개업연월일 필드 참고), 실제로는 예비창업패키지
+    # 쪽 값을 채우는 게 맞다.
+    직업='피트니스 센터 운영(개업 전)',
+    기업예정명='LOCALFIT',
 )
 
 if __name__ == '__main__':
-    docx_bytes = render_plan_docx(data)
-    with open('사업계획서_초안.docx', 'wb') as f:
-        f.write(docx_bytes)
-    print(f'사업계획서_초안.docx 생성 완료 ({len(docx_bytes):,} bytes)')
+    for template, suffix in (('early_general', '초기창업패키지'), ('preliminary', '예비창업패키지')):
+        docx_bytes = render_plan_docx(data, template=template)
+        filename = f'사업계획서_초안_{suffix}.docx'
+        with open(filename, 'wb') as f:
+            f.write(docx_bytes)
+        print(f'{filename} 생성 완료 ({len(docx_bytes):,} bytes)')

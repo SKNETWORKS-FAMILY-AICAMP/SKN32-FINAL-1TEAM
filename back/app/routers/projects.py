@@ -61,6 +61,8 @@ from app.models import (
     TeamMember,
     User,
     Verdict,
+    VerificationPolicy,
+    VerificationScoreHistory,
 )
 from app.schemas import (
     AgentExecutionOut,
@@ -116,6 +118,97 @@ _VERIFY2_CROSSCHECK_PREFIXES = ('FEATURE-',)
 def _num(value: Decimal | None) -> float | None:
     """Decimal -> float. 응답 JSON(changed 필드)에 그대로 넣기 위한 변환."""
     return float(value) if value is not None else None
+
+
+def _get_verification_policy(db: Session) -> VerificationPolicy:
+    """verification_policies는 운영 중 1행만 유지하는 설계다(app_schema.sql 주석) —
+    seed_dummy_pipeline.py가 이미 이 행을 보장해두므로, retry_task 시점엔 항상 있어야
+    정상이다. 없으면(예: seed 없이 직접 만든 plan) 500으로 명확히 알린다."""
+    policy = db.query(VerificationPolicy).order_by(VerificationPolicy.policy_id.asc()).first()
+    if policy is None:
+        raise HTTPException(status_code=500, detail='verification_policies 초기 행이 없습니다.')
+    return policy
+
+
+def _rescore_verify1(db: Session, plan: BusinessPlan, verify1_task_key: str) -> dict | None:
+    """검증-1(문서층) 재채점 — verify1_rubric/verify1_evidence 두 task_key가 공유하는 로직을
+    뽑아냈다. plan_score_reasons가 아직 없으면(초기 파이프라인이 한 번도 안 돌았거나 등)
+    None을 돌려준다 — 이 함수를 직접 호출하는 재시도 요청(verify1_rubric/verify1_evidence
+    task_key)은 호출부에서 그 경우 404로 막고, '작성' 재시도에 딸려오는 자동 재검증
+    (2026-09-18 추가, "재작성하면 점수도 바뀌어야 하지 않냐"는 지적)에서는 그냥 건너뛴다
+    (작성 자체는 이미 성공했으니 그 응답까지 실패시킬 이유가 없음)."""
+    reasons = db.query(PlanScoreReason).filter(PlanScoreReason.plan_id == plan.plan_id).all()
+    if not reasons:
+        return None
+    reasons_by_code = {r.item_code: r for r in reasons if r.item_code is not None}
+    rubric_input = [(r.item_code, r.max_score or Decimal('10')) for r in reasons if r.item_code is not None]
+
+    if verify1_task_key == 'verify1_rubric':
+        results = agents.run_verify1_rubric_retry(rubric_input)
+    else:
+        # E-V1-EVIDENCE: "evidenceLocator 없는 감점은 무효 처리하고 점수를 복원한다" —
+        # 이 규칙 자체는 app/agents.py의 run_verify1_evidence_retry() 안에 구현돼 있다.
+        results = agents.run_verify1_evidence_retry(rubric_input)
+
+    before_score = plan.doc_score
+    item_changes = {}
+    for result in results:
+        reason = reasons_by_code.get(result.item_code)
+        if reason is None:
+            continue  # 담당자 구현이 모르는 item_code를 돌려주면 조용히 무시(방어적)
+        item_changes[result.item_code] = {
+            'before': {'score': _num(reason.score), 'evidence_locator': reason.evidence_locator},
+            'after': {'score': _num(result.score), 'evidence_locator': result.evidence_locator},
+        }
+        reason.score = result.score
+        reason.evidence_locator = result.evidence_locator
+    plan.doc_score = sum((r.score or Decimal('0')) for r in reasons)
+
+    # [2026-09-18 수정] 재채점 시에도 verification_score_history에 새 행을 남긴다 — 예전엔
+    # plan.doc_score만 갱신하고 이력을 안 남겨서, 관리자 대시보드 "운영 현황"의 채점 편차
+    # (1회→2회)가 재시도가 있어도 항상 0건으로 보이는 버그가 있었다.
+    policy = _get_verification_policy(db)
+    db.add(VerificationScoreHistory(
+        plan_id=plan.plan_id, layer='doc', score=plan.doc_score, is_rerun=True,
+        policy_id=policy.policy_id, applied_weight=policy.doc_weight,
+        applied_pass_threshold=policy.pass_threshold, applied_rerun_cap=policy.rerun_cap,
+    ))
+    return {'scores': item_changes, 'doc_score': {'before': _num(before_score), 'after': _num(plan.doc_score)}}
+
+
+def _rescore_verify2(db: Session, plan: BusinessPlan, artifact: Artifact, verify2_task_key: str) -> dict | None:
+    """검증-2(산출물층) 재채점 — verify2_static/verify2_crosscheck 공유 로직. 채점 근거가
+    없으면(구현 재시도에 딸려오는 자동 재검증에서) None."""
+    prefixes = _VERIFY2_STATIC_PREFIXES if verify2_task_key == 'verify2_static' else _VERIFY2_CROSSCHECK_PREFIXES
+    all_reasons = db.query(ArtifactScoreReason).filter(ArtifactScoreReason.artifact_id == artifact.artifact_id).all()
+    reasons = [r for r in all_reasons if r.item_code and r.item_code.startswith(prefixes)]
+    if not reasons:
+        return None
+    reasons_by_code = {r.item_code: r for r in reasons}
+    rubric_input = [(r.item_code, r.max_score or Decimal('10')) for r in reasons]
+    results = agents.run_verify2_retry(
+        rubric_input, check_kind='static' if verify2_task_key == 'verify2_static' else 'crosscheck',
+    )
+
+    before_score = artifact.artifact_score
+    item_changes = {}
+    for result in results:
+        reason = reasons_by_code.get(result.item_code)
+        if reason is None:
+            continue
+        item_changes[result.item_code] = {'before': _num(reason.score), 'after': _num(result.score)}
+        reason.score = result.score
+        reason.evidence_locator = result.evidence_locator
+    artifact.artifact_score = sum((r.score or Decimal('0')) for r in all_reasons)
+
+    # [2026-09-18 수정] verify1_* 재채점과 같은 이유 — 산출물층(code)도 재채점 이력을 남긴다.
+    policy = _get_verification_policy(db)
+    db.add(VerificationScoreHistory(
+        plan_id=plan.plan_id, layer='code', score=artifact.artifact_score, is_rerun=True,
+        policy_id=policy.policy_id, applied_weight=policy.code_weight,
+        applied_pass_threshold=policy.pass_threshold, applied_rerun_cap=policy.rerun_cap,
+    ))
+    return {'scores': item_changes, 'artifact_score': {'before': _num(before_score), 'after': _num(artifact.artifact_score)}}
 
 
 def _upsert_plan_section(db: Session, plan_id: int, draft) -> dict:
@@ -189,10 +282,16 @@ def _create_company_for_project(db: Session, current_user: User, body: ProjectCr
     더 이상 동시 요청을 막기 위한 락이나 insert-then-catch가 필요 없다."""
     company = Company(
         user_id=current_user.user_id,
-        start_type=body.start_type,
+        # [2026-09-17 배선] IntakeForm.jsx가 필수로 물어보는 신청자 유형이 여기까지 안 실려서
+        # 화면에서 고른 값이 버려지고 있었다 — 이제 받아서 저장한다(하정원님 지적으로 발견).
+        applicant_type=body.applicant_type,
         biz_type=body.biz_type,
         ceo_name=body.ceo_name,
         founded_at=body.founded_at,
+        # [2026-09-17 배선] 컬럼은 있었는데 요청 바디에서 받아서 저장하는 코드가 없었다.
+        company_name=body.company_name,
+        business_reg_no=body.business_reg_no,
+        rep_type=body.rep_type,
     )
     db.add(company)
     db.flush()  # company_id 확보
@@ -396,18 +495,24 @@ def get_pipeline_result(
 
 
 def _build_plan_document_data(db: Session, project: Project, plan: BusinessPlan | None):
-    """project(+company/team_members/pricing_items)와 생성된 계획서(BusinessPlan.sections)를
-    초기창업패키지(일반형) 공식 양식(별첨1) 구조(app/plan_document_export.py의
-    PlanDocumentData)로 옮긴다.
+    """project(+company/team_members/pricing_items/budget_items/schedule_items/partners)와
+    생성된 계획서(BusinessPlan.sections)를 공식 양식(별첨1) 구조(app/plan_document_export.py의
+    PlanDocumentData)로 옮긴다. 반환값은 (data, template) 튜플 — template은 company.
+    applicant_type이 'preliminary'(예비창업자)면 'preliminary', 그 외(individual/corp/
+    미입력)면 'early_general'이다. 두 양식은 원본 파일(사용자가 준 초기창업패키지(일반형)/
+    예비창업패키지 .docx 2종)을 직접 비교해서 실제로 다른 항목만 갈랐다
+    (app/plan_document_export.py 모듈 docstring 참고).
 
-    [2026-09-15] 지금 DB 스키마엔 공식 양식이 요구하는 항목 중 상당수(기업명, 사업자등록번호,
-    지원분야/전문기술분야, 사업비 집행계획 세부, 사업추진일정, 지방우대 지역 등)가 아예
-    저장할 컬럼이 없다 — ProjectCreateRequest에 그런 필드를 받은 적이 없기 때문이다.
-    그 항목들은 원본 양식 자체의 안내 표기('○○○', 'OO.OO' 등)를 그대로 남겨서, 실제로
-    없는 값을 그럴듯하게 지어내지 않는다. 반대로 실제로 DB에 있는 값(프로젝트 설명, 팀원,
-    plan_sections 3개 — 문제인식/실현가능성/성장전략)은 그대로 채운다. 이 함수가 지어내는
-    부분과 실제 DB 값인 부분을 나중에 필드 하나씩 스키마에 추가해가며 줄이면 된다."""
-    from app.plan_document_export import BudgetLineItem, PlanDocumentData, ScheduleRow, TeamRow
+    [2026-09-17 배선] company_name/business_reg_no/rep_type(companies),
+    output_summary/tech_field/regional_priority_area(projects),
+    project_budget_items/project_schedule_items/project_partners 테이블이 이번에 스키마에
+    추가됐지만, 이 함수는 그 뒤로도 계속 하드코딩 placeholder('○○○' 등)를 반환하고 있었다
+    — 멘토링 피드백("실제 API·Agent 입출력 구조와 DB 스키마 간 정합성 점검 필요")으로
+    발견. 이제 값이 있으면 실제 DB 값을, 없으면(아직 그 화면/Agent가 안 만들어져 입력된
+    적이 없는 경우) 기존처럼 원본 양식 안내 표기로 채운다 — 지어내지 않는다는 원칙은
+    유지. 정부지원사업비/자기부담금/총사업비는 project_budget_items 행이 있으면 그 금액을
+    합산해서 채운다(각 행이 없으면 합계도 낼 수 없으니 placeholder 유지)."""
+    from app.plan_document_export import BudgetLineItem, PartnerRow, PlanDocumentData, ScheduleRow, TeamRow
 
     company = db.get(Company, project.company_id)
     section_by_tag = {s.tag: s for s in (plan.sections if plan is not None else [])}
@@ -415,6 +520,9 @@ def _build_plan_document_data(db: Session, project: Project, plan: BusinessPlan 
     def _section_body(tag: str) -> str:
         section = section_by_tag.get(tag)
         return section.body if section is not None and section.body else '※ 아직 생성된 계획서 문단이 없습니다.'
+
+    def _or_placeholder(value, placeholder):
+        return value if value else placeholder
 
     team_members = project.team_members
     team_rows = [
@@ -425,32 +533,74 @@ def _build_plan_document_data(db: Session, project: Project, plan: BusinessPlan 
         f'{m.name}({m.role or "역할 미입력"}): {m.experience or "경력 정보 미입력"}' for m in team_members
     ) or '※ 등록된 팀원 정보가 없습니다.'
 
-    pricing_rows = [
-        BudgetLineItem(p.service_name, p.service_name, f'{p.unit_price:,.0f}원' if p.unit_price else '○○', '○○', '○○', '○○')
-        for p in project.pricing_items
-    ] or [BudgetLineItem('○○', '○○', '○○', '○○', '○○', '○○')]
+    def _won(amount) -> str:
+        return f'{amount:,.0f}원' if amount is not None else '○○'
+
+    # 사업비 집행계획: project_budget_items(신규, 정식 입력)가 있으면 그걸 그대로 쓰고,
+    # 없으면 예전처럼 pricing_items(수익모델 단가)로 대략 채운다(둘은 다른 개념이라 임시
+    # 대체일 뿐 — app_schema.sql의 project_budget_items 테이블 주석 참고).
+    budget_items = sorted(project.budget_items, key=lambda b: b.item_order or 0)
+    if budget_items:
+        budget_rows = [
+            BudgetLineItem(
+                b.category or '○○', b.execution_plan or '○○', _won(b.total_amount),
+                _won(b.government_amount), _won(b.self_cash_amount), _won(b.self_in_kind_amount),
+            )
+            for b in budget_items
+        ]
+        total_amount = sum((b.total_amount or 0) for b in budget_items)
+        government_amount = sum((b.government_amount or 0) for b in budget_items)
+        self_cash = sum((b.self_cash_amount or 0) for b in budget_items)
+        self_in_kind = sum((b.self_in_kind_amount or 0) for b in budget_items)
+        total_amount_text, government_amount_text = _won(total_amount), _won(government_amount)
+        self_cash_text, self_in_kind_text = _won(self_cash), _won(self_in_kind)
+    else:
+        budget_rows = [
+            BudgetLineItem(p.service_name, p.service_name, f'{p.unit_price:,.0f}원' if p.unit_price else '○○', '○○', '○○', '○○')
+            for p in project.pricing_items
+        ] or [BudgetLineItem('○○', '○○', '○○', '○○', '○○', '○○')]
+        total_amount_text = government_amount_text = self_cash_text = self_in_kind_text = '○○,○○○천원'
+
+    feasibility_schedule = sorted(
+        (s for s in project.schedule_items if s.section == 'feasibility'), key=lambda s: s.item_order or 0
+    )
+    growth_schedule = sorted(
+        (s for s in project.schedule_items if s.section == 'growth'), key=lambda s: s.item_order or 0
+    )
+
+    def _schedule_rows(rows):
+        return [
+            ScheduleRow(str(i + 1), s.category or '○○', s.period or '○○.○○ ~ ○○.○○', s.detail or s.content or '○○')
+            for i, s in enumerate(rows)
+        ] or [ScheduleRow('1', '○○', '○○.○○ ~ ○○.○○', '○○')]
+
+    partner_rows = [
+        PartnerRow(str(i + 1), p.partner_name or '○○', p.capability or '○○', p.collaboration_plan or '○○', p.collaboration_timing or '○○')
+        for i, p in enumerate(sorted(project.partners, key=lambda p: p.item_order or 0))
+    ]
 
     item_desc = project.description or ''
+    template = 'preliminary' if company and company.applicant_type == 'preliminary' else 'early_general'
 
-    return PlanDocumentData(
-        기업명='○○○',  # companies 테이블에 기업명 컬럼이 아직 없음
+    data = PlanDocumentData(
+        기업명=_or_placeholder(company.company_name if company else None, '○○○'),
         개업연월일=str(company.founded_at) if company and company.founded_at else '예비창업자(개업 전)',
         사업자_구분='법인사업자' if company and company.founded_at else '개인사업자',
-        대표자_유형='단독',
-        사업자등록번호='○○○-○○-○○○○○',
-        사업자_소재지=project.notify_region or '○○도 ○○시·군',
+        대표자_유형=_or_placeholder(company.rep_type if company else None, '단독'),
+        사업자등록번호=_or_placeholder(company.business_reg_no if company else None, '○○○-○○-○○○○○'),
+        사업자_소재지='○○도 ○○시·군',
         창업아이템명=item_desc[:60] or '○○기술이 적용된 ○○제품·서비스',
-        산출물='○○ (협약기간 내 목표 — 산출물 형태·수량 입력 필요)',
-        지원분야=project.notify_industry or '○○',
-        전문기술분야='○○·○○',
-        정부지원사업비='○○,○○○천원',
-        자기부담_현금='○,○○○천원',
-        자기부담_현물='○,○○○천원',
-        총사업비='○○,○○○천원',
-        지방우대_지역_해당여부='○○ 지역',
+        산출물=_or_placeholder(project.output_summary, '○○ (협약기간 내 목표 — 산출물 형태·수량 입력 필요)'),
+        지원분야='○○',
+        전문기술분야=_or_placeholder(project.tech_field, '○○·○○'),
+        정부지원사업비=government_amount_text,
+        자기부담_현금=self_cash_text,
+        자기부담_현물=self_in_kind_text,
+        총사업비=total_amount_text,
+        지방우대_지역_해당여부=_or_placeholder(project.regional_priority_area, '해당 없음'),
         팀구성현황=team_rows,
         아이템_명칭=item_desc[:20] or '○○',
-        아이템_범주=project.notify_industry or '○○',
+        아이템_범주='○○',
         아이템_개요=item_desc,
         요약_문제인식=_section_body('1-1'),
         요약_실현가능성=_section_body('2-1'),
@@ -458,14 +608,19 @@ def _build_plan_document_data(db: Session, project: Project, plan: BusinessPlan 
         요약_팀구성=team_text,
         문제인식_본문=_section_body('1-1'),
         실현가능성_본문=_section_body('2-1'),
-        실현가능성_일정=[ScheduleRow('1', '○○', '○○.○○ ~ ○○.○○', '○○')],
-        사업비_집행계획=pricing_rows,
+        실현가능성_일정=_schedule_rows(feasibility_schedule),
+        사업비_집행계획=budget_rows,
         성장전략_본문=_section_body('3-1'),
-        성장전략_일정=[ScheduleRow('1', '○○', '○○.○○ ~ ○○.○○', '○○')],
+        성장전략_일정=_schedule_rows(growth_schedule),
         팀구성_본문=team_text,
         팀구성_안=team_rows,
-        협력기관=[],
+        협력기관=partner_rows,
+        # 예비창업패키지 전용(early_general 렌더링에서는 안 쓰임) — 기업(예정)명은
+        # company_name을 그대로 재사용한다(예비창업자도 창업 예정 상호를 입력할 수 있음).
+        # '직업'은 IntakeForm에 대응 입력칸이 없어 지어내지 않고 placeholder로 남긴다.
+        기업예정명=_or_placeholder(company.company_name if company else None, '○○○'),
     )
+    return data, template
 
 
 @router.get('/{project_id}/plan-document.docx')
@@ -474,8 +629,10 @@ def download_plan_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """사업계획서를 초기창업패키지(일반형) 공식 양식(별첨1) 구조로 채운 진짜 .docx로
-    내려준다(app/plan_document_export.py). 매칭/계획서가 아직 없어도 막지 않는다 —
+    """사업계획서를 공식 양식(별첨1) 구조로 채운 진짜 .docx로 내려준다
+    (app/plan_document_export.py). company.applicant_type이 'preliminary'(예비창업자)면
+    예비창업패키지 양식, 그 외면 초기창업패키지(일반형) 양식으로 자동 분기한다
+    (_build_plan_document_data 참고). 매칭/계획서가 아직 없어도 막지 않는다 —
     _build_plan_document_data가 없는 값은 원본 양식 안내 표기로 채워서라도 지금
     입력된 정보(프로젝트 설명·팀원)만으로 미리보기를 볼 수 있게 한다."""
     from app.plan_document_export import render_plan_docx
@@ -496,11 +653,54 @@ def download_plan_document(
             .first()
         )
 
-    data = _build_plan_document_data(db, project, plan)
-    docx_bytes = render_plan_docx(data)
+    data, template = _build_plan_document_data(db, project, plan)
+    docx_bytes = render_plan_docx(data, template=template)
     filename = quote('사업계획서.docx')
     return Response(
         content=docx_bytes,
+        media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        headers={'Content-Disposition': f"attachment; filename*=UTF-8''{filename}"},
+    )
+
+
+# [2026-09-18] 신분증 사본·사업자등록증 등 "증빙서류"는 사업계획서(별첨1)와 달리 우리가
+# 데이터를 채워 생성하는 문서가 아니다 — 원본 공고문 그대로(빈 동의서 양식 포함)를
+# 그냥 내려주면 되는 정적 파일이라, plan-document.docx처럼 매번 python-docx로 새로
+# 만들지 않고 실제 공고 원본 파일(app/assets/attachment_guides/)을 그대로 서빙한다.
+# 지금은 초기창업패키지(일반형) 원본(별첨2 "증빙서류 제출목록 안내")만 있다 — 예비창업패키지
+# 쪽 원본 파일을 받으면 _ATTACHMENT_GUIDE_FILES에 'preliminary' 키만 추가하면 된다.
+_ATTACHMENT_GUIDE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'attachment_guides')
+_ATTACHMENT_GUIDE_FILES = {
+    'early_general': ('early_general_submission_guide.docx', '초기창업패키지_증빙서류_제출목록_안내.docx'),
+}
+
+
+@router.get('/{project_id}/attachment-guide.docx')
+def download_attachment_guide(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """신분증 사본 등 신청자격 증빙서류가 뭔지 안내하는 공고 원본 문서(별첨2)를 그대로
+    내려준다 — download_plan_document와 같은 template 분기(company.applicant_type이
+    'preliminary'면 예비창업패키지, 그 외면 초기창업패키지(일반형))를 쓴다."""
+    project = _get_owned_project(db, project_id, current_user)
+    company = project.company
+    template = 'preliminary' if company and company.applicant_type == 'preliminary' else 'early_general'
+
+    entry = _ATTACHMENT_GUIDE_FILES.get(template)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f'{template} 유형의 증빙서류 안내 파일이 아직 없습니다')
+    stored_name, download_name = entry
+    path = os.path.join(_ATTACHMENT_GUIDE_DIR, stored_name)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail='증빙서류 안내 파일을 찾을 수 없습니다')
+
+    with open(path, 'rb') as f:
+        file_bytes = f.read()
+    filename = quote(download_name)
+    return Response(
+        content=file_bytes,
         media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         headers={'Content-Disposition': f"attachment; filename*=UTF-8''{filename}"},
     )
@@ -546,8 +746,10 @@ async def create_project(
     project = Project(
         company_id=company.company_id,
         description=body.description,
-        notify_region=body.notify_region,
-        notify_industry=body.notify_industry,
+        # [2026-09-17 배선] 컬럼은 있었는데 요청 바디에서 받아서 저장하는 코드가 없었다.
+        output_summary=body.output_summary,
+        tech_field=body.tech_field,
+        regional_priority_area=body.regional_priority_area,
     )
     db.add(project)
     db.flush()  # project_id 확보
@@ -735,35 +937,24 @@ def retry_task(
         drafts = agents.run_writing_agent_retry(project.description, tags=['1-1', '2-1'])
         changed['sections'] = {d.tag: _upsert_plan_section(db, plan.plan_id, d) for d in drafts}
 
+        # [2026-09-18 추가] "본문/그래프/표를 재작성했는데 왜 점수가 그대로냐"는 지적(하정원님)
+        # — 작성은 콘텐츠만 바꾸고 채점은 검증-1 몫이라 그동안 점수가 안 바뀌었는데, 실제
+        # 화면에도 검증-1을 따로 재시도하는 버튼이 없어(재작성 버튼뿐) 사용자가 점수를 갱신할
+        # 방법 자체가 없었다. 그래서 작성 재시도에 검증-1(rubric+evidence) 재채점을 자동으로
+        # 붙인다 — 채점 근거가 아직 없으면(초기 파이프라인 전) 조용히 건너뛴다.
+        verify1_changed = {}
+        for verify1_key in ('verify1_rubric', 'verify1_evidence'):
+            result = _rescore_verify1(db, plan, verify1_key)
+            if result is not None:
+                verify1_changed[verify1_key] = result
+        if verify1_changed:
+            changed['verify1_rescore'] = verify1_changed
+
     elif task_key in ('verify1_rubric', 'verify1_evidence'):
-        reasons = db.query(PlanScoreReason).filter(PlanScoreReason.plan_id == plan.plan_id).all()
-        if not reasons:
+        result = _rescore_verify1(db, plan, task_key)
+        if result is None:
             raise HTTPException(status_code=404, detail='재채점할 채점 근거(plan_score_reasons)가 없습니다')
-        reasons_by_code = {r.item_code: r for r in reasons if r.item_code is not None}
-        rubric_input = [(r.item_code, r.max_score or Decimal('10')) for r in reasons if r.item_code is not None]
-
-        if task_key == 'verify1_rubric':
-            results = agents.run_verify1_rubric_retry(rubric_input)
-        else:
-            # E-V1-EVIDENCE: "evidenceLocator 없는 감점은 무효 처리하고 점수를 복원한다" —
-            # 이 규칙 자체는 app/agents.py의 run_verify1_evidence_retry() 안에 구현돼 있다.
-            results = agents.run_verify1_evidence_retry(rubric_input)
-
-        before_score = plan.doc_score
-        item_changes = {}
-        for result in results:
-            reason = reasons_by_code.get(result.item_code)
-            if reason is None:
-                continue  # 담당자 구현이 모르는 item_code를 돌려주면 조용히 무시(방어적)
-            item_changes[result.item_code] = {
-                'before': {'score': _num(reason.score), 'evidence_locator': reason.evidence_locator},
-                'after': {'score': _num(result.score), 'evidence_locator': result.evidence_locator},
-            }
-            reason.score = result.score
-            reason.evidence_locator = result.evidence_locator
-        plan.doc_score = sum((r.score or Decimal('0')) for r in reasons)
-        changed['scores'] = item_changes
-        changed['doc_score'] = {'before': _num(before_score), 'after': _num(plan.doc_score)}
+        changed.update(result)
 
     elif task_key in ('implement_prototype', 'implement_infographic'):
         artifact = (
@@ -806,6 +997,16 @@ def retry_task(
             changed['infographic_path'] = {'before': artifact.infographic_path, 'after': new_url}
             artifact.infographic_path = new_url
 
+        # [2026-09-18 추가] writing과 같은 이유 — 구현(파일 재생성)에도 검증-2(static+
+        # crosscheck) 재채점을 자동으로 붙인다. 채점 근거가 없으면 조용히 건너뛴다.
+        verify2_changed = {}
+        for verify2_key in ('verify2_static', 'verify2_crosscheck'):
+            result = _rescore_verify2(db, plan, artifact, verify2_key)
+            if result is not None:
+                verify2_changed[verify2_key] = result
+        if verify2_changed:
+            changed['verify2_rescore'] = verify2_changed
+
     elif task_key in ('verify2_static', 'verify2_crosscheck'):
         artifact = (
             db.query(Artifact)
@@ -816,34 +1017,14 @@ def retry_task(
         if artifact is None:
             raise HTTPException(status_code=404, detail='재채점할 산출물(artifacts)이 없습니다')
 
-        prefixes = _VERIFY2_STATIC_PREFIXES if task_key == 'verify2_static' else _VERIFY2_CROSSCHECK_PREFIXES
-        all_reasons = (
-            db.query(ArtifactScoreReason).filter(ArtifactScoreReason.artifact_id == artifact.artifact_id).all()
-        )
-        reasons = [r for r in all_reasons if r.item_code and r.item_code.startswith(prefixes)]
-        if not reasons:
+        result = _rescore_verify2(db, plan, artifact, task_key)
+        if result is None:
+            prefixes = _VERIFY2_STATIC_PREFIXES if task_key == 'verify2_static' else _VERIFY2_CROSSCHECK_PREFIXES
             raise HTTPException(
                 status_code=404,
                 detail=f'{task_key}에 해당하는 채점 근거(item_code 접두어 {prefixes})가 없습니다',
             )
-        reasons_by_code = {r.item_code: r for r in reasons}
-        rubric_input = [(r.item_code, r.max_score or Decimal('10')) for r in reasons]
-        results = agents.run_verify2_retry(
-            rubric_input, check_kind='static' if task_key == 'verify2_static' else 'crosscheck',
-        )
-
-        before_score = artifact.artifact_score
-        item_changes = {}
-        for result in results:
-            reason = reasons_by_code.get(result.item_code)
-            if reason is None:
-                continue
-            item_changes[result.item_code] = {'before': _num(reason.score), 'after': _num(result.score)}
-            reason.score = result.score
-            reason.evidence_locator = result.evidence_locator
-        artifact.artifact_score = sum((r.score or Decimal('0')) for r in all_reasons)
-        changed['scores'] = item_changes
-        changed['artifact_score'] = {'before': _num(before_score), 'after': _num(artifact.artifact_score)}
+        changed.update(result)
 
     elif task_key == 'review_expression':
         latest = (
@@ -872,17 +1053,30 @@ def retry_task(
             .order_by(ProofreadLog.log_id.desc())
             .first()
         )
-        result = agents.run_review_token_check_retry(project.description)
+        next_attempt_no = (latest.attempt_no + 1) if latest is not None else 1
+        result = agents.run_review_token_check_retry(project.description, attempt_no=next_attempt_no)
         db.add(ProofreadLog(
             plan_id=plan.plan_id,
             original_text=(latest.corrected_text if latest is not None else project.description),
             corrected_text=result.corrected_text,
             reason=result.reason,
+            attempt_no=next_attempt_no,
+            score=result.score,
+            passed=result.passed,
+            violation_type=result.violation_type,
+            violation_note=result.violation_note,
+            # passed=False인 시도는 그 즉시 "검수 회수 문단" 탭의 라벨링 대기열로 들어간다.
+            recovery_status=None if result.passed else 'pending',
         ))
         changed['corrected_text'] = {
             'before': latest.corrected_text if latest is not None else None,
             'after': result.corrected_text,
         }
+        changed['score'] = {'before': _num(latest.score) if latest is not None else None, 'after': _num(result.score)}
+        changed['passed'] = result.passed
+        if not result.passed:
+            changed['violation_type'] = result.violation_type
+            changed['violation_note'] = result.violation_note
 
     else:  # pragma: no cover — _RETRIABLE_TASK_KEYS 체크를 통과했으면 도달할 수 없다.
         raise HTTPException(status_code=500, detail=f'처리 로직이 없는 task_key: {task_key!r}')

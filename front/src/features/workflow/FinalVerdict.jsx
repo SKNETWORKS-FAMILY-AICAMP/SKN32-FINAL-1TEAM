@@ -6,6 +6,14 @@ import {GeneralInfoBlock,PlanExtrasBlock} from './PlanForm.jsx';
 import {PrototypeFrame,ResultPreview} from './ArtifactResult.jsx';
 import {detectItemCategory,diffSentences,taskReasons,DOC_SCORE_BY_OUTCOME} from './utils.js';
 import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,WRITING_SUBTASKS} from './data.js';
+import {retryTask} from '../../api.js';
+
+// 계획서 라벨(WRITING_SUBTASKS)은 전부 '작성' Agent 하나(writing)로, 산출물 라벨은
+// ARTIFACT_SUBTASKS_BY_CATEGORY의 두 항목으로 각각 매핑한다 — app/schemas.py RetryTaskRequest 참고.
+const TASK_KEY_BY_LABEL = {
+  '사업계획서 본문 작성': 'writing', '그래프 생성': 'writing', '표 생성': 'writing',
+  '실행 파일 제작': 'implement_prototype', '인포그래픽 제작': 'implement_infographic',
+};
 
 export function PlanCompareColumns({ itemInfo, announcement }){
   const diffs = PLAN_DOCUMENT_SECTIONS.map((s, i) => diffSentences(s.body, PLAN_DOCUMENT_SECTIONS_REWORKED[i].body));
@@ -317,7 +325,7 @@ export function ArtifactCarousel({ hasExecutable }){
   );
 }
 
-export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOutcome, artifactOutcome, setDocOutcome, setArtifactOutcome }){
+export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOutcome, artifactOutcome, setDocOutcome, setArtifactOutcome, projectId }){
   const docScore = DOC_SCORE_BY_OUTCOME[docOutcome];
   const artifactScore = ARTIFACT_SCORE_BY_OUTCOME[artifactOutcome];
   const artifactRawTotal = artifactScore.autoCheck.raw + artifactScore.crossCheck.raw;
@@ -379,39 +387,50 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
   // 골랐을 때 하나만(프로토타입) 보여주고 종합 판정으로 넘어가 버리면 계획서 쪽
   // 대조 결과를 놓친다(사용자 지적) — viewerOpen을 'both'로 두고, 모달 안에서
   // 계획서·프로토타입 비교를 위아래로 둘 다 보여준다.
-  const handleRewrite = () => {
+  // POST /projects/{id}/retry-task 실제 호출(app/routers/projects.py retry_task) — 예전엔
+  // setTimeout으로 스피너·비교 모달만 흉내 내고 서버 호출이 없어 DB가 안 바뀌었다. 아래
+  // 비교 모달(TASK_REWORK_SUMMARY 등 고정 시연 문구)은 그대로 두고, 실제 반영 여부만 API로 확인한다.
+  const handleRewrite = async () => {
     if (checkedTasks.length === 0) return;
     const picked = checkedTasks;
     const pickedLayers = new Set(allTasks.filter((t) => picked.includes(t.label)).map((t) => t.layer));
     const fromTotal = finalTotal; // 재작성 전 총점 — 변경 내역 헤더의 "X → Y" 중 X
     setRunningTasks(picked);
     setCheckedTasks([]);
-    setTimeout(() => {
+    const taskKeys = [...new Set(picked.map((label) => TASK_KEY_BY_LABEL[label]).filter(Boolean))];
+    try {
+      if (projectId) await Promise.all(taskKeys.map((key) => retryTask(projectId, key)));
+    } catch (err) {
+      console.error('재작성 요청이 실패했어요', err);
+      window.alert(err.message || '재작성에 실패했어요. 다시 시도해 주세요.');
       setRunningTasks([]);
-      setReworkDiff(allTasks.map(({ label, layer }) => {
-        const changed = picked.includes(label);
-        const summary = TASK_REWORK_SUMMARY[label] || { before: '변경 없음', after: '변경 없음' };
-        return changed
-          ? { label, layer, before: summary.before, after: summary.after, changed: true }
-          : { label, layer, before: '변경 없음', after: '변경 없음', changed: false };
-      }));
-      setReworkFromTotal(fromTotal);
-      setReworkedParts({
-        plan: pickedLayers.has('계획서'),
-        infographic: picked.includes('인포그래픽 제작'),
-        prototype: picked.includes('실행 파일 제작'),
-      });
-      // 고른 층만 점수를 올린다 — 고르지 않은 층은 그대로 승계된다(v3 §2). ARTIFACT_
-      // SCORE_BY_OUTCOME.pass/DOC_SCORE_BY_OUTCOME.pass가 시연 로그의 실제 재작성-후
-      // 값이라, 이 전환이 곧 시연 로그가 보여준 점수 진행 그 자체가 된다.
-      if (pickedLayers.has('계획서')) setDocOutcome('pass');
-      if (pickedLayers.has('프로토타입')) setArtifactOutcome('pass');
-      setViewerCompare(true);
-      setViewerOpen(
-        pickedLayers.has('계획서') && pickedLayers.has('프로토타입') ? 'both'
-          : pickedLayers.has('프로토타입') ? 'artifact' : 'plan'
-      );
-    }, 1600);
+      setCheckedTasks(picked);
+      return;
+    }
+    setRunningTasks([]);
+    setReworkDiff(allTasks.map(({ label, layer }) => {
+      const changed = picked.includes(label);
+      const summary = TASK_REWORK_SUMMARY[label] || { before: '변경 없음', after: '변경 없음' };
+      return changed
+        ? { label, layer, before: summary.before, after: summary.after, changed: true }
+        : { label, layer, before: '변경 없음', after: '변경 없음', changed: false };
+    }));
+    setReworkFromTotal(fromTotal);
+    setReworkedParts({
+      plan: pickedLayers.has('계획서'),
+      infographic: picked.includes('인포그래픽 제작'),
+      prototype: picked.includes('실행 파일 제작'),
+    });
+    // 고른 층만 점수를 올린다 — 고르지 않은 층은 그대로 승계된다(v3 §2). ARTIFACT_
+    // SCORE_BY_OUTCOME.pass/DOC_SCORE_BY_OUTCOME.pass가 시연 로그의 실제 재작성-후
+    // 값이라, 이 전환이 곧 시연 로그가 보여준 점수 진행 그 자체가 된다.
+    if (pickedLayers.has('계획서')) setDocOutcome('pass');
+    if (pickedLayers.has('프로토타입')) setArtifactOutcome('pass');
+    setViewerCompare(true);
+    setViewerOpen(
+      pickedLayers.has('계획서') && pickedLayers.has('프로토타입') ? 'both'
+        : pickedLayers.has('프로토타입') ? 'artifact' : 'plan'
+    );
   };
 
   // 기준 이상이면 곧장 검수로, 미달이면 되돌릴 수 없음을 확인받은 뒤에만 검수로 넘어간다(E4).

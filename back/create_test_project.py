@@ -55,8 +55,6 @@ def main() -> None:
     parser.add_argument('--email', default='test@example.com', help='가짜 로그인에 쓸 이메일(계정 구분용)')
     parser.add_argument('--name', default='테스트유저')
     parser.add_argument('--description', default='더미 파이프라인 테스트용 프로젝트')
-    parser.add_argument('--region', default='서울')
-    parser.add_argument('--industry', default='IT')
     args = parser.parse_args()
 
     # google-auth 검증 함수만 가짜로 바꾼다 — 실제 구글 서버에 요청 안 보내고 바로 통과시킨다.
@@ -79,12 +77,9 @@ def main() -> None:
     print(f'로그인 성공 ({args.email})')
 
     payload = {
-        'start_type': '온라인',
         'biz_type': 'AI 서비스',
         'ceo_name': args.name,
         'description': args.description,
-        'notify_region': args.region,
-        'notify_industry': args.industry,
         'team_members': [],
         'pricing_items': [{'service_name': '기본 서비스', 'unit_price': 1000000}],
     }

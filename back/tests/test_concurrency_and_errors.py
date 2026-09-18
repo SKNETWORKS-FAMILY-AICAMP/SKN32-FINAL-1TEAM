@@ -13,8 +13,8 @@ from app.models import MatchResult, Notice
 
 def _payload(**overrides):
     body = dict(
-        start_type='예비창업', biz_type=None, ceo_name='김서준', founded_at=None,
-        description='동네 헬스장 예약 서비스', notify_region='전국', notify_industry='기타',
+        biz_type=None, ceo_name='김서준', founded_at=None,
+        description='동네 헬스장 예약 서비스',
         team_members=[], pricing_items=[],
     )
     body.update(overrides)
@@ -101,7 +101,7 @@ class TestErrorCases:
 
     def test_malformed_create_payload_gets_422(self, authed_client):
         # description(필수)이 빠짐
-        bad_body = dict(start_type='예비창업', notify_region='전국', notify_industry='기타')
+        bad_body = dict(biz_type='개인')
         res = authed_client.post('/projects', data={'payload': json.dumps(bad_body)})
         assert res.status_code == 422, res.text
 

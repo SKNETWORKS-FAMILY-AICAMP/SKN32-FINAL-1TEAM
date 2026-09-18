@@ -11,6 +11,7 @@ db_session 픽스처가 테스트 함수마다 DB를 비워주기 때문에, 그
 실행:
     pytest tests/test_admin.py -v
 """
+import datetime
 import json
 
 import pytest
@@ -18,7 +19,7 @@ from fastapi.testclient import TestClient
 
 import app.routers.auth as auth_router
 import app.security as security
-from app.models import Faq, Notice, User, VerificationChecklistItem
+from app.models import Faq, ImportRun, Notice, ProofreadLog, User, VerificationChecklistItem
 from seed_dummy_admin_data import main as seed_admin_data_main
 from seed_dummy_pipeline import seed_dummy_pipeline
 
@@ -49,8 +50,8 @@ def _login(client: TestClient, email: str, name: str) -> None:
 
 def _create_project(client: TestClient, description: str = 'admin 검증용 프로젝트') -> int:
     payload = {
-        'start_type': '온라인', 'biz_type': 'AI 서비스', 'ceo_name': '일반유저테스트',
-        'description': description, 'notify_region': '서울', 'notify_industry': 'IT',
+        'biz_type': 'AI 서비스', 'ceo_name': '일반유저테스트',
+        'description': description,
         'team_members': [], 'pricing_items': [],
     }
     res = client.post('/projects', data={'payload': json.dumps(payload)})
@@ -72,12 +73,14 @@ def seeded_admin_data(db_session):
 
 @pytest.fixture()
 def admin_client(db_session, seeded_admin_data):
-    """role='admin'으로 채워서 관리자 API를 바로 호출할 수 있는 세션."""
+    """role='admin'으로 만들어 관리자 API를 바로 호출할 수 있는 세션.
+
+    [2026-09-17 개정] 얼굴 인증(face_verified_at) 게이트는 팀 결정으로 완전히 빼기로
+    확정됐다(admin.py 참고) — 컬럼 자체도 models.py/app_schema.sql에서 지웠으니 여기서도
+    더 이상 채울 대상이 없다."""
     ac = _new_client()
     _login(ac, ADMIN_EMAIL, '관리자테스트')
 
-    # 관리자 승격 — API로 role만 바꾸면 되니(얼굴 인증 게이트는 팀 결정으로 뺐다) DB를
-    # 직접 건드려 "이미 관리자인 계정"인 것처럼 만든다.
     admin_user = db_session.query(User).filter(User.email == ADMIN_EMAIL).one()
     admin_user.role = 'admin'
     db_session.commit()
@@ -171,6 +174,10 @@ def test_get_items_reflects_match_status(admin_client, user_client, db_session):
     assert len(matching) == 1, f'방금 만든 프로젝트가 /admin/items에 안 보임: {res.json()}'
     assert matching[0]['user_name'] == '일반유저테스트'
     assert matching[0]['match_status'] is None, '아직 매칭 전인데 match_status가 비어있지 않음'
+    assert matching[0]['status_label'] == '공고 매칭 전'
+    assert matching[0]['step'] is None
+    assert matching[0]['score'] is None
+    assert matching[0]['archived'] is False
 
     notice = Notice(
         notice_id='ADMIN-TEST-001', source='k-startup', title='admin 검증용 더미 공고', recruitment_status='진행중',
@@ -183,6 +190,409 @@ def test_get_items_reflects_match_status(admin_client, user_client, db_session):
     res = admin_client.get('/admin/items')
     matched = next(row for row in res.json() if row['project_id'] == project_id)
     assert matched['match_status'] == 'completed', matched
+    # seed_dummy_pipeline은 stage=STAGE_DONE으로 채우므로 완료 상태여야 한다(app/pipeline_stages.py).
+    assert matched['status_label'] == '완료', matched
+    # FIXED_TASK_SEQUENCE 마지막 행(coordinate_finalize, agent_name='조율')이 최신 실행이어야 한다.
+    assert matched['step'] == '조율', matched
+    assert matched['attempts'] == 1
+    # DEFAULT_DOC_SCORE(58.50) + DEFAULT_ARTIFACT_SCORE(24.00) = 82.50 (seed_dummy_pipeline.py 기본값)
+    assert matched['score'] == pytest.approx(82.50), matched
+    assert matched['archived'] is False
+
+
+def test_put_item_archive_toggles_match_archived_at(admin_client, user_client, db_session):
+    project_id = _create_project(user_client)
+    notice = Notice(
+        notice_id='ADMIN-TEST-ARCHIVE', source='k-startup', title='보관 처리 검증용 더미 공고',
+        recruitment_status='진행중',
+    )
+    db_session.add(notice)
+    db_session.flush()
+    seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-ARCHIVE', retry_agents=())
+    db_session.commit()
+
+    res = admin_client.put(f'/admin/items/{project_id}/archive', json={'archived': True})
+    assert res.status_code == 200, res.text
+    assert res.json()['archived'] is True
+
+    res = admin_client.get('/admin/items')
+    matched = next(row for row in res.json() if row['project_id'] == project_id)
+    assert matched['archived'] is True
+
+    res = admin_client.put(f'/admin/items/{project_id}/archive', json={'archived': False})
+    assert res.status_code == 200, res.text
+    assert res.json()['archived'] is False
+
+
+def test_put_item_archive_without_match_returns_400(admin_client, user_client):
+    project_id = _create_project(user_client)
+    res = admin_client.put(f'/admin/items/{project_id}/archive', json={'archived': True})
+    assert res.status_code == 400, res.text
+
+
+def test_get_item_score_history_groups_by_layer(admin_client, user_client, db_session):
+    project_id = _create_project(user_client)
+    notice = Notice(
+        notice_id='ADMIN-TEST-HISTORY', source='k-startup', title='점수 이력 검증용 더미 공고',
+        recruitment_status='진행중',
+    )
+    db_session.add(notice)
+    db_session.flush()
+    seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-HISTORY', retry_agents=())
+    db_session.commit()
+
+    res = admin_client.get(f'/admin/items/{project_id}/score-history')
+    assert res.status_code == 200, res.text
+    body = res.json()
+    # seed_dummy_pipeline이 verification_score_history에 doc/code 두 layer를 하나씩 남긴다
+    # (plan layer는 아직 채점 산식이 없어 만들지 않는다 — seed_dummy_pipeline.py 주석 참고).
+    assert len(body['doc']) == 1, body
+    assert len(body['code']) == 1, body
+    assert body['plan'] == []
+    assert body['doc'][0]['score'] == pytest.approx(58.50)
+    assert body['code'][0]['score'] == pytest.approx(24.00)
+
+
+def test_get_item_score_history_without_plan_returns_empty(admin_client, user_client):
+    project_id = _create_project(user_client)
+    res = admin_client.get(f'/admin/items/{project_id}/score-history')
+    assert res.status_code == 200, res.text
+    assert res.json() == {'doc': [], 'code': [], 'plan': []}
+
+
+# ============================================================================
+# 공고 관리 (/admin/notices)
+# ============================================================================
+
+def test_get_notices_lists_and_filters_by_title(admin_client, db_session):
+    db_session.add_all([
+        Notice(notice_id='NOTICE-A', source='kstartup', title='동네 헬스장 대상 지원사업', recruitment_status='open'),
+        Notice(notice_id='NOTICE-B', source='bizinfo', title='전혀 다른 제조업 공고', recruitment_status='closed'),
+    ])
+    db_session.commit()
+
+    res = admin_client.get('/admin/notices')
+    assert res.status_code == 200, res.text
+    ids = {r['notice_id'] for r in res.json()}
+    assert {'NOTICE-A', 'NOTICE-B'} <= ids
+    row_a = next(r for r in res.json() if r['notice_id'] == 'NOTICE-A')
+    assert row_a['has_embedding'] is False, '아직 embedding 컬럼을 안 채웠는데 True로 나옴'
+
+    res = admin_client.get('/admin/notices', params={'q': '헬스장'})
+    assert res.status_code == 200, res.text
+    filtered = res.json()
+    assert len(filtered) == 1 and filtered[0]['notice_id'] == 'NOTICE-A'
+
+
+def test_get_notices_reports_has_embedding(admin_client, db_session):
+    db_session.add(Notice(
+        notice_id='NOTICE-EMBED', source='kstartup', title='임베딩 있는 공고',
+        recruitment_status='open', embedding=b'\x00' * 4096,
+    ))
+    db_session.commit()
+
+    res = admin_client.get('/admin/notices', params={'q': '임베딩 있는'})
+    assert res.status_code == 200, res.text
+    assert res.json()[0]['has_embedding'] is True
+
+
+# ============================================================================
+# 공고 수집 현황 (/admin/collection-status)
+# ============================================================================
+
+def test_get_collection_status_aggregates_by_source(admin_client, db_session):
+    db_session.add_all([
+        Notice(notice_id='COLL-K1', source='kstartup', title='K-Startup 공고 1', recruitment_status='open', embedding=b'\x00' * 4096),
+        Notice(notice_id='COLL-K2', source='kstartup', title='K-Startup 공고 2', recruitment_status='open'),
+        Notice(notice_id='COLL-B1', source='bizinfo', title='기업마당 공고 1', recruitment_status='open', embedding=b'\x00' * 4096),
+    ])
+    db_session.add(ImportRun(
+        run_id='RUN-TEST-1', input_sha256='x' * 64,
+        generated_at=datetime.datetime(2026, 9, 18, 0, 0, 0),
+        imported_at=datetime.datetime(2026, 9, 18, 0, 0, 5), notice_count=3,
+        report={'summary': {'accepted_count': 3, 'input_counts': {'kstartup': 2, 'bizinfo': 1}, 'issue_counts': {'unparsed_period': 1}}},
+    ))
+    db_session.commit()
+
+    res = admin_client.get('/admin/collection-status')
+    assert res.status_code == 200, res.text
+    body = res.json()
+    by_source = {s['source']: s for s in body['sources']}
+    assert by_source['kstartup']['total_count'] == 2
+    assert by_source['kstartup']['embedded_count'] == 1
+    assert by_source['kstartup']['label'] == 'K-Startup'
+    assert by_source['kstartup']['latest_run_input_count'] == 2
+    assert by_source['bizinfo']['total_count'] == 1
+    assert by_source['bizinfo']['embedded_count'] == 1
+    assert by_source['bizinfo']['label'] == '기업마당'
+
+    assert len(body['recent_runs']) == 1
+    run = body['recent_runs'][0]
+    assert run['run_id'] == 'RUN-TEST-1'
+    assert run['generated_at'] == '2026-09-18T00:00:00'
+    assert run['imported_at'] == '2026-09-18T00:00:05'
+    assert run['accepted_count'] == 3
+    assert run['input_counts'] == {'kstartup': 2, 'bizinfo': 1}
+    assert run['issue_counts'] == {'unparsed_period': 1}
+
+
+def test_get_collection_status_empty_when_no_notices(admin_client):
+    res = admin_client.get('/admin/collection-status')
+    assert res.status_code == 200, res.text
+    assert res.json() == {'sources': [], 'recent_runs': []}
+
+
+# ============================================================================
+# 에이전트 테스크 — Task별 보기 (/admin/agent-tasks)
+# ============================================================================
+
+def test_get_agent_tasks_defined_counts_match_fixed_sequence(admin_client):
+    res = admin_client.get('/admin/agent-tasks')
+    assert res.status_code == 200, res.text
+    by_name = {r['agent_name']: r for r in res.json()}
+    # FIXED_TASK_SEQUENCE(app/models.py) 기준 — 조율 4개, 전략/작성 각 1개, 나머지 각 2개.
+    assert by_name['조율']['defined_task_count'] == 4
+    assert by_name['전략']['defined_task_count'] == 1
+    assert by_name['작성']['defined_task_count'] == 1
+    assert by_name['검증-1']['defined_task_count'] == 2
+    assert by_name['구현']['defined_task_count'] == 2
+    assert by_name['검증-2']['defined_task_count'] == 2
+    assert by_name['검수']['defined_task_count'] == 2
+    # 아직 아무 실행도 없는 신선한 테스트 DB에서는 전부 0건·최근 프로젝트 없음이어야 한다.
+    assert all(r['total_executions'] == 0 for r in by_name.values())
+    assert all(r['recent_project_id'] is None for r in by_name.values())
+
+
+def test_get_agent_tasks_reflects_recent_execution(admin_client, user_client, db_session):
+    project_id = _create_project(user_client, description='에이전트 테스크 검증용 프로젝트')
+    notice = Notice(
+        notice_id='ADMIN-TEST-AGENTTASK', source='k-startup', title='에이전트 테스크 검증용 공고',
+        recruitment_status='진행중',
+    )
+    db_session.add(notice)
+    db_session.flush()
+    seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-AGENTTASK', retry_agents=())
+    db_session.commit()
+
+    res = admin_client.get('/admin/agent-tasks')
+    assert res.status_code == 200, res.text
+    by_name = {r['agent_name']: r for r in res.json()}
+    # FIXED_TASK_SEQUENCE 마지막 행(coordinate_finalize)이 '조율'이라 그 Agent의 최근
+    # 실행이 이 프로젝트를 가리켜야 한다.
+    assert by_name['조율']['recent_project_id'] == project_id
+    assert by_name['조율']['recent_project_description'] == '에이전트 테스크 검증용 프로젝트'
+    assert by_name['조율']['recent_status'] == 'success'
+    assert by_name['조율']['total_executions'] == 4  # coordinate_intake/user_decision_doc/user_decision_final/coordinate_finalize
+
+
+# ============================================================================
+# 에이전트 테스크 — 운영 지표 요약 (/admin/agent-ops-summary)
+# ============================================================================
+
+def test_get_agent_ops_summary_splits_initial_and_rerun(admin_client, user_client, db_session):
+    project_id = _create_project(user_client)
+    notice = Notice(
+        notice_id='ADMIN-TEST-OPSSUMMARY', source='k-startup', title='운영 지표 요약 검증용 공고',
+        recruitment_status='진행중',
+    )
+    db_session.add(notice)
+    db_session.flush()
+    # 기본 retry_agents=('작성','구현')라 writing 1행 + implement_prototype/infographic 2행,
+    # 총 3개의 rerun 행이 FIXED_TASK_SEQUENCE 14행 위에 추가로 쌓인다(seed_dummy_pipeline.py 참고).
+    seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-OPSSUMMARY')
+    db_session.commit()
+
+    res = admin_client.get('/admin/agent-ops-summary')
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body['total_executions'] == 17
+    assert body['initial_executions'] == 14
+    assert body['rerun_executions'] == 3
+    assert body['initial_avg_tokens'] == pytest.approx(800.0)
+    assert body['rerun_avg_tokens'] == pytest.approx(650.0)
+    assert body['total_tokens'] == 14 * 800 + 3 * 650
+
+
+def test_get_agent_ops_summary_empty_when_no_executions(admin_client):
+    res = admin_client.get('/admin/agent-ops-summary')
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body['total_executions'] == 0
+    assert body['initial_avg_tokens'] is None
+    assert body['rerun_avg_tokens'] is None
+
+
+# ============================================================================
+# 운영 현황 (/admin/ops-summary)
+# ============================================================================
+
+def test_get_ops_summary_aggregates_scores_and_status(admin_client, user_client, db_session):
+    project_id = _create_project(user_client)
+    notice = Notice(
+        notice_id='ADMIN-TEST-OPS', source='k-startup', title='운영 현황 검증용 공고',
+        recruitment_status='진행중',
+    )
+    db_session.add(notice)
+    db_session.flush()
+    # 기본 doc_score=58.50, artifact_score=24.00, threshold=80.00 -> 합계 82.50으로 통과.
+    seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-OPS')
+    db_session.commit()
+
+    res = admin_client.get('/admin/ops-summary')
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body['status_counts'] == {'완료': 1}
+    assert body['doc_avg'] == pytest.approx(58.50)
+    assert body['doc_count'] == 1
+    assert body['total_avg'] == pytest.approx(82.50)
+    assert body['total_count'] == 1
+    assert body['pass_count'] == 1
+    assert body['pass_rate'] == pytest.approx(100.0)
+    assert body['pass_threshold'] == pytest.approx(80.0)
+    assert body['matches_with_execution'] == 1
+    assert body['rerun_matches'] == 1  # 기본 retry_agents가 비어있지 않아 재시도 행이 남는다
+    assert body['rerun_rate'] == pytest.approx(100.0)
+    buckets = {b['label']: b['count'] for b in body['score_buckets']}
+    assert buckets['80~89점'] == 1
+    assert sum(buckets.values()) == 1
+    # retry_task를 실제로 호출한 적이 없어 verification_score_history엔 layer당 1건뿐이라
+    # (1회->2회 비교가 안 됨) 편차는 항상 sample_count=0으로 나온다(admin.py get_ops_summary 주석 참고).
+    deviations = {d['layer']: d for d in body['deviations']}
+    assert deviations['doc']['sample_count'] == 0
+    assert deviations['code']['sample_count'] == 0
+    assert deviations['plan']['sample_count'] == 0
+
+
+def test_get_ops_summary_empty_when_no_projects(admin_client):
+    res = admin_client.get('/admin/ops-summary')
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body['status_counts'] == {}
+    assert body['doc_avg'] is None
+    assert body['total_count'] == 0
+    assert body['pass_rate'] is None
+    assert body['rerun_rate'] is None
+    assert body['token_violation_rate'] is None
+
+
+def test_get_ops_summary_token_violation_rate_pinned_to_zero_while_dummy(admin_client, user_client, db_session):
+    # run_review_token_check_retry가 아직 더미(무작위) 판정이라, 실제 passed=False
+    # 건수가 있어도 위반율은 0으로 고정된다 (진짜 판정 로직이 들어오기 전까지).
+    project_id = _create_project(user_client)
+    notice = Notice(
+        notice_id='ADMIN-TEST-TOKENRATE', source='k-startup', title='토큰 위반율 검증용 공고',
+        recruitment_status='진행중',
+    )
+    db_session.add(notice)
+    db_session.flush()
+    verdict = seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-TOKENRATE', retry_agents=())
+    db_session.add(ProofreadLog(
+        plan_id=verdict.plan_id, original_text='원문', corrected_text='반려된 시도안',
+        attempt_no=2, passed=False, violation_type='날짜', violation_note='테스트 위반', recovery_status='pending',
+    ))
+    db_session.commit()
+
+    res = admin_client.get('/admin/ops-summary')
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body['token_check_count'] == 2
+    assert body['token_violation_count'] == 0
+    assert body['token_violation_rate'] == pytest.approx(0.0)
+
+
+# ============================================================================
+# 검수 회수 문단 (/admin/recovery-items)
+# ============================================================================
+
+def test_get_recovery_items_lists_only_failed_attempts(admin_client, user_client, db_session):
+    project_id = _create_project(user_client, description='회수 문단 검증용 프로젝트')
+    notice = Notice(
+        notice_id='ADMIN-TEST-RECOVERY', source='k-startup', title='회수 문단 검증용 공고',
+        recruitment_status='진행중',
+    )
+    db_session.add(notice)
+    db_session.flush()
+    verdict = seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-RECOVERY', retry_agents=())
+    db_session.add(ProofreadLog(
+        plan_id=verdict.plan_id, original_text='2026년 10월 16일 마감', corrected_text='10월 중순 마감',
+        attempt_no=2, passed=False, violation_type='날짜', violation_note='날짜 표기 훼손', recovery_status='pending',
+    ))
+    db_session.commit()
+
+    res = admin_client.get('/admin/recovery-items')
+    assert res.status_code == 200, res.text
+    items = res.json()
+    # seed가 만든 passed=True 1건은 안 보이고, 방금 추가한 passed=False 1건만 보여야 한다.
+    assert len(items) == 1
+    item = items[0]
+    assert item['project_id'] == project_id
+    assert item['project_description'] == '회수 문단 검증용 프로젝트'
+    assert item['violation_type'] == '날짜'
+    assert item['original'] == '2026년 10월 16일 마감'
+    assert item['attempt'] == '10월 중순 마감'
+    assert item['recovery_status'] == 'pending'
+    assert item['model_version'] == 'v1'  # seed_dummy_pipeline의 Verdict.model_version 기본값
+    assert item['consent'] is True  # _login 헬퍼가 aiTrainingAgreed=True로 로그인시킴
+
+
+def test_put_recovery_item_updates_status_and_label(admin_client, user_client, db_session):
+    project_id = _create_project(user_client)
+    notice = Notice(
+        notice_id='ADMIN-TEST-RECOVERY-PUT', source='k-startup', title='회수 라벨링 검증용 공고',
+        recruitment_status='진행중',
+    )
+    db_session.add(notice)
+    db_session.flush()
+    verdict = seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-RECOVERY-PUT', retry_agents=())
+    failed = ProofreadLog(
+        plan_id=verdict.plan_id, original_text='원문', corrected_text='반려안',
+        attempt_no=2, passed=False, violation_type='기능명', recovery_status='pending',
+    )
+    db_session.add(failed)
+    db_session.commit()
+    db_session.refresh(failed)
+
+    res = admin_client.put(f'/admin/recovery-items/{failed.log_id}', json={'recovery_status': 'labeled', 'label': '정답 문장'})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body['recovery_status'] == 'labeled'
+    assert body['label'] == '정답 문장'
+
+
+def test_put_recovery_item_on_passed_attempt_returns_404(admin_client, user_client, db_session):
+    project_id = _create_project(user_client)
+    notice = Notice(
+        notice_id='ADMIN-TEST-RECOVERY-PASSED', source='k-startup', title='통과 시도 검증용 공고',
+        recruitment_status='진행중',
+    )
+    db_session.add(notice)
+    db_session.flush()
+    verdict = seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-RECOVERY-PASSED', retry_agents=())
+    passed_log = db_session.query(ProofreadLog).filter(ProofreadLog.plan_id == verdict.plan_id).one()
+
+    res = admin_client.put(f'/admin/recovery-items/{passed_log.log_id}', json={'recovery_status': 'labeled'})
+    assert res.status_code == 404, res.text
+
+
+def test_put_recovery_item_invalid_status_returns_422(admin_client, user_client, db_session):
+    project_id = _create_project(user_client)
+    notice = Notice(
+        notice_id='ADMIN-TEST-RECOVERY-422', source='k-startup', title='잘못된 상태값 검증용 공고',
+        recruitment_status='진행중',
+    )
+    db_session.add(notice)
+    db_session.flush()
+    verdict = seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-RECOVERY-422', retry_agents=())
+    failed = ProofreadLog(
+        plan_id=verdict.plan_id, original_text='원문', corrected_text='반려안',
+        attempt_no=2, passed=False, recovery_status='pending',
+    )
+    db_session.add(failed)
+    db_session.commit()
+    db_session.refresh(failed)
+
+    res = admin_client.put(f'/admin/recovery-items/{failed.log_id}', json={'recovery_status': 'approved'})
+    assert res.status_code == 422, res.text
 
 
 # ============================================================================
@@ -190,7 +600,11 @@ def test_get_items_reflects_match_status(admin_client, user_client, db_session):
 # ============================================================================
 
 def test_put_users_role_and_status(admin_client, user_client):
-    # 얼굴 인증 게이트는 팀 결정으로 뺐다 — role 전환이 바로 반영돼야 한다.
+    """[2026-09-17 개정] 얼굴 인증(face_verified_at) 게이트는 팀 결정으로 완전히 빼기로
+    확정됐다 — 로직뿐 아니라 컬럼 자체도 models.py/app_schema.sql에서 지웠다(AWS 공유
+    DB엔 아직 이 스키마가 올라가지 않은 시점이라 컬럼 삭제도 바로 반영). 예전엔 이 테스트가
+    "얼굴 등록 전이면 admin 승격이 422로 막혀야 한다"를 검증했는데, 그 개념 자체가 없어졌으니
+    이제는 단순히 role/status 변경이 정상 반영되는지만 검증한다."""
     res = admin_client.get('/admin/users')
     assert res.status_code == 200, res.text
     plain_user = next(u for u in res.json() if u['email'] == USER_EMAIL)

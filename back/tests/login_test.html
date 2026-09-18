@@ -45,10 +45,7 @@
       </label>
     </div>
     <div style="margin-top:8px;">
-      <label>시작 유형 <input id="p_start_type" value="온라인" size="10"></label>
-      <label style="margin-left:8px;">업종 <input id="p_biz_type" value="AI 서비스" size="12"></label>
-      <label style="margin-left:8px;">알림 지역 <input id="p_region" value="서울" size="8"></label>
-      <label style="margin-left:8px;">알림 업종 <input id="p_industry" value="IT" size="8"></label>
+      <label>업종 <input id="p_biz_type" value="AI 서비스" size="12"></label>
     </div>
     <button type="button" onclick="createProject()" style="margin-top:12px;">프로젝트 생성</button>
     <h4>프로젝트 생성 결과</h4>
@@ -103,11 +100,8 @@
       // 'payload' 폼 필드에 ProjectCreateRequest와 동일한 필드를 JSON 문자열로 담아 보낸다.
       // 파일 첨부는 이 테스트 폼에서는 생략(files 필드를 아예 안 보내면 빈 리스트로 처리됨).
       const payload = {
-        start_type: document.getElementById('p_start_type').value,
         biz_type: document.getElementById('p_biz_type').value,
         description: document.getElementById('p_description').value,
-        notify_region: document.getElementById('p_region').value,
-        notify_industry: document.getElementById('p_industry').value,
         team_members: [],
         pricing_items: [{ service_name: '기본 서비스', unit_price: 1000000 }],
       };

@@ -2,10 +2,17 @@
 User 행 락으로 분리한 수정 검증용. 두 가지를 확인한다:
 
 1. 같은 계정으로 프로젝트를 두 번 만들 때, 두 번째 프로젝트에 입력한 신청자 정보
-   (start_type/ceo_name/founded_at)가 첫 번째 프로젝트 것으로 조용히 덮이지 않고
+   (ceo_name/founded_at)가 첫 번째 프로젝트 것으로 조용히 덮이지 않고
    각자 따로 저장되는지.
 2. 계정당 동시 실행 1건 제한(진행 중 매칭이 있으면 새 프로젝트 생성 거부)이 회사
    프로필을 거치지 않고도 여전히 걸리는지.
+
+[2026-09-17] start_type/notify_region/notify_industry는 IntakeForm.jsx에 입력칸이
+아예 없어서 항상 고정값('예비창업'/'전국'/'기타' 등)만 보내고 있던 가짜 필드였다
+(하정원님 지적, "지워" 지시로 ProjectCreateRequest에서 제거) — 이 테스트 파일도
+같이 정리했다. [2026-09-18] 그 뒤로 모든 행이 NULL로만 쌓이는 게 확인돼 컬럼 자체도
+완전히 지웠다(companies.start_type/projects.notify_region/notify_industry) —
+_payload()가 안 보내도 여전히 201로 성공해야 한다.
 """
 import datetime
 import json
@@ -15,8 +22,8 @@ from app.models import Company, MatchResult, Notice, Project
 
 def _payload(**overrides):
     body = dict(
-        start_type='예비창업', biz_type=None, ceo_name='김서준', founded_at=None,
-        description='동네 헬스장 예약 서비스', notify_region='전국', notify_industry='기타',
+        biz_type=None, ceo_name='김서준', founded_at=None,
+        description='동네 헬스장 예약 서비스',
         team_members=[], pricing_items=[],
     )
     body.update(overrides)
@@ -24,12 +31,12 @@ def _payload(**overrides):
 
 
 def test_two_projects_keep_own_company_info(authed_client, db_session):
-    r1 = authed_client.post('/projects', data=_payload(start_type='예비창업', ceo_name='김서준', founded_at=None))
+    r1 = authed_client.post('/projects', data=_payload(ceo_name='김서준', founded_at=None))
     assert r1.status_code == 201, r1.text
     project1 = r1.json()
 
     r2 = authed_client.post('/projects', data=_payload(
-        start_type='사업자', ceo_name='이영희', founded_at='2024-01-10',
+        ceo_name='이영희', founded_at='2024-01-10',
     ))
     assert r2.status_code == 201, r2.text
     project2 = r2.json()
@@ -40,8 +47,8 @@ def test_two_projects_keep_own_company_info(authed_client, db_session):
 
     company1 = db_session.get(Company, project1['company_id'])
     company2 = db_session.get(Company, project2['company_id'])
-    assert company1.start_type == '예비창업' and company1.ceo_name == '김서준' and company1.founded_at is None
-    assert company2.start_type == '사업자' and company2.ceo_name == '이영희'
+    assert company1.ceo_name == '김서준' and company1.founded_at is None
+    assert company2.ceo_name == '이영희'
     assert company2.founded_at == datetime.date(2024, 1, 10)
 
     # 같은 계정의 두 프로젝트가 둘 다 대시보드 목록에 나오는지도 같이 확인 (list_projects가
@@ -82,3 +89,29 @@ def test_concurrency_limit_still_blocks_without_shared_company(authed_client, db
         Project.project_id == project1_id
     ).count()
     assert companies_for_user == 1
+
+
+def test_applicant_type_is_persisted(authed_client, db_session):
+    """[2026-09-17] IntakeForm.jsx가 필수로 물어보는 "신청자 유형"이 요청 바디에도 안 실리고
+    저장할 컬럼도 없어서 화면에서 고른 값이 버려지고 있었다(하정원님 지적으로 발견) — 이제
+    받아서 companies.applicant_type에 저장되는지 확인한다."""
+    res = authed_client.post('/projects', data=_payload(applicant_type='individual'))
+    assert res.status_code == 201, res.text
+    project = res.json()
+
+    company = db_session.get(Company, project['company_id'])
+    assert company.applicant_type == 'individual'
+
+
+def test_applicant_type_omitted_stays_null(authed_client, db_session):
+    """기존 호출자(create_test_project.py 등)처럼 applicant_type을 아예 안 보내도 여전히
+    201로 성공해야 한다 — 필수 필드로 만들지 않았다."""
+    res = authed_client.post('/projects', data=_payload())
+    assert res.status_code == 201, res.text
+    company = db_session.get(Company, res.json()['company_id'])
+    assert company.applicant_type is None
+
+
+def test_invalid_applicant_type_returns_422(authed_client):
+    res = authed_client.post('/projects', data=_payload(applicant_type='xxx'))
+    assert res.status_code == 422

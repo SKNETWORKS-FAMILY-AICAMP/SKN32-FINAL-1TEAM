@@ -326,6 +326,7 @@ export const DOWNLOAD_FILES = [
   { name: '사업계획서.docx', desc: '문장 다듬기까지 마친 최종 사업계획서' },
   { name: 'prototype.zip', desc: '실행 파일(index.html)과 인포그래픽을 담은 압축 파일' },
   { name: '검증결과.pdf', desc: '문서층·산출물층 검증 내역과 대조 결과' },
+  { name: '증빙서류_제출목록_안내.docx', desc: '신분증 사본 등 신청자격 증빙서류가 뭔지 안내하는 공고 원본 문서' },
 ];
 
 // 실제 산출물 생성(Task #14)이 아직 안 붙어서, 이 세 파일은 화면에 이미 있는 더미

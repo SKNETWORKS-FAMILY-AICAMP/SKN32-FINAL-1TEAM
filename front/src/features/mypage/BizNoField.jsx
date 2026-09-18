@@ -12,6 +12,7 @@ const STATUS_HINT = {
 
 export default function BizNoField({ value, onChange }) {
   const bizStatus = useMyPageStore((s) => s.profiles[s.activeIndex].bizStatus);
+  const profileId = useMyPageStore((s) => s.profiles[s.activeIndex].profileId);
   const setBizStatus = useMyPageStore((s) => s.setBizStatus);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -24,7 +25,10 @@ export default function BizNoField({ value, onChange }) {
     setLoading(true);
     setError('');
     try {
-      const res = await checkBizNo(value);
+      // profileId가 아직 없으면(이 슬롯을 한 번도 저장한 적 없으면) 서버는 조회 결과를
+      // 어느 슬롯에도 저장하지 않는다(back/app/routers/biz_check.py) — 화면엔 그래도
+      // 결과가 뜨지만, 슬롯을 먼저 저장해야 새로고침 후에도 남는다.
+      const res = await checkBizNo(value, profileId);
       setBizStatus({ ...res, checkedNo: value });
     } catch (err) {
       setError(err.status === 401 ? '로그인이 끊겼어요. 다시 로그인해 주세요.' : '지금은 조회할 수 없어요. 잠시 후 다시 시도해 주세요.');

@@ -45,20 +45,29 @@ export default function App(){
  // 안 된 상태) fetchCurrentUser가 null을 돌려주므로 아무 것도 안 하고 기존처럼 로그인 버튼을 보여준다.
  useEffect(()=>{
   let cancelled=false;
-  fetchCurrentUser().then(u=>{if(!cancelled&&u){setUser(u);setNotifyEnabled(u.notify_enabled)}})
-   .finally(()=>{if(!cancelled)setAuthChecked(true)});
+  fetchCurrentUser().then(u=>{
+   if(cancelled||!u)return;
+   setUser(u);setNotifyEnabled(u.notify_enabled);
+   // 마이페이지 정보 슬롯을 서버에서 끌어온다 — 이걸 안 하면 다른 기기에서 저장한 값이
+   // 이 브라우저의 로컬 캐시(onboarded:false)에 가려서 또 저장하라고 뜬다(useMyPageStore.js
+   // loadProfiles 주석 참고).
+   useMyPageStore.getState().loadProfiles();
+  }).finally(()=>{if(!cancelled)setAuthChecked(true)});
   return ()=>{cancelled=true};
  },[]);
- // 마이페이지를 "저장"으로 확정하기 전까지는 실제 기능 화면으로 못 들어가게 막는다 — mypage
- // 스토어의 onboarded가 저장 버튼을 누른 순간에만 true가 된다(useMyPageStore.js
- // completeOnboarding). 랜딩은 예외라 로그인만 하고 정보 저장 전에도 자유롭게 구경할 수 있다
- // — 실제로 막는 시점은 "시작하기"를 눌러 대시보드로 들어가려는 순간(아래 startFlow)이다.
- // 이 effect는 그 이후에도 저장 없이 다른 메뉴로 나가려 하면(홈 제외) 다시 막아주는 안전망이다.
+ // 마이페이지를 "저장"으로 확정하기 전까지는 실제 기능 화면으로 못 들어가게 막는다 —
+ // user.has_profile은 서버가 /auth/me·로그인 응답마다 계산해서 내려주는 값이라(정재희님
+ // 인계서, back/app/routers/profile.py compute_has_profile) 로그아웃 후 재로그인하거나
+ // 다른 기기에서 로그인해도 정확하다 — 브라우저 로컬 상태(예전 useMyPageStore의 onboarded)
+ // 에만 의존하면 로그아웃 시 로컬을 비우는 순간 "저장 안 한 것"처럼 보이는 문제가 있었다.
+ // 랜딩은 예외라 로그인만 하고 정보 저장 전에도 자유롭게 구경할 수 있다 — 실제로 막는
+ // 시점은 "시작하기"를 눌러 대시보드로 들어가려는 순간(아래 startFlow)이다. 이 effect는
+ // 그 이후에도 저장 없이 다른 메뉴로 나가려 하면(홈 제외) 다시 막아주는 안전망이다.
  // 관리자 계정은 예외로 둔다.
  useEffect(()=>{
   if(!authChecked||!user||user.role==='admin'){setMyPageNudgeOpen(false);return}
   if(view==='landing'||view==='mypage'){setMyPageNudgeOpen(false);return}
-  setMyPageNudgeOpen(!useMyPageStore.getState().onboarded);
+  setMyPageNudgeOpen(!user.has_profile);
  },[view,user,authChecked]);
  const startNewProject=()=>{resetProject();resetScoreOutcome('fail');setView('intake')};
 
@@ -70,18 +79,21 @@ export default function App(){
   setView('match-progress');
   try{
    const payload={
-    // IntakeForm은 "온라인/오프라인" 같은 start_type을 따로 묻지 않아서 팀 테스트
-    // 스크립트(create_test_project.py)와 같은 고정값을 임시로 채운다. 업종·알림 지역은
-    // 마이페이지에서 불러왔으면 그 값을, 아니면 예전 기본값을 쓴다(서버 제한 32자).
-    start_type:'온라인',
-    biz_type:info.industry||null,
+    // [2026-09-17] applicant_type(신청자 유형)은 IntakeForm이 필수로 물어보는데도 지금까지
+    // 여기서 빠져 있어서, 화면에서 고른 값이 서버로 안 가고 그냥 버려지고 있었다(하정원님
+    // 지적으로 발견) — companies.applicant_type 컬럼/저장 로직 추가(app/models.py,
+    // app/routers/projects.py)와 같이 고쳤다.
+    applicant_type:info.applicantType||null,
+    // [2026-09-17 삭제] start_type/notify_region/notify_industry는 IntakeForm이 입력칸 자체를
+    // 안 물어보는데도 팀 테스트 스크립트와 맞추려고 '온라인'/'전국'/'기타' 고정값을 계속
+    // 보내고 있었다(하정원님이 실제 INSERT 로그를 보고 지적, "지워" 지시). 백엔드도 더 이상
+    // 이 필드들을 받지 않으므로(app/schemas.py ProjectCreateRequest 참고) 여기서도 뺐다.
+    // 나중에 진짜 입력칸이 생기면 그때 다시 추가.
+    biz_type:null,
     ceo_name:info.ceoName||null,
     founded_at:info.foundedAt||null,
     description:info.item,
-    notify_region:(info.region||'전국').slice(0,32),
-    notify_industry:(info.industry||'기타').slice(0,32),
-    // 폼의 팀 경력 칸은 마이페이지와 같은 career 키를 쓰고, 서버 필드명(experience)으로는 여기서만 바꾼다.
-    team_members:(info.team||[]).map(t=>({name:t.name,role:t.role||null,experience:t.career||null})),
+    team_members:(info.team||[]).map(t=>({name:t.name,role:t.role||null,experience:t.experience||null})),
     pricing_items:(info.pricing||[]).map(p=>({service_name:p.item,unit_price:parsePrice(p.price)})),
    };
    const project=await createProject(payload,info.files||[]);
@@ -128,12 +140,12 @@ export default function App(){
  // 저장 안 됐으면 대시보드로 보내는 대신 강제 모달을 띄운다(관리자는 예외).
  const startFlow=()=>{
   if(!user){setLoginOpen(true);return}
-  if(user.role!=='admin'&&!useMyPageStore.getState().onboarded){setMyPageNudgeOpen(true);return}
+  if(user.role!=='admin'&&!user.has_profile){setMyPageNudgeOpen(true);return}
   setView('dashboard');
  };
  // acc는 백엔드가 돌려준 실제 UserOut(POST /auth/google 응답) — notify_enabled도 여기 들어있어서
  // 로컬 동의 체크박스값(consent.notifyAgreed) 대신 서버가 실제로 저장한 값을 신뢰한다.
- const handleLoginSuccess=acc=>{setUser(acc);setLoginOpen(false);setNotifyEnabled(acc.notify_enabled)};
+ const handleLoginSuccess=acc=>{setUser(acc);setLoginOpen(false);setNotifyEnabled(acc.notify_enabled);useMyPageStore.getState().loadProfiles()};
  // 로그아웃은 화면 전환이 먼저 느껴지도록 user state부터 지우고, 서버 세션 쿠키 삭제(POST
  // /auth/logout)는 기다리지 않고 백그라운드로 보낸다 — 실패해도(오프라인 등) 어차피 프론트
  // 쪽에서는 로그아웃된 것처럼 보여주면 되고, logout() 내부에서 에러를 삼키게 해뒀다.
@@ -146,15 +158,18 @@ export default function App(){
  if(view==='admin')body=<AdminDashboard user={user} onExit={()=>setView('landing')}/>;
  else if(view==='landing')body=<React.Fragment><Landing onStart={startFlow} user={user} isAdmin={isAdmin} onOpenAdmin={()=>setView('admin')} onMyPage={()=>setView('mypage')} onLogin={()=>setLoginOpen(true)} onLogout={handleLogout}/><LoginModal open={loginOpen} onClose={()=>setLoginOpen(false)} onSuccess={handleLoginSuccess}/></React.Fragment>;
  else body=<WorkspaceShell view={view} user={user} onHome={()=>setView('landing')} onDashboard={()=>setView('dashboard')} onMyPage={()=>setView('mypage')} onNewProject={startNewProject} onLogout={handleLogout} notifyEnabled={notifyEnabled} onToggleNotify={()=>setNotifyEnabled(x=>!x)}>
-  {view==='mypage'&&<MyPage/>}
+  {/* onSaved: 저장 성공 시 /auth/me를 다시 불러 user.has_profile을 최신값으로 갱신한다 —
+      안 하면 로그인 시점에 false였던 값이 이번 세션 내내 그대로 남아 "시작하기"가 계속
+      막힌다(방금 막 저장했는데도). */}
+  {view==='mypage'&&<MyPage onSaved={()=>fetchCurrentUser().then(u=>{if(u)setUser(u)})}/>}
   {view==='dashboard'&&<Dashboard onNewProject={startNewProject} onOpenProject={handleOpenProject} notifyEnabled={notifyEnabled} alerts={SIMILAR_ANNOUNCEMENT_ALERTS}/>}
   {view==='intake'&&<IntakeForm onSubmit={handleIntakeSubmit} onBack={()=>setView('dashboard')} backLabel="내 프로젝트로 돌아가기"/>}
   {view==='match-progress'&&<MatchProgress onComplete={()=>setView('match-results')}/>}
   {view==='match-results'&&<MatchResults projectId={projectId} candidates={matchCandidates} onCandidatesLoaded={setMatchCandidates} onBack={()=>setView(returnToDashboard?'dashboard':'intake')} backLabel={returnToDashboard?'내 프로젝트로 돌아가기':'아이템 정보 다시 입력하기'} onCheckEligibility={handleCheckEligibility} disabledTitles={checkedFailedTitles}/>}
   {view==='eligibility-gate'&&<EligibilityGate announcement={announcement} eligibility={pipelineResult?.eligibility} onProceed={()=>setView('plan-form')} onLeave={(title,failed)=>{if(failed)setCheckedFailedTitles(p=>[...new Set([...p,title])]);setView('match-results')}}/>}
-  {view==='plan-form'&&<PlanForm announcement={announcement} onGenerate={()=>setView('artifact-result')} scoreOutcome={scoreOutcome} itemInfo={itemInfo}/>}
-  {view==='artifact-result'&&<ArtifactResult announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('plan-form')} onFinalize={()=>setView('final-verdict')} scoreOutcome={scoreOutcome}/>}
-  {view==='final-verdict'&&<FinalVerdict announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('artifact-result')} onProceed={()=>setView('review')} docOutcome={docOutcome} artifactOutcome={artifactOutcome} setDocOutcome={setDocOutcome} setArtifactOutcome={setArtifactOutcome}/>}
+  {view==='plan-form'&&<PlanForm announcement={announcement} onGenerate={()=>setView('artifact-result')} scoreOutcome={scoreOutcome} itemInfo={itemInfo} projectId={projectId}/>}
+  {view==='artifact-result'&&<ArtifactResult announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('plan-form')} onFinalize={()=>setView('final-verdict')} scoreOutcome={scoreOutcome} projectId={projectId}/>}
+  {view==='final-verdict'&&<FinalVerdict announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('artifact-result')} onProceed={()=>setView('review')} docOutcome={docOutcome} artifactOutcome={artifactOutcome} setDocOutcome={setDocOutcome} setArtifactOutcome={setArtifactOutcome} projectId={projectId}/>}
   {view==='review'&&<ReviewScreen announcement={announcement} itemInfo={itemInfo} docOutcome={docOutcome} artifactOutcome={artifactOutcome} onGoDashboard={()=>setView('dashboard')} projectId={projectId}/>}
  </WorkspaceShell>;
  // 저장 전 강제 이동 모달은 view가 무엇이든(랜딩·워크스페이스 어느 화면 위에도) 뜰 수 있어야

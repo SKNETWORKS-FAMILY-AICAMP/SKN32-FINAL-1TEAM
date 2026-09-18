@@ -1,7 +1,7 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
 import React from 'react';
 import {downloadPlanDocx,downloadPrototypeZip,downloadVerificationPdf} from '../../dummyDeliverables.js';
-import {downloadPlanDocument} from '../../api.js';
+import {ApiError,downloadAttachmentGuide,downloadPlanDocument} from '../../api.js';
 import {buildGeneralInfo,buildOverview,DOC_SCORE_BY_OUTCOME} from './utils.js';
 import {ARTIFACT_SCORE_BY_OUTCOME,DELIVERABLE_NOTICES,DOWNLOAD_FILES,EN_DOC_ITEM_LABEL,FINAL_THRESHOLD,PLAN_DOCUMENT_SECTIONS_REWORKED,REVIEW_PARAGRAPHS} from './data.js';
 
@@ -39,6 +39,26 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
         sections: PLAN_DOCUMENT_SECTIONS_REWORKED,
         footer: DELIVERABLE_NOTICES.find((n) => n.label === '계획서')?.text,
       });
+      return;
+    }
+    if (file.name === '증빙서류_제출목록_안내.docx') {
+      // 신분증 사본 등 증빙서류 자체는 우리가 만들어내는 문서가 아니라 공고 원본 안내문을
+      // 그대로 내려주는 것뿐이라, 사업계획서처럼 채울 더미 데이터가 없다 — projectId가
+      // 없는 미리보기 화면에서는 다운로드할 방법이 아예 없다.
+      if (projectId) {
+        downloadAttachmentGuide(projectId).catch((err) => {
+          console.error('증빙서류 안내 다운로드 실패:', err);
+          // 404는 "이 신청 유형용 파일이 아직 없음"이라는 구체적 이유가 detail에 실려
+          // 온다(back/app/routers/projects.py download_attachment_guide) — 일시적 오류처럼
+          // 보이는 재시도 문구 대신 그 이유를 그대로 보여준다.
+          const message = err instanceof ApiError && err.status === 404
+            ? String(err.detail)
+            : '지금은 증빙서류 안내 파일을 받을 수 없어요. 잠시 후 다시 시도해 주세요.';
+          window.alert(message);
+        });
+      } else {
+        window.alert('프로젝트 정보가 있어야 받을 수 있는 파일이에요.');
+      }
       return;
     }
     if (file.name === 'prototype.zip') {

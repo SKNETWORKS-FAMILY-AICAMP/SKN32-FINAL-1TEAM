@@ -8,8 +8,20 @@ export class ApiError extends Error{
   constructor(status,detail){super(typeof detail==='string'?detail:JSON.stringify(detail));this.status=status;this.detail=detail}
 }
 
+// Access Token(세션 쿠키)은 30분 만료라, 그 사이 401을 받으면 여기서 조용히 POST /auth/refresh로
+// 재발급받은 뒤 원래 요청을 한 번 재시도한다(back/app/security.py ACCESS_TOKEN_EXPIRE_MINUTES 참고).
+// 같은 순간 여러 요청이 401을 받아도 refresh 호출은 한 번만 나가도록 진행 중인 Promise를 공유한다.
+let _refreshInFlight=null;
+function refreshAccessToken(){
+  if(!_refreshInFlight){
+    _refreshInFlight=fetch(API_BASE+'/auth/refresh',{method:'POST',credentials:'include'})
+      .finally(()=>{_refreshInFlight=null});
+  }
+  return _refreshInFlight;
+}
+
 // path: '/auth/me' 같은 절대경로. body가 FormData면 그대로, 아니면 JSON으로 감싼다.
-export async function apiFetch(path,{method='GET',body,headers}={}){
+export async function apiFetch(path,{method='GET',body,headers,_retried=false}={}){
   const isForm=typeof FormData!=='undefined'&&body instanceof FormData;
   const res=await fetch(API_BASE+path,{
     method,
@@ -17,6 +29,10 @@ export async function apiFetch(path,{method='GET',body,headers}={}){
     headers:isForm?headers:{'Content-Type':'application/json',...headers},
     body:body===undefined?undefined:(isForm?body:JSON.stringify(body)),
   });
+  if(res.status===401&&!_retried&&path!=='/auth/refresh'&&path!=='/auth/google'){
+    const refreshed=await refreshAccessToken();
+    if(refreshed.ok)return apiFetch(path,{method,body,headers,_retried:true});
+  }
   const text=await res.text();
   const data=text?JSON.parse(text):null;
   if(!res.ok){throw new ApiError(res.status,data?.detail??data??res.statusText)}
@@ -31,7 +47,7 @@ export const api={
 };
 
 // ---------------------------------------------------------------------------
-// 프로젝트/워크플로우 관련 호출 (2026-09-15, 하정원님이 추가한 백엔드 임시 엔드포인트에 맞춤).
+// 프로젝트/워크플로우 관련 호출 (2026-09-15, 팀원이 추가한 백엔드 임시 엔드포인트에 맞춤).
 // GET /projects, GET /projects/{id}/match-candidates, POST /projects/{id}/generate,
 // GET /projects/{id}/result는 실제 오케스트레이터(Agent 파이프라인)가 아직 없어서
 // (app/agents.py 모듈 docstring 참고) seed_dummy_pipeline.py의 더미 로직을 API로 감싼
@@ -72,13 +88,14 @@ export const getProjectResult=(projectId)=>api.get(`/projects/${projectId}/resul
 // 'review_expression'|'review_token_check' (app/schemas.py RetryTaskRequest 참고).
 export const retryTask=(projectId,taskKey)=>api.post(`/projects/${projectId}/retry-task`,{task_key:taskKey});
 
-// [2026-09-15] 사업계획서.docx 다운로드 — 응답이 JSON이 아니라 실제 .docx 바이너리라
-// apiFetch(항상 JSON 파싱)를 못 쓰고 별도 함수로 뺐다. 서버가
-// GET /projects/{id}/plan-document.docx 에서 초기창업패키지(일반형) 공식 양식(별첨1)
-// 구조로 채운 진짜 docx를 내려준다(app/plan_document_export.py) — ReviewScreen의
-// 더미(dummyDeliverables.js) 대신 이 함수를 쓰면 실제 양식이 반영된 파일을 받는다.
-export async function downloadPlanDocument(projectId,filename='사업계획서.docx'){
-  const res=await fetch(`${API_BASE}/projects/${projectId}/plan-document.docx`,{credentials:'include'});
+// [2026-09-15] 응답이 JSON이 아니라 실제 파일 바이너리인 다운로드 공용 헬퍼 — apiFetch(항상
+// JSON 파싱)를 못 쓰는 GET /projects/{id}/plan-document.docx, /attachment-guide.docx가 같이 쓴다.
+async function downloadFile(path,filename){
+  let res=await fetch(`${API_BASE}${path}`,{credentials:'include'});
+  if(res.status===401){
+    const refreshed=await refreshAccessToken();
+    if(refreshed.ok)res=await fetch(`${API_BASE}${path}`,{credentials:'include'});
+  }
   if(!res.ok){
     const text=await res.text();
     const data=text?JSON.parse(text):null;
@@ -92,6 +109,27 @@ export async function downloadPlanDocument(projectId,filename='사업계획서.d
   URL.revokeObjectURL(url);
 }
 
+// GET /projects/{id}/plan-document.docx 에서 초기창업패키지(일반형)/예비창업패키지 공식
+// 양식(별첨1) 구조로 채운 진짜 docx를 내려준다(app/plan_document_export.py) — ReviewScreen의
+// 더미(dummyDeliverables.js) 대신 이 함수를 쓰면 실제 양식이 반영된 파일을 받는다.
+export const downloadPlanDocument=(projectId,filename='사업계획서.docx')=>downloadFile(`/projects/${projectId}/plan-document.docx`,filename);
+
+// [2026-09-18] 신분증 사본 등 신청자격 증빙서류가 뭔지 안내하는 공고 원본 문서(별첨2)를
+// 그대로 내려준다(back/app/routers/projects.py download_attachment_guide) — 사업계획서와
+// 달리 데이터를 채워 만드는 문서가 아니라 원본 그대로다.
+export const downloadAttachmentGuide=(projectId,filename='증빙서류_제출목록_안내.docx')=>downloadFile(`/projects/${projectId}/attachment-guide.docx`,filename);
+
 // 마이페이지 사업자등록번호 조회 — 서버가 국세청 상태조회 API를 대신 호출한다
 // (back/app/routers/biz_check.py). 응답: {valid, b_stt_cd, label, tax_type, tax_type_cd, message}
-export const checkBizNo=(bNo)=>api.post('/biz-check',{b_no:bNo});
+// profileId를 주면 그 결과를 해당 정보 슬롯(user_profiles)에 서버가 같이 저장한다 — 아직
+// 서버에 저장된 적 없는 슬롯(profileId 없음)이면 조회 결과만 화면에 보여주고 저장은
+// 건너뛴다(back/app/routers/biz_check.py — profile_id 없으면 아무 슬롯도 안 건드림).
+export const checkBizNo=(bNo,profileId)=>api.post('/biz-check',{b_no:bNo,profile_id:profileId??null});
+
+// ---------------------------------------------------------------------------
+// 마이페이지 프로필 (SB-59 v2, 계정당 최대 3슬롯) — back/app/routers/profile.py
+// ---------------------------------------------------------------------------
+export const listProfiles=()=>api.get('/profile');
+export const createProfile=(body)=>api.post('/profile',body);
+export const updateProfile=(profileId,body)=>api.put(`/profile/${profileId}`,body);
+export const deleteProfile=(profileId)=>api.delete(`/profile/${profileId}`);

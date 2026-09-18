@@ -5,6 +5,10 @@ import {Icon} from '../../components/Icons.jsx';
 import {SiteMock} from './shared.jsx';
 import {detectItemCategory,buildCodeCheckItems} from './utils.js';
 import {ARTIFACT_CATEGORY_COPY,ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,EXECUTABLE_COPY,PROTOTYPE_PAGE} from './data.js';
+import {retryTask} from '../../api.js';
+
+// ARTIFACT_SUBTASKS_BY_CATEGORY(data.js)의 라벨 -> app/schemas.py RetryTaskRequest.task_key.
+const TASK_KEY_BY_LABEL = { '실행 파일 제작': 'implement_prototype', '인포그래픽 제작': 'implement_infographic' };
 
 export function InfographicMock(){
   return (
@@ -61,7 +65,7 @@ export function ResultPreview({kind,onClose}){
  </dialog>;
 }
 
-export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, scoreOutcome = 'fail' }){
+export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, scoreOutcome = 'fail', projectId }){
   const [preview,setPreview]=useState(null);
   const category = detectItemCategory(itemInfo && itemInfo.item);
   const hasExecutable = category !== 'onepage';
@@ -82,15 +86,24 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
     setCheckedTasks((prev) => (prev.includes(label) ? prev.filter((t) => t !== label) : [...prev, label]));
     setCompletedTasks((prev) => prev.filter((t) => t !== label));
   };
-  const handleRewrite = () => {
+  // POST /projects/{id}/retry-task 실제 호출(app/routers/projects.py retry_task) — 예전엔
+  // setTimeout으로 스피너만 흉내 내고 서버 호출이 없어 artifacts 테이블이 안 바뀌었다.
+  const handleRewrite = async () => {
     if (checkedTasks.length === 0) return;
     const picked = checkedTasks;
     setRunningTasks(picked);
     setCheckedTasks([]);
-    setTimeout(() => {
-      setRunningTasks([]);
+    const taskKeys = [...new Set(picked.map((label) => TASK_KEY_BY_LABEL[label]).filter(Boolean))];
+    try {
+      if (projectId) await Promise.all(taskKeys.map((key) => retryTask(projectId, key)));
       setCompletedTasks((prev) => [...new Set([...prev, ...picked])]);
-    }, 1600);
+    } catch (err) {
+      console.error('재작성 요청이 실패했어요', err);
+      window.alert(err.message || '재작성에 실패했어요. 다시 시도해 주세요.');
+      setCheckedTasks(picked);
+    } finally {
+      setRunningTasks([]);
+    }
   };
 
   return (

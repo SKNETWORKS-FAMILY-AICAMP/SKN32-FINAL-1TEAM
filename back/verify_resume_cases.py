@@ -37,7 +37,7 @@ user = User(email='resume@example.com', name='이어하기테스트', google_sub
 db.add(user)
 db.commit()
 
-company = Company(user_id=user.user_id, start_type='온라인', biz_type='AI 서비스', ceo_name='이어하기테스트')
+company = Company(user_id=user.user_id, biz_type='AI 서비스', ceo_name='이어하기테스트')
 db.add(company)
 db.commit()
 
@@ -65,7 +65,7 @@ def detect_resume_screen(db, project_id: int):
 
 
 def make_project(desc: str) -> int:
-    p = Project(company_id=company.company_id, description=desc, notify_region='서울', notify_industry='IT')
+    p = Project(company_id=company.company_id, description=desc)
     db.add(p)
     db.commit()
     return p.project_id
