@@ -40,6 +40,9 @@
     font-family: "IBM Plex Sans KR", system-ui, -apple-system, sans-serif;
     font-size: 15px; line-height: 1.7;
     -webkit-font-smoothing: antialiased;
+    /* 한국어는 기본값이면 어절 한가운데서 끊긴다. 띄어쓰기에서만 끊는다. */
+    word-break: keep-all;
+    overflow-wrap: break-word;   /* 긴 영문·경로는 예외적으로 끊어 넘친 것을 막는다 */
   }
   .page { max-width: 1060px; margin: 0 auto; padding-block: 44px 72px; padding-left: 20px; padding-right: 20px; }
 
@@ -50,12 +53,12 @@
   }
   h1 { font-size: clamp(27px, 4.4vw, 38px); line-height: 1.25; margin: 0 0 12px;
        font-weight: 700; letter-spacing: -.02em; text-wrap: balance; }
-  .lede { font-size: 16px; color: var(--ink-soft); max-width: 62ch; margin: 0; }
+  .lede { font-size: 16px; color: var(--ink-soft); margin: 0; }
 
   h2 { font-size: 20px; font-weight: 700; margin: 0 0 6px; letter-spacing: -.01em; text-wrap: balance; }
   h3 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
   .sec { margin-top: 56px; }
-  .sec > .note { color: var(--muted); font-size: 14px; margin: 0 0 20px; max-width: 64ch; }
+  .sec > .note { color: var(--muted); font-size: 14px; margin: 0 0 20px; }
 
   /* ── 단계 사슬 ───────────────────────────── */
   .lane { background: var(--surface); border: 1px solid var(--hair);
@@ -166,7 +169,7 @@
   <p class="eyebrow">S-Brain · data-collection</p>
   <h1>공고 매칭 파이프라인</h1>
   <p class="lede">
-    지원사업 공고 2,153건이 매일 밤 정리되고, 사용자가 검색을 누르면 그중 3건이 골라진다.
+    지원사업 공고 2,153건이 매일 아침 정리되고, 사용자가 검색을 누르면 그중 3건이 골라진다.
     학습한 두 모델이 그 흐름의 어디에 들어가는지, 지금 어디까지 연결되어 있는지를 정리했다.
   </p>
 
@@ -174,14 +177,14 @@
   <section class="sec">
     <h2>흐름 두 가지</h2>
     <p class="note">
-      위는 사람이 없을 때 도는 준비 작업, 아래는 사용자가 버튼을 누른 순간 도는 작업이다.
+      위는 하루 한 번 미리 해두는 준비 작업, 아래는 사용자가 버튼을 누른 순간 도는 작업이다.
       시간 단위가 전혀 다르다 — 위는 분 단위로 미리, 아래는 밀리초 단위로 즉시.
     </p>
 
     <div class="lane">
       <div class="lane-head">
-        <h3>① 매일 밤 — 데이터 준비</h3>
-        <span class="when">작업 PC · 09:00 자동 실행</span>
+        <h3>① 매일 아침 — 데이터 준비</h3>
+        <span class="when">작업 PC · 09:00 자동 실행 · 약 5분</span>
         <span class="tot">전체 618.5초</span>
       </div>
       <p>두 오픈 API에서 공고를 받아 검색할 수 있는 형태로 만들어 둔다. 바뀐 것만 처리한다.</p>
@@ -372,15 +375,18 @@
           </tr>
           <tr>
             <td>서비스 연결</td>
-            <td><span class="pill off">미연결</span> 규칙이 버릴 때 숫자까지 지워
-                되살릴 값이 DB에 없다. 컬럼 추가 후 재추출이 먼저다</td>
+            <td><span class="pill off">미연결</span> 규칙이 버릴 때 「몇 년」인지를 지운다.
+                다만 근거 문장은 남아 있어 70%는 거기서 숫자를 다시 읽을 수 있다 —
+                재추출 없이 붙일 수 있다</td>
             <td><span class="pill off">미연결</span> GPU 8.8 GB · 질의당 1,079 ms.
                 운영 서버는 4 GB · CPU다</td>
           </tr>
           <tr>
             <td>남은 일</td>
-            <td>반나절~하루 · LLM 재추출 약 $1</td>
-            <td>모델 경량화 또는 GPU 서버 — 며칠</td>
+            <td>숫자 재파싱 · 분류기 판정 · gate 연결<br>
+                <span style="color:var(--muted)">약 3시간으로 예상 (추정)</span></td>
+            <td>모델 경량화 후 재측정, 또는 GPU 서버<br>
+                <span style="color:var(--muted)">기간 미상 — 얼마나 빨라질지 해봐야 안다 (추정)</span></td>
           </tr>
         </tbody>
       </table>
@@ -400,6 +406,12 @@
       <div><span class="v">36,550 ms</span><span class="k">리랭커 · CPU</span></div>
       <div><span class="v">35배</span><span class="k">GPU 대비 CPU 소요</span></div>
     </div>
+    <p class="note" style="margin-top:14px">
+      목표를 200 ms 로 잡으면 CPU 는 <b>183배</b>를 줄여야 한다. 줄일 수 있는 수단을
+      모두 합쳐도(경량화 2~4배 · 후보 30→10건 3배 · 문장 512→256자 1.4배) 약 17배다 —
+      <b>CPU 서빙은 설정을 조절해서 될 문제가 아니다.</b>
+      GPU 쪽은 5.4배만 줄이면 되므로 같은 수단으로 도달할 수 있다.
+    </p>
   </section>
 
   <!-- ─────────── 데이터 ─────────── -->
