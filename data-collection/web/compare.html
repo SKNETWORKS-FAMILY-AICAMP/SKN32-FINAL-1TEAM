@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>공고 검색 — 기존 방식과 새 방식 비교</title>
+<!--
+  experiments/sql_semantic/viewer.py 의 /compare (기본 8010 포트).
+  같은 입력을 기존 서비스(8000)와 새 방식(정형 필터 → 임베딩)에 넣고 나란히 본다.
+  아무것도 저장하지 않는다. 외부 스크립트·글꼴을 쓰지 않는다. 상태는 글자로도 적는다.
+-->
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--line:#d9dee7;--ink:#20242b;--dim:#6b7280;--head:#1f3864;
+  --ok:#1d6b3a;--no:#a3282b;--check:#8a6212;--tag:#eef1f6;--all:#e7f3ea;--lab:#eef3fb}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 "맑은 고딕","Malgun Gothic",system-ui,sans-serif}
+.wrap{max-width:1500px;margin:0 auto;padding:18px 16px 80px}
+h1{font-size:21px;color:var(--head);margin:0 0 4px}
+h2{font-size:15px;color:var(--head);margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.muted{color:var(--dim);font-size:12.5px}
+.notes li{font-size:12.5px;color:#4b5563;margin-bottom:2px}
+form .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+label{font-size:12.5px;color:#44506b;display:flex;flex-direction:column;gap:3px}
+textarea{width:100%;min-height:64px;font:inherit;padding:8px;border:1px solid var(--line);border-radius:6px}
+input,select{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#fff}
+button{font:inherit;padding:7px 16px;border:0;border-radius:6px;background:var(--head);color:#fff;cursor:pointer}
+button:disabled{opacity:.5;cursor:wait}
+.chips button{background:#eef1f6;color:var(--head);padding:3px 10px;font-size:12.5px;margin-right:4px}
+.cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:1000px){.cols{grid-template-columns:1fr}}
+.col h3{font-size:14px;margin:0 0 2px;color:var(--head)}
+.hit{border:1px solid #e6e9ef;border-radius:8px;padding:8px 10px;margin-bottom:7px;background:#fff}
+.hit.all{background:var(--all)}
+.hit .t{font-weight:bold;font-size:13px}
+.meta{color:var(--dim);font-size:11.8px;margin-top:2px}
+.tag{display:inline-block;background:var(--tag);border-radius:9px;padding:0 7px;font-size:11.3px;color:#44506b;margin:2px 4px 0 0}
+.tag.all{background:#cfe8d6;color:var(--ok);font-weight:bold}
+.tag.warn{background:#fdecc8;color:var(--check)}
+.v-ok{color:var(--ok);font-weight:bold}.v-no{color:var(--no);font-weight:bold}.v-check{color:var(--check);font-weight:bold}
+.err{background:#fdecec;border:1px solid #f3c1c1;color:var(--no);border-radius:8px;padding:8px 10px;font-size:12.5px}
+.empty{padding:10px;border:1px dashed var(--line);border-radius:8px;color:var(--dim);font-size:12.5px}
+a{color:var(--head)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>공고 검색 — 기존 방식과 새 방식 비교</h1>
+  <p class="muted">같은 입력을 세 방식에 넣고 나란히 봅니다. 아무것도 저장하지 않습니다.
+    <a href="/">검증 화면으로</a></p>
+
+  <div class="card">
+    <h2>읽기 전에</h2>
+    <ul class="notes" id="notes">
+      <li>두 방식은 <b>보는 공고가 다릅니다.</b> 기존: 운영 DB 전체(마감 공고는 숨김) · 새 방식: 2026-09-18 접수 중 스냅샷.</li>
+      <li><b>검색어가 다릅니다.</b> 기존은 아이디어에 업종·인증 등을 붙인 문장, 새 방식은 아이디어만 씁니다.</li>
+      <li>겹침 표시는 <b>화면에 보인 Top N 목록 안에서만</b> 비교한 것입니다. 목록에 없다는 건 N위 밖이라는 뜻이지, 그 방식이 못 찾았다는 뜻이 아닙니다.</li>
+      <li>점수는 코사인 유사도입니다. 정확도·확률이 아닙니다.</li>
+      <li>사람 판정이 없습니다. 여기서 보이는 차이로 어느 방식이 낫다고 말하지 않습니다.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <form id="f">
+      <div class="chips muted" style="margin-bottom:8px">예시:
+        <button type="button" data-ex="mfg">제조 법인</button>
+        <button type="button" data-ex="pre">예비창업자</button>
+        <button type="button" data-ex="food">외식 소상공인</button>
+      </div>
+      <label>아이디어 설명 (필수)
+        <textarea id="idea" placeholder="예: 금형 공장 불량을 카메라로 자동 검출하는 AI 검사 장비"></textarea>
+      </label>
+      <div class="row" style="margin-top:8px">
+        <label>신청자 유형
+          <select id="applicant_type">
+            <option>법인</option><option>개인사업자</option><option>예비창업자</option>
+          </select>
+        </label>
+        <label>시·도
+          <select id="region">
+            <option value="">선택 안 함</option>
+            <option>서울</option><option>부산</option><option>대구</option><option>인천</option>
+            <option>대전</option><option>울산</option><option>세종</option><option>경기</option>
+            <option>강원</option><option>충북</option><option>충남</option><option>전북</option>
+            <option value="전남광주">광주·전남</option><option>경북</option><option>경남</option><option>제주</option>
+          </select>
+        </label>
+        <label>시·군·구 <input id="district" placeholder="예: 수원시" size="10"></label>
+        <label>설립일 <input id="founded_at" type="date"></label>
+        <label>몇 개씩
+          <select id="top"><option>3</option><option selected>5</option><option>10</option></select>
+        </label>
+        <button id="go" type="submit">비교 검색</button>
+      </div>
+      <p class="muted" id="status" role="status" aria-live="polite" style="margin:8px 0 0">처음 한 번은 새 방식 모델을 올리느라 30초~1분 걸릴 수 있습니다.</p>
+    </form>
+  </div>
+
+  <div id="out"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v === null || v === undefined ? '' : v)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const VERDICT = {ok:['충족','v-ok'], no:['불충족','v-no'], check:['확인 필요','v-check']};
+const safeUrl = (u) => /^https?:\/\//i.test(String(u || '')) ? String(u) : '';
+const FIELD = {region:'지역', business_age:'업력', application_period:'접수기간',
+  company_size:'기업 규모', industry:'업종'};
+const NAME = {hybrid:'기존 · 하이브리드', dense:'기존 · 의미 검색만', lab:'새 방식 · 정형 필터 → 임베딩'};
+const EX = {
+  mfg: {idea:'중소 금형·사출 공장의 불량을 카메라로 자동 검출하는 비전 AI 검사 장비',
+        applicant_type:'법인', region:'경기', district:'수원시', founded_at:'2021-04-01'},
+  pre: {idea:'대학생 대상 중고 전공서적 거래를 연결하는 모바일 앱',
+        applicant_type:'예비창업자', region:'서울', district:'', founded_at:''},
+  food:{idea:'지역 농산물로 만든 수제 도시락 배달 전문점',
+        applicant_type:'개인사업자', region:'전남광주', district:'목포시', founded_at:'2024-03-01'},
+};
+document.querySelectorAll('[data-ex]').forEach(b => b.onclick = () => {
+  const e = EX[b.dataset.ex];
+  Object.keys(e).forEach(k => $(k).value = e[k]);
+});
+
+function conditionTags(c){
+  if(!c) return '';
+  return Object.keys(c).map(k => {
+    const [t, cls] = VERDICT[c[k].verdict] || [c[k].verdict, ''];
+    return '<span class="tag">' + esc(FIELD[k] || k) + ' <span class="' + cls + '">' + esc(t) + '</span></span>';
+  }).join('');
+}
+
+function column(key, rows, err, meta, top){
+  const N = 'Top ' + top;
+  let h = '<div class="col card"><h3>' + esc(NAME[key]) + '</h3>';
+  if(key === 'lab' && meta){
+    const c = meta.counts || {};
+    h += '<div class="muted">SQL 통과 ' + esc(c.rows_from_sql) + ' → 조건 통과 ' + esc(c.after_conditions) +
+         ' → 비교 ' + esc(c.compared) + ' · 기준일 ' + esc(meta.as_of_date) + '</div>';
+  }
+  if(meta && meta.query && key !== 'lab'){
+    h += '<details class="muted"><summary>실제로 쓴 검색어</summary>' + esc(meta.query) + '</details>';
+  }
+  if(err){ return h + '<div class="err">' + esc(err) + '</div></div>'; }
+  if(!rows.length){ return h + '<div class="empty">결과 0건.</div></div>'; }
+  rows.forEach(r => {
+    const all = (r.also_in || []).length === 3;
+    h += '<div class="hit' + (all ? ' all' : '') + '"><div class="t">' + esc(r.rank) + '. ' +
+      (safeUrl(r.url) ? '<a href="' + esc(safeUrl(r.url)) + '" target="_blank" rel="noreferrer noopener">' + esc(r.title) + '</a>' : esc(r.title)) +
+      '</div><div class="meta"><code>' + esc(r.notice_id) + '</code> · 유사도 ' + esc(r.score) +
+      (r.band ? ' · ' + esc(r.band) : '') + ' · 마감 ' + esc(r.apply_end || '(없음)') +
+      (r.region ? ' · ' + esc(r.region) : '') + '</div><div>';
+    if(all) h += '<span class="tag all">세 방식 ' + N + ' 공통</span>';
+    else h += (r.also_in || []).filter(n => n !== key).map(n => '<span class="tag">' + esc(NAME[n]) + ' ' + N + '에도</span>').join('') ||
+              '<span class="tag">이 방식 ' + N + '에만</span>';
+    if(key !== 'lab' && r.in_lab_data === false) h += '<span class="tag warn">새 방식 데이터에 없는 공고</span>';
+    if(key === 'lab') h += conditionTags(r.conditions);
+    h += '</div></div>';
+  });
+  return h + '</div>';
+}
+
+$('f').onsubmit = (ev) => {
+  ev.preventDefault();
+  const body = {idea: $('idea').value, applicant_type: $('applicant_type').value, region: $('region').value,
+                district: $('district').value, founded_at: $('founded_at').value, top: Number($('top').value)};
+  if(!body.idea.trim()){ $('status').textContent = '아이디어 설명을 입력하세요.'; return; }
+  $('go').disabled = true; $('status').textContent = '검색 중… (처음이면 모델을 올리느라 오래 걸립니다)';
+  fetch('/api/compare', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})
+    .then(r => r.json()).then(d => {
+      $('go').disabled = false;
+      if(d.error){ $('status').textContent = d.error; return; }
+      const e = d.errors || {}, m = d.meta || {};
+      $('status').textContent = '세 방식 Top ' + d.top + ' 목록에 모두 나온 공고 ' + (d.in_all_three || []).length + '건 (초록색)' +
+        (d.lab_notice_count ? ' · 새 방식 데이터 ' + d.lab_notice_count + '건' : '') +
+        (d.lab_ids_error ? ' · ' + d.lab_ids_error : '');
+      $('out').innerHTML = '<p class="muted">' + esc(d.overlap_scope || '') + '</p><div class="cols">' +
+        ['hybrid','dense','lab'].map(k => column(k, d.columns[k] || [], e[k], m[k], d.top)).join('') + '</div>';
+    }).catch(() => { $('go').disabled = false; $('status').textContent = '비교 요청에 실패했습니다.'; });
+};
+</script>
+</body>
+</html>

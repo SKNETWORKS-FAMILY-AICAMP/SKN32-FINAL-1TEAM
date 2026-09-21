@@ -1,0 +1,234 @@
+{
+ "started_at": "2026-09-21T03:17:28+00:00",
+ "parts": {
+  "db_npz": {
+   "status": "통과",
+   "problems": [],
+   "db_count": 2328,
+   "stale_count": 0,
+   "stale_examples": [],
+   "missing_count": 0,
+   "missing_examples": [],
+   "extra_count": 0,
+   "extra_examples": []
+  },
+  "npz_chroma": {
+   "tolerance": {
+    "dtype": "float32",
+    "atol": 1e-06,
+    "rtol": 0.0,
+    "why": "float32 → .tolist() → Chroma float32 왕복은 정확해야 한다. 1e-6 은 float32 반올림 1회보다 크고 서로 다른 벡터의 차이보다 훨씬 작다."
+   },
+   "expected_dim": 1024,
+   "npz_count": 2328,
+   "chroma_count": 2328,
+   "compared": 2328,
+   "byte_equal": 1775,
+   "max_abs_diff": 0.019302446395158768,
+   "mismatch_count": 1,
+   "mismatch_examples": [
+    {
+     "notice_id": "kstartup:179193",
+     "max_abs_diff": 0.019302446395158768
+    }
+   ],
+   "npz_duplicates": [],
+   "chroma_duplicates": [],
+   "only_in_npz": [],
+   "only_in_npz_count": 0,
+   "only_in_chroma": [],
+   "only_in_chroma_count": 0,
+   "broken": [],
+   "broken_count": 0,
+   "status": "불일치",
+   "problems": [
+    "벡터 값이 허용 오차(1e-06)를 넘게 다른 공고 1건"
+   ]
+  },
+  "meta": {
+   "fields": [
+    "model",
+    "revision",
+    "input_version",
+    "max_tokens",
+    "dim",
+    "dtype",
+    "normalized",
+    "byte_order"
+   ],
+   "chroma_raw": "{\"model\": \"BAAI/bge-m3\", \"revision\": \"5617a9f61b028005a4858fdac845db406aefb181\", \"input_version\": \"v1:title+body+target_text+target_category+category+subcategory\", \"max_tokens\": 512, \"dim\": 1024, \"dtype\": \"float32\", \"normalized\": true, \"byte_order\": \"little\"}",
+   "npz": {
+    "model": "BAAI/bge-m3",
+    "revision": "5617a9f61b028005a4858fdac845db406aefb181",
+    "input_version": "v1:title+body+target_text+target_category+category+subcategory",
+    "max_tokens": 512,
+    "dim": 1024,
+    "dtype": "float32",
+    "normalized": true,
+    "byte_order": "little"
+   },
+   "current": {
+    "model": "BAAI/bge-m3",
+    "revision": "5617a9f61b028005a4858fdac845db406aefb181",
+    "input_version": "v1:title+body+target_text+target_category+category+subcategory",
+    "max_tokens": 512,
+    "dim": 1024,
+    "dtype": "float32",
+    "normalized": true,
+    "byte_order": "little"
+   },
+   "chroma": {
+    "model": "BAAI/bge-m3",
+    "revision": "5617a9f61b028005a4858fdac845db406aefb181",
+    "input_version": "v1:title+body+target_text+target_category+category+subcategory",
+    "max_tokens": 512,
+    "dim": 1024,
+    "dtype": "float32",
+    "normalized": true,
+    "byte_order": "little"
+   },
+   "table": [
+    {
+     "field": "model",
+     "chroma": "BAAI/bge-m3",
+     "npz": "BAAI/bge-m3",
+     "current": "BAAI/bge-m3",
+     "same": true
+    },
+    {
+     "field": "revision",
+     "chroma": "5617a9f61b028005a4858fdac845db406aefb181",
+     "npz": "5617a9f61b028005a4858fdac845db406aefb181",
+     "current": "5617a9f61b028005a4858fdac845db406aefb181",
+     "same": true
+    },
+    {
+     "field": "input_version",
+     "chroma": "v1:title+body+target_text+target_category+category+subcategory",
+     "npz": "v1:title+body+target_text+target_category+category+subcategory",
+     "current": "v1:title+body+target_text+target_category+category+subcategory",
+     "same": true
+    },
+    {
+     "field": "max_tokens",
+     "chroma": 512,
+     "npz": 512,
+     "current": 512,
+     "same": true
+    },
+    {
+     "field": "dim",
+     "chroma": 1024,
+     "npz": 1024,
+     "current": 1024,
+     "same": true
+    },
+    {
+     "field": "dtype",
+     "chroma": "float32",
+     "npz": "float32",
+     "current": "float32",
+     "same": true
+    },
+    {
+     "field": "normalized",
+     "chroma": true,
+     "npz": true,
+     "current": true,
+     "same": true
+    },
+    {
+     "field": "byte_order",
+     "chroma": "little",
+     "npz": "little",
+     "current": "little",
+     "same": true
+    }
+   ],
+   "status": "통과"
+  }
+ },
+ "sources": {
+  "npz": "data/embeddings_v1.npz",
+  "chroma_dir": "data/vecstore/chroma",
+  "collection": "notices_v1",
+  "db": "MYSQL_* 설정의 notices (SELECT 만 · 접속 정보 기록하지 않음)"
+ },
+ "corpus_sha256": "e77a852f2122e849a5c6e2e6e43568aafe76df8b0a8aaa8e0b91f7a5ea1c7ce5",
+ "chroma_raw_count": 2328,
+ "chroma_vector_set_sha256": "499d812abc3c0e8449d7cb90dcc0cfb8b23d794e0e956291428b44f6c866009f",
+ "npz_vector_set_sha256": "438ed2ad0ceb5518022e5f300fe376529861d43d2f40b1dcb18b228a3f979da0",
+ "corpus_sha256_after": "e77a852f2122e849a5c6e2e6e43568aafe76df8b0a8aaa8e0b91f7a5ea1c7ce5",
+ "snapshot": {
+  "before": {
+   "npz_sha256": "3def67cf6598f06f66ff9949adc02ccb60ad4298a6d76bd844ebac563c262ccb",
+   "chroma_files": {
+    "chroma.sqlite3": {
+     "bytes": 5791744,
+     "sha256": "3aa65b8531bdb8f7db91ca4bbf066320d950254da481c9526d956d2e31a87339"
+    },
+    "ee41b854-49eb-46a7-b995-f41310d4f91b/data_level0.bin": {
+     "bytes": 8683800,
+     "sha256": "6e1bba66760ef5636d589514ea5b429c5cf0bc91a93c2188682bcbb2db8a15a6"
+    },
+    "ee41b854-49eb-46a7-b995-f41310d4f91b/header.bin": {
+     "bytes": 100,
+     "sha256": "772ac2c868e675e15b408627ed8bbaa116aae2d81419ab0830eda723456c9bbd"
+    },
+    "ee41b854-49eb-46a7-b995-f41310d4f91b/index_metadata.pickle": {
+     "bytes": 146836,
+     "sha256": "ba3e7bd9e63f36c2b1e6c03897b8a213c5058d967a22da437ba2a5159a773354"
+    },
+    "ee41b854-49eb-46a7-b995-f41310d4f91b/length.bin": {
+     "bytes": 8200,
+     "sha256": "eda1f2ced8fba72b48af4c9414eedd3008e463c1a2a07a0e308d6097ae9e39dc"
+    },
+    "ee41b854-49eb-46a7-b995-f41310d4f91b/link_lists.bin": {
+     "bytes": 17380,
+     "sha256": "94bb65b7cedc869ec26f2172f088ff253c8c41b299b499431d5a1380b39b3c26"
+    }
+   }
+  },
+  "after": {
+   "npz_sha256": "3def67cf6598f06f66ff9949adc02ccb60ad4298a6d76bd844ebac563c262ccb",
+   "chroma_files": {
+    "chroma.sqlite3": {
+     "bytes": 5791744,
+     "sha256": "3aa65b8531bdb8f7db91ca4bbf066320d950254da481c9526d956d2e31a87339"
+    },
+    "ee41b854-49eb-46a7-b995-f41310d4f91b/data_level0.bin": {
+     "bytes": 8683800,
+     "sha256": "6e1bba66760ef5636d589514ea5b429c5cf0bc91a93c2188682bcbb2db8a15a6"
+    },
+    "ee41b854-49eb-46a7-b995-f41310d4f91b/header.bin": {
+     "bytes": 100,
+     "sha256": "772ac2c868e675e15b408627ed8bbaa116aae2d81419ab0830eda723456c9bbd"
+    },
+    "ee41b854-49eb-46a7-b995-f41310d4f91b/index_metadata.pickle": {
+     "bytes": 146836,
+     "sha256": "ba3e7bd9e63f36c2b1e6c03897b8a213c5058d967a22da437ba2a5159a773354"
+    },
+    "ee41b854-49eb-46a7-b995-f41310d4f91b/length.bin": {
+     "bytes": 8200,
+     "sha256": "eda1f2ced8fba72b48af4c9414eedd3008e463c1a2a07a0e308d6097ae9e39dc"
+    },
+    "ee41b854-49eb-46a7-b995-f41310d4f91b/link_lists.bin": {
+     "bytes": 17380,
+     "sha256": "94bb65b7cedc869ec26f2172f088ff253c8c41b299b499431d5a1380b39b3c26"
+    }
+   }
+  },
+  "changed": [],
+  "method": "NPZ 는 파일 sha256, Chroma 는 원본 폴더 전체 파일의 크기·sha256, DB 는 공고 입력 해시 집합의 sha256 을 검사 전후에 비교한다. 검사 도중 잠깐 바뀌었다가 되돌아간 경우는 잡지 못한다."
+ },
+ "status": "불일치",
+ "chroma_content_verified": false,
+ "finished_at": "2026-09-21T03:17:31+00:00",
+ "git_revision": "ab38ddfd185bf047224174270d75fa494de68356",
+ "code_sha256": {
+  "eval/chroma_integrity.py": "69247b6c807a1ea42e1448bcc1365d9a6b6b34006d30cf0fd21b538fcfa26eb9",
+  "shared/embed.py": "8525b2a806c38980542190ed9d61f5194ed3fc0b372c1a0b359d6a3080112942",
+  "search/vecstore.py": "7d0df9aea6d73ed785f8d8c8616d38df49f13cf813e79ddeb7b16b4596178fa7",
+  "eval/build_pool.py": "fd011542d3fce58e97cd5665a619b495ea89231f70fd988037ac9adc0ce29f2c"
+ }
+}

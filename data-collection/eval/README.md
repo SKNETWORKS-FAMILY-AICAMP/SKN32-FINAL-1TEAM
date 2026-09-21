@@ -51,7 +51,12 @@ cd C:\mok_workspace\SKN32-FINAL-1TEAM\data-collection
 .\.venv\Scripts\python.exe -X utf8 eval\merge_qrels.py           # qrels + 블라인드 일치율
 .\.venv\Scripts\python.exe -X utf8 eval\evaluate.py --systems dense bm25 rrf
 .\.venv\Scripts\python.exe -X utf8 eval\evaluate.py --judges human   # 사람 판정만 정답으로
+.\.venv\Scripts\python.exe -X utf8 eval\search_comparison.py --check-only   # Chroma 실제 벡터 정합성만 (읽기 전용)
 ```
+
+`--check-only` 는 DB(SELECT)·`data/embeddings_v1.npz`·Chroma 를 대조해 `reports/chroma_integrity_<시각>/` 에
+`integrity.json`·`summary.md` 를 남긴다. Chroma 는 원본을 열지 않고 임시 복사본을 연다.
+종료코드 0 통과 · 2 불일치 · 4 확인 실패. 비교 실행(`search_comparison.py`)도 이 검사가 통과해야 검색을 시작한다.
 
 ## 파일
 

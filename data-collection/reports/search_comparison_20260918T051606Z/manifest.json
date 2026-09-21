@@ -1,0 +1,66 @@
+{
+ "task": "docs/SEARCH_COMPARISON_TASK_20260918.md",
+ "run_at": "2026-09-18T05:16:06+00:00",
+ "as_of_today": "2026-09-18",
+ "git": {
+  "revision": "ab38ddf",
+  "branch": "feature/SB-46-data-collection",
+  "dirty_files": [
+   "ocs/STATUS.md",
+   "docs/WORKLOG.md",
+   "../.idea/",
+   "docs/SEARCH_COMPARISON_TASK_20260918.md",
+   "eval/search_comparison.py"
+  ]
+ },
+ "data": {
+  "db_notices": 2285,
+  "chroma_vectors": 2285,
+  "bm25_docs": 2285,
+  "server_rows": 2285,
+  "db_equals_chroma": true,
+  "db_equals_bm25": true,
+  "db_equals_rows": true,
+  "only_in_db": [],
+  "only_in_chroma": [],
+  "corpus_sha256": "0f60b8eea7f4d326bca9fc293458b043ae3b62dc7d5c726dbe7d8206b1805127",
+  "embed_input_version": "v1:title+body+target_text+target_category+category+subcategory",
+  "embed_model": "BAAI/bge-m3"
+ },
+ "settings": {
+  "top": 5,
+  "stages": {
+   "A": {
+    "hide_expired": false,
+    "demote_groups": false,
+    "demote_region": false,
+    "demote_district": false
+   },
+   "B": {
+    "hide_expired": true,
+    "demote_groups": true,
+    "demote_region": true,
+    "demote_district": true
+   }
+  },
+  "searches": [
+   "dense",
+   "hybrid"
+  ],
+  "weights": {
+   "dense": 1.0,
+   "bm25": 1.0,
+   "rrf_k": 60,
+   "mode": "order",
+   "penalty_group": 0.5,
+   "penalty_region": 1.0,
+   "penalty_district": 0.3
+  },
+  "reranker": false
+ },
+ "counts": {
+  "inputs": 10,
+  "responses": 40,
+  "notices_in_results": 110
+ }
+}

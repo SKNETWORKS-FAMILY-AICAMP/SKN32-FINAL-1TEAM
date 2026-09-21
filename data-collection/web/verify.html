@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL 의미 검색 — 눈으로 확인하는 검증 화면</title>
+<!--
+  experiments/sql_semantic/viewer.py 가 띄우는 화면 (기본 8010 포트).
+  외부로 아무것도 보내지 않는다. 스크립트·글꼴을 바깥에서 받아오지 않는다.
+  상태는 색만이 아니라 **글자**로도 적는다.
+-->
+<style>
+:root{
+  --bg:#f5f6f8; --card:#fff; --line:#d9dee7; --ink:#20242b; --dim:#6b7280;
+  --head:#1f3864; --ok:#1d6b3a; --no:#a3282b; --check:#8a6212; --tagbg:#eef1f6;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:14px/1.6 "맑은 고딕","Malgun Gothic",system-ui,sans-serif}
+.wrap{max-width:1360px;margin:0 auto;padding:18px 16px 80px}
+h1{font-size:21px;color:var(--head);margin:0 0 4px}
+h2{font-size:16px;color:var(--head);margin:0 0 10px}
+h3{font-size:13.5px;margin:0 0 6px;color:var(--head)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;
+  padding:14px 16px;margin-bottom:14px}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.col{flex:1 1 380px;min-width:320px}
+.muted{color:var(--dim);font-size:12.5px}
+.banner{background:#fff3cd;border:2px solid #d9a441;border-radius:8px;padding:10px 14px;
+  font-weight:bold;margin-bottom:12px}
+.issues li{margin-bottom:6px}
+.tag{display:inline-block;background:var(--tagbg);border-radius:9px;padding:1px 8px;
+  font-size:11.5px;color:#44506b;margin:0 4px 3px 0;white-space:nowrap}
+.v-ok{color:var(--ok);font-weight:bold}
+.v-no{color:var(--no);font-weight:bold}
+.v-check{color:var(--check);font-weight:bold}
+table{width:100%;border-collapse:collapse}
+.scroll{overflow-x:auto;max-height:520px;overflow-y:auto}
+th,td{border-bottom:1px solid #eceff4;padding:6px 8px;text-align:left;font-size:12.5px;
+  vertical-align:top}
+th{background:#f4f6fa;color:#55617a;font-size:12px;position:sticky;top:0;z-index:1}
+select,button{font:inherit;padding:5px 9px;border:1px solid var(--line);border-radius:6px;
+  background:#fff;color:var(--ink);cursor:pointer}
+button:hover{background:#eef1f6}
+details{margin-top:4px}
+summary{cursor:pointer;color:var(--head);font-size:12.5px}
+pre{background:#f7f8fa;border:1px solid var(--line);border-radius:6px;padding:8px;
+  font-size:12px;white-space:pre-wrap;word-break:break-all;margin:6px 0 0}
+code{background:#f0f2f6;padding:1px 5px;border-radius:4px;font-size:12px}
+.hit{border:1px solid #e6e9ef;border-radius:8px;padding:8px 10px;margin-bottom:6px}
+.hit .t{font-weight:bold;font-size:12.5px}
+.empty{padding:10px;border:1px dashed var(--line);border-radius:8px;color:var(--dim);
+  font-size:12.5px}
+nav a{margin-right:10px;font-size:12.5px;color:var(--head)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SQL 의미 검색 — 눈으로 확인하는 검증 화면</h1>
+  <p class="muted">읽기 전용이다. 저장된 결과와 fixture 만 읽고, 검색을 새로 돌리거나 DB 에 쓰지 않는다.
+    코사인 유사도를 정확도·확률로 바꾸지 않는다.</p>
+  <nav><a href="#state">A 실행·데이터 상태</a><a href="#cond">B 조건 판정</a>
+    <a href="#search">C 검색 결과</a><a href="#vec">D 벡터 검증</a>
+    <a href="/compare"><b>직접 검색해서 기존 방식과 비교 →</b></a></nav>
+
+  <div id="banner"></div>
+
+  <div class="card">
+    <label>볼 실행 <select id="runPick"></select></label>
+    <span class="muted" id="runNote"></span>
+  </div>
+
+  <div class="card" id="issues"><h2>알려진 문제와 상태</h2><div class="muted">불러오는 중…</div></div>
+
+  <div class="card" id="state"><h2>A. 실행·데이터 상태</h2><div class="muted">불러오는 중…</div></div>
+
+  <div class="card" id="cond"><h2>B. 정형 조건 판정</h2><div class="muted">불러오는 중…</div></div>
+
+  <div class="card" id="search"><h2>C. 검색 결과 · 필터 켬/끔</h2><div class="muted">불러오는 중…</div></div>
+
+  <div class="card" id="vec"><h2>D. 벡터 검증</h2><div class="muted">불러오는 중…</div></div>
+</div>
+
+<script>
+const VERDICT = {ok:['충족','v-ok'], no:['불충족','v-no'], check:['확인 필요','v-check']};
+const STATUS = {known:'확인됨', no_limit:'제한 없음', unknown:'정보 없음'};
+const FIELD = {region:'지역', business_age:'업력', application_period:'접수기간',
+  company_size:'기업 규모', industry:'업종', support_type:'지원 방식',
+  support_amount:'지원금액', purpose:'지원 분야', target:'지원대상'};
+
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v === null || v === undefined ? '' : v)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const get = (url) => fetch(url).then(r => r.json());
+
+function verdict(v){
+  const [text, cls] = VERDICT[v] || [v || '정보 없음', 'muted'];
+  return '<span class="' + cls + '">' + esc(text) + '</span>';
+}
+
+function table(headers, rows){
+  if(!rows.length) return '<div class="empty">표시할 줄이 없다.</div>';
+  return '<div class="scroll"><table><thead><tr>' +
+    headers.map(h => '<th>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' +
+    rows.map(r => '<tr>' + r.map(c => '<td>' + c + '</td>').join('') + '</tr>').join('') +
+    '</tbody></table></div>';
+}
+
+/* ---------------------------------------------------------------- 미해결 목록 */
+function drawIssues(issues, testCommand, tests){
+  let html = '<h2>알려진 문제와 상태</h2><ul class="issues">';
+  issues.forEach(i => {
+    html += '<li><b>' + esc(i.id) + ' · ' + esc(i.state) + '</b> — ' + esc(i.title) +
+      '<div class="muted">' + esc(i.detail) + ' <code>' + esc(i.where) + '</code></div></li>';
+  });
+  html += '</ul><p class="muted">이 화면은 표시만 한다. 「해결」은 Codex 재검토에서 승인된 것만 적는다.</p>';
+  html += '<h3>테스트</h3><pre>' + esc(testCommand) + '</pre>';
+  if(tests && tests.available){
+    html += '<div class="muted">저장된 결과: ' + esc(tests.ran_at || '') + ' · ' +
+      esc(tests.summary || '') + '</div>';
+  } else {
+    html += '<div class="muted">' + esc((tests && tests.note) || '저장된 테스트 결과가 없다.') + '</div>';
+  }
+  $('issues').innerHTML = html;
+}
+
+/* ------------------------------------------------------------- A 실행 상태 */
+function drawState(d){
+  const m = d.manifest || {}, q = d.data_quality || {}, e = d.embedding || {};
+  const v = (q.vectors) || {};
+  const pairs = [
+    ['실행 식별자', m.run_id],
+    ['종류', d.is_fixture ? 'FIXTURE (가짜 데이터 — 실제 검색 결과 아님)' : '저장된 실제 실행 결과'],
+    ['실행 시각', m.run_at],
+    ['기준일', m.as_of_date],
+    ['과거 결과와 비교 가능 여부', m.comparable],
+    ['공고 수', q.notices],
+    ['벡터 수', v.count],
+    ['벡터 없는 공고', v.without_vector],
+    ['임베딩 계약', e.contract],
+    ['모델', e.model],
+    ['모델 리비전', e.model_revision || m.model_revision],
+    ['차원 / dtype / 정규화', [e.dim, e.dtype, e.normalized].join(' · ')],
+    ['조건 추출기', m.condition_extractor],
+    ['실험 코드 해시', m.experiment_code_sha256],
+    ['결과 폴더', d.folder || '(fixture — 저장 파일 없음)'],
+  ];
+  let html = '<h2>A. 실행·데이터 상태</h2>' +
+    table(['항목','값'], pairs.map(p => [esc(p[0]), esc(p[1] === undefined ? '' : p[1])]));
+
+  const cond = q.conditions || {};
+  const keys = Object.keys(cond).sort();
+  if(keys.length){
+    html += '<h3>정형 조건 확보율 — 저장된 집계</h3>' +
+      table(['필드','확인됨','제한 없음','정보 없음','확보율'],
+        keys.map(k => [esc(FIELD[k] || k), esc(cond[k].known || 0), esc(cond[k].no_limit || 0),
+          esc(cond[k].unknown || 0), esc(cond[k].known_ratio)]));
+    html += '<p class="muted">업종 확보율 0% 는 오류가 아니라 실제 측정값이다. ' +
+      '지원 분야 분류를 업종 자격으로 세지 않기 때문이다.</p>';
+  }
+  if(d.files && d.files.length){
+    html += '<details><summary>결과 파일과 해시 (' + d.files.length + '개)</summary>' +
+      table(['파일','바이트','sha256'], d.files.map(f =>
+        [esc(f.name), esc(f.bytes), '<code>' + esc(f.sha256) + '</code>'])) + '</details>';
+  }
+  $('state').innerHTML = html;
+}
+
+/* ------------------------------------------------------------- B 조건 판정 */
+function drawConditionCases(d){
+  let html = '<h2>B. 정형 조건 판정</h2>' +
+    '<p class="muted">가짜 공고를 <b>실제 추출기</b>에 넣은 결과다. ' +
+    '문제가 살아 있으면 아래에 <b>문제 재현됨</b>으로 나온다. 통과처럼 꾸미지 않는다.</p>';
+  html += table(['검사','대상 필드','기대','실제','결과','근거 문장'],
+    d.cases.map(c => [
+      esc(c.label) + '<div class="muted">' + esc(c.why) + '</div>' +
+        (c.guards ? '<span class="tag">' + esc(c.guards) + ' 회귀 검사</span>' : ''),
+      esc(FIELD[c.field] || c.field),
+      esc(STATUS[c.expected_status] || c.expected_status),
+      esc(STATUS[c.actual_status] || c.actual_status) +
+        (c.actual_value ? ' (' + esc(c.actual_value) + ')' : ''),
+      c.passed ? '<span class="v-ok">기대대로</span>' : '<span class="v-no">문제 재현됨</span>',
+      '<details><summary>원문 보기</summary><pre>' +
+        esc((c.notice && (c.notice.target_text || '')) || '(지원대상 문구 없음)') +
+        '\n제목: ' + esc((c.notice && c.notice.title) || '') +
+        '\n분류: ' + esc((c.notice && c.notice.category) || '') + '</pre>' +
+        (c.evidence ? '<pre>근거: ' + esc(c.evidence) + '</pre>' : '') + '</details>',
+    ]));
+  html += '<p class="muted">' + esc(d.note) + '</p>';
+  $('cond').innerHTML = html;
+}
+
+/* ------------------------------------------------------------- C 검색 결과 */
+let RUN = null, CASE_CACHE = {};
+
+function conditionTags(r){
+  const c = r.conditions || {};
+  const keys = Object.keys(c);
+  if(!keys.length) return '<span class="muted">필터 끔 — 조건을 보지 않았다</span>';
+  return keys.map(k => '<span class="tag">' + esc(FIELD[k] || k) + ' ' +
+    verdict(c[k].verdict) + ' · ' + esc(c[k].why) + '</span>').join('');
+}
+
+function drawCase(detail){
+  const on = detail.filter_on || {}, off = detail.filter_off || {};
+  const a = detail.applicant || {};
+  let html = '<h3>' + esc(detail.case.case_id) + ' · ' + esc(detail.case.category || '') + '</h3>';
+  html += '<p class="muted">질의: ' + esc(detail.query_text) + '</p>';
+  html += '<p class="muted">신청자: 지역 ' + esc(a.region || '(없음)') +
+    ' · 시군구 ' + esc(a.district || '(없음)') +
+    ' · 설립일 ' + esc(a.founded_at || '(없음)') +
+    ' · 예비창업 ' + (a.prestartup ? '예' : '아니오') +
+    ' · 기준일 ' + esc(detail.as_of_date) + '</p>';
+
+  html += '<h3>같은 공고를 두 방식이 어떻게 놓았나</h3>';
+  html += table(['공고 ID','제목','어디에','필터 켬 순위','필터 끔 순위','순위 이동','유사도','원문'],
+    (detail.side_by_side || []).map(r => [
+      '<code>' + esc(r.notice_id) + '</code>', esc(r.title),
+      esc(r.where),
+      esc(r.rank_on === null ? '—' : r.rank_on),
+      esc(r.rank_off === null ? '—' : r.rank_off),
+      r.move === null ? '—' : (r.move > 0 ? '▲ ' + r.move : (r.move < 0 ? '▼ ' + (-r.move) : '변화 없음')),
+      esc(r.similarity),
+      r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noreferrer noopener">열기</a>' : '—',
+    ]));
+  html += '<p class="muted">순위 이동은 필터 끔 순위에서 필터 켬 순위로 얼마나 올라갔는지다. ' +
+    '▲ 는 필터를 켰을 때 위로 올라온 것이다.</p>';
+
+  html += '<div class="row">';
+  [['filter_on','정형 필터 켬', on],['filter_off','정형 필터 끔 (대조군)', off]].forEach(([key, label, res]) => {
+    const drops = (detail.drops || {})[key] || {};
+    let block = '<div class="col"><h3>' + esc(label) + '</h3>';
+    /* 지시서 3-C: SQL 단계에서 빠진 수와 파이썬 조건에서 빠진 수를 **나눠서** 보여 준다.
+       (2026-09-21 Codex 리뷰 2번) 계산할 수 없는 칸은 숫자 대신 이유를 적는다. */
+    const step = (name, value, kind) =>
+      '<tr><td>' + esc(name) + '</td><td' + (kind ? ' class="' + kind + '"' : '') + '>' +
+      (value === null || value === undefined ? '<span class="muted">계산 안 함</span>' : esc(value)) +
+      '</td></tr>';
+    block += '<div class="scroll"><table><tbody>' +
+      step('전체 후보 (필터 끔 기준)', drops.total_candidates) +
+      step('− SQL 단계 제외', drops.sql_dropped) +
+      step('= SQL 통과', drops.rows_from_sql) +
+      step('− 조건 제외 (지역·업력 등)', drops.dropped_by_conditions) +
+      step('= 조건 통과', drops.after_conditions) +
+      step('− 벡터 없음·손상·낡음', drops.dropped_by_vector) +
+      step('= 유사도 비교', drops.compared) +
+      step('→ 반환', drops.returned) +
+      '</tbody></table></div>';
+    if(drops.sql_note) block += '<div class="muted">' + esc(drops.sql_note) + '</div>';
+    const fields = drops.dropped_fields_in_examples || {};
+    const fkeys = Object.keys(fields);
+    if(fkeys.length){
+      block += '<div class="muted">제외 사유(예시 기준): ' +
+        fkeys.map(k => esc(FIELD[k] || k) + ' ' + fields[k] + '건').join(' · ') + '</div>';
+    }
+    block += '<div class="muted">' + esc(drops.note || '') + '</div>';
+    const results = res.results || [];
+    if(!results.length){
+      block += '<div class="empty">결과 0건. 조건에 맞는 공고가 없거나 모두 제외됐다.</div>';
+    } else {
+      results.forEach(r => {
+        block += '<div class="hit"><div class="t">' + esc(r.rank) + '. ' + esc(r.title) + '</div>' +
+          '<div class="muted"><code>' + esc(r.notice_id) + '</code> · 유사도 ' + esc(r.similarity) +
+          ' · ' + esc(r.rank_reason) +
+          ' · 마감 ' + esc(r.apply_end || '(없음)') +
+          (r.url ? ' · <a href="' + esc(r.url) + '" target="_blank" rel="noreferrer noopener">원문</a>' : '') +
+          '</div><div>' + conditionTags(r) + '</div>';
+        if(r.needs_check && r.needs_check.length){
+          block += '<div class="muted">확인 필요: ' +
+            r.needs_check.map(k => esc(FIELD[k] || k)).join(', ') + '</div>';
+        }
+        const ev = (detail.evidence || {})[r.notice_id];
+        if(ev){
+          block += '<details><summary>근거 문장</summary><pre>' +
+            Object.keys(ev).sort().map(k => (FIELD[k] || k) + ': ' + (ev[k] || '(근거 없음)')).join('\n') +
+            '</pre></details>';
+        } else {
+          block += '<details><summary>근거 문장</summary><div class="muted">저장된 결과에는 ' +
+            '근거 문장이 없다. 아래 버튼으로 실험 DB 에서 읽어 본다.</div>' +
+            '<button onclick="loadEvidence(this, \'' + esc(r.notice_id) + '\')">근거 불러오기</button>' +
+            '<div></div></details>';
+        }
+        block += '</div>';
+      });
+    }
+    const t = (detail.timing_ms || {})[key];
+    if(t) block += '<div class="muted">소요: SQL ' + esc(t.sql) + 'ms · 인코딩 ' + esc(t.encode) +
+      'ms · 비교 ' + esc(t.compare) + 'ms</div>';
+    block += '</div>';
+    html += block;
+  });
+  html += '</div>';
+  $('caseBox').innerHTML = html;
+}
+
+function loadEvidence(button, noticeId){
+  const box = button.nextElementSibling;
+  box.innerHTML = '<span class="muted">불러오는 중…</span>';
+  get('/api/evidence/' + encodeURIComponent(noticeId)).then(d => {
+    if(!d.available){ box.innerHTML = '<div class="muted">' + esc(d.reason) + '</div>'; return; }
+    box.innerHTML = '<pre>' + (d.conditions || []).map(c =>
+      (FIELD[c.field] || c.field) + ' [' + (STATUS[c.status] || c.status) + '] ' +
+      (c.value_text || '') + '\n  근거: ' + (c.evidence || '(없음)')).join('\n') + '</pre>';
+  }).catch(() => { box.innerHTML = '<div class="muted">불러오지 못했다.</div>'; });
+}
+
+function drawSearch(d){
+  let html = '<h2>C. 검색 결과 · 필터 켬/끔</h2>';
+  html += '<p class="muted">같은 데이터·같은 임베딩·같은 정렬에서 정형 필터만 켜고 껐다. ' +
+    '과거 dense/hybrid 결과는 여기 넣지 않았다 — 공고 집합·기준일이 달라 나란히 두면 오해를 준다. ' +
+    '필요하면 저장된 <code>comparison.html</code> 을 참고용으로 본다.</p>';
+  html += '<label>사례 <select id="casePick"></select></label>';
+  html += '<div id="caseBox" style="margin-top:10px"></div>';
+  $('search').innerHTML = html;
+
+  const pick = $('casePick');
+  pick.innerHTML = d.cases.map(c => '<option value="' + esc(c.case_id) + '">' +
+    esc(c.case_id) + ' · ' + esc(c.category || '') + ' · ' +
+    esc((c.idea || '').slice(0, 40)) + '</option>').join('');
+  pick.onchange = () => loadCase(d.run_id, pick.value);
+  if(d.cases.length) loadCase(d.run_id, d.cases[0].case_id);
+  else $('caseBox').innerHTML = '<div class="empty">사례가 없다.</div>';
+}
+
+function loadCase(runId, caseId){
+  $('caseBox').innerHTML = '<div class="muted">불러오는 중…</div>';
+  get('/api/run/' + encodeURIComponent(runId) + '/case/' + encodeURIComponent(caseId))
+    .then(drawCase)
+    .catch(() => { $('caseBox').innerHTML = '<div class="empty">사례를 불러오지 못했다.</div>'; });
+}
+
+/* ------------------------------------------------------------- D 벡터 검증 */
+function drawVectors(d){
+  const v = d.vectors || {}, t = v.totals || {}, e = v.examples || {};
+  const emb = d.embedding || {};
+  let html = '<h2>D. 벡터 검증</h2>';
+  html += table(['검사','결과'], [
+    ['저장 벡터가 지금 공고 내용으로 만들어졌는가 (입력 해시 대조)',
+      '검사함 — 어긋나면 낡은 벡터로 빼고 센다'],
+    ['같은 계약·모델인가', '검사함 (' + esc(emb.contract) + ' · ' + esc(emb.model) + ')'],
+    ['모델 리비전이 같은가',
+      '검사함 — 다르거나 모르면 낡은 벡터로 빼고 센다 (F2 해결)' +
+      ((d.manifest && d.manifest.model_revision)
+        ? ' · 이 실행의 인코더 ' + esc(String(d.manifest.model_revision).slice(0, 12)) : '')],
+    ['차원·dtype·유한값', '검사함 — 한 건이 깨져도 나머지 결과는 계속 나온다'],
+  ]);
+  html += '<h3>이 실행에서 센 값</h3>';
+  html += table(['상태','건수(사례 합계)'], [
+    ['벡터 없음 missing_vector', esc(t.missing_vector)],
+    ['손상 broken_vector', esc(t.broken_vector)],
+    ['낡음 stale_vector', esc(t.stale_vector)],
+  ]);
+  html += '<p class="muted">' + esc(v.note || '') + '</p>';
+  const rows = [];
+  ['missing_vector','broken_vector','stale_vector'].forEach(k => {
+    (e[k] || []).forEach(x => rows.push([esc(k), '<code>' + esc(x.notice_id) + '</code>',
+      esc(x.case_id), esc(x.mode), esc(x.reason || x.error || x.fields || '')]));
+  });
+  html += rows.length
+    ? '<details open><summary>개별 사유</summary>' +
+      table(['상태','공고 ID','사례','모드','사유'], rows) + '</details>'
+    : '<div class="empty">이 실행에서는 벡터 문제가 0건이다. ' +
+      '문제 화면을 보려면 위에서 FIXTURE 를 고른다.</div>';
+  $('vec').innerHTML = html;
+}
+
+/* ---------------------------------------------------------------- 시작 */
+function loadRun(runId){
+  ['state','cond','search','vec'].forEach(id =>
+    $(id).innerHTML = '<div class="muted">불러오는 중…</div>');
+  get('/api/run/' + encodeURIComponent(runId)).then(d => {
+    RUN = d;
+    $('banner').innerHTML = d.banner
+      ? '<div class="banner">' + esc(d.banner) + ' — 아래 숫자는 가짜 입력으로 만든 것이다.</div>'
+      : '';
+    $('runNote').textContent = d.is_fixture
+      ? '가짜 데이터다. 실제 공고가 아니다.'
+      : '저장된 실행 결과를 그대로 읽었다. 새로 검색하지 않았다.';
+    drawIssues(d.issues, d.test_command, d.tests);
+    drawState(d);
+    drawSearch(d);
+    drawVectors(d);
+  });
+  get('/api/conditions/cases').then(drawConditionCases);
+}
+
+get('/api/runs').then(d => {
+  const pick = $('runPick');
+  pick.innerHTML = d.runs.map(r => '<option value="' + esc(r.run_id) + '">' +
+    esc(r.label) + ' · ' + esc(r.run_id) + '</option>').join('');
+  pick.onchange = () => loadRun(pick.value);
+  if(d.runs.length) loadRun(d.runs[0].run_id);
+});
+</script>
+</body>
+</html>

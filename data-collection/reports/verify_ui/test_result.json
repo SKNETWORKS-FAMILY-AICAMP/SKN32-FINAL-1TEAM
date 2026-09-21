@@ -1,0 +1,11 @@
+{
+ "ran_at": "2026-09-21 (작업 PC · Claude · F2·F3 Codex 승인 반영 후)",
+ "command": ".\\.venv\\Scripts\\python.exe -X utf8 -m unittest discover -s tests -p \"test_*.py\"",
+ "summary": "246개 통과 · 건너뜀 13 (검증 화면 35 · SQL 실험 87) · 3회 연속 같은 결과",
+ "total": 246,
+ "skipped": 13,
+ "verify_ui_tests": 35,
+ "repeated_runs": 3,
+ "note": "가짜 연결·가짜 모델로 돈다. 실제 DB·임베딩 모델을 부르지 않았다. 통과했다고 실제 데이터가 맞다는 뜻은 아니다.",
+ "sql_semantic_tests": 87
+}

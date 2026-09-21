@@ -1,0 +1,32 @@
+{
+ "measured_at": "2026-09-21",
+ "extractor": "F1 2차 수정 후 (필드별 제한 없음)",
+ "notices": 1852,
+ "new_status_counts": {
+  "company_size/known": 1556,
+  "company_size/unknown": 296,
+  "industry/no_limit": 1,
+  "industry/unknown": 1851
+ },
+ "changed_total": 54,
+ "changed_kinds": {
+  "company_size known->unknown": 52,
+  "company_size known->known": 1,
+  "industry unknown->no_limit": 1
+ },
+ "narrowed_allow_list": [
+  {
+   "notice_id": "kstartup:177864",
+   "before": "대기업,스타트업",
+   "after": "스타트업"
+  }
+ ],
+ "no_limit_cases": [
+  {
+   "field": "industry",
+   "notice_id": "kstartup:179038",
+   "quote": "산업군 무관"
+  }
+ ],
+ "note": "저장된 lab_conditions(수정 전 추출)와 현재 추출기를 비교했다. DB 는 SELECT 만 했고 저장값은 바꾸지 않았다. 저장된 검색 결과는 수정 전 추출로 만든 것이다. 사람 자격 판정 정답이 아니다."
+}
