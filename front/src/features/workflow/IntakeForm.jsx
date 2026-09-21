@@ -1,16 +1,19 @@
 // 새 프로젝트 사전 정보 입력. 입력 부품은 마이페이지(features/mypage/ui.jsx)와 같은 것을 써서
 // 두 화면이 같은 모양을 유지한다. 루트를 <section data-screen="intake">로 두면 styles.css의
 // 옛 IntakeForm 전용 규칙(회색 입력칸, 버튼 높이 강제 등)이 걸리므로 <div> + 다른 이름을 쓴다.
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Icon } from '../../components/Icons.jsx';
 import { useMyPageStore } from '../../store/useMyPageStore.js';
 import {
   CAREER_FIELDS, CERTS, EMPTY_TEAM_ROW, EQUIPMENT_FIELDS, HIRE_FIELDS, PARTNER_FIELDS, profileToIntake,
 } from '../mypage/derive.js';
 import {
-  ChipSelect, Check, Collapsible, IndustryField, ListEditor, RegionInput, Section, Segmented, TextInput, textareaCls,
+  ChipSelect, Check, IndustryField, ListEditor, RegionInput, Section, Segmented, Select, TextInput, errorFor, focusSection, textareaCls,
 } from '../mypage/ui.jsx';
 import { BackButton, FileAttach } from './shared.jsx';
+import {
+  BudgetScaleField, DevPeriodField, EMPTY_FUNDING, ListOrNone, SelfFundingField, fundingFilled, periodFilled, rowsFilled,
+} from './ProjectPlanFields.jsx';
 
 const APPLICANT_TYPES = [['preliminary', '예비창업자'], ['individual', '개인사업자'], ['corp', '법인']];
 const APPLICANT_LABEL = Object.fromEntries(APPLICANT_TYPES);
@@ -24,7 +27,7 @@ const PRICING_FIELDS = [
   { key: 'price', label: '단가', placeholder: '500원' },
 ];
 const EMPTY_PRICING_ROW = { item: '', price: '' };
-const EMPTY_EXTRA = { region: { sido: '', sigungu: '' }, industry: '', certs: [], careers: [], skills: '', hires: [], equipment: [], partners: [] };
+const EMPTY_EXTRA = { region: { sido: '', sigungu: '' }, industry: '', certs: [], careers: [], skills: '' };
 
 function LoadProfileModal({ open, profiles, onPick, onClose }) {
   if (!open) return null;
@@ -59,77 +62,120 @@ function LoadProfileModal({ open, profiles, onPick, onClose }) {
   );
 }
 
-export function IntakeForm({ onSubmit, onBack, backLabel = '처음으로 돌아가기' }) {
+export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처음으로 돌아가기' }) {
+  const draft = initialValues || {};
   const profiles = useMyPageStore((s) => s.profiles);
-  const [applicantType, setApplicantType] = useState('');
-  const [ceoName, setCeoName] = useState('');
-  const [foundedAt, setFoundedAt] = useState('');
-  const [item, setItem] = useState('');
-  const [files, setFiles] = useState([]);
-  const [team, setTeam] = useState([{ ...EMPTY_TEAM_ROW }]);
-  const [noTeam, setNoTeam] = useState(false);
-  const [pricing, setPricing] = useState([{ ...EMPTY_PRICING_ROW }]);
-  // 아이디어·팀·단가처럼 서버로 보내는 값은 아니지만, "저장해둔 걸 잊고 여기서 새로
-  // 입력하는 사람"이 있을 수 있어 불러온 나머지 마이페이지 항목도 전부 보여주고 고치게 한다.
-  const [extra, setExtra] = useState(EMPTY_EXTRA);
+  const [applicantType, setApplicantType] = useState(draft.applicantType || '');
+  const [ceoName, setCeoName] = useState(draft.ceoName || '');
+  const [birthDate, setBirthDate] = useState(draft.birthDate || '');
+  const [gender, setGender] = useState(draft.gender || '');
+  const [foundedAt, setFoundedAt] = useState(draft.foundedAt || '');
+  const [item, setItem] = useState(draft.item || '');
+  const [files, setFiles] = useState(draft.files || []);
+  const [team, setTeam] = useState(draft.team || [{ ...EMPTY_TEAM_ROW }]);
+  const [noTeam, setNoTeam] = useState(draft.noTeam ?? draft.team?.length === 0);
+  const [pricing, setPricing] = useState(draft.pricing || [{ ...EMPTY_PRICING_ROW }]);
+  // 사업 계획 — 프로젝트마다 달라서 마이페이지에서 불러오지 않고 여기서 새로 받는다(전부 필수).
+  const [devPeriod, setDevPeriod] = useState(draft.devPeriod || { start: '', end: '' });
+  const [budgetScale, setBudgetScale] = useState(draft.budgetScale || '');
+  const [funding, setFunding] = useState(draft.selfFunding || EMPTY_FUNDING);
+  const [hires, setHires] = useState(draft.hires || []);
+  const [noHires, setNoHires] = useState(draft.noHires || false);
+  const [equipment, setEquipment] = useState(draft.equipment || []);
+  const [noEquipment, setNoEquipment] = useState(draft.noEquipment || false);
+  const [partners, setPartners] = useState(draft.partners || []);
+  const [noPartners, setNoPartners] = useState(draft.noPartners || false);
+  const [errorAnchor, setErrorAnchor] = useState(null);
+  // 대표자 역량·지역·주업종·보유 인증 — "내 정보 불러오기"로 채워지고 여기서 고칠 수 있다.
+  const [extra, setExtra] = useState(() => ({
+    region: draft.region || EMPTY_EXTRA.region, industry: draft.industry || '',
+    certs: draft.certs || [], careers: draft.careers || [], skills: draft.skills || '',
+  }));
   const [loadedFrom, setLoadedFrom] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
-  // 접고 펼치는 항목들(지역·주업종·대표자 역량·팀 구성)을 "정보 불러오기"에 맞춰 한 번에
-  // 펼치기 위한 값 — Collapsible이 내부 상태(uncontrolled)라 defaultOpen만 바꿔선 이미
-  // 마운트된 컴포넌트가 안 바뀐다. key에 넣어 불러올 때마다 강제로 다시 마운트시킨다.
-  const [loadNonce, setLoadNonce] = useState(0);
   const patchExtra = (key) => (value) => setExtra((prev) => ({ ...prev, [key]: value }));
 
   const isPreliminary = applicantType === 'preliminary';
+  const regionLabel = isPreliminary ? '창업 예정 지역' : applicantType ? '사업장 소재지' : '사업장 또는 창업 예정 지역';
   const hasProfile = profiles.some((p) => p.basic.applicantType);
-  const touched = applicantType || ceoName || foundedAt || team.some((r) => r.name || r.role || r.career);
+  const touched = applicantType || ceoName || birthDate || gender || team.some((r) => r.name || r.role || r.career);
+
+  // 예비창업자(직접 입력) ↔ 개인·법인(목록 선택)으로 사용자가 바꿀 때만 업종을 비운다(마이페이지와 같은 규칙).
+  const changeApplicantType = (next) => {
+    if (applicantType && (applicantType === 'preliminary') !== (next === 'preliminary')) patchExtra('industry')('');
+    setApplicantType(next);
+  };
 
   const applyProfile = (profile) => {
     if (touched && !window.confirm('이미 입력한 신청자 정보를 불러온 내용으로 바꿀까요?')) return;
     const v = profileToIntake(profile);
     setApplicantType(v.applicantType);
     setCeoName(v.ceoName);
+    setBirthDate(v.birthDate);
+    setGender(v.gender);
+    // 불러온 설립일도 프로젝트 입력 화면에서 확인·수정할 수 있다.
     setFoundedAt(v.foundedAt);
     setNoTeam(v.noTeam);
     setTeam(v.team);
-    setExtra({ region: v.region, industry: v.industry, certs: v.certs, careers: v.careers, skills: v.skills, hires: v.hires, equipment: v.equipment, partners: v.partners });
+    setExtra({ region: v.region, industry: v.industry, certs: v.certs, careers: v.careers, skills: v.skills });
     setLoadedFrom(profile.name);
-    setLoadNonce((n) => n + 1);
     setPickerOpen(false);
   };
 
-  // 예비창업자로 바꾸면 설립일자는 쓰지 않으므로 남아 있던 값이 제출되지 않게 비운다.
-  useEffect(() => { if (isPreliminary) setFoundedAt(''); }, [isPreliminary]);
+  // 유형을 잠시 바꿔도 입력한 날짜는 유지한다. 예비창업자는 제출할 때만 제외한다.
 
-  const companyValid = isPreliminary || (ceoName.trim() && foundedAt);
   const ideaValid = item.trim().length > 5;
   const teamValid = noTeam || (team.length > 0 && team.every((r) => r.name.trim() && r.role.trim() && r.career.trim()));
   const pricingValid = pricing.length > 0 && pricing.every((r) => r.item.trim() && r.price.trim());
-  const valid = applicantType && companyValid && ideaValid && teamValid && pricingValid;
+
+  // 화면 위에서부터의 순서 — 제출하면 이 중 첫 빈 항목으로 스크롤한다.
+  const missing = [
+    [!applicantType, '신청자 유형', 'intake-applicant'],
+    [!ceoName.trim() || !birthDate || !gender, '대표자 정보', 'intake-ceo'],
+    [applicantType && !isPreliminary && !foundedAt, '설립일', 'intake-founded'],
+    [!extra.careers.length || !extra.skills.trim(), '대표자 역량', 'intake-career'],
+    [!extra.region.sido || !extra.industry?.trim(), '지역 · 주업종', 'intake-region'],
+    [!teamValid, '팀 구성원', 'intake-team'],
+    [!noHires && !rowsFilled(hires, HIRE_FIELDS), '채용 계획', 'intake-hires'],
+    [!periodFilled(devPeriod), '개발 기간', 'intake-period'],
+    [!noEquipment && !rowsFilled(equipment, EQUIPMENT_FIELDS), '장비 · 시설', 'intake-equipment'],
+    [!noPartners && !rowsFilled(partners, PARTNER_FIELDS), '협력 기관', 'intake-partners'],
+    [applicantType && (isPreliminary ? !budgetScale : !fundingFilled(funding)), isPreliminary ? '예비창업자 정보' : '자기부담금', 'intake-funding'],
+    [!pricingValid, '수익모델 단가', 'intake-pricing'],
+    [!ideaValid, '아이디어 설명', 'intake-idea'],
+  ].filter(([bad]) => bad).map(([, label, anchor]) => ({ label, anchor }));
+  const error = missing.find((m) => m.anchor === errorAnchor) || null;
 
   // 실제 POST /projects는 App.jsx의 handleIntakeSubmit이 한다(project_id를 App 상태로 들고
-  // 다음 화면에 넘겨야 해서). 여기서는 유효성 검사 후 값만 올려보낸다. extra의 careers·skills·
-  // hires·equipment·partners·certs는 지금 서버 스키마에 자리가 없어 화면 확인·수정용으로만
-  // 쓰고 제출엔 안 싣는다 — industry·region만 보낸다(업종·알림 지역 기본값 대신 실제 값).
+  // 다음 화면에 넘겨야 해서). 여기서는 유효성 검사 후 값만 올려보내고, 요청 형식 변환은
+  // App.jsx intakeDetailPayload가 맡는다.
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!valid) return;
+    if (missing.length > 0) {
+      setErrorAnchor(missing[0].anchor);
+      focusSection(missing[0].anchor);
+      return;
+    }
     onSubmit({
       applicantType, item, files,
-      ceoName: isPreliminary ? '' : ceoName,
+      ceoName, birthDate, gender,
       foundedAt: isPreliminary ? '' : foundedAt,
       team: noTeam ? [] : team,
       pricing,
       industry: extra.industry,
-      region: extra.region.sido,
+      region: extra.region,
+      careers: extra.careers,
+      skills: extra.skills,
+      certs: extra.certs,
+      devPeriod,
+      budgetScale: isPreliminary ? budgetScale : '',
+      selfFunding: isPreliminary ? null : funding,
+      hires: noHires ? [] : hires,
+      equipment: noEquipment ? [] : equipment,
+      partners: noPartners ? [] : partners,
+      noTeam, noHires, noEquipment, noPartners,
     });
   };
-
-  const hint = !applicantType ? '신청자 유형을 선택해 주세요'
-    : !companyValid ? '대표자명과 설립일자를 입력해 주세요'
-    : !ideaValid ? '아이디어 설명을 6자 이상 입력해 주세요'
-    : !teamValid ? '팀원 정보를 모두 입력하거나 팀원 없음을 선택해 주세요'
-    : '수익모델 단가 항목을 모두 입력해 주세요';
 
   return (
     <div data-screen="intake-form" className="max-w-3xl mx-auto px-6 py-14">
@@ -151,68 +197,81 @@ export function IntakeForm({ onSubmit, onBack, backLabel = '처음으로 돌아�
       )}
 
       <form onSubmit={handleSubmit}>
-        <Section title="신청자 유형">
-          <Segmented options={APPLICANT_TYPES} value={applicantType} onChange={setApplicantType} />
-          {applicantType && !isPreliminary && (
-            <div className="grid gap-3 sm:grid-cols-2 mt-4">
-              <TextInput label="대표자명" value={ceoName} placeholder="홍길동" onChange={setCeoName} />
-              <TextInput label="설립일자" type="date" value={foundedAt} onChange={setFoundedAt} />
-            </div>
-          )}
+        <Section id="intake-applicant" title="신청자 유형" required error={errorFor(error, 'intake-applicant')}>
+          <Segmented options={APPLICANT_TYPES} value={applicantType} onChange={changeApplicantType} />
         </Section>
 
-        {/* 프로필을 불러왔든 안 불러왔든 화면 구성 자체는 항상 같다(사용자 지적) — "불러온
-            정보"라는 조건부 섹션 대신 늘 같은 자리에 같은 항목을 두고, 새로 시작할 땐
-            접어서 비어 보이지 않게 하고 "정보 불러오기"를 누르면 그때 펼쳐서 보여준다. */}
-        <Section title="지역 · 주업종 · 대표자 역량">
-          <Collapsible key={`region-${loadNonce}`} title="지역 · 주업종 · 보유 인증" defaultOpen={!!loadedFrom}>
-            <RegionInput label="지역" value={extra.region} onChange={patchExtra('region')} />
+        <Section id="intake-ceo" title="대표자 정보" required error={errorFor(error, 'intake-ceo')}>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <TextInput label="이름" value={ceoName} placeholder="홍길동" onChange={setCeoName} />
+            <TextInput label="생년월일" type="date" value={birthDate} onChange={setBirthDate} />
+            <Select label="성별" value={gender} options={['남성', '여성']} onChange={setGender} />
+          </div>
+        </Section>
+
+        {applicantType && !isPreliminary && (
+          <Section id="intake-founded" title="사업자 정보" required error={errorFor(error, 'intake-founded')}>
+            <TextInput label="설립일" type="date" value={foundedAt} onChange={setFoundedAt} />
+          </Section>
+        )}
+
+        <Section id="intake-career" title="대표자 역량" required error={errorFor(error, 'intake-career')} desc="경력·학력·지원사업 수행·수상 이력과 보유 역량을 적어 주세요.">
+          <ListEditor items={extra.careers} onChange={patchExtra('careers')} cols={4} addLabel="이력 추가" fields={CAREER_FIELDS} />
+          <label className="block mt-5">
+            <span className="block text-[13px] font-semibold text-[#4e5968] mb-1.5">기술력 · 노하우 · 인적 네트워크</span>
+            <textarea value={extra.skills} onChange={(e) => patchExtra('skills')(e.target.value)} rows={3}
+              placeholder="창업 아이템을 개발하거나 구체화할 수 있는 역량을 적어 주세요" className={textareaCls} />
+          </label>
+        </Section>
+
+        <Section id="intake-region" title={`${regionLabel} · 주업종`} required error={errorFor(error, 'intake-region')}>
+          <RegionInput label={regionLabel} value={extra.region} onChange={patchExtra('region')} />
+          <div className="mt-3">
             <IndustryField applicantType={applicantType} value={extra.industry} onChange={patchExtra('industry')} />
-            <div>
-              <span className="block text-[13px] font-semibold text-[#4e5968] mb-1.5">보유 인증 · 가입</span>
-              <ChipSelect options={CERTS} values={extra.certs} onChange={patchExtra('certs')} />
-            </div>
-          </Collapsible>
-          <Collapsible key={`career-${loadNonce}`} title="대표자 역량" defaultOpen={!!loadedFrom}>
-            <ListEditor items={extra.careers} onChange={patchExtra('careers')} cols={4} addLabel="이력 추가" fields={CAREER_FIELDS} />
-            <label className="block">
-              <span className="block text-[13px] font-semibold text-[#4e5968] mb-1.5">기술력 · 노하우 · 인적 네트워크</span>
-              <textarea value={extra.skills} onChange={(e) => patchExtra('skills')(e.target.value)} rows={3} className={textareaCls} />
-            </label>
-          </Collapsible>
+          </div>
         </Section>
 
-        <Section title="팀 구성 · 채용 계획">
-          <Collapsible key={`team-${loadNonce}`} title="팀 구성원 · 채용 계획 · 장비 · 협력 파트너" defaultOpen={!!loadedFrom}>
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[13px] font-semibold text-[#4e5968]">팀 구성원 경력</span>
-              </div>
-              <div className="mb-3"><Check checked={noTeam} onChange={setNoTeam}>팀원 없이 혼자 준비하고 있어요</Check></div>
-              {!noTeam && <ListEditor items={team} onChange={setTeam} cols={3} addLabel="팀원 추가" fields={TEAM_FIELDS} />}
-            </div>
-            <div>
-              <span className="block text-[13px] font-semibold text-[#4e5968] mb-3">채용 계획</span>
-              <ListEditor items={extra.hires} onChange={patchExtra('hires')} cols={4} addLabel="채용 계획 추가" fields={HIRE_FIELDS} />
-            </div>
-            <div className="grid gap-6 md:grid-cols-2">
-              <div>
-                <h3 className="text-[13px] font-semibold text-[#4e5968] mb-2">장비 · 시설</h3>
-                <ListEditor items={extra.equipment} onChange={patchExtra('equipment')} cols={2} addLabel="장비 추가" fields={EQUIPMENT_FIELDS} />
-              </div>
-              <div>
-                <h3 className="text-[13px] font-semibold text-[#4e5968] mb-2">협력 파트너 · 기관</h3>
-                <ListEditor items={extra.partners} onChange={patchExtra('partners')} cols={2} addLabel="파트너 추가" fields={PARTNER_FIELDS} />
-              </div>
-            </div>
-          </Collapsible>
+        <Section id="intake-team" title="팀 구성원" required error={errorFor(error, 'intake-team')}>
+          <div className="mb-3"><Check checked={noTeam} onChange={setNoTeam}>팀원 없이 혼자 준비하고 있어요</Check></div>
+          {!noTeam && <ListEditor items={team} onChange={setTeam} cols={3} addLabel="팀원 추가" fields={TEAM_FIELDS} />}
         </Section>
 
-        <Section title="수익모델 단가" desc="매출을 예상하는 데 사용할 상품과 가격을 알려주세요.">
+        <Section id="intake-hires" title="채용 계획" required desc="협약 기간 안에 뽑을 인력이 있다면 적어 주세요." error={errorFor(error, 'intake-hires')}>
+          <ListOrNone items={hires} onChange={setHires} none={noHires} onNoneChange={setNoHires}
+            noneLabel="채용 계획이 없어요" fields={HIRE_FIELDS} cols={4} addLabel="채용 계획 추가" />
+        </Section>
+
+        <Section id="intake-period" title="개발 기간" required error={errorFor(error, 'intake-period')}>
+          <DevPeriodField value={devPeriod} onChange={setDevPeriod} />
+        </Section>
+
+        <Section id="intake-equipment" title="장비 · 시설" required error={errorFor(error, 'intake-equipment')}>
+          <ListOrNone items={equipment} onChange={setEquipment} none={noEquipment} onNoneChange={setNoEquipment}
+            noneLabel="필요한 장비·시설이 없어요" fields={EQUIPMENT_FIELDS} cols={2} addLabel="장비 추가" />
+        </Section>
+
+        <Section id="intake-partners" title="협력 기관" required error={errorFor(error, 'intake-partners')}>
+          <ListOrNone items={partners} onChange={setPartners} none={noPartners} onNoneChange={setNoPartners}
+            noneLabel="협력하는 기관이 없어요" fields={PARTNER_FIELDS} cols={2} addLabel="협력 기관 추가" />
+        </Section>
+
+        {applicantType && (
+          <Section id="intake-funding" title={isPreliminary ? '예비창업자 정보' : '자기부담 가능 범위'} required error={errorFor(error, 'intake-funding')}>
+            {isPreliminary
+              ? <BudgetScaleField value={budgetScale} onChange={setBudgetScale} />
+              : <SelfFundingField value={funding} onChange={setFunding} />}
+          </Section>
+        )}
+
+        <Section title="보유 인증 · 가입" optional desc="해당하는 것을 모두 골라 주세요.">
+          <ChipSelect options={CERTS} values={extra.certs} onChange={patchExtra('certs')} />
+        </Section>
+
+        <Section id="intake-pricing" title="수익모델 단가" required error={errorFor(error, 'intake-pricing')} desc="매출을 예상하는 데 사용할 상품과 가격을 알려주세요.">
           <ListEditor items={pricing} onChange={setPricing} cols={2} addLabel="항목 추가" fields={PRICING_FIELDS} />
         </Section>
 
-        <Section title="아이디어 설명">
+        <Section id="intake-idea" title="아이디어 설명" required error={errorFor(error, 'intake-idea')}>
           <textarea value={item} onChange={(e) => setItem(e.target.value)} rows={5}
             placeholder="예) 반려견 산책 도우미를 구해주는 매칭 플랫폼을 만들고 있어요"
             className={textareaCls} />
@@ -221,11 +280,11 @@ export function IntakeForm({ onSubmit, onBack, backLabel = '처음으로 돌아�
         </Section>
 
         <div className="pt-6 border-t border-[var(--border)]">
-          <button type="submit" disabled={!valid}
-            className="w-full h-12 rounded-xl bg-[var(--primary)] text-white text-[15px] font-semibold hover:bg-[var(--primary-dim)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+          <button type="submit"
+            className="w-full h-12 rounded-xl bg-[var(--primary)] text-white text-[15px] font-semibold hover:bg-[var(--primary-dim)] transition-colors">
             맞는 공고 찾기
           </button>
-          {!valid && <p className="mt-2 text-[12.5px] text-[var(--muted-fg)] text-center">{hint}</p>}
+          {missing.length > 0 && <p className="mt-2 text-[11.5px] text-[var(--muted-fg)] text-center">[필수] 항목을 먼저 채워 주세요 — {missing.map((m) => m.label).join(', ')}</p>}
         </div>
       </form>
 

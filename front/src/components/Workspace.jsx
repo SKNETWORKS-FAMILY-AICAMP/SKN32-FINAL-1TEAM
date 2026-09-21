@@ -1,14 +1,14 @@
 import React,{useState,useEffect} from 'react';
 import {Brand,Icon} from './Icons.jsx';
-import {NotificationBell,SIMILAR_ANNOUNCEMENT_ALERTS} from '../features/Workflow.jsx';
+import {NotificationBell} from '../features/Workflow.jsx';
 import {listProjects,deleteProject} from '../api.js';
 export const steps=[['intake','아이템 입력'],['match-results','공고 찾기'],['plan-form','사업계획서'],['artifact-result','프로토타입'],['final-verdict','제출 전 점검'],['review','최종 결과물']];
-export function WorkspaceShell({view,user,onHome,onDashboard,onMyPage,onNewProject,onLogout,notifyEnabled,onToggleNotify,children}){
+export function WorkspaceShell({view,user,onHome,onDashboard,onMyPage,onNewProject,onLogout,notifyEnabled,onToggleNotify,onOpenProject,children}){
  const index=['match-progress','eligibility-gate','eligibility-fail'].includes(view)?1:view==='plan-progress'?2:view==='artifact-progress'?3:view==='final-pass'?4:steps.findIndex(x=>x[0]===view);
  // [2026-09-19] nav를 좌측 끝까지 넓히면서 상단 중앙에 빈 공간이 생겨서(사용자 지적),
  // 예전엔 topbar 아래 별도 줄이던 진행 단계(flow-navigation)를 topbar 안 중앙으로
  // 옮겨 그 공간을 쓴다 — 화면마다 줄 하나씩 줄어드는 효과도 겸한다.
- return <div className={'workspace view-'+view}><header className="workspace-topbar"><div className="workspace-nav"><div className="workspace-nav-left"><Brand onClick={onHome}/><button className={view==='dashboard'?'nav-active':''} onClick={onDashboard}>내 프로젝트</button><button className={view==='mypage'?'nav-active':''} onClick={onMyPage}>마이페이지</button></div><span className="workspace-nav-center">{index>=0&&<ol className="flow-steps-inline" aria-label="프로젝트 진행 단계">{steps.map(([key,label],i)=><li key={key} className={i===index?'current':i<index?'complete':''} aria-current={i===index?'step':undefined}><span>{i<index?<Icon name="check" size={11}/>:i+1}</span>{label}</li>)}</ol>}</span><div className="workspace-nav-right"><NotificationBell alerts={SIMILAR_ANNOUNCEMENT_ALERTS} enabled={notifyEnabled} onToggle={onToggleNotify}/><span className="profile-group"><span className="profile-name">{user?.name||'김창업'} 님</span><button className="logout-button" onClick={onLogout}>로그아웃</button></span></div></div></header><main className={'workflow-content '+(view==='dashboard'?'is-dashboard':'')} data-view={view} key={view}>{children}</main></div>
+ return <div className={'workspace view-'+view}><header className="workspace-topbar"><div className="workspace-nav"><div className="workspace-nav-left"><Brand onClick={onHome}/><button className={view==='dashboard'?'nav-active':''} onClick={onDashboard}>내 프로젝트</button><button className={view==='mypage'?'nav-active':''} onClick={onMyPage}>마이페이지</button></div><span className="workspace-nav-center">{index>=0&&<ol className="flow-steps-inline" aria-label="프로젝트 진행 단계">{steps.map(([key,label],i)=><li key={key} className={i===index?'current':i<index?'complete':''} aria-current={i===index?'step':undefined}><span>{i<index?<Icon name="check" size={11}/>:i+1}</span>{label}</li>)}</ol>}</span><div className="workspace-nav-right"><NotificationBell enabled={notifyEnabled} onToggle={onToggleNotify} onOpenProject={onOpenProject} refreshKey={view}/><span className="profile-group"><span className="profile-name">{user?.name||'김창업'} 님</span><button className="logout-button" onClick={onLogout}>로그아웃</button></span></div></div></header><main className={'workflow-content '+(view==='dashboard'?'is-dashboard':'')} data-view={view} key={view}>{children}</main></div>
 }
 // [2026-09-15, 프론트 통합] 예전엔 features/Workflow.jsx의 하드코딩된 MY_PROJECTS를 그대로
 // 그렸는데, 이제 마운트 시 GET /projects(api.js listProjects)로 실제 내 프로젝트 목록을
@@ -27,15 +27,17 @@ const isActuallyDone=(projectId,stage)=>{
  if(stage!=='done')return false;
  try{return localStorage.getItem(lastViewKey(projectId))==='review'}catch(e){return false}
 };
-export function Dashboard({onNewProject,onOpenProject,notifyEnabled,alerts}){
+const GENERATING_LABEL={plan_writing:'계획서 작성 중',prototype_building:'프로토타입 제작 중'};
+export function Dashboard({onNewProject,onOpenProject}){
  const [query,setQuery]=useState('');const [filter,setFilter]=useState('전체');const [guard,setGuard]=useState(false);
  const [projects,setProjects]=useState([]);const [loading,setLoading]=useState(true);const [loadError,setLoadError]=useState(false);
  const [confirmingId,setConfirmingId]=useState(null);const [deletingId,setDeletingId]=useState(null);
 
  useEffect(()=>{
-  let cancelled=false;
+  let cancelled=false;let timer=null;
   setLoading(true);setLoadError(false);
-  listProjects().then(rows=>{
+  // 계획서·프로토타입이 서버에서 만들어지는 중이면 진행률이 보이도록 주기적으로 다시 불러온다.
+  const load=()=>listProjects().then(rows=>{
    if(cancelled)return;
    setProjects(rows.map(r=>({
     id:r.project_id,
@@ -43,14 +45,17 @@ export function Dashboard({onNewProject,onOpenProject,notifyEnabled,alerts}){
     announcementTitle:r.notice_title||'아직 매칭된 공고가 없어요',
     matched:!!r.notice_title,
     progress:isActuallyDone(r.project_id,r.stage)?100:0,
+    generating:GENERATING_LABEL[r.stage]?`${GENERATING_LABEL[r.stage]} ${r.progress_percent??0}%`:null,
     updatedAt:(r.created_at||'').slice(0,10),
    })));
    setLoading(false);
+   if(rows.some(r=>GENERATING_LABEL[r.stage]))timer=setTimeout(load,5000);
   }).catch(err=>{
    console.error('내 프로젝트 목록을 불러오지 못했어요', err);
    if(!cancelled){setLoadError(true);setLoading(false);}
   });
-  return ()=>{cancelled=true};
+  load();
+  return ()=>{cancelled=true;clearTimeout(timer)};
  },[]);
 
  const isNewUser=!loading&&!loadError&&projects.length===0;
@@ -81,11 +86,9 @@ export function Dashboard({onNewProject,onOpenProject,notifyEnabled,alerts}){
   {loading&&<p className="workspace-note">내 프로젝트를 불러오는 중이에요…</p>}
   {loadError&&<p className="workspace-note">프로젝트 목록을 불러오지 못했어요. 새로고침해 주세요.</p>}
 
-  {!loading&&inProgress&&<button className="continue-card" onClick={()=>onOpenProject(inProgress)}><span className="continue-icon"><Icon name="file" size={32}/></span><div><p>이어서 준비하기</p><h2>{inProgress.name}</h2><span>{inProgress.matched?'계획서·프로토타입 준비를 이어서 진행해요':'공고 선택부터 이어서 진행해요'}</span></div><div className="continue-status"><span>{inProgress.matched?'진행 중':'매칭 대기 중'}</span><b>이어서 진행하기 <Icon name="chevron" size={19}/></b></div></button>}
+  {!loading&&inProgress&&<button className="continue-card" onClick={()=>onOpenProject(inProgress)}><span className="continue-icon"><Icon name="file" size={32}/></span><div><p>이어서 준비하기</p><h2>{inProgress.name}</h2><span>{inProgress.matched?'계획서·프로토타입 준비를 이어서 진행해요':'공고 선택부터 이어서 진행해요'}</span></div><div className="continue-status"><span>{inProgress.generating||(inProgress.matched?'진행 중':'매칭 대기 중')}</span><b>이어서 진행하기 <Icon name="chevron" size={19}/></b></div></button>}
 
   {guard&&<div className="project-guard" role="status"><div><b>먼저 진행 중인 프로젝트를 확인해 주세요</b><p>한 번에 하나의 프로젝트를 준비할 수 있어요.</p></div><button className="btn small" onClick={()=>onOpenProject(inProgress||projects[0])}>이어서 준비하기</button><button className="btn btn-muted small" onClick={()=>{setGuard(false);onNewProject()}}>중단하고 새로 시작</button><button className="icon-button" aria-label="안내 닫기" onClick={()=>setGuard(false)}><Icon name="close"/></button></div>}
-
-  {!isNewUser&&notifyEnabled&&<div className="match-notice"><span className="notice-mini"><Icon name="file" size={19}/></span><p>비슷한 아이템의 새 공고 <b>{alerts.length}건</b>이 있어요.</p><span>상단 알림에서 확인해 주세요</span></div>}
 
   <div className="projects-heading"><h2>전체 프로젝트 <span>{projects.length}</span></h2></div>
   <div className="project-toolbar"><div className="filter-tabs" role="group" aria-label="프로젝트 상태">{['전체','진행 중','완료'].map(f=><button key={f} aria-pressed={filter===f} onClick={()=>setFilter(f)} className={filter===f?'active':''}>{f}</button>)}</div>{!isNewUser&&<label className="project-search"><Icon name="search" size={19}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="프로젝트 검색" aria-label="프로젝트 검색"/></label>}</div>
@@ -95,7 +98,7 @@ export function Dashboard({onNewProject,onOpenProject,notifyEnabled,alerts}){
      <button className="project-row-main" onClick={()=>onOpenProject(p)}>
       <span className={'project-symbol '+(p.progress===100?'done':'')}><Icon name={p.progress===100?'check':'folder'} size={26}/></span>
       <div className="project-title"><h3>{p.name}</h3><p>{p.announcementTitle}<span>·</span>{(p.updatedAt||'').replaceAll('-','.')} 수정</p></div>
-      <span className={'status-pill '+(p.progress===100?'done':'')}>{p.progress===100?'준비 완료':p.matched?'진행 중':'공고 선택 대기'}</span>
+      <span className={'status-pill '+(p.progress===100?'done':'')}>{p.progress===100?'준비 완료':p.generating||(p.matched?'진행 중':'공고 선택 대기')}</span>
       <Icon name="chevron" size={21}/>
      </button>
      {confirmingId===p.id?(

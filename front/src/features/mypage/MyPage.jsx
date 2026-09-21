@@ -3,8 +3,8 @@ import { Icon } from '../../components/Icons.jsx';
 import { MAX_PROFILES, useMyPageStore } from '../../store/useMyPageStore.js';
 import BasicInfo from './BasicInfo.jsx';
 import CapabilityTeam from './CapabilityTeam.jsx';
-import { missingRequiredFields, progressOf } from './derive.js';
-import { inputCls } from './ui.jsx';
+import { missingRequiredFields } from './derive.js';
+import { focusSection, inputCls } from './ui.jsx';
 
 const TABS = [
   ['basic', '기본 정보', BasicInfo],
@@ -104,15 +104,21 @@ export default function MyPage({ onSaved }) {
   const saveActiveProfile = useMyPageStore((s) => s.saveActiveProfile);
   const [justSaved, setJustSaved] = useState(false);
   const [saving, setSaving] = useState(false);
-  const progress = progressOf(activeProfile);
-  const [done, total] = Object.values(progress).reduce(([d, t], [a, b]) => [d + a, t + b], [0, 0]);
-  const percent = total ? Math.round((done / total) * 100) : 0;
   const missing = missingRequiredFields(activeProfile);
-  const canSave = missing.length === 0;
+  // 저장을 눌렀을 때 비어 있던 첫 필수 항목. 그 항목을 채우면 안내는 저절로 사라진다.
+  const [errorAnchor, setErrorAnchor] = useState(null);
+  const error = missing.find((m) => m.anchor === errorAnchor) || null;
+  const [pendingFocus, setPendingFocus] = useState(null);
 
   // 정보 슬롯을 바꾸거나 새로 추가하면 그 전에 보고 있던 탭(역량·팀 등)이 아니라
   // 항상 기본 정보 탭부터 보여준다 — 슬롯마다 처음 보는 화면이 같아야 헷갈리지 않는다.
-  useEffect(() => { setTab('basic'); }, [activeIndex]);
+  useEffect(() => { setTab('basic'); setErrorAnchor(null); }, [activeIndex]);
+  // 빈 항목이 다른 탭에 있으면 탭을 바꾼 뒤(그 섹션이 그려진 다음) 스크롤한다.
+  useEffect(() => {
+    if (!pendingFocus) return;
+    focusSection(pendingFocus);
+    setPendingFocus(null);
+  }, [pendingFocus, tab]);
 
   const index = TABS.findIndex(([key]) => key === tab);
   const [, , Current] = TABS[index];
@@ -126,7 +132,14 @@ export default function MyPage({ onSaved }) {
   // 안 부르면 저장에 성공해도 로그인 시점에 캐시된 has_profile=false가 세션 내내 그대로
   // 남아 "시작하기"/"내 프로젝트" 이동마다 마이페이지 입력 강제 모달이 계속 떴다(사용자 지적).
   const handleSave = async () => {
-    if (!canSave || saving) return;
+    if (saving) return;
+    if (missing.length > 0) {
+      const first = missing[0];
+      setErrorAnchor(first.anchor);
+      setTab(first.tab);
+      setPendingFocus(first.anchor);
+      return;
+    }
     setSaving(true);
     try {
       await saveActiveProfile();
@@ -144,47 +157,34 @@ export default function MyPage({ onSaved }) {
   return (
     <div data-screen="mypage" className="max-w-3xl mx-auto px-6 py-14">
       <p className="text-[13px] font-semibold text-[var(--primary-dim)] mb-2">마이페이지</p>
-      <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
-        <div>
-          <h1 className="font-bold text-[28px] md:text-[32px]">내 창업 정보</h1>
-          <p className="text-[15px] text-[var(--muted-fg)] mt-2">한 번 정리해 두면 공고 자격을 확인할 때 쓸 수 있어요. 최대 3개까지 따로 저장할 수 있어요.</p>
-        </div>
-        <div className="w-full sm:w-52">
-          <div className="flex justify-between text-[13px] mb-1.5">
-            <span className="text-[var(--muted-fg)]">입력 완료</span>
-            <b className="text-[var(--primary)]">{percent}%</b>
-          </div>
-          <div className="h-2 rounded-full bg-[var(--muted)] overflow-hidden">
-            <div className="h-full rounded-full bg-[var(--primary)] transition-[width] duration-300" style={{ width: `${percent}%` }} />
-          </div>
-        </div>
+      <div className="mb-6">
+        <h1 className="font-bold text-[28px] md:text-[32px]">내 창업 정보</h1>
+        <p className="text-[15px] text-[var(--muted-fg)] mt-2">한 번 정리해 두면 공고 자격을 확인할 때 쓸 수 있어요. 최대 3개까지 따로 저장할 수 있어요.</p>
       </div>
 
       <ProfileSwitcher />
 
       <nav role="tablist" className="sticky top-0 z-10 flex gap-1 bg-white border-b border-[var(--border)] mb-8">
         {TABS.map(([key, label]) => {
-          const [d, t] = progress[key];
           const active = key === tab;
           return (
             <button key={key} role="tab" aria-selected={active} onClick={() => goTab(key)}
               className={`relative px-4 py-3.5 text-[15px] font-semibold transition-colors ${active ? 'text-[var(--fg)]' : 'text-[#8b95a1] hover:text-[#4e5968]'}`}>
               {label}
-              <span className={`ml-1.5 text-[12.5px] font-medium ${t && d === t ? 'text-[var(--ok)]' : 'text-[#b0b8c1]'}`}>{t ? `${d}/${t}` : '선택'}</span>
               {active && <span className="absolute left-3 right-3 -bottom-px h-0.5 rounded-full bg-[var(--fg)]" />}
             </button>
           );
         })}
       </nav>
 
-      <Current />
+      <Current error={error} />
 
       <div className="flex items-center justify-between gap-4 mt-6 pt-6 border-t border-[var(--border)]">
         <div className="min-h-5">
           {justSaved ? (
             <p className="text-[12.5px] font-semibold text-[var(--ok)]">저장됐어요.</p>
           ) : missing.length > 0 ? (
-            <p className="text-[12.5px] text-[var(--warn)]">필수 항목을 먼저 채워 주세요 — {missing.join(', ')}</p>
+            <p className="text-[11.5px] text-[var(--muted-fg)]">[필수] 항목을 먼저 채워 주세요 — {missing.map((m) => m.label).join(', ')}</p>
           ) : !onboarded ? (
             <p className="text-[12.5px] text-[var(--warn)]">아직 저장 전이에요. 저장을 눌러 주세요.</p>
           ) : (
@@ -198,7 +198,7 @@ export default function MyPage({ onSaved }) {
               다음
             </button>
           )}
-          <button type="button" onClick={handleSave} disabled={!canSave || saving}
+          <button type="button" onClick={handleSave} disabled={saving}
             className="h-11 px-6 rounded-xl bg-[var(--primary)] text-white text-[14.5px] font-semibold hover:bg-[var(--primary-dim)] disabled:opacity-40 disabled:cursor-not-allowed transition-[background-color,scale] active:scale-[0.98]">
             {saving ? '저장 중…' : '저장'}
           </button>

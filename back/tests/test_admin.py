@@ -133,6 +133,42 @@ def test_put_policy_thresholds(admin_client):
     assert body['token_retry_cap'] == 4
 
 
+@pytest.mark.parametrize('field,value', [
+    ('pass_threshold', -1), ('pass_threshold', 101),
+    ('pass_threshold', ''), ('deviation_cap', -1),
+    ('rerun_cap', -1), ('token_retry_cap', 1.5),
+])
+def test_invalid_thresholds_do_not_change_policy(admin_client, field, value):
+    before = admin_client.get('/admin/policy').json()
+    payload = {key: before[key] for key in (
+        'pass_threshold', 'rerun_cap', 'deviation_cap', 'token_retry_cap')}
+    payload[field] = value
+    response = admin_client.put('/admin/policy/thresholds', json=payload)
+    assert response.status_code == 422
+    assert admin_client.get('/admin/policy').json() == before
+
+
+def test_negative_scores_with_valid_total_are_rejected(admin_client):
+    before = admin_client.get('/admin/policy').json()
+    response = admin_client.put('/admin/policy/scores', json={
+        'doc_weight': -10, 'code_weight': 55, 'plan_weight': 55,
+    })
+    assert response.status_code == 422
+    assert admin_client.get('/admin/policy').json() == before
+
+
+def test_negative_checklist_weight_is_rejected(admin_client):
+    before = admin_client.get('/admin/checklist').json()
+    payload = [dict(check_item_id=item['check_item_id'], weight=0, enabled=True)
+               for item in before]
+    payload[0]['weight'] = -10
+    payload[1]['weight'] = 55
+    payload[2]['weight'] = 55
+    response = admin_client.put('/admin/checklist', json=payload)
+    assert response.status_code == 422
+    assert admin_client.get('/admin/checklist').json() == before
+
+
 # ============================================================================
 # 체크리스트
 # ============================================================================

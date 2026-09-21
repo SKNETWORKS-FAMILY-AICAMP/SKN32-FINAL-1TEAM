@@ -2,17 +2,16 @@
 import React, {useState} from 'react';
 import {Icon} from '../../components/Icons.jsx';
 import Preparation from '../../components/Preparation.jsx';
-import {GeneratingOverlay} from './shared.jsx';
-import {ArtifactProgress} from './ArtifactResult.jsx';
 import {buildGeneralInfo,buildOverview,DOC_SCORE_BY_OUTCOME} from './utils.js';
-import {ANNOUNCEMENTS,FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_DOCUMENT_SECTIONS,PLAN_TABLE_EXAMPLE,PSST_OFFICIAL_HEADERS,SCORE_DISCLAIMER,WRITING_SUBTASKS} from './data.js';
+import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_DOCUMENT_SECTIONS,PLAN_TABLE_EXAMPLE,PSST_OFFICIAL_HEADERS,SCORE_DISCLAIMER,WRITING_SUBTASKS} from './data.js';
 import {retryTask} from '../../api.js';
 
 // WRITING_SUBTASKS 3개는 전부 PLAN_STAGE_TASKS(data.js)에서 같은 '작성' Agent 몫이라
 // 백엔드에도 별도 task_key 없이 하나(writing)로 묶여 있다 — app/schemas.py RetryTaskRequest 참고.
 const TASK_KEY_BY_LABEL = { '사업계획서 본문 작성': 'writing', '그래프 생성': 'writing', '표 생성': 'writing' };
 
-export function PipelineProgress({onComplete}){return <Preparation kind="plan" onComplete={onComplete} similarAnnouncements={ANNOUNCEMENTS.slice(0,3)}/>;}
+// 화면 검토(audit.jsx)용 데모 타이머 버전 — 실제 흐름은 GenerationProgress가 서버 진행률을 쓴다.
+export function PipelineProgress({onComplete}){return <Preparation kind="plan" onComplete={onComplete}/>;}
 
 // 사업계획서 표준 4대 항목(PSST: Problem·Solution·Scale-up·Team) — 정부지원사업 사업계획서의
 // 실제 목차 구조를 그대로 예시 본문에 쓴다. 표·그래프 예시도 같이 넣어서 "구현 Task가
@@ -126,14 +125,13 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
   // 지적에 따라, 방금 재작성한 항목을 완료 표시로 남겨둔다 — 같은 항목을 다시
   // 체크해 재작성을 걸면(toggleTask) 그 항목의 완료 표시는 지운다.
   const [completedTasks, setCompletedTasks] = useState([]);
-  const [generating, setGenerating] = useState(false);
   // 레퍼런스(makedeck)의 좌측 히스토리 사이드바처럼, 문서 평가 패널을 접었다 펼 수 있게 —
   // 기본은 펼친 상태(사용자 지적: 처음엔 점수가 바로 보여야 함).
   const [scoreOpen, setScoreOpen] = useState(true);
 
   const handleGenerateClick = () => {
     if (!passed) { setConfirmProceed(true); return; }
-    setGenerating(true);
+    onGenerate();
   };
 
   const toggleTask = (label) => {
@@ -164,7 +162,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
 
   return (
     <React.Fragment>
-    <section data-screen="plan" className={`max-w-6xl mx-auto px-6 py-12 transition-[filter] duration-300 ${generating ? 'blur-sm pointer-events-none select-none' : ''}`}>
+    <section data-screen="plan" className="max-w-6xl mx-auto px-6 py-12">
       <div className={`grid gap-6 items-start transition-[grid-template-columns] duration-200 ${scoreOpen ? 'md:grid-cols-[290px_1fr]' : 'md:grid-cols-[auto_1fr]'}`}>
         {/* 좌측 — 문서 평가: 문서층 70점을 100점 만점으로 환산해 표시 (기획서 4-5).
             우측 본문과 한 박스로 묶으면(카드 하나 공유) 내용이 짧은 이쪽이 긴 본문
@@ -253,7 +251,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
                   className="text-[13px] font-semibold text-[var(--muted-fg)] hover:text-[var(--fg)] transition-[color,scale] duration-150 ease-out active:scale-[0.96]">
                   취소
                 </button>
-                <button onClick={() => setGenerating(true)} className="text-[13px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">
+                <button onClick={onGenerate} className="text-[13px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">
                   그래도 진행하기
                 </button>
               </div>
@@ -290,11 +288,6 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
         </div>
       </div>
     </section>
-    {generating && (
-      <GeneratingOverlay>
-        <ArtifactProgress itemInfo={itemInfo} onComplete={onGenerate} />
-      </GeneratingOverlay>
-    )}
     </React.Fragment>
   );
 }

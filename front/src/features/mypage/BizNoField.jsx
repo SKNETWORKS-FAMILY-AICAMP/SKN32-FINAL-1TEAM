@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { checkBizNo } from '../../api.js';
 import { useMyPageStore } from '../../store/useMyPageStore.js';
 import { formatBizNo } from './derive.js';
@@ -13,15 +13,26 @@ const STATUS_HINT = {
 export default function BizNoField({ value, onChange }) {
   const bizStatus = useMyPageStore((s) => s.profiles[s.activeIndex].bizStatus);
   const profileId = useMyPageStore((s) => s.profiles[s.activeIndex].profileId);
+  const localId = useMyPageStore((s) => s.profiles[s.activeIndex].localId);
+  const generation = useMyPageStore((s) => s.generation);
   const setBizStatus = useMyPageStore((s) => s.setBizStatus);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const request = useRef(0);
+  useEffect(() => {
+    request.current += 1;
+    setLoading(false);
+    setError('');
+    return () => { request.current += 1; };
+  }, [localId, value, generation]);
 
   // 번호를 고치면 이전 조회 결과는 더 이상 이 번호의 것이 아니다.
   const result = bizStatus?.checkedNo === value ? bizStatus : null;
   const ready = value.replace(/\D/g, '').length === 10;
 
   const lookup = async () => {
+    if (!ready || loading) return;
+    const id = ++request.current;
     setLoading(true);
     setError('');
     try {
@@ -29,11 +40,12 @@ export default function BizNoField({ value, onChange }) {
       // 어느 슬롯에도 저장하지 않는다(back/app/routers/biz_check.py) — 화면엔 그래도
       // 결과가 뜨지만, 슬롯을 먼저 저장해야 새로고침 후에도 남는다.
       const res = await checkBizNo(value, profileId);
-      setBizStatus({ ...res, checkedNo: value });
+      setBizStatus(localId, generation, { ...res, checkedNo: value });
     } catch (err) {
+      if (request.current !== id) return;
       setError(err.status === 401 ? '로그인이 끊겼어요. 다시 로그인해 주세요.' : '지금은 조회할 수 없어요. 잠시 후 다시 시도해 주세요.');
     } finally {
-      setLoading(false);
+      if (request.current === id) setLoading(false);
     }
   };
 

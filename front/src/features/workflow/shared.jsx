@@ -1,5 +1,6 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
 import React, {useState,useRef,useEffect} from 'react';
+import {listProjects} from '../../api.js';
 
 export function FloatingInput({inputRef,type,value,onChange,label}){
   return <label className="block text-[14px] text-[var(--muted-fg)]"><span className="block mb-2">{label}</span><input ref={inputRef} type={type} value={value} onChange={onChange} onInput={onChange} onBlur={onChange} className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg)]"/></label>;
@@ -41,26 +42,97 @@ export function BackButton({ onClick, label = '이전 단계로 돌아가기' })
   );
 }
 
-// 신규 공고 매칭은 임베딩으로 후보를 먼저 좁힌 뒤, 상위 N건만 LLM으로 세부 비교한다
-// — 신규 공고 전체를 LLM으로 돌리면 공고 건수에 비례해 비용이 선형으로 늘어난다.
-// 이 파이프라인 자체는 백엔드 영역이라 목업엔 없고, 그 결과(유사도 점수)만 더미로 흉내낸다.
-// 목업 수정 요청서 v3 §9: 등록 단위는 프로젝트(계획서)가 아니라 아이템이다 — 계획서는
-// 선택 공고의 양식·마감일·지원규모에 종속되어 다른 공고에 재사용할 수 없어서(기획서
-// 4-2⑧), 계획서 기반 알림은 성립하지 않는다. 아이템 자체는 공고와 무관하게 남아
-// 여러 신규 공고와 계속 비교될 수 있다는 게 차이다.
-export function NotificationBell({ enabled, onToggle, alerts = [] }){
+// match_results.stage(back/app/pipeline_stages.py) 순서. 계획서는 plan_writing 이후면 완료,
+// 프로토타입은 prototype_building 이후면 완료로 본다.
+const STAGE_ORDER = ['plan_writing','plan_review_pending','prototype_building','artifact_review','final_review_pending','reviewing','done'];
+const PROGRESS_POLL_MS = 5000;
+const SEEN_KEY = 'sbrain-seen-progress-alerts';
+
+function readSeen(){try{return new Set(JSON.parse(localStorage.getItem(SEEN_KEY)||'[]'))}catch(e){return new Set()}}
+function writeSeen(set){try{localStorage.setItem(SEEN_KEY,JSON.stringify([...set]))}catch(e){}}
+
+export function progressAlertsFrom(projects){
+  const alerts = [];
+  for (const p of projects) {
+    const i = STAGE_ORDER.indexOf(p.stage);
+    if (i < 0) continue;
+    const name = p.description || '내 프로젝트';
+    const project = { id: p.project_id, matched: true, announcementTitle: p.notice_title };
+    const planDone = i > 0;
+    alerts.push({ key: `${p.project_id}:plan`, project, projectName: name, kind: '사업계획서', done: planDone,
+      percent: planDone ? 100 : p.progress_percent, view: planDone ? 'plan-form' : 'plan-progress' });
+    if (i >= 2) {
+      const protoDone = i > 2;
+      alerts.push({ key: `${p.project_id}:prototype`, project, projectName: name, kind: '프로토타입', done: protoDone,
+        percent: protoDone ? 100 : p.progress_percent, view: protoDone ? 'artifact-result' : 'artifact-progress' });
+    }
+  }
+  // 진행 중인 것을 위로
+  return alerts.sort((a, b) => Number(a.done) - Number(b.done));
+}
+
+// refreshKey(현재 화면)가 바뀔 때마다 다시 불러온다 — 생성을 막 시작한 뒤에도 진행 중
+// 항목을 바로 잡아 폴링을 이어가기 위해서다. 이 세션에서 진행 중이던 게 끝나면 토스트를 띄운다.
+export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey }){
   const [open, setOpen] = useState(false);
+  const [alerts, setAlerts] = useState([]);
+  const [seen, setSeen] = useState(readSeen);
+  const [toast, setToast] = useState(null);
+  const runningKeys = useRef(new Set());
+
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    let timer = null;
+    const load = () => listProjects().then((rows) => {
+      if (cancelled) return;
+      const next = progressAlertsFrom(rows);
+      const finished = next.find((a) => a.done && runningKeys.current.has(a.key));
+      if (finished) setToast(finished);
+      runningKeys.current = new Set(next.filter((a) => !a.done).map((a) => a.key));
+      setAlerts(next);
+      if (next.some((a) => !a.done)) timer = setTimeout(load, PROGRESS_POLL_MS);
+    }).catch((err) => console.error('진행 알림을 불러오지 못했어요', err));
+    load();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [enabled, refreshKey]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 8000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const openAlert = (a) => {
+    setOpen(false);
+    setToast(null);
+    onOpenProject?.(a.project, a.view);
+  };
+
   const activeAlerts = enabled ? alerts : [];
+  const hasUnread = activeAlerts.some((a) => a.done && !seen.has(a.key));
+
+  const toggleOpen = () => {
+    setOpen((v) => {
+      if (!v) {
+        const next = new Set(seen);
+        activeAlerts.filter((a) => a.done).forEach((a) => next.add(a.key));
+        writeSeen(next);
+        setSeen(next);
+      }
+      return !v;
+    });
+  };
 
   return (
     <div className="relative">
-      <button onClick={() => setOpen((v) => !v)} aria-label="알림"
+      <button onClick={toggleOpen} aria-label="알림"
         className="relative w-9 h-9 rounded-full flex items-center justify-center text-[var(--muted-fg)] hover:bg-[var(--muted)] hover:text-[var(--fg)] transition-[background-color,color] duration-150 ease-out">
         <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>
           <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
         </svg>
-        {activeAlerts.length > 0 && (
+        {hasUnread && (
           <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[var(--primary)]"></span>
         )}
       </button>
@@ -70,8 +142,8 @@ export function NotificationBell({ enabled, onToggle, alerts = [] }){
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)}></div>
           <div className="absolute right-0 top-11 w-[340px] max-w-[calc(100vw-32px)] rounded-2xl border border-[var(--border)] bg-white shadow-[0_20px_48px_-16px_rgba(20,23,31,.25)] z-50 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3.5 border-b border-[var(--border)]">
-              <p className="text-[13.5px] font-bold">유사 공고 알림</p>
-              <button type="button" role="switch" aria-checked={enabled} aria-label="유사 공고 알림" className="flex items-center gap-2 cursor-pointer select-none" onClick={onToggle}>
+              <p className="text-[13.5px] font-bold">제작 진행 알림</p>
+              <button type="button" role="switch" aria-checked={enabled} aria-label="제작 진행 알림" className="flex items-center gap-2 cursor-pointer select-none" onClick={onToggle}>
                 <span className="text-[11.5px] text-[var(--muted-fg)]">{enabled ? '켜짐' : '꺼짐'}</span>
                 <span className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-150 ease-out" style={{ backgroundColor: enabled ? 'var(--primary)' : '#d1d6db' }}>
                   <span className="inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform duration-150 ease-out" style={{ transform: enabled ? 'translateX(18px)' : 'translateX(3px)' }}></span>
@@ -80,17 +152,26 @@ export function NotificationBell({ enabled, onToggle, alerts = [] }){
             </div>
 
             {!enabled ? (
-              <p className="px-4 py-6 text-[12.5px] text-[var(--muted-fg)] text-center">알림이 꺼져 있어요 — 켜면 등록한 프로젝트와 비슷한 신규 공고를 알려드려요</p>
+              <p className="px-4 py-6 text-[12.5px] text-[var(--muted-fg)] text-center">알림이 꺼져 있어요 — 켜면 사업계획서·프로토타입 제작 상황을 알려드려요</p>
             ) : activeAlerts.length === 0 ? (
-              <p className="px-4 py-6 text-[12.5px] text-[var(--muted-fg)] text-center">아직 새로 올라온 유사 공고가 없어요</p>
+              <p className="px-4 py-6 text-[12.5px] text-[var(--muted-fg)] text-center">아직 제작 중인 사업계획서·프로토타입이 없어요</p>
             ) : (
               <div className="soft-scroll max-h-72 overflow-y-auto divide-y divide-[var(--border)]">
                 {activeAlerts.map((a) => (
-                  <div key={a.id} className="px-4 py-3.5">
-                    <p className="text-[11.5px] text-[var(--muted-fg)] mb-1">『{a.itemName}』 아이템과 유사</p>
-                    <p className="text-[13px] font-semibold mb-0.5">{a.title}</p>
-                    <p className="text-[11.5px] text-[var(--muted-fg)]">{a.org} · 유사도 {a.similarity}% · {a.detectedAt}</p>
-                  </div>
+                  <button type="button" key={a.key} onClick={() => openAlert(a)} className="block w-full text-left px-4 py-3.5 hover:bg-[#f9fafb] transition-colors">
+                    <p className="text-[11.5px] text-[var(--muted-fg)] mb-1 truncate">『{a.projectName}』</p>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[13px] font-semibold">{a.kind} {a.done ? '제작이 끝났어요' : '만드는 중이에요'}</p>
+                      <span className={'text-[11.5px] font-semibold flex-shrink-0 ' + (a.done ? 'text-[var(--ok)]' : 'text-[var(--primary)]')}>
+                        {a.done ? '완료' : a.percent != null ? `진행 중 ${a.percent}%` : '진행 중'}
+                      </span>
+                    </div>
+                    {!a.done && a.percent != null && (
+                      <div className="mt-2 h-1 rounded-full bg-[var(--muted)] overflow-hidden">
+                        <div className="h-full rounded-full bg-[var(--primary)]" style={{ width: `${a.percent}%` }} />
+                      </div>
+                    )}
+                  </button>
                 ))}
               </div>
             )}
@@ -101,6 +182,13 @@ export function NotificationBell({ enabled, onToggle, alerts = [] }){
             </div>
           </div>
         </React.Fragment>
+      )}
+      {toast && (
+        <div role="status" className="progress-toast">
+          <p><b>{toast.kind === '프로토타입' ? '프로토타입이' : '사업계획서가'}</b> 완성됐어요 <span>『{toast.projectName}』</span></p>
+          <button type="button" onClick={() => openAlert(toast)}>보러 가기</button>
+          <button type="button" aria-label="닫기" className="progress-toast-close" onClick={() => setToast(null)}>✕</button>
+        </div>
       )}
     </div>
   );
@@ -147,41 +235,14 @@ export function FileAttach({ files, onAdd, onRemove }){
 // 처음에 모두 모아두면 신청 자격 확인 이후로는 사용자에게 되묻지 않고 끝까지
 // 진행할 수 있다. 예비창업자는 대표자·설립일자가 아예 해당 없으므로 그 값들을
 // 비워둔 채(=업력 계산상 예비창업자로 판정) 다음 단계로 넘긴다.
-export function FitGauge({value}){
-  const r=42,c=2*Math.PI*r,offset=c*(1-Math.max(0,Math.min(100,value))/100);
-  const tone=value>=80?'#3182f6':value>=60?'#d7a03c':'#d34b50';
+// 가산점은 공고마다 붙는 점수라 만점 기준이 없다 — 비율 게이지 대신 점수만 크게 보여준다.
+export function formatBonus(value){return `+${Number(value)}`;}
+export function BonusScore({value}){
   return (
-    <svg viewBox="0 0 100 100" className="fit-gauge" role="img" aria-label={`아이템 적합도 ${value}%`}>
-      <circle cx="50" cy="50" r={r} fill="none" stroke="#eef1f4" strokeWidth="10"/>
-      <circle cx="50" cy="50" r={r} fill="none" stroke={tone} strokeWidth="10" strokeLinecap="round"
-        strokeDasharray={c} strokeDashoffset={offset} transform="rotate(-90 50 50)" style={{transition:'stroke-dashoffset .4s ease-out'}}/>
-      <text x="50" y="46" textAnchor="middle" fontSize="24" fontWeight="700" fill="#333d4b">{value}</text>
-      <text x="50" y="65" textAnchor="middle" fontSize="10" fill="#8b95a1">% 적합</text>
-    </svg>
+    <div className="bonus-score" role="img" aria-label={`가산점 ${Number(value)}점`}>
+      <b>{formatBonus(value)}</b><span>점</span>
+    </div>
   );
-}
-
-// [2026-09-15, 프론트 통합 임시 구현] 예전엔 ANNOUNCEMENTS(하드코딩 6건)를 그대로 3건
-// 잘라 보여줬는데, 이제 마운트 시 GET /projects/{id}/match-candidates(api.js
-// getMatchCandidates)로 실제 후보를 받아온다 — 백엔드가 아직 아무것도 저장하지 않은 채
-// 후보만 계산해서 보여주는 단계라(app/routers/projects.py get_match_candidates 주석 참고),
-// 사용자가 "신청 자격 확인하기"를 누르는 순간에만 POST /generate(generatePipeline)를 호출해
-// 실제 매칭·자격판정·계획서·산출물·최종판정을 한 번에 만든다.
-//
-// [2026-09-16, 근거 패널 추가] 원래는 후보 목록 안에 매칭 근거를 한 줄로만 보여줬는데
-// (사용자 지적 — "근거를 더 상세히 어필할 수 있게"), 왼쪽 목록/오른쪽 근거 패널로
-// 나눠서 선택한 공고의 적합도 게이지·다른 후보와의 비교까지 오른쪽에 보여준다.
-// candidates/onLoaded: 후보 목록은 App이 들고 있는다(2026-09-16). 자격 요건을 확인하러
-// 갔다가 "매칭 결과로 돌아가기"로 되돌아오면 이 컴포넌트가 다시 마운트되는데, 그때마다
-// GET /match-candidates를 다시 부르면 공고 3건과 적합도가 통째로 새로 뽑힌다 — 백엔드가
-// 아직 아무것도 저장하지 않고 매번 random으로 점수를 매기는 임시 구현이라 그렇다
-// (app/routers/projects.py get_match_candidates 주석 참고). 사용자 입장에선 방금 보던
-// 공고 목록이 사라지는 버그로 보여서(사용자 지적), 한 프로젝트 안에서는 처음 받아온
-// 후보를 계속 쓴다. 실제 매칭이 DB에 저장되기 시작하면 이 캐시는 없애도 된다.
-export function GeneratingOverlay({children}){
- const ref=useRef(null);
- useEffect(()=>{const dialog=ref.current;dialog?.showModal();const heading=dialog?.querySelector("h1");if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true});}if(dialog)dialog.scrollTop=0;return()=>dialog?.close()},[]);
- return <dialog ref={ref} className="generation-dialog" aria-label="결과물 생성 진행" onCancel={e=>e.preventDefault()}>{children}</dialog>;
 }
 
 // [2026-09-15, 프론트 통합 임시 구현] 예전엔 클라이언트에서 evaluateEligibility(공고 조건 3개를

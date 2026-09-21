@@ -1,10 +1,11 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
 import React, {useState} from 'react';
 import {Icon} from '../../components/Icons.jsx';
-import {downloadPlanDocx,downloadPrototypeZip,downloadVerificationPdf} from '../../dummyDeliverables.js';
-import {ApiError,downloadAttachmentGuide,downloadPlanDocument} from '../../api.js';
-import {buildGeneralInfo,buildOverview,DOC_SCORE_BY_OUTCOME} from './utils.js';
-import {ARTIFACT_SCORE_BY_OUTCOME,DELIVERABLE_NOTICES,DOWNLOAD_FILES,EN_DOC_ITEM_LABEL,FINAL_THRESHOLD,PLAN_DOCUMENT_SECTIONS_REWORKED,REVIEW_PARAGRAPHS} from './data.js';
+import {downloadPlanDocx,downloadPrototypeZip} from '../../dummyDeliverables.js';
+import {downloadPlanDocument} from '../../api.js';
+import {buildCodeCheckItems,buildGeneralInfo,buildOverview,detectItemCategory,DOC_SCORE_BY_OUTCOME} from './utils.js';
+import {printVerificationReport} from './verificationReport.js';
+import {ARTIFACT_SCORE_BY_OUTCOME,DELIVERABLE_NOTICES,DOWNLOAD_FILES,FINAL_THRESHOLD,PLAN_DOCUMENT_SECTIONS_REWORKED,REVIEW_PARAGRAPHS} from './data.js';
 
 export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', artifactOutcome = 'fail', onGoDashboard, projectId }){
   const docScore = DOC_SCORE_BY_OUTCOME[docOutcome];
@@ -46,26 +47,6 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
       });
       return;
     }
-    if (file.name === '증빙서류_제출목록_안내.docx') {
-      // 신분증 사본 등 증빙서류 자체는 우리가 만들어내는 문서가 아니라 공고 원본 안내문을
-      // 그대로 내려주는 것뿐이라, 사업계획서처럼 채울 더미 데이터가 없다 — projectId가
-      // 없는 미리보기 화면에서는 다운로드할 방법이 아예 없다.
-      if (projectId) {
-        downloadAttachmentGuide(projectId).catch((err) => {
-          console.error('증빙서류 안내 다운로드 실패:', err);
-          // 404는 "이 신청 유형용 파일이 아직 없음"이라는 구체적 이유가 detail에 실려
-          // 온다(back/app/routers/projects.py download_attachment_guide) — 일시적 오류처럼
-          // 보이는 재시도 문구 대신 그 이유를 그대로 보여준다.
-          const message = err instanceof ApiError && err.status === 404
-            ? String(err.detail)
-            : '지금은 증빙서류 안내 파일을 받을 수 없어요. 잠시 후 다시 시도해 주세요.';
-          window.alert(message);
-        });
-      } else {
-        window.alert('프로젝트 정보가 있어야 받을 수 있는 파일이에요.');
-      }
-      return;
-    }
     if (file.name === 'prototype.zip') {
       const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"/><title>${itemTitle || '프로토타입'}</title>
 <style>body{font-family:system-ui,sans-serif;background:#f2f4f6;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
@@ -88,24 +69,17 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
       return;
     }
     if (file.name === '검증결과.pdf') {
-      const lines = [
-        { text: 'S-Brain Verification Result (Demo)', size: 16 },
-        { text: `Item: ${itemTitle || '-'}`, size: 10 },
-        { text: `Generated: ${new Date().toISOString()}`, size: 10 },
-        { text: '' },
-        { text: `[Document Layer] ${docScore.raw} / ${docScore.max}`, size: 13 },
-        ...docScore.items.map((it) => ({ text: `  - ${EN_DOC_ITEM_LABEL[it.name] || it.name}: ${it.score} / ${it.max}` })),
-        { text: '' },
-        { text: `[Artifact Layer] Auto-check ${artifactScore.autoCheck.raw}/${artifactScore.autoCheck.max}, Cross-check ${artifactScore.crossCheck.raw}/${artifactScore.crossCheck.max}`, size: 13 },
-        ...artifactScore.autoCheck.reasons.map((r, i) => ({ text: `  - Auto-check issue ${i + 1}` })),
-        ...artifactScore.crossCheck.reasons.map((r, i) => ({ text: `  - Cross-check issue ${i + 1}` })),
-        { text: '' },
-        { text: `Final Score: ${finalTotal} / 100 (threshold ${FINAL_THRESHOLD})`, size: 14 },
-        { text: `Result: ${passed ? 'PASS' : 'BELOW THRESHOLD'}`, size: 14 },
-        { text: '' },
-        { text: 'This score is an internal reference score, not an official screening score.', size: 9 },
-      ];
-      downloadVerificationPdf({ lines });
+      // 원페이지형 검증결과서 양식을 인쇄 창으로 연다 — "PDF로 저장"을 고르면 PDF가 된다.
+      const category = detectItemCategory(itemInfo?.item);
+      printVerificationReport({
+        projectName: itemInfo?.item,
+        announcementTitle: itemTitle,
+        category,
+        docScore,
+        codeCheckItems: buildCodeCheckItems(category, artifactOutcome),
+        crossCheck: artifactScore.crossCheck,
+        threshold: FINAL_THRESHOLD,
+      });
       return;
     }
   }

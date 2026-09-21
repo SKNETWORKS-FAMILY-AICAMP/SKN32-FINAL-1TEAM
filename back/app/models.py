@@ -413,6 +413,21 @@ class NoticeAlert(Base):
     detected_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class MatchCandidate(Base):
+    """GET /projects/{id}/match-candidates 가 보여준 공고 후보. 한 번 뽑은 후보를 저장해 두어야
+    새로고침해도 같은 목록이 나오고, 재실행(batch=2)을 서버가 프로젝트당 1회로 강제할 수 있다."""
+
+    __tablename__ = 'match_candidates'
+
+    candidate_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
+    notice_id: Mapped[str] = mapped_column(String(320), ForeignKey('notices.notice_id'))
+    batch: Mapped[int] = mapped_column(SmallInteger)  # 1=첫 매칭, 2=재실행
+    bonus_score: Mapped[decimal.Decimal] = mapped_column(Numeric(4, 1))  # 공고별 가산점(만점 기준 없음)
+    reason: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class MatchResult(Base):
     __tablename__ = 'match_results'
 

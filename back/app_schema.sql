@@ -211,6 +211,19 @@ CREATE TABLE IF NOT EXISTS notice_alerts (
     FOREIGN KEY (notice_id) REFERENCES notices(notice_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+CREATE TABLE IF NOT EXISTS match_candidates (
+    candidate_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '매칭 후보 고유 식별자',
+    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
+    notice_id VARCHAR(320) NOT NULL COMMENT 'REFERENCES notices(notice_id)',
+    batch SMALLINT NOT NULL COMMENT '1=첫 매칭, 2=재실행(프로젝트당 1회)',
+    bonus_score DECIMAL(4,1) NOT NULL COMMENT '공고별 가산점(만점 기준 없음)',
+    reason TEXT NOT NULL COMMENT '매칭 근거 서술',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '후보 생성 일시',
+    KEY ix_match_candidates_project (project_id),
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE,
+    FOREIGN KEY (notice_id) REFERENCES notices(notice_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 CREATE TABLE IF NOT EXISTS match_results (
     match_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '매칭 결과 고유 식별자',
     project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',

@@ -1,4 +1,4 @@
-import React,{useState,useEffect} from 'react';
+import React,{useState,useEffect,useRef} from 'react';
 import {Brand,Icon} from '../components/Icons.jsx';
 import {api,ApiError} from '../api.js';
 
@@ -57,8 +57,8 @@ const AGENT_ROWS=[
 const executionRowFromServer=r=>({
   id:'EXEC-'+r.execution_id,matchId:r.match_id,agent:r.agent_name,tokens:Number(r.token_usage).toLocaleString(),
   rerun:r.rerun_type,rerunTone:r.rerun_type==='rerun'?'primary':'muted',
-  status:r.status,statusTone:r.status==='completed'||r.status==='성공'?'ok':'danger',
-  tone:(r.status!=='completed'&&r.status!=='성공')?'danger':undefined,
+  status:r.status,statusTone:['completed','success','성공'].includes(r.status)?'ok':'danger',
+  tone:!['completed','success','성공'].includes(r.status)?'danger':undefined,
 });
 
 // GET /admin/notices(NoticeAdminOut 목록) -> "공고 전체 관리" 표 행. notices는 공고 수집
@@ -260,13 +260,14 @@ function AnnouncementTab(){
   // 검색어를 입력할 때마다 바로 요청을 쏘지 않고 300ms 디바운스한다 — notices가 2천 건대라
   // 타이핑 중간중간 불필요한 요청이 쌓이는 걸 막는다.
   useEffect(()=>{
+    let active=true;
     setNotices(null);setNoticesError('');
     const timer=setTimeout(()=>{
       const search=query?`?q=${encodeURIComponent(query)}`:'';
-      api.get(`/admin/notices${search}`).then(rows=>setNotices(rows.map(noticeRowFromServer)))
-        .catch(e=>setNoticesError(e instanceof ApiError?String(e.detail):'공고 목록을 불러오지 못했어요'));
+      api.get(`/admin/notices${search}`).then(rows=>{if(active)setNotices(rows.map(noticeRowFromServer))})
+        .catch(e=>{if(active)setNoticesError(e instanceof ApiError?String(e.detail):'공고 목록을 불러오지 못했어요')});
     },300);
-    return ()=>clearTimeout(timer);
+    return ()=>{active=false;clearTimeout(timer)};
   },[query]);
   const rows=notices||[];
   return (
@@ -434,6 +435,7 @@ function ProgressTab(){
   const [loadError,setLoadError]=useState(false);
   const [scoreId,setScoreId]=useState(null);
   const [scoreHistory,setScoreHistory]=useState(null);
+  const [scoreError,setScoreError]=useState('');
   const [detailId,setDetailId]=useState(null);
   const [restoring,setRestoring]=useState(null);
 
@@ -445,8 +447,13 @@ function ProgressTab(){
 
   useEffect(()=>{
     if(scoreId==null)return;
+    let active=true;
     setScoreHistory(null);
-    api.get(`/admin/items/${scoreId}/score-history`).then(setScoreHistory).catch(()=>setScoreHistory({doc:[],code:[],plan:[]}));
+    setScoreError('');
+    api.get(`/admin/items/${scoreId}/score-history`)
+      .then(data=>{if(active)setScoreHistory(data)})
+      .catch(()=>{if(active)setScoreError('점수 이력을 불러오지 못했어요. 창을 닫고 다시 열어 주세요.')});
+    return ()=>{active=false};
   },[scoreId]);
 
   const handleRestore=async id=>{
@@ -508,7 +515,7 @@ function ProgressTab(){
 
       {scoreId!=null&&<Modal wide title={(items.find(i=>i.project_id===scoreId)?.description||'')+' 점수 이력'} onClose={()=>{setScoreId(null);setScoreHistory(null)}}>
         <p className="text-[12.5px] text-[var(--muted-fg)] mb-4">검증 단계별 이력이 삭제되지 않고 누적됩니다. 최근 변경 순으로 표시됩니다.</p>
-        {!scoreHistory?<p className="text-[13px] text-[var(--muted-fg)]">불러오는 중…</p>:(
+        {scoreError?<p role="alert" className="text-[13px] text-[var(--danger)]">{scoreError}</p>:!scoreHistory?<p className="text-[13px] text-[var(--muted-fg)]">불러오는 중…</p>:(
         <div className="grid sm:grid-cols-3 gap-4">
           {DEVIATION_CATEGORIES.map(([key,label,max])=>(
             <div key={key}>
@@ -594,13 +601,19 @@ function AgentsTab(){
   const [opsSummaryError,setOpsSummaryError]=useState('');
   useEffect(()=>{
     if(view!=='execution'||executions!==null)return;
-    api.get('/admin/agent-executions?limit=100').then(rows=>setExecutions(rows.map(executionRowFromServer)))
-      .catch(e=>setExecError(e instanceof ApiError?String(e.detail):'실행 세션을 불러오지 못했어요'));
+    let active=true;
+    setExecError('');
+    api.get('/admin/agent-executions?limit=100').then(rows=>{if(active)setExecutions(rows.map(executionRowFromServer))})
+      .catch(e=>{if(active)setExecError(e instanceof ApiError?String(e.detail):'실행 세션을 불러오지 못했어요')});
+    return ()=>{active=false};
   },[view,executions]);
   useEffect(()=>{
     if(view!=='task'||agentTasks!==null)return;
-    api.get('/admin/agent-tasks').then(rows=>setAgentTasks(rows.map(agentTaskFromServer)))
-      .catch(e=>setAgentTaskError(e instanceof ApiError?String(e.detail):'Task 현황을 불러오지 못했어요'));
+    let active=true;
+    setAgentTaskError('');
+    api.get('/admin/agent-tasks').then(rows=>{if(active)setAgentTasks(rows.map(agentTaskFromServer))})
+      .catch(e=>{if(active)setAgentTaskError(e instanceof ApiError?String(e.detail):'Task 현황을 불러오지 못했어요')});
+    return ()=>{active=false};
   },[view,agentTasks]);
   useEffect(()=>{
     api.get('/admin/agent-ops-summary').then(setOpsSummary)
@@ -712,6 +725,7 @@ function AgentsTab(){
 const policyFromServer=p=>({scores:{doc:p.doc_weight,code:p.code_weight,plan:p.plan_weight},
   limits:{threshold:p.pass_threshold,rerun:p.rerun_cap,tokenRetry:p.token_retry_cap,recheck:p.deviation_cap}});
 const checklistFromServer=list=>list.map(i=>({id:i.check_item_id,name:i.name,how:i.method,kind:i.category,weight:i.weight,base:i.weight,on:i.enabled}));
+const validNumber=(value,max=Infinity,integer=false)=>String(value).trim()!==''&&Number.isFinite(Number(value))&&Number(value)>=0&&Number(value)<=max&&(!integer||Number.isInteger(Number(value)));
 
 function PolicyTab({pushToast}){
   const [scores,setScores]=useState(null);
@@ -746,20 +760,25 @@ function PolicyTab({pushToast}){
   const setWeight=(id,v)=>setItems(list=>list.map(i=>i.id===id?{...i,weight:v,base:Number(v)||0}:i));
 
   const saveScores=async()=>{
-    if(scoreSum!==100){pushToast('배점을 저장하지 못했습니다','문서층·코드 기준·계획서 대조 배점의 합이 100점이어야 합니다. (현재 '+scoreSum+'점)','danger');return}
+    if(!Object.values(scores).every(v=>validNumber(v,100))){pushToast('배점을 저장하지 못했습니다','각 배점에 0~100 사이의 숫자를 입력해 주세요.','danger');return}
+    if(Math.round(scoreSum*100)!==10000){pushToast('배점을 저장하지 못했습니다','문서층·코드 기준·계획서 대조 배점의 합이 100점이어야 합니다. (현재 '+scoreSum+'점)','danger');return}
     try{
       await api.put('/admin/policy/scores',{doc_weight:Number(scores.doc),code_weight:Number(scores.code),plan_weight:Number(scores.plan)});
       pushToast('배점이 저장되었습니다','문서층 '+scores.doc+'점 · 코드 기준 '+scores.code+'점 · 계획서 대조 '+scores.plan+'점으로 반영됩니다.','info');
     }catch(e){pushToast('배점을 저장하지 못했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
   };
   const saveLimits=async()=>{
+    if(!validNumber(limits.threshold,100)||!validNumber(limits.recheck,100)||!validNumber(limits.rerun,Infinity,true)||!validNumber(limits.tokenRetry,Infinity,true)){
+      pushToast('판정 기준을 저장하지 못했습니다','점수는 0~100, 횟수는 0 이상의 정수로 입력해 주세요. 빈칸은 저장할 수 없습니다.','danger');return;
+    }
     try{
       await api.put('/admin/policy/thresholds',{pass_threshold:Number(limits.threshold),rerun_cap:Number(limits.rerun),deviation_cap:Number(limits.recheck),token_retry_cap:Number(limits.tokenRetry)});
       pushToast('판정 기준이 저장되었습니다','통과 Threshold '+limits.threshold+'점 · 재수행 상한 '+limits.rerun+'회 · 검수 재시도 상한 '+limits.tokenRetry+'회 · 재채점 편차 상한 '+limits.recheck+'점으로 반영됩니다.','info');
     }catch(e){pushToast('판정 기준을 저장하지 못했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
   };
   const saveItems=async()=>{
-    if(weightSum!==100){pushToast('검증 항목을 저장하지 못했습니다','사용 중인 항목의 가중치 합이 100점이어야 합니다. (현재 '+weightSum+'점) 체크박스를 한 번 더 토글하면 100점에 맞게 재배분됩니다.','danger');return}
+    if(!items.every(i=>validNumber(i.weight,100))){pushToast('검증 항목을 저장하지 못했습니다','각 가중치에 0~100 사이의 숫자를 입력해 주세요.','danger');return}
+    if(Math.round(weightSum*100)!==10000){pushToast('검증 항목을 저장하지 못했습니다','사용 중인 항목의 가중치 합이 100점이어야 합니다. (현재 '+weightSum+'점) 체크박스를 한 번 더 토글하면 100점에 맞게 재배분됩니다.','danger');return}
     try{
       await api.put('/admin/checklist',items.map(i=>({check_item_id:i.id,weight:Number(i.weight),enabled:i.on})));
       pushToast('검증 항목이 저장되었습니다',items.filter(i=>i.on).length+' / '+items.length+'개 항목이 사용되며 가중치 합계 100점으로 반영됩니다.','info');
@@ -980,6 +999,8 @@ function RecoveryTab({pushToast}){
 }
 
 function UsersTab({pushToast}){
+  const faqRequest=useRef(false);
+  const [faqSaving,setFaqSaving]=useState(false);
   const [users,setUsers]=useState(null);
   const [usersError,setUsersError]=useState('');
   const [faq,setFaq]=useState(null);
@@ -1010,21 +1031,27 @@ function UsersTab({pushToast}){
   };
   const openFaq=id=>{setFaqId(id);setAnswer(faq.find(f=>f.id===id).answer)};
   const saveAnswer=async(id)=>{
+    if(faqRequest.current)return;
     if(!answer.trim()){pushToast('답변을 저장하지 못했습니다','답변 내용을 입력해주세요.','danger');return}
     const cur=faq.find(f=>f.id===id);
+    faqRequest.current=true;setFaqSaving(true);
     try{
       const updated=await api.put('/admin/faqs/'+id,{answer:answer.trim(),is_visible:cur.visible});
       setFaq(list=>list.map(f=>f.id===id?{...f,answer:updated.answer,answered:true,visible:updated.is_visible}:f));
       pushToast('답변이 저장되었습니다','노출로 전환해야 사용자에게 공개됩니다.','info');
     }catch(e){pushToast('답변을 저장하지 못했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
+    finally{faqRequest.current=false;setFaqSaving(false)}
   };
   const toggleVisible=async(id)=>{
+    if(faqRequest.current)return;
     const item=faq.find(f=>f.id===id);
     if(!item.visible&&!item.answered){pushToast('노출로 전환하지 못했습니다','답변을 먼저 저장한 뒤 노출로 전환할 수 있습니다.','danger');return}
+    faqRequest.current=true;setFaqSaving(true);
     try{
       const updated=await api.put('/admin/faqs/'+id,{answer:item.answer,is_visible:!item.visible});
       setFaq(list=>list.map(f=>f.id===id?{...f,visible:updated.is_visible}:f));
     }catch(e){pushToast('노출 전환에 실패했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
+    finally{faqRequest.current=false;setFaqSaving(false)}
   };
   const shown=(users||[]).filter(u=>(u.name+u.email).includes(query));
 
@@ -1102,13 +1129,13 @@ function UsersTab({pushToast}){
                 <p className="text-[11px] text-[var(--muted-fg)] mb-1.5">노출 상태</p>
                 <span className={'inline-block text-[12px] font-semibold px-3 py-1 rounded-full '+(f.visible?toneBg.ok:toneBg.muted)}>{f.visible?'노출중':'비노출'}</span>
               </div>
-              <button onClick={()=>toggleVisible(faqId)} className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-[12.5px] font-semibold text-[var(--muted-fg)] hover:bg-[var(--bg)]">
+              <button disabled={faqSaving} onClick={()=>toggleVisible(faqId)} className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-[12.5px] font-semibold text-[var(--muted-fg)] hover:bg-[var(--bg)] disabled:opacity-50">
                 {f.visible?'비노출로 전환':'노출로 전환'}
               </button>
             </div>
             <div className="flex justify-end gap-2 mt-6 pt-5 border-t border-[var(--border)]">
               <button onClick={()=>setFaqId(null)} className="rounded-xl border border-[var(--border)] px-4 py-2 text-[13px] font-semibold text-[var(--muted-fg)] hover:bg-[var(--bg)]">닫기</button>
-              <button onClick={()=>saveAnswer(faqId)} className="rounded-xl bg-[var(--primary)] text-white px-4 py-2 text-[13px] font-semibold hover:bg-[var(--primary-dim)]">답변 저장</button>
+              <button disabled={faqSaving} onClick={()=>saveAnswer(faqId)} className="rounded-xl bg-[var(--primary)] text-white px-4 py-2 text-[13px] font-semibold hover:bg-[var(--primary-dim)] disabled:opacity-50">{faqSaving?'처리 중…':'답변 저장'}</button>
             </div>
           </Modal>
         );

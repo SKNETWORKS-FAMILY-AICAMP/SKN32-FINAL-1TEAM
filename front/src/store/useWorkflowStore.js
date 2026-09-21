@@ -32,5 +32,5 @@ export const useWorkflowStore = create((set) => ({
 
   resetScoreOutcome: (v) => set({ scoreOutcome: v, docOutcome: v, artifactOutcome: v }),
   resetProject: () =>
-    set({ projectId: null, pipelineResult: null, matchCandidates: null, returnToDashboard: false }),
+    set({ projectId: null, itemInfo: null, announcement: null, checkedFailedTitles: [], pipelineResult: null, matchCandidates: null, returnToDashboard: false }),
 }));
