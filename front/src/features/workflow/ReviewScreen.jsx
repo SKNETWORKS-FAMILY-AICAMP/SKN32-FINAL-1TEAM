@@ -1,9 +1,11 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
-import React from 'react';
-import {downloadPlanDocx,downloadPrototypeZip,downloadVerificationPdf} from '../../dummyDeliverables.js';
-import {ApiError,downloadAttachmentGuide,downloadPlanDocument} from '../../api.js';
-import {buildGeneralInfo,buildOverview,DOC_SCORE_BY_OUTCOME} from './utils.js';
-import {ARTIFACT_SCORE_BY_OUTCOME,DELIVERABLE_NOTICES,DOWNLOAD_FILES,EN_DOC_ITEM_LABEL,FINAL_THRESHOLD,PLAN_DOCUMENT_SECTIONS_REWORKED,REVIEW_PARAGRAPHS} from './data.js';
+import React, {useState} from 'react';
+import {Icon} from '../../components/Icons.jsx';
+import {downloadPlanDocx,downloadPrototypeZip} from '../../dummyDeliverables.js';
+import {downloadPlanDocument} from '../../api.js';
+import {buildCodeCheckItems,buildGeneralInfo,buildOverview,detectItemCategory,DOC_SCORE_BY_OUTCOME} from './utils.js';
+import {printVerificationReport} from './verificationReport.js';
+import {ARTIFACT_SCORE_BY_OUTCOME,DELIVERABLE_NOTICES,DOWNLOAD_FILES,FINAL_THRESHOLD,PLAN_DOCUMENT_SECTIONS_REWORKED,REVIEW_PARAGRAPHS} from './data.js';
 
 export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', artifactOutcome = 'fail', onGoDashboard, projectId }){
   const docScore = DOC_SCORE_BY_OUTCOME[docOutcome];
@@ -11,6 +13,10 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
   const finalTotal = docScore.raw + artifactScore.autoCheck.raw + artifactScore.crossCheck.raw;
   const passed = finalTotal >= FINAL_THRESHOLD;
   const itemTitle = announcement ? announcement.title : '';
+  // 문장 다듬기 항목별 수정 내역(p-02, p-09...)은 대부분의 사용자가 신경 안 쓰는
+  // 세부 정보라, 기본은 접어두고 보고 싶은 사람만 눌러서 펼친다(사용자 지적) —
+  // 항목별로 따로따로 펼치는 게 아니라 토글 하나로 전부 한 번에 나온다.
+  const [showDetails, setShowDetails] = useState(false);
 
   function handleDownload(file){
     if (file.name === '사업계획서.docx') {
@@ -41,26 +47,6 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
       });
       return;
     }
-    if (file.name === '증빙서류_제출목록_안내.docx') {
-      // 신분증 사본 등 증빙서류 자체는 우리가 만들어내는 문서가 아니라 공고 원본 안내문을
-      // 그대로 내려주는 것뿐이라, 사업계획서처럼 채울 더미 데이터가 없다 — projectId가
-      // 없는 미리보기 화면에서는 다운로드할 방법이 아예 없다.
-      if (projectId) {
-        downloadAttachmentGuide(projectId).catch((err) => {
-          console.error('증빙서류 안내 다운로드 실패:', err);
-          // 404는 "이 신청 유형용 파일이 아직 없음"이라는 구체적 이유가 detail에 실려
-          // 온다(back/app/routers/projects.py download_attachment_guide) — 일시적 오류처럼
-          // 보이는 재시도 문구 대신 그 이유를 그대로 보여준다.
-          const message = err instanceof ApiError && err.status === 404
-            ? String(err.detail)
-            : '지금은 증빙서류 안내 파일을 받을 수 없어요. 잠시 후 다시 시도해 주세요.';
-          window.alert(message);
-        });
-      } else {
-        window.alert('프로젝트 정보가 있어야 받을 수 있는 파일이에요.');
-      }
-      return;
-    }
     if (file.name === 'prototype.zip') {
       const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"/><title>${itemTitle || '프로토타입'}</title>
 <style>body{font-family:system-ui,sans-serif;background:#f2f4f6;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
@@ -83,27 +69,26 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
       return;
     }
     if (file.name === '검증결과.pdf') {
-      const lines = [
-        { text: 'S-Brain Verification Result (Demo)', size: 16 },
-        { text: `Item: ${itemTitle || '-'}`, size: 10 },
-        { text: `Generated: ${new Date().toISOString()}`, size: 10 },
-        { text: '' },
-        { text: `[Document Layer] ${docScore.raw} / ${docScore.max}`, size: 13 },
-        ...docScore.items.map((it) => ({ text: `  - ${EN_DOC_ITEM_LABEL[it.name] || it.name}: ${it.score} / ${it.max}` })),
-        { text: '' },
-        { text: `[Artifact Layer] Auto-check ${artifactScore.autoCheck.raw}/${artifactScore.autoCheck.max}, Cross-check ${artifactScore.crossCheck.raw}/${artifactScore.crossCheck.max}`, size: 13 },
-        ...artifactScore.autoCheck.reasons.map((r, i) => ({ text: `  - Auto-check issue ${i + 1}` })),
-        ...artifactScore.crossCheck.reasons.map((r, i) => ({ text: `  - Cross-check issue ${i + 1}` })),
-        { text: '' },
-        { text: `Final Score: ${finalTotal} / 100 (threshold ${FINAL_THRESHOLD})`, size: 14 },
-        { text: `Result: ${passed ? 'PASS' : 'BELOW THRESHOLD'}`, size: 14 },
-        { text: '' },
-        { text: 'This score is an internal reference score, not an official screening score.', size: 9 },
-      ];
-      downloadVerificationPdf({ lines });
+      // 원페이지형 검증결과서 양식을 인쇄 창으로 연다 — "PDF로 저장"을 고르면 PDF가 된다.
+      const category = detectItemCategory(itemInfo?.item);
+      printVerificationReport({
+        projectName: itemInfo?.item,
+        announcementTitle: itemTitle,
+        category,
+        docScore,
+        codeCheckItems: buildCodeCheckItems(category, artifactOutcome),
+        crossCheck: artifactScore.crossCheck,
+        threshold: FINAL_THRESHOLD,
+      });
       return;
     }
   }
+
+  // 파일마다 따로 눌러야 했던 걸 한 번에 — 브라우저가 같은 틱에 여러 다운로드를
+  // 팝업 차단처럼 막는 경우가 있어(사용자 지적: 산출물 한번에 받게) 살짝 간격을 둔다.
+  const handleDownloadAll = () => {
+    DOWNLOAD_FILES.forEach((f, i) => setTimeout(() => handleDownload(f), i * 400));
+  };
 
   return (
     <section data-screen="review" className="max-w-3xl mx-auto px-6 py-16">
@@ -113,8 +98,20 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
       <p className="text-[14.5px] text-[var(--muted-fg)] mb-1">사업계획서 문장 형식과 한국어 표현만 다듬는 단계라 점수는 바뀌지 않습니다</p>
       <p className="text-[12.5px] text-[var(--muted-fg)] mb-8">이 단계부터는 이전 화면으로 돌아갈 수 없습니다</p>
 
-      <div className="flex flex-col gap-4 mb-10">
-        {REVIEW_PARAGRAPHS.map((p) => (
+      <button type="button" onClick={() => setShowDetails((v) => !v)} aria-expanded={showDetails}
+        className="flex items-center gap-1.5 text-[13.5px] font-semibold text-[var(--muted-fg)] hover:text-[var(--fg)] transition-colors mb-10">
+        <Icon name="chevron" size={14} className={`transition-transform duration-150 ${showDetails ? 'rotate-90' : ''}`} />
+        수정한 문장 {REVIEW_PARAGRAPHS.length}건 {showDetails ? '접기' : '보기'}
+      </button>
+
+      {/* 이 div는 접혀있어도(showDetails=false) DOM에 항상 존재해야 한다 — styles.css의
+          레거시 규칙(.workflow-content [data-screen="review"]>div:first-of-type>div)이
+          "몇 번째 div 자식인지"로 문단 카드를 스타일링하는데, 이 div 자체를 통째로
+          안 그리면 그 자리를 "결과물" 감싸는 div가 대신 차지해서 엉뚱하게 padding:28px가
+          거기 먹혀버린다(사용자 지적: 전체 다운로드가 계속 삐져나옴 — 실제로 이게 원인이었다).
+          그래서 바깥 div는 그대로 두고 안쪽 map만 조건부로 비운다. */}
+      <div className={`flex flex-col gap-4 ${showDetails ? 'mb-10' : ''}`}>
+        {showDetails && REVIEW_PARAGRAPHS.map((p) => (
           <div key={p.id} className={`rounded-2xl border bg-white p-5 ${p.spotlight ? 'border-[var(--primary)]' : 'border-[var(--border)]'}`}>
             <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
               <p className="text-[11px] font-bold text-[var(--muted-fg)] tracking-wide font-mono">{p.id}</p>
@@ -157,8 +154,14 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
         ))}
       </div>
 
-      <div className="border-t border-[var(--border)] pt-8">
-        <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide mb-2">결과물</p>
+      <div className="border-t border-[var(--border)] pt-6">
+        <div className="flex items-center justify-between gap-4 flex-wrap mb-6 px-5">
+          <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide">결과물</p>
+          <button onClick={handleDownloadAll} title="더미 데이터로 만든 파일입니다 — 형식만 실제와 같습니다"
+            className="flex-shrink-0 text-[12.5px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">
+            전체 다운로드
+          </button>
+        </div>
         {!passed && (
           <p className="text-[13px] text-[var(--fg)] mb-4">현재 {finalTotal}점으로 저장됩니다 — 검수는 표현만 다듬으므로 종합 평가에서 확인한 점수가 그대로 기록됩니다</p>
         )}

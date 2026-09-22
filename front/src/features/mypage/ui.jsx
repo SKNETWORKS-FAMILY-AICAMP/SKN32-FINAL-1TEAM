@@ -31,20 +31,43 @@ export function Badges({ items }) {
 // 보고 걸리는 바람에, 여기서도 <section>을 쓰면 흰 배경으로 짜둔 inputCls를 회색으로
 // 덮어써 버렸다(포커스 때만 잠깐 흰색으로 바뀌었다 풀리는 것도 그 규칙의 :focus 예외 때문).
 // 레거시 규칙은 그대로 두고, 여기 태그만 바꿔서 그 선택자에 안 걸리게 한다.
-export function Section({ title, desc, children }) {
+// 로그인 약관 동의 화면의 [필수] 표기와 같은 모양.
+export function RequiredTag() {
+  return <span className="ml-1.5 text-[12px] font-semibold text-[var(--primary)] align-middle">[필수]</span>;
+}
+
+export function OptionalTag() {
+  return <span className="ml-1.5 text-[12px] font-semibold text-[var(--muted-fg)] align-middle">[선택]</span>;
+}
+
+// id: 제출 시 빠진 필수 항목으로 스크롤할 때의 목적지. error: 그 섹션에 띄울 "작성해 주세요" 안내.
+export function Section({ id, title, desc, required, optional, error, children }) {
   return (
-    <div className="py-8 border-t border-[var(--border)] first:border-t-0 first:pt-0">
-      <h2 className="font-bold text-[17px]">{title}</h2>
+    <div id={id} className={`py-8 border-t border-[var(--border)] first:border-t-0 first:pt-0 ${error ? 'section-error' : ''}`}>
+      <h2 className="font-bold text-[17px]">{title}{required && <RequiredTag />}{optional && <OptionalTag />}</h2>
       {desc && <p className="text-[13.5px] text-[var(--muted-fg)] mt-1">{desc}</p>}
+      {error && <p role="alert" className="mt-2 text-[13px] font-semibold text-[var(--danger)]">{error}</p>}
       <div className="mt-5">{children}</div>
     </div>
   );
 }
 
-export function Field({ label, children }) {
+// 저장/제출 때 빈 필수 항목({label, anchor})이 이 섹션이면 안내 문구를 돌려준다.
+export const errorFor = (error, anchor) => (error?.anchor === anchor ? `${error.label} 항목을 작성해 주세요` : null);
+
+// 빠진 필수 항목(섹션 id)으로 부드럽게 스크롤하고 그 안의 첫 입력칸에 포커스를 준다.
+export function focusSection(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  // 상단 바·마이페이지 탭 줄(둘 다 sticky)에 가려지지 않게 그만큼 위를 비워 둔다.
+  window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 140, behavior: 'smooth' });
+  el.querySelector('input, textarea, button[aria-haspopup], button[aria-pressed]')?.focus({ preventScroll: true });
+}
+
+export function Field({ label, required, children }) {
   return (
     <label className="block min-w-0">
-      <span className="block text-[13px] font-semibold text-[#4e5968] mb-1.5">{label}</span>
+      <span className="block text-[13px] font-semibold text-[#4e5968] mb-1.5">{label}{required && <RequiredTag />}</span>
       {children}
     </label>
   );
@@ -125,20 +148,13 @@ export function Check({ checked, onChange, children }) {
   );
 }
 
-// 개인사업자·법인은 이미 사업자등록증에 업종이 정해져 있어 정부지원사업 신청서
-// 표준 목록(지원 분야/전문기술분야) 중에서만 고르게 한다. 예비창업자는 아직 업종이
-// 굳어지지 않은 경우가 많아 자유 입력을 그대로 둔다.
-// 자유입력↔선택형 경계를 넘나들 때 값을 안 지우면, 예비창업자에서 자유롭게 쓴 텍스트가
-// 선택형 쪽엔 없는 항목인데도 "선택된 값"처럼 보이거나(또는 그 반대) 남아 있는 버그가
-// 났었다 — 개인/법인끼리는 같은 목록을 쓰니 유지하고, 그 경계를 넘을 때만 비운다.
+// 프로필 로딩·전환은 사용자 수정이 아니므로 값을 초기화하지 않는다.
+// 현재 목록에 없는 기존 업종도 옵션에 포함해 표시하고 재저장할 수 있게 한다.
 export function IndustryField({ label = '주업종', applicantType, value, onChange }) {
   const selectable = applicantType === 'individual' || applicantType === 'corp';
-  const prevSelectable = useRef(selectable);
-  useEffect(() => {
-    if (prevSelectable.current !== selectable && value) onChange('');
-    prevSelectable.current = selectable;
-  }, [selectable]);
-  if (selectable) return <Select label={label} value={value} options={INDUSTRY_OPTIONS} onChange={onChange} />;
+  const options = value?.trim() && !INDUSTRY_OPTIONS.includes(value)
+    ? [value, ...INDUSTRY_OPTIONS] : INDUSTRY_OPTIONS;
+  if (selectable) return <Select label={label} value={value} options={options} onChange={onChange} />;
   return <TextInput label={label} value={value} placeholder="예) 응용 소프트웨어 개발" onChange={onChange} />;
 }
 

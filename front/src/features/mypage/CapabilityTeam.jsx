@@ -1,14 +1,14 @@
 import React from 'react';
 import { useSection } from '../../store/useMyPageStore.js';
-import { CAREER_FIELDS, EQUIPMENT_FIELDS, HIRE_FIELDS, PARTNER_FIELDS } from './derive.js';
-import { Check, ListEditor, Section, textareaCls } from './ui.jsx';
+import { CAREER_FIELDS } from './derive.js';
+import { Check, ListEditor, Section, errorFor, textareaCls } from './ui.jsx';
 
-export default function CapabilityTeam() {
+export default function CapabilityTeam({ error }) {
   const [c, set] = useSection('capability');
 
   return (
     <>
-      <Section title="대표자 이력" desc="사업계획서 '팀 구성' 항목 작성에 쓰여요. 증빙 서류가 있으면 표시해 주세요.">
+      <Section id="mp-career" error={errorFor(error, 'mp-career')} title="대표자 이력" required desc="사업계획서 '팀 구성' 항목 작성에 쓰여요. 증빙 서류가 있으면 표시해 주세요.">
         <ListEditor items={c.careers} onChange={set('careers')} cols={4} addLabel="이력 추가"
           emptyText="경력, 학력, 지원사업 수행, 수상 이력을 추가해 주세요."
           fields={CAREER_FIELDS} />
@@ -20,7 +20,7 @@ export default function CapabilityTeam() {
         </label>
       </Section>
 
-      <Section title="팀 구성원">
+      <Section id="mp-team" error={errorFor(error, 'mp-team')} title="팀 구성원" required>
         <div className="mb-3"><Check checked={c.soloFounder} onChange={set('soloFounder')}>팀원 없이 혼자 준비하고 있어요</Check></div>
         {!c.soloFounder && (
           <ListEditor items={c.team} onChange={set('team')} cols={4} addLabel="팀원 추가"
@@ -31,23 +31,6 @@ export default function CapabilityTeam() {
               { key: 'status', label: '상태', type: 'select', options: ['재직 중', '합류 예정'] },
             ]} />
         )}
-      </Section>
-
-      <Section title="채용 계획" desc="협약 기간 안에 뽑을 인력이 있다면 적어 주세요.">
-        <ListEditor items={c.hires} onChange={set('hires')} cols={4} addLabel="채용 계획 추가" fields={HIRE_FIELDS} />
-      </Section>
-
-      <Section title="장비 · 협력 기관">
-        <div className="grid gap-6 md:grid-cols-2">
-          <div>
-            <h3 className="text-[14px] font-semibold mb-2">장비 · 시설</h3>
-            <ListEditor items={c.equipment} onChange={set('equipment')} cols={2} addLabel="장비 추가" fields={EQUIPMENT_FIELDS} />
-          </div>
-          <div>
-            <h3 className="text-[14px] font-semibold mb-2">협력 파트너 · 기관</h3>
-            <ListEditor items={c.partners} onChange={set('partners')} cols={2} addLabel="파트너 추가" fields={PARTNER_FIELDS} />
-          </div>
-        </div>
       </Section>
     </>
   );

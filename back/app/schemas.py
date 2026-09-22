@@ -235,9 +235,15 @@ class MatchCandidateOut(BaseModel):
     title: str
     org: str | None = None
     apply_end: datetime.date | None = None
-    fit_score: float
+    bonus_score: float  # 가산점(만점 기준 없음, 공고마다 다름)
     reason: str
     url: str | None = None
+    batch: int = 1  # 1=첫 매칭, 2=재실행
+
+
+class MatchCandidatesOut(BaseModel):
+    candidates: list[MatchCandidateOut]
+    rematch_used: bool
 
 
 class EligibilityCheckOut(BaseModel):
@@ -451,21 +457,21 @@ class ProjectListItemOut(BaseModel):
 # 관리자 - 검증 정책 (admin-dashboard.html 대응)
 # ---------------------------------------------------------------------------
 class PolicyScoresIn(BaseModel):
-    doc_weight: float
-    code_weight: float
-    plan_weight: float
+    doc_weight: float = Field(ge=0, le=100, allow_inf_nan=False)
+    code_weight: float = Field(ge=0, le=100, allow_inf_nan=False)
+    plan_weight: float = Field(ge=0, le=100, allow_inf_nan=False)
 
 
 class PolicyThresholdsIn(BaseModel):
-    pass_threshold: float
-    rerun_cap: int
-    deviation_cap: float
-    token_retry_cap: int
+    pass_threshold: float = Field(ge=0, le=100, allow_inf_nan=False)
+    rerun_cap: int = Field(ge=0)
+    deviation_cap: float = Field(ge=0, le=100, allow_inf_nan=False)
+    token_retry_cap: int = Field(ge=0)
 
 
 class ChecklistItemIn(BaseModel):
     check_item_id: int
-    weight: float
+    weight: float = Field(ge=0, le=100, allow_inf_nan=False)
     enabled: bool
 
 

@@ -73,9 +73,15 @@ export function createProject(payload,files=[]){
 
 export const getProject=(projectId)=>api.get(`/projects/${projectId}`);
 export const getProjectStatus=(projectId)=>api.get(`/projects/${projectId}/status`);
+// 계획서·프로토타입 생성 시작 — 바로 응답하고 생성은 서버에서 계속 돈다. 진행률은 getProjectStatus로 본다.
+export const startPlanGeneration=(projectId)=>api.post(`/projects/${projectId}/plan/start`);
+export const startPrototypeGeneration=(projectId)=>api.post(`/projects/${projectId}/prototype/start`);
 
-// 매칭 후보(최대 3건) — 아직 아무것도 저장 안 됨, 사용자가 고른 뒤 generatePipeline 호출.
+// 매칭 후보 {candidates:[...batch 1|2], rematch_used} — 처음 부를 때 10건을 뽑아 서버에 저장하고
+// 이후엔 같은 목록을 돌려준다. 사용자가 고른 뒤 generatePipeline 호출.
 export const getMatchCandidates=(projectId)=>api.get(`/projects/${projectId}/match-candidates`);
+// 공고 다시 찾기 — 프로젝트당 1회(서버가 409로 막음). 이전 후보는 유지하고 10건을 더한다.
+export const rematchCandidates=(projectId)=>api.post(`/projects/${projectId}/match-candidates/rematch`);
 
 // 선택한 공고로 매칭~최종판정까지 한 번에 생성(더미). noticeId 생략하면 서버가 아무 공고나 고른다.
 export const generatePipeline=(projectId,noticeId)=>api.post(`/projects/${projectId}/generate`,{notice_id:noticeId||null});
@@ -89,7 +95,7 @@ export const getProjectResult=(projectId)=>api.get(`/projects/${projectId}/resul
 export const retryTask=(projectId,taskKey)=>api.post(`/projects/${projectId}/retry-task`,{task_key:taskKey});
 
 // [2026-09-15] 응답이 JSON이 아니라 실제 파일 바이너리인 다운로드 공용 헬퍼 — apiFetch(항상
-// JSON 파싱)를 못 쓰는 GET /projects/{id}/plan-document.docx, /attachment-guide.docx가 같이 쓴다.
+// JSON 파싱)를 못 쓰는 GET /projects/{id}/plan-document.docx 가 쓴다.
 async function downloadFile(path,filename){
   let res=await fetch(`${API_BASE}${path}`,{credentials:'include'});
   if(res.status===401){
@@ -113,11 +119,6 @@ async function downloadFile(path,filename){
 // 양식(별첨1) 구조로 채운 진짜 docx를 내려준다(app/plan_document_export.py) — ReviewScreen의
 // 더미(dummyDeliverables.js) 대신 이 함수를 쓰면 실제 양식이 반영된 파일을 받는다.
 export const downloadPlanDocument=(projectId,filename='사업계획서.docx')=>downloadFile(`/projects/${projectId}/plan-document.docx`,filename);
-
-// [2026-09-18] 신분증 사본 등 신청자격 증빙서류가 뭔지 안내하는 공고 원본 문서(별첨2)를
-// 그대로 내려준다(back/app/routers/projects.py download_attachment_guide) — 사업계획서와
-// 달리 데이터를 채워 만드는 문서가 아니라 원본 그대로다.
-export const downloadAttachmentGuide=(projectId,filename='증빙서류_제출목록_안내.docx')=>downloadFile(`/projects/${projectId}/attachment-guide.docx`,filename);
 
 // 마이페이지 사업자등록번호 조회 — 서버가 국세청 상태조회 API를 대신 호출한다
 // (back/app/routers/biz_check.py). 응답: {valid, b_stt_cd, label, tax_type, tax_type_cd, message}

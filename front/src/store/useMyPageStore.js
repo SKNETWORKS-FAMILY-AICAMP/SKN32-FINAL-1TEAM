@@ -6,15 +6,18 @@ import { createProfile, deleteProfile, listProfiles, updateProfile } from '../ap
 // 신청자 정보). [2026-09-18] back/app/routers/profile.py(GET/POST /profile, PUT·DELETE
 // /profile/{id})에 연결했다 — 로그인 직후(App.jsx) loadProfiles()로 서버 값을 끌어와야
 // "다른 기기에서 로그인하면 안 보이던" 문제가 실제로 고쳐진다. persist(localStorage)는
-// 여전히 켜두는데, 서버 응답이 오기 전 깜빡임을 줄이는 용도일 뿐 — loadProfiles()가
-// 끝나면 항상 서버 값이 로컬 값을 덮어쓴다(서버가 항상 최종 진실).
+// 여전히 켜두지만 로그인 상태 복원·계정 변경 시에는 캐시를 비우고 서버에서 다시 읽는다.
+// 이전 계정의 요청 응답은 generation으로 구분해서 버린다.
 // 로그아웃 시 reset()을 불러야 같은 브라우저의 다음 사용자에게 값이 안 보인다(App.jsx).
 //
 // 재창업/과거 사업 이력은 추적하지 않는다 — 신청자 유형(예비창업자 / 개인사업자·법인)
 // 하나로만 화면이 갈린다.
 export const MAX_PROFILES = 3;
+let profileSequence = 0;
+const newLocalId = () => `profile-${Date.now()}-${++profileSequence}`;
 
 const emptyProfile = (name) => ({
+  localId: newLocalId(),
   // profileId: 서버에 아직 한 번도 저장 안 한 슬롯이면 null — save()가 null이면 POST(생성),
   // 있으면 PUT(수정)으로 나눠 호출한다.
   profileId: null,
@@ -37,6 +40,7 @@ const emptyProfile = (name) => ({
 
 // GET /profile 응답(ProfileOut) 한 건 -> 이 스토어의 profile 모양.
 const profileFromServer = (p) => ({
+  localId: newLocalId(),
   profileId: p.profile_id,
   name: p.name,
   basic: { ...emptyProfile('').basic, ...p.basic },
@@ -45,6 +49,7 @@ const profileFromServer = (p) => ({
 });
 
 const initial = () => ({
+  generation: 0,
   profiles: [emptyProfile('정보 1')],
   activeIndex: 0,
   // 저장 버튼을 눌러야만 true — 계정이 자기 정보를 한 번이라도 확정 저장했는지 나타낸다.
@@ -67,9 +72,12 @@ export const useMyPageStore = create(
         profiles[s.activeIndex] = p;
         return { profiles };
       }),
-      setBizStatus: (bizStatus) => set((s) => {
+      setBizStatus: (localId, generation, bizStatus) => set((s) => {
+        if (s.generation !== generation) return s;
+        const index = s.profiles.findIndex(p => p.localId === localId);
+        if (index < 0 || s.profiles[index].basic.bizNo !== bizStatus.checkedNo) return s;
         const profiles = s.profiles.slice();
-        profiles[s.activeIndex] = { ...profiles[s.activeIndex], bizStatus };
+        profiles[index] = { ...profiles[index], bizStatus };
         return { profiles };
       }),
 
@@ -86,8 +94,12 @@ export const useMyPageStore = create(
         const target = s.profiles[i];
         if (target.profileId != null) await deleteProfile(target.profileId);
         set((s2) => {
-          const profiles = s2.profiles.filter((_, idx) => idx !== i);
-          return { profiles, activeIndex: Math.min(s2.activeIndex, profiles.length - 1) };
+          if (s2.generation !== s.generation) return s2;
+          const selectedId = s2.profiles[s2.activeIndex]?.localId;
+          const profiles = s2.profiles.filter(p => p.localId !== target.localId);
+          if (!profiles.length) profiles.push(emptyProfile('정보 1'));
+          const selectedIndex = profiles.findIndex(p => p.localId === selectedId);
+          return { profiles, activeIndex: selectedIndex < 0 ? 0 : selectedIndex };
         });
       },
       renameProfile: (i, name) => set((s) => {
@@ -102,17 +114,18 @@ export const useMyPageStore = create(
       // 계정이 바뀌었는데 이전 계정의 로컬 캐시가 "저장된 적 있음"으로 잘못 남아있을 수
       // 있어서다.
       loadProfiles: async () => {
-        set({ loading: true });
+        const generation = get().generation + 1;
+        set({ ...initial(), generation, loading: true });
         try {
           const rows = await listProfiles();
+          if (get().generation !== generation) return;
           if (rows.length === 0) {
             set({ profiles: [emptyProfile('정보 1')], activeIndex: 0, onboarded: false, loading: false });
           } else {
             set({ profiles: rows.map(profileFromServer), activeIndex: 0, onboarded: true, loading: false });
           }
         } catch (err) {
-          // 오프라인 등으로 못 불러와도 화면은 로컬 캐시(persist)로 그냥 보여준다 —
-          // 다음 저장 시도에서 다시 에러가 나면 그때 사용자에게 알리면 된다.
+          if (get().generation !== generation) return;
           set({ loading: false });
         }
       },
@@ -127,20 +140,28 @@ export const useMyPageStore = create(
         const saved = active.profileId == null
           ? await createProfile(body)
           : await updateProfile(active.profileId, body);
-        // 저장이 오가는 동안 사용자가 다른 슬롯으로 옮기거나 슬롯을 지웠을 수 있어, 저장을
-        // 누른 시점의 인덱스(savingIndex)를 그대로 써야 한다 — 응답을 받은 시점의
-        // activeIndex(다른 슬롯을 보고 있을 수 있음)에 덮어쓰면 엉뚱한 슬롯이 바뀐다.
+        // 배열 순서가 바뀌어도 요청 당시 슬롯만 갱신하고, 로그아웃 전 응답은 버린다.
         set((s2) => {
-          if (savingIndex >= s2.profiles.length) return s2;
+          if (s2.generation !== s.generation) return s2;
+          const index = s2.profiles.findIndex(p => p.localId === active.localId);
+          if (index < 0) return s2;
           const profiles = s2.profiles.slice();
-          profiles[savingIndex] = profileFromServer(saved);
+          // 요청 이후 입력한 내용은 유지하고 새 서버 ID만 연결한다.
+          profiles[index] = profiles[index] === active
+            ? { ...profileFromServer(saved), localId: active.localId }
+            : { ...profiles[index], profileId: saved.profile_id };
           return { profiles, onboarded: true };
         });
       },
 
-      reset: () => set(initial()),
+      reset: () => set(s => ({ ...initial(), generation: s.generation + 1 })),
     }),
-    { name: 'sbrain-mypage', partialize: (s) => ({ profiles: s.profiles, activeIndex: s.activeIndex, onboarded: s.onboarded }) },
+    { name: 'sbrain-mypage', partialize: (s) => ({ profiles: s.profiles, activeIndex: s.activeIndex, onboarded: s.onboarded }),
+      merge: (saved, current) => ({ ...current, ...saved,
+        profiles: saved?.profiles?.length ? saved.profiles.map(p => ({ ...p, localId: newLocalId() })) : current.profiles,
+        activeIndex: Math.max(0, Math.min(saved?.activeIndex || 0, (saved?.profiles?.length || 1) - 1)),
+      }),
+    },
   ),
 );
 

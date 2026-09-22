@@ -1,5 +1,6 @@
 import React,{useState,useRef,useEffect} from 'react';
 import {Icon} from './Icons.jsx';
+import {apiFetch} from '../api.js';
 
 const GOOGLE_CLIENT_ID=import.meta.env.VITE_GOOGLE_CLIENT_ID;
 // backend_decisions.md #4 확정값: 백엔드 http://localhost:8000 (app/security.py의
@@ -60,14 +61,12 @@ async function updateConsent(consent){
 // (에러로 던지지 않음 — 호출부에서 "로그인 안 됨"과 "네트워크 에러"를 굳이 구분할 필요가 없어서).
 export async function fetchCurrentUser(){
   try{
-    const res=await fetch(`${API_BASE}/auth/me`,{credentials:'include'});
-    if(!res.ok)return null; // 401 등 — 로그인 안 된 상태
-    return res.json(); // AuthMeOut
+    return await apiFetch('/auth/me');
   }catch(e){
     // fetch 자체가 실패(네트워크 끊김, 백엔드 안 켜짐, CORS 차단 등) — 이것도 "복원 못 함"으로
     // 취급하고 null을 돌려준다. 여기서 못 잡으면 App.jsx의 호출부가 .catch 없이 .then만 쓰고
     // 있어서 unhandled promise rejection이 나고, 콘솔에 원인이 안 남아 디버깅이 더 어려워진다.
-    console.error('GET /auth/me 실패(로그인 상태 복원 못 함):',e);
+    if(e.status!==401)console.error('GET /auth/me 실패(로그인 상태 복원 못 함):',e);
     return null;
   }
 }
@@ -148,8 +147,8 @@ const CONSENT_TERMS={
     '이용자가 생성한 사업계획서·프로토타입 및 그에 대한 평가 결과는 익명화 처리 후 서비스 품질 개선을 위한 모델 학습에 활용될 수 있습니다.',
     '동의는 언제든 철회할 수 있으나, 철회 이전에 이미 학습에 반영된 데이터는 되돌릴 수 없습니다.',
   ]},
-  notify:{title:'유사 공고 알림 수신 동의',body:[
-    '이용자가 등록한 아이템과 유사한 정부지원사업 공고가 새로 게시되면 이메일 또는 서비스 내 알림으로 안내해 드립니다.',
+  notify:{title:'제작 진행 알림 수신 동의',body:[
+    '사업계획서·프로토타입 제작이 진행 중이거나 완료되면 서비스 내 알림으로 안내해 드립니다.',
     '동의는 언제든 설정에서 철회할 수 있습니다.',
   ]},
 };
@@ -189,7 +188,7 @@ function StepConsent({onAgree,submitting,error}){
         <ConsentRow termKey="terms" checked={termsAgreed} onChange={setTermsAgreed} tag="[필수]" tagTone="text-[var(--primary)]" label="이용약관 동의"/>
         <ConsentRow termKey="privacy" checked={privacyAgreed} onChange={setPrivacyAgreed} tag="[필수]" tagTone="text-[var(--primary)]" label="개인정보 수집·이용 동의"/>
         <ConsentRow termKey="ai" checked={aiTrainingAgreed} onChange={setAiTrainingAgreed} tag="[선택]" tagTone="text-[var(--muted-fg)]" label="서비스 개선을 위한 학습 데이터 활용 동의"/>
-        <ConsentRow termKey="notify" checked={notifyAgreed} onChange={setNotifyAgreed} tag="[선택]" tagTone="text-[var(--muted-fg)]" label="유사 공고 알림 수신 동의"/>
+        <ConsentRow termKey="notify" checked={notifyAgreed} onChange={setNotifyAgreed} tag="[선택]" tagTone="text-[var(--muted-fg)]" label="제작 진행 알림 수신 동의"/>
       </div>
       <p className="mt-3 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">선택 동의는 이후 언제든 철회할 수 있습니다. 다만 철회 전 이미 학습에 반영된 데이터는 되돌릴 수 없습니다.</p>
       <button onClick={()=>onAgree({aiTrainingAgreed,notifyAgreed})} disabled={!requiredOk||submitting}

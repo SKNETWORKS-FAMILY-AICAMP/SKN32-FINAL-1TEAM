@@ -49,7 +49,7 @@ def verify_google_id_token(id_token_str: str) -> dict:
     client_id = pipeline_config.require('GOOGLE_CLIENT_ID')
     try:
         payload = google_id_token.verify_oauth2_token(
-            id_token_str, google_requests.Request(), client_id
+            id_token_str, google_requests.Request(), client_id, clock_skew_in_seconds=10
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f'구글 토큰 검증 실패: {exc}') from exc

@@ -30,6 +30,8 @@ import json
 import os
 import random
 import sys
+import threading
+import time
 import uuid
 from decimal import Decimal
 from urllib.parse import quote
@@ -50,6 +52,7 @@ from app.models import (
     Company,
     EligibilityCheck,
     FormatFinding,
+    MatchCandidate,
     MatchResult,
     Notice,
     PlanScoreReason,
@@ -71,6 +74,7 @@ from app.schemas import (
     DemoGenerateResponse,
     EligibilityCheckOut,
     MatchCandidateOut,
+    MatchCandidatesOut,
     MatchResultOut,
     ProjectCreateRequest,
     ProjectDetailOut,
@@ -346,48 +350,95 @@ def list_projects(
     return items
 
 
-@router.get('/{project_id}/match-candidates', response_model=list[MatchCandidateOut])
+MATCH_CANDIDATES_PER_BATCH = 10
+
+
+def _add_candidate_batch(db: Session, project_id: int, batch: int, exclude_notice_ids: list[str]) -> int:
+    """[임시 구현] 실제 임베딩 유사도 매칭(notices.embedding_status 반영 이후 예정)이 아직 없어서,
+    모집중(open) 공고 중 아직 안 보여준 것을 골라 무작위 적합도를 붙여 저장한다."""
+    def pick(open_only: bool):
+        q = db.query(Notice)
+        if open_only:
+            q = q.filter(Notice.recruitment_status == 'open')
+        if exclude_notice_ids:
+            q = q.filter(Notice.notice_id.notin_(exclude_notice_ids))
+        return q.order_by(Notice.id.asc()).limit(MATCH_CANDIDATES_PER_BATCH).all()
+
+    # 모집중 공고가 모자라면(로컬 개발 DB가 비어있는 등) 마감된 공고라도 채운다 —
+    # 화면이 빈 채로 막히는 것보다는 흐름을 테스트해볼 수 있는 쪽이 낫다.
+    notices = pick(open_only=True) or pick(open_only=False)
+    for notice in notices:
+        db.add(MatchCandidate(
+            project_id=project_id,
+            notice_id=notice.notice_id,
+            batch=batch,
+            # [임시] 실제 가산점 산정 전까지 1~5점 랜덤
+            bonus_score=Decimal(random.randint(1, 5)),
+            reason=f'"{notice.title[:30]}" — 아이템 설명과 키워드가 겹치는 것으로 보입니다.',
+        ))
+    db.commit()
+    return len(notices)
+
+
+def _candidates_response(db: Session, project_id: int) -> MatchCandidatesOut:
+    rows = db.query(MatchCandidate).filter(MatchCandidate.project_id == project_id).all()
+    notices = {
+        n.notice_id: n
+        for n in db.query(Notice).filter(Notice.notice_id.in_([r.notice_id for r in rows])).all()
+    } if rows else {}
+    candidates = []
+    for r in rows:
+        notice = notices.get(r.notice_id)
+        if notice is None:
+            continue
+        candidates.append(MatchCandidateOut(
+            notice_id=notice.notice_id,
+            title=notice.title,
+            org=notice.organizer or notice.supervising_org or notice.executing_org,
+            apply_end=notice.apply_end,
+            bonus_score=float(r.bonus_score),
+            reason=r.reason,
+            url=notice.url,
+            batch=r.batch,
+        ))
+    # 재실행 후보(batch 2)가 위로, 각 묶음 안에서는 가산점 높은 순
+    candidates.sort(key=lambda c: (-c.batch, -c.bonus_score))
+    return MatchCandidatesOut(candidates=candidates, rematch_used=any(r.batch == 2 for r in rows))
+
+
+@router.get('/{project_id}/match-candidates', response_model=MatchCandidatesOut)
 def get_match_candidates(
     project_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """[2026-09-15, 프론트 통합 임시 구현] 실제 임베딩 유사도 매칭(공고 수집팀의
-    notices.embedding_status 반영 이후 예정)이 아직 없어서, 모집중(open)인 공고 중
-    최대 3건을 골라 무작위 적합도(fit_score)를 붙여 후보로 보여준다 — 사용자가 이 중
-    하나를 고르면 POST /projects/{id}/generate 로 실제 match_results 행이 생긴다.
-    그래서 여기서는 아무것도 저장하지 않는다(다시 불러도 매번 새 후보가 나올 수 있음)."""
+    """처음 부르면 후보 10건을 뽑아 저장하고, 그 뒤로는 저장된 후보를 그대로 돌려준다 —
+    새로고침할 때마다 새 후보가 나오면 재실행 1회 제한이 무의미해진다.
+    사용자가 이 중 하나를 고르면 POST /projects/{id}/generate 로 match_results 행이 생긴다."""
     _get_owned_project(db, project_id, current_user)
+    exists = db.query(MatchCandidate.candidate_id).filter(MatchCandidate.project_id == project_id).first()
+    if exists is None:
+        _add_candidate_batch(db, project_id, batch=1, exclude_notice_ids=[])
+    return _candidates_response(db, project_id)
 
-    candidates = (
-        db.query(Notice)
-        .filter(Notice.recruitment_status == 'open')
-        .order_by(Notice.id.asc())
-        .limit(3)
-        .all()
-    )
-    if not candidates:
-        # 모집중인 공고가 하나도 없으면(로컬 개발 DB가 비어있는 등) 마감된 공고라도 보여준다 —
-        # 화면이 완전히 빈 채로 막히는 것보다는 "일단 흐름을 테스트해볼 수 있는" 쪽이 낫다고 판단.
-        candidates = db.query(Notice).order_by(Notice.id.asc()).limit(3).all()
 
-    results = []
-    for notice in candidates:
-        org = notice.organizer or notice.supervising_org or notice.executing_org
-        results.append(MatchCandidateOut(
-            notice_id=notice.notice_id,
-            title=notice.title,
-            org=org,
-            apply_end=notice.apply_end,
-            fit_score=round(random.uniform(55, 98), 1),
-            # "(더미 매칭 근거)" 같은 개발용 주석을 문구 안에 직접 넣었었는데, 그대로
-            # 화면에 노출돼 사용자가 봤다(2026-09-16) — 문구 자체에서 뺐다. 더미라는
-            # 사실 자체는 화면 하단 안내 문구("AI가 임시로 생성한...")로 이미 전달된다.
-            reason=f'"{notice.title[:30]}" — 아이템 설명과 키워드가 겹치는 것으로 보입니다.',
-            url=notice.url,
-        ))
-    results.sort(key=lambda r: r.fit_score, reverse=True)
-    return results
+@router.post('/{project_id}/match-candidates/rematch', response_model=MatchCandidatesOut)
+def rematch_candidates(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """공고 매칭 재실행 — 프로젝트당 1회. 앞서 보여준 후보는 지우지 않고 새 후보 10건을 더한다."""
+    _get_owned_project(db, project_id, current_user)
+    shown = db.query(MatchCandidate).filter(MatchCandidate.project_id == project_id).all()
+    if not shown:
+        raise HTTPException(status_code=400, detail='먼저 공고 매칭 결과를 불러와 주세요.')
+    if any(r.batch == 2 for r in shown):
+        raise HTTPException(status_code=409, detail='공고 다시 찾기는 한 번만 할 수 있어요.')
+    added = _add_candidate_batch(db, project_id, batch=2, exclude_notice_ids=[r.notice_id for r in shown])
+    if added == 0:
+        raise HTTPException(status_code=404, detail='지금은 더 보여드릴 공고가 없어요.')
+    return _candidates_response(db, project_id)
 
 
 def _build_demo_response(db: Session, project_id: int, match: MatchResult) -> DemoGenerateResponse:
@@ -470,7 +521,106 @@ def generate_pipeline_result(
 
     plan = db.get(BusinessPlan, verdict.plan_id)
     match = db.get(MatchResult, plan.match_id)
+    # 공고 선택·자격 확인까지만 끝난 상태 — 계획서/프로토타입 생성은 사용자가 각각
+    # POST .../plan/start, .../prototype/start 로 시작한다(stage NULL = 계획서 시작 전).
+    match.stage = None
+    match.progress_percent = None
+    db.commit()
     return _build_demo_response(db, project_id, match)
+
+
+# ---------------------------------------------------------------------------
+# [더미] 계획서·프로토타입 생성 진행 흉내. 실제 에이전트 파이프라인이 붙기 전까지 백그라운드
+# 스레드가 match_results.stage/progress_percent를 조금씩 올린다 — 실제 구현도 같은 두 컬럼을
+# 갱신하면 프론트(GET /projects/{id}/status 폴링, 알림)는 그대로 동작한다.
+# ---------------------------------------------------------------------------
+DUMMY_GENERATION_STEPS = 10
+DUMMY_GENERATION_STEP_SECONDS = float(os.getenv('DUMMY_GENERATION_STEP_SECONDS', '1.5'))
+_running_generations: set[int] = set()
+_running_lock = threading.Lock()
+
+
+def _simulate_generation(match_id: int, running_stage: str, done_stage: str) -> None:
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        match = db.get(MatchResult, match_id)
+        step = (match.progress_percent or 0) * DUMMY_GENERATION_STEPS // 100 if match else DUMMY_GENERATION_STEPS
+        while step < DUMMY_GENERATION_STEPS:
+            time.sleep(DUMMY_GENERATION_STEP_SECONDS)
+            db.expire_all()
+            match = db.get(MatchResult, match_id)
+            if match is None or match.stage != running_stage:
+                return
+            step += 1
+            if step >= DUMMY_GENERATION_STEPS:
+                match.stage = done_stage
+                match.progress_percent = 100
+            else:
+                match.progress_percent = step * 100 // DUMMY_GENERATION_STEPS
+            db.commit()
+    finally:
+        db.close()
+        with _running_lock:
+            _running_generations.discard(match_id)
+
+
+def _start_generation(db: Session, project: Project, start_from: tuple, running_stage: str, done_stage: str) -> ProjectStatusOut:
+    match = (
+        db.query(MatchResult)
+        .filter(MatchResult.project_id == project.project_id)
+        .order_by(MatchResult.match_id.desc())
+        .first()
+    )
+    if match is None:
+        raise HTTPException(status_code=400, detail='먼저 공고를 선택해 주세요.')
+    if match.stage in start_from:
+        match.stage = running_stage
+        match.progress_percent = 0
+        db.commit()
+    # 이미 진행 중이면 새로 시작하지 않는다. 서버 재시작으로 스레드만 끊긴 경우엔 이어서 돌린다.
+    if match.stage == running_stage:
+        with _running_lock:
+            should_run = match.match_id not in _running_generations
+            _running_generations.add(match.match_id)
+        if should_run:
+            threading.Thread(
+                target=_simulate_generation, args=(match.match_id, running_stage, done_stage), daemon=True,
+            ).start()
+    return ProjectStatusOut(
+        project_id=project.project_id,
+        screen=ps.STAGE_TO_SCREEN.get(match.stage) if match.stage is not None else None,
+        stage=match.stage,
+        progress_percent=match.progress_percent,
+        match_id=match.match_id,
+        match_status=match.status,
+    )
+
+
+@router.post('/{project_id}/plan/start', response_model=ProjectStatusOut)
+def start_plan_generation(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """사업계획서 생성 시작. 바로 응답하고 생성은 백그라운드에서 돈다 — 진행 상황은
+    GET /projects/{id}/status 의 stage='plan_writing' + progress_percent 로 확인한다.
+    끝나면 stage='plan_review_pending'. 여러 번 불러도 한 번만 시작한다."""
+    project = _get_owned_project(db, project_id, current_user)
+    return _start_generation(db, project, (None,), ps.STAGE_PLAN_WRITING, ps.STAGE_PLAN_REVIEW_PENDING)
+
+
+@router.post('/{project_id}/prototype/start', response_model=ProjectStatusOut)
+def start_prototype_generation(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """프로토타입 생성 시작(계획서 완료 후). stage='prototype_building' + progress_percent 로
+    진행되고, 끝나면 [더미] 이후 화면(산출물 확인~검수)이 아직 서버 단계를 안 쓰므로 곧장 'done'."""
+    project = _get_owned_project(db, project_id, current_user)
+    return _start_generation(db, project, (ps.STAGE_PLAN_REVIEW_PENDING,), ps.STAGE_PROTOTYPE_BUILDING, ps.STAGE_DONE)
 
 
 @router.get('/{project_id}/result', response_model=DemoGenerateResponse)
@@ -663,49 +813,6 @@ def download_plan_document(
     )
 
 
-# [2026-09-18] 신분증 사본·사업자등록증 등 "증빙서류"는 사업계획서(별첨1)와 달리 우리가
-# 데이터를 채워 생성하는 문서가 아니다 — 원본 공고문 그대로(빈 동의서 양식 포함)를
-# 그냥 내려주면 되는 정적 파일이라, plan-document.docx처럼 매번 python-docx로 새로
-# 만들지 않고 실제 공고 원본 파일(app/assets/attachment_guides/)을 그대로 서빙한다.
-# 지금은 초기창업패키지(일반형) 원본(별첨2 "증빙서류 제출목록 안내")만 있다 — 예비창업패키지
-# 쪽 원본 파일을 받으면 _ATTACHMENT_GUIDE_FILES에 'preliminary' 키만 추가하면 된다.
-_ATTACHMENT_GUIDE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'attachment_guides')
-_ATTACHMENT_GUIDE_FILES = {
-    'early_general': ('early_general_submission_guide.docx', '초기창업패키지_증빙서류_제출목록_안내.docx'),
-}
-
-
-@router.get('/{project_id}/attachment-guide.docx')
-def download_attachment_guide(
-    project_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """신분증 사본 등 신청자격 증빙서류가 뭔지 안내하는 공고 원본 문서(별첨2)를 그대로
-    내려준다 — download_plan_document와 같은 template 분기(company.applicant_type이
-    'preliminary'면 예비창업패키지, 그 외면 초기창업패키지(일반형))를 쓴다."""
-    project = _get_owned_project(db, project_id, current_user)
-    company = project.company
-    template = 'preliminary' if company and company.applicant_type == 'preliminary' else 'early_general'
-
-    entry = _ATTACHMENT_GUIDE_FILES.get(template)
-    if entry is None:
-        raise HTTPException(status_code=404, detail=f'{template} 유형의 증빙서류 안내 파일이 아직 없습니다')
-    stored_name, download_name = entry
-    path = os.path.join(_ATTACHMENT_GUIDE_DIR, stored_name)
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail='증빙서류 안내 파일을 찾을 수 없습니다')
-
-    with open(path, 'rb') as f:
-        file_bytes = f.read()
-    filename = quote(download_name)
-    return Response(
-        content=file_bytes,
-        media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        headers={'Content-Disposition': f"attachment; filename*=UTF-8''{filename}"},
-    )
-
-
 @router.post('', response_model=ProjectDetailOut, status_code=201)
 async def create_project(
     payload: str = Form(..., description='ProjectCreateRequest 스키마와 동일한 필드를 담은 JSON 문자열'),
@@ -812,6 +919,7 @@ def delete_project(
     db.query(ProjectAttachment).filter(ProjectAttachment.project_id == project_id).delete()
     db.query(TeamMember).filter(TeamMember.project_id == project_id).delete()
     db.query(PricingItem).filter(PricingItem.project_id == project_id).delete()
+    db.query(MatchCandidate).filter(MatchCandidate.project_id == project_id).delete()
     db.query(Project).filter(Project.project_id == project_id).delete()
     db.commit()
     return Response(status_code=204)

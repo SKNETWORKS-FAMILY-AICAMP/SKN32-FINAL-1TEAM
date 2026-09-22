@@ -106,6 +106,8 @@ export function profileToIntake(profile) {
   return {
     applicantType: b.applicantType,
     ceoName: b.ceoName,
+    birthDate: b.birthDate,
+    gender: b.gender,
     foundedAt: b.applicantType === 'preliminary' ? '' : b.openedAt,
     noTeam: c.soloFounder,
     team: team.length ? team : [{ ...EMPTY_TEAM_ROW }],
@@ -114,41 +116,23 @@ export function profileToIntake(profile) {
     certs: [...b.certs],
     careers: copyRows(c.careers),
     skills: c.skills,
-    hires: copyRows(c.hires),
-    equipment: copyRows(c.equipment),
-    partners: copyRows(c.partners),
   };
 }
 
-// [2026-09-18] 저장 버튼이 눌리려면 다 채워야 하는 항목 — back/app/routers/profile.py의
-// profile_satisfies_required_fields와 반드시 같은 기준이어야 한다(정재희님 인계서: "서버
-// has_profile 계산도 같은 기준으로 맞춰 주세요 — 안 그러면 프론트·백엔드가 서로 다른 걸
-// 저장 완료로 봐요"). 신청자 유형만 채우고 저장되던 예전 문제(canSave=applicantType만 확인)
-// 를 고친다 — 둘 중 하나만 고치면 프론트는 저장되는데 서버 has_profile은 계속 false인
-// 상태가 생긴다.
+// 마이페이지 필수 항목 — 보유 인증·가입만 선택이다. 채용 계획·장비·협력 기관·자기부담금·
+// 희망 사업 규모는 프로젝트마다 달라 프로젝트 작성 화면(IntakeForm)에서 받는다.
+// 항목마다 tab/anchor를 같이 돌려줘서, 저장을 누르면 첫 빈 항목의 탭·섹션으로 바로 이동한다.
+const teamRowFilled = (r) => r.name?.trim() && r.role?.trim() && r.career?.trim();
 export function missingRequiredFields(profile) {
-  const { basic: b, capability: c } = profile;
+  const { basic, capability: cap } = profile;
+  const biz = basic.applicantType === 'individual' || basic.applicantType === 'corp';
   const missing = [];
-  if (!b.applicantType) missing.push('신청자 유형');
-  if (!b.ceoName || !b.birthDate || !b.gender) missing.push('대표자 정보');
-  if (!b.region.sido) missing.push('지역');
-  if (!b.industry) missing.push('주업종');
-  if (!c.careers.length) missing.push('대표자 이력');
-  if ((b.applicantType === 'individual' || b.applicantType === 'corp') && !b.bizNo) missing.push('사업자 번호');
+  const need = (cond, label, tab, anchor) => { if (cond) missing.push({ label, tab, anchor }); };
+  need(!basic.applicantType, '신청자 유형', 'basic', 'mp-applicant');
+  need(!basic.ceoName || !basic.birthDate || !basic.gender, '대표자 정보', 'basic', 'mp-ceo');
+  need(!basic.region.sido || !basic.industry?.trim(), '지역 · 주업종', 'basic', 'mp-region');
+  need(biz && (!basic.bizNo || !basic.openedAt), '사업자 정보', 'basic', 'mp-biz');
+  need(!cap.careers.length || !cap.skills?.trim(), '대표자 이력', 'capability', 'mp-career');
+  need(!cap.soloFounder && !(cap.team.length && cap.team.every(teamRowFilled)), '팀 구성원', 'capability', 'mp-team');
   return missing;
-}
-
-// 탭별 채움 정도 — [채운 개수, 전체]. 예비창업자와 개인사업자·법인은 서로 다른 항목을 센다.
-export function progressOf(state) {
-  const { basic, bizStatus, capability: cap } = state;
-  const pre = basic.applicantType === 'preliminary';
-  const bizChecked = bizStatus?.checkedNo === basic.bizNo && bizStatus?.valid;
-  const basicChecks = [
-    basic.applicantType, basic.ceoName, basic.birthDate, basic.gender,
-    basic.region.sido, basic.industry,
-    ...(pre ? [basic.budgetScale] : [bizChecked, basic.openedAt]),
-  ];
-  const capChecks = [cap.careers.length, cap.skills.trim(), cap.soloFounder || cap.team.length];
-  const count = (arr) => [arr.filter(Boolean).length, arr.length];
-  return { basic: count(basicChecks), capability: count(capChecks) };
 }

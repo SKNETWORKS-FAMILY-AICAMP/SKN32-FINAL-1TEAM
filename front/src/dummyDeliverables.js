@@ -3,12 +3,9 @@
 // [2026-09-15, 프론트 통합 임시 구현] 실제 산출물 생성(Task #14, PlanForm/ArtifactResult/
 // FinalVerdict 실데이터 연동)은 아직 백엔드에 붙기 전이라, 화면 하단 세 파일
 // (사업계획서.docx / prototype.zip / 검증결과.pdf)을 실제로 "그 확장자로 열리는" 더미
-// 파일로 브라우저에서 즉석 생성해 내려준다. 새 npm 의존성(JSZip/jsPDF 등)을 추가하지
-// 않고 — 무압축(store) ZIP과 최소 유효 OOXML/PDF를 순수 JS로 직접 만든다.
-//
-// docx/zip 쪽 텍스트는 UTF-8 XML/HTML이라 한글이 그대로 렌더링된다. PDF 쪽은 표준
-// 14종 내장 폰트(Helvetica)에 한글 글리프가 없어서(임베딩하려면 CJK 폰트 파일이 수
-// MB 필요 — 더미 파일 취지에 안 맞음) 영문 라벨로만 작성한다.
+// 파일로 브라우저에서 즉석 생성해 내려준다. 새 npm 의존성(JSZip 등)을 추가하지
+// 않고 — 무압축(store) ZIP과 최소 유효 OOXML을 순수 JS로 직접 만든다. 검증결과.pdf는
+// 한글 양식을 인쇄 창으로 내보내는 features/workflow/verificationReport.js가 맡는다.
 
 // ---------- 공통: 다운로드 트리거 ----------
 export function triggerDownload(bytes, filename, mime) {
@@ -248,44 +245,4 @@ index.html을 브라우저로 열면 화면 예시를 확인할 수 있습니다
 export function downloadPrototypeZip({ itemName, html }) {
   const bytes = buildPrototypeZip({ itemName, html });
   triggerDownload(bytes, 'prototype.zip', 'application/zip');
-}
-
-// ---------- 검증결과.pdf ----------
-// lines: [{ text, size? }]
-export function buildVerificationPdf({ lines }) {
-  const esc = (s) => String(s).replace(/([()\\])/g, '\\$1');
-  const contentParts = lines.map((l, i) => {
-    const size = l.size || 12;
-    const y = 750 - i * 20;
-    return `BT /F1 ${size} Tf 56 ${y} Td (${esc(l.text)}) Tj ET`;
-  });
-  const content = contentParts.join('\n');
-
-  const objects = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
-  ];
-
-  let pdf = '%PDF-1.4\n';
-  const offsets = [0];
-  objects.forEach((obj, i) => {
-    offsets.push(pdf.length);
-    pdf += `${i + 1} 0 obj\n${obj}\nendobj\n`;
-  });
-  const xrefStart = pdf.length;
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (let i = 1; i <= objects.length; i++) {
-    pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
-  }
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
-
-  return utf8(pdf);
-}
-
-export function downloadVerificationPdf({ lines }) {
-  const bytes = buildVerificationPdf({ lines });
-  triggerDownload(bytes, '검증결과.pdf', 'application/pdf');
 }

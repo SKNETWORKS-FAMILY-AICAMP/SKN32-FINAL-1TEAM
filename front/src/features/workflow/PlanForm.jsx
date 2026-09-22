@@ -1,17 +1,17 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
 import React, {useState} from 'react';
+import {Icon} from '../../components/Icons.jsx';
 import Preparation from '../../components/Preparation.jsx';
-import {GeneratingOverlay} from './shared.jsx';
-import {ArtifactProgress} from './ArtifactResult.jsx';
 import {buildGeneralInfo,buildOverview,DOC_SCORE_BY_OUTCOME} from './utils.js';
-import {ANNOUNCEMENTS,FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_DOCUMENT_SECTIONS,PLAN_TABLE_EXAMPLE,PSST_OFFICIAL_HEADERS,SCORE_DISCLAIMER,WRITING_SUBTASKS} from './data.js';
+import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_DOCUMENT_SECTIONS,PLAN_TABLE_EXAMPLE,PSST_OFFICIAL_HEADERS,SCORE_DISCLAIMER,WRITING_SUBTASKS} from './data.js';
 import {retryTask} from '../../api.js';
 
 // WRITING_SUBTASKS 3개는 전부 PLAN_STAGE_TASKS(data.js)에서 같은 '작성' Agent 몫이라
 // 백엔드에도 별도 task_key 없이 하나(writing)로 묶여 있다 — app/schemas.py RetryTaskRequest 참고.
 const TASK_KEY_BY_LABEL = { '사업계획서 본문 작성': 'writing', '그래프 생성': 'writing', '표 생성': 'writing' };
 
-export function PipelineProgress({onComplete}){return <Preparation kind="plan" onComplete={onComplete} similarAnnouncements={ANNOUNCEMENTS.slice(0,3)}/>;}
+// 화면 검토(audit.jsx)용 데모 타이머 버전 — 실제 흐름은 GenerationProgress가 서버 진행률을 쓴다.
+export function PipelineProgress({onComplete}){return <Preparation kind="plan" onComplete={onComplete}/>;}
 
 // 사업계획서 표준 4대 항목(PSST: Problem·Solution·Scale-up·Team) — 정부지원사업 사업계획서의
 // 실제 목차 구조를 그대로 예시 본문에 쓴다. 표·그래프 예시도 같이 넣어서 "구현 Task가
@@ -125,11 +125,13 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
   // 지적에 따라, 방금 재작성한 항목을 완료 표시로 남겨둔다 — 같은 항목을 다시
   // 체크해 재작성을 걸면(toggleTask) 그 항목의 완료 표시는 지운다.
   const [completedTasks, setCompletedTasks] = useState([]);
-  const [generating, setGenerating] = useState(false);
+  // 레퍼런스(makedeck)의 좌측 히스토리 사이드바처럼, 문서 평가 패널을 접었다 펼 수 있게 —
+  // 기본은 펼친 상태(사용자 지적: 처음엔 점수가 바로 보여야 함).
+  const [scoreOpen, setScoreOpen] = useState(true);
 
   const handleGenerateClick = () => {
     if (!passed) { setConfirmProceed(true); return; }
-    setGenerating(true);
+    onGenerate();
   };
 
   const toggleTask = (label) => {
@@ -160,37 +162,26 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
 
   return (
     <React.Fragment>
-    <section data-screen="plan" className={`max-w-6xl mx-auto px-6 py-14 transition-[filter] duration-300 ${generating ? 'blur-sm pointer-events-none select-none' : ''}`}>
-      <div className="grid md:grid-cols-[1fr_360px] gap-7 items-start">
-        {/* 좌측 — 작성된 사업계획서 미리보기 */}
-        <div className="rounded-2xl border border-[var(--border)] bg-white overflow-hidden">
-          <div className="border-b border-[var(--border)] px-10 py-8 flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              {/* 공고 제목을 제목 문장 안에 끼워 넣으면(『긴 공고명』 사업계획서) 제목이 길 때
-                  줄이 어중간하게 끊기고 뒤 단어만 남아 어색해진다(사용자 지적). 공고명은
-                  윗줄에 따로 두고, 제목은 길이가 고정된 짧은 문장만 남긴다. */}
-              <p className="text-[13px] font-semibold text-[var(--primary-dim)] leading-snug mb-1.5">『{announcement ? announcement.title : ''}』</p>
-              <h1 className="font-display font-bold text-[25px] mb-2">사업계획서</h1>
-              <p className="text-[12px] text-[var(--muted-fg)]">{PLAN_AI_NOTICE}</p>
-            </div>
-          </div>
-
-          <div className="px-10 py-10 flex flex-col gap-9">
-            <GeneralInfoBlock itemInfo={itemInfo} itemTitle={announcement ? announcement.title : ''} sections={PLAN_DOCUMENT_SECTIONS} />
-
-            {PLAN_DOCUMENT_SECTIONS.map((s, i) => (
-              <div key={s.title}>
-                <h2 className="font-display font-bold text-[18px] mb-2.5">{PSST_OFFICIAL_HEADERS[i]}</h2>
-                <p className="text-[14.5px] leading-[1.85] text-[var(--fg)]">{s.body}</p>
-              </div>
-            ))}
-
-            <PlanExtrasBlock />
-          </div>
-        </div>
-
-        {/* 우측 — 문서 평가: 문서층 70점을 100점 만점으로 환산해 표시 (기획서 4-5) */}
-        <aside className="rounded-2xl border border-[var(--border)] bg-white p-7 md:sticky md:top-24">
+    <section data-screen="plan" className="max-w-6xl mx-auto px-6 py-12">
+      <div className={`grid gap-6 items-start transition-[grid-template-columns] duration-200 ${scoreOpen ? 'md:grid-cols-[290px_1fr]' : 'md:grid-cols-[auto_1fr]'}`}>
+        {/* 좌측 — 문서 평가: 문서층 70점을 100점 만점으로 환산해 표시 (기획서 4-5).
+            우측 본문과 한 박스로 묶으면(카드 하나 공유) 내용이 짧은 이쪽이 긴 본문
+            높이에 맞춰 억지로 늘어나면서 빈 여백만 커진다(사용자 지적) — 그래서 서로
+            독립된 카드로 분리하고, 내용 길이만큼만 높이를 차지하게 한다. 접으면 얇은
+            칸으로 줄고 우측 본문이 그만큼 넓어진다. 기본은 펼친 상태. */}
+        {!scoreOpen && (
+          <button type="button" onClick={() => setScoreOpen(true)} aria-label="문서 평가 펼치기"
+            className="hidden md:flex flex-col items-center gap-3 w-11 py-5 md:sticky md:top-24 text-[var(--muted-fg)] hover:text-[var(--fg)] transition-colors">
+            <Icon name="chevron" size={13} />
+            <span className={`font-display font-bold text-[14px] leading-none ${passed ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>{docScoreScaled}</span>
+          </button>
+        )}
+        {scoreOpen && (
+        <aside className="relative md:sticky md:top-24">
+          <button type="button" onClick={() => setScoreOpen(false)} aria-label="문서 평가 접기"
+            className="hidden md:grid absolute -right-3.5 top-6 w-7 h-7 place-items-center rounded-full border border-[var(--border)] bg-white shadow-[0_2px_8px_-1px_rgba(15,23,42,.15)] hover:bg-[var(--muted)] transition-colors z-10">
+            <Icon name="chevron" size={12} className="rotate-180 text-[var(--muted-fg)]" />
+          </button>
           <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1">문서 평가</p>
           <p className="text-[11.5px] text-[var(--muted-fg)] mb-5">문서층 70점을 100점 만점으로 환산, {FINAL_THRESHOLD}점부터 통과</p>
 
@@ -260,20 +251,43 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
                   className="text-[13px] font-semibold text-[var(--muted-fg)] hover:text-[var(--fg)] transition-[color,scale] duration-150 ease-out active:scale-[0.96]">
                   취소
                 </button>
-                <button onClick={() => setGenerating(true)} className="text-[13px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">
+                <button onClick={onGenerate} className="text-[13px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">
                   그래도 진행하기
                 </button>
               </div>
             </div>
           )}
         </aside>
+        )}
+
+        {/* 우측 — 작성된 사업계획서 미리보기 */}
+        <div className="rounded-2xl border border-[var(--border)] bg-white overflow-hidden">
+          <div className="border-b border-[var(--border)] px-9 py-6 flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              {/* 공고 제목을 제목 문장 안에 끼워 넣으면(『긴 공고명』 사업계획서) 제목이 길 때
+                  줄이 어중간하게 끊기고 뒤 단어만 남아 어색해진다(사용자 지적). 공고명은
+                  윗줄에 따로 두고, 제목은 길이가 고정된 짧은 문장만 남긴다. */}
+              <p className="text-[13px] font-semibold text-[var(--primary-dim)] leading-snug mb-1.5">『{announcement ? announcement.title : ''}』</p>
+              <h1 className="font-display font-bold text-[23px] mb-1.5">사업계획서</h1>
+              <p className="text-[12px] text-[var(--muted-fg)]">{PLAN_AI_NOTICE}</p>
+            </div>
+          </div>
+
+          <div className="px-9 py-8 flex flex-col gap-7">
+            <GeneralInfoBlock itemInfo={itemInfo} itemTitle={announcement ? announcement.title : ''} sections={PLAN_DOCUMENT_SECTIONS} />
+
+            {PLAN_DOCUMENT_SECTIONS.map((s, i) => (
+              <div key={s.title}>
+                <h2 className="font-display font-bold text-[17px] mb-2">{PSST_OFFICIAL_HEADERS[i]}</h2>
+                <p className="text-[14px] leading-relaxed text-[var(--fg)]">{s.body}</p>
+              </div>
+            ))}
+
+            <PlanExtrasBlock />
+          </div>
+        </div>
       </div>
     </section>
-    {generating && (
-      <GeneratingOverlay>
-        <ArtifactProgress itemInfo={itemInfo} onComplete={onGenerate} />
-      </GeneratingOverlay>
-    )}
     </React.Fragment>
   );
 }

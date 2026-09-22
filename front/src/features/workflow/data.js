@@ -1,8 +1,4 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
-export const SIMILAR_ANNOUNCEMENT_ALERTS = [
-  { id: 1, itemName: '동네 헬스장 예약 서비스', title: 'AI 서비스 실증지원 사업', org: '정보통신산업진흥원', similarity: 87, detectedAt: '2026-09-09' },
-  { id: 2, itemName: '중고거래 안전결제 플랫폼', title: '생활밀착형 서비스 창업 지원사업', org: '중소벤처기업부', similarity: 81, detectedAt: '2026-09-07' },
-];
 
 // 이메일 발송은 이번 범위에서 제외(최종발표 이후 유료화 검토와 함께 진행) — 카카오
 // 알림톡은 사업자등록이 있어야 보낼 수 있어 예비창업자 사용자를 못 받아 대상에서
@@ -78,14 +74,10 @@ export const ANNOUNCEMENTS = [
 // 직접 눌러서 신청 자격 확인까지 갔다가 불통과를 확인하고 "다른 공고 다시 보기"로
 // 돌아왔을 때만 그 공고를 비활성화한다(disabledTitles, App state) — 즉 비활성화는
 // 사용자 자신의 확인 행동에서 나온다.
-// 기획서 4-1/4-2②: 공고는 매칭 결과로만 등장하고, 전체 목록을 보여주지 않는다 —
-// 적합도 상위 3건만 카드로 제시한다("더 보기"로 나머지를 펼치지 않는다). 공고를
-// 먼저 훑어보고 거기 맞춰 아이템을 지어내는 흐름이 되지 않도록 하는 게 목적이다.
+// 기획서 4-1/4-2②: 공고는 매칭 결과로만 등장하고, 전체 목록을 보여주지 않는다.
+// 매칭 후보(10건, 가산점 높은 순) 중 처음부터 펼쳐 보여주는 개수 — 나머지는 "더 보기"로 연다.
 export const RESULTS_SHOWN_COUNT = 3;
 
-// 적합도(fit_score) 하나를 원형 게이지로 보여준다 — 백엔드가 실제로 내려주는 숫자가
-// 이것뿐이라(항목별 세부 점수는 없음), 없는 근거를 지어내서 막대 여러 개로 쪼개는
-// 대신 정직하게 이 값 하나만 크게 시각화한다.
 export const PLAN_STAGE_TASKS = [
   { agent: '전략', task: '요구사항 분석' },
   { agent: '전략', task: '목표 시장 분석' },
@@ -227,46 +219,44 @@ export const ARTIFACT_SCORE_BY_OUTCOME = {
   },
 };
 
-// verification_agent/score.py의 R-4 8항목 배점표(이름·weight)를 그대로 옮긴다 — 웹개발·AI API는
-// prototype.html을 검사하는 8항목(_ITEM_DEFS), 원페이지는 인포그래픽 SVG를 검사하는 별도
-// 8항목(_ONEPAGE_ITEM_DEFS)을 쓴다. 합계는 두 쪽 다 15점. standard 쪽 이름은 시연 로그
-// steps[9].data.codeCheck.checks의 표기를 그대로 따랐다(원 소스 파일의 긴 이름과 다름).
+// 산출물층 코드 기준 자동 검증 8항목·15점 — 프로젝트 기획서 v1.8 5-4 표의 이름·배점 그대로.
+// 웹개발·AI API는 HTML 실행 파일 기준, 원페이지는 인포그래픽 SVG 지면 기준 체크리스트를 쓴다.
+// 두 쪽 모두 1번(진입 파일) 미충족이면 자동 검증 점수 전체가 0점이다(5-4).
+// (verification_agent/score.py의 원페이지 항목은 아직 v1.8 이전 목록이라 따로 맞춰야 한다.)
 export const CODE_CHECK_ITEMS_BY_CATEGORY = {
   standard: [
-    { id: 1, name: '진입 파일 존재', weight: 3 },
-    { id: 2, name: '대체 텍스트', weight: 2 },
-    { id: 3, name: 'label 연결', weight: 2 },
-    { id: 4, name: 'html lang', weight: 1 },
-    { id: 5, name: '명도 대비', weight: 2 },
+    { id: 1, name: '진입 파일 존재 여부', weight: 3 },
+    { id: 2, name: 'img · svg 대체 텍스트', weight: 2 },
+    { id: 3, name: 'input label 연결', weight: 2 },
+    { id: 4, name: 'html lang 속성', weight: 1 },
+    { id: 5, name: '명도 대비 4.5:1', weight: 2 },
     { id: 6, name: '제목 계층', weight: 2 },
-    { id: 7, name: '실행 안내', weight: 1 },
-    { id: 8, name: '비밀값 하드코딩 없음', weight: 2 },
+    { id: 7, name: '실행·열람 안내 문서', weight: 1 },
+    { id: 8, name: '하드코딩된 비밀값', weight: 2 },
   ],
   onepage: [
-    { id: 1, name: '진입 파일 존재', weight: 3 },
-    { id: 2, name: 'img·svg 대체 텍스트', weight: 2 },
-    { id: 3, name: 'viewBox 유효성', weight: 1 },
+    { id: 1, name: '진입 파일 존재 여부', weight: 3 },
+    { id: 2, name: '대체 텍스트', weight: 2 },
+    { id: 3, name: '핵심 정보 항목 포함', weight: 2 },
     { id: 4, name: '명도 대비 4.5:1', weight: 2 },
-    { id: 5, name: '카테고리 배지 표기', weight: 1 },
-    { id: 6, name: '필수 섹션 제목 존재', weight: 2 },
-    { id: 7, name: '데이터 완전성', weight: 2 },
-    { id: 8, name: '하드코딩된 비밀값 없음', weight: 2 },
+    { id: 5, name: '정보 계층', weight: 2 },
+    { id: 6, name: '텍스트 실재성', weight: 2 },
+    { id: 7, name: '최소 글자 크기', weight: 1 },
+    { id: 8, name: '열람 안내 문서', weight: 1 },
   ],
 };
 
 // outcome('fail'/'pass')별로 미달 처리할 항목 id·사유만 지정한다 — 나머지는 자동 통과.
-// standard 쪽은 시연 로그 steps[9].data.codeCheck.checks를 그대로 옮겼다: fail은
-// 4(html lang)·5(명도 대비)만 미달(weight 1+2=3, raw 12/15), pass는 전부 통과(15/15,
-// steps[11].data.reworkDiff의 "코드 15/15"). onepage는 시연 로그에 없어 이전 값 유지.
+// 미달 배점 합이 ARTIFACT_SCORE_BY_OUTCOME의 autoCheck.raw와 맞도록 둔다(fail 12/15, pass 15/15).
+// standard 쪽은 시연 로그 steps[9].data.codeCheck.checks를 그대로 옮겼다.
 export const CODE_CHECK_FAILS_BY_OUTCOME = {
   fail: {
     standard: { 4: 'html 태그에 lang 속성이 없습니다.', 5: '예약 버튼의 전경/배경 명도 대비가 2.9:1로 기준(4.5:1) 미만입니다.' },
-    onepage: { 3: 'viewBox 속성 값 형식이 올바르지 않음', 4: '명도 대비 4.5:1 기준 미달 2건',
-      5: '카테고리 배지 텍스트 누락', 7: '매출 추정 표의 일부 항목 데이터 누락' },
+    onepage: { 4: '본문 문구 2건의 글자색/배경 명도 대비가 3.1:1로 기준(4.5:1) 미만입니다.', 7: '각주 글자 크기가 10px로 본문 하한(12px)에 못 미칩니다.' },
   },
   pass: {
     standard: {},
-    onepage: { 5: '카테고리 배지 텍스트 누락' },
+    onepage: {},
   },
 };
 
@@ -326,19 +316,10 @@ export const DOWNLOAD_FILES = [
   { name: '사업계획서.docx', desc: '문장 다듬기까지 마친 최종 사업계획서' },
   { name: 'prototype.zip', desc: '실행 파일(index.html)과 인포그래픽을 담은 압축 파일' },
   { name: '검증결과.pdf', desc: '문서층·산출물층 검증 내역과 대조 결과' },
-  { name: '증빙서류_제출목록_안내.docx', desc: '신분증 사본 등 신청자격 증빙서류가 뭔지 안내하는 공고 원본 문서' },
 ];
 
-// 실제 산출물 생성(Task #14)이 아직 안 붙어서, 이 세 파일은 화면에 이미 있는 더미
-// 데이터(PLAN_DOCUMENT_SECTIONS_REWORKED/ARTIFACT_SCORE_BY_OUTCOME 등)를 그대로 옮겨
-// 그 확장자로 실제 열리는 더미 파일을 즉석 생성해 내려준다(dummyDeliverables.js).
-// 검증결과.pdf만 표준 내장 폰트 한계로 영문 라벨을 쓴다 — 아래는 그 번역표.
-export const EN_DOC_ITEM_LABEL = {
-  '문제인식': 'Problem Recognition',
-  '실현가능성': 'Feasibility',
-  '성장전략': 'Growth Strategy',
-  '팀 구성': 'Team Composition',
-};
+// 사업계획서.docx·prototype.zip은 화면의 더미 데이터로 즉석 생성하고(dummyDeliverables.js),
+// 검증결과.pdf는 원페이지형 검증결과서 양식을 인쇄 창으로 연다(verificationReport.js).
 
 // 검수 단계 진입은 되돌릴 수 없다(기획서 4-7) — 종합 평가로 돌아가는 경로를 두지
 // 않는다. 그래서 이 화면에는 뒤로가기 버튼이 없다(다른 모든 파이프라인 화면과의
