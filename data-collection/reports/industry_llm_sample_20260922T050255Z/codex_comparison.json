@@ -1,0 +1,359 @@
+{
+ "all": {
+  "regex": {
+   "n": 30,
+   "status_agree": 17,
+   "known_both": 0,
+   "known_only_system": 0,
+   "known_only_codex": 13,
+   "value_precision": null,
+   "value_recall": null,
+   "values_system": 0,
+   "values_codex": 0,
+   "size_word_values": 0,
+   "size_word_examples": [],
+   "list_complete_vs_codex": {},
+   "confusion": {
+    "known→unknown": 13,
+    "unknown→unknown": 17
+   }
+  },
+  "v1": {
+   "n": 30,
+   "status_agree": 21,
+   "known_both": 12,
+   "known_only_system": 8,
+   "known_only_codex": 1,
+   "value_precision": 0.5,
+   "value_recall": 0.359,
+   "values_system": 28,
+   "values_codex": 39,
+   "size_word_values": 0,
+   "size_word_examples": [],
+   "list_complete_vs_codex": {},
+   "confusion": {
+    "known→known": 12,
+    "known→unknown": 1,
+    "unknown→known": 8,
+    "unknown→unknown": 9
+   }
+  },
+  "v2": {
+   "n": 30,
+   "status_agree": 23,
+   "known_both": 7,
+   "known_only_system": 1,
+   "known_only_codex": 6,
+   "value_precision": 0.833,
+   "value_recall": 0.5,
+   "values_system": 18,
+   "values_codex": 30,
+   "size_word_values": 0,
+   "size_word_examples": [],
+   "list_complete_vs_codex": {},
+   "confusion": {
+    "known→known": 7,
+    "known→unknown": 6,
+    "unknown→known": 1,
+    "unknown→unknown": 16
+   }
+  },
+  "v3": {
+   "n": 30,
+   "status_agree": 20,
+   "known_both": 8,
+   "known_only_system": 5,
+   "known_only_codex": 5,
+   "value_precision": 0.917,
+   "value_recall": 0.458,
+   "values_system": 12,
+   "values_codex": 24,
+   "size_word_values": 6,
+   "size_word_examples": [
+    [
+     "bizinfo:PBLN_000000000117330",
+     "중소기업"
+    ],
+    [
+     "bizinfo:PBLN_000000000117568",
+     "기업"
+    ],
+    [
+     "bizinfo:PBLN_000000000117568",
+     "농가"
+    ],
+    [
+     "bizinfo:PBLN_000000000117568",
+     "소상공인"
+    ],
+    [
+     "bizinfo:PBLN_000000000126157",
+     "중소기업"
+    ],
+    [
+     "bizinfo:PBLN_000000000126296",
+     "소상공인"
+    ]
+   ],
+   "list_complete_vs_codex": {
+    "N→N": 3,
+    "N→Y": 2,
+    "Y→N": 1,
+    "Y→Y": 2
+   },
+   "confusion": {
+    "known→known": 8,
+    "known→unknown": 5,
+    "unknown→known": 5,
+    "unknown→unknown": 12
+   }
+  },
+  "luna": {
+   "n": 30,
+   "status_agree": 24,
+   "known_both": 7,
+   "known_only_system": 0,
+   "known_only_codex": 6,
+   "value_precision": 1.0,
+   "value_recall": 1.0,
+   "values_system": 25,
+   "values_codex": 23,
+   "size_word_values": 0,
+   "size_word_examples": [],
+   "list_complete_vs_codex": {
+    "N→N": 1,
+    "Y→N": 1,
+    "Y→Y": 5
+   },
+   "confusion": {
+    "known→known": 7,
+    "known→unknown": 6,
+    "unknown→unknown": 17
+   }
+  },
+  "full_strict": {
+   "n": 30,
+   "status_agree": 23,
+   "known_both": 6,
+   "known_only_system": 0,
+   "known_only_codex": 7,
+   "value_precision": 1.0,
+   "value_recall": 1.0,
+   "values_system": 11,
+   "values_codex": 10,
+   "size_word_values": 0,
+   "size_word_examples": [],
+   "list_complete_vs_codex": {
+    "N→N": 1,
+    "Y→N": 1,
+    "Y→Y": 4
+   },
+   "confusion": {
+    "known→known": 6,
+    "known→unknown": 7,
+    "unknown→unknown": 17
+   }
+  },
+  "full_rough": {
+   "n": 30,
+   "status_agree": 26,
+   "known_both": 9,
+   "known_only_system": 0,
+   "known_only_codex": 4,
+   "value_precision": 0.971,
+   "value_recall": 1.0,
+   "values_system": 35,
+   "values_codex": 32,
+   "size_word_values": 0,
+   "size_word_examples": [],
+   "list_complete_vs_codex": {
+    "N→N": 2,
+    "N→Y": 1,
+    "Y→N": 1,
+    "Y→Y": 5
+   },
+   "confusion": {
+    "known→known": 9,
+    "known→unknown": 4,
+    "unknown→unknown": 17
+   }
+  }
+ },
+ "high_confidence_only": {
+  "regex": {
+   "n": 27,
+   "status_agree": 16,
+   "known_both": 0,
+   "known_only_system": 0,
+   "known_only_codex": 11,
+   "value_precision": null,
+   "value_recall": null,
+   "values_system": 0,
+   "values_codex": 0,
+   "size_word_values": 0,
+   "size_word_examples": [],
+   "list_complete_vs_codex": {},
+   "confusion": {
+    "known→unknown": 11,
+    "unknown→unknown": 16
+   }
+  },
+  "v1": {
+   "n": 27,
+   "status_agree": 19,
+   "known_both": 10,
+   "known_only_system": 7,
+   "known_only_codex": 1,
+   "value_precision": 0.56,
+   "value_recall": 0.4,
+   "values_system": 25,
+   "values_codex": 35,
+   "size_word_values": 0,
+   "size_word_examples": [],
+   "list_complete_vs_codex": {},
+   "confusion": {
+    "known→known": 10,
+    "known→unknown": 1,
+    "unknown→known": 7,
+    "unknown→unknown": 9
+   }
+  },
+  "v2": {
+   "n": 27,
+   "status_agree": 21,
+   "known_both": 6,
+   "known_only_system": 1,
+   "known_only_codex": 5,
+   "value_precision": 0.882,
+   "value_recall": 0.556,
+   "values_system": 17,
+   "values_codex": 27,
+   "size_word_values": 0,
+   "size_word_examples": [],
+   "list_complete_vs_codex": {},
+   "confusion": {
+    "known→known": 6,
+    "known→unknown": 5,
+    "unknown→known": 1,
+    "unknown→unknown": 15
+   }
+  },
+  "v3": {
+   "n": 27,
+   "status_agree": 18,
+   "known_both": 6,
+   "known_only_system": 4,
+   "known_only_codex": 5,
+   "value_precision": 1.0,
+   "value_recall": 0.4,
+   "values_system": 8,
+   "values_codex": 20,
+   "size_word_values": 5,
+   "size_word_examples": [
+    [
+     "bizinfo:PBLN_000000000117330",
+     "중소기업"
+    ],
+    [
+     "bizinfo:PBLN_000000000117568",
+     "기업"
+    ],
+    [
+     "bizinfo:PBLN_000000000117568",
+     "농가"
+    ],
+    [
+     "bizinfo:PBLN_000000000117568",
+     "소상공인"
+    ],
+    [
+     "bizinfo:PBLN_000000000126296",
+     "소상공인"
+    ]
+   ],
+   "list_complete_vs_codex": {
+    "N→N": 2,
+    "N→Y": 2,
+    "Y→Y": 2
+   },
+   "confusion": {
+    "known→known": 6,
+    "known→unknown": 5,
+    "unknown→known": 4,
+    "unknown→unknown": 12
+   }
+  },
+  "luna": {
+   "n": 27,
+   "status_agree": 22,
+   "known_both": 6,
+   "known_only_system": 0,
+   "known_only_codex": 5,
+   "value_precision": 1.0,
+   "value_recall": 1.0,
+   "values_system": 22,
+   "values_codex": 20,
+   "size_word_values": 0,
+   "size_word_examples": [],
+   "list_complete_vs_codex": {
+    "Y→N": 1,
+    "Y→Y": 5
+   },
+   "confusion": {
+    "known→known": 6,
+    "known→unknown": 5,
+    "unknown→unknown": 16
+   }
+  },
+  "full_strict": {
+   "n": 27,
+   "status_agree": 20,
+   "known_both": 4,
+   "known_only_system": 0,
+   "known_only_codex": 7,
+   "value_precision": 1.0,
+   "value_recall": 1.0,
+   "values_system": 6,
+   "values_codex": 6,
+   "size_word_values": 0,
+   "size_word_examples": [],
+   "list_complete_vs_codex": {
+    "Y→Y": 4
+   },
+   "confusion": {
+    "known→known": 4,
+    "known→unknown": 7,
+    "unknown→unknown": 16
+   }
+  },
+  "full_rough": {
+   "n": 27,
+   "status_agree": 23,
+   "known_both": 7,
+   "known_only_system": 0,
+   "known_only_codex": 4,
+   "value_precision": 0.967,
+   "value_recall": 1.0,
+   "values_system": 30,
+   "values_codex": 28,
+   "size_word_values": 0,
+   "size_word_examples": [],
+   "list_complete_vs_codex": {
+    "N→N": 1,
+    "N→Y": 1,
+    "Y→Y": 5
+   },
+   "confusion": {
+    "known→known": 7,
+    "known→unknown": 4,
+    "unknown→unknown": 16
+   }
+  }
+ },
+ "low_confidence_ids": [
+  "bizinfo:PBLN_000000000124849",
+  "bizinfo:PBLN_000000000126157",
+  "bizinfo:PBLN_000000000126183"
+ ],
+ "caveat": "Codex 판정(AI 참고 정답)이며 사람 정답이 아니다. Codex 는 판정 전 v3 요약 일부 노출을 기록했다."
+}

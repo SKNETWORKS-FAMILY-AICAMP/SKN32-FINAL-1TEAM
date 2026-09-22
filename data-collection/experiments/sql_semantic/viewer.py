@@ -517,24 +517,24 @@ def mark_overlap(columns, lab_ids):
 
 @app.post('/api/compare')
 def api_compare(body: dict):
-    idea = str(body.get('idea') or '').strip()
-    if not idea:
-        return JSONResponse({'error': '아이디어 설명을 입력한다'}, status_code=400)
-    top, top_error = parse_top(body.get('top'))
-    if top_error:
-        return JSONResponse({'error': top_error}, status_code=400)
-    applicant_type = str(body.get('applicant_type') or '법인')
-    region = str(body.get('region') or '')
-    district = str(body.get('district') or '')
-    founded_at = str(body.get('founded_at') or '')
+    """입력 계약은 compare_input.py 에 있다 (2026-09-21 입력 확장).
 
-    service_payload = {'applicant_type': applicant_type, 'idea': idea, 'region': region,
-                       'district': district, 'founded_at': founded_at, 'top': top}
+    검증에 실패하면 검색·모델·DB 를 부르기 **전에** 400 과 칸별 오류를 돌려준다. 오류에는 입력값을 넣지 않는다.
+    """
+    from experiments.sql_semantic import compare_input
+    top, top_error = parse_top(body.get('top') if isinstance(body, dict) else None)
+    clean, errors = compare_input.validate(body)
+    if top_error:
+        errors = list(errors) + [{'field': 'top', 'label': '몇 개씩', 'message': top_error}]
+    if errors:
+        return JSONResponse({'error': '입력을 확인한다 (%d개 칸)' % len(errors), 'fields': errors},
+                            status_code=400)
+
+    service_payload = compare_input.service_payload(clean, top)
     hybrid = call_service(service_payload, 'hybrid')
     dense = call_service(service_payload, 'dense')
 
-    applicant = {'idea': idea, 'region': region, 'district': district, 'founded_at': founded_at,
-                 'prestartup': applicant_type == '예비창업자', 'preferred_support_type': ''}
+    applicant, lab_industry = compare_input.lab_applicant(clean)
     try:
         lab = run_lab(applicant, top)
     except Exception as exc:
@@ -570,7 +570,9 @@ def api_compare(body: dict):
                'lab': rows_of(lab, 'lab')}
     overlap = mark_overlap(columns, lab_ids)
     return JSONResponse({
-        'input': dict(service_payload),
+        # 개인정보(이름·생년월일·사업자번호)는 되돌려주지 않는다
+        'input_summary': compare_input.input_summary(clean),
+        'usage': compare_input.field_usage(clean, lab_industry),
         'columns': columns,
         'errors': {k: v.get('error') for k, v in (('hybrid', hybrid), ('dense', dense), ('lab', lab))
                    if isinstance(v, dict) and v.get('error')},
@@ -600,9 +602,84 @@ def api_compare(body: dict):
     })
 
 
+@app.get('/api/compare/form')
+def api_compare_form():
+    """비교 화면 선택지. 서비스 메인 화면(/api/form)과 **같은 어휘**를 같은 모듈에서 가져온다."""
+    from experiments.sql_semantic import compare_input
+    from shared import region as region_mod
+    labels = {'전남광주': '광주·전남'}
+    return JSONResponse({
+        'applicant_types': list(compare_input.APPLICANT_TYPES),
+        'genders': list(compare_input.GENDERS),
+        'regions': [{'value': r, 'label': labels.get(r, r),
+                     'districts': list(region_mod.districts_of(r))} for r in region_mod.REGIONS],
+        'certifications': list(compare_input.CERTIFICATIONS),
+    })
+
+
+@app.get('/compare/selftest', response_class=HTMLResponse)
+def compare_selftest_page():
+    """비교 화면의 **브라우저 동작** 자체 시험 (2026-09-21 Codex 리뷰). /api/compare 만 가짜로 바꿔 부른다."""
+    with io.open(os.path.join(WEB, 'compare_selftest.html'), encoding='utf-8') as f:
+        return f.read()
+
+
 @app.get('/compare', response_class=HTMLResponse)
 def compare_page():
     with io.open(os.path.join(WEB, 'compare.html'), encoding='utf-8') as f:
+        return f.read()
+
+
+@app.post('/api/industry-probe')
+def api_industry_probe(body: dict):
+    """업종 강조 4변형(그대로·업종 없음·업종 반복·업종 앞배치)을 실제 데이터로 나란히 본다.
+
+    2026-09-22 사용자 요청 — `eval/industry_weight_probe.py` 결론(유의미한 차이 없음)을
+    눈으로도 직접 확인할 수 있게. 기존 서비스(8000, `search/app.py` 파일)는 건드리지 않는다.
+    이 프로세스 안에서 서비스를 한 번 더 부팅해서 쓴다(첫 요청은 시간이 걸린다).
+    """
+    from experiments.sql_semantic import industry_probe
+    idea = str(body.get('idea') or '').strip()
+    applicant_type = str(body.get('applicant_type') or '').strip()
+    if not idea or not applicant_type:
+        return JSONResponse({'error': '아이디어와 신청자 유형은 필수다'}, status_code=400)
+    payload = {'idea': idea, 'applicant_type': applicant_type,
+               'founded_at': str(body.get('founded_at') or ''),
+               'main_industry': str(body.get('main_industry') or ''),
+               'region': str(body.get('region') or '')}
+    try:
+        out = industry_probe.run(payload, top=5)
+    except Exception as exc:
+        return JSONResponse({'error': '실행 실패: %s: %s' % (type(exc).__name__, str(exc).splitlines()[0])},
+                            status_code=500)
+    return JSONResponse(out)
+
+
+@app.get('/industry-probe', response_class=HTMLResponse)
+def industry_probe_page():
+    with io.open(os.path.join(WEB, 'industry_probe.html'), encoding='utf-8') as f:
+        return f.read()
+
+
+@app.get('/api/industry-results')
+def api_industry_results(run: str = ''):
+    """업종 LLM 추출 결과(`reports/industry_llm_*`)를 읽어 보낸다. 읽기 전용 — DB·LLM 호출 없음.
+
+    2026-09-22 사용자 요청 — luna 전량 결과에서 어떤 업종이 됐는지 눈으로 본다.
+    """
+    from experiments.sql_semantic import industry_results
+    name = run or industry_results.default_run()
+    data = industry_results.load_run(name)
+    if data is None:
+        return JSONResponse({'error': '결과 폴더를 찾을 수 없다: %s' % name[:80],
+                             'runs': industry_results.list_runs()}, status_code=404)
+    data['runs'] = industry_results.list_runs()
+    return JSONResponse(data)
+
+
+@app.get('/industry-results', response_class=HTMLResponse)
+def industry_results_page():
+    with io.open(os.path.join(WEB, 'industry_results.html'), encoding='utf-8') as f:
         return f.read()
 
 

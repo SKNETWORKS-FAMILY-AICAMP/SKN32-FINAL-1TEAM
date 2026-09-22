@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>업종 추출 결과</title>
+<!--
+  experiments/sql_semantic/viewer.py 의 /industry-results (기본 8010 포트).
+  2026-09-22 사용자 요청 — 업종 LLM 추출(luna 전량 등) 결과에서 어떤 업종이 됐는지 눈으로 본다.
+  reports/industry_llm_* 의 결과 파일만 읽는다. DB·LLM 을 부르지 않고 아무것도 저장하지 않는다.
+-->
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--line:#d9dee7;--ink:#20242b;--dim:#6b7280;--head:#1f3864;--tag:#eef1f6;
+  --known:#1d6b3a;--nolimit:#2b5ea7;--unknown:#6b7280;--warn:#8a6212;--bar:#c9d6ec;--barOn:#1f3864}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 "맑은 고딕","Malgun Gothic",system-ui,sans-serif}
+.wrap{max-width:1400px;margin:0 auto;padding:18px 16px 80px}
+h1{font-size:21px;color:var(--head);margin:0 0 4px}
+h2{font-size:15px;color:var(--head);margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.muted{color:var(--dim);font-size:12.5px}
+.notes li{font-size:12.5px;color:#4b5563;margin-bottom:2px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer}
+.tile.on{outline:2px solid var(--head)}
+.tile .n{font-size:22px;font-weight:bold;color:var(--head)}
+.tile .l{font-size:12px;color:var(--dim)}
+.cols{display:grid;grid-template-columns:2fr 1fr;gap:14px}
+@media (max-width:1000px){.cols{grid-template-columns:1fr}}
+.bars{display:flex;flex-direction:column;gap:3px;max-height:460px;overflow:auto}
+.bar{display:grid;grid-template-columns:minmax(120px,240px) 1fr 44px;gap:8px;align-items:center;cursor:pointer;
+  font-size:12.5px;border:0;background:none;text-align:left;padding:2px 4px;border-radius:5px;font-family:inherit;color:inherit}
+.bar:hover,.bar.on{background:#eef2fa}
+.bar .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar .track{background:#f1f3f7;border-radius:4px;height:12px;overflow:hidden}
+.bar .fill{background:var(--bar);height:100%}
+.bar.on .fill{background:var(--barOn)}
+.bar .cnt{text-align:right;color:var(--dim)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-bottom:8px}
+.seg button{border:0;background:#fff;padding:3px 10px;font:inherit;font-size:12.5px;cursor:pointer;color:var(--head)}
+.seg button.on{background:var(--head);color:#fff}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+input,select{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#fff}
+input[type=search]{min-width:240px}
+.chip{display:inline-flex;gap:6px;align-items:center;background:#e7edf8;color:var(--head);border-radius:12px;padding:1px 4px 1px 10px;font-size:12.5px}
+.chip button{border:0;background:none;cursor:pointer;color:var(--head);font-size:14px}
+table{width:100%;border-collapse:collapse}
+th,td{border-bottom:1px solid #eceff4;padding:6px 8px;text-align:left;font-size:12.8px;vertical-align:top}
+th{background:#f4f6fa;color:#55617a;position:sticky;top:0}
+tr.main{cursor:pointer}
+tr.main:hover{background:#fafbfd}
+.st{font-weight:bold;white-space:nowrap}
+.st.known{color:var(--known)}.st.no_limit{color:var(--nolimit)}.st.unknown{color:var(--unknown)}
+.st.not_mentioned{color:#2b5ea7}.st.excluded_only{color:#8a4b12}.st.conditional{color:#8a6212}
+.tag{display:inline-block;background:var(--tag);border-radius:9px;padding:0 7px;font-size:11.5px;color:#44506b;margin:1px 3px 1px 0}
+.tag.lab{background:#dcefe2;color:var(--known)}
+.tag.ex{background:#fbe3e3;color:#a3282b}
+.tag.warn{background:#fdecc8;color:var(--warn)}
+.tag.grp{background:#e7edf8;color:var(--head);border:1px solid #c9d6ec}
+.detail td{background:#fbfcfe;font-size:12.5px;color:#374151}
+.detail .q{background:#f4f6fa;border-radius:6px;padding:6px 8px;margin:4px 0;white-space:pre-wrap;word-break:break-all}
+.pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:10px}
+button.sub{font:inherit;padding:4px 12px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--head);cursor:pointer}
+button.sub:disabled{opacity:.4;cursor:default}
+.err{background:#fdecec;border:1px solid #f3c1c1;color:#a3282b;border-radius:8px;padding:8px 10px;font-size:12.5px}
+a{color:var(--head)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>업종 추출 결과</h1>
+  <p class="muted">LLM 이 공고마다 "어떤 업종만 신청할 수 있나"를 읽은 결과입니다. 결과 파일만 읽고 아무것도 저장하지 않습니다.
+    <a href="/">검증 화면</a> · <a href="/compare">방식 비교</a> · <a href="/industry-probe">업종 강조 실험</a></p>
+
+  <div class="card">
+    <div class="filters">
+      <label class="muted" for="run">결과 폴더</label>
+      <select id="run"></select>
+      <span id="meta" class="muted"></span>
+    </div>
+    <ul class="notes">
+      <li><b>참고용입니다.</b> 이 값은 DB 에 넣지 않았고 공고 탈락 필터로 쓰지 않습니다.</li>
+      <li>품질은 30건 표본을 Codex 가 판정한 것과 비교해 짐작한 수준입니다(사람 정답 아님). luna(medium)는 표본 30건 중 24건이 Codex 와 같았고, 없는 업종을 지어낸 것은 0건이었습니다.</li>
+      <li><b>검사가 내림</b>은 LLM 은 업종이 있다고 했지만 근거 검사에서 확인 불가로 바꾼 공고입니다. 이 중 일부는 LLM 이 맞았습니다 — 눈으로 확인해 볼 만한 곳입니다.</li>
+      <li><b>매칭용 판정</b>: <b>업종 제한 있음</b> · <b>제한 없음(언급 없음·추정)</b> — 신청 자격 문장은 찾았는데 업종 얘기가 없는 공고(대부분의 지원사업) ·
+        <b>제외 업종만</b> — 그 업종만 빼면 누구나 · <b>제한 없음(명시)</b> · <b>조건부·세부사업별</b> — 통합공고나 "중점기업이면 전 업종" 같은 분기가 섞인 공고 ·
+        <b>확인 필요</b> — 검사가 내렸거나, 자격 문장을 못 찾았거나, 업종 후보가 있었지만 검사를 통과하지 못한 공고.
+        "언급 없음"은 추정이라 명시된 제한 없음과 따로 둡니다. 발췌가 6,000자에서 잘렸던 97건은 18,000자로 다시 읽었습니다.</li>
+      <li><b>검사 강도</b>: <b>엄격</b>은 근거 문장이 원문과 글자 그대로 같고 자격 머리말 아래 있어야 합니다. <b>러프</b>는 공백·글머리표 차이를 무시하고, 지원 내용·제외 목록으로 확실한 것만 떨어뜨립니다. 두 결과 모두 같은 LLM 답을 다시 검사한 것입니다(추가 비용 없음). 결과 폴더에서 골라 보세요.</li>
+      <li>업종 이름은 공고 원문 표현 그대로입니다. 초록 표시는 원문이 12개 표준 이름(제조업·건설업 …)과 같은 경우입니다.</li>
+      <li><b>큰 묶음</b>은 원문 표현을 한국표준산업분류(KSIC) 대분류로 규칙에 따라 묶은 것입니다(<code>industry_groups.py</code>). 이름이 헷갈리는 것 — 정보통신공사업·전기공사업은 건설업(F), 의료기기는 제조(C), 여행사는 사업지원(N) — 은 공식 분류를 따랐습니다. 바이오·AI·주력산업처럼 표준 업종이 아닌 표현은 "분야·정책 범주"로 따로 둡니다. 규칙 정확도는 재지 않았습니다.</li>
+    </ul>
+  </div>
+
+  <div id="err" class="err" hidden></div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="cols" style="margin-top:14px">
+    <div class="card">
+      <h2>어떤 업종이 나왔나 <span class="muted">(업종 확인 공고 기준 · 누르면 아래 표가 그 업종만 보입니다)</span></h2>
+      <div class="seg" role="group" aria-label="업종 묶는 방식">
+        <button type="button" id="segGroup" class="on">큰 묶음(KSIC 대분류)</button>
+        <button type="button" id="segText">원문 표현</button>
+        <button type="button" id="segLabel">표준 이름(12개)</button>
+      </div>
+      <div id="gcov" class="muted" style="margin-bottom:6px"></div>
+      <div class="bars" id="bars"></div>
+      <details id="unmappedBox" style="margin-top:8px" hidden><summary class="muted">큰 묶음으로 못 묶은 표현 보기</summary>
+        <div id="unmapped" class="muted" style="margin-top:4px"></div></details>
+    </div>
+    <div class="card">
+      <h2>제외 업종 <span class="muted">(누르면 필터)</span></h2>
+      <div class="bars" id="exbars"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>공고 <span id="count" class="muted"></span></h2>
+    <div class="filters" style="margin-bottom:10px">
+      <select id="fStatus" aria-label="판정">
+        <option value="">판정 전체</option>
+        <option value="known">업종 확인</option>
+        <option value="no_limit">제한 없음</option>
+        <option value="unknown">확인 불가</option>
+        <option value="downgraded">검사가 내림</option>
+      </select>
+      <select id="fIStatus" aria-label="매칭용 판정" hidden></select>
+      <select id="fComplete" aria-label="목록 완전">
+        <option value="">목록 완전 여부 전체</option>
+        <option value="yes">목록 완전</option>
+        <option value="no">목록 불완전</option>
+      </select>
+      <input id="fText" type="search" placeholder="제목·업종·근거 검색" aria-label="검색">
+      <span id="chip"></span>
+    </div>
+    <table>
+      <thead><tr><th style="width:34%">공고</th><th>판정</th><th style="width:30%">허용 업종</th><th>목록</th><th>제외 업종</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="pager">
+      <button type="button" class="sub" id="prev">이전</button>
+      <span id="page" class="muted"></span>
+      <button type="button" class="sub" id="next">다음</button>
+    </div>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const safeUrl = u => /^https?:\/\//i.test(u || '') ? u : '';
+const ST = {known:'업종 확인', no_limit:'제한 없음', unknown:'확인 불가'};
+const PAGE = 50;
+const ISTATUS_ORDER = ['known', 'not_mentioned', 'excluded_only', 'no_limit', 'conditional', 'unknown'];
+let data = null, rows = [], view = 'group', pick = null, pickKind = null, page = 0, open = new Set(), tileKey = '';
+// 여러 번 합친 결과면 merge_history 에서 이 공고를 덮은 실행을 찾는다
+const reread = r => {
+  const hist = (data && data.meta && (data.meta.merge_history || (data.meta.merged_from ? [data.meta.merged_from] : []))) || [];
+  return r.source_run ? hist.find(h => h.override === r.source_run) : null;
+};
+const gname = code => (data && data.group_names && data.group_names[code]) || code;
+
+async function load(run){
+  $('err').hidden = true;
+  const res = await fetch('/api/industry-results' + (run ? '?run=' + encodeURIComponent(run) : ''));
+  const d = await res.json();
+  fillRuns(d.runs || [], run || d.run);
+  if(!res.ok){ $('err').textContent = d.error || ('오류 ' + res.status); $('err').hidden = false; return; }
+  data = d; rows = d.rows; pick = null; pickKind = null; page = 0; open.clear(); tileKey = '';
+  $('fStatus').value = ''; $('fComplete').value = ''; $('fText').value = '';
+  const hasI = !!(d.summary && d.summary.istatus);
+  $('fIStatus').hidden = !hasI;
+  $('fIStatus').innerHTML = '<option value="">매칭용 판정 전체</option>' +
+    (hasI ? ISTATUS_ORDER.map(k => '<option value="' + k + '">' + esc(d.istatus_names[k]) + '</option>').join('') : '');
+  const m = d.meta || {};
+  const cost = m.reverified_from ? '재검사(LLM 호출 없음) · 원답 비용 약 $' + Number(m.source_cost_usd || 0).toFixed(2)
+    : (m.cost_usd != null ? '토큰 기준 약 $' + Number(m.cost_usd).toFixed(2) + ' (청구액 아님)' : '');
+  $('meta').textContent = [m.engine, m.prompt, m.take_all ? '전량' : ('표본 ' + (m.sample || '')),
+    m.profile ? '검사 ' + ({strict: '엄격', rough: '러프'}[m.profile] || m.profile) : '', cost].filter(Boolean).join(' · ');
+  renderTiles(); renderBars(); render();
+}
+
+function fillRuns(runs, current){
+  $('run').innerHTML = runs.map(r => '<option value="' + esc(r.name) + '"' + (r.name === current ? ' selected' : '') + '>' +
+    esc(r.name) + ' (' + esc(r.engine) + (r.take_all ? ', 전량' : ', 표본') + ')</option>').join('');
+}
+
+function renderTiles(){
+  const s = data.summary;
+  const tiles = s.istatus
+    ? [['', '전체', s.total]].concat(ISTATUS_ORDER.map(k => ['i:' + k, data.istatus_names[k], s.istatus[k] || 0]))
+        .concat([['complete', '목록 완전', s.complete], ['downgraded', '검사가 내림', s.downgraded]])
+    : [['', '전체', s.total], ['known', '업종 확인', s.known], ['no_limit', '제한 없음', s.no_limit],
+       ['unknown', '확인 불가', s.unknown], ['complete', '목록 완전', s.complete], ['downgraded', '검사가 내림', s.downgraded],
+       ['excluded', '제외 업종 있음', s.with_excluded]];
+  if(s.newly_known != null) tiles.push(['newly', '비교 결과 대비 새로 업종 확인', s.newly_known]);
+  $('tiles').innerHTML = tiles.map(([k, l, n]) =>
+    '<div class="tile' + (tileKey === k ? ' on' : '') + '" data-k="' + k + '" role="button" tabindex="0"><div class="n">' +
+    esc(n) + '</div><div class="l">' + esc(l) + (s.total && k ? ' · ' + Math.round(n / s.total * 100) + '%' : '') + '</div></div>').join('');
+  document.querySelectorAll('.tile').forEach(t => {
+    const go = () => {
+      tileKey = t.dataset.k;
+      $('fStatus').value = ['known', 'no_limit', 'unknown', 'downgraded'].includes(tileKey) ? tileKey : '';
+      $('fComplete').value = tileKey === 'complete' ? 'yes' : '';
+      $('fIStatus').value = tileKey.startsWith('i:') ? tileKey.slice(2) : '';
+      if(tileKey === 'complete') $('fStatus').value = 'known';
+      pick = null; pickKind = tileKey === 'excluded' ? 'anyExcluded' : null;
+      page = 0; renderTiles(); renderBars(); render();
+    };
+    t.onclick = go; t.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); go(); } };
+  });
+}
+
+function barHtml(items, kind){
+  const max = Math.max(1, ...items.map(x => x[1]));
+  return items.map(([name, n, label]) =>
+    '<button type="button" class="bar' + (pick === name && pickKind === kind ? ' on' : '') + '" data-name="' + esc(name) +
+    '" data-kind="' + kind + '" title="' + esc(label || name) + '"><span class="name">' + esc(label ? name + ' ' + label : name) +
+    '</span><span class="track"><span class="fill" style="display:block;width:' + (n / max * 100).toFixed(1) +
+    '%"></span></span><span class="cnt">' + esc(n) + '</span></button>').join('') || '<div class="muted">없음</div>';
+}
+
+function renderBars(){
+  $('segGroup').classList.toggle('on', view === 'group');
+  $('segText').classList.toggle('on', view === 'text');
+  $('segLabel').classList.toggle('on', view === 'label');
+  const groups = (data.top_groups || []).map(([code, name, n]) => [code, n, name]);
+  $('bars').innerHTML = barHtml(view === 'group' ? groups : (view === 'text' ? data.top_texts : data.top_labels), view);
+  const gc = data.group_coverage;
+  $('gcov').textContent = view === 'group' && gc ? '업종 확인 ' + gc.known + '건 중 표준 대분류 ' + gc.standard + '건 · 분야 범주/전 업종만 ' +
+    gc.only_field_or_all + '건 · 못 묶음 ' + gc.none + '건. 한 공고가 여러 묶음에 들어갈 수 있습니다.' : '';
+  $('unmappedBox').hidden = view !== 'group' || !(data.unmapped || []).length;
+  $('unmapped').innerHTML = (data.unmapped || []).map(([t, n]) => '<span class="tag">' + esc(t) + ' ' + esc(n) + '</span>').join('');
+  $('exbars').innerHTML = barHtml(data.top_excluded, 'excluded');
+  document.querySelectorAll('.bar').forEach(b => b.onclick = () => {
+    const same = pick === b.dataset.name && pickKind === b.dataset.kind;
+    pick = same ? null : b.dataset.name; pickKind = same ? null : b.dataset.kind;
+    tileKey = ''; page = 0; renderTiles(); renderBars(); render();
+  });
+}
+
+function matches(r){
+  const st = $('fStatus').value, cp = $('fComplete').value, q = $('fText').value.trim().toLowerCase();
+  if(st === 'downgraded' ? !r.downgraded : (st && r.status !== st)) return false;
+  if(cp === 'yes' && !(r.status === 'known' && r.complete)) return false;
+  if(cp === 'no' && !(r.status === 'known' && !r.complete)) return false;
+  if(pickKind === 'text' && !(r.status === 'known' && r.allowed.some(a => a.text === pick))) return false;
+  if(pickKind === 'label' && !(r.status === 'known' && r.allowed.some(a => a.label === pick && a.basis === 'exact'))) return false;
+  if(pickKind === 'group' && !(r.status === 'known' && (r.groups || []).includes(pick))) return false;
+  if(pickKind === 'excluded' && !r.excluded.includes(pick)) return false;
+  if(pickKind === 'anyExcluded' && !r.excluded.length) return false;
+  if(tileKey === 'newly' && !(r.status === 'known' && r.counter_status && r.counter_status !== 'known')) return false;
+  const is = $('fIStatus').value;
+  if(is && r.istatus !== is) return false;
+  if(q){
+    const hay = [r.title, r.id, r.quote, r.reason, ...r.allowed.map(a => a.text), ...r.excluded].join(' ').toLowerCase();
+    if(!hay.includes(q)) return false;
+  }
+  return true;
+}
+
+function render(){
+  if(!data) return;
+  const list = rows.filter(matches);
+  const pages = Math.max(1, Math.ceil(list.length / PAGE));
+  page = Math.min(page, pages - 1);
+  $('count').textContent = list.length + '건' + (list.length !== rows.length ? ' / 전체 ' + rows.length + '건' : '');
+  $('chip').innerHTML = pick ? '<span class="chip">' + (pickKind === 'excluded' ? '제외: ' : (pickKind === 'group' ? '묶음: ' : '업종: ')) +
+    esc(pickKind === 'group' ? pick + ' ' + gname(pick) : pick) +
+    ' <button type="button" id="clearPick" aria-label="업종 필터 해제">×</button></span>' :
+    (pickKind === 'anyExcluded' ? '<span class="chip">제외 업종 있음 <button type="button" id="clearPick" aria-label="필터 해제">×</button></span>' : '');
+  if($('clearPick')) $('clearPick').onclick = () => { pick = null; pickKind = null; tileKey = ''; renderTiles(); renderBars(); render(); };
+  const slice = list.slice(page * PAGE, page * PAGE + PAGE);
+  $('tbody').innerHTML = slice.map(r => {
+    const link = safeUrl(r.url) ? '<a href="' + esc(safeUrl(r.url)) + '" target="_blank" rel="noreferrer noopener">' + esc(r.title) + '</a>' : esc(r.title);
+    const allowed = r.allowed.map(a => '<span class="tag' + (a.basis === 'exact' && a.label ? ' lab' : '') + '">' + esc(a.text) + '</span>').join('') +
+      ((r.groups || []).length ? '<div style="margin-top:2px">' + r.groups.map(c => '<span class="tag grp" title="' + esc(gname(c)) + '">' +
+        esc(c === 'X' || c === 'ALL' ? gname(c) : c + ' ' + gname(c)) + '</span>').join('') + '</div>' : '');
+    const ex = r.excluded.map(t => '<span class="tag ex">' + esc(t) + '</span>').join('');
+    const warn = (r.downgraded ? '<br><span class="tag warn">검사가 내림 (LLM: ' + esc(ST[r.llm_status] || r.llm_status) + ')</span>' : '') +
+      (r.truncated ? '<br><span class="tag warn">발췌 잘림</span>' : '');
+    const comp = r.status === 'known' ? (r.complete ? '완전' : '<span class="muted">불완전</span>') : '';
+    let h = '<tr class="main" data-id="' + esc(r.id) + '"><td>' + link + '<div class="muted">' + esc(r.id) + (r.category ? ' · ' + esc(r.category) : '') +
+      '</div></td><td><span class="st ' + esc(r.istatus || r.status) + '">' +
+      esc(r.istatus ? data.istatus_names[r.istatus] : (ST[r.status] || r.status)) + '</span>' + warn +
+      '</td><td>' + (allowed || (r.status === 'known' ? '' : '<span class="muted">-</span>')) + '</td><td>' + comp + '</td><td>' + ex + '</td></tr>';
+    if(open.has(r.id)){
+      h += '<tr class="detail"><td colspan="5"><b>근거 문장</b><div class="q">' + esc(r.quote || '(없음)') + '</div>' +
+        (r.reason ? '<b>LLM 설명</b> ' + esc(r.reason) + '<br>' : '') +
+        (r.downgraded ? '<b>검사가 내린 이유</b> ' + esc(r.downgraded) + '<br>' : '') +
+        (r.istatus_why ? '<b>판정 이유</b> ' + esc(r.istatus_why) + '<br>' : '') +
+        (reread(r) ? '<b>다시 읽음</b> 발췌를 ' + esc(reread(r).override_max_chars) + '자로 늘려 다시 읽은 공고 (' + esc(r.source_run) + ')<br>' : '') +
+        (r.dropped.length ? '<b>검사에서 뺀 업종</b> ' + r.dropped.map(t => '<span class="tag">' + esc(t) + '</span>').join('') + '<br>' : '') +
+        '<span class="muted">기존 정규식 판정: ' + esc(ST[r.regex] || r.regex) +
+        (r.counter_status ? ' · 비교 결과(' + esc(data.meta.counterpart || '') + ') 판정: ' + esc(ST[r.counter_status] || r.counter_status) : '') +
+        '</span></td></tr>';
+    }
+    return h;
+  }).join('') || '<tr><td colspan="5" class="muted">조건에 맞는 공고가 없습니다.</td></tr>';
+  document.querySelectorAll('tr.main').forEach(tr => tr.onclick = e => {
+    if(e.target.closest('a')) return;
+    const id = tr.dataset.id; open.has(id) ? open.delete(id) : open.add(id); render();
+  });
+  $('page').textContent = (page + 1) + ' / ' + pages + ' 쪽';
+  $('prev').disabled = page === 0; $('next').disabled = page >= pages - 1;
+}
+
+$('prev').onclick = () => { page--; render(); };
+$('next').onclick = () => { page++; render(); };
+['fStatus', 'fComplete', 'fIStatus'].forEach(id => $(id).onchange = () => { tileKey = ''; page = 0; renderTiles(); render(); });
+$('fText').oninput = () => { page = 0; render(); };
+const setView = v => { if(['text', 'label', 'group'].includes(pickKind) && pickKind !== v){ pick = null; pickKind = null; }
+  view = v; renderBars(); render(); };
+$('segGroup').onclick = () => setView('group');
+$('segText').onclick = () => setView('text');
+$('segLabel').onclick = () => setView('label');
+$('run').onchange = () => load($('run').value);
+load('');
+</script>
+</body>
+</html>

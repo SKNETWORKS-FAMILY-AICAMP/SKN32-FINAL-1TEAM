@@ -280,10 +280,49 @@
    },
    "snapshot_sha256": "fead76057cda39cdede0c8f9e1162cfaf08aa3ffbdfc4a20ecd7a6f95b3c18aa",
    "added_pairs": 20
+  },
+  {
+   "at": "2026-09-22T01:52:23+00:00",
+   "git": "e5181ab",
+   "qids": [
+    "q053",
+    "q054",
+    "q055",
+    "q056",
+    "q057",
+    "q058"
+   ],
+   "method": {
+    "dense": "chroma@20",
+    "bm25": "char2gram@10",
+    "bm25_input": "embed.build_input (임베딩과 동일)",
+    "truncate": false,
+    "shuffle_seed": 20260915
+   },
+   "corpus_sha256": "9667552b793d82cf638e0a38f5f8794c412f9022b8ffbd86a753b3817e76d439",
+   "index": {
+    "notices": 2390,
+    "vectors": 2390,
+    "chroma": 2390,
+    "stale_vectors": 0,
+    "missing_vectors": 0,
+    "embed_meta": {
+     "model": "BAAI/bge-m3",
+     "revision": "5617a9f61b028005a4858fdac845db406aefb181",
+     "input_version": "v1:title+body+target_text+target_category+category+subcategory",
+     "max_tokens": 512,
+     "dim": 1024,
+     "dtype": "float32",
+     "normalized": true,
+     "byte_order": "little"
+    }
+   },
+   "snapshot_sha256": "4e3165f2885e18ed559ae8d01d1419eb0a5d859fbb2544ab75ce0b9d9a4bff30",
+   "added_pairs": 170
   }
  ],
  "label_version": "topic-v2",
- "pairs": 1773,
- "queries": 60,
- "snapshot_notices": 870
+ "pairs": 1943,
+ "queries": 66,
+ "snapshot_notices": 917
 }

@@ -203,6 +203,22 @@ class RouteTests(unittest.TestCase):
         self.assertIn('근거를 읽지 못했다', body['reason'])
 
 
+# /compare 에 넣는 **명백한 가짜** 입력 (2026-09-21 입력 확장). 실제 개인정보를 쓰지 않는다
+VALID = {
+    'applicant_type': '법인', 'owner_name': '테스트대표', 'birth_date': '1980-01-01',
+    'gender': '응답 안 함', 'region': '경기', 'district': '수원시', 'main_industry': '제조업',
+    'business_no': '0000000000', 'founded_at': '2021-04-01', 'owner_career': '금형 설계 12년',
+    'revenue': [{'item': '검사 장비 판매', 'price': '12000000'}],
+    'idea': '금형 불량 검출 AI', 'top': 5,
+}
+
+
+def valid(**overrides):
+    body = json.loads(json.dumps(VALID))
+    body.update(overrides)
+    return body
+
+
 class CompareTests(unittest.TestCase):
     """직접 검색 비교(/compare). 기존 서비스·실험 DB·모델은 가짜로 바꾼다."""
 
@@ -246,13 +262,12 @@ class CompareTests(unittest.TestCase):
         self.assertIn('보는 공고가 다릅니다', r.text)      # 비교 한계를 화면에 적는다
 
     def test_idea_is_required(self):
-        r, calls = self.post({'idea': '  '}, {}, {}, {})
+        r, calls = self.post(valid(idea='  '), {}, {}, {})
         self.assertEqual(r.status_code, 400)
         self.assertEqual(calls, {})
 
     def test_three_columns_and_overlap(self):
-        r, calls = self.post({'idea': '금형 검사', 'applicant_type': '예비창업자', 'region': '경기',
-                              'top': 3},
+        r, calls = self.post(valid(applicant_type='예비창업자', top=3),
                              self.service(['a', 'b', 'c']), self.service(['a', 'c', 'd']),
                              self.lab(['a', 'z']))
         body = r.json()
@@ -267,7 +282,7 @@ class CompareTests(unittest.TestCase):
 
     def test_service_down_is_shown_not_crashed(self):
         down = {'error': '기존 서비스에 연결하지 못했다'}
-        r, _ = self.post({'idea': 'x'}, down, down, self.lab(['a']))
+        r, _ = self.post(valid(), down, down, self.lab(['a']))
         body = r.json()
         self.assertEqual(r.status_code, 200)
         self.assertIn('hybrid', body['errors'])
@@ -275,14 +290,14 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(len(body['columns']['lab']), 1)
 
     def test_lab_failure_is_shown_not_crashed(self):
-        r, _ = self.post({'idea': 'x'}, self.service(['a']), self.service(['a']),
+        r, _ = self.post(valid(), self.service(['a']), self.service(['a']),
                          RuntimeError('실험 DB 연결 실패'))
         body = r.json()
         self.assertIn('lab', body['errors'])
         self.assertEqual(body['columns']['lab'], [])
 
     def test_top_is_clamped(self):
-        _r, calls = self.post({'idea': 'x', 'top': 999}, self.service([]), self.service([]),
+        _r, calls = self.post(valid(top=999), self.service([]), self.service([]),
                               self.lab([]))
         self.assertEqual(calls['lab'][1], 10)
 
@@ -296,9 +311,9 @@ class CompareTests(unittest.TestCase):
 
         그래서 겹침은 전체 검색 공간이 아니라 Top N 목록 기준이라고 응답·화면에 적는다.
         """
-        top5, _ = self.post({'idea': 'x', 'top': 5}, self.service(['a', 'x']),
+        top5, _ = self.post(valid(top=5), self.service(['a', 'x']),
                             self.service(['a', 'b']), self.lab(['a']))
-        top10, _ = self.post({'idea': 'x', 'top': 10}, self.service(['a', 'x']),
+        top10, _ = self.post(valid(top=10), self.service(['a', 'x']),
                              self.service(['a', 'b', 'x']), self.lab(['a']))
         row5 = {r['notice_id']: r for r in top5.json()['columns']['hybrid']}['x']
         row10 = {r['notice_id']: r for r in top10.json()['columns']['hybrid']}['x']
@@ -369,7 +384,7 @@ class CompareTests(unittest.TestCase):
         with patch.object(viewer, 'call_service', lambda p, m, timeout=120: self.service(['a'])), \
                 patch.object(viewer, 'run_lab', lambda a, t: self.lab(['a'])), \
                 patch.object(viewer, 'lab_notice_ids', boom):
-            body = client.post('/api/compare', json={'idea': 'x'}).json()
+            body = client.post('/api/compare', json=valid()).json()
         self.assertIsNone(body['lab_notice_count'])
         self.assertIn('표시를 하지 않는다', body['lab_ids_error'])
         self.assertIsNone(body['columns']['hybrid'][0]['in_lab_data'])
@@ -378,7 +393,7 @@ class CompareTests(unittest.TestCase):
     def test_bad_top_is_400_not_500(self):
         """P3: 정수가 아닌 top 은 조용히 바꾸지 않고 400 으로 돌려준다."""
         for bad in ('abc', 1.5, '1.5', True):
-            r, calls = self.post({'idea': 'x', 'top': bad}, self.service([]), self.service([]),
+            r, calls = self.post(valid(top=bad), self.service([]), self.service([]),
                                  self.lab([]))
             self.assertEqual(r.status_code, 400, bad)
             self.assertEqual(calls, {}, bad)                       # 검색을 부르지 않는다
@@ -394,6 +409,244 @@ class CompareTests(unittest.TestCase):
         self.assertNotIn("'<a href=\"' + esc(r.url)", html)
         self.assertIn('role="status"', html)
         self.assertIn('aria-live="polite"', html)
+
+
+class CompareInputTests(unittest.TestCase):
+    """/compare 신청자 입력 확장 — docs/COMPARE_INPUT_EXPANSION_TASK_20260921.md '필수 테스트'.
+
+    사용자 결정: 설립일은 개인사업자·법인만 필수, 성별은 여성/남성/응답 안 함 중 필수.
+    """
+
+    REQUIRED = ('applicant_type', 'owner_name', 'birth_date', 'gender', 'region', 'main_industry',
+                'business_no', 'owner_career', 'revenue', 'idea')
+
+    def setUp(self):
+        self.helper = CompareTests()
+
+    def post(self, body):
+        h = self.helper
+        return h.post(body, h.service(['a']), h.service(['a']), h.lab(['a']))
+
+    # 1
+    def test_all_required_calls_each_search_once(self):
+        r, calls = self.post(valid())
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(sorted(m for _p, m in calls['service']), ['dense', 'hybrid'])
+        self.assertIn('lab', calls)
+
+    # 2
+    def test_each_missing_required_is_4xx_and_calls_nothing(self):
+        for field in self.REQUIRED:
+            body = valid()
+            body[field] = [] if field == 'revenue' else ''
+            r, calls = self.post(body)
+            self.assertEqual(r.status_code, 400, field)
+            self.assertEqual(calls, {}, field)
+            self.assertIn(field, [e['field'] for e in r.json()['fields']], field)
+
+    # 3
+    def test_business_needs_business_no_and_founded_at(self):
+        for kind in ('개인사업자', '법인'):
+            for field in ('business_no', 'founded_at'):
+                r, calls = self.post(valid(applicant_type=kind, **{field: ''}))
+                self.assertEqual(r.status_code, 400, (kind, field))
+                self.assertEqual(calls, {})
+
+    # 4
+    def test_prestartup_passes_without_and_drops_stale_values(self):
+        r, calls = self.post(valid(applicant_type='예비창업자', business_no='0000000000',
+                                   founded_at='2021-04-01', self_funding=True,
+                                   self_funding_budget='100'))
+        self.assertEqual(r.status_code, 200)
+        payload = calls['service'][0][0]
+        self.assertEqual(payload['business_no'], '')
+        self.assertEqual(payload['founded_at'], '')
+        self.assertIsNone(payload['self_funding'])
+        self.assertEqual(calls['lab'][0]['founded_at'], '')
+        self.assertTrue(calls['lab'][0]['prestartup'])
+        self.assertEqual(sorted(r.json()['input_summary']['dropped_for_type']),
+                         ['business_no', 'founded_at', 'self_funding', 'self_funding_budget'])
+        r2, _ = self.post(valid(applicant_type='예비창업자', business_no='', founded_at=''))
+        self.assertEqual(r2.status_code, 200)
+
+    # 5
+    def test_rejects_bad_formats(self):
+        cases = {
+            'business_no': valid(business_no='12345'),
+            'birth_date': valid(birth_date='2999-01-01'),
+            'revenue[0].price': valid(revenue=[{'item': '장비', 'price': ''}]),
+            'revenue[0].item': valid(revenue=[{'item': '', 'price': '1000'}]),
+            'revenue[0].price ': valid(revenue=[{'item': '장비', 'price': '-5'}]),
+            'budget_scale': valid(applicant_type='예비창업자', budget_scale='abc'),
+            'self_funding_budget': valid(self_funding=True, self_funding_budget='1.5'),
+            'gender': valid(gender='기타'),
+            'region': valid(region='어딘가'),
+            'district': valid(district='강남구'),               # 경기에 없는 시·군·구
+            'founded_at': valid(founded_at='2999-01-01'),
+        }
+        for name, body in cases.items():
+            r, calls = self.post(body)
+            self.assertEqual(r.status_code, 400, name)
+            self.assertEqual(calls, {}, name)
+
+    def test_errors_never_echo_personal_values(self):
+        secret_name, secret_no = '비밀이름값', '98765'
+        r, _ = self.post(valid(owner_name=secret_name, business_no=secret_no, birth_date='2999-12-31'))
+        text = json.dumps(r.json(), ensure_ascii=False)
+        self.assertEqual(r.status_code, 400)
+        self.assertNotIn(secret_no, text)
+        self.assertNotIn('2999-12-31', text)
+        self.assertNotIn(secret_name, text)
+
+    # 6
+    def test_owner_career_and_team_are_not_duplicated(self):
+        r, calls = self.post(valid(team=[{'name': '테스트팀원', 'role': '개발', 'career': '금형 설계 12년'},
+                                         {'name': '테스트팀원2', 'role': '개발', 'career': '머신비전 5년'}]))
+        team = calls['service'][0][0]['team']
+        careers = [m['career'] for m in team]
+        self.assertEqual(careers.count('금형 설계 12년'), 1)
+        self.assertEqual(team[0]['role'], '대표')
+        self.assertEqual(team[0]['name'], '')                # 대표 행에 이름을 퍼뜨리지 않는다
+        self.assertIn('머신비전 5년', careers)
+
+    def test_half_filled_team_row_is_an_error(self):
+        r, calls = self.post(valid(team=[{'name': '테스트팀원', 'role': '', 'career': ''}]))
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(calls, {})
+
+    # 7
+    def test_hybrid_and_dense_payloads_differ_only_by_search(self):
+        _r, calls = self.post(valid(certifications=['벤처기업'], partners=['테스트기관'],
+                                    equipment=['3D 프린터'], hiring_plan=True))
+        (p1, m1), (p2, m2) = calls['service']
+        self.assertEqual({m1, m2}, {'hybrid', 'dense'})
+        self.assertEqual(p1, p2)                             # search 는 call_service 가 붙인다
+
+    # 8
+    def test_main_industry_reaches_lab_as_industry(self):
+        _r, calls = self.post(valid(main_industry='제조'))
+        self.assertEqual(calls['lab'][0]['industry'], '제조업')
+        _r, calls = self.post(valid(main_industry='우주관광'))
+        self.assertEqual(calls['lab'][0]['industry'], '')    # 어휘에 없으면 넘기지 않는다
+
+    def test_industry_actually_changes_lab_judgement(self):
+        """새 방식에 넘긴 업종이 조건 판정 문구를 실제로 바꾸는지 (진짜 judge_list)."""
+        from experiments.sql_semantic import compare_input, search
+        clean, errors = compare_input.validate(valid(main_industry='제조업'))
+        self.assertEqual(errors, [])
+        applicant, _ = compare_input.lab_applicant(clean)
+        row = {'industry_status': 'known', 'industry_value': '서비스업'}
+        verdict, _why = search.judge_list(row, applicant, 'industry_status', 'industry_value',
+                                          'industry', '업종')
+        self.assertEqual(verdict, search.NO)
+        verdict, why = search.judge_list(row, dict(applicant, industry=''), 'industry_status',
+                                         'industry_value', 'industry', '업종')
+        self.assertIn('미입력', why)
+
+    # 9
+    def test_unused_fields_are_marked_unused(self):
+        r, _ = self.post(valid(equipment=['3D 프린터']))
+        usage = {u['field']: u for u in r.json()['usage']}
+        for field in ('owner_name', 'birth_date', 'business_no', 'equipment'):
+            self.assertEqual(usage[field]['service'], '입력만 받음', field)
+            self.assertEqual(usage[field]['lab'], '미사용', field)
+        self.assertIn('조건 판정', usage['region']['lab'])
+        self.assertIn('조건 판정', usage['main_industry']['lab'])
+        self.assertEqual(usage['district']['lab'], '미사용')
+        self.assertEqual(usage['gender']['lab'], '미사용')
+        self.assertIn('해당 없음', usage['gender']['service'])  # '응답 안 함' 은 규칙을 적용하지 않는다
+
+    def test_gender_no_answer_is_sent_as_empty(self):
+        _r, calls = self.post(valid(gender='응답 안 함'))
+        self.assertEqual(calls['service'][0][0]['gender'], '')
+        _r, calls = self.post(valid(gender='여성'))
+        self.assertEqual(calls['service'][0][0]['gender'], '여성')
+
+    # 10
+    def test_page_hides_and_clears_conditional_fields(self):
+        html = client.get('/compare').text
+        self.assertIn('data-for="business"', html)
+        self.assertIn('data-for="prestartup"', html)
+        self.assertIn("i.value = ''", html)                  # 숨길 때 값을 지운다
+        self.assertIn('유형에 맞지 않는 칸은 아예 보내지 않는다', html)
+
+    # 11
+    def test_no_personal_data_in_response_or_browser_storage(self):
+        r, _ = self.post(valid(owner_name='비밀이름값', business_no='1234567890',
+                               birth_date='1970-07-07'))
+        text = json.dumps(r.json(), ensure_ascii=False)
+        for secret in ('비밀이름값', '1234567890', '1970-07-07'):
+            self.assertNotIn(secret, text)
+        html = client.get('/compare').text
+        self.assertNotIn('localStorage', html)
+        self.assertNotIn('sessionStorage', html)
+        self.assertNotIn('location.search', html)
+        self.assertNotIn('history.pushState', html)
+        self.assertIn("method:'POST'", html)
+
+    # 12
+    def test_accessibility_markers(self):
+        html = client.get('/compare').text
+        self.assertGreaterEqual(html.count('aria-required="true"'), 8)
+        self.assertIn('aria-describedby="e-owner_name"', html)
+        self.assertIn("setAttribute('aria-invalid', 'true')", html)
+        self.assertIn('first.focus()', html)
+        self.assertIn('role="status"', html)
+        self.assertIn('* 필수', html)                         # 색만이 아니라 글자로 필수 표시
+
+    # ---- 2026-09-21 Codex 입력 확장 리뷰
+
+    def test_dates_must_be_exact_yyyy_mm_dd(self):
+        """P2: 뒤에 글자가 붙은 날짜를 잘라 읽고 승인하던 문제."""
+        for field, value in (('birth_date', '1980-01-01garbage'), ('founded_at', '2021-04-01garbage'),
+                             ('birth_date', '19800101'), ('birth_date', '1980-13-01'),
+                             ('founded_at', '2023-02-29')):
+            r, calls = self.post(valid(**{field: value}))
+            self.assertEqual(r.status_code, 400, (field, value))
+            self.assertEqual(calls, {})
+        r, _ = self.post(valid(founded_at='2024-02-29'))          # 윤년은 정상
+        self.assertEqual(r.status_code, 200)
+
+    def test_twenty_rows_ok_twenty_one_rejected(self):
+        """P2: 21번째 행부터 조용히 버리던 문제 — 이제 21개면 오류."""
+        rev = [{'item': '항목%d' % i, 'price': '100'} for i in range(20)]
+        team = [{'name': '', 'role': '', 'career': '이력%d' % i} for i in range(20)]
+        r, _ = self.post(valid(revenue=rev, team=team))
+        self.assertEqual(r.status_code, 200)
+        for field, extra in (('revenue', {'revenue': rev + [{'item': '항목20', 'price': '100'}]}),
+                             ('team', {'team': team + [{'career': '이력20'}]})):
+            r, calls = self.post(valid(**extra))
+            self.assertEqual(r.status_code, 400, field)
+            self.assertIn(field, [e['field'] for e in r.json()['fields']])
+            self.assertEqual(calls, {})
+
+    def test_lab_gets_no_district(self):
+        """P3: 새 방식이 쓰지 않는 시·군·구는 넘기지 않는다."""
+        _r, calls = self.post(valid())
+        self.assertNotIn('district', calls['lab'][0])
+
+    def test_selftest_page_and_hooks(self):
+        """브라우저 동작 시험 페이지. 실제 실행 결과는 브라우저로 연다(문서 VERIFY_UI 3-3)."""
+        page = client.get('/compare/selftest')
+        self.assertEqual(page.status_code, 200)
+        for name in ('이전 선택이 남지 않는다', '예시 전환 순서와 무관하게', '결과·사용 여부 표가 지워진다',
+                     '늦게 온 응답을 버린다', '내용 있는 행 추가·삭제·예시는 무효화',
+                     '20행에서 추가 버튼이 막히고', 'aria-invalid·초점',
+                     '서버 오류의 행 번호를'):
+            self.assertIn(name, page.text)
+        html = client.get('/compare').text
+        self.assertIn('window.__compare', html)
+        self.assertIn('resetForm();', html)                         # 예시 적용 전에 초기화
+        self.assertIn('if(my !== gen) return;', html)               # 늦은 응답 무시
+        self.assertIn('role="group" aria-labelledby="l-revenue" aria-describedby="e-revenue"', html)
+
+    def test_form_options_route(self):
+        body = client.get('/api/compare/form').json()
+        self.assertEqual(body['genders'], ['여성', '남성', '응답 안 함'])
+        self.assertIn('예비창업자', body['applicant_types'])
+        self.assertTrue(any(r['value'] == '경기' and '수원시' in r['districts']
+                            for r in body['regions']))
+        self.assertIn('벤처기업', body['certifications'])
 
 
 class StoredRunTests(unittest.TestCase):

@@ -7,11 +7,13 @@
 <!--
   experiments/sql_semantic/viewer.py 의 /compare (기본 8010 포트).
   같은 입력을 기존 서비스(8000)와 새 방식(정형 필터 → 임베딩)에 넣고 나란히 본다.
-  아무것도 저장하지 않는다. 외부 스크립트·글꼴을 쓰지 않는다. 상태는 글자로도 적는다.
+  입력 계약: experiments/sql_semantic/compare_input.py · 지시서 docs/COMPARE_INPUT_EXPANSION_TASK_20260921.md
+  아무것도 저장하지 않는다 — 브라우저 저장소·주소창에도 넣지 않는다(이름·생년월일·사업자번호).
+  외부 스크립트·글꼴을 쓰지 않는다. 상태·필수·오류는 색만이 아니라 글자로도 적는다.
 -->
 <style>
 :root{--bg:#f5f6f8;--card:#fff;--line:#d9dee7;--ink:#20242b;--dim:#6b7280;--head:#1f3864;
-  --ok:#1d6b3a;--no:#a3282b;--check:#8a6212;--tag:#eef1f6;--all:#e7f3ea;--lab:#eef3fb}
+  --ok:#1d6b3a;--no:#a3282b;--check:#8a6212;--tag:#eef1f6;--all:#e7f3ea}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 "맑은 고딕","Malgun Gothic",system-ui,sans-serif}
 .wrap{max-width:1500px;margin:0 auto;padding:18px 16px 80px}
@@ -20,13 +22,24 @@ h2{font-size:15px;color:var(--head);margin:0 0 8px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
 .muted{color:var(--dim);font-size:12.5px}
 .notes li{font-size:12.5px;color:#4b5563;margin-bottom:2px}
-form .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
-label{font-size:12.5px;color:#44506b;display:flex;flex-direction:column;gap:3px}
-textarea{width:100%;min-height:64px;font:inherit;padding:8px;border:1px solid var(--line);border-radius:6px}
+fieldset{border:1px solid var(--line);border-radius:8px;margin:0 0 12px;padding:10px 12px}
+legend{font-weight:bold;color:var(--head);font-size:13.5px;padding:0 4px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.field{display:flex;flex-direction:column;gap:3px;font-size:12.5px;color:#44506b}
+.field.wide{grid-column:1/-1}
+.req{color:var(--no);font-weight:bold}
+.opt{color:var(--dim)}
+textarea{width:100%;min-height:60px;font:inherit;padding:7px;border:1px solid var(--line);border-radius:6px}
 input,select{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#fff}
+input[aria-invalid="true"],select[aria-invalid="true"],textarea[aria-invalid="true"]{border:2px solid var(--no)}
+.ferr{color:var(--no);font-size:12px;min-height:0}
+.rows .r{display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap}
+.rows .r input{flex:1 1 140px}
 button{font:inherit;padding:7px 16px;border:0;border-radius:6px;background:var(--head);color:#fff;cursor:pointer}
+button.sub{background:#eef1f6;color:var(--head);padding:3px 10px;font-size:12.5px}
 button:disabled{opacity:.5;cursor:wait}
-.chips button{background:#eef1f6;color:var(--head);padding:3px 10px;font-size:12.5px;margin-right:4px}
+.chips button{margin-right:4px}
+.checks label{display:inline-flex;gap:4px;align-items:center;margin:0 10px 4px 0;font-size:12.5px}
 .cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 @media (max-width:1000px){.cols{grid-template-columns:1fr}}
 .col h3{font-size:14px;margin:0 0 2px;color:var(--head)}
@@ -40,7 +53,11 @@ button:disabled{opacity:.5;cursor:wait}
 .v-ok{color:var(--ok);font-weight:bold}.v-no{color:var(--no);font-weight:bold}.v-check{color:var(--check);font-weight:bold}
 .err{background:#fdecec;border:1px solid #f3c1c1;color:var(--no);border-radius:8px;padding:8px 10px;font-size:12.5px}
 .empty{padding:10px;border:1px dashed var(--line);border-radius:8px;color:var(--dim);font-size:12.5px}
+table{width:100%;border-collapse:collapse}
+th,td{border-bottom:1px solid #eceff4;padding:5px 8px;text-align:left;font-size:12.5px;vertical-align:top}
+th{background:#f4f6fa;color:#55617a}
 a{color:var(--head)}
+[hidden]{display:none!important}
 </style>
 </head>
 <body>
@@ -51,50 +68,149 @@ a{color:var(--head)}
 
   <div class="card">
     <h2>읽기 전에</h2>
-    <ul class="notes" id="notes">
+    <ul class="notes">
       <li>두 방식은 <b>보는 공고가 다릅니다.</b> 기존: 운영 DB 전체(마감 공고는 숨김) · 새 방식: 2026-09-18 접수 중 스냅샷.</li>
-      <li><b>검색어가 다릅니다.</b> 기존은 아이디어에 업종·인증 등을 붙인 문장, 새 방식은 아이디어만 씁니다.</li>
+      <li><b>입력을 쓰는 방법이 다릅니다.</b> 칸마다 어느 방식에서 쓰였는지 결과 아래 표에 적습니다. 받기만 하고 쓰지 않는 칸도 있습니다.</li>
       <li>겹침 표시는 <b>화면에 보인 Top N 목록 안에서만</b> 비교한 것입니다. 목록에 없다는 건 N위 밖이라는 뜻이지, 그 방식이 못 찾았다는 뜻이 아닙니다.</li>
-      <li>점수는 코사인 유사도입니다. 정확도·확률이 아닙니다.</li>
-      <li>사람 판정이 없습니다. 여기서 보이는 차이로 어느 방식이 낫다고 말하지 않습니다.</li>
+      <li>점수는 코사인 유사도입니다. 정확도·확률이 아닙니다. 사람 판정이 없어 어느 방식이 낫다고 말하지 않습니다.</li>
+      <li>이름·생년월일·사업자등록번호는 검색에 쓰지 않고 어디에도 저장하지 않습니다. 시험할 때는 가짜 값을 쓰세요.</li>
     </ul>
   </div>
 
-  <div class="card">
-    <form id="f">
-      <div class="chips muted" style="margin-bottom:8px">예시:
-        <button type="button" data-ex="mfg">제조 법인</button>
-        <button type="button" data-ex="pre">예비창업자</button>
-        <button type="button" data-ex="food">외식 소상공인</button>
+  <form id="f" class="card" novalidate>
+    <div class="chips muted" style="margin-bottom:10px">가짜 예시로 채우기:
+      <button type="button" class="sub" data-ex="mfg">제조 법인</button>
+      <button type="button" class="sub" data-ex="pre">예비창업자</button>
+      <button type="button" class="sub" data-ex="food">외식 개인사업자</button>
+      <span>· <span class="req">*</span> 필수</span>
+    </div>
+
+    <fieldset>
+      <legend>1. 신청자 유형</legend>
+      <div class="grid">
+        <label class="field">신청자 유형 <span class="req">* 필수</span>
+          <select id="applicant_type" required aria-required="true" aria-describedby="e-applicant_type">
+            <option value="">고르세요</option>
+            <option>예비창업자</option><option>개인사업자</option><option>법인</option>
+          </select>
+          <span class="ferr" id="e-applicant_type"></span>
+        </label>
       </div>
-      <label>아이디어 설명 (필수)
-        <textarea id="idea" placeholder="예: 금형 공장 불량을 카메라로 자동 검출하는 AI 검사 장비"></textarea>
+    </fieldset>
+
+    <fieldset>
+      <legend>2. 대표자 기본 정보</legend>
+      <div class="grid">
+        <label class="field">이름 <span class="req">* 필수</span>
+          <input id="owner_name" autocomplete="off" required aria-required="true" aria-describedby="e-owner_name">
+          <span class="ferr" id="e-owner_name"></span>
+        </label>
+        <label class="field">생년월일 <span class="req">* 필수</span>
+          <input id="birth_date" type="date" autocomplete="off" required aria-required="true" aria-describedby="e-birth_date">
+          <span class="ferr" id="e-birth_date"></span>
+        </label>
+        <label class="field">성별 <span class="req">* 필수</span>
+          <select id="gender" required aria-required="true" aria-describedby="e-gender">
+            <option value="">고르세요</option>
+            <option>여성</option><option>남성</option><option>응답 안 함</option>
+          </select>
+          <span class="ferr" id="e-gender"></span>
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>3. 사업 정보</legend>
+      <div class="grid">
+        <label class="field">지역(시·도) <span class="req">* 필수</span>
+          <select id="region" required aria-required="true" aria-describedby="e-region"><option value="">고르세요</option></select>
+          <span class="ferr" id="e-region"></span>
+        </label>
+        <label class="field">시·군·구 <span class="opt">(선택)</span>
+          <select id="district" aria-describedby="e-district"><option value="">선택 안 함</option></select>
+          <span class="ferr" id="e-district"></span>
+        </label>
+        <label class="field">주 업종 <span class="req">* 필수</span>
+          <input id="main_industry" placeholder="예: 제조업" required aria-required="true" aria-describedby="e-main_industry">
+          <span class="ferr" id="e-main_industry"></span>
+        </label>
+        <label class="field" data-for="business">사업자등록번호 <span class="req">* 필수 (개인사업자·법인)</span>
+          <input id="business_no" inputmode="numeric" autocomplete="off" placeholder="숫자 10자리" aria-describedby="e-business_no">
+          <span class="ferr" id="e-business_no"></span>
+        </label>
+        <label class="field" data-for="business">설립일 <span class="req">* 필수 (개인사업자·법인)</span>
+          <input id="founded_at" type="date" aria-describedby="e-founded_at">
+          <span class="ferr" id="e-founded_at"></span>
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>4. 대표자 이력</legend>
+      <label class="field wide">대표자 이력 <span class="req">* 필수</span>
+        <textarea id="owner_career" required aria-required="true" aria-describedby="e-owner_career" placeholder="예: 금형 설계 12년"></textarea>
+        <span class="ferr" id="e-owner_career"></span>
       </label>
-      <div class="row" style="margin-top:8px">
-        <label>신청자 유형
-          <select id="applicant_type">
-            <option>법인</option><option>개인사업자</option><option>예비창업자</option>
-          </select>
-        </label>
-        <label>시·도
-          <select id="region">
-            <option value="">선택 안 함</option>
-            <option>서울</option><option>부산</option><option>대구</option><option>인천</option>
-            <option>대전</option><option>울산</option><option>세종</option><option>경기</option>
-            <option>강원</option><option>충북</option><option>충남</option><option>전북</option>
-            <option value="전남광주">광주·전남</option><option>경북</option><option>경남</option><option>제주</option>
-          </select>
-        </label>
-        <label>시·군·구 <input id="district" placeholder="예: 수원시" size="10"></label>
-        <label>설립일 <input id="founded_at" type="date"></label>
-        <label>몇 개씩
-          <select id="top"><option>3</option><option selected>5</option><option>10</option></select>
-        </label>
-        <button id="go" type="submit">비교 검색</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>5. 아이디어와 수익모델</legend>
+      <label class="field wide">아이디어 설명 <span class="req">* 필수</span>
+        <textarea id="idea" required aria-required="true" aria-describedby="e-idea" placeholder="예: 금형 공장 불량을 카메라로 자동 검출하는 AI 검사 장비"></textarea>
+        <span class="ferr" id="e-idea"></span>
+      </label>
+      <div class="field wide" style="margin-top:8px" role="group" aria-labelledby="l-revenue" aria-describedby="e-revenue">
+        <span id="l-revenue">수익모델 단가 <span class="req">* 필수 — 항목과 단가(원) 1개 이상, 최대 20개</span></span>
+        <div class="rows" id="revenue"></div>
+        <div><button type="button" class="sub" id="add-rev">+ 항목 추가</button> <span class="muted" id="rev-limit"></span></div>
+        <span class="ferr" id="e-revenue" role="alert"></span>
       </div>
-      <p class="muted" id="status" role="status" aria-live="polite" style="margin:8px 0 0">처음 한 번은 새 방식 모델을 올리느라 30초~1분 걸릴 수 있습니다.</p>
-    </form>
-  </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>6. 선택 정보</legend>
+      <div class="field wide">보유 인증·확인서 <span class="opt">(선택)</span>
+        <div class="checks" id="certifications"></div>
+        <span class="ferr" id="e-certifications"></span>
+      </div>
+      <div class="grid" style="margin-top:8px">
+        <label class="field" data-for="prestartup">희망 사업 규모(만원) <span class="opt">(선택 · 예비창업자)</span>
+          <input id="budget_scale" inputmode="numeric" aria-describedby="e-budget_scale">
+          <span class="ferr" id="e-budget_scale"></span>
+        </label>
+        <label class="field" data-for="business">자기부담금 <span class="opt">(선택 · 개인사업자·법인)</span>
+          <select id="self_funding"><option value="">선택 안 함</option><option value="yes">가능</option><option value="no">어려움</option></select>
+        </label>
+        <label class="field" data-for="business">자기부담 가능액(만원) <span class="opt">(선택 · '가능'일 때)</span>
+          <input id="self_funding_budget" inputmode="numeric" aria-describedby="e-self_funding_budget">
+          <span class="ferr" id="e-self_funding_budget"></span>
+        </label>
+        <label class="field"><span>채용 계획 <span class="opt">(선택)</span></span>
+          <span><input type="checkbox" id="hiring_plan"> 올해 채용 계획이 있다</span>
+        </label>
+        <label class="field">보유 장비 <span class="opt">(선택 · 쉼표로 구분)</span>
+          <input id="equipment" aria-describedby="e-equipment"><span class="ferr" id="e-equipment"></span>
+        </label>
+        <label class="field">협력기관 <span class="opt">(선택 · 쉼표로 구분)</span>
+          <input id="partners" aria-describedby="e-partners"><span class="ferr" id="e-partners"></span>
+        </label>
+      </div>
+      <div class="field wide" style="margin-top:8px" role="group" aria-labelledby="l-team" aria-describedby="e-team">
+        <span id="l-team">팀 구성원 <span class="opt">(선택 · 대표자 이력과 별도. 이력을 적은 행만 보냅니다. 최대 20명)</span></span>
+        <div class="rows" id="team"></div>
+        <div><button type="button" class="sub" id="add-team">+ 팀원 추가</button> <span class="muted" id="team-limit"></span></div>
+        <span class="ferr" id="e-team" role="alert"></span>
+      </div>
+    </fieldset>
+
+    <div class="grid" style="align-items:end">
+      <label class="field">몇 개씩
+        <select id="top"><option>3</option><option selected>5</option><option>10</option></select>
+      </label>
+      <div><button id="go" type="submit">비교 검색</button></div>
+    </div>
+    <p class="muted" id="status" role="status" aria-live="polite" style="margin:8px 0 0">처음 한 번은 새 방식 모델을 올리느라 30초~1분 걸릴 수 있습니다.</p>
+  </form>
 
   <div id="out"></div>
 </div>
@@ -103,24 +219,291 @@ a{color:var(--head)}
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v === null || v === undefined ? '' : v)
   .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-const VERDICT = {ok:['충족','v-ok'], no:['불충족','v-no'], check:['확인 필요','v-check']};
 const safeUrl = (u) => /^https?:\/\//i.test(String(u || '')) ? String(u) : '';
+const VERDICT = {ok:['충족','v-ok'], no:['불충족','v-no'], check:['확인 필요','v-check']};
 const FIELD = {region:'지역', business_age:'업력', application_period:'접수기간',
   company_size:'기업 규모', industry:'업종'};
 const NAME = {hybrid:'기존 · 하이브리드', dense:'기존 · 의미 검색만', lab:'새 방식 · 정형 필터 → 임베딩'};
-const EX = {
-  mfg: {idea:'중소 금형·사출 공장의 불량을 카메라로 자동 검출하는 비전 AI 검사 장비',
-        applicant_type:'법인', region:'경기', district:'수원시', founded_at:'2021-04-01'},
-  pre: {idea:'대학생 대상 중고 전공서적 거래를 연결하는 모바일 앱',
-        applicant_type:'예비창업자', region:'서울', district:'', founded_at:''},
-  food:{idea:'지역 농산물로 만든 수제 도시락 배달 전문점',
-        applicant_type:'개인사업자', region:'전남광주', district:'목포시', founded_at:'2024-03-01'},
+const MAX_ROWS = 20;                       /* 서버 compare_input.MAX_LIST 와 같다 */
+let FORM = {regions: [], certifications: []};
+
+/* ---------------------------------------------------------------- 반복 행 (수익모델·팀)
+   수익모델은 필수 묶음이다. 입력마다 aria-required 와 오류 설명(e-revenue)을 연결한다. */
+const ROWS = {
+  revenue: {keys: ['item','price'], labels: ['항목 (예: 장비 판매)', '단가(원)'], required: true,
+            button: 'add-rev', limit: 'rev-limit', unit: '개'},
+  team: {keys: ['name','role','career'], labels: ['이름', '역할', '이력'], required: false,
+         button: 'add-team', limit: 'team-limit', unit: '명'},
 };
-document.querySelectorAll('[data-ex]').forEach(b => b.onclick = () => {
-  const e = EX[b.dataset.ex];
-  Object.keys(e).forEach(k => $(k).value = e[k]);
+function updateLimits(){
+  Object.keys(ROWS).forEach(kind => {
+    const n = $(kind).querySelectorAll('.r').length, cfg = ROWS[kind];
+    const full = n >= MAX_ROWS;
+    $(cfg.button).disabled = full;
+    $(cfg.limit).textContent = full ? '최대 ' + MAX_ROWS + cfg.unit + '까지 입력할 수 있습니다' : '';
+  });
+}
+function addRow(kind, values){
+  const cfg = ROWS[kind], host = $(kind);
+  if(host.querySelectorAll('.r').length >= MAX_ROWS){ updateLimits(); return; }
+  const r = document.createElement('div'); r.className = 'r';
+  cfg.keys.forEach((k, i) => {
+    const inp = document.createElement('input');
+    inp.dataset.key = k; inp.placeholder = cfg.labels[i]; inp.setAttribute('aria-label', cfg.labels[i]);
+    inp.setAttribute('aria-describedby', 'e-' + kind);
+    if(cfg.required) inp.setAttribute('aria-required', 'true');
+    inp.value = (values && values[k] !== undefined) ? values[k] : '';
+    r.appendChild(inp);
+  });
+  const del = document.createElement('button');
+  del.type = 'button'; del.className = 'sub'; del.textContent = '삭제'; del.setAttribute('aria-label', '이 행 삭제');
+  del.onclick = () => { r.remove(); updateLimits(); invalidate(); };
+  r.appendChild(del);
+  host.appendChild(r);
+  updateLimits();
+}
+const domRows = (kind) => [...$(kind).querySelectorAll('.r')];
+const rowValues = (r) => Object.fromEntries([...r.querySelectorAll('input')].map(i => [i.dataset.key, i.value.trim()]));
+$('add-rev').onclick = () => { addRow('revenue'); invalidate(); };
+$('add-team').onclick = () => { addRow('team'); invalidate(); };
+
+/* ---------------------------------------------------------------- 신청자 유형에 따른 칸 */
+function applyType(){
+  const t = $('applicant_type').value;
+  const business = (t === '개인사업자' || t === '법인');
+  document.querySelectorAll('[data-for="business"]').forEach(el => {
+    el.hidden = !business;
+    // 숨긴 칸의 이전 값은 지운다 — 전송에 남지 않게
+    if(!business) el.querySelectorAll('input,select').forEach(i => { i.value = ''; clearErr(i.id); });
+  });
+  document.querySelectorAll('[data-for="prestartup"]').forEach(el => {
+    el.hidden = t !== '예비창업자';
+    if(t !== '예비창업자') el.querySelectorAll('input,select').forEach(i => { i.value = ''; clearErr(i.id); });
+  });
+  ['business_no','founded_at'].forEach(id => {
+    $(id).required = business; $(id).setAttribute('aria-required', business ? 'true' : 'false');
+  });
+}
+$('applicant_type').addEventListener('change', applyType);
+$('self_funding').addEventListener('change', () => {
+  if($('self_funding').value !== 'yes') $('self_funding_budget').value = '';
 });
 
+/* ---------------------------------------------------------------- 선택지 (서버와 같은 어휘) */
+let formReady = false;
+fetch('/api/compare/form').then(r => r.json()).then(d => {
+  FORM = d;
+  $('region').insertAdjacentHTML('beforeend', d.regions
+    .map(r => '<option value="' + esc(r.value) + '">' + esc(r.label) + '</option>').join(''));
+  $('certifications').innerHTML = d.certifications
+    .map(c => '<label><input type="checkbox" value="' + esc(c) + '">' + esc(c) + '</label>').join('');
+  formReady = true;
+});
+function fillDistricts(){
+  const r = FORM.regions.find(x => x.value === $('region').value);
+  $('district').innerHTML = '<option value="">선택 안 함</option>' +
+    (r ? r.districts.map(d => '<option>' + esc(d) + '</option>').join('') : '');
+}
+$('region').addEventListener('change', fillDistricts);
+
+/* ---------------------------------------------------------------- 입력 모으기 */
+const split = (v) => v.split(',').map(x => x.trim()).filter(Boolean);
+let sentRowIndex = {revenue: [], team: []};   /* 보낸 행 번호 → 화면 행 번호 (서버 오류를 그 행에 표시) */
+function collect(){
+  const t = $('applicant_type').value;
+  const business = (t === '개인사업자' || t === '법인');
+  const pick = (kind, keep) => {
+    const out = [], map = [];
+    domRows(kind).forEach((r, i) => { const v = rowValues(r); if(keep(v)){ out.push(v); map.push(i); } });
+    sentRowIndex[kind] = map;
+    return out;
+  };
+  const body = {
+    applicant_type: t,
+    owner_name: $('owner_name').value.trim(),
+    birth_date: $('birth_date').value,
+    gender: $('gender').value,
+    region: $('region').value,
+    district: $('district').value,
+    main_industry: $('main_industry').value.trim(),
+    owner_career: $('owner_career').value.trim(),
+    idea: $('idea').value.trim(),
+    revenue: pick('revenue', r => r.item || r.price),
+    certifications: [...document.querySelectorAll('#certifications input:checked')].map(c => c.value),
+    team: pick('team', m => m.name || m.role || m.career),
+    hiring_plan: $('hiring_plan').checked,
+    equipment: split($('equipment').value),
+    partners: split($('partners').value),
+    top: Number($('top').value),
+  };
+  // 유형에 맞지 않는 칸은 아예 보내지 않는다
+  if(business){
+    body.business_no = $('business_no').value.replace(/[^0-9]/g, '');
+    body.founded_at = $('founded_at').value;
+    if($('self_funding').value) body.self_funding = $('self_funding').value === 'yes';
+    if($('self_funding').value === 'yes' && $('self_funding_budget').value.trim())
+      body.self_funding_budget = $('self_funding_budget').value.trim();
+  }
+  if(t === '예비창업자' && $('budget_scale').value.trim()) body.budget_scale = $('budget_scale').value.trim();
+  return body;
+}
+
+/* ---------------------------------------------------------------- 폼 전체 초기화 (예시 적용 전에 반드시)
+   2026-09-21 Codex 리뷰 P1 — 예시가 일부 칸만 덮어써서 이전에 체크한 인증 등이 다음 검색에 섞였다. */
+function resetForm(){
+  $('f').querySelectorAll('input,select,textarea').forEach(el => {
+    if(el.id === 'top') return;                    /* 몇 개씩은 결과 보기 설정이라 둔다 */
+    if(el.type === 'checkbox') el.checked = false; else el.value = '';
+  });
+  $('revenue').innerHTML = ''; $('team').innerHTML = '';
+  addRow('revenue');
+  fillDistricts(); applyType(); clearAllErr(); updateLimits();
+}
+
+/* ---------------------------------------------------------------- 결과 무효화
+   2026-09-21 Codex 리뷰 P2 — 입력을 바꿔도 이전 결과·사용 여부 표가 남아 잘못 읽힐 수 있었다.
+   제출한 입력의 복사본을 페이지 메모리에만 두고, 지금 입력과 다르면 결과를 지운다.
+   검색 중에 입력이 바뀌면 세대 번호를 올려 늦게 온 응답을 버린다. */
+let gen = 0, lastSent = null, shown = false, inFlight = false;
+function invalidate(){
+  if(!shown && !inFlight) return;
+  if(!inFlight && lastSent !== null && JSON.stringify(collect()) === lastSent) return;
+  gen++; inFlight = false; shown = false;
+  $('out').innerHTML = '';
+  $('go').disabled = false;
+  $('status').textContent = '입력이 바뀌었습니다. 다시 검색하세요.';
+}
+$('f').addEventListener('input', invalidate);
+$('f').addEventListener('change', invalidate);
+
+/* ---------------------------------------------------------------- 칸별 오류 */
+const ROW_FIELD = /^(revenue|team)\[(\d+)\](?:\.(\w+))?$/;
+const ERR_ID = (field) => {
+  const base = field.split('[')[0].split('.')[0];
+  return $('e-' + base) ? base : null;
+};
+function clearErr(id){
+  if(!id) return;
+  const e = $('e-' + id); if(e) e.textContent = '';
+  const i = $(id); if(i && i.removeAttribute) i.removeAttribute('aria-invalid');
+}
+function clearAllErr(){
+  document.querySelectorAll('.ferr').forEach(e => e.textContent = '');
+  document.querySelectorAll('[aria-invalid]').forEach(i => i.removeAttribute('aria-invalid'));
+}
+/* 반복 행 오류는 그 행의 입력에 표시한다. fromServer 면 보낸 행 번호를 화면 행 번호로 바꾼다 */
+function rowInputFor(field, fromServer){
+  const m = ROW_FIELD.exec(field);
+  if(!m) return null;
+  let i = Number(m[2]);
+  if(fromServer && sentRowIndex[m[1]][i] !== undefined) i = sentRowIndex[m[1]][i];
+  const row = domRows(m[1])[i];
+  if(!row) return null;
+  return m[3] ? row.querySelector('input[data-key="' + m[3] + '"]') : row.querySelector('input');
+}
+function showErrors(list, fromServer){
+  clearAllErr();
+  let first = null;
+  list.forEach(x => {
+    const id = ERR_ID(x.field);
+    if(!id) return;
+    const box = $('e-' + id);
+    if(!box.textContent.includes(x.message))
+      box.textContent = (box.textContent ? box.textContent + ' · ' : '') + x.message;
+    let inp = rowInputFor(x.field, fromServer);
+    if(!inp){
+      const el = $(id);
+      if(el && ['INPUT','SELECT','TEXTAREA'].includes(el.tagName)) inp = el;
+      else if(el) inp = el.querySelector('input');
+    }
+    if(inp){ inp.setAttribute('aria-invalid', 'true'); if(!first) first = inp; }
+  });
+  if(first) first.focus();
+  $('status').textContent = '입력을 확인하세요 (' + list.length + '개 칸).';
+}
+// 칸을 고치면 그 칸의 오류 표시를 지운다
+document.addEventListener('input', (ev) => {
+  const t = ev.target;
+  if(t && t.id) clearErr(t.id);
+  if(t && t.dataset && t.dataset.key) t.removeAttribute('aria-invalid');
+});
+
+/* 서버와 같은 규칙 (compare_input.validate). 서버도 다시 검사한다 */
+function checkLocal(b){
+  const errs = [], add = (field, message) => errs.push({field, message});
+  const today = new Date().toISOString().slice(0, 10);
+  const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v);
+  const money = (v) => /^[0-9][0-9,]*$/.test(String(v));
+  if(!['예비창업자','개인사업자','법인'].includes(b.applicant_type)) add('applicant_type', '신청자 유형을 고르세요');
+  if(!b.owner_name) add('owner_name', '이름을 입력하세요');
+  if(!b.birth_date) add('birth_date', '생년월일을 입력하세요');
+  else if(!isDate(b.birth_date)) add('birth_date', '날짜 형식(YYYY-MM-DD)이 아닙니다');
+  else if(b.birth_date > today) add('birth_date', '미래 날짜는 입력할 수 없습니다');
+  if(!b.gender) add('gender', '성별을 고르세요 (응답 안 함도 고를 수 있습니다)');
+  if(!b.region) add('region', '시·도를 고르세요');
+  if(!b.main_industry) add('main_industry', '주 업종을 입력하세요');
+  if(b.applicant_type === '개인사업자' || b.applicant_type === '법인'){
+    if(!b.business_no) add('business_no', '사업자등록번호를 입력하세요');
+    else if(!/^\d{10}$/.test(b.business_no)) add('business_no', '숫자 10자리로 입력하세요');
+    if(!b.founded_at) add('founded_at', '설립일을 입력하세요');
+    else if(!isDate(b.founded_at)) add('founded_at', '날짜 형식(YYYY-MM-DD)이 아닙니다');
+    else if(b.founded_at > today) add('founded_at', '미래 날짜는 입력할 수 없습니다');
+  }
+  if(!b.owner_career) add('owner_career', '대표자 이력을 입력하세요');
+  if(!b.idea) add('idea', '아이디어 설명을 입력하세요');
+  /* 수익모델은 화면 행 번호로 알린다 — 그 행 입력에 오류를 붙이려고 */
+  let complete = 0;
+  domRows('revenue').forEach((r, i) => {
+    const v = rowValues(r);
+    if(!v.item && !v.price) return;
+    if(!v.item) add('revenue[' + i + '].item', '항목 이름을 입력하세요');
+    if(!v.price) add('revenue[' + i + '].price', '단가를 입력하세요');
+    else if(!money(v.price)) add('revenue[' + i + '].price', '단가는 0 이상의 정수(원)로 입력하세요');
+    if(v.item && v.price && money(v.price)) complete++;
+  });
+  if(!complete && !errs.some(e => e.field.startsWith('revenue'))) add('revenue', '수익모델 항목과 단가를 1개 이상 입력하세요');
+  if(domRows('revenue').length > MAX_ROWS) add('revenue', '수익모델은 ' + MAX_ROWS + '개까지 입력합니다');
+  domRows('team').forEach((r, i) => {
+    const v = rowValues(r);
+    if((v.name || v.role) && !v.career) add('team[' + i + '].career', '팀원 이력을 입력하거나 행을 지우세요');
+  });
+  ['budget_scale','self_funding_budget'].forEach(k => {
+    if(b[k] !== undefined && !money(b[k])) add(k, '0 이상의 정수 금액(만원)으로 입력하세요');
+  });
+  return errs;
+}
+
+/* ---------------------------------------------------------------- 가짜 예시 */
+const EX = {
+  mfg: {applicant_type:'법인', owner_name:'테스트대표', birth_date:'1980-01-01', gender:'남성',
+        region:'경기', district:'수원시', main_industry:'제조업', business_no:'0000000000', founded_at:'2021-04-01',
+        owner_career:'금형 설계 12년', idea:'중소 금형·사출 공장의 불량을 카메라로 자동 검출하는 비전 AI 검사 장비',
+        revenue:[{item:'검사 장비 판매', price:'12000000'}, {item:'유지보수 구독', price:'300000'}],
+        team:[{name:'테스트팀원', role:'개발', career:'머신비전 연구원 5년'}]},
+  pre: {applicant_type:'예비창업자', owner_name:'테스트대표', birth_date:'2000-01-01', gender:'응답 안 함',
+        region:'서울', district:'', main_industry:'정보통신업', owner_career:'대학 창업동아리 2년',
+        idea:'대학생 대상 중고 전공서적 거래를 연결하는 모바일 앱',
+        revenue:[{item:'거래 수수료', price:'1000'}], budget_scale:'3000', team:[]},
+  food:{applicant_type:'개인사업자', owner_name:'테스트대표', birth_date:'1985-01-01', gender:'여성',
+        region:'전남광주', district:'목포시', main_industry:'음식점업', business_no:'0000000000', founded_at:'2024-03-01',
+        owner_career:'한식 조리 10년', idea:'지역 농산물로 만든 수제 도시락 배달 전문점',
+        revenue:[{item:'도시락', price:'9000'}], team:[]},
+};
+function applyExample(key){
+  const e = EX[key];
+  resetForm();                                     /* 이전 선택(인증·장비·자기부담 등)을 먼저 지운다 */
+  $('applicant_type').value = e.applicant_type; applyType();
+  ['owner_name','birth_date','gender','main_industry','owner_career','idea'].forEach(k => $(k).value = e[k] || '');
+  $('region').value = e.region; fillDistricts(); $('district').value = e.district || '';
+  if(e.business_no !== undefined){ $('business_no').value = e.business_no; $('founded_at').value = e.founded_at; }
+  if(e.budget_scale !== undefined) $('budget_scale').value = e.budget_scale;
+  $('revenue').innerHTML = ''; (e.revenue.length ? e.revenue : [{}]).forEach(v => addRow('revenue', v));
+  (e.team || []).forEach(v => addRow('team', v));
+  clearAllErr(); invalidate();
+}
+document.querySelectorAll('[data-ex]').forEach(b => b.onclick = () => applyExample(b.dataset.ex));
+
+/* ---------------------------------------------------------------- 결과 */
 function conditionTags(c){
   if(!c) return '';
   return Object.keys(c).map(k => {
@@ -159,24 +542,55 @@ function column(key, rows, err, meta, top){
   return h + '</div>';
 }
 
+function usageTable(d){
+  const rows = d.usage || [];
+  if(!rows.length) return '';
+  const dropped = ((d.input_summary || {}).dropped_for_type || []);
+  return '<div class="card"><h2>입력한 칸이 방식별로 어떻게 쓰였나</h2>' +
+    '<p class="muted">"입력만 받음"·"미사용"은 검색 결과에 영향을 주지 않았다는 뜻입니다. ' +
+    '기존 방식(하이브리드·의미 검색만)은 같은 입력을 받습니다.</p>' +
+    (dropped.length ? '<p class="muted">신청자 유형에 맞지 않아 보내지 않은 칸: ' + esc(dropped.join(', ')) + '</p>' : '') +
+    '<table><thead><tr><th>칸</th><th>기존 방식</th><th>새 방식</th></tr></thead><tbody>' +
+    rows.map(r => '<tr><td>' + esc(r.label) + '</td><td>' + esc(r.service) + '</td><td>' + esc(r.lab) + '</td></tr>').join('') +
+    '</tbody></table></div>';
+}
+
 $('f').onsubmit = (ev) => {
   ev.preventDefault();
-  const body = {idea: $('idea').value, applicant_type: $('applicant_type').value, region: $('region').value,
-                district: $('district').value, founded_at: $('founded_at').value, top: Number($('top').value)};
-  if(!body.idea.trim()){ $('status').textContent = '아이디어 설명을 입력하세요.'; return; }
+  const body = collect();
+  const local = checkLocal(body);
+  if(local.length){ showErrors(local, false); return; }
+  clearAllErr();
+  const my = ++gen;
+  lastSent = JSON.stringify(body); inFlight = true; shown = false;
+  $('out').innerHTML = '';
   $('go').disabled = true; $('status').textContent = '검색 중… (처음이면 모델을 올리느라 오래 걸립니다)';
-  fetch('/api/compare', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})
+  fetch('/api/compare', {method:'POST', headers:{'Content-Type':'application/json'}, body: lastSent})
     .then(r => r.json()).then(d => {
-      $('go').disabled = false;
+      if(my !== gen) return;                       /* 그사이 입력이 바뀌었다 — 늦게 온 응답은 버린다 */
+      inFlight = false; $('go').disabled = false;
+      if(d.fields){ showErrors(d.fields, true); return; }
       if(d.error){ $('status').textContent = d.error; return; }
       const e = d.errors || {}, m = d.meta || {};
-      $('status').textContent = '세 방식 Top ' + d.top + ' 목록에 모두 나온 공고 ' + (d.in_all_three || []).length + '건 (초록색)' +
+      $('status').textContent = '검색 완료. 세 방식 Top ' + d.top + ' 목록에 모두 나온 공고 ' + (d.in_all_three || []).length + '건 (초록색)' +
         (d.lab_notice_count ? ' · 새 방식 데이터 ' + d.lab_notice_count + '건' : '') +
         (d.lab_ids_error ? ' · ' + d.lab_ids_error : '');
       $('out').innerHTML = '<p class="muted">' + esc(d.overlap_scope || '') + '</p><div class="cols">' +
-        ['hybrid','dense','lab'].map(k => column(k, d.columns[k] || [], e[k], m[k], d.top)).join('') + '</div>';
-    }).catch(() => { $('go').disabled = false; $('status').textContent = '비교 요청에 실패했습니다.'; });
+        ['hybrid','dense','lab'].map(k => column(k, d.columns[k] || [], e[k], m[k], d.top)).join('') + '</div>' +
+        usageTable(d);
+      shown = true;
+    }).catch(() => {
+      if(my !== gen) return;
+      inFlight = false; $('go').disabled = false; $('status').textContent = '비교 요청에 실패했습니다.';
+    });
 };
+addRow('revenue');
+applyType();
+updateLimits();
+
+/* 자체 시험(/compare/selftest)이 쓰는 손잡이. 화면 동작에는 영향이 없다 */
+window.__compare = {collect, resetForm, applyExample, applyType, invalidate, addRow, EX, MAX_ROWS,
+  state: () => ({gen, shown, inFlight, lastSent}), formReady: () => formReady};
 </script>
 </body>
 </html>
