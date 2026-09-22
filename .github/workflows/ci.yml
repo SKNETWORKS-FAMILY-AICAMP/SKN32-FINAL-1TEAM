@@ -16,7 +16,7 @@ jobs:
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          if ! echo "$PR_TITLE" | grep -qE '^\[[A-Z]+-[0-9]+\]'; then
+          if ! printf '%s\n' "$PR_TITLE" | grep -qE '^\[[A-Z][A-Z0-9]*-[0-9]+\][[:space:]]+.+$'; then
             echo "::error::PR 제목은 '[이슈키] 설명' 형식이어야 합니다. 예: [SB-12] 로그인 기능 구현"
             exit 1
           fi
@@ -107,3 +107,31 @@ jobs:
         if: steps.check.outputs.exists == 'true'
         working-directory: web/frontend
         run: npm run build --if-present
+  
+  refinement-finetuning:
+    name: Korean Text Refinement (Python 3.12)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: korean-text-refinement-finetuning
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: korean-text-refinement-finetuning/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: |
+          python -X utf8 -m unittest discover -s scripts -p "test_*.py"
