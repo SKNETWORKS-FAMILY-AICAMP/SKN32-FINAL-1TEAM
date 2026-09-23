@@ -312,8 +312,19 @@ export const DELIVERABLE_NOTICES = [
   { label: '제출 안내', text: '공고에 따라 AI로 작성한 문서의 제출을 제한하거나 명시를 요구할 수 있습니다. 해당 공고의 제출 요건을 확인해 주세요.' },
 ];
 
+// formats가 있는 항목은 카드 하나에 형식별 버튼을 나눠 그린다(ReviewScreen) — 사업계획서는
+// 워드(.docx)와 한글(.hwp) 중 골라 받는다. 둘 다 같은 내용을 서버가 각 형식으로 렌더한 것이고
+// (app/plan_document_export.py / app/hwp_export.py), 한글은 서버에 rhwp가 있어야 한다.
+// 기본 형식(formats[0])이 '전체 다운로드'와 파일명(name)의 확장자에 쓰인다.
 export const DOWNLOAD_FILES = [
-  { name: '사업계획서.docx', desc: '문장 다듬기까지 마친 최종 사업계획서' },
+  {
+    name: '사업계획서',
+    desc: '문장 다듬기까지 마친 최종 사업계획서',
+    formats: [
+      { ext: 'docx', label: '워드(.docx)' },
+      { ext: 'hwp', label: '한글(.hwp)' },
+    ],
+  },
   { name: 'prototype.zip', desc: '실행 파일(index.html)과 인포그래픽을 담은 압축 파일' },
   { name: '검증결과.pdf', desc: '문서층·산출물층 검증 내역과 대조 결과' },
 ];

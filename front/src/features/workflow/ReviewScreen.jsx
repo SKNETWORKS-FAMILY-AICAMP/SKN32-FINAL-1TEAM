@@ -2,7 +2,7 @@
 import React, {useState} from 'react';
 import {Icon} from '../../components/Icons.jsx';
 import {downloadPlanDocx,downloadPrototypeZip} from '../../dummyDeliverables.js';
-import {downloadPlanDocument} from '../../api.js';
+import {downloadPlanDocument,downloadPlanHwp} from '../../api.js';
 import {buildCodeCheckItems,buildGeneralInfo,buildOverview,detectItemCategory,DOC_SCORE_BY_OUTCOME} from './utils.js';
 import {printVerificationReport} from './verificationReport.js';
 import {ARTIFACT_SCORE_BY_OUTCOME,DELIVERABLE_NOTICES,DOWNLOAD_FILES,FINAL_THRESHOLD,PLAN_DOCUMENT_SECTIONS_REWORKED,REVIEW_PARAGRAPHS} from './data.js';
@@ -19,9 +19,27 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
   // 세부 정보라, 기본은 접어두고 보고 싶은 사람만 눌러서 펼친다(사용자 지적) —
   // 항목별로 따로따로 펼치는 게 아니라 토글 하나로 전부 한 번에 나온다.
   const [showDetails, setShowDetails] = useState(false);
+  // 한글(.hwp)은 서버에 rhwp가 있어야만 만들어진다(RHWP_BIN) — docx처럼 화면 더미로
+  // 대신 만들어줄 수가 없어서, 실패하면 조용히 다른 파일을 주지 말고 사유를 띄운다.
+  const [hwpError, setHwpError] = useState('');
 
-  function handleDownload(file){
-    if (file.name === '사업계획서.docx') {
+  function handleDownload(file, format){
+    // formats가 있는 항목은 어느 형식 버튼을 눌렀는지가 같이 온다 — '전체 다운로드'처럼
+    // 형식을 안 넘기면 기본 형식(formats[0], 사업계획서는 docx)으로 받는다.
+    const ext = format ?? file.formats?.[0]?.ext;
+    if (file.name === '사업계획서' && ext === 'hwp') {
+      if (!projectId) {
+        setHwpError('미리보기 화면에서는 한글 파일을 만들 수 없습니다 — 실제 프로젝트에서 내려받아 주세요.');
+        return;
+      }
+      setHwpError('');
+      downloadPlanHwp(projectId).catch((err) => {
+        console.error('한글 사업계획서 다운로드 실패:', err);
+        setHwpError('한글 파일을 만들지 못했습니다 — 서버에 한글 변환기(rhwp)가 설치돼 있는지 확인해 주세요. 워드(.docx)는 그대로 받을 수 있습니다.');
+      });
+      return;
+    }
+    if (file.name === '사업계획서') {
       // [2026-09-15] projectId가 있으면 실제 백엔드가 초기창업패키지(일반형) 공식 양식(별첨1)
       // 구조로 채운 진짜 .docx를 내려준다(app/plan_document_export.py). projectId가 없는
       // 경우(데모 화면을 프로젝트 없이 미리보기로 연 경우 등)에만 예전 클라이언트 더미로
@@ -171,14 +189,27 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
 
         <div className="flex flex-col gap-3 mb-6">
           {DOWNLOAD_FILES.map((f) => (
-            <div key={f.name} className="rounded-2xl border border-[var(--border)] bg-white p-5 flex items-center justify-between gap-4 flex-wrap">
-              <div>
-                <p className="font-semibold text-[14px] font-mono mb-1">{f.name}</p>
-                <p className="text-[12.5px] text-[var(--muted-fg)]">{f.desc}</p>
+            <div key={f.name} className="rounded-2xl border border-[var(--border)] bg-white p-5">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <p className="font-semibold text-[14px] font-mono mb-1">{f.name}</p>
+                  <p className="text-[12.5px] text-[var(--muted-fg)]">{f.desc}</p>
+                </div>
+                {/* 형식이 여러 개인 항목(사업계획서: 워드/한글)은 버튼을 형식별로 나눠 그린다 —
+                    받기 전에 어느 형식인지 보이게 하려고 드롭다운 대신 버튼을 둘 다 노출한다. */}
+                <div className="flex-shrink-0 flex items-center gap-2 flex-wrap">
+                  {(f.formats ?? [null]).map((fmt) => (
+                    <button key={fmt?.ext ?? 'default'} onClick={() => handleDownload(f, fmt?.ext)}
+                      title="더미 데이터로 만든 파일입니다 — 형식만 실제와 같습니다"
+                      className="rounded-lg border border-[var(--border)] px-4 py-2 text-[13px] font-semibold hover:bg-[var(--bg)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
+                      {fmt ? fmt.label : '다운로드'}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <button onClick={() => handleDownload(f)} title="더미 데이터로 만든 파일입니다 — 형식만 실제와 같습니다" className="flex-shrink-0 rounded-lg border border-[var(--border)] px-4 py-2 text-[13px] font-semibold hover:bg-[var(--bg)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-                다운로드
-              </button>
+              {f.formats && hwpError && (
+                <p role="alert" className="mt-3 text-[12.5px] leading-relaxed text-[var(--danger)]">{hwpError}</p>
+              )}
             </div>
           ))}
         </div>

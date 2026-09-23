@@ -28,7 +28,7 @@ RHWP_BIN=./rhwp.exe
 
 서버(`uvicorn app.main:app --reload`)를 켜고 아래 중 하나로 확인:
 
-- `pytest tests/verify_plan_document_hwp.py` — 실제로 계획서를 만들어서 본문 삽입·개인정보
+- `python verify_plan_document_hwp.py` (`back/`에서 실행) — 실제로 계획서를 만들어서 본문 삽입·개인정보
   삭제·협력기관 매핑까지 24개 항목을 자동 검증한다. `RHWP_BIN`이 안 잡혀 있으면 이 검증은
   자동으로 건너뛰고 0으로 종료된다.
 - Swagger(`/docs`)에서 `GET /projects/{id}/plan-document.hwp` 직접 호출 — 200이면 성공,
