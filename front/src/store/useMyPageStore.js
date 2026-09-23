@@ -29,8 +29,8 @@ const emptyProfile = (name) => ({
     certs: [],
     // 예비창업자 전용
     budgetScale: '',
-    // 개인사업자·법인 전용
-    bizNo: '', openedAt: '',
+    // 개인사업자·법인 전용 (companyName은 사업계획서 일반현황 '기업명' 칸에 쓰인다)
+    bizNo: '', companyName: '', openedAt: '',
     selfFunding: false, selfFundingMin: '', selfFundingMax: '',
   },
   // checkedNo: 조회에 쓴 번호 — 입력칸 값이 바뀌면 이 결과는 무효로 본다.

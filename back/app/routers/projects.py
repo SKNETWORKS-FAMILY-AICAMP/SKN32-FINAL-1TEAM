@@ -847,6 +847,21 @@ def _build_plan_document_data(db: Session, project: Project, plan: BusinessPlan 
     company = db.get(Company, project.company_id)
     section_by_tag = {s.tag: s for s in (plan.sections if plan is not None else [])}
 
+    # [2026-09-23] IntakeForm "사업 계획" 섹션 값은 2026-09-22부터 project_plan_inputs에
+    # 저장되는데(create_project), 이 함수는 그때 같이 안 고쳐져서 계속 companies/projects만
+    # 읽고 있었다 — 그래서 소재지·업종·개발기간을 입력해도 문서엔 ○○로 나왔다(사용자 지적,
+    # 생성된 PDF로 확인). 특히 소재지는 '○○도 ○○시·군'이 코드에 박혀 있어 무슨 값을
+    # 넣어도 안 바뀌었다. 값이 있으면 쓰고, 없을 때만 기존 placeholder로 돌아간다.
+    plan_input = (
+        db.query(ProjectPlanInput).filter(ProjectPlanInput.project_id == project.project_id).one_or_none()
+    )
+    region_text = None
+    dev_period_text = None
+    if plan_input is not None:
+        region_text = ' '.join(x for x in (plan_input.region_sido, plan_input.region_sigungu) if x) or None
+        if plan_input.dev_start_month and plan_input.dev_end_month:
+            dev_period_text = f'{plan_input.dev_start_month} ~ {plan_input.dev_end_month}'
+
     def _section_body(tag: str) -> str:
         section = section_by_tag.get(tag)
         return section.body if section is not None and section.body else '※ 아직 생성된 계획서 문단이 없습니다.'
@@ -899,10 +914,14 @@ def _build_plan_document_data(db: Session, project: Project, plan: BusinessPlan 
     )
 
     def _schedule_rows(rows):
+        # 세부 일정(project_schedule_items)을 입력받는 화면이 아직 없어 대부분 빈 목록이다.
+        # 그때라도 IntakeForm에서 받은 개발 기간은 기간 칸에 넣어준다 — 한 줄이라도 실제
+        # 입력값이 보이는 편이 낫다.
         return [
-            ScheduleRow(str(i + 1), s.category or '○○', s.period or '○○.○○ ~ ○○.○○', s.detail or s.content or '○○')
+            ScheduleRow(str(i + 1), s.category or '○○', s.period or dev_period_text or '○○.○○ ~ ○○.○○',
+                        s.detail or s.content or '○○')
             for i, s in enumerate(rows)
-        ] or [ScheduleRow('1', '○○', '○○.○○ ~ ○○.○○', '○○')]
+        ] or [ScheduleRow('1', '○○', dev_period_text or '○○.○○ ~ ○○.○○', '○○')]
 
     # [2026-09-22 수정] 예전엔 project_partners 테이블(project.partners)에서 읽었는데,
     # 그 테이블엔 아무도 값을 넣지 않는다 — IntakeForm.jsx "협력 기관" 입력은 project_plan_inputs
@@ -937,11 +956,13 @@ def _build_plan_document_data(db: Session, project: Project, plan: BusinessPlan 
         사업자_구분='법인사업자' if company and company.founded_at else '개인사업자',
         대표자_유형=_or_placeholder(company.rep_type if company else None, '단독'),
         사업자등록번호=_or_placeholder(company.business_reg_no if company else None, '○○○-○○-○○○○○'),
-        사업자_소재지='○○도 ○○시·군',
+        사업자_소재지=_or_placeholder(region_text, '○○도 ○○시·군'),
         창업아이템명=item_desc[:60] or '○○기술이 적용된 ○○제품·서비스',
         산출물=_or_placeholder(project.output_summary, '○○ (협약기간 내 목표 — 산출물 형태·수량 입력 필요)'),
         지원분야='○○',
-        전문기술분야=_or_placeholder(project.tech_field, '○○·○○'),
+        # 전문기술분야 입력칸은 아직 없다 — 그 전까진 IntakeForm에서 받는 주업종으로 채운다.
+        전문기술분야=_or_placeholder(
+            project.tech_field or (plan_input.main_industry if plan_input else None), '○○·○○'),
         정부지원사업비=government_amount_text,
         자기부담_현금=self_cash_text,
         자기부담_현물=self_in_kind_text,
@@ -1011,6 +1032,50 @@ def download_plan_document(
         content=docx_bytes,
         media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         headers={'Content-Disposition': f"attachment; filename*=UTF-8''{filename}"},
+    )
+
+
+@router.get('/{project_id}/plan-document.pdf')
+def download_plan_document_pdf(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """download_plan_document(.docx)가 만든 그 파일을 그대로 PDF로 변환해 내려준다
+    (app/pdf_export.py). 화면 미리보기(plan-form 우측 PDF 뷰어)가 쓰는 엔드포인트라
+    inline로 내보낸다 — attachment면 브라우저가 뷰어 대신 다운로드를 띄운다.
+    양식을 다시 그리지 않으므로 미리보기와 내려받는 문서가 어긋날 수 없다."""
+    from app.pdf_export import PdfConversionError, docx_to_pdf
+    from app.plan_document_export import render_plan_docx
+
+    project = _get_owned_project(db, project_id, current_user)
+    match = (
+        db.query(MatchResult)
+        .filter(MatchResult.project_id == project_id)
+        .order_by(MatchResult.match_id.desc())
+        .first()
+    )
+    plan = None
+    if match is not None:
+        plan = (
+            db.query(BusinessPlan)
+            .filter(BusinessPlan.match_id == match.match_id)
+            .order_by(BusinessPlan.plan_id.desc())
+            .first()
+        )
+
+    data, template = _build_plan_document_data(db, project, plan)
+    try:
+        pdf_bytes = docx_to_pdf(render_plan_docx(data, template=template))
+    except PdfConversionError as exc:
+        # 설정/환경 문제(LibreOffice 미설치 등)라 요청을 고쳐도 소용없다 — 503으로 구분해 둔다.
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    filename = quote('사업계획서.pdf')
+    return Response(
+        content=pdf_bytes,
+        media_type='application/pdf',
+        headers={'Content-Disposition': f"inline; filename*=UTF-8''{filename}"},
     )
 
 

@@ -3,8 +3,8 @@ import React, {useState, useEffect} from 'react';
 import {Icon} from '../../components/Icons.jsx';
 import Preparation from '../../components/Preparation.jsx';
 import {buildGeneralInfo,buildOverview,DOC_SCORE_BY_OUTCOME} from './utils.js';
-import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_DOCUMENT_SECTIONS,PLAN_TABLE_EXAMPLE,PSST_OFFICIAL_HEADERS,SCORE_DISCLAIMER,WRITING_SUBTASKS} from './data.js';
-import {getProjectStatus,retryTask} from '../../api.js';
+import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_TABLE_EXAMPLE,SCORE_DISCLAIMER,WRITING_SUBTASKS} from './data.js';
+import {ApiError,fetchPlanDocumentPdf,getProjectStatus,retryTask} from '../../api.js';
 
 // WRITING_SUBTASKS 3개는 전부 PLAN_STAGE_TASKS(data.js)에서 같은 '작성' Agent 몫이라
 // 백엔드에도 별도 task_key 없이 하나(writing)로 묶여 있다 — app/schemas.py RetryTaskRequest 참고.
@@ -161,6 +161,34 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
     poll();
     return () => { cancelled = true; clearTimeout(timer); };
   }, [projectId]);
+
+  // 우측 미리보기는 서버가 내려주는 PDF를 그대로 띄운다 — 내려받는 .docx와 같은 코드
+  // (plan_document_export.render_plan_docx)에서 나온 파일이라 화면과 문서가 어긋날 수 없다.
+  // 예전엔 여기서 HTML로 따로 그렸고, 그래서 양식을 고칠 때마다 두 군데가 달라졌다.
+  const [pdfUrl, setPdfUrl] = useState('');
+  const [pdfError, setPdfError] = useState('');
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfRetry, setPdfRetry] = useState(0);
+
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    let objectUrl = '';
+    setPdfLoading(true);
+    setPdfError('');
+    fetchPlanDocumentPdf(projectId).then((blob) => {
+      if (cancelled) return;
+      objectUrl = URL.createObjectURL(blob);
+      setPdfUrl(objectUrl);
+    }).catch((err) => {
+      if (cancelled) return;
+      console.error('사업계획서 미리보기를 불러오지 못했어요', err);
+      setPdfUrl('');
+      setPdfError(err instanceof ApiError ? String(err.detail) : '사업계획서 미리보기를 불러오지 못했어요.');
+    }).finally(() => { if (!cancelled) setPdfLoading(false); });
+    // 띄우는 동안만 유효한 주소라 화면을 벗어나면 반드시 회수한다(안 하면 탭이 PDF를 계속 들고 있다).
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [projectId, pdfRetry]);
 
   const handleGenerateClick = () => {
     if (generating || runningTasks.length > 0) return;
@@ -320,17 +348,27 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
             </div>
           </div>
 
-          <div className="px-9 py-8 flex flex-col gap-7">
-            <GeneralInfoBlock itemInfo={itemInfo} itemTitle={announcement ? announcement.title : ''} sections={PLAN_DOCUMENT_SECTIONS} />
-
-            {PLAN_DOCUMENT_SECTIONS.map((s, i) => (
-              <div key={s.title}>
-                <h2 className="font-display font-bold text-[17px] mb-2">{PSST_OFFICIAL_HEADERS[i]}</h2>
-                <p className="text-[14px] leading-relaxed text-[var(--fg)]">{s.body}</p>
+          {/* 공식 양식 그대로 보여주려고 브라우저 내장 PDF 뷰어에 맡긴다 — 페이지 넘김·확대·
+              인쇄가 전부 따라온다. 높이를 화면에 맞춰 잡아야 뷰어가 제 몫을 한다. */}
+          <div className="h-[calc(100vh-220px)] min-h-[520px] bg-[var(--muted)]">
+            {pdfUrl ? (
+              <iframe src={pdfUrl} title="사업계획서 미리보기" className="w-full h-full border-0" />
+            ) : (
+              <div className="h-full grid place-items-center px-9 text-center">
+                {pdfLoading ? (
+                  <p className="text-[13.5px] text-[var(--muted-fg)]">사업계획서를 불러오는 중이에요…</p>
+                ) : (
+                  <div className="max-w-[420px]">
+                    <p className="text-[13.5px] font-semibold text-[var(--danger)] mb-1.5">미리보기를 불러오지 못했어요</p>
+                    <p className="text-[12.5px] text-[var(--muted-fg)] leading-relaxed mb-4">{pdfError || '잠시 후 다시 시도해 주세요.'}</p>
+                    <button type="button" onClick={() => setPdfRetry((n) => n + 1)}
+                      className="rounded-lg border border-[var(--border)] px-4 py-2 text-[13px] font-semibold hover:bg-[var(--bg)] transition-colors">
+                      다시 시도
+                    </button>
+                  </div>
+                )}
               </div>
-            ))}
-
-            <PlanExtrasBlock />
+            )}
           </div>
         </div>
       </div>

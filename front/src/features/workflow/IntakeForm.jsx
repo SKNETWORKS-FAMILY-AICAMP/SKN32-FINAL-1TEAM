@@ -70,6 +70,9 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
   const [birthDate, setBirthDate] = useState(draft.birthDate || '');
   const [gender, setGender] = useState(draft.gender || '');
   const [foundedAt, setFoundedAt] = useState(draft.foundedAt || '');
+  const [companyName, setCompanyName] = useState(draft.companyName || '');
+  // 화면에 입력칸은 없고 "내 정보 불러오기"로만 채워지는 값 — 사업계획서 일반현황에 쓴다.
+  const [bizNo, setBizNo] = useState(draft.bizNo || '');
   const [item, setItem] = useState(draft.item || '');
   const [files, setFiles] = useState(draft.files || []);
   const [team, setTeam] = useState(draft.team || [{ ...EMPTY_TEAM_ROW }]);
@@ -115,6 +118,8 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
     setGender(v.gender);
     // 불러온 설립일도 프로젝트 입력 화면에서 확인·수정할 수 있다.
     setFoundedAt(v.foundedAt);
+    setCompanyName(v.companyName);
+    setBizNo(v.bizNo);
     setNoTeam(v.noTeam);
     setTeam(v.team);
     setExtra({ region: v.region, industry: v.industry, certs: v.certs, careers: v.careers, skills: v.skills });
@@ -132,7 +137,7 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
   const missing = [
     [!applicantType, '신청자 유형', 'intake-applicant'],
     [!ceoName.trim() || !birthDate || !gender, '대표자 정보', 'intake-ceo'],
-    [applicantType && !isPreliminary && !foundedAt, '설립일', 'intake-founded'],
+    [applicantType && !isPreliminary && (!companyName || !foundedAt), '사업자 정보', 'intake-founded'],
     [!extra.careers.length || !extra.skills.trim(), '대표자 역량', 'intake-career'],
     [!extra.region.sido || !extra.industry?.trim(), '지역 · 주업종', 'intake-region'],
     [!teamValid, '팀 구성원', 'intake-team'],
@@ -160,6 +165,8 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
       applicantType, item, files,
       ceoName, birthDate, gender,
       foundedAt: isPreliminary ? '' : foundedAt,
+      companyName: isPreliminary ? '' : companyName,
+      bizNo: isPreliminary ? '' : bizNo,
       team: noTeam ? [] : team,
       pricing,
       industry: extra.industry,
@@ -211,7 +218,11 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
 
         {applicantType && !isPreliminary && (
           <Section id="intake-founded" title="사업자 정보" required error={errorFor(error, 'intake-founded')}>
-            <TextInput label="설립일" type="date" value={foundedAt} onChange={setFoundedAt} />
+            {/* 기업명은 사업계획서 일반현황 첫 칸에 그대로 들어간다(companies.company_name). */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <TextInput label="기업명" value={companyName} placeholder="(주)에스브레인" onChange={setCompanyName} />
+              <TextInput label="설립일" type="date" value={foundedAt} onChange={setFoundedAt} />
+            </div>
           </Section>
         )}
 

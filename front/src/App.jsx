@@ -148,6 +148,11 @@ export default function App(){
     biz_type:null,
     ceo_name:info.ceoName||null,
     founded_at:info.foundedAt||null,
+    // [2026-09-23] 서버는 진작부터 받을 준비가 돼 있었는데(ProjectCreateRequest.business_reg_no)
+    // 프론트가 안 보내서, 마이페이지에 사업자등록번호를 적어둬도 사업계획서 일반현황 칸이
+    // ○○○-○○-○○○○○로 나왔다(사용자 지적 — 생성된 PDF 캡처로 확인).
+    business_reg_no:info.bizNo||null,
+    company_name:info.companyName||null,
     description:info.item,
     team_members:(info.team||[]).map(t=>({name:t.name,role:t.role||null,experience:t.career||t.experience||null})),
     pricing_items:(info.pricing||[]).map(p=>({service_name:p.item,unit_price:parsePrice(p.price)})),

@@ -46,7 +46,11 @@ export default function BasicInfo({ error }) {
       {biz && (
         <Section id="mp-biz" error={errorFor(error, 'mp-biz')} title="사업자 정보" required>
           <BizNoField value={b.bizNo} onChange={set('bizNo')} />
+          {/* 기업명은 사업계획서 일반현황 첫 칸(companies.company_name)에 그대로 들어간다 —
+              받는 곳이 없어서 문서에 계속 ○○○으로 나왔다(사용자 지적). 예비창업자는
+              아직 상호가 없으므로 이 구역(biz) 자체가 안 보인다. */}
           <div className="grid gap-3 sm:grid-cols-2 mt-3">
+            <TextInput label="기업명" value={b.companyName} placeholder="(주)에스브레인" onChange={set('companyName')} />
             <TextInput label="설립일" type="date" value={b.openedAt} onChange={set('openedAt')} />
           </div>
           <Badges items={[careerBadge(b.openedAt)]} />
