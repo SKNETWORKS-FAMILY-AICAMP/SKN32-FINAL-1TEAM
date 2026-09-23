@@ -1,16 +1,17 @@
 # rhwp 설치·실행 가이드
 
-사업계획서 `.hwp` 다운로드(`app/hwp_export.py`)는 [rhwp](https://github.com/kyunghwan-AITeam/rhwp)라는
+사업계획서 `.hwp` 다운로드(`app/hwp_export.py`)는 [rhwp](https://github.com/edwardkim/rhwp)라는
 외부 CLI를 써서 `.hwp` 원본 양식에 실제 내용을 채워 넣는다.
 
-**Windows용, v0.8.6 고정 빌드 실행 파일을 아래 링크에서 받으면 된다** — git엔 안 올라가 있으니
-(용량 문제) 각자 다운로드해서 `back/rhwp.exe`로 저장하면 된다.
+**Windows용 실행 파일을 공식 릴리즈에서 받으면 된다** — git엔 안 올라가 있으니(용량 문제)
+각자 다운로드해서 `back/rhwp.exe`로 저장하면 된다.
 
 ## 1. 다운로드
 
-**다운로드 링크: [여기에 링크 넣기]**
+**다운로드: https://github.com/edwardkim/rhwp/releases/tag/v0.8.6**
 
-받은 파일을 `back/rhwp.exe`로 저장한다(파일명·위치 그대로 맞출 것).
+위 페이지에서 `rhwp-v0.8.6-windows-x86_64.zip`을 받아 압축을 풀고, 안에 있는 실행 파일을
+`back/rhwp.exe`로 저장한다(파일명·위치 그대로 맞출 것).
 
 ## 2. `.env`에 경로 설정
 
