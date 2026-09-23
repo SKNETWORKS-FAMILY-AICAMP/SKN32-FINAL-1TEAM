@@ -64,6 +64,10 @@ from app.security import require_admin
 
 router = APIRouter(prefix='/admin', tags=['admin'])
 
+# [2026-09-22, 프론트 전달사항 10번] 기획서 v1.8 5-4 기준 — 산출물 카테고리(html/svg)마다
+# 체크리스트 8항목 합계가 이 값이어야 한다(VerificationChecklistItem.category 참고).
+_CHECKLIST_CATEGORY_MAX_SCORE = 15.0
+
 
 def _get_policy(db: Session) -> VerificationPolicy:
     policy = db.query(VerificationPolicy).order_by(VerificationPolicy.policy_id).first()
@@ -114,7 +118,10 @@ def get_checklist(db: Session = Depends(get_db), _admin: User = Depends(require_
 @router.put('/checklist', response_model=list[ChecklistItemOut])
 def save_checklist(body: list[ChecklistItemIn], db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
     items = {i.check_item_id: i for i in db.query(VerificationChecklistItem).all()}
-    enabled_total = 0.0
+    # [2026-09-22 수정, 프론트 전달사항 10번] v1.8 기준 카테고리(html=웹개발·AI API /
+    # svg=원페이지)별로 8항목·15점 만점이라, 예전 "전체 합 100점" 검증을 "카테고리별 합
+    # 15점" 검증으로 바꿨다 — 다른 카테고리 항목끼리 가중치를 주고받아 맞추는 걸 막는다.
+    enabled_total_by_category: dict[str, float] = {}
     for entry in body:
         item = items.get(entry.check_item_id)
         if item is None:
@@ -122,12 +129,21 @@ def save_checklist(body: list[ChecklistItemIn], db: Session = Depends(get_db), _
         item.weight = entry.weight
         item.enabled = entry.enabled
         if entry.enabled:
-            enabled_total += entry.weight
+            enabled_total_by_category[item.category] = (
+                enabled_total_by_category.get(item.category, 0.0) + entry.weight
+            )
 
-    if round(enabled_total, 2) != 100:
-        # admin-dashboard.html saveChecklistItems() 와 동일한 검증
+    bad_categories = {
+        category: total for category, total in enabled_total_by_category.items()
+        if round(total, 2) != _CHECKLIST_CATEGORY_MAX_SCORE
+    }
+    if bad_categories:
         db.rollback()
-        raise HTTPException(status_code=422, detail=f'사용 중인 항목의 가중치 합이 100점이어야 합니다(현재 {enabled_total}점)')
+        detail = ', '.join(f"{category}: {total}점" for category, total in bad_categories.items())
+        raise HTTPException(
+            status_code=422,
+            detail=f'사용 중인 항목의 카테고리별 가중치 합이 {_CHECKLIST_CATEGORY_MAX_SCORE}점이어야 합니다({detail})',
+        )
 
     db.commit()
     items_sorted = db.query(VerificationChecklistItem).order_by(VerificationChecklistItem.check_item_id).all()

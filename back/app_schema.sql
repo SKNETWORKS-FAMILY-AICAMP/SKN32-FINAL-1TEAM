@@ -196,6 +196,47 @@ CREATE TABLE IF NOT EXISTS project_partners (
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- [2026-09-22 신규, 하정원님] IntakeForm.jsx가 2026-09-18 정재희님 커밋(병합 시점 담당자
+-- 인수인계 불가로 확인 — front/src/features/workflow/ProjectPlanFields.jsx는 그 커밋의
+-- 사용부만 보고 재구성했다)에서 새로 받기 시작한 "사업 계획" 입력을 담는다. App.jsx의
+-- intakeDetailPayload가 이미 이 컬럼명 그대로(snake_case) 보내고 있었는데
+-- ProjectCreateRequest에 대응 필드가 없어 조용히 버려지고 있었다.
+-- project_partners/project_budget_items/project_schedule_items와는 다른 개념 — 그 셋은
+-- 계획서 문서(별첨1 양식)가 "만들어진 뒤" 채워지고, 이 테이블은 그 전 사전 정보 입력
+-- 화면에서 받은 원본이다(project당 1행).
+-- hires/equipment/partners/ceo_careers는 user_profiles.basic_json/capability_json과 같은
+-- 이유로 JSON에 프론트 항목 모양 그대로 저장한다 — 필드 구성이 아직 팀 논의 중이라
+-- (채용예정인력·협업회사 필수입력 전환 제안) 컬럼을 미리 쪼개면 논의가 정리될 때마다
+-- 마이그레이션이 필요해진다.
+CREATE TABLE IF NOT EXISTS project_plan_inputs (
+    input_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '사업 계획 입력 고유 식별자',
+    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id), project당 1행',
+    ceo_birth_date DATE NULL COMMENT '대표자 생년월일',
+    ceo_gender VARCHAR(10) NULL COMMENT '대표자 성별',
+    region_sido VARCHAR(20) NULL COMMENT '사업장 소재지/창업 예정 지역 — 시/도',
+    region_sigungu VARCHAR(50) NULL COMMENT '사업장 소재지/창업 예정 지역 — 시/군/구',
+    main_industry VARCHAR(100) NULL COMMENT '주업종',
+    certifications JSON NULL COMMENT '보유 인증·가입(문자열 배열)',
+    ceo_careers JSON NULL COMMENT '대표자 이력(구분/내용/기간/증빙여부 객체 배열)',
+    ceo_capability TEXT NULL COMMENT '기술력 · 노하우 · 인적 네트워크 서술',
+    occupation VARCHAR(100) NULL COMMENT '예비창업자 직업(직장명 기재 불가) — 계획서 양식 "일반현황" 항목',
+    dev_start_month VARCHAR(7) NULL COMMENT '개발 시작월(YYYY-MM)',
+    dev_end_month VARCHAR(7) NULL COMMENT '개발 종료월(YYYY-MM)',
+    budget_scale_manwon INT UNSIGNED NULL COMMENT '희망 사업화 자금 규모(만원, 예비창업자 전용, 0~2000)',
+    self_funding_allowed BOOLEAN NULL COMMENT '자기부담금 가능 여부(개인사업자·법인 전용, 미입력이면 NULL)',
+    self_cash_limit INT UNSIGNED NULL COMMENT '현금 자기부담 가능액(만원)',
+    self_in_kind_resources TEXT NULL COMMENT '현물 자원(보유 장비·공간 등) 서술',
+    no_hires BOOLEAN NOT NULL DEFAULT FALSE COMMENT '채용 계획 없음 체크 여부',
+    hires JSON NULL COMMENT '채용 계획(직무/인원/요구역량/채용시기 객체 배열)',
+    no_equipment BOOLEAN NOT NULL DEFAULT FALSE COMMENT '필요 장비·시설 없음 체크 여부',
+    equipment JSON NULL COMMENT '장비·시설(이름/상태 객체 배열)',
+    no_partners BOOLEAN NOT NULL DEFAULT FALSE COMMENT '협력 기관 없음 체크 여부',
+    partners JSON NULL COMMENT '협력 기관(기관명·협력내용/상태 객체 배열) — project_partners(계획서 별첨용)와는 다른 테이블',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '입력 등록 일시',
+    UNIQUE KEY ux_project_plan_inputs_project (project_id),
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- ---------------------------------------------------------------------------
 -- 유사 공고 알림 / 매칭 / 자격요건 게이트
 -- ---------------------------------------------------------------------------
@@ -233,6 +274,15 @@ CREATE TABLE IF NOT EXISTS match_results (
     status VARCHAR(20) NOT NULL DEFAULT 'in_progress' COMMENT '프로젝트 진행 상태(in_progress/completed/halted)',
     stage VARCHAR(30) NULL COMMENT '이어하기용 세부 진행 단계(app/pipeline_stages.py의 STAGE_* 상수 중 하나). NULL이면 아직 매칭만 되고 계획서 작성 전',
     progress_percent TINYINT UNSIGNED NULL COMMENT 'stage 안에서도 오래 걸리는 구간(계획서 작성/프로토타입 제작)의 진행률 0~100. 해당 없는 stage에서는 NULL',
+    -- [2026-09-22 신규] 생성 작업 클레임 시각 — Redis 등 별도 브로커 없이 이 컬럼 하나로
+    -- "지금 이 stage를 어떤 워커가 처리 중인지"를 표현한다(app/routers/projects.py
+    -- _try_claim_and_run 참고). NULL이거나 GENERATION_CLAIM_STALE_SECONDS보다 오래됐으면
+    -- "아무도 처리 안 함"으로 보고 새로 클레임할 수 있다 — 서버 재시작·다중 워커 대응.
+    worker_claimed_at DATETIME(6) NULL COMMENT '생성 작업(plan_writing/prototype_building)을 처리 중인 워커의 마지막 클레임/하트비트 시각',
+    -- [2026-09-22 신규, 프론트 전달사항 4번] 생성 작업 실패 처리 — status='failed'로
+    -- 표시하고 stage는 실패한 단계 그대로 둔다. 실패는 복구 루프가 자동 재시도하지 않고
+    -- 사용자가 "다시 시도"를 눌러야(_start_generation 재호출) 재개된다.
+    failure_reason TEXT NULL COMMENT '생성 작업이 실패한 사유(에러 메시지) — status=failed일 때만 값 있음',
     archived_at DATETIME(6) NULL COMMENT '사용자가 프로젝트를 삭제해 보관 처리된 일시(NULL 가능)',
     archived_by VARCHAR(20) NULL COMMENT "보관 처리 주체('user' 고정, NULL 가능)",
     -- [참고] project.py 전역에서 "WHERE project_id=X ORDER BY match_id DESC" 패턴이 매우
@@ -244,6 +294,11 @@ CREATE TABLE IF NOT EXISTS match_results (
     -- [2026-09-17 신규 인덱스] 프로젝트 시작 시 "진행 중(in_progress) 매칭이 있는지" 동시성
     -- 체크(projects.py)가 status로 필터한다.
     KEY ix_match_results_status (status),
+    -- [2026-09-22 신규 인덱스] _recover_orphaned_generations_once가 10초(기본)마다 영원히
+    -- "WHERE stage=X AND (worker_claimed_at IS NULL OR 오래됨)"을 도는데, 이 두 컬럼에
+    -- 인덱스가 없으면 매번 테이블 풀스캔이 된다 — 지금 규모에선 체감 안 되지만 테이블이
+    -- 커질수록/공유 DB 부하가 쌓일수록 그냥 두면 안 되는 debt이라 처음부터 넣는다.
+    KEY ix_match_results_stage_claim (stage, worker_claimed_at),
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE,
     FOREIGN KEY (notice_id) REFERENCES notices(notice_id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
@@ -298,6 +353,23 @@ CREATE TABLE IF NOT EXISTS plan_sections (
     -- 섹션이 이미 있는지"를 매번 확인한다(plan_id, tag 동시 필터) — 복합 인덱스로 교체.
     -- 선두 컬럼이 plan_id라 plan_id 단독 조회도 그대로 커버.
     KEY ix_plan_sections_plan_tag (plan_id, tag),
+    FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- [2026-09-22 신규] Strategy Agent(구글 드라이브 "전략/작성/검증1" 시트 F01~F15)의 중간
+-- 산출물("canonical data") 저장소 — market_analysis/development_plan/team_capability 등
+-- 여러 섹션이 재사용하는 구조화된 데이터. plan_sections(완성된 최종 문단)와 다른 층으로,
+-- 이게 없으면 최종 텍스트만 복붙해 재사용을 흉내낼 수밖에 없었다(models.py PlanCanonicalData
+-- 참고). data_json 내부 구조는 여기서 정하지 않는다 — Strategy Agent 담당자 몫.
+CREATE TABLE IF NOT EXISTS plan_canonical_data (
+    data_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '캐노니컬 데이터 고유 식별자',
+    plan_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES business_plans(plan_id)',
+    data_key VARCHAR(50) NOT NULL COMMENT '블록 이름: item_spec/market_analysis/competitor_analysis/team_capability/development_goal/development_method/development_plan/production_plan/marketing_strategy/business_model/growth_strategy/resource_plan/budget/schedule/web_data 등(시트 그대로)',
+    data_json JSON NOT NULL COMMENT 'F01~F15 각 함수의 실제 output — 내부 구조는 Strategy Agent 담당자가 정함',
+    source_function VARCHAR(10) NULL COMMENT '이 데이터를 만든 F-함수 번호(예: F03) — 재시도 대상 식별·디버깅용',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    UNIQUE KEY uq_plan_canonical_data_plan_key (plan_id, data_key),
     FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
@@ -485,22 +557,41 @@ CREATE TABLE IF NOT EXISTS verification_policies (
 INSERT INTO verification_policies (policy_id)
 SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM verification_policies);
 
+-- [2026-09-22 구조 교체, 프론트 전달사항 10번] 기획서 v1.8 5-4 기준(카테고리별 8항목·
+-- 15점 만점)으로 바꿨다 — category는 이제 산출물 카테고리('html'=웹개발·AI API,
+-- 'svg'=원페이지) 의미이고, item_no(카테고리 안 1~8번)·item_code(artifact_score_reasons.
+-- item_code와 매칭)를 새로 추가했다(models.py VerificationChecklistItem 참고).
 CREATE TABLE IF NOT EXISTS verification_checklist_items (
     check_item_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '코드 기준 자동 검증 항목 고유 식별자',
-    name VARCHAR(100) NOT NULL COMMENT '검증 항목명(예: 실행 파일 정상 로드)',
+    item_code VARCHAR(50) NOT NULL UNIQUE COMMENT 'artifact_score_reasons.item_code와 매칭되는 항목 코드',
+    item_no TINYINT UNSIGNED NOT NULL COMMENT '카테고리 안에서의 순번(1~8) — 1번은 진입 파일 존재 여부, 미충족 시 해당 카테고리 자동 검증 점수 전체 0점(검증 에이전트가 적용)',
+    category VARCHAR(20) NOT NULL COMMENT "산출물 카테고리: 'html'(웹개발·AI API, artifacts.category의 webdev/aiapi) | 'svg'(원페이지, artifacts.category의 onepage)",
+    name VARCHAR(100) NOT NULL COMMENT '검증 항목명(예: 진입 파일 존재 여부)',
     method TEXT NOT NULL COMMENT '판정 방식 설명(파싱/계산 기준)',
-    category VARCHAR(20) NOT NULL COMMENT '구분(정적분석/실행검증)',
-    weight DECIMAL(5,2) NOT NULL COMMENT '가중치 점수',
+    weight DECIMAL(5,2) NOT NULL COMMENT '가중치 점수 — 카테고리별 8항목 합계 15점',
     enabled BOOLEAN NOT NULL DEFAULT TRUE COMMENT '사용 여부(해제 시 채점에서 제외)'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
-INSERT INTO verification_checklist_items (name, method, category, weight, enabled)
-SELECT * FROM (SELECT
-    '실행 파일 정상 로드' AS name, '파일 존재 여부 + 브라우저 렌더링 성공 여부 확인' AS method, '정적분석' AS category, 30.00 AS weight, TRUE AS enabled
-    UNION ALL SELECT '반응형 레이아웃 구현', 'viewport meta·media query 존재 여부 파싱', '정적분석', 20.00, TRUE
-    UNION ALL SELECT '접근성 기본 준수', 'alt 속성·시맨틱 태그·명도 대비 파싱', '정적분석', 20.00, TRUE
-    UNION ALL SELECT '콘솔 에러 없음', '브라우저 콘솔 로그 스캔', '실행검증', 20.00, TRUE
-    UNION ALL SELECT '인포그래픽 포함 여부', '이미지·SVG 파일 존재 여부 파싱', '정적분석', 10.00, FALSE
+INSERT INTO verification_checklist_items (item_code, item_no, category, name, method, weight, enabled)
+SELECT * FROM (
+    -- 웹개발·AI API(HTML) — 8항목, 합계 15점
+    SELECT 'CHECK-HTML-ENTRY-FILE' AS item_code, 1 AS item_no, 'html' AS category, '진입 파일 존재 여부' AS name, '산출물 루트에 지정된 진입 파일(index.html 등)이 실제로 있는지 확인' AS method, 3.00 AS weight, TRUE AS enabled
+    UNION ALL SELECT 'CHECK-HTML-ALT-TEXT', 2, 'html', 'img·svg 대체 텍스트', 'img/svg 요소에 alt(또는 대체 텍스트 접근법)가 있는지 파싱', 2.00, TRUE
+    UNION ALL SELECT 'CHECK-HTML-INPUT-LABEL', 3, 'html', 'input label 연결', 'input 요소가 label(for/aria-label 등)로 연결돼 있는지 파싱', 2.00, TRUE
+    UNION ALL SELECT 'CHECK-HTML-LANG-ATTR', 4, 'html', 'html lang 속성', '<html> 태그에 lang 속성이 있는지 확인', 1.00, TRUE
+    UNION ALL SELECT 'CHECK-HTML-CONTRAST', 5, 'html', '명도 대비 4.5:1', '주요 텍스트·배경 색상 조합의 명도 대비가 4.5:1 이상인지 계산', 2.00, TRUE
+    UNION ALL SELECT 'CHECK-HTML-HEADING', 6, 'html', '제목 계층', 'h1~h6 제목 태그가 순서를 건너뛰지 않고 계층적으로 쓰였는지 확인', 2.00, TRUE
+    UNION ALL SELECT 'CHECK-HTML-README', 7, 'html', '실행·열람 안내 문서', '실행 방법을 설명하는 안내 문서(README 등)가 있는지 확인', 1.00, TRUE
+    UNION ALL SELECT 'CHECK-HTML-SECRET', 8, 'html', '하드코딩된 비밀값', 'API 키·비밀번호 등이 코드에 하드코딩돼 있는지 패턴 스캔', 2.00, TRUE
+    -- 원페이지(SVG) — 8항목, 합계 15점
+    UNION ALL SELECT 'CHECK-SVG-ENTRY-FILE', 1, 'svg', '진입 파일 존재 여부', '산출물 루트에 지정된 진입 파일(svg 등)이 실제로 있는지 확인', 3.00, TRUE
+    UNION ALL SELECT 'CHECK-SVG-ALT-TEXT', 2, 'svg', '대체 텍스트', '이미지·아이콘 요소에 대체 텍스트가 있는지 파싱', 2.00, TRUE
+    UNION ALL SELECT 'CHECK-SVG-KEY-INFO', 3, 'svg', '핵심 정보 항목 포함', '계획서가 요구하는 핵심 정보 항목이 실제로 담겨 있는지 확인', 2.00, TRUE
+    UNION ALL SELECT 'CHECK-SVG-CONTRAST', 4, 'svg', '명도 대비 4.5:1', '주요 텍스트·배경 색상 조합의 명도 대비가 4.5:1 이상인지 계산', 2.00, TRUE
+    UNION ALL SELECT 'CHECK-SVG-INFO-HIERARCHY', 5, 'svg', '정보 계층', '정보가 중요도 순으로 시각적 계층을 이루는지 확인', 2.00, TRUE
+    UNION ALL SELECT 'CHECK-SVG-TEXT-REALNESS', 6, 'svg', '텍스트 실재성', '텍스트가 이미지가 아니라 실제 선택 가능한 텍스트 요소인지 확인', 2.00, TRUE
+    UNION ALL SELECT 'CHECK-SVG-MIN-FONT-SIZE', 7, 'svg', '최소 글자 크기', '본문 텍스트가 정책상 최소 글자 크기 이상인지 확인', 1.00, TRUE
+    UNION ALL SELECT 'CHECK-SVG-README', 8, 'svg', '열람 안내 문서', '결과물 열람 방법을 설명하는 안내 문서가 있는지 확인', 1.00, TRUE
 ) seed
 WHERE NOT EXISTS (SELECT 1 FROM verification_checklist_items);
 

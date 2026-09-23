@@ -22,7 +22,7 @@ coordinate_finalize)은 콘텐츠를 만드는 게 아니라 사용자 판단을
 오케스트레이션 체크포인트라서, "재시도하면 결과물이 바뀐다"는 개념 자체가 안 맞는다 — 그래서
 재시도 인터페이스에서 뺐다. 나머지 6개는 각자 자기 테이블에 대응하는 더미 함수를 아래에 뒀다:
 
-    전략(strategy)              -> plan_sections '3-1'(성장 전략) 섹션 본문
+    전략(strategy)              -> plan_canonical_data(F01~F15 분석 결과 — market_analysis 등)
     작성(writing)                -> plan_sections '1-1'/'2-1'(문제인식/실현가능성) 섹션 본문
     검증-1 · rubric(verify1_rubric)   -> plan_score_reasons 점수
     검증-1 · evidence(verify1_evidence) -> plan_score_reasons의 evidence_locator
@@ -31,6 +31,14 @@ coordinate_finalize)은 콘텐츠를 만드는 게 아니라 사용자 판단을
     검증-2 · static/crosscheck(verify2_static/crosscheck) -> artifact_score_reasons 점수
     검수 · expression(review_expression) -> format_findings (T-P1, 형식 검수)
     검수 · token_check(review_token_check) -> proofread_logs (T-P2, 윤문)
+
+[2026-09-22 수정] '전략'은 원래 plan_sections '3-1'(성장전략 섹션 최종 문단)을 다시 썼는데,
+이건 구글 드라이브 "전략/작성/검증1" 시트의 Strategy Agent(F01~F15)가 하는 일과 안 맞았다
+— 시트에서 최종 문단 텍스트를 쓰는 건 Writing Agent(F16 generate_section)이고, Strategy
+Agent는 market_analysis/growth_strategy 같은 분석 자료만 만든다. 프론트에 '전략'
+(task_key='strategy')을 호출하는 버튼이 실제로 하나도 없어서(WRITING_SUBTASKS는 전부
+'writing'으로만 묶임 — front/src/features/workflow/PlanForm.jsx 참고) 안전하게 바로잡았다
+— plan_canonical_data(2026-09-22 신규, models.py)에 쓰도록 바꿨다.
 """
 import random
 import uuid
@@ -56,6 +64,16 @@ class SectionDraftResult:
     tag: str
     title: str
     body: str
+
+
+@dataclass
+class CanonicalDataResult:
+    """plan_canonical_data 행 하나의 재생성 결과 — Strategy Agent(F01~F15)의 분석 산출물
+    하나. data_json 내부 구조는 여기서 정하지 않는다(models.py PlanCanonicalData 참고)."""
+
+    data_key: str
+    data_json: dict
+    source_function: str | None = None
 
 
 @dataclass
@@ -112,17 +130,34 @@ def _dummy_rescored_item(item_code: str, max_score: Decimal) -> ScoreItemResult:
 # ---------------------------------------------------------------------------
 # 전략
 # ---------------------------------------------------------------------------
-def run_strategy_agent_retry(project_description: str) -> SectionDraftResult:
-    """전략 Agent 재시도 — plan_sections의 '3-1'(성장 전략) 섹션 본문을 다시 쓴다.
-    실제 연동 시: 시장 진입/확장 전략 분석 LLM 호출 결과를 SectionDraftResult로 돌려주면 된다."""
-    return SectionDraftResult(
-        tag='3-1',
-        title='성장 전략',
-        body=(
-            f'(더미 재작성 {uuid.uuid4().hex[:8]}) {project_description} 기반 성장 전략 — '
-            '시장 진입 및 확장 전략을 다시 서술한 문단입니다.'
+def run_strategy_agent_retry(project_description: str) -> list[CanonicalDataResult]:
+    """전략 Agent 재시도 — F01~F15(시장분석/경쟁사분석/개발계획/예산/일정 등)에 해당하는
+    plan_canonical_data 블록을 다시 만든다. 실제 연동 시: 각 F-함수 실제 실행 결과를
+    CanonicalDataResult 리스트로 돌려주면 된다(전부 15개를 매번 다 만들 필요는 없다 —
+    재시도가 실제로 바꿔야 할 블록만 골라 돌려주면 나머지는 그대로 유지된다).
+
+    지금은 더미라 그중 market_analysis/growth_strategy 두 블록만 채운다 — 15개를 전부
+    무작위로 채우면 장황해질 뿐이고, 실제로는 F03/F12처럼 각 블록이 서로 다른 F-함수(와
+    어쩌면 서로 다른 재시도 버튼)로 나뉠 자리라 지금 하나의 더미 함수가 다 떠맡을 이유가
+    없다."""
+    token = uuid.uuid4().hex[:8]
+    return [
+        CanonicalDataResult(
+            data_key='market_analysis', source_function='F03',
+            data_json={
+                'trend_summary': f'(더미 재분석 {token}) {project_description} 관련 시장동향 요약',
+                'pain_points': [f'(더미) 문제점 1 — {token}', '(더미) 문제점 2'],
+            },
         ),
-    )
+        CanonicalDataResult(
+            data_key='growth_strategy', source_function='F12',
+            data_json={
+                'summary': f'(더미 재분석 {token}) {project_description} 기반 성장 전략 요약',
+                'entry_strategy': '(더미) 시장 진입 전략',
+                'expansion_strategy': '(더미) 확장 전략',
+            },
+        ),
+    ]
 
 
 # ---------------------------------------------------------------------------

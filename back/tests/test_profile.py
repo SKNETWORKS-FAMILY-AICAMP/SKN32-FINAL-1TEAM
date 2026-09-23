@@ -268,3 +268,36 @@ def test_has_profile_false_for_biz_type_missing_biz_no(authed_client):
     body = dict(_SAMPLE_BODY, basic=dict(_SAMPLE_BODY['basic'], bizNo=''))
     authed_client.post('/profile', json=body)
     assert authed_client.get('/auth/me').json()['has_profile'] is False
+
+
+# [2026-09-22 신규, 프론트 전달사항 9번] front/src/features/mypage/derive.js
+# missingRequiredFields()가 이미 확정한 기준인데 서버가 안 보고 있던 3가지.
+def test_has_profile_false_for_biz_type_missing_opened_at(authed_client):
+    # individual/corp인데 설립일이 빈 경우 — bizNo만 보던 예전 서버 기준이면 여기서
+    # true가 잘못 나왔을 것.
+    body = dict(_SAMPLE_BODY, basic=dict(_SAMPLE_BODY['basic'], openedAt=''))
+    authed_client.post('/profile', json=body)
+    assert authed_client.get('/auth/me').json()['has_profile'] is False
+
+
+def test_has_profile_false_when_skills_blank(authed_client):
+    body = dict(_SAMPLE_BODY, capability=dict(_SAMPLE_BODY['capability'], skills='   '))
+    authed_client.post('/profile', json=body)
+    assert authed_client.get('/auth/me').json()['has_profile'] is False
+
+
+def test_has_profile_false_when_team_row_incomplete(authed_client):
+    # soloFounder=False인데 팀원 행의 career가 비어있는 경우.
+    body = dict(_SAMPLE_BODY, capability=dict(
+        _SAMPLE_BODY['capability'],
+        team=[{'name': '김개발', 'role': 'CTO', 'career': '', 'status': '재직 중'}],
+    ))
+    authed_client.post('/profile', json=body)
+    assert authed_client.get('/auth/me').json()['has_profile'] is False
+
+
+def test_has_profile_true_when_solo_founder_has_no_team(authed_client):
+    # soloFounder=True면 team이 비어있어도 통과해야 한다(팀 구성 체크 자체가 면제됨).
+    body = dict(_SAMPLE_BODY, capability=dict(_SAMPLE_BODY['capability'], soloFounder=True, team=[]))
+    authed_client.post('/profile', json=body)
+    assert authed_client.get('/auth/me').json()['has_profile'] is True
