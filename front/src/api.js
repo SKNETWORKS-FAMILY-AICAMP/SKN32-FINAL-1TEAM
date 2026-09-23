@@ -128,6 +128,11 @@ async function downloadFile(path,filename){
 // 더미(dummyDeliverables.js) 대신 이 함수를 쓰면 실제 양식이 반영된 파일을 받는다.
 export const downloadPlanDocument=(projectId,filename='사업계획서.docx')=>downloadFile(`/projects/${projectId}/plan-document.docx`,filename);
 
+// GET /projects/{id}/plan-document.hwp — 위 docx와 같은 데이터를 한글 원본 양식(.hwp)에
+// 채워서 내려준다(app/hwp_export.py). 서버에 rhwp 실행 파일이 있어야 하고(RHWP_BIN,
+// back/scripts/README.md), 없으면 500이 온다 — docx와 달리 클라이언트 더미 폴백이 없다.
+export const downloadPlanHwp=(projectId,filename='사업계획서.hwp')=>downloadFile(`/projects/${projectId}/plan-document.hwp`,filename);
+
 // GET /projects/{id}/plan-document.pdf — 위 docx를 서버가 LibreOffice로 변환한 PDF(app/pdf_export.py).
 // 화면(PlanForm 우측 뷰어)에 띄우려고 Blob으로 받는다 — iframe src에 엔드포인트를 그대로 걸면
 // 401 재발급 처리가 안 되고, 변환 실패(503) 사유도 브라우저 기본 화면에 묻혀 안 보인다.
