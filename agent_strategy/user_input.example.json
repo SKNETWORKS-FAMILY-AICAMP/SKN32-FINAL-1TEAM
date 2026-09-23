@@ -1,0 +1,8 @@
+{
+  "documentType": "pre_startup",
+  "general": {"founderName": "", "plannedCompanyName": "", "occupation": "", "supportField": "", "businessPeriodMonths": 12},
+  "item": {"name": "", "description": "", "customer": "", "problem": "", "solution": "", "expectedDeliverables": []},
+  "team": {"representative": {"name": "", "capabilities": [], "responsibilities": []}, "members": [], "partnerCompanies": []},
+  "budgetPlan": {"totalGovernmentSupport": 0, "phases": [{"name": "1단계", "items": []}, {"name": "2단계", "items": []}]},
+  "preferences": {"tone": "공식적·근거 중심", "targetMarket": "", "additionalNotes": ""}
+}
