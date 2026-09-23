@@ -19,7 +19,7 @@ import {useWorkflowStore} from './store/useWorkflowStore.js';
 // localStorage에 남겨두고, 다시 열 때 거기부터 이어서 보여준다.
 const RESUMABLE_VIEWS=['plan-progress','plan-form','artifact-progress','artifact-result','final-verdict','review'];
 // 저장된 화면이 없을 때 서버 진행 단계(match_results.stage)로 돌아갈 화면을 정한다.
-const VIEW_BY_STAGE={plan_writing:'plan-progress',plan_review_pending:'plan-form',prototype_building:'artifact-progress'};
+const VIEW_BY_STAGE={plan_writing:'plan-progress',plan_review_pending:'plan-form',prototype_building:'artifact-progress',artifact_review:'artifact-result',final_review_pending:'final-verdict'};
 const lastViewKey=(projectId)=>`sbrain-last-view:${projectId}`;
 
 function parsePrice(text){
@@ -61,6 +61,7 @@ function intakeDetailPayload(info){
 
 export default function App(){
  const projectRequest=useRef(0);
+ const authVersion=useRef(0);
  const [view,setViewState]=useState('landing');
  // 화면을 떠나는 즉시 진행 중이던 요청의 화면 갱신 권한을 무효화한다.
  const setView=(next)=>{projectRequest.current++;setViewState(next)};
@@ -240,12 +241,17 @@ export default function App(){
  };
  // acc는 백엔드가 돌려준 실제 UserOut(POST /auth/google 응답) — notify_enabled도 여기 들어있어서
  // 로컬 동의 체크박스값(consent.notifyAgreed) 대신 서버가 실제로 저장한 값을 신뢰한다.
- const handleLoginSuccess=acc=>{setUser(acc);setLoginOpen(false);setNotifyEnabled(acc.notify_enabled);useMyPageStore.getState().loadProfiles()};
+ const handleLoginSuccess=acc=>{authVersion.current++;setUser(acc);setLoginOpen(false);setNotifyEnabled(acc.notify_enabled);useMyPageStore.getState().loadProfiles()};
+ const handleProfileSaved=async()=>{
+  const version=authVersion.current;
+  const updated=await fetchCurrentUser();
+  if(version===authVersion.current&&updated)setUser(updated);
+ };
  // 로그아웃은 화면 전환이 먼저 느껴지도록 user state부터 지우고, 서버 세션 쿠키 삭제(POST
  // /auth/logout)는 기다리지 않고 백그라운드로 보낸다 — 실패해도(오프라인 등) 어차피 프론트
  // 쪽에서는 로그아웃된 것처럼 보여주면 되고, logout() 내부에서 에러를 삼키게 해뒀다.
  // 마이페이지 값은 localStorage에 남으므로 같은 브라우저의 다음 사용자에게 보이지 않게 비운다.
- const handleLogout=()=>{projectRequest.current++;logout();useMyPageStore.getState().reset();resetProject();setUser(null);setView('landing')};
+ const handleLogout=()=>{authVersion.current++;projectRequest.current++;logout();useMyPageStore.getState().reset();resetProject();setUser(null);setView('landing')};
  // 관리자 판별은 프론트 이메일 목록이 아니라 백엔드가 내려주는 실제 role로 한다.
  const isAdmin=user?.role==='admin';
  if(!authChecked)return null; // 세션 확인 전 깜빡임(로그인 화면 잠깐 보였다 사라짐) 방지
@@ -256,7 +262,7 @@ export default function App(){
   {/* onSaved: 저장 성공 시 /auth/me를 다시 불러 user.has_profile을 최신값으로 갱신한다 —
       안 하면 로그인 시점에 false였던 값이 이번 세션 내내 그대로 남아 "시작하기"가 계속
       막힌다(방금 막 저장했는데도). */}
-  {view==='mypage'&&<MyPage onSaved={()=>fetchCurrentUser().then(u=>{if(u)setUser(u)})}/>}
+  {view==='mypage'&&<MyPage onSaved={handleProfileSaved}/>}
   {view==='dashboard'&&<Dashboard onNewProject={startNewProject} onOpenProject={handleOpenProject}/>}
   {view==='intake'&&<IntakeForm initialValues={itemInfo} onSubmit={handleIntakeSubmit} onBack={()=>setView('dashboard')} backLabel="내 프로젝트로 돌아가기"/>}
   {view==='match-progress'&&<MatchProgress ready={!!projectId} onComplete={()=>setView('match-results')}/>}

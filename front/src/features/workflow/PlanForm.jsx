@@ -146,7 +146,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
     let timer = null;
     const poll = () => getProjectStatus(projectId).then((status) => {
       if (cancelled) return;
-      const running = status?.stage === 'prototype_building';
+      const running = status?.stage === 'prototype_building' && status?.match_status !== 'failed';
       setGenerating(running);
       // 이미 생성이 돌고 있으면 점수 미달 확인창은 의미가 없다.
       if (running) setConfirmProceed(false);
@@ -156,13 +156,14 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
       // 상태를 못 읽었다고 버튼까지 막지는 않는다.
       if (cancelled) return;
       console.error('생성 상태를 확인하지 못했어요', err);
+      timer = setTimeout(poll, STATUS_POLL_MS);
     });
     poll();
     return () => { cancelled = true; clearTimeout(timer); };
   }, [projectId]);
 
   const handleGenerateClick = () => {
-    if (generating) return;
+    if (generating || runningTasks.length > 0) return;
     if (!passed) { setConfirmProceed(true); return; }
     onGenerate();
   };
@@ -177,7 +178,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
   // 체크한 라벨이 전부 같은 task_key('writing')로 묶이므로 중복 없이 한 번만 호출한다.
   const handleRewrite = async () => {
     // 프로토타입이 이 계획서로 만들어지는 중이라 지금 본문을 다시 쓰면 둘이 어긋난다.
-    if (generating) return;
+    if (generating || runningTasks.length > 0) return;
     if (checkedTasks.length === 0) return;
     const picked = checkedTasks;
     setRunningTasks(picked);
@@ -278,7 +279,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
           </div>
 
           <div className="flex flex-col gap-2 mt-4">
-            <button onClick={handleGenerateClick} disabled={generating}
+            <button onClick={handleGenerateClick} disabled={generating || runningTasks.length > 0}
               className="w-full rounded-xl bg-[var(--primary)] text-white py-3 text-[14.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--primary-dim)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
               {generating ? '프로토타입 생성 중…' : '프로토타입 생성'}
             </button>
@@ -297,7 +298,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
                   className="text-[13px] font-semibold text-[var(--muted-fg)] hover:text-[var(--fg)] transition-[color,scale] duration-150 ease-out active:scale-[0.96]">
                   취소
                 </button>
-                <button onClick={onGenerate} className="text-[13px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">
+                <button disabled={generating || runningTasks.length > 0} onClick={()=>{if(!generating && runningTasks.length===0)onGenerate()}} className="text-[13px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">
                   그래도 진행하기
                 </button>
               </div>

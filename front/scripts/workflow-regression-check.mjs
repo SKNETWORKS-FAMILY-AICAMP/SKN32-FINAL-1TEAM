@@ -37,6 +37,7 @@ try{
   const {MatchResults}=await server.ssrLoadModule('/src/features/workflow/MatchResults.jsx');
   const {default:GenerationProgress}=await server.ssrLoadModule('/src/features/workflow/GenerationProgress.jsx');
   const {default:App}=await server.ssrLoadModule('/src/App.jsx');
+  const {PlanForm}=await server.ssrLoadModule('/src/features/workflow/PlanForm.jsx');
   const {useWorkflowStore:store}=await server.ssrLoadModule('/src/store/useWorkflowStore.js');
   const file=new Blob(['attachment']);
   const draft={applicantType:'individual',ceoName:'대표',birthDate:'1990-01-01',gender:'남성',foundedAt:'2024-01-01',
@@ -116,5 +117,47 @@ try{
   assert.ok(ui.component('ReviewScreen'));assert.equal(cache.get('sbrain-last-view:2'),'review');
   createRequest.resolve(response({project_id:99}));await saving;await ui.flush();
   assert.equal(store.getState().projectId,2);assert.equal(store.getState().itemInfo.item,'B project');ui.unmount();
-  console.log('PASS: intake restoration, founding date validation/type switch, stale eligibility/create responses, final-stage lock, automatic/manual polling recovery');
+  // A delayed profile refresh must not log the user back in after logout.
+  ui=mount(App);await ui.flush();ui.component('Landing').props.onMyPage();await ui.flush();
+  const refresh=deferred();const appFetch=globalThis.fetch;
+  globalThis.fetch=(url,options)=>String(url).endsWith('/auth/me')?refresh.promise:appFetch(url,options);
+  const refreshing=ui.component('MyPage').props.onSaved();
+  ui.component('WorkspaceShell').props.onLogout();await ui.flush();
+  refresh.resolve(response({user_id:1,name:'Old session',has_profile:true}));await refreshing;await ui.flush();
+  assert.equal(ui.component('Landing').props.user,null);ui.unmount();
+
+  // Fresh browsers have no saved view: server stages must select the correct screen.
+  for(const [stage,screen] of [['artifact_review','ArtifactResult'],['final_review_pending','FinalVerdict']]){
+    cache.delete('sbrain-last-view:2');
+    globalThis.fetch=(url,options)=>String(url).endsWith('/projects/2/status')?Promise.resolve(response({stage})):appFetch(url,options);
+    ui=mount(App);await ui.flush();ui.component('Landing').props.onStart();await ui.flush();
+    await ui.component('Dashboard').props.onOpenProject({id:2,matched:true});await ui.flush();
+    assert.ok(ui.component(screen));ui.unmount();
+  }
+
+  // A polling error must not permanently lock the prototype button; failed jobs also unlock it.
+  let planPolls=0;
+  globalThis.fetch=async()=>{
+    planPolls++;
+    if(planPolls===2)throw new Error('simulated plan status disconnect');
+    return response({stage:'prototype_building',match_status:planPolls>=3?'failed':'processing'});
+  };
+  ui=mount(PlanForm,{projectId:2});await ui.flush();
+  assert.equal(ui.find(n=>n.type==='button'&&n.props.children==='프로토타입 생성 중…').props.disabled,true);
+  await wait(2100);await ui.flush();await wait(2100);await ui.flush();
+  assert.equal(ui.find(n=>n.type==='button'&&n.props.children==='프로토타입 생성').props.disabled,false);ui.unmount();
+
+  // Rewriting a plan and generating its prototype must not run concurrently.
+  const rewrite=deferred();let generated=0;
+  globalThis.fetch=(url)=>String(url).endsWith('/retry-task')?rewrite.promise:Promise.resolve(response({stage:'plan_review_pending'}));
+  ui=mount(PlanForm,{projectId:2,onGenerate:()=>generated++});await ui.flush();
+  ui.find(n=>n.type==='button'&&n.props.children==='프로토타입 생성').props.onClick();await ui.flush();
+  ui.find(n=>n.type==='input'&&n.props.type==='checkbox').props.onChange();await ui.flush();
+  const rewriting=ui.find(n=>n.type==='button'&&n.props.children==='선택 항목 재작성').props.onClick();await ui.flush();
+  assert.equal(ui.find(n=>n.type==='button'&&n.props.children==='프로토타입 생성').props.disabled,true);
+  const proceed=ui.find(n=>n.type==='button'&&n.props.children==='그래도 진행하기');
+  assert.equal(proceed.props.disabled,true);proceed.props.onClick();assert.equal(generated,0);
+  rewrite.resolve(response({}));await rewriting;await ui.flush();
+  assert.equal(ui.find(n=>n.type==='button'&&n.props.children==='프로토타입 생성').props.disabled,false);ui.unmount();
+  console.log('PASS: intake restoration, stale responses, final-stage lock, polling recovery, profile logout race, stage routing, rewrite/generation exclusion');
 }finally{globalThis.fetch=originalFetch;await server.close()}
