@@ -23,6 +23,7 @@ from app.models import (
     Artifact,
     BusinessPlan,
     Faq,
+    GenerationFailureAlert,
     ImportRun,
     MatchResult,
     Notice,
@@ -42,6 +43,8 @@ from app.schemas import (
     CollectionStatusOut,
     FaqAnswerIn,
     FaqOut,
+    GenerationFailureAlertAckIn,
+    GenerationFailureAlertOut,
     ImportRunOut,
     ItemArchiveIn,
     ItemOut,
@@ -201,8 +204,13 @@ def _build_item_out(db: Session, project: Project) -> ItemOut:
         status_label = '완료'
     elif match.stage in (ps.STAGE_PLAN_REVIEW_PENDING, ps.STAGE_FINAL_REVIEW_PENDING):
         status_label = '판단 대기'
-    elif match.status == 'halted':
+    elif match.status == ps.GENERATION_STATUS_HALTED:
         status_label = '중단'
+    # [2026-09-23 신규] 'waiting_resume'(자동 재시도 백오프 대기 중)은 여전히 '진행중'으로
+    # 보여준다(화면 설계상 실행/재개대기 둘 다 "진행"으로 같이 보임) — 'failed'(자동
+    # 재시도 5회 소진, 확정된 실패)만 구분해서 관리자가 바로 알아볼 수 있게 한다.
+    elif match.status == ps.GENERATION_STATUS_FAILED:
+        status_label = '실패'
     else:
         status_label = '진행중'
 
@@ -226,6 +234,8 @@ def _build_item_out(db: Session, project: Project) -> ItemOut:
         stalled=stalled,
         score=score,
         archived=archived,
+        generation_retry_count=match.retry_count or 0,
+        generation_failure_reason=match.failure_reason,
     )
 
 
@@ -272,6 +282,38 @@ def set_item_archived(
         match.archived_by = None
     db.commit()
     return _build_item_out(db, project)
+
+
+@router.get('/generation-alerts', response_model=list[GenerationFailureAlertOut])
+def list_generation_alerts(
+    include_acknowledged: bool = False,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """생성 작업(계획서/프로토타입)이 자동 재시도 5회를 전부 소진하고 확정 실패할 때마다
+    쌓이는 관리자 알림 목록 — 기본은 아직 확인 안 한 것만 최신순으로 보여준다
+    (include_acknowledged=true면 확인 처리된 것까지 전부)."""
+    query = db.query(GenerationFailureAlert)
+    if not include_acknowledged:
+        query = query.filter(GenerationFailureAlert.acknowledged_at.is_(None))
+    return query.order_by(GenerationFailureAlert.alert_id.desc()).all()
+
+
+@router.put('/generation-alerts/{alert_id}/ack', response_model=GenerationFailureAlertOut)
+def ack_generation_alert(
+    alert_id: int,
+    body: GenerationFailureAlertAckIn,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """관리자가 실패 알림을 확인 처리(또는 취소)한다 — 재시도 자체와는 무관하다(사용자는
+    확인 여부와 상관없이 "다시 이어가기"를 누를 수 있음)."""
+    alert = db.get(GenerationFailureAlert, alert_id)
+    if alert is None:
+        raise HTTPException(status_code=404, detail='알림을 찾을 수 없습니다')
+    alert.acknowledged_at = datetime.datetime.utcnow() if body.acknowledged else None
+    db.commit()
+    return alert
 
 
 @router.get('/items/{project_id}/score-history', response_model=ItemScoreHistoryOut)

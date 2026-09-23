@@ -271,7 +271,11 @@ CREATE TABLE IF NOT EXISTS match_results (
     notice_id VARCHAR(320) NOT NULL COMMENT 'REFERENCES notices(notice_id)',
     fit_score DECIMAL(5,2) NULL COMMENT '매칭 적합도 점수',
     reason TEXT NULL COMMENT '매칭 사유/근거 서술',
-    status VARCHAR(20) NOT NULL DEFAULT 'in_progress' COMMENT '프로젝트 진행 상태(in_progress/completed/halted)',
+    -- [2026-09-23 개정] 서비스 내부 상태 6종을 실제 MySQL ENUM으로 강제한다(app/models.py
+    -- _GenerationStatus, app/pipeline_stages.py GENERATION_STATUSES와 정확히 동일해야 함) —
+    -- agent_executions.status와 같은 값 집합을 공유한다. user_waiting/halted는 아직 실제로
+    -- 쓰는 코드가 없지만(향후 대비) 미리 넣어둔다.
+    status ENUM('in_progress','waiting_resume','user_waiting','failed','completed','halted') NOT NULL DEFAULT 'in_progress' COMMENT '서비스 내부 상태(실행/재개대기/사용자대기/실패/완료/중단)',
     stage VARCHAR(30) NULL COMMENT '이어하기용 세부 진행 단계(app/pipeline_stages.py의 STAGE_* 상수 중 하나). NULL이면 아직 매칭만 되고 계획서 작성 전',
     progress_percent TINYINT UNSIGNED NULL COMMENT 'stage 안에서도 오래 걸리는 구간(계획서 작성/프로토타입 제작)의 진행률 0~100. 해당 없는 stage에서는 NULL',
     -- [2026-09-22 신규] 생성 작업 클레임 시각 — Redis 등 별도 브로커 없이 이 컬럼 하나로
@@ -279,10 +283,17 @@ CREATE TABLE IF NOT EXISTS match_results (
     -- _try_claim_and_run 참고). NULL이거나 GENERATION_CLAIM_STALE_SECONDS보다 오래됐으면
     -- "아무도 처리 안 함"으로 보고 새로 클레임할 수 있다 — 서버 재시작·다중 워커 대응.
     worker_claimed_at DATETIME(6) NULL COMMENT '생성 작업(plan_writing/prototype_building)을 처리 중인 워커의 마지막 클레임/하트비트 시각',
-    -- [2026-09-22 신규, 프론트 전달사항 4번] 생성 작업 실패 처리 — status='failed'로
-    -- 표시하고 stage는 실패한 단계 그대로 둔다. 실패는 복구 루프가 자동 재시도하지 않고
-    -- 사용자가 "다시 시도"를 눌러야(_start_generation 재호출) 재개된다.
-    failure_reason TEXT NULL COMMENT '생성 작업이 실패한 사유(에러 메시지) — status=failed일 때만 값 있음',
+    -- [2026-09-23 개정] status='failed'는 이제 자동 재시도(최대 5회, 백오프) 소진 뒤에만
+    -- 도달한다 — status='waiting_resume'이 그 사이 자동 대기 상태를 표현한다.
+    failure_reason TEXT NULL COMMENT '마지막 실패 사유(에러 메시지) — status=waiting_resume/failed일 때 값 있음',
+    -- [2026-09-23 신규] 실패 후 자동 재시도 횟수. 15→30→60→120→240초로 2배씩 늘려가며
+    -- 최대 5회까지 자동 재시도하고, 그래도 안 되면 status='failed'로 확정한다(관리자 알림
+    -- 대상, generation_failure_alerts 참고). 사용자가 수동으로 "다시 이어가기"를 누르면
+    -- 0으로 리셋된다.
+    retry_count TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '자동 재시도 소진 횟수(최대 5)',
+    -- [2026-09-23 신규] 다음 자동 재시도 예정 시각(status='waiting_resume'일 때만 값 있음) —
+    -- 복구 루프가 이 시각 이전엔 재시도하지 않는다(백오프 간격 준수).
+    next_retry_at DATETIME(6) NULL COMMENT '다음 자동 재시도 예정 시각(waiting_resume 전용)',
     archived_at DATETIME(6) NULL COMMENT '사용자가 프로젝트를 삭제해 보관 처리된 일시(NULL 가능)',
     archived_by VARCHAR(20) NULL COMMENT "보관 처리 주체('user' 고정, NULL 가능)",
     -- [참고] project.py 전역에서 "WHERE project_id=X ORDER BY match_id DESC" 패턴이 매우
@@ -317,6 +328,26 @@ CREATE TABLE IF NOT EXISTS match_score_reasons (
     evidence_locator VARCHAR(500) NULL COMMENT '근거 위치(공고문 내 위치 등)',
     KEY ix_match_score_reasons_match (match_id),
     FOREIGN KEY (match_id) REFERENCES match_results(match_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- [2026-09-23 신규] 생성 작업이 자동 재시도(최대 5회, 백오프)를 전부 소진하고
+-- match_results.status='failed'로 확정될 때마다 한 행씩 쌓는 관리자 알림 로그.
+-- match_results는 최신 상태만 담아서 "몇 번이나 실패했었는지" 이력이 안 남으므로 별도로
+-- 보존한다(app/routers/projects.py _simulate_generation 참고).
+CREATE TABLE IF NOT EXISTS generation_failure_alerts (
+    alert_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '알림 고유 식별자',
+    match_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES match_results(match_id)',
+    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
+    stage VARCHAR(30) NOT NULL COMMENT '실패가 확정된 시점의 stage',
+    retry_count TINYINT UNSIGNED NOT NULL COMMENT '확정 시점까지 소진한 자동 재시도 횟수',
+    failure_reason TEXT NULL COMMENT '마지막 실패 사유',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    -- 관리자가 확인 처리한 시각 — NULL이면 미확인. 재시도 자체를 막지는 않는다.
+    acknowledged_at DATETIME(6) NULL COMMENT '관리자 확인 처리 시각(NULL이면 미확인)',
+    KEY ix_generation_failure_alerts_match (match_id),
+    KEY ix_generation_failure_alerts_unacked (acknowledged_at),
+    FOREIGN KEY (match_id) REFERENCES match_results(match_id) ON DELETE CASCADE,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS eligibility_checks (
@@ -526,7 +557,9 @@ CREATE TABLE IF NOT EXISTS agent_executions (
     model_used VARCHAR(50) NOT NULL COMMENT '사용 모델명(Claude Opus/Sonnet/Haiku 또는 자체 파인튜닝 모델 버전)',
     rerun_type VARCHAR(20) NOT NULL COMMENT '최초 실행/선별 재수행/전체 재실행 구분',
     token_usage INT UNSIGNED NOT NULL COMMENT '실행에 사용된 토큰 수',
-    status VARCHAR(20) NOT NULL COMMENT '실행 결과 상태(성공/실패)',
+    -- [2026-09-23 개정] match_results.status와 같은 enum(6종)을 쓴다 — 예전엔 여기만
+    -- 'success'라는 다른 이름을 썼는데(seed_dummy_pipeline.py), 'completed'로 통일한다.
+    status ENUM('in_progress','waiting_resume','user_waiting','failed','completed','halted') NOT NULL COMMENT '서비스 내부 상태(실행/재개대기/사용자대기/실패/완료/중단) — match_results.status와 같은 enum',
     started_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '실행 시작 일시',
     -- [2026-09-17 인덱싱 개정] "이 매칭의 이 task_key 최근 시도가 몇 번째인지" 조회가
     -- 재시도/이어하기 로직에서 자주 호출된다(projects.py 재시도 처리, admin.py 에이전트

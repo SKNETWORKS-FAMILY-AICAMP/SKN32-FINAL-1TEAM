@@ -53,6 +53,7 @@ from app.models import (
     Company,
     EligibilityCheck,
     FormatFinding,
+    GenerationFailureAlert,
     MatchCandidate,
     MatchResult,
     Notice,
@@ -264,7 +265,7 @@ UPLOAD_DIR = os.path.join(_REPO_ROOT, 'uploads')
 
 # 진행 중으로 취급하는 매칭 상태 — 이 상태의 매칭을 가진 프로젝트가 하나라도 있으면
 # 계정당 동시 실행 1건 제한(기획서 4-7, backend_decisions.md #11)에 걸려 새 프로젝트 생성을 막는다.
-ACTIVE_MATCH_STATUSES = ('in_progress',)
+ACTIVE_MATCH_STATUSES = (ps.GENERATION_STATUS_IN_PROGRESS,)
 
 
 def _save_attachment(file: UploadFile) -> tuple[str, str]:
@@ -368,9 +369,18 @@ def list_projects(
             notice_id=match.notice_id if match is not None else None,
             notice_title=notice_title,
             match_status=match.status if match is not None else None,
+            # [2026-09-23 신규] 화면 헤더 종모양 알림용 — 프론트가 이미 이 목록 엔드포인트를
+            # 폴링하고 있어서(NotificationBell, front/src/features/workflow/shared.jsx)
+            # 별도 알림 엔드포인트 대신 여기 필드만 추가한다. 서비스 내부 상태(실행/재개대기/
+            # 사용자대기/실패/완료/중단)를 화면 문구(진행/확인이 필요합니다/문제가 생겨
+            # 멈췄다/완료/중단됨)로 분류한다(app/pipeline_stages.py status_to_display).
+            display_status=ps.status_to_display(match.status if match is not None else None),
             stage=match.stage if match is not None else None,
             progress_percent=match.progress_percent if match is not None else None,
             screen=screen,
+            retry_count=(match.retry_count or 0) if match is not None else 0,
+            next_retry_at=match.next_retry_at if match is not None else None,
+            failure_reason=match.failure_reason if match is not None else None,
         ))
     return items
 
@@ -621,6 +631,12 @@ GENERATION_CLAIM_STALE_SECONDS = float(os.getenv('GENERATION_CLAIM_STALE_SECONDS
 # 복구 루프가 "고아" 작업(클레임 없음/오래됨)을 찾는 주기.
 GENERATION_POLL_INTERVAL_SECONDS = float(os.getenv('GENERATION_POLL_INTERVAL_SECONDS', '10'))
 
+# [2026-09-23 신규] 실패 시 자동 재시도 정책 — 15 -> 30 -> 60 -> 120 -> 240초로 2배씩
+# 늘려가며 최대 5회까지 자동 재시도한다(status='waiting_resume'). 5회를 전부 소진하고도
+# 실패하면 status='failed'로 확정하고 관리자 알림(generation_failure_alerts)을 남긴다.
+GENERATION_RETRY_MAX_ATTEMPTS = int(os.getenv('GENERATION_RETRY_MAX_ATTEMPTS', '5'))
+GENERATION_RETRY_BASE_SECONDS = float(os.getenv('GENERATION_RETRY_BASE_SECONDS', '15'))
+
 # running_stage -> done_stage. 복구 루프가 어떤 stage들을 감시해야 하는지 여기 한 곳에 모은다
 # — _start_generation이 쓰는 (running_stage, done_stage) 쌍과 항상 같은 값이어야 한다.
 _RUNNING_GENERATION_STAGES = {
@@ -648,25 +664,45 @@ def _simulate_generation(match_id: int, running_stage: str, done_stage: str) -> 
                     match.stage = done_stage
                     match.progress_percent = 100
                     if done_stage == ps.STAGE_DONE:
-                        match.status = 'completed'
+                        match.status = ps.GENERATION_STATUS_COMPLETED
                         match.failure_reason = None
                 else:
                     match.progress_percent = step * 100 // DUMMY_GENERATION_STEPS
                 match.worker_claimed_at = datetime.datetime.utcnow()  # 하트비트 — 진행 중엔 클레임이 안 늙는다
+                # [2026-09-23 신규] 한 스텝이라도 성공하면(=다시 정상 진행되면) 이전 실패
+                # 스트릭을 리셋한다 — 재시도 예산(5회)은 "연속 실패"에 대한 것이지, 이
+                # 작업 전체 수명 동안 누적되는 값이 아니다.
+                match.retry_count = 0
                 db.commit()
         except Exception as exc:
-            # [2026-09-22 신규, 프론트 전달사항 4번] 지금 더미 로직(sleep+progress 증가)은
-            # 실패할 일이 없지만, 실제 에이전트가 붙으면 여기서 예외가 날 수 있다 — 그때
-            # 스레드가 조용히 죽어버리면 클레임만 남아 복구 루프가 영원히 못 잡아내는(stage는
-            # running_stage인데 아무도 안 돌리는) 상태가 된다. status='failed'로 명시적으로
-            # 남기고, stage는 실패한 단계 그대로 둔다 — 복구 루프는 status='failed'를 건드리지
-            # 않으므로(_recover_orphaned_generations_once) 자동 재시도되지 않고, 사용자가
-            # "다시 시도"(plan/start·prototype/start 재호출)해야 재개된다.
+            # [2026-09-23 개정] 지금 더미 로직(sleep+progress 증가)은 실패할 일이 없지만,
+            # 실제 에이전트가 붙으면 여기서 예외가 날 수 있다 — 첫 실패에서 바로 포기하지
+            # 않고, 15 -> 30 -> 60 -> 120 -> 240초로 2배씩 늘려가며 최대 5회까지 자동
+            # 재시도한다(status='waiting_resume', next_retry_at에 다음 시도 시각을 남김).
+            # 복구 루프(_recover_orphaned_generations_once)가 next_retry_at이 지난 뒤에만
+            # 다시 클레임한다. 5회를 전부 소진하고도 실패하면 status='failed'로 확정하고
+            # 관리자 알림을 한 행 남긴다 — 그때부터 사용자가 "다시 이어가기"를 눌러야
+            # 재개된다(_start_generation). progress_percent는 안 건드리므로 재시도할 때마다
+            # 이미 진행된 부분부터 이어간다(처음부터 다시 하지 않음).
             db.rollback()
             match = db.get(MatchResult, match_id)
             if match is not None and match.stage == running_stage:
-                match.status = 'failed'
                 match.failure_reason = str(exc)[:2000]
+                match.retry_count = (match.retry_count or 0) + 1
+                if match.retry_count > GENERATION_RETRY_MAX_ATTEMPTS:
+                    match.status = ps.GENERATION_STATUS_FAILED
+                    match.next_retry_at = None
+                    db.add(GenerationFailureAlert(
+                        match_id=match.match_id,
+                        project_id=match.project_id,
+                        stage=match.stage,
+                        retry_count=match.retry_count - 1,
+                        failure_reason=match.failure_reason,
+                    ))
+                else:
+                    delay = GENERATION_RETRY_BASE_SECONDS * (2 ** (match.retry_count - 1))
+                    match.status = ps.GENERATION_STATUS_WAITING_RESUME
+                    match.next_retry_at = datetime.datetime.utcnow() + datetime.timedelta(seconds=delay)
                 db.commit()
     finally:
         db.close()
@@ -688,7 +724,14 @@ def _try_claim_and_run(match_id: int, running_stage: str, done_stage: str) -> bo
                 MatchResult.stage == running_stage,
                 or_(MatchResult.worker_claimed_at.is_(None), MatchResult.worker_claimed_at < stale_before),
             )
-            .update({MatchResult.worker_claimed_at: datetime.datetime.utcnow()}, synchronize_session=False)
+            # [2026-09-23] status='waiting_resume'로 대기하던 행을 자동 재시도가 실제로
+            # 집어 들 때, 상태를 다시 '실행'으로 되돌린다(next_retry_at도 비움) — 화면상
+            # 둘 다 "진행"으로 같이 보이긴 하지만, 내부 상태는 지금 실제로 도는 중임을
+            # 정확히 반영해야 한다.
+            .update(
+                {MatchResult.worker_claimed_at: datetime.datetime.utcnow(), MatchResult.status: ps.GENERATION_STATUS_IN_PROGRESS, MatchResult.next_retry_at: None},
+                synchronize_session=False,
+            )
         )
         db.commit()
     finally:
@@ -702,17 +745,22 @@ def _try_claim_and_run(match_id: int, running_stage: str, done_stage: str) -> bo
 def _recover_orphaned_generations_once(db: Session) -> None:
     """진행 중 stage인데 클레임이 없거나 오래된(GENERATION_CLAIM_STALE_SECONDS) match_results
     행을 한 번 훑어 이어받는다 — _generation_recovery_loop이 매 tick 호출하고, 테스트도
-    무한루프 대신 이 함수 하나만 직접 불러 검증한다."""
+    무한루프 대신 이 함수 하나만 직접 불러 검증한다.
+
+    [2026-09-23 개정] status='waiting_resume'(자동 백오프 대기 중)인 행도 이제 여기서
+    이어받는다 — 단, next_retry_at이 아직 안 지났으면 건드리지 않는다(백오프 간격 준수).
+    status='failed'(자동 재시도 5회 소진, 확정된 실패)만 여전히 자동으로 건드리지 않고
+    사용자가 "다시 이어가기"를 눌러야(_start_generation) 재개된다."""
     stale_before = datetime.datetime.utcnow() - datetime.timedelta(seconds=GENERATION_CLAIM_STALE_SECONDS)
+    now = datetime.datetime.utcnow()
     for running_stage, done_stage in _RUNNING_GENERATION_STAGES.items():
         orphans = (
             db.query(MatchResult.match_id)
             .filter(
                 MatchResult.stage == running_stage,
-                # [2026-09-22 신규] 이미 실패로 확정된 작업은 자동으로 다시 돌리지 않는다 —
-                # 사용자가 "다시 시도"를 눌러야(_start_generation) 재개된다.
-                MatchResult.status != 'failed',
+                MatchResult.status != ps.GENERATION_STATUS_FAILED,
                 or_(MatchResult.worker_claimed_at.is_(None), MatchResult.worker_claimed_at < stale_before),
+                or_(MatchResult.next_retry_at.is_(None), MatchResult.next_retry_at <= now),
             )
             .all()
         )
@@ -755,17 +803,26 @@ def _start_generation(db: Session, project: Project, start_from: tuple, running_
     # [2026-09-22 신규, 프론트 전달사항 4번] "다시 시도" — 실패는 stage를 실패한 단계 그대로
     # 두므로(_simulate_generation), 실패한 바로 그 단계에 대해서만(stage == running_stage)
     # 재시작을 허용한다 — 다른 단계에서 실패했는데 엉뚱한 단계가 리셋되면 안 되니까.
-    can_retry_failed = match.status == 'failed' and match.stage == running_stage
+    can_retry_failed = match.status == ps.GENERATION_STATUS_FAILED and match.stage == running_stage
     if match.stage in start_from or can_retry_failed:
         match.stage = running_stage
         match.progress_percent = 0
         match.worker_claimed_at = None  # 새 단계 시작 — 이전 단계의 클레임 흔적을 지운다
-        match.status = 'in_progress'
+        match.status = ps.GENERATION_STATUS_IN_PROGRESS
         match.failure_reason = None
+        # [2026-09-23] 수동 "다시 이어가기"는 재시도 횟수를 0으로 완전히 리셋하지 않고
+        # 1로 둔다 — 이 수동 클릭 자체를 재시도 1회로 친다(원래 재시도 예산 5회의
+        # 연장선). 그래서 이 시도도 또 실패하면 바로 2번째 백오프(30초)부터 이어간다.
+        # 최초 시작(재시도가 아니라 처음 시작하는 경우)은 0부터.
+        match.retry_count = 1 if can_retry_failed else 0
+        match.next_retry_at = None
         db.commit()
     # 이미 진행 중이면(다른 요청/복구 루프가 먼저 클레임했으면) 새로 시작하지 않는다 —
-    # _try_claim_and_run의 원자적 UPDATE가 중복 실행 방지를 대신한다.
-    if match.stage == running_stage and match.status != 'failed':
+    # _try_claim_and_run의 원자적 UPDATE가 중복 실행 방지를 대신한다. status='waiting_resume'
+    # 이면서 next_retry_at이 아직 안 지났으면 여기서도 건드리지 않는다 — 백오프 대기를
+    # 사용자가 화면을 다시 열었다고 건너뛰면 안 된다(복구 루프와 같은 규칙).
+    backoff_pending = match.status == ps.GENERATION_STATUS_WAITING_RESUME and match.next_retry_at and match.next_retry_at > datetime.datetime.utcnow()
+    if match.stage == running_stage and match.status != ps.GENERATION_STATUS_FAILED and not backoff_pending:
         _try_claim_and_run(match.match_id, running_stage, done_stage)
     return ProjectStatusOut(
         project_id=project.project_id,
@@ -775,6 +832,8 @@ def _start_generation(db: Session, project: Project, start_from: tuple, running_
         match_id=match.match_id,
         match_status=match.status,
         failure_reason=match.failure_reason,
+        retry_count=match.retry_count or 0,
+        next_retry_at=match.next_retry_at,
     )
 
 
@@ -1287,7 +1346,7 @@ def get_project_status(
     실제 Agent 파이프라인(다른 팀원이 작업 중인 오케스트레이터)이 각 단계를 시작/진행할
     때마다 match_results.stage(+progress_percent)를 갱신해두면(app/pipeline_stages.py의
     STAGE_* 상수 사용), 이 엔드포인트는 그 값을 읽어 화면 번호로만 바꿔주는 얇은 조회다.
-    판별 로직 자체는 verify_resume_cases.py에서 기획서 8케이스 전부에 대해 검증됐다
+    판별 로직 자체는 tests/verify_resume_cases.py에서 기획서 8케이스 전부에 대해 검증됐다
     (detect_resume_screen()과 동일한 로직 — 거기서는 아직 실제 API가 없어 DB를 직접
     조회해 검증했지만, 여기서는 라우터로 옮기고 소유권 체크(_get_owned_project)만 추가했다).
     """
@@ -1312,6 +1371,8 @@ def get_project_status(
         match_id=match.match_id,
         match_status=match.status,
         failure_reason=match.failure_reason,
+        retry_count=match.retry_count or 0,
+        next_retry_at=match.next_retry_at,
     )
 
 
@@ -1542,7 +1603,7 @@ def retry_task(
         model_used='dummy-retry',
         rerun_type='rerun',
         token_usage=random.randint(100, 3000),
-        status='completed',
+        status=ps.GENERATION_STATUS_COMPLETED,
     )
     db.add(execution)
     db.commit()

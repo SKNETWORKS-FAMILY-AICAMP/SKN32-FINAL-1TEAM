@@ -74,16 +74,86 @@ CALL _add_col_if_missing('projects', 'regional_priority_area', "VARCHAR(100) NUL
 -- [2026-09-22 신규] 생성 작업(계획서/프로토타입) 비동기화 — DB 클레임 컬럼 하나로
 -- Redis 없이 재시작·다중 워커에 대응한다(app/routers/projects.py _try_claim_and_run 참고).
 CALL _add_col_if_missing('match_results', 'worker_claimed_at', "DATETIME(6) NULL COMMENT '생성 작업을 처리 중인 워커의 마지막 클레임/하트비트 시각'");
-CALL _add_col_if_missing('match_results', 'failure_reason', "TEXT NULL COMMENT '생성 작업이 실패한 사유(에러 메시지) — status=failed일 때만 값 있음'");
+CALL _add_col_if_missing('match_results', 'failure_reason', "TEXT NULL COMMENT '마지막 실패 사유(에러 메시지) — status=waiting_resume/failed일 때 값 있음'");
 
--- [2026-09-22 신규] verification_checklist_items v1.8 구조 교체(카테고리별 8항목·15점).
--- 예전 5항목/100점 데이터는 item_code/item_no가 있을 자리 자체가 없어서 컬럼만 추가해선
--- 값을 못 채운다 — 이 테이블은 사용자 데이터가 아니라 관리자 기준표라 안전하게 통째로
--- 비우고 다시 심는다. 이 스크립트 실행 후 `python seed_dummy_admin_data.py`를 다시
--- 돌리면(또는 app_schema.sql을 재적용하면) 새 v1.8 16항목이 채워진다.
+-- [2026-09-23 신규] 실패 시 자동 재시도(최대 5회, 15->30->60->120->240초 백오프) —
+-- app/routers/projects.py GENERATION_RETRY_MAX_ATTEMPTS 참고.
+CALL _add_col_if_missing('match_results', 'retry_count', "TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '자동 재시도 소진 횟수(최대 5)'");
+CALL _add_col_if_missing('match_results', 'next_retry_at', "DATETIME(6) NULL COMMENT '다음 자동 재시도 예정 시각(waiting_resume 전용)'");
+
+-- [2026-09-23 신규] match_results.status/agent_executions.status를 서비스 내부 상태
+-- 6종(실행/재개대기/사용자대기/실패/완료/중단) 실제 MySQL ENUM으로 강제한다
+-- (app/models.py _GenerationStatus, app/pipeline_stages.py GENERATION_STATUSES 참고).
+-- agent_executions.status는 예전에 'success'라는 다른 이름을 썼어서(seed_dummy_pipeline.py),
+-- ENUM으로 바꾸기 전에 기존 값을 'completed'로 먼저 맞춰야 한다 — 안 그러면 ENUM에
+-- 없는 값이 남아있는 행에서 ALTER 자체가 막힌다. 두 ALTER 다 몇 번을 다시 실행해도
+-- 안전하다(이미 ENUM이어도 같은 정의로 다시 MODIFY할 뿐).
+UPDATE agent_executions SET status = 'completed' WHERE status = 'success';
+ALTER TABLE match_results
+    MODIFY COLUMN status ENUM('in_progress','waiting_resume','user_waiting','failed','completed','halted')
+    NOT NULL DEFAULT 'in_progress' COMMENT '서비스 내부 상태(실행/재개대기/사용자대기/실패/완료/중단)';
+ALTER TABLE agent_executions
+    MODIFY COLUMN status ENUM('in_progress','waiting_resume','user_waiting','failed','completed','halted')
+    NOT NULL COMMENT '서비스 내부 상태(실행/재개대기/사용자대기/실패/완료/중단) — match_results.status와 같은 enum';
+
+-- [2026-09-23 신규] 자동 재시도 5회 소진 후 확정 실패할 때마다 쌓는 관리자 알림 로그
+-- (app/models.py GenerationFailureAlert 참고) — 새 테이블이라 CREATE TABLE IF NOT EXISTS로
+-- 충분하다(컬럼 추가 마이그레이션 절차 불필요).
+CREATE TABLE IF NOT EXISTS generation_failure_alerts (
+    alert_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '알림 고유 식별자',
+    match_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES match_results(match_id)',
+    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
+    stage VARCHAR(30) NOT NULL COMMENT '실패가 확정된 시점의 stage',
+    retry_count TINYINT UNSIGNED NOT NULL COMMENT '확정 시점까지 소진한 자동 재시도 횟수',
+    failure_reason TEXT NULL COMMENT '마지막 실패 사유',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    acknowledged_at DATETIME(6) NULL COMMENT '관리자 확인 처리 시각(NULL이면 미확인)',
+    KEY ix_generation_failure_alerts_match (match_id),
+    KEY ix_generation_failure_alerts_unacked (acknowledged_at),
+    FOREIGN KEY (match_id) REFERENCES match_results(match_id) ON DELETE CASCADE,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- [2026-09-22 신규, 2026-09-23 재시딩 추가] verification_checklist_items v1.8 구조
+-- 교체(카테고리별 8항목·15점). 예전 5항목/100점 데이터는 item_code/item_no가 있을 자리
+-- 자체가 없어서 컬럼만 추가해선 값을 못 채운다 — 이 테이블은 사용자 데이터가 아니라
+-- 관리자 기준표라 안전하게 통째로 비우고 다시 심는다.
+--
+-- [2026-09-23 수정] 예전엔 여기서 비우고 나서 `python seed_dummy_admin_data.py`를 다시
+-- 돌리라고 안내했는데, 그 스크립트는 DB_BACKEND=sqlite가 아니면 스스로 거부하도록
+-- 만들어져 있어서(팀 공유 AWS MySQL에 더미 프로젝트 데이터가 새는 걸 막으려는 안전장치,
+-- seed_dummy_admin_data.py 8번째 줄 참고) 정작 MySQL엔 절대 못 돌린다 — MySQL로 켜서
+-- 관리자 체크리스트 화면을 열면 데이터가 하나도 없어서 안 뜨는 원인이 바로 이거였다
+-- (프론트 담당자 협의사항 스크린샷, 하정원님이 실제로 겪음). 이건 사용자별 더미 데이터가
+-- 아니라 전체 팀이 같이 쓰는 채점 기준표라 seed_dummy_admin_data.py가 아니라 이 마이그레이션
+-- 스크립트 자신이 다시 심어야 맞다 — 그래서 app_schema.sql의 INSERT 블록을 그대로 옮겨왔다.
 DELETE FROM verification_checklist_items;
+ALTER TABLE verification_checklist_items AUTO_INCREMENT = 1;
 CALL _add_col_if_missing('verification_checklist_items', 'item_code', "VARCHAR(50) NOT NULL UNIQUE COMMENT 'artifact_score_reasons.item_code와 매칭되는 항목 코드'");
 CALL _add_col_if_missing('verification_checklist_items', 'item_no', "TINYINT UNSIGNED NOT NULL COMMENT '카테고리 안에서의 순번(1~8)'");
+
+INSERT INTO verification_checklist_items (item_code, item_no, category, name, method, weight, enabled)
+SELECT * FROM (
+    -- 웹개발·AI API(HTML) — 8항목, 합계 15점
+    SELECT 'CHECK-HTML-ENTRY-FILE' AS item_code, 1 AS item_no, 'html' AS category, '진입 파일 존재 여부' AS name, '산출물 루트에 지정된 진입 파일(index.html 등)이 실제로 있는지 확인' AS method, 3.00 AS weight, TRUE AS enabled
+    UNION ALL SELECT 'CHECK-HTML-ALT-TEXT', 2, 'html', 'img·svg 대체 텍스트', 'img/svg 요소에 alt(또는 대체 텍스트 접근법)가 있는지 파싱', 2.00, TRUE
+    UNION ALL SELECT 'CHECK-HTML-INPUT-LABEL', 3, 'html', 'input label 연결', 'input 요소가 label(for/aria-label 등)로 연결돼 있는지 파싱', 2.00, TRUE
+    UNION ALL SELECT 'CHECK-HTML-LANG-ATTR', 4, 'html', 'html lang 속성', '<html> 태그에 lang 속성이 있는지 확인', 1.00, TRUE
+    UNION ALL SELECT 'CHECK-HTML-CONTRAST', 5, 'html', '명도 대비 4.5:1', '주요 텍스트·배경 색상 조합의 명도 대비가 4.5:1 이상인지 계산', 2.00, TRUE
+    UNION ALL SELECT 'CHECK-HTML-HEADING', 6, 'html', '제목 계층', 'h1~h6 제목 태그가 순서를 건너뛰지 않고 계층적으로 쓰였는지 확인', 2.00, TRUE
+    UNION ALL SELECT 'CHECK-HTML-README', 7, 'html', '실행·열람 안내 문서', '실행 방법을 설명하는 안내 문서(README 등)가 있는지 확인', 1.00, TRUE
+    UNION ALL SELECT 'CHECK-HTML-SECRET', 8, 'html', '하드코딩된 비밀값', 'API 키·비밀번호 등이 코드에 하드코딩돼 있는지 패턴 스캔', 2.00, TRUE
+    -- 원페이지(SVG) — 8항목, 합계 15점
+    UNION ALL SELECT 'CHECK-SVG-ENTRY-FILE', 1, 'svg', '진입 파일 존재 여부', '산출물 루트에 지정된 진입 파일(svg 등)이 실제로 있는지 확인', 3.00, TRUE
+    UNION ALL SELECT 'CHECK-SVG-ALT-TEXT', 2, 'svg', '대체 텍스트', '이미지·아이콘 요소에 대체 텍스트가 있는지 파싱', 2.00, TRUE
+    UNION ALL SELECT 'CHECK-SVG-KEY-INFO', 3, 'svg', '핵심 정보 항목 포함', '계획서가 요구하는 핵심 정보 항목이 실제로 담겨 있는지 확인', 2.00, TRUE
+    UNION ALL SELECT 'CHECK-SVG-CONTRAST', 4, 'svg', '명도 대비 4.5:1', '주요 텍스트·배경 색상 조합의 명도 대비가 4.5:1 이상인지 계산', 2.00, TRUE
+    UNION ALL SELECT 'CHECK-SVG-INFO-HIERARCHY', 5, 'svg', '정보 계층', '정보가 중요도 순으로 시각적 계층을 이루는지 확인', 2.00, TRUE
+    UNION ALL SELECT 'CHECK-SVG-TEXT-REALNESS', 6, 'svg', '텍스트 실재성', '텍스트가 이미지가 아니라 실제 선택 가능한 텍스트 요소인지 확인', 2.00, TRUE
+    UNION ALL SELECT 'CHECK-SVG-MIN-FONT-SIZE', 7, 'svg', '최소 글자 크기', '본문 텍스트가 정책상 최소 글자 크기 이상인지 확인', 1.00, TRUE
+    UNION ALL SELECT 'CHECK-SVG-README', 8, 'svg', '열람 안내 문서', '결과물 열람 방법을 설명하는 안내 문서가 있는지 확인', 1.00, TRUE
+) seed
+WHERE NOT EXISTS (SELECT 1 FROM verification_checklist_items);
 
 DROP PROCEDURE IF EXISTS _add_col_if_missing;
 
@@ -93,10 +163,12 @@ CALL _add_index_if_missing('match_results', 'ix_match_results_stage_claim', '(st
 
 DROP PROCEDURE IF EXISTS _add_index_if_missing;
 
--- start_type/notify_region/notify_industry를 이미 NULL 허용으로 바꿔두셨다면 아래 3줄은
--- 각각 "already NULL"이어도 에러 없이 그냥 다시 적용될 뿐이라 안전하다(아직 안 하셨다면 이걸로 처리됨).
-ALTER TABLE companies MODIFY start_type VARCHAR(32) NULL;
-ALTER TABLE projects MODIFY notify_region VARCHAR(32) NULL, MODIFY notify_industry VARCHAR(32) NULL;
+-- [2026-09-23 삭제] start_type/notify_region/notify_industry는 2026-09-18에 컬럼 자체가
+-- 완전히 삭제됐다(app_schema.sql 67/100번째 줄 주석 참고) — 지금 스키마엔 이 컬럼들이
+-- 아예 없어서 "NULL 허용으로 바꾸는" ALTER 자체가 "Unknown column" 에러만 낸다. 이미 이
+-- 컬럼들이 없는 DB(=현재 스키마와 일치)에서 이 스크립트를 실행하면 여기서 막힌다는 걸
+-- 실제로 확인해서(하정원님) 지웠다 — 그 앞의 CALL들은 전부 이 줄보다 먼저 실행되므로
+-- 안전했다.
 
 -- 최종 확인용 — 실행 후 이 두 개를 결과로 같이 보내주시면 더 빠지는 컬럼이 있는지 바로 확인 가능합니다.
 SHOW COLUMNS FROM companies;

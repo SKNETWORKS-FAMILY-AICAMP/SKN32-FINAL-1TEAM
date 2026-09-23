@@ -281,6 +281,112 @@ def test_put_item_archive_without_match_returns_400(admin_client, user_client):
     assert res.status_code == 400, res.text
 
 
+def test_items_shows_failed_status_and_retry_count(admin_client, user_client, db_session):
+    """[2026-09-23 신규] 생성 작업이 자동 재시도(최대 5회)를 소진하고 확정 실패하면
+    /admin/items의 status_label이 '실패'로, retry_count/failure_reason이 그대로
+    보여야 한다."""
+    import app.pipeline_stages as ps
+    from app.models import MatchResult
+
+    project_id = _create_project(user_client)
+    notice = Notice(
+        notice_id='ADMIN-TEST-GENFAIL', source='k-startup', title='생성 실패 검증용 더미 공고',
+        recruitment_status='진행중',
+    )
+    db_session.add(notice)
+    db_session.flush()
+    match = MatchResult(
+        project_id=project_id, notice_id=notice.notice_id, status='failed',
+        stage=ps.STAGE_PLAN_WRITING, progress_percent=70,
+        retry_count=6, failure_reason='6번째 실패(테스트)',
+    )
+    db_session.add(match)
+    db_session.commit()
+
+    res = admin_client.get('/admin/items')
+    assert res.status_code == 200, res.text
+    matched = next(row for row in res.json() if row['project_id'] == project_id)
+    assert matched['status_label'] == '실패'
+    assert matched['generation_retry_count'] == 6
+    assert matched['generation_failure_reason'] == '6번째 실패(테스트)'
+
+
+# ============================================================================
+# 생성 실패 관리자 알림 (/admin/generation-alerts)
+# ============================================================================
+
+def test_generation_alerts_lists_unacknowledged_by_default(admin_client, user_client, db_session):
+    import app.pipeline_stages as ps
+    from app.models import GenerationFailureAlert, MatchResult
+
+    project_id = _create_project(user_client)
+    notice = Notice(
+        notice_id='ADMIN-TEST-ALERT-LIST', source='k-startup', title='알림 목록 검증용 더미 공고',
+        recruitment_status='진행중',
+    )
+    db_session.add(notice)
+    db_session.flush()
+    match = MatchResult(
+        project_id=project_id, notice_id=notice.notice_id, status='failed',
+        stage=ps.STAGE_PLAN_WRITING, progress_percent=70, retry_count=6,
+    )
+    db_session.add(match)
+    db_session.flush()
+    unacked = GenerationFailureAlert(
+        match_id=match.match_id, project_id=project_id, stage=ps.STAGE_PLAN_WRITING,
+        retry_count=5, failure_reason='미확인 실패(테스트)',
+    )
+    acked = GenerationFailureAlert(
+        match_id=match.match_id, project_id=project_id, stage=ps.STAGE_PLAN_WRITING,
+        retry_count=5, failure_reason='이미 확인한 실패(테스트)', acknowledged_at=datetime.datetime.utcnow(),
+    )
+    db_session.add_all([unacked, acked])
+    db_session.commit()
+
+    res = admin_client.get('/admin/generation-alerts')
+    assert res.status_code == 200, res.text
+    ids = {row['alert_id'] for row in res.json()}
+    assert unacked.alert_id in ids
+    assert acked.alert_id not in ids, '기본값은 미확인만 보여줘야 함'
+
+    res_all = admin_client.get('/admin/generation-alerts', params={'include_acknowledged': True})
+    ids_all = {row['alert_id'] for row in res_all.json()}
+    assert {unacked.alert_id, acked.alert_id} <= ids_all
+
+
+def test_ack_generation_alert_toggles_acknowledged_at(admin_client, user_client, db_session):
+    import app.pipeline_stages as ps
+    from app.models import GenerationFailureAlert, MatchResult
+
+    project_id = _create_project(user_client)
+    notice = Notice(
+        notice_id='ADMIN-TEST-ALERT-ACK', source='k-startup', title='알림 확인 처리 검증용 더미 공고',
+        recruitment_status='진행중',
+    )
+    db_session.add(notice)
+    db_session.flush()
+    match = MatchResult(
+        project_id=project_id, notice_id=notice.notice_id, status='failed',
+        stage=ps.STAGE_PLAN_WRITING, progress_percent=70, retry_count=6,
+    )
+    db_session.add(match)
+    db_session.flush()
+    alert = GenerationFailureAlert(
+        match_id=match.match_id, project_id=project_id, stage=ps.STAGE_PLAN_WRITING,
+        retry_count=5, failure_reason='확인 처리 대상(테스트)',
+    )
+    db_session.add(alert)
+    db_session.commit()
+
+    res = admin_client.put(f'/admin/generation-alerts/{alert.alert_id}/ack', json={'acknowledged': True})
+    assert res.status_code == 200, res.text
+    assert res.json()['acknowledged_at'] is not None
+
+    res = admin_client.put(f'/admin/generation-alerts/{alert.alert_id}/ack', json={'acknowledged': False})
+    assert res.status_code == 200, res.text
+    assert res.json()['acknowledged_at'] is None
+
+
 def test_get_item_score_history_groups_by_layer(admin_client, user_client, db_session):
     project_id = _create_project(user_client)
     notice = Notice(
@@ -432,7 +538,7 @@ def test_get_agent_tasks_reflects_recent_execution(admin_client, user_client, db
     # 실행이 이 프로젝트를 가리켜야 한다.
     assert by_name['조율']['recent_project_id'] == project_id
     assert by_name['조율']['recent_project_description'] == '에이전트 테스크 검증용 프로젝트'
-    assert by_name['조율']['recent_status'] == 'success'
+    assert by_name['조율']['recent_status'] == 'completed'
     assert by_name['조율']['total_executions'] == 4  # coordinate_intake/user_decision_doc/user_decision_final/coordinate_finalize
 
 

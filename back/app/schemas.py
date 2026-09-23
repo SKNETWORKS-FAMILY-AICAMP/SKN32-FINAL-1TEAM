@@ -473,7 +473,7 @@ class MatchResultOut(BaseModel):
 class ProjectStatusOut(BaseModel):
     """GET /projects/{id}/status 응답 — 이어하기(기획서 v1.7 4-7절 p.20, 8케이스) 화면
     판별 결과. app/pipeline_stages.py의 STAGE_TO_SCREEN/NO_MATCH_SCREEN 매핑을 그대로
-    반영하며, 8케이스 전부에 대한 판별 로직은 verify_resume_cases.py로 검증됐다.
+    반영하며, 8케이스 전부에 대한 판별 로직은 tests/verify_resume_cases.py로 검증됐다.
 
     - 이 프로젝트에 매칭(match_results) 자체가 없으면(8케이스의 ①, 아직 공고 선택 전):
       screen=3(NO_MATCH_SCREEN), stage/match_id/match_status는 전부 None.
@@ -490,9 +490,15 @@ class ProjectStatusOut(BaseModel):
     progress_percent: int | None = None
     match_id: int | None = None
     match_status: str | None = None
-    # [2026-09-22 신규, 프론트 전달사항 4번] match_status='failed'일 때만 값이 있다 —
-    # 진행 화면의 "다시 시도" 버튼 옆에 실패 사유를 보여주는 용도.
+    # [2026-09-23 개정] match_status가 'waiting_resume'(자동 재시도 대기 중)이거나
+    # 'failed'(재시도 5회 소진, 확정된 실패)일 때 값이 있다 — 진행 화면에 실패 사유를
+    # 보여주는 용도. 'failed'일 때만 "다시 이어가기" 버튼을 보여주면 된다.
     failure_reason: str | None = None
+    # [2026-09-23 신규] 자동 재시도 소진 횟수(0~5)와 다음 자동 재시도 예정 시각 —
+    # match_status='waiting_resume'일 때만 next_retry_at에 값이 있다. 화면에 "N번째
+    # 재시도 중" 또는 "다음 재시도까지 남은 시간" 같은 걸 보여주고 싶으면 쓰면 된다.
+    retry_count: int = 0
+    next_retry_at: datetime.datetime | None = None
 
 
 class RetryTaskRequest(BaseModel):
@@ -576,7 +582,11 @@ class DemoGenerateResponse(BaseModel):
 # 프로젝트 목록 (대시보드 "내 프로젝트")
 # ---------------------------------------------------------------------------
 class ProjectListItemOut(BaseModel):
-    """GET /projects(목록) 응답 항목 하나 — 프로젝트 1건 + 가장 최근 매칭(있으면) 요약."""
+    """GET /projects(목록) 응답 항목 하나 — 프로젝트 1건 + 가장 최근 매칭(있으면) 요약.
+
+    [2026-09-23 개정] 화면 헤더 종모양 알림(NotificationBell, front/src/features/workflow/
+    shared.jsx)이 이 목록 엔드포인트를 이미 폴링하고 있어서, 별도 알림 엔드포인트 대신
+    여기에 display_status/retry_count/next_retry_at/failure_reason을 추가했다."""
 
     model_config = ConfigDict(from_attributes=True)
     project_id: int
@@ -585,9 +595,15 @@ class ProjectListItemOut(BaseModel):
     notice_id: str | None = None
     notice_title: str | None = None
     match_status: str | None = None
+    # 서비스 내부 상태(실행/재개대기/사용자대기/실패/완료/중단, match_status)를 화면 문구로
+    # 분류한 값 — app/pipeline_stages.py status_to_display 참고. 매칭 자체가 없으면 None.
+    display_status: str | None = Field(None, description="'진행'/'확인이 필요합니다'/'문제가 생겨 멈췄다'/'완료'/'중단됨' 중 하나, 매칭 없으면 None")
     stage: str | None = None
     progress_percent: int | None = None
     screen: int | None = None
+    retry_count: int = 0
+    next_retry_at: datetime.datetime | None = None
+    failure_reason: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -661,17 +677,40 @@ class ItemOut(BaseModel):
     created_at: datetime.datetime
     match_status: str | None = None
     stage: str | None = None
-    status_label: str = Field(..., description="'공고 매칭 전'/'진행중'/'판단 대기'/'완료'/'중단' 중 하나")
+    status_label: str = Field(..., description="'공고 매칭 전'/'진행중'/'판단 대기'/'완료'/'중단'/'실패' 중 하나")
     step: str | None = Field(None, description='마지막으로 실행된 Agent 이름(전략/작성/구현/검증-1/검증-2/검수) — agent_executions 최신 행 기준')
     attempts: int | None = Field(None, description='같은 단계(step)를 몇 번째 시도 중인지 — agent_executions.attempt_no 최신값')
     last_updated: datetime.datetime | None = Field(None, description='agent_executions 최신 실행 시각, 없으면 프로젝트 등록 시각')
     stalled: bool = Field(False, description='완료·보관 상태가 아니면서 마지막 갱신 후 48시간 이상 지났는지')
     score: float | None = Field(None, description='doc_score + artifact_score 합계(둘 다 없으면 None)')
     archived: bool = False
+    # [2026-09-23 신규] 생성 작업(계획서/프로토타입) 자동 재시도 소진 횟수(0~5)와 마지막
+    # 실패 사유 — match_status가 'waiting_resume'/'failed'일 때만 의미가 있다.
+    generation_retry_count: int = 0
+    generation_failure_reason: str | None = None
 
 
 class ItemArchiveIn(BaseModel):
     archived: bool = Field(..., description='True면 보관 처리, False면 복원')
+
+
+class GenerationFailureAlertOut(BaseModel):
+    """GET /admin/generation-alerts 응답 — 생성 작업이 자동 재시도 5회를 전부 소진하고
+    확정 실패할 때마다 한 행씩 쌓이는 관리자 알림(generation_failure_alerts)."""
+
+    model_config = ConfigDict(from_attributes=True)
+    alert_id: int
+    match_id: int
+    project_id: int
+    stage: str
+    retry_count: int
+    failure_reason: str | None = None
+    created_at: datetime.datetime
+    acknowledged_at: datetime.datetime | None = None
+
+
+class GenerationFailureAlertAckIn(BaseModel):
+    acknowledged: bool = Field(..., description='True면 확인 처리, False면 확인 취소')
 
 
 class ScoreHistoryEntryOut(BaseModel):
