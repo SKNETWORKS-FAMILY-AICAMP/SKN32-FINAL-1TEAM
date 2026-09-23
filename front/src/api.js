@@ -96,7 +96,9 @@ export const retryTask=(projectId,taskKey)=>api.post(`/projects/${projectId}/ret
 
 // [2026-09-15] 응답이 JSON이 아니라 실제 파일 바이너리인 다운로드 공용 헬퍼 — apiFetch(항상
 // JSON 파싱)를 못 쓰는 GET /projects/{id}/plan-document.docx 가 쓴다.
-async function downloadFile(path,filename){
+// 파일 바이너리를 Blob으로 받아온다(401이면 한 번 갱신 후 재시도) — 받아서 저장하는
+// downloadFile과, 화면에 띄우는 fetchPlanDocumentPdf가 같이 쓴다.
+async function fetchBlob(path){
   let res=await fetch(`${API_BASE}${path}`,{credentials:'include'});
   if(res.status===401){
     const refreshed=await refreshAccessToken();
@@ -104,10 +106,16 @@ async function downloadFile(path,filename){
   }
   if(!res.ok){
     const text=await res.text();
-    const data=text?JSON.parse(text):null;
+    // 에러 본문이 JSON이 아닐 수도 있다(프록시가 낸 HTML 오류 페이지 등) — 그땐 본문/상태 문구를 쓴다.
+    let data=null;
+    try{data=text?JSON.parse(text):null}catch(e){data=text||null}
     throw new ApiError(res.status,data?.detail??data??res.statusText);
   }
-  const blob=await res.blob();
+  return res.blob();
+}
+
+async function downloadFile(path,filename){
+  const blob=await fetchBlob(path);
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url;a.download=filename;
@@ -119,6 +127,11 @@ async function downloadFile(path,filename){
 // 양식(별첨1) 구조로 채운 진짜 docx를 내려준다(app/plan_document_export.py) — ReviewScreen의
 // 더미(dummyDeliverables.js) 대신 이 함수를 쓰면 실제 양식이 반영된 파일을 받는다.
 export const downloadPlanDocument=(projectId,filename='사업계획서.docx')=>downloadFile(`/projects/${projectId}/plan-document.docx`,filename);
+
+// GET /projects/{id}/plan-document.pdf — 위 docx를 서버가 LibreOffice로 변환한 PDF(app/pdf_export.py).
+// 화면(PlanForm 우측 뷰어)에 띄우려고 Blob으로 받는다 — iframe src에 엔드포인트를 그대로 걸면
+// 401 재발급 처리가 안 되고, 변환 실패(503) 사유도 브라우저 기본 화면에 묻혀 안 보인다.
+export const fetchPlanDocumentPdf=(projectId)=>fetchBlob(`/projects/${projectId}/plan-document.pdf`);
 
 // 마이페이지 사업자등록번호 조회 — 서버가 국세청 상태조회 API를 대신 호출한다
 // (back/app/routers/biz_check.py). 응답: {valid, b_stt_cd, label, tax_type, tax_type_cd, message}

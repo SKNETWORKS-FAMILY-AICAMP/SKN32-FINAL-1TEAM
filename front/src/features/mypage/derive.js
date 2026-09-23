@@ -109,6 +109,12 @@ export function profileToIntake(profile) {
     birthDate: b.birthDate,
     gender: b.gender,
     foundedAt: b.applicantType === 'preliminary' ? '' : b.openedAt,
+    // 사업자등록번호는 입력 화면에 다시 노출하지 않고 값만 들고 간다 — 사업계획서 일반현황
+    // (companies.business_reg_no)을 채우는 값이라, 안 넘기면 문서에 ○○○-○○-○○○○○로 남는다.
+    // 마이페이지에서 이미 국세청 조회를 거친 값이라 여기서 다시 검증하지 않는다.
+    // 예비창업자는 사업자등록번호 자체가 없다(설립일과 같은 규칙).
+    bizNo: b.applicantType === 'preliminary' ? '' : (b.bizNo || ''),
+    companyName: b.applicantType === 'preliminary' ? '' : (b.companyName || ''),
     noTeam: c.soloFounder,
     team: team.length ? team : [{ ...EMPTY_TEAM_ROW }],
     industry: b.industry,
@@ -131,7 +137,7 @@ export function missingRequiredFields(profile) {
   need(!basic.applicantType, '신청자 유형', 'basic', 'mp-applicant');
   need(!basic.ceoName || !basic.birthDate || !basic.gender, '대표자 정보', 'basic', 'mp-ceo');
   need(!basic.region.sido || !basic.industry?.trim(), '지역 · 주업종', 'basic', 'mp-region');
-  need(biz && (!basic.bizNo || !basic.openedAt), '사업자 정보', 'basic', 'mp-biz');
+  need(biz && (!basic.bizNo || !basic.companyName || !basic.openedAt), '사업자 정보', 'basic', 'mp-biz');
   need(!cap.careers.length || !cap.skills?.trim(), '대표자 이력', 'capability', 'mp-career');
   need(!cap.soloFounder && !(cap.team.length && cap.team.every(teamRowFilled)), '팀 구성원', 'capability', 'mp-team');
   return missing;
