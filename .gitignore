@@ -24,3 +24,5 @@ __pycache__/
 **/generate_report.py
 **/generated_reports/
 **/generate_reports/
+
+/tools/
