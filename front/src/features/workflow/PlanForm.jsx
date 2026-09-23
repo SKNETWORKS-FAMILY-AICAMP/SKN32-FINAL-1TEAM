@@ -1,14 +1,17 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
-import React, {useState} from 'react';
+import React, {useState, useEffect} from 'react';
 import {Icon} from '../../components/Icons.jsx';
 import Preparation from '../../components/Preparation.jsx';
 import {buildGeneralInfo,buildOverview,DOC_SCORE_BY_OUTCOME} from './utils.js';
 import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_DOCUMENT_SECTIONS,PLAN_TABLE_EXAMPLE,PSST_OFFICIAL_HEADERS,SCORE_DISCLAIMER,WRITING_SUBTASKS} from './data.js';
-import {retryTask} from '../../api.js';
+import {getProjectStatus,retryTask} from '../../api.js';
 
 // WRITING_SUBTASKS 3개는 전부 PLAN_STAGE_TASKS(data.js)에서 같은 '작성' Agent 몫이라
 // 백엔드에도 별도 task_key 없이 하나(writing)로 묶여 있다 — app/schemas.py RetryTaskRequest 참고.
 const TASK_KEY_BY_LABEL = { '사업계획서 본문 작성': 'writing', '그래프 생성': 'writing', '표 생성': 'writing' };
+
+// 프로토타입 생성 중인지 확인하는 주기. 진행 중일 때만 돌고 끝나면 멈춘다.
+const STATUS_POLL_MS = 2000;
 
 // 화면 검토(audit.jsx)용 데모 타이머 버전 — 실제 흐름은 GenerationProgress가 서버 진행률을 쓴다.
 export function PipelineProgress({onComplete}){return <Preparation kind="plan" onComplete={onComplete}/>;}
@@ -129,7 +132,37 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
   // 기본은 펼친 상태(사용자 지적: 처음엔 점수가 바로 보여야 함).
   const [scoreOpen, setScoreOpen] = useState(true);
 
+  // 프로토타입 생성이 서버에서 도는 동안(stage='prototype_building') 알림을 통해 이 화면으로
+  // 되돌아올 수 있다 — 계획서는 이미 끝난 상태라 알림이 "완료"로 뜨고 plan-form으로 보낸다
+  // (shared.jsx progressAlertsFrom). 그런데 생성 버튼이 그대로 눌리는 상태로 남아 있어서
+  // 아직 시작 전인 것처럼 보였다(사용자 지적). 서버는 중복 요청을 무시하지만
+  // (app/routers/projects.py _start_generation) 화면만으로는 구분이 안 되므로,
+  // 진행 중인 동안 버튼을 잠그고 라벨로 상태를 알린다.
+  const [generating, setGenerating] = useState(false);
+
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    let timer = null;
+    const poll = () => getProjectStatus(projectId).then((status) => {
+      if (cancelled) return;
+      const running = status?.stage === 'prototype_building';
+      setGenerating(running);
+      // 이미 생성이 돌고 있으면 점수 미달 확인창은 의미가 없다.
+      if (running) setConfirmProceed(false);
+      // 진행 중일 때만 이어서 확인한다 — 끝나면 폴링을 멈추고 버튼이 다시 풀린다.
+      if (running) timer = setTimeout(poll, STATUS_POLL_MS);
+    }).catch((err) => {
+      // 상태를 못 읽었다고 버튼까지 막지는 않는다.
+      if (cancelled) return;
+      console.error('생성 상태를 확인하지 못했어요', err);
+    });
+    poll();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [projectId]);
+
   const handleGenerateClick = () => {
+    if (generating) return;
     if (!passed) { setConfirmProceed(true); return; }
     onGenerate();
   };
@@ -237,10 +270,15 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
           </div>
 
           <div className="flex flex-col gap-2 mt-4">
-            <button onClick={handleGenerateClick}
-              className="w-full rounded-xl bg-[var(--primary)] text-white py-3 text-[14.5px] font-semibold hover:bg-[var(--primary-dim)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-              프로토타입 생성
+            <button onClick={handleGenerateClick} disabled={generating}
+              className="w-full rounded-xl bg-[var(--primary)] text-white py-3 text-[14.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--primary-dim)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
+              {generating ? '프로토타입 생성 중…' : '프로토타입 생성'}
             </button>
+            {generating && (
+              <p className="text-[11.5px] text-[var(--muted-fg)] leading-relaxed">
+                프로토타입을 만들고 있어요. 진행 상황은 알림에서 확인할 수 있어요.
+              </p>
+            )}
           </div>
 
           {confirmProceed && (
