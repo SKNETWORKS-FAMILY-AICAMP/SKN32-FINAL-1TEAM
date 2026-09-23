@@ -165,26 +165,28 @@ def _wait_until_status(db_session, match: MatchResult, status: str, timeout_s: f
     raise AssertionError(f'{timeout_s}초 안에 status={status!r}가 되지 못함(마지막 status={match.status!r})')
 
 
-def test_failed_generation_marks_status_and_reason(authed_client, db_session, monkeypatch):
-    """[2026-09-22, 프론트 전달사항 4번] 실행 중 예외가 나면 status='failed' +
-    failure_reason이 남아야 하고, stage는 실패한 단계 그대로여야 한다(어디서 멈췄는지
-    알 수 있게)."""
-    monkeypatch.setattr(projects_router, 'DUMMY_GENERATION_STEP_SECONDS', 0.02)
-
-    # projects.time은 표준 라이브러리 time 모듈 그 자체라(같은 객체), 여기서 sleep을
-    # 갈아치우면 이 테스트 파일의 폴링(_wait_until_status의 time.sleep(0.05))에도 그대로
-    # 적용된다 — 생성 스텝 간격(0.02초)일 때만 실패를 흉내내고, 그 외(폴링 등)는 진짜
-    # sleep으로 넘겨야 한다.
+def _monkeypatch_boom(monkeypatch, message='더미 에이전트 강제 실패(테스트)'):
+    """projects.time은 표준 라이브러리 time 모듈 그 자체라(같은 객체), 여기서 sleep을
+    갈아치우면 테스트 파일의 폴링(_wait_until_status 등)에도 그대로 적용된다 — 생성 스텝
+    간격(DUMMY_GENERATION_STEP_SECONDS)일 때만 실패를 흉내내고, 그 외(폴링 등)는 진짜
+    sleep으로 넘겨야 한다."""
     _real_sleep = time.sleep
 
     def _boom(seconds):
         if seconds == projects_router.DUMMY_GENERATION_STEP_SECONDS:
-            raise RuntimeError('더미 에이전트 강제 실패(테스트)')
+            raise RuntimeError(message)
         _real_sleep(seconds)
 
     monkeypatch.setattr(projects_router.time, 'sleep', _boom)
 
-    match = _create_match(authed_client, db_session, 'NOTICE-ASYNC-FAIL')
+
+def test_first_failure_schedules_backoff_retry_instead_of_failing(authed_client, db_session, monkeypatch):
+    """[2026-09-23 개정] 첫 실패에서 바로 status='failed'가 되면 안 된다 — 15초 뒤
+    자동 재시도를 예약한 status='waiting_resume'이 되고, retry_count가 1이 돼야 한다."""
+    monkeypatch.setattr(projects_router, 'DUMMY_GENERATION_STEP_SECONDS', 0.02)
+    _monkeypatch_boom(monkeypatch)
+
+    match = _create_match(authed_client, db_session, 'NOTICE-ASYNC-BACKOFF1')
     match.stage = projects_router.ps.STAGE_PLAN_WRITING
     match.progress_percent = 0
     match.worker_claimed_at = None
@@ -195,9 +197,94 @@ def test_failed_generation_marks_status_and_reason(authed_client, db_session, mo
     )
     assert claimed is True
 
-    _wait_until_status(db_session, match, 'failed')
+    _wait_until_status(db_session, match, 'waiting_resume')
     assert match.stage == projects_router.ps.STAGE_PLAN_WRITING, '실패해도 stage는 실패한 단계 그대로여야 함'
     assert '더미 에이전트 강제 실패' in (match.failure_reason or '')
+    assert match.retry_count == 1
+    assert match.next_retry_at is not None
+    expected_delay = projects_router.GENERATION_RETRY_BASE_SECONDS  # 1번째 재시도 = 기본 간격(15초)
+    actual_delay = (match.next_retry_at - datetime.datetime.utcnow()).total_seconds()
+    assert expected_delay - 2 < actual_delay <= expected_delay, f'1번째 백오프는 {expected_delay}초여야 함(실제 {actual_delay})'
+
+    # 아직 재시도 5회를 다 못 썼으니 관리자 알림은 안 생겨야 한다.
+    alerts = db_session.query(projects_router.GenerationFailureAlert).filter_by(match_id=match.match_id).all()
+    assert alerts == [], '재시도 여지가 남아있는 실패는 관리자 알림 대상이 아님'
+
+
+def test_recovery_does_not_retry_before_next_retry_at(authed_client, db_session):
+    """status='waiting_resume'이어도 next_retry_at이 아직 안 지났으면 복구 루프가
+    건드리면 안 된다 — 백오프 간격을 지켜야 함."""
+    match = _create_match(authed_client, db_session, 'NOTICE-ASYNC-BACKOFF-EARLY')
+    match.stage = projects_router.ps.STAGE_PLAN_WRITING
+    match.progress_percent = 40
+    match.status = 'waiting_resume'
+    match.retry_count = 1
+    match.failure_reason = '이전 실패(테스트)'
+    match.worker_claimed_at = None
+    match.next_retry_at = datetime.datetime.utcnow() + datetime.timedelta(seconds=30)
+    db_session.commit()
+
+    projects_router._recover_orphaned_generations_once(db_session)
+    time.sleep(0.1)  # 잘못 재시작됐다면 진행됐을 시간을 줌
+
+    db_session.expire_all()
+    db_session.refresh(match)
+    assert match.status == 'waiting_resume', '백오프 대기 시간이 남았으면 손대면 안 됨'
+    assert match.progress_percent == 40
+
+
+def test_recovery_retries_after_next_retry_at_passes(authed_client, db_session, monkeypatch):
+    """next_retry_at이 지나면 복구 루프가 자동으로 다시 이어받아야 하고(사용자 개입 없이),
+    이미 진행된 부분(progress_percent)부터 재개해야 한다."""
+    monkeypatch.setattr(projects_router, 'DUMMY_GENERATION_STEP_SECONDS', 0.02)
+    match = _create_match(authed_client, db_session, 'NOTICE-ASYNC-BACKOFF-DUE')
+    match.stage = projects_router.ps.STAGE_PLAN_WRITING
+    match.progress_percent = 40
+    match.status = 'waiting_resume'
+    match.retry_count = 1
+    match.failure_reason = '이전 실패(테스트)'
+    match.worker_claimed_at = None
+    match.next_retry_at = datetime.datetime.utcnow() - datetime.timedelta(seconds=1)  # 이미 지남
+    db_session.commit()
+
+    projects_router._recover_orphaned_generations_once(db_session)
+
+    _wait_until_done(db_session, match, projects_router.ps.STAGE_PLAN_REVIEW_PENDING)
+    assert match.status == 'in_progress', '클레임되면서 waiting_resume -> in_progress로 되돌아가야 함'
+    assert match.retry_count == 0, '성공적으로 재개됐으면 실패 스트릭이 리셋돼야 함'
+    assert match.progress_percent == 100
+
+
+def test_max_retries_exhausted_marks_failed_and_creates_alert(authed_client, db_session, monkeypatch):
+    """자동 재시도 5회를 전부 소진하고도 실패하면 status='failed'로 확정되고,
+    generation_failure_alerts에 관리자 알림 행이 하나 남아야 한다."""
+    monkeypatch.setattr(projects_router, 'DUMMY_GENERATION_STEP_SECONDS', 0.02)
+    _monkeypatch_boom(monkeypatch, message='6번째 실패(테스트)')
+
+    match = _create_match(authed_client, db_session, 'NOTICE-ASYNC-CAP')
+    match.stage = projects_router.ps.STAGE_PLAN_WRITING
+    match.progress_percent = 70
+    match.status = 'waiting_resume'
+    match.retry_count = projects_router.GENERATION_RETRY_MAX_ATTEMPTS  # 이미 5회 소진
+    match.worker_claimed_at = None
+    match.next_retry_at = datetime.datetime.utcnow() - datetime.timedelta(seconds=1)
+    db_session.commit()
+
+    projects_router._recover_orphaned_generations_once(db_session)
+
+    _wait_until_status(db_session, match, 'failed')
+    assert match.retry_count == projects_router.GENERATION_RETRY_MAX_ATTEMPTS + 1
+    assert match.next_retry_at is None
+    assert '6번째 실패' in (match.failure_reason or '')
+
+    alerts = db_session.query(projects_router.GenerationFailureAlert).filter_by(match_id=match.match_id).all()
+    assert len(alerts) == 1, '재시도 상한 도달 시 관리자 알림이 정확히 한 행 생겨야 함'
+    alert = alerts[0]
+    assert alert.project_id == match.project_id
+    assert alert.stage == projects_router.ps.STAGE_PLAN_WRITING
+    assert alert.retry_count == projects_router.GENERATION_RETRY_MAX_ATTEMPTS
+    assert '6번째 실패' in (alert.failure_reason or '')
+    assert alert.acknowledged_at is None
 
 
 def test_recovery_loop_does_not_retry_failed_generation(authed_client, db_session):
@@ -238,7 +325,67 @@ def test_plan_start_retries_after_failure(authed_client, db_session, monkeypatch
     assert body['match_status'] == 'in_progress'
     assert body['failure_reason'] is None
     assert body['progress_percent'] == 0, '다시 시도는 처음부터 다시 돌아야 함'
+    # [2026-09-23] 수동 "다시 이어가기"는 0이 아니라 1로 간다 — 이 클릭 자체가 재시도
+    # 1회를 쓴 걸로 친다(원래 재시도 예산 5회의 연장선).
+    assert body['retry_count'] == 1
 
     _wait_until_done(db_session, match, projects_router.ps.STAGE_PLAN_REVIEW_PENDING)
     assert match.status == 'in_progress'
     assert match.failure_reason is None
+
+
+# ============================================================================
+# 화면 헤더 종모양 알림 — GET /projects(목록)의 display_status/재시도 필드
+# (front/src/features/workflow/shared.jsx NotificationBell이 이 엔드포인트를 이미
+# 폴링하고 있어서, 별도 알림 엔드포인트 대신 여기에 필드를 얹었다.)
+# ============================================================================
+
+def test_list_projects_classifies_waiting_resume_and_failed_for_display(authed_client, db_session):
+    """waiting_resume/failed 상태가 화면 문구(진행/문제가 생겨 멈췄다)로 분류되고,
+    재시도 횟수·다음 재시도 시각·실패 사유도 그대로 실려야 한다."""
+    waiting = _create_match(authed_client, db_session, 'NOTICE-NOTIFY-WAITING')
+    waiting.stage = projects_router.ps.STAGE_PLAN_WRITING
+    waiting.status = 'waiting_resume'
+    waiting.retry_count = 2
+    waiting.failure_reason = '30초 후 재시도 예정(테스트)'
+    waiting.next_retry_at = datetime.datetime.utcnow() + datetime.timedelta(seconds=30)
+    db_session.commit()
+
+    res = authed_client.get('/projects')
+    assert res.status_code == 200, res.text
+    row = next(r for r in res.json() if r['project_id'] == waiting.project_id)
+    assert row['match_status'] == 'waiting_resume'
+    assert row['display_status'] == '진행', '재개대기도 화면엔 그냥 진행 중으로 보여야 함'
+    assert row['retry_count'] == 2
+    assert row['next_retry_at'] is not None
+    assert row['failure_reason'] == '30초 후 재시도 예정(테스트)'
+
+    # 실패로 확정되면(자동 재시도 5회 소진) 별도 문구로 분류돼야 한다 — 동시 실행 1건
+    # 제한 때문에 앞의 waiting_resume 매칭을 먼저 보관 처리해야 새 프로젝트를 만들 수 있다.
+    waiting.archived_at = datetime.datetime.utcnow()
+    waiting.archived_by = 'user'
+    db_session.commit()
+
+    failed = _create_match(authed_client, db_session, 'NOTICE-NOTIFY-FAILED')
+    failed.stage = projects_router.ps.STAGE_PROTOTYPE_BUILDING
+    failed.status = 'failed'
+    failed.retry_count = 6
+    failed.failure_reason = '재시도 5회 소진(테스트)'
+    db_session.commit()
+
+    res2 = authed_client.get('/projects')
+    row2 = next(r for r in res2.json() if r['project_id'] == failed.project_id)
+    assert row2['display_status'] == '문제가 생겨 멈췄다'
+    assert row2['retry_count'] == 6
+
+
+def test_list_projects_classifies_completed_for_display(authed_client, db_session):
+    done = _create_match(authed_client, db_session, 'NOTICE-NOTIFY-DONE')
+    done.stage = projects_router.ps.STAGE_DONE
+    done.status = 'completed'
+    db_session.commit()
+
+    res = authed_client.get('/projects')
+    assert res.status_code == 200, res.text
+    row = next(r for r in res.json() if r['project_id'] == done.project_id)
+    assert row['display_status'] == '완료'

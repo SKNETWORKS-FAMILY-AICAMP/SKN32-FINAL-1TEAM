@@ -112,12 +112,14 @@ def _log_agent_executions(db, match_id: int, retry_agents: tuple[str, ...] = ())
     for task_key, agent_name in FIXED_TASK_SEQUENCE:
         db.add(AgentExecution(
             match_id=match_id, agent_name=agent_name, task_key=task_key, attempt_no=1,
-            model_used='dummy-llm-v1', rerun_type='initial', token_usage=800, status='success',
+            model_used='dummy-llm-v1', rerun_type='initial', token_usage=800,
+            status=pipeline_stages.GENERATION_STATUS_COMPLETED,
         ))
         if agent_name in retry_agents:
             db.add(AgentExecution(
                 match_id=match_id, agent_name=agent_name, task_key=task_key, attempt_no=2,
-                model_used='dummy-llm-v1', rerun_type='rerun', token_usage=650, status='success',
+                model_used='dummy-llm-v1', rerun_type='rerun', token_usage=650,
+                status=pipeline_stages.GENERATION_STATUS_COMPLETED,
             ))
 
 
@@ -313,7 +315,7 @@ def seed_dummy_pipeline(
         notice_id=notice_id,
         fit_score=decimal.Decimal('87.50'),
         reason='더미 매칭 결과 — 실제 임베딩 유사도 계산 없이 임의로 채운 값입니다.',
-        status='completed',
+        status=pipeline_stages.GENERATION_STATUS_COMPLETED,
         stage=pipeline_stages.STAGE_DONE,
         progress_percent=100,
     )

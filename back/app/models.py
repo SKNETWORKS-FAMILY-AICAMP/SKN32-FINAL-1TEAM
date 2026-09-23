@@ -12,6 +12,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Enum,
     ForeignKey,
     Integer,
     LargeBinary,
@@ -28,7 +29,13 @@ from sqlalchemy.dialects.mysql import LONGTEXT, MEDIUMBLOB
 from sqlalchemy.dialects.mysql import SMALLINT as MySQLSmallInteger
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app import pipeline_stages as ps
 from app.database import Base
+
+# [2026-09-23 신규] match_results.status/agent_executions.status가 공유하는 서비스 내부
+# 상태 6종(app/pipeline_stages.py 참고) — MySQL에서는 실제 ENUM(...) 컬럼이 되고, SQLite
+# (테스트)에서는 VARCHAR + CHECK 제약으로 동작한다(SQLAlchemy Enum의 기본 동작).
+_GenerationStatus = Enum(*ps.GENERATION_STATUSES, name='generation_status')
 
 # app_schema.sql엔 MySQL 전용 타입(LONGTEXT, INT UNSIGNED)으로 선언된 컬럼이 있는데,
 # 이 타입들을 그대로 쓰면 SQLite(tests/conftest.py가 만드는 테스트 DB)에서 컴파일 에러가 난다.
@@ -509,7 +516,7 @@ class MatchResult(Base):
     notice_id: Mapped[str] = mapped_column(String(320), ForeignKey('notices.notice_id'))
     fit_score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(String(20), default='in_progress')
+    status: Mapped[str] = mapped_column(_GenerationStatus, default=ps.GENERATION_STATUS_IN_PROGRESS)
     archived_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     archived_by: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
@@ -530,13 +537,20 @@ class MatchResult(Base):
     # (_try_claim_and_run/_generation_recovery_loop 참고).
     worker_claimed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
-    # [2026-09-22 신규, 프론트 전달사항 4번] 생성 작업(plan_writing/prototype_building)
-    # 실패 처리 — status='failed'로 표시하고 stage는 실패한 단계 그대로 둔다(어디서
-    # 멈췄는지 알 수 있게). failure_reason엔 원인을 텍스트로 남긴다. 실패는 재시작하지
-    # 않으면(=_start_generation을 사용자가 다시 호출하지 않으면) 복구 루프가 자동으로
-    # 재시도하지 않는다 — "다시 시도" 버튼을 눌러야 재개되게 하려는 의도
-    # (_recover_orphaned_generations_once/_start_generation 참고).
+    # [2026-09-23 개정] status='failed'는 이제 "자동 재시도 5회를 전부 소진한 뒤"에만
+    # 도달한다(과거엔 첫 실패에서 바로 failed였음) — status='waiting_resume'이 그 사이의
+    # 자동 백오프 대기 상태를 표현한다. failure_reason엔 마지막 실패 원인을 남긴다.
+    # (_simulate_generation/_recover_orphaned_generations_once/_start_generation 참고).
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # [2026-09-23 신규] 실패 후 자동 재시도 횟수 — 15초 -> 30 -> 60 -> 120 -> 240초로
+    # 2배씩 늘려가며 최대 5번까지 자동으로 재시도하고, 그래도 안 되면 status='failed'로
+    # 확정한다(관리자 알림 + 사용자 "다시 이어가기" 버튼 대상). 사용자가 수동으로
+    # "다시 이어가기"를 누르면(_start_generation) 0으로 리셋된다 — 새 시도 묶음이라는 뜻.
+    retry_count: Mapped[int] = mapped_column(_UnsignedInt, default=0)
+    # 다음 자동 재시도를 시도할 시각(status='waiting_resume'일 때만 값이 있음) — 복구
+    # 루프가 이 시각이 지나기 전엔 재시도하지 않는다(백오프 간격을 지키기 위함).
+    next_retry_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
     project: Mapped['Project'] = relationship(back_populates='matches')
     eligibility_checks: Mapped[list['EligibilityCheck']] = relationship(back_populates='match')
@@ -560,6 +574,27 @@ class MatchScoreReason(Base):
     evidence_locator: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     match: Mapped['MatchResult'] = relationship(back_populates='score_reasons')
+
+
+class GenerationFailureAlert(Base):
+    """[2026-09-23 신규] 생성 작업이 자동 재시도(최대 5회, 백오프)를 전부 소진하고
+    status='failed'로 확정될 때마다 한 행씩 쌓는 관리자 알림 로그. match_results 자체는
+    최신 상태만 담아서 "몇 번이나 실패했었는지"가 남지 않으므로, 그 이력을 여기 별도로
+    보존한다. 관리자 대시보드가 이 테이블을 조회해 미확인 실패를 보여준다
+    (app/routers/projects.py _simulate_generation 참고)."""
+
+    __tablename__ = 'generation_failure_alerts'
+
+    alert_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    match_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('match_results.match_id'))
+    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
+    stage: Mapped[str] = mapped_column(String(30))  # 실패가 확정된 시점의 stage(어느 단계였는지)
+    retry_count: Mapped[int] = mapped_column(_UnsignedInt)  # 확정 시점까지 소진한 자동 재시도 횟수
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+    # 관리자가 확인 처리한 시각 — NULL이면 아직 미확인. 재시도 자체를 막지는 않는다
+    # (사용자는 확인 여부와 무관하게 "다시 이어가기"를 누를 수 있음).
+    acknowledged_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class EligibilityCheck(Base):
@@ -906,7 +941,10 @@ class AgentExecution(Base):
     model_used: Mapped[str] = mapped_column(String(50))
     rerun_type: Mapped[str] = mapped_column(String(20))
     token_usage: Mapped[int] = mapped_column(_UnsignedInt)  # app_schema.sql: INT UNSIGNED
-    status: Mapped[str] = mapped_column(String(20))
+    # [2026-09-23 개정] match_results.status와 같은 enum(6종)을 쓴다 — 예전엔 여기만
+    # 'success'라는 다른 이름을 썼는데(seed_dummy_pipeline.py), match_results가 쓰는
+    # 'completed'로 통일한다(app/pipeline_stages.py GENERATION_STATUSES 참고).
+    status: Mapped[str] = mapped_column(_GenerationStatus)
     started_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
 
 
