@@ -25,10 +25,9 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from app.database import init_sqlite_dev_db
-from app.routers import admin, auth, biz_check, faqs, profile, projects
+from app.routers import admin, auth, biz_check, faqs, profile, projects, uploads
 from app.routers.projects import UPLOAD_DIR
 
 app = FastAPI(title='S-Brain API', version='0.1.0')
@@ -52,9 +51,9 @@ app.add_middleware(
 )
 
 # projects.py 의 POST /projects 가 로컬 디스크(/uploads)에 저장한 첨부파일을
-# 그대로 URL로 접근 가능하게 정적 서빙한다 (backend_decisions.md #6).
+# 기존 URL을 유지하면서 uploads 라우터에서 인증·소유권을 확인한다.
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-app.mount('/uploads', StaticFiles(directory=UPLOAD_DIR), name='uploads')
+app.include_router(uploads.router)
 
 app.include_router(auth.router)
 app.include_router(projects.router)

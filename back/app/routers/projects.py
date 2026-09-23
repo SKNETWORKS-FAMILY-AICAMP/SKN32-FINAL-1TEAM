@@ -270,7 +270,7 @@ ACTIVE_MATCH_STATUSES = ('in_progress',)
 def _save_attachment(file: UploadFile) -> tuple[str, str]:
     """첨부파일을 저장하고 (원본 파일명, 접근 가능한 URL)을 반환한다.
     지금은 로컬 디스크에 저장 — 나중에 S3 등으로 바꿀 때 이 함수 내부만 교체하면 된다.
-    (main.py 에서 /uploads 를 StaticFiles로 mount 해뒀어야 이 URL로 실제 접근이 된다.)"""
+    /uploads 경로는 로그인 및 프로젝트 소유권 검사 후 파일을 제공한다."""
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     ext = os.path.splitext(file.filename or '')[1]
     stored_name = f'{uuid.uuid4().hex}{ext}'
@@ -647,6 +647,9 @@ def _simulate_generation(match_id: int, running_stage: str, done_stage: str) -> 
                 if step >= DUMMY_GENERATION_STEPS:
                     match.stage = done_stage
                     match.progress_percent = 100
+                    if done_stage == ps.STAGE_DONE:
+                        match.status = 'completed'
+                        match.failure_reason = None
                 else:
                     match.progress_percent = step * 100 // DUMMY_GENERATION_STEPS
                 match.worker_claimed_at = datetime.datetime.utcnow()  # 하트비트 — 진행 중엔 클레임이 안 늙는다
@@ -1081,7 +1084,12 @@ async def create_project(
         db.query(MatchResult)
         .join(Project, Project.project_id == MatchResult.project_id)
         .join(Company, Company.company_id == Project.company_id)
-        .filter(Company.user_id == current_user.user_id, MatchResult.status.in_(ACTIVE_MATCH_STATUSES))
+        .filter(
+            Company.user_id == current_user.user_id,
+            MatchResult.status.in_(ACTIVE_MATCH_STATUSES),
+            MatchResult.archived_at.is_(None),
+            or_(MatchResult.stage.is_(None), MatchResult.stage != ps.STAGE_DONE),
+        )
         .first()
     )
     if active is not None:
@@ -1187,6 +1195,7 @@ def delete_project(
     db.query(TeamMember).filter(TeamMember.project_id == project_id).delete()
     db.query(PricingItem).filter(PricingItem.project_id == project_id).delete()
     db.query(MatchCandidate).filter(MatchCandidate.project_id == project_id).delete()
+    db.query(ProjectPlanInput).filter(ProjectPlanInput.project_id == project_id).delete()
     db.query(Project).filter(Project.project_id == project_id).delete()
     db.commit()
     return Response(status_code=204)
