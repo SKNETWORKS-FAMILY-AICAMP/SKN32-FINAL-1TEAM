@@ -27,6 +27,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_sqlite_dev_db
+from app.request_logging import RequestLoggingMiddleware
 from app.routers import admin, auth, biz_check, faqs, profile, projects, uploads
 from app.routers.projects import UPLOAD_DIR
 
@@ -49,6 +50,12 @@ app.add_middleware(
     allow_methods=['*'],
     allow_headers=['*'],
 )
+
+# [2026-09-23, 팀 로깅 정책 "웹서비스" 담당분] 요청마다 시작/끝을 back/logs/에 파일로
+# 남긴다(DB엔 안 남김) — CORS보다 나중에 추가해서 미들웨어 스택 바깥쪽을 차지하게 했다
+# (Starlette는 add_middleware 호출 역순으로 스택을 쌓아서, 나중에 추가한 게 가장 바깥쪽 —
+# 즉 요청이 CORS를 타기도 전에 로그가 먼저 찍힌다). app/request_logging.py 참고.
+app.add_middleware(RequestLoggingMiddleware)
 
 # projects.py 의 POST /projects 가 로컬 디스크(/uploads)에 저장한 첨부파일을
 # 기존 URL을 유지하면서 uploads 라우터에서 인증·소유권을 확인한다.
