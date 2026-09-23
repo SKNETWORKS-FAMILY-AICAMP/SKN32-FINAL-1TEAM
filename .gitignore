@@ -50,3 +50,6 @@ login_test.html
 
 # --- 로컬 보관 문서 (용량이 커서 git에 올리지 않음) ---
 /프로젝트_기획서_*.docx
+
+# --- rhwp CLI 실행 파일 (28MB, 각자 릴리즈에서 받음 — back/scripts/README.md) ---
+back/rhwp.exe
