@@ -725,6 +725,12 @@ function AgentsTab(){
 const policyFromServer=p=>({scores:{doc:p.doc_weight,code:p.code_weight,plan:p.plan_weight},
   limits:{threshold:p.pass_threshold,rerun:p.rerun_cap,tokenRetry:p.token_retry_cap,recheck:p.deviation_cap}});
 const checklistFromServer=list=>list.map(i=>({id:i.check_item_id,name:i.name,how:i.method,kind:i.category,weight:i.weight,base:i.weight,on:i.enabled}));
+// [2026-09-23, 백엔드 전달사항 10번] 기획서 v1.8 5-4 — 체크리스트는 전체 합이 아니라
+// 산출물 카테고리마다 따로 15점 만점이다(app/routers/admin.py _CHECKLIST_CATEGORY_MAX_SCORE).
+// 예전엔 이 화면이 "전체 합 100점"으로 맞춰 보내서 서버가 항상 422로 되돌려보냈다.
+const CHECKLIST_CATEGORY_MAX=15;
+// 라벨은 표시용일 뿐이라, 서버가 카테고리를 늘리면 키 그대로 묶여서 보인다.
+const CHECKLIST_CATEGORY_LABEL={html:'HTML — 웹개발 · AI API',svg:'SVG — 원페이지'};
 const validNumber=(value,max=Infinity,integer=false)=>String(value).trim()!==''&&Number.isFinite(Number(value))&&Number(value)>=0&&Number(value)<=max&&(!integer||Number.isInteger(Number(value)));
 
 function PolicyTab({pushToast}){
@@ -743,20 +749,31 @@ function PolicyTab({pushToast}){
   if(!scores||!limits||!items)return <div><h1 className="text-[28px] font-bold mb-4">검증 정책</h1><p className="text-[13.5px] text-[var(--muted-fg)]">불러오는 중…</p></div>;
 
   const scoreSum=Number(scores.doc)+Number(scores.code)+Number(scores.plan);
-  const weightSum=items.filter(i=>i.on).reduce((s,i)=>s+Number(i.weight||0),0);
+  // 항목이 등장한 순서대로 카테고리를 묶는다 — 서버가 카테고리를 늘려도 화면이 따라간다.
+  const categories=[...new Set(items.map(i=>i.kind))];
+  const categoryLabel=kind=>CHECKLIST_CATEGORY_LABEL[kind]||kind;
+  const sumOfCategory=kind=>items.filter(i=>i.on&&i.kind===kind).reduce((s,i)=>s+Number(i.weight||0),0);
+  const isCategoryUsed=kind=>items.some(i=>i.on&&i.kind===kind);
+  // 사용 중인 항목이 하나도 없는 카테고리는 서버도 검사하지 않는다(admin.py save_checklist).
+  const isCategoryOk=kind=>!isCategoryUsed(kind)||Math.round(sumOfCategory(kind)*100)===CHECKLIST_CATEGORY_MAX*100;
 
-  // 체크를 해제·재선택하면 사용 중인 항목끼리 기준 가중치 비율대로 합 100을 다시 배분한다.
-  // 반올림 오차는 최대 나머지법으로 나눠 정확히 100을 맞춘다.
-  const redistribute=list=>{
-    const on=list.filter(i=>i.on);const totalBase=on.reduce((s,i)=>s+i.base,0);
+  // 체크를 해제·재선택하면 "같은 카테고리" 항목끼리만 기준 가중치 비율대로 15점을 다시
+  // 배분한다 — 카테고리를 넘나들며 점수를 주고받으면 서버 검증에 그대로 걸린다.
+  // 반올림 오차는 최대 나머지법으로 나눠 정확히 15점을 맞춘다.
+  const redistribute=(list,kind)=>{
+    const on=list.filter(i=>i.on&&i.kind===kind);const totalBase=on.reduce((s,i)=>s+i.base,0);
     if(totalBase<=0)return list;
-    const plans=on.map(i=>{const exact=i.base/totalBase*100;const floor=Math.floor(exact);return {id:i.id,floor,rem:exact-floor}});
-    let leftover=100-plans.reduce((s,p)=>s+p.floor,0);
+    const plans=on.map(i=>{const exact=i.base/totalBase*CHECKLIST_CATEGORY_MAX;const floor=Math.floor(exact);return {id:i.id,floor,rem:exact-floor}});
+    let leftover=CHECKLIST_CATEGORY_MAX-plans.reduce((s,p)=>s+p.floor,0);
     plans.slice().sort((a,b)=>b.rem-a.rem).slice(0,Math.max(leftover,0)).forEach(p=>{p.floor+=1});
     const map=Object.fromEntries(plans.map(p=>[p.id,p.floor]));
-    return list.map(i=>i.on?{...i,weight:map[i.id]}:{...i,weight:i.base});
+    return list.map(i=>i.kind!==kind?i:(i.on?{...i,weight:map[i.id]}:{...i,weight:i.base}));
   };
-  const toggleItem=id=>setItems(list=>redistribute(list.map(i=>i.id===id?{...i,on:!i.on}:i)));
+  const toggleItem=id=>setItems(list=>{
+    const target=list.find(i=>i.id===id);
+    if(!target)return list;
+    return redistribute(list.map(i=>i.id===id?{...i,on:!i.on}:i),target.kind);
+  });
   const setWeight=(id,v)=>setItems(list=>list.map(i=>i.id===id?{...i,weight:v,base:Number(v)||0}:i));
 
   const saveScores=async()=>{
@@ -778,10 +795,15 @@ function PolicyTab({pushToast}){
   };
   const saveItems=async()=>{
     if(!items.every(i=>validNumber(i.weight,100))){pushToast('검증 항목을 저장하지 못했습니다','각 가중치에 0~100 사이의 숫자를 입력해 주세요.','danger');return}
-    if(Math.round(weightSum*100)!==10000){pushToast('검증 항목을 저장하지 못했습니다','사용 중인 항목의 가중치 합이 100점이어야 합니다. (현재 '+weightSum+'점) 체크박스를 한 번 더 토글하면 100점에 맞게 재배분됩니다.','danger');return}
+    const badCategories=categories.filter(k=>!isCategoryOk(k));
+    if(badCategories.length){
+      const detail=badCategories.map(k=>categoryLabel(k)+' '+sumOfCategory(k)+'점').join(', ');
+      pushToast('검증 항목을 저장하지 못했습니다','묶음마다 사용 중인 항목의 가중치 합이 '+CHECKLIST_CATEGORY_MAX+'점이어야 합니다. (현재 '+detail+') 해당 묶음의 체크박스를 한 번 더 토글하면 '+CHECKLIST_CATEGORY_MAX+'점에 맞게 재배분됩니다.','danger');
+      return;
+    }
     try{
       await api.put('/admin/checklist',items.map(i=>({check_item_id:i.id,weight:Number(i.weight),enabled:i.on})));
-      pushToast('검증 항목이 저장되었습니다',items.filter(i=>i.on).length+' / '+items.length+'개 항목이 사용되며 가중치 합계 100점으로 반영됩니다.','info');
+      pushToast('검증 항목이 저장되었습니다',items.filter(i=>i.on).length+' / '+items.length+'개 항목이 사용되며 묶음마다 가중치 합계 '+CHECKLIST_CATEGORY_MAX+'점으로 반영됩니다.','info');
     }catch(e){pushToast('검증 항목을 저장하지 못했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
   };
 
@@ -840,34 +862,42 @@ function PolicyTab({pushToast}){
       <div className="mb-8">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h2 className="text-[20px] font-bold">코드 기준 자동 검증 항목</h2>
-          <div className="flex items-center gap-2">
-            <span className={'text-[12px] font-semibold px-2.5 py-0.5 rounded-full '+(weightSum===100?toneBg.ok:toneBg.danger)}>사용 중 가중치 합계 {weightSum}점</span>
-            <span className="text-[11.5px] text-[var(--muted-fg)]">모든 항목은 파싱·계산으로만 판정하며 LLM을 호출하지 않습니다.</span>
-          </div>
+          <span className="text-[11.5px] text-[var(--muted-fg)]">모든 항목은 파싱·계산으로만 판정하며 LLM을 호출하지 않습니다.</span>
         </div>
         <Panel>
-          <div className="grid grid-cols-[1.6fr_2fr_0.9fr_0.9fr_0.8fr] text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]">
-            <div className="p-4">검증 항목</div><div className="p-4">판정 방식</div><div className="p-4 text-center">구분</div><div className="p-4 text-center">가중치</div><div className="p-4 text-center">사용 여부</div>
+          <div className="grid grid-cols-[1.9fr_2.4fr_0.9fr_0.8fr] text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]">
+            <div className="p-4">검증 항목</div><div className="p-4">판정 방식</div><div className="p-4 text-center">가중치</div><div className="p-4 text-center">사용 여부</div>
           </div>
-          {items.map(i=>(
-            <div key={i.id} className={'grid grid-cols-[1.6fr_2fr_0.9fr_0.9fr_0.8fr] text-[13px] border-t border-[var(--border)] items-center '+(i.on?'':'opacity-50')}>
-              <div className="p-4 font-medium">{i.name}</div>
-              <div className="p-4 text-[var(--muted-fg)]">{i.how}</div>
-              <div className="p-4 text-center text-[var(--muted-fg)]">{i.kind}</div>
-              <div className="p-4 flex justify-center">
-                <input type="number" value={i.weight} disabled={!i.on} onChange={e=>setWeight(i.id,e.target.value)}
-                  className={'w-16 border border-[var(--border)] rounded-lg px-2 py-1 text-center text-[13px] outline-none focus:border-[var(--primary)] '+(i.on?'':'bg-[var(--muted)]')}/>
+          {/* 산출물 카테고리(html/svg)마다 따로 15점을 맞춰야 저장되므로, 합계도 묶음별로
+              보여준다 — 한 덩어리로 늘어놓으면 어느 묶음이 모자란지 화면만 보고는 알 수 없다. */}
+          {categories.map(kind=>(
+            <React.Fragment key={kind}>
+              <div className="border-t border-[var(--border)] bg-[var(--bg)] px-4 py-3 flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-[13px] font-bold">{categoryLabel(kind)}</p>
+                <span className={'text-[12px] font-semibold px-2.5 py-0.5 rounded-full '+(isCategoryOk(kind)?toneBg.ok:toneBg.danger)}>
+                  {isCategoryUsed(kind)?'사용 중 합계 '+sumOfCategory(kind)+' / '+CHECKLIST_CATEGORY_MAX+'점':'사용 중인 항목 없음'}
+                </span>
               </div>
-              <div className="p-4 flex justify-center">
-                <input type="checkbox" checked={i.on} onChange={()=>toggleItem(i.id)} aria-label={i.name+' 사용'} className="w-4 h-4 accent-[var(--primary)]"/>
-              </div>
-            </div>
+              {items.filter(i=>i.kind===kind).map(i=>(
+                <div key={i.id} className={'grid grid-cols-[1.9fr_2.4fr_0.9fr_0.8fr] text-[13px] border-t border-[var(--border)] items-center '+(i.on?'':'opacity-50')}>
+                  <div className="p-4 font-medium">{i.name}</div>
+                  <div className="p-4 text-[var(--muted-fg)]">{i.how}</div>
+                  <div className="p-4 flex justify-center">
+                    <input type="number" value={i.weight} disabled={!i.on} onChange={e=>setWeight(i.id,e.target.value)}
+                      className={'w-16 border border-[var(--border)] rounded-lg px-2 py-1 text-center text-[13px] outline-none focus:border-[var(--primary)] '+(i.on?'':'bg-[var(--muted)]')}/>
+                  </div>
+                  <div className="p-4 flex justify-center">
+                    <input type="checkbox" checked={i.on} onChange={()=>toggleItem(i.id)} aria-label={i.name+' 사용'} className="w-4 h-4 accent-[var(--primary)]"/>
+                  </div>
+                </div>
+              ))}
+            </React.Fragment>
           ))}
           <div className="p-4 border-t border-[var(--border)] flex justify-end">
             <button onClick={saveItems} className="rounded-xl bg-[var(--primary)] text-white px-4 py-2 text-[13px] font-semibold hover:bg-[var(--primary-dim)]">검증 항목 저장</button>
           </div>
         </Panel>
-        <p className="mt-2 text-[11px] text-[var(--muted-fg)]">체크를 해제하면 해당 항목은 채점에서 제외되고, 가중치는 사용 중인 항목끼리 다시 배분됩니다.</p>
+        <p className="mt-2 text-[11px] text-[var(--muted-fg)]">체크를 해제하면 해당 항목은 채점에서 제외되고, 가중치는 <b>같은 묶음 안에서만</b> 다시 배분됩니다. 묶음마다 합계가 {CHECKLIST_CATEGORY_MAX}점이어야 저장됩니다.</p>
       </div>
 
       <Panel>

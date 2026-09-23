@@ -40,3 +40,13 @@ Thumbs.db
 
 # --- 개인 로컬 테스트용 ---
 login_test.html
+
+# --- 작업 중 임시 파일/결과물 ---
+/tmp/
+# build_verification_report.py로 만드는 PDF — 스크립트만 커밋하고 결과물은 제외
+/output/pdf/*.pdf
+# 참고용으로 떠둔 캡처 (초기창업패키지 사업계획서 양식)
+/image.png
+
+# --- 로컬 보관 문서 (용량이 커서 git에 올리지 않음) ---
+/프로젝트_기획서_*.docx

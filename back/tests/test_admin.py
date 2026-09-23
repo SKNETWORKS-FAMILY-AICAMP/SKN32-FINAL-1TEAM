@@ -669,6 +669,41 @@ def test_put_users_role_and_status(admin_client, user_client):
     assert suspend.json()['status'] == 'suspended'
 
 
+def test_put_users_cannot_drop_own_admin_role(admin_client):
+    """[2026-09-23] 관리자가 이 화면에서 자기 권한을 내려 관리자 화면에 못 들어가는 사고가
+    실제로 났다 — 되돌리는 것도 이 화면에서만 되므로 DB를 직접 고쳐야 복구된다. role 해제와
+    status 비활성화 둘 다 같은 결과(접근 상실)라 둘 다 막힌다."""
+    res = admin_client.get('/admin/users')
+    assert res.status_code == 200, res.text
+    me = next(u for u in res.json() if u['email'] == ADMIN_EMAIL)
+
+    demote = admin_client.put(f"/admin/users/{me['user_id']}", json={'role': 'user'})
+    assert demote.status_code == 422, demote.text
+    assert '자기 자신' in demote.json()['detail']
+
+    suspend = admin_client.put(f"/admin/users/{me['user_id']}", json={'status': 'suspended'})
+    assert suspend.status_code == 422, suspend.text
+
+    # 막혔으면 DB도 그대로여야 한다 — 검증만 하고 롤백되지 않으면 의미가 없다.
+    after = admin_client.get('/admin/users')
+    still_me = next(u for u in after.json() if u['email'] == ADMIN_EMAIL)
+    assert still_me['role'] == 'admin' and still_me['status'] == 'active'
+
+
+def test_put_users_can_still_demote_another_admin(admin_client, user_client):
+    """가드는 "자기 자신"에만 걸린다 — 다른 관리자를 강등하는 정상 운영은 그대로 된다.
+    호출자 본인이 활성 관리자로 남으므로 이 경로로는 관리자가 0명이 될 수 없다."""
+    res = admin_client.get('/admin/users')
+    plain_user = next(u for u in res.json() if u['email'] == USER_EMAIL)
+
+    promote = admin_client.put(f"/admin/users/{plain_user['user_id']}", json={'role': 'admin'})
+    assert promote.status_code == 200, promote.text
+
+    demote = admin_client.put(f"/admin/users/{plain_user['user_id']}", json={'role': 'user'})
+    assert demote.status_code == 200, demote.text
+    assert demote.json()['role'] == 'user'
+
+
 # ============================================================================
 # FAQ
 # ============================================================================

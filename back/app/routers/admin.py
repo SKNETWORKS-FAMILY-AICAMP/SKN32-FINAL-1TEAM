@@ -399,19 +399,35 @@ def list_users(db: Session = Depends(get_db), _admin: User = Depends(require_adm
 
 
 @router.put('/users/{user_id}', response_model=UserOut)
-def update_user(user_id: int, body: UserRoleStatusIn, db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
+def update_user(user_id: int, body: UserRoleStatusIn, db: Session = Depends(get_db), current_admin: User = Depends(require_admin)):
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail='사용자를 찾을 수 없습니다')
+    if body.role is not None and body.role not in ('user', 'admin'):
+        raise HTTPException(status_code=422, detail="role은 'user' 또는 'admin' 이어야 합니다")
+    if body.status is not None and body.status not in ('active', 'suspended', 'dormant'):
+        raise HTTPException(status_code=422, detail="status는 active/suspended/dormant 중 하나여야 합니다")
+
+    # [2026-09-23] 관리자가 이 화면에서 자기 권한을 스스로 내려 관리자 화면에 못 들어가는
+    # 사고가 실제로 났다(공유 DB를 직접 고쳐 복구). 되돌리는 것도 이 화면에서만 되므로
+    # 자기 자신을 관리자에서 빼는 변경만 막으면 잠길 일이 없다 — 남을 강등할 때는 호출자
+    # 본인이 활성 관리자로 남아 있으니(require_admin + get_current_user의 status 검사)
+    # "마지막 관리자가 사라지는" 경우 자체가 생기지 않는다.
+    # role 해제와 status 비활성화를 함께 보는 이유: get_current_user가 status!='active'
+    # 계정을 401로 끊어서, 둘 다 결과가 같다(관리자 화면 접근 상실).
+    demoting = body.role is not None and body.role != 'admin' and user.role == 'admin'
+    deactivating = body.status is not None and body.status != 'active' and user.status == 'active'
+    if user.user_id == current_admin.user_id and (demoting or deactivating):
+        raise HTTPException(
+            status_code=422,
+            detail='자기 자신의 관리자 권한은 해제할 수 없습니다. 다른 관리자에게 요청하세요.',
+        )
+
     if body.role is not None:
-        if body.role not in ('user', 'admin'):
-            raise HTTPException(status_code=422, detail="role은 'user' 또는 'admin' 이어야 합니다")
         # [2026-09-17] 얼굴 인증(face_verified_at) 게이트는 팀 결정으로 빼기로 확정됐다 —
         # 컬럼 자체도 지웠다(models.py/app_schema.sql 참고, AWS엔 아직 안 올라간 시점).
         user.role = body.role
     if body.status is not None:
-        if body.status not in ('active', 'suspended', 'dormant'):
-            raise HTTPException(status_code=422, detail="status는 active/suspended/dormant 중 하나여야 합니다")
         user.status = body.status
     db.commit()
     db.refresh(user)

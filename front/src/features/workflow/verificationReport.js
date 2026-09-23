@@ -21,16 +21,30 @@ function formatDateTime(d) {
 
 // projectName·announcementTitle·category('onepage' | 그 외), docScore(DOC_SCORE_BY_OUTCOME 값),
 // codeCheckItems(buildCodeCheckItems 결과), crossCheck({raw, max, reasons}), threshold.
-export function buildVerificationReportHtml({ projectName, announcementTitle, category, docScore, codeCheckItems, crossCheck, threshold, createdAt = new Date() }) {
+// verdict: GET /result의 VerdictOut(선택). 서버가 세 층 점수·총점·판정기준을 직접 내려주면
+// "종합 판정"은 그 값을 그대로 쓴다 — 화면에서 다시 더하면 서버 판정과 숫자가 어긋날 수 있다.
+export function buildVerificationReportHtml({ projectName, announcementTitle, category, docScore, codeCheckItems, crossCheck, threshold, verdict = null, createdAt = new Date() }) {
   const copy = TYPE_COPY[category === 'onepage' ? 'onepage' : 'standard'];
   const autoMax = codeCheckItems.reduce((s, it) => s + it.weight, 0);
   // 진입 파일(1번)이 없으면 나머지 항목 검사가 성립하지 않으므로 자동 검증 점수 전체를 0으로 본다(5-4).
   const entryMissing = codeCheckItems.some((it) => it.id === 1 && !it.passed);
   const autoRaw = entryMissing ? 0 : codeCheckItems.reduce((s, it) => s + (it.passed ? it.weight : 0), 0);
-  const artifactRaw = autoRaw + crossCheck.raw;
-  const artifactMax = autoMax + crossCheck.max;
-  const total = docScore.raw + artifactRaw;
-  const passed = total >= threshold;
+
+  // [2026-09-23, 백엔드 전달사항 10번] VerdictOut의 점수 필드는 전부 nullable이라 한 항목씩
+  // 확인하고, 없으면(목업·데모 등 아직 서버 판정이 없는 경우) 지금까지처럼 화면 값으로 센다.
+  const num = (v) => (typeof v === 'number' ? v : null);
+  const vDoc = num(verdict?.doc_score), vDocMax = num(verdict?.doc_max_score);
+  const vCode = num(verdict?.code_score), vCodeMax = num(verdict?.code_max_score);
+  const vPlan = num(verdict?.plan_match_score), vPlanMax = num(verdict?.plan_match_max_score);
+
+  const docRaw = vDoc ?? docScore.raw;
+  const docMaxScore = vDocMax ?? docScore.max;
+  // 산출물층 = 자동 검증 + 계획서 대조. 서버 값은 둘 다 있을 때만 쓴다(한쪽만 쓰면 합이 깨진다).
+  const artifactRaw = vCode != null && vPlan != null ? vCode + vPlan : autoRaw + crossCheck.raw;
+  const artifactMax = vCodeMax != null && vPlanMax != null ? vCodeMax + vPlanMax : autoMax + crossCheck.max;
+  const total = num(verdict?.total_score) ?? docRaw + artifactRaw;
+  const passThreshold = num(verdict?.pass_threshold) ?? threshold;
+  const passed = total >= passThreshold;
   const failedItems = codeCheckItems.filter((it) => !it.passed);
 
   const opinion = crossCheck.reasons.length
@@ -92,9 +106,9 @@ export function buildVerificationReportHtml({ projectName, announcementTitle, ca
   <div class="verdict">
     <div><small>종합 판정</small><div class="result">${passed ? '통과' : '기준 미달'}</div></div>
     <div class="score">${total}<span>/ 100점</span></div>
-    <div class="parts"><div><span>문서층 (사업계획서)</span><b>${docScore.raw} / ${docScore.max}</b></div><div><span>산출물층 (자동 검증 + 계획서 대조)</span><b>${artifactRaw} / ${artifactMax}</b></div></div>
+    <div class="parts"><div><span>문서층 (사업계획서)</span><b>${docRaw} / ${docMaxScore}</b></div><div><span>산출물층 (자동 검증 + 계획서 대조)</span><b>${artifactRaw} / ${artifactMax}</b></div></div>
   </div>
-  <p class="rule">판정 기준 ${threshold}점 이상${failedItems.length || crossCheck.reasons.length ? '  |  총점 판정과 별개로 미충족 항목의 보완이 필요합니다.' : ''}</p>
+  <p class="rule">판정 기준 ${passThreshold}점 이상${failedItems.length || crossCheck.reasons.length ? '  |  총점 판정과 별개로 미충족 항목의 보완이 필요합니다.' : ''}</p>
 
   <h2><em>01</em>사업계획서 평가<small>획득 점수 / 배점</small></h2>
   <div class="doc">${docCells}

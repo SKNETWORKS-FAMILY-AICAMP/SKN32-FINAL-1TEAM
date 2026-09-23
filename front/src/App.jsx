@@ -79,7 +79,7 @@ export default function App(){
   itemInfo,announcement,checkedFailedTitles,returnToDashboard,scoreOutcome,docOutcome,artifactOutcome,
   projectId,pipelineResult,matchCandidates,
   setItemInfo,setAnnouncement,setCheckedFailedTitles,setReturnToDashboard,setDocOutcome,setArtifactOutcome,
-  setProjectId,setPipelineResult,setMatchCandidates,resetScoreOutcome,resetProject,
+  setProjectId,setPipelineResult,setMatchCandidates,setVerdictPending,resetScoreOutcome,resetProject,
  }=useWorkflowStore();
  useEffect(()=>{window.scrollTo({top:0});document.title=(view==='landing'?'아이디어를 다음 단계로':'나의 워크스페이스')+' | S-Brain'},[view]);
  // 위 RESUMABLE_VIEWS 화면에 머무는 동안엔 매번 "지금 보던 화면"을 기록해둔다 — 검수는
@@ -197,7 +197,13 @@ export default function App(){
     if(request!==projectRequest.current)return;
     setPipelineResult(result);
     setAnnouncement({title:project.announcementTitle,org:'',deadline:'',amount:'',fit:result.match.fit_score,reason:result.match.reason,eligibility:{},originalUrl:''});
-    resetScoreOutcome(result.verdict?.overall_passed?'pass':'fail');
+    // [2026-09-23, 백엔드 전달사항 3번] verdict는 산출물 채점까지 끝나야 나오므로 계획서만
+    // 완성되고 프로토타입이 아직이면 null로 내려온다(app/schemas.py DemoGenerateResponse).
+    // 예전엔 이 경우 GET /result가 통째로 404여서 틈이 안 드러났는데, 지금은 정상 응답이라
+    // null을 그대로 'fail'로 접으면 채점도 안 한 프로젝트가 화면에 "내부 기준 미달"로 뜬다.
+    // 판정이 나온 경우에만 결과를 반영하고, 판정 전이라는 사실은 따로 남긴다.
+    setVerdictPending(result.verdict==null);
+    if(result.verdict)resetScoreOutcome(result.verdict.overall_passed?'pass':'fail');
     const savedView=localStorage.getItem(lastViewKey(project.id));
     const stageView=status.stage==null?'eligibility-gate':VIEW_BY_STAGE[status.stage]||'plan-form';
     setProjectId(project.id);
@@ -261,7 +267,7 @@ export default function App(){
   {view==='artifact-progress'&&<GenerationProgress kind="artifact" projectId={projectId} itemInfo={itemInfo} onDone={()=>setView('artifact-result')} onLeave={()=>setView('dashboard')}/>}
   {view==='artifact-result'&&<ArtifactResult announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('plan-form')} onFinalize={()=>setView('final-verdict')} scoreOutcome={scoreOutcome} projectId={projectId}/>}
   {view==='final-verdict'&&<FinalVerdict announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('artifact-result')} onProceed={()=>setView('review')} docOutcome={docOutcome} artifactOutcome={artifactOutcome} setDocOutcome={setDocOutcome} setArtifactOutcome={setArtifactOutcome} projectId={projectId}/>}
-  {view==='review'&&<ReviewScreen announcement={announcement} itemInfo={itemInfo} docOutcome={docOutcome} artifactOutcome={artifactOutcome} onGoDashboard={()=>setView('dashboard')} projectId={projectId}/>}
+  {view==='review'&&<ReviewScreen announcement={announcement} itemInfo={itemInfo} docOutcome={docOutcome} artifactOutcome={artifactOutcome} onGoDashboard={()=>setView('dashboard')} projectId={projectId} verdict={pipelineResult?.verdict}/>}
  </WorkspaceShell>;
  // 저장 전 강제 이동 모달은 view가 무엇이든(랜딩·워크스페이스 어느 화면 위에도) 뜰 수 있어야
  // 하므로 세 분기 바깥, 최상위에서 한 번만 렌더한다.

@@ -34,6 +34,13 @@ export default function GenerationProgress({kind, projectId, itemInfo, onDone, o
       if (cancelled) return;
       failures = 0;
       setError('');
+      // [2026-09-23, 백엔드 전달사항 4번] 서버가 생성을 실패로 닫으면 stage가 더는 진행되지
+      // 않아 진행률이 0에 멈춘 채 폴링만 끝없이 돌았다(화면엔 아무 안내도 안 떴다).
+      // match_status로 실패를 먼저 가려내고, 사유(failure_reason)를 "다시 시도" 옆에 띄운다.
+      if (status?.match_status === 'failed') {
+        setError(status.failure_reason || '생성에 실패했어요. 다시 시도해 주세요.');
+        return; // 폴링 중단 — "다시 시도"를 누르면 effect가 다시 돌며 재개한다.
+      }
       const next = progressFor(kind, status);
       setProgress(next);
       if (next < 100) timer = setTimeout(poll, POLL_MS);

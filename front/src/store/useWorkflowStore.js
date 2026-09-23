@@ -16,6 +16,10 @@ export const useWorkflowStore = create((set) => ({
   projectId: null,
   pipelineResult: null,
   matchCandidates: null,
+  // [2026-09-23] GET /result의 verdict는 산출물 채점까지 끝나야 나오므로 프로토타입 생성
+  // 중엔 null이다(app/schemas.py DemoGenerateResponse.verdict). "아직 판정 전"과 "미달"은
+  // 전혀 다른 상태라 scoreOutcome('pass'/'fail')만으론 구분이 안 돼 따로 들고 있는다.
+  verdictPending: false,
 
   setItemInfo: (itemInfo) => set({ itemInfo }),
   setAnnouncement: (announcement) => set({ announcement }),
@@ -29,8 +33,9 @@ export const useWorkflowStore = create((set) => ({
   setProjectId: (projectId) => set({ projectId }),
   setPipelineResult: (pipelineResult) => set({ pipelineResult }),
   setMatchCandidates: (matchCandidates) => set({ matchCandidates }),
+  setVerdictPending: (verdictPending) => set({ verdictPending }),
 
   resetScoreOutcome: (v) => set({ scoreOutcome: v, docOutcome: v, artifactOutcome: v }),
   resetProject: () =>
-    set({ projectId: null, itemInfo: null, announcement: null, checkedFailedTitles: [], pipelineResult: null, matchCandidates: null, returnToDashboard: false }),
+    set({ projectId: null, itemInfo: null, announcement: null, checkedFailedTitles: [], pipelineResult: null, matchCandidates: null, returnToDashboard: false, verdictPending: false }),
 }));

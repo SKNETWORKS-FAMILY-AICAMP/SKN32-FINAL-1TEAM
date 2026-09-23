@@ -7,7 +7,9 @@ import {buildCodeCheckItems,buildGeneralInfo,buildOverview,detectItemCategory,DO
 import {printVerificationReport} from './verificationReport.js';
 import {ARTIFACT_SCORE_BY_OUTCOME,DELIVERABLE_NOTICES,DOWNLOAD_FILES,FINAL_THRESHOLD,PLAN_DOCUMENT_SECTIONS_REWORKED,REVIEW_PARAGRAPHS} from './data.js';
 
-export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', artifactOutcome = 'fail', onGoDashboard, projectId }){
+// verdict: GET /result의 VerdictOut. 검증결과서의 "종합 판정"을 서버 점수로 찍기 위해 받는다
+// (없으면 화면 값으로 계산 — verificationReport.js 참고).
+export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', artifactOutcome = 'fail', onGoDashboard, projectId, verdict = null }){
   const docScore = DOC_SCORE_BY_OUTCOME[docOutcome];
   const artifactScore = ARTIFACT_SCORE_BY_OUTCOME[artifactOutcome];
   const finalTotal = docScore.raw + artifactScore.autoCheck.raw + artifactScore.crossCheck.raw;
@@ -79,6 +81,7 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
         codeCheckItems: buildCodeCheckItems(category, artifactOutcome),
         crossCheck: artifactScore.crossCheck,
         threshold: FINAL_THRESHOLD,
+        verdict,
       });
       return;
     }
