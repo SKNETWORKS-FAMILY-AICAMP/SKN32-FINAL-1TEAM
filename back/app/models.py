@@ -19,6 +19,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.mysql import BIGINT as MySQLBigInteger
@@ -304,6 +305,8 @@ class Project(Base):
     budget_items: Mapped[list['ProjectBudgetItem']] = relationship(back_populates='project')
     schedule_items: Mapped[list['ProjectScheduleItem']] = relationship(back_populates='project')
     partners: Mapped[list['ProjectPartner']] = relationship(back_populates='project')
+    # [2026-09-22 신규] ProjectPlanInput 참고 — project당 1행(1:1).
+    plan_input: Mapped['ProjectPlanInput | None'] = relationship(back_populates='project', uselist=False)
     matches: Mapped[list['MatchResult']] = relationship(back_populates='project')
 
 
@@ -400,6 +403,76 @@ class ProjectPartner(Base):
     project: Mapped['Project'] = relationship(back_populates='partners')
 
 
+class ProjectPlanInput(Base):
+    """[2026-09-22 신규, 하정원님] IntakeForm.jsx가 2026-09-18 정재희님 커밋(병합 시점
+    담당자 인수인계 불가로 확인 — 이 파일은 그 커밋의 사용부만 보고 재구성했다)에서 새로
+    받기 시작한 "사업 계획" 입력을 담는다. App.jsx의 intakeDetailPayload가 이미
+    이 스키마 그대로(snake_case) 보내고 있었는데 ProjectCreateRequest에 대응 필드가 없어
+    pydantic 기본 extra='ignore'로 조용히 버려지고 있었다(App.jsx 자체 주석 참고).
+
+    project_partners/project_budget_items/project_schedule_items와는 다른 테이블이다 —
+    그 셋은 계획서 문서(별첨1 양식)가 "만들어진 뒤" Agent/사용자가 채우거나 고치는
+    항목이고, 이건 계획서를 만들기 "전" 사전 정보 입력 화면에서 받은 원본이다. project당
+    1행(1:1) — team_members/pricing_items처럼 여러 행이 아니라 폼 제출 한 번에 값이
+    전부 확정되는 스칼라·목록 묶음이라 회사 프로필(companies)처럼 프로젝트에 딸린 스냅샷
+    하나로 둔다.
+
+    hires/equipment/partners(그리고 ceo_careers)는 UserProfile.basic_json/capability_json과
+    같은 이유로 JSON 리스트에 프론트 항목 모양 그대로 저장한다 — 이 필드들 구성은 아직
+    팀 논의 중이다(재희님 "채용예정인력/협업회사를 선택이 아닌 필수 입력으로 바꾸거나,
+    변경된 인력 충원사항을 사용자에게 ACCEPT받자"는 제안이 논의 중 — 2026-09 대화 참고).
+    컬럼을 미리 잘게 쪼개면 그 논의가 정리될 때마다 마이그레이션이 필요해진다.
+    """
+    __tablename__ = 'project_plan_inputs'
+
+    input_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'), unique=True, index=True)
+
+    # 대표자 역량 · 지역 · 주업종 · 보유 인증 — 마이페이지 BasicInfo와 같은 개념이지만
+    # 프로젝트마다 다시 받으므로(불러오기는 하되 그 자리에서 고칠 수 있어야 함, IntakeForm.jsx
+    # 자체 state) companies가 아니라 여기 담는다.
+    ceo_birth_date: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
+    ceo_gender: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    region_sido: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    region_sigungu: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    main_industry: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    certifications: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    ceo_careers: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    ceo_capability: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # 개발 기간(YYYY-MM 문자열 — DevPeriodField)
+    dev_start_month: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    dev_end_month: Mapped[str | None] = mapped_column(String(7), nullable=True)
+
+    # [2026-09-22 신규] 사업계획서 공식 양식(별첨1)의 "일반현황 > 직업"(예비창업자 전용,
+    # 사업자등록 전이라 회사/직장 대신 받음) — 대응 입력칸이 없어 계속 '○○○' 플레이스홀더로만
+    # 나가고 있던 걸 발견해서 추가(routers/projects.py _build_plan_document_data 참고).
+    # [2026-09-22, 재희님 확인] 같이 검토했던 "아이템 개요 > 범주"는 컬럼을 안 만든다 —
+    # 전략/작성 시트(2.3/3.3)에 다른 web 입력 항목과 달리 "WEB에서" 표시가 없어서,
+    # Agent가 아이디어 설명(description)을 보고 직접 짓는 항목으로 설계된 것으로 확인됐다.
+    occupation: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # 예비창업자 전용(BudgetScaleField) — 마이페이지 budget_scale과 같은 상한(derive.js
+    # PRELIMINARY_BUDGET_CAP_MANWON=2000).
+    budget_scale_manwon: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # 개인사업자 · 법인 전용(SelfFundingField)
+    self_funding_allowed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    self_cash_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    self_in_kind_resources: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    no_hires: Mapped[bool] = mapped_column(Boolean, default=False, server_default='0')
+    hires: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    no_equipment: Mapped[bool] = mapped_column(Boolean, default=False, server_default='0')
+    equipment: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    no_partners: Mapped[bool] = mapped_column(Boolean, default=False, server_default='0')
+    partners: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    project: Mapped['Project'] = relationship(back_populates='plan_input')
+
+
 # ---------------------------------------------------------------------------
 # 유사 공고 알림 / 매칭 / 자격요건 게이트
 # ---------------------------------------------------------------------------
@@ -449,6 +522,21 @@ class MatchResult(Base):
     # 처리할 때마다 이 두 컬럼을 갱신하게 될 자리다.
     stage: Mapped[str | None] = mapped_column(String(30), nullable=True)
     progress_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # [2026-09-22 신규] 생성 작업(plan_writing/prototype_building) 비동기화용 클레임
+    # 시각 — Redis 등 별도 브로커 없이 이 컬럼 하나로 "지금 어떤 워커가 처리 중인지"를
+    # 표현한다. NULL이거나 오래됐으면(app/routers/projects.py GENERATION_CLAIM_STALE_SECONDS)
+    # 아무도 처리 안 하는 것으로 보고 새로 클레임한다 — 서버 재시작·다중 워커 대응
+    # (_try_claim_and_run/_generation_recovery_loop 참고).
+    worker_claimed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # [2026-09-22 신규, 프론트 전달사항 4번] 생성 작업(plan_writing/prototype_building)
+    # 실패 처리 — status='failed'로 표시하고 stage는 실패한 단계 그대로 둔다(어디서
+    # 멈췄는지 알 수 있게). failure_reason엔 원인을 텍스트로 남긴다. 실패는 재시작하지
+    # 않으면(=_start_generation을 사용자가 다시 호출하지 않으면) 복구 루프가 자동으로
+    # 재시도하지 않는다 — "다시 시도" 버튼을 눌러야 재개되게 하려는 의도
+    # (_recover_orphaned_generations_once/_start_generation 참고).
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     project: Mapped['Project'] = relationship(back_populates='matches')
     eligibility_checks: Mapped[list['EligibilityCheck']] = relationship(back_populates='match')
@@ -513,6 +601,7 @@ class BusinessPlan(Base):
 
     match: Mapped['MatchResult'] = relationship(back_populates='business_plans')
     sections: Mapped[list['PlanSection']] = relationship(back_populates='plan')
+    canonical_data: Mapped[list['PlanCanonicalData']] = relationship(back_populates='plan')
     score_reasons: Mapped[list['PlanScoreReason']] = relationship(back_populates='plan')
     artifacts: Mapped[list['Artifact']] = relationship(back_populates='plan')
     score_history: Mapped[list['VerificationScoreHistory']] = relationship(back_populates='plan')
@@ -530,6 +619,43 @@ class PlanSection(Base):
     body: Mapped[str | None] = mapped_column(_LongText, nullable=True)  # app_schema.sql: LONGTEXT
 
     plan: Mapped['BusinessPlan'] = relationship(back_populates='sections')
+
+
+class PlanCanonicalData(Base):
+    """[2026-09-22 신규] Strategy Agent(구글 드라이브 "전략/작성/검증1" 시트의 F01~F15)가
+    만드는 중간 산출물 저장소 — market_analysis/development_plan/team_capability 등, 여러
+    섹션이 재사용하는 구조화된 데이터. plan_sections(완성된 최종 문단 텍스트)와는 다른 층이다
+    — 이건 그 문단을 쓰는 데 쓰인 "재료"라서, F19(validate_section)의 "원본 데이터 대조"
+    검증이나 다른 섹션(예: 문제인식/성장전략 둘 다 market_analysis를 씀)이 같은 분석을
+    재사용할 때 여기서 읽는다. 지금까지는 이 재료 층이 아예 없어서 PlanSection.body(최종
+    텍스트)를 여러 자리에 그대로 복붙해 재사용을 흉내내고 있었다(routers/projects.py
+    _section_body 참고).
+
+    data_json의 내부 구조는 여기서 정하지 않는다 — F01~F15 각 함수가 실제로 어떤 모양을
+    만들지는 Strategy Agent 담당자 몫이라(app/agents.py 모듈 docstring의 "Agent 담당자가
+    우리 DB 스키마를 몰라도 되게" 원칙과 같은 이유로) JSON으로 느슨하게 받는다.
+
+    data_key는 시트의 canonical data 블록 이름을 그대로 쓴다 — item_spec / market_analysis /
+    competitor_analysis / team_capability / development_goal / development_method /
+    development_plan / production_plan / marketing_strategy / business_model /
+    growth_strategy / resource_plan / budget / schedule / web_data."""
+
+    __tablename__ = 'plan_canonical_data'
+    __table_args__ = (UniqueConstraint('plan_id', 'data_key', name='uq_plan_canonical_data_plan_key'),)
+
+    data_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    plan_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('business_plans.plan_id'))
+    data_key: Mapped[str] = mapped_column(String(50))
+    data_json: Mapped[dict] = mapped_column(JSON)
+    # 어느 F-함수가 만들었는지(예: 'F03') — 시트에 이미 번호가 붙어있어 그대로 남긴다.
+    # 재시도 대상 식별·디버깅용, 필수는 아니다.
+    source_function: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(),
+    )
+
+    plan: Mapped['BusinessPlan'] = relationship(back_populates='canonical_data')
 
 
 class PlanScoreReason(Base):
@@ -811,13 +937,28 @@ class VerificationPolicy(Base):
 class VerificationChecklistItem(Base):
     """R-4(코드 8항목 자동 검증)가 쓰는 체크리스트 — LLM 없이 기계적으로 통과/실패만
     판정하는 항목들(진입 파일 존재 여부 등). 아래 RubricItem과 헷갈리기 쉬운데, 이쪽은
-    산출물층(코드) 검증용이고 RubricItem은 문서층(계획서) 채점용으로 대상이 다르다."""
+    산출물층(코드) 검증용이고 RubricItem은 문서층(계획서) 채점용으로 대상이 다르다.
+
+    [2026-09-22 구조 교체, 프론트 전달사항 10번] 기존엔 100점 만점 5항목(웹/원페이지
+    구분 없음)이었는데, 기획서 v1.8 5-4 기준(카테고리별 8항목·15점 만점, 산출물
+    카테고리마다 다른 항목 구성)으로 바꿨다:
+      - category(예전 뜻 '정적분석'/'실행검증')를 '산출물 카테고리' 의미로 재사용한다 —
+        'html'(웹개발·AI API, artifacts.category의 webdev/aiapi가 여기 매핑) |
+        'svg'(원페이지, artifacts.category의 onepage가 매핑). v1.8엔 정적분석/실행검증
+        구분 자체가 없어서 옛 의미를 유지할 이유가 없었다.
+      - item_no(카테고리 안에서의 1~8번)와 item_code(artifact_score_reasons.item_code와
+        매칭 — rubric_items.item_code와 같은 패턴)를 신규 추가했다.
+      - 규칙(1번 '진입 파일 존재 여부' 미충족이면 그 카테고리 자동 검증 점수 전체 0점)은
+        검증 에이전트가 실제 채점할 때 지켜야 할 규칙이라 여기 스키마엔 없다 — 이 테이블은
+        기준표(무엇을·몇 점을 볼지)만 담는다."""
     __tablename__ = 'verification_checklist_items'
 
     check_item_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    item_code: Mapped[str] = mapped_column(String(50), unique=True)
+    item_no: Mapped[int] = mapped_column(_UnsignedInt)
+    category: Mapped[str] = mapped_column(String(20))  # 'html' | 'svg' — 클래스 docstring 참고
     name: Mapped[str] = mapped_column(String(100))
     method: Mapped[str] = mapped_column(Text)
-    category: Mapped[str] = mapped_column(String(20))
     weight: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 

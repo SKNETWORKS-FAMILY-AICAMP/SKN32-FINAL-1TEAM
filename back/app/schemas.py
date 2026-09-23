@@ -93,6 +93,39 @@ class PricingItemIn(BaseModel):
     unit_price: float | None = Field(None, description='단가(원), 미정이면 NULL')
 
 
+# [2026-09-22 신규, 하정원님] IntakeForm.jsx "사업 계획" 섹션의 목록 항목들 — App.jsx
+# intakeDetailPayload가 이미 이 키 이름 그대로(snake_case) 보내고 있다. 항목 모양이 아직
+# 팀 논의 중이라(채용예정인력·협업회사 필수입력 전환 제안) 여기서도 필드를 꽉 채우지 않고
+# 전부 선택으로 둔다 — project_plan_inputs에 JSON 그대로 저장(app/models.py 참고).
+class PlanCareerIn(BaseModel):
+    type: str | None = None
+    title: str | None = None
+    period: str | None = None
+    has_proof: bool = False
+
+
+class PlanHireIn(BaseModel):
+    job: str | None = None
+    headcount: str | None = None
+    required_skill: str | None = None
+    hire_month: str | None = Field(None, description='YYYY-MM')
+
+
+class PlanEquipmentIn(BaseModel):
+    name: str | None = None
+    status: str | None = None
+
+
+class PlanPartnerIn(BaseModel):
+    """계획서 별첨용 ProjectPartner(partner_name/capability/collaboration_plan/
+    collaboration_timing)와는 다른, 사전 정보 입력 화면의 단순 협력 기관 항목이다."""
+    name: str | None = None
+    status: str | None = None
+
+
+_MONTH_RE = re.compile(r'^\d{4}-\d{2}$')
+
+
 class ProjectCreateRequest(BaseModel):
     """POST /projects 의 본문. 연동합의서 #6(첨부파일 처리) 확정에 따라 실제 요청은
     JSON이 아니라 multipart/form-data 로 오고, 이 스키마는 그 안의 'payload' 폼 필드에
@@ -145,6 +178,45 @@ class ProjectCreateRequest(BaseModel):
     team_members: list[TeamMemberIn] = Field(default_factory=list)
     pricing_items: list[PricingItemIn] = Field(default_factory=list, description='수익모델 단가 — 4-6 정책상 최소 1건 권장')
 
+    # [2026-09-22 배선, 하정원님] IntakeForm.jsx가 2026-09-18 정재희님 커밋(병합 시점 담당자
+    # 인수인계 불가로 확인)에서 새로 받기 시작한 "사업 계획" 입력. App.jsx intakeDetailPayload가
+    # 이미 이 이름 그대로(snake_case) 보내고 있었는데 여기 대응 필드가 없어 pydantic 기본
+    # extra='ignore'로 조용히 버려지고 있었다(App.jsx 자체 주석 "서버 ProjectCreateRequest에
+    # 아직 필드가 없어 지금은 서버가 무시" 참고). project_plan_inputs 테이블(project당 1행)에
+    # 그대로 저장한다(app/routers/projects.py create_project, app/models.py ProjectPlanInput).
+    # [2026-09-22 신규] 계획서 공식 양식이 요구하는데 대응 입력칸이 없어 계속 '○○○'
+    # 플레이스홀더로만 나가고 있던 항목(예비창업자 전용, 사업자등록 전이라 직장 대신
+    # 직업 구분만 받음). "아이템 범주"는 여기 안 넣는다 — Agent가 짓는 항목(models.py
+    # ProjectPlanInput.occupation 주석 참고).
+    occupation: str | None = Field(None, max_length=100, description='예비창업자 직업(직장명 기재 불가)')
+
+    ceo_birth_date: datetime.date | None = None
+    ceo_gender: str | None = Field(None, max_length=10)
+    region_sido: str | None = Field(None, max_length=20)
+    region_sigungu: str | None = Field(None, max_length=50)
+    main_industry: str | None = Field(None, max_length=100)
+    certifications: list[str] = Field(default_factory=list)
+    ceo_careers: list[PlanCareerIn] = Field(default_factory=list)
+    ceo_capability: str | None = None
+
+    dev_start_month: str | None = Field(None, description='개발 시작월 YYYY-MM')
+    dev_end_month: str | None = Field(None, description='개발 종료월 YYYY-MM')
+
+    # 예비창업자 전용 — 마이페이지 budget_scale과 같은 상한(derive.js PRELIMINARY_BUDGET_CAP_MANWON).
+    budget_scale_manwon: int | None = Field(None, ge=0, le=2000)
+
+    # 개인사업자 · 법인 전용
+    self_funding_allowed: bool | None = None
+    self_cash_limit: int | None = Field(None, ge=0)
+    self_in_kind_resources: str | None = None
+
+    no_hires: bool = False
+    hires: list[PlanHireIn] = Field(default_factory=list)
+    no_equipment: bool = False
+    equipment: list[PlanEquipmentIn] = Field(default_factory=list)
+    no_partners: bool = False
+    partners: list[PlanPartnerIn] = Field(default_factory=list)
+
     @field_validator('applicant_type')
     @classmethod
     def _check_applicant_type(cls, v: str | None) -> str | None:
@@ -152,6 +224,15 @@ class ProjectCreateRequest(BaseModel):
             return None
         if v not in {'preliminary', 'individual', 'corp'}:
             raise ValueError('applicant_type은 preliminary/individual/corp 중 하나여야 합니다')
+        return v
+
+    @field_validator('dev_start_month', 'dev_end_month')
+    @classmethod
+    def _check_month(cls, v: str | None) -> str | None:
+        if v in (None, ''):
+            return None
+        if not _MONTH_RE.match(v):
+            raise ValueError('YYYY-MM 형식이어야 합니다')
         return v
 
 
@@ -205,11 +286,41 @@ class ProjectOut(BaseModel):
     regional_priority_area: str | None = None
 
 
+class ProjectPlanInputOut(BaseModel):
+    """[2026-09-22 신규] app/models.py ProjectPlanInput 조회용. hires/equipment/partners/
+    ceo_careers/certifications는 저장된 JSON을 그대로 내려준다(ProfileOut.basic/capability와
+    같은 이유 — 프론트 항목 모양 그대로, 변환 코드 불필요)."""
+    model_config = ConfigDict(from_attributes=True)
+
+    ceo_birth_date: datetime.date | None = None
+    ceo_gender: str | None = None
+    region_sido: str | None = None
+    region_sigungu: str | None = None
+    main_industry: str | None = None
+    certifications: list = Field(default_factory=list)
+    ceo_careers: list = Field(default_factory=list)
+    ceo_capability: str | None = None
+    occupation: str | None = None
+    dev_start_month: str | None = None
+    dev_end_month: str | None = None
+    budget_scale_manwon: int | None = None
+    self_funding_allowed: bool | None = None
+    self_cash_limit: int | None = None
+    self_in_kind_resources: str | None = None
+    no_hires: bool = False
+    hires: list = Field(default_factory=list)
+    no_equipment: bool = False
+    equipment: list = Field(default_factory=list)
+    no_partners: bool = False
+    partners: list = Field(default_factory=list)
+
+
 class ProjectDetailOut(ProjectOut):
     team_members: list[TeamMemberOut] = Field(default_factory=list)
     pricing_items: list[PricingItemOut] = Field(default_factory=list)
     attachments: list[ProjectAttachmentOut] = Field(default_factory=list)
     company: CompanyOut | None = None
+    plan_input: ProjectPlanInputOut | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -319,6 +430,22 @@ class VerdictOut(BaseModel):
     model_version: str
     first_pass_passed: bool
 
+    # [2026-09-22 신규, 프론트 전달사항 10번] 검증결과서(front/src/features/workflow/
+    # verificationReport.js)의 "종합 판정" 행 — 문서층/자동검증/계획서대조 세 층 점수와
+    # 총점·판정기준. 항목별 세부(01/02/03)는 이미 BusinessPlanOut.score_reasons(사업계획서
+    # 평가)와 ArtifactOut.score_reasons(자동검증은 item_code 'CHECK-', 계획서대조는
+    # 'FEATURE-' 접두어로 구분)에 있어서, 여기선 그 세 층을 합산한 요약만 담는다.
+    # Verdict 테이블 자체엔 없는 값이라(verification_policies에서 가져옴) model_validate가
+    # 아니라 라우터(_build_demo_response)가 직접 계산해서 채운다.
+    doc_score: float | None = None
+    doc_max_score: float | None = None
+    code_score: float | None = None
+    code_max_score: float | None = None
+    plan_match_score: float | None = None
+    plan_match_max_score: float | None = None
+    total_score: float | None = None
+    pass_threshold: float | None = None
+
 
 class MatchScoreReasonOut(BaseModel):
     """[2026-09-17 신규] match_score_reasons 테이블 배선 — 매칭 근거를 정량 점수로 노출
@@ -363,6 +490,9 @@ class ProjectStatusOut(BaseModel):
     progress_percent: int | None = None
     match_id: int | None = None
     match_status: str | None = None
+    # [2026-09-22 신규, 프론트 전달사항 4번] match_status='failed'일 때만 값이 있다 —
+    # 진행 화면의 "다시 시도" 버튼 옆에 실패 사유를 보여주는 용도.
+    failure_reason: str | None = None
 
 
 class RetryTaskRequest(BaseModel):
@@ -376,7 +506,7 @@ class RetryTaskRequest(BaseModel):
     안 맞는다)만 빼고 나머지 10개를 전부 받는다. 각 값이 실제로 무엇을 다시 만드는지는
     app/agents.py 모듈 docstring의 매핑표 참고:
 
-        'strategy'                                -> plan_sections '3-1'(성장 전략)
+        'strategy'                                -> plan_canonical_data(F01~F15 분석 결과)
         'writing'                                  -> plan_sections '1-1'/'2-1'
         'verify1_rubric' / 'verify1_evidence'      -> plan_score_reasons(+ doc_score)
         'implement_prototype' / 'implement_infographic' -> artifacts 파일 경로
@@ -404,8 +534,9 @@ class RetryTaskResponse(BaseModel):
     changed: dict = Field(
         ...,
         description=(
-            '재시도 전/후 값 비교. task_key에 따라 모양이 다르다 — 섹션 재작성(strategy/'
-            "writing)은 {'sections': {tag: {'before', 'after'}}}, 채점(verify1_*/verify2_*)은 "
+            '재시도 전/후 값 비교. task_key에 따라 모양이 다르다 — 전략(strategy)은 '
+            "{'canonical_data': {data_key: {'before', 'after'}}}, 작성(writing)은 "
+            "{'sections': {tag: {'before', 'after'}}}, 채점(verify1_*/verify2_*)은 "
             "{'scores': {item_code: {'before', 'after'}}, 'doc_score' 또는 'artifact_score': "
             "{'before', 'after'}}, 산출물 재생성(implement_*)은 {'executable_path' 또는 "
             "'infographic_path': {'before', 'after'}}, 검수(review_expression/"
@@ -431,7 +562,13 @@ class DemoGenerateResponse(BaseModel):
     match: MatchResultOut
     eligibility: EligibilityCheckOut
     plan: BusinessPlanOut
-    verdict: VerdictOut
+    # [2026-09-22 수정, 프론트 전달사항 3번] "GET /result는 프로토타입이 아직 만들어지는
+    # 중이어도 완성된 계획서는 돌려줘야 한다" — verdict는 산출물(artifact) 채점까지 끝나야
+    # 나오는 값이라, 계획서만 끝나고 프로토타입/검증이 아직인 상태에선 없을 수 있다.
+    # 예전엔 verdict가 없으면(=artifact가 없으면) 통째로 404를 냈는데, 지금 더미
+    # 파이프라인(seed_dummy_pipeline)은 계획서·산출물·판정을 한 번에 만들어서 이 틈이
+    # 안 드러났을 뿐 — 생성이 단계별로 끝나는 실제 흐름에선 이 틈이 그대로 404가 된다.
+    verdict: VerdictOut | None = None
     agent_executions: list[AgentExecutionOut]
 
 
@@ -478,6 +615,12 @@ class ChecklistItemIn(BaseModel):
 class ChecklistItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     check_item_id: int
+    # [2026-09-22 신규, 프론트 전달사항 10번] item_code는 artifact_score_reasons.item_code와
+    # 매칭되는 값, item_no는 카테고리(웹/원페이지) 안에서의 순번(1~8, 1번=진입 파일 존재
+    # 여부 — 미충족 시 해당 카테고리 자동 검증 점수 전체 0점 규칙 적용 대상). category의
+    # 뜻도 '정적분석/실행검증'에서 '산출물 카테고리(html/svg)'로 바뀌었다(models.py 참고).
+    item_code: str
+    item_no: int
     name: str
     method: str
     category: str

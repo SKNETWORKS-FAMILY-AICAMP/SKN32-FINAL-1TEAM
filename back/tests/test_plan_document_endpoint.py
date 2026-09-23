@@ -4,7 +4,10 @@
 검증한다."""
 import io
 import json
+import os
+import shutil
 
+import pytest
 from docx import Document
 
 from app.models import Notice
@@ -72,6 +75,42 @@ def test_plan_document_after_generate_contains_real_sections(authed_client, db_s
     assert body_1_1[:15] in full_text  # 실제 생성된 계획서 본문이 들어갔는지
 
 
+def test_plan_document_uses_intake_partners_not_empty_project_partners_table(authed_client):
+    # [2026-09-22] IntakeForm.jsx "협력 기관" 입력은 project_plan_inputs.partners(JSON)에
+    # 저장되는데, _build_plan_document_data는 계속 비어있는 project_partners 테이블을
+    # 읽고 있어서 실제로 입력해도 사업계획서엔 항상 플레이스홀더만 나오던 버그 —
+    # routers/projects.py partner_rows 수정 확인.
+    r = authed_client.post('/projects', data={'payload': json.dumps(_payload(
+        partners=[{'name': '○○대학 · 실증 지원', 'status': '협력 중'}],
+    ))})
+    assert r.status_code == 201, r.text
+    project_id = r.json()['project_id']
+
+    r = authed_client.get(f'/projects/{project_id}/plan-document.docx')
+    assert r.status_code == 200
+    doc = Document(io.BytesIO(r.content))
+    table_text = '\n'.join(c.text for t in doc.tables for row in t.rows for c in row.cells)
+    assert '○○대학 · 실증 지원' in table_text
+    assert '협력 중' in table_text
+
+
+def test_plan_document_uses_occupation_for_preliminary(authed_client):
+    # [2026-09-22] 계획서 양식(예비창업자 전용 "직업" 항목)이 요구하는데 대응 입력칸이
+    # 없어 계속 '○○○' 플레이스홀더로만 나가던 항목. "아이템 범주"는 함께 검토했지만
+    # Agent가 짓는 항목으로 확인돼(재희님) 사용자 입력에 추가하지 않았다.
+    r = authed_client.post('/projects', data={'payload': json.dumps(_payload(
+        applicant_type='preliminary', occupation='대학생',
+    ))})
+    assert r.status_code == 201, r.text
+    project_id = r.json()['project_id']
+
+    r = authed_client.get(f'/projects/{project_id}/plan-document.docx')
+    assert r.status_code == 200
+    doc = Document(io.BytesIO(r.content))
+    table_text = '\n'.join(c.text for t in doc.tables for row in t.rows for c in row.cells)
+    assert '대학생' in table_text
+
+
 def test_plan_document_requires_ownership(login_as, db_session):
     owner = login_as('owner@example.com', '주인')
     r = owner.post('/projects', data={'payload': json.dumps(_payload())})
@@ -81,3 +120,31 @@ def test_plan_document_requires_ownership(login_as, db_session):
     r = other.get(f'/projects/{project_id}/plan-document.docx')
     assert r.status_code == 404
 
+
+# ============================================================================
+# GET /projects/{id}/plan-document.hwp (SB-59, 2026-09-18)
+# ============================================================================
+# 예비창업패키지·초기창업패키지(일반형) 둘 다 원본 .hwp + 표 좌표 매핑까지 끝났다
+# (app/hwp_export.py의 _preliminary_steps/_early_general_steps). RHWP_BIN이 실제
+# rhwp 실행 파일을 안 가리키는 환경(팀 공용 CI 등, 개인 다운로드 경로를 박아둘 수
+# 없음)에서는 500(rhwp 실행 파일을 찾을 수 없음)이 정상이고, RHWP_BIN을 로컬에
+# 실제로 맞춘 환경(.env)에서는 진짜 200 + .hwp가 나와야 한다 — 두 경우 다 검증한다.
+from app.hwp_export import RHWP_BIN as _RHWP_BIN
+
+_RHWP_AVAILABLE = shutil.which(_RHWP_BIN) is not None or os.path.isfile(_RHWP_BIN)
+
+
+@pytest.mark.parametrize('applicant_type', [None, 'preliminary'])
+def test_plan_document_hwp(authed_client, applicant_type):
+    payload = _payload(applicant_type=applicant_type) if applicant_type else _payload()
+    r = authed_client.post('/projects', data={'payload': json.dumps(payload)})
+    project_id = r.json()['project_id']
+
+    r = authed_client.get(f'/projects/{project_id}/plan-document.hwp')
+    if _RHWP_AVAILABLE:
+        assert r.status_code == 200, r.text
+        assert r.headers['content-type'] == 'application/haansofthwp'
+        assert len(r.content) > 1000
+    else:
+        assert r.status_code == 500
+        assert 'rhwp 실행 파일을 찾을 수 없습니다' in r.json()['detail']

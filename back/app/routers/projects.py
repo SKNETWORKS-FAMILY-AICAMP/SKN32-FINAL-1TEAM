@@ -38,6 +38,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import ValidationError
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import agents
@@ -55,11 +56,13 @@ from app.models import (
     MatchCandidate,
     MatchResult,
     Notice,
+    PlanCanonicalData,
     PlanScoreReason,
     PlanSection,
     PricingItem,
     Project,
     ProjectAttachment,
+    ProjectPlanInput,
     ProofreadLog,
     TeamMember,
     User,
@@ -216,8 +219,8 @@ def _rescore_verify2(db: Session, plan: BusinessPlan, artifact: Artifact, verify
 
 
 def _upsert_plan_section(db: Session, plan_id: int, draft) -> dict:
-    """plan_sections에 (plan_id, tag)로 찾아서 있으면 갱신, 없으면 새로 만든다 — 전략/작성
-    Agent 재시도 공통 로직. draft는 app.agents.SectionDraftResult."""
+    """plan_sections에 (plan_id, tag)로 찾아서 있으면 갱신, 없으면 새로 만든다 — 작성
+    Agent 재시도 로직. draft는 app.agents.SectionDraftResult."""
     section = (
         db.query(PlanSection)
         .filter(PlanSection.plan_id == plan_id, PlanSection.tag == draft.tag)
@@ -231,6 +234,28 @@ def _upsert_plan_section(db: Session, plan_id: int, draft) -> dict:
         section.title = draft.title
         section.body = draft.body
     return {'before': before, 'after': draft.body}
+
+
+def _upsert_canonical_data(db: Session, plan_id: int, result) -> dict:
+    """plan_canonical_data에 (plan_id, data_key)로 찾아서 있으면 갱신, 없으면 새로 만든다 —
+    _upsert_plan_section과 같은 패턴, 전략 Agent(F01~F15) 재시도 전용. result는
+    app.agents.CanonicalDataResult."""
+    row = (
+        db.query(PlanCanonicalData)
+        .filter(PlanCanonicalData.plan_id == plan_id, PlanCanonicalData.data_key == result.data_key)
+        .first()
+    )
+    before = row.data_json if row is not None else None
+    if row is None:
+        row = PlanCanonicalData(
+            plan_id=plan_id, data_key=result.data_key,
+            data_json=result.data_json, source_function=result.source_function,
+        )
+        db.add(row)
+    else:
+        row.data_json = result.data_json
+        row.source_function = result.source_function
+    return {'before': before, 'after': result.data_json}
 
 # repo 루트/uploads — database.py의 _REPO_ROOT 계산 방식과 동일하게 __file__ 기준으로 잡는다
 # (app/routers/projects.py 에서 두 단계 위로 올라가면 app/ 이고, 그 위가 repo 루트).
@@ -450,6 +475,12 @@ def _build_demo_response(db: Session, project_id: int, match: MatchResult) -> De
         .order_by(BusinessPlan.plan_id.desc())
         .first()
     )
+    # [2026-09-22 수정, 프론트 전달사항 3번] 예전엔 verdict(=artifact)까지 없으면 통째로
+    # 404였다 — 계획서만 먼저 끝나고 프로토타입/검증은 아직인 상태(실제 단계별 생성
+    # 흐름에선 흔한 중간 상태)에서도 "완성된 계획서"는 돌려줘야 한다는 요구사항과
+    # 어긋났다. 이제 plan이 있으면(=계획서 작성이 끝났으면) 200을 내려주고, artifact/
+    # verdict가 아직 없으면 verdict만 None으로 비워서 응답한다.
+    artifact = None
     verdict = None
     if plan is not None:
         artifact = (
@@ -462,10 +493,10 @@ def _build_demo_response(db: Session, project_id: int, match: MatchResult) -> De
                 .order_by(Verdict.verdict_id.desc())
                 .first()
             )
-    if plan is None or verdict is None:
+    if plan is None:
         raise HTTPException(
             status_code=404,
-            detail='이 프로젝트엔 아직 계획서/산출물/최종판정이 없습니다 — POST /projects/{id}/generate 로 먼저 만들어야 합니다',
+            detail='이 프로젝트엔 아직 계획서가 없습니다 — POST /projects/{id}/generate 또는 .../plan/start 로 먼저 만들어야 합니다',
         )
 
     eligibility = (
@@ -480,12 +511,44 @@ def _build_demo_response(db: Session, project_id: int, match: MatchResult) -> De
         .order_by(AgentExecution.execution_id.asc())
         .all()
     )
+
+    verdict_out = None
+    if verdict is not None:
+        # [2026-09-22, 프론트 전달사항 10번] 검증결과서 "종합 판정" 행 — 문서층/자동검증/
+        # 계획서대조 세 층 점수를 verification_policies 가중치 기준으로 합산한다. 자동검증/
+        # 계획서대조는 artifact_score_reasons 하나에 섞여 있어서 item_code 접두어(_VERIFY2_
+        # STATIC_PREFIXES='CHECK-'/_VERIFY2_CROSSCHECK_PREFIXES='FEATURE-')로 갈라 합산한다 —
+        # _rescore_verify2가 재채점할 때 쓰는 것과 같은 구분.
+        policy = _get_verification_policy(db)
+        code_score = sum(
+            (r.score or Decimal('0')) for r in artifact.score_reasons
+            if r.item_code and r.item_code.startswith(_VERIFY2_STATIC_PREFIXES)
+        )
+        plan_match_score = sum(
+            (r.score or Decimal('0')) for r in artifact.score_reasons
+            if r.item_code and r.item_code.startswith(_VERIFY2_CROSSCHECK_PREFIXES)
+        )
+        doc_score = plan.doc_score or Decimal('0')
+        verdict_out = VerdictOut(
+            overall_passed=verdict.overall_passed,
+            model_version=verdict.model_version,
+            first_pass_passed=verdict.first_pass_passed,
+            doc_score=_num(doc_score),
+            doc_max_score=_num(policy.doc_weight),
+            code_score=_num(code_score),
+            code_max_score=_num(policy.code_weight),
+            plan_match_score=_num(plan_match_score),
+            plan_match_max_score=_num(policy.plan_weight),
+            total_score=_num(doc_score + code_score + plan_match_score),
+            pass_threshold=_num(policy.pass_threshold),
+        )
+
     return DemoGenerateResponse(
         project_id=project_id,
         match=MatchResultOut.model_validate(match),
         eligibility=EligibilityCheckOut.model_validate(eligibility),
         plan=BusinessPlanOut.model_validate(plan),
-        verdict=VerdictOut.model_validate(verdict),
+        verdict=verdict_out,
         agent_executions=[AgentExecutionOut.model_validate(e) for e in executions],
     )
 
@@ -530,14 +593,40 @@ def generate_pipeline_result(
 
 
 # ---------------------------------------------------------------------------
-# [더미] 계획서·프로토타입 생성 진행 흉내. 실제 에이전트 파이프라인이 붙기 전까지 백그라운드
-# 스레드가 match_results.stage/progress_percent를 조금씩 올린다 — 실제 구현도 같은 두 컬럼을
-# 갱신하면 프론트(GET /projects/{id}/status 폴링, 알림)는 그대로 동작한다.
+# [더미 콘텐츠 + 실제 비동기 인프라, 2026-09-22] 계획서·프로토타입을 실제로 만드는 로직
+# (_simulate_generation 본문)은 여전히 sleep+progress_percent 증가 흉내다 — 실제 에이전트
+# 파이프라인은 별도 작업(프론트 전달사항 1번 "실제 에이전트 파이프라인으로 교체")이고, 오늘
+# 바꾼 건 그걸 "어떻게 돌리는가"다.
+#
+# 예전엔 threading.Thread(daemon=True) + 프로세스 메모리 안의 _running_generations 셋으로
+# 중복 실행만 막았는데, 그러면 (a) 서버가 재시작되면 스레드가 통째로 사라지고 진행률이
+# 영영 멈추고, (b) uvicorn을 여러 워커 프로세스로 띄우면 워커마다 셋이 따로 있어서 같은
+# match_id가 워커 수만큼 중복 실행될 수 있었다. Redis 등 별도 브로커를 새로 두지 않기로
+# 했으므로(팀 인프라에 아직 없음), match_results에 클레임 시각 컬럼 하나(worker_claimed_at)
+# 를 추가해서 "지금 어떤 프로세스가 이 stage를 처리 중인지"를 DB 자체로 표현한다:
+#   - _try_claim_and_run: UPDATE ... WHERE stage=X AND (클레임 없음 또는 오래됨) 을
+#     한 번의 원자적 SQL 문으로 실행해 rowcount로 성공 여부를 판정한다 — 여러 프로세스가
+#     동시에 같은 match_id를 클레임하려 해도 DB 행 잠금 덕에 단 하나만 성공한다.
+#   - _simulate_generation은 매 스텝 커밋마다 worker_claimed_at도 같이 갱신한다(하트비트) —
+#     정상 진행 중인 작업은 클레임이 계속 "최근"으로 유지되어 다른 프로세스가 가로채지 않는다.
+#   - _generation_recovery_loop: 앱 시작 시(그리고 주기적으로) "진행 중 stage인데 클레임이
+#     없거나 오래된" match_results 행을 찾아 다시 클레임·실행한다 — 서버가 재시작돼 스레드가
+#     죽었거나, 워커 프로세스 자체가 죽은 경우를 이 루프가 이어받는다.
 # ---------------------------------------------------------------------------
 DUMMY_GENERATION_STEPS = 10
 DUMMY_GENERATION_STEP_SECONDS = float(os.getenv('DUMMY_GENERATION_STEP_SECONDS', '1.5'))
-_running_generations: set[int] = set()
-_running_lock = threading.Lock()
+# 클레임이 이만큼 갱신 안 되면 "처리하던 워커가 죽었다"고 보고 다른 워커가 가로챈다.
+# 스텝 간격(기본 1.5초)보다 충분히 커야 정상 진행 중인 작업을 실수로 가로채지 않는다.
+GENERATION_CLAIM_STALE_SECONDS = float(os.getenv('GENERATION_CLAIM_STALE_SECONDS', '30'))
+# 복구 루프가 "고아" 작업(클레임 없음/오래됨)을 찾는 주기.
+GENERATION_POLL_INTERVAL_SECONDS = float(os.getenv('GENERATION_POLL_INTERVAL_SECONDS', '10'))
+
+# running_stage -> done_stage. 복구 루프가 어떤 stage들을 감시해야 하는지 여기 한 곳에 모은다
+# — _start_generation이 쓰는 (running_stage, done_stage) 쌍과 항상 같은 값이어야 한다.
+_RUNNING_GENERATION_STAGES = {
+    ps.STAGE_PLAN_WRITING: ps.STAGE_PLAN_REVIEW_PENDING,
+    ps.STAGE_PROTOTYPE_BUILDING: ps.STAGE_DONE,
+}
 
 
 def _simulate_generation(match_id: int, running_stage: str, done_stage: str) -> None:
@@ -545,25 +634,110 @@ def _simulate_generation(match_id: int, running_stage: str, done_stage: str) -> 
 
     db = SessionLocal()
     try:
-        match = db.get(MatchResult, match_id)
-        step = (match.progress_percent or 0) * DUMMY_GENERATION_STEPS // 100 if match else DUMMY_GENERATION_STEPS
-        while step < DUMMY_GENERATION_STEPS:
-            time.sleep(DUMMY_GENERATION_STEP_SECONDS)
-            db.expire_all()
+        try:
             match = db.get(MatchResult, match_id)
-            if match is None or match.stage != running_stage:
-                return
-            step += 1
-            if step >= DUMMY_GENERATION_STEPS:
-                match.stage = done_stage
-                match.progress_percent = 100
-            else:
-                match.progress_percent = step * 100 // DUMMY_GENERATION_STEPS
-            db.commit()
+            step = (match.progress_percent or 0) * DUMMY_GENERATION_STEPS // 100 if match else DUMMY_GENERATION_STEPS
+            while step < DUMMY_GENERATION_STEPS:
+                time.sleep(DUMMY_GENERATION_STEP_SECONDS)
+                db.expire_all()
+                match = db.get(MatchResult, match_id)
+                if match is None or match.stage != running_stage:
+                    return
+                step += 1
+                if step >= DUMMY_GENERATION_STEPS:
+                    match.stage = done_stage
+                    match.progress_percent = 100
+                else:
+                    match.progress_percent = step * 100 // DUMMY_GENERATION_STEPS
+                match.worker_claimed_at = datetime.datetime.utcnow()  # 하트비트 — 진행 중엔 클레임이 안 늙는다
+                db.commit()
+        except Exception as exc:
+            # [2026-09-22 신규, 프론트 전달사항 4번] 지금 더미 로직(sleep+progress 증가)은
+            # 실패할 일이 없지만, 실제 에이전트가 붙으면 여기서 예외가 날 수 있다 — 그때
+            # 스레드가 조용히 죽어버리면 클레임만 남아 복구 루프가 영원히 못 잡아내는(stage는
+            # running_stage인데 아무도 안 돌리는) 상태가 된다. status='failed'로 명시적으로
+            # 남기고, stage는 실패한 단계 그대로 둔다 — 복구 루프는 status='failed'를 건드리지
+            # 않으므로(_recover_orphaned_generations_once) 자동 재시도되지 않고, 사용자가
+            # "다시 시도"(plan/start·prototype/start 재호출)해야 재개된다.
+            db.rollback()
+            match = db.get(MatchResult, match_id)
+            if match is not None and match.stage == running_stage:
+                match.status = 'failed'
+                match.failure_reason = str(exc)[:2000]
+                db.commit()
     finally:
         db.close()
-        with _running_lock:
-            _running_generations.discard(match_id)
+
+
+def _try_claim_and_run(match_id: int, running_stage: str, done_stage: str) -> bool:
+    """match_id의 running_stage 작업을 원자적으로 클레임하고, 성공한 경우에만 실행 스레드를
+    띄운다. 실패(이미 다른 곳에서 처리 중)하면 아무 것도 안 하고 False를 돌려준다 — 즉시시작
+    경로(_start_generation)와 복구 루프(_generation_recovery_loop)가 공유한다."""
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        stale_before = datetime.datetime.utcnow() - datetime.timedelta(seconds=GENERATION_CLAIM_STALE_SECONDS)
+        claimed = (
+            db.query(MatchResult)
+            .filter(
+                MatchResult.match_id == match_id,
+                MatchResult.stage == running_stage,
+                or_(MatchResult.worker_claimed_at.is_(None), MatchResult.worker_claimed_at < stale_before),
+            )
+            .update({MatchResult.worker_claimed_at: datetime.datetime.utcnow()}, synchronize_session=False)
+        )
+        db.commit()
+    finally:
+        db.close()
+    if claimed == 1:
+        threading.Thread(target=_simulate_generation, args=(match_id, running_stage, done_stage), daemon=True).start()
+        return True
+    return False
+
+
+def _recover_orphaned_generations_once(db: Session) -> None:
+    """진행 중 stage인데 클레임이 없거나 오래된(GENERATION_CLAIM_STALE_SECONDS) match_results
+    행을 한 번 훑어 이어받는다 — _generation_recovery_loop이 매 tick 호출하고, 테스트도
+    무한루프 대신 이 함수 하나만 직접 불러 검증한다."""
+    stale_before = datetime.datetime.utcnow() - datetime.timedelta(seconds=GENERATION_CLAIM_STALE_SECONDS)
+    for running_stage, done_stage in _RUNNING_GENERATION_STAGES.items():
+        orphans = (
+            db.query(MatchResult.match_id)
+            .filter(
+                MatchResult.stage == running_stage,
+                # [2026-09-22 신규] 이미 실패로 확정된 작업은 자동으로 다시 돌리지 않는다 —
+                # 사용자가 "다시 시도"를 눌러야(_start_generation) 재개된다.
+                MatchResult.status != 'failed',
+                or_(MatchResult.worker_claimed_at.is_(None), MatchResult.worker_claimed_at < stale_before),
+            )
+            .all()
+        )
+        for (orphan_match_id,) in orphans:
+            _try_claim_and_run(orphan_match_id, running_stage, done_stage)
+
+
+def _generation_recovery_loop() -> None:
+    """앱이 살아있는 동안 계속 도는 백그라운드 루프 — 재시작 직후 멈춰있던 작업이나, 스레드가
+    예외로 죽어 클레임이 오래된 작업을 찾아 이어받는다. 이 루프 자체는 무슨 일이 있어도
+    죽으면 안 되므로 매 tick을 통째로 try/except로 감싼다."""
+    from app.database import SessionLocal
+
+    while True:
+        try:
+            db = SessionLocal()
+            try:
+                _recover_orphaned_generations_once(db)
+            finally:
+                db.close()
+        except Exception:
+            pass  # 이번 tick만 건너뛰고 다음 tick에 다시 시도 — 루프 자체는 계속 산다
+        time.sleep(GENERATION_POLL_INTERVAL_SECONDS)
+
+
+def start_generation_recovery_loop() -> None:
+    """app/main.py가 앱 시작 시 한 번 호출한다(백그라운드 데몬 스레드로 루프를 띄움)."""
+    threading.Thread(target=_generation_recovery_loop, daemon=True).start()
 
 
 def _start_generation(db: Session, project: Project, start_from: tuple, running_stage: str, done_stage: str) -> ProjectStatusOut:
@@ -575,19 +749,21 @@ def _start_generation(db: Session, project: Project, start_from: tuple, running_
     )
     if match is None:
         raise HTTPException(status_code=400, detail='먼저 공고를 선택해 주세요.')
-    if match.stage in start_from:
+    # [2026-09-22 신규, 프론트 전달사항 4번] "다시 시도" — 실패는 stage를 실패한 단계 그대로
+    # 두므로(_simulate_generation), 실패한 바로 그 단계에 대해서만(stage == running_stage)
+    # 재시작을 허용한다 — 다른 단계에서 실패했는데 엉뚱한 단계가 리셋되면 안 되니까.
+    can_retry_failed = match.status == 'failed' and match.stage == running_stage
+    if match.stage in start_from or can_retry_failed:
         match.stage = running_stage
         match.progress_percent = 0
+        match.worker_claimed_at = None  # 새 단계 시작 — 이전 단계의 클레임 흔적을 지운다
+        match.status = 'in_progress'
+        match.failure_reason = None
         db.commit()
-    # 이미 진행 중이면 새로 시작하지 않는다. 서버 재시작으로 스레드만 끊긴 경우엔 이어서 돌린다.
-    if match.stage == running_stage:
-        with _running_lock:
-            should_run = match.match_id not in _running_generations
-            _running_generations.add(match.match_id)
-        if should_run:
-            threading.Thread(
-                target=_simulate_generation, args=(match.match_id, running_stage, done_stage), daemon=True,
-            ).start()
+    # 이미 진행 중이면(다른 요청/복구 루프가 먼저 클레임했으면) 새로 시작하지 않는다 —
+    # _try_claim_and_run의 원자적 UPDATE가 중복 실행 방지를 대신한다.
+    if match.stage == running_stage and match.status != 'failed':
+        _try_claim_and_run(match.match_id, running_stage, done_stage)
     return ProjectStatusOut(
         project_id=project.project_id,
         screen=ps.STAGE_TO_SCREEN.get(match.stage) if match.stage is not None else None,
@@ -595,6 +771,7 @@ def _start_generation(db: Session, project: Project, start_from: tuple, running_
         progress_percent=match.progress_percent,
         match_id=match.match_id,
         match_status=match.status,
+        failure_reason=match.failure_reason,
     )
 
 
@@ -724,10 +901,29 @@ def _build_plan_document_data(db: Session, project: Project, plan: BusinessPlan 
             for i, s in enumerate(rows)
         ] or [ScheduleRow('1', '○○', '○○.○○ ~ ○○.○○', '○○')]
 
-    partner_rows = [
-        PartnerRow(str(i + 1), p.partner_name or '○○', p.capability or '○○', p.collaboration_plan or '○○', p.collaboration_timing or '○○')
-        for i, p in enumerate(sorted(project.partners, key=lambda p: p.item_order or 0))
-    ]
+    # [2026-09-22 수정] 예전엔 project_partners 테이블(project.partners)에서 읽었는데,
+    # 그 테이블엔 아무도 값을 넣지 않는다 — IntakeForm.jsx "협력 기관" 입력은 project_plan_inputs
+    # 테이블에 JSON(ProjectPlanInput.partners, {name, status} 모양)으로 저장된다
+    # (schemas.py PlanPartnerIn 참고). 그래서 실제로 입력해도 사업계획서엔 항상 플레이스홀더만
+    # 나오고 있었다(버그). project_partners는 여전히 다른 용도(Agent가 나중에 채우는 협력기관
+    # 제안 등)로 남겨두되, 지금 사용자가 직접 입력한 값이 있으면 그걸 우선한다.
+    #
+    # [2026-09-22 매핑 수정] intake는 {name, status}만 주는데, status('협력 중'/'예정')를
+    # 원래 협력시기(날짜/분기 등이 들어가는 칸 — dummy 데이터의 '00.00' 참고)에 넣고
+    # 있어서 "협력시기: 협력 중" 같은 의미 안 맞는 문장이 나가고 있었다. status는 협업
+    # 진행 상태를 나타내니 협업방안 자리로 옮기고, 실제 값이 없는 보유역량/협력시기는
+    # 다른 곳과 같은 자리표시자 관례('○○')를 쓴다(하드코딩 '-' 대신).
+    plan_partners = (project.plan_input.partners if project.plan_input else None) or []
+    if plan_partners:
+        partner_rows = [
+            PartnerRow(str(i + 1), p.get('name') or '○○', '○○', p.get('status') or '○○', '○○')
+            for i, p in enumerate(plan_partners)
+        ]
+    else:
+        partner_rows = [
+            PartnerRow(str(i + 1), p.partner_name or '○○', p.capability or '○○', p.collaboration_plan or '○○', p.collaboration_timing or '○○')
+            for i, p in enumerate(sorted(project.partners, key=lambda p: p.item_order or 0))
+        ]
 
     item_desc = project.description or ''
     template = 'preliminary' if company and company.applicant_type == 'preliminary' else 'early_general'
@@ -750,6 +946,8 @@ def _build_plan_document_data(db: Session, project: Project, plan: BusinessPlan 
         지방우대_지역_해당여부=_or_placeholder(project.regional_priority_area, '해당 없음'),
         팀구성현황=team_rows,
         아이템_명칭=item_desc[:20] or '○○',
+        # [2026-09-22, 재희님 확인] Agent가 아이디어 설명을 보고 직접 짓는 항목 —
+        # 전략/작성 시트(2.3/3.3) 참고, 사용자 입력을 받지 않는다.
         아이템_범주='○○',
         아이템_개요=item_desc,
         요약_문제인식=_section_body('1-1'),
@@ -767,7 +965,7 @@ def _build_plan_document_data(db: Session, project: Project, plan: BusinessPlan 
         협력기관=partner_rows,
         # 예비창업패키지 전용(early_general 렌더링에서는 안 쓰임) — 기업(예정)명은
         # company_name을 그대로 재사용한다(예비창업자도 창업 예정 상호를 입력할 수 있음).
-        # '직업'은 IntakeForm에 대응 입력칸이 없어 지어내지 않고 placeholder로 남긴다.
+        직업=_or_placeholder(project.plan_input.occupation if project.plan_input else None, '○○○'),
         기업예정명=_or_placeholder(company.company_name if company else None, '○○○'),
     )
     return data, template
@@ -809,6 +1007,50 @@ def download_plan_document(
     return Response(
         content=docx_bytes,
         media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        headers={'Content-Disposition': f"attachment; filename*=UTF-8''{filename}"},
+    )
+
+
+@router.get('/{project_id}/plan-document.hwp')
+def download_plan_document_hwp(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """download_plan_document(.docx)와 같은 데이터로 실제 .hwp를 내려준다
+    (app/hwp_export.py, rhwp CLI 기반). [2026-09-18] 예비창업패키지·초기창업패키지
+    (일반형) 둘 다 실제 원본 양식 + 좌표 매핑까지 끝났다 — RHWP_BIN(.env.example
+    참고)만 실제 rhwp 실행 파일 경로로 맞추면 이 서버에서도 바로 된다."""
+    from app.hwp_export import render_plan_hwp
+
+    project = _get_owned_project(db, project_id, current_user)
+    match = (
+        db.query(MatchResult)
+        .filter(MatchResult.project_id == project_id)
+        .order_by(MatchResult.match_id.desc())
+        .first()
+    )
+    plan = None
+    if match is not None:
+        plan = (
+            db.query(BusinessPlan)
+            .filter(BusinessPlan.match_id == match.match_id)
+            .order_by(BusinessPlan.plan_id.desc())
+            .first()
+        )
+
+    data, template = _build_plan_document_data(db, project, plan)
+    try:
+        hwp_bytes = render_plan_hwp(data, template=template)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    filename = quote('사업계획서.hwp')
+    return Response(
+        content=hwp_bytes,
+        media_type='application/haansofthwp',
         headers={'Content-Disposition': f"attachment; filename*=UTF-8''{filename}"},
     )
 
@@ -865,6 +1107,31 @@ async def create_project(
         db.add(TeamMember(project_id=project.project_id, name=m.name, role=m.role, experience=m.experience))
     for p in body.pricing_items:
         db.add(PricingItem(project_id=project.project_id, service_name=p.service_name, unit_price=p.unit_price))
+    # [2026-09-22 배선] IntakeForm.jsx "사업 계획" 섹션 — project당 1행(ProjectPlanInput 참고).
+    db.add(ProjectPlanInput(
+        project_id=project.project_id,
+        occupation=body.occupation,
+        ceo_birth_date=body.ceo_birth_date,
+        ceo_gender=body.ceo_gender,
+        region_sido=body.region_sido,
+        region_sigungu=body.region_sigungu,
+        main_industry=body.main_industry,
+        certifications=body.certifications,
+        ceo_careers=[c.model_dump() for c in body.ceo_careers],
+        ceo_capability=body.ceo_capability,
+        dev_start_month=body.dev_start_month,
+        dev_end_month=body.dev_end_month,
+        budget_scale_manwon=body.budget_scale_manwon,
+        self_funding_allowed=body.self_funding_allowed,
+        self_cash_limit=body.self_cash_limit,
+        self_in_kind_resources=body.self_in_kind_resources,
+        no_hires=body.no_hires,
+        hires=[h.model_dump() for h in body.hires],
+        no_equipment=body.no_equipment,
+        equipment=[e.model_dump() for e in body.equipment],
+        no_partners=body.no_partners,
+        partners=[p.model_dump() for p in body.partners],
+    ))
     for f in files:
         if not f.filename:
             continue  # 빈 파일 필드는 건너뜀 (프론트가 파일 선택 안 하고 제출한 경우)
@@ -970,6 +1237,7 @@ def get_project_status(
         progress_percent=match.progress_percent,
         match_id=match.match_id,
         match_status=match.status,
+        failure_reason=match.failure_reason,
     )
 
 
@@ -1037,9 +1305,12 @@ def retry_task(
 
     if task_key == 'strategy':
         # app/agents.py — 실제 Agent가 연동되면 이 호출 하나만 실제 구현으로 바뀐다(계약은
-        # 동일하게 유지). 지금은 더미 구현이 무작위 문구를 돌려준다.
-        draft = agents.run_strategy_agent_retry(project.description)
-        changed['sections'] = {draft.tag: _upsert_plan_section(db, plan.plan_id, draft)}
+        # 동일하게 유지). 지금은 더미 구현이 무작위 값을 돌려준다. [2026-09-22 수정]
+        # plan_sections '3-1' 대신 plan_canonical_data에 쓴다 — agents.py 모듈 docstring의
+        # "2026-09-22 수정" 참고(Strategy Agent는 분석 자료를 만들 뿐, 최종 문단은 작성
+        # Agent 몫이라는 시트 구조에 맞춤).
+        results = agents.run_strategy_agent_retry(project.description)
+        changed['canonical_data'] = {r.data_key: _upsert_canonical_data(db, plan.plan_id, r) for r in results}
 
     elif task_key == 'writing':
         drafts = agents.run_writing_agent_retry(project.description, tags=['1-1', '2-1'])

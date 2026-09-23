@@ -104,6 +104,7 @@ export default function MyPage({ onSaved }) {
   const saveActiveProfile = useMyPageStore((s) => s.saveActiveProfile);
   const [justSaved, setJustSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const missing = missingRequiredFields(activeProfile);
   // 저장을 눌렀을 때 비어 있던 첫 필수 항목. 그 항목을 채우면 안내는 저절로 사라진다.
   const [errorAnchor, setErrorAnchor] = useState(null);
@@ -112,7 +113,7 @@ export default function MyPage({ onSaved }) {
 
   // 정보 슬롯을 바꾸거나 새로 추가하면 그 전에 보고 있던 탭(역량·팀 등)이 아니라
   // 항상 기본 정보 탭부터 보여준다 — 슬롯마다 처음 보는 화면이 같아야 헷갈리지 않는다.
-  useEffect(() => { setTab('basic'); setErrorAnchor(null); }, [activeIndex]);
+  useEffect(() => { setTab('basic'); setErrorAnchor(null); setSaveError(''); }, [activeIndex]);
   // 빈 항목이 다른 탭에 있으면 탭을 바꾼 뒤(그 섹션이 그려진 다음) 스크롤한다.
   useEffect(() => {
     if (!pendingFocus) return;
@@ -141,6 +142,7 @@ export default function MyPage({ onSaved }) {
       return;
     }
     setSaving(true);
+    setSaveError('');
     try {
       await saveActiveProfile();
       onSaved?.();
@@ -148,7 +150,7 @@ export default function MyPage({ onSaved }) {
       setTimeout(() => setJustSaved(false), 2500);
     } catch (err) {
       console.error('마이페이지 저장에 실패했어요', err);
-      window.alert(err.message || '저장에 실패했어요. 다시 시도해 주세요.');
+      setSaveError(err?.status === 401 ? '로그인이 끊겼어요. 다시 로그인해 주세요.' : '저장하지 못했어요. 잠시 후 다시 시도해 주세요.');
     } finally {
       setSaving(false);
     }
@@ -181,14 +183,16 @@ export default function MyPage({ onSaved }) {
 
       <div className="flex items-center justify-between gap-4 mt-6 pt-6 border-t border-[var(--border)]">
         <div className="min-h-5">
-          {justSaved ? (
+          {saveError ? (
+            <p className="text-[12.5px] font-semibold text-[var(--danger)]">{saveError}</p>
+          ) : justSaved ? (
             <p className="text-[12.5px] font-semibold text-[var(--ok)]">저장됐어요.</p>
           ) : missing.length > 0 ? (
             <p className="text-[11.5px] text-[var(--muted-fg)]">[필수] 항목을 먼저 채워 주세요 — {missing.map((m) => m.label).join(', ')}</p>
           ) : !onboarded ? (
             <p className="text-[12.5px] text-[var(--warn)]">아직 저장 전이에요. 저장을 눌러 주세요.</p>
           ) : (
-            <p className="text-[12.5px] text-[var(--muted-fg)]">입력한 내용은 이 정보 슬롯에 자동으로 저장돼요.</p>
+            <p className="text-[12.5px] text-[var(--muted-fg)]">저장 버튼을 눌러야 이 정보 슬롯이 서버에 반영돼요.</p>
           )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">

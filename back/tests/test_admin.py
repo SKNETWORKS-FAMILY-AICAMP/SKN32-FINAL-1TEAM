@@ -174,27 +174,42 @@ def test_negative_checklist_weight_is_rejected(admin_client):
 # ============================================================================
 
 def test_get_checklist_seeded_items(admin_client, db_session):
+    """[2026-09-22 구조 교체] v1.8 기준 html/svg 두 카테고리 × 8항목 = 16개, 카테고리별
+    합계 15점(전체 합 100점 규칙은 더 이상 아님)."""
     res = admin_client.get('/admin/checklist')
     assert res.status_code == 200, res.text
     items = res.json()
-    assert len(items) == 8, f'seed_dummy_admin_data.py가 8항목을 넣었는데 {len(items)}개만 보임'
-    enabled_total = sum(i['weight'] for i in items if i['enabled'])
-    assert enabled_total == 100, f'enabled 항목 가중치 합이 100이 아님: {enabled_total}'
+    assert len(items) == 16, f'seed_dummy_admin_data.py가 16항목(html/svg 8개씩)을 넣었는데 {len(items)}개만 보임'
+    for category in ('html', 'svg'):
+        enabled_total = sum(i['weight'] for i in items if i['enabled'] and i['category'] == category)
+        assert enabled_total == 15, f'{category} 카테고리 enabled 가중치 합이 15가 아님: {enabled_total}'
     # API 응답뿐 아니라 DB 레벨에서도 seed가 중복 없이 정확히 들어갔는지
-    assert db_session.query(VerificationChecklistItem).count() == 8
+    assert db_session.query(VerificationChecklistItem).count() == 16
 
 
-def test_put_checklist_validates_weight_sum_100(admin_client):
+def test_put_checklist_validates_weight_sum_15_per_category(admin_client):
+    """[2026-09-22 구조 교체] 카테고리(html/svg) 하나라도 합이 15가 아니면 거부 — 다른
+    카테고리 항목끼리 가중치를 주고받아 전체 합만 맞추는 걸 막는 게 핵심이라, 한쪽
+    카테고리만 깨뜨려도 막히는지 확인한다."""
     items = admin_client.get('/admin/checklist').json()
 
-    over_body = [{'check_item_id': i['check_item_id'], 'weight': 30, 'enabled': True} for i in items]
+    over_body = [
+        {'check_item_id': i['check_item_id'], 'weight': 30 if i['category'] == 'html' else i['weight'], 'enabled': True}
+        for i in items
+    ]
     over = admin_client.put('/admin/checklist', json=over_body)
-    assert over.status_code == 422, f'합 240인데 422가 아님: {over.status_code} {over.text}'
+    assert over.status_code == 422, f'html 카테고리 합이 240인데 422가 아님: {over.status_code} {over.text}'
+    assert 'html' in over.json()['detail']
 
-    ok_body = [{'check_item_id': i['check_item_id'], 'weight': 12.5, 'enabled': True} for i in items]
+    # weight는 DECIMAL(5,2)라 15/8(=1.875)처럼 소수점 셋째 자리가 필요한 값은 못 쓴다 —
+    # 카테고리(8항목)마다 정수로 합 15가 되는 값(2*7 + 1)을 쓴다.
+    ok_body = [
+        {'check_item_id': i['check_item_id'], 'weight': 1 if idx % 8 == 7 else 2, 'enabled': True}
+        for idx, i in enumerate(items)
+    ]
     ok = admin_client.put('/admin/checklist', json=ok_body)
     assert ok.status_code == 200, ok.text
-    assert all(i['weight'] == 12.5 for i in ok.json())
+    assert [i['weight'] for i in ok.json()] == [1 if idx % 8 == 7 else 2 for idx in range(len(items))]
 
 
 # ============================================================================

@@ -121,6 +121,38 @@ def test_repeated_verify1_retry_keeps_appending(retry_setup, db_session):
 # 작성/구현 재시도에 딸려오는 자동 재검증 (2026-09-18 추가)
 # ============================================================================
 
+def test_strategy_retry_writes_canonical_data_not_sections(retry_setup, db_session):
+    """[2026-09-22] '전략' 재시도는 이제 plan_sections가 아니라 plan_canonical_data에 쓴다 —
+    구글 드라이브 "전략/작성/검증1" 시트의 Strategy Agent(F01~F15, 분석 자료 생성)와
+    Writing Agent(F16, 최종 문단 작성) 구분에 맞춘 것(app/agents.py 모듈 docstring 참고)."""
+    from app.models import PlanCanonicalData
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'strategy')
+    assert res.status_code == 200, res.text
+    changed = res.json()['changed']
+    assert 'canonical_data' in changed
+    assert set(changed['canonical_data']) == {'market_analysis', 'growth_strategy'}
+
+    db_session.expire_all()
+    rows = (
+        db_session.query(PlanCanonicalData)
+        .filter(PlanCanonicalData.plan_id == retry_setup['plan_id'])
+        .all()
+    )
+    assert {r.data_key for r in rows} == {'market_analysis', 'growth_strategy'}
+
+    # 다시 호출해도 (plan_id, data_key) 유일성 때문에 새 행이 추가되는 게 아니라 갱신돼야 한다.
+    res2 = _retry(retry_setup['client'], retry_setup['project_id'], 'strategy')
+    assert res2.status_code == 200, res2.text
+    db_session.expire_all()
+    count = (
+        db_session.query(PlanCanonicalData)
+        .filter(PlanCanonicalData.plan_id == retry_setup['plan_id'])
+        .count()
+    )
+    assert count == 2, '재시도할 때마다 새 행이 쌓이면 안 됨 — upsert여야 함'
+
+
 def test_writing_retry_also_rescores_verify1(retry_setup, db_session):
     """"본문 작성을 재작성했는데 점수가 그대로다"는 지적(하정원님) — 화면에 검증-1을 따로
     재시도하는 버튼이 없어서 실제로 점수를 바꿀 방법이 없었다. writing 재시도에 검증-1

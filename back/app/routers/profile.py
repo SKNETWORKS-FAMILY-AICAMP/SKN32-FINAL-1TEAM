@@ -71,6 +71,10 @@ _APPLICANT_TYPES_REQUIRING_BIZ_NO = {'individual', 'corp'}
 
 
 def profile_satisfies_required_fields(profile: UserProfile) -> bool:
+    """[2026-09-22 수정, 프론트 전달사항 9번] front/src/features/mypage/derive.js의
+    missingRequiredFields()가 이미 확정한 필수 기준 그대로 서버도 검사하도록 맞췄다 —
+    예전엔 서버가 더 느슨해서(capability.skills/팀 구성 완전성/개인·법인의 openedAt을
+    안 봄) 충돌은 없었지만 기준이 어긋나 있었다."""
     basic = profile.basic_json or {}
     capability = profile.capability_json or {}
     applicant_type = basic.get('applicantType')
@@ -80,11 +84,19 @@ def profile_satisfies_required_fields(profile: UserProfile) -> bool:
         return False
     if not (basic.get('region') or {}).get('sido'):
         return False
-    if not basic.get('industry'):
+    if not (basic.get('industry') or '').strip():
         return False
-    if not capability.get('careers'):
+    if applicant_type in _APPLICANT_TYPES_REQUIRING_BIZ_NO and not (basic.get('bizNo') and basic.get('openedAt')):
         return False
-    if applicant_type in _APPLICANT_TYPES_REQUIRING_BIZ_NO and not basic.get('bizNo'):
+    if not capability.get('careers') or not (capability.get('skills') or '').strip():
+        return False
+    solo_founder = bool(capability.get('soloFounder'))
+    team = capability.get('team') or []
+    team_complete = bool(team) and all(
+        (row.get('name') or '').strip() and (row.get('role') or '').strip() and (row.get('career') or '').strip()
+        for row in team
+    )
+    if not solo_founder and not team_complete:
         return False
     return True
 
