@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 
 import app.routers.auth as auth_router
 import app.security as security
-from app.models import Faq, ImportRun, Notice, ProofreadLog, User, VerificationChecklistItem
+from app.models import Faq, ImportRun, MatchResult, Notice, ProofreadLog, User, VerificationChecklistItem
 from seed_dummy_admin_data import main as seed_admin_data_main
 from seed_dummy_pipeline import seed_dummy_pipeline
 
@@ -249,6 +249,19 @@ def test_get_items_reflects_match_status(admin_client, user_client, db_session):
     # DEFAULT_DOC_SCORE(58.50) + DEFAULT_ARTIFACT_SCORE(24.00) = 82.50 (seed_dummy_pipeline.py 기본값)
     assert matched['score'] == pytest.approx(82.50), matched
     assert matched['archived'] is False
+
+    match = db_session.query(MatchResult).filter(MatchResult.project_id == project_id).first()
+    match.status = 'failed'
+    match.stage = 'prototype_building'
+    match.failure_reason = '프로토타입 작업 오류'
+    db_session.commit()
+    user_item = next(row for row in user_client.get('/projects').json() if row['project_id'] == project_id)
+    assert user_item['match_status'] == 'failed'
+    assert user_item['failure_reason'] == '프로토타입 작업 오류'
+    admin_item = next(row for row in admin_client.get('/admin/items').json() if row['project_id'] == project_id)
+    assert admin_item['status_label'] == '실패'
+    assert admin_item['match_id'] == match.match_id
+    assert admin_item['failure_reason'] == '프로토타입 작업 오류'
 
 
 def test_put_item_archive_toggles_match_archived_at(admin_client, user_client, db_session):
@@ -747,6 +760,7 @@ def test_get_agent_executions(admin_client, user_client, db_session):
     res = admin_client.get('/admin/agent-executions')
     assert res.status_code == 200, res.text
     assert len(res.json()) >= 10, f'seed_dummy_pipeline이 남긴 실행 로그가 안 보임: {len(res.json())}건'
+    assert all('task_key' in row for row in res.json())
 
 
 # ============================================================================

@@ -1,7 +1,7 @@
 import React,{useState,useEffect} from 'react';
 import {Brand,Icon} from './Icons.jsx';
 import {NotificationBell} from '../features/Workflow.jsx';
-import {listProjects,deleteProject} from '../api.js';
+import {listProjects,deleteProject,startPlanGeneration,startPrototypeGeneration} from '../api.js';
 export const steps=[['intake','아이템 입력'],['match-results','공고 찾기'],['plan-form','사업계획서'],['artifact-result','프로토타입'],['final-verdict','제출 전 점검'],['review','최종 결과물']];
 export function WorkspaceShell({view,user,onHome,onDashboard,onMyPage,onNewProject,onLogout,notifyEnabled,onToggleNotify,onOpenProject,children}){
  const index=['match-progress','eligibility-gate','eligibility-fail'].includes(view)?1:view==='plan-progress'?2:view==='artifact-progress'?3:view==='final-pass'?4:steps.findIndex(x=>x[0]===view);
@@ -32,6 +32,7 @@ export function Dashboard({onNewProject,onOpenProject}){
  const [query,setQuery]=useState('');const [filter,setFilter]=useState('전체');const [guard,setGuard]=useState(false);
  const [projects,setProjects]=useState([]);const [loading,setLoading]=useState(true);const [loadError,setLoadError]=useState(false);
  const [confirmingId,setConfirmingId]=useState(null);const [deletingId,setDeletingId]=useState(null);
+ const [retryingId,setRetryingId]=useState(null);const [retryError,setRetryError]=useState('');
 
  useEffect(()=>{
   let cancelled=false;let timer=null;
@@ -45,11 +46,12 @@ export function Dashboard({onNewProject,onOpenProject}){
     announcementTitle:r.notice_title||'아직 매칭된 공고가 없어요',
     matched:!!r.notice_title,
     progress:isActuallyDone(r.project_id,r.stage)?100:0,
-    generating:GENERATING_LABEL[r.stage]?`${GENERATING_LABEL[r.stage]} ${r.progress_percent??0}%`:null,
+    failed:r.match_status==='failed',failedStage:r.stage,
+    generating:r.match_status!=='failed'&&GENERATING_LABEL[r.stage]?`${GENERATING_LABEL[r.stage]} ${r.progress_percent??0}%`:null,
     updatedAt:(r.created_at||'').slice(0,10),
    })));
    setLoading(false);
-   if(rows.some(r=>GENERATING_LABEL[r.stage]))timer=setTimeout(load,5000);
+   if(rows.some(r=>r.match_status!=='failed'&&GENERATING_LABEL[r.stage]))timer=setTimeout(load,5000);
   }).catch(err=>{
    console.error('내 프로젝트 목록을 불러오지 못했어요', err);
    if(!cancelled){setLoadError(true);setLoading(false);}
@@ -62,6 +64,16 @@ export function Dashboard({onNewProject,onOpenProject}){
  const filtered=projects.filter(p=>(p.name+' '+p.announcementTitle).includes(query)&&(filter==='전체'||(filter==='진행 중'?p.progress<100:p.progress===100)));
  const inProgress=projects.find(p=>p.progress<100)||null;
  const start=()=>{if(inProgress)setGuard(true);else onNewProject()};
+ const retryProject=async p=>{
+  if(retryingId!=null)return;
+  setRetryError('');setRetryingId(p.id);
+  try{
+   const startTask=p.failedStage==='plan_writing'?startPlanGeneration:startPrototypeGeneration;
+   await startTask(p.id);
+   onOpenProject(p,p.failedStage==='plan_writing'?'plan-progress':'artifact-progress');
+  }catch(err){setRetryError(err.message||'재실행하지 못했어요. 다시 시도해 주세요.');}
+  finally{setRetryingId(null)}
+ };
 
  // 휴지통 버튼 — 실수로 바로 지워지지 않게 한 번 더 확인을 거친다(같은 자리에서
  // "정말 삭제할까요?"로 바뀌었다가 다시 누르면 실제 삭제). 매칭 전이면 서버가 진짜
@@ -86,7 +98,11 @@ export function Dashboard({onNewProject,onOpenProject}){
   {loading&&<p className="workspace-note">내 프로젝트를 불러오는 중이에요…</p>}
   {loadError&&<p className="workspace-note">프로젝트 목록을 불러오지 못했어요. 새로고침해 주세요.</p>}
 
-  {!loading&&inProgress&&<button className="continue-card" onClick={()=>onOpenProject(inProgress)}><span className="continue-icon"><Icon name="file" size={32}/></span><div><p>이어서 준비하기</p><h2>{inProgress.name}</h2><span>{inProgress.matched?'계획서·프로토타입 준비를 이어서 진행해요':'공고 선택부터 이어서 진행해요'}</span></div><div className="continue-status"><span>{inProgress.generating||(inProgress.matched?'진행 중':'매칭 대기 중')}</span><b>이어서 진행하기 <Icon name="chevron" size={19}/></b></div></button>}
+  {!loading&&inProgress&&<div className={'continue-card'+(inProgress.failed?' is-failed':'')}>
+   <button className="continue-open" onClick={()=>onOpenProject(inProgress)}><span className="continue-icon"><Icon name={inProgress.failed?'close':'file'} size={32}/></span><div><p>{inProgress.failed?'작업이 중단됐어요':'이어서 준비하기'}</p><h2>{inProgress.name}</h2><span>{inProgress.failed?(inProgress.failedStage==='plan_writing'?'사업계획서':'프로토타입')+' 작성 중 실패하였습니다.':inProgress.matched?'계획서·프로토타입 준비를 이어서 진행해요':'공고 선택부터 이어서 진행해요'}</span></div></button>
+   <div className="continue-status"><span>{inProgress.failed?'실패했습니다':inProgress.generating||(inProgress.matched?'진행 중':'매칭 대기 중')}</span>{inProgress.failed?<button type="button" className="continue-retry" disabled={retryingId===inProgress.id} onClick={()=>retryProject(inProgress)}>{retryingId===inProgress.id?'재실행 중…':'재실행'} <Icon name="chevron" size={19}/></button>:<button type="button" onClick={()=>onOpenProject(inProgress)}>이어서 진행하기 <Icon name="chevron" size={19}/></button>}</div>
+  </div>}
+  {retryError&&<p role="alert" className="workspace-retry-error">{retryError}</p>}
 
   {guard&&<div className="project-guard" role="status"><div><b>먼저 진행 중인 프로젝트를 확인해 주세요</b><p>한 번에 하나의 프로젝트를 준비할 수 있어요.</p></div><button className="btn small" onClick={()=>onOpenProject(inProgress||projects[0])}>이어서 준비하기</button><button className="btn btn-muted small" onClick={()=>{setGuard(false);onNewProject()}}>중단하고 새로 시작</button><button className="icon-button" aria-label="안내 닫기" onClick={()=>setGuard(false)}><Icon name="close"/></button></div>}
 
@@ -96,9 +112,9 @@ export function Dashboard({onNewProject,onOpenProject}){
   <div className="project-list">
    {filtered.map(p=><div className="project-row" key={p.id}>
      <button className="project-row-main" onClick={()=>onOpenProject(p)}>
-      <span className={'project-symbol '+(p.progress===100?'done':'')}><Icon name={p.progress===100?'check':'folder'} size={26}/></span>
+      <span className={'project-symbol '+(p.failed?'failed':p.progress===100?'done':'')}><Icon name={p.failed?'close':p.progress===100?'check':'folder'} size={26}/></span>
       <div className="project-title"><h3>{p.name}</h3><p>{p.announcementTitle}<span>·</span>{(p.updatedAt||'').replaceAll('-','.')} 수정</p></div>
-      <span className={'status-pill '+(p.progress===100?'done':'')}>{p.progress===100?'준비 완료':p.generating||(p.matched?'진행 중':'공고 선택 대기')}</span>
+      <span className={'status-pill '+(p.failed?'failed':p.progress===100?'done':'')}>{p.failed?'실패했습니다':p.progress===100?'준비 완료':p.generating||(p.matched?'진행 중':'공고 선택 대기')}</span>
       <Icon name="chevron" size={21}/>
      </button>
      {confirmingId===p.id?(

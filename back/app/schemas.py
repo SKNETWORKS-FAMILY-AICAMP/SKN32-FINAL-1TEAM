@@ -585,6 +585,7 @@ class ProjectListItemOut(BaseModel):
     notice_id: str | None = None
     notice_title: str | None = None
     match_status: str | None = None
+    failure_reason: str | None = None
     stage: str | None = None
     progress_percent: int | None = None
     screen: int | None = None
@@ -660,8 +661,10 @@ class ItemOut(BaseModel):
     user_name: str
     created_at: datetime.datetime
     match_status: str | None = None
+    match_id: int | None = None
+    failure_reason: str | None = None
     stage: str | None = None
-    status_label: str = Field(..., description="'공고 매칭 전'/'진행중'/'판단 대기'/'완료'/'중단' 중 하나")
+    status_label: str = Field(..., description="'공고 매칭 전'/'진행중'/'판단 대기'/'완료'/'실패'/'중단' 중 하나")
     step: str | None = Field(None, description='마지막으로 실행된 Agent 이름(전략/작성/구현/검증-1/검증-2/검수) — agent_executions 최신 행 기준')
     attempts: int | None = Field(None, description='같은 단계(step)를 몇 번째 시도 중인지 — agent_executions.attempt_no 최신값')
     last_updated: datetime.datetime | None = Field(None, description='agent_executions 최신 실행 시각, 없으면 프로젝트 등록 시각')

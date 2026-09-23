@@ -24,6 +24,7 @@ export default function GenerationProgress({kind, projectId, itemInfo, onDone, o
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,9 +39,11 @@ export default function GenerationProgress({kind, projectId, itemInfo, onDone, o
       // 않아 진행률이 0에 멈춘 채 폴링만 끝없이 돌았다(화면엔 아무 안내도 안 떴다).
       // match_status로 실패를 먼저 가려내고, 사유(failure_reason)를 "다시 시도" 옆에 띄운다.
       if (status?.match_status === 'failed') {
-        setError(status.failure_reason || '생성에 실패했어요. 다시 시도해 주세요.');
+        setError(`${kind === 'plan' ? '사업계획서' : '프로토타입'} 작성 중 실패하였습니다. 다시 실행해 주세요.`);
+        setRetrying(false);
         return; // 폴링 중단 — "다시 시도"를 누르면 effect가 다시 돌며 재개한다.
       }
+      setRetrying(false);
       const next = progressFor(kind, status);
       setProgress(next);
       if (next < 100) timer = setTimeout(poll, POLL_MS);
@@ -54,13 +57,20 @@ export default function GenerationProgress({kind, projectId, itemInfo, onDone, o
         setError('연결이 잠시 끊겼어요. 진행 상황을 다시 확인하고 있어요.');
         timer = setTimeout(again, POLL_MS * failures);
       } else {
+        setRetrying(false);
         setError(err.message || '진행 상황을 불러오지 못했어요. 다시 시도해 주세요.');
       }
     };
     const poll = () => getProjectStatus(projectId).then(apply).catch(err => fail(err, poll));
     // 시작 API는 중복 호출해도 이미 실행 중인 작업을 다시 생성하지 않는다.
     const start = () => KINDS[kind].start(projectId).then(apply).catch(err => fail(err, start));
-    start();
+    // 실패한 작업은 상태를 먼저 보여준다. 재실행 버튼을 누를 때만 시작 API를 호출한다.
+    const check = () => getProjectStatus(projectId).then(status=>{
+      if(cancelled)return;
+      if(status.match_status==='failed' && retry===0)apply(status);
+      else start();
+    }).catch(err=>fail(err,check));
+    check();
     return () => { cancelled = true; clearTimeout(timer); };
   }, [kind, projectId, retry]);
 
@@ -70,7 +80,7 @@ export default function GenerationProgress({kind, projectId, itemInfo, onDone, o
       <Preparation kind={kind} compact={compact} progress={progress} onComplete={onDone} onLeave={onLeave}/>
       {error && <div className="text-center">
         <p className="matched-note" role="alert">{error}</p>
-        <button type="button" className="btn btn-muted small" onClick={() => setRetry(n => n + 1)}>다시 시도</button>
+        <button type="button" className="btn btn-muted small" disabled={retrying} onClick={() => {setRetrying(true);setRetry(n => n + 1)}}>{retrying?'재실행 중…':'재실행'}</button>
       </div>}
     </>
   );

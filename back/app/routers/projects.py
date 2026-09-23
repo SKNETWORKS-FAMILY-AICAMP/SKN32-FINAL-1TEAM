@@ -368,6 +368,7 @@ def list_projects(
             notice_id=match.notice_id if match is not None else None,
             notice_title=notice_title,
             match_status=match.status if match is not None else None,
+            failure_reason=match.failure_reason if match is not None and match.status == 'failed' else None,
             stage=match.stage if match is not None else None,
             progress_percent=match.progress_percent if match is not None else None,
             screen=screen,

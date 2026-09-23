@@ -33,3 +33,4 @@ RHWP_BIN=./rhwp.exe
   자동으로 건너뛰고 0으로 종료된다.
 - Swagger(`/docs`)에서 `GET /projects/{id}/plan-document.hwp` 직접 호출 — 200이면 성공,
   500이면 `RHWP_BIN` 경로가 잘못된 것.
+ 

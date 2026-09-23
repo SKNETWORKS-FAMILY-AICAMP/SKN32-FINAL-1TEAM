@@ -197,7 +197,9 @@ def _build_item_out(db: Session, project: Project) -> ItemOut:
         score = float((plan.doc_score or 0) + (artifact.artifact_score if artifact and artifact.artifact_score else 0))
 
     archived = match.archived_at is not None
-    if match.stage == ps.STAGE_DONE:
+    if match.status == 'failed':
+        status_label = '실패'
+    elif match.stage == ps.STAGE_DONE:
         status_label = '완료'
     elif match.stage in (ps.STAGE_PLAN_REVIEW_PENDING, ps.STAGE_FINAL_REVIEW_PENDING):
         status_label = '판단 대기'
@@ -218,6 +220,8 @@ def _build_item_out(db: Session, project: Project) -> ItemOut:
         user_name=project.company.user.name,
         created_at=project.created_at,
         match_status=match.status,
+        match_id=match.match_id,
+        failure_reason=match.failure_reason if match.status == 'failed' else None,
         stage=match.stage,
         status_label=status_label,
         step=latest_execution.agent_name if latest_execution else None,
@@ -472,6 +476,7 @@ def list_agent_executions(
         {
             'execution_id': r.execution_id,
             'match_id': r.match_id,
+            'task_key': r.task_key,
             'agent_name': r.agent_name,
             'model_used': r.model_used,
             'rerun_type': r.rerun_type,
@@ -698,4 +703,4 @@ def label_recovery_item(
     row.recovery_status = body.recovery_status
     row.recovery_label = body.label
     db.commit()
-    return _recovery_item_out(row, db)
+    return _recovery_item_out(row, db)

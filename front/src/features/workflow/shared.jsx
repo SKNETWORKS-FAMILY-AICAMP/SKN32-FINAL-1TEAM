@@ -59,16 +59,18 @@ export function progressAlertsFrom(projects){
     const name = p.description || '내 프로젝트';
     const project = { id: p.project_id, matched: true, announcementTitle: p.notice_title };
     const planDone = i > 0;
-    alerts.push({ key: `${p.project_id}:plan`, project, projectName: name, kind: '사업계획서', done: planDone,
+    const planFailed = p.match_status === 'failed' && p.stage === 'plan_writing';
+    alerts.push({ key: `${p.project_id}:plan`, project, projectName: name, kind: '사업계획서', done: planDone, failed: planFailed,
       percent: planDone ? 100 : p.progress_percent, view: planDone ? 'plan-form' : 'plan-progress' });
     if (i >= 2) {
       const protoDone = i > 2;
-      alerts.push({ key: `${p.project_id}:prototype`, project, projectName: name, kind: '프로토타입', done: protoDone,
+      const protoFailed = p.match_status === 'failed' && p.stage === 'prototype_building';
+      alerts.push({ key: `${p.project_id}:prototype`, project, projectName: name, kind: '프로토타입', done: protoDone, failed: protoFailed,
         percent: protoDone ? 100 : p.progress_percent, view: protoDone ? 'artifact-result' : 'artifact-progress' });
     }
   }
   // 진행 중인 것을 위로
-  return alerts.sort((a, b) => Number(a.done) - Number(b.done));
+  return alerts.sort((a, b) => Number(b.failed) - Number(a.failed) || Number(a.done) - Number(b.done));
 }
 
 // refreshKey(현재 화면)가 바뀔 때마다 다시 불러온다 — 생성을 막 시작한 뒤에도 진행 중
@@ -87,11 +89,11 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
     const load = () => listProjects().then((rows) => {
       if (cancelled) return;
       const next = progressAlertsFrom(rows);
-      const finished = next.find((a) => a.done && runningKeys.current.has(a.key));
+      const finished = next.find((a) => (a.done || a.failed) && runningKeys.current.has(a.key));
       if (finished) setToast(finished);
-      runningKeys.current = new Set(next.filter((a) => !a.done).map((a) => a.key));
+      runningKeys.current = new Set(next.filter((a) => !a.done && !a.failed).map((a) => a.key));
       setAlerts(next);
-      if (next.some((a) => !a.done)) timer = setTimeout(load, PROGRESS_POLL_MS);
+      if (next.some((a) => !a.done && !a.failed)) timer = setTimeout(load, PROGRESS_POLL_MS);
     }).catch((err) => console.error('진행 알림을 불러오지 못했어요', err));
     load();
     return () => { cancelled = true; clearTimeout(timer); };
@@ -110,13 +112,14 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
   };
 
   const activeAlerts = enabled ? alerts : [];
-  const hasUnread = activeAlerts.some((a) => a.done && !seen.has(a.key));
+  const seenKey = a => `${a.key}:${a.failed?'failed':a.done?'done':'running'}`;
+  const hasUnread = activeAlerts.some((a) => (a.done || a.failed) && !seen.has(seenKey(a)));
 
   const toggleOpen = () => {
     setOpen((v) => {
       if (!v) {
         const next = new Set(seen);
-        activeAlerts.filter((a) => a.done).forEach((a) => next.add(a.key));
+        activeAlerts.filter((a) => a.done || a.failed).forEach((a) => next.add(seenKey(a)));
         writeSeen(next);
         setSeen(next);
       }
@@ -142,7 +145,7 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)}></div>
           <div className="absolute right-0 top-11 w-[340px] max-w-[calc(100vw-32px)] rounded-2xl border border-[var(--border)] bg-white shadow-[0_20px_48px_-16px_rgba(20,23,31,.25)] z-50 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3.5 border-b border-[var(--border)]">
-              <p className="text-[13.5px] font-bold">제작 진행 알림</p>
+              <p className="text-[13.5px] font-bold">알림 현황</p>
               <button type="button" role="switch" aria-checked={enabled} aria-label="제작 진행 알림" className="flex items-center gap-2 cursor-pointer select-none" onClick={onToggle}>
                 <span className="text-[11.5px] text-[var(--muted-fg)]">{enabled ? '켜짐' : '꺼짐'}</span>
                 <span className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-150 ease-out" style={{ backgroundColor: enabled ? 'var(--primary)' : '#d1d6db' }}>
@@ -161,12 +164,12 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
                   <button type="button" key={a.key} onClick={() => openAlert(a)} className="block w-full text-left px-4 py-3.5 hover:bg-[#f9fafb] transition-colors">
                     <p className="text-[11.5px] text-[var(--muted-fg)] mb-1 truncate">『{a.projectName}』</p>
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-[13px] font-semibold">{a.kind} {a.done ? '제작이 끝났어요' : '만드는 중이에요'}</p>
-                      <span className={'text-[11.5px] font-semibold flex-shrink-0 ' + (a.done ? 'text-[var(--ok)]' : 'text-[var(--primary)]')}>
-                        {a.done ? '완료' : a.percent != null ? `진행 중 ${a.percent}%` : '진행 중'}
+                    <p className="text-[13px] font-semibold">{a.kind} {a.failed ? '작성 중 실패하였습니다.' : a.done ? '제작이 끝났어요' : '만드는 중이에요'}</p>
+                    <span className={'text-[11.5px] font-semibold flex-shrink-0 ' + (a.failed?'text-[var(--danger)]':a.done ? 'text-[var(--ok)]' : 'text-[var(--primary)]')}>
+                        {a.failed?'실패했습니다':a.done ? '완료' : a.percent != null ? `진행 중 ${a.percent}%` : '진행 중'}
                       </span>
                     </div>
-                    {!a.done && a.percent != null && (
+                    {!a.done && !a.failed && a.percent != null && (
                       <div className="mt-2 h-1 rounded-full bg-[var(--muted)] overflow-hidden">
                         <div className="h-full rounded-full bg-[var(--primary)]" style={{ width: `${a.percent}%` }} />
                       </div>
@@ -185,8 +188,8 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
       )}
       {toast && (
         <div role="status" className="progress-toast">
-          <p><b>{toast.kind === '프로토타입' ? '프로토타입이' : '사업계획서가'}</b> 완성됐어요 <span>『{toast.projectName}』</span></p>
-          <button type="button" onClick={() => openAlert(toast)}>보러 가기</button>
+          <p><b>{toast.kind === '프로토타입' ? '프로토타입이' : '사업계획서가'}</b> {toast.failed?'실패했습니다':'완성됐어요'} <span>『{toast.projectName}』</span></p>
+          <button type="button" onClick={() => openAlert(toast)}>{toast.failed?'확인하기':'보러 가기'}</button>
           <button type="button" aria-label="닫기" className="progress-toast-close" onClick={() => setToast(null)}>✕</button>
         </div>
       )}
