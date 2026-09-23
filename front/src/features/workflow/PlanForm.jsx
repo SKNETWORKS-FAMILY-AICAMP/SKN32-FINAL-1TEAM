@@ -176,6 +176,8 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
   // 예전엔 setTimeout으로 스피너만 흉내 내고 서버 호출이 없어 DB에 아무 변화도 안 남았다.
   // 체크한 라벨이 전부 같은 task_key('writing')로 묶이므로 중복 없이 한 번만 호출한다.
   const handleRewrite = async () => {
+    // 프로토타입이 이 계획서로 만들어지는 중이라 지금 본문을 다시 쓰면 둘이 어긋난다.
+    if (generating) return;
     if (checkedTasks.length === 0) return;
     const picked = checkedTasks;
     setRunningTasks(picked);
@@ -248,12 +250,13 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
                 const isRunning = runningTasks.includes(label);
                 const isDone = !isRunning && completedTasks.includes(label);
                 return (
-                  <label key={label} className={`flex items-center gap-2.5 text-[13px] ${isRunning ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>
+                  <label key={label} className={`flex items-center gap-2.5 text-[13px] ${isRunning || generating ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>
                     {isRunning ? (
                       <span className="rewrite-indicator" aria-hidden="true"></span>
                     ) : (
                       <input type="checkbox" checked={checkedTasks.includes(label)} onChange={() => toggleTask(label)}
-                        className="w-4 h-4 accent-[var(--primary)]" />
+                        disabled={generating}
+                        className="w-4 h-4 accent-[var(--primary)] disabled:cursor-not-allowed" />
                     )}
                     <span>
                       {isRunning ? `${label} 재작성 중…` : label}
@@ -263,10 +266,15 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
                 );
               })}
             </div>
-            <button onClick={handleRewrite} disabled={checkedTasks.length === 0 || runningTasks.length > 0}
+            <button onClick={handleRewrite} disabled={generating || checkedTasks.length === 0 || runningTasks.length > 0}
               className="w-full mt-3 rounded-lg border border-[var(--border)] py-2.5 text-[13.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--bg)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
               선택 항목 재작성
             </button>
+            {generating && (
+              <p className="mt-2 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">
+                프로토타입을 만드는 중에는 계획서를 다시 쓸 수 없어요. 생성이 끝나면 다시 열려요.
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-2 mt-4">
