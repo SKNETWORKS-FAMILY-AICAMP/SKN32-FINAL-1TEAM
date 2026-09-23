@@ -824,6 +824,12 @@ def get_pipeline_result(
     return _build_demo_response(db, project_id, match)
 
 
+# companies.applicant_type -> 양식의 "사업자 구분" 표기. 사용자가 직접 고른 값이라
+# 추측할 필요가 없다 — 예전엔 설립일 유무로 갈랐는데, 개인사업자도 설립일이 있으니
+# 항상 '법인사업자'로 찍히는 버그였다(사용자 지적, 생성된 PDF로 확인).
+_APPLICANT_TYPE_LABEL = {'corp': '법인사업자', 'individual': '개인사업자', 'preliminary': '예비창업자'}
+
+
 def _build_plan_document_data(db: Session, project: Project, plan: BusinessPlan | None):
     """project(+company/team_members/pricing_items/budget_items/schedule_items/partners)와
     생성된 계획서(BusinessPlan.sections)를 공식 양식(별첨1) 구조(app/plan_document_export.py의
@@ -953,7 +959,7 @@ def _build_plan_document_data(db: Session, project: Project, plan: BusinessPlan 
     data = PlanDocumentData(
         기업명=_or_placeholder(company.company_name if company else None, '○○○'),
         개업연월일=str(company.founded_at) if company and company.founded_at else '예비창업자(개업 전)',
-        사업자_구분='법인사업자' if company and company.founded_at else '개인사업자',
+        사업자_구분=_APPLICANT_TYPE_LABEL.get(company.applicant_type if company else None, '개인사업자'),
         대표자_유형=_or_placeholder(company.rep_type if company else None, '단독'),
         사업자등록번호=_or_placeholder(company.business_reg_no if company else None, '○○○-○○-○○○○○'),
         사업자_소재지=_or_placeholder(region_text, '○○도 ○○시·군'),
