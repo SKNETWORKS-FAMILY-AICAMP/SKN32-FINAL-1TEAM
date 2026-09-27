@@ -89,7 +89,7 @@ def login_as(client):
     """호출할 때마다 이메일별로 로그인 처리된 TestClient를 돌려주는 팩토리.
 
     구글 ID 토큰 검증(app.security.verify_google_id_token)을 더미로 갈아치우고
-    실제로 POST /auth/google을 호출해서 세션 쿠키까지 심어둔다 — verify_retry_task.py
+    실제로 POST /auth/google을 호출해서 세션 쿠키까지 심어둔다 — tests/verify_retry_task.py
     등 verify_*.py 스크립트들이 파일마다 반복하던 로그인 monkeypatch 패턴을 fixture로
     뽑아낸 것. app.routers.auth가 `from app.security import verify_google_id_token`로
     함수를 직접 이름 바인딩해 가져가기 때문에, security 모듈뿐 아니라 auth 라우터
@@ -111,6 +111,11 @@ def login_as(client):
             'id_token': 'dummy', 'aiTrainingAgreed': True, 'notifyAgreed': True,
         })
         assert res.status_code == 200, f'테스트 로그인 실패: {res.status_code} {res.text}'
+        # [2026-09-27 신규] 필수 동의(이용약관/개인정보)를 완료해야 POST /projects가
+        # 열린다(E-AUTH-CONSENT) — 실제 온보딩 흐름(로그인 -> 동의 화면 -> PATCH
+        # /auth/consent)과 같은 순서로, 테스트 계정도 기본으로 동의를 완료시켜둔다.
+        consent_res = client.patch('/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True})
+        assert consent_res.status_code == 200, f'테스트 계정 필수 동의 실패: {consent_res.status_code} {consent_res.text}'
         return client
 
     return _login

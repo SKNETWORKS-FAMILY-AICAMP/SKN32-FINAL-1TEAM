@@ -206,6 +206,14 @@ class User(Base):
     google_sub: Mapped[str] = mapped_column(String(255), unique=True)
     notify_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     ai_training_agreed: Mapped[bool] = mapped_column(Boolean, default=False)
+    # [2026-09-27 신규] 필수 동의(이용약관/개인정보 수집·이용) — 공식 기능정의서 v1.9의
+    # Consent 타입(E-AUTH-CONSENT) 대응. 예전엔 이 두 필수 동의를 저장하는 컬럼 자체가
+    # 없었고 프론트 체크박스로만 가입 진행을 막았다(ConsentUpdateRequest 예전 docstring
+    # 참고) — 서버가 실제로 동의 여부를 알 방법이 없었다는 뜻이다. NULL이면 아직
+    # 동의하지 않은 상태, 값이 있으면 그 시각에 동의했다는 뜻(PATCH /auth/consent가
+    # 채운다). 새 실행 시작(POST /projects)은 둘 다 값이 있어야 허용한다.
+    terms_agreed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    privacy_agreed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     role: Mapped[str] = mapped_column(String(20), default='user')
     status: Mapped[str] = mapped_column(String(20), default='active')
     # [2026-09-17] 얼굴 인증(face_verified_at) 게이트를 팀 결정으로 완전히 뺐다 — AWS

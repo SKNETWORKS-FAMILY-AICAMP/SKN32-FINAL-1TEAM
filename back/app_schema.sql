@@ -33,6 +33,11 @@ CREATE TABLE IF NOT EXISTS users (
     google_sub VARCHAR(255) NOT NULL COMMENT 'Google OAuth 식별자(sub)',
     notify_enabled BOOLEAN NOT NULL DEFAULT TRUE COMMENT '유사 공고 알림 on/off 전역 설정',
     ai_training_agreed BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'AI 학습 데이터 활용 동의(연동합의서 #3) — 로그인마다 갱신',
+    -- [2026-09-27 신규] 필수 동의(이용약관/개인정보) — NULL이면 아직 미동의. PATCH
+    -- /auth/consent가 채운다. 새 실행 시작(POST /projects)은 둘 다 값이 있어야 허용한다
+    -- (기능정의서 v1.9 E-AUTH-CONSENT).
+    terms_agreed_at DATETIME(6) NULL COMMENT '이용약관 동의 시각(NULL=미동의)',
+    privacy_agreed_at DATETIME(6) NULL COMMENT '개인정보 수집·이용 동의 시각(NULL=미동의)',
     role VARCHAR(20) NOT NULL DEFAULT 'user' COMMENT '권한(user/admin)',
     status VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '계정 상태(active/suspended/dormant)',
     -- [2026-09-17] 얼굴 인증(face_verified_at) 게이트를 팀 결정으로 완전히 뺐다(admin.py

@@ -14,6 +14,8 @@ users.ai_training_agreed를 덮어썼다 — 그런데 프론트의 "이미 동�
 호출해야 한다. 프론트가 "동의 화면을 다시 보여줄지"를 판단할 수 있도록, 응답에
 has_agreed_terms/is_new_user를 실제 값으로 채워 돌려준다(예전엔 has_agreed_terms가 무조건
 True로 고정돼 있어서 프론트가 쓸 수 없는 값이었다)."""
+import datetime
+
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
@@ -91,7 +93,7 @@ def login_with_google(body: GoogleLoginRequest, response: Response, db: Session 
     user_out.has_profile = compute_has_profile(db, user.user_id)
     return GoogleLoginResponse(
         user=user_out,
-        has_agreed_terms=not is_new_user,
+        has_agreed_terms=user.terms_agreed_at is not None and user.privacy_agreed_at is not None,
         is_new_user=is_new_user,
     )
 
@@ -127,14 +129,21 @@ def update_consent(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """신규 가입 직후 동의 화면 제출, 또는 나중에 설정 화면에서 선택 동의(학습데이터
-    활용/유사 공고 알림)를 바꿀 때 쓴다. 둘 다 선택이라 일부만 보내도 되고(None은 그대로
-    둠), 필수 약관(이용약관/개인정보) 자체는 이 테이블에 컬럼이 없어 여기서 다루지 않는다
-    — 프론트에서만 가입 진행을 막는 게이트로 쓰인다."""
+    """신규 가입 직후 동의 화면 제출, 또는 나중에 설정 화면에서 동의값을 바꿀 때 쓴다.
+    전부 선택 필드라 일부만 보내도 된다(None은 그대로 둠).
+
+    [2026-09-27 확장] 필수 동의(이용약관/개인정보)도 이제 이 엔드포인트로 기록한다 —
+    true면 지금 시각을 저장하고, false면 철회로 보고 NULL로 되돌린다(공식 기능정의서
+    v1.9 E-AUTH-CONSENT: "철회 이후 수집을 중단한다"). 새 실행 시작(POST /projects)은
+    둘 다 값이 있어야 허용된다."""
     if body.ai_training_agreed is not None:
         current_user.ai_training_agreed = body.ai_training_agreed
     if body.notify_agreed is not None:
         current_user.notify_enabled = body.notify_agreed
+    if body.terms_agreed is not None:
+        current_user.terms_agreed_at = datetime.datetime.utcnow() if body.terms_agreed else None
+    if body.privacy_agreed is not None:
+        current_user.privacy_agreed_at = datetime.datetime.utcnow() if body.privacy_agreed else None
     db.commit()
     db.refresh(current_user)
     return UserOut.model_validate(current_user)

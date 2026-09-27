@@ -39,6 +39,10 @@ class UserOut(BaseModel):
     status: str
     notify_enabled: bool
     ai_training_agreed: bool
+    # [2026-09-27 신규] 필수 동의 완료 시각 — NULL이면 아직 동의 전. 설정 화면에서
+    # 동의 상태를 보여주거나, 나중에 재동의를 유도할 때 쓴다.
+    terms_agreed_at: datetime.datetime | None = None
+    privacy_agreed_at: datetime.datetime | None = None
     # [2026-09-18 추가, 정재희님 인계서] User 테이블 컬럼이 아니라 요청마다 계산해서 채운다
     # (app/routers/profile.py compute_has_profile) — user_profiles 슬롯 중 하나라도 필수
     # 입력 항목(신청자 유형/대표자 정보/지역/주업종/대표자 이력 1건 이상, biz 유형이면
@@ -50,12 +54,15 @@ class UserOut(BaseModel):
 
 class GoogleLoginResponse(BaseModel):
     user: UserOut
-    # [2026-09-15 개정] 원래 무조건 True로 고정돼 있던 값이라 프론트가 실질적으로 못 쓰고
-    # 있었다 — 이제 "이번 로그인이 기존 계정이라 필수 약관 동의가 이미 저장돼 있는지"를
-    # 실제로 계산해서 내려준다(= not is_new_user). 프론트(Login.jsx)는 이 값이 True면
-    # 동의 화면을 건너뛰고, False(신규 가입)면 동의 화면을 보여준다.
+    # [2026-09-15 개정, 2026-09-27 재개정] 원래 무조건 True로 고정돼 있던 값이라 프론트가
+    # 실질적으로 못 쓰고 있었다 — 한 번은 "신규 가입 여부"(not is_new_user)로 계산하도록
+    # 고쳤었는데, 이러면 계정만 생기고 필수 동의 화면을 실제로 완료하기 전에 이탈한
+    # 사용자가 재로그인할 때 (더 이상 신규가 아니므로) 동의 화면을 건너뛰는 문제가 있었다.
+    # 이제 users.terms_agreed_at/privacy_agreed_at(PATCH /auth/consent가 채움)이 실제로
+    # 둘 다 채워졌는지로 계산한다 — 진짜로 필수 동의를 마쳤는지를 본다. 프론트(Login.jsx)는
+    # 이 값이 True면 동의 화면을 건너뛰고, False면 보여준다.
     has_agreed_terms: bool = Field(
-        ..., description='이 계정이 이전에 이미 필수 약관에 동의한 적이 있는지 (신규 가입이면 False)',
+        ..., description='이 계정이 필수 동의(이용약관·개인정보)를 실제로 완료했는지',
     )
     is_new_user: bool = Field(
         ..., description='이번 로그인으로 계정이 방금 새로 만들어졌는지 (has_agreed_terms의 반대값과 동일)',
@@ -68,15 +75,23 @@ class AuthMeOut(UserOut):
 
 
 class ConsentUpdateRequest(BaseModel):
-    """[2026-09-15 신규] 로그인 이후(이미 세션이 있는 상태)에 동의값을 바꿀 때 쓴다 —
-    신규 가입 직후 동의 화면 제출, 또는 나중에 설정 화면에서 선택 동의를 바꿀 때 둘 다
-    이 엔드포인트(PATCH /auth/consent) 하나로 처리한다. 둘 다 선택이라(필수 약관은
-    가입 자체를 막는 게 아니라 프론트에서만 체크를 강제하므로 여기 스키마에는 없음)
-    일부만 보내도 된다."""
+    """[2026-09-15 신규, 2026-09-27 확장] 로그인 이후(이미 세션이 있는 상태)에 동의값을
+    바꿀 때 쓴다 — 신규 가입 직후 동의 화면 제출, 또는 나중에 설정 화면에서 선택 동의를
+    바꿀 때 둘 다 이 엔드포인트(PATCH /auth/consent) 하나로 처리한다. 전부 선택 필드라
+    일부만 보내도 된다(None은 그대로 둠).
+
+    [2026-09-27] 필수 약관(이용약관/개인정보) 필드를 추가했다 — 예전엔 "가입 자체를
+    막는 게 아니라 프론트에서만 체크를 강제"했는데, 서버가 동의 여부를 전혀 모르는
+    상태였다(공식 기능정의서 v1.9 E-AUTH-CONSENT 대비 갭). true를 보내면 그 시각을
+    저장하고(users.terms_agreed_at/privacy_agreed_at), false를 보내면 철회로 보고
+    NULL로 되돌린다. 둘 다 채워지기 전까지는 POST /projects(새 실행 시작)가
+    차단된다(routers/projects.py create_project 참고)."""
     model_config = ConfigDict(populate_by_name=True)
 
     ai_training_agreed: bool | None = Field(None, alias='aiTrainingAgreed')
     notify_agreed: bool | None = Field(None, alias='notifyAgreed')
+    terms_agreed: bool | None = Field(None, alias='termsAgreed', description='이용약관 동의(필수)')
+    privacy_agreed: bool | None = Field(None, alias='privacyAgreed', description='개인정보 수집·이용 동의(필수)')
 
 
 # ---------------------------------------------------------------------------

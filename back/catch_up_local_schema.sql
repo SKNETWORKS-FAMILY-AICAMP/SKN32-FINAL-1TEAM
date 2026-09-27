@@ -83,6 +83,14 @@ CALL _add_col_if_missing('match_results', 'retry_count', "TINYINT UNSIGNED NOT N
 CALL _add_col_if_missing('match_results', 'next_retry_at', "DATETIME(6) NULL COMMENT '다음 자동 재개 예정 시각(waiting_resume 전용)'");
 CALL _add_col_if_missing('match_results', 'resume_started_at', "DATETIME(6) NULL COMMENT '이번 실패 스트릭 시작 시각(재개 총 대기 상한 12시간 계산용)'");
 
+-- [2026-09-27 신규] 필수 동의(이용약관/개인정보) — 공식 기능정의서 v1.9 E-AUTH-CONSENT
+-- 대비 갭. 예전엔 프론트 체크박스로만 가입 진행을 막고 서버는 동의 여부를 전혀
+-- 몰랐다. 의도적으로 백필하지 않는다 — 기존 계정도 실제로 동의한 적이 없으므로
+-- NULL(미동의)로 두고, PATCH /auth/consent로 다시 동의해야 새 실행을 시작할 수 있게
+-- 한다(app/routers/projects.py create_project 참고).
+CALL _add_col_if_missing('users', 'terms_agreed_at', "DATETIME(6) NULL COMMENT '이용약관 동의 시각(NULL=미동의)'");
+CALL _add_col_if_missing('users', 'privacy_agreed_at', "DATETIME(6) NULL COMMENT '개인정보 수집·이용 동의 시각(NULL=미동의)'");
+
 -- [2026-09-23 신규] match_results.status/agent_executions.status를 서비스 내부 상태
 -- 6종(실행/재개대기/사용자대기/실패/완료/중단) 실제 MySQL ENUM으로 강제한다
 -- (app/models.py _GenerationStatus, app/pipeline_stages.py GENERATION_STATUSES 참고).

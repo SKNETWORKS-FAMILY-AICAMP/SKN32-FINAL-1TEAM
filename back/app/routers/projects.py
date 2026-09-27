@@ -1225,6 +1225,17 @@ async def create_project(
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=json.loads(exc.json())) from exc
 
+    # [2026-09-27 신규] 필수 동의(이용약관/개인정보) 게이트 — 공식 기능정의서 v1.9
+    # E-AUTH-CONSENT: "필수 항목에 동의해야 계정과 작업 결과를 보관할 수 있습니다...
+    # 진입을 중단한다." 새 실행 시작이 곧 "진입"에 해당하므로 여기서 막는다. 로그인
+    # 자체(POST /auth/google)는 계정 생성을 위해 막지 않는다 — 동의 화면은 로그인
+    # 이후 별도로 뜨고, PATCH /auth/consent가 완료돼야 아래 두 값이 채워진다.
+    if current_user.terms_agreed_at is None or current_user.privacy_agreed_at is None:
+        raise HTTPException(
+            status_code=403,
+            detail='필수 항목(이용약관, 개인정보 수집·이용)에 동의해야 이용할 수 있습니다.',
+        )
+
     # 계정당 동시 실행 1건 제한(기획서 4-7, backend_decisions.md #11)의 락은 회사 프로필이
     # 아니라 계정(User 행) 자체를 잠가서 건다 — 회사 프로필을 만들기 전에 가장 먼저 걸어야
     # 같은 유저가 거의 동시에 두 번 요청을 보내도 두 번째 요청이 첫 번째 트랜잭션이 끝날

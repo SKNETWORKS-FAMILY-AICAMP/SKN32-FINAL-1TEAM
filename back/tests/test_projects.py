@@ -30,6 +30,9 @@ def _login(client: TestClient, email: str, name: str) -> None:
     auth_router.verify_google_id_token = security.verify_google_id_token
     res = client.post('/auth/google', json={'id_token': 'dummy', 'aiTrainingAgreed': True, 'notifyAgreed': True})
     assert res.status_code == 200, f'로그인 실패({email}): {res.status_code} {res.text}'
+    # [2026-09-27 신규] 필수 동의를 완료해야 POST /projects가 열린다(E-AUTH-CONSENT).
+    consent_res = client.patch('/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True})
+    assert consent_res.status_code == 200, f'필수 동의 실패({email}): {consent_res.status_code} {consent_res.text}'
 
 
 def _create_project(client: TestClient, description: str = '삭제 테스트용 프로젝트') -> int:
