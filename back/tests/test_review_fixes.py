@@ -2,10 +2,10 @@
 import json
 
 from fastapi.testclient import TestClient
+from test_generation_async import _create_match
 
 from app.models import Artifact, ProjectPlanInput, User
 from app.routers import projects
-from test_generation_async import _create_match
 
 
 def create(client):
@@ -40,6 +40,23 @@ def test_archived_running_project_does_not_block(authed_client, db_session):
     db_session.commit()
     assert create(authed_client).status_code == 409
     assert authed_client.delete(f'/projects/{match.project_id}').status_code == 204
+    assert create(authed_client).status_code == 201
+
+
+def test_waiting_resume_blocks_new_project(authed_client, db_session):
+    """[2026-09-26 회귀] 공식 기능정의서 v1.9 E-RUN-CONCURRENT(R-9) — waiting_resume(자동
+    재개 백오프 대기 중)도 화면상 "진행"으로 보이는 실행 중 상태라 동시 실행 1건 제한에
+    걸려야 한다. 예전엔 ACTIVE_MATCH_STATUSES에 in_progress만 있어서 재개 대기 중에도
+    새 프로젝트를 하나 더 만들 수 있는 버그가 있었다."""
+    match = _create_match(authed_client, db_session, 'REVIEW-WAITING-RESUME')
+    match.stage = 'plan_writing'
+    match.status = 'waiting_resume'
+    db_session.commit()
+    assert create(authed_client).status_code == 409
+
+    # failed는 반대로 제한에서 안 세야 한다(E-RUN-FAIL "계정당 1건 제한에서 세지 않는다").
+    match.status = 'failed'
+    db_session.commit()
     assert create(authed_client).status_code == 201
 
 

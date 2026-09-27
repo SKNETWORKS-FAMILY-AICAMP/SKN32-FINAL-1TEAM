@@ -264,8 +264,12 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 UPLOAD_DIR = os.path.join(_REPO_ROOT, 'uploads')
 
 # 진행 중으로 취급하는 매칭 상태 — 이 상태의 매칭을 가진 프로젝트가 하나라도 있으면
-# 계정당 동시 실행 1건 제한(기획서 4-7, backend_decisions.md #11)에 걸려 새 프로젝트 생성을 막는다.
-ACTIVE_MATCH_STATUSES = (ps.GENERATION_STATUS_IN_PROGRESS,)
+# 계정당 동시 실행 1건 제한(기획서 4-7, backend_decisions.md #11)에 걸려 새 프로젝트 생성을
+# 막는다. [2026-09-26 수정] waiting_resume(자동 재개 대기 중)도 화면상 "진행"으로 보이는
+# 실행 중 상태라 포함해야 한다(공식 기능정의서 v1.9 E-RUN-CONCURRENT, R-9) — 빠뜨리면
+# 재개 대기 중에도 사용자가 새 프로젝트를 하나 더 만들 수 있는 버그가 된다. failed는
+# 여기 안 들어가는 게 맞다("계정당 1건 제한에서 세지 않는다", E-RUN-FAIL).
+ACTIVE_MATCH_STATUSES = (ps.GENERATION_STATUS_IN_PROGRESS, ps.GENERATION_STATUS_WAITING_RESUME)
 
 
 def _save_attachment(file: UploadFile) -> tuple[str, str]:
