@@ -43,6 +43,30 @@ def test_archived_running_project_does_not_block(authed_client, db_session):
     assert create(authed_client).status_code == 201
 
 
+def test_concurrent_project_blocked_response_supports_abandon_and_restart(authed_client, db_session):
+    """[2026-09-27 신규, SB-138] 공식 기능정의서 v1.9 E-RUN-CONCURRENT — 진행 중인 실행이
+    있으면 blocked=true와 함께 어느 프로젝트가 막고 있는지(active_project_id) 구조화된
+    정보를 내려줘야 프론트가 "이어하기 / 중단 후 새로 시작" 선택 화면을 만들 수 있다.
+    "중단 후 새로 시작"은 새 엔드포인트가 아니라 기존 DELETE /projects/{id}를 그대로
+    쓴다 — 그 active_project_id로 DELETE를 부르면 다시 새 프로젝트를 만들 수 있어야 한다."""
+    match = _create_match(authed_client, db_session, 'REVIEW-CONCURRENT-BLOCK')
+    match.stage = 'plan_writing'
+    match.status = 'in_progress'
+    db_session.commit()
+
+    res = create(authed_client)
+    assert res.status_code == 409
+    body = res.json()['detail']
+    assert body['blocked'] is True
+    assert body['active_project_id'] == match.project_id
+    assert body['active_stage'] == 'plan_writing'
+    assert body['active_display_status'] == '진행'
+
+    # "중단 후 새로 시작" — active_project_id로 기존 삭제(보관) 엔드포인트를 부르면 된다.
+    assert authed_client.delete(f'/projects/{body["active_project_id"]}').status_code == 204
+    assert create(authed_client).status_code == 201
+
+
 def test_waiting_resume_blocks_new_project(authed_client, db_session):
     """[2026-09-26 회귀] 공식 기능정의서 v1.9 E-RUN-CONCURRENT(R-9) — waiting_resume(자동
     재개 백오프 대기 중)도 화면상 "진행"으로 보이는 실행 중 상태라 동시 실행 1건 제한에

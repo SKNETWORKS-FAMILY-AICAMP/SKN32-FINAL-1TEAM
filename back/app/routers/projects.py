@@ -1290,9 +1290,27 @@ async def create_project(
         .first()
     )
     if active is not None:
+        # [2026-09-27 신규, SB-138] 공식 기능정의서 v1.9 E-RUN-CONCURRENT: "새 Run을 만들지
+        # 않고 blocked=true를 반환한다. 진행 중인 작업의 현재 단계를 보여주고 이어하기와
+        # 중단 후 새로 시작 중 선택하게 한다." 예전엔 사람이 읽는 문장 하나만 detail로
+        # 내려줘서 프론트가 이 선택 화면을 만들 정보(어느 프로젝트인지, 지금 몇 화면인지)를
+        # 파싱할 방법이 없었다 — 구조화된 필드로 바꾼다.
+        #
+        # "중단 후 새로 시작"은 별도 엔드포인트를 새로 만들지 않는다 — 기존 DELETE
+        # /projects/{id}가 이미 정확히 이 역할이다(상태와 무관하게 보관 처리하고 계정당
+        # 1건 제한에서 제외시킨다, test_archived_running_project_does_not_block 참고).
+        # 프론트가 active_project_id로 그 엔드포인트를 부르면 된다. "결과를 다시 볼 수
+        # 없다는 사실을 확인받는다"는 프론트 쪽 확인 다이얼로그의 몫이다.
         raise HTTPException(
             status_code=409,
-            detail=f'진행 중인 프로젝트(project_id={active.project_id})가 있습니다. 이어서 진행하거나 먼저 중단해주세요.',
+            detail={
+                'message': '진행 중인 작업이 있습니다. 이어서 진행하거나, 중단하고 새로 시작할 수 있습니다. 중단하면 지금까지의 결과를 다시 볼 수 없습니다.',
+                'blocked': True,
+                'active_project_id': active.project_id,
+                'active_stage': active.stage,
+                'active_screen': ps.STAGE_TO_SCREEN.get(active.stage) if active.stage is not None else None,
+                'active_display_status': ps.status_to_display(active.status),
+            },
         )
 
     company = _create_company_for_project(db, current_user, body)
