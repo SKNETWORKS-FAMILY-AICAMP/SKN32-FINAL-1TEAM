@@ -135,3 +135,24 @@ jobs:
       - name: Run tests
         run: |
           python -X utf8 -m unittest discover -s scripts -p "test_*.py"
+  
+  orchestration:
+    name: Agent Orchestration (Python 3.12)
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: agent-orchestration
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: agent-orchestration/requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run tests
+        run: python -m pytest
