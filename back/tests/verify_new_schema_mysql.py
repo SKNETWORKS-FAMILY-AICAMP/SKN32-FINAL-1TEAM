@@ -19,9 +19,9 @@ import decimal
 import os
 import sys
 
-# 이 스크립트는 repo 루트(back/, app/ 패키지가 바로 옆에 있는 위치)에서
-# `python verify_new_schema_mysql.py`로 실행하는 걸 전제로 한다.
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# back/ (app/ 패키지가 바로 옆에 있는 위치)에서
+# `python tests/verify_new_schema_mysql.py`로 실행하는 걸 전제로 한다.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # tests/ -> back/
 
 os.environ['DB_BACKEND'] = 'mysql'
 os.environ['MYSQL_USER'] = 'sbrain'
@@ -152,15 +152,15 @@ db.commit()
 # 6) agent_executions — task_key/attempt_no
 exec1 = AgentExecution(
     match_id=match.match_id, agent_name='구현', task_key='implement_prototype', attempt_no=1,
-    model_used='dummy-llm-v1', rerun_type='initial', token_usage=800, status='success',
+    model_used='dummy-llm-v1', rerun_type='initial', token_usage=800, status='completed',
 )
 exec2 = AgentExecution(
     match_id=match.match_id, agent_name='구현', task_key='implement_prototype', attempt_no=2,
-    model_used='dummy-llm-v1', rerun_type='rerun', token_usage=650, status='success',
+    model_used='dummy-llm-v1', rerun_type='rerun', token_usage=650, status='completed',
 )
 exec3 = AgentExecution(
     match_id=match.match_id, agent_name='구현', task_key='implement_infographic', attempt_no=1,
-    model_used='dummy-llm-v1', rerun_type='initial', token_usage=500, status='success',
+    model_used='dummy-llm-v1', rerun_type='initial', token_usage=500, status='completed',
 )
 db.add_all([exec1, exec2, exec3])
 db.commit()
