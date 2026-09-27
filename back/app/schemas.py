@@ -676,6 +676,8 @@ class ItemOut(BaseModel):
     user_name: str
     created_at: datetime.datetime
     match_status: str | None = None
+    match_id: int | None = None
+    failure_reason: str | None = None
     stage: str | None = None
     status_label: str = Field(..., description="'공고 매칭 전'/'진행중'/'판단 대기'/'완료'/'중단'/'실패' 중 하나")
     step: str | None = Field(None, description='마지막으로 실행된 Agent 이름(전략/작성/구현/검증-1/검증-2/검수) — agent_executions 최신 행 기준')

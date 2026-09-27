@@ -199,21 +199,27 @@ export default function App(){
   // "공고 찾기"로 보내버리는 회귀가 생겨서, 매칭 여부(project.matched)로 따로 판단한다.
   if(project.matched){
    try{
-    const [result,status]=await Promise.all([getProjectResult(project.id),getProjectStatus(project.id)]);
+    const status=await getProjectStatus(project.id);
+    // 계획서 생성 중/실패에는 아직 BusinessPlan이 없어 /result가 404일 수 있다.
+    const result=await getProjectResult(project.id).catch(err=>{
+     if(err.status===404&&status.stage==='plan_writing')return null;
+     throw err;
+    });
     if(request!==projectRequest.current)return;
     setPipelineResult(result);
-    setAnnouncement({title:project.announcementTitle,org:'',deadline:'',amount:'',fit:result.match.fit_score,reason:result.match.reason,eligibility:{},originalUrl:''});
+    setAnnouncement({title:project.announcementTitle,org:'',deadline:'',amount:'',fit:result?.match?.fit_score,reason:result?.match?.reason,eligibility:{},originalUrl:''});
     // [2026-09-23, 백엔드 전달사항 3번] verdict는 산출물 채점까지 끝나야 나오므로 계획서만
     // 완성되고 프로토타입이 아직이면 null로 내려온다(app/schemas.py DemoGenerateResponse).
     // 예전엔 이 경우 GET /result가 통째로 404여서 틈이 안 드러났는데, 지금은 정상 응답이라
     // null을 그대로 'fail'로 접으면 채점도 안 한 프로젝트가 화면에 "내부 기준 미달"로 뜬다.
     // 판정이 나온 경우에만 결과를 반영하고, 판정 전이라는 사실은 따로 남긴다.
-    setVerdictPending(result.verdict==null);
-    if(result.verdict)resetScoreOutcome(result.verdict.overall_passed?'pass':'fail');
+    setVerdictPending(result?.verdict==null);
+    if(result?.verdict)resetScoreOutcome(result.verdict.overall_passed?'pass':'fail');
     const savedView=localStorage.getItem(lastViewKey(project.id));
     const stageView=status.stage==null?'eligibility-gate':VIEW_BY_STAGE[status.stage]||'plan-form';
     setProjectId(project.id);
-    setView(savedView==='review'||status.stage==='reviewing'?'review':targetView||(RESUMABLE_VIEWS.includes(savedView)?savedView:stageView));
+    const failedView=status.match_status==='failed' ? VIEW_BY_STAGE[status.stage] : null;
+    setView(failedView||(savedView==='review'||status.stage==='reviewing'?'review':targetView||(RESUMABLE_VIEWS.includes(savedView)?savedView:stageView)));
    }catch(err){
     if(request!==projectRequest.current)return;
     console.error('결과를 불러오지 못했어요',err);

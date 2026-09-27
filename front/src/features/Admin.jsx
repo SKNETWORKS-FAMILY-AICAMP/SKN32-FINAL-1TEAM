@@ -183,8 +183,78 @@ function Modal({title,onClose,children,wide}){
   );
 }
 
+const ADMIN_ALERT_SEEN_KEY='sbrain-admin-alerts-seen';
+const readAdminSeen=()=>{try{return new Set(JSON.parse(localStorage.getItem(ADMIN_ALERT_SEEN_KEY)||'[]'))}catch{return new Set()}};
+const TASK_STATUS_FAILED=new Set(['failed','error','실패']);
+function adminAlertsFrom(items,executions){
+  const alerts=[];
+  const byMatch=new Map(items.filter(i=>i.match_id!=null).map(i=>[i.match_id,i]));
+  for(const item of items){
+    if(item.archived)continue;
+    if(item.match_status==='failed'){
+      const kind=item.stage==='plan_writing'?'사업계획서':item.stage==='prototype_building'?'프로토타입':'프로젝트';
+      alerts.push({key:`project:${item.match_id}:failed`,kind:'실패',title:`${kind} 생성 실패`,detail:item.failure_reason||'실패 원인을 확인해 주세요.',project:item.description,projectId:item.project_id,tab:'progress',time:item.last_updated});
+    }else if(item.stalled){
+      alerts.push({key:`project:${item.match_id}:stalled`,kind:'정체',title:'작업 진행이 멈춰 있습니다',detail:'마지막 갱신 이후 48시간이 지났습니다.',project:item.description,projectId:item.project_id,tab:'progress',time:item.last_updated});
+    }
+  }
+  const latest=new Map();
+  for(const row of executions){
+    const key=`${row.match_id}:${row.task_key||row.agent_name}`;
+    if(!latest.has(key))latest.set(key,row);
+  }
+  for(const row of latest.values()){
+    if(!TASK_STATUS_FAILED.has(row.status))continue;
+    const item=byMatch.get(row.match_id);
+    if(item?.archived)continue;
+    alerts.push({key:`task:${row.execution_id}`,kind:'실패',title:`${row.task_key||row.agent_name} Task 오류`,detail:`실행 상태: ${row.status}`,project:item?.description||`매칭 #${row.match_id}`,matchId:row.match_id,tab:'agents',time:row.started_at});
+  }
+  return alerts.sort((a,b)=>(b.time||'').localeCompare(a.time||''));
+}
+
+function AdminNotificationBell({onNavigate}){
+  const [open,setOpen]=useState(false);
+  const [alerts,setAlerts]=useState([]);
+  const [seen,setSeen]=useState(readAdminSeen);
+  const [error,setError]=useState('');
+  useEffect(()=>{
+    let cancelled=false,timer;
+    const load=()=>Promise.all([api.get('/admin/items'),api.get('/admin/agent-executions?limit=500')])
+      .then(([items,executions])=>{if(!cancelled){setAlerts(adminAlertsFrom(items,executions));setError('')}})
+      .catch(()=>{if(!cancelled)setError('알림을 불러오지 못했어요.')})
+      .finally(()=>{if(!cancelled)timer=setTimeout(load,15000)});
+    load();
+    return()=>{cancelled=true;clearTimeout(timer)};
+  },[]);
+  const toggle=()=>{
+    if(!open){
+      const next=new Set([...seen,...alerts.map(a=>a.key)]);
+      setSeen(next);
+      try{localStorage.setItem(ADMIN_ALERT_SEEN_KEY,JSON.stringify([...next]))}catch{}
+    }
+    setOpen(v=>!v);
+  };
+  return <div className="relative">
+    <button type="button" aria-label="관리자 알림 현황" aria-expanded={open} onClick={toggle} className="relative w-9 h-9 rounded-full flex items-center justify-center text-[var(--muted-fg)] hover:bg-[var(--muted)]">
+      <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      {alerts.some(a=>!seen.has(a.key))&&<span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-[var(--danger)]"/>}
+    </button>
+    {open&&<React.Fragment><button type="button" aria-label="알림 닫기" className="fixed inset-0 z-40 cursor-default" onClick={()=>setOpen(false)}/>
+      <div className="absolute right-0 top-11 z-50 w-[360px] max-w-[calc(100vw-32px)] rounded-2xl border border-[var(--border)] bg-white shadow-[0_20px_48px_-16px_rgba(20,23,31,.25)] overflow-hidden">
+        <div className="px-4 py-3.5 border-b border-[var(--border)] flex items-center justify-between"><h2 className="text-[13.5px] font-bold">알림 현황</h2><span className="text-[11px] text-[var(--muted-fg)]">관리 필요 {alerts.length}건</span></div>
+        {error&&<p role="alert" className="px-4 py-2 text-[12px] text-[var(--danger)]">{error}</p>}
+        {!error&&alerts.length===0?<p className="px-4 py-6 text-center text-[12.5px] text-[var(--muted-fg)]">현재 확인이 필요한 작업이 없어요.</p>:
+          <div className="soft-scroll max-h-80 overflow-y-auto divide-y divide-[var(--border)]">{alerts.map(a=><button type="button" key={a.key} onClick={()=>{setOpen(false);onNavigate(a)}} className="block w-full text-left px-4 py-3 hover:bg-[#f9fafb]">
+            <p className="text-[11px] text-[var(--muted-fg)] truncate">『{a.project}』</p><div className="flex gap-2 items-center mt-1"><strong className="text-[12.5px]">{a.title}</strong><span className={'ml-auto text-[11px] font-semibold '+(a.kind==='실패'?'text-[var(--danger)]':'text-[var(--warn)]')}>{a.kind}</span></div><p className="text-[11.5px] text-[var(--muted-fg)] mt-1 break-words line-clamp-2">{a.detail}</p>
+          </button>)}</div>}
+      </div>
+    </React.Fragment>}
+  </div>;
+}
+
 export default function AdminDashboard({user,onExit}){
   const [tab,setTab]=useState('ann');
+  const [selectedAlert,setSelectedAlert]=useState(null);
   const [toasts,setToasts]=useState([]);
   const closeToast=id=>setToasts(t=>t.filter(x=>x.id!==id));
   // 10초 뒤 자동으로 닫힌다 — 안 닫으면 계속 쌓여서 다른 작업을 가린다(사용자 지적).
@@ -206,6 +276,7 @@ export default function AdminDashboard({user,onExit}){
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-3">
+            <AdminNotificationBell onNavigate={alert=>{setSelectedAlert(alert);setTab(alert.tab)}}/>
             <span className="hidden sm:block text-[13px] text-[var(--muted-fg)]">{user?.name||'관리자'}</span>
             <button onClick={onExit} className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-[13px] font-semibold text-[var(--muted-fg)] hover:bg-[var(--muted)]">서비스 화면</button>
           </div>
@@ -220,8 +291,8 @@ export default function AdminDashboard({user,onExit}){
       <main className="w-[min(1180px,calc(100%-48px))] mx-auto py-12">
         {tab==='ann'&&<AnnouncementTab/>}
         {tab==='ops'&&<OpsTab/>}
-        {tab==='progress'&&<ProgressTab/>}
-        {tab==='agents'&&<AgentsTab/>}
+        {tab==='progress'&&<ProgressTab key={selectedAlert?.tab==='progress'?selectedAlert.key:'progress'} focusProjectId={selectedAlert?.tab==='progress'?selectedAlert.projectId:null}/>}
+        {tab==='agents'&&<AgentsTab key={selectedAlert?.tab==='agents'?selectedAlert.key:'agents'} focusMatchId={selectedAlert?.tab==='agents'?selectedAlert.matchId:null}/>}
         {tab==='policy'&&<PolicyTab pushToast={pushToast}/>}
         {tab==='recovery'&&<RecoveryTab pushToast={pushToast}/>}
         {tab==='users'&&<UsersTab pushToast={pushToast}/>}
@@ -363,7 +434,7 @@ function AnnouncementTab(){
 }
 
 // status_label(_build_item_out/ItemOut) -> "운영 현황" 실행건수 카드 표시 순서.
-const OPS_STATUS_ORDER=['진행중','판단 대기','완료','중단','공고 매칭 전'];
+const OPS_STATUS_ORDER=['진행중','실패','판단 대기','완료','중단','공고 매칭 전'];
 const formatStatusCounts=counts=>{
   const parts=OPS_STATUS_ORDER.filter(k=>counts[k]).map(k=>`${k} ${counts[k]}`);
   return parts.length?parts.join(' · '):'실행 없음';
@@ -429,14 +500,14 @@ function OpsTab(){
 // GET /admin/items 응답의 last_updated(ISO)를 "MM-DD HH:mm" 짧은 표기로 바꾼다.
 const shortUpdated=iso=>iso?iso.slice(5,16).replace('T',' '):'-';
 
-function ProgressTab(){
+function ProgressTab({focusProjectId=null}){
   const [items,setItems]=useState([]);
   const [loading,setLoading]=useState(true);
   const [loadError,setLoadError]=useState(false);
   const [scoreId,setScoreId]=useState(null);
   const [scoreHistory,setScoreHistory]=useState(null);
   const [scoreError,setScoreError]=useState('');
-  const [detailId,setDetailId]=useState(null);
+  const [detailId,setDetailId]=useState(focusProjectId);
   const [restoring,setRestoring]=useState(null);
 
   const loadItems=()=>{
@@ -468,7 +539,7 @@ function ProgressTab(){
     }
   };
 
-  const statusTone=s=>s==='진행중'?'ok':s==='중단'?'danger':s==='판단 대기'?'warn':'muted';
+  const statusTone=s=>s==='진행중'?'ok':s==='중단'||s==='실패'?'danger':s==='판단 대기'?'warn':'muted';
   const detail=items.find(i=>i.project_id===detailId);
 
   return (
@@ -488,7 +559,7 @@ function ProgressTab(){
           const id=p.project_id,isArchived=p.archived;
           return (
             <div key={id} className={'grid grid-cols-[1.7fr_0.8fr_0.85fr_0.6fr_1.15fr_0.9fr_0.85fr_90px] text-[13px] border-t border-[var(--border)] items-center '+
-              (isArchived?'opacity-50 ':'')+(p.status_label==='중단'?'bg-[color-mix(in_srgb,var(--danger)_5%,white)] border-l-4 border-l-[var(--danger)] ':p.status_label==='판단 대기'?'bg-[color-mix(in_srgb,var(--warn)_5%,white)] border-l-4 border-l-[var(--warn)] ':'')}>
+              (isArchived?'opacity-50 ':'')+(['중단','실패'].includes(p.status_label)?'bg-[color-mix(in_srgb,var(--danger)_5%,white)] border-l-4 border-l-[var(--danger)] ':p.status_label==='판단 대기'?'bg-[color-mix(in_srgb,var(--warn)_5%,white)] border-l-4 border-l-[var(--warn)] ':'')}>
               <div className="p-4 font-medium">{p.description}</div>
               <div className="p-4 text-center text-[var(--muted-fg)]">{p.user_name}</div>
               <div className="p-4 text-center text-[var(--muted-fg)]">{p.step||'-'}</div>
@@ -555,11 +626,12 @@ function ProgressTab(){
               </div>
             </div>
             <p className="text-[12.5px] text-[var(--muted-fg)] mb-5">마지막 갱신: {shortUpdated(detail.last_updated)}</p>
+            {detail.match_status==='failed'&&<div role="alert" className="rounded-xl border border-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_6%,white)] p-3.5 text-[13px] mb-5 text-[var(--danger)]"><strong>작업 실패</strong><p className="mt-1 break-words">{detail.failure_reason||'실패 원인이 기록되지 않았습니다.'}</p></div>}
             {/* 지금 어느 Agent가 뭘 하고 있는지·오류 로그는 실시간 오케스트레이터가 아직 없어
                 지어낼 수 없다(schemas.py ItemOut 주석 참고) — 안내 문구로만 그 사실을 알린다. */}
             <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-2">실시간 실행 상태</p>
             <div className="rounded-xl border border-[var(--border)] p-3.5 text-[13px] mb-5 text-[var(--muted-fg)]">
-              지금 어떤 Agent가 무엇을 하고 있는지와 오류 로그는 오케스트레이터가 실시간으로 연동되면 여기 표시됩니다. 현재는 마지막으로 실행된 단계와 시도 횟수만 확인할 수 있어요.
+              현재는 마지막 실행 단계와 시도 횟수를 확인할 수 있습니다. 작업 실패 사유는 위에 표시되며, Agent별 상세 오류 로그는 아직 저장되지 않습니다.
             </div>
             <div className="pt-4 border-t border-[var(--border)]">
               {isArchived
@@ -591,8 +663,9 @@ const agentTaskFromServer=r=>({
   recentTone:(r.recent_status&&r.recent_status!=='completed'&&r.recent_status!=='success')?'danger':undefined,
 });
 
-function AgentsTab(){
-  const [view,setView]=useState('task');
+function AgentsTab({focusMatchId=null}){
+  const [view,setView]=useState(focusMatchId==null?'task':'execution');
+  const [matchFilter,setMatchFilter]=useState(focusMatchId);
   const [executions,setExecutions]=useState(null);
   const [execError,setExecError]=useState('');
   const [agentTasks,setAgentTasks]=useState(null);
@@ -603,7 +676,7 @@ function AgentsTab(){
     if(view!=='execution'||executions!==null)return;
     let active=true;
     setExecError('');
-    api.get('/admin/agent-executions?limit=100').then(rows=>{if(active)setExecutions(rows.map(executionRowFromServer))})
+    api.get('/admin/agent-executions?limit=500').then(rows=>{if(active)setExecutions(rows.map(executionRowFromServer))})
       .catch(e=>{if(active)setExecError(e instanceof ApiError?String(e.detail):'실행 세션을 불러오지 못했어요')});
     return ()=>{active=false};
   },[view,executions]);
@@ -693,6 +766,7 @@ function AgentsTab(){
       ):(
         <>
           <h2 className="text-[20px] font-bold mb-4">실행 세션</h2>
+          {matchFilter!=null&&<button type="button" className="text-[12px] text-[var(--primary)] mb-3" onClick={()=>setMatchFilter(null)}>매칭 #{matchFilter} 오류 확인 중 · 전체 실행 보기</button>}
           {execError?<p className="text-[13.5px] text-[var(--danger)]">{execError}</p>
           :executions===null?<p className="text-[13.5px] text-[var(--muted-fg)]">불러오는 중…</p>
           :(<Panel>
@@ -700,8 +774,8 @@ function AgentsTab(){
               <div className="p-4">세션 ID</div><div className="p-4 text-center">Agent</div><div className="p-4 text-center">매칭 ID</div>
               <div className="p-4 text-center">토큰 사용량</div><div className="p-4 text-center">재수행 여부</div><div className="p-4 text-center">상태</div>
             </div>
-            {executions.length===0&&<p className="p-6 text-center text-[13px] text-[var(--muted-fg)]">실행 로그가 아직 없어요.</p>}
-            {executions.map(r=>(
+            {executions.filter(r=>matchFilter==null||r.matchId===matchFilter).length===0&&<p className="p-6 text-center text-[13px] text-[var(--muted-fg)]">해당 실행 로그가 없어요.</p>}
+            {executions.filter(r=>matchFilter==null||r.matchId===matchFilter).map(r=>(
               <div key={r.id} className={'grid grid-cols-[1fr_1fr_1.6fr_1fr_1.2fr_0.9fr] text-[13px] border-t border-[var(--border)] items-center '+
                 (r.tone==='danger'?'bg-[color-mix(in_srgb,var(--danger)_5%,white)] border-l-4 border-l-[var(--danger)] ':'')}>
                 <div className="p-4 font-medium">{r.id}</div>
