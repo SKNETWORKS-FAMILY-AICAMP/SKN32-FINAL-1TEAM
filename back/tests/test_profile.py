@@ -6,9 +6,20 @@ authed_client fixture(conftest.py)와 test_biz_check.py의 requests.post 바꿔�
 실행:
     pytest tests/test_profile.py -v
 """
+import pytest
+
 import app.routers.biz_check as biz_check
 from app.models import UserProfile
 from app.schemas import MAX_PROFILES
+
+
+@pytest.fixture()
+def authed_client(login_as):
+    """[2026-09-27] conftest.py의 전역 authed_client를 이 파일에서만 오버라이드한다 —
+    이 파일은 프로필 시스템 자체를 "계정에 저장된 슬롯이 하나도 없는 상태"부터 검증하는데
+    (E-AUTH-PROFILE 게이트 대응으로) 전역 fixture는 이제 기본 프로필을 하나 만들어두고
+    시작한다. with_profile=False로 그 단계만 건너뛴다."""
+    return login_as(with_profile=False)
 
 _SAMPLE_BODY = {
     'name': '정보 1',
@@ -110,10 +121,10 @@ def test_delete_profile_removes_row(db_session, authed_client):
 def test_other_account_profile_is_isolated(login_as):
     # login_as는 같은 TestClient의 세션 쿠키를 계정마다 바꿔치기하는 방식이라(conftest.py),
     # A로 로그인해 생성까지 마친 뒤에 B로 전환해야 두 계정이 실제로 분리된다.
-    client = login_as('profile-a@example.com')
+    client = login_as('profile-a@example.com', with_profile=False)
     profile_id = client.post('/profile', json=_SAMPLE_BODY).json()['profile_id']
 
-    client = login_as('profile-b@example.com')
+    client = login_as('profile-b@example.com', with_profile=False)
     assert client.get('/profile').json() == []
     assert client.put(f'/profile/{profile_id}', json=_SAMPLE_BODY).status_code == 404
     assert client.delete(f'/profile/{profile_id}').status_code == 404

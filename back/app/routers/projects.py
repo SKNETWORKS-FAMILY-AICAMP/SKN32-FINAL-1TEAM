@@ -71,6 +71,7 @@ from app.models import (
     VerificationPolicy,
     VerificationScoreHistory,
 )
+from app.routers.profile import compute_has_profile
 from app.schemas import (
     AgentExecutionOut,
     BusinessPlanOut,
@@ -1234,6 +1235,17 @@ async def create_project(
         raise HTTPException(
             status_code=403,
             detail='필수 항목(이용약관, 개인정보 수집·이용)에 동의해야 이용할 수 있습니다.',
+        )
+
+    # [2026-09-27 신규] 마이페이지 프로필 게이트 — 공식 기능정의서 v1.9 E-AUTH-PROFILE:
+    # "필수 항목을 채운 프로필이 생기기 전에는 새 실행을 시작할 수 없다." 최초 로그인
+    # 이거나(프로필 0개) 있던 프로필을 전부 지운 경우가 해당한다. has_profile 계산은
+    # /auth/me·로그인 응답이 쓰는 것과 같은 함수(compute_has_profile)를 그대로 재사용한다
+    # — 슬롯 하나라도 필수 입력을 전부 채웠는지를 본다.
+    if not compute_has_profile(db, current_user.user_id):
+        raise HTTPException(
+            status_code=403,
+            detail='서비스를 이용하려면 먼저 마이페이지에서 프로필을 만들어주세요.',
         )
 
     # 계정당 동시 실행 1건 제한(기획서 4-7, backend_decisions.md #11)의 락은 회사 프로필이

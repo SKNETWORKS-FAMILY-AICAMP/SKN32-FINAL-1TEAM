@@ -49,6 +49,16 @@ def _login(client: TestClient, email: str, name: str) -> None:
     # [2026-09-27 신규] 필수 동의를 완료해야 POST /projects가 열린다(E-AUTH-CONSENT).
     consent_res = client.patch('/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True})
     assert consent_res.status_code == 200, f'필수 동의 실패({email}): {consent_res.status_code} {consent_res.text}'
+    # [2026-09-27 신규] 필수 항목을 채운 마이페이지 프로필이 있어야 POST /projects가
+    # 열린다(E-AUTH-PROFILE) — conftest.py의 _MINIMAL_PROFILE_PAYLOAD와 동일한 값.
+    profile_res = client.post('/profile', json={
+        'basic': {
+            'applicantType': 'preliminary', 'ceoName': name, 'birthDate': '1990-01-01',
+            'gender': 'male', 'region': {'sido': '서울', 'sigungu': ''}, 'industry': 'IT',
+        },
+        'capability': {'careers': ['테스트 경력'], 'skills': '백엔드 개발', 'soloFounder': True},
+    })
+    assert profile_res.status_code == 201, f'프로필 생성 실패({email}): {profile_res.status_code} {profile_res.text}'
 
 
 def _create_project(client: TestClient, description: str = 'admin 검증용 프로젝트') -> int:

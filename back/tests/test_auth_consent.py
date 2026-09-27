@@ -72,9 +72,18 @@ def test_patch_consent_revokes_required_consent_to_null(client, monkeypatch):
     assert r2.json()['privacy_agreed_at'] is not None  # privacyAgreed는 안 건드렸으니 유지
 
 
+_MINIMAL_PROFILE_PAYLOAD = {
+    'basic': {
+        'applicantType': 'preliminary', 'ceoName': '게이트테스트', 'birthDate': '1990-01-01',
+        'gender': 'male', 'region': {'sido': '서울', 'sigungu': ''}, 'industry': 'IT',
+    },
+    'capability': {'careers': ['테스트 경력'], 'skills': '백엔드 개발', 'soloFounder': True},
+}
+
+
 def test_create_project_blocked_until_required_consent_completed(client, monkeypatch):
     """[2026-09-27 신규] 공식 기능정의서 v1.9 E-AUTH-CONSENT — 필수 동의를 마치기 전엔
-    새 실행(POST /projects)을 시작할 수 없고, 완료하면 열려야 한다."""
+    새 실행(POST /projects)을 시작할 수 없고, 완료하면(+ 프로필까지 있으면) 열려야 한다."""
     import json as json_module
 
     _fake_login(monkeypatch, 'gate@example.com', 'sub-gate')
@@ -83,12 +92,43 @@ def test_create_project_blocked_until_required_consent_completed(client, monkeyp
     payload = json_module.dumps({'description': 'consent gate test'})
     r1 = client.post('/projects', data={'payload': payload})
     assert r1.status_code == 403, r1.text
+    assert '동의' in r1.json()['detail']
 
     consent_res = client.patch('/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True})
     assert consent_res.status_code == 200
 
+    # 동의는 마쳤지만 아직 마이페이지 프로필이 없으므로 이번엔 E-AUTH-PROFILE 게이트에 걸린다.
     r2 = client.post('/projects', data={'payload': payload})
+    assert r2.status_code == 403, r2.text
+    assert '프로필' in r2.json()['detail']
+
+    profile_res = client.post('/profile', json=_MINIMAL_PROFILE_PAYLOAD)
+    assert profile_res.status_code == 201, profile_res.text
+
+    r3 = client.post('/projects', data={'payload': payload})
+    assert r3.status_code == 201, r3.text
+
+
+def test_create_project_blocked_until_profile_created(client, monkeypatch):
+    """[2026-09-27 신규] 공식 기능정의서 v1.9 E-AUTH-PROFILE — 필수 항목을 채운 마이페이지
+    프로필이 하나도 없으면(최초 로그인 또는 프로필을 모두 삭제한 뒤) 새 실행을 시작할
+    수 없고, 프로필을 만들면 열려야 한다. 필수 동의는 이미 완료된 상태로 가정한다."""
+    import json as json_module
+
+    _fake_login(monkeypatch, 'profile-gate@example.com', 'sub-profile-gate')
+    client.post('/auth/google', json={'id_token': 'dummy'})
+    client.patch('/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True})
+
+    payload = json_module.dumps({'description': 'profile gate test'})
+    r1 = client.post('/projects', data={'payload': payload})
+    assert r1.status_code == 403, r1.text
+    assert '프로필' in r1.json()['detail']
+
+    r2 = client.post('/profile', json=_MINIMAL_PROFILE_PAYLOAD)
     assert r2.status_code == 201, r2.text
+
+    r3 = client.post('/projects', data={'payload': payload})
+    assert r3.status_code == 201, r3.text
 
 
 def test_patch_consent_updates_only_provided_fields(client, monkeypatch):
