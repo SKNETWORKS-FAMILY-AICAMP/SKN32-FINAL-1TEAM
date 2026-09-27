@@ -286,14 +286,17 @@ CREATE TABLE IF NOT EXISTS match_results (
     -- [2026-09-23 개정] status='failed'는 이제 자동 재시도(최대 5회, 백오프) 소진 뒤에만
     -- 도달한다 — status='waiting_resume'이 그 사이 자동 대기 상태를 표현한다.
     failure_reason TEXT NULL COMMENT '마지막 실패 사유(에러 메시지) — status=waiting_resume/failed일 때 값 있음',
-    -- [2026-09-23 신규] 실패 후 자동 재시도 횟수. 15→30→60→120→240초로 2배씩 늘려가며
-    -- 최대 5회까지 자동 재시도하고, 그래도 안 되면 status='failed'로 확정한다(관리자 알림
-    -- 대상, generation_failure_alerts 참고). 사용자가 수동으로 "다시 이어가기"를 누르면
-    -- 0으로 리셋된다.
-    retry_count TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '자동 재시도 소진 횟수(최대 5)',
-    -- [2026-09-23 신규] 다음 자동 재시도 예정 시각(status='waiting_resume'일 때만 값 있음) —
-    -- 복구 루프가 이 시각 이전엔 재시도하지 않는다(백오프 간격 준수).
-    next_retry_at DATETIME(6) NULL COMMENT '다음 자동 재시도 예정 시각(waiting_resume 전용)',
+    -- [2026-09-23 신규, 2026-09-26 정정] 실패 후 자동 "재개" 횟수 — 공식 기능정의서 v1.9
+    -- (R-11) 기준 15분→30→60→120→240분으로 2배씩 늘려가며 최대 5번까지 자동 재개하고,
+    -- 그래도 안 되면 status='failed'로 확정한다(관리자 알림 대상, generation_failure_alerts
+    -- 참고). 사용자가 수동으로 "다시 이어가기"를 누르면 1로 리셋된다.
+    retry_count TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '자동 재개 소진 횟수(최대 5)',
+    -- [2026-09-23 신규] 다음 자동 재개 예정 시각(status='waiting_resume'일 때만 값 있음) —
+    -- 복구 루프가 이 시각 이전엔 재개하지 않는다(백오프 간격 준수).
+    next_retry_at DATETIME(6) NULL COMMENT '다음 자동 재개 예정 시각(waiting_resume 전용)',
+    -- [2026-09-26 신규] 이번 실패 스트릭의 첫 실패 시각 — "재개 총 대기 상한"(12시간,
+    -- 재개 대기+실행 시간 합산)을 재는 기준점. 성공하거나 수동 재시작 시 초기화된다.
+    resume_started_at DATETIME(6) NULL COMMENT '이번 실패 스트릭 시작 시각(재개 총 대기 상한 12시간 계산용)',
     archived_at DATETIME(6) NULL COMMENT '사용자가 프로젝트를 삭제해 보관 처리된 일시(NULL 가능)',
     archived_by VARCHAR(20) NULL COMMENT "보관 처리 주체('user' 고정, NULL 가능)",
     -- [참고] project.py 전역에서 "WHERE project_id=X ORDER BY match_id DESC" 패턴이 매우

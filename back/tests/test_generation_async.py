@@ -181,8 +181,10 @@ def _monkeypatch_boom(monkeypatch, message='더미 에이전트 강제 실패(�
 
 
 def test_first_failure_schedules_backoff_retry_instead_of_failing(authed_client, db_session, monkeypatch):
-    """[2026-09-23 개정] 첫 실패에서 바로 status='failed'가 되면 안 된다 — 15초 뒤
-    자동 재시도를 예약한 status='waiting_resume'이 되고, retry_count가 1이 돼야 한다."""
+    """[2026-09-23 개정, 2026-09-26 단위 정정] 첫 실패에서 바로 status='failed'가 되면
+    안 된다 — 15분 뒤 자동 재개를 예약한 status='waiting_resume'이 되고, retry_count가
+    1이 돼야 한다(공식 기능정의서 v1.9 R-11 — 세션 초반엔 단위 없이 전달받아 초로
+    잘못 구현했던 걸 정정)."""
     monkeypatch.setattr(projects_router, 'DUMMY_GENERATION_STEP_SECONDS', 0.02)
     _monkeypatch_boom(monkeypatch)
 
@@ -202,11 +204,12 @@ def test_first_failure_schedules_backoff_retry_instead_of_failing(authed_client,
     assert '더미 에이전트 강제 실패' in (match.failure_reason or '')
     assert match.retry_count == 1
     assert match.next_retry_at is not None
-    expected_delay = projects_router.GENERATION_RETRY_BASE_SECONDS  # 1번째 재시도 = 기본 간격(15초)
+    expected_delay = projects_router.GENERATION_RESUME_BASE_SECONDS  # 1번째 재개 = 기본 간격(15분)
     actual_delay = (match.next_retry_at - datetime.datetime.utcnow()).total_seconds()
     assert expected_delay - 2 < actual_delay <= expected_delay, f'1번째 백오프는 {expected_delay}초여야 함(실제 {actual_delay})'
+    assert match.resume_started_at is not None, '실패 스트릭 시작 시각이 기록돼야 함(재개 총 대기 상한 계산용)'
 
-    # 아직 재시도 5회를 다 못 썼으니 관리자 알림은 안 생겨야 한다.
+    # 아직 재개 5회를 다 못 썼으니 관리자 알림은 안 생겨야 한다.
     alerts = db_session.query(projects_router.GenerationFailureAlert).filter_by(match_id=match.match_id).all()
     assert alerts == [], '재시도 여지가 남아있는 실패는 관리자 알림 대상이 아님'
 
@@ -256,7 +259,7 @@ def test_recovery_retries_after_next_retry_at_passes(authed_client, db_session, 
 
 
 def test_max_retries_exhausted_marks_failed_and_creates_alert(authed_client, db_session, monkeypatch):
-    """자동 재시도 5회를 전부 소진하고도 실패하면 status='failed'로 확정되고,
+    """자동 재개 5회를 전부 소진하고도 실패하면 status='failed'로 확정되고,
     generation_failure_alerts에 관리자 알림 행이 하나 남아야 한다."""
     monkeypatch.setattr(projects_router, 'DUMMY_GENERATION_STEP_SECONDS', 0.02)
     _monkeypatch_boom(monkeypatch, message='6번째 실패(테스트)')
@@ -265,7 +268,8 @@ def test_max_retries_exhausted_marks_failed_and_creates_alert(authed_client, db_
     match.stage = projects_router.ps.STAGE_PLAN_WRITING
     match.progress_percent = 70
     match.status = 'waiting_resume'
-    match.retry_count = projects_router.GENERATION_RETRY_MAX_ATTEMPTS  # 이미 5회 소진
+    match.retry_count = projects_router.GENERATION_RESUME_MAX_ATTEMPTS  # 이미 5회 소진
+    match.resume_started_at = datetime.datetime.utcnow() - datetime.timedelta(minutes=30)
     match.worker_claimed_at = None
     match.next_retry_at = datetime.datetime.utcnow() - datetime.timedelta(seconds=1)
     db_session.commit()
@@ -273,18 +277,44 @@ def test_max_retries_exhausted_marks_failed_and_creates_alert(authed_client, db_
     projects_router._recover_orphaned_generations_once(db_session)
 
     _wait_until_status(db_session, match, 'failed')
-    assert match.retry_count == projects_router.GENERATION_RETRY_MAX_ATTEMPTS + 1
+    assert match.retry_count == projects_router.GENERATION_RESUME_MAX_ATTEMPTS + 1
     assert match.next_retry_at is None
     assert '6번째 실패' in (match.failure_reason or '')
 
     alerts = db_session.query(projects_router.GenerationFailureAlert).filter_by(match_id=match.match_id).all()
-    assert len(alerts) == 1, '재시도 상한 도달 시 관리자 알림이 정확히 한 행 생겨야 함'
+    assert len(alerts) == 1, '재개 상한 도달 시 관리자 알림이 정확히 한 행 생겨야 함'
     alert = alerts[0]
     assert alert.project_id == match.project_id
     assert alert.stage == projects_router.ps.STAGE_PLAN_WRITING
-    assert alert.retry_count == projects_router.GENERATION_RETRY_MAX_ATTEMPTS
+    assert alert.retry_count == projects_router.GENERATION_RESUME_MAX_ATTEMPTS
     assert '6번째 실패' in (alert.failure_reason or '')
-    assert alert.acknowledged_at is None
+
+
+def test_resume_total_cap_exceeded_marks_failed_before_attempt_cap(authed_client, db_session, monkeypatch):
+    """[2026-09-26 신규] 공식 기능정의서 v1.9의 "재개 총 대기 상한"(12시간) — 재개
+    횟수(5번) 자체를 다 안 썼어도, 첫 실패 이후 12시간이 지났으면 그걸로 바로
+    실패 확정돼야 한다(비용이 무한정 발산하지 않도록)."""
+    monkeypatch.setattr(projects_router, 'DUMMY_GENERATION_STEP_SECONDS', 0.02)
+    _monkeypatch_boom(monkeypatch, message='12시간 넘긴 재개(테스트)')
+
+    match = _create_match(authed_client, db_session, 'NOTICE-ASYNC-TOTALCAP')
+    match.stage = projects_router.ps.STAGE_PLAN_WRITING
+    match.progress_percent = 50
+    match.status = 'waiting_resume'
+    match.retry_count = 1  # 재개 횟수 상한(5)엔 한참 못 미침
+    match.resume_started_at = datetime.datetime.utcnow() - datetime.timedelta(hours=13)  # 12시간 상한 초과
+    match.worker_claimed_at = None
+    match.next_retry_at = datetime.datetime.utcnow() - datetime.timedelta(seconds=1)
+    db_session.commit()
+
+    projects_router._recover_orphaned_generations_once(db_session)
+
+    _wait_until_status(db_session, match, 'failed')
+    assert match.retry_count == 2, '재개 횟수 상한(5)엔 못 미쳤어도 실패로 확정돼야 함'
+
+    alerts = db_session.query(projects_router.GenerationFailureAlert).filter_by(match_id=match.match_id).all()
+    assert len(alerts) == 1
+    assert alerts[0].acknowledged_at is None
 
 
 def test_recovery_loop_does_not_retry_failed_generation(authed_client, db_session):

@@ -45,7 +45,7 @@ NO_MATCH_SCREEN = 3  # match_results 행이 아예 없을 때(8케이스의 ①)
 # [2026-09-23 신규] "서비스 내부 상태" 6종 — match_results.status와 agent_executions.status가
 # 공유하는 단일 enum이다(app/models.py에서 SQLAlchemy Enum으로 두 컬럼 다 이 값들로 강제).
 # 실행/재개대기(자동 재시도 백오프 중)/사용자대기(판단 대기)/실패(재시도 5회 소진 확정)/
-# 완료(최종)/중단(멈춤·계정삭제) — app/routers/projects.py GENERATION_RETRY_MAX_ATTEMPTS 등
+# 완료(최종)/중단(멈춤·계정삭제) — app/routers/projects.py GENERATION_RESUME_MAX_ATTEMPTS 등
 # 재시도 정책과 함께 쓴다. GENERATION_STATUS_HALTED는 예전부터 admin.py가 '중단' 판정에 쓰던
 # 이름을 그대로 가져온 것(원래도 'halted'였음 — 새 이름을 안 만들고 기존 걸 정식화).
 GENERATION_STATUS_IN_PROGRESS = 'in_progress'

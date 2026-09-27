@@ -543,14 +543,19 @@ class MatchResult(Base):
     # (_simulate_generation/_recover_orphaned_generations_once/_start_generation 참고).
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # [2026-09-23 신규] 실패 후 자동 재시도 횟수 — 15초 -> 30 -> 60 -> 120 -> 240초로
-    # 2배씩 늘려가며 최대 5번까지 자동으로 재시도하고, 그래도 안 되면 status='failed'로
-    # 확정한다(관리자 알림 + 사용자 "다시 이어가기" 버튼 대상). 사용자가 수동으로
-    # "다시 이어가기"를 누르면(_start_generation) 0으로 리셋된다 — 새 시도 묶음이라는 뜻.
+    # [2026-09-23 신규, 2026-09-26 정정] 실패 후 자동 "재개" 횟수 — 공식 기능정의서 v1.9
+    # (R-11) 기준 15분 -> 30 -> 60 -> 120 -> 240분으로 2배씩 늘려가며 최대 5번까지
+    # 자동으로 재개하고, 그래도 안 되면 status='failed'로 확정한다(관리자 알림 + 사용자
+    # "다시 이어가기" 버튼 대상). 사용자가 수동으로 "다시 이어가기"를 누르면
+    # (_start_generation) 1로 리셋된다(그 클릭 자체가 1회 재개로 침).
     retry_count: Mapped[int] = mapped_column(_UnsignedInt, default=0)
-    # 다음 자동 재시도를 시도할 시각(status='waiting_resume'일 때만 값이 있음) — 복구
-    # 루프가 이 시각이 지나기 전엔 재시도하지 않는다(백오프 간격을 지키기 위함).
+    # 다음 자동 재개를 시도할 시각(status='waiting_resume'일 때만 값이 있음) — 복구
+    # 루프가 이 시각이 지나기 전엔 재개하지 않는다(백오프 간격을 지키기 위함).
     next_retry_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    # [2026-09-26 신규] 이번 실패 스트릭의 첫 실패 시각 — "재개 총 대기 상한"(12시간,
+    # 재개 대기+실행 시간 합산)을 재는 기준점이다. 성공하거나 사용자가 수동으로 다시
+    # 시작하면 초기화된다(retry_count가 0/1로 리셋되는 시점과 항상 같이 움직인다).
+    resume_started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
     project: Mapped['Project'] = relationship(back_populates='matches')
     eligibility_checks: Mapped[list['EligibilityCheck']] = relationship(back_populates='match')

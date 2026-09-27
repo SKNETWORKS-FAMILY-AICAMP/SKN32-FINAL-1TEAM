@@ -635,11 +635,22 @@ GENERATION_CLAIM_STALE_SECONDS = float(os.getenv('GENERATION_CLAIM_STALE_SECONDS
 # 복구 루프가 "고아" 작업(클레임 없음/오래됨)을 찾는 주기.
 GENERATION_POLL_INTERVAL_SECONDS = float(os.getenv('GENERATION_POLL_INTERVAL_SECONDS', '10'))
 
-# [2026-09-23 신규] 실패 시 자동 재시도 정책 — 15 -> 30 -> 60 -> 120 -> 240초로 2배씩
-# 늘려가며 최대 5회까지 자동 재시도한다(status='waiting_resume'). 5회를 전부 소진하고도
-# 실패하면 status='failed'로 확정하고 관리자 알림(generation_failure_alerts)을 남긴다.
-GENERATION_RETRY_MAX_ATTEMPTS = int(os.getenv('GENERATION_RETRY_MAX_ATTEMPTS', '5'))
-GENERATION_RETRY_BASE_SECONDS = float(os.getenv('GENERATION_RETRY_BASE_SECONDS', '15'))
+# [2026-09-23 신규, 2026-09-26 정정] 실패 시 자동 "재개" 정책 — 공식 기능정의서 v1.9
+# (시트 1_개요 "횟수·간격 설정값", R-11) 기준. 세션 초반엔 단위 없이 전달받아 초 단위로
+# 잘못 구현했었다 — 실제로는 "재개 첫 간격" 15분부터 2배씩 늘려(15→30→60→120→240분)
+# 최대 5번("재개 횟수")까지 자동 재개하고, 그래도 안 되면 status='failed'로 확정하고
+# 관리자 알림(generation_failure_alerts)을 남긴다. 공식 스펙은 이 "재개"(시간을 두고
+# 실패 지점부터 다시 시작)와 "재시도"(호출 실패 시 같은 호출을 즉시 다시 보냄, 5회,
+# 간격은 구현하면서 정함)를 별개 2단계로 구분하는데, 지금 더미 시뮬레이션엔 개별 호출
+# 재시도라는 더 낮은 층위가 없어서(실제 Agent가 API를 호출하기 전까진 의미가 없음)
+# 이 코드는 "재개" 계층만 구현한다 — 실제 Agent가 붙으면 그 안에서 별도로 "재시도"
+# 계층을 추가하면 된다.
+GENERATION_RESUME_MAX_ATTEMPTS = int(os.getenv('GENERATION_RESUME_MAX_ATTEMPTS', '5'))
+GENERATION_RESUME_BASE_SECONDS = float(os.getenv('GENERATION_RESUME_BASE_SECONDS', str(15 * 60)))  # 15분
+# [2026-09-26 신규] "재개 총 대기 상한" — 재개 대기 + 재개 실행 시간을 모두 합한 바깥
+# 상한(12시간). 재개 횟수(5번) 자체를 다 쓰기 전이라도 이 시간을 넘기면 바로 실패로
+# 확정한다(무한 반복으로 비용이 발산하지 않게 하는 게 원칙).
+GENERATION_RESUME_TOTAL_CAP_SECONDS = float(os.getenv('GENERATION_RESUME_TOTAL_CAP_SECONDS', str(12 * 3600)))  # 12시간
 
 # running_stage -> done_stage. 복구 루프가 어떤 stage들을 감시해야 하는지 여기 한 곳에 모은다
 # — _start_generation이 쓰는 (running_stage, done_stage) 쌍과 항상 같은 값이어야 한다.
@@ -674,26 +685,33 @@ def _simulate_generation(match_id: int, running_stage: str, done_stage: str) -> 
                     match.progress_percent = step * 100 // DUMMY_GENERATION_STEPS
                 match.worker_claimed_at = datetime.datetime.utcnow()  # 하트비트 — 진행 중엔 클레임이 안 늙는다
                 # [2026-09-23 신규] 한 스텝이라도 성공하면(=다시 정상 진행되면) 이전 실패
-                # 스트릭을 리셋한다 — 재시도 예산(5회)은 "연속 실패"에 대한 것이지, 이
+                # 스트릭을 리셋한다 — 재개 예산(5회/12시간)은 "연속 실패"에 대한 것이지, 이
                 # 작업 전체 수명 동안 누적되는 값이 아니다.
                 match.retry_count = 0
+                match.resume_started_at = None
                 db.commit()
         except Exception as exc:
-            # [2026-09-23 개정] 지금 더미 로직(sleep+progress 증가)은 실패할 일이 없지만,
-            # 실제 에이전트가 붙으면 여기서 예외가 날 수 있다 — 첫 실패에서 바로 포기하지
-            # 않고, 15 -> 30 -> 60 -> 120 -> 240초로 2배씩 늘려가며 최대 5회까지 자동
-            # 재시도한다(status='waiting_resume', next_retry_at에 다음 시도 시각을 남김).
-            # 복구 루프(_recover_orphaned_generations_once)가 next_retry_at이 지난 뒤에만
-            # 다시 클레임한다. 5회를 전부 소진하고도 실패하면 status='failed'로 확정하고
-            # 관리자 알림을 한 행 남긴다 — 그때부터 사용자가 "다시 이어가기"를 눌러야
-            # 재개된다(_start_generation). progress_percent는 안 건드리므로 재시도할 때마다
-            # 이미 진행된 부분부터 이어간다(처음부터 다시 하지 않음).
+            # [2026-09-23 신규, 2026-09-26 정정] 지금 더미 로직(sleep+progress 증가)은
+            # 실패할 일이 없지만, 실제 에이전트가 붙으면 여기서 예외가 날 수 있다 — 첫
+            # 실패에서 바로 포기하지 않고, 공식 기능정의서 v1.9(R-11) 기준 15분 -> 30 ->
+            # 60 -> 120 -> 240분으로 2배씩 늘려가며 최대 5번까지 자동 재개한다
+            # (status='waiting_resume', next_retry_at에 다음 시도 시각을 남김). 복구 루프
+            # (_recover_orphaned_generations_once)가 next_retry_at이 지난 뒤에만 다시
+            # 클레임한다. 재개 횟수(5번)를 다 쓰거나, 이번 스트릭이 시작된 뒤로 "재개 총
+            # 대기 상한"(12시간)을 넘기면 status='failed'로 확정하고 관리자 알림을 한 행
+            # 남긴다 — 그때부터 사용자가 "다시 이어가기"를 눌러야 재개된다
+            # (_start_generation). progress_percent는 안 건드리므로 재개할 때마다 이미
+            # 진행된 부분부터 이어간다(처음부터 다시 하지 않음).
             db.rollback()
             match = db.get(MatchResult, match_id)
             if match is not None and match.stage == running_stage:
+                now = datetime.datetime.utcnow()
                 match.failure_reason = str(exc)[:2000]
+                if match.retry_count == 0:
+                    match.resume_started_at = now  # 이번 실패 스트릭의 시작 시각
                 match.retry_count = (match.retry_count or 0) + 1
-                if match.retry_count > GENERATION_RETRY_MAX_ATTEMPTS:
+                elapsed = (now - match.resume_started_at).total_seconds() if match.resume_started_at else 0.0
+                if match.retry_count > GENERATION_RESUME_MAX_ATTEMPTS or elapsed > GENERATION_RESUME_TOTAL_CAP_SECONDS:
                     match.status = ps.GENERATION_STATUS_FAILED
                     match.next_retry_at = None
                     db.add(GenerationFailureAlert(
@@ -704,9 +722,9 @@ def _simulate_generation(match_id: int, running_stage: str, done_stage: str) -> 
                         failure_reason=match.failure_reason,
                     ))
                 else:
-                    delay = GENERATION_RETRY_BASE_SECONDS * (2 ** (match.retry_count - 1))
+                    delay = GENERATION_RESUME_BASE_SECONDS * (2 ** (match.retry_count - 1))
                     match.status = ps.GENERATION_STATUS_WAITING_RESUME
-                    match.next_retry_at = datetime.datetime.utcnow() + datetime.timedelta(seconds=delay)
+                    match.next_retry_at = now + datetime.timedelta(seconds=delay)
                 db.commit()
     finally:
         db.close()
@@ -814,11 +832,14 @@ def _start_generation(db: Session, project: Project, start_from: tuple, running_
         match.worker_claimed_at = None  # 새 단계 시작 — 이전 단계의 클레임 흔적을 지운다
         match.status = ps.GENERATION_STATUS_IN_PROGRESS
         match.failure_reason = None
-        # [2026-09-23] 수동 "다시 이어가기"는 재시도 횟수를 0으로 완전히 리셋하지 않고
-        # 1로 둔다 — 이 수동 클릭 자체를 재시도 1회로 친다(원래 재시도 예산 5회의
-        # 연장선). 그래서 이 시도도 또 실패하면 바로 2번째 백오프(30초)부터 이어간다.
-        # 최초 시작(재시도가 아니라 처음 시작하는 경우)은 0부터.
+        # [2026-09-23 신규, 2026-09-26 정정] 수동 "다시 이어가기"는 재개 횟수를 0으로
+        # 완전히 리셋하지 않고 1로 둔다 — 이 수동 클릭 자체를 재개 1회로 친다(원래 재개
+        # 예산 5회의 연장선). 그래서 이 시도도 또 실패하면 바로 2번째 백오프(30분)부터
+        # 이어간다. resume_started_at도 지금(수동 클릭 시각)으로 다시 잡아서 "재개 총
+        # 대기 상한"(12시간)도 이 시점부터 새로 잰다. 최초 시작(재개가 아니라 처음
+        # 시작하는 경우)은 둘 다 비운다.
         match.retry_count = 1 if can_retry_failed else 0
+        match.resume_started_at = datetime.datetime.utcnow() if can_retry_failed else None
         match.next_retry_at = None
         db.commit()
     # 이미 진행 중이면(다른 요청/복구 루프가 먼저 클레임했으면) 새로 시작하지 않는다 —

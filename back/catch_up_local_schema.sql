@@ -76,10 +76,12 @@ CALL _add_col_if_missing('projects', 'regional_priority_area', "VARCHAR(100) NUL
 CALL _add_col_if_missing('match_results', 'worker_claimed_at', "DATETIME(6) NULL COMMENT '생성 작업을 처리 중인 워커의 마지막 클레임/하트비트 시각'");
 CALL _add_col_if_missing('match_results', 'failure_reason', "TEXT NULL COMMENT '마지막 실패 사유(에러 메시지) — status=waiting_resume/failed일 때 값 있음'");
 
--- [2026-09-23 신규] 실패 시 자동 재시도(최대 5회, 15->30->60->120->240초 백오프) —
--- app/routers/projects.py GENERATION_RETRY_MAX_ATTEMPTS 참고.
-CALL _add_col_if_missing('match_results', 'retry_count', "TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '자동 재시도 소진 횟수(최대 5)'");
-CALL _add_col_if_missing('match_results', 'next_retry_at', "DATETIME(6) NULL COMMENT '다음 자동 재시도 예정 시각(waiting_resume 전용)'");
+-- [2026-09-23 신규, 2026-09-26 정정] 실패 시 자동 재개(최대 5회, 15->30->60->120->240분
+-- 백오프, 총 대기 상한 12시간) — 공식 기능정의서 v1.9(R-11) 기준. app/routers/projects.py
+-- GENERATION_RESUME_MAX_ATTEMPTS/GENERATION_RESUME_TOTAL_CAP_SECONDS 참고.
+CALL _add_col_if_missing('match_results', 'retry_count', "TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '자동 재개 소진 횟수(최대 5)'");
+CALL _add_col_if_missing('match_results', 'next_retry_at', "DATETIME(6) NULL COMMENT '다음 자동 재개 예정 시각(waiting_resume 전용)'");
+CALL _add_col_if_missing('match_results', 'resume_started_at', "DATETIME(6) NULL COMMENT '이번 실패 스트릭 시작 시각(재개 총 대기 상한 12시간 계산용)'");
 
 -- [2026-09-23 신규] match_results.status/agent_executions.status를 서비스 내부 상태
 -- 6종(실행/재개대기/사용자대기/실패/완료/중단) 실제 MySQL ENUM으로 강제한다
