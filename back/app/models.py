@@ -36,6 +36,9 @@ from app.database import Base
 # 상태 6종(app/pipeline_stages.py 참고) — MySQL에서는 실제 ENUM(...) 컬럼이 되고, SQLite
 # (테스트)에서는 VARCHAR + CHECK 제약으로 동작한다(SQLAlchemy Enum의 기본 동작).
 _GenerationStatus = Enum(*ps.GENERATION_STATUSES, name='generation_status')
+# [2026-09-27 신규, SB-134] 실패 원인 분류 3종(일시/입력/운영) — app/pipeline_stages.py
+# classify_error_kind 참고.
+_ErrorKind = Enum(*ps.ERROR_KINDS, name='error_kind')
 
 # app_schema.sql엔 MySQL 전용 타입(LONGTEXT, INT UNSIGNED)으로 선언된 컬럼이 있는데,
 # 이 타입들을 그대로 쓰면 SQLite(tests/conftest.py가 만드는 테스트 DB)에서 컴파일 에러가 난다.
@@ -551,18 +554,34 @@ class MatchResult(Base):
     # (_simulate_generation/_recover_orphaned_generations_once/_start_generation 참고).
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # [2026-09-23 신규, 2026-09-26 정정] 실패 후 자동 "재개" 횟수 — 공식 기능정의서 v1.9
-    # (R-11) 기준 15분 -> 30 -> 60 -> 120 -> 240분으로 2배씩 늘려가며 최대 5번까지
-    # 자동으로 재개하고, 그래도 안 되면 status='failed'로 확정한다(관리자 알림 + 사용자
-    # "다시 이어가기" 버튼 대상). 사용자가 수동으로 "다시 이어가기"를 누르면
-    # (_start_generation) 1로 리셋된다(그 클릭 자체가 1회 재개로 침).
+    # [2026-09-27 신규, SB-134] 마지막 실패의 원인 분류(일시/입력/운영) — 공식 기능정의서
+    # v1.9 Run.lastErrorKind. 일시 오류만 재개(백오프 재시도)하고, 입력·운영은 영구
+    # 오류로 보고 재개 없이 바로 status='failed'로 확정한다(R-11). NULL이면 아직 실패한
+    # 적이 없거나(정상 진행 중) 성공해서 초기화된 상태 — app/pipeline_stages.py
+    # classify_error_kind 참고.
+    last_error_kind: Mapped[str | None] = mapped_column(_ErrorKind, nullable=True)
+
+    # [2026-09-23 신규, 2026-09-26 정정, 2026-09-27 개명] 실패 후 자동 "재개" 횟수(공식
+    # 기능정의서 v1.9의 Run.resumeCount) — R-11 기준 15분 -> 30 -> 60 -> 120 -> 240분으로
+    # 2배씩 늘려가며 최대 5번까지 자동으로 재개하고, 그래도 안 되면 status='failed'로
+    # 확정한다(관리자 알림 + 사용자 "다시 이어가기" 버튼 대상). 사용자가 수동으로
+    # "다시 이어가기"를 누르면(_start_generation) 1로 리셋된다(그 클릭 자체가 1회
+    # 재개로 침). [2026-09-27] 예전엔 이 컬럼 이름이 retry_count였는데, 스펙의
+    # Run.retryCount("현재 호출의 재시도 횟수" — 같은 호출을 즉시 다시 보내는 것,
+    # 재개할 때마다 다시 채워짐)와 다른 개념이라 resume_count로 바로잡는다.
+    resume_count: Mapped[int] = mapped_column(_UnsignedInt, default=0)
+    # [2026-09-27 신규] 개별 Agent 호출 실패(타임아웃·응답 형식 오류 등)에 대한 즉시
+    # 재시도 횟수(Run.retryCount) — 지금은 파이프라인이 100% 더미(sleep만 함)라 실제로
+    # "호출이 실패해서 재시도"할 대상 자체가 없어서 항상 0이다. 실제 Agent 호출 계층이
+    # 생기면 그 안에서 이 컬럼을 채우면 된다(재개 시작마다 0으로 리셋 — resume_count와
+    # 달리 "연속 실패" 누적값이 아니라 "이번 재개 안에서의 호출 재시도" 값).
     retry_count: Mapped[int] = mapped_column(_UnsignedInt, default=0)
     # 다음 자동 재개를 시도할 시각(status='waiting_resume'일 때만 값이 있음) — 복구
     # 루프가 이 시각이 지나기 전엔 재개하지 않는다(백오프 간격을 지키기 위함).
     next_retry_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     # [2026-09-26 신규] 이번 실패 스트릭의 첫 실패 시각 — "재개 총 대기 상한"(12시간,
     # 재개 대기+실행 시간 합산)을 재는 기준점이다. 성공하거나 사용자가 수동으로 다시
-    # 시작하면 초기화된다(retry_count가 0/1로 리셋되는 시점과 항상 같이 움직인다).
+    # 시작하면 초기화된다(resume_count가 0/1로 리셋되는 시점과 항상 같이 움직인다).
     resume_started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
     project: Mapped['Project'] = relationship(back_populates='matches')
@@ -602,7 +621,12 @@ class GenerationFailureAlert(Base):
     match_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('match_results.match_id'))
     project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
     stage: Mapped[str] = mapped_column(String(30))  # 실패가 확정된 시점의 stage(어느 단계였는지)
-    retry_count: Mapped[int] = mapped_column(_UnsignedInt)  # 확정 시점까지 소진한 자동 재시도 횟수
+    # [2026-09-27 개명] match_results.resume_count와 같은 이유로 개명(예전 retry_count).
+    resume_count: Mapped[int] = mapped_column(_UnsignedInt)  # 확정 시점까지 소진한 자동 재개 횟수
+    # [2026-09-27 신규, SB-134] 실패 확정 시점의 원인 분류 스냅샷 — 관리자가 "재개 상한
+    # 소진"(일시 오류가 오래 지속)과 "영구 오류로 즉시 실패"(입력/운영)를 구분해서 볼 수
+    # 있게 한다.
+    last_error_kind: Mapped[str] = mapped_column(_ErrorKind)
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
     # 관리자가 확인 처리한 시각 — NULL이면 아직 미확인. 재시도 자체를 막지는 않는다

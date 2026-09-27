@@ -307,10 +307,10 @@ def test_put_item_archive_without_match_returns_400(admin_client, user_client):
     assert res.status_code == 400, res.text
 
 
-def test_items_shows_failed_status_and_retry_count(admin_client, user_client, db_session):
-    """[2026-09-23 신규] 생성 작업이 자동 재시도(최대 5회)를 소진하고 확정 실패하면
-    /admin/items의 status_label이 '실패'로, retry_count/failure_reason이 그대로
-    보여야 한다."""
+def test_items_shows_failed_status_and_resume_count(admin_client, user_client, db_session):
+    """[2026-09-23 신규, 2026-09-27 개명] 생성 작업이 자동 재개(최대 5회)를 소진하고
+    확정 실패하면 /admin/items의 status_label이 '실패'로, resume_count/failure_reason이
+    그대로 보여야 한다."""
     import app.pipeline_stages as ps
     from app.models import MatchResult
 
@@ -324,7 +324,7 @@ def test_items_shows_failed_status_and_retry_count(admin_client, user_client, db
     match = MatchResult(
         project_id=project_id, notice_id=notice.notice_id, status='failed',
         stage=ps.STAGE_PLAN_WRITING, progress_percent=70,
-        retry_count=6, failure_reason='6번째 실패(테스트)',
+        resume_count=6, last_error_kind=ps.ERROR_KIND_TRANSIENT, failure_reason='6번째 실패(테스트)',
     )
     db_session.add(match)
     db_session.commit()
@@ -333,8 +333,9 @@ def test_items_shows_failed_status_and_retry_count(admin_client, user_client, db
     assert res.status_code == 200, res.text
     matched = next(row for row in res.json() if row['project_id'] == project_id)
     assert matched['status_label'] == '실패'
-    assert matched['generation_retry_count'] == 6
+    assert matched['generation_resume_count'] == 6
     assert matched['generation_failure_reason'] == '6번째 실패(테스트)'
+    assert matched['generation_last_error_kind'] == '일시'
 
 
 # ============================================================================
@@ -354,17 +355,18 @@ def test_generation_alerts_lists_unacknowledged_by_default(admin_client, user_cl
     db_session.flush()
     match = MatchResult(
         project_id=project_id, notice_id=notice.notice_id, status='failed',
-        stage=ps.STAGE_PLAN_WRITING, progress_percent=70, retry_count=6,
+        stage=ps.STAGE_PLAN_WRITING, progress_percent=70, resume_count=6,
     )
     db_session.add(match)
     db_session.flush()
     unacked = GenerationFailureAlert(
         match_id=match.match_id, project_id=project_id, stage=ps.STAGE_PLAN_WRITING,
-        retry_count=5, failure_reason='미확인 실패(테스트)',
+        resume_count=5, last_error_kind=ps.ERROR_KIND_TRANSIENT, failure_reason='미확인 실패(테스트)',
     )
     acked = GenerationFailureAlert(
         match_id=match.match_id, project_id=project_id, stage=ps.STAGE_PLAN_WRITING,
-        retry_count=5, failure_reason='이미 확인한 실패(테스트)', acknowledged_at=datetime.datetime.utcnow(),
+        resume_count=5, last_error_kind=ps.ERROR_KIND_TRANSIENT,
+        failure_reason='이미 확인한 실패(테스트)', acknowledged_at=datetime.datetime.utcnow(),
     )
     db_session.add_all([unacked, acked])
     db_session.commit()
@@ -393,13 +395,13 @@ def test_ack_generation_alert_toggles_acknowledged_at(admin_client, user_client,
     db_session.flush()
     match = MatchResult(
         project_id=project_id, notice_id=notice.notice_id, status='failed',
-        stage=ps.STAGE_PLAN_WRITING, progress_percent=70, retry_count=6,
+        stage=ps.STAGE_PLAN_WRITING, progress_percent=70, resume_count=6,
     )
     db_session.add(match)
     db_session.flush()
     alert = GenerationFailureAlert(
         match_id=match.match_id, project_id=project_id, stage=ps.STAGE_PLAN_WRITING,
-        retry_count=5, failure_reason='확인 처리 대상(테스트)',
+        resume_count=5, last_error_kind=ps.ERROR_KIND_TRANSIENT, failure_reason='확인 처리 대상(테스트)',
     )
     db_session.add(alert)
     db_session.commit()

@@ -509,10 +509,13 @@ class ProjectStatusOut(BaseModel):
     # 'failed'(재시도 5회 소진, 확정된 실패)일 때 값이 있다 — 진행 화면에 실패 사유를
     # 보여주는 용도. 'failed'일 때만 "다시 이어가기" 버튼을 보여주면 된다.
     failure_reason: str | None = None
-    # [2026-09-23 신규] 자동 재시도 소진 횟수(0~5)와 다음 자동 재시도 예정 시각 —
-    # match_status='waiting_resume'일 때만 next_retry_at에 값이 있다. 화면에 "N번째
-    # 재시도 중" 또는 "다음 재시도까지 남은 시간" 같은 걸 보여주고 싶으면 쓰면 된다.
-    retry_count: int = 0
+    # [2026-09-23 신규, 2026-09-27 개명] 자동 재개 소진 횟수(0~5)와 다음 자동 재개
+    # 예정 시각 — match_status='waiting_resume'일 때만 next_retry_at에 값이 있다.
+    # 화면에 "N번째 재개 중" 또는 "다음 재개까지 남은 시간" 같은 걸 보여주고 싶으면
+    # 쓰면 된다. [2026-09-27] 필드명을 retry_count -> resume_count로 바로잡았다 —
+    # 이 값은 스펙의 Run.resumeCount(재개 횟수)이지 Run.retryCount(호출 재시도 횟수)가
+    # 아니다.
+    resume_count: int = 0
     next_retry_at: datetime.datetime | None = None
 
 
@@ -601,7 +604,7 @@ class ProjectListItemOut(BaseModel):
 
     [2026-09-23 개정] 화면 헤더 종모양 알림(NotificationBell, front/src/features/workflow/
     shared.jsx)이 이 목록 엔드포인트를 이미 폴링하고 있어서, 별도 알림 엔드포인트 대신
-    여기에 display_status/retry_count/next_retry_at/failure_reason을 추가했다."""
+    여기에 display_status/resume_count/next_retry_at/failure_reason을 추가했다."""
 
     model_config = ConfigDict(from_attributes=True)
     project_id: int
@@ -616,7 +619,8 @@ class ProjectListItemOut(BaseModel):
     stage: str | None = None
     progress_percent: int | None = None
     screen: int | None = None
-    retry_count: int = 0
+    # [2026-09-27 개명] retry_count -> resume_count (ProjectStatusOut과 같은 이유).
+    resume_count: int = 0
     next_retry_at: datetime.datetime | None = None
     failure_reason: str | None = None
 
@@ -701,10 +705,14 @@ class ItemOut(BaseModel):
     stalled: bool = Field(False, description='완료·보관 상태가 아니면서 마지막 갱신 후 48시간 이상 지났는지')
     score: float | None = Field(None, description='doc_score + artifact_score 합계(둘 다 없으면 None)')
     archived: bool = False
-    # [2026-09-23 신규] 생성 작업(계획서/프로토타입) 자동 재시도 소진 횟수(0~5)와 마지막
-    # 실패 사유 — match_status가 'waiting_resume'/'failed'일 때만 의미가 있다.
-    generation_retry_count: int = 0
+    # [2026-09-23 신규, 2026-09-27 개명] 생성 작업(계획서/프로토타입) 자동 재개 소진
+    # 횟수(0~5)와 마지막 실패 사유 — match_status가 'waiting_resume'/'failed'일 때만
+    # 의미가 있다.
+    generation_resume_count: int = 0
     generation_failure_reason: str | None = None
+    # [2026-09-27 신규, SB-134] 마지막 실패 원인 분류('일시'/'입력'/'운영') — 입력·운영이면
+    # 영구 오류로 재개 없이 바로 실패 확정된 것. NULL이면 실패 이력이 없거나 초기화됨.
+    generation_last_error_kind: str | None = None
 
 
 class ItemArchiveIn(BaseModel):
@@ -720,7 +728,8 @@ class GenerationFailureAlertOut(BaseModel):
     match_id: int
     project_id: int
     stage: str
-    retry_count: int
+    resume_count: int
+    last_error_kind: str = Field(..., description="'일시'/'입력'/'운영' 중 하나 — 실패 확정 시점의 원인 분류")
     failure_reason: str | None = None
     created_at: datetime.datetime
     acknowledged_at: datetime.datetime | None = None

@@ -83,3 +83,32 @@ def status_to_display(match_status: str | None) -> str | None:
     if match_status is None:
         return None
     return STATUS_TO_DISPLAY.get(match_status)
+
+
+# [2026-09-27 신규, SB-134] 실패 원인 분류(공식 기능정의서 v1.9 Run.lastErrorKind) — 일시
+# 오류만 재개(자동 백오프 재시도)하고, 입력·운영 오류는 영구 오류로 보고 재개 없이 바로
+# 실패로 끝낸다(R-11: "일시 오류일 때만 하며 ... 영구 오류가 나면 실행을 실패로 끝낸다").
+ERROR_KIND_TRANSIENT = '일시'    # 네트워크 타임아웃 등 — 시간을 두면 나아질 수 있는 오류
+ERROR_KIND_INPUT = '입력'        # 입력 데이터 자체의 문제 — 재시도해도 같은 결과
+ERROR_KIND_OPERATIONAL = '운영'  # API 연결 끊김·키 만료·크레딧 소진 등 — 사람이 조치해야 함
+ERROR_KINDS = (ERROR_KIND_TRANSIENT, ERROR_KIND_INPUT, ERROR_KIND_OPERATIONAL)
+
+# [주의] 지금 파이프라인은 100% 더미(sleep만 함)라 실제 Agent 호출에서 나는 진짜 오류
+# 유형(예외 클래스, 응답 코드)이 아직 없다 — 그래서 이 분류는 예외 메시지의 키워드로
+# 판단하는 임시 방편이다. 실제 Agent 호출 계층이 생기면, 예외 클래스나 API 응답 코드로
+# 판단하는 훨씬 정확한 방식으로 교체해야 한다(예: 인증 실패 예외 -> 운영, 스키마 검증
+# 실패 예외 -> 입력, 나머지 -> 일시).
+_OPERATIONAL_KEYWORDS = ('api 연결', '연결 끊', '키 만료', '크레딧', 'api key', 'credit', 'connection refused', 'unauthorized')
+_INPUT_KEYWORDS = ('입력값', '형식 오류', 'validation', 'invalid input', 'malformed')
+
+
+def classify_error_kind(exc: BaseException) -> str:
+    """예외 메시지를 보고 일시/입력/운영 중 하나로 분류한다. 위 키워드 중 아무것도 안
+    맞으면 기본값은 '일시'다 — 지금까지 해온 대로 "일단 재개를 시도해본다"는 기존 동작과
+    같다(모르는 오류를 섣불리 영구 오류로 단정해 재개 기회 자체를 없애지 않기 위함)."""
+    message = str(exc).lower()
+    if any(kw in message for kw in _OPERATIONAL_KEYWORDS):
+        return ERROR_KIND_OPERATIONAL
+    if any(kw in message for kw in _INPUT_KEYWORDS):
+        return ERROR_KIND_INPUT
+    return ERROR_KIND_TRANSIENT

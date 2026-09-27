@@ -383,7 +383,7 @@ def list_projects(
             stage=match.stage if match is not None else None,
             progress_percent=match.progress_percent if match is not None else None,
             screen=screen,
-            retry_count=(match.retry_count or 0) if match is not None else 0,
+            resume_count=(match.resume_count or 0) if match is not None else 0,
             next_retry_at=match.next_retry_at if match is not None else None,
             failure_reason=match.failure_reason if match is not None else None,
         ))
@@ -688,42 +688,60 @@ def _simulate_generation(match_id: int, running_stage: str, done_stage: str) -> 
                 # [2026-09-23 신규] 한 스텝이라도 성공하면(=다시 정상 진행되면) 이전 실패
                 # 스트릭을 리셋한다 — 재개 예산(5회/12시간)은 "연속 실패"에 대한 것이지, 이
                 # 작업 전체 수명 동안 누적되는 값이 아니다.
-                match.retry_count = 0
+                match.resume_count = 0
                 match.resume_started_at = None
+                match.last_error_kind = None
                 db.commit()
         except Exception as exc:
-            # [2026-09-23 신규, 2026-09-26 정정] 지금 더미 로직(sleep+progress 증가)은
-            # 실패할 일이 없지만, 실제 에이전트가 붙으면 여기서 예외가 날 수 있다 — 첫
-            # 실패에서 바로 포기하지 않고, 공식 기능정의서 v1.9(R-11) 기준 15분 -> 30 ->
-            # 60 -> 120 -> 240분으로 2배씩 늘려가며 최대 5번까지 자동 재개한다
-            # (status='waiting_resume', next_retry_at에 다음 시도 시각을 남김). 복구 루프
-            # (_recover_orphaned_generations_once)가 next_retry_at이 지난 뒤에만 다시
-            # 클레임한다. 재개 횟수(5번)를 다 쓰거나, 이번 스트릭이 시작된 뒤로 "재개 총
-            # 대기 상한"(12시간)을 넘기면 status='failed'로 확정하고 관리자 알림을 한 행
-            # 남긴다 — 그때부터 사용자가 "다시 이어가기"를 눌러야 재개된다
-            # (_start_generation). progress_percent는 안 건드리므로 재개할 때마다 이미
-            # 진행된 부분부터 이어간다(처음부터 다시 하지 않음).
+            # [2026-09-23 신규, 2026-09-26 정정, 2026-09-27 SB-134 분기 추가] 지금 더미
+            # 로직(sleep+progress 증가)은 실패할 일이 없지만, 실제 에이전트가 붙으면 여기서
+            # 예외가 날 수 있다. 공식 기능정의서 v1.9(R-11): "재개는 일시 오류일 때만 하며,
+            # 재개 상한을 넘기거나 영구 오류가 나면 실행을 실패로 끝낸다." — 그래서 예외를
+            # 먼저 분류(pipeline_stages.classify_error_kind)하고 갈린다:
+            #   - 일시(ERROR_KIND_TRANSIENT): 기존 그대로 15분 -> 30 -> 60 -> 120 -> 240분
+            #     백오프로 최대 5번까지 자동 재개한다(status='waiting_resume').
+            #   - 입력·운영(영구 오류): 재개를 아예 시도하지 않고 바로 status='failed'로
+            #     확정한다 — 같은 입력이나 API 키 문제는 기다린다고 나아지지 않는다.
+            # 두 경우 다 관리자 알림(GenerationFailureAlert)을 남긴다. progress_percent는
+            # 안 건드리므로 재개할 때마다 이미 진행된 부분부터 이어간다(처음부터 다시
+            # 하지 않음).
             db.rollback()
             match = db.get(MatchResult, match_id)
             if match is not None and match.stage == running_stage:
                 now = datetime.datetime.utcnow()
                 match.failure_reason = str(exc)[:2000]
-                if match.retry_count == 0:
-                    match.resume_started_at = now  # 이번 실패 스트릭의 시작 시각
-                match.retry_count = (match.retry_count or 0) + 1
-                elapsed = (now - match.resume_started_at).total_seconds() if match.resume_started_at else 0.0
-                if match.retry_count > GENERATION_RESUME_MAX_ATTEMPTS or elapsed > GENERATION_RESUME_TOTAL_CAP_SECONDS:
+                error_kind = ps.classify_error_kind(exc)
+                match.last_error_kind = error_kind
+                if error_kind != ps.ERROR_KIND_TRANSIENT:
                     match.status = ps.GENERATION_STATUS_FAILED
                     match.next_retry_at = None
                     db.add(GenerationFailureAlert(
                         match_id=match.match_id,
                         project_id=match.project_id,
                         stage=match.stage,
-                        retry_count=match.retry_count - 1,
+                        resume_count=match.resume_count or 0,
+                        last_error_kind=error_kind,
+                        failure_reason=match.failure_reason,
+                    ))
+                    db.commit()
+                    return
+                if match.resume_count == 0:
+                    match.resume_started_at = now  # 이번 실패 스트릭의 시작 시각
+                match.resume_count = (match.resume_count or 0) + 1
+                elapsed = (now - match.resume_started_at).total_seconds() if match.resume_started_at else 0.0
+                if match.resume_count > GENERATION_RESUME_MAX_ATTEMPTS or elapsed > GENERATION_RESUME_TOTAL_CAP_SECONDS:
+                    match.status = ps.GENERATION_STATUS_FAILED
+                    match.next_retry_at = None
+                    db.add(GenerationFailureAlert(
+                        match_id=match.match_id,
+                        project_id=match.project_id,
+                        stage=match.stage,
+                        resume_count=match.resume_count - 1,
+                        last_error_kind=error_kind,
                         failure_reason=match.failure_reason,
                     ))
                 else:
-                    delay = GENERATION_RESUME_BASE_SECONDS * (2 ** (match.retry_count - 1))
+                    delay = GENERATION_RESUME_BASE_SECONDS * (2 ** (match.resume_count - 1))
                     match.status = ps.GENERATION_STATUS_WAITING_RESUME
                     match.next_retry_at = now + datetime.timedelta(seconds=delay)
                 db.commit()
@@ -839,8 +857,9 @@ def _start_generation(db: Session, project: Project, start_from: tuple, running_
         # 이어간다. resume_started_at도 지금(수동 클릭 시각)으로 다시 잡아서 "재개 총
         # 대기 상한"(12시간)도 이 시점부터 새로 잰다. 최초 시작(재개가 아니라 처음
         # 시작하는 경우)은 둘 다 비운다.
-        match.retry_count = 1 if can_retry_failed else 0
+        match.resume_count = 1 if can_retry_failed else 0
         match.resume_started_at = datetime.datetime.utcnow() if can_retry_failed else None
+        match.last_error_kind = None
         match.next_retry_at = None
         db.commit()
     # 이미 진행 중이면(다른 요청/복구 루프가 먼저 클레임했으면) 새로 시작하지 않는다 —
@@ -858,7 +877,7 @@ def _start_generation(db: Session, project: Project, start_from: tuple, running_
         match_id=match.match_id,
         match_status=match.status,
         failure_reason=match.failure_reason,
-        retry_count=match.retry_count or 0,
+        resume_count=match.resume_count or 0,
         next_retry_at=match.next_retry_at,
     )
 
@@ -1425,7 +1444,7 @@ def get_project_status(
         match_id=match.match_id,
         match_status=match.status,
         failure_reason=match.failure_reason,
-        retry_count=match.retry_count or 0,
+        resume_count=match.resume_count or 0,
         next_retry_at=match.next_retry_at,
     )
 

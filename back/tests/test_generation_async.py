@@ -182,7 +182,7 @@ def _monkeypatch_boom(monkeypatch, message='더미 에이전트 강제 실패(�
 
 def test_first_failure_schedules_backoff_retry_instead_of_failing(authed_client, db_session, monkeypatch):
     """[2026-09-23 개정, 2026-09-26 단위 정정] 첫 실패에서 바로 status='failed'가 되면
-    안 된다 — 15분 뒤 자동 재개를 예약한 status='waiting_resume'이 되고, retry_count가
+    안 된다 — 15분 뒤 자동 재개를 예약한 status='waiting_resume'이 되고, resume_count가
     1이 돼야 한다(공식 기능정의서 v1.9 R-11 — 세션 초반엔 단위 없이 전달받아 초로
     잘못 구현했던 걸 정정)."""
     monkeypatch.setattr(projects_router, 'DUMMY_GENERATION_STEP_SECONDS', 0.02)
@@ -202,16 +202,47 @@ def test_first_failure_schedules_backoff_retry_instead_of_failing(authed_client,
     _wait_until_status(db_session, match, 'waiting_resume')
     assert match.stage == projects_router.ps.STAGE_PLAN_WRITING, '실패해도 stage는 실패한 단계 그대로여야 함'
     assert '더미 에이전트 강제 실패' in (match.failure_reason or '')
-    assert match.retry_count == 1
+    assert match.resume_count == 1
     assert match.next_retry_at is not None
     expected_delay = projects_router.GENERATION_RESUME_BASE_SECONDS  # 1번째 재개 = 기본 간격(15분)
     actual_delay = (match.next_retry_at - datetime.datetime.utcnow()).total_seconds()
     assert expected_delay - 2 < actual_delay <= expected_delay, f'1번째 백오프는 {expected_delay}초여야 함(실제 {actual_delay})'
     assert match.resume_started_at is not None, '실패 스트릭 시작 시각이 기록돼야 함(재개 총 대기 상한 계산용)'
+    assert match.last_error_kind == projects_router.ps.ERROR_KIND_TRANSIENT, '분류할 키워드가 없는 일반 예외는 일시 오류로 봐야 함'
 
     # 아직 재개 5회를 다 못 썼으니 관리자 알림은 안 생겨야 한다.
     alerts = db_session.query(projects_router.GenerationFailureAlert).filter_by(match_id=match.match_id).all()
     assert alerts == [], '재시도 여지가 남아있는 실패는 관리자 알림 대상이 아님'
+
+
+def test_operational_error_fails_immediately_without_resume(authed_client, db_session, monkeypatch):
+    """[2026-09-27 신규, SB-134] 공식 기능정의서 v1.9 R-11 — "재개는 일시 오류일 때만
+    하며 ... 영구 오류가 나면 실행을 실패로 끝낸다." API 연결·키 만료·크레딧 소진 같은
+    운영 오류는 재개(백오프 대기)를 시도하지 않고 바로 status='failed'로 확정되고,
+    resume_count는 늘어나지 않아야 한다(재개를 시도한 적이 없으므로)."""
+    monkeypatch.setattr(projects_router, 'DUMMY_GENERATION_STEP_SECONDS', 0.02)
+    _monkeypatch_boom(monkeypatch, message='결제 크레딧 소진으로 호출 실패(테스트)')
+
+    match = _create_match(authed_client, db_session, 'NOTICE-ASYNC-OPFAIL')
+    match.stage = projects_router.ps.STAGE_PLAN_WRITING
+    match.progress_percent = 0
+    match.worker_claimed_at = None
+    db_session.commit()
+
+    claimed = projects_router._try_claim_and_run(
+        match.match_id, projects_router.ps.STAGE_PLAN_WRITING, projects_router.ps.STAGE_PLAN_REVIEW_PENDING,
+    )
+    assert claimed is True
+
+    _wait_until_status(db_session, match, 'failed')
+    assert match.last_error_kind == projects_router.ps.ERROR_KIND_OPERATIONAL
+    assert match.resume_count == 0, '재개를 시도한 적이 없으므로 재개 횟수는 그대로여야 함'
+    assert match.next_retry_at is None
+
+    alerts = db_session.query(projects_router.GenerationFailureAlert).filter_by(match_id=match.match_id).all()
+    assert len(alerts) == 1, '영구 오류는 재개 상한과 무관하게 즉시 관리자 알림이 생겨야 함'
+    assert alerts[0].last_error_kind == projects_router.ps.ERROR_KIND_OPERATIONAL
+    assert alerts[0].resume_count == 0
 
 
 def test_recovery_does_not_retry_before_next_retry_at(authed_client, db_session):
@@ -221,7 +252,7 @@ def test_recovery_does_not_retry_before_next_retry_at(authed_client, db_session)
     match.stage = projects_router.ps.STAGE_PLAN_WRITING
     match.progress_percent = 40
     match.status = 'waiting_resume'
-    match.retry_count = 1
+    match.resume_count = 1
     match.failure_reason = '이전 실패(테스트)'
     match.worker_claimed_at = None
     match.next_retry_at = datetime.datetime.utcnow() + datetime.timedelta(seconds=30)
@@ -244,7 +275,7 @@ def test_recovery_retries_after_next_retry_at_passes(authed_client, db_session, 
     match.stage = projects_router.ps.STAGE_PLAN_WRITING
     match.progress_percent = 40
     match.status = 'waiting_resume'
-    match.retry_count = 1
+    match.resume_count = 1
     match.failure_reason = '이전 실패(테스트)'
     match.worker_claimed_at = None
     match.next_retry_at = datetime.datetime.utcnow() - datetime.timedelta(seconds=1)  # 이미 지남
@@ -254,7 +285,7 @@ def test_recovery_retries_after_next_retry_at_passes(authed_client, db_session, 
 
     _wait_until_done(db_session, match, projects_router.ps.STAGE_PLAN_REVIEW_PENDING)
     assert match.status == 'in_progress', '클레임되면서 waiting_resume -> in_progress로 되돌아가야 함'
-    assert match.retry_count == 0, '성공적으로 재개됐으면 실패 스트릭이 리셋돼야 함'
+    assert match.resume_count == 0, '성공적으로 재개됐으면 실패 스트릭이 리셋돼야 함'
     assert match.progress_percent == 100
 
 
@@ -268,7 +299,7 @@ def test_max_retries_exhausted_marks_failed_and_creates_alert(authed_client, db_
     match.stage = projects_router.ps.STAGE_PLAN_WRITING
     match.progress_percent = 70
     match.status = 'waiting_resume'
-    match.retry_count = projects_router.GENERATION_RESUME_MAX_ATTEMPTS  # 이미 5회 소진
+    match.resume_count = projects_router.GENERATION_RESUME_MAX_ATTEMPTS  # 이미 5회 소진
     match.resume_started_at = datetime.datetime.utcnow() - datetime.timedelta(minutes=30)
     match.worker_claimed_at = None
     match.next_retry_at = datetime.datetime.utcnow() - datetime.timedelta(seconds=1)
@@ -277,7 +308,7 @@ def test_max_retries_exhausted_marks_failed_and_creates_alert(authed_client, db_
     projects_router._recover_orphaned_generations_once(db_session)
 
     _wait_until_status(db_session, match, 'failed')
-    assert match.retry_count == projects_router.GENERATION_RESUME_MAX_ATTEMPTS + 1
+    assert match.resume_count == projects_router.GENERATION_RESUME_MAX_ATTEMPTS + 1
     assert match.next_retry_at is None
     assert '6번째 실패' in (match.failure_reason or '')
 
@@ -286,7 +317,7 @@ def test_max_retries_exhausted_marks_failed_and_creates_alert(authed_client, db_
     alert = alerts[0]
     assert alert.project_id == match.project_id
     assert alert.stage == projects_router.ps.STAGE_PLAN_WRITING
-    assert alert.retry_count == projects_router.GENERATION_RESUME_MAX_ATTEMPTS
+    assert alert.resume_count == projects_router.GENERATION_RESUME_MAX_ATTEMPTS
     assert '6번째 실패' in (alert.failure_reason or '')
 
 
@@ -301,7 +332,7 @@ def test_resume_total_cap_exceeded_marks_failed_before_attempt_cap(authed_client
     match.stage = projects_router.ps.STAGE_PLAN_WRITING
     match.progress_percent = 50
     match.status = 'waiting_resume'
-    match.retry_count = 1  # 재개 횟수 상한(5)엔 한참 못 미침
+    match.resume_count = 1  # 재개 횟수 상한(5)엔 한참 못 미침
     match.resume_started_at = datetime.datetime.utcnow() - datetime.timedelta(hours=13)  # 12시간 상한 초과
     match.worker_claimed_at = None
     match.next_retry_at = datetime.datetime.utcnow() - datetime.timedelta(seconds=1)
@@ -310,7 +341,7 @@ def test_resume_total_cap_exceeded_marks_failed_before_attempt_cap(authed_client
     projects_router._recover_orphaned_generations_once(db_session)
 
     _wait_until_status(db_session, match, 'failed')
-    assert match.retry_count == 2, '재개 횟수 상한(5)엔 못 미쳤어도 실패로 확정돼야 함'
+    assert match.resume_count == 2, '재개 횟수 상한(5)엔 못 미쳤어도 실패로 확정돼야 함'
 
     alerts = db_session.query(projects_router.GenerationFailureAlert).filter_by(match_id=match.match_id).all()
     assert len(alerts) == 1
@@ -357,7 +388,7 @@ def test_plan_start_retries_after_failure(authed_client, db_session, monkeypatch
     assert body['progress_percent'] == 0, '다시 시도는 처음부터 다시 돌아야 함'
     # [2026-09-23] 수동 "다시 이어가기"는 0이 아니라 1로 간다 — 이 클릭 자체가 재시도
     # 1회를 쓴 걸로 친다(원래 재시도 예산 5회의 연장선).
-    assert body['retry_count'] == 1
+    assert body['resume_count'] == 1
 
     _wait_until_done(db_session, match, projects_router.ps.STAGE_PLAN_REVIEW_PENDING)
     assert match.status == 'in_progress'
@@ -376,7 +407,7 @@ def test_list_projects_classifies_waiting_resume_and_failed_for_display(authed_c
     waiting = _create_match(authed_client, db_session, 'NOTICE-NOTIFY-WAITING')
     waiting.stage = projects_router.ps.STAGE_PLAN_WRITING
     waiting.status = 'waiting_resume'
-    waiting.retry_count = 2
+    waiting.resume_count = 2
     waiting.failure_reason = '30초 후 재시도 예정(테스트)'
     waiting.next_retry_at = datetime.datetime.utcnow() + datetime.timedelta(seconds=30)
     db_session.commit()
@@ -386,7 +417,7 @@ def test_list_projects_classifies_waiting_resume_and_failed_for_display(authed_c
     row = next(r for r in res.json() if r['project_id'] == waiting.project_id)
     assert row['match_status'] == 'waiting_resume'
     assert row['display_status'] == '진행', '재개대기도 화면엔 그냥 진행 중으로 보여야 함'
-    assert row['retry_count'] == 2
+    assert row['resume_count'] == 2
     assert row['next_retry_at'] is not None
     assert row['failure_reason'] == '30초 후 재시도 예정(테스트)'
 
@@ -399,14 +430,14 @@ def test_list_projects_classifies_waiting_resume_and_failed_for_display(authed_c
     failed = _create_match(authed_client, db_session, 'NOTICE-NOTIFY-FAILED')
     failed.stage = projects_router.ps.STAGE_PROTOTYPE_BUILDING
     failed.status = 'failed'
-    failed.retry_count = 6
+    failed.resume_count = 6
     failed.failure_reason = '재시도 5회 소진(테스트)'
     db_session.commit()
 
     res2 = authed_client.get('/projects')
     row2 = next(r for r in res2.json() if r['project_id'] == failed.project_id)
     assert row2['display_status'] == '문제가 생겨 멈췄다'
-    assert row2['retry_count'] == 6
+    assert row2['resume_count'] == 6
 
 
 def test_list_projects_classifies_completed_for_display(authed_client, db_session):

@@ -291,11 +291,19 @@ CREATE TABLE IF NOT EXISTS match_results (
     -- [2026-09-23 개정] status='failed'는 이제 자동 재시도(최대 5회, 백오프) 소진 뒤에만
     -- 도달한다 — status='waiting_resume'이 그 사이 자동 대기 상태를 표현한다.
     failure_reason TEXT NULL COMMENT '마지막 실패 사유(에러 메시지) — status=waiting_resume/failed일 때 값 있음',
-    -- [2026-09-23 신규, 2026-09-26 정정] 실패 후 자동 "재개" 횟수 — 공식 기능정의서 v1.9
-    -- (R-11) 기준 15분→30→60→120→240분으로 2배씩 늘려가며 최대 5번까지 자동 재개하고,
-    -- 그래도 안 되면 status='failed'로 확정한다(관리자 알림 대상, generation_failure_alerts
-    -- 참고). 사용자가 수동으로 "다시 이어가기"를 누르면 1로 리셋된다.
-    retry_count TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '자동 재개 소진 횟수(최대 5)',
+    -- [2026-09-27 신규, SB-134] 마지막 실패 원인 분류 — 일시 오류만 재개하고 입력·운영은
+    -- 재개 없이 바로 실패 확정한다(R-11). app/pipeline_stages.py classify_error_kind 참고.
+    last_error_kind ENUM('일시','입력','운영') NULL COMMENT '마지막 실패 원인 분류(NULL=실패 이력 없음/초기화됨)',
+    -- [2026-09-23 신규, 2026-09-26 정정, 2026-09-27 개명] 실패 후 자동 "재개" 횟수
+    -- (Run.resumeCount) — 공식 기능정의서 v1.9(R-11) 기준 15분→30→60→120→240분으로
+    -- 2배씩 늘려가며 최대 5번까지 자동 재개하고, 그래도 안 되면 status='failed'로
+    -- 확정한다(관리자 알림 대상, generation_failure_alerts 참고). 사용자가 수동으로
+    -- "다시 이어가기"를 누르면 1로 리셋된다. 예전 컬럼명 retry_count는 Run.retryCount
+    -- (호출 재시도)와 개념이 달라 resume_count로 바로잡았다.
+    resume_count TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '자동 재개 소진 횟수(최대 5)',
+    -- [2026-09-27 신규] 개별 Agent 호출 실패에 대한 즉시 재시도 횟수(Run.retryCount) —
+    -- 지금은 파이프라인이 100% 더미라 항상 0. 실제 Agent 호출 계층이 생기면 채운다.
+    retry_count TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '개별 호출 즉시 재시도 횟수(현재 미사용, 항상 0)',
     -- [2026-09-23 신규] 다음 자동 재개 예정 시각(status='waiting_resume'일 때만 값 있음) —
     -- 복구 루프가 이 시각 이전엔 재개하지 않는다(백오프 간격 준수).
     next_retry_at DATETIME(6) NULL COMMENT '다음 자동 재개 예정 시각(waiting_resume 전용)',
@@ -347,7 +355,10 @@ CREATE TABLE IF NOT EXISTS generation_failure_alerts (
     match_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES match_results(match_id)',
     project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
     stage VARCHAR(30) NOT NULL COMMENT '실패가 확정된 시점의 stage',
-    retry_count TINYINT UNSIGNED NOT NULL COMMENT '확정 시점까지 소진한 자동 재시도 횟수',
+    -- [2026-09-27 개명] match_results.resume_count와 같은 이유로 개명(예전 retry_count).
+    resume_count TINYINT UNSIGNED NOT NULL COMMENT '확정 시점까지 소진한 자동 재개 횟수',
+    -- [2026-09-27 신규, SB-134] 실패 확정 시점의 원인 분류 스냅샷.
+    last_error_kind ENUM('일시','입력','운영') NOT NULL COMMENT '실패 확정 시점의 원인 분류',
     failure_reason TEXT NULL COMMENT '마지막 실패 사유',
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     -- 관리자가 확인 처리한 시각 — NULL이면 미확인. 재시도 자체를 막지는 않는다.

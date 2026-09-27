@@ -236,8 +236,9 @@ def _build_item_out(db: Session, project: Project) -> ItemOut:
         stalled=stalled,
         score=score,
         archived=archived,
-        generation_retry_count=match.retry_count or 0,
+        generation_resume_count=match.resume_count or 0,
         generation_failure_reason=match.failure_reason,
+        generation_last_error_kind=match.last_error_kind,
     )
 
 
