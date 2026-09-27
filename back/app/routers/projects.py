@@ -1425,6 +1425,27 @@ def _get_owned_project(db: Session, project_id: int, user: User) -> Project:
     return project
 
 
+def _is_notice_closed(db: Session, notice_id: str | None) -> bool:
+    """[2026-09-27 신규, SB-139] 이어하기로 복귀한 시점에 사용자가 고른 공고가 그새
+    마감됐는지 확인한다(E-RUN-CLOSED). recruitment_status가 수집 파이프라인 쪽에서
+    'open' 외의 값으로 바뀌었거나, apply_end가 오늘보다 이전이면 마감으로 본다 —
+    두 신호를 같이 보는 이유는 apply_period_type이 'budget_exhaustion'/'rolling'처럼
+    날짜만으로 마감을 판단할 수 없는 경우도 있고(Notice 모델 주석 참고), 반대로
+    recruitment_status 갱신이 apply_end 당일 자정에 딱 맞춰 반영된다는 보장도 없기
+    때문이다. 공고 자체를 못 찾으면(드묾 — 수집 데이터가 지워진 경우) 마감이 아니라고
+    본다: 판단할 근거가 없을 때 실행을 막는 쪽으로 오판하지 않기 위해서다."""
+    if notice_id is None:
+        return False
+    notice = db.query(Notice).filter(Notice.notice_id == notice_id).one_or_none()
+    if notice is None:
+        return False
+    if notice.recruitment_status != 'open':
+        return True
+    if notice.apply_end is not None and notice.apply_end < datetime.date.today():
+        return True
+    return False
+
+
 @router.get('/{project_id}/status', response_model=ProjectStatusOut)
 def get_project_status(
     project_id: int,
@@ -1464,6 +1485,7 @@ def get_project_status(
         failure_reason=match.failure_reason,
         resume_count=match.resume_count or 0,
         next_retry_at=match.next_retry_at,
+        notice_closed=_is_notice_closed(db, match.notice_id),
     )
 
 

@@ -517,6 +517,11 @@ class ProjectStatusOut(BaseModel):
     # 아니다.
     resume_count: int = 0
     next_retry_at: datetime.datetime | None = None
+    # [2026-09-27 신규, SB-139] 공식 기능정의서 v1.9 E-RUN-CLOSED: "이어하기로 돌아왔을
+    # 때 선택 공고 마감" — 마감 사실만 알리고 계속 진행할지는 사용자가 정한다(실행을
+    # 막지 않는다). 매칭 자체가 없거나(screen=NO_MATCH_SCREEN) 공고 정보를 못 찾으면
+    # False.
+    notice_closed: bool = False
 
 
 class RetryTaskRequest(BaseModel):
