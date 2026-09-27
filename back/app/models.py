@@ -43,6 +43,11 @@ _ErrorKind = Enum(*ps.ERROR_KINDS, name='error_kind')
 # NOTIFICATION_KINDS/NOTIFICATION_FAILURE_SCOPES 참고.
 _NotificationKind = Enum(*ps.NOTIFICATION_KINDS, name='notification_kind')
 _NotificationFailureScope = Enum(*ps.NOTIFICATION_FAILURE_SCOPES, name='notification_failure_scope')
+# [2026-09-28 신규] plan_sections.tag(예비·초기 3종 + 일반 4종, app/pipeline_stages.py
+# PLAN_SECTION_TAGS 참고)와 user_profiles.biz_status_cd(국세청 사업자상태조회 3종)를
+# MySQL 실제 ENUM으로 만든다.
+_PlanSectionTag = Enum(*ps.PLAN_SECTION_TAGS, name='plan_section_tag')
+_BizStatusCd = Enum(*ps.BIZ_STATUS_CODES, name='biz_status_cd')
 
 # app_schema.sql엔 MySQL 전용 타입(LONGTEXT, INT UNSIGNED)으로 선언된 컬럼이 있는데,
 # 이 타입들을 그대로 쓰면 SQLite(tests/conftest.py가 만드는 테스트 DB)에서 컴파일 에러가 난다.
@@ -721,7 +726,7 @@ class PlanSection(Base):
 
     section_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     plan_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('business_plans.plan_id'))
-    tag: Mapped[str] = mapped_column(String(16))  # P / S / S / T
+    tag: Mapped[str] = mapped_column(_PlanSectionTag)  # app/pipeline_stages.py PLAN_SECTION_TAGS
     title: Mapped[str] = mapped_column(String(255))
     body: Mapped[str | None] = mapped_column(_LongText, nullable=True)  # app_schema.sql: LONGTEXT
 
@@ -957,7 +962,7 @@ class UserProfile(Base):
     capability_json: Mapped[dict] = mapped_column(JSON, nullable=False)
 
     biz_checked_no: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    biz_status_cd: Mapped[str | None] = mapped_column(String(2), nullable=True)  # 01 계속/02 휴업/03 폐업
+    biz_status_cd: Mapped[str | None] = mapped_column(_BizStatusCd, nullable=True)  # 01 계속/02 휴업/03 폐업
     biz_tax_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     biz_checked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 

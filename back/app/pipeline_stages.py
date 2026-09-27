@@ -155,3 +155,35 @@ STAGE_TO_NOTIFICATION_KIND = {
     STAGE_ARTIFACT_REVIEW: NOTIFICATION_KIND_ARTIFACT_REVIEW,
     STAGE_REVIEWING: NOTIFICATION_KIND_PROOFREADING,
 }
+
+# [2026-09-28 신규] plan_sections.tag를 MySQL 실제 ENUM 컬럼으로 만들기 위한 고정 코드
+# 목록. 공식 기능정의서 v1.9(FormSpec.sectionCodes)는 "'1-1','2-1','3-3' 같은 문자열"이라고만
+# 하고 닫힌 집합을 정의하지 않는다(공고마다 양식이 달라질 수 있어서) — 그래서 목록 자체는
+# 기능정의서가 아니라 우리가 지금 실제로 지원하는 계획서 템플릿(예비/초기=3섹션, 일반=4섹션)
+# 기준으로 정한 것이다. 예비/초기는 agents.py가 이미 쓰고 있는 '1-1'/'2-1'/'3-1'을 그대로
+# 두고(라이브 코드 변경 최소화), '일반'(기술개발사업계획서 PartⅡ, 4_(1-2)사업계획서_작성_
+# 예시_사업계획서_Part2.pdf 확인) 전용으로 'G-01'~'G-04' 4자 코드를 새로 추가했다.
+PLAN_SECTION_TAG_PROBLEM = '1-1'  # 문제인식 (예비·초기)
+PLAN_SECTION_TAG_FEASIBILITY = '2-1'  # 실현가능성 (예비·초기)
+PLAN_SECTION_TAG_GROWTH = '3-1'  # 성장전략 (예비·초기)
+PLAN_SECTION_TAG_GENERAL_OVERVIEW = 'G-01'  # 기술개발의 개요 및 필요성 (일반)
+PLAN_SECTION_TAG_GENERAL_GOAL = 'G-02'  # 기술개발의 목표 (일반)
+PLAN_SECTION_TAG_GENERAL_METHOD = 'G-03'  # 기술개발의 방법 (일반)
+PLAN_SECTION_TAG_GENERAL_BIZ_PLAN = 'G-04'  # 사업화 계획 (일반)
+PLAN_SECTION_TAGS = (
+    PLAN_SECTION_TAG_PROBLEM,
+    PLAN_SECTION_TAG_FEASIBILITY,
+    PLAN_SECTION_TAG_GROWTH,
+    PLAN_SECTION_TAG_GENERAL_OVERVIEW,
+    PLAN_SECTION_TAG_GENERAL_GOAL,
+    PLAN_SECTION_TAG_GENERAL_METHOD,
+    PLAN_SECTION_TAG_GENERAL_BIZ_PLAN,
+)
+
+# [2026-09-28 신규] user_profiles.biz_status_cd — 국세청 사업자상태조회(POST /biz-check)
+# 응답 코드를 MySQL 실제 ENUM으로 저장한다. 값 자체는 이 프로젝트가 정한 게 아니라 국세청
+# API 응답 코드 그대로다(01 계속/02 휴업/03 폐업, models.py UserProfile 기존 주석 참고).
+BIZ_STATUS_CODE_ACTIVE = '01'
+BIZ_STATUS_CODE_SUSPENDED = '02'
+BIZ_STATUS_CODE_CLOSED = '03'
+BIZ_STATUS_CODES = (BIZ_STATUS_CODE_ACTIVE, BIZ_STATUS_CODE_SUSPENDED, BIZ_STATUS_CODE_CLOSED)

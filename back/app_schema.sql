@@ -415,7 +415,7 @@ CREATE TABLE IF NOT EXISTS business_plans (
 CREATE TABLE IF NOT EXISTS plan_sections (
     section_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '계획서 섹션 고유 식별자',
     plan_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES business_plans(plan_id)',
-    tag VARCHAR(16) NOT NULL COMMENT 'PSST 구분(P/S/S/T)',
+    tag ENUM('1-1','2-1','3-1','G-01','G-02','G-03','G-04') NOT NULL COMMENT '양식 항목 코드 — 예비/초기(1-1 문제인식/2-1 실현가능성/3-1 성장전략) + 일반(G-01~G-04, PartⅡ 4섹션). app/pipeline_stages.py PLAN_SECTION_TAGS',
     title VARCHAR(255) NOT NULL COMMENT '섹션 제목',
     body LONGTEXT NULL COMMENT '섹션 본문',
     -- [2026-09-17 인덱싱 개정] projects.py의 초안 저장이 "이 plan_id 안에 같은 tag(PSST 중 하나)
@@ -574,7 +574,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     -- "계속사업자" 상태를 조작해서 보낼 수 없게 하기 위함. 저장한 bizNo가 이 biz_checked_no와
     -- 달라지면(재조회 전까지는) 아래 4개 컬럼을 NULL로 비운다.
     biz_checked_no CHAR(10) NULL COMMENT '조회에 실제로 쓰인 사업자등록번호(숫자만)',
-    biz_status_cd CHAR(2) NULL COMMENT '01 계속사업자 / 02 휴업자 / 03 폐업자',
+    biz_status_cd ENUM('01','02','03') NULL COMMENT '01 계속사업자 / 02 휴업자 / 03 폐업자 (국세청 사업자상태조회 API 코드)',
     biz_tax_type VARCHAR(50) NULL COMMENT '과세유형(예: 부가가치세 일반과세자)',
     biz_checked_at DATETIME(6) NULL COMMENT '조회 시각',
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '슬롯 생성 일시',

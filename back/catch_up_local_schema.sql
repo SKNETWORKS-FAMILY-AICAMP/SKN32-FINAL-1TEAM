@@ -251,6 +251,20 @@ DROP PROCEDURE IF EXISTS _add_index_if_missing;
 -- 실제로 확인해서(하정원님) 지웠다 — 그 앞의 CALL들은 전부 이 줄보다 먼저 실행되므로
 -- 안전했다.
 
+-- [2026-09-28 신규] plan_sections.tag를 실제 MySQL ENUM으로 강제한다(app/models.py
+-- _PlanSectionTag, app/pipeline_stages.py PLAN_SECTION_TAGS 참고). 기존 값은 agents.py가
+-- 이미 쓰던 '1-1'/'2-1'/'3-1'뿐이라 ENUM에 없는 값 정리 없이 바로 MODIFY해도 안전하다.
+-- 몇 번을 다시 실행해도 안전하다(이미 ENUM이어도 같은 정의로 다시 MODIFY할 뿐).
+ALTER TABLE plan_sections
+    MODIFY COLUMN tag ENUM('1-1','2-1','3-1','G-01','G-02','G-03','G-04')
+    NOT NULL COMMENT '양식 항목 코드 — 예비/초기(1-1/2-1/3-1) + 일반(G-01~G-04, PartⅡ 4섹션)';
+
+-- [2026-09-28 신규] user_profiles.biz_status_cd — 국세청 사업자상태조회 응답 코드를 실제
+-- MySQL ENUM으로 강제한다(app/models.py _BizStatusCd 참고). POST /biz-check가 쓰는 값만
+-- 이 컬럼에 들어가므로(app/routers/profile.py) 기존 값 정리 없이 바로 MODIFY해도 안전하다.
+ALTER TABLE user_profiles
+    MODIFY COLUMN biz_status_cd ENUM('01','02','03') NULL COMMENT '01 계속사업자 / 02 휴업자 / 03 폐업자 (국세청 사업자상태조회 API 코드)';
+
 -- 최종 확인용 — 실행 후 이 두 개를 결과로 같이 보내주시면 더 빠지는 컬럼이 있는지 바로 확인 가능합니다.
 SHOW COLUMNS FROM companies;
 SHOW COLUMNS FROM projects;
