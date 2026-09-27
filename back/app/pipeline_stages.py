@@ -112,3 +112,46 @@ def classify_error_kind(exc: BaseException) -> str:
     if any(kw in message for kw in _INPUT_KEYWORDS):
         return ERROR_KIND_INPUT
     return ERROR_KIND_TRANSIENT
+
+
+# [2026-09-27 신규, SB-141] 사용자용 작업 알림(Notification) 종류 — 공식 기능정의서
+# v1.9. 문서평가/산출물확인/표현검수는 각 단계(검증-1/검증-2/검수)가 끝났을 때, 실패는
+# 실행 실패·재작성 실패 둘 다에 쓴다(failureScope로 구분). '완료'는 kind에 없다 — 결과물
+# 화면에 사용자가 직접 들어가 있는 상태라 별도 알림이 필요 없다.
+NOTIFICATION_KIND_DOC_REVIEW = '문서평가'
+NOTIFICATION_KIND_ARTIFACT_REVIEW = '산출물확인'
+NOTIFICATION_KIND_PROOFREADING = '표현검수'
+NOTIFICATION_KIND_FAILURE = '실패'
+NOTIFICATION_KINDS = (
+    NOTIFICATION_KIND_DOC_REVIEW,
+    NOTIFICATION_KIND_ARTIFACT_REVIEW,
+    NOTIFICATION_KIND_PROOFREADING,
+    NOTIFICATION_KIND_FAILURE,
+)
+NOTIFICATION_FAILURE_SCOPE_RUN = '실행'
+NOTIFICATION_FAILURE_SCOPE_REWORK = '재작성'
+NOTIFICATION_FAILURE_SCOPES = (NOTIFICATION_FAILURE_SCOPE_RUN, NOTIFICATION_FAILURE_SCOPE_REWORK)
+# [주의] 산출물확인/표현검수는 지금 더미 파이프라인에 해당 stage(artifact_review/
+# reviewing) 전환 자체가 없어서 아직 트리거되지 않는다(GENERATION_STATUS_USER_WAITING/
+# HALTED와 같은 사정) — 실제 검증-2/검수 단계가 붙으면 그때 생성 지점을 추가하면 된다.
+NOTIFICATION_CHANNEL_SCREEN = '화면'  # 지금은 이거 하나뿐 — 메일 알림은 향후 도입(4-2 ⑧)
+
+# kind -> 알림을 누르면 들어갈 화면 번호(기획서 4-7 기본 흐름). 문서평가는 검증-1이 끝난
+# 뒤 사용자가 판단하는 화면(6), 산출물확인은 검증-2 뒤 점검 결과 화면(8), 표현검수는
+# 검수 완료 뒤 결과물 화면(10). 실패는 들어갈 화면이 없어 이어하기 목록으로 연결한다
+# (target_step=None).
+NOTIFICATION_KIND_TO_TARGET_STEP = {
+    NOTIFICATION_KIND_DOC_REVIEW: STAGE_TO_SCREEN[STAGE_PLAN_REVIEW_PENDING],
+    NOTIFICATION_KIND_ARTIFACT_REVIEW: STAGE_TO_SCREEN[STAGE_ARTIFACT_REVIEW],
+    NOTIFICATION_KIND_PROOFREADING: STAGE_TO_SCREEN[STAGE_REVIEWING],
+}
+
+# stage에 도달했을 때 어떤 kind의 알림을 만들지 — _simulate_generation의 성공 경로가
+# done_stage로 이 표를 찾아본다. STAGE_ARTIFACT_REVIEW/STAGE_REVIEWING은 지금 더미
+# 파이프라인의 (running_stage, done_stage) 조합에 아직 안 나오지만, 실제 검증-2/검수
+# 단계가 붙어 나오게 되면 이 표만으로 자동으로 알림이 생긴다(호출부 수정 불필요).
+STAGE_TO_NOTIFICATION_KIND = {
+    STAGE_PLAN_REVIEW_PENDING: NOTIFICATION_KIND_DOC_REVIEW,
+    STAGE_ARTIFACT_REVIEW: NOTIFICATION_KIND_ARTIFACT_REVIEW,
+    STAGE_REVIEWING: NOTIFICATION_KIND_PROOFREADING,
+}

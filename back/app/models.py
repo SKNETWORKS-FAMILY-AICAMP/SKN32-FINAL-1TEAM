@@ -39,6 +39,10 @@ _GenerationStatus = Enum(*ps.GENERATION_STATUSES, name='generation_status')
 # [2026-09-27 신규, SB-134] 실패 원인 분류 3종(일시/입력/운영) — app/pipeline_stages.py
 # classify_error_kind 참고.
 _ErrorKind = Enum(*ps.ERROR_KINDS, name='error_kind')
+# [2026-09-27 신규, SB-141] 사용자용 알림 종류·실패 범위 — app/pipeline_stages.py
+# NOTIFICATION_KINDS/NOTIFICATION_FAILURE_SCOPES 참고.
+_NotificationKind = Enum(*ps.NOTIFICATION_KINDS, name='notification_kind')
+_NotificationFailureScope = Enum(*ps.NOTIFICATION_FAILURE_SCOPES, name='notification_failure_scope')
 
 # app_schema.sql엔 MySQL 전용 타입(LONGTEXT, INT UNSIGNED)으로 선언된 컬럼이 있는데,
 # 이 타입들을 그대로 쓰면 SQLite(tests/conftest.py가 만드는 테스트 DB)에서 컴파일 에러가 난다.
@@ -632,6 +636,37 @@ class GenerationFailureAlert(Base):
     # 관리자가 확인 처리한 시각 — NULL이면 아직 미확인. 재시도 자체를 막지는 않는다
     # (사용자는 확인 여부와 무관하게 "다시 이어가기"를 누를 수 있음).
     acknowledged_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class Notification(Base):
+    """[2026-09-27 신규, SB-141] 사용자용 작업 알림 — 공식 기능정의서 v1.9 Notification
+    타입. GenerationFailureAlert(관리자 대시보드용 실패 로그)와는 독립된 테이블이다 —
+    이건 화면 헤더 종모양 알림에 사용자가 직접 보는 이력이고, 저건 관리자가 미확인
+    실패를 조회하는 별도 목적이라 대상 독자와 필드가 다르다(예: 이 테이블엔
+    target_step·read_at이 있고, 저 테이블엔 resume_count·acknowledged_at이 있다).
+
+    [2026-09-23 세션 결정과의 관계] 세션 초반엔 "사용자 알림엔 진행/완료/실패 3가지만"
+    이라는 더 단순한 방향으로 가서 GET /projects.display_status로 흉내만 냈었는데,
+    이번에 스펙 원안(kind 4종 + target_step + read_at)대로 다시 정식화하기로 했다
+    (2026-09-27). display_status는 그대로 두고(다른 화면이 이미 그걸 쓰고 있음), 이
+    테이블은 그와 별개로 "무슨 일이 있었는지의 이력 목록"을 담당한다."""
+
+    __tablename__ = 'notifications'
+
+    notification_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    match_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('match_results.match_id'))
+    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
+    kind: Mapped[str] = mapped_column(_NotificationKind)
+    # kind='실패'일 때만 값이 있다 — 실행 실패(E-RUN-FAIL)인지 재작성 실패(E-RUN-ROLLBACK)
+    # 인지 구분한다. 재작성 실패는 아직 구현 전이라(2-1/2-2 선행 필요) 지금은 항상
+    # '실행'만 나온다.
+    failure_scope: Mapped[str | None] = mapped_column(_NotificationFailureScope, nullable=True)
+    # 알림을 누르면 들어갈 화면 번호 — kind='실패'면 들어갈 화면이 없어 NULL(이어하기
+    # 목록으로 연결).
+    target_step: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    channel: Mapped[str] = mapped_column(String(10), default=ps.NOTIFICATION_CHANNEL_SCREEN)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+    read_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class EligibilityCheck(Base):

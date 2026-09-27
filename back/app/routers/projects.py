@@ -57,6 +57,7 @@ from app.models import (
     MatchCandidate,
     MatchResult,
     Notice,
+    Notification,
     PlanCanonicalData,
     PlanScoreReason,
     PlanSection,
@@ -81,6 +82,8 @@ from app.schemas import (
     MatchCandidateOut,
     MatchCandidatesOut,
     MatchResultOut,
+    NotificationOut,
+    NotificationReadIn,
     ProjectCreateRequest,
     ProjectDetailOut,
     ProjectListItemOut,
@@ -390,6 +393,51 @@ def list_projects(
     return items
 
 
+@router.get('/notifications', response_model=list[NotificationOut])
+def list_notifications(
+    unread_only: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """[2026-09-27 신규, SB-141] 화면 헤더 종모양 알림 — 공식 기능정의서 v1.9 Notification
+    타입(kind=문서평가/산출물확인/표현검수/실패). GET /projects의 display_status(진행/완료/
+    실패 3분류)와는 별개다 — 저건 "지금 상태가 뭔지"를 보여주는 목록 요약이고, 이건
+    "그동안 무슨 일이 있었는지"의 이력이다. 반드시 이 경로를 GET /projects/{project_id}
+    (line 1396 근처)보다 먼저 등록해야 한다 — 안 그러면 "notifications"가 project_id로
+    잘못 매칭된다."""
+    query = (
+        db.query(Notification)
+        .join(Project, Project.project_id == Notification.project_id)
+        .join(Company, Company.company_id == Project.company_id)
+        .filter(Company.user_id == current_user.user_id)
+    )
+    if unread_only:
+        query = query.filter(Notification.read_at.is_(None))
+    return query.order_by(Notification.created_at.desc()).all()
+
+
+@router.patch('/notifications/{notification_id}/read', response_model=NotificationOut)
+def mark_notification_read(
+    notification_id: int,
+    body: NotificationReadIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    notification = (
+        db.query(Notification)
+        .join(Project, Project.project_id == Notification.project_id)
+        .join(Company, Company.company_id == Project.company_id)
+        .filter(Notification.notification_id == notification_id, Company.user_id == current_user.user_id)
+        .one_or_none()
+    )
+    if notification is None:
+        raise HTTPException(status_code=404, detail='알림을 찾을 수 없습니다')
+    notification.read_at = datetime.datetime.utcnow() if body.read else None
+    db.commit()
+    db.refresh(notification)
+    return notification
+
+
 MATCH_CANDIDATES_PER_BATCH = 10
 
 
@@ -682,6 +730,17 @@ def _simulate_generation(match_id: int, running_stage: str, done_stage: str) -> 
                     if done_stage == ps.STAGE_DONE:
                         match.status = ps.GENERATION_STATUS_COMPLETED
                         match.failure_reason = None
+                    # [2026-09-27 신규, SB-141] 이 stage에 도달한 게 사용자 알림 대상이면
+                    # (지금은 문서평가만 실제로 도달 가능 — 산출물확인/표현검수는 아직
+                    # 없는 stage) notifications에 한 행 남긴다.
+                    notif_kind = ps.STAGE_TO_NOTIFICATION_KIND.get(done_stage)
+                    if notif_kind is not None:
+                        db.add(Notification(
+                            match_id=match.match_id,
+                            project_id=match.project_id,
+                            kind=notif_kind,
+                            target_step=ps.NOTIFICATION_KIND_TO_TARGET_STEP[notif_kind],
+                        ))
                 else:
                     match.progress_percent = step * 100 // DUMMY_GENERATION_STEPS
                 match.worker_claimed_at = datetime.datetime.utcnow()  # 하트비트 — 진행 중엔 클레임이 안 늙는다
@@ -723,6 +782,15 @@ def _simulate_generation(match_id: int, running_stage: str, done_stage: str) -> 
                         last_error_kind=error_kind,
                         failure_reason=match.failure_reason,
                     ))
+                    # [2026-09-27 신규, SB-141] 실행 실패(E-RUN-FAIL) 사용자 알림. 재작성
+                    # 실패(failure_scope='재작성')는 재작성 기능(2-1/2-2)이 아직 없어서
+                    # 여기선 항상 '실행'이다.
+                    db.add(Notification(
+                        match_id=match.match_id,
+                        project_id=match.project_id,
+                        kind=ps.NOTIFICATION_KIND_FAILURE,
+                        failure_scope=ps.NOTIFICATION_FAILURE_SCOPE_RUN,
+                    ))
                     db.commit()
                     return
                 if match.resume_count == 0:
@@ -739,6 +807,12 @@ def _simulate_generation(match_id: int, running_stage: str, done_stage: str) -> 
                         resume_count=match.resume_count - 1,
                         last_error_kind=error_kind,
                         failure_reason=match.failure_reason,
+                    ))
+                    db.add(Notification(
+                        match_id=match.match_id,
+                        project_id=match.project_id,
+                        kind=ps.NOTIFICATION_KIND_FAILURE,
+                        failure_scope=ps.NOTIFICATION_FAILURE_SCOPE_RUN,
                     ))
                 else:
                     delay = GENERATION_RESUME_BASE_SECONDS * (2 ** (match.resume_count - 1))

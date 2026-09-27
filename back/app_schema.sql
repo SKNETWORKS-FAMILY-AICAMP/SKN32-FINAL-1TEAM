@@ -369,6 +369,25 @@ CREATE TABLE IF NOT EXISTS generation_failure_alerts (
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- [2026-09-27 신규, SB-141] 사용자용 작업 알림(화면 헤더 종모양) — 공식 기능정의서 v1.9
+-- Notification 타입. generation_failure_alerts(관리자 대시보드 전용)와는 독립된 테이블
+-- 이다 — 대상 독자와 필드가 다르다(app/models.py Notification 클래스 주석 참고).
+CREATE TABLE IF NOT EXISTS notifications (
+    notification_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '알림 고유 식별자',
+    match_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES match_results(match_id)',
+    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
+    kind ENUM('문서평가','산출물확인','표현검수','실패') NOT NULL COMMENT '완료된 단계 또는 실패',
+    failure_scope ENUM('실행','재작성') NULL COMMENT "kind='실패'일 때만: 실행 실패 또는 재작성 실패",
+    target_step TINYINT UNSIGNED NULL COMMENT '알림을 누르면 들어갈 화면 번호(실패는 NULL — 이어하기 목록으로 연결)',
+    channel VARCHAR(10) NOT NULL DEFAULT '화면' COMMENT '알림 경로. 지금은 화면 하나뿐(메일은 향후 도입)',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    read_at DATETIME(6) NULL COMMENT '사용자가 읽은 시각(NULL이면 안읽음)',
+    KEY ix_notifications_project (project_id),
+    KEY ix_notifications_match (match_id),
+    FOREIGN KEY (match_id) REFERENCES match_results(match_id) ON DELETE CASCADE,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 CREATE TABLE IF NOT EXISTS eligibility_checks (
     check_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '자격요건 게이트 결과 고유 식별자',
     match_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES match_results(match_id)',

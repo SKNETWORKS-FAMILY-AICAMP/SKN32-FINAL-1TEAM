@@ -177,6 +177,24 @@ UPDATE generation_failure_alerts SET last_error_kind = '일시' WHERE last_error
 ALTER TABLE generation_failure_alerts
     MODIFY COLUMN last_error_kind ENUM('일시','입력','운영') NOT NULL COMMENT '실패 확정 시점의 원인 분류';
 
+-- [2026-09-27 신규, SB-141] 사용자용 작업 알림(화면 헤더 종모양) — 새 테이블이라
+-- CREATE TABLE IF NOT EXISTS로 충분하다(컬럼 추가 마이그레이션 절차 불필요).
+CREATE TABLE IF NOT EXISTS notifications (
+    notification_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '알림 고유 식별자',
+    match_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES match_results(match_id)',
+    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
+    kind ENUM('문서평가','산출물확인','표현검수','실패') NOT NULL COMMENT '완료된 단계 또는 실패',
+    failure_scope ENUM('실행','재작성') NULL COMMENT "kind='실패'일 때만: 실행 실패 또는 재작성 실패",
+    target_step TINYINT UNSIGNED NULL COMMENT '알림을 누르면 들어갈 화면 번호(실패는 NULL — 이어하기 목록으로 연결)',
+    channel VARCHAR(10) NOT NULL DEFAULT '화면' COMMENT '알림 경로. 지금은 화면 하나뿐(메일은 향후 도입)',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    read_at DATETIME(6) NULL COMMENT '사용자가 읽은 시각(NULL이면 안읽음)',
+    KEY ix_notifications_project (project_id),
+    KEY ix_notifications_match (match_id),
+    FOREIGN KEY (match_id) REFERENCES match_results(match_id) ON DELETE CASCADE,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- [2026-09-22 신규, 2026-09-23 재시딩 추가] verification_checklist_items v1.8 구조
 -- 교체(카테고리별 8항목·15점). 예전 5항목/100점 데이터는 item_code/item_no가 있을 자리
 -- 자체가 없어서 컬럼만 추가해선 값을 못 채운다 — 이 테이블은 사용자 데이터가 아니라

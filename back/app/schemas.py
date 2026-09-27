@@ -631,6 +631,29 @@ class ProjectListItemOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# 사용자 알림 (화면 헤더 종모양 — SB-141)
+# ---------------------------------------------------------------------------
+class NotificationOut(BaseModel):
+    """GET /projects/notifications 응답 항목 하나 — 공식 기능정의서 v1.9 Notification
+    타입. GET /projects의 display_status(진행/완료/실패 3분류 요약)와는 별개로, "그동안
+    무슨 일이 있었는지"의 개별 이력을 담는다."""
+
+    model_config = ConfigDict(from_attributes=True)
+    notification_id: int
+    match_id: int
+    project_id: int
+    kind: str = Field(..., description="'문서평가'/'산출물확인'/'표현검수'/'실패' 중 하나")
+    failure_scope: str | None = Field(None, description="kind='실패'일 때만: '실행' 또는 '재작성'")
+    target_step: int | None = Field(None, description='알림을 누르면 들어갈 화면 번호. kind=실패면 None(이어하기 목록으로 연결)')
+    created_at: datetime.datetime
+    read_at: datetime.datetime | None = None
+
+
+class NotificationReadIn(BaseModel):
+    read: bool = Field(..., description='true면 읽음 처리, false면 다시 안읽음으로 되돌림')
+
+
+# ---------------------------------------------------------------------------
 # 관리자 - 검증 정책 (admin-dashboard.html 대응)
 # ---------------------------------------------------------------------------
 class PolicyScoresIn(BaseModel):
