@@ -255,6 +255,67 @@ def test_writing_retry_records_output_ref_to_plan_sections(retry_setup, db_sessi
         assert section is not None and section.plan_id == retry_setup['plan_id']
 
 
+def test_writing_retry_targets_only_the_section_the_bundle_id_maps_to(monkeypatch, retry_setup, db_session):
+    """[2026-09-29 회귀 방지] writing 재시도가 bundle_id와 무관하게 항상 plan_sections의
+    1-1/2-1만 재생성하던 버그 — "성장전략"을 재작성해도 정작 3-1은 그대로였다. 이제
+    ps.BUNDLE_PSST_TO_SECTION_TAG로 bundle_id가 가리키는 섹션 하나만 정확히 재생성해야
+    한다(다른 섹션은 안 건드림). "팀 구성"(4-1)은 예비·초기 템플릿에 대응 섹션이 아예
+    없었던 것까지 같이 고쳤으므로(app/pipeline_stages.py PLAN_SECTION_TAG_TEAM 신규) 4개
+    묶음 전부를 돈다.
+
+    검증-1 재채점(_rescore_verify1)이 매번 무작위 점수를 매기는데(app/agents.py
+    _dummy_rescored_item), 점수가 떨어지면 A-2 정책(재작성 전후 점수 비교)이 섹션 본문을
+    되돌려버려서 "본문이 안 바뀜"이 되레 정상 동작일 수 있다 — 그 경합을 없애려고 항상
+    만점을 반환하도록 고정해 점수가 유지/상승(kept='new')만 나오게 만든다."""
+    from decimal import Decimal
+
+    import app.routers.projects as projects_router
+    from app import pipeline_stages as ps
+    from app.models import BusinessPlan, PlanSection
+
+    def _full_marks(items):
+        return [
+            projects_router.agents.ScoreItemResult(
+                item_code=item_code, score=max_score, max_score=max_score,
+                evidence_locator='test:fixed', reason_text='(테스트 고정) 만점',
+            )
+            for item_code, max_score in items
+        ]
+    monkeypatch.setattr(projects_router.agents, 'run_verify1_rubric_retry', _full_marks)
+    monkeypatch.setattr(projects_router.agents, 'run_verify1_evidence_retry', _full_marks)
+
+    # seed의 doc_score 기본값(58.50)은 rubric 항목 만점 합계(40)보다 큰 자리표시자라서
+    # (seed_dummy_pipeline.py DEFAULT_DOC_SCORE 참고), 만점 처리해도 "점수 상승"이 안
+    # 만들어진다 — 위 test_writing_retry_keeps_new_when_score_improves와 같은 이유로 미리
+    # 낮춰둔다.
+    plan = db_session.get(BusinessPlan, retry_setup['plan_id'])
+    plan.doc_score = Decimal('10.00')
+    db_session.commit()
+
+    for bundle_id, expected_tag in ps.BUNDLE_PSST_TO_SECTION_TAG.items():
+        before_bodies = {
+            s.tag: s.body
+            for s in db_session.query(PlanSection).filter(PlanSection.plan_id == retry_setup['plan_id']).all()
+        }
+
+        res = _retry(retry_setup['client'], retry_setup['project_id'], 'writing', bundle_id)
+        assert res.status_code == 200, res.text
+        assert set(res.json()['changed']['sections'].keys()) == {expected_tag}, (
+            f'{bundle_id!r} 재작성이 {expected_tag!r} 하나가 아니라 다른 섹션도 건드림'
+        )
+
+        db_session.expire_all()
+        after = {
+            s.tag: s.body
+            for s in db_session.query(PlanSection).filter(PlanSection.plan_id == retry_setup['plan_id']).all()
+        }
+        for tag, body in after.items():
+            if tag == expected_tag:
+                assert body != before_bodies.get(tag), f'{expected_tag!r} 섹션이 재작성됐는데 본문이 안 바뀜'
+            else:
+                assert body == before_bodies.get(tag), f'{bundle_id!r} 재작성이 관계없는 {tag!r} 섹션까지 건드림'
+
+
 def test_implement_prototype_retry_records_output_ref_to_artifact(retry_setup, db_session):
     from app.models import AgentExecution, Artifact
 

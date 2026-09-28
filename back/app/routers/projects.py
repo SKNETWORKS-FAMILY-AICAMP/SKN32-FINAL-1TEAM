@@ -1972,7 +1972,12 @@ def retry_task(
             before_snapshot = _snapshot_plan_doc_state(plan)
             before_doc_score = plan.doc_score
 
-            drafts = agents.run_writing_agent_retry(project.description, tags=['1-1', '2-1'])
+            # [2026-09-29 수정] 예전엔 bundle_id와 무관하게 항상 ['1-1', '2-1']만 재생성해서,
+            # "성장전략"이나 "팀 구성" 묶음을 재작성해도 실제로는 문제인식/실현가능성만 바뀌고
+            # 정작 고른 섹션은 그대로였다 — bundle_id가 가리키는 섹션 하나만 정확히 재생성한다.
+            drafts = agents.run_writing_agent_retry(
+                project.description, tags=[ps.BUNDLE_PSST_TO_SECTION_TAG[bundle_id]],
+            )
             changed['sections'] = {d.tag: _upsert_plan_section(db, plan.plan_id, d) for d in drafts}
             output_ref = [{'table': 'plan_sections', 'id': v['id']} for v in changed['sections'].values()]
 

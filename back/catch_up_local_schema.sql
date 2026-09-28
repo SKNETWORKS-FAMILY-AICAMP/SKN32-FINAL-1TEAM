@@ -308,9 +308,13 @@ DROP PROCEDURE IF EXISTS _add_index_if_missing;
 -- _PlanSectionTag, app/pipeline_stages.py PLAN_SECTION_TAGS 참고). 기존 값은 agents.py가
 -- 이미 쓰던 '1-1'/'2-1'/'3-1'뿐이라 ENUM에 없는 값 정리 없이 바로 MODIFY해도 안전하다.
 -- 몇 번을 다시 실행해도 안전하다(이미 ENUM이어도 같은 정의로 다시 MODIFY할 뿐).
+-- [2026-09-29 수정] '4-1'(팀 구성) 추가 — SB-165가 재작성 묶음을 PSST 4항목으로 확정했는데
+-- 예비·초기 템플릿엔 4번째 섹션이 없어서 "팀 구성" 재작성이 실제로는 아무 섹션도 못
+-- 바꾸던 버그를 고쳤다(app/routers/projects.py retry_task 'writing' 분기 참고). 기존
+-- 값(1-1/2-1/3-1/G-01~G-04)엔 없는 값이라 여기도 정리 없이 바로 MODIFY해도 안전하다.
 ALTER TABLE plan_sections
-    MODIFY COLUMN tag ENUM('1-1','2-1','3-1','G-01','G-02','G-03','G-04')
-    NOT NULL COMMENT '양식 항목 코드 — 예비/초기(1-1/2-1/3-1) + 일반(G-01~G-04, PartⅡ 4섹션)';
+    MODIFY COLUMN tag ENUM('1-1','2-1','3-1','4-1','G-01','G-02','G-03','G-04')
+    NOT NULL COMMENT '양식 항목 코드 — 예비/초기(1-1/2-1/3-1/4-1) + 일반(G-01~G-04, PartⅡ 4섹션)';
 
 -- [2026-09-28 신규] user_profiles.biz_status_cd — 국세청 사업자상태조회 응답 코드를 실제
 -- MySQL ENUM으로 강제한다(app/models.py _BizStatusCd 참고). POST /biz-check가 쓰는 값만

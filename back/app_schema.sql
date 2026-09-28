@@ -431,7 +431,7 @@ CREATE TABLE IF NOT EXISTS business_plans (
 CREATE TABLE IF NOT EXISTS plan_sections (
     section_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '계획서 섹션 고유 식별자',
     plan_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES business_plans(plan_id)',
-    tag ENUM('1-1','2-1','3-1','G-01','G-02','G-03','G-04') NOT NULL COMMENT '양식 항목 코드 — 예비/초기(1-1 문제인식/2-1 실현가능성/3-1 성장전략) + 일반(G-01~G-04, PartⅡ 4섹션). app/pipeline_stages.py PLAN_SECTION_TAGS',
+    tag ENUM('1-1','2-1','3-1','4-1','G-01','G-02','G-03','G-04') NOT NULL COMMENT '양식 항목 코드 — 예비/초기(1-1 문제인식/2-1 실현가능성/3-1 성장전략/4-1 팀 구성) + 일반(G-01~G-04, PartⅡ 4섹션). app/pipeline_stages.py PLAN_SECTION_TAGS',
     title VARCHAR(255) NOT NULL COMMENT '섹션 제목',
     body LONGTEXT NULL COMMENT '섹션 본문',
     -- [2026-09-17 인덱싱 개정] projects.py의 초안 저장이 "이 plan_id 안에 같은 tag(PSST 중 하나)

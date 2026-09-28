@@ -73,7 +73,7 @@ elig = db.query(EligibilityCheck).filter(EligibilityCheck.project_id == project.
 check('eligibility_checks.undecidable 기본값 False로 채워짐', elig.undecidable is False)
 
 rubric_count = db.query(RubricItem).count()
-check('rubric_items가 전역으로 채워짐 (3개)', rubric_count == 3)
+check('rubric_items가 전역으로 채워짐 (4개)', rubric_count == 4)
 
 reasons = db.query(PlanScoreReason).filter(PlanScoreReason.plan_id == plan_id).all()
 check('plan_score_reasons에 item_code/score/evidence_locator 채워짐', all(

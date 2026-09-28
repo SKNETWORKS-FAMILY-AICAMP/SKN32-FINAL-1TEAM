@@ -164,9 +164,9 @@ def run_strategy_agent_retry(project_description: str) -> list[CanonicalDataResu
 # 작성
 # ---------------------------------------------------------------------------
 def run_writing_agent_retry(project_description: str, tags: list[str]) -> list[SectionDraftResult]:
-    """작성 Agent 재시도 — plan_sections의 문제인식('1-1')/실현가능성('2-1') 섹션 본문을
-    다시 쓴다. tags에 실제로 존재하는(또는 만들어야 할) 섹션 태그 목록을 넘긴다."""
-    titles = {'1-1': '문제 인식', '2-1': '실현 가능성'}
+    """작성 Agent 재시도 — plan_sections의 PSST 섹션(문제인식/실현가능성/성장전략/팀 구성)
+    본문을 다시 쓴다. tags에 실제로 존재하는(또는 만들어야 할) 섹션 태그 목록을 넘긴다."""
+    titles = {'1-1': '문제 인식', '2-1': '실현 가능성', '3-1': '성장 전략', '4-1': '팀 구성'}
     return [
         SectionDraftResult(
             tag=tag,

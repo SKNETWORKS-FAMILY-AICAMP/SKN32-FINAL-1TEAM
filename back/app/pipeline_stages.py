@@ -166,6 +166,11 @@ STAGE_TO_NOTIFICATION_KIND = {
 PLAN_SECTION_TAG_PROBLEM = '1-1'  # 문제인식 (예비·초기)
 PLAN_SECTION_TAG_FEASIBILITY = '2-1'  # 실현가능성 (예비·초기)
 PLAN_SECTION_TAG_GROWTH = '3-1'  # 성장전략 (예비·초기)
+# [2026-09-29 신규, SB-165 후속] SB-165가 재작성 묶음(bundle_id)을 PSST 4항목(문제인식/
+# 실현가능성/성장전략/팀 구성)으로 확정했는데, 예비·초기 템플릿엔 "팀 구성"에 대응하는
+# 섹션이 없었다 — writing 재시도가 bundle_id를 무시하고 항상 1-1/2-1만 재생성하던 버그의
+# 근본 원인. PSST 4번째 항목에 맞춰 4-1을 추가한다(아래 BUNDLE_PSST_TO_SECTION_TAG 참고).
+PLAN_SECTION_TAG_TEAM = '4-1'  # 팀 구성 (예비·초기)
 PLAN_SECTION_TAG_GENERAL_OVERVIEW = 'G-01'  # 기술개발의 개요 및 필요성 (일반)
 PLAN_SECTION_TAG_GENERAL_GOAL = 'G-02'  # 기술개발의 목표 (일반)
 PLAN_SECTION_TAG_GENERAL_METHOD = 'G-03'  # 기술개발의 방법 (일반)
@@ -174,6 +179,7 @@ PLAN_SECTION_TAGS = (
     PLAN_SECTION_TAG_PROBLEM,
     PLAN_SECTION_TAG_FEASIBILITY,
     PLAN_SECTION_TAG_GROWTH,
+    PLAN_SECTION_TAG_TEAM,
     PLAN_SECTION_TAG_GENERAL_OVERVIEW,
     PLAN_SECTION_TAG_GENERAL_GOAL,
     PLAN_SECTION_TAG_GENERAL_METHOD,
@@ -221,6 +227,17 @@ BUNDLE_PSST_SOLUTION = '실현가능성'
 BUNDLE_PSST_SCALEUP = '성장전략'
 BUNDLE_PSST_TEAM = '팀 구성'
 WRITING_BUNDLES = (BUNDLE_PSST_PROBLEM, BUNDLE_PSST_SOLUTION, BUNDLE_PSST_SCALEUP, BUNDLE_PSST_TEAM)
+
+# [2026-09-29 신규] writing 재시도(app/routers/projects.py retry_task)가 bundle_id를
+# 무시하고 항상 plan_sections의 1-1/2-1만 재생성하던 버그의 수정 — 묶음마다 정확히
+# 재생성해야 할 문서 섹션 하나를 여기서 고정한다(둘 다 이 파일이 소유하는 상수라 여기
+# 두는 게 자연스럽다). WRITING_BUNDLES의 모든 항목이 키로 있어야 한다.
+BUNDLE_PSST_TO_SECTION_TAG = {
+    BUNDLE_PSST_PROBLEM: PLAN_SECTION_TAG_PROBLEM,
+    BUNDLE_PSST_SOLUTION: PLAN_SECTION_TAG_FEASIBILITY,
+    BUNDLE_PSST_SCALEUP: PLAN_SECTION_TAG_GROWTH,
+    BUNDLE_PSST_TEAM: PLAN_SECTION_TAG_TEAM,
+}
 
 BUNDLE_ARTIFACT_PROTOTYPE = '실행 파일 제작'
 BUNDLE_ARTIFACT_INFOGRAPHIC = '인포그래픽 제작'

@@ -164,6 +164,11 @@ _DUMMY_RUBRIC_ITEMS = (
     ('PSST-1-1', '문제인식', '목표 고객이 겪는 문제 정의가 구체적인가', decimal.Decimal('10.00')),
     ('PSST-2-1', '실현가능성', '팀 역량과 실행 계획이 충분히 서술됐는가', decimal.Decimal('10.00')),
     ('PSST-3-1', '성장전략', '시장 진입·확장 전략이 구체적인가', decimal.Decimal('10.00')),
+    # [2026-09-29 신규] PSST 재작성 묶음(pipeline_stages.py WRITING_BUNDLES)이 SB-165에서
+    # 4항목(문제인식/실현가능성/성장전략/팀 구성)으로 확정됐는데, 문서층 채점 근거는 여전히
+    # 3항목만 있었다 — '팀 구성' 묶음을 재작성해도 채점 근거(plan_score_reasons)가 하나도
+    # 없어 검증-1 자동 재채점(_rescore_verify1)이 조용히 건너뛰어졌다.
+    ('PSST-4-1', '팀구성', '팀 구성과 역할 분담이 명확한가', decimal.Decimal('10.00')),
 )
 
 
@@ -381,6 +386,8 @@ def seed_dummy_pipeline(
         ('1-1', '문제 인식', '더미 본문 — 목표 고객이 겪는 문제를 서술하는 구간입니다.'),
         ('2-1', '실현 가능성', '더미 본문 — 팀 역량과 실행 계획을 서술하는 구간입니다.'),
         ('3-1', '성장 전략', '더미 본문 — 시장 진입 및 확장 전략을 서술하는 구간입니다.'),
+        # [2026-09-29 신규] PSST 4번째 항목(팀 구성) — pipeline_stages.py PLAN_SECTION_TAG_TEAM.
+        ('4-1', '팀 구성', '더미 본문 — 팀 구성과 역할 분담을 서술하는 구간입니다.'),
     ):
         section = PlanSection(plan_id=plan.plan_id, tag=section_code, title=title, body=body)
         db.add(section)
@@ -399,6 +406,8 @@ def seed_dummy_pipeline(
          '실현 가능성 항목: 팀 경력 서술이 짧아 2점 감점 (더미 근거)', 'section:2-1 문단 1'),
         ('PSST-3-1', '시장 진입·확장 전략', decimal.Decimal('10.00'), decimal.Decimal('10.00'),
          '성장 전략 항목: 시장 진입·확장 전략이 구체적이라 만점 처리 (더미 근거)', 'section:3-1 문단 1'),
+        ('PSST-4-1', '팀 구성과 역할 분담', decimal.Decimal('10.00'), decimal.Decimal('10.00'),
+         '팀 구성 항목: 역할 분담이 명확히 서술되어 만점 처리 (더미 근거)', 'section:4-1 문단 1'),
     ):
         db.add(PlanScoreReason(
             plan_id=plan.plan_id, reason_text=reason_text, item_code=item_code, display_name=display_name,
