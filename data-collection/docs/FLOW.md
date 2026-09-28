@@ -15,13 +15,15 @@
 | 공고 수집 | K-Startup·기업마당 API → 정규화 → MySQL 공고 저장 | `collect/daily_pipeline.py`, `collect/normalize.py`, `shared/store_mysql.py` |
 | 첨부 처리 | 첨부 파일 → 텍스트 추출·저장 → 자격요건 추출 | `collect/attachment_pipeline.py`, `collect/doctext.py`, `collect/extract_conditions.py` |
 | 검색 준비 | 공고 필드 → BGE-M3 임베딩 → 로컬 벡터 색인·공용 DB 업로드 | `shared/embed.py`, `search/vecstore.py`, `collect/upload_vectors.py` |
-| 공고 매칭 | 신청자 입력 → 질의 생성 → 벡터/BM25 검색·RRF 결합 → 옵션에 따른 마감 처리·재정렬 → 공고 반환 | `search/app.py`, `search/applicant.py`, `search/hybrid.py`, `search/rank_rules.py`, `shared/region.py` |
+| 공고 매칭 | 신청자 입력 → **정형 필터(모집 상태·접수 마감·업력/신청자 유형, `gate.prefilter`)** → 필터 통과 공고 안에서 벡터/BM25 검색·RRF 결합 → 지역·집단 규칙 재정렬 → 공고 반환 | `search/app.py`, `search/gate.py`, `search/applicant.py`, `search/hybrid.py`, `search/rank_rules.py`, `shared/region.py` |
 | 자격 확인 | 선택한 공고·신청자 정보 → 조건 판정 → 판정 근거 반환 | `search/app.py`, `search/gate.py` |
 | 검색 평가 | 고정 질의·판정 자료 → 검색 방식별 결과 → 품질 지표 | `eval/README.md`, `eval/evaluate.py` |
 
 검색의 기본 진입점은 `search/app.py`의 `/api/match`입니다. `search='dense'`는 임베딩 단독,
 `search='hybrid'`는 임베딩과 BM25를 RRF로 합치는 방식입니다.
 최종 순위는 가중치·마감·지역·지원대상 옵션에 따라서도 바뀌므로 검색 비교 시 함께 기록합니다.
+2026-09-28부터 정형 필터가 검색보다 먼저 돈다(기획서 5-3, 기능정의서 R-3). 지역·업종은 필터가 아니라 순위에만 쓴다.
+응답의 `filtered_count`·`filter.excluded`·`pipeline`으로 필터 → 검색 → 순위 통합 순서와 뺀 이유를 확인한다.
 가중치 비교, 리랭커 및 분류기 시험 경로도 있으므로 상세 동작은 현재 API 구현을 확인합니다.
 
 아래는 기존 배치 상세 설명입니다. 실제 `collect/daily_pipeline.py`에는 첨부 업로드 뒤

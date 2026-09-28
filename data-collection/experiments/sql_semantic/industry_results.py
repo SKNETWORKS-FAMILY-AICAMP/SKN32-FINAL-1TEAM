@@ -17,7 +17,7 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 REPORTS = os.path.join(ROOT, 'reports')
 DEFAULT_RUN = 'industry_llm_full_luna_20260922'
 # 화면을 처음 열 때 고르는 순서. 있으면 러프 재검사 결과를 먼저 보여 준다(2026-09-22 사용자 요청)
-DEFAULT_ORDER = ('industry_llm_full_luna_20260922_final4', 'industry_llm_full_luna_20260922_final3', 'industry_llm_full_luna_20260922_final2', 'industry_llm_full_luna_20260922_final', 'industry_llm_full_luna_20260922_rough_split',
+DEFAULT_ORDER = ('industry_llm_full_luna_20260928_final5', 'industry_llm_full_luna_20260922_final4', 'industry_llm_full_luna_20260922_final3', 'industry_llm_full_luna_20260922_final2', 'industry_llm_full_luna_20260922_final', 'industry_llm_full_luna_20260922_rough_split',
                  'industry_llm_full_luna_20260922_rough', 'industry_llm_full_luna_20260922_strict', DEFAULT_RUN)
 
 
@@ -44,19 +44,47 @@ def notice_url(notice_id):
     return ''
 
 
+# 결과 폴더 묶음(화면 목록의 optgroup). 순서가 화면 순서다 (2026-09-28 사용자 요청 — 섞여 있어 보기 힘듦)
+RUN_GROUPS = (('final', '최종 결과 (합친 전량)'), ('full', '전량 1,852건 — LLM 원답·재검사'),
+              ('long', '긴 원문 재독 (잘린 공고만)'), ('merge', '중간 합침'), ('sample', '표본 실험'))
+
+
+def run_group(name, meta):
+    """폴더 → 묶음 키. 이름보다 meta 를 먼저 본다(합쳤는지·발췌 상한·전량 여부)."""
+    if meta.get('merged_from'):
+        return 'final' if re.search(r'_final\d*$', name) else 'merge'
+    if int(meta.get('max_chars') or 0) > 6000:
+        return 'long'
+    if meta.get('take_all') or '_full_' in name:
+        return 'full'
+    return 'sample'
+
+
 def list_runs(reports=None):
-    """결과 폴더 목록(최신 먼저). results.jsonl·meta.json 이 있는 것만."""
+    """결과 폴더 목록. results.jsonl·meta.json 이 있는 것만.
+
+    RUN_GROUPS 순서로 묶고, 묶음 안에서는 만든 시각(meta.run_at) 최신순이다. 예전에는 이름을
+    거꾸로 정렬해 최종·재검사·재독·표본이 섞였다. 화면 기본값(default_run)은 current=True 로 표시한다.
+    """
     reports = reports or REPORTS
+    current = default_run(reports)
+    order = {key: i for i, (key, _) in enumerate(RUN_GROUPS)}
+    labels = dict(RUN_GROUPS)
     out = []
-    for name in sorted(os.listdir(reports), reverse=True) if os.path.isdir(reports) else []:
+    for name in os.listdir(reports) if os.path.isdir(reports) else []:
         path = os.path.join(reports, name)
         if RUN_NAME.match(name) and os.path.exists(os.path.join(path, 'results.jsonl')) \
                 and os.path.exists(os.path.join(path, 'meta.json')):
             with io.open(os.path.join(path, 'meta.json'), encoding='utf-8') as f:
                 meta = json.load(f)
+            group = run_group(name, meta)
             out.append({'name': name, 'engine': meta.get('engine') or meta.get('model') or 'gpt-4o-mini',
                         'prompt': meta.get('prompt'), 'take_all': bool(meta.get('take_all')),
-                        'sample': meta.get('sample')})
+                        'sample': meta.get('sample'), 'run_at': meta.get('run_at') or '',
+                        'group': group, 'group_label': labels[group], 'current': name == current})
+    # 시각 최신순(같으면 이름 역순)을 먼저 정렬한 뒤 묶음 순서로 안정 정렬한다
+    out.sort(key=lambda r: (r['run_at'], r['name']), reverse=True)
+    out.sort(key=lambda r: order[r['group']])
     return out
 
 
@@ -89,6 +117,7 @@ def _row(r):
             # 매칭용 판정(2026-09-22) — 없는 옛 결과는 None
             'istatus': llm.get('industry_status'), 'istatus_why': llm.get('industry_status_why') or '',
             'source_run': r.get('source_run') or '', 'truncated': bool(llm.get('truncated')),
+            'scope_unresolved': bool(llm.get('scope_unresolved')),   # 통합공고 — 세부사업 범위 미확인(2026-09-28)
             'allowed': allowed, 'excluded': excluded,
             'complete': llm.get('list_complete'), 'quote': llm.get('quote') or '',
             'reason': llm.get('reason') or '', 'downgraded': llm.get('downgraded') or '',

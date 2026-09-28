@@ -683,6 +683,26 @@ def industry_results_page():
         return f.read()
 
 
+@app.get('/api/filter-first-eval')
+def api_filter_first_eval(run: str = ''):
+    """검색 먼저 vs 정형 필터 먼저 비교(`reports/filter_first_eval_*`). 읽기 전용 — DB·모델 호출 없음.
+
+    2026-09-28 사용자 요청 — eval/filter_first_eval.py 결과를 사이트에서 확인한다.
+    """
+    from experiments.sql_semantic import filter_first_results
+    data = filter_first_results.load_run(run)
+    if data is None:
+        return JSONResponse({'error': '결과 폴더를 찾을 수 없다. eval/filter_first_eval.py 를 먼저 돌린다.',
+                             'runs': filter_first_results.list_runs()}, status_code=404)
+    return JSONResponse(data)
+
+
+@app.get('/filter-first-eval', response_class=HTMLResponse)
+def filter_first_eval_page():
+    with io.open(os.path.join(WEB, 'filter_first_eval.html'), encoding='utf-8') as f:
+        return f.read()
+
+
 @app.get('/api/health')
 def api_health():
     return JSONResponse({'ok': True, 'runs': len(list_runs()),

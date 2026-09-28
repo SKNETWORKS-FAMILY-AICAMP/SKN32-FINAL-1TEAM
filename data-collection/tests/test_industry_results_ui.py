@@ -82,6 +82,28 @@ class IndustryResultsTests(unittest.TestCase):
         self.assertEqual([r['name'] for r in runs], ['industry_llm_full_test'])
         self.assertTrue(runs[0]['take_all'])
 
+    def test_list_runs_grouped_then_newest_first(self):
+        # 2026-09-28 사용자 요청 — 최종·재검사·재독·표본이 이름순으로 섞이던 것을 묶음·최신순으로
+        def make(name, **meta):
+            path = os.path.join(self.dir, name)
+            os.makedirs(path)
+            io.open(os.path.join(path, 'results.jsonl'), 'w', encoding='utf-8').close()
+            with io.open(os.path.join(path, 'meta.json'), 'w', encoding='utf-8') as f:
+                json.dump(meta, f)
+        make('industry_llm_sample_20260922T020000Z', sample=30, run_at='2026-09-22T02:00:00+00:00')
+        make('industry_llm_full_luna_x_final4', take_all=True, merged_from={'base': 'a'}, run_at='2026-09-22T08:00:00+00:00')
+        make('industry_llm_full_luna_y_final5', take_all=True, merged_from={'base': 'b'}, run_at='2026-09-28T00:02:00+00:00')
+        make('industry_llm_full_luna_y_m1', take_all=True, merged_from={'base': 'c'}, run_at='2026-09-28T00:01:59+00:00')
+        make('industry_llm_long97_luna_x', max_chars=18000, sample=97, run_at='2026-09-22T07:25:00+00:00')
+        make('industry_llm_full_luna_x_rough', take_all=True, run_at='2026-09-22T07:10:00+00:00')
+        runs = ir.list_runs()
+        self.assertEqual([(r['group'], r['name']) for r in runs], [
+            ('final', 'industry_llm_full_luna_y_final5'), ('final', 'industry_llm_full_luna_x_final4'),
+            ('full', 'industry_llm_full_luna_x_rough'), ('full', 'industry_llm_full_test'),
+            ('long', 'industry_llm_long97_luna_x'), ('merge', 'industry_llm_full_luna_y_m1'),
+            ('sample', 'industry_llm_sample_20260922T020000Z')])
+        self.assertEqual([r['group_label'] for r in runs][0], '최종 결과 (합친 전량)')
+
     def test_counterpart_marks_newly_known(self):
         rough = os.path.join(self.dir, 'industry_llm_full_test_rough')
         os.makedirs(rough)
@@ -122,6 +144,13 @@ class IndustryResultsTests(unittest.TestCase):
         self.assertEqual((e['istatus'], e['istatus_why'], e['source_run']), ('unknown', '자격 문장을 찾지 못함', 'long'))
         self.assertEqual(d['meta']['merged_from']['override_max_chars'], 18000)
         self.assertIsNone(ir.load_run('industry_llm_full_test')['summary']['istatus'])   # 옛 결과는 판정 칸이 없다
+
+    def test_scope_unresolved_passed_to_page(self):
+        # Codex 2차 후속 리뷰 F1 — 통합공고는 세부사업 범위 미확인 표시가 화면까지 간다
+        row = v3_row('bizinfo:PBLN_8', 'unknown')
+        self.assertFalse(ir._row(row)['scope_unresolved'])            # 옛 결과에는 칸이 없다
+        row['llm']['scope_unresolved'] = True
+        self.assertTrue(ir._row(row)['scope_unresolved'])
 
     def test_raw_allowed_shown_as_dropped(self):
         row = v3_row('bizinfo:PBLN_9', 'unknown')

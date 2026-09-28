@@ -23,6 +23,169 @@
 
 ## 작업 기록
 
+### 2026-09-28 · Claude · 종료 인계서 작성 (계정 전환 전)
+
+- 요청·목적: 사용자가 Claude 계정을 바꿔(대화 맥락이 이어지지 않을 수 있음) 새 세션이 이어받을 문서가 필요하다고 판단.
+- 변경 파일: [NEXT_SESSION_HANDOFF_20260928.md](NEXT_SESSION_HANDOFF_20260928.md) 신규, STATUS 맨 위에 진입점 추가.
+- 내용: 기준 문서·담당 범위, 사용자 결정 3가지, 오늘 작업과 검수 상태, 현재 매칭 동작, 남은 일(B~H·업종), 미커밋 변경 목록, 실행 방법, 금지 사항, 첫 요청문.
+- 코드 변경·LLM·DB 호출 없음. Git은 사용자 담당.
+
+### 2026-09-28 · Claude · 불일치 A — Codex 검수 P2 두 건 수정
+
+- 요청·목적: [Codex 검수](MATCH_FILTER_FIRST_REVIEW_20260928.md)가 최종 승인 전 수정으로 둔 P2 두 건.
+- 변경 파일: `search/app.py`(`match()`가 필터 통과 공고가 있을 때만 인코딩·검색, 응답 `dense_error`·실행한 단계만 담은 `pipeline`;
+  `_dense_within()`이 ids 미지원 TypeError 와 그 밖의 오류를 구분해 stderr·응답에 원인 기록), `tests/test_match_rules.py`(+2, 기존 1개 보강),
+  [요청서](MATCH_FILTER_FIRST_REVIEW_REQUEST_20260928.md) 6절 재검수 요청.
+- 검증: 전체 485개 통과(건너뜀 13). `eval/filter_first_eval.py` 재실행 수치 동일(`reports/filter_first_eval_20260928T011252Z/`).
+  EC2 읽기 전용 SSH: chromadb 1.5.9, `query`에 `ids` 인자 있음, `search/app.py` 미배포.
+- 미검증: EC2에서 필터 질의·대신 계산 시간 측정(공용 서버 실행은 사용자 승인 필요). 임베딩 오류 시 BM25 단독 폴백은 불일치 E로 남음.
+- 다음 단계: Codex 재검수. Git은 사용자 담당.
+
+### 2026-09-28 · Claude · 매칭 순서 비교 화면에 쉬운 말 용어 전환
+
+- 요청·목적: P@3·쓸모@3·미판정@3 같은 용어가 어렵다는 사용자 요청. 기존 용어는 그대로 두고 쉬운 이름 버전을 함께 제공.
+- 변경 파일: `web/filter_first_eval.html` — 상단 "쉬운 말 / 전문 용어" 전환(기본 쉬운 말, 선택은 localStorage 에 기억, 실패해도 동작).
+  쉬운 이름: 신청 못 하는 공고 비율 · 내용 적합도 · 쓸모 있는 추천 수 · 채점 못 한 비율 · 하한/상한 → 보수적/낙관적 · 95% 구간 → 믿을 수 있는 범위.
+  전문 용어 모드는 서버 label(eval/filter_first_eval.py METRICS)을 그대로 쓴다.
+- 검증: 브라우저에서 두 모드의 타일·표·질의 요약·설명 문구 전환 확인, 콘솔 오류 없음, 조사 어색함("공고은") 수정 후 0건. `tests/test_filter_first_ui.py` 통과.
+
+### 2026-09-28 · Claude · 매칭 순서 비교 화면 (`/filter-first-eval`)
+
+- 요청·목적: 검색 먼저 vs 필터 먼저 비교 결과를 사이트에서 직접 확인하고 싶다는 사용자 요청.
+- 변경 파일: `eval/filter_first_eval.py`(results.json 에 질의 요약·공고 제목/마감/업력 조건·신청 불가 이유·판정값 추가),
+  `experiments/sql_semantic/filter_first_results.py` 신규(읽기 전용, 폴더 이름 정규식 검사), `experiments/sql_semantic/viewer.py`
+  (`/api/filter-first-eval`, `/filter-first-eval`), `web/filter_first_eval.html` 신규, `tests/test_filter_first_ui.py` 신규(4개).
+- 화면: 비교 방식 설명 → 핵심 4지표 타일(95% 구간으로 개선/차이 없음/악화 표시) → 전체 지표표(쉬운 설명) →
+  질의별 예전·지금 상위 10 나란히(신청 불가 이유, 내용 판정, 새로 들어옴/빠짐). 기본은 "예전에 신청 불가가 있던 질의" 21개.
+- 재실행: 결과 → `reports/filter_first_eval_20260928T004842Z/`. 수치는 첫 실행(004448Z)과 같다(재현 확인). 첫 실행 폴더도 화면에서 ID만으로 열린다.
+- 검증: 전체 테스트 483개 통과(건너뜀 13). 뷰어를 다시 켜서 화면 렌더링·콘솔 오류 없음·가로 넘침 없음 확인, 질의별 목록 DOM 확인
+  (예: q001 예전 1위 "1인 창업가 캠프"는 업력 3년 미만 공고라 신청 불가 → 지금 목록에서 빠짐).
+- 다음 단계: 없음. Git은 사용자 담당.
+
+### 2026-09-28 · Claude · 검색 먼저 vs 필터 먼저 수치 비교 (A안, 판정 보충 없음)
+
+- 요청·목적: 매칭 순서를 바꾼 것이 더 나은지 숫자로 보고 싶다는 사용자 요청. 미판정 공고를 LLM으로 채우지 않는 A안(비용 0)으로 먼저.
+- 변경 파일: `eval/filter_first_eval.py` 신규(예전 코드를 `git show 35358be:.../search/app.py`로 불러와 같은 STATE·질의 벡터·기준일로 비교,
+  말뭉치는 2026-09-16 전 수집 2,084건으로 제한, 지표: 신청 불가@10·P@3(2) 하한/상한·nDCG@10·쓸모@3/@10 하한/상한·미판정),
+  `tests/test_filter_first_eval.py` 신규(3개), [기획서 대조](PLAN_ALIGNMENT_20260928.md) 3-1절, 검수 요청서 4-1절.
+- 결과: `reports/filter_first_eval_20260928T004448Z/`. hybrid 신청 불가@10 4.8%→0% [−0.067, −0.029], P@3(2) 하한 62.6%→60.3%(구간 0 포함),
+  쓸모@3 하한 1.810→1.810. dense 신청 불가@10 5.9%→0%, 쓸모@10 하한 +0.155 [+0.069, +0.276]. 미판정@3 10~12%.
+  P@3 감소 2.3%p는 예전 상위 3에 있던 "내용 판정 2이지만 신청 불가" 4칸(174칸 중)과 같다.
+- 검증: 지표 단위 테스트 통과. 실행은 실제 Chroma·공용 DB 읽기, OpenAI 0, DB 쓰기 0. 요약표의 `95%%` 오타는 코드와 결과 파일 모두 고쳤다.
+- 미검증·남은 문제: 미판정@10(hybrid 31%)이 높아 @10 지표는 참고. 판정 기준(topic_rel)은 내용만 보므로 신청 가능 여부는 규칙(prefilter)으로 따로 매겼다.
+  평가 질의 신청자가 대부분 업력이 짧아 신청 불가 비율이 낮게 나온다(앞선 10년 차 법인 사례는 상위 10 중 5~6건).
+- 다음 단계: Codex 검수(요청서 4-1). 필요하면 B안(미판정 LLM 보충)은 비용 확인 후 사용자 결정.
+
+### 2026-09-28 · Codex · Claude 필터 선행 매칭 검수
+
+- 요청·목적: 사용자 요청과 [Claude 검수 요청](MATCH_FILTER_FIRST_REVIEW_REQUEST_20260928.md)에 따라 불일치 A의 구현·계약·평가 영향을 독립 검토.
+- 작업 전 상태: Claude의 `search/app.py`, `search/gate.py`, `search/hybrid.py` 및 관련 테스트·문서가 미커밋 상태. 기존 변경은 수정하지 않음.
+- 변경 파일: [검수 결과](MATCH_FILTER_FIRST_REVIEW_20260928.md) 신규, STATUS 판정 기록, WORKLOG 이 항목.
+- 판단: 필터 통과 ID 안에서만 두 검색을 하는 핵심 구현은 확인. 통과 후보 0건이어도 인코더를 먼저 실행하는 P2, Chroma 오류를 모두 대량 벡터 조회로 전환하는 P2를 기록. 최종 승인은 수정·회귀 확인 뒤. 접수 시작 전 공고는 명시된 R-3의 종료일 기준과 일치한다.
+- 검증: 로컬 Python에서 FastAPI 최소 대역으로 `FilterFirstTests` 11개 통과. 인코더 오류 대역과 전체 마감 공고로 빈 후보 계약 위반 재현. 로컬 정규화 스냅샷 1,734건 중 17건은 2026-09-28 이후 접수 시작.
+- 미검증·남은 문제: 전체 475개, HTTP 테스트, 실 Chroma·DB 비교, EC2 버전·성능은 독립 재현하지 못함. 기존 검색 평가 수치는 새 파이프라인 기준으로 다시 측정할 필요가 있다.
+- 다음 단계: Claude가 두 P2를 수정하고 빈 후보·예외 경로 테스트를 추가하면 재검토. Git staging·commit·push는 사용자 담당.
+
+### 2026-09-28 · Claude · 업종 결과 화면의 결과 폴더 목록 정렬
+
+- 요청·목적: `/industry-results`의 결과 폴더 목록이 섞여 있어 보기 힘들다는 사용자 요청.
+- 원인: `list_runs()`가 폴더 이름을 거꾸로 된 문자순으로만 정렬해 표본·재독·전량·최종이 뒤섞였다.
+- 변경 파일: `experiments/sql_semantic/industry_results.py`(`RUN_GROUPS`, `run_group()`, `list_runs()`가 묶음 → 만든 시각 최신순으로 정렬하고
+  `run_at`·`group`·`group_label`·`current`를 돌려줌), `web/industry_results.html`(`fillRuns()`가 묶음마다 optgroup, 한국 시각·건수·★현재 기준 표시),
+  `tests/test_industry_results_ui.py`(+1).
+- 묶음 규칙: 합친 결과 중 이름이 `_final숫자`로 끝나면 최종, 나머지 합침은 중간 합침. 발췌 상한 6,000자 초과는 긴 원문 재독,
+  전량은 전량, 그 밖은 표본. 실제 23개 폴더가 최종 5 · 전량 7 · 재독 6 · 중간 합침 1 · 표본 4로 나뉜다.
+- 검증: 전체 테스트 476개 통과(건너뜀 13). 뷰어를 다시 켜고 화면의 optgroup 5개와 기본 선택 final5를 확인.
+  API로 다른 폴더(long97_v3 97건, 표본 30건)가 불러와지는 것을 확인. 폴더 전환 후의 화면 렌더링은 브라우저 창이 닫혀 보지 못했다.
+- 다음 단계: 없음. Git은 사용자 담당.
+
+### 2026-09-28 · Claude · 불일치 A — 정형 필터를 검색보다 먼저 (서비스 매칭)
+
+- 요청·목적: 사용자가 [기획서 대조](PLAN_ALIGNMENT_20260928.md)의 제안(업종 순위 반영 원칙)을 승인하고 불일치 A부터 고치라고 요청.
+  기능정의서 R-3은 필터를 먼저 걸고 통과 집합 안에서만 순위를 매기며, 순서를 뒤집으면 결함으로 본다.
+- 작업 전 상태: F1-1·기획서 대조 문서가 미커밋. 서비스 `match()`는 Chroma 상위 depth건 → 마감 제외 → 모자라면 depth×3 반복.
+- 변경 파일: `search/gate.py`(`prefilter`, `applicant_age`), `search/hybrid.py`(`BM25.search(allowed=)`),
+  `search/app.py`(`match()` 재구성, `_dense_within`, `boot()`의 `vector_ids`, `MatchRequest.structured_filter`, 응답 `filtered_count`·`filter`·`dense_path`·`pipeline`,
+  `/api/eligibility`가 `applicant_age` 사용), `eval/search_comparison.py`(A단계 `structured_filter: False`),
+  `tests/test_match_rules.py`(`CandidateRefillTests` → `FilterFirstTests` 11개), `tests/test_query_ablation.py`(가짜 BM25 `allowed`), `docs/FLOW.md`,
+  [검수 요청](MATCH_FILTER_FIRST_REVIEW_REQUEST_20260928.md) 신규, 대조 문서 A 해결·순위 원칙 확정 표시.
+- 전후 차이·선택 이유: 필터는 확실한 미달만 뺀다(모집 상태 closed, 마감일 < 오늘, `_check_age` False). 설립일 미상 사업자는 게이트와 같이 아무것도 빼지 않는다.
+  시작 전 공고는 R-3 문구(`applyEnd >= today`)대로 남긴다. 실제 Chroma는 색인에 없는 ID를 `query(ids=)`에 넘기면 `InternalError`를 내서(직접 재현)
+  boot 때 색인 ID를 기억하고 교집합만 넘긴다. `ids` 인자가 없거나 실패하면 벡터를 꺼내 직접 코사인 계산.
+- 검증:
+  - `python -X utf8 -m unittest discover -s tests` **475개 통과(건너뜀 13)**.
+  - 실제 Chroma(chromadb 1.5.9)·공용 DB 2,476건, HEAD `search/app.py`를 같은 프로세스에 올려 질의 3개 × hybrid/dense × top 10 비교.
+    필터 통과: 예비창업자 1,717 · 2016년 설립 법인 1,548 · 2025년 설립 법인 1,758(접수 마감 706건 공통).
+    이전 상위 10건 중 필터에 걸리는 공고: 2016년 법인 hybrid 6·dense 5, 예비창업자 dense 1 → 이후 모두 0. `dense_path`는 모두 `chroma`.
+  - Chroma `ids=` 검색 상위 50 = 필터 통과 공고 전체 직접 계산 상위 50(두 질의, 집합·순서 동일, 거리 차 ≤ 4.2e-7).
+  - DB 확인: 기업마당 모집 상태 전부 `unknown`, K-Startup 전부 `open`(마감 지난 213건 포함) → 현재 `closed` 제외는 0건.
+- 미검증·남은 문제: 검색 서버·EC2에서 실행하지 않았다(EC2 chromadb 버전 미확인). `eval/` 기존 지표는 이전 순서로 잰 값이다.
+  신청자 유형은 K-Startup 업력 필드의 '예비창업자' 표기로만 판정된다(불일치 G). 기본 `top=3`·10/20건은 불일치 D로 남음.
+- 다음 단계: Codex 검수. 서버 재시작·배포는 사용자 판단. Git은 사용자 담당.
+
+### 2026-09-28 · Claude · 기획서 v1.10·기능정의서 v1.9 대조, 업종 순위 신호 결정 기록
+
+- 요청·목적: 사용자가 넣어 둔 기획서에서 이 폴더 담당 부분만 골라 현재 구현과 일치하는지 확인. 이어서 사용자가
+  "기획서대로 업종은 순위 신호로" 결정하고 문서화를 요청.
+- 작업 전 상태: F1-1 코드 변경·final5와 Codex 검수 문서가 미커밋. 사용자가 기획서 PDF·기능정의서 xlsx를 스테이징해 둠.
+- 변경 파일: [기획서 대조](PLAN_ALIGNMENT_20260928.md) 신규, STATUS 최신 방향 항목 추가.
+- 확인 방법: PDF는 `pdfplumber`로 47쪽 텍스트를 뽑아 7-1 R&R·4-2·5-3·6장·E 흐름을 읽음. xlsx는 `openpyxl`이 없어
+  zip 안의 XML에서 셀 문자열을 뽑아 T-C2·G-01·R-1~R-3·오류코드·변경 이력을 읽음. 코드는 `search/app.py`·`search/gate.py`·
+  `experiments/sql_semantic/search.py`·`web/app.html`을 읽고, 분야별 공고 수는 공용 MySQL `notices`를 읽기 전용으로 조회.
+- 결과: 담당은 공고 데이터·매칭·자격 판정·인프라(공동). 일치 8항목, 불일치 A~H, 담당 불분명·미확정 항목을 문서 3절에 정리.
+  업종 결정의 근거는 기획서 4-2·5-3과 기능정의서 R-2·R-3(담당자 협의 2026-09-22).
+- 미검증: 불일치 항목은 코드 읽기로 판단했고 실행으로 재현하지 않았다. 기업마당 범위를 넓힌 결정이 문서 밖(팀 대화)에 있을 수 있다.
+- 다음 단계: 순위 반영 방식 확정, 불일치 A~H 착수 순서 결정. 코드 변경·LLM·DB 쓰기 없음. Git은 사용자 담당.
+
+### 2026-09-28 · Codex · Claude F1-1 통합공고 수정 검수
+
+- 요청·목적: 사용자 요청과 [Claude 검수 요청](INDUSTRY_F1_UMBRELLA_REVIEW_REQUEST_20260928.md)에 따라 코드·`final5`·화면 데이터 계약을 독립 검토.
+- 작업 전 상태: Claude의 코드·문서 변경과 새 결과 폴더가 미커밋 상태. 기존 변경은 수정하지 않음.
+- 변경 파일: [검수 결과](INDUSTRY_F1_UMBRELLA_REVIEW_20260928.md) 신규 작성, STATUS에 판정과 다음 단계 기록, WORKLOG에 이 항목 추가.
+- 판단: F1-1 전역 판정 방지 목표 승인. 제목에서 상위 통합공고를 참조하는 개별 공고와 챗봇 안내의 P2 오분류는 후속 수정 대상으로 기록. 업종 정형 필터 연결은 승인하지 않음.
+- 검증: `final4/final5` 1,852개 ID와 의미 필드 12종 비교 → 8행의 판정·이유만 변화. 범위 표시 25행, 필터 사용 가능 0행. `industry_results.load_run()`의 기본 결과·집계 확인. 로컬 Python에서 업종 추출 113개, 업종 묶음 11개 테스트 통과.
+- 미검증·남은 문제: `fastapi`가 없어 UI 테스트 및 전체 469개 통과는 독립 재현하지 못함. 브라우저 렌더링·외부 호출 감시는 하지 않음. F1-2, F2와 사람 표본 평가가 남음.
+- 다음 단계: Claude의 F1-2 진행과 별도로 P2 제목 판별 반례를 테스트에 추가. Git staging·commit·push는 사용자 담당.
+
+### 2026-09-28 · Claude · F1-1 통합공고 전역 판정 방지 + 오프라인 재검사(final5) — LLM 호출 0
+
+- 요청·목적: [인계](NEXT_SESSION_HANDOFF_20260922.md) F1-1 / [Codex 2차 후속 재검토](INDUSTRY_LLM_FULL_LUNA_REVIEW_20260922.md) F1.
+  통합공고 보호가 `known` 분기 안에만 있어, 원답이 `unknown`+quote인 통합공고 7건은 `not_mentioned`, 1건은 `excluded_only`로 공고 전체 판정이 됐다.
+- 작업 전 상태: Git 변경 없음(`.claude/`, `.idea/` 미추적만). 최신 결과 final4.
+- 변경 파일:
+  - `experiments/sql_semantic/industry_llm_sample.py` — `industry_status()`가 먼저 범위 무관 판정(`_status_ignoring_scope`, 기존 로직)을 내고,
+    제목이 `UMBRELLA_TITLE`이면 `out['scope_unresolved']=True`를 적은 뒤 `known·no_limit·not_mentioned·excluded_only`를 `conditional`로 내린다.
+    이유 문구는 `UMBRELLA_WHY`에 판정별로 둔다. `unknown`·`conditional`은 그대로 둔다(이미 통과 조건이 아니고, unknown의 이유가 더 구체적).
+    제외값·허용값 자체는 지우지 않는다(어느 세부사업 것인지 모를 뿐 원문 근거는 있다).
+  - `experiments/sql_semantic/industry_results.py` — 행에 `scope_unresolved` 전달. 화면 기본 결과를 `final5`로.
+  - `web/industry_results.html` — 판정 칸에 `세부사업 범위 미확인` 경고 표시.
+  - 테스트: `tests/test_industry_llm_sample.py` +4(raw unknown+quote, 제외값만, no_limit, 이미 unknown인 통합공고의 이유 보존), 기존 known 통합공고 테스트에 `scope_unresolved` 확인 추가.
+    `tests/test_industry_results_ui.py` +1(화면 전달·옛 결과는 False).
+- 선택 이유: 리뷰는 "최소 unknown, 가능하면 conditional + scope_unresolved"를 제시했다. 라벨 "조건부·세부사업별(확인 필요)"이 통합공고의 실제 뜻과 맞고,
+  unknown은 "추출 실패"로 읽히므로 conditional을 택했다. 두 값 모두 통과 조건이 아니므로 매칭 안전성은 같다.
+- 재검사(LLM 0, 저장 checkpoint, 기존 폴더 덮어쓰지 않음, `--profile rough`):
+  1. `industry_llm_full_luna_20260922` → `reports/industry_llm_full_luna_20260928_rough_umbrella/`(counterpart strict)
+  2. `industry_llm_long97_luna_20260922` → `reports/industry_llm_long97_luna_20260928_umbrella/`
+  3. `industry_llm_long104_luna_20260922` → `reports/industry_llm_long104_luna_20260928_umbrella/`
+  4. 합침 1+2 → `…20260928_umbrella_m1`, 합침 m1+3 → **`reports/industry_llm_full_luna_20260928_final5/`**
+- 검증:
+  - 테스트: 업종 3종 134개 통과. 전체 `python -X utf8 -m unittest discover -s tests` **469개 통과(건너뜀 13)**.
+  - final4 ↔ final5(의미 필드 12종 비교): 1,852행·ID 집합 동일, **바뀐 행 8건이며 모두 제목이 통합공고**, 바뀐 필드는 `industry_status(_why)`뿐.
+    바뀐 8건: `bizinfo:PBLN_000000000116008·119737·119738·122433·124502`, `kstartup:175783·175817`(not_mentioned→conditional),
+    `bizinfo:PBLN_000000000116975`(excluded_only→conditional).
+  - 출처 base 1,651 + long97 97 + long104 104(폴더 이름만 새 재검사 폴더), 토큰 6,394,949/1,472,128·원답 비용 $3.0455 final4와 동일,
+    `called_this_run=0`, `db_writes=0`, `filter_ready=true` 0건, 상태/값 불변식 위반 0건.
+  - final5 판정: 제한 있음 616 · 언급 없음 810 · 제외만 242 · 명시 4 · **조건부 24** · 확인 필요 156.
+    통합공고 25건 = 조건부 18 · 확인 필요 7, `scope_unresolved=true` 25건(= 제목 일치 25건).
+  - 화면: `verify-viewer` 실행 후 `/industry-results`가 final5를 기본 선택, 집계 타일 숫자 위와 일치, "통합" 검색 시 통합공고 행마다
+    `세부사업 범위 미확인` 표시를 DOM 텍스트로 확인. 스크린샷은 창이 가려져 비어 있어 증거로 쓰지 않았다.
+- 미검증·Codex 판단 요청:
+  1. 제목 정규식은 `통합\s*공고`만 잡는다. `통합 모집 공고`(예: `…120933`, `…124708`, `…124926 통합 상시 모집 공고`)는 잡지 않는다.
+     이들이 실제로 여러 세부사업을 묶었는지는 확인하지 않았다 — 넓힐지 판단 필요.
+  2. `kstartup:175817`은 통합공고 요약본 챗봇 안내라 엄밀한 통합공고는 아니지만 제목에 걸려 conditional이 됐다(보수 쪽 오차).
+  3. 세부사업별 업종을 실제로 분리하는 것(재추출)은 하지 않았다. 이번 수정은 "전역 판정을 막는 것"까지다.
+- 다음 단계: Codex 검수([검수 요청서](INDUSTRY_F1_UMBRELLA_REVIEW_REQUEST_20260928.md)) → F1-2 제외표 참조문 분리. Git commit·push는 사용자가 한다.
+
 ### 2026-09-22 · Codex · final4 2차 후속 리뷰 및 다음 세션 인계
 
 - 요청·목적: Claude 세션 종료 전에 현재 업종 추출 작업을 다음 주에 바로 재개할 수 있도록 정리.

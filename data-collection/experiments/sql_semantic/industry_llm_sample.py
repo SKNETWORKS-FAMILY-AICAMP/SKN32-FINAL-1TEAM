@@ -686,6 +686,14 @@ INDUSTRY_STATUS = {
 TRUNCATION_MARGIN = 50        # 발췌가 상한에서 이만큼 안쪽이면 잘린 것으로 본다
 # 통합공고는 여러 세부사업을 한 공고에 담는다 — 한 세부사업의 업종 조건을 공고 전체 조건으로 쓰면 안 된다(Codex 후속 리뷰 F1)
 UMBRELLA_TITLE = re.compile(r'통합\s*공고')
+# 세부사업 범위를 저장하지 않으므로, 공고 전체에 대한 판정은 통합공고에서 조건부로 내린다(2026-09-28, Codex 2차 후속 리뷰 F1).
+# unknown·conditional 은 그대로 둔다 — 이미 통과 조건이 아니고, unknown 의 이유(검사가 내림 등)가 더 구체적이다
+UMBRELLA_WHY = {
+    'known': '통합공고 — 세부사업마다 업종 조건이 다를 수 있음',
+    'no_limit': '통합공고 — "업종 제한 없음"이 일부 세부사업의 조건일 수 있음',
+    'not_mentioned': '통합공고 — 세부사업 범위를 보존하지 못해 "업종 언급 없음"을 공고 전체 조건으로 볼 수 없음',
+    'excluded_only': '통합공고 — 제외 업종이 어느 세부사업의 조건인지 보존하지 못함',
+}
 
 
 def _conditional_all(out):
@@ -701,17 +709,27 @@ def industry_status(out, document, excerpt_cap, title=''):
     2026-09-22 Codex 후속 리뷰 반영:
       · 제외 업종 **후보**가 하나라도 있었으면(검사에서 빠졌어도) 언급 없음으로 올리지 않는다 → 확인 필요 (F1, 244건)
       · 허용 업종 후보가 검사에서 빠졌어도 마찬가지
-      · 통합공고의 known, 전 업종이 구체 업종과 섞인 known 은 조건부(conditional) (F1)
+      · 전 업종이 구체 업종과 섞인 known 은 조건부(conditional) (F1)
       · 발췌가 상한에서 잘렸으면 판정과 상관없이 out['truncated']=True, list_complete=False (F2)
+
+    2026-09-28 Codex 2차 후속 리뷰 F1: 통합공고 보호를 known 밖으로 옮겼다. 제목이 통합공고면
+    out['scope_unresolved']=True 이고, known·no_limit·not_mentioned·excluded_only 는 conditional 로 내린다(UMBRELLA_WHY).
     """
     truncated = bool(excerpt_cap) and len(document or '') >= excerpt_cap - TRUNCATION_MARGIN
     out['truncated'] = truncated
     if truncated:
         out['list_complete'] = False
     cut = ' (발췌가 %d자에서 잘려 목록이 더 있을 수 있음)' % excerpt_cap if truncated else ''
+    code, why = _status_ignoring_scope(out, excerpt_cap, truncated, cut)
+    out['scope_unresolved'] = bool(UMBRELLA_TITLE.search(title or ''))
+    if out['scope_unresolved'] and code in UMBRELLA_WHY:
+        return 'conditional', UMBRELLA_WHY[code] + cut
+    return code, why
+
+
+def _status_ignoring_scope(out, excerpt_cap, truncated, cut):
+    """세부사업 범위(통합공고)를 따지기 전의 매칭용 판정."""
     if out['status'] == 'known':
-        if UMBRELLA_TITLE.search(title or ''):
-            return 'conditional', '통합공고 — 세부사업마다 업종 조건이 다를 수 있음' + cut
         if _conditional_all(out):
             return 'conditional', '전 업종과 구체 업종이 함께 있음 — 조건부 분기일 수 있음' + cut
         return 'known', cut.strip()

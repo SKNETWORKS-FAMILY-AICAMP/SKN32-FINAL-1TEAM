@@ -56,10 +56,14 @@ class BM25:
     def __len__(self):
         return len(self.ids)
 
-    def search(self, query, top=10):
+    def search(self, query, top=10, allowed=None):
+        """allowed(공고 ID 집합)를 주면 그 안에서만 찾는다 — 정형 필터를 통과한 후보(2026-09-28).
+        idf 는 전체 문서로 계산한 값 그대로 쓴다. 후보가 바뀔 때마다 단어 무게가 달라지지 않게."""
         q = Counter(tokenize(query))
         scores = []
         for i, tf in enumerate(self.tfs):
+            if allowed is not None and self.ids[i] not in allowed:
+                continue
             s = 0.0
             norm = self.k1 * (1 - self.b + self.b * self.lens[i] / self.avg)
             for term in q:

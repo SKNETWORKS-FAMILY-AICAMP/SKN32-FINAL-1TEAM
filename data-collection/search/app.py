@@ -109,6 +109,8 @@ def boot():
     started = time.time()
     STATE['collection'] = _collection()
     print('벡터 DB 색인 %d건' % STATE['collection'].count())
+    # 정형 필터 통과 공고 안에서만 의미 검색을 하려면 색인에 있는 ID 를 알아야 한다(_dense_within)
+    STATE['vector_ids'] = set(STATE['collection'].get(include=[])['ids']) - {'__watermark__'}
 
     connection = _connect()
     try:
@@ -219,6 +221,9 @@ class MatchRequest(BaseModel):
     team: list[TeamMember] = []
     revenue: list[RevenueItem] = []
     top: int = 3
+    # 정형 필터(검색 전, gate.prefilter). hide_expired 는 그중 모집 상태·접수 마감 부분이다.
+    # 둘 다 비교·평가용 스위치이며 서비스 화면은 항상 True 로 부른다
+    structured_filter: bool = True
     hide_expired: bool = True
     # 회사 소재지. 시·도 16개 중 하나(region.REGIONS) 또는 빈 값(고르지 않음).
     region: str = ''
@@ -263,42 +268,51 @@ class GateRequest(BaseModel):
 @app.post('/api/match')
 def match(req: MatchRequest):
     query = build_query(req)
-    t0 = time.time()
-    qv = _encode(query)
-    encode_ms = (time.time() - t0) * 1000
-
     hybrid_on = req.search != 'dense'
     col = STATE['collection']
-    total = col.count()
 
-    # 처음 가져올 후보 수. 마감 공고를 걸러내고도 요청 건수가 남게 넉넉히 잡는다
-    depth = req.top * 8 if req.hide_expired else req.top + 1
-    if req.demote_groups:
-        depth = max(depth, 30)        # 뒤로 보낼 공고가 있어도 요청 건수가 채워지게
-    if hybrid_on:
-        depth = max(depth, _hybrid_depth())
+    # ── 1. 정형 필터 — 검색보다 **먼저** 모든 공고에 적용한다 (기획서 5-3, 기능정의서 R-3) ──
+    # 2026-09-28 이전에는 검색 상위 후보를 먼저 자르고 마감만 거른 뒤 모자라면 더 깊이 찾았다.
+    # 기능정의서는 그 순서를 결함으로 본다(R-3 ①). 지역·업종은 여기서 쓰지 않고 순위에만 쓴다.
+    today = date.today()
+    age_months = gate.applicant_age(req.applicant_type, req.founded_at, today)
+    passed, excluded = [], {}
+    for nid, row in STATE['rows'].items():
+        keep, why = ((True, []) if not req.structured_filter
+                     else gate.prefilter(row, age_months, today, check_deadline=req.hide_expired))
+        if keep:
+            passed.append(nid)
+        for reason in why:
+            excluded[reason] = excluded.get(reason, 0) + 1
+    allowed = set(passed)
 
-    today = date.today().isoformat()
+    # 각 검색에서 합치기 전에 가져올 후보 수. 필터를 통과한 공고 안에서만 센다
+    depth = max(req.top, _hybrid_depth())
+
     # 검색 구간 전체를 바깥에서 잰다. dense·BM25 세부 시간만 더하면 그 사이에 일어나는
     # 벡터 추가 조회(_fill_distances)·RRF 결합 시간이 빠져 화면에 실제보다 짧게 찍힌다
     # (2026-09-18 Codex 검토 P3). 세부 시간은 어디에 시간이 쓰였는지 보려고 그대로 둔다.
+    # 필터 통과 0건이면 질의를 인코딩하지도 검색하지도 않고 빈 결과를 돌려준다(R-3 ②, Codex 검수 P2 2026-09-28)
+    encode_ms = 0.0
     search_started = time.time()
     dense_ms = bm25_ms = 0.0
-    attempts = 0
-    while True:
-        attempts += 1
+    ranks = {}
+    ordered = []
+    dense_path = dense_error = None
+    if passed:
+        # ── 2. 필터 통과 공고 안에서만 검색 ──
         t0 = time.time()
-        found = col.query(query_embeddings=[qv], n_results=min(depth + 1, total))
-        dense = [(nid, dist) for nid, dist in zip(found['ids'][0], found['distances'][0])
-                 if nid != '__watermark__'][:depth]
-        dense_ms += (time.time() - t0) * 1000
-
-        ranks = {}
+        qv = _encode(query)
+        encode_ms = (time.time() - t0) * 1000
+        search_started = time.time()
+        t0 = time.time()
+        dense, dense_path, dense_error = _dense_within(col, qv, passed, depth)
+        dense_ms = (time.time() - t0) * 1000
         if hybrid_on:
             from search import hybrid
             t1 = time.time()
-            lexical = STATE['bm25'].search(query, top=depth)
-            bm25_ms += (time.time() - t1) * 1000
+            lexical = STATE['bm25'].search(query, top=depth, allowed=allowed)
+            bm25_ms = (time.time() - t1) * 1000
             ranks = {nid: {'dense_rank': i} for i, (nid, _) in enumerate(dense, 1)}
             for i, (nid, _) in enumerate(lexical, 1):
                 ranks.setdefault(nid, {})['bm25_rank'] = i
@@ -313,25 +327,9 @@ def match(req: MatchRequest):
                 ranks[nid]['rrf_score'] = round(sc, 5)
         else:
             ordered = dense
-
-        candidates = []
-        for nid, dist in ordered:
-            row = STATE['rows'].get(nid)
-            if row is None:
-                continue
-            end = row.get('apply_end')
-            if req.hide_expired and end is not None and str(end) < today:
-                continue
-            candidates.append((nid, dist, row))
-
-        # 마감 공고를 걸러내고 나니 요청 건수가 안 되면 **더 깊이 찾는다.**
-        # 예전에는 의미 검색 51위 이하를 그대로 뒤에 붙였는데, 그 꼬리에는 RRF 점수가
-        # 없어 코사인 유사도로 대신했고 두 점수가 섞여 정렬이 뒤틀렸다
-        # (2026-09-18 Codex 검토 2·3번). 같은 점수 체계를 유지한 채 후보만 넓힌다.
-        if len(candidates) >= req.top or depth >= total:
-            break
-        depth = min(depth * 3, total)
     search_ms = (time.time() - search_started) * 1000
+
+    candidates = [(nid, dist, STATE['rows'][nid]) for nid, dist in ordered if nid in allowed]
 
     # ── 규칙 ────────────────────────────────────────────────
     # 어떤 공고가 어떤 규칙에 걸리는지 먼저 한 번에 판정한다. 그 다음
@@ -462,7 +460,13 @@ def match(req: MatchRequest):
            'rule_words': applicant_mod.rule_words(req),
            'stored_only': applicant_mod.stored_only(req),
            'why_not_used': applicant_mod.why_not_used()}
-    out.update({'depth': depth, 'search_rounds': attempts})
+    # 필터 → 검색 → 순위 통합 순서가 결과에 남는다(R-3). filtered_count 는 기능정의서 filteredCount
+    out.update({'depth': depth, 'search_rounds': 1,
+                'filter': {'applied': bool(req.structured_filter), 'check_deadline': bool(req.hide_expired),
+                           'total': len(STATE['rows']), 'excluded': excluded},
+                'filtered_count': len(passed), 'dense_path': dense_path, 'dense_error': dense_error,
+                # 실제로 돈 단계만 적는다. 통과 0건이면 검색·순위 통합을 하지 않는다
+                'pipeline': ['정형 필터', '검색', '순위 통합'] if passed else ['정형 필터']})
     if hybrid_on:
         out.update({'dense_ms': round(dense_ms, 2), 'bm25_ms': round(bm25_ms, 2)})
     return out
@@ -471,6 +475,39 @@ def match(req: MatchRequest):
 def _hybrid_depth():
     from search import hybrid
     return hybrid.DEPTH
+
+
+def _dense_within(col, qv, ids, n):
+    """의미 검색을 ids(정형 필터 통과 공고) 안에서만 한다. ([(공고 ID, 거리)] 가까운 순, 쓴 경로, 오류 설명).
+
+    Chroma 의 query(ids=...) 로 후보를 좁힌다. 색인에 없는 ID 를 넘기면 Chroma 가 오류를 내므로
+    boot() 가 기억한 색인 ID 와 겹치는 것만 넘긴다(로컬·EC2 모두 chromadb 1.5.9, ids 지원 확인 2026-09-28).
+
+    경로 (Codex 검수 P2, 2026-09-28 — 호환성 문제와 색인 장애를 구분한다)
+      'chroma'   정상
+      'vectors'  ids 인자를 모르는 색인(평가용 NumpyCollection·옛 Chroma, TypeError)이다. 벡터를 꺼내 코사인을
+                 직접 계산한다(벡터가 정규화돼 있어 결과 순서가 같다). 오류가 아니므로 설명은 None
+      'vectors'  + 설명  그 밖의 Chroma 오류(타임아웃·색인 오류 등). 원인을 로그와 응답(dense_error)에 남기고
+                 같은 방식으로 대신 계산한다. 대신 계산도 실패하면 예외를 그대로 올린다(폴백 E 는 별도 항목)
+    """
+    known = STATE.get('vector_ids')
+    ids = [nid for nid in ids if known is None or nid in known]
+    if not ids:
+        return [], 'chroma', None
+    error = None
+    try:
+        found = col.query(query_embeddings=[qv], ids=ids, n_results=min(n, len(ids)))
+        return list(zip(found['ids'][0], found['distances'][0])), 'chroma', None
+    except TypeError as exc:
+        if 'ids' not in str(exc):
+            error = '%s: %s' % (type(exc).__name__, str(exc).splitlines()[0][:200])
+    except Exception as exc:
+        error = '%s: %s' % (type(exc).__name__, str(exc).splitlines()[0][:200] if str(exc) else '')
+    if error:
+        print('경고: Chroma 필터 검색 실패 — 벡터 %d건을 직접 계산한다 (%s)' % (len(ids), error), file=sys.stderr)
+    dist_of = {}
+    _fill_distances(col, qv, ids, dist_of)
+    return sorted(dist_of.items(), key=lambda x: (x[1], x[0]))[:n], 'vectors', error
 
 
 def _fill_distances(col, qv, ids, dist_of):
@@ -537,14 +574,9 @@ def eligibility(req: GateRequest):
     if row is None:
         return JSONResponse({'error': '공고를 찾을 수 없다'}, status_code=404)
 
-    if req.applicant_type == '예비창업자':
-        months = None                       # 미설립 — 예비창업자 전용 공고에 해당
-    else:
-        # 설립일이 없거나 형식이 이상하면 '모른다'. 미설립으로 보면 안 된다
-        months = gate.business_age_months(req.founded_at)
-        if months is None:
-            months = gate.UNKNOWN_AGE
-    verdict = gate.judge(row, months)
+    # 예비창업자는 미설립(None), 설립일이 없거나 형식이 이상한 사업자는 '모른다'(UNKNOWN_AGE).
+    # 매칭의 정형 필터와 같은 함수를 쓴다
+    verdict = gate.judge(row, gate.applicant_age(req.applicant_type, req.founded_at))
 
     # gate.py 는 업력·접수기간·모집상태를 본다. 화면이 요구하는 '지원대상 유형'
     # 은 개인/법인 구분 데이터가 DB 에 없어 판정하지 않고 '확인 필요' 로 둔다.

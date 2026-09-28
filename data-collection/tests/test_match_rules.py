@@ -29,16 +29,19 @@ class FakeCollection:
 
     def __init__(self, ids):
         self.ids = ids
+        self.asked = []          # query(ids=...) 로 받은 후보 — 검색이 필터 뒤에 도는지 본다
 
     def count(self):
         return len(self.ids)
 
-    def query(self, query_embeddings=None, n_results=10):
-        ids = self.ids[:n_results]
-        return {'ids': [ids], 'distances': [[0.20 + i * 0.005 for i in range(len(ids))]]}
+    def query(self, query_embeddings=None, n_results=10, ids=None):
+        self.asked.append(None if ids is None else list(ids))
+        pool = self.ids if ids is None else [n for n in self.ids if n in set(ids)]
+        ids = pool[:n_results]
+        return {'ids': [ids], 'distances': [[0.20 + self.ids.index(n) * 0.005 for n in ids]]}
 
     def get(self, ids=None, include=None):
-        ids = list(ids or [])
+        ids = list(self.ids if ids is None else ids)
         return {'ids': ids, 'embeddings': [[0.0] * 4 for _ in ids]}
 
 
@@ -105,8 +108,12 @@ class RuleOrderTests(unittest.TestCase):
         self.assertEqual([r['notice_id'] for r in out['results']], ['성남', '서울', '수원'])
 
 
-class CandidateRefillTests(unittest.TestCase):
-    """3번 — 마감 공고를 걸러낸 뒤 후보가 모자라면 더 깊이 찾는다."""
+class FilterFirstTests(unittest.TestCase):
+    """정형 필터가 검색보다 먼저 돈다 — 기획서 5-3, 기능정의서 R-3 (2026-09-28).
+
+    예전(3번)에는 검색 상위를 먼저 자르고 마감을 거른 뒤 모자라면 더 깊이 찾았다.
+    이제는 모든 공고에 필터를 먼저 걸고, 통과한 공고 안에서만 검색한다.
+    """
 
     def rows(self, expired=51, total=60):
         rows = {}
@@ -115,27 +122,139 @@ class CandidateRefillTests(unittest.TestCase):
             rows[nid] = notice(nid, apply_end='2000-12-31' if i <= expired else '2099-12-31')
         return rows
 
+    def run_match(self, rows, **kw):
+        kw.setdefault('search', 'dense')
+        req = app.MatchRequest(applicant_type=kw.pop('applicant_type', '법인사업자'),
+                               founded_at=kw.pop('founded_at', '2025-01-01'), idea='창업 지원', **kw)
+        st = state(rows)
+        with patch.dict(app.STATE, st, clear=True), \
+                patch.object(app, '_encode', lambda text: [0.0, 0.0, 0.0, 0.0]):
+            return app.match(req), st['collection']
+
     def test_finds_live_notices_beyond_the_first_page(self):
         out = match(self.rows(), top=3)
-        self.assertEqual(out['count'], 3)
         self.assertEqual([r['notice_id'] for r in out['results']], ['n052', 'n053', 'n054'])
-        self.assertGreater(out['search_rounds'], 1)      # 더 깊이 찾았다
+        self.assertEqual(out['filtered_count'], 9)
+        self.assertEqual(out['filter']['excluded'], {'접수 마감': 51})
 
-    def test_hybrid_also_refills(self):
-        out = match(self.rows(), top=3, search='hybrid')
-        self.assertEqual(out['count'], 3)
+    def test_search_only_sees_filtered_notices(self):
+        out, col = self.run_match(self.rows(), top=3)
+        self.assertEqual(len(col.asked), 1)
+        self.assertEqual(sorted(col.asked[0]), ['n%03d' % i for i in range(52, 61)])
+        self.assertEqual(out['pipeline'], ['정형 필터', '검색', '순위 통합'])
 
-    def test_no_extra_round_when_first_page_is_enough(self):
-        out = match(self.rows(expired=0), top=3)
-        self.assertEqual(out['search_rounds'], 1)
+    def test_hybrid_bm25_is_also_limited(self):
+        out = match(self.rows(), top=20, search='hybrid')
+        self.assertEqual(out['count'], 9)
+        self.assertTrue(all(r['notice_id'] >= 'n052' for r in out['results']))
 
-    def test_stops_when_everything_is_expired(self):
+    def test_everything_expired_returns_empty(self):
         out = match(self.rows(expired=60), top=3)
-        self.assertEqual(out['count'], 0)               # 무한히 찾지 않는다
+        self.assertEqual((out['count'], out['filtered_count']), (0, 0))    # 검색 순위로 채우지 않는다(R-3 ②)
 
     def test_expired_are_still_shown_when_asked(self):
         out = match(self.rows(), top=3, hide_expired=False)
         self.assertEqual([r['notice_id'] for r in out['results']], ['n001', 'n002', 'n003'])
+
+    def test_structured_filter_off_is_plain_search(self):
+        rows = self.rows()
+        rows['n001'] = notice('n001', age_condition_raw='예비창업자', apply_end='2000-12-31')
+        out = match(rows, top=3, structured_filter=False)
+        self.assertEqual([r['notice_id'] for r in out['results']], ['n001', 'n002', 'n003'])
+        self.assertEqual(out['filtered_count'], 60)
+
+    def test_closed_status_is_excluded(self):
+        rows = self.rows(expired=0, total=3)
+        rows['n001'] = notice('n001', recruitment_status='closed')
+        out = match(rows, top=3)
+        self.assertEqual([r['notice_id'] for r in out['results']], ['n002', 'n003'])
+        self.assertEqual(out['filter']['excluded'], {'모집 마감': 1})
+
+    def test_business_age_and_applicant_type(self):
+        rows = {'pre_only': notice('pre_only', age_condition_raw='예비창업자'),
+                'under3': notice('under3', age_condition_raw='3년미만'),
+                'under7': notice('under7', age_condition_raw='7년미만'),
+                'pre_or7': notice('pre_or7', age_condition_raw='예비창업자,7년미만'),
+                'no_field': notice('no_field', age_condition_raw='')}
+        ids = lambda out: sorted(r['notice_id'] for r in out['results'])
+        # 설립 5년 법인: 예비창업자 전용·3년 미만은 확실히 미달, 조건을 모르는 공고는 남긴다
+        out, _ = self.run_match(rows, top=10, founded_at='2021-01-01')
+        self.assertEqual(ids(out), ['no_field', 'pre_or7', 'under7'])
+        self.assertEqual(out['filter']['excluded'], {'업력·신청자 유형': 2})
+        # 예비창업자: 예비창업자를 받는 공고와 조건을 모르는 공고만
+        out, _ = self.run_match(rows, top=10, applicant_type='예비창업자', founded_at='')
+        self.assertEqual(ids(out), ['no_field', 'pre_only', 'pre_or7'])
+        # 설립일을 모르는 사업자: 게이트와 같이 업력 판정 불가 → 아무것도 빼지 않는다(4번 검토의 원칙)
+        out, _ = self.run_match(rows, top=10, founded_at='')
+        self.assertEqual(ids(out), ['no_field', 'pre_only', 'pre_or7', 'under3', 'under7'])
+
+    def test_region_is_not_a_filter(self):
+        # 지역·업종은 순위에만 쓴다(기획서 4-2·5-3). 다른 시·도 공고도 후보에 남고 뒤로만 간다
+        rows = {'서울': notice('서울 창업지원', region='서울'), '경기': notice('경기 창업지원', region='경기')}
+        out = match(rows, region='경기', top=3)
+        self.assertEqual([r['notice_id'] for r in out['results']], ['경기', '서울'])
+        self.assertEqual(out['filtered_count'], 2)
+
+    def test_dense_falls_back_when_query_has_no_ids(self):
+        # 평가용 가짜 색인(eval.query_ablation.NumpyCollection)·옛 Chroma 는 ids 인자를 모른다
+        class NoIds(FakeCollection):
+            def query(self, query_embeddings=None, n_results=10):
+                return FakeCollection.query(self, query_embeddings, n_results)
+        rows = self.rows()
+        st = state(rows)
+        st['collection'] = NoIds(list(rows))
+        req = app.MatchRequest(applicant_type='법인사업자', founded_at='2025-01-01', idea='창업 지원',
+                               top=3, search='dense')
+        with patch.dict(app.STATE, st, clear=True), \
+                patch.object(app, '_encode', lambda text: [1.0, 0.0, 0.0, 0.0]):
+            out = app.match(req)
+        self.assertEqual(out['dense_path'], 'vectors')
+        self.assertIsNone(out['dense_error'])            # 호환성 차이는 오류가 아니다
+        self.assertEqual(out['count'], 3)
+        self.assertTrue(all(r['notice_id'] >= 'n052' for r in out['results']))
+
+    def test_no_candidates_skips_encoding(self):
+        # Codex 검수 P2 — 필터 통과 0건이면 인코더를 부르지 않고 빈 결과(R-3 ②). 인코더가 고장 나도 오류가 아니다
+        def broken(text):
+            raise RuntimeError('인코더 고장')
+        st = state(self.rows(expired=60))
+        req = app.MatchRequest(applicant_type='법인사업자', founded_at='2025-01-01', idea='창업 지원', top=3)
+        with patch.dict(app.STATE, st, clear=True), patch.object(app, '_encode', broken):
+            out = app.match(req)
+        self.assertEqual((out['count'], out['filtered_count'], out['encode_ms']), (0, 0, 0.0))
+        self.assertEqual(out['pipeline'], ['정형 필터'])
+        self.assertEqual(st['collection'].asked, [])     # Chroma 도 부르지 않았다
+
+    def test_other_chroma_errors_are_reported(self):
+        # Codex 검수 P2 — 색인 장애는 버전 차이와 구분해 원인을 남긴다
+        class Broken(FakeCollection):
+            def query(self, query_embeddings=None, n_results=10, ids=None):
+                raise RuntimeError('Error executing plan: Internal error')
+        rows = self.rows()
+        st = state(rows)
+        st['collection'] = Broken(list(rows))
+        req = app.MatchRequest(applicant_type='법인사업자', founded_at='2025-01-01', idea='창업 지원',
+                               top=3, search='dense')
+        with patch.dict(app.STATE, st, clear=True), \
+                patch.object(app, '_encode', lambda text: [1.0, 0.0, 0.0, 0.0]), \
+                patch('sys.stderr'):
+            out = app.match(req)
+        self.assertEqual(out['dense_path'], 'vectors')
+        self.assertIn('RuntimeError', out['dense_error'])
+        self.assertEqual(out['count'], 3)
+
+    def test_only_indexed_ids_go_to_chroma(self):
+        # 실제 Chroma 는 색인에 없는 ID 를 넘기면 오류를 낸다(2026-09-28 확인)
+        rows = self.rows(expired=0, total=5)
+        st = state(rows)
+        st['vector_ids'] = {'n001', 'n002'}
+        req = app.MatchRequest(applicant_type='법인사업자', founded_at='2025-01-01', idea='창업 지원',
+                               top=5, search='dense')
+        with patch.dict(app.STATE, st, clear=True), \
+                patch.object(app, '_encode', lambda text: [0.0, 0.0, 0.0, 0.0]):
+            out = app.match(req)
+        self.assertEqual(sorted(st['collection'].asked[0]), ['n001', 'n002'])
+        self.assertEqual(out['dense_path'], 'chroma')
 
 
 class ScoreModeTests(unittest.TestCase):
@@ -193,7 +312,7 @@ class SearchTimingTests(unittest.TestCase):
         texts['n060'] = '창업 지원 창업 지원'
         bm25 = hybrid.BM25([(n, texts[n]) for n in rows])
         real_search = bm25.search
-        bm25.search = lambda query, top=10: (tick('bm25'), real_search(query, top=top))[1]
+        bm25.search = lambda query, top=10, allowed=None: (tick('bm25'), real_search(query, top=top, allowed=allowed))[1]
 
         req = app.MatchRequest(applicant_type='법인사업자', founded_at='2025-01-01',
                                idea='창업 지원', top=3, search='hybrid')

@@ -27,8 +27,9 @@ class FakeBM25:
     def __init__(self, ids):
         self.ids = ids
 
-    def search(self, text, top=50):
+    def search(self, text, top=50, allowed=None):
         order = ['c', 'a', 'b', 'd'] if '팀 경력' in text else ['a', 'b', 'c', 'd']
+        order = [n for n in order if allowed is None or n in allowed]     # 정형 필터 통과 공고만(2026-09-28)
         return [(n, 1.0 / (i + 1)) for i, n in enumerate(order)][:top]
 
     def __len__(self):

@@ -747,6 +747,45 @@ class IndustryStatusTests(unittest.TestCase):
         self.assertEqual(out['industry_status'], 'conditional')
         self.assertEqual(s.verify_v3(v3(allowed=[('제조', '제조업')], quote=q), q, 'rough',
                                      title='2026년 수출 바우처')['industry_status'], 'known')
+        self.assertTrue(out['scope_unresolved'])
+
+    # Codex 2차 후속 리뷰 F1 — 통합공고 보호가 known 에만 걸려 not_mentioned 7·excluded_only 1건이 전역 판정으로 남던 문제
+    UMBRELLA = '2026년 중소기업 기술보호 지원사업 통합 공고'
+
+    def test_umbrella_raw_unknown_with_quote_is_not_not_mentioned(self):
+        q = '신청대상: 도내 소재 중소기업'
+        out = s.verify_v3(v3('unknown', quote=q), q, 'rough', title=self.UMBRELLA)
+        self.assertEqual(out['industry_status'], 'conditional')
+        self.assertIn('통합공고', out['industry_status_why'])
+        self.assertTrue(out['scope_unresolved'])
+        # 같은 원답이라도 통합공고가 아니면 예전처럼 언급 없음
+        plain = s.verify_v3(v3('unknown', quote=q), q, 'rough', title='2026년 기술보호 바우처')
+        self.assertEqual(plain['industry_status'], 'not_mentioned')
+        self.assertFalse(plain['scope_unresolved'])
+
+    def test_umbrella_with_excluded_only_is_not_excluded_only(self):
+        doc = '신청대상: 도내 소상공인. 단, 유흥업은 지원 제외'
+        data = v3('unknown', excluded=[('유흥업', '단, 유흥업은 지원 제외')], quote='신청대상: 도내 소상공인')
+        out = s.verify_v3(data, doc, 'rough', title=self.UMBRELLA)
+        self.assertEqual([e['text'] for e in out['excluded']], ['유흥업'])     # 값은 남기되 전역 판정은 하지 않는다
+        self.assertEqual(out['industry_status'], 'conditional')
+        self.assertTrue(out['scope_unresolved'])
+
+    def test_umbrella_no_limit_is_conditional(self):
+        out = s.verify_v3(v3('no_limit', no_limit_text='업종 제한 없음', quote='업종 제한 없음'),
+                          '신청대상: 업종 제한 없음', 'rough', title=self.UMBRELLA)
+        self.assertEqual(out['industry_status'], 'conditional')
+        self.assertTrue(out['scope_unresolved'])
+
+    def test_umbrella_unknown_keeps_its_reason(self):
+        # 이미 확인 필요인 통합공고는 그 이유(검사가 내림 등)를 지우지 않는다
+        support = '지원내용: 제조업 스마트공장 구축비'
+        out = s.verify_v3(v3(allowed=[('제조업', '제조업')], quote=support), support, 'rough', title=self.UMBRELLA)
+        self.assertEqual(out['industry_status'], 'unknown')
+        self.assertIn('검사가 내림', out['industry_status_why'])
+        self.assertTrue(out['scope_unresolved'])
+        out = s.verify_v3(v3('unknown', quote=''), '공고 개요', 'rough', title=self.UMBRELLA)
+        self.assertEqual(out['industry_status'], 'unknown')
 
     def test_all_mixed_with_specific_is_conditional(self):
         q = '신청대상: 제조업 영위 기업, 중점 육성기업은 전업종'

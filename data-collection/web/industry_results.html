@@ -181,9 +181,23 @@ async function load(run){
   renderTiles(); renderBars(); render();
 }
 
+// 서버가 묶음(group)·최신순으로 정렬해 보낸다. 묶음마다 optgroup 으로 나눈다(2026-09-28)
 function fillRuns(runs, current){
-  $('run').innerHTML = runs.map(r => '<option value="' + esc(r.name) + '"' + (r.name === current ? ' selected' : '') + '>' +
-    esc(r.name) + ' (' + esc(r.engine) + (r.take_all ? ', 전량' : ', 표본') + ')</option>').join('');
+  const when = s => {                       // run_at(UTC) → 한국 시각 'MM-DD HH:mm'
+    const d = new Date(s); if(isNaN(d)) return '';
+    const k = new Date(d.getTime() + 9 * 3600e3).toISOString();
+    return k.slice(5, 10) + ' ' + k.slice(11, 16);
+  };
+  const opt = r => '<option value="' + esc(r.name) + '"' + (r.name === current ? ' selected' : '') + '>' +
+    (r.current ? '★ ' : '') + esc(r.name.replace(/^industry_llm_/, '')) +
+    ' · ' + esc(when(r.run_at)) + ' · ' + (r.sample != null ? esc(r.sample) + '건' : '') +
+    (r.current ? ' (현재 기준)' : '') + '</option>';
+  const groups = [];
+  runs.forEach(r => {
+    const g = groups.find(x => x.key === r.group);
+    g ? g.runs.push(r) : groups.push({key: r.group, label: r.group_label || r.group, runs: [r]});
+  });
+  $('run').innerHTML = groups.map(g => '<optgroup label="' + esc(g.label) + '">' + g.runs.map(opt).join('') + '</optgroup>').join('');
 }
 
 function renderTiles(){
@@ -279,7 +293,8 @@ function render(){
         esc(c === 'X' || c === 'ALL' ? gname(c) : c + ' ' + gname(c)) + '</span>').join('') + '</div>' : '');
     const ex = r.excluded.map(t => '<span class="tag ex">' + esc(t) + '</span>').join('');
     const warn = (r.downgraded ? '<br><span class="tag warn">검사가 내림 (LLM: ' + esc(ST[r.llm_status] || r.llm_status) + ')</span>' : '') +
-      (r.truncated ? '<br><span class="tag warn">발췌 잘림</span>' : '');
+      (r.truncated ? '<br><span class="tag warn">발췌 잘림</span>' : '') +
+      (r.scope_unresolved ? '<br><span class="tag warn" title="통합공고 — 업종 조건이 어느 세부사업의 것인지 보존하지 못함">세부사업 범위 미확인</span>' : '');
     const comp = r.status === 'known' ? (r.complete ? '완전' : '<span class="muted">불완전</span>') : '';
     let h = '<tr class="main" data-id="' + esc(r.id) + '"><td>' + link + '<div class="muted">' + esc(r.id) + (r.category ? ' · ' + esc(r.category) : '') +
       '</div></td><td><span class="st ' + esc(r.istatus || r.status) + '">' +

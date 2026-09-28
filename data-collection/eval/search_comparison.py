@@ -50,7 +50,8 @@ SUPPLEMENT = {
 }
 
 STAGES = {
-    'A': {'hide_expired': False, 'demote_groups': False,
+    # A 는 검색 결과 그대로다. 2026-09-28 부터 서비스가 검색 전에 정형 필터를 걸어서 명시적으로 끈다
+    'A': {'structured_filter': False, 'hide_expired': False, 'demote_groups': False,
           'demote_region': False, 'demote_district': False},
     'B': {'hide_expired': True, 'demote_groups': True,
           'demote_region': True, 'demote_district': True},

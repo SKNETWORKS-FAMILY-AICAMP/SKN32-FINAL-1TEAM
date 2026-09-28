@@ -223,6 +223,41 @@ def judge(notice, age_months, today=None):
     }
 
 
+def prefilter(notice, age_months, today=None, check_deadline=True):
+    """정형 필터 — 검색 **전에** 후보에서 뺄 공고인지. (남길지, 뺀 이유 목록)
+
+    기능정의서 R-3 `filter: {status, applyEnd >= today, applicantTypes, businessAgeMax}`.
+    검색 순위 상위 N건을 먼저 자르고 거르면 신청 가능한 공고가 한 건도 남지 않을 수 있어
+    기획서가 결함으로 본다(5-3). 그래서 매칭은 이 함수를 모든 공고에 먼저 적용한다.
+
+    **확실한 미달만 뺀다.** 조건을 모르면(None) 남긴다 — 게이트(judge)와 같은 원칙이다.
+      모집 상태   'closed' 만 뺀다
+      접수 마감   마감일이 있고 오늘보다 앞이면 뺀다. 시작 전인 공고는 남긴다(R-3 은 applyEnd 만 본다)
+      업력·유형   _check_age 가 False 인 경우만 뺀다(예비창업자 전용 ↔ 사업자, 업력 상한 초과)
+    지역·업종은 여기서 보지 않는다. 순위에만 쓴다(기획서 4-2·5-3, 2026-09-28 결정).
+    check_deadline=False 는 비교·평가용이다(모집 상태·접수 마감을 보지 않는다).
+    """
+    today = today or date.today()
+    f = _fields(notice)
+    reasons = []
+    if check_deadline:
+        if f['status'] == 'closed':
+            reasons.append('모집 마감')
+        if f['end'] and f['end'] < today:
+            reasons.append('접수 마감')
+    if _check_age(f['age_raw'], age_months)[0] is False:
+        reasons.append('업력·신청자 유형')
+    return not reasons, reasons
+
+
+def applicant_age(applicant_type, founded_at, today=None):
+    """신청자 → judge·prefilter 의 age_months. 예비창업자는 None, 설립일을 모르는 사업자는 UNKNOWN_AGE."""
+    if applicant_type == PRE_FOUNDER:
+        return None
+    months = business_age_months(founded_at, today)
+    return UNKNOWN_AGE if months is None else months
+
+
 def mark(verdict):
     """판정 값 → 표시 기호. None 을 X 로 뭉개지 않기 위한 공용 함수."""
     return {True: 'O', False: 'X'}.get(verdict, '?')
