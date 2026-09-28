@@ -839,6 +839,12 @@ class ArtifactScoreReason(Base):
     score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     max_score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     evidence_locator: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # [2026-09-28 신규, 프론트 2차 요청 B-1] item_code('ENTRY-FILE' 등)만 내려가면 화면에
+    # 코드가 그대로 노출된다 — 실제 Agent가 뭘 채점하든 항목 이름을 보여줄 자리가 없었기
+    # 때문. 사람이 읽을 짧은 이름('진입 파일 존재 여부')을 따로 둔다(reason_text는 문장이라
+    # 라벨로 쓰기엔 김). 재채점(_rescore_verify2)은 score/evidence_locator/reason_text만
+    # 갱신하고 이 필드는 건드리지 않는다 — item_code가 그대로면 이름도 그대로여야 한다.
+    display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     artifact: Mapped['Artifact'] = relationship(back_populates='score_reasons')
 

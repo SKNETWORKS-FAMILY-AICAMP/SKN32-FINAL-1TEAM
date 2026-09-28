@@ -70,6 +70,37 @@ DEFAULT_CATEGORY = 'webdev'
 DEFAULT_DOC_SCORE = decimal.Decimal('58.50')  # 0~70
 DEFAULT_ARTIFACT_SCORE = decimal.Decimal('24.00')  # 0~30 (합계 82.50 → 기본 Threshold 80 통과)
 
+# [2026-09-28 신규, 프론트 2차 요청 C] "산출물층 코드 기준 자동 검증 8항목·15점"(기획서
+# v1.8 5-4) — front/src/features/workflow/data.js의 CODE_CHECK_ITEMS_BY_CATEGORY와 똑같은
+# 이름·배점으로 맞췄다(프론트가 이 목록을 근거로 지적했으므로 따로 지어내지 않고 그대로
+# 옮김). 예전엔 이 층에 CHECK-ENTRY-FILE 하나(5점)만 있어서 만점을 받아도 code_weight(15)
+# 근처도 못 갔다 — "합격 화면을 아예 확인할 수 없다"는 지적의 원인.
+_CODE_CHECK_ITEMS_BY_CATEGORY = {
+    'standard': (
+        ('CHECK-ENTRY-FILE', '진입 파일 존재 여부', decimal.Decimal('3.00')),
+        ('CHECK-ALT-TEXT', 'img · svg 대체 텍스트', decimal.Decimal('2.00')),
+        ('CHECK-INPUT-LABEL', 'input label 연결', decimal.Decimal('2.00')),
+        ('CHECK-HTML-LANG', 'html lang 속성', decimal.Decimal('1.00')),
+        ('CHECK-CONTRAST', '명도 대비 4.5:1', decimal.Decimal('2.00')),
+        ('CHECK-HEADING', '제목 계층', decimal.Decimal('2.00')),
+        ('CHECK-README', '실행·열람 안내 문서', decimal.Decimal('1.00')),
+        ('CHECK-HARDCODED-SECRET', '하드코딩된 비밀값', decimal.Decimal('2.00')),
+    ),
+    'onepage': (
+        ('CHECK-ENTRY-FILE', '진입 파일 존재 여부', decimal.Decimal('3.00')),
+        ('CHECK-ALT-TEXT', '대체 텍스트', decimal.Decimal('2.00')),
+        ('CHECK-KEY-INFO', '핵심 정보 항목 포함', decimal.Decimal('2.00')),
+        ('CHECK-CONTRAST', '명도 대비 4.5:1', decimal.Decimal('2.00')),
+        ('CHECK-INFO-HIERARCHY', '정보 계층', decimal.Decimal('2.00')),
+        ('CHECK-TEXT-REALNESS', '텍스트 실재성', decimal.Decimal('2.00')),
+        ('CHECK-MIN-FONT', '최소 글자 크기', decimal.Decimal('1.00')),
+        ('CHECK-README', '열람 안내 문서', decimal.Decimal('1.00')),
+    ),
+}
+# webdev/aiapi(HTML 실행 파일) -> 'standard' 체크리스트, onepage(인포그래픽 SVG) -> 'onepage'
+# 체크리스트 — data.js 상단 주석과 같은 분류.
+_CODE_CHECK_CATEGORY_KEY = {'webdev': 'standard', 'aiapi': 'standard', 'onepage': 'onepage'}
+
 _DUMMY_INFOGRAPHIC_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="480" height="320">
   <rect width="480" height="320" fill="#eef2ff"/>
   <text x="24" y="48" font-size="22" fill="#1e293b">더미 인포그래픽 (seed_dummy_pipeline.py)</text>
@@ -358,11 +389,16 @@ def seed_dummy_pipeline(
 
     # item_code/score/max_score/evidence_locator — db_review_response.md 2장 (B)-2
     # 대응: rubric_items의 item_code와 맞춘 항목 단위 채점 + 근거 위치.
+    # [2026-09-28 수정, 프론트 2차 요청 C] PSST-3-1은 rubric_items엔 있는데 이 목록에서
+    # 빠져 있었다 — plan_score_reasons 합계가 실제로는 만점이어도 20점(항목 2개 치)에서
+    # 못 벗어났던 원인 중 하나.
     for item_code, score, max_score, reason_text, evidence_locator in (
         ('PSST-1-1', decimal.Decimal('10.00'), decimal.Decimal('10.00'),
          '문제 인식 항목: 목표 고객 정의가 구체적이라 만점 처리 (더미 근거)', 'section:1-1 문단 2'),
         ('PSST-2-1', decimal.Decimal('8.00'), decimal.Decimal('10.00'),
          '실현 가능성 항목: 팀 경력 서술이 짧아 2점 감점 (더미 근거)', 'section:2-1 문단 1'),
+        ('PSST-3-1', decimal.Decimal('10.00'), decimal.Decimal('10.00'),
+         '성장 전략 항목: 시장 진입·확장 전략이 구체적이라 만점 처리 (더미 근거)', 'section:3-1 문단 1'),
     ):
         db.add(PlanScoreReason(
             plan_id=plan.plan_id, reason_text=reason_text, item_code=item_code,
@@ -403,16 +439,27 @@ def seed_dummy_pipeline(
     db.add(artifact)
     db.flush()  # artifact.artifact_id 확보
 
-    for item_code, score, max_score, reason_text, evidence_locator in (
-        ('CHECK-ENTRY-FILE', decimal.Decimal('5.00'), decimal.Decimal('5.00'),
-         '코드 검증: 진입 파일 존재 확인 — 통과 (더미 근거)', 'dist/index.html'),
-        ('FEATURE-MATCH', decimal.Decimal('5.00'), decimal.Decimal('5.00'),
-         '기능 대조: featureList 대비 누락 기능 없음 — 통과 (더미 근거)', 'src/App.tsx'),
-    ):
+    # [2026-09-28 수정, 프론트 2차 요청 B-1/C] 예전엔 CHECK-ENTRY-FILE(5점) 하나만 있어서
+    # 만점이어도 code_weight(15)의 1/3밖에 못 채웠다 — 위 _CODE_CHECK_ITEMS_BY_CATEGORY
+    # (프론트 CODE_CHECK_ITEMS_BY_CATEGORY와 동일)의 8항목을 그대로 채운다. display_name도
+    # 같이 넣어서 화면에 item_code 대신 사람이 읽을 이름이 뜨게 한다(B-1).
+    code_check_items = _CODE_CHECK_ITEMS_BY_CATEGORY[_CODE_CHECK_CATEGORY_KEY[category]]
+    for item_code, display_name, max_score in code_check_items:
         db.add(ArtifactScoreReason(
-            artifact_id=artifact.artifact_id, reason_text=reason_text, item_code=item_code,
-            score=score, max_score=max_score, evidence_locator=evidence_locator,
+            artifact_id=artifact.artifact_id, item_code=item_code, display_name=display_name,
+            score=max_score, max_score=max_score,
+            reason_text=f'코드 검증: {display_name} — 통과 (더미 근거)',
+            evidence_locator='dist/index.html' if item_code == 'CHECK-ENTRY-FILE' else None,
         ))
+    # [2026-09-28 수정] plan_weight(15)와 맞추려면 FEATURE-MATCH 하나로는(예전 5점) 부족
+    # 했다 — 계획서 대조 쪽은 프론트가 CODE_CHECK_ITEMS_BY_CATEGORY 같은 세부 항목 목록을
+    # 아직 안 줘서 여러 항목으로 쪼개지 않고, 배점만 policy.plan_weight 기본값(15)에 맞춘다.
+    db.add(ArtifactScoreReason(
+        artifact_id=artifact.artifact_id, item_code='FEATURE-MATCH', display_name='계획서 기능 대조',
+        score=decimal.Decimal('15.00'), max_score=decimal.Decimal('15.00'),
+        reason_text='기능 대조: featureList 대비 누락 기능 없음 — 통과 (더미 근거)',
+        evidence_locator='src/App.tsx',
+    ))
 
     # 5) 최종판정 (G-02)
     verdict = Verdict(

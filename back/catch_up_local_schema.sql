@@ -261,6 +261,10 @@ CALL _add_col_if_missing('verification_policies', 'rework_cap', "INT UNSIGNED NO
 -- 정확히 셀 수 없다(app/models.py AgentExecution.bundle_id 참고).
 CALL _add_col_if_missing('agent_executions', 'bundle_id', "VARCHAR(50) NULL COMMENT '재작성 묶음 이름(writing만 사용 — 예: 사업계획서 본문 작성/그래프 생성/표 생성)'");
 
+-- [2026-09-28 신규, 프론트 2차 요청 B-1] item_code만 내려가서 화면에 코드가 그대로
+-- 노출되던 문제(app/models.py ArtifactScoreReason.display_name 참고).
+CALL _add_col_if_missing('artifact_score_reasons', 'display_name', "VARCHAR(100) NULL COMMENT '화면에 보여줄 짧은 항목 이름 (예: 진입 파일 존재 여부)'");
+
 DROP PROCEDURE IF EXISTS _add_col_if_missing;
 
 -- [2026-09-28 신규] rerun_cap은 기획서 5-6절 확정값(2)로 맞춘다 — rework_cap과 분리되기

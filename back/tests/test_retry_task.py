@@ -556,3 +556,93 @@ def test_result_response_includes_rework_cap_and_bundle_usages(retry_setup, db_s
     writing_exec = next(e for e in body['agent_executions'] if e['task_key'] == 'writing' and e['rerun_type'] == 'rerun')
     assert writing_exec['attempt_no'] == 2  # seed(attempt_no=1) + retry(attempt_no=2)
     assert writing_exec['bundle_id'] == ps.BUNDLE_WRITING_BODY
+
+
+# ============================================================================
+# [2026-09-28 신규, 프론트 2차 요청 C] 재채점 시 reason_text도 같이 갱신되는지 —
+# 예전엔 score/evidence_locator만 바뀌고 reason_text는 재채점 전 문장("...통과") 그대로
+# 남아서, 점수가 떨어져도 사유는 "통과"라고 뜨는 모순이 있었다.
+# ============================================================================
+
+def test_verify2_retry_updates_reason_text(monkeypatch, retry_setup, db_session):
+    from decimal import Decimal
+
+    import app.routers.projects as projects_router
+    from app.models import ArtifactScoreReason
+
+    monkeypatch.setattr(
+        projects_router.agents, 'run_verify2_retry',
+        lambda rubric_items, *, check_kind: [
+            projects_router.agents.ScoreItemResult(
+                item_code=item_code, score=Decimal('0.00'), max_score=max_score,
+                evidence_locator=None, reason_text='(테스트 고정) 재채점 후 미달 처리',
+            )
+            for item_code, max_score in rubric_items
+        ],
+    )
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'verify2_static')
+    assert res.status_code == 200, res.text
+
+    db_session.expire_all()
+    rows = (
+        db_session.query(ArtifactScoreReason)
+        .filter(ArtifactScoreReason.item_code.like('CHECK-%'))
+        .all()
+    )
+    assert rows, 'CHECK-* 항목이 하나도 없음'
+    for row in rows:
+        assert row.score == Decimal('0.00')
+        assert row.reason_text == '(테스트 고정) 재채점 후 미달 처리', (
+            'reason_text가 재채점 후에도 안 바뀜 — 점수/사유 모순 버그 재발'
+        )
+
+
+# ============================================================================
+# [2026-09-28 신규, 프론트 2차 요청 B-3] overall_passed는 저장된 값이 아니라 그 순간의
+# 총점·기준값에서 유도해야 한다 — 재채점으로 점수가 기준 밑으로 떨어지면 판정도 같이
+# 바뀌어야 한다(첫 결과가 통과였다는 사실인 first_pass_passed는 안 바뀌어야 정상).
+# ============================================================================
+
+def test_overall_passed_reflects_current_total_score_after_rescore(monkeypatch, retry_setup, db_session):
+    from decimal import Decimal
+
+    import app.routers.projects as projects_router
+    from app.models import Verdict
+
+    result = retry_setup['client'].get(f'/projects/{retry_setup["project_id"]}/result')
+    assert result.status_code == 200, result.text
+    before = result.json()['verdict']
+    assert before['overall_passed'] is True, '테스트 전제(seed 기본값은 통과)가 깨짐'
+    assert before['first_pass_passed'] is True
+
+    # 코드 검증 8항목을 전부 0점으로 떨어뜨려서 총점이 기준(80) 밑으로 가게 만든다.
+    monkeypatch.setattr(
+        projects_router.agents, 'run_verify2_retry',
+        lambda rubric_items, *, check_kind: [
+            projects_router.agents.ScoreItemResult(
+                item_code=item_code, score=Decimal('0.00'), max_score=max_score,
+                evidence_locator=None, reason_text='(테스트 고정) 미달',
+            )
+            for item_code, max_score in rubric_items
+        ],
+    )
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'verify2_static')
+    assert res.status_code == 200, res.text
+
+    result2 = retry_setup['client'].get(f'/projects/{retry_setup["project_id"]}/result')
+    assert result2.status_code == 200, result2.text
+    after = result2.json()['verdict']
+    assert after['total_score'] < after['pass_threshold']
+    assert after['overall_passed'] is False, (
+        '총점이 기준 밑으로 떨어졌는데도 overall_passed가 True — 저장된 값을 그대로 내려주는 버그 재발'
+    )
+    # 최초 결과가 통과였다는 역사적 사실은 재채점으로 안 바뀌어야 한다.
+    assert after['first_pass_passed'] is True
+
+    db_session.expire_all()
+    verdict_row = db_session.get(Verdict, db_session.query(Verdict.verdict_id).filter(
+        Verdict.plan_id == retry_setup['plan_id']
+    ).scalar())
+    assert verdict_row.overall_passed is True, (
+        '저장된 verdict.overall_passed까지 바뀌면 안 된다 — 판정은 읽는 시점에만 유도한다'
+    )

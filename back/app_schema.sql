@@ -488,6 +488,7 @@ CREATE TABLE IF NOT EXISTS artifact_score_reasons (
     score DECIMAL(5,2) NULL COMMENT '해당 항목 획득 점수',
     max_score DECIMAL(5,2) NULL COMMENT '해당 항목 배점',
     evidence_locator VARCHAR(500) NULL COMMENT '근거 위치(코드 경로, 화면 위치 등)',
+    display_name VARCHAR(100) NULL COMMENT '화면에 보여줄 짧은 항목 이름 (예: 진입 파일 존재 여부)',
     KEY ix_artifact_score_reasons_artifact (artifact_id),
     FOREIGN KEY (artifact_id) REFERENCES artifacts(artifact_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;

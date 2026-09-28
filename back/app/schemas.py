@@ -392,6 +392,7 @@ class ArtifactScoreReasonOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     reason_text: str
     item_code: str | None = None
+    display_name: str | None = None
     score: float | None = None
     max_score: float | None = None
 
@@ -426,6 +427,13 @@ class ProofreadLogOut(BaseModel):
     original_text: str
     corrected_text: str
     reason: str | None = None
+    # [2026-09-28 신규, 프론트 2차 요청 A-3] 모델(app/models.py ProofreadLog)엔 이미 있는데
+    # 응답에서 빠져 있었다 — 이게 있어야 "1차 반려 → 2차 통과" 같은 시도별 과정을 화면에
+    # 그릴 수 있다(위반이면 passed=False + violation_type/note, attempt_no로 회차 구분).
+    attempt_no: int
+    passed: bool
+    violation_type: str | None = None
+    violation_note: str | None = None
 
 
 class BusinessPlanOut(BaseModel):

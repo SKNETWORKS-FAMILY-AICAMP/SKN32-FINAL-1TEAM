@@ -180,6 +180,10 @@ def _rescore_verify1(db: Session, plan: BusinessPlan, verify1_task_key: str) -> 
         }
         reason.score = result.score
         reason.evidence_locator = result.evidence_locator
+        # [2026-09-28 수정, 프론트 2차 요청 C] reason_text를 안 갱신해서 점수가 바뀌어도
+        # 사유 문장은 재채점 전('통과' 등) 그대로 남아있던 버그 — 점수와 사유가 같은
+        # 재채점 결과에서 같이 나와야 한다.
+        reason.reason_text = result.reason_text
     plan.doc_score = sum((r.score or Decimal('0')) for r in reasons)
 
     # [2026-09-18 수정] 재채점 시에도 verification_score_history에 새 행을 남긴다 — 예전엔
@@ -217,6 +221,8 @@ def _rescore_verify2(db: Session, plan: BusinessPlan, artifact: Artifact, verify
         item_changes[result.item_code] = {'before': _num(reason.score), 'after': _num(result.score)}
         reason.score = result.score
         reason.evidence_locator = result.evidence_locator
+        # [2026-09-28 수정, 프론트 2차 요청 C] verify1과 같은 이유 — reason_text도 같이 갱신.
+        reason.reason_text = result.reason_text
     artifact.artifact_score = sum((r.score or Decimal('0')) for r in all_reasons)
 
     # [2026-09-18 수정] verify1_* 재채점과 같은 이유 — 산출물층(code)도 재채점 이력을 남긴다.
@@ -616,8 +622,16 @@ def _build_demo_response(db: Session, project_id: int, project: Project) -> Demo
             if r.item_code and r.item_code.startswith(_VERIFY2_CROSSCHECK_PREFIXES)
         )
         doc_score = plan.doc_score or Decimal('0')
+        total_score = doc_score + code_score + plan_match_score
+        # [2026-09-28 수정, 프론트 2차 요청 B-3] verdict.overall_passed는 최초 생성 시점에
+        # 한 번 저장된 값이라, 그 뒤 재채점으로 doc_score/code_score/plan_match_score가
+        # 바뀌어도 안 따라온다 — 총점은 매번 새로 합산하면서 판정은 저장된 값을 그대로
+        # 내려주니 "총점 15.07인데 통과"처럼 서로 다른 계산에서 나온 값이 어긋났다.
+        # 판정을 항상 그 순간의 총점·기준값에서 유도한다(first_pass_passed는 "최초 결과가
+        # 통과였는지"의 역사적 사실이라 그대로 저장값을 쓴다 — 재채점으로 안 바뀌어야 함).
+        overall_passed = total_score >= policy.pass_threshold
         verdict_out = VerdictOut(
-            overall_passed=verdict.overall_passed,
+            overall_passed=overall_passed,
             model_version=verdict.model_version,
             first_pass_passed=verdict.first_pass_passed,
             doc_score=_num(doc_score),
@@ -626,7 +640,7 @@ def _build_demo_response(db: Session, project_id: int, project: Project) -> Demo
             code_max_score=_num(policy.code_weight),
             plan_match_score=_num(plan_match_score),
             plan_match_max_score=_num(policy.plan_weight),
-            total_score=_num(doc_score + code_score + plan_match_score),
+            total_score=_num(total_score),
             pass_threshold=_num(policy.pass_threshold),
         )
 

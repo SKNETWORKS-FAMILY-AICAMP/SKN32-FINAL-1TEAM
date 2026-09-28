@@ -39,15 +39,18 @@ def test_verdict_includes_three_layer_score_summary(authed_client, db_session):
 
     policy = db_session.query(VerificationPolicy).order_by(VerificationPolicy.policy_id.asc()).first()
 
-    # seed_dummy_pipeline이 심어두는 예시 채점 근거: CHECK-ENTRY-FILE 5.00/5.00,
-    # FEATURE-MATCH 5.00/5.00 (seed_dummy_pipeline.py 참고) — item_code 접두어로 갈라 합산.
+    # [2026-09-28 수정, 프론트 2차 요청 B-1/C] seed_dummy_pipeline이 심어두는 예시 채점
+    # 근거: CHECK-*(webdev 기본 카테고리 -> 'standard' 8항목, 만점 합계 15.00), FEATURE-MATCH
+    # 15.00/15.00(seed_dummy_pipeline.py _CODE_CHECK_ITEMS_BY_CATEGORY 참고) — item_code
+    # 접두어로 갈라 합산. 예전엔 항목 하나씩(5.00)만 있었는데, 만점이어도 code_weight/
+    # plan_weight(15)의 1/3밖에 못 채워서 시연 중 통과 화면을 볼 수 없다는 지적으로 확장.
     assert verdict['doc_score'] == plan['doc_score']
     assert verdict['doc_max_score'] == float(policy.doc_weight)
-    assert verdict['code_score'] == 5.0
+    assert verdict['code_score'] == 15.0
     assert verdict['code_max_score'] == float(policy.code_weight)
-    assert verdict['plan_match_score'] == 5.0
+    assert verdict['plan_match_score'] == 15.0
     assert verdict['plan_match_max_score'] == float(policy.plan_weight)
-    assert verdict['total_score'] == plan['doc_score'] + 5.0 + 5.0
+    assert verdict['total_score'] == plan['doc_score'] + 15.0 + 15.0
     assert verdict['pass_threshold'] == float(policy.pass_threshold)
 
 
