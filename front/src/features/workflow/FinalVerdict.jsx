@@ -250,7 +250,7 @@ export function ArtifactCarousel({ hasExecutable, infoSrc = null, siteSrc = null
   if (!hasExecutable) {
     return (
       <div className="flex items-center justify-center py-2">
-        <img src="/infographic-preview.png" alt="인포그래픽 예시" className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-lg"/>
+        <img src={infoSrc || '/infographic-preview.png'} alt={infoSrc ? '인포그래픽' : '인포그래픽 예시'} className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-lg"/>
       </div>
     );
   }
