@@ -138,6 +138,11 @@ def _num(value: Decimal | None) -> float | None:
     return float(value) if value is not None else None
 
 
+def _to_decimal(value: float | int | None) -> Decimal | None:
+    """_num()의 역변환 — JSON 스냅샷(float)에서 DB 컬럼(Decimal)으로 되돌릴 때 쓴다."""
+    return Decimal(str(value)) if value is not None else None
+
+
 def _get_verification_policy(db: Session) -> VerificationPolicy:
     """verification_policies는 운영 중 1행만 유지하는 설계다(app_schema.sql 주석) —
     seed_dummy_pipeline.py가 이미 이 행을 보장해두므로, retry_task 시점엔 항상 있어야
@@ -233,6 +238,135 @@ def _rescore_verify2(db: Session, plan: BusinessPlan, artifact: Artifact, verify
         applied_pass_threshold=policy.pass_threshold, applied_rerun_cap=policy.rerun_cap,
     ))
     return {'scores': item_changes, 'artifact_score': {'before': _num(before_score), 'after': _num(artifact.artifact_score)}}
+
+
+# ---------------------------------------------------------------------------
+# 재작성 전후 점수 비교 + 버전 보존 (프론트 2차 요청 A-2, 기획서 5-6절)
+# ---------------------------------------------------------------------------
+# "재작성 전후의 검증 점수를 비교해 높은 쪽을 남긴다", "이전 결과는 삭제하지 않고
+# 보존한다" — writing(문서층)/implement_*(산출물층) 재시도는 콘텐츠만 바꾸고 바로
+# 확정해버려서, 재작성으로 점수가 떨어져도 그대로 남는 문제가 있었다(rework_comparisons
+# 같은 별도 테이블도 없었음).
+#
+# 문서(plan_sections 등) 쪽은 버전마다 새 행을 쌓지 않고, 재작성 직전 상태를 JSON
+# 스냅샷(BusinessPlan.version_history)으로 찍어뒀다가 점수가 낮으면 그 스냅샷으로
+# 되돌린다.
+#
+# [2026-09-29 개정, SB-155] 산출물(artifacts) 쪽은 JSON 스냅샷 대신 실제로 버전마다
+# 새 행을 쌓는 방식으로 바꿨다 — 형제 저장소 agent-orchestration의 "이름@버전"(이전
+# 버전을 덮어쓰지 않고 쌓는) 설계와 맞춘 것. Artifact.is_current로 "지금 채택된 버전"
+# 하나만 표시한다(app/routers/projects.py _get_current_artifact 참고).
+#
+# 두 방식 모두 GET /result의 plan.sections/plan.artifacts는 항상 지금 채택된 버전
+# 하나만 내려가서, 프론트가 "여러 버전 중 뭐가 현재 버전인지" 고민할 필요가 없다
+# (정재희님 우려 사항 — API 응답 모양은 안 바뀐다).
+
+def _snapshot_plan_doc_state(plan: BusinessPlan) -> dict:
+    """writing 재시도 직전 문서층 상태 스냅샷 — doc_score/plan_sections/plan_score_reasons
+    전부를 담는다(작성 재시도가 자동으로 verify1_rubric/evidence까지 재채점하므로, 재작성이
+    건드린 태그뿐 아니라 채점 근거 전체가 같이 바뀔 수 있음)."""
+    return {
+        'doc_score': _num(plan.doc_score),
+        'sections': {s.tag: {'title': s.title, 'body': s.body} for s in plan.sections},
+        'score_reasons': {
+            r.item_code: {
+                'score': _num(r.score), 'max_score': _num(r.max_score),
+                'evidence_locator': r.evidence_locator, 'reason_text': r.reason_text,
+            }
+            for r in plan.score_reasons if r.item_code
+        },
+    }
+
+
+def _restore_plan_doc_state(plan: BusinessPlan, snapshot: dict) -> None:
+    """_snapshot_plan_doc_state가 찍어둔 스냅샷으로 되돌린다 — 재작성 후 점수가
+    낮아졌을 때만 호출한다."""
+    plan.doc_score = _to_decimal(snapshot['doc_score'])
+    sections_by_tag = {s.tag: s for s in plan.sections}
+    for tag, saved in snapshot['sections'].items():
+        section = sections_by_tag.get(tag)
+        if section is not None:
+            section.title = saved['title']
+            section.body = saved['body']
+    reasons_by_code = {r.item_code: r for r in plan.score_reasons if r.item_code}
+    for item_code, saved in snapshot['score_reasons'].items():
+        reason = reasons_by_code.get(item_code)
+        if reason is not None:
+            reason.score = _to_decimal(saved['score'])
+            reason.max_score = _to_decimal(saved['max_score'])
+            reason.evidence_locator = saved['evidence_locator']
+            reason.reason_text = saved['reason_text']
+
+
+# [2026-09-29 신규, SB-155] 산출물(artifacts)은 문서(plan)와 달리 JSON 스냅샷이 아니라
+# 버전마다 새 행을 쌓는다 — 형제 저장소 agent-orchestration의 "이름@버전"(이전 버전을
+# 덮어쓰지 않고 쌓는 방식) 설계와 맞춘 것. plan_id당 is_current=TRUE는 정확히 한 행만
+# 유지한다. API 응답(plan.artifacts는 여전히 1개만 옴)은 바뀌지 않는다 — is_current로
+# 필터링해서 내려주기 때문.
+
+def _get_current_artifact(db: Session, plan_id: int) -> Artifact | None:
+    """이 plan의 "지금 채택된" 산출물 버전 하나 — GET /result, 재시도, 관리자 화면이
+    전부 이 함수를 공유한다. artifact_id 최댓값이 아니라 is_current로 고른다: 재작성이
+    거부된(점수가 낮아 채택 안 된) 새 버전은 artifact_id가 더 크면서도 is_current=False일
+    수 있기 때문이다."""
+    return (
+        db.query(Artifact)
+        .filter(Artifact.plan_id == plan_id, Artifact.is_current.is_(True))
+        .order_by(Artifact.artifact_id.desc())
+        .first()
+    )
+
+
+def _clone_artifact_as_new_version(db: Session, old: Artifact) -> Artifact:
+    """재작성 직전 산출물을 다음 버전 행으로 복제한다 — 새 파일 경로는 호출부가 바로
+    갱신하고, 점수 근거(artifact_score_reasons)는 재채점(_rescore_verify2)이 새 행을
+    바로 찾을 수 있도록 여기서 통째로 복사해둔다(재채점은 일부 item_code만 갱신하므로,
+    복사해두지 않은 나머지 항목이 새 버전에서 통째로 사라지는 걸 막기 위함)."""
+    new = Artifact(
+        plan_id=old.plan_id, category=old.category,
+        infographic_path=old.infographic_path, executable_path=old.executable_path,
+        artifact_score=old.artifact_score, version=old.version + 1, is_current=False,
+    )
+    db.add(new)
+    db.flush()  # artifact_id 확보 — 아래 score_reasons가 이 id를 참조한다.
+    for reason in old.score_reasons:
+        db.add(ArtifactScoreReason(
+            artifact_id=new.artifact_id, reason_text=reason.reason_text, item_code=reason.item_code,
+            score=reason.score, max_score=reason.max_score, evidence_locator=reason.evidence_locator,
+            display_name=reason.display_name,
+        ))
+    db.flush()
+    return new
+
+
+def _new_version_wins(before_score: Decimal | None, after_score: Decimal | None) -> bool:
+    """재작성 전/후 점수를 비교해 새 버전을 채택(is_current)할지 정한다 — 점수가 없으면
+    (아직 채점 근거가 없어 비교 자체가 불가능한 경우) 새 버전을 그냥 채택한다."""
+    if before_score is None or after_score is None:
+        return True
+    return after_score >= before_score
+
+
+def _decide_version(
+    *, before_snapshot: dict, before_score: Decimal | None, after_score: Decimal | None, task_key: str,
+) -> dict:
+    """재작성 전/후 점수를 비교해 어느 쪽을 남길지 정하고, version_history에 追加할 항목을
+    만든다. 점수가 없으면(아직 채점 근거가 없는 초기 파이프라인 전이라 재채점이 조용히
+    건너뛰어진 경우) 비교 자체가 불가능하므로 새 버전을 그냥 채택한다."""
+    # 둘 중 하나라도 없으면(아직 채점 근거가 없어 비교 자체가 불가능한 경우) 비교하지
+    # 않고 새 버전을 그냥 채택한다 — 되돌릴 "이전 점수"라는 게 의미가 없기 때문.
+    if before_score is None or after_score is None:
+        kept = 'new'
+    else:
+        kept = 'new' if after_score >= before_score else 'previous'
+    return {
+        'kept': kept,
+        'task_key': task_key,
+        'before_score': _num(before_score),
+        'after_score': _num(after_score),
+        'snapshot': before_snapshot,
+        'recorded_at': datetime.datetime.utcnow().isoformat(),
+    }
 
 
 def _upsert_plan_section(db: Session, plan_id: int, draft) -> dict:
@@ -576,13 +710,15 @@ def _build_demo_response(db: Session, project_id: int, project: Project) -> Demo
     artifact = None
     verdict = None
     if plan is not None:
-        artifact = (
-            db.query(Artifact).filter(Artifact.plan_id == plan.plan_id).order_by(Artifact.artifact_id.desc()).first()
-        )
+        artifact = _get_current_artifact(db, plan.plan_id)
         if artifact is not None:
+            # [2026-09-29 수정, SB-155] artifact_id가 아니라 plan_id로 찾는다 — 산출물이
+            # 재작성마다 새 행(다른 artifact_id)으로 쌓이면서, 초기 채점 때 만들어진 verdict가
+            # 가리키던 artifact_id와 "지금 현재 버전"의 artifact_id가 달라질 수 있기 때문
+            # (Verdict는 plan_id도 갖고 있어 그쪽으로 찾으면 버전이 바뀌어도 계속 찾아진다).
             verdict = (
                 db.query(Verdict)
-                .filter(Verdict.artifact_id == artifact.artifact_id)
+                .filter(Verdict.plan_id == plan.plan_id)
                 .order_by(Verdict.verdict_id.desc())
                 .first()
             )
@@ -1551,6 +1687,24 @@ def delete_project(
     return Response(status_code=204)
 
 
+def _delete_artifact_files(artifact: Artifact) -> None:
+    """[2026-09-29 신규, SB-160; 2026-09-29 단순화, SB-155] 완전 삭제 시 이 산출물 행이
+    디스크에 남긴 파일을 지운다. DB 행만 지우고 파일은 그대로 두면(예전
+    _delete_project_cascade가 그랬음) UPLOAD_DIR에 영원히 고아 파일로 남는다. [SB-155]
+    산출물이 이제 버전마다 새 행으로 쌓이므로(JSON 스냅샷이 아니라 실제 행), 이 함수를
+    부르는 쪽(_delete_project_cascade)이 그 plan의 모든 버전 행을 순회하기만 하면 되고,
+    이 함수는 "행 하나 몫의 파일"만 책임지면 된다 — 예전엔 한 행에 여러 버전이
+    version_history로 몰려 있어서 여기서 직접 그 목록을 펼쳐야 했다."""
+    paths = {artifact.infographic_path, artifact.executable_path}
+    for url in paths:
+        if not url:
+            continue
+        try:
+            os.remove(os.path.join(UPLOAD_DIR, os.path.basename(url)))
+        except OSError:
+            pass
+
+
 def _delete_project_cascade(db: Session, project: Project) -> None:
     """[2026-09-28 신규] "건별 삭제" — 프로젝트 기획서 v1.10 6-7절 표: 사전 정보 입력값/
     산출물은 "건별 삭제 가능"이라고 명시돼 있다. 위 delete_project()는 매칭 이후엔 archive만
@@ -1567,7 +1721,10 @@ def _delete_project_cascade(db: Session, project: Project) -> None:
     plan_ids = [p.plan_id for p in db.query(BusinessPlan.plan_id).filter(BusinessPlan.project_id == project_id)]
 
     if plan_ids:
-        artifact_ids = [a.artifact_id for a in db.query(Artifact.artifact_id).filter(Artifact.plan_id.in_(plan_ids))]
+        artifacts = db.query(Artifact).filter(Artifact.plan_id.in_(plan_ids)).all()
+        for artifact in artifacts:
+            _delete_artifact_files(artifact)
+        artifact_ids = [a.artifact_id for a in artifacts]
         if artifact_ids:
             db.query(ArtifactScoreReason).filter(ArtifactScoreReason.artifact_id.in_(artifact_ids)).delete(synchronize_session=False)
         db.query(Verdict).filter(Verdict.plan_id.in_(plan_ids)).delete(synchronize_session=False)
@@ -1806,6 +1963,11 @@ def retry_task(
             output_ref = [{'table': 'plan_canonical_data', 'id': v['id']} for v in changed['canonical_data'].values()]
 
         elif task_key == 'writing':
+            # [2026-09-28 신규, 프론트 2차 요청 A-2] 재작성 직전 상태를 먼저 찍어둔다 —
+            # 재채점 후 점수가 떨어지면 이 스냅샷으로 되돌린다.
+            before_snapshot = _snapshot_plan_doc_state(plan)
+            before_doc_score = plan.doc_score
+
             drafts = agents.run_writing_agent_retry(project.description, tags=['1-1', '2-1'])
             changed['sections'] = {d.tag: _upsert_plan_section(db, plan.plan_id, d) for d in drafts}
             output_ref = [{'table': 'plan_sections', 'id': v['id']} for v in changed['sections'].values()]
@@ -1823,6 +1985,22 @@ def retry_task(
             if verify1_changed:
                 changed['verify1_rescore'] = verify1_changed
 
+            # [2026-09-28 신규, 프론트 2차 요청 A-2] 기획서 5-6절 — 재작성 전후 점수를
+            # 비교해 낮아졌으면 이전 상태로 되돌린다("이전 결과는 삭제하지 않고 보존한다").
+            # 채점 근거가 아직 없어 재채점 자체가 안 됐으면(verify1_changed가 비어있으면)
+            # 비교할 게 없으니 새 콘텐츠를 그냥 둔다.
+            version_entry = _decide_version(
+                before_snapshot=before_snapshot, before_score=before_doc_score,
+                after_score=plan.doc_score, task_key=task_key,
+            )
+            if version_entry['kept'] == 'previous':
+                _restore_plan_doc_state(plan, before_snapshot)
+            plan.version_history = (plan.version_history or []) + [version_entry]
+            changed['version_kept'] = version_entry['kept']
+            changed['version_comparison'] = {
+                'before_score': version_entry['before_score'], 'after_score': version_entry['after_score'],
+            }
+
         elif task_key in ('verify1_rubric', 'verify1_evidence'):
             result = _rescore_verify1(db, plan, task_key)
             if result is None:
@@ -1831,15 +2009,10 @@ def retry_task(
             output_ref = {'table': 'business_plans', 'id': plan.plan_id}
 
         elif task_key in ('implement_prototype', 'implement_infographic'):
-            artifact = (
-                db.query(Artifact)
-                .filter(Artifact.plan_id == plan.plan_id)
-                .order_by(Artifact.artifact_id.desc())
-                .first()
-            )
-            if artifact is None:
+            old_artifact = _get_current_artifact(db, plan.plan_id)
+            if old_artifact is None:
                 raise HTTPException(status_code=404, detail='재시도할 산출물(artifacts)이 없습니다')
-            if task_key == 'implement_prototype' and artifact.category == 'onepage':
+            if task_key == 'implement_prototype' and old_artifact.category == 'onepage':
                 raise HTTPException(
                     status_code=400,
                     detail=(
@@ -1847,6 +2020,8 @@ def retry_task(
                         '프로토타입 재시도 대상이 아닙니다 (인포그래픽 재시도만 가능)'
                     ),
                 )
+
+            before_artifact_score = old_artifact.artifact_score
 
             # 구현 Agent는 파일만 새로 만든다 — 채점(점수 갱신)은 검증-2(verify2_*) 몫이다.
             artifact_kind = 'prototype' if task_key == 'implement_prototype' else 'infographic'
@@ -1864,11 +2039,14 @@ def retry_task(
                 out.write(result.file_bytes)
             new_url = f'/uploads/{stored_name}'
 
+            # [2026-09-29 신규, SB-155] old_artifact는 그대로 두고(버전 보존), 새 버전 행을
+            # 만들어 거기에만 새 파일 경로를 반영한다.
+            artifact = _clone_artifact_as_new_version(db, old_artifact)
             if task_key == 'implement_prototype':
-                changed['executable_path'] = {'before': artifact.executable_path, 'after': new_url}
+                changed['executable_path'] = {'before': old_artifact.executable_path, 'after': new_url}
                 artifact.executable_path = new_url
             else:
-                changed['infographic_path'] = {'before': artifact.infographic_path, 'after': new_url}
+                changed['infographic_path'] = {'before': old_artifact.infographic_path, 'after': new_url}
                 artifact.infographic_path = new_url
             output_ref = {'table': 'artifacts', 'id': artifact.artifact_id}
 
@@ -1882,13 +2060,20 @@ def retry_task(
             if verify2_changed:
                 changed['verify2_rescore'] = verify2_changed
 
+            # [2026-09-29 신규, SB-155] 재작성 전후 점수를 비교해 새 버전을 채택할지 정한다
+            # — 낮아지면 새 행은 그냥 is_current=False로 남고(파일도 안 지움, "이전 결과는
+            # 삭제하지 않고 보존한다"), old_artifact가 계속 현재 버전으로 남는다.
+            keep_new = _new_version_wins(before_artifact_score, artifact.artifact_score)
+            artifact.is_current = keep_new
+            if keep_new:
+                old_artifact.is_current = False
+            changed['version_kept'] = 'new' if keep_new else 'previous'
+            changed['version_comparison'] = {
+                'before_score': _num(before_artifact_score), 'after_score': _num(artifact.artifact_score),
+            }
+
         elif task_key in ('verify2_static', 'verify2_crosscheck'):
-            artifact = (
-                db.query(Artifact)
-                .filter(Artifact.plan_id == plan.plan_id)
-                .order_by(Artifact.artifact_id.desc())
-                .first()
-            )
+            artifact = _get_current_artifact(db, plan.plan_id)
             if artifact is None:
                 raise HTTPException(status_code=404, detail='재채점할 산출물(artifacts)이 없습니다')
 

@@ -726,6 +726,14 @@ class BusinessPlan(Base):
     project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
     doc_score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     threshold: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    # [2026-09-28 신규, 프론트 2차 요청 A-2] 기획서 5-6절 — 재작성(writing) 전후 점수를
+    # 비교해 높은 쪽만 남기고, 낮으면 이전 상태로 되돌린다("이전 결과는 삭제하지 않고
+    # 점수 변화 이력으로 보존한다"). 다른 세션에서 이미 확정한 방식(버전마다 새 행을
+    # 쌓지 않고 JSON 스냅샷으로 보존 — plan_sections/plan_score_reasons/artifacts 행 수는
+    # 그대로 유지) — GET /result의 plan.sections/artifacts가 항상 1세트만 내려가게 하려는
+    # 목적(프론트가 배열에 여러 버전이 섞이는 걸 우려함). 각 원소 모양은
+    # app/routers/projects.py _snapshot_plan_doc_state 참고.
+    version_history: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     project: Mapped['Project'] = relationship(back_populates='business_plans')
     sections: Mapped[list['PlanSection']] = relationship(back_populates='plan')
@@ -819,6 +827,15 @@ class Artifact(Base):
     infographic_path: Mapped[str] = mapped_column(String(500))
     executable_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     artifact_score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    # [2026-09-29 신규, SB-155] 구현(implement_prototype/infographic) 재작성 전후 점수를
+    # 비교해 높은 쪽을 남기되, JSON 스냅샷(BusinessPlan.version_history 방식)이 아니라
+    # 실제 행을 버전마다 새로 쌓는다 — 형제 저장소 agent-orchestration의 "이름@버전"
+    # 설계(이전 버전을 덮어쓰지 않고 쌓는 방식)와 맞춘 것. plan_id당 정확히 한 행만
+    # is_current=True고, 그 행이 GET /result 등에서 내려주는 "현재" 산출물이다. API
+    # 응답 모양(plan.artifacts 배열에 여전히 1개만 옴)은 바뀌지 않는다 — is_current로
+    # 필터링해서 내려주기 때문(app/routers/projects.py _get_current_artifact 참고).
+    version: Mapped[int] = mapped_column(_UnsignedInt, default=1)
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True)
 
     plan: Mapped['BusinessPlan'] = relationship(back_populates='artifacts')
     score_reasons: Mapped[list['ArtifactScoreReason']] = relationship(back_populates='artifact')

@@ -593,7 +593,11 @@ class RetryTaskResponse(BaseModel):
             "'infographic_path': {'before', 'after'}}, 검수(review_expression/"
             "review_token_check)는 {'finding' 또는 'corrected_text': {'before', 'after'}} 형태. "
             '어느 모양이든 호출할 때마다 실제로 값이 달라졌는지(=진짜로 다시 수행했는지) '
-            '이 필드로 바로 확인 가능.'
+            '이 필드로 바로 확인 가능. writing/implement_*는 추가로 '
+            "'version_kept': 'new'|'previous'와 'version_comparison': {'before_score', "
+            "'after_score'}를 담는다 — 재작성 후 점수가 떨어지면 서버가 자동으로 이전 "
+            "버전을 유지하고('previous'), 이때 위 'sections'/'executable_path' 등에 보이는 "
+            "'after' 값은 실제로 반영되지 않은(되돌려진) 시도값이다."
         ),
     )
 

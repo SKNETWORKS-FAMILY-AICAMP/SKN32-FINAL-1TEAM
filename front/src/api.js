@@ -109,7 +109,9 @@ export const getProjectResult=(projectId)=>api.get(`/projects/${projectId}/resul
 // 개별 작업 재시도 — task_key: 'strategy'|'writing'|'verify1_rubric'|'verify1_evidence'|
 // 'implement_prototype'|'implement_infographic'|'verify2_static'|'verify2_crosscheck'|
 // 'review_expression'|'review_token_check' (app/schemas.py RetryTaskRequest 참고).
-export const retryTask=(projectId,taskKey)=>api.post(`/projects/${projectId}/retry-task`,{task_key:taskKey});
+// bundleId: task_key='writing'일 때 필수(서버가 PSST 4항목 중 하나를 요구 — 안 보내면
+// 400). implement_prototype/infographic은 서버가 고정 매핑을 쓰므로 생략 가능.
+export const retryTask=(projectId,taskKey,bundleId)=>api.post(`/projects/${projectId}/retry-task`,{task_key:taskKey,...(bundleId?{bundle_id:bundleId}:{})});
 
 // [2026-09-15] 응답이 JSON이 아니라 실제 파일 바이너리인 다운로드 공용 헬퍼 — apiFetch(항상
 // JSON 파싱)를 못 쓰는 GET /projects/{id}/plan-document.docx 가 쓴다.

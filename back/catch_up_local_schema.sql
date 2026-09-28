@@ -256,16 +256,30 @@ CALL _add_col_if_missing('project_plan_inputs', 'main_industry_free', "VARCHAR(1
 -- 상한을 rerun_cap(시스템 자동 재수행)과 분리한다(app/models.py VerificationPolicy 참고).
 CALL _add_col_if_missing('verification_policies', 'rework_cap', "INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '재작성(사용자가 POST /projects/{id}/retry-task로 묶음을 다시 만드는 것) 최대 횟수 — 묶음마다 1회, 첫 실행은 안 세고 실패하면 환불(rerun_cap과 별개, 2026-09-28 신규)'");
 
--- [2026-09-28 신규, 프론트 답변 반영 — bundle_id 버그 수정] task_key='writing' 하나가
--- 화면상 묶음 3개(본문/그래프/표)를 가리켜서, rework_cap 소진 여부를 task_key만으로
--- 정확히 셀 수 없다(app/models.py AgentExecution.bundle_id 참고).
-CALL _add_col_if_missing('agent_executions', 'bundle_id', "VARCHAR(50) NULL COMMENT '재작성 묶음 이름(writing만 사용 — 예: 사업계획서 본문 작성/그래프 생성/표 생성)'");
+-- [2026-09-28 신규, 프론트 답변 반영 — bundle_id 버그 수정, 2026-09-29 SB-165 묶음명 확정]
+-- task_key='writing' 하나가 화면상 묶음 여러 개(PSST 4항목)를 가리켜서, rework_cap 소진
+-- 여부를 task_key만으로 정확히 셀 수 없다(app/models.py AgentExecution.bundle_id 참고).
+CALL _add_col_if_missing('agent_executions', 'bundle_id', "VARCHAR(50) NULL COMMENT '재작성 묶음 이름(writing만 사용 — PSST 4항목: 문제인식/실현가능성/성장전략/팀 구성)'");
 
 -- [2026-09-28 신규, 프론트 2차 요청 B-1] item_code만 내려가서 화면에 코드가 그대로
 -- 노출되던 문제(app/models.py ArtifactScoreReason.display_name 참고).
 CALL _add_col_if_missing('artifact_score_reasons', 'display_name', "VARCHAR(100) NULL COMMENT '화면에 보여줄 짧은 항목 이름 (예: 진입 파일 존재 여부)'");
 
+-- [2026-09-28 신규, 프론트 2차 요청 A-2] 재작성 전후 점수 비교 + 버전 보존 — 계획서(문서)
+-- 쪽은 JSON 스냅샷.
+CALL _add_col_if_missing('business_plans', 'version_history', "JSON NULL COMMENT '재작성 전후 버전 스냅샷 이력(점수가 낮으면 되돌리고 이전 상태를 여기 보존)'");
+
+-- [2026-09-29 신규, SB-155] 산출물(artifacts) 쪽은 JSON 스냅샷 대신 버전마다 새 행을
+-- 쌓는 방식으로 바꾼다 — 기존 단일 행은 그대로 version=1, is_current=TRUE가 되므로
+-- 데이터 이관이 따로 필요 없다.
+CALL _add_col_if_missing('artifacts', 'version', "TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '이 산출물의 버전 번호(재작성마다 +1)'");
+CALL _add_col_if_missing('artifacts', 'is_current', "BOOLEAN NOT NULL DEFAULT TRUE COMMENT '이 plan_id에서 지금 채택된 버전인지'");
+
 DROP PROCEDURE IF EXISTS _add_col_if_missing;
+
+-- [2026-09-29 신규, SB-155] is_current로 "현재 버전"을 빠르게 찾는 조회(GET /result 등)를
+-- 위한 인덱스 — 위 컬럼들이 생긴 뒤에 걸어야 한다.
+CALL _add_index_if_missing('artifacts', 'ix_artifacts_plan_current', '(plan_id, is_current)');
 
 -- [2026-09-28 신규] rerun_cap은 기획서 5-6절 확정값(2)로 맞춘다 — rework_cap과 분리되기
 -- 전 기본값 3이 그대로 남아있는 행만 건드린다(운영 중 정책은 1행만 유지 — app_schema.sql

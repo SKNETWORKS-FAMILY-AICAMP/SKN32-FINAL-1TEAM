@@ -189,8 +189,13 @@ def _build_item_out(db: Session, project: Project) -> ItemOut:
         .order_by(BusinessPlan.plan_id.desc())
         .first()
     )
+    # [2026-09-29 수정, SB-155] artifact_id 최댓값이 아니라 is_current로 "현재 버전"을
+    # 고른다 — 재작성이 거부된 새 버전은 artifact_id가 더 크면서도 is_current=False일 수
+    # 있다(app/routers/projects.py _get_current_artifact와 같은 이유).
     artifact = (
-        db.query(Artifact).filter(Artifact.plan_id == plan.plan_id).order_by(Artifact.artifact_id.desc()).first()
+        db.query(Artifact)
+        .filter(Artifact.plan_id == plan.plan_id, Artifact.is_current.is_(True))
+        .order_by(Artifact.artifact_id.desc()).first()
         if plan is not None else None
     )
     score = None
@@ -624,7 +629,7 @@ def get_ops_summary(db: Session = Depends(get_db), _admin: User = Depends(requir
         if plan.doc_score is None:
             continue
         artifact = (
-            db.query(Artifact).filter(Artifact.plan_id == plan.plan_id)
+            db.query(Artifact).filter(Artifact.plan_id == plan.plan_id, Artifact.is_current.is_(True))
             .order_by(Artifact.artifact_id.desc()).first()
         )
         if artifact is not None and artifact.artifact_score is not None:

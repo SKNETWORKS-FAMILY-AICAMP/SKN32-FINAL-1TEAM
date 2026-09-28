@@ -7,11 +7,12 @@ import {RerunLeftBadge} from './shared.jsx';
 import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_TABLE_EXAMPLE,RERUN_CAP,SCORE_DISCLAIMER,DOC_REWORK_BUNDLES} from './data.js';
 import {ApiError,fetchPlanDocumentPdf,getProjectStatus,retryTask} from '../../api.js';
 
-// 재작성 묶음 -> 다시 돌릴 task_key. 묶음 하나를 고르면 그 항목의 본문·차트·표가 함께
-// 다시 만들어지는데(기능정의서 7_재작성·재수행매핑), 서버에는 그 셋이 'writing' 하나로
-// 묶여 있어 호출은 한 번이다.
-// ⚠ 어느 묶음 몫인지는 아직 서버에 못 보낸다 — RetryTaskRequest에 bundle_id가 없다.
-// 그래서 서버는 지금 "writing을 다시 돌렸다"까지만 알고, 묶음별 사용 횟수는 프론트만 센다.
+// 재작성 묶음(PSST 4항목) -> 다시 돌릴 task_key. 묶음 하나를 고르면 그 항목의
+// 본문·차트·표가 함께 다시 만들어지는데(기능정의서 7_재작성·재수행매핑), 서버에는 그
+// 셋이 'writing' 하나로 묶여 있다. 어느 묶음 몫인지는 라벨을 그대로 bundle_id로
+// 보내서 구분한다(app/pipeline_stages.py WRITING_BUNDLES와 값이 같아야 함) — 그래서
+// 묶음마다 따로 호출해야 하고(task_key로 뭉쳐서 한 번만 부르면 안 됨), 서버가
+// 묶음별 사용 횟수를 정확히 센다.
 const TASK_KEY_BY_LABEL = Object.fromEntries(DOC_REWORK_BUNDLES.map((b) => [b, 'writing']));
 
 // 프로토타입 생성 중인지 확인하는 주기. 진행 중일 때만 돌고 끝나면 멈춘다.
@@ -212,7 +213,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
   // 재작성 상한(RERUN_CAP = 항목마다 1회)에 닿은 항목은 고를 수 없다.
   // 화면에 적는 상한값도 서버가 준 값을 쓴다(관리자가 바꾸면 같이 따라간다).
   const cap = reworkBudget?.cap ?? RERUN_CAP;
-  const isCapped = (label) => isRerunCapped(reworkCounts, label, reworkBudget, TASK_KEY_BY_LABEL);
+  const isCapped = (label) => isRerunCapped(reworkCounts, label, reworkBudget);
   const allCapped = DOC_REWORK_BUNDLES.every(isCapped);
 
   const toggleTask = (label) => {
@@ -223,7 +224,9 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
 
   // POST /projects/{id}/retry-task를 실제로 호출한다(app/routers/projects.py retry_task) —
   // 예전엔 setTimeout으로 스피너만 흉내 내고 서버 호출이 없어 DB에 아무 변화도 안 남았다.
-  // 체크한 라벨이 전부 같은 task_key('writing')로 묶이므로 중복 없이 한 번만 호출한다.
+  // 묶음(PSST 항목)마다 서버가 bundle_id로 사용 횟수를 따로 세므로, task_key가 같아도
+  // (전부 'writing') 묶음별로 각각 호출해야 한다 — 하나로 뭉쳐 부르면 서버가 어느 묶음
+  // 몫인지 몰라 나머지 묶음 횟수까지 같이 깎인다.
   const handleRewrite = async () => {
     // 프로토타입이 이 계획서로 만들어지는 중이라 지금 본문을 다시 쓰면 둘이 어긋난다.
     if (generating || runningTasks.length > 0) return;
@@ -233,9 +236,8 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
     if (picked.length === 0) return;
     setRunningTasks(picked);
     setCheckedTasks([]);
-    const taskKeys = [...new Set(picked.map((label) => TASK_KEY_BY_LABEL[label]).filter(Boolean))];
     try {
-      if (projectId) await Promise.all(taskKeys.map((key) => retryTask(projectId, key)));
+      if (projectId) await Promise.all(picked.map((label) => retryTask(projectId, TASK_KEY_BY_LABEL[label], label)));
       // 실제로 재시도가 나간 뒤에만 횟수를 센다 — 실패한 호출로 상한을 깎으면 안 된다.
       if (onRework) onRework(picked);
       // 서버가 재채점까지 마친 뒤이므로 결과를 다시 받아 점수를 갱신한다.
@@ -305,7 +307,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
               {DOC_REWORK_BUNDLES.map((label) => {
                 const isRunning = runningTasks.includes(label);
                 const isDone = !isRunning && completedTasks.includes(label);
-                const left = rerunLeftOf(reworkCounts, label, reworkBudget, TASK_KEY_BY_LABEL);
+                const left = rerunLeftOf(reworkCounts, label, reworkBudget);
                 const capped = left <= 0;
                 return (
                   <label key={label} className={`flex items-center gap-2.5 text-[13px] ${isRunning || generating || capped ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>

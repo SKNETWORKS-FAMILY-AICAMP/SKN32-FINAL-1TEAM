@@ -60,12 +60,12 @@ def retry_setup(db_session):
 
 def _retry(client, project_id, task_key, bundle_id=None):
     # writing은 bundle_id가 필수라서(app/pipeline_stages.py WRITING_BUNDLES), 이 파일의
-    # 다른 테스트들이 다 고쳐 쓰지 않도록 기본값(본문 작성)을 여기서 채워준다 — 묶음
+    # 다른 테스트들이 다 고쳐 쓰지 않도록 기본값(문제인식)을 여기서 채워준다 — 묶음
     # 간 독립을 직접 검증하는 테스트만 bundle_id를 명시적으로 넘긴다.
     body = {'task_key': task_key}
     if task_key == 'writing':
         from app import pipeline_stages as ps
-        body['bundle_id'] = bundle_id or ps.BUNDLE_WRITING_BODY
+        body['bundle_id'] = bundle_id or ps.BUNDLE_PSST_PROBLEM
     elif bundle_id is not None:
         body['bundle_id'] = bundle_id
     return client.post(f'/projects/{project_id}/retry-task', json=body)
@@ -268,7 +268,12 @@ def test_implement_prototype_retry_records_output_ref_to_artifact(retry_setup, d
         .order_by(AgentExecution.attempt_no.desc())
         .first()
     )
-    artifact = db_session.query(Artifact).filter(Artifact.plan_id == retry_setup['plan_id']).one()
+    # [SB-155] 재시도마다 새 버전 행이 쌓이므로(is_current 여부와 무관), output_ref는
+    # 방금 만들어진(가장 최근) 행을 가리켜야 한다.
+    artifact = (
+        db_session.query(Artifact).filter(Artifact.plan_id == retry_setup['plan_id'])
+        .order_by(Artifact.artifact_id.desc()).first()
+    )
     assert execution.output_ref == {'table': 'artifacts', 'id': artifact.artifact_id}
 
 
@@ -458,10 +463,10 @@ def test_retry_task_enforces_rework_cap(retry_setup, db_session):
 
 
 def test_rework_cap_is_counted_per_bundle_not_per_task_key(retry_setup, db_session):
-    """버그 재현/회귀 방지 — writing 하나가 화면상 묶음 3개(본문/그래프/표)를 가리켜서,
-    task_key로만 세면 "그래프" 1회 재작성했다고 "표" 재작성까지 막혀버렸다(프론트 답변
-    md "⚠ 중요 — bundle_id를 task_key로 잡으면 안 됩니다" 참고). 묶음마다 따로 1회씩
-    허용돼야 한다."""
+    """버그 재현/회귀 방지 — writing 하나가 화면상 묶음 여러 개(PSST 4항목)를 가리켜서,
+    task_key로만 세면 "실현가능성" 1회 재작성했다고 "성장전략" 재작성까지 막혀버렸다
+    (프론트 답변 md "⚠ 중요 — bundle_id를 task_key로 잡으면 안 됩니다" 참고). 묶음마다
+    따로 1회씩 허용돼야 한다."""
     from app import pipeline_stages as ps
     from app.models import VerificationPolicy
 
@@ -469,15 +474,15 @@ def test_rework_cap_is_counted_per_bundle_not_per_task_key(retry_setup, db_sessi
     policy.rework_cap = 1
     db_session.commit()
 
-    res1 = _retry(retry_setup['client'], retry_setup['project_id'], 'writing', ps.BUNDLE_WRITING_CHART)
+    res1 = _retry(retry_setup['client'], retry_setup['project_id'], 'writing', ps.BUNDLE_PSST_SOLUTION)
     assert res1.status_code == 200, res1.text
 
-    # 같은 묶음(그래프)을 또 재작성하면 막힌다.
-    res2 = _retry(retry_setup['client'], retry_setup['project_id'], 'writing', ps.BUNDLE_WRITING_CHART)
+    # 같은 묶음(실현가능성)을 또 재작성하면 막힌다.
+    res2 = _retry(retry_setup['client'], retry_setup['project_id'], 'writing', ps.BUNDLE_PSST_SOLUTION)
     assert res2.status_code == 409, res2.text
 
-    # 다른 묶음(표)은 아직 안 썼으므로 여전히 가능해야 한다 — 이게 고친 버그.
-    res3 = _retry(retry_setup['client'], retry_setup['project_id'], 'writing', ps.BUNDLE_WRITING_TABLE)
+    # 다른 묶음(성장전략)은 아직 안 썼으므로 여전히 가능해야 한다 — 이게 고친 버그.
+    res3 = _retry(retry_setup['client'], retry_setup['project_id'], 'writing', ps.BUNDLE_PSST_SCALEUP)
     assert res3.status_code == 200, res3.text
 
 
@@ -525,7 +530,7 @@ def test_result_response_includes_rework_cap_and_bundle_usages(retry_setup, db_s
     """프론트 요청 2 — GET /projects/{id}/result가 rework_cap과 묶음별 사용/잔여 횟수를
     내려줘야 프론트가 RERUN_CAP 상수 없이 화면을 그릴 수 있다. [2026-09-28 수정] task_key
     기준이던 retry_budget을 bundle_id 기준 bundle_usages로 바꿨다 — writing 하나가 화면상
-    묶음 3개(본문/그래프/표)를 가리켜서 task_key만으로는 셀 수 없었기 때문(프론트 답변 md
+    묶음 여러 개(PSST 4항목)를 가리켜서 task_key만으로는 셀 수 없었기 때문(프론트 답변 md
     참고). strategy처럼 화면에 재작성 버튼이 없는 task_key는 더 이상 이 목록에 없다."""
     from app import pipeline_stages as ps
     from app.models import VerificationPolicy
@@ -534,7 +539,7 @@ def test_result_response_includes_rework_cap_and_bundle_usages(retry_setup, db_s
     policy.rework_cap = 1
     db_session.commit()
 
-    res = _retry(retry_setup['client'], retry_setup['project_id'], 'writing', ps.BUNDLE_WRITING_BODY)
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'writing', ps.BUNDLE_PSST_PROBLEM)
     assert res.status_code == 200, res.text
 
     result = retry_setup['client'].get(f'/projects/{retry_setup["project_id"]}/result')
@@ -543,19 +548,20 @@ def test_result_response_includes_rework_cap_and_bundle_usages(retry_setup, db_s
     assert body['rework_cap'] == 1
 
     usage_by_bundle = {item['bundle_id']: item for item in body['bundle_usages']}
-    assert usage_by_bundle[ps.BUNDLE_WRITING_BODY] == {
-        'bundle_id': ps.BUNDLE_WRITING_BODY, 'layer': 'document', 'used': 1, 'remaining': 0,
+    assert usage_by_bundle[ps.BUNDLE_PSST_PROBLEM] == {
+        'bundle_id': ps.BUNDLE_PSST_PROBLEM, 'layer': 'document', 'used': 1, 'remaining': 0,
     }
     # 다른 묶음은 안 건드렸으니 그대로 남아있어야 한다(버그였다면 여기도 0으로 깎였을 것).
-    assert usage_by_bundle[ps.BUNDLE_WRITING_CHART]['remaining'] == 1
-    assert usage_by_bundle[ps.BUNDLE_WRITING_TABLE]['remaining'] == 1
+    assert usage_by_bundle[ps.BUNDLE_PSST_SOLUTION]['remaining'] == 1
+    assert usage_by_bundle[ps.BUNDLE_PSST_SCALEUP]['remaining'] == 1
+    assert usage_by_bundle[ps.BUNDLE_PSST_TEAM]['remaining'] == 1
     assert usage_by_bundle[ps.BUNDLE_ARTIFACT_PROTOTYPE]['remaining'] == 1
     assert usage_by_bundle[ps.BUNDLE_ARTIFACT_INFOGRAPHIC]['remaining'] == 1
     assert 'strategy' not in usage_by_bundle  # 재작성 버튼이 없는 task_key는 묶음이 아님
 
     writing_exec = next(e for e in body['agent_executions'] if e['task_key'] == 'writing' and e['rerun_type'] == 'rerun')
     assert writing_exec['attempt_no'] == 2  # seed(attempt_no=1) + retry(attempt_no=2)
-    assert writing_exec['bundle_id'] == ps.BUNDLE_WRITING_BODY
+    assert writing_exec['bundle_id'] == ps.BUNDLE_PSST_PROBLEM
 
 
 # ============================================================================
@@ -646,3 +652,175 @@ def test_overall_passed_reflects_current_total_score_after_rescore(monkeypatch, 
     assert verdict_row.overall_passed is True, (
         '저장된 verdict.overall_passed까지 바뀌면 안 된다 — 판정은 읽는 시점에만 유도한다'
     )
+
+
+# ============================================================================
+# [2026-09-28 신규, 프론트 2차 요청 A-2] 재작성 전후 점수 비교 + 버전 보존(JSON 스냅샷).
+# 기획서 5-6절: "재작성 전후의 검증 점수를 비교해 높은 쪽을 남긴다", "이전 결과는
+# 삭제하지 않고 보존한다".
+# ============================================================================
+
+def test_writing_retry_rolls_back_when_score_drops(monkeypatch, retry_setup, db_session):
+    from decimal import Decimal
+
+    import app.routers.projects as projects_router
+    from app.models import BusinessPlan
+
+    plan = db_session.get(BusinessPlan, retry_setup['plan_id'])
+    before_doc_score = plan.doc_score
+    before_bodies = {s.tag: s.body for s in plan.sections}
+
+    def _low_score(items):
+        return [
+            projects_router.agents.ScoreItemResult(
+                item_code=item_code, score=Decimal('0.00'), max_score=max_score,
+                evidence_locator=None, reason_text='(테스트 고정) 낮은 점수',
+            )
+            for item_code, max_score in items
+        ]
+    monkeypatch.setattr(projects_router.agents, 'run_verify1_rubric_retry', _low_score)
+    monkeypatch.setattr(projects_router.agents, 'run_verify1_evidence_retry', _low_score)
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'writing')
+    assert res.status_code == 200, res.text
+    changed = res.json()['changed']
+    assert changed['version_kept'] == 'previous'
+    assert changed['version_comparison']['before_score'] == float(before_doc_score)
+
+    db_session.expire_all()
+    plan = db_session.get(BusinessPlan, retry_setup['plan_id'])
+    assert plan.doc_score == before_doc_score, '점수가 떨어졌는데 doc_score가 되돌아가지 않음'
+    for s in plan.sections:
+        assert s.body == before_bodies[s.tag], f'{s.tag} 본문이 되돌아가지 않음(재작성 시도가 그대로 남음)'
+    assert plan.version_history and plan.version_history[-1]['kept'] == 'previous'
+
+
+def test_writing_retry_keeps_new_when_score_improves(monkeypatch, retry_setup, db_session):
+    from decimal import Decimal
+
+    import app.routers.projects as projects_router
+    from app.models import BusinessPlan
+
+    plan = db_session.get(BusinessPlan, retry_setup['plan_id'])
+    # seed의 doc_score 기본값(58.50)은 plan_score_reasons 합계(28)보다 큰 "자리표시자"라서
+    # (seed_dummy_pipeline.py DEFAULT_DOC_SCORE 참고), 항목을 만점 처리해도 그보다 낮게
+    # 나온다 — "점수가 오르는" 시나리오를 확실히 만들려고 합계보다 낮은 값으로 미리 낮춰둔다.
+    plan.doc_score = Decimal('10.00')
+    db_session.commit()
+    before_doc_score = plan.doc_score
+
+    def _full_marks(items):
+        return [
+            projects_router.agents.ScoreItemResult(
+                item_code=item_code, score=max_score, max_score=max_score,
+                evidence_locator='test:fixed', reason_text='(테스트 고정) 만점',
+            )
+            for item_code, max_score in items
+        ]
+    monkeypatch.setattr(projects_router.agents, 'run_verify1_rubric_retry', _full_marks)
+    monkeypatch.setattr(projects_router.agents, 'run_verify1_evidence_retry', _full_marks)
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'writing')
+    assert res.status_code == 200, res.text
+    changed = res.json()['changed']
+    assert changed['version_kept'] == 'new'
+
+    db_session.expire_all()
+    plan = db_session.get(BusinessPlan, retry_setup['plan_id'])
+    assert plan.doc_score > before_doc_score
+    assert plan.version_history and plan.version_history[-1]['kept'] == 'new'
+
+
+def test_implement_prototype_retry_keeps_old_version_current_when_score_drops(monkeypatch, retry_setup, db_session):
+    """[SB-155] 점수가 낮아지면 새 버전 행은 만들어지되 is_current=False로 남고, 예전
+    행(is_current=True)은 건드리지 않는다 — JSON 스냅샷을 되돌리던 예전 방식과 달리
+    실제로 두 행이 DB에 공존한다."""
+    import os
+    from decimal import Decimal
+
+    import app.routers.projects as projects_router
+    from app.models import Artifact
+
+    old = db_session.query(Artifact).filter(Artifact.plan_id == retry_setup['plan_id']).one()
+    before_path = old.executable_path
+    before_score = old.artifact_score
+    before_version = old.version
+
+    def _low_score(items, *, check_kind):
+        return [
+            projects_router.agents.ScoreItemResult(
+                item_code=item_code, score=Decimal('0.00'), max_score=max_score,
+                evidence_locator=None, reason_text='(테스트 고정) 낮은 점수',
+            )
+            for item_code, max_score in items
+        ]
+    monkeypatch.setattr(projects_router.agents, 'run_verify2_retry', _low_score)
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'implement_prototype')
+    assert res.status_code == 200, res.text
+    changed = res.json()['changed']
+    assert changed['version_kept'] == 'previous'
+
+    db_session.expire_all()
+    rows = (
+        db_session.query(Artifact).filter(Artifact.plan_id == retry_setup['plan_id'])
+        .order_by(Artifact.artifact_id.asc()).all()
+    )
+    assert len(rows) == 2, '점수가 낮아져도 새 버전 행 자체는 쌓여야 한다(보존)'
+    still_current, new_version = rows[0], rows[1]
+    assert still_current.is_current is True
+    assert still_current.executable_path == before_path
+    assert still_current.artifact_score == before_score
+    assert still_current.version == before_version
+
+    assert new_version.is_current is False
+    assert new_version.version == before_version + 1
+    new_path = changed['executable_path']['after']
+    assert new_version.executable_path == new_path
+    assert new_path != before_path
+
+    # [SB-155] "이전 결과는 삭제하지 않고 보존한다" — 채택되지 않은 새 버전도 파일은
+    # 지우지 않는다(예전엔 고아 파일 방지로 즉시 지웠으나, 지금은 행 자체가 보존 대상).
+    from app.routers.projects import UPLOAD_DIR
+    disk_path = os.path.join(UPLOAD_DIR, os.path.basename(new_path))
+    assert os.path.exists(disk_path), '채택 안 된 버전이어도 파일 자체는 보존돼야 함'
+
+
+def test_implement_prototype_retry_switches_current_when_score_improves(monkeypatch, retry_setup, db_session):
+    """[SB-155] 점수가 오르면 새 버전 행이 is_current=True가 되고, 예전 행은
+    is_current=False로 내려간다(예전 행도 지우지 않고 그대로 보존)."""
+    import app.routers.projects as projects_router
+    from app.models import Artifact
+
+    old = db_session.query(Artifact).filter(Artifact.plan_id == retry_setup['plan_id']).one()
+    old_artifact_id = old.artifact_id
+    old_path = old.executable_path
+
+    def _full_marks(items, *, check_kind):
+        return [
+            projects_router.agents.ScoreItemResult(
+                item_code=item_code, score=max_score, max_score=max_score,
+                evidence_locator='test:fixed', reason_text='(테스트 고정) 만점',
+            )
+            for item_code, max_score in items
+        ]
+    monkeypatch.setattr(projects_router.agents, 'run_verify2_retry', _full_marks)
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'implement_prototype')
+    assert res.status_code == 200, res.text
+    changed = res.json()['changed']
+    assert changed['version_kept'] == 'new'
+
+    db_session.expire_all()
+    old = db_session.get(Artifact, old_artifact_id)
+    assert old.is_current is False
+    assert old.executable_path == old_path, '예전 행은 손대지 않고 그대로 보존돼야 함'
+
+    current = (
+        db_session.query(Artifact)
+        .filter(Artifact.plan_id == retry_setup['plan_id'], Artifact.is_current.is_(True))
+        .one()
+    )
+    assert current.artifact_id != old_artifact_id
+    assert current.executable_path == changed['executable_path']['after']
+    assert current.version == old.version + 1

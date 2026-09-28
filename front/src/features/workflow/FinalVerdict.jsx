@@ -10,8 +10,9 @@ import {retryTask} from '../../api.js';
 
 // 계획서 라벨(WRITING_SUBTASKS)은 전부 '작성' Agent 하나(writing)로, 산출물 라벨은
 // ARTIFACT_SUBTASKS_BY_CATEGORY의 두 항목으로 각각 매핑한다 — app/schemas.py RetryTaskRequest 참고.
-// 계획서 묶음은 전부 'writing' 하나로, 산출물 묶음은 각자 task_key로 간다
-// (PlanForm.jsx의 같은 표 주석 참고 — bundle_id를 아직 서버에 못 보낸다).
+// 계획서 묶음은 전부 'writing' 하나로, 산출물 묶음은 각자 task_key로 간다. 계획서
+// 쪽은 라벨(PSST 항목)을 그대로 bundle_id로 보내 구분한다(PlanForm.jsx의 같은 표
+// 주석 참고) — 그래서 묶음마다 따로 호출해야 한다.
 const TASK_KEY_BY_LABEL = {
   ...Object.fromEntries(DOC_REWORK_BUNDLES.map((b) => [b, 'writing'])),
   '실행 파일 제작': 'implement_prototype', '인포그래픽 제작': 'implement_infographic',
@@ -405,7 +406,7 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
   // Task는 이 화면에서도 고를 수 없다.
   // 화면에 적는 상한값도 서버가 준 값을 쓴다(관리자가 바꾸면 같이 따라간다).
   const cap = reworkBudget?.cap ?? RERUN_CAP;
-  const isCapped = (label) => isRerunCapped(reworkCounts, label, reworkBudget, TASK_KEY_BY_LABEL);
+  const isCapped = (label) => isRerunCapped(reworkCounts, label, reworkBudget);
   const allCapped = allTasks.every(({ label }) => isCapped(label));
 
   const toggleTask = (label) => {
@@ -434,12 +435,15 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
     const fromTotal = finalTotal; // 재작성 전 총점 — 변경 내역 헤더의 "X → Y" 중 X
     setRunningTasks(picked);
     setCheckedTasks([]);
-    const taskKeys = [...new Set(picked.map((label) => TASK_KEY_BY_LABEL[label]).filter(Boolean))];
-    const changedByKey = {};
+    // 라벨(묶음)별로 각각 호출한다 — 계획서 묶음 여러 개를 같이 골라도 전부 task_key=
+    // 'writing'이라, 하나로 뭉쳐 부르면 서버가 어느 묶음 몫인지 몰라 나머지 묶음
+    // 사용 횟수까지 같이 깎인다.
+    const changedByLabel = {};
     try {
-      const responses = projectId ? await Promise.all(taskKeys.map((key) => retryTask(projectId, key))) : [];
-      // task_key -> 그 호출이 돌려준 changed. 라벨은 TASK_KEY_BY_LABEL로 자기 task_key를 찾는다.
-      taskKeys.forEach((key, i) => { changedByKey[key] = responses[i]?.changed || null; });
+      const responses = projectId
+        ? await Promise.all(picked.map((label) => retryTask(projectId, TASK_KEY_BY_LABEL[label], label)))
+        : [];
+      picked.forEach((label, i) => { changedByLabel[label] = responses[i]?.changed || null; });
     } catch (err) {
       console.error('재작성 요청이 실패했어요', err);
       window.alert(err.message || '재작성에 실패했어요. 다시 시도해 주세요.');
@@ -456,12 +460,15 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
     setReworkDiff(allTasks.map(({ label, layer }) => {
       const changed = picked.includes(label);
       if (!changed) return { label, layer, before: '변경 없음', after: '변경 없음', changed: false };
-      const fromServer = reworkDiffFromChanged(changedByKey[TASK_KEY_BY_LABEL[label]]);
+      const fromServer = reworkDiffFromChanged(changedByLabel[label]);
       const summary = fromServer || TASK_REWORK_SUMMARY[label] || { before: '변경 없음', after: '변경 없음' };
       return { label, layer, before: summary.before, after: summary.after, changed: true, fromServer: !!fromServer };
     }));
     setReworkFromTotal(fromTotal);
-    setSectionDiff(changedByKey['writing']?.sections || null);
+    // 계획서 묶음(PSST 항목)을 하나라도 골랐으면 그 응답의 sections로 비교를 그린다 —
+    // 서버는 어느 묶음이든 같은 writing 재작성을 돌리므로 내용은 동일하다.
+    const writingLabel = picked.find((label) => TASK_KEY_BY_LABEL[label] === 'writing');
+    setSectionDiff(writingLabel ? changedByLabel[writingLabel]?.sections || null : null);
     setReworkedParts({
       plan: pickedLayers.has('계획서'),
       infographic: picked.includes('인포그래픽 제작'),
@@ -561,7 +568,7 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
           <div className="flex flex-col gap-2.5 mb-4">
             {allTasks.map(({ label, layer }) => {
               const isRunning = runningTasks.includes(label);
-              const left = rerunLeftOf(reworkCounts, label, reworkBudget, TASK_KEY_BY_LABEL);
+              const left = rerunLeftOf(reworkCounts, label, reworkBudget);
               const capped = left <= 0;
               // 재작성 대조 모달을 X로 닫고 나면, 방금 체크했던 항목이 실제로 반영됐는지
               // 구분할 UI가 없었다(사용자 지적) — 가장 최근 재작성에서 바뀐 항목(reworkDiff의

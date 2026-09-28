@@ -138,7 +138,7 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
   // 재작성 상한(RERUN_CAP = 항목마다 1회)에 닿은 항목은 고를 수 없다 — PlanForm과 같은 규칙.
   // 화면에 적는 상한값도 서버가 준 값을 쓴다(관리자가 바꾸면 같이 따라간다).
   const cap = reworkBudget?.cap ?? RERUN_CAP;
-  const isCapped = (label) => isRerunCapped(reworkCounts, label, reworkBudget, TASK_KEY_BY_LABEL);
+  const isCapped = (label) => isRerunCapped(reworkCounts, label, reworkBudget);
   const allCapped = subtasks.every(isCapped);
 
   const toggleTask = (label) => {
@@ -246,7 +246,7 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
               {subtasks.map((label) => {
                 const isRunning = runningTasks.includes(label);
                 const isDone = !isRunning && completedTasks.includes(label);
-                const left = rerunLeftOf(reworkCounts, label, reworkBudget, TASK_KEY_BY_LABEL);
+                const left = rerunLeftOf(reworkCounts, label, reworkBudget);
                 const capped = left <= 0;
                 return (
                   <label key={label} className={`flex items-center gap-2.5 text-[13px] ${isRunning || capped ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>

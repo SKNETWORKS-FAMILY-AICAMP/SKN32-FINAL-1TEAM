@@ -82,6 +82,63 @@ def test_permanent_delete_cascades_full_pipeline_and_own_company(authed_client, 
     assert db_session.query(Notice).filter_by(notice_id='PERM-DEL-001').count() == 1
 
 
+def test_permanent_delete_removes_all_artifact_version_files_from_disk(authed_client, db_session):
+    """[SB-160] 완전 삭제는 DB 행뿐 아니라 디스크의 산출물 파일도 지워야 한다 — 지금
+    채택된 버전(is_current=True)만이 아니라, 재작성으로 쌓인 예전 버전 행(SB-155,
+    is_current=False)의 파일까지 전부. 안 지우면 UPLOAD_DIR에 고아 파일로 영원히 남는다."""
+    import os
+
+    from app.routers.projects import UPLOAD_DIR
+
+    payload = {'description': '완전 삭제 버전 파일 정리 테스트', 'team_members': [], 'pricing_items': []}
+    project_id = authed_client.post('/projects', data={'payload': json.dumps(payload)}).json()['project_id']
+
+    notice = Notice(notice_id='PERM-DEL-FILES', source='k-startup', title='건별삭제 파일정리 테스트용 공고', recruitment_status='open')
+    db_session.add(notice)
+    db_session.flush()
+    verdict = seed_dummy_pipeline(db_session, project_id, notice_id='PERM-DEL-FILES', retry_agents=())
+    db_session.commit()
+
+    artifact = db_session.query(Artifact).filter_by(artifact_id=verdict.artifact_id).one()
+    current_infographic = os.path.join(UPLOAD_DIR, os.path.basename(artifact.infographic_path))
+    current_executable = os.path.join(UPLOAD_DIR, os.path.basename(artifact.executable_path))
+    assert os.path.exists(current_infographic)
+    assert os.path.exists(current_executable)
+    # 삭제 전엔 실제로 다운로드 가능해야 한다(뒤에서 볼 404가 "원래도 안 됐던 것"이 아님을
+    # 보장하기 위한 대조군).
+    assert authed_client.get(artifact.infographic_path).status_code == 200
+    assert authed_client.get(artifact.executable_path).status_code == 200
+
+    # [SB-155] 재작성으로 쌓인, 채택되지 않은 예전 버전 행을 흉내낸다 — 실제로 디스크에
+    # 파일을 하나 더 만들어두고 그 경로를 가리키는 두 번째(is_current=False) Artifact
+    # 행을 추가한다.
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    old_stored_name = 'old-version-test.svg'
+    old_path = os.path.join(UPLOAD_DIR, old_stored_name)
+    with open(old_path, 'wb') as f:
+        f.write(b'old version content')
+    rejected_version = Artifact(
+        plan_id=artifact.plan_id, category=artifact.category,
+        infographic_path=f'/uploads/{old_stored_name}', executable_path=None,
+        version=artifact.version + 1, is_current=False,
+    )
+    db_session.add(rejected_version)
+    db_session.commit()
+    assert os.path.exists(old_path)
+
+    infographic_url = artifact.infographic_path
+    executable_url = artifact.executable_path
+
+    res = authed_client.delete(f'/projects/{project_id}/permanent')
+    assert res.status_code == 204, res.text
+
+    assert not os.path.exists(current_infographic)
+    assert not os.path.exists(current_executable)
+    assert not os.path.exists(old_path)
+    assert authed_client.get(infographic_url).status_code == 404
+    assert authed_client.get(executable_url).status_code == 404
+
+
 def test_permanent_delete_works_on_already_archived_project(authed_client, db_session):
     """archive된(휴지통) 프로젝트도 permanent delete로 완전히 지울 수 있어야 한다 —
     두 액션이 서로 배타적이지 않다."""

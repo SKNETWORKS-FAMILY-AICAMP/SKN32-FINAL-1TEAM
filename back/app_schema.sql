@@ -423,6 +423,7 @@ CREATE TABLE IF NOT EXISTS business_plans (
     project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
     doc_score DECIMAL(5,2) NULL COMMENT '문서 적합도 점수(작성 Agent 산출)',
     threshold DECIMAL(5,2) NULL COMMENT '통과 기준 점수',
+    version_history JSON NULL COMMENT '재작성 전후 버전 스냅샷 이력(점수가 낮으면 되돌리고 이전 상태를 여기 보존)',
     KEY ix_business_plans_project (project_id),
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
@@ -476,7 +477,13 @@ CREATE TABLE IF NOT EXISTS artifacts (
     infographic_path VARCHAR(500) NOT NULL COMMENT '인포그래픽 파일 경로',
     executable_path VARCHAR(500) NULL COMMENT '실행 파일 경로(원페이지형은 NULL)',
     artifact_score DECIMAL(5,2) NULL COMMENT '산출물 적합도 점수',
+    -- [2026-09-29 신규, SB-155] 재작성마다 새 행을 쌓는다(JSON 스냅샷 아님) — 형제 저장소
+    -- agent-orchestration의 "이름@버전" 설계와 맞춤. plan_id당 is_current=TRUE는 정확히
+    -- 한 행이어야 한다(app에서 보장, catch_up_local_schema.sql 참고).
+    version TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '이 산출물의 버전 번호(재작성마다 +1)',
+    is_current BOOLEAN NOT NULL DEFAULT TRUE COMMENT '이 plan_id에서 지금 채택된 버전인지 — GET /result 등은 이 값이 TRUE인 행만 내려준다',
     KEY ix_artifacts_plan (plan_id),
+    KEY ix_artifacts_plan_current (plan_id, is_current),
     FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
@@ -625,11 +632,12 @@ CREATE TABLE IF NOT EXISTS agent_executions (
     -- 그 리스트(JSON). 형제 저장소 agent-orchestration의 ExecutionRecord/CallLog 설계(원본
     -- 프롬프트·응답 내용은 남기지 않고 참조만 남김)를 관계형 id로 옮긴 것.
     output_ref JSON NULL COMMENT '이 실행이 만들거나 바꾼 산출물 참조({table,id} 또는 리스트) — 프롬프트/응답 원문은 저장하지 않음',
-    -- [2026-09-28 신규, SB-152 프론트 답변 반영] task_key='writing' 하나가 화면상 묶음
-    -- 3개(사업계획서 본문 작성/그래프 생성/표 생성)를 가리켜서, rework_cap 소진 여부를
-    -- task_key만으로 셀 수 없다 — writing 재시도일 때만 채워지고, 이미 task_key와 묶음이
-    -- 1:1인 나머지(구현 등)는 NULL로 둔 채 여전히 task_key 기준으로 센다.
-    bundle_id VARCHAR(50) NULL COMMENT '재작성 묶음 이름(writing만 사용 — 예: 사업계획서 본문 작성/그래프 생성/표 생성)',
+    -- [2026-09-28 신규, SB-152 프론트 답변 반영, 2026-09-29 SB-165 묶음명 확정] task_key=
+    -- 'writing' 하나가 화면상 묶음 여러 개(PSST 4항목: 문제인식/실현가능성/성장전략/
+    -- 팀 구성)를 가리켜서, rework_cap 소진 여부를 task_key만으로 셀 수 없다 — writing
+    -- 재시도일 때만 채워지고, 이미 task_key와 묶음이 1:1인 나머지(구현 등)는 NULL로 둔
+    -- 채 여전히 task_key 기준으로 센다.
+    bundle_id VARCHAR(50) NULL COMMENT '재작성 묶음 이름(writing만 사용 — PSST 4항목: 문제인식/실현가능성/성장전략/팀 구성)',
     -- [2026-09-17 인덱싱 개정, 2026-09-28 match_results 통합으로 컬럼명만 변경] "이
     -- 프로젝트의 이 task_key 최근 시도가 몇 번째인지" 조회가 재시도/이어하기 로직에서
     -- 자주 호출된다(projects.py 재시도 처리, admin.py 에이전트 테스크 탭의 project_id

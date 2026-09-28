@@ -207,14 +207,20 @@ MAIN_INDUSTRIES = ('제조', '지식서비스', '기계·소재', '전기·전�
 
 # [2026-09-28 신규, SB-152 프론트 답변 반영] "재작성" 상한(VerificationPolicy.rework_cap)은
 # task_key 단위가 아니라 화면에 보이는 "묶음(bundle)" 단위로 세야 한다 — writing 하나의
-# task_key 안에 화면상 별개인 묶음 3개(본문/그래프/표)가 들어있어서, task_key로만 세면
-# 그래프만 재작성해도 표 재작성 기회까지 같이 깎이는 버그가 생긴다(프론트 답변 md
-# "⚠ 중요 — bundle_id를 task_key로 잡으면 안 됩니다" 참고). 산출물(구현) 쪽은 이미
-# task_key와 묶음이 1:1이라 문제 없다.
-BUNDLE_WRITING_BODY = '사업계획서 본문 작성'
-BUNDLE_WRITING_CHART = '그래프 생성'
-BUNDLE_WRITING_TABLE = '표 생성'
-WRITING_BUNDLES = (BUNDLE_WRITING_BODY, BUNDLE_WRITING_CHART, BUNDLE_WRITING_TABLE)
+# task_key 안에 화면상 별개인 묶음 여러 개가 들어있어서, task_key로만 세면 묶음 하나만
+# 재작성해도 다른 묶음 재작성 기회까지 같이 깎이는 버그가 생긴다(프론트 답변 md "⚠ 중요
+# — bundle_id를 task_key로 잡으면 안 됩니다" 참고). 산출물(구현) 쪽은 이미 task_key와
+# 묶음이 1:1이라 문제 없다.
+#
+# [2026-09-29 개정, SB-165] 묶음 = Task 이름(본문/차트/표)이 아니라 PSST 평가 항목
+# 4개(문제인식/실현가능성/성장전략/팀 구성)로 확정 — front/src/features/workflow/data.js
+# DOC_REWORK_BUNDLES와 반드시 같은 값이어야 한다(프론트가 그 라벨을 bundle_id로 그대로
+# 보낸다). PSST = Problem·Solution·Scale-up·Team.
+BUNDLE_PSST_PROBLEM = '문제인식'
+BUNDLE_PSST_SOLUTION = '실현가능성'
+BUNDLE_PSST_SCALEUP = '성장전략'
+BUNDLE_PSST_TEAM = '팀 구성'
+WRITING_BUNDLES = (BUNDLE_PSST_PROBLEM, BUNDLE_PSST_SOLUTION, BUNDLE_PSST_SCALEUP, BUNDLE_PSST_TEAM)
 
 BUNDLE_ARTIFACT_PROTOTYPE = '실행 파일 제작'
 BUNDLE_ARTIFACT_INFOGRAPHIC = '인포그래픽 제작'
@@ -229,9 +235,10 @@ TASK_KEY_TO_FIXED_BUNDLE = {
     'implement_infographic': BUNDLE_ARTIFACT_INFOGRAPHIC,
 }
 BUNDLE_TO_LAYER = {
-    BUNDLE_WRITING_BODY: BUNDLE_LAYER_DOCUMENT,
-    BUNDLE_WRITING_CHART: BUNDLE_LAYER_DOCUMENT,
-    BUNDLE_WRITING_TABLE: BUNDLE_LAYER_DOCUMENT,
+    BUNDLE_PSST_PROBLEM: BUNDLE_LAYER_DOCUMENT,
+    BUNDLE_PSST_SOLUTION: BUNDLE_LAYER_DOCUMENT,
+    BUNDLE_PSST_SCALEUP: BUNDLE_LAYER_DOCUMENT,
+    BUNDLE_PSST_TEAM: BUNDLE_LAYER_DOCUMENT,
     BUNDLE_ARTIFACT_PROTOTYPE: BUNDLE_LAYER_ARTIFACT,
     BUNDLE_ARTIFACT_INFOGRAPHIC: BUNDLE_LAYER_ARTIFACT,
 }
