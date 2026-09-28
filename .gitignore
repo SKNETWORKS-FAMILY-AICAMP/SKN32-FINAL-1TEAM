@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 개인 업무 정리 문서
 /박상희.md
 
@@ -26,3 +27,24 @@ __pycache__/
 **/generate_reports/
 
 /tools/
+=======
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+>>>>>>> deb5c81cc62f58d52d8a384f2b8aac6e881d7fef
