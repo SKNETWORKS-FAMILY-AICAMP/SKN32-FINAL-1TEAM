@@ -97,29 +97,14 @@ CALL _add_col_if_missing('projects', 'output_summary', "TEXT NULL COMMENT '산�
 CALL _add_col_if_missing('projects', 'tech_field', "VARCHAR(100) NULL COMMENT '전문기술분야'");
 CALL _add_col_if_missing('projects', 'regional_priority_area', "VARCHAR(100) NULL COMMENT '지방우대 지역 해당여부(해당 시 지역명)'");
 
--- [2026-09-22 신규] 생성 작업(계획서/프로토타입) 비동기화 — DB 클레임 컬럼 하나로
--- Redis 없이 재시작·다중 워커에 대응한다(app/routers/projects.py _try_claim_and_run 참고).
-CALL _add_col_if_missing('match_results', 'worker_claimed_at', "DATETIME(6) NULL COMMENT '생성 작업을 처리 중인 워커의 마지막 클레임/하트비트 시각'");
-CALL _add_col_if_missing('match_results', 'failure_reason', "TEXT NULL COMMENT '마지막 실패 사유(에러 메시지) — status=waiting_resume/failed일 때 값 있음'");
-
--- [2026-09-23 신규, 2026-09-26 정정] 실패 시 자동 재개(최대 5회, 15->30->60->120->240분
--- 백오프, 총 대기 상한 12시간) — 공식 기능정의서 v1.9(R-11) 기준. app/routers/projects.py
--- GENERATION_RESUME_MAX_ATTEMPTS/GENERATION_RESUME_TOTAL_CAP_SECONDS 참고.
-CALL _add_col_if_missing('match_results', 'retry_count', "TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '자동 재개 소진 횟수(최대 5)'");
-CALL _add_col_if_missing('match_results', 'next_retry_at', "DATETIME(6) NULL COMMENT '다음 자동 재개 예정 시각(waiting_resume 전용)'");
-CALL _add_col_if_missing('match_results', 'resume_started_at', "DATETIME(6) NULL COMMENT '이번 실패 스트릭 시작 시각(재개 총 대기 상한 12시간 계산용)'");
-
--- [2026-09-27 신규, SB-133] retry_count(위에서 만든 컬럼)는 사실 스펙의 Run.resumeCount
--- (재개 횟수)였다 — Run.retryCount(개별 호출 즉시 재시도 횟수)와 이름이 겹쳐 혼동을
--- 일으키므로 resume_count로 바로잡고, 진짜 retry_count는 새로 만든다(지금은 파이프라인이
--- 100% 더미라 항상 0 — 실제 Agent 호출 계층이 생기면 그때 채운다). 순서 중요: 먼저
--- 개명하고, 그다음에 비어진 retry_count 이름으로 새 컬럼을 추가한다.
-CALL _rename_col_if_needed('match_results', 'retry_count', 'resume_count', "TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '자동 재개 소진 횟수(최대 5)'");
-CALL _add_col_if_missing('match_results', 'retry_count', "TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '개별 호출 즉시 재시도 횟수(현재 미사용, 항상 0)'");
-
--- [2026-09-27 신규, SB-134] 실패 원인 분류(일시/입력/운영) — 공식 기능정의서 v1.9
--- Run.lastErrorKind, R-11. app/pipeline_stages.py classify_error_kind 참고.
-CALL _add_col_if_missing('match_results', 'last_error_kind', "ENUM('일시','입력','운영') NULL COMMENT '마지막 실패 원인 분류(NULL=실패 이력 없음/초기화됨)'");
+-- [2026-09-28 삭제, SB-152 정리] 여기 있던 match_results 컬럼 추가/개명 6건(worker_claimed_at/
+-- failure_reason/retry_count/next_retry_at/resume_started_at/last_error_kind, 2026-09-22~27
+-- 사이 추가됨)을 지웠다 — projects/match_results 통합(SB-118) 이후 match_results 테이블
+-- 자체가 없어져서, 이미 통합이 끝난 DB에서 이 CALL들이 "Table 'match_results' doesn't
+-- exist"(Error 1146)로 실패하는 걸 실제로 확인했다(하정원님). 아직 통합 전인(=match_results가
+-- 남아있는) DB는 없다고 보고 안전하게 지운다 — 혹시 있다면 _migrate_match_results_into_
+-- projects()가 이 컬럼들 없이 UPDATE를 시도해 실패할 텐데, 그건 이 컬럼들을 여기서 되살리는
+-- 것보다 먼저 어떤 DB인지 확인하는 게 맞다.
 
 -- [2026-09-27 신규] 필수 동의(이용약관/개인정보) — 공식 기능정의서 v1.9 E-AUTH-CONSENT
 -- 대비 갭. 예전엔 프론트 체크박스로만 가입 진행을 막고 서버는 동의 여부를 전혀
@@ -136,10 +121,11 @@ CALL _add_col_if_missing('users', 'privacy_agreed_at', "DATETIME(6) NULL COMMENT
 -- ENUM으로 바꾸기 전에 기존 값을 'completed'로 먼저 맞춰야 한다 — 안 그러면 ENUM에
 -- 없는 값이 남아있는 행에서 ALTER 자체가 막힌다. 두 ALTER 다 몇 번을 다시 실행해도
 -- 안전하다(이미 ENUM이어도 같은 정의로 다시 MODIFY할 뿐).
+-- [2026-09-28 삭제, SB-152 정리] 여기 있던 `ALTER TABLE match_results MODIFY COLUMN
+-- status ...`를 지웠다 — match_results 테이블 자체가 없어져서(SB-118) 이제 이 ALTER는
+-- 무조건 "Table 'match_results' doesn't exist"로 실패한다. projects.status는 아래
+-- _migrate_match_results_into_projects() 섹션이 처음부터 이 ENUM 정의로 컬럼을 만든다.
 UPDATE agent_executions SET status = 'completed' WHERE status = 'success';
-ALTER TABLE match_results
-    MODIFY COLUMN status ENUM('in_progress','waiting_resume','user_waiting','failed','completed','halted')
-    NOT NULL DEFAULT 'in_progress' COMMENT '서비스 내부 상태(실행/재개대기/사용자대기/실패/완료/중단)';
 ALTER TABLE agent_executions
     MODIFY COLUMN status ENUM('in_progress','waiting_resume','user_waiting','failed','completed','halted')
     NOT NULL COMMENT '서비스 내부 상태(실행/재개대기/사용자대기/실패/완료/중단) — match_results.status와 같은 enum';
@@ -147,18 +133,18 @@ ALTER TABLE agent_executions
 -- [2026-09-23 신규] 자동 재시도 5회 소진 후 확정 실패할 때마다 쌓는 관리자 알림 로그
 -- (app/models.py GenerationFailureAlert 참고) — 새 테이블이라 CREATE TABLE IF NOT EXISTS로
 -- 충분하다(컬럼 추가 마이그레이션 절차 불필요).
+-- [2026-09-28 수정, SB-152 정리] match_id 컬럼/FK 제거 — notifications와 같은 이유
+-- (match_results 테이블 소멸, 위 참고).
 CREATE TABLE IF NOT EXISTS generation_failure_alerts (
     alert_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '알림 고유 식별자',
-    match_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES match_results(match_id)',
     project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
     stage VARCHAR(30) NOT NULL COMMENT '실패가 확정된 시점의 stage',
     resume_count TINYINT UNSIGNED NOT NULL COMMENT '확정 시점까지 소진한 자동 재개 횟수',
     failure_reason TEXT NULL COMMENT '마지막 실패 사유',
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     acknowledged_at DATETIME(6) NULL COMMENT '관리자 확인 처리 시각(NULL이면 미확인)',
-    KEY ix_generation_failure_alerts_match (match_id),
+    KEY ix_generation_failure_alerts_project (project_id),
     KEY ix_generation_failure_alerts_unacked (acknowledged_at),
-    FOREIGN KEY (match_id) REFERENCES match_results(match_id) ON DELETE CASCADE,
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
@@ -196,9 +182,13 @@ CREATE TABLE IF NOT EXISTS plan_canonical_data (
 
 -- [2026-09-27 신규, SB-141] 사용자용 작업 알림(화면 헤더 종모양) — 새 테이블이라
 -- CREATE TABLE IF NOT EXISTS로 충분하다(컬럼 추가 마이그레이션 절차 불필요).
+-- [2026-09-28 수정, SB-152 정리] match_id 컬럼/FK 제거 — projects/match_results 통합
+-- (SB-118) 이후 match_results 테이블 자체가 없어져서, notifications가 아직 없는 DB에
+-- 이 블록을 그대로 실행하면 없는 테이블을 참조하는 FK 때문에 바로 실패한다. 이미
+-- notifications가 있는 DB(=지금 이 CREATE TABLE IF NOT EXISTS가 no-op인 경우)는 그
+-- 아래 _migrate_match_results_into_projects() 섹션이 match_id 컬럼을 따로 드롭해준다.
 CREATE TABLE IF NOT EXISTS notifications (
     notification_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '알림 고유 식별자',
-    match_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES match_results(match_id)',
     project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
     kind ENUM('문서평가','산출물확인','표현검수','실패') NOT NULL COMMENT '완료된 단계 또는 실패',
     failure_scope ENUM('실행','재작성') NULL COMMENT "kind='실패'일 때만: 실행 실패 또는 재작성 실패",
@@ -207,8 +197,6 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     read_at DATETIME(6) NULL COMMENT '사용자가 읽은 시각(NULL이면 안읽음)',
     KEY ix_notifications_project (project_id),
-    KEY ix_notifications_match (match_id),
-    FOREIGN KEY (match_id) REFERENCES match_results(match_id) ON DELETE CASCADE,
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
@@ -275,9 +263,10 @@ DROP PROCEDURE IF EXISTS _add_col_if_missing;
 -- 주석). 이미 관리자가 3이 아닌 값으로 직접 바꿔둔 행은 건드리지 않는다.
 UPDATE verification_policies SET rerun_cap = 2 WHERE rerun_cap = 3;
 
--- 복구 루프가 10초마다 WHERE stage=X AND (worker_claimed_at IS NULL OR 오래됨)을 도는데,
--- 인덱스 없이 두면 테이블이 커질수록 매번 풀스캔이 된다(app_schema.sql 주석 참고).
-CALL _add_index_if_missing('match_results', 'ix_match_results_stage_claim', '(stage, worker_claimed_at)');
+-- [2026-09-28 삭제, SB-152 정리] 여기 있던 match_results용 인덱스 추가 CALL도 같은 이유로
+-- 지웠다(위 컬럼 CALL들과 동일 — 테이블 자체가 없어져 Error 1146). 같은 역할의 인덱스는
+-- 아래 _migrate_match_results_into_projects() 섹션에서 projects에 이미 걸어준다
+-- (ix_projects_stage_claim).
 
 DROP PROCEDURE IF EXISTS _add_index_if_missing;
 
