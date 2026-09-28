@@ -1,0 +1,418 @@
+"""POST /projects/{id}/retry-task 확장분 검증 (pytest 버전) — tests/verify_retry_task.py는
+"재시도하면 값이 실제로 바뀌는가"를 검증하고, 이 파일은 2026-09-18에 추가된 두 가지를
+검증한다:
+
+1. verify1_*/verify2_* 재시도가 verification_score_history에 새 행(is_rerun=True)을
+   남기는지 — 예전엔 plan.doc_score/artifact.artifact_score만 갱신하고 이력을 안 남겨서
+   관리자 대시보드 "운영 현황"의 채점 편차(1회→2회)가 항상 0건으로 보이는 버그가 있었다.
+2. review_token_check 재시도가 attempt_no를 증가시키고, 보호 토큰 위반 시
+   passed=False/violation_type/violation_note/recovery_status='pending'을 남기는지.
+
+app.agents.run_review_token_check_retry는 무작위 판정이라 이 파일에서는 결정론적 결과를
+얻기 위해 monkeypatch로 갈아치운다.
+"""
+import pytest
+
+from app.models import Company, Notice, Project, User
+from app.security import issue_access_token
+from seed_dummy_pipeline import seed_dummy_pipeline
+
+
+def _client_for(user_id: int):
+    from fastapi.testclient import TestClient
+
+    from app.main import app as fastapi_app
+    client = TestClient(fastapi_app)
+    token = issue_access_token(user_id)
+    client.cookies.set('sbrain_session', token)
+    return client
+
+
+@pytest.fixture()
+def retry_setup(db_session):
+    email = 'retry-test@example.com'
+    user = User(email=email, name='재시도테스트', google_sub='sub-retry-test', role='user', status='active')
+    db_session.add(user)
+    db_session.flush()
+    company = Company(user_id=user.user_id, ceo_name='재시도테스트')
+    db_session.add(company)
+    db_session.flush()
+    project = Project(company_id=company.company_id, description='재시도 검증용 프로젝트')
+    db_session.add(project)
+    db_session.flush()
+    notice = Notice(
+        notice_id=f'RETRY-TEST-{project.project_id}', source='k-startup',
+        title='재시도 검증용 공고', recruitment_status='진행중',
+    )
+    db_session.add(notice)
+    db_session.flush()
+    verdict = seed_dummy_pipeline(db_session, project.project_id, notice_id=notice.notice_id, retry_agents=())
+    db_session.commit()
+    client = _client_for(user.user_id)
+    return {'client': client, 'project_id': project.project_id, 'plan_id': verdict.plan_id}
+
+
+def _retry(client, project_id, task_key):
+    return client.post(f'/projects/{project_id}/retry-task', json={'task_key': task_key})
+
+
+# ============================================================================
+# verification_score_history — 재채점 시 이력이 실제로 쌓이는지
+# ============================================================================
+
+def test_verify1_retry_appends_score_history(retry_setup, db_session):
+    from app.models import VerificationScoreHistory
+
+    before = (
+        db_session.query(VerificationScoreHistory)
+        .filter(VerificationScoreHistory.plan_id == retry_setup['plan_id'], VerificationScoreHistory.layer == 'doc')
+        .count()
+    )
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'verify1_rubric')
+    assert res.status_code == 200, res.text
+
+    db_session.expire_all()
+    rows = (
+        db_session.query(VerificationScoreHistory)
+        .filter(VerificationScoreHistory.plan_id == retry_setup['plan_id'], VerificationScoreHistory.layer == 'doc')
+        .order_by(VerificationScoreHistory.history_id.asc())
+        .all()
+    )
+    assert len(rows) == before + 1, '재채점 후 doc layer 이력이 안 늘었음'
+    assert rows[-1].is_rerun is True
+    assert rows[-1].applied_pass_threshold is not None
+
+
+def test_verify2_retry_appends_score_history(retry_setup, db_session):
+    from app.models import VerificationScoreHistory
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'verify2_static')
+    assert res.status_code == 200, res.text
+
+    db_session.expire_all()
+    rows = (
+        db_session.query(VerificationScoreHistory)
+        .filter(VerificationScoreHistory.plan_id == retry_setup['plan_id'], VerificationScoreHistory.layer == 'code')
+        .order_by(VerificationScoreHistory.history_id.asc())
+        .all()
+    )
+    assert len(rows) == 2, 'seed에서 1건 + retry에서 1건 = 2건이어야 함'
+    assert rows[-1].is_rerun is True
+
+
+def test_repeated_verify1_retry_keeps_appending(retry_setup, db_session):
+    """이 gap을 고치기 전엔 재채점을 몇 번 해도 이력이 하나도 안 늘었다 — 여러 번 불러서
+    매번 늘어나는지까지 확인한다(1회만 늘고 멈추는 반쪽짜리 수정을 방지)."""
+    from app.models import VerificationScoreHistory
+
+    for _ in range(3):
+        res = _retry(retry_setup['client'], retry_setup['project_id'], 'verify1_evidence')
+        assert res.status_code == 200, res.text
+
+    db_session.expire_all()
+    count = (
+        db_session.query(VerificationScoreHistory)
+        .filter(VerificationScoreHistory.plan_id == retry_setup['plan_id'], VerificationScoreHistory.layer == 'doc')
+        .count()
+    )
+    assert count == 1 + 3  # seed 1건 + retry 3건
+
+
+# ============================================================================
+# 작성/구현 재시도에 딸려오는 자동 재검증 (2026-09-18 추가)
+# ============================================================================
+
+def test_strategy_retry_writes_canonical_data_not_sections(retry_setup, db_session):
+    """[2026-09-22] '전략' 재시도는 이제 plan_sections가 아니라 plan_canonical_data에 쓴다 —
+    구글 드라이브 "전략/작성/검증1" 시트의 Strategy Agent(F01~F15, 분석 자료 생성)와
+    Writing Agent(F16, 최종 문단 작성) 구분에 맞춘 것(app/agents.py 모듈 docstring 참고)."""
+    from app.models import PlanCanonicalData
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'strategy')
+    assert res.status_code == 200, res.text
+    changed = res.json()['changed']
+    assert 'canonical_data' in changed
+    assert set(changed['canonical_data']) == {'market_analysis', 'growth_strategy'}
+
+    db_session.expire_all()
+    rows = (
+        db_session.query(PlanCanonicalData)
+        .filter(PlanCanonicalData.plan_id == retry_setup['plan_id'])
+        .all()
+    )
+    assert {r.data_key for r in rows} == {'market_analysis', 'growth_strategy'}
+
+    # 다시 호출해도 (plan_id, data_key) 유일성 때문에 새 행이 추가되는 게 아니라 갱신돼야 한다.
+    res2 = _retry(retry_setup['client'], retry_setup['project_id'], 'strategy')
+    assert res2.status_code == 200, res2.text
+    db_session.expire_all()
+    count = (
+        db_session.query(PlanCanonicalData)
+        .filter(PlanCanonicalData.plan_id == retry_setup['plan_id'])
+        .count()
+    )
+    assert count == 2, '재시도할 때마다 새 행이 쌓이면 안 됨 — upsert여야 함'
+
+
+def test_writing_retry_also_rescores_verify1(retry_setup, db_session):
+    """"본문 작성을 재작성했는데 점수가 그대로다"는 지적(하정원님) — 화면에 검증-1을 따로
+    재시도하는 버튼이 없어서 실제로 점수를 바꿀 방법이 없었다. writing 재시도에 검증-1
+    (rubric+evidence) 재채점을 자동으로 붙여 고쳤다."""
+    from app.models import VerificationScoreHistory
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'writing')
+    assert res.status_code == 200, res.text
+    assert 'verify1_rescore' in res.json()['changed']
+    assert set(res.json()['changed']['verify1_rescore']) == {'verify1_rubric', 'verify1_evidence'}
+
+    db_session.expire_all()
+    count = (
+        db_session.query(VerificationScoreHistory)
+        .filter(VerificationScoreHistory.plan_id == retry_setup['plan_id'], VerificationScoreHistory.layer == 'doc')
+        .count()
+    )
+    assert count == 1 + 2  # seed 1건 + writing이 자동으로 붙인 rubric/evidence 2건
+
+
+def test_implement_prototype_retry_also_rescores_verify2(retry_setup, db_session):
+    from app.models import VerificationScoreHistory
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'implement_prototype')
+    assert res.status_code == 200, res.text
+    assert 'verify2_rescore' in res.json()['changed']
+    assert set(res.json()['changed']['verify2_rescore']) == {'verify2_static', 'verify2_crosscheck'}
+
+    db_session.expire_all()
+    count = (
+        db_session.query(VerificationScoreHistory)
+        .filter(VerificationScoreHistory.plan_id == retry_setup['plan_id'], VerificationScoreHistory.layer == 'code')
+        .count()
+    )
+    assert count == 1 + 2  # seed 1건 + implement가 자동으로 붙인 static/crosscheck 2건
+
+
+# ============================================================================
+# output_ref — SB-148: agent_executions가 산출물 참조({table,id})를 남기는지
+# (프롬프트/응답 원문이 아니라 참조만 — agent-orchestration 저장소의 ExecutionRecord/
+# CallLog 설계를 관계형 id로 옮긴 것)
+# ============================================================================
+
+def test_strategy_retry_records_output_ref_to_canonical_data(retry_setup, db_session):
+    from app.models import AgentExecution, PlanCanonicalData
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'strategy')
+    assert res.status_code == 200, res.text
+
+    db_session.expire_all()
+    execution = (
+        db_session.query(AgentExecution)
+        .filter(AgentExecution.task_key == 'strategy')
+        .order_by(AgentExecution.attempt_no.desc())
+        .first()
+    )
+    assert execution.output_ref is not None
+    tables = {ref['table'] for ref in execution.output_ref}
+    assert tables == {'plan_canonical_data'}
+    ids = {ref['id'] for ref in execution.output_ref}
+    real_ids = {
+        r.data_id for r in db_session.query(PlanCanonicalData).filter(PlanCanonicalData.plan_id == retry_setup['plan_id'])
+    }
+    assert ids == real_ids
+
+
+def test_writing_retry_records_output_ref_to_plan_sections(retry_setup, db_session):
+    from app.models import AgentExecution, PlanSection
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'writing')
+    assert res.status_code == 200, res.text
+
+    db_session.expire_all()
+    execution = (
+        db_session.query(AgentExecution)
+        .filter(AgentExecution.task_key == 'writing')
+        .order_by(AgentExecution.attempt_no.desc())
+        .first()
+    )
+    assert execution.output_ref is not None
+    for ref in execution.output_ref:
+        assert ref['table'] == 'plan_sections'
+        section = db_session.get(PlanSection, ref['id'])
+        assert section is not None and section.plan_id == retry_setup['plan_id']
+
+
+def test_implement_prototype_retry_records_output_ref_to_artifact(retry_setup, db_session):
+    from app.models import AgentExecution, Artifact
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'implement_prototype')
+    assert res.status_code == 200, res.text
+
+    db_session.expire_all()
+    execution = (
+        db_session.query(AgentExecution)
+        .filter(AgentExecution.task_key == 'implement_prototype')
+        .order_by(AgentExecution.attempt_no.desc())
+        .first()
+    )
+    artifact = db_session.query(Artifact).filter(Artifact.plan_id == retry_setup['plan_id']).one()
+    assert execution.output_ref == {'table': 'artifacts', 'id': artifact.artifact_id}
+
+
+def test_review_token_check_retry_records_output_ref_to_proofread_log(retry_setup, db_session):
+    from app.models import AgentExecution, ProofreadLog
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'review_token_check')
+    assert res.status_code == 200, res.text
+
+    db_session.expire_all()
+    execution = (
+        db_session.query(AgentExecution)
+        .filter(AgentExecution.task_key == 'review_token_check')
+        .order_by(AgentExecution.attempt_no.desc())
+        .first()
+    )
+    assert execution.output_ref['table'] == 'proofread_logs'
+    log = db_session.get(ProofreadLog, execution.output_ref['id'])
+    assert log is not None and log.plan_id == retry_setup['plan_id']
+
+
+# ============================================================================
+# review_token_check — attempt_no / passed / violation_* / recovery_status
+# ============================================================================
+
+def test_review_token_check_increments_attempt_no(retry_setup, db_session):
+    from app.models import ProofreadLog
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'review_token_check')
+    assert res.status_code == 200, res.text
+    res2 = _retry(retry_setup['client'], retry_setup['project_id'], 'review_token_check')
+    assert res2.status_code == 200, res2.text
+
+    db_session.expire_all()
+    rows = (
+        db_session.query(ProofreadLog)
+        .filter(ProofreadLog.plan_id == retry_setup['plan_id'])
+        .order_by(ProofreadLog.attempt_no.asc())
+        .all()
+    )
+    # seed_dummy_pipeline이 이미 attempt_no=1인 행을 하나 만들어두므로 재시도 2번이면 2,3이 된다.
+    assert [r.attempt_no for r in rows] == [1, 2, 3]
+
+
+def test_review_token_check_violation_sets_recovery_pending(monkeypatch, retry_setup, db_session):
+    import app.routers.projects as projects_router
+    from app.models import ProofreadLog
+
+    monkeypatch.setattr(
+        projects_router.agents, 'run_review_token_check_retry',
+        lambda description, attempt_no=1: projects_router.agents.ProofreadResult(
+            corrected_text='(고정 시도안) 반려될 예정',
+            reason='테스트 고정 반려',
+            passed=False,
+            violation_type='수치·금액',
+            violation_note='테스트로 고정한 위반 사유',
+        ),
+    )
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'review_token_check')
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body['changed']['passed'] is False
+    assert body['changed']['violation_type'] == '수치·금액'
+
+    db_session.expire_all()
+    latest = (
+        db_session.query(ProofreadLog)
+        .filter(ProofreadLog.plan_id == retry_setup['plan_id'])
+        .order_by(ProofreadLog.log_id.desc())
+        .first()
+    )
+    assert latest.passed is False
+    assert latest.violation_type == '수치·금액'
+    assert latest.recovery_status == 'pending'
+
+
+def test_review_token_check_stores_score_from_agent_result(monkeypatch, retry_setup, db_session):
+    from decimal import Decimal
+
+    import app.routers.projects as projects_router
+    from app.models import ProofreadLog
+
+    monkeypatch.setattr(
+        projects_router.agents, 'run_review_token_check_retry',
+        lambda description, attempt_no=1: projects_router.agents.ProofreadResult(
+            corrected_text='(고정 시도안) 80점', reason='테스트 고정 점수',
+            score=Decimal('80'), passed=True,
+        ),
+    )
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'review_token_check')
+    assert res.status_code == 200, res.text
+    assert res.json()['changed']['score']['after'] == 80.0
+
+    db_session.expire_all()
+    latest = (
+        db_session.query(ProofreadLog)
+        .filter(ProofreadLog.plan_id == retry_setup['plan_id'])
+        .order_by(ProofreadLog.log_id.desc())
+        .first()
+    )
+    assert latest.score == Decimal('80.00')
+
+
+def test_retry_task_failure_is_recorded_on_agent_execution(monkeypatch, retry_setup, db_session):
+    """[2026-09-28 신규] 지금은 app.agents.run_*_retry()가 전부 더미(무작위)라 실패할
+    일이 없지만, 실제 Agent가 연동된 뒤 예외가 나면 (1) agent_executions에 status='failed'
+    행이 남고 error_kind/error_reason이 채워져야 하고, (2) 클라이언트는 502와 함께
+    구조화된 오류를 받아야 한다 — 프론트가 "이 재시도가 재시도 가능한 오류인지"를
+    error_kind로 구분할 수 있어야 하기 때문."""
+    import app.routers.projects as projects_router
+    from app.models import AgentExecution, MatchResult
+
+    def _boom(description, tags):
+        raise RuntimeError('결제 크레딧 소진(테스트)')  # 운영 오류로 분류돼야 함
+
+    monkeypatch.setattr(projects_router.agents, 'run_writing_agent_retry', _boom)
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'writing')
+    assert res.status_code == 502, res.text
+    detail = res.json()['detail']
+    assert detail['task_key'] == 'writing'
+    assert detail['error_kind'] == projects_router.ps.ERROR_KIND_OPERATIONAL
+
+    db_session.expire_all()
+    match = db_session.query(MatchResult).filter(MatchResult.project_id == retry_setup['project_id']).one()
+    failed = (
+        db_session.query(AgentExecution)
+        .filter(AgentExecution.match_id == match.match_id, AgentExecution.task_key == 'writing')
+        .order_by(AgentExecution.attempt_no.desc())
+        .first()
+    )
+    assert failed.status == 'failed'
+    assert failed.error_kind == projects_router.ps.ERROR_KIND_OPERATIONAL
+    assert '결제 크레딧 소진' in failed.error_reason
+
+
+def test_review_token_check_success_leaves_recovery_null(monkeypatch, retry_setup, db_session):
+    import app.routers.projects as projects_router
+    from app.models import ProofreadLog
+
+    monkeypatch.setattr(
+        projects_router.agents, 'run_review_token_check_retry',
+        lambda description, attempt_no=1: projects_router.agents.ProofreadResult(
+            corrected_text='(고정 시도안) 통과',
+            reason='테스트 고정 통과',
+            passed=True,
+        ),
+    )
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'review_token_check')
+    assert res.status_code == 200, res.text
+    assert res.json()['changed']['passed'] is True
+
+    db_session.expire_all()
+    latest = (
+        db_session.query(ProofreadLog)
+        .filter(ProofreadLog.plan_id == retry_setup['plan_id'])
+        .order_by(ProofreadLog.log_id.desc())
+        .first()
+    )
+    assert latest.passed is True
+    assert latest.recovery_status is None
+    assert latest.violation_type is None

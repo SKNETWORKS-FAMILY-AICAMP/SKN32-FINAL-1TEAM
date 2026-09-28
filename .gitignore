@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 # 개인 업무 정리 문서
 /박상희.md
 
@@ -48,3 +49,60 @@ dist-ssr/
 .DS_Store
 Thumbs.db
 >>>>>>> deb5c81cc62f58d52d8a384f2b8aac6e881d7fef
+=======
+# --- 비밀값 (절대 커밋 금지) ---
+.env
+*.env.local
+
+# --- 파이썬 ---
+__pycache__/
+*.py[cod]
+*.pyc
+*.egg-info/
+.eggs/
+
+# --- 가상환경 ---
+venv/
+.venv/
+env/
+
+# --- 테스트/린트 캐시 ---
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# --- IDE / 에디터 ---
+.vscode/
+.idea/
+*.swp
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- 로그/임시 파일 ---
+*.log
+*.db
+*.sqlite3
+
+# --- 업로드된 첨부파일 (로컬 디스크 저장, backend_decisions.md #6) ---
+**/uploads/
+
+# --- 개인 로컬 테스트용 ---
+login_test.html
+
+# --- 작업 중 임시 파일/결과물 ---
+/tmp/
+# build_verification_report.py로 만드는 PDF — 스크립트만 커밋하고 결과물은 제외
+/output/pdf/*.pdf
+# 참고용으로 떠둔 캡처 (초기창업패키지 사업계획서 양식)
+/image.png
+
+# --- 로컬 보관 문서 (용량이 커서 git에 올리지 않음) ---
+/프로젝트_기획서_*.docx
+
+# --- rhwp CLI 실행 파일 (28MB, 각자 릴리즈에서 받음 — back/scripts/README.md) ---
+back/rhwp.exe
+>>>>>>> 1054eaaaad9eb6ca6f73dd9ab5b529519b535a6f
