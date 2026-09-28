@@ -1071,7 +1071,20 @@ class VerificationPolicy(Base):
     # 행에만 적용되니, 기존 행은 관리자 화면(admin-dashboard.html 검증 정책 탭)이나
     # UPDATE verification_policies SET pass_threshold = 80 WHERE ...; 로 직접 맞춰야 한다.
     pass_threshold: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2), default=80)
-    rerun_cap: Mapped[int] = mapped_column(_UnsignedInt, default=3)  # app_schema.sql: INT UNSIGNED
+    # [2026-09-28 개정] 기획서 5-6절 스펙 확정값 — 이 값이 재수행(REDO) 상한이다: 검사를
+    # 통과 못한 결과를 "시스템이" 자동으로 다시 만드는 횟수(넘기면 그대로 보내고 예외 6곳은
+    # 확정 동작). 예전 기본값 3은 이 값과 아래 rework_cap(사용자 재작성)이 하나로 뭉쳐
+    # 있던 시절 값 — 지금은 자동 재수행 트리거 자체가 아직 구현 전이라 실제로 이 값을
+    # 소비하는 코드는 없다(향후 자동 재수행 기능 추가 시 사용).
+    rerun_cap: Mapped[int] = mapped_column(_UnsignedInt, default=2)  # app_schema.sql: INT UNSIGNED
+    # [2026-09-28 신규] "재작성 횟수" — 사용자가 재작성 버튼을 눌러 POST /projects/{id}/
+    # retry-task로 묶음(문서평가·산출물확인·종합평가 화면이 공유)을 다시 만들 수 있는
+    # 횟수. 기획서 5-6절: 묶음마다 1회, 첫 실행(agent_executions rerun_type='initial')은
+    # 세지 않고, 재작성이 실패(status=failed)하면 쓴 기회를 돌려준다 — retry_task가
+    # rerun_type='rerun' AND status='completed'인 행만 세는 걸로 이 환불을 구현한다
+    # (app/routers/projects.py retry_task 참고). rerun_cap(시스템 자동 재수행)과는
+    # 별개의 값이다.
+    rework_cap: Mapped[int] = mapped_column(_UnsignedInt, default=1)  # app_schema.sql: INT UNSIGNED
     deviation_cap: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2), default=5)
     # 검수(표현) Task 내부에서 보호 토큰(수치/날짜/고유명사/기능명) 위반 문단을 재시도하는
     # 최대 횟수 — rerun_cap(Task 단위 재수행 상한)과는 별개로 관리된다. admin-dashboard.html
@@ -1152,3 +1165,16 @@ class VerificationScoreHistory(Base):
     scored_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
 
     plan: Mapped['BusinessPlan'] = relationship(back_populates='score_history')
+
+
+class PermanentDeletionLog(Base):
+    """[2026-09-28 신규] 프론트 요청 4 — 완전 삭제(DELETE /projects/{id}/permanent)는
+    _delete_project_cascade가 그 프로젝트의 모든 행을 지우기 때문에, 관리자 화면에서
+    "이런 프로젝트가 있었다"는 흔적 자체가 안 남는다. 개인정보 처리방침(v1.10 6-7절)의
+    "건별 삭제 가능"과 실행 로그의 "12개월 뒤 식별자 분리·통계 보존" 요구를 같이
+    지키는 최소 버전 — project_id/company_id/user_id 등 식별자는 전혀 남기지 않고,
+    "언제 삭제됐는지"만 기록해서 시각별 집계(건수)가 가능하게 한다."""
+    __tablename__ = 'permanent_deletion_log'
+
+    log_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    deleted_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())

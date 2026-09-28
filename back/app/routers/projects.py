@@ -59,6 +59,7 @@ from app.models import (
     Notice,
     NoticeAlert,
     Notification,
+    PermanentDeletionLog,
     PlanCanonicalData,
     PlanScoreReason,
     PlanSection,
@@ -92,6 +93,7 @@ from app.schemas import (
     ProjectDetailOut,
     ProjectListItemOut,
     ProjectStatusOut,
+    RetryBudgetItemOut,
     RetryTaskRequest,
     RetryTaskResponse,
     VerdictOut,
@@ -596,6 +598,7 @@ def _build_demo_response(db: Session, project_id: int, project: Project) -> Demo
         .order_by(AgentExecution.execution_id.asc())
         .all()
     )
+    policy = _get_verification_policy(db)
 
     verdict_out = None
     if verdict is not None:
@@ -604,7 +607,6 @@ def _build_demo_response(db: Session, project_id: int, project: Project) -> Demo
         # 계획서대조는 artifact_score_reasons 하나에 섞여 있어서 item_code 접두어(_VERIFY2_
         # STATIC_PREFIXES='CHECK-'/_VERIFY2_CROSSCHECK_PREFIXES='FEATURE-')로 갈라 합산한다 —
         # _rescore_verify2가 재채점할 때 쓰는 것과 같은 구분.
-        policy = _get_verification_policy(db)
         code_score = sum(
             (r.score or Decimal('0')) for r in artifact.score_reasons
             if r.item_code and r.item_code.startswith(_VERIFY2_STATIC_PREFIXES)
@@ -628,6 +630,23 @@ def _build_demo_response(db: Session, project_id: int, project: Project) -> Demo
             pass_threshold=_num(policy.pass_threshold),
         )
 
+    # [2026-09-28 신규] 프론트 요청 2 — task_key별 재작성 사용/잔여 횟수. retry_task의
+    # 409 판정과 같은 규칙(rerun_type='rerun' AND status='completed'만 센다)을 그대로
+    # 써야 화면과 서버가 같은 숫자를 본다 — executions는 이미 조회해뒀으니 쿼리 추가 없이
+    # 메모리에서 task_key별로 센다.
+    rework_used_by_task_key: dict[str, int] = {}
+    for e in executions:
+        if e.task_key and e.rerun_type == 'rerun' and e.status == ps.GENERATION_STATUS_COMPLETED:
+            rework_used_by_task_key[e.task_key] = rework_used_by_task_key.get(e.task_key, 0) + 1
+    retry_budget = [
+        RetryBudgetItemOut(
+            task_key=tk,
+            used=rework_used_by_task_key.get(tk, 0),
+            remaining=max(policy.rework_cap - rework_used_by_task_key.get(tk, 0), 0),
+        )
+        for tk in sorted(_RETRIABLE_TASK_KEYS)
+    ]
+
     return DemoGenerateResponse(
         project_id=project_id,
         match=MatchResultOut.model_validate(project),
@@ -635,6 +654,8 @@ def _build_demo_response(db: Session, project_id: int, project: Project) -> Demo
         plan=BusinessPlanOut.model_validate(plan),
         verdict=verdict_out,
         agent_executions=[AgentExecutionOut.model_validate(e) for e in executions],
+        rework_cap=policy.rework_cap,
+        retry_budget=retry_budget,
     )
 
 
@@ -1541,6 +1562,8 @@ def _delete_project_cascade(db: Session, project: Project) -> None:
     company_id = project.company_id
     db.query(Project).filter(Project.project_id == project_id).delete(synchronize_session=False)
     db.query(Company).filter(Company.company_id == company_id).delete(synchronize_session=False)
+    # [2026-09-28 신규] 프론트 요청 4 — 식별자 없이 "삭제됐다"는 사실과 시각만 남긴다.
+    db.add(PermanentDeletionLog())
     db.commit()
 
 
@@ -1553,8 +1576,17 @@ def delete_project_permanently(
     """"건별 삭제"(완전 삭제) — 프로젝트 기획서 v1.10 6-7절. 보관(archive) 여부·매칭 진행
     상태와 무관하게 바로 실제로 지운다 — DELETE /projects/{id}(휴지통, 매칭 이후엔 archive만
     함)와는 독립된 별도 액션이다. 되돌릴 수 없다 — 프론트는 호출 전 확인 다이얼로그를
-    거쳐야 한다."""
+    거쳐야 한다.
+
+    [2026-09-28 신규] 프론트 요청 3 — 계획서·프로토타입 생성이 threading.Thread로 도는
+    중(_simulate_generation)에 행이 사라지면 그 쓰레드가 없는 project_id를 계속 쓰게
+    된다. 지금까지는 프론트가 버튼을 잠그는 게 유일한 방어선이었다 — _RUNNING_GENERATION_
+    STAGES(=_simulate_generation이 감시하는 stage 집합, _start_generation과 항상 같은
+    값)에 있는 동안이면 서버도 409로 거절한다. 휴지통(delete_project, archive만 함)은
+    이 제한과 무관하다."""
     project = _get_owned_project(db, project_id, current_user)
+    if project.stage in _RUNNING_GENERATION_STAGES:
+        raise HTTPException(status_code=409, detail='생성이 끝난 뒤에 완전히 삭제할 수 있습니다')
     _delete_project_cascade(db, project)
     return Response(status_code=204)
 
@@ -1677,6 +1709,27 @@ def retry_task(
         .first()
     )
     next_attempt_no = (last_attempt.attempt_no + 1) if last_attempt is not None else 1
+
+    # [2026-09-28 신규] 프론트 요청 1 — "재작성" 상한(rework_cap) 초과를 서버가 막는다.
+    # 첫 실행(rerun_type='initial', _simulate_generation이 만듦)은 세지 않고, 이 엔드포인트가
+    # 만든 행 중 실제로 성공(status='completed')한 것만 센다 — 실패한 재작성은 기획서
+    # 5-6절 "재작성이 실패하면 쓴 기회를 돌려준다" 규칙에 따라 소진되지 않는다.
+    policy = _get_verification_policy(db)
+    rework_used = (
+        db.query(AgentExecution)
+        .filter(
+            AgentExecution.project_id == project.project_id,
+            AgentExecution.task_key == body.task_key,
+            AgentExecution.rerun_type == 'rerun',
+            AgentExecution.status == ps.GENERATION_STATUS_COMPLETED,
+        )
+        .count()
+    )
+    if rework_used >= policy.rework_cap:
+        raise HTTPException(
+            status_code=409,
+            detail=f'이 작업은 재작성 상한 {policy.rework_cap}회를 이미 사용했습니다',
+        )
 
     changed: dict = {}
     output_ref: dict | list | None = None

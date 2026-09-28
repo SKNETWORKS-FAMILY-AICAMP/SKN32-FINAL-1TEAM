@@ -136,12 +136,13 @@ def test_put_policy_scores_validates_sum_100(admin_client):
 def test_put_policy_thresholds(admin_client):
     res = admin_client.put(
         '/admin/policy/thresholds',
-        json={'pass_threshold': 75, 'rerun_cap': 5, 'deviation_cap': 8, 'token_retry_cap': 4},
+        json={'pass_threshold': 75, 'rerun_cap': 5, 'rework_cap': 2, 'deviation_cap': 8, 'token_retry_cap': 4},
     )
     assert res.status_code == 200, res.text
     body = res.json()
     assert body['pass_threshold'] == 75.0
     assert body['rerun_cap'] == 5
+    assert body['rework_cap'] == 2
     assert body['deviation_cap'] == 8.0
     assert body['token_retry_cap'] == 4
 
@@ -154,7 +155,7 @@ def test_put_policy_thresholds(admin_client):
 def test_invalid_thresholds_do_not_change_policy(admin_client, field, value):
     before = admin_client.get('/admin/policy').json()
     payload = {key: before[key] for key in (
-        'pass_threshold', 'rerun_cap', 'deviation_cap', 'token_retry_cap')}
+        'pass_threshold', 'rerun_cap', 'rework_cap', 'deviation_cap', 'token_retry_cap')}
     payload[field] = value
     response = admin_client.put('/admin/policy/thresholds', json=payload)
     assert response.status_code == 422

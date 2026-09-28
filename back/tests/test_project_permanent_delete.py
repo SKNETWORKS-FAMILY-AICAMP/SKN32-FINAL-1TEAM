@@ -19,6 +19,7 @@ from app.models import (
     MatchScoreReason,
     Notice,
     Notification,
+    PermanentDeletionLog,
     PlanScoreReason,
     PlanSection,
     Project,
@@ -122,3 +123,37 @@ def test_permanent_delete_does_not_affect_other_accounts_projects(authed_client,
 
     assert db_session.query(Project).filter_by(project_id=project_a_id).count() == 1
     assert db_session.query(Project).filter_by(project_id=project_b_id).count() == 1
+
+
+def test_permanent_delete_blocked_while_generation_in_progress(authed_client, db_session):
+    """[2026-09-28 신규, 프론트 요청 3] 계획서·프로토타입 생성이 threading.Thread로 도는
+    중(_simulate_generation)에 행이 사라지면 그 쓰레드가 없는 project_id를 계속 쓰게
+    된다 — stage가 생성 중인 동안이면 409로 막아야 한다."""
+    import app.routers.projects as projects_router
+
+    payload = {'description': '생성 중 완전삭제 차단 테스트', 'team_members': [], 'pricing_items': []}
+    project_id = authed_client.post('/projects', data={'payload': json.dumps(payload)}).json()['project_id']
+
+    project = db_session.query(Project).filter_by(project_id=project_id).one()
+    project.stage = projects_router.ps.STAGE_PLAN_WRITING
+    db_session.commit()
+
+    res = authed_client.delete(f'/projects/{project_id}/permanent')
+    assert res.status_code == 409, res.text
+    assert '생성' in res.json()['detail']
+    assert db_session.query(Project).filter_by(project_id=project_id).count() == 1
+
+
+def test_permanent_delete_writes_audit_log_without_identifiers(authed_client, db_session):
+    """[2026-09-28 신규, 프론트 요청 4] 완전 삭제는 식별자 없이 "언제 삭제됐는지"만
+    permanent_deletion_log에 남겨서, 삭제된 프로젝트가 있었다는 사실 자체는 통계로
+    확인할 수 있어야 한다."""
+    payload = {'description': '완전삭제 감사로그 테스트', 'team_members': [], 'pricing_items': []}
+    project_id = authed_client.post('/projects', data={'payload': json.dumps(payload)}).json()['project_id']
+
+    before = db_session.query(PermanentDeletionLog).count()
+    res = authed_client.delete(f'/projects/{project_id}/permanent')
+    assert res.status_code == 204, res.text
+
+    after = db_session.query(PermanentDeletionLog).count()
+    assert after == before + 1

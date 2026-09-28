@@ -13,7 +13,7 @@ app.agents.run_review_token_check_retry는 무작위 판정이라 이 파일에�
 """
 import pytest
 
-from app.models import Company, Notice, Project, User
+from app.models import Company, Notice, Project, User, VerificationPolicy
 from app.security import issue_access_token
 from seed_dummy_pipeline import seed_dummy_pipeline
 
@@ -47,6 +47,12 @@ def retry_setup(db_session):
     db_session.add(notice)
     db_session.flush()
     verdict = seed_dummy_pipeline(db_session, project.project_id, notice_id=notice.notice_id, retry_agents=())
+    # [2026-09-28 신규] 이 파일의 여러 테스트가 같은 task_key를 반복 호출해 "값이 실제로
+    # 바뀌는지"만 본다 — rework_cap(재작성 상한, 기본 1)의 409는 별도 테스트
+    # (test_retry_task_enforces_rework_cap)에서 다루므로, 여기 공용 fixture에서는 상한을
+    # 넉넉히 풀어둔다.
+    policy = db_session.query(VerificationPolicy).order_by(VerificationPolicy.policy_id.asc()).first()
+    policy.rework_cap = 10
     db_session.commit()
     client = _client_for(user.user_id)
     return {'client': client, 'project_id': project.project_id, 'plan_id': verdict.plan_id}
@@ -415,3 +421,76 @@ def test_review_token_check_success_leaves_recovery_null(monkeypatch, retry_setu
     assert latest.passed is True
     assert latest.recovery_status is None
     assert latest.violation_type is None
+
+
+# ============================================================================
+# rework_cap(재작성 상한) — 프론트 요청 1·2 (2026-09-28)
+# ============================================================================
+
+def test_retry_task_enforces_rework_cap(retry_setup, db_session):
+    """retry_setup fixture가 rework_cap을 10으로 풀어두므로, 여기서는 이 테스트 전용으로
+    1로 다시 낮춰서 실제 상한 동작(1회는 성공, 2회째는 409)을 검증한다."""
+    from app.models import VerificationPolicy
+
+    policy = db_session.query(VerificationPolicy).order_by(VerificationPolicy.policy_id.asc()).first()
+    policy.rework_cap = 1
+    db_session.commit()
+
+    res1 = _retry(retry_setup['client'], retry_setup['project_id'], 'writing')
+    assert res1.status_code == 200, res1.text
+
+    res2 = _retry(retry_setup['client'], retry_setup['project_id'], 'writing')
+    assert res2.status_code == 409, res2.text
+    assert '1회' in res2.json()['detail']
+
+    # 다른 task_key는 상한을 공유하지 않는다(항목마다 1회).
+    res3 = _retry(retry_setup['client'], retry_setup['project_id'], 'strategy')
+    assert res3.status_code == 200, res3.text
+
+
+def test_failed_rework_does_not_consume_cap(monkeypatch, retry_setup, db_session):
+    """기획서 5-6절 "재작성이 실패하면 쓴 기회를 돌려준다" — 실패한 시도는 rework_cap을
+    소진하지 않아야 하므로, 실패 뒤 같은 task_key를 다시 불러도(rework_cap=1이어도)
+    여전히 성공해야 한다."""
+    import app.routers.projects as projects_router
+    from app.models import VerificationPolicy
+
+    policy = db_session.query(VerificationPolicy).order_by(VerificationPolicy.policy_id.asc()).first()
+    policy.rework_cap = 1
+    db_session.commit()
+
+    def _boom(description, tags):
+        raise RuntimeError('일시 오류(테스트)')
+
+    monkeypatch.setattr(projects_router.agents, 'run_writing_agent_retry', _boom)
+    res1 = _retry(retry_setup['client'], retry_setup['project_id'], 'writing')
+    assert res1.status_code == 502, res1.text
+
+    monkeypatch.undo()
+    res2 = _retry(retry_setup['client'], retry_setup['project_id'], 'writing')
+    assert res2.status_code == 200, res2.text
+
+
+def test_result_response_includes_rework_cap_and_retry_budget(retry_setup, db_session):
+    """프론트 요청 2 — GET /projects/{id}/result가 rework_cap과 task_key별 사용/잔여
+    횟수를 내려줘야 프론트가 RERUN_CAP 상수 없이 화면을 그릴 수 있다."""
+    from app.models import VerificationPolicy
+
+    policy = db_session.query(VerificationPolicy).order_by(VerificationPolicy.policy_id.asc()).first()
+    policy.rework_cap = 1
+    db_session.commit()
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'writing')
+    assert res.status_code == 200, res.text
+
+    result = retry_setup['client'].get(f'/projects/{retry_setup["project_id"]}/result')
+    assert result.status_code == 200, result.text
+    body = result.json()
+    assert body['rework_cap'] == 1
+
+    budget_by_key = {item['task_key']: item for item in body['retry_budget']}
+    assert budget_by_key['writing'] == {'task_key': 'writing', 'used': 1, 'remaining': 0}
+    assert budget_by_key['strategy'] == {'task_key': 'strategy', 'used': 0, 'remaining': 1}
+
+    writing_exec = next(e for e in body['agent_executions'] if e['task_key'] == 'writing' and e['rerun_type'] == 'rerun')
+    assert writing_exec['attempt_no'] == 2  # seed(attempt_no=1) + retry(attempt_no=2)

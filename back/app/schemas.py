@@ -585,11 +585,23 @@ class RetryTaskResponse(BaseModel):
 class AgentExecutionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     agent_name: str
+    # [2026-09-28 신규] 프론트 요청 2 — 화면이 항목(task_key)별로 몇 번째 시도인지 알아야
+    # 재작성 버튼을 disabled 처리할 수 있는데, 이 응답엔 그 필드가 없었다.
+    task_key: str | None
+    attempt_no: int
     model_used: str
     rerun_type: str
     token_usage: int
     status: str
     started_at: datetime.datetime
+
+
+class RetryBudgetItemOut(BaseModel):
+    """프론트 요청 2 — task_key별 재작성(rework) 사용/잔여 횟수. 재작성 실패는 세지 않는다
+    (retry_task가 rerun_type='rerun' AND status='completed'인 행만 used로 센다)."""
+    task_key: str
+    used: int
+    remaining: int
 
 
 class DemoGenerateResponse(BaseModel):
@@ -605,6 +617,10 @@ class DemoGenerateResponse(BaseModel):
     # 안 드러났을 뿐 — 생성이 단계별로 끝나는 실제 흐름에선 이 틈이 그대로 404가 된다.
     verdict: VerdictOut | None = None
     agent_executions: list[AgentExecutionOut]
+    # [2026-09-28 신규] 프론트 요청 2 — RERUN_CAP 프론트 상수를 없애고 관리자가 상한을
+    # 바꾸면 화면도 같이 따라가도록, 상한값과 task_key별 사용/잔여 횟수를 같이 내려준다.
+    rework_cap: int
+    retry_budget: list[RetryBudgetItemOut]
 
 
 # ---------------------------------------------------------------------------
@@ -670,6 +686,7 @@ class PolicyScoresIn(BaseModel):
 class PolicyThresholdsIn(BaseModel):
     pass_threshold: float = Field(ge=0, le=100, allow_inf_nan=False)
     rerun_cap: int = Field(ge=0)
+    rework_cap: int = Field(ge=0)
     deviation_cap: float = Field(ge=0, le=100, allow_inf_nan=False)
     token_retry_cap: int = Field(ge=0)
 
@@ -703,6 +720,7 @@ class VerificationPolicyOut(BaseModel):
     plan_weight: float
     pass_threshold: float
     rerun_cap: int
+    rework_cap: int
     deviation_cap: float
     token_retry_cap: int
 

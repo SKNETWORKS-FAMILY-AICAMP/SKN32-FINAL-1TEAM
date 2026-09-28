@@ -645,7 +645,8 @@ CREATE TABLE IF NOT EXISTS verification_policies (
     code_weight DECIMAL(5,2) NOT NULL DEFAULT 15 COMMENT '2차 검증 배점 - 코드 기준 자동 검증',
     plan_weight DECIMAL(5,2) NOT NULL DEFAULT 15 COMMENT '2차 검증 배점 - 계획서 대조',
     pass_threshold DECIMAL(5,2) NOT NULL DEFAULT 80 COMMENT '통과 Threshold(100점 만점 기준) — 기능명세 G-02 기준으로 80 확정(2026-09-13, 이전엔 70이었음)',
-    rerun_cap INT UNSIGNED NOT NULL DEFAULT 3 COMMENT 'Threshold 미달 시 자동 재수행 최대 횟수',
+    rerun_cap INT UNSIGNED NOT NULL DEFAULT 2 COMMENT '재수행(시스템이 Threshold 미달 결과를 자동으로 다시 만드는 것) 최대 횟수 — 2026-09-28 기획서 5-6절 확정값(예전 3은 rework_cap과 미분리 시절 값)',
+    rework_cap INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '재작성(사용자가 POST /projects/{id}/retry-task로 묶음을 다시 만드는 것) 최대 횟수 — 묶음마다 1회, 첫 실행은 안 세고 실패하면 환불(rerun_cap과 별개, 2026-09-28 신규)',
     deviation_cap DECIMAL(5,2) NOT NULL DEFAULT 5 COMMENT '문서층 재채점 편차 상한(경고 알림 기준)',
     token_retry_cap INT UNSIGNED NOT NULL DEFAULT 2 COMMENT '검수(표현) Task 내부 보호 토큰 위반 문단 재시도 최대 횟수(rerun_cap과 별개)',
     updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '정책 마지막 수정 일시'
@@ -717,4 +718,12 @@ CREATE TABLE IF NOT EXISTS verification_score_history (
     KEY ix_verification_score_history_plan (plan_id),
     FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE,
     FOREIGN KEY (policy_id) REFERENCES verification_policies(policy_id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- [2026-09-28 신규] 완전 삭제(DELETE /projects/{id}/permanent) 최소 감사 로그 — 식별자
+-- 없이 "언제 삭제됐는지"만 남겨서 관리자 통계에서 건수 집계가 가능하게 한다(프론트
+-- 전달사항, app/routers/projects.py _delete_project_cascade 참고).
+CREATE TABLE IF NOT EXISTS permanent_deletion_log (
+    log_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '완전 삭제 로그 고유 식별자',
+    deleted_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '완전 삭제 처리 일시 — 식별자 없음(프로젝트/계정과 연결 안 됨)'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;

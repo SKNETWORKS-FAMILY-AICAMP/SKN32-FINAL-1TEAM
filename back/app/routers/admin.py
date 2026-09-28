@@ -102,6 +102,7 @@ def save_policy_thresholds(body: PolicyThresholdsIn, db: Session = Depends(get_d
     policy = _get_policy(db)
     policy.pass_threshold = body.pass_threshold
     policy.rerun_cap = body.rerun_cap
+    policy.rework_cap = body.rework_cap
     policy.deviation_cap = body.deviation_cap
     policy.token_retry_cap = body.token_retry_cap
     db.commit()

@@ -264,7 +264,16 @@ CALL _add_col_if_missing('agent_executions', 'error_reason', "TEXT NULL COMMENT 
 CALL _add_col_if_missing('agent_executions', 'output_ref', "JSON NULL COMMENT '이 실행이 만들거나 바꾼 산출물 참조({table,id} 또는 리스트) — 프롬프트/응답 원문은 저장하지 않음'");
 CALL _add_col_if_missing('project_plan_inputs', 'main_industry_free', "VARCHAR(100) NULL COMMENT '주업종(예비창업자 전용 자유 텍스트)'");
 
+-- [2026-09-28 신규] 프론트 요청 1·2(재시도 상한) — "재작성"(사용자, POST .../retry-task)
+-- 상한을 rerun_cap(시스템 자동 재수행)과 분리한다(app/models.py VerificationPolicy 참고).
+CALL _add_col_if_missing('verification_policies', 'rework_cap', "INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '재작성(사용자가 POST /projects/{id}/retry-task로 묶음을 다시 만드는 것) 최대 횟수 — 묶음마다 1회, 첫 실행은 안 세고 실패하면 환불(rerun_cap과 별개, 2026-09-28 신규)'");
+
 DROP PROCEDURE IF EXISTS _add_col_if_missing;
+
+-- [2026-09-28 신규] rerun_cap은 기획서 5-6절 확정값(2)로 맞춘다 — rework_cap과 분리되기
+-- 전 기본값 3이 그대로 남아있는 행만 건드린다(운영 중 정책은 1행만 유지 — app_schema.sql
+-- 주석). 이미 관리자가 3이 아닌 값으로 직접 바꿔둔 행은 건드리지 않는다.
+UPDATE verification_policies SET rerun_cap = 2 WHERE rerun_cap = 3;
 
 -- 복구 루프가 10초마다 WHERE stage=X AND (worker_claimed_at IS NULL OR 오래됨)을 도는데,
 -- 인덱스 없이 두면 테이블이 커질수록 매번 풀스캔이 된다(app_schema.sql 주석 참고).
@@ -555,6 +564,13 @@ DROP PROCEDURE IF EXISTS _mr_drop_col_if_exists;
 DROP PROCEDURE IF EXISTS _mr_drop_fk_on_column_if_exists;
 DROP PROCEDURE IF EXISTS _mr_add_index_if_missing;
 DROP PROCEDURE IF EXISTS _mr_add_col_if_missing;
+
+-- [2026-09-28 신규] 프론트 요청 4 — 완전 삭제 최소 감사 로그. 새 테이블이라
+-- CREATE TABLE IF NOT EXISTS로 충분하다(app/models.py PermanentDeletionLog 참고).
+CREATE TABLE IF NOT EXISTS permanent_deletion_log (
+    log_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '완전 삭제 로그 고유 식별자',
+    deleted_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '완전 삭제 처리 일시 — 식별자 없음(프로젝트/계정과 연결 안 됨)'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- 최종 확인용 — 실행 후 이 두 개를 결과로 같이 보내주시면 더 빠지는 컬럼이 있는지 바로 확인 가능합니다.
 SHOW COLUMNS FROM companies;
