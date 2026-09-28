@@ -31,6 +31,7 @@ import decimal
 import os
 import sys
 import uuid
+from xml.sax.saxutils import escape
 
 from app import pipeline_stages
 from app.database import IS_SQLITE, SessionLocal, init_sqlite_dev_db
@@ -129,6 +130,45 @@ _DUMMY_INFOGRAPHIC_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="480" 
   <rect width="480" height="320" fill="#eef2ff"/>
   <text x="24" y="48" font-size="22" fill="#1e293b">더미 인포그래픽 (seed_dummy_pipeline.py)</text>
   <text x="24" y="80" font-size="14" fill="#475569">실제 Agent가 생성한 이미지가 아니라, 다운로드 테스트용 더미 파일입니다.</text>
+</svg>""".encode()
+
+# [2026-09-29 신규] onepage 카테고리는 이 SVG 자체가 산출물 전부다 — 코드검증 8항목 중
+# CHECK-KEY-INFO("핵심 정보 항목 포함", _CODE_CHECK_ITEMS_BY_CATEGORY 참고)가 기획서
+# v1.10 5-4의 필수 6항목(아이템명·목표 고객·문제 정의·해결 방안·수익모델 단가·추진
+# 일정)이 실제로 들어있는지를 본다. 예전엔 이 SVG가 카테고리와 무관하게 항상 위 제네릭
+# 플레이스홀더라, CHECK-KEY-INFO를 만점 처리해도 그 근거가 파일 안에 없었다 — CHECK-
+# TEXT-REALNESS("텍스트 실재성")도 같이 겨냥해 이미지가 아니라 진짜 <text> 요소로 넣는다.
+_ONEPAGE_KEY_INFO_LABELS = (
+    '① 아이템명', '② 목표 고객', '③ 문제 정의', '④ 해결 방안', '⑤ 수익모델 단가', '⑥ 추진 일정',
+)
+
+
+def _dummy_onepage_key_info(project_description: str) -> tuple[str, ...]:
+    """CHECK-KEY-INFO 필수 6항목 더미 값 — project_description 하나로는 6항목을 다 못
+    채우므로(실제로는 Strategy Agent의 featureList/PlanCanonicalData 몫), 아이템명·문제
+    정의만 project_description을 반영하고 나머지는 대표적인 더미 값을 쓴다."""
+    return (
+        project_description or '더미 아이템',
+        '동네 소규모 자영업자 및 이용 고객',
+        f'{project_description or "이 아이템"}이 필요한 문제 상황을 아직 기존 서비스가 풀지 못하고 있음',
+        '온라인으로 한 번에 예약·관리할 수 있는 통합 서비스 제공',
+        '월 이용료 35,000원 / 업체당',
+        '2026.10 MVP 출시 → 2027.03 지역 확장',
+    )
+
+
+def _dummy_infographic_svg(category: str, project_description: str) -> bytes:
+    if category != 'onepage':
+        return _DUMMY_INFOGRAPHIC_SVG
+    values = _dummy_onepage_key_info(project_description)
+    rows = '\n  '.join(
+        f'<text x="24" y="{56 + i * 40}" font-size="13" fill="#1e293b">{escape(label)}: {escape(value)}</text>'
+        for i, (label, value) in enumerate(zip(_ONEPAGE_KEY_INFO_LABELS, values, strict=True))
+    )
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="640" height="320">
+  <rect width="640" height="320" fill="#eef2ff"/>
+  <text x="24" y="28" font-size="13" fill="#475569">더미 인포그래픽 (seed_dummy_pipeline.py) — 다운로드 테스트용 더미 파일입니다.</text>
+  {rows}
 </svg>""".encode()
 
 
@@ -470,7 +510,7 @@ def seed_dummy_pipeline(
 
     # 4) 산출물 (산출물층, T-B1/T-B2)
     if write_real_files:
-        infographic_path = _write_dummy_file(_DUMMY_INFOGRAPHIC_SVG, '.svg')
+        infographic_path = _write_dummy_file(_dummy_infographic_svg(category, project.description), '.svg')
         executable_path = None if category == 'onepage' else _write_dummy_file(
             _dummy_prototype_html(project.description), '.html'
         )
