@@ -78,6 +78,131 @@ export const DOC_SCORE_BY_OUTCOME = {
   fail: { raw: sumScores(DOC_ITEMS_FAIL), max: 70, items: DOC_ITEMS_FAIL, reasons: reasonsFromItems(DOC_ITEMS_FAIL) },
   pass: { raw: sumScores(DOC_ITEMS_PASS), max: 70, items: DOC_ITEMS_PASS, reasons: reasonsFromItems(DOC_ITEMS_PASS) },
 };
+// ---------------------------------------------------------------------------
+// 서버 채점 결과 -> 화면이 쓰는 점수 모양
+//
+// 위 DOC_SCORE_BY_OUTCOME/ARTIFACT_SCORE_BY_OUTCOME는 채점 엔진이 없던 시절의
+// 고정 표다. 이제 GET /projects/{id}/result가 실제 값을 내려준다(app/schemas.py):
+//   verdict            — 층별 점수·총점·통과 기준(doc_score/code_score/plan_match_score…)
+//   plan.score_reasons — 문서층 항목별 {item_code, score, max_score, reason_text}
+//   artifact.score_reasons — 산출물층 항목별. item_code 접두어로 층을 가른다
+//                        (back/app/routers/projects.py _VERIFY2_*_PREFIXES: CHECK-/FEATURE-)
+// 화면 세 곳(문서 평가·산출물 확인·종합 평가)이 이미 쓰고 있는 모양을 그대로
+// 만들어 돌려주므로, 각 화면은 "서버 값이 있으면 그걸, 없으면 기존 고정 표"만
+// 고르면 된다. 판정 전(verdict=null, 프로토타입 채점 이전)이나 audit/render-check
+// 처럼 결과 없이 컴포넌트만 그리는 경우가 있어서 fallback은 남겨둔다.
+// ---------------------------------------------------------------------------
+const num = (v) => (v == null || Number.isNaN(Number(v)) ? null : Number(v));
+// 'PSST-1-1' -> '1-1'. 그 코드가 가리키는 계획서 섹션 제목을 항목 이름으로 쓴다.
+function itemNameFrom(itemCode, sections){
+  if (!itemCode) return '항목';
+  const tag = itemCode.replace(/^PSST-/, '');
+  const section = (sections || []).find((s) => s.tag === tag);
+  return section?.title || itemCode;
+}
+function reasonsToItems(reasons, sections){
+  return (reasons || []).map((r) => ({
+    name: itemNameFrom(r.item_code, sections),
+    score: num(r.score) ?? 0,
+    max: num(r.max_score) ?? 0,
+    comment: r.reason_text || '',
+  }));
+}
+
+export function scoresFromResult(result){
+  const verdict = result?.verdict;
+  if (!verdict) return null; // 아직 채점 전 — 화면은 기존 고정 표로 돌아간다
+  const plan = result?.plan;
+  const artifact = plan?.artifacts?.[0];
+  const artifactReasons = artifact?.score_reasons || [];
+  const isCross = (r) => (r.item_code || '').startsWith('FEATURE-');
+
+  const docItems = reasonsToItems(plan?.score_reasons, plan?.sections);
+  const docScore = {
+    raw: num(verdict.doc_score) ?? sumScores(docItems),
+    max: num(verdict.doc_max_score) ?? 70,
+    items: docItems,
+    reasons: reasonsFromItems(docItems),
+  };
+
+  const layer = (rows, score, max) => {
+    const items = reasonsToItems(rows);
+    return {
+      raw: num(score) ?? sumScores(items),
+      max: num(max) ?? 15,
+      // 만점인 항목은 "미달 사유"가 아니다 — 화면이 이 배열을 그대로 사유로 쓴다.
+      reasons: items.filter((it) => it.score < it.max).map((it) => it.comment || it.name),
+    };
+  };
+  const artifactScore = {
+    autoCheck: layer(artifactReasons.filter((r) => !isCross(r)), verdict.code_score, verdict.code_max_score),
+    crossCheck: layer(artifactReasons.filter(isCross), verdict.plan_match_score, verdict.plan_match_max_score),
+  };
+
+  // 코드 검증 8항목 — 서버가 준 CHECK-* 항목을 그대로 쓴다. 이름은 item_code에서
+  // 접두어만 떼고 보여준다(사람이 읽을 이름을 서버가 따로 주지 않는다).
+  const codeCheckItems = artifactReasons.filter((r) => !isCross(r)).map((r, i) => ({
+    id: r.item_code || `CHECK-${i}`,
+    name: (r.item_code || '').replace(/^CHECK-/, '') || '검증 항목',
+    passed: (num(r.score) ?? 0) >= (num(r.max_score) ?? 0),
+    evidence: r.reason_text || null,
+  }));
+
+  return {
+    docScore,
+    artifactScore,
+    codeCheckItems: codeCheckItems.length ? codeCheckItems : null,
+    total: num(verdict.total_score),
+    threshold: num(verdict.pass_threshold),
+  };
+}
+
+// 표현 검수 화면의 문단 전/후 — GET /result의 plan.proofread_logs(실제 검수 기록)를 쓴다.
+// 예전엔 시연 로그에서 베낀 고정 문단(REVIEW_PARAGRAPHS)만 보여줬다.
+// 한계: ProofreadLogOut이 original_text/corrected_text/reason만 내려줘서(app/schemas.py),
+// 모델에는 있는 attempt_no·passed·violation_note를 못 받는다 — 그래서 "1차 반려 → 2차
+// 통과" 같은 재시도 과정은 아직 그릴 수 없다. 그 필드가 열리면 여기만 고치면 된다.
+export function reviewParagraphsFrom(plan){
+  const logs = plan?.proofread_logs || [];
+  if (!logs.length) return null; // 검수 기록이 없으면 화면이 기존 예시로 돌아간다
+  return logs.map((log, i) => ({
+    id: `p-${String(i + 1).padStart(2, '0')}`,
+    before: log.original_text || '',
+    after: log.corrected_text || '',
+    reason: log.reason || null,
+  }));
+}
+
+// 재작성 응답(POST /projects/{id}/retry-task)의 changed를 "변경 내역" 한 줄로 바꾼다.
+// changed 모양은 task_key마다 다르다(app/schemas.py RetryTaskResponse):
+//   writing            -> { sections: { '1-1': {before, after}, … } }
+//   implement_*        -> { executable_path | infographic_path: {before, after} }
+//   verify1_*/verify2_*-> { scores: {...}, doc_score|artifact_score: {before, after} }
+// 서버가 쓸 만한 전/후를 안 준 경우엔 null을 돌려주고, 화면이 기존 고정 문구로 돌아간다.
+export function reworkDiffFromChanged(changed){
+  if (!changed) return null;
+  const pair = (v) => (v && typeof v === 'object' && ('before' in v || 'after' in v) ? v : null);
+  const fileName = (p) => (typeof p === 'string' ? p.split('/').pop() : null);
+
+  if (changed.sections && typeof changed.sections === 'object') {
+    const entries = Object.entries(changed.sections).map(([tag, v]) => [tag, pair(v)]).filter(([, v]) => v);
+    if (entries.length) {
+      const [tag, v] = entries[0];
+      const more = entries.length > 1 ? ` 외 ${entries.length - 1}건` : '';
+      return { before: `${tag} ${v.before ?? '(없음)'}`, after: `${tag} ${v.after ?? '(없음)'}${more}` };
+    }
+  }
+  for (const key of ['executable_path', 'infographic_path']) {
+    const v = pair(changed[key]);
+    if (v) return { before: fileName(v.before) || '(없음)', after: fileName(v.after) || '(없음)' };
+  }
+  for (const key of ['doc_score', 'artifact_score']) {
+    const v = pair(changed[key]);
+    if (v) return { before: `${v.before ?? '-'}점`, after: `${v.after ?? '-'}점` };
+  }
+  return null;
+}
+
 export function detectItemCategory(itemText){
   const text = itemText || '';
   if (/매장|오프라인|가게|매점|제조|공장|카페|식당/.test(text)) return 'onepage';
@@ -114,8 +239,16 @@ export function isRerunCapped(counts, label){
   return rerunLeftOf(counts, label) <= 0;
 }
 
+// 재작성 목록의 묶음 옆에 "왜 다시 만들어야 하는지" 한 줄을 붙인다.
+// 문서 묶음은 이름이 채점 항목 이름과 같으므로(data.js DOC_REWORK_BUNDLES) 그 항목의
+// 점수·코멘트를 그대로 쓴다 — 예전엔 문서층 사유 전부를 '사업계획서 본문 작성' 한 줄에
+// 몰아 붙여서, 어느 항목이 왜 미달인지 묶음별로 구분되지 않았다.
 export function taskReasons(label, docScore, artifactScore){
-  if (label === '사업계획서 본문 작성') return docScore.reasons.map((r) => `［문서층］ ${r}`);
+  const item = (docScore.items || []).find((it) => it.name === label);
+  if (item) {
+    if (item.score >= item.max) return [];
+    return [`［문서층］ ${item.name} ${item.score}/${item.max}${item.comment ? ` — ${item.comment}` : ''}`];
+  }
   if (label === '실행 파일 제작') {
     return [...artifactScore.autoCheck.reasons, ...artifactScore.crossCheck.reasons].map((r) => `［산출물층］ ${r}`);
   }

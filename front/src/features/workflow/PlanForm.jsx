@@ -4,12 +4,15 @@ import {Icon} from '../../components/Icons.jsx';
 import Preparation from '../../components/Preparation.jsx';
 import {buildGeneralInfo,buildOverview,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
 import {RerunLeftBadge} from './shared.jsx';
-import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_TABLE_EXAMPLE,RERUN_CAP,SCORE_DISCLAIMER,WRITING_SUBTASKS} from './data.js';
+import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_TABLE_EXAMPLE,RERUN_CAP,SCORE_DISCLAIMER,DOC_REWORK_BUNDLES} from './data.js';
 import {ApiError,fetchPlanDocumentPdf,getProjectStatus,retryTask} from '../../api.js';
 
-// WRITING_SUBTASKS 3개는 전부 PLAN_STAGE_TASKS(data.js)에서 같은 '작성' Agent 몫이라
-// 백엔드에도 별도 task_key 없이 하나(writing)로 묶여 있다 — app/schemas.py RetryTaskRequest 참고.
-const TASK_KEY_BY_LABEL = { '사업계획서 본문 작성': 'writing', '그래프 생성': 'writing', '표 생성': 'writing' };
+// 재작성 묶음 -> 다시 돌릴 task_key. 묶음 하나를 고르면 그 항목의 본문·차트·표가 함께
+// 다시 만들어지는데(기능정의서 7_재작성·재수행매핑), 서버에는 그 셋이 'writing' 하나로
+// 묶여 있어 호출은 한 번이다.
+// ⚠ 어느 묶음 몫인지는 아직 서버에 못 보낸다 — RetryTaskRequest에 bundle_id가 없다.
+// 그래서 서버는 지금 "writing을 다시 돌렸다"까지만 알고, 묶음별 사용 횟수는 프론트만 센다.
+const TASK_KEY_BY_LABEL = Object.fromEntries(DOC_REWORK_BUNDLES.map((b) => [b, 'writing']));
 
 // 프로토타입 생성 중인지 확인하는 주기. 진행 중일 때만 돌고 끝나면 멈춘다.
 const STATUS_POLL_MS = 2000;
@@ -118,10 +121,12 @@ export function PlanExtrasBlock({ size = 'full' }){
 // 60/70)의 RB-PSST-2026 루브릭 4항목(EV-01~04)을 그대로 옮겼다 — reasons는 이
 // items에서 만점 미달 항목만 뽑아 만든다(하드코딩된 문구 2줄이던 이전 값보다
 // 항목별 근거가 분명하다).
-export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', itemInfo, projectId, reworkCounts = {}, onRework }){
-  const docScore = DOC_SCORE_BY_OUTCOME[scoreOutcome];
-  const docScoreScaled = Math.round((docScore.raw / docScore.max) * 100);
-  const passed = docScoreScaled >= FINAL_THRESHOLD;
+export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', itemInfo, projectId, reworkCounts = {}, onRework, scores = null, onScoresRefresh }){
+  // 서버가 채점을 끝냈으면 그 값(scores), 아직이면 기존 고정 표 — utils.js scoresFromResult 참고.
+  const docScore = scores?.docScore || DOC_SCORE_BY_OUTCOME[scoreOutcome];
+  const threshold = scores?.threshold ?? FINAL_THRESHOLD;
+  const docScoreScaled = docScore.max ? Math.round((docScore.raw / docScore.max) * 100) : 0;
+  const passed = docScoreScaled >= threshold;
   const [confirmProceed, setConfirmProceed] = useState(false);
   const [checkedTasks, setCheckedTasks] = useState([]);
   const [runningTasks, setRunningTasks] = useState([]);
@@ -199,7 +204,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
 
   // 재작성 상한(RERUN_CAP = 항목마다 1회)에 닿은 항목은 고를 수 없다.
   const isCapped = (label) => isRerunCapped(reworkCounts, label);
-  const allCapped = WRITING_SUBTASKS.every(isCapped);
+  const allCapped = DOC_REWORK_BUNDLES.every(isCapped);
 
   const toggleTask = (label) => {
     if (isCapped(label)) return;
@@ -224,6 +229,8 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
       if (projectId) await Promise.all(taskKeys.map((key) => retryTask(projectId, key)));
       // 실제로 재시도가 나간 뒤에만 횟수를 센다 — 실패한 호출로 상한을 깎으면 안 된다.
       if (onRework) onRework(picked);
+      // 서버가 재채점까지 마친 뒤이므로 결과를 다시 받아 점수를 갱신한다.
+      if (onScoresRefresh) await onScoresRefresh();
       setCompletedTasks((prev) => [...new Set([...prev, ...picked])]);
     } catch (err) {
       console.error('재작성 요청이 실패했어요', err);
@@ -257,7 +264,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
             <Icon name="chevron" size={12} className="rotate-180 text-[var(--muted-fg)]" />
           </button>
           <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1">문서 평가</p>
-          <p className="text-[11.5px] text-[var(--muted-fg)] mb-5">문서층 70점을 100점 만점으로 환산, {FINAL_THRESHOLD}점부터 통과</p>
+          <p className="text-[11.5px] text-[var(--muted-fg)] mb-5">문서층 {docScore.max}점을 100점 만점으로 환산, {threshold}점부터 통과</p>
 
           <div className="flex items-end gap-1.5 mb-2">
             <p className={`font-display font-bold text-[44px] leading-none ${passed ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>{docScoreScaled}</p>
@@ -267,7 +274,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
             <div className={`h-full rounded-full ${passed ? 'bg-[var(--ok)]' : 'bg-[var(--danger)]'}`} style={{ width: `${docScoreScaled}%` }} />
           </div>
           <p className={`text-[12.5px] font-bold mb-1 ${passed ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>
-            {passed ? `［내부 기준 ${FINAL_THRESHOLD}점 통과］` : `［내부 기준 ${FINAL_THRESHOLD}점 미달］`}
+            {passed ? `［내부 기준 ${threshold}점 통과］` : `［내부 기준 ${threshold}점 미달］`}
           </p>
           <p className="text-[11px] text-[var(--muted-fg)] leading-relaxed">{SCORE_DISCLAIMER}</p>
 
@@ -284,9 +291,9 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
 
           <div className="mt-5 rounded-xl border border-[var(--border)] p-4">
             <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-1">다시 준비할 항목</p>
-            <p className="text-[11px] text-[var(--muted-fg)] mb-3">항목마다 재작성은 {RERUN_CAP}회까지만 가능해요</p>
+            <p className="text-[11px] text-[var(--muted-fg)] mb-3">항목을 고르면 그 항목의 본문·그래프·표를 함께 다시 만들어요. 항목마다 {RERUN_CAP}회까지.</p>
             <div className="flex flex-col gap-2">
-              {WRITING_SUBTASKS.map((label) => {
+              {DOC_REWORK_BUNDLES.map((label) => {
                 const isRunning = runningTasks.includes(label);
                 const isDone = !isRunning && completedTasks.includes(label);
                 const left = rerunLeftOf(reworkCounts, label);

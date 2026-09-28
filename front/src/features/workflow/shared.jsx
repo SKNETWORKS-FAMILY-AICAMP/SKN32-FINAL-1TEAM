@@ -18,13 +18,13 @@ export function FloatingInput({inputRef,type,value,onChange,label}){
 // 먹게 막아두고 위쪽 일부만 잘라 보여준다. "미리보기" 팝업(ResultPreview)은 이
 // 컴포넌트를 쓰지 않고 라이트박스로 직접 iframe을 띄운다(카드 없이 화면만 보여야
 // 한다는 지적 — 이 컴포넌트의 카드 모양 자체가 그 "박스"였다).
-export function SiteMock(){
+export function SiteMock({ src = null }){
   return (
     <div className="absolute inset-0 flex items-center justify-center p-5">
       <div className="w-full max-w-[420px] overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-lg">
-        <div className="border-b border-[var(--border)] px-4 py-2 text-[12px] text-[var(--muted-fg)]">프로토타입 화면 예시</div>
+        <div className="border-b border-[var(--border)] px-4 py-2 text-[12px] text-[var(--muted-fg)]">{src ? '프로토타입 화면' : '프로토타입 화면 예시'}</div>
         <div className="relative w-full overflow-hidden" style={{ height: 260 }}>
-          <iframe src="/prototype-preview.html" title="프로토타입 화면 예시" sandbox="allow-scripts" tabIndex={-1}
+          <iframe src={src || '/prototype-preview.html'} title={src ? '프로토타입 화면' : '프로토타입 화면 예시'} sandbox="allow-scripts" tabIndex={-1}
             style={{ width: 1440, height: 900, border: 'none', transform: 'scale(0.29)', transformOrigin: 'top left', pointerEvents: 'none' }}/>
         </div>
       </div>

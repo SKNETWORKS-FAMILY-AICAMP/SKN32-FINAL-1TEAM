@@ -3,18 +3,22 @@ import React, {useState} from 'react';
 import {Icon} from '../../components/Icons.jsx';
 import {downloadPlanDocx,downloadPrototypeZip} from '../../dummyDeliverables.js';
 import {downloadPlanDocument,downloadPlanHwp} from '../../api.js';
-import {buildCodeCheckItems,buildGeneralInfo,buildOverview,detectItemCategory,DOC_SCORE_BY_OUTCOME} from './utils.js';
+import {buildCodeCheckItems,buildGeneralInfo,buildOverview,detectItemCategory,DOC_SCORE_BY_OUTCOME,reviewParagraphsFrom} from './utils.js';
 import {printVerificationReport} from './verificationReport.js';
 import {ARTIFACT_SCORE_BY_OUTCOME,DELIVERABLE_NOTICES,DOWNLOAD_FILES,FINAL_THRESHOLD,PLAN_DOCUMENT_SECTIONS_REWORKED,REVIEW_PARAGRAPHS,REVIEW_RETRY_CAP} from './data.js';
 
 // verdict: GET /result의 VerdictOut. 검증결과서의 "종합 판정"을 서버 점수로 찍기 위해 받는다
 // (없으면 화면 값으로 계산 — verificationReport.js 참고).
-export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', artifactOutcome = 'fail', onGoDashboard, projectId, verdict = null }){
-  const docScore = DOC_SCORE_BY_OUTCOME[docOutcome];
-  const artifactScore = ARTIFACT_SCORE_BY_OUTCOME[artifactOutcome];
-  const finalTotal = docScore.raw + artifactScore.autoCheck.raw + artifactScore.crossCheck.raw;
-  const passed = finalTotal >= FINAL_THRESHOLD;
+export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', artifactOutcome = 'fail', onGoDashboard, projectId, verdict = null, scores = null, plan = null }){
+  // 화면 점수와 내려받는 검증결과서 점수가 어긋나지 않도록, 둘 다 서버 값을 본다.
+  const docScore = scores?.docScore || DOC_SCORE_BY_OUTCOME[docOutcome];
+  const artifactScore = scores?.artifactScore || ARTIFACT_SCORE_BY_OUTCOME[artifactOutcome];
+  const threshold = scores?.threshold ?? FINAL_THRESHOLD;
+  const finalTotal = scores?.total ?? (docScore.raw + artifactScore.autoCheck.raw + artifactScore.crossCheck.raw);
+  const passed = finalTotal >= threshold;
   const itemTitle = announcement ? announcement.title : '';
+  // 서버 검수 기록이 있으면 그걸, 없으면 기존 예시 문단(utils.js reviewParagraphsFrom).
+  const paragraphs = reviewParagraphsFrom(plan) || REVIEW_PARAGRAPHS;
   // 문장 다듬기 항목별 수정 내역(p-02, p-09...)은 대부분의 사용자가 신경 안 쓰는
   // 세부 정보라, 기본은 접어두고 보고 싶은 사람만 눌러서 펼친다(사용자 지적) —
   // 항목별로 따로따로 펼치는 게 아니라 토글 하나로 전부 한 번에 나온다.
@@ -96,9 +100,9 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
         announcementTitle: itemTitle,
         category,
         docScore,
-        codeCheckItems: buildCodeCheckItems(category, artifactOutcome),
+        codeCheckItems: scores?.codeCheckItems || buildCodeCheckItems(category, artifactOutcome),
         crossCheck: artifactScore.crossCheck,
-        threshold: FINAL_THRESHOLD,
+        threshold,
         verdict,
       });
       return;
@@ -132,7 +136,7 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
           거기 먹혀버린다(사용자 지적: 전체 다운로드가 계속 삐져나옴 — 실제로 이게 원인이었다).
           그래서 바깥 div는 그대로 두고 안쪽 map만 조건부로 비운다. */}
       <div className={`flex flex-col gap-4 ${showDetails ? 'mb-10' : ''}`}>
-        {showDetails && REVIEW_PARAGRAPHS.map((p) => (
+        {showDetails && paragraphs.map((p) => (
           <div key={p.id} className={`rounded-2xl border bg-white p-5 ${p.spotlight ? 'border-[var(--primary)]' : 'border-[var(--border)]'}`}>
             <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
               <p className="text-[11px] font-bold text-[var(--muted-fg)] tracking-wide font-mono">{p.id}</p>
@@ -176,6 +180,8 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
                 <div>
                   <p className="text-[11px] font-semibold text-[var(--primary-dim)] mb-1.5">수정 후</p>
                   <p className="text-[13.5px] leading-relaxed text-[var(--fg)]">{p.after}</p>
+                  {/* 서버 검수 기록에는 왜 고쳤는지(reason)가 같이 온다 — 있으면 붙인다. */}
+                  {p.reason && <p className="mt-1.5 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">{p.reason}</p>}
                 </div>
               </div>
             )}
