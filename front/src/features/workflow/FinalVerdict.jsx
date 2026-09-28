@@ -3,7 +3,7 @@ import React, {useState,useRef,useEffect} from 'react';
 import {Icon} from '../../components/Icons.jsx';
 import {DiffText,RerunLeftBadge} from './shared.jsx';
 import {GeneralInfoBlock,PlanExtrasBlock} from './PlanForm.jsx';
-import {PrototypeFrame,ResultPreview} from './ArtifactResult.jsx';
+import {PrototypeFrame,ResultPreview,useArtifactFile,ArtifactLoadError} from './ArtifactResult.jsx';
 import {detectItemCategory,diffSentences,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf,reworkDiffFromChanged} from './utils.js';
 import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,RERUN_CAP,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,DOC_REWORK_BUNDLES} from './data.js';
 import {retryTask} from '../../api.js';
@@ -124,10 +124,10 @@ function CompareCarousel({ before, after, prevAriaLabel = '재작성 전 보기'
 // 비교 박스(고정 aspect-[4/3])에 그대로 넣으면 인포그래픽 원본 비율과 안 맞아 위아래로
 // 빈 여백이 남는다(사용자 지적) — 프로토타입과 같은 방식으로, 이미지가 박스 너비에
 // 꽉 차게 채우고 세로로 넘치는 만큼은 스크롤하게 한다.
-function InfographicPreviewFill(){
+function InfographicPreviewFill({ src = null }){
   return (
     <div className="soft-scroll absolute inset-0 overflow-y-auto overflow-x-hidden bg-[#f2f4f6]">
-      <img src="/infographic-preview.png" alt="인포그래픽 예시" className="block w-full h-auto"/>
+      <img src={src || '/infographic-preview.png'} alt={src ? '인포그래픽' : '인포그래픽 예시'} className="block w-full h-auto"/>
     </div>
   );
 }
@@ -241,7 +241,7 @@ function BookCompare({ pages }){
 // (방향 결정 전엔 아무것도 안 함) 가로일 때만 슬라이드를 옆으로 밀고, 세로면 그대로
 // 둬서 원래 하던 세로 스크롤이 방해받지 않게 한다. 화살표 버튼은 항상 양쪽에서 다 쓸
 // 수 있다. 산출물이 하나뿐인 카테고리(원페이지)는 넘길 게 없으니 그냥 인포그래픽만 보여준다.
-export function ArtifactCarousel({ hasExecutable }){
+export function ArtifactCarousel({ hasExecutable, infoSrc = null, siteSrc = null }){
   const [slide, setSlide] = useState(0);
   const trackRef = useRef(null);
   const dragRef = useRef(null);
@@ -302,13 +302,13 @@ export function ArtifactCarousel({ hasExecutable }){
         <div ref={trackRef} className="flex transition-transform duration-300 ease-out" style={{ width: '200%', transform: `translateX(-${slide * 50}%)` }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}>
           <div className="w-1/2 flex-shrink-0 flex items-center justify-center p-2" style={{ height: stageHeight }}>
-            <img src="/infographic-preview.png" alt="인포그래픽 예시" className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" draggable={false}/>
+            <img src={infoSrc || '/infographic-preview.png'} alt={infoSrc ? '인포그래픽' : '인포그래픽 예시'} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" draggable={false}/>
           </div>
           <div className="w-1/2 flex-shrink-0 flex flex-col items-center justify-center p-2" style={{ height: stageHeight }}>
             {/* 화면이 카드를 꽉 채우도록 배율은 PrototypeFrame이 상자 너비를 재서 계산한다 —
                 고정 배율이면 남는 폭만큼 카드의 흰 배경이 옆에 띠처럼 보인다(사용자 지적). */}
             <div className="relative w-full h-full rounded-xl shadow-2xl bg-white overflow-hidden">
-              <PrototypeFrame className="w-full h-full"/>
+              <PrototypeFrame className="w-full h-full" src={siteSrc}/>
               {/* 프로토타입 화면은 iframe이라 그 위에서 시작한 드래그는 부모로 안 올라온다
                   (다른 문서라 브라우저가 막음). 드래그로 되돌아갈 수 있게 iframe 밖의 손잡이를
                   하나 두되, 줄(row)로 쌓으면 위쪽에 흰 띠가 생기므로 화면 위에 떠 있게 한다. */}
@@ -340,7 +340,7 @@ export function ArtifactCarousel({ hasExecutable }){
   );
 }
 
-export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOutcome, artifactOutcome, setDocOutcome, setArtifactOutcome, projectId, reworkCounts = {}, onRework, scores = null, onScoresRefresh }){
+export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOutcome, artifactOutcome, setDocOutcome, setArtifactOutcome, projectId, reworkCounts = {}, onRework, scores = null, onScoresRefresh, artifact = null }){
   // 서버 채점 결과가 있으면 그 값으로 판정한다(utils.js scoresFromResult) — 없으면 기존 고정 표.
   const docScore = scores?.docScore || DOC_SCORE_BY_OUTCOME[docOutcome];
   const artifactScore = scores?.artifactScore || ARTIFACT_SCORE_BY_OUTCOME[artifactOutcome];
@@ -381,6 +381,9 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
   const [reworkFromTotal, setReworkFromTotal] = useState(null); // 변경 내역 헤더의 "X → Y" 중 X
   // 재작성 응답의 changed.sections — 비교 모달이 실제 전/후를 그리는 데 쓴다(없으면 고정 문단).
   const [sectionDiff, setSectionDiff] = useState(null);
+  // 산출물 열람·비교에 띄울 실제 파일. 없으면 예시 파일로 돌아간다(ArtifactResult와 같은 방식).
+  const [infoUrl, infoFailed] = useArtifactFile(artifact?.infographic_path);
+  const [siteUrl, siteFailed] = useArtifactFile(artifact?.executable_path);
   // 웹페이지(프로토타입)·인포그래픽 중 실제로 체크했던 쪽만 대조 화면에 보여주기 위한
   // 기록 — 둘 다 "프로토타입" 층으로 묶여 있어(ARTIFACT_SUBTASKS_BY_CATEGORY) 어느 걸
   // 골랐는지 따로 남겨두지 않으면 구분이 안 된다(사용자 지적: 안 고른 쪽은 여백만 남음).
@@ -485,10 +488,10 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
     comparePages.push({ key: 'plan', label: '사업계획서', content: <PlanCompareColumns sectionDiff={sectionDiff} itemInfo={itemInfo} announcement={announcement} /> });
   }
   if (reworkedParts.infographic) {
-    comparePages.push({ key: 'infographic', label: '인포그래픽', content: <ArtifactPartCompare reasons={artifactReasons} render={() => <InfographicPreviewFill />} /> });
+    comparePages.push({ key: 'infographic', label: '인포그래픽', content: <ArtifactPartCompare reasons={artifactReasons} render={() => <InfographicPreviewFill src={infoUrl} />} /> });
   }
   if (reworkedParts.prototype) {
-    comparePages.push({ key: 'prototype', label: '웹페이지(프로토타입)', content: <ArtifactPartCompare reasons={artifactReasons} render={() => <PrototypeFrame className="absolute inset-0"/>} /> });
+    comparePages.push({ key: 'prototype', label: '웹페이지(프로토타입)', content: <ArtifactPartCompare reasons={artifactReasons} render={() => <PrototypeFrame className="absolute inset-0" src={siteUrl}/>} /> });
   }
 
   return (
@@ -505,6 +508,7 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
         </div>
       </div>
 
+      {(infoFailed || siteFailed) && <ArtifactLoadError />}
       <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide mb-2">종합 평가</p>
       <p className="text-[14px] text-[var(--muted-fg)] leading-snug mb-1.5">『{announcement ? announcement.title : ''}』</p>
       <h1 className="font-display font-bold text-[26px] md:text-[30px] mb-3">제출 전 점검 결과예요</h1>
@@ -694,7 +698,7 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
             </div>
           ) : (
             <div className="relative" style={{ width: 'min(92vw, 900px)' }}>
-              <ArtifactCarousel hasExecutable={hasExecutable} />
+              <ArtifactCarousel hasExecutable={hasExecutable} infoSrc={infoUrl} siteSrc={siteUrl} />
             </div>
           )}
         </div>

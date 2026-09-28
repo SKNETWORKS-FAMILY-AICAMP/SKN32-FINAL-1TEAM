@@ -145,6 +145,10 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
   // (app/routers/projects.py _start_generation) 화면만으로는 구분이 안 되므로,
   // 진행 중인 동안 버튼을 잠그고 라벨로 상태를 알린다.
   const [generating, setGenerating] = useState(false);
+  // 첫 상태 조회가 끝나기 전까지는 "생성 중이 아니다"라고 단정할 수 없다. 예전엔 generating이
+  // false로 시작해서, 산출물 화면에서 뒤로 돌아온 직후(프로토타입이 서버에서 도는 중인데도)
+  // 첫 폴링이 오기 전까지 생성 버튼이 눌리는 상태로 열려 있었다.
+  const [statusChecked, setStatusChecked] = useState(false);
 
   useEffect(() => {
     if (!projectId) return;
@@ -154,6 +158,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
       if (cancelled) return;
       const running = status?.stage === 'prototype_building' && status?.match_status !== 'failed';
       setGenerating(running);
+      setStatusChecked(true);
       // 이미 생성이 돌고 있으면 점수 미달 확인창은 의미가 없다.
       if (running) setConfirmProceed(false);
       // 진행 중일 때만 이어서 확인한다 — 끝나면 폴링을 멈추고 버튼이 다시 풀린다.
@@ -162,6 +167,8 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
       // 상태를 못 읽었다고 버튼까지 막지는 않는다.
       if (cancelled) return;
       console.error('생성 상태를 확인하지 못했어요', err);
+      // 상태를 못 읽었다고 버튼까지 막지는 않는다 — 조회 실패는 '확인됨'으로 친다.
+      setStatusChecked(true);
       timer = setTimeout(poll, STATUS_POLL_MS);
     });
     poll();
@@ -197,7 +204,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
   }, [projectId, pdfRetry]);
 
   const handleGenerateClick = () => {
-    if (generating || runningTasks.length > 0) return;
+    if (generating || !statusChecked || runningTasks.length > 0) return;
     if (!passed) { setConfirmProceed(true); return; }
     onGenerate();
   };
@@ -333,9 +340,9 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
           </div>
 
           <div className="flex flex-col gap-2 mt-4">
-            <button onClick={handleGenerateClick} disabled={generating || runningTasks.length > 0}
+            <button onClick={handleGenerateClick} disabled={generating || !statusChecked || runningTasks.length > 0}
               className="w-full rounded-xl bg-[var(--primary)] text-white py-3 text-[14.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--primary-dim)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-              {generating ? '프로토타입 생성 중…' : '프로토타입 생성'}
+              {generating ? '프로토타입 생성 중…' : !statusChecked ? '상태 확인 중…' : '프로토타입 생성'}
             </button>
             {generating && (
               <p className="text-[11.5px] text-[var(--muted-fg)] leading-relaxed">

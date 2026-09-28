@@ -22,23 +22,37 @@ export function InfographicMock({ src = null }){
 // 산출물 파일(/uploads/...)을 Blob으로 받아 화면에 띄울 주소로 바꾼다. 경로가 없거나
 // 못 받으면 null을 돌려주고, 호출한 쪽이 기존 예시 파일로 돌아간다.
 // objectURL은 띄우는 동안만 유효하므로 경로가 바뀌거나 화면을 벗어나면 반드시 회수한다.
+// [url, failed]를 돌려준다. failed는 "경로는 있는데 못 받았다"일 때만 true다 — 경로 자체가
+// 없는 경우(아직 생성 전, 렌더 테스트)와 구분해야 한다. 실패했는데 조용히 예시 파일로
+// 돌아가면 사용자는 그 예시를 자기 산출물로 오해한다.
 export function useArtifactFile(path){
-  const [url, setUrl] = useState(null);
+  const [state, setState] = useState({ url: null, failed: false });
   useEffect(() => {
-    if (!path) { setUrl(null); return; }
+    if (!path) { setState({ url: null, failed: false }); return; }
     let cancelled = false, objectUrl = '';
+    setState({ url: null, failed: false });
     fetchUploadBlob(path).then((blob) => {
       if (cancelled) return;
       objectUrl = URL.createObjectURL(blob);
-      setUrl(objectUrl);
+      setState({ url: objectUrl, failed: false });
     }).catch((err) => {
       if (cancelled) return;
       console.error('산출물 파일을 불러오지 못했어요', path, err);
-      setUrl(null);
+      setState({ url: null, failed: true });
     });
     return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [path]);
-  return url;
+  return [state.url, state.failed];
+}
+
+// 산출물 파일을 못 받았을 때 화면에 대신 띄우는 한 줄 — 지금 보이는 그림이 진짜 산출물이
+// 아니라는 사실을 알린다.
+export function ArtifactLoadError(){
+  return (
+    <p role="alert" className="mb-4 rounded-xl border border-[var(--warn)] bg-[color-mix(in_srgb,var(--warn)_8%,white)] px-4 py-3 text-[12.5px] text-[var(--fg)] leading-relaxed">
+      산출물 파일을 불러오지 못해 예시 화면을 대신 보여주고 있어요. 로그인이 풀렸을 수 있으니 새로고침해 주세요.
+    </p>
+  );
 }
 
 // 구현 Agent 산출 Task도 카테고리별로 다르다 — 원페이지는 실행 파일 Task 자체가
@@ -110,8 +124,8 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
   // 카드 말고 그냥 구역으로).
   const [panelOpen, setPanelOpen] = useState(true);
   // 서버가 만든 실제 산출물 파일. 없으면(아직 생성 전이거나 못 받으면) 예시 파일로 돌아간다.
-  const infoUrl = useArtifactFile(artifact?.infographic_path);
-  const siteUrl = useArtifactFile(artifact?.executable_path);
+  const [infoUrl, infoFailed] = useArtifactFile(artifact?.infographic_path);
+  const [siteUrl, siteFailed] = useArtifactFile(artifact?.executable_path);
 
   // 재작성 상한(RERUN_CAP = 항목마다 1회)에 닿은 항목은 고를 수 없다 — PlanForm과 같은 규칙.
   const isCapped = (label) => isRerunCapped(reworkCounts, label);
@@ -256,6 +270,7 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
         )}
 
         <div className="flex flex-col">
+          {(infoFailed || siteFailed) && <ArtifactLoadError />}
           <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide mb-2">산출물</p>
           <p className="text-[14px] text-[var(--muted-fg)] leading-snug mb-1.5">『{announcement ? announcement.title : ''}』</p>
           <h1 className="font-display font-bold text-[26px] md:text-[30px] mb-3">프로토타입이 준비됐어요</h1>

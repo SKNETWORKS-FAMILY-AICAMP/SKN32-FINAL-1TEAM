@@ -89,7 +89,7 @@ export default function App(){
   itemInfo,announcement,checkedFailedTitles,returnToDashboard,scoreOutcome,docOutcome,artifactOutcome,
   projectId,pipelineResult,matchCandidates,reworkCounts,
   setItemInfo,setAnnouncement,setCheckedFailedTitles,setReturnToDashboard,setDocOutcome,setArtifactOutcome,
-  setProjectId,setPipelineResult,setMatchCandidates,setVerdictPending,resetScoreOutcome,resetProject,countRework,
+  setProjectId,setPipelineResult,setMatchCandidates,setVerdictPending,resetScoreOutcome,resetProject,countRework,resetReworkCounts,
  }=useWorkflowStore();
  // 서버가 실제로 매긴 점수(GET /result의 verdict + score_reasons)를 화면 모양으로 바꾼다.
  // 판정 전이면 null이고, 그때는 각 화면이 기존 고정 표(data.js)로 돌아간다 — 채점도 안 한
@@ -157,6 +157,7 @@ export default function App(){
   setCheckedFailedTitles([]);
   setMatchCandidates(null);
   resetScoreOutcome('fail');
+  resetReworkCounts(); // 새로 만드는 프로젝트라 횟수도 새로 센다
   setProjectId(null);
   setView('match-progress');
   const request=projectRequest.current;
@@ -238,6 +239,7 @@ export default function App(){
   setReturnToDashboard(true);
   setMatchCandidates(null);
   setCheckedFailedTitles([]);
+  resetReworkCounts(); // 다른 프로젝트의 재작성 횟수를 물려받지 않는다
   try{
    const detail=await getProject(project.id);
    if(request!==projectRequest.current)return;
@@ -356,7 +358,7 @@ export default function App(){
   {view==='plan-form'&&<PlanForm scores={scores} onScoresRefresh={refreshResult} announcement={announcement} onGenerate={()=>setView('artifact-progress')} scoreOutcome={scoreOutcome} itemInfo={itemInfo} projectId={projectId} reworkCounts={reworkCounts} onRework={countRework}/>}
   {view==='artifact-progress'&&<GenerationProgress kind="artifact" projectId={projectId} itemInfo={itemInfo} onDone={()=>setView('artifact-result')} onLeave={()=>setView('dashboard')}/>}
   {view==='artifact-result'&&<ArtifactResult scores={scores} artifact={pipelineResult?.plan?.artifacts?.[0]} onScoresRefresh={refreshResult} announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('plan-form')} onFinalize={()=>setView('final-verdict')} scoreOutcome={scoreOutcome} projectId={projectId} reworkCounts={reworkCounts} onRework={countRework}/>}
-  {view==='final-verdict'&&<FinalVerdict scores={scores} onScoresRefresh={refreshResult} announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('artifact-result')} onProceed={()=>setView('review')} docOutcome={docOutcome} artifactOutcome={artifactOutcome} setDocOutcome={setDocOutcome} setArtifactOutcome={setArtifactOutcome} projectId={projectId} reworkCounts={reworkCounts} onRework={countRework}/>}
+  {view==='final-verdict'&&<FinalVerdict scores={scores} artifact={pipelineResult?.plan?.artifacts?.[0]} onScoresRefresh={refreshResult} announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('artifact-result')} onProceed={()=>setView('review')} docOutcome={docOutcome} artifactOutcome={artifactOutcome} setDocOutcome={setDocOutcome} setArtifactOutcome={setArtifactOutcome} projectId={projectId} reworkCounts={reworkCounts} onRework={countRework}/>}
   {view==='review'&&<ReviewScreen scores={scores} plan={pipelineResult?.plan} announcement={announcement} itemInfo={itemInfo} docOutcome={docOutcome} artifactOutcome={artifactOutcome} onGoDashboard={()=>setView('dashboard')} projectId={projectId} verdict={pipelineResult?.verdict}/>}
  </WorkspaceShell>;
  // 저장 전 강제 이동 모달은 view가 무엇이든(랜딩·워크스페이스 어느 화면 위에도) 뜰 수 있어야

@@ -542,6 +542,10 @@ function ProgressTab({focusProjectId=null}){
   // '진행중'일 때만 돈다(admin.py status_label: 공고 매칭 전/진행중/판단 대기/완료/실패/중단).
   // 나머지는 서버가 스스로 움직이지 않는 상태라, 다시 불러도 같은 값이 온다.
   const detailRunning=detailItem!=null&&!detailItem.archived&&detailItem.status_label==='진행중';
+  // effect 의존성에 넣으면 이 값이 바뀔 때마다 effect가 다시 돌아 목록이 "불러오는 중"으로
+  // 깜빡인다 — 값만 최신으로 들고 읽는다.
+  const detailRunningRef=useRef(detailRunning);
+  detailRunningRef.current=detailRunning;
   useEffect(()=>{
     if(detailId==null)return;
     let active=true,timer=null;
@@ -550,12 +554,16 @@ function ProgressTab({focusProjectId=null}){
       .then(rows=>{
         if(!active)return;
         setExecRows(rows);
-        if(detailRunning)timer=setTimeout(load,EXEC_POLL_MS);
+        // 진행 중이라고 알고 있어도, 실행 로그에 도는 Task가 하나도 없으면 끝난 것이다.
+        // items는 모달을 여는 동안 갱신되지 않아서 status_label만 믿으면 계속 폴링한다.
+        const stillRunning=rows.some(r=>r.status==='in_progress');
+        if(detailRunningRef.current&&stillRunning)timer=setTimeout(load,EXEC_POLL_MS);
+        else if(detailRunningRef.current&&!stillRunning)loadItems(); // 끝났으니 상태도 갱신
       })
       .catch(()=>{if(active){setExecError(true);setExecRows([])}});
     load();
     return ()=>{active=false;clearTimeout(timer)};
-  },[detailId,detailRunning]);
+  },[detailId]);
 
   const handleRestore=async id=>{
     setRestoring(id);
@@ -662,7 +670,7 @@ function ProgressTab({focusProjectId=null}){
                 프롬프트·응답 원문은 서버가 안 내려주므로(admin.py list_agent_executions) 여기에도 없다. */}
             <div className="flex items-center justify-between gap-3 mb-2">
               <p className="text-[13px] font-semibold text-[var(--muted-fg)]">실시간 실행 상태</p>
-              {detailRunning&&<span className="flex items-center gap-1.5 text-[11.5px] text-[var(--ok)]">
+              {detailRunning&&execRows?.some(r=>r.status==='in_progress')&&<span className="flex items-center gap-1.5 text-[11.5px] text-[var(--ok)]">
                 <span className="live-dot" aria-hidden="true"></span>{EXEC_POLL_MS/1000}초마다 갱신 중
               </span>}
             </div>
