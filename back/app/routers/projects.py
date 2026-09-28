@@ -80,6 +80,7 @@ from app.models import (
 from app.routers.profile import compute_has_profile
 from app.schemas import (
     AgentExecutionOut,
+    BundleUsageOut,
     BusinessPlanOut,
     DemoGenerateRequest,
     DemoGenerateResponse,
@@ -93,7 +94,6 @@ from app.schemas import (
     ProjectDetailOut,
     ProjectListItemOut,
     ProjectStatusOut,
-    RetryBudgetItemOut,
     RetryTaskRequest,
     RetryTaskResponse,
     VerdictOut,
@@ -630,21 +630,41 @@ def _build_demo_response(db: Session, project_id: int, project: Project) -> Demo
             pass_threshold=_num(policy.pass_threshold),
         )
 
-    # [2026-09-28 신규] 프론트 요청 2 — task_key별 재작성 사용/잔여 횟수. retry_task의
-    # 409 판정과 같은 규칙(rerun_type='rerun' AND status='completed'만 센다)을 그대로
-    # 써야 화면과 서버가 같은 숫자를 본다 — executions는 이미 조회해뒀으니 쿼리 추가 없이
-    # 메모리에서 task_key별로 센다.
-    rework_used_by_task_key: dict[str, int] = {}
+    # [2026-09-28 신규] 프론트 요청 2 — 화면에 보이는 "묶음(bundle)" 단위 재작성 사용/잔여
+    # 횟수. retry_task의 409 판정과 같은 규칙(rerun_type='rerun' AND status='completed'만
+    # 센다)을 그대로 써야 화면과 서버가 같은 숫자를 본다 — executions는 이미 조회해뒀으니
+    # 쿼리 추가 없이 메모리에서 센다.
+    # [2026-09-28 수정] task_key로 세면 writing 하나가 화면상 묶음 3개(본문/그래프/표)를
+    # 가리켜서 틀린다 — writing은 bundle_id로, 이미 1:1인 구현 쪽은 task_key로 센 뒤 고정
+    # 묶음 이름에 매핑한다(app/pipeline_stages.py WRITING_BUNDLES/TASK_KEY_TO_FIXED_BUNDLE).
+    # strategy/verify1_*/verify2_*/review_*는 화면에 "재작성" 버튼이 없는 자동 연동 재시도라
+    # 애초에 묶음 개념이 아니므로 이 목록에 안 넣는다.
+    rework_used_by_bundle: dict[str, int] = {}
     for e in executions:
-        if e.task_key and e.rerun_type == 'rerun' and e.status == ps.GENERATION_STATUS_COMPLETED:
-            rework_used_by_task_key[e.task_key] = rework_used_by_task_key.get(e.task_key, 0) + 1
-    retry_budget = [
-        RetryBudgetItemOut(
-            task_key=tk,
-            used=rework_used_by_task_key.get(tk, 0),
-            remaining=max(policy.rework_cap - rework_used_by_task_key.get(tk, 0), 0),
+        if e.rerun_type != 'rerun' or e.status != ps.GENERATION_STATUS_COMPLETED:
+            continue
+        if e.task_key == 'writing' and e.bundle_id:
+            rework_used_by_bundle[e.bundle_id] = rework_used_by_bundle.get(e.bundle_id, 0) + 1
+        elif e.task_key in ps.TASK_KEY_TO_FIXED_BUNDLE:
+            bundle = ps.TASK_KEY_TO_FIXED_BUNDLE[e.task_key]
+            rework_used_by_bundle[bundle] = rework_used_by_bundle.get(bundle, 0) + 1
+
+    bundle_ids = list(ps.WRITING_BUNDLES)
+    if artifact is not None:
+        # category='onepage'는 실행 파일(executable_path) 자체가 없어 그 묶음이 없다
+        # (retry_task의 같은 규칙 참고 — "category='onepage' 산출물은... 실행 파일이 없어서").
+        if artifact.category != 'onepage':
+            bundle_ids.append(ps.BUNDLE_ARTIFACT_PROTOTYPE)
+        bundle_ids.append(ps.BUNDLE_ARTIFACT_INFOGRAPHIC)
+
+    bundle_usages = [
+        BundleUsageOut(
+            bundle_id=b,
+            layer=ps.BUNDLE_TO_LAYER[b],
+            used=rework_used_by_bundle.get(b, 0),
+            remaining=max(policy.rework_cap - rework_used_by_bundle.get(b, 0), 0),
         )
-        for tk in sorted(_RETRIABLE_TASK_KEYS)
+        for b in bundle_ids
     ]
 
     return DemoGenerateResponse(
@@ -655,7 +675,7 @@ def _build_demo_response(db: Session, project_id: int, project: Project) -> Demo
         verdict=verdict_out,
         agent_executions=[AgentExecutionOut.model_validate(e) for e in executions],
         rework_cap=policy.rework_cap,
-        retry_budget=retry_budget,
+        bundle_usages=bundle_usages,
     )
 
 
@@ -1701,6 +1721,30 @@ def retry_task(
     if plan is None:
         raise HTTPException(status_code=404, detail='이 프로젝트엔 아직 사업계획서가 없어 재시도할 수 없습니다')
 
+    # [2026-09-28 신규, 프론트 답변 반영] writing은 화면상 묶음 3개를 공유하므로 bundle_id가
+    # 필수다 — 안 보내면 어느 묶음을 재작성한 건지 서버가 구분할 수 없다. 그 외 task_key는
+    # 이미 묶음과 1:1이라(app/pipeline_stages.py TASK_KEY_TO_FIXED_BUNDLE) 생략하면 그 고정
+    # 값으로 채우고, 보냈다면 그 고정값과 일치하는지만 검증한다(둘 다 없는 task_key는 묶음
+    # 개념이 아니므로 bundle_id를 그냥 무시한다). 프로젝트/계획서 존재 확인(404)보다는 뒤에
+    # 둔다 — "매칭도 없는 프로젝트"에 bundle_id 누락까지 같이 따질 이유가 없다.
+    if body.task_key == 'writing':
+        if body.bundle_id not in ps.WRITING_BUNDLES:
+            raise HTTPException(
+                status_code=400,
+                detail=f'writing 재시도는 bundle_id가 필요합니다 (가능한 값: {ps.WRITING_BUNDLES})',
+            )
+        bundle_id = body.bundle_id
+    elif body.task_key in ps.TASK_KEY_TO_FIXED_BUNDLE:
+        fixed_bundle = ps.TASK_KEY_TO_FIXED_BUNDLE[body.task_key]
+        if body.bundle_id is not None and body.bundle_id != fixed_bundle:
+            raise HTTPException(
+                status_code=400,
+                detail=f'{body.task_key!r}의 bundle_id는 {fixed_bundle!r}로 고정입니다',
+            )
+        bundle_id = fixed_bundle
+    else:
+        bundle_id = None
+
     agent_name = _TASK_KEY_TO_AGENT[body.task_key]
     last_attempt = (
         db.query(AgentExecution)
@@ -1715,20 +1759,21 @@ def retry_task(
     # 만든 행 중 실제로 성공(status='completed')한 것만 센다 — 실패한 재작성은 기획서
     # 5-6절 "재작성이 실패하면 쓴 기회를 돌려준다" 규칙에 따라 소진되지 않는다.
     policy = _get_verification_policy(db)
-    rework_used = (
-        db.query(AgentExecution)
-        .filter(
-            AgentExecution.project_id == project.project_id,
-            AgentExecution.task_key == body.task_key,
-            AgentExecution.rerun_type == 'rerun',
-            AgentExecution.status == ps.GENERATION_STATUS_COMPLETED,
-        )
-        .count()
+    rework_used_query = db.query(AgentExecution).filter(
+        AgentExecution.project_id == project.project_id,
+        AgentExecution.task_key == body.task_key,
+        AgentExecution.rerun_type == 'rerun',
+        AgentExecution.status == ps.GENERATION_STATUS_COMPLETED,
     )
+    # writing만 bundle_id로 추가 필터링한다 — 나머지는 task_key만으로 이미 묶음 하나와
+    # 1:1이라 더 좁힐 필요가 없다(위 bundle_id 해석 로직 주석 참고).
+    if body.task_key == 'writing':
+        rework_used_query = rework_used_query.filter(AgentExecution.bundle_id == bundle_id)
+    rework_used = rework_used_query.count()
     if rework_used >= policy.rework_cap:
         raise HTTPException(
             status_code=409,
-            detail=f'이 작업은 재작성 상한 {policy.rework_cap}회를 이미 사용했습니다',
+            detail=f'"{bundle_id}" 항목은 재작성 상한 {policy.rework_cap}회를 이미 사용했습니다',
         )
 
     changed: dict = {}
@@ -1915,6 +1960,7 @@ def retry_task(
             project_id=project.project_id,
             agent_name=agent_name,
             task_key=body.task_key,
+            bundle_id=bundle_id,
             attempt_no=next_attempt_no,
             model_used='dummy-retry',
             rerun_type='rerun',
@@ -1933,6 +1979,7 @@ def retry_task(
         project_id=project.project_id,
         agent_name=agent_name,
         task_key=body.task_key,
+        bundle_id=bundle_id,
         attempt_no=next_attempt_no,
         model_used='dummy-retry',
         rerun_type='rerun',

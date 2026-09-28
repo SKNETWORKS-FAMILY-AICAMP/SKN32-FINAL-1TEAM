@@ -58,8 +58,17 @@ def retry_setup(db_session):
     return {'client': client, 'project_id': project.project_id, 'plan_id': verdict.plan_id}
 
 
-def _retry(client, project_id, task_key):
-    return client.post(f'/projects/{project_id}/retry-task', json={'task_key': task_key})
+def _retry(client, project_id, task_key, bundle_id=None):
+    # writing은 bundle_id가 필수라서(app/pipeline_stages.py WRITING_BUNDLES), 이 파일의
+    # 다른 테스트들이 다 고쳐 쓰지 않도록 기본값(본문 작성)을 여기서 채워준다 — 묶음
+    # 간 독립을 직접 검증하는 테스트만 bundle_id를 명시적으로 넘긴다.
+    body = {'task_key': task_key}
+    if task_key == 'writing':
+        from app import pipeline_stages as ps
+        body['bundle_id'] = bundle_id or ps.BUNDLE_WRITING_BODY
+    elif bundle_id is not None:
+        body['bundle_id'] = bundle_id
+    return client.post(f'/projects/{project_id}/retry-task', json=body)
 
 
 # ============================================================================
@@ -448,6 +457,47 @@ def test_retry_task_enforces_rework_cap(retry_setup, db_session):
     assert res3.status_code == 200, res3.text
 
 
+def test_rework_cap_is_counted_per_bundle_not_per_task_key(retry_setup, db_session):
+    """버그 재현/회귀 방지 — writing 하나가 화면상 묶음 3개(본문/그래프/표)를 가리켜서,
+    task_key로만 세면 "그래프" 1회 재작성했다고 "표" 재작성까지 막혀버렸다(프론트 답변
+    md "⚠ 중요 — bundle_id를 task_key로 잡으면 안 됩니다" 참고). 묶음마다 따로 1회씩
+    허용돼야 한다."""
+    from app import pipeline_stages as ps
+    from app.models import VerificationPolicy
+
+    policy = db_session.query(VerificationPolicy).order_by(VerificationPolicy.policy_id.asc()).first()
+    policy.rework_cap = 1
+    db_session.commit()
+
+    res1 = _retry(retry_setup['client'], retry_setup['project_id'], 'writing', ps.BUNDLE_WRITING_CHART)
+    assert res1.status_code == 200, res1.text
+
+    # 같은 묶음(그래프)을 또 재작성하면 막힌다.
+    res2 = _retry(retry_setup['client'], retry_setup['project_id'], 'writing', ps.BUNDLE_WRITING_CHART)
+    assert res2.status_code == 409, res2.text
+
+    # 다른 묶음(표)은 아직 안 썼으므로 여전히 가능해야 한다 — 이게 고친 버그.
+    res3 = _retry(retry_setup['client'], retry_setup['project_id'], 'writing', ps.BUNDLE_WRITING_TABLE)
+    assert res3.status_code == 200, res3.text
+
+
+def test_writing_retry_without_bundle_id_is_rejected(retry_setup):
+    res = retry_setup['client'].post(
+        f'/projects/{retry_setup["project_id"]}/retry-task', json={'task_key': 'writing'},
+    )
+    assert res.status_code == 400, res.text
+    assert 'bundle_id' in res.json()['detail']
+
+
+def test_implement_prototype_bundle_id_mismatch_is_rejected(retry_setup):
+    res = retry_setup['client'].post(
+        f'/projects/{retry_setup["project_id"]}/retry-task',
+        json={'task_key': 'implement_prototype', 'bundle_id': '인포그래픽 제작'},
+    )
+    assert res.status_code == 400, res.text
+    assert 'bundle_id' in res.json()['detail']
+
+
 def test_failed_rework_does_not_consume_cap(monkeypatch, retry_setup, db_session):
     """기획서 5-6절 "재작성이 실패하면 쓴 기회를 돌려준다" — 실패한 시도는 rework_cap을
     소진하지 않아야 하므로, 실패 뒤 같은 task_key를 다시 불러도(rework_cap=1이어도)
@@ -471,16 +521,20 @@ def test_failed_rework_does_not_consume_cap(monkeypatch, retry_setup, db_session
     assert res2.status_code == 200, res2.text
 
 
-def test_result_response_includes_rework_cap_and_retry_budget(retry_setup, db_session):
-    """프론트 요청 2 — GET /projects/{id}/result가 rework_cap과 task_key별 사용/잔여
-    횟수를 내려줘야 프론트가 RERUN_CAP 상수 없이 화면을 그릴 수 있다."""
+def test_result_response_includes_rework_cap_and_bundle_usages(retry_setup, db_session):
+    """프론트 요청 2 — GET /projects/{id}/result가 rework_cap과 묶음별 사용/잔여 횟수를
+    내려줘야 프론트가 RERUN_CAP 상수 없이 화면을 그릴 수 있다. [2026-09-28 수정] task_key
+    기준이던 retry_budget을 bundle_id 기준 bundle_usages로 바꿨다 — writing 하나가 화면상
+    묶음 3개(본문/그래프/표)를 가리켜서 task_key만으로는 셀 수 없었기 때문(프론트 답변 md
+    참고). strategy처럼 화면에 재작성 버튼이 없는 task_key는 더 이상 이 목록에 없다."""
+    from app import pipeline_stages as ps
     from app.models import VerificationPolicy
 
     policy = db_session.query(VerificationPolicy).order_by(VerificationPolicy.policy_id.asc()).first()
     policy.rework_cap = 1
     db_session.commit()
 
-    res = _retry(retry_setup['client'], retry_setup['project_id'], 'writing')
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'writing', ps.BUNDLE_WRITING_BODY)
     assert res.status_code == 200, res.text
 
     result = retry_setup['client'].get(f'/projects/{retry_setup["project_id"]}/result')
@@ -488,9 +542,17 @@ def test_result_response_includes_rework_cap_and_retry_budget(retry_setup, db_se
     body = result.json()
     assert body['rework_cap'] == 1
 
-    budget_by_key = {item['task_key']: item for item in body['retry_budget']}
-    assert budget_by_key['writing'] == {'task_key': 'writing', 'used': 1, 'remaining': 0}
-    assert budget_by_key['strategy'] == {'task_key': 'strategy', 'used': 0, 'remaining': 1}
+    usage_by_bundle = {item['bundle_id']: item for item in body['bundle_usages']}
+    assert usage_by_bundle[ps.BUNDLE_WRITING_BODY] == {
+        'bundle_id': ps.BUNDLE_WRITING_BODY, 'layer': 'document', 'used': 1, 'remaining': 0,
+    }
+    # 다른 묶음은 안 건드렸으니 그대로 남아있어야 한다(버그였다면 여기도 0으로 깎였을 것).
+    assert usage_by_bundle[ps.BUNDLE_WRITING_CHART]['remaining'] == 1
+    assert usage_by_bundle[ps.BUNDLE_WRITING_TABLE]['remaining'] == 1
+    assert usage_by_bundle[ps.BUNDLE_ARTIFACT_PROTOTYPE]['remaining'] == 1
+    assert usage_by_bundle[ps.BUNDLE_ARTIFACT_INFOGRAPHIC]['remaining'] == 1
+    assert 'strategy' not in usage_by_bundle  # 재작성 버튼이 없는 task_key는 묶음이 아님
 
     writing_exec = next(e for e in body['agent_executions'] if e['task_key'] == 'writing' and e['rerun_type'] == 'rerun')
     assert writing_exec['attempt_no'] == 2  # seed(attempt_no=1) + retry(attempt_no=2)
+    assert writing_exec['bundle_id'] == ps.BUNDLE_WRITING_BODY

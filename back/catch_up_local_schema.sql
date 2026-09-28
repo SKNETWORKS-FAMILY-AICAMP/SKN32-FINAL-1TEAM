@@ -256,6 +256,11 @@ CALL _add_col_if_missing('project_plan_inputs', 'main_industry_free', "VARCHAR(1
 -- 상한을 rerun_cap(시스템 자동 재수행)과 분리한다(app/models.py VerificationPolicy 참고).
 CALL _add_col_if_missing('verification_policies', 'rework_cap', "INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '재작성(사용자가 POST /projects/{id}/retry-task로 묶음을 다시 만드는 것) 최대 횟수 — 묶음마다 1회, 첫 실행은 안 세고 실패하면 환불(rerun_cap과 별개, 2026-09-28 신규)'");
 
+-- [2026-09-28 신규, 프론트 답변 반영 — bundle_id 버그 수정] task_key='writing' 하나가
+-- 화면상 묶음 3개(본문/그래프/표)를 가리켜서, rework_cap 소진 여부를 task_key만으로
+-- 정확히 셀 수 없다(app/models.py AgentExecution.bundle_id 참고).
+CALL _add_col_if_missing('agent_executions', 'bundle_id', "VARCHAR(50) NULL COMMENT '재작성 묶음 이름(writing만 사용 — 예: 사업계획서 본문 작성/그래프 생성/표 생성)'");
+
 DROP PROCEDURE IF EXISTS _add_col_if_missing;
 
 -- [2026-09-28 신규] rerun_cap은 기획서 5-6절 확정값(2)로 맞춘다 — rework_cap과 분리되기

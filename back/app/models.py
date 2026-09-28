@@ -1055,6 +1055,13 @@ class AgentExecution(Base):
     # 실제 내용은 참조가 가리키는 테이블에서 조회). app/routers/projects.py retry_task 참고.
     output_ref: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
 
+    # [2026-09-28 신규, SB-152 프론트 답변 반영 — bundle_id 버그 수정] task_key='writing'
+    # 하나가 화면상 별개인 묶음 3개(본문/그래프/표)를 가리켜서, rework_cap 소진 여부를
+    # task_key만으로는 정확히 셀 수 없다(app/pipeline_stages.py WRITING_BUNDLES 참고).
+    # writing 재시도일 때만 실제로 채워지고, task_key와 묶음이 이미 1:1인 나머지
+    # task_key(구현 등)는 NULL로 둔 채 여전히 task_key 기준으로 센다.
+    bundle_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
 
 # ---------------------------------------------------------------------------
 # 검증 정책 (admin-dashboard.html 검증 정책 탭과 대응)

@@ -204,3 +204,34 @@ STAGE_TO_AGENT_TASK = {
 # ProjectPlanInput.main_industry_free(자유 문자열)에 따로 담고, 이 ENUM은 main_industry
 # 컬럼(개인/법인 전용)에만 적용한다.
 MAIN_INDUSTRIES = ('제조', '지식서비스', '기계·소재', '전기·전자', '정보·통신', '화공·섬유', '바이오·의료·생명', '에너지·자원', '공예·디자인')
+
+# [2026-09-28 신규, SB-152 프론트 답변 반영] "재작성" 상한(VerificationPolicy.rework_cap)은
+# task_key 단위가 아니라 화면에 보이는 "묶음(bundle)" 단위로 세야 한다 — writing 하나의
+# task_key 안에 화면상 별개인 묶음 3개(본문/그래프/표)가 들어있어서, task_key로만 세면
+# 그래프만 재작성해도 표 재작성 기회까지 같이 깎이는 버그가 생긴다(프론트 답변 md
+# "⚠ 중요 — bundle_id를 task_key로 잡으면 안 됩니다" 참고). 산출물(구현) 쪽은 이미
+# task_key와 묶음이 1:1이라 문제 없다.
+BUNDLE_WRITING_BODY = '사업계획서 본문 작성'
+BUNDLE_WRITING_CHART = '그래프 생성'
+BUNDLE_WRITING_TABLE = '표 생성'
+WRITING_BUNDLES = (BUNDLE_WRITING_BODY, BUNDLE_WRITING_CHART, BUNDLE_WRITING_TABLE)
+
+BUNDLE_ARTIFACT_PROTOTYPE = '실행 파일 제작'
+BUNDLE_ARTIFACT_INFOGRAPHIC = '인포그래픽 제작'
+
+BUNDLE_LAYER_DOCUMENT = 'document'
+BUNDLE_LAYER_ARTIFACT = 'artifact'
+
+# implement_prototype/implement_infographic은 이미 task_key와 묶음이 1:1이라 요청에
+# bundle_id를 따로 안 보내도(또는 보내도) 이 값으로 고정된다.
+TASK_KEY_TO_FIXED_BUNDLE = {
+    'implement_prototype': BUNDLE_ARTIFACT_PROTOTYPE,
+    'implement_infographic': BUNDLE_ARTIFACT_INFOGRAPHIC,
+}
+BUNDLE_TO_LAYER = {
+    BUNDLE_WRITING_BODY: BUNDLE_LAYER_DOCUMENT,
+    BUNDLE_WRITING_CHART: BUNDLE_LAYER_DOCUMENT,
+    BUNDLE_WRITING_TABLE: BUNDLE_LAYER_DOCUMENT,
+    BUNDLE_ARTIFACT_PROTOTYPE: BUNDLE_LAYER_ARTIFACT,
+    BUNDLE_ARTIFACT_INFOGRAPHIC: BUNDLE_LAYER_ARTIFACT,
+}

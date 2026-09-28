@@ -624,6 +624,11 @@ CREATE TABLE IF NOT EXISTS agent_executions (
     -- 그 리스트(JSON). 형제 저장소 agent-orchestration의 ExecutionRecord/CallLog 설계(원본
     -- 프롬프트·응답 내용은 남기지 않고 참조만 남김)를 관계형 id로 옮긴 것.
     output_ref JSON NULL COMMENT '이 실행이 만들거나 바꾼 산출물 참조({table,id} 또는 리스트) — 프롬프트/응답 원문은 저장하지 않음',
+    -- [2026-09-28 신규, SB-152 프론트 답변 반영] task_key='writing' 하나가 화면상 묶음
+    -- 3개(사업계획서 본문 작성/그래프 생성/표 생성)를 가리켜서, rework_cap 소진 여부를
+    -- task_key만으로 셀 수 없다 — writing 재시도일 때만 채워지고, 이미 task_key와 묶음이
+    -- 1:1인 나머지(구현 등)는 NULL로 둔 채 여전히 task_key 기준으로 센다.
+    bundle_id VARCHAR(50) NULL COMMENT '재작성 묶음 이름(writing만 사용 — 예: 사업계획서 본문 작성/그래프 생성/표 생성)',
     -- [2026-09-17 인덱싱 개정, 2026-09-28 match_results 통합으로 컬럼명만 변경] "이
     -- 프로젝트의 이 task_key 최근 시도가 몇 번째인지" 조회가 재시도/이어하기 로직에서
     -- 자주 호출된다(projects.py 재시도 처리, admin.py 에이전트 테스크 탭의 project_id

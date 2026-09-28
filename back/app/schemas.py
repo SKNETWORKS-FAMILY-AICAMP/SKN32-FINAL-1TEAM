@@ -559,6 +559,14 @@ class RetryTaskRequest(BaseModel):
             "'verify2_crosscheck' | 'review_expression' | 'review_token_check'"
         ),
     )
+    # [2026-09-28 신규, 프론트 답변 반영] task_key='writing'은 화면상 묶음 3개(사업계획서
+    # 본문 작성/그래프 생성/표 생성)를 공유하므로 어느 묶음인지 필수로 받는다
+    # (app/pipeline_stages.py WRITING_BUNDLES). 그 외 task_key는 이미 묶음과 1:1이라
+    # 생략 가능 — 값을 보내면 그 task_key의 고정 묶음과 일치하는지만 검증한다.
+    bundle_id: str | None = Field(
+        default=None,
+        description="writing 재시도는 필수: '사업계획서 본문 작성' | '그래프 생성' | '표 생성'. 그 외엔 생략 가능.",
+    )
 
 
 class RetryTaskResponse(BaseModel):
@@ -594,12 +602,16 @@ class AgentExecutionOut(BaseModel):
     token_usage: int
     status: str
     started_at: datetime.datetime
+    bundle_id: str | None = None
 
 
-class RetryBudgetItemOut(BaseModel):
-    """프론트 요청 2 — task_key별 재작성(rework) 사용/잔여 횟수. 재작성 실패는 세지 않는다
-    (retry_task가 rerun_type='rerun' AND status='completed'인 행만 used로 센다)."""
-    task_key: str
+class BundleUsageOut(BaseModel):
+    """프론트 답변 반영 — 화면에 보이는 "묶음(bundle)" 단위 재작성(rework) 사용/잔여 횟수.
+    task_key가 아니라 bundle_id로 센다(writing 하나가 묶음 3개를 가리키므로 — 자세한 배경은
+    app/pipeline_stages.py WRITING_BUNDLES 참고). 재작성 실패는 세지 않는다(retry_task가
+    rerun_type='rerun' AND status='completed'인 행만 used로 센다)."""
+    bundle_id: str
+    layer: str  # 'document' | 'artifact'
     used: int
     remaining: int
 
@@ -618,9 +630,13 @@ class DemoGenerateResponse(BaseModel):
     verdict: VerdictOut | None = None
     agent_executions: list[AgentExecutionOut]
     # [2026-09-28 신규] 프론트 요청 2 — RERUN_CAP 프론트 상수를 없애고 관리자가 상한을
-    # 바꾸면 화면도 같이 따라가도록, 상한값과 task_key별 사용/잔여 횟수를 같이 내려준다.
+    # 바꾸면 화면도 같이 따라가도록, 상한값과 묶음별 사용/잔여 횟수를 같이 내려준다.
+    # [2026-09-28 수정] task_key 단위였던 retry_budget을 bundle_id 단위 bundle_usages로
+    # 교체 — writing 하나가 화면상 묶음 3개를 가리키는 문제 때문(app/pipeline_stages.py
+    # WRITING_BUNDLES 참고). strategy/verify1_*/verify2_*/review_* 처럼 화면에 "재작성"
+    # 버튼이 없는 task_key는 애초에 묶음 개념이 아니라서 이 목록에 안 나온다.
     rework_cap: int
-    retry_budget: list[RetryBudgetItemOut]
+    bundle_usages: list[BundleUsageOut]
 
 
 # ---------------------------------------------------------------------------

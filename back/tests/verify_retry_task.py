@@ -107,8 +107,11 @@ finally:
 print(f'[준비] project_id={project_id} plan_id={plan_id} artifact_id={artifact_id} (category=webdev)')
 
 
-def retry(task_key: str) -> tuple[int, dict]:
-    res = client.post(f'/projects/{project_id}/retry-task', json={'task_key': task_key})
+def retry(task_key: str, bundle_id: str | None = None) -> tuple[int, dict]:
+    body = {'task_key': task_key}
+    if bundle_id is not None:
+        body['bundle_id'] = bundle_id
+    res = client.post(f'/projects/{project_id}/retry-task', json=body)
     return res.status_code, res.json()
 
 
@@ -151,7 +154,7 @@ print('[OK] strategy 재시도: plan_sections[3-1] 본문이 매번 실제로 �
 # ============================================================================
 # 2) 작성(writing) — plan_sections '1-1'/'2-1' 본문이 실제로 달라지는지
 # ============================================================================
-status2, body2 = retry('writing')
+status2, body2 = retry('writing', bundle_id='사업계획서 본문 작성')
 assert status2 == 200, f'writing 재시도 실패: {status2} {body2}'
 assert body2['attempt_no'] == 2, body2['attempt_no']
 assert body2['agent_name'] == '작성', body2['agent_name']
