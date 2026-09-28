@@ -160,6 +160,22 @@ export const DOC_ITEMS_PASS = [
 
 export const FINAL_THRESHOLD = 80;
 
+// 재작성(재수행) 횟수 상한 — 팀 확정값은 "항목마다 1회"다(2026-09-28). 그래서 화면에
+// 보이는 항목(라벨) 단위로 센다: useWorkflowStore.reworkCounts는 { 라벨: 쓴 횟수 }다.
+//
+// ⚠ 두 가지가 아직 서버와 어긋나 있다 — 백엔드 반영 요청 문서에 함께 적었다.
+//  1) verification_policies.rerun_cap 기본값은 3이다(models.py). 이 화면 규칙(1회)과
+//     맞추려면 정책 행을 1로 바꾸거나, 프론트가 정책값을 받아 쓰게 해야 한다.
+//  2) 계획서의 본문·그래프·표 3개 라벨은 서버에선 같은 task_key('writing') 하나다.
+//     화면은 라벨마다 1회씩 허용하므로 서버 입장에선 'writing'이 최대 3번 호출된다.
+// 지금은 프론트가 세는 값이라 새로고침하면 카운트가 0으로 돌아간다(서버 retry_task는
+// 상한을 검사하지 않고 agent_executions.attempt_no만 올린다).
+export const RERUN_CAP = 1;
+// 검수(표현) Task 내부에서 핵심 정보가 바뀐 문단을 다시 거는 상한
+// (verification_policies.token_retry_cap 기본 2). 사용자가 누르는 버튼이 아니라 Task
+// 내부 자동 재시도라 막을 버튼이 없다 — 화면에는 상한과 상한 도달 시 동작만 밝힌다.
+export const REVIEW_RETRY_CAP = 2;
+
 // 기획서 6-8: "검증 결과 문서와 화면 양쪽에 이 성격을 표기한다" — 지금까지는
 // 표현검수/다운로드 화면에만 있었다. 점수가 실제로 뜨는 화면(문서 평가·종합 평가)
 // 에도 같은 문구를 단다. 다운로드 화면 고지(DELIVERABLE_NOTICES)와 문구를 맞춘다.

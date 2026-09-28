@@ -5,7 +5,7 @@ import {downloadPlanDocx,downloadPrototypeZip} from '../../dummyDeliverables.js'
 import {downloadPlanDocument,downloadPlanHwp} from '../../api.js';
 import {buildCodeCheckItems,buildGeneralInfo,buildOverview,detectItemCategory,DOC_SCORE_BY_OUTCOME} from './utils.js';
 import {printVerificationReport} from './verificationReport.js';
-import {ARTIFACT_SCORE_BY_OUTCOME,DELIVERABLE_NOTICES,DOWNLOAD_FILES,FINAL_THRESHOLD,PLAN_DOCUMENT_SECTIONS_REWORKED,REVIEW_PARAGRAPHS} from './data.js';
+import {ARTIFACT_SCORE_BY_OUTCOME,DELIVERABLE_NOTICES,DOWNLOAD_FILES,FINAL_THRESHOLD,PLAN_DOCUMENT_SECTIONS_REWORKED,REVIEW_PARAGRAPHS,REVIEW_RETRY_CAP} from './data.js';
 
 // verdict: GET /result의 VerdictOut. 검증결과서의 "종합 판정"을 서버 점수로 찍기 위해 받는다
 // (없으면 화면 값으로 계산 — verificationReport.js 참고).
@@ -152,12 +152,20 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
                         <span className={`text-[11px] font-semibold rounded-full px-2 py-0.5 ${a.passed ? 'text-[var(--ok)] bg-[color-mix(in_srgb,var(--ok)_16%,white)]' : 'text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_12%,white)]'}`}>
                           {a.try}차 시도 · {a.passed ? '핵심 정보 보존 확인' : '핵심 정보 변경 발견'}
                         </span>
+                        {a.try >= REVIEW_RETRY_CAP && (
+                          <span className="text-[11px] font-semibold text-[var(--muted-fg)]">다시 하기 상한 {REVIEW_RETRY_CAP}회 도달 — 이후 재시도 없음</span>
+                        )}
                       </div>
                       <p className="text-[13.5px] leading-relaxed text-[var(--fg)]">{a.after}</p>
                       {a.issue && <p className="mt-1.5 text-[12px] text-[var(--danger)] leading-relaxed">{a.issue}</p>}
                     </div>
                   ))}
                 </div>
+                {/* 검수는 사용자가 누르는 재시도 버튼이 없는 단계다(문단 재시도는 Task 내부에서
+                    자동) — 막을 버튼이 없으니 상한과 상한 도달 시 동작만 밝힌다. */}
+                <p className="mt-3 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">
+                  문장 다듬기는 한 문단당 최대 {REVIEW_RETRY_CAP}회까지 다시 시도해요 — 그래도 숫자·날짜 같은 핵심 정보가 바뀌면 그 문단은 원문을 그대로 두고 멈춥니다.
+                </p>
               </React.Fragment>
             ) : (
               <div className="grid sm:grid-cols-2 gap-4">

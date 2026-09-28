@@ -2,9 +2,9 @@
 import React, {useState,useRef,useEffect} from 'react';
 import Preparation from '../../components/Preparation.jsx';
 import {Icon} from '../../components/Icons.jsx';
-import {SiteMock} from './shared.jsx';
-import {detectItemCategory,buildCodeCheckItems} from './utils.js';
-import {ARTIFACT_CATEGORY_COPY,ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,EXECUTABLE_COPY,PROTOTYPE_PAGE} from './data.js';
+import {SiteMock,RerunLeftBadge} from './shared.jsx';
+import {detectItemCategory,buildCodeCheckItems,isRerunCapped,rerunLeftOf} from './utils.js';
+import {ARTIFACT_CATEGORY_COPY,ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,EXECUTABLE_COPY,PROTOTYPE_PAGE,RERUN_CAP} from './data.js';
 import {retryTask} from '../../api.js';
 
 // ARTIFACT_SUBTASKS_BY_CATEGORY(data.js)의 라벨 -> app/schemas.py RetryTaskRequest.task_key.
@@ -65,7 +65,7 @@ export function ResultPreview({kind,onClose}){
  </dialog>;
 }
 
-export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, scoreOutcome = 'fail', projectId }){
+export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, scoreOutcome = 'fail', projectId, reworkCounts = {}, onRework }){
   const [preview,setPreview]=useState(null);
   const category = detectItemCategory(itemInfo && itemInfo.item);
   const hasExecutable = category !== 'onepage';
@@ -86,20 +86,27 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
   // 카드 말고 그냥 구역으로).
   const [panelOpen, setPanelOpen] = useState(true);
 
+  // 재작성 상한(RERUN_CAP = 항목마다 1회)에 닿은 항목은 고를 수 없다 — PlanForm과 같은 규칙.
+  const isCapped = (label) => isRerunCapped(reworkCounts, label);
+  const allCapped = subtasks.every(isCapped);
+
   const toggleTask = (label) => {
+    if (isCapped(label)) return;
     setCheckedTasks((prev) => (prev.includes(label) ? prev.filter((t) => t !== label) : [...prev, label]));
     setCompletedTasks((prev) => prev.filter((t) => t !== label));
   };
   // POST /projects/{id}/retry-task 실제 호출(app/routers/projects.py retry_task) — 예전엔
   // setTimeout으로 스피너만 흉내 내고 서버 호출이 없어 artifacts 테이블이 안 바뀌었다.
   const handleRewrite = async () => {
-    if (checkedTasks.length === 0) return;
-    const picked = checkedTasks;
+    const picked = checkedTasks.filter((label) => !isCapped(label));
+    if (picked.length === 0) return;
     setRunningTasks(picked);
     setCheckedTasks([]);
     const taskKeys = [...new Set(picked.map((label) => TASK_KEY_BY_LABEL[label]).filter(Boolean))];
     try {
       if (projectId) await Promise.all(taskKeys.map((key) => retryTask(projectId, key)));
+      // 실제로 재시도가 나간 뒤에만 횟수를 센다 — 실패한 호출로 상한을 깎지 않는다.
+      if (onRework) onRework(picked);
       setCompletedTasks((prev) => [...new Set([...prev, ...picked])]);
     } catch (err) {
       console.error('재작성 요청이 실패했어요', err);
@@ -181,31 +188,41 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
           </div>
 
           <div className="rounded-xl border border-[var(--border)] p-4">
-            <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-3">다시 준비할 항목</p>
+            <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-1">다시 준비할 항목</p>
+            <p className="text-[11px] text-[var(--muted-fg)] mb-3">항목마다 다시 만들기는 {RERUN_CAP}회까지만 가능해요</p>
             <div className="flex flex-col gap-2">
               {subtasks.map((label) => {
                 const isRunning = runningTasks.includes(label);
                 const isDone = !isRunning && completedTasks.includes(label);
+                const left = rerunLeftOf(reworkCounts, label);
+                const capped = left <= 0;
                 return (
-                  <label key={label} className={`flex items-center gap-2.5 text-[13px] ${isRunning ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>
+                  <label key={label} className={`flex items-center gap-2.5 text-[13px] ${isRunning || capped ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>
                     {isRunning ? (
                       <span className="rewrite-indicator" aria-hidden="true"></span>
                     ) : (
                       <input type="checkbox" checked={checkedTasks.includes(label)} onChange={() => toggleTask(label)}
-                        className="w-4 h-4 accent-[var(--primary)]" />
+                        disabled={capped}
+                        className="w-4 h-4 accent-[var(--primary)] disabled:cursor-not-allowed" />
                     )}
                     <span>
                       {isRunning ? `${label} 재작성 중…` : label}
                       {isDone && <span className="ml-1.5 text-[11.5px] font-semibold text-[var(--ok)]">✓ 재작성 완료</span>}
+                      {!isRunning && <RerunLeftBadge left={left} />}
                     </span>
                   </label>
                 );
               })}
             </div>
-            <button onClick={handleRewrite} disabled={checkedTasks.length === 0 || runningTasks.length > 0}
+            <button onClick={handleRewrite} disabled={allCapped || checkedTasks.length === 0 || runningTasks.length > 0}
               className="w-full mt-3 rounded-lg border border-[var(--border)] py-2.5 text-[13.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--bg)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-              선택 항목 재작성
+              {allCapped ? `재작성 상한 ${RERUN_CAP}회 도달` : '선택 항목 재작성'}
             </button>
+            {allCapped && (
+              <p className="mt-2 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">
+                모든 항목의 재작성 {RERUN_CAP}회를 다 썼어요. 지금 상태로 종합 평가를 확인해 주세요.
+              </p>
+            )}
           </div>
         </aside>
         )}
