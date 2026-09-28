@@ -53,9 +53,9 @@ const AGENT_ROWS=[
 ];
 
 // GET /admin/agent-executions 응답(dict 목록, AgentExecutionOut 고정 스키마가 아니라 유연한 형태)을
-// 이 화면 행 모양으로 바꾼다. project(프로젝트명)는 API가 안 내려줘서 match_id로 대신 표시한다.
+// 이 화면 행 모양으로 바꾼다. project(프로젝트명)는 API가 안 내려줘서 project_id로 대신 표시한다.
 const executionRowFromServer=r=>({
-  id:'EXEC-'+r.execution_id,matchId:r.match_id,agent:r.agent_name,tokens:Number(r.token_usage).toLocaleString(),
+  id:'EXEC-'+r.execution_id,projectId:r.project_id,agent:r.agent_name,tokens:Number(r.token_usage).toLocaleString(),
   rerun:r.rerun_type,rerunTone:r.rerun_type==='rerun'?'primary':'muted',
   status:r.status,statusTone:['completed','success','성공'].includes(r.status)?'ok':'danger',
   tone:!['completed','success','성공'].includes(r.status)?'danger':undefined,
@@ -188,26 +188,26 @@ const readAdminSeen=()=>{try{return new Set(JSON.parse(localStorage.getItem(ADMI
 const TASK_STATUS_FAILED=new Set(['failed','error','실패']);
 function adminAlertsFrom(items,executions){
   const alerts=[];
-  const byMatch=new Map(items.filter(i=>i.match_id!=null).map(i=>[i.match_id,i]));
+  const byProject=new Map(items.filter(i=>i.project_id!=null).map(i=>[i.project_id,i]));
   for(const item of items){
     if(item.archived)continue;
     if(item.match_status==='failed'){
       const kind=item.stage==='plan_writing'?'사업계획서':item.stage==='prototype_building'?'프로토타입':'프로젝트';
-      alerts.push({key:`project:${item.match_id}:failed`,kind:'실패',title:`${kind} 생성 실패`,detail:item.failure_reason||'실패 원인을 확인해 주세요.',project:item.description,projectId:item.project_id,tab:'progress',time:item.last_updated});
+      alerts.push({key:`project:${item.project_id}:failed`,kind:'실패',title:`${kind} 생성 실패`,detail:item.failure_reason||'실패 원인을 확인해 주세요.',project:item.description,projectId:item.project_id,tab:'progress',time:item.last_updated});
     }else if(item.stalled){
-      alerts.push({key:`project:${item.match_id}:stalled`,kind:'정체',title:'작업 진행이 멈춰 있습니다',detail:'마지막 갱신 이후 48시간이 지났습니다.',project:item.description,projectId:item.project_id,tab:'progress',time:item.last_updated});
+      alerts.push({key:`project:${item.project_id}:stalled`,kind:'정체',title:'작업 진행이 멈춰 있습니다',detail:'마지막 갱신 이후 48시간이 지났습니다.',project:item.description,projectId:item.project_id,tab:'progress',time:item.last_updated});
     }
   }
   const latest=new Map();
   for(const row of executions){
-    const key=`${row.match_id}:${row.task_key||row.agent_name}`;
+    const key=`${row.project_id}:${row.task_key||row.agent_name}`;
     if(!latest.has(key))latest.set(key,row);
   }
   for(const row of latest.values()){
     if(!TASK_STATUS_FAILED.has(row.status))continue;
-    const item=byMatch.get(row.match_id);
+    const item=byProject.get(row.project_id);
     if(item?.archived)continue;
-    alerts.push({key:`task:${row.execution_id}`,kind:'실패',title:`${row.task_key||row.agent_name} Task 오류`,detail:`실행 상태: ${row.status}`,project:item?.description||`매칭 #${row.match_id}`,matchId:row.match_id,tab:'agents',time:row.started_at});
+    alerts.push({key:`task:${row.execution_id}`,kind:'실패',title:`${row.task_key||row.agent_name} Task 오류`,detail:`실행 상태: ${row.status}`,project:item?.description||`프로젝트 #${row.project_id}`,projectId:row.project_id,tab:'agents',time:row.started_at});
   }
   return alerts.sort((a,b)=>(b.time||'').localeCompare(a.time||''));
 }
@@ -292,7 +292,7 @@ export default function AdminDashboard({user,onExit}){
         {tab==='ann'&&<AnnouncementTab/>}
         {tab==='ops'&&<OpsTab/>}
         {tab==='progress'&&<ProgressTab key={selectedAlert?.tab==='progress'?selectedAlert.key:'progress'} focusProjectId={selectedAlert?.tab==='progress'?selectedAlert.projectId:null}/>}
-        {tab==='agents'&&<AgentsTab key={selectedAlert?.tab==='agents'?selectedAlert.key:'agents'} focusMatchId={selectedAlert?.tab==='agents'?selectedAlert.matchId:null}/>}
+        {tab==='agents'&&<AgentsTab key={selectedAlert?.tab==='agents'?selectedAlert.key:'agents'} focusProjectId={selectedAlert?.tab==='agents'?selectedAlert.projectId:null}/>}
         {tab==='policy'&&<PolicyTab pushToast={pushToast}/>}
         {tab==='recovery'&&<RecoveryTab pushToast={pushToast}/>}
         {tab==='users'&&<UsersTab pushToast={pushToast}/>}
@@ -663,9 +663,9 @@ const agentTaskFromServer=r=>({
   recentTone:(r.recent_status&&r.recent_status!=='completed'&&r.recent_status!=='success')?'danger':undefined,
 });
 
-function AgentsTab({focusMatchId=null}){
-  const [view,setView]=useState(focusMatchId==null?'task':'execution');
-  const [matchFilter,setMatchFilter]=useState(focusMatchId);
+function AgentsTab({focusProjectId=null}){
+  const [view,setView]=useState(focusProjectId==null?'task':'execution');
+  const [projectFilter,setProjectFilter]=useState(focusProjectId);
   const [executions,setExecutions]=useState(null);
   const [execError,setExecError]=useState('');
   const [agentTasks,setAgentTasks]=useState(null);
@@ -766,21 +766,21 @@ function AgentsTab({focusMatchId=null}){
       ):(
         <>
           <h2 className="text-[20px] font-bold mb-4">실행 세션</h2>
-          {matchFilter!=null&&<button type="button" className="text-[12px] text-[var(--primary)] mb-3" onClick={()=>setMatchFilter(null)}>매칭 #{matchFilter} 오류 확인 중 · 전체 실행 보기</button>}
+          {projectFilter!=null&&<button type="button" className="text-[12px] text-[var(--primary)] mb-3" onClick={()=>setProjectFilter(null)}>프로젝트 #{projectFilter} 오류 확인 중 · 전체 실행 보기</button>}
           {execError?<p className="text-[13.5px] text-[var(--danger)]">{execError}</p>
           :executions===null?<p className="text-[13.5px] text-[var(--muted-fg)]">불러오는 중…</p>
           :(<Panel>
             <div className="grid grid-cols-[1fr_1fr_1.6fr_1fr_1.2fr_0.9fr] text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]">
-              <div className="p-4">세션 ID</div><div className="p-4 text-center">Agent</div><div className="p-4 text-center">매칭 ID</div>
+              <div className="p-4">세션 ID</div><div className="p-4 text-center">Agent</div><div className="p-4 text-center">프로젝트 ID</div>
               <div className="p-4 text-center">토큰 사용량</div><div className="p-4 text-center">재수행 여부</div><div className="p-4 text-center">상태</div>
             </div>
-            {executions.filter(r=>matchFilter==null||r.matchId===matchFilter).length===0&&<p className="p-6 text-center text-[13px] text-[var(--muted-fg)]">해당 실행 로그가 없어요.</p>}
-            {executions.filter(r=>matchFilter==null||r.matchId===matchFilter).map(r=>(
+            {executions.filter(r=>projectFilter==null||r.projectId===projectFilter).length===0&&<p className="p-6 text-center text-[13px] text-[var(--muted-fg)]">해당 실행 로그가 없어요.</p>}
+            {executions.filter(r=>projectFilter==null||r.projectId===projectFilter).map(r=>(
               <div key={r.id} className={'grid grid-cols-[1fr_1fr_1.6fr_1fr_1.2fr_0.9fr] text-[13px] border-t border-[var(--border)] items-center '+
                 (r.tone==='danger'?'bg-[color-mix(in_srgb,var(--danger)_5%,white)] border-l-4 border-l-[var(--danger)] ':'')}>
                 <div className="p-4 font-medium">{r.id}</div>
                 <div className="p-4 text-center text-[var(--muted-fg)]">{r.agent}</div>
-                <div className="p-4 text-center text-[var(--muted-fg)]">{r.matchId??'—'}</div>
+                <div className="p-4 text-center text-[var(--muted-fg)]">{r.projectId??'—'}</div>
                 <div className="p-4 text-center text-[var(--muted-fg)]">{r.tokens}</div>
                 <div className={'p-4 text-center font-semibold '+toneText[r.rerunTone]}>{r.rerun}</div>
                 <div className={'p-4 text-center font-semibold '+toneText[r.statusTone]}>{r.status}</div>
