@@ -1,0 +1,104 @@
+{
+ "task": "docs/SEARCH_COMPARISON_TASK_20260918.md",
+ "run_at": "2026-09-18T05:43:14+00:00",
+ "as_of_today": "2026-09-18",
+ "run_end_date": "2026-09-18",
+ "date_consistent": true,
+ "git": {
+  "revision": "ab38ddf",
+  "branch": "feature/SB-46-data-collection",
+  "dirty_files": [
+   "docs/STATUS.md",
+   "docs/WORKLOG.md",
+   "../.idea/",
+   "docs/SEARCH_COMPARISON_REVIEW_20260918.md",
+   "docs/SEARCH_COMPARISON_TASK_20260918.md",
+   "eval/search_comparison.py",
+   "reports/search_comparison_20260918T051606Z/",
+   "reports/search_comparison_20260918T053021Z/",
+   "reports/search_comparison_20260918T053148Z/",
+   "tests/test_search_comparison.py"
+  ],
+  "local_file_sha256": {
+   "docs/STATUS.md": "66830b50542fdbdbb8fe02446b8416d3d4a213e5143cfbee36e9be73b563bac2",
+   "docs/WORKLOG.md": "3ce9c1853a4b97d7ca61e73d5bb10709cc547a3a0b6d72a743998faac8193c36",
+   "docs/SEARCH_COMPARISON_REVIEW_20260918.md": "a9907a0e092c9588d4a2025943431f67c3021c3a55a5a223067092b7203f903b",
+   "docs/SEARCH_COMPARISON_TASK_20260918.md": "14beaec3862cf2638a530c70f2de4db0a7fe9fc6a99737838b0c6c0f3d513794",
+   "eval/search_comparison.py": "48c1d4cb8f60edabcc68ece7d730f995d678360cc6a676d5ba990931c156bf15",
+   "tests/test_search_comparison.py": "690cab1dc379ff375937a2a90014c14fc49d6398beadfc6a44956130df97bebc"
+  }
+ },
+ "data": {
+  "db_notices": 2285,
+  "chroma_vectors": 2285,
+  "bm25_docs": 2285,
+  "server_rows": 2285,
+  "db_equals_chroma": true,
+  "db_equals_bm25": true,
+  "db_equals_rows": true,
+  "only_in_db": [],
+  "only_in_chroma": [],
+  "corpus_sha256": "0f60b8eea7f4d326bca9fc293458b043ae3b62dc7d5c726dbe7d8206b1805127",
+  "embed_input_version": "v1:title+body+target_text+target_category+category+subcategory",
+  "embed_model": "BAAI/bge-m3",
+  "embed_model_revision": "5617a9f61b028005a4858fdac845db406aefb181",
+  "bm25_content_mismatch": [],
+  "bm25_content_mismatch_count": 0,
+  "bm25_content_checked": true,
+  "vector_file": {
+   "checked": true,
+   "vectors": 2285,
+   "stale_content": [],
+   "stale_count": 0,
+   "missing_vectors": [],
+   "missing_count": 0,
+   "meta": {
+    "model": "BAAI/bge-m3",
+    "revision": "5617a9f61b028005a4858fdac845db406aefb181",
+    "input_version": "v1:title+body+target_text+target_category+category+subcategory",
+    "max_tokens": 512,
+    "dim": 1024,
+    "dtype": "float32",
+    "normalized": true,
+    "byte_order": "little"
+   }
+  },
+  "chroma_content_verified": false
+ },
+ "settings": {
+  "top": 5,
+  "stages": {
+   "A": {
+    "hide_expired": false,
+    "demote_groups": false,
+    "demote_region": false,
+    "demote_district": false
+   },
+   "B": {
+    "hide_expired": true,
+    "demote_groups": true,
+    "demote_region": true,
+    "demote_district": true
+   }
+  },
+  "searches": [
+   "dense",
+   "hybrid"
+  ],
+  "weights": {
+   "dense": 1.0,
+   "bm25": 1.0,
+   "rrf_k": 60,
+   "mode": "order",
+   "penalty_group": 0.5,
+   "penalty_region": 1.0,
+   "penalty_district": 0.3
+  },
+  "reranker": false
+ },
+ "counts": {
+  "inputs": 10,
+  "responses": 40,
+  "notices_in_results": 110
+ }
+}

@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>비교 화면 자체 시험</title>
+<!--
+  /compare/selftest — 실제 /compare 화면을 iframe 으로 띄워 **브라우저 동작**을 확인한다.
+  2026-09-21 Codex 리뷰(COMPARE_INPUT_EXPANSION_REVIEW_20260921.md)가 요구한 상태 전이 시험이다.
+  /api/compare 요청만 가짜 응답으로 바꾼다(검색·DB·모델을 부르지 않는다). 선택지(/api/compare/form)는 진짜를 쓴다.
+  결과는 표와 window.__selftest 에 남는다. 외부 자원 없음.
+-->
+<style>
+body{font:14px/1.6 "맑은 고딕","Malgun Gothic",system-ui,sans-serif;margin:16px;color:#20242b}
+table{border-collapse:collapse;width:100%;max-width:1100px}
+th,td{border-bottom:1px solid #e3e6ec;padding:5px 8px;text-align:left;font-size:13px;vertical-align:top}
+.pass{color:#1d6b3a;font-weight:bold}.fail{color:#a3282b;font-weight:bold}
+iframe{width:100%;height:420px;border:1px solid #d9dee7;margin-top:12px}
+</style>
+</head>
+<body>
+<h1 style="font-size:19px">비교 화면 자체 시험</h1>
+<p id="summary" role="status" aria-live="polite">시험 중…</p>
+<table><thead><tr><th>시험</th><th>결과</th><th>내용</th></tr></thead><tbody id="rows"></tbody></table>
+<iframe id="app" src="/compare" title="시험 대상 비교 화면"></iframe>
+<script>
+const results = [];
+window.__selftest = {done: false, passed: 0, failed: 0, results};
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+async function waitFor(fn, ms = 8000){
+  const t0 = Date.now();
+  while(Date.now() - t0 < ms){ try { if(fn()) return true; } catch(e){} await sleep(50); }
+  return false;
+}
+
+function record(name, ok, detail){
+  results.push({name, ok, detail: detail || ''});
+  const tr = document.createElement('tr');
+  tr.innerHTML = '<td></td><td class="' + (ok ? 'pass' : 'fail') + '">' + (ok ? '통과' : '실패') + '</td><td></td>';
+  tr.children[0].textContent = name; tr.children[2].textContent = detail || '';
+  document.getElementById('rows').appendChild(tr);
+}
+
+async function test(name, fn){
+  try { const d = await fn(); record(name, d === undefined || d === true, typeof d === 'string' ? d : ''); }
+  catch(e){ record(name, false, String(e && e.message || e)); }
+}
+
+function must(cond, msg){ if(!cond) throw new Error(msg); }
+
+(async () => {
+  const frame = document.getElementById('app');
+  await waitFor(() => frame.contentWindow && frame.contentWindow.__compare && frame.contentWindow.__compare.formReady());
+  const w = frame.contentWindow, d = w.document, C = w.__compare, $ = (id) => d.getElementById(id);
+  const realFetch = w.fetch.bind(w);
+  let handler = null;
+  w.fetch = (url, opts) => (url === '/api/compare' && handler) ? handler(opts) : realFetch(url, opts);
+  const reply = (obj, delay = 0) => () => new Promise(r => setTimeout(() => r({json: async () => obj}), delay));
+  const okResponse = {top: 5, overlap_scope: '세 방식의 Top 5 목록 안에서만 비교했다.', in_all_three: [],
+    columns: {hybrid: [], dense: [], lab: []}, errors: {}, meta: {}, usage: [
+      {field: 'gender', label: '성별', service: '규칙 (여성 대상 공고 유지)', lab: '미사용'}],
+    input_summary: {dropped_for_type: []}, lab_notice_count: 1852};
+  const fire = (el, type) => el.dispatchEvent(new w.Event(type, {bubbles: true}));
+  const submit = () => $('f').requestSubmit();
+
+  /* 기대 payload — 예시 정의에서 바로 만든다. 예시에 없는 칸은 비어 있어야 한다 */
+  function expected(key){
+    const e = C.EX[key], business = e.applicant_type !== '예비창업자';
+    const body = {applicant_type: e.applicant_type, owner_name: e.owner_name, birth_date: e.birth_date,
+      gender: e.gender, region: e.region, district: e.district || '', main_industry: e.main_industry,
+      owner_career: e.owner_career, idea: e.idea,
+      revenue: e.revenue.map(r => ({item: r.item, price: r.price})), certifications: [],
+      team: (e.team || []).map(m => ({name: m.name, role: m.role, career: m.career})),
+      hiring_plan: false, equipment: [], partners: [], top: Number($('top').value)};
+    if(business){ body.business_no = e.business_no; body.founded_at = e.founded_at; }
+    if(!business && e.budget_scale) body.budget_scale = e.budget_scale;
+    return body;
+  }
+  function dirty(){
+    /* 예시에 없는 칸을 잔뜩 채워 둔다 */
+    C.applyExample('mfg');
+    d.querySelectorAll('#certifications input')[0].checked = true;
+    d.querySelectorAll('#certifications input')[3].checked = true;
+    $('hiring_plan').checked = true; $('equipment').value = '3D 프린터'; $('partners').value = '테스트기관';
+    $('self_funding').value = 'yes'; $('self_funding_budget').value = '500';
+    C.addRow('team', {name: '남은팀원', role: 'x', career: '남은 이력'});
+  }
+
+  /* P1 — 예시가 폼 전체를 초기화하는가 */
+  for(const key of Object.keys(C.EX)){
+    await test('예시 "' + key + '" — 이전 선택이 남지 않는다', () => {
+      dirty(); C.applyExample(key);
+      const got = C.collect(), want = expected(key);
+      must(eq(got, want), '기대와 다름: ' + JSON.stringify(got));
+    });
+  }
+  await test('예시 전환 순서와 무관하게 같은 payload', () => {
+    C.resetForm(); C.applyExample('pre'); const a = JSON.stringify(C.collect());
+    dirty(); C.applyExample('food'); C.applyExample('mfg'); C.applyExample('pre');
+    must(JSON.stringify(C.collect()) === a, '순서에 따라 달라졌다');
+  });
+
+  /* 유형 전환 */
+  await test('법인 → 예비창업자 전환 시 사업자 칸 숨김·값 제거', () => {
+    C.applyExample('mfg');
+    $('applicant_type').value = '예비창업자'; fire($('applicant_type'), 'change');
+    const body = C.collect();
+    must(!('business_no' in body) && !('founded_at' in body), '사업자 칸이 전송에 남았다');
+    must($('business_no').value === '' && $('founded_at').value === '', '값이 남았다');
+    must(d.querySelector('[data-for="business"]').hidden, '칸이 숨겨지지 않았다');
+  });
+
+  /* P2 — 입력이 바뀌면 이전 결과를 지운다 */
+  await test('검색 뒤 입력을 바꾸면 결과·사용 여부 표가 지워진다', async () => {
+    handler = reply(okResponse);
+    C.applyExample('food'); submit();
+    must(await waitFor(() => C.state().shown), '결과가 표시되지 않았다');
+    must($('out').textContent.includes('여성 대상 공고 유지'), '사용 여부 표가 없다');
+    $('gender').value = '남성'; fire($('gender'), 'change');
+    must($('out').innerHTML === '', '이전 결과가 남아 있다');
+    must($('status').textContent.includes('입력이 바뀌었습니다'), '상태 안내가 없다: ' + $('status').textContent);
+  });
+  await test('같은 값으로 되돌린 선택은 결과를 지우지 않는다', async () => {
+    handler = reply(okResponse);
+    C.applyExample('food'); submit();
+    must(await waitFor(() => C.state().shown), '결과가 표시되지 않았다');
+    fire($('gender'), 'change');                              /* 값은 그대로 */
+    must($('out').innerHTML !== '', '바뀌지 않았는데 지웠다');
+  });
+  await test('검색 중에 입력이 바뀌면 늦게 온 응답을 버린다', async () => {
+    handler = reply(okResponse, 400);
+    C.applyExample('mfg'); submit();
+    await sleep(50);
+    $('owner_name').value = '다른테스트'; fire($('owner_name'), 'input');
+    await sleep(600);
+    must($('out').innerHTML === '', '늦은 응답이 새 입력 화면을 덮어썼다');
+    must(!C.state().shown, 'shown 이 켜졌다');
+  });
+  await test('빈 행 추가는 보낼 내용이 같아 결과를 유지하고, 내용 있는 행 추가·삭제·예시는 무효화한다', async () => {
+    handler = reply(okResponse);
+    C.applyExample('mfg'); submit();
+    must(await waitFor(() => C.state().shown), '결과가 표시되지 않았다');
+    $('add-team').click();                                    /* 빈 행은 전송되지 않는다 */
+    must($('out').innerHTML !== '', '보낼 내용이 같은데 지웠다');
+    const last = d.querySelector('#team .r:last-child input[data-key="career"]');
+    last.value = '새 팀원 이력'; fire(last, 'input');
+    must($('out').innerHTML === '', '내용 있는 행을 넣었는데 결과가 남았다');
+
+    C.applyExample('mfg'); submit();
+    must(await waitFor(() => C.state().shown), '결과가 다시 표시되지 않았다');
+    d.querySelector('#team .r button').click();               /* 이력이 있는 팀원 행 삭제 */
+    must($('out').innerHTML === '', '행 삭제 뒤에도 결과가 남았다');
+
+    C.applyExample('mfg'); submit();
+    must(await waitFor(() => C.state().shown), '결과가 다시 표시되지 않았다');
+    C.applyExample('food');
+    must($('out').innerHTML === '', '다른 예시로 바꿨는데 결과가 남았다');
+  });
+
+  /* P2 — 행 수 상한 */
+  await test('수익모델·팀은 20행에서 추가 버튼이 막히고 이유를 글로 알린다', () => {
+    C.resetForm();
+    for(let i = 0; i < 25; i++){ C.addRow('revenue'); C.addRow('team'); }
+    must(d.querySelectorAll('#revenue .r').length === C.MAX_ROWS, '수익모델 행이 ' + d.querySelectorAll('#revenue .r').length);
+    must(d.querySelectorAll('#team .r').length === C.MAX_ROWS, '팀 행이 20이 아니다');
+    must($('add-rev').disabled && $('add-team').disabled, '버튼이 막히지 않았다');
+    must($('rev-limit').textContent.includes('최대 20'), '이유 글이 없다');
+    d.querySelector('#revenue .r button').click();
+    must(!$('add-rev').disabled, '행을 지워도 버튼이 풀리지 않았다');
+  });
+
+  /* P2 — 수익모델 접근성 */
+  await test('수익모델 묶음과 입력에 필수·오류 설명이 연결된다', () => {
+    C.resetForm();
+    const group = $('revenue').closest('[role="group"]');
+    must(group && group.getAttribute('aria-describedby') === 'e-revenue', '묶음 연결 없음');
+    must(d.getElementById(group.getAttribute('aria-labelledby')), '묶음 이름 없음');
+    const inp = d.querySelector('#revenue input');
+    must(inp.getAttribute('aria-required') === 'true', 'aria-required 없음');
+    must(inp.getAttribute('aria-describedby') === 'e-revenue', 'aria-describedby 없음');
+  });
+  await test('단가를 비우고 제출하면 그 입력에 aria-invalid·초점·오류 문구', async () => {
+    handler = null;
+    C.applyExample('mfg');
+    const price = d.querySelectorAll('#revenue .r')[1].querySelector('input[data-key="price"]');
+    price.value = ''; fire(price, 'input');
+    submit(); await sleep(50);
+    must(price.getAttribute('aria-invalid') === 'true', 'aria-invalid 없음');
+    must(d.activeElement === price, '초점이 그 칸으로 가지 않았다');
+    must($('e-revenue').textContent.includes('단가'), '오류 문구 없음');
+  });
+  await test('서버 오류의 행 번호를 화면 행으로 옮겨 표시한다', async () => {
+    C.applyExample('mfg');
+    /* 맨 앞에 빈 행을 끼워 넣는다 — 전송에서는 빠지므로 서버의 revenue[0] 은 화면 두 번째 행이다 */
+    const host = $('revenue'); C.addRow('revenue');
+    host.insertBefore(host.lastElementChild, host.firstElementChild);
+    handler = reply({error: '입력을 확인한다 (1개 칸)', fields: [
+      {field: 'revenue[0].price', label: '수익모델 단가', message: '0 이상의 정수 금액으로 입력한다'}]});
+    submit();
+    must(await waitFor(() => $('e-revenue').textContent.length > 0), '오류가 표시되지 않았다');
+    const target = d.querySelectorAll('#revenue .r')[1].querySelector('input[data-key="price"]');
+    must(target.getAttribute('aria-invalid') === 'true', '두 번째 화면 행에 표시되지 않았다');
+  });
+
+  /* 개인정보 */
+  await test('브라우저 저장소·주소창에 입력을 남기지 않는다', () => {
+    let keys = [];
+    try { keys = Object.keys(w.localStorage).concat(Object.keys(w.sessionStorage)); } catch(e){}
+    must(keys.length === 0, '저장소 키: ' + keys.join(','));
+    must(w.location.search === '' && !w.location.hash, '주소창 변경: ' + w.location.href);
+  });
+
+  const passed = results.filter(r => r.ok).length, failed = results.length - passed;
+  Object.assign(window.__selftest, {done: true, passed, failed});
+  document.getElementById('summary').textContent =
+    '끝: ' + passed + '개 통과 · ' + failed + '개 실패 (' + results.length + '개)';
+})();
+</script>
+</body>
+</html>

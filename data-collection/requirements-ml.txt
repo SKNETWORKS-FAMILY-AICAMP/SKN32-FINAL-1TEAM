@@ -1,0 +1,30 @@
+# 모델 학습·실험 전용. 수집 배치(requirements.txt)와 분리한다.
+#
+# 이 파일은 집 PC(RTX 3060 12GB)에서 ML/DL 을 돌리기 위한 것이다.
+# 수집 배치는 이 패키지들 없이도 그대로 동작한다.
+#
+#   .\.venv\Scripts\python.exe -m pip install -r requirements-ml.txt
+#
+# ⚠ torch 는 여기에 넣지 않는다. CPU 판이 깔릴 수 있어서 따로 설치해야 한다.
+#
+#   pip uninstall -y torch
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+#
+#   확인: python -c "import torch; print(torch.cuda.is_available())"  →  True
+
+# ── 고전 ML (P2 근거 문장 분류기) ────────────────────────
+scikit-learn>=1.4        # TF-IDF + 로지스틱 회귀, 교차검증, 혼동행렬
+
+# ── 딥러닝 (P1 크로스인코더 리랭커) ──────────────────────
+transformers>=4.44       # 사전학습 리랭커 로드·파인튜닝
+accelerate>=0.33         # 혼합정밀도(bf16)·학습 루프
+peft>=0.12               # LoRA. 880쌍뿐이라 전체 학습 대신 일부만 학습한다
+
+# ── 분석·결과서 ─────────────────────────────────────────
+pandas>=2.2
+matplotlib>=3.8          # 학습 곡선·혼동행렬 그림
+joblib>=1.4              # 학습한 분류기 저장
+
+# ── 노트북 ──────────────────────────────────────────────
+jupyterlab>=4.2
+ipykernel>=6.29

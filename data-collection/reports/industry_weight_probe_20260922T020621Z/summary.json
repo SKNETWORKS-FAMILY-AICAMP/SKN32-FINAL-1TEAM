@@ -1,0 +1,181 @@
+{
+ "run_at": "2026-09-22T02:06:21+00:00",
+ "qids": [
+  "q053",
+  "q054",
+  "q055",
+  "q056",
+  "q057",
+  "q058"
+ ],
+ "table": [
+  {
+   "mode": "dense",
+   "variant": "그대로",
+   "queries": 6,
+   "p3_rec": 0.38888888888888884,
+   "p3_rec_judged": 0.5,
+   "p3_rel": 0.4444444444444444,
+   "ndcg3": 0.4506530148390224,
+   "unjudged3": 0.16666666666666666,
+   "human_judged_slots": 0,
+   "p3_rec_ci95": [
+    0.2222222222222222,
+    0.5555555555555555
+   ]
+  },
+  {
+   "mode": "dense",
+   "variant": "업종 없음",
+   "queries": 6,
+   "p3_rec": 0.38888888888888884,
+   "p3_rec_judged": 0.5,
+   "p3_rel": 0.4444444444444444,
+   "ndcg3": 0.4506530148390224,
+   "unjudged3": 0.2222222222222222,
+   "human_judged_slots": 0,
+   "p3_rec_ci95": [
+    0.2222222222222222,
+    0.5555555555555555
+   ],
+   "diff_vs_full": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "top3_changed_slots": 1,
+   "queries_with_change": 1,
+   "query_text_changed": 6
+  },
+  {
+   "mode": "dense",
+   "variant": "업종 반복",
+   "queries": 6,
+   "p3_rec": 0.38888888888888884,
+   "p3_rec_judged": 0.5,
+   "p3_rel": 0.4444444444444444,
+   "ndcg3": 0.4217868789962072,
+   "unjudged3": 0.16666666666666666,
+   "human_judged_slots": 0,
+   "p3_rec_ci95": [
+    0.2222222222222222,
+    0.5555555555555555
+   ],
+   "diff_vs_full": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "top3_changed_slots": 1,
+   "queries_with_change": 1,
+   "query_text_changed": 6
+  },
+  {
+   "mode": "dense",
+   "variant": "업종 앞배치",
+   "queries": 6,
+   "p3_rec": 0.38888888888888884,
+   "p3_rec_judged": 0.47222222222222215,
+   "p3_rel": 0.4444444444444444,
+   "ndcg3": 0.4506530148390224,
+   "unjudged3": 0.1111111111111111,
+   "human_judged_slots": 0,
+   "p3_rec_ci95": [
+    0.2222222222222222,
+    0.5555555555555555
+   ],
+   "diff_vs_full": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "top3_changed_slots": 4,
+   "queries_with_change": 3,
+   "query_text_changed": 6
+  },
+  {
+   "mode": "hybrid",
+   "variant": "그대로",
+   "queries": 6,
+   "p3_rec": 0.4444444444444444,
+   "p3_rec_judged": 0.638888888888889,
+   "p3_rel": 0.5,
+   "ndcg3": 0.5102404246590811,
+   "unjudged3": 0.27777777777777773,
+   "human_judged_slots": 0,
+   "p3_rec_ci95": [
+    0.2222222222222222,
+    0.7222222222222222
+   ]
+  },
+  {
+   "mode": "hybrid",
+   "variant": "업종 없음",
+   "queries": 6,
+   "p3_rec": 0.38888888888888884,
+   "p3_rec_judged": 0.5,
+   "p3_rel": 0.4444444444444444,
+   "ndcg3": 0.4217868789962072,
+   "unjudged3": 0.27777777777777773,
+   "human_judged_slots": 0,
+   "p3_rec_ci95": [
+    0.16666666666666666,
+    0.611111111111111
+   ],
+   "diff_vs_full": [
+    -0.05555555555555556,
+    -0.22222222222222224,
+    0.1111111111111111
+   ],
+   "top3_changed_slots": 7,
+   "queries_with_change": 6,
+   "query_text_changed": 6
+  },
+  {
+   "mode": "hybrid",
+   "variant": "업종 반복",
+   "queries": 6,
+   "p3_rec": 0.4444444444444444,
+   "p3_rec_judged": 0.5555555555555556,
+   "p3_rel": 0.5,
+   "ndcg3": 0.5,
+   "unjudged3": 0.16666666666666666,
+   "human_judged_slots": 0,
+   "p3_rec_ci95": [
+    0.2222222222222222,
+    0.7222222222222222
+   ],
+   "diff_vs_full": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "top3_changed_slots": 2,
+   "queries_with_change": 2,
+   "query_text_changed": 6
+  },
+  {
+   "mode": "hybrid",
+   "variant": "업종 앞배치",
+   "queries": 6,
+   "p3_rec": 0.38888888888888884,
+   "p3_rec_judged": 0.638888888888889,
+   "p3_rel": 0.4444444444444444,
+   "ndcg3": 0.46089343949810363,
+   "unjudged3": 0.3333333333333333,
+   "human_judged_slots": 0,
+   "p3_rec_ci95": [
+    0.2222222222222222,
+    0.6666666666666666
+   ],
+   "diff_vs_full": [
+    -0.05555555555555555,
+    -0.16666666666666666,
+    0.0
+   ],
+   "top3_changed_slots": 2,
+   "queries_with_change": 2,
+   "query_text_changed": 6
+  }
+ ]
+}

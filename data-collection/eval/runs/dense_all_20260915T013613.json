@@ -1,0 +1,1817 @@
+{
+ "summary": {
+  "system": "dense",
+  "queries": 52,
+  "no_relevant_queries": [],
+  "ndcg3": 0.777479015023479,
+  "ndcg3_floor": 0.44093160453038727,
+  "ndcg10": 0.7902896537805126,
+  "p3": 0.48717948717948717,
+  "rel2_3": 0.37179487179487175,
+  "unjudged3": 0.46153846153846156,
+  "unjudged10": 0.43653846153846154,
+  "recall30": 0.7938371902038847,
+  "ndcg3_ci95": [
+   0.7161756820903117,
+   0.8369347549521513
+  ],
+  "negative_auc": 0.8125,
+  "thresholds": [
+   {
+    "threshold": 0.48,
+    "negative_recommended": 0.875,
+    "relevant_withheld": 0.0
+   },
+   {
+    "threshold": 0.5,
+    "negative_recommended": 0.75,
+    "relevant_withheld": 0.0
+   },
+   {
+    "threshold": 0.52,
+    "negative_recommended": 0.375,
+    "relevant_withheld": 0.0
+   },
+   {
+    "threshold": 0.54,
+    "negative_recommended": 0.25,
+    "relevant_withheld": 0.17307692307692307
+   },
+   {
+    "threshold": 0.56,
+    "negative_recommended": 0.25,
+    "relevant_withheld": 0.40384615384615385
+   },
+   {
+    "threshold": 0.58,
+    "negative_recommended": 0.25,
+    "relevant_withheld": 0.6153846153846154
+   },
+   {
+    "threshold": 0.6,
+    "negative_recommended": 0.0,
+    "relevant_withheld": 0.7884615384615384
+   },
+   {
+    "threshold": 0.62,
+    "negative_recommended": 0.0,
+    "relevant_withheld": 0.9038461538461539
+   },
+   {
+    "threshold": 0.64,
+    "negative_recommended": 0.0,
+    "relevant_withheld": 0.9423076923076923
+   },
+   {
+    "threshold": 0.66,
+    "negative_recommended": 0.0,
+    "relevant_withheld": 0.9423076923076923
+   }
+  ]
+ },
+ "per_query": [
+  {
+   "qid": "q001",
+   "kind": "normal",
+   "category": "제조",
+   "top1_score": 0.6672695279121399,
+   "top3": [
+    {
+     "notice_id": "kstartup:179061",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125850",
+     "topic_rel": 1
+    },
+    {
+     "notice_id": "kstartup:178937",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.617319681505689,
+   "ndcg3_floor": 0.617319681505689,
+   "ndcg10": 0.7426071455971858,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.2,
+   "recall30": 1.0,
+   "has_rel2": true
+  },
+  {
+   "qid": "q002",
+   "kind": "normal",
+   "category": "제조",
+   "top1_score": 0.5484138131141663,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000120423",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000120385",
+     "topic_rel": 1
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125054",
+     "topic_rel": 1
+    }
+   ],
+   "ndcg3": 0.38268031849431083,
+   "ndcg3_floor": 0.2653606369886217,
+   "ndcg10": 0.647130218333663,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.0,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.3,
+   "recall30": 0.9,
+   "has_rel2": true
+  },
+  {
+   "qid": "q003",
+   "kind": "normal",
+   "category": "제조",
+   "top1_score": 0.6114367246627808,
+   "top3": [
+    {
+     "notice_id": "kstartup:176442",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000118350",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000123352",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 1.0,
+   "ndcg3_floor": 0.7039180890341347,
+   "ndcg10": 0.8541968278117388,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.6666666666666666,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.4,
+   "recall30": 0.8461538461538461,
+   "has_rel2": true
+  },
+  {
+   "qid": "q004",
+   "kind": "normal",
+   "category": "소재·화학",
+   "top1_score": 0.5504151582717896,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000126257",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126041",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "kstartup:179085",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.7653606369886217,
+   "ndcg3_floor": 0.0,
+   "ndcg10": 0.7049996360390088,
+   "p3": 0.0,
+   "rel2_3": 0.0,
+   "unjudged3": 1.0,
+   "unjudged10": 0.6,
+   "recall30": 0.7,
+   "has_rel2": true
+  },
+  {
+   "qid": "q005",
+   "kind": "normal",
+   "category": "IT·SW",
+   "top1_score": 0.6122630834579468,
+   "top3": [
+    {
+     "notice_id": "kstartup:175817",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "kstartup:179079",
+     "topic_rel": 1
+    },
+    {
+     "notice_id": "kstartup:177466",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 0.8519590445170673,
+   "ndcg3_floor": 0.8519590445170673,
+   "ndcg10": 0.8656312722365522,
+   "p3": 1.0,
+   "rel2_3": 0.6666666666666666,
+   "unjudged3": 0.0,
+   "unjudged10": 0.1,
+   "recall30": 0.7777777777777778,
+   "has_rel2": true
+  },
+  {
+   "qid": "q006",
+   "kind": "normal",
+   "category": "IT·SW",
+   "top1_score": 0.5784165859222412,
+   "top3": [
+    {
+     "notice_id": "kstartup:179214",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "kstartup:178937",
+     "topic_rel": 1
+    },
+    {
+     "notice_id": "kstartup:179135",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.7653606369886217,
+   "ndcg3_floor": 0.1480409554829326,
+   "ndcg10": 0.7822626272124663,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.0,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.4,
+   "recall30": 0.8125,
+   "has_rel2": true
+  },
+  {
+   "qid": "q007",
+   "kind": "normal",
+   "category": "IT·SW",
+   "top1_score": 0.5736122131347656,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000123202",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000121421",
+     "topic_rel": 1
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000121467",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.7653606369886217,
+   "ndcg3_floor": 0.1480409554829326,
+   "ndcg10": 0.8091240095518304,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.0,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.6,
+   "recall30": 0.8888888888888888,
+   "has_rel2": true
+  },
+  {
+   "qid": "q008",
+   "kind": "normal",
+   "category": "IT·SW",
+   "top1_score": 0.5848979353904724,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000123093",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000120091",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "kstartup:179182",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 1.0,
+   "ndcg3_floor": 0.5307212739772434,
+   "ndcg10": 0.9141038735590566,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.6666666666666666,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.5,
+   "recall30": 0.8888888888888888,
+   "has_rel2": true
+  },
+  {
+   "qid": "q009",
+   "kind": "normal",
+   "category": "보안",
+   "top1_score": 0.6053447723388672,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000122104",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000121038",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000119239",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 1.0,
+   "ndcg3_floor": 0.46927872602275644,
+   "ndcg10": 0.9576636019888798,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.5,
+   "recall30": 0.9090909090909091,
+   "has_rel2": true
+  },
+  {
+   "qid": "q010",
+   "kind": "normal",
+   "category": "바이오·헬스",
+   "top1_score": 0.5751802325248718,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000123203",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "kstartup:178831",
+     "topic_rel": 1
+    },
+    {
+     "notice_id": "kstartup:179079",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.617319681505689,
+   "ndcg3_floor": 0.1480409554829326,
+   "ndcg10": 0.6546474776996424,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.0,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.3,
+   "recall30": 0.9166666666666666,
+   "has_rel2": true
+  },
+  {
+   "qid": "q011",
+   "kind": "normal",
+   "category": "바이오·헬스",
+   "top1_score": 0.5284947752952576,
+   "top3": [
+    {
+     "notice_id": "kstartup:177072",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000123203",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000120444",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.8826803184943108,
+   "ndcg3_floor": 0.7653606369886217,
+   "ndcg10": 0.5333848366210553,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.6666666666666666,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.4,
+   "recall30": 0.6,
+   "has_rel2": true
+  },
+  {
+   "qid": "q012",
+   "kind": "normal",
+   "category": "바이오·헬스",
+   "top1_score": 0.536723256111145,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000122309",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000119324",
+     "topic_rel": 1
+    },
+    {
+     "notice_id": "kstartup:179085",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.7653606369886217,
+   "ndcg3_floor": 0.1480409554829326,
+   "ndcg10": 0.7837617698311977,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.0,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.6,
+   "recall30": 0.6,
+   "has_rel2": true
+  },
+  {
+   "qid": "q013",
+   "kind": "normal",
+   "category": "농식품",
+   "top1_score": 0.5579034090042114,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000125929",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125930",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000119567",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 1.0,
+   "ndcg3_floor": 0.23463936301137822,
+   "ndcg10": 0.8512360941594272,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.3,
+   "recall30": 0.8181818181818182,
+   "has_rel2": true
+  },
+  {
+   "qid": "q014",
+   "kind": "normal",
+   "category": "농식품",
+   "top1_score": 0.5573775768280029,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000126219",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126321",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125622",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 0.8826803184943108,
+   "ndcg3_floor": 0.23463936301137822,
+   "ndcg10": 0.7208015444548435,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.5,
+   "recall30": 0.7272727272727273,
+   "has_rel2": true
+  },
+  {
+   "qid": "q015",
+   "kind": "normal",
+   "category": "농식품",
+   "top1_score": 0.5615375638008118,
+   "top3": [
+    {
+     "notice_id": "kstartup:179091",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "kstartup:178831",
+     "topic_rel": 0
+    },
+    {
+     "notice_id": "kstartup:179054",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.26582598262939583,
+   "ndcg3_floor": 0.0,
+   "ndcg10": 0.34124370925347763,
+   "p3": 0.0,
+   "rel2_3": 0.0,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.4,
+   "recall30": 0.5,
+   "has_rel2": true
+  },
+  {
+   "qid": "q016",
+   "kind": "normal",
+   "category": "외식·소상공인",
+   "top1_score": 0.5588828325271606,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000125768",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126339",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000118191",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 1.0,
+   "ndcg3_floor": 0.2960819109658652,
+   "ndcg10": 0.9363792118010481,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.6,
+   "recall30": 0.75,
+   "has_rel2": true
+  },
+  {
+   "qid": "q017",
+   "kind": "normal",
+   "category": "외식·소상공인",
+   "top1_score": 0.5881809592247009,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000118294",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000122254",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000121288",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 1.0,
+   "ndcg3_floor": 0.46927872602275644,
+   "ndcg10": 0.8669479898642709,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.5,
+   "recall30": 0.7272727272727273,
+   "has_rel2": true
+  },
+  {
+   "qid": "q018",
+   "kind": "normal",
+   "category": "외식·소상공인",
+   "top1_score": 0.5557429194450378,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000125998",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "kstartup:179134",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126372",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.7039180890341347,
+   "ndcg3_floor": 0.46927872602275644,
+   "ndcg10": 0.6989939362279121,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.6,
+   "recall30": 0.7,
+   "has_rel2": true
+  },
+  {
+   "qid": "q019",
+   "kind": "normal",
+   "category": "유통·커머스",
+   "top1_score": 0.624117910861969,
+   "top3": [
+    {
+     "notice_id": "kstartup:178766",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000124086",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000121288",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.8826803184943108,
+   "ndcg3_floor": 0.7653606369886217,
+   "ndcg10": 0.843191095438847,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.6666666666666666,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.5,
+   "recall30": 0.9090909090909091,
+   "has_rel2": true
+  },
+  {
+   "qid": "q020",
+   "kind": "normal",
+   "category": "유통·커머스",
+   "top1_score": 0.5847867131233215,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000124341",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125365",
+     "topic_rel": 0
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000121254",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.41340159247155434,
+   "ndcg3_floor": 0.0,
+   "ndcg10": 0.6436594575964838,
+   "p3": 0.0,
+   "rel2_3": 0.0,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.3,
+   "recall30": 0.9090909090909091,
+   "has_rel2": true
+  },
+  {
+   "qid": "q021",
+   "kind": "normal",
+   "category": "수출",
+   "top1_score": 0.5250526070594788,
+   "top3": [
+    {
+     "notice_id": "kstartup:179182",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000118122",
+     "topic_rel": 1
+    },
+    {
+     "notice_id": "kstartup:179017",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 0.7653606369886217,
+   "ndcg3_floor": 0.38268031849431083,
+   "ndcg10": 0.8043780868537874,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.3,
+   "recall30": 0.8888888888888888,
+   "has_rel2": true
+  },
+  {
+   "qid": "q022",
+   "kind": "normal",
+   "category": "콘텐츠",
+   "top1_score": 0.5382396578788757,
+   "top3": [
+    {
+     "notice_id": "kstartup:178983",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125901",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125979",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 1.0,
+   "ndcg3_floor": 1.0,
+   "ndcg10": 0.9608008655106622,
+   "p3": 1.0,
+   "rel2_3": 1.0,
+   "unjudged3": 0.0,
+   "unjudged10": 0.4,
+   "recall30": 0.9230769230769231,
+   "has_rel2": true
+  },
+  {
+   "qid": "q023",
+   "kind": "normal",
+   "category": "콘텐츠",
+   "top1_score": 0.5487948656082153,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000123170",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000123662",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "kstartup:179094",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 1.0,
+   "ndcg3_floor": 0.23463936301137822,
+   "ndcg10": 0.8767602105758319,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.4,
+   "recall30": 0.9166666666666666,
+   "has_rel2": true
+  },
+  {
+   "qid": "q024",
+   "kind": "normal",
+   "category": "관광",
+   "top1_score": 0.5521527528762817,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000126436",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000119946",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "kstartup:179134",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 1.0,
+   "ndcg3_floor": 0.5307212739772434,
+   "ndcg10": 1.0,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.6666666666666666,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.4,
+   "recall30": 0.8125,
+   "has_rel2": true
+  },
+  {
+   "qid": "q025",
+   "kind": "normal",
+   "category": "디자인",
+   "top1_score": 0.5732192993164062,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000126164",
+     "topic_rel": 1
+    },
+    {
+     "notice_id": "kstartup:179137",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "kstartup:179079",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 0.7653606369886217,
+   "ndcg3_floor": 0.7653606369886217,
+   "ndcg10": 0.8302179972453201,
+   "p3": 1.0,
+   "rel2_3": 0.6666666666666666,
+   "unjudged3": 0.0,
+   "unjudged10": 0.4,
+   "recall30": 0.6666666666666666,
+   "has_rel2": true
+  },
+  {
+   "qid": "q026",
+   "kind": "normal",
+   "category": "환경·에너지",
+   "top1_score": 0.5325838923454285,
+   "top3": [
+    {
+     "notice_id": "kstartup:179125",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "kstartup:179129",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "kstartup:179062",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 1.0,
+   "ndcg3_floor": 1.0,
+   "ndcg10": 0.9363792118010481,
+   "p3": 1.0,
+   "rel2_3": 1.0,
+   "unjudged3": 0.0,
+   "unjudged10": 0.3,
+   "recall30": 0.9090909090909091,
+   "has_rel2": true
+  },
+  {
+   "qid": "q027",
+   "kind": "normal",
+   "category": "환경·에너지",
+   "top1_score": 0.5297300815582275,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000119052",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126136",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000123056",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.7039180890341347,
+   "ndcg3_floor": 0.46927872602275644,
+   "ndcg10": 0.5669450709942981,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.6,
+   "recall30": 0.45454545454545453,
+   "has_rel2": true
+  },
+  {
+   "qid": "q028",
+   "kind": "normal",
+   "category": "환경·에너지",
+   "top1_score": 0.5375300049781799,
+   "top3": [
+    {
+     "notice_id": "kstartup:179125",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000116975",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126269",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 1.0,
+   "ndcg3_floor": 0.7653606369886217,
+   "ndcg10": 0.8987583839637467,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.6666666666666666,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.2,
+   "recall30": 0.8,
+   "has_rel2": true
+  },
+  {
+   "qid": "q029",
+   "kind": "normal",
+   "category": "모빌리티",
+   "top1_score": 0.5789194703102112,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000126107",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000120495",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000121591",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.7039180890341347,
+   "ndcg3_floor": 0.2960819109658652,
+   "ndcg10": 0.7906346007662736,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.5,
+   "recall30": 0.875,
+   "has_rel2": true
+  },
+  {
+   "qid": "q030",
+   "kind": "normal",
+   "category": "모빌리티",
+   "top1_score": 0.528904139995575,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000119567",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "kstartup:179146",
+     "topic_rel": 1
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000120423",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.6993694869720469,
+   "ndcg3_floor": 0.6993694869720469,
+   "ndcg10": 0.889264378485236,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.6,
+   "recall30": 1.0,
+   "has_rel2": true
+  },
+  {
+   "qid": "q031",
+   "kind": "normal",
+   "category": "사회적경제",
+   "top1_score": 0.6291521787643433,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000118350",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125974",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126111",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 1.0,
+   "ndcg3_floor": 0.0,
+   "ndcg10": 0.8919204669322511,
+   "p3": 0.0,
+   "rel2_3": 0.0,
+   "unjudged3": 1.0,
+   "unjudged10": 0.5,
+   "recall30": 0.6923076923076923,
+   "has_rel2": true
+  },
+  {
+   "qid": "q032",
+   "kind": "normal",
+   "category": "사회적경제",
+   "top1_score": 0.5864577293395996,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000118350",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000124046",
+     "topic_rel": 1
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000120444",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.23463936301137822,
+   "ndcg3_floor": 0.1480409554829326,
+   "ndcg10": 0.45428273889610604,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.0,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.5,
+   "recall30": 0.6,
+   "has_rel2": true
+  },
+  {
+   "qid": "q033",
+   "kind": "normal",
+   "category": "교육",
+   "top1_score": 0.5832310914993286,
+   "top3": [
+    {
+     "notice_id": "kstartup:179010",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "kstartup:178956",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "kstartup:179119",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.8826803184943108,
+   "ndcg3_floor": 0.7653606369886217,
+   "ndcg10": 0.8435085313874333,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.6666666666666666,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.4,
+   "recall30": 0.8181818181818182,
+   "has_rel2": true
+  },
+  {
+   "qid": "q034",
+   "kind": "normal",
+   "category": "인력",
+   "top1_score": 0.5693405866622925,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000125054",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "kstartup:179061",
+     "topic_rel": 1
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000124779",
+     "topic_rel": 1
+    }
+   ],
+   "ndcg3": 0.617319681505689,
+   "ndcg3_floor": 0.2653606369886217,
+   "ndcg10": 0.7994990110585669,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.0,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.6,
+   "recall30": 0.8461538461538461,
+   "has_rel2": true
+  },
+  {
+   "qid": "q035",
+   "kind": "normal",
+   "category": "인력",
+   "top1_score": 0.6657989025115967,
+   "top3": [
+    {
+     "notice_id": "kstartup:179085",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "kstartup:179054",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000122866",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 1.0,
+   "ndcg3_floor": 0.46927872602275644,
+   "ndcg10": 0.9505325006029216,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.4,
+   "recall30": 0.9166666666666666,
+   "has_rel2": true
+  },
+  {
+   "qid": "q036",
+   "kind": "normal",
+   "category": "금융",
+   "top1_score": 0.5796414613723755,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000124246",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000117162",
+     "topic_rel": 1
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000118912",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.8519590445170673,
+   "ndcg3_floor": 0.617319681505689,
+   "ndcg10": 0.8643145546088337,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.3,
+   "recall30": 0.625,
+   "has_rel2": true
+  },
+  {
+   "qid": "q037",
+   "kind": "normal",
+   "category": "금융",
+   "top1_score": 0.571232795715332,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000117158",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000120620",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "kstartup:179112",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 0.8826803184943108,
+   "ndcg3_floor": 0.7039180890341347,
+   "ndcg10": 0.8785011472538548,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.6666666666666666,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.7,
+   "recall30": 0.7692307692307693,
+   "has_rel2": true
+  },
+  {
+   "qid": "q038",
+   "kind": "normal",
+   "category": "지식재산",
+   "top1_score": 0.5589221119880676,
+   "top3": [
+    {
+     "notice_id": "kstartup:176739",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000118943",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000118682",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 0.8826803184943108,
+   "ndcg3_floor": 0.7039180890341347,
+   "ndcg10": 0.880274360990886,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.6666666666666666,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.7,
+   "recall30": 0.875,
+   "has_rel2": true
+  },
+  {
+   "qid": "q039",
+   "kind": "normal",
+   "category": "시험·인증",
+   "top1_score": 0.5353106260299683,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000122394",
+     "topic_rel": 0
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125892",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126451",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.1480409554829326,
+   "ndcg3_floor": 0.0,
+   "ndcg10": 0.6208893500587268,
+   "p3": 0.0,
+   "rel2_3": 0.0,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.4,
+   "recall30": 0.875,
+   "has_rel2": true
+  },
+  {
+   "qid": "q040",
+   "kind": "normal",
+   "category": "공간·보육",
+   "top1_score": 0.5983735918998718,
+   "top3": [
+    {
+     "notice_id": "kstartup:178831",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126309",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125965",
+     "topic_rel": 0
+    }
+   ],
+   "ndcg3": 0.5865984075284455,
+   "ndcg3_floor": 0.46927872602275644,
+   "ndcg10": 0.7098001663854714,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.5,
+   "recall30": 0.7692307692307693,
+   "has_rel2": true
+  },
+  {
+   "qid": "q041",
+   "kind": "normal",
+   "category": "공간·보육",
+   "top1_score": 0.6184631586074829,
+   "top3": [
+    {
+     "notice_id": "kstartup:177072",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "kstartup:173424",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "kstartup:179220",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 0.8826803184943108,
+   "ndcg3_floor": 0.23463936301137822,
+   "ndcg10": 0.913166664326004,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.4,
+   "recall30": 0.7333333333333333,
+   "has_rel2": true
+  },
+  {
+   "qid": "q042",
+   "kind": "normal",
+   "category": "창업 일반",
+   "top1_score": 0.6616656184196472,
+   "top3": [
+    {
+     "notice_id": "kstartup:179135",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "kstartup:178831",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "kstartup:179119",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 1.0,
+   "ndcg3_floor": 0.5307212739772434,
+   "ndcg10": 1.0,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.6666666666666666,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.3,
+   "recall30": 0.7647058823529411,
+   "has_rel2": true
+  },
+  {
+   "qid": "q043",
+   "kind": "normal",
+   "category": "창업 일반",
+   "top1_score": 0.6094121932983398,
+   "top3": [
+    {
+     "notice_id": "kstartup:179079",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "kstartup:178831",
+     "topic_rel": 1
+    },
+    {
+     "notice_id": "kstartup:178983",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.8519590445170673,
+   "ndcg3_floor": 0.617319681505689,
+   "ndcg10": 0.8521705090845474,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.3,
+   "recall30": 0.7368421052631579,
+   "has_rel2": true
+  },
+  {
+   "qid": "q044",
+   "kind": "normal",
+   "category": "창업 일반",
+   "top1_score": 0.5932749509811401,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000119567",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "kstartup:179057",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000119754",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.7653606369886217,
+   "ndcg3_floor": 0.46927872602275644,
+   "ndcg10": 0.6918878842401036,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.4,
+   "recall30": 0.8,
+   "has_rel2": true
+  },
+  {
+   "qid": "q045",
+   "kind": "normal",
+   "category": "창업 일반",
+   "top1_score": 0.6096240878105164,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000118943",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "kstartup:178985",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "kstartup:178977",
+     "topic_rel": 0
+    }
+   ],
+   "ndcg3": 0.7039180890341347,
+   "ndcg3_floor": 0.2960819109658652,
+   "ndcg10": 0.7820467070702044,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.5,
+   "recall30": 0.7,
+   "has_rel2": true
+  },
+  {
+   "qid": "q046",
+   "kind": "normal",
+   "category": "창업 일반",
+   "top1_score": 0.5819729566574097,
+   "top3": [
+    {
+     "notice_id": "kstartup:178956",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "kstartup:179013",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000119706",
+     "topic_rel": 0
+    }
+   ],
+   "ndcg3": 0.41340159247155434,
+   "ndcg3_floor": 0.0,
+   "ndcg10": 0.536668512026561,
+   "p3": 0.0,
+   "rel2_3": 0.0,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.5,
+   "recall30": 0.7272727272727273,
+   "has_rel2": true
+  },
+  {
+   "qid": "q047",
+   "kind": "normal",
+   "category": "창업 일반",
+   "top1_score": 0.5836285352706909,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000120444",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "kstartup:176858",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000118204",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 1.0,
+   "ndcg3_floor": 0.7039180890341347,
+   "ndcg10": 0.9363792118010481,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.6666666666666666,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.4,
+   "recall30": 0.8461538461538461,
+   "has_rel2": true
+  },
+  {
+   "qid": "q048",
+   "kind": "normal",
+   "category": "경영",
+   "top1_score": 0.557731032371521,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000117162",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000124966",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000120342",
+     "topic_rel": 1
+    }
+   ],
+   "ndcg3": 0.35195904451706733,
+   "ndcg3_floor": 0.11731968150568911,
+   "ndcg10": 0.6379366096759115,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.0,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.4,
+   "recall30": 0.7,
+   "has_rel2": true
+  },
+  {
+   "qid": "q049",
+   "kind": "normal",
+   "category": "경영",
+   "top1_score": 0.5521185994148254,
+   "top3": [
+    {
+     "notice_id": "kstartup:179205",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126316",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125182",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 1.0,
+   "ndcg3_floor": 1.0,
+   "ndcg10": 0.7755566117712305,
+   "p3": 1.0,
+   "rel2_3": 1.0,
+   "unjudged3": 0.0,
+   "unjudged10": 0.3,
+   "recall30": 0.75,
+   "has_rel2": true
+  },
+  {
+   "qid": "q050",
+   "kind": "normal",
+   "category": "해양·수산",
+   "top1_score": 0.5640352964401245,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000126071",
+     "topic_rel": 2
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000122153",
+     "topic_rel": 0
+    },
+    {
+     "notice_id": "kstartup:179054",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 0.7039180890341347,
+   "ndcg3_floor": 0.7039180890341347,
+   "ndcg10": 0.7754900284333297,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.6666666666666666,
+   "unjudged3": 0.0,
+   "unjudged10": 0.5,
+   "recall30": 0.8333333333333334,
+   "has_rel2": true
+  },
+  {
+   "qid": "q051",
+   "kind": "normal",
+   "category": "건설·부동산",
+   "top1_score": 0.5496783256530762,
+   "top3": [
+    {
+     "notice_id": "kstartup:179186",
+     "topic_rel": 1
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125525",
+     "topic_rel": 0
+    },
+    {
+     "notice_id": "kstartup:178536",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 0.46927872602275644,
+   "ndcg3_floor": 0.46927872602275644,
+   "ndcg10": 0.6577520767068262,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.0,
+   "unjudged10": 0.3,
+   "recall30": 0.8571428571428571,
+   "has_rel2": true
+  },
+  {
+   "qid": "q052",
+   "kind": "normal",
+   "category": "반도체·전자",
+   "top1_score": 0.56192547082901,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000126213",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000121098",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000124835",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 1.0,
+   "ndcg3_floor": 0.23463936301137822,
+   "ndcg10": 0.9363792118010481,
+   "p3": 0.3333333333333333,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.7,
+   "recall30": 0.9166666666666666,
+   "has_rel2": true
+  },
+  {
+   "qid": "n001",
+   "kind": "negative",
+   "category": "무관",
+   "top1_score": 0.50846266746521,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000126382",
+     "topic_rel": 0
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126234",
+     "topic_rel": 0
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125691",
+     "topic_rel": 0
+    }
+   ],
+   "ndcg3": null,
+   "ndcg3_floor": null,
+   "ndcg10": null,
+   "p3": 0.0,
+   "rel2_3": 0.0,
+   "unjudged3": 0.0,
+   "unjudged10": 0.0,
+   "recall30": null,
+   "has_rel2": false
+  },
+  {
+   "qid": "n002",
+   "kind": "negative",
+   "category": "무관",
+   "top1_score": 0.5061553120613098,
+   "top3": [
+    {
+     "notice_id": "kstartup:176316",
+     "topic_rel": 0
+    },
+    {
+     "notice_id": "kstartup:179130",
+     "topic_rel": 1
+    },
+    {
+     "notice_id": "kstartup:178831",
+     "topic_rel": 1
+    }
+   ],
+   "ndcg3": 0.36121211352040195,
+   "ndcg3_floor": 0.36121211352040195,
+   "ndcg10": 0.28642306264840484,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.0,
+   "unjudged3": 0.0,
+   "unjudged10": 0.1,
+   "recall30": 0.6,
+   "has_rel2": true
+  },
+  {
+   "qid": "n003",
+   "kind": "negative",
+   "category": "무관",
+   "top1_score": 0.498706579208374,
+   "top3": [
+    {
+     "notice_id": "kstartup:178831",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "kstartup:179090",
+     "topic_rel": 1
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000118350",
+     "topic_rel": 1
+    }
+   ],
+   "ndcg3": 0.566456495657349,
+   "ndcg3_floor": 0.30063051302795313,
+   "ndcg10": 0.5396436193704129,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.0,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.7,
+   "recall30": 0.5714285714285714,
+   "has_rel2": true
+  },
+  {
+   "qid": "n004",
+   "kind": "negative",
+   "category": "무관",
+   "top1_score": 0.5227742195129395,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000118679",
+     "topic_rel": 0
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000122174",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126394",
+     "topic_rel": 0
+    }
+   ],
+   "ndcg3": null,
+   "ndcg3_floor": null,
+   "ndcg10": null,
+   "p3": 0.0,
+   "rel2_3": 0.0,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.4,
+   "recall30": null,
+   "has_rel2": false
+  },
+  {
+   "qid": "n005",
+   "kind": "negative",
+   "category": "무관",
+   "top1_score": 0.5888922214508057,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000118350",
+     "topic_rel": 0
+    },
+    {
+     "notice_id": "kstartup:179105",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "kstartup:179194",
+     "topic_rel": null
+    }
+   ],
+   "ndcg3": 0.0,
+   "ndcg3_floor": 0.0,
+   "ndcg10": 0.38685280723454163,
+   "p3": 0.0,
+   "rel2_3": 0.0,
+   "unjudged3": 0.6666666666666666,
+   "unjudged10": 0.7,
+   "recall30": 1.0,
+   "has_rel2": false
+  },
+  {
+   "qid": "n006",
+   "kind": "negative",
+   "category": "무관",
+   "top1_score": 0.5013710260391235,
+   "top3": [
+    {
+     "notice_id": "kstartup:179105",
+     "topic_rel": 0
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126017",
+     "topic_rel": 0
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126078",
+     "topic_rel": 0
+    }
+   ],
+   "ndcg3": null,
+   "ndcg3_floor": null,
+   "ndcg10": null,
+   "p3": 0.0,
+   "rel2_3": 0.0,
+   "unjudged3": 0.0,
+   "unjudged10": 0.3,
+   "recall30": null,
+   "has_rel2": false
+  },
+  {
+   "qid": "n007",
+   "kind": "negative",
+   "category": "무관",
+   "top1_score": 0.45057058334350586,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000125696",
+     "topic_rel": 0
+    },
+    {
+     "notice_id": "kstartup:178977",
+     "topic_rel": 0
+    },
+    {
+     "notice_id": "kstartup:178593",
+     "topic_rel": 0
+    }
+   ],
+   "ndcg3": null,
+   "ndcg3_floor": null,
+   "ndcg10": null,
+   "p3": 0.0,
+   "rel2_3": 0.0,
+   "unjudged3": 0.0,
+   "unjudged10": 0.3,
+   "recall30": null,
+   "has_rel2": false
+  },
+  {
+   "qid": "n008",
+   "kind": "negative",
+   "category": "무관",
+   "top1_score": 0.5926625728607178,
+   "top3": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000118350",
+     "topic_rel": null
+    },
+    {
+     "notice_id": "kstartup:177432",
+     "topic_rel": 1
+    },
+    {
+     "notice_id": "kstartup:176190",
+     "topic_rel": 2
+    }
+   ],
+   "ndcg3": 0.5307212739772434,
+   "ndcg3_floor": 0.38268031849431083,
+   "ndcg10": 0.5878615590840801,
+   "p3": 0.6666666666666666,
+   "rel2_3": 0.3333333333333333,
+   "unjudged3": 0.3333333333333333,
+   "unjudged10": 0.4,
+   "recall30": 0.7142857142857143,
+   "has_rel2": true
+  }
+ ],
+ "judges": "all",
+ "qrels_pairs": 917,
+ "label_version": "topic-v1"
+}

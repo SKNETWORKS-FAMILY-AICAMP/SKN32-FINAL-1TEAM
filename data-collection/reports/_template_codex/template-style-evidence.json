@@ -1,0 +1,69 @@
+{
+  "input": "C:\\Users\\playdata2\\Downloads\\[\ub370\uc774\ud130\uc804\ucc98\ub9ac] \ub370\uc774\ud130\uc804\ucc98\ub9ac\uacb0\uacfc\uc11c.docx",
+  "fonts_by_char_count": {
+    "Malgun Gothic": 2464
+  },
+  "direct_run_formatting_runs": 227,
+  "direct_paragraph_formatting_paragraphs": 172,
+  "heading_like_paragraphs_not_heading_style": [],
+  "examples": {
+    "direct_paragraph_formatting": [
+      {
+        "para_index": 1,
+        "text": " ",
+        "style": "normal"
+      },
+      {
+        "para_index": 2,
+        "text": "",
+        "style": "normal"
+      },
+      {
+        "para_index": 3,
+        "text": "",
+        "style": "normal"
+      },
+      {
+        "para_index": 4,
+        "text": "",
+        "style": "normal"
+      },
+      {
+        "para_index": 5,
+        "text": "",
+        "style": "normal"
+      }
+    ],
+    "direct_run_formatting": [
+      {
+        "para_index": 1,
+        "run_text": " ",
+        "style": "normal"
+      },
+      {
+        "para_index": 7,
+        "run_text": "\uc804\ucc98\ub9ac \uac1c\uc694",
+        "style": "normal"
+      },
+      {
+        "para_index": 8,
+        "run_text": "\uc804\ucc98\ub9ac \ubaa9\uc801 : \uba40\ud2f0 \uc5d0\uc774\uc804\ud2b8\u00b7RAG \ud30c\uc774\ud504\ub77c\uc778\uc5d0 \ud22c\uc785 \uac00\ub2a5\ud55c \ud559\uc2b5\u00b7\uac80\uc0c9\uc6a9 \uace0\ud488\uc9c8 \ub370\uc774\ud130 \uc0dd\uc0b0",
+        "style": "normal"
+      },
+      {
+        "para_index": 9,
+        "run_text": "\uc804\ucc98\ub9ac \ubc94\uc704 : \uc815\ud615 DB \ub370\uc774\ud130 \ubc0f \ube44\uc815\ud615 \ubb38\uc11c\u00b7\ub85c\uadf8(\uc6d0\ucc9c \u2192 \uc815\uc81c \u2192 \uccad\ud0b9\u00b7\uc784\ubca0\ub529)",
+        "style": "normal"
+      },
+      {
+        "para_index": 10,
+        "run_text": "\uc0ac\uc6a9 \ub3c4\uad6c : pandas, numpy, re, kiwipiepy, nltk, scikit-learn, LangChain, sentence-tr",
+        "style": "normal"
+      }
+    ]
+  },
+  "notes": [
+    "Direct formatting is not always wrong, but it often causes inconsistent output when templates change.",
+    "Heading-like paragraphs not using Heading styles can break TOC and accessibility."
+  ]
+}

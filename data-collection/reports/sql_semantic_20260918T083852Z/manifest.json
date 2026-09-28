@@ -1,0 +1,92 @@
+{
+ "task": "docs/SQL_SEMANTIC_EXPERIMENT_TASK_20260918.md",
+ "run_at": "2026-09-18T08:38:52+00:00",
+ "as_of_date": "2026-09-18",
+ "baseline_folder": "reports\\search_comparison_20260918T054314Z",
+ "comparable": "아니오 — 과거 열은 참고용 (공고 집합·임베딩 계약·기준일이 다르고 Chroma 내용 미검증)",
+ "lab": {
+  "lab": {
+   "host": "127.0.0.1",
+   "port": 3306,
+   "database": "notice_match_sql_lab",
+   "user": "root"
+  },
+  "source": {
+   "host": "(기록하지 않음)",
+   "database": "s_brain"
+  },
+  "separated": true
+ },
+ "embedding": {
+  "contract": "sql_lab_v1:title+purpose+content+eligibility",
+  "model": "BAAI/bge-m3",
+  "model_revision": "5617a9f61b028005a4858fdac845db406aefb181",
+  "dim": 1024,
+  "dtype": "float32",
+  "normalized": true,
+  "max_tokens": 512
+ },
+ "model_revision": "5617a9f61b028005a4858fdac845db406aefb181",
+ "experiment_code_sha256": "05e4409b1da0c30d58bcf7206194d3b72fa8551a81d8a1c8635111ba57c933f8",
+ "condition_extractor": "sql_lab_v1",
+ "top": 5,
+ "data_quality": {
+  "conditions": {
+   "application_period": {
+    "known": 907,
+    "no_limit": 885,
+    "unknown": 60,
+    "known_ratio": 0.968
+   },
+   "business_age": {
+    "known": 251,
+    "unknown": 1601,
+    "known_ratio": 0.136
+   },
+   "company_size": {
+    "known": 1608,
+    "unknown": 244,
+    "known_ratio": 0.868
+   },
+   "industry": {
+    "unknown": 1852,
+    "known_ratio": 0.0
+   },
+   "purpose": {
+    "known": 1852,
+    "known_ratio": 1.0
+   },
+   "region": {
+    "known": 1222,
+    "no_limit": 630,
+    "known_ratio": 1.0
+   },
+   "support_amount": {
+    "known": 358,
+    "unknown": 1494,
+    "known_ratio": 0.193
+   },
+   "support_type": {
+    "known": 972,
+    "unknown": 880,
+    "known_ratio": 0.525
+   },
+   "target": {
+    "known": 1852,
+    "known_ratio": 1.0
+   }
+  },
+  "vectors": {
+   "count": 1852,
+   "dim_min": 1024,
+   "dim_max": 1024,
+   "contract": "sql_lab_v1:title+purpose+content+eligibility",
+   "without_vector": 0
+  },
+  "notices": 1852
+ },
+ "counts": {
+  "cases": 10,
+  "responses": 20
+ }
+}

@@ -1,0 +1,417 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S-Brain 데이터 흐름</title>
+<style>
+  :root {
+    --bg:#faf8f5; --ink:#2b2724; --muted:#7a716a; --line:#e0d6ca;
+    --red:#a4362f; --blue:#2f6ea4; --gray:#8a7f74;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:14px/1.6 'Malgun Gothic','Segoe UI',sans-serif; }
+  .page { max-width:1280px; margin:0 auto; padding:22px 18px 60px; }
+  h1 { font-size:23px; margin:0 0 4px; letter-spacing:-.3px; }
+  .sub { color:var(--muted); margin:0 0 14px; font-size:13px; }
+
+  .bar { display:flex; flex-wrap:wrap; gap:14px; align-items:center;
+         background:#fff; border:1px solid var(--line); border-radius:10px;
+         padding:11px 14px; margin-bottom:14px; position:sticky; top:0; z-index:5; }
+  .key { display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--muted); }
+  .key i { width:26px; height:0; border-top:2.5px solid var(--gray); display:inline-block; }
+  .key.red i { border-color:var(--red); }
+  .key.blue i { border-color:var(--blue); }
+  .hint { margin-left:auto; font-size:12.5px; color:var(--muted); }
+  .hint b { color:var(--red); }
+  #panel { font-size:12.5px; color:var(--ink); min-height:19px; }
+  #panel b { color:var(--red); }
+
+  .canvas { background:#fff; border:1px solid var(--line); border-radius:12px;
+            padding:6px; overflow-x:auto; }
+  svg { display:block; width:100%; height:auto; min-width:1050px; }
+
+  /* ── 기본 상태 ───────────────────────────── */
+  .edge { fill:none; stroke-width:1.7; opacity:.9; transition:opacity .16s, stroke-width .16s; }
+  .edge.g { stroke:var(--gray); marker-end:url(#mkG); }
+  .edge.r { stroke:var(--red);  marker-end:url(#mkR); }
+  .edge.b { stroke:var(--blue); marker-end:url(#mkB); }
+  .node { cursor:pointer; transition:opacity .16s; }
+  .node rect { transition:stroke .16s, stroke-width .16s; }
+  .elabel { transition:opacity .16s; }
+
+  /* ── 무언가를 지목한 상태 ─────────────────── */
+  body.focus .edge { opacity:.07; }
+  body.focus .elabel { opacity:.12; }
+  body.focus .node { opacity:.3; }
+
+  body.focus .edge.on { opacity:1; stroke-width:3.2;
+    stroke-dasharray:9 7; animation:flow .7s linear infinite; }
+  body.focus .edge.on.g { marker-end:url(#mkGh); }
+  body.focus .edge.on.r { marker-end:url(#mkRh); }
+  body.focus .edge.on.b { marker-end:url(#mkBh); }
+  body.focus .elabel.on { opacity:1; }
+  body.focus .node.on { opacity:1; }
+  body.focus .node.src rect { stroke:var(--red); stroke-width:2.4; }
+  body.focus .node.on rect { stroke-width:2; }
+
+  @keyframes flow { to { stroke-dashoffset:-16; } }
+
+  text { font-family:'Malgun Gothic','Segoe UI',sans-serif; }
+  .t   { font-size:13px; fill:#2b2724; }
+  .tb  { font-size:13px; fill:#2b2724; font-weight:700; }
+  .s   { font-size:11.5px; fill:#7a716a; }
+  .n   { font-size:11px; fill:#a4362f; font-weight:700; }
+  .h   { font-size:15px; fill:#2b2724; font-weight:700; }
+  .hs  { font-size:11.5px; fill:#7a716a; }
+  .lblG{ font-size:11px; fill:#8a7f74; }
+  .lblR{ font-size:11px; fill:#a4362f; font-weight:700; }
+  .lblB{ font-size:11px; fill:#2f6ea4; font-weight:700; }
+  .bx  { fill:#fff; stroke:#e0d6ca; stroke-width:1.2; }
+  .bxa { fill:#fdf0ee; stroke:#e3bdb8; stroke-width:1.2; }
+  .bxb { fill:#eef4fa; stroke:#b9cfe3; stroke-width:1.2; }
+  .bxg { fill:#f7f3ee; stroke:#e0d6ca; stroke-width:1.2; }
+  .zone{ fill:none; stroke:#cfc3b5; stroke-width:1.3; stroke-dasharray:7 5; }
+</style>
+
+<div class="page">
+  <h1>S-Brain 공고 데이터 — 내 PC 와 EC2 사이의 흐름</h1>
+  <p class="sub">2026-09-14 기준 · 실측값 표기</p>
+
+  <div class="bar">
+    <span class="key"><i></i>외부 → 내 PC</span>
+    <span class="key red"><i></i>내 PC → EC2 쓰기</span>
+    <span class="key blue"><i></i>EC2 안에서 읽기</span>
+    <span class="hint">카드에 <b>마우스를 올리면</b> 연결된 선만 흐릅니다 · <b>클릭</b>하면 고정 · 빈 곳 클릭하면 해제</span>
+    <div id="panel" style="flex-basis:100%"></div>
+  </div>
+
+  <div class="canvas">
+  <svg viewBox="0 0 1180 1560" id="svg">
+    <defs>
+      <marker id="mkG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8a7f74"/></marker>
+      <marker id="mkR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a4362f"/></marker>
+      <marker id="mkB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2f6ea4"/></marker>
+      <marker id="mkGh" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5d534a"/></marker>
+      <marker id="mkRh" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7d1f1a"/></marker>
+      <marker id="mkBh" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1d4e78"/></marker>
+    </defs>
+
+    <!-- ════════ 외부 ════════ -->
+    <text x="40" y="30" class="tb">외부</text>
+
+    <g class="node" data-id="ks" data-desc="공공데이터포털 K-Startup 오픈API. 100건씩 페이징해 받는다">
+      <rect x="40" y="40" width="200" height="50" rx="8" class="bxg"/>
+      <text x="56" y="61" class="t">K-Startup 오픈API</text>
+      <text x="56" y="79" class="s">data.go.kr · 244건</text>
+    </g>
+    <g class="node" data-id="biz" data-desc="기업마당 오픈API. 한 번에 전량이 온다. 응답 원문을 그대로 보관한다">
+      <rect x="252" y="40" width="200" height="50" rx="8" class="bxg"/>
+      <text x="268" y="61" class="t">기업마당 오픈API</text>
+      <text x="268" y="79" class="s">bizinfo.go.kr · 1,550건</text>
+    </g>
+    <g class="node" data-id="att" data-desc="공고에 붙은 첨부 파일. 1초 간격으로 받아 doctext 로 본문을 뽑는다">
+      <rect x="464" y="40" width="196" height="50" rx="8" class="bxg"/>
+      <text x="480" y="61" class="t">공고 사이트 첨부</text>
+      <text x="480" y="79" class="s">PDF · HWP · HWPX</text>
+    </g>
+    <g class="node" data-id="oai" data-desc="10단계에서만 부른다. 공고문에서 지원금액·사업자 형태를 구조화한다. 하루 약 0.02 달러">
+      <rect x="672" y="40" width="186" height="50" rx="8" class="bxg"/>
+      <text x="688" y="61" class="t">OpenAI API</text>
+      <text x="688" y="79" class="s">gpt-4o-mini</text>
+    </g>
+    <g class="node" data-id="hf" data-desc="임베딩 모델. 최초 1회만 내려받아 캐시에 둔다. PC 와 EC2 양쪽에 있다">
+      <rect x="870" y="40" width="270" height="50" rx="8" class="bxg"/>
+      <text x="886" y="61" class="t">HuggingFace  BGE-M3</text>
+      <text x="886" y="79" class="s">2.2GB · 최초 1회</text>
+    </g>
+
+    <!-- ════════ 배치 구역 ════════ -->
+    <rect x="26" y="112" width="1128" height="700" rx="12" class="zone"/>
+    <text x="44" y="136" class="h">매일 09:00 — 작업 스케줄러 · 약 5분</text>
+    <text x="44" y="154" class="hs">Interactive 로 등록돼 있어 PC 가 로그온 상태여야 돈다</text>
+    <text x="150" y="182" class="tb" text-anchor="middle">내 PC</text>
+    <text x="880" y="182" class="tb" text-anchor="middle">EC2  43.201.90.238</text>
+    <text x="880" y="199" class="s" text-anchor="middle">t3.medium 4GB + 스왑 2GB · 탄력적 IP</text>
+
+    <g class="node" data-id="p12" data-desc="1·2단계 — 두 오픈API 를 호출한다. 한 출처가 죽어도 나머지는 갱신하고 실패한 쪽은 직전 데이터를 쓴다">
+      <rect x="44" y="212" width="290" height="44" rx="7" class="bx"/>
+      <text x="58" y="231" class="n">1 · 2</text>
+      <text x="100" y="231" class="t">fetch.py · fetch_bizinfo.py</text>
+      <text x="58" y="248" class="s">공고 수집 → data/raw</text>
+    </g>
+    <g class="node" data-id="p3" data-desc="3단계 — 두 출처를 공통 스키마로. 날짜·주소 정리, 중복 제거. API 원본을 raw 필드에 함께 보관한다">
+      <rect x="44" y="268" width="290" height="44" rx="7" class="bx"/>
+      <text x="58" y="287" class="n">3</text>
+      <text x="100" y="287" class="t">normalize.py</text>
+      <text x="58" y="304" class="s">공통 스키마로 · 1,794건</text>
+    </g>
+    <g class="node" data-id="p4" data-desc="4단계 — MySQL 에 upsert. 한 트랜잭션으로 notices·notice_attachments·import_runs 를 함께 쓴다">
+      <rect x="44" y="324" width="290" height="44" rx="7" class="bx"/>
+      <text x="58" y="343" class="n">4</text>
+      <text x="100" y="343" class="t">store_mysql.py</text>
+      <text x="58" y="360" class="s">upsert · 트랜잭션</text>
+    </g>
+    <g class="node" data-id="p5" data-desc="5단계 — 첨부를 받아 본문을 뽑는다. 한 건 끝날 때마다 디스크에 밀어내서 중단돼도 이어서 한다">
+      <rect x="44" y="380" width="290" height="56" rx="7" class="bx"/>
+      <text x="58" y="399" class="n">5</text>
+      <text x="100" y="399" class="t">attachment_pipeline.py</text>
+      <text x="58" y="416" class="s">첨부 받기 → doctext 본문 추출</text>
+      <text x="58" y="432" class="s">로컬 data/attachments 637MB</text>
+    </g>
+    <g class="node" data-id="p67" data-desc="6·7단계 — 벡터를 만들고 로컬 Chroma 에 넣는다. 입력 해시가 같으면 건너뛴다. 설정 지문이 바뀌면 전량 재생성">
+      <rect x="44" y="448" width="290" height="56" rx="7" class="bx"/>
+      <text x="58" y="467" class="n">6 · 7</text>
+      <text x="100" y="467" class="t">embed.py · vecstore.py</text>
+      <text x="58" y="484" class="s">embeddings_v1.npz 8.1MB</text>
+      <text x="58" y="500" class="s">로컬 Chroma 색인 2,084건</text>
+    </g>
+    <g class="node" data-id="p8" data-desc="8단계 — 바뀐 벡터만 EC2 로 올린다. DB 와 npz 를 대조해 스스로 고르므로 6단계가 실패한 날도 따라잡는다">
+      <rect x="44" y="516" width="290" height="44" rx="7" class="bxa"/>
+      <text x="58" y="535" class="n">8</text>
+      <text x="100" y="535" class="t">upload_vectors.py</text>
+      <text x="58" y="552" class="s">1건 4,096바이트</text>
+    </g>
+    <g class="node" data-id="p9" data-desc="9단계 — 새 첨부 파일만 올린다. 파일 내용의 해시가 키라서 같은 파일은 한 번만 저장된다">
+      <rect x="44" y="572" width="290" height="44" rx="7" class="bxa"/>
+      <text x="58" y="591" class="n">9</text>
+      <text x="100" y="591" class="t">upload_attachments.py</text>
+      <text x="58" y="608" class="s">해시가 키 · 8MB 단위 커밋</text>
+    </g>
+    <g class="node" data-id="p10" data-desc="10단계 — 공고문을 LLM 에 넣어 지원금액·사업자 형태를 뽑는다. 근거 문장을 함께 저장하고 검산으로 오답을 버린다">
+      <rect x="44" y="628" width="290" height="56" rx="7" class="bxa"/>
+      <text x="58" y="647" class="n">10</text>
+      <text x="100" y="647" class="t">extract_conditions.py</text>
+      <text x="58" y="664" class="s">자격요건 구조화 (LLM)</text>
+      <text x="58" y="680" class="s">바뀐 것만 · 하루 약 0.02 달러</text>
+    </g>
+
+    <rect x="700" y="216" width="360" height="232" rx="8" class="bxb"/>
+    <text x="716" y="238" class="tb">MySQL  s_brain</text>
+    <text x="716" y="255" class="s">포트 3306 · TLS 필수 · 팀 공용</text>
+
+    <g class="node" data-id="t-notices" data-desc="공고 본문·기간·기관·지역. 38컬럼. web 이 목록과 상세에 쓰는 테이블">
+      <rect x="716" y="266" width="328" height="28" rx="5" class="bx"/>
+      <text x="728" y="285" class="t">notices  2,084행</text>
+      <text x="1032" y="285" class="s" text-anchor="end">10.0MB</text>
+    </g>
+    <g class="node" data-id="t-emb" data-desc="공고 요약 벡터. float32 리틀엔디안 4,096바이트. SELECT * 로 읽으면 행마다 따라온다">
+      <rect x="716" y="300" width="328" height="28" rx="5" class="bx"/>
+      <text x="728" y="319" class="t">notices.embedding  2,084건</text>
+      <text x="1032" y="319" class="s" text-anchor="end">8.1MB</text>
+    </g>
+    <g class="node" data-id="t-na" data-desc="첨부 링크. URL 과 파일명. 파일 자체는 아니다">
+      <rect x="716" y="334" width="328" height="28" rx="5" class="bx"/>
+      <text x="728" y="353" class="t">notice_attachments  2,973행</text>
+      <text x="1032" y="353" class="s" text-anchor="end">1.8MB</text>
+    </g>
+    <g class="node" data-id="t-at" data-desc="첨부에서 뽑은 본문 텍스트. ok 1,575 · image_only 157 · parse_error 4. 10단계 LLM 의 입력이 된다">
+      <rect x="716" y="368" width="328" height="28" rx="5" class="bx"/>
+      <text x="728" y="387" class="t">attachment_texts  1,736행</text>
+      <text x="1032" y="387" class="s" text-anchor="end">28.6MB</text>
+    </g>
+    <g class="node" data-id="t-af" data-desc="첨부 원본 파일 바이트. 가공하지 않은 그대로. 파일시스템 사본과 중복이다">
+      <rect x="716" y="402" width="328" height="28" rx="5" class="bx"/>
+      <text x="728" y="421" class="t">attachment_files  1,679개</text>
+      <text x="1032" y="421" class="s" text-anchor="end">631.7MB</text>
+    </g>
+
+    <g class="node" data-id="t-cond" data-desc="LLM 이 뽑은 자격요건. 금액 664 · 형태 595 · 예비창업 853. 업력 128 은 오답률 61% 라 판정에 쓰지 않는다">
+      <rect x="700" y="464" width="360" height="66" rx="8" class="bxb"/>
+      <text x="716" y="486" class="tb">notice_conditions  1,573행</text>
+      <text x="716" y="504" class="s">금액 664 · 형태 595 · 예비창업 853</text>
+      <text x="716" y="521" class="s">업력 128 은 참고용. 판정 제외</text>
+    </g>
+    <g class="node" data-id="ec2fs" data-desc="EC2 파일시스템의 첨부 사본. 2026-09-09 부터 있었다. MySQL attachment_files 와 중복이므로 한쪽을 정리해야 한다">
+      <rect x="700" y="546" width="360" height="62" rx="8" class="bx"/>
+      <text x="716" y="568" class="tb">~/s-brain/attachments</text>
+      <text x="716" y="586" class="s">612MB · 2026-09-09 부터</text>
+      <text x="716" y="602" class="s">MySQL attachment_files 와 중복</text>
+    </g>
+    <g class="node" data-id="ec2chroma" data-desc="EC2 안의 벡터 DB. 공고 검색이 반드시 여기를 거친다. 열린 포트가 없어 EC2 내부 코드만 접근한다">
+      <rect x="700" y="624" width="360" height="62" rx="8" class="bxb"/>
+      <text x="716" y="646" class="tb">벡터 DB  data/vecstore/chroma</text>
+      <text x="716" y="664" class="s">2,084건 · 15MB · HNSW 코사인</text>
+      <text x="716" y="680" class="s">EC2 안의 코드만 접근 가능</text>
+    </g>
+
+    <!-- 외부 → PC -->
+    <path class="edge g" data-a="ks"  data-b="p12" d="M140,90 L140,212"/>
+    <path class="edge g" data-a="biz" data-b="p12" d="M352,90 L352,168 L210,168 L210,212"/>
+    <path class="edge g" data-a="att" data-b="p5"  d="M562,90 L562,404 L334,404"/>
+    <path class="edge g" data-a="oai" data-b="p10" d="M765,90 L765,176 L618,176 L618,657 L334,657"/>
+    <text class="elabel lblG" data-a="oai" data-b="p10" x="626" y="172">HTTPS</text>
+    <path class="edge g" data-a="hf"  data-b="p67" d="M1005,90 L1005,176 L660,176 L660,477 L334,477"/>
+    <text class="elabel lblG" data-a="hf" data-b="p67" x="668" y="472">최초 1회</text>
+
+    <!-- PC 안 흐름 -->
+    <path class="edge g" data-a="p12" data-b="p3" d="M189,256 L189,268"/>
+    <path class="edge g" data-a="p3"  data-b="p4" d="M189,312 L189,324"/>
+    <path class="edge g" data-a="p4"  data-b="p5" d="M189,368 L189,380"/>
+    <path class="edge g" data-a="p5"  data-b="p67" d="M189,436 L189,448"/>
+    <path class="edge g" data-a="p67" data-b="p8" d="M189,504 L189,516"/>
+
+    <!-- PC → EC2 -->
+    <path class="edge r" data-a="p4" data-b="t-notices" d="M334,340 L520,340 L520,280 L700,280"/>
+    <text class="elabel lblR" data-a="p4" data-b="t-notices" x="528" y="273">3306 TLS</text>
+    <path class="edge r" data-a="p4" data-b="t-na" d="M334,352 L500,352 L500,348 L700,348"/>
+    <path class="edge r" data-a="p5" data-b="t-at" d="M334,420 L560,420 L560,382 L700,382"/>
+    <text class="elabel lblR" data-a="p5" data-b="t-at" x="568" y="375">3306</text>
+    <path class="edge r" data-a="p8" data-b="t-emb" d="M334,538 L600,538 L600,314 L700,314"/>
+    <text class="elabel lblR" data-a="p8" data-b="t-emb" x="608" y="308">3306</text>
+    <path class="edge r" data-a="p9" data-b="t-af" d="M334,594 L640,594 L640,416 L700,416"/>
+    <text class="elabel lblR" data-a="p9" data-b="t-af" x="648" y="410">3306</text>
+    <path class="edge r" data-a="p10" data-b="t-cond" d="M334,651 L560,651 L560,497 L700,497"/>
+    <text class="elabel lblR" data-a="p10" data-b="t-cond" x="568" y="491">3306</text>
+    <path class="edge b" data-a="t-at" data-b="p10" d="M700,392 L676,392 L676,672 L334,672"/>
+    <text class="elabel lblB" data-a="t-at" data-b="p10" x="380" y="666">10단계가 첨부 본문을 읽어 간다</text>
+
+    <!-- 배치가 만든 것이 아니다. 9/9 에 사람이 올렸다. 점선으로 구분한다 -->
+    <path class="edge g" data-a="p5" data-b="ec2fs" d="M334,428 L470,428 L470,577 L700,577"
+          style="stroke-dasharray:4 4"/>
+    <text class="elabel lblG" data-a="p5" data-b="ec2fs" x="478" y="571">수동 업로드 · 배치 아님</text>
+
+    <!-- ════════ EC2 crontab ════════ -->
+    <rect x="26" y="834" width="1128" height="116" rx="12" class="zone"/>
+    <text x="44" y="858" class="h">매일 09:10 — EC2 crontab · 약 1초</text>
+    <text x="44" y="876" class="hs">PC 배치가 끝난 뒤 돈다. embedding_updated_at 을 기준시각으로 새 것만 넣는다</text>
+
+    <g class="node" data-id="cron" data-desc="EC2 에서 도는 색인 갱신기. 임베딩 모델을 쓰지 않는다. pymysql·numpy·chromadb 만 필요하다">
+      <rect x="44" y="890" width="300" height="44" rx="7" class="bx"/>
+      <text x="58" y="917" class="t">ec2_vecstore.py</text>
+    </g>
+    <path class="edge b" data-a="t-emb" data-b="cron" d="M700,314 L672,314 L672,912 L344,912"/>
+    <text class="elabel lblB" data-a="t-emb" data-b="cron" x="380" y="906">127.0.0.1 로 벡터를 읽는다</text>
+    <path class="edge b" data-a="cron" data-b="ec2chroma" d="M344,900 L1090,900 L1090,655 L1060,655"/>
+    <text class="elabel lblB" data-a="cron" data-b="ec2chroma" x="900" y="894">색인에 upsert</text>
+
+    <!-- ════════ 검색 ════════ -->
+    <rect x="26" y="972" width="1128" height="248" rx="12" class="zone"/>
+    <text x="44" y="996" class="h">공고 검색 — 전부 EC2 안에서 일어난다</text>
+    <text x="44" y="1014" class="hs">MySQL 의 embedding 을 직접 읽어 numpy 로 계산하는 경로는 쓰지 않는다. 요구사항은 성능이 아니라 아키텍처다</text>
+
+    <g class="node" data-id="q1" data-desc="사용자가 입력한 아이디어·수익모델을 한 문장으로 엮어 질의를 만든다">
+      <rect x="44" y="1032" width="188" height="50" rx="7" class="bx"/>
+      <text x="58" y="1053" class="t">검색어</text>
+      <text x="58" y="1071" class="s">아이디어 · 수익모델</text>
+    </g>
+    <g class="node" data-id="q2" data-desc="EC2 에 상주하는 BGE-M3. 첫 질의는 20.8초(워밍업 필요), 이후 258~390ms. 피크 메모리 2.7GB">
+      <rect x="256" y="1032" width="188" height="50" rx="7" class="bxb"/>
+      <text x="270" y="1053" class="t">BGE-M3  (EC2)</text>
+      <text x="270" y="1071" class="s">258~390ms · 피크 2.7GB</text>
+    </g>
+    <g class="node" data-id="q3" data-desc="벡터 DB 조회. 문서 벡터와 코사인 유사도를 재 상위 3건의 notice_id 를 돌려준다">
+      <rect x="468" y="1032" width="188" height="50" rx="7" class="bxb"/>
+      <text x="482" y="1053" class="t">Chroma 벡터 DB</text>
+      <text x="482" y="1071" class="s">9ms · 상위 3건 ID</text>
+    </g>
+    <g class="node" data-id="q4" data-desc="받은 ID 로 제목·기관·기간·지원금액을 채운다. 벡터는 다시 읽지 않는다">
+      <rect x="680" y="1032" width="188" height="50" rx="7" class="bxb"/>
+      <text x="694" y="1053" class="t">MySQL 조회</text>
+      <text x="694" y="1071" class="s">제목·기관·기간·금액</text>
+    </g>
+    <g class="node" data-id="q5" data-desc="gate.py 가 업력·접수기간·모집상태를 계산한다. LLM 을 쓰지 않아 같은 입력이면 항상 같은 결과가 나온다">
+      <rect x="892" y="1032" width="220" height="50" rx="7" class="bx"/>
+      <text x="906" y="1053" class="t">공고 3건 + 자격요건</text>
+      <text x="906" y="1071" class="s">gate.py 3단 판정</text>
+    </g>
+    <path class="edge b" data-a="q1" data-b="q2" d="M232,1057 L256,1057"/>
+    <path class="edge b" data-a="q2" data-b="q3" d="M444,1057 L468,1057"/>
+    <path class="edge b" data-a="q3" data-b="q4" d="M656,1057 L680,1057"/>
+    <path class="edge b" data-a="q4" data-b="q5" d="M868,1057 L892,1057"/>
+    <path class="edge b" data-a="ec2chroma" data-b="q3" d="M880,686 L880,700 L562,700 L562,1032"/>
+    <path class="edge b" data-a="t-notices" data-b="q4" d="M1044,280 L1128,280 L1128,1010 L774,1010 L774,1032"/>
+    <path class="edge b" data-a="t-cond" data-b="q4" d="M1060,497 L1110,497 L1110,1000 L800,1000 L800,1032"/>
+
+    <rect x="44" y="1106" width="1068" height="94" rx="8" class="bxg"/>
+    <text x="60" y="1128" class="tb">자격요건 판정 3단 — 확인 필요를 뭉개지 않는다</text>
+    <text x="60" y="1148" class="t">통과</text><text x="130" y="1148" class="s">조건을 충족한다</text>
+    <text x="60" y="1168" class="t">미달</text><text x="130" y="1168" class="s">조건에 어긋난다</text>
+    <text x="60" y="1188" class="t">확인 필요</text><text x="130" y="1188" class="s">데이터가 없어 알 수 없다 — 자격 충족을 뜻하지 않는다</text>
+    <text x="560" y="1148" class="s">접수기간  100% 판정 가능</text>
+    <text x="560" y="1168" class="s">업력  약 20% (K-Startup 정형 데이터만)</text>
+    <text x="560" y="1188" class="s">지원대상 유형  LLM business_type 으로 38%</text>
+
+    <!-- ════════ 팀원 ════════ -->
+    <rect x="26" y="1242" width="1128" height="204" rx="12" class="zone"/>
+    <text x="44" y="1266" class="h">팀원(백엔드·프론트)이 쓰는 경로</text>
+
+    <g class="node" data-id="team" data-desc="팀원 PC. PyMySQL 과 numpy 만 있으면 된다. .env 와 data/ec2-ca.pem 이 필요하다. TEAM_DATA.md 에 쿼리 예시가 있다">
+      <rect x="44" y="1284" width="300" height="138" rx="8" class="bx"/>
+      <text x="60" y="1306" class="tb">팀원 PC</text>
+      <text x="60" y="1328" class="s">pip install PyMySQL numpy</text>
+      <text x="60" y="1348" class="s">.env + data/ec2-ca.pem 필요</text>
+      <text x="60" y="1372" class="s">TEAM_DATA.md 에 쿼리 예시</text>
+      <text x="60" y="1396" class="s">주의: notices 를 SELECT * 금지</text>
+      <text x="60" y="1412" class="s">벡터 4KB 가 따라와 20 → 57ms</text>
+    </g>
+    <g class="node" data-id="teamdb" data-desc="팀원이 3306 으로 읽을 수 있는 것 전부. 벡터까지 포함된다. Chroma 에는 직접 붙을 수 없다">
+      <rect x="700" y="1284" width="360" height="138" rx="8" class="bxb"/>
+      <text x="716" y="1306" class="tb">MySQL 3306 으로 전부 접근 가능</text>
+      <text x="716" y="1328" class="s">공고 목록·상세·검색 필터</text>
+      <text x="716" y="1348" class="s">첨부 본문 (attachment_texts)</text>
+      <text x="716" y="1368" class="s">첨부 원본 바이트 (attachment_files)</text>
+      <text x="716" y="1388" class="s">지원금액·형태 (notice_conditions)</text>
+      <text x="716" y="1410" class="s">벡터 (notices.embedding)</text>
+    </g>
+    <path class="edge b" data-a="team" data-b="teamdb" d="M344,1353 L700,1353"/>
+    <text class="elabel lblB" data-a="team" data-b="teamdb" x="440" y="1346">3306 TLS · 보안그룹 개방</text>
+
+    <text x="44" y="1470" class="hs">아직 안 되는 것 — 팀원이 EC2 Chroma 에 직접 붙는 것(열린 포트 없음) · 검색 화면이 EC2 에 올라가 있지 않음(app.py 는 PC 전용)</text>
+  </svg>
+  </div>
+</div>
+
+<script>
+const svg = document.getElementById('svg');
+const panel = document.getElementById('panel');
+const nodes = [...svg.querySelectorAll('.node')];
+const edges = [...svg.querySelectorAll('.edge')];
+const labels = [...svg.querySelectorAll('.elabel')];
+let pinned = null;
+
+function nodeById(id) { return nodes.find(n => n.dataset.id === id); }
+
+function focus(id) {
+  document.body.classList.add('focus');
+  const touched = new Set([id]);
+
+  for (const e of edges) {
+    const hit = e.dataset.a === id || e.dataset.b === id;
+    e.classList.toggle('on', hit);
+    if (hit) { touched.add(e.dataset.a); touched.add(e.dataset.b); }
+  }
+  for (const l of labels) {
+    l.classList.toggle('on', l.dataset.a === id || l.dataset.b === id);
+  }
+  for (const n of nodes) {
+    n.classList.toggle('on', touched.has(n.dataset.id));
+    n.classList.toggle('src', n.dataset.id === id);
+  }
+
+  const me = nodeById(id);
+  const linked = [...touched].filter(x => x !== id).length;
+  panel.innerHTML = `<b>${me.querySelector('.t, .tb').textContent.trim()}</b> — `
+    + (me.dataset.desc || '') + `  <span style="color:#7a716a">· 연결 ${linked}개</span>`;
+}
+
+function clear() {
+  document.body.classList.remove('focus');
+  edges.forEach(e => e.classList.remove('on'));
+  labels.forEach(l => l.classList.remove('on'));
+  nodes.forEach(n => n.classList.remove('on', 'src'));
+  panel.textContent = '';
+}
+
+for (const n of nodes) {
+  n.addEventListener('mouseenter', () => { if (!pinned) focus(n.dataset.id); });
+  n.addEventListener('mouseleave', () => { if (!pinned) clear(); });
+  n.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (pinned === n.dataset.id) { pinned = null; clear(); }
+    else { pinned = n.dataset.id; focus(pinned); }
+  });
+}
+document.addEventListener('click', () => { if (pinned) { pinned = null; clear(); } });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && pinned) { pinned = null; clear(); }
+});
+</script>
