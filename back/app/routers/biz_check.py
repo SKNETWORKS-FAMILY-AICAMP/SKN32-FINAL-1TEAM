@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.logging_config import web_logger
 from app.models import User, UserProfile
 from app.schemas import BizCheckOut, BizCheckRequest
 from app.security import get_current_user
@@ -52,7 +53,19 @@ def check_business_number(
     if len(b_no) != 10:
         raise HTTPException(status_code=400, detail='사업자등록번호는 숫자 10자리여야 합니다')
 
-    service_key = config.require('NTS_SERVICE_KEY')
+    # [2026-09-28 수정] 예전엔 config.require()를 썼는데, 그 함수는 키가 없으면
+    # SystemExit(1)을 던진다 — CLI 스크립트용 처리라 요청 처리 중엔 맞지 않는다.
+    # SystemExit은 Exception이 아니어서 FastAPI 예외 핸들러를 그냥 지나쳐, 클라이언트엔
+    # 본문 없는 500만 가고 사유는 서버 콘솔에만 남았다(화면에는 아무 안내도 안 떴다).
+    # 키는 서버가 한 벌 갖는 값이라 사용자가 할 수 있는 일이 없으므로, 503과 함께
+    # "지금은 조회할 수 없다"는 사실만 분명히 알린다(프론트가 이 문구를 그대로 띄운다).
+    service_key = config.get('NTS_SERVICE_KEY')
+    if not service_key:
+        web_logger.error('NTS_SERVICE_KEY 미설정 — 사업자등록번호 조회 요청을 처리할 수 없습니다.')
+        raise HTTPException(
+            status_code=503,
+            detail='사업자등록번호 조회 서비스가 일시적으로 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.',
+        )
 
     try:
         resp = requests.post(

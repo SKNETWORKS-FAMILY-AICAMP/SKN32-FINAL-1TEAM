@@ -77,6 +77,45 @@ export function TextInput({ label, value, onChange, type = 'text', placeholder }
   return <Field label={label}><input type={type} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} className={inputCls} /></Field>;
 }
 
+// [2026-09-28] 기간을 자유 텍스트로 받던 칸(대표자 이력 등)을 달력으로 바꾼다. 사람마다
+// '2019.03 – 2023.10'/'19년 3월~23년 10월'처럼 제각각 적어서 사업계획서에 그대로 실리고
+// 정렬·비교도 안 됐다. 저장 형식은 'YYYY-MM ~ YYYY-MM' 문자열 하나로 유지한다 — 서버
+// 스키마(app/schemas.py PlanCareerIn.period: str)와 이미 저장된 프로필을 안 건드리기 위해서다.
+const _MONTH_RE = /(\d{4})[.\-/년\s]*(\d{1,2})/g;
+
+// 예전에 손으로 적어둔 값도 최대한 읽어준다 — 연·월 두 쌍을 찾으면 그걸 시작·종료로 쓴다.
+export function parseMonthRange(value) {
+  if (!value) return { start: '', end: '' };
+  const found = [...String(value).matchAll(_MONTH_RE)].map(
+    ([, y, m]) => `${y}-${String(Number(m)).padStart(2, '0')}`,
+  );
+  return { start: found[0] || '', end: found[1] || '' };
+}
+
+export function formatMonthRange({ start, end }) {
+  if (!start && !end) return '';
+  return `${start} ~ ${end}`.trim();
+}
+
+export function MonthRangeInput({ label, value, onChange }) {
+  const { start, end } = parseMonthRange(value);
+  const set = (key) => (e) => onChange(formatMonthRange({ start, end, [key]: e.target.value }));
+  const reversed = start && end && start > end;
+  return (
+    <div className="min-w-0">
+      <span className="block text-[13px] font-semibold text-[#4e5968] mb-1.5">{label}</span>
+      {/* input은 기본 너비(약 20자) 아래로 안 줄어들어서, min-w-0 없이 flex에 넣으면
+          칸을 넘쳐 옆 항목(증빙 있음) 위로 올라탄다(사용자 지적). */}
+      <div className="flex items-center gap-1.5">
+        <input type="month" aria-label={`${label} 시작`} value={start} onChange={set('start')} className={`${inputCls} min-w-0 flex-1 px-2`} />
+        <span className="flex-shrink-0 text-[var(--muted-fg)]">~</span>
+        <input type="month" aria-label={`${label} 종료`} value={end} onChange={set('end')} className={`${inputCls} min-w-0 flex-1 px-2`} />
+      </div>
+      {reversed && <p className="text-[12px] mt-1 text-[var(--danger)]">종료월이 시작월보다 빨라요.</p>}
+    </div>
+  );
+}
+
 // 모든 드롭다운(성별·시/도·역량 탭의 구분·상태 선택 등)이 같은 모양을 쓰도록 여기 하나로
 // 통일한다 — 네이티브 select는 펼쳤을 때 옵션 목록이 OS 기본 모양(각진 사각형)으로 나와
 // CSS로 못 고치므로, 버튼 + 커스텀 목록으로 직접 그린다.
@@ -227,6 +266,8 @@ export function ListEditor({ items, onChange, fields, cols = 3, addLabel, emptyT
               const set = (v) => update(i, f.key, v);
               if (f.type === 'select') return <Select key={f.key} label={f.label} value={row[f.key]} options={f.options} onChange={set} />;
               if (f.type === 'check') return <div key={f.key} className="flex items-end pb-2.5"><Check checked={!!row[f.key]} onChange={set}>{f.label}</Check></div>;
+              // 달력 두 칸이 들어가는 기간 항목은 한 칸으로는 좁아서 두 칸을 차지한다.
+              if (f.type === 'monthrange') return <div key={f.key} className="min-w-0 md:col-span-2"><MonthRangeInput label={f.label} value={row[f.key]} onChange={set} /></div>;
               return <TextInput key={f.key} label={f.label} type={f.type || 'text'} value={row[f.key]} placeholder={f.placeholder} onChange={set} />;
             })}
           </div>

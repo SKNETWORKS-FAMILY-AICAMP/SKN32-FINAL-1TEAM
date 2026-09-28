@@ -1,11 +1,11 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
 import React, {useState,useRef,useEffect} from 'react';
 import {Icon} from '../../components/Icons.jsx';
-import {DiffText} from './shared.jsx';
+import {DiffText,RerunLeftBadge} from './shared.jsx';
 import {GeneralInfoBlock,PlanExtrasBlock} from './PlanForm.jsx';
 import {PrototypeFrame,ResultPreview} from './ArtifactResult.jsx';
-import {detectItemCategory,diffSentences,taskReasons,DOC_SCORE_BY_OUTCOME} from './utils.js';
-import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,WRITING_SUBTASKS} from './data.js';
+import {detectItemCategory,diffSentences,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
+import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,RERUN_CAP,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,WRITING_SUBTASKS} from './data.js';
 import {retryTask} from '../../api.js';
 
 // 계획서 라벨(WRITING_SUBTASKS)은 전부 '작성' Agent 하나(writing)로, 산출물 라벨은
@@ -325,7 +325,7 @@ export function ArtifactCarousel({ hasExecutable }){
   );
 }
 
-export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOutcome, artifactOutcome, setDocOutcome, setArtifactOutcome, projectId }){
+export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOutcome, artifactOutcome, setDocOutcome, setArtifactOutcome, projectId, reworkCounts = {}, onRework }){
   const docScore = DOC_SCORE_BY_OUTCOME[docOutcome];
   const artifactScore = ARTIFACT_SCORE_BY_OUTCOME[artifactOutcome];
   const artifactRawTotal = artifactScore.autoCheck.raw + artifactScore.crossCheck.raw;
@@ -373,7 +373,14 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
     return () => window.removeEventListener('keydown', onKey);
   }, [viewerOpen]);
 
+  // 재수행 횟수 상한 — 계획서 화면(6번)·산출물 화면(8번)에서 이미 쓴 횟수까지 전역
+  // 스토어에서 함께 세므로(useWorkflowStore.reworkCounts), 여기 오기 전에 다 써버린
+  // Task는 이 화면에서도 고를 수 없다.
+  const isCapped = (label) => isRerunCapped(reworkCounts, label);
+  const allCapped = allTasks.every(({ label }) => isCapped(label));
+
   const toggleTask = (label) => {
+    if (isCapped(label)) return;
     setCheckedTasks((prev) => (prev.includes(label) ? prev.filter((t) => t !== label) : [...prev, label]));
   };
   // 실제 재생성 파이프라인은 없는 목업이라, 체크한 항목을 잠깐 "재작성 중"으로
@@ -391,8 +398,8 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
   // setTimeout으로 스피너·비교 모달만 흉내 내고 서버 호출이 없어 DB가 안 바뀌었다. 아래
   // 비교 모달(TASK_REWORK_SUMMARY 등 고정 시연 문구)은 그대로 두고, 실제 반영 여부만 API로 확인한다.
   const handleRewrite = async () => {
-    if (checkedTasks.length === 0) return;
-    const picked = checkedTasks;
+    const picked = checkedTasks.filter((label) => !isCapped(label));
+    if (picked.length === 0) return;
     const pickedLayers = new Set(allTasks.filter((t) => picked.includes(t.label)).map((t) => t.layer));
     const fromTotal = finalTotal; // 재작성 전 총점 — 변경 내역 헤더의 "X → Y" 중 X
     setRunningTasks(picked);
@@ -407,6 +414,8 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
       setCheckedTasks(picked);
       return;
     }
+    // 실제로 재시도가 나간 뒤에만 횟수를 센다 — 위 catch로 빠진 실패 호출은 세지 않는다.
+    if (onRework) onRework(picked);
     setRunningTasks([]);
     setReworkDiff(allTasks.map(({ label, layer }) => {
       const changed = picked.includes(label);
@@ -509,10 +518,13 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
 
       {!passed && (
         <div className="rounded-2xl border border-[var(--border)] p-5 mb-6">
-          <p className="text-[12.5px] font-bold text-[var(--danger)] mb-3">보완이 필요한 항목</p>
+          <p className="text-[12.5px] font-bold text-[var(--danger)] mb-1">보완이 필요한 항목</p>
+          <p className="text-[11.5px] text-[var(--muted-fg)] mb-3">항목마다 다시 만들기는 {RERUN_CAP}회까지만 가능해요 — 앞 단계에서 쓴 횟수도 함께 셉니다</p>
           <div className="flex flex-col gap-2.5 mb-4">
             {allTasks.map(({ label, layer }) => {
               const isRunning = runningTasks.includes(label);
+              const left = rerunLeftOf(reworkCounts, label);
+              const capped = left <= 0;
               // 재작성 대조 모달을 X로 닫고 나면, 방금 체크했던 항목이 실제로 반영됐는지
               // 구분할 UI가 없었다(사용자 지적) — 가장 최근 재작성에서 바뀐 항목(reworkDiff의
               // changed:true)에 "방금 재작성함" 배지를 달아준다. 다음 재작성을 돌리면
@@ -520,16 +532,18 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
               const justReworked = reworkDiff?.find((d) => d.label === label)?.changed;
               const reasons = taskReasons(label, docScore, artifactScore);
               return (
-                <label key={label} className={`flex items-start gap-2.5 text-[13px] ${isRunning ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>
+                <label key={label} className={`flex items-start gap-2.5 text-[13px] ${isRunning || capped ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>
                   {isRunning ? (
                     <span className="rewrite-indicator" aria-hidden="true"></span>
                   ) : (
                     <input type="checkbox" checked={checkedTasks.includes(label)} onChange={() => toggleTask(label)}
-                      className="flex-shrink-0 mt-0.5 w-4 h-4 accent-[var(--primary)]" />
+                      disabled={capped}
+                      className="flex-shrink-0 mt-0.5 w-4 h-4 accent-[var(--primary)] disabled:cursor-not-allowed" />
                   )}
                   <span>
                     <span className="flex-shrink-0 text-[11px] font-semibold text-[var(--muted-fg)] mr-1.5">［{layer}］</span>
                     {isRunning ? `${label} 재작성 중…` : label}
+                    {!isRunning && <RerunLeftBadge left={left} />}
                     {!isRunning && justReworked && (
                       <span className="inline-flex items-center gap-0.5 ml-1.5 text-[11px] font-semibold text-[var(--ok)]">
                         <Icon name="check" size={12}/> 방금 재작성함
@@ -543,10 +557,15 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
               );
             })}
           </div>
+          {allCapped && (
+            <p className="text-[12.5px] text-[var(--fg)] leading-relaxed mb-4">
+              모든 항목이 재작성 {RERUN_CAP}회를 다 썼어요. 지금 점수로 검수 단계로 넘어가는 것만 가능합니다.
+            </p>
+          )}
           <div className="flex items-center gap-3 flex-wrap">
-            <button onClick={handleRewrite} disabled={checkedTasks.length === 0 || runningTasks.length > 0}
+            <button onClick={handleRewrite} disabled={allCapped || checkedTasks.length === 0 || runningTasks.length > 0}
               className="rounded-lg border border-[var(--border)] px-4 py-2.5 text-[13.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--bg)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-              선택 항목 다시 만들기
+              {allCapped ? `재작성 상한 ${RERUN_CAP}회 도달` : '선택 항목 다시 만들기'}
             </button>
             <button onClick={handleProceedClick}
               className="rounded-lg px-4 py-2.5 text-[13.5px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">

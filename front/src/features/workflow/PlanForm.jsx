@@ -2,8 +2,9 @@
 import React, {useState, useEffect} from 'react';
 import {Icon} from '../../components/Icons.jsx';
 import Preparation from '../../components/Preparation.jsx';
-import {buildGeneralInfo,buildOverview,DOC_SCORE_BY_OUTCOME} from './utils.js';
-import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_TABLE_EXAMPLE,SCORE_DISCLAIMER,WRITING_SUBTASKS} from './data.js';
+import {buildGeneralInfo,buildOverview,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
+import {RerunLeftBadge} from './shared.jsx';
+import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_TABLE_EXAMPLE,RERUN_CAP,SCORE_DISCLAIMER,WRITING_SUBTASKS} from './data.js';
 import {ApiError,fetchPlanDocumentPdf,getProjectStatus,retryTask} from '../../api.js';
 
 // WRITING_SUBTASKS 3개는 전부 PLAN_STAGE_TASKS(data.js)에서 같은 '작성' Agent 몫이라
@@ -117,7 +118,7 @@ export function PlanExtrasBlock({ size = 'full' }){
 // 60/70)의 RB-PSST-2026 루브릭 4항목(EV-01~04)을 그대로 옮겼다 — reasons는 이
 // items에서 만점 미달 항목만 뽑아 만든다(하드코딩된 문구 2줄이던 이전 값보다
 // 항목별 근거가 분명하다).
-export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', itemInfo, projectId }){
+export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', itemInfo, projectId, reworkCounts = {}, onRework }){
   const docScore = DOC_SCORE_BY_OUTCOME[scoreOutcome];
   const docScoreScaled = Math.round((docScore.raw / docScore.max) * 100);
   const passed = docScoreScaled >= FINAL_THRESHOLD;
@@ -196,7 +197,12 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
     onGenerate();
   };
 
+  // 재작성 상한(RERUN_CAP = 항목마다 1회)에 닿은 항목은 고를 수 없다.
+  const isCapped = (label) => isRerunCapped(reworkCounts, label);
+  const allCapped = WRITING_SUBTASKS.every(isCapped);
+
   const toggleTask = (label) => {
+    if (isCapped(label)) return;
     setCheckedTasks((prev) => (prev.includes(label) ? prev.filter((t) => t !== label) : [...prev, label]));
     setCompletedTasks((prev) => prev.filter((t) => t !== label));
   };
@@ -207,13 +213,17 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
   const handleRewrite = async () => {
     // 프로토타입이 이 계획서로 만들어지는 중이라 지금 본문을 다시 쓰면 둘이 어긋난다.
     if (generating || runningTasks.length > 0) return;
-    if (checkedTasks.length === 0) return;
-    const picked = checkedTasks;
+    // 상한에 닿은 항목은 체크 자체가 막혀 있지만, 이미 체크해둔 사이에 상한에 닿는 경우
+    // (종합 평가에서 같은 Task를 쓰고 돌아온 경우)까지 여기서 한 번 더 걸러낸다.
+    const picked = checkedTasks.filter((label) => !isCapped(label));
+    if (picked.length === 0) return;
     setRunningTasks(picked);
     setCheckedTasks([]);
     const taskKeys = [...new Set(picked.map((label) => TASK_KEY_BY_LABEL[label]).filter(Boolean))];
     try {
       if (projectId) await Promise.all(taskKeys.map((key) => retryTask(projectId, key)));
+      // 실제로 재시도가 나간 뒤에만 횟수를 센다 — 실패한 호출로 상한을 깎으면 안 된다.
+      if (onRework) onRework(picked);
       setCompletedTasks((prev) => [...new Set([...prev, ...picked])]);
     } catch (err) {
       console.error('재작성 요청이 실패했어요', err);
@@ -273,32 +283,41 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
           )}
 
           <div className="mt-5 rounded-xl border border-[var(--border)] p-4">
-            <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-3">다시 준비할 항목</p>
+            <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-1">다시 준비할 항목</p>
+            <p className="text-[11px] text-[var(--muted-fg)] mb-3">항목마다 재작성은 {RERUN_CAP}회까지만 가능해요</p>
             <div className="flex flex-col gap-2">
               {WRITING_SUBTASKS.map((label) => {
                 const isRunning = runningTasks.includes(label);
                 const isDone = !isRunning && completedTasks.includes(label);
+                const left = rerunLeftOf(reworkCounts, label);
+                const capped = left <= 0;
                 return (
-                  <label key={label} className={`flex items-center gap-2.5 text-[13px] ${isRunning || generating ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>
+                  <label key={label} className={`flex items-center gap-2.5 text-[13px] ${isRunning || generating || capped ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>
                     {isRunning ? (
                       <span className="rewrite-indicator" aria-hidden="true"></span>
                     ) : (
                       <input type="checkbox" checked={checkedTasks.includes(label)} onChange={() => toggleTask(label)}
-                        disabled={generating}
+                        disabled={generating || capped}
                         className="w-4 h-4 accent-[var(--primary)] disabled:cursor-not-allowed" />
                     )}
                     <span>
                       {isRunning ? `${label} 재작성 중…` : label}
                       {isDone && <span className="ml-1.5 text-[11.5px] font-semibold text-[var(--ok)]">✓ 재작성 완료</span>}
+                      {!isRunning && <RerunLeftBadge left={left} />}
                     </span>
                   </label>
                 );
               })}
             </div>
-            <button onClick={handleRewrite} disabled={generating || checkedTasks.length === 0 || runningTasks.length > 0}
+            <button onClick={handleRewrite} disabled={generating || allCapped || checkedTasks.length === 0 || runningTasks.length > 0}
               className="w-full mt-3 rounded-lg border border-[var(--border)] py-2.5 text-[13.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--bg)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-              선택 항목 재작성
+              {allCapped ? `재작성 상한 ${RERUN_CAP}회 도달` : '선택 항목 재작성'}
             </button>
+            {allCapped && (
+              <p className="mt-2 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">
+                모든 항목의 재작성 {RERUN_CAP}회를 다 썼어요. 지금 상태로 프로토타입 생성으로 넘어가 주세요.
+              </p>
+            )}
             {generating && (
               <p className="mt-2 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">
                 프로토타입을 만드는 중에는 계획서를 다시 쓸 수 없어요. 생성이 끝나면 다시 열려요.

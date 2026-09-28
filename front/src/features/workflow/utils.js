@@ -1,5 +1,5 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
-import {DOC_ITEMS_FAIL,DOC_ITEMS_PASS,CODE_CHECK_ITEMS_BY_CATEGORY,CODE_CHECK_FAILS_BY_OUTCOME,APPLICANT_TYPE_LABEL,PROJECT_STATUS_TONE} from './data.js';
+import {DOC_ITEMS_FAIL,DOC_ITEMS_PASS,CODE_CHECK_ITEMS_BY_CATEGORY,CODE_CHECK_FAILS_BY_OUTCOME,APPLICANT_TYPE_LABEL,PROJECT_STATUS_TONE,RERUN_CAP} from './data.js';
 
 export const MOCK_TODAY = new Date('2026-09-08');
 
@@ -105,6 +105,15 @@ export function buildCodeCheckItems(category, scoreOutcome){
 // 내용 너비(clientWidth, 세로 스크롤바를 뺀 값)를 재서 배율을 그때그때 계산한다.
 // transform:scale은 그려지는 크기만 줄이고 레이아웃 박스는 원본(1440x3770) 그대로 두기
 // 때문에, 축소된 크기로 감싸는 div를 하나 더 둬야 스크롤 범위가 눈에 보이는 높이와 맞는다.
+// 항목별 남은 재작성 횟수 — reworkCounts는 { 라벨: 쓴 횟수 }(useWorkflowStore).
+// 상한은 항목마다 RERUN_CAP회이고, 계획서·산출물·종합 평가 세 화면이 같은 카운트를 본다.
+export function rerunLeftOf(counts, label){
+  return Math.max(0, RERUN_CAP - ((counts && counts[label]) || 0));
+}
+export function isRerunCapped(counts, label){
+  return rerunLeftOf(counts, label) <= 0;
+}
+
 export function taskReasons(label, docScore, artifactScore){
   if (label === '사업계획서 본문 작성') return docScore.reasons.map((r) => `［문서층］ ${r}`);
   if (label === '실행 파일 제작') {

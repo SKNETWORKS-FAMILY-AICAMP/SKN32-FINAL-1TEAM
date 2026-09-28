@@ -86,9 +86,9 @@ export default function App(){
  // (app/routers/projects.py _build_demo_response 참고).
  const {
   itemInfo,announcement,checkedFailedTitles,returnToDashboard,scoreOutcome,docOutcome,artifactOutcome,
-  projectId,pipelineResult,matchCandidates,
+  projectId,pipelineResult,matchCandidates,reworkCounts,
   setItemInfo,setAnnouncement,setCheckedFailedTitles,setReturnToDashboard,setDocOutcome,setArtifactOutcome,
-  setProjectId,setPipelineResult,setMatchCandidates,setVerdictPending,resetScoreOutcome,resetProject,
+  setProjectId,setPipelineResult,setMatchCandidates,setVerdictPending,resetScoreOutcome,resetProject,countRework,
  }=useWorkflowStore();
  useEffect(()=>{window.scrollTo({top:0});document.title=(view==='landing'?'아이디어를 다음 단계로':'나의 워크스페이스')+' | S-Brain'},[view]);
  // 위 RESUMABLE_VIEWS 화면에 머무는 동안엔 매번 "지금 보던 화면"을 기록해둔다 — 검수는
@@ -334,10 +334,10 @@ export default function App(){
   {view==='match-results'&&<MatchResults projectId={projectId} candidates={matchCandidates} onCandidatesLoaded={setMatchCandidates} onBack={()=>setView(returnToDashboard?'dashboard':'intake')} backLabel={returnToDashboard?'내 프로젝트로 돌아가기':'아이템 정보 다시 입력하기'} onCheckEligibility={handleCheckEligibility} disabledTitles={checkedFailedTitles}/>}
   {view==='eligibility-gate'&&<EligibilityGate announcement={announcement} eligibility={pipelineResult?.eligibility} onProceed={()=>setView('plan-progress')} onLeave={(title,failed)=>{if(failed)setCheckedFailedTitles(p=>[...new Set([...p,title])]);setView('match-results')}}/>}
   {view==='plan-progress'&&<GenerationProgress kind="plan" projectId={projectId} onDone={()=>setView('plan-form')} onLeave={()=>setView('dashboard')}/>}
-  {view==='plan-form'&&<PlanForm announcement={announcement} onGenerate={()=>setView('artifact-progress')} scoreOutcome={scoreOutcome} itemInfo={itemInfo} projectId={projectId}/>}
+  {view==='plan-form'&&<PlanForm announcement={announcement} onGenerate={()=>setView('artifact-progress')} scoreOutcome={scoreOutcome} itemInfo={itemInfo} projectId={projectId} reworkCounts={reworkCounts} onRework={countRework}/>}
   {view==='artifact-progress'&&<GenerationProgress kind="artifact" projectId={projectId} itemInfo={itemInfo} onDone={()=>setView('artifact-result')} onLeave={()=>setView('dashboard')}/>}
-  {view==='artifact-result'&&<ArtifactResult announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('plan-form')} onFinalize={()=>setView('final-verdict')} scoreOutcome={scoreOutcome} projectId={projectId}/>}
-  {view==='final-verdict'&&<FinalVerdict announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('artifact-result')} onProceed={()=>setView('review')} docOutcome={docOutcome} artifactOutcome={artifactOutcome} setDocOutcome={setDocOutcome} setArtifactOutcome={setArtifactOutcome} projectId={projectId}/>}
+  {view==='artifact-result'&&<ArtifactResult announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('plan-form')} onFinalize={()=>setView('final-verdict')} scoreOutcome={scoreOutcome} projectId={projectId} reworkCounts={reworkCounts} onRework={countRework}/>}
+  {view==='final-verdict'&&<FinalVerdict announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('artifact-result')} onProceed={()=>setView('review')} docOutcome={docOutcome} artifactOutcome={artifactOutcome} setDocOutcome={setDocOutcome} setArtifactOutcome={setArtifactOutcome} projectId={projectId} reworkCounts={reworkCounts} onRework={countRework}/>}
   {view==='review'&&<ReviewScreen announcement={announcement} itemInfo={itemInfo} docOutcome={docOutcome} artifactOutcome={artifactOutcome} onGoDashboard={()=>setView('dashboard')} projectId={projectId} verdict={pipelineResult?.verdict}/>}
  </WorkspaceShell>;
  // 저장 전 강제 이동 모달은 view가 무엇이든(랜딩·워크스페이스 어느 화면 위에도) 뜰 수 있어야

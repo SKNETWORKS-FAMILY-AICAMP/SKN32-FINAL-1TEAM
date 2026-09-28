@@ -1,7 +1,7 @@
 import React,{useState,useEffect} from 'react';
 import {Brand,Icon} from './Icons.jsx';
 import {NotificationBell} from '../features/Workflow.jsx';
-import {listProjects,deleteProject,startPlanGeneration,startPrototypeGeneration} from '../api.js';
+import {listProjects,deleteProject,deleteProjectPermanently,startPlanGeneration,startPrototypeGeneration} from '../api.js';
 export const steps=[['intake','아이템 입력'],['match-results','공고 찾기'],['plan-form','사업계획서'],['artifact-result','프로토타입'],['final-verdict','제출 전 점검'],['review','최종 결과물']];
 export function WorkspaceShell({view,user,onHome,onDashboard,onMyPage,onNewProject,onLogout,notifyEnabled,onToggleNotify,onOpenProject,children}){
  const index=['match-progress','eligibility-gate','eligibility-fail'].includes(view)?1:view==='plan-progress'?2:view==='artifact-progress'?3:view==='final-pass'?4:steps.findIndex(x=>x[0]===view);
@@ -32,6 +32,9 @@ export function Dashboard({onNewProject,onOpenProject}){
  const [query,setQuery]=useState('');const [filter,setFilter]=useState('전체');const [guard,setGuard]=useState(false);
  const [projects,setProjects]=useState([]);const [loading,setLoading]=useState(true);const [loadError,setLoadError]=useState(false);
  const [confirmingId,setConfirmingId]=useState(null);const [deletingId,setDeletingId]=useState(null);
+ // "완전히 삭제"는 되돌릴 수 없어서 한 단계를 더 둔다 — 이 값이 그 프로젝트 id면 확인 자리가
+ // 완전 삭제 최종 확인으로 바뀐다.
+ const [permanentId,setPermanentId]=useState(null);
  const [retryingId,setRetryingId]=useState(null);const [retryError,setRetryError]=useState('');
 
  useEffect(()=>{
@@ -75,20 +78,24 @@ export function Dashboard({onNewProject,onOpenProject}){
   finally{setRetryingId(null)}
  };
 
- // 휴지통 버튼 — 실수로 바로 지워지지 않게 한 번 더 확인을 거친다(같은 자리에서
- // "정말 삭제할까요?"로 바뀌었다가 다시 누르면 실제 삭제). 매칭 전이면 서버가 진짜
- // 지우고, 매칭 이후면 보관 처리만 한다(deleteProject 주석 참고) — 어느 쪽이든
- // 프론트는 그냥 내 목록에서 빼면 된다.
- const handleDelete=async(id)=>{
+ // 휴지통 버튼 — 실수로 바로 지워지지 않게 한 번 더 확인을 거친다. 확인 자리에서 둘 중
+ // 하나를 고른다(기획서 6-7 "건별 삭제" 대응):
+ //  · 목록에서 숨기기 = DELETE /projects/{id}. 매칭 전이면 서버가 진짜 지우고, 매칭
+ //    이후면 보관 처리(archived_at)만 한다 — 관리자 "진행 현황" 탭에서 복원할 수 있다.
+ //  · 완전히 삭제 = DELETE /projects/{id}/permanent. 입력값·첨부·계획서·산출물·실행
+ //    이력까지 한 번에 지우고 되돌릴 수 없다.
+ // 어느 쪽이든 프론트는 내 목록에서 빼면 된다.
+ const handleDelete=async(id,permanent)=>{
   setDeletingId(id);
   try{
-   await deleteProject(id);
+   await (permanent?deleteProjectPermanently(id):deleteProject(id));
    setProjects(list=>list.filter(p=>p.id!==id));
+   try{localStorage.removeItem(lastViewKey(id))}catch(e){}
   }catch(err){
    console.error('프로젝트를 지우지 못했어요',err);
    window.alert('프로젝트를 지우지 못했어요. 다시 시도해 주세요.');
   }finally{
-   setDeletingId(null);setConfirmingId(null);
+   setDeletingId(null);setConfirmingId(null);setPermanentId(null);
   }
  };
 
@@ -118,13 +125,30 @@ export function Dashboard({onNewProject,onOpenProject}){
       <Icon name="chevron" size={21}/>
      </button>
      {confirmingId===p.id?(
+      /* "지울까요?"는 한 번만 묻고, 자료까지 지울지는 체크 하나로 고르게 한다 — 버튼 두
+         개를 나란히 두면 사용자가 둘의 차이부터 해석해야 해서(사용자 지적) 그냥 지우고
+         싶은 사람까지 멈춰 세운다. 체크를 켜면 문구와 버튼이 같이 바뀌어서, 지금 무엇을
+         누르는지가 누르기 전에 보인다. */
       <div className="project-row-confirm">
-       <span>삭제할까요?</span>
-       <button className="text-link" disabled={deletingId===p.id} onClick={()=>handleDelete(p.id)}>{deletingId===p.id?'삭제 중…':'삭제'}</button>
-       <button className="icon-button" aria-label="삭제 취소" onClick={()=>setConfirmingId(null)}><Icon name="close" size={15}/></button>
+       <span>{permanentId===p.id
+        ?'계획서·프로토타입·첨부까지 모두 지워요. 되돌릴 수 없어요.'
+        :'이 프로젝트를 지울까요?'}</span>
+       {/* 생성이 도는 중에 자료를 지우면 서버 백그라운드 작업이 없는 행을 계속 쓴다
+           (app/routers/projects.py _simulate_generation) — 끝난 뒤에 지우게 막는다. */}
+       <label className={'confirm-check'+(p.generating?' is-off':'')}
+         title={p.generating?'만드는 중에는 자료를 지울 수 없어요. 끝난 뒤에 지워 주세요':undefined}>
+        <input type="checkbox" checked={permanentId===p.id} disabled={deletingId===p.id||!!p.generating}
+          onChange={e=>setPermanentId(e.target.checked?p.id:null)}/>
+        자료까지 지우기
+       </label>
+       <button className={'text-link'+(permanentId===p.id?' is-danger':'')} disabled={deletingId===p.id}
+         onClick={()=>handleDelete(p.id,permanentId===p.id)}>
+        {deletingId===p.id?'지우는 중…':permanentId===p.id?'완전히 삭제':'삭제'}
+       </button>
+       <button className="icon-button" aria-label="삭제 취소" onClick={()=>{setConfirmingId(null);setPermanentId(null)}}><Icon name="close" size={15}/></button>
       </div>
      ):(
-      <button className="project-row-delete" aria-label={`${p.name} 삭제`} onClick={()=>setConfirmingId(p.id)}><Icon name="trash" size={17}/></button>
+      <button className="project-row-delete" aria-label={`${p.name} 삭제`} onClick={()=>{setConfirmingId(p.id);setPermanentId(null)}}><Icon name="trash" size={17}/></button>
      )}
     </div>)}
    {isNewUser

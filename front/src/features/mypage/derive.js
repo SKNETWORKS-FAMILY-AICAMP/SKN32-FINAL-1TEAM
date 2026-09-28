@@ -81,7 +81,8 @@ export const EMPTY_TEAM_ROW = { name: '', role: '', career: '' };
 export const CAREER_FIELDS = [
   { key: 'type', label: '구분', type: 'select', options: CAREER_TYPES },
   { key: 'title', label: '내용', placeholder: '○○전자 · 백엔드 개발' },
-  { key: 'period', label: '기간', placeholder: '2019.03 – 2023.10' },
+  // 달력(월 선택) 두 칸으로 받고 'YYYY-MM ~ YYYY-MM' 문자열로 저장한다(ui.jsx MonthRangeInput).
+  { key: 'period', label: '기간', type: 'monthrange' },
   { key: 'hasProof', label: '증빙 있음', type: 'check' },
 ];
 export const HIRE_FIELDS = [
