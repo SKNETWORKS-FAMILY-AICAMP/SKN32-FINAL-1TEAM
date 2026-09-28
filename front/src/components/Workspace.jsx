@@ -37,6 +37,9 @@ export function Dashboard({onNewProject,onOpenProject}){
  const [permanentId,setPermanentId]=useState(null);
  const [retryingId,setRetryingId]=useState(null);const [retryError,setRetryError]=useState('');
 
+ // 목록을 즉시 다시 받아야 할 때 쓴다(예: 삭제가 409로 거절당해 내 목록이 서버와 어긋났을 때).
+ const [reloadKey,setReloadKey]=useState(0);
+ const reload=()=>setReloadKey(k=>k+1);
  useEffect(()=>{
   let cancelled=false;let timer=null;
   setLoading(true);setLoadError(false);
@@ -61,7 +64,7 @@ export function Dashboard({onNewProject,onOpenProject}){
   });
   load();
   return ()=>{cancelled=true;clearTimeout(timer)};
- },[]);
+ },[reloadKey]);
 
  const isNewUser=!loading&&!loadError&&projects.length===0;
  const filtered=projects.filter(p=>(p.name+' '+p.announcementTitle).includes(query)&&(filter==='전체'||(filter==='진행 중'?p.progress<100:p.progress===100)));
@@ -93,7 +96,14 @@ export function Dashboard({onNewProject,onOpenProject}){
    try{localStorage.removeItem(lastViewKey(id))}catch(e){}
   }catch(err){
    console.error('프로젝트를 지우지 못했어요',err);
-   window.alert('프로젝트를 지우지 못했어요. 다시 시도해 주세요.');
+   // 서버가 409로 거절할 때는 detail에 사유가 온다(예: 생성 중엔 완전 삭제 불가).
+   // 아래 체크박스는 p.generating(5초 폴링 스냅샷)으로 막지만, 다른 탭에서 방금 생성이
+   // 시작된 직후처럼 폴링이 아직 안 돈 순간엔 열려 있을 수 있다 — 그 틈으로 눌렀을 때
+   // "다시 시도해 주세요"만 뜨면 왜 안 되는지 알 수가 없다. 사유가 오면 그대로 띄운다.
+   const detail=typeof err?.detail==='string'?err.detail:null;
+   window.alert(detail||'프로젝트를 지우지 못했어요. 다시 시도해 주세요.');
+   // 거절당했다는 건 내 목록이 서버와 어긋나 있다는 뜻이라 즉시 다시 받아온다.
+   if(err?.status===409)reload();
   }finally{
    setDeletingId(null);setConfirmingId(null);setPermanentId(null);
   }
