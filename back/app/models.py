@@ -1024,6 +1024,13 @@ class AgentExecution(Base):
     status: Mapped[str] = mapped_column(_GenerationStatus)
     started_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
 
+    # [2026-09-28 신규] status='failed'일 때만 채운다. error_kind는 match_results.
+    # last_error_kind와 같은 분류(일시/입력/운영, app/pipeline_stages.py classify_error_kind)
+    # 를 그대로 재사용한다 — "재시도 가능 여부"는 error_kind == '일시'로 파생되는 값이라
+    # 별도 컬럼을 두지 않는다(admin.py list_agent_executions가 응답에서 계산해 내려준다).
+    error_kind: Mapped[str | None] = mapped_column(_ErrorKind, nullable=True)
+    error_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
 
 # ---------------------------------------------------------------------------
 # 검증 정책 (admin-dashboard.html 검증 정책 탭과 대응)

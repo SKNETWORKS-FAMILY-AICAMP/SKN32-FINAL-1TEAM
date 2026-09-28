@@ -503,15 +503,24 @@ def answer_faq(faq_id: int, body: FaqAnswerIn, db: Session = Depends(get_db), _a
 @router.get('/agent-executions', response_model=None)
 def list_agent_executions(
     match_id: int | None = None,
+    status: str | None = None,
     limit: int = 100,
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
     """에이전트 테스크 탭 — 실행 로그 원시 목록. 응답 모델을 스키마로 고정하지 않고
-    dict 로 내려서 admin-dashboard.html 쪽 표 컬럼이 바뀌어도 유연하게 대응한다."""
+    dict 로 내려서 admin-dashboard.html 쪽 표 컬럼이 바뀌어도 유연하게 대응한다.
+
+    [2026-09-28 신규] status='failed'로 필터링하면 "최근 500건" 캡에 최근 성공 실행이
+    섞여 정작 봐야 할 실패 건이 밀려나는 문제 없이, 지금 쌓여 있는 실패 건만 최대 500개
+    받을 수 있다. error_kind/error_reason은 status='failed'일 때만 값이 있고(app/models.py
+    AgentExecution), retryable은 error_kind가 '일시'(=자동 재개 대상)인지로 여기서
+    계산해 내려준다 — 별도 컬럼으로 저장하면 error_kind와 값이 어긋날 수 있어서다."""
     q = db.query(AgentExecution).order_by(AgentExecution.execution_id.desc())
     if match_id is not None:
         q = q.filter(AgentExecution.match_id == match_id)
+    if status is not None:
+        q = q.filter(AgentExecution.status == status)
     rows = q.limit(min(limit, 500)).all()
     return [
         {
@@ -523,6 +532,9 @@ def list_agent_executions(
             'rerun_type': r.rerun_type,
             'token_usage': r.token_usage,
             'status': r.status,
+            'error_kind': r.error_kind,
+            'error_reason': r.error_reason,
+            'retryable': (r.error_kind == ps.ERROR_KIND_TRANSIENT) if r.error_kind is not None else None,
             'started_at': r.started_at.isoformat() if r.started_at else None,
         }
         for r in rows

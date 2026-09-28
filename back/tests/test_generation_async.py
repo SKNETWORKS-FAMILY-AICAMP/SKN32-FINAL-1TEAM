@@ -245,6 +245,42 @@ def test_operational_error_fails_immediately_without_resume(authed_client, db_se
     assert alerts[0].resume_count == 0
 
 
+def test_stage_failure_records_agent_execution(authed_client, db_session, monkeypatch):
+    """[2026-09-28 신규] 관리자 "에이전트 테스크" 탭이 단계(stage) 단위 실패도 볼 수
+    있어야 한다 — _simulate_generation이 실패하면 match_results뿐 아니라
+    agent_executions에도 status='failed' + error_kind/error_reason 행이 남아야 한다
+    (app/pipeline_stages.py STAGE_TO_AGENT_TASK 참고)."""
+    from app.models import AgentExecution
+
+    monkeypatch.setattr(projects_router, 'DUMMY_GENERATION_STEP_SECONDS', 0.02)
+    _monkeypatch_boom(monkeypatch, message='결제 크레딧 소진으로 호출 실패(테스트)')
+
+    match = _create_match(authed_client, db_session, 'NOTICE-ASYNC-AGENTLOG')
+    match.stage = projects_router.ps.STAGE_PLAN_WRITING
+    match.progress_percent = 0
+    match.worker_claimed_at = None
+    db_session.commit()
+
+    claimed = projects_router._try_claim_and_run(
+        match.match_id, projects_router.ps.STAGE_PLAN_WRITING, projects_router.ps.STAGE_PLAN_REVIEW_PENDING,
+    )
+    assert claimed is True
+
+    _wait_until_status(db_session, match, 'failed')
+
+    execution = (
+        db_session.query(AgentExecution)
+        .filter(AgentExecution.match_id == match.match_id, AgentExecution.task_key == 'writing')
+        .order_by(AgentExecution.attempt_no.desc())
+        .first()
+    )
+    assert execution is not None, 'stage 실패가 agent_executions에 안 남았음'
+    assert execution.agent_name == '작성'
+    assert execution.status == 'failed'
+    assert execution.error_kind == projects_router.ps.ERROR_KIND_OPERATIONAL
+    assert '결제 크레딧 소진' in execution.error_reason
+
+
 def test_recovery_does_not_retry_before_next_retry_at(authed_client, db_session):
     """status='waiting_resume'이어도 next_retry_at이 아직 안 지났으면 복구 루프가
     건드리면 안 된다 — 백오프 간격을 지켜야 함."""

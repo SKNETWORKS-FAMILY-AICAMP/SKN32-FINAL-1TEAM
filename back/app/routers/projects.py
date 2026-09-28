@@ -771,6 +771,30 @@ def _simulate_generation(match_id: int, running_stage: str, done_stage: str) -> 
                 match.failure_reason = str(exc)[:2000]
                 error_kind = ps.classify_error_kind(exc)
                 match.last_error_kind = error_kind
+                # [2026-09-28 신규] 관리자 "에이전트 테스크" 탭이 stage 단위 실패도 볼 수
+                # 있도록 agent_executions에도 남긴다 — 재시도(POST .../retry-task)와 같은
+                # attempt_no 채번 규칙(같은 task_key 안에서 이어서 증가)을 쓴다.
+                stage_agent_task = ps.STAGE_TO_AGENT_TASK.get(running_stage)
+                if stage_agent_task is not None:
+                    stage_agent_name, stage_task_key = stage_agent_task
+                    last_stage_attempt = (
+                        db.query(AgentExecution)
+                        .filter(AgentExecution.match_id == match.match_id, AgentExecution.task_key == stage_task_key)
+                        .order_by(AgentExecution.attempt_no.desc())
+                        .first()
+                    )
+                    db.add(AgentExecution(
+                        match_id=match.match_id,
+                        agent_name=stage_agent_name,
+                        task_key=stage_task_key,
+                        attempt_no=(last_stage_attempt.attempt_no + 1) if last_stage_attempt is not None else 1,
+                        model_used='dummy',
+                        rerun_type='initial' if last_stage_attempt is None else 'rerun',
+                        token_usage=0,
+                        status=ps.GENERATION_STATUS_FAILED,
+                        error_kind=error_kind,
+                        error_reason=match.failure_reason,
+                    ))
                 if error_kind != ps.ERROR_KIND_TRANSIENT:
                     match.status = ps.GENERATION_STATUS_FAILED
                     match.next_retry_at = None
@@ -1625,162 +1649,188 @@ def retry_task(
     changed: dict = {}
     task_key = body.task_key
 
-    if task_key == 'strategy':
-        # app/agents.py — 실제 Agent가 연동되면 이 호출 하나만 실제 구현으로 바뀐다(계약은
-        # 동일하게 유지). 지금은 더미 구현이 무작위 값을 돌려준다. [2026-09-22 수정]
-        # plan_sections '3-1' 대신 plan_canonical_data에 쓴다 — agents.py 모듈 docstring의
-        # "2026-09-22 수정" 참고(Strategy Agent는 분석 자료를 만들 뿐, 최종 문단은 작성
-        # Agent 몫이라는 시트 구조에 맞춤).
-        results = agents.run_strategy_agent_retry(project.description)
-        changed['canonical_data'] = {r.data_key: _upsert_canonical_data(db, plan.plan_id, r) for r in results}
+    try:
+        if task_key == 'strategy':
+            # app/agents.py — 실제 Agent가 연동되면 이 호출 하나만 실제 구현으로 바뀐다(계약은
+            # 동일하게 유지). 지금은 더미 구현이 무작위 값을 돌려준다. [2026-09-22 수정]
+            # plan_sections '3-1' 대신 plan_canonical_data에 쓴다 — agents.py 모듈 docstring의
+            # "2026-09-22 수정" 참고(Strategy Agent는 분석 자료를 만들 뿐, 최종 문단은 작성
+            # Agent 몫이라는 시트 구조에 맞춤).
+            results = agents.run_strategy_agent_retry(project.description)
+            changed['canonical_data'] = {r.data_key: _upsert_canonical_data(db, plan.plan_id, r) for r in results}
 
-    elif task_key == 'writing':
-        drafts = agents.run_writing_agent_retry(project.description, tags=['1-1', '2-1'])
-        changed['sections'] = {d.tag: _upsert_plan_section(db, plan.plan_id, d) for d in drafts}
+        elif task_key == 'writing':
+            drafts = agents.run_writing_agent_retry(project.description, tags=['1-1', '2-1'])
+            changed['sections'] = {d.tag: _upsert_plan_section(db, plan.plan_id, d) for d in drafts}
 
-        # [2026-09-18 추가] "본문/그래프/표를 재작성했는데 왜 점수가 그대로냐"는 지적(하정원님)
-        # — 작성은 콘텐츠만 바꾸고 채점은 검증-1 몫이라 그동안 점수가 안 바뀌었는데, 실제
-        # 화면에도 검증-1을 따로 재시도하는 버튼이 없어(재작성 버튼뿐) 사용자가 점수를 갱신할
-        # 방법 자체가 없었다. 그래서 작성 재시도에 검증-1(rubric+evidence) 재채점을 자동으로
-        # 붙인다 — 채점 근거가 아직 없으면(초기 파이프라인 전) 조용히 건너뛴다.
-        verify1_changed = {}
-        for verify1_key in ('verify1_rubric', 'verify1_evidence'):
-            result = _rescore_verify1(db, plan, verify1_key)
-            if result is not None:
-                verify1_changed[verify1_key] = result
-        if verify1_changed:
-            changed['verify1_rescore'] = verify1_changed
+            # [2026-09-18 추가] "본문/그래프/표를 재작성했는데 왜 점수가 그대로냐"는 지적(하정원님)
+            # — 작성은 콘텐츠만 바꾸고 채점은 검증-1 몫이라 그동안 점수가 안 바뀌었는데, 실제
+            # 화면에도 검증-1을 따로 재시도하는 버튼이 없어(재작성 버튼뿐) 사용자가 점수를 갱신할
+            # 방법 자체가 없었다. 그래서 작성 재시도에 검증-1(rubric+evidence) 재채점을 자동으로
+            # 붙인다 — 채점 근거가 아직 없으면(초기 파이프라인 전) 조용히 건너뛴다.
+            verify1_changed = {}
+            for verify1_key in ('verify1_rubric', 'verify1_evidence'):
+                result = _rescore_verify1(db, plan, verify1_key)
+                if result is not None:
+                    verify1_changed[verify1_key] = result
+            if verify1_changed:
+                changed['verify1_rescore'] = verify1_changed
 
-    elif task_key in ('verify1_rubric', 'verify1_evidence'):
-        result = _rescore_verify1(db, plan, task_key)
-        if result is None:
-            raise HTTPException(status_code=404, detail='재채점할 채점 근거(plan_score_reasons)가 없습니다')
-        changed.update(result)
+        elif task_key in ('verify1_rubric', 'verify1_evidence'):
+            result = _rescore_verify1(db, plan, task_key)
+            if result is None:
+                raise HTTPException(status_code=404, detail='재채점할 채점 근거(plan_score_reasons)가 없습니다')
+            changed.update(result)
 
-    elif task_key in ('implement_prototype', 'implement_infographic'):
-        artifact = (
-            db.query(Artifact)
-            .filter(Artifact.plan_id == plan.plan_id)
-            .order_by(Artifact.artifact_id.desc())
-            .first()
-        )
-        if artifact is None:
-            raise HTTPException(status_code=404, detail='재시도할 산출물(artifacts)이 없습니다')
-        if task_key == 'implement_prototype' and artifact.category == 'onepage':
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "category='onepage' 산출물은 설계상 실행 파일(executable_path)이 없어서 "
-                    '프로토타입 재시도 대상이 아닙니다 (인포그래픽 재시도만 가능)'
-                ),
+        elif task_key in ('implement_prototype', 'implement_infographic'):
+            artifact = (
+                db.query(Artifact)
+                .filter(Artifact.plan_id == plan.plan_id)
+                .order_by(Artifact.artifact_id.desc())
+                .first()
+            )
+            if artifact is None:
+                raise HTTPException(status_code=404, detail='재시도할 산출물(artifacts)이 없습니다')
+            if task_key == 'implement_prototype' and artifact.category == 'onepage':
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "category='onepage' 산출물은 설계상 실행 파일(executable_path)이 없어서 "
+                        '프로토타입 재시도 대상이 아닙니다 (인포그래픽 재시도만 가능)'
+                    ),
+                )
+
+            # 구현 Agent는 파일만 새로 만든다 — 채점(점수 갱신)은 검증-2(verify2_*) 몫이다.
+            artifact_kind = 'prototype' if task_key == 'implement_prototype' else 'infographic'
+            result = agents.run_implement_agent_retry(
+                artifact_kind=artifact_kind, project_description=project.description,
             )
 
-        # 구현 Agent는 파일만 새로 만든다 — 채점(점수 갱신)은 검증-2(verify2_*) 몫이다.
-        artifact_kind = 'prototype' if task_key == 'implement_prototype' else 'infographic'
-        result = agents.run_implement_agent_retry(
-            artifact_kind=artifact_kind, project_description=project.description,
-        )
+            # 파일은 app/agents.py가 만들어 돌려준 바이트를 그대로 저장한다 — 어디에 저장할지
+            # (UPLOAD_DIR)는 여전히 이쪽(호출부) 책임. _save_attachment()는 업로드용이라 재사용
+            # 하지 않고, 같은 저장 위치만 맞춘다.
+            os.makedirs(UPLOAD_DIR, exist_ok=True)
+            stored_name = f'{uuid.uuid4().hex}{result.file_ext}'
+            dest_path = os.path.join(UPLOAD_DIR, stored_name)
+            with open(dest_path, 'wb') as out:
+                out.write(result.file_bytes)
+            new_url = f'/uploads/{stored_name}'
 
-        # 파일은 app/agents.py가 만들어 돌려준 바이트를 그대로 저장한다 — 어디에 저장할지
-        # (UPLOAD_DIR)는 여전히 이쪽(호출부) 책임. _save_attachment()는 업로드용이라 재사용
-        # 하지 않고, 같은 저장 위치만 맞춘다.
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-        stored_name = f'{uuid.uuid4().hex}{result.file_ext}'
-        dest_path = os.path.join(UPLOAD_DIR, stored_name)
-        with open(dest_path, 'wb') as out:
-            out.write(result.file_bytes)
-        new_url = f'/uploads/{stored_name}'
+            if task_key == 'implement_prototype':
+                changed['executable_path'] = {'before': artifact.executable_path, 'after': new_url}
+                artifact.executable_path = new_url
+            else:
+                changed['infographic_path'] = {'before': artifact.infographic_path, 'after': new_url}
+                artifact.infographic_path = new_url
 
-        if task_key == 'implement_prototype':
-            changed['executable_path'] = {'before': artifact.executable_path, 'after': new_url}
-            artifact.executable_path = new_url
-        else:
-            changed['infographic_path'] = {'before': artifact.infographic_path, 'after': new_url}
-            artifact.infographic_path = new_url
+            # [2026-09-18 추가] writing과 같은 이유 — 구현(파일 재생성)에도 검증-2(static+
+            # crosscheck) 재채점을 자동으로 붙인다. 채점 근거가 없으면 조용히 건너뛴다.
+            verify2_changed = {}
+            for verify2_key in ('verify2_static', 'verify2_crosscheck'):
+                result = _rescore_verify2(db, plan, artifact, verify2_key)
+                if result is not None:
+                    verify2_changed[verify2_key] = result
+            if verify2_changed:
+                changed['verify2_rescore'] = verify2_changed
 
-        # [2026-09-18 추가] writing과 같은 이유 — 구현(파일 재생성)에도 검증-2(static+
-        # crosscheck) 재채점을 자동으로 붙인다. 채점 근거가 없으면 조용히 건너뛴다.
-        verify2_changed = {}
-        for verify2_key in ('verify2_static', 'verify2_crosscheck'):
-            result = _rescore_verify2(db, plan, artifact, verify2_key)
-            if result is not None:
-                verify2_changed[verify2_key] = result
-        if verify2_changed:
-            changed['verify2_rescore'] = verify2_changed
-
-    elif task_key in ('verify2_static', 'verify2_crosscheck'):
-        artifact = (
-            db.query(Artifact)
-            .filter(Artifact.plan_id == plan.plan_id)
-            .order_by(Artifact.artifact_id.desc())
-            .first()
-        )
-        if artifact is None:
-            raise HTTPException(status_code=404, detail='재채점할 산출물(artifacts)이 없습니다')
-
-        result = _rescore_verify2(db, plan, artifact, task_key)
-        if result is None:
-            prefixes = _VERIFY2_STATIC_PREFIXES if task_key == 'verify2_static' else _VERIFY2_CROSSCHECK_PREFIXES
-            raise HTTPException(
-                status_code=404,
-                detail=f'{task_key}에 해당하는 채점 근거(item_code 접두어 {prefixes})가 없습니다',
+        elif task_key in ('verify2_static', 'verify2_crosscheck'):
+            artifact = (
+                db.query(Artifact)
+                .filter(Artifact.plan_id == plan.plan_id)
+                .order_by(Artifact.artifact_id.desc())
+                .first()
             )
-        changed.update(result)
+            if artifact is None:
+                raise HTTPException(status_code=404, detail='재채점할 산출물(artifacts)이 없습니다')
 
-    elif task_key == 'review_expression':
-        latest = (
-            db.query(FormatFinding)
-            .filter(FormatFinding.plan_id == plan.plan_id)
-            .order_by(FormatFinding.finding_id.desc())
-            .first()
-        )
-        result = agents.run_review_expression_retry(project.description)
-        db.add(FormatFinding(
-            plan_id=plan.plan_id,
-            finding_type=result.finding_type,
-            location=result.location,
-            message=result.message,
-            severity=result.severity,
-        ))
-        changed['finding'] = {
-            'before': latest.message if latest is not None else None,
-            'after': result.message,
-        }
+            result = _rescore_verify2(db, plan, artifact, task_key)
+            if result is None:
+                prefixes = _VERIFY2_STATIC_PREFIXES if task_key == 'verify2_static' else _VERIFY2_CROSSCHECK_PREFIXES
+                raise HTTPException(
+                    status_code=404,
+                    detail=f'{task_key}에 해당하는 채점 근거(item_code 접두어 {prefixes})가 없습니다',
+                )
+            changed.update(result)
 
-    elif task_key == 'review_token_check':
-        latest = (
-            db.query(ProofreadLog)
-            .filter(ProofreadLog.plan_id == plan.plan_id)
-            .order_by(ProofreadLog.log_id.desc())
-            .first()
-        )
-        next_attempt_no = (latest.attempt_no + 1) if latest is not None else 1
-        result = agents.run_review_token_check_retry(project.description, attempt_no=next_attempt_no)
-        db.add(ProofreadLog(
-            plan_id=plan.plan_id,
-            original_text=(latest.corrected_text if latest is not None else project.description),
-            corrected_text=result.corrected_text,
-            reason=result.reason,
+        elif task_key == 'review_expression':
+            latest = (
+                db.query(FormatFinding)
+                .filter(FormatFinding.plan_id == plan.plan_id)
+                .order_by(FormatFinding.finding_id.desc())
+                .first()
+            )
+            result = agents.run_review_expression_retry(project.description)
+            db.add(FormatFinding(
+                plan_id=plan.plan_id,
+                finding_type=result.finding_type,
+                location=result.location,
+                message=result.message,
+                severity=result.severity,
+            ))
+            changed['finding'] = {
+                'before': latest.message if latest is not None else None,
+                'after': result.message,
+            }
+
+        elif task_key == 'review_token_check':
+            latest = (
+                db.query(ProofreadLog)
+                .filter(ProofreadLog.plan_id == plan.plan_id)
+                .order_by(ProofreadLog.log_id.desc())
+                .first()
+            )
+            next_attempt_no = (latest.attempt_no + 1) if latest is not None else 1
+            result = agents.run_review_token_check_retry(project.description, attempt_no=next_attempt_no)
+            db.add(ProofreadLog(
+                plan_id=plan.plan_id,
+                original_text=(latest.corrected_text if latest is not None else project.description),
+                corrected_text=result.corrected_text,
+                reason=result.reason,
+                attempt_no=next_attempt_no,
+                score=result.score,
+                passed=result.passed,
+                violation_type=result.violation_type,
+                violation_note=result.violation_note,
+                # passed=False인 시도는 그 즉시 "검수 회수 문단" 탭의 라벨링 대기열로 들어간다.
+                recovery_status=None if result.passed else 'pending',
+            ))
+            changed['corrected_text'] = {
+                'before': latest.corrected_text if latest is not None else None,
+                'after': result.corrected_text,
+            }
+            changed['score'] = {'before': _num(latest.score) if latest is not None else None, 'after': _num(result.score)}
+            changed['passed'] = result.passed
+            if not result.passed:
+                changed['violation_type'] = result.violation_type
+                changed['violation_note'] = result.violation_note
+
+        else:  # pragma: no cover — _RETRIABLE_TASK_KEYS 체크를 통과했으면 도달할 수 없다.
+            raise HTTPException(status_code=500, detail=f'처리 로직이 없는 task_key: {task_key!r}')
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # [2026-09-28 신규] 지금은 app.agents의 run_*_retry()가 전부 더미(무작위)라 실패할
+        # 일이 없지만, 실제 Agent가 연동된 뒤에는 여기서 예외가 날 수 있다 — 그때도 이
+        # 라우터를 다시 손대지 않도록 실패 기록을 미리 준비해둔다(_simulate_generation의
+        # 예외 분류 방식과 동일하게 classify_error_kind를 재사용).
+        error_kind = ps.classify_error_kind(exc)
+        db.add(AgentExecution(
+            match_id=match.match_id,
+            agent_name=agent_name,
+            task_key=body.task_key,
             attempt_no=next_attempt_no,
-            score=result.score,
-            passed=result.passed,
-            violation_type=result.violation_type,
-            violation_note=result.violation_note,
-            # passed=False인 시도는 그 즉시 "검수 회수 문단" 탭의 라벨링 대기열로 들어간다.
-            recovery_status=None if result.passed else 'pending',
+            model_used='dummy-retry',
+            rerun_type='rerun',
+            token_usage=0,
+            status=ps.GENERATION_STATUS_FAILED,
+            error_kind=error_kind,
+            error_reason=str(exc)[:2000],
         ))
-        changed['corrected_text'] = {
-            'before': latest.corrected_text if latest is not None else None,
-            'after': result.corrected_text,
-        }
-        changed['score'] = {'before': _num(latest.score) if latest is not None else None, 'after': _num(result.score)}
-        changed['passed'] = result.passed
-        if not result.passed:
-            changed['violation_type'] = result.violation_type
-            changed['violation_note'] = result.violation_note
-
-    else:  # pragma: no cover — _RETRIABLE_TASK_KEYS 체크를 통과했으면 도달할 수 없다.
-        raise HTTPException(status_code=500, detail=f'처리 로직이 없는 task_key: {task_key!r}')
+        db.commit()
+        raise HTTPException(
+            status_code=502,
+            detail={'message': '작업 재시도 중 오류가 발생했습니다', 'task_key': body.task_key, 'error_kind': error_kind},
+        ) from exc
 
     execution = AgentExecution(
         match_id=match.match_id,

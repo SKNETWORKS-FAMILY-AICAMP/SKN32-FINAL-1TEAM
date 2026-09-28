@@ -884,6 +884,41 @@ def test_get_agent_executions(admin_client, user_client, db_session):
     assert all('task_key' in row for row in res.json())
 
 
+def test_get_agent_executions_filters_by_status_and_reports_retryable(admin_client, user_client, db_session):
+    """[2026-09-28 신규] status='failed' 필터로 성공 실행 사이에 섞인 실패 건만 뽑을 수
+    있어야 하고, 응답의 error_kind/error_reason/retryable이 실제로 채워져야 한다.
+    retryable은 error_kind='일시'일 때만 True — 별도 컬럼이 아니라 여기서 계산된 값
+    (app/routers/admin.py list_agent_executions 참고)."""
+    import app.pipeline_stages as ps
+    from app.models import AgentExecution
+
+    project_id = _create_project(user_client, description='에이전트 실패 로그 검증용 프로젝트')
+    notice = Notice(
+        notice_id='ADMIN-TEST-003', source='k-startup', title='admin 검증용 더미 공고3', recruitment_status='진행중',
+    )
+    db_session.add(notice)
+    db_session.flush()
+    seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-003', retry_agents=())
+    match = db_session.query(MatchResult).filter_by(project_id=project_id).one()
+    db_session.add(AgentExecution(
+        match_id=match.match_id, agent_name='작성', task_key='writing', attempt_no=99,
+        model_used='dummy', rerun_type='rerun', token_usage=0, status='failed',
+        error_kind=ps.ERROR_KIND_TRANSIENT, error_reason='일시 오류(테스트)',
+    ))
+    db_session.commit()
+
+    res = admin_client.get('/admin/agent-executions', params={'status': 'failed'})
+    assert res.status_code == 200, res.text
+    rows = res.json()
+    assert len(rows) == 1, f'status=failed 필터가 성공 건까지 같이 돌려줌: {len(rows)}건'
+    assert rows[0]['error_kind'] == '일시'
+    assert rows[0]['error_reason'] == '일시 오류(테스트)'
+    assert rows[0]['retryable'] is True
+
+    completed = admin_client.get('/admin/agent-executions', params={'status': 'completed'}).json()
+    assert all(r['retryable'] is None for r in completed), '성공 건은 error_kind가 없으니 retryable도 None이어야 함'
+
+
 # ============================================================================
 # 권한 — 403(비관리자) / 401(정지 계정) 구분
 # ============================================================================

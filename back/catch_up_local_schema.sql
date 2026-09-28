@@ -236,6 +236,12 @@ SELECT * FROM (
 ) seed
 WHERE NOT EXISTS (SELECT 1 FROM verification_checklist_items);
 
+-- [2026-09-28 신규] agent_executions에 실패 상세(오류 분류/사유)를 추가한다 — 관리자
+-- "에이전트 테스크" 탭이 status='failed' 행의 원인과 재시도 가능 여부(error_kind='일시')를
+-- 보여주려면 필요하다(app/models.py AgentExecution, app/routers/admin.py list_agent_executions).
+CALL _add_col_if_missing('agent_executions', 'error_kind', "ENUM('일시','입력','운영') NULL COMMENT '실패 원인 분류(status=failed일 때만)'");
+CALL _add_col_if_missing('agent_executions', 'error_reason', "TEXT NULL COMMENT '실패 사유 원문(status=failed일 때만)'");
+
 DROP PROCEDURE IF EXISTS _add_col_if_missing;
 
 -- 복구 루프가 10초마다 WHERE stage=X AND (worker_claimed_at IS NULL OR 오래됨)을 도는데,

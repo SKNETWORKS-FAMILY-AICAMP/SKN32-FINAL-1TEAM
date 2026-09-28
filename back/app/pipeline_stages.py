@@ -187,3 +187,13 @@ BIZ_STATUS_CODE_ACTIVE = '01'
 BIZ_STATUS_CODE_SUSPENDED = '02'
 BIZ_STATUS_CODE_CLOSED = '03'
 BIZ_STATUS_CODES = (BIZ_STATUS_CODE_ACTIVE, BIZ_STATUS_CODE_SUSPENDED, BIZ_STATUS_CODE_CLOSED)
+
+# [2026-09-28 신규] match_results.stage(=_simulate_generation이 도는 단계) 실패를
+# agent_executions에도 남기기 위한 매핑 — 이 테이블엔 stage 컬럼이 없고 agent_name/
+# task_key로만 구분하므로, 어느 단계가 실패했는지를 FIXED_TASK_SEQUENCE(app/models.py)의
+# 가장 대표적인 task_key로 근사한다(계획서 작성 단계 전체 실패는 '작성'/'writing'으로,
+# 프로토타입 제작 단계 전체 실패는 '구현'/'implement_prototype'으로 기록).
+STAGE_TO_AGENT_TASK = {
+    STAGE_PLAN_WRITING: ('작성', 'writing'),
+    STAGE_PROTOTYPE_BUILDING: ('구현', 'implement_prototype'),
+}

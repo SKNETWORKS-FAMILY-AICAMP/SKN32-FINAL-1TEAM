@@ -1,4 +1,4 @@
-"""POST /projects/{id}/retry-task 확장분 검증 (pytest 버전) — verify_retry_task.py는
+"""POST /projects/{id}/retry-task 확장분 검증 (pytest 버전) — tests/verify_retry_task.py는
 "재시도하면 값이 실제로 바뀌는가"를 검증하고, 이 파일은 2026-09-18에 추가된 두 가지를
 검증한다:
 
@@ -20,6 +20,7 @@ from seed_dummy_pipeline import seed_dummy_pipeline
 
 def _client_for(user_id: int):
     from fastapi.testclient import TestClient
+
     from app.main import app as fastapi_app
     client = TestClient(fastapi_app)
     token = issue_access_token(user_id)
@@ -214,8 +215,8 @@ def test_review_token_check_increments_attempt_no(retry_setup, db_session):
 
 
 def test_review_token_check_violation_sets_recovery_pending(monkeypatch, retry_setup, db_session):
-    from app.models import ProofreadLog
     import app.routers.projects as projects_router
+    from app.models import ProofreadLog
 
     monkeypatch.setattr(
         projects_router.agents, 'run_review_token_check_retry',
@@ -248,8 +249,8 @@ def test_review_token_check_violation_sets_recovery_pending(monkeypatch, retry_s
 def test_review_token_check_stores_score_from_agent_result(monkeypatch, retry_setup, db_session):
     from decimal import Decimal
 
-    from app.models import ProofreadLog
     import app.routers.projects as projects_router
+    from app.models import ProofreadLog
 
     monkeypatch.setattr(
         projects_router.agents, 'run_review_token_check_retry',
@@ -272,9 +273,42 @@ def test_review_token_check_stores_score_from_agent_result(monkeypatch, retry_se
     assert latest.score == Decimal('80.00')
 
 
-def test_review_token_check_success_leaves_recovery_null(monkeypatch, retry_setup, db_session):
-    from app.models import ProofreadLog
+def test_retry_task_failure_is_recorded_on_agent_execution(monkeypatch, retry_setup, db_session):
+    """[2026-09-28 신규] 지금은 app.agents.run_*_retry()가 전부 더미(무작위)라 실패할
+    일이 없지만, 실제 Agent가 연동된 뒤 예외가 나면 (1) agent_executions에 status='failed'
+    행이 남고 error_kind/error_reason이 채워져야 하고, (2) 클라이언트는 502와 함께
+    구조화된 오류를 받아야 한다 — 프론트가 "이 재시도가 재시도 가능한 오류인지"를
+    error_kind로 구분할 수 있어야 하기 때문."""
     import app.routers.projects as projects_router
+    from app.models import AgentExecution, MatchResult
+
+    def _boom(description, tags):
+        raise RuntimeError('결제 크레딧 소진(테스트)')  # 운영 오류로 분류돼야 함
+
+    monkeypatch.setattr(projects_router.agents, 'run_writing_agent_retry', _boom)
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'writing')
+    assert res.status_code == 502, res.text
+    detail = res.json()['detail']
+    assert detail['task_key'] == 'writing'
+    assert detail['error_kind'] == projects_router.ps.ERROR_KIND_OPERATIONAL
+
+    db_session.expire_all()
+    match = db_session.query(MatchResult).filter(MatchResult.project_id == retry_setup['project_id']).one()
+    failed = (
+        db_session.query(AgentExecution)
+        .filter(AgentExecution.match_id == match.match_id, AgentExecution.task_key == 'writing')
+        .order_by(AgentExecution.attempt_no.desc())
+        .first()
+    )
+    assert failed.status == 'failed'
+    assert failed.error_kind == projects_router.ps.ERROR_KIND_OPERATIONAL
+    assert '결제 크레딧 소진' in failed.error_reason
+
+
+def test_review_token_check_success_leaves_recovery_null(monkeypatch, retry_setup, db_session):
+    import app.routers.projects as projects_router
+    from app.models import ProofreadLog
 
     monkeypatch.setattr(
         projects_router.agents, 'run_review_token_check_retry',

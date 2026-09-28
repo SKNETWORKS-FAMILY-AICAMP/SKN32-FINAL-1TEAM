@@ -599,6 +599,11 @@ CREATE TABLE IF NOT EXISTS agent_executions (
     -- 'success'라는 다른 이름을 썼는데(seed_dummy_pipeline.py), 'completed'로 통일한다.
     status ENUM('in_progress','waiting_resume','user_waiting','failed','completed','halted') NOT NULL COMMENT '서비스 내부 상태(실행/재개대기/사용자대기/실패/완료/중단) — match_results.status와 같은 enum',
     started_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '실행 시작 일시',
+    -- [2026-09-28 신규] status='failed'일 때만 채운다. error_kind는 match_results.
+    -- last_error_kind와 같은 분류(일시/입력/운영) — "재시도 가능 여부"는 이 값이 '일시'인지로
+    -- API 응답에서 계산해 내려준다(별도 컬럼으로 중복 저장하지 않음, admin.py 참고).
+    error_kind ENUM('일시','입력','운영') NULL COMMENT '실패 원인 분류(status=failed일 때만)',
+    error_reason TEXT NULL COMMENT '실패 사유 원문(status=failed일 때만)',
     -- [2026-09-17 인덱싱 개정] "이 매칭의 이 task_key 최근 시도가 몇 번째인지" 조회가
     -- 재시도/이어하기 로직에서 자주 호출된다(projects.py 재시도 처리, admin.py 에이전트
     -- 테스크 탭의 match_id 필터). 복합 인덱스 선두가 match_id라 match_id 단독 필터
