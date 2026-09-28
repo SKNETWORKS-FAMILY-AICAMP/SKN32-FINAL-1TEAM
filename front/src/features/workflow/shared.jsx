@@ -51,22 +51,39 @@ const SEEN_KEY = 'sbrain-seen-progress-alerts';
 function readSeen(){try{return new Set(JSON.parse(localStorage.getItem(SEEN_KEY)||'[]'))}catch(e){return new Set()}}
 function writeSeen(set){try{localStorage.setItem(SEEN_KEY,JSON.stringify([...set]))}catch(e){}}
 
+// 실패 여부는 백엔드가 이미 분류해서 내려주는 display_status를 그대로 쓴다
+// (GET /projects, back/app/pipeline_stages.py status_to_display) — match_status/stage를
+// 화면에서 다시 조합하지 않는다. 'waiting_resume'(자동 재시도 대기)은 서버가 '진행'으로
+// 묶어주므로, 재시도가 아직 남아있는 건을 실패로 잘못 띄우던 문제도 같이 사라진다.
+const DISPLAY_FAILED = '문제가 생겨 멈췄다';
+
 export function progressAlertsFrom(projects){
   const alerts = [];
   for (const p of projects) {
-    const i = STAGE_ORDER.indexOf(p.stage);
-    if (i < 0) continue;
     const name = p.description || '내 프로젝트';
     const project = { id: p.project_id, matched: true, announcementTitle: p.notice_title };
+    const failed = p.display_status === DISPLAY_FAILED;
+    const retryCount = p.retry_count ?? 0;
+    const i = STAGE_ORDER.indexOf(p.stage);
+    if (i < 0) {
+      // stage가 아직 안 잡힌 채 멈춘 건(생성 시작 직후 실패 등)은 예전엔 여기서 통째로
+      // 걸러져 알림에 아예 안 떴다. 어느 산출물에서 멈췄는지는 알 수 없으므로 첫 산출물인
+      // 계획서 기준으로 한 건만 띄워서, 눌러 들어가 재시도할 수 있게 한다.
+      if (failed) {
+        alerts.push({ key: `${p.project_id}:plan`, project, projectName: name, kind: '사업계획서',
+          done: false, failed: true, retryCount, percent: p.progress_percent, view: 'plan-progress' });
+      }
+      continue;
+    }
     const planDone = i > 0;
-    const planFailed = p.match_status === 'failed' && p.stage === 'plan_writing';
+    const planFailed = failed && p.stage === 'plan_writing';
     alerts.push({ key: `${p.project_id}:plan`, project, projectName: name, kind: '사업계획서', done: planDone, failed: planFailed,
-      percent: planDone ? 100 : p.progress_percent, view: planDone ? 'plan-form' : 'plan-progress' });
+      retryCount, percent: planDone ? 100 : p.progress_percent, view: planDone ? 'plan-form' : 'plan-progress' });
     if (i >= 2) {
       const protoDone = i > 2;
-      const protoFailed = p.match_status === 'failed' && p.stage === 'prototype_building';
+      const protoFailed = failed && p.stage === 'prototype_building';
       alerts.push({ key: `${p.project_id}:prototype`, project, projectName: name, kind: '프로토타입', done: protoDone, failed: protoFailed,
-        percent: protoDone ? 100 : p.progress_percent, view: protoDone ? 'artifact-result' : 'artifact-progress' });
+        retryCount, percent: protoDone ? 100 : p.progress_percent, view: protoDone ? 'artifact-result' : 'artifact-progress' });
     }
   }
   // 진행 중인 것을 위로
@@ -169,6 +186,11 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
                         {a.failed?'실패했습니다':a.done ? '완료' : a.percent != null ? `진행 중 ${a.percent}%` : '진행 중'}
                       </span>
                     </div>
+                    {/* 실패 사유(failure_reason)는 서버 예외 문구 그대로라 사용자에게 그대로
+                        보여주지 않는다 — 몇 번까지 자동으로 다시 해봤는지만 알려준다. */}
+                    {a.failed && a.retryCount > 0 && (
+                      <p className="mt-1.5 text-[11.5px] text-[var(--muted-fg)]">자동으로 {a.retryCount}번 다시 시도했지만 안 됐어요</p>
+                    )}
                     {!a.done && !a.failed && a.percent != null && (
                       <div className="mt-2 h-1 rounded-full bg-[var(--muted)] overflow-hidden">
                         <div className="h-full rounded-full bg-[var(--primary)]" style={{ width: `${a.percent}%` }} />
