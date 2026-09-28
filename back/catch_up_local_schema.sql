@@ -54,6 +54,32 @@ BEGIN
     END IF;
 END $$
 
+-- [2026-09-27 신규] 컬럼 개명용(SB-133: retry_count -> resume_count) — 옛 이름이 아직
+-- 있고 새 이름은 아직 없을 때만 RENAME한다(몇 번을 돌려도 안전). p_coldef에는 RENAME
+-- 대상 컬럼의 전체 타입 정의(예: "TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '...'")를
+-- 그대로 넣어야 한다 — MySQL의 CHANGE COLUMN 문법이 타입을 다시 요구하기 때문.
+DROP PROCEDURE IF EXISTS _rename_col_if_needed $$
+CREATE PROCEDURE _rename_col_if_needed(
+    IN p_table VARCHAR(64), IN p_old_column VARCHAR(64), IN p_new_column VARCHAR(64), IN p_coldef TEXT
+)
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_old_column
+    ) AND NOT EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_new_column
+    ) THEN
+        SET @ddl = CONCAT('ALTER TABLE `', p_table, '` CHANGE COLUMN `', p_old_column, '` `', p_new_column, '` ', p_coldef);
+        PREPARE stmt FROM @ddl;
+        EXECUTE stmt;
+        DEALLOCATE PREPARE stmt;
+        SELECT CONCAT(p_table, '.', p_old_column, ' -> ', p_new_column, ' 개명함') AS result;
+    ELSE
+        SELECT CONCAT(p_table, '.', p_new_column, ' 이미 처리됨 — 건너뜀') AS result;
+    END IF;
+END $$
+
 DELIMITER ;
 
 -- companies: applicant_type이 없다는 건 [2026-09-17 신규] 이후 컬럼들이 통째로 안 들어가
@@ -76,10 +102,32 @@ CALL _add_col_if_missing('projects', 'regional_priority_area', "VARCHAR(100) NUL
 CALL _add_col_if_missing('match_results', 'worker_claimed_at', "DATETIME(6) NULL COMMENT '생성 작업을 처리 중인 워커의 마지막 클레임/하트비트 시각'");
 CALL _add_col_if_missing('match_results', 'failure_reason', "TEXT NULL COMMENT '마지막 실패 사유(에러 메시지) — status=waiting_resume/failed일 때 값 있음'");
 
--- [2026-09-23 신규] 실패 시 자동 재시도(최대 5회, 15->30->60->120->240초 백오프) —
--- app/routers/projects.py GENERATION_RETRY_MAX_ATTEMPTS 참고.
-CALL _add_col_if_missing('match_results', 'retry_count', "TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '자동 재시도 소진 횟수(최대 5)'");
-CALL _add_col_if_missing('match_results', 'next_retry_at', "DATETIME(6) NULL COMMENT '다음 자동 재시도 예정 시각(waiting_resume 전용)'");
+-- [2026-09-23 신규, 2026-09-26 정정] 실패 시 자동 재개(최대 5회, 15->30->60->120->240분
+-- 백오프, 총 대기 상한 12시간) — 공식 기능정의서 v1.9(R-11) 기준. app/routers/projects.py
+-- GENERATION_RESUME_MAX_ATTEMPTS/GENERATION_RESUME_TOTAL_CAP_SECONDS 참고.
+CALL _add_col_if_missing('match_results', 'retry_count', "TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '자동 재개 소진 횟수(최대 5)'");
+CALL _add_col_if_missing('match_results', 'next_retry_at', "DATETIME(6) NULL COMMENT '다음 자동 재개 예정 시각(waiting_resume 전용)'");
+CALL _add_col_if_missing('match_results', 'resume_started_at', "DATETIME(6) NULL COMMENT '이번 실패 스트릭 시작 시각(재개 총 대기 상한 12시간 계산용)'");
+
+-- [2026-09-27 신규, SB-133] retry_count(위에서 만든 컬럼)는 사실 스펙의 Run.resumeCount
+-- (재개 횟수)였다 — Run.retryCount(개별 호출 즉시 재시도 횟수)와 이름이 겹쳐 혼동을
+-- 일으키므로 resume_count로 바로잡고, 진짜 retry_count는 새로 만든다(지금은 파이프라인이
+-- 100% 더미라 항상 0 — 실제 Agent 호출 계층이 생기면 그때 채운다). 순서 중요: 먼저
+-- 개명하고, 그다음에 비어진 retry_count 이름으로 새 컬럼을 추가한다.
+CALL _rename_col_if_needed('match_results', 'retry_count', 'resume_count', "TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '자동 재개 소진 횟수(최대 5)'");
+CALL _add_col_if_missing('match_results', 'retry_count', "TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '개별 호출 즉시 재시도 횟수(현재 미사용, 항상 0)'");
+
+-- [2026-09-27 신규, SB-134] 실패 원인 분류(일시/입력/운영) — 공식 기능정의서 v1.9
+-- Run.lastErrorKind, R-11. app/pipeline_stages.py classify_error_kind 참고.
+CALL _add_col_if_missing('match_results', 'last_error_kind', "ENUM('일시','입력','운영') NULL COMMENT '마지막 실패 원인 분류(NULL=실패 이력 없음/초기화됨)'");
+
+-- [2026-09-27 신규] 필수 동의(이용약관/개인정보) — 공식 기능정의서 v1.9 E-AUTH-CONSENT
+-- 대비 갭. 예전엔 프론트 체크박스로만 가입 진행을 막고 서버는 동의 여부를 전혀
+-- 몰랐다. 의도적으로 백필하지 않는다 — 기존 계정도 실제로 동의한 적이 없으므로
+-- NULL(미동의)로 두고, PATCH /auth/consent로 다시 동의해야 새 실행을 시작할 수 있게
+-- 한다(app/routers/projects.py create_project 참고).
+CALL _add_col_if_missing('users', 'terms_agreed_at', "DATETIME(6) NULL COMMENT '이용약관 동의 시각(NULL=미동의)'");
+CALL _add_col_if_missing('users', 'privacy_agreed_at', "DATETIME(6) NULL COMMENT '개인정보 수집·이용 동의 시각(NULL=미동의)'");
 
 -- [2026-09-23 신규] match_results.status/agent_executions.status를 서비스 내부 상태
 -- 6종(실행/재개대기/사용자대기/실패/완료/중단) 실제 MySQL ENUM으로 강제한다
@@ -104,12 +152,45 @@ CREATE TABLE IF NOT EXISTS generation_failure_alerts (
     match_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES match_results(match_id)',
     project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
     stage VARCHAR(30) NOT NULL COMMENT '실패가 확정된 시점의 stage',
-    retry_count TINYINT UNSIGNED NOT NULL COMMENT '확정 시점까지 소진한 자동 재시도 횟수',
+    resume_count TINYINT UNSIGNED NOT NULL COMMENT '확정 시점까지 소진한 자동 재개 횟수',
     failure_reason TEXT NULL COMMENT '마지막 실패 사유',
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     acknowledged_at DATETIME(6) NULL COMMENT '관리자 확인 처리 시각(NULL이면 미확인)',
     KEY ix_generation_failure_alerts_match (match_id),
     KEY ix_generation_failure_alerts_unacked (acknowledged_at),
+    FOREIGN KEY (match_id) REFERENCES match_results(match_id) ON DELETE CASCADE,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- [2026-09-27 신규, SB-133] 위 CREATE TABLE IF NOT EXISTS는 테이블이 이미 있으면 컬럼을
+-- 안 건드리므로, 이 테이블이 옛 이름(retry_count)으로 이미 만들어져 있던 환경은 여기서
+-- 개명해야 한다.
+CALL _rename_col_if_needed('generation_failure_alerts', 'retry_count', 'resume_count', "TINYINT UNSIGNED NOT NULL COMMENT '확정 시점까지 소진한 자동 재개 횟수'");
+
+-- [2026-09-27 신규, SB-134] last_error_kind — 최종 스키마는 NOT NULL이지만, 이 테이블에
+-- 이미 쌓여있는 옛 행은 이 개념 자체가 없던 시절 것이라 값을 채울 수 없다. 일단 NULL
+-- 허용으로 추가하고, 기존 행은 '일시'(가장 낙관적인 기본값 — 재개 상한 소진으로 실패한
+-- 옛 행들의 실제 원인은 알 수 없음)로 채운 뒤 NOT NULL로 고정한다. 두 단계 다 몇 번을
+-- 다시 실행해도 안전하다.
+CALL _add_col_if_missing('generation_failure_alerts', 'last_error_kind', "ENUM('일시','입력','운영') NULL COMMENT '실패 확정 시점의 원인 분류'");
+UPDATE generation_failure_alerts SET last_error_kind = '일시' WHERE last_error_kind IS NULL;
+ALTER TABLE generation_failure_alerts
+    MODIFY COLUMN last_error_kind ENUM('일시','입력','운영') NOT NULL COMMENT '실패 확정 시점의 원인 분류';
+
+-- [2026-09-27 신규, SB-141] 사용자용 작업 알림(화면 헤더 종모양) — 새 테이블이라
+-- CREATE TABLE IF NOT EXISTS로 충분하다(컬럼 추가 마이그레이션 절차 불필요).
+CREATE TABLE IF NOT EXISTS notifications (
+    notification_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '알림 고유 식별자',
+    match_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES match_results(match_id)',
+    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
+    kind ENUM('문서평가','산출물확인','표현검수','실패') NOT NULL COMMENT '완료된 단계 또는 실패',
+    failure_scope ENUM('실행','재작성') NULL COMMENT "kind='실패'일 때만: 실행 실패 또는 재작성 실패",
+    target_step TINYINT UNSIGNED NULL COMMENT '알림을 누르면 들어갈 화면 번호(실패는 NULL — 이어하기 목록으로 연결)',
+    channel VARCHAR(10) NOT NULL DEFAULT '화면' COMMENT '알림 경로. 지금은 화면 하나뿐(메일은 향후 도입)',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    read_at DATETIME(6) NULL COMMENT '사용자가 읽은 시각(NULL이면 안읽음)',
+    KEY ix_notifications_project (project_id),
+    KEY ix_notifications_match (match_id),
     FOREIGN KEY (match_id) REFERENCES match_results(match_id) ON DELETE CASCADE,
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
@@ -155,6 +236,12 @@ SELECT * FROM (
 ) seed
 WHERE NOT EXISTS (SELECT 1 FROM verification_checklist_items);
 
+-- [2026-09-28 신규] agent_executions에 실패 상세(오류 분류/사유)를 추가한다 — 관리자
+-- "에이전트 테스크" 탭이 status='failed' 행의 원인과 재시도 가능 여부(error_kind='일시')를
+-- 보여주려면 필요하다(app/models.py AgentExecution, app/routers/admin.py list_agent_executions).
+CALL _add_col_if_missing('agent_executions', 'error_kind', "ENUM('일시','입력','운영') NULL COMMENT '실패 원인 분류(status=failed일 때만)'");
+CALL _add_col_if_missing('agent_executions', 'error_reason', "TEXT NULL COMMENT '실패 사유 원문(status=failed일 때만)'");
+
 DROP PROCEDURE IF EXISTS _add_col_if_missing;
 
 -- 복구 루프가 10초마다 WHERE stage=X AND (worker_claimed_at IS NULL OR 오래됨)을 도는데,
@@ -169,6 +256,20 @@ DROP PROCEDURE IF EXISTS _add_index_if_missing;
 -- 컬럼들이 없는 DB(=현재 스키마와 일치)에서 이 스크립트를 실행하면 여기서 막힌다는 걸
 -- 실제로 확인해서(하정원님) 지웠다 — 그 앞의 CALL들은 전부 이 줄보다 먼저 실행되므로
 -- 안전했다.
+
+-- [2026-09-28 신규] plan_sections.tag를 실제 MySQL ENUM으로 강제한다(app/models.py
+-- _PlanSectionTag, app/pipeline_stages.py PLAN_SECTION_TAGS 참고). 기존 값은 agents.py가
+-- 이미 쓰던 '1-1'/'2-1'/'3-1'뿐이라 ENUM에 없는 값 정리 없이 바로 MODIFY해도 안전하다.
+-- 몇 번을 다시 실행해도 안전하다(이미 ENUM이어도 같은 정의로 다시 MODIFY할 뿐).
+ALTER TABLE plan_sections
+    MODIFY COLUMN tag ENUM('1-1','2-1','3-1','G-01','G-02','G-03','G-04')
+    NOT NULL COMMENT '양식 항목 코드 — 예비/초기(1-1/2-1/3-1) + 일반(G-01~G-04, PartⅡ 4섹션)';
+
+-- [2026-09-28 신규] user_profiles.biz_status_cd — 국세청 사업자상태조회 응답 코드를 실제
+-- MySQL ENUM으로 강제한다(app/models.py _BizStatusCd 참고). POST /biz-check가 쓰는 값만
+-- 이 컬럼에 들어가므로(app/routers/profile.py) 기존 값 정리 없이 바로 MODIFY해도 안전하다.
+ALTER TABLE user_profiles
+    MODIFY COLUMN biz_status_cd ENUM('01','02','03') NULL COMMENT '01 계속사업자 / 02 휴업자 / 03 폐업자 (국세청 사업자상태조회 API 코드)';
 
 -- 최종 확인용 — 실행 후 이 두 개를 결과로 같이 보내주시면 더 빠지는 컬럼이 있는지 바로 확인 가능합니다.
 SHOW COLUMNS FROM companies;

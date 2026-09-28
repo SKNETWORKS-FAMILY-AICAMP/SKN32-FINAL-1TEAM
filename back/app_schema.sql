@@ -33,6 +33,11 @@ CREATE TABLE IF NOT EXISTS users (
     google_sub VARCHAR(255) NOT NULL COMMENT 'Google OAuth 식별자(sub)',
     notify_enabled BOOLEAN NOT NULL DEFAULT TRUE COMMENT '유사 공고 알림 on/off 전역 설정',
     ai_training_agreed BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'AI 학습 데이터 활용 동의(연동합의서 #3) — 로그인마다 갱신',
+    -- [2026-09-27 신규] 필수 동의(이용약관/개인정보) — NULL이면 아직 미동의. PATCH
+    -- /auth/consent가 채운다. 새 실행 시작(POST /projects)은 둘 다 값이 있어야 허용한다
+    -- (기능정의서 v1.9 E-AUTH-CONSENT).
+    terms_agreed_at DATETIME(6) NULL COMMENT '이용약관 동의 시각(NULL=미동의)',
+    privacy_agreed_at DATETIME(6) NULL COMMENT '개인정보 수집·이용 동의 시각(NULL=미동의)',
     role VARCHAR(20) NOT NULL DEFAULT 'user' COMMENT '권한(user/admin)',
     status VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '계정 상태(active/suspended/dormant)',
     -- [2026-09-17] 얼굴 인증(face_verified_at) 게이트를 팀 결정으로 완전히 뺐다(admin.py
@@ -286,14 +291,25 @@ CREATE TABLE IF NOT EXISTS match_results (
     -- [2026-09-23 개정] status='failed'는 이제 자동 재시도(최대 5회, 백오프) 소진 뒤에만
     -- 도달한다 — status='waiting_resume'이 그 사이 자동 대기 상태를 표현한다.
     failure_reason TEXT NULL COMMENT '마지막 실패 사유(에러 메시지) — status=waiting_resume/failed일 때 값 있음',
-    -- [2026-09-23 신규] 실패 후 자동 재시도 횟수. 15→30→60→120→240초로 2배씩 늘려가며
-    -- 최대 5회까지 자동 재시도하고, 그래도 안 되면 status='failed'로 확정한다(관리자 알림
-    -- 대상, generation_failure_alerts 참고). 사용자가 수동으로 "다시 이어가기"를 누르면
-    -- 0으로 리셋된다.
-    retry_count TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '자동 재시도 소진 횟수(최대 5)',
-    -- [2026-09-23 신규] 다음 자동 재시도 예정 시각(status='waiting_resume'일 때만 값 있음) —
-    -- 복구 루프가 이 시각 이전엔 재시도하지 않는다(백오프 간격 준수).
-    next_retry_at DATETIME(6) NULL COMMENT '다음 자동 재시도 예정 시각(waiting_resume 전용)',
+    -- [2026-09-27 신규, SB-134] 마지막 실패 원인 분류 — 일시 오류만 재개하고 입력·운영은
+    -- 재개 없이 바로 실패 확정한다(R-11). app/pipeline_stages.py classify_error_kind 참고.
+    last_error_kind ENUM('일시','입력','운영') NULL COMMENT '마지막 실패 원인 분류(NULL=실패 이력 없음/초기화됨)',
+    -- [2026-09-23 신규, 2026-09-26 정정, 2026-09-27 개명] 실패 후 자동 "재개" 횟수
+    -- (Run.resumeCount) — 공식 기능정의서 v1.9(R-11) 기준 15분→30→60→120→240분으로
+    -- 2배씩 늘려가며 최대 5번까지 자동 재개하고, 그래도 안 되면 status='failed'로
+    -- 확정한다(관리자 알림 대상, generation_failure_alerts 참고). 사용자가 수동으로
+    -- "다시 이어가기"를 누르면 1로 리셋된다. 예전 컬럼명 retry_count는 Run.retryCount
+    -- (호출 재시도)와 개념이 달라 resume_count로 바로잡았다.
+    resume_count TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '자동 재개 소진 횟수(최대 5)',
+    -- [2026-09-27 신규] 개별 Agent 호출 실패에 대한 즉시 재시도 횟수(Run.retryCount) —
+    -- 지금은 파이프라인이 100% 더미라 항상 0. 실제 Agent 호출 계층이 생기면 채운다.
+    retry_count TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '개별 호출 즉시 재시도 횟수(현재 미사용, 항상 0)',
+    -- [2026-09-23 신규] 다음 자동 재개 예정 시각(status='waiting_resume'일 때만 값 있음) —
+    -- 복구 루프가 이 시각 이전엔 재개하지 않는다(백오프 간격 준수).
+    next_retry_at DATETIME(6) NULL COMMENT '다음 자동 재개 예정 시각(waiting_resume 전용)',
+    -- [2026-09-26 신규] 이번 실패 스트릭의 첫 실패 시각 — "재개 총 대기 상한"(12시간,
+    -- 재개 대기+실행 시간 합산)을 재는 기준점. 성공하거나 수동 재시작 시 초기화된다.
+    resume_started_at DATETIME(6) NULL COMMENT '이번 실패 스트릭 시작 시각(재개 총 대기 상한 12시간 계산용)',
     archived_at DATETIME(6) NULL COMMENT '사용자가 프로젝트를 삭제해 보관 처리된 일시(NULL 가능)',
     archived_by VARCHAR(20) NULL COMMENT "보관 처리 주체('user' 고정, NULL 가능)",
     -- [참고] project.py 전역에서 "WHERE project_id=X ORDER BY match_id DESC" 패턴이 매우
@@ -339,13 +355,35 @@ CREATE TABLE IF NOT EXISTS generation_failure_alerts (
     match_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES match_results(match_id)',
     project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
     stage VARCHAR(30) NOT NULL COMMENT '실패가 확정된 시점의 stage',
-    retry_count TINYINT UNSIGNED NOT NULL COMMENT '확정 시점까지 소진한 자동 재시도 횟수',
+    -- [2026-09-27 개명] match_results.resume_count와 같은 이유로 개명(예전 retry_count).
+    resume_count TINYINT UNSIGNED NOT NULL COMMENT '확정 시점까지 소진한 자동 재개 횟수',
+    -- [2026-09-27 신규, SB-134] 실패 확정 시점의 원인 분류 스냅샷.
+    last_error_kind ENUM('일시','입력','운영') NOT NULL COMMENT '실패 확정 시점의 원인 분류',
     failure_reason TEXT NULL COMMENT '마지막 실패 사유',
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     -- 관리자가 확인 처리한 시각 — NULL이면 미확인. 재시도 자체를 막지는 않는다.
     acknowledged_at DATETIME(6) NULL COMMENT '관리자 확인 처리 시각(NULL이면 미확인)',
     KEY ix_generation_failure_alerts_match (match_id),
     KEY ix_generation_failure_alerts_unacked (acknowledged_at),
+    FOREIGN KEY (match_id) REFERENCES match_results(match_id) ON DELETE CASCADE,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- [2026-09-27 신규, SB-141] 사용자용 작업 알림(화면 헤더 종모양) — 공식 기능정의서 v1.9
+-- Notification 타입. generation_failure_alerts(관리자 대시보드 전용)와는 독립된 테이블
+-- 이다 — 대상 독자와 필드가 다르다(app/models.py Notification 클래스 주석 참고).
+CREATE TABLE IF NOT EXISTS notifications (
+    notification_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '알림 고유 식별자',
+    match_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES match_results(match_id)',
+    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
+    kind ENUM('문서평가','산출물확인','표현검수','실패') NOT NULL COMMENT '완료된 단계 또는 실패',
+    failure_scope ENUM('실행','재작성') NULL COMMENT "kind='실패'일 때만: 실행 실패 또는 재작성 실패",
+    target_step TINYINT UNSIGNED NULL COMMENT '알림을 누르면 들어갈 화면 번호(실패는 NULL — 이어하기 목록으로 연결)',
+    channel VARCHAR(10) NOT NULL DEFAULT '화면' COMMENT '알림 경로. 지금은 화면 하나뿐(메일은 향후 도입)',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    read_at DATETIME(6) NULL COMMENT '사용자가 읽은 시각(NULL이면 안읽음)',
+    KEY ix_notifications_project (project_id),
+    KEY ix_notifications_match (match_id),
     FOREIGN KEY (match_id) REFERENCES match_results(match_id) ON DELETE CASCADE,
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
@@ -377,7 +415,7 @@ CREATE TABLE IF NOT EXISTS business_plans (
 CREATE TABLE IF NOT EXISTS plan_sections (
     section_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '계획서 섹션 고유 식별자',
     plan_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES business_plans(plan_id)',
-    tag VARCHAR(16) NOT NULL COMMENT 'PSST 구분(P/S/S/T)',
+    tag ENUM('1-1','2-1','3-1','G-01','G-02','G-03','G-04') NOT NULL COMMENT '양식 항목 코드 — 예비/초기(1-1 문제인식/2-1 실현가능성/3-1 성장전략) + 일반(G-01~G-04, PartⅡ 4섹션). app/pipeline_stages.py PLAN_SECTION_TAGS',
     title VARCHAR(255) NOT NULL COMMENT '섹션 제목',
     body LONGTEXT NULL COMMENT '섹션 본문',
     -- [2026-09-17 인덱싱 개정] projects.py의 초안 저장이 "이 plan_id 안에 같은 tag(PSST 중 하나)
@@ -536,7 +574,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     -- "계속사업자" 상태를 조작해서 보낼 수 없게 하기 위함. 저장한 bizNo가 이 biz_checked_no와
     -- 달라지면(재조회 전까지는) 아래 4개 컬럼을 NULL로 비운다.
     biz_checked_no CHAR(10) NULL COMMENT '조회에 실제로 쓰인 사업자등록번호(숫자만)',
-    biz_status_cd CHAR(2) NULL COMMENT '01 계속사업자 / 02 휴업자 / 03 폐업자',
+    biz_status_cd ENUM('01','02','03') NULL COMMENT '01 계속사업자 / 02 휴업자 / 03 폐업자 (국세청 사업자상태조회 API 코드)',
     biz_tax_type VARCHAR(50) NULL COMMENT '과세유형(예: 부가가치세 일반과세자)',
     biz_checked_at DATETIME(6) NULL COMMENT '조회 시각',
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '슬롯 생성 일시',
@@ -561,6 +599,11 @@ CREATE TABLE IF NOT EXISTS agent_executions (
     -- 'success'라는 다른 이름을 썼는데(seed_dummy_pipeline.py), 'completed'로 통일한다.
     status ENUM('in_progress','waiting_resume','user_waiting','failed','completed','halted') NOT NULL COMMENT '서비스 내부 상태(실행/재개대기/사용자대기/실패/완료/중단) — match_results.status와 같은 enum',
     started_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '실행 시작 일시',
+    -- [2026-09-28 신규] status='failed'일 때만 채운다. error_kind는 match_results.
+    -- last_error_kind와 같은 분류(일시/입력/운영) — "재시도 가능 여부"는 이 값이 '일시'인지로
+    -- API 응답에서 계산해 내려준다(별도 컬럼으로 중복 저장하지 않음, admin.py 참고).
+    error_kind ENUM('일시','입력','운영') NULL COMMENT '실패 원인 분류(status=failed일 때만)',
+    error_reason TEXT NULL COMMENT '실패 사유 원문(status=failed일 때만)',
     -- [2026-09-17 인덱싱 개정] "이 매칭의 이 task_key 최근 시도가 몇 번째인지" 조회가
     -- 재시도/이어하기 로직에서 자주 호출된다(projects.py 재시도 처리, admin.py 에이전트
     -- 테스크 탭의 match_id 필터). 복합 인덱스 선두가 match_id라 match_id 단독 필터

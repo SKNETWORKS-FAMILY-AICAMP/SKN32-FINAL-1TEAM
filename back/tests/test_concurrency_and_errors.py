@@ -48,7 +48,10 @@ class TestConcurrencyLimit:
 
         r2 = authed_client.post('/projects', data=_payload())
         assert r2.status_code == 409
-        assert str(project1_id) in r2.json()['detail']  # 어느 프로젝트가 막았는지 메시지에 나와야 함
+        # [2026-09-27 개정, SB-138] detail이 사람이 읽는 문장 하나였던 것에서 구조화된
+        # 필드(blocked/active_project_id 등)로 바뀌었다 — E-RUN-CONCURRENT 대응.
+        assert r2.json()['detail']['blocked'] is True
+        assert r2.json()['detail']['active_project_id'] == project1_id  # 어느 프로젝트가 막았는지 나와야 함
 
     def test_completed_match_does_not_block(self, authed_client, db_session):
         """status='completed'(제출 완료)는 ACTIVE_MATCH_STATUSES에 없으니 막으면 안 된다 —

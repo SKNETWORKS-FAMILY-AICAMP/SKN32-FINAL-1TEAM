@@ -12,7 +12,7 @@ import sys
 
 # 이 스크립트는 repo 루트(back/, app/ 패키지가 바로 옆에 있는 위치)에서
 # `python verify_resume_cases.py`로 실행하는 걸 전제로 한다.
-_REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # tests/ -> back/
 sys.path.insert(0, _REPO_ROOT)
 os.environ.setdefault('DB_BACKEND', 'sqlite')
 os.environ.setdefault('GOOGLE_CLIENT_ID', 'ci-dummy-client-id')

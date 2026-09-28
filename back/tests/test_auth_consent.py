@@ -35,17 +35,100 @@ def test_second_login_is_not_new_and_keeps_stored_consent(client, monkeypatch):
     assert r1.status_code == 200
     assert r1.json()['is_new_user'] is True
 
-    # 재로그인 — 이번엔 body에 정반대 값을 보내도(예: 프론트가 기본값으로 다시 보내는 경우)
-    # 기존에 저장된 동의값이 그대로 유지돼야 한다(예전 버그: 여기서 덮어써버림).
+    # [2026-09-27] 필수 동의(이용약관/개인정보)를 아직 완료하지 않았으므로, 신규가
+    # 아니게 됐어도(is_new_user=False) has_agreed_terms는 여전히 False여야 한다 —
+    # 예전엔 "신규가 아니면 True"였는데, 그러면 계정만 만들고 필수 동의 화면을
+    # 실제로 완료하기 전에 이탈한 사용자가 재로그인할 때 동의 화면을 건너뛰는
+    # 버그가 있었다.
     r2 = client.post('/auth/google', json={
         'id_token': 'dummy', 'aiTrainingAgreed': False, 'notifyAgreed': True,
     })
     assert r2.status_code == 200, r2.text
     body2 = r2.json()
     assert body2['is_new_user'] is False
-    assert body2['has_agreed_terms'] is True
+    assert body2['has_agreed_terms'] is False
     assert body2['user']['ai_training_agreed'] is True   # 최초 가입 때 값(True) 그대로
     assert body2['user']['notify_enabled'] is False        # 최초 가입 때 값(False) 그대로
+
+    # 필수 동의를 완료하면 그 다음부터는 has_agreed_terms가 True로 바뀐다.
+    consent_res = client.patch('/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True})
+    assert consent_res.status_code == 200, consent_res.text
+    r3 = client.post('/auth/google', json={'id_token': 'dummy'})
+    assert r3.json()['has_agreed_terms'] is True
+
+
+def test_patch_consent_revokes_required_consent_to_null(client, monkeypatch):
+    """[2026-09-27 신규] false를 보내면 철회로 보고 NULL로 되돌아가야 한다
+    (E-AUTH-CONSENT: "철회 이후 수집을 중단한다")."""
+    _fake_login(monkeypatch, 'revoke@example.com', 'sub-revoke')
+    client.post('/auth/google', json={'id_token': 'dummy'})
+
+    r1 = client.patch('/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True})
+    assert r1.json()['terms_agreed_at'] is not None
+    assert r1.json()['privacy_agreed_at'] is not None
+
+    r2 = client.patch('/auth/consent', json={'termsAgreed': False})
+    assert r2.json()['terms_agreed_at'] is None
+    assert r2.json()['privacy_agreed_at'] is not None  # privacyAgreed는 안 건드렸으니 유지
+
+
+_MINIMAL_PROFILE_PAYLOAD = {
+    'basic': {
+        'applicantType': 'preliminary', 'ceoName': '게이트테스트', 'birthDate': '1990-01-01',
+        'gender': 'male', 'region': {'sido': '서울', 'sigungu': ''}, 'industry': 'IT',
+    },
+    'capability': {'careers': ['테스트 경력'], 'skills': '백엔드 개발', 'soloFounder': True},
+}
+
+
+def test_create_project_blocked_until_required_consent_completed(client, monkeypatch):
+    """[2026-09-27 신규] 공식 기능정의서 v1.9 E-AUTH-CONSENT — 필수 동의를 마치기 전엔
+    새 실행(POST /projects)을 시작할 수 없고, 완료하면(+ 프로필까지 있으면) 열려야 한다."""
+    import json as json_module
+
+    _fake_login(monkeypatch, 'gate@example.com', 'sub-gate')
+    client.post('/auth/google', json={'id_token': 'dummy'})
+
+    payload = json_module.dumps({'description': 'consent gate test'})
+    r1 = client.post('/projects', data={'payload': payload})
+    assert r1.status_code == 403, r1.text
+    assert '동의' in r1.json()['detail']
+
+    consent_res = client.patch('/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True})
+    assert consent_res.status_code == 200
+
+    # 동의는 마쳤지만 아직 마이페이지 프로필이 없으므로 이번엔 E-AUTH-PROFILE 게이트에 걸린다.
+    r2 = client.post('/projects', data={'payload': payload})
+    assert r2.status_code == 403, r2.text
+    assert '프로필' in r2.json()['detail']
+
+    profile_res = client.post('/profile', json=_MINIMAL_PROFILE_PAYLOAD)
+    assert profile_res.status_code == 201, profile_res.text
+
+    r3 = client.post('/projects', data={'payload': payload})
+    assert r3.status_code == 201, r3.text
+
+
+def test_create_project_blocked_until_profile_created(client, monkeypatch):
+    """[2026-09-27 신규] 공식 기능정의서 v1.9 E-AUTH-PROFILE — 필수 항목을 채운 마이페이지
+    프로필이 하나도 없으면(최초 로그인 또는 프로필을 모두 삭제한 뒤) 새 실행을 시작할
+    수 없고, 프로필을 만들면 열려야 한다. 필수 동의는 이미 완료된 상태로 가정한다."""
+    import json as json_module
+
+    _fake_login(monkeypatch, 'profile-gate@example.com', 'sub-profile-gate')
+    client.post('/auth/google', json={'id_token': 'dummy'})
+    client.patch('/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True})
+
+    payload = json_module.dumps({'description': 'profile gate test'})
+    r1 = client.post('/projects', data={'payload': payload})
+    assert r1.status_code == 403, r1.text
+    assert '프로필' in r1.json()['detail']
+
+    r2 = client.post('/profile', json=_MINIMAL_PROFILE_PAYLOAD)
+    assert r2.status_code == 201, r2.text
+
+    r3 = client.post('/projects', data={'payload': payload})
+    assert r3.status_code == 201, r3.text
 
 
 def test_patch_consent_updates_only_provided_fields(client, monkeypatch):

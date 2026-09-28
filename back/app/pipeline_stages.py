@@ -45,7 +45,7 @@ NO_MATCH_SCREEN = 3  # match_results 행이 아예 없을 때(8케이스의 ①)
 # [2026-09-23 신규] "서비스 내부 상태" 6종 — match_results.status와 agent_executions.status가
 # 공유하는 단일 enum이다(app/models.py에서 SQLAlchemy Enum으로 두 컬럼 다 이 값들로 강제).
 # 실행/재개대기(자동 재시도 백오프 중)/사용자대기(판단 대기)/실패(재시도 5회 소진 확정)/
-# 완료(최종)/중단(멈춤·계정삭제) — app/routers/projects.py GENERATION_RETRY_MAX_ATTEMPTS 등
+# 완료(최종)/중단(멈춤·계정삭제) — app/routers/projects.py GENERATION_RESUME_MAX_ATTEMPTS 등
 # 재시도 정책과 함께 쓴다. GENERATION_STATUS_HALTED는 예전부터 admin.py가 '중단' 판정에 쓰던
 # 이름을 그대로 가져온 것(원래도 'halted'였음 — 새 이름을 안 만들고 기존 걸 정식화).
 GENERATION_STATUS_IN_PROGRESS = 'in_progress'
@@ -83,3 +83,117 @@ def status_to_display(match_status: str | None) -> str | None:
     if match_status is None:
         return None
     return STATUS_TO_DISPLAY.get(match_status)
+
+
+# [2026-09-27 신규, SB-134] 실패 원인 분류(공식 기능정의서 v1.9 Run.lastErrorKind) — 일시
+# 오류만 재개(자동 백오프 재시도)하고, 입력·운영 오류는 영구 오류로 보고 재개 없이 바로
+# 실패로 끝낸다(R-11: "일시 오류일 때만 하며 ... 영구 오류가 나면 실행을 실패로 끝낸다").
+ERROR_KIND_TRANSIENT = '일시'    # 네트워크 타임아웃 등 — 시간을 두면 나아질 수 있는 오류
+ERROR_KIND_INPUT = '입력'        # 입력 데이터 자체의 문제 — 재시도해도 같은 결과
+ERROR_KIND_OPERATIONAL = '운영'  # API 연결 끊김·키 만료·크레딧 소진 등 — 사람이 조치해야 함
+ERROR_KINDS = (ERROR_KIND_TRANSIENT, ERROR_KIND_INPUT, ERROR_KIND_OPERATIONAL)
+
+# [주의] 지금 파이프라인은 100% 더미(sleep만 함)라 실제 Agent 호출에서 나는 진짜 오류
+# 유형(예외 클래스, 응답 코드)이 아직 없다 — 그래서 이 분류는 예외 메시지의 키워드로
+# 판단하는 임시 방편이다. 실제 Agent 호출 계층이 생기면, 예외 클래스나 API 응답 코드로
+# 판단하는 훨씬 정확한 방식으로 교체해야 한다(예: 인증 실패 예외 -> 운영, 스키마 검증
+# 실패 예외 -> 입력, 나머지 -> 일시).
+_OPERATIONAL_KEYWORDS = ('api 연결', '연결 끊', '키 만료', '크레딧', 'api key', 'credit', 'connection refused', 'unauthorized')
+_INPUT_KEYWORDS = ('입력값', '형식 오류', 'validation', 'invalid input', 'malformed')
+
+
+def classify_error_kind(exc: BaseException) -> str:
+    """예외 메시지를 보고 일시/입력/운영 중 하나로 분류한다. 위 키워드 중 아무것도 안
+    맞으면 기본값은 '일시'다 — 지금까지 해온 대로 "일단 재개를 시도해본다"는 기존 동작과
+    같다(모르는 오류를 섣불리 영구 오류로 단정해 재개 기회 자체를 없애지 않기 위함)."""
+    message = str(exc).lower()
+    if any(kw in message for kw in _OPERATIONAL_KEYWORDS):
+        return ERROR_KIND_OPERATIONAL
+    if any(kw in message for kw in _INPUT_KEYWORDS):
+        return ERROR_KIND_INPUT
+    return ERROR_KIND_TRANSIENT
+
+
+# [2026-09-27 신규, SB-141] 사용자용 작업 알림(Notification) 종류 — 공식 기능정의서
+# v1.9. 문서평가/산출물확인/표현검수는 각 단계(검증-1/검증-2/검수)가 끝났을 때, 실패는
+# 실행 실패·재작성 실패 둘 다에 쓴다(failureScope로 구분). '완료'는 kind에 없다 — 결과물
+# 화면에 사용자가 직접 들어가 있는 상태라 별도 알림이 필요 없다.
+NOTIFICATION_KIND_DOC_REVIEW = '문서평가'
+NOTIFICATION_KIND_ARTIFACT_REVIEW = '산출물확인'
+NOTIFICATION_KIND_PROOFREADING = '표현검수'
+NOTIFICATION_KIND_FAILURE = '실패'
+NOTIFICATION_KINDS = (
+    NOTIFICATION_KIND_DOC_REVIEW,
+    NOTIFICATION_KIND_ARTIFACT_REVIEW,
+    NOTIFICATION_KIND_PROOFREADING,
+    NOTIFICATION_KIND_FAILURE,
+)
+NOTIFICATION_FAILURE_SCOPE_RUN = '실행'
+NOTIFICATION_FAILURE_SCOPE_REWORK = '재작성'
+NOTIFICATION_FAILURE_SCOPES = (NOTIFICATION_FAILURE_SCOPE_RUN, NOTIFICATION_FAILURE_SCOPE_REWORK)
+# [주의] 산출물확인/표현검수는 지금 더미 파이프라인에 해당 stage(artifact_review/
+# reviewing) 전환 자체가 없어서 아직 트리거되지 않는다(GENERATION_STATUS_USER_WAITING/
+# HALTED와 같은 사정) — 실제 검증-2/검수 단계가 붙으면 그때 생성 지점을 추가하면 된다.
+NOTIFICATION_CHANNEL_SCREEN = '화면'  # 지금은 이거 하나뿐 — 메일 알림은 향후 도입(4-2 ⑧)
+
+# kind -> 알림을 누르면 들어갈 화면 번호(기획서 4-7 기본 흐름). 문서평가는 검증-1이 끝난
+# 뒤 사용자가 판단하는 화면(6), 산출물확인은 검증-2 뒤 점검 결과 화면(8), 표현검수는
+# 검수 완료 뒤 결과물 화면(10). 실패는 들어갈 화면이 없어 이어하기 목록으로 연결한다
+# (target_step=None).
+NOTIFICATION_KIND_TO_TARGET_STEP = {
+    NOTIFICATION_KIND_DOC_REVIEW: STAGE_TO_SCREEN[STAGE_PLAN_REVIEW_PENDING],
+    NOTIFICATION_KIND_ARTIFACT_REVIEW: STAGE_TO_SCREEN[STAGE_ARTIFACT_REVIEW],
+    NOTIFICATION_KIND_PROOFREADING: STAGE_TO_SCREEN[STAGE_REVIEWING],
+}
+
+# stage에 도달했을 때 어떤 kind의 알림을 만들지 — _simulate_generation의 성공 경로가
+# done_stage로 이 표를 찾아본다. STAGE_ARTIFACT_REVIEW/STAGE_REVIEWING은 지금 더미
+# 파이프라인의 (running_stage, done_stage) 조합에 아직 안 나오지만, 실제 검증-2/검수
+# 단계가 붙어 나오게 되면 이 표만으로 자동으로 알림이 생긴다(호출부 수정 불필요).
+STAGE_TO_NOTIFICATION_KIND = {
+    STAGE_PLAN_REVIEW_PENDING: NOTIFICATION_KIND_DOC_REVIEW,
+    STAGE_ARTIFACT_REVIEW: NOTIFICATION_KIND_ARTIFACT_REVIEW,
+    STAGE_REVIEWING: NOTIFICATION_KIND_PROOFREADING,
+}
+
+# [2026-09-28 신규] plan_sections.tag를 MySQL 실제 ENUM 컬럼으로 만들기 위한 고정 코드
+# 목록. 공식 기능정의서 v1.9(FormSpec.sectionCodes)는 "'1-1','2-1','3-3' 같은 문자열"이라고만
+# 하고 닫힌 집합을 정의하지 않는다(공고마다 양식이 달라질 수 있어서) — 그래서 목록 자체는
+# 기능정의서가 아니라 우리가 지금 실제로 지원하는 계획서 템플릿(예비/초기=3섹션, 일반=4섹션)
+# 기준으로 정한 것이다. 예비/초기는 agents.py가 이미 쓰고 있는 '1-1'/'2-1'/'3-1'을 그대로
+# 두고(라이브 코드 변경 최소화), '일반'(기술개발사업계획서 PartⅡ, 4_(1-2)사업계획서_작성_
+# 예시_사업계획서_Part2.pdf 확인) 전용으로 'G-01'~'G-04' 4자 코드를 새로 추가했다.
+PLAN_SECTION_TAG_PROBLEM = '1-1'  # 문제인식 (예비·초기)
+PLAN_SECTION_TAG_FEASIBILITY = '2-1'  # 실현가능성 (예비·초기)
+PLAN_SECTION_TAG_GROWTH = '3-1'  # 성장전략 (예비·초기)
+PLAN_SECTION_TAG_GENERAL_OVERVIEW = 'G-01'  # 기술개발의 개요 및 필요성 (일반)
+PLAN_SECTION_TAG_GENERAL_GOAL = 'G-02'  # 기술개발의 목표 (일반)
+PLAN_SECTION_TAG_GENERAL_METHOD = 'G-03'  # 기술개발의 방법 (일반)
+PLAN_SECTION_TAG_GENERAL_BIZ_PLAN = 'G-04'  # 사업화 계획 (일반)
+PLAN_SECTION_TAGS = (
+    PLAN_SECTION_TAG_PROBLEM,
+    PLAN_SECTION_TAG_FEASIBILITY,
+    PLAN_SECTION_TAG_GROWTH,
+    PLAN_SECTION_TAG_GENERAL_OVERVIEW,
+    PLAN_SECTION_TAG_GENERAL_GOAL,
+    PLAN_SECTION_TAG_GENERAL_METHOD,
+    PLAN_SECTION_TAG_GENERAL_BIZ_PLAN,
+)
+
+# [2026-09-28 신규] user_profiles.biz_status_cd — 국세청 사업자상태조회(POST /biz-check)
+# 응답 코드를 MySQL 실제 ENUM으로 저장한다. 값 자체는 이 프로젝트가 정한 게 아니라 국세청
+# API 응답 코드 그대로다(01 계속/02 휴업/03 폐업, models.py UserProfile 기존 주석 참고).
+BIZ_STATUS_CODE_ACTIVE = '01'
+BIZ_STATUS_CODE_SUSPENDED = '02'
+BIZ_STATUS_CODE_CLOSED = '03'
+BIZ_STATUS_CODES = (BIZ_STATUS_CODE_ACTIVE, BIZ_STATUS_CODE_SUSPENDED, BIZ_STATUS_CODE_CLOSED)
+
+# [2026-09-28 신규] match_results.stage(=_simulate_generation이 도는 단계) 실패를
+# agent_executions에도 남기기 위한 매핑 — 이 테이블엔 stage 컬럼이 없고 agent_name/
+# task_key로만 구분하므로, 어느 단계가 실패했는지를 FIXED_TASK_SEQUENCE(app/models.py)의
+# 가장 대표적인 task_key로 근사한다(계획서 작성 단계 전체 실패는 '작성'/'writing'으로,
+# 프로토타입 제작 단계 전체 실패는 '구현'/'implement_prototype'으로 기록).
+STAGE_TO_AGENT_TASK = {
+    STAGE_PLAN_WRITING: ('작성', 'writing'),
+    STAGE_PROTOTYPE_BUILDING: ('구현', 'implement_prototype'),
+}

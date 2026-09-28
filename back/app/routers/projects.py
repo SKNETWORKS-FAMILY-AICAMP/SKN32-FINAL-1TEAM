@@ -57,6 +57,7 @@ from app.models import (
     MatchCandidate,
     MatchResult,
     Notice,
+    Notification,
     PlanCanonicalData,
     PlanScoreReason,
     PlanSection,
@@ -71,6 +72,7 @@ from app.models import (
     VerificationPolicy,
     VerificationScoreHistory,
 )
+from app.routers.profile import compute_has_profile
 from app.schemas import (
     AgentExecutionOut,
     BusinessPlanOut,
@@ -80,6 +82,8 @@ from app.schemas import (
     MatchCandidateOut,
     MatchCandidatesOut,
     MatchResultOut,
+    NotificationOut,
+    NotificationReadIn,
     ProjectCreateRequest,
     ProjectDetailOut,
     ProjectListItemOut,
@@ -264,8 +268,12 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 UPLOAD_DIR = os.path.join(_REPO_ROOT, 'uploads')
 
 # 진행 중으로 취급하는 매칭 상태 — 이 상태의 매칭을 가진 프로젝트가 하나라도 있으면
-# 계정당 동시 실행 1건 제한(기획서 4-7, backend_decisions.md #11)에 걸려 새 프로젝트 생성을 막는다.
-ACTIVE_MATCH_STATUSES = (ps.GENERATION_STATUS_IN_PROGRESS,)
+# 계정당 동시 실행 1건 제한(기획서 4-7, backend_decisions.md #11)에 걸려 새 프로젝트 생성을
+# 막는다. [2026-09-26 수정] waiting_resume(자동 재개 대기 중)도 화면상 "진행"으로 보이는
+# 실행 중 상태라 포함해야 한다(공식 기능정의서 v1.9 E-RUN-CONCURRENT, R-9) — 빠뜨리면
+# 재개 대기 중에도 사용자가 새 프로젝트를 하나 더 만들 수 있는 버그가 된다. failed는
+# 여기 안 들어가는 게 맞다("계정당 1건 제한에서 세지 않는다", E-RUN-FAIL).
+ACTIVE_MATCH_STATUSES = (ps.GENERATION_STATUS_IN_PROGRESS, ps.GENERATION_STATUS_WAITING_RESUME)
 
 
 def _save_attachment(file: UploadFile) -> tuple[str, str]:
@@ -378,11 +386,56 @@ def list_projects(
             stage=match.stage if match is not None else None,
             progress_percent=match.progress_percent if match is not None else None,
             screen=screen,
-            retry_count=(match.retry_count or 0) if match is not None else 0,
+            resume_count=(match.resume_count or 0) if match is not None else 0,
             next_retry_at=match.next_retry_at if match is not None else None,
             failure_reason=match.failure_reason if match is not None else None,
         ))
     return items
+
+
+@router.get('/notifications', response_model=list[NotificationOut])
+def list_notifications(
+    unread_only: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """[2026-09-27 신규, SB-141] 화면 헤더 종모양 알림 — 공식 기능정의서 v1.9 Notification
+    타입(kind=문서평가/산출물확인/표현검수/실패). GET /projects의 display_status(진행/완료/
+    실패 3분류)와는 별개다 — 저건 "지금 상태가 뭔지"를 보여주는 목록 요약이고, 이건
+    "그동안 무슨 일이 있었는지"의 이력이다. 반드시 이 경로를 GET /projects/{project_id}
+    (line 1396 근처)보다 먼저 등록해야 한다 — 안 그러면 "notifications"가 project_id로
+    잘못 매칭된다."""
+    query = (
+        db.query(Notification)
+        .join(Project, Project.project_id == Notification.project_id)
+        .join(Company, Company.company_id == Project.company_id)
+        .filter(Company.user_id == current_user.user_id)
+    )
+    if unread_only:
+        query = query.filter(Notification.read_at.is_(None))
+    return query.order_by(Notification.created_at.desc()).all()
+
+
+@router.patch('/notifications/{notification_id}/read', response_model=NotificationOut)
+def mark_notification_read(
+    notification_id: int,
+    body: NotificationReadIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    notification = (
+        db.query(Notification)
+        .join(Project, Project.project_id == Notification.project_id)
+        .join(Company, Company.company_id == Project.company_id)
+        .filter(Notification.notification_id == notification_id, Company.user_id == current_user.user_id)
+        .one_or_none()
+    )
+    if notification is None:
+        raise HTTPException(status_code=404, detail='알림을 찾을 수 없습니다')
+    notification.read_at = datetime.datetime.utcnow() if body.read else None
+    db.commit()
+    db.refresh(notification)
+    return notification
 
 
 MATCH_CANDIDATES_PER_BATCH = 10
@@ -631,11 +684,22 @@ GENERATION_CLAIM_STALE_SECONDS = float(os.getenv('GENERATION_CLAIM_STALE_SECONDS
 # 복구 루프가 "고아" 작업(클레임 없음/오래됨)을 찾는 주기.
 GENERATION_POLL_INTERVAL_SECONDS = float(os.getenv('GENERATION_POLL_INTERVAL_SECONDS', '10'))
 
-# [2026-09-23 신규] 실패 시 자동 재시도 정책 — 15 -> 30 -> 60 -> 120 -> 240초로 2배씩
-# 늘려가며 최대 5회까지 자동 재시도한다(status='waiting_resume'). 5회를 전부 소진하고도
-# 실패하면 status='failed'로 확정하고 관리자 알림(generation_failure_alerts)을 남긴다.
-GENERATION_RETRY_MAX_ATTEMPTS = int(os.getenv('GENERATION_RETRY_MAX_ATTEMPTS', '5'))
-GENERATION_RETRY_BASE_SECONDS = float(os.getenv('GENERATION_RETRY_BASE_SECONDS', '15'))
+# [2026-09-23 신규, 2026-09-26 정정] 실패 시 자동 "재개" 정책 — 공식 기능정의서 v1.9
+# (시트 1_개요 "횟수·간격 설정값", R-11) 기준. 세션 초반엔 단위 없이 전달받아 초 단위로
+# 잘못 구현했었다 — 실제로는 "재개 첫 간격" 15분부터 2배씩 늘려(15→30→60→120→240분)
+# 최대 5번("재개 횟수")까지 자동 재개하고, 그래도 안 되면 status='failed'로 확정하고
+# 관리자 알림(generation_failure_alerts)을 남긴다. 공식 스펙은 이 "재개"(시간을 두고
+# 실패 지점부터 다시 시작)와 "재시도"(호출 실패 시 같은 호출을 즉시 다시 보냄, 5회,
+# 간격은 구현하면서 정함)를 별개 2단계로 구분하는데, 지금 더미 시뮬레이션엔 개별 호출
+# 재시도라는 더 낮은 층위가 없어서(실제 Agent가 API를 호출하기 전까진 의미가 없음)
+# 이 코드는 "재개" 계층만 구현한다 — 실제 Agent가 붙으면 그 안에서 별도로 "재시도"
+# 계층을 추가하면 된다.
+GENERATION_RESUME_MAX_ATTEMPTS = int(os.getenv('GENERATION_RESUME_MAX_ATTEMPTS', '5'))
+GENERATION_RESUME_BASE_SECONDS = float(os.getenv('GENERATION_RESUME_BASE_SECONDS', str(15 * 60)))  # 15분
+# [2026-09-26 신규] "재개 총 대기 상한" — 재개 대기 + 재개 실행 시간을 모두 합한 바깥
+# 상한(12시간). 재개 횟수(5번) 자체를 다 쓰기 전이라도 이 시간을 넘기면 바로 실패로
+# 확정한다(무한 반복으로 비용이 발산하지 않게 하는 게 원칙).
+GENERATION_RESUME_TOTAL_CAP_SECONDS = float(os.getenv('GENERATION_RESUME_TOTAL_CAP_SECONDS', str(12 * 3600)))  # 12시간
 
 # running_stage -> done_stage. 복구 루프가 어떤 stage들을 감시해야 하는지 여기 한 곳에 모은다
 # — _start_generation이 쓰는 (running_stage, done_stage) 쌍과 항상 같은 값이어야 한다.
@@ -666,43 +730,118 @@ def _simulate_generation(match_id: int, running_stage: str, done_stage: str) -> 
                     if done_stage == ps.STAGE_DONE:
                         match.status = ps.GENERATION_STATUS_COMPLETED
                         match.failure_reason = None
+                    # [2026-09-27 신규, SB-141] 이 stage에 도달한 게 사용자 알림 대상이면
+                    # (지금은 문서평가만 실제로 도달 가능 — 산출물확인/표현검수는 아직
+                    # 없는 stage) notifications에 한 행 남긴다.
+                    notif_kind = ps.STAGE_TO_NOTIFICATION_KIND.get(done_stage)
+                    if notif_kind is not None:
+                        db.add(Notification(
+                            match_id=match.match_id,
+                            project_id=match.project_id,
+                            kind=notif_kind,
+                            target_step=ps.NOTIFICATION_KIND_TO_TARGET_STEP[notif_kind],
+                        ))
                 else:
                     match.progress_percent = step * 100 // DUMMY_GENERATION_STEPS
                 match.worker_claimed_at = datetime.datetime.utcnow()  # 하트비트 — 진행 중엔 클레임이 안 늙는다
                 # [2026-09-23 신규] 한 스텝이라도 성공하면(=다시 정상 진행되면) 이전 실패
-                # 스트릭을 리셋한다 — 재시도 예산(5회)은 "연속 실패"에 대한 것이지, 이
+                # 스트릭을 리셋한다 — 재개 예산(5회/12시간)은 "연속 실패"에 대한 것이지, 이
                 # 작업 전체 수명 동안 누적되는 값이 아니다.
-                match.retry_count = 0
+                match.resume_count = 0
+                match.resume_started_at = None
+                match.last_error_kind = None
                 db.commit()
         except Exception as exc:
-            # [2026-09-23 개정] 지금 더미 로직(sleep+progress 증가)은 실패할 일이 없지만,
-            # 실제 에이전트가 붙으면 여기서 예외가 날 수 있다 — 첫 실패에서 바로 포기하지
-            # 않고, 15 -> 30 -> 60 -> 120 -> 240초로 2배씩 늘려가며 최대 5회까지 자동
-            # 재시도한다(status='waiting_resume', next_retry_at에 다음 시도 시각을 남김).
-            # 복구 루프(_recover_orphaned_generations_once)가 next_retry_at이 지난 뒤에만
-            # 다시 클레임한다. 5회를 전부 소진하고도 실패하면 status='failed'로 확정하고
-            # 관리자 알림을 한 행 남긴다 — 그때부터 사용자가 "다시 이어가기"를 눌러야
-            # 재개된다(_start_generation). progress_percent는 안 건드리므로 재시도할 때마다
-            # 이미 진행된 부분부터 이어간다(처음부터 다시 하지 않음).
+            # [2026-09-23 신규, 2026-09-26 정정, 2026-09-27 SB-134 분기 추가] 지금 더미
+            # 로직(sleep+progress 증가)은 실패할 일이 없지만, 실제 에이전트가 붙으면 여기서
+            # 예외가 날 수 있다. 공식 기능정의서 v1.9(R-11): "재개는 일시 오류일 때만 하며,
+            # 재개 상한을 넘기거나 영구 오류가 나면 실행을 실패로 끝낸다." — 그래서 예외를
+            # 먼저 분류(pipeline_stages.classify_error_kind)하고 갈린다:
+            #   - 일시(ERROR_KIND_TRANSIENT): 기존 그대로 15분 -> 30 -> 60 -> 120 -> 240분
+            #     백오프로 최대 5번까지 자동 재개한다(status='waiting_resume').
+            #   - 입력·운영(영구 오류): 재개를 아예 시도하지 않고 바로 status='failed'로
+            #     확정한다 — 같은 입력이나 API 키 문제는 기다린다고 나아지지 않는다.
+            # 두 경우 다 관리자 알림(GenerationFailureAlert)을 남긴다. progress_percent는
+            # 안 건드리므로 재개할 때마다 이미 진행된 부분부터 이어간다(처음부터 다시
+            # 하지 않음).
             db.rollback()
             match = db.get(MatchResult, match_id)
             if match is not None and match.stage == running_stage:
+                now = datetime.datetime.utcnow()
                 match.failure_reason = str(exc)[:2000]
-                match.retry_count = (match.retry_count or 0) + 1
-                if match.retry_count > GENERATION_RETRY_MAX_ATTEMPTS:
+                error_kind = ps.classify_error_kind(exc)
+                match.last_error_kind = error_kind
+                # [2026-09-28 신규] 관리자 "에이전트 테스크" 탭이 stage 단위 실패도 볼 수
+                # 있도록 agent_executions에도 남긴다 — 재시도(POST .../retry-task)와 같은
+                # attempt_no 채번 규칙(같은 task_key 안에서 이어서 증가)을 쓴다.
+                stage_agent_task = ps.STAGE_TO_AGENT_TASK.get(running_stage)
+                if stage_agent_task is not None:
+                    stage_agent_name, stage_task_key = stage_agent_task
+                    last_stage_attempt = (
+                        db.query(AgentExecution)
+                        .filter(AgentExecution.match_id == match.match_id, AgentExecution.task_key == stage_task_key)
+                        .order_by(AgentExecution.attempt_no.desc())
+                        .first()
+                    )
+                    db.add(AgentExecution(
+                        match_id=match.match_id,
+                        agent_name=stage_agent_name,
+                        task_key=stage_task_key,
+                        attempt_no=(last_stage_attempt.attempt_no + 1) if last_stage_attempt is not None else 1,
+                        model_used='dummy',
+                        rerun_type='initial' if last_stage_attempt is None else 'rerun',
+                        token_usage=0,
+                        status=ps.GENERATION_STATUS_FAILED,
+                        error_kind=error_kind,
+                        error_reason=match.failure_reason,
+                    ))
+                if error_kind != ps.ERROR_KIND_TRANSIENT:
                     match.status = ps.GENERATION_STATUS_FAILED
                     match.next_retry_at = None
                     db.add(GenerationFailureAlert(
                         match_id=match.match_id,
                         project_id=match.project_id,
                         stage=match.stage,
-                        retry_count=match.retry_count - 1,
+                        resume_count=match.resume_count or 0,
+                        last_error_kind=error_kind,
                         failure_reason=match.failure_reason,
                     ))
+                    # [2026-09-27 신규, SB-141] 실행 실패(E-RUN-FAIL) 사용자 알림. 재작성
+                    # 실패(failure_scope='재작성')는 재작성 기능(2-1/2-2)이 아직 없어서
+                    # 여기선 항상 '실행'이다.
+                    db.add(Notification(
+                        match_id=match.match_id,
+                        project_id=match.project_id,
+                        kind=ps.NOTIFICATION_KIND_FAILURE,
+                        failure_scope=ps.NOTIFICATION_FAILURE_SCOPE_RUN,
+                    ))
+                    db.commit()
+                    return
+                if match.resume_count == 0:
+                    match.resume_started_at = now  # 이번 실패 스트릭의 시작 시각
+                match.resume_count = (match.resume_count or 0) + 1
+                elapsed = (now - match.resume_started_at).total_seconds() if match.resume_started_at else 0.0
+                if match.resume_count > GENERATION_RESUME_MAX_ATTEMPTS or elapsed > GENERATION_RESUME_TOTAL_CAP_SECONDS:
+                    match.status = ps.GENERATION_STATUS_FAILED
+                    match.next_retry_at = None
+                    db.add(GenerationFailureAlert(
+                        match_id=match.match_id,
+                        project_id=match.project_id,
+                        stage=match.stage,
+                        resume_count=match.resume_count - 1,
+                        last_error_kind=error_kind,
+                        failure_reason=match.failure_reason,
+                    ))
+                    db.add(Notification(
+                        match_id=match.match_id,
+                        project_id=match.project_id,
+                        kind=ps.NOTIFICATION_KIND_FAILURE,
+                        failure_scope=ps.NOTIFICATION_FAILURE_SCOPE_RUN,
+                    ))
                 else:
-                    delay = GENERATION_RETRY_BASE_SECONDS * (2 ** (match.retry_count - 1))
+                    delay = GENERATION_RESUME_BASE_SECONDS * (2 ** (match.resume_count - 1))
                     match.status = ps.GENERATION_STATUS_WAITING_RESUME
-                    match.next_retry_at = datetime.datetime.utcnow() + datetime.timedelta(seconds=delay)
+                    match.next_retry_at = now + datetime.timedelta(seconds=delay)
                 db.commit()
     finally:
         db.close()
@@ -810,11 +949,15 @@ def _start_generation(db: Session, project: Project, start_from: tuple, running_
         match.worker_claimed_at = None  # 새 단계 시작 — 이전 단계의 클레임 흔적을 지운다
         match.status = ps.GENERATION_STATUS_IN_PROGRESS
         match.failure_reason = None
-        # [2026-09-23] 수동 "다시 이어가기"는 재시도 횟수를 0으로 완전히 리셋하지 않고
-        # 1로 둔다 — 이 수동 클릭 자체를 재시도 1회로 친다(원래 재시도 예산 5회의
-        # 연장선). 그래서 이 시도도 또 실패하면 바로 2번째 백오프(30초)부터 이어간다.
-        # 최초 시작(재시도가 아니라 처음 시작하는 경우)은 0부터.
-        match.retry_count = 1 if can_retry_failed else 0
+        # [2026-09-23 신규, 2026-09-26 정정] 수동 "다시 이어가기"는 재개 횟수를 0으로
+        # 완전히 리셋하지 않고 1로 둔다 — 이 수동 클릭 자체를 재개 1회로 친다(원래 재개
+        # 예산 5회의 연장선). 그래서 이 시도도 또 실패하면 바로 2번째 백오프(30분)부터
+        # 이어간다. resume_started_at도 지금(수동 클릭 시각)으로 다시 잡아서 "재개 총
+        # 대기 상한"(12시간)도 이 시점부터 새로 잰다. 최초 시작(재개가 아니라 처음
+        # 시작하는 경우)은 둘 다 비운다.
+        match.resume_count = 1 if can_retry_failed else 0
+        match.resume_started_at = datetime.datetime.utcnow() if can_retry_failed else None
+        match.last_error_kind = None
         match.next_retry_at = None
         db.commit()
     # 이미 진행 중이면(다른 요청/복구 루프가 먼저 클레임했으면) 새로 시작하지 않는다 —
@@ -832,7 +975,7 @@ def _start_generation(db: Session, project: Project, start_from: tuple, running_
         match_id=match.match_id,
         match_status=match.status,
         failure_reason=match.failure_reason,
-        retry_count=match.retry_count or 0,
+        resume_count=match.resume_count or 0,
         next_retry_at=match.next_retry_at,
     )
 
@@ -1200,6 +1343,28 @@ async def create_project(
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=json.loads(exc.json())) from exc
 
+    # [2026-09-27 신규] 필수 동의(이용약관/개인정보) 게이트 — 공식 기능정의서 v1.9
+    # E-AUTH-CONSENT: "필수 항목에 동의해야 계정과 작업 결과를 보관할 수 있습니다...
+    # 진입을 중단한다." 새 실행 시작이 곧 "진입"에 해당하므로 여기서 막는다. 로그인
+    # 자체(POST /auth/google)는 계정 생성을 위해 막지 않는다 — 동의 화면은 로그인
+    # 이후 별도로 뜨고, PATCH /auth/consent가 완료돼야 아래 두 값이 채워진다.
+    if current_user.terms_agreed_at is None or current_user.privacy_agreed_at is None:
+        raise HTTPException(
+            status_code=403,
+            detail='필수 항목(이용약관, 개인정보 수집·이용)에 동의해야 이용할 수 있습니다.',
+        )
+
+    # [2026-09-27 신규] 마이페이지 프로필 게이트 — 공식 기능정의서 v1.9 E-AUTH-PROFILE:
+    # "필수 항목을 채운 프로필이 생기기 전에는 새 실행을 시작할 수 없다." 최초 로그인
+    # 이거나(프로필 0개) 있던 프로필을 전부 지운 경우가 해당한다. has_profile 계산은
+    # /auth/me·로그인 응답이 쓰는 것과 같은 함수(compute_has_profile)를 그대로 재사용한다
+    # — 슬롯 하나라도 필수 입력을 전부 채웠는지를 본다.
+    if not compute_has_profile(db, current_user.user_id):
+        raise HTTPException(
+            status_code=403,
+            detail='서비스를 이용하려면 먼저 마이페이지에서 프로필을 만들어주세요.',
+        )
+
     # 계정당 동시 실행 1건 제한(기획서 4-7, backend_decisions.md #11)의 락은 회사 프로필이
     # 아니라 계정(User 행) 자체를 잠가서 건다 — 회사 프로필을 만들기 전에 가장 먼저 걸어야
     # 같은 유저가 거의 동시에 두 번 요청을 보내도 두 번째 요청이 첫 번째 트랜잭션이 끝날
@@ -1223,9 +1388,27 @@ async def create_project(
         .first()
     )
     if active is not None:
+        # [2026-09-27 신규, SB-138] 공식 기능정의서 v1.9 E-RUN-CONCURRENT: "새 Run을 만들지
+        # 않고 blocked=true를 반환한다. 진행 중인 작업의 현재 단계를 보여주고 이어하기와
+        # 중단 후 새로 시작 중 선택하게 한다." 예전엔 사람이 읽는 문장 하나만 detail로
+        # 내려줘서 프론트가 이 선택 화면을 만들 정보(어느 프로젝트인지, 지금 몇 화면인지)를
+        # 파싱할 방법이 없었다 — 구조화된 필드로 바꾼다.
+        #
+        # "중단 후 새로 시작"은 별도 엔드포인트를 새로 만들지 않는다 — 기존 DELETE
+        # /projects/{id}가 이미 정확히 이 역할이다(상태와 무관하게 보관 처리하고 계정당
+        # 1건 제한에서 제외시킨다, test_archived_running_project_does_not_block 참고).
+        # 프론트가 active_project_id로 그 엔드포인트를 부르면 된다. "결과를 다시 볼 수
+        # 없다는 사실을 확인받는다"는 프론트 쪽 확인 다이얼로그의 몫이다.
         raise HTTPException(
             status_code=409,
-            detail=f'진행 중인 프로젝트(project_id={active.project_id})가 있습니다. 이어서 진행하거나 먼저 중단해주세요.',
+            detail={
+                'message': '진행 중인 작업이 있습니다. 이어서 진행하거나, 중단하고 새로 시작할 수 있습니다. 중단하면 지금까지의 결과를 다시 볼 수 없습니다.',
+                'blocked': True,
+                'active_project_id': active.project_id,
+                'active_stage': active.stage,
+                'active_screen': ps.STAGE_TO_SCREEN.get(active.stage) if active.stage is not None else None,
+                'active_display_status': ps.status_to_display(active.status),
+            },
         )
 
     company = _create_company_for_project(db, current_user, body)
@@ -1340,6 +1523,27 @@ def _get_owned_project(db: Session, project_id: int, user: User) -> Project:
     return project
 
 
+def _is_notice_closed(db: Session, notice_id: str | None) -> bool:
+    """[2026-09-27 신규, SB-139] 이어하기로 복귀한 시점에 사용자가 고른 공고가 그새
+    마감됐는지 확인한다(E-RUN-CLOSED). recruitment_status가 수집 파이프라인 쪽에서
+    'open' 외의 값으로 바뀌었거나, apply_end가 오늘보다 이전이면 마감으로 본다 —
+    두 신호를 같이 보는 이유는 apply_period_type이 'budget_exhaustion'/'rolling'처럼
+    날짜만으로 마감을 판단할 수 없는 경우도 있고(Notice 모델 주석 참고), 반대로
+    recruitment_status 갱신이 apply_end 당일 자정에 딱 맞춰 반영된다는 보장도 없기
+    때문이다. 공고 자체를 못 찾으면(드묾 — 수집 데이터가 지워진 경우) 마감이 아니라고
+    본다: 판단할 근거가 없을 때 실행을 막는 쪽으로 오판하지 않기 위해서다."""
+    if notice_id is None:
+        return False
+    notice = db.query(Notice).filter(Notice.notice_id == notice_id).one_or_none()
+    if notice is None:
+        return False
+    if notice.recruitment_status != 'open':
+        return True
+    if notice.apply_end is not None and notice.apply_end < datetime.date.today():
+        return True
+    return False
+
+
 @router.get('/{project_id}/status', response_model=ProjectStatusOut)
 def get_project_status(
     project_id: int,
@@ -1377,8 +1581,9 @@ def get_project_status(
         match_id=match.match_id,
         match_status=match.status,
         failure_reason=match.failure_reason,
-        retry_count=match.retry_count or 0,
+        resume_count=match.resume_count or 0,
         next_retry_at=match.next_retry_at,
+        notice_closed=_is_notice_closed(db, match.notice_id),
     )
 
 
@@ -1444,162 +1649,188 @@ def retry_task(
     changed: dict = {}
     task_key = body.task_key
 
-    if task_key == 'strategy':
-        # app/agents.py — 실제 Agent가 연동되면 이 호출 하나만 실제 구현으로 바뀐다(계약은
-        # 동일하게 유지). 지금은 더미 구현이 무작위 값을 돌려준다. [2026-09-22 수정]
-        # plan_sections '3-1' 대신 plan_canonical_data에 쓴다 — agents.py 모듈 docstring의
-        # "2026-09-22 수정" 참고(Strategy Agent는 분석 자료를 만들 뿐, 최종 문단은 작성
-        # Agent 몫이라는 시트 구조에 맞춤).
-        results = agents.run_strategy_agent_retry(project.description)
-        changed['canonical_data'] = {r.data_key: _upsert_canonical_data(db, plan.plan_id, r) for r in results}
+    try:
+        if task_key == 'strategy':
+            # app/agents.py — 실제 Agent가 연동되면 이 호출 하나만 실제 구현으로 바뀐다(계약은
+            # 동일하게 유지). 지금은 더미 구현이 무작위 값을 돌려준다. [2026-09-22 수정]
+            # plan_sections '3-1' 대신 plan_canonical_data에 쓴다 — agents.py 모듈 docstring의
+            # "2026-09-22 수정" 참고(Strategy Agent는 분석 자료를 만들 뿐, 최종 문단은 작성
+            # Agent 몫이라는 시트 구조에 맞춤).
+            results = agents.run_strategy_agent_retry(project.description)
+            changed['canonical_data'] = {r.data_key: _upsert_canonical_data(db, plan.plan_id, r) for r in results}
 
-    elif task_key == 'writing':
-        drafts = agents.run_writing_agent_retry(project.description, tags=['1-1', '2-1'])
-        changed['sections'] = {d.tag: _upsert_plan_section(db, plan.plan_id, d) for d in drafts}
+        elif task_key == 'writing':
+            drafts = agents.run_writing_agent_retry(project.description, tags=['1-1', '2-1'])
+            changed['sections'] = {d.tag: _upsert_plan_section(db, plan.plan_id, d) for d in drafts}
 
-        # [2026-09-18 추가] "본문/그래프/표를 재작성했는데 왜 점수가 그대로냐"는 지적(하정원님)
-        # — 작성은 콘텐츠만 바꾸고 채점은 검증-1 몫이라 그동안 점수가 안 바뀌었는데, 실제
-        # 화면에도 검증-1을 따로 재시도하는 버튼이 없어(재작성 버튼뿐) 사용자가 점수를 갱신할
-        # 방법 자체가 없었다. 그래서 작성 재시도에 검증-1(rubric+evidence) 재채점을 자동으로
-        # 붙인다 — 채점 근거가 아직 없으면(초기 파이프라인 전) 조용히 건너뛴다.
-        verify1_changed = {}
-        for verify1_key in ('verify1_rubric', 'verify1_evidence'):
-            result = _rescore_verify1(db, plan, verify1_key)
-            if result is not None:
-                verify1_changed[verify1_key] = result
-        if verify1_changed:
-            changed['verify1_rescore'] = verify1_changed
+            # [2026-09-18 추가] "본문/그래프/표를 재작성했는데 왜 점수가 그대로냐"는 지적(하정원님)
+            # — 작성은 콘텐츠만 바꾸고 채점은 검증-1 몫이라 그동안 점수가 안 바뀌었는데, 실제
+            # 화면에도 검증-1을 따로 재시도하는 버튼이 없어(재작성 버튼뿐) 사용자가 점수를 갱신할
+            # 방법 자체가 없었다. 그래서 작성 재시도에 검증-1(rubric+evidence) 재채점을 자동으로
+            # 붙인다 — 채점 근거가 아직 없으면(초기 파이프라인 전) 조용히 건너뛴다.
+            verify1_changed = {}
+            for verify1_key in ('verify1_rubric', 'verify1_evidence'):
+                result = _rescore_verify1(db, plan, verify1_key)
+                if result is not None:
+                    verify1_changed[verify1_key] = result
+            if verify1_changed:
+                changed['verify1_rescore'] = verify1_changed
 
-    elif task_key in ('verify1_rubric', 'verify1_evidence'):
-        result = _rescore_verify1(db, plan, task_key)
-        if result is None:
-            raise HTTPException(status_code=404, detail='재채점할 채점 근거(plan_score_reasons)가 없습니다')
-        changed.update(result)
+        elif task_key in ('verify1_rubric', 'verify1_evidence'):
+            result = _rescore_verify1(db, plan, task_key)
+            if result is None:
+                raise HTTPException(status_code=404, detail='재채점할 채점 근거(plan_score_reasons)가 없습니다')
+            changed.update(result)
 
-    elif task_key in ('implement_prototype', 'implement_infographic'):
-        artifact = (
-            db.query(Artifact)
-            .filter(Artifact.plan_id == plan.plan_id)
-            .order_by(Artifact.artifact_id.desc())
-            .first()
-        )
-        if artifact is None:
-            raise HTTPException(status_code=404, detail='재시도할 산출물(artifacts)이 없습니다')
-        if task_key == 'implement_prototype' and artifact.category == 'onepage':
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "category='onepage' 산출물은 설계상 실행 파일(executable_path)이 없어서 "
-                    '프로토타입 재시도 대상이 아닙니다 (인포그래픽 재시도만 가능)'
-                ),
+        elif task_key in ('implement_prototype', 'implement_infographic'):
+            artifact = (
+                db.query(Artifact)
+                .filter(Artifact.plan_id == plan.plan_id)
+                .order_by(Artifact.artifact_id.desc())
+                .first()
+            )
+            if artifact is None:
+                raise HTTPException(status_code=404, detail='재시도할 산출물(artifacts)이 없습니다')
+            if task_key == 'implement_prototype' and artifact.category == 'onepage':
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "category='onepage' 산출물은 설계상 실행 파일(executable_path)이 없어서 "
+                        '프로토타입 재시도 대상이 아닙니다 (인포그래픽 재시도만 가능)'
+                    ),
+                )
+
+            # 구현 Agent는 파일만 새로 만든다 — 채점(점수 갱신)은 검증-2(verify2_*) 몫이다.
+            artifact_kind = 'prototype' if task_key == 'implement_prototype' else 'infographic'
+            result = agents.run_implement_agent_retry(
+                artifact_kind=artifact_kind, project_description=project.description,
             )
 
-        # 구현 Agent는 파일만 새로 만든다 — 채점(점수 갱신)은 검증-2(verify2_*) 몫이다.
-        artifact_kind = 'prototype' if task_key == 'implement_prototype' else 'infographic'
-        result = agents.run_implement_agent_retry(
-            artifact_kind=artifact_kind, project_description=project.description,
-        )
+            # 파일은 app/agents.py가 만들어 돌려준 바이트를 그대로 저장한다 — 어디에 저장할지
+            # (UPLOAD_DIR)는 여전히 이쪽(호출부) 책임. _save_attachment()는 업로드용이라 재사용
+            # 하지 않고, 같은 저장 위치만 맞춘다.
+            os.makedirs(UPLOAD_DIR, exist_ok=True)
+            stored_name = f'{uuid.uuid4().hex}{result.file_ext}'
+            dest_path = os.path.join(UPLOAD_DIR, stored_name)
+            with open(dest_path, 'wb') as out:
+                out.write(result.file_bytes)
+            new_url = f'/uploads/{stored_name}'
 
-        # 파일은 app/agents.py가 만들어 돌려준 바이트를 그대로 저장한다 — 어디에 저장할지
-        # (UPLOAD_DIR)는 여전히 이쪽(호출부) 책임. _save_attachment()는 업로드용이라 재사용
-        # 하지 않고, 같은 저장 위치만 맞춘다.
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-        stored_name = f'{uuid.uuid4().hex}{result.file_ext}'
-        dest_path = os.path.join(UPLOAD_DIR, stored_name)
-        with open(dest_path, 'wb') as out:
-            out.write(result.file_bytes)
-        new_url = f'/uploads/{stored_name}'
+            if task_key == 'implement_prototype':
+                changed['executable_path'] = {'before': artifact.executable_path, 'after': new_url}
+                artifact.executable_path = new_url
+            else:
+                changed['infographic_path'] = {'before': artifact.infographic_path, 'after': new_url}
+                artifact.infographic_path = new_url
 
-        if task_key == 'implement_prototype':
-            changed['executable_path'] = {'before': artifact.executable_path, 'after': new_url}
-            artifact.executable_path = new_url
-        else:
-            changed['infographic_path'] = {'before': artifact.infographic_path, 'after': new_url}
-            artifact.infographic_path = new_url
+            # [2026-09-18 추가] writing과 같은 이유 — 구현(파일 재생성)에도 검증-2(static+
+            # crosscheck) 재채점을 자동으로 붙인다. 채점 근거가 없으면 조용히 건너뛴다.
+            verify2_changed = {}
+            for verify2_key in ('verify2_static', 'verify2_crosscheck'):
+                result = _rescore_verify2(db, plan, artifact, verify2_key)
+                if result is not None:
+                    verify2_changed[verify2_key] = result
+            if verify2_changed:
+                changed['verify2_rescore'] = verify2_changed
 
-        # [2026-09-18 추가] writing과 같은 이유 — 구현(파일 재생성)에도 검증-2(static+
-        # crosscheck) 재채점을 자동으로 붙인다. 채점 근거가 없으면 조용히 건너뛴다.
-        verify2_changed = {}
-        for verify2_key in ('verify2_static', 'verify2_crosscheck'):
-            result = _rescore_verify2(db, plan, artifact, verify2_key)
-            if result is not None:
-                verify2_changed[verify2_key] = result
-        if verify2_changed:
-            changed['verify2_rescore'] = verify2_changed
-
-    elif task_key in ('verify2_static', 'verify2_crosscheck'):
-        artifact = (
-            db.query(Artifact)
-            .filter(Artifact.plan_id == plan.plan_id)
-            .order_by(Artifact.artifact_id.desc())
-            .first()
-        )
-        if artifact is None:
-            raise HTTPException(status_code=404, detail='재채점할 산출물(artifacts)이 없습니다')
-
-        result = _rescore_verify2(db, plan, artifact, task_key)
-        if result is None:
-            prefixes = _VERIFY2_STATIC_PREFIXES if task_key == 'verify2_static' else _VERIFY2_CROSSCHECK_PREFIXES
-            raise HTTPException(
-                status_code=404,
-                detail=f'{task_key}에 해당하는 채점 근거(item_code 접두어 {prefixes})가 없습니다',
+        elif task_key in ('verify2_static', 'verify2_crosscheck'):
+            artifact = (
+                db.query(Artifact)
+                .filter(Artifact.plan_id == plan.plan_id)
+                .order_by(Artifact.artifact_id.desc())
+                .first()
             )
-        changed.update(result)
+            if artifact is None:
+                raise HTTPException(status_code=404, detail='재채점할 산출물(artifacts)이 없습니다')
 
-    elif task_key == 'review_expression':
-        latest = (
-            db.query(FormatFinding)
-            .filter(FormatFinding.plan_id == plan.plan_id)
-            .order_by(FormatFinding.finding_id.desc())
-            .first()
-        )
-        result = agents.run_review_expression_retry(project.description)
-        db.add(FormatFinding(
-            plan_id=plan.plan_id,
-            finding_type=result.finding_type,
-            location=result.location,
-            message=result.message,
-            severity=result.severity,
-        ))
-        changed['finding'] = {
-            'before': latest.message if latest is not None else None,
-            'after': result.message,
-        }
+            result = _rescore_verify2(db, plan, artifact, task_key)
+            if result is None:
+                prefixes = _VERIFY2_STATIC_PREFIXES if task_key == 'verify2_static' else _VERIFY2_CROSSCHECK_PREFIXES
+                raise HTTPException(
+                    status_code=404,
+                    detail=f'{task_key}에 해당하는 채점 근거(item_code 접두어 {prefixes})가 없습니다',
+                )
+            changed.update(result)
 
-    elif task_key == 'review_token_check':
-        latest = (
-            db.query(ProofreadLog)
-            .filter(ProofreadLog.plan_id == plan.plan_id)
-            .order_by(ProofreadLog.log_id.desc())
-            .first()
-        )
-        next_attempt_no = (latest.attempt_no + 1) if latest is not None else 1
-        result = agents.run_review_token_check_retry(project.description, attempt_no=next_attempt_no)
-        db.add(ProofreadLog(
-            plan_id=plan.plan_id,
-            original_text=(latest.corrected_text if latest is not None else project.description),
-            corrected_text=result.corrected_text,
-            reason=result.reason,
+        elif task_key == 'review_expression':
+            latest = (
+                db.query(FormatFinding)
+                .filter(FormatFinding.plan_id == plan.plan_id)
+                .order_by(FormatFinding.finding_id.desc())
+                .first()
+            )
+            result = agents.run_review_expression_retry(project.description)
+            db.add(FormatFinding(
+                plan_id=plan.plan_id,
+                finding_type=result.finding_type,
+                location=result.location,
+                message=result.message,
+                severity=result.severity,
+            ))
+            changed['finding'] = {
+                'before': latest.message if latest is not None else None,
+                'after': result.message,
+            }
+
+        elif task_key == 'review_token_check':
+            latest = (
+                db.query(ProofreadLog)
+                .filter(ProofreadLog.plan_id == plan.plan_id)
+                .order_by(ProofreadLog.log_id.desc())
+                .first()
+            )
+            next_attempt_no = (latest.attempt_no + 1) if latest is not None else 1
+            result = agents.run_review_token_check_retry(project.description, attempt_no=next_attempt_no)
+            db.add(ProofreadLog(
+                plan_id=plan.plan_id,
+                original_text=(latest.corrected_text if latest is not None else project.description),
+                corrected_text=result.corrected_text,
+                reason=result.reason,
+                attempt_no=next_attempt_no,
+                score=result.score,
+                passed=result.passed,
+                violation_type=result.violation_type,
+                violation_note=result.violation_note,
+                # passed=False인 시도는 그 즉시 "검수 회수 문단" 탭의 라벨링 대기열로 들어간다.
+                recovery_status=None if result.passed else 'pending',
+            ))
+            changed['corrected_text'] = {
+                'before': latest.corrected_text if latest is not None else None,
+                'after': result.corrected_text,
+            }
+            changed['score'] = {'before': _num(latest.score) if latest is not None else None, 'after': _num(result.score)}
+            changed['passed'] = result.passed
+            if not result.passed:
+                changed['violation_type'] = result.violation_type
+                changed['violation_note'] = result.violation_note
+
+        else:  # pragma: no cover — _RETRIABLE_TASK_KEYS 체크를 통과했으면 도달할 수 없다.
+            raise HTTPException(status_code=500, detail=f'처리 로직이 없는 task_key: {task_key!r}')
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # [2026-09-28 신규] 지금은 app.agents의 run_*_retry()가 전부 더미(무작위)라 실패할
+        # 일이 없지만, 실제 Agent가 연동된 뒤에는 여기서 예외가 날 수 있다 — 그때도 이
+        # 라우터를 다시 손대지 않도록 실패 기록을 미리 준비해둔다(_simulate_generation의
+        # 예외 분류 방식과 동일하게 classify_error_kind를 재사용).
+        error_kind = ps.classify_error_kind(exc)
+        db.add(AgentExecution(
+            match_id=match.match_id,
+            agent_name=agent_name,
+            task_key=body.task_key,
             attempt_no=next_attempt_no,
-            score=result.score,
-            passed=result.passed,
-            violation_type=result.violation_type,
-            violation_note=result.violation_note,
-            # passed=False인 시도는 그 즉시 "검수 회수 문단" 탭의 라벨링 대기열로 들어간다.
-            recovery_status=None if result.passed else 'pending',
+            model_used='dummy-retry',
+            rerun_type='rerun',
+            token_usage=0,
+            status=ps.GENERATION_STATUS_FAILED,
+            error_kind=error_kind,
+            error_reason=str(exc)[:2000],
         ))
-        changed['corrected_text'] = {
-            'before': latest.corrected_text if latest is not None else None,
-            'after': result.corrected_text,
-        }
-        changed['score'] = {'before': _num(latest.score) if latest is not None else None, 'after': _num(result.score)}
-        changed['passed'] = result.passed
-        if not result.passed:
-            changed['violation_type'] = result.violation_type
-            changed['violation_note'] = result.violation_note
-
-    else:  # pragma: no cover — _RETRIABLE_TASK_KEYS 체크를 통과했으면 도달할 수 없다.
-        raise HTTPException(status_code=500, detail=f'처리 로직이 없는 task_key: {task_key!r}')
+        db.commit()
+        raise HTTPException(
+            status_code=502,
+            detail={'message': '작업 재시도 중 오류가 발생했습니다', 'task_key': body.task_key, 'error_kind': error_kind},
+        ) from exc
 
     execution = AgentExecution(
         match_id=match.match_id,

@@ -22,10 +22,10 @@ pip install -r requirements.txt
 전부 스크립트 안에서 `DB_BACKEND=sqlite`를 자동 세팅하고, `dev.db`를 매번 지우고 새로 만들어서 스키마가 항상 최신 상태로 시작한다. 그냥 실행하면 된다.
 
 ```
-python verify_resume_cases.py       # 이어하기 8케이스 stage/progress_percent 판별 검증
-python verify_status_endpoint.py    # GET /projects/{id}/status API 실제 HTTP 왕복 검증
-python verify_schema_gaps_seed.py   # 이번에 추가한 6개 스키마 항목이 실제로 채워지는지 검증
-python verify_retry_task.py         # POST /projects/{id}/retry-task — 재시도할 때마다 실제로 값이 바뀌는지 검증
+python tests/verify_resume_cases.py       # 이어하기 8케이스 stage/progress_percent 판별 검증
+python tests/verify_status_endpoint.py    # GET /projects/{id}/status API 실제 HTTP 왕복 검증
+python tests/verify_schema_gaps_seed.py   # 이번에 추가한 6개 스키마 항목이 실제로 채워지는지 검증
+python tests/verify_retry_task.py         # POST /projects/{id}/retry-task — 재시도할 때마다 실제로 값이 바뀌는지 검증
 ```
 
 마지막 줄에 `ALL OK` 또는 `결과: ... 확인.`이 뜨면 통과, 중간에 `assert`가 걸려서 에러 나면 뭔가 깨진 것.
@@ -42,7 +42,7 @@ pytest tests/test_admin.py -v
 
 정책 배점 100 검증/체크리스트 가중치 100 검증/`GET /admin/items` 진행현황/유저 승격(얼굴인증 게이트)/FAQ(미답변 조회·답변 저장)/에이전트 실행로그, 그리고 일반 계정 403·정지 계정 401 구분까지 총 11개 테스트로 나뉘어 있다 — `python verify_admin.py` 한 덩어리로 돌리던 것과 확인 내용은 동일하지만, 중간에 하나가 깨져도 나머지가 계속 실행돼서 pytest 리포트에 한 번에 다 보인다는 게 다르다.
 
-나머지 4개(`verify_resume_cases.py` 등)도 언젠가 `test_*.py`로 옮길 계획이지만 아직은 그대로다 — 옮겨지면 여기도 같이 업데이트할 것.
+나머지 4개(`verify_resume_cases.py` 등)는 실제로 `def test_xxx()` 형태가 아니라 import되는 순간 바로 실행되는 절차형 스크립트라 pytest로 못 옮긴다(수집 단계에서 실행돼버리고, `os.environ['DB_BACKEND']` 전역 세팅과 `sys.exit()` 때문에 다른 테스트까지 깨진다) — 대신 위치만 `tests/`로 옮겨뒀다(2026-09-23). 이름은 `verify_*.py`로 그대로라 pytest 기본 수집 패턴(`test_*.py`)에 안 걸려서 `pytest -q`를 돌려도 같이 실행되지 않는다.
 
 ---
 
@@ -132,7 +132,7 @@ Swagger에서 `POST /projects/{project_id}/retry-task`를 찾아 body에 task_ke
 
 먼저 `python seed_dummy_pipeline.py <project_id>`로 계획서/산출물까지 채워둔 프로젝트여야 호출된다(계획서/산출물이 없으면 404). `category='onepage'`인 산출물에 `implement_prototype`을 호출하면 400이 나는 게 정상(원페이지는 설계상 실행 파일이 없음) — 그런 경우엔 `implement_infographic`만 재시도 가능하다.
 
-`python verify_retry_task.py`가 이 API의 10개 task_key 전부와 정상/오류 케이스를 자동으로 검증해준다(1번 참고).
+`python tests/verify_retry_task.py`가 이 API의 10개 task_key 전부와 정상/오류 케이스를 자동으로 검증해준다(1번 참고).
 
 ---
 
@@ -179,7 +179,7 @@ python seed_dummy_notices.py
 ## 5. (선택, 로컬에 MySQL/MariaDB 있을 때만) 실제 MySQL로 스키마 검증
 
 ```
-python verify_new_schema_mysql.py
+python tests/verify_new_schema_mysql.py
 ```
 
 로컬에 MariaDB/MySQL 서버가 떠 있고 `sbrain`/`sbrain_pw` 계정에 `sbrain_test` DB가 있어야 돌아간다. 없으면 안 돌려도 된다 — SQLite 기반 검증(1번)으로 로직 자체는 충분히 확인 가능하고, 이건 실제 MySQL 계열 DB에서도 타입/제약이 문제없는지 한 번 더 확인하는 용도다(이미 내가 한 번 돌려서 확인해둠).
@@ -190,10 +190,10 @@ python verify_new_schema_mysql.py
 
 | 하고 싶은 것 | 쓸 것 |
 |---|---|
-| 스키마/로직이 안 깨졌는지 빠르게 확인 | 1번 (`verify_*.py` 4개) |
+| 스키마/로직이 안 깨졌는지 빠르게 확인 | 1번 (`tests/verify_*.py` 4개) |
 | admin.py(정책/체크리스트/유저/FAQ 등)가 안 깨졌는지 확인 | 1-1번 (`pytest tests/test_admin.py`) |
-| 재시도가 진짜로 값을 바꿔서 반환하는지 확인 | 2-4번 (Swagger) 또는 `verify_retry_task.py` |
+| 재시도가 진짜로 값을 바꿔서 반환하는지 확인 | 2-4번 (Swagger) 또는 `tests/verify_retry_task.py` |
 | 화면 테스트용 더미 프로젝트 하나 빨리 만들기 (로그인 안 되는 지금) | 2번 (`create_test_project.py` → `seed_dummy_pipeline.py` → `check_project_status.py`) |
 | 진짜 구글 로그인 플로우 자체를 확인 | 3번 (`login_test.html`, origin 등록 필요) |
 | 매칭/공고 조회 로직 테스트 | 4번 (`seed_dummy_notices.py`) |
-| 실제 MySQL 계열 DB에서도 문제없는지 확인 | 5번 (`verify_new_schema_mysql.py`, 선택) |
+| 실제 MySQL 계열 DB에서도 문제없는지 확인 | 5번 (`tests/verify_new_schema_mysql.py`, 선택) |

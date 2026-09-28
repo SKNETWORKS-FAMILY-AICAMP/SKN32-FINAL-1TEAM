@@ -46,6 +46,19 @@ def _login(client: TestClient, email: str, name: str) -> None:
     auth_router.verify_google_id_token = security.verify_google_id_token
     res = client.post('/auth/google', json={'id_token': 'dummy', 'aiTrainingAgreed': True, 'notifyAgreed': True})
     assert res.status_code == 200, f'로그인 실패({email}): {res.status_code} {res.text}'
+    # [2026-09-27 신규] 필수 동의를 완료해야 POST /projects가 열린다(E-AUTH-CONSENT).
+    consent_res = client.patch('/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True})
+    assert consent_res.status_code == 200, f'필수 동의 실패({email}): {consent_res.status_code} {consent_res.text}'
+    # [2026-09-27 신규] 필수 항목을 채운 마이페이지 프로필이 있어야 POST /projects가
+    # 열린다(E-AUTH-PROFILE) — conftest.py의 _MINIMAL_PROFILE_PAYLOAD와 동일한 값.
+    profile_res = client.post('/profile', json={
+        'basic': {
+            'applicantType': 'preliminary', 'ceoName': name, 'birthDate': '1990-01-01',
+            'gender': 'male', 'region': {'sido': '서울', 'sigungu': ''}, 'industry': 'IT',
+        },
+        'capability': {'careers': ['테스트 경력'], 'skills': '백엔드 개발', 'soloFounder': True},
+    })
+    assert profile_res.status_code == 201, f'프로필 생성 실패({email}): {profile_res.status_code} {profile_res.text}'
 
 
 def _create_project(client: TestClient, description: str = 'admin 검증용 프로젝트') -> int:
@@ -294,10 +307,10 @@ def test_put_item_archive_without_match_returns_400(admin_client, user_client):
     assert res.status_code == 400, res.text
 
 
-def test_items_shows_failed_status_and_retry_count(admin_client, user_client, db_session):
-    """[2026-09-23 신규] 생성 작업이 자동 재시도(최대 5회)를 소진하고 확정 실패하면
-    /admin/items의 status_label이 '실패'로, retry_count/failure_reason이 그대로
-    보여야 한다."""
+def test_items_shows_failed_status_and_resume_count(admin_client, user_client, db_session):
+    """[2026-09-23 신규, 2026-09-27 개명] 생성 작업이 자동 재개(최대 5회)를 소진하고
+    확정 실패하면 /admin/items의 status_label이 '실패'로, resume_count/failure_reason이
+    그대로 보여야 한다."""
     import app.pipeline_stages as ps
     from app.models import MatchResult
 
@@ -311,7 +324,7 @@ def test_items_shows_failed_status_and_retry_count(admin_client, user_client, db
     match = MatchResult(
         project_id=project_id, notice_id=notice.notice_id, status='failed',
         stage=ps.STAGE_PLAN_WRITING, progress_percent=70,
-        retry_count=6, failure_reason='6번째 실패(테스트)',
+        resume_count=6, last_error_kind=ps.ERROR_KIND_TRANSIENT, failure_reason='6번째 실패(테스트)',
     )
     db_session.add(match)
     db_session.commit()
@@ -320,8 +333,9 @@ def test_items_shows_failed_status_and_retry_count(admin_client, user_client, db
     assert res.status_code == 200, res.text
     matched = next(row for row in res.json() if row['project_id'] == project_id)
     assert matched['status_label'] == '실패'
-    assert matched['generation_retry_count'] == 6
+    assert matched['generation_resume_count'] == 6
     assert matched['generation_failure_reason'] == '6번째 실패(테스트)'
+    assert matched['generation_last_error_kind'] == '일시'
 
 
 # ============================================================================
@@ -341,17 +355,18 @@ def test_generation_alerts_lists_unacknowledged_by_default(admin_client, user_cl
     db_session.flush()
     match = MatchResult(
         project_id=project_id, notice_id=notice.notice_id, status='failed',
-        stage=ps.STAGE_PLAN_WRITING, progress_percent=70, retry_count=6,
+        stage=ps.STAGE_PLAN_WRITING, progress_percent=70, resume_count=6,
     )
     db_session.add(match)
     db_session.flush()
     unacked = GenerationFailureAlert(
         match_id=match.match_id, project_id=project_id, stage=ps.STAGE_PLAN_WRITING,
-        retry_count=5, failure_reason='미확인 실패(테스트)',
+        resume_count=5, last_error_kind=ps.ERROR_KIND_TRANSIENT, failure_reason='미확인 실패(테스트)',
     )
     acked = GenerationFailureAlert(
         match_id=match.match_id, project_id=project_id, stage=ps.STAGE_PLAN_WRITING,
-        retry_count=5, failure_reason='이미 확인한 실패(테스트)', acknowledged_at=datetime.datetime.utcnow(),
+        resume_count=5, last_error_kind=ps.ERROR_KIND_TRANSIENT,
+        failure_reason='이미 확인한 실패(테스트)', acknowledged_at=datetime.datetime.utcnow(),
     )
     db_session.add_all([unacked, acked])
     db_session.commit()
@@ -380,13 +395,13 @@ def test_ack_generation_alert_toggles_acknowledged_at(admin_client, user_client,
     db_session.flush()
     match = MatchResult(
         project_id=project_id, notice_id=notice.notice_id, status='failed',
-        stage=ps.STAGE_PLAN_WRITING, progress_percent=70, retry_count=6,
+        stage=ps.STAGE_PLAN_WRITING, progress_percent=70, resume_count=6,
     )
     db_session.add(match)
     db_session.flush()
     alert = GenerationFailureAlert(
         match_id=match.match_id, project_id=project_id, stage=ps.STAGE_PLAN_WRITING,
-        retry_count=5, failure_reason='확인 처리 대상(테스트)',
+        resume_count=5, last_error_kind=ps.ERROR_KIND_TRANSIENT, failure_reason='확인 처리 대상(테스트)',
     )
     db_session.add(alert)
     db_session.commit()
@@ -867,6 +882,41 @@ def test_get_agent_executions(admin_client, user_client, db_session):
     assert res.status_code == 200, res.text
     assert len(res.json()) >= 10, f'seed_dummy_pipeline이 남긴 실행 로그가 안 보임: {len(res.json())}건'
     assert all('task_key' in row for row in res.json())
+
+
+def test_get_agent_executions_filters_by_status_and_reports_retryable(admin_client, user_client, db_session):
+    """[2026-09-28 신규] status='failed' 필터로 성공 실행 사이에 섞인 실패 건만 뽑을 수
+    있어야 하고, 응답의 error_kind/error_reason/retryable이 실제로 채워져야 한다.
+    retryable은 error_kind='일시'일 때만 True — 별도 컬럼이 아니라 여기서 계산된 값
+    (app/routers/admin.py list_agent_executions 참고)."""
+    import app.pipeline_stages as ps
+    from app.models import AgentExecution
+
+    project_id = _create_project(user_client, description='에이전트 실패 로그 검증용 프로젝트')
+    notice = Notice(
+        notice_id='ADMIN-TEST-003', source='k-startup', title='admin 검증용 더미 공고3', recruitment_status='진행중',
+    )
+    db_session.add(notice)
+    db_session.flush()
+    seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-003', retry_agents=())
+    match = db_session.query(MatchResult).filter_by(project_id=project_id).one()
+    db_session.add(AgentExecution(
+        match_id=match.match_id, agent_name='작성', task_key='writing', attempt_no=99,
+        model_used='dummy', rerun_type='rerun', token_usage=0, status='failed',
+        error_kind=ps.ERROR_KIND_TRANSIENT, error_reason='일시 오류(테스트)',
+    ))
+    db_session.commit()
+
+    res = admin_client.get('/admin/agent-executions', params={'status': 'failed'})
+    assert res.status_code == 200, res.text
+    rows = res.json()
+    assert len(rows) == 1, f'status=failed 필터가 성공 건까지 같이 돌려줌: {len(rows)}건'
+    assert rows[0]['error_kind'] == '일시'
+    assert rows[0]['error_reason'] == '일시 오류(테스트)'
+    assert rows[0]['retryable'] is True
+
+    completed = admin_client.get('/admin/agent-executions', params={'status': 'completed'}).json()
+    assert all(r['retryable'] is None for r in completed), '성공 건은 error_kind가 없으니 retryable도 None이어야 함'
 
 
 # ============================================================================

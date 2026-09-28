@@ -36,6 +36,18 @@ from app.database import Base
 # 상태 6종(app/pipeline_stages.py 참고) — MySQL에서는 실제 ENUM(...) 컬럼이 되고, SQLite
 # (테스트)에서는 VARCHAR + CHECK 제약으로 동작한다(SQLAlchemy Enum의 기본 동작).
 _GenerationStatus = Enum(*ps.GENERATION_STATUSES, name='generation_status')
+# [2026-09-27 신규, SB-134] 실패 원인 분류 3종(일시/입력/운영) — app/pipeline_stages.py
+# classify_error_kind 참고.
+_ErrorKind = Enum(*ps.ERROR_KINDS, name='error_kind')
+# [2026-09-27 신규, SB-141] 사용자용 알림 종류·실패 범위 — app/pipeline_stages.py
+# NOTIFICATION_KINDS/NOTIFICATION_FAILURE_SCOPES 참고.
+_NotificationKind = Enum(*ps.NOTIFICATION_KINDS, name='notification_kind')
+_NotificationFailureScope = Enum(*ps.NOTIFICATION_FAILURE_SCOPES, name='notification_failure_scope')
+# [2026-09-28 신규] plan_sections.tag(예비·초기 3종 + 일반 4종, app/pipeline_stages.py
+# PLAN_SECTION_TAGS 참고)와 user_profiles.biz_status_cd(국세청 사업자상태조회 3종)를
+# MySQL 실제 ENUM으로 만든다.
+_PlanSectionTag = Enum(*ps.PLAN_SECTION_TAGS, name='plan_section_tag')
+_BizStatusCd = Enum(*ps.BIZ_STATUS_CODES, name='biz_status_cd')
 
 # app_schema.sql엔 MySQL 전용 타입(LONGTEXT, INT UNSIGNED)으로 선언된 컬럼이 있는데,
 # 이 타입들을 그대로 쓰면 SQLite(tests/conftest.py가 만드는 테스트 DB)에서 컴파일 에러가 난다.
@@ -206,6 +218,14 @@ class User(Base):
     google_sub: Mapped[str] = mapped_column(String(255), unique=True)
     notify_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     ai_training_agreed: Mapped[bool] = mapped_column(Boolean, default=False)
+    # [2026-09-27 신규] 필수 동의(이용약관/개인정보 수집·이용) — 공식 기능정의서 v1.9의
+    # Consent 타입(E-AUTH-CONSENT) 대응. 예전엔 이 두 필수 동의를 저장하는 컬럼 자체가
+    # 없었고 프론트 체크박스로만 가입 진행을 막았다(ConsentUpdateRequest 예전 docstring
+    # 참고) — 서버가 실제로 동의 여부를 알 방법이 없었다는 뜻이다. NULL이면 아직
+    # 동의하지 않은 상태, 값이 있으면 그 시각에 동의했다는 뜻(PATCH /auth/consent가
+    # 채운다). 새 실행 시작(POST /projects)은 둘 다 값이 있어야 허용한다.
+    terms_agreed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    privacy_agreed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     role: Mapped[str] = mapped_column(String(20), default='user')
     status: Mapped[str] = mapped_column(String(20), default='active')
     # [2026-09-17] 얼굴 인증(face_verified_at) 게이트를 팀 결정으로 완전히 뺐다 — AWS
@@ -543,14 +563,35 @@ class MatchResult(Base):
     # (_simulate_generation/_recover_orphaned_generations_once/_start_generation 참고).
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # [2026-09-23 신규] 실패 후 자동 재시도 횟수 — 15초 -> 30 -> 60 -> 120 -> 240초로
-    # 2배씩 늘려가며 최대 5번까지 자동으로 재시도하고, 그래도 안 되면 status='failed'로
+    # [2026-09-27 신규, SB-134] 마지막 실패의 원인 분류(일시/입력/운영) — 공식 기능정의서
+    # v1.9 Run.lastErrorKind. 일시 오류만 재개(백오프 재시도)하고, 입력·운영은 영구
+    # 오류로 보고 재개 없이 바로 status='failed'로 확정한다(R-11). NULL이면 아직 실패한
+    # 적이 없거나(정상 진행 중) 성공해서 초기화된 상태 — app/pipeline_stages.py
+    # classify_error_kind 참고.
+    last_error_kind: Mapped[str | None] = mapped_column(_ErrorKind, nullable=True)
+
+    # [2026-09-23 신규, 2026-09-26 정정, 2026-09-27 개명] 실패 후 자동 "재개" 횟수(공식
+    # 기능정의서 v1.9의 Run.resumeCount) — R-11 기준 15분 -> 30 -> 60 -> 120 -> 240분으로
+    # 2배씩 늘려가며 최대 5번까지 자동으로 재개하고, 그래도 안 되면 status='failed'로
     # 확정한다(관리자 알림 + 사용자 "다시 이어가기" 버튼 대상). 사용자가 수동으로
-    # "다시 이어가기"를 누르면(_start_generation) 0으로 리셋된다 — 새 시도 묶음이라는 뜻.
+    # "다시 이어가기"를 누르면(_start_generation) 1로 리셋된다(그 클릭 자체가 1회
+    # 재개로 침). [2026-09-27] 예전엔 이 컬럼 이름이 retry_count였는데, 스펙의
+    # Run.retryCount("현재 호출의 재시도 횟수" — 같은 호출을 즉시 다시 보내는 것,
+    # 재개할 때마다 다시 채워짐)와 다른 개념이라 resume_count로 바로잡는다.
+    resume_count: Mapped[int] = mapped_column(_UnsignedInt, default=0)
+    # [2026-09-27 신규] 개별 Agent 호출 실패(타임아웃·응답 형식 오류 등)에 대한 즉시
+    # 재시도 횟수(Run.retryCount) — 지금은 파이프라인이 100% 더미(sleep만 함)라 실제로
+    # "호출이 실패해서 재시도"할 대상 자체가 없어서 항상 0이다. 실제 Agent 호출 계층이
+    # 생기면 그 안에서 이 컬럼을 채우면 된다(재개 시작마다 0으로 리셋 — resume_count와
+    # 달리 "연속 실패" 누적값이 아니라 "이번 재개 안에서의 호출 재시도" 값).
     retry_count: Mapped[int] = mapped_column(_UnsignedInt, default=0)
-    # 다음 자동 재시도를 시도할 시각(status='waiting_resume'일 때만 값이 있음) — 복구
-    # 루프가 이 시각이 지나기 전엔 재시도하지 않는다(백오프 간격을 지키기 위함).
+    # 다음 자동 재개를 시도할 시각(status='waiting_resume'일 때만 값이 있음) — 복구
+    # 루프가 이 시각이 지나기 전엔 재개하지 않는다(백오프 간격을 지키기 위함).
     next_retry_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    # [2026-09-26 신규] 이번 실패 스트릭의 첫 실패 시각 — "재개 총 대기 상한"(12시간,
+    # 재개 대기+실행 시간 합산)을 재는 기준점이다. 성공하거나 사용자가 수동으로 다시
+    # 시작하면 초기화된다(resume_count가 0/1로 리셋되는 시점과 항상 같이 움직인다).
+    resume_started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
     project: Mapped['Project'] = relationship(back_populates='matches')
     eligibility_checks: Mapped[list['EligibilityCheck']] = relationship(back_populates='match')
@@ -589,12 +630,48 @@ class GenerationFailureAlert(Base):
     match_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('match_results.match_id'))
     project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
     stage: Mapped[str] = mapped_column(String(30))  # 실패가 확정된 시점의 stage(어느 단계였는지)
-    retry_count: Mapped[int] = mapped_column(_UnsignedInt)  # 확정 시점까지 소진한 자동 재시도 횟수
+    # [2026-09-27 개명] match_results.resume_count와 같은 이유로 개명(예전 retry_count).
+    resume_count: Mapped[int] = mapped_column(_UnsignedInt)  # 확정 시점까지 소진한 자동 재개 횟수
+    # [2026-09-27 신규, SB-134] 실패 확정 시점의 원인 분류 스냅샷 — 관리자가 "재개 상한
+    # 소진"(일시 오류가 오래 지속)과 "영구 오류로 즉시 실패"(입력/운영)를 구분해서 볼 수
+    # 있게 한다.
+    last_error_kind: Mapped[str] = mapped_column(_ErrorKind)
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
     # 관리자가 확인 처리한 시각 — NULL이면 아직 미확인. 재시도 자체를 막지는 않는다
     # (사용자는 확인 여부와 무관하게 "다시 이어가기"를 누를 수 있음).
     acknowledged_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class Notification(Base):
+    """[2026-09-27 신규, SB-141] 사용자용 작업 알림 — 공식 기능정의서 v1.9 Notification
+    타입. GenerationFailureAlert(관리자 대시보드용 실패 로그)와는 독립된 테이블이다 —
+    이건 화면 헤더 종모양 알림에 사용자가 직접 보는 이력이고, 저건 관리자가 미확인
+    실패를 조회하는 별도 목적이라 대상 독자와 필드가 다르다(예: 이 테이블엔
+    target_step·read_at이 있고, 저 테이블엔 resume_count·acknowledged_at이 있다).
+
+    [2026-09-23 세션 결정과의 관계] 세션 초반엔 "사용자 알림엔 진행/완료/실패 3가지만"
+    이라는 더 단순한 방향으로 가서 GET /projects.display_status로 흉내만 냈었는데,
+    이번에 스펙 원안(kind 4종 + target_step + read_at)대로 다시 정식화하기로 했다
+    (2026-09-27). display_status는 그대로 두고(다른 화면이 이미 그걸 쓰고 있음), 이
+    테이블은 그와 별개로 "무슨 일이 있었는지의 이력 목록"을 담당한다."""
+
+    __tablename__ = 'notifications'
+
+    notification_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    match_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('match_results.match_id'))
+    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
+    kind: Mapped[str] = mapped_column(_NotificationKind)
+    # kind='실패'일 때만 값이 있다 — 실행 실패(E-RUN-FAIL)인지 재작성 실패(E-RUN-ROLLBACK)
+    # 인지 구분한다. 재작성 실패는 아직 구현 전이라(2-1/2-2 선행 필요) 지금은 항상
+    # '실행'만 나온다.
+    failure_scope: Mapped[str | None] = mapped_column(_NotificationFailureScope, nullable=True)
+    # 알림을 누르면 들어갈 화면 번호 — kind='실패'면 들어갈 화면이 없어 NULL(이어하기
+    # 목록으로 연결).
+    target_step: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    channel: Mapped[str] = mapped_column(String(10), default=ps.NOTIFICATION_CHANNEL_SCREEN)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+    read_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class EligibilityCheck(Base):
@@ -649,7 +726,7 @@ class PlanSection(Base):
 
     section_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     plan_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('business_plans.plan_id'))
-    tag: Mapped[str] = mapped_column(String(16))  # P / S / S / T
+    tag: Mapped[str] = mapped_column(_PlanSectionTag)  # app/pipeline_stages.py PLAN_SECTION_TAGS
     title: Mapped[str] = mapped_column(String(255))
     body: Mapped[str | None] = mapped_column(_LongText, nullable=True)  # app_schema.sql: LONGTEXT
 
@@ -885,7 +962,7 @@ class UserProfile(Base):
     capability_json: Mapped[dict] = mapped_column(JSON, nullable=False)
 
     biz_checked_no: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    biz_status_cd: Mapped[str | None] = mapped_column(String(2), nullable=True)  # 01 계속/02 휴업/03 폐업
+    biz_status_cd: Mapped[str | None] = mapped_column(_BizStatusCd, nullable=True)  # 01 계속/02 휴업/03 폐업
     biz_tax_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     biz_checked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -946,6 +1023,13 @@ class AgentExecution(Base):
     # 'completed'로 통일한다(app/pipeline_stages.py GENERATION_STATUSES 참고).
     status: Mapped[str] = mapped_column(_GenerationStatus)
     started_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # [2026-09-28 신규] status='failed'일 때만 채운다. error_kind는 match_results.
+    # last_error_kind와 같은 분류(일시/입력/운영, app/pipeline_stages.py classify_error_kind)
+    # 를 그대로 재사용한다 — "재시도 가능 여부"는 error_kind == '일시'로 파생되는 값이라
+    # 별도 컬럼을 두지 않는다(admin.py list_agent_executions가 응답에서 계산해 내려준다).
+    error_kind: Mapped[str | None] = mapped_column(_ErrorKind, nullable=True)
+    error_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 # ---------------------------------------------------------------------------

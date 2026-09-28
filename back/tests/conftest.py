@@ -76,6 +76,27 @@ def db_session():
                 conn.execute(table.delete())
 
 
+# [2026-09-27 신규] E-AUTH-PROFILE 게이트(POST /projects는 필수 항목을 채운 마이페이지
+# 프로필이 하나 이상 있어야 열린다) 대응용 최소 유효 프로필 — 다른 테스트 파일의 로컬
+# 로그인 헬퍼(test_admin.py, test_projects.py)도 이 값을 그대로 가져다 쓴다. 필수 조건은
+# app/routers/profile.py의 profile_satisfies_required_fields 참고.
+_MINIMAL_PROFILE_PAYLOAD = {
+    'basic': {
+        'applicantType': 'preliminary',  # individual/corp는 bizNo/openedAt까지 요구해서 회피
+        'ceoName': '테스트유저',
+        'birthDate': '1990-01-01',
+        'gender': 'male',
+        'region': {'sido': '서울', 'sigungu': ''},
+        'industry': 'IT',
+    },
+    'capability': {
+        'careers': ['테스트 경력'],
+        'skills': '백엔드 개발',
+        'soloFounder': True,
+    },
+}
+
+
 @pytest.fixture()
 def client(db_session):
     """인증 안 된 TestClient. db_session과 같은 엔진(SQLite 파일)을 보므로, 테스트
@@ -89,7 +110,7 @@ def login_as(client):
     """호출할 때마다 이메일별로 로그인 처리된 TestClient를 돌려주는 팩토리.
 
     구글 ID 토큰 검증(app.security.verify_google_id_token)을 더미로 갈아치우고
-    실제로 POST /auth/google을 호출해서 세션 쿠키까지 심어둔다 — verify_retry_task.py
+    실제로 POST /auth/google을 호출해서 세션 쿠키까지 심어둔다 — tests/verify_retry_task.py
     등 verify_*.py 스크립트들이 파일마다 반복하던 로그인 monkeypatch 패턴을 fixture로
     뽑아낸 것. app.routers.auth가 `from app.security import verify_google_id_token`로
     함수를 직접 이름 바인딩해 가져가기 때문에, security 모듈뿐 아니라 auth 라우터
@@ -101,7 +122,7 @@ def login_as(client):
     import app.routers.auth as auth_router
     import app.security as security
 
-    def _login(email: str = 'pytest-user@example.com', name: str = 'pytest유저'):
+    def _login(email: str = 'pytest-user@example.com', name: str = 'pytest유저', with_profile: bool = True):
         fake_sub = f'test-sub-{email}'
         security.verify_google_id_token = lambda id_token_str: {
             'sub': fake_sub, 'email': email, 'name': name,
@@ -111,6 +132,19 @@ def login_as(client):
             'id_token': 'dummy', 'aiTrainingAgreed': True, 'notifyAgreed': True,
         })
         assert res.status_code == 200, f'테스트 로그인 실패: {res.status_code} {res.text}'
+        # [2026-09-27 신규] 필수 동의(이용약관/개인정보)를 완료해야 POST /projects가
+        # 열린다(E-AUTH-CONSENT) — 실제 온보딩 흐름(로그인 -> 동의 화면 -> PATCH
+        # /auth/consent)과 같은 순서로, 테스트 계정도 기본으로 동의를 완료시켜둔다.
+        consent_res = client.patch('/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True})
+        assert consent_res.status_code == 200, f'테스트 계정 필수 동의 실패: {consent_res.status_code} {consent_res.text}'
+        # [2026-09-27 신규] 마이페이지 프로필이 하나도 없으면 POST /projects가 열리지
+        # 않는다(E-AUTH-PROFILE) — 실제 온보딩 흐름과 같은 순서로, 테스트 계정도 필수
+        # 항목을 채운 프로필을 기본으로 하나 만들어둔다. with_profile=False는 프로필
+        # 시스템 자체를 "아직 아무것도 저장 안 한 계정"부터 테스트해야 하는 test_profile.py
+        # 전용(그 파일이 authed_client를 이 값으로 오버라이드해서 쓴다).
+        if with_profile:
+            profile_res = client.post('/profile', json=_MINIMAL_PROFILE_PAYLOAD)
+            assert profile_res.status_code == 201, f'테스트 계정 프로필 생성 실패: {profile_res.status_code} {profile_res.text}'
         return client
 
     return _login

@@ -14,11 +14,45 @@ users.ai_training_agreed를 덮어썼다 — 그런데 프론트의 "이미 동�
 호출해야 한다. 프론트가 "동의 화면을 다시 보여줄지"를 판단할 수 있도록, 응답에
 has_agreed_terms/is_new_user를 실제 값으로 채워 돌려준다(예전엔 has_agreed_terms가 무조건
 True로 고정돼 있어서 프론트가 쓸 수 없는 값이었다)."""
+import datetime
+
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import User
+from app.models import (
+    AgentExecution,
+    Artifact,
+    ArtifactScoreReason,
+    BusinessPlan,
+    Company,
+    EligibilityCheck,
+    Faq,
+    FormatFinding,
+    GenerationFailureAlert,
+    MatchCandidate,
+    MatchResult,
+    MatchScoreReason,
+    NoticeAlert,
+    Notification,
+    PlanCanonicalData,
+    PlanScoreReason,
+    PlanSection,
+    PricingItem,
+    Project,
+    ProjectAttachment,
+    ProjectBudgetItem,
+    ProjectPartner,
+    ProjectPlanInput,
+    ProjectScheduleItem,
+    ProofreadLog,
+    RefreshToken,
+    TeamMember,
+    User,
+    UserProfile,
+    Verdict,
+    VerificationScoreHistory,
+)
 from app.routers.profile import compute_has_profile
 from app.schemas import (
     AuthMeOut,
@@ -91,7 +125,7 @@ def login_with_google(body: GoogleLoginRequest, response: Response, db: Session 
     user_out.has_profile = compute_has_profile(db, user.user_id)
     return GoogleLoginResponse(
         user=user_out,
-        has_agreed_terms=not is_new_user,
+        has_agreed_terms=user.terms_agreed_at is not None and user.privacy_agreed_at is not None,
         is_new_user=is_new_user,
     )
 
@@ -127,17 +161,99 @@ def update_consent(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """신규 가입 직후 동의 화면 제출, 또는 나중에 설정 화면에서 선택 동의(학습데이터
-    활용/유사 공고 알림)를 바꿀 때 쓴다. 둘 다 선택이라 일부만 보내도 되고(None은 그대로
-    둠), 필수 약관(이용약관/개인정보) 자체는 이 테이블에 컬럼이 없어 여기서 다루지 않는다
-    — 프론트에서만 가입 진행을 막는 게이트로 쓰인다."""
+    """신규 가입 직후 동의 화면 제출, 또는 나중에 설정 화면에서 동의값을 바꿀 때 쓴다.
+    전부 선택 필드라 일부만 보내도 된다(None은 그대로 둠).
+
+    [2026-09-27 확장] 필수 동의(이용약관/개인정보)도 이제 이 엔드포인트로 기록한다 —
+    true면 지금 시각을 저장하고, false면 철회로 보고 NULL로 되돌린다(공식 기능정의서
+    v1.9 E-AUTH-CONSENT: "철회 이후 수집을 중단한다"). 새 실행 시작(POST /projects)은
+    둘 다 값이 있어야 허용된다."""
     if body.ai_training_agreed is not None:
         current_user.ai_training_agreed = body.ai_training_agreed
     if body.notify_agreed is not None:
         current_user.notify_enabled = body.notify_agreed
+    if body.terms_agreed is not None:
+        current_user.terms_agreed_at = datetime.datetime.utcnow() if body.terms_agreed else None
+    if body.privacy_agreed is not None:
+        current_user.privacy_agreed_at = datetime.datetime.utcnow() if body.privacy_agreed else None
     db.commit()
     db.refresh(current_user)
     return UserOut.model_validate(current_user)
+
+
+def _delete_account_cascade(db: Session, user: User) -> None:
+    """[2026-09-28 신규] 계정 삭제(탈퇴) — 프로젝트 기획서 v1.10 6-7절: "계정 식별자와
+    마이페이지 프로필, 모든 실행 건을 삭제한다. 진행 중인 실행이 있으면 중단한 뒤
+    삭제한다." 진행 중인 실행을 별도로 'halted'로 바꾸는 중간 단계는 두지 않는다 —
+    이 함수가 끝나면 그 실행의 match_results 행 자체가 사라지므로, 더미 생성 루프
+    (_simulate_generation)가 다음 루프에서 db.get(MatchResult, ...)가 None을 보고
+    조용히 멈춘다(app/routers/projects.py 참고) — 실질적으로 "중단 후 삭제"와 같다.
+
+    app_schema.sql(MySQL)에는 이미 이 테이블들 대부분에 ON DELETE CASCADE가 걸려있지만,
+    (1) SQLite 테스트 스키마(models.py에서 직접 생성)는 ForeignKey에 ondelete를 안 줘서
+    cascade가 전혀 없고, (2) 그래서 MySQL/SQLite 어느 쪽에서 돌든 동일하게 동작하도록
+    delete_project()와 같은 방식(자식부터 명시적으로 지우는 순서)을 따른다."""
+    company_ids = [c.company_id for c in db.query(Company.company_id).filter(Company.user_id == user.user_id)]
+    project_ids = [p.project_id for p in db.query(Project.project_id).filter(Project.company_id.in_(company_ids))] if company_ids else []
+    match_ids = [m.match_id for m in db.query(MatchResult.match_id).filter(MatchResult.project_id.in_(project_ids))] if project_ids else []
+    plan_ids = [p.plan_id for p in db.query(BusinessPlan.plan_id).filter(BusinessPlan.match_id.in_(match_ids))] if match_ids else []
+
+    if plan_ids:
+        artifact_ids = [a.artifact_id for a in db.query(Artifact.artifact_id).filter(Artifact.plan_id.in_(plan_ids))]
+        if artifact_ids:
+            db.query(ArtifactScoreReason).filter(ArtifactScoreReason.artifact_id.in_(artifact_ids)).delete(synchronize_session=False)
+        db.query(Verdict).filter(Verdict.plan_id.in_(plan_ids)).delete(synchronize_session=False)
+        db.query(Artifact).filter(Artifact.plan_id.in_(plan_ids)).delete(synchronize_session=False)
+        db.query(ProofreadLog).filter(ProofreadLog.plan_id.in_(plan_ids)).delete(synchronize_session=False)
+        db.query(FormatFinding).filter(FormatFinding.plan_id.in_(plan_ids)).delete(synchronize_session=False)
+        db.query(PlanScoreReason).filter(PlanScoreReason.plan_id.in_(plan_ids)).delete(synchronize_session=False)
+        db.query(PlanCanonicalData).filter(PlanCanonicalData.plan_id.in_(plan_ids)).delete(synchronize_session=False)
+        db.query(VerificationScoreHistory).filter(VerificationScoreHistory.plan_id.in_(plan_ids)).delete(synchronize_session=False)
+        db.query(PlanSection).filter(PlanSection.plan_id.in_(plan_ids)).delete(synchronize_session=False)
+    if match_ids:
+        db.query(BusinessPlan).filter(BusinessPlan.match_id.in_(match_ids)).delete(synchronize_session=False)
+        db.query(Notification).filter(Notification.match_id.in_(match_ids)).delete(synchronize_session=False)
+        db.query(GenerationFailureAlert).filter(GenerationFailureAlert.match_id.in_(match_ids)).delete(synchronize_session=False)
+        db.query(MatchScoreReason).filter(MatchScoreReason.match_id.in_(match_ids)).delete(synchronize_session=False)
+        db.query(EligibilityCheck).filter(EligibilityCheck.match_id.in_(match_ids)).delete(synchronize_session=False)
+        db.query(AgentExecution).filter(AgentExecution.match_id.in_(match_ids)).delete(synchronize_session=False)
+    if project_ids:
+        db.query(MatchResult).filter(MatchResult.project_id.in_(project_ids)).delete(synchronize_session=False)
+        db.query(MatchCandidate).filter(MatchCandidate.project_id.in_(project_ids)).delete(synchronize_session=False)
+        db.query(NoticeAlert).filter(NoticeAlert.project_id.in_(project_ids)).delete(synchronize_session=False)
+        db.query(ProjectAttachment).filter(ProjectAttachment.project_id.in_(project_ids)).delete(synchronize_session=False)
+        db.query(TeamMember).filter(TeamMember.project_id.in_(project_ids)).delete(synchronize_session=False)
+        db.query(PricingItem).filter(PricingItem.project_id.in_(project_ids)).delete(synchronize_session=False)
+        db.query(ProjectBudgetItem).filter(ProjectBudgetItem.project_id.in_(project_ids)).delete(synchronize_session=False)
+        db.query(ProjectScheduleItem).filter(ProjectScheduleItem.project_id.in_(project_ids)).delete(synchronize_session=False)
+        db.query(ProjectPartner).filter(ProjectPartner.project_id.in_(project_ids)).delete(synchronize_session=False)
+        db.query(ProjectPlanInput).filter(ProjectPlanInput.project_id.in_(project_ids)).delete(synchronize_session=False)
+    if company_ids:
+        db.query(Project).filter(Project.company_id.in_(company_ids)).delete(synchronize_session=False)
+    db.query(Company).filter(Company.user_id == user.user_id).delete(synchronize_session=False)
+    db.query(UserProfile).filter(UserProfile.user_id == user.user_id).delete(synchronize_session=False)
+    db.query(RefreshToken).filter(RefreshToken.user_id == user.user_id).delete(synchronize_session=False)
+    db.query(Faq).filter(Faq.user_id == user.user_id).delete(synchronize_session=False)
+    db.delete(user)
+    db.commit()
+
+
+@router.delete('/me', status_code=204)
+def delete_account(
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """계정 삭제(탈퇴) — 프로젝트 기획서 v1.10 6-7절. 계정 식별자, 마이페이지 프로필,
+    회사 프로필, 프로젝트와 그 아래 매칭·계획서·산출물·검증 이력까지 전부 지운다.
+    되돌릴 수 없다 — 프론트는 이 호출 전에 반드시 확인 다이얼로그를 거쳐야 한다.
+
+    refresh_tokens 행 자체가 _delete_account_cascade에서 통째로 삭제되므로
+    revoke_refresh_token을 따로 부를 필요가 없다(행이 없으면 재발급도 당연히 안 됨).
+    쿠키는 주입받은 response에 직접 지워야 한다 — 새 Response 객체를 만들어 반환하면
+    FastAPI가 그 객체를 쓰지 않고 이 쿠키 삭제가 사라진다(logout()과 같은 패턴)."""
+    _delete_account_cascade(db, current_user)
+    clear_auth_cookies(response)
 
 
 @router.post('/logout')
