@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Icon } from '../../components/Icons.jsx';
+import { deleteAccount } from '../../api.js';
 import { MAX_PROFILES, useMyPageStore } from '../../store/useMyPageStore.js';
 import BasicInfo from './BasicInfo.jsx';
 import CapabilityTeam from './CapabilityTeam.jsx';
@@ -96,7 +97,63 @@ function ProfileSwitcher() {
   );
 }
 
-export default function MyPage({ onSaved }) {
+// [2026-09-28] 계정 탈퇴(DELETE /auth/me, 기획서 v1.10 6-7절). 서버가 계정·프로필·모든 실행
+// 이력을 되돌릴 수 없게 지우므로, 백엔드 주석이 요구하는 대로 확인 단계를 반드시 거친다 —
+// 여기서는 실수로 누르기 어렵게 계정 이메일을 그대로 입력해야 버튼이 열리게 했다.
+function DeleteAccountSection({ email, onDeleted }) {
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const confirmed = typed.trim() === (email || '').trim() && !!email;
+
+  const handleDelete = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await deleteAccount();
+      onDeleted?.();
+    } catch (e) {
+      console.error('계정 삭제 실패:', e);
+      setError(e.message || '탈퇴 처리 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-12 pt-6 border-t border-[var(--border)]">
+      {!open ? (
+        <button type="button" onClick={() => setOpen(true)}
+          className="text-[13px] font-semibold text-[var(--muted-fg)] underline underline-offset-2 hover:text-[var(--danger)]">
+          계정 탈퇴
+        </button>
+      ) : (
+        <div className="rounded-2xl border border-[#f4c9c9] bg-[#fff1f1] p-5">
+          <p className="text-[14px] font-bold text-[#bb3434] mb-1.5">정말 탈퇴하시겠어요?</p>
+          <p className="text-[12.5px] text-[#874b4b] leading-relaxed mb-4">
+            계정과 마이페이지 정보, 지금까지 만든 사업계획서·프로토타입과 검증 이력이 모두 삭제됩니다. 되돌릴 수 없어요.
+          </p>
+          <label className="block text-[12.5px] text-[#874b4b] mb-1.5">확인을 위해 계정 이메일 <span className="font-semibold">{email}</span> 을 입력해 주세요</label>
+          <input value={typed} onChange={(e) => setTyped(e.target.value)} disabled={busy}
+            className={inputCls + ' bg-white mb-3'} placeholder={email || '계정 이메일'} />
+          {error && <p className="text-[12.5px] font-semibold text-[var(--danger)] mb-2">{error}</p>}
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={handleDelete} disabled={!confirmed || busy}
+              className="h-10 px-4 rounded-xl bg-[var(--danger)] text-white text-[13.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-[scale] active:scale-[0.98]">
+              {busy ? '처리 중…' : '탈퇴하기'}
+            </button>
+            <button type="button" onClick={() => { setOpen(false); setTyped(''); setError(''); }} disabled={busy}
+              className="h-10 px-4 rounded-xl border border-[var(--border)] bg-white text-[13.5px] font-semibold disabled:opacity-40">
+              취소
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function MyPage({ onSaved, user, onAccountDeleted }) {
   const [tab, setTab] = useState('basic');
   const activeIndex = useMyPageStore((s) => s.activeIndex);
   const activeProfile = useMyPageStore((s) => s.profiles[s.activeIndex]);
@@ -208,6 +265,8 @@ export default function MyPage({ onSaved }) {
           </button>
         </div>
       </div>
+
+      <DeleteAccountSection email={user?.email} onDeleted={onAccountDeleted} />
     </div>
   );
 }
