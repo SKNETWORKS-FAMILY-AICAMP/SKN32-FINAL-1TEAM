@@ -2126,6 +2126,12 @@ def retry_task(
             result = agents.run_review_token_check_retry(project.description, attempt_no=next_attempt_no)
             log_row = ProofreadLog(
                 plan_id=plan.plan_id,
+                # [2026-09-29 신규] 예전엔 이 필드가 아예 빠져있어서 재시도로 만든 행은
+                # 전부 section_id=NULL이 됐다 — 프론트 reviewParagraphsFrom(SB-165)이
+                # section_id로 시도 이력을 묶는데, 그러면 최초 시드 행(section_id 있음)과
+                # 재시도 행(NULL)이 서로 다른 문단으로 갈라져 보였다. original_text와 같은
+                # 이유로 이전 행에서 이어받는다.
+                section_id=(latest.section_id if latest is not None else None),
                 original_text=(latest.corrected_text if latest is not None else project.description),
                 corrected_text=result.corrected_text,
                 reason=result.reason,

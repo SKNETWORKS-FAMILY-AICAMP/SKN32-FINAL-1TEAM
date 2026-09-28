@@ -437,6 +437,68 @@ def test_review_token_check_success_leaves_recovery_null(monkeypatch, retry_setu
     assert latest.violation_type is None
 
 
+def test_review_token_check_multi_attempt_ordering_and_fields_are_independent(monkeypatch, retry_setup, db_session):
+    """[SB-165 후속] 프론트 reviewParagraphsFrom(front/src/features/workflow/utils.js)이
+    이제 plan.proofread_logs를 section_id로 묶어 attempt_no 순으로 "1차 반려 → 2차 통과"를
+    그린다 — 그 전제(같은 section 안에서 attempt_no가 1,2,3... 순서대로 매겨지고, 각 행의
+    passed/violation_type/violation_note가 이전/다음 시도 값과 섞이지 않는다)를 직접
+    검증한다. 위의 increments_attempt_no 테스트는 순서만, violation_sets_recovery_pending/
+    success_leaves_recovery_null은 필드값만 각각 한 시도로 따로 보므로, 이 테스트는 그
+    둘을 실패→통과 한 흐름 안에서 같이 본다."""
+    import app.routers.projects as projects_router
+    from app.models import ProofreadLog
+
+    results = [
+        projects_router.agents.ProofreadResult(
+            corrected_text='(고정 1차 시도) 반려될 예정', reason=None, passed=False,
+            violation_type='수치·금액', violation_note='1차 반려 사유(테스트)',
+        ),
+        projects_router.agents.ProofreadResult(
+            corrected_text='(고정 2차 시도) 통과', reason='띄어쓰기 교정(테스트)', passed=True,
+        ),
+    ]
+    calls = iter(results)
+    monkeypatch.setattr(
+        projects_router.agents, 'run_review_token_check_retry',
+        lambda description, attempt_no=1: next(calls),
+    )
+
+    res1 = _retry(retry_setup['client'], retry_setup['project_id'], 'review_token_check')
+    assert res1.status_code == 200, res1.text
+    res2 = _retry(retry_setup['client'], retry_setup['project_id'], 'review_token_check')
+    assert res2.status_code == 200, res2.text
+
+    db_session.expire_all()
+    rows = (
+        db_session.query(ProofreadLog)
+        .filter(ProofreadLog.plan_id == retry_setup['plan_id'])
+        .order_by(ProofreadLog.attempt_no.asc())
+        .all()
+    )
+    # seed_dummy_pipeline이 attempt_no=1인 통과 행을 하나 미리 만들어두므로(이 흐름과는
+    # 무관한 seed 시도) 이 테스트의 1차/2차는 attempt_no 2·3이 된다 — 순서 자체가 핵심이라
+    # attempt_no 절대값이 아니라 "증가 순서 + 그 순서에 맞는 필드"로 검증한다.
+    assert len(rows) == 3
+    seeded, first_attempt, second_attempt = rows
+    assert [r.attempt_no for r in rows] == sorted(r.attempt_no for r in rows), 'attempt_no가 오름차순이 아님'
+
+    assert first_attempt.passed is False
+    assert first_attempt.violation_type == '수치·금액'
+    assert first_attempt.violation_note == '1차 반려 사유(테스트)'
+    assert first_attempt.recovery_status == 'pending'
+
+    # 2차 시도가 1차의 반려 흔적(violation_type/note)을 물려받으면 안 된다 — 독립적이어야
+    # reviewParagraphsFrom이 "2차는 통과, issue 없음"으로 정확히 그릴 수 있다.
+    assert second_attempt.passed is True
+    assert second_attempt.violation_type is None
+    assert second_attempt.violation_note is None
+    assert second_attempt.recovery_status is None
+    assert second_attempt.corrected_text == '(고정 2차 시도) 통과'
+
+    # 같은 section에 묶여야 프론트가 하나의 문단(스포트라이트)으로 인식한다.
+    assert first_attempt.section_id == second_attempt.section_id == seeded.section_id
+
+
 # ============================================================================
 # rework_cap(재작성 상한) — 프론트 요청 1·2 (2026-09-28)
 # ============================================================================
