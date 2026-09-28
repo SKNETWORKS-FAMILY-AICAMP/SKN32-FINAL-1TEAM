@@ -74,3 +74,38 @@ def test_get_result_returns_same_score_summary_as_generate(authed_client, db_ses
     result_verdict = r.json()['verdict']
 
     assert result_verdict == generate_verdict
+
+
+def test_seed_artifact_outcome_fail_reproduces_frontend_demo_scores(authed_client, db_session):
+    """[2026-09-29 신규] POST /generate는 seed_dummy_pipeline을 항상 artifact_outcome=
+    'pass'(만점)로만 호출해서, 기획서 v1.10 발표 예시(⑪ "문서 86점 통과인데 대조 7/15
+    때문에 종합 79점 미달")를 재현할 방법이 없었다 — artifact_outcome='fail'을 직접
+    호출해 front/src/features/workflow/data.js의 CODE_CHECK_FAILS_BY_OUTCOME.fail /
+    ARTIFACT_SCORE_BY_OUTCOME.fail과 같은 숫자(코드 12/15, 대조 7/15)가 나오는지 확인한다.
+    대조 점수는 기능정의서 v1.9 FeatureMatchResult.score 공식(max(0, 15 - 4 × 누락
+    건수))대로 계산돼야 한다."""
+    import json
+
+    from seed_dummy_pipeline import seed_dummy_pipeline
+
+    notice = Notice(
+        notice_id='NOTICE-VERDICT-SCORE-FAIL', source='k-startup', title='테스트 공고',
+        organizer='창업진흥원', recruitment_status='open', url='https://example.com/notice/verdict-fail',
+    )
+    db_session.add(notice)
+    db_session.commit()
+
+    r = authed_client.post('/projects', data={'payload': json.dumps(_payload())})
+    assert r.status_code == 201, r.text
+    project_id = r.json()['project_id']
+
+    seed_dummy_pipeline(db_session, project_id, notice_id=notice.notice_id, artifact_outcome='fail')
+    db_session.commit()
+
+    r = authed_client.get(f'/projects/{project_id}/result')
+    assert r.status_code == 200, r.text
+    verdict = r.json()['verdict']
+
+    assert verdict['code_score'] == 12.0
+    assert verdict['plan_match_score'] == 7.0  # max(0, 15 - 4*2) — 기능정의서 공식
+    assert verdict['total_score'] == verdict['doc_score'] + 12.0 + 7.0

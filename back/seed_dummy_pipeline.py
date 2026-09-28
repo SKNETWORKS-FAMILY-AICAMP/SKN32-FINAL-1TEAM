@@ -101,6 +101,30 @@ _CODE_CHECK_ITEMS_BY_CATEGORY = {
 # 체크리스트 — data.js 상단 주석과 같은 분류.
 _CODE_CHECK_CATEGORY_KEY = {'webdev': 'standard', 'aiapi': 'standard', 'onepage': 'onepage'}
 
+# [2026-09-29 신규] artifact_outcome='fail' 시드용 — front/src/features/workflow/data.js
+# CODE_CHECK_FAILS_BY_OUTCOME.fail을 item_code 기준으로 그대로 옮겼다(프론트 id는 목록
+# 안 순번이라 item_code로 바꿔 대응시킴). 두 카테고리 다 미충족 배점 합이 3점이라
+# 15-3=12/15 — 기획서 v1.10 발표 예시(⑪ "코드 12/15")와 일치한다.
+_CODE_CHECK_FAIL_REASONS_BY_CATEGORY = {
+    'standard': {
+        'CHECK-HTML-LANG': 'html 태그에 lang 속성이 없습니다.',
+        'CHECK-CONTRAST': '예약 버튼의 전경/배경 명도 대비가 2.9:1로 기준(4.5:1) 미만입니다.',
+    },
+    'onepage': {
+        'CHECK-CONTRAST': '본문 문구 2건의 글자색/배경 명도 대비가 3.1:1로 기준(4.5:1) 미만입니다.',
+        'CHECK-MIN-FONT': '각주 글자 크기가 10px로 본문 하한(12px)에 못 미칩니다.',
+    },
+}
+
+# [2026-09-29 신규] artifact_outcome='fail' 시드용 — front/src/features/workflow/data.js
+# ARTIFACT_SCORE_BY_OUTCOME.fail.crossCheck.reasons를 그대로 옮겼다. 기능정의서 v1.9
+# FeatureMatchResult.score 공식(max(0, 15 - 4 × 누락 건수))대로 누락 2건 → 15-8=7/15 —
+# 기획서 v1.10 발표 예시(⑪ "대조 7/15")와 정확히 일치한다.
+_FEATURE_MATCH_FAIL_REASONS = (
+    "계획서의 '회원권 결제' 기능이 프로토타입에 존재하지 않습니다.",
+    "계획서의 '출석 알림' 기능이 프로토타입에 존재하지 않습니다.",
+)
+
 _DUMMY_INFOGRAPHIC_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="480" height="320">
   <rect width="480" height="320" fill="#eef2ff"/>
   <text x="24" y="48" font-size="22" fill="#1e293b">더미 인포그래픽 (seed_dummy_pipeline.py)</text>
@@ -295,6 +319,7 @@ def seed_dummy_pipeline(
     write_real_files: bool = True,
     log_agent_executions: bool = True,
     retry_agents: tuple[str, ...] = ('작성', '구현'),
+    artifact_outcome: str = 'pass',
 ) -> Verdict:
     """project_id 하나에 대해 파이프라인 전체 결과(매칭 1건 + 그 아래 자격판정 1건 +
     사업계획서 1건(섹션 3개, 채점 근거 2개) + 산출물 1건(채점 근거 2개) + 최종판정 1건)를
@@ -320,9 +345,20 @@ def seed_dummy_pipeline(
               남길 에이전트 이름들. 기본값은 ('작성', '구현') — 신규 유저 흐름의
               "보고서 생성 후 개별 재시도" · "프로토타입 생성 후 개별 재시도" 두 단계에
               대응한다.
+    artifact_outcome: 'pass'(기본) | 'fail'. 산출물층 채점 근거(artifact_score_reasons)를
+              전부 만점으로 채울지, 프론트 데모 목업(front/src/features/workflow/data.js
+              CODE_CHECK_FAILS_BY_OUTCOME.fail / ARTIFACT_SCORE_BY_OUTCOME.fail)과 똑같은
+              미달 시나리오로 채울지 — 코드 검증 8항목 중 2개 미충족(코드 12/15)과 계획서
+              대조 누락 2건(대조 7/15, 기능정의서 FeatureMatchResult.score = max(0, 15 -
+              4 × 누락 건수) 공식 그대로)을 프론트가 이미 쓰는 숫자·사유 그대로 재현한다.
+              예전엔 이 층이 항상 만점(30/30)으로만 시드돼서, 기획서가 예로 든 "문서
+              평가는 통과했는데 산출물 대조 때문에 종합 미달" 장면 자체를 재현할 방법이
+              없었다.
     """
     if category not in VALID_CATEGORIES:
         raise ValueError(f"category는 {VALID_CATEGORIES} 중 하나여야 합니다: {category!r}")
+    if artifact_outcome not in ('pass', 'fail'):
+        raise ValueError(f"artifact_outcome은 'pass'|'fail' 중 하나여야 합니다: {artifact_outcome!r}")
 
     project = db.get(Project, project_id)
     if project is None:
@@ -452,21 +488,37 @@ def seed_dummy_pipeline(
     # 만점이어도 code_weight(15)의 1/3밖에 못 채웠다 — 위 _CODE_CHECK_ITEMS_BY_CATEGORY
     # (프론트 CODE_CHECK_ITEMS_BY_CATEGORY와 동일)의 8항목을 그대로 채운다. display_name도
     # 같이 넣어서 화면에 item_code 대신 사람이 읽을 이름이 뜨게 한다(B-1).
-    code_check_items = _CODE_CHECK_ITEMS_BY_CATEGORY[_CODE_CHECK_CATEGORY_KEY[category]]
+    # [2026-09-29 수정] artifact_outcome='fail'이면 _CODE_CHECK_FAIL_REASONS_BY_CATEGORY에
+    # 있는 항목만 0점(미충족 사유 그대로), 나머지는 여전히 만점 — 프론트 데모 목업과 같은
+    # 미달 시나리오(코드 12/15)를 재현한다.
+    category_key = _CODE_CHECK_CATEGORY_KEY[category]
+    code_check_items = _CODE_CHECK_ITEMS_BY_CATEGORY[category_key]
+    fail_reasons = _CODE_CHECK_FAIL_REASONS_BY_CATEGORY[category_key] if artifact_outcome == 'fail' else {}
     for item_code, display_name, max_score in code_check_items:
+        fail_reason = fail_reasons.get(item_code)
         db.add(ArtifactScoreReason(
             artifact_id=artifact.artifact_id, item_code=item_code, display_name=display_name,
-            score=max_score, max_score=max_score,
-            reason_text=f'코드 검증: {display_name} — 통과 (더미 근거)',
+            score=decimal.Decimal('0.00') if fail_reason else max_score, max_score=max_score,
+            reason_text=(f'코드 검증: {display_name} — 미충족: {fail_reason} (더미 근거)' if fail_reason
+                         else f'코드 검증: {display_name} — 통과 (더미 근거)'),
             evidence_locator='dist/index.html' if item_code == 'CHECK-ENTRY-FILE' else None,
         ))
     # [2026-09-28 수정] plan_weight(15)와 맞추려면 FEATURE-MATCH 하나로는(예전 5점) 부족
     # 했다 — 계획서 대조 쪽은 프론트가 CODE_CHECK_ITEMS_BY_CATEGORY 같은 세부 항목 목록을
     # 아직 안 줘서 여러 항목으로 쪼개지 않고, 배점만 policy.plan_weight 기본값(15)에 맞춘다.
+    # [2026-09-29 수정] artifact_outcome='fail'이면 기능정의서 v1.9 FeatureMatchResult.score
+    # 공식(max(0, 15 - 4 × 누락 건수))대로 계산한다 — 프론트 목업과 같은 누락 2건, 7/15점.
+    if artifact_outcome == 'fail':
+        missing = _FEATURE_MATCH_FAIL_REASONS
+        feature_score = max(decimal.Decimal('0.00'), decimal.Decimal('15.00') - decimal.Decimal('4.00') * len(missing))
+        feature_reason = '기능 대조: featureList 대비 누락 기능 ' + str(len(missing)) + '건 — ' + ' / '.join(missing) + ' (더미 근거)'
+    else:
+        feature_score = decimal.Decimal('15.00')
+        feature_reason = '기능 대조: featureList 대비 누락 기능 없음 — 통과 (더미 근거)'
     db.add(ArtifactScoreReason(
         artifact_id=artifact.artifact_id, item_code='FEATURE-MATCH', display_name='계획서 기능 대조',
-        score=decimal.Decimal('15.00'), max_score=decimal.Decimal('15.00'),
-        reason_text='기능 대조: featureList 대비 누락 기능 없음 — 통과 (더미 근거)',
+        score=feature_score, max_score=decimal.Decimal('15.00'),
+        reason_text=feature_reason,
         evidence_locator='src/App.tsx',
     ))
 
@@ -526,6 +578,11 @@ def main() -> None:
     parser.add_argument('--threshold', default=str(DEFAULT_THRESHOLD), help='통과 기준 총점')
     parser.add_argument('--no-files', action='store_true', help='실제 파일을 만들지 않고 경로 문자열만 채운다')
     parser.add_argument('--no-agent-log', action='store_true', help='agent_executions 로그를 남기지 않는다')
+    parser.add_argument(
+        '--artifact-outcome', default='pass', choices=('pass', 'fail'),
+        help="'fail'이면 코드 검증 8항목 중 2개 미충족(12/15) + 계획서 대조 누락 2건(7/15)으로 "
+             '채운다 — front/src/features/workflow/data.js의 fail 목업과 같은 숫자',
+    )
     args = parser.parse_args()
 
     init_sqlite_dev_db()  # 테이블이 아직 없으면 만든다 (이미 있으면 아무 일도 안 함)
@@ -542,6 +599,7 @@ def main() -> None:
             threshold=args.threshold,
             write_real_files=not args.no_files,
             log_agent_executions=not args.no_agent_log,
+            artifact_outcome=args.artifact_outcome,
         )
         db.commit()
         plan_row = db.get(BusinessPlan, verdict.plan_id)  # Verdict엔 plan 관계가 없어 project_id는 따로 조회
