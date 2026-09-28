@@ -278,7 +278,16 @@ UPLOAD_DIR = os.path.join(_REPO_ROOT, 'uploads')
 # 실행 중 상태라 포함해야 한다(공식 기능정의서 v1.9 E-RUN-CONCURRENT, R-9) — 빠뜨리면
 # 재개 대기 중에도 사용자가 새 프로젝트를 하나 더 만들 수 있는 버그가 된다. failed는
 # 여기 안 들어가는 게 맞다("계정당 1건 제한에서 세지 않는다", E-RUN-FAIL).
-ACTIVE_MATCH_STATUSES = (ps.GENERATION_STATUS_IN_PROGRESS, ps.GENERATION_STATUS_WAITING_RESUME)
+# [2026-09-28 수정] user_waiting(문서평가/산출물확인/종합평가 등 사용자 판단 대기, RunState.
+# screenStatus='확인 필요')도 포함해야 한다 — 기능정의서 v1.9 R-9: "계정당 1건 제한은
+# 진행 중·확인 필요만 센다"고 명시. 지금 더미 파이프라인엔 이 상태로 전환되는 코드 경로가
+# 아직 없어 당장 트리거되진 않지만(app/pipeline_stages.py 주석 참고), 실제 검증-2/검수
+# 단계가 붙어 이 상태가 쓰이기 시작하면 이 튜플이 자동으로 걸러줘야 한다.
+ACTIVE_MATCH_STATUSES = (
+    ps.GENERATION_STATUS_IN_PROGRESS,
+    ps.GENERATION_STATUS_WAITING_RESUME,
+    ps.GENERATION_STATUS_USER_WAITING,
+)
 
 
 def _save_attachment(file: UploadFile) -> tuple[str, str]:

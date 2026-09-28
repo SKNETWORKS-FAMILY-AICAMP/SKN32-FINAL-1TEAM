@@ -53,6 +53,22 @@ class TestConcurrencyLimit:
         assert r2.json()['detail']['blocked'] is True
         assert r2.json()['detail']['active_project_id'] == project1_id  # 어느 프로젝트가 막았는지 나와야 함
 
+    def test_blocks_second_project_while_first_user_waiting(self, authed_client, db_session):
+        """[2026-09-28 신규] user_waiting(문서평가 등 사용자 판단 대기)도 ACTIVE_MATCH_STATUSES에
+        포함돼야 한다 — 기능정의서 v1.9 R-9: "계정당 1건 제한은 진행 중·확인 필요만 센다."
+        (app/routers/projects.py:281 ACTIVE_MATCH_STATUSES 참고)."""
+        r1 = authed_client.post('/projects', data=_payload())
+        assert r1.status_code == 201
+        project1_id = r1.json()['project_id']
+
+        notice = _seed_notice(db_session, 'test:PBLN_USERWAIT')
+        db_session.add(MatchResult(project_id=project1_id, notice_id=notice.notice_id, fit_score=80, status='user_waiting'))
+        db_session.commit()
+
+        r2 = authed_client.post('/projects', data=_payload())
+        assert r2.status_code == 409, 'user_waiting(확인 필요)도 진행 중으로 세서 막아야 함'
+        assert r2.json()['detail']['blocked'] is True
+
     def test_completed_match_does_not_block(self, authed_client, db_session):
         """status='completed'(제출 완료)는 ACTIVE_MATCH_STATUSES에 없으니 막으면 안 된다 —
         '진행 중'과 '이미 끝남'을 혼동하는 회귀가 생기면 이 테스트가 잡아준다."""
