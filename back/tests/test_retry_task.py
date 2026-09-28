@@ -364,7 +364,7 @@ def test_retry_task_failure_is_recorded_on_agent_execution(monkeypatch, retry_se
     구조화된 오류를 받아야 한다 — 프론트가 "이 재시도가 재시도 가능한 오류인지"를
     error_kind로 구분할 수 있어야 하기 때문."""
     import app.routers.projects as projects_router
-    from app.models import AgentExecution, MatchResult
+    from app.models import AgentExecution
 
     def _boom(description, tags):
         raise RuntimeError('결제 크레딧 소진(테스트)')  # 운영 오류로 분류돼야 함
@@ -378,10 +378,9 @@ def test_retry_task_failure_is_recorded_on_agent_execution(monkeypatch, retry_se
     assert detail['error_kind'] == projects_router.ps.ERROR_KIND_OPERATIONAL
 
     db_session.expire_all()
-    match = db_session.query(MatchResult).filter(MatchResult.project_id == retry_setup['project_id']).one()
     failed = (
         db_session.query(AgentExecution)
-        .filter(AgentExecution.match_id == match.match_id, AgentExecution.task_key == 'writing')
+        .filter(AgentExecution.project_id == retry_setup['project_id'], AgentExecution.task_key == 'writing')
         .order_by(AgentExecution.attempt_no.desc())
         .first()
     )

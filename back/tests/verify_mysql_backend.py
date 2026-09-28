@@ -43,7 +43,7 @@ from sqlalchemy.exc import IntegrityError  # noqa: E402
 import app.security as security  # noqa: E402
 from app.database import IS_SQLITE, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import Company, MatchResult, Notice, Project, User  # noqa: E402
+from app.models import Company, Notice, Project, User  # noqa: E402
 from app.routers.projects import _lock_user_for_concurrency_check  # noqa: E402
 from seed_dummy_pipeline import seed_dummy_pipeline  # noqa: E402
 
@@ -68,7 +68,7 @@ print(f'=== DB: {engine.url.render_as_string(hide_password=True)} ===\n')
 print('[0] 스키마 스모크')
 db = SessionLocal()
 try:
-    for model in (User, Company, Project, Notice, MatchResult):
+    for model in (User, Company, Project, Notice):
         db.query(model).count()
     check('모든 핵심 테이블에 SELECT 가능 (MySQL 방언 오류 없음)', True)
 finally:

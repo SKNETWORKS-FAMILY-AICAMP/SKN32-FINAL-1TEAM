@@ -8,7 +8,7 @@
 안 건드리는지까지 확인한다."""
 import json
 
-from app.models import MatchResult, Notice
+from app.models import Notice, Project
 
 
 def _payload(**overrides):
@@ -33,6 +33,16 @@ def _seed_notice(db_session, notice_id='test:PBLN_CONC'):
     return notice
 
 
+def _set_match(db_session, project_id: int, notice_id: str, fit_score=80, status='in_progress'):
+    """[2026-09-28, match_results 테이블 통합] 예전엔 MatchResult 행을 새로 만들었으나,
+    이제 매칭 상태는 project 행 자체에 있는 컬럼이라 기존 project를 가져와 갱신한다."""
+    project = db_session.get(Project, project_id)
+    project.notice_id = notice_id
+    project.fit_score = fit_score
+    project.status = status
+    return project
+
+
 # ---------------------------------------------------------------------------
 # 2) 동시 실행 1건 제한
 # ---------------------------------------------------------------------------
@@ -43,7 +53,7 @@ class TestConcurrencyLimit:
         project1_id = r1.json()['project_id']
 
         notice = _seed_notice(db_session)
-        db_session.add(MatchResult(project_id=project1_id, notice_id=notice.notice_id, fit_score=80))
+        _set_match(db_session, project1_id, notice.notice_id)
         db_session.commit()
 
         r2 = authed_client.post('/projects', data=_payload())
@@ -62,7 +72,7 @@ class TestConcurrencyLimit:
         project1_id = r1.json()['project_id']
 
         notice = _seed_notice(db_session, 'test:PBLN_USERWAIT')
-        db_session.add(MatchResult(project_id=project1_id, notice_id=notice.notice_id, fit_score=80, status='user_waiting'))
+        _set_match(db_session, project1_id, notice.notice_id, status='user_waiting')
         db_session.commit()
 
         r2 = authed_client.post('/projects', data=_payload())
@@ -77,7 +87,7 @@ class TestConcurrencyLimit:
         project1_id = r1.json()['project_id']
 
         notice = _seed_notice(db_session, 'test:PBLN_DONE')
-        db_session.add(MatchResult(project_id=project1_id, notice_id=notice.notice_id, fit_score=80, status='completed'))
+        _set_match(db_session, project1_id, notice.notice_id, status='completed')
         db_session.commit()
 
         r2 = authed_client.post('/projects', data=_payload())
@@ -91,7 +101,7 @@ class TestConcurrencyLimit:
         assert ra.status_code == 201
         project_a_id = ra.json()['project_id']
         notice = _seed_notice(db_session, 'test:PBLN_A')
-        db_session.add(MatchResult(project_id=project_a_id, notice_id=notice.notice_id, fit_score=80))
+        _set_match(db_session, project_a_id, notice.notice_id)
         db_session.commit()
 
         # A는 두 번째 프로젝트를 못 만든다

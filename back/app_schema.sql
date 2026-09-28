@@ -18,10 +18,20 @@
 -- 전체를 grep해서 실제 order_by()/filter() 패턴을 확인하고, 그 패턴을 못 커버하던 컬럼에만
 -- 인덱스를 추가/교체했다(무작정 다 걸지 않음 — 쓰기 비용과 트레이드오프). 상세 근거는 각 테이블
 -- 정의 옆 주석 참고. 요약: projects(company_id+created_at 복합, created_at 단일 추가),
--- plan_sections(plan_id+tag 복합), agent_executions(match_id+task_key+attempt_no 복합),
--- faqs(is_visible+created_at 복합 신규), match_results(status 단일 신규). match_id/plan_id/
--- artifact_id 등 "FK로 필터 + PK로 정렬"류는 InnoDB가 보조 인덱스 리프에 PK를 항상 포함하는
--- 특성상 기존 단일 컬럼 인덱스만으로 이미 커버돼서 손대지 않았다.
+-- plan_sections(plan_id+tag 복합), agent_executions(project_id+task_key+attempt_no 복합),
+-- faqs(is_visible+created_at 복합 신규), projects(status 단일 신규 — [2026-09-28] match_results
+-- 통합 이전에는 match_results 소유였음). project_id/plan_id/artifact_id 등 "FK로 필터 + PK로
+-- 정렬"류는 InnoDB가 보조 인덱스 리프에 PK를 항상 포함하는 특성상 기존 단일 컬럼 인덱스만으로
+-- 이미 커버돼서 손대지 않았다.
+--
+-- [2026-09-28, match_results 테이블 통합] project(1):match_results(N)로 나뉘어 있던 예전
+-- 설계를 projects(1):1로 합쳤다 — match_results 테이블 자체를 삭제하고 그 컬럼을 전부
+-- projects로 옮겼다(위 projects CREATE TABLE 정의 참고). match_score_reasons/
+-- eligibility_checks/business_plans/agent_executions의 match_id 컬럼은 project_id로 이름이
+-- 바뀌어 projects(project_id)를 직접 가리키고, generation_failure_alerts/notifications는
+-- project_id와 match_id를 둘 다 갖고 있던 것을 project_id 하나로 정리했다. 공유 AWS MySQL에
+-- 이미 이 스키마가 올라간 상태라면 이 파일을 그대로 다시 적용하지 말고
+-- catch_up_local_schema.sql의 해당 마이그레이션 섹션을 검토 후 실행할 것.
 
 -- ---------------------------------------------------------------------------
 -- 사용자
@@ -97,6 +107,13 @@ CREATE TABLE IF NOT EXISTS companies (
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- [2026-09-28, match_results 테이블 통합] project(1) : match_results(N)로 나뉘어 있던
+-- 예전 설계를 project(1):1로 합쳤다 — 형제 저장소 agent-orchestration의 Run 개념(아이디어·
+-- 회사정보·공고선택·진행상태를 전부 담는 자기완결 단위 하나)과 우리 SB-138 "중단 후 새로
+-- 시작"(기존 프로젝트를 archive하고 새 프로젝트를 만드는 방식) 패턴을 보면 project 한 행이
+-- 곧 실행 시도 하나이기 때문이다. 아래 notice_id부터 resume_started_at까지는 원래
+-- match_results 테이블 소유였던 컬럼을 그대로 옮겨온 것(이름/타입/컬럼 코멘트 불변,
+-- match_id 컬럼 자체만 사라짐 — project_id가 그 역할을 겸한다).
 CREATE TABLE IF NOT EXISTS projects (
     project_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '프로젝트(지원 아이템/사업 아이디어) 고유 식별자',
     company_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES companies(company_id)',
@@ -110,6 +127,51 @@ CREATE TABLE IF NOT EXISTS projects (
     output_summary TEXT NULL COMMENT '산출물(협약기간 내 목표 — 형태·수량)',
     tech_field VARCHAR(100) NULL COMMENT '전문기술분야',
     regional_priority_area VARCHAR(100) NULL COMMENT '지방우대 지역 해당여부(해당 시 지역명, 비해당이면 NULL)',
+    notice_id VARCHAR(320) NULL COMMENT 'REFERENCES notices(notice_id). NULL이면 아직 공고를 선택하기 전(=아직 매칭 전)',
+    fit_score DECIMAL(5,2) NULL COMMENT '매칭 적합도 점수',
+    reason TEXT NULL COMMENT '매칭 사유/근거 서술',
+    -- [2026-09-23 개정] 서비스 내부 상태 6종을 실제 MySQL ENUM으로 강제한다(app/models.py
+    -- _GenerationStatus, app/pipeline_stages.py GENERATION_STATUSES와 정확히 동일해야 함) —
+    -- agent_executions.status와 같은 값 집합을 공유한다. user_waiting/halted는 아직 실제로
+    -- 쓰는 코드가 없지만(향후 대비) 미리 넣어둔다.
+    -- [2026-09-28 주의] match_results 시절엔 DEFAULT 'in_progress'가 있었다(그 컬럼이 속한
+    -- 행 자체가 "매칭이 실제로 생겼을 때"만 만들어졌으므로 항상 안전했다) — 이 컬럼을
+    -- projects로 그대로 옮기면서 그 DEFAULT까지 옮기면, 아직 매칭 전인 방금 만든 project
+    -- 행도 INSERT 시점에 status='in_progress'가 채워져 버려서 계정당 동시 실행 1건 제한이
+    -- 막 생성된 모든 프로젝트를 "진행 중"으로 오판하는 회귀가 생긴다(app/models.py Project
+    -- 주석 참고, 실제로 이 리팩터 중 테스트로 발견) — 그래서 DEFAULT 없이 NULL 허용만 둔다.
+    status ENUM('in_progress','waiting_resume','user_waiting','failed','completed','halted') NULL COMMENT '서비스 내부 상태(실행/재개대기/사용자대기/실패/완료/중단). NULL이면 아직 매칭 전',
+    stage VARCHAR(30) NULL COMMENT '이어하기용 세부 진행 단계(app/pipeline_stages.py의 STAGE_* 상수 중 하나). NULL이면 아직 매칭만 되고 계획서 작성 전(또는 매칭 전)',
+    progress_percent TINYINT UNSIGNED NULL COMMENT 'stage 안에서도 오래 걸리는 구간(계획서 작성/프로토타입 제작)의 진행률 0~100. 해당 없는 stage에서는 NULL',
+    -- [2026-09-22 신규] 생성 작업 클레임 시각 — Redis 등 별도 브로커 없이 이 컬럼 하나로
+    -- "지금 이 stage를 어떤 워커가 처리 중인지"를 표현한다(app/routers/projects.py
+    -- _try_claim_and_run 참고). NULL이거나 GENERATION_CLAIM_STALE_SECONDS보다 오래됐으면
+    -- "아무도 처리 안 함"으로 보고 새로 클레임할 수 있다 — 서버 재시작·다중 워커 대응.
+    worker_claimed_at DATETIME(6) NULL COMMENT '생성 작업(plan_writing/prototype_building)을 처리 중인 워커의 마지막 클레임/하트비트 시각',
+    -- [2026-09-23 개정] status='failed'는 이제 자동 재시도(최대 5회, 백오프) 소진 뒤에만
+    -- 도달한다 — status='waiting_resume'이 그 사이 자동 대기 상태를 표현한다.
+    failure_reason TEXT NULL COMMENT '마지막 실패 사유(에러 메시지) — status=waiting_resume/failed일 때 값 있음',
+    -- [2026-09-27 신규, SB-134] 마지막 실패 원인 분류 — 일시 오류만 재개하고 입력·운영은
+    -- 재개 없이 바로 실패 확정한다(R-11). app/pipeline_stages.py classify_error_kind 참고.
+    last_error_kind ENUM('일시','입력','운영') NULL COMMENT '마지막 실패 원인 분류(NULL=실패 이력 없음/초기화됨)',
+    -- [2026-09-23 신규, 2026-09-26 정정, 2026-09-27 개명] 실패 후 자동 "재개" 횟수
+    -- (Run.resumeCount) — 공식 기능정의서 v1.9(R-11) 기준 15분→30→60→120→240분으로
+    -- 2배씩 늘려가며 최대 5번까지 자동 재개하고, 그래도 안 되면 status='failed'로
+    -- 확정한다(관리자 알림 대상, generation_failure_alerts 참고). 사용자가 수동으로
+    -- "다시 이어가기"를 누르면 1로 리셋된다. 예전 컬럼명 retry_count는 Run.retryCount
+    -- (호출 재시도)와 개념이 달라 resume_count로 바로잡았다.
+    resume_count TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '자동 재개 소진 횟수(최대 5)',
+    -- [2026-09-27 신규] 개별 Agent 호출 실패에 대한 즉시 재시도 횟수(Run.retryCount) —
+    -- 지금은 파이프라인이 100% 더미라 항상 0. 실제 Agent 호출 계층이 생기면 채운다.
+    retry_count TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '개별 호출 즉시 재시도 횟수(현재 미사용, 항상 0)',
+    -- [2026-09-23 신규] 다음 자동 재개 예정 시각(status='waiting_resume'일 때만 값 있음) —
+    -- 복구 루프가 이 시각 이전엔 재개하지 않는다(백오프 간격 준수).
+    next_retry_at DATETIME(6) NULL COMMENT '다음 자동 재개 예정 시각(waiting_resume 전용)',
+    -- [2026-09-26 신규] 이번 실패 스트릭의 첫 실패 시각 — "재개 총 대기 상한"(12시간,
+    -- 재개 대기+실행 시간 합산)을 재는 기준점. 성공하거나 수동 재시작 시 초기화된다.
+    resume_started_at DATETIME(6) NULL COMMENT '이번 실패 스트릭 시작 시각(재개 총 대기 상한 12시간 계산용)',
+    archived_at DATETIME(6) NULL COMMENT '사용자가 프로젝트를 삭제해 보관 처리된 일시(NULL 가능)',
+    archived_by VARCHAR(20) NULL COMMENT "보관 처리 주체('user' 고정, NULL 가능)",
     -- [2026-09-17 인덱싱 개정] 읽기 위주 접근 패턴 반영. projects.py list_projects()가
     -- "company_id로 필터 + created_at DESC 정렬"을 한다(companies.user_id 1건이 아니게
     -- 되면서 한 유저가 여러 company를 가질 수 있어 이 조회가 더 잦아졌다) — 선두 컬럼이
@@ -118,7 +180,16 @@ CREATE TABLE IF NOT EXISTS projects (
     -- company_id 필터 없이 전체를 created_at으로만 정렬하므로 별도 단일 컬럼 인덱스가 필요.
     KEY ix_projects_company_created (company_id, created_at),
     KEY ix_projects_created (created_at),
-    FOREIGN KEY (company_id) REFERENCES companies(company_id) ON DELETE CASCADE
+    KEY ix_projects_notice (notice_id),
+    -- [2026-09-17 신규 인덱스, match_results에서 이관] "진행 중(in_progress) 매칭이 있는지"
+    -- 동시성 체크(projects.py)가 status로 필터한다.
+    KEY ix_projects_status (status),
+    -- [2026-09-22 신규 인덱스, match_results에서 이관] _recover_orphaned_generations_once가
+    -- 10초(기본)마다 영원히 "WHERE stage=X AND (worker_claimed_at IS NULL OR 오래됨)"을
+    -- 도는데, 이 두 컬럼에 인덱스가 없으면 매번 테이블 풀스캔이 된다.
+    KEY ix_projects_stage_claim (stage, worker_claimed_at),
+    FOREIGN KEY (company_id) REFERENCES companies(company_id) ON DELETE CASCADE,
+    FOREIGN KEY (notice_id) REFERENCES notices(notice_id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS project_attachments (
@@ -271,92 +342,35 @@ CREATE TABLE IF NOT EXISTS match_candidates (
     FOREIGN KEY (notice_id) REFERENCES notices(notice_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
-CREATE TABLE IF NOT EXISTS match_results (
-    match_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '매칭 결과 고유 식별자',
-    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
-    notice_id VARCHAR(320) NOT NULL COMMENT 'REFERENCES notices(notice_id)',
-    fit_score DECIMAL(5,2) NULL COMMENT '매칭 적합도 점수',
-    reason TEXT NULL COMMENT '매칭 사유/근거 서술',
-    -- [2026-09-23 개정] 서비스 내부 상태 6종을 실제 MySQL ENUM으로 강제한다(app/models.py
-    -- _GenerationStatus, app/pipeline_stages.py GENERATION_STATUSES와 정확히 동일해야 함) —
-    -- agent_executions.status와 같은 값 집합을 공유한다. user_waiting/halted는 아직 실제로
-    -- 쓰는 코드가 없지만(향후 대비) 미리 넣어둔다.
-    status ENUM('in_progress','waiting_resume','user_waiting','failed','completed','halted') NOT NULL DEFAULT 'in_progress' COMMENT '서비스 내부 상태(실행/재개대기/사용자대기/실패/완료/중단)',
-    stage VARCHAR(30) NULL COMMENT '이어하기용 세부 진행 단계(app/pipeline_stages.py의 STAGE_* 상수 중 하나). NULL이면 아직 매칭만 되고 계획서 작성 전',
-    progress_percent TINYINT UNSIGNED NULL COMMENT 'stage 안에서도 오래 걸리는 구간(계획서 작성/프로토타입 제작)의 진행률 0~100. 해당 없는 stage에서는 NULL',
-    -- [2026-09-22 신규] 생성 작업 클레임 시각 — Redis 등 별도 브로커 없이 이 컬럼 하나로
-    -- "지금 이 stage를 어떤 워커가 처리 중인지"를 표현한다(app/routers/projects.py
-    -- _try_claim_and_run 참고). NULL이거나 GENERATION_CLAIM_STALE_SECONDS보다 오래됐으면
-    -- "아무도 처리 안 함"으로 보고 새로 클레임할 수 있다 — 서버 재시작·다중 워커 대응.
-    worker_claimed_at DATETIME(6) NULL COMMENT '생성 작업(plan_writing/prototype_building)을 처리 중인 워커의 마지막 클레임/하트비트 시각',
-    -- [2026-09-23 개정] status='failed'는 이제 자동 재시도(최대 5회, 백오프) 소진 뒤에만
-    -- 도달한다 — status='waiting_resume'이 그 사이 자동 대기 상태를 표현한다.
-    failure_reason TEXT NULL COMMENT '마지막 실패 사유(에러 메시지) — status=waiting_resume/failed일 때 값 있음',
-    -- [2026-09-27 신규, SB-134] 마지막 실패 원인 분류 — 일시 오류만 재개하고 입력·운영은
-    -- 재개 없이 바로 실패 확정한다(R-11). app/pipeline_stages.py classify_error_kind 참고.
-    last_error_kind ENUM('일시','입력','운영') NULL COMMENT '마지막 실패 원인 분류(NULL=실패 이력 없음/초기화됨)',
-    -- [2026-09-23 신규, 2026-09-26 정정, 2026-09-27 개명] 실패 후 자동 "재개" 횟수
-    -- (Run.resumeCount) — 공식 기능정의서 v1.9(R-11) 기준 15분→30→60→120→240분으로
-    -- 2배씩 늘려가며 최대 5번까지 자동 재개하고, 그래도 안 되면 status='failed'로
-    -- 확정한다(관리자 알림 대상, generation_failure_alerts 참고). 사용자가 수동으로
-    -- "다시 이어가기"를 누르면 1로 리셋된다. 예전 컬럼명 retry_count는 Run.retryCount
-    -- (호출 재시도)와 개념이 달라 resume_count로 바로잡았다.
-    resume_count TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '자동 재개 소진 횟수(최대 5)',
-    -- [2026-09-27 신규] 개별 Agent 호출 실패에 대한 즉시 재시도 횟수(Run.retryCount) —
-    -- 지금은 파이프라인이 100% 더미라 항상 0. 실제 Agent 호출 계층이 생기면 채운다.
-    retry_count TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '개별 호출 즉시 재시도 횟수(현재 미사용, 항상 0)',
-    -- [2026-09-23 신규] 다음 자동 재개 예정 시각(status='waiting_resume'일 때만 값 있음) —
-    -- 복구 루프가 이 시각 이전엔 재개하지 않는다(백오프 간격 준수).
-    next_retry_at DATETIME(6) NULL COMMENT '다음 자동 재개 예정 시각(waiting_resume 전용)',
-    -- [2026-09-26 신규] 이번 실패 스트릭의 첫 실패 시각 — "재개 총 대기 상한"(12시간,
-    -- 재개 대기+실행 시간 합산)을 재는 기준점. 성공하거나 수동 재시작 시 초기화된다.
-    resume_started_at DATETIME(6) NULL COMMENT '이번 실패 스트릭 시작 시각(재개 총 대기 상한 12시간 계산용)',
-    archived_at DATETIME(6) NULL COMMENT '사용자가 프로젝트를 삭제해 보관 처리된 일시(NULL 가능)',
-    archived_by VARCHAR(20) NULL COMMENT "보관 처리 주체('user' 고정, NULL 가능)",
-    -- [참고] project.py 전역에서 "WHERE project_id=X ORDER BY match_id DESC" 패턴이 매우
-    -- 잦은데, InnoDB 보조 인덱스는 리프에 PK(match_id)를 항상 포함해서 물리적으로
-    -- (project_id, match_id) 순으로 정렬돼있다 — ix_match_results_project 단일 컬럼
-    -- 인덱스만으로 이미 이 정렬까지 커버되므로 별도 복합 인덱스를 추가하지 않았다.
-    KEY ix_match_results_project (project_id),
-    KEY ix_match_results_notice (notice_id),
-    -- [2026-09-17 신규 인덱스] 프로젝트 시작 시 "진행 중(in_progress) 매칭이 있는지" 동시성
-    -- 체크(projects.py)가 status로 필터한다.
-    KEY ix_match_results_status (status),
-    -- [2026-09-22 신규 인덱스] _recover_orphaned_generations_once가 10초(기본)마다 영원히
-    -- "WHERE stage=X AND (worker_claimed_at IS NULL OR 오래됨)"을 도는데, 이 두 컬럼에
-    -- 인덱스가 없으면 매번 테이블 풀스캔이 된다 — 지금 규모에선 체감 안 되지만 테이블이
-    -- 커질수록/공유 DB 부하가 쌓일수록 그냥 두면 안 되는 debt이라 처음부터 넣는다.
-    KEY ix_match_results_stage_claim (stage, worker_claimed_at),
-    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE,
-    FOREIGN KEY (notice_id) REFERENCES notices(notice_id) ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
-
 -- [2026-09-17 신규] 멘토링 피드백 "매칭 근거는 정성적 설명보다 '+2점' 같은 정량 점수로
--- 표시하는 게 더 설득력 있음" 반영. match_results.reason(자유 텍스트 하나)만으로는 항목별
+-- 표시하는 게 더 설득력 있음" 반영. projects.reason(자유 텍스트 하나)만으로는 항목별
 -- 점수를 못 보여주니, plan_score_reasons/artifact_score_reasons와 똑같은 모양(item_code/
 -- score/max_score/evidence_locator)으로 매칭 단계에도 항목별 채점 근거 테이블을 둔다.
+-- [2026-09-28, match_results 테이블 통합] match_id 대신 projects(project_id)를 직접 참조한다.
 CREATE TABLE IF NOT EXISTS match_score_reasons (
     reason_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '사유 고유 식별자',
-    match_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES match_results(match_id)',
+    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
     reason_text TEXT NOT NULL COMMENT '매칭 적합도 판단 사유',
     item_code VARCHAR(50) NULL COMMENT '채점 항목 코드',
     score DECIMAL(5,2) NULL COMMENT '해당 항목 획득 점수(예: +2.00)',
     max_score DECIMAL(5,2) NULL COMMENT '해당 항목 배점',
     evidence_locator VARCHAR(500) NULL COMMENT '근거 위치(공고문 내 위치 등)',
-    KEY ix_match_score_reasons_match (match_id),
-    FOREIGN KEY (match_id) REFERENCES match_results(match_id) ON DELETE CASCADE
+    KEY ix_match_score_reasons_project (project_id),
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- [2026-09-23 신규] 생성 작업이 자동 재시도(최대 5회, 백오프)를 전부 소진하고
--- match_results.status='failed'로 확정될 때마다 한 행씩 쌓는 관리자 알림 로그.
--- match_results는 최신 상태만 담아서 "몇 번이나 실패했었는지" 이력이 안 남으므로 별도로
+-- projects.status='failed'로 확정될 때마다 한 행씩 쌓는 관리자 알림 로그.
+-- projects는 최신 상태만 담아서 "몇 번이나 실패했었는지" 이력이 안 남으므로 별도로
 -- 보존한다(app/routers/projects.py _simulate_generation 참고).
+-- [2026-09-28, match_results 테이블 통합] project_id와 함께 match_id도 들고 있었으나
+-- (둘이 항상 같은 project를 가리켰음), match_results가 projects로 합쳐지면서
+-- project_id 하나만 남긴다.
 CREATE TABLE IF NOT EXISTS generation_failure_alerts (
     alert_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '알림 고유 식별자',
-    match_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES match_results(match_id)',
     project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
     stage VARCHAR(30) NOT NULL COMMENT '실패가 확정된 시점의 stage',
-    -- [2026-09-27 개명] match_results.resume_count와 같은 이유로 개명(예전 retry_count).
+    -- [2026-09-27 개명] projects.resume_count와 같은 이유로 개명(예전 retry_count).
     resume_count TINYINT UNSIGNED NOT NULL COMMENT '확정 시점까지 소진한 자동 재개 횟수',
     -- [2026-09-27 신규, SB-134] 실패 확정 시점의 원인 분류 스냅샷.
     last_error_kind ENUM('일시','입력','운영') NOT NULL COMMENT '실패 확정 시점의 원인 분류',
@@ -364,18 +378,18 @@ CREATE TABLE IF NOT EXISTS generation_failure_alerts (
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     -- 관리자가 확인 처리한 시각 — NULL이면 미확인. 재시도 자체를 막지는 않는다.
     acknowledged_at DATETIME(6) NULL COMMENT '관리자 확인 처리 시각(NULL이면 미확인)',
-    KEY ix_generation_failure_alerts_match (match_id),
+    KEY ix_generation_failure_alerts_project (project_id),
     KEY ix_generation_failure_alerts_unacked (acknowledged_at),
-    FOREIGN KEY (match_id) REFERENCES match_results(match_id) ON DELETE CASCADE,
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- [2026-09-27 신규, SB-141] 사용자용 작업 알림(화면 헤더 종모양) — 공식 기능정의서 v1.9
 -- Notification 타입. generation_failure_alerts(관리자 대시보드 전용)와는 독립된 테이블
 -- 이다 — 대상 독자와 필드가 다르다(app/models.py Notification 클래스 주석 참고).
+-- [2026-09-28, match_results 테이블 통합] generation_failure_alerts와 같은 이유로
+-- match_id 컬럼을 뺐다 — project_id 하나만 남긴다.
 CREATE TABLE IF NOT EXISTS notifications (
     notification_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '알림 고유 식별자',
-    match_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES match_results(match_id)',
     project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
     kind ENUM('문서평가','산출물확인','표현검수','실패') NOT NULL COMMENT '완료된 단계 또는 실패',
     failure_scope ENUM('실행','재작성') NULL COMMENT "kind='실패'일 때만: 실행 실패 또는 재작성 실패",
@@ -384,33 +398,33 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     read_at DATETIME(6) NULL COMMENT '사용자가 읽은 시각(NULL이면 안읽음)',
     KEY ix_notifications_project (project_id),
-    KEY ix_notifications_match (match_id),
-    FOREIGN KEY (match_id) REFERENCES match_results(match_id) ON DELETE CASCADE,
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- [2026-09-28, match_results 테이블 통합] match_id 대신 projects(project_id)를 직접 참조한다.
 CREATE TABLE IF NOT EXISTS eligibility_checks (
     check_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '자격요건 게이트 결과 고유 식별자',
-    match_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES match_results(match_id)',
+    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
     passed BOOLEAN NOT NULL COMMENT '자격요건 통과 여부',
     failed_conditions JSON NULL COMMENT '불통과 사유 목록(문자열 배열) — undecidable=TRUE면 의미 없음',
     missing_inputs JSON NULL COMMENT '판정에 필요한데 빠진 입력값 목록(되묻기 대상)',
     undecidable BOOLEAN NOT NULL DEFAULT FALSE COMMENT '공고문 정형화 실패 등으로 판정 자체가 불가능한 경우(E-G1-UNPARSED) — TRUE면 passed 값은 무시',
     checked_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '검증 일시',
-    KEY ix_eligibility_checks_match (match_id),
-    FOREIGN KEY (match_id) REFERENCES match_results(match_id) ON DELETE CASCADE
+    KEY ix_eligibility_checks_project (project_id),
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- ---------------------------------------------------------------------------
 -- 사업계획서(문서층) 및 산출물(산출물층), 최종 판정
 -- ---------------------------------------------------------------------------
+-- [2026-09-28, match_results 테이블 통합] match_id 대신 projects(project_id)를 직접 참조한다.
 CREATE TABLE IF NOT EXISTS business_plans (
     plan_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '사업계획서 고유 식별자',
-    match_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES match_results(match_id)',
+    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
     doc_score DECIMAL(5,2) NULL COMMENT '문서 적합도 점수(작성 Agent 산출)',
     threshold DECIMAL(5,2) NULL COMMENT '통과 기준 점수',
-    KEY ix_business_plans_match (match_id),
-    FOREIGN KEY (match_id) REFERENCES match_results(match_id) ON DELETE CASCADE
+    KEY ix_business_plans_project (project_id),
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS plan_sections (
@@ -587,20 +601,21 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 -- ---------------------------------------------------------------------------
 -- 에이전트 실행 로그 (관리자 대시보드 "에이전트 테스크" 탭)
 -- ---------------------------------------------------------------------------
+-- [2026-09-28, match_results 테이블 통합] match_id 대신 projects(project_id)를 직접 참조한다.
 CREATE TABLE IF NOT EXISTS agent_executions (
     execution_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '에이전트 실행 세션 고유 식별자',
-    match_id BIGINT UNSIGNED NULL COMMENT 'REFERENCES match_results(match_id), nullable',
+    project_id BIGINT UNSIGNED NULL COMMENT 'REFERENCES projects(project_id), nullable',
     agent_name VARCHAR(50) NOT NULL COMMENT '실행 Agent 이름(조율/전략/작성/구현/검증-1/검증-2/검수)',
     task_key VARCHAR(50) NULL COMMENT 'app/models.py FIXED_TASK_SEQUENCE의 세부 Task 키 — 같은 agent_name이 여러 Task를 맡을 때 구분용',
     attempt_no INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '같은 task_key 안에서 몇 번째 실행인지(1=최초, 2=재시도 1회차, ...)',
     model_used VARCHAR(50) NOT NULL COMMENT '사용 모델명(Claude Opus/Sonnet/Haiku 또는 자체 파인튜닝 모델 버전)',
     rerun_type VARCHAR(20) NOT NULL COMMENT '최초 실행/선별 재수행/전체 재실행 구분',
     token_usage INT UNSIGNED NOT NULL COMMENT '실행에 사용된 토큰 수',
-    -- [2026-09-23 개정] match_results.status와 같은 enum(6종)을 쓴다 — 예전엔 여기만
+    -- [2026-09-23 개정] projects.status와 같은 enum(6종)을 쓴다 — 예전엔 여기만
     -- 'success'라는 다른 이름을 썼는데(seed_dummy_pipeline.py), 'completed'로 통일한다.
-    status ENUM('in_progress','waiting_resume','user_waiting','failed','completed','halted') NOT NULL COMMENT '서비스 내부 상태(실행/재개대기/사용자대기/실패/완료/중단) — match_results.status와 같은 enum',
+    status ENUM('in_progress','waiting_resume','user_waiting','failed','completed','halted') NOT NULL COMMENT '서비스 내부 상태(실행/재개대기/사용자대기/실패/완료/중단) — projects.status와 같은 enum',
     started_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '실행 시작 일시',
-    -- [2026-09-28 신규] status='failed'일 때만 채운다. error_kind는 match_results.
+    -- [2026-09-28 신규] status='failed'일 때만 채운다. error_kind는 projects.
     -- last_error_kind와 같은 분류(일시/입력/운영) — "재시도 가능 여부"는 이 값이 '일시'인지로
     -- API 응답에서 계산해 내려준다(별도 컬럼으로 중복 저장하지 않음, admin.py 참고).
     error_kind ENUM('일시','입력','운영') NULL COMMENT '실패 원인 분류(status=failed일 때만)',
@@ -609,12 +624,13 @@ CREATE TABLE IF NOT EXISTS agent_executions (
     -- 그 리스트(JSON). 형제 저장소 agent-orchestration의 ExecutionRecord/CallLog 설계(원본
     -- 프롬프트·응답 내용은 남기지 않고 참조만 남김)를 관계형 id로 옮긴 것.
     output_ref JSON NULL COMMENT '이 실행이 만들거나 바꾼 산출물 참조({table,id} 또는 리스트) — 프롬프트/응답 원문은 저장하지 않음',
-    -- [2026-09-17 인덱싱 개정] "이 매칭의 이 task_key 최근 시도가 몇 번째인지" 조회가
-    -- 재시도/이어하기 로직에서 자주 호출된다(projects.py 재시도 처리, admin.py 에이전트
-    -- 테스크 탭의 match_id 필터). 복합 인덱스 선두가 match_id라 match_id 단독 필터
-    -- (admin.py)도 그대로 커버하므로 기존 ix_agent_executions_match(단일)를 대체한다.
-    KEY ix_agent_executions_match_task (match_id, task_key, attempt_no),
-    FOREIGN KEY (match_id) REFERENCES match_results(match_id) ON DELETE SET NULL
+    -- [2026-09-17 인덱싱 개정, 2026-09-28 match_results 통합으로 컬럼명만 변경] "이
+    -- 프로젝트의 이 task_key 최근 시도가 몇 번째인지" 조회가 재시도/이어하기 로직에서
+    -- 자주 호출된다(projects.py 재시도 처리, admin.py 에이전트 테스크 탭의 project_id
+    -- 필터). 복합 인덱스 선두가 project_id라 project_id 단독 필터(admin.py)도 그대로
+    -- 커버한다.
+    KEY ix_agent_executions_project_task (project_id, task_key, attempt_no),
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- ---------------------------------------------------------------------------

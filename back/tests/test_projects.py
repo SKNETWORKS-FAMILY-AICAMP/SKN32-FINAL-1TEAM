@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 import app.routers.auth as auth_router
 import app.security as security
-from app.models import MatchResult, Notice, Project
+from app.models import Notice, Project
 from seed_dummy_pipeline import seed_dummy_pipeline
 
 USER_EMAIL = 'delete-test@example.com'
@@ -64,7 +64,7 @@ def user_client(db_session):
 
 
 def test_delete_project_without_match_hard_deletes(user_client, db_session):
-    """아직 공고 매칭 전(match_results 없음)이면 실제로 지워진다 — 목록에서도, DB에서도."""
+    """아직 공고 매칭 전(notice_id 없음)이면 실제로 지워진다 — 목록에서도, DB에서도."""
     project_id = _create_project(user_client)
 
     listed = user_client.get('/projects').json()
@@ -82,7 +82,7 @@ def test_delete_project_without_match_hard_deletes(user_client, db_session):
 
 def test_delete_project_with_match_archives_instead_of_deleting(user_client, db_session):
     """매칭 이후(계획서·산출물 등 이미 생김)면 실제로 지우지 않고 보관 처리만 한다 —
-    목록에서는 사라지지만(사용자 기준), DB에는 match_results.archived_at과 함께 남는다."""
+    목록에서는 사라지지만(사용자 기준), DB에는 projects.archived_at과 함께 남는다."""
     project_id = _create_project(user_client)
     notice = Notice(
         notice_id='DELETE-TEST-001', source='k-startup', title='삭제 테스트용 더미 공고', recruitment_status='진행중',
@@ -101,14 +101,8 @@ def test_delete_project_with_match_archives_instead_of_deleting(user_client, db_
     db_session.expire_all()
     project = db_session.get(Project, project_id)
     assert project is not None, '매칭까지 된 프로젝트인데 실제로 지워짐 — 계획서/산출물 데이터가 같이 날아갔을 것'
-    match = (
-        db_session.query(MatchResult)
-        .filter(MatchResult.project_id == project_id)
-        .order_by(MatchResult.match_id.desc())
-        .first()
-    )
-    assert match is not None and match.archived_at is not None, 'archived_at이 안 채워짐'
-    assert match.archived_by == 'user'
+    assert project.archived_at is not None, 'archived_at이 안 채워짐'
+    assert project.archived_by == 'user'
 
 
 def test_delete_project_requires_ownership(db_session):

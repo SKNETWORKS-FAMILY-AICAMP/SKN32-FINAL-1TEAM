@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 
 import app.routers.auth as auth_router
 import app.security as security
-from app.models import Faq, ImportRun, MatchResult, Notice, ProofreadLog, User, VerificationChecklistItem
+from app.models import Faq, ImportRun, Notice, Project, ProofreadLog, User, VerificationChecklistItem
 from seed_dummy_admin_data import main as seed_admin_data_main
 from seed_dummy_pipeline import seed_dummy_pipeline
 
@@ -263,17 +263,16 @@ def test_get_items_reflects_match_status(admin_client, user_client, db_session):
     assert matched['score'] == pytest.approx(82.50), matched
     assert matched['archived'] is False
 
-    match = db_session.query(MatchResult).filter(MatchResult.project_id == project_id).first()
-    match.status = 'failed'
-    match.stage = 'prototype_building'
-    match.failure_reason = '프로토타입 작업 오류'
+    project = db_session.get(Project, project_id)
+    project.status = 'failed'
+    project.stage = 'prototype_building'
+    project.failure_reason = '프로토타입 작업 오류'
     db_session.commit()
     user_item = next(row for row in user_client.get('/projects').json() if row['project_id'] == project_id)
     assert user_item['match_status'] == 'failed'
     assert user_item['failure_reason'] == '프로토타입 작업 오류'
     admin_item = next(row for row in admin_client.get('/admin/items').json() if row['project_id'] == project_id)
     assert admin_item['status_label'] == '실패'
-    assert admin_item['match_id'] == match.match_id
     assert admin_item['failure_reason'] == '프로토타입 작업 오류'
 
 
@@ -312,7 +311,6 @@ def test_items_shows_failed_status_and_resume_count(admin_client, user_client, d
     확정 실패하면 /admin/items의 status_label이 '실패'로, resume_count/failure_reason이
     그대로 보여야 한다."""
     import app.pipeline_stages as ps
-    from app.models import MatchResult
 
     project_id = _create_project(user_client)
     notice = Notice(
@@ -321,12 +319,14 @@ def test_items_shows_failed_status_and_resume_count(admin_client, user_client, d
     )
     db_session.add(notice)
     db_session.flush()
-    match = MatchResult(
-        project_id=project_id, notice_id=notice.notice_id, status='failed',
-        stage=ps.STAGE_PLAN_WRITING, progress_percent=70,
-        resume_count=6, last_error_kind=ps.ERROR_KIND_TRANSIENT, failure_reason='6번째 실패(테스트)',
-    )
-    db_session.add(match)
+    project = db_session.get(Project, project_id)
+    project.notice_id = notice.notice_id
+    project.status = 'failed'
+    project.stage = ps.STAGE_PLAN_WRITING
+    project.progress_percent = 70
+    project.resume_count = 6
+    project.last_error_kind = ps.ERROR_KIND_TRANSIENT
+    project.failure_reason = '6번째 실패(테스트)'
     db_session.commit()
 
     res = admin_client.get('/admin/items')
@@ -344,7 +344,7 @@ def test_items_shows_failed_status_and_resume_count(admin_client, user_client, d
 
 def test_generation_alerts_lists_unacknowledged_by_default(admin_client, user_client, db_session):
     import app.pipeline_stages as ps
-    from app.models import GenerationFailureAlert, MatchResult
+    from app.models import GenerationFailureAlert
 
     project_id = _create_project(user_client)
     notice = Notice(
@@ -353,18 +353,19 @@ def test_generation_alerts_lists_unacknowledged_by_default(admin_client, user_cl
     )
     db_session.add(notice)
     db_session.flush()
-    match = MatchResult(
-        project_id=project_id, notice_id=notice.notice_id, status='failed',
-        stage=ps.STAGE_PLAN_WRITING, progress_percent=70, resume_count=6,
-    )
-    db_session.add(match)
+    project = db_session.get(Project, project_id)
+    project.notice_id = notice.notice_id
+    project.status = 'failed'
+    project.stage = ps.STAGE_PLAN_WRITING
+    project.progress_percent = 70
+    project.resume_count = 6
     db_session.flush()
     unacked = GenerationFailureAlert(
-        match_id=match.match_id, project_id=project_id, stage=ps.STAGE_PLAN_WRITING,
+        project_id=project_id, stage=ps.STAGE_PLAN_WRITING,
         resume_count=5, last_error_kind=ps.ERROR_KIND_TRANSIENT, failure_reason='미확인 실패(테스트)',
     )
     acked = GenerationFailureAlert(
-        match_id=match.match_id, project_id=project_id, stage=ps.STAGE_PLAN_WRITING,
+        project_id=project_id, stage=ps.STAGE_PLAN_WRITING,
         resume_count=5, last_error_kind=ps.ERROR_KIND_TRANSIENT,
         failure_reason='이미 확인한 실패(테스트)', acknowledged_at=datetime.datetime.utcnow(),
     )
@@ -384,7 +385,7 @@ def test_generation_alerts_lists_unacknowledged_by_default(admin_client, user_cl
 
 def test_ack_generation_alert_toggles_acknowledged_at(admin_client, user_client, db_session):
     import app.pipeline_stages as ps
-    from app.models import GenerationFailureAlert, MatchResult
+    from app.models import GenerationFailureAlert
 
     project_id = _create_project(user_client)
     notice = Notice(
@@ -393,14 +394,15 @@ def test_ack_generation_alert_toggles_acknowledged_at(admin_client, user_client,
     )
     db_session.add(notice)
     db_session.flush()
-    match = MatchResult(
-        project_id=project_id, notice_id=notice.notice_id, status='failed',
-        stage=ps.STAGE_PLAN_WRITING, progress_percent=70, resume_count=6,
-    )
-    db_session.add(match)
+    project = db_session.get(Project, project_id)
+    project.notice_id = notice.notice_id
+    project.status = 'failed'
+    project.stage = ps.STAGE_PLAN_WRITING
+    project.progress_percent = 70
+    project.resume_count = 6
     db_session.flush()
     alert = GenerationFailureAlert(
-        match_id=match.match_id, project_id=project_id, stage=ps.STAGE_PLAN_WRITING,
+        project_id=project_id, stage=ps.STAGE_PLAN_WRITING,
         resume_count=5, last_error_kind=ps.ERROR_KIND_TRANSIENT, failure_reason='확인 처리 대상(테스트)',
     )
     db_session.add(alert)
@@ -899,9 +901,8 @@ def test_get_agent_executions_filters_by_status_and_reports_retryable(admin_clie
     db_session.add(notice)
     db_session.flush()
     seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-003', retry_agents=())
-    match = db_session.query(MatchResult).filter_by(project_id=project_id).one()
     db_session.add(AgentExecution(
-        match_id=match.match_id, agent_name='작성', task_key='writing', attempt_no=99,
+        project_id=project_id, agent_name='작성', task_key='writing', attempt_no=99,
         model_used='dummy', rerun_type='rerun', token_usage=0, status='failed',
         error_kind=ps.ERROR_KIND_TRANSIENT, error_reason='일시 오류(테스트)',
     ))

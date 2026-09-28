@@ -477,12 +477,16 @@ class MatchScoreReasonOut(BaseModel):
 
 
 class MatchResultOut(BaseModel):
+    """[2026-09-28, match_results 테이블 통합] 예전엔 match_results 테이블(자체 PK인
+    match_id)에서 이 값들을 읽었으나, 그 테이블이 projects로 합쳐지면서 이제 이 필드들은
+    Project 모델에 직접 있다 — 별도 식별자가 필요 없으니 match_id는 뺐다(부모 응답의
+    project_id로 충분)."""
+
     model_config = ConfigDict(from_attributes=True)
-    match_id: int
-    notice_id: str
+    notice_id: str | None = None
     fit_score: float | None = None
     reason: str | None = None
-    status: str
+    status: str | None = None
     score_reasons: list[MatchScoreReasonOut] = Field(default_factory=list)
 
 
@@ -491,20 +495,22 @@ class ProjectStatusOut(BaseModel):
     판별 결과. app/pipeline_stages.py의 STAGE_TO_SCREEN/NO_MATCH_SCREEN 매핑을 그대로
     반영하며, 8케이스 전부에 대한 판별 로직은 tests/verify_resume_cases.py로 검증됐다.
 
-    - 이 프로젝트에 매칭(match_results) 자체가 없으면(8케이스의 ①, 아직 공고 선택 전):
-      screen=3(NO_MATCH_SCREEN), stage/match_id/match_status는 전부 None.
-    - 매칭은 있는데 stage가 NULL이면(마이그레이션 이전 데이터 등, 정상 흐름에서는
-      발생하지 않아야 함): screen도 None으로 내려간다 — 프론트는 이 경우 화면을
-      확정할 수 없으니 기본 진입점(예: 프로젝트 목록)으로 보내는 게 안전하다.
+    - 이 프로젝트에 아직 매칭(notice_id/stage)이 없으면(8케이스의 ①, 아직 공고 선택 전):
+      screen=3(NO_MATCH_SCREEN), stage/match_status는 전부 None.
+    - stage가 NULL이면(마이그레이션 이전 데이터 등, 정상 흐름에서는 발생하지 않아야 함):
+      screen도 None으로 내려간다 — 프론트는 이 경우 화면을 확정할 수 없으니 기본
+      진입점(예: 프로젝트 목록)으로 보내는 게 안전하다.
     - progress_percent는 stage가 '계획서 작성 중'/'프로토타입 제작 중'처럼 한 단계
-      안에서도 오래 걸리는 구간일 때만 값이 있고, 그 외 stage에서는 None이다."""
+      안에서도 오래 걸리는 구간일 때만 값이 있고, 그 외 stage에서는 None이다.
+
+    [2026-09-28, match_results 테이블 통합] match_id 필드는 뺐다 — project_id가 곧
+    이 실행 단위의 유일한 식별자다."""
 
     model_config = ConfigDict(from_attributes=True)
     project_id: int
     screen: int | None = None
     stage: str | None = None
     progress_percent: int | None = None
-    match_id: int | None = None
     match_status: str | None = None
     # [2026-09-23 개정] match_status가 'waiting_resume'(자동 재시도 대기 중)이거나
     # 'failed'(재시도 5회 소진, 확정된 실패)일 때 값이 있다 — 진행 화면에 실패 사유를
@@ -557,7 +563,6 @@ class RetryTaskRequest(BaseModel):
 
 class RetryTaskResponse(BaseModel):
     project_id: int
-    match_id: int
     task_key: str
     agent_name: str
     attempt_no: int
@@ -641,7 +646,6 @@ class NotificationOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
     notification_id: int
-    match_id: int
     project_id: int
     kind: str = Field(..., description="'문서평가'/'산출물확인'/'표현검수'/'실패' 중 하나")
     failure_scope: str | None = Field(None, description="kind='실패'일 때만: '실행' 또는 '재작성'")
@@ -724,7 +728,6 @@ class ItemOut(BaseModel):
     user_name: str
     created_at: datetime.datetime
     match_status: str | None = None
-    match_id: int | None = None
     failure_reason: str | None = None
     stage: str | None = None
     status_label: str = Field(..., description="'공고 매칭 전'/'진행중'/'판단 대기'/'완료'/'중단'/'실패' 중 하나")
@@ -754,7 +757,6 @@ class GenerationFailureAlertOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
     alert_id: int
-    match_id: int
     project_id: int
     stage: str
     resume_count: int

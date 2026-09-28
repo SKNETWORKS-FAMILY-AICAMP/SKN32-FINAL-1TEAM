@@ -41,7 +41,6 @@ from app.models import (  # noqa: E402
     Company,
     EligibilityCheck,
     FormatFinding,
-    MatchResult,
     Notice,
     PlanScoreReason,
     PlanSection,
@@ -77,17 +76,17 @@ notice = Notice(notice_id='kstartup:SCHEMA_TEST', source='kstartup', title='스�
 db.add(notice)
 db.commit()
 
-match = MatchResult(project_id=project.project_id, notice_id=notice.notice_id, status='completed')
-db.add(match)
+project.notice_id = notice.notice_id
+project.status = 'completed'
 db.commit()
 
 # 1) eligibility_checks — failed_conditions/missing_inputs(JSON)/undecidable 왕복 확인
 elig_reject = EligibilityCheck(
-    match_id=match.match_id, passed=False, undecidable=False,
+    project_id=project.project_id, passed=False, undecidable=False,
     failed_conditions=['ageMax 초과', 'regionCodes 불일치'],
 )
 elig_unparsed = EligibilityCheck(
-    match_id=match.match_id, passed=False, undecidable=True,
+    project_id=project.project_id, passed=False, undecidable=True,
     missing_inputs=['businessAgeMaxYears'],
 )
 db.add_all([elig_reject, elig_unparsed])
@@ -101,7 +100,7 @@ db.add(rubric)
 db.commit()
 
 # 3) business_plans + plan_sections + plan_score_reasons(item_code/score/max_score/evidence_locator)
-plan = BusinessPlan(match_id=match.match_id, doc_score=decimal.Decimal('58.50'), threshold=decimal.Decimal('80.00'))
+plan = BusinessPlan(project_id=project.project_id, doc_score=decimal.Decimal('58.50'), threshold=decimal.Decimal('80.00'))
 db.add(plan)
 db.commit()
 
@@ -151,15 +150,15 @@ db.commit()
 
 # 6) agent_executions — task_key/attempt_no
 exec1 = AgentExecution(
-    match_id=match.match_id, agent_name='구현', task_key='implement_prototype', attempt_no=1,
+    project_id=project.project_id, agent_name='구현', task_key='implement_prototype', attempt_no=1,
     model_used='dummy-llm-v1', rerun_type='initial', token_usage=800, status='completed',
 )
 exec2 = AgentExecution(
-    match_id=match.match_id, agent_name='구현', task_key='implement_prototype', attempt_no=2,
+    project_id=project.project_id, agent_name='구현', task_key='implement_prototype', attempt_no=2,
     model_used='dummy-llm-v1', rerun_type='rerun', token_usage=650, status='completed',
 )
 exec3 = AgentExecution(
-    match_id=match.match_id, agent_name='구현', task_key='implement_infographic', attempt_no=1,
+    project_id=project.project_id, agent_name='구현', task_key='implement_infographic', attempt_no=1,
     model_used='dummy-llm-v1', rerun_type='initial', token_usage=500, status='completed',
 )
 db.add_all([exec1, exec2, exec3])
@@ -213,7 +212,7 @@ check('proofread_logs(T-P2) 생성 확인', proofread_db.corrected_text == '더�
 artifact_reason_db = db.get(ArtifactScoreReason, artifact_reason.reason_id)
 check('artifact_score_reasons 항목별 점수 왕복', artifact_reason_db.evidence_locator == 'src/routes/login.tsx')
 
-execs_db = db.query(AgentExecution).filter(AgentExecution.match_id == match.match_id).order_by(AgentExecution.execution_id).all()
+execs_db = db.query(AgentExecution).filter(AgentExecution.project_id == project.project_id).order_by(AgentExecution.execution_id).all()
 check('agent_executions 3건 생성 확인', len(execs_db) == 3)
 check('같은 agent_name("구현")이 task_key로 구분됨', {e.task_key for e in execs_db} == {'implement_prototype', 'implement_infographic'})
 check('attempt_no로 재시도 회차 구분됨', [e.attempt_no for e in execs_db if e.task_key == 'implement_prototype'] == [1, 2])

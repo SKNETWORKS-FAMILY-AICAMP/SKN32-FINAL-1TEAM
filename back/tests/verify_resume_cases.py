@@ -1,5 +1,6 @@
-"""[기존 유저] 이어하기 8케이스(기획서 v1.7 4-7절, p.20 표)를 match_results.stage/
-progress_percent 컬럼을 추가한 뒤 실제로 구분해낼 수 있는지 재검증한다.
+"""[기존 유저] 이어하기 8케이스(기획서 v1.7 4-7절, p.20 표)를 projects.stage/
+progress_percent 컬럼(예전엔 match_results 소유, 2026-09-28 통합됨)을 추가한 뒤 실제로
+구분해낼 수 있는지 재검증한다.
 
 이전 버전(자식 행 존재 여부만으로 판별)에서는 8케이스 중 6개가 3개 그룹으로 뭉쳐
 서로 구분이 안 됐다(existing_user_resume_test_report.md). 이번엔 각 케이스가 실제
@@ -28,7 +29,7 @@ if os.path.exists(_DEV_DB):
 
 import app.database as appdb  # noqa: E402
 from app import pipeline_stages as ps  # noqa: E402
-from app.models import Company, EligibilityCheck, MatchResult, Notice, Project, User  # noqa: E402
+from app.models import Company, EligibilityCheck, Notice, Project, User  # noqa: E402
 
 appdb.init_sqlite_dev_db()
 db = appdb.SessionLocal()
@@ -50,18 +51,16 @@ db.commit()
 
 
 def detect_resume_screen(db, project_id: int):
-    """실제 GET /projects/{id}/status 가 하게 될 판별 로직 — match_results.stage를
-    app/pipeline_stages.STAGE_TO_SCREEN으로 화면 번호로 바꾼다. match 자체가 없으면
-    아직 공고도 안 골랐다는 뜻이라 NO_MATCH_SCREEN(3)으로 돌려보낸다."""
-    match = (
-        db.query(MatchResult).filter(MatchResult.project_id == project_id)
-        .order_by(MatchResult.match_id.desc()).first()
-    )
-    if match is None:
+    """실제 GET /projects/{id}/status 가 하게 될 판별 로직 — projects.stage를
+    app/pipeline_stages.STAGE_TO_SCREEN으로 화면 번호로 바꾼다. [2026-09-28,
+    match_results 테이블 통합] notice_id가 없으면(=매칭 자체가 없으면) 아직 공고도
+    안 골랐다는 뜻이라 NO_MATCH_SCREEN(3)으로 돌려보낸다."""
+    project = db.get(Project, project_id)
+    if project.notice_id is None:
         return ps.NO_MATCH_SCREEN, None
-    if match.stage is None:
+    if project.stage is None:
         return None, None  # 마이그레이션 이전 데이터 등 — 화면을 못 정한다
-    return ps.STAGE_TO_SCREEN.get(match.stage), match.progress_percent
+    return ps.STAGE_TO_SCREEN.get(project.stage), project.progress_percent
 
 
 def make_project(desc: str) -> int:
@@ -71,16 +70,16 @@ def make_project(desc: str) -> int:
     return p.project_id
 
 
-def base_match(project_id: int, stage: str, progress_percent: int | None = None) -> MatchResult:
-    m = MatchResult(
-        project_id=project_id, notice_id=notice.notice_id, status='in_progress',
-        stage=stage, progress_percent=progress_percent,
-    )
-    db.add(m)
+def base_match(project_id: int, stage: str, progress_percent: int | None = None) -> Project:
+    project = db.get(Project, project_id)
+    project.notice_id = notice.notice_id
+    project.status = 'in_progress'
+    project.stage = stage
+    project.progress_percent = progress_percent
     db.commit()
-    db.add(EligibilityCheck(match_id=m.match_id, passed=True))
+    db.add(EligibilityCheck(project_id=project_id, passed=True))
     db.commit()
-    return m
+    return project
 
 
 CASES = [

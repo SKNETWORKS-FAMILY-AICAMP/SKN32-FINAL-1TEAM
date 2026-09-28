@@ -22,7 +22,7 @@ os.environ.setdefault('GOOGLE_CLIENT_ID', 'ci-dummy-client-id')
 os.environ.setdefault('JWT_SECRET', 'ci-dummy-secret-not-for-production')
 
 from app.database import SessionLocal  # noqa: E402
-from app.models import AgentExecution, MatchResult  # noqa: E402
+from app.models import AgentExecution, Project  # noqa: E402
 
 
 def main() -> None:
@@ -32,26 +32,29 @@ def main() -> None:
 
     db = SessionLocal()
     try:
-        query = db.query(MatchResult).order_by(MatchResult.match_id.desc())
+        # [2026-09-28, match_results 테이블 통합] 매칭 상태는 이제 projects 행 자체에
+        # 있으므로, "가장 최근 매칭이 생긴 프로젝트"는 notice_id가 채워진 project 중
+        # project_id가 가장 큰(=가장 최근 생성된) 행으로 본다.
+        query = db.query(Project).filter(Project.notice_id.isnot(None)).order_by(Project.project_id.desc())
         if args.project_id is not None:
-            query = query.filter(MatchResult.project_id == args.project_id)
+            query = db.query(Project).filter(Project.project_id == args.project_id)
         match = query.first()
 
         if match is None:
             if args.project_id is not None:
                 print(f'project_id={args.project_id}에 매칭 결과가 없다 — seed_dummy_pipeline.py를 먼저 돌렸는지 확인.', file=sys.stderr)
             else:
-                print('match_results가 비어 있다 — seed_dummy_pipeline.py를 먼저 돌렸는지 확인.', file=sys.stderr)
+                print('매칭된 프로젝트가 없다 — seed_dummy_pipeline.py를 먼저 돌렸는지 확인.', file=sys.stderr)
             raise SystemExit(1)
 
         execs = (
             db.query(AgentExecution)
-            .filter(AgentExecution.match_id == match.match_id)
+            .filter(AgentExecution.project_id == match.project_id)
             .order_by(AgentExecution.execution_id)
             .all()
         )
 
-        print(f'project_id={match.project_id}  match_id={match.match_id}  '
+        print(f'project_id={match.project_id}  '
               f'status={match.status}  stage={match.stage}')
         print()
         if not execs:

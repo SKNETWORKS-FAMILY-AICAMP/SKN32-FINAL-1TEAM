@@ -31,7 +31,6 @@ from app.models import (
     FormatFinding,
     GenerationFailureAlert,
     MatchCandidate,
-    MatchResult,
     MatchScoreReason,
     NoticeAlert,
     Notification,
@@ -185,18 +184,20 @@ def _delete_account_cascade(db: Session, user: User) -> None:
     """[2026-09-28 신규] 계정 삭제(탈퇴) — 프로젝트 기획서 v1.10 6-7절: "계정 식별자와
     마이페이지 프로필, 모든 실행 건을 삭제한다. 진행 중인 실행이 있으면 중단한 뒤
     삭제한다." 진행 중인 실행을 별도로 'halted'로 바꾸는 중간 단계는 두지 않는다 —
-    이 함수가 끝나면 그 실행의 match_results 행 자체가 사라지므로, 더미 생성 루프
-    (_simulate_generation)가 다음 루프에서 db.get(MatchResult, ...)가 None을 보고
+    이 함수가 끝나면 그 실행의 project 행 자체가 사라지므로, 더미 생성 루프
+    (_simulate_generation)가 다음 루프에서 db.get(Project, ...)가 None을 보고
     조용히 멈춘다(app/routers/projects.py 참고) — 실질적으로 "중단 후 삭제"와 같다.
 
     app_schema.sql(MySQL)에는 이미 이 테이블들 대부분에 ON DELETE CASCADE가 걸려있지만,
     (1) SQLite 테스트 스키마(models.py에서 직접 생성)는 ForeignKey에 ondelete를 안 줘서
     cascade가 전혀 없고, (2) 그래서 MySQL/SQLite 어느 쪽에서 돌든 동일하게 동작하도록
-    delete_project()와 같은 방식(자식부터 명시적으로 지우는 순서)을 따른다."""
+    delete_project()와 같은 방식(자식부터 명시적으로 지우는 순서)을 따른다.
+
+    [2026-09-28, match_results 테이블 통합] project(1):match(1)로 합쳐지면서 match_ids
+    조회 단계 자체가 없어졌다 — project_ids가 곧 이전의 match_ids 역할을 겸한다."""
     company_ids = [c.company_id for c in db.query(Company.company_id).filter(Company.user_id == user.user_id)]
     project_ids = [p.project_id for p in db.query(Project.project_id).filter(Project.company_id.in_(company_ids))] if company_ids else []
-    match_ids = [m.match_id for m in db.query(MatchResult.match_id).filter(MatchResult.project_id.in_(project_ids))] if project_ids else []
-    plan_ids = [p.plan_id for p in db.query(BusinessPlan.plan_id).filter(BusinessPlan.match_id.in_(match_ids))] if match_ids else []
+    plan_ids = [p.plan_id for p in db.query(BusinessPlan.plan_id).filter(BusinessPlan.project_id.in_(project_ids))] if project_ids else []
 
     if plan_ids:
         artifact_ids = [a.artifact_id for a in db.query(Artifact.artifact_id).filter(Artifact.plan_id.in_(plan_ids))]
@@ -210,15 +211,13 @@ def _delete_account_cascade(db: Session, user: User) -> None:
         db.query(PlanCanonicalData).filter(PlanCanonicalData.plan_id.in_(plan_ids)).delete(synchronize_session=False)
         db.query(VerificationScoreHistory).filter(VerificationScoreHistory.plan_id.in_(plan_ids)).delete(synchronize_session=False)
         db.query(PlanSection).filter(PlanSection.plan_id.in_(plan_ids)).delete(synchronize_session=False)
-    if match_ids:
-        db.query(BusinessPlan).filter(BusinessPlan.match_id.in_(match_ids)).delete(synchronize_session=False)
-        db.query(Notification).filter(Notification.match_id.in_(match_ids)).delete(synchronize_session=False)
-        db.query(GenerationFailureAlert).filter(GenerationFailureAlert.match_id.in_(match_ids)).delete(synchronize_session=False)
-        db.query(MatchScoreReason).filter(MatchScoreReason.match_id.in_(match_ids)).delete(synchronize_session=False)
-        db.query(EligibilityCheck).filter(EligibilityCheck.match_id.in_(match_ids)).delete(synchronize_session=False)
-        db.query(AgentExecution).filter(AgentExecution.match_id.in_(match_ids)).delete(synchronize_session=False)
     if project_ids:
-        db.query(MatchResult).filter(MatchResult.project_id.in_(project_ids)).delete(synchronize_session=False)
+        db.query(BusinessPlan).filter(BusinessPlan.project_id.in_(project_ids)).delete(synchronize_session=False)
+        db.query(Notification).filter(Notification.project_id.in_(project_ids)).delete(synchronize_session=False)
+        db.query(GenerationFailureAlert).filter(GenerationFailureAlert.project_id.in_(project_ids)).delete(synchronize_session=False)
+        db.query(MatchScoreReason).filter(MatchScoreReason.project_id.in_(project_ids)).delete(synchronize_session=False)
+        db.query(EligibilityCheck).filter(EligibilityCheck.project_id.in_(project_ids)).delete(synchronize_session=False)
+        db.query(AgentExecution).filter(AgentExecution.project_id.in_(project_ids)).delete(synchronize_session=False)
         db.query(MatchCandidate).filter(MatchCandidate.project_id.in_(project_ids)).delete(synchronize_session=False)
         db.query(NoticeAlert).filter(NoticeAlert.project_id.in_(project_ids)).delete(synchronize_session=False)
         db.query(ProjectAttachment).filter(ProjectAttachment.project_id.in_(project_ids)).delete(synchronize_session=False)

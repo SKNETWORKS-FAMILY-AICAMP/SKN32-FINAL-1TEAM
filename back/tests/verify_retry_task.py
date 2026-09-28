@@ -49,7 +49,6 @@ from app.models import (  # noqa: E402
     AgentExecution,
     ArtifactScoreReason,
     FormatFinding,
-    MatchResult,
     Notice,
     PlanSection,
     ProofreadLog,
@@ -103,11 +102,9 @@ try:
     db.commit()
     plan_id = verdict.plan_id
     artifact_id = verdict.artifact_id
-    match = db.query(MatchResult).filter(MatchResult.project_id == project_id).one()
-    match_id = match.match_id
 finally:
     db.close()
-print(f'[준비] match_id={match_id} plan_id={plan_id} artifact_id={artifact_id} (category=webdev)')
+print(f'[준비] project_id={project_id} plan_id={plan_id} artifact_id={artifact_id} (category=webdev)')
 
 
 def retry(task_key: str) -> tuple[int, dict]:
@@ -379,7 +376,7 @@ db = SessionLocal()
 try:
     execs = (
         db.query(AgentExecution)
-        .filter(AgentExecution.match_id == match_id, AgentExecution.rerun_type == 'rerun')
+        .filter(AgentExecution.project_id == project_id, AgentExecution.rerun_type == 'rerun')
         .order_by(AgentExecution.execution_id)
         .all()
     )

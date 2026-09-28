@@ -26,7 +26,6 @@ from app.models import (  # noqa: E402
     Company,
     EligibilityCheck,
     FormatFinding,
-    MatchResult,
     Notice,
     PlanScoreReason,
     Project,
@@ -69,9 +68,8 @@ def check(label, cond):
 
 plan_id = verdict.plan_id
 artifact_id = verdict.artifact_id
-match_id = db.query(MatchResult).filter(MatchResult.project_id == project.project_id).one().match_id
 
-elig = db.query(EligibilityCheck).filter(EligibilityCheck.match_id == match_id).one()
+elig = db.query(EligibilityCheck).filter(EligibilityCheck.project_id == project.project_id).one()
 check('eligibility_checks.undecidable 기본값 False로 채워짐', elig.undecidable is False)
 
 rubric_count = db.query(RubricItem).count()
@@ -102,7 +100,7 @@ check('verification_score_history 2건(doc/code) + policy 스냅샷', (
 policy = db.query(VerificationPolicy).order_by(VerificationPolicy.policy_id.asc()).first()
 check('verification_policies가 없으면 자동 생성됨 (pass_threshold=80)', policy is not None and policy.pass_threshold == 80)
 
-execs = db.query(AgentExecution).filter(AgentExecution.match_id == match_id).all()
+execs = db.query(AgentExecution).filter(AgentExecution.project_id == project.project_id).all()
 implement_execs = [e for e in execs if e.agent_name == '구현']
 check('agent_executions에 task_key 채워짐', all(e.task_key is not None for e in execs))
 check('같은 agent_name("구현")의 두 Task가 task_key로 구분됨', {e.task_key for e in implement_execs} == {'implement_prototype', 'implement_infographic'})

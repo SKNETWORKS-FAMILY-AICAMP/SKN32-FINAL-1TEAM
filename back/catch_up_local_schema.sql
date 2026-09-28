@@ -307,6 +307,255 @@ ALTER TABLE project_plan_inputs
     MODIFY COLUMN main_industry ENUM('제조','지식서비스','기계·소재','전기·전자','정보·통신','화공·섬유','바이오·의료·생명','에너지·자원','공예·디자인')
     NULL COMMENT '주업종(개인/법인 전용, 프론트 드롭다운 9종)';
 
+-- =====================================================================
+-- [2026-09-28, match_results 테이블 통합] project(1):match_results(N)로 나뉘어 있던
+-- 예전 설계를 project(1):1로 합쳤다 — 실제 형제 저장소 agent-orchestration의 Run
+-- 개념(아이디어·회사정보·공고선택·진행상태를 전부 담는 자기완결 단위 하나)과 우리
+-- SB-138 "중단 후 새로 시작"(기존 프로젝트를 archive하고 새 프로젝트를 만드는 방식)
+-- 패턴을 보면 project 한 행이 곧 실행 시도 하나이기 때문이다. 실제로 1:N이 쓰이는
+-- 곳은 POST /projects/{id}/generate 하나뿐이었고, 그마저 그 함수 자체 docstring에
+-- "[2026-09-15, 프론트 통합 임시 구현]"이라고 명시된 임시 데모 우회였다
+-- (app/routers/projects.py generate_pipeline_result 참고).
+--
+-- *** 공유 AWS MySQL에 실행하기 전 사람이 반드시 먼저 확인할 것 ***
+-- 아래 UPDATE는 한 project_id에 match_results가 여러 건 있으면(과거 데모 엔드포인트가
+-- 호출할 때마다 새 세트를 쌓던 동작 탓) match_id가 가장 큰(=가장 최근) 행 하나만
+-- projects로 옮기고 나머지는 조용히 버린다 — 병합 후에는 되돌릴 방법이 없다. 실행
+-- 전에 반드시 아래 쿼리로 그런 프로젝트가 몇 건이나 있는지 먼저 확인해서 사람에게
+-- 보고할 것:
+--
+--     SELECT project_id, COUNT(*) AS match_count
+--     FROM match_results
+--     GROUP BY project_id
+--     HAVING COUNT(*) > 1;
+--
+-- 이 섹션은 로컬/스테이징에서 검증하는 용도로만 이 파일에 작성돼 있다 — 이 리팩터
+-- 작업의 일부로 이 SQL을 공유 DB에 대해 직접 실행하지 않았다(그건 사람이 위 확인을
+-- 거친 뒤 별도로 결정할 일이다).
+-- =====================================================================
+
+DELIMITER $$
+
+-- 이 섹션 전용 헬퍼 — 위쪽 _add_col_if_missing은 이미 DROP돼 있으므로(줄 266) 여기서
+-- 필요한 것만 다시 만들고, 섹션 끝에서 다시 DROP한다.
+DROP PROCEDURE IF EXISTS _mr_add_col_if_missing $$
+CREATE PROCEDURE _mr_add_col_if_missing(
+    IN p_table VARCHAR(64), IN p_column VARCHAR(64), IN p_coldef TEXT
+)
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_column
+    ) THEN
+        SET @ddl = CONCAT('ALTER TABLE `', p_table, '` ADD COLUMN `', p_column, '` ', p_coldef);
+        PREPARE stmt FROM @ddl;
+        EXECUTE stmt;
+        DEALLOCATE PREPARE stmt;
+        SELECT CONCAT(p_table, '.', p_column, ' 추가함') AS result;
+    ELSE
+        SELECT CONCAT(p_table, '.', p_column, ' 이미 있음 — 건너뜀') AS result;
+    END IF;
+END $$
+
+-- match_id를 참조하는 FK를 컬럼명 기준으로 찾아서 지운다 — CREATE TABLE에서 FK에
+-- 이름을 안 줘서(app_schema.sql 참고) MySQL이 자동 생성한 이름(예: xxx_ibfk_1)이라
+-- 하드코딩할 수 없다. 이미 지워졌으면(재실행) 아무 것도 안 한다.
+DROP PROCEDURE IF EXISTS _mr_drop_fk_on_column_if_exists $$
+CREATE PROCEDURE _mr_drop_fk_on_column_if_exists(IN p_table VARCHAR(64), IN p_column VARCHAR(64))
+BEGIN
+    DECLARE v_fk_name VARCHAR(64) DEFAULT NULL;
+    SELECT CONSTRAINT_NAME INTO v_fk_name
+    FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_column
+      AND REFERENCED_TABLE_NAME IS NOT NULL
+    LIMIT 1;
+    IF v_fk_name IS NOT NULL THEN
+        SET @ddl = CONCAT('ALTER TABLE `', p_table, '` DROP FOREIGN KEY `', v_fk_name, '`');
+        PREPARE stmt FROM @ddl;
+        EXECUTE stmt;
+        DEALLOCATE PREPARE stmt;
+        SELECT CONCAT(p_table, '.', v_fk_name, ' FK 삭제함') AS result;
+    ELSE
+        SELECT CONCAT(p_table, '.', p_column, ' FK 없음 — 건너뜀') AS result;
+    END IF;
+END $$
+
+DROP PROCEDURE IF EXISTS _mr_drop_col_if_exists $$
+CREATE PROCEDURE _mr_drop_col_if_exists(IN p_table VARCHAR(64), IN p_column VARCHAR(64))
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_column
+    ) THEN
+        SET @ddl = CONCAT('ALTER TABLE `', p_table, '` DROP COLUMN `', p_column, '`');
+        PREPARE stmt FROM @ddl;
+        EXECUTE stmt;
+        DEALLOCATE PREPARE stmt;
+        SELECT CONCAT(p_table, '.', p_column, ' 컬럼 삭제함') AS result;
+    ELSE
+        SELECT CONCAT(p_table, '.', p_column, ' 이미 없음 — 건너뜀') AS result;
+    END IF;
+END $$
+
+-- 위쪽 _add_index_if_missing도 이미 DROP돼 있으므로(줄 272) 이 섹션 전용으로 다시 만든다.
+DROP PROCEDURE IF EXISTS _mr_add_index_if_missing $$
+CREATE PROCEDURE _mr_add_index_if_missing(
+    IN p_table VARCHAR(64), IN p_index VARCHAR(64), IN p_indexdef TEXT
+)
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND INDEX_NAME = p_index
+    ) THEN
+        SET @ddl = CONCAT('ALTER TABLE `', p_table, '` ADD INDEX `', p_index, '` ', p_indexdef);
+        PREPARE stmt FROM @ddl;
+        EXECUTE stmt;
+        DEALLOCATE PREPARE stmt;
+        SELECT CONCAT(p_table, '.', p_index, ' 추가함') AS result;
+    ELSE
+        SELECT CONCAT(p_table, '.', p_index, ' 이미 있음 — 건너뜀') AS result;
+    END IF;
+END $$
+
+-- 전체 이관을 한 프로시저로 감싼다 — match_results 테이블이 이미 없으면(=이전에 이미
+-- 이 마이그레이션을 돌렸거나, 애초에 이 스키마 버전으로 새로 설치된 DB) 통째로
+-- 건너뛴다. 그래서 이 스크립트를 여러 번 실행해도, match_results가 사라진 뒤에
+-- 실행해도 안전하다(조용한 no-op).
+DROP PROCEDURE IF EXISTS _migrate_match_results_into_projects $$
+CREATE PROCEDURE _migrate_match_results_into_projects()
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'match_results'
+    ) THEN
+        -- (1) match_results가 소유했던 컬럼들을 projects에 추가한다(app_schema.sql의
+        -- projects CREATE TABLE 정의, 컬럼 코멘트까지 동일하게 맞춘다).
+        CALL _mr_add_col_if_missing('projects', 'notice_id', "VARCHAR(320) NULL COMMENT 'REFERENCES notices(notice_id). NULL이면 아직 공고를 선택하기 전(=아직 매칭 전)'");
+        CALL _mr_add_col_if_missing('projects', 'fit_score', "DECIMAL(5,2) NULL COMMENT '매칭 적합도 점수'");
+        CALL _mr_add_col_if_missing('projects', 'reason', "TEXT NULL COMMENT '매칭 사유/근거 서술'");
+        CALL _mr_add_col_if_missing('projects', 'status', "ENUM('in_progress','waiting_resume','user_waiting','failed','completed','halted') NULL COMMENT '서비스 내부 상태(실행/재개대기/사용자대기/실패/완료/중단). NULL이면 아직 매칭 전'");
+        CALL _mr_add_col_if_missing('projects', 'stage', "VARCHAR(30) NULL COMMENT '이어하기용 세부 진행 단계(app/pipeline_stages.py의 STAGE_* 상수 중 하나)'");
+        CALL _mr_add_col_if_missing('projects', 'progress_percent', "TINYINT UNSIGNED NULL COMMENT 'stage 안에서도 오래 걸리는 구간의 진행률 0~100'");
+        CALL _mr_add_col_if_missing('projects', 'worker_claimed_at', "DATETIME(6) NULL COMMENT '생성 작업을 처리 중인 워커의 마지막 클레임/하트비트 시각'");
+        CALL _mr_add_col_if_missing('projects', 'failure_reason', "TEXT NULL COMMENT '마지막 실패 사유(에러 메시지)'");
+        CALL _mr_add_col_if_missing('projects', 'last_error_kind', "ENUM('일시','입력','운영') NULL COMMENT '마지막 실패 원인 분류(NULL=실패 이력 없음/초기화됨)'");
+        CALL _mr_add_col_if_missing('projects', 'resume_count', "TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '자동 재개 소진 횟수(최대 5)'");
+        CALL _mr_add_col_if_missing('projects', 'retry_count', "TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '개별 호출 즉시 재시도 횟수(현재 미사용, 항상 0)'");
+        CALL _mr_add_col_if_missing('projects', 'next_retry_at', "DATETIME(6) NULL COMMENT '다음 자동 재개 예정 시각(waiting_resume 전용)'");
+        CALL _mr_add_col_if_missing('projects', 'resume_started_at', "DATETIME(6) NULL COMMENT '이번 실패 스트릭 시작 시각(재개 총 대기 상한 12시간 계산용)'");
+        CALL _mr_add_col_if_missing('projects', 'archived_at', "DATETIME(6) NULL COMMENT '사용자가 프로젝트를 삭제해 보관 처리된 일시(NULL 가능)'");
+        CALL _mr_add_col_if_missing('projects', 'archived_by', "VARCHAR(20) NULL COMMENT \"보관 처리 주체('user' 고정, NULL 가능)\"");
+
+        -- (2) match_results 값을 projects로 옮긴다. *** 위 실행 전 확인 사항 참고 ***:
+        -- project_id당 match_id 최댓값(가장 최근 매칭) 행만 명시적으로 골라 옮긴다 —
+        -- 여러 건이 있으면 그 나머지는 이 UPDATE로 유실된다.
+        UPDATE projects p
+        JOIN (
+            SELECT m1.*
+            FROM match_results m1
+            JOIN (
+                SELECT project_id, MAX(match_id) AS max_match_id
+                FROM match_results
+                GROUP BY project_id
+            ) latest ON latest.project_id = m1.project_id AND latest.max_match_id = m1.match_id
+        ) m ON m.project_id = p.project_id
+        SET
+            p.notice_id = m.notice_id,
+            p.fit_score = m.fit_score,
+            p.reason = m.reason,
+            p.status = m.status,
+            p.stage = m.stage,
+            p.progress_percent = m.progress_percent,
+            p.worker_claimed_at = m.worker_claimed_at,
+            p.failure_reason = m.failure_reason,
+            p.last_error_kind = m.last_error_kind,
+            p.resume_count = m.resume_count,
+            p.retry_count = m.retry_count,
+            p.next_retry_at = m.next_retry_at,
+            p.resume_started_at = m.resume_started_at,
+            p.archived_at = m.archived_at,
+            p.archived_by = m.archived_by;
+
+        -- projects.notice_id도 match_results.notice_id처럼 notices(notice_id)를 참조해야
+        -- 한다(app_schema.sql projects 정의 참고). 이 IF 분기는 match_results가 있을 때
+        -- 딱 한 번만 들어오므로(재실행 시 이 분기 자체가 건너뛰어짐) FK 중복 추가 걱정 없이
+        -- 바로 추가한다.
+        ALTER TABLE projects ADD CONSTRAINT fk_projects_notice FOREIGN KEY (notice_id) REFERENCES notices(notice_id) ON DELETE RESTRICT;
+
+        -- (3) match_id -> project_id로 이름이 바뀌는 4개 자식 테이블(match_score_reasons/
+        -- eligibility_checks/business_plans/agent_executions): project_id 컬럼을 추가하고
+        -- match_results를 거쳐 backfill한 뒤, match_id의 FK와 컬럼을 지운다. 반드시
+        -- match_results가 아직 있는 지금 이 시점에 처리해야 한다(백필 조인 대상이라서).
+        CALL _mr_add_col_if_missing('match_score_reasons', 'project_id', "BIGINT UNSIGNED NULL COMMENT 'REFERENCES projects(project_id)'");
+        UPDATE match_score_reasons t JOIN match_results m ON t.match_id = m.match_id SET t.project_id = m.project_id;
+        CALL _mr_drop_fk_on_column_if_exists('match_score_reasons', 'match_id');
+        CALL _mr_drop_col_if_exists('match_score_reasons', 'match_id');
+        ALTER TABLE match_score_reasons MODIFY COLUMN project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)';
+        CALL _mr_add_index_if_missing('match_score_reasons', 'ix_match_score_reasons_project', '(project_id)');
+        ALTER TABLE match_score_reasons ADD CONSTRAINT fk_match_score_reasons_project FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE;
+
+        CALL _mr_add_col_if_missing('eligibility_checks', 'project_id', "BIGINT UNSIGNED NULL COMMENT 'REFERENCES projects(project_id)'");
+        UPDATE eligibility_checks t JOIN match_results m ON t.match_id = m.match_id SET t.project_id = m.project_id;
+        CALL _mr_drop_fk_on_column_if_exists('eligibility_checks', 'match_id');
+        CALL _mr_drop_col_if_exists('eligibility_checks', 'match_id');
+        ALTER TABLE eligibility_checks MODIFY COLUMN project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)';
+        CALL _mr_add_index_if_missing('eligibility_checks', 'ix_eligibility_checks_project', '(project_id)');
+        ALTER TABLE eligibility_checks ADD CONSTRAINT fk_eligibility_checks_project FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE;
+
+        CALL _mr_add_col_if_missing('business_plans', 'project_id', "BIGINT UNSIGNED NULL COMMENT 'REFERENCES projects(project_id)'");
+        UPDATE business_plans t JOIN match_results m ON t.match_id = m.match_id SET t.project_id = m.project_id;
+        CALL _mr_drop_fk_on_column_if_exists('business_plans', 'match_id');
+        CALL _mr_drop_col_if_exists('business_plans', 'match_id');
+        ALTER TABLE business_plans MODIFY COLUMN project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)';
+        CALL _mr_add_index_if_missing('business_plans', 'ix_business_plans_project', '(project_id)');
+        ALTER TABLE business_plans ADD CONSTRAINT fk_business_plans_project FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE;
+
+        -- agent_executions.match_id는 nullable이었다 — project_id도 nullable로 유지.
+        CALL _mr_add_col_if_missing('agent_executions', 'project_id', "BIGINT UNSIGNED NULL COMMENT 'REFERENCES projects(project_id), nullable'");
+        UPDATE agent_executions t JOIN match_results m ON t.match_id = m.match_id SET t.project_id = m.project_id;
+        CALL _mr_drop_fk_on_column_if_exists('agent_executions', 'match_id');
+        CALL _mr_drop_col_if_exists('agent_executions', 'match_id');
+        CALL _mr_add_index_if_missing('agent_executions', 'ix_agent_executions_project_task', '(project_id, task_key, attempt_no)');
+        ALTER TABLE agent_executions ADD CONSTRAINT fk_agent_executions_project FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE SET NULL;
+
+        -- (4) project_id와 match_id를 둘 다 갖고 있던 2개 테이블(generation_failure_alerts/
+        -- notifications): project_id는 이미 채워져 있으므로 이제 불필요해진 match_id
+        -- 컬럼과 그 FK만 지우면 된다.
+        CALL _mr_drop_fk_on_column_if_exists('generation_failure_alerts', 'match_id');
+        CALL _mr_drop_col_if_exists('generation_failure_alerts', 'match_id');
+        CALL _mr_drop_fk_on_column_if_exists('notifications', 'match_id');
+        CALL _mr_drop_col_if_exists('notifications', 'match_id');
+
+        -- (5) match_results 테이블 자체를 지운다 — 위에서 이 테이블을 참조하던 FK를
+        -- 전부 지웠으므로 이제 안전하게 DROP할 수 있다.
+        DROP TABLE match_results;
+
+        SELECT 'match_results -> projects 이관 완료' AS result;
+    ELSE
+        SELECT 'match_results 테이블이 이미 없음 — 이관 완료된 상태로 보고 건너뜀' AS result;
+    END IF;
+END $$
+
+DELIMITER ;
+
+-- 컬럼(stage/worker_claimed_at/status/notice_id)이 아직 없는 첫 실행에서는 이 인덱스들을
+-- 걸 수 없으므로, 반드시 _migrate_match_results_into_projects()로 컬럼을 다 채운 뒤에
+-- 실행해야 한다 — 순서를 바꾸면 "Unknown column" 에러로 바로 막힌다.
+CALL _migrate_match_results_into_projects();
+
+-- app_schema.sql과 동일한 인덱스(stage+worker_claimed_at/status/notice_id)를 projects에도
+-- 걸어준다 — match_results에 있던 ix_match_results_stage_claim/ix_match_results_status/
+-- ix_match_results_notice와 같은 역할.
+CALL _mr_add_index_if_missing('projects', 'ix_projects_stage_claim', '(stage, worker_claimed_at)');
+CALL _mr_add_index_if_missing('projects', 'ix_projects_status', '(status)');
+CALL _mr_add_index_if_missing('projects', 'ix_projects_notice', '(notice_id)');
+
+DROP PROCEDURE IF EXISTS _migrate_match_results_into_projects;
+DROP PROCEDURE IF EXISTS _mr_drop_col_if_exists;
+DROP PROCEDURE IF EXISTS _mr_drop_fk_on_column_if_exists;
+DROP PROCEDURE IF EXISTS _mr_add_index_if_missing;
+DROP PROCEDURE IF EXISTS _mr_add_col_if_missing;
+
 -- 최종 확인용 — 실행 후 이 두 개를 결과로 같이 보내주시면 더 빠지는 컬럼이 있는지 바로 확인 가능합니다.
 SHOW COLUMNS FROM companies;
 SHOW COLUMNS FROM projects;

@@ -13,7 +13,6 @@ from app.models import (
     Company,
     EligibilityCheck,
     GenerationFailureAlert,
-    MatchResult,
     MatchScoreReason,
     Notice,
     Notification,
@@ -54,22 +53,20 @@ def test_delete_account_cascades_full_pipeline_data(authed_client, db_session):
     db_session.add(notice)
     db_session.flush()
     verdict = seed_dummy_pipeline(db_session, project_id, notice_id='ACCOUNT-DEL-001', retry_agents=())
-    match = db_session.query(MatchResult).filter_by(project_id=project_id).one()
-    db_session.add(Notification(match_id=match.match_id, project_id=project_id, kind='문서평가', target_step=6))
+    db_session.add(Notification(project_id=project_id, kind='문서평가', target_step=6))
     db_session.add(GenerationFailureAlert(
-        match_id=match.match_id, project_id=project_id, stage='plan_writing',
+        project_id=project_id, stage='plan_writing',
         resume_count=5, last_error_kind='일시', failure_reason='탈퇴 전 마지막 실패(테스트)',
     ))
     db_session.commit()
 
     plan_id = verdict.plan_id
     artifact_id = verdict.artifact_id
-    match_id = match.match_id
 
     # 삭제 전 실제로 데이터가 있는지 먼저 확인 — 아니면 아래 0건 확인이 무의미해진다.
     assert db_session.query(PlanSection).filter_by(plan_id=plan_id).count() > 0
     assert db_session.query(ArtifactScoreReason).filter_by(artifact_id=artifact_id).count() > 0
-    assert db_session.query(AgentExecution).filter_by(match_id=match_id).count() > 0
+    assert db_session.query(AgentExecution).filter_by(project_id=project_id).count() > 0
 
     res = authed_client.delete('/auth/me')
     assert res.status_code == 204, res.text
@@ -78,7 +75,6 @@ def test_delete_account_cascades_full_pipeline_data(authed_client, db_session):
     assert db_session.query(Company).count() == 0
     assert db_session.query(Project).count() == 0
     assert db_session.query(ProjectPlanInput).count() == 0
-    assert db_session.query(MatchResult).count() == 0
     assert db_session.query(EligibilityCheck).count() == 0
     assert db_session.query(MatchScoreReason).count() == 0
     assert db_session.query(BusinessPlan).count() == 0

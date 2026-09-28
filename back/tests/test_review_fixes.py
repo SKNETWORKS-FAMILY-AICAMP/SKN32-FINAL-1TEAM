@@ -19,7 +19,7 @@ def test_finished_generation_allows_new_project(authed_client, db_session, monke
     match.progress_percent = 90
     db_session.commit()
     monkeypatch.setattr(projects, 'DUMMY_GENERATION_STEP_SECONDS', 0)
-    projects._simulate_generation(match.match_id, 'prototype_building', 'done')
+    projects._simulate_generation(match.project_id, 'prototype_building', 'done')
     db_session.refresh(match)
     assert match.status == 'completed'
     assert create(authed_client).status_code == 201
@@ -115,7 +115,7 @@ def test_private_uploads(authed_client, login_as, db_session, monkeypatch, tmp_p
 
 def test_artifact_owner_keeps_preview_access(authed_client, login_as, db_session, monkeypatch, tmp_path):
     match = _create_match(authed_client, db_session, 'REVIEW-ARTIFACT')
-    artifact = db_session.query(Artifact).join(Artifact.plan).filter_by(match_id=match.match_id).first()
+    artifact = db_session.query(Artifact).join(Artifact.plan).filter_by(project_id=match.project_id).first()
     artifact.executable_path = '/uploads/preview.html'
     db_session.commit()
     monkeypatch.setattr(projects, 'UPLOAD_DIR', str(tmp_path))

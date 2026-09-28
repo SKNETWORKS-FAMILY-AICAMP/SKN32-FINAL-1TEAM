@@ -46,7 +46,7 @@ from sqlalchemy.exc import IntegrityError  # noqa: E402
 
 import app.database as appdb  # noqa: E402
 from app import pipeline_stages as ps  # noqa: E402
-from app.models import EligibilityCheck, MatchResult, Notice  # noqa: E402
+from app.models import EligibilityCheck, Notice, Project  # noqa: E402
 
 PAYLOAD = {
     'biz_type': 'AI 서비스',
@@ -74,17 +74,19 @@ def seed_notice_once():
 
 
 def set_match(project_id: int, stage: str | None, progress_percent: int | None = None) -> int:
-    """해당 프로젝트에 매칭을 하나 만들고(기존 매칭이 있으면 그대로 두지 않고 새로 추가 —
-    상태 조회는 match_id desc로 최신 것만 보므로 새로 추가해도 최신 것이 반영됨) match_id를
-    돌려준다."""
+    """[2026-09-28, match_results 테이블 통합] 예전엔 매칭을 담는 별도 MatchResult 행을
+    새로 만들었으나, project(1):match(1)로 합쳐지면서 이 프로젝트 자체 행에 값을 얹는다
+    — project_id를 그대로 돌려준다(예전 반환값 match_id의 역할)."""
     seed_notice_once()
-    m = MatchResult(project_id=project_id, notice_id='kstartup:STATUS_EP_TEST', status='in_progress',
-                     stage=stage, progress_percent=progress_percent)
-    db.add(m)
+    project = db.get(Project, project_id)
+    project.notice_id = 'kstartup:STATUS_EP_TEST'
+    project.status = 'in_progress'
+    project.stage = stage
+    project.progress_percent = progress_percent
     db.commit()
-    db.add(EligibilityCheck(match_id=m.match_id, passed=True))
+    db.add(EligibilityCheck(project_id=project_id, passed=True))
     db.commit()
-    return m.match_id
+    return project_id
 
 
 with TestClient(app) as client:
@@ -106,7 +108,7 @@ with TestClient(app) as client:
     body = r.json()
     assert body == {
         'project_id': project_no_match, 'screen': ps.NO_MATCH_SCREEN,
-        'stage': None, 'progress_percent': None, 'match_id': None, 'match_status': None,
+        'stage': None, 'progress_percent': None, 'match_status': None,
     }, body
     print(f'2) ① 매칭 없음 -> 200 OK, screen={body["screen"]} (기대: {ps.NO_MATCH_SCREEN})')
 
@@ -125,14 +127,14 @@ with TestClient(app) as client:
         r = client.post('/projects', data={'payload': json.dumps(PAYLOAD)}, files=[])
         assert r.status_code == 201, r.text
         pid = r.json()['project_id']
-        match_id = set_match(pid, stage, progress)
+        set_match(pid, stage, progress)
 
         r = client.get(f'/projects/{pid}/status')
         assert r.status_code == 200, r.text
         body = r.json()
         ok = (
             body['screen'] == expected_screen and body['stage'] == stage
-            and body['progress_percent'] == progress and body['match_id'] == match_id
+            and body['progress_percent'] == progress
             and body['match_status'] == 'in_progress'
         )
         all_ok = all_ok and ok
@@ -143,8 +145,8 @@ with TestClient(app) as client:
         # 이 매칭을 진행 중(in_progress)에서 빼줘야 다음 케이스의 POST /projects가
         # 동시 실행 1건 제한(409)에 안 걸린다 — 상태 조회 엔드포인트 자체와는 무관한
         # 테스트 준비 절차라서 매칭이 끝난 것처럼(archived) 표시만 해둔다.
-        m = db.get(MatchResult, match_id)
-        m.status = 'archived'
+        project = db.get(Project, pid)
+        project.status = 'archived'
         db.commit()
     assert all_ok, '위 케이스 중 FAIL이 있음'
     print('3) 매칭 있는 7케이스 전부 기대한 화면/진행률로 정확히 내려옴')

@@ -17,9 +17,13 @@ Agent를 실제로 호출하지 않고, 각 단계가 끝났을 때 남았을 �
     python seed_dummy_pipeline.py <project_id>
     python seed_dummy_pipeline.py 1 --category onepage --doc-score 65 --artifact-score 20
 
-여러 번 실행하면 그때마다 새 매칭/계획서/산출물/판정 세트가 하나씩 더 쌓인다
-(실제로 재수행 사이클마다 이전 결과를 지우지 않고 이력으로 남기는 것과 같은 모양 —
-기능정의서 G-02: "이전 결과는 삭제하지 않고 점수 변화 이력으로 보존한다").
+여러 번 실행하면 그때마다 새 계획서/산출물/판정 세트가 하나씩 더 쌓인다(실제로 재수행
+사이클마다 이전 결과를 지우지 않고 이력으로 남기는 것과 같은 모양 — 기능정의서 G-02:
+"이전 결과는 삭제하지 않고 점수 변화 이력으로 보존한다"). [2026-09-28, match_results
+테이블 통합] 매칭 자체는 이제 project 행 하나에 얹히는 값이라(project(1):match(1))
+다시 실행해도 매칭 값 자체는 새로 쌓이지 않고 그 project 행을 덮어쓴다 — project_id당
+한 번만 매칭이 존재한다는 전제는 POST /projects/{id}/generate(app/routers/projects.py)가
+지킨다.
 """
 import argparse
 import datetime
@@ -39,7 +43,6 @@ from app.models import (
     Company,
     EligibilityCheck,
     FormatFinding,
-    MatchResult,
     Notice,
     PlanScoreReason,
     PlanSection,
@@ -98,7 +101,7 @@ def _write_dummy_file(content: bytes, ext: str) -> str:
     return f'/uploads/{stored_name}'
 
 
-def _log_agent_executions(db, match_id: int, retry_agents: tuple[str, ...] = ()) -> None:
+def _log_agent_executions(db, project_id: int, retry_agents: tuple[str, ...] = ()) -> None:
     """agent_executions에 고정 Task 14단계(models.py의 FIXED_TASK_SEQUENCE)를 한 번씩
     기록하고, retry_agents에 들어있는 에이전트는 재시도 1회가 더 있었던 것처럼 행을
     하나 더 남긴다 — "개별 작업 재시도" 단계를 실제로 수행하는 API는 아직 없어서,
@@ -111,13 +114,13 @@ def _log_agent_executions(db, match_id: int, retry_agents: tuple[str, ...] = ())
     구분되는 걸 보여준다."""
     for task_key, agent_name in FIXED_TASK_SEQUENCE:
         db.add(AgentExecution(
-            match_id=match_id, agent_name=agent_name, task_key=task_key, attempt_no=1,
+            project_id=project_id, agent_name=agent_name, task_key=task_key, attempt_no=1,
             model_used='dummy-llm-v1', rerun_type='initial', token_usage=800,
             status=pipeline_stages.GENERATION_STATUS_COMPLETED,
         ))
         if agent_name in retry_agents:
             db.add(AgentExecution(
-                match_id=match_id, agent_name=agent_name, task_key=task_key, attempt_no=2,
+                project_id=project_id, agent_name=agent_name, task_key=task_key, attempt_no=2,
                 model_used='dummy-llm-v1', rerun_type='rerun', token_usage=650,
                 status=pipeline_stages.GENERATION_STATUS_COMPLETED,
             ))
@@ -310,17 +313,16 @@ def seed_dummy_pipeline(
     #    stage/progress_percent도 같은 이유로 "끝까지 다 돈 상태"인 STAGE_DONE/100으로
     #    채운다 — 이어하기 판별(app/pipeline_stages.py)이 이 프로젝트를 중간 단계로
     #    오인해 엉뚱한 화면으로 돌려보내지 않도록.
-    match = MatchResult(
-        project_id=project_id,
-        notice_id=notice_id,
-        fit_score=decimal.Decimal('87.50'),
-        reason='더미 매칭 결과 — 실제 임베딩 유사도 계산 없이 임의로 채운 값입니다.',
-        status=pipeline_stages.GENERATION_STATUS_COMPLETED,
-        stage=pipeline_stages.STAGE_DONE,
-        progress_percent=100,
-    )
-    db.add(match)
-    db.flush()  # match.match_id 확보
+    # [2026-09-28, match_results 테이블 통합] 예전엔 이 값들을 담는 별도 MatchResult
+    # 행을 만들었으나, 그 테이블이 projects로 합쳐지면서 이미 갖고 있는 project 행을
+    # 그대로 갱신한다 — project(1):match(1)이라 새 행을 만들 필요가 없다.
+    project.notice_id = notice_id
+    project.fit_score = decimal.Decimal('87.50')
+    project.reason = '더미 매칭 결과 — 실제 임베딩 유사도 계산 없이 임의로 채운 값입니다.'
+    project.status = pipeline_stages.GENERATION_STATUS_COMPLETED
+    project.stage = pipeline_stages.STAGE_DONE
+    project.progress_percent = 100
+    db.flush()
 
     # 2) 자격판정 (G-01) — _DUMMY_ELIGIBILITY_RULES(공고별 더미 신청자격)로 회사
     #    프로필(company.founded_at 기준 예비창업자/사업자 판정 + 업력 + 접수기간)을
@@ -330,12 +332,12 @@ def seed_dummy_pipeline(
     company = db.get(Company, project.company_id)
     elig_passed, elig_undecidable, elig_failed, elig_missing = _evaluate_dummy_eligibility(company, notice)
     db.add(EligibilityCheck(
-        match_id=match.match_id, passed=elig_passed, undecidable=elig_undecidable,
+        project_id=project.project_id, passed=elig_passed, undecidable=elig_undecidable,
         failed_conditions=elig_failed, missing_inputs=elig_missing,
     ))
 
     # 3) 사업계획서 (문서층, T-W1~W3 산출물)
-    plan = BusinessPlan(match_id=match.match_id, doc_score=doc_score, threshold=threshold)
+    plan = BusinessPlan(project_id=project.project_id, doc_score=doc_score, threshold=threshold)
     db.add(plan)
     db.flush()  # plan.plan_id 확보
 
@@ -444,7 +446,7 @@ def seed_dummy_pipeline(
     # 6) Agent 실행 로그 (관리자 대시보드 "에이전트 테스크" 탭 대응) — "개별 작업 재시도"
     #    단계를 실제로 수행하는 API가 아직 없어서, 재시도가 있었다는 사실만 로그로 남긴다.
     if log_agent_executions:
-        _log_agent_executions(db, match_id=match.match_id, retry_agents=retry_agents)
+        _log_agent_executions(db, project_id=project.project_id, retry_agents=retry_agents)
 
     return verdict
 
@@ -486,10 +488,10 @@ def main() -> None:
             log_agent_executions=not args.no_agent_log,
         )
         db.commit()
-        plan_row = db.get(BusinessPlan, verdict.plan_id)  # Verdict엔 plan 관계가 없어 match_id는 따로 조회
+        plan_row = db.get(BusinessPlan, verdict.plan_id)  # Verdict엔 plan 관계가 없어 project_id는 따로 조회
         print(
             f'[seed_dummy_pipeline] project_id={args.project_id} 파이프라인 결과 적재 완료 — '
-            f'match_id={plan_row.match_id}, plan_id={verdict.plan_id}, '
+            f'project_id={plan_row.project_id}, plan_id={verdict.plan_id}, '
             f'artifact_id={verdict.artifact_id}, verdict_id={verdict.verdict_id}, '
             f'overall_passed={verdict.overall_passed}'
         )

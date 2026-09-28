@@ -326,6 +326,81 @@ class Project(Base):
     tech_field: Mapped[str | None] = mapped_column(String(100), nullable=True)
     regional_priority_area: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
+    # [2026-09-28 신규, match_results 테이블 통합] project(1) : match_results(N)로
+    # 나뉘어 있던 예전 설계를 project(1):1로 합쳤다 — 실제 agent-orchestration 저장소의
+    # Run 개념(아이디어·회사정보·공고선택·진행상태를 전부 담는 자기완결 단위 하나)과
+    # 우리 SB-138 "중단 후 새로 시작"(기존 프로젝트를 archive하고 새 프로젝트를 만드는
+    # 방식) 패턴을 보면 project 한 행이 곧 실행 시도 하나다. 아래 컬럼들은 원래
+    # match_results 테이블 소유였던 필드를 그대로 옮겨온 것(이름/타입 불변) — 상세 주석은
+    # 예전 MatchResult 클래스 docstring/컬럼 주석 참고.
+    # [2026-09-28 주의] status는 MatchResult 시절엔 default=GENERATION_STATUS_IN_PROGRESS가
+    # 있었다(그 컬럼이 속한 행 자체가 "매칭이 실제로 생겼을 때"만 만들어졌으므로 항상
+    # 안전했다) — 그런데 이 컬럼을 그대로 Project로 옮기면서 그 default를 같이 옮기면,
+    # "아직 매칭 전"인 방금 만든 Project 행도 INSERT 시점에 status='in_progress'가 채워져
+    # 버려서 계정당 동시 실행 1건 제한(ACTIVE_MATCH_STATUSES)이 막 생성된 모든 프로젝트를
+    # "진행 중"으로 오판하는 회귀가 생긴다(실제로 이 리팩터 중 테스트로 발견). 그래서
+    # default 없이 두고, 매칭이 실제로 이뤄지는 시점(seed_dummy_pipeline / 실제 파이프라인)
+    # 에서 명시적으로 채운다 — notice_id가 NULL인지가 "아직 매칭 전" 판별 기준이다.
+    notice_id: Mapped[str | None] = mapped_column(String(320), ForeignKey('notices.notice_id'), nullable=True)
+    fit_score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str | None] = mapped_column(_GenerationStatus, nullable=True)
+    archived_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    archived_by: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # 이어하기(기획서 4-7절 p.20, 8케이스) 대응 — existing_user_resume_test_report.md에서
+    # 확인한 대로, 기존 컬럼(자식 행 존재 여부)만으로는 8케이스 중 6개가 서로 구분되지
+    # 않았다. stage는 app/pipeline_stages.py의 상수 중 하나(또는 아직 파이프라인 시작
+    # 전이라 생성이 시작되지 않았으면 NULL)이고, progress_percent는 stage='plan_writing'/
+    # 'prototype_building'처럼 한 단계 안에서도 오래 걸리는 구간의 진행률(0~100)을
+    # 담는다 — 실제 Agent 파이프라인이 각 Task를 처리할 때마다 이 두 컬럼을 갱신하게
+    # 될 자리다.
+    stage: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    progress_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # [2026-09-22 신규] 생성 작업(plan_writing/prototype_building) 비동기화용 클레임
+    # 시각 — Redis 등 별도 브로커 없이 이 컬럼 하나로 "지금 어떤 워커가 처리 중인지"를
+    # 표현한다. NULL이거나 오래됐으면(app/routers/projects.py GENERATION_CLAIM_STALE_SECONDS)
+    # 아무도 처리 안 하는 것으로 보고 새로 클레임한다 — 서버 재시작·다중 워커 대응
+    # (_try_claim_and_run/_generation_recovery_loop 참고).
+    worker_claimed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # [2026-09-23 개정] status='failed'는 이제 "자동 재시도 5회를 전부 소진한 뒤"에만
+    # 도달한다(과거엔 첫 실패에서 바로 failed였음) — status='waiting_resume'이 그 사이의
+    # 자동 백오프 대기 상태를 표현한다. failure_reason엔 마지막 실패 원인을 남긴다.
+    # (_simulate_generation/_recover_orphaned_generations_once/_start_generation 참고).
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # [2026-09-27 신규, SB-134] 마지막 실패의 원인 분류(일시/입력/운영) — 공식 기능정의서
+    # v1.9 Run.lastErrorKind. 일시 오류만 재개(백오프 재시도)하고, 입력·운영은 영구
+    # 오류로 보고 재개 없이 바로 status='failed'로 확정한다(R-11). NULL이면 아직 실패한
+    # 적이 없거나(정상 진행 중) 성공해서 초기화된 상태 — app/pipeline_stages.py
+    # classify_error_kind 참고.
+    last_error_kind: Mapped[str | None] = mapped_column(_ErrorKind, nullable=True)
+
+    # [2026-09-23 신규, 2026-09-26 정정, 2026-09-27 개명] 실패 후 자동 "재개" 횟수(공식
+    # 기능정의서 v1.9의 Run.resumeCount) — R-11 기준 15분 -> 30 -> 60 -> 120 -> 240분으로
+    # 2배씩 늘려가며 최대 5번까지 자동으로 재개하고, 그래도 안 되면 status='failed'로
+    # 확정한다(관리자 알림 + 사용자 "다시 이어가기" 버튼 대상). 사용자가 수동으로
+    # "다시 이어가기"를 누르면(_start_generation) 1로 리셋된다(그 클릭 자체가 1회
+    # 재개로 침). [2026-09-27] 예전엔 이 컬럼 이름이 retry_count였는데, 스펙의
+    # Run.retryCount("현재 호출의 재시도 횟수" — 같은 호출을 즉시 다시 보내는 것,
+    # 재개할 때마다 다시 채워짐)와 다른 개념이라 resume_count로 바로잡는다.
+    resume_count: Mapped[int] = mapped_column(_UnsignedInt, default=0)
+    # [2026-09-27 신규] 개별 Agent 호출 실패(타임아웃·응답 형식 오류 등)에 대한 즉시
+    # 재시도 횟수(Run.retryCount) — 지금은 파이프라인이 100% 더미(sleep만 함)라 실제로
+    # "호출이 실패해서 재시도"할 대상 자체가 없어서 항상 0이다. 실제 Agent 호출 계층이
+    # 생기면 그 안에서 이 컬럼을 채우면 된다(재개 시작마다 0으로 리셋 — resume_count와
+    # 달리 "연속 실패" 누적값이 아니라 "이번 재개 안에서의 호출 재시도" 값).
+    retry_count: Mapped[int] = mapped_column(_UnsignedInt, default=0)
+    # 다음 자동 재개를 시도할 시각(status='waiting_resume'일 때만 값이 있음) — 복구
+    # 루프가 이 시각이 지나기 전엔 재개하지 않는다(백오프 간격을 지키기 위함).
+    next_retry_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    # [2026-09-26 신규] 이번 실패 스트릭의 첫 실패 시각 — "재개 총 대기 상한"(12시간,
+    # 재개 대기+실행 시간 합산)을 재는 기준점이다. 성공하거나 사용자가 수동으로 다시
+    # 시작하면 초기화된다(resume_count가 0/1로 리셋되는 시점과 항상 같이 움직인다).
+    resume_started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+
     company: Mapped['Company'] = relationship(back_populates='projects')
     attachments: Mapped[list['ProjectAttachment']] = relationship(back_populates='project')
     team_members: Mapped[list['TeamMember']] = relationship(back_populates='project')
@@ -335,7 +410,9 @@ class Project(Base):
     partners: Mapped[list['ProjectPartner']] = relationship(back_populates='project')
     # [2026-09-22 신규] ProjectPlanInput 참고 — project당 1행(1:1).
     plan_input: Mapped['ProjectPlanInput | None'] = relationship(back_populates='project', uselist=False)
-    matches: Mapped[list['MatchResult']] = relationship(back_populates='project')
+    eligibility_checks: Mapped[list['EligibilityCheck']] = relationship(back_populates='project')
+    business_plans: Mapped[list['BusinessPlan']] = relationship(back_populates='project')
+    score_reasons: Mapped[list['MatchScoreReason']] = relationship(back_populates='project')
 
 
 class ProjectAttachment(Base):
@@ -533,109 +610,44 @@ class MatchCandidate(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-class MatchResult(Base):
-    __tablename__ = 'match_results'
-
-    match_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
-    notice_id: Mapped[str] = mapped_column(String(320), ForeignKey('notices.notice_id'))
-    fit_score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(_GenerationStatus, default=ps.GENERATION_STATUS_IN_PROGRESS)
-    archived_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
-    archived_by: Mapped[str | None] = mapped_column(String(20), nullable=True)
-
-    # 이어하기(기획서 4-7절 p.20, 8케이스) 대응 — existing_user_resume_test_report.md에서
-    # 확인한 대로, 기존 컬럼(자식 행 존재 여부)만으로는 8케이스 중 6개가 서로 구분되지
-    # 않았다. stage는 app/pipeline_stages.py의 상수 중 하나(또는 아직 파이프라인 시작
-    # 전이라 match_results 행 자체가 없으면 NULL이 아니라 행 자체가 없음)이고,
-    # progress_percent는 stage='plan_writing'/'prototype_building'처럼 한 단계 안에서도
-    # 오래 걸리는 구간의 진행률(0~100)을 담는다 — 실제 Agent 파이프라인이 각 Task를
-    # 처리할 때마다 이 두 컬럼을 갱신하게 될 자리다.
-    stage: Mapped[str | None] = mapped_column(String(30), nullable=True)
-    progress_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
-
-    # [2026-09-22 신규] 생성 작업(plan_writing/prototype_building) 비동기화용 클레임
-    # 시각 — Redis 등 별도 브로커 없이 이 컬럼 하나로 "지금 어떤 워커가 처리 중인지"를
-    # 표현한다. NULL이거나 오래됐으면(app/routers/projects.py GENERATION_CLAIM_STALE_SECONDS)
-    # 아무도 처리 안 하는 것으로 보고 새로 클레임한다 — 서버 재시작·다중 워커 대응
-    # (_try_claim_and_run/_generation_recovery_loop 참고).
-    worker_claimed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
-
-    # [2026-09-23 개정] status='failed'는 이제 "자동 재시도 5회를 전부 소진한 뒤"에만
-    # 도달한다(과거엔 첫 실패에서 바로 failed였음) — status='waiting_resume'이 그 사이의
-    # 자동 백오프 대기 상태를 표현한다. failure_reason엔 마지막 실패 원인을 남긴다.
-    # (_simulate_generation/_recover_orphaned_generations_once/_start_generation 참고).
-    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    # [2026-09-27 신규, SB-134] 마지막 실패의 원인 분류(일시/입력/운영) — 공식 기능정의서
-    # v1.9 Run.lastErrorKind. 일시 오류만 재개(백오프 재시도)하고, 입력·운영은 영구
-    # 오류로 보고 재개 없이 바로 status='failed'로 확정한다(R-11). NULL이면 아직 실패한
-    # 적이 없거나(정상 진행 중) 성공해서 초기화된 상태 — app/pipeline_stages.py
-    # classify_error_kind 참고.
-    last_error_kind: Mapped[str | None] = mapped_column(_ErrorKind, nullable=True)
-
-    # [2026-09-23 신규, 2026-09-26 정정, 2026-09-27 개명] 실패 후 자동 "재개" 횟수(공식
-    # 기능정의서 v1.9의 Run.resumeCount) — R-11 기준 15분 -> 30 -> 60 -> 120 -> 240분으로
-    # 2배씩 늘려가며 최대 5번까지 자동으로 재개하고, 그래도 안 되면 status='failed'로
-    # 확정한다(관리자 알림 + 사용자 "다시 이어가기" 버튼 대상). 사용자가 수동으로
-    # "다시 이어가기"를 누르면(_start_generation) 1로 리셋된다(그 클릭 자체가 1회
-    # 재개로 침). [2026-09-27] 예전엔 이 컬럼 이름이 retry_count였는데, 스펙의
-    # Run.retryCount("현재 호출의 재시도 횟수" — 같은 호출을 즉시 다시 보내는 것,
-    # 재개할 때마다 다시 채워짐)와 다른 개념이라 resume_count로 바로잡는다.
-    resume_count: Mapped[int] = mapped_column(_UnsignedInt, default=0)
-    # [2026-09-27 신규] 개별 Agent 호출 실패(타임아웃·응답 형식 오류 등)에 대한 즉시
-    # 재시도 횟수(Run.retryCount) — 지금은 파이프라인이 100% 더미(sleep만 함)라 실제로
-    # "호출이 실패해서 재시도"할 대상 자체가 없어서 항상 0이다. 실제 Agent 호출 계층이
-    # 생기면 그 안에서 이 컬럼을 채우면 된다(재개 시작마다 0으로 리셋 — resume_count와
-    # 달리 "연속 실패" 누적값이 아니라 "이번 재개 안에서의 호출 재시도" 값).
-    retry_count: Mapped[int] = mapped_column(_UnsignedInt, default=0)
-    # 다음 자동 재개를 시도할 시각(status='waiting_resume'일 때만 값이 있음) — 복구
-    # 루프가 이 시각이 지나기 전엔 재개하지 않는다(백오프 간격을 지키기 위함).
-    next_retry_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
-    # [2026-09-26 신규] 이번 실패 스트릭의 첫 실패 시각 — "재개 총 대기 상한"(12시간,
-    # 재개 대기+실행 시간 합산)을 재는 기준점이다. 성공하거나 사용자가 수동으로 다시
-    # 시작하면 초기화된다(resume_count가 0/1로 리셋되는 시점과 항상 같이 움직인다).
-    resume_started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
-
-    project: Mapped['Project'] = relationship(back_populates='matches')
-    eligibility_checks: Mapped[list['EligibilityCheck']] = relationship(back_populates='match')
-    business_plans: Mapped[list['BusinessPlan']] = relationship(back_populates='match')
-    score_reasons: Mapped[list['MatchScoreReason']] = relationship(back_populates='match')
-
-
 class MatchScoreReason(Base):
     """멘토링 피드백 "매칭 근거는 정성적 설명보다 '+2점' 같은 정량 점수로 표시하는 게 더
-    설득력 있음" 반영. PlanScoreReason/ArtifactScoreReason과 똑같은 모양이다 — match_results.
-    reason(자유 텍스트 하나)만으로는 항목별 점수를 못 보여줘서 매칭 단계에도 이 테이블을 둔다."""
+    설득력 있음" 반영. PlanScoreReason/ArtifactScoreReason과 똑같은 모양이다 — projects.
+    reason(자유 텍스트 하나)만으로는 항목별 점수를 못 보여줘서 매칭 단계에도 이 테이블을 둔다.
+
+    [2026-09-28, match_results 테이블 통합] 예전엔 match_results.match_id를 가리켰으나,
+    project(1):match(1)로 합쳐지면서 projects.project_id를 직접 가리키도록 바뀌었다."""
 
     __tablename__ = 'match_score_reasons'
 
     reason_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    match_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('match_results.match_id'))
+    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
     reason_text: Mapped[str] = mapped_column(Text)
     item_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
     score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     max_score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     evidence_locator: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
-    match: Mapped['MatchResult'] = relationship(back_populates='score_reasons')
+    project: Mapped['Project'] = relationship(back_populates='score_reasons')
 
 
 class GenerationFailureAlert(Base):
     """[2026-09-23 신규] 생성 작업이 자동 재시도(최대 5회, 백오프)를 전부 소진하고
-    status='failed'로 확정될 때마다 한 행씩 쌓는 관리자 알림 로그. match_results 자체는
+    status='failed'로 확정될 때마다 한 행씩 쌓는 관리자 알림 로그. projects 자체는
     최신 상태만 담아서 "몇 번이나 실패했었는지"가 남지 않으므로, 그 이력을 여기 별도로
     보존한다. 관리자 대시보드가 이 테이블을 조회해 미확인 실패를 보여준다
-    (app/routers/projects.py _simulate_generation 참고)."""
+    (app/routers/projects.py _simulate_generation 참고).
+
+    [2026-09-28, match_results 테이블 통합] project_id와 함께 match_id도 들고 있었으나
+    (둘이 사실상 항상 같은 project를 가리켰음), match_results가 projects로 합쳐지면서
+    이제 project_id 하나만 남긴다."""
 
     __tablename__ = 'generation_failure_alerts'
 
     alert_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    match_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('match_results.match_id'))
     project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
     stage: Mapped[str] = mapped_column(String(30))  # 실패가 확정된 시점의 stage(어느 단계였는지)
-    # [2026-09-27 개명] match_results.resume_count와 같은 이유로 개명(예전 retry_count).
+    # [2026-09-27 개명] projects.resume_count와 같은 이유로 개명(예전 retry_count).
     resume_count: Mapped[int] = mapped_column(_UnsignedInt)  # 확정 시점까지 소진한 자동 재개 횟수
     # [2026-09-27 신규, SB-134] 실패 확정 시점의 원인 분류 스냅샷 — 관리자가 "재개 상한
     # 소진"(일시 오류가 오래 지속)과 "영구 오류로 즉시 실패"(입력/운영)를 구분해서 볼 수
@@ -664,7 +676,6 @@ class Notification(Base):
     __tablename__ = 'notifications'
 
     notification_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    match_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('match_results.match_id'))
     project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
     kind: Mapped[str] = mapped_column(_NotificationKind)
     # kind='실패'일 때만 값이 있다 — 실행 실패(E-RUN-FAIL)인지 재작성 실패(E-RUN-ROLLBACK)
@@ -683,7 +694,7 @@ class EligibilityCheck(Base):
     __tablename__ = 'eligibility_checks'
 
     check_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    match_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('match_results.match_id'))
+    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
     passed: Mapped[bool] = mapped_column(Boolean)
 
     # db_review_response.md 2장 (B)-1 대응. 기능정의서의 GateResult는 passed 하나로는
@@ -702,7 +713,7 @@ class EligibilityCheck(Base):
 
     checked_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
 
-    match: Mapped['MatchResult'] = relationship(back_populates='eligibility_checks')
+    project: Mapped['Project'] = relationship(back_populates='eligibility_checks')
 
 
 # ---------------------------------------------------------------------------
@@ -712,11 +723,11 @@ class BusinessPlan(Base):
     __tablename__ = 'business_plans'
 
     plan_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    match_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('match_results.match_id'))
+    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
     doc_score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     threshold: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
 
-    match: Mapped['MatchResult'] = relationship(back_populates='business_plans')
+    project: Mapped['Project'] = relationship(back_populates='business_plans')
     sections: Mapped[list['PlanSection']] = relationship(back_populates='plan')
     canonical_data: Mapped[list['PlanCanonicalData']] = relationship(back_populates='plan')
     score_reasons: Mapped[list['PlanScoreReason']] = relationship(back_populates='plan')
@@ -1005,7 +1016,7 @@ class AgentExecution(Base):
     __tablename__ = 'agent_executions'
 
     execution_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    match_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('match_results.match_id'), nullable=True)
+    project_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('projects.project_id'), nullable=True)
     agent_name: Mapped[str] = mapped_column(String(50))
 
     # 재시도 로그 구분 문제 대응 — FIXED_TASK_SEQUENCE(위)엔 '구현', '검증-1', '검증-2'

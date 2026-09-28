@@ -55,7 +55,6 @@ from app.models import (
     FormatFinding,
     GenerationFailureAlert,
     MatchCandidate,
-    MatchResult,
     MatchScoreReason,
     Notice,
     NoticeAlert,
@@ -360,9 +359,12 @@ def list_projects(
     """대시보드 "내 프로젝트" 목록. [2026-09-15 개정] 계정당 회사 프로필이 이제 여러 건일
     수 있으므로(프로젝트마다 따로 만듦), Company를 거치지 않고 Project를 Company와 join해
     Company.user_id로 직접 필터링한다 — 프로젝트를 한 번도 안 만든 신규 유저는 join 결과가
-    그냥 빈 목록이라 별도 분기가 필요 없다. 프로젝트마다 가장 최근 매칭(있으면) 요약을
-    같이 내려서, 목록 화면에서 진행 상태를 바로 보여줄 수 있게 한다 — GET /projects/{id}/status와
-    같은 stage->screen 매핑을 쓴다."""
+    그냥 빈 목록이라 별도 분기가 필요 없다.
+
+    [2026-09-28, match_results 테이블 통합] 예전엔 프로젝트마다 가장 최근 MatchResult를
+    N+1 쿼리로 따로 조회했었다(project 하나당 쿼리 한 번씩) — match_results가 projects로
+    합쳐지면서 그 N+1이 사라지고, 아래처럼 Project 하나만 조회하면 진행 상태까지 전부
+    같이 나온다."""
     projects = (
         db.query(Project)
         .join(Company, Company.company_id == Project.company_id)
@@ -370,41 +372,42 @@ def list_projects(
         .order_by(Project.created_at.desc())
         .all()
     )
+    notices_by_id = {}
+    notice_ids = [p.notice_id for p in projects if p.notice_id is not None]
+    if notice_ids:
+        notices_by_id = {
+            n.notice_id: n
+            for n in db.query(Notice).filter(Notice.notice_id.in_(notice_ids)).all()
+        }
     items = []
     for project in projects:
-        match = (
-            db.query(MatchResult)
-            .filter(MatchResult.project_id == project.project_id)
-            .order_by(MatchResult.match_id.desc())
-            .first()
-        )
-        if match is not None and match.archived_at is not None:
+        if project.archived_at is not None:
             continue  # 사용자가 지운(보관 처리한) 프로젝트는 본인 목록에서 숨긴다 — DELETE /projects/{id} 참고.
         notice_title = None
         screen = ps.NO_MATCH_SCREEN
-        if match is not None:
-            notice = db.query(Notice).filter(Notice.notice_id == match.notice_id).one_or_none()
+        if project.notice_id is not None:
+            notice = notices_by_id.get(project.notice_id)
             notice_title = notice.title if notice is not None else None
-            screen = ps.STAGE_TO_SCREEN.get(match.stage) if match.stage is not None else None
+            screen = ps.STAGE_TO_SCREEN.get(project.stage) if project.stage is not None else None
         items.append(ProjectListItemOut(
             project_id=project.project_id,
             description=project.description,
             created_at=project.created_at,
-            notice_id=match.notice_id if match is not None else None,
+            notice_id=project.notice_id,
             notice_title=notice_title,
-            match_status=match.status if match is not None else None,
+            match_status=project.status,
             # [2026-09-23 신규] 화면 헤더 종모양 알림용 — 프론트가 이미 이 목록 엔드포인트를
             # 폴링하고 있어서(NotificationBell, front/src/features/workflow/shared.jsx)
             # 별도 알림 엔드포인트 대신 여기 필드만 추가한다. 서비스 내부 상태(실행/재개대기/
             # 사용자대기/실패/완료/중단)를 화면 문구(진행/확인이 필요합니다/문제가 생겨
             # 멈췄다/완료/중단됨)로 분류한다(app/pipeline_stages.py status_to_display).
-            display_status=ps.status_to_display(match.status if match is not None else None),
-            stage=match.stage if match is not None else None,
-            progress_percent=match.progress_percent if match is not None else None,
+            display_status=ps.status_to_display(project.status),
+            stage=project.stage,
+            progress_percent=project.progress_percent,
             screen=screen,
-            resume_count=(match.resume_count or 0) if match is not None else 0,
-            next_retry_at=match.next_retry_at if match is not None else None,
-            failure_reason=match.failure_reason if match is not None else None,
+            resume_count=project.resume_count or 0,
+            next_retry_at=project.next_retry_at,
+            failure_reason=project.failure_reason,
         ))
     return items
 
@@ -545,12 +548,15 @@ def rematch_candidates(
     return _candidates_response(db, project_id)
 
 
-def _build_demo_response(db: Session, project_id: int, match: MatchResult) -> DemoGenerateResponse:
-    """match_id 하나로 DemoGenerateResponse를 조립한다 — POST /generate(방금 막 만든 match)와
-    GET /result(예전에 만들어둔 match를 다시 조회) 둘 다 이 함수를 공유한다."""
+def _build_demo_response(db: Session, project_id: int, project: Project) -> DemoGenerateResponse:
+    """project_id 하나로 DemoGenerateResponse를 조립한다 — POST /generate(방금 막 만든
+    project)와 GET /result(예전에 만들어둔 project를 다시 조회) 둘 다 이 함수를 공유한다.
+
+    [2026-09-28, match_results 테이블 통합] 예전엔 match(MatchResult) 인자를 받았으나,
+    그 필드들이 전부 Project로 옮겨오면서 project 하나만 받으면 된다."""
     plan = (
         db.query(BusinessPlan)
-        .filter(BusinessPlan.match_id == match.match_id)
+        .filter(BusinessPlan.project_id == project.project_id)
         .order_by(BusinessPlan.plan_id.desc())
         .first()
     )
@@ -580,13 +586,13 @@ def _build_demo_response(db: Session, project_id: int, match: MatchResult) -> De
 
     eligibility = (
         db.query(EligibilityCheck)
-        .filter(EligibilityCheck.match_id == match.match_id)
+        .filter(EligibilityCheck.project_id == project.project_id)
         .order_by(EligibilityCheck.check_id.desc())
         .first()
     )
     executions = (
         db.query(AgentExecution)
-        .filter(AgentExecution.match_id == match.match_id)
+        .filter(AgentExecution.project_id == project.project_id)
         .order_by(AgentExecution.execution_id.asc())
         .all()
     )
@@ -624,7 +630,7 @@ def _build_demo_response(db: Session, project_id: int, match: MatchResult) -> De
 
     return DemoGenerateResponse(
         project_id=project_id,
-        match=MatchResultOut.model_validate(match),
+        match=MatchResultOut.model_validate(project),
         eligibility=EligibilityCheckOut.model_validate(eligibility),
         plan=BusinessPlanOut.model_validate(plan),
         verdict=verdict_out,
@@ -643,15 +649,19 @@ def generate_pipeline_result(
     seed_dummy_pipeline.py의 더미 로직으로 매칭+자격판정+계획서+산출물+최종판정을 한 번에
     만들어서 DB에 저장하고, 화면(매칭결과~검수)이 그대로 쓸 수 있는 모양으로 돌려준다.
 
-    주의(임시 구현의 한계, 나중에 실제 오케스트레이터로 교체 시 참고): seed_dummy_pipeline은
-    "이미 판정까지 끝난 프로젝트"를 한 번에 만드는 스크립트라 stage를 곧장 STAGE_DONE으로
-    채운다 — 그래서 이 호출이 끝난 뒤 사용자가 새로고침하면 GET /projects/{id}/status는
-    항상 "11.결과물 내려받기" 화면으로 돌려보낸다(중간 화면 5~10에서 이어하기는 못 함).
-    지금은 프론트가 이 응답 하나를 화면 상태로 들고 있다가 순서대로 넘기는 방식으로 우회한다.
-    호출할 때마다 새 매칭/계획서/산출물/판정 세트가 하나 더 쌓인다(seed_dummy_pipeline.py
-    자체 동작) — 이미 만든 프로젝트를 다시 보기만 하려면 이 엔드포인트 대신
-    GET /projects/{id}/result 를 쓴다."""
-    _get_owned_project(db, project_id, current_user)
+    [2026-09-28, match_results 테이블 통합] 예전엔 project 하나에 match_results가
+    여러 건 쌓일 수 있었다(호출할 때마다 새 세트가 하나 더 쌓임, seed_dummy_pipeline.py
+    자체 동작) — 이 엔드포인트 자체 주석에 "임시 데모 우회"라고 명시돼 있던 그 동작이다.
+    project(1):match(1)로 합쳐진 지금은 project 행 하나에 이 값들을 얹는 구조라 더 이상
+    "여러 세트"가 존재할 수 없다 — project.notice_id가 이미 채워져 있으면(=이미 한 번
+    생성됨) seed_dummy_pipeline을 다시 돌려 덮어쓰지 않고, 기존 상태를 그대로 재사용해
+    돌려준다(계정당 동시 실행 1건 제한과 같은 "진행 중/완료된 실행은 새로 만들지 않는다"
+    원칙, ACTIVE_MATCH_STATUSES/E-RUN-CONCURRENT 참고). 다시 매칭부터 새로 하고 싶으면
+    SB-138 패턴대로 새 프로젝트를 만들면 된다(POST /projects)."""
+    project = _get_owned_project(db, project_id, current_user)
+    if project.notice_id is not None:
+        return _build_demo_response(db, project_id, project)
+
     import seed_dummy_pipeline as _seed_pipeline  # 지연 import — 위 주석 참고(순환 import 회피)
 
     try:
@@ -662,13 +672,13 @@ def generate_pipeline_result(
     db.refresh(verdict)
 
     plan = db.get(BusinessPlan, verdict.plan_id)
-    match = db.get(MatchResult, plan.match_id)
+    project = db.get(Project, plan.project_id)
     # 공고 선택·자격 확인까지만 끝난 상태 — 계획서/프로토타입 생성은 사용자가 각각
     # POST .../plan/start, .../prototype/start 로 시작한다(stage NULL = 계획서 시작 전).
-    match.stage = None
-    match.progress_percent = None
+    project.stage = None
+    project.progress_percent = None
     db.commit()
-    return _build_demo_response(db, project_id, match)
+    return _build_demo_response(db, project_id, project)
 
 
 # ---------------------------------------------------------------------------
@@ -725,47 +735,46 @@ _RUNNING_GENERATION_STAGES = {
 }
 
 
-def _simulate_generation(match_id: int, running_stage: str, done_stage: str) -> None:
+def _simulate_generation(project_id: int, running_stage: str, done_stage: str) -> None:
     from app.database import SessionLocal
 
     db = SessionLocal()
     try:
         try:
-            match = db.get(MatchResult, match_id)
-            step = (match.progress_percent or 0) * DUMMY_GENERATION_STEPS // 100 if match else DUMMY_GENERATION_STEPS
+            project = db.get(Project, project_id)
+            step = (project.progress_percent or 0) * DUMMY_GENERATION_STEPS // 100 if project else DUMMY_GENERATION_STEPS
             while step < DUMMY_GENERATION_STEPS:
                 time.sleep(DUMMY_GENERATION_STEP_SECONDS)
                 db.expire_all()
-                match = db.get(MatchResult, match_id)
-                if match is None or match.stage != running_stage:
+                project = db.get(Project, project_id)
+                if project is None or project.stage != running_stage:
                     return
                 step += 1
                 if step >= DUMMY_GENERATION_STEPS:
-                    match.stage = done_stage
-                    match.progress_percent = 100
+                    project.stage = done_stage
+                    project.progress_percent = 100
                     if done_stage == ps.STAGE_DONE:
-                        match.status = ps.GENERATION_STATUS_COMPLETED
-                        match.failure_reason = None
+                        project.status = ps.GENERATION_STATUS_COMPLETED
+                        project.failure_reason = None
                     # [2026-09-27 신규, SB-141] 이 stage에 도달한 게 사용자 알림 대상이면
                     # (지금은 문서평가만 실제로 도달 가능 — 산출물확인/표현검수는 아직
                     # 없는 stage) notifications에 한 행 남긴다.
                     notif_kind = ps.STAGE_TO_NOTIFICATION_KIND.get(done_stage)
                     if notif_kind is not None:
                         db.add(Notification(
-                            match_id=match.match_id,
-                            project_id=match.project_id,
+                            project_id=project.project_id,
                             kind=notif_kind,
                             target_step=ps.NOTIFICATION_KIND_TO_TARGET_STEP[notif_kind],
                         ))
                 else:
-                    match.progress_percent = step * 100 // DUMMY_GENERATION_STEPS
-                match.worker_claimed_at = datetime.datetime.utcnow()  # 하트비트 — 진행 중엔 클레임이 안 늙는다
+                    project.progress_percent = step * 100 // DUMMY_GENERATION_STEPS
+                project.worker_claimed_at = datetime.datetime.utcnow()  # 하트비트 — 진행 중엔 클레임이 안 늙는다
                 # [2026-09-23 신규] 한 스텝이라도 성공하면(=다시 정상 진행되면) 이전 실패
                 # 스트릭을 리셋한다 — 재개 예산(5회/12시간)은 "연속 실패"에 대한 것이지, 이
                 # 작업 전체 수명 동안 누적되는 값이 아니다.
-                match.resume_count = 0
-                match.resume_started_at = None
-                match.last_error_kind = None
+                project.resume_count = 0
+                project.resume_started_at = None
+                project.last_error_kind = None
                 db.commit()
         except Exception as exc:
             # [2026-09-23 신규, 2026-09-26 정정, 2026-09-27 SB-134 분기 추가] 지금 더미
@@ -781,12 +790,12 @@ def _simulate_generation(match_id: int, running_stage: str, done_stage: str) -> 
             # 안 건드리므로 재개할 때마다 이미 진행된 부분부터 이어간다(처음부터 다시
             # 하지 않음).
             db.rollback()
-            match = db.get(MatchResult, match_id)
-            if match is not None and match.stage == running_stage:
+            project = db.get(Project, project_id)
+            if project is not None and project.stage == running_stage:
                 now = datetime.datetime.utcnow()
-                match.failure_reason = str(exc)[:2000]
+                project.failure_reason = str(exc)[:2000]
                 error_kind = ps.classify_error_kind(exc)
-                match.last_error_kind = error_kind
+                project.last_error_kind = error_kind
                 # [2026-09-28 신규] 관리자 "에이전트 테스크" 탭이 stage 단위 실패도 볼 수
                 # 있도록 agent_executions에도 남긴다 — 재시도(POST .../retry-task)와 같은
                 # attempt_no 채번 규칙(같은 task_key 안에서 이어서 증가)을 쓴다.
@@ -795,12 +804,12 @@ def _simulate_generation(match_id: int, running_stage: str, done_stage: str) -> 
                     stage_agent_name, stage_task_key = stage_agent_task
                     last_stage_attempt = (
                         db.query(AgentExecution)
-                        .filter(AgentExecution.match_id == match.match_id, AgentExecution.task_key == stage_task_key)
+                        .filter(AgentExecution.project_id == project.project_id, AgentExecution.task_key == stage_task_key)
                         .order_by(AgentExecution.attempt_no.desc())
                         .first()
                     )
                     db.add(AgentExecution(
-                        match_id=match.match_id,
+                        project_id=project.project_id,
                         agent_name=stage_agent_name,
                         task_key=stage_task_key,
                         attempt_no=(last_stage_attempt.attempt_no + 1) if last_stage_attempt is not None else 1,
@@ -809,62 +818,58 @@ def _simulate_generation(match_id: int, running_stage: str, done_stage: str) -> 
                         token_usage=0,
                         status=ps.GENERATION_STATUS_FAILED,
                         error_kind=error_kind,
-                        error_reason=match.failure_reason,
+                        error_reason=project.failure_reason,
                     ))
                 if error_kind != ps.ERROR_KIND_TRANSIENT:
-                    match.status = ps.GENERATION_STATUS_FAILED
-                    match.next_retry_at = None
+                    project.status = ps.GENERATION_STATUS_FAILED
+                    project.next_retry_at = None
                     db.add(GenerationFailureAlert(
-                        match_id=match.match_id,
-                        project_id=match.project_id,
-                        stage=match.stage,
-                        resume_count=match.resume_count or 0,
+                        project_id=project.project_id,
+                        stage=project.stage,
+                        resume_count=project.resume_count or 0,
                         last_error_kind=error_kind,
-                        failure_reason=match.failure_reason,
+                        failure_reason=project.failure_reason,
                     ))
                     # [2026-09-27 신규, SB-141] 실행 실패(E-RUN-FAIL) 사용자 알림. 재작성
                     # 실패(failure_scope='재작성')는 재작성 기능(2-1/2-2)이 아직 없어서
                     # 여기선 항상 '실행'이다.
                     db.add(Notification(
-                        match_id=match.match_id,
-                        project_id=match.project_id,
+                        project_id=project.project_id,
                         kind=ps.NOTIFICATION_KIND_FAILURE,
                         failure_scope=ps.NOTIFICATION_FAILURE_SCOPE_RUN,
                     ))
                     db.commit()
                     return
-                if match.resume_count == 0:
-                    match.resume_started_at = now  # 이번 실패 스트릭의 시작 시각
-                match.resume_count = (match.resume_count or 0) + 1
-                elapsed = (now - match.resume_started_at).total_seconds() if match.resume_started_at else 0.0
-                if match.resume_count > GENERATION_RESUME_MAX_ATTEMPTS or elapsed > GENERATION_RESUME_TOTAL_CAP_SECONDS:
-                    match.status = ps.GENERATION_STATUS_FAILED
-                    match.next_retry_at = None
+                if project.resume_count == 0:
+                    project.resume_started_at = now  # 이번 실패 스트릭의 시작 시각
+                project.resume_count = (project.resume_count or 0) + 1
+                elapsed = (now - project.resume_started_at).total_seconds() if project.resume_started_at else 0.0
+                if project.resume_count > GENERATION_RESUME_MAX_ATTEMPTS or elapsed > GENERATION_RESUME_TOTAL_CAP_SECONDS:
+                    project.status = ps.GENERATION_STATUS_FAILED
+                    project.next_retry_at = None
                     db.add(GenerationFailureAlert(
-                        match_id=match.match_id,
-                        project_id=match.project_id,
-                        stage=match.stage,
-                        resume_count=match.resume_count - 1,
+                        project_id=project.project_id,
+                        stage=project.stage,
+                        resume_count=project.resume_count - 1,
                         last_error_kind=error_kind,
-                        failure_reason=match.failure_reason,
+                        failure_reason=project.failure_reason,
                     ))
                     db.add(Notification(
-                        match_id=match.match_id,
-                        project_id=match.project_id,
+                        project_id=project.project_id,
                         kind=ps.NOTIFICATION_KIND_FAILURE,
                         failure_scope=ps.NOTIFICATION_FAILURE_SCOPE_RUN,
                     ))
                 else:
-                    delay = GENERATION_RESUME_BASE_SECONDS * (2 ** (match.resume_count - 1))
-                    match.status = ps.GENERATION_STATUS_WAITING_RESUME
-                    match.next_retry_at = now + datetime.timedelta(seconds=delay)
+                    delay = GENERATION_RESUME_BASE_SECONDS * (2 ** (project.resume_count - 1))
+                    project.status = ps.GENERATION_STATUS_WAITING_RESUME
+                    project.next_retry_at = now + datetime.timedelta(seconds=delay)
                 db.commit()
     finally:
         db.close()
 
 
-def _try_claim_and_run(match_id: int, running_stage: str, done_stage: str) -> bool:
-    """match_id의 running_stage 작업을 원자적으로 클레임하고, 성공한 경우에만 실행 스레드를
+def _try_claim_and_run(project_id: int, running_stage: str, done_stage: str) -> bool:
+    """project_id의 running_stage 작업을 원자적으로 클레임하고, 성공한 경우에만 실행 스레드를
     띄운다. 실패(이미 다른 곳에서 처리 중)하면 아무 것도 안 하고 False를 돌려준다 — 즉시시작
     경로(_start_generation)와 복구 루프(_generation_recovery_loop)가 공유한다."""
     from app.database import SessionLocal
@@ -873,18 +878,18 @@ def _try_claim_and_run(match_id: int, running_stage: str, done_stage: str) -> bo
     try:
         stale_before = datetime.datetime.utcnow() - datetime.timedelta(seconds=GENERATION_CLAIM_STALE_SECONDS)
         claimed = (
-            db.query(MatchResult)
+            db.query(Project)
             .filter(
-                MatchResult.match_id == match_id,
-                MatchResult.stage == running_stage,
-                or_(MatchResult.worker_claimed_at.is_(None), MatchResult.worker_claimed_at < stale_before),
+                Project.project_id == project_id,
+                Project.stage == running_stage,
+                or_(Project.worker_claimed_at.is_(None), Project.worker_claimed_at < stale_before),
             )
             # [2026-09-23] status='waiting_resume'로 대기하던 행을 자동 재시도가 실제로
             # 집어 들 때, 상태를 다시 '실행'으로 되돌린다(next_retry_at도 비움) — 화면상
             # 둘 다 "진행"으로 같이 보이긴 하지만, 내부 상태는 지금 실제로 도는 중임을
             # 정확히 반영해야 한다.
             .update(
-                {MatchResult.worker_claimed_at: datetime.datetime.utcnow(), MatchResult.status: ps.GENERATION_STATUS_IN_PROGRESS, MatchResult.next_retry_at: None},
+                {Project.worker_claimed_at: datetime.datetime.utcnow(), Project.status: ps.GENERATION_STATUS_IN_PROGRESS, Project.next_retry_at: None},
                 synchronize_session=False,
             )
         )
@@ -892,13 +897,13 @@ def _try_claim_and_run(match_id: int, running_stage: str, done_stage: str) -> bo
     finally:
         db.close()
     if claimed == 1:
-        threading.Thread(target=_simulate_generation, args=(match_id, running_stage, done_stage), daemon=True).start()
+        threading.Thread(target=_simulate_generation, args=(project_id, running_stage, done_stage), daemon=True).start()
         return True
     return False
 
 
 def _recover_orphaned_generations_once(db: Session) -> None:
-    """진행 중 stage인데 클레임이 없거나 오래된(GENERATION_CLAIM_STALE_SECONDS) match_results
+    """진행 중 stage인데 클레임이 없거나 오래된(GENERATION_CLAIM_STALE_SECONDS) projects
     행을 한 번 훑어 이어받는다 — _generation_recovery_loop이 매 tick 호출하고, 테스트도
     무한루프 대신 이 함수 하나만 직접 불러 검증한다.
 
@@ -910,17 +915,17 @@ def _recover_orphaned_generations_once(db: Session) -> None:
     now = datetime.datetime.utcnow()
     for running_stage, done_stage in _RUNNING_GENERATION_STAGES.items():
         orphans = (
-            db.query(MatchResult.match_id)
+            db.query(Project.project_id)
             .filter(
-                MatchResult.stage == running_stage,
-                MatchResult.status != ps.GENERATION_STATUS_FAILED,
-                or_(MatchResult.worker_claimed_at.is_(None), MatchResult.worker_claimed_at < stale_before),
-                or_(MatchResult.next_retry_at.is_(None), MatchResult.next_retry_at <= now),
+                Project.stage == running_stage,
+                Project.status != ps.GENERATION_STATUS_FAILED,
+                or_(Project.worker_claimed_at.is_(None), Project.worker_claimed_at < stale_before),
+                or_(Project.next_retry_at.is_(None), Project.next_retry_at <= now),
             )
             .all()
         )
-        for (orphan_match_id,) in orphans:
-            _try_claim_and_run(orphan_match_id, running_stage, done_stage)
+        for (orphan_project_id,) in orphans:
+            _try_claim_and_run(orphan_project_id, running_stage, done_stage)
 
 
 def _generation_recovery_loop() -> None:
@@ -947,52 +952,45 @@ def start_generation_recovery_loop() -> None:
 
 
 def _start_generation(db: Session, project: Project, start_from: tuple, running_stage: str, done_stage: str) -> ProjectStatusOut:
-    match = (
-        db.query(MatchResult)
-        .filter(MatchResult.project_id == project.project_id)
-        .order_by(MatchResult.match_id.desc())
-        .first()
-    )
-    if match is None:
+    if project.notice_id is None:
         raise HTTPException(status_code=400, detail='먼저 공고를 선택해 주세요.')
     # [2026-09-22 신규, 프론트 전달사항 4번] "다시 시도" — 실패는 stage를 실패한 단계 그대로
     # 두므로(_simulate_generation), 실패한 바로 그 단계에 대해서만(stage == running_stage)
     # 재시작을 허용한다 — 다른 단계에서 실패했는데 엉뚱한 단계가 리셋되면 안 되니까.
-    can_retry_failed = match.status == ps.GENERATION_STATUS_FAILED and match.stage == running_stage
-    if match.stage in start_from or can_retry_failed:
-        match.stage = running_stage
-        match.progress_percent = 0
-        match.worker_claimed_at = None  # 새 단계 시작 — 이전 단계의 클레임 흔적을 지운다
-        match.status = ps.GENERATION_STATUS_IN_PROGRESS
-        match.failure_reason = None
+    can_retry_failed = project.status == ps.GENERATION_STATUS_FAILED and project.stage == running_stage
+    if project.stage in start_from or can_retry_failed:
+        project.stage = running_stage
+        project.progress_percent = 0
+        project.worker_claimed_at = None  # 새 단계 시작 — 이전 단계의 클레임 흔적을 지운다
+        project.status = ps.GENERATION_STATUS_IN_PROGRESS
+        project.failure_reason = None
         # [2026-09-23 신규, 2026-09-26 정정] 수동 "다시 이어가기"는 재개 횟수를 0으로
         # 완전히 리셋하지 않고 1로 둔다 — 이 수동 클릭 자체를 재개 1회로 친다(원래 재개
         # 예산 5회의 연장선). 그래서 이 시도도 또 실패하면 바로 2번째 백오프(30분)부터
         # 이어간다. resume_started_at도 지금(수동 클릭 시각)으로 다시 잡아서 "재개 총
         # 대기 상한"(12시간)도 이 시점부터 새로 잰다. 최초 시작(재개가 아니라 처음
         # 시작하는 경우)은 둘 다 비운다.
-        match.resume_count = 1 if can_retry_failed else 0
-        match.resume_started_at = datetime.datetime.utcnow() if can_retry_failed else None
-        match.last_error_kind = None
-        match.next_retry_at = None
+        project.resume_count = 1 if can_retry_failed else 0
+        project.resume_started_at = datetime.datetime.utcnow() if can_retry_failed else None
+        project.last_error_kind = None
+        project.next_retry_at = None
         db.commit()
     # 이미 진행 중이면(다른 요청/복구 루프가 먼저 클레임했으면) 새로 시작하지 않는다 —
     # _try_claim_and_run의 원자적 UPDATE가 중복 실행 방지를 대신한다. status='waiting_resume'
     # 이면서 next_retry_at이 아직 안 지났으면 여기서도 건드리지 않는다 — 백오프 대기를
     # 사용자가 화면을 다시 열었다고 건너뛰면 안 된다(복구 루프와 같은 규칙).
-    backoff_pending = match.status == ps.GENERATION_STATUS_WAITING_RESUME and match.next_retry_at and match.next_retry_at > datetime.datetime.utcnow()
-    if match.stage == running_stage and match.status != ps.GENERATION_STATUS_FAILED and not backoff_pending:
-        _try_claim_and_run(match.match_id, running_stage, done_stage)
+    backoff_pending = project.status == ps.GENERATION_STATUS_WAITING_RESUME and project.next_retry_at and project.next_retry_at > datetime.datetime.utcnow()
+    if project.stage == running_stage and project.status != ps.GENERATION_STATUS_FAILED and not backoff_pending:
+        _try_claim_and_run(project.project_id, running_stage, done_stage)
     return ProjectStatusOut(
         project_id=project.project_id,
-        screen=ps.STAGE_TO_SCREEN.get(match.stage) if match.stage is not None else None,
-        stage=match.stage,
-        progress_percent=match.progress_percent,
-        match_id=match.match_id,
-        match_status=match.status,
-        failure_reason=match.failure_reason,
-        resume_count=match.resume_count or 0,
-        next_retry_at=match.next_retry_at,
+        screen=ps.STAGE_TO_SCREEN.get(project.stage) if project.stage is not None else None,
+        stage=project.stage,
+        progress_percent=project.progress_percent,
+        match_status=project.status,
+        failure_reason=project.failure_reason,
+        resume_count=project.resume_count or 0,
+        next_retry_at=project.next_retry_at,
     )
 
 
@@ -1028,18 +1026,11 @@ def get_pipeline_result(
     current_user: User = Depends(get_current_user),
 ):
     """[2026-09-15, 프론트 통합 임시 구현] POST /generate로 이미 만들어둔 결과를 다시
-    불러온다(재생성하지 않음) — 새로고침/재방문 시 "이어서 보기"용. 가장 최근 매칭
-    기준으로 조회한다."""
-    _get_owned_project(db, project_id, current_user)
-    match = (
-        db.query(MatchResult)
-        .filter(MatchResult.project_id == project_id)
-        .order_by(MatchResult.match_id.desc())
-        .first()
-    )
-    if match is None:
+    불러온다(재생성하지 않음) — 새로고침/재방문 시 "이어서 보기"용."""
+    project = _get_owned_project(db, project_id, current_user)
+    if project.notice_id is None:
         raise HTTPException(status_code=404, detail='이 프로젝트엔 아직 매칭 결과가 없습니다')
-    return _build_demo_response(db, project_id, match)
+    return _build_demo_response(db, project_id, project)
 
 
 # companies.applicant_type -> 양식의 "사업자 구분" 표기. 사용자가 직접 고른 값이라
@@ -1236,20 +1227,12 @@ def download_plan_document(
     from app.plan_document_export import render_plan_docx
 
     project = _get_owned_project(db, project_id, current_user)
-    match = (
-        db.query(MatchResult)
-        .filter(MatchResult.project_id == project_id)
-        .order_by(MatchResult.match_id.desc())
+    plan = (
+        db.query(BusinessPlan)
+        .filter(BusinessPlan.project_id == project_id)
+        .order_by(BusinessPlan.plan_id.desc())
         .first()
     )
-    plan = None
-    if match is not None:
-        plan = (
-            db.query(BusinessPlan)
-            .filter(BusinessPlan.match_id == match.match_id)
-            .order_by(BusinessPlan.plan_id.desc())
-            .first()
-        )
 
     data, template = _build_plan_document_data(db, project, plan)
     docx_bytes = render_plan_docx(data, template=template)
@@ -1275,20 +1258,12 @@ def download_plan_document_pdf(
     from app.plan_document_export import render_plan_docx
 
     project = _get_owned_project(db, project_id, current_user)
-    match = (
-        db.query(MatchResult)
-        .filter(MatchResult.project_id == project_id)
-        .order_by(MatchResult.match_id.desc())
+    plan = (
+        db.query(BusinessPlan)
+        .filter(BusinessPlan.project_id == project_id)
+        .order_by(BusinessPlan.plan_id.desc())
         .first()
     )
-    plan = None
-    if match is not None:
-        plan = (
-            db.query(BusinessPlan)
-            .filter(BusinessPlan.match_id == match.match_id)
-            .order_by(BusinessPlan.plan_id.desc())
-            .first()
-        )
 
     data, template = _build_plan_document_data(db, project, plan)
     try:
@@ -1318,20 +1293,12 @@ def download_plan_document_hwp(
     from app.hwp_export import render_plan_hwp
 
     project = _get_owned_project(db, project_id, current_user)
-    match = (
-        db.query(MatchResult)
-        .filter(MatchResult.project_id == project_id)
-        .order_by(MatchResult.match_id.desc())
+    plan = (
+        db.query(BusinessPlan)
+        .filter(BusinessPlan.project_id == project_id)
+        .order_by(BusinessPlan.plan_id.desc())
         .first()
     )
-    plan = None
-    if match is not None:
-        plan = (
-            db.query(BusinessPlan)
-            .filter(BusinessPlan.match_id == match.match_id)
-            .order_by(BusinessPlan.plan_id.desc())
-            .first()
-        )
 
     data, template = _build_plan_document_data(db, project, plan)
     try:
@@ -1394,14 +1361,13 @@ async def create_project(
     # 수 있어 Company.company_id 하나로는 못 좁히고, Company.user_id로 전체를 본다. 위에서
     # 이미 User 행을 잠갔으므로 이 조회 자체엔 with_for_update()가 필요 없다.
     active = (
-        db.query(MatchResult)
-        .join(Project, Project.project_id == MatchResult.project_id)
+        db.query(Project)
         .join(Company, Company.company_id == Project.company_id)
         .filter(
             Company.user_id == current_user.user_id,
-            MatchResult.status.in_(ACTIVE_MATCH_STATUSES),
-            MatchResult.archived_at.is_(None),
-            or_(MatchResult.stage.is_(None), MatchResult.stage != ps.STAGE_DONE),
+            Project.status.in_(ACTIVE_MATCH_STATUSES),
+            Project.archived_at.is_(None),
+            or_(Project.stage.is_(None), Project.stage != ps.STAGE_DONE),
         )
         .first()
     )
@@ -1504,23 +1470,17 @@ def delete_project(
 ):
     """대시보드 "내 프로젝트"의 휴지통 버튼 — 사용자가 자기 프로젝트를 목록에서 지운다.
 
-    아직 공고 매칭 전(match_results 자체가 없음)이면 남길 데이터가 없으니 그냥 실제로
-    지운다. 매칭 이후(계획서·산출물 등 이미 만들어진 뒤)면 실제로 지우지 않고
-    match_results.archived_at/archived_by에 보관 처리만 한다(app_schema.sql 설계 그대로
+    아직 공고 매칭 전(notice_id가 없음)이면 남길 데이터가 없으니 그냥 실제로 지운다.
+    매칭 이후(계획서·산출물 등 이미 만들어진 뒤)면 실제로 지우지 않고
+    projects.archived_at/archived_by에 보관 처리만 한다(app_schema.sql 설계 그대로
     — "사용자가 프로젝트를 삭제해 보관 처리된 일시") — 이미 만든 계획서·산출물 데이터를
     보존하기 위해서고, 관리자 대시보드(진행 현황 탭)는 이 프로젝트를 계속 "보관중"으로
     조회·복원할 수 있다. list_projects()는 archived_at이 있는 프로젝트를 걸러서 본인
     목록에서는 안 보이게 한다."""
     project = _get_owned_project(db, project_id, current_user)
-    match = (
-        db.query(MatchResult)
-        .filter(MatchResult.project_id == project.project_id)
-        .order_by(MatchResult.match_id.desc())
-        .first()
-    )
-    if match is not None:
-        match.archived_at = datetime.datetime.utcnow()
-        match.archived_by = 'user'
+    if project.notice_id is not None:
+        project.archived_at = datetime.datetime.utcnow()
+        project.archived_by = 'user'
         db.commit()
         return Response(status_code=204)
 
@@ -1543,10 +1503,13 @@ def _delete_project_cascade(db: Session, project: Project) -> None:
     그렇게 둔 것) — 이 함수는 그것과 독립적으로, 보관 여부와 무관하게 바로 완전히 지우는
     경로다(delete_project_permanently 참고). app/routers/auth.py _delete_account_cascade의
     "프로젝트 하나 분량"과 같은 구조 — 차이는 그 프로젝트 전용 Company 행(1:1, company_id에
-    유니크 제약이 없는 이유는 app/models.py Company 주석 참고)도 여기서 같이 지운다는 것."""
+    유니크 제약이 없는 이유는 app/models.py Company 주석 참고)도 여기서 같이 지운다는 것.
+
+    [2026-09-28, match_results 테이블 통합] project(1):match(1)로 합쳐지면서 match_ids
+    조회 단계 자체가 필요 없어졌다 — project_id로 바로 plan_ids를 구하고, project의
+    match 필드들(자식 테이블들)도 project_id로 바로 지운다."""
     project_id = project.project_id
-    match_ids = [m.match_id for m in db.query(MatchResult.match_id).filter(MatchResult.project_id == project_id)]
-    plan_ids = [p.plan_id for p in db.query(BusinessPlan.plan_id).filter(BusinessPlan.match_id.in_(match_ids))] if match_ids else []
+    plan_ids = [p.plan_id for p in db.query(BusinessPlan.plan_id).filter(BusinessPlan.project_id == project_id)]
 
     if plan_ids:
         artifact_ids = [a.artifact_id for a in db.query(Artifact.artifact_id).filter(Artifact.plan_id.in_(plan_ids))]
@@ -1560,14 +1523,12 @@ def _delete_project_cascade(db: Session, project: Project) -> None:
         db.query(PlanCanonicalData).filter(PlanCanonicalData.plan_id.in_(plan_ids)).delete(synchronize_session=False)
         db.query(VerificationScoreHistory).filter(VerificationScoreHistory.plan_id.in_(plan_ids)).delete(synchronize_session=False)
         db.query(PlanSection).filter(PlanSection.plan_id.in_(plan_ids)).delete(synchronize_session=False)
-    if match_ids:
-        db.query(BusinessPlan).filter(BusinessPlan.match_id.in_(match_ids)).delete(synchronize_session=False)
-        db.query(Notification).filter(Notification.match_id.in_(match_ids)).delete(synchronize_session=False)
-        db.query(GenerationFailureAlert).filter(GenerationFailureAlert.match_id.in_(match_ids)).delete(synchronize_session=False)
-        db.query(MatchScoreReason).filter(MatchScoreReason.match_id.in_(match_ids)).delete(synchronize_session=False)
-        db.query(EligibilityCheck).filter(EligibilityCheck.match_id.in_(match_ids)).delete(synchronize_session=False)
-        db.query(AgentExecution).filter(AgentExecution.match_id.in_(match_ids)).delete(synchronize_session=False)
-    db.query(MatchResult).filter(MatchResult.project_id == project_id).delete(synchronize_session=False)
+    db.query(BusinessPlan).filter(BusinessPlan.project_id == project_id).delete(synchronize_session=False)
+    db.query(Notification).filter(Notification.project_id == project_id).delete(synchronize_session=False)
+    db.query(GenerationFailureAlert).filter(GenerationFailureAlert.project_id == project_id).delete(synchronize_session=False)
+    db.query(MatchScoreReason).filter(MatchScoreReason.project_id == project_id).delete(synchronize_session=False)
+    db.query(EligibilityCheck).filter(EligibilityCheck.project_id == project_id).delete(synchronize_session=False)
+    db.query(AgentExecution).filter(AgentExecution.project_id == project_id).delete(synchronize_session=False)
     db.query(MatchCandidate).filter(MatchCandidate.project_id == project_id).delete(synchronize_session=False)
     db.query(NoticeAlert).filter(NoticeAlert.project_id == project_id).delete(synchronize_session=False)
     db.query(ProjectAttachment).filter(ProjectAttachment.project_id == project_id).delete(synchronize_session=False)
@@ -1638,7 +1599,7 @@ def get_project_status(
     몇 번 화면으로 돌려보내야 하는지를 판별해서 내려준다.
 
     실제 Agent 파이프라인(다른 팀원이 작업 중인 오케스트레이터)이 각 단계를 시작/진행할
-    때마다 match_results.stage(+progress_percent)를 갱신해두면(app/pipeline_stages.py의
+    때마다 projects.stage(+progress_percent)를 갱신해두면(app/pipeline_stages.py의
     STAGE_* 상수 사용), 이 엔드포인트는 그 값을 읽어 화면 번호로만 바꿔주는 얇은 조회다.
     판별 로직 자체는 tests/verify_resume_cases.py에서 기획서 8케이스 전부에 대해 검증됐다
     (detect_resume_screen()과 동일한 로직 — 거기서는 아직 실제 API가 없어 DB를 직접
@@ -1646,28 +1607,21 @@ def get_project_status(
     """
     project = _get_owned_project(db, project_id, current_user)
 
-    match = (
-        db.query(MatchResult)
-        .filter(MatchResult.project_id == project.project_id)
-        .order_by(MatchResult.match_id.desc())
-        .first()
-    )
-    if match is None:
+    if project.notice_id is None:
         # 매칭 자체가 없음 — 아직 공고를 고르기 전(8케이스의 ①) -> 화면 3(공고 매칭)으로.
         return ProjectStatusOut(project_id=project.project_id, screen=ps.NO_MATCH_SCREEN)
 
-    screen = ps.STAGE_TO_SCREEN.get(match.stage) if match.stage is not None else None
+    screen = ps.STAGE_TO_SCREEN.get(project.stage) if project.stage is not None else None
     return ProjectStatusOut(
         project_id=project.project_id,
         screen=screen,
-        stage=match.stage,
-        progress_percent=match.progress_percent,
-        match_id=match.match_id,
-        match_status=match.status,
-        failure_reason=match.failure_reason,
-        resume_count=match.resume_count or 0,
-        next_retry_at=match.next_retry_at,
-        notice_closed=_is_notice_closed(db, match.notice_id),
+        stage=project.stage,
+        progress_percent=project.progress_percent,
+        match_status=project.status,
+        failure_reason=project.failure_reason,
+        resume_count=project.resume_count or 0,
+        next_retry_at=project.next_retry_at,
+        notice_closed=_is_notice_closed(db, project.notice_id),
     )
 
 
@@ -1703,18 +1657,12 @@ def retry_task(
 
     project = _get_owned_project(db, project_id, current_user)
 
-    match = (
-        db.query(MatchResult)
-        .filter(MatchResult.project_id == project.project_id)
-        .order_by(MatchResult.match_id.desc())
-        .first()
-    )
-    if match is None:
+    if project.notice_id is None:
         raise HTTPException(status_code=404, detail='이 프로젝트엔 아직 매칭 결과가 없어 재시도할 작업이 없습니다')
 
     plan = (
         db.query(BusinessPlan)
-        .filter(BusinessPlan.match_id == match.match_id)
+        .filter(BusinessPlan.project_id == project.project_id)
         .order_by(BusinessPlan.plan_id.desc())
         .first()
     )
@@ -1724,7 +1672,7 @@ def retry_task(
     agent_name = _TASK_KEY_TO_AGENT[body.task_key]
     last_attempt = (
         db.query(AgentExecution)
-        .filter(AgentExecution.match_id == match.match_id, AgentExecution.task_key == body.task_key)
+        .filter(AgentExecution.project_id == project.project_id, AgentExecution.task_key == body.task_key)
         .order_by(AgentExecution.attempt_no.desc())
         .first()
     )
@@ -1911,7 +1859,7 @@ def retry_task(
         # 예외 분류 방식과 동일하게 classify_error_kind를 재사용).
         error_kind = ps.classify_error_kind(exc)
         db.add(AgentExecution(
-            match_id=match.match_id,
+            project_id=project.project_id,
             agent_name=agent_name,
             task_key=body.task_key,
             attempt_no=next_attempt_no,
@@ -1929,7 +1877,7 @@ def retry_task(
         ) from exc
 
     execution = AgentExecution(
-        match_id=match.match_id,
+        project_id=project.project_id,
         agent_name=agent_name,
         task_key=body.task_key,
         attempt_no=next_attempt_no,
@@ -1944,7 +1892,6 @@ def retry_task(
 
     return RetryTaskResponse(
         project_id=project.project_id,
-        match_id=match.match_id,
         task_key=body.task_key,
         agent_name=agent_name,
         attempt_no=next_attempt_no,

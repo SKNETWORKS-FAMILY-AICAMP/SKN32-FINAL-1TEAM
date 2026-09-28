@@ -25,7 +25,6 @@ from app.models import (
     Faq,
     GenerationFailureAlert,
     ImportRun,
-    MatchResult,
     Notice,
     Project,
     ProofreadLog,
@@ -160,14 +159,12 @@ def _build_item_out(db: Session, project: Project) -> ItemOut:
     """진행 현황 탭 행 하나를 실제 DB 값으로 조립한다 — list_items/archive 토글이 공유한다.
     "정체"(stalled)는 마지막 agent_executions 실행 후 48시간 기준(모듈 상단 _STALLED_AFTER)
     — 완료·보관 상태는 정체로 치지 않는다. score는 doc_score+artifact_score 합계(문서
-    평가만 끝났으면 doc_score만, 산출물까지 끝났으면 둘 다 더함)."""
-    match = (
-        db.query(MatchResult)
-        .filter(MatchResult.project_id == project.project_id)
-        .order_by(MatchResult.match_id.desc())
-        .first()
-    )
-    if match is None:
+    평가만 끝났으면 doc_score만, 산출물까지 끝났으면 둘 다 더함).
+
+    [2026-09-28, match_results 테이블 통합] 예전엔 project와 별도로 MatchResult를 조회해야
+    했으나, 이제 project 자체가 그 상태를 들고 있다 — project.notice_id가 None이면
+    "아직 매칭 전"이다."""
+    if project.notice_id is None:
         return ItemOut(
             project_id=project.project_id,
             description=project.description,
@@ -179,7 +176,7 @@ def _build_item_out(db: Session, project: Project) -> ItemOut:
 
     latest_execution = (
         db.query(AgentExecution)
-        .filter(AgentExecution.match_id == match.match_id)
+        .filter(AgentExecution.project_id == project.project_id)
         .order_by(AgentExecution.execution_id.desc())
         .first()
     )
@@ -187,7 +184,7 @@ def _build_item_out(db: Session, project: Project) -> ItemOut:
 
     plan = (
         db.query(BusinessPlan)
-        .filter(BusinessPlan.match_id == match.match_id)
+        .filter(BusinessPlan.project_id == project.project_id)
         .order_by(BusinessPlan.plan_id.desc())
         .first()
     )
@@ -199,17 +196,17 @@ def _build_item_out(db: Session, project: Project) -> ItemOut:
     if plan is not None:
         score = float((plan.doc_score or 0) + (artifact.artifact_score if artifact and artifact.artifact_score else 0))
 
-    archived = match.archived_at is not None
-    if match.stage == ps.STAGE_DONE:
+    archived = project.archived_at is not None
+    if project.stage == ps.STAGE_DONE:
         status_label = '완료'
-    elif match.stage in (ps.STAGE_PLAN_REVIEW_PENDING, ps.STAGE_FINAL_REVIEW_PENDING):
+    elif project.stage in (ps.STAGE_PLAN_REVIEW_PENDING, ps.STAGE_FINAL_REVIEW_PENDING):
         status_label = '판단 대기'
-    elif match.status == ps.GENERATION_STATUS_HALTED:
+    elif project.status == ps.GENERATION_STATUS_HALTED:
         status_label = '중단'
     # [2026-09-23 신규] 'waiting_resume'(자동 재시도 백오프 대기 중)은 여전히 '진행중'으로
     # 보여준다(화면 설계상 실행/재개대기 둘 다 "진행"으로 같이 보임) — 'failed'(자동
     # 재시도 5회 소진, 확정된 실패)만 구분해서 관리자가 바로 알아볼 수 있게 한다.
-    elif match.status == ps.GENERATION_STATUS_FAILED:
+    elif project.status == ps.GENERATION_STATUS_FAILED:
         status_label = '실패'
     else:
         status_label = '진행중'
@@ -225,10 +222,9 @@ def _build_item_out(db: Session, project: Project) -> ItemOut:
         description=project.description,
         user_name=project.company.user.name,
         created_at=project.created_at,
-        match_status=match.status,
-        match_id=match.match_id,
-        failure_reason=match.failure_reason if match.status == 'failed' else None,
-        stage=match.stage,
+        match_status=project.status,
+        failure_reason=project.failure_reason if project.status == 'failed' else None,
+        stage=project.stage,
         status_label=status_label,
         step=latest_execution.agent_name if latest_execution else None,
         attempts=latest_execution.attempt_no if latest_execution else None,
@@ -236,9 +232,9 @@ def _build_item_out(db: Session, project: Project) -> ItemOut:
         stalled=stalled,
         score=score,
         archived=archived,
-        generation_resume_count=match.resume_count or 0,
-        generation_failure_reason=match.failure_reason,
-        generation_last_error_kind=match.last_error_kind,
+        generation_resume_count=project.resume_count or 0,
+        generation_failure_reason=project.failure_reason,
+        generation_last_error_kind=project.last_error_kind,
     )
 
 
@@ -264,25 +260,19 @@ def set_item_archived(
     _admin: User = Depends(require_admin),
 ):
     """진행 현황 탭의 "보관"/"복원" 버튼 — 사용자가 대시보드에서 직접 지울 때(DELETE
-    /projects/{id})와 같은 match_results.archived_at/archived_by를 관리자가 대신
+    /projects/{id})와 같은 projects.archived_at/archived_by를 관리자가 대신
     조작한다. archived_by만 'admin'으로 남겨 사용자 본인이 지운 것과 구분한다."""
     project = db.get(Project, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail='프로젝트를 찾을 수 없습니다')
-    match = (
-        db.query(MatchResult)
-        .filter(MatchResult.project_id == project_id)
-        .order_by(MatchResult.match_id.desc())
-        .first()
-    )
-    if match is None:
+    if project.notice_id is None:
         raise HTTPException(status_code=400, detail='아직 매칭 결과가 없어 보관 처리할 수 없습니다')
     if body.archived:
-        match.archived_at = datetime.datetime.utcnow()
-        match.archived_by = 'admin'
+        project.archived_at = datetime.datetime.utcnow()
+        project.archived_by = 'admin'
     else:
-        match.archived_at = None
-        match.archived_by = None
+        project.archived_at = None
+        project.archived_by = None
     db.commit()
     return _build_item_out(db, project)
 
@@ -331,16 +321,9 @@ def get_item_score_history(
     project = db.get(Project, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail='프로젝트를 찾을 수 없습니다')
-    match = (
-        db.query(MatchResult)
-        .filter(MatchResult.project_id == project_id)
-        .order_by(MatchResult.match_id.desc())
-        .first()
-    )
     plan = (
-        db.query(BusinessPlan).filter(BusinessPlan.match_id == match.match_id)
+        db.query(BusinessPlan).filter(BusinessPlan.project_id == project_id)
         .order_by(BusinessPlan.plan_id.desc()).first()
-        if match is not None else None
     )
     if plan is None:
         return ItemScoreHistoryOut()
@@ -502,7 +485,7 @@ def answer_faq(faq_id: int, body: FaqAnswerIn, db: Session = Depends(get_db), _a
 
 @router.get('/agent-executions', response_model=None)
 def list_agent_executions(
-    match_id: int | None = None,
+    project_id: int | None = None,
     status: str | None = None,
     limit: int = 100,
     db: Session = Depends(get_db),
@@ -522,15 +505,15 @@ def list_agent_executions(
     원문은 담지 않는다 — 실제 내용을 보려면 참조가 가리키는 테이블(plan_sections 등)을
     따로 조회해야 한다."""
     q = db.query(AgentExecution).order_by(AgentExecution.execution_id.desc())
-    if match_id is not None:
-        q = q.filter(AgentExecution.match_id == match_id)
+    if project_id is not None:
+        q = q.filter(AgentExecution.project_id == project_id)
     if status is not None:
         q = q.filter(AgentExecution.status == status)
     rows = q.limit(min(limit, 500)).all()
     return [
         {
             'execution_id': r.execution_id,
-            'match_id': r.match_id,
+            'project_id': r.project_id,
             'task_key': r.task_key,
             'agent_name': r.agent_name,
             'model_used': r.model_used,
@@ -552,7 +535,7 @@ def list_agent_tasks(db: Session = Depends(get_db), _admin: User = Depends(requi
     """에이전트 테스크 탭의 "Task별 보기" — Agent 1개당 한 행(AgentTaskOut 참고).
     defined_task_count는 FIXED_TASK_SEQUENCE(코드에 고정된 실제 파이프라인 구조)에서
     세고, 최근 실행 프로젝트·상태는 agent_executions에서 그 Agent의 execution_id가 가장
-    큰(=최신) 행 하나를 찾아 match_id -> project로 거슬러 올라가 채운다."""
+    큰(=최신) 행 하나를 찾아 project_id로 project를 직접 조회해 채운다."""
     task_keys_by_agent: dict[str, set[str]] = defaultdict(set)
     for task_key, agent_name in FIXED_TASK_SEQUENCE:
         task_keys_by_agent[agent_name].add(task_key)
@@ -569,9 +552,8 @@ def list_agent_tasks(db: Session = Depends(get_db), _admin: User = Depends(requi
 
         recent_project_id = None
         recent_project_description = None
-        if latest is not None and latest.match_id is not None:
-            match = db.get(MatchResult, latest.match_id)
-            project = db.get(Project, match.project_id) if match is not None else None
+        if latest is not None and latest.project_id is not None:
+            project = db.get(Project, latest.project_id)
             if project is not None:
                 recent_project_id = project.project_id
                 recent_project_description = project.description
@@ -659,13 +641,13 @@ def get_ops_summary(db: Session = Depends(get_db), _admin: User = Depends(requir
         for label, lo, hi in buckets
     ]
 
-    match_ids_with_exec = {mid for (mid,) in db.query(AgentExecution.match_id).distinct().all() if mid is not None}
-    rerun_match_ids = {
-        mid for (mid,) in db.query(AgentExecution.match_id)
-        .filter(AgentExecution.rerun_type == 'rerun').distinct().all() if mid is not None
+    project_ids_with_exec = {pid for (pid,) in db.query(AgentExecution.project_id).distinct().all() if pid is not None}
+    rerun_project_ids = {
+        pid for (pid,) in db.query(AgentExecution.project_id)
+        .filter(AgentExecution.rerun_type == 'rerun').distinct().all() if pid is not None
     }
-    matches_with_execution = len(match_ids_with_exec)
-    rerun_matches = len(rerun_match_ids)
+    matches_with_execution = len(project_ids_with_exec)
+    rerun_matches = len(rerun_project_ids)
     rerun_rate = round(rerun_matches / matches_with_execution * 100, 1) if matches_with_execution else None
 
     history_by_plan_layer: dict[tuple[int, str], list[float]] = {}
@@ -708,11 +690,10 @@ def get_ops_summary(db: Session = Depends(get_db), _admin: User = Depends(requir
 
 def _recovery_item_out(row: ProofreadLog, db: Session) -> RecoveryItemOut:
     """proofread_logs 행(passed=False) 하나를 RecoveryItemOut으로 조립한다 — plan ->
-    match -> project -> company -> user로 거슬러 올라가 프로젝트 설명·동의 여부를 찾고,
+    project -> company -> user로 거슬러 올라가 프로젝트 설명·동의 여부를 찾고,
     plan -> verdicts로 모델 버전을 찾는다(근사치, RecoveryItemOut 주석 참고)."""
     plan = db.get(BusinessPlan, row.plan_id)
-    match = db.get(MatchResult, plan.match_id) if plan is not None else None
-    project = db.get(Project, match.project_id) if match is not None else None
+    project = db.get(Project, plan.project_id) if plan is not None else None
     user = project.company.user if project is not None else None
     verdict = (
         db.query(Verdict).filter(Verdict.plan_id == row.plan_id).order_by(Verdict.verdict_id.desc()).first()

@@ -1,17 +1,21 @@
 """app/routers/projects.py의 생성 비동기화(2026-09-22, 프론트 전달사항 1번) — pytest 버전.
 
 threading.Thread(daemon=True) + 프로세스 메모리 안의 _running_generations 셋 대신,
-match_results.worker_claimed_at 컬럼 하나로 "지금 어떤 프로세스가 이 stage를 처리 중인지"를
+projects.worker_claimed_at 컬럼 하나로 "지금 어떤 프로세스가 이 stage를 처리 중인지"를
 DB 자체로 표현하도록 바꿨다(Redis 등 새 브로커 없이 서버 재시작·다중 워커에 대응하기 위함).
 이 테스트는 그 클레임/복구 로직만 검증한다 — 진행 내용물(fake sleep로 progress_percent만
 올리는 부분)은 기존 동작 그대로라 별도로 다루지 않는다.
+
+[2026-09-28, match_results 테이블 통합] 이 테스트가 다루던 MatchResult 행은 이제
+Project 행 자체다(project(1):match(1)) — 아래 헬퍼가 돌려주는 `match` 변수는 실제로는
+Project 인스턴스이고, match_id 대신 project_id를 키로 쓴다.
 """
 import datetime
 import json
 import time
 
 import app.routers.projects as projects_router
-from app.models import MatchResult, Notice
+from app.models import Notice, Project
 
 
 def _payload(**overrides):
@@ -35,21 +39,20 @@ def _seed_notice(db_session, notice_id: str) -> Notice:
     return notice
 
 
-def _create_match(authed_client, db_session, notice_id: str) -> MatchResult:
-    """POST /generate로 실제 엔드포인트를 그대로 태워 match_results 행을 하나 만든다 —
-    company/project FK를 손으로 채우는 대신 기존 파이프라인을 재사용."""
+def _create_match(authed_client, db_session, notice_id: str) -> Project:
+    """POST /generate로 실제 엔드포인트를 그대로 태워 매칭 상태(이제 project 행 자체에
+    얹힘)를 만든다 — company/project FK를 손으로 채우는 대신 기존 파이프라인을 재사용."""
     notice = _seed_notice(db_session, notice_id)
     r = authed_client.post('/projects', data={'payload': json.dumps(_payload())})
     assert r.status_code == 201, r.text
     project_id = r.json()['project_id']
     r = authed_client.post(f'/projects/{project_id}/generate', json={'notice_id': notice.notice_id})
     assert r.status_code == 200, r.text
-    match_id = r.json()['match']['match_id']
     db_session.expire_all()
-    return db_session.get(MatchResult, match_id)
+    return db_session.get(Project, project_id)
 
 
-def _wait_until_done(db_session, match: MatchResult, done_stage: str, timeout_s: float = 5.0) -> None:
+def _wait_until_done(db_session, match: Project, done_stage: str, timeout_s: float = 5.0) -> None:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         db_session.expire_all()
@@ -71,8 +74,8 @@ def test_duplicate_claim_does_not_double_run(authed_client, db_session, monkeypa
     db_session.commit()
 
     running, done = projects_router.ps.STAGE_PLAN_WRITING, projects_router.ps.STAGE_PLAN_REVIEW_PENDING
-    first = projects_router._try_claim_and_run(match.match_id, running, done)
-    second = projects_router._try_claim_and_run(match.match_id, running, done)
+    first = projects_router._try_claim_and_run(match.project_id, running, done)
+    second = projects_router._try_claim_and_run(match.project_id, running, done)
 
     assert first is True, '첫 클레임은 성공해야 함'
     assert second is False, '방금 클레임된 작업을 두 번째 호출이 또 가져가면 중복 실행이 됨'
@@ -154,7 +157,7 @@ def test_plan_start_endpoint_still_completes_via_claim(authed_client, db_session
     assert status['progress_percent'] == 100
 
 
-def _wait_until_status(db_session, match: MatchResult, status: str, timeout_s: float = 5.0) -> None:
+def _wait_until_status(db_session, match: Project, status: str, timeout_s: float = 5.0) -> None:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         db_session.expire_all()
@@ -195,7 +198,7 @@ def test_first_failure_schedules_backoff_retry_instead_of_failing(authed_client,
     db_session.commit()
 
     claimed = projects_router._try_claim_and_run(
-        match.match_id, projects_router.ps.STAGE_PLAN_WRITING, projects_router.ps.STAGE_PLAN_REVIEW_PENDING,
+        match.project_id, projects_router.ps.STAGE_PLAN_WRITING, projects_router.ps.STAGE_PLAN_REVIEW_PENDING,
     )
     assert claimed is True
 
@@ -211,7 +214,7 @@ def test_first_failure_schedules_backoff_retry_instead_of_failing(authed_client,
     assert match.last_error_kind == projects_router.ps.ERROR_KIND_TRANSIENT, '분류할 키워드가 없는 일반 예외는 일시 오류로 봐야 함'
 
     # 아직 재개 5회를 다 못 썼으니 관리자 알림은 안 생겨야 한다.
-    alerts = db_session.query(projects_router.GenerationFailureAlert).filter_by(match_id=match.match_id).all()
+    alerts = db_session.query(projects_router.GenerationFailureAlert).filter_by(project_id=match.project_id).all()
     assert alerts == [], '재시도 여지가 남아있는 실패는 관리자 알림 대상이 아님'
 
 
@@ -230,7 +233,7 @@ def test_operational_error_fails_immediately_without_resume(authed_client, db_se
     db_session.commit()
 
     claimed = projects_router._try_claim_and_run(
-        match.match_id, projects_router.ps.STAGE_PLAN_WRITING, projects_router.ps.STAGE_PLAN_REVIEW_PENDING,
+        match.project_id, projects_router.ps.STAGE_PLAN_WRITING, projects_router.ps.STAGE_PLAN_REVIEW_PENDING,
     )
     assert claimed is True
 
@@ -239,7 +242,7 @@ def test_operational_error_fails_immediately_without_resume(authed_client, db_se
     assert match.resume_count == 0, '재개를 시도한 적이 없으므로 재개 횟수는 그대로여야 함'
     assert match.next_retry_at is None
 
-    alerts = db_session.query(projects_router.GenerationFailureAlert).filter_by(match_id=match.match_id).all()
+    alerts = db_session.query(projects_router.GenerationFailureAlert).filter_by(project_id=match.project_id).all()
     assert len(alerts) == 1, '영구 오류는 재개 상한과 무관하게 즉시 관리자 알림이 생겨야 함'
     assert alerts[0].last_error_kind == projects_router.ps.ERROR_KIND_OPERATIONAL
     assert alerts[0].resume_count == 0
@@ -262,7 +265,7 @@ def test_stage_failure_records_agent_execution(authed_client, db_session, monkey
     db_session.commit()
 
     claimed = projects_router._try_claim_and_run(
-        match.match_id, projects_router.ps.STAGE_PLAN_WRITING, projects_router.ps.STAGE_PLAN_REVIEW_PENDING,
+        match.project_id, projects_router.ps.STAGE_PLAN_WRITING, projects_router.ps.STAGE_PLAN_REVIEW_PENDING,
     )
     assert claimed is True
 
@@ -270,7 +273,7 @@ def test_stage_failure_records_agent_execution(authed_client, db_session, monkey
 
     execution = (
         db_session.query(AgentExecution)
-        .filter(AgentExecution.match_id == match.match_id, AgentExecution.task_key == 'writing')
+        .filter(AgentExecution.project_id == match.project_id, AgentExecution.task_key == 'writing')
         .order_by(AgentExecution.attempt_no.desc())
         .first()
     )
@@ -348,7 +351,7 @@ def test_max_retries_exhausted_marks_failed_and_creates_alert(authed_client, db_
     assert match.next_retry_at is None
     assert '6번째 실패' in (match.failure_reason or '')
 
-    alerts = db_session.query(projects_router.GenerationFailureAlert).filter_by(match_id=match.match_id).all()
+    alerts = db_session.query(projects_router.GenerationFailureAlert).filter_by(project_id=match.project_id).all()
     assert len(alerts) == 1, '재개 상한 도달 시 관리자 알림이 정확히 한 행 생겨야 함'
     alert = alerts[0]
     assert alert.project_id == match.project_id
@@ -379,7 +382,7 @@ def test_resume_total_cap_exceeded_marks_failed_before_attempt_cap(authed_client
     _wait_until_status(db_session, match, 'failed')
     assert match.resume_count == 2, '재개 횟수 상한(5)엔 못 미쳤어도 실패로 확정돼야 함'
 
-    alerts = db_session.query(projects_router.GenerationFailureAlert).filter_by(match_id=match.match_id).all()
+    alerts = db_session.query(projects_router.GenerationFailureAlert).filter_by(project_id=match.project_id).all()
     assert len(alerts) == 1
     assert alerts[0].acknowledged_at is None
 

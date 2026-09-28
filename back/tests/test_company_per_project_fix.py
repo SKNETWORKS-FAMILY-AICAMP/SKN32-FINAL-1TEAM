@@ -17,7 +17,7 @@ _payload()가 안 보내도 여전히 201로 성공해야 한다.
 import datetime
 import json
 
-from app.models import Company, MatchResult, Notice, Project
+from app.models import Company, Notice, Project
 
 
 def _payload(**overrides):
@@ -64,8 +64,10 @@ def test_concurrency_limit_still_blocks_without_shared_company(authed_client, db
     assert r1.status_code == 201, r1.text
     project1_id = r1.json()['project_id']
 
-    # 실제 파이프라인 없이 "진행 중 매칭"만 최소로 흉내낸다 — MatchResult.status 기본값이
-    # in_progress라 그대로 커밋하면 된다.
+    # 실제 파이프라인 없이 "진행 중 매칭"만 최소로 흉내낸다 — [2026-09-28, match_results
+    # 테이블 통합] 이제 이 값들은 project 행 자체의 컬럼이고, status는 (match_results와
+    # 달리) 기본값이 없으므로(아직 매칭 전인 프로젝트와 구분하기 위해 nullable) 명시적으로
+    # 'in_progress'를 채워야 한다.
     notice = Notice(
         id=1, notice_id='test:PBLN_0001', source='test', title='테스트 공고',
         target_text=None, category=None, organizer=None, supervising_org=None,
@@ -74,7 +76,10 @@ def test_concurrency_limit_still_blocks_without_shared_company(authed_client, db
     )
     db_session.add(notice)
     db_session.flush()
-    db_session.add(MatchResult(project_id=project1_id, notice_id=notice.notice_id, fit_score=80))
+    project1 = db_session.get(Project, project1_id)
+    project1.notice_id = notice.notice_id
+    project1.fit_score = 80
+    project1.status = 'in_progress'
     db_session.commit()
 
     r2 = authed_client.post('/projects', data=_payload(ceo_name='다른 사람'))

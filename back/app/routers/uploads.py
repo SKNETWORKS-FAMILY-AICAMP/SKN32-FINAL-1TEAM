@@ -7,7 +7,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Artifact, BusinessPlan, Company, MatchResult, Project, ProjectAttachment, User
+from app.models import Artifact, BusinessPlan, Company, Project, ProjectAttachment, User
 from app.routers import projects
 from app.security import get_current_user
 
@@ -28,8 +28,7 @@ def download_upload(filename: str, db: Session = Depends(get_db), user: User = D
                    .filter(ProjectAttachment.file_url == url))
     artifacts = (db.query(Artifact)
                  .join(BusinessPlan, BusinessPlan.plan_id == Artifact.plan_id)
-                 .join(MatchResult, MatchResult.match_id == BusinessPlan.match_id)
-                 .join(Project, Project.project_id == MatchResult.project_id)
+                 .join(Project, Project.project_id == BusinessPlan.project_id)
                  .join(Company, Company.company_id == Project.company_id)
                  .filter(or_(Artifact.executable_path == url, Artifact.infographic_path == url)))
     if user.role != 'admin':

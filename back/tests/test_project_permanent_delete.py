@@ -16,7 +16,6 @@ from app.models import (
     Company,
     EligibilityCheck,
     GenerationFailureAlert,
-    MatchResult,
     MatchScoreReason,
     Notice,
     Notification,
@@ -48,11 +47,9 @@ def test_permanent_delete_cascades_full_pipeline_and_own_company(authed_client, 
     db_session.add(notice)
     db_session.flush()
     verdict = seed_dummy_pipeline(db_session, project_id, notice_id='PERM-DEL-001', retry_agents=())
-    match = db_session.query(MatchResult).filter_by(project_id=project_id).one()
-    match_id = match.match_id
-    db_session.add(Notification(match_id=match_id, project_id=project_id, kind='문서평가', target_step=6))
+    db_session.add(Notification(project_id=project_id, kind='문서평가', target_step=6))
     db_session.add(GenerationFailureAlert(
-        match_id=match_id, project_id=project_id, stage='plan_writing',
+        project_id=project_id, stage='plan_writing',
         resume_count=1, last_error_kind='일시', failure_reason='건별 삭제 전 마지막 실패(테스트)',
     ))
     db_session.commit()
@@ -69,18 +66,17 @@ def test_permanent_delete_cascades_full_pipeline_and_own_company(authed_client, 
 
     assert db_session.query(Project).filter_by(project_id=project_id).count() == 0
     assert db_session.query(Company).filter_by(company_id=company_id).count() == 0
-    assert db_session.query(MatchResult).filter_by(project_id=project_id).count() == 0
-    assert db_session.query(EligibilityCheck).filter_by(match_id=match_id).count() == 0
-    assert db_session.query(MatchScoreReason).filter_by(match_id=match_id).count() == 0
-    assert db_session.query(BusinessPlan).filter_by(match_id=match_id).count() == 0
+    assert db_session.query(EligibilityCheck).filter_by(project_id=project_id).count() == 0
+    assert db_session.query(MatchScoreReason).filter_by(project_id=project_id).count() == 0
+    assert db_session.query(BusinessPlan).filter_by(project_id=project_id).count() == 0
     assert db_session.query(PlanSection).filter_by(plan_id=plan_id).count() == 0
     assert db_session.query(PlanScoreReason).filter_by(plan_id=plan_id).count() == 0
     assert db_session.query(Artifact).filter_by(plan_id=plan_id).count() == 0
     assert db_session.query(ArtifactScoreReason).filter_by(artifact_id=artifact_id).count() == 0
     assert db_session.query(Verdict).filter_by(plan_id=plan_id).count() == 0
-    assert db_session.query(AgentExecution).filter_by(match_id=match_id).count() == 0
-    assert db_session.query(Notification).filter_by(match_id=match_id).count() == 0
-    assert db_session.query(GenerationFailureAlert).filter_by(match_id=match_id).count() == 0
+    assert db_session.query(AgentExecution).filter_by(project_id=project_id).count() == 0
+    assert db_session.query(Notification).filter_by(project_id=project_id).count() == 0
+    assert db_session.query(GenerationFailureAlert).filter_by(project_id=project_id).count() == 0
     # 공고 수집 파이프라인 소유 테이블은 프로젝트와 무관하므로 그대로 남아야 한다.
     assert db_session.query(Notice).filter_by(notice_id='PERM-DEL-001').count() == 1
 
@@ -98,13 +94,13 @@ def test_permanent_delete_works_on_already_archived_project(authed_client, db_se
 
     archive_res = authed_client.delete(f'/projects/{project_id}')
     assert archive_res.status_code == 204, archive_res.text
-    match = db_session.query(MatchResult).filter_by(project_id=project_id).one()
-    assert match.archived_at is not None, '휴지통 버튼은 archive만 해야 함(기존 동작 유지 확인)'
+    db_session.expire_all()
+    project = db_session.query(Project).filter_by(project_id=project_id).one()
+    assert project.archived_at is not None, '휴지통 버튼은 archive만 해야 함(기존 동작 유지 확인)'
 
     res = authed_client.delete(f'/projects/{project_id}/permanent')
     assert res.status_code == 204, res.text
     assert db_session.query(Project).filter_by(project_id=project_id).count() == 0
-    assert db_session.query(MatchResult).filter_by(project_id=project_id).count() == 0
 
 
 def test_permanent_delete_does_not_affect_other_accounts_projects(authed_client, db_session, login_as):
