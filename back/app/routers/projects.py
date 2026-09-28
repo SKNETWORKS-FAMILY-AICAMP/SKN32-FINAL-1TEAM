@@ -56,7 +56,9 @@ from app.models import (
     GenerationFailureAlert,
     MatchCandidate,
     MatchResult,
+    MatchScoreReason,
     Notice,
+    NoticeAlert,
     Notification,
     PlanCanonicalData,
     PlanScoreReason,
@@ -64,7 +66,10 @@ from app.models import (
     PricingItem,
     Project,
     ProjectAttachment,
+    ProjectBudgetItem,
+    ProjectPartner,
     ProjectPlanInput,
+    ProjectScheduleItem,
     ProofreadLog,
     TeamMember,
     User,
@@ -1511,6 +1516,68 @@ def delete_project(
     db.query(ProjectPlanInput).filter(ProjectPlanInput.project_id == project_id).delete()
     db.query(Project).filter(Project.project_id == project_id).delete()
     db.commit()
+    return Response(status_code=204)
+
+
+def _delete_project_cascade(db: Session, project: Project) -> None:
+    """[2026-09-28 신규] "건별 삭제" — 프로젝트 기획서 v1.10 6-7절 표: 사전 정보 입력값/
+    산출물은 "건별 삭제 가능"이라고 명시돼 있다. 위 delete_project()는 매칭 이후엔 archive만
+    하고 실제로 안 지우는데(관리자 대시보드 "진행 현황" 탭의 보관중/복원 기능을 위해 일부러
+    그렇게 둔 것) — 이 함수는 그것과 독립적으로, 보관 여부와 무관하게 바로 완전히 지우는
+    경로다(delete_project_permanently 참고). app/routers/auth.py _delete_account_cascade의
+    "프로젝트 하나 분량"과 같은 구조 — 차이는 그 프로젝트 전용 Company 행(1:1, company_id에
+    유니크 제약이 없는 이유는 app/models.py Company 주석 참고)도 여기서 같이 지운다는 것."""
+    project_id = project.project_id
+    match_ids = [m.match_id for m in db.query(MatchResult.match_id).filter(MatchResult.project_id == project_id)]
+    plan_ids = [p.plan_id for p in db.query(BusinessPlan.plan_id).filter(BusinessPlan.match_id.in_(match_ids))] if match_ids else []
+
+    if plan_ids:
+        artifact_ids = [a.artifact_id for a in db.query(Artifact.artifact_id).filter(Artifact.plan_id.in_(plan_ids))]
+        if artifact_ids:
+            db.query(ArtifactScoreReason).filter(ArtifactScoreReason.artifact_id.in_(artifact_ids)).delete(synchronize_session=False)
+        db.query(Verdict).filter(Verdict.plan_id.in_(plan_ids)).delete(synchronize_session=False)
+        db.query(Artifact).filter(Artifact.plan_id.in_(plan_ids)).delete(synchronize_session=False)
+        db.query(ProofreadLog).filter(ProofreadLog.plan_id.in_(plan_ids)).delete(synchronize_session=False)
+        db.query(FormatFinding).filter(FormatFinding.plan_id.in_(plan_ids)).delete(synchronize_session=False)
+        db.query(PlanScoreReason).filter(PlanScoreReason.plan_id.in_(plan_ids)).delete(synchronize_session=False)
+        db.query(PlanCanonicalData).filter(PlanCanonicalData.plan_id.in_(plan_ids)).delete(synchronize_session=False)
+        db.query(VerificationScoreHistory).filter(VerificationScoreHistory.plan_id.in_(plan_ids)).delete(synchronize_session=False)
+        db.query(PlanSection).filter(PlanSection.plan_id.in_(plan_ids)).delete(synchronize_session=False)
+    if match_ids:
+        db.query(BusinessPlan).filter(BusinessPlan.match_id.in_(match_ids)).delete(synchronize_session=False)
+        db.query(Notification).filter(Notification.match_id.in_(match_ids)).delete(synchronize_session=False)
+        db.query(GenerationFailureAlert).filter(GenerationFailureAlert.match_id.in_(match_ids)).delete(synchronize_session=False)
+        db.query(MatchScoreReason).filter(MatchScoreReason.match_id.in_(match_ids)).delete(synchronize_session=False)
+        db.query(EligibilityCheck).filter(EligibilityCheck.match_id.in_(match_ids)).delete(synchronize_session=False)
+        db.query(AgentExecution).filter(AgentExecution.match_id.in_(match_ids)).delete(synchronize_session=False)
+    db.query(MatchResult).filter(MatchResult.project_id == project_id).delete(synchronize_session=False)
+    db.query(MatchCandidate).filter(MatchCandidate.project_id == project_id).delete(synchronize_session=False)
+    db.query(NoticeAlert).filter(NoticeAlert.project_id == project_id).delete(synchronize_session=False)
+    db.query(ProjectAttachment).filter(ProjectAttachment.project_id == project_id).delete(synchronize_session=False)
+    db.query(TeamMember).filter(TeamMember.project_id == project_id).delete(synchronize_session=False)
+    db.query(PricingItem).filter(PricingItem.project_id == project_id).delete(synchronize_session=False)
+    db.query(ProjectBudgetItem).filter(ProjectBudgetItem.project_id == project_id).delete(synchronize_session=False)
+    db.query(ProjectScheduleItem).filter(ProjectScheduleItem.project_id == project_id).delete(synchronize_session=False)
+    db.query(ProjectPartner).filter(ProjectPartner.project_id == project_id).delete(synchronize_session=False)
+    db.query(ProjectPlanInput).filter(ProjectPlanInput.project_id == project_id).delete(synchronize_session=False)
+    company_id = project.company_id
+    db.query(Project).filter(Project.project_id == project_id).delete(synchronize_session=False)
+    db.query(Company).filter(Company.company_id == company_id).delete(synchronize_session=False)
+    db.commit()
+
+
+@router.delete('/{project_id}/permanent', status_code=204)
+def delete_project_permanently(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """"건별 삭제"(완전 삭제) — 프로젝트 기획서 v1.10 6-7절. 보관(archive) 여부·매칭 진행
+    상태와 무관하게 바로 실제로 지운다 — DELETE /projects/{id}(휴지통, 매칭 이후엔 archive만
+    함)와는 독립된 별도 액션이다. 되돌릴 수 없다 — 프론트는 호출 전 확인 다이얼로그를
+    거쳐야 한다."""
+    project = _get_owned_project(db, project_id, current_user)
+    _delete_project_cascade(db, project)
     return Response(status_code=204)
 
 
