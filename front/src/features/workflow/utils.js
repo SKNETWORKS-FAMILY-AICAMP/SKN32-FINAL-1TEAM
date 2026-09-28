@@ -159,18 +159,44 @@ export function scoresFromResult(result){
 
 // 표현 검수 화면의 문단 전/후 — GET /result의 plan.proofread_logs(실제 검수 기록)를 쓴다.
 // 예전엔 시연 로그에서 베낀 고정 문단(REVIEW_PARAGRAPHS)만 보여줬다.
-// 한계: ProofreadLogOut이 original_text/corrected_text/reason만 내려줘서(app/schemas.py),
-// 모델에는 있는 attempt_no·passed·violation_note를 못 받는다 — 그래서 "1차 반려 → 2차
-// 통과" 같은 재시도 과정은 아직 그릴 수 없다. 그 필드가 열리면 여기만 고치면 된다.
+// [2026-09-29 수정] ProofreadLogOut이 attempt_no/passed/violation_note까지 내려주게
+// 되면서(app/schemas.py) "1차 반려 → 2차 통과" 재시도 과정도 그릴 수 있게 됐다 — 지금
+// 더미 구현(app/routers/projects.py review_token_check)은 같은 문단을 계속 이어 고치는
+// 구조라 section_id로 묶으면 그게 한 문단의 시도 이력이 된다. 관계(BusinessPlan.
+// proofread_logs)엔 order_by가 없어 배열 순서를 못 믿으므로 attempt_no로 직접 정렬한다.
 export function reviewParagraphsFrom(plan){
   const logs = plan?.proofread_logs || [];
   if (!logs.length) return null; // 검수 기록이 없으면 화면이 기존 예시로 돌아간다
-  return logs.map((log, i) => ({
-    id: `p-${String(i + 1).padStart(2, '0')}`,
-    before: log.original_text || '',
-    after: log.corrected_text || '',
-    reason: log.reason || null,
-  }));
+
+  const groups = new Map(); // section_id(없으면 'null') -> log[]
+  for (const log of logs) {
+    const key = log.section_id ?? 'null';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(log);
+  }
+
+  return Array.from(groups.values()).map((groupLogs, i) => {
+    const sorted = [...groupLogs].sort((a, b) => (a.attempt_no ?? 0) - (b.attempt_no ?? 0));
+    const id = `p-${String(i + 1).padStart(2, '0')}`;
+    const first = sorted[0];
+
+    // 시도가 하나뿐이고 통과했으면(재작업 과정을 보여줄 게 없으면) 기존 평평한 모양 그대로.
+    if (sorted.length === 1 && first.passed !== false) {
+      return { id, before: first.original_text || '', after: first.corrected_text || '', reason: first.reason || null };
+    }
+
+    return {
+      id,
+      spotlight: true,
+      before: first.original_text || '',
+      attempts: sorted.map((log) => ({
+        try: log.attempt_no,
+        passed: log.passed !== false,
+        after: log.corrected_text || '',
+        issue: log.passed === false ? (log.violation_note || log.reason || null) : null,
+      })),
+    };
+  });
 }
 
 // 재작성 응답(POST /projects/{id}/retry-task)의 changed를 "변경 내역" 한 줄로 바꾼다.
