@@ -192,6 +192,90 @@ def test_implement_prototype_retry_also_rescores_verify2(retry_setup, db_session
 
 
 # ============================================================================
+# output_ref — SB-148: agent_executions가 산출물 참조({table,id})를 남기는지
+# (프롬프트/응답 원문이 아니라 참조만 — agent-orchestration 저장소의 ExecutionRecord/
+# CallLog 설계를 관계형 id로 옮긴 것)
+# ============================================================================
+
+def test_strategy_retry_records_output_ref_to_canonical_data(retry_setup, db_session):
+    from app.models import AgentExecution, PlanCanonicalData
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'strategy')
+    assert res.status_code == 200, res.text
+
+    db_session.expire_all()
+    execution = (
+        db_session.query(AgentExecution)
+        .filter(AgentExecution.task_key == 'strategy')
+        .order_by(AgentExecution.attempt_no.desc())
+        .first()
+    )
+    assert execution.output_ref is not None
+    tables = {ref['table'] for ref in execution.output_ref}
+    assert tables == {'plan_canonical_data'}
+    ids = {ref['id'] for ref in execution.output_ref}
+    real_ids = {
+        r.data_id for r in db_session.query(PlanCanonicalData).filter(PlanCanonicalData.plan_id == retry_setup['plan_id'])
+    }
+    assert ids == real_ids
+
+
+def test_writing_retry_records_output_ref_to_plan_sections(retry_setup, db_session):
+    from app.models import AgentExecution, PlanSection
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'writing')
+    assert res.status_code == 200, res.text
+
+    db_session.expire_all()
+    execution = (
+        db_session.query(AgentExecution)
+        .filter(AgentExecution.task_key == 'writing')
+        .order_by(AgentExecution.attempt_no.desc())
+        .first()
+    )
+    assert execution.output_ref is not None
+    for ref in execution.output_ref:
+        assert ref['table'] == 'plan_sections'
+        section = db_session.get(PlanSection, ref['id'])
+        assert section is not None and section.plan_id == retry_setup['plan_id']
+
+
+def test_implement_prototype_retry_records_output_ref_to_artifact(retry_setup, db_session):
+    from app.models import AgentExecution, Artifact
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'implement_prototype')
+    assert res.status_code == 200, res.text
+
+    db_session.expire_all()
+    execution = (
+        db_session.query(AgentExecution)
+        .filter(AgentExecution.task_key == 'implement_prototype')
+        .order_by(AgentExecution.attempt_no.desc())
+        .first()
+    )
+    artifact = db_session.query(Artifact).filter(Artifact.plan_id == retry_setup['plan_id']).one()
+    assert execution.output_ref == {'table': 'artifacts', 'id': artifact.artifact_id}
+
+
+def test_review_token_check_retry_records_output_ref_to_proofread_log(retry_setup, db_session):
+    from app.models import AgentExecution, ProofreadLog
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'review_token_check')
+    assert res.status_code == 200, res.text
+
+    db_session.expire_all()
+    execution = (
+        db_session.query(AgentExecution)
+        .filter(AgentExecution.task_key == 'review_token_check')
+        .order_by(AgentExecution.attempt_no.desc())
+        .first()
+    )
+    assert execution.output_ref['table'] == 'proofread_logs'
+    log = db_session.get(ProofreadLog, execution.output_ref['id'])
+    assert log is not None and log.plan_id == retry_setup['plan_id']
+
+
+# ============================================================================
 # review_token_check — attempt_no / passed / violation_* / recovery_status
 # ============================================================================
 

@@ -240,10 +240,11 @@ def _upsert_plan_section(db: Session, plan_id: int, draft) -> dict:
     if section is None:
         section = PlanSection(plan_id=plan_id, tag=draft.tag, title=draft.title, body=draft.body)
         db.add(section)
+        db.flush()  # section_id 확보 — agent_executions.output_ref가 이 행을 참조한다.
     else:
         section.title = draft.title
         section.body = draft.body
-    return {'before': before, 'after': draft.body}
+    return {'before': before, 'after': draft.body, 'id': section.section_id}
 
 
 def _upsert_canonical_data(db: Session, plan_id: int, result) -> dict:
@@ -262,10 +263,11 @@ def _upsert_canonical_data(db: Session, plan_id: int, result) -> dict:
             data_json=result.data_json, source_function=result.source_function,
         )
         db.add(row)
+        db.flush()  # data_id 확보 — agent_executions.output_ref가 이 행을 참조한다.
     else:
         row.data_json = result.data_json
         row.source_function = result.source_function
-    return {'before': before, 'after': result.data_json}
+    return {'before': before, 'after': result.data_json, 'id': row.data_id}
 
 # repo 루트/uploads — database.py의 _REPO_ROOT 계산 방식과 동일하게 __file__ 기준으로 잡는다
 # (app/routers/projects.py 에서 두 단계 위로 올라가면 app/ 이고, 그 위가 repo 루트).
@@ -1723,6 +1725,7 @@ def retry_task(
     next_attempt_no = (last_attempt.attempt_no + 1) if last_attempt is not None else 1
 
     changed: dict = {}
+    output_ref: dict | list | None = None
     task_key = body.task_key
 
     try:
@@ -1734,10 +1737,12 @@ def retry_task(
             # Agent 몫이라는 시트 구조에 맞춤).
             results = agents.run_strategy_agent_retry(project.description)
             changed['canonical_data'] = {r.data_key: _upsert_canonical_data(db, plan.plan_id, r) for r in results}
+            output_ref = [{'table': 'plan_canonical_data', 'id': v['id']} for v in changed['canonical_data'].values()]
 
         elif task_key == 'writing':
             drafts = agents.run_writing_agent_retry(project.description, tags=['1-1', '2-1'])
             changed['sections'] = {d.tag: _upsert_plan_section(db, plan.plan_id, d) for d in drafts}
+            output_ref = [{'table': 'plan_sections', 'id': v['id']} for v in changed['sections'].values()]
 
             # [2026-09-18 추가] "본문/그래프/표를 재작성했는데 왜 점수가 그대로냐"는 지적(하정원님)
             # — 작성은 콘텐츠만 바꾸고 채점은 검증-1 몫이라 그동안 점수가 안 바뀌었는데, 실제
@@ -1757,6 +1762,7 @@ def retry_task(
             if result is None:
                 raise HTTPException(status_code=404, detail='재채점할 채점 근거(plan_score_reasons)가 없습니다')
             changed.update(result)
+            output_ref = {'table': 'business_plans', 'id': plan.plan_id}
 
         elif task_key in ('implement_prototype', 'implement_infographic'):
             artifact = (
@@ -1798,6 +1804,7 @@ def retry_task(
             else:
                 changed['infographic_path'] = {'before': artifact.infographic_path, 'after': new_url}
                 artifact.infographic_path = new_url
+            output_ref = {'table': 'artifacts', 'id': artifact.artifact_id}
 
             # [2026-09-18 추가] writing과 같은 이유 — 구현(파일 재생성)에도 검증-2(static+
             # crosscheck) 재채점을 자동으로 붙인다. 채점 근거가 없으면 조용히 건너뛴다.
@@ -1827,6 +1834,7 @@ def retry_task(
                     detail=f'{task_key}에 해당하는 채점 근거(item_code 접두어 {prefixes})가 없습니다',
                 )
             changed.update(result)
+            output_ref = {'table': 'artifacts', 'id': artifact.artifact_id}
 
         elif task_key == 'review_expression':
             latest = (
@@ -1836,17 +1844,20 @@ def retry_task(
                 .first()
             )
             result = agents.run_review_expression_retry(project.description)
-            db.add(FormatFinding(
+            finding_row = FormatFinding(
                 plan_id=plan.plan_id,
                 finding_type=result.finding_type,
                 location=result.location,
                 message=result.message,
                 severity=result.severity,
-            ))
+            )
+            db.add(finding_row)
+            db.flush()  # finding_id 확보 — agent_executions.output_ref가 이 행을 참조한다.
             changed['finding'] = {
                 'before': latest.message if latest is not None else None,
                 'after': result.message,
             }
+            output_ref = {'table': 'format_findings', 'id': finding_row.finding_id}
 
         elif task_key == 'review_token_check':
             latest = (
@@ -1857,7 +1868,7 @@ def retry_task(
             )
             next_attempt_no = (latest.attempt_no + 1) if latest is not None else 1
             result = agents.run_review_token_check_retry(project.description, attempt_no=next_attempt_no)
-            db.add(ProofreadLog(
+            log_row = ProofreadLog(
                 plan_id=plan.plan_id,
                 original_text=(latest.corrected_text if latest is not None else project.description),
                 corrected_text=result.corrected_text,
@@ -1869,7 +1880,9 @@ def retry_task(
                 violation_note=result.violation_note,
                 # passed=False인 시도는 그 즉시 "검수 회수 문단" 탭의 라벨링 대기열로 들어간다.
                 recovery_status=None if result.passed else 'pending',
-            ))
+            )
+            db.add(log_row)
+            db.flush()  # log_id 확보 — agent_executions.output_ref가 이 행을 참조한다.
             changed['corrected_text'] = {
                 'before': latest.corrected_text if latest is not None else None,
                 'after': result.corrected_text,
@@ -1879,6 +1892,7 @@ def retry_task(
             if not result.passed:
                 changed['violation_type'] = result.violation_type
                 changed['violation_note'] = result.violation_note
+            output_ref = {'table': 'proofread_logs', 'id': log_row.log_id}
 
         else:  # pragma: no cover — _RETRIABLE_TASK_KEYS 체크를 통과했으면 도달할 수 없다.
             raise HTTPException(status_code=500, detail=f'처리 로직이 없는 task_key: {task_key!r}')
@@ -1917,6 +1931,7 @@ def retry_task(
         rerun_type='rerun',
         token_usage=random.randint(100, 3000),
         status=ps.GENERATION_STATUS_COMPLETED,
+        output_ref=output_ref,
     )
     db.add(execution)
     db.commit()

@@ -177,6 +177,23 @@ UPDATE generation_failure_alerts SET last_error_kind = '일시' WHERE last_error
 ALTER TABLE generation_failure_alerts
     MODIFY COLUMN last_error_kind ENUM('일시','입력','운영') NOT NULL COMMENT '실패 확정 시점의 원인 분류';
 
+-- [2026-09-28 뒤늦게 추가] plan_canonical_data(2026-09-22 신규, Strategy Agent F01~F15
+-- 중간 산출물 저장소) — app_schema.sql에는 있었는데 이 카드업 스크립트에 반영이 안 돼
+-- 있어서 팀 공유 AWS MySQL에 이 테이블 자체가 없는 상태로 남아 있었다(2026-09-28 프론트
+-- 보고, GET/POST /projects 500 OperationalError 원인 중 하나). 새 테이블이라
+-- CREATE TABLE IF NOT EXISTS로 충분하다.
+CREATE TABLE IF NOT EXISTS plan_canonical_data (
+    data_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '캐노니컬 데이터 고유 식별자',
+    plan_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES business_plans(plan_id)',
+    data_key VARCHAR(50) NOT NULL COMMENT '블록 이름: item_spec/market_analysis/competitor_analysis/team_capability/development_goal/development_method/development_plan/production_plan/marketing_strategy/business_model/growth_strategy/resource_plan/budget/schedule/web_data 등(시트 그대로)',
+    data_json JSON NOT NULL COMMENT 'F01~F15 각 함수의 실제 output — 내부 구조는 Strategy Agent 담당자가 정함',
+    source_function VARCHAR(10) NULL COMMENT '이 데이터를 만든 F-함수 번호(예: F03) — 재시도 대상 식별·디버깅용',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    UNIQUE KEY uq_plan_canonical_data_plan_key (plan_id, data_key),
+    FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- [2026-09-27 신규, SB-141] 사용자용 작업 알림(화면 헤더 종모양) — 새 테이블이라
 -- CREATE TABLE IF NOT EXISTS로 충분하다(컬럼 추가 마이그레이션 절차 불필요).
 CREATE TABLE IF NOT EXISTS notifications (
@@ -241,6 +258,10 @@ WHERE NOT EXISTS (SELECT 1 FROM verification_checklist_items);
 -- 보여주려면 필요하다(app/models.py AgentExecution, app/routers/admin.py list_agent_executions).
 CALL _add_col_if_missing('agent_executions', 'error_kind', "ENUM('일시','입력','운영') NULL COMMENT '실패 원인 분류(status=failed일 때만)'");
 CALL _add_col_if_missing('agent_executions', 'error_reason', "TEXT NULL COMMENT '실패 사유 원문(status=failed일 때만)'");
+
+-- [2026-09-28 신규, SB-148] Task I/O 확장 검토 결과 — 원본 프롬프트/응답 대신 산출물
+-- 참조({table,id})만 남긴다(app/models.py AgentExecution.output_ref 참고).
+CALL _add_col_if_missing('agent_executions', 'output_ref', "JSON NULL COMMENT '이 실행이 만들거나 바꾼 산출물 참조({table,id} 또는 리스트) — 프롬프트/응답 원문은 저장하지 않음'");
 
 DROP PROCEDURE IF EXISTS _add_col_if_missing;
 

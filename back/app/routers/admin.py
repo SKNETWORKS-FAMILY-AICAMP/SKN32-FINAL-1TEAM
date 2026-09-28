@@ -515,7 +515,12 @@ def list_agent_executions(
     섞여 정작 봐야 할 실패 건이 밀려나는 문제 없이, 지금 쌓여 있는 실패 건만 최대 500개
     받을 수 있다. error_kind/error_reason은 status='failed'일 때만 값이 있고(app/models.py
     AgentExecution), retryable은 error_kind가 '일시'(=자동 재개 대상)인지로 여기서
-    계산해 내려준다 — 별도 컬럼으로 저장하면 error_kind와 값이 어긋날 수 있어서다."""
+    계산해 내려준다 — 별도 컬럼으로 저장하면 error_kind와 값이 어긋날 수 있어서다.
+
+    [2026-09-28 신규, SB-148] output_ref — 이 실행이 만들거나 바꾼 산출물 참조
+    ({'table', 'id'} 또는 그 리스트, app/models.py AgentExecution 참고). 프롬프트·응답
+    원문은 담지 않는다 — 실제 내용을 보려면 참조가 가리키는 테이블(plan_sections 등)을
+    따로 조회해야 한다."""
     q = db.query(AgentExecution).order_by(AgentExecution.execution_id.desc())
     if match_id is not None:
         q = q.filter(AgentExecution.match_id == match_id)
@@ -535,6 +540,7 @@ def list_agent_executions(
             'error_kind': r.error_kind,
             'error_reason': r.error_reason,
             'retryable': (r.error_kind == ps.ERROR_KIND_TRANSIENT) if r.error_kind is not None else None,
+            'output_ref': r.output_ref,
             'started_at': r.started_at.isoformat() if r.started_at else None,
         }
         for r in rows

@@ -1031,6 +1031,14 @@ class AgentExecution(Base):
     error_kind: Mapped[str | None] = mapped_column(_ErrorKind, nullable=True)
     error_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # [2026-09-28 신규, SB-148 검토 결과] 이 실행이 만들거나 바꾼 산출물 참조 —
+    # {'table': ..., 'id': ...} 하나 또는 그 리스트. 형제 저장소 agent-orchestration의
+    # ExecutionRecord(입력/출력을 원본이 아니라 "이름@버전" 참조로 남김)와 CallLog
+    # ("프롬프트·응답 내용은 남기지 않음") 설계를 우리 관계형 id로 옮긴 것 — 원본
+    # 프롬프트나 산출물 본문 텍스트는 여기 저장하지 않는다(용량·개인정보 문제 방지,
+    # 실제 내용은 참조가 가리키는 테이블에서 조회). app/routers/projects.py retry_task 참고.
+    output_ref: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
+
 
 # ---------------------------------------------------------------------------
 # 검증 정책 (admin-dashboard.html 검증 정책 탭과 대응)
