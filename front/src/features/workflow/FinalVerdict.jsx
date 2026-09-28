@@ -3,20 +3,35 @@ import React, {useState,useRef,useEffect} from 'react';
 import {Icon} from '../../components/Icons.jsx';
 import {DiffText,RerunLeftBadge} from './shared.jsx';
 import {GeneralInfoBlock,PlanExtrasBlock} from './PlanForm.jsx';
-import {PrototypeFrame,ResultPreview} from './ArtifactResult.jsx';
-import {detectItemCategory,diffSentences,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
-import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,RERUN_CAP,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,WRITING_SUBTASKS} from './data.js';
+import {PrototypeFrame,ResultPreview,useArtifactFile,ArtifactLoadError} from './ArtifactResult.jsx';
+import {detectItemCategory,diffSentences,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf,reworkDiffFromChanged} from './utils.js';
+import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,RERUN_CAP,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,DOC_REWORK_BUNDLES} from './data.js';
 import {retryTask} from '../../api.js';
 
 // 계획서 라벨(WRITING_SUBTASKS)은 전부 '작성' Agent 하나(writing)로, 산출물 라벨은
 // ARTIFACT_SUBTASKS_BY_CATEGORY의 두 항목으로 각각 매핑한다 — app/schemas.py RetryTaskRequest 참고.
+// 계획서 묶음은 전부 'writing' 하나로, 산출물 묶음은 각자 task_key로 간다
+// (PlanForm.jsx의 같은 표 주석 참고 — bundle_id를 아직 서버에 못 보낸다).
 const TASK_KEY_BY_LABEL = {
-  '사업계획서 본문 작성': 'writing', '그래프 생성': 'writing', '표 생성': 'writing',
+  ...Object.fromEntries(DOC_REWORK_BUNDLES.map((b) => [b, 'writing'])),
   '실행 파일 제작': 'implement_prototype', '인포그래픽 제작': 'implement_infographic',
 };
 
-export function PlanCompareColumns({ itemInfo, announcement }){
-  const diffs = PLAN_DOCUMENT_SECTIONS.map((s, i) => diffSentences(s.body, PLAN_DOCUMENT_SECTIONS_REWORKED[i].body));
+// sectionDiff: 재작성 응답 changed.sections = { '1-1': {before, after}, … }. 있으면 그
+// 실제 전/후를 대조하고, 없으면(서버가 안 줬거나 시연용으로 그릴 때) 기존 고정 문단을 쓴다.
+// "전" 문단은 서버 응답으로만 알 수 있다 — GET /result는 지금 상태(후)만 내려준다.
+export function PlanCompareColumns({ itemInfo, announcement, sectionDiff = null }){
+  const rows = sectionDiff
+    ? Object.entries(sectionDiff).map(([tag, v], i) => ({
+        title: PLAN_DOCUMENT_SECTIONS[i]?.title || tag,
+        header: PSST_OFFICIAL_HEADERS[i] || tag,
+        parts: diffSentences(v?.before || '', v?.after || ''),
+      }))
+    : PLAN_DOCUMENT_SECTIONS.map((s, i) => ({
+        title: s.title,
+        header: PSST_OFFICIAL_HEADERS[i],
+        parts: diffSentences(s.body, PLAN_DOCUMENT_SECTIONS_REWORKED[i].body),
+      }));
   return (
     <div className="flex flex-col gap-6">
       {/* 일반현황·개요는 재작성 전/후로 갈리지 않는 값이라 좌우로 나누지 않고 위에 한 번만 둔다. */}
@@ -29,10 +44,10 @@ export function PlanCompareColumns({ itemInfo, announcement }){
       <p className="text-[11px] font-semibold text-[var(--muted-fg)]">
         <span className="text-[var(--danger)] line-through">빨간 취소선</span>은 빠지거나 바뀐 부분, <span className="text-[var(--ok)]">초록 배경</span>은 새로 들어간 부분이에요
       </p>
-      {PLAN_DOCUMENT_SECTIONS.map((s, i) => (
-        <div key={s.title} className="pt-5 border-t border-[var(--border)] first:pt-0 first:border-t-0">
-          <h2 className="font-display font-bold text-[14px] mb-1">{PSST_OFFICIAL_HEADERS[i]}</h2>
-          <DiffText parts={diffs[i]} />
+      {rows.map((row) => (
+        <div key={row.title} className="pt-5 border-t border-[var(--border)] first:pt-0 first:border-t-0">
+          <h2 className="font-display font-bold text-[14px] mb-1">{row.header}</h2>
+          <DiffText parts={row.parts} />
         </div>
       ))}
       {/* 재작성 대조 화면에서 표·그래프가 빠져 있었다(사용자 지적: "재작성하면 자꾸
@@ -109,10 +124,10 @@ function CompareCarousel({ before, after, prevAriaLabel = '재작성 전 보기'
 // 비교 박스(고정 aspect-[4/3])에 그대로 넣으면 인포그래픽 원본 비율과 안 맞아 위아래로
 // 빈 여백이 남는다(사용자 지적) — 프로토타입과 같은 방식으로, 이미지가 박스 너비에
 // 꽉 차게 채우고 세로로 넘치는 만큼은 스크롤하게 한다.
-function InfographicPreviewFill(){
+function InfographicPreviewFill({ src = null }){
   return (
     <div className="soft-scroll absolute inset-0 overflow-y-auto overflow-x-hidden bg-[#f2f4f6]">
-      <img src="/infographic-preview.png" alt="인포그래픽 예시" className="block w-full h-auto"/>
+      <img src={src || '/infographic-preview.png'} alt={src ? '인포그래픽' : '인포그래픽 예시'} className="block w-full h-auto"/>
     </div>
   );
 }
@@ -226,7 +241,7 @@ function BookCompare({ pages }){
 // (방향 결정 전엔 아무것도 안 함) 가로일 때만 슬라이드를 옆으로 밀고, 세로면 그대로
 // 둬서 원래 하던 세로 스크롤이 방해받지 않게 한다. 화살표 버튼은 항상 양쪽에서 다 쓸
 // 수 있다. 산출물이 하나뿐인 카테고리(원페이지)는 넘길 게 없으니 그냥 인포그래픽만 보여준다.
-export function ArtifactCarousel({ hasExecutable }){
+export function ArtifactCarousel({ hasExecutable, infoSrc = null, siteSrc = null }){
   const [slide, setSlide] = useState(0);
   const trackRef = useRef(null);
   const dragRef = useRef(null);
@@ -287,13 +302,13 @@ export function ArtifactCarousel({ hasExecutable }){
         <div ref={trackRef} className="flex transition-transform duration-300 ease-out" style={{ width: '200%', transform: `translateX(-${slide * 50}%)` }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}>
           <div className="w-1/2 flex-shrink-0 flex items-center justify-center p-2" style={{ height: stageHeight }}>
-            <img src="/infographic-preview.png" alt="인포그래픽 예시" className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" draggable={false}/>
+            <img src={infoSrc || '/infographic-preview.png'} alt={infoSrc ? '인포그래픽' : '인포그래픽 예시'} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" draggable={false}/>
           </div>
           <div className="w-1/2 flex-shrink-0 flex flex-col items-center justify-center p-2" style={{ height: stageHeight }}>
             {/* 화면이 카드를 꽉 채우도록 배율은 PrototypeFrame이 상자 너비를 재서 계산한다 —
                 고정 배율이면 남는 폭만큼 카드의 흰 배경이 옆에 띠처럼 보인다(사용자 지적). */}
             <div className="relative w-full h-full rounded-xl shadow-2xl bg-white overflow-hidden">
-              <PrototypeFrame className="w-full h-full"/>
+              <PrototypeFrame className="w-full h-full" src={siteSrc}/>
               {/* 프로토타입 화면은 iframe이라 그 위에서 시작한 드래그는 부모로 안 올라온다
                   (다른 문서라 브라우저가 막음). 드래그로 되돌아갈 수 있게 iframe 밖의 손잡이를
                   하나 두되, 줄(row)로 쌓으면 위쪽에 흰 띠가 생기므로 화면 위에 떠 있게 한다. */}
@@ -325,16 +340,23 @@ export function ArtifactCarousel({ hasExecutable }){
   );
 }
 
-export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOutcome, artifactOutcome, setDocOutcome, setArtifactOutcome, projectId, reworkCounts = {}, onRework }){
-  const docScore = DOC_SCORE_BY_OUTCOME[docOutcome];
-  const artifactScore = ARTIFACT_SCORE_BY_OUTCOME[artifactOutcome];
+export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOutcome, artifactOutcome, setDocOutcome, setArtifactOutcome, projectId, reworkCounts = {}, onRework, scores = null, reworkBudget = null, onScoresRefresh, artifact = null }){
+  // 서버 채점 결과가 있으면 그 값으로 판정한다(utils.js scoresFromResult) — 없으면 기존 고정 표.
+  const docScore = scores?.docScore || DOC_SCORE_BY_OUTCOME[docOutcome];
+  const artifactScore = scores?.artifactScore || ARTIFACT_SCORE_BY_OUTCOME[artifactOutcome];
+  const threshold = scores?.threshold ?? FINAL_THRESHOLD;
   const artifactRawTotal = artifactScore.autoCheck.raw + artifactScore.crossCheck.raw;
-  const finalTotal = docScore.raw + artifactRawTotal;
-  const passed = finalTotal >= FINAL_THRESHOLD;
+  // 서버가 총점을 직접 주면 그 값을 쓴다 — 층별 합이 반올림 때문에 총점과 어긋날 수 있다.
+  const finalTotal = scores?.total ?? (docScore.raw + artifactRawTotal);
+  const passed = finalTotal >= threshold;
   // E9: 산출물층을 이미 최선까지 재작성했는데도(더 오를 여지가 없는데도) 총점이
   // 기준에 못 미치면, 프로토타입만 다시 만들어선 기준에 이를 수 없다 — 버튼을
   // 막지는 않되 계획서 항목도 함께 고르라고 안내한다.
-  const showE9Hint = !passed && artifactOutcome === 'pass';
+  // E9: 산출물층이 이미 만점이면 프로토타입만 다시 만들어선 기준에 이를 수 없다는 안내.
+  // 예전엔 artifactOutcome(서버 overall_passed로 정해지는 pass/fail)만 봐서, 산출물 점수가
+  // 4.22/30인데도 "이미 최선까지 재작성했다"고 뜨는 경우가 있었다 — 실제 점수로 판단한다.
+  const artifactMaxTotal = artifactScore.autoCheck.max + artifactScore.crossCheck.max;
+  const showE9Hint = !passed && artifactMaxTotal > 0 && artifactRawTotal >= artifactMaxTotal;
   // 되돌릴 수 없음 확인 절차(시연 로그 steps[10].data.choices[1].confirm)에 쓸 짧은
   // 항목별 미달 요약 — "실현가능성 13/20"처럼 항목명+점수로 간결하게 늘어놓는다.
   const remainingShortfalls = [
@@ -346,7 +368,7 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
   const category = detectItemCategory(itemInfo && itemInfo.item);
   const hasExecutable = category !== 'onepage';
   const allTasks = [
-    ...WRITING_SUBTASKS.map((label) => ({ label, layer: '계획서' })),
+    ...DOC_REWORK_BUNDLES.map((label) => ({ label, layer: '계획서' })),
     ...(ARTIFACT_SUBTASKS_BY_CATEGORY[category] || ARTIFACT_SUBTASKS_BY_CATEGORY.webdev).map((label) => ({ label, layer: '프로토타입' })),
   ];
 
@@ -361,6 +383,11 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
   const [reworkDiff, setReworkDiff] = useState(null); // null 이전엔 한 번도 재작성 안 함
   const [diffExpanded, setDiffExpanded] = useState(false);
   const [reworkFromTotal, setReworkFromTotal] = useState(null); // 변경 내역 헤더의 "X → Y" 중 X
+  // 재작성 응답의 changed.sections — 비교 모달이 실제 전/후를 그리는 데 쓴다(없으면 고정 문단).
+  const [sectionDiff, setSectionDiff] = useState(null);
+  // 산출물 열람·비교에 띄울 실제 파일. 없으면 예시 파일로 돌아간다(ArtifactResult와 같은 방식).
+  const [infoUrl, infoFailed] = useArtifactFile(artifact?.infographic_path, { expect: 'image' });
+  const [siteUrl, siteFailed] = useArtifactFile(artifact?.executable_path);
   // 웹페이지(프로토타입)·인포그래픽 중 실제로 체크했던 쪽만 대조 화면에 보여주기 위한
   // 기록 — 둘 다 "프로토타입" 층으로 묶여 있어(ARTIFACT_SUBTASKS_BY_CATEGORY) 어느 걸
   // 골랐는지 따로 남겨두지 않으면 구분이 안 된다(사용자 지적: 안 고른 쪽은 여백만 남음).
@@ -376,7 +403,9 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
   // 재수행 횟수 상한 — 계획서 화면(6번)·산출물 화면(8번)에서 이미 쓴 횟수까지 전역
   // 스토어에서 함께 세므로(useWorkflowStore.reworkCounts), 여기 오기 전에 다 써버린
   // Task는 이 화면에서도 고를 수 없다.
-  const isCapped = (label) => isRerunCapped(reworkCounts, label);
+  // 화면에 적는 상한값도 서버가 준 값을 쓴다(관리자가 바꾸면 같이 따라간다).
+  const cap = reworkBudget?.cap ?? RERUN_CAP;
+  const isCapped = (label) => isRerunCapped(reworkCounts, label, reworkBudget, TASK_KEY_BY_LABEL);
   const allCapped = allTasks.every(({ label }) => isCapped(label));
 
   const toggleTask = (label) => {
@@ -394,9 +423,10 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
   // 골랐을 때 하나만(프로토타입) 보여주고 종합 판정으로 넘어가 버리면 계획서 쪽
   // 대조 결과를 놓친다(사용자 지적) — viewerOpen을 'both'로 두고, 모달 안에서
   // 계획서·프로토타입 비교를 위아래로 둘 다 보여준다.
-  // POST /projects/{id}/retry-task 실제 호출(app/routers/projects.py retry_task) — 예전엔
-  // setTimeout으로 스피너·비교 모달만 흉내 내고 서버 호출이 없어 DB가 안 바뀌었다. 아래
-  // 비교 모달(TASK_REWORK_SUMMARY 등 고정 시연 문구)은 그대로 두고, 실제 반영 여부만 API로 확인한다.
+  // POST /projects/{id}/retry-task 실제 호출(app/routers/projects.py retry_task).
+  // [변경] 응답의 changed(실제 전/후 값)로 "변경 내역"을 채운다 — 예전엔 응답을 버리고
+  // TASK_REWORK_SUMMARY 고정 문구를 썼기 때문에 몇 번을 재작성해도 같은 문장이 나왔다.
+  // 서버가 쓸 만한 전/후를 안 준 task_key는 그때만 고정 문구로 돌아간다.
   const handleRewrite = async () => {
     const picked = checkedTasks.filter((label) => !isCapped(label));
     if (picked.length === 0) return;
@@ -405,8 +435,11 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
     setRunningTasks(picked);
     setCheckedTasks([]);
     const taskKeys = [...new Set(picked.map((label) => TASK_KEY_BY_LABEL[label]).filter(Boolean))];
+    const changedByKey = {};
     try {
-      if (projectId) await Promise.all(taskKeys.map((key) => retryTask(projectId, key)));
+      const responses = projectId ? await Promise.all(taskKeys.map((key) => retryTask(projectId, key))) : [];
+      // task_key -> 그 호출이 돌려준 changed. 라벨은 TASK_KEY_BY_LABEL로 자기 task_key를 찾는다.
+      taskKeys.forEach((key, i) => { changedByKey[key] = responses[i]?.changed || null; });
     } catch (err) {
       console.error('재작성 요청이 실패했어요', err);
       window.alert(err.message || '재작성에 실패했어요. 다시 시도해 주세요.');
@@ -416,15 +449,19 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
     }
     // 실제로 재시도가 나간 뒤에만 횟수를 센다 — 위 catch로 빠진 실패 호출은 세지 않는다.
     if (onRework) onRework(picked);
+    // 서버 재채점 결과를 다시 받아온다(아래 setDocOutcome/setArtifactOutcome은 서버 점수가
+    // 없을 때 쓰는 고정 표 경로용 — 실제 점수가 있으면 그쪽이 우선한다).
+    if (onScoresRefresh) await onScoresRefresh();
     setRunningTasks([]);
     setReworkDiff(allTasks.map(({ label, layer }) => {
       const changed = picked.includes(label);
-      const summary = TASK_REWORK_SUMMARY[label] || { before: '변경 없음', after: '변경 없음' };
-      return changed
-        ? { label, layer, before: summary.before, after: summary.after, changed: true }
-        : { label, layer, before: '변경 없음', after: '변경 없음', changed: false };
+      if (!changed) return { label, layer, before: '변경 없음', after: '변경 없음', changed: false };
+      const fromServer = reworkDiffFromChanged(changedByKey[TASK_KEY_BY_LABEL[label]]);
+      const summary = fromServer || TASK_REWORK_SUMMARY[label] || { before: '변경 없음', after: '변경 없음' };
+      return { label, layer, before: summary.before, after: summary.after, changed: true, fromServer: !!fromServer };
     }));
     setReworkFromTotal(fromTotal);
+    setSectionDiff(changedByKey['writing']?.sections || null);
     setReworkedParts({
       plan: pickedLayers.has('계획서'),
       infographic: picked.includes('인포그래픽 제작'),
@@ -454,13 +491,13 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
   const artifactReasons = [...ARTIFACT_SCORE_BY_OUTCOME.fail.autoCheck.reasons, ...ARTIFACT_SCORE_BY_OUTCOME.fail.crossCheck.reasons];
   const comparePages = [];
   if (reworkedParts.plan) {
-    comparePages.push({ key: 'plan', label: '사업계획서', content: <PlanCompareColumns itemInfo={itemInfo} announcement={announcement} /> });
+    comparePages.push({ key: 'plan', label: '사업계획서', content: <PlanCompareColumns sectionDiff={sectionDiff} itemInfo={itemInfo} announcement={announcement} /> });
   }
   if (reworkedParts.infographic) {
-    comparePages.push({ key: 'infographic', label: '인포그래픽', content: <ArtifactPartCompare reasons={artifactReasons} render={() => <InfographicPreviewFill />} /> });
+    comparePages.push({ key: 'infographic', label: '인포그래픽', content: <ArtifactPartCompare reasons={artifactReasons} render={() => <InfographicPreviewFill src={infoUrl} />} /> });
   }
   if (reworkedParts.prototype) {
-    comparePages.push({ key: 'prototype', label: '웹페이지(프로토타입)', content: <ArtifactPartCompare reasons={artifactReasons} render={() => <PrototypeFrame className="absolute inset-0"/>} /> });
+    comparePages.push({ key: 'prototype', label: '웹페이지(프로토타입)', content: <ArtifactPartCompare reasons={artifactReasons} render={() => <PrototypeFrame className="absolute inset-0" src={siteUrl}/>} /> });
   }
 
   return (
@@ -477,6 +514,7 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
         </div>
       </div>
 
+      {(infoFailed || siteFailed) && <ArtifactLoadError />}
       <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide mb-2">종합 평가</p>
       <p className="text-[14px] text-[var(--muted-fg)] leading-snug mb-1.5">『{announcement ? announcement.title : ''}』</p>
       <h1 className="font-display font-bold text-[26px] md:text-[30px] mb-3">제출 전 점검 결과예요</h1>
@@ -491,7 +529,7 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
         </div>
         <div className="flex items-end gap-1.5">
           <p className={`font-display font-bold text-[32px] leading-none ${passed ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>{finalTotal}</p>
-          <p className="text-[13px] text-[var(--muted-fg)] mb-0.5">/ 100점 (내부 기준 {FINAL_THRESHOLD})</p>
+          <p className="text-[13px] text-[var(--muted-fg)] mb-0.5">/ 100점 (내부 기준 {threshold})</p>
         </div>
       </div>
 
@@ -519,11 +557,11 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
       {!passed && (
         <div className="rounded-2xl border border-[var(--border)] p-5 mb-6">
           <p className="text-[12.5px] font-bold text-[var(--danger)] mb-1">보완이 필요한 항목</p>
-          <p className="text-[11.5px] text-[var(--muted-fg)] mb-3">항목마다 다시 만들기는 {RERUN_CAP}회까지만 가능해요 — 앞 단계에서 쓴 횟수도 함께 셉니다</p>
+          <p className="text-[11.5px] text-[var(--muted-fg)] mb-3">항목마다 다시 만들기는 {cap}회까지만 가능해요 — 앞 단계에서 쓴 횟수도 함께 셉니다</p>
           <div className="flex flex-col gap-2.5 mb-4">
             {allTasks.map(({ label, layer }) => {
               const isRunning = runningTasks.includes(label);
-              const left = rerunLeftOf(reworkCounts, label);
+              const left = rerunLeftOf(reworkCounts, label, reworkBudget, TASK_KEY_BY_LABEL);
               const capped = left <= 0;
               // 재작성 대조 모달을 X로 닫고 나면, 방금 체크했던 항목이 실제로 반영됐는지
               // 구분할 UI가 없었다(사용자 지적) — 가장 최근 재작성에서 바뀐 항목(reworkDiff의
@@ -543,7 +581,7 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
                   <span>
                     <span className="flex-shrink-0 text-[11px] font-semibold text-[var(--muted-fg)] mr-1.5">［{layer}］</span>
                     {isRunning ? `${label} 재작성 중…` : label}
-                    {!isRunning && <RerunLeftBadge left={left} />}
+                    {!isRunning && <RerunLeftBadge left={left} cap={cap} />}
                     {!isRunning && justReworked && (
                       <span className="inline-flex items-center gap-0.5 ml-1.5 text-[11px] font-semibold text-[var(--ok)]">
                         <Icon name="check" size={12}/> 방금 재작성함
@@ -559,13 +597,13 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
           </div>
           {allCapped && (
             <p className="text-[12.5px] text-[var(--fg)] leading-relaxed mb-4">
-              모든 항목이 재작성 {RERUN_CAP}회를 다 썼어요. 지금 점수로 검수 단계로 넘어가는 것만 가능합니다.
+              모든 항목이 재작성 {cap}회를 다 썼어요. 지금 점수로 검수 단계로 넘어가는 것만 가능합니다.
             </p>
           )}
           <div className="flex items-center gap-3 flex-wrap">
             <button onClick={handleRewrite} disabled={allCapped || checkedTasks.length === 0 || runningTasks.length > 0}
               className="rounded-lg border border-[var(--border)] px-4 py-2.5 text-[13.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--bg)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-              {allCapped ? `재작성 상한 ${RERUN_CAP}회 도달` : '선택 항목 다시 만들기'}
+              {allCapped ? `재작성 상한 ${cap}회 도달` : '선택 항목 다시 만들기'}
             </button>
             <button onClick={handleProceedClick}
               className="rounded-lg px-4 py-2.5 text-[13.5px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">
@@ -666,7 +704,7 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
             </div>
           ) : (
             <div className="relative" style={{ width: 'min(92vw, 900px)' }}>
-              <ArtifactCarousel hasExecutable={hasExecutable} />
+              <ArtifactCarousel hasExecutable={hasExecutable} infoSrc={infoUrl} siteSrc={siteUrl} />
             </div>
           )}
         </div>

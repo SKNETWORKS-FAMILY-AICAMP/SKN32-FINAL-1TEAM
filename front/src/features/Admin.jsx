@@ -499,6 +499,9 @@ function OpsTab(){
 
 // GET /admin/items 응답의 last_updated(ISO)를 "MM-DD HH:mm" 짧은 표기로 바꾼다.
 const shortUpdated=iso=>iso?iso.slice(5,16).replace('T',' '):'-';
+// 상세 모달의 실행 로그 갱신 주기. 생성은 초 단위로 움직이지 않아 3초면 충분하고,
+// 모달이 열려 있는 동안 + 아직 진행 중일 때만 돈다.
+const EXEC_POLL_MS=3000;
 
 function ProgressTab({focusProjectId=null}){
   const [items,setItems]=useState([]);
@@ -509,6 +512,12 @@ function ProgressTab({focusProjectId=null}){
   const [scoreError,setScoreError]=useState('');
   const [detailId,setDetailId]=useState(focusProjectId);
   const [restoring,setRestoring]=useState(null);
+  // 상세 모달의 "실시간 실행 상태" — 예전엔 안내 문구만 있었는데(실시간 오케스트레이터가
+  // 없던 시절), 이제 agent_executions에 Task별 실행이 쌓이므로 그 프로젝트 것만 뽑아
+  // 그대로 보여준다(GET /admin/agent-executions?project_id=). 아직 도는 중이면
+  // EXEC_POLL_MS마다 다시 불러 화면이 따라간다.
+  const [execRows,setExecRows]=useState(null); // null=불러오는 중, []=기록 없음
+  const [execError,setExecError]=useState(false);
 
   const loadItems=()=>{
     setLoading(true);setLoadError(false);
@@ -526,6 +535,35 @@ function ProgressTab({focusProjectId=null}){
       .catch(()=>{if(active)setScoreError('점수 이력을 불러오지 못했어요. 창을 닫고 다시 열어 주세요.')});
     return ()=>{active=false};
   },[scoreId]);
+
+  // 모달이 열려 있는 동안만 돈다. 아직 진행 중인 프로젝트면 주기적으로 다시 받고,
+  // 끝났거나(완료·실패) 보관중이면 한 번만 받고 멈춘다 — 안 바뀔 값을 계속 부르지 않는다.
+  const detailItem=items.find(it=>it.project_id===detailId)||null;
+  // '진행중'일 때만 돈다(admin.py status_label: 공고 매칭 전/진행중/판단 대기/완료/실패/중단).
+  // 나머지는 서버가 스스로 움직이지 않는 상태라, 다시 불러도 같은 값이 온다.
+  const detailRunning=detailItem!=null&&!detailItem.archived&&detailItem.status_label==='진행중';
+  // effect 의존성에 넣으면 이 값이 바뀔 때마다 effect가 다시 돌아 목록이 "불러오는 중"으로
+  // 깜빡인다 — 값만 최신으로 들고 읽는다.
+  const detailRunningRef=useRef(detailRunning);
+  detailRunningRef.current=detailRunning;
+  useEffect(()=>{
+    if(detailId==null)return;
+    let active=true,timer=null;
+    setExecRows(null);setExecError(false);
+    const load=()=>api.get(`/admin/agent-executions?project_id=${detailId}&limit=30`)
+      .then(rows=>{
+        if(!active)return;
+        setExecRows(rows);
+        // 진행 중이라고 알고 있어도, 실행 로그에 도는 Task가 하나도 없으면 끝난 것이다.
+        // items는 모달을 여는 동안 갱신되지 않아서 status_label만 믿으면 계속 폴링한다.
+        const stillRunning=rows.some(r=>r.status==='in_progress');
+        if(detailRunningRef.current&&stillRunning)timer=setTimeout(load,EXEC_POLL_MS);
+        else if(detailRunningRef.current&&!stillRunning)loadItems(); // 끝났으니 상태도 갱신
+      })
+      .catch(()=>{if(active){setExecError(true);setExecRows([])}});
+    load();
+    return ()=>{active=false;clearTimeout(timer)};
+  },[detailId]);
 
   const handleRestore=async id=>{
     setRestoring(id);
@@ -627,11 +665,52 @@ function ProgressTab({focusProjectId=null}){
             </div>
             <p className="text-[12.5px] text-[var(--muted-fg)] mb-5">마지막 갱신: {shortUpdated(detail.last_updated)}</p>
             {detail.match_status==='failed'&&<div role="alert" className="rounded-xl border border-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_6%,white)] p-3.5 text-[13px] mb-5 text-[var(--danger)]"><strong>작업 실패</strong><p className="mt-1 break-words">{detail.failure_reason||'실패 원인이 기록되지 않았습니다.'}</p></div>}
-            {/* 지금 어느 Agent가 뭘 하고 있는지·오류 로그는 실시간 오케스트레이터가 아직 없어
-                지어낼 수 없다(schemas.py ItemOut 주석 참고) — 안내 문구로만 그 사실을 알린다. */}
-            <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-2">실시간 실행 상태</p>
-            <div className="rounded-xl border border-[var(--border)] p-3.5 text-[13px] mb-5 text-[var(--muted-fg)]">
-              현재는 마지막 실행 단계와 시도 횟수를 확인할 수 있습니다. 작업 실패 사유는 위에 표시되며, Agent별 상세 오류 로그는 아직 저장되지 않습니다.
+            {/* 실시간 실행 상태 — agent_executions에 쌓인 이 프로젝트의 Task 실행을 최신순으로
+                그대로 보여준다. 진행 중이면 위 useEffect가 EXEC_POLL_MS마다 다시 받아 갱신한다.
+                프롬프트·응답 원문은 서버가 안 내려주므로(admin.py list_agent_executions) 여기에도 없다. */}
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <p className="text-[13px] font-semibold text-[var(--muted-fg)]">실시간 실행 상태</p>
+              {detailRunning&&execRows?.some(r=>r.status==='in_progress')&&<span className="flex items-center gap-1.5 text-[11.5px] text-[var(--ok)]">
+                <span className="live-dot" aria-hidden="true"></span>{EXEC_POLL_MS/1000}초마다 갱신 중
+              </span>}
+            </div>
+            <div className="rounded-xl border border-[var(--border)] overflow-hidden mb-5">
+              {execRows==null
+                ?<p className="p-3.5 text-[13px] text-[var(--muted-fg)]">실행 기록을 불러오는 중이에요…</p>
+                :execError
+                ?<p className="p-3.5 text-[13px] text-[var(--muted-fg)]">실행 기록을 불러오지 못했어요. 창을 닫고 다시 열어 주세요.</p>
+                :execRows.length===0
+                ?<p className="p-3.5 text-[13px] text-[var(--muted-fg)]">아직 실행된 Task가 없습니다. 생성이 시작되면 여기에 쌓입니다.</p>
+                :<div className="divide-y divide-[var(--border)] max-h-64 overflow-y-auto">
+                  {execRows.map(r=>{
+                    const failed=r.status==='failed';
+                    const running=r.status==='in_progress';
+                    return (
+                      <div key={r.execution_id} className="p-3 text-[12.5px]">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="font-semibold text-[13px]">
+                            {r.task_key||'—'}
+                            <span className="ml-1.5 font-normal text-[var(--muted-fg)]">{r.agent_name}</span>
+                            {r.rerun_type==='rerun'&&<span className="ml-1.5 text-[11px] font-semibold text-[var(--primary)]">재수행</span>}
+                          </span>
+                          <span className={'text-[11.5px] font-semibold flex-shrink-0 '+toneText[failed?'danger':running?'primary':'ok']}>
+                            {failed?'실패':running?'진행 중':'완료'}
+                          </span>
+                        </div>
+                        <p className="text-[11.5px] text-[var(--muted-fg)] mt-0.5">
+                          {shortUpdated(r.started_at)}
+                          {r.model_used&&<span> · {r.model_used}</span>}
+                          {r.token_usage!=null&&<span> · {Number(r.token_usage).toLocaleString()} tok</span>}
+                        </p>
+                        {failed&&<p className="text-[11.5px] text-[var(--danger)] mt-1 break-words">
+                          {r.error_kind&&<span className="font-semibold">［{r.error_kind}］ </span>}
+                          {r.error_reason||'오류 사유가 기록되지 않았습니다.'}
+                          {r.retryable&&<span className="text-[var(--muted-fg)]"> · 자동 재개 대상</span>}
+                        </p>}
+                      </div>
+                    );
+                  })}
+                </div>}
             </div>
             <div className="pt-4 border-t border-[var(--border)]">
               {isArchived

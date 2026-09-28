@@ -140,6 +140,12 @@ async function downloadFile(path,filename){
   URL.revokeObjectURL(url);
 }
 
+// GET /uploads/{filename} — 서버가 만든 산출물 파일(프로토타입 HTML·인포그래픽 이미지).
+// 이 경로는 로그인과 소유권 검사를 거치는데(back/app/routers/uploads.py), 세션 쿠키가
+// SameSite=lax라 <img src>/<iframe src>로 직접 걸면 쿠키가 안 실려 401이 난다 — 계획서
+// 미리보기(fetchPlanDocumentPdf)와 같은 방식으로 Blob으로 받아서 objectURL로 띄운다.
+export const fetchUploadBlob=(path)=>fetchBlob(path);
+
 // GET /projects/{id}/plan-document.docx 에서 초기창업패키지(일반형)/예비창업패키지 공식
 // 양식(별첨1) 구조로 채운 진짜 docx를 내려준다(app/plan_document_export.py) — ReviewScreen의
 // 더미(dummyDeliverables.js) 대신 이 함수를 쓰면 실제 양식이 반영된 파일을 받는다.

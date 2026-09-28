@@ -5,16 +5,61 @@ import {Icon} from '../../components/Icons.jsx';
 import {SiteMock,RerunLeftBadge} from './shared.jsx';
 import {detectItemCategory,buildCodeCheckItems,isRerunCapped,rerunLeftOf} from './utils.js';
 import {ARTIFACT_CATEGORY_COPY,ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,EXECUTABLE_COPY,PROTOTYPE_PAGE,RERUN_CAP} from './data.js';
-import {retryTask} from '../../api.js';
+import {retryTask,fetchUploadBlob} from '../../api.js';
 
 // ARTIFACT_SUBTASKS_BY_CATEGORY(data.js)의 라벨 -> app/schemas.py RetryTaskRequest.task_key.
 const TASK_KEY_BY_LABEL = { '실행 파일 제작': 'implement_prototype', '인포그래픽 제작': 'implement_infographic' };
 
-export function InfographicMock(){
+// src를 주면 서버가 만든 실제 인포그래픽을, 없으면 예시 이미지를 띄운다.
+export function InfographicMock({ src = null }){
   return (
     <div className="absolute inset-0 flex items-center justify-center p-6" style={{ background:'#f2f4f6' }}>
-      <img src="/infographic-preview.png" alt="인포그래픽 예시" className="max-w-full max-h-full rounded-sm shadow-xl"/>
+      <img src={src || '/infographic-preview.png'} alt={src ? '인포그래픽' : '인포그래픽 예시'} className="max-w-full max-h-full rounded-sm shadow-xl"/>
     </div>
+  );
+}
+
+// 산출물 파일(/uploads/...)을 Blob으로 받아 화면에 띄울 주소로 바꾼다. 경로가 없거나
+// 못 받으면 null을 돌려주고, 호출한 쪽이 기존 예시 파일로 돌아간다.
+// objectURL은 띄우는 동안만 유효하므로 경로가 바뀌거나 화면을 벗어나면 반드시 회수한다.
+// [url, failed]를 돌려준다. failed는 "경로는 있는데 못 받았다"일 때만 true다 — 경로 자체가
+// 없는 경우(아직 생성 전, 렌더 테스트)와 구분해야 한다. 실패했는데 조용히 예시 파일로
+// 돌아가면 사용자는 그 예시를 자기 산출물로 오해한다.
+// expect='image'를 주면 받아온 파일이 실제 이미지인지까지 본다. 서버의 구현 Agent가
+// 인포그래픽도 .html로 만들어 보내는 경우가 있는데(app/agents.py run_implement_agent_retry),
+// 그대로 <img>에 걸면 깨진 이미지 자리만 남고 사용자는 이유를 알 수 없다.
+export function useArtifactFile(path, { expect } = {}){
+  const [state, setState] = useState({ url: null, failed: false });
+  useEffect(() => {
+    if (!path) { setState({ url: null, failed: false }); return; }
+    let cancelled = false, objectUrl = '';
+    setState({ url: null, failed: false });
+    fetchUploadBlob(path).then((blob) => {
+      if (cancelled) return;
+      if (expect === 'image' && blob.type && !blob.type.startsWith('image/')) {
+        console.error('인포그래픽 자리에 이미지가 아닌 파일이 왔어요', path, blob.type);
+        setState({ url: null, failed: true });
+        return;
+      }
+      objectUrl = URL.createObjectURL(blob);
+      setState({ url: objectUrl, failed: false });
+    }).catch((err) => {
+      if (cancelled) return;
+      console.error('산출물 파일을 불러오지 못했어요', path, err);
+      setState({ url: null, failed: true });
+    });
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [path, expect]);
+  return [state.url, state.failed];
+}
+
+// 산출물 파일을 못 받았을 때 화면에 대신 띄우는 한 줄 — 지금 보이는 그림이 진짜 산출물이
+// 아니라는 사실을 알린다.
+export function ArtifactLoadError(){
+  return (
+    <p role="alert" className="mb-4 rounded-xl border border-[var(--warn)] bg-[color-mix(in_srgb,var(--warn)_8%,white)] px-4 py-3 text-[12.5px] text-[var(--fg)] leading-relaxed">
+      산출물 파일을 불러오지 못해 예시 화면을 대신 보여주고 있어요. 로그인이 풀렸을 수 있으니 새로고침해 주세요.
+    </p>
   );
 }
 
@@ -28,7 +73,7 @@ export function ArtifactProgress({onComplete,itemInfo}){return <Preparation kind
 // 7/15)와 steps[11]/steps[13](재작성 후, 자동검증 15/15·대조 11/15)을 그대로 옮겼다.
 // 대조 사유(누락 기능 2건)도 시연 로그 featureMatch.findings 그대로다 — 계획서
 // 한 벌만으로는 나올 수 없는, 두 산출물을 독립적으로 대조해야만 나오는 지적이다.
-export function PrototypeFrame({ className = '' }){
+export function PrototypeFrame({ className = '', src = null }){
   const boxRef = useRef(null);
   const [boxW, setBoxW] = useState(0);
   useEffect(() => {
@@ -45,7 +90,7 @@ export function PrototypeFrame({ className = '' }){
     <div ref={boxRef} className={`soft-scroll overflow-y-auto overflow-x-hidden ${className}`} style={{ scrollbarGutter: 'auto' }}>
       <div style={{ width: boxW || '100%', height: PROTOTYPE_PAGE.h * scale }}>
         {scale > 0 && (
-          <iframe src="/prototype-preview.html" title="프로토타입 화면 예시" sandbox="allow-scripts"
+          <iframe src={src || '/prototype-preview.html'} title={src ? '프로토타입 화면' : '프로토타입 화면 예시'} sandbox="allow-scripts"
             style={{ width: PROTOTYPE_PAGE.w, height: PROTOTYPE_PAGE.h, border: 'none', transform: `scale(${scale})`, transformOrigin: 'top left' }}/>
         )}
       </div>
@@ -53,25 +98,26 @@ export function PrototypeFrame({ className = '' }){
   );
 }
 
-export function ResultPreview({kind,onClose}){
+export function ResultPreview({kind,onClose,siteSrc=null,infoSrc=null}){
  const ref=useRef(null);
  useEffect(()=>{const d=ref.current;d?.showModal();return()=>d?.close()},[]);
  return <dialog ref={ref} className="result-preview-lightbox" onCancel={onClose}
    onClick={(e)=>{ if (e.target===ref.current) onClose(); }} aria-label="산출물 미리보기">
    <button onClick={onClose} aria-label="미리보기 닫기" className="result-preview-lightbox-close"><Icon name="close"/></button>
    {kind==='site'
-     ? <PrototypeFrame className="result-preview-lightbox-frame"/>
-     : <img src="/infographic-preview.png" alt="인포그래픽 예시" className="result-preview-lightbox-img"/>}
+     ? <PrototypeFrame className="result-preview-lightbox-frame" src={siteSrc}/>
+     : <img src={infoSrc || '/infographic-preview.png'} alt={infoSrc ? '인포그래픽' : '인포그래픽 예시'} className="result-preview-lightbox-img"/>}
  </dialog>;
 }
 
-export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, scoreOutcome = 'fail', projectId, reworkCounts = {}, onRework }){
+export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, scoreOutcome = 'fail', projectId, reworkCounts = {}, onRework, scores = null, reworkBudget = null, onScoresRefresh, artifact = null }){
   const [preview,setPreview]=useState(null);
   const category = detectItemCategory(itemInfo && itemInfo.item);
   const hasExecutable = category !== 'onepage';
   const copy = ARTIFACT_CATEGORY_COPY[category];
-  const artifactScore = ARTIFACT_SCORE_BY_OUTCOME[scoreOutcome];
-  const codeCheckItems = buildCodeCheckItems(category, scoreOutcome);
+  // 서버 채점이 끝났으면 그 값을, 아직이면 기존 고정 표를 쓴다(utils.js scoresFromResult).
+  const artifactScore = scores?.artifactScore || ARTIFACT_SCORE_BY_OUTCOME[scoreOutcome];
+  const codeCheckItems = scores?.codeCheckItems || buildCodeCheckItems(category, scoreOutcome);
   const passedItems = codeCheckItems.filter((item) => item.passed);
   const failedItems = codeCheckItems.filter((item) => !item.passed);
   const missingFeatures = artifactScore.crossCheck.reasons;
@@ -85,9 +131,14 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
   // 있고, 박스(테두리 카드) 대신 구역만 나눈다(사용자 지적: 여백만 커지는 사이드바
   // 카드 말고 그냥 구역으로).
   const [panelOpen, setPanelOpen] = useState(true);
+  // 서버가 만든 실제 산출물 파일. 없으면(아직 생성 전이거나 못 받으면) 예시 파일로 돌아간다.
+  const [infoUrl, infoFailed] = useArtifactFile(artifact?.infographic_path, { expect: 'image' });
+  const [siteUrl, siteFailed] = useArtifactFile(artifact?.executable_path);
 
   // 재작성 상한(RERUN_CAP = 항목마다 1회)에 닿은 항목은 고를 수 없다 — PlanForm과 같은 규칙.
-  const isCapped = (label) => isRerunCapped(reworkCounts, label);
+  // 화면에 적는 상한값도 서버가 준 값을 쓴다(관리자가 바꾸면 같이 따라간다).
+  const cap = reworkBudget?.cap ?? RERUN_CAP;
+  const isCapped = (label) => isRerunCapped(reworkCounts, label, reworkBudget, TASK_KEY_BY_LABEL);
   const allCapped = subtasks.every(isCapped);
 
   const toggleTask = (label) => {
@@ -107,6 +158,7 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
       if (projectId) await Promise.all(taskKeys.map((key) => retryTask(projectId, key)));
       // 실제로 재시도가 나간 뒤에만 횟수를 센다 — 실패한 호출로 상한을 깎지 않는다.
       if (onRework) onRework(picked);
+      if (onScoresRefresh) await onScoresRefresh();
       setCompletedTasks((prev) => [...new Set([...prev, ...picked])]);
     } catch (err) {
       console.error('재작성 요청이 실패했어요', err);
@@ -189,12 +241,12 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
 
           <div className="rounded-xl border border-[var(--border)] p-4">
             <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-1">다시 준비할 항목</p>
-            <p className="text-[11px] text-[var(--muted-fg)] mb-3">항목마다 다시 만들기는 {RERUN_CAP}회까지만 가능해요</p>
+            <p className="text-[11px] text-[var(--muted-fg)] mb-3">항목마다 다시 만들기는 {cap}회까지만 가능해요</p>
             <div className="flex flex-col gap-2">
               {subtasks.map((label) => {
                 const isRunning = runningTasks.includes(label);
                 const isDone = !isRunning && completedTasks.includes(label);
-                const left = rerunLeftOf(reworkCounts, label);
+                const left = rerunLeftOf(reworkCounts, label, reworkBudget, TASK_KEY_BY_LABEL);
                 const capped = left <= 0;
                 return (
                   <label key={label} className={`flex items-center gap-2.5 text-[13px] ${isRunning || capped ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>
@@ -208,7 +260,7 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
                     <span>
                       {isRunning ? `${label} 재작성 중…` : label}
                       {isDone && <span className="ml-1.5 text-[11.5px] font-semibold text-[var(--ok)]">✓ 재작성 완료</span>}
-                      {!isRunning && <RerunLeftBadge left={left} />}
+                      {!isRunning && <RerunLeftBadge left={left} cap={cap} />}
                     </span>
                   </label>
                 );
@@ -216,11 +268,11 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
             </div>
             <button onClick={handleRewrite} disabled={allCapped || checkedTasks.length === 0 || runningTasks.length > 0}
               className="w-full mt-3 rounded-lg border border-[var(--border)] py-2.5 text-[13.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--bg)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-              {allCapped ? `재작성 상한 ${RERUN_CAP}회 도달` : '선택 항목 재작성'}
+              {allCapped ? `재작성 상한 ${cap}회 도달` : '선택 항목 재작성'}
             </button>
             {allCapped && (
               <p className="mt-2 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">
-                모든 항목의 재작성 {RERUN_CAP}회를 다 썼어요. 지금 상태로 종합 평가를 확인해 주세요.
+                모든 항목의 재작성 {cap}회를 다 썼어요. 지금 상태로 종합 평가를 확인해 주세요.
               </p>
             )}
           </div>
@@ -228,6 +280,7 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
         )}
 
         <div className="flex flex-col">
+          {(infoFailed || siteFailed) && <ArtifactLoadError />}
           <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide mb-2">산출물</p>
           <p className="text-[14px] text-[var(--muted-fg)] leading-snug mb-1.5">『{announcement ? announcement.title : ''}』</p>
           <h1 className="font-display font-bold text-[26px] md:text-[30px] mb-3">프로토타입이 준비됐어요</h1>
@@ -238,13 +291,13 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
           <div className={`flex-1 grid gap-6 ${hasExecutable ? 'sm:grid-cols-2' : 'sm:grid-cols-1 max-w-md'}`}>
             <div className="flex flex-col rounded-2xl border border-[var(--border)] bg-white overflow-hidden">
               <div className="relative flex-1 aspect-[4/3] overflow-hidden">
-                <InfographicMock />
+                <InfographicMock src={infoUrl} />
               </div>
               <div className="p-4">
                 <p className="font-bold text-[14.5px] mb-1">인포그래픽</p>
                 <p className="text-[12.5px] text-[var(--muted-fg)] mb-3">사업계획서에 삽입할 요약 인포그래픽입니다</p>
                 <div className="flex items-center justify-between text-[12px] font-mono text-[var(--muted-fg)]">
-                  <span>infographic.png</span>
+                  <span>{(artifact?.infographic_path||'infographic.png').split('/').pop()}</span>
                   <button onClick={()=>setPreview("info")} className="font-semibold text-[var(--primary)] hover:underline">미리보기</button>
                 </div>
               </div>
@@ -253,13 +306,13 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
             {hasExecutable && (
               <div className="flex flex-col rounded-2xl border border-[var(--border)] bg-white overflow-hidden">
                 <div className="relative flex-1 aspect-[4/3] overflow-hidden">
-                  <SiteMock />
+                  <SiteMock src={siteUrl} />
                 </div>
                 <div className="p-4">
                   <p className="font-bold text-[14.5px] mb-1">{EXECUTABLE_COPY.title}</p>
                   <p className="text-[12.5px] text-[var(--muted-fg)] mb-3">{EXECUTABLE_COPY.desc}</p>
                   <div className="flex items-center justify-between text-[12px] font-mono text-[var(--muted-fg)]">
-                    <span>index.html</span>
+                    <span>{(artifact?.executable_path||'index.html').split('/').pop()}</span>
                     <button onClick={()=>setPreview("site")} className="font-semibold text-[var(--primary)] hover:underline">크게 보기</button>
                   </div>
                 </div>
@@ -278,7 +331,7 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
           종합 평가 확인하기
         </button>
       </div>
-      {preview&&<ResultPreview kind={preview} onClose={()=>setPreview(null)}/>}
+      {preview&&<ResultPreview kind={preview} onClose={()=>setPreview(null)} siteSrc={siteUrl} infoSrc={infoUrl}/>}
     </section>
   );
 }

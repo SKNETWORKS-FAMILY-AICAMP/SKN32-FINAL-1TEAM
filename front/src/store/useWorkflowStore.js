@@ -49,6 +49,10 @@ export const useWorkflowStore = create((set) => ({
       return { reworkCounts: next };
     }),
 
+  // 재작성 횟수는 프로젝트마다 따로 센다 — 카운트 키가 묶음 이름뿐이라 프로젝트를 바꿔
+  // 열면 앞 프로젝트에서 쓴 횟수가 그대로 따라붙는다(다른 프로젝트인데 상한 도달로 잠김).
+  resetReworkCounts: () => set({ reworkCounts: {} }),
+
   resetScoreOutcome: (v) => set({ scoreOutcome: v, docOutcome: v, artifactOutcome: v }),
   resetProject: () =>
     set({ projectId: null, itemInfo: null, announcement: null, checkedFailedTitles: [], pipelineResult: null, matchCandidates: null, returnToDashboard: false, verdictPending: false, reworkCounts: {} }),

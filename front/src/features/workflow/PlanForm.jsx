@@ -4,12 +4,15 @@ import {Icon} from '../../components/Icons.jsx';
 import Preparation from '../../components/Preparation.jsx';
 import {buildGeneralInfo,buildOverview,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
 import {RerunLeftBadge} from './shared.jsx';
-import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_TABLE_EXAMPLE,RERUN_CAP,SCORE_DISCLAIMER,WRITING_SUBTASKS} from './data.js';
+import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_TABLE_EXAMPLE,RERUN_CAP,SCORE_DISCLAIMER,DOC_REWORK_BUNDLES} from './data.js';
 import {ApiError,fetchPlanDocumentPdf,getProjectStatus,retryTask} from '../../api.js';
 
-// WRITING_SUBTASKS 3개는 전부 PLAN_STAGE_TASKS(data.js)에서 같은 '작성' Agent 몫이라
-// 백엔드에도 별도 task_key 없이 하나(writing)로 묶여 있다 — app/schemas.py RetryTaskRequest 참고.
-const TASK_KEY_BY_LABEL = { '사업계획서 본문 작성': 'writing', '그래프 생성': 'writing', '표 생성': 'writing' };
+// 재작성 묶음 -> 다시 돌릴 task_key. 묶음 하나를 고르면 그 항목의 본문·차트·표가 함께
+// 다시 만들어지는데(기능정의서 7_재작성·재수행매핑), 서버에는 그 셋이 'writing' 하나로
+// 묶여 있어 호출은 한 번이다.
+// ⚠ 어느 묶음 몫인지는 아직 서버에 못 보낸다 — RetryTaskRequest에 bundle_id가 없다.
+// 그래서 서버는 지금 "writing을 다시 돌렸다"까지만 알고, 묶음별 사용 횟수는 프론트만 센다.
+const TASK_KEY_BY_LABEL = Object.fromEntries(DOC_REWORK_BUNDLES.map((b) => [b, 'writing']));
 
 // 프로토타입 생성 중인지 확인하는 주기. 진행 중일 때만 돌고 끝나면 멈춘다.
 const STATUS_POLL_MS = 2000;
@@ -118,10 +121,12 @@ export function PlanExtrasBlock({ size = 'full' }){
 // 60/70)의 RB-PSST-2026 루브릭 4항목(EV-01~04)을 그대로 옮겼다 — reasons는 이
 // items에서 만점 미달 항목만 뽑아 만든다(하드코딩된 문구 2줄이던 이전 값보다
 // 항목별 근거가 분명하다).
-export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', itemInfo, projectId, reworkCounts = {}, onRework }){
-  const docScore = DOC_SCORE_BY_OUTCOME[scoreOutcome];
-  const docScoreScaled = Math.round((docScore.raw / docScore.max) * 100);
-  const passed = docScoreScaled >= FINAL_THRESHOLD;
+export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', itemInfo, projectId, reworkCounts = {}, onRework, scores = null, reworkBudget = null, onScoresRefresh }){
+  // 서버가 채점을 끝냈으면 그 값(scores), 아직이면 기존 고정 표 — utils.js scoresFromResult 참고.
+  const docScore = scores?.docScore || DOC_SCORE_BY_OUTCOME[scoreOutcome];
+  const threshold = scores?.threshold ?? FINAL_THRESHOLD;
+  const docScoreScaled = docScore.max ? Math.round((docScore.raw / docScore.max) * 100) : 0;
+  const passed = docScoreScaled >= threshold;
   const [confirmProceed, setConfirmProceed] = useState(false);
   const [checkedTasks, setCheckedTasks] = useState([]);
   const [runningTasks, setRunningTasks] = useState([]);
@@ -140,6 +145,10 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
   // (app/routers/projects.py _start_generation) 화면만으로는 구분이 안 되므로,
   // 진행 중인 동안 버튼을 잠그고 라벨로 상태를 알린다.
   const [generating, setGenerating] = useState(false);
+  // 첫 상태 조회가 끝나기 전까지는 "생성 중이 아니다"라고 단정할 수 없다. 예전엔 generating이
+  // false로 시작해서, 산출물 화면에서 뒤로 돌아온 직후(프로토타입이 서버에서 도는 중인데도)
+  // 첫 폴링이 오기 전까지 생성 버튼이 눌리는 상태로 열려 있었다.
+  const [statusChecked, setStatusChecked] = useState(false);
 
   useEffect(() => {
     if (!projectId) return;
@@ -149,6 +158,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
       if (cancelled) return;
       const running = status?.stage === 'prototype_building' && status?.match_status !== 'failed';
       setGenerating(running);
+      setStatusChecked(true);
       // 이미 생성이 돌고 있으면 점수 미달 확인창은 의미가 없다.
       if (running) setConfirmProceed(false);
       // 진행 중일 때만 이어서 확인한다 — 끝나면 폴링을 멈추고 버튼이 다시 풀린다.
@@ -157,6 +167,8 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
       // 상태를 못 읽었다고 버튼까지 막지는 않는다.
       if (cancelled) return;
       console.error('생성 상태를 확인하지 못했어요', err);
+      // 상태를 못 읽었다고 버튼까지 막지는 않는다 — 조회 실패는 '확인됨'으로 친다.
+      setStatusChecked(true);
       timer = setTimeout(poll, STATUS_POLL_MS);
     });
     poll();
@@ -192,14 +204,16 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
   }, [projectId, pdfRetry]);
 
   const handleGenerateClick = () => {
-    if (generating || runningTasks.length > 0) return;
+    if (generating || !statusChecked || runningTasks.length > 0) return;
     if (!passed) { setConfirmProceed(true); return; }
     onGenerate();
   };
 
   // 재작성 상한(RERUN_CAP = 항목마다 1회)에 닿은 항목은 고를 수 없다.
-  const isCapped = (label) => isRerunCapped(reworkCounts, label);
-  const allCapped = WRITING_SUBTASKS.every(isCapped);
+  // 화면에 적는 상한값도 서버가 준 값을 쓴다(관리자가 바꾸면 같이 따라간다).
+  const cap = reworkBudget?.cap ?? RERUN_CAP;
+  const isCapped = (label) => isRerunCapped(reworkCounts, label, reworkBudget, TASK_KEY_BY_LABEL);
+  const allCapped = DOC_REWORK_BUNDLES.every(isCapped);
 
   const toggleTask = (label) => {
     if (isCapped(label)) return;
@@ -224,6 +238,8 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
       if (projectId) await Promise.all(taskKeys.map((key) => retryTask(projectId, key)));
       // 실제로 재시도가 나간 뒤에만 횟수를 센다 — 실패한 호출로 상한을 깎으면 안 된다.
       if (onRework) onRework(picked);
+      // 서버가 재채점까지 마친 뒤이므로 결과를 다시 받아 점수를 갱신한다.
+      if (onScoresRefresh) await onScoresRefresh();
       setCompletedTasks((prev) => [...new Set([...prev, ...picked])]);
     } catch (err) {
       console.error('재작성 요청이 실패했어요', err);
@@ -257,7 +273,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
             <Icon name="chevron" size={12} className="rotate-180 text-[var(--muted-fg)]" />
           </button>
           <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1">문서 평가</p>
-          <p className="text-[11.5px] text-[var(--muted-fg)] mb-5">문서층 70점을 100점 만점으로 환산, {FINAL_THRESHOLD}점부터 통과</p>
+          <p className="text-[11.5px] text-[var(--muted-fg)] mb-5">문서층 {docScore.max}점을 100점 만점으로 환산, {threshold}점부터 통과</p>
 
           <div className="flex items-end gap-1.5 mb-2">
             <p className={`font-display font-bold text-[44px] leading-none ${passed ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>{docScoreScaled}</p>
@@ -267,7 +283,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
             <div className={`h-full rounded-full ${passed ? 'bg-[var(--ok)]' : 'bg-[var(--danger)]'}`} style={{ width: `${docScoreScaled}%` }} />
           </div>
           <p className={`text-[12.5px] font-bold mb-1 ${passed ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>
-            {passed ? `［내부 기준 ${FINAL_THRESHOLD}점 통과］` : `［내부 기준 ${FINAL_THRESHOLD}점 미달］`}
+            {passed ? `［내부 기준 ${threshold}점 통과］` : `［내부 기준 ${threshold}점 미달］`}
           </p>
           <p className="text-[11px] text-[var(--muted-fg)] leading-relaxed">{SCORE_DISCLAIMER}</p>
 
@@ -284,12 +300,12 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
 
           <div className="mt-5 rounded-xl border border-[var(--border)] p-4">
             <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-1">다시 준비할 항목</p>
-            <p className="text-[11px] text-[var(--muted-fg)] mb-3">항목마다 재작성은 {RERUN_CAP}회까지만 가능해요</p>
+            <p className="text-[11px] text-[var(--muted-fg)] mb-3">항목을 고르면 그 항목의 본문·그래프·표를 함께 다시 만들어요. 항목마다 {cap}회까지.</p>
             <div className="flex flex-col gap-2">
-              {WRITING_SUBTASKS.map((label) => {
+              {DOC_REWORK_BUNDLES.map((label) => {
                 const isRunning = runningTasks.includes(label);
                 const isDone = !isRunning && completedTasks.includes(label);
-                const left = rerunLeftOf(reworkCounts, label);
+                const left = rerunLeftOf(reworkCounts, label, reworkBudget, TASK_KEY_BY_LABEL);
                 const capped = left <= 0;
                 return (
                   <label key={label} className={`flex items-center gap-2.5 text-[13px] ${isRunning || generating || capped ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>
@@ -303,7 +319,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
                     <span>
                       {isRunning ? `${label} 재작성 중…` : label}
                       {isDone && <span className="ml-1.5 text-[11.5px] font-semibold text-[var(--ok)]">✓ 재작성 완료</span>}
-                      {!isRunning && <RerunLeftBadge left={left} />}
+                      {!isRunning && <RerunLeftBadge left={left} cap={cap} />}
                     </span>
                   </label>
                 );
@@ -311,11 +327,11 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
             </div>
             <button onClick={handleRewrite} disabled={generating || allCapped || checkedTasks.length === 0 || runningTasks.length > 0}
               className="w-full mt-3 rounded-lg border border-[var(--border)] py-2.5 text-[13.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--bg)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-              {allCapped ? `재작성 상한 ${RERUN_CAP}회 도달` : '선택 항목 재작성'}
+              {allCapped ? `재작성 상한 ${cap}회 도달` : '선택 항목 재작성'}
             </button>
             {allCapped && (
               <p className="mt-2 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">
-                모든 항목의 재작성 {RERUN_CAP}회를 다 썼어요. 지금 상태로 프로토타입 생성으로 넘어가 주세요.
+                모든 항목의 재작성 {cap}회를 다 썼어요. 지금 상태로 프로토타입 생성으로 넘어가 주세요.
               </p>
             )}
             {generating && (
@@ -326,9 +342,9 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
           </div>
 
           <div className="flex flex-col gap-2 mt-4">
-            <button onClick={handleGenerateClick} disabled={generating || runningTasks.length > 0}
+            <button onClick={handleGenerateClick} disabled={generating || !statusChecked || runningTasks.length > 0}
               className="w-full rounded-xl bg-[var(--primary)] text-white py-3 text-[14.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--primary-dim)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-              {generating ? '프로토타입 생성 중…' : '프로토타입 생성'}
+              {generating ? '프로토타입 생성 중…' : !statusChecked ? '상태 확인 중…' : '프로토타입 생성'}
             </button>
             {generating && (
               <p className="text-[11.5px] text-[var(--muted-fg)] leading-relaxed">

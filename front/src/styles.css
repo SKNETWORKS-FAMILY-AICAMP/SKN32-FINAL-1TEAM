@@ -128,3 +128,7 @@
 .project-row{flex-wrap:wrap}
 .project-row-confirm{flex-basis:100%;justify-content:flex-end;flex-wrap:wrap;margin-right:0;padding:0 12px 20px;white-space:normal}
 .project-row:has(.project-row-confirm) .project-row-main{padding-bottom:12px}
+/* 관리자 상세 모달 — 실행 로그가 주기적으로 갱신되는 중임을 알리는 점. */
+.live-dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:live-pulse 1.4s ease-in-out infinite}
+@keyframes live-pulse{0%,100%{opacity:1}50%{opacity:.25}}
+@media(prefers-reduced-motion:reduce){.live-dot{animation:none}}
