@@ -411,6 +411,7 @@ class PlanScoreReasonOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     reason_text: str
     item_code: str | None = None
+    display_name: str | None = None
     score: float | None = None
     max_score: float | None = None
 

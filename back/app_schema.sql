@@ -466,6 +466,7 @@ CREATE TABLE IF NOT EXISTS plan_score_reasons (
     score DECIMAL(5,2) NULL COMMENT '해당 항목 획득 점수',
     max_score DECIMAL(5,2) NULL COMMENT '해당 항목 배점',
     evidence_locator VARCHAR(500) NULL COMMENT '근거 위치(계획서 원문 내 위치) — 없으면 감점 무효(E-V1-EVIDENCE)',
+    display_name VARCHAR(100) NULL COMMENT '화면에 보여줄 짧은 항목 이름 (예: 목표 고객 문제 정의)',
     KEY ix_plan_score_reasons_plan (plan_id),
     FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;

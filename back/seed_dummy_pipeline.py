@@ -392,16 +392,16 @@ def seed_dummy_pipeline(
     # [2026-09-28 수정, 프론트 2차 요청 C] PSST-3-1은 rubric_items엔 있는데 이 목록에서
     # 빠져 있었다 — plan_score_reasons 합계가 실제로는 만점이어도 20점(항목 2개 치)에서
     # 못 벗어났던 원인 중 하나.
-    for item_code, score, max_score, reason_text, evidence_locator in (
-        ('PSST-1-1', decimal.Decimal('10.00'), decimal.Decimal('10.00'),
+    for item_code, display_name, score, max_score, reason_text, evidence_locator in (
+        ('PSST-1-1', '목표 고객 문제 정의', decimal.Decimal('10.00'), decimal.Decimal('10.00'),
          '문제 인식 항목: 목표 고객 정의가 구체적이라 만점 처리 (더미 근거)', 'section:1-1 문단 2'),
-        ('PSST-2-1', decimal.Decimal('8.00'), decimal.Decimal('10.00'),
+        ('PSST-2-1', '팀 역량·실행 계획', decimal.Decimal('8.00'), decimal.Decimal('10.00'),
          '실현 가능성 항목: 팀 경력 서술이 짧아 2점 감점 (더미 근거)', 'section:2-1 문단 1'),
-        ('PSST-3-1', decimal.Decimal('10.00'), decimal.Decimal('10.00'),
+        ('PSST-3-1', '시장 진입·확장 전략', decimal.Decimal('10.00'), decimal.Decimal('10.00'),
          '성장 전략 항목: 시장 진입·확장 전략이 구체적이라 만점 처리 (더미 근거)', 'section:3-1 문단 1'),
     ):
         db.add(PlanScoreReason(
-            plan_id=plan.plan_id, reason_text=reason_text, item_code=item_code,
+            plan_id=plan.plan_id, reason_text=reason_text, item_code=item_code, display_name=display_name,
             score=score, max_score=max_score, evidence_locator=evidence_locator,
         ))
 

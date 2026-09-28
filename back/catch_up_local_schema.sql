@@ -275,6 +275,10 @@ CALL _add_col_if_missing('business_plans', 'version_history', "JSON NULL COMMENT
 CALL _add_col_if_missing('artifacts', 'version', "TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '이 산출물의 버전 번호(재작성마다 +1)'");
 CALL _add_col_if_missing('artifacts', 'is_current', "BOOLEAN NOT NULL DEFAULT TRUE COMMENT '이 plan_id에서 지금 채택된 버전인지'");
 
+-- [2026-09-29 신규] plan_score_reasons에도 artifact_score_reasons(줄 266)와 같은 문제가
+-- 있었다 — item_code만 내려가면 화면에 코드가 그대로 노출된다. 그동안 누락돼 있었다.
+CALL _add_col_if_missing('plan_score_reasons', 'display_name', "VARCHAR(100) NULL COMMENT '화면에 보여줄 짧은 항목 이름 (예: 목표 고객 문제 정의)'");
+
 DROP PROCEDURE IF EXISTS _add_col_if_missing;
 
 -- [2026-09-29 신규, SB-155] is_current로 "현재 버전"을 빠르게 찾는 조회(GET /result 등)를

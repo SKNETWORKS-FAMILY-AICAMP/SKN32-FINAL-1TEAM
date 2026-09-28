@@ -814,6 +814,9 @@ class PlanScoreReason(Base):
     score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     max_score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     evidence_locator: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # ArtifactScoreReason.display_name(아래 참고)과 같은 이유 — item_code만 내려가면
+    # 화면에 표시할 이름이 없다. 재채점(_rescore_verify1)은 이 필드를 건드리지 않는다.
+    display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     plan: Mapped['BusinessPlan'] = relationship(back_populates='score_reasons')
 
