@@ -243,8 +243,12 @@ export function isRerunCapped(counts, label){
 // 문서 묶음은 이름이 채점 항목 이름과 같으므로(data.js DOC_REWORK_BUNDLES) 그 항목의
 // 점수·코멘트를 그대로 쓴다 — 예전엔 문서층 사유 전부를 '사업계획서 본문 작성' 한 줄에
 // 몰아 붙여서, 어느 항목이 왜 미달인지 묶음별로 구분되지 않았다.
+// 묶음 이름은 화면 표기('문제인식')이고 서버 항목 이름은 계획서 섹션 제목('문제 인식')이라
+// 띄어쓰기가 다르다 — 공백을 떼고 맞춘다. 이걸 안 하면 미달 사유가 하나도 안 붙는다.
+const sameItem = (a, b) => String(a || '').replace(/\s/g, '') === String(b || '').replace(/\s/g, '');
+
 export function taskReasons(label, docScore, artifactScore){
-  const item = (docScore.items || []).find((it) => it.name === label);
+  const item = (docScore.items || []).find((it) => sameItem(it.name, label));
   if (item) {
     if (item.score >= item.max) return [];
     return [`［문서층］ ${item.name} ${item.score}/${item.max}${item.comment ? ` — ${item.comment}` : ''}`];

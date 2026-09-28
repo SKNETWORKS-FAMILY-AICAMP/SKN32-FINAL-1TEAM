@@ -352,7 +352,11 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
   // E9: 산출물층을 이미 최선까지 재작성했는데도(더 오를 여지가 없는데도) 총점이
   // 기준에 못 미치면, 프로토타입만 다시 만들어선 기준에 이를 수 없다 — 버튼을
   // 막지는 않되 계획서 항목도 함께 고르라고 안내한다.
-  const showE9Hint = !passed && artifactOutcome === 'pass';
+  // E9: 산출물층이 이미 만점이면 프로토타입만 다시 만들어선 기준에 이를 수 없다는 안내.
+  // 예전엔 artifactOutcome(서버 overall_passed로 정해지는 pass/fail)만 봐서, 산출물 점수가
+  // 4.22/30인데도 "이미 최선까지 재작성했다"고 뜨는 경우가 있었다 — 실제 점수로 판단한다.
+  const artifactMaxTotal = artifactScore.autoCheck.max + artifactScore.crossCheck.max;
+  const showE9Hint = !passed && artifactMaxTotal > 0 && artifactRawTotal >= artifactMaxTotal;
   // 되돌릴 수 없음 확인 절차(시연 로그 steps[10].data.choices[1].confirm)에 쓸 짧은
   // 항목별 미달 요약 — "실현가능성 13/20"처럼 항목명+점수로 간결하게 늘어놓는다.
   const remainingShortfalls = [
@@ -382,7 +386,7 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
   // 재작성 응답의 changed.sections — 비교 모달이 실제 전/후를 그리는 데 쓴다(없으면 고정 문단).
   const [sectionDiff, setSectionDiff] = useState(null);
   // 산출물 열람·비교에 띄울 실제 파일. 없으면 예시 파일로 돌아간다(ArtifactResult와 같은 방식).
-  const [infoUrl, infoFailed] = useArtifactFile(artifact?.infographic_path);
+  const [infoUrl, infoFailed] = useArtifactFile(artifact?.infographic_path, { expect: 'image' });
   const [siteUrl, siteFailed] = useArtifactFile(artifact?.executable_path);
   // 웹페이지(프로토타입)·인포그래픽 중 실제로 체크했던 쪽만 대조 화면에 보여주기 위한
   // 기록 — 둘 다 "프로토타입" 층으로 묶여 있어(ARTIFACT_SUBTASKS_BY_CATEGORY) 어느 걸

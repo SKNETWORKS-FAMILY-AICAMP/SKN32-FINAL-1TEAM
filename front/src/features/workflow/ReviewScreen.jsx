@@ -126,7 +126,7 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
       <button type="button" onClick={() => setShowDetails((v) => !v)} aria-expanded={showDetails}
         className="flex items-center gap-1.5 text-[13.5px] font-semibold text-[var(--muted-fg)] hover:text-[var(--fg)] transition-colors mb-10">
         <Icon name="chevron" size={14} className={`transition-transform duration-150 ${showDetails ? 'rotate-90' : ''}`} />
-        수정한 문장 {REVIEW_PARAGRAPHS.length}건 {showDetails ? '접기' : '보기'}
+        수정한 문장 {paragraphs.length}건 {showDetails ? '접기' : '보기'}
       </button>
 
       {/* 이 div는 접혀있어도(showDetails=false) DOM에 항상 존재해야 한다 — styles.css의

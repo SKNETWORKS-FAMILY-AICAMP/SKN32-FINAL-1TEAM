@@ -25,7 +25,10 @@ export function InfographicMock({ src = null }){
 // [url, failed]를 돌려준다. failed는 "경로는 있는데 못 받았다"일 때만 true다 — 경로 자체가
 // 없는 경우(아직 생성 전, 렌더 테스트)와 구분해야 한다. 실패했는데 조용히 예시 파일로
 // 돌아가면 사용자는 그 예시를 자기 산출물로 오해한다.
-export function useArtifactFile(path){
+// expect='image'를 주면 받아온 파일이 실제 이미지인지까지 본다. 서버의 구현 Agent가
+// 인포그래픽도 .html로 만들어 보내는 경우가 있는데(app/agents.py run_implement_agent_retry),
+// 그대로 <img>에 걸면 깨진 이미지 자리만 남고 사용자는 이유를 알 수 없다.
+export function useArtifactFile(path, { expect } = {}){
   const [state, setState] = useState({ url: null, failed: false });
   useEffect(() => {
     if (!path) { setState({ url: null, failed: false }); return; }
@@ -33,6 +36,11 @@ export function useArtifactFile(path){
     setState({ url: null, failed: false });
     fetchUploadBlob(path).then((blob) => {
       if (cancelled) return;
+      if (expect === 'image' && blob.type && !blob.type.startsWith('image/')) {
+        console.error('인포그래픽 자리에 이미지가 아닌 파일이 왔어요', path, blob.type);
+        setState({ url: null, failed: true });
+        return;
+      }
       objectUrl = URL.createObjectURL(blob);
       setState({ url: objectUrl, failed: false });
     }).catch((err) => {
@@ -41,7 +49,7 @@ export function useArtifactFile(path){
       setState({ url: null, failed: true });
     });
     return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [path]);
+  }, [path, expect]);
   return [state.url, state.failed];
 }
 
@@ -124,7 +132,7 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
   // 카드 말고 그냥 구역으로).
   const [panelOpen, setPanelOpen] = useState(true);
   // 서버가 만든 실제 산출물 파일. 없으면(아직 생성 전이거나 못 받으면) 예시 파일로 돌아간다.
-  const [infoUrl, infoFailed] = useArtifactFile(artifact?.infographic_path);
+  const [infoUrl, infoFailed] = useArtifactFile(artifact?.infographic_path, { expect: 'image' });
   const [siteUrl, siteFailed] = useArtifactFile(artifact?.executable_path);
 
   // 재작성 상한(RERUN_CAP = 항목마다 1회)에 닿은 항목은 고를 수 없다 — PlanForm과 같은 규칙.
