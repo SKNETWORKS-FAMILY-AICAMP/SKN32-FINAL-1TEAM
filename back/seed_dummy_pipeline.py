@@ -414,6 +414,10 @@ def seed_dummy_pipeline(
     db.flush()  # plan.plan_id 확보
 
     _ensure_rubric_items(db)  # rubric_items(전역 고정값)가 없으면 채워둔다
+    # [2026-09-29 신규] 아래 코드검증/계획서대조 배점을 policy.code_weight/plan_weight
+    # 기준으로 맞추려고 여기서 먼저 구해둔다(예전엔 5-1 검증 이력 저장 시점에만 구했는데,
+    # 그건 score_reasons를 다 만들고 난 뒤라 이미 늦다).
+    policy = _ensure_verification_policy(db)
 
     # section_code는 기능정의서 FormSpec.sectionCodes 표기('1-1' 등)를 그대로 흉내 냈다.
     # rubric_items의 item_code(PSST-1-1 등)와 맞춰뒀다 — 아래 PlanScoreReason에서 참조.
@@ -491,10 +495,25 @@ def seed_dummy_pipeline(
     # [2026-09-29 수정] artifact_outcome='fail'이면 _CODE_CHECK_FAIL_REASONS_BY_CATEGORY에
     # 있는 항목만 0점(미충족 사유 그대로), 나머지는 여전히 만점 — 프론트 데모 목업과 같은
     # 미달 시나리오(코드 12/15)를 재현한다.
+    # [2026-09-29 재수정] 위 8항목 배점(합계 15)은 policy.code_weight 기본값(15) 기준이다 —
+    # 관리자가 배점을 바꾸면(예: 운영 DB처럼 code_weight=20) 항목별 배점도 비례로 같이
+    # 늘려야 "자동 검증 15/20"처럼 만점이 자기 배점을 못 채우는 표시가 안 생긴다. 15가
+    # 아닌 값으로 바뀌어도 8항목의 상대적 비중(진입 파일 3, 대체 텍스트 2 ...)은 유지된다.
     category_key = _CODE_CHECK_CATEGORY_KEY[category]
     code_check_items = _CODE_CHECK_ITEMS_BY_CATEGORY[category_key]
     fail_reasons = _CODE_CHECK_FAIL_REASONS_BY_CATEGORY[category_key] if artifact_outcome == 'fail' else {}
-    for item_code, display_name, max_score in code_check_items:
+    # policy가 방금 _ensure_verification_policy로 새로 만들어진 행이면 flush 직후에도
+    # code_weight/plan_weight가 (DB Numeric(5,2)로 왕복하기 전이라) 모델 default 그대로인
+    # 파이썬 int(15)일 수 있다 — Decimal 연산과 섞이면 깨지므로 여기서 확실히 맞춘다.
+    policy_code_weight = decimal.Decimal(str(policy.code_weight))
+    policy_plan_weight = decimal.Decimal(str(policy.plan_weight))
+    code_scale = policy_code_weight / decimal.Decimal('15.00')
+    # 8항목을 각자 반올림하면 합계가 policy_code_weight에서 몇 센트 어긋날 수 있다(예:
+    # code_weight=20일 때 20.01) — 마지막 항목이 "목표 합계 - 앞 7개 합"을 그대로 받게
+    # 해서 항상 정확히 policy_code_weight로 맞춘다(나머지 흡수 방식).
+    scaled_max_scores = [(base * code_scale).quantize(decimal.Decimal('0.01')) for _, _, base in code_check_items]
+    scaled_max_scores[-1] = policy_code_weight - sum(scaled_max_scores[:-1])
+    for (item_code, display_name, _base_max_score), max_score in zip(code_check_items, scaled_max_scores, strict=True):
         fail_reason = fail_reasons.get(item_code)
         db.add(ArtifactScoreReason(
             artifact_id=artifact.artifact_id, item_code=item_code, display_name=display_name,
@@ -505,19 +524,26 @@ def seed_dummy_pipeline(
         ))
     # [2026-09-28 수정] plan_weight(15)와 맞추려면 FEATURE-MATCH 하나로는(예전 5점) 부족
     # 했다 — 계획서 대조 쪽은 프론트가 CODE_CHECK_ITEMS_BY_CATEGORY 같은 세부 항목 목록을
-    # 아직 안 줘서 여러 항목으로 쪼개지 않고, 배점만 policy.plan_weight 기본값(15)에 맞춘다.
+    # 아직 안 줘서 여러 항목으로 쪼개지 않고, 배점만 policy.plan_weight에 맞춘다.
     # [2026-09-29 수정] artifact_outcome='fail'이면 기능정의서 v1.9 FeatureMatchResult.score
-    # 공식(max(0, 15 - 4 × 누락 건수))대로 계산한다 — 프론트 목업과 같은 누락 2건, 7/15점.
+    # 공식(max(0, 15 - 4 × 누락 건수))대로 계산한다 — 프론트 목업과 같은 누락 2건, 15점
+    # 기준 7/15. [2026-09-29 재수정] 만점을 policy.plan_weight 하드코딩 15.00 대신 실제
+    # 정책값으로 채우고, "누락 1건당 4점" 감점도 15점 기준 비율(4 × plan_weight/15)로
+    # 맞춰 같은 이유(위 코드 검증 항목과 동일)로 관리자 배점 변경에 안 깨지게 한다.
     if artifact_outcome == 'fail':
         missing = _FEATURE_MATCH_FAIL_REASONS
-        feature_score = max(decimal.Decimal('0.00'), decimal.Decimal('15.00') - decimal.Decimal('4.00') * len(missing))
+        deduction_per_missing = decimal.Decimal('4.00') * policy_plan_weight / decimal.Decimal('15.00')
+        feature_score = max(
+            decimal.Decimal('0.00'),
+            policy_plan_weight - deduction_per_missing * len(missing),
+        ).quantize(decimal.Decimal('0.01'))
         feature_reason = '기능 대조: featureList 대비 누락 기능 ' + str(len(missing)) + '건 — ' + ' / '.join(missing) + ' (더미 근거)'
     else:
-        feature_score = decimal.Decimal('15.00')
+        feature_score = policy_plan_weight.quantize(decimal.Decimal('0.01'))
         feature_reason = '기능 대조: featureList 대비 누락 기능 없음 — 통과 (더미 근거)'
     db.add(ArtifactScoreReason(
         artifact_id=artifact.artifact_id, item_code='FEATURE-MATCH', display_name='계획서 기능 대조',
-        score=feature_score, max_score=decimal.Decimal('15.00'),
+        score=feature_score, max_score=policy_plan_weight.quantize(decimal.Decimal('0.01')),
         reason_text=feature_reason,
         evidence_locator='src/App.tsx',
     ))
@@ -536,8 +562,8 @@ def seed_dummy_pipeline(
     # 5-1) 검증 이력 (verification_score_history) — db_review_response.md 2장 (B)-3
     #    대응: 판정 당시 정책값(policy_id + 스냅샷)을 같이 남겨야 나중에 정책 기본값이
     #    바뀌어도 "그때 기준으로" 재현할 수 있다. 지금 정책 테이블은 1행만 유지하는
-    #    설계라(app_schema.sql 주석) 그 1행을 그대로 읽어서 스냅샷을 뜬다.
-    policy = _ensure_verification_policy(db)
+    #    설계라(app_schema.sql 주석) 그 1행을 그대로 읽어서 스냅샷을 뜬다(policy는
+    #    위에서 이미 구해뒀다).
     # doc=문서층(계획서 채점), code=산출물층(자동 코드 검증) — 더미라 이 함수가 이미
     # 갖고 있는 doc_score/artifact_score를 그대로 재사용한다. plan(계획서 대조) layer는
     # 별도 점수 산식이 아직 없어서(기능정의서에 상세 미정) 이번엔 만들지 않는다.

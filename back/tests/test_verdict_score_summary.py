@@ -54,6 +54,34 @@ def test_verdict_includes_three_layer_score_summary(authed_client, db_session):
     assert verdict['pass_threshold'] == float(policy.pass_threshold)
 
 
+def test_augmented_seed_reaches_pass_threshold_end_to_end(authed_client, db_session):
+    """[2026-09-29 신규] 코드검증 8항목(SB-146)·PSST 4항목(SB-167)·계획서 대조(SB-168)로
+    "보강된" 시드가 실제로 POST /generate -> GET /result 경로를 통해 총점 80점 이상 ·
+    overall_passed=True인 "통과" 상태까지 이어지는지 엔드투엔드로 확인한다. 항목이
+    하나씩 늘어난 개별 커밋마다는 합계가 맞는지 직접 검증한 적이 없었다."""
+    notice = Notice(
+        notice_id='NOTICE-VERDICT-SCORE-E2E-PASS', source='k-startup', title='테스트 공고',
+        organizer='창업진흥원', recruitment_status='open', url='https://example.com/notice/verdict-e2e-pass',
+    )
+    db_session.add(notice)
+    db_session.commit()
+
+    r = authed_client.post('/projects', data={'payload': json.dumps(_payload())})
+    assert r.status_code == 201, r.text
+    project_id = r.json()['project_id']
+
+    r = authed_client.post(f'/projects/{project_id}/generate', json={'notice_id': notice.notice_id})
+    assert r.status_code == 200, r.text
+
+    r = authed_client.get(f'/projects/{project_id}/result')
+    assert r.status_code == 200, r.text
+    verdict = r.json()['verdict']
+
+    assert verdict['total_score'] >= 80, f"보강 시드 총점이 80 미만: {verdict['total_score']}"
+    assert verdict['total_score'] >= verdict['pass_threshold']
+    assert verdict['overall_passed'] is True, '보강 시드(기본 pass 시나리오)가 통과 화면으로 안 이어짐'
+
+
 def test_get_result_returns_same_score_summary_as_generate(authed_client, db_session):
     """새로고침/재방문(GET /result)해도 같은 요약이 나와야 한다 — _build_demo_response를
     /generate와 /result 둘 다 공유하므로."""
