@@ -788,7 +788,15 @@ def test_implement_prototype_retry_keeps_old_version_current_when_score_drops(mo
 
 def test_implement_prototype_retry_switches_current_when_score_improves(monkeypatch, retry_setup, db_session):
     """[SB-155] 점수가 오르면 새 버전 행이 is_current=True가 되고, 예전 행은
-    is_current=False로 내려간다(예전 행도 지우지 않고 그대로 보존)."""
+    is_current=False로 내려간다(예전 행도 지우지 않고 그대로 보존).
+
+    [파일 보존 회귀 테스트] 반대 방향(점수 하락 시 새 버전 파일 보존)은 위
+    test_implement_prototype_retry_keeps_old_version_current_when_score_drops에서 이미
+    검증한다 — 이 테스트는 그 짝: 새 버전이 채택돼도 밀려난 예전 버전의 파일을 지우면
+    안 된다(SB-155 이전엔 rollback 시 os.remove로 고아 파일을 지웠으나, 지금은 예전
+    버전도 히스토리로 보존 대상이라 디스크 파일도 절대 지우면 안 됨)."""
+    import os
+
     import app.routers.projects as projects_router
     from app.models import Artifact
 
@@ -824,3 +832,7 @@ def test_implement_prototype_retry_switches_current_when_score_improves(monkeypa
     assert current.artifact_id != old_artifact_id
     assert current.executable_path == changed['executable_path']['after']
     assert current.version == old.version + 1
+
+    from app.routers.projects import UPLOAD_DIR
+    old_disk_path = os.path.join(UPLOAD_DIR, os.path.basename(old_path))
+    assert os.path.exists(old_disk_path), '새 버전이 채택돼도 밀려난 예전 버전 파일은 지우면 안 됨'
