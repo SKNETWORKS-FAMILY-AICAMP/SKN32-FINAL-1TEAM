@@ -638,14 +638,14 @@ function ProgressTab({focusProjectId=null}){
                 ?<div className="flex items-center justify-between gap-4">
                    <div>
                      <span className="inline-block text-[12px] font-semibold px-3 py-1 rounded-full bg-[var(--muted)] text-[var(--muted-fg)] mb-1.5">보관중 · 사용자 삭제</span>
-                     <p className="text-[11.5px] text-[var(--muted-fg)]">사용자가 삭제해 보관중입니다. 데이터는 보존되며 관리자만 조회·복원할 수 있습니다.</p>
+                     <p className="text-[11.5px] text-[var(--muted-fg)]">사용자가 자기 목록에서 지워 보관중입니다("자료까지 지우기"는 고르지 않음). 데이터는 보존되며 관리자만 조회·복원할 수 있습니다.</p>
                    </div>
                    <button onClick={()=>handleRestore(detailId)} disabled={restoring===detailId}
                      className="flex-shrink-0 rounded-xl border border-[var(--border)] px-4 py-2 text-[13px] font-semibold text-[var(--muted-fg)] hover:bg-[var(--bg)] disabled:opacity-50">
                      {restoring===detailId?'복원 중…':'복원'}
                    </button>
                  </div>
-                :<p className="text-[11.5px] text-[var(--muted-fg)]">보관 처리는 관리자가 직접 하지 않습니다. 사용자가 프로젝트를 삭제하면 "보관중"으로 표시되며 데이터는 보존됩니다.</p>}
+                :<p className="text-[11.5px] text-[var(--muted-fg)]">보관 처리는 관리자가 직접 하지 않습니다. 사용자가 프로젝트를 지우면 "보관중"으로 표시되고 데이터는 보존됩니다 — 다만 지울 때 "자료까지 지우기"를 함께 고르면 보관을 거치지 않고 즉시 완전 삭제되어, 이 목록에서도 사라지고 복원할 수 없습니다.</p>}
             </div>
           </Modal>
         );

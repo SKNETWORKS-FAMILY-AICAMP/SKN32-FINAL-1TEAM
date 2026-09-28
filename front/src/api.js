@@ -64,6 +64,13 @@ export const listProjects=()=>api.get('/projects');
 // 그냥 "내 목록에서 사라진다"만 알면 된다.
 export const deleteProject=(projectId)=>api.delete(`/projects/${projectId}`);
 
+// "건별 삭제"(완전 삭제) — 위 deleteProject(휴지통)와는 별개 엔드포인트다. 보관 여부·매칭
+// 진행 상태와 무관하게 사전 정보 입력값·첨부·계획서·산출물·실행 이력을 한 번에 실제로
+// 지운다(back/app/routers/projects.py delete_project_permanently). 되돌릴 수 없어서 호출
+// 전에 반드시 확인 절차를 거친다.
+// ⚠ 서버가 지우는 건 DB 행까지다 — 업로드된 실제 파일(/uploads)은 아직 남는다(백엔드 과제).
+export const deleteProjectPermanently=(projectId)=>api.delete(`/projects/${projectId}/permanent`);
+
 // [2026-09-28] 헤더 종모양이 쓰는 알림 이력(GET /projects의 진행 상태 요약과는 별개 —
 // "그동안 무슨 일이 있었는지"의 개별 기록). kind: 문서평가/산출물확인/표현검수/실패.
 export const listNotifications=(unreadOnly=false)=>api.get(`/projects/notifications${unreadOnly?'?unread_only=true':''}`);
