@@ -230,13 +230,32 @@ export function buildCodeCheckItems(category, scoreOutcome){
 // 내용 너비(clientWidth, 세로 스크롤바를 뺀 값)를 재서 배율을 그때그때 계산한다.
 // transform:scale은 그려지는 크기만 줄이고 레이아웃 박스는 원본(1440x3770) 그대로 두기
 // 때문에, 축소된 크기로 감싸는 div를 하나 더 둬야 스크롤 범위가 눈에 보이는 높이와 맞는다.
-// 항목별 남은 재작성 횟수 — reworkCounts는 { 라벨: 쓴 횟수 }(useWorkflowStore).
-// 상한은 항목마다 RERUN_CAP회이고, 계획서·산출물·종합 평가 세 화면이 같은 카운트를 본다.
-export function rerunLeftOf(counts, label){
-  return Math.max(0, RERUN_CAP - ((counts && counts[label]) || 0));
+// 서버가 내려주는 재작성 예산 — GET /result의 rework_cap + retry_budget
+// ([{task_key, used, remaining}], back/app/schemas.py RetryBudgetItemOut).
+// 서버가 rerun_type='rerun' AND status='completed'인 실행만 세므로 "첫 실행은 세지 않는다",
+// "실패하면 기회를 돌려준다"가 서버 쪽에서 보장된다. 새로고침해도 유지된다.
+export function reworkBudgetFrom(result){
+  if (!result || result.rework_cap == null) return null;
+  const remaining = {};
+  for (const row of result.retry_budget || []) remaining[row.task_key] = row.remaining;
+  return { cap: result.rework_cap, remaining };
 }
-export function isRerunCapped(counts, label){
-  return rerunLeftOf(counts, label) <= 0;
+
+// 항목별 남은 재작성 횟수.
+// 서버 예산이 있으면 그 값이 우선이다 — 서버가 상한을 409로 막으므로, 화면이 더 후하게
+// 열어두면 눌렀을 때 에러만 난다.
+// ⚠ 서버 예산의 키가 task_key라, 계획서 묶음 4개가 같은 'writing' 예산 하나를 나눠 쓴다.
+// 그래서 한 묶음을 재작성하면 나머지 계획서 묶음도 함께 잠긴다 — 묶음 단위로 세려면
+// 서버가 bundle_id를 받아야 한다(재작성 횟수제한 정책 답변서 참고).
+// 서버 예산이 없으면(구버전 응답, 채점 전) 화면이 자체로 센 값으로 돌아간다.
+export function rerunLeftOf(counts, label, budget, taskKeyByLabel){
+  const key = taskKeyByLabel && taskKeyByLabel[label];
+  if (budget && key && budget.remaining[key] != null) return Math.max(0, budget.remaining[key]);
+  const cap = budget?.cap ?? RERUN_CAP;
+  return Math.max(0, cap - ((counts && counts[label]) || 0));
+}
+export function isRerunCapped(counts, label, budget, taskKeyByLabel){
+  return rerunLeftOf(counts, label, budget, taskKeyByLabel) <= 0;
 }
 
 // 재작성 목록의 묶음 옆에 "왜 다시 만들어야 하는지" 한 줄을 붙인다.

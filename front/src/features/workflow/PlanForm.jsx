@@ -121,7 +121,7 @@ export function PlanExtrasBlock({ size = 'full' }){
 // 60/70)의 RB-PSST-2026 루브릭 4항목(EV-01~04)을 그대로 옮겼다 — reasons는 이
 // items에서 만점 미달 항목만 뽑아 만든다(하드코딩된 문구 2줄이던 이전 값보다
 // 항목별 근거가 분명하다).
-export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', itemInfo, projectId, reworkCounts = {}, onRework, scores = null, onScoresRefresh }){
+export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', itemInfo, projectId, reworkCounts = {}, onRework, scores = null, reworkBudget = null, onScoresRefresh }){
   // 서버가 채점을 끝냈으면 그 값(scores), 아직이면 기존 고정 표 — utils.js scoresFromResult 참고.
   const docScore = scores?.docScore || DOC_SCORE_BY_OUTCOME[scoreOutcome];
   const threshold = scores?.threshold ?? FINAL_THRESHOLD;
@@ -210,7 +210,9 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
   };
 
   // 재작성 상한(RERUN_CAP = 항목마다 1회)에 닿은 항목은 고를 수 없다.
-  const isCapped = (label) => isRerunCapped(reworkCounts, label);
+  // 화면에 적는 상한값도 서버가 준 값을 쓴다(관리자가 바꾸면 같이 따라간다).
+  const cap = reworkBudget?.cap ?? RERUN_CAP;
+  const isCapped = (label) => isRerunCapped(reworkCounts, label, reworkBudget, TASK_KEY_BY_LABEL);
   const allCapped = DOC_REWORK_BUNDLES.every(isCapped);
 
   const toggleTask = (label) => {
@@ -298,12 +300,12 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
 
           <div className="mt-5 rounded-xl border border-[var(--border)] p-4">
             <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-1">다시 준비할 항목</p>
-            <p className="text-[11px] text-[var(--muted-fg)] mb-3">항목을 고르면 그 항목의 본문·그래프·표를 함께 다시 만들어요. 항목마다 {RERUN_CAP}회까지.</p>
+            <p className="text-[11px] text-[var(--muted-fg)] mb-3">항목을 고르면 그 항목의 본문·그래프·표를 함께 다시 만들어요. 항목마다 {cap}회까지.</p>
             <div className="flex flex-col gap-2">
               {DOC_REWORK_BUNDLES.map((label) => {
                 const isRunning = runningTasks.includes(label);
                 const isDone = !isRunning && completedTasks.includes(label);
-                const left = rerunLeftOf(reworkCounts, label);
+                const left = rerunLeftOf(reworkCounts, label, reworkBudget, TASK_KEY_BY_LABEL);
                 const capped = left <= 0;
                 return (
                   <label key={label} className={`flex items-center gap-2.5 text-[13px] ${isRunning || generating || capped ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>
@@ -317,7 +319,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
                     <span>
                       {isRunning ? `${label} 재작성 중…` : label}
                       {isDone && <span className="ml-1.5 text-[11.5px] font-semibold text-[var(--ok)]">✓ 재작성 완료</span>}
-                      {!isRunning && <RerunLeftBadge left={left} />}
+                      {!isRunning && <RerunLeftBadge left={left} cap={cap} />}
                     </span>
                   </label>
                 );
@@ -325,11 +327,11 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
             </div>
             <button onClick={handleRewrite} disabled={generating || allCapped || checkedTasks.length === 0 || runningTasks.length > 0}
               className="w-full mt-3 rounded-lg border border-[var(--border)] py-2.5 text-[13.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--bg)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-              {allCapped ? `재작성 상한 ${RERUN_CAP}회 도달` : '선택 항목 재작성'}
+              {allCapped ? `재작성 상한 ${cap}회 도달` : '선택 항목 재작성'}
             </button>
             {allCapped && (
               <p className="mt-2 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">
-                모든 항목의 재작성 {RERUN_CAP}회를 다 썼어요. 지금 상태로 프로토타입 생성으로 넘어가 주세요.
+                모든 항목의 재작성 {cap}회를 다 썼어요. 지금 상태로 프로토타입 생성으로 넘어가 주세요.
               </p>
             )}
             {generating && (

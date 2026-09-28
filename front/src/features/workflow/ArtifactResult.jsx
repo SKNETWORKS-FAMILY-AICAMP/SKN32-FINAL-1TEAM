@@ -110,7 +110,7 @@ export function ResultPreview({kind,onClose,siteSrc=null,infoSrc=null}){
  </dialog>;
 }
 
-export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, scoreOutcome = 'fail', projectId, reworkCounts = {}, onRework, scores = null, onScoresRefresh, artifact = null }){
+export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, scoreOutcome = 'fail', projectId, reworkCounts = {}, onRework, scores = null, reworkBudget = null, onScoresRefresh, artifact = null }){
   const [preview,setPreview]=useState(null);
   const category = detectItemCategory(itemInfo && itemInfo.item);
   const hasExecutable = category !== 'onepage';
@@ -136,7 +136,9 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
   const [siteUrl, siteFailed] = useArtifactFile(artifact?.executable_path);
 
   // 재작성 상한(RERUN_CAP = 항목마다 1회)에 닿은 항목은 고를 수 없다 — PlanForm과 같은 규칙.
-  const isCapped = (label) => isRerunCapped(reworkCounts, label);
+  // 화면에 적는 상한값도 서버가 준 값을 쓴다(관리자가 바꾸면 같이 따라간다).
+  const cap = reworkBudget?.cap ?? RERUN_CAP;
+  const isCapped = (label) => isRerunCapped(reworkCounts, label, reworkBudget, TASK_KEY_BY_LABEL);
   const allCapped = subtasks.every(isCapped);
 
   const toggleTask = (label) => {
@@ -239,12 +241,12 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
 
           <div className="rounded-xl border border-[var(--border)] p-4">
             <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-1">다시 준비할 항목</p>
-            <p className="text-[11px] text-[var(--muted-fg)] mb-3">항목마다 다시 만들기는 {RERUN_CAP}회까지만 가능해요</p>
+            <p className="text-[11px] text-[var(--muted-fg)] mb-3">항목마다 다시 만들기는 {cap}회까지만 가능해요</p>
             <div className="flex flex-col gap-2">
               {subtasks.map((label) => {
                 const isRunning = runningTasks.includes(label);
                 const isDone = !isRunning && completedTasks.includes(label);
-                const left = rerunLeftOf(reworkCounts, label);
+                const left = rerunLeftOf(reworkCounts, label, reworkBudget, TASK_KEY_BY_LABEL);
                 const capped = left <= 0;
                 return (
                   <label key={label} className={`flex items-center gap-2.5 text-[13px] ${isRunning || capped ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>
@@ -258,7 +260,7 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
                     <span>
                       {isRunning ? `${label} 재작성 중…` : label}
                       {isDone && <span className="ml-1.5 text-[11.5px] font-semibold text-[var(--ok)]">✓ 재작성 완료</span>}
-                      {!isRunning && <RerunLeftBadge left={left} />}
+                      {!isRunning && <RerunLeftBadge left={left} cap={cap} />}
                     </span>
                   </label>
                 );
@@ -266,11 +268,11 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
             </div>
             <button onClick={handleRewrite} disabled={allCapped || checkedTasks.length === 0 || runningTasks.length > 0}
               className="w-full mt-3 rounded-lg border border-[var(--border)] py-2.5 text-[13.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--bg)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-              {allCapped ? `재작성 상한 ${RERUN_CAP}회 도달` : '선택 항목 재작성'}
+              {allCapped ? `재작성 상한 ${cap}회 도달` : '선택 항목 재작성'}
             </button>
             {allCapped && (
               <p className="mt-2 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">
-                모든 항목의 재작성 {RERUN_CAP}회를 다 썼어요. 지금 상태로 종합 평가를 확인해 주세요.
+                모든 항목의 재작성 {cap}회를 다 썼어요. 지금 상태로 종합 평가를 확인해 주세요.
               </p>
             )}
           </div>

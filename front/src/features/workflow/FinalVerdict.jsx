@@ -340,7 +340,7 @@ export function ArtifactCarousel({ hasExecutable, infoSrc = null, siteSrc = null
   );
 }
 
-export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOutcome, artifactOutcome, setDocOutcome, setArtifactOutcome, projectId, reworkCounts = {}, onRework, scores = null, onScoresRefresh, artifact = null }){
+export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOutcome, artifactOutcome, setDocOutcome, setArtifactOutcome, projectId, reworkCounts = {}, onRework, scores = null, reworkBudget = null, onScoresRefresh, artifact = null }){
   // 서버 채점 결과가 있으면 그 값으로 판정한다(utils.js scoresFromResult) — 없으면 기존 고정 표.
   const docScore = scores?.docScore || DOC_SCORE_BY_OUTCOME[docOutcome];
   const artifactScore = scores?.artifactScore || ARTIFACT_SCORE_BY_OUTCOME[artifactOutcome];
@@ -403,7 +403,9 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
   // 재수행 횟수 상한 — 계획서 화면(6번)·산출물 화면(8번)에서 이미 쓴 횟수까지 전역
   // 스토어에서 함께 세므로(useWorkflowStore.reworkCounts), 여기 오기 전에 다 써버린
   // Task는 이 화면에서도 고를 수 없다.
-  const isCapped = (label) => isRerunCapped(reworkCounts, label);
+  // 화면에 적는 상한값도 서버가 준 값을 쓴다(관리자가 바꾸면 같이 따라간다).
+  const cap = reworkBudget?.cap ?? RERUN_CAP;
+  const isCapped = (label) => isRerunCapped(reworkCounts, label, reworkBudget, TASK_KEY_BY_LABEL);
   const allCapped = allTasks.every(({ label }) => isCapped(label));
 
   const toggleTask = (label) => {
@@ -555,11 +557,11 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
       {!passed && (
         <div className="rounded-2xl border border-[var(--border)] p-5 mb-6">
           <p className="text-[12.5px] font-bold text-[var(--danger)] mb-1">보완이 필요한 항목</p>
-          <p className="text-[11.5px] text-[var(--muted-fg)] mb-3">항목마다 다시 만들기는 {RERUN_CAP}회까지만 가능해요 — 앞 단계에서 쓴 횟수도 함께 셉니다</p>
+          <p className="text-[11.5px] text-[var(--muted-fg)] mb-3">항목마다 다시 만들기는 {cap}회까지만 가능해요 — 앞 단계에서 쓴 횟수도 함께 셉니다</p>
           <div className="flex flex-col gap-2.5 mb-4">
             {allTasks.map(({ label, layer }) => {
               const isRunning = runningTasks.includes(label);
-              const left = rerunLeftOf(reworkCounts, label);
+              const left = rerunLeftOf(reworkCounts, label, reworkBudget, TASK_KEY_BY_LABEL);
               const capped = left <= 0;
               // 재작성 대조 모달을 X로 닫고 나면, 방금 체크했던 항목이 실제로 반영됐는지
               // 구분할 UI가 없었다(사용자 지적) — 가장 최근 재작성에서 바뀐 항목(reworkDiff의
@@ -579,7 +581,7 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
                   <span>
                     <span className="flex-shrink-0 text-[11px] font-semibold text-[var(--muted-fg)] mr-1.5">［{layer}］</span>
                     {isRunning ? `${label} 재작성 중…` : label}
-                    {!isRunning && <RerunLeftBadge left={left} />}
+                    {!isRunning && <RerunLeftBadge left={left} cap={cap} />}
                     {!isRunning && justReworked && (
                       <span className="inline-flex items-center gap-0.5 ml-1.5 text-[11px] font-semibold text-[var(--ok)]">
                         <Icon name="check" size={12}/> 방금 재작성함
@@ -595,13 +597,13 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
           </div>
           {allCapped && (
             <p className="text-[12.5px] text-[var(--fg)] leading-relaxed mb-4">
-              모든 항목이 재작성 {RERUN_CAP}회를 다 썼어요. 지금 점수로 검수 단계로 넘어가는 것만 가능합니다.
+              모든 항목이 재작성 {cap}회를 다 썼어요. 지금 점수로 검수 단계로 넘어가는 것만 가능합니다.
             </p>
           )}
           <div className="flex items-center gap-3 flex-wrap">
             <button onClick={handleRewrite} disabled={allCapped || checkedTasks.length === 0 || runningTasks.length > 0}
               className="rounded-lg border border-[var(--border)] px-4 py-2.5 text-[13.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--bg)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-              {allCapped ? `재작성 상한 ${RERUN_CAP}회 도달` : '선택 항목 다시 만들기'}
+              {allCapped ? `재작성 상한 ${cap}회 도달` : '선택 항목 다시 만들기'}
             </button>
             <button onClick={handleProceedClick}
               className="rounded-lg px-4 py-2.5 text-[13.5px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">

@@ -329,10 +329,10 @@ export function FileAttach({ files, onAdd, onRemove }){
 // Task별 남은 재수행 횟수 표시 — 재작성 체크 목록의 항목 이름 뒤에 붙는다(계획서·산출물·
 // 종합 평가 세 화면이 같은 문구를 쓴다). 상한(RERUN_CAP)에 닿으면 왜 못 고르는지가
 // 그 자리에 바로 보여야 한다(체크박스만 회색이면 고장인지 상한인지 구분이 안 된다).
-export function RerunLeftBadge({ left }){
+export function RerunLeftBadge({ left, cap = RERUN_CAP }){
   return left > 0
     ? <span className="ml-1.5 text-[11.5px] text-[var(--muted-fg)]">· 재작성 {left}회 남음</span>
-    : <span className="ml-1.5 text-[11.5px] font-semibold text-[var(--danger)]">· 재작성 상한 {RERUN_CAP}회 도달</span>;
+    : <span className="ml-1.5 text-[11.5px] font-semibold text-[var(--danger)]">· 재작성 상한 {cap}회 도달</span>;
 }
 
 export function formatBonus(value){return `+${Number(value)}`;}

@@ -9,7 +9,7 @@ import {IntakeForm,MatchProgress,MatchResults,EligibilityGate,PlanForm,ArtifactR
 import {createProject,deleteProject,getProject,getProjectResult,getProjectStatus} from './api.js';
 import {NoticeClosedBanner,RunBlockedDialog} from './components/RunDialogs.jsx';
 import {useWorkflowStore} from './store/useWorkflowStore.js';
-import {scoresFromResult} from './features/workflow/utils.js';
+import {scoresFromResult,reworkBudgetFrom} from './features/workflow/utils.js';
 
 // [2026-09-15, 프론트 통합 임시 구현] "단가" 입력칸은 자유 텍스트("500원" 등)라서 서버가
 // 기대하는 숫자(unit_price)를 뽑아내려면 이 정도 파싱이 필요하다 — 숫자를 못 찾으면 null(미정)로 보낸다.
@@ -97,6 +97,9 @@ export default function App(){
  // 점수는 늘 고정값이었는데, 그 탓에 화면 점수와 내려받는 검증결과서 점수가 어긋났다
  // (검증결과서는 verificationReport.js가 verdict 실제 값으로 만든다).
  const scores=useMemo(()=>scoresFromResult(pipelineResult),[pipelineResult]);
+ // 서버가 세는 재작성 예산(SB-152). 이게 오면 화면 상수(RERUN_CAP)와 자체 카운트 대신
+ // 이 값을 쓴다 — 새로고침해도 유지되고, 관리자가 상한을 바꾸면 화면도 따라간다.
+ const reworkBudget=useMemo(()=>reworkBudgetFrom(pipelineResult),[pipelineResult]);
  // 재작성(retry-task)은 서버에서 해당 Task를 다시 돌리고 검증-1/2 재채점까지 붙어 있다
  // (app/routers/projects.py retry_task). 그래서 재작성이 끝나면 /result를 다시 받아야
  // 화면 점수가 실제로 바뀐다 — 안 그러면 서버 점수는 올랐는데 화면은 옛 값을 들고 있는다.
@@ -355,10 +358,10 @@ export default function App(){
   {view==='match-results'&&<MatchResults projectId={projectId} candidates={matchCandidates} onCandidatesLoaded={setMatchCandidates} onBack={()=>setView(returnToDashboard?'dashboard':'intake')} backLabel={returnToDashboard?'내 프로젝트로 돌아가기':'아이템 정보 다시 입력하기'} onCheckEligibility={handleCheckEligibility} disabledTitles={checkedFailedTitles}/>}
   {view==='eligibility-gate'&&<EligibilityGate announcement={announcement} eligibility={pipelineResult?.eligibility} onProceed={()=>setView('plan-progress')} onLeave={(title,failed)=>{if(failed)setCheckedFailedTitles(p=>[...new Set([...p,title])]);setView('match-results')}}/>}
   {view==='plan-progress'&&<GenerationProgress kind="plan" projectId={projectId} onDone={()=>setView('plan-form')} onLeave={()=>setView('dashboard')}/>}
-  {view==='plan-form'&&<PlanForm scores={scores} onScoresRefresh={refreshResult} announcement={announcement} onGenerate={()=>setView('artifact-progress')} scoreOutcome={scoreOutcome} itemInfo={itemInfo} projectId={projectId} reworkCounts={reworkCounts} onRework={countRework}/>}
+  {view==='plan-form'&&<PlanForm scores={scores} reworkBudget={reworkBudget} onScoresRefresh={refreshResult} announcement={announcement} onGenerate={()=>setView('artifact-progress')} scoreOutcome={scoreOutcome} itemInfo={itemInfo} projectId={projectId} reworkCounts={reworkCounts} onRework={countRework}/>}
   {view==='artifact-progress'&&<GenerationProgress kind="artifact" projectId={projectId} itemInfo={itemInfo} onDone={()=>setView('artifact-result')} onLeave={()=>setView('dashboard')}/>}
-  {view==='artifact-result'&&<ArtifactResult scores={scores} artifact={pipelineResult?.plan?.artifacts?.[0]} onScoresRefresh={refreshResult} announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('plan-form')} onFinalize={()=>setView('final-verdict')} scoreOutcome={scoreOutcome} projectId={projectId} reworkCounts={reworkCounts} onRework={countRework}/>}
-  {view==='final-verdict'&&<FinalVerdict scores={scores} artifact={pipelineResult?.plan?.artifacts?.[0]} onScoresRefresh={refreshResult} announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('artifact-result')} onProceed={()=>setView('review')} docOutcome={docOutcome} artifactOutcome={artifactOutcome} setDocOutcome={setDocOutcome} setArtifactOutcome={setArtifactOutcome} projectId={projectId} reworkCounts={reworkCounts} onRework={countRework}/>}
+  {view==='artifact-result'&&<ArtifactResult scores={scores} reworkBudget={reworkBudget} artifact={pipelineResult?.plan?.artifacts?.[0]} onScoresRefresh={refreshResult} announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('plan-form')} onFinalize={()=>setView('final-verdict')} scoreOutcome={scoreOutcome} projectId={projectId} reworkCounts={reworkCounts} onRework={countRework}/>}
+  {view==='final-verdict'&&<FinalVerdict scores={scores} reworkBudget={reworkBudget} artifact={pipelineResult?.plan?.artifacts?.[0]} onScoresRefresh={refreshResult} announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('artifact-result')} onProceed={()=>setView('review')} docOutcome={docOutcome} artifactOutcome={artifactOutcome} setDocOutcome={setDocOutcome} setArtifactOutcome={setArtifactOutcome} projectId={projectId} reworkCounts={reworkCounts} onRework={countRework}/>}
   {view==='review'&&<ReviewScreen scores={scores} plan={pipelineResult?.plan} announcement={announcement} itemInfo={itemInfo} docOutcome={docOutcome} artifactOutcome={artifactOutcome} onGoDashboard={()=>setView('dashboard')} projectId={projectId} verdict={pipelineResult?.verdict}/>}
  </WorkspaceShell>;
  // 저장 전 강제 이동 모달은 view가 무엇이든(랜딩·워크스페이스 어느 화면 위에도) 뜰 수 있어야
