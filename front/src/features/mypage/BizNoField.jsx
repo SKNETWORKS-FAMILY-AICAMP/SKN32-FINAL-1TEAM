@@ -43,7 +43,11 @@ export default function BizNoField({ value, onChange }) {
       setBizStatus(localId, generation, { ...res, checkedNo: value });
     } catch (err) {
       if (request.current !== id) return;
-      setError(err.status === 401 ? '로그인이 끊겼어요. 다시 로그인해 주세요.' : '지금은 조회할 수 없어요. 잠시 후 다시 시도해 주세요.');
+      // [2026-09-28] 서버가 사유를 문장으로 내려주면(예: 조회 키 미설정 503, 국세청 API
+      // 오류 502) 그걸 그대로 보여준다 — 전부 "잠시 후 다시" 한 문장으로 뭉뚱그리면
+      // 사용자는 자기 번호가 틀린 줄 알고 계속 다시 누르게 된다. 사유가 없을 때만 일반 문구.
+      if (err.status === 401) { setError('로그인이 끊겼어요. 다시 로그인해 주세요.'); return; }
+      setError(typeof err.detail === 'string' && err.detail ? err.detail : '지금은 조회할 수 없어요. 잠시 후 다시 시도해 주세요.');
     } finally {
       if (request.current === id) setLoading(false);
     }
