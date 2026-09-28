@@ -6,7 +6,8 @@ import AdminDashboard from './features/Admin.jsx';
 import MyPage from './features/mypage/MyPage.jsx';
 import {useMyPageStore} from './store/useMyPageStore.js';
 import {IntakeForm,MatchProgress,MatchResults,EligibilityGate,PlanForm,ArtifactResult,FinalVerdict,ReviewScreen,GenerationProgress} from './features/Workflow.jsx';
-import {createProject,getProject,getProjectResult,getProjectStatus} from './api.js';
+import {createProject,deleteProject,getProject,getProjectResult,getProjectStatus} from './api.js';
+import {NoticeClosedBanner,RunBlockedDialog} from './components/RunDialogs.jsx';
 import {useWorkflowStore} from './store/useWorkflowStore.js';
 
 // [2026-09-15, 프론트 통합 임시 구현] "단가" 입력칸은 자유 텍스트("500원" 등)라서 서버가
@@ -68,6 +69,13 @@ export default function App(){
  const [notifyEnabled,setNotifyEnabled]=useState(true);
  const [user,setUser]=useState(null);const [loginOpen,setLoginOpen]=useState(false);const [authChecked,setAuthChecked]=useState(false);
  const [myPageNudgeOpen,setMyPageNudgeOpen]=useState(false);
+ // [2026-09-28] 계정당 동시 실행 1건 제한(E-RUN-CONCURRENT)에 걸렸을 때 POST /projects가
+ // 409와 함께 내려주는 정보 + 그때 사용자가 넣으려던 입력값. "중단하고 새로 시작"을 고르면
+ // 이 입력값 그대로 다시 만들어준다(다시 입력하게 하지 않는다).
+ const [blockedRun,setBlockedRun]=useState(null);
+ const [blockedBusy,setBlockedBusy]=useState(false);
+ // 이어하기로 돌아온 시점에 고른 공고가 마감된 경우(E-RUN-CLOSED) — 알리기만 하고 막지 않는다.
+ const [noticeClosed,setNoticeClosed]=useState(false);
  // 현재 진행 중인 프로젝트/워크플로우 데이터(itemInfo, announcement, projectId, pipelineResult,
  // matchCandidates, checkedFailedTitles, returnToDashboard, scoreOutcome/docOutcome/artifactOutcome)는
  // 전역 스토어(store/useWorkflowStore.js, Zustand)가 들고 있다 — 아래 화면들에는 지금처럼 그대로
@@ -123,7 +131,7 @@ export default function App(){
   if(view==='landing'||view==='mypage'){setMyPageNudgeOpen(false);return}
   setMyPageNudgeOpen(!user.has_profile);
  },[view,user,authChecked]);
- const startNewProject=()=>{projectRequest.current++;resetProject();resetScoreOutcome('fail');setView('intake')};
+ const startNewProject=()=>{projectRequest.current++;resetProject();resetScoreOutcome('fail');setNoticeClosed(false);setView('intake')};
 
  const handleIntakeSubmit=async(info)=>{
   setItemInfo({...info});
@@ -163,9 +171,43 @@ export default function App(){
    setProjectId(project.project_id);
   }catch(err){
    if(request!==projectRequest.current)return;
+   // [2026-09-28] 동시 실행 1건 제한(E-RUN-CONCURRENT)은 "실패"가 아니라 사용자가 고를 일이다 —
+   // 서버가 409 detail에 {blocked, active_project_id, active_stage, active_screen}을 구조화해서
+   // 주므로(app/routers/projects.py), alert로 JSON을 덤프하지 말고 선택 화면을 띄운다.
+   if(err.status===409&&err.detail&&err.detail.blocked){
+    setBlockedRun({...err.detail,info});
+    setView('intake');
+    return;
+   }
    console.error('프로젝트를 만들지 못했어요',err);
    window.alert(err.message||'프로젝트를 만들지 못했어요. 다시 시도해 주세요.');
    setView('intake');
+  }
+ };
+
+ // 위 선택 화면의 두 버튼. "이어서 진행하기"는 진행 중이던 프로젝트를 그대로 연다.
+ const resumeBlockedRun=()=>{
+  const blocked=blockedRun;
+  setBlockedRun(null);
+  if(!blocked)return;
+  // active_stage가 없으면 아직 공고를 고르기 전이라 매칭 화면으로 가야 한다(handleOpenProject 분기).
+  handleOpenProject({id:blocked.active_project_id,matched:!!blocked.active_stage,announcementTitle:''});
+ };
+ // "중단하고 새로 시작하기" — 서버엔 별도 엔드포인트가 없고 DELETE /projects/{id}가 그 역할이다
+ // (보관 처리돼 동시 실행 제한에서 빠진다). 지운 뒤 방금 입력값 그대로 다시 만들어준다.
+ const restartBlockedRun=async()=>{
+  const blocked=blockedRun;
+  if(!blocked)return;
+  setBlockedBusy(true);
+  try{
+   await deleteProject(blocked.active_project_id);
+   setBlockedRun(null);
+   await handleIntakeSubmit(blocked.info);
+  }catch(err){
+   console.error('진행 중인 작업을 중단하지 못했어요',err);
+   window.alert('진행 중인 작업을 중단하지 못했어요. 다시 시도해 주세요.');
+  }finally{
+   setBlockedBusy(false);
   }
  };
 
@@ -200,6 +242,8 @@ export default function App(){
   if(project.matched){
    try{
     const status=await getProjectStatus(project.id);
+    // [2026-09-28] 이어하기 시점에 고른 공고가 마감됐는지는 서버가 판단해서 준다(E-RUN-CLOSED).
+    setNoticeClosed(!!status.notice_closed);
     // 계획서 생성 중/실패에는 아직 BusinessPlan이 없어 /result가 404일 수 있다.
     const result=await getProjectResult(project.id).catch(err=>{
      if(err.status===404&&status.stage==='plan_writing')return null;
@@ -263,6 +307,14 @@ export default function App(){
  // 쪽에서는 로그아웃된 것처럼 보여주면 되고, logout() 내부에서 에러를 삼키게 해뒀다.
  // 마이페이지 값은 localStorage에 남으므로 같은 브라우저의 다음 사용자에게 보이지 않게 비운다.
  const handleLogout=()=>{authVersion.current++;projectRequest.current++;logout();useMyPageStore.getState().reset();resetProject();setUser(null);setView('landing')};
+ // 탈퇴 성공(서버가 계정과 모든 이력을 지우고 쿠키까지 정리한 뒤) — 로그아웃과 같은 정리를
+ // 하되 POST /auth/logout은 부르지 않는다(세션 자체가 이미 사라졌다).
+ const handleAccountDeleted=()=>{
+  authVersion.current++;projectRequest.current++;
+  useMyPageStore.getState().reset();resetProject();
+  setUser(null);setMyPageNudgeOpen(false);setView('landing');
+  window.alert('탈퇴가 완료됐어요. 그동안 이용해 주셔서 감사합니다.');
+ };
  // 관리자 판별은 프론트 이메일 목록이 아니라 백엔드가 내려주는 실제 role로 한다.
  const isAdmin=user?.role==='admin';
  if(!authChecked)return null; // 세션 확인 전 깜빡임(로그인 화면 잠깐 보였다 사라짐) 방지
@@ -273,7 +325,9 @@ export default function App(){
   {/* onSaved: 저장 성공 시 /auth/me를 다시 불러 user.has_profile을 최신값으로 갱신한다 —
       안 하면 로그인 시점에 false였던 값이 이번 세션 내내 그대로 남아 "시작하기"가 계속
       막힌다(방금 막 저장했는데도). */}
-  {view==='mypage'&&<MyPage onSaved={handleProfileSaved}/>}
+  {/* 마감 안내는 계획서~검수 사이 어느 화면으로 복귀하든 보여야 해서 화면 분기 위에 둔다. */}
+  {noticeClosed&&view!=='mypage'&&view!=='dashboard'&&<NoticeClosedBanner onClose={()=>setNoticeClosed(false)}/>}
+  {view==='mypage'&&<MyPage onSaved={handleProfileSaved} user={user} onAccountDeleted={handleAccountDeleted}/>}
   {view==='dashboard'&&<Dashboard onNewProject={startNewProject} onOpenProject={handleOpenProject}/>}
   {view==='intake'&&<IntakeForm initialValues={itemInfo} onSubmit={handleIntakeSubmit} onBack={()=>setView('dashboard')} backLabel="내 프로젝트로 돌아가기"/>}
   {view==='match-progress'&&<MatchProgress ready={!!projectId} onComplete={()=>setView('match-results')}/>}
@@ -288,5 +342,6 @@ export default function App(){
  </WorkspaceShell>;
  // 저장 전 강제 이동 모달은 view가 무엇이든(랜딩·워크스페이스 어느 화면 위에도) 뜰 수 있어야
  // 하므로 세 분기 바깥, 최상위에서 한 번만 렌더한다.
- return <React.Fragment>{body}<MyPageNudge open={myPageNudgeOpen} onGo={()=>setView('mypage')}/></React.Fragment>;
+ return <React.Fragment>{body}<MyPageNudge open={myPageNudgeOpen} onGo={()=>setView('mypage')}/>
+  <RunBlockedDialog detail={blockedRun} busy={blockedBusy} onResume={resumeBlockedRun} onRestart={restartBlockedRun} onClose={()=>setBlockedRun(null)}/></React.Fragment>;
 }

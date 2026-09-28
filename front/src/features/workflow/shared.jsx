@@ -1,6 +1,6 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
 import React, {useState,useRef,useEffect} from 'react';
-import {listProjects} from '../../api.js';
+import {listNotifications,listProjects,markNotificationRead} from '../../api.js';
 
 export function FloatingInput({inputRef,type,value,onChange,label}){
   return <label className="block text-[14px] text-[var(--muted-fg)]"><span className="block mb-2">{label}</span><input ref={inputRef} type={type} value={value} onChange={onChange} onInput={onChange} onBlur={onChange} className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg)]"/></label>;
@@ -57,6 +57,26 @@ function writeSeen(set){try{localStorage.setItem(SEEN_KEY,JSON.stringify([...set
 // 묶어주므로, 재시도가 아직 남아있는 건을 실패로 잘못 띄우던 문제도 같이 사라진다.
 const DISPLAY_FAILED = '문제가 생겨 멈췄다';
 
+// 알림 이력 kind(back/app/schemas.py NotificationOut) → 사용자에게 보여줄 문장.
+const NOTIFICATION_TEXT = {
+  문서평가: '사업계획서 평가가 끝났어요',
+  산출물확인: '프로토타입 확인이 필요해요',
+  표현검수: '문장 다듬기가 끝났어요',
+  실패: '작업이 문제로 멈췄어요',
+};
+
+// "3분 전"/"어제" 같은 대략적인 시각 — 초 단위 정확도가 필요한 화면이 아니다.
+function formatNotifiedAt(value){
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) return '';
+  const minutes = Math.floor((Date.now() - at.getTime()) / 60000);
+  if (minutes < 1) return '방금';
+  if (minutes < 60) return `${minutes}분 전`;
+  if (minutes < 60 * 24) return `${Math.floor(minutes / 60)}시간 전`;
+  if (minutes < 60 * 24 * 7) return `${Math.floor(minutes / (60 * 24))}일 전`;
+  return `${at.getMonth() + 1}.${at.getDate()}`;
+}
+
 export function progressAlertsFrom(projects){
   const alerts = [];
   for (const p of projects) {
@@ -97,7 +117,20 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
   const [alerts, setAlerts] = useState([]);
   const [seen, setSeen] = useState(readSeen);
   const [toast, setToast] = useState(null);
+  // [2026-09-28] 서버가 쌓아주는 알림 이력(GET /projects/notifications, SB-141) — 위 진행
+  // 목록이 "지금 상태"라면 이건 "그동안 무슨 일이 있었는지"다. 읽음 여부가 서버에 저장돼
+  // 브라우저를 바꿔도 유지된다(진행 목록의 seen은 localStorage라 이 기기에만 남는다).
+  const [history, setHistory] = useState([]);
   const runningKeys = useRef(new Set());
+
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    listNotifications()
+      .then((rows) => { if (!cancelled) setHistory(rows); })
+      .catch((err) => console.error('알림 이력을 불러오지 못했어요', err));
+    return () => { cancelled = true; };
+  }, [enabled, refreshKey]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -129,8 +162,20 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
   };
 
   const activeAlerts = enabled ? alerts : [];
+  const activeHistory = enabled ? history : [];
   const seenKey = a => `${a.key}:${a.failed?'failed':a.done?'done':'running'}`;
-  const hasUnread = activeAlerts.some((a) => (a.done || a.failed) && !seen.has(seenKey(a)));
+  const hasUnread = activeAlerts.some((a) => (a.done || a.failed) && !seen.has(seenKey(a)))
+    || activeHistory.some((n) => n.read_at == null);
+
+  // 이력 한 건을 눌러 들어가면 그 건만 읽음 처리한다 — 서버 저장이 실패해도 화면은 읽음으로
+  // 두지 않는다(다음에 다시 뜨는 게 조용히 사라지는 것보다 낫다).
+  const openHistory = (n) => {
+    setOpen(false);
+    markNotificationRead(n.notification_id)
+      .then(() => setHistory((rows) => rows.map((r) => (r.notification_id === n.notification_id ? { ...r, read_at: new Date().toISOString() } : r))))
+      .catch((err) => console.error('알림을 읽음 처리하지 못했어요', err));
+    onOpenProject?.({ id: n.project_id, matched: true });
+  };
 
   const toggleOpen = () => {
     setOpen((v) => {
@@ -198,6 +243,25 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
                     )}
                   </button>
                 ))}
+              </div>
+            )}
+
+            {/* 서버에 쌓인 알림 이력 — 위 진행 목록과 달리 지난 일까지 남는다(읽음도 서버 저장). */}
+            {enabled && activeHistory.length > 0 && (
+              <div className="border-t border-[var(--border)]">
+                <p className="px-4 pt-3 pb-1.5 text-[11.5px] font-bold text-[var(--muted-fg)]">지난 알림</p>
+                <div className="soft-scroll max-h-52 overflow-y-auto divide-y divide-[var(--border)]">
+                  {activeHistory.map((n) => (
+                    <button type="button" key={n.notification_id} onClick={() => openHistory(n)}
+                      className="flex w-full items-center gap-2.5 px-4 py-3 text-left hover:bg-[#f9fafb] transition-colors">
+                      {n.read_at == null && <span className="w-1.5 h-1.5 rounded-full bg-[var(--primary)] flex-shrink-0" aria-label="읽지 않음" />}
+                      <span className={'flex-1 min-w-0 text-[12.5px] ' + (n.read_at == null ? 'font-semibold' : 'text-[var(--muted-fg)]')}>
+                        {NOTIFICATION_TEXT[n.kind] || n.kind}
+                      </span>
+                      <span className="flex-shrink-0 text-[11px] text-[var(--muted-fg)]">{formatNotifiedAt(n.created_at)}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 

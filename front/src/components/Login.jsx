@@ -41,12 +41,21 @@ async function loginWithGoogle(idToken,consent={}){
 
 // PATCH /auth/consent — 신규 가입 직후 동의 화면 제출, 또는 나중에 설정에서 선택 동의를
 // 바꿀 때 쓴다(로그인 자체와 분리 — auth.py 참고). 이미 세션 쿠키가 있어야 호출 가능하다.
+// [2026-09-28 수정] 필수 동의(이용약관/개인정보)를 같이 보낸다 — 화면에서는 체크를 받으면서
+// 서버엔 선택 동의 2개만 보내고 있었다. 백엔드가 users.terms_agreed_at/privacy_agreed_at이
+// 비어 있으면 새 실행 시작을 403으로 막기 때문에(back/app/routers/projects.py create_project,
+// 기능정의서 v1.9 E-AUTH-CONSENT), 이 값이 안 실리면 신규 가입자가 아무것도 시작할 수 없다.
 async function updateConsent(consent){
   const res=await fetch(`${API_BASE}/auth/consent`,{
     method:'PATCH',
     credentials:'include',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({aiTrainingAgreed:!!consent.aiTrainingAgreed,notifyAgreed:consent.notifyAgreed!==false}),
+    body:JSON.stringify({
+      termsAgreed:!!consent.termsAgreed,
+      privacyAgreed:!!consent.privacyAgreed,
+      aiTrainingAgreed:!!consent.aiTrainingAgreed,
+      notifyAgreed:consent.notifyAgreed!==false,
+    }),
   });
   if(!res.ok){
     const body=await res.json().catch(()=>({}));
@@ -191,7 +200,7 @@ function StepConsent({onAgree,submitting,error}){
         <ConsentRow termKey="notify" checked={notifyAgreed} onChange={setNotifyAgreed} tag="[선택]" tagTone="text-[var(--muted-fg)]" label="제작 진행 알림 수신 동의"/>
       </div>
       <p className="mt-3 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">선택 동의는 이후 언제든 철회할 수 있습니다. 다만 철회 전 이미 학습에 반영된 데이터는 되돌릴 수 없습니다.</p>
-      <button onClick={()=>onAgree({aiTrainingAgreed,notifyAgreed})} disabled={!requiredOk||submitting}
+      <button onClick={()=>onAgree({termsAgreed,privacyAgreed,aiTrainingAgreed,notifyAgreed})} disabled={!requiredOk||submitting}
         className="w-full mt-6 rounded-xl bg-[var(--primary)] text-white py-3 text-[14.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--primary-dim)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">{submitting?'처리 중…':'동의하고 계속하기'}</button>
       {!requiredOk&&<p className="mt-2 text-[12px] text-[var(--muted-fg)] text-center">필수 항목에 모두 동의해야 계속할 수 있어요</p>}
       {error&&<p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-600 text-center leading-relaxed">{error}</p>}
@@ -230,8 +239,14 @@ export function LoginModal({open,onClose,onSuccess}){
     try{
       const data=await loginWithGoogle(idToken,DEFAULT_CONSENT); // {user, has_agreed_terms, is_new_user}
       setAccount(data.user);
-      if(data.is_new_user){
-        setStep('consent'); // 신규 가입 -> 실제 동의값을 받아야 함(아래 submitConsent)
+      // [2026-09-28 수정] 예전엔 is_new_user("이번 로그인으로 계정 행이 새로 생겼나")로
+      // 판단했는데, 그러면 이미 있던 계정은 필수 동의가 비어 있어도 동의 화면을 건너뛴다 —
+      // 동의 컬럼이 생기기 전에 가입했거나, 동의 화면에서 이탈했다가 재로그인한 계정이
+      // 그렇다. 그 계정은 POST /projects가 403으로 막혀 아무것도 못 하면서 동의할 방법도
+      // 없는 상태가 된다(실제 제보). 백엔드가 "실제로 필수 동의를 마쳤는지"를 계산해서
+      // 내려주는 has_agreed_terms를 보는 게 맞다(app/schemas.py GoogleLoginResponse).
+      if(!data.has_agreed_terms){
+        setStep('consent'); // 필수 동의 미완료 -> 실제 동의값을 받아야 함(아래 submitConsent)
       }else{
         setStep('success');
         onSuccess(data.user);

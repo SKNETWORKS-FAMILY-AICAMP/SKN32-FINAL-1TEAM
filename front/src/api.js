@@ -43,6 +43,7 @@ export const api={
   get:(path)=>apiFetch(path),
   post:(path,body)=>apiFetch(path,{method:'POST',body}),
   put:(path,body)=>apiFetch(path,{method:'PUT',body}),
+  patch:(path,body)=>apiFetch(path,{method:'PATCH',body}),
   delete:(path)=>apiFetch(path,{method:'DELETE'}),
 };
 
@@ -62,6 +63,15 @@ export const listProjects=()=>api.get('/projects');
 // 한다(back/app/routers/projects.py delete_project 참고). 어느 쪽이든 프론트 입장에선
 // 그냥 "내 목록에서 사라진다"만 알면 된다.
 export const deleteProject=(projectId)=>api.delete(`/projects/${projectId}`);
+
+// [2026-09-28] 헤더 종모양이 쓰는 알림 이력(GET /projects의 진행 상태 요약과는 별개 —
+// "그동안 무슨 일이 있었는지"의 개별 기록). kind: 문서평가/산출물확인/표현검수/실패.
+export const listNotifications=(unreadOnly=false)=>api.get(`/projects/notifications${unreadOnly?'?unread_only=true':''}`);
+export const markNotificationRead=(notificationId,read=true)=>api.patch(`/projects/notifications/${notificationId}/read`,{read});
+
+// 계정 탈퇴 — 계정·프로필·모든 실행 이력을 서버에서 지운다. 되돌릴 수 없어서 호출 전에
+// 반드시 확인 다이얼로그를 거친다(back/app/routers/auth.py delete_account).
+export const deleteAccount=()=>api.delete('/auth/me');
 
 // IntakeForm 제출 — multipart/form-data(payload는 JSON 문자열, files는 실제 첨부파일).
 export function createProject(payload,files=[]){
