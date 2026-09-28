@@ -312,6 +312,7 @@ class ProjectPlanInputOut(BaseModel):
     region_sido: str | None = None
     region_sigungu: str | None = None
     main_industry: str | None = None
+    main_industry_free: str | None = None
     certifications: list = Field(default_factory=list)
     ceo_careers: list = Field(default_factory=list)
     ceo_capability: str | None = None

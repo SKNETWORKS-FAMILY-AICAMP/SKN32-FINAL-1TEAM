@@ -48,6 +48,7 @@ _NotificationFailureScope = Enum(*ps.NOTIFICATION_FAILURE_SCOPES, name='notifica
 # MySQL 실제 ENUM으로 만든다.
 _PlanSectionTag = Enum(*ps.PLAN_SECTION_TAGS, name='plan_section_tag')
 _BizStatusCd = Enum(*ps.BIZ_STATUS_CODES, name='biz_status_cd')
+_MainIndustry = Enum(*ps.MAIN_INDUSTRIES, name='main_industry')
 
 # app_schema.sql엔 MySQL 전용 타입(LONGTEXT, INT UNSIGNED)으로 선언된 컬럼이 있는데,
 # 이 타입들을 그대로 쓰면 SQLite(tests/conftest.py가 만드는 테스트 DB)에서 컴파일 에러가 난다.
@@ -462,7 +463,11 @@ class ProjectPlanInput(Base):
     ceo_gender: Mapped[str | None] = mapped_column(String(10), nullable=True)
     region_sido: Mapped[str | None] = mapped_column(String(20), nullable=True)
     region_sigungu: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    main_industry: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # [2026-09-28 개정] 개인/법인 전용 — 프론트 드롭다운 9종(app/pipeline_stages.py
+    # MAIN_INDUSTRIES)으로 제한. 예비창업자는 프론트가 이 목록이 아니라 자유 텍스트를
+    # 받으므로 main_industry_free에 따로 담는다(두 컬럼은 같이 채워지지 않는다).
+    main_industry: Mapped[str | None] = mapped_column(_MainIndustry, nullable=True)
+    main_industry_free: Mapped[str | None] = mapped_column(String(100), nullable=True)
     certifications: Mapped[list | None] = mapped_column(JSON, nullable=True)
     ceo_careers: Mapped[list | None] = mapped_column(JSON, nullable=True)
     ceo_capability: Mapped[str | None] = mapped_column(Text, nullable=True)

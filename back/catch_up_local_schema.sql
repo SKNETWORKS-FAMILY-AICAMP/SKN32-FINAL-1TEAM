@@ -262,6 +262,7 @@ CALL _add_col_if_missing('agent_executions', 'error_reason', "TEXT NULL COMMENT 
 -- [2026-09-28 신규, SB-148] Task I/O 확장 검토 결과 — 원본 프롬프트/응답 대신 산출물
 -- 참조({table,id})만 남긴다(app/models.py AgentExecution.output_ref 참고).
 CALL _add_col_if_missing('agent_executions', 'output_ref', "JSON NULL COMMENT '이 실행이 만들거나 바꾼 산출물 참조({table,id} 또는 리스트) — 프롬프트/응답 원문은 저장하지 않음'");
+CALL _add_col_if_missing('project_plan_inputs', 'main_industry_free', "VARCHAR(100) NULL COMMENT '주업종(예비창업자 전용 자유 텍스트)'");
 
 DROP PROCEDURE IF EXISTS _add_col_if_missing;
 
@@ -291,6 +292,20 @@ ALTER TABLE plan_sections
 -- 이 컬럼에 들어가므로(app/routers/profile.py) 기존 값 정리 없이 바로 MODIFY해도 안전하다.
 ALTER TABLE user_profiles
     MODIFY COLUMN biz_status_cd ENUM('01','02','03') NULL COMMENT '01 계속사업자 / 02 휴업자 / 03 폐업자 (국세청 사업자상태조회 API 코드)';
+
+-- [2026-09-28 신규] project_plan_inputs.main_industry(주업종)를 실제 MySQL ENUM으로
+-- 강제한다(app/models.py _MainIndustry, app/pipeline_stages.py MAIN_INDUSTRIES 참고) —
+-- 프론트 드롭다운 9종(개인/법인 전용). 예비창업자는 자유 텍스트를 입력하므로 별도
+-- 컬럼(main_industry_free)으로 분리한다. 기존에 이 9종 밖의 자유 텍스트 값이 이미
+-- 저장돼 있으면(과거엔 컬럼 하나였으므로) ENUM으로 바로 MODIFY하면 실패하니, 그런
+-- 값은 먼저 main_industry_free로 옮기고 main_industry는 비운다.
+UPDATE project_plan_inputs
+SET main_industry_free = main_industry, main_industry = NULL
+WHERE main_industry IS NOT NULL
+  AND main_industry NOT IN ('제조','지식서비스','기계·소재','전기·전자','정보·통신','화공·섬유','바이오·의료·생명','에너지·자원','공예·디자인');
+ALTER TABLE project_plan_inputs
+    MODIFY COLUMN main_industry ENUM('제조','지식서비스','기계·소재','전기·전자','정보·통신','화공·섬유','바이오·의료·생명','에너지·자원','공예·디자인')
+    NULL COMMENT '주업종(개인/법인 전용, 프론트 드롭다운 9종)';
 
 -- 최종 확인용 — 실행 후 이 두 개를 결과로 같이 보내주시면 더 빠지는 컬럼이 있는지 바로 확인 가능합니다.
 SHOW COLUMNS FROM companies;

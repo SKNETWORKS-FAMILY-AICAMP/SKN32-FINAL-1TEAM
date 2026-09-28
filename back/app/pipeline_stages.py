@@ -197,3 +197,10 @@ STAGE_TO_AGENT_TASK = {
     STAGE_PLAN_WRITING: ('작성', 'writing'),
     STAGE_PROTOTYPE_BUILDING: ('구현', 'implement_prototype'),
 }
+
+# [2026-09-28 신규] 마이페이지/프로젝트 작성란 "주업종" — front/src/features/mypage/
+# derive.js INDUSTRY_OPTIONS와 동일(개인/법인 전용 드롭다운 9종). 예비창업자는 이
+# 목록이 아니라 자유 텍스트를 입력하므로(front IndustryField.selectable=false) 그 값은
+# ProjectPlanInput.main_industry_free(자유 문자열)에 따로 담고, 이 ENUM은 main_industry
+# 컬럼(개인/법인 전용)에만 적용한다.
+MAIN_INDUSTRIES = ('제조', '지식서비스', '기계·소재', '전기·전자', '정보·통신', '화공·섬유', '바이오·의료·생명', '에너지·자원', '공예·디자인')

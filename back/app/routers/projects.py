@@ -1186,7 +1186,9 @@ def _build_plan_document_data(db: Session, project: Project, plan: BusinessPlan 
         지원분야='○○',
         # 전문기술분야 입력칸은 아직 없다 — 그 전까진 IntakeForm에서 받는 주업종으로 채운다.
         전문기술분야=_or_placeholder(
-            project.tech_field or (plan_input.main_industry if plan_input else None), '○○·○○'),
+            project.tech_field or (plan_input.main_industry or plan_input.main_industry_free if plan_input else None),
+            '○○·○○',
+        ),
         정부지원사업비=government_amount_text,
         자기부담_현금=self_cash_text,
         자기부담_현물=self_in_kind_text,
@@ -1452,7 +1454,11 @@ async def create_project(
         ceo_gender=body.ceo_gender,
         region_sido=body.region_sido,
         region_sigungu=body.region_sigungu,
-        main_industry=body.main_industry,
+        # [2026-09-28 개정] main_industry는 이제 ENUM(9종, 개인/법인 드롭다운 전용) —
+        # 예비창업자는 프론트가 자유 텍스트를 보내므로(app/pipeline_stages.py
+        # MAIN_INDUSTRIES 주석 참고) 그 값은 main_industry_free에 담는다.
+        main_industry=body.main_industry if body.applicant_type != 'preliminary' else None,
+        main_industry_free=body.main_industry if body.applicant_type == 'preliminary' else None,
         certifications=body.certifications,
         ceo_careers=[c.model_dump() for c in body.ceo_careers],
         ceo_capability=body.ceo_capability,
