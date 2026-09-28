@@ -836,3 +836,42 @@ def test_implement_prototype_retry_switches_current_when_score_improves(monkeypa
     from app.routers.projects import UPLOAD_DIR
     old_disk_path = os.path.join(UPLOAD_DIR, os.path.basename(old_path))
     assert os.path.exists(old_disk_path), '새 버전이 채택돼도 밀려난 예전 버전 파일은 지우면 안 됨'
+
+
+def test_implement_prototype_retry_cleans_up_file_when_transaction_fails(monkeypatch, retry_setup, db_session):
+    """[SB-161 후속] 위 두 테스트는 "버전 행까지는 만들어졌는데 점수가 낮아/높아 채택
+    여부만 갈리는" 정상 케이스의 파일 보존을 다룬다. 이 테스트는 그와 다른 경우 —
+    파일은 디스크에 썼는데 그 직후 버전 행 생성/재채점(_rescore_verify2)이 실패해서
+    트랜잭션 자체가 롤백되는 경우다. 이때는 그 파일을 가리키는 DB 행이 아예 없으므로
+    "이전 결과는 삭제하지 않고 보존한다"(SB-155)의 보존 대상이 아니라 진짜 고아
+    파일이다 — 트랜잭션이 롤백돼 Artifact 행 자체가 남지 않는지, 그리고 파일도 같이
+    지워지는지를 확인한다."""
+    import os
+
+    import app.routers.projects as projects_router
+    from app.models import Artifact
+    from app.routers.projects import UPLOAD_DIR
+
+    before_ids = {row.artifact_id for row in db_session.query(Artifact.artifact_id).all()}
+    before_path = db_session.query(Artifact).filter(Artifact.plan_id == retry_setup['plan_id']).one().executable_path
+    # UPLOAD_DIR은 테스트마다 새로 만드는 게 아니라 전체 스위트가 공유하는 실제 디렉터리라
+    # (다른 테스트가 미리 써둔 파일들이 이미 있을 수 있음) 절대 개수가 아니라 이 호출
+    # 전후로 "새로 생긴 파일이 있는가"만 diff로 본다.
+    before_files = set(os.listdir(UPLOAD_DIR))
+
+    def _boom(rubric_items, *, check_kind):
+        raise RuntimeError('일시 오류(테스트) — 재채점 실패')
+    monkeypatch.setattr(projects_router.agents, 'run_verify2_retry', _boom)
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'implement_prototype')
+    assert res.status_code == 502, res.text
+
+    db_session.expire_all()
+    rows = db_session.query(Artifact).filter(Artifact.plan_id == retry_setup['plan_id']).all()
+    assert {r.artifact_id for r in rows} == before_ids, (
+        '트랜잭션이 실패했는데 버전 행이 남아있음 — 롤백이 안 되고 있음'
+    )
+    assert rows[0].executable_path == before_path, '기존 행도 손대지 않아야 함'
+
+    after_files = set(os.listdir(UPLOAD_DIR))
+    assert after_files == before_files, f'고아 파일이 안 지워지고 남아있음: {after_files - before_files}'

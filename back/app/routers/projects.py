@@ -1950,6 +1950,10 @@ def retry_task(
     changed: dict = {}
     output_ref: dict | list | None = None
     task_key = body.task_key
+    # implement_prototype/infographic이 파일을 디스크에 쓴 뒤 DB 트랜잭션이 실패하면(아래
+    # except) 방금 쓴 파일이 아무 행도 가리키지 않는 진짜 고아 파일로 남는다 — 이 경우에만
+    # 정리 대상이라 여기서 미리 None으로 잡아두고, 파일을 쓴 직후 채운다.
+    written_dest_path: str | None = None
 
     try:
         if task_key == 'strategy':
@@ -2037,6 +2041,7 @@ def retry_task(
             dest_path = os.path.join(UPLOAD_DIR, stored_name)
             with open(dest_path, 'wb') as out:
                 out.write(result.file_bytes)
+            written_dest_path = dest_path  # 아래에서 실패하면 except가 이 파일을 지운다.
             new_url = f'/uploads/{stored_name}'
 
             # [2026-09-29 신규, SB-155] old_artifact는 그대로 두고(버전 보존), 새 버전 행을
@@ -2155,8 +2160,21 @@ def retry_task(
         # 라우터를 다시 손대지 않도록 실패 기록을 미리 준비해둔다(_simulate_generation의
         # 예외 분류 방식과 동일하게 classify_error_kind를 재사용).
         error_kind = ps.classify_error_kind(exc)
+        # [2026-09-29 신규] 이 db.rollback()이 빠져있었다 — 그 결과 implement_prototype/
+        # infographic 도중(_clone_artifact_as_new_version으로 flush까지 된 새 버전 행이
+        # 있는 상태에서) run_verify2_retry 등이 실패하면, 그 flush된 새 행이 롤백되지 않고
+        # 아래 db.commit()에 실패 로그와 함께 그대로 같이 커밋돼버렸다(재채점 전 상태로
+        # 반쯤 멈춘 행이 DB에 남는 버그). _simulate_generation의 예외 처리와 같은 패턴으로
+        # 맞춘다 — 여기서 롤백해야 아래 "고아 파일 삭제"도 실제로 어떤 행도 안 가리키는
+        # 파일만 지우는 게 보장된다(안 그러면 방금 커밋된 행이 가리키는 파일을 지워버림).
+        db.rollback()
+        # 파일은 썼는데 그 뒤(버전 행 생성/재채점)가 실패해 트랜잭션이 롤백되면, 이 파일은
+        # 어떤 DB 행도 가리키지 않는 진짜 고아 파일이다 — SB-155가 보존 대상으로 삼는
+        # "채택 안 된 버전"과는 다르므로(그건 행이라도 있다) 여기서는 지운다.
+        if written_dest_path is not None and os.path.exists(written_dest_path):
+            os.remove(written_dest_path)
         db.add(AgentExecution(
-            project_id=project.project_id,
+            project_id=project_id,
             agent_name=agent_name,
             task_key=body.task_key,
             bundle_id=bundle_id,
