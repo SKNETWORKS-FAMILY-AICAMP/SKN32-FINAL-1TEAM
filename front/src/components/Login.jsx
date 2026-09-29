@@ -230,7 +230,15 @@ export function UserPill({user}){
 // 동의 화면 제출(PATCH /auth/consent)이 실제 값으로 덮어쓰므로 여기 값 자체는 잠깐만 쓰인다.
 const DEFAULT_CONSENT={aiTrainingAgreed:false,notifyAgreed:true};
 
-export function LoginModal({open,onClose,onSuccess}){
+// 필수 동의(이용약관·개인정보·만 16세 이상) 중 하나라도 비어 있는지 — 서버 has_agreed_terms와
+// 같은 조건. GET /auth/me(AuthMeOut)엔 has_agreed_terms가 없어 세션 복원 때는 이걸로 판단한다.
+export function needsRequiredConsent(u){
+  return !!u&&(!u.terms_agreed_at||!u.privacy_agreed_at||!u.age_confirmed_at);
+}
+
+// initialStep='consent': 이미 로그인된 세션에 새 필수 동의가 비어 있을 때 동의 단계부터 연다
+// (백엔드_버그제보_기존세션_연령동의.md — 예전엔 구글 로그인을 다시 해야만 이 화면을 볼 수 있었다).
+export function LoginModal({open,onClose,onSuccess,initialStep='method'}){
   const dialogRef=useRef(null);
   const closeBtnRef=useRef(null);
   const [step,setStep]=useState('method'); // 'method' | 'consent' | 'success' | 'error'
@@ -238,7 +246,7 @@ export function LoginModal({open,onClose,onSuccess}){
   const [error,setError]=useState(null);
   const [submitting,setSubmitting]=useState(false);
 
-  useEffect(()=>{if(!open)return;setStep('method');setAccount(null);setError(null)},[open]);
+  useEffect(()=>{if(!open)return;setStep(initialStep);setAccount(null);setError(null)},[open,initialStep]);
 
   // [2026-09-15 개정] 동의 화면을 먼저 보여줄지는 더 이상 프론트가 추측하지 않는다(새로고침
   // 하면 날아가는 state로 판단하던 게 버그 원인이었다) — 일단 로그인부터 보내고, 백엔드가
