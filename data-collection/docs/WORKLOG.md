@@ -23,6 +23,72 @@
 
 ## 작업 기록
 
+### 2026-09-29 · Codex · 조율 함수 설명서 개정 재검수
+
+- 요청·목적: 사용자 재검수 요청에 따라 Claude의 [응답](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RESPONSE_20260929.md)과 개정된 함수 설명서·검증 스크립트를 앞선 검수 항목별로 확인한다.
+- 작업 전 상태: 설명서 첫판은 `aac4093`에 있고 이번 개정과 Claude 기록은 미커밋이다. 조율 브랜치 기준 ref는 `deb5c81`; 서비스 코드·DB는 바뀌지 않았다.
+- 변경 파일: [재검수 결과](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK_20260929.md), 이 WORKLOG, [STATUS](STATUS.md), [문서 지도](README.md). 코드·DB·설명서·스테이징은 변경하지 않았다.
+- 결과: Linux 수집 상태 연결은 `app._connect()` 연결 전달로, G-01의 `app.eligibility()` 한 줄 권고는 철회로 문서 오류 해결 확인. 실제 공고 공급과 확인 필요 표시는 한계·합의 사항으로 명시됐으나 기능은 미완료. 새 P2 네 건은 확인 필요 목록의 입력 출처, 빠른 시작의 지연·실패/빈 목록 처리, 화면용 자격 근거의 접수 시작 전 공고 오해 방지, 카드·공고 기간 계약과 EC2 프로세스 교체 메모리 조건이다.
+- 검증: 번들 Python 3.12 + 기존 `.venv` 패키지로 `experiments.orchestration_probe` 독립 재실행. D·A·B·C 모두 통과, 종료 코드 0; A offset 0·10 각 10건, B 2,525건×5입력 차이 0, C 스텁 공고로 계획서작성. 개정 설명서 `git diff --check` 통과. 공용 DB는 probe의 SELECT만 실행, 유료 API 호출 없음.
+- 미검증·남은 문제: Linux(EC2) 실제 실행, 실제 `Announcement` 공급, 확인 필요 표시, 비정상 수집 상태·빈 결과, 동시 요청·프로세스 교체, 사람 기준 신청 가능 여부. 전체 unittest는 서비스 코드 변경이 없어 재실행하지 않았다.
+- 다음 단계: Claude가 P2 문구를 보완하고 조율 담당과 ①②③⑦ 및 입력 변환을 합의한 뒤 실제 공급 함수로 통합 검증한다. 신청자 유형 판정표 P1은 별도 사용자 지시 전까지 멈춘다.
+
+### 2026-09-29 · Claude · Codex 검수 반영 — 조율 함수 설명서 개정
+
+- 요청·목적: 사용자 — [Codex 검수](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_20260929.md) 반영(1번). 사용자 결정: 접수 시작 전 공고는 고를 수 있다.
+- 작업 전 상태:
+  - 설명서 첫판은 커밋 `aac4093`에 있었다(조율 담당이 머지했다면 옛 판).
+  - Codex P1 두 건은 설명서의 잘못된 안내였다.
+    - Linux에서 `collection_status.check()`가 `ec2/.env`를 읽지 않는다(`shared/config.py` CANDIDATES — 코드 대조로 확인).
+    - `app.eligibility()`는 `gate._check_period`에서 시작 전 공고를 False로 판정한다(확인).
+- 변경 파일:
+  - [설명서](guides/ORCHESTRATION_HANDOFF.md) 전면 개편. 순서: 빠른 시작 → 연결 전 합의 → 준비물·운영 → 함수 상세 → 예시 → 기타 합의 → 운영·개정 기록.
+  - `experiments/orchestration_probe.py`: 코드 블록을 내용으로 찾고, D(빠른 시작 실행)를 추가했다.
+  - [응답](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RESPONSE_20260929.md)(신규), 문서 지도, STATUS.
+- 전후 차이:
+  - 수집 상태는 `app._connect()` 연결을 넘기는 `collection_status_now()`로 바꿨다.
+  - ⑩ 권고를 철회했다. 4.5는 "화면용 — G-01에 그대로 쓰지 않는다"가 됐다.
+  - ①은 `date | None` + `apply_period_type` + 조율 `service.py:259` 비교 수정을 묶음으로 제안한다.
+  - ⑦은 `unknown_conditions` + 화면 표시 합의로 제안한다.
+  - ⑪ 벡터 대체 경로 `notices.embedding` `'<f4'`와 ⑫ 입력 변환을 추가했다.
+  - 운영 주의를 추가했다: 재시작은 새 프로세스로 교체, 동시 호출 미확인, 손상 파일 알려진 문제.
+  - 예시 `top=min(top_k, 10)`.
+- 검증: `python -m experiments.orchestration_probe --sbrain <세션 임시 폴더>\agent-orchestration` → D·A·B·C 통과, 종료 코드 0.
+  - B: 5가지 경우 다름 0.
+  - C: 공고 공급은 스텁 값.
+  - 서비스 코드를 바꾸지 않아 전체 unittest는 돌리지 않았다.
+- 미검증: Linux 실행, 실제 공고 공급, 재부팅·동시 호출.
+- 다음 단계: Codex 재검수. 조율 담당과 ①②③⑦ 합의.
+
+### 2026-09-29 · Codex · 조율 연동 설명서와 9/29 배치 독립 검수
+
+- 요청·목적: Claude의 [검수 요청](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_REQUEST_20260929.md)에 따라 조율 개발자용 함수 설명서, 실제 코드 계약, 9/29 배치 점검을 독립 확인한다.
+- 작업 전 상태: `ORCHESTRATION_HANDOFF.md`는 `aac4093`에 이미 포함되어 있었고, 요청서·검증 스크립트와 STATUS·WORKLOG·문서 지도 수정은 기존 미커밋 상태였다. 사용자 지시로 신청자 유형 판정표 P1 수정은 멈춰 있었다.
+- 변경 파일: [검수 결과](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_20260929.md) 신규, 이 WORKLOG, [STATUS](STATUS.md), [문서 지도](README.md). 코드·DB·설명서·기존 스테이징은 변경하지 않았다.
+- 결과: 예시 A·B·C 재실행 통과. Linux 설정 경로 불일치, G-01의 `app.eligibility()` 대체 시 접수 시작 전 공고 판정 차이(가상 공고로 재현), 실제 공고 공급의 필수 필드 미확정, “모름·입력 누락 통과”의 확인 필요 정보 소실을 P1으로 기록했다. 벡터 장애 시 필수 임베딩 공급과 동시 재시작 등의 조건도 기록했다.
+- 검증: 로컬 원격 추적 ref `deb5c81`에서 조율 코드를 임시 폴더로 읽고, 번들 Python 3.12 + 기존 `.venv` 패키지로 `experiments.orchestration_probe` 실행(A offset 0·10 각 10건, B 2,525건×5입력 차이 0, C 스텁 흐름 계획서작성). 공용 DB SELECT에서 `notices`·판정표 각 2,525행, 마감 없음 985, 모집 상태 모름 2,086, 금액 787 확인. `upload_judgments --plan`에서 두 표 모두 같음 2,525·변경 0. 로그 `exit=0`, 11·12단계 각각 추출 50/실패 0, 13단계 각 올림 50 확인. `bizinfo:PBLN_000000000126783`의 업력 근거 “5년 이상”과 상한 5 불일치를 SELECT로 확인. DB 쓰기·유료 API 호출 없음.
+- 미검증·남은 문제: Linux 실배포, 실제 Announcement 공급, 병렬 요청과 재시작 중 요청, 전체 unittest, 사람 기준 신청 가능 여부는 확인하지 않았다. `.venv` 실행 파일은 원래 Python 경로가 없어 직접 사용할 수 없었다.
+- 다음 단계: Claude가 검수 결과에 따라 설명서와 합의안을 보완하고, 조율 담당이 필수 필드·확인 필요 표시를 결정한 뒤 실제 공고 공급으로 통합 검증한다. 멈춘 판정표 P1은 별도 지시 전까지 수정하지 않는다.
+
+### 2026-09-29 · Claude · 조율 설명서 Codex 검수 요청 + 검증 스크립트
+
+- 요청·목적: 사용자 — 지금 상황을 Codex에 전달한다. 사용자 전달: 조율 담당이 우리 브랜치를 다른 브랜치로 머지해 작업한다.
+- 변경 파일:
+  - [검수 요청서](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_REQUEST_20260929.md)(신규, 새 주제 폴더 `reviews/orchestration/`)
+  - `experiments/orchestration_probe.py`(신규)
+  - [문서 지도](README.md) 3절 한 줄, [STATUS](STATUS.md)
+- 스크립트를 둔 이유: 지금까지의 확인은 세션 임시 폴더의 시험 코드로 했다. Codex가 같은 확인을 다시 돌릴 수 없어 저장소에 옮겼다.
+  - 설명서 7절 코드 블록을 정규식으로 꺼내 실행한다. 문서와 시험 코드가 따로 놀지 않게 하려는 것이다.
+  - 조율 코드 경로는 `--sbrain`으로 받는다(`git archive`로 꺼낸 폴더).
+  - 읽기 전용이다. 조율 쪽 pytest 없이 돈다.
+- 검증: `python -m experiments.orchestration_probe --sbrain <세션 임시 폴더>\agent-orchestration`
+  - A: T-C2 offset 0·10 각 10건, 순위 1~10·11~20
+  - B: G-01 5가지 경우 모두 다름 0
+  - C: 흐름이 계획서작성까지 감
+  - 문서 문자열의 `\.` SyntaxWarning을 raw 문자열로 고쳤다.
+  - 전체 unittest는 서비스 코드 변경이 없어 돌리지 않았다.
+- 다음 단계: Codex 검수 결과를 보고 설명서를 고친다. 가독성 개편(코드 예시를 맨 앞으로)도 그때 함께 한다. 멈춘 판정표 P1은 사용자 지시가 있을 때 재개한다.
+
 ### 2026-09-29 · Claude · 조율 안내서를 함수 설명서 형식으로 다시 씀
 
 - 요청·목적: 사용자 — "어떤 파라미터를 받고 어떤 결과를 주는지, 어떤 파이썬 파일인지, 개발자가 원하는 문서를 알기 쉽게".
