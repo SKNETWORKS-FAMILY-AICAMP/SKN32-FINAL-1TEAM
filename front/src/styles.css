@@ -139,3 +139,5 @@
 .generation-failed{text-align:center}.generation-failed-symbol{display:grid!important;place-items:center;width:64px;height:64px;margin:0 auto 22px!important;border-radius:20px;background:#fff0f0;color:#bb3434}.generation-failed-actions{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:32px}.generation-failed-note{margin-top:14px;font-size:12.5px;color:#8b95a1}
 /* 실패 카드는 진행 애니메이션(아래로 긴 영역)이 없어서 위쪽에 붙어 보였다(사용자 지적) — 화면 가운데로. */
 .generation-failed{min-height:calc(100vh - 260px);display:flex;flex-direction:column;justify-content:center;padding:40px 0!important}
+/* 안내 문장 끝 "주세요"만 다음 줄로 떨어지던 것(사용자 지적) — 어절 단위로 끊고 줄 길이를 고르게. */
+.generation-failed .preparation-heading>span:not(.generation-failed-symbol){word-break:keep-all;text-wrap:balance;max-width:440px;margin-left:auto;margin-right:auto}

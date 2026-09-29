@@ -118,7 +118,7 @@ export function GenerationFailed({kind, streak = 0, cap = REGENERATE_CAP, retryi
         <span className="generation-failed-symbol"><Icon name="close" size={30}/></span>
         <h1>{label} 만들지 못했어요</h1>
         <span>{exhausted
-          ? '서비스 쪽 문제가 계속되고 있어요. 관리자에게 알렸으니 잠시 후 다시 시도해 주세요.'
+          ? '서비스 쪽 문제가 계속되고 있어요. 문제가 기록됐고 확인 후 조치할게요. 잠시 후 다시 시도해 주세요.'
           : '서비스 쪽 문제로 생성이 중단됐어요. 입력하신 내용은 그대로 남아 있어요.'}</span>
       </div>
       <div className="generation-failed-actions">
