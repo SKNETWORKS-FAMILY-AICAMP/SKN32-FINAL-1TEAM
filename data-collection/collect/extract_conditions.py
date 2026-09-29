@@ -396,6 +396,9 @@ def pick_targets(connection, limit, only_missing_age=True, notice_id=None):
 
     공고 본문(body)·지원대상(target_text)도 함께 넣는다. 업력 조건이 첨부가
     아니라 공고 본문에 적힌 경우가 실측으로 69건 있었다.
+
+    첨부는 지금 공고에 달린 것만(na.active) 읽는다. 길이가 같으면 첨부 번호 순이다(2026-09-29 Codex 재검수 P1-1·P2-1,
+    11·12단계와 같다).
     """
     where = ''
     args = []
@@ -412,7 +415,7 @@ def pick_targets(connection, limit, only_missing_age=True, notice_id=None):
               FROM notices n
              WHERE EXISTS (SELECT 1 FROM notice_attachments na
                              JOIN attachment_texts at ON at.attachment_fk = na.id
-                            WHERE na.notice_fk = n.id AND at.last_status = 'ok'
+                            WHERE na.notice_fk = n.id AND na.active AND at.last_status = 'ok'
                               AND at.extracted_text IS NOT NULL)""" + where +
             ' ORDER BY n.notice_id LIMIT %s', tuple(args) + (limit,))
         notices = cursor.fetchall()
@@ -423,9 +426,9 @@ def pick_targets(connection, limit, only_missing_age=True, notice_id=None):
                 SELECT at.extracted_text
                   FROM notice_attachments na
                   JOIN attachment_texts at ON at.attachment_fk = na.id
-                 WHERE na.notice_fk = %s AND at.last_status = 'ok'
+                 WHERE na.notice_fk = %s AND na.active AND at.last_status = 'ok'
                    AND at.extracted_text IS NOT NULL
-                 ORDER BY at.text_chars DESC""", (pk,))
+                 ORDER BY at.text_chars DESC, na.id""", (pk,))
             attachments = [r[0] for r in cursor.fetchall()]
             targets.append({
                 'notice_id': nid, 'title': title or '',

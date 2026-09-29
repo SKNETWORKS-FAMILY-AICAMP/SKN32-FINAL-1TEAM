@@ -1,6 +1,84 @@
 # 현재 작업 상태
 
-마지막 갱신: 2026-09-29 · Claude (설명서 4차 개정) · 이전: Codex (설명서 3차 개정 재검수)
+마지막 갱신: 2026-09-29 · Claude (판정표 지문 수정 Codex 승인 확인) · 이전: Codex (설명서 3차 개정 재검수)
+
+## 2026-09-29 · Codex → Claude 확인 · 판정표 지문 수정 **승인**
+
+- [Codex 4차 재검수](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK3_20260929.md): **코드 재검수 승인.** 첨부 경계 반례에서 서비스 확인 필요·13단계 NULL, 앞 차수 동작(반복 문구·단어 중간 공백·원문 없음·지문 다름) 유지. 조각별 발췌 횟수 ≤ 원문 횟수를 코드 경계 검토와 무작위 입력 2,500건으로 확인(초과 0).
+- Codex 참고: 자격 구간이 없는 첨부 안의 빈 줄 때문에 실제로 읽은 언급이 발췌 횟수에서 빠져 유효한 불가가 확인 필요로 내려갈 수 있다(보수적 방향, 응답서에 적은 범위).
+- 남은 확인: 9/30 09:00 배치 — 10·11·12단계 비활성 첨부 공고 5건씩 재판정, 13단계 신청자 유형 결론 변경 3건 업로드(`--plan` 기준). ~~조율 설명서의 `search/app.py` 줄 번호 맞추기~~ → 9/29 완료(`match` 387·`MatchRequest` 294·`eligibility` 828·`GateRequest` 348·업력 설명 859-885, 3.3절 5번에 승인된 동작 두 줄 추가).
+
+## 2026-09-29 · Claude · Codex 3차 재검수(P1 1) 반영 — 발췌를 조각마다 센다
+
+- [Codex 3차 재검수](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK2_20260929.md): 보류 P1 1. 첨부 '예비'·'창업' 경계가 발췌 전체의 공백 제거로 붙어 가짜 언급이 생기고, 안 읽은 진짜 언급을 가렸다. Claude 재현 확인. 앞 차수 지적은 모두 수정 확인.
+- 사용자 승인(추천 방향): 발췌를 빈 줄로 나눈 조각마다 세서 더한다. 발췌 함수는 그대로(지문 변화 없음).
+- 사전 집계(SELECT만): 같은 2건, 전체 공고 중 경계 가짜 언급 0건. unittest **663개 통과**(건너뜀 13). load_auto·`--plan`(바뀜 3)·probe 모두 그대로.
+- 8000은 사용자 요청으로 새 코드로 재시작했다: boot_errors 없음, used 2,520 · stale 5 · unread_pre_founder 2 · unverified_pre_founder 0.
+- [3차 응답·재검수 요청](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK2_RESPONSE_20260929.md) — 결과: 같은 폴더 `JUDGMENT_FRESHNESS_REVIEW_RECHECK3_20260929.md`.
+
+## 2026-09-29 · Claude · Codex 2차 재검수(P1 1·P2 1) 반영, 재검수 요청
+
+- [Codex 2차 재검수](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK_20260929.md): 보류. 앞선 7건 중 6건 수정 확인. 남은 것은 A안 경계 두 가지(반복 문구, 단어 중간 줄바꿈)와 `current`만 넘기면 A안 검사를 건너뛰는 호출. Claude가 두 반례를 재현했다.
+- 사용자가 Claude 추천 방향을 승인: **P1 횟수 비교**(공백 지운 원문의 '예비창업' 횟수 > 발췌 횟수면 확인 필요), **P2 원문 없이·지문 다름이면 strong 불가를 쓰지 않음**(`unverified_pre_founder`, 서비스·13단계 공통).
+- 사전 집계(SELECT만): 횟수 방식도 같은 2건(126586·126651), 새로 걸리거나 빠지는 공고 없음.
+- 검증: unittest **659개 통과**(건너뜀 13). load_auto 2.1초·같음 2,520·다름 5·발췌 밖 2·확인 못 함 0. `upload_judgments --plan` 신청자 유형 바뀜 3(A안 2 + 재판정 대기 126490). probe D·A·B·C 통과, 필터 통과 1,596.
+- 8000은 사용자 요청으로 새 코드로 재시작했다: boot_errors 없음, used 2,520 · stale 5 · unread_pre_founder 2 · unverified_pre_founder 0.
+- [응답·재검수 요청](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK_RESPONSE_20260929.md) — 결과: 같은 폴더 `JUDGMENT_FRESHNESS_REVIEW_RECHECK2_20260929.md`.
+
+## 2026-09-29 · Claude · Codex 지문 재검수 나머지 6건 반영, 재검수 요청
+
+- 사용자 요청으로 8000 재시작 후 나머지 지적을 반영했다. [응답·재검수 요청](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RESPONSE_20260929.md)(결과: 같은 폴더 `JUDGMENT_FRESHNESS_REVIEW_RECHECK_20260929.md`).
+  - P1-1·P2-1: 10·11·12단계 첨부 조회 5곳에 `na.active`, 정렬 마지막 `na.id`. 비활성 첨부 공고 6건 중 5건 지문 변경 → 서비스는 '모름'(126490 blocked 포함), **내일 배치가 10·11·12단계 각 5건 다시 판정**(예상 약 1~2센트).
+  - P1-3: `load_auto`가 모든 모드에서 지문을 먼저 구한다. file 모드도 확인, 못 구하면 기능 끔.
+  - P1-4: `load()` 줄 단위 ID 검사, `boot()`가 판정 읽기 예외를 기능 끄기로(업종 포함).
+  - P2-2: 13단계 오류·경고 둘 다 `stage_warnings`. P2-3: 쓸 판정 0건이면 이유가 `boot_errors`에.
+- 검증: unittest **654개 통과**(건너뜀 13). 공용 DB SELECT만: load_auto 2.1초·같음 2,520·다름 5·확인 필요 2. `--plan`: 11단계 5건 $0.004, 12단계 5건 $0.006, 10단계 5건, 13단계 바뀜 2. probe D·A·B·C 통과, 필터 통과 1,596. 8000 재시작: boot_errors 없음, used 2,520·stale 5·unread 2.
+
+## 2026-09-29 · Claude · Codex 지문 재검수 결과 확인, P1-2 A안 반영
+
+- [Codex 재검수](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_20260929.md): **보류, P1 4건·P2 3건.** Claude가 지적 위치를 코드에서 모두 확인했다(사실).
+- 사용자 결정: P1-2(발췌 밖 원문 변경을 지문이 못 봄)는 **A안** — strong 불가인데 LLM이 안 읽은 원문에 '예비창업'이 있으면 빼지 않고 확인 필요.
+  - 사전 집계(DB 읽기만): strong 불가 187건 중 발췌 밖 글이 있는 25건에는 해당 언급 0건. 전체로는 2건(126586·126651, 둘 다 자격 문장은 아님).
+  - 코드: `search/applicant_types.py`(`current_documents`·`unread_pre_founder`·`mark_unread`, `pre_founder()`·`type_check()`), `collect/upload_judgments.py`(13단계 결론 칸도 같은 규칙, 공고문을 못 읽으면 신청자 유형 표는 올리지 않음), `search/app.py` health에 `unread_pre_founder`.
+  - 검증: 전체 unittest 647개 통과(건너뜀 13). Codex 재현(본문 2,100자 뒤 문장 추가)을 테스트로 옮겼다. 실제 DB로 load_auto 1.9초·낮춤 2건. `upload_judgments --plan` 신청자 유형 바뀜 2(내일 13단계가 올림). `orchestration_probe` D·A·B·C 통과, 필터 통과 1,594 → 1,595.
+  - 8000은 사용자 요청으로 재시작해 반영했다.
+- 남은 지적 6건은 위 항목에서 반영했다.
+
+## 2026-09-29 · Claude · 프로젝트 점검(읽기만)과 문서 정리
+
+- 테스트 637개 통과, 오늘 배치 정상, 8000 판정 2,525건 최신, 비밀값 유출 0건.
+- 문서 정리: README(단계 수·옵션·종료 코드·테스트 수), 오늘 인계서(P1 상태·남은 일), 깨진 링크 18개, `guides/JUDGMENT_TABLES.md` "(예정)"·경로, `share/build_jev.py` 깨진 글자.
+- 미룸: 조율 설명서의 `app.py` 줄 번호와 `daily_pipeline.py` 주석은 Codex 검수 뒤.
+- 코드 과제는 손대지 않았다: EC2 색인 누락 가능성, K-Startup 조기 마감, 백업의 LLM 표 누락, `match_bge` 없는 모듈, DB 3306 개방 기록(보안). 자세한 내용은 [인계서](NEXT_SESSION_HANDOFF_20260929.md) 4절 4번과 WORKLOG.
+
+## 2026-09-29 · Claude · 판정표 P1 수정 완료 — 지문(문서 해시)으로 신선도 확인, 재검수 대기
+
+- [9/28 재검수](reviews/integration/JUDGMENT_TABLES_REVIEW_RECHECK_20260928.md) P1 세 건과 13단계 90% 가드(P2)를 고쳤다. 새 표(DDL)는 만들지 않았다.
+  - 서비스가 켜질 때 11단계와 같은 함수로 지금 공고문의 지문을 계산한다(약 1.7초).
+  - 판정 행의 `document_sha256`이 같을 때만 쓴다(DB → 파일). 다르면 '모름'이다.
+  - 지문을 못 구하면 기능만 끈다. 결과 파일의 깨진 줄은 건너뛴다(서버 시작이 멈추지 않음).
+  - 13단계: 중복 줄이면 그 표는 올리지 않고(error), 공고가 90% 미만으로 줄면 경고만 남기고 올린다(`stage_warnings`의 `warning`).
+  - `/api/health`에 `applicant_types` 신선도를 추가했다.
+- 사용자 결정: **프롬프트 버전은 대조하지 않는다.** 업종 판정은 이번 범위에서 뺐다(순위 기능 꺼짐).
+- 검증
+  - 전체 unittest 637개 통과(건너뜀 13).
+  - 실제 공용 DB로 boot(): 판정 2,525건 모두 지문 같음(DB 2,525·파일 0·다름 0), 21.7초. 매칭 결과는 전과 같다(필터 통과 1,594, 본문 불가 181, 되살림 9).
+  - `orchestration_probe` D·A·B·C 통과.
+- **내부 교차 검토 워크플로는 권한 검사 일시 오류로 돌리지 못했다.** 대신 [Codex 검수 요청서](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_REQUEST_20260929.md)를 만들었다(결과: 같은 폴더 `JUDGMENT_FRESHNESS_REVIEW_20260929.md`).
+- 8000 서버는 사용자 요청으로 새 코드로 재시작했다. `/api/health` applicant_types: used 2,525 · fresh_from_db 2,525 · stale 0.
+- 문서: `guides/JUDGMENT_TABLES.md` 6절, `guides/ORCHESTRATION_HANDOFF.md` 3.3, `share/전체흐름.html`(게시본 미갱신).
+
+## 2026-09-29 · Claude · 8010 "매칭 방식 비교"를 공유 페이지로 게시
+
+- 사용자 요청으로 8010을 서버 대신 결과 페이지로 공유하는 방식을 시험했다. 첫 화면으로 [공고 매칭 방식 비교](https://claude.ai/artifact/UT4MmaFiorn5GYZnaaFXDJ)를 게시했다(**비공개** — 공유는 사용자가 페이지의 Share 메뉴에서).
+- 데이터: `reports/filter_first_eval_20260928T104212Z/results.json`(요약·질의별 목록)을 페이지에 넣었다. 섞인 질의 수(50·22·0 / 58)와 이유별 건수는 그 파일에서 다시 셌다. 예시는 질의 q001이다.
+- 서버·DB가 필요 없다. 결과가 바뀌면 다시 게시해야 한다.
+- 이어서 나머지 네 화면도 게시했다(모두 **비공개**, 보조 에이전트 4개가 병렬 제작 → Claude가 비밀정보·금지 태그 확인 후 게시).
+  - [공고 데이터 전체 흐름](https://claude.ai/artifact/MWB72kbMUNmz5ku73StqFS): 9/29 현재 기준으로 새로 썼다. Codex가 지적한 `web/flow.html`의 옛 문구는 옮기지 않았다. 팀 서버 자체 색인 재생성·배포 여부는 "확인 필요"로 표시했다.
+  - [업종 추출 결과](https://claude.ai/artifact/CTumyNQb6KUoVB3tps8jaN): final5 1,852건(서비스 사용) + final6 비교. 순위 사용 174/217은 `industry_rank.load()`와 대조했다.
+  - [Jev 채점 시험](https://claude.ai/artifact/K2WJfq5XcxoZz8nrn68myc): 143쌍 수치 22개를 summary·WORKLOG와 대조해 모두 일치했다.
+  - [신청자 유형 판정](https://claude.ai/artifact/SwEHA6bDVei9PPVFe1KrUp): 9/28 실행 2,476건. 서비스 처리 1,701·183·289·303, 되살림 9, 엇갈림 68/363을 대조했다.
+- 페이지 원본은 **저장소 [share/](../share/README.md)**로 옮겼다(사용자 요청). HTML 5장, 생성 스크립트 4개, 틀 3개가 있다. 스크립트 경로는 상대 경로로 바꿨다. 다시 만들면 게시본과 같다. 미커밋.
 
 ## 2026-09-29 · Claude · Codex 3차 재검수 반영 — 설명서 4차 개정 (SB-189)
 

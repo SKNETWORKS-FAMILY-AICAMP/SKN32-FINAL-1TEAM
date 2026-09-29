@@ -12,7 +12,8 @@ SQL: db/mysql_migration_006_notice_judgments.sql
 무엇을 올리나
   notice_applicant_types  ← search/applicant_types.default_path() (매일 11단계가 갱신하는 누적 파일)
                             서비스 결론(pre_founder_verdict·registered_only_phrase)은 search/applicant_types 의
-                            같은 함수로 계산한다 — DB 를 읽는 쪽이 서비스와 같은 결론을 보게
+                            같은 함수로 계산한다 — DB 를 읽는 쪽이 서비스와 같은 결론을 보게. 발췌 밖 원문에 '예비창업'
+                            이 있는 strong 불가도 서비스처럼 NULL(확인 필요)로 올린다(2026-09-29 Codex 재검수 P1-2, A안)
   notice_industries       ← data/industries/results.jsonl (12단계 누적) · 없으면 final6 · 또는 --industry-results
                             allowed_sections·usable_for_rank 는 올릴 때의 코드 규칙(industry_groups·industry_rank)으로 계산
 
@@ -42,7 +43,7 @@ def industry_default_path():
 
 INDUSTRY_RESULTS = INDUSTRY_SEED      # 옛 이름(테스트·문서 호환)
 BATCH = 200
-MIN_FILE_RATIO = 0.9      # 결과 파일 행이 DB 행의 이만큼도 안 되면 올리지 않는다
+MIN_FILE_RATIO = 0.9      # 결과 파일의 공고가 DB 의 이만큼도 안 되면 경고한다(2026-09-29 — 막지 않고 경고만)
 
 TYPE_COLUMNS = ('notice_id', 'pre_founder_verdict', 'registered_only_phrase', 'varies',
                 'pre_founder_status', 'pre_founder_strength', 'pre_founder_evidence',
@@ -73,13 +74,18 @@ def read_meta(results_path):
 
 # ─────────────────────────────────────────────────────────── 행 만들기 (DB 없이 테스트한다)
 
-def type_rows(path):
-    """신청자 유형 결과 파일 → 테이블 행 목록."""
+def type_rows(path, documents=None):
+    """신청자 유형 결과 파일 → 테이블 행 목록.
+
+    documents: search.applicant_types.current_documents() 값(지금 공고문). 서비스와 같이 발췌 밖 언급을 확인한다.
+    없거나 그 공고의 지문이 다르면 strong 불가를 'blocked' 로 올리지 않는다(NULL, 확인 필요 — Codex 재재검수 P2).
+    """
     from search import applicant_types as at
     from experiments.sql_semantic import applicant_type_llm as atl
     meta = read_meta(path)
     engine = meta.get('engine') or '%s@%s' % (atl.MODEL, atl.EFFORT)
     table = at.load(path)
+    table['notices'] = at.mark_unread(table['notices'], documents)
     out = []
     for row in read_jsonl(path):
         llm = row.get('llm')
@@ -227,18 +233,37 @@ def run(only=None, dry_run=False, connection=None, types_path=None, industry_pat
                 result[key] = {'error': '결과 파일이 없다: %s' % path}
                 say('  %s — 결과 파일이 없다' % table)
                 continue
-            rows = build(path)
+            if key == 'types':
+                # 서비스(load_auto)와 같은 결론을 올리려면 지금 공고문이 필요하다. 못 읽으면 이 표는 올리지 않는다
+                try:
+                    rows = build(path, at.current_documents(connection))
+                except Exception as exc:
+                    result[key] = {'error': '지금 공고문을 읽지 못해 올리지 않는다(%s)' % type(exc).__name__}
+                    say('  %s — %s' % (table, result[key]['error']))
+                    continue
+            else:
+                rows = build(path)
             current = read_current(connection, table, columns)
             todo, counts = plan(rows, current, known, columns)
             counts.update(source=os.path.relpath(path, ROOT), rows=len(rows), uploaded=0)
-            # 파일 행이 DB 행보다 크게 줄었으면 파일이 잘못된 것으로 보고 올리지 않는다(Codex 검수 P1 — 누적 파일
-            # 손상·빈 파일). DB 에서 행을 지우지 않으므로 올리지 않아도 DB 는 전날 값 그대로다
-            if current and len(rows) < MIN_FILE_RATIO * len(current):
-                counts['error'] = '결과 파일 행(%d)이 DB 행(%d)의 %d%% 미만 — 파일 이상으로 보고 올리지 않는다' % (
-                    len(rows), len(current), MIN_FILE_RATIO * 100)
+            # 같은 공고가 파일에 두 번 이상 있으면 어느 줄이 맞는지 모른다 — 파일 이상으로 보고 이 표는 올리지 않는다
+            # (2026-09-29 Codex 재검수 P2: 중복 줄이 행 수를 부풀려 90% 검사를 통과하던 문제). DB 는 전날 값 그대로다
+            ids = [r['notice_id'] for r in rows]
+            duplicated = len(ids) - len(set(ids))
+            if duplicated:
+                counts['error'] = '같은 공고가 결과 파일에 겹쳐 있다(%d줄) — 파일 이상으로 보고 올리지 않는다' % duplicated
                 say('  %s — %s' % (table, counts['error']))
                 result[key] = counts
                 continue
+            # 파일에 있는 공고가 DB 보다 크게 적으면 **경고만** 남기고 맞는 행은 올린다(2026-09-29 — 예전에는 전부 막아
+            # 정상 갱신까지 멈췄다). 올리지 않아도 DB 행을 지우지는 않고, 서비스가 공고마다 지문을 확인해 옛 판정은
+            # 쓰지 않으므로(search/applicant_types.fresh_only) 여기서 전부 막을 이유가 없다. 공고 수는 지금 notices 에 있는 것만 센다
+            in_file = set(ids) & known
+            in_db = set(current) & known
+            if in_db and len(in_file) < MIN_FILE_RATIO * len(in_db):
+                counts['warning'] = '결과 파일의 공고(%d)가 DB(%d)의 %d%% 미만 — 파일이 줄었는지 확인 필요(맞는 행은 올림)' % (
+                    len(in_file), len(in_db), MIN_FILE_RATIO * 100)
+                say('  %s — 경고: %s' % (table, counts['warning']))
             if todo and not dry_run:
                 upsert(connection, table, columns, todo)
                 counts['uploaded'] = len(todo)

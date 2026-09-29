@@ -1,0 +1,572 @@
+<meta charset="utf-8">
+<title>공고 데이터 전체 흐름</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@500;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* 레이아웃: 한 열 지도. 한눈에 → 매일 배치 13단계 → 데이터 지도 → 추천 흐름 → 자격 판정·조율 연결 → 결정·남은 일. 첫 페이지(매칭 방식 비교)와 같은 토큰 */
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --ink: #111a28;
+  --ink-2: #47526a;
+  --muted: #6b7690;
+  --line: #dde2ea;
+  --grid: #e9edf2;
+  --s1: #86b6ef;   /* 모으기 단계 */
+  --s2: #2a78d6;   /* 검색 준비 단계 */
+  --s3: #104281;   /* LLM 판정 단계 · 지금 */
+  --range: rgba(42,120,214,.18);
+  --bad: #c2392f;  --bad-bg: #fbe9e7;
+  --good: #1d7a46; --good-bg: #e6f4ec;
+  --warn: #8f5600; --warn-bg: #fcf0db;
+  --font-display: "Hahmlet", "Noto Serif KR", "Apple SD Gothic Neo", serif;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151c; --surface: #181d26; --ink: #eef2f8; --ink-2: #b7c0d0; --muted: #8d97aa;
+    --line: #2a3140; --grid: #232a36;
+    --s1: #184f95; --s2: #3987e5; --s3: #9ec5f4; --range: rgba(57,135,229,.22);
+    --bad: #f08a80; --bad-bg: #3a1f1d; --good: #6fd29a; --good-bg: #173424;
+    --warn: #f0b85a; --warn-bg: #3a2c14;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151c; --surface: #181d26; --ink: #eef2f8; --ink-2: #b7c0d0; --muted: #8d97aa;
+  --line: #2a3140; --grid: #232a36;
+  --s1: #184f95; --s2: #3987e5; --s3: #9ec5f4; --range: rgba(57,135,229,.22);
+  --bad: #f08a80; --bad-bg: #3a1f1d; --good: #6fd29a; --good-bg: #173424;
+  --warn: #f0b85a; --warn-bg: #3a2c14;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.65; }
+.wrap { max-width: 980px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; display: grid; gap: 48px; }
+h1, h2 { font-family: var(--font-display); font-weight: 700; line-height: 1.25; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(28px, 4.2vw, 40px); }
+h2 { font-size: 22px; }
+h3 { font-size: 15px; font-weight: 600; margin: 0; }
+p { margin: 0; max-width: 68ch; }
+code { font-family: var(--font-mono); font-size: .88em; background: var(--grid); padding: 0 4px; border-radius: 4px; overflow-wrap: anywhere; }
+.eyebrow { font-size: 12px; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.lede { color: var(--ink-2); font-size: 16px; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+section { display: grid; gap: 18px; }
+header { display: grid; gap: 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--muted); font-size: 13px; }
+.meta span b { color: var(--ink-2); font-weight: 500; }
+/* 격자 칸이 넓은 표·도식에 밀려 페이지가 넓어지지 않게 — 넓은 것은 자기 상자 안에서만 가로 스크롤 */
+.wrap, header, section, .sec-head, .phases, .phase { grid-template-columns: minmax(0,1fr); }
+details, .tbl-card, .tbl { min-width: 0; max-width: 100%; }
+.sec-head { display: grid; gap: 6px; }
+.sec-head .eyebrow { font-size: 11.5px; }
+.note { font-size: 13px; color: var(--muted); }
+
+/* 배지 */
+.badge { display: inline-flex; gap: 4px; align-items: center; font-size: 11.5px; padding: 1px 8px; border-radius: 999px; font-weight: 600; white-space: nowrap; }
+.badge.bad { color: var(--bad); background: var(--bad-bg); }
+.badge.ok { color: var(--good); background: var(--good-bg); }
+.badge.warn { color: var(--warn); background: var(--warn-bg); }
+.badge.off { color: var(--ink-2); background: var(--grid); }
+.tag { display: inline-block; font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: var(--grid); color: var(--ink-2); font-weight: 500; }
+
+/* 한눈에 — 네 칸 흐름 */
+.overview { display: grid; grid-template-columns: minmax(0,1fr) 28px minmax(0,1fr) 28px minmax(0,1fr) 28px minmax(0,1fr); align-items: stretch; }
+.node { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.node .k { font-size: 11.5px; color: var(--muted); font-weight: 600; letter-spacing: .04em; }
+.node h3 { font-size: 15.5px; }
+.node p { font-size: 13px; color: var(--ink-2); }
+.node.hub { border-color: var(--s3); box-shadow: inset 0 0 0 1px var(--s3); }
+.arrow { display: grid; place-items: center; color: var(--muted); font-size: 18px; position: relative; }
+.arrow small { position: absolute; top: calc(50% + 12px); font-size: 10.5px; white-space: nowrap; color: var(--muted); display: none; }
+
+/* 배치 13단계 */
+.batch-meta { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; display: grid; gap: 2px; min-width: 0; }
+.stat .big { font-family: var(--font-mono); font-size: 24px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.stat .sub { font-size: 12.5px; color: var(--muted); }
+.phases { display: grid; gap: 22px; }
+.phase { display: grid; gap: 4px; }
+.phase-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding-bottom: 6px; border-bottom: 2px solid var(--p); }
+.phase-h h3 { font-size: 16px; }
+.phase-h span { font-size: 12.5px; color: var(--muted); }
+.p1 { --p: var(--s1); } .p2 { --p: var(--s2); } .p3 { --p: var(--s3); }
+.stages { list-style: none; margin: 0; padding: 0; display: grid; }
+.stage { display: grid; grid-template-columns: 34px minmax(0,1fr) minmax(0,230px); gap: 4px 14px; padding: 12px 0; border-bottom: 1px solid var(--grid); align-items: start; }
+.stage:last-child { border-bottom: 0; }
+.no { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--p); display: grid; place-items: center; font-family: var(--font-mono); font-size: 12.5px; font-weight: 500; background: var(--surface); }
+.stage .t { font-weight: 600; font-size: 14.5px; }
+.stage .d { font-size: 13.5px; color: var(--ink-2); }
+.stage .w { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.stage .w code { font-size: 11.5px; }
+.stage .m { font-size: 12.5px; color: var(--ink-2); font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; line-height: 1.5; }
+.stage .m b { color: var(--ink); font-weight: 500; }
+.fail-note { background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 12px 16px; font-size: 13.5px; color: var(--ink-2); display: grid; gap: 4px; }
+
+/* 데이터 지도 */
+.zones { display: grid; grid-template-columns: minmax(0,1.25fr) minmax(0,1fr); gap: 14px; }
+.zone { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.zone.shared { border-color: var(--s3); box-shadow: inset 0 0 0 1px var(--s3); }
+.zone-h { display: grid; gap: 2px; }
+.zone-h .sub { font-size: 12.5px; color: var(--muted); }
+.items { list-style: none; margin: 0; padding: 0; display: grid; }
+.items li { display: grid; gap: 2px; padding: 9px 0; border-top: 1px solid var(--grid); font-size: 13.5px; }
+.items li .row { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; justify-content: space-between; }
+.items li .name { font-weight: 600; }
+.items li .desc { color: var(--ink-2); font-size: 13px; }
+.items li .cnt { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-2); }
+.uplinks { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-2); }
+.uplinks .step { display: inline-flex; gap: 6px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px 3px 4px; }
+.uplinks .step .no { width: 22px; height: 22px; font-size: 11px; border-width: 1.5px; }
+
+/* 추천 흐름 — 깔때기 */
+.funnel { display: grid; gap: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 6px 16px; }
+.fstep { display: grid; grid-template-columns: 34px minmax(0,1fr) minmax(0,260px); gap: 4px 14px; padding: 14px 0; border-bottom: 1px solid var(--grid); align-items: start; }
+.fstep:last-child { border-bottom: 0; }
+.fstep .no { --p: var(--s2); }
+.fstep.pre .no { --p: var(--muted); border-style: dashed; }
+.fstep .t { font-weight: 600; font-size: 14.5px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.fstep .d { font-size: 13.5px; color: var(--ink-2); }
+.fstep ul { margin: 4px 0 0; padding-left: 18px; font-size: 13px; color: var(--ink-2); display: grid; gap: 2px; }
+.bar-cell { display: grid; gap: 3px; padding-top: 3px; }
+.bar-track { height: 12px; background: var(--grid); border-radius: 4px; overflow: hidden; }
+.bar { height: 100%; background: var(--s2); border-radius: 4px; min-width: 3px; }
+.bar.final { background: var(--s3); }
+.bar-cell .lab { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.demote { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; counter-reset: d; }
+.demote li { display: grid; grid-template-columns: 20px minmax(0,1fr); gap: 6px; font-size: 13px; color: var(--ink-2); counter-increment: d; }
+.demote li::before { content: counter(d); font-family: var(--font-mono); font-size: 12px; color: var(--muted); padding-top: 1px; }
+.two { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.panel h3 { font-size: 14.5px; }
+.kv { display: grid; grid-template-columns: max-content minmax(0,1fr); gap: 6px 12px; font-size: 13.5px; margin: 0; }
+.kv dt { color: var(--ink-2); font-weight: 500; }
+.kv dd { margin: 0; color: var(--ink-2); }
+
+/* 조율 연결 — 두 줄 흐름 */
+.lanes { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.lane-row { display: grid; grid-template-columns: 40px minmax(0,1fr) minmax(0,1fr); border-top: 1px solid var(--grid); }
+.lane-row:first-child { border-top: 0; }
+.lane-row > div { padding: 10px 14px; font-size: 13.5px; min-width: 0; }
+.lane-row .n { font-family: var(--font-mono); color: var(--muted); font-size: 12.5px; padding-right: 0; }
+.lane-row .ours { background: var(--range); }
+.lane-row.head > div { font-size: 12px; color: var(--muted); font-weight: 600; padding-block: 8px; }
+.lane-row .lbl { display: none; font-size: 11px; color: var(--muted); font-weight: 600; }
+.lane-row code { font-size: 12px; }
+.rules { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13.5px; }
+.rules li { display: grid; grid-template-columns: 18px minmax(0,1fr); gap: 6px; color: var(--ink-2); }
+.rules li::before { content: "·"; color: var(--muted); font-weight: 700; text-align: center; }
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 4px; align-content: start; min-width: 0; }
+.tile .k { font-size: 12px; color: var(--muted); font-weight: 600; }
+.tile .big { font-family: var(--font-mono); font-size: 28px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.tile .big.word { font-family: var(--font-display); font-size: 24px; }
+.tile .sub { font-size: 12.5px; color: var(--ink-2); }
+
+/* 표 · 목록 */
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+summary:focus-visible { outline: 2px solid var(--s2); outline-offset: 2px; }
+.tbl { overflow-x: auto; }
+details .tbl { margin-top: 12px; }
+table { border-collapse: collapse; font-size: 13px; width: 100%; min-width: 600px; }
+th, td { padding: 8px 8px; border-bottom: 1px solid var(--grid); text-align: left; vertical-align: top; }
+thead th { color: var(--muted); font-weight: 500; font-size: 12px; white-space: nowrap; }
+td.when { font-family: var(--font-mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+.tbl-card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 4px 16px 8px; }
+.todo { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding-inline: 16px; }
+.todo li { display: grid; grid-template-columns: 96px minmax(0,1fr); gap: 4px 12px; padding: 11px 0; border-top: 1px solid var(--grid); font-size: 13.5px; color: var(--ink-2); align-items: start; }
+.todo li:first-child { border-top: 0; }
+.todo li b { color: var(--ink); font-weight: 600; }
+.todo .badge { justify-self: start; margin-top: 2px; }
+.limits { display: grid; gap: 8px; font-size: 14px; color: var(--ink-2); margin: 0; padding-left: 18px; }
+.changes { display: grid; gap: 0; margin-top: 10px; }
+.changes div { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; padding: 9px 0; border-top: 1px solid var(--grid); font-size: 13px; }
+.changes .old { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line); }
+.changes .new { color: var(--ink-2); }
+footer { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 4px; }
+
+@media (max-width: 860px) {
+  .overview { grid-template-columns: minmax(0,1fr); }
+  .overview .arrow { height: 26px; transform: rotate(90deg); }
+  .batch-meta, .tiles { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .zones, .two { grid-template-columns: minmax(0,1fr); }
+}
+@media (max-width: 640px) {
+  .wrap { padding-inline: 16px; gap: 40px; }
+  .stage, .fstep { grid-template-columns: 34px minmax(0,1fr); }
+  .stage .m, .fstep .bar-cell { grid-column: 2; text-align: left; }
+  .lane-row { grid-template-columns: 30px minmax(0,1fr); }
+  .lane-row.head { display: none; }
+  .lane-row .ours { grid-column: 2; }
+  .lane-row .lbl { display: block; }
+  .todo li { grid-template-columns: minmax(0,1fr); }
+  .changes div { grid-template-columns: minmax(0,1fr); gap: 2px; }
+  .kv { grid-template-columns: minmax(0,1fr); gap: 0 0; }
+  .kv dd { margin-bottom: 6px; }
+}
+@media (max-width: 420px) {
+  .batch-meta, .tiles { grid-template-columns: minmax(0,1fr); }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">S-Brain 공고 매칭 · 전체 흐름</div>
+    <h1>공고 데이터 전체 흐름</h1>
+    <p class="lede">지원사업 공고가 어디서 들어와서, 매일 아침 어떤 손질을 거쳐, 추천과 자격 판정에 어떻게 쓰이는지 한 장에 담은 지도입니다. 비유하면 <b>매일 아침 장을 봐 와서(배치), 공용 냉장고(공용 DB)에 정리해 넣고, 주문이 오면(추천 요청) 먹을 수 없는 재료부터 빼고 요리하는</b> 흐름입니다.</p>
+    <div class="meta">
+      <span>기준일 <b class="num">2026-09-29</b></span>
+      <span>공고 <b class="num">2,525건</b></span>
+      <span>매일 배치 <b class="num">09:00 · 약 12분</b></span>
+      <span>오늘 새 공고 <b class="num">49건</b></span>
+      <span>9/28 화면을 9/29 사실로 다시 씀</span>
+    </div>
+  </header>
+
+  <!-- 한눈에 -->
+  <section aria-labelledby="h-over">
+    <div class="sec-head">
+      <h2 id="h-over">한눈에 보기</h2>
+      <p class="note">왼쪽에서 오른쪽으로 데이터가 흐릅니다. 파란 테두리가 팀 모두가 함께 보는 곳입니다.</p>
+    </div>
+    <div class="overview">
+      <div class="node">
+        <span class="k">출처</span>
+        <h3>공고 사이트 두 곳</h3>
+        <p>K-Startup과 기업마당의 공개 API에서 공고를 받습니다. 사용자가 추천을 요청할 때 이 사이트를 직접 부르지는 않습니다.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node">
+        <span class="k">매일 09:00 · 사용자 PC</span>
+        <h3>매일 배치 13단계</h3>
+        <p>받기 → 정리 → 저장 → 첨부 → 벡터 → LLM 판정 → 공용 DB로 올리기. 약 12분 걸립니다.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node hub">
+        <span class="k">팀 서버 · MySQL <code>s_brain</code></span>
+        <h3>공용 DB</h3>
+        <p>공고, 첨부 본문·원본, 공고 벡터, 자격요건, 신청자 유형·업종 판정표가 모두 여기 있습니다. 팀원은 읽기만 합니다.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node">
+        <span class="k">쓰는 곳</span>
+        <h3>추천 · 자격 판정</h3>
+        <p>조율 에이전트가 공고팀 파이썬 함수를 직접 불러 씁니다. 시작할 때 한 번 <code>app.boot()</code>, 추천할 때마다 <code>app.match()</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 매일 배치 -->
+  <section aria-labelledby="h-batch">
+    <div class="sec-head">
+      <span class="eyebrow">1 · 매일 배치</span>
+      <h2 id="h-batch">매일 아침 13단계</h2>
+      <p class="lede">사용자 PC의 작업 스케줄러가 매일 09:00에 <code>collect/daily_pipeline.py</code>를 돌립니다. 번호는 코드의 실제 순서입니다. 오른쪽 숫자는 <b>2026-09-29 실행 결과</b>입니다.</p>
+    </div>
+    <div class="batch-meta">
+      <div class="stat"><span class="sub">걸린 시간</span><span class="big">723초</span><span class="sub">09:00:02 ~ 09:12:08 · 종료 코드 0</span></div>
+      <div class="stat"><span class="sub">새 공고</span><span class="big">49건</span><span class="sub">K-Startup 4 · 기업마당 45</span></div>
+      <div class="stat"><span class="sub">공용 DB 공고</span><span class="big">2,525건</span><span class="sub">두 판정표도 각 2,525행 · 일치</span></div>
+      <div class="stat"><span class="sub">LLM 비용 (11·12단계)</span><span class="big">$0.13</span><span class="sub">$0.046 + $0.080 · 경고 0</span></div>
+    </div>
+
+    <div class="phases">
+      <div class="phase p1">
+        <div class="phase-h"><h3>모으기</h3><span>두 사이트에서 받아 한 형식으로 맞추고 저장합니다</span></div>
+        <ol class="stages">
+          <li class="stage"><span class="no">1</span><div><div class="t">K-Startup 공고 받기</div><div class="d">공개 API를 불러 공고 목록을 받습니다. 건수가 어제의 절반 밑이면 오늘 것을 쓰지 않습니다.</div><div class="w">남는 곳: <code>data/notices.json</code></div></div><div class="m"><b>214건</b> 받음<br>새 공고 4건</div></li>
+          <li class="stage"><span class="no">2</span><div><div class="t">기업마당 공고 받기</div><div class="d">응답 원문을 그대로 저장합니다. 실패하거나 급감하면 직전 스냅샷을 이어 씁니다.</div><div class="w">남는 곳: <code>data/raw/bizinfo_*.json</code> (최근 14개)</div></div><div class="m"><b>1,514건</b> 받음<br>새 공고 45건</div></li>
+          <li class="stage"><span class="no">3</span><div><div class="t">한 형식으로 맞추기 (정규화)</div><div class="d">날짜·기관·지역 칸 이름과 형식을 통일하고 중복을 거릅니다.</div><div class="w">남는 곳: <code>data/normalized/</code></div></div><div class="m"><b>1,728건</b><br>오늘 두 사이트 합계</div></li>
+          <li class="stage"><span class="no">4</span><div><div class="t">공용 DB에 저장</div><div class="d">없으면 추가, 있으면 수정합니다. 저장 기록은 수집 상태 판정의 근거가 됩니다.</div><div class="w">공용 DB: <code>notices</code> · <code>notice_attachments</code> · <code>import_runs</code></div></div><div class="m">누적 <b>2,525건</b></div></li>
+        </ol>
+      </div>
+
+      <div class="phase p2">
+        <div class="phase-h"><h3>첨부와 검색 준비</h3><span>공고문 본문을 읽고, 뜻으로 찾을 수 있게 벡터를 만듭니다</span></div>
+        <ol class="stages" start="5">
+          <li class="stage"><span class="no">5</span><div><div class="t">첨부 받아 본문 뽑기</div><div class="d">PDF·HWP·HWPX에서 글자를 꺼냅니다. 새 첨부와 바뀐 첨부만 받습니다.</div><div class="w">공용 DB: <code>attachment_texts</code> · 원본은 PC <code>data/attachments/</code></div></div><div class="m"><b>55건</b><br>성공 48 · 읽기 오류 5 · 이미지뿐 2</div></li>
+          <li class="stage"><span class="no">6</span><div><div class="t">임베딩 (BGE-M3)</div><div class="d">공고 요약을 1,024차원 벡터로 바꿉니다. 내용이 바뀐 공고만 다시 만듭니다.</div><div class="w">남는 곳: PC <code>data/embeddings_v1.npz</code></div></div><div class="m"><b>51건</b><br>새 49 · 내용 바뀜 2</div></li>
+          <li class="stage"><span class="no">7</span><div><div class="t">벡터 색인 갱신 (Chroma)</div><div class="d">의미 검색용 색인에 바뀐 벡터만 넣습니다. 색인과 벡터 파일 수가 다르면 경고합니다.</div><div class="w">남는 곳: PC <code>data/vecstore/chroma/</code></div></div><div class="m">색인 <b>2,525건</b><br>빠진 공고 0</div></li>
+          <li class="stage"><span class="no">8</span><div><div class="t">벡터를 공용 DB로 올리기</div><div class="d">DB와 벡터 파일을 대조해 아직 안 올린 것만 올립니다. 전날 실패한 몫도 따라잡습니다.</div><div class="w">공용 DB: <code>notices.embedding</code></div></div><div class="m"><b>51건</b> 올림</div></li>
+          <li class="stage"><span class="no">9</span><div><div class="t">첨부 원본 파일을 공용 DB로</div><div class="d">내용 해시가 파일 이름이라 같은 파일은 한 번만 올립니다.</div><div class="w">공용 DB: <code>attachment_files</code></div></div><div class="m"><b>47개</b> 올림</div></li>
+        </ol>
+      </div>
+
+      <div class="phase p3">
+        <div class="phase-h"><h3>LLM 판정</h3><span>공고문에만 문장으로 있는 조건을 LLM이 근거 문장과 함께 읽습니다. 새 공고·바뀐 공고만 부릅니다</span></div>
+        <ol class="stages" start="10">
+          <li class="stage"><span class="no">10</span><div><div class="t">자격요건 추출</div><div class="d">첨부 본문에서 업력·지원 금액·사업자 형태를 gpt-4o-mini로 뽑습니다.</div><div class="w">공용 DB: <code>notice_conditions</code> (바로 저장)</div></div><div class="m"><b>44건</b><br>금액 14 · 사업자 형태 14</div></li>
+          <li class="stage"><span class="no">11</span><div><div class="t">신청자 유형 판정</div><div class="d">예비창업자·개인사업자·법인이 신청할 수 있는지 gpt-5.6-luna가 읽습니다. 하루 최대 300건.</div><div class="w">PC 파일: <code>data/applicant_types/results.jsonl</code></div></div><div class="m"><b>50건</b> · 약 $0.046<br>실패·미룸·포기 0</div></li>
+          <li class="stage"><span class="no">12</span><div><div class="t">업종 판정</div><div class="d">신청 가능 업종을 luna가 읽고, 코드 규칙이 업종 대분류(A~U)로 묶습니다. 하루 최대 300건.</div><div class="w">PC 파일: <code>data/industries/results.jsonl</code></div></div><div class="m"><b>50건</b> · 약 $0.080<br>실패·미룸·포기 0</div></li>
+          <li class="stage"><span class="no">13</span><div><div class="t">판정을 공용 DB로 올리기</div><div class="d">11·12단계 파일을 공용 DB 판정표 두 개로 올립니다. 칸마다 비교해 바뀐 행만 올립니다.</div><div class="w">공용 DB: <code>notice_applicant_types</code> · <code>notice_industries</code></div></div><div class="m">표마다 <b>50행</b> (새 49 · 바뀜 1)<br>→ 각 2,525행</div></li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="fail-note">
+      <b style="color:var(--ink)">한 단계가 실패하면</b>
+      <span>앞 단계 결과는 그대로 남고, 다음 날 실행이 못 한 몫을 스스로 찾아 다시 합니다. 한 사이트가 실패하면 그 사이트만 어제 데이터를 쓰고 기록에 "일부 실패"로 남습니다. LLM 단계(10~13)만 실패하면 수집은 정상으로 두고 경고와 종료 코드 4로 알립니다. 공고 데이터는 새것이라 추천을 막을 일이 아니기 때문입니다.</span>
+    </div>
+  </section>
+
+  <!-- 데이터 지도 -->
+  <section aria-labelledby="h-map">
+    <div class="sec-head">
+      <span class="eyebrow">2 · 데이터 지도</span>
+      <h2 id="h-map">무엇이 어디에 있나</h2>
+      <p class="lede">팀이 함께 쓰는 것은 공용 DB 하나입니다. 배치 PC에는 공용 DB로 올리기 전의 작업 파일과 다시 만들 수 있는 것만 남습니다. 예외는 업종 판정으로, 추천 코드가 아직 PC의 옛 결과 파일을 읽습니다.</p>
+    </div>
+
+    <div class="zones">
+      <div class="zone shared">
+        <div class="zone-h"><h3>공용 DB · 팀 서버 MySQL <code>s_brain</code></h3><span class="sub">팀원·조율 에이전트가 SQL로 읽습니다. 쓰는 쪽은 배치 PC 하나입니다.</span></div>
+        <ul class="items">
+          <li><div class="row"><span class="name">공고 · 첨부 연결 · 수집 기록</span><span class="cnt">2,525건</span></div><span class="desc"><code>notices</code> · <code>notice_attachments</code> · <code>import_runs</code> — 4단계</span></li>
+          <li><div class="row"><span class="name">첨부 본문 · 원본 파일</span><span class="cnt">매일 갱신</span></div><span class="desc"><code>attachment_texts</code> · <code>attachment_files</code> — 5·9단계</span></li>
+          <li><div class="row"><span class="name">공고 벡터</span><span class="cnt">2,525건</span></div><span class="desc"><code>notices.embedding</code> — 8단계. 색인 없이도 이 벡터로 검색할 수 있습니다</span></li>
+          <li><div class="row"><span class="name">자격요건 (업력·금액·형태)</span><span class="cnt">금액 787건</span></div><span class="desc"><code>notice_conditions</code> — 10단계. 9/28 luna 재추출 업력 78행을 반영해 업력 근거가 225건이 됐습니다(9/29 서버 시작 때는 새 공고를 더해 226건)</span></li>
+          <li><div class="row"><span class="name">신청자 유형 판정표 <span class="badge ok">9/28 신설</span></span><span class="cnt">2,525행</span></div><span class="desc"><code>notice_applicant_types</code> — 13단계. 추천 코드가 이 표를 먼저 읽습니다</span></li>
+          <li><div class="row"><span class="name">업종 판정표 <span class="badge ok">9/28 신설</span></span><span class="cnt">2,525행</span></div><span class="desc"><code>notice_industries</code> — 13단계. 추천 코드는 아직 이 표를 읽지 않습니다(아래)</span></li>
+        </ul>
+      </div>
+
+      <div class="zone">
+        <div class="zone-h"><h3>배치 PC · 사용자 PC</h3><span class="sub">이 PC에만 있고 Git에도 올리지 않습니다.</span></div>
+        <ul class="items">
+          <li><div class="row"><span class="name">벡터 색인 (Chroma)</span><span class="cnt">2,525건</span></div><span class="desc"><code>data/vecstore/chroma/</code> — 7단계. 추천 코드를 돌리는 곳마다 이 폴더가 필요합니다</span></li>
+          <li><div class="row"><span class="name">신청자 유형 누적 파일</span><span class="cnt">2,525행</span></div><span class="desc"><code>data/applicant_types/</code> — 11단계가 쓰고 13단계가 올립니다. 공용 DB와 일치</span></li>
+          <li><div class="row"><span class="name">업종 누적 파일</span><span class="cnt">2,525행</span></div><span class="desc"><code>data/industries/</code> — 12단계가 쓰고 13단계가 올립니다. 공용 DB와 일치</span></li>
+          <li><div class="row"><span class="name">업종 옛 결과 <code>final5</code> <span class="badge warn">추천이 읽는 곳</span></span><span class="cnt">1,852건</span></div><span class="desc"><code>reports/industry_llm_full_luna_20260928_final5/</code> — 업종 순위의 기본 출처. 9월 중순 공고 목록으로 만들어 새 공고가 없습니다. 업종 순위가 꺼져 있어 지금 추천에는 영향이 없습니다</span></li>
+          <li><div class="row"><span class="name">배치 기록</span><span class="cnt">실행마다 한 줄</span></div><span class="desc"><code>data/collect_log.jsonl</code> · <code>data/run.log</code></span></li>
+          <li><div class="row"><span class="name">실험 DB <span class="badge off">서비스 미사용</span></span><span class="cnt">1,852건</span></div><span class="desc">로컬 MySQL <code>notice_match_sql_lab</code>. 9월 중순 사본에서 멈춘 비교 실험용입니다. 추천·배치·조율 연결은 쓰지 않습니다</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="uplinks" aria-label="배치 PC에서 공용 DB로 올리는 단계">
+      <span>PC → 공용 DB로 올리는 단계:</span>
+      <span class="step p1"><span class="no">4</span>공고</span>
+      <span class="step p2"><span class="no">8</span>벡터</span>
+      <span class="step p2"><span class="no">9</span>첨부 파일</span>
+      <span class="step p3"><span class="no">10</span>자격요건</span>
+      <span class="step p3"><span class="no">13</span>판정표 두 개</span>
+    </div>
+
+    <details>
+      <summary>추천 코드가 판정을 어디서 읽나 (서버를 켤 때 한 번)</summary>
+      <div class="tbl"><table>
+        <thead><tr><th>판정</th><th>기본 출처</th><th>파일이 없는 곳(팀원 PC 등)</th><th>9/29 확인</th></tr></thead>
+        <tbody>
+          <tr><td>신청자 유형</td><td>공용 DB → PC 파일 순서로, 공고마다 <b>지금 공고문과 지문(문서 해시)이 같은 판정만</b> 씀. 둘 다 다르면 "모름"(빼지 않음). 지문은 서버가 켜질 때 11단계와 같은 방법으로 계산(약 2초)</td><td>공용 DB만으로 같은 확인</td><td>2,525건 모두 지문 같음 · DB에서 2,525 · 지문 달라 뺀 판정 0</td></tr>
+          <tr><td>업종</td><td>PC 파일 <code>final5</code> (DB 전환은 Codex 재검수 뒤로 보류)</td><td>업종 순위 꺼짐 (기본도 꺼짐)</td><td>파일 1,852행</td></tr>
+          <tr><td>업력 근거</td><td>공용 DB <code>notice_conditions</code> + 파일(있으면)</td><td>공용 DB만으로 225건(9/28 반영 직후)</td><td>자격 확인 화면에 근거로만 표시</td></tr>
+        </tbody>
+      </table></div>
+      <p class="note" style="margin-top:10px">서버는 시작할 때 한 번만 읽습니다. 09:00 배치 뒤 새 공고·판정을 반영하려면 09:20 이후 다시 켜야 합니다. 자동 재시작은 아직 없습니다.</p>
+    </details>
+  </section>
+
+  <!-- 추천 흐름 -->
+  <section aria-labelledby="h-match">
+    <div class="sec-head">
+      <span class="eyebrow">3 · 추천 (T-C2)</span>
+      <h2 id="h-match">추천은 이렇게 고릅니다</h2>
+      <p class="lede">"신청할 수 없는 공고부터 빼고, 남은 공고 안에서 찾기"입니다. 막대 길이는 예비창업자 한 명이 9/29에 요청했을 때 단계마다 남은 공고 수입니다(전체 2,525건 기준).</p>
+    </div>
+
+    <div class="funnel">
+      <div class="fstep pre">
+        <span class="no">0</span>
+        <div>
+          <div class="t">수집 상태 확인 <span class="tag">조율 에이전트가 먼저 부름</span></div>
+          <div class="d"><code>collection_status.check()</code>가 <b>정상 · 지연 · 실패</b>를 판정합니다. 마지막 저장이 24시간을 넘으면 지연, 최근 배치가 실패했거나 한 사이트가 옛 데이터를 재사용했으면 실패입니다. 정상이 아니면 첫 조회를 하지 않고 "공고 정보를 갱신하는 중"이라고 안내합니다. <code>app.match()</code> 자체는 수집 상태를 보지 않습니다.</div>
+        </div>
+        <div class="bar-cell"><div class="bar-track"><div class="bar" style="width:100%"></div></div><span class="lab">2,525건 전체</span></div>
+      </div>
+      <div class="fstep">
+        <span class="no">1</span>
+        <div>
+          <div class="t">정형 필터 — 전체 공고에 먼저</div>
+          <div class="d"><b>확실히</b> 신청할 수 없는 공고만 뺍니다. 모르면 남깁니다.</div>
+          <ul>
+            <li>모집 마감으로 표시됐거나 접수 마감일이 지난 공고</li>
+            <li>업력·신청자 유형이 확실히 안 맞는 공고 (K-Startup 업력 칸)</li>
+            <li>예비창업자라면 공고 본문에 "예비창업자 불가"가 분명한 공고. 본문에 "가능"이면 업력 칸보다 본문을 따릅니다</li>
+            <li>접수 시작 전 공고는 남깁니다. 지역·업종은 여기서 보지 않습니다</li>
+          </ul>
+        </div>
+        <div class="bar-cell"><div class="bar-track"><div class="bar" style="width:63.1%"></div></div><span class="lab">1,594건 남음<br>뺀 이유: 접수 마감 756 · 본문상 예비창업자 불가 181 (겹칠 수 있음)</span></div>
+      </div>
+      <div class="fstep">
+        <span class="no">2</span>
+        <div>
+          <div class="t">두 가지 검색 — 남은 공고 안에서만</div>
+          <div class="d">뜻으로 찾기(BGE-M3 벡터 + Chroma)와 낱말로 찾기(BM25)를 따로 돌려 각각 50건씩 후보를 뽑습니다. 질의는 아이디어·수익 모델·신청자 유형·팀 경력·인증 등을 한 문장으로 엮은 것입니다.</div>
+        </div>
+        <div class="bar-cell"><div class="bar-track"><div class="bar" style="width:3.96%"></div></div><span class="lab">최대 100건 (50 + 50)</span></div>
+      </div>
+      <div class="fstep">
+        <span class="no">3</span>
+        <div>
+          <div class="t">두 순위 합치기 (RRF)</div>
+          <div class="d">두 검색 모두에서 위에 있는 공고가 앞으로 옵니다. 상수 k=60, 두 검색 무게 1:1.</div>
+        </div>
+        <div class="bar-cell"><div class="bar-track"><div class="bar" style="width:3.96%"></div></div><span class="lab">겹친 공고는 하나로</span></div>
+      </div>
+      <div class="fstep">
+        <span class="no">4</span>
+        <div>
+          <div class="t">순서 다듬기 — 빼지 않고 뒤로만</div>
+          <div class="d">아래 조건에 걸린 공고를 뒤로 보냅니다. 위에 있을수록 강하게 밀립니다.</div>
+          <ol class="demote">
+            <li>다른 시·도 전용 공고</li>
+            <li>같은 시·도의 다른 시·군·구 전용 공고 (제목 기준)</li>
+            <li>예비창업자인데 대상이 이미 사업 중인 기업으로 보이는 공고 (추정)</li>
+            <li>주 업종이 공고의 허용 업종 밖 <span class="badge off">기본 꺼짐</span></li>
+            <li>여성기업 전용처럼 특정 대상 공고인데 신청자 입력에 근거가 없음</li>
+          </ol>
+        </div>
+        <div class="bar-cell"><div class="bar-track"><div class="bar" style="width:3.96%"></div></div><span class="lab">건수는 그대로, 순서만 바뀜</span></div>
+      </div>
+      <div class="fstep">
+        <span class="no">5</span>
+        <div>
+          <div class="t">결과 보여 주기</div>
+          <div class="d">첫 조회 10건(카드 3 + 목록 7), "더 보기"로 10건 더, 최대 20건입니다. 공고마다 적합도(<code>fit_score</code>, 0~1)가 붙습니다. 두 검색 모두 1위일 때를 1로 본 잠정 산식이며 확률이 아닙니다.</div>
+        </div>
+        <div class="bar-cell"><div class="bar-track"><div class="bar final" style="width:0.4%"></div></div><span class="lab">10건 (+ 더 보기 10건)</span></div>
+      </div>
+    </div>
+
+    <div class="two">
+      <div class="panel">
+        <h3>검색 한쪽이 고장 나면 (대체 검색)</h3>
+        <dl class="kv">
+          <dt>뜻 검색 고장</dt><dd>BM25단독 — 낱말 검색만으로 찾습니다</dd>
+          <dt>낱말 검색 고장</dt><dd>임베딩단독 — 뜻 검색만으로 찾습니다</dd>
+          <dt>둘 다 고장</dt><dd>마감임박순 — 필터를 통과한 공고를 마감이 가까운 순서로 (잠정)</dd>
+        </dl>
+        <p class="note">어느 경우에도 1단계 정형 필터는 건너뛰지 않습니다. 응답에 <code>fallback_mode</code>로 남습니다.</p>
+      </div>
+      <div class="panel">
+        <h3>지역·업종을 빼는 데 쓰지 않는 이유</h3>
+        <p style="font-size:13.5px;color:var(--ink-2)">기획서 4-2·5-3과 기능정의서 R-2·R-3에 따라 희망 지역과 주 업종은 순위 신호로만 씁니다(9/28 결정). 업종 순위는 Codex 블라인드 판정에서 밀린 공고 34건 중 11건이 부당하게 밀려 꺼 두었습니다.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 자격 판정 · 조율 연결 -->
+  <section aria-labelledby="h-g01">
+    <div class="sec-head">
+      <span class="eyebrow">4 · 자격 판정 (G-01)과 조율 에이전트</span>
+      <h2 id="h-g01">조율 에이전트는 공고팀 함수를 직접 부릅니다</h2>
+      <p class="lede">공고팀 서버를 따로 켜지 않습니다. 조율 에이전트 프로세스가 공고팀 코드를 import해서 부릅니다. 공고팀은 코드를 끼우지 않고 <b>함수 설명서</b>(<code>docs/guides/ORCHESTRATION_HANDOFF.md</code>)만 전달했습니다.</p>
+    </div>
+
+    <div class="lanes" role="table" aria-label="조율 에이전트와 공고팀 함수의 호출 순서">
+      <div class="lane-row head" role="row"><div role="columnheader">#</div><div role="columnheader">조율 에이전트가 하는 일</div><div class="ours" role="columnheader">부르는 공고팀 함수</div></div>
+      <div class="lane-row" role="row"><div class="n" role="cell">1</div><div role="cell">서버를 켤 때 한 번 준비</div><div class="ours" role="cell"><span class="lbl">공고팀 함수</span><code>app.boot()</code> — 공고 2,525건·벡터 색인·BM25·판정표를 메모리에 올림. 약 20초, 약 2GB</div></div>
+      <div class="lane-row" role="row"><div class="n" role="cell">2</div><div role="cell">첫 조회 전 수집 상태 확인. 정상이 아니면 멈추고 안내</div><div class="ours" role="cell"><span class="lbl">공고팀 함수</span><code>collection_status.check(connection=…)</code></div></div>
+      <div class="lane-row" role="row"><div class="n" role="cell">3</div><div role="cell">추천 10건 받기, "더 보기"면 다음 10건</div><div class="ours" role="cell"><span class="lbl">공고팀 함수</span><code>app.match(MatchRequest)</code> — 약 0.3초</div></div>
+      <div class="lane-row" role="row"><div class="n" role="cell">4</div><div role="cell">사용자가 공고 하나를 고름</div><div class="ours" role="cell"><span class="lbl">공고팀 함수</span><code>app.STATE['rows'][공고ID]</code> — 공고 정보</div></div>
+      <div class="lane-row" role="row"><div class="n" role="cell">5</div><div role="cell">자격 판정(G-01) 통과하면 계획서 작성으로</div><div class="ours" role="cell"><span class="lbl">공고팀 함수</span>설명서 5절의 예시 규칙 <code>eligibility_of()</code> + <code>g01()</code></div></div>
+    </div>
+
+    <div class="two">
+      <div class="panel">
+        <h3>G-01 판정 규칙 (9/29 결정)</h3>
+        <ul class="rules">
+          <li><span><b>확실히 안 되는 경우만 불합격</b>입니다. 지원대상 유형이 맞지 않거나 업력 상한을 넘은 경우.</span></li>
+          <li><span>모르는 조건과 입력 누락(예: 설립일 없는 사업자)은 <b>통과</b>입니다.</span></li>
+          <li><span><b>접수 시작 전 공고도 고를 수 있습니다.</b> G-01은 접수기간을 보지 않습니다.</span></li>
+          <li><span>지역·업종은 보지 않습니다.</span></li>
+          <li><span>추천 1단계(마감 조건 제외)와 결론이 같습니다. 공고 2,525건 × 신청자 5가지 경우를 대조해 차이 0건.</span></li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>연결 확인 상태</h3>
+        <ul class="rules">
+          <li><span>설명서의 예시 코드를 그대로 꺼내 조율 쪽 시험 흐름에 끼웠고, 추천 → 더 보기 → 선택 → G-01 → 계획서 작성까지 갔습니다(<code>experiments/orchestration_probe.py</code>).</span></li>
+          <li><span>설명서는 Codex 검수 한 번과 재검수 세 번을 거쳐 설명서 쪽 지적이 정리됐습니다.</span></li>
+          <li><span><span class="badge warn">아직</span> 공고 공급의 양식·평가 항목·금액은 시험용 가짜 값입니다. 실제 공고 공급은 아래 합의 뒤에 시험합니다.</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="sec-head" style="margin-top:6px">
+      <h3 style="font-size:16px">연결 전에 조율 담당과 합의할 것</h3>
+      <p class="note">합의 전에는 실제 연결이 멈추거나 사용자에게 잘못된 안내가 나갈 수 있습니다. 설명서 2절 번호를 그대로 씁니다.</p>
+    </div>
+    <div class="tiles">
+      <div class="tile"><span class="k">① 마감일 없는 공고</span><span class="big">985건</span><span class="sub">예산 소진 시까지 678 · 상시 149 · 선착순 94 · 정보 없음 64. 조율 쪽 모델은 마감일이 필수입니다</span></div>
+      <div class="tile"><span class="k">② 지원 금액이 있는 공고</span><span class="big">787건</span><span class="sub">나머지는 공고문에 없거나 못 읽었습니다. 금액 칸을 선택으로 바꾸자고 제안했습니다</span></div>
+      <div class="tile"><span class="k">③ 신청서 양식 · 평가 항목</span><span class="big word">없음</span><span class="sub">공고팀 DB에 없는 정보입니다. 누가 만들지부터 정해야 합니다</span></div>
+      <div class="tile"><span class="k">⑦ "확인 필요" 표시</span><span class="big">94%</span><span class="sub">예비창업자가 고를 수 있는 공고 중 확인 필요 조건이 있는 비율(사업자는 100%). 지금 G-01 결과에는 담을 칸이 없습니다</span></div>
+    </div>
+  </section>
+
+  <!-- 결정 · 남은 일 -->
+  <section aria-labelledby="h-dec">
+    <div class="sec-head">
+      <span class="eyebrow">5 · 결정과 남은 일</span>
+      <h2 id="h-dec">정해진 것, 남은 것</h2>
+    </div>
+
+    <div class="tbl-card"><div class="tbl"><table>
+      <thead><tr><th>날짜</th><th>사용자 결정</th><th>근거·이유</th></tr></thead>
+      <tbody>
+        <tr><td class="when">9/28</td><td>업종·지역은 순위 신호로만 씁니다. 게이트는 유형·업력·접수기간만 봅니다</td><td>기획서 v1.10 4-2·5-3, 기능정의서 v1.9 R-2·R-3</td></tr>
+        <tr><td class="when">9/28</td><td>업종 순위는 기본으로 끕니다</td><td>밀린 공고 34건 중 11건이 부당하게 밀림</td></tr>
+        <tr><td class="when">9/28</td><td>제외 업종 목록은 순위에 쓰지 않고 허용 목록만 씁니다</td><td>세부 제외 업종을 대분류로 올리면 일반 음식점·편의점까지 밀림</td></tr>
+        <tr><td class="when">9/28</td><td>판정은 공용 DB 새 표 두 개로 올리고, 매일 13단계가 갱신합니다</td><td>파일이 없는 곳(팀원·서버)도 같은 판정을 쓰게</td></tr>
+        <tr><td class="when">9/29</td><td>조율 연결은 코드 직접 호출. 공고팀은 설명서만 전달합니다</td><td>공고팀 서버를 따로 운영하지 않음</td></tr>
+        <tr><td class="when">9/29</td><td>G-01은 모름·입력 누락을 통과로 둡니다</td><td>정보가 적은 공고(주로 기업마당)가 모두 막히는 것을 피함</td></tr>
+        <tr><td class="when">9/29</td><td>접수 시작 전 공고는 고를 수 있습니다</td><td>추천 1단계와 같은 기준</td></tr>
+      </tbody>
+    </table></div></div>
+
+    <ul class="todo">
+      <li><span class="badge warn">재검수 대기</span><span><b>판정표 신선도 보호 — 9/29 수정.</b> 판정마다 지금 공고문과 지문을 대조해 같은 것만 씁니다. 옛 파일이 새 DB 값을 덮지 않고, 파일이 없는 곳도 옛 "예비창업자 불가"를 쓰지 않습니다. 깨진 파일 줄은 건너뛰어 서버 시작이 멈추지 않습니다. 13단계는 중복 줄이면 올리지 않고, 크게 줄면 경고만 합니다.</span></li>
+      <li><span class="badge warn">합의 대기</span><span><b>조율 담당과 ①②③⑦ 합의</b> → 실제 공고 공급으로 통합 시험.</span></li>
+      <li><span class="badge off">작은 후속</span><span>업력 상한 오류 1건(<code>bizinfo:PBLN_000000000126783</code>, "5년 이상"인데 상한 5로 저장). 추천에서는 빼지 않고 자격 확인 표시만 틀릴 수 있습니다.</span></li>
+      <li><span class="badge off">작은 후속</span><span>기획 대조 남은 것: C 기업마당 수집 범위(지금 8개 분야 전부, 기획은 창업·기술만), F 수집 상태를 추천 코드 안에서도 볼지, G 개인사업자·법인 판정은 아직 참고 표시만.</span></li>
+      <li><span class="badge off">작은 후속</span><span>업종 순위를 다시 켤 때 출처를 <code>final5</code>(1,852건)에서 새 판정(2,525건)으로 바꿉니다. 배치 뒤 서버 재시작 자동화도 없습니다.</span></li>
+    </ul>
+  </section>
+
+  <!-- 읽을 때 주의 -->
+  <section aria-labelledby="h-lim">
+    <h2 id="h-lim">읽을 때 주의할 점</h2>
+    <ul class="limits">
+      <li><b>판정은 LLM이 읽은 값입니다.</b> 신청자 유형·업종·자격요건 모두 근거 문장이 함께 있지만 사람이 전부 검증하지는 않았습니다. 그래서 "빼기"에는 명시적인 불가만 씁니다.</li>
+      <li><b>숫자는 2026-09-29 배치 기준입니다.</b> 추천 막대의 1,594건은 예비창업자 한 명의 그날 실행 예시이며, 날짜와 신청자에 따라 달라집니다.</li>
+      <li><b>팀 서버 쪽 일부는 확인하지 못했습니다.</b> 9/15 기록에는 팀 서버가 매일 09:10에 공용 DB 벡터로 자체 색인을 다시 만든다고 되어 있지만 지금도 도는지는 확인 필요입니다. 9/28 기록 기준으로 팀 서버에는 추천 코드(<code>search/app.py</code>)가 배포되어 있지 않습니다.</li>
+      <li><b>조율 연결은 시험 흐름까지만 확인했습니다.</b> 리눅스 서버 실행, 동시 요청, 실제 공고 공급은 아직입니다.</li>
+    </ul>
+
+    <details>
+      <summary>9/28 흐름 화면과 달라진 사실</summary>
+      <div class="changes">
+        <div><span class="old">공용 DB 구조는 바꾸지 않았다(읽기만)</span><span class="new">9/28에 판정표 두 개를 새로 만들고 매일 13단계가 갱신합니다. 기존 표 구조는 그대로입니다</span></div>
+        <div><span class="old">결과 파일이 없어 신청자 유형·업종 기능 꺼짐</span><span class="new">신청자 유형은 공용 DB에서 읽어 파일 없이도 작동합니다. 업종 순위는 파일이 없으면 꺼지지만 원래 기본 꺼짐입니다</span></div>
+        <div><span class="old">업력 되찾은 77건은 파일에만, DB 미반영</span><span class="new">9/28 luna 재추출 업력 78행을 공용 DB에 반영했습니다(반영 직후 업력 근거 225건, 9/29 서버 시작 때 226건)</span></div>
+        <div><span class="old">새 판정은 이 PC 파일에만 있음</span><span class="new">두 판정 모두 공용 DB에 2,525행씩 있고 파일과 일치합니다</span></div>
+        <div><span class="old">매일 배치 1~11단계, 공고 2,476건</span><span class="new">13단계(12 업종, 13 판정 올리기 추가), 공고 2,525건</span></div>
+        <div><span class="old">업종 결과 1,852건(9/21 사본 기준)</span><span class="new">매일 12단계가 새 공고까지 채워 2,525건. 단, 추천 코드는 아직 옛 1,852건 파일을 읽습니다</span></div>
+        <div><span class="old">수집 상태: 판정만 구현, 매칭 연결 전</span><span class="new">조율 에이전트가 첫 조회 전에 판정 함수를 부르는 방식으로 설명서에 정했습니다. 추천 함수 안에서는 여전히 보지 않습니다</span></div>
+        <div><span class="old">(없음)</span><span class="new">조율 에이전트 연결 방식, G-01 규칙, 연결 전 합의 항목</span></div>
+      </div>
+    </details>
+  </section>
+
+  <footer>
+    <span>출처: <code>collect/daily_pipeline.py</code> · <code>search/app.py</code>(<code>boot</code>·<code>match</code>) · <code>search/collection_status.py</code> · <code>data/collect_log.jsonl</code>(9/29 실행) · <code>docs/FLOW.md</code> · <code>docs/WORKLOG.md</code> 9/28~29 · <code>docs/guides/JUDGMENT_TABLES.md</code> · <code>docs/guides/ORCHESTRATION_HANDOFF.md</code> · <code>docs/PLAN_ALIGNMENT_20260928.md</code></span>
+    <span>이 페이지를 만들 때 유료 API 호출 0, DB 쓰기 0 · 서버 없이 보는 정적 페이지</span>
+    <span>S-Brain SKN32 1팀 · 공고 데이터·매칭 담당</span>
+  </footer>
+</div>

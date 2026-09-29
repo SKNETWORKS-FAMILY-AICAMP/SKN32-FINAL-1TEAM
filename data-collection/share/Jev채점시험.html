@@ -1,0 +1,474 @@
+<meta charset="utf-8">
+<title>Jev 채점 시험</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@500;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* 레이아웃: 한 열 보고서. 요약 수치 → 무엇을 했나 → 확신도·분포 → 혼동표 → 쌍별 목록 → 결론 → 한계.
+   색: 기존 AI(gpt-4.1-mini) = --s2, Jev = --s3(순서형 파랑 두 단계), 사람 = --muted(회색 기준) */
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --ink: #111a28;
+  --ink-2: #47526a;
+  --muted: #6b7690;
+  --line: #dde2ea;
+  --grid: #e9edf2;
+  --s1: #86b6ef;
+  --s2: #2a78d6;   /* 기존 AI */
+  --s3: #104281;   /* Jev — 가장 진함 */
+  --range: rgba(42,120,214,.18);
+  --bad: #c2392f;  --bad-bg: #fbe9e7;
+  --good: #1d7a46; --good-bg: #e6f4ec;
+  --font-display: "Hahmlet", "Noto Serif KR", "Apple SD Gothic Neo", serif;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151c; --surface: #181d26; --ink: #eef2f8; --ink-2: #b7c0d0; --muted: #8d97aa;
+    --line: #2a3140; --grid: #232a36;
+    --s1: #184f95; --s2: #3987e5; --s3: #9ec5f4; --range: rgba(57,135,229,.22);
+    --bad: #f08a80; --bad-bg: #3a1f1d; --good: #6fd29a; --good-bg: #173424;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151c; --surface: #181d26; --ink: #eef2f8; --ink-2: #b7c0d0; --muted: #8d97aa;
+  --line: #2a3140; --grid: #232a36;
+  --s1: #184f95; --s2: #3987e5; --s3: #9ec5f4; --range: rgba(57,135,229,.22);
+  --bad: #f08a80; --bad-bg: #3a1f1d; --good: #6fd29a; --good-bg: #173424;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.65; }
+.wrap { max-width: 980px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; display: grid; gap: 44px; }
+h1, h2 { font-family: var(--font-display); font-weight: 700; line-height: 1.25; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(28px, 4.2vw, 40px); }
+h2 { font-size: 22px; }
+h3 { font-size: 15px; font-weight: 600; margin: 0; }
+p { margin: 0; max-width: 68ch; }
+a { color: var(--s2); }
+.eyebrow { font-size: 12px; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.lede { color: var(--ink-2); font-size: 16px; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+section { display: grid; gap: 18px; }
+header { display: grid; gap: 14px; }
+.wrap, section, header, footer, .controls, .plist { grid-template-columns: minmax(0,1fr); }
+footer span { overflow-wrap: anywhere; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--muted); font-size: 13px; }
+.meta span b { color: var(--ink-2); font-weight: 500; }
+
+/* 핵심 결과 */
+.headline { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; flex: none; display: inline-block; }
+.sw2 { background: var(--s2); } .sw3 { background: var(--s3); } .swh { background: var(--muted); }
+
+/* 무엇을 했나 */
+.ways { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+.way { border-top: 3px solid var(--muted); padding-top: 12px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.way.w2 { border-top-color: var(--s2); } .way.w3 { border-top-color: var(--s3); }
+.way h3 { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.way h3 small { color: var(--muted); font-weight: 400; font-size: 12px; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13.5px; color: var(--ink-2); }
+.steps li { display: flex; gap: 8px; }
+.steps li::before { content: "·"; color: var(--muted); flex: none; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--ink-2); }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+
+/* 그래프 카드 */
+.charts { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
+.chart { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 16px 12px; display: grid; gap: 6px; min-width: 0; align-content: start; }
+.chart h3 { font-size: 14.5px; }
+.chart .how { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart .note { font-size: 12.5px; color: var(--ink-2); }
+.holder { min-width: 0; }
+.tag { display: inline-block; font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: var(--grid); color: var(--ink-2); margin-left: 6px; vertical-align: 1px; font-weight: 500; }
+.badge { display: inline-flex; gap: 4px; align-items: center; font-size: 11.5px; padding: 1px 7px; border-radius: 999px; font-weight: 600; }
+.badge.bad { color: var(--bad); background: var(--bad-bg); }
+.badge.ok { color: var(--good); background: var(--good-bg); }
+
+/* 혼동표 */
+table { border-collapse: collapse; font-size: 13px; width: 100%; }
+table.mat { table-layout: fixed; }
+table.mat th, table.mat td { padding: 8px 4px; text-align: center; border: 2px solid var(--surface); }
+table.mat thead th { color: var(--muted); font-weight: 500; font-size: 12px; line-height: 1.3; }
+table.mat th.rh { text-align: left; color: var(--ink-2); font-weight: 500; font-size: 12.5px; line-height: 1.3; width: 26%; }
+table.mat td.cell { font-family: var(--font-mono); font-size: 15px; font-variant-numeric: tabular-nums; }
+table.mat td.diag { box-shadow: inset 0 0 0 2px var(--good); font-weight: 600; }
+table.mat .tot { color: var(--muted); font-family: var(--font-mono); font-size: 12.5px; }
+
+/* 쌍별 목록 */
+.controls { display: grid; gap: 10px; }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.filters button { font: inherit; font-size: 13px; padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-2); cursor: pointer; }
+.filters button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.filters button .num { font-size: 12px; opacity: .8; margin-left: 5px; }
+.filters button:focus-visible, summary:focus-visible, .field select:focus-visible, .field input:focus-visible { outline: 2px solid var(--s2); outline-offset: 2px; }
+.fields { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.field select, .field input { font: inherit; font-size: 13.5px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); max-width: 100%; }
+.field input { width: 280px; }
+.count { color: var(--muted); font-size: 13px; }
+.explain { font-size: 13.5px; color: var(--ink-2); }
+.plist { display: grid; gap: 8px; }
+details.pr { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+details.pr.miss { border-left: 3px solid var(--bad); }
+details.pr > summary { list-style: none; cursor: pointer; padding: 10px 14px 10px 32px; display: grid; gap: 3px; position: relative; }
+details.pr > summary::-webkit-details-marker { display: none; }
+details.pr > summary::before { content: "▸"; position: absolute; left: 13px; top: 10px; color: var(--muted); }
+details.pr[open] > summary::before { content: "▾"; }
+.pt { display: flex; gap: 8px; align-items: baseline; min-width: 0; font-size: 14px; font-weight: 500; }
+.pt .qid { color: var(--muted); font-size: 12px; flex: none; }
+.pt .t { overflow-wrap: anywhere; }
+.idea { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.verd { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; margin-top: 3px; }
+.vv { display: inline-flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.sc { display: inline-flex; gap: 5px; align-items: baseline; border: 1px solid var(--line); border-radius: 6px; padding: 0 7px; font-size: 12.5px; color: var(--ink-2); background: var(--bg); }
+.sc .who { color: var(--muted); font-size: 12px; }
+.sc b { font-family: var(--font-mono); color: var(--ink); font-weight: 600; }
+.conf { color: var(--muted); font-size: 12px; }
+.pbody { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; padding: 0 14px 14px; border-top: 1px solid var(--grid); }
+.pbody > div { min-width: 0; display: grid; gap: 6px; align-content: start; padding-top: 10px; }
+.pbody h4 { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.pbody pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 13px; line-height: 1.55; background: var(--bg); border-radius: 8px; padding: 8px 10px; color: var(--ink); }
+.pbody .src { font-size: 13px; }
+.pb { display: grid; grid-template-columns: 92px minmax(0,1fr) 40px; gap: 6px; align-items: center; font-size: 12.5px; }
+.pb .lb { color: var(--ink-2); white-space: nowrap; }
+.pb .lb.human { font-weight: 600; color: var(--ink); }
+.pb .tr { height: 12px; background: var(--grid); border-radius: 3px; position: relative; overflow: hidden; }
+.pb .fl { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 3px; background: color-mix(in srgb, var(--s3) 38%, var(--surface)); }
+.pb .fl.pick { background: var(--s3); }
+.pb .v { text-align: right; font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); }
+.small { font-size: 12px; color: var(--muted); }
+
+/* 결론 · 한계 */
+.concl { display: grid; gap: 10px; margin: 0; padding: 16px 18px 16px 36px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; font-size: 14.5px; }
+.limits { display: grid; gap: 8px; font-size: 14px; color: var(--ink-2); margin: 0; padding-left: 18px; }
+footer { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 4px; }
+
+@media (max-width: 900px) { .pbody { grid-template-columns: minmax(0,1fr); } }
+@media (max-width: 720px) {
+  .headline, .ways, .charts { grid-template-columns: minmax(0,1fr); }
+  .field, .field input { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">S-Brain 공고 매칭 · 채점 모델 시험</div>
+    <h1>Jev 채점 시험</h1>
+    <p class="lede">평가용 정답표는 "이 공고가 이 창업자의 분야와 맞나"를 AI(gpt-4.1-mini)가 0·1·2점으로 매겨 만들었습니다. 새 모델 <b>Jev</b>가 이 채점을 대신할 수 있는지, 사람이 직접 채점한 143쌍을 정답으로 두고 시험했습니다. 결과는 <b>Jev가 기존 AI보다 사람과 덜 맞았다</b>는 것입니다. 지금 형태로는 기존 채점을 대신하지 못합니다.</p>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section aria-labelledby="h-head">
+    <h2 id="h-head">같은 143쌍에서 사람과 얼마나 맞았나</h2>
+    <div class="legend" aria-hidden="true">
+      <span><span class="sw sw3"></span>Jev (새 모델)</span>
+      <span><span class="sw sw2"></span>기존 AI 채점 (gpt-4.1-mini)</span>
+      <span><svg width="10" height="14"><line x1="5" x2="5" y1="0" y2="14" stroke="var(--ink-2)" stroke-width="1.5" stroke-dasharray="3 2"/></svg>팀이 정해 둔 잠정 기준(참고용)</span>
+    </div>
+    <div class="headline" id="headline"></div>
+    <p class="explain" id="binary"></p>
+  </section>
+
+  <section aria-labelledby="h-ways">
+    <h2 id="h-ways">무엇을 했나</h2>
+    <div class="ways">
+      <div class="way">
+        <h3><span class="sw swh"></span>정답 <small>사람이 직접 채점</small></h3>
+        <ul class="steps">
+          <li>AI 답을 보지 않고 사람이 매긴 창업자–공고 143쌍</li>
+          <li>0 무관 · 1 부분 관련 · 2 딱 맞음</li>
+          <li>다시 본 쌍은 다시 매긴 점수를 정답으로 씀</li>
+        </ul>
+      </div>
+      <div class="way w3">
+        <h3><span class="sw sw3"></span>Jev <small>새 모델 (TypeSafe AI)</small></h3>
+        <ul class="steps">
+          <li>글을 쓰지 않고 정해진 보기(0·1·2) 중 하나를 고름</li>
+          <li>보기마다 확률을 주고, 고른 보기의 확신도를 줌</li>
+          <li>기존 AI와 같은 창업자·공고 글, 같은 채점 기준을 보냄</li>
+        </ul>
+      </div>
+      <div class="way w2">
+        <h3><span class="sw sw2"></span>기존 AI <small>gpt-4.1-mini</small></h3>
+        <ul class="steps">
+          <li>지금 정답표를 만든 채점기</li>
+          <li>같은 쌍에 예전에 받아 둔 답을 그대로 씀(새로 부르지 않음)</li>
+          <li>점수와 함께 이유를 글로 씀</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-more">
+    <h2 id="h-more">어떤 쌍을 잘 맞히고, 어떤 점수를 주나</h2>
+    <div class="charts">
+      <div class="chart">
+        <h3>Jev 확신도 구간별 정확 일치<span class="tag">높을수록 좋음</span></h3>
+        <div class="how">Jev가 스스로 확신한 정도로 쌍을 나누고, 같은 쌍을 기존 AI는 얼마나 맞혔는지 나란히 봅니다. 둘 다 높으면 Jev가 잘했다기보다 원래 쉬운 쌍이 모인 것입니다.</div>
+        <div class="legend" aria-hidden="true"><span><span class="sw sw3"></span>Jev</span><span><span class="sw sw2"></span>기존 AI</span></div>
+        <div class="holder" data-chart="bins"></div>
+        <div class="note" id="bins-note"></div>
+      </div>
+      <div class="chart">
+        <h3>점수를 몇 번 줬나</h3>
+        <div class="how">143쌍에 0·1·2점을 각각 몇 번 줬는지 셉니다. 회색이 사람(정답)입니다.</div>
+        <div class="legend" aria-hidden="true"><span><span class="sw swh"></span>사람</span><span><span class="sw sw2"></span>기존 AI</span><span><span class="sw sw3"></span>Jev</span></div>
+        <div class="holder" data-chart="dist"></div>
+        <div class="note" id="dist-note"></div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-mat">
+    <h2 id="h-mat">어디서 틀렸나</h2>
+    <p class="explain">세로는 사람 정답, 가로는 채점기가 준 점수입니다. 초록 테두리 칸(대각선)이 맞힌 것이고, 나머지는 틀린 것입니다. 색이 진할수록 쌍이 많습니다.</p>
+    <div class="charts" id="mats"></div>
+  </section>
+
+  <section aria-labelledby="h-pairs">
+    <h2 id="h-pairs">쌍별로 보기</h2>
+    <div class="controls">
+      <div class="filters" id="filters" role="group" aria-label="쌍 거르기"></div>
+      <div class="fields">
+        <label class="field"><select id="cf" aria-label="Jev 확신도">
+          <option value="">확신도 전체</option><option value="0">확신도 0.9 이상</option><option value="1">확신도 0.7~0.9</option><option value="2">확신도 0.7 미만</option>
+        </select></label>
+        <label class="field"><input type="search" id="q" placeholder="공고 제목·아이디어·질의 번호 검색" aria-label="공고 제목·아이디어·질의 번호 검색"></label>
+        <span class="count" id="pcount"></span>
+      </div>
+      <p class="explain">"Jev만 틀림"은 기존 AI는 맞혔는데 Jev는 틀린 쌍입니다. 왼쪽 빨간 선은 Jev가 틀린 쌍 표시입니다. 누르면 창업자 정보, Jev의 보기별 확률, 기존 AI의 이유가 펼쳐집니다.</p>
+    </div>
+    <div class="plist" id="pairs"></div>
+  </section>
+
+  <section aria-labelledby="h-concl">
+    <h2 id="h-concl">결론</h2>
+    <ol class="concl" id="concl"></ol>
+  </section>
+
+  <section aria-labelledby="h-lim">
+    <h2 id="h-lim">읽을 때 주의할 점</h2>
+    <ul class="limits" id="limits"></ul>
+  </section>
+
+  <footer>
+    <span id="src"></span>
+    <span>S-Brain SKN32 1팀 · 공고 데이터·매칭 담당</span>
+  </footer>
+</div>
+
+<script>
+const DATA = {"meta":{"run":"jev_judge_probe_20260928T110603Z","run_at":"2026-09-28T11:06:03+00:00","pairs":143,"answered":143,"errors":0,"model":"jev-1.13.0","median_ms":230,"queries":49,"rechecked":48},"trust":{"exact":0.7,"kappa":0.6,"swap02":0.03},"jev":{"n":143,"exact":0.5244755244755245,"kappa":0.4746662786891208,"swap02":0.07692307692307693,"binary":0.7342657342657343,"conf":[[29,17,3],[10,19,7],[8,23,27]]},"llm":{"n":143,"exact":0.6433566433566433,"kappa":0.617886715270676,"swap02":0.06993006993006994,"binary":0.7972027972027972,"conf":[[31,13,5],[6,15,15],[5,7,46]]},"bins":[{"name":"0.9 이상","n":25,"jev":0.84,"llm":0.8},{"name":"0.7~0.9","n":31,"jev":0.6129032258064516,"llm":0.6774193548387096},{"name":"0.7 미만","n":87,"jev":0.40229885057471265,"llm":0.5862068965517241}],"dist":{"human":[49,36,58],"jev":[47,59,37],"llm":[42,35,66]},"same":{"n":97,"exact":0.6597938144329897},"blind_only_exact":0.4405594405594406,"groups":{"jev_only_wrong":28,"both_wrong":40,"both_right":64,"jev_only_right":11},"queries":{"q001":"신청자 유형: 법인\n설립일자: 2021-04-01\n사업 아이디어: 중소 금형·사출 공장의 불량을 카메라로 자동 검출하는 비전 AI 검사 장비\n수익모델: 검사 장비 판매, 유지보수 구독\n팀 경력: 금형 설계 12년, 머신비전 연구원 5년","q002":"신청자 유형: 개인사업자\n설립일자: 2019-09-01\n사업 아이디어: 자동차 부품 절삭 가공 업체로 노후 설비를 자동화 라인으로 바꾸고 싶다\n수익모델: 부품 임가공","q004":"신청자 유형: 법인\n설립일자: 2018-02-01\n사업 아이디어: 폐플라스틱을 재활용한 고기능성 복합소재 개발 및 양산\n수익모델: 소재 B2B 공급\n팀 경력: 고분자공학 박사","q005":"신청자 유형: 법인\n설립일자: 2023-06-01\n사업 아이디어: 중소기업 회계·세무 서류를 자동으로 분류하는 AI SaaS\n수익모델: 월 구독료\n팀 경력: 백엔드 개발 7년, 세무사","q006":"신청자 유형: 예비창업자\n사업 아이디어: 대학생 동아리 일정과 회비를 관리하는 모바일 앱\n수익모델: 광고, 프리미엄 기능 결제\n팀 경력: 컴퓨터공학과 재학","q007":"신청자 유형: 개인사업자\n설립일자: 2024-03-01\n사업 아이디어: 소상공인 매장의 예약·주문을 한 번에 관리하는 키오스크 연동 플랫폼\n수익모델: 가맹점 월 이용료, 결제 수수료\n팀 경력: POS 개발 5년","q008":"신청자 유형: 법인\n설립일자: 2020-11-01\n사업 아이디어: 공공기관용 빅데이터 분석·시각화 솔루션 해외 수출\n수익모델: 솔루션 라이선스\n팀 경력: 데이터 엔지니어 10년","q010":"신청자 유형: 법인\n설립일자: 2020-05-01\n사업 아이디어: 피부 질환을 스마트폰 사진으로 1차 판별하는 의료 AI\n수익모델: 병원 대상 라이선스\n팀 경력: 피부과 전문의, 딥러닝 연구원","q011":"신청자 유형: 예비창업자\n사업 아이디어: 고령자 낙상을 감지해 보호자에게 알리는 웨어러블 기기\n수익모델: 기기 판매, 모니터링 구독\n팀 경력: 간호사 8년","q012":"신청자 유형: 법인\n설립일자: 2017-03-01\n사업 아이디어: 천연물 기반 건강기능식품 원료 개발 및 해외 수출\n수익모델: 원료 수출\n팀 경력: 식품공학 박사","q013":"신청자 유형: 개인사업자\n설립일자: 2022-08-01\n사업 아이디어: 지역 농산물로 만든 수제 잼과 가공식품 온라인 판매\n수익모델: 온라인 쇼핑몰 판매","q014":"신청자 유형: 법인\n설립일자: 2021-02-01\n사업 아이디어: 컨테이너형 스마트팜으로 엽채류를 재배해 급식업체에 납품\n수익모델: 채소 납품, 스마트팜 설비 판매\n팀 경력: 농업기계 엔지니어","q015":"신청자 유형: 예비창업자\n사업 아이디어: 귀농해서 체험형 블루베리 농장과 카페를 운영하려 한다\n수익모델: 체험 프로그램, 카페 매출","q016":"신청자 유형: 개인사업자\n설립일자: 2016-05-01\n사업 아이디어: 10년째 운영 중인 한식당, 매출이 줄어 경영 개선과 운영자금이 필요하다\n수익모델: 음식 판매","q017":"신청자 유형: 개인사업자\n설립일자: 2025-01-01\n사업 아이디어: 동네 베이커리 카페, 배달앱 입점과 온라인 홍보를 하고 싶다\n수익모델: 빵·음료 판매","q018":"신청자 유형: 예비창업자\n사업 아이디어: 전통시장 안에 청년 푸드트럭형 분식 매장 창업\n수익모델: 분식 판매","q019":"신청자 유형: 개인사업자\n설립일자: 2023-02-01\n사업 아이디어: 국내 중소 브랜드 화장품을 동남아 라이브커머스로 판매\n수익모델: 판매 수수료\n팀 경력: 쇼호스트 3년","q020":"신청자 유형: 법인\n설립일자: 2019-07-01\n사업 아이디어: 생활용품 자체 브랜드를 미국 아마존에 입점시키려 한다\n수익모델: 해외 온라인 판매\n팀 경력: 무역 실무 8년","q021":"신청자 유형: 법인\n설립일자: 2015-03-01\n사업 아이디어: 산업용 밸브를 생산하며 중동 시장 수출을 확대하려 한다\n수익모델: 밸브 수출","q023":"신청자 유형: 법인\n설립일자: 2022-10-01\n사업 아이디어: 인디 게임 개발사, 신작 PC 게임의 글로벌 출시 준비\n수익모델: 게임 판매\n팀 경력: 게임 기획 10년","q024":"신청자 유형: 예비창업자\n사업 아이디어: 외국인 대상 지역 전통주 양조장 투어 여행 상품\n수익모델: 투어 상품 판매\n팀 경력: 여행사 가이드 5년","q025":"신청자 유형: 개인사업자\n설립일자: 2021-05-01\n사업 아이디어: 중소기업 제품 패키지와 브랜드 아이덴티티 디자인 에이전시\n수익모델: 디자인 용역\n팀 경력: 브랜드 디자이너 9년","q026":"신청자 유형: 법인\n설립일자: 2020-09-01\n사업 아이디어: 공장 지붕 태양광과 에너지저장장치를 묶은 에너지 관리 서비스\n수익모델: 설비 구축, 에너지 절감 성과 공유\n팀 경력: 전기기사 15년","q027":"신청자 유형: 개인사업자\n설립일자: 2018-04-01\n사업 아이디어: 도장 공장을 운영하는데 대기오염 방지시설 교체 비용이 부담된다\n수익모델: 도장 임가공","q028":"신청자 유형: 예비창업자\n사업 아이디어: 커피 찌꺼기를 수거해 친환경 연료 펠릿으로 만드는 사업\n수익모델: 펠릿 판매\n팀 경력: 환경공학 석사","q029":"신청자 유형: 법인\n설립일자: 2021-08-01\n사업 아이디어: 전기차 배터리 상태를 진단하는 장비와 데이터 서비스\n수익모델: 진단 장비 판매, 데이터 이용료\n팀 경력: 자동차 전장 연구원 11년","q030":"신청자 유형: 법인\n설립일자: 2023-01-01\n사업 아이디어: 농업용 방제 드론 제작 및 방제 대행 서비스\n수익모델: 드론 판매, 방제 대행\n팀 경력: 항공기계 엔지니어","q031":"신청자 유형: 법인\n설립일자: 2020-03-01\n사업 아이디어: 발달장애인을 고용해 친환경 세제를 만드는 사회적기업\n수익모델: 세제 판매, 공공기관 납품","q032":"신청자 유형: 예비창업자\n사업 아이디어: 경력단절 여성을 위한 돌봄 인력 매칭 협동조합\n수익모델: 매칭 수수료\n팀 경력: 사회복지사 7년","q033":"신청자 유형: 개인사업자\n설립일자: 2022-03-01\n사업 아이디어: 초등학생 대상 코딩·로봇 교육 학원을 온라인 강의로 확장\n수익모델: 수강료\n팀 경력: 초등 교사 출신","q034":"신청자 유형: 법인\n설립일자: 2016-06-01\n사업 아이디어: 전자부품 제조사로 청년 기술인력을 채용하고 싶지만 인건비가 부담\n수익모델: 전자부품 납품","q035":"신청자 유형: 법인\n설립일자: 2019-01-01\n사업 아이디어: 연구소를 운영하는데 석박사 연구인력 채용과 재직자 교육이 필요\n수익모델: 기술 용역\n팀 경력: 기업부설연구소장","q036":"신청자 유형: 개인사업자\n설립일자: 2023-09-01\n사업 아이디어: 인테리어 시공업, 장비 구입과 운전자금이 필요해 저금리 대출을 찾는다\n수익모델: 시공 매출","q037":"신청자 유형: 법인\n설립일자: 2022-05-01\n사업 아이디어: 기술력은 있으나 담보가 없는 초기 제조 스타트업, 보증을 통한 자금 조달\n수익모델: 센서 모듈 판매\n팀 경력: 반도체 공정 엔지니어","q038":"신청자 유형: 법인\n설립일자: 2021-10-01\n사업 아이디어: 보유 특허를 해외에 출원하고 기술 이전으로 수익화하려 한다\n수익모델: 기술 이전료\n팀 경력: 변리사","q039":"신청자 유형: 개인사업자\n설립일자: 2024-01-01\n사업 아이디어: 유아용 원목 장난감을 만드는데 KC 인증과 해외 인증이 필요\n수익모델: 장난감 판매","q040":"신청자 유형: 예비창업자\n사업 아이디어: 사무실 없이 AI 음성 비서 서비스를 준비 중이라 입주 공간이 필요\n수익모델: B2B 음성봇 구축\n팀 경력: 음성인식 개발자","q041":"신청자 유형: 법인\n설립일자: 2024-04-01\n사업 아이디어: 초기 바이오 스타트업으로 실험 장비가 있는 입주 공간을 찾는다\n수익모델: 진단 키트 판매\n팀 경력: 생명과학 박사","q042":"신청자 유형: 예비창업자\n사업 아이디어: 아이디어는 있지만 사업계획서 작성과 창업 교육을 먼저 받고 싶다","q043":"신청자 유형: 개인사업자\n설립일자: 2025-03-01\n사업 아이디어: 1인 창조기업으로 온라인 마케팅 대행을 하며 투자자와 네트워킹하고 싶다\n수익모델: 마케팅 대행료","q044":"신청자 유형: 법인\n설립일자: 2023-11-01\n사업 아이디어: 시드 투자를 받은 푸드테크 스타트업, 후속 투자 유치와 액셀러레이팅 프로그램 참여\n수익모델: 대체육 B2B 공급\n팀 경력: 식품 R&D 8년","q045":"신청자 유형: 법인\n설립일자: 2020-02-01\n사업 아이디어: 창업 6년차 도약기 기업으로 매출 확대를 위한 사업화 자금이 필요\n수익모델: 산업용 IoT 센서 판매","q046":"신청자 유형: 예비창업자\n사업 아이디어: 퇴직 후 40년 제조 경력을 살려 정밀 부품 설계 컨설팅 창업\n수익모델: 설계 컨설팅\n팀 경력: 정밀기계 설계 30년","q047":"신청자 유형: 예비창업자\n사업 아이디어: 여성 전용 홈트레이닝 콘텐츠와 운동용품 구독 서비스\n수익모델: 구독료\n팀 경력: 필라테스 강사 6년","q048":"신청자 유형: 법인\n설립일자: 2014-08-01\n사업 아이디어: 가구 제조사로 ERP 도입과 경영 컨설팅을 통해 원가 구조를 개선하려 한다\n수익모델: 가구 납품","q049":"신청자 유형: 개인사업자\n설립일자: 2017-10-01\n사업 아이디어: 의류 봉제 공장, 공공기관 조달 시장에 진입하고 싶다\n수익모델: 의류 OEM","q050":"신청자 유형: 법인\n설립일자: 2021-06-01\n사업 아이디어: 양식장 수질을 IoT로 모니터링하고 사료 급이를 자동화\n수익모델: 양식장 설비 판매\n팀 경력: 수산학 석사","q051":"신청자 유형: 법인\n설립일자: 2019-12-01\n사업 아이디어: 건설 현장 안전사고를 CCTV AI로 예측하는 솔루션\n수익모델: 현장당 이용료\n팀 경력: 건설안전기술사","q052":"신청자 유형: 법인\n설립일자: 2018-09-01\n사업 아이디어: 전력반도체 테스트 장비 국산화 개발\n수익모델: 테스트 장비 판매\n팀 경력: 반도체 장비 설계 14년"},"pairs":[{"q":"q001","id":"bizinfo:PBLN_000000000125850","t":"2026년 서울용산시제품제작소 AIㆍ스마트전자제품 금형지원 기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125850","h":2,"j":1,"c":0.44,"p":[0.15,0.58,0.27,0.0],"l":2,"lr":"신청자의 AI 검사 장비는 전자기기 기반 제품으로 금형 설계 및 제작 지원 사업 내용과 업종 및 기술 분야가 일치하며, 지원 내용도 금형 제작 지원으로 신청자의 필요와 부합한다.","b":2},{"q":"q001","id":"bizinfo:PBLN_000000000126347","t":"[전남광주] 광양시 2026년 제조 산업 AI융합 실증 지원 사업 참여기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126347","h":2,"j":1,"c":0.36,"p":[0.46,0.53,0.01,0.0],"l":2,"lr":"신청자의 금형·사출 공장 대상 AI 비전 검사 장비 개발은 제조업 분야에 해당하며, 공고는 제조기업의 AI 융합 실증 지원으로 AI 기술 도입과 제조 혁신을 지원하므로 업종과 지원 내용이 일치한다.","b":2},{"q":"q001","id":"kstartup:179061","t":"26년 AI·스마트전자제품 금형지원 기업모집","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179061","h":2,"j":1,"c":0.43,"p":[0.15,0.58,0.27,0.0],"l":2,"lr":"신청자는 금형·사출 공장용 비전 AI 검사 장비를 개발하는 기업으로, 공고는 AI·스마트전자제품 금형 제작 지원을 전자기기 기반 제품 제조 기업에 제공하여 신청자의 사업 분야와 지원 내용이 일치한다.","b":2},{"q":"q002","id":"bizinfo:PBLN_000000000122914","t":"[경북] 2026년 거점기관 개방형혁신사업 장비 및 인프라 활용 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122914","h":1,"j":2,"c":0.46,"p":[0.6,0.38,0.02,0.0],"l":2,"lr":"신청자는 자동차 부품 절삭 가공 업체로 미래모빌리티부품 분야에 해당하며, 노후 설비를 자동화 라인으로 바꾸고자 하는 필요가 있어 장비 및 인프라 무상 지원 사업과 주제가 일치한다.","b":2},{"q":"q002","id":"bizinfo:PBLN_000000000125054","t":"[울산] 2026년 자동차 부품업종 미래인재 일경험 지원사업 참여기업 모집 수정 공고(지역ㆍ산업맞춤형 일자리지원 사업(자율계정))","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125054","h":1,"j":1,"c":0.72,"p":[0.09,0.79,0.12,0.0],"l":1,"lr":"신청자는 자동차 부품 절삭 가공 업체로 업종은 맞으나, 공고는 인력 채용 및 교육 지원에 한정되어 있어 신청자의 설비 자동화 필요와 직접적인 지원 내용이 맞지 않는다.","b":1},{"q":"q004","id":"bizinfo:PBLN_000000000126041","t":"2026년 3차 고강도 고방열 경량금속소재 부품화 실증 기반구축사업 수요기업 대응형 기술전환 지원 컨설팅 수요기업 추가모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126041","h":1,"j":0,"c":0.81,"p":[0.01,0.13,0.86,0.0],"l":0,"lr":"신청자는 폐플라스틱 재활용 복합소재 개발 기업으로 경량금속소재를 활용하는 공고의 대상 분야와 다르며 지원 내용도 맞지 않음","b":1},{"q":"q004","id":"kstartup:179085","t":"출연연, 대학 연구소기업 Business Development 프로그램 참여 예비창업자 모집 (9월)","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179085","h":0,"j":0,"c":0.91,"p":[0.02,0.04,0.93,0.0],"l":0,"lr":"공고는 출연연 및 대학 연구자 대상 연구소기업 설립 지원으로, 신청자는 이미 법인 설립 후 소재 양산 사업을 진행 중이어서 대상과 지원 내용이 맞지 않음","b":0},{"q":"q005","id":"bizinfo:PBLN_000000000123596","t":"[서울ㆍ경기ㆍ인천ㆍ강원] 2026년 중소기업 AI활용 도입을 위한 AI훈련 참여기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123596","h":2,"j":1,"c":0.42,"p":[0.42,0.5700000000000001,0.01,0.0],"l":2,"lr":"신청자의 AI SaaS 개발 사업과 중소기업 대상 AI 도입 훈련 프로그램 지원 내용이 AI 활용 및 도입이라는 점에서 직접적으로 부합한다.","b":2},{"q":"q005","id":"bizinfo:PBLN_000000000125996","t":"2026년 중소기업 AX 우수사례 공모전 참가기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125996","h":1,"j":1,"c":0.77,"p":[0.15,0.83,0.02,0.0],"l":2,"lr":"신청자는 AI 기반 중소기업 회계·세무 자동화 SaaS를 개발하는 중소기업으로, AI 도입을 통한 경영 혁신 사례 발굴 및 확산을 지원하는 공모전 주제와 사업 분야 및 필요가 일치한다.","b":1},{"q":"q005","id":"kstartup:177466","t":"2026 중소기업AI훈련 맞춤 컨설팅 100% 정부지원 프로그램 참여기업 모집모집","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=177466","h":1,"j":1,"c":0.52,"p":[0.34,0.64,0.02,0.0],"l":2,"lr":"신청자의 AI SaaS 개발 사업과 AI 도입 및 활용 지원 컨설팅 프로그램이 AI 기술 분야에서 직접적으로 연관되고, 신청자의 AI 역량 강화 필요와 맞아 지원 내용과 분야가 일치한다.","b":2},{"q":"q006","id":"kstartup:179202","t":"대학생 창업자가 투자를 유치하며 겪었던 이야기들(#고객이 원하는 시장을 찾는 방법) - 제9차 벤처스타트업 아카데미","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179202","h":0,"j":1,"c":0.9,"p":[0.06,0.93,0.01,0.0],"l":1,"lr":"공고는 대학생 예비창업자를 대상으로 한 창업 교육 행사로 신청자의 예비창업자 신분과 창업 준비 단계에 부합하지만, 지원 내용이 교육·멘토링 중심으로 신청자의 구체적 사업 아이디어나 필요와 직접적으로 맞지 않는다.","b":0},{"q":"q007","id":"bizinfo:PBLN_000000000126212","t":"[경북] 예천군 2026년 소상공인 카드수수료 지원사업 참여점포 모집 변경 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126212","h":0,"j":0,"c":0.55,"p":[0.03,0.3,0.67,0.0],"l":0,"lr":"신청자는 소상공인 매장 관리 플랫폼 개발 사업자로 카드수수료 지원은 신청자의 사업 분야와 직접적인 관련이 없으며, 지원 내용도 신청자의 필요와 맞지 않는다.","b":2},{"q":"q008","id":"bizinfo:PBLN_000000000121025","t":"2026년 해양플랜트 서비스산업 엔지니어링 기술 지원 공고(해양플랜트 서비스산업 장비 공동활용 및 인력양성 사업)","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000121025","h":1,"j":0,"c":0.97,"p":[0.0,0.02,0.98,0.0],"l":0,"lr":"신청자는 공공기관용 빅데이터 분석·시각화 솔루션 해외 수출 사업을 하는 SW 분야이며, 공고는 해양플랜트 서비스산업 엔지니어링 기술 지원으로 분야와 지원 내용이 일치하지 않는다.","b":0},{"q":"q008","id":"bizinfo:PBLN_000000000124154","t":"[부산] 2026년 중소기업 빅데이터 분석ㆍ활용 지원사업 데이터 가치평가 수요기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000124154","h":1,"j":1,"c":0.67,"p":[0.18,0.75,0.07,0.0],"l":1,"lr":"신청자는 빅데이터 분석·시각화 솔루션 해외 수출을 하는 기업으로, 공고는 빅데이터 분석·활용 역량 강화를 위한 데이터 가치평가 지원을 제공하나, 신청자의 필요인 해외 수출과 직접적인 연관성은 낮고, 지역 제한으로 인해 지원 대상이 제한적이므로 주제 관련도는 1이며 borderline로 판단함.","b":2},{"q":"q008","id":"kstartup:179182","t":"12대 국가전략기술 분야 기술이전 수요 모집","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179182","h":2,"j":1,"c":0.53,"p":[0.28,0.65,0.06,0.01],"l":2,"lr":"신청자의 공공기관용 빅데이터 분석·시각화 솔루션 해외 수출 사업은 공공기술 기술이전 및 사업화 지원 공고의 딥테크 기반 유망기업 모집과 기술경쟁력 확보 지원 내용에 부합한다.","b":2},{"q":"q010","id":"bizinfo:PBLN_000000000123764","t":"AI융합 의료기기 신뢰성 강화 및 성능 평가ㆍ실증 사업 수혜기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123764","h":2,"j":2,"c":0.97,"p":[0.98,0.02,0.0,0.0],"l":2,"lr":"신청자는 피부 질환 AI 의료기기 개발 기업으로, 공고는 AI융합 의료기기 신뢰성 및 성능 평가와 실증 지원을 하여 신청자의 사업 분야와 필요에 정확히 부합한다.","b":0},{"q":"q010","id":"bizinfo:PBLN_000000000126117","t":"[대구] 2026년 2차 수성 알파시티 기업 전용 저궤도 위성 통신망 서비스 지원 대상 기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126117","h":0,"j":0,"c":0.33,"p":[0.03,0.47,0.5,0.0],"l":1,"lr":"신청자는 의료 AI 분야로 AI 기술을 활용하지만, 공고는 스마트도시 내 저궤도 위성 통신망 지원으로 분야가 다소 다르고, 지원 내용도 신청자의 피부 질환 AI 판별 서비스와 직접적인 연관성이 적어 업종과 지원 내용이 일부만 맞는다.","b":2},{"q":"q010","id":"bizinfo:PBLN_000000000126309","t":"2026년 AI 창업 경진대회 참가자 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126309","h":0,"j":1,"c":0.38,"p":[0.45,0.54,0.01,0.0],"l":1,"lr":"신청자의 의료 AI 분야가 공고의 AI 창업 경진대회 모집분야에 포함되나, 공고는 경진대회 참가자 모집으로 교육·멘토링·네트워킹 성격이 강해 직접적인 사업화 자금 지원 등 필요와 완전히 일치하지 않아 1점에 borderline를 부여함","b":2},{"q":"q010","id":"kstartup:178831","t":"[국비지원] AI 기반 서비스 개발·사업화 1인 창업가 캠프 7기 모집","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=178831","h":1,"j":1,"c":0.46,"p":[0.36,0.6,0.04,0.0],"l":1,"lr":"신청자의 의료 AI 사업 분야와 AI 기반 서비스 개발 교육은 관련 있으나, 공고는 1인 창업가 및 예비창업자 대상 교육 중심으로 신청자의 법인 형태와 사업 단계와는 일부 차이가 있어 지원 내용과 대상이 완전히 일치하지 않는다.","b":2},{"q":"q010","id":"kstartup:179010","t":"2026 오픈소스 로봇 손(Amazing Hand)으로 배우는 Physical AI 실습 교육","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179010","h":0,"j":0,"c":0.38,"p":[0.01,0.45,0.54,0.0],"l":0,"lr":"신청자의 의료 AI 분야와 병원 대상 라이선스 수익모델은 로봇 손과 피지컬 AI 실습 교육과 지원 내용 및 대상 분야가 맞지 않음","b":2},{"q":"q011","id":"bizinfo:PBLN_000000000123203","t":"AI기반 Age-Tech 산업 중심의 디지털의료제품 지원 바이오데이터 및 알고리즘 실증 기술서비스 모집 상시 공고(산업혁신기반구축ㆍ2차년도)","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123203","h":2,"j":2,"c":0.61,"p":[0.7,0.27,0.03,0.0],"l":2,"lr":"신청자의 고령자 낙상 감지 웨어러블 기기는 AI 기반 Age-Tech 디지털 의료제품에 해당하며, 공고는 AI 알고리즘 성능평가 및 SW 밸리데이션 기술지원을 제공하여 신청자의 기술개발 및 제품 고도화 필요와 정확히 맞는다.","b":2},{"q":"q011","id":"bizinfo:PBLN_000000000125940","t":"[인천] 2026년 어르신일자리 창출 우수기업ㆍ기관 인증 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125940","h":0,"j":0,"c":0.71,"p":[0.02,0.2,0.78,0.0],"l":0,"lr":"공고는 어르신 일자리 창출 및 고용에 관한 인증과 지원을 제공하는 제도로, 신청자의 웨어러블 기기 개발 및 판매 사업 분야와 지원 내용이 관련이 없으며, 특정 대상 집단(어르신 고용 기업)만을 대상으로 하여 신청자와 주제가 맞지 않는다.","b":1},{"q":"q012","id":"bizinfo:PBLN_000000000124484","t":"2026년 베트남 복합형 거점 물류센터(DC) 지원사업 이용업체 수시 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000124484","h":0,"j":2,"c":0.31,"p":[0.48,0.37,0.15,0.0],"l":1,"lr":"신청자는 천연물 기반 건강기능식품 원료 개발 및 해외 수출을 하는 식품 분야 수출업체로, 공고는 농림축산식품 수출업체의 해외 물류 지원을 목적으로 하나 임·수산물 제외 등 품목 제한이 있어 신청자의 건강기능식품 원료가 명확히 포함되는지 불분명하여 지원 내용과 분야가 일부만 맞는다.","b":2},{"q":"q013","id":"bizinfo:PBLN_000000000119567","t":"2026년 농식품 크라우드펀딩 지원사업 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000119567","h":2,"j":2,"c":0.92,"p":[0.94,0.06,0.0,0.0],"l":2,"lr":"신청자는 지역 농산물로 만든 수제 잼과 가공식품을 온라인 판매하는 농식품 분야 창업 7년 이내 개인사업자로, 농식품 크라우드펀딩 지원사업의 지원 대상과 내용이 신청자의 사업 분야와 필요에 정확히 부합한다.","b":0},{"q":"q013","id":"bizinfo:PBLN_000000000123926","t":"2026 디지털커머스 전문기관(소담스퀘어 in 전남) 지원사업 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123926","h":1,"j":2,"c":0.7,"p":[0.77,0.22,0.01,0.0],"l":2,"lr":"신청자는 지역 농산물 가공식품을 온라인으로 판매하는 개인사업자로, 공고는 온라인 판로 지원과 디지털콘텐츠 제작 등 온라인 판매 활성화 지원을 제공하여 신청자의 사업 분야와 필요에 부합한다.","b":1},{"q":"q013","id":"bizinfo:PBLN_000000000125929","t":"[전남광주] 2026년 3차 농촌자원 복합산업화 시군 특화자원사업 대상자 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125929","h":1,"j":2,"c":0.55,"p":[0.66,0.32,0.02,0.0],"l":2,"lr":"신청자는 지역 농산물로 만든 수제 잼과 가공식품을 온라인 판매하는 농식품 제조·가공업체로, 공고는 농식품 제조·가공 분야의 시설 및 장비 지원을 제공하여 신청자의 사업 분야와 지원 내용이 직접적으로 일치한다.","b":2},{"q":"q013","id":"bizinfo:PBLN_000000000125936","t":"[전남광주] 2026년 3차 양파 가공식품 경쟁력 강화 사업대상자 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125936","h":2,"j":1,"c":0.54,"p":[0.19,0.66,0.15,0.0],"l":1,"lr":"신청자는 농산물 가공식품 온라인 판매 사업자로 농식품 분야에 해당하나, 공고는 양파 가공식품에 한정되어 있어 업종이 일부만 겹치고 지원 내용도 온라인 판매보다는 브랜드·마케팅 지원에 국한되어 있어 일부만 맞음","b":2},{"q":"q014","id":"bizinfo:PBLN_000000000124442","t":"[경북] 청도군 2026년 스마트산업ㆍ문화관광 융합 신성장 지원사업 공고(시군구연고산업육성사업ㆍ스마트 기술 컨설팅)","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000124442","h":2,"j":2,"c":0.63,"p":[0.72,0.27,0.01,0.0],"l":2,"lr":"신청자는 컨테이너형 스마트팜으로 농산물을 재배하고 있어 농업 스마트팜 분야에 해당하며, 공고는 스마트기술 컨설팅을 지원하여 신청자의 사업 분야와 필요에 정확히 부합한다.","b":2},{"q":"q014","id":"kstartup:178624","t":"2026년 「스마트제조창업팩토리관」 입주기업 모집 공고","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=178624","h":2,"j":0,"c":0.37,"p":[0.1,0.37,0.53,0.0],"l":1,"lr":"신청자의 스마트팜 농업기계 엔지니어링 사업은 제조 분야에 일부 해당하나, 공고는 제조 창업기업의 시제품 개발 및 양산 준비를 위한 입주공간 지원에 초점이 있어 신청자의 필요와 완전히 일치하지는 않는다.","b":2},{"q":"q015","id":"bizinfo:PBLN_000000000119395","t":"[울산] 2026년 미래내일 일경험 인턴형 참여기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000119395","h":0,"j":0,"c":0.83,"p":[0.01,0.12,0.87,0.0],"l":0,"lr":"신청자는 귀농 체험형 농장과 카페 창업 아이디어로 인력 고용유지 지원과 직접적인 관련이 없고, 공고는 미취업 청년 일경험 제공에 초점이 맞춰져 있어 지원 내용과 분야가 맞지 않는다.","b":1},{"q":"q015","id":"kstartup:179054","t":"[숭실대학교 캠퍼스타운] 2026 석·박사급 실험실 창업스쿨(유형2) 참여자 모집","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179054","h":0,"j":0,"c":0.8,"p":[0.01,0.14,0.85,0.0],"l":0,"lr":"신청자는 귀농 체험형 농장과 카페 창업 아이디어를 가진 예비창업자이나, 공고는 이공계 석·박사급 연구인력과 기술창업 중심의 교육 프로그램으로 농업 분야와는 관련이 없고, 지원 내용도 체험형 농장 운영과 맞지 않음","b":1},{"q":"q015","id":"kstartup:179091","t":"<소셜벤처 프렙스쿨 14기> 사회연대경제기업 창업 육성 프로그램 참여기업 모집","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179091","h":0,"j":1,"c":0.57,"p":[0.09,0.6900000000000001,0.22,0.0],"l":1,"lr":"신청자는 귀농 체험형 농장과 카페 창업을 준비하는 예비창업자로, 공고는 사회연대경제기업 창업 육성 프로그램으로 창업 지원을 하지만, 농업 분야에 특화된 지원 내용은 아니며, 창업 육성 프로그램이라는 범용적 지원 내용이 신청자의 필요와 일부 맞는다.","b":2},{"q":"q016","id":"bizinfo:PBLN_000000000118191","t":"[인천] 2026년 식품진흥기금 융자사업 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118191","h":2,"j":1,"c":0.37,"p":[0.44,0.53,0.03,0.0],"l":2,"lr":"신청자는 10년째 운영 중인 한식당으로 음식점이며, 공고는 음식점 위생 수준 향상을 위한 시설개선 및 육성자금 융자를 지원하여 신청자의 경영 개선과 운영자금 필요에 부합한다.","b":2},{"q":"q016","id":"bizinfo:PBLN_000000000118203","t":"[광주] 2026년 식품진흥기금 융자지원계획 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118203","h":2,"j":2,"c":0.69,"p":[0.77,0.22,0.01,0.0],"l":2,"lr":"한식당 운영자의 경영 개선과 운영자금 필요에 대해 식품위생법에 따른 식품업소 위생관리 시설 개선 및 육성자금 융자 지원이 직접적으로 부합한다.","b":2},{"q":"q016","id":"bizinfo:PBLN_000000000118345","t":"[경기] 광명시 2026년 소규모 유통업 육성자금 지원 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118345","h":0,"j":0,"c":0.59,"p":[0.07,0.23,0.7,0.0],"l":0,"lr":"신청자는 한식당을 운영하는 음식점으로, 공고는 소규모 유통업체에 대한 운영자금 융자 지원으로 업종이 다르며 지원 내용도 맞지 않음","b":2},{"q":"q016","id":"bizinfo:PBLN_000000000125055","t":"[경북] 의성군 2026년 소상공인 카드수수료 지원사업 참여점포 모집 변경 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125055","h":2,"j":1,"c":0.65,"p":[0.22,0.74,0.04,0.0],"l":2,"lr":"신청자는 한식당을 운영하는 소상공인으로 카드수수료 부담 경감 자금 지원 사업 내용과 업종 및 필요가 일치한다.","b":2},{"q":"q017","id":"bizinfo:PBLN_000000000118294","t":"[경북] 영주시 2026년 공공배달앱 활성화 지원사업 참여업체 모집 공고(기본배달료 지원)","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118294","h":2,"j":2,"c":0.83,"p":[0.87,0.12,0.01,0.0],"l":2,"lr":"신청자는 동네 베이커리 카페로 배달앱 입점과 온라인 홍보를 원하며, 공고는 공공배달앱 가맹점 배달료 지원을 통해 경영안정을 지원하므로 지원 내용과 신청자의 필요가 정확히 일치한다.","b":1},{"q":"q017","id":"bizinfo:PBLN_000000000118350","t":"2026년 장애인 창업 컨설팅지원 대상자 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118350","h":0,"j":0,"c":0.99,"p":[0.0,0.01,0.99,0.0],"l":0,"lr":"공고는 장애인 창업자만 지원하는 컨설팅으로, 신청자는 장애인 여부가 확인되지 않고 지원 내용도 동네 베이커리 카페의 온라인 홍보 및 배달앱 입점과 직접 맞지 않음","b":0},{"q":"q018","id":"bizinfo:PBLN_000000000125998","t":"2026년 중앙지구 도시재생 뉴딜사업 비단길청년몰 청년상인 및 창업 아카데미 교육 대상자 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125998","h":1,"j":2,"c":0.67,"p":[0.75,0.24,0.01,0.0],"l":2,"lr":"신청자의 전통시장 내 청년 푸드트럭형 분식 매장 창업 아이디어와 공고의 전통시장 청년 상인 창업 지원 및 주방설비 제공이 직접적으로 일치하여 지원 내용과 분야가 모두 맞음","b":2},{"q":"q018","id":"bizinfo:PBLN_000000000126446","t":"[경북] 2026년 경북청년 롯데백화점 포항점 팝업스토어 참여기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126446","h":1,"j":2,"c":0.44,"p":[0.58,0.39,0.03,0.0],"l":2,"lr":"신청자의 청년 푸드트럭형 분식 매장 창업 아이디어가 경북 청년 창업제품의 내수 판로 확보 및 홍보를 지원하는 팝업스토어 참여 지원과 직접적으로 맞아떨어진다.","b":2},{"q":"q018","id":"kstartup:178937","t":"[창업] AI 활용 상세페이지·상품 기획 실습","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=178937","h":1,"j":1,"c":0.7,"p":[0.02,0.78,0.2,0.0],"l":1,"lr":"신청자는 전통시장 내 분식 푸드트럭 창업을 준비하는 청년 예비창업자로, 공고는 AI 활용 상세페이지 및 상품 기획 교육을 제공하는 창업교육으로 업종과 직접적 연관성은 적으나 창업 초기 단계 지원이라는 점에서 필요와 일부 맞는다.","b":1},{"q":"q018","id":"kstartup:179134","t":"청년 창업 인사이트 밋업","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179134","h":1,"j":1,"c":0.88,"p":[0.08,0.91,0.01,0.0],"l":2,"lr":"신청자가 청년 예비창업자로서 분식 매장 창업을 준비 중이며, 공고는 청년 예비 및 초기창업자를 대상으로 한 창업 멘토링 프로그램으로 지원 내용과 대상이 일치한다.","b":1},{"q":"q019","id":"bizinfo:PBLN_000000000118556","t":"2026년 디지털커머스 전문기관(소담스퀘어 in 광주) 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118556","h":1,"j":2,"c":0.81,"p":[0.86,0.14,0.0,0.0],"l":2,"lr":"신청자는 동남아 라이브커머스 판매를 하는 개인사업자로, 공고는 소상공인 대상 라이브커머스 제작과 디지털 전환 지원을 하여 신청자의 사업 분야와 필요에 부합한다.","b":1},{"q":"q019","id":"bizinfo:PBLN_000000000121288","t":"[부산] 2026년 디지털커머스 전문기관 구축ㆍ운영라이브커머스 운영 지원 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000121288","h":2,"j":2,"c":0.93,"p":[0.95,0.05,0.0,0.0],"l":2,"lr":"신청자는 국내 중소 브랜드 화장품을 동남아 라이브커머스로 판매하는 뷰티 분야 개인사업자로, 공고는 뷰티 등 소비재 소상공인의 라이브커머스 운영 지원을 내용으로 하여 업종과 지원 내용이 일치한다.","b":0},{"q":"q019","id":"bizinfo:PBLN_000000000125511","t":"[서울] 종로구 2026년 소상공인 라이브커머스 지원사업 참여자 모집 재공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125511","h":2,"j":2,"c":0.76,"p":[0.82,0.17,0.01,0.0],"l":2,"lr":"신청자는 국내 중소 브랜드 화장품을 동남아 라이브커머스로 판매하는 개인사업자로, 공고는 라이브커머스 진행 지원과 관련된 내용으로 신청자의 온라인 판로개척 필요와 업종(소상공인 화장품 판매) 분야에 부합한다.","b":1},{"q":"q019","id":"kstartup:178766","t":"2026년 라이브커머스 플랫폼을 활용한 쇼호스트 교육생 모집","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=178766","h":2,"j":2,"c":0.4,"p":[0.55,0.44,0.01,0.0],"l":1,"lr":"신청자는 라이브커머스 판매를 하는 개인사업자로, 공고는 라이브커머스 쇼호스트 교육을 지원하는 내용으로 지원 내용은 신청자의 필요와 맞으나, 대상 지역이 제한적이고 신청자의 지역 정보가 없어 완전한 일치로 보기 어려워 1점이다.","b":2},{"q":"q020","id":"bizinfo:PBLN_000000000124341","t":"2026년 하반기 온라인 K-SEAFOOD 판매 전용관 운영 사업 입점 제품 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000124341","h":1,"j":0,"c":0.69,"p":[0.01,0.22,0.77,0.0],"l":0,"lr":"신청자는 생활용품 자체 브랜드를 미국 아마존에 입점시키려 하나, 공고는 수산물 및 수산가공품 분야에 한정하여 지원하므로 업종 분야가 명백히 다르다.","b":2},{"q":"q021","id":"bizinfo:PBLN_000000000118122","t":"[울산] 2026년 이전ㆍ창업기업(기술강소기업) 특별보조금 지원사업 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118122","h":1,"j":1,"c":0.53,"p":[0.33,0.65,0.02,0.0],"l":1,"lr":"신청자는 산업용 밸브 제조 및 수출 기업으로, 공고는 기술강소기업의 울산 이전 및 창업 지원에 초점을 맞추고 있으나 신청자의 수출 확대 필요와 직접적으로 맞는 지원 내용은 아니며, 업종도 특정하지 않아 일부만 관련된다.","b":2},{"q":"q021","id":"kstartup:179085","t":"출연연, 대학 연구소기업 Business Development 프로그램 참여 예비창업자 모집 (9월)","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179085","h":0,"j":0,"c":0.98,"p":[0.0,0.01,0.99,0.0],"l":0,"lr":"공고는 출연연 및 대학 연구자 대상의 연구소기업 설립 지원으로, 산업용 밸브 생산 및 중동 수출을 목표로 하는 법인과는 지원 내용과 대상 분야가 맞지 않음","b":0},{"q":"q021","id":"kstartup:179182","t":"12대 국가전략기술 분야 기술이전 수요 모집","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179182","h":0,"j":1,"c":0.34,"p":[0.1,0.5,0.39,0.01],"l":1,"lr":"산업용 밸브 제조 및 수출 기업이 공공기술 이전을 통한 기술경쟁력 확보를 희망할 수 있으나, 공고는 딥테크 기반 기술에 초점을 맞추고 있어 분야 적합성이 일부 제한적임","b":2},{"q":"q023","id":"bizinfo:PBLN_000000000119967","t":"[전북] 2026년 게임인재 맞춤형 인턴십 지원사업 공고(전북 글로벌게임센터)","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000119967","h":2,"j":2,"c":0.45,"p":[0.58,0.4,0.02,0.0],"l":1,"lr":"신청자는 인디 게임 개발사로 게임 분야에 해당하며, 공고는 게임콘텐츠 관련 중소기업의 인턴 인건비 지원으로 인력 지원 내용이 신청자의 고용 필요와 일부 맞으나 지역 제한으로 직접적 지원 가능성은 낮아 1점이다.","b":2},{"q":"q023","id":"bizinfo:PBLN_000000000120444","t":"2026년 체육인 직업안정 사업(창업지원) 참여자 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000120444","h":0,"j":0,"c":0.99,"p":[0.0,0.0,1.0,0.0],"l":0,"lr":"신청자는 인디 게임 개발사로 체육인 대상 창업지원 사업과 업종 및 대상 집단이 전혀 다르며 지원 내용도 맞지 않음","b":0},{"q":"q023","id":"bizinfo:PBLN_000000000123170","t":"[경북] 2026년 게임 기업 맞춤형 지원사업(컨설팅 분야) 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123170","h":2,"j":2,"c":0.95,"p":[0.97,0.03,0.0,0.0],"l":0,"lr":"공고는 경북도 내 게임기업만 지원하며 신청자는 경북도 내 사업장 보유 여부가 불명확하고, 공고가 특정 지역 게임기업만 대상으로 하여 신청자와 주제 관련성이 없다.","b":0},{"q":"q023","id":"bizinfo:PBLN_000000000123662","t":"[전북] 2026년 게임기업 컨설팅 지원사업 신청 게임기업(예비창업자) 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123662","h":2,"j":2,"c":0.98,"p":[0.98,0.02,0.0,0.0],"l":2,"lr":"신청자는 인디 게임 개발사로 글로벌 출시 준비 중이며, 공고는 게임기업을 대상으로 투자, 퍼블리싱, 마케팅 등 사업 성장에 필요한 맞춤형 컨설팅을 지원하여 신청자의 사업 분야와 필요에 부합한다.","b":0},{"q":"q024","id":"bizinfo:PBLN_000000000117523","t":"2026년 공주시 단체관광객 유치 여행사 인센티브 지원사업 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000117523","h":2,"j":1,"c":0.28,"p":[0.45,0.46,0.09,0.0],"l":2,"lr":"신청자는 외국인 대상 지역 전통주 양조장 투어 여행 상품을 기획하는 여행사 가이드 출신으로, 공고는 단체 관광객 유치 여행사에 인센티브를 지원하여 체류형 관광을 확대하는 내용으로 신청자의 사업 분야와 지원 내용이 직접적으로 부합한다.","b":2},{"q":"q024","id":"bizinfo:PBLN_000000000119946","t":"[울산] 2026년 지역관광기업 컨설팅 운영 사업 컨설팅 프로그램 운영 참여기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000119946","h":2,"j":2,"c":0.53,"p":[0.65,0.34,0.01,0.0],"l":2,"lr":"신청자는 외국인 대상 지역 전통주 양조장 투어 여행 상품을 기획하는 예비창업자로, 공고는 관광산업 관련 예비창업자에게 관광 상품 및 경영, 창업·BM 컨설팅을 지원하여 신청자의 사업 분야와 필요에 정확히 부합한다.","b":2},{"q":"q024","id":"bizinfo:PBLN_000000000126035","t":"2026년 남해군 독일마을 맥주축제ㆍ관광객 유치 인센티브 지원 사업 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126035","h":2,"j":1,"c":0.43,"p":[0.26,0.57,0.17,0.0],"l":2,"lr":"신청자는 외국인 대상 전통주 양조장 투어 여행 상품을 기획하는 여행사 예비창업자로, 공고는 외국인 단체관광객 유치 인센티브를 지원하여 신청자의 사업 분야와 필요에 정확히 부합한다.","b":2},{"q":"q024","id":"kstartup:179008","t":"2026년도 ｢서울 관광스타트업 육성 지원(상생협력) 사업｣ 공모","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179008","h":2,"j":2,"c":0.79,"p":[0.84,0.14,0.02,0.0],"l":2,"lr":"신청자의 외국인 대상 지역 전통주 양조장 투어 여행 상품은 외래관광객 대상 관광 서비스 개발에 해당하며, 공고가 관광 스타트업의 사업화 지원을 목적으로 하여 지원 내용과 분야가 일치한다.","b":1},{"q":"q024","id":"kstartup:179013","t":"(~ 9/4 마감) 2026년도 재도전응원본부 재창업 특화교육ㆍ컨설팅 프로그램 모집 공고","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179013","h":0,"j":0,"c":0.96,"p":[0.01,0.03,0.96,0.0],"l":0,"lr":"신청자는 예비창업자이나 폐업 이력이 없고, 공고는 폐업 이력이 있는 재창업자만 지원 대상이므로 지원 내용과 대상 집단이 맞지 않는다.","b":0},{"q":"q025","id":"bizinfo:PBLN_000000000123983","t":"[서울ㆍ인천ㆍ강원] 2026년 상시 디자인 컨설팅 지원 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123983","h":2,"j":1,"c":0.22,"p":[0.41,0.42,0.17,0.0],"l":2,"lr":"신청자의 브랜드 및 패키지 디자인 에이전시 사업과 공고의 디자인 컨설팅 지원 내용이 직접적으로 일치하며, 신청자의 디자인 용역 필요와 맞는다.","b":2},{"q":"q025","id":"bizinfo:PBLN_000000000126164","t":"[서울] 2026년 패션기업 연말 맞춤형 제품 제작ㆍ프로모션 지원사업 참여기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126164","h":2,"j":0,"c":0.34,"p":[0.05,0.44,0.51,0.0],"l":1,"lr":"신청자는 디자인 에이전시로 패션기업이 아니며, 공고는 패션기업의 제품 제작 및 프로모션 지원에 초점을 맞추고 있어 업종이 일부만 겹치고 지원 내용도 직접적인 필요와 완전히 일치하지 않는다.","b":2},{"q":"q025","id":"kstartup:179093","t":"2026년 09월 초기 창업기업 대상 벤처기업 인증 행정자문&전략 수립 기업모집","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179093","h":2,"j":1,"c":0.64,"p":[0.21,0.73,0.06,0.0],"l":2,"lr":"신청자는 초기 창업기업으로 벤처기업 인증 준비와 기업 성장에 필요한 행정자문 및 전략 수립 지원이 필요하며, 공고는 초기 창업기업의 벤처기업 인증과 기업가치 제고를 위한 맞춤형 자문을 지원하므로 주제가 일치한다.","b":2},{"q":"q025","id":"kstartup:179137","t":"서울디자인런 2026 - 창업은 언제 혼자를 벗어나야 할까?","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179137","h":1,"j":1,"c":0.35,"p":[0.48,0.51,0.01,0.0],"l":1,"lr":"공고는 디자인 창업 교육을 지원하는 내용으로 신청자의 디자인 에이전시 창업과 분야는 일치하나, 교육 프로그램이므로 신청자의 구체적 필요인 용역 사업 지원과는 직접적 연관성이 약함","b":2},{"q":"q026","id":"bizinfo:PBLN_000000000118858","t":"2026년 경남 수도권 투자유치 거점센터 데모데이ㆍ멘토링 데이 참기기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118858","h":0,"j":1,"c":0.71,"p":[0.21,0.78,0.01,0.0],"l":1,"lr":"신청자의 에너지 관리 서비스가 친환경·에너지 분야에 해당하며, 공고는 투자유치와 비즈니스모델 고도화 지원으로 신청자의 필요와 일부 맞으나 직접적인 자금 지원이나 설비 지원은 아님","b":1},{"q":"q026","id":"bizinfo:PBLN_000000000119834","t":"[광주] 2026년 벤처기업육성자금 지원계획 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000119834","h":2,"j":1,"c":0.3,"p":[0.34,0.48,0.18,0.0],"l":2,"lr":"신청자의 사업 아이디어가 공장 지붕 태양광과 에너지저장장치를 결합한 에너지 관리 서비스로 광(光) 관련기업에 해당하며, 공고는 벤처기업육성자금 융자 지원으로 신청자의 자금 필요와 업종이 정확히 맞는다.","b":2},{"q":"q026","id":"bizinfo:PBLN_000000000125144","t":"[경기] 2026년 에너지기술공유대학(ETU) 산업체 연계 인턴십 참여기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125144","h":2,"j":1,"c":0.77,"p":[0.14,0.83,0.03,0.0],"l":2,"lr":"신청자의 에너지 관리 서비스 사업이 에너지 분야에 해당하며, 인턴십 인건비 지원을 통한 인력·고용유지 지원 내용이 신청자의 인력 확보 필요와 부합한다.","b":1},{"q":"q026","id":"bizinfo:PBLN_000000000126222","t":"2026년 재생에너지 금융지원사업 지원 2차 변경 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126222","h":2,"j":2,"c":0.88,"p":[0.92,0.08,0.0,0.0],"l":2,"lr":"신청자의 공장 지붕 태양광과 에너지저장장치 결합 에너지 관리 서비스는 재생에너지 관련 시설물 설치 및 설비 구축에 해당하며, 공고는 재생에너지 시설자금 지원을 통해 설비 구축 비용을 지원하므로 업종과 지원 내용이 정확히 일치한다.","b":1},{"q":"q026","id":"kstartup:179125","t":"성남 기후테크 UpSkill 아카데미 Vol.2 - 비즈니스모델 개발과 기술사업화","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179125","h":1,"j":1,"c":0.52,"p":[0.36,0.64,0.0,0.0],"l":1,"lr":"신청자의 에너지 관리 서비스가 기후테크 분야에 해당하나, 공고는 교육 중심이며 신청자의 구체적 필요인 설비 구축이나 에너지 절감 성과 공유 지원과는 직접적으로 맞지 않는다.","b":2},{"q":"q026","id":"kstartup:179193","t":"2026년 한전KPS 창업벤처기업 육성 지원사업 참여기업 모집안내(연장)","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179193","h":2,"j":2,"c":0.44,"p":[0.58,0.36,0.05,0.01],"l":2,"lr":"신청자의 에너지 관리 서비스는 신재생/친환경 분야에 해당하며, 공고는 신재생/친환경 창업벤처기업을 사업화 지원하므로 지원 내용과 분야가 모두 일치한다.","b":2},{"q":"q027","id":"bizinfo:PBLN_000000000120355","t":"2026년 3차 미래환경산업육성융자(오염방지시설자금) 지원사업 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000120355","h":2,"j":2,"c":0.85,"p":[0.89,0.1,0.01,0.0],"l":2,"lr":"신청자는 도장 공장 운영 중 대기오염 방지시설 교체 비용 부담이 있어, 오염방지시설자금 융자 지원 내용과 업종(제조업) 및 필요가 정확히 일치한다.","b":1},{"q":"q027","id":"bizinfo:PBLN_000000000122168","t":"[경북] 경주시 2026년 소규모 사업장 방지시설 설치 지원사업 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122168","h":0,"j":2,"c":0.52,"p":[0.64,0.29,0.07,0.0],"l":2,"lr":"신청자는 도장 공장 운영으로 대기오염 방지시설 교체 비용 부담이 있어, 경주시 소규모 사업장 방지시설 설치 지원사업이 노후 방지시설 개선비용 지원을 통해 직접적인 필요와 업종에 부합한다.","b":2},{"q":"q027","id":"bizinfo:PBLN_000000000122900","t":"[경기] 2026년 수질 자동측정기기 설치운영관리비 지원사업 추가 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122900","h":0,"j":0,"c":0.62,"p":[0.02,0.26,0.72,0.0],"l":0,"lr":"신청자는 대기오염 방지시설 교체 비용 부담이 있으나, 공고는 수질 자동측정기기 설치 및 운영비 지원으로 지원 내용과 대상 분야가 일치하지 않는다.","b":2},{"q":"q027","id":"bizinfo:PBLN_000000000123056","t":"[경기] 2026년 2차 음식점 미세먼지ㆍ악취 방지시설 설치 지원사업 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123056","h":0,"j":0,"c":0.61,"p":[0.03,0.26,0.71,0.0],"l":0,"lr":"신청자는 도장 공장을 운영하는 제조업자로, 공고는 음식점 대상 미세먼지·악취 방지시설 설치 지원으로 업종과 대상이 맞지 않아 주제 관련성이 없다.","b":2},{"q":"q027","id":"bizinfo:PBLN_000000000123119","t":"2026년 바이오프린팅 활용 첨단바이오 활성화 지원사업(시설ㆍ장비 활용) 수혜기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123119","h":0,"j":0,"c":0.99,"p":[0.0,0.01,0.99,0.0],"l":0,"lr":"신청자는 도장 공장 운영 및 대기오염 방지시설 교체 비용 부담과 관련된 사업을 하고 있으나, 공고는 바이오프린팅 및 첨단바이오 분야 시설·장비 활용 지원으로 신청자의 업종과 지원 내용이 전혀 맞지 않음","b":0},{"q":"q027","id":"bizinfo:PBLN_000000000125525","t":"[충남] 2026년 AI 기반 태양광 설비 유지보수 솔루션 보급 시범사업 참여기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125525","h":0,"j":0,"c":0.91,"p":[0.0,0.07,0.93,0.0],"l":0,"lr":"신청자는 도장 공장 운영과 대기오염 방지시설 교체 비용 부담과 관련된 사업을 하고 있으나, 공고는 태양광 설비 유지보수 솔루션 도입 지원으로 업종과 지원 내용이 전혀 맞지 않음","b":0},{"q":"q027","id":"bizinfo:PBLN_000000000125717","t":"2026년 백년소상공인 위생컨설팅 및 환경개선지원 사업 추가 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125717","h":0,"j":0,"c":0.97,"p":[0.0,0.02,0.98,0.0],"l":0,"lr":"공고는 식품안심업소 지정과 위생환경 개선을 위한 외식업종 소상공인 지원에 한정되어 있어 도장 공장 대기오염 방지시설 교체 비용 지원과는 관련이 없다.","b":0},{"q":"q027","id":"bizinfo:PBLN_000000000126280","t":"[부산] 연제구 2026년 노후간판 교체(지원) 사업 신청자 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126280","h":0,"j":0,"c":0.87,"p":[0.01,0.09,0.9,0.0],"l":0,"lr":"신청자는 도장 공장 운영과 대기오염 방지시설 교체 비용 부담 문제를 겪고 있으나, 공고는 노후간판 교체 지원으로 지원 내용과 업종 분야가 전혀 맞지 않음","b":1},{"q":"q028","id":"kstartup:179125","t":"성남 기후테크 UpSkill 아카데미 Vol.2 - 비즈니스모델 개발과 기술사업화","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179125","h":0,"j":1,"c":0.48,"p":[0.39,0.61,0.0,0.0],"l":1,"lr":"신청자의 친환경 연료 펠릿 사업은 기후테크 분야에 해당하며, 공고는 기후테크 비즈니스모델 개발과 기술사업화 교육을 제공하나, 신청자의 구체적 필요인 자금 지원이나 시제품 제작 지원과는 직접적으로 맞지 않아 일부만 부합한다.","b":2},{"q":"q029","id":"bizinfo:PBLN_000000000123299","t":"2026년 수요맞춤형 전기구동 경형 PBV 개발 지원기반 구축사업 기업지원 프로그램(기술자문) 추가 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123299","h":1,"j":1,"c":0.54,"p":[0.3,0.66,0.04,0.0],"l":2,"lr":"신청자는 전기차 배터리 진단 장비 및 데이터 서비스를 개발하는 자동차 부품 관련 기업으로, 공고는 전기구동 경형 PBV 관련 자동차 부품기업에 기술자문을 지원하여 기술개발 및 제품개발을 돕는 내용으로 신청자의 사업 분야와 지원 내용이 직접적으로 부합한다.","b":2},{"q":"q030","id":"bizinfo:PBLN_000000000116975","t":"넷제로 챌린지X 통합 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000116975","h":0,"j":1,"c":0.43,"p":[0.39,0.57,0.03,0.01],"l":2,"lr":"신청자의 농업용 방제 드론 제작 및 방제 대행 서비스는 탄소중립·녹색성장 분야의 혁신기술에 해당하며, 공고는 해당 분야 스타트업의 사업화 지원을 목적으로 하여 지원 내용과 분야가 일치한다.","b":2},{"q":"q030","id":"bizinfo:PBLN_000000000120423","t":"2026년 로봇 재제조산업 기업지원사업(기술 자문) 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000120423","h":2,"j":0,"c":0.86,"p":[0.01,0.09,0.9,0.0],"l":0,"lr":"신청자의 농업용 방제 드론 제작 및 방제 대행 서비스는 로봇 재제조 산업과 기술 자문 지원 내용 및 대상 분야와 관련이 없다.","b":1},{"q":"q030","id":"bizinfo:PBLN_000000000121498","t":"2026년 농업용 면세유 유가연동보조금 지원사업 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000121498","h":1,"j":0,"c":0.4,"p":[0.05,0.4,0.55,0.0],"l":1,"lr":"신청자는 농업용 방제 드론 제작 및 방제 대행 서비스를 하는 기업으로, 공고는 농업용 면세유 구입비 지원을 하는 내용으로 지원 내용은 농업 관련이지만 신청자의 주된 필요인 드론 제작 및 방제 서비스와 직접적인 관련은 적어 지원 내용과 분야가 일부만 맞는다.","b":2},{"q":"q030","id":"bizinfo:PBLN_000000000126136","t":"2026년 위조방지기술 도입지원 사업 기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126136","h":0,"j":0,"c":0.91,"p":[0.01,0.06,0.93,0.0],"l":0,"lr":"신청자의 농업용 방제 드론 제작 및 방제 대행 서비스는 위조방지기술 도입 지원 사업의 대상 분야와 지원 내용과 관련이 없으며, 위조방지기술은 주로 제품의 정품 인증과 관련된 기술로 농업용 드론과 직접적인 연관성이 없다.","b":0},{"q":"q030","id":"kstartup:179146","t":"(대구센터) 2026년 제8회 제대군인 창업 워크숍 개최 안내","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179146","h":0,"j":0,"c":0.98,"p":[0.0,0.01,0.99,0.0],"l":0,"lr":"공고는 제대군인 창업 교육을 지원하는 내용으로, 신청자의 농업용 방제 드론 제작 및 방제 대행 서비스와 업종 및 대상 집단이 맞지 않음","b":0},{"q":"q031","id":"bizinfo:PBLN_000000000117984","t":"2026년 제주창조경제혁신센터 창업-BuS 프로그램(W-JOIN) 참여기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000117984","h":0,"j":1,"c":0.56,"p":[0.28,0.67,0.04,0.0],"l":2,"lr":"신청자는 친환경 세제 제조 사회적기업으로 친환경 분야에 해당하며, 공고는 친환경 분야 스타트업의 기술 고도화 및 투자 유치 지원을 목표로 하여 신청자의 사업 분야와 지원 내용이 일치한다.","b":2},{"q":"q031","id":"bizinfo:PBLN_000000000118350","t":"2026년 장애인 창업 컨설팅지원 대상자 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118350","h":1,"j":0,"c":0.65,"p":[0.09,0.17,0.74,0.0],"l":2,"lr":"신청자는 발달장애인을 고용한 사회적기업으로 장애인 창업자에 해당하며, 공고는 장애인 창업자의 창업단계별 맞춤형 컨설팅을 지원하여 신청자의 사업 분야와 필요에 부합한다.","b":2},{"q":"q031","id":"bizinfo:PBLN_000000000124046","t":"[대구ㆍ경북] 2026년 사회적가치형 청년 일경험 지원사업 참여기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000124046","h":0,"j":1,"c":0.25,"p":[0.35,0.45,0.2,0.0],"l":2,"lr":"신청자는 사회적기업으로서 청년 일경험 지원사업의 대상이며, 인력·고용 분야에서 청년 고용과 멘토링 지원 내용이 신청자의 사회적기업 운영과 고용 필요에 부합한다.","b":2},{"q":"q031","id":"bizinfo:PBLN_000000000126111","t":"[경북] 2026년 발달장애인 가족창업 특화사업 기업(사업화) 지원사업 모집 연장 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126111","h":2,"j":0,"c":0.76,"p":[0.07,0.11,0.82,0.0],"l":2,"lr":"신청자는 발달장애인을 고용한 사회적기업으로 발달장애인 가족창업 특화사업 지원 대상에 부합하며, 시제품 제작과 홍보물 제작 등 사업화 지원 내용이 신청자의 친환경 세제 제조 및 공공기관 납품 필요와 직접 맞는다.","b":1},{"q":"q032","id":"bizinfo:PBLN_000000000118350","t":"2026년 장애인 창업 컨설팅지원 대상자 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118350","h":0,"j":0,"c":0.98,"p":[0.0,0.01,0.99,0.0],"l":0,"lr":"공고는 장애인 창업자를 대상으로 한 맞춤형 컨설팅 지원이며, 신청자는 경력단절 여성 대상 돌봄 인력 매칭 협동조합 예비창업자로 장애인 대상이 아니어서 대상 집단이 맞지 않는다.","b":0},{"q":"q032","id":"bizinfo:PBLN_000000000124046","t":"[대구ㆍ경북] 2026년 사회적가치형 청년 일경험 지원사업 참여기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000124046","h":2,"j":0,"c":0.31,"p":[0.12,0.4,0.48,0.0],"l":0,"lr":"신청자는 경력단절 여성 돌봄 인력 매칭 협동조합 예비창업자로 사회적기업 여부가 불분명하고, 공고는 사회적기업에 청년 일경험 참여자를 지원하는 인력·고용 분야 사업으로 신청자의 사업 분야와 직접적 연관성이 없다.","b":2},{"q":"q033","id":"kstartup:178023","t":"[정부지원] 2026년 중소기업 AI 역량 강화 및 실무 자동화 교육생 모집 (인재키움 프리미엄)","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=178023","h":1,"j":1,"c":0.64,"p":[0.08,0.73,0.19,0.0],"l":1,"lr":"신청자는 초등학생 대상 코딩·로봇 교육 온라인 강의를 하는 개인사업자로, 공고는 AI 역량 강화 교육을 스타트업 대상으로 하여 교육 지원 내용은 맞으나, 신청자의 사업 분야와 직접적 연관성은 낮아 일부만 겹친다.","b":2},{"q":"q033","id":"kstartup:179010","t":"2026 오픈소스 로봇 손(Amazing Hand)으로 배우는 Physical AI 실습 교육","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179010","h":0,"j":1,"c":0.63,"p":[0.25,0.72,0.03,0.0],"l":1,"lr":"신청자는 초등학생 대상 코딩·로봇 교육 학원을 운영하며 교육 분야와 로봇 기술이 일부 겹치고, 공고는 로봇과 AI 실습 교육을 지원하지만 신청자의 온라인 강의 확장 필요와 직접적으로 맞지 않아 일부만 관련된다.","b":2},{"q":"q034","id":"bizinfo:PBLN_000000000124779","t":"혁신기술 제조창업 기업지원 수혜기업 추가모집 공고(혁신기술 제조창업 공유공장 구축사업)","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000124779","h":2,"j":1,"c":0.46,"p":[0.22,0.61,0.17,0.0],"l":2,"lr":"신청자는 전자부품 제조사로 시험검사 및 기술지원이 필요한 제조기업이며, 공고는 제조 창업기업 대상 시제품 시험검사 및 기술지원 지원으로 신청자의 사업 분야와 필요에 부합한다.","b":2},{"q":"q034","id":"kstartup:179061","t":"26년 AI·스마트전자제품 금형지원 기업모집","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179061","h":2,"j":1,"c":0.63,"p":[0.11,0.72,0.17,0.0],"l":2,"lr":"신청자는 전자부품 제조사로 전자기기 제조 분야에 해당하며, 공고는 전자기기 기반 제품 제조기업에 금형 제작 지원을 하여 신청자의 제조 분야와 지원 내용이 일치한다.","b":2},{"q":"q035","id":"bizinfo:PBLN_000000000122866","t":"[대구] 2026년 연구조직(기업부설연구소 등) 설립 및 기술ㆍ경영혁신 인증 지원사업 참여기업 모집공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122866","h":2,"j":2,"c":0.7,"p":[0.78,0.22,0.0,0.0],"l":2,"lr":"신청자는 연구소 운영과 연구인력 채용 및 교육이 필요하며, 공고는 연구조직 설립 지원과 연구인력 역량강화 교육을 포함하여 연구개발 역량 강화를 지원하므로 주제 관련도가 높다.","b":1},{"q":"q035","id":"bizinfo:PBLN_000000000124779","t":"혁신기술 제조창업 기업지원 수혜기업 추가모집 공고(혁신기술 제조창업 공유공장 구축사업)","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000124779","h":1,"j":0,"c":0.47,"p":[0.05,0.34,0.61,0.0],"l":0,"lr":"신청자는 연구소 운영과 연구인력 채용 및 교육이 필요하나, 공고는 제조 창업기업의 시험검사 및 제품개발 기술지원에 초점이 맞춰져 있어 지원 내용과 분야가 맞지 않는다.","b":2},{"q":"q035","id":"kstartup:179085","t":"출연연, 대학 연구소기업 Business Development 프로그램 참여 예비창업자 모집 (9월)","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179085","h":2,"j":0,"c":0.89,"p":[0.03,0.06,0.91,0.0],"l":2,"lr":"신청자는 연구소를 운영하며 석박사 연구인력 채용과 재직자 교육이 필요하고, 공고는 출연연 및 대학 연구자 대상 연구소기업 설립과 기술사업화 지원으로 신청자의 연구소 운영과 인력 필요에 부합한다.","b":1},{"q":"q036","id":"bizinfo:PBLN_000000000118912","t":"[경기] 화성시 2026년 동탄 소공인복합지원센터 인프라 지원사업(장비ㆍ시설) 모집공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118912","h":0,"j":0,"c":0.8,"p":[0.03,0.12,0.85,0.0],"l":0,"lr":"신청자는 인테리어 시공업으로 제조업 분야가 아니며, 공고는 제조업 소공인 대상 장비·시설 지원으로 업종이 맞지 않는다.","b":1},{"q":"q036","id":"bizinfo:PBLN_000000000124246","t":"[인천] 2026년 하반기 소상공인시장진흥자금 융자 계획 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000124246","h":2,"j":1,"c":0.33,"p":[0.49,0.51,0.0,0.0],"l":2,"lr":"신청자의 인테리어 시공업과 장비 구입 및 운전자금 필요가 점포시설개선 및 운영자금 융자 지원 내용과 일치하며, 업종도 소상공인에 해당하여 주제 관련도가 높다.","b":2},{"q":"q037","id":"bizinfo:PBLN_000000000124459","t":"[경남] 2026년 지진안전산업 기술지원 수혜기업 상시 모집 공고(행정안전부 지진 안전 기반 구축 사업)","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000124459","h":2,"j":0,"c":0.72,"p":[0.03,0.17,0.8,0.0],"l":0,"lr":"신청자는 초기 제조 스타트업으로 센서 모듈 판매를 하는 반도체 공정 엔지니어 출신이나, 공고는 지진안전산업 내진엔지니어링 기술지원에 한정되어 있어 신청자의 사업 분야와 지원 내용이 맞지 않음","b":1},{"q":"q037","id":"bizinfo:PBLN_000000000126397","t":"[경남] 창원시 2026년 플랫폼기반 시뮬레이션 기술 지원사업 추가모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126397","h":1,"j":1,"c":0.34,"p":[0.05,0.51,0.44,0.0],"l":1,"lr":"신청자는 초기 제조 스타트업으로 자금 조달이 필요하며, 공고는 제조 중소기업의 시뮬레이션 기술 지원을 통한 공정 효율화에 초점을 맞추어 지원 내용과 신청자의 직접적인 필요(자금 보증)와는 다소 차이가 있으나 업종은 일치한다.","b":2},{"q":"q037","id":"kstartup:178951","t":"2026 현대모비스 CSV 오픈 이노베이션 참여 기업 모집","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=178951","h":0,"j":1,"c":0.56,"p":[0.25,0.67,0.07,0.01],"l":1,"lr":"신청자는 초기 제조 스타트업으로 기술력과 자금 조달 필요가 있으나, 공고는 혁신 기술 실증과 사업화 지원에 초점을 맞추고 있어 지원 내용은 일부 맞으나 업종과 필요가 완전히 일치하지 않음","b":2},{"q":"q038","id":"bizinfo:PBLN_000000000126165","t":"[울산] 2026년 소상공인 해외상표 출원 지원사업 지원기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126165","h":2,"j":1,"c":0.51,"p":[0.1,0.64,0.26,0.0],"l":1,"lr":"신청자는 해외 특허 출원과 기술 이전을 통한 수익화에 관심이 있으나, 공고는 소상공인의 해외상표 출원 지원에 한정되어 있어 지원 내용과 대상 분야가 일부만 겹친다.","b":2},{"q":"q038","id":"kstartup:176739","t":"2026년 기술이전 지원사업 (서울 Tech trade-on 프로그램) 참여기업 모집","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=176739","h":1,"j":2,"c":0.61,"p":[0.71,0.28,0.01,0.0],"l":2,"lr":"신청자가 보유 특허를 해외에 출원하고 기술 이전으로 수익화하려는 사업 아이디어와 기술이전 지원사업의 지원 내용 및 대상 분야가 일치함","b":2},{"q":"q038","id":"kstartup:179049","t":"국내 특허(IP) 보유기업 투자&사업화 스케일업 지원사업","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179049","h":2,"j":2,"c":0.42,"p":[0.57,0.42,0.01,0.0],"l":2,"lr":"신청자는 보유 특허의 해외 출원과 기술 이전을 통한 수익화를 목표로 하며, 공고는 특허 보유 기업의 사업화와 투자유치 역량 강화를 지원하여 신청자의 사업 아이디어와 수익모델에 직접 부합한다.","b":2},{"q":"q039","id":"bizinfo:PBLN_000000000124676","t":"[서울] 2026년 하반기 소상공인 안전검사 지원사업 공고(생활용품 및 어린이제품)","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000124676","h":2,"j":2,"c":0.97,"p":[0.98,0.02,0.0,0.0],"l":2,"lr":"신청자가 유아용 원목 장난감을 제조하며 KC 및 해외 인증이 필요하므로 어린이제품 안전검사 비용 지원 사업 내용과 분야가 정확히 일치한다.","b":0},{"q":"q039","id":"bizinfo:PBLN_000000000125892","t":"2026년 1차 K-브랜드 정부인증제도 참여기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125892","h":1,"j":1,"c":0.47,"p":[0.34,0.6,0.06,0.0],"l":2,"lr":"신청자는 유아용 원목 장난감 제조업체로 KC 및 해외 인증이 필요하며, 공고는 해외 인증과 국가인증상표 사용 비용 지원 및 해외 위조상품 피해 대응을 지원하여 신청자의 인증 필요와 수출 관련 지원 내용이 일치한다.","b":2},{"q":"q039","id":"kstartup:179020","t":"창업부트캠프 바이오큐브 17차 교육 신청 안내","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179020","h":0,"j":0,"c":0.93,"p":[0.0,0.05,0.95,0.0],"l":0,"lr":"신청자는 유아용 원목 장난감 제조 및 인증이 필요하나, 공고는 바이오 분야 창업자 대상 교육 지원으로 분야와 지원 내용이 맞지 않음","b":0},{"q":"q039","id":"kstartup:179047","t":"해외진출 기업 대상 AI 통역 서비스 「아네스노트」 이용권 지원 (9월)","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179047","h":0,"j":1,"c":0.68,"p":[0.21,0.76,0.03,0.0],"l":0,"lr":"신청자는 유아용 원목 장난감 제조 및 인증 필요로 해외 진출 지원 중 인증 관련 지원이 필요하지만, 공고는 AI 통역 서비스 지원으로 신청자의 인증 필요와 지원 내용이 맞지 않는다.","b":2},{"q":"q040","id":"bizinfo:PBLN_000000000120091","t":"[부산] 2026년 서비스융복합연구센터 데이터 기반 융복합 서비스 개발 컨설팅 지원 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000120091","h":1,"j":1,"c":0.6,"p":[0.04,0.7,0.26,0.0],"l":1,"lr":"신청자는 AI 음성 비서 서비스 개발을 준비 중이며 입주 공간이 필요하지만, 공고는 데이터 기반 서비스 개발 컨설팅을 지원하여 신청자의 입주 공간 필요와 직접적인 지원 내용이 맞지 않고, 업종은 제한 없으나 지원 내용이 신청자의 구체적 필요와 정확히 일치하지 않아 1점에 borderline를 부여함","b":2},{"q":"q040","id":"bizinfo:PBLN_000000000126309","t":"2026년 AI 창업 경진대회 참가자 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126309","h":0,"j":1,"c":0.9,"p":[0.06,0.93,0.01,0.0],"l":1,"lr":"신청자는 AI 음성 비서 서비스 예비창업자로 AI 분야에 해당하며, 공고는 AI 창업 아이디어 발굴과 창업 지원을 하지만 경진대회 형식으로 직접적인 입주 공간 지원과는 거리가 있어 지원 내용과 신청자 필요가 완전히 일치하지 않는다.","b":0},{"q":"q040","id":"kstartup:179085","t":"출연연, 대학 연구소기업 Business Development 프로그램 참여 예비창업자 모집 (9월)","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179085","h":1,"j":0,"c":0.97,"p":[0.0,0.02,0.98,0.0],"l":0,"lr":"신청자는 AI 음성 비서 서비스 예비창업자로, 공고는 출연연 및 대학 연구자 대상 연구소기업 설립 지원으로 신청자의 사업 분야와 대상 집단이 맞지 않음","b":0},{"q":"q041","id":"kstartup:177072","t":"2026년 보건의료빅데이터 창업 인큐베이팅 랩 모집 공고","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=177072","h":1,"j":0,"c":0.4,"p":[0.01,0.44,0.55,0.0],"l":1,"lr":"신청자는 바이오 스타트업으로 입주 공간이 필요하지만, 공고는 보건의료빅데이터 기반 디지털헬스케어 분야의 교육 및 멘토링 지원으로 지원 내용이 직접적으로 맞지 않는다.","b":2},{"q":"q041","id":"kstartup:179199","t":"2026년 스타트업 96 입주 예비창업자 모집","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179199","h":2,"j":1,"c":0.74,"p":[0.19,0.8,0.01,0.0],"l":2,"lr":"신청자가 초기 바이오 스타트업으로 실험 장비가 있는 입주 공간을 찾는다는 필요와 공고의 입주 공간 지원 내용이 일치하며, 바이오 분야 창업자도 포함될 수 있는 일반 창업자 대상임","b":1},{"q":"q042","id":"kstartup:179045","t":"2026년 민간 산림복지 창업 아카데미[1차] 참가자 모집","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179045","h":2,"j":2,"c":0.45,"p":[0.59,0.38,0.03,0.0],"l":2,"lr":"신청자가 예비창업자로서 창업 교육을 받고자 하는 필요와 민간 산림복지 분야 창업교육 지원 내용이 일치한다.","b":2},{"q":"q042","id":"kstartup:179085","t":"출연연, 대학 연구소기업 Business Development 프로그램 참여 예비창업자 모집 (9월)","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179085","h":0,"j":0,"c":0.98,"p":[0.0,0.01,0.99,0.0],"l":0,"lr":"공고는 출연연 및 대학 연구자 대상 기술사업화 지원으로, 신청자는 예비창업자로 연구자 대상이 아니며 창업 교육과 사업계획서 작성 지원이 주된 필요여서 주제 관련성이 없다.","b":0},{"q":"q042","id":"kstartup:179119","t":"[창업 교육] 투자자가 보는 기업 가치와 IR 전략","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179119","h":2,"j":1,"c":0.4,"p":[0.44,0.55,0.01,0.0],"l":2,"lr":"신청자가 창업 교육을 받고 싶다는 필요와 공고의 창업 교육 내용이 정확히 일치하며, 대상도 창업팀 등 창업 관련자에게 열려 있어 주제 관련도가 높다.","b":2},{"q":"q042","id":"kstartup:179156","t":"SURF 2026 INCHEON (인천스타트업위크) 사전 등록 및 비즈니스 밋업 신청 오픈","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179156","h":1,"j":1,"c":0.86,"p":[0.04,0.89,0.07,0.0],"l":1,"lr":"신청자는 창업 교육과 사업계획서 작성 지원을 원하지만, 공고는 주로 비즈니스 밋업과 멘토링을 지원하는 행사로, 교육과 직접적인 창업 준비 지원과는 다소 차이가 있어 지원 내용과 신청자 필요가 완전히 일치하지 않는다.","b":1},{"q":"q043","id":"bizinfo:PBLN_000000000125166","t":"2026년 디지털커머스 전문기관(소담스퀘어 in 경북) 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125166","h":1,"j":1,"c":0.56,"p":[0.28,0.67,0.05,0.0],"l":2,"lr":"신청자는 온라인 마케팅 대행을 하는 1인 창조기업으로, 공고는 소상공인의 디지털 콘텐츠 제작과 온라인시장 진출, AI플랫폼 활용 교육 및 컨설팅을 지원하여 신청자의 사업 분야와 필요에 정확히 부합한다.","b":2},{"q":"q043","id":"bizinfo:PBLN_000000000126458","t":"2026년 공예 온라인 유통 및 AI 활용 역량 강화 교육프로그램 교육생 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126458","h":2,"j":0,"c":0.58,"p":[0.01,0.3,0.69,0.0],"l":0,"lr":"신청자는 온라인 마케팅 대행 1인 창조기업으로 공예 분야가 아니며, 공예 산업 대상 교육 프로그램과 지원 내용이 맞지 않는다.","b":2},{"q":"q043","id":"kstartup:178113","t":"서울창업허브 스타트업플러스 플랫폼 온라인 투자밋업 참가안내","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=178113","h":2,"j":2,"c":0.4,"p":[0.56,0.44,0.0,0.0],"l":2,"lr":"신청자가 온라인 마케팅 대행을 하는 1인 창조기업으로 투자자와 네트워킹을 원하며, 공고는 투자유치에 관심 있는 스타트업을 대상으로 온라인 투자밋업 참가를 지원하므로 지원 내용과 대상 분야가 정확히 맞는다.","b":2},{"q":"q043","id":"kstartup:178983","t":"2026년 크리에이터미디어 콤플렉스 하반기 입주 모집공고(~9/15, 16:00)","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=178983","h":0,"j":1,"c":0.32,"p":[0.08,0.49,0.43,0.0],"l":0,"lr":"신청자는 온라인 마케팅 대행업으로 크리에이터미디어 관련 업종코드를 보유하지 않아 지원 대상 분야에 부합하지 않는다.","b":2},{"q":"q044","id":"bizinfo:PBLN_000000000119567","t":"2026년 농식품 크라우드펀딩 지원사업 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000119567","h":0,"j":2,"c":0.85,"p":[0.89,0.11,0.0,0.0],"l":2,"lr":"신청자는 대체육 B2B 공급을 하는 푸드테크 스타트업으로 농식품 분야에 해당하며, 후속 투자 유치와 액셀러레이팅 프로그램 참여가 필요하므로 크라우드펀딩 지원과 현장코칭, 컨설팅 지원 내용이 신청자의 필요와 업종에 적합하다.","b":1},{"q":"q045","id":"bizinfo:PBLN_000000000117232","t":"[충남] 2026년 식품진흥기금 시설개선자금 융자계획 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000117232","h":0,"j":0,"c":0.98,"p":[0.0,0.01,0.99,0.0],"l":0,"lr":"신청자는 산업용 IoT 센서 판매 기업으로 식품 관련 위생시설 개선 융자 지원 대상과 업종 및 지원 내용이 전혀 맞지 않음","b":0},{"q":"q045","id":"bizinfo:PBLN_000000000118943","t":"[경기] 2026년 기술이전 창업지원사업 필요기술 발굴지원 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118943","h":2,"j":1,"c":0.61,"p":[0.2,0.71,0.09,0.0],"l":2,"lr":"신청자는 6년차 도약기 창업기업으로 기술이전 및 사업화 연계 지원이 필요한 산업용 IoT 센서 판매 사업에 적합한 기술 발굴 및 매칭 지원을 받을 수 있어 지원 내용과 업종, 필요가 모두 부합한다.","b":2},{"q":"q045","id":"kstartup:178622","t":"2026년 성장플러스 창업사업화 지원사업 참여기업 모집","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=178622","h":2,"j":1,"c":0.4,"p":[0.44,0.55,0.01,0.0],"l":2,"lr":"신청자는 6년차 도약기 기업으로 매출 확대를 위한 사업화 자금이 필요하며, 공고는 3년 초과 7년 이내 창업기업에 사업화 자금을 지원하여 성장과 정착을 돕는 내용으로 신청자의 사업 단계와 필요에 부합한다.","b":2},{"q":"q046","id":"bizinfo:PBLN_000000000120342","t":"2026년 기업승계 M&A 활성화를 위한 컨설팅 지원사업 시행계획 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000120342","h":1,"j":0,"c":0.69,"p":[0.01,0.21,0.78,0.0],"l":0,"lr":"신청자는 예비창업자로서 M&A 대상 기업이 아니며, 공고는 기존 중소기업의 기업승계 및 M&A 컨설팅 지원에 한정되어 있어 신청자의 사업 분야와 필요와 맞지 않음.","b":2},{"q":"q046","id":"bizinfo:PBLN_000000000121931","t":"[부산] 2026년 소상공인 경영전략 컨설팅 소상공인 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000121931","h":2,"j":1,"c":0.67,"p":[0.08,0.75,0.17,0.0],"l":1,"lr":"신청자는 정밀 부품 설계 컨설팅 창업을 준비하는 예비창업자로, 공고는 소상공인 및 예비창업자 대상 경영전략 컨설팅을 지원하나 신청자의 구체적 필요인 설계 컨설팅과 직접적으로 맞지 않아 지원 내용과 분야가 일부만 겹친다.","b":2},{"q":"q046","id":"kstartup:176741","t":"2026년 기술컨설팅 지원사업(서울 스타트업 Tech trade-on 프로그램) 참여기업 모집","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=176741","h":2,"j":2,"c":0.35,"p":[0.51,0.47,0.02,0.0],"l":2,"lr":"신청자는 정밀 부품 설계 컨설팅 창업을 준비하는 예비창업자로, 기술컨설팅 지원사업이 신청자의 사업 분야인 설계 컨설팅과 직접적으로 맞으며, 멘토링·컨설팅 지원 내용도 신청자의 필요와 부합한다.","b":2},{"q":"q047","id":"bizinfo:PBLN_000000000118204","t":"2026년 여성기업 육성사업 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118204","h":2,"j":2,"c":0.57,"p":[0.68,0.3,0.02,0.0],"l":2,"lr":"신청자는 여성 예비창업자로 여성 전용 홈트레이닝 콘텐츠와 운동용품 구독 서비스를 준비 중이며, 공고는 여성 예비창업자 대상 창업 보육, 멘토링, 투자유치, 판로 지원 등 여성기업 경영 및 사업화 전반을 지원하므로 업종과 지원 내용이 일치한다.","b":2},{"q":"q047","id":"bizinfo:PBLN_000000000120444","t":"2026년 체육인 직업안정 사업(창업지원) 참여자 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000120444","h":0,"j":0,"c":0.78,"p":[0.08,0.09,0.83,0.0],"l":0,"lr":"공고는 체육인 집단만을 대상으로 하며, 신청자는 필라테스 강사 경력이 있으나 체육인(선수, 지도자, 심판)으로 명시되지 않아 대상 집단에 해당하지 않고, 지원 내용도 신청자의 여성 전용 홈트레이닝 콘텐츠 및 운동용품 구독 서비스와 직접 관련이 없다.","b":1},{"q":"q047","id":"kstartup:179122","t":"2026년 창업준비 아카데미 참여자 모집","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179122","h":0,"j":1,"c":0.81,"p":[0.13,0.86,0.01,0.0],"l":1,"lr":"예비창업자 대상 창업 교육·멘토링 지원으로 신청자의 창업 준비 단계와 맞으나, 지원 내용이 여성 전용 홈트레이닝 콘텐츠 및 운동용품 구독 서비스에 특화된 것은 아님","b":1},{"q":"q048","id":"bizinfo:PBLN_000000000120418","t":"[경남] 김해시 2026년 창업기업 마케팅 역량강화 지원사업 디자인 멘토링 및 어워드 출품료 수혜기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000120418","h":0,"j":1,"c":0.47,"p":[0.03,0.61,0.36,0.0],"l":0,"lr":"신청자는 2014년 설립된 가구 제조사로 디자인 멘토링 및 어워드 출품 지원 대상인 7년 이내 창업기업이 아니며, 지원 내용도 원가 구조 개선과 ERP 도입에 초점이 있어 디자인 멘토링과 맞지 않는다.","b":2},{"q":"q049","id":"bizinfo:PBLN_000000000125182","t":"[인천] 2026년 공공구매(조달) 상담회 참가기업 모집 공고(지역상품 공공 조달정보 지원사업)","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125182","h":2,"j":2,"c":0.43,"p":[0.58,0.42,0.0,0.0],"l":2,"lr":"의류 봉제 공장으로 공공기관 조달 시장 진입을 희망하는 신청자에게 공공구매(조달) 상담회 참가를 통한 판로 지원이 직접적으로 부합한다.","b":2},{"q":"q049","id":"bizinfo:PBLN_000000000125879","t":"2026년 하반기 우수발명품 우선구매 추천사업 신규지정 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125879","h":0,"j":1,"c":0.35,"p":[0.1,0.52,0.38,0.0],"l":1,"lr":"신청자는 의류 봉제 공장으로 공공기관 조달 시장 진입을 원하지만, 공고는 특허권 등 지식재산권 보유 제품에 한정되어 있어 신청자의 필요와 지원 내용이 직접적으로 맞지 않는다.","b":2},{"q":"q049","id":"kstartup:179085","t":"출연연, 대학 연구소기업 Business Development 프로그램 참여 예비창업자 모집 (9월)","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179085","h":0,"j":0,"c":0.99,"p":[0.0,0.0,1.0,0.0],"l":0,"lr":"신청자는 의류 봉제 공장으로 공공기관 조달 진입을 원하지만, 공고는 출연연 및 대학 연구자 대상의 연구개발 기술 사업화 지원으로 업종과 대상이 맞지 않음","b":0},{"q":"q049","id":"kstartup:179205","t":"('26년 4분기) 공공조달시장 진출지원 컨설팅 희망기업 모집","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=179205","h":2,"j":2,"c":0.34,"p":[0.51,0.48,0.01,0.0],"l":2,"lr":"신청자는 의류 봉제 공장으로 공공기관 조달 시장 진입을 원하며, 공고는 공공조달시장 진출 지원 컨설팅을 제공하여 신청자의 사업 분야와 필요에 정확히 부합한다.","b":2},{"q":"q050","id":"bizinfo:PBLN_000000000126071","t":"[전남광주] AI어장 현장실증(시설ㆍ제품 고도화) 지원 모집 3차 재공고(AI기반 어장공간정보 빅데이터 플랫폼 구축 및 활용사업)","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126071","h":2,"j":2,"c":0.76,"p":[0.82,0.17,0.01,0.0],"l":2,"lr":"신청자의 IoT 기반 양식장 수질 모니터링 및 사료 급이 자동화 사업은 수산양식 분야의 제어·기기 및 제품 제조에 해당하며, 공고는 수산양식 분야 ICT기업의 시설 및 제품 고도화 실증을 지원하므로 지원 내용과 분야가 모두 일치한다.","b":1},{"q":"q050","id":"bizinfo:PBLN_000000000126321","t":"[경북] 2026년 푸드테크 스마트 제조 기반 구축 사업 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126321","h":0,"j":0,"c":0.35,"p":[0.08,0.4,0.52,0.0],"l":0,"lr":"신청자는 양식장 IoT 모니터링 및 자동화 설비 판매 사업으로 식품 제조·가공업과 직접 관련이 없고, 공고는 식품 제조업체의 스마트 제조 기반 구축 지원에 한정되어 있어 분야와 지원 내용이 맞지 않음","b":2},{"q":"q051","id":"bizinfo:PBLN_000000000125525","t":"[충남] 2026년 AI 기반 태양광 설비 유지보수 솔루션 보급 시범사업 참여기업 모집 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125525","h":0,"j":0,"c":0.86,"p":[0.0,0.1,0.9,0.0],"l":0,"lr":"신청자의 사업은 건설 현장 안전사고 예측 AI 솔루션으로, 공고는 태양광 설비 유지보수 AI 솔루션 지원으로 분야와 지원 내용이 다르다.","b":1},{"q":"q051","id":"kstartup:178831","t":"[국비지원] AI 기반 서비스 개발·사업화 1인 창업가 캠프 7기 모집","u":"https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=178831","h":1,"j":1,"c":0.37,"p":[0.45,0.54,0.01,0.0],"l":1,"lr":"공고는 AI 기반 서비스 개발과 사업화 교육을 지원하는 멘토링 프로그램으로, 신청자의 AI 건설 안전 솔루션 개발과 사업화 필요와 일부 맞으나, 신청자는 법인이고 1인 창업가 대상이라는 점에서 완전 일치하지 않는다.","b":2},{"q":"q052","id":"bizinfo:PBLN_000000000126112","t":"2026년 2차 무기체계 부품국산화개발 지원사업 연구개발기관 모집 추가 재공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126112","h":1,"j":1,"c":0.27,"p":[0.36,0.46,0.18,0.0],"l":2,"lr":"신청자는 전력반도체 테스트 장비 국산화 개발을 진행하는 반도체 장비 설계 기업으로, 무기체계 부품국산화개발 지원사업이 국방 분야 핵심부품 및 전략부품 개발을 지원하여 신청자의 기술 분야와 연구개발 지원 내용이 일치한다.","b":2},{"q":"q052","id":"bizinfo:PBLN_000000000126213","t":"2026년 의료기기 반도체 실증플랫폼 구축사업 실증지원 통합 공고","u":"https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126213","h":1,"j":0,"c":0.59,"p":[0.02,0.28,0.7,0.0],"l":1,"lr":"신청자는 전력반도체 테스트 장비 개발 기업으로 의료기기 반도체 분야와는 다소 차이가 있으나, 공고는 반도체 관련 시제품 제작과 기술지원을 포함하여 지원 내용을 일부 충족하므로 주제 관련도가 1이다.","b":2}]};
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const f2 = (v) => Number(v).toFixed(2);
+const pct = (v, d = 1) => (v * 100).toFixed(d) + '%';
+const safeUrl = (u) => /^https:\/\//.test(u || '') ? u : '';
+const NAME = ['무관', '부분 관련', '딱 맞음'];
+const SHORT = ['무관', '부분', '딱 맞음'];
+const COL = { h: 'var(--muted)', l: 'var(--s2)', j: 'var(--s3)' };
+const J = DATA.jev, L = DATA.llm, T = DATA.trust, N = DATA.meta.pairs;
+
+/* 가로 막대 그래프(인라인 SVG, 실제 칸 너비로 그림). groups: [{label, sub, bars:[{name, v, color, text}]}] */
+function bars(W, groups, o) {
+  const Lw = o.labelW || 92, R = o.right || 70, bh = 18, gi = 4, gg = 14;
+  const top = o.ref != null ? 20 : 6;
+  const x = (v) => Lw + (Math.min(v, o.max) / o.max) * (W - Lw - R);
+  let y = top, body = '';
+  for (const g of groups) {
+    const gh = g.bars.length * bh + (g.bars.length - 1) * gi;
+    const cy = y + gh / 2;
+    body += `<text x="${Lw - 10}" y="${g.sub ? cy - 3 : cy + 4}" text-anchor="end" font-size="12" fill="var(--ink-2)">${esc(g.label)}</text>`;
+    if (g.sub) body += `<text x="${Lw - 10}" y="${cy + 12}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="var(--font-mono)">${esc(g.sub)}</text>`;
+    g.bars.forEach((b, i) => {
+      const by = y + i * (bh + gi), w = Math.max(0, x(b.v) - x(0));
+      body += `<g role="img" aria-label="${esc(g.label + ' ' + b.name + ' ' + b.text)}"><title>${esc(g.label + ' · ' + b.name + ': ' + b.text)}</title>`;
+      body += w > 0 ? `<rect x="${x(0)}" y="${by}" width="${w}" height="${bh}" rx="3" fill="${b.color}"/>`
+                    : `<line x1="${x(0)}" x2="${x(0)}" y1="${by}" y2="${by + bh}" stroke="${b.color}" stroke-width="3"/>`;
+      body += `<text x="${x(b.v) + 6}" y="${by + bh / 2 + 4}" font-size="11.5" fill="var(--ink)" font-family="var(--font-mono)" stroke="var(--surface)" stroke-width="4" stroke-linejoin="round" paint-order="stroke">${esc(b.text)}</text></g>`;
+    });
+    y += gh + gg;
+  }
+  const bottom = y - gg;
+  let grid = '';
+  for (const t of o.ticks) {
+    grid += `<line x1="${x(t)}" x2="${x(t)}" y1="${top - 2}" y2="${bottom + 2}" stroke="var(--grid)" stroke-width="1"/>`;
+    grid += `<text x="${x(t)}" y="${bottom + 16}" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--font-mono)">${o.tick(t)}</text>`;
+  }
+  let ref = '';
+  if (o.ref != null) {
+    ref = `<line x1="${x(o.ref)}" x2="${x(o.ref)}" y1="${top - 4}" y2="${bottom + 2}" stroke="var(--ink-2)" stroke-width="1.5" stroke-dasharray="3 2"/>` +
+          `<text x="${x(o.ref)}" y="${top - 8}" text-anchor="middle" font-size="11" fill="var(--ink-2)">${esc(o.refLabel)}</text>`;
+  }
+  const axis = `<line x1="${x(0)}" x2="${x(0)}" y1="${top - 2}" y2="${bottom + 2}" stroke="var(--muted)" stroke-width="1"/>`;
+  const H = bottom + 22;
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${grid}${ref}${body}${axis}</svg>`;
+}
+
+const HEAD = [
+  { k: 'exact', title: '정확 일치', better: '높을수록 좋음', how: '0·1·2점이 사람과 똑같은 비율입니다.', max: 1, ticks: [0, .25, .5, .75, 1], tick: String, fmt: f2, ref: T.exact, refLabel: '기준 ' + f2(T.exact), pass: (v) => v >= T.exact },
+  { k: 'kappa', title: '가중 카파', better: '높을수록 좋음', how: '점수 차이가 클수록 더 크게 벌점을 주는 일치도입니다. 우연히 맞을 몫은 빼고 셉니다(1 = 완전 일치, 0 = 찍은 것과 같음).', max: 1, ticks: [0, .25, .5, .75, 1], tick: String, fmt: f2, ref: T.kappa, refLabel: '기준 ' + f2(T.kappa), pass: (v) => v >= T.kappa },
+  { k: 'swap02', title: '0↔2 뒤바뀜', better: '낮을수록 좋음', how: '사람은 "딱 맞음"인데 "무관"을 줬거나 그 반대인 비율입니다. 가장 큰 실수입니다.', max: 0.1, ticks: [0, .05, .1], tick: (v) => pct(v, 0), fmt: (v) => pct(v) + ' (' + Math.round(v * N) + '쌍)', ref: T.swap02, refLabel: '기준 ' + pct(T.swap02, 0), pass: (v) => v <= T.swap02 },
+];
+
+function renderHead() {
+  const ok = (c, v) => c.pass(v) ? '<span class="badge ok">✓ 기준 충족</span>' : '<span class="badge bad">✕ 기준 미달</span>';
+  $('headline').innerHTML = HEAD.map((c) => `<div class="chart"><h3>${c.title}<span class="tag">${c.better}</span></h3><div class="how">${c.how}</div>
+      <div class="holder" data-chart="head-${c.k}"></div>
+      <div class="note" style="display:flex;flex-wrap:wrap;gap:4px 12px"><span style="display:inline-flex;gap:6px;align-items:center"><span class="sw sw3"></span>Jev ${ok(c, J[c.k])}</span><span style="display:inline-flex;gap:6px;align-items:center"><span class="sw sw2"></span>기존 AI ${ok(c, L[c.k])}</span></div></div>`).join('');
+  $('binary').innerHTML = `점수를 "관련 없음(0) / 관련 있음(1·2)" 둘로만 나눠 봐도 Jev <b class="num">${f2(J.binary)}</b>, 기존 AI <b class="num">${f2(L.binary)}</b>로 Jev가 낮습니다. 잠정 기준은 팀이 정해 둔 참고값이며, 기존 AI도 정확 일치와 0↔2 뒤바뀜 기준에는 못 미칩니다.`;
+}
+
+function drawAll() {
+  document.querySelectorAll('.holder').forEach((h) => {
+    const W = Math.max(240, Math.floor(h.clientWidth));
+    const key = h.dataset.chart;
+    if (key.startsWith('head-')) {
+      const c = HEAD.find((x) => 'head-' + x.k === key);
+      h.innerHTML = bars(W, [
+        { label: 'Jev', bars: [{ name: 'Jev', v: J[c.k], color: COL.j, text: c.fmt(J[c.k]) }] },
+        { label: '기존 AI', bars: [{ name: '기존 AI', v: L[c.k], color: COL.l, text: c.fmt(L[c.k]) }] },
+      ], { max: c.max, ticks: c.ticks, tick: c.tick, ref: c.ref, refLabel: c.refLabel, labelW: 62, right: c.k === 'swap02' ? 92 : 44 });
+    } else if (key === 'bins') {
+      h.innerHTML = bars(W, DATA.bins.map((b) => ({
+        label: b.name, sub: b.n + '쌍',
+        bars: [{ name: 'Jev', v: b.jev, color: COL.j, text: f2(b.jev) }, { name: '기존 AI', v: b.llm, color: COL.l, text: f2(b.llm) }],
+      })), { max: 1, ticks: [0, .25, .5, .75, 1], tick: String, labelW: 76, right: 44 });
+    } else if (key === 'dist') {
+      const d = DATA.dist;
+      h.innerHTML = bars(W, [0, 1, 2].map((v) => ({
+        label: v + ' ' + NAME[v],
+        bars: [{ name: '사람', v: d.human[v], color: COL.h, text: d.human[v] + '번' },
+               { name: '기존 AI', v: d.llm[v], color: COL.l, text: d.llm[v] + '번' },
+               { name: 'Jev', v: d.jev[v], color: COL.j, text: d.jev[v] + '번' }],
+      })), { max: 70, ticks: [0, 20, 40, 60], tick: String, labelW: 84, right: 44 });
+    }
+  });
+}
+
+function renderNotes() {
+  const b = DATA.bins, d = DATA.dist;
+  $('bins-note').innerHTML = `확신도가 높을수록 더 잘 맞긴 합니다(<span class="num">${b.map((x) => f2(x.jev)).join(' → ')}</span>). 하지만 0.9 이상 ${b[0].n}쌍은 기존 AI도 <b class="num">${f2(b[0].llm)}</b>이라, 쉬운 쌍이 몰린 것에 가깝습니다. 확신 높은 쌍만 쓰면 ${N}쌍 중 ${b[0].n}쌍(${pct(b[0].n / N, 0)})만 남습니다.`;
+  $('dist-note').innerHTML = `Jev는 <b>"1 부분 관련"으로 몰립니다</b>. 1을 준 횟수가 Jev ${d.jev[1]}번, 사람 ${d.human[1]}번입니다. "2 딱 맞음"은 사람 ${d.human[2]}번, Jev ${d.jev[2]}번입니다.`;
+}
+
+function renderMats() {
+  const one = (key, name, sw) => {
+    const m = DATA[key].conf, max = Math.max(1, ...m.flat());
+    const right = m[0][0] + m[1][1] + m[2][2];
+    const colTot = [0, 1, 2].map((x) => m[0][x] + m[1][x] + m[2][x]);
+    let rows = '';
+    for (let h = 0; h < 3; h++) {
+      rows += `<tr><th class="rh" scope="row">사람 ${h}<br>${SHORT[h]}</th>`;
+      for (let x = 0; x < 3; x++) {
+        const n = m[h][x], a = Math.round(n / max * 88);
+        const fg = a > 45 ? 'var(--surface)' : 'var(--ink)';
+        rows += `<td class="cell${h === x ? ' diag' : ''}" style="background:color-mix(in srgb, var(--s3) ${a}%, var(--grid));color:${fg}" aria-label="사람 ${h}, ${name} ${x}: ${n}쌍">${n}</td>`;
+      }
+      rows += `<td class="tot">${m[h][0] + m[h][1] + m[h][2]}</td></tr>`;
+    }
+    rows += `<tr><th class="rh" scope="row" style="color:var(--muted)">합계</th>${colTot.map((t) => `<td class="tot">${t}</td>`).join('')}<td class="tot">${N}</td></tr>`;
+    const note = key === 'jev'
+      ? `사람이 2를 준 ${m[2][0] + m[2][1] + m[2][2]}쌍 중 <b>${m[2][1]}쌍</b>을 Jev는 1로 낮췄습니다.`
+      : `기존 AI는 반대로 사람 1인 쌍을 2로 올린 경우(${m[1][2]}쌍)가 가장 많습니다.`;
+    return `<div class="chart"><h3 style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="sw ${sw}"></span>${name}<span class="tag num" style="margin-left:0">${right} / ${N} 맞힘</span></h3>
+      <table class="mat"><thead><tr><th></th><th scope="col">${name}<br>0</th><th scope="col">${name}<br>1</th><th scope="col">${name}<br>2</th><th scope="col">합계</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="note">${note}</div></div>`;
+  };
+  $('mats').innerHTML = one('jev', 'Jev', 'sw3') + one('llm', '기존 AI', 'sw2');
+}
+
+/* 쌍별 목록 */
+const FILTERS = [['jev_only_wrong', 'Jev만 틀림'], ['jev_only_right', 'Jev만 맞음'], ['both_wrong', '둘 다 틀림'], ['all', '전체']];
+const groupOf = (p) => { const jr = p.j === p.h, lr = p.l === p.h; return !jr && lr ? 'jev_only_wrong' : jr && !lr ? 'jev_only_right' : !jr && !lr ? 'both_wrong' : 'both_right'; };
+let PF = 'jev_only_wrong';
+try { const s = localStorage.getItem('jev-filter'); if (FILTERS.some(([k]) => k === s)) PF = s; } catch (e) {}
+const ideaOf = (qid) => ((DATA.queries[qid] || '').match(/사업 아이디어:\s*(.*)/) || [])[1] || '';
+const sc = (who, v) => `<span class="sc"><span class="who">${who}</span><b>${v == null ? '-' : v}</b>${v == null ? '' : NAME[v]}</span>`;
+const mark = (ok) => ok ? '<span class="badge ok">✓ 맞음</span>' : '<span class="badge bad">✕ 틀림</span>';
+
+function renderFilters() {
+  const cnt = (k) => k === 'all' ? DATA.pairs.length : DATA.groups[k] || 0;
+  $('filters').innerHTML = FILTERS.map(([k, n]) => `<button type="button" data-f="${k}" aria-pressed="${k === PF}">${n}<span class="num">${cnt(k)}</span></button>`).join('');
+}
+
+function probs(p) {
+  const names = ['2 딱 맞음', '1 부분 관련', '0 무관', '판단 불가'], vals = [2, 1, 0, null];
+  return p.p.map((v, i) => {
+    if (i === 3 && !v) return '';
+    const pick = vals[i] === p.j, human = vals[i] === p.h;
+    return `<div class="pb"><span class="lb${human ? ' human' : ''}">${names[i]}${human ? ' ◂사람' : ''}</span><div class="tr" role="img" aria-label="${names[i]} ${Math.round(v * 100)}%${pick ? ', Jev가 고른 보기' : ''}"><div class="fl${pick ? ' pick' : ''}" style="width:${(v * 100).toFixed(1)}%"></div></div><span class="v">${Math.round(v * 100)}%</span></div>`;
+  }).join('');
+}
+
+function renderPairs() {
+  const term = $('q').value.trim().toLowerCase(), cf = $('cf').value;
+  const shown = DATA.pairs.filter((p) => {
+    if (PF !== 'all' && groupOf(p) !== PF) return false;
+    if (cf !== '' && String(p.b) !== cf) return false;
+    return !term || (p.t + ' ' + ideaOf(p.q) + ' ' + p.q + ' ' + p.id).toLowerCase().includes(term);
+  });
+  $('pcount').textContent = shown.length + '쌍 표시';
+  $('pairs').innerHTML = shown.map((p) => {
+    const jr = p.j === p.h, lr = p.l === p.h, url = safeUrl(p.u);
+    return `<details class="pr${jr ? '' : ' miss'}"><summary>
+      <span class="pt"><span class="qid num">${esc(p.q)}</span><span class="t">${esc(p.t || p.id)}</span></span>
+      <span class="idea">${esc(ideaOf(p.q))}</span>
+      <span class="verd">
+        <span class="vv">${sc('사람', p.h)}</span>
+        <span class="vv">${sc('Jev', p.j)}<span class="conf num">확신 ${p.c == null ? '-' : f2(p.c)}</span>${mark(jr)}</span>
+        <span class="vv">${sc('기존 AI', p.l)}${mark(lr)}</span>
+      </span></summary>
+      <div class="pbody">
+        <div><h4>창업자 정보 (채점기에 보낸 글)</h4><pre>${esc(DATA.queries[p.q])}</pre>
+          ${url ? `<a class="src" href="${esc(url)}" target="_blank" rel="noopener noreferrer">공고 원문 보기 ↗</a>` : ''}</div>
+        <div><h4>Jev 보기별 확률</h4>${probs(p)}<p class="small">진한 막대가 Jev가 고른 보기, 굵은 글자가 사람 정답입니다. Jev는 이유를 쓰지 않습니다.</p></div>
+        <div><h4>기존 AI의 이유</h4><pre>${esc(p.lr || '-')}</pre>${p.hr ? `<h4>사람 메모</h4><pre>${esc(p.hr)}</pre>` : ''}</div>
+      </div></details>`;
+  }).join('') || '<p class="explain">조건에 맞는 쌍이 없습니다.</p>';
+}
+
+$('filters').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-f]'); if (!b) return;
+  PF = b.dataset.f;
+  try { localStorage.setItem('jev-filter', PF); } catch (err) {}
+  $('filters').querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  renderPairs();
+});
+$('cf').addEventListener('change', renderPairs);
+$('q').addEventListener('input', renderPairs);
+
+function renderText() {
+  const m = DATA.meta, b = DATA.bins;
+  $('meta').innerHTML = [
+    ['실행', m.run_at.slice(0, 10)], ['쌍', m.pairs + '개'], ['질의', m.queries + '개'], ['Jev 오류', m.errors + '건'],
+    ['모델', m.model], ['응답 시간 중앙값', m.median_ms + 'ms'], ['비용', '약 $0.01'],
+  ].map(([a, v]) => `<span>${a} <b class="num">${esc(v)}</b></span>`).join('');
+  $('concl').innerHTML = [
+    `<b>같은 ${N}쌍에서 Jev가 기존 AI보다 사람과 덜 맞았습니다.</b> 정확 일치 <span class="num">${f2(J.exact)}</span> vs <span class="num">${f2(L.exact)}</span>, 가중 카파 <span class="num">${f2(J.kappa)}</span> vs <span class="num">${f2(L.kappa)}</span>. 0↔2 뒤바뀜은 <span class="num">${pct(J.swap02)}</span> vs <span class="num">${pct(L.swap02)}</span>(${Math.round(J.swap02 * N)}쌍 vs ${Math.round(L.swap02 * N)}쌍)로 비슷합니다.`,
+    `<b>Jev는 "1 부분 관련"으로 몰립니다.</b> 1을 ${DATA.dist.jev[1]}번 줬고(사람 ${DATA.dist.human[1]}번), 사람이 "딱 맞음"이라 한 쌍을 1로 낮춘 경우가 ${J.conf[2][1]}쌍입니다.`,
+    `<b>확신도는 순서가 맞게 나오지만, 쓸 만한 곳은 좁습니다.</b> 확신도 0.9 이상 ${b[0].n}쌍의 정확 일치는 Jev <span class="num">${f2(b[0].jev)}</span>, 같은 쌍에서 기존 AI도 <span class="num">${f2(b[0].llm)}</span>입니다. 확신도로 골라 쓰면 ${N}쌍 중 ${b[0].n}쌍만 남습니다.`,
+    `<b>둘을 합쳐도 크게 나아지지 않습니다.</b> Jev와 기존 AI가 같은 답을 낸 ${DATA.same.n}쌍도 사람과 <span class="num">${f2(DATA.same.exact)}</span>만 맞습니다.`,
+    `<b>그래서 지금 형태로는 기존 AI 채점을 대신하지 못합니다.</b> Jev는 빠르고(중앙값 ${m.median_ms}ms) 쌉니다(143쌍 약 $0.01). 다만 이 143쌍에 맞춰 지시문(프롬프트)을 고치면 시험 문제를 보고 공부하는 셈이라 수치를 믿을 수 없게 됩니다. 그래서 고치지 않고 이 결과를 기록으로 남깁니다.`,
+  ].map((t) => `<li>${t}</li>`).join('');
+  $('limits').innerHTML = [
+    `<b>정답은 사람 판정 ${N}쌍입니다.</b> 질의(창업자) ${m.queries}개와 공고를 짝지은 ${N}쌍뿐이라 작은 차이는 우연일 수 있습니다. 0↔2 뒤바뀜의 차이는 1쌍입니다.`,
+    `<b>사람 점수도 흔들립니다.</b> ${N}쌍 중 ${m.rechecked}쌍(${pct(m.rechecked / N, 0)})은 사람이 다시 볼 때 점수를 바꿨고, 이 페이지는 바꾼 점수를 정답으로 씁니다. 처음 점수를 정답으로 쓰면 Jev 정확 일치는 <span class="num">${f2(DATA.blind_only_exact)}</span>입니다. "1 부분 관련"의 경계는 사람에게도 애매합니다.`,
+    `<b>기존 AI 값은 예전에 받아 둔 답입니다.</b> 이번에 새로 부르지 않았습니다. Jev에는 기존 AI와 같은 글과 같은 채점 기준을 보냈습니다.`,
+    `<b>확신도 구간의 쌍 수가 적습니다.</b> ${b.map((x) => x.name + ' ' + x.n + '쌍').join(', ')}입니다.`,
+    `<b>Jev는 이유를 쓰지 않습니다.</b> 왜 틀렸는지는 보기별 확률로만 짐작할 수 있습니다.`,
+    `<b>한 번, 한 가지 지시문으로 본 결과입니다.</b> 모델 버전은 ${esc(m.model)}입니다. 다른 버전이나 지시문에서는 달라질 수 있습니다.`,
+  ].map((t) => `<li>${t}</li>`).join('');
+  $('src').textContent = `출처: data-collection/reports/${m.run} · 실행 ${m.run_at.slice(0, 10)} · Jev 호출 ${m.answered}회(오류 ${m.errors}) · DB 쓰기 0 · 이 페이지를 만들 때 유료 호출 0`;
+}
+
+renderText(); renderHead(); renderNotes(); renderMats(); renderFilters(); renderPairs(); drawAll();
+let lastW = document.body.clientWidth, rz;
+window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { const w = document.body.clientWidth; if (w !== lastW) { lastW = w; drawAll(); } }, 150); });
+</script>

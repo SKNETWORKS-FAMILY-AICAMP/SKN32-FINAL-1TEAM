@@ -149,6 +149,14 @@ class PipelineStatusTests(unittest.TestCase):
         self.assertEqual(dp.stage_warnings_of({'judgments_upload': ok}), [])
         self.assertEqual(dp.stage_warnings_of({'judgments_upload': dict(ok, error='types: 결과 파일이 없다')}),
                          [{'stage': 'judgments_upload', 'error': 'types: 결과 파일이 없다'}])
+        # 2026-09-29: 파일이 크게 줄었다는 경고(올리기는 막지 않음)도 stage_warnings 에 남는다
+        self.assertEqual(dp.stage_warnings_of({'judgments_upload': dict(ok, warning='types: 공고 수 급감')}),
+                         [{'stage': 'judgments_upload', 'warning': 'types: 공고 수 급감'}])
+        self.assertEqual(dp.stage_warnings_of({'judgments_upload': dict(ok, warning=None)}), [])
+        # Codex 재검수 P2-2: 한 표의 오류와 다른 표의 경고가 함께 나면 둘 다 남는다(예전에는 경고가 사라졌다)
+        both = dp.stage_warnings_of({'judgments_upload': {'error': 'types: duplicate', 'warning': 'industries: coverage low'}})
+        self.assertEqual(both, [{'stage': 'judgments_upload', 'error': 'types: duplicate'},
+                                {'stage': 'judgments_upload', 'warning': 'industries: coverage low'}])
 
 
 class ServicePathTests(unittest.TestCase):

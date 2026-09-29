@@ -150,13 +150,28 @@ def boot():
     except Exception as exc:
         judgments_conn = None
         STATE['boot_errors']['judgments_db'] = _describe(exc, '판정 DB 연결')
+    # 두 판정 읽기는 예외를 내지 않게 만들었지만, 예상 밖 예외가 나도 **기능만 끄고** 서버는 연다
+    # (2026-09-29 Codex 재검수 P1-4 — 조율 에이전트도 이 boot() 를 부른다)
+    def judged(name, load, where):
+        try:
+            return load(judgments_conn, expected=len(STATE['rows']))
+        except Exception as exc:
+            STATE['boot_errors'][name] = _describe(exc, where)
+            return {'active': False, 'source': None, 'rows': 0, 'notices': {},
+                    'error': '%s 중 예외: %s' % (where, type(exc).__name__)}
     try:
-        # expected: DB 표가 "다 올라간" 것인지 보는 기준(공고 수의 95%, Codex 검수 P1)
-        STATE['industry'] = industry_rank.load_auto(judgments_conn, expected=len(STATE['rows']))
-        STATE['applicant_types'] = applicant_types.load_auto(judgments_conn, expected=len(STATE['rows']))
+        # 업종: expected 로 DB 표가 "다 올라간" 것인지 본다(공고 수의 95%, Codex 검수 P1). 순위 기능은 기본 꺼짐
+        STATE['industry'] = judged('industry', industry_rank.load_auto, '업종 판정 읽기')
+        # 신청자 유형: 지금 공고문의 지문과 같은 판정만 쓴다(2026-09-29 Codex 재검수 P1). 지문을 계산하지 못하거나
+        # 쓸 판정이 0건이면 기능만 꺼지고 error 에 이유가 남는다
+        STATE['applicant_types'] = judged('applicant_types', applicant_types.load_auto, '신청자 유형 판정 읽기')
     finally:
         if judgments_conn is not None:
             judgments_conn.close()
+    if STATE['applicant_types'].get('error') and not STATE['applicant_types'].get('active') \
+            and 'applicant_types' not in STATE['boot_errors']:
+        STATE['boot_errors']['applicant_types'] = {'where': '신청자 유형 판정 읽기',
+                                                   'error': STATE['applicant_types']['error']}
     # 업력 근거(2026-09-28 B). 자격 확인의 업력 줄에 공고문 추출 값을 **근거로만** 보여 준다. 실패해도 서버는 연다
     from search import age_evidence
     # load() 는 예외를 내지 않는다 — DB·파일 중 실패한 쪽만 비우고 error 에 적는다(Codex 검수 P1)
@@ -983,10 +998,21 @@ def health():
         indexed = col.count() if col is not None else None
     except Exception:
         indexed = None
+    types = STATE.get('applicant_types') or {}
     return {'indexed': indexed, 'boot_errors': STATE.get('boot_errors') or {},
             'notices': len(STATE['rows']),
             'bm25_indexed': len(STATE['bm25']) if STATE.get('bm25') else 0,
-            'on_ec2': ON_EC2, 'source': 'chroma+bm25', 'default_search': 'hybrid'}
+            'on_ec2': ON_EC2, 'source': 'chroma+bm25', 'default_search': 'hybrid',
+            # 신청자 유형 판정의 신선도(2026-09-29 — Codex 재검수: 실행 중 상태를 볼 곳이 없었다)
+            'applicant_types': {'active': bool(types.get('active')), 'source': types.get('source'),
+                                'used': len(types.get('notices') or {}),
+                                'fresh_from_db': types.get('fresh_from_db'),
+                                'refreshed_from_file': types.get('refreshed_from_file'),
+                                'stale': types.get('stale'), 'bad_lines': types.get('bad_lines'),
+                                # 발췌 밖 원문에 예비창업 언급이 있어 불가 → 확인 필요로 낮춘 공고 수(Codex 재검수 P1-2)
+                                'unread_pre_founder': types.get('unread_pre_founder'),
+                                'unverified_pre_founder': types.get('unverified_pre_founder'),
+                                'error': types.get('error')}}
 
 
 # ── 리랭커 시연 (내부 검토용) ────────────────────────────────

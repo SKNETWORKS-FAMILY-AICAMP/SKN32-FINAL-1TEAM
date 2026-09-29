@@ -388,7 +388,9 @@ def _run(dry_run, skip_store, force, say,
             from collect import upload_judgments
             parts = upload_judgments.run(say=lambda line: say('  ' + line))
             errors = ['%s: %s' % (k, v['error']) for k, v in parts.items() if v.get('error')]
-            judgments_result = dict(parts, error='; '.join(errors) or None)
+            # 파일이 크게 줄었다는 경고(2026-09-29 — 올리기는 막지 않는다)도 stage_warnings 로 남긴다
+            warnings = ['%s: %s' % (k, v['warning']) for k, v in parts.items() if v.get('warning')]
+            judgments_result = dict(parts, error='; '.join(errors) or None, warning='; '.join(warnings) or None)
         except Exception as exc:
             say('  판정 올리기 실패: %s' % type(exc).__name__)
             judgments_result = {'error': '%s: %s' % (type(exc).__name__, str(exc)[:200])}
@@ -402,7 +404,7 @@ def _run(dry_run, skip_store, force, say,
     # 한 소스라도 정상이 아니면 부분 실패로 본다
     degraded = [s for s, v in sources.items() if v['status'] not in ('ok', 'dry-run')]
     ok = not degraded and (stored or dry_run or skip_store)
-    # 후처리(LLM) 경고 — 10·11단계가 실패했거나 일부 호출이 실패했다(2026-09-28 Codex 통합 검수 P2).
+    # 후처리 경고 — 10~13단계(LLM 추출·판정 올리기)가 실패했거나 일부 호출이 실패했거나 경고를 냈다(2026-09-28 Codex 통합 검수 P2).
     # 수집 자체는 끝났으므로 status 는 그대로 둔다. 'partial' 로 바꾸면 수집 상태 판정(search/collection_status.py)이
     # 매칭을 막는다 — 공고 데이터는 새것인데 LLM 후처리만 늦은 것이라 막을 일이 아니다.
     # 대신 로그에 stage_warnings 로 남기고 종료 코드 4 로 알린다(run_daily.bat 이 run.log 에 exit=4 를 남긴다).
@@ -434,7 +436,12 @@ def _run(dry_run, skip_store, force, say,
 
 
 def stage_warnings_of(results):
-    """{단계: 결과} → [{'stage', 'error'|'failed'}]. 단계 예외·API 키 없음·일부 호출 실패를 모은다."""
+    """{단계: 결과} → [{'stage', 'error'|'failed'|'warning'}]. 단계 예외·API 키 없음·일부 호출 실패·경고를 모은다.
+
+    warning 은 2026-09-29 추가 — 13단계가 결과 파일이 크게 줄어든 것을 알리되 올리기는 막지 않을 때다.
+    한 단계에 error 와 warning 이 함께 있으면 **둘 다** 남긴다(13단계는 한 표의 오류와 다른 표의 경고가 함께 날 수 있다 —
+    2026-09-29 Codex 재검수 P2-2). 같은 단계가 두 줄이 될 수 있다.
+    """
     out = []
     for stage, result in results.items():
         if not result:
@@ -443,6 +450,8 @@ def stage_warnings_of(results):
             out.append({'stage': stage, 'error': result['error']})
         elif result.get('failed'):
             out.append({'stage': stage, 'failed': result['failed']})
+        if result.get('warning'):
+            out.append({'stage': stage, 'warning': result['warning']})
     return out
 
 
@@ -557,7 +566,7 @@ def main():
         return 2
     if r.get('stage_warnings'):
         print('\n수집은 끝났지만 후처리(LLM)에 경고가 있다: %s'
-              % ', '.join(w['stage'] for w in r['stage_warnings']))
+              % ', '.join(dict.fromkeys(w['stage'] for w in r['stage_warnings'])))
         return 4
     return 0
 

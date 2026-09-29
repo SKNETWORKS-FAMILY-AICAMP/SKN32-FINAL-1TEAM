@@ -2,25 +2,25 @@
 
 기준 시점: 2026-09-28 작업 종료 (Claude, 계정 전환 전)  
 작업 범위: `data-collection/`만  
-이 문서가 **최신 진입점**이다. 이전 [2026-09-22 인계](archive/NEXT_SESSION_HANDOFF_20260922.md)는 업종 작업의 세부 배경으로만 읽는다.
+이 문서가 **최신 진입점**이다. 이전 [2026-09-22 인계](NEXT_SESSION_HANDOFF_20260922.md)는 업종 작업의 세부 배경으로만 읽는다.
 
 > **같은 날 오후에 이어진 작업(이 문서 작성 뒤)**: F2 업종 코드 맞추기, 제외 목록은 순위에 안 씀(A안), 업종 순위 반영 구현,
-> docs 폴더 정리(문서 위치 변경 — [문서 지도](README.md)), 검증 화면 공통 메뉴·전체 흐름 화면(`/flow`).
-> 요약은 [STATUS](STATUS.md) 맨 위, 상세는 [WORKLOG](WORKLOG.md) 2026-09-28 위쪽 항목들. 아래 7절 "커밋되지 않은 변경"은 오전 기준이다(오전분은 커밋 `eb62206`).
+> docs 폴더 정리(문서 위치 변경 — [문서 지도](../README.md)), 검증 화면 공통 메뉴·전체 흐름 화면(`/flow`).
+> 요약은 [STATUS](../STATUS.md) 맨 위, 상세는 [WORKLOG](../WORKLOG.md) 2026-09-28 위쪽 항목들. 아래 7절 "커밋되지 않은 변경"은 오전 기준이다(오전분은 커밋 `eb62206`).
 
 ## 1. 새 세션이 가장 먼저 할 것
 
 1. 이 문서를 끝까지 읽는다.
-2. [현재 상태](STATUS.md) 맨 위 항목과 [WORKLOG](WORKLOG.md)의 2026-09-28 항목들을 읽는다.
+2. [현재 상태](../STATUS.md) 맨 위 항목과 [WORKLOG](../WORKLOG.md)의 2026-09-28 항목들을 읽는다.
 3. `docs/reviews/matching/`에 `MATCH_FILTER_FIRST_REVIEW_*`로 시작하는 Codex의 **재검수 결과**가 새로 생겼는지 확인한다(아래 4절). 2026-09-28 정리 전 위치인 `docs/` 맨 위도 함께 본다.
 4. 사용자는 이근준이다. 커밋·push는 사용자가 직접 한다. 설명은 비유 먼저, 쉬운 말로 한다.
 
 ## 2. 기준 문서와 담당 범위
 
-- 기준: [프로젝트 기획서 v1.10](specs/프로젝트_기획서_v1.10.pdf)(2026-09-23), [Agent 기능정의서 v1.9](specs/S-Brain_Agent_기능정의서_v1.9.xlsx).
+- 기준: [프로젝트 기획서 v1.10](../specs/프로젝트_기획서_v1.10.pdf)(2026-09-23), [Agent 기능정의서 v1.9](../specs/S-Brain_Agent_기능정의서_v1.9.xlsx).
   xlsx는 `openpyxl`이 `.venv`에 없어 zip 안의 XML로 읽었다.
 - 기획서 7-1에서 이근준의 담당은 **공고 데이터 · 매칭·자격 판정 · 인프라·배포(신누리와 공동)**다. 기능정의서 규칙으로는 R-1·R-2·R-3이다.
-- 대조 결과와 결정은 [기획서 대조](PLAN_ALIGNMENT_20260928.md)에 있다. 이 문서가 방향의 기준이다.
+- 대조 결과와 결정은 [기획서 대조](../PLAN_ALIGNMENT_20260928.md)에 있다. 이 문서가 방향의 기준이다.
 
 ## 3. 2026-09-28에 정한 것 (사용자 결정)
 
@@ -34,9 +34,9 @@
 
 | 작업 | 상태 | 근거 |
 |---|---|---|
-| F1-1 통합공고 전역 판정 방지 → `final5` | ✅ **Codex 승인**. P2(괄호 참조 개별 공고·챗봇 안내 오분류 2건)는 후속 | [검수](reviews/industry/INDUSTRY_F1_UMBRELLA_REVIEW_20260928.md) |
-| 기획서 대조, 업종 순위 신호 결정 | ✅ 문서화 | [대조](PLAN_ALIGNMENT_20260928.md) |
-| 불일치 A: 필터 선행 매칭 | ⏳ **Codex 재검수 대기**. 1차 검수의 P2 두 건은 고쳤다 | [1차 검수](reviews/matching/MATCH_FILTER_FIRST_REVIEW_20260928.md), [요청서 6절](reviews/matching/MATCH_FILTER_FIRST_REVIEW_REQUEST_20260928.md) |
+| F1-1 통합공고 전역 판정 방지 → `final5` | ✅ **Codex 승인**. P2(괄호 참조 개별 공고·챗봇 안내 오분류 2건)는 후속 | [검수](../reviews/industry/INDUSTRY_F1_UMBRELLA_REVIEW_20260928.md) |
+| 기획서 대조, 업종 순위 신호 결정 | ✅ 문서화 | [대조](../PLAN_ALIGNMENT_20260928.md) |
+| 불일치 A: 필터 선행 매칭 | ⏳ **Codex 재검수 대기**. 1차 검수의 P2 두 건은 고쳤다 | [1차 검수](../reviews/matching/MATCH_FILTER_FIRST_REVIEW_20260928.md), [요청서 6절](../reviews/matching/MATCH_FILTER_FIRST_REVIEW_REQUEST_20260928.md) |
 | 검색 먼저 vs 필터 먼저 수치 비교 | ✅ hybrid 신청 불가@10 4.8% → 0%, 쓸모@3 1.81 → 1.81(유지). 사용자에게 "새 방식이 낫다"고 설명함 | `reports/filter_first_eval_20260928T011252Z/` |
 | 비교 화면 `/filter-first-eval` | ✅ 쉬운 말/전문 용어 전환 포함 | `web/filter_first_eval.html` |
 | 업종 결과 화면 폴더 목록 정렬 | ✅ 묶음(최종·전량·재독·중간 합침·표본) → 최신순 | `industry_results.list_runs()` |
@@ -61,7 +61,7 @@ Codex 재검수가 승인이면 A는 끝난다. 추가 지적이 있으면 그�
 
 ## 6. 남은 일 (사용자가 순서를 정한다)
 
-기획서와 어긋난 곳([대조](PLAN_ALIGNMENT_20260928.md) 3절):
+기획서와 어긋난 곳([대조](../PLAN_ALIGNMENT_20260928.md) 3절):
 
 | # | 내용 | 메모 |
 |---|---|---|
@@ -74,7 +74,7 @@ Codex 재검수가 승인이면 A는 끝난다. 추가 지적이 있으면 그�
 | H | `filteredCount`는 추가됨. `fitScore`(RRF ÷ 이론 최대) 없음 | 기능정의서도 잠정 |
 
 업종 작업: **F2 KSIC 복합 명칭·미분류 167개 → F1-2 제외표 참조문 25건** 순서를 제안했다. 그다음 업종 순위 반영을 구현한다.
-F1-1 P2(제목 판별 2건)는 작다. 상세는 [2026-09-22 인계](archive/NEXT_SESSION_HANDOFF_20260922.md) 6절, [업종 리뷰](reviews/industry/INDUSTRY_LLM_FULL_LUNA_REVIEW_20260922.md) 끝을 본다.
+F1-1 P2(제목 판별 2건)는 작다. 상세는 [2026-09-22 인계](NEXT_SESSION_HANDOFF_20260922.md) 6절, [업종 리뷰](../reviews/industry/INDUSTRY_LLM_FULL_LUNA_REVIEW_20260922.md) 끝을 본다.
 
 ## 7. 커밋되지 않은 변경 (2026-09-28 기준 HEAD `35358be`)
 

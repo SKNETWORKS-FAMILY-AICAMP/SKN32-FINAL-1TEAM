@@ -26,7 +26,7 @@
 
 ### P3. 문서 이동 뒤 남은 경로
 
-- [최신 인계서](../../NEXT_SESSION_HANDOFF_20260928.md) 111행의 새 세션 요청문은 옛 `docs/MATCH_FILTER_FIRST_REVIEW_*` 위치를 가리킨다. 실제 위치는 `docs/reviews/matching/`이다.
+- [최신 인계서](../../archive/NEXT_SESSION_HANDOFF_20260928.md) 111행의 새 세션 요청문은 옛 `docs/MATCH_FILTER_FIRST_REVIEW_*` 위치를 가리킨다. 실제 위치는 `docs/reviews/matching/`이다.
 - `reports/search_comparison_20260918T*/summary.md`와 한 `NOTE.md`의 Markdown 링크 6개가 옛 `../../docs/SEARCH_COMPARISON_*` 위치를 가리켜 열리지 않는다. 결과 보존 원칙 때문에 원본을 그대로 둘 경우, 새 위치를 안내하는 방법이 필요하다. JSON manifest의 과거 경로·해시는 당시 실행 기록이므로 이 문제와 구분한다.
 
 ## 독립 확인과 한계

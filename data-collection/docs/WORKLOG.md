@@ -23,6 +23,140 @@
 
 ## 작업 기록
 
+### 2026-09-29 · Claude · 조율 설명서 줄 번호 맞추기
+
+- 요청·목적: 판정표 수정 검수가 끝나 미뤄 둔 `guides/ORCHESTRATION_HANDOFF.md`의 `search/app.py` 줄 번호를 맞췄다(사용자 요청).
+- 변경: `match` 372→387, `MatchRequest` 279→294, `eligibility` 813→828, `GateRequest` 333→348, 업력 설명 구간 844-870→859-885. `boot` 108·`FIELDS` 47·`collection_status.check` 133과 조율 쪽 파일 번호는 그대로 맞았다. 3.3절 5번에 승인된 동작 두 줄(0건·예외 시 기능만 끔, 발췌 밖 '예비창업' 언급이면 확인 필요)을 보탰다. 함수 이름·입출력은 바뀌지 않았다.
+- 검증: 새 번호 8곳을 `sed`로 열어 각 줄이 해당 정의인지 확인했다. 문서 링크 점검 깨진 링크 0.
+
+### 2026-09-29 · Claude · 판정표 지문 수정 Codex 승인 확인
+
+- [Codex 4차 재검수](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK3_20260929.md) 결과 **승인**을 확인했다(코드 수정 없음). 첨부 경계 반례 서비스 None·13단계 NULL, 전체 unittest 663개 통과, 공용 DB SELECT 결과(신선 2,520·다름 5·발췌 밖 2·확인 불가 0, `--plan` 바뀜 3)가 Claude 측정과 같다.
+- 9/28 판정표 P1부터 이어진 지문 신선도 검수(요청 → 보류 → 1차·2차·3차 응답)가 끝났다. 남은 것: 9/30 배치 실제 재판정·업로드 확인, 조율 설명서 줄 번호.
+
+### 2026-09-29 · Claude · Codex 3차 재검수 — 발췌 조각별 횟수
+
+- 요청·목적: [Codex 3차 재검수](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK2_20260929.md) 보류(P1 1). 사용자가 추천 방향으로 진행하라고 했다.
+- 원인: `build_document()`가 첨부 조각을 빈 줄로 잇는데, 발췌 전체의 공백을 지우고 세면 첨부 경계 "예비"+"창업"이 붙어 원문에 없는 언급 1회가 생긴다. Claude가 Codex 입력으로 재현했다(지문 같음, 감지 None).
+- 변경 파일: `search/applicant_types.py`(`unread_pre_founder()` — 발췌를 `\n\n`(빈 줄)으로 나눈 조각마다 세서 더함, 문장 고르기도 조각 사이 `|`). 테스트: `tests/test_judgments_source.py`(Codex 반례, 경계만 있으면 blocked 유지, 조각이 두 출처를 잇지 않는다는 전제), `tests/test_upload_judgments.py`(같은 반례로 13단계 NULL). 문서: `guides/JUDGMENT_TABLES.md`, [3차 응답·재검수 요청](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK2_RESPONSE_20260929.md).
+- 선택 이유: 발췌에 구분 글자를 넣으면 지문 2,525건이 모두 바뀌어 전량 재판정이 된다. 조각별 세기는 발췌 함수를 그대로 두고, 나누기가 틀려도 발췌 횟수가 줄어드는 쪽(확인 필요)이다.
+- 검증: 사전 집계(SELECT만) 같은 2건·경계 가짜 언급 0건. unittest 663개 통과(건너뜀 13). load_auto 발췌 밖 2·확인 못 함 0, `upload_judgments --plan` 바뀜 3, probe D·A·B·C 통과.
+- 미검증·남은 문제: 8000 재시작 안 함(사용자 확인 필요).
+- 다음 단계: Codex 재검수 결과(`JUDGMENT_FRESHNESS_REVIEW_RECHECK3_20260929.md`).
+
+### 2026-09-29 · Claude · Codex 2차 재검수 — A안 횟수 비교와 확인 못 한 불가 미사용
+
+- 요청·목적: [Codex 2차 재검수](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK_20260929.md) 보류(P1 1·P2 1). 사용자가 설명을 듣고 Claude 추천 방향으로 진행하라고 했다.
+- 재현(Claude, DB 없음): 반복 문구 → 지문 같고 `unread_pre_founder` None. `예비\n창업`은 잡지만 `예비창\n업`·`예비 창 업`은 못 잡음.
+- 선택 이유: 위치 추적(발췌 함수가 자른 구간 기록)은 10·11·12단계 공용 함수를 건드려 지문 전체가 흔들릴 위험이 있고, 발췌가 원문을 다 못 담은 공고의 불가를 모두 푸는 방식은 정확한 불가(Codex 30/30)까지 버린다. 횟수 비교는 발췌 ⊂ 원문이라 "원문 > 발췌"가 안 읽은 언급의 확실한 증거이고, 틀려도 확인 필요 쪽이다.
+- 변경 파일
+  - `search/applicant_types.py`: `unread_pre_founder()` 횟수 비교(보여 줄 문장은 앞뒤까지 발췌에 없는 첫 언급, 없으면 마지막), 언급 찾기 정규식 `예\s*비\s*창\s*업`. `mark_unread()`는 원문 없음·지문 다름이면 `unverified_pre_founder`. `load_auto()`는 항상 `mark_unread()`, 결과에 `unverified_pre_founder`. `pre_founder()`·`type_check()`.
+  - `collect/upload_judgments.py`: `type_rows()`도 항상 확인(원문 없음·지문 다름 → strong 불가 NULL).
+  - `search/app.py`: health `unverified_pre_founder`.
+  - 테스트: `tests/test_judgments_source.py`(반례 3개 + 모두 읽은 반복 + `current`만 넘긴 호출, 도우미가 빈 원문을 함께 넘김), `tests/test_upload_judgments.py`(기본 공고문 대역, 확인 못 함 → NULL).
+  - 문서: `guides/JUDGMENT_TABLES.md`, [2차 응답·재검수 요청](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK_RESPONSE_20260929.md).
+- 검증: 사전 집계(SELECT만) 횟수 방식도 같은 2건. unittest 659개 통과(건너뜀 13). load_auto 2.1초·발췌 밖 2·확인 못 함 0. `upload_judgments --plan` 신청자 유형 바뀜 3(126490 포함 — 재판정 전까지 DB 결론도 NULL). probe D·A·B·C 통과.
+- 미검증·남은 문제: 8000 재시작 안 함(사용자 확인 필요). '예비창업' 말이 없는 자격 변경은 범위 밖.
+- 다음 단계: Codex 재검수 결과(`JUDGMENT_FRESHNESS_REVIEW_RECHECK2_20260929.md`).
+
+### 2026-09-29 · Claude · Codex 지문 재검수 나머지 6건(P1-1·P1-3·P1-4·P2 3건)
+
+- 요청·목적: 사용자가 8000 재시작과 나머지 지적 진행을 요청했다(파일 모드 무검사 경로 제거·비활성 첨부로 인한 재판정 포함).
+- 사전 집계(SELECT만): 비활성인데 본문이 있는 첨부 7개·공고 6건. 활성 첨부의 같은 공고·같은 길이 동률 0건.
+- 변경 파일
+  - `experiments/sql_semantic/applicant_type_llm.py`(`load_population`), `collect/extract_conditions.py`(`pick_targets` 두 조회), `experiments/sql_semantic/industry_llm_sample.py`(`load_items_shared`·`load_items`): 첨부 `na.active`, `ORDER BY text_chars DESC, na.id`.
+  - `search/applicant_types.py`: `load()`는 공고 ID가 빈 값·문자열 아님이면 깨진 줄로 세고 삽입도 줄 단위 `try` 안에서. `load_auto()`는 지문(current·documents)을 모든 모드에서 먼저 구하고 그다음 모드별 출처(auto DB→파일, db, file). 쓸 판정 0건이면 `error`에 행 수·지문 다름·공고문 없음.
+  - `search/app.py`: `boot()`가 두 판정 읽기를 감싸 예외 시 기능만 끄고 `boot_errors`에 남긴다.
+  - `collect/daily_pipeline.py`: `stage_warnings_of` error/failed 뒤에 warning도 따로 남긴다. 종료 메시지는 단계 이름 중복 제거. 종료 코드 4 주석 10~13단계.
+  - 테스트: `tests/test_judgments_source.py`(Codex 재현 P1-3 두 개·P1-4·P2-3, file 모드 테스트를 새 규칙으로), `tests/test_applicant_type_daily.py`(P2-2), 새 `tests/test_active_attachments.py`(가짜 연결로 실행 SQL 확인).
+  - 문서: `guides/JUDGMENT_TABLES.md` 6절, [응답·재검수 요청](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RESPONSE_20260929.md), 인계서·문서 지도.
+- 검증: unittest 654개 통과(건너뜀 13). 공용 DB SELECT만: load_auto 2.1초, 지문 같음 2,520·다름 5(125813·126284·126490·126496·126545 — 126490이 Codex가 짚은 blocked)·확인 필요 2. `--plan`(호출·쓰기 없음): 11단계 5건 약 $0.004, 12단계 5건 약 $0.006, 10단계 5건, 13단계 신청자 유형 바뀜 2·업종 0. `orchestration_probe` D·A·B·C 통과, 필터 통과 1,596. 8000 재시작 두 번(A안 뒤, 이번 수정 뒤) — boot_errors 없음, used 2,520·stale 5·unread 2.
+- 미검증·남은 문제: EC2 부팅, 내일 09:00 배치의 재판정·업로드. 13단계는 지문이 달라진 5건의 옛 파일 판정을 재판정 전까지 그대로 올린다(서비스는 쓰지 않음, SQL 사용자는 하루 옛 값을 볼 수 있다).
+- 다음 단계: Codex 재검수 결과(`JUDGMENT_FRESHNESS_REVIEW_RECHECK_20260929.md`) 확인.
+
+### 2026-09-29 · Claude · Codex 지문 재검수 P1-2 — A안(발췌 밖 '예비창업' 언급이면 확인 필요)
+
+- 요청·목적: Codex [재검수](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_20260929.md) 보류(P1 4·P2 3). 사용자가 P1-2를 먼저 25건 세어 보고 A안으로 진행하라고 했다.
+- 판단: 지문은 LLM이 읽은 발췌의 해시다. 전체 원문 지문으로 바꾸면 변경은 알아채지만, 다시 판정해도 같은 발췌를 읽어 결론이 같다. 그래서 "안 읽은 곳에 해당 말이 있나"를 본다.
+- 사전 집계(공용 DB SELECT만, 1.7초): 공고 2,525 · strong 불가 187 · Codex 기준 발췌 밖 글이 있는 불가 25건 중 안 읽은 곳 '예비창업' 0건 · 전체 불가 중 2건.
+  - 126586: 제출서류 표 "개인사업자 또는 예비창업자의 경우 해당사항 없음" — 예비창업자 신청 여지가 있어 확인 필요가 맞다.
+  - 126651: 작성 양식 "예비창업자 … 노하우 전수" 활동 예시 — 자격과 무관, 낮춰도 추천에 남을 뿐이다.
+  - 25건이 0인 이유: 발췌는 자격 구간 주변만 잘라 오므로 한도를 늘려도 안 읽는 곳이 있다. 그래서 원문 전체와 대조했다.
+- 변경 파일
+  - `search/applicant_types.py`: `current_documents()`(지금 공고문 원문), `unread_pre_founder()`(원문의 '예비창업' 앞뒤 10자가 발췌에 없으면 그 조각), `mark_unread()`(strong 불가·지문 같음일 때만 표시, 원래 표는 안 바꿈). `load_auto(documents=)`, 결과에 `unread_pre_founder` 건수. `pre_founder()`는 표시가 있으면 None, `type_check()`는 "예비창업자 불가로 읽었으나 확인 필요"와 두 문장.
+  - `collect/upload_judgments.py`: 13단계도 지금 공고문으로 같은 표시 → `pre_founder_verdict` NULL. 공고문을 못 읽으면 신청자 유형 표는 올리지 않는다(error, 업종은 계속).
+  - `search/app.py`: `/api/health` applicant_types에 `unread_pre_founder`.
+  - 테스트: `tests/test_judgments_source.py`(A안 6개, Codex 재현 포함, 대역을 `current_documents`로), `tests/test_upload_judgments.py`(4개, 가짜 DB용 대역).
+  - 문서: `guides/JUDGMENT_TABLES.md`(`pre_founder_verdict` 설명, 6절).
+- 검증: unittest 647개 통과(건너뜀 13). 실제 DB `load_auto` 1.9초, 낮춤 2건. `upload_judgments --plan`: 신청자 유형 바뀜 2·같음 2,523(쓰지 않음). `orchestration_probe` D·A·B·C 통과, G-01과 매칭 1단계 차이 0, 필터 통과 1,594 → 1,595.
+- 미검증·남은 문제: 8000 서버는 이후 사용자 요청으로 재시작했다. `share/신청자유형.html`은 게시 당시 스냅샷이라 이 2건이 '불가'로 남아 있다. 나머지 Codex 지적(P1-1·P1-3·P1-4·P2 3건)은 사용자 결정 대기.
+- 다음 단계: 남은 지적 수정 → Codex에 같은 경계 입력으로 재검수 요청.
+
+### 2026-09-29 · Claude · 9/29 프로젝트 점검(읽기만)과 문서 정리
+
+- 요청·목적: Codex 검수를 기다리는 동안 프로젝트 전체를 훑어 문제를 찾는다. 이어서 사용자가 문서 정리부터 하라고 했다.
+- 점검 방법: 보조 에이전트 3개(코드·문서·보안 설정)가 읽기만 하며 살폈고, Claude가 주요 지적을 코드·파일에서 직접 확인했다.
+- 정상 확인: unittest 637개 통과(건너뜀 13). 9/29 09:00 배치 13단계 성공·경고 0·12분·LLM 약 $0.13. 8000 `/api/health` 판정 2,525건 모두 최신. 추적 파일에 비밀번호·API 키 0건, `share/` HTML에 IP·키·개인 경로 없음. 요청값이 SQL에 문자열로 들어가는 곳 없음.
+- 문서 정리(이번에 고침)
+  - `README.md`: "다섯 단계" → 13단계, "5~11단계만 바뀐 것" → 5~13단계, `reports/`는 git에 올라간다고 정정, 빠진 배치 옵션 5개 추가, 종료 코드 4 = 10~13단계 경고, 테스트 81개 → 637개.
+  - `share/build_jev.py` 4행: 설명 줄에 백스페이스 바이트(0x08)가 들어가 `shareuild`로 보이던 것을 옆 파일(`build_filter_first.py`)처럼 역슬래시 두 개로 고쳤다(`SyntaxWarning`도 사라짐).
+  - `NEXT_SESSION_HANDOFF_20260929.md`: P1 "멈춤" → 수정 완료·재검수 대기, 점검에서 나온 코드 과제를 4절 4번에 추가, 테스트 수·서버 상태 갱신.
+  - 깨진 링크 18개: 보관 폴더로 옮긴 `archive/NEXT_SESSION_HANDOFF_20260928.md`(16개), `WORKLOG.md`(1개), `reviews/integration/CURRENT_PROGRESS_REVIEW_20260928.md`(1개). `reports/search_comparison_20260918*`의 6개는 결과 보존 원칙대로 두었다.
+  - `guides/JUDGMENT_TABLES.md`: 이미 연결된 13단계의 "(예정)" 삭제, 업종 파일 위치를 `data/industries/results.jsonl`로, 업종 규칙 파일 경로 명시.
+- 검증: 링크 점검 스크립트 재실행 결과 깨진 링크 0개(`reports/` 제외). 고친 파일에 제어 문자 없음. `build_jev.py` 경고 없이 구문 분석됨.
+- 미룬 것: Codex 검수 중인 파일과 엮인 곳 — `guides/ORCHESTRATION_HANDOFF.md`의 `search/app.py` 줄 번호(5줄 밀림), `collect/daily_pipeline.py` 종료 코드 4 주석. 검수 뒤 맞춘다.
+- 코드 과제(손대지 않음, 인계서 4절 4번): EC2 색인 워터마크 누락 가능성, K-Startup 조기 마감 미반영, 백업에서 LLM 결과 표 누락, `daily_job.py`의 없는 모듈 `match_bge`. 보안: 옛 인계서 `archive/HANDOFF.md`에 DB 3306 "개방"·EC2 주소가 적혀 있다(저장소 공개 여부 확인 필요).
+- 문제 아님으로 본 것: EC2 리랭커 API 메모리 위험(EC2에 torch가 없어 모델을 올리기 전에 끝남), PC의 DB 암호화 연결(CA 인증서 검증 방식).
+
+### 2026-09-29 · Claude · 판정표 P1 — 지문(문서 해시)으로 신선도 확인
+
+- 요청·목적: 사용자 — [9/28 재검수](reviews/integration/JUDGMENT_TABLES_REVIEW_RECHECK_20260928.md) P1 세 건 수정(멈춰 둔 작업 재개). 조율 에이전트가 `app.boot()`를 직접 부르게 되어 우선순위가 올라갔다.
+- 사전 측정(읽기만)
+  - 11단계와 같은 `applicant_type_llm.load_population`으로 지금 공고문 지문을 계산하면 2,525건 1.7초다.
+  - 공용 DB 판정 2,525행 모두 지금 지문과 같았다.
+  - 모듈 불러오기는 0.11초이고, 모델·API 라이브러리를 불러오지 않는다.
+- 사용자 결정: 새 표 없이 지문 대조. 프롬프트 버전은 대조하지 않는다. 업종은 범위 밖.
+- 변경 파일
+  - `search/applicant_types.py`
+    - `load()`는 예외를 내지 않는다(깨진 줄 `bad_lines`, 못 읽으면 error).
+    - `current_document_hashes()`, `fresh_only()`를 새로 만들었다.
+    - `load_auto()`를 다시 썼다(DB→파일 순서로 지문 같은 것만, 지문 못 구하면 기능 끔, 95% 규칙 삭제). 모듈 설명도 고쳤다.
+  - `search/app.py`: boot가 기능 꺼짐을 `boot_errors.applicant_types`에 남긴다. `/api/health`에 `applicant_types`를 추가했다.
+  - `collect/upload_judgments.py`: 중복 공고 줄이면 error(올리지 않음). 공고(현재 notices 기준 고유 ID)가 90% 미만이면 warning만 남기고 올린다.
+  - `collect/daily_pipeline.py`: `warning` 집계, `stage_warnings_of`가 warning을 인식한다(종료 코드 4).
+  - `web/collection_status.html`: 경고 표시.
+  - 테스트
+    - `tests/test_judgments_source.py`: 신청자 유형 부분을 새 규칙으로 바꾸고 15개로 늘렸다(옛 파일 vs 새 DB, 파일 없는 호스트의 옛 blocked, 깨진 파일, 지문 계산 실패, db·file 모드 등).
+    - `tests/test_upload_judgments.py`: 90% 테스트를 경고로 바꾸고, 중복·살아 있는 공고만 세기를 추가했다.
+    - `tests/test_applicant_type_daily.py`: warning 경고.
+  - 문서: `guides/JUDGMENT_TABLES.md` 6절, `guides/ORCHESTRATION_HANDOFF.md` 3.3(알려진 문제 → 수정됨), `share/전체흐름.html` 두 곳, STATUS.
+- 검증
+  - 전체 unittest 637개 통과(건너뜀 13).
+  - 실제 DB로 별도 프로세스에서 `app.boot()` 21.7초: 판정 2,525건 모두 신선(DB 2,525, 파일 0, 다름 0), `boot_errors` {}.
+  - 매칭(예비창업자·반려동물 앱·서울): 필터 통과 1,594, 본문 불가 181, 접수 마감 756, 업력·유형 107, 되살림 9 — 전과 같다.
+  - `experiments.orchestration_probe` D·A·B·C 통과, C′ 실패 검출.
+- 미검증: Claude 내부 교차 검토 워크플로(권한 검사 일시 오류로 실행 못 함), Linux(EC2)에서의 boot, 실제 배치 13단계 경고 경로(내일 09:00 배치), 켜져 있는 8000 서버(옛 코드 — 재시작 전).
+- 다음 단계: 교차 검토 재시도 또는 Codex 재검수. 8000 재시작(사용자 확인). `share/전체흐름.html` 재게시.
+
+### 2026-09-29 · Claude · 8010 결과 화면 5장을 공유 페이지로 게시하고 저장소 share/에 보관
+
+- 요청·목적: 사용자 — 8010 결과를 다른 사람도 보게 한다. 새 서버 대신 결과 페이지로 공유하는 방식을 택했다. 원본은 저장소에 넣는다.
+- 만든 것
+  - 매칭 방식 비교(Claude 직접 제작)
+  - 전체 흐름, 업종 추출 결과, Jev 채점 시험, 신청자 유형 판정: 보조 에이전트 4개가 병렬로 만들었다. 저장소 쓰기는 금지했다.
+  - Claude가 게시 전 확인한 것: 비밀정보·IP·금지 태그 없음, 제목. 5장 모두 claude.ai에 **비공개**로 게시했다. 링크는 [share/README.md](../share/README.md)와 STATUS에 있다.
+- 변경 파일
+  - `share/`(신규): HTML 5, `build_filter_first.py`(신규 — 대화 중 추출 과정을 스크립트화), `build_industry.py`, `build_jev.py`, `build_applicant_types.py`, 틀 3, README
+  - `README.md` 폴더 목록 한 줄, STATUS
+  - 서비스 코드·DB 변경 없음. 유료 API 없음.
+- 전체 흐름: 옛 `web/flow.html`의 틀린 문구(Codex 지적)를 옮기지 않고 9/29 기준으로 새로 썼다. 업력 근거 225(9/28)·226(9/29 시작)은 날짜를 나눠 적었다.
+- 검증
+  - 그래프 색: 순서형 파랑이 dataviz 검증기에서 밝은·어두운 화면 모두 통과했다.
+  - 수치: 에이전트별로 원본과 대조했다(업종 `industry_rank.load()` 174/217, Jev 22개, 신청자 유형 21개 일치).
+  - 저장소로 옮긴 스크립트로 다시 만들었다. 업종·Jev·신청자 유형은 게시본과 바이트까지 같다. 매칭 방식 비교는 JSON 항목 순서 하나만 다르다(글자 수 같음).
+- 미검증·한계: 결과가 자동 갱신되지 않는다(다시 만들어 다시 게시해야 함). 신청자 유형은 9/28 실행 2,476건 기준이다. 파일을 직접 열 때 한글이 깨지지 않도록 저장소 판 페이지·틀 첫 줄에 `<meta charset="utf-8">`을 더했다(게시본에는 영향 없음).
+- 다음 단계: 사용자가 필요한 페이지를 Share 메뉴로 공유하고, `share/`를 커밋한다.
+
 ### 2026-09-29 · Claude · Codex 3차 재검수 반영 — 조율 설명서 4차 개정 (SB-189)
 
 - 요청·목적: 사용자 — [Codex 3차 재검수](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK3_20260929.md) 확인·반영.
@@ -927,7 +1061,7 @@
 ### 2026-09-28 · Claude · 종료 인계서 작성 (계정 전환 전)
 
 - 요청·목적: 사용자가 Claude 계정을 바꿔(대화 맥락이 이어지지 않을 수 있음) 새 세션이 이어받을 문서가 필요하다고 판단.
-- 변경 파일: [NEXT_SESSION_HANDOFF_20260928.md](NEXT_SESSION_HANDOFF_20260928.md) 신규, STATUS 맨 위에 진입점 추가.
+- 변경 파일: [NEXT_SESSION_HANDOFF_20260928.md](archive/NEXT_SESSION_HANDOFF_20260928.md) 신규, STATUS 맨 위에 진입점 추가.
 - 내용: 기준 문서·담당 범위, 사용자 결정 3가지, 오늘 작업과 검수 상태, 현재 매칭 동작, 남은 일(B~H·업종), 미커밋 변경 목록, 실행 방법, 금지 사항, 첫 요청문.
 - 코드 변경·LLM·DB 호출 없음. Git은 사용자 담당.
 

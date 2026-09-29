@@ -936,8 +936,8 @@ def load_items_shared(source_connection, ids, max_chars=None):
                   FROM notices n
                   JOIN notice_attachments na ON na.notice_fk = n.id
                   JOIN attachment_texts at ON at.attachment_fk = na.id
-                 WHERE n.notice_id = %s AND at.last_status = 'ok' AND at.extracted_text IS NOT NULL
-                 ORDER BY at.text_chars DESC""", (nid,))
+                 WHERE n.notice_id = %s AND na.active AND at.last_status = 'ok' AND at.extracted_text IS NOT NULL
+                 ORDER BY at.text_chars DESC, na.id""", (nid,))
             row['attachments'] = [r[0] for r in cursor.fetchall()]
             items.append(prepare(row, max_chars))
     return items
@@ -996,8 +996,8 @@ def load_items(lab_connection, source_connection, ids, max_chars=None):
                   FROM notices n
                   JOIN notice_attachments na ON na.notice_fk = n.id
                   JOIN attachment_texts at ON at.attachment_fk = na.id
-                 WHERE n.notice_id = %s AND at.last_status = 'ok' AND at.extracted_text IS NOT NULL
-                 ORDER BY at.text_chars DESC""", (item['notice_id'],))
+                 WHERE n.notice_id = %s AND na.active AND at.last_status = 'ok' AND at.extracted_text IS NOT NULL
+                 ORDER BY at.text_chars DESC, na.id""", (item['notice_id'],))
             item['attachments'] = [r[0] for r in cursor.fetchall()]
     for item in items:
         prepare(item, max_chars)

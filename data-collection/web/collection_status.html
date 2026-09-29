@@ -87,7 +87,7 @@ const STAGE = {conditions:'자격요건 추출(10단계)', applicant_types:'신�
       <dt>가장 최근 배치</dt><dd>${n.latest_batch ? `${esc(n.latest_batch.status)} · ${kst(n.latest_batch.run_at)}` : '—'}</dd>
       <dt>출처별</dt><dd>${src}</dd>
       <dt>후처리(LLM) 경고</dt><dd>${n.latest_batch && (n.latest_batch.stage_warnings || []).length
-        ? n.latest_batch.stage_warnings.map(w => `${esc(STAGE[w.stage] || w.stage)} — ${w.error ? esc(w.error) : `호출 실패 ${w.failed}건`}`).join('<br>')
+        ? n.latest_batch.stage_warnings.map(w => `${esc(STAGE[w.stage] || w.stage)} — ${w.error ? esc(w.error) : w.warning ? '경고: ' + esc(w.warning) : `호출 실패 ${w.failed}건`}`).join('<br>')
           + '<div class="muted">매칭은 막지 않습니다. 공고 데이터는 새것이고, 판정 결과만 갱신이 늦습니다.</div>'
         : '없음'}</dd>
       <dt>기업마당 스냅샷</dt><dd>${kst(n.bizinfo_snapshot_at)}</dd>

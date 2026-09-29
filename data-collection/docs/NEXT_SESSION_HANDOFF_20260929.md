@@ -1,6 +1,6 @@
 # 다음 세션 인수인계 — 조율 에이전트 연결 준비 마무리 (2026-09-29)
 
-기준 시점: 2026-09-29 오전 작업 종료 (Claude)
+기준 시점: 2026-09-29 오전 작업 종료 (Claude), 같은 날 오후 판정표 P1 수정·프로젝트 점검 반영
 작업 범위: `data-collection/`만
 이 문서가 **최신 진입점**이다. 이전 인계서는 [archive/NEXT_SESSION_HANDOFF_20260928.md](archive/NEXT_SESSION_HANDOFF_20260928.md)다.
 
@@ -22,7 +22,9 @@
 | 9/29 매일 배치 점검 | ✅ 정상. 신규 49건, DB·파일 각 2,525행 일치. Codex도 독립 확인 | WORKLOG "9/29 매일 배치 결과 점검" |
 | 조율 에이전트용 **함수 설명서** | ✅ 작성 → Codex 검수 → 개정 → 재검수 **조건부 승인** | [guides/ORCHESTRATION_HANDOFF.md](guides/ORCHESTRATION_HANDOFF.md), [reviews/orchestration/](reviews/orchestration/) |
 | 검증 스크립트 | ✅ 설명서의 코드 블록을 그대로 꺼내 D(빠른 시작)·A(T-C2)·B(G-01 2,525건 × 5가지 경우)·C(조율 스텁 흐름)를 확인. 모두 통과 | `experiments/orchestration_probe.py` |
-| Codex 판정표 P1(9/28) | ⏸ **사용자 요청으로 멈춤**(수정 착수 전) | [판정 테이블 재검수](reviews/integration/JUDGMENT_TABLES_REVIEW_RECHECK_20260928.md) |
+| Codex 판정표 P1(9/28) | ✅ 세 건과 13단계 90% 가드 수정(판정마다 공고문 지문 대조) → Codex 보류(P1 4·P2 3) → 7건 반영(P1-2는 A안) → Codex 2차 보류(A안 경계 2·호출 우회 1) → 횟수 비교·확인 못 한 불가 미사용 반영 → Codex 3차 보류(첨부 경계 가짜 언급) → 조각별 횟수 반영 → ✅ **Codex 승인** | [Codex 승인](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK3_20260929.md), [3차 응답](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK2_RESPONSE_20260929.md) |
+| 8010 결과 공유 페이지 | ✅ 서버 없이 여는 HTML 5장과 생성 스크립트 | [share/README.md](../share/README.md) |
+| 프로젝트 전체 점검(읽기만) | ✅ 테스트 637개 통과, 9/29 배치 정상. 문서 불일치는 정리했고 코드 과제는 4절 4번에 남김 | WORKLOG "9/29 프로젝트 점검" |
 
 ## 3. 9/29 사용자 결정
 
@@ -39,15 +41,22 @@
    - Codex 제출 전 내부 교차 검토에서 6건을 더 고쳤다.
    - 특히 `tc2()`의 수집 상태 분기는 **첫 조회에만** 적용한다. 조율 흐름은 더 보기 뒤에 수집 상태를 보지 않기 때문이다.
 2. **조율 담당과 합의**: 설명서 2절 ①마감일, ②금액, ③양식·평가 항목, ⑦확인 필요 표시가 급하다. 합의 뒤 **실제 공고 공급**으로 통합 시험을 한다.
-3. **멈춘 판정표 P1**: 옛 파일이 DB를 덮는 문제, 손상 파일이 서버 시작을 막는 문제, 파일 없는 호스트의 `blocked`.
-4. **작은 후속**
+3. **판정표 지문 수정은 Codex 승인됨**(9/29). 9/30 배치에서 10·11·12단계가 비활성 첨부 공고 5건씩 다시 판정하고, 13단계가 신청자 유형 결론(A안 2건, 재판정 뒤 126490)을 올리는지 확인한다.
+   - [조율 설명서](guides/ORCHESTRATION_HANDOFF.md)의 `search/app.py` 줄 번호는 9/29 승인 뒤 맞췄다(`MatchRequest` 294 등). `daily_pipeline.py` 종료 코드 4 주석도 9/29에 고쳤다.
+4. **9/29 점검에서 나온 코드 과제**(아직 손대지 않음, 사용자가 순서를 정한다)
+   - EC2 색인 누락 가능성: `collect/upload_vectors.py`가 묶음마다 같은 시각을 찍고, `ec2/ec2_vecstore.py`는 `> 워터마크`로 고른다. 업로드 도중 09:10 갱신이 돌면 나머지 묶음이 빠진다. 벡터를 전부 다시 올리는 날이 위험하다.
+   - K-Startup 조기 마감: 모집 중 목록만 받고 빠진 공고를 닫지 않는다. 마감일 전에 닫힌 공고가 `open`으로 남는다.
+   - `collect/backup_db.py` 백업 대상에 LLM 결과 표(`notice_conditions`·`notice_applicant_types`·`notice_industries`)가 없다.
+   - `collect/daily_job.py`가 없는 모듈 `match_bge`를 부른다(매일 배치는 이 경로를 건너뛰어 영향 없음).
+   - 보안: 옛 인계서 `archive/HANDOFF.md`에 DB 포트 3306 "개방"과 EC2 주소가 적혀 있다. 저장소 공개 여부 확인 뒤 포트 제한(AWS 설정, 사용자 승인 필요)과 문서 가리기를 정한다.
+5. **작은 후속**
    - 업력 상한 오류 `bizinfo:PBLN_000000000126783` — "5년 이상"인데 상한 5가 들어갔다. `age_quote_problem` 보완이 필요하다.
    - 9/28 기획서 대조 C·F·G.
-5. **8000/8010 공유**(사용자 검토 중)
+6. **8000/8010 공유**(사용자 검토 중)
    - 8000을 공개하려면 새 EC2 인스턴스를 권한다. 8GB·같은 리전/VPC로 만들면 조율 에이전트도 함께 올릴 수 있다.
-   - 8010은 대부분 저장된 결과를 보여 주는 화면이라 **결과 페이지로 공유**하는 편이 낫다(서버 불필요).
+   - 8010은 대부분 저장된 결과를 보여 주는 화면이라 **결과 페이지로 공유**하는 편이 낫다(서버 불필요). 9/29에 5장을 만들었다([share/](../share/README.md)).
    - `/compare`·`/industry-probe`·근거 보기는 8000과 실험 DB에 기대서 이 방식으로는 공유할 수 없다.
-   - 결정 전이다.
+   - 8000 공개는 결정 전이다.
 
 ## 5. 알아 둘 사실
 
@@ -61,12 +70,12 @@
 ## 6. 확인·실행 방법 (`data-collection/`에서)
 
 ```powershell
-.\.venv\Scripts\python.exe -X utf8 -m unittest discover -s tests                      # 전체 테스트 (9/28 기준 621개 통과)
+.\.venv\Scripts\python.exe -X utf8 -m unittest discover -s tests                      # 전체 테스트 (9/29 기준 637개 통과·건너뜀 13)
 .\.venv\Scripts\python.exe -X utf8 -m experiments.orchestration_probe --sbrain ..\agent-orchestration   # 설명서 검증
 .\.venv\Scripts\python.exe -X utf8 -m collect.upload_judgments --plan                  # 판정표 DB·파일 대조 (읽기만)
 ```
 
-- 서버: 저장소 루트 `.claude/launch.json`의 `search-service`(8000)와 `verify-viewer`(8010). 9/29 종료 때 둘 다 껐다.
+- 서버: 저장소 루트 `.claude/launch.json`의 `search-service`(8000)와 `verify-viewer`(8010). 9/29 오후 기준 둘 다 켜져 있다(8000은 판정표 수정 코드로 다시 켰다).
 - `gh` CLI는 이 PC에 없다. PR 확인은 웹에서 한다.
 
 ## 7. 하지 말 것

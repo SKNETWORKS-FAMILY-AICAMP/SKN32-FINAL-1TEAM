@@ -125,7 +125,11 @@ def prompt_sha():
 # ─────────────────────────────────────────────────────────── 데이터
 
 def load_population(connection):
-    """출처 DB 의 공고 + 첨부 본문 + 기존 4o-mini 값. 문서가 빈 공고는 뺀다."""
+    """출처 DB 의 공고 + 첨부 본문 + 기존 4o-mini 값. 문서가 빈 공고는 뺀다.
+
+    첨부는 **지금 공고에 달린 것만**(na.active) 읽고, 길이가 같으면 첨부 번호 순이다(2026-09-29 Codex 재검수 P1-1·P2-1 —
+    목록에서 빠진 첨부를 계속 읽거나, 동률 순서가 바뀌어 지문이 흔들리지 않게). 서비스 지문 계산도 이 함수를 쓴다.
+    """
     with connection.cursor() as cur:
         cur.execute('SELECT notice_id, source, title, body, target_text, target_category, age_condition_raw '
                     'FROM notices ORDER BY notice_id')
@@ -134,8 +138,8 @@ def load_population(connection):
         cur.execute("""SELECT n.notice_id, at.extracted_text FROM notices n
                          JOIN notice_attachments na ON na.notice_fk = n.id
                          JOIN attachment_texts at ON at.attachment_fk = na.id
-                        WHERE at.last_status = 'ok' AND at.extracted_text IS NOT NULL
-                        ORDER BY n.notice_id, at.text_chars DESC""")
+                        WHERE na.active AND at.last_status = 'ok' AND at.extracted_text IS NOT NULL
+                        ORDER BY n.notice_id, at.text_chars DESC, na.id""")
         for nid, text in cur.fetchall():
             if nid in rows:
                 rows[nid].setdefault('attachments', []).append(text)

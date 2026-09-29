@@ -1,0 +1,491 @@
+<meta charset="utf-8">
+<title>신청자 유형 판정</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@500;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* 레이아웃: 한 열 보고서. 쓰임 → 요약 → 분포 그래프 → AI 재확인 → 공고 목록 → 한계. 첫 페이지(매칭 방식 비교)와 같은 토큰 */
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --ink: #111a28;
+  --ink-2: #47526a;
+  --muted: #6b7690;
+  --line: #dde2ea;
+  --grid: #e9edf2;
+  --s1: #86b6ef;
+  --s2: #2a78d6;
+  --s3: #104281;
+  --range: rgba(42,120,214,.18);
+  --bad: #c2392f;  --bad-bg: #fbe9e7;
+  --good: #1d7a46; --good-bg: #e6f4ec;
+  --font-display: "Hahmlet", "Noto Serif KR", "Apple SD Gothic Neo", serif;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151c; --surface: #181d26; --ink: #eef2f8; --ink-2: #b7c0d0; --muted: #8d97aa;
+    --line: #2a3140; --grid: #232a36;
+    --s1: #184f95; --s2: #3987e5; --s3: #9ec5f4; --range: rgba(57,135,229,.22);
+    --bad: #f08a80; --bad-bg: #3a1f1d; --good: #6fd29a; --good-bg: #173424;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151c; --surface: #181d26; --ink: #eef2f8; --ink-2: #b7c0d0; --muted: #8d97aa;
+  --line: #2a3140; --grid: #232a36;
+  --s1: #184f95; --s2: #3987e5; --s3: #9ec5f4; --range: rgba(57,135,229,.22);
+  --bad: #f08a80; --bad-bg: #3a1f1d; --good: #6fd29a; --good-bg: #173424;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.65; margin: 0; }
+.wrap { max-width: 980px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; display: grid; gap: 44px; }
+h1, h2 { font-family: var(--font-display); font-weight: 700; line-height: 1.25; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(28px, 4.2vw, 40px); }
+h2 { font-size: 22px; }
+h3 { font-size: 15px; font-weight: 600; margin: 0; }
+p { margin: 0; max-width: 68ch; }
+a { color: var(--s2); }
+.eyebrow { font-size: 12px; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.lede { color: var(--ink-2); font-size: 16px; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+section { display: grid; gap: 18px; min-width: 0; }
+header { display: grid; gap: 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--muted); font-size: 13px; }
+.meta span b { color: var(--ink-2); font-weight: 500; }
+
+/* 핵심 결과 */
+.headline { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; }
+.hl { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: grid; gap: 4px; min-width: 0; align-content: start;
+  font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.hl:hover { border-color: var(--s2); }
+.hl .who { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); font-weight: 500; }
+.hl .big { font-family: var(--font-mono); font-size: 34px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.hl .sub { font-size: 13px; color: var(--muted); }
+.sw { width: 12px; height: 12px; border-radius: 3px; flex: none; display: inline-block; }
+.sw.bad { background: var(--bad); } .sw.good { background: var(--good); }
+.sw.guess { background: var(--bad); opacity: .45; } .sw.none { background: var(--muted); }
+.facts { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; margin: 0; }
+.facts div { border-top: 1px solid var(--line); padding-top: 8px; min-width: 0; }
+.facts dt { font-size: 12.5px; color: var(--muted); }
+.facts dd { margin: 0; font-size: 13.5px; color: var(--ink-2); }
+.facts dd b { font-family: var(--font-mono); font-size: 20px; color: var(--ink); font-weight: 500; margin-right: 4px; }
+
+/* 쓰임 설명 */
+.ways { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+.way { border-top: 3px solid var(--bad); padding-top: 12px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.way.w-good { border-top-color: var(--good); } .way.w-guess { border-top-style: dashed; }
+.way h3 { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.way h3 small { color: var(--muted); font-weight: 400; font-size: 12px; }
+.way p { font-size: 13.5px; color: var(--ink-2); }
+.aside { font-size: 13.5px; color: var(--ink-2); background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 10px 14px; max-width: none; }
+
+/* 그래프 */
+.charts { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
+.chart { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 16px 12px; display: grid; gap: 6px; min-width: 0; align-content: start; }
+.chart h3 { font-size: 14.5px; }
+.chart .how { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart .note { font-size: 12.5px; color: var(--ink-2); }
+
+/* 뱃지 — 색과 글자를 함께 */
+.badge { display: inline-flex; gap: 4px; align-items: center; font-size: 11.5px; padding: 1px 7px; border-radius: 999px; font-weight: 600; white-space: nowrap; border: 1px solid transparent; }
+.badge.bad { color: var(--bad); background: var(--bad-bg); }
+.badge.ok { color: var(--good); background: var(--good-bg); }
+.badge.guess { color: var(--bad); background: transparent; border: 1px dashed var(--bad); }
+.badge.none { color: var(--ink-2); background: var(--grid); }
+.badge.info { color: var(--ink-2); background: transparent; border-color: var(--line); font-weight: 500; }
+.weak { font-size: 11.5px; color: var(--muted); }
+
+/* 표 · details · 한계 */
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+summary:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--s2); outline-offset: 2px; }
+.tbl { overflow-x: auto; }
+table { border-collapse: collapse; font-size: 13px; width: 100%; min-width: 640px; }
+th, td { padding: 7px 8px; border-bottom: 1px solid var(--grid); text-align: left; vertical-align: top; }
+thead th { color: var(--muted); font-weight: 500; font-size: 12px; white-space: nowrap; }
+td.num { font-family: var(--font-mono); white-space: nowrap; text-align: right; }
+th.r { text-align: right; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+.legend-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; font-size: 13.5px; color: var(--ink-2); }
+.small { font-size: 13px; color: var(--muted); max-width: none; }
+.limits { display: grid; gap: 8px; font-size: 14px; color: var(--ink-2); margin: 0; padding-left: 18px; }
+footer { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 4px; overflow-wrap: anywhere; }
+
+/* 공고 목록 */
+.filters { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.filters label { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--ink-2); flex-wrap: wrap; }
+.filters input[type=search], .filters select { font: inherit; font-size: 13.5px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); max-width: 100%; min-width: 0; }
+.filters input[type=search] { flex: 1 1 240px; }
+.filters input[type=checkbox] { accent-color: var(--s2); }
+.count { font-size: 13px; color: var(--muted); }
+.list { display: grid; gap: 10px; }
+.nt { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; display: grid; gap: 8px; min-width: 0; }
+.nt-h { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; justify-content: space-between; }
+.nt-h a { font-weight: 600; text-decoration: none; overflow-wrap: anywhere; min-width: 0; }
+.nt-h a:hover { text-decoration: underline; }
+.nt-m { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; }
+.nt-m .id { font-family: var(--font-mono); }
+.vts { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; }
+.vt { display: inline-flex; gap: 6px; align-items: center; }
+.vt .tn { color: var(--ink-2); }
+.evs { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13.5px; color: var(--ink-2); }
+.evs li { overflow-wrap: anywhere; }
+.evs .k { color: var(--muted); font-size: 12.5px; margin-right: 6px; }
+.fix { font-size: 12.5px; color: var(--ink-2); border-left: 2px solid var(--line); padding-left: 8px; overflow-wrap: anywhere; }
+.nt details { padding: 0; border: 0; background: transparent; }
+.nt summary { font-weight: 500; font-size: 12.5px; color: var(--s2); }
+.nt details p { font-size: 13px; color: var(--ink-2); margin-top: 4px; max-width: none; }
+.more { font: inherit; font-size: 14px; padding: 8px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); cursor: pointer; justify-self: center; }
+.more:hover { border-color: var(--s2); }
+.empty { color: var(--muted); font-size: 14px; }
+
+@media (max-width: 860px) {
+  .headline, .facts { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+@media (max-width: 720px) {
+  .ways, .charts { grid-template-columns: minmax(0,1fr); }
+  .wrap { padding-inline: 16px; }
+}
+@media (max-width: 560px) {
+  table.stack { min-width: 0; }
+  table.stack thead { display: none; }
+  table.stack tr { display: grid; gap: 2px; padding: 8px 0; border-bottom: 1px solid var(--grid); }
+  table.stack td { border: 0; padding: 0; text-align: left; white-space: normal; }
+  table.stack td:first-child { font-weight: 600; }
+}
+@media (max-width: 380px) {
+  .headline, .facts { grid-template-columns: minmax(0,1fr); }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">S-Brain 공고 매칭 · 신청자 유형 판정</div>
+    <h1>신청자 유형 판정 결과</h1>
+    <p class="lede">공고마다 <b>예비창업자 · 개인사업자 · 법인</b>이 신청할 수 있는지를 AI가 공고 본문을 읽고 근거 문장과 함께 판정했습니다. 서비스는 이 판정을 <b>신청자가 예비창업자일 때만</b> 씁니다. 본문에 “안 된다”가 분명히 적힌 공고는 추천에서 빼고, “된다”가 적힌 공고는 되살리며, 추정만 되는 공고는 빼지 않고 뒤로 보냅니다.</p>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section aria-labelledby="h-use">
+    <h2 id="h-use">예비창업자 신청자에게 이렇게 씁니다</h2>
+    <div class="ways">
+      <div class="way">
+        <h3><span class="sw bad"></span>추천에서 뺍니다 <small>본문에 불가가 분명함</small></h3>
+        <p>지원대상·제외 문장에 “사업자등록증 보유”, “예비창업자 제외”처럼 예비창업자가 안 된다고 <b>분명히</b> 적혀 있고(근거 강함), 세부사업마다 조건이 다르지 않은 공고입니다.</p>
+      </div>
+      <div class="way w-good">
+        <h3><span class="sw good"></span>본문을 우선합니다 <small>본문에 가능이 적힘</small></h3>
+        <p>K-Startup이 주는 업력 칸(예: “7년미만”)만 보면 예비창업자가 빠지지만, 본문에는 “예비창업자 또는 창업 7년 미만”처럼 가능하다고 적힌 공고는 <b>본문을 믿고 되살립니다.</b></p>
+      </div>
+      <div class="way w-guess">
+        <h3><span class="sw guess"></span>순위만 뒤로 보냅니다 <small>불가로 추정됨</small></h3>
+        <p>대상이 “공장을 둔 중소기업”처럼 이미 사업 중인 곳으로만 적혀 있어 예비창업자는 어려워 <b>보이는</b> 공고입니다. 추정이라 빼지 않고 뒤로만 보냅니다.</p>
+      </div>
+    </div>
+    <p class="aside">개인사업자·법인 판정은 추천에 자동으로 쓰지 않습니다. 건수가 적고, 조건이 어느 세부사업에 걸리는지 따져야 해서 자격 확인 화면에 근거만 참고로 보여 줍니다. 새로 들어온 공고는 매일 배치가 같은 방식으로 판정하고(11단계), 결과를 공용 DB 표 <span class="num">notice_applicant_types</span>에 올립니다(13단계).</p>
+  </section>
+
+  <section aria-labelledby="h-head">
+    <h2 id="h-head">한눈에 보기</h2>
+    <p class="lede" id="head-lede"></p>
+    <div class="headline" id="headline"></div>
+    <dl class="facts" id="facts"></dl>
+  </section>
+
+  <section aria-labelledby="h-charts">
+    <h2 id="h-charts">판정 분포</h2>
+    <div class="charts" id="charts"></div>
+  </section>
+
+  <section aria-labelledby="h-check">
+    <h2 id="h-check">다른 AI로 다시 확인한 결과</h2>
+    <p class="lede">판정을 만든 AI와 별개로, Codex가 답을 보지 않은 채 공고 93건을 따로 판정한 뒤 맞춰 봤습니다. 서비스는 여기서 믿을 만했던 판정만 씁니다. 이것도 AI 판정이라 사람이 확정한 정답은 아닙니다.</p>
+    <div class="card tbl">
+      <table class="stack">
+        <thead><tr><th>판정 묶음</th><th class="r">맞춰 본 결과</th><th>서비스에서</th></tr></thead>
+        <tbody>
+          <tr><td>예비창업자 · 불가, 근거 강함</td><td class="num">30 / 30 일치</td><td><span class="badge bad">✕ 뺌</span> 표본 30건(전체 183건 중)</td></tr>
+          <tr><td>예비창업자 · API 업력 칸은 불가, 본문은 가능</td><td class="num">9 / 9 가능 확인</td><td><span class="badge ok">✓ 되살림</span> 해당 9건 전부 확인</td></tr>
+          <tr><td>예비창업자 · 불가 추정</td><td class="num">23 / 23 불가·추정</td><td><span class="badge guess">뒤로</span> 가능으로 본 경우 0건. 명시 불가인 경우도 섞여 있지만 추정이라 빼지 않음</td></tr>
+          <tr><td>예비창업자 · 불가, 근거 약함</td><td class="num">13 / 17 일치</td><td><span class="badge none">쓰지 않음</span> 문장이 분명한지, 어디에 걸리는지가 쟁점</td></tr>
+          <tr><td>개인사업자·법인 · 불가, 근거 강함</td><td class="num">개인 7 / 7 · 법인 8 / 8 일치</td><td><span class="badge none">쓰지 않음</span> 조건의 적용 범위를 따져야 해서 참고만</td></tr>
+          <tr><td>세 유형 모두 언급 없음</td><td class="num">0 / 10 일치</td><td><span class="badge guess">일부 뒤로</span> 놓친 불가가 있어 “등록 사업자 표현” 규칙을 추가</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small">“등록 사업자 표현” 규칙: AI가 예비창업자를 “언급 없음”이나 “근거 약한 불가”로 둔 공고라도, 근거 문장에 “사업자등록증명원 상의 소재지”, “정상가동 중인”처럼 이미 사업자 등록을 한 곳만 맞출 수 있는 표현이 있으면 불가 추정으로 올려 뒤로 보냅니다. 원문 대조에서 놓친 것으로 확인된 6건이 모두 여기에 들어갑니다. 출처: docs/reviews/applicant_type/ 의 판정 결과·원문 대조 문서(2026-09-28).</p>
+  </section>
+
+  <section aria-labelledby="h-list">
+    <h2 id="h-list">공고별 판정</h2>
+    <details>
+      <summary>판정 읽는 법</summary>
+      <ul class="legend-list">
+        <li><span class="badge ok">✓ 가능</span> 그 유형이 신청할 수 있다고 적혀 있습니다. 예) “예비창업자 및 창업 7년 이내 기업”</li>
+        <li><span class="badge bad">✕ 불가</span> 안 된다고 적혀 있습니다. 예) “사업자등록증 보유”, “법인사업자에 한함”</li>
+        <li><span class="badge guess">불가 추정</span> 예비창업자에만 있습니다. 대상이 이미 사업하는 곳으로만 적혀 있어 어려워 보이는 경우입니다.</li>
+        <li><span class="badge none">언급 없음</span> 판단할 문장이 없습니다. “중소기업·소상공인”은 규모 구분이라 개인/법인 판단에 쓰지 않습니다.</li>
+        <li><span class="weak">근거 약함</span> 근거 문장이 지원대상·신청자격 같은 자격 항목 아래에 있는지 확인하지 못한 경우입니다.</li>
+        <li><b>근거 검사로 낮춤</b> AI가 낸 근거를 코드가 다시 봅니다. 근거가 원문에 없거나, 제출 서류 설명이거나, 지원 내용 문맥이면 “언급 없음”으로 낮춥니다.</li>
+        <li><span class="badge info">API와 엇갈림</span> K-Startup 공고의 업력 칸(예: “예비창업자,1년미만”)이 말하는 예비창업자 가능 여부와 본문 판정이 다릅니다.</li>
+        <li>오른쪽 위 뱃지(<span class="badge bad">✕ 추천에서 뺌</span> 등)는 신청자가 예비창업자일 때 서비스가 그 공고를 어떻게 다루는지입니다.</li>
+      </ul>
+    </details>
+    <div class="filters" role="search">
+      <input type="search" id="fText" placeholder="제목·근거 문장·공고 번호 검색" aria-label="제목·근거 문장·공고 번호 검색">
+      <label>예비창업자 판정 <select id="fPre"><option value="">전체</option><option value="a">가능</option><option value="n">불가</option><option value="i">불가 추정</option><option value="m">언급 없음</option></select></label>
+      <label>서비스 처리 <select id="fSvc"><option value="">전체</option><option value="x">추천에서 뺌</option><option value="r">본문으로 되살림</option><option value="a">본문 가능</option><option value="d">순위 뒤로</option><option value="-">영향 없음</option></select></label>
+      <label>출처 <select id="fSrc"><option value="">전체</option><option value="b">기업마당</option><option value="k">K-Startup</option></select></label>
+      <label><input type="checkbox" id="fApi"> API 업력 칸과 엇갈림만</label>
+      <label><input type="checkbox" id="fVar"> 세부사업별로 다름만</label>
+    </div>
+    <div class="count" id="count" aria-live="polite"></div>
+    <div class="list" id="list"></div>
+    <button type="button" class="more" id="more" hidden>더 보기</button>
+  </section>
+
+  <section aria-labelledby="h-lim">
+    <h2 id="h-lim">읽을 때 주의할 점</h2>
+    <ul class="limits" id="limits"></ul>
+  </section>
+
+  <footer>
+    <span id="src"></span>
+    <span>S-Brain SKN32 1팀 · 공고 데이터·매칭 담당</span>
+  </footer>
+</div>
+
+<script>
+const DATA = /*DATA*/null;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = (n) => Number(n).toLocaleString('ko-KR');
+const pct = (a, b) => b ? (a / b * 100).toFixed(1) + '%' : '0%';
+const P = DATA.pool;
+const TYPE_KO = ['예비창업자', '개인사업자', '법인'];
+const ST_KO = { a: '가능', n: '불가', i: '불가 추정', m: '언급 없음' };
+const ST_BADGE = { a: '<span class="badge ok">✓ 가능</span>', n: '<span class="badge bad">✕ 불가</span>', i: '<span class="badge guess">불가 추정</span>', m: '<span class="badge none">언급 없음</span>' };
+const SVC = {
+  x: { t: '추천에서 뺌', b: 'bad', i: '✕ ' },
+  r: { t: '본문으로 되살림', b: 'ok', i: '✓ ' },
+  a: { t: '본문 가능', b: 'ok', i: '✓ ' },
+  d: { t: '순위 뒤로', b: 'guess', i: '' },
+  '-': { t: '영향 없음', b: 'none', i: '' },
+};
+
+// 압축된 행 → 객체. codes: 출처 · (상태, 강도)×3 · 세부사업 다름 · API 예비 가능 · 서비스 처리
+const ROWS = DATA.rows.map((a) => {
+  const c = a[2];
+  const st = [c[1], c[3], c[5]], sg = [c[2], c[4], c[6]];
+  const api = c[8] === '-' ? null : c[8] === '1';
+  const llmPre = st[0] === 'a' ? true : (st[0] === 'n' || st[0] === 'i') ? false : null;
+  const ev = [a[5] || 0, a[6] || 0, a[7] || 0].map((i) => P[i]);
+  return {
+    id: a[0], title: a[1], src: c[0], st, sg, varies: c[7] === '1', api, svc: c[9],
+    apiDiff: api !== null && llmPre !== null && api !== llmPre,
+    cat: P[a[3] || 0], age: P[a[4] || 0], ev, reason: a[8] || '', drops: a[9] || [], reg: a[10] ? P[a[10]] : '',
+    hay: (a[0] + ' ' + a[1] + ' ' + ev.join(' ')).toLowerCase(),
+  };
+});
+const url = (r) => r.src === 'b'
+  ? 'https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=' + encodeURIComponent(r.id)
+  : 'https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?schM=view&pbancSn=' + encodeURIComponent(r.id);
+
+// ── 집계: 페이지 안 데이터에서 직접 센다 ──
+const cnt = (f) => ROWS.reduce((n, r) => n + (f(r) ? 1 : 0), 0);
+const N = ROWS.length;
+const S = {
+  svc: Object.fromEntries(['x', 'r', 'a', 'd', '-'].map((k) => [k, cnt((r) => r.svc === k)])),
+  pre: Object.fromEntries(['a', 'n', 'i', 'm'].map((k) => [k, cnt((r) => r.st[0] === k)])),
+  preStrong: Object.fromEntries(['a', 'n'].map((k) => [k, cnt((r) => r.st[0] === k && r.sg[0] === 's')])),
+  sole: Object.fromEntries(['a', 'n', 'm'].map((k) => [k, cnt((r) => r.st[1] === k)])),
+  corp: Object.fromEntries(['a', 'n', 'm'].map((k) => [k, cnt((r) => r.st[2] === k)])),
+  reg: cnt((r) => r.reg),
+  varies: cnt((r) => r.varies),
+  apiCmp: cnt((r) => r.api !== null && r.st[0] !== 'm'),
+  apiDiff: cnt((r) => r.apiDiff),
+  apiNoBodyYes: cnt((r) => r.api === false && r.st[0] === 'a'),
+  apiYesBodyNo: cnt((r) => r.api === true && r.st[0] === 'n'),
+  apiYesBodyGuess: cnt((r) => r.api === true && r.st[0] === 'i'),
+  biz: cnt((r) => r.st[1] !== 'm' || r.st[2] !== 'm'),
+  bizNo: cnt((r) => r.st[1] === 'n' || r.st[2] === 'n'),
+  drops: ROWS.reduce((n, r) => n + r.drops.length, 0),
+};
+S.apiSame = S.apiCmp - S.apiDiff;
+
+function renderMeta() {
+  const m = DATA.meta;
+  $('meta').innerHTML = [
+    ['판정 실행', m.run_at.slice(0, 10)], ['공고', fmt(m.n) + '건'], ['기업마당', fmt(m.n_bizinfo) + '건'], ['K-Startup', fmt(m.n_kstartup) + '건'],
+    ['판정 AI', m.engine.replace(/@.*/, '')], ['실패', m.failures + '건'],
+  ].map(([a, b]) => `<span>${a} <b class="num">${esc(b)}</b></span>`).join('');
+  $('src').textContent = `출처: data-collection/reports/${m.run} (results.jsonl · meta.json) · 서비스 처리는 search/applicant_types.py 규칙으로 다시 계산 · 이 페이지를 만들 때 유료 API 호출 0, DB 쓰기 0`;
+}
+
+function renderHeadline() {
+  $('head-lede').innerHTML = `공고 <b class="num">${fmt(N)}</b>건을 판정했고 실패는 ${DATA.meta.failures}건입니다. 아래 네 칸은 신청자가 <b>예비창업자</b>일 때 서비스가 하는 일입니다. 칸을 누르면 아래 목록이 그 공고로 좁혀집니다.`;
+  const T = [
+    ['x', 'bad', '추천에서 뺌', '본문 불가 · 근거 강함 · 세부사업 공통'],
+    ['r', 'good', '본문으로 되살림', `API 업력 칸은 불가, 본문은 가능 (본문 가능 전체 ${fmt(S.svc.a + S.svc.r)}건 중)`],
+    ['d', 'guess', '순위만 뒤로', `불가 추정 ${fmt(S.pre.i)} + 등록 사업자 표현 ${fmt(S.reg)}`],
+    ['-', 'none', '영향 없음', '판정을 쓰지 않음(언급 없음·근거 약함 등)'],
+  ];
+  $('headline').innerHTML = T.map(([k, sw, name, sub]) => `
+    <button type="button" class="hl" data-svc="${k}" aria-label="${name} ${S.svc[k]}건, 목록에서 보기">
+      <span class="who"><span class="sw ${sw}"></span>${name}</span>
+      <span class="big">${fmt(S.svc[k])}</span>
+      <span class="sub">${sub}</span>
+    </button>`).join('');
+  $('headline').querySelectorAll('.hl').forEach((b) => b.addEventListener('click', () => {
+    resetFilters(); $('fSvc').value = b.dataset.svc; apply();
+    $('h-list').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+  const F = [
+    ['K-Startup API 업력 칸과 엇갈림', `<b>${fmt(S.apiDiff)}</b>건 / 비교 ${fmt(S.apiCmp)}건`],
+    ['세부사업별로 대상이 다름', `<b>${fmt(S.varies)}</b>건`],
+    ['개인사업자·법인 언급 있음', `<b>${fmt(S.biz)}</b>건 (그중 불가 ${fmt(S.bizNo)}건 · 참고만)`],
+    ['근거 검사로 낮춘 판정', `<b>${fmt(S.drops)}</b>개 (세 유형 합계)`],
+  ];
+  $('facts').innerHTML = F.map(([t, d]) => `<div><dt>${t}</dt><dd>${d}</dd></div>`).join('');
+}
+
+// ── 막대그래프: 한 그래프 = 한 단위(공고 수). 이름은 막대 위, 값은 막대 끝에 직접 ──
+const FILL = { good: 'var(--good)', bad: 'var(--bad)', guess: 'var(--bad)', none: 'var(--muted)', blue: 'var(--s2)' };
+function bars(rows, total, W) {
+  const R = 118, rowH = 46, top = 2;
+  const max = Math.max(...rows.map((r) => r.v));
+  const x = (v) => (v / max) * (W - R);
+  let g = '';
+  rows.forEach((r, i) => {
+    const y = top + rowH * i;
+    g += `<g role="img" aria-label="${esc(r.label)} ${r.v}건">`;
+    g += `<text x="0" y="${y + 12}" font-size="12.5" fill="var(--ink-2)">${esc(r.label)}</text>`;
+    const w = x(r.v);
+    if (w >= 1) g += `<rect x="0" y="${y + 18}" width="${w.toFixed(1)}" height="16" rx="4" fill="${FILL[r.c]}"${r.c === 'guess' ? ' fill-opacity=".45"' : ''}/>`;
+    else g += `<line x1="1.5" x2="1.5" y1="${y + 16}" y2="${y + 36}" stroke="${FILL[r.c]}" stroke-width="3" stroke-linecap="round"/>`;
+    g += `<text x="${(Math.max(w, 2) + 6).toFixed(1)}" y="${y + 30}" font-size="12" fill="var(--ink)" font-family="var(--font-mono)">${fmt(r.v)}건 · ${pct(r.v, total)}</text>`;
+    g += `</g>`;
+  });
+  const H = top + rowH * rows.length;
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${g}</svg>`;
+}
+
+function chartDefs() {
+  return [
+    { title: '예비창업자 — AI 판정', how: `공고 ${fmt(N)}건에서 AI가 본문을 읽고 낸 예비창업자 판정입니다(근거 검사 뒤). 비율은 전체 공고 대비.`, total: N, rows: [
+      { label: '가능', v: S.pre.a, c: 'good' }, { label: '불가', v: S.pre.n, c: 'bad' },
+      { label: '불가 추정', v: S.pre.i, c: 'guess' }, { label: '언급 없음', v: S.pre.m, c: 'none' }],
+      note: `불가 ${fmt(S.pre.n)}건 중 근거가 강한 것은 ${fmt(S.preStrong.n)}건이고, 그중 세부사업마다 다르지 않은 ${fmt(S.svc.x)}건만 추천에서 뺍니다. 가능 ${fmt(S.pre.a)}건 중 근거 강함은 ${fmt(S.preStrong.a)}건입니다.` },
+    { title: '예비창업자 신청자에게 서비스가 하는 일', how: '위 판정에 서비스 규칙(search/applicant_types.py)을 적용한 결과입니다. 비율은 전체 공고 대비.', total: N, rows: [
+      { label: '추천에서 뺌', v: S.svc.x, c: 'bad' }, { label: '본문으로 되살림', v: S.svc.r, c: 'good' },
+      { label: '본문 가능(원래도 통과)', v: S.svc.a, c: 'good' }, { label: '순위 뒤로', v: S.svc.d, c: 'guess' },
+      { label: '영향 없음', v: S.svc['-'], c: 'none' }],
+      note: `순위 뒤로 ${fmt(S.svc.d)}건 = AI의 불가 추정 ${fmt(S.pre.i)}건 + 등록 사업자 표현 규칙으로 올린 ${fmt(S.reg)}건.` },
+    { title: 'K-Startup API 업력 칸 vs 본문 판정', how: `업력 칸이 있는 K-Startup 공고 중 본문 판정이 가능·불가·불가 추정인 ${fmt(S.apiCmp)}건을 맞춰 봤습니다. 비율은 ${fmt(S.apiCmp)}건 대비.`, total: S.apiCmp, rows: [
+      { label: '같음', v: S.apiSame, c: 'blue' },
+      { label: 'API 가능 → 본문 불가 추정', v: S.apiYesBodyGuess, c: 'guess' },
+      { label: 'API 가능 → 본문 불가', v: S.apiYesBodyNo, c: 'bad' },
+      { label: 'API 불가 → 본문 가능', v: S.apiNoBodyYes, c: 'good' }],
+      note: `엇갈린 ${fmt(S.apiDiff)}건 중 “API 불가 → 본문 가능” ${fmt(S.apiNoBodyYes)}건이 서비스가 되살리는 공고입니다. “API 가능 → 본문 불가 추정”은 본문 대상이 “업력 N년 미만 창업기업”으로만 적힌 경우입니다.` },
+    { title: '개인사업자·법인 — AI 판정', how: '추천에는 쓰지 않고 자격 확인 화면에 참고로만 보여 줍니다. 비율은 전체 공고 대비.', total: N, rows: [
+      { label: '개인사업자 · 가능', v: S.sole.a, c: 'good' }, { label: '개인사업자 · 불가', v: S.sole.n, c: 'bad' },
+      { label: '개인사업자 · 언급 없음', v: S.sole.m, c: 'none' },
+      { label: '법인 · 가능', v: S.corp.a, c: 'good' }, { label: '법인 · 불가', v: S.corp.n, c: 'bad' },
+      { label: '법인 · 언급 없음', v: S.corp.m, c: 'none' }],
+      note: '대부분의 공고가 “중소기업”, “소상공인”처럼 규모로만 대상을 적어 개인/법인을 가리지 않습니다.' },
+  ];
+}
+
+function renderCharts() {
+  const box = $('charts'), cols = window.matchMedia('(max-width: 720px)').matches ? 1 : 2;
+  const W = Math.max(250, Math.round((box.clientWidth - (cols - 1) * 14) / cols - 34));
+  $('charts').innerHTML = chartDefs().map((c) => `
+    <div class="chart">
+      <h3>${c.title}</h3>
+      <div class="how">${c.how}</div>
+      ${bars(c.rows, c.total, W)}
+      <div class="note">${c.note}</div>
+    </div>`).join('');
+}
+
+// ── 목록: 처음 50건 + 더 보기 ──
+const PAGE = 50;
+let shown = PAGE, filtered = ROWS;
+
+function resetFilters() {
+  $('fText').value = ''; $('fPre').value = ''; $('fSvc').value = ''; $('fSrc').value = '';
+  $('fApi').checked = false; $('fVar').checked = false;
+}
+
+function apply() {
+  const q = $('fText').value.trim().toLowerCase();
+  const pre = $('fPre').value, svc = $('fSvc').value, src = $('fSrc').value;
+  const onlyApi = $('fApi').checked, onlyVar = $('fVar').checked;
+  filtered = ROWS.filter((r) => (!pre || r.st[0] === pre) && (!svc || r.svc === svc) && (!src || r.src === src)
+    && (!onlyApi || r.apiDiff) && (!onlyVar || r.varies) && (!q || r.hay.includes(q)));
+  shown = PAGE;
+  try { localStorage.setItem('at-filters', JSON.stringify({ pre, svc, src, onlyApi, onlyVar })); } catch (e) {}
+  render();
+}
+
+function card(r) {
+  const s = SVC[r.svc];
+  const vts = [0, 1, 2].map((i) => `<span class="vt"><span class="tn">${TYPE_KO[i]}</span>${ST_BADGE[r.st[i]]}${r.sg[i] === 'w' ? '<span class="weak">근거 약함</span>' : ''}</span>`).join('');
+  const groups = [];   // 같은 근거 문장은 한 번만
+  r.ev.forEach((e, i) => { if (!e) return; const g = groups.find((x) => x.e === e); if (g) g.t.push(TYPE_KO[i]); else groups.push({ e, t: [TYPE_KO[i]] }); });
+  const evs = groups.length ? `<ul class="evs">${groups.map((g) => `<li><span class="k">${g.t.join('·')}</span>“${esc(g.e)}”</li>`).join('')}</ul>` : '';
+  const meta = [`<span>${r.src === 'b' ? '기업마당' : 'K-Startup'}</span>`, `<span class="id">${esc(r.id)}</span>`];
+  if (r.cat) meta.push(`<span>대상 분류: ${esc(r.cat)}</span>`);
+  if (r.api !== null) meta.push(`<span>API 업력 칸 “${esc(r.age)}” → 예비창업자 ${r.api ? '가능' : '불가'}</span>${r.apiDiff ? '<span class="badge info">API와 엇갈림</span>' : ''}`);
+  if (r.varies) meta.push('<span class="badge info">세부사업별로 다름</span>');
+  const fixes = r.drops.map(([t, raw, why]) => `<div class="fix">근거 검사로 낮춤 · ${TYPE_KO[t]}: AI는 “${ST_KO[raw]}” → 언급 없음 (이유: ${esc(P[why])})</div>`).join('')
+    + (r.reg ? `<div class="fix">등록 사업자 표현 “${esc(r.reg)}”이 있어 예비창업자를 불가 추정으로 올림 → 순위 뒤로</div>` : '');
+  return `<article class="nt">
+    <div class="nt-h"><a href="${url(r)}" target="_blank" rel="noopener noreferrer">${esc(r.title) || '(제목 없음)'}</a>
+      <span class="badge ${s.b}" title="예비창업자 신청자에게 서비스가 하는 일">${s.i}${s.t}</span></div>
+    <div class="nt-m">${meta.join('<span aria-hidden="true">·</span>')}</div>
+    <div class="vts">${vts}</div>
+    ${evs}${fixes}
+    ${r.reason ? `<details><summary>AI가 적은 판단 이유</summary><p>${esc(r.reason)}</p></details>` : ''}
+  </article>`;
+}
+
+function render() {
+  const part = filtered.slice(0, shown);
+  $('count').textContent = `조건에 맞는 공고 ${fmt(filtered.length)}건 중 ${fmt(part.length)}건 표시`;
+  $('list').innerHTML = part.length ? part.map(card).join('') : '<p class="empty">조건에 맞는 공고가 없습니다.</p>';
+  const rest = filtered.length - part.length;
+  $('more').hidden = rest <= 0;
+  $('more').textContent = `더 보기 (${fmt(Math.min(PAGE, rest))}건 더 · 남은 ${fmt(rest)}건)`;
+}
+
+function renderLimits() {
+  const m = DATA.meta;
+  const L = [
+    `<b>AI 판정이며 사람이 검수한 결과가 아닙니다.</b> 판정 AI(${esc(m.engine.replace(/@.*/, ''))})가 본문 발췌를 읽고 낸 값이고, 다시 확인한 Codex도 AI입니다. Codex가 맞춰 본 것은 93건 표본이라 “근거 강한 불가 30/30”도 ${fmt(S.svc.x)}건 전체를 보증하지는 않습니다.`,
+    `<b>저장된 실행(${m.run_at.slice(0, 10)}) 기준입니다.</b> 그 뒤 매일 배치가 새 공고를 판정해 공용 DB에 올리므로 9/29 기준 DB에는 2,525건이 있습니다. 이 페이지의 ${fmt(N)}건과 수가 다르고, 그 뒤에 들어온 공고는 여기에 없습니다.`,
+    `<b>“서비스 처리”는 지금 코드 규칙으로 다시 계산한 값입니다.</b> 등록 사업자 표현 규칙으로 올린 ${fmt(S.reg)}건도 포함합니다. 실제 추천에서는 “추천에서 뺌” 공고 중 일부가 이미 마감이나 업력 조건으로 먼저 빠져 있을 수 있습니다.`,
+    `<b>API 업력 칸 비교는 K-Startup 공고에만 있습니다.</b> 기업마당 공고에는 그 칸이 없어 비교 ${fmt(S.apiCmp)}건에 들어가지 않습니다.`,
+    `<b>개인사업자·법인 판정은 참고용입니다.</b> 조건이 특정 세부사업에만 걸리는 경우가 있어 추천에서 자동으로 빼거나 올리지 않습니다.`,
+    `<b>원문 링크는 기업마당·K-Startup 사이트로 연결됩니다.</b> 마감되거나 내려간 공고는 열리지 않을 수 있습니다. 판정 비용 약 $${Number(m.cost_usd).toFixed(2)}는 토큰 단가로 추정한 값입니다.`,
+  ];
+  $('limits').innerHTML = L.map((x) => `<li>${x}</li>`).join('');
+}
+
+['fPre', 'fSvc', 'fSrc', 'fApi', 'fVar'].forEach((id) => $(id).addEventListener('change', apply));
+let tq; $('fText').addEventListener('input', () => { clearTimeout(tq); tq = setTimeout(apply, 150); });
+$('more').addEventListener('click', () => { shown += PAGE; render(); });
+
+try {
+  const f = JSON.parse(localStorage.getItem('at-filters') || 'null');
+  if (f) { $('fPre').value = f.pre || ''; $('fSvc').value = f.svc || ''; $('fSrc').value = f.src || ''; $('fApi').checked = !!f.onlyApi; $('fVar').checked = !!f.onlyVar; }
+} catch (e) {}
+renderMeta(); renderHeadline(); renderCharts(); renderLimits(); apply();
+let lastW = $('charts').clientWidth, rz;
+window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { const w = $('charts').clientWidth; if (w !== lastW) { lastW = w; renderCharts(); } }, 150); });
+</script>

@@ -32,7 +32,7 @@ K-Startup·기업마당 오픈API 에서 지원사업 공고를 매일 한 번 �
  13  판정 올리기 신청자 유형·업종 → 공용 DB notice_applicant_types·notice_industries (바뀐 행만, 2026-09-28)
 ```
 
-**5~11단계는 바뀐 것만 처리합니다.** 실측으로 신규 49건이 들어온 날
+**5~13단계는 바뀐 것만 처리합니다.** 실측으로 신규 49건이 들어온 날
 첨부 49건 · 임베딩 49건만 처리하고 나머지 1,951건은 건너뛰었습니다.
 
 ---
@@ -51,8 +51,9 @@ tests/        시험 코드
 docs/         문서 · 제출물 — 무엇이 어디 있는지는 docs/README.md(문서 지도)
 eval/         검색 품질 평가 (질의·판정·지표)
 ml/           리랭커·업력 분류기 학습 (서비스 미연결)
+share/        검증 화면 결과를 서버 없이 보는 공유 HTML 5장과 생성 스크립트 — share/README.md
 data/         산출물 — 원본 스냅샷·벡터·첨부 (git 제외)
-reports/      배치 실행 기록 (git 제외)
+reports/      실험·평가 결과 기록 (git 에 올라감 · 기존 폴더는 덮어쓰지 않음)
 ```
 
 **패키지라서 파일을 직접 부르지 않고 `-m` 으로 부릅니다.** 항상 이 폴더에서 실행합니다.
@@ -71,7 +72,7 @@ reports/      배치 실행 기록 (git 제외)
 
 | 파일 | 하는 일 |
 |---|---|
-| `collect/daily_pipeline.py` | **진입점.** 다섯 단계를 순서대로 부른다 |
+| `collect/daily_pipeline.py` | **진입점.** 13단계를 순서대로 부른다 |
 | `collect/fetch.py` | K-Startup 오픈API 호출. 100건씩 쪽 나눔 |
 | `collect/fetch_bizinfo.py` | 기업마당 오픈API 호출. 한 번에 전량 |
 | `collect/daily_job.py` | K-Startup 수집·검증·원자적 교체 |
@@ -144,17 +145,22 @@ DB 를 처음 만든다면,
 --skip-store       MySQL 저장 생략
 --skip-attach      첨부 수집 생략
 --attach-limit N   이번 실행에서 받을 첨부 상한
+--attach-interval S  첨부 요청 간격(초). 기본 1.0
 --skip-embed       임베딩 생략 (torch·chromadb 없이도 돈다)
 --embed-limit N    이번 실행에서 만들 벡터 상한
 --skip-upload      벡터를 공용 DB 로 올리지 않는다
 --skip-files       첨부 원본 파일을 올리지 않는다
 --force            건수 급감 경고 무시
 --skip-conditions  자격요건 추출(LLM) 생략
+--conditions-limit N       이번 실행에서 자격요건을 뽑을 공고 상한
 --skip-applicant-types     신청자 유형 추출(LLM) 생략
 --applicant-types-limit N  이번 실행에서 신청자 유형을 뽑을 공고 상한 (기본 300)
+--skip-industries          업종 추출(LLM) 생략
+--industries-limit N       이번 날짜의 업종 추출 공고 상한 (기본 300)
+--skip-judgments           판정(신청자 유형·업종)을 공용 DB 로 올리지 않는다
 ```
 
-종료 코드: `0` 성공 · `1` 실패 · `2` 부분 실패 · `3` 이미 실행 중 · `4` 수집은 성공, 후처리(LLM 10·11단계) 경고(로그 `stage_warnings`, 매칭은 막지 않음)
+종료 코드: `0` 성공 · `1` 실패 · `2` 부분 실패 · `3` 이미 실행 중 · `4` 수집은 성공, 후처리(10~13단계: LLM 추출·판정 올리기) 경고(로그 `stage_warnings`, 매칭은 막지 않음)
 
 ## 검증
 
@@ -162,4 +168,4 @@ DB 를 처음 만든다면,
 .\.venv\Scripts\python.exe -X utf8 -m unittest discover -s tests
 ```
 
-81개 통과를 확인했습니다(MySQL 통합 13개는 접속 정보가 없으면 건너뜁니다).
+2026-09-29 기준 637개 통과를 확인했습니다(MySQL 통합 13개는 접속 정보가 없으면 건너뜁니다).
