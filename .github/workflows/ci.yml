@@ -16,6 +16,9 @@ jobs:
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
+          # UTF-8 BOM(U+FEFF) 제거
+          PR_TITLE="${PR_TITLE#$'\ufeff'}"
+
           if ! printf '%s\n' "$PR_TITLE" | grep -qE '^\[[A-Z][A-Z0-9]*-[0-9]+\][[:space:]]+.+$'; then
             echo "::error::PR 제목은 '[이슈키] 설명' 형식이어야 합니다. 예: [SB-12] 로그인 기능 구현"
             exit 1
