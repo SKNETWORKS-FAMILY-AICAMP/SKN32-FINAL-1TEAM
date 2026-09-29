@@ -1,10 +1,21 @@
+# --- 비밀값 (절대 커밋 금지) ---
+.env
+*.env.local
+
 # Python
 __pycache__/
+*.py[cod]
 *.pyc
+.egg-info/
+.eggs/
 .venv/
 venv/
+env/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
 
 # Node
 node_modules/
@@ -15,5 +26,18 @@ dist-ssr/
 # Editors / OS
 .vscode/
 .idea/
+*.swp
 .DS_Store
 Thumbs.db
+
+# --- 로그/DB/업로드된 첨부파일(로컬 디스크 저장) ---
+*.log
+*.db
+*.sqlite3
+**/uploads/
+
+# --- 개인 로컬 테스트용 ---
+login_test.html
+
+# --- rhwp CLI 실행 파일 (28MB, 각자 릴리즈에서 받음 — web/backend/scripts/README.md) ---
+web/backend/rhwp.exe

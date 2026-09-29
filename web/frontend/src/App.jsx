@@ -1,122 +1,382 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import React,{useState,useEffect,useRef,useMemo,Suspense,lazy} from 'react';
+import Landing,{MyPageNudge} from './components/Landing.jsx';
+import {WorkspaceShell,Dashboard} from './components/Workspace.jsx';
+import {LoginModal,fetchCurrentUser,logout,needsRequiredConsent} from './components/Login.jsx';
+import AdminDashboard from './features/Admin.jsx';
+import MyPage from './features/mypage/MyPage.jsx';
+import {useMyPageStore} from './store/useMyPageStore.js';
+import {IntakeForm,MatchProgress,MatchResults,EligibilityGate,PlanForm,ArtifactResult,FinalVerdict,ReviewScreen,GenerationProgress} from './features/Workflow.jsx';
+import {createProject,deleteProject,getProject,getProjectResult,getProjectStatus} from './api.js';
+import {NoticeClosedBanner,RunBlockedDialog} from './components/RunDialogs.jsx';
+import {useWorkflowStore} from './store/useWorkflowStore.js';
+import {scoresFromResult,reworkBudgetFrom} from './features/workflow/utils.js';
 
-function App() {
-  const [count, setCount] = useState(0)
+// [2026-09-15, 프론트 통합 임시 구현] "단가" 입력칸은 자유 텍스트("500원" 등)라서 서버가
+// 기대하는 숫자(unit_price)를 뽑아내려면 이 정도 파싱이 필요하다 — 숫자를 못 찾으면 null(미정)로 보낸다.
+// 사업계획서~검수 사이에서 나갔다가 "이어서 진행하기"로 돌아오면 항상 검수(끝)로
+// 보내던 버그 수정용. 지금 더미 파이프라인은 공고를 고르는 순간 계획서·프로토타입·
+// 최종판정을 한 번에 다 만들어 버려서(back/app/routers/projects.py의 generate_pipeline_result
+// 주석 참고 — 실제 Agent 파이프라인이 생기기 전까지 stage는 항상 곧장 'done'이 됨) 서버
+// status로는 마지막으로 보던 화면을 구분 못 한다. 그래서 화면 전환 자체를 프로젝트별로
+// localStorage에 남겨두고, 다시 열 때 거기부터 이어서 보여준다.
+const RESUMABLE_VIEWS=['plan-progress','plan-form','artifact-progress','artifact-result','final-verdict','review'];
+// 저장된 화면이 없을 때 서버 진행 단계(match_results.stage)로 돌아갈 화면을 정한다.
+const VIEW_BY_STAGE={plan_writing:'plan-progress',plan_review_pending:'plan-form',prototype_building:'artifact-progress',artifact_review:'artifact-result',final_review_pending:'final-verdict'};
+const lastViewKey=(projectId)=>`sbrain-last-view:${projectId}`;
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+function parsePrice(text){
+ const digits=(text||'').replace(/[^0-9.]/g,'');
+ if(!digits)return null;
+ const n=Number(digits);
+ return Number.isFinite(n)?n:null;
 }
 
-export default App
+// 프로젝트 작성 화면의 나머지 입력값 — 요청 형식은 프론트가 확정했다(백엔드 전달사항 문서 참고).
+// 서버 ProjectCreateRequest에 아직 필드가 없어 지금은 서버가 무시하고, 필드를 추가하면 그대로 저장된다.
+// 선택지 값(성별·이력 구분·상태)은 화면 표시 문자열 그대로, 금액은 숫자, 월은 YYYY-MM.
+function intakeDetailPayload(info){
+ const text=(v)=>(v||'').trim()||null;
+ const f=info.selfFunding;
+ return {
+  ceo_birth_date:info.birthDate||null,
+  ceo_gender:info.gender||null,
+  region_sido:info.region?.sido||null,
+  region_sigungu:text(info.region?.sigungu),
+  main_industry:text(info.industry),
+  certifications:info.certs||[],
+  ceo_careers:(info.careers||[]).map(c=>({type:c.type||null,title:text(c.title),period:text(c.period),has_proof:!!c.hasProof})),
+  ceo_capability:text(info.skills),
+  dev_start_month:info.devPeriod?.start||null,
+  dev_end_month:info.devPeriod?.end||null,
+  budget_scale_manwon:info.budgetScale?Number(info.budgetScale):null,
+  self_funding_allowed:f?f.available:null,
+  self_cash_limit:f?.available&&f.cashLimit?Number(f.cashLimit):null,
+  self_in_kind_resources:f?.available?text(f.inKindResources):null,
+  no_hires:!!info.noHires,
+  hires:(info.hires||[]).map(h=>({job:text(h.job),headcount:text(h.count),required_skill:text(h.skill),hire_month:h.when||null})),
+  no_equipment:!!info.noEquipment,
+  equipment:(info.equipment||[]).map(e=>({name:text(e.name),status:e.status||null})),
+  no_partners:!!info.noPartners,
+  partners:(info.partners||[]).map(p=>({name:text(p.name),status:p.status||null})),
+ };
+}
+
+export default function App(){
+ const projectRequest=useRef(0);
+ const authVersion=useRef(0);
+ const [view,setViewState]=useState('landing');
+ // 화면을 떠나는 즉시 진행 중이던 요청의 화면 갱신 권한을 무효화한다.
+ const setView=(next)=>{projectRequest.current++;setViewState(next)};
+ const [notifyEnabled,setNotifyEnabled]=useState(true);
+ const [user,setUser]=useState(null);const [loginOpen,setLoginOpen]=useState(false);const [consentOpen,setConsentOpen]=useState(false);const [authChecked,setAuthChecked]=useState(false);
+ const [myPageNudgeOpen,setMyPageNudgeOpen]=useState(false);
+ // [2026-09-28] 계정당 동시 실행 1건 제한(E-RUN-CONCURRENT)에 걸렸을 때 POST /projects가
+ // 409와 함께 내려주는 정보 + 그때 사용자가 넣으려던 입력값. "중단하고 새로 시작"을 고르면
+ // 이 입력값 그대로 다시 만들어준다(다시 입력하게 하지 않는다).
+ const [blockedRun,setBlockedRun]=useState(null);
+ const [blockedBusy,setBlockedBusy]=useState(false);
+ // 이어하기로 돌아온 시점에 고른 공고가 마감된 경우(E-RUN-CLOSED) — 알리기만 하고 막지 않는다.
+ const [noticeClosed,setNoticeClosed]=useState(false);
+ // 현재 진행 중인 프로젝트/워크플로우 데이터(itemInfo, announcement, projectId, pipelineResult,
+ // matchCandidates, checkedFailedTitles, returnToDashboard, scoreOutcome/docOutcome/artifactOutcome)는
+ // 전역 스토어(store/useWorkflowStore.js, Zustand)가 들고 있다 — 아래 화면들에는 지금처럼 그대로
+ // props로 넘긴다. 매칭 후보(matchCandidates)는 여기서 들고 있는다 — MatchResults 안에 두면 자격
+ // 확인 화면을 다녀올 때마다 컴포넌트가 다시 마운트되면서 후보를 새로 받아오고, 임시 백엔드가
+ // 매번 random으로 점수를 매겨서 공고 목록과 적합도가 통째로 바뀌어 버린다(사용자 지적). 프로젝트가
+ // 바뀔 때만 비운다. projectId/pipelineResult는 eligibility-gate부터 화면에 그대로 뿌린다
+ // (app/routers/projects.py _build_demo_response 참고).
+ const {
+  itemInfo,announcement,checkedFailedTitles,returnToDashboard,scoreOutcome,docOutcome,artifactOutcome,
+  projectId,pipelineResult,matchCandidates,reworkCounts,
+  setItemInfo,setAnnouncement,setCheckedFailedTitles,setReturnToDashboard,setDocOutcome,setArtifactOutcome,
+  setProjectId,setPipelineResult,setMatchCandidates,setVerdictPending,resetScoreOutcome,resetProject,countRework,resetReworkCounts,
+ }=useWorkflowStore();
+ // 서버가 실제로 매긴 점수(GET /result의 verdict + score_reasons)를 화면 모양으로 바꾼다.
+ // 판정 전이면 null이고, 그때는 각 화면이 기존 고정 표(data.js)로 돌아간다 — 채점도 안 한
+ // 프로젝트에 점수를 지어내지 않기 위해서다. 예전엔 verdict에서 통과 여부 하나만 꺼내 쓰고
+ // 점수는 늘 고정값이었는데, 그 탓에 화면 점수와 내려받는 검증결과서 점수가 어긋났다
+ // (검증결과서는 verificationReport.js가 verdict 실제 값으로 만든다).
+ const scores=useMemo(()=>scoresFromResult(pipelineResult),[pipelineResult]);
+ // 서버가 세는 재작성 예산(SB-152). 이게 오면 화면 상수(RERUN_CAP)와 자체 카운트 대신
+ // 이 값을 쓴다 — 새로고침해도 유지되고, 관리자가 상한을 바꾸면 화면도 따라간다.
+ const reworkBudget=useMemo(()=>reworkBudgetFrom(pipelineResult),[pipelineResult]);
+ // 재작성(retry-task)은 서버에서 해당 Task를 다시 돌리고 검증-1/2 재채점까지 붙어 있다
+ // (app/routers/projects.py retry_task). 그래서 재작성이 끝나면 /result를 다시 받아야
+ // 화면 점수가 실제로 바뀐다 — 안 그러면 서버 점수는 올랐는데 화면은 옛 값을 들고 있는다.
+ const refreshResult=async()=>{
+  if(!projectId)return;
+  try{
+   const r=await getProjectResult(projectId);
+   setPipelineResult(r);
+   setVerdictPending(r?.verdict==null);
+   if(r?.verdict)resetScoreOutcome(r.verdict.overall_passed?'pass':'fail');
+  }catch(err){console.error('갱신된 점수를 불러오지 못했어요',err)}
+ };
+ useEffect(()=>{window.scrollTo({top:0});document.title=(view==='landing'?'아이디어를 다음 단계로':'나의 워크스페이스')+' | S-Brain'},[view]);
+ // 위 RESUMABLE_VIEWS 화면에 머무는 동안엔 매번 "지금 보던 화면"을 기록해둔다 — 검수는
+ // 편도(4-7)라 한 번 도달하면 그 뒤로도 계속 검수로 남는 게 맞다.
+ useEffect(()=>{
+  if(projectId&&RESUMABLE_VIEWS.includes(view)){
+   const saved=localStorage.getItem(lastViewKey(projectId));
+   if(saved!=='review')localStorage.setItem(lastViewKey(projectId),view);
+  }
+ },[view,projectId]);
+ // 새로고침해도 로그인 상태가 유지되게, 마운트 시 세션 쿠키가 아직 유효한지 GET /auth/me로
+ // 한 번 확인한다. 유효하면(200) 그 응답으로 user를 복원 — 로그인 화면도, 동의 화면도 다시
+ // 안 거친다(백엔드가 users 테이블에 이미 행이 있다는 것 자체를 "예전에 필수 동의를 마쳤다"는
+ // 근거로 취급하는 셈 — 필수 동의 자체를 저장하는 컬럼은 없어서 이게 최선). 401이면(로그인
+ // 안 된 상태) fetchCurrentUser가 null을 돌려주므로 아무 것도 안 하고 기존처럼 로그인 버튼을 보여준다.
+ useEffect(()=>{
+  let cancelled=false;
+  fetchCurrentUser().then(u=>{
+   if(cancelled)return;
+   if(!u){useMyPageStore.getState().reset();return}
+   setUser(u);setNotifyEnabled(u.notify_enabled);
+   // 로그인된 채로 다시 연 세션은 구글 로그인 응답(has_agreed_terms)을 거치지 않는다 — 새로 생긴
+   // 필수 동의(만 16세 이상 등)가 비어 있으면 여기서 동의 화면을 띄운다.
+   if(needsRequiredConsent(u))setConsentOpen(true);
+   // 마이페이지 정보 슬롯을 서버에서 끌어온다 — 이걸 안 하면 다른 기기에서 저장한 값이
+   // 이 브라우저의 로컬 캐시(onboarded:false)에 가려서 또 저장하라고 뜬다(useMyPageStore.js
+   // loadProfiles 주석 참고).
+   useMyPageStore.getState().loadProfiles();
+  }).finally(()=>{if(!cancelled)setAuthChecked(true)});
+  return ()=>{cancelled=true};
+ },[]);
+ // 마이페이지를 "저장"으로 확정하기 전까지는 실제 기능 화면으로 못 들어가게 막는다 —
+ // user.has_profile은 서버가 /auth/me·로그인 응답마다 계산해서 내려주는 값이라(프론트 담당자
+ // 인계서, back/app/routers/profile.py compute_has_profile) 로그아웃 후 재로그인하거나
+ // 다른 기기에서 로그인해도 정확하다 — 브라우저 로컬 상태(예전 useMyPageStore의 onboarded)
+ // 에만 의존하면 로그아웃 시 로컬을 비우는 순간 "저장 안 한 것"처럼 보이는 문제가 있었다.
+ // 랜딩은 예외라 로그인만 하고 정보 저장 전에도 자유롭게 구경할 수 있다 — 실제로 막는
+ // 시점은 "시작하기"를 눌러 대시보드로 들어가려는 순간(아래 startFlow)이다. 이 effect는
+ // 그 이후에도 저장 없이 다른 메뉴로 나가려 하면(홈 제외) 다시 막아주는 안전망이다.
+ // 관리자 계정은 예외로 둔다.
+ useEffect(()=>{
+  if(!authChecked||!user||user.role==='admin'){setMyPageNudgeOpen(false);return}
+  if(view==='landing'||view==='mypage'){setMyPageNudgeOpen(false);return}
+  setMyPageNudgeOpen(!user.has_profile);
+ },[view,user,authChecked]);
+ const startNewProject=()=>{projectRequest.current++;resetProject();resetScoreOutcome('fail');setNoticeClosed(false);setView('intake')};
+
+ const handleIntakeSubmit=async(info)=>{
+  setItemInfo({...info});
+  setCheckedFailedTitles([]);
+  setMatchCandidates(null);
+  resetScoreOutcome('fail');
+  resetReworkCounts(); // 새로 만드는 프로젝트라 횟수도 새로 센다
+  setProjectId(null);
+  setView('match-progress');
+  const request=projectRequest.current;
+  try{
+   const payload={
+    // [2026-09-17] applicant_type(신청자 유형)은 IntakeForm이 필수로 물어보는데도 지금까지
+    // 여기서 빠져 있어서, 화면에서 고른 값이 서버로 안 가고 그냥 버려지고 있었다(담당자
+    // 지적으로 발견) — companies.applicant_type 컬럼/저장 로직 추가(app/models.py,
+    // app/routers/projects.py)와 같이 고쳤다.
+    applicant_type:info.applicantType||null,
+    // [2026-09-17 삭제] start_type/notify_region/notify_industry는 IntakeForm이 입력칸 자체를
+    // 안 물어보는데도 팀 테스트 스크립트와 맞추려고 '온라인'/'전국'/'기타' 고정값을 계속
+    // 보내고 있었다(리뷰 중 실제 INSERT 로그로 발견, "지워" 지시). 백엔드도 더 이상
+    // 이 필드들을 받지 않으므로(app/schemas.py ProjectCreateRequest 참고) 여기서도 뺐다.
+    // 나중에 진짜 입력칸이 생기면 그때 다시 추가.
+    biz_type:null,
+    ceo_name:info.ceoName||null,
+    founded_at:info.foundedAt||null,
+    // [2026-09-23] 서버는 진작부터 받을 준비가 돼 있었는데(ProjectCreateRequest.business_reg_no)
+    // 프론트가 안 보내서, 마이페이지에 사업자등록번호를 적어둬도 사업계획서 일반현황 칸이
+    // ○○○-○○-○○○○○로 나왔다(사용자 지적 — 생성된 PDF 캡처로 확인).
+    business_reg_no:info.bizNo||null,
+    company_name:info.companyName||null,
+    description:info.item,
+    team_members:(info.team||[]).map(t=>({name:t.name,role:t.role||null,experience:t.career||t.experience||null})),
+    pricing_items:(info.pricing||[]).map(p=>({service_name:p.item,unit_price:parsePrice(p.price)})),
+    ...intakeDetailPayload(info),
+   };
+   const project=await createProject(payload,info.files||[]);
+   if(request!==projectRequest.current)return;
+   setProjectId(project.project_id);
+  }catch(err){
+   if(request!==projectRequest.current)return;
+   // [2026-09-28] 동시 실행 1건 제한(E-RUN-CONCURRENT)은 "실패"가 아니라 사용자가 고를 일이다 —
+   // 서버가 409 detail에 {blocked, active_project_id, active_stage, active_screen}을 구조화해서
+   // 주므로(app/routers/projects.py), alert로 JSON을 덤프하지 말고 선택 화면을 띄운다.
+   if(err.status===409&&err.detail&&err.detail.blocked){
+    setBlockedRun({...err.detail,info});
+    setView('intake');
+    return;
+   }
+   // 필수 동의 미완료(E-AUTH-CONSENT 403) — 원문 alert 대신 동의 화면을 띄운다. 입력값(itemInfo)은
+   // 그대로 남아 있어서 동의 후 다시 제출하면 된다.
+   if(err.status===403&&String(err.message||'').includes('동의')){
+    setConsentOpen(true);
+    setView('intake');
+    return;
+   }
+   console.error('프로젝트를 만들지 못했어요',err);
+   window.alert(err.message||'프로젝트를 만들지 못했어요. 다시 시도해 주세요.');
+   setView('intake');
+  }
+ };
+
+ // 위 선택 화면의 두 버튼. "이어서 진행하기"는 진행 중이던 프로젝트를 그대로 연다.
+ const resumeBlockedRun=()=>{
+  const blocked=blockedRun;
+  setBlockedRun(null);
+  if(!blocked)return;
+  // active_stage가 없으면 아직 공고를 고르기 전이라 매칭 화면으로 가야 한다(handleOpenProject 분기).
+  handleOpenProject({id:blocked.active_project_id,matched:!!blocked.active_stage,announcementTitle:''});
+ };
+ // "중단하고 새로 시작하기" — 서버엔 별도 엔드포인트가 없고 DELETE /projects/{id}가 그 역할이다
+ // (보관 처리돼 동시 실행 제한에서 빠진다). 지운 뒤 방금 입력값 그대로 다시 만들어준다.
+ const restartBlockedRun=async()=>{
+  const blocked=blockedRun;
+  if(!blocked)return;
+  setBlockedBusy(true);
+  try{
+   await deleteProject(blocked.active_project_id);
+   setBlockedRun(null);
+   await handleIntakeSubmit(blocked.info);
+  }catch(err){
+   console.error('진행 중인 작업을 중단하지 못했어요',err);
+   window.alert('진행 중인 작업을 중단하지 못했어요. 다시 시도해 주세요.');
+  }finally{
+   setBlockedBusy(false);
+  }
+ };
+
+ // targetView: 알림에서 열 때처럼 특정 화면으로 바로 가야 할 때만 넘긴다.
+ const handleOpenProject=async(project,targetView)=>{
+  // 이전 프로젝트 화면을 먼저 닫아 요청 중인 작업과 마지막 화면 기록을 분리한다.
+  setView('dashboard');
+  const request=++projectRequest.current;
+  setReturnToDashboard(true);
+  setMatchCandidates(null);
+  setCheckedFailedTitles([]);
+  resetReworkCounts(); // 다른 프로젝트의 재작성 횟수를 물려받지 않는다
+  try{
+   const detail=await getProject(project.id);
+   if(request!==projectRequest.current)return;
+   setItemInfo({
+    item:detail.description, applicantType:detail.company?.applicant_type||'',
+    ceoName:detail.company?.ceo_name||'', foundedAt:detail.company?.founded_at||'',
+    team:(detail.team_members||[]).map(t=>({name:t.name,role:t.role||'',career:t.experience||''})),
+    pricing:(detail.pricing_items||[]).map(p=>({item:p.service_name,price:p.unit_price==null?'':String(p.unit_price)})),
+    files:[], attachments:detail.attachments||[],
+   });
+  }catch(err){
+   if(request!==projectRequest.current)return;
+   window.alert('프로젝트 정보를 불러오지 못했어요. 다시 시도해 주세요.');
+   return;
+  }
+  // [2026-09-19] 예전엔 project.progress>=100(=stage==='done')로 "이미 공고 매칭까지
+  // 끝났으니 결과를 불러오자"를 판단했는데, Dashboard가 progress를 "review 화면까지 본
+  // 적 있음" 기준으로 바꾸면서(사용자 지적: 사업계획서만 쓰고 나가도 준비완료로 잘못
+  // 뜨던 버그) 이 조건이 같이 깨졌다 — 매칭은 됐지만 아직 review 전인 프로젝트를 다시
+  // "공고 찾기"로 보내버리는 회귀가 생겨서, 매칭 여부(project.matched)로 따로 판단한다.
+  if(project.matched){
+   try{
+    const status=await getProjectStatus(project.id);
+    // [2026-09-28] 이어하기 시점에 고른 공고가 마감됐는지는 서버가 판단해서 준다(E-RUN-CLOSED).
+    setNoticeClosed(!!status.notice_closed);
+    // 계획서 생성 중/실패에는 아직 BusinessPlan이 없어 /result가 404일 수 있다.
+    const result=await getProjectResult(project.id).catch(err=>{
+     if(err.status===404&&status.stage==='plan_writing')return null;
+     throw err;
+    });
+    if(request!==projectRequest.current)return;
+    setPipelineResult(result);
+    setAnnouncement({title:project.announcementTitle,org:'',deadline:'',amount:'',fit:result?.match?.fit_score,reason:result?.match?.reason,eligibility:{},originalUrl:''});
+    // [2026-09-23, 백엔드 전달사항 3번] verdict는 산출물 채점까지 끝나야 나오므로 계획서만
+    // 완성되고 프로토타입이 아직이면 null로 내려온다(app/schemas.py DemoGenerateResponse).
+    // 예전엔 이 경우 GET /result가 통째로 404여서 틈이 안 드러났는데, 지금은 정상 응답이라
+    // null을 그대로 'fail'로 접으면 채점도 안 한 프로젝트가 화면에 "내부 기준 미달"로 뜬다.
+    // 판정이 나온 경우에만 결과를 반영하고, 판정 전이라는 사실은 따로 남긴다.
+    setVerdictPending(result?.verdict==null);
+    if(result?.verdict)resetScoreOutcome(result.verdict.overall_passed?'pass':'fail');
+    const savedView=localStorage.getItem(lastViewKey(project.id));
+    const stageView=status.stage==null?'eligibility-gate':VIEW_BY_STAGE[status.stage]||'plan-form';
+    setProjectId(project.id);
+    const failedView=status.match_status==='failed' ? VIEW_BY_STAGE[status.stage] : null;
+    setView(failedView||(savedView==='review'||status.stage==='reviewing'?'review':targetView||(RESUMABLE_VIEWS.includes(savedView)?savedView:stageView)));
+   }catch(err){
+    if(request!==projectRequest.current)return;
+    console.error('결과를 불러오지 못했어요',err);
+    window.alert('이 프로젝트 결과를 불러오지 못했어요.');
+    setView('dashboard');
+   }
+  }else{
+   setProjectId(project.id);
+   setView('match-results');
+  }
+ };
+
+ // MatchResults가 후보 선택 시 자체적으로 POST /generate까지 호출한 뒤(app/routers/projects.py
+ // generate_pipeline_result) 그 응답을 여기로 올려준다 — eligibility-gate는 이 결과를 그대로 쓴다.
+ const eligibilityRequest=projectRequest.current;
+ const handleCheckEligibility=(candidate,generateResult)=>{
+  if(eligibilityRequest!==projectRequest.current)return;
+  setAnnouncement({title:candidate.title,org:candidate.org||'',deadline:candidate.apply_end||'',amount:'',fit:candidate.bonus_score,reason:candidate.reason,eligibility:{},originalUrl:candidate.url||''});
+  setPipelineResult(generateResult);
+  setView('eligibility-gate');
+ };
+
+ // 로그인 안 된 상태면 로그인부터. 로그인된 상태에서 "시작하기"를 누른 시점에만 마이페이지
+ // 저장 여부를 검사한다 — 랜딩을 보는 동안은 막지 않고, 실제로 기능을 쓰려는 순간(여기)에
+ // 저장 안 됐으면 대시보드로 보내는 대신 강제 모달을 띄운다(관리자는 예외).
+ const startFlow=()=>{
+  if(!user){setLoginOpen(true);return}
+  if(user.role!=='admin'&&!user.has_profile){setMyPageNudgeOpen(true);return}
+  setView('dashboard');
+ };
+ // acc는 백엔드가 돌려준 실제 UserOut(POST /auth/google 응답) — notify_enabled도 여기 들어있어서
+ // 로컬 동의 체크박스값(consent.notifyAgreed) 대신 서버가 실제로 저장한 값을 신뢰한다.
+ const handleLoginSuccess=acc=>{authVersion.current++;setUser(acc);setLoginOpen(false);setNotifyEnabled(acc.notify_enabled);useMyPageStore.getState().loadProfiles()};
+ const handleProfileSaved=async()=>{
+  const version=authVersion.current;
+  const updated=await fetchCurrentUser();
+  if(version===authVersion.current&&updated)setUser(updated);
+ };
+ // 로그아웃은 화면 전환이 먼저 느껴지도록 user state부터 지우고, 서버 세션 쿠키 삭제(POST
+ // /auth/logout)는 기다리지 않고 백그라운드로 보낸다 — 실패해도(오프라인 등) 어차피 프론트
+ // 쪽에서는 로그아웃된 것처럼 보여주면 되고, logout() 내부에서 에러를 삼키게 해뒀다.
+ // 마이페이지 값은 localStorage에 남으므로 같은 브라우저의 다음 사용자에게 보이지 않게 비운다.
+ const handleLogout=()=>{authVersion.current++;projectRequest.current++;logout();useMyPageStore.getState().reset();resetProject();setUser(null);setView('landing')};
+ // 탈퇴 성공(서버가 계정과 모든 이력을 지우고 쿠키까지 정리한 뒤) — 로그아웃과 같은 정리를
+ // 하되 POST /auth/logout은 부르지 않는다(세션 자체가 이미 사라졌다).
+ const handleAccountDeleted=()=>{
+  authVersion.current++;projectRequest.current++;
+  useMyPageStore.getState().reset();resetProject();
+  setUser(null);setMyPageNudgeOpen(false);setView('landing');
+  window.alert('탈퇴가 완료됐어요. 그동안 이용해 주셔서 감사합니다.');
+ };
+ // 관리자 판별은 프론트 이메일 목록이 아니라 백엔드가 내려주는 실제 role로 한다.
+ const isAdmin=user?.role==='admin';
+ if(!authChecked)return null; // 세션 확인 전 깜빡임(로그인 화면 잠깐 보였다 사라짐) 방지
+ let body;
+ if(view==='admin')body=<AdminDashboard user={user} onExit={()=>setView('landing')}/>;
+ else if(view==='landing')body=<React.Fragment><Landing onStart={startFlow} user={user} isAdmin={isAdmin} onOpenAdmin={()=>setView('admin')} onMyPage={()=>setView('mypage')} onLogin={()=>setLoginOpen(true)} onLogout={handleLogout} notifyEnabled={notifyEnabled} onToggleNotify={()=>setNotifyEnabled(x=>!x)} onOpenProject={handleOpenProject}/><LoginModal open={loginOpen} onClose={()=>setLoginOpen(false)} onSuccess={handleLoginSuccess}/></React.Fragment>;
+ else body=<WorkspaceShell view={view} user={user} onHome={()=>setView('landing')} onDashboard={()=>setView('dashboard')} onMyPage={()=>setView('mypage')} onNewProject={startNewProject} onLogout={handleLogout} notifyEnabled={notifyEnabled} onToggleNotify={()=>setNotifyEnabled(x=>!x)} onOpenProject={handleOpenProject}>
+  {/* onSaved: 저장 성공 시 /auth/me를 다시 불러 user.has_profile을 최신값으로 갱신한다 —
+      안 하면 로그인 시점에 false였던 값이 이번 세션 내내 그대로 남아 "시작하기"가 계속
+      막힌다(방금 막 저장했는데도). */}
+  {/* 마감 안내는 계획서~검수 사이 어느 화면으로 복귀하든 보여야 해서 화면 분기 위에 둔다. */}
+  {noticeClosed&&view!=='mypage'&&view!=='dashboard'&&<NoticeClosedBanner onClose={()=>setNoticeClosed(false)}/>}
+  {view==='mypage'&&<MyPage onSaved={handleProfileSaved} user={user} onAccountDeleted={handleAccountDeleted}/>}
+  {view==='dashboard'&&<Dashboard onNewProject={startNewProject} onOpenProject={handleOpenProject}/>}
+  {view==='intake'&&<IntakeForm initialValues={itemInfo} onSubmit={handleIntakeSubmit} onBack={()=>setView('dashboard')} backLabel="내 프로젝트로 돌아가기"/>}
+  {view==='match-progress'&&<MatchProgress ready={!!projectId} onComplete={()=>setView('match-results')}/>}
+  {view==='match-results'&&<MatchResults projectId={projectId} candidates={matchCandidates} onCandidatesLoaded={setMatchCandidates} onBack={()=>setView(returnToDashboard?'dashboard':'intake')} backLabel={returnToDashboard?'내 프로젝트로 돌아가기':'아이템 정보 다시 입력하기'} onCheckEligibility={handleCheckEligibility} disabledTitles={checkedFailedTitles}/>}
+  {view==='eligibility-gate'&&<EligibilityGate announcement={announcement} eligibility={pipelineResult?.eligibility} onProceed={()=>setView('plan-progress')} onLeave={(title,failed)=>{if(failed)setCheckedFailedTitles(p=>[...new Set([...p,title])]);setView('match-results')}}/>}
+  {view==='plan-progress'&&<GenerationProgress kind="plan" projectId={projectId} onDone={()=>setView('plan-form')} onLeave={()=>setView('dashboard')}/>}
+  {view==='plan-form'&&<PlanForm scores={scores} reworkBudget={reworkBudget} onScoresRefresh={refreshResult} announcement={announcement} onGenerate={()=>setView('artifact-progress')} scoreOutcome={scoreOutcome} itemInfo={itemInfo} projectId={projectId} reworkCounts={reworkCounts} onRework={countRework}/>}
+  {view==='artifact-progress'&&<GenerationProgress kind="artifact" projectId={projectId} itemInfo={itemInfo} onDone={()=>setView('artifact-result')} onLeave={()=>setView('dashboard')}/>}
+  {view==='artifact-result'&&<ArtifactResult scores={scores} reworkBudget={reworkBudget} artifact={pipelineResult?.plan?.artifacts?.[0]} onScoresRefresh={refreshResult} announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('plan-form')} onFinalize={()=>setView('final-verdict')} scoreOutcome={scoreOutcome} projectId={projectId} reworkCounts={reworkCounts} onRework={countRework}/>}
+  {view==='final-verdict'&&<FinalVerdict scores={scores} reworkBudget={reworkBudget} artifact={pipelineResult?.plan?.artifacts?.[0]} onScoresRefresh={refreshResult} announcement={announcement} itemInfo={itemInfo} onBack={()=>setView('artifact-result')} onProceed={()=>setView('review')} docOutcome={docOutcome} artifactOutcome={artifactOutcome} setDocOutcome={setDocOutcome} setArtifactOutcome={setArtifactOutcome} projectId={projectId} reworkCounts={reworkCounts} onRework={countRework}/>}
+  {view==='review'&&<ReviewScreen scores={scores} plan={pipelineResult?.plan} announcement={announcement} itemInfo={itemInfo} docOutcome={docOutcome} artifactOutcome={artifactOutcome} onGoDashboard={()=>setView('dashboard')} projectId={projectId} verdict={pipelineResult?.verdict}/>}
+ </WorkspaceShell>;
+ // 저장 전 강제 이동 모달은 view가 무엇이든(랜딩·워크스페이스 어느 화면 위에도) 뜰 수 있어야
+ // 하므로 세 분기 바깥, 최상위에서 한 번만 렌더한다.
+ return <React.Fragment>{body}<MyPageNudge open={myPageNudgeOpen} onGo={()=>setView('mypage')}/>
+  <LoginModal open={consentOpen} initialStep="consent" onClose={()=>setConsentOpen(false)} onSuccess={handleLoginSuccess}/>
+  <RunBlockedDialog detail={blockedRun} busy={blockedBusy} onResume={resumeBlockedRun} onRestart={restartBlockedRun} onClose={()=>setBlockedRun(null)}/></React.Fragment>;
+}
