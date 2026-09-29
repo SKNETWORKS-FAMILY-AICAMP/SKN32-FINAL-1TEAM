@@ -50,11 +50,18 @@ def test_second_login_is_not_new_and_keeps_stored_consent(client, monkeypatch):
     assert body2['user']['ai_training_agreed'] is True   # 최초 가입 때 값(True) 그대로
     assert body2['user']['notify_enabled'] is False        # 최초 가입 때 값(False) 그대로
 
-    # 필수 동의를 완료하면 그 다음부터는 has_agreed_terms가 True로 바뀐다.
+    # [2026-09-29 신규, 프론트 요청사항 4차 C-1] terms/privacy만으로는 아직 부족하다 —
+    # age_confirmed도 있어야 has_agreed_terms가 True가 된다.
     consent_res = client.patch('/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True})
     assert consent_res.status_code == 200, consent_res.text
     r3 = client.post('/auth/google', json={'id_token': 'dummy'})
-    assert r3.json()['has_agreed_terms'] is True
+    assert r3.json()['has_agreed_terms'] is False, 'age_confirmed_at이 아직 없으므로 True면 안 됨'
+
+    # 연령 확인까지 마쳐야 비로소 has_agreed_terms가 True로 바뀐다.
+    age_res = client.patch('/auth/consent', json={'ageConfirmed': True})
+    assert age_res.status_code == 200, age_res.text
+    r4 = client.post('/auth/google', json={'id_token': 'dummy'})
+    assert r4.json()['has_agreed_terms'] is True
 
 
 def test_patch_consent_revokes_required_consent_to_null(client, monkeypatch):
@@ -70,6 +77,21 @@ def test_patch_consent_revokes_required_consent_to_null(client, monkeypatch):
     r2 = client.patch('/auth/consent', json={'termsAgreed': False})
     assert r2.json()['terms_agreed_at'] is None
     assert r2.json()['privacy_agreed_at'] is not None  # privacyAgreed는 안 건드렸으니 유지
+
+
+def test_patch_consent_stores_age_confirmed_at(client, monkeypatch):
+    """[2026-09-29 신규, 프론트 요청사항 4차 C-1] ageConfirmed=true를 보내면 지금 시각이
+    age_confirmed_at에 저장되고, terms/privacy와 같은 패턴으로 false를 보내면 NULL로
+    되돌아간다(실제로 철회를 받을 일은 없지만 같은 코드 경로를 그대로 쓴다)."""
+    _fake_login(monkeypatch, 'age@example.com', 'sub-age')
+    client.post('/auth/google', json={'id_token': 'dummy'})
+
+    r1 = client.patch('/auth/consent', json={'ageConfirmed': True})
+    assert r1.status_code == 200, r1.text
+    assert r1.json()['age_confirmed_at'] is not None
+
+    r2 = client.patch('/auth/consent', json={'ageConfirmed': False})
+    assert r2.json()['age_confirmed_at'] is None
 
 
 _MINIMAL_PROFILE_PAYLOAD = {
@@ -97,6 +119,15 @@ def test_create_project_blocked_until_required_consent_completed(client, monkeyp
     consent_res = client.patch('/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True})
     assert consent_res.status_code == 200
 
+    # [2026-09-29 신규, 프론트 요청사항 4차 C-1] terms/privacy만으로는 아직 부족하다 —
+    # ageConfirmed도 있어야 이 게이트를 통과한다.
+    r1b = client.post('/projects', data={'payload': payload})
+    assert r1b.status_code == 403, r1b.text
+    assert '동의' in r1b.json()['detail']
+
+    age_res = client.patch('/auth/consent', json={'ageConfirmed': True})
+    assert age_res.status_code == 200
+
     # 동의는 마쳤지만 아직 마이페이지 프로필이 없으므로 이번엔 E-AUTH-PROFILE 게이트에 걸린다.
     r2 = client.post('/projects', data={'payload': payload})
     assert r2.status_code == 403, r2.text
@@ -117,7 +148,7 @@ def test_create_project_blocked_until_profile_created(client, monkeypatch):
 
     _fake_login(monkeypatch, 'profile-gate@example.com', 'sub-profile-gate')
     client.post('/auth/google', json={'id_token': 'dummy'})
-    client.patch('/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True})
+    client.patch('/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True, 'ageConfirmed': True})
 
     payload = json_module.dumps({'description': 'profile gate test'})
     r1 = client.post('/projects', data={'payload': payload})

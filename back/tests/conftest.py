@@ -132,10 +132,13 @@ def login_as(client):
             'id_token': 'dummy', 'aiTrainingAgreed': True, 'notifyAgreed': True,
         })
         assert res.status_code == 200, f'테스트 로그인 실패: {res.status_code} {res.text}'
-        # [2026-09-27 신규] 필수 동의(이용약관/개인정보)를 완료해야 POST /projects가
-        # 열린다(E-AUTH-CONSENT) — 실제 온보딩 흐름(로그인 -> 동의 화면 -> PATCH
-        # /auth/consent)과 같은 순서로, 테스트 계정도 기본으로 동의를 완료시켜둔다.
-        consent_res = client.patch('/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True})
+        # [2026-09-27 신규, 2026-09-29 프론트 요청사항 4차 C-1 ageConfirmed 추가] 필수
+        # 동의(이용약관/개인정보/연령)를 완료해야 POST /projects가 열린다(E-AUTH-CONSENT)
+        # — 실제 온보딩 흐름(로그인 -> 동의 화면 -> PATCH /auth/consent)과 같은 순서로,
+        # 테스트 계정도 기본으로 동의를 완료시켜둔다.
+        consent_res = client.patch(
+            '/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True, 'ageConfirmed': True},
+        )
         assert consent_res.status_code == 200, f'테스트 계정 필수 동의 실패: {consent_res.status_code} {consent_res.text}'
         # [2026-09-27 신규] 마이페이지 프로필이 하나도 없으면 POST /projects가 열리지
         # 않는다(E-AUTH-PROFILE) — 실제 온보딩 흐름과 같은 순서로, 테스트 계정도 필수

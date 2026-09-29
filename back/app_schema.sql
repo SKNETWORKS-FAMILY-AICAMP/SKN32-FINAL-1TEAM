@@ -48,6 +48,10 @@ CREATE TABLE IF NOT EXISTS users (
     -- (기능정의서 v1.9 E-AUTH-CONSENT).
     terms_agreed_at DATETIME(6) NULL COMMENT '이용약관 동의 시각(NULL=미동의)',
     privacy_agreed_at DATETIME(6) NULL COMMENT '개인정보 수집·이용 동의 시각(NULL=미동의)',
+    -- [2026-09-29 신규, 프론트 요청사항 4차 C-1] "만 16세 이상입니다" 필수 동의 — 팀 확정
+    -- 2026-09-29(서비스 정책, 법정 의무는 만 14세 미만 법정대리인 동의뿐). 위 둘과 완전히
+    -- 같은 패턴 — NULL이면 미동의, PATCH /auth/consent(ageConfirmed=true)가 채운다.
+    age_confirmed_at DATETIME(6) NULL COMMENT '만 16세 이상 확인 동의 시각(NULL=미동의)',
     role VARCHAR(20) NOT NULL DEFAULT 'user' COMMENT '권한(user/admin)',
     status VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '계정 상태(active/suspended/dormant)',
     -- [2026-09-17] 얼굴 인증(face_verified_at) 게이트를 팀 결정으로 완전히 뺐다(admin.py

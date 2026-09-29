@@ -43,6 +43,9 @@ class UserOut(BaseModel):
     # 동의 상태를 보여주거나, 나중에 재동의를 유도할 때 쓴다.
     terms_agreed_at: datetime.datetime | None = None
     privacy_agreed_at: datetime.datetime | None = None
+    # [2026-09-29 신규, 프론트 요청사항 4차 C-1] "만 16세 이상입니다" 동의 완료 시각 —
+    # 위 둘과 같은 용도(NULL이면 아직 동의 전).
+    age_confirmed_at: datetime.datetime | None = None
     # [2026-09-18 추가, 정재희님 인계서] User 테이블 컬럼이 아니라 요청마다 계산해서 채운다
     # (app/routers/profile.py compute_has_profile) — user_profiles 슬롯 중 하나라도 필수
     # 입력 항목(신청자 유형/대표자 정보/지역/주업종/대표자 이력 1건 이상, biz 유형이면
@@ -92,6 +95,11 @@ class ConsentUpdateRequest(BaseModel):
     notify_agreed: bool | None = Field(None, alias='notifyAgreed')
     terms_agreed: bool | None = Field(None, alias='termsAgreed', description='이용약관 동의(필수)')
     privacy_agreed: bool | None = Field(None, alias='privacyAgreed', description='개인정보 수집·이용 동의(필수)')
+    # [2026-09-29 신규, 프론트 요청사항 4차 C-1] "만 16세 이상입니다" 필수 동의 — 팀 확정
+    # 2026-09-29. terms_agreed/privacy_agreed와 같은 방식으로 처리한다(true=지금 시각
+    # 저장, false=철회로 보고 NULL). 실제로는 철회를 받을 일이 없는 필수 항목이지만,
+    # 같은 패턴을 그대로 쓰는 게 더 단순하다.
+    age_confirmed: bool | None = Field(None, alias='ageConfirmed', description='만 16세 이상입니다(필수)')
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +147,24 @@ class PlanPartnerIn(BaseModel):
 
 
 _MONTH_RE = re.compile(r'^\d{4}-\d{2}$')
+
+# [2026-09-29 신규, 프론트 요청사항 4차 C-2] 대표자 생년월일이 실제로 받는 최소 나이 —
+# 프론트도 같은 값으로 입력 연도를 제한하지만(derive.js MIN_CEO_AGE, 우회 가능) 서버에서도
+# 같은 기준으로 막는다. 대표자 정보를 받는 곳(ProjectCreateRequest.ceo_birth_date,
+# BasicProfileIn.birth_date)이 이 상수를 공유한다. config.py(레포 루트)는 .env 비밀값
+# 로더 전용이라(그 파일 자체 docstring 참고) 여기 둔다 — ATTACH_MAX_FILES/MB와 같은 이유.
+MIN_CEO_AGE = 16
+
+
+def _check_min_age(birth_date: datetime.date) -> None:
+    """만 나이가 MIN_CEO_AGE 이상인지 확인한다(생일이 아직 안 지났으면 -1) —
+    seed_dummy_pipeline.py의 _years_since와 같은 계산 방식."""
+    today = datetime.date.today()
+    age = today.year - birth_date.year
+    if (today.month, today.day) < (birth_date.month, birth_date.day):
+        age -= 1
+    if age < MIN_CEO_AGE:
+        raise ValueError('대표자는 만 16세 이상만 입력할 수 있어요')
 
 
 class ProjectCreateRequest(BaseModel):
@@ -248,6 +274,13 @@ class ProjectCreateRequest(BaseModel):
             return None
         if not _MONTH_RE.match(v):
             raise ValueError('YYYY-MM 형식이어야 합니다')
+        return v
+
+    @field_validator('ceo_birth_date')
+    @classmethod
+    def _check_ceo_birth_date_age(cls, v: datetime.date | None) -> datetime.date | None:
+        if v is not None:
+            _check_min_age(v)
         return v
 
 
@@ -1139,6 +1172,13 @@ class BasicProfileIn(BaseModel):
     @classmethod
     def _check_dates(cls, v: str) -> str:
         return _validate_optional_date_str(v)
+
+    @field_validator('birth_date')
+    @classmethod
+    def _check_birth_date_age(cls, v: str) -> str:
+        if v:
+            _check_min_age(datetime.date.fromisoformat(v))
+        return v
 
     @field_validator('budget_scale')
     @classmethod

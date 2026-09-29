@@ -124,7 +124,11 @@ def login_with_google(body: GoogleLoginRequest, response: Response, db: Session 
     user_out.has_profile = compute_has_profile(db, user.user_id)
     return GoogleLoginResponse(
         user=user_out,
-        has_agreed_terms=user.terms_agreed_at is not None and user.privacy_agreed_at is not None,
+        has_agreed_terms=(
+            user.terms_agreed_at is not None
+            and user.privacy_agreed_at is not None
+            and user.age_confirmed_at is not None
+        ),
         is_new_user=is_new_user,
     )
 
@@ -163,10 +167,11 @@ def update_consent(
     """신규 가입 직후 동의 화면 제출, 또는 나중에 설정 화면에서 동의값을 바꿀 때 쓴다.
     전부 선택 필드라 일부만 보내도 된다(None은 그대로 둠).
 
-    [2026-09-27 확장] 필수 동의(이용약관/개인정보)도 이제 이 엔드포인트로 기록한다 —
-    true면 지금 시각을 저장하고, false면 철회로 보고 NULL로 되돌린다(공식 기능정의서
-    v1.9 E-AUTH-CONSENT: "철회 이후 수집을 중단한다"). 새 실행 시작(POST /projects)은
-    둘 다 값이 있어야 허용된다."""
+    [2026-09-27 확장, 2026-09-29 프론트 요청사항 4차 C-1] 필수 동의(이용약관/개인정보/
+    만 16세 이상)도 이제 이 엔드포인트로 기록한다 — true면 지금 시각을 저장하고, false면
+    철회로 보고 NULL로 되돌린다(공식 기능정의서 v1.9 E-AUTH-CONSENT: "철회 이후 수집을
+    중단한다" — 연령 확인은 실제로 철회를 받을 일이 없지만 같은 패턴을 그대로 쓴다).
+    새 실행 시작(POST /projects)은 셋 다 값이 있어야 허용된다."""
     if body.ai_training_agreed is not None:
         current_user.ai_training_agreed = body.ai_training_agreed
     if body.notify_agreed is not None:
@@ -175,6 +180,8 @@ def update_consent(
         current_user.terms_agreed_at = datetime.datetime.utcnow() if body.terms_agreed else None
     if body.privacy_agreed is not None:
         current_user.privacy_agreed_at = datetime.datetime.utcnow() if body.privacy_agreed else None
+    if body.age_confirmed is not None:
+        current_user.age_confirmed_at = datetime.datetime.utcnow() if body.age_confirmed else None
     db.commit()
     db.refresh(current_user)
     return UserOut.model_validate(current_user)

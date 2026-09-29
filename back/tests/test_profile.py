@@ -232,6 +232,26 @@ def test_invalid_date_format_returns_422(authed_client):
     assert res.status_code == 422
 
 
+def test_birth_date_under_16_returns_422(authed_client):
+    """[2026-09-29 신규] 서버도 만 16세 미만 생년월일을 막아야 한다 — 프론트 입력 제한은
+    우회 가능하다(app/schemas.py MIN_AGE_YEARS)."""
+    import datetime
+    too_young = (datetime.date.today() - datetime.timedelta(days=16 * 365)).isoformat()
+    bad_body = dict(_SAMPLE_BODY, basic=dict(_SAMPLE_BODY['basic'], birthDate=too_young))
+    res = authed_client.post('/profile', json=bad_body)
+    assert res.status_code == 422, res.text
+    assert '16' in res.text
+
+
+def test_birth_date_exactly_16_is_accepted(authed_client):
+    import datetime
+    today = datetime.date.today()
+    exactly_16 = today.replace(year=today.year - 16).isoformat()
+    body = dict(_SAMPLE_BODY, basic=dict(_SAMPLE_BODY['basic'], birthDate=exactly_16))
+    res = authed_client.post('/profile', json=body)
+    assert res.status_code == 201, res.text
+
+
 def test_budget_scale_over_2000_returns_422(authed_client):
     bad_body = dict(_SAMPLE_BODY, basic=dict(_SAMPLE_BODY['basic'], applicantType='preliminary', budgetScale='2500'))
     res = authed_client.post('/profile', json=bad_body)

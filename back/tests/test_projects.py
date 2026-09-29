@@ -30,8 +30,11 @@ def _login(client: TestClient, email: str, name: str) -> None:
     auth_router.verify_google_id_token = security.verify_google_id_token
     res = client.post('/auth/google', json={'id_token': 'dummy', 'aiTrainingAgreed': True, 'notifyAgreed': True})
     assert res.status_code == 200, f'로그인 실패({email}): {res.status_code} {res.text}'
-    # [2026-09-27 신규] 필수 동의를 완료해야 POST /projects가 열린다(E-AUTH-CONSENT).
-    consent_res = client.patch('/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True})
+    # [2026-09-27 신규, 2026-09-29 ageConfirmed 추가] 필수 동의를 완료해야 POST /projects가
+    # 열린다(E-AUTH-CONSENT).
+    consent_res = client.patch(
+        '/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True, 'ageConfirmed': True},
+    )
     assert consent_res.status_code == 200, f'필수 동의 실패({email}): {consent_res.status_code} {consent_res.text}'
     # [2026-09-27 신규] 필수 항목을 채운 마이페이지 프로필이 있어야 POST /projects가
     # 열린다(E-AUTH-PROFILE) — conftest.py의 _MINIMAL_PROFILE_PAYLOAD와 동일한 값.

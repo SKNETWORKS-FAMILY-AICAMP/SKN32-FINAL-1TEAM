@@ -114,6 +114,10 @@ CALL _add_col_if_missing('projects', 'regional_priority_area', "VARCHAR(100) NUL
 CALL _add_col_if_missing('users', 'terms_agreed_at', "DATETIME(6) NULL COMMENT '이용약관 동의 시각(NULL=미동의)'");
 CALL _add_col_if_missing('users', 'privacy_agreed_at', "DATETIME(6) NULL COMMENT '개인정보 수집·이용 동의 시각(NULL=미동의)'");
 
+-- [2026-09-29 신규, 프론트 요청사항 4차 C-1] "만 16세 이상입니다" 필수 동의 — 위 둘과 같은
+-- 이유로 의도적으로 백필하지 않는다. 기존 계정도 NULL(미동의)로 두고 재동의를 받는다.
+CALL _add_col_if_missing('users', 'age_confirmed_at', "DATETIME(6) NULL COMMENT '만 16세 이상 확인 동의 시각(NULL=미동의)'");
+
 -- [2026-09-23 신규] match_results.status/agent_executions.status를 서비스 내부 상태
 -- 6종(실행/재개대기/사용자대기/실패/완료/중단) 실제 MySQL ENUM으로 강제한다
 -- (app/models.py _GenerationStatus, app/pipeline_stages.py GENERATION_STATUSES 참고).

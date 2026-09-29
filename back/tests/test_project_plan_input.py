@@ -110,3 +110,21 @@ def test_get_project_requires_ownership_for_plan_input(login_as):
     other = login_as('plan-input-other@example.com', '남')
     r = other.get(f'/projects/{project_id}')
     assert r.status_code == 404
+
+
+def test_ceo_birth_date_under_16_returns_422(authed_client):
+    """[2026-09-29 신규, 프론트 요청사항 4차 C-2] 서버도 만 16세 미만 대표자 생년월일을
+    막아야 한다 — 프론트 입력 제한(derive.js MIN_CEO_AGE)은 우회 가능하다."""
+    import datetime
+    too_young = (datetime.date.today() - datetime.timedelta(days=16 * 365)).isoformat()
+    r = authed_client.post('/projects', data={'payload': json.dumps(_full_payload(ceo_birth_date=too_young))})
+    assert r.status_code == 422, r.text
+    assert '16' in r.text
+
+
+def test_ceo_birth_date_exactly_16_is_accepted(authed_client):
+    import datetime
+    today = datetime.date.today()
+    exactly_16 = today.replace(year=today.year - 16).isoformat()
+    r = authed_client.post('/projects', data={'payload': json.dumps(_full_payload(ceo_birth_date=exactly_16))})
+    assert r.status_code == 201, r.text

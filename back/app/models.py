@@ -227,6 +227,13 @@ class User(Base):
     # 채운다). 새 실행 시작(POST /projects)은 둘 다 값이 있어야 허용한다.
     terms_agreed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     privacy_agreed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    # [2026-09-29 신규, 프론트 요청사항 4차 C-1] "만 16세 이상입니다" 필수 동의 — 팀 확정
+    # 2026-09-29, S-Brain은 만 16세 이상만 이용 가능(한국 개인정보보호법상 법정 의무는
+    # 만 14세 미만 법정대리인 동의뿐이라, 16세는 서비스 정책으로 약관 제4조에 명시).
+    # terms_agreed_at/privacy_agreed_at과 완전히 같은 패턴 — NULL이면 미동의,
+    # PATCH /auth/consent(ageConfirmed=true)가 채운다. 철회(false로 지우기)는 지원하지
+    # 않는다 — 셋 다 철회 불가능한 필수 항목이라는 게 팀 확정이다.
+    age_confirmed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     role: Mapped[str] = mapped_column(String(20), default='user')
     status: Mapped[str] = mapped_column(String(20), default='active')
     # [2026-09-17] 얼굴 인증(face_verified_at) 게이트를 팀 결정으로 완전히 뺐다 — AWS
