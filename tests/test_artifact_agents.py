@@ -1,0 +1,362 @@
+import sys
+import types
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest import TestCase
+from unittest.mock import patch
+from xml.etree import ElementTree as ET
+
+from engineering_agent import builder_infographic, gates
+from engineering_agent.builder_html import build_prototype_html
+from engineering_agent.file_writer import save_files
+from verification_agent.feature_match import match_features
+from verification_agent.rules.r4 import check_contrast, check_html, parse_page
+from verification_agent.rules.items import total as items_total
+from verification_agent.score import compute_code_check, compute_infographic_check
+
+_ONEPAGE_PLAN = ("동네 매장 대상. 주문 대기가 길다. 빠른 주문으로 줄인다. 단가는 월 10000원. "
+                 "2026-12-01 착수. 주문 조회 기능은 매장별 주문 상태를 한 화면에 보여준다.")
+
+_ONEPAGE_DATA = {
+    "item_name": "동네 주문", "target_users": "동네 매장",
+    "problem": "주문 대기", "solution": "빠른 주문",
+    "revenue_unit_price": "월 10000원", "timeline_baseline": "2026-12-01",
+    "features": ["주문 조회"], "feature_details": ["매장별 주문 상태를 한 화면에 보여준다"],
+}
+
+
+def _page(body: str, style: str = "body{color:#0F172A;background-color:#FFFFFF}") -> str:
+    return (f'<!doctype html><html lang="ko"><head><style>{style}</style></head>'
+            f"<body><h1>동네 주문</h1>{body}</body></html>")
+
+
+class _FakeFormatError(Exception):
+    """Orchestration의 sbrain.orchestrator.errors.FormatError 대역."""
+
+
+def _stub_sbrain_errors():
+    """sbrain이 설치되지 않은 곳에서도 R2 경로를 검사하기 위한 모듈 대역.
+
+    구현 Agent는 FormatError를 실패 시점에만 import하므로, 정상 경로 테스트는 이
+    대역 없이도 돌아간다. 여기서 꽂는 것은 예외 경로 검사용이다.
+    """
+    errors = types.ModuleType("sbrain.orchestrator.errors")
+    errors.FormatError = _FakeFormatError
+    orchestrator = types.ModuleType("sbrain.orchestrator")
+    orchestrator.errors = errors
+    sbrain = types.ModuleType("sbrain")
+    sbrain.orchestrator = orchestrator
+    return patch.dict(sys.modules, {
+        "sbrain": sbrain,
+        "sbrain.orchestrator": orchestrator,
+        "sbrain.orchestrator.errors": errors,
+    })
+
+
+class _Tools:
+    """tools.llm의 계약 중 이 패키지가 쓰는 부분만 재현한다 — schema로 검사한 뒤
+    parse에 넘기고, parse의 반환값을 그대로 돌려준다."""
+
+    def __init__(self, response):
+        self._response = response
+        self.messages = None
+        self.kwargs = None
+
+    def llm(self, messages, *, schema=None, parse=None, purpose=""):
+        self.messages = messages
+        self.kwargs = {"schema": schema, "parse": parse, "purpose": purpose}
+        value = self._response(schema) if callable(self._response) else self._response
+        return parse(value) if parse is not None else value
+
+
+class ArtifactAgentTests(TestCase):
+    _TEMP_ROOT = Path(__file__).resolve().parents[1] / "engineering_agent" / "output"
+
+    def test_attempt_files_cannot_overwrite_or_escape(self):
+        with TemporaryDirectory(dir=self._TEMP_ROOT) as directory:
+            root = Path(directory)
+            first = save_files({"index.html": "first"}, "attempt-1", root)
+            self.assertEqual(Path(first["index.html"]).read_text(encoding="utf-8"), "first")
+            with self.assertRaises(FileExistsError):
+                save_files({"index.html": "second"}, "attempt-1", root)
+            with self.assertRaises(ValueError):
+                save_files({"../other.html": "escape"}, "attempt-2", root)
+            with self.assertRaises(ValueError):
+                save_files({"index.html": "escape"}, "../other", root)
+            second = save_files({"index.html": "second"}, "attempt-2", root)
+            self.assertEqual(Path(first["index.html"]).read_text(encoding="utf-8"), "first")
+            self.assertEqual(Path(second["index.html"]).read_text(encoding="utf-8"), "second")
+
+    def _render_onepage(self, **over):
+        data = {**_ONEPAGE_DATA, **over}
+        directory = TemporaryDirectory(dir=self._TEMP_ROOT)
+        self.addCleanup(directory.cleanup)
+        with patch.object(builder_infographic, "_OUTPUT_DIR", Path(directory.name)):
+            return builder_infographic.render_infographic("원페이지", data)
+
+    def test_onepage_code_score_and_missing_fields(self):
+        saved = self._render_onepage()
+        checked = compute_infographic_check(
+            saved["file_path"], saved["source_text"], "열람하고 인쇄하세요"
+        )
+        self.assertEqual(len(checked["items"]), 8)
+        six = checked["items"][1]
+        self.assertEqual((six["name"], six["passed"], six["earned"]), ("핵심 정보 6항목", True, 3))
+        self.assertEqual(checked["total"], 15, checked["items"])
+        # 파일과 원문이 어긋나면 통과 필수 조건 실패 — 30점 전체가 0
+        altered = saved["source_text"].replace("월 10000원", "")
+        broken = compute_infographic_check(saved["file_path"], altered, "열람하고 인쇄하세요")
+        self.assertEqual(broken["total"], 0)
+        self.assertIn("원문 불일치", broken["gate_failures"][0])
+
+    def test_onepage_truncated_value_loses_points(self):
+        saved = self._render_onepage(problem="주문 대기 " * 40)
+        items = compute_infographic_check(saved["file_path"], saved["source_text"],
+                                          "열람하고 인쇄하세요")["items"]
+        self.assertFalse(items[4]["passed"])
+        self.assertIn("problem", items[4]["evidence"])
+
+    def test_feature_match_needs_handler_on_that_element(self):
+        """화면 문구 + 그 요소에 직접 붙은 핸들러가 있어야 기능을 인정한다."""
+        base = """<html><body><!-- IMPLEMENTED_FEATURES: 주문 조회 -->
+        {body}<script>{script}</script></body></html>"""
+        button = '<button id="order" data-feature="주문 조회">주문 조회</button>'
+        other = '<button id="help">도움말</button>'
+        cases = {
+            "주석 자기 신고와 화면 문구만": ("<p>주문 조회</p>", "console.log('ready')", False),
+            "버튼은 있는데 핸들러 없음": (button, "console.log('ready')", False),
+            # 예전 판정은 이 경우를 통과시켰다: id가 스크립트에 문자열로 있고
+            # addEventListener가 어딘가에 한 번 있으면 연결로 쳤다.
+            "리스너가 다른 버튼에 붙음": (
+                button + other,
+                "const ids = ['order']; document.getElementById('help')"
+                ".addEventListener('click', () => {})", False),
+            "직접 연결": (button, "document.getElementById('order')"
+                                 ".addEventListener('click', () => {})", True),
+            "변수로 받아 연결": (button, "const b = document.getElementById('order');"
+                                       " b.addEventListener('click', () => {})", True),
+            "인라인 onclick": ('<button onclick="run()">주문 조회</button>', "", True),
+        }
+        for label, (body, script, expected) in cases.items():
+            with self.subTest(label):
+                result = match_features(["주문 조회"], base.format(body=body, script=script), "html")
+                self.assertEqual(result["score"], 15.0 if expected else 0.0, result["findings"])
+
+    def test_html_items_catch_dead_buttons_broken_refs_and_placeholders(self):
+        page = _page(
+            '<button id="a">주문</button><button id="b">취소</button>'
+            "<p>Lorem ipsum dolor</p>"
+            "<script>document.getElementById('a').addEventListener('click', () => {"
+            " document.getElementById('result').textContent = 'ok'; });</script>")
+        items = {i["id"]: i for i in check_html(page)}
+        self.assertAlmostEqual(items[1]["earned"], 1.5)  # 버튼 2개 중 1개만 연결
+        self.assertIn("취소", items[1]["evidence"])
+        self.assertFalse(items[7]["passed"])             # #result 는 문서에 없음
+        self.assertIn("result", items[7]["evidence"])
+        self.assertFalse(items[8]["passed"])             # lorem ipsum
+
+    def test_html_width_over_1440_fails(self):
+        wide = check_html(_page("<p>x</p>", "body{color:#000;background-color:#fff}"
+                                            ".wrap{min-width:1920px;max-width:3000px}"))
+        self.assertFalse(wide[5]["passed"])
+        self.assertIn("1920", wide[5]["evidence"])
+        narrow = check_html(_page("<p>x</p>", "body{color:#000;background-color:#fff}"
+                                              ".wrap{width:1200px;max-width:3000px}"))
+        self.assertTrue(narrow[5]["passed"], narrow[5]["evidence"])
+
+    def test_items_without_targets_are_excluded_not_free(self):
+        """input·이미지가 없는 페이지는 그 항목을 빼고 환산한다. 만점으로 치면
+        아무것도 안 만들수록 점수가 오른다."""
+        page = _page('<button id="go">시작</button>'
+                     "<script>document.getElementById('go').addEventListener('click', () => {});"
+                     "</script>")
+        items = check_html(page)
+        excluded = {i["id"] for i in items if not i["applicable"]}
+        self.assertEqual(excluded, {2, 3})
+        self.assertEqual(items_total(items), 15.0)
+        items[0].update(earned=0.0, passed=False)          # 동작 연결 3점을 잃으면
+        self.assertAlmostEqual(items_total(items), 15 * 8 / 11, places=2)  # 11점 만점 중 8
+
+    def test_gate_failure_zeroes_code_check(self):
+        with TemporaryDirectory(dir=self._TEMP_ROOT) as directory:
+            page = _page('<script>const apiKey = "sk-abcdefghijklmnopqrstuvwxyz123456";</script>')
+            path = Path(directory) / "index.html"
+            path.write_text(page, encoding="utf-8")
+            result = compute_code_check(str(path), page, "# 실행 방법")
+            self.assertEqual(result["total"], 0.0)
+            self.assertFalse(result["passed"])
+            self.assertIn("비밀값", result["gate_failures"][0])
+            no_readme = compute_code_check(str(path), _page("<p>x</p>"), None)
+            self.assertIn("README", " ".join(no_readme["gate_failures"]))
+
+    def test_onepage_feature_match_is_judged_against_plan(self):
+        source = self._render_onepage()["source_text"]
+        ok = match_features(["주문 조회"], source, "svg-onepage", _ONEPAGE_PLAN)
+        self.assertEqual(ok["score"], 15.0, ok["findings"])
+
+        # 계획서 원문이 없으면 기능명 비교로 되돌아가지 않는다(자기 채점 방지).
+        withheld = match_features(["주문 조회"], source, "svg-onepage", None)
+        self.assertEqual(withheld["score"], 0.0)
+        self.assertIn("plan_doc", withheld["findings"][0])
+
+        cases = {
+            "설명 없음": ([""], "비어 있거나"),
+            "기능명 되풀이": (["주문 조회"], "되풀이"),
+            "계획서에 없는 내용": (["드론으로 배달 경로를 최적화한다"], "계획서에서 확인"),
+            "계획서에 없는 수치": (["주문 상태를 30초마다 보여준다"], "30"),
+        }
+        for label, (details, reason) in cases.items():
+            with self.subTest(label):
+                src = self._render_onepage(feature_details=details)["source_text"]
+                result = match_features(["주문 조회"], src, "svg-onepage", _ONEPAGE_PLAN)
+                self.assertEqual(result["missing_features"], ["주문 조회"])
+                self.assertIn(reason, " ".join(result["findings"]))
+
+    def test_onepage_invented_numbers_cost_points(self):
+        source = self._render_onepage(revenue_unit_price="월 99000원")["source_text"]
+        result = match_features(["주문 조회"], source, "svg-onepage", _ONEPAGE_PLAN)
+        self.assertEqual(result["score"], 14.0)
+        self.assertIn("99000", result["findings"][-1])
+
+    def test_html_generation_uses_tools_and_returns_source(self):
+        tools = _Tools(
+            "```html:index.html\n<!doctype html><html lang=\"ko\"><body>작동</body></html>\n```"
+        )
+        with TemporaryDirectory(dir=self._TEMP_ROOT) as directory:
+            with patch("engineering_agent.builder_html.save_files") as write:
+                write.side_effect = lambda files, run_id: save_files(files, run_id, Path(directory))
+                result = build_prototype_html(["조회"], {"item_name": "테스트"},
+                                              "웹개발", "생성", tools)
+            self.assertEqual(result["status"], "success")
+            self.assertIsNone(result["readmePath"])
+            self.assertEqual(Path(result["entryFilePath"]).read_text(encoding="utf-8"),
+                             result["sourceText"])
+            self.assertEqual(result["implementedFeatures"], [])
+            self.assertEqual(tools.kwargs["purpose"], "T-B1 HTML 생성")
+
+    def test_infographic_extraction_uses_schema(self):
+        tools = _Tools(lambda schema: schema(item_name="테스트", features=["조회"]))
+        result = builder_infographic.generate_infographic_content("웹개발", "본문", tools)
+        self.assertEqual(result["features"], ["조회"])
+        self.assertEqual(tools.kwargs["schema"].__name__, "InfographicContent")
+
+    def test_unusable_llm_response_raises_instead_of_reporting_failure(self):
+        """완전실패_예외처리.md R2 — 빈 응답·코드블록 0개는 품질 실패가 아니라
+        호출 실패이므로 FormatError를 올려 tools가 재시도하게 한다."""
+        for label, response in (("빈 응답", ""), ("코드블록 없음", "죄송합니다. 만들 수 없습니다."),
+                                ("공백만", "   \n  ")):
+            with self.subTest(label), _stub_sbrain_errors():
+                with self.assertRaises(_FakeFormatError):
+                    build_prototype_html(["조회"], {"item_name": "t"}, "웹개발", "생성",
+                                         _Tools(response))
+
+    def test_gate_violation_reports_failure_without_raising(self):
+        """코드는 왔는데 게이트를 위반한 경우는 예외가 아니라 status='failed'다
+        (재수행은 Supervisor 몫)."""
+        wrong_name = _Tools("```html:main.html\n<html lang=\"ko\"></html>\n```")
+        result = build_prototype_html(["조회"], {"item_name": "t"}, "웹개발", "생성", wrong_name)
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("E-B1-ENTRY", result["summary"])
+
+        external = _Tools(
+            '```html:index.html\n<html lang="ko"><head>'
+            '<script src="https://cdn.example.com/x.js"></script></head></html>\n```'
+        )
+        result = build_prototype_html(["조회"], {"item_name": "t"}, "웹개발", "생성", external)
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("E-B1-DEP", result["summary"])
+
+    def test_sandbox_gate_blocks_apis_that_die_in_iframe(self):
+        """프론트가 sandbox="allow-scripts" iframe에 띄우므로 스토리지·모달·submit은
+        동작을 깨뜨린다. 프롬프트 지시만으로 두지 않고 게이트로 막는다."""
+        cases = {
+            "localStorage": "<script>localStorage.setItem('a', 1);</script>",
+            "sessionStorage": "<script>window.sessionStorage.clear();</script>",
+            "document.cookie": "<script>document.cookie = 'a=1';</script>",
+            "alert()": "<script>alert('저장했습니다');</script>",
+            "confirm()": '<button onclick="confirm(\'삭제할까요\')">삭제</button>',
+            "window.open()": "<script>window.open('/next');</script>",
+            "페이지 이동(location)": "<script>location.href = '/next';</script>",
+            "form.submit()": "<script>document.forms[0].submit();</script>",
+        }
+        for label, snippet in cases.items():
+            with self.subTest(label):
+                ok, violations = gates.check_sandbox_api_gate(
+                    f'<html lang="ko"><body>{snippet}</body></html>')
+                self.assertFalse(ok)
+                self.assertIn(label, violations)
+
+        # 본문 글에 같은 낱말이 섞여도 오탐하지 않는다 (script 블록·on* 속성만 본다)
+        prose = ('<html lang="ko"><body><p>저장 버튼을 누르면 alert(경고) 없이 '
+                 'localStorage 대신 메모리에 담깁니다</p>'
+                 '<script>const state = {};</script></body></html>')
+        ok, violations = gates.check_sandbox_api_gate(prose)
+        self.assertTrue(ok, violations)
+
+    def test_sandbox_violation_reported_as_gate_failure(self):
+        tools = _Tools('```html:index.html\n<html lang="ko"><body>'
+                       "<script>localStorage.setItem('x', 1);</script>"
+                       "</body></html>\n```")
+        result = build_prototype_html(["조회"], {"item_name": "t"}, "웹개발", "생성", tools)
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("E-B1-SANDBOX", result["summary"])
+        self.assertEqual(result["gate_failures"]["sandbox"], ["localStorage"])
+
+    def test_file_save_failure_propagates(self):
+        """R3 — 우리 코드 문제(저장 실패)는 None이나 빈 경로가 아니라 예외로 올린다."""
+        tools = _Tools('```html:index.html\n<html lang="ko"><body>x</body></html>\n```')
+        with patch("engineering_agent.builder_html.save_files") as write:
+            write.side_effect = OSError("디스크 쓰기 실패")
+            with self.assertRaises(OSError):
+                build_prototype_html(["조회"], {"item_name": "t"}, "웹개발", "생성", tools)
+
+    def test_feature_match_score_is_proportional(self):
+        """15 × 인정/전체. 예전 max(0, 15 - 4 × 누락)은 기능 1개를 안 만들면 11점,
+        10개 중 6개를 만들면 0점으로 뒤집혔다."""
+        html = """<html lang="ko"><body>
+        <button id="a" data-feature="주문 조회">주문 조회</button>
+        <button id="b" data-feature="주문 등록">주문 등록</button>
+        <script>
+        document.getElementById('a').addEventListener('click', () => {});
+        document.getElementById('b').addEventListener('click', () => {});
+        </script></body></html>"""
+        result = match_features(["주문 조회", "주문 등록", "결제", "배송"], html, "html")
+        self.assertEqual(result["missing_features"], ["결제", "배송"])
+        self.assertEqual(result["score"], 7.5)
+        self.assertEqual(match_features(["결제"], html, "html")["score"], 0.0)
+        many = [f"기능{i}" for i in range(4)] + ["주문 조회", "주문 등록"]
+        self.assertEqual(match_features(many, html, "html")["score"], 5.0)
+
+    def test_contrast_reads_background_shorthand(self):
+        """background 단축 속성만 쓴 산출물이 '판정 대상 0개'로 미통과가 되지 않는다."""
+        def contrast(css):
+            return check_contrast(parse_page(f"<html><head><style>{css}</style></head></html>"))
+        passing = contrast("body{background:#fff;color:#0f172a}")
+        self.assertTrue(passing["passed"], passing["evidence"])
+        self.assertFalse(contrast("body{background:#fff;color:#cccccc}")["passed"])
+        # 색 하나로 환원되지 않는 배경은 판정 밖에 둔다
+        gradient = contrast("body{background:linear-gradient(#fff,#eee);color:#111}")
+        self.assertIn("판정 대상 0개", gradient["evidence"])
+
+    def test_onepage_partial_credit_is_reachable(self):
+        """6항목 중 하나가 비어도 SVG는 렌더링되고 2번이 부분 점수를 받는다 —
+        파일을 안 만들면 통과 필수 조건 실패로 30점 전체가 0이 된다."""
+        saved = self._render_onepage(revenue_unit_price="")
+        checked = compute_infographic_check(
+            saved["file_path"], saved["source_text"], "열람하고 인쇄하세요"
+        )
+        self.assertTrue(checked["passed"])
+        self.assertFalse(checked["items"][1]["passed"])
+        self.assertAlmostEqual(checked["items"][1]["earned"], 3 * 5 / 6, places=3)
+        self.assertAlmostEqual(checked["total"], 14.5)
+
+    def test_webdev_flow_stays_inside_svg(self):
+        data = {"item_name": "테스트", "features": ["조회"],
+                "flow_steps": ["탐색", "선택", "결제", "확인"]}
+        with TemporaryDirectory(dir=self._TEMP_ROOT) as directory:
+            with patch.object(builder_infographic, "_OUTPUT_DIR", Path(directory)):
+                saved = builder_infographic.render_infographic("웹개발", data)
+        root = ET.fromstring(saved["source_text"])
+        widths = [float(node.get("x", 0)) + float(node.get("width", 0))
+                  for node in root.iter() if node.tag.endswith("}rect")]
+        self.assertLessEqual(max(widths), 900)

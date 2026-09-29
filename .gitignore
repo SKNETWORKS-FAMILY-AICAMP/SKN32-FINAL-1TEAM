@@ -17,3 +17,14 @@ dist-ssr/
 .idea/
 .DS_Store
 Thumbs.db
+
+# 구현 agent 로컬 규칙
+.env
+engineering_agent/output/*
+!engineering_agent/output/.gitkeep
+.claude/*.local.md
+.claude/settings.local.json
+.claude/hooks/.stop_hook_state/
+.claude/skills/
+.agents/
+skills-lock.json
