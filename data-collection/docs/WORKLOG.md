@@ -23,6 +23,102 @@
 
 ## 작업 기록
 
+### 2026-09-29 · Claude · Codex 3차 재검수 반영 — 조율 설명서 4차 개정 (SB-189)
+
+- 요청·목적: 사용자 — [Codex 3차 재검수](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK3_20260929.md) 확인·반영.
+- 재검수 결과: 앞선 지적은 모두 수정 확인. D·A·B·C 통과, C′ 실패 검출. 남은 P2 하나(⑦ 가·⑩의 입력 연결 범위).
+- 확인(읽기만): 조율 `catalog.py:55-58` G-01 입력은 칸별 명시 연결이다. `RunView`(`service.py:42-51`)에는 `gateResult`가 없다. 지적이 맞다.
+- 변경 파일: [설명서](guides/ORCHESTRATION_HANDOFF.md)
+  - ⑦ 가 행: 모델 + 입력 연결 두 곳
+  - ⑦ 표시: `RunView` 경로
+  - ⑩ 행: (ㄱ) 확인 필요만 추가·`eligibility_of()` 유지 / (ㄴ) 공급 단순화·필수 칸 변경
+  - 4차 개정 기록
+  - STATUS
+- 코드 블록·검증 스크립트·서비스 코드 변경 없음. 그래서 검증을 다시 돌리지 않았다(직전 D·A·B·C 결과 유효).
+- 다음 단계: 설명서 쪽 지적 정리 완료. 조율 담당 합의(①②③⑦) → 실제 공고 공급 통합 시험.
+
+### 2026-09-29 · Codex · 조율 설명서 3차 개정 재검수
+
+- 요청·목적: 사용자의 재검수 요청에 따라 Claude의 [2차 재검수 응답](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK2_RESPONSE_20260929.md), 설명서 3차 개정과 검증 스크립트를 확인했다.
+- 작업 전 상태: Claude 변경은 미커밋·일부 스테이징 상태. 기존 변경과 스테이징을 보존했다.
+- 변경 파일: [재검수 결과](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK3_20260929.md), 이 WORKLOG, [STATUS](STATUS.md), [문서 지도](README.md). 서비스 코드·DB·Claude 설명서·프로브는 수정하지 않았다.
+- 결과: 앞선 P2 두 건과 P3 문구 보완 확인. C는 더 보기 새 결과 버전·11~20위·실패 알림 부재를 판정하고 C′가 시간 초과를 실패로 검출한다. 기간 유형의 두 모델 추가 계약과 확인 필요 이유 선택도 적혔다. 추가 P2는 ⑦ 가 방식·⑩의 공고 ID 입력 연결과 필수 자격 필드 변경 범위 누락이다.
+- 검증: 번들 Python 3.12 + 기존 `.venv` 패키지로 `orchestration_probe` 독립 재실행. D·A·B·C 통과, 종료 코드 0; 공고 2,525건 × 5입력 G-01 차이 0. C 정상은 후보 버전 2·11~20위·알림 없음, C′ 타임아웃은 버전 1·1~10위·`X-C2-FAIL`로 실패 검출. 별도 DB 없는 대역 시험에서 C/C′·A·D 정상·0건 분기 확인. 편집 파일 제어문자 0, `git diff --check`·`git diff --cached --check` 통과. 공용 DB는 SELECT만 실행했다.
+- 미검증·남은 문제: Linux, 실제 공고 공급, 확인 필요 화면, 동시 요청·재시작, 사람 기준 신청 가능 여부. 조율 담당과 ①②③⑦ 계약 합의가 필요하다. 판정표 P1은 사용자 지시대로 멈춘 상태다.
+- 다음 단계: Claude가 ⑩의 입력 바인딩·자격 필드 범위를 문서에 보완하고 실제 공급 함수로 통합 시험한다.
+
+### 2026-09-29 · Claude · Codex 2차 재검수 반영 — 조율 설명서 3차 개정 (SB-189)
+
+- 요청·목적: 사용자 — [Codex 2차 재검수](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK2_20260929.md) 확인·반영.
+- 변경 파일:
+  - `experiments/orchestration_probe.py`
+    - C를 `_run_flow()`로 나눴다. 검사 여섯 가지 + C′(offset 10 `TimeoutError` 주입)가 실패를 잡는지 확인한다.
+    - A는 순위를 정확히 비교한다. D는 계약·참고를 나눴다.
+  - [설명서](guides/ORCHESTRATION_HANDOFF.md)
+    - ① `apply_period_type` 두 모델 추가 계약
+    - ⑦ `{condition, reason}` 목록(권장)
+    - 3.1·7절 `.venv` 재생성 안내, 5절 표 C, 3차 개정 기록
+  - [STATUS](STATUS.md): 24·26행 `\a`→BEL 복구
+  - [2차 응답](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK2_RESPONSE_20260929.md)(신규), 문서 지도(Codex가 고친 행에 응답 링크만 추가), 인계서
+- 확인:
+  - STATUS BEL은 사실이었다. 파이썬 스크립트로 고치다 생긴 Claude의 실수다.
+  - `.venv` 실행 불가는 Codex 환경 한정이다. 이 PC는 `pyvenv.cfg` home이 있고 3.12.10으로 실행된다.
+- 검증: `python -m experiments.orchestration_probe --sbrain ..\agent-orchestration` → D·A·B·C 통과, 종료 코드 0.
+  - C: 결과 버전 2, 11위부터, 알림 없음.
+  - C′: 결과 버전 1, 1위부터, `X-C2-FAIL` → 세 검사가 어긋나 **실패로 검출**.
+  - 편집한 문서 7개에서 제어문자 0.
+- 다음 단계: 조율 담당 합의(①②③⑦) → 실제 공고 공급 통합 시험.
+
+### 2026-09-29 · Codex · 조율 설명서 2차 개정 재검수
+
+- 요청·목적: 사용자 검토 요청에 따라 Claude의 [재검수 응답](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK_RESPONSE_20260929.md), 설명서 2차 개정과 프로브를 실제 조율 계약·흐름에 대조했다.
+- 작업 전 상태: Claude 변경은 미커밋·일부 스테이징 상태였다. 서비스 코드·DB는 바뀌지 않았다. 기존 변경을 보존했다.
+- 변경 파일: [이번 재검수 결과](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK2_20260929.md), 이 WORKLOG, [STATUS](STATUS.md), [문서 지도](README.md). Claude의 설명서·프로브와 서비스 코드·DB·Git 스테이징은 수정하지 않았다.
+- 결과: 앞선 P2 네 건의 설명서 반영은 확인했다. 새 P2는 프로브 C의 더 보기 실패 거짓 통과와 날짜 없는 공고의 기간 유형 전달 계약 누락이다. 확인 필요 이유의 전달 범위, STATUS 경로 제어문자, 검증 명령의 깨진 가상환경, D의 정상·0건 판정도 기록했다.
+- 검증: 번들 Python 3.12 + 기존 `.venv` 패키지로 `orchestration_probe` 독립 재실행. D·A·B·C 통과, 종료 코드 0; 공고 2,525건, B 5입력 차이 0. 별도 DB 없는 MORE `TimeoutError` 주입에서 C가 더 보기를 1위부터 10건으로 잘못 출력하고 `True`를 반환했다. `git diff --check`·`git diff --cached --check` 통과. DB 조회는 SELECT만 실행, 유료 API 호출 없음.
+- 미검증·남은 문제: Linux, 실제 `Announcement` 공급, 확인 필요 화면, 동시 요청·재시작, 사람 기준 신청 가능 여부. 조율 담당과 ①②③⑦ 계약 합의가 필요하다. 판정표 P1은 사용자 지시대로 멈춘 상태다.
+- 다음 단계: Claude가 프로브 판정과 문서 계약을 보완한 뒤 실제 공고 공급으로 통합 시험한다.
+
+### 2026-09-29 · Claude · Codex 재검수 P2 반영 — 조율 설명서 2차 개정 (SB-189)
+
+- 요청·목적: 사용자 — [재검수](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK_20260929.md) P2 네 건 반영.
+- 변경 파일:
+  - [설명서](guides/ORCHESTRATION_HANDOFF.md)
+  - `experiments/orchestration_probe.py`: D·A 대역 검사, 거짓 통과 제거, 안내·절 번호, 도움말 `\a` 이스케이프
+  - [재검수 응답](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK_RESPONSE_20260929.md)(신규), 문서 지도, STATUS
+  - 서비스 코드·DB 변경 없음.
+- 전후 차이:
+  - 빠른 시작이 `recommend()`가 됐다. "정상"이 아니면 `(status, [])`, 0건이면 안내한다.
+  - `tc2()`는 **첫 조회에서만** 비정상 수집 시 빈 카드를 준다.
+  - ⑦에 가·나 방식과 규모를 넣었다. SELECT 집계로 고를 수 있는 공고 기준, 접수기간 제외: 예비창업자 1,492/1,594, 법인 1,757/1,757, 개인사업자 설립일 없음 1,769/1,769.
+  - 4.5 재사용 표: `c.get('설명') or c['요구']`, 접수 예정은 `start is not None and start > 오늘`.
+  - ①에 필수 칸 세 곳과 `isoformat()` 사용처를 넣었다. 3.3에 재시작 두 방식을 넣었다.
+  - 6절 ⑧에 "더 보기는 상태를 보지 않음"을 넣었다.
+- 내부 교차 검토:
+  - Workflow `handoff-p2-review`(에이전트 16, 약 8분, 읽기 전용). 구성은 검토자 3명(코드·계약·스크립트) + 지적별 반박 검증이다.
+  - 13건 중 8건 확인(중복 제외 6건), 5건 기각. 상세는 응답 2절.
+  - 핵심은 C3이다. 조율 `service.py:103`은 start_run에서만 수집 상태를 본다. MORE 구간(`sbrain_flow.py:196`)은 보지 않는다. 그래서 첫판 분기대로면 더 보기에서 안내 없이 0건이 되고 `more_used`만 소진된다.
+- 검증:
+  - `python -m experiments.orchestration_probe --sbrain ..\agent-orchestration` → D·A·B·C 통과, 종료 코드 0.
+    - A: 지연 첫 조회 0건, 지연 더 보기 10건.
+    - B: 5가지 경우 다름 0.
+  - 4.5 예시 블록을 설명서에서 꺼내 실행했다: `[('모집 상태', '모집 상태 정보 없음')]`. 2,525건 × 개인사업자에서 목록·판단식 오류 0.
+- 다음 단계: Codex 재검수, 조율 담당 합의(①②③⑦ — ⑦은 가·나 선택 포함).
+
+### 2026-09-29 · Claude · 오전 작업 마무리와 인계
+
+- 요청·목적: 사용자 — 작업을 마무리한다. PR #10 머지 뒤 `feature/SB-46-data-collection` 브랜치를 지울 예정이다.
+- 확인(읽기만):
+  - 로컬 HEAD `7e5e83f` = `origin/feature/SB-46-data-collection`(앞/뒤 0).
+  - `origin/main`이 HEAD를 포함한다(PR #10 merge `7ab629c`). 작업 트리에 data-collection 미커밋 변경 없음. 루트 `.claude/`·`.idea/`만 미추적.
+  - main의 `agent-orchestration/`은 검증 기준 `deb5c81`과 차이 0.
+- 변경 파일:
+  - [NEXT_SESSION_HANDOFF_20260929.md](NEXT_SESSION_HANDOFF_20260929.md) 신규
+  - 9/28 인계서를 `archive/`로 이동(파일 이동만, 스테이징은 되돌림)
+  - [문서 지도](README.md) 1·2절 링크, [STATUS](STATUS.md)
+- 그 밖: 미리보기 서버 8000·8010 종료.
+- 다음 단계: 새 인계서 4절(사용자가 순서 결정).
+
 ### 2026-09-29 · Codex · 조율 함수 설명서 개정 재검수
 
 - 요청·목적: 사용자 재검수 요청에 따라 Claude의 [응답](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RESPONSE_20260929.md)과 개정된 함수 설명서·검증 스크립트를 앞선 검수 항목별로 확인한다.

@@ -8,7 +8,7 @@
 | 문서 | 무엇 | 언제 |
 |---|---|---|
 | [STATUS.md](STATUS.md) | 지금 상태. **맨 위 항목이 최신**이다 | 작업을 시작할 때 항상 |
-| [NEXT_SESSION_HANDOFF_20260928.md](NEXT_SESSION_HANDOFF_20260928.md) | 최신 인계서. 결정·남은 일·실행 방법 | 새 세션을 시작할 때 |
+| [NEXT_SESSION_HANDOFF_20260929.md](NEXT_SESSION_HANDOFF_20260929.md) | 최신 인계서. 결정·남은 일·실행 방법 (9/29 조율 에이전트 연결 준비 마무리) | 새 세션을 시작할 때 |
 | [PLAN_ALIGNMENT_20260928.md](PLAN_ALIGNMENT_20260928.md) | 기획서·기능정의서와 대조한 결과와 **방향 결정**(업종·지역은 순위 신호, 제외 목록은 순위에 안 씀 등) | 매칭·업종 작업 전에 |
 | [FLOW.md](FLOW.md) | 코드가 실제로 어떤 순서로 도는지 | 코드를 고치기 전에 |
 | [WORKLOG.md](WORKLOG.md) | 작업 이력. **맨 위가 최신**, 과거 기록은 지우지 않는다 | 왜 이렇게 됐는지 찾을 때 |
@@ -24,7 +24,7 @@
 | [reviews/](reviews/) | 작업 지시서·검수 요청서·검수 결과. 주제별 폴더 | 아래 3절 |
 | [ml/](ml/) | 머신러닝(리랭커·업력 분류기) 설계·방향과 도식 | 서비스에 연결되지 않은 제출물용 |
 | [deliverables/](deliverables/) | 제출한 보고서(docx)와 확인용 렌더링(`_qa/`) | 제출본이다. 고치지 않는다 |
-| [archive/](archive/) | 지난 인계서(9/14, 9/22) | **최신이 아니다.** 배경을 찾을 때만 읽는다 |
+| [archive/](archive/) | 지난 인계서(9/14, 9/22, 9/28) | **최신이 아니다.** 배경을 찾을 때만 읽는다 |
 
 ## 3. reviews/ — 주제별 검수 기록
 
@@ -37,7 +37,7 @@
 | [reviews/ui/](reviews/ui/) | 검증 UI 지시·리뷰, `/compare` 화면·입력 확장 지시·리뷰 | 완료 |
 | [reviews/applicant_type/](reviews/applicant_type/) | 신청자 유형·업종 밀림 [Codex 판정 지시서](reviews/applicant_type/APPLICANT_TYPE_INDUSTRY_LABEL_TASK_20260928.md)와 [AI 참고 판정 결과](reviews/applicant_type/APPLICANT_TYPE_INDUSTRY_LABEL_RESULT_20260928.md) — 판정 꾸러미 `reports/label_pack_20260928/` | 블라인드 판정 완료 · 사람 검수 필요 |
 | [reviews/chroma/](reviews/chroma/) | Chroma 실제 벡터 정합성 검사 지시·리뷰 | 완료 |
-| [reviews/orchestration/](reviews/orchestration/) | 조율 에이전트용 [함수 설명서](guides/ORCHESTRATION_HANDOFF.md) · [검수 요청](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_REQUEST_20260929.md)·[Codex 결과](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_20260929.md)·[Claude 응답](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RESPONSE_20260929.md)·[Codex 재검수](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK_20260929.md) | 문서 오류 두 건 수정 확인. 실제 공급·확인 필요 표시는 조율 담당 합의 대기 (2026-09-29) |
+| [reviews/orchestration/](reviews/orchestration/) | 조율 에이전트용 [함수 설명서](guides/ORCHESTRATION_HANDOFF.md) · [검수 요청](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_REQUEST_20260929.md)·[Codex 결과](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_20260929.md)·[Claude 응답](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RESPONSE_20260929.md)·[Codex 재검수](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK_20260929.md)·[재검수 응답](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK_RESPONSE_20260929.md)·[Codex 2차 개정 재검수](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK2_20260929.md)·[2차 응답](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK2_RESPONSE_20260929.md)·[Codex 3차 개정 재검수](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK3_20260929.md) | 프로브 C·기간 유형 계약 보완 확인. G-01 공고 ID 입력 연결 범위 문구 보완과 조율 담당 합의 대기 (2026-09-29) |
 | [reviews/integration/](reviews/integration/) | [9/28 진행분 통합 검수](reviews/integration/CURRENT_PROGRESS_REVIEW_20260928.md)와 [재검수](reviews/integration/CURRENT_PROGRESS_REVIEW_RECHECK_20260928.md), [오후 변경 요청](reviews/integration/UNREVIEWED_CHANGES_REVIEW_REQUEST_20260928.md)·[검수 결과](reviews/integration/UNREVIEWED_CHANGES_REVIEW_20260928.md)·[Claude 응답](reviews/integration/UNREVIEWED_CHANGES_REVIEW_RESPONSE_20260928.md), [8건 재검수 + 저녁 변경 요청](reviews/integration/RECHECK_AND_EVENING_REVIEW_REQUEST_20260928.md)·[결과](reviews/integration/RECHECK_AND_EVENING_REVIEW_20260928.md)·[Claude 응답](reviews/integration/RECHECK_AND_EVENING_REVIEW_RESPONSE_20260928.md)·[재검수 결과](reviews/integration/RECHECK_AND_EVENING_REVIEW_RECHECK_20260928.md), **[판정 테이블·12·13단계·C-3 요청](reviews/integration/JUDGMENT_TABLES_REVIEW_REQUEST_20260928.md)·[Codex 검수 결과](reviews/integration/JUDGMENT_TABLES_REVIEW_20260928.md)**·[Claude 응답](reviews/integration/JUDGMENT_TABLES_REVIEW_RESPONSE_20260928.md) ·[Codex 재검수](reviews/integration/JUDGMENT_TABLES_REVIEW_RECHECK_20260928.md) | 재검수에서 P1 미해결: 옛 파일의 DB 덮기·손상 파일 예외·파일 없는 호스트의 오래된 blocked 사용. 90% 가드·흐름 화면도 보완 필요 |
 
 ## 4. 새 문서를 만들 때 (Claude·Codex 공통 규칙)

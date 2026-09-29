@@ -1,6 +1,6 @@
 # 공고팀 함수 설명서 — 조율 에이전트 개발자용
 
-공고팀 이근준 → 조율 에이전트(`agent-orchestration/`, SB-86) 개발자 · 2026-09-29 개정
+공고팀 이근준 → 조율 에이전트(`agent-orchestration/`, SB-86) 개발자 · 2026-09-29 4차 개정
 
 조율 쪽이 공고팀 파이썬 함수를 **직접 import 해서 부른다.** 공고팀 서버는 따로 켜지 않는다.
 이 문서의 예시와 수치는 모두 2026-09-29 실제 실행 결과다. 공고는 2,525건이다.
@@ -18,19 +18,29 @@ from search import app, collection_status
 
 app.boot()                                     # ① 서버 켤 때 한 번 (약 20초, 메모리 약 2GB)
 
-conn = app._connect()                          # ② 수집 상태 — boot 와 같은 접속 정보를 쓰게 연결을 넘긴다
-try:
-    status = collection_status.check(connection=conn)['status']   # '정상' | '지연' | '실패'
-finally:
-    conn.close()
 
-out = app.match(app.MatchRequest(              # ③ 공고 추천 (약 0.3초)
-    applicant_type='예비창업자', idea='AI 기반 반려동물 건강관리 앱', region='서울'))
-first = out['results'][0]                      #    추천 공고 10건 중 1위
-print(status, out['filtered_count'], first['notice_id'], first['title'], first['fit_score'])
+def recommend(applicant_type, idea, region=''):
+    """추천 공고 목록. 조율 흐름과 같게, 수집 상태가 '정상'이 아니면 추천하지 않는다."""
+    conn = app._connect()                      # ② 수집 상태 — boot 와 같은 접속 정보를 쓰게 연결을 넘긴다
+    try:
+        status = collection_status.check(connection=conn)['status']   # '정상' | '지연' | '실패'
+    finally:
+        conn.close()
+    if status != '정상':
+        return status, []                      #    조율: E-C2-STALE "공고 정보를 갱신하는 중입니다"
+    out = app.match(app.MatchRequest(          # ③ 공고 추천 (약 0.3초)
+        applicant_type=applicant_type, idea=idea, region=region))
+    return status, out['results']              #    빈 목록이면 조율: E-C2-NOMATCH "지금 신청 가능한 공고가 없습니다"
 
-row = app.STATE['rows'][first['notice_id']]    # ④ 고른 공고의 정보
-print(row['apply_end'], row['url'])
+
+status, cards = recommend('예비창업자', 'AI 기반 반려동물 건강관리 앱', '서울')
+if cards:
+    first = cards[0]                           #    추천 공고 10건 중 1위
+    print(status, first['notice_id'], first['title'], first['fit_score'])
+    row = app.STATE['rows'][first['notice_id']]    # ④ 고른 공고의 정보
+    print(row['apply_end'], row['url'])
+else:
+    print('추천 없음:', status)                 #    수집 상태가 정상이 아니거나, 조건에 맞는 공고가 0건
 ```
 
 | # | 하는 일 | 파일 | 부르는 법 | 조율 쪽 어디에 |
@@ -54,13 +64,21 @@ print(row['apply_end'], row['url'])
 - **현황**: 2,525건 중 **985건**은 마감일이 없다. 원래 마감일이 없는 공고다.
   - 예산 소진 시까지 678, 상시·수시 149, 선착순·모집 완료 시까지 94, 정보 없음 64.
   - 추천 상위 3건 중 2건이 이런 공고인 경우도 있었다.
-- **문제**: 조율 모델은 두 칸이 필수다.
-  - 두 칸을 `None` 허용으로만 바꾸면 조율 쪽 [sbrain/flow/service.py:259](../../../agent-orchestration/sbrain/flow/service.py)의 `ann.apply_end < 오늘`이 **오류로 멈춘다.**
+- **문제**: 조율 모델은 마감일을 **두 곳에서** 필수로 요구한다.
+  - 공고 정보 `Announcement.apply_start`·`apply_end`([sbrain/models/domain.py:161-162](../../../agent-orchestration/sbrain/models/domain.py))
+  - 추천 카드 `AnnouncementCard.apply_end`([domain.py:178](../../../agent-orchestration/sbrain/models/domain.py))
+  - 모델만 `None` 허용으로 바꾸면 마감일을 쓰는 코드가 **오류로 멈춘다.**
+    - 조율 화면 상태 [sbrain/flow/service.py:259](../../../agent-orchestration/sbrain/flow/service.py)의 `ann.apply_end < 오늘`
+    - 스텁 작업 분해(T-C3, [stubs.py:247](../../../agent-orchestration/sbrain/agents/stubs.py))와 보호 토큰(G-03, [stubs.py:392](../../../agent-orchestration/sbrain/agents/stubs.py))의 `apply_end.isoformat()`
+    - 실제 T-C3·G-03을 구현할 때도 같은 처리가 필요하다.
   - 예시 코드의 `9999-12-31`은 카드 형식 검사만 통과시키는 임시값이다. 마감 판정을 대신하지 못한다.
-- **제안**: 세 가지를 함께 바꾼다.
-  - `apply_end`·`apply_start`를 `date | None`으로 바꾼다.
-  - 마감 형태 `apply_period_type`을 함께 받는다(4.2).
-  - 259행을 `ann.apply_end and ann.apply_end < 오늘`로 바꾼다.
+- **제안**: 아래를 **한 번에** 바꾼다.
+  - 위 세 칸(`Announcement` 둘, `AnnouncementCard` 하나)을 `date | None`으로 바꾼다.
+  - 마감 형태 `apply_period_type`을 **새 칸으로 추가**한다. 지금은 `Announcement`에도 `AnnouncementCard`에도 이 칸이 없다([domain.py:156-185](../../../agent-orchestration/sbrain/models/domain.py)). 모델이 모르는 칸을 거부하므로(`extra="forbid"`) 합의 전에는 공고팀 예시(5절 `tc2()`)도 이 값을 넣을 수 없다.
+    - 값: `'fixed'`(기간 있음), `'budget_exhaustion'`(예산 소진 시까지), `'rolling'`(상시·수시), `'until_filled'`(선착순·모집 완료 시까지), `'unknown'`(정보 없음).
+    - 공고팀 출처: 추천 결과 `r['apply_period_type']`(4.2), 공고 정보 `app.STATE['rows'][id]['apply_period_type']`(4.4).
+    - 화면은 마감일이 없으면 이 값으로 "예산 소진 시까지"·"상시 접수" 등을 표시한다. **카드(추천 목록)와 공고 상세 둘 다** 표시하도록 합의한다.
+  - 마감일을 쓰는 곳에 빈 값 처리를 넣는다. 예: 259행 `ann.apply_end and ann.apply_end < 오늘`, `isoformat()` 호출 앞에 `None` 확인.
 
 ### ② 지원 금액 — `support_amount_max`
 - **현황**: 금액을 추출한 공고는 **787건**뿐이다(공용 DB `notice_conditions.amount_max_won`). 나머지는 공고문에 없거나 못 읽었다.
@@ -80,9 +98,25 @@ print(row['apply_end'], row['url'])
   - 정보가 부족한 공고도 **아무 안내 없이** 계획서 작성으로 넘어간다.
   - 모집 상태 모름 2,086건, 마감일 없음 985건이 여기에 해당할 수 있다.
   - `E-G1-UNPARSED`·`E-G1-MISSING` 안내는 나오지 않는다.
-- **제안**: `GateResult`에 확장 칸 `unknown_conditions: list[str]`을 추가한다(예: `['업력', '모집 상태']`). **그리고 계획서 작성 화면이 이 값을 사용자에게 보여 준다**는 것까지 합의한다.
-  - 칸만 추가하고 화면에 안 보이면 효과가 없다.
+- **제안**: `GateResult`에 확장 칸 `unknown_conditions`를 추가한다. **그리고 계획서 작성 화면이 이 값을 사용자에게 보여 준다**는 것까지 합의한다.
+  - **조건 이름만 줄지, 이유 문장도 줄지** 함께 정한다. 공고팀 권장은 **이유까지** 주는 것이다. 이름만으로는 사용자가 무엇을 확인할지 모른다.
+    - 이름만: `list[str]` — 예: `['업력', '모집 상태']`
+    - 이유까지(권장): `list[{"condition": str, "reason": str}]` — 예: `[{"condition": "모집 상태", "reason": "모집 상태 정보 없음"}]`. 이유는 4.5의 `c.get('설명') or c['요구']`로 만든다.
+  - 칸만 추가하고 화면에 안 보이면 효과가 없다. 지금 조율의 화면 상태 `RunView`([service.py:42-51](../../../agent-orchestration/sbrain/flow/service.py))에는 G-01 결과(`gateResult`)가 없다. 화면이 그 산출물을 읽게 하거나 `RunView`에 표시용 칸을 더하는 경로도 함께 정한다.
   - 조율 모델은 모르는 칸을 거부하므로(`extra="forbid"`) 합의 전에는 공고팀이 채울 수 없다.
+- **목록을 어디서 만드나 — 이것도 합의 대상이다.**
+  - 지금 `G01In`에는 신청자 정보·자격 조건·날짜만 있다([tasks.py:99-103](../../../agent-orchestration/sbrain/contracts/tasks.py)). 공고 ID·모집 상태·마감 형태는 없다.
+  - 그래서 5절의 `g01()`만으로는 "모집 상태를 모른다"는 사실을 알 수 없다.
+
+  | 방식 | 방법 | 비고 |
+  |---|---|---|
+  | **가. G-01에 공고 ID를 넘긴다 (공고팀 권장)** | `G01In`에 `announcement_id`를 추가하고, **G-01 입력 연결([catalog.py:55-58](../../../agent-orchestration/sbrain/flow/catalog.py))에도 공고 ID를 넣는다**(6절 ⑩과 같은 변경 — 연결을 빠뜨리면 값이 비어 입력 검증에서 실패한다). G-01 안에서 합격/불합격은 5절 `g01()` 규칙으로 정하고, 확인 필요 목록은 `app.eligibility()`의 `checks`에서 **`판정`이 `None`인 조건**을 모은다. 이때 **접수기간 줄은 뺀다**(4.5) | 공고팀 판정을 한 곳(공고팀 코드)에서 가져온다. `app.eligibility()`는 날짜 인자가 없어 실행한 날을 기준으로 한다 |
+  | 나. 공고 공급 단계에서 미리 계산한다 | `announcements(id)`가 `Announcement`의 확장 칸(예: `unknown_conditions`)에 목록을 담고, G-01 입력으로 연결한다 | 신청자 정보(유형·설립일)에 따라 목록이 달라진다. 그런데 공고 공급에는 신청자 정보가 들어오지 않아 **신청자별로 정확히 만들 수 없다** |
+
+- **숫자로 본 규모** (2026-09-29, 고를 수 있는 공고 기준, 접수기간 제외):
+  - 예비창업자는 1,594건 중 **1,492건(94%)**에 확인 필요 조건이 하나 이상 있다.
+  - 사업자는 **100%**다(법인 2024-12 설립 1,757건, 설립일 없는 개인사업자 1,769건). 개인/법인 구분 데이터가 없어 "지원대상 유형"이 항상 모름이기 때문이다.
+  - 그래서 "확인 필요 있음/없음" 한 칸으로는 **거의 모든 공고에 표시가 붙어 의미가 없다.** 화면에는 **어떤 조건이 확인 필요인지 조건 이름을 그대로** 보여 주고, 원문 링크로 이어지게 하는 것을 권한다.
 
 ### 공고팀이 정한 것 (참고)
 - **접수 시작 전 공고는 고를 수 있다**(2026-09-29). 매칭 1단계도 이런 공고를 남긴다. 그래서 G-01은 접수기간을 보지 않는다.
@@ -96,7 +130,7 @@ print(row['apply_end'], row['url'])
 
 | 항목 | 내용 |
 |---|---|
-| 파이썬 | 3.12 (공고팀은 3.12.10) |
+| 파이썬 | 3.12 (공고팀은 3.12.10). 가상환경 `.venv`는 **PC마다 새로 만든다.** 다른 PC에서 복사한 `.venv`는 원래 PC의 파이썬 설치 경로를 가리켜 실행되지 않는다: `python -m venv .venv` → `.\.venv\Scripts\python.exe -m pip install -r requirements.txt` |
 | 패키지 | `data-collection/requirements.txt` — PyMySQL, numpy, sentence-transformers(torch), chromadb, fastapi, pydantic |
 | DB 접속 정보 | 공용 MySQL. 키 이름은 `MYSQL_USER`, `MYSQL_PASSWORD` 등이다. **값은 공고팀에 따로 요청한다.** 읽는 위치는 3.2 |
 | 벡터 색인 | Chroma 폴더. Windows는 `data-collection/data/vecstore/`, Linux는 `VECSTORE_PATH`(기본 `data-collection/ec2/data/vecstore/chroma`) |
@@ -118,7 +152,10 @@ print(row['apply_end'], row['url'])
 1. `boot()`는 **서버 시작 때 한 번만** 부른다. 요청마다 부르면 매번 20초가 걸린다.
 2. **프로세스 하나에 약 2GB**가 든다. uvicorn `--workers`는 1로 둔다(EC2는 4GB + 스왑 2GB).
 3. 공고는 **매일 09:00 배치**(약 12분)로 바뀐다. `boot()`가 읽은 공고는 메모리에 남아 있어서 저절로 바뀌지 않는다.
-   - 새 공고를 보려면 **09:20 이후 새 프로세스를 띄워 준비가 끝난 뒤 옛 프로세스와 바꾼다**(재시작).
+   - 새 공고를 보려면 **09:20 이후 재시작**한다. 방법은 메모리 여유에 따라 고른다.
+     - **여유가 넉넉할 때**: 새 프로세스를 먼저 띄우고, 준비가 끝나면 옛 프로세스와 바꾼다. 멈춤 없이 바뀐다. 다만 바꾸는 동안 **2GB짜리 두 개(약 4GB 이상)**가 함께 돈다. OS·DB·다른 서비스 메모리도 더해지므로, 미리 여유를 확인한다(Linux `free -m`).
+     - **여유가 모자랄 때**(예: 4GB 서버, 같은 서버에 MySQL): 옛 프로세스를 **먼저 끄고** 새로 켠다. `boot()`가 끝날 때까지 **약 20~30초 동안 추천이 멈춘다.** 사용자가 적은 시간에 한다.
+     - 두 프로세스의 동시 구동은 공고팀이 측정하지 않았다. EC2 4GB에서는 두 번째 방법이 안전하다.
    - 실행 중에 `boot()`를 다시 부르지 않는다. 불러오는 도중 요청이 들어와도 안전한지 확인하지 않았다.
 4. 여러 스레드에서 `app.match()`를 동시에 불러도 안전한지는 **확인하지 않았다.** 확인 전까지는 호출을 한 번에 하나씩 처리하거나(잠금) 순서대로 부르기를 권한다.
 5. `boot()`가 멈추는 경우:
@@ -270,12 +307,26 @@ print(row['apply_end'], row['url'])
   - **접수 시작 전 공고를 "X"로 판정한다.** 매칭과 G-01(5절)은 이런 공고를 남기고 고를 수 있게 한다(2절 결정). 그대로 쓰면 추천해 놓고 고르면 막힌다.
   - 날짜 인자가 없어 실행한 날을 쓴다(`G01In.today`를 반영할 수 없음).
   - 없는 ID면 예외 대신 `JSONResponse`(404) 객체를 돌려준다.
-- 대신 "왜 확인이 필요한지" 문장(`checks[].설명`)이 필요할 때 참고용으로 쓸 수 있다. 예: 계획서 작성 화면의 "확인 필요" 표시(2절 ⑦).
+- 대신 **확인 필요 목록과 그 이유 문장**의 재료로 쓸 수 있다(2절 ⑦ 가 방식). 다만 **조건별로 골라서** 쓴다.
+
+  | 조건 줄 | 쓸 것 | 쓰지 않을 것 |
+  |---|---|---|
+  | 지원대상 유형, 업력 | `판정`이 `None`이면 확인 필요로 올린다. 이유 문장은 **`c.get('설명') or c['요구']`**로 만든다. `설명` 칸은 지원대상 유형 줄에만 항상 있다. 업력 줄에는 근거가 있을 때만 있다(공고문 업력 근거 또는 본문 예비창업자 근거, [search/app.py:844-870](../../search/app.py#L844)). `c['설명']`으로 바로 꺼내면 대부분의 업력 줄에서 `KeyError`가 난다 | — |
+  | 모집 상태 | `판정`이 `None`이면 확인 필요로 올린다(기업마당은 모두 `None`). 이 줄에는 `설명` 칸이 **없다**. 이유는 `c['요구']`("모집 상태 정보 없음")를 쓴다 | — |
+  | **접수기간** | **쓰지 않는다.** 시작 전 공고는 따로 **"접수 예정 (시작일 YYYY-MM-DD)"**로 표시한다. 판단 기준: `start = app.STATE['rows'][id]['apply_start']`로 꺼낸 뒤 **`start is not None and start > 오늘`**이면 접수 예정이다. **시작일이 없는 공고 985건**(모두 마감일도 없음: 예산 소진·상시·선착순·정보 없음)은 접수 예정이 아니다. 이 공고들은 ①처럼 `apply_period_type`으로 "예산 소진 시까지" 등을 표시한다. `None`을 확인하지 않고 비교하면 `TypeError`가 난다. G-01 안에서 계산하면 `오늘`은 `inp.today`를 쓴다 | 이 줄의 `X`와 `설명`. 고를 수 있게 한 결정(2절)과 **모순되는 안내**가 된다 |
+
+  - 2026-09-29 확인: 고를 수 있는 공고에서 이 함수가 `X`를 준 경우는 **접수기간 줄뿐**이었다. 예비창업자 17건, 사업자 21건이고, 모두 접수 시작 전 공고다.
+  - 이 함수로 합격/불합격을 정하지 않는다. 그것은 5절 `g01()`이 정한다.
 
 ```python
 res = app.eligibility(app.GateRequest(notice_id='bizinfo:PBLN_000000000126505', applicant_type='예비창업자'))
 res['marks']   # {'지원대상 유형': 'O', '업력': 'O', '접수기간': 'O', '모집 상태': '?'}
 res['checks'][0]['설명']   # '근거: "전국의 예비창업자(개인·팀) 또는 창업 10년 미만 기업(개인·법인)"'
+
+# 확인 필요 목록 (2절 ⑦ 가 방식) — 접수기간 줄은 빼고, 설명이 없으면 요구 문구를 쓴다
+unknown = [(c['조건'], c.get('설명') or c['요구'])
+           for c in res['checks'] if c['판정'] is None and c['조건'] != '접수기간']
+# 이 공고는 [('모집 상태', '모집 상태 정보 없음')]
 ```
 
 ---
@@ -286,12 +337,12 @@ res['checks'][0]['설명']   # '근거: "전국의 예비창업자(개인·팀) 
 
 | 확인 | 결과 |
 |---|---|
-| A | T-C2 `offset` 0·10 각 10건(순위 1~10, 11~20)이 조율 쪽 `TC2Out` 검사를 통과 |
+| A | T-C2 `offset` 0·10 각 10건(순위 1~10, 11~20)이 조율 쪽 `TC2Out` 검사를 통과. 수집 상태가 "지연"이면(대역): 첫 조회(offset 0)는 추천을 부르지 않고 빈 카드 + "지연"을 돌려줌, 더 보기(offset 10)는 카드를 그대로 줌 |
 | B | G-01 결과가 매칭 1단계(`app.eligible_with_types`, 마감 제외)와 공고 2,525건 × 신청자 5가지 경우에서 **전부 같음**. 5가지: 예비창업자 / 개인사업자 2025-03 설립 / 법인 2019-01 설립 / 법인 2024-12 설립 / 개인사업자 설립일 없음 |
-| C | 조율 쪽 `build_stub_app()`에 `registry.bind`로 끼워 `start_run` → 더 보기 → 선택 → G-01 → "계획서작성"까지 감. **단, 공고 공급의 양식·평가 항목·금액은 스텁 값이다**(2절 ③) |
-| D | 1절 "빠른 시작" 코드가 그대로 실행됨 |
+| C | 조율 쪽 `build_stub_app()`에 `registry.bind`로 끼워 `start_run` → 더 보기 → 선택 → G-01 → "계획서작성"까지 감. 여섯 가지를 검사한다: 첫 조회 1~10위, 더 보기 **새 결과 저장**, 11~20위, 더 보기 실패 알림(`X-C2-FAIL`) 없음, G-01 통과, 계획서작성 진입. **C′**는 더 보기에 시간 초과를 일부러 넣어, 이 검사가 실패를 **실패로 잡는지** 확인한다. **단, 공고 공급의 양식·평가 항목·금액은 스텁 값이다**(2절 ③) |
+| D | 1절 "빠른 시작" 코드가 그대로 실행됨. 대역으로 두 경로도 확인: 수집 상태 "지연"이면 추천을 부르지 않고 `('지연', [])`, 추천 0건이면 오류 없이 `('정상', [])` |
 
-⚠ 표시가 붙은 값은 2절 합의 전의 임시값이다.
+⚠ 표시가 붙은 값은 합의 전의 임시값이다(①② 2절, ⑤ 6절).
 
 ```python
 from datetime import date
@@ -322,6 +373,10 @@ def tc2(inp: c.TC2In, tools) -> c.TC2Out:
         gender=co.gender, certifications=co.certifications or [], first_startup=co.is_first_startup,
         top=min(inp.top_k, 10), offset=inp.offset)     # 카드 최대 10건 · rank 1~20 (4.2)
     status = collection_status_now()
+    if inp.offset == 0 and status != '정상':   # 첫 조회만: 조율 흐름이 E-C2-STALE 로 멈춘다(service.py:103)
+        return c.TC2Out(candidates=[], collection_status=status, filtered_count=0, fallback_used=False)
+    # 더 보기(offset 10)에서는 빈 카드를 주지 않는다. 조율 흐름이 더 보기 뒤에는 수집 상태를 보지 않아서
+    # (sbrain_flow.py:196) 안내 없이 0건이 되고 '더 보기' 기회만 사라진다(service.py:120). 첫 조회와 같은 메모리 공고라 그대로 준다
     out = tools.search('공고 매칭', lambda timeout: app.match(req))
     cards = [AnnouncementCard(
         announcement_id=r['notice_id'], title=r['title'], agency=r['organizer'] or '-',
@@ -392,9 +447,9 @@ def g01(inp: c.G01In) -> c.G01Out:
 | ④ | `support_field`가 "창업(06)"과 "기술개발(02)" 두 값만 허용한다 | 기업마당 8개 분야(경영, 기술, 수출, 금융, 인력, 내수, 창업, 기타)와 K-Startup 분류를 전부 수집한다 | 값 범위를 넓히거나 `str`로 바꾸기 |
 | ⑤ | 카드의 `match_reason`(추천 이유) | 결과에 이유 문장이 없다. 재료는 있다: `region_match`, `rules`, `fit_score` | 조율 쪽이 재료로 짧은 문장을 만들기. 공고팀이 문장을 추가해 주기를 원하면 알려 달라 |
 | ⑥ | 공고의 `status`가 "모집중"/"마감" 두 값뿐이다 | 모집 상태 모름 **2,086건**(기업마당은 칸이 없음) | 모르면 "모집중"으로 두기. 마감이 지난 공고는 추천에서 이미 빠진다. ⑦의 확인 필요 표시와 함께 쓰기 |
-| ⑧ | 수집 상태가 "지연"이어도 매칭 전체가 멈춘다 | 배치가 하루 늦으면 서비스가 멈춘다 | 기능정의서 R-3(24시간)을 따른다. 알고만 있어 달라 |
+| ⑧ | 수집 상태가 "지연"이어도 매칭 전체가 멈춘다. 반대로 **더 보기**에서는 수집 상태를 보지 않는다 | 배치가 하루 늦으면 서비스가 멈춘다. 첫 조회 뒤 상태가 바뀌어도 더 보기는 그대로 진행된다([sbrain_flow.py:196](../../../agent-orchestration/sbrain/flow/sbrain_flow.py)) | 기능정의서 R-3(24시간)을 따른다. 알고만 있어 달라. 공고팀 예시는 더 보기에서 빈 카드를 주지 않는다(5절). 더 보기에서도 막아야 한다고 보면, 조율 흐름이 MORE 구간 끝에서 수집 상태를 보고 `E-C2-STALE`을 알리고 `more_used`를 되돌려야 한다 |
 | ⑨ | `CompanyInfo.region` 값 | 공고팀은 4.2의 16개 값만 읽는다 | 같은 목록을 쓰기. 다른 값이면 지역 순위 조정이 꺼진다 |
-| ⑩ | `G01In`에 공고 ID가 없다 | 그래서 5절은 공고 공급 단계에서 `eligibility_of()`로 미리 변환한다 | 공고 ID를 넣어 주면 G-01 안에서 `eligibility_of(공고ID)`를 바로 부를 수 있어 공고 공급이 단순해진다. **`app.eligibility()`로 바꾸지는 않는다**(4.5) |
+| ⑩ | `G01In`에 공고 ID가 없다 | 그래서 5절은 공고 공급 단계에서 `eligibility_of()`로 미리 변환한다 | 공고 ID를 넣어 준다(2절 ⑦ **가** 방식과 같은 변경). **바꿀 곳은 두 군데다**: `G01In` 모델에 `announcement_id` 칸, G-01 입력 연결([catalog.py:55-58](../../../agent-orchestration/sbrain/flow/catalog.py))에 선택 공고의 ID. 그다음은 둘 중 하나를 고른다.<br>**(ㄱ) 확인 필요 목록만 추가**(작은 변경): `eligibility`·`eligibility_parsed`는 지금처럼 필수로 두고, 공고 공급의 `eligibility_of()`도 **그대로 둔다**. G-01은 공고 ID로 `app.eligibility()`를 불러 확인 필요 목록만 만든다.<br>**(ㄴ) 공고 공급까지 단순화**: 위 두 칸을 `Announcement`와 `G01In`에서 선택으로 바꾸거나 빼고, 입력 연결에서도 뺀다. 그 뒤 G-01 안에서 `eligibility_of(공고ID)`로 합격/불합격을 정한다.<br>**공고 ID 칸만 추가하고 공급 단계의 `eligibility_of()`를 없애면 필수 칸이 비어 실패한다.** 어느 쪽이든 **합격/불합격을 `app.eligibility()`로 정하지는 않는다**(4.5) |
 | ⑪ | 벡터 DB 장애 때 `summary_embedding` | 벡터 색인이 없으면 꺼낼 수 없다 | 공용 DB `notices.embedding`에서 읽기(4.4). 또는 이 칸을 선택으로 바꾸기 |
 | ⑫ | 입력 칸 변환 | `industry_code`(예: `J62`)는 공고팀이 쓰는 업종 **이름**이 아니다. `hiring_plan`은 조율 쪽 str ↔ 공고팀 bool. `TC2In.today`는 반영되지 않는다(4.2) | 업종 코드 → 이름 변환은 조율 쪽 입력 단계에서 하기(업종 순위는 현재 꺼져 있어 영향 작음). `hiring_plan`은 "없음"·빈 값이 아니면 True처럼 규칙을 정하기 |
 
@@ -406,13 +461,32 @@ def g01(inp: c.G01In) -> c.G01Out:
 - 이 문서의 함수 이름이나 입출력 칸을 바꾸게 되면 **이 문서를 먼저 고치고 알린다.**
 - 확인하는 법(공고팀·검수용):
   ```powershell
-  git archive origin/feature/SB-86-orchestration-flow agent-orchestration | tar -x -C <임시 폴더>
-  .\.venv\Scripts\python.exe -X utf8 -m experiments.orchestration_probe --sbrain <임시 폴더>\agent-orchestration
+  # data-collection 폴더에서. 조율 코드는 저장소 루트 agent-orchestration/ 에 있다(main 머지본, deb5c81 과 같다)
+  .\.venv\Scripts\python.exe -X utf8 -m experiments.orchestration_probe --sbrain ..\agent-orchestration
   ```
+  - `.venv`가 실행되지 않으면 그 PC에서 가상환경을 새로 만든다(3.1). 공용 DB 접속 정보(`.env`)와 메모리 약 2GB가 필요하다.
 - 문의: 이근준(공고팀).
 
 ## 개정 기록
 
+- **2026-09-29 4차 개정** ([Codex 3차 재검수](../reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK3_20260929.md) 반영)
+  - ⑦ 가·⑩: 공고 ID는 `G01In` 모델과 G-01 입력 연결(`catalog.py:55-58`) **두 곳**을 바꿔야 한다고 적었다. (ㄱ) 확인 필요 목록만 추가 — `eligibility_of()` 유지, (ㄴ) 공급까지 단순화 — 두 필수 칸도 바꿈으로 나눴다.
+  - ⑦: 화면 상태 `RunView`에 G-01 결과가 없으니 표시 경로도 함께 정하자고 적었다.
+- **2026-09-29 3차 개정** ([Codex 2차 재검수](../reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK2_20260929.md) 반영)
+  - ① 마감 형태 `apply_period_type`을 `Announcement`·`AnnouncementCard` **두 모델에 새 칸으로** 추가하는 계약을 적었다(값 목록·공고팀 출처·카드와 상세 둘 다 표시).
+  - ⑦ 확인 필요를 조건 이름만 줄지 이유까지 줄지 정하도록 했다(이유까지 권장, `{condition, reason}` 목록).
+  - 3.1·7절에 `.venv`는 PC마다 새로 만든다는 안내를 넣었다.
+  - 검증 스크립트: C가 더 보기 **새 결과(11~20위) 저장과 실패 알림 없음**까지 검사하고, C′(더 보기 시간 초과 주입)로 그 검사가 실패를 잡는지 확인한다. A는 순위를 정확히 검사한다. D는 계약 검사와 오늘 데이터 참고 출력을 나눴다.
+- **2026-09-29 2차 개정** ([Codex 재검수](../reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK_20260929.md) P2 반영)
+  - 빠른 시작을 `recommend()`로 바꿨다. 수집 상태가 "정상"이 아니면 추천하지 않고, 0건이면 안내만 한다. 5절 `tc2()`도 같은 분기를 넣었다.
+  - ⑦에 "확인 필요 목록을 어디서 만드나"(가·나 방식, 가 권장)와 규모(예비창업자 94%, 사업자 100%)를 넣었다.
+  - 4.5에 조건 줄별 재사용 범위를 적었다. 접수기간 줄은 쓰지 않고 "접수 예정"으로 따로 표시한다.
+  - ①에 `AnnouncementCard.apply_end`와 스텁 T-C3·G-03의 `isoformat()`을 추가했다. 3.3에 재시작 방식별 메모리 조건을 적었다.
+  - 공고팀 내부 교차 검토(Claude 보조 에이전트 16개, 지적 13건 중 반박을 견딘 8건 = 실제 6건)를 반영했다.
+    - "접수 예정" 판단식에 `None` 확인을 넣었다(시작일 없는 985건에서 `TypeError`).
+    - 확인 필요 이유는 `c.get('설명') or c['요구']`로 쓴다(업력·모집 상태 줄에 `설명` 칸이 없는 경우가 많음).
+    - `tc2()`의 수집 상태 분기를 **첫 조회에만** 적용했다. 더 보기에서 빈 카드를 주면 조율 흐름이 안내 없이 0건을 보여 주고 더 보기 기회만 사라진다. ⑧에도 적었다.
+    - 확인하는 법을 저장소 안 `..\agent-orchestration`으로 바꿨다(SB-86 브랜치는 머지 후 삭제). 절 번호 참조를 바로잡았다.
 - **2026-09-29 개정** ([Codex 검수](../reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_20260929.md) 반영)
   - 맨 앞을 "빠른 시작" 코드로 바꿨다.
   - "연결 전에 꼭 합의할 것"(①②③⑦)을 앞으로 옮겼다.
