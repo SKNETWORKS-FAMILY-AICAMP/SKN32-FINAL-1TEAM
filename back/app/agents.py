@@ -85,6 +85,40 @@ class ImplementArtifactResult:
 
 
 @dataclass
+class ImplementInputs:
+    """구현 Agent(T-B1/T-B2) 입력 — 프론트 요청사항 5차 D-1. agent-orchestration
+    (`agent-orchestration/sbrain/contracts/tasks.py`)의 TB1In/TB2In은 ItemSpec/PlanDoc/
+    ReworkInput 같은 중첩 pydantic 모델인데, 이 모듈의 기존 원칙(Agent 담당자가 우리 DB
+    스키마를 몰라도 됨)을 지키려고 여기서는 그 변환에 필요한 재료만 평평한 값으로 모아
+    넘긴다 — 실제 TB1In/TB2In 조립은 이 함수의 실제 구현(Agent 담당)이 맡는다.
+
+    [2026-09-29, DB에 아직 없는 필드 주의] 아래 필드 중 일부는 지금 DB 스키마에 정확히
+    대응하는 곳이 없어 최선으로 근사한 값이다 — 실제 구조화된 입력칸이 생기면 호출부
+    (app/routers/projects.py)만 고치면 된다:
+      - item_name/one_line_summary/target_customer: 전부 projects.description(아이디어
+        설명 한 줄)을 그대로 쓴다 — 이 앱에는 이름/요약/타깃고객을 각각 받는 입력칸이 없다.
+      - keywords: 대응하는 입력칸이 없어 항상 빈 리스트.
+      - feature_list: pricing_items.service_name 목록으로 근사한다(수익모델 상품·서비스
+        이름 — "기능 목록"과 정확히 같은 개념은 아니지만 지금 있는 것 중 가장 가깝다).
+        그마저도 없으면 project_description 하나를 감싸 최소 1개를 보장한다
+        (TB1In.feature_list/ItemSpec.core_features가 1개 이상을 요구함).
+      - tables: 계획서 표 데이터를 담는 테이블이 DB에 아예 없어 항상 빈 리스트
+        (sections만 plan_sections에서 채운다).
+    """
+
+    category: str  # '원페이지' | '웹개발' | 'AI_API' — agent-orchestration Category
+    item_name: str
+    one_line_summary: str
+    target_customer: str
+    keywords: list[str]
+    feature_list: list[str]  # 1개 이상 — 비어 있으면 호출부가 400으로 막아야 한다.
+    sections: list[tuple[str, list[str]]]  # (제목, 문장 목록) — 인포그래픽(T-B2)만 사용
+    tables: list[tuple[str, list[list[str]]]]  # (제목, 행 목록) — 인포그래픽(T-B2)만 사용
+    issues: list[str]  # 재작성 사유(검증-2 미달 근거) — 최초 생성이면 빈 리스트
+    previous_result_ref: str | None  # 재작성 시 직전 artifact_id 문자열 — 최초 생성이면 None
+
+
+@dataclass
 class FormatFindingResult:
     """format_findings(T-P1, 문장 형식 검수) 결과 — 지적만 하고 고치지는 않는다."""
 
@@ -218,15 +252,23 @@ def run_verify1_evidence_retry(items: list[tuple[str, Decimal]]) -> list[ScoreIt
 # ---------------------------------------------------------------------------
 # 구현
 # ---------------------------------------------------------------------------
-def run_implement_agent_retry(*, artifact_kind: str, project_description: str) -> ImplementArtifactResult:
+def run_implement_agent_retry(*, artifact_kind: str, inputs: ImplementInputs) -> ImplementArtifactResult:
     """구현 Agent 재시도 — artifact_kind='prototype'|'infographic' 파일을 새로 만든다
-    (채점은 검증-2 몫이라 여기서 하지 않는다). 실제 연동 시: 실제 코드/이미지 생성 파이프라인
-    결과 파일의 바이트와 확장자를 이 반환 타입 그대로 돌려주면 된다 — 저장 위치(UPLOAD_DIR)는
-    여전히 projects.py가 결정한다."""
+    (채점은 검증-2 몫이라 여기서 하지 않는다). [2026-09-29, 프론트 요청사항 5차 D-1]
+    예전엔 project_description 한 줄만 받았는데, T-B1/T-B2가 실제로 필요로 하는 값
+    (item_spec/feature_list/plan_doc/rework_input에 해당하는 재료)을 ImplementInputs로
+    묶어서 받는다 — 실제 TB1In/TB2In 조립·run_tb1/run_tb2 호출(Tools 포함)은 이 함수의
+    실제 구현(Agent 담당)이 맡는다. 지금은 여전히 더미라 inputs 대부분을 안 쓴다 —
+    인포그래픽도 .html로 만드는 문제 역시 실제 구현으로 교체하면서 같이 해결될 부분이라
+    (Agent 담당 몫) 더미 상태로 그대로 둔다.
+
+    실제 연동 시: 실제 코드/이미지 생성 파이프라인 결과 파일의 바이트와 확장자를 이
+    반환 타입 그대로 돌려주면 된다 — 저장 위치(UPLOAD_DIR)는 여전히 projects.py가
+    결정한다."""
     label = '프로토타입' if artifact_kind == 'prototype' else '인포그래픽'
     html = (
         f'<!doctype html><html><body><h1>{label} 재시도 결과물 (더미)</h1>'
-        f'<p>{project_description}</p>'
+        f'<p>{inputs.one_line_summary}</p>'
         f'<p>generated: {uuid.uuid4().hex[:8]}</p></body></html>'
     ).encode()
     return ImplementArtifactResult(file_bytes=html, file_ext='.html')

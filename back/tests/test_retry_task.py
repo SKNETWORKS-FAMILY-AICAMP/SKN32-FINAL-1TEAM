@@ -338,6 +338,22 @@ def test_implement_prototype_retry_records_output_ref_to_artifact(retry_setup, d
     assert execution.output_ref == {'table': 'artifacts', 'id': artifact.artifact_id}
 
 
+def test_implement_prototype_retry_blocked_when_feature_list_empty(retry_setup, db_session):
+    """[2026-09-29 신규, 프론트 요청사항 5차 D-1] T-B1/T-B2는 feature_list가 최소 1개
+    있어야 계약상 돌 수 있다(ItemSpec.core_features min_length=1) — 실제로는
+    projects.description이 항상 필수(min_length=1)라 거의 발생하지 않지만, pricing_items도
+    없고 description도 빈 상태를 직접 만들어 서버가 Agent 호출 전에 400으로 막는지 본다."""
+    from app.models import Project
+
+    project = db_session.get(Project, retry_setup['project_id'])
+    project.description = ''
+    db_session.commit()
+
+    res = _retry(retry_setup['client'], retry_setup['project_id'], 'implement_prototype')
+    assert res.status_code == 400, res.text
+    assert 'feature_list' in res.json()['detail']
+
+
 def test_review_token_check_retry_records_output_ref_to_proofread_log(retry_setup, db_session):
     from app.models import AgentExecution, ProofreadLog
 

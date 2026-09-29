@@ -304,6 +304,50 @@ def _restore_plan_doc_state(plan: BusinessPlan, snapshot: dict) -> None:
 # 유지한다. API 응답(plan.artifacts는 여전히 1개만 옴)은 바뀌지 않는다 — is_current로
 # 필터링해서 내려주기 때문.
 
+# [2026-09-29 신규, 프론트 요청사항 5차 D-1] artifacts.category(onepage/webdev/aiapi)를
+# agent-orchestration의 Category(Literal['원페이지','웹개발','AI_API'])로 바꾸는 표 —
+# DB 쪽 영문 코드는 그대로 두고 Agent에 넘길 때만 여기서 번역한다.
+_CATEGORY_TO_AGENT = {'onepage': '원페이지', 'webdev': '웹개발', 'aiapi': 'AI_API'}
+
+
+def _build_implement_inputs(
+    db: Session, project: Project, plan: BusinessPlan, artifact: Artifact | None,
+) -> 'agents.ImplementInputs':
+    """구현 Agent 재시도 호출에 넘길 app.agents.ImplementInputs를 DB에서 조립한다
+    (프론트 요청사항 5차 D-1) — 어떤 필드를 어디서 근사하는지는 ImplementInputs
+    docstring(app/agents.py) 참고. artifact가 None이면(아직 산출물이 없는 최초 생성
+    시점) category는 호출부가 이미 알고 있는 값을 넘겨야 하므로 이 함수는 재시도
+    경로 전용이다."""
+    sections = (
+        db.query(PlanSection)
+        .filter(PlanSection.plan_id == plan.plan_id)
+        .order_by(PlanSection.section_id)
+        .all()
+    )
+    pricing_items = db.query(PricingItem).filter(PricingItem.project_id == project.project_id).all()
+    feature_list = [p.service_name for p in pricing_items if p.service_name] or (
+        [project.description] if project.description else []
+    )
+
+    issues: list[str] = []
+    if artifact is not None:
+        reasons = db.query(ArtifactScoreReason).filter(ArtifactScoreReason.artifact_id == artifact.artifact_id).all()
+        issues = [r.reason_text for r in reasons if r.score is not None and r.max_score is not None and r.score < r.max_score]
+
+    return agents.ImplementInputs(
+        category=_CATEGORY_TO_AGENT.get(artifact.category, '웹개발') if artifact is not None else '웹개발',
+        item_name=project.description,
+        one_line_summary=project.description,
+        target_customer=project.description,
+        keywords=[],
+        feature_list=feature_list,
+        sections=[(s.title, [s.body]) for s in sections if s.body],
+        tables=[],
+        issues=issues,
+        previous_result_ref=str(artifact.artifact_id) if artifact is not None else None,
+    )
+
+
 def _get_current_artifact(db: Session, plan_id: int) -> Artifact | None:
     """이 plan의 "지금 채택된" 산출물 버전 하나 — GET /result, 재시도, 관리자 화면이
     전부 이 함수를 공유한다. artifact_id 최댓값이 아니라 is_current로 고른다: 재작성이
@@ -2108,10 +2152,17 @@ def retry_task(
 
             before_artifact_score = old_artifact.artifact_score
 
+            # [2026-09-29 신규, 프론트 요청사항 5차 D-1] T-B1/T-B2는 feature_list가 최소
+            # 1개 있어야 계약상 돌 수 있다(ItemSpec.core_features min_length=1) — Agent를
+            # 호출하기 전에 서버에서 먼저 막는다.
+            implement_inputs = _build_implement_inputs(db, project, plan, old_artifact)
+            if not implement_inputs.feature_list:
+                raise HTTPException(status_code=400, detail='기능 목록(feature_list)이 비어 있어 구현 Agent를 호출할 수 없습니다')
+
             # 구현 Agent는 파일만 새로 만든다 — 채점(점수 갱신)은 검증-2(verify2_*) 몫이다.
             artifact_kind = 'prototype' if task_key == 'implement_prototype' else 'infographic'
             result = agents.run_implement_agent_retry(
-                artifact_kind=artifact_kind, project_description=project.description,
+                artifact_kind=artifact_kind, inputs=implement_inputs,
             )
 
             # 파일은 app/agents.py가 만들어 돌려준 바이트를 그대로 저장한다 — 어디에 저장할지
