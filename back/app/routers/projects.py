@@ -415,6 +415,14 @@ def _upsert_canonical_data(db: Session, plan_id: int, result) -> dict:
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 UPLOAD_DIR = os.path.join(_REPO_ROOT, 'uploads')
 
+# [2026-09-29 신규, 프론트 요청사항 3차 B-5, 팀 확정 2026-09-29] POST /projects 첨부파일
+# 상한 — 프론트(front/src/features/workflow/shared.jsx)와 값을 맞춰야 하는 숫자라 여기
+# 상수 하나로 모아둔다. 프론트 검사(FileAttach)는 우회 가능하므로 서버에서도 같은 값으로
+# 막는다(create_project 참고).
+ATTACH_MAX_FILES = int(os.getenv('ATTACH_MAX_FILES', '5'))
+ATTACH_MAX_MB = int(os.getenv('ATTACH_MAX_MB', '10'))
+ATTACH_MAX_BYTES = ATTACH_MAX_MB * 1024 * 1024
+
 # 진행 중으로 취급하는 매칭 상태 — 이 상태의 매칭을 가진 프로젝트가 하나라도 있으면
 # 계정당 동시 실행 1건 제한(기획서 4-7, backend_decisions.md #11)에 걸려 새 프로젝트 생성을
 # 막는다. [2026-09-26 수정] waiting_resume(자동 재개 대기 중)도 화면상 "진행"으로 보이는
@@ -1590,6 +1598,18 @@ async def create_project(
             detail='서비스를 이용하려면 먼저 마이페이지에서 프로필을 만들어주세요.',
         )
 
+    # [2026-09-29 신규, 프론트 요청사항 3차 B-5] 첨부파일 개수·용량 상한 — 아직 회사/프로젝트
+    # 행을 하나도 안 만든 시점(이 아래부터 DB에 실제로 쓰기 시작한다)에 바로 막아서, 거절될
+    # 때 이미 저장된 첨부나 만들어진 프로젝트 행이 남지 않게 한다. UploadFile.size는
+    # Starlette가 multipart 파싱 중에 실제로 받은 바이트 수를 이미 채워둔 값이라(우리가
+    # 직접 read()하기 전) 파일 내용을 안 읽고도 용량을 확인할 수 있다.
+    real_files = [f for f in files if f.filename]
+    if len(real_files) > ATTACH_MAX_FILES:
+        raise HTTPException(status_code=400, detail=f'첨부파일은 최대 {ATTACH_MAX_FILES}개까지 올릴 수 있어요')
+    for f in real_files:
+        if (f.size or 0) > ATTACH_MAX_BYTES:
+            raise HTTPException(status_code=413, detail=f'"{f.filename}" 파일이 {ATTACH_MAX_MB}MB를 초과했어요')
+
     # 계정당 동시 실행 1건 제한(기획서 4-7, backend_decisions.md #11)의 락은 회사 프로필이
     # 아니라 계정(User 행) 자체를 잠가서 건다 — 회사 프로필을 만들기 전에 가장 먼저 걸어야
     # 같은 유저가 거의 동시에 두 번 요청을 보내도 두 번째 요청이 첫 번째 트랜잭션이 끝날
@@ -1681,9 +1701,7 @@ async def create_project(
         no_partners=body.no_partners,
         partners=[p.model_dump() for p in body.partners],
     ))
-    for f in files:
-        if not f.filename:
-            continue  # 빈 파일 필드는 건너뜀 (프론트가 파일 선택 안 하고 제출한 경우)
+    for f in real_files:  # 개수·용량 검증을 이미 통과한 목록(위 참고) — 빈 파일 필드는 여기 없음
         file_name, file_url = _save_attachment(f)
         db.add(ProjectAttachment(project_id=project.project_id, file_name=file_name, file_url=file_url))
 

@@ -725,6 +725,10 @@ class PolicyThresholdsIn(BaseModel):
     rework_cap: int = Field(ge=0)
     deviation_cap: float = Field(ge=0, le=100, allow_inf_nan=False)
     token_retry_cap: int = Field(ge=0)
+    # [2026-09-29 신규, 프론트 요청사항 3차 B-2] "verification_policies에 두면 관리자가
+    # 조절 가능"이라고 요청하신 부분 — DB 컬럼만으로는 관리자 화면에서 실제로 바꿀 방법이
+    # 없어서 다른 상한들과 같은 자리(PUT /admin/policy/thresholds)에 같이 넣는다.
+    regenerate_cap: int = Field(ge=0)
 
 
 class ChecklistItemIn(BaseModel):
@@ -759,6 +763,7 @@ class VerificationPolicyOut(BaseModel):
     rework_cap: int
     deviation_cap: float
     token_retry_cap: int
+    regenerate_cap: int
 
 
 class ItemOut(BaseModel):

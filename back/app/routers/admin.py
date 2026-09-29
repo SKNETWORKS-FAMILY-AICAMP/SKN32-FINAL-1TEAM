@@ -105,6 +105,7 @@ def save_policy_thresholds(body: PolicyThresholdsIn, db: Session = Depends(get_d
     policy.rework_cap = body.rework_cap
     policy.deviation_cap = body.deviation_cap
     policy.token_retry_cap = body.token_retry_cap
+    policy.regenerate_cap = body.regenerate_cap
     db.commit()
     db.refresh(policy)
     # TODO: notifyRecheckCapViolations() 에 해당하는 재채점 편차 점검을
