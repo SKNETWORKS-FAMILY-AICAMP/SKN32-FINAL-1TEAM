@@ -198,7 +198,8 @@ function adminAlertsFrom(items,executions,genAlerts=[]){
     if(g.acknowledged_at)continue;
     const item=byProject.get(g.project_id);
     if(item?.archived)continue;
-    alerts.push({key:`gen:${g.alert_id}`,alertId:g.alert_id,kind:'실패',title:`${GEN_STAGE_LABEL[g.stage]||'프로젝트'} 생성 실패`,detail:`[${g.last_error_kind}] ${g.failure_reason||'실패 원인이 기록되지 않았어요.'}`,project:item?.description||`프로젝트 #${g.project_id}`,projectId:g.project_id,tab:'progress',time:g.created_at});
+    // regenerate_exhausted: 사용자가 "다시 생성"을 상한까지 눌러도 실패해 더 할 수 있는 게 없는 건 — 맨 위로(3차 B-4).
+    alerts.push({key:`gen:${g.alert_id}`,alertId:g.alert_id,urgent:!!g.regenerate_exhausted,kind:g.regenerate_exhausted?'조치 필요':'실패',title:`${GEN_STAGE_LABEL[g.stage]||'프로젝트'} 생성 실패${g.regenerate_exhausted?' · 재생성 상한 도달':''}`,detail:`[${g.last_error_kind}] ${g.failure_reason||'실패 원인이 기록되지 않았어요.'}`,project:item?.description||`프로젝트 #${g.project_id}`,projectId:g.project_id,tab:'progress',time:g.created_at});
   }
   for(const item of items){
     if(item.archived)continue;
@@ -223,7 +224,7 @@ function adminAlertsFrom(items,executions,genAlerts=[]){
     if(item?.match_status==='failed')continue;
     alerts.push({key:`task:${row.execution_id}`,kind:'실패',title:`${row.task_key||row.agent_name} Task 오류`,detail:`실행 상태: ${row.status}`,project:item?.description||`프로젝트 #${row.project_id}`,projectId:row.project_id,tab:'agents',time:row.started_at});
   }
-  return alerts.sort((a,b)=>(b.time||'').localeCompare(a.time||''));
+  return alerts.sort((a,b)=>(b.urgent?1:0)-(a.urgent?1:0)||(b.time||'').localeCompare(a.time||''));
 }
 
 function AdminNotificationBell({onNavigate}){
@@ -268,7 +269,7 @@ function AdminNotificationBell({onNavigate}){
         {error&&<p role="alert" className="px-4 py-2 text-[12px] text-[var(--danger)]">{error}</p>}
         {!error&&alerts.length===0?<p className="px-4 py-6 text-center text-[12.5px] text-[var(--muted-fg)]">현재 확인이 필요한 작업이 없어요.</p>:
           <div className="soft-scroll max-h-80 overflow-y-auto divide-y divide-[var(--border)]">{alerts.map(a=><div key={a.key} className="relative hover:bg-[#f9fafb]"><button type="button" onClick={()=>{setOpen(false);onNavigate(a)}} className={'block w-full text-left px-4 py-3'+(a.alertId?' pr-16':'')}>
-            <p className="text-[11px] text-[var(--muted-fg)] truncate">『{a.project}』</p><div className="flex gap-2 items-center mt-1"><strong className="text-[12.5px]">{a.title}</strong><span className={'ml-auto text-[11px] font-semibold '+(a.kind==='실패'?'text-[var(--danger)]':'text-[var(--warn)]')}>{a.kind}</span></div><p className="text-[11.5px] text-[var(--muted-fg)] mt-1 break-words line-clamp-2">{a.detail}</p>
+            <p className="text-[11px] text-[var(--muted-fg)] truncate">『{a.project}』</p><div className="flex gap-2 items-center mt-1"><strong className="text-[12.5px]">{a.title}</strong><span className={'ml-auto flex-shrink-0 text-[11px] font-semibold '+(a.urgent||a.kind==='실패'?'text-[var(--danger)]':'text-[var(--warn)]')}>{a.kind}</span></div><p className="text-[11.5px] text-[var(--muted-fg)] mt-1 break-words line-clamp-2">{a.detail}</p>
           </button>{a.alertId&&<button type="button" disabled={acking===a.alertId} onClick={()=>ack(a)} className="absolute right-3 top-3 rounded-md border border-[var(--border)] bg-white px-2 py-1 text-[11px] font-semibold text-[var(--muted-fg)] hover:text-[var(--fg)] disabled:opacity-50">{acking===a.alertId?'처리 중':'확인'}</button>}</div>)}</div>}
       </div>
     </React.Fragment>}
@@ -899,7 +900,10 @@ function AgentsTab({focusProjectId=null}){
 // snake_case로 주고받아서, 화면 안에서는 기존 mock 시절 키(doc/code/plan, threshold/rerun/...)
 // 그대로 쓰고 여기서만 변환한다.
 const policyFromServer=p=>({scores:{doc:p.doc_weight,code:p.code_weight,plan:p.plan_weight},
-  limits:{threshold:p.pass_threshold,rerun:p.rerun_cap,tokenRetry:p.token_retry_cap,recheck:p.deviation_cap}});
+  // [2026-09-29] rework_cap(SB-152)이 빠져 있어 저장이 항상 422였다(백엔드 제보). regenerate_cap은
+  // 서버가 GET /admin/policy에 내려줄 때만 칸을 띄우고 보낸다 — 아직 안 내려주는 서버에 빈 값을 보내지 않게.
+  limits:{threshold:p.pass_threshold,rerun:p.rerun_cap,rework:p.rework_cap,tokenRetry:p.token_retry_cap,recheck:p.deviation_cap,
+    ...(p.regenerate_cap!=null?{regenerate:p.regenerate_cap}:{})}});
 const checklistFromServer=list=>list.map(i=>({id:i.check_item_id,name:i.name,how:i.method,kind:i.category,weight:i.weight,base:i.weight,on:i.enabled}));
 // [2026-09-23, 백엔드 전달사항 10번] 기획서 v1.8 5-4 — 체크리스트는 전체 합이 아니라
 // 산출물 카테고리마다 따로 15점 만점이다(app/routers/admin.py _CHECKLIST_CATEGORY_MAX_SCORE).
@@ -961,12 +965,13 @@ function PolicyTab({pushToast}){
     }catch(e){pushToast('배점을 저장하지 못했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
   };
   const saveLimits=async()=>{
-    if(!validNumber(limits.threshold,100)||!validNumber(limits.recheck,100)||!validNumber(limits.rerun,Infinity,true)||!validNumber(limits.tokenRetry,Infinity,true)){
+    const hasRegenerate=limits.regenerate!==undefined;
+    if(!validNumber(limits.threshold,100)||!validNumber(limits.recheck,100)||!validNumber(limits.rerun,Infinity,true)||!validNumber(limits.rework,Infinity,true)||!validNumber(limits.tokenRetry,Infinity,true)||(hasRegenerate&&!validNumber(limits.regenerate,Infinity,true))){
       pushToast('판정 기준을 저장하지 못했습니다','점수는 0~100, 횟수는 0 이상의 정수로 입력해 주세요. 빈칸은 저장할 수 없습니다.','danger');return;
     }
     try{
-      await api.put('/admin/policy/thresholds',{pass_threshold:Number(limits.threshold),rerun_cap:Number(limits.rerun),deviation_cap:Number(limits.recheck),token_retry_cap:Number(limits.tokenRetry)});
-      pushToast('판정 기준이 저장되었습니다','통과 Threshold '+limits.threshold+'점 · 재수행 상한 '+limits.rerun+'회 · 검수 재시도 상한 '+limits.tokenRetry+'회 · 재채점 편차 상한 '+limits.recheck+'점으로 반영됩니다.','info');
+      await api.put('/admin/policy/thresholds',{pass_threshold:Number(limits.threshold),rerun_cap:Number(limits.rerun),rework_cap:Number(limits.rework),deviation_cap:Number(limits.recheck),token_retry_cap:Number(limits.tokenRetry),...(hasRegenerate?{regenerate_cap:Number(limits.regenerate)}:{})});
+      pushToast('판정 기준이 저장되었습니다','통과 Threshold '+limits.threshold+'점 · 재수행 상한 '+limits.rerun+'회 · 재작성 상한 '+limits.rework+'회'+(hasRegenerate?' · 재생성 상한 '+limits.regenerate+'회':'')+' · 검수 재시도 상한 '+limits.tokenRetry+'회 · 재채점 편차 상한 '+limits.recheck+'점으로 반영됩니다.','info');
     }catch(e){pushToast('판정 기준을 저장하지 못했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
   };
   const saveItems=async()=>{
@@ -1018,6 +1023,8 @@ function PolicyTab({pushToast}){
         </div>
         {[['threshold','통과 Threshold','100점 만점 중 이 점수 이상이면 통과로 판정합니다.','점'],
           ['rerun','재수행 횟수 상한','미달 항목이 발생한 Task만 선별 재수행할 때의 최대 횟수입니다.','회'],
+          ['rework','재작성 상한','사용자가 결과물 항목(묶음)마다 직접 재작성을 요청할 수 있는 횟수입니다.','회'],
+          ...(limits.regenerate!==undefined?[['regenerate','재생성 상한','서버 문제로 생성이 완전히 실패했을 때 "처음부터 다시 생성"이 연속으로 실패할 수 있는 횟수입니다. 넘으면 사용자 화면에서 버튼이 사라집니다.','회']]:[]),
           ['tokenRetry','검수 문단 재시도 상한','검수(표현) Task 내부에서 보호 토큰 위반 문단을 재시도하는 최대 횟수입니다.','회'],
           ['recheck','문서층 재채점 편차 상한','동일 입력을 다시 채점했을 때 총점 편차가 이 값을 넘으면 알림을 띄웁니다.','점']].map(([key,label,desc,unit])=>(
           <div key={key} className="grid grid-cols-[1.6fr_2.4fr_1fr] text-[13px] border-t border-[var(--border)] items-center">
