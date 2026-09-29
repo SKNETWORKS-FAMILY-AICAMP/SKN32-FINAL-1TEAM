@@ -1,7 +1,7 @@
 import React,{useState,useEffect,useRef,useMemo,Suspense,lazy} from 'react';
 import Landing,{MyPageNudge} from './components/Landing.jsx';
 import {WorkspaceShell,Dashboard} from './components/Workspace.jsx';
-import {LoginModal,fetchCurrentUser,logout} from './components/Login.jsx';
+import {LoginModal,fetchCurrentUser,logout,needsRequiredConsent} from './components/Login.jsx';
 import AdminDashboard from './features/Admin.jsx';
 import MyPage from './features/mypage/MyPage.jsx';
 import {useMyPageStore} from './store/useMyPageStore.js';
@@ -68,7 +68,7 @@ export default function App(){
  // 화면을 떠나는 즉시 진행 중이던 요청의 화면 갱신 권한을 무효화한다.
  const setView=(next)=>{projectRequest.current++;setViewState(next)};
  const [notifyEnabled,setNotifyEnabled]=useState(true);
- const [user,setUser]=useState(null);const [loginOpen,setLoginOpen]=useState(false);const [authChecked,setAuthChecked]=useState(false);
+ const [user,setUser]=useState(null);const [loginOpen,setLoginOpen]=useState(false);const [consentOpen,setConsentOpen]=useState(false);const [authChecked,setAuthChecked]=useState(false);
  const [myPageNudgeOpen,setMyPageNudgeOpen]=useState(false);
  // [2026-09-28] 계정당 동시 실행 1건 제한(E-RUN-CONCURRENT)에 걸렸을 때 POST /projects가
  // 409와 함께 내려주는 정보 + 그때 사용자가 넣으려던 입력값. "중단하고 새로 시작"을 고르면
@@ -132,6 +132,9 @@ export default function App(){
    if(cancelled)return;
    if(!u){useMyPageStore.getState().reset();return}
    setUser(u);setNotifyEnabled(u.notify_enabled);
+   // 로그인된 채로 다시 연 세션은 구글 로그인 응답(has_agreed_terms)을 거치지 않는다 — 새로 생긴
+   // 필수 동의(만 16세 이상 등)가 비어 있으면 여기서 동의 화면을 띄운다.
+   if(needsRequiredConsent(u))setConsentOpen(true);
    // 마이페이지 정보 슬롯을 서버에서 끌어온다 — 이걸 안 하면 다른 기기에서 저장한 값이
    // 이 브라우저의 로컬 캐시(onboarded:false)에 가려서 또 저장하라고 뜬다(useMyPageStore.js
    // loadProfiles 주석 참고).
@@ -199,6 +202,13 @@ export default function App(){
    // 주므로(app/routers/projects.py), alert로 JSON을 덤프하지 말고 선택 화면을 띄운다.
    if(err.status===409&&err.detail&&err.detail.blocked){
     setBlockedRun({...err.detail,info});
+    setView('intake');
+    return;
+   }
+   // 필수 동의 미완료(E-AUTH-CONSENT 403) — 원문 alert 대신 동의 화면을 띄운다. 입력값(itemInfo)은
+   // 그대로 남아 있어서 동의 후 다시 제출하면 된다.
+   if(err.status===403&&String(err.message||'').includes('동의')){
+    setConsentOpen(true);
     setView('intake');
     return;
    }
@@ -367,5 +377,6 @@ export default function App(){
  // 저장 전 강제 이동 모달은 view가 무엇이든(랜딩·워크스페이스 어느 화면 위에도) 뜰 수 있어야
  // 하므로 세 분기 바깥, 최상위에서 한 번만 렌더한다.
  return <React.Fragment>{body}<MyPageNudge open={myPageNudgeOpen} onGo={()=>setView('mypage')}/>
+  <LoginModal open={consentOpen} initialStep="consent" onClose={()=>setConsentOpen(false)} onSuccess={handleLoginSuccess}/>
   <RunBlockedDialog detail={blockedRun} busy={blockedBusy} onResume={resumeBlockedRun} onRestart={restartBlockedRun} onClose={()=>setBlockedRun(null)}/></React.Fragment>;
 }
