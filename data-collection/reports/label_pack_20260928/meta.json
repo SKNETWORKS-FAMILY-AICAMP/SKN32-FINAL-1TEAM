@@ -1,0 +1,34 @@
+{
+ "created_at": "2026-09-28T03:26:18.000722+00:00",
+ "applicant_run": "applicant_type_llm_full_20260928T023916Z",
+ "industry_check": "industry_rank_check_20260928T031858Z",
+ "seed": 20260929,
+ "sizes": {
+  "A": 30,
+  "B": null,
+  "C": 15,
+  "D": 20,
+  "E": 20,
+  "F": 10
+ },
+ "pools": {
+  "D": 9,
+  "E": 1632,
+  "A": 183,
+  "F": 262,
+  "C": 87,
+  "B": 9
+ },
+ "applicant_items": 93,
+ "industry_items": 34,
+ "groups": {
+  "A": 30,
+  "B": 9,
+  "C": 15,
+  "D": 9,
+  "E": 20,
+  "F": 10
+ },
+ "same_document": 93,
+ "db_writes": 0
+}

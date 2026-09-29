@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>하이브리드 서치 구조 — S-Brain 공고 매칭</title>
+<style>
+  :root {
+    --ink:#1f3864; --line:#d8dee9; --muted:#6b7280; --bg:#f7f8fa;
+    --dense:#2f6ab0; --dense-bg:#e8f0fb;
+    --bm25:#2f7a45; --bm25-bg:#e6f3ea;
+    --fuse:#a4632f; --fuse-bg:#fbf0e4;
+    --rule:#7a4b8f; --rule-bg:#f2e9f6;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:#23282f;
+         font:15px/1.7 "맑은 고딕","Malgun Gothic",system-ui,sans-serif;
+         word-break:keep-all; overflow-wrap:break-word; }
+  .wrap { max-width:1000px; margin:0 auto; padding:30px 20px 80px; }
+  h1 { font-size:25px; color:var(--ink); margin:0 0 6px; letter-spacing:-.01em; }
+  .lede { color:var(--muted); font-size:14px; margin:0 0 26px; }
+  h2 { font-size:17px; color:var(--ink); margin:34px 0 10px; }
+  .sec { background:#fff; border:1px solid var(--line); border-radius:12px;
+         padding:20px 22px; margin-bottom:16px; }
+  .note { font-size:13px; color:var(--muted); margin:8px 0 0; }
+  b.k { color:var(--ink); }
+  table { width:100%; border-collapse:collapse; margin-top:10px; }
+  th,td { border-bottom:1px solid #eceff4; padding:8px 10px; text-align:left; font-size:13.5px; }
+  th { background:#f4f6fa; color:#55617a; font-size:12.5px; font-weight:700; }
+  td.num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .win { color:var(--bm25); font-weight:700; }
+  svg { display:block; width:100%; height:auto; }
+  .legend { display:flex; gap:16px; flex-wrap:wrap; font-size:12.5px; color:var(--muted); margin-top:10px; }
+  .legend i { display:inline-block; width:11px; height:11px; border-radius:3px; margin-right:5px; }
+  code { background:#f1f3f7; padding:1px 6px; border-radius:4px; font-size:12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>하이브리드 서치 구조</h1>
+  <p class="lede">
+    공고 검색을 <b class="k">의미 검색</b>과 <b class="k">단어 검색</b> 두 가지로 하고,
+    그 결과를 <b class="k">순위로 합쳐서</b> 추천합니다. 2026-09-18 기준 · 공고 2,285건.
+  </p>
+
+  <div class="sec">
+    <svg viewBox="0 0 960 620" role="img" aria-label="하이브리드 서치 흐름도">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="#93a0b5"/>
+        </marker>
+        <style>
+          .box { rx:10; }
+          .t { font:14px "맑은 고딕","Malgun Gothic",sans-serif; fill:#23282f; }
+          .tb { font:bold 14.5px "맑은 고딕","Malgun Gothic",sans-serif; }
+          .s { font:12px "맑은 고딕","Malgun Gothic",sans-serif; fill:#6b7280; }
+          .ln { stroke:#93a0b5; stroke-width:1.6; fill:none; marker-end:url(#ar); }
+        </style>
+      </defs>
+
+      <!-- 입력 -->
+      <rect x="330" y="14" width="300" height="56" class="box" fill="#fff" stroke="#c9d2e0"/>
+      <text x="480" y="38" class="tb" text-anchor="middle" fill="#1f3864">신청자 입력</text>
+      <text x="480" y="58" class="s" text-anchor="middle">아이디어 · 업종 · 유형 · 설립일 · 소재지 · 팀 경력</text>
+      <path class="ln" d="M480,70 L480,100"/>
+
+      <!-- 질의 문장 -->
+      <rect x="290" y="102" width="380" height="50" class="box" fill="#fff" stroke="#c9d2e0"/>
+      <text x="480" y="124" class="tb" text-anchor="middle" fill="#1f3864">질의 문장 한 줄로 만들기</text>
+      <text x="480" y="142" class="s" text-anchor="middle">두 검색이 똑같은 문장을 본다</text>
+      <path class="ln" d="M430,152 L250,190"/>
+      <path class="ln" d="M530,152 L710,190"/>
+
+      <!-- 의미 검색 -->
+      <rect x="60" y="192" width="380" height="118" class="box" fill="var(--dense-bg)" stroke="#bcd0ea"/>
+      <text x="250" y="216" class="tb" text-anchor="middle" fill="var(--dense)">① 의미 검색</text>
+      <text x="250" y="238" class="t" text-anchor="middle">BGE-M3 임베딩 → Chroma 벡터 DB</text>
+      <text x="250" y="260" class="s" text-anchor="middle">뜻이 비슷하면 찾는다</text>
+      <text x="250" y="280" class="s" text-anchor="middle">"불량 검출" ↔ "품질 검사"</text>
+      <text x="250" y="300" class="s" text-anchor="middle">상위 50건 · 약 5ms</text>
+
+      <!-- 단어 검색 -->
+      <rect x="520" y="192" width="380" height="118" class="box" fill="var(--bm25-bg)" stroke="#bfdcc8"/>
+      <text x="710" y="216" class="tb" text-anchor="middle" fill="var(--bm25)">② 단어 검색</text>
+      <text x="710" y="238" class="t" text-anchor="middle">BM25 (문자 2-gram)</text>
+      <text x="710" y="260" class="s" text-anchor="middle">같은 말이 들어 있으면 찾는다</text>
+      <text x="710" y="280" class="s" text-anchor="middle">"중동" ↔ "중동"</text>
+      <text x="710" y="300" class="s" text-anchor="middle">상위 50건 · 약 13ms</text>
+
+      <path class="ln" d="M250,310 L430,352"/>
+      <path class="ln" d="M710,310 L530,352"/>
+
+      <!-- RRF -->
+      <rect x="290" y="354" width="380" height="86" class="box" fill="var(--fuse-bg)" stroke="#e8cfae"/>
+      <text x="480" y="378" class="tb" text-anchor="middle" fill="var(--fuse)">③ RRF — 순위로 합치기</text>
+      <text x="480" y="400" class="t" text-anchor="middle">점수 = 1 / (60 + 순위) 를 더한다</text>
+      <text x="480" y="422" class="s" text-anchor="middle">양쪽 모두 상위인 공고가 위로 올라온다</text>
+      <path class="ln" d="M480,440 L480,470"/>
+
+      <!-- 규칙 -->
+      <rect x="230" y="472" width="500" height="92" class="box" fill="var(--rule-bg)" stroke="#dcc6e6"/>
+      <text x="480" y="496" class="tb" text-anchor="middle" fill="var(--rule)">④ 규칙으로 정리 (검색 아님)</text>
+      <text x="480" y="518" class="t" text-anchor="middle">마감 지난 공고 숨김 → 다른 시·도 → 다른 시·군·구 → 대상 집단</text>
+      <text x="480" y="540" class="s" text-anchor="middle">빼지 않고 뒤로 보낸다 · 모르면 건드리지 않는다</text>
+      <text x="480" y="558" class="s" text-anchor="middle">LLM·모델을 쓰지 않아 같은 입력에 같은 결과</text>
+      <path class="ln" d="M480,564 L480,586"/>
+
+      <rect x="360" y="588" width="240" height="30" class="box" fill="#fff" stroke="#c9d2e0"/>
+      <text x="480" y="608" class="tb" text-anchor="middle" fill="#1f3864">추천 공고 3~5건</text>
+    </svg>
+
+    <div class="legend">
+      <span><i style="background:var(--dense-bg);border:1px solid #bcd0ea"></i>의미 검색</span>
+      <span><i style="background:var(--bm25-bg);border:1px solid #bfdcc8"></i>단어 검색</span>
+      <span><i style="background:var(--fuse-bg);border:1px solid #e8cfae"></i>합치기</span>
+      <span><i style="background:var(--rule-bg);border:1px solid #dcc6e6"></i>규칙</span>
+    </div>
+  </div>
+
+  <h2>왜 둘 다 쓰나</h2>
+  <div class="sec">
+    <p>한쪽만 쓰면 놓치는 게 서로 다릅니다.</p>
+    <table>
+      <thead><tr><th>질의</th><th>의미 검색</th><th>단어 검색</th></tr></thead>
+      <tbody>
+        <tr><td>"금형 불량 검출"</td><td class="win">"품질 검사 자동화" 를 찾아냄</td><td>겹치는 단어가 없어 못 찾음</td></tr>
+        <tr><td>"중동 시장 수출"</td><td>"수출" 의 뜻만 보고 지역을 놓침</td><td class="win">제목에 "중동" 이 든 공고를 찾아냄</td></tr>
+      </tbody>
+    </table>
+    <p class="note">그래서 둘을 각각 돌리고 순위를 합칩니다. 점수 단위가 서로 달라 점수로는 더할 수 없습니다.</p>
+  </div>
+
+  <h2>실제로 얼마나 나아졌나</h2>
+  <div class="sec">
+    <table>
+      <thead><tr><th>방식</th><th class="num">딱 맞음(P@3)</th><th class="num">순위 품질</th><th>판정</th></tr></thead>
+      <tbody>
+        <tr><td>의미 검색만</td><td class="num">0.468</td><td class="num">0.683</td><td>기준</td></tr>
+        <tr><td>단어 검색만</td><td class="num">0.519</td><td class="num">0.671</td><td>+0.051 (−0.051 ~ +0.167) 판단 불가</td></tr>
+        <tr><td><b class="k">하이브리드</b></td><td class="num"><b>0.596</b></td><td class="num"><b>0.764</b></td><td class="win">+0.128 (+0.045 ~ +0.212) 개선</td></tr>
+      </tbody>
+    </table>
+    <p class="note">
+      질의 52개 · LLM 잠정 판정 기준 · 2026-09-18 측정.
+      괄호는 95% 구간이며, <b class="k">0을 넘어야 "좋아진 게 맞다"</b>고 말할 수 있습니다.
+      단어 검색 단독은 구간이 0을 걸쳐 단정할 수 없습니다.
+    </p>
+  </div>
+
+  <h2>비용</h2>
+  <div class="sec">
+    <table>
+      <thead><tr><th>항목</th><th class="num">값</th><th>설명</th></tr></thead>
+      <tbody>
+        <tr><td>BM25 색인 만들기</td><td class="num">0.4초</td><td>서버를 켤 때 한 번</td></tr>
+        <tr><td>단어 검색</td><td class="num">약 13ms</td><td>검색 1회당 추가되는 시간</td></tr>
+        <tr><td>질의를 벡터로 바꾸기</td><td class="num">약 300ms</td><td>검색 시간의 대부분은 여기</td></tr>
+        <tr><td>GPU</td><td class="num">필요 없음</td><td>CPU 로 충분</td></tr>
+      </tbody>
+    </table>
+    <p class="note">
+      단어 검색을 더하는 비용은 전체의 5% 미만입니다.
+      새 모델을 들이지 않고 <code>eval/</code> 에 있던 코드를 서비스와 공유하도록 옮긴 것이라 유지 비용도 늘지 않습니다.
+    </p>
+  </div>
+
+  <h2>설정값</h2>
+  <div class="sec">
+    <table>
+      <thead><tr><th>값</th><th class="num">설정</th><th>바꾸면</th></tr></thead>
+      <tbody>
+        <tr><td>의미 : 단어 무게</td><td class="num">1 : 1</td><td>어느 검색을 더 믿을지. 여러 조합을 재봤지만 모두 판단 불가라 기본값 유지</td></tr>
+        <tr><td>RRF k</td><td class="num">60</td><td>작을수록 1위 대우가 커지고, 클수록 두루 걸친 공고가 유리</td></tr>
+        <tr><td>후보 깊이</td><td class="num">각 50건</td><td>마감 공고를 걸러내 부족하면 자동으로 더 깊이 찾음</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="note">
+    코드: <code>search/hybrid.py</code>(BM25·RRF) · <code>search/app.py</code>(검색 경로) ·
+    <code>search/vecstore.py</code>(벡터 DB). 서비스와 평가가 같은 파일을 씁니다.
+  </p>
+
+</div>
+</body>
+</html>

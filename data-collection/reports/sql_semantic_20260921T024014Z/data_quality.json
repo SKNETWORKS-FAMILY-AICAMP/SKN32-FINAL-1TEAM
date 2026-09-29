@@ -1,0 +1,56 @@
+{
+ "conditions": {
+  "application_period": {
+   "known": 907,
+   "no_limit": 885,
+   "unknown": 60,
+   "known_ratio": 0.968
+  },
+  "business_age": {
+   "known": 251,
+   "unknown": 1601,
+   "known_ratio": 0.136
+  },
+  "company_size": {
+   "known": 1556,
+   "unknown": 296,
+   "known_ratio": 0.84
+  },
+  "industry": {
+   "no_limit": 1,
+   "unknown": 1851,
+   "known_ratio": 0.001
+  },
+  "purpose": {
+   "known": 1852,
+   "known_ratio": 1.0
+  },
+  "region": {
+   "known": 1222,
+   "no_limit": 630,
+   "known_ratio": 1.0
+  },
+  "support_amount": {
+   "known": 358,
+   "unknown": 1494,
+   "known_ratio": 0.193
+  },
+  "support_type": {
+   "known": 972,
+   "unknown": 880,
+   "known_ratio": 0.525
+  },
+  "target": {
+   "known": 1852,
+   "known_ratio": 1.0
+  }
+ },
+ "vectors": {
+  "count": 1852,
+  "dim_min": 1024,
+  "dim_max": 1024,
+  "contract": "sql_lab_v1:title+purpose+content+eligibility",
+  "without_vector": 0
+ },
+ "notices": 1852
+}

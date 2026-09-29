@@ -1,0 +1,259 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 1560" width="1180" height="1560" font-family="'Malgun Gothic','Segoe UI',sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8a7f74"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#a4362f"/>
+    </marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2f6ea4"/>
+    </marker>
+    <style>
+      .t   { font-size: 13px; fill: #2b2724; }
+      .tb  { font-size: 13px; fill: #2b2724; font-weight: 700; }
+      .s   { font-size: 11.5px; fill: #7a716a; }
+      .n   { font-size: 11px; fill: #a4362f; font-weight: 700; }
+      .h   { font-size: 17px; fill: #2b2724; font-weight: 700; }
+      .hs  { font-size: 12px; fill: #7a716a; }
+      .lbl { font-size: 11px; fill: #8a7f74; }
+      .lblr{ font-size: 11px; fill: #a4362f; font-weight: 700; }
+      .lblb{ font-size: 11px; fill: #2f6ea4; font-weight: 700; }
+      .box { fill: #fff; stroke: #e0d6ca; stroke-width: 1.2; }
+      .boxa{ fill: #fdf0ee; stroke: #e3bdb8; stroke-width: 1.2; }
+      .boxb{ fill: #eef4fa; stroke: #b9cfe3; stroke-width: 1.2; }
+      .boxg{ fill: #f7f3ee; stroke: #e0d6ca; stroke-width: 1.2; }
+      .zone{ fill: none; stroke: #cfc3b5; stroke-width: 1.4; stroke-dasharray: 7 5; }
+      .flow{ fill: none; stroke: #8a7f74; stroke-width: 1.6; marker-end: url(#a); }
+      .flowr{ fill: none; stroke: #a4362f; stroke-width: 1.8; marker-end: url(#ar); }
+      .flowb{ fill: none; stroke: #2f6ea4; stroke-width: 1.8; marker-end: url(#ab); }
+    </style>
+  </defs>
+
+  <rect width="1180" height="1560" fill="#faf8f5"/>
+
+  <text x="40" y="42" class="h">S-Brain 공고 데이터 — 내 PC 와 EC2 사이의 흐름</text>
+  <text x="40" y="64" class="hs">2026-09-14 기준 · 실측값 표기 · 붉은 선은 EC2 로 나가는 쓰기, 파란 선은 EC2 에서 읽기</text>
+
+  <!-- ================= 외부 서비스 ================= -->
+  <text x="40" y="104" class="tb">외부</text>
+  <rect x="40" y="114" width="200" height="52" rx="8" class="boxg"/>
+  <text x="56" y="136" class="t">K-Startup 오픈API</text>
+  <text x="56" y="154" class="s">data.go.kr · 244건</text>
+
+  <rect x="252" y="114" width="200" height="52" rx="8" class="boxg"/>
+  <text x="268" y="136" class="t">기업마당 오픈API</text>
+  <text x="268" y="154" class="s">bizinfo.go.kr · 1,550건</text>
+
+  <rect x="464" y="114" width="196" height="52" rx="8" class="boxg"/>
+  <text x="480" y="136" class="t">공고 사이트 첨부</text>
+  <text x="480" y="154" class="s">PDF · HWP · HWPX</text>
+
+  <rect x="672" y="114" width="186" height="52" rx="8" class="boxg"/>
+  <text x="688" y="136" class="t">OpenAI API</text>
+  <text x="688" y="154" class="s">gpt-4o-mini · 10단계</text>
+
+  <rect x="870" y="114" width="270" height="52" rx="8" class="boxg"/>
+  <text x="886" y="136" class="t">HuggingFace</text>
+  <text x="886" y="154" class="s">BGE-M3 2.2GB · 최초 1회 내려받음</text>
+
+  <!-- ================= 배치 구역 ================= -->
+  <rect x="26" y="190" width="1128" height="700" rx="12" class="zone"/>
+  <text x="44" y="214" class="tb">매일 09:00 — 작업 스케줄러 S-Brain-DailyCollection · 약 5분</text>
+  <text x="44" y="232" class="s">주의: Interactive 로 등록돼 있어 PC 가 로그온 상태여야 돈다</text>
+
+  <text x="150" y="262" class="tb" text-anchor="middle">내 PC</text>
+  <text x="880" y="262" class="tb" text-anchor="middle">EC2  43.201.90.238</text>
+  <text x="880" y="280" class="s" text-anchor="middle">t3.medium 4GB + 스왑 2GB · 탄력적 IP</text>
+
+  <!-- PC 단계들 -->
+  <rect x="44" y="292" width="290" height="46" rx="7" class="box"/>
+  <text x="58" y="311" class="n">1 · 2</text>
+  <text x="100" y="311" class="t">fetch.py · fetch_bizinfo.py</text>
+  <text x="58" y="329" class="s">공고 수집 → data/raw</text>
+
+  <rect x="44" y="350" width="290" height="46" rx="7" class="box"/>
+  <text x="58" y="369" class="n">3</text>
+  <text x="100" y="369" class="t">normalize.py</text>
+  <text x="58" y="387" class="s">두 출처를 공통 스키마로 · 1,794건</text>
+
+  <rect x="44" y="408" width="290" height="46" rx="7" class="box"/>
+  <text x="58" y="427" class="n">4</text>
+  <text x="100" y="427" class="t">store_mysql.py</text>
+  <text x="58" y="445" class="s">upsert · 트랜잭션</text>
+
+  <rect x="44" y="466" width="290" height="58" rx="7" class="box"/>
+  <text x="58" y="485" class="n">5</text>
+  <text x="100" y="485" class="t">attachment_pipeline.py</text>
+  <text x="58" y="503" class="s">첨부 받기 → doctext 로 본문 추출</text>
+  <text x="58" y="519" class="s">로컬 data/attachments 637MB</text>
+
+  <rect x="44" y="536" width="290" height="58" rx="7" class="box"/>
+  <text x="58" y="555" class="n">6 · 7</text>
+  <text x="100" y="555" class="t">embed.py · vecstore.py</text>
+  <text x="58" y="573" class="s">BGE-M3 → embeddings_v1.npz 8.1MB</text>
+  <text x="58" y="589" class="s">로컬 Chroma 색인 2,084건</text>
+
+  <rect x="44" y="606" width="290" height="46" rx="7" class="boxa"/>
+  <text x="58" y="625" class="n">8</text>
+  <text x="100" y="625" class="t">upload_vectors.py</text>
+  <text x="58" y="643" class="s">바뀐 벡터만 · 1건 4,096바이트</text>
+
+  <rect x="44" y="664" width="290" height="46" rx="7" class="boxa"/>
+  <text x="58" y="683" class="n">9</text>
+  <text x="100" y="683" class="t">upload_attachments.py</text>
+  <text x="58" y="701" class="s">새 첨부 파일만 · 해시가 키</text>
+
+  <rect x="44" y="722" width="290" height="58" rx="7" class="boxa"/>
+  <text x="58" y="741" class="n">10</text>
+  <text x="100" y="741" class="t">extract_conditions.py</text>
+  <text x="58" y="759" class="s">공고문 → LLM → 자격요건 구조화</text>
+  <text x="58" y="775" class="s">바뀐 것만 · 하루 약 0.02 달러</text>
+
+  <!-- EC2 저장소 -->
+  <rect x="700" y="300" width="360" height="240" rx="8" class="boxb"/>
+  <text x="716" y="324" class="tb">MySQL  s_brain</text>
+  <text x="716" y="342" class="s">포트 3306 · TLS 필수 · 팀 공용</text>
+
+  <rect x="716" y="354" width="328" height="30" rx="5" class="box"/>
+  <text x="728" y="374" class="t">notices  2,084행</text>
+  <text x="1032" y="374" class="s" text-anchor="end">10.0MB</text>
+
+  <rect x="716" y="390" width="328" height="30" rx="5" class="box"/>
+  <text x="728" y="410" class="t">notices.embedding  2,084건</text>
+  <text x="1032" y="410" class="s" text-anchor="end">8.1MB</text>
+
+  <rect x="716" y="426" width="328" height="30" rx="5" class="box"/>
+  <text x="728" y="446" class="t">notice_attachments  2,973행</text>
+  <text x="1032" y="446" class="s" text-anchor="end">1.8MB</text>
+
+  <rect x="716" y="462" width="328" height="30" rx="5" class="box"/>
+  <text x="728" y="482" class="t">attachment_texts  1,736행</text>
+  <text x="1032" y="482" class="s" text-anchor="end">28.6MB</text>
+
+  <rect x="716" y="498" width="328" height="30" rx="5" class="box"/>
+  <text x="728" y="518" class="t">attachment_files  1,679개</text>
+  <text x="1032" y="518" class="s" text-anchor="end">631.7MB</text>
+
+  <rect x="700" y="556" width="360" height="70" rx="8" class="boxb"/>
+  <text x="716" y="580" class="tb">notice_conditions  1,573행</text>
+  <text x="716" y="598" class="s">금액 664 · 형태 595 · 예비창업 853</text>
+  <text x="716" y="616" class="s">업력 128 은 참고용. 판정에 쓰지 않는다</text>
+
+  <rect x="700" y="642" width="360" height="66" rx="8" class="box"/>
+  <text x="716" y="666" class="tb">파일시스템  ~/s-brain/attachments</text>
+  <text x="716" y="684" class="s">612MB · 2026-09-09 부터 존재</text>
+  <text x="716" y="700" class="s">MySQL attachment_files 와 중복이다</text>
+
+  <rect x="700" y="724" width="360" height="66" rx="8" class="boxb"/>
+  <text x="716" y="748" class="tb">벡터 DB  data/vecstore/chroma</text>
+  <text x="716" y="766" class="s">2,084건 · 15MB · HNSW 코사인</text>
+  <text x="716" y="782" class="s">EC2 안의 코드만 접근 가능 (열린 포트 없음)</text>
+
+  <!-- 외부 → PC -->
+  <path d="M140,166 L140,292" class="flow"/>
+  <path d="M352,166 L352,240 L200,240 L200,292" class="flow"/>
+  <path d="M562,166 L562,490 L334,490" class="flow"/>
+  <path d="M765,166 L765,250 L620,250 L620,751 L334,751" class="flow"/>
+  <text x="628" y="244" class="lbl">HTTPS</text>
+  <path d="M1005,166 L1005,250 L660,250 L660,565 L334,565" class="flow"/>
+  <text x="668" y="560" class="lbl">최초 1회</text>
+
+  <!-- PC → EC2 (쓰기, 붉은 선) -->
+  <path d="M334,431 L520,431 L520,369 L700,369" class="flowr"/>
+  <text x="528" y="362" class="lblr">3306 TLS</text>
+
+  <path d="M334,495 L560,495 L560,477 L700,477" class="flowr"/>
+  <text x="568" y="470" class="lblr">3306</text>
+
+  <path d="M334,629 L600,629 L600,405 L700,405" class="flowr"/>
+  <text x="608" y="399" class="lblr">3306</text>
+
+  <path d="M334,687 L640,687 L640,513 L700,513" class="flowr"/>
+  <text x="648" y="507" class="lblr">3306</text>
+
+  <path d="M334,745 L560,745 L560,591 L700,591" class="flowr"/>
+  <text x="568" y="585" class="lblr">3306</text>
+
+  <!-- ================= EC2 crontab ================= -->
+  <rect x="26" y="912" width="1128" height="118" rx="12" class="zone"/>
+  <text x="44" y="936" class="tb">매일 09:10 — EC2 crontab · 약 1초</text>
+  <text x="44" y="954" class="s">PC 배치가 끝난 뒤에 돈다. embedding_updated_at 을 기준시각으로 삼아 새 것만 넣는다</text>
+
+  <rect x="44" y="968" width="300" height="46" rx="7" class="box"/>
+  <text x="58" y="996" class="t">ec2_vecstore.py</text>
+
+  <rect x="700" y="968" width="360" height="46" rx="7" class="boxb"/>
+  <text x="716" y="988" class="t">notices.embedding  →  Chroma</text>
+  <text x="716" y="1006" class="s">최초 생성 2,050건 3초 · 이후 증분</text>
+
+  <path d="M344,991 L700,991" class="flowb"/>
+  <text x="380" y="984" class="lblb">127.0.0.1 로 읽고 로컬 파일에 쓴다</text>
+
+  <!-- ================= 검색 흐름 ================= -->
+  <rect x="26" y="1052" width="1128" height="250" rx="12" class="zone"/>
+  <text x="44" y="1076" class="tb">공고 검색 — 전부 EC2 안에서 일어난다</text>
+  <text x="44" y="1094" class="s">MySQL 의 embedding 을 직접 읽어 numpy 로 계산하는 경로는 쓰지 않는다. 요구사항은 성능이 아니라 아키텍처다</text>
+
+  <rect x="44" y="1112" width="188" height="52" rx="7" class="box"/>
+  <text x="58" y="1134" class="t">검색어</text>
+  <text x="58" y="1152" class="s">"제조업 스마트공장 보조금"</text>
+
+  <rect x="256" y="1112" width="188" height="52" rx="7" class="boxb"/>
+  <text x="270" y="1134" class="t">BGE-M3  (EC2)</text>
+  <text x="270" y="1152" class="s">258~390ms · 피크 2.7GB</text>
+
+  <rect x="468" y="1112" width="188" height="52" rx="7" class="boxb"/>
+  <text x="482" y="1134" class="t">Chroma 벡터 DB</text>
+  <text x="482" y="1152" class="s">9ms · 상위 3건 notice_id</text>
+
+  <rect x="680" y="1112" width="188" height="52" rx="7" class="boxb"/>
+  <text x="694" y="1134" class="t">MySQL 조회</text>
+  <text x="694" y="1152" class="s">제목·기관·기간·금액</text>
+
+  <rect x="892" y="1112" width="220" height="52" rx="7" class="box"/>
+  <text x="906" y="1134" class="t">공고 3건 + 자격요건</text>
+  <text x="906" y="1152" class="s">gate.py 3단 판정</text>
+
+  <path d="M232,1138 L256,1138" class="flowb"/>
+  <path d="M444,1138 L468,1138" class="flowb"/>
+  <path d="M656,1138 L680,1138" class="flowb"/>
+  <path d="M868,1138 L892,1138" class="flowb"/>
+
+  <rect x="44" y="1190" width="1068" height="96" rx="8" class="boxg"/>
+  <text x="60" y="1212" class="tb">자격요건 판정 3단 — 확인 필요를 뭉개지 않는다</text>
+  <text x="60" y="1232" class="t">통과</text>
+  <text x="130" y="1232" class="s">조건을 충족한다</text>
+  <text x="60" y="1252" class="t">미달</text>
+  <text x="130" y="1252" class="s">조건에 어긋난다</text>
+  <text x="60" y="1272" class="t">확인 필요</text>
+  <text x="130" y="1272" class="s">데이터가 없어 알 수 없다 — 후보로 남기되 자격 충족을 뜻하지 않는다</text>
+  <text x="540" y="1232" class="s">접수기간  2,084건 100% 판정 가능</text>
+  <text x="540" y="1252" class="s">업력      약 20% (K-Startup 정형 데이터만)</text>
+  <text x="540" y="1272" class="s">지원대상 유형  LLM 추출 business_type 으로 38%</text>
+
+  <!-- ================= 팀원 접근 ================= -->
+  <rect x="26" y="1324" width="1128" height="206" rx="12" class="zone"/>
+  <text x="44" y="1348" class="tb">팀원(백엔드·프론트)이 쓰는 경로</text>
+
+  <rect x="44" y="1366" width="300" height="140" rx="8" class="box"/>
+  <text x="60" y="1390" class="tb">팀원 PC</text>
+  <text x="60" y="1412" class="s">pip install PyMySQL numpy</text>
+  <text x="60" y="1432" class="s">.env + data/ec2-ca.pem 필요</text>
+  <text x="60" y="1456" class="s">TEAM_DATA.md 에 쿼리 예시 있음</text>
+  <text x="60" y="1480" class="s">주의: notices 를 SELECT * 로 읽지 말 것</text>
+  <text x="60" y="1496" class="s">벡터 4KB 가 행마다 따라와 20ms → 57ms</text>
+
+  <rect x="700" y="1366" width="360" height="140" rx="8" class="boxb"/>
+  <text x="716" y="1390" class="tb">MySQL 3306 으로 전부 접근 가능</text>
+  <text x="716" y="1412" class="s">공고 목록·상세·검색 필터</text>
+  <text x="716" y="1432" class="s">첨부 본문 텍스트 (attachment_texts)</text>
+  <text x="716" y="1452" class="s">첨부 원본 파일 바이트 (attachment_files)</text>
+  <text x="716" y="1472" class="s">지원금액·사업자 형태 (notice_conditions)</text>
+  <text x="716" y="1496" class="s">벡터 (notices.embedding)</text>
+
+  <path d="M344,1436 L700,1436" class="flowb"/>
+  <text x="440" y="1428" class="lblb">3306 TLS · 보안그룹 개방</text>
+
+  <text x="44" y="1524" class="s">아직 안 되는 것 — 팀원이 EC2 Chroma 에 직접 붙는 것(열린 포트 없음) · 검색 화면이 EC2 에 올라가 있지 않음(app.py 는 PC 전용)</text>
+</svg>

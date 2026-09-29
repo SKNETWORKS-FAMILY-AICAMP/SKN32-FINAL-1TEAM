@@ -1,0 +1,23 @@
+{
+ "run_at": "2026-09-28T06:20:35.241511+00:00",
+ "model": "gpt-5.6-luna",
+ "effort": "medium",
+ "prompt_sha256": "cd30edab625b0ed8eb61d1b55e30b7bc59793e81f6515b0646692539b88a9e37",
+ "population": 1460,
+ "targets": 100,
+ "db_write": false,
+ "missing": true,
+ "sample": 100,
+ "seed": 20260928,
+ "rows": 100,
+ "failed": 0,
+ "outcome": {
+  "업력 없음": 97,
+  "다시 버림": 2,
+  "살아남": 1
+ },
+ "tokens_in": 421298,
+ "tokens_out": 42669,
+ "cost_usd": 0.1355,
+ "failures": []
+}

@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>전체 흐름</title>
+<!--
+  2026-09-28 사용자 요청 — 지금까지 만든 것의 흐름을 눈으로 본다.
+  내용은 코드 기준(search/app.py, collect/daily_pipeline.py, search/industry_rank.py …)이며 docs/FLOW.md 와 같은 사실을 그림으로 옮긴 것이다.
+  숫자 몇 개만 /api/flow 에서 읽는다(파일만 읽음 — DB·모델 호출 없음).
+-->
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--line:#d9dee7;--ink:#20242b;--dim:#6b7280;--head:#1f3864;
+  --done:#1a7f4b;--done-bg:#e3f4ea;--part:#9a6200;--part-bg:#fdf1dc;--todo:#8a2130;--todo-bg:#fbe5e8;
+  --off:#4b5563;--off-bg:#eceff3;--arrow:#9aa7bd;--accent:#2f5fb3}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 "맑은 고딕","Malgun Gothic",system-ui,sans-serif}
+.wrap{max-width:1200px;margin:0 auto;padding:20px 16px 48px}
+h1{margin:4px 0 6px;font-size:24px;color:var(--head)}
+.lead{color:var(--dim);margin:0 0 14px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:0 0 18px;font-size:13px;color:var(--dim)}
+.chip{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:1px 9px;white-space:nowrap}
+.chip.done{color:var(--done);background:var(--done-bg)}
+.chip.part{color:var(--part);background:var(--part-bg)}
+.chip.todo{color:var(--todo);background:var(--todo-bg)}
+.chip.off{color:var(--off);background:var(--off-bg)}
+section.lane{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 16px 18px;margin:0 0 18px}
+.lane-h{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline;margin:0 0 4px}
+.lane-h h2{margin:0;font-size:18px;color:var(--head)}
+.lane-h .when{color:var(--dim);font-size:13px}
+.lane p.sum{margin:2px 0 14px;color:var(--dim)}
+.flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:0}
+.step{flex:1 1 170px;min-width:150px;max-width:260px;background:#f9fafc;border:1px solid var(--line);border-radius:10px;padding:10px 11px;display:flex;flex-direction:column;gap:4px}
+.step.key{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;background:#f4f8ff}
+.step .n{font-size:12px;color:var(--dim);font-weight:700}
+.step .t{font-weight:700;line-height:1.35}
+.step .d{font-size:13px;color:#39404b;line-height:1.5}
+.step .f{font-size:11.5px;color:var(--dim);font-family:Consolas,"D2Coding",monospace;word-break:break-all;margin-top:auto;padding-top:4px}
+.step .chip{align-self:flex-start;white-space:normal;border-radius:8px;line-height:1.45}
+.step a{color:var(--accent)}
+.arrow{flex:0 0 22px;display:flex;align-items:center;justify-content:center;color:var(--arrow);font-size:18px;font-weight:700}
+.rules{margin:12px 0 0;padding:10px 12px;border:1px dashed var(--line);border-radius:10px;background:#fcfcfd}
+.rules h3{margin:0 0 6px;font-size:14px}
+.rules ol{margin:0;padding-left:22px}
+.rules li{margin:2px 0}
+.note{font-size:13px;color:var(--dim);margin:10px 0 0}
+.join{margin:10px 0 0;padding:8px 12px;border-left:4px solid var(--accent);background:#f4f8ff;border-radius:6px;font-size:13px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:top}
+th{color:var(--dim);font-weight:700;background:#f7f8fa}
+td.k{white-space:nowrap;font-weight:700}
+.live{font-size:13px;color:var(--dim)}
+.live b{color:var(--ink)}
+a{color:var(--accent)}
+/* ⓪ 데이터 지도 (2026-09-28) */
+.map{width:100%;height:auto;display:block;margin:4px 0 6px}
+.map text{font-family:"맑은 고딕","Malgun Gothic",system-ui,sans-serif;fill:var(--ink)}
+.map .grp{fill:#fafbfd;stroke:var(--line);stroke-width:1.5}
+.map .grp-t{font-size:15px;font-weight:700;fill:var(--head)}
+.map .box{fill:#fff;stroke:#b9c3d3;stroke-width:1.2}
+.map .box.db{fill:#eef3fb;stroke:#8fa6cc}
+.map .box.file{fill:#fdf6e8;stroke:#d9b56a}
+.map .box.lab{fill:#f1f1f4;stroke:#9aa1ad;stroke-dasharray:5 3}
+.map .box.svc{fill:#e9f6ef;stroke:#6fb38c}
+.map .box.warn{fill:#fbe9ec;stroke:#d58d98;stroke-dasharray:5 3}
+.map .bt{font-size:13.5px;font-weight:700}
+.map .bd{font-size:12px;fill:#454c57}
+.map .bd.hot{fill:var(--todo);font-weight:700}
+.map .w{stroke:#2f5fb3;stroke-width:2;fill:none}
+.map .r{stroke:#1a7f4b;stroke-width:2;fill:none}
+.map .once{stroke-dasharray:6 4}
+.map .lbl{font-size:11.5px;fill:var(--dim)}
+.map-legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--dim);margin:0 0 12px}
+.map-legend i{display:inline-block;width:26px;height:0;border-top:2px solid;vertical-align:middle;margin-right:5px}
+.gaps{margin:12px 0 0;padding-left:22px}
+.gaps li{margin:4px 0}
+@media (max-width:720px){
+  .flow{flex-direction:column}
+  .step{max-width:none}
+  .arrow{flex-basis:20px;transform:rotate(90deg)}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>전체 흐름 — 지금 만들어 둔 것</h1>
+  <p class="lead">공고를 모으는 일부터 신청자에게 맞는 공고를 고르는 일까지, 지금 코드가 실제로 도는 순서입니다.
+    상자마다 무엇을 하는지 한 줄, 담당 파일, 상태를 적었습니다. 파란 테두리는 오늘(9/28) 바뀐 곳입니다.</p>
+  <div class="legend">
+    <span><span class="chip done">완료</span> 코드가 돌고 검증함</span>
+    <span><span class="chip part">일부</span> 돌지만 빠진 부분이 있음</span>
+    <span><span class="chip off">연결 안 됨</span> 만들었지만 서비스에 안 붙음</span>
+    <span><span class="chip todo">미구현</span> 기획서에 있으나 아직 없음</span>
+  </div>
+
+  <!-- 0. 데이터 지도 (2026-09-28 사용자 요청 — 테스트하던 것과 원래 DB가 어떻게 나뉘어 있는지) -->
+  <section class="lane" aria-labelledby="l0">
+    <div class="lane-h"><h2 id="l0">⓪ 데이터 지도 — 무엇이 어디에 있고 누가 읽나</h2><span class="when">9/28 조회 기준 · 공용 DB 구조는 바꾸지 않았다(읽기만)</span></div>
+    <p class="sum">비유하면 <b>공식 장부(공용 DB)</b>는 그대로이고, 옆에 <b>연습장(실험 DB)</b>과 <b>메모지(결과 파일)</b>가 생겼습니다.
+      검색 서비스는 장부와 메모지를 같이 봅니다. 메모지는 이 PC에만 있습니다.</p>
+    <div class="map-legend">
+      <span><i style="border-color:#2f5fb3"></i>만들기·쓰기</span>
+      <span><i style="border-color:#1a7f4b"></i>읽기</span>
+      <span><i style="border-color:#6b7280;border-top-style:dashed"></i>한 번 만든 것(손으로 실행)</span>
+      <span><span class="chip todo">빨간 글씨</span> 어긋나는 곳</span>
+    </div>
+    <svg class="map" viewBox="0 0 1100 470" role="img" aria-labelledby="mapTitle mapDesc">
+      <title id="mapTitle">데이터 지도</title>
+      <desc id="mapDesc">EC2 서버의 공용 DB와 EC2 벡터 DB, 이 PC의 매일 배치·벡터 DB·실험 DB·결과 파일 두 개, 그리고 이것을 읽는 검색 서비스(8000)와 확인용 화면(8010).</desc>
+      <defs>
+        <marker id="aw" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#2f5fb3"/></marker>
+        <marker id="ag" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#1a7f4b"/></marker>
+      </defs>
+
+      <!-- EC2 -->
+      <rect class="grp" x="10" y="40" width="330" height="300" rx="12"/>
+      <text class="grp-t" x="26" y="64">EC2 서버 (팀 공용)</text>
+      <rect class="box db" x="30" y="80" width="290" height="125" rx="8"/>
+      <text class="bt" x="44" y="102">공용 DB (MySQL s_brain)</text>
+      <text class="bd" x="44" y="124">공고 2,476건 · 매일 09:00 갱신</text>
+      <text class="bd" x="44" y="143">첨부 본문 · 수집 기록(import_runs)</text>
+      <text class="bd" x="44" y="162">자격요건 1,864건 (10단계 · gpt-4o-mini)</text>
+      <text class="bd hot" x="44" y="181">↳ 업력 204건 버려짐 → 77건 재추출(파일)</text>
+      <path class="w" d="M175,205 V226" marker-end="url(#aw)"/>
+      <text class="lbl" x="184" y="222">09:10 색인</text>
+      <rect class="box db" x="30" y="232" width="290" height="90" rx="8"/>
+      <text class="bt" x="44" y="254">EC2 벡터 DB (Chroma)</text>
+      <text class="bd" x="44" y="276">EC2에서 검색할 때 쓰는 색인</text>
+      <text class="bd" x="44" y="295">공용 DB의 벡터로 매일 다시 만든다</text>
+
+      <rect class="box warn" x="10" y="360" width="330" height="95" rx="8"/>
+      <text class="bt" x="24" y="382">EC2 검색 서비스</text>
+      <text class="bd hot" x="24" y="403">오늘(9/28) 코드는 배포 안 됨</text>
+      <text class="bd" x="24" y="422">결과 파일이 없어 신청자 유형·업종 기능 꺼짐</text>
+      <text class="bd" x="24" y="441">→ 파일 복사 또는 DB 저장, 팀 결정 필요</text>
+
+      <!-- 이 PC -->
+      <rect class="grp" x="370" y="40" width="720" height="415" rx="12"/>
+      <text class="grp-t" x="386" y="64">이 PC (매일 배치 · 시험 서버)</text>
+      <rect class="box" x="390" y="80" width="340" height="60" rx="8"/>
+      <text class="bt" x="404" y="103">매일 배치 1~11단계 (09:00)</text>
+      <text class="bd" x="404" y="124">run_daily.bat → collect/daily_pipeline.py</text>
+
+      <rect class="box file" x="390" y="160" width="160" height="80" rx="8"/>
+      <text class="bt" x="402" y="182">결과 파일: 신청자 유형</text>
+      <text class="bd" x="402" y="201">2,476건 · luna · 매일</text>
+      <text class="bd" x="402" y="220">data/applicant_types/</text>
+      <rect class="box db" x="570" y="160" width="160" height="80" rx="8"/>
+      <text class="bt" x="582" y="182">벡터 DB (Chroma)</text>
+      <text class="bd" x="582" y="201">2,476건</text>
+      <text class="bd" x="582" y="220">검색 서비스용 색인</text>
+
+      <rect class="box lab" x="390" y="264" width="160" height="80" rx="8"/>
+      <text class="bt" x="402" y="286">실험 DB (lab)</text>
+      <text class="bd" x="402" y="305">1,852건 · 9/21 사본</text>
+      <text class="bd hot" x="402" y="324">그 뒤 약 600건 없음</text>
+      <rect class="box file" x="570" y="264" width="160" height="80" rx="8"/>
+      <text class="bt" x="582" y="286">결과 파일: 업종</text>
+      <text class="bd" x="582" y="305">1,852건 · luna</text>
+      <text class="bd hot" x="582" y="324">실험 DB 사본 기준</text>
+
+      <rect class="box svc" x="800" y="90" width="270" height="130" rx="8"/>
+      <text class="bt" x="814" y="113">검색 서비스 · 8000</text>
+      <text class="bd" x="814" y="134">매칭 /api/match</text>
+      <text class="bd" x="814" y="153">자격 확인 /api/eligibility</text>
+      <text class="bd" x="814" y="172">읽기: 공용 DB · Chroma · 결과 파일</text>
+      <text class="bd" x="814" y="191">자격요건(10단계)은 업력 근거로만</text>
+      <rect class="box svc" x="800" y="270" width="270" height="110" rx="8"/>
+      <text class="bt" x="814" y="293">확인용 화면 · 8010</text>
+      <text class="bd" x="814" y="314">검증·비교 화면 → 실험 DB</text>
+      <text class="bd" x="814" y="333">결과·흐름 화면 → 결과 파일</text>
+      <text class="bd" x="814" y="352">수집 상태 화면 → 공용 DB</text>
+      <text class="lbl" x="390" y="440">data/applicant_types/ · reports/ 는 이 PC에만 있다 (Git에도 올리지 않음)</text>
+
+      <!-- 쓰기 -->
+      <path class="w" d="M390,110 L326,122" marker-end="url(#aw)"/>
+      <text class="lbl" x="343" y="104">저장</text>
+      <path class="w" d="M470,140 V155" marker-end="url(#aw)"/>
+      <text class="lbl" x="478" y="153">11단계</text>
+      <path class="w" d="M650,140 V155" marker-end="url(#aw)"/>
+      <text class="lbl" x="658" y="153">5단계</text>
+      <path class="w once" d="M320,192 L384,296" marker-end="url(#aw)"/>
+      <text class="lbl" x="342" y="288">9/21</text>
+      <text class="lbl" x="342" y="303">복사</text>
+      <path class="w once" d="M550,304 H564" marker-end="url(#aw)"/>
+      <!-- 읽기 -->
+      <path class="r" d="M300,80 V24 H935 V84" marker-end="url(#ag)"/>
+      <text class="lbl" x="560" y="18">읽기 (SELECT만)</text>
+      <path class="r" d="M730,195 L794,172" marker-end="url(#ag)"/>
+      <path class="r" d="M470,240 V252 H770 V202 H794" marker-end="url(#ag)"/>
+      <path class="r once" d="M730,290 L794,214" marker-end="url(#ag)"/>
+      <text class="lbl" x="738" y="302">업종 순위</text>
+      <text class="lbl" x="738" y="317">(꺼짐)</text>
+      <path class="r" d="M470,344 V362 H780 V330 H794" marker-end="url(#ag)"/>
+    </svg>
+
+    <table>
+      <thead><tr><th>데이터</th><th>어디</th><th>건수 · 시점</th><th>누가 쓰나</th></tr></thead>
+      <tbody>
+        <tr><td class="k">공고 · 첨부 본문</td><td>공용 DB (EC2 MySQL)</td><td>2,476건 · 매일 09:00</td><td>검색 서비스(8000), 매일 배치</td></tr>
+        <tr><td class="k">자격요건 (10단계)</td><td>공용 DB <code>notice_conditions</code></td><td>1,864건 · gpt-4o-mini · 업력 버림 204건 → luna 재추출로 77건 되찾음(파일, DB 미반영)</td><td><span class="chip part">근거 표시만</span> 자격 확인 업력 줄(판정 안 함, 9/28) · 검토 화면(8000 /review)</td></tr>
+        <tr><td class="k">뜻 벡터</td><td>이 PC Chroma · EC2 Chroma (따로)</td><td>2,476건</td><td>PC 것은 8000, EC2 것은 EC2 검색</td></tr>
+        <tr><td class="k">신청자 유형 (11단계 → 13단계)</td><td>이 PC 파일 <code>data/applicant_types/</code> → <b>공용 DB <code>notice_applicant_types</code></b></td><td id="liveTypes">2,476건 · luna</td><td>8000 매칭(예비창업자 필터)·자격 확인 — <b>DB에서 읽음</b>(덜 올라갔거나 옛 값이면 파일)</td></tr>
+        <tr><td class="k">업종 (12단계 → 13단계)</td><td>이 PC 파일 <code>data/industries/</code> → <b>공용 DB <code>notice_industries</code></b></td><td id="liveInd">2,476건 · luna</td><td>8000 업종 순위 <span class="chip off">기본 꺼짐</span> — 서비스는 아직 final5 파일(Codex 재검수 뒤 DB로)</td></tr>
+        <tr><td class="k">실험 사본</td><td>이 PC 로컬 MySQL <code>notice_match_sql_lab</code></td><td>1,852건 · 9/21 사본</td><td>8010 검증·비교 화면, 업종 추출의 모집단</td></tr>
+      </tbody>
+    </table>
+
+    <h3 style="margin:16px 0 4px;font-size:15px">어긋나는 곳 4가지</h3>
+    <ol class="gaps">
+      <li><b>업종 결과가 오래됨</b> — 9/21 사본 1,852건으로 뽑아, 그 뒤 들어온 약 600건은 업종 판정이 없다. 업종 순위를 꺼 둬서 지금 영향은 작다.</li>
+      <li><b>새 판정은 이 PC 파일에만 있음</b> — 신청자 유형·업종은 DB에 없어 EC2 서비스에는 이 기능이 없다(파일이 없으면 자동으로 꺼짐, 오류는 아님).</li>
+      <li><b>"자격 조건"이 세 군데에 따로 있음</b> — 공용 DB 10단계(4o-mini) · 실험 DB 실험 조건 · 신청자 유형 파일(luna).
+        예: 기업마당 반려동물 경진대회 공고는 10단계가 "사업자등록 후 1년 이상 10년 미만"을 찾았지만 검사에서 버려졌고, 서비스는 그 결과를 읽지도 않아 업력이 "확인 필요"로 나왔다. <span class="chip done">9/28 보완</span> 예비창업자는 본문 "예비창업자 가능"이면 업력 통과(A), 사업자에게는 공고문 추출 업력을 근거로 표시(B).</li>
+      <li><b>8000과 8010 일부가 다른 DB를 봄</b> — 9/28 B(지역·업종으로 빼지 않고 뒤로)는 실험 DB 쪽 경로에만 적용됐다. 서비스(8000)는 원래 뒤로 보낸다.</li>
+    </ol>
+    <p class="note">정리 방향(팀 결정 필요): 판정 결과를 공용 DB 표로 저장하거나(DB 쓰기) 결과 파일을 EC2로 복사한다. 어느 쪽이 기준(정본)인지 먼저 정한다.</p>
+  </section>
+
+  <!-- 1. 매일 수집 -->
+  <section class="lane" aria-labelledby="l1">
+    <div class="lane-h"><h2 id="l1">① 공고 모으기</h2><span class="when">매일 09:00 자동 · <code>run_daily.bat</code> → <code>collect/daily_pipeline.py</code></span></div>
+    <p class="sum">두 곳의 공고를 받아 한 형식으로 맞추고, 첨부 본문과 "뜻 벡터"까지 만들어 둡니다. 바뀐 공고만 다시 처리합니다.</p>
+    <div class="flow">
+      <div class="step"><span class="n">1</span><span class="t">공고 받기</span><span class="d">K-Startup · 기업마당 오픈API에서 공고를 받는다</span><span class="chip part">일부 — 기업마당 8개 분야 전부(기획은 창업·기술만, C)</span><span class="f">collect/fetch.py · fetch_bizinfo.py</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="step"><span class="n">2</span><span class="t">한 형식으로 맞추기</span><span class="d">두 출처의 날짜·주소·지역을 같은 칸으로</span><span class="chip done">완료</span><span class="f">collect/normalize.py</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="step"><span class="n">3</span><span class="t">DB에 저장</span><span class="d">MySQL <code>notices</code>. 없으면 추가, 있으면 수정</span><span class="chip done">완료</span><span class="f">shared/store_mysql.py</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="step"><span class="n">4</span><span class="t">첨부 본문 뽑기</span><span class="d">PDF · HWP · HWPX에서 글자를 꺼낸다</span><span class="chip done">완료</span><span class="f">collect/attachment_pipeline.py · doctext.py</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="step"><span class="n">5</span><span class="t">뜻 벡터 만들기</span><span class="d">공고 요약을 BGE-M3로 벡터로 바꿔 Chroma 에 넣고, 팀 공용 DB에도 올린다</span><span class="chip done">완료</span><span class="f">shared/embed.py · search/vecstore.py · collect/upload_vectors.py</span></div>
+    </div>
+    <p class="note">수집 상태(F): 지금 <span id="liveCollect">불러오는 중…</span> — 판정은 만들었고 매칭 연결은 아직 <span class="chip part">일부 (9/28)</span> · <a href="/collection-status">수집 상태 화면 →</a></p>
+  </section>
+
+  <!-- 2. 정형화 -->
+  <section class="lane" aria-labelledby="l2">
+    <div class="lane-h"><h2 id="l2">② 공고 조건 정리하기</h2><span class="when">API 칸 · 매일 배치 10·11단계 · 손으로 실행한 LLM 추출</span></div>
+    <p class="sum">공고문에서 "누가 신청할 수 있나"를 읽어 비교할 수 있는 값으로 바꿉니다. 업종은 LLM이 읽고, 코드 규칙이 KSIC 대분류(A~U)로 묶습니다.</p>
+    <div class="flow">
+      <div class="step"><span class="n">A</span><span class="t">업력 · 모집 상태 · 마감일</span><span class="d">API 칸에서 바로 읽는다. <b>기업마당 공고 2,041건은 API에 업력·모집 상태 칸이 없다</b> → 자격 확인에서 "확인 필요"</span><span class="chip part">일부 — K-Startup만</span><span class="f">search/gate.py</span></div>
+      <div class="arrow" aria-hidden="true">·</div>
+      <div class="step"><span class="n">A2</span><span class="t">자격요건 읽기 (LLM, 매일 10단계)</span><span class="d">첨부에서 업력·지원금·기업 형태를 gpt-4o-mini로. 공용 DB <code>notice_conditions</code> 1,864건. 업력 검사가 좁아 204건을 버렸다가 검사를 넓히고 luna로 다시 뽑아 77건을 되찾음(9/28, 결과 파일)</span><span class="chip part">근거 표시만 — 자격 확인 업력 줄</span><span class="f">collect/extract_conditions.py</span></div>
+      <div class="arrow" aria-hidden="true">·</div>
+      <div class="step"><span class="n">B</span><span class="t">업종 읽기 (LLM)</span><span class="d">공고 1,852건을 gpt-5.6-luna가 읽고 근거 문장을 코드로 검사. 최신 결과 <code>final5</code></span><span class="chip done">완료 (사람 검증 전)</span><span class="f">experiments/sql_semantic/industry_llm_sample.py<br>reports/industry_llm_full_luna_20260928_final5/</span><a href="/industry-results">결과 화면 →</a></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="step key"><span class="n">C</span><span class="t">업종 대분류로 묶기</span><span class="d">"전문·과학 및 기술서비스업" → M 처럼 공고·신청자 업종을 같은 코드로. 못 묶은 허용값 167 → 100개</span><span class="chip done">완료 (F2, 9/28)</span><span class="f">experiments/sql_semantic/industry_groups.py</span></div>
+      <div class="arrow" aria-hidden="true">·</div>
+      <div class="step key"><span class="n">D</span><span class="t">신청자 유형 읽기 (LLM)</span><span class="d">예비창업자·개인사업자·법인 신청 가능 여부를 근거 문장과 함께. 전량 2,476건 완료, 매일 배치 11단계로 새 공고만 추가. 게이트에 쓸 "확실한 불가" 192건, API 업력 칸 때문에 예비창업자를 잘못 빼는 공고 9건 발견</span><span class="chip done">연결 (G, 9/28) — 예비창업자만</span><span class="f">experiments/sql_semantic/applicant_type_llm.py</span><a href="/applicant-types">결과 화면 →</a></div>
+    </div>
+  </section>
+
+  <!-- 3. 매칭 -->
+  <section class="lane" aria-labelledby="l3">
+    <div class="lane-h"><h2 id="l3">③ 신청자에게 맞는 공고 고르기</h2><span class="when">요청마다 · <code>POST /api/match</code> (search/app.py, 8000번)</span></div>
+    <p class="sum">비유하면 "살 수 있는 물건만 먼저 골라 두고, 그 안에서 마음에 드는 순서로 줄 세우기"입니다. 지역·업종은 빼는 데 쓰지 않고 순서에만 씁니다.</p>
+    <div class="flow">
+      <div class="step"><span class="n">1</span><span class="t">신청자 입력</span><span class="d">아이디어, 신청자 유형, 설립일, 지역, 주 업종 …</span><span class="chip done">완료</span><span class="f">search/app.py MatchRequest · applicant.py</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="step key"><span class="n">2</span><span class="t">신청 못 하는 공고 빼기</span><span class="d">모집 종료 · 마감 지남 · 업력/유형이 <b>확실히</b> 미달인 공고만. 모르면 남긴다. 예비창업자는 공고 본문의 "불가"(명시)도 빼고, 본문 "가능"은 API 업력 칸보다 우선(9/28)</span><span class="chip done">완료 (A, 9/28)</span><span class="f">search/gate.py prefilter</span><a href="/filter-first-eval">방식 비교 →</a></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="step"><span class="n">3</span><span class="t">두 가지로 찾기</span><span class="d">뜻으로 찾기(Chroma) + 낱말로 찾기(BM25). 2단계를 통과한 공고 안에서만</span><span class="chip done">완료 — 한쪽 오류 시 대체 검색(E, 9/28)</span><span class="f">search/app.py _dense_within · search/hybrid.py</span><a href="/compare">방식 비교 →</a></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="step"><span class="n">4</span><span class="t">두 순위 합치기</span><span class="d">RRF — 두 검색 모두 위에 있는 공고가 앞으로</span><span class="chip done">완료</span><span class="f">search/hybrid.py rrf</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="step key"><span class="n">5</span><span class="t">순서 다듬기</span><span class="d">조건이 확실히 안 맞는 공고를 <b>뒤로</b>(빼지 않음). 아래 표의 순서대로</span><span class="chip done">완료 (9/28: 예비창업자 추정 추가, 업종은 기본 꺼짐)</span><span class="f">search/rank_rules.py · shared/region.py · search/industry_rank.py</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="step"><span class="n">6</span><span class="t">결과 보여 주기</span><span class="d">첫 조회 10건(카드 3 + 리스트 7), 추가 10건(최대 20), 순위 점수(fit_score · 확률 아님)</span><span class="chip done">완료 (D · H, 9/28)</span><span class="f">search/app.py match()</span></div>
+    </div>
+    <div class="rules">
+      <h3>5단계 "순서 다듬기" — 뒤로 보내는 순서 (강한 것부터)</h3>
+      <ol>
+        <li><b>다른 시·도 전용 공고</b> — 신청 자체가 안 된다</li>
+        <li><b>같은 시·도의 다른 시·군·구 전용</b> — 대개 신청이 안 된다</li>
+        <li><b>예비창업자인데 대상이 이미 사업 중인 기업으로 보임(추정)</b> <span class="chip done">9/28</span> — 빼지 않고 뒤로. 신청자가 예비창업자일 때만</li>
+        <li><b>업종 허용 목록 밖</b> <span class="chip off">기본 꺼짐</span> — Codex 판정에서 밀린 34건 중 11건이 부당하게 밀려 꺼 두었다(요청에서 켤 수 있음).
+          <span class="live" id="liveIndustry">불러오는 중…</span></li>
+        <li><b>대상 집단 근거 없음</b> — 여성기업 전용 공고인데 신청자 입력에 근거가 없을 때. 가장 약하다</li>
+      </ol>
+    </div>
+    <div class="join">선택한 공고 하나의 자격 확인은 따로 있습니다: <code>POST /api/eligibility</code> — 업력 · 접수기간 · 모집 상태를 대조해 통과 / 불통과 / 확인 필요 <span class="chip part">일부 — 신청자 유형(G)</span></div>
+  </section>
+
+  <!-- 3-1. 매칭 입력 (2026-09-28 사용자 요청 — 매칭에 무엇을 쓰고 있나) -->
+  <section class="lane" aria-labelledby="l3b">
+    <div class="lane-h"><h2 id="l3b">③-1 매칭에 쓰는 입력 — 무엇을 어디에 쓰나</h2><span class="when"><code>search/app.py MatchRequest</code> · <code>search/applicant.py</code></span></div>
+    <p class="sum">신청자 입력은 네 가지 용도로 나뉩니다. 비유하면 <b>못 가는 가게 빼기 → 원하는 물건 찾기 → 가까운 순으로 줄 세우기</b>, 나머지는 적어만 둡니다.
+      결과를 좌우하는 핵심은 <b>아이디어</b>(무엇을 찾을지), <b>신청자 유형·설립일</b>(무엇을 뺄지), <b>지역</b>(무엇을 뒤로 보낼지)입니다.</p>
+
+    <h3 style="margin:10px 0 4px;font-size:15px">① 거르기 — 신청 못 하는 공고를 뺀다 (검색 전)</h3>
+    <table>
+      <thead><tr><th>입력</th><th>어떻게 쓰나</th></tr></thead>
+      <tbody>
+        <tr><td class="k">신청자 유형</td><td>예비창업자·개인사업자·법인사업자. 업력·유형이 <b>확실히</b> 안 맞는 공고만 뺀다. 예비창업자는 공고 본문의 "예비창업자 불가"(명시)도 뺀다</td></tr>
+        <tr><td class="k">설립일</td><td>업력 계산 → 공고 업력 칸과 비교(K-Startup만 칸이 있다. 기업마당은 모름으로 두고 빼지 않는다)</td></tr>
+        <tr><td class="k">(오늘 날짜)</td><td>마감이 지났거나 모집이 끝난 공고를 뺀다</td></tr>
+      </tbody>
+    </table>
+
+    <h3 style="margin:14px 0 4px;font-size:15px">② 검색 문장 — 의미 검색·단어 검색(BM25)에 넣는 글</h3>
+    <table>
+      <thead><tr><th>입력</th><th>문장에 들어가는 모양</th></tr></thead>
+      <tbody>
+        <tr><td class="k">아이디어 (필수)</td><td>그대로</td></tr>
+        <tr><td class="k">수익모델</td><td>항목명만 — "수익모델: 구독, 광고" (단가 숫자는 넣지 않는다)</td></tr>
+        <tr><td class="k">신청자 유형 · 설립일</td><td>"예비창업자" 또는 "창업 3년차 개인사업자"</td></tr>
+        <tr><td class="k">팀 경력</td><td>"팀 경력: …"</td></tr>
+        <tr><td class="k">주 업종 · 보유 인증 · 채용 계획</td><td>"업종: …" · "보유 인증: …" · "고용 계획 있음"</td></tr>
+      </tbody>
+    </table>
+
+    <h3 style="margin:14px 0 4px;font-size:15px">③ 순서 다듬기 — 빼지 않고 뒤로만 보낸다</h3>
+    <table>
+      <thead><tr><th>입력</th><th>규칙</th><th>상태</th></tr></thead>
+      <tbody>
+        <tr><td class="k">지역 (시·도)</td><td>다른 시·도 전용 공고를 뒤로</td><td><span class="chip done">켜짐</span></td></tr>
+        <tr><td class="k">시·군·구</td><td>같은 도의 다른 시·군 전용 공고(제목 기준)를 뒤로</td><td><span class="chip done">켜짐</span></td></tr>
+        <tr><td class="k">신청자 유형 = 예비창업자</td><td>대상이 이미 사업 중인 기업으로 보이는 공고(추정)를 뒤로</td><td><span class="chip done">켜짐</span></td></tr>
+        <tr><td class="k">주 업종</td><td>공고 업종 허용 목록 밖이면 뒤로</td><td><span class="chip off">꺼짐</span> 부당 밀림 11/34</td></tr>
+        <tr><td class="k">성별 · 인증 · 업종 · 협력기관 · 재창업 여부</td><td>"여성기업 전용"처럼 특정 대상 공고인데 신청자 입력에 근거가 없으면 뒤로</td><td><span class="chip done">켜짐</span></td></tr>
+      </tbody>
+    </table>
+
+    <h3 style="margin:14px 0 4px;font-size:15px">④ 저장만 — 매칭에 쓰지 않는다</h3>
+    <table>
+      <thead><tr><th>입력</th><th>왜 못 쓰나</th></tr></thead>
+      <tbody>
+        <tr><td class="k">이름</td><td>공고 데이터에 대응하는 칸이 없다</td></tr>
+        <tr><td class="k">생년월일(만 나이)</td><td>공고의 나이 조건(청년·중장년)이 칸으로 정리돼 있지 않다</td></tr>
+        <tr><td class="k">사업자등록번호</td><td>국세청 API를 붙이면 설립일 검증·폐업 확인에 쓸 수 있다</td></tr>
+        <tr><td class="k">예산 규모 · 자기부담금</td><td>공고에 지원금액·자기부담 비율 칸이 없다</td></tr>
+        <tr><td class="k">보유 장비</td><td>공고 본문에만 있어 아직 칸으로 뽑지 않았다</td></tr>
+      </tbody>
+    </table>
+
+    <h3 style="margin:14px 0 4px;font-size:15px">고정 설정값 (입력이 아님)</h3>
+    <table>
+      <thead><tr><th>설정</th><th>값</th></tr></thead>
+      <tbody>
+        <tr><td class="k">검색 방식</td><td>하이브리드 — 의미 검색(BGE-M3, Chroma) + 단어 검색(BM25)</td></tr>
+        <tr><td class="k">두 순위 합치기</td><td>RRF · k=60 · 두 검색 가중치 1:1</td></tr>
+        <tr><td class="k">각 검색에서 가져오는 후보</td><td>50건 (정형 필터를 통과한 공고 안에서)</td></tr>
+        <tr><td class="k">결과 개수</td><td>첫 10건(카드 3 + 리스트 7) · 추가 10건 · 최대 20건</td></tr>
+        <tr><td class="k">순서 다듬기 방식</td><td>order — 걸리면 맨 뒤로(점수 감점 방식 score 는 시험용)</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 4. 확인 -->
+  <section class="lane" aria-labelledby="l4">
+    <div class="lane-h"><h2 id="l4">④ 잘 되는지 확인하기</h2><span class="when">사람이 눈으로 · 숫자로</span></div>
+    <p class="sum">결과를 믿어도 되는지 보는 곳입니다. 화면은 이 서버(8010)에, 숫자 평가는 <code>eval/</code>에, 결과는 <code>reports/</code>에 남습니다.</p>
+    <table>
+      <thead><tr><th>무엇</th><th>어디서</th><th>최근 결과</th></tr></thead>
+      <tbody>
+        <tr><td class="k">벡터만 vs 검색 먼저 vs 필터 먼저</td><td><a href="/filter-first-eval">매칭 방식 비교</a> · <code>eval/filter_first_eval.py</code></td><td id="liveFF">—</td></tr>
+        <tr><td class="k">업종 순위 안전 확인</td><td><code>eval/industry_rank_check.py</code></td><td id="liveIRC">—</td></tr>
+        <tr><td class="k">업종 추출 결과</td><td><a href="/industry-results">업종 추출 결과</a> · <a href="/industry-probe">업종 강조 실험</a></td><td>final5 기준</td></tr>
+        <tr><td class="k">검색 방식 직접 비교</td><td><a href="/compare">검색 방식 비교</a> · <a href="/">검증 화면</a></td><td>—</td></tr>
+        <tr><td class="k">테스트</td><td><code>python -X utf8 -m unittest discover -s tests</code></td><td>571개 통과 · 건너뜀 13 (9/28)</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 5. 남은 것 -->
+  <section class="lane" aria-labelledby="l5">
+    <div class="lane-h"><h2 id="l5">⑤ 아직 없는 것 · 연결 안 된 것</h2><span class="when">기획서 v1.10 · 기능정의서 v1.9 대비 — <code>docs/PLAN_ALIGNMENT_20260928.md</code></span></div>
+    <table>
+      <thead><tr><th>표시</th><th>내용</th><th>상태</th></tr></thead>
+      <tbody>
+        <tr><td class="k">D</td><td>후보 10건 + 추가 10건(최대 20건)</td><td><span class="chip done">완료</span> 9/28</td></tr>
+        <tr><td class="k">E</td><td>임베딩 오류 시 BM25 단독으로 대신 찾기</td><td><span class="chip done">완료</span> 9/28 · 둘 다 실패는 마감임박순(잠정)</td></tr>
+        <tr><td class="k">H</td><td>적합도 점수(fitScore)</td><td><span class="chip done">완료</span> 9/28 · 산식은 기능정의서도 잠정</td></tr>
+        <tr><td class="k">F</td><td>수집 상태 확인(24시간 초과 경고)</td><td><span class="chip part">판정 완료 · 매칭 연결 전</span> <a href="/collection-status">화면</a></td></tr>
+        <tr><td class="k">G</td><td>공고의 신청자 유형(예비창업자·개인/법인) 정형화</td><td><span class="chip done">예비창업자 연결</span> 개인/법인은 참고만 · <a href="/applicant-types">결과</a></td></tr>
+        <tr><td class="k">C</td><td>기업마당 수집 범위(창업·기술만) — 팀 확인 필요</td><td><span class="chip part">결정 대기</span></td></tr>
+        <tr><td class="k">B</td><td>실험 경로가 지역으로 공고를 뺌</td><td><span class="chip done">완료</span> 9/28 · 지역·업종·규모는 뒤로</td></tr>
+        <tr><td class="k">ML</td><td>리랭커 · 업력 분류기 (제출물용)</td><td><span class="chip off">연결 안 됨</span> 시연 화면만(8000 /demo · /classify)</td></tr>
+        <tr><td class="k">검수</td><td>필터 먼저 매칭(A)</td><td><span class="chip done">Codex 승인</span> 9/28</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <p class="note">문서가 어디 있는지는 <code>docs/README.md</code>(문서 지도), 코드 흐름의 글 설명은 <code>docs/FLOW.md</code>에 있습니다.</p>
+</div>
+<script>
+(async () => {
+  const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  try {
+    const r = await fetch('/api/flow');
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    const ind = d.industry || {};
+    const ty = d.applicant_types || {};
+    if (ty.rows) set('liveTypes', `${ty.rows.toLocaleString()}건 · luna${ty.updated ? ' · 마지막 배치 ' + new Date(ty.updated).toLocaleString('ko-KR') : ''}`);
+    if (ind.rows) set('liveInd', `${ind.rows.toLocaleString()}건 · luna · 순위에 쓸 수 있는 공고 ${ind.notices.toLocaleString()}건`);
+    set('liveIndustry', ind.active
+      ? `지금 순위에 쓰는 공고 <b>${ind.notices.toLocaleString()}건</b> / 업종 결과 ${ind.rows.toLocaleString()}건 (${ind.source})`
+      : `업종 결과 파일이 없어 규칙이 꺼져 있음`);
+    const ff = d.latest && d.latest.filter_first_eval;
+    set('liveFF', ff ? `<code>reports/${ff}/</code>` : '아직 없음');
+    const irc = d.latest && d.latest.industry_rank_check;
+    set('liveIRC', irc ? `<code>reports/${irc.name}/</code>${irc.violations != null ? ` · 불변식 위반 <b>${irc.violations}건</b>` : ''}` : '아직 없음');
+  } catch (e) {
+    set('liveIndustry', '(숫자를 불러오지 못함)');
+  }
+  try {
+    const c = await fetch('/api/collection-status').then(r => r.ok ? r.json() : Promise.reject(r.status));
+    const n = c.now;
+    const cls = n.status === '정상' ? 'done' : (n.status === '지연' ? 'part' : 'todo');
+    set('liveCollect', `<span class="chip ${cls}">${n.status}</span> 마지막 저장 ${n.age_hours ?? '—'}시간 전`);
+  } catch (e) {
+    set('liveCollect', '(DB를 읽지 못함)');
+  }
+})();
+</script>
+</body>
+</html>

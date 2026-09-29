@@ -1,0 +1,151 @@
+<!-- LLM 추출 결과 검토 화면. app.py 의 /review 가 내려준다. -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>자격요건 추출 검토</title>
+<style>
+  :root {
+    --bg:#faf8f5; --card:#fff; --ink:#2b2724; --muted:#7a716a; --line:#e6ded4;
+    --accent:#a4362f; --accent-soft:#fdf0ee; --ok:#1f7a4d; --no:#b4342b; --warn:#9a7b21;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:14px/1.6 -apple-system,"Segoe UI","Malgun Gothic",sans-serif; }
+  .wrap { max-width:1240px; margin:0 auto; padding:24px 18px 70px; }
+  h1 { font-size:24px; margin:4px 0 6px; letter-spacing:-.3px; }
+  .eyebrow { color:var(--accent); font-size:12.5px; font-weight:700; }
+  .lede { color:var(--muted); margin:0 0 20px; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(126px,1fr));
+           gap:9px; margin-bottom:18px; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:9px;
+          padding:11px 13px; }
+  .stat b { display:block; font-size:19px; }
+  .stat span { color:var(--muted); font-size:11.5px; }
+  .tabs { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:16px; }
+  .tabs button { padding:8px 13px; border:1px solid var(--line); background:#fff;
+    border-radius:20px; font:inherit; font-size:13px; cursor:pointer; color:inherit; }
+  .tabs button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent);
+    background:var(--accent-soft); font-weight:700; }
+  .note { background:#fdf9ec; border:1px solid var(--line); border-radius:9px;
+          padding:12px 14px; margin-bottom:16px; color:#6b5a1e; font-size:13px; }
+  table { width:100%; border-collapse:collapse; background:var(--card);
+          border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  th,td { padding:11px 12px; border-bottom:1px solid var(--line);
+          text-align:left; vertical-align:top; }
+  th { background:#f4efe8; color:var(--muted); font-size:12px; font-weight:700;
+       position:sticky; top:0; }
+  tr:last-child td { border-bottom:0; }
+  td.amt { font-weight:700; white-space:nowrap; text-align:right; font-variant-numeric:tabular-nums; }
+  td.amt.big { color:var(--no); }
+  .title { font-weight:600; }
+  .meta { color:var(--muted); font-size:12px; }
+  .quote { color:#4a423c; font-size:12.5px; background:#f7f3ee; border-left:3px solid var(--line);
+           padding:6px 9px; border-radius:0 5px 5px 0; margin-top:5px; }
+  .tag { display:inline-block; padding:1px 7px; border:1px solid var(--line);
+         border-radius:11px; font-size:11.5px; margin-right:3px; color:var(--muted); }
+  .flag { color:var(--no); font-size:11.5px; font-weight:700; }
+  .fix { color:var(--warn); font-size:11.5px; }
+  a { color:var(--accent); }
+  .spin { color:var(--muted); padding:22px; }
+  .right { text-align:right; }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">LLM 추출 검토</p>
+  <h1>자격요건 추출 결과를 근거와 함께 봅니다</h1>
+  <p class="lede">근거 문장이 값과 맞는지 보세요 — 숫자는 맞고 의미가 틀린 경우를 찾는 것이 목적입니다.</p>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="tabs" id="tabs">
+    <button data-k="amount" data-b="all"      aria-pressed="true">금액 전체</button>
+    <button data-k="amount" data-b="under10m" aria-pressed="false">1천만원 미만</button>
+    <button data-k="amount" data-b="10m_100m" aria-pressed="false">1천만~1억</button>
+    <button data-k="amount" data-b="100m_1b"  aria-pressed="false">1억~10억</button>
+    <button data-k="amount" data-b="over1b"   aria-pressed="false">10억 이상 ⚠</button>
+    <button data-k="corrected" data-b="all"   aria-pressed="false">검산 교정분</button>
+    <button data-k="type" data-b="all"        aria-pressed="false">사업자 형태</button>
+    <button data-k="age_kept" data-b="all"    aria-pressed="false">업력 남은 것</button>
+    <button data-k="age_rejected" data-b="all" aria-pressed="false">업력 폐기분</button>
+  </div>
+
+  <div class="note" id="note" hidden></div>
+  <div id="out" class="spin">불러오는 중…</div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const won = n => n == null ? '—' : n.toLocaleString('ko-KR') + '원';
+
+const NOTES = {
+  over1b: '기업 1곳이 10억 넘게 받는 공고는 드뭅니다. 근거를 보면 대부분 <b>사업 총예산·매출 기준·전체 융자 규모</b>를 지원금으로 잘못 읽은 것입니다. 숫자와 근거가 일치해서 검산이 통과시킨 경우라 사람이 봐야 합니다.',
+  corrected: '검산이 근거 문장과 대조해 단위 자리수를 고친 건들입니다. 교정 전/후가 표시됩니다.',
+  age_rejected: 'LLM 이 업력 값을 냈지만 근거가 사람 나이·근속연수·개월 단위여서 버린 건들입니다. 값은 지우고 근거만 남겼습니다.',
+  age_kept: '검산을 통과해 남은 업력 값입니다. 근거에 업력·창업·설립 표현이 있는 것만 남았습니다. 그래도 판정에는 쓰지 않습니다.',
+};
+
+async function load(kind, band) {
+  $('#out').className = 'spin';
+  $('#out').textContent = '불러오는 중…';
+  const r = await fetch(`/api/conditions?kind=${kind}&band=${band}&limit=400`);
+  const d = await r.json();
+
+  const s = d.stats;
+  $('#stats').innerHTML = [
+    ['추출 완료', s.total], ['금액 확보', s.amount], ['사업자 형태', s.type],
+    ['1천만 미만', s.under10m], ['1천만~1억', s['10m_100m']],
+    ['1억~10억', s['100m_1b']], ['10억 이상 ⚠', s.over1b],
+    ['검산 교정', s.corrected], ['업력 폐기', s.age_rejected],
+  ].map(([k, v]) => `<div class="stat"><b>${(v||0).toLocaleString()}</b><span>${k}</span></div>`).join('');
+
+  const note = NOTES[band] || NOTES[kind];
+  $('#note').hidden = !note;
+  if (note) $('#note').innerHTML = note;
+
+  if (!d.rows.length) {
+    $('#out').textContent = '해당 조건에 맞는 건이 없습니다.';
+    return;
+  }
+
+  const rows = d.rows.map((x, i) => {
+    const types = (x.business_type || []).map(t => `<span class="tag">${esc(t)}</span>`).join('');
+    const pre = x.pre_startup_allowed === true ? '<span class="tag">예비창업 가능</span>'
+              : x.pre_startup_allowed === false ? '<span class="tag">예비창업 불가</span>' : '';
+    const age = (x.age_years_max != null || x.age_years_min != null)
+      ? `<span class="tag">업력 ${x.age_years_min != null ? x.age_years_min + '년 이상' : ''}${x.age_years_max != null ? ' ' + x.age_years_max + '년 이하' : ''}</span>` : '';
+    const fix = x.amount_corrected
+      ? `<div class="fix">검산 교정 ${won(x.amount_corrected.from)} → ${won(x.amount_corrected.to)}</div>` : '';
+    const rej = x.age_rejected ? `<div class="flag">업력 폐기 — ${esc(x.age_rejected)}</div>` : '';
+    const quote = x.source_quote
+      ? `<div class="quote">${esc(x.source_quote).slice(0, 300)}</div>` : '';
+    const aquote = x.age_source_quote && x.age_source_quote !== x.source_quote
+      ? `<div class="quote">업력 근거 — ${esc(x.age_source_quote).slice(0, 220)}</div>` : '';
+    const big = x.amount_max_won >= 1e9 ? ' big' : '';
+    return `<tr>
+      <td class="meta">${i + 1}</td>
+      <td class="amt${big}">${won(x.amount_max_won)}${fix}</td>
+      <td>
+        <div class="title">${esc(x.title).slice(0, 92)}</div>
+        <div class="meta">${esc(x.source)} · ${esc(x.notice_id)}
+          ${x.url ? ` · <a href="${esc(x.url)}" target="_blank" rel="noopener">원문 ↗</a>` : ''}</div>
+        <div style="margin-top:5px">${types}${pre}${age}</div>
+        ${quote}${aquote}${rej}
+      </td></tr>`;
+  }).join('');
+
+  $('#out').className = '';
+  $('#out').innerHTML = `<p class="meta right">${d.count}건 표시 (최대 400)</p>
+    <table><thead><tr><th style="width:42px">#</th><th style="width:190px" class="right">지원금액</th>
+    <th>공고 · 추출값 · 근거</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+$('#tabs').addEventListener('click', e => {
+  const b = e.target.closest('button[data-k]');
+  if (!b) return;
+  [...$('#tabs').children].forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  load(b.dataset.k, b.dataset.b);
+});
+
+load('amount', 'all');
+</script>
