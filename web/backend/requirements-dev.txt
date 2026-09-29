@@ -1,0 +1,6 @@
+# 테스트에만 필요한 의존성 — requirements.txt(런타임)와 분리한다.
+# httpx2: 최신 starlette(TestClient)가 fastapi.testclient.TestClient 내부에서
+# 요구한다(런타임 코드는 안 씀) — 로컬 venv엔 예전에 어쩌다 깔려있어서 안 걸렸지만,
+# CI는 매번 새 환경에 requirements.txt만 설치해서 여기 없으면 pytest 수집 단계부터
+# ImportError로 죽는다(SB-193 PR CI에서 처음 발견).
+httpx2
