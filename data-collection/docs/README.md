@@ -20,7 +20,7 @@
 | 폴더 | 들어 있는 것 | 비고 |
 |---|---|---|
 | [specs/](specs/) | **기준 문서** — 프로젝트 기획서 v1.10(PDF), Agent 기능정의서 v1.9(xlsx) | 팀 문서. 고치지 않는다. 판단 기준은 기능정의서 |
-| [guides/](guides/) | 운영·구조 참고 — API 필드 대응표, 배치 SQL, 예약 실행, 팀원용 데이터 사용법, 검증 화면 사용법, 구조도(HTML·SVG), [공고 판정 테이블 설계](guides/JUDGMENT_TABLES.md) | 내용이 바뀌면 같은 파일을 고친다 |
+| [guides/](guides/) | 운영·구조 참고 — API 필드 대응표, 배치 SQL, 예약 실행, 팀원용 데이터 사용법, 검증 화면 사용법, 구조도(HTML·SVG), [공고 판정 테이블 설계](guides/JUDGMENT_TABLES.md), **[공고팀 함수 설명서 — 조율 에이전트용](guides/ORCHESTRATION_HANDOFF.md)**(조율 개발자에게 전달) | 내용이 바뀌면 같은 파일을 고친다 |
 | [reviews/](reviews/) | 작업 지시서·검수 요청서·검수 결과. 주제별 폴더 | 아래 3절 |
 | [ml/](ml/) | 머신러닝(리랭커·업력 분류기) 설계·방향과 도식 | 서비스에 연결되지 않은 제출물용 |
 | [deliverables/](deliverables/) | 제출한 보고서(docx)와 확인용 렌더링(`_qa/`) | 제출본이다. 고치지 않는다 |
