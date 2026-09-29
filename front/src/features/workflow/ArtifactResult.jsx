@@ -112,7 +112,11 @@ export function ResultPreview({kind,onClose,siteSrc=null,infoSrc=null}){
 
 export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, scoreOutcome = 'fail', projectId, reworkCounts = {}, onRework, scores = null, reworkBudget = null, onScoresRefresh, artifact = null }){
   const [preview,setPreview]=useState(null);
-  const category = detectItemCategory(itemInfo && itemInfo.item);
+  // 서버가 이미 정한 카테고리(artifact.category)가 있으면 그걸 쓴다 — 없으면(아직 생성
+  // 전이라 artifact 자체가 없는 극히 드문 진입 경로에서만) itemInfo 텍스트로 추측한다.
+  // 예전엔 항상 추측만 써서, 사용자가 입력한 문구가 onepage 키워드(매장/가게/카페 등)에
+  // 안 걸리면 실제로는 onepage인데 실행 파일 카드가 있는 것처럼 잘못 보였다(사용자 지적).
+  const category = artifact?.category || detectItemCategory(itemInfo && itemInfo.item);
   const hasExecutable = category !== 'onepage';
   const copy = ARTIFACT_CATEGORY_COPY[category];
   // 서버 채점이 끝났으면 그 값을, 아직이면 기존 고정 표를 쓴다(utils.js scoresFromResult).

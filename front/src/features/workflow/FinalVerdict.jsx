@@ -366,7 +366,8 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
     ...artifactScore.crossCheck.reasons,
   ];
 
-  const category = detectItemCategory(itemInfo && itemInfo.item);
+  // ArtifactResult.jsx와 같은 이유 — 서버가 정한 artifact.category를 우선 쓴다.
+  const category = artifact?.category || detectItemCategory(itemInfo && itemInfo.item);
   const hasExecutable = category !== 'onepage';
   const allTasks = [
     ...DOC_REWORK_BUNDLES.map((label) => ({ label, layer: '계획서' })),

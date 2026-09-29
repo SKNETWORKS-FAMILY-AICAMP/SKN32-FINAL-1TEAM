@@ -94,7 +94,8 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
     }
     if (file.name === '검증결과.pdf') {
       // 원페이지형 검증결과서 양식을 인쇄 창으로 연다 — "PDF로 저장"을 고르면 PDF가 된다.
-      const category = detectItemCategory(itemInfo?.item);
+      // ArtifactResult.jsx와 같은 이유 — 서버가 정한 artifact.category를 우선 쓴다.
+      const category = plan?.artifacts?.[0]?.category || detectItemCategory(itemInfo?.item);
       printVerificationReport({
         projectName: itemInfo?.item,
         announcementTitle: itemTitle,

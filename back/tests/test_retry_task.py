@@ -687,6 +687,52 @@ def test_result_response_includes_rework_cap_and_bundle_usages(retry_setup, db_s
     assert writing_exec['bundle_id'] == ps.BUNDLE_PSST_PROBLEM
 
 
+def test_onepage_result_omits_prototype_bundle_and_executable_path(db_session):
+    """[2026-09-29 신규] onepage는 실행 파일(executable_path) 자체가 없는 카테고리라서
+    (app/routers/projects.py "category='onepage'는 실행 파일... 없어" 주석 참고), GET
+    /result의 bundle_usages에 '실행 파일 제작' 묶음이 아예 없어야 한다(webdev/aiapi는
+    있음) — 프론트가 이 목록 개수로 재작성 카드를 그리므로(data.js
+    ARTIFACT_SUBTASKS_BY_CATEGORY.onepage가 1개뿐인 것과 대응) 정확히 맞아야 한다.
+    이제까지 onepage 카테고리 자체를 실행하는 pytest가 하나도 없었다."""
+    from app import pipeline_stages as ps
+    from app.models import Company, Notice, Project, User
+    from seed_dummy_pipeline import seed_dummy_pipeline
+
+    email = 'onepage-cards-test@example.com'
+    user = User(email=email, name='원페이지테스트', google_sub='sub-onepage-cards-test', role='user', status='active')
+    db_session.add(user)
+    db_session.flush()
+    company = Company(user_id=user.user_id, ceo_name='원페이지테스트')
+    db_session.add(company)
+    db_session.flush()
+    project = Project(company_id=company.company_id, description='onepage 카드 개수 검증용 프로젝트')
+    db_session.add(project)
+    db_session.flush()
+    notice = Notice(
+        notice_id=f'ONEPAGE-CARDS-TEST-{project.project_id}', source='k-startup',
+        title='onepage 카드 개수 검증용 공고', recruitment_status='진행중',
+    )
+    db_session.add(notice)
+    db_session.flush()
+    seed_dummy_pipeline(db_session, project.project_id, notice_id=notice.notice_id, category='onepage', retry_agents=())
+    db_session.commit()
+
+    client = _client_for(user.user_id)
+    result = client.get(f'/projects/{project.project_id}/result')
+    assert result.status_code == 200, result.text
+    body = result.json()
+
+    bundle_ids = {item['bundle_id'] for item in body['bundle_usages']}
+    assert ps.BUNDLE_ARTIFACT_PROTOTYPE not in bundle_ids, "onepage인데 '실행 파일 제작' 묶음이 응답에 있음"
+    assert ps.BUNDLE_ARTIFACT_INFOGRAPHIC in bundle_ids
+    # PSST 4항목(문서층) + 인포그래픽 1개 = 5개뿐이어야 한다(webdev/aiapi는 실행 파일까지 6개).
+    assert len(bundle_ids) == 5, f'onepage 재작성 카드 개수가 예상과 다름: {sorted(bundle_ids)}'
+
+    artifact = body['plan']['artifacts'][0]
+    assert artifact['executable_path'] is None
+    assert artifact['infographic_path'] is not None
+
+
 # ============================================================================
 # [2026-09-28 신규, 프론트 2차 요청 C] 재채점 시 reason_text도 같이 갱신되는지 —
 # 예전엔 score/evidence_locator만 바뀌고 reason_text는 재채점 전 문장("...통과") 그대로
