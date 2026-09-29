@@ -186,12 +186,24 @@ function Modal({title,onClose,children,wide}){
 const ADMIN_ALERT_SEEN_KEY='sbrain-admin-alerts-seen';
 const readAdminSeen=()=>{try{return new Set(JSON.parse(localStorage.getItem(ADMIN_ALERT_SEEN_KEY)||'[]'))}catch{return new Set()}};
 const TASK_STATUS_FAILED=new Set(['failed','error','실패']);
-function adminAlertsFrom(items,executions){
+const GEN_STAGE_LABEL={plan_writing:'사업계획서',prototype_building:'프로토타입'};
+// 생성 완전 실패는 서버가 확정 실패 때마다 쌓는 generation_failure_alerts(GET /admin/generation-alerts)를
+// 쓴다 — "확인" 처리가 서버에 남아서 다른 PC·다른 관리자에게도 같이 사라진다. 알림 행이 없는
+// 예전 실패만 진행 현황(match_status)으로 보충한다.
+function adminAlertsFrom(items,executions,genAlerts=[]){
   const alerts=[];
   const byProject=new Map(items.filter(i=>i.project_id!=null).map(i=>[i.project_id,i]));
+  const alertedProjects=new Set(genAlerts.map(a=>a.project_id));
+  for(const g of genAlerts){
+    if(g.acknowledged_at)continue;
+    const item=byProject.get(g.project_id);
+    if(item?.archived)continue;
+    alerts.push({key:`gen:${g.alert_id}`,alertId:g.alert_id,kind:'실패',title:`${GEN_STAGE_LABEL[g.stage]||'프로젝트'} 생성 실패`,detail:`[${g.last_error_kind}] ${g.failure_reason||'실패 원인이 기록되지 않았어요.'}`,project:item?.description||`프로젝트 #${g.project_id}`,projectId:g.project_id,tab:'progress',time:g.created_at});
+  }
   for(const item of items){
     if(item.archived)continue;
     if(item.match_status==='failed'){
+      if(alertedProjects.has(item.project_id))continue;
       const kind=item.stage==='plan_writing'?'사업계획서':item.stage==='prototype_building'?'프로토타입':'프로젝트';
       alerts.push({key:`project:${item.project_id}:failed`,kind:'실패',title:`${kind} 생성 실패`,detail:item.failure_reason||'실패 원인을 확인해 주세요.',project:item.description,projectId:item.project_id,tab:'progress',time:item.last_updated});
     }else if(item.stalled){
@@ -207,6 +219,8 @@ function adminAlertsFrom(items,executions){
     if(!TASK_STATUS_FAILED.has(row.status))continue;
     const item=byProject.get(row.project_id);
     if(item?.archived)continue;
+    // 생성 단계 실패는 agent_executions에도 한 줄 남는다 — 위 생성 실패 알림과 같은 사건이라 겹쳐 띄우지 않는다.
+    if(item?.match_status==='failed')continue;
     alerts.push({key:`task:${row.execution_id}`,kind:'실패',title:`${row.task_key||row.agent_name} Task 오류`,detail:`실행 상태: ${row.status}`,project:item?.description||`프로젝트 #${row.project_id}`,projectId:row.project_id,tab:'agents',time:row.started_at});
   }
   return alerts.sort((a,b)=>(b.time||'').localeCompare(a.time||''));
@@ -219,16 +233,25 @@ function AdminNotificationBell({onNavigate}){
   const [error,setError]=useState('');
   useEffect(()=>{
     let cancelled=false,timer;
-    const load=()=>Promise.all([api.get('/admin/items'),api.get('/admin/agent-executions?limit=500')])
-      .then(([items,executions])=>{if(!cancelled){setAlerts(adminAlertsFrom(items,executions));setError('')}})
+    const load=()=>Promise.all([api.get('/admin/items'),api.get('/admin/agent-executions?limit=500'),api.get('/admin/generation-alerts?include_acknowledged=true')])
+      .then(([items,executions,genAlerts])=>{if(!cancelled){setAlerts(adminAlertsFrom(items,executions,genAlerts));setError('')}})
       .catch(()=>{if(!cancelled)setError('알림을 불러오지 못했어요.')})
       .finally(()=>{if(!cancelled)timer=setTimeout(load,15000)});
     load();
     return()=>{cancelled=true;clearTimeout(timer)};
   },[]);
+  const [acking,setAcking]=useState(null);
+  const ack=a=>{
+    setAcking(a.alertId);
+    api.put(`/admin/generation-alerts/${a.alertId}/ack`,{acknowledged:true})
+      .then(()=>setAlerts(list=>list.filter(x=>x.key!==a.key)))
+      .catch(()=>setError('확인 처리하지 못했어요. 다시 시도해 주세요.'))
+      .finally(()=>setAcking(null));
+  };
   const toggle=()=>{
     if(!open){
-      const next=new Set([...seen,...alerts.map(a=>a.key)]);
+      // 생성 실패 알림은 서버에서 "확인"해야 사라진다 — 열어보기만 해선 읽음 처리하지 않는다.
+      const next=new Set([...seen,...alerts.filter(a=>!a.alertId).map(a=>a.key)]);
       setSeen(next);
       try{localStorage.setItem(ADMIN_ALERT_SEEN_KEY,JSON.stringify([...next]))}catch{}
     }
@@ -244,9 +267,9 @@ function AdminNotificationBell({onNavigate}){
         <div className="px-4 py-3.5 border-b border-[var(--border)] flex items-center justify-between"><h2 className="text-[13.5px] font-bold">알림 현황</h2><span className="text-[11px] text-[var(--muted-fg)]">관리 필요 {alerts.length}건</span></div>
         {error&&<p role="alert" className="px-4 py-2 text-[12px] text-[var(--danger)]">{error}</p>}
         {!error&&alerts.length===0?<p className="px-4 py-6 text-center text-[12.5px] text-[var(--muted-fg)]">현재 확인이 필요한 작업이 없어요.</p>:
-          <div className="soft-scroll max-h-80 overflow-y-auto divide-y divide-[var(--border)]">{alerts.map(a=><button type="button" key={a.key} onClick={()=>{setOpen(false);onNavigate(a)}} className="block w-full text-left px-4 py-3 hover:bg-[#f9fafb]">
+          <div className="soft-scroll max-h-80 overflow-y-auto divide-y divide-[var(--border)]">{alerts.map(a=><div key={a.key} className="relative hover:bg-[#f9fafb]"><button type="button" onClick={()=>{setOpen(false);onNavigate(a)}} className={'block w-full text-left px-4 py-3'+(a.alertId?' pr-16':'')}>
             <p className="text-[11px] text-[var(--muted-fg)] truncate">『{a.project}』</p><div className="flex gap-2 items-center mt-1"><strong className="text-[12.5px]">{a.title}</strong><span className={'ml-auto text-[11px] font-semibold '+(a.kind==='실패'?'text-[var(--danger)]':'text-[var(--warn)]')}>{a.kind}</span></div><p className="text-[11.5px] text-[var(--muted-fg)] mt-1 break-words line-clamp-2">{a.detail}</p>
-          </button>)}</div>}
+          </button>{a.alertId&&<button type="button" disabled={acking===a.alertId} onClick={()=>ack(a)} className="absolute right-3 top-3 rounded-md border border-[var(--border)] bg-white px-2 py-1 text-[11px] font-semibold text-[var(--muted-fg)] hover:text-[var(--fg)] disabled:opacity-50">{acking===a.alertId?'처리 중':'확인'}</button>}</div>)}</div>}
       </div>
     </React.Fragment>}
   </div>;
