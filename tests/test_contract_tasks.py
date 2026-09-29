@@ -280,3 +280,41 @@ class ContractTaskTests(TestCase):
         tb2, out = self._run_onepage_tv2(with_plan=True, detail="")
         self.assertIn("기능 설명(주문 조회) 누락", tb2.check.failures)
         self.assertEqual(out.feature_match.missing_features, ["주문 조회"])
+
+    def test_run_tv2_fills_flow_fields(self):
+        """조율이 흐름을 가르는 두 값(확장 필드)이 계약 결과에 문자열 밖으로 실린다."""
+        from sbrain.contracts.tasks import TV2In
+        from sbrain.models import Infographic, Prototype
+        from verification_agent.tasks import run_tv2
+
+        with TemporaryDirectory(dir=self._OUTPUT) as directory:
+            svg = Path(directory) / "infographic.svg"
+            svg.write_text('<svg xmlns="http://www.w3.org/2000/svg"><title>x</title></svg>',
+                           encoding="utf-8")
+            prototype = Prototype(entry_file_path=str(Path(directory) / "none.html"), kind="html",
+                                  source_text="<html></html>", asset_paths=[],
+                                  implemented_features=[])
+            out = run_tv2(TV2In(prototype=prototype,
+                                infographic=Infographic(image_path=str(svg), format="svg",
+                                                        alt_text="다른 문장"),
+                                feature_list=["주문 조회"]), _Tools(""))
+        self.assertEqual(out.code_check.gate_failures, ["entry"])
+        self.assertEqual(out.artifact_score.total, 0.0)
+
+        with TemporaryDirectory(dir=self._OUTPUT) as directory:
+            html = _HTML.split("\n", 1)[1].rsplit("```", 1)[0].rstrip("\n")
+            entry = Path(directory) / "index.html"
+            entry.write_text(html, encoding="utf-8")
+            svg = Path(directory) / "infographic.svg"
+            svg.write_text('<svg xmlns="http://www.w3.org/2000/svg"><title>x</title></svg>',
+                           encoding="utf-8")
+            prototype = Prototype(entry_file_path=str(entry), kind="html", source_text=html,
+                                  asset_paths=[], implemented_features=[])
+            out = run_tv2(TV2In(prototype=prototype,
+                                infographic=Infographic(image_path=str(svg), format="svg",
+                                                        alt_text="다른 문장"),
+                                feature_list=["주문 조회"]), _Tools(""))
+        alt = out.code_check.checks[1]
+        self.assertEqual(out.code_check.gate_failures, [])
+        self.assertFalse(alt.passed)
+        self.assertEqual(alt.defect_sources, ["infographic"])

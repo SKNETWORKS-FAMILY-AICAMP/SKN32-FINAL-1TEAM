@@ -62,11 +62,20 @@ _SCRIPT_BLOCK_RE = re.compile(r'<script\b(?![^>]*\bsrc\s*=)[^>]*>(.*?)</script>'
                               re.IGNORECASE | re.DOTALL)
 _EVENT_ATTR_RE = re.compile(r'\bon[a-z]+\s*=\s*["\']([^"\']*)["\']', re.IGNORECASE)
 
-_SANDBOX_FORBIDDEN: tuple[tuple[re.Pattern, str], ...] = (
+# sandbox iframe(allow-scripts만)에서 막히는 API를 결과로 나눈다.
+# - 멈춤: origin이 opaque라 접근하는 순간 예외 → 스크립트 전체가 멈춰 화면이 동작하지 않는다.
+#   통과 필수 조건이다.
+# - 무시: 호출이 조용히 무시되거나 막힌다. 그 동작 하나만 안 되고 나머지 화면은 돈다.
+#   점수 항목(r4.py 7번 "스크립트 동작 오류 없음")에서 감점한다.
+# 생성 쪽(engineering_agent/gates.py, E-B1-SANDBOX)은 둘 다 막는다. 여기는 재수행 상한을
+# 넘겨 그대로 들어온 산출물을 채점할 때 얼마나 무겁게 볼지를 가른다.
+_SANDBOX_HALTING: tuple[tuple[re.Pattern, str], ...] = (
     (re.compile(r'\b(?:window\s*\.\s*)?localStorage\b'), 'localStorage'),
     (re.compile(r'\b(?:window\s*\.\s*)?sessionStorage\b'), 'sessionStorage'),
     (re.compile(r'\bdocument\s*\.\s*cookie\b'), 'document.cookie'),
     (re.compile(r'\b(?:window\s*\.\s*)?indexedDB\b'), 'indexedDB'),
+)
+_SANDBOX_IGNORED: tuple[tuple[re.Pattern, str], ...] = (
     (re.compile(r'\b(?:window\s*\.\s*)?alert\s*\('), 'alert()'),
     (re.compile(r'\b(?:window\s*\.\s*)?confirm\s*\('), 'confirm()'),
     (re.compile(r'\b(?:window\s*\.\s*)?prompt\s*\('), 'prompt()'),
@@ -76,12 +85,21 @@ _SANDBOX_FORBIDDEN: tuple[tuple[re.Pattern, str], ...] = (
 )
 
 
-def sandbox_violations(html_content: str) -> list[str]:
-    """script 블록과 on* 속성만 본다. 본문 글에 같은 낱말이 있어도 오탐하지 않는다."""
+def _script_code(html_content: str) -> str:
+    """script 블록과 on* 속성만 모은다. 본문 글에 같은 낱말이 있어도 오탐하지 않는다."""
     scripts = _SCRIPT_BLOCK_RE.findall(html_content)
     handlers = [m.group(1) for m in _EVENT_ATTR_RE.finditer(html_content)]
-    code = "\n".join(scripts + handlers)
-    return [label for pattern, label in _SANDBOX_FORBIDDEN if pattern.search(code)]
+    return "\n".join(scripts + handlers)
+
+
+def halting_apis(html_content: str) -> list[str]:
+    code = _script_code(html_content)
+    return [label for pattern, label in _SANDBOX_HALTING if pattern.search(code)]
+
+
+def ignored_apis(html_content: str) -> list[str]:
+    code = _script_code(html_content)
+    return [label for pattern, label in _SANDBOX_IGNORED if pattern.search(code)]
 
 
 # ── 조건 묶음 ──────────────────────────────────────────────────
@@ -103,35 +121,40 @@ def _entry_matches(path: str, source: str, suffix: str) -> str | None:
     return None
 
 
-def html_gates(entry_file_path: str, source: str) -> list[str]:
-    failures: list[str] = []
+# 반환은 (코드, 사유) 목록이다. 코드("entry" | "secret" | "sandbox")는 조율이 재수행
+# 대상을 고르는 값이라(CodeCheckResult.gate_failures) 문구와 따로 둔다. 사유는 화면용이다.
+GateFailure = tuple[str, str]
+
+
+def html_gates(entry_file_path: str, source: str) -> list[GateFailure]:
+    failures: list[GateFailure] = []
     entry = _entry_matches(entry_file_path, source, ".html")
     if entry:
-        failures.append(entry)
+        failures.append(("entry", entry))
     secret = find_secret(source)
     if secret:
-        failures.append(f"하드코딩된 비밀값 의심: {secret!r}")
-    blocked = sandbox_violations(source)
-    if blocked:
-        failures.append(f"sandbox에서 동작하지 않는 API: {', '.join(blocked)}")
+        failures.append(("secret", f"하드코딩된 비밀값 의심: {secret!r}"))
+    halting = halting_apis(source)
+    if halting:
+        failures.append(("sandbox", f"sandbox에서 스크립트를 멈추는 API: {', '.join(halting)}"))
     return failures
 
 
-def svg_gates(entry_file_path: str, source: str) -> list[str]:
-    failures: list[str] = []
+def svg_gates(entry_file_path: str, source: str) -> list[GateFailure]:
+    failures: list[GateFailure] = []
     entry = _entry_matches(entry_file_path, source, ".svg")
     if entry:
-        failures.append(entry)
+        failures.append(("entry", entry))
     else:
         try:
             root = ET.fromstring(source)
             if root.tag.rsplit("}", 1)[-1] != "svg":
-                failures.append("SVG 루트 요소가 아님")
+                failures.append(("entry", "SVG 루트 요소가 아님"))
         except ET.ParseError as exc:
-            failures.append(f"SVG 파싱 실패: {exc}")
+            failures.append(("entry", f"SVG 파싱 실패: {exc}"))
     secret = find_secret(source)
     if secret:
-        failures.append(f"하드코딩된 비밀값 의심: {secret!r}")
+        failures.append(("secret", f"하드코딩된 비밀값 의심: {secret!r}"))
     return failures
 
 

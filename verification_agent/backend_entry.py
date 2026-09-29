@@ -25,7 +25,7 @@ ITEM_CODES = {
     "html": {
         1: "CHECK-ACTION-WIRING", 2: "CHECK-ALT-TEXT", 3: "CHECK-INPUT-LABEL",
         4: "CHECK-CONTRAST", 5: "CHECK-HEADING", 6: "CHECK-LAYOUT-WIDTH",
-        7: "CHECK-BROKEN-REF", 8: "CHECK-PLACEHOLDER",
+        7: "CHECK-SCRIPT-ERROR", 8: "CHECK-PLACEHOLDER",
     },
     "svg-onepage": {
         1: "CHECK-ALT-TEXT", 2: "CHECK-KEY-INFO", 3: "CHECK-CONTRAST",
@@ -56,6 +56,7 @@ def _scaled_rows(kind: str, items: list[dict], code_total: float) -> list[dict]:
             "passed": bool(item["passed"]),
             "applicable": applicable,
             "reason_text": item["evidence"],
+            "defect_sources": item["defect_sources"],
         })
     # 반올림으로 생긴 몇 센트 차이는 마지막 해당 항목이 흡수한다(백엔드 시드와 같은 방식).
     live = [r for r in rows if r["applicable"]]
@@ -81,6 +82,8 @@ def verify_artifact(*, category: str, prototype_path: str | None, infographic_pa
         "code_total", "feature_score", "artifact_total",   # Decimal
         "rows": [ {item_code, display_name, score, max_score, passed, applicable, reason_text}, ... ],
         "missing_features", "gate_failures", "warnings",   # list[str]
+        "gate_codes",                                      # ["entry" | "secret" | "sandbox"]
+    rows의 defect_sources는 미충족 결함이 있는 산출물("prototype" | "infographic")이다.
     }
     warnings는 점수 밖 결함이다(README 없음 → G-04 재실행). 화면에 띄우지 말고 관리자 로그로.
     """
@@ -104,11 +107,14 @@ def verify_artifact(*, category: str, prototype_path: str | None, infographic_pa
         "score": feature_score, "max_score": Decimal("15.00"),
         "passed": not feature["missing_features"], "applicable": True,
         "reason_text": " / ".join(feature["findings"]),
+        "defect_sources": ([] if not feature["missing_features"]
+                           else ["infographic"] if kind == "svg-onepage" else ["prototype"]),
     })
     code_total = _money(raw["total"])
     return {
         "code_total": code_total, "feature_score": feature_score,
         "artifact_total": code_total + feature_score, "rows": rows,
         "missing_features": feature["missing_features"],
-        "gate_failures": raw["gate_failures"], "warnings": raw["warnings"],
+        "gate_failures": raw["gate_failures"], "gate_codes": raw["gate_codes"],
+        "warnings": raw["warnings"],
     }

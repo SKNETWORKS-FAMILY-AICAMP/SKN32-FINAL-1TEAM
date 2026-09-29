@@ -4,8 +4,8 @@
 `기획서_개정안_산출물층_검증.md`에 있다. 요약하면:
 - 정상 산출물이면 항상 통과하던 진입 파일·비밀값은 점수에서 빼고 통과 필수
   조건(rules/gates.py)으로 옮겼다. lang 속성은 생성 지시로 고정돼 뺐다.
-- 그 자리에 "화면이 실제로 동작하는가"를 보는 항목(동작 연결, 끊어진 참조, 1440px 폭,
-  임시 문구)을 넣었다.
+- 그 자리에 "화면이 실제로 동작하는가"를 보는 항목(동작 연결, 스크립트 동작 오류,
+  1440px 폭, 임시 문구)을 넣었다.
 
 | No | 항목 | 배점 |
 |:-:|---|:-:|
@@ -15,7 +15,7 @@
 | 4 | 명도 대비 4.5:1 | 2 |
 | 5 | 제목 계층 | 1 |
 | 6 | 1440px 폭 안에 들어옴 | 2 |
-| 7 | 끊어진 id 참조 없음 | 2 |
+| 7 | 스크립트 동작 오류 없음 | 2 |
 | 8 | 임시 문구 없음 | 1 |
 
 전부 순수 함수다 — 같은 입력이면 몇 번을 돌려도 같은 결과가 나와야 채점이 재현된다.
@@ -27,6 +27,7 @@ from __future__ import annotations
 import re
 
 from verification_agent.rules.color import contrast_ratio, extract_paired_declarations, parse_color
+from verification_agent.rules.gates import ignored_apis
 from verification_agent.rules.html_parser import (
     EXCLUDED_INPUT_TYPES,
     PAGE_WIDTH_PX,
@@ -70,14 +71,17 @@ def check_alt_text(parser: PageParser, infographic_svg: str | None = None) -> di
     """2. img·svg 대체 텍스트. T-B2 인포그래픽도 같이 본다 — 인포그래픽 대체 텍스트
     미충족은 T-B2 재수행으로 이어진다(기능정의서 오류→재수행 매핑)."""
     count, failures = _alt_failures(parser)
+    sources = ["prototype"] if failures else []
     if infographic_svg:
         info_count, info_failures = _alt_failures(parse_page(infographic_svg), "[인포그래픽] ")
         count += info_count
         failures += info_failures
+        if info_failures:
+            sources.append("infographic")
     if not count:
         return item(2, "img·svg 대체 텍스트", 2, True, "이미지 0개", applicable=False)
     evidence = f"검사 대상 {count}건 전부 통과" if not failures else "; ".join(failures)
-    return item(2, "img·svg 대체 텍스트", 2, not failures, evidence)
+    return item(2, "img·svg 대체 텍스트", 2, not failures, evidence, defect_sources=sources)
 
 
 # ── 3. input label ────────────────────────────────────────────
@@ -157,20 +161,32 @@ def check_layout_width(parser: PageParser) -> dict:
     return item(6, f"{PAGE_WIDTH_PX}px 폭 안에 들어옴", 2, not wide, evidence)
 
 
-# ── 7. 끊어진 참조 ────────────────────────────────────────────
+# ── 7. 스크립트 동작 오류 ─────────────────────────────────────
 
 
-def check_broken_refs(parser: PageParser) -> dict:
-    """7. 스크립트가 찾는 id가 문서에 실제로 있는지. 없으면 null에 메서드를 부르다
-    스크립트가 멈춘다. 스크립트가 id를 하나도 찾지 않으면 해당 없음."""
+def check_script_errors(parser: PageParser, html_content: str) -> dict:
+    """7. 스크립트가 의도대로 돌지 못하게 하는 원인 두 가지.
+
+    - 끊어진 id 참조: 스크립트가 찾는 id가 문서에 없으면 null에 메서드를 부르다 멈춘다.
+    - sandbox에서 무시되는 API: alert() · confirm() · window.open() · 페이지 이동 ·
+      form 전송은 iframe(allow-scripts만)에서 조용히 무시되거나 막혀 그 동작만 안 된다.
+      스크립트 전체를 멈추는 스토리지 API는 여기가 아니라 통과 필수 조건이다(rules/gates.py).
+    id 참조도 무시되는 API도 없으면 해당 없음.
+    """
     script = "\n".join(parser.script_chunks)
     refs = {a or b for a, b in ID_REF_RE.findall(script)}
-    if not refs:
-        return item(7, "끊어진 id 참조 없음", 2, True, "스크립트의 id 참조 0개", applicable=False)
+    ignored = ignored_apis(html_content)
+    if not refs and not ignored:
+        return item(7, "스크립트 동작 오류 없음", 2, True, "스크립트의 id 참조 · 막히는 API 0개",
+                    applicable=False)
     broken = sorted(refs - parser.ids)
-    evidence = (f"참조 {len(refs)}개 전부 문서에 있음" if not broken
-                else f"문서에 없는 id {len(broken)}개: {', '.join(broken[:5])}")
-    return item(7, "끊어진 id 참조 없음", 2, not broken, evidence)
+    problems = []
+    if broken:
+        problems.append(f"문서에 없는 id {len(broken)}개: {', '.join(broken[:5])}")
+    if ignored:
+        problems.append(f"sandbox에서 무시되는 API: {', '.join(ignored)}")
+    evidence = "; ".join(problems) if problems else f"id 참조 {len(refs)}개 전부 문서에 있음"
+    return item(7, "스크립트 동작 오류 없음", 2, not problems, evidence)
 
 
 # ── 8. 임시 문구 ──────────────────────────────────────────────
@@ -200,7 +216,7 @@ def check_placeholder_text(parser: PageParser) -> dict:
 ITEM_DEFS: tuple[tuple[int, str, float], ...] = (
     (1, "동작 연결", 3), (2, "img·svg 대체 텍스트", 2), (3, "input label 연결", 2),
     (4, "명도 대비 4.5:1", 2), (5, "제목 계층", 1),
-    (6, f"{PAGE_WIDTH_PX}px 폭 안에 들어옴", 2), (7, "끊어진 id 참조 없음", 2),
+    (6, f"{PAGE_WIDTH_PX}px 폭 안에 들어옴", 2), (7, "스크립트 동작 오류 없음", 2),
     (8, "임시 문구 없음", 1),
 )
 
@@ -214,6 +230,6 @@ def check_html(html_content: str, infographic_svg: str | None = None) -> list[di
         check_contrast(parser),
         check_heading_hierarchy(parser),
         check_layout_width(parser),
-        check_broken_refs(parser),
+        check_script_errors(parser, html_content),
         check_placeholder_text(parser),
     ]

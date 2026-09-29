@@ -49,7 +49,10 @@ def _check_infographic_alt(raw: dict, kind: str, svg: str, alt_text: str) -> Non
     if not raw["passed"]:
         return
     if not svg or "<svg" not in svg or not alt_text or alt_text not in svg:
-        item_rules.fail(raw["items"], _ALT_ITEM[kind], "Infographic.alt_text와 SVG 원문 불일치")
+        # 결함은 인포그래픽(T-B2) 쪽이다. 원페이지는 칸 전체가 T-B2 몫이라 표시하지 않는다.
+        sources = ["infographic"] if kind == "html" else []
+        item_rules.fail(raw["items"], _ALT_ITEM[kind], "Infographic.alt_text와 SVG 원문 불일치",
+                        sources)
         raw["total"] = item_rules.total(raw["items"])
 
 
@@ -68,7 +71,7 @@ def score_artifact(*, kind: str, entry_file_path: str, source_text: str,
         raw = compute_infographic_check(entry_file_path, source_text, readme)
         if raw["passed"] and svg != source_text:
             reason = "Infographic.image_path와 Prototype.source_text 불일치"
-            raw.update(total=0.0, passed=False, gate_failures=[reason],
+            raw.update(total=0.0, passed=False, gate_failures=[reason], gate_codes=["entry"],
                        items=item_rules.skipped(
                            tuple((i["id"], i["name"], i["weight"]) for i in raw["items"]),
                            f"통과 필수 조건 실패로 검사 생략: {reason}"))
@@ -93,10 +96,16 @@ def run_tv2(inp: TV2In, tools: Tools) -> TV2Out:
         # plan_doc은 계약 추가 요청 중인 필드다(조율_계약필드_요청_검증2.md). 오기 전에는 None.
         plan_text=plan_text_of(getattr(inp, "plan_doc", None)),
     )
+    # gate_failures · defect_sources는 조율이 확장 필드로 추가하는 중이다(조율 회신 2-2).
+    # 실계약에 아직 없으면 넣지 않는다 — extra="forbid"라 넣으면 검증 오류가 난다.
+    check_extra = "defect_sources" in CodeCheck.model_fields
+    result_extra = "gate_failures" in CodeCheckResult.model_fields
     checks = [CodeCheck(no=item["id"], name=item["name"], weight=item["weight"],
-                        passed=bool(item["passed"]), detail=item["evidence"])
+                        passed=bool(item["passed"]), detail=item["evidence"],
+                        **({"defect_sources": item["defect_sources"]} if check_extra else {}))
               for item in raw["items"]]
-    code = CodeCheckResult(total=raw["total"], checks=checks)
+    code = CodeCheckResult(total=raw["total"], checks=checks,
+                           **({"gate_failures": raw["gate_codes"]} if result_extra else {}))
     feature = FeatureMatchResult(**feature_raw)
     artifact = ArtifactScore(total=code.total + feature.score,
                              code_check=code, feature_match=feature)

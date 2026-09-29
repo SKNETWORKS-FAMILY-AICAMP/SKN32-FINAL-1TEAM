@@ -189,6 +189,55 @@ class ArtifactAgentTests(TestCase):
             self.assertFalse(result["passed"])
             self.assertIn("비밀값", result["gate_failures"][0])
 
+    def test_sandbox_split_halting_is_gate_ignored_is_deduction(self):
+        """스크립트 전체를 멈추는 스토리지 API만 필수 조건(30점 0)이다. alert() 등
+        무시되는 API는 그 동작 하나만 안 되므로 7번 항목에서 감점한다(조율 회신 5-3)."""
+        with TemporaryDirectory(dir=self._TEMP_ROOT) as directory:
+            path = Path(directory) / "index.html"
+            wired = ('<button id="go">시작</button><script>'
+                     "document.getElementById('go').addEventListener('click', () => {%s});"
+                     "</script>")
+
+            halting = _page(wired % "localStorage.setItem('a', 1)")
+            path.write_text(halting, encoding="utf-8")
+            result = compute_code_check(str(path), halting, "# 실행 방법")
+            self.assertEqual((result["total"], result["gate_codes"]), (0.0, ["sandbox"]))
+
+            ignored = _page(wired % "alert('저장')")
+            path.write_text(ignored, encoding="utf-8")
+            result = compute_code_check(str(path), ignored, "# 실행 방법")
+            self.assertTrue(result["passed"])
+            self.assertEqual(result["gate_codes"], [])
+            script_item = result["items"][6]
+            self.assertEqual(script_item["name"], "스크립트 동작 오류 없음")
+            self.assertFalse(script_item["passed"])
+            self.assertIn("alert()", script_item["evidence"])
+            self.assertLess(result["total"], 15.0)
+
+    def test_gate_codes_are_separate_from_messages(self):
+        with TemporaryDirectory(dir=self._TEMP_ROOT) as directory:
+            page = _page('<script>const apiKey = "sk-abcdefghijklmnopqrstuvwxyz123456";</script>')
+            missing = str(Path(directory) / "none.html")
+            result = compute_code_check(missing, page, "# 실행 방법")
+            self.assertEqual(result["gate_codes"], ["entry", "secret"])
+            self.assertEqual(len(result["gate_failures"]), 2)
+
+    def test_alt_text_reports_which_artifact_is_defective(self):
+        """HTML 2번은 index.html과 인포그래픽을 함께 본다. 조율이 재수행 대상을 사유
+        문구가 아니라 defect_sources로 가르게 한다(조율 회신 2-2)."""
+        good_svg = '<svg xmlns="http://www.w3.org/2000/svg"><title>인포그래픽</title></svg>'
+        bad_svg = '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
+        good_html, bad_html = _page('<img src="data:," alt="로고">'), _page('<img src="data:,">')
+        cases = {
+            "둘 다 정상": (good_html, good_svg, []),
+            "index.html 결함": (bad_html, good_svg, ["prototype"]),
+            "인포그래픽 결함": (good_html, bad_svg, ["infographic"]),
+            "둘 다 결함": (bad_html, bad_svg, ["prototype", "infographic"]),
+        }
+        for label, (html, svg, expected) in cases.items():
+            with self.subTest(label):
+                self.assertEqual(check_html(html, svg)[1]["defect_sources"], expected)
+
     def test_missing_readme_warns_without_touching_score(self):
         """README는 조율의 G-04(R-10)가 만든다. R-10은 생성 실패 시 파이프라인을 계속
         진행하게 하므로, README 결함이 산출물 점수를 흔들면 안 된다."""

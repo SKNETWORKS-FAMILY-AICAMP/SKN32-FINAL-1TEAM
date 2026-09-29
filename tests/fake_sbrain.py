@@ -165,11 +165,15 @@ class CodeCheck(SBModel):
     weight: float
     passed: bool
     detail: str
+    # 확장 필드 — 조율 회신(2026-09-29) 2-2에서 합의. 실계약 반영 전까지 대역에만 있다.
+    defect_sources: list[Literal["prototype", "infographic"]] = Field(default_factory=list)
 
 
 class CodeCheckResult(SBModel):
     total: float = Field(ge=0, le=15)
     checks: list[CodeCheck] = Field(min_length=8, max_length=8)
+    # 확장 필드 — 조율 회신 2-2. 비어 있지 않으면 산출물층 0, 조율은 카테고리로 재작성 대상을 정한다.
+    gate_failures: list[Literal["entry", "secret", "sandbox"]] = Field(default_factory=list)
 
 
 class FeatureMatchResult(SBModel):

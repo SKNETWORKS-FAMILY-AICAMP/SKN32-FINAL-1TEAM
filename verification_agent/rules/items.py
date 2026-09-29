@@ -14,15 +14,20 @@ TOTAL = 15.0
 
 
 def item(no: int, name: str, weight: float, passed: bool, evidence: str, *,
-         earned: float | None = None, applicable: bool = True) -> dict:
+         earned: float | None = None, applicable: bool = True,
+         defect_sources: list[str] | None = None) -> dict:
+    """defect_sources: 미충족 결함이 있는 산출물("prototype" | "infographic"). 조율이
+    재수행 대상을 고르는 데 쓴다 — 사유 문구를 읽어 가르지 않게 하려는 필드다. 지금은
+    HTML 2번(대체 텍스트)만 채운다. 나머지 칸은 결함 위치가 카테고리로 정해진다."""
     if not applicable:
         return {"id": no, "name": name, "weight": weight, "passed": True,
                 "evidence": f"해당 없음 — 배점에서 빼고 환산 ({evidence})",
-                "earned": 0.0, "applicable": False}
+                "earned": 0.0, "applicable": False, "defect_sources": []}
     if earned is None:
         earned = weight if passed else 0.0
     return {"id": no, "name": name, "weight": weight, "passed": passed,
-            "evidence": evidence, "earned": round(earned, 4), "applicable": True}
+            "evidence": evidence, "earned": round(earned, 4), "applicable": True,
+            "defect_sources": [] if passed else list(defect_sources or [])}
 
 
 def skipped(defs: tuple[tuple[int, str, float], ...], reason: str) -> list[dict]:
@@ -38,8 +43,10 @@ def total(items: list[dict]) -> float:
     return round(TOTAL * sum(i["earned"] for i in counted) / weight, 2)
 
 
-def fail(items: list[dict], no: int, reason: str) -> None:
+def fail(items: list[dict], no: int, reason: str, defect_sources: list[str] | None = None) -> None:
     """호출자(run_tv2)가 파일 바깥 정보로 한 칸을 뒤집을 때 쓴다."""
     for entry in items:
         if entry["id"] == no:
-            entry.update(passed=False, earned=0.0, applicable=True, evidence=reason)
+            sources = list(dict.fromkeys(entry.get("defect_sources", []) + (defect_sources or [])))
+            entry.update(passed=False, earned=0.0, applicable=True, evidence=reason,
+                         defect_sources=sources)
