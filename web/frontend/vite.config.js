@@ -1,7 +1,1 @@
-import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
-
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [react()],
-})
+export default {base:'./',resolve:{preserveSymlinks:true},esbuild:{jsx:'automatic'},build:{target:'es2020'},server:{port:5174,strictPort:true}};
