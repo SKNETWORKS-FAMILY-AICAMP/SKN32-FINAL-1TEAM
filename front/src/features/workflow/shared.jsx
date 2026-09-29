@@ -1,7 +1,6 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
 import React, {useState,useRef,useEffect} from 'react';
 import {listNotifications,listProjects,markNotificationRead} from '../../api.js';
-import {RERUN_CAP} from './data.js';
 
 export function FloatingInput({inputRef,type,value,onChange,label}){
   return <label className="block text-[14px] text-[var(--muted-fg)]"><span className="block mb-2">{label}</span><input ref={inputRef} type={type} value={value} onChange={onChange} onInput={onChange} onBlur={onChange} className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg)]"/></label>;
@@ -327,12 +326,13 @@ export function FileAttach({ files, onAdd, onRemove }){
 // 비워둔 채(=업력 계산상 예비창업자로 판정) 다음 단계로 넘긴다.
 // 가산점은 공고마다 붙는 점수라 만점 기준이 없다 — 비율 게이지 대신 점수만 크게 보여준다.
 // Task별 남은 재수행 횟수 표시 — 재작성 체크 목록의 항목 이름 뒤에 붙는다(계획서·산출물·
-// 종합 평가 세 화면이 같은 문구를 쓴다). 상한(RERUN_CAP)에 닿으면 왜 못 고르는지가
-// 그 자리에 바로 보여야 한다(체크박스만 회색이면 고장인지 상한인지 구분이 안 된다).
-export function RerunLeftBadge({ left, cap = RERUN_CAP }){
+// 종합 평가 세 화면이 같은 문구를 쓴다).
+// 상한에 닿은 뒤의 "재작성 상한 N회 도달" 문구는 뺐다 — 항목마다 빨간 글씨가 붙어
+// 화면이 지저분해진다(사용자 지적). 체크박스·버튼 비활성화만으로 막는다.
+export function RerunLeftBadge({ left }){
   return left > 0
     ? <span className="ml-1.5 text-[11.5px] text-[var(--muted-fg)]">· 재작성 {left}회 남음</span>
-    : <span className="ml-1.5 text-[11.5px] font-semibold text-[var(--danger)]">· 재작성 상한 {cap}회 도달</span>;
+    : null;
 }
 
 export function formatBonus(value){return `+${Number(value)}`;}

@@ -589,7 +589,7 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
                   <span>
                     <span className="flex-shrink-0 text-[11px] font-semibold text-[var(--muted-fg)] mr-1.5">［{layer}］</span>
                     {isRunning ? `${label} 재작성 중…` : label}
-                    {!isRunning && <RerunLeftBadge left={left} cap={cap} />}
+                    {!isRunning && <RerunLeftBadge left={left} />}
                     {!isRunning && justReworked && (
                       <span className="inline-flex items-center gap-0.5 ml-1.5 text-[11px] font-semibold text-[var(--ok)]">
                         <Icon name="check" size={12}/> 방금 재작성함
@@ -603,15 +603,10 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
               );
             })}
           </div>
-          {allCapped && (
-            <p className="text-[12.5px] text-[var(--fg)] leading-relaxed mb-4">
-              모든 항목이 재작성 {cap}회를 다 썼어요. 지금 점수로 검수 단계로 넘어가는 것만 가능합니다.
-            </p>
-          )}
           <div className="flex items-center gap-3 flex-wrap">
             <button onClick={handleRewrite} disabled={allCapped || checkedTasks.length === 0 || runningTasks.length > 0}
               className="rounded-lg border border-[var(--border)] px-4 py-2.5 text-[13.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--bg)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-              {allCapped ? `재작성 상한 ${cap}회 도달` : '선택 항목 다시 만들기'}
+              선택 항목 다시 만들기
             </button>
             <button onClick={handleProceedClick}
               className="rounded-lg px-4 py-2.5 text-[13.5px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">

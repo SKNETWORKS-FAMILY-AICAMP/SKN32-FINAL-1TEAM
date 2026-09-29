@@ -264,7 +264,7 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
                     <span>
                       {isRunning ? `${label} 재작성 중…` : label}
                       {isDone && <span className="ml-1.5 text-[11.5px] font-semibold text-[var(--ok)]">✓ 재작성 완료</span>}
-                      {!isRunning && <RerunLeftBadge left={left} cap={cap} />}
+                      {!isRunning && <RerunLeftBadge left={left} />}
                     </span>
                   </label>
                 );
@@ -272,13 +272,8 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
             </div>
             <button onClick={handleRewrite} disabled={allCapped || checkedTasks.length === 0 || runningTasks.length > 0}
               className="w-full mt-3 rounded-lg border border-[var(--border)] py-2.5 text-[13.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--bg)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-              {allCapped ? `재작성 상한 ${cap}회 도달` : '선택 항목 재작성'}
+              선택 항목 재작성
             </button>
-            {allCapped && (
-              <p className="mt-2 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">
-                모든 항목의 재작성 {cap}회를 다 썼어요. 지금 상태로 종합 평가를 확인해 주세요.
-              </p>
-            )}
           </div>
         </aside>
         )}
