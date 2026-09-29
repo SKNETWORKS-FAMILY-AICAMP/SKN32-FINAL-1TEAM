@@ -5,7 +5,7 @@ import re
 from typing import TYPE_CHECKING
 
 from engineering_agent.builder_html import build_prototype_html
-from engineering_agent.builder_infographic import (
+from engineering_agent.infographic import (
     generate_infographic_content,
     overflow_fields,
     render_infographic,

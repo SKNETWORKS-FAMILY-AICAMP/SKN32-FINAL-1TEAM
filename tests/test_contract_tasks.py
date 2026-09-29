@@ -127,7 +127,7 @@ class ContractTaskTests(TestCase):
             run_tb1(inp, Exhausted())
 
     def _run_tb2(self, category, extracted, sentences, feature_list=("주문 조회",)):
-        from engineering_agent import builder_infographic
+        from engineering_agent.infographic import render as infographic_render
         from engineering_agent.tasks import run_tb2
         from sbrain.contracts.tasks import TB2In
 
@@ -136,7 +136,7 @@ class ContractTaskTests(TestCase):
                     instruction="만들어라")
         tools = _Tools(lambda schema: schema(**extracted))
         directory = TemporaryDirectory(dir=self._OUTPUT)
-        with patch.object(builder_infographic, "_OUTPUT_DIR", Path(directory.name)):
+        with patch.object(infographic_render, "_OUTPUT_DIR", Path(directory.name)):
             out = run_tb2(inp, tools)
         self.addCleanup(directory.cleanup)
         return out
@@ -185,7 +185,7 @@ class ContractTaskTests(TestCase):
         self.assertIn("처리 단계 누락", ai.check.failures)
 
     def test_run_tv2_assembles_artifact_score(self):
-        from engineering_agent import builder_infographic
+        from engineering_agent.infographic import render as infographic_render
         from engineering_agent.tasks import run_tb2
         from engineering_agent.file_writer import save_files
         from sbrain.contracts.tasks import TB2In, TV2In
@@ -198,7 +198,7 @@ class ContractTaskTests(TestCase):
             inp = TB2In(plan_doc=_plan_doc(sentences, ["주문 조회"]),
                         item_spec=_item_spec(category="웹개발"),
                         category="웹개발", instruction="만들어라")
-            with patch.object(builder_infographic, "_OUTPUT_DIR", Path(directory)):
+            with patch.object(infographic_render, "_OUTPUT_DIR", Path(directory)):
                 tb2 = run_tb2(inp, _Tools(lambda schema: schema(
                     item_name="동네 주문", features=["주문 조회"],
                     flow_steps=["탐색", "주문"])))
@@ -224,7 +224,7 @@ class ContractTaskTests(TestCase):
         self.assertAlmostEqual(out.artifact_score.total, 22.5)
 
     def _run_onepage_tv2(self, *, with_plan: bool, detail: str):
-        from engineering_agent import builder_infographic
+        from engineering_agent.infographic import render as infographic_render
         from engineering_agent.tasks import run_tb2
         from sbrain.contracts.tasks import TB2In, TV2In
         from sbrain.models import Prototype
@@ -236,7 +236,7 @@ class ContractTaskTests(TestCase):
         with TemporaryDirectory(dir=self._OUTPUT) as directory:
             inp = TB2In(plan_doc=plan, item_spec=_item_spec(), category="원페이지",
                         instruction="만들어라")
-            with patch.object(builder_infographic, "_OUTPUT_DIR", Path(directory)):
+            with patch.object(infographic_render, "_OUTPUT_DIR", Path(directory)):
                 tb2 = run_tb2(inp, _Tools(lambda schema: schema(
                     item_name="동네 주문", features=["주문 조회"], target_users="동네 매장",
                     problem="주문 대기가 길다", solution="빠른 주문으로 줄인다",

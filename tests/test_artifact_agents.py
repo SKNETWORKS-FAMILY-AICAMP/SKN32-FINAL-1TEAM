@@ -6,11 +6,13 @@ from unittest import TestCase
 from unittest.mock import patch
 from xml.etree import ElementTree as ET
 
-from engineering_agent import builder_infographic, gates
+from engineering_agent import gates, infographic
+from engineering_agent.infographic import render as infographic_render
 from engineering_agent.builder_html import build_prototype_html
 from engineering_agent.file_writer import save_files
 from verification_agent.feature_match import match_features
-from verification_agent.rules.r4 import check_contrast, check_html, parse_page
+from verification_agent.rules.html_parser import parse_page
+from verification_agent.rules.r4 import check_contrast, check_html
 from verification_agent.rules.items import total as items_total
 from verification_agent.score import compute_code_check, compute_infographic_check
 
@@ -91,8 +93,8 @@ class ArtifactAgentTests(TestCase):
         data = {**_ONEPAGE_DATA, **over}
         directory = TemporaryDirectory(dir=self._TEMP_ROOT)
         self.addCleanup(directory.cleanup)
-        with patch.object(builder_infographic, "_OUTPUT_DIR", Path(directory.name)):
-            return builder_infographic.render_infographic("원페이지", data)
+        with patch.object(infographic_render, "_OUTPUT_DIR", Path(directory.name)):
+            return infographic.render_infographic("원페이지", data)
 
     def test_onepage_code_score_and_missing_fields(self):
         saved = self._render_onepage()
@@ -236,7 +238,7 @@ class ArtifactAgentTests(TestCase):
 
     def test_infographic_extraction_uses_schema(self):
         tools = _Tools(lambda schema: schema(item_name="테스트", features=["조회"]))
-        result = builder_infographic.generate_infographic_content("웹개발", "본문", tools)
+        result = infographic.generate_infographic_content("웹개발", "본문", tools)
         self.assertEqual(result["features"], ["조회"])
         self.assertEqual(tools.kwargs["schema"].__name__, "InfographicContent")
 
@@ -354,8 +356,8 @@ class ArtifactAgentTests(TestCase):
         data = {"item_name": "테스트", "features": ["조회"],
                 "flow_steps": ["탐색", "선택", "결제", "확인"]}
         with TemporaryDirectory(dir=self._TEMP_ROOT) as directory:
-            with patch.object(builder_infographic, "_OUTPUT_DIR", Path(directory)):
-                saved = builder_infographic.render_infographic("웹개발", data)
+            with patch.object(infographic_render, "_OUTPUT_DIR", Path(directory)):
+                saved = infographic.render_infographic("웹개발", data)
         root = ET.fromstring(saved["source_text"])
         widths = [float(node.get("x", 0)) + float(node.get("width", 0))
                   for node in root.iter() if node.tag.endswith("}rect")]

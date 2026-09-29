@@ -40,10 +40,11 @@ from __future__ import annotations
 
 from xml.etree import ElementTree as ET
 
+from verification_agent.rules.color import contrast_ratio, parse_color
 from verification_agent.rules.items import item
-from verification_agent.rules.r4 import _contrast_ratio, _parse_color
 
-# 값이 실재하지 않는데 자리만 채운 문구. 구현 Agent의 _EMPTY_VALUE_TEXT와 같은 목록이며,
+# 값이 실재하지 않는데 자리만 채운 문구. 구현 Agent가 빈 값에 적는 문구
+# (engineering_agent/infographic/svg_parts.py의 EMPTY_VALUE_TEXT)를 포함하며,
 # 이 문구가 들어간 항목은 충족으로 세지 않는다 — 세면 "정보 없음" 여섯 개가 만점을 받는다.
 _PLACEHOLDER_VALUES = {"정보 없음", "미정", "해당 없음", "n/a", "na", "-", "tbd", "없음"}
 
@@ -191,12 +192,12 @@ def check_contrast(root) -> dict:
         if not backgrounds:
             continue
         bg = min(backgrounds, key=lambda r: r[2] * r[3])[4]
-        fg_rgb, bg_rgb = _parse_color(node.get("fill", "")), _parse_color(bg)
+        fg_rgb, bg_rgb = parse_color(node.get("fill", "")), parse_color(bg)
         if fg_rgb is None or bg_rgb is None:
             failures += 1
             continue
         checked += 1
-        ratio = _contrast_ratio(fg_rgb, bg_rgb)
+        ratio = contrast_ratio(fg_rgb, bg_rgb)
         if ratio < 4.5:
             failures += 1
             if len(worst) < 3:

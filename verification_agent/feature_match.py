@@ -24,7 +24,8 @@ from __future__ import annotations
 import re
 from xml.etree import ElementTree as ET
 
-from verification_agent.rules.r4 import control_label, is_wired, parse_page, wired_ids
+from verification_agent.rules.html_parser import parse_page
+from verification_agent.rules.wiring import control_label, is_wired, wired_ids
 
 TOTAL = 15.0
 # 원페이지 지면에서 계획서에 없는 수치 한 건당 감점과 상한.
