@@ -63,6 +63,58 @@ def _wait_until_done(db_session, match: Project, done_stage: str, timeout_s: flo
     raise AssertionError(f'{timeout_s}초 안에 stage={done_stage!r}에 도달하지 못함(마지막 stage={match.stage!r})')
 
 
+def test_prototype_building_completion_replaces_dummy_artifact_with_v2(authed_client, db_session, monkeypatch):
+    """[2026-09-29 신규, 프론트 5차 D-2] prototype_building 워커가 100%에 도달하면
+    seed_dummy_pipeline이 매칭 시점에 미리 만들어둔 더미 산출물(version=1)을 구현
+    Agent(T-B1/T-B2) 실제 호출 결과(version=2)로 교체해야 한다 — 구현·검증-2 담당(정재희)
+    확인(옵션 A, Downloads/백엔드_답변_D2_구현Agent_호출시점.md) 반영. 더미 v1은 점수 비교
+    없이 즉시 is_current=False가 되고(조건 2-2), 교체 자체는 rework_cap을 쓰지 않아야
+    한다(조건 2-3, rerun_type='initial')."""
+    from app.models import AgentExecution, Artifact, BusinessPlan
+
+    match = _create_match(authed_client, db_session, 'PROTO-D2')
+    plan = db_session.query(BusinessPlan).filter_by(project_id=match.project_id).one()
+    old_artifact = db_session.query(Artifact).filter_by(plan_id=plan.plan_id).one()
+    assert old_artifact.version == 1
+    assert old_artifact.is_current is True
+
+    match.stage = projects_router.ps.STAGE_PROTOTYPE_BUILDING
+    match.status = 'in_progress'
+    match.progress_percent = 90
+    db_session.commit()
+    monkeypatch.setattr(projects_router, 'DUMMY_GENERATION_STEP_SECONDS', 0)
+    projects_router._simulate_generation(match.project_id, projects_router.ps.STAGE_PROTOTYPE_BUILDING, 'done')
+
+    db_session.expire_all()
+    artifacts = db_session.query(Artifact).filter_by(plan_id=plan.plan_id).order_by(Artifact.artifact_id).all()
+    assert len(artifacts) == 2, '더미(v1) + 실제 호출 결과(v2) 두 행이 남아야 한다'
+    assert artifacts[0].artifact_id == old_artifact.artifact_id
+    assert artifacts[0].is_current is False
+    new_artifact = artifacts[1]
+    assert new_artifact.version == 2
+    assert new_artifact.is_current is True
+    assert new_artifact.infographic_path != old_artifact.infographic_path
+    assert new_artifact.executable_path != old_artifact.executable_path
+
+    executions = db_session.query(AgentExecution).filter(
+        AgentExecution.project_id == match.project_id,
+        AgentExecution.task_key.in_(['implement_prototype', 'implement_infographic']),
+    ).all()
+    assert executions, '실제 구현 Agent 호출이 agent_executions에 기록돼야 한다'
+    assert all(e.rerun_type == 'initial' for e in executions)
+    assert all(e.status == projects_router.ps.GENERATION_STATUS_COMPLETED for e in executions)
+
+    # [조건 2-3] 이 교체는 사용자의 재작성이 아니므로 rework_cap 카운트(retry_task와 같은
+    # 필터: rerun_type='rerun' AND status='completed')에 잡히면 안 된다.
+    rework_used = db_session.query(AgentExecution).filter(
+        AgentExecution.project_id == match.project_id,
+        AgentExecution.task_key.in_(['implement_prototype', 'implement_infographic']),
+        AgentExecution.rerun_type == 'rerun',
+        AgentExecution.status == projects_router.ps.GENERATION_STATUS_COMPLETED,
+    ).count()
+    assert rework_used == 0
+
+
 def test_duplicate_claim_does_not_double_run(authed_client, db_session, monkeypatch):
     """같은 stage를 거의 동시에 두 번 클레임 시도하면 하나만 성공해야 한다 — 여러 요청/
     복구 루프가 겹쳐도 실행 스레드가 중복으로 뜨지 않는 걸 보장하는 부분."""

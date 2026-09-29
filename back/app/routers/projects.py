@@ -310,14 +310,12 @@ def _restore_plan_doc_state(plan: BusinessPlan, snapshot: dict) -> None:
 _CATEGORY_TO_AGENT = {'onepage': '원페이지', 'webdev': '웹개발', 'aiapi': 'AI_API'}
 
 
-def _build_implement_inputs(
-    db: Session, project: Project, plan: BusinessPlan, artifact: Artifact | None,
-) -> 'agents.ImplementInputs':
-    """구현 Agent 재시도 호출에 넘길 app.agents.ImplementInputs를 DB에서 조립한다
-    (프론트 요청사항 5차 D-1) — 어떤 필드를 어디서 근사하는지는 ImplementInputs
-    docstring(app/agents.py) 참고. artifact가 None이면(아직 산출물이 없는 최초 생성
-    시점) category는 호출부가 이미 알고 있는 값을 넘겨야 하므로 이 함수는 재시도
-    경로 전용이다."""
+def _build_implement_agent_kwargs(db: Session, project: Project, plan: BusinessPlan, artifact: Artifact) -> dict:
+    """구현 Agent 재시도(agents.run_implement_agent_retry) 호출에 넘길 kwargs를 DB에서
+    조립한다 — 구현·검증-2 담당(정재희) "백엔드 요청 — 구현 Agent 연동 입력 확장"
+    반영(2026-09-29). 어떤 필드를 어디서 근사하는지는 agents.py의 해당 함수 위 주석
+    참고. artifact.category로 이미 확정된 카테고리를 쓰므로 이 함수는 재시도 경로
+    전용이다(최초 생성 경로는 category를 호출부가 별도로 정해야 한다)."""
     sections = (
         db.query(PlanSection)
         .filter(PlanSection.plan_id == plan.plan_id)
@@ -329,23 +327,35 @@ def _build_implement_inputs(
         [project.description] if project.description else []
     )
 
-    issues: list[str] = []
-    if artifact is not None:
-        reasons = db.query(ArtifactScoreReason).filter(ArtifactScoreReason.artifact_id == artifact.artifact_id).all()
-        issues = [r.reason_text for r in reasons if r.score is not None and r.max_score is not None and r.score < r.max_score]
+    reasons = db.query(ArtifactScoreReason).filter(ArtifactScoreReason.artifact_id == artifact.artifact_id).all()
+    rework_issues = [r.reason_text for r in reasons if r.score is not None and r.max_score is not None and r.score < r.max_score]
 
-    return agents.ImplementInputs(
-        category=_CATEGORY_TO_AGENT.get(artifact.category, '웹개발') if artifact is not None else '웹개발',
-        item_name=project.description,
-        one_line_summary=project.description,
-        target_customer=project.description,
-        keywords=[],
-        feature_list=feature_list,
-        sections=[(s.title, [s.body]) for s in sections if s.body],
-        tables=[],
-        issues=issues,
-        previous_result_ref=str(artifact.artifact_id) if artifact is not None else None,
-    )
+    category = _CATEGORY_TO_AGENT.get(artifact.category, '웹개발')
+    item_spec = {
+        'item_name': project.description,
+        'one_line_summary': project.description,
+        'target_customer': project.description,
+        'core_features': feature_list,
+        'category': category,
+        'keywords': [],
+    }
+    plan_doc = {
+        'sections': [
+            {'section_code': s.tag, 'title': s.title, 'sentences': [s.body]} for s in sections if s.body
+        ],
+        'feature_list': feature_list,
+        'charts': [],
+        'tables': [],
+        'protected_tokens': [],
+    }
+    return {
+        'category': category,
+        'feature_list': feature_list,
+        'item_spec': item_spec,
+        'plan_doc': plan_doc,
+        'instruction': '',
+        'rework_issues': rework_issues,
+    }
 
 
 def _get_current_artifact(db: Session, plan_id: int) -> Artifact | None:
@@ -381,6 +391,87 @@ def _clone_artifact_as_new_version(db: Session, old: Artifact) -> Artifact:
         ))
     db.flush()
     return new
+
+
+def _run_initial_implement_and_rescore(db: Session, project: Project, plan: BusinessPlan) -> None:
+    """[2026-09-29 신규, 프론트 요청사항 5차 D-2] prototype_building 워커가 100%에 도달하는
+    시점에 구현 Agent(T-B1/T-B2)를 실제로 호출해, seed_dummy_pipeline()이 매칭 시점에 미리
+    만들어둔 더미 산출물(placeholder, version=1)을 실제 결과로 교체한다.
+
+    구현·검증-2 담당(정재희) 확인 반영(Downloads/백엔드_답변_D2_구현Agent_호출시점.md):
+      - T-B1/T-B2/검증-2는 version 번호에 의존하지 않는다 — 그래서 "버전1로 처음부터
+        다시 만드는" 대신 "버전2로 교체"하는 옵션 A로 간다(_clone_artifact_as_new_version
+        재사용). 최초 실제 산출물은 version=2로 기록된다.
+      - 이건 사용자가 고른 재작성이 아니라 최초 생성이므로, 점수 비교(_new_version_wins)
+        없이 무조건 새 버전을 채택한다 — 그래야 더미 v1이 이후 재작성 비교/되돌리기에
+        "이전 버전"으로 다시 등장하지 않는다(조건 2-2).
+      - agent_executions는 rerun_type='initial'(재생성 중이면 'regenerate')로 남긴다 —
+        retry_task의 rework_cap 카운트는 rerun_type='rerun'만 세므로, 이 교체는 사용자의
+        재작성 횟수에서 빠진다(조건 2-3).
+      - Verdict는 새로 만들 필요가 없다 — GET /result의 overall_passed는 저장된 값이
+        아니라 "지금 채택된(is_current) artifact의 score_reasons"에서 매번 새로 합산하므로
+        (아래 build_result 참고), is_current만 새 버전으로 옮기면 실제 점수가 반영된다.
+      - T-B1(원페이지가 아니면)·T-B2가 먼저 결과를 내고, 검증-2(T-V2)는 그 결과의 README가
+        나온 뒤에 돌아야 한다(조건 2-1) — 이 순서는 실제 Agent 구현부(app/agents.py) 내부
+        책임이고, 여기서는 "구현 완료 -> 검증" 순서만 보장한다.
+
+    예외가 나면 호출부(_simulate_generation)의 기존 except 블록이 그대로 failed/
+    waiting_resume으로 처리한다 — 이 함수 안에서 별도로 실패를 잡지 않는다.
+    """
+    old_artifact = _get_current_artifact(db, plan.plan_id)
+    if old_artifact is None:
+        return  # 방어적 — seed_dummy_pipeline이 항상 만들어두므로 정상 흐름에선 오지 않는다.
+
+    implement_kwargs = _build_implement_agent_kwargs(db, project, plan, old_artifact)
+    if not implement_kwargs['feature_list']:
+        # feature_list가 비어 있으면 T-B1/T-B2 계약(ItemSpec.core_features min_length=1)을
+        # 만족할 수 없다 — 실패로 취급하지 않고 더미 placeholder를 최종본으로 남겨둔다.
+        return
+
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    artifact = _clone_artifact_as_new_version(db, old_artifact)
+
+    task_keys = ['implement_infographic'] if old_artifact.category == 'onepage' else [
+        'implement_prototype', 'implement_infographic',
+    ]
+    for task_key in task_keys:
+        artifact_kind = 'prototype' if task_key == 'implement_prototype' else 'infographic'
+        result = agents.run_implement_agent_retry(artifact_kind=artifact_kind, **implement_kwargs)
+        stored_name = f'{uuid.uuid4().hex}{result.file_ext}'
+        dest_path = os.path.join(UPLOAD_DIR, stored_name)
+        with open(dest_path, 'wb') as out:
+            out.write(result.file_bytes)
+        new_url = f'/uploads/{stored_name}'
+        if artifact_kind == 'prototype':
+            artifact.executable_path = new_url
+        else:
+            artifact.infographic_path = new_url
+
+        last_attempt = (
+            db.query(AgentExecution)
+            .filter(AgentExecution.project_id == project.project_id, AgentExecution.task_key == task_key)
+            .order_by(AgentExecution.attempt_no.desc())
+            .first()
+        )
+        db.add(AgentExecution(
+            project_id=project.project_id,
+            agent_name=_TASK_KEY_TO_AGENT[task_key],
+            task_key=task_key,
+            bundle_id=ps.TASK_KEY_TO_FIXED_BUNDLE.get(task_key),
+            attempt_no=(last_attempt.attempt_no + 1) if last_attempt is not None else 1,
+            model_used='dummy',
+            rerun_type='regenerate' if project.is_regenerating else 'initial',
+            token_usage=0,
+            status=ps.GENERATION_STATUS_COMPLETED,
+            output_ref={'table': 'artifacts', 'id': artifact.artifact_id},
+        ))
+
+    for verify2_key in ('verify2_static', 'verify2_crosscheck'):
+        _rescore_verify2(db, plan, artifact, verify2_key)
+
+    artifact.is_current = True
+    old_artifact.is_current = False
+    db.flush()
 
 
 def _new_version_wins(before_score: Decimal | None, after_score: Decimal | None) -> bool:
@@ -1004,6 +1095,19 @@ def _simulate_generation(project_id: int, running_stage: str, done_stage: str) -
                     return
                 step += 1
                 if step >= DUMMY_GENERATION_STEPS:
+                    # [2026-09-29 신규, 프론트 요청사항 5차 D-2] prototype_building이 끝나는
+                    # 시점에만 구현 Agent를 실제로 호출한다 — 여기서 예외가 나면 project.stage가
+                    # 아직 running_stage 그대로라 아래 except 블록이 기존 실패/재개 로직을 그대로
+                    # 탄다(project.stage를 아직 done_stage로 바꾸지 않았기 때문에 가능).
+                    if running_stage == ps.STAGE_PROTOTYPE_BUILDING:
+                        plan = (
+                            db.query(BusinessPlan)
+                            .filter(BusinessPlan.project_id == project.project_id)
+                            .order_by(BusinessPlan.plan_id.desc())
+                            .first()
+                        )
+                        if plan is not None:
+                            _run_initial_implement_and_rescore(db, project, plan)
                     project.stage = done_stage
                     project.progress_percent = 100
                     if done_stage == ps.STAGE_DONE:
@@ -2152,18 +2256,16 @@ def retry_task(
 
             before_artifact_score = old_artifact.artifact_score
 
-            # [2026-09-29 신규, 프론트 요청사항 5차 D-1] T-B1/T-B2는 feature_list가 최소
-            # 1개 있어야 계약상 돌 수 있다(ItemSpec.core_features min_length=1) — Agent를
-            # 호출하기 전에 서버에서 먼저 막는다.
-            implement_inputs = _build_implement_inputs(db, project, plan, old_artifact)
-            if not implement_inputs.feature_list:
+            # [2026-09-29 신규, 구현·검증-2 담당(정재희) 요청] T-B1/T-B2는 feature_list가
+            # 최소 1개 있어야 계약상 돌 수 있다(ItemSpec.core_features min_length=1) —
+            # Agent를 호출하기 전에 서버에서 먼저 막는다.
+            implement_kwargs = _build_implement_agent_kwargs(db, project, plan, old_artifact)
+            if not implement_kwargs['feature_list']:
                 raise HTTPException(status_code=400, detail='기능 목록(feature_list)이 비어 있어 구현 Agent를 호출할 수 없습니다')
 
             # 구현 Agent는 파일만 새로 만든다 — 채점(점수 갱신)은 검증-2(verify2_*) 몫이다.
             artifact_kind = 'prototype' if task_key == 'implement_prototype' else 'infographic'
-            result = agents.run_implement_agent_retry(
-                artifact_kind=artifact_kind, inputs=implement_inputs,
-            )
+            result = agents.run_implement_agent_retry(artifact_kind=artifact_kind, **implement_kwargs)
 
             # 파일은 app/agents.py가 만들어 돌려준 바이트를 그대로 저장한다 — 어디에 저장할지
             # (UPLOAD_DIR)는 여전히 이쪽(호출부) 책임. _save_attachment()는 업로드용이라 재사용

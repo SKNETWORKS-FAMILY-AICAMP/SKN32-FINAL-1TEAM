@@ -84,38 +84,24 @@ class ImplementArtifactResult:
     file_ext: str  # 예: '.html' — UPLOAD_DIR에 저장할 때 확장자로 쓴다.
 
 
-@dataclass
-class ImplementInputs:
-    """구현 Agent(T-B1/T-B2) 입력 — 프론트 요청사항 5차 D-1. agent-orchestration
-    (`agent-orchestration/sbrain/contracts/tasks.py`)의 TB1In/TB2In은 ItemSpec/PlanDoc/
-    ReworkInput 같은 중첩 pydantic 모델인데, 이 모듈의 기존 원칙(Agent 담당자가 우리 DB
-    스키마를 몰라도 됨)을 지키려고 여기서는 그 변환에 필요한 재료만 평평한 값으로 모아
-    넘긴다 — 실제 TB1In/TB2In 조립은 이 함수의 실제 구현(Agent 담당)이 맡는다.
-
-    [2026-09-29, DB에 아직 없는 필드 주의] 아래 필드 중 일부는 지금 DB 스키마에 정확히
-    대응하는 곳이 없어 최선으로 근사한 값이다 — 실제 구조화된 입력칸이 생기면 호출부
-    (app/routers/projects.py)만 고치면 된다:
-      - item_name/one_line_summary/target_customer: 전부 projects.description(아이디어
-        설명 한 줄)을 그대로 쓴다 — 이 앱에는 이름/요약/타깃고객을 각각 받는 입력칸이 없다.
-      - keywords: 대응하는 입력칸이 없어 항상 빈 리스트.
-      - feature_list: pricing_items.service_name 목록으로 근사한다(수익모델 상품·서비스
-        이름 — "기능 목록"과 정확히 같은 개념은 아니지만 지금 있는 것 중 가장 가깝다).
-        그마저도 없으면 project_description 하나를 감싸 최소 1개를 보장한다
-        (TB1In.feature_list/ItemSpec.core_features가 1개 이상을 요구함).
-      - tables: 계획서 표 데이터를 담는 테이블이 DB에 아예 없어 항상 빈 리스트
-        (sections만 plan_sections에서 채운다).
-    """
-
-    category: str  # '원페이지' | '웹개발' | 'AI_API' — agent-orchestration Category
-    item_name: str
-    one_line_summary: str
-    target_customer: str
-    keywords: list[str]
-    feature_list: list[str]  # 1개 이상 — 비어 있으면 호출부가 400으로 막아야 한다.
-    sections: list[tuple[str, list[str]]]  # (제목, 문장 목록) — 인포그래픽(T-B2)만 사용
-    tables: list[tuple[str, list[list[str]]]]  # (제목, 행 목록) — 인포그래픽(T-B2)만 사용
-    issues: list[str]  # 재작성 사유(검증-2 미달 근거) — 최초 생성이면 빈 리스트
-    previous_result_ref: str | None  # 재작성 시 직전 artifact_id 문자열 — 최초 생성이면 None
+# [2026-09-29 개정, 구현·검증-2 담당(정재희) "백엔드 요청 — 구현 Agent 연동 입력 확장"]
+# SB-192에서 만들었던 ImplementInputs dataclass를 걷어내고, 요청받은 그대로 TB1In/TB2In
+# (agent-orchestration/sbrain/contracts/tasks.py)에 바로 대응하는 평평한 kwargs로 바꿨다.
+# item_spec/plan_doc은 ItemSpec/PlanDoc pydantic 모델 필드명 그대로인 dict — Agent 담당이
+# 이 함수의 실제 구현에서 ItemSpec(**item_spec)/PlanDoc(**plan_doc)로 그대로 조립할 수 있게
+# 한다(SBModel이 populate_by_name=True라 snake_case 그대로 받아들인다).
+#
+# [DB에 아직 없는 필드 주의] item_spec 안의 일부 값은 지금 DB 스키마에 정확히 대응하는
+# 곳이 없어 최선으로 근사한다 — 실제 구조화된 입력칸이 생기면 호출부
+# (app/routers/projects.py _build_implement_agent_kwargs)만 고치면 된다:
+#   - item_name/one_line_summary/target_customer: 전부 projects.description(아이디어
+#     설명 한 줄)을 그대로 쓴다 — 이 앱엔 이름/요약/타깃고객을 각각 받는 입력칸이 없다.
+#   - keywords: 대응하는 입력칸이 없어 항상 빈 리스트.
+# feature_list는 pricing_items.service_name 목록으로 근사한다(수익모델 상품·서비스 이름 —
+# "기능 목록"과 정확히 같은 개념은 아니지만 지금 있는 것 중 가장 가깝다). 그마저도 없으면
+# project_description 하나를 감싸 최소 1개를 보장한다(core_features가 1개 이상을 요구함).
+# plan_doc.sections는 plan_sections에서 채우고 tables/charts/protected_tokens는 그 데이터를
+# 담는 테이블이 DB에 아예 없어 항상 빈 리스트다.
 
 
 @dataclass
@@ -252,23 +238,39 @@ def run_verify1_evidence_retry(items: list[tuple[str, Decimal]]) -> list[ScoreIt
 # ---------------------------------------------------------------------------
 # 구현
 # ---------------------------------------------------------------------------
-def run_implement_agent_retry(*, artifact_kind: str, inputs: ImplementInputs) -> ImplementArtifactResult:
+def run_implement_agent_retry(
+    *,
+    artifact_kind: str,
+    category: str,  # '원페이지' | '웹개발' | 'AI_API'
+    feature_list: list[str],
+    item_spec: dict,  # ItemSpec(agent-orchestration) 필드 그대로 — item_name/one_line_summary/
+                       # target_customer/core_features/category/keywords
+    plan_doc: dict | None = None,  # PlanDoc 필드 그대로 — artifact_kind='infographic'일 때만 필요
+    instruction: str = '',
+    rework_issues: list[str] | None = None,
+) -> ImplementArtifactResult:
     """구현 Agent 재시도 — artifact_kind='prototype'|'infographic' 파일을 새로 만든다
-    (채점은 검증-2 몫이라 여기서 하지 않는다). [2026-09-29, 프론트 요청사항 5차 D-1]
-    예전엔 project_description 한 줄만 받았는데, T-B1/T-B2가 실제로 필요로 하는 값
-    (item_spec/feature_list/plan_doc/rework_input에 해당하는 재료)을 ImplementInputs로
-    묶어서 받는다 — 실제 TB1In/TB2In 조립·run_tb1/run_tb2 호출(Tools 포함)은 이 함수의
-    실제 구현(Agent 담당)이 맡는다. 지금은 여전히 더미라 inputs 대부분을 안 쓴다 —
-    인포그래픽도 .html로 만드는 문제 역시 실제 구현으로 교체하면서 같이 해결될 부분이라
-    (Agent 담당 몫) 더미 상태로 그대로 둔다.
+    (채점은 검증-2 몫이라 여기서 하지 않는다). [2026-09-29, 구현·검증-2 담당(정재희)
+    "백엔드 요청 — 구현 Agent 연동 입력 확장"] 예전엔 project_description 한 줄만
+    받았는데(SB-192에서 한 번 더 손봤다가, 이 요청서 반영으로 다시 바꿨다), T-B1/T-B2가
+    실제로 필요로 하는 값을 agent-orchestration 계약(TB1In/TB2In) 필드 이름 그대로
+    받는다 — 실제 구현(Agent 담당)이 item_spec/plan_doc dict를 ItemSpec(**item_spec)/
+    PlanDoc(**plan_doc)로 바로 조립하고, run_tb1/run_tb2(Tools 포함)를 호출하면 된다.
+    지금은 여전히 더미라 인자 대부분을 안 쓴다 — 인포그래픽도 .html로 만드는 문제
+    역시 실제 구현으로 교체하면서 같이 해결될 부분이라(Agent 담당 몫) 더미 상태로
+    그대로 둔다.
 
-    실제 연동 시: 실제 코드/이미지 생성 파이프라인 결과 파일의 바이트와 확장자를 이
-    반환 타입 그대로 돌려주면 된다 — 저장 위치(UPLOAD_DIR)는 여전히 projects.py가
-    결정한다."""
+    파일 바이트 vs 경로: 구현 Agent가 시도마다 새 경로(engineering_agent/output/...)에
+    파일을 쓰고 TB1Out.prototype.entry_file_path/TB2Out.infographic.image_path로 경로를
+    돌려주더라도, 이 함수의 반환 타입(ImplementArtifactResult(file_bytes, file_ext))은
+    바뀌지 않는다 — 그 경로를 읽어 바이트로 바꾸는 얇은 어댑터(Path.read_bytes())는
+    저장 위치(UPLOAD_DIR)를 모르는 이 함수의 실제 구현 안에서 처리한다. 이러면
+    file_ext가 실제 파일 확장자(.svg 등)를 그대로 따라가서 인포그래픽 .html 문제도
+    자연히 없어진다 — projects.py 쪽은 손댈 필요가 없다."""
     label = '프로토타입' if artifact_kind == 'prototype' else '인포그래픽'
     html = (
         f'<!doctype html><html><body><h1>{label} 재시도 결과물 (더미)</h1>'
-        f'<p>{inputs.one_line_summary}</p>'
+        f'<p>{item_spec.get("one_line_summary", "")}</p>'
         f'<p>generated: {uuid.uuid4().hex[:8]}</p></body></html>'
     ).encode()
     return ImplementArtifactResult(file_bytes=html, file_ext='.html')
