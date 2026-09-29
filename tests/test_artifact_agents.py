@@ -188,8 +188,26 @@ class ArtifactAgentTests(TestCase):
             self.assertEqual(result["total"], 0.0)
             self.assertFalse(result["passed"])
             self.assertIn("비밀값", result["gate_failures"][0])
-            no_readme = compute_code_check(str(path), _page("<p>x</p>"), None)
-            self.assertIn("README", " ".join(no_readme["gate_failures"]))
+
+    def test_missing_readme_warns_without_touching_score(self):
+        """README는 조율의 G-04(R-10)가 만든다. R-10은 생성 실패 시 파이프라인을 계속
+        진행하게 하므로, README 결함이 산출물 점수를 흔들면 안 된다."""
+        with TemporaryDirectory(dir=self._TEMP_ROOT) as directory:
+            page = _page('<button id="go">시작</button>'
+                         "<script>document.getElementById('go').addEventListener('click', () => {});"
+                         "</script>")
+            path = Path(directory) / "index.html"
+            path.write_text(page, encoding="utf-8")
+            with_readme = compute_code_check(str(path), page, "# 실행 방법")
+            without = compute_code_check(str(path), page, None)
+            self.assertTrue(without["passed"])
+            self.assertEqual(without["gate_failures"], [])
+            self.assertEqual(without["total"], with_readme["total"])
+            self.assertIn("README", without["warnings"][0])
+            self.assertEqual(with_readme["warnings"], [])
+            # README 안의 문자열은 산출물이 아니므로 비밀값 검사 대상도 아니다
+            leaked = compute_code_check(str(path), page, 'token = "sk-abcdefghijklmnopqrstuvwxyz1234"')
+            self.assertTrue(leaked["passed"])
 
     def test_onepage_feature_match_is_judged_against_plan(self):
         source = self._render_onepage()["source_text"]
