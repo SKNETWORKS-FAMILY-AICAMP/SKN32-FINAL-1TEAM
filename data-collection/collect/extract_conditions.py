@@ -131,8 +131,18 @@ SYSTEM = """너는 정부 지원사업 공고문에서 신청 자격요건만 �
    · "장기재직 3년 이상", "근속 5년"      → 근로자 근속연수다
    · "지원기간 3~5년", "유효기간 5년"     → 사업 기간이다
    · "최근 3개년 매출", "최근 5년간 지원금" → 실적 집계 기간이다
+   · "입사 5년 미만 근로자", "근무경력 3년", "2년 이상 거주"   → 사람의 근무·경력·거주 기간이다
+   · "설비를 3년 이상 운영하여야 함", "지정기간 3년"       → 선정 뒤 의무·지정 기간이다
    업력은 "업력 N년", "창업 N년", "설립 후 N년", "개업 N년", "영업 N년" 처럼
-   사업 시작 시점을 기준으로 적힌 것만이다.
+   사업 시작 시점을 기준으로 적힌 것만이다. 아래도 업력이다(2026-09-28 추가).
+   · "사업개시일로부터 7년 이내", "사업을 개시한 날부터 3년이 지나지 않은"
+   · "사업자등록일로부터 1년 이상", "사업자등록 후 1년 이상 10년 미만", "창업한 지 5년 이내"
+   · "설립된 지 5년 미만", "영업신고 후 1년 이상", "영업 개시 후 6개월"
+   · "관내에서 1년 이상 가동 중인 기업", "2년 이상 운영 중인 기업"(사업을 해 온 기간)
+   예외·제외 조항 속 업력은 신청 조건이 아니다. 예: "부채비율 500% 이상 기업 제외(단, 7년 미만
+   창업기업은 예외)" 의 7년은 업력 조건이 아니므로 쓰지 않는다.
+   "예비창업자 또는 창업 10년 미만 기업" 처럼 예비창업자가 따로 허용되면 업력 값은 기업 쪽 조건
+   (age_years_max=10)으로 쓰고 pre_startup_allowed=true 로 둔다.
 10. age_source_quote 에는 업력 값의 근거 문장만 원문 그대로 넣는다.
     업력을 못 찾았으면 age_years_max=null, age_years_min=null,
     age_source_quote=null 이다. 다른 조건 문장을 억지로 넣지 않는다.
@@ -141,12 +151,82 @@ SYSTEM = """너는 정부 지원사업 공고문에서 신청 자격요건만 �
 
 # 업력 근거로 인정할 표현. 이 말이 근거 문장에 없으면 업력 값을 버린다.
 # 실측 오답: "만 19세~만 45세" 를 업력 45년으로, "3개월 이상 영업" 을 5년으로 읽었다.
-AGE_EVIDENCE = re.compile(r'업력|창업\s*후|창업\s*\d|설립\s*후|설립\s*\d|개업|영업\s*중|영업\s*\d')
+# 2026-09-28 넓힘 — "사업자등록 후 1년 이상 10년 미만", "사업개시일로부터 7년 이내" 같은 실제 업력 조건이
+# 이 목록에 없어 204건이 버려졌다(반려동물 창업 경진대회 공고 등). 사업을 시작한 시점을 기준으로 한 표현을 더한다.
+AGE_EVIDENCE = re.compile(
+    r'업\s*력|업려|창업\s*후|창업\s*\d|창업\s*(?:한\s*지|일|이후|기준)|설립\s*후|설립\s*\d|설립\s*(?:된|한)\s*지|설립\s*(?:연도|년도|등기)'
+    r'|개업|영업\s*중|영업\s*\d|영업\s*(?:을\s*)?(?:개시|신고|기간|하고|유지|지속)|(?:사업|영업)\s*(?:을\s*)?개시|개시일'
+    r'|사업자\s*등록\s*증?\s*(?:일|후|한\s*지|\d)|등록일\s*(?:로부터|기준)|가동\s*(?:중|상태)|\d\s*년\s*이상\s*가동|(?:운영|영위)\s*중|영위한|영위하는|영위\s*실적|기업\s*경영'
+    r'|(?<!예비)(?<!예비\s)창업\s*(?:기업|자|한|팀)|초기\s*창업')
+# 사람·근로자·의무 기간. 이 말이 있는 문장은 버린다. 단 **같은 근거 안의 다른 구절**에 업력 표현과 연수가 함께
+# 있으면 살린다(2026-09-28 Codex 검수 P2 — "주민등록을 두고 거주하며, 1년 이상 해당사업을 운영 중인 소상공인",
+# "창업 7년 이내이며 관내 거주 1년 이상" 의 업력까지 버리던 문제). 구절은 쉼표·괄호·"이며"·"하며"·"및"·"또는" 으로 나눈다
 AGE_DECOY = re.compile(r'만\s*\d+\s*세|\d+\s*세\s*(이하|이상|미만)|근속|재직|유효기간')
+AGE_DECOY_STRONG = re.compile(r'입사|근무|\d\s*년\s*(?:미만|이상|이하)?\s*근로자|경력|거주|주민등록|전입|공적\s*기간|활동\s*기간|수공\s*기간'
+                              r'|운영하여야|유지하여야|지정\s*기간|수혜')
 
 
 AGE_MONTH_ONLY = re.compile(r'\d+\s*개월')
 AGE_YEAR = re.compile(r'\d+\s*년')
+AGE_CLAUSE_SPLIT = re.compile(r'[,，;()\[\]]|이며|하며|이고\s|및|또는')
+
+
+# 우대·혜택·지원금 구간(2026-09-28 Codex 재검수 P2) — "7년 미만 기업은 대출금리 우대", "창업기업 6개월 미만 - 3천만원,
+# 1년 이상 - 5천만원" 은 신청 자격이 아니라 혜택 구간이다. 자격 문장 속 금액("매출액 80백만 원 미만")은 잡지 않도록
+# 금액은 "최대·융자·지원·보증·대출 … 원", "… 원까지·이내·한도", "- 3천만원"(구간표) 모양만 본다
+AGE_BENEFIT = re.compile(
+    r'우대|가점|감면|금리|추천\s*가능|우선\s*(?:선정|지원|선발)'
+    r'|(?:최대|융자|지원|보증|대출)\s*\S{0,6}?\d[\d,.]*\s*(?:천만|백만|만|억)\s*원'
+    r'|\d[\d,.]*\s*(?:천만|백만|만|억)\s*원\s*(?:까지|이내|한도)'
+    r'|[-–:]\s*\d[\d,.]*\s*(?:천만|백만|만|억)\s*원')
+
+
+def _clean_age_clauses(quote):
+    """업력 표현과 연수가 함께 있고 사람·의무 기간·우대·지원금 말은 없는 구절 목록."""
+    return [c for c in AGE_CLAUSE_SPLIT.split(quote)
+            if AGE_EVIDENCE.search(c) and AGE_YEAR.search(c) and not AGE_DECOY_STRONG.search(c)
+            and not AGE_DECOY.search(c) and not AGE_BENEFIT.search(c)]
+
+
+def _clean_age_clause(quote):
+    return bool(_clean_age_clauses(quote))
+
+
+def _value_in(clauses, n):
+    """연수 n 이 깨끗한 구절에 'n년'(또는 n×12개월)으로 나오는가."""
+    pat = re.compile(r'(?<!\d)(?:%d\s*년|%d\s*개월)' % (n, n * 12))
+    return any(pat.search(c) for c in clauses)
+
+
+def age_quote_problem(quote, values=()):
+    """업력 근거 문장 검사. 문제가 있으면 이유, 없으면 None. verify_age 와 /classify 시연이 함께 쓴다.
+
+    values: 모델이 뽑은 업력 연수(0·None 제외). 근거에 사람·의무 기간이나 우대·지원금 구절이 **섞여 있으면**
+    각 연수가 깨끗한 업력 구절에 그대로 나와야 한다(2026-09-28 Codex 재검수 P2 — "거주 2년 이상이며 창업 7년 이내"
+    에서 거주 2년을 업력 하한으로 읽어도 통과하던 문제). 섞이지 않은 근거에는 적용하지 않는다(개월 환산 등 회귀 방지).
+    """
+    quote = quote or ''
+    if not quote.strip():
+        return '근거 문장 없음'
+    if AGE_DECOY.search(quote) and not AGE_EVIDENCE.search(quote):
+        return '근거가 사람 나이·근속연수로 보임'
+    mixed_person = bool(AGE_DECOY_STRONG.search(quote))
+    mixed_benefit = bool(AGE_BENEFIT.search(quote))
+    clauses = _clean_age_clauses(quote) if (mixed_person or mixed_benefit) else None
+    if mixed_person and not clauses:
+        return '근거가 근무·경력·거주·의무 기간으로 보임'
+    if mixed_benefit and not clauses:
+        return '근거가 우대·혜택·지원금 구간으로 보임'
+    if not AGE_EVIDENCE.search(quote):
+        return '근거에 업력 표현이 없음'
+    if AGE_MONTH_ONLY.search(quote) and not AGE_YEAR.search(quote):
+        # "3개월 이상 영업" 을 3년으로 읽은 사례가 있었다. 개월만 적힌 근거는 버린다.
+        return '근거가 개월 단위인데 연 단위로 읽음'
+    if clauses is not None:
+        stray = [n for n in values if n and not _value_in(clauses, n)]
+        if stray:
+            return '추출 연수(%s년)가 업력 구절에 없음 — 다른 기간·혜택 구간에서 읽은 값으로 보임' % stray[0]
+    return None
 
 
 def verify_age(data):
@@ -166,16 +246,8 @@ def verify_age(data):
     if not has_age:
         return data, None
 
-    if not quote.strip():
-        reason = '근거 문장 없음'
-    elif AGE_DECOY.search(quote) and not AGE_EVIDENCE.search(quote):
-        reason = '근거가 사람 나이·근속연수로 보임'
-    elif not AGE_EVIDENCE.search(quote):
-        reason = '근거에 업력 표현이 없음'
-    elif AGE_MONTH_ONLY.search(quote) and not AGE_YEAR.search(quote):
-        # "3개월 이상 영업" 을 3년으로 읽은 사례가 있었다. 개월만 적힌 근거는 버린다.
-        reason = '근거가 개월 단위인데 연 단위로 읽음'
-    else:
+    reason = age_quote_problem(quote, [data.get('age_years_min'), data.get('age_years_max')])
+    if reason is None:
         return data, None
 
     data['age_years_max'] = None

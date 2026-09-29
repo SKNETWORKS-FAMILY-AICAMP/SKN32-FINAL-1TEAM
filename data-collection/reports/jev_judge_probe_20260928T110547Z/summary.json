@@ -1,0 +1,95 @@
+{
+ "meta": {
+  "run_at": "2026-09-28T11:05:47+00:00",
+  "pairs": 5,
+  "answered": 5,
+  "errors": 0,
+  "unknown": 0,
+  "models": [
+   "jev-1.13.0"
+  ],
+  "median_ms": 330,
+  "truth": "human blind (+recheck), merge_qrels.agreement 규칙",
+  "db_writes": 0
+ },
+ "jev_vs_human": {
+  "n": 5,
+  "exact": 0.4,
+  "kappa": -0.15384615384615374,
+  "swap02": 0.0,
+  "binary": 1.0,
+  "confusion": {
+   "1>1": 1,
+   "1>2": 1,
+   "2>1": 2,
+   "2>2": 1
+  }
+ },
+ "jev_vs_human_blind_only": {
+  "n": 5,
+  "exact": 0.6,
+  "kappa": 0.16666666666666663,
+  "swap02": 0.0,
+  "binary": 1.0,
+  "confusion": {
+   "1>1": 2,
+   "1>2": 1,
+   "2>1": 1,
+   "2>2": 1
+  }
+ },
+ "same_pairs": {
+  "n": 5,
+  "jev": {
+   "n": 5,
+   "exact": 0.4,
+   "kappa": -0.15384615384615374,
+   "swap02": 0.0,
+   "binary": 1.0,
+   "confusion": {
+    "1>1": 1,
+    "1>2": 1,
+    "2>1": 2,
+    "2>2": 1
+   }
+  },
+  "llm_gpt41mini_A": {
+   "n": 5,
+   "exact": 0.8,
+   "kappa": 0.5454545454545454,
+   "swap02": 0.0,
+   "binary": 1.0,
+   "confusion": {
+    "1>1": 1,
+    "1>2": 1,
+    "2>2": 3
+   }
+  }
+ },
+ "jev_by_confidence": {
+  "0.9 이상": null,
+  "0.7~0.9": {
+   "n": 1,
+   "exact": 1.0,
+   "kappa": null,
+   "swap02": 0.0,
+   "binary": 1.0,
+   "confusion": {
+    "1>1": 1
+   }
+  },
+  "0.7 미만": {
+   "n": 4,
+   "exact": 0.25,
+   "kappa": -0.5,
+   "swap02": 0.0,
+   "binary": 1.0,
+   "confusion": {
+    "1>2": 1,
+    "2>1": 2,
+    "2>2": 1
+   }
+  }
+ },
+ "error_samples": []
+}

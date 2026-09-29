@@ -71,6 +71,21 @@
   .card .meta { color: var(--muted); font-size: 12.5px; }
   .card .sim { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line);
     color: var(--muted); font-size: 12px; }
+  /* 4위부터는 리스트(기능정의서 T-C2: 상위 3 카드 + 7 리스트, 2026-09-28) */
+  .list { margin-top: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+  .list:empty { display: none; }
+  .row-item { display: grid; grid-template-columns: 44px 1fr auto; gap: 12px; align-items: center; width: 100%;
+    padding: 12px 16px; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left;
+    font: inherit; color: inherit; cursor: pointer; }
+  .row-item:last-child { border-bottom: 0; }
+  .row-item:hover { background: #faf6f0; }
+  .row-item .no { color: var(--muted); font-size: 13px; }
+  .row-item .t { font-weight: 600; line-height: 1.4; }
+  .row-item .meta { color: var(--muted); font-size: 12px; }
+  .row-item .fit { color: var(--accent); font-weight: 700; font-size: 13px; white-space: nowrap; }
+  .more { display: block; margin: 14px auto 0; padding: 10px 22px; border: 1px solid var(--accent); border-radius: 999px;
+    background: var(--card); color: var(--accent); font: inherit; font-weight: 700; cursor: pointer; }
+  .more:disabled { opacity: .5; cursor: default; }
   table { width: 100%; border-collapse: collapse; }
   th, td { padding: 13px 12px; border-bottom: 1px solid var(--line);
     text-align: left; vertical-align: top; font-size: 14px; }
@@ -221,7 +236,10 @@
       <span><b>특정 대상 집단 공고 뒤로 보내기</b> <small>(시험 · 개선안 B)</small><br>
         <small>장애인·체육인·재창업자 등 대상이 정해진 공고는, 입력에 그 집단이라는 내용이 없으면 뒤로 보냅니다. 끄면 기존 방식으로 다시 검색합니다.</small></span>
     </label>
+    <div class="banner warn" id="fallback" hidden style="margin:0 0 14px"></div>
     <div class="cards" id="cards"></div>
+    <div class="list" id="list"></div>
+    <button class="more" id="more" hidden>10건 더 보기</button>
     <div class="demoted" id="demoted" hidden></div>
     <div class="used" id="used" hidden></div>
     <p class="hint" id="list-foot"></p>
@@ -417,7 +435,7 @@ function collect() {
     idea: $('#idea').value.trim(),
     team: rows($('#team'), ['name','role','career']).filter(m => m.career || m.name),
     revenue: rows($('#rev'), ['item','price']).filter(r => r.item),
-    top: 3, hide_expired: true,
+    top: 10, offset: 0, hide_expired: true,
     region: $('#region').value,
     district: $('#district').value,
     name: $('#owner').value.trim(),
@@ -500,30 +518,70 @@ $('#demote').addEventListener('change', async () => {
   finally { $('#cards').style.opacity = 1; }
 });
 
-async function runMatch() {
-    const d = await post('/api/match', {...last, demote_groups: $('#demote').checked});
-    $('#list-title').textContent =
-      `지금 신청 가능한 공고 ${d.count}건을 찾았습니다`;
-    $('#list-lede').textContent =
-      '유사도가 높은 순서입니다 — 공고를 선택하면 자격요건 확인으로 넘어갑니다.';
-    $('#cards').innerHTML = '';
-    d.results.forEach((n, i) => {
-      const period = n.apply_end ? `${n.apply_end} 마감`
-        : ({budget_exhaustion:'예산 소진 시까지', rolling:'상시·수시 접수',
-            until_filled:'선착순 마감', unknown:'접수기간 정보 없음'}[n.apply_period_type]
-           || '접수기간 정보 없음');
-      const b = document.createElement('button');
+// 적합도(fit_score, 잠정): RRF 점수 ÷ 이론 최대값. 대체 경로(마감임박순)에서는 없다.
+// 확률이 아니라 "이번 검색에서 얼마나 위에 걸렸나" 의 상대값이라 %로 쓰지 않는다(2026-09-28 Codex 통합 검수 P3).
+// 두 검색 모두 1위면 1.00 이지만 자격·관련성을 보증하지 않는다
+const FIT_TIP = '검색 순위로 만든 상대 점수(0~1). 두 검색에서 모두 1위면 1.00 — 확률이나 합격 가능성이 아닙니다';
+const fitText = (n) => n.fit_score == null ? '순위 점수 없음'
+  : `<span title="${FIT_TIP}">순위 점수 ${n.fit_score.toFixed(2)}</span>`;
+const FALLBACK_NOTE = {
+  'BM25단독': '의미 검색에 문제가 있어 <b>단어 검색만으로</b> 찾았습니다. 추천 정확도가 낮아질 수 있습니다.',
+  '임베딩단독': '단어 검색에 문제가 있어 <b>의미 검색만으로</b> 찾았습니다.',
+  '마감임박순': '검색에 문제가 있어 <b>신청 가능한 공고를 마감이 가까운 순서</b>로 보여 드립니다. 추천 순위가 아닙니다.',
+};
+
+function periodText(n) {
+  return n.apply_end ? `${n.apply_end} 마감`
+    : ({budget_exhaustion:'예산 소진 시까지', rolling:'상시·수시 접수',
+        until_filled:'선착순 마감', unknown:'접수기간 정보 없음'}[n.apply_period_type]
+       || '접수기간 정보 없음');
+}
+
+function addResults(results) {
+  results.forEach((n) => {
+    const b = document.createElement('button');
+    if (n.display_type === 'card') {
       b.className = 'card';
       b.innerHTML =
-        `<span class="no">0${i+1}</span><span class="band">${n.band}</span>
+        `<span class="no">${String(n.rank).padStart(2, '0')}</span><span class="band">${n.band ? esc(n.band) : fitText(n)}</span>
          <h3>${esc(n.title)}</h3>
-         <p class="meta">${esc(n.organizer || '기관 정보 없음')} · ${period}</p>
+         <p class="meta">${esc(n.organizer || '기관 정보 없음')} · ${periodText(n)}</p>
          <p class="meta">${esc(n.target_category || '')}${n.category ? ' · ' + esc(n.category) : ''}</p>
          <p class="meta">${regionText(n)}</p>
-         <p class="sim">유사도 ${n.score} · 출처 ${n.source}</p>`;
-      b.onclick = () => openGate(n);
+         <p class="sim">${fitText(n)}${n.score == null ? '' : ' · 유사도 ' + n.score} · 출처 ${n.source}</p>`;
       $('#cards').appendChild(b);
-    });
+    } else {
+      b.className = 'row-item';
+      b.innerHTML =
+        `<span class="no">${String(n.rank).padStart(2, '0')}</span>
+         <span><span class="t">${esc(n.title)}</span><br>
+           <span class="meta">${esc(n.organizer || '기관 정보 없음')} · ${periodText(n)} · ${regionText(n)}</span></span>
+         <span class="fit">${fitText(n)}</span>`;
+      $('#list').appendChild(b);
+    }
+    b.onclick = () => openGate(n);
+  });
+}
+
+let shown = 0;
+async function runMatch() {
+    const d = await post('/api/match', {...last, offset: 0, demote_groups: $('#demote').checked});
+    $('#list-title').textContent =
+      `지금 신청 가능한 공고 ${d.filtered_count}건 중 가장 맞는 ${d.count}건입니다`;
+    $('#list-lede').textContent =
+      '상위 3건은 카드, 나머지는 목록입니다 — 공고를 선택하면 자격요건 확인으로 넘어갑니다.';
+    $('#cards').innerHTML = '';
+    $('#list').innerHTML = '';
+    const fb = $('#fallback');
+    // 대체 경로는 아니지만 검색 일부가 실패한 경우(예: 보조 벡터 조회 실패로 일부 유사도가 빈 값)도 알린다(2026-09-28 Codex 검수)
+    const partial = !d.fallback_used && d.search_errors && Object.keys(d.search_errors).length > 0;
+    fb.innerHTML = d.fallback_used ? (FALLBACK_NOTE[d.fallback_mode] || '검색 일부에 문제가 있었습니다.')
+      : partial ? '검색 일부에 문제가 있어 몇몇 공고는 유사도 없이 표시됩니다. 순서는 정상입니다.' : '';
+    fb.hidden = !(d.fallback_used || partial);
+    addResults(d.results);
+    shown = d.results.length;
+    $('#more').hidden = !d.has_more;
+    $('#more').disabled = false;
     const box = $('#demoted');
     const parts = [];
     if (d.demote_region && d.region_demoted.length) {
@@ -536,7 +594,7 @@ async function runMatch() {
     }
     if (d.demote_groups && d.demoted.length) {
       parts.push(`<b>뒤로 보낸 공고 ${d.demoted.length}건</b> — 입력에 해당 집단이라는 내용이 없어서
-        <ul>${d.demoted.map(x => `<li>${esc(x.title)} <small>(유사도 ${x.score} · ${esc(x.groups.join(', '))})</small></li>`).join('')}</ul>`);
+        <ul>${d.demoted.map(x => `<li>${esc(x.title)} <small>(유사도 ${x.score ?? "—"} · ${esc(x.groups.join(', '))})</small></li>`).join('')}</ul>`);
     }
     box.innerHTML = parts.join('<div style="height:10px"></div>');
     box.hidden = !parts.length;
@@ -588,6 +646,19 @@ async function openGate(n) {
       `<tr><td colspan="4" class="err">실패: ${esc(String(e.message).slice(0,200))}</td></tr>`;
   }
 }
+
+// 추가 조회 — 다음 10건(누적 최대 20건). 같은 입력으로 offset 만 바꿔 부른다
+$('#more').onclick = async () => {
+  $('#more').disabled = true;
+  try {
+    const d = await post('/api/match', {...last, offset: shown, demote_groups: $('#demote').checked});
+    addResults(d.results);
+    shown += d.results.length;
+    $('#more').hidden = !d.has_more;
+  } catch (e) {
+    $('#list-foot').innerHTML = `<span class="err">추가 조회 실패: ${esc(String(e.message).slice(0,200))}</span>`;
+  } finally { $('#more').disabled = false; }
+};
 
 $('#back-input').onclick = () => show('step-input');
 $('#back-list').onclick = () => show('step-list');

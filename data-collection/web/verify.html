@@ -240,11 +240,12 @@ function drawCase(detail){
       step('전체 후보 (필터 끔 기준)', drops.total_candidates) +
       step('− SQL 단계 제외', drops.sql_dropped) +
       step('= SQL 통과', drops.rows_from_sql) +
-      step('− 조건 제외 (지역·업력 등)', drops.dropped_by_conditions) +
+      step('− 조건 제외 (업력·접수기간)', drops.dropped_by_conditions) +
       step('= 조건 통과', drops.after_conditions) +
       step('− 벡터 없음·손상·낡음', drops.dropped_by_vector) +
       step('= 유사도 비교', drops.compared) +
       step('→ 반환', drops.returned) +
+      step('(그중 뒤로 보냄 — 지역·업종·규모 불충족, 빼지 않음)', drops.demoted) +
       '</tbody></table></div>';
     if(drops.sql_note) block += '<div class="muted">' + esc(drops.sql_note) + '</div>';
     const fields = drops.dropped_fields_in_examples || {};

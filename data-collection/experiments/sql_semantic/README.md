@@ -1,6 +1,6 @@
 # 정형 필터 + 의미 검색 (실험)
 
-지시서: [docs/SQL_SEMANTIC_EXPERIMENT_TASK_20260918.md](../../docs/SQL_SEMANTIC_EXPERIMENT_TASK_20260918.md)
+지시서: [docs/reviews/sql_semantic/SQL_SEMANTIC_EXPERIMENT_TASK_20260918.md](../../docs/reviews/sql_semantic/SQL_SEMANTIC_EXPERIMENT_TASK_20260918.md)
 
 기존 서비스(dense + BM25 하이브리드)는 **그대로 둔다.** 이 폴더는 별도 로컬 MySQL 에서
 다른 방식을 시험한다. VectorDB·BM25 를 쓰지 않는다.
@@ -67,14 +67,16 @@ SQL_LAB_DATABASE=notice_match_sql_lab
 | `search.py` | SQL 필터 → 후보 전체와 코사인 → 규칙 정렬 → Top N |
 | `compare.py` | 기존 결과와 나란히 보는 HTML·manifest·데이터 품질 |
 | `fixtures.py` | 검증 화면용 가짜 데이터. 실제 추출기·검색 로직에 넣어 문제 사례를 재현한다 |
-| `viewer.py` | 검증 화면 서버(읽기 전용, 기본 8010). 절차는 [VERIFY_UI.md](../../docs/VERIFY_UI.md) |
+| `viewer.py` | 검증 화면 서버(읽기 전용, 기본 8010). 절차는 [VERIFY_UI.md](../../docs/guides/VERIFY_UI.md) |
 
 ## 설계에서 지킨 것
 
 - **모르는 조건은 탈락시키지 않는다.** `충족 / 불충족 / 확인 필요` 세 값으로 다루고,
   확인 필요는 후보로 남긴다. 남겼다고 자격이 보장되는 것은 아니다.
-- **SQL 에서 거르는 것은 두 가지뿐이다** — 마감이 지난 공고, 지역이 확인됐는데 다른 지역 전용.
-  업종·규모·지원 방식은 자격이 아니라 선호로 다룬다.
+- **SQL 에서 거르는 것은 마감이 지난 공고뿐이다.** 파이썬 판정에서 빼는 것은 업력·접수기간 불충족뿐이다.
+  지역·업종·기업 규모 불충족은 빼지 않고 순위만 뒤로 보낸다(`demoted_by`). 지원 방식은 선호로 다룬다.
+  2026-09-28 기획서 대조 B로 바뀌었다 — 그 전에는 지역을 SQL 에서, 지역·업종·규모를 파이썬에서 제외했다.
+  예전 결과 폴더(`reports/sql_semantic_*`)의 수치는 옛 방식이다.
 - **전체 Top-K 를 먼저 자르지 않는다.** SQL 로 거른 후보 **전체**와 유사도를 계산한다.
 - 값은 파라미터로 넘긴다. 사용자 입력으로 SQL 문자열을 만들지 않는다.
 - 코사인과 규칙을 섞어 하나의 '적합 확률'로 만들지 않는다. 순위가 바뀐 이유를 공고마다 남긴다.
@@ -94,4 +96,4 @@ SQL_LAB_DATABASE=notice_match_sql_lab
 .\.venv\Scripts\python.exe -X utf8 -m experiments.sql_semantic.viewer
 ```
 
-→ http://127.0.0.1:8010 · 화면 설명과 확인 절차는 [docs/VERIFY_UI.md](../../docs/VERIFY_UI.md).
+→ http://127.0.0.1:8010 · 화면 설명과 확인 절차는 [docs/guides/VERIFY_UI.md](../../docs/guides/VERIFY_UI.md).

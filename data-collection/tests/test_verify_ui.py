@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""검증 화면 테스트 — `docs/CLAUDE_UI_VERIFICATION_TASK_20260921.md` 5절.
+"""검증 화면 테스트 — `docs/reviews/ui/CLAUDE_UI_VERIFICATION_TASK_20260921.md` 5절.
 
   .\\.venv\\Scripts\\python.exe -X utf8 -m unittest discover -s tests -k test_verify_ui -v
 
@@ -412,7 +412,7 @@ class CompareTests(unittest.TestCase):
 
 
 class CompareInputTests(unittest.TestCase):
-    """/compare 신청자 입력 확장 — docs/COMPARE_INPUT_EXPANSION_TASK_20260921.md '필수 테스트'.
+    """/compare 신청자 입력 확장 — docs/reviews/ui/COMPARE_INPUT_EXPANSION_TASK_20260921.md '필수 테스트'.
 
     사용자 결정: 설립일은 개인사업자·법인만 필수, 성별은 여성/남성/응답 안 함 중 필수.
     """

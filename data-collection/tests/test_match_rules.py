@@ -4,7 +4,7 @@
   .\.venv\Scripts\python.exe -X utf8 -m unittest discover -s tests -k test_match_rules -v
 
 DB·모델·HTTP 없이 `app.match()` 와 `app.eligibility()` 를 가짜 색인으로 직접 부른다.
-검토 문서: docs/MATCHING_REVIEW_20260918.md
+검토 문서: docs/reviews/matching/MATCHING_REVIEW_20260918.md
 
 여기서 고정하는 것
   1번  시·도 → 시·군·구 → 집단 순서. 나중 규칙이 앞선 규칙을 덮어쓰지 않는다

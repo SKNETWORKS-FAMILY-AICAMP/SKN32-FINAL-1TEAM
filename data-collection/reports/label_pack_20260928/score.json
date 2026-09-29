@@ -1,0 +1,229 @@
+{
+ "applicant_labeled": 93,
+ "industry_labeled": 34,
+ "agreement": {
+  "pre_founder": {
+   "hit": 74,
+   "total": 93,
+   "rate": 0.796
+  },
+  "sole_proprietor": {
+   "hit": 88,
+   "total": 93,
+   "rate": 0.946
+  },
+  "corporation": {
+   "hit": 89,
+   "total": 93,
+   "rate": 0.957
+  }
+ },
+ "gate_pre_strong": {
+  "hit": 30,
+  "total": 30,
+  "rate": 1.0
+ },
+ "gate_pre_strong_wrong_allowed": [],
+ "b_text_over_api": {
+  "hit": 9,
+  "total": 9,
+  "rate": 1.0
+ },
+ "pre_weak": {
+  "hit": 13,
+  "total": 17,
+  "rate": 0.765
+ },
+ "sole_proprietor_strong_no": {
+  "hit": 7,
+  "total": 7,
+  "rate": 1.0
+ },
+ "corporation_strong_no": {
+  "hit": 8,
+  "total": 8,
+  "rate": 1.0
+ },
+ "pre_implied_no": {
+  "hit": 23,
+  "total": 23,
+  "rate": 1.0
+ },
+ "pre_implied_no_but_allowed": [],
+ "missed_in_F": [
+  "P084",
+  "P085",
+  "P089"
+ ],
+ "industry_section_verdicts": {
+  "ineligible": 101,
+  "eligible": 32,
+  "unclear": 2
+ },
+ "industry_wrong_push": [
+  {
+   "item_id": "I003",
+   "notice_id": "bizinfo:PBLN_000000000126456",
+   "section": "C"
+  },
+  {
+   "item_id": "I003",
+   "notice_id": "bizinfo:PBLN_000000000126456",
+   "section": "F"
+  },
+  {
+   "item_id": "I003",
+   "notice_id": "bizinfo:PBLN_000000000126456",
+   "section": "G"
+  },
+  {
+   "item_id": "I003",
+   "notice_id": "bizinfo:PBLN_000000000126456",
+   "section": "I"
+  },
+  {
+   "item_id": "I003",
+   "notice_id": "bizinfo:PBLN_000000000126456",
+   "section": "J"
+  },
+  {
+   "item_id": "I006",
+   "notice_id": "bizinfo:PBLN_000000000122625",
+   "section": "A"
+  },
+  {
+   "item_id": "I006",
+   "notice_id": "bizinfo:PBLN_000000000122625",
+   "section": "C"
+  },
+  {
+   "item_id": "I006",
+   "notice_id": "bizinfo:PBLN_000000000122625",
+   "section": "F"
+  },
+  {
+   "item_id": "I006",
+   "notice_id": "bizinfo:PBLN_000000000122625",
+   "section": "G"
+  },
+  {
+   "item_id": "I006",
+   "notice_id": "bizinfo:PBLN_000000000122625",
+   "section": "I"
+  },
+  {
+   "item_id": "I006",
+   "notice_id": "bizinfo:PBLN_000000000122625",
+   "section": "J"
+  },
+  {
+   "item_id": "I007",
+   "notice_id": "bizinfo:PBLN_000000000126466",
+   "section": "J"
+  },
+  {
+   "item_id": "I008",
+   "notice_id": "bizinfo:PBLN_000000000126512",
+   "section": "J"
+  },
+  {
+   "item_id": "I011",
+   "notice_id": "bizinfo:PBLN_000000000126235",
+   "section": "A"
+  },
+  {
+   "item_id": "I011",
+   "notice_id": "bizinfo:PBLN_000000000126235",
+   "section": "C"
+  },
+  {
+   "item_id": "I011",
+   "notice_id": "bizinfo:PBLN_000000000126235",
+   "section": "F"
+  },
+  {
+   "item_id": "I011",
+   "notice_id": "bizinfo:PBLN_000000000126235",
+   "section": "G"
+  },
+  {
+   "item_id": "I011",
+   "notice_id": "bizinfo:PBLN_000000000126235",
+   "section": "J"
+  },
+  {
+   "item_id": "I013",
+   "notice_id": "bizinfo:PBLN_000000000126547",
+   "section": "C"
+  },
+  {
+   "item_id": "I013",
+   "notice_id": "bizinfo:PBLN_000000000126547",
+   "section": "G"
+  },
+  {
+   "item_id": "I017",
+   "notice_id": "kstartup:179286",
+   "section": "A"
+  },
+  {
+   "item_id": "I017",
+   "notice_id": "kstartup:179286",
+   "section": "C"
+  },
+  {
+   "item_id": "I017",
+   "notice_id": "kstartup:179286",
+   "section": "F"
+  },
+  {
+   "item_id": "I017",
+   "notice_id": "kstartup:179286",
+   "section": "G"
+  },
+  {
+   "item_id": "I020",
+   "notice_id": "bizinfo:PBLN_000000000121098",
+   "section": "J"
+  },
+  {
+   "item_id": "I023",
+   "notice_id": "bizinfo:PBLN_000000000121103",
+   "section": "A"
+  },
+  {
+   "item_id": "I023",
+   "notice_id": "bizinfo:PBLN_000000000121103",
+   "section": "F"
+  },
+  {
+   "item_id": "I023",
+   "notice_id": "bizinfo:PBLN_000000000121103",
+   "section": "I"
+  },
+  {
+   "item_id": "I023",
+   "notice_id": "bizinfo:PBLN_000000000121103",
+   "section": "J"
+  },
+  {
+   "item_id": "I024",
+   "notice_id": "bizinfo:PBLN_000000000123900",
+   "section": "C"
+  },
+  {
+   "item_id": "I024",
+   "notice_id": "bizinfo:PBLN_000000000123900",
+   "section": "F"
+  },
+  {
+   "item_id": "I032",
+   "notice_id": "bizinfo:PBLN_000000000126501",
+   "section": "G"
+  }
+ ],
+ "industry_restricted": {
+  "True": 29,
+  "False": 5
+ }
+}

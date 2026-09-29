@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-r"""Chroma 실제 벡터 검증 테스트 — docs/CHROMA_INTEGRITY_TASK_20260918.md '필요한 테스트'.
+r"""Chroma 실제 벡터 검증 테스트 — docs/reviews/chroma/CHROMA_INTEGRITY_TASK_20260918.md '필요한 테스트'.
 
   .\.venv\Scripts\python.exe -X utf8 -m unittest discover -s tests -k test_chroma_integrity -v
 

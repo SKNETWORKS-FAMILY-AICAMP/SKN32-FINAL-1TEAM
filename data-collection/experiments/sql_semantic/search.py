@@ -7,6 +7,9 @@
 원칙 (지시서 5·6절)
 
   · **확실한 불일치만 SQL 에서 제외한다.** 모르는 조건은 후보로 남긴다(확인 필요).
+  · **빼는 조건은 업력·접수기간뿐이다.** 지역·업종·기업 규모는 빼지 않고 순위만 뒤로 보낸다
+    (2026-09-28 기획서 대조 B — 기획서 4-2·5-3, 기능정의서 R-2·R-3: 게이트는 유형·업력·접수기간, 지역·업종은 순위 신호.
+     서비스 search/app.py 와 같은 원칙. 이전에는 지역을 SQL WHERE 로, 지역·업종·규모 불충족을 파이썬에서 제외했다)
   · 남겼다는 것이 자격을 보장한다는 뜻이 아니다. 조건별 사유를 응답에 담는다.
   · 전체 벡터 Top-K 를 먼저 자르고 SQL 필터라고 부르지 않는다. SQL 로 거른 **후보 전체**와 비교한다.
   · 값은 파라미터로 넘긴다. 사용자 입력으로 SQL 문자열을 조립하지 않는다.
@@ -30,6 +33,12 @@ from shared import region as region_mod  # noqa: E402
 
 TOP = 5
 
+# 불충족이면 후보에서 빼는 조건(자격 게이트와 같은 항목)과, 빼지 않고 뒤로 보내는 조건(순위 신호).
+# SOFT_FIELDS 순서가 뒤로 보내는 강도 순서다(서비스와 같게 지역 → 업종 → 규모)
+HARD_FIELDS = ('business_age', 'application_period')
+SOFT_FIELDS = ('region', 'industry', 'company_size')
+SOFT_LABEL = {'region': '지역', 'industry': '업종', 'company_size': '기업 규모'}
+
 # 조건 판정 세 값
 OK, NO, CHECK = 'ok', 'no', 'check'
 
@@ -45,22 +54,12 @@ def applicant_age_months(applicant, as_of):
 def build_filter(applicant, as_of):
     """(SQL, 파라미터). 확실한 불일치만 제외한다.
 
-    SQL 안에서 걸러내는 것은 두 가지뿐이다.
-      · 마감이 지난 공고 (마감일이 **있고** 그 날짜가 기준일보다 이른 경우만)
-      · 지역이 확인됐고 신청자 지역과 다른 경우 (전국·미확인은 남긴다)
-
+    SQL 안에서 걸러내는 것은 **마감이 지난 공고 하나뿐**이다(마감일이 **있고** 그 날짜가 기준일보다 이른 경우만).
     업력은 경계 처리가 까다로워 SQL 에서 값만 가져오고 파이썬에서 3값으로 판정한다.
-    업종·규모·지원 방식은 자격이 아니라 선호라 여기서 거르지 않는다(지시서 5절).
+    지역은 2026-09-28 부터 SQL 에서 거르지 않는다(기획서 대조 B). 값만 가져와 파이썬에서 순위 신호로 쓴다.
+    업종·규모·지원 방식도 거르지 않는다(지시서 5절).
     """
     where = ["(n.apply_end IS NULL OR n.apply_end >= %s)"]
-
-    my_region = region_mod.canonical(applicant.get('region') or '') if applicant.get('region') else None
-    if my_region:
-        # 지역 조건이 known 이면서 내 지역이 목록에 없을 때만 제외한다.
-        # no_limit(전국)·unknown 은 남긴다.
-        where.append(
-            "(c_region.status IS NULL OR c_region.status <> 'known' "
-            " OR FIND_IN_SET(%s, c_region.value_text) > 0)")
 
     sql = (
         "SELECT n.notice_id, n.title, n.url, n.apply_start, n.apply_end, n.apply_period_type,\n"
@@ -90,7 +89,7 @@ def build_filter(applicant, as_of):
     # **순서가 중요하다.** 물음표는 SQL 에 나온 순서대로 채워진다.
     # 계약(contract)은 LEFT JOIN 안에 있어 WHERE 보다 먼저 나온다.
     # 처음에 날짜를 먼저 넣었다가 실제 DB 에서 "Incorrect DATE value: '경기'" 로 실패했다.
-    params = [embedding.CONTRACT, as_of.isoformat()] + ([my_region] if my_region else [])
+    params = [embedding.CONTRACT, as_of.isoformat()]
     return sql, params
 
 
@@ -171,7 +170,11 @@ def judge_list(row, applicant, status_key, value_key, mine_key, label):
 
 
 def evaluate(row, applicant, applicant_months, as_of):
-    """조건별 판정 묶음. NO 가 하나라도 있으면 후보에서 뺀다(사유를 남긴다)."""
+    """조건별 판정 묶음. (checks, excluded, unsure, demote)
+
+    excluded  HARD_FIELDS(업력·접수기간) 중 NO — 후보에서 뺀다(사유를 남긴다)
+    demote    SOFT_FIELDS(지역·업종·규모) 중 NO — 빼지 않고 순위만 뒤로(2026-09-28 기획서 대조 B)
+    """
     checks = {
         'region': judge_region(row, applicant),
         'business_age': judge_age(row, applicant_months),
@@ -181,14 +184,16 @@ def evaluate(row, applicant, applicant_months, as_of):
         'industry': judge_list(row, applicant, 'industry_status', 'industry_value',
                                'industry', '업종'),
     }
-    excluded = [k for k, (verdict, _why) in checks.items() if verdict == NO]
+    excluded = [k for k in HARD_FIELDS if checks[k][0] == NO]
+    demote = [k for k in SOFT_FIELDS if checks[k][0] == NO]
     unsure = [k for k, (verdict, _why) in checks.items() if verdict == CHECK]
-    return checks, excluded, unsure
+    return checks, excluded, unsure, demote
 
 
-def rank(candidates, similarity, applicant):
+def rank(candidates, similarity, applicant, demote=None):
     """고정된 정렬 규칙.
 
+      0) 지역 → 업종 → 규모 불충족(demote)은 뒤로. 빼지 않는다(2026-09-28 기획서 대조 B)
       1) 신청자가 원하는 지원 방식이 공고에 있으면 먼저 (선호를 밝혔을 때만)
       2) 유사도 높은 순
       3) 동점이면 공고 ID 순
@@ -196,17 +201,21 @@ def rank(candidates, similarity, applicant):
     가중치를 곱해 하나의 점수로 만들지 않는다. 왜 올라갔는지 말할 수 있어야 한다.
     """
     want = (applicant.get('preferred_support_type') or '').strip()
+    demote = demote or {}
     ordered = []
     for row, score in zip(candidates, similarity):
         types = {v.strip() for v in (row.get('type_value') or '').split(',') if v.strip()}
         matched = bool(want) and want in types
-        ordered.append({'row': row, 'similarity': float(score), 'preference_match': matched})
-    ordered.sort(key=lambda x: (0 if x['preference_match'] else 1,
-                                -x['similarity'], x['row']['notice_id']))
+        ordered.append({'row': row, 'similarity': float(score), 'preference_match': matched,
+                        'demoted_by': list(demote.get(row['notice_id']) or [])})
+    ordered.sort(key=lambda x: tuple(f in x['demoted_by'] for f in SOFT_FIELDS)
+                 + (0 if x['preference_match'] else 1, -x['similarity'], x['row']['notice_id']))
     for i, item in enumerate(ordered, 1):
         item['rank'] = i
-        item['rank_reason'] = ('선호한 지원 방식(%s) 일치 → 앞으로' % want) if item['preference_match'] \
-            else '유사도 순'
+        reason = ('선호한 지원 방식(%s) 일치 → 앞으로' % want) if item['preference_match'] else '유사도 순'
+        if item['demoted_by']:
+            reason = '%s 불일치 → 뒤로 · %s' % ('·'.join(SOFT_LABEL[f] for f in item['demoted_by']), reason)
+        item['rank_reason'] = reason
     return ordered
 
 
@@ -233,15 +242,17 @@ def run(applicant, as_of=None, top=TOP, use_filter=True, connection=None, model=
         sql_ms = (time.time() - started) * 1000
 
         kept, dropped, missing_vector = [], [], []
-        reasons = {}
+        reasons, demote = {}, {}
         for row in rows:
             if use_filter:
-                checks, excluded, unsure = evaluate(row, applicant, applicant_months, as_of)
+                checks, excluded, unsure, soft = evaluate(row, applicant, applicant_months, as_of)
             else:
-                checks, excluded, unsure = {}, [], []
+                checks, excluded, unsure, soft = {}, [], [], []
             reasons[row['notice_id']] = {'checks': {k: {'verdict': v, 'why': w}
                                                     for k, (v, w) in checks.items()},
                                          'unsure': unsure}
+            if soft:
+                demote[row['notice_id']] = soft
             if excluded:
                 dropped.append({'notice_id': row['notice_id'], 'fields': excluded})
                 continue
@@ -304,7 +315,7 @@ def run(applicant, as_of=None, top=TOP, use_filter=True, connection=None, model=
         scores = embedding.cosine(query_vec, np.vstack(vectors)) if vectors else []
         compare_ms = (time.time() - t0) * 1000
 
-        ordered = rank(valid, scores, applicant)[:top]
+        ordered = rank(valid, scores, applicant, demote)[:top]
         results = []
         for item in ordered:
             row = item['row']
@@ -312,6 +323,7 @@ def run(applicant, as_of=None, top=TOP, use_filter=True, connection=None, model=
                 'notice_id': row['notice_id'], 'title': row['title'], 'url': row['url'],
                 'rank': item['rank'], 'similarity': round(item['similarity'], 4),
                 'rank_reason': item['rank_reason'],
+                'demoted_by': item['demoted_by'],
                 'apply_end': str(row.get('apply_end') or ''),
                 'apply_period_type': row.get('apply_period_type'),
                 'region': row.get('region_value'), 'region_status': row.get('region_status'),
@@ -329,8 +341,11 @@ def run(applicant, as_of=None, top=TOP, use_filter=True, connection=None, model=
             'counts': {'rows_from_sql': len(rows), 'after_conditions': len(kept),
                        'compared': len(valid), 'returned': len(results),
                        'dropped': len(dropped), 'missing_vector': len(missing_vector),
+                       # 빼지 않고 뒤로 보낸 후보(지역·업종·규모 불충족) — 2026-09-28 B
+                       'demoted': sum(1 for r in valid if r['notice_id'] in demote),
                        'broken_vector': len(broken), 'stale_vector': len(stale)},
             'dropped_examples': dropped[:10],
+            'demoted_examples': [{'notice_id': n, 'fields': f} for n, f in list(demote.items())[:10]],
             'missing_vector_examples': missing_vector[:10],
             'broken_vector_examples': broken[:10],
             'stale_vector_examples': stale[:10],

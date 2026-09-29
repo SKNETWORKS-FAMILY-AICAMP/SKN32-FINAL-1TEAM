@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """/compare 신청자 입력 계약 — 검증, 방식별 변환, 사용 여부 표.
 
-지시서: docs/COMPARE_INPUT_EXPANSION_TASK_20260921.md
+지시서: docs/reviews/ui/COMPARE_INPUT_EXPANSION_TASK_20260921.md
 
 세 가지를 한곳에서 정한다.
 
@@ -439,7 +439,7 @@ def field_usage(clean, lab_industry):
         ('birth_date', ONLY, UNUSED),
         ('gender', (RULE + ' (여성 대상 공고 유지)') if women else (RULE + ' 해당 없음 (여성일 때만 씀)'),
          UNUSED),
-        ('region', RULE + ' (다른 지역 전용 공고 뒤로)', JUDGE + ' (SQL 제외 + 지역 판정)'),
+        ('region', RULE + ' (다른 지역 전용 공고 뒤로)', JUDGE + ' (지역 판정 → 불일치는 뒤로, 빼지 않음)'),
         ('district', RULE + ' (다른 시·군·구 공고 뒤로)', UNUSED),
         ('main_industry', SEARCH + ' + ' + RULE,
          (JUDGE + ' (업종 "%s")' % lab_industry) if lab_industry

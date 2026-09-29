@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """업종 LLM 표본(`experiments/sql_semantic/industry_llm_sample.py`) 회귀 테스트. DB·API 없이 돈다.
 
-2026-09-22 Codex 리뷰(docs/INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md)의 반례를 그대로 고정한다.
+2026-09-22 Codex 리뷰(docs/reviews/industry/INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md)의 반례를 그대로 고정한다.
 """
 import io
 import json
@@ -906,6 +906,66 @@ class MergeAndIdsTests(TempDirCase):
         other_model = self.write_run('om', [self.row('a', 'known')], {'prompt': 'v3', 'model': 'gpt-4o-mini'})
         with self.assertRaises(SystemExit):
             s.merge_runs(base2, other_model, os.path.join(self.dir, 'm3'))
+
+    def test_merging_a_merged_run_keeps_original_source_run(self):
+        # 덮는 쪽이 이미 합친 결과면 행의 원래 실행 이름을 지킨다(only_new 가 발췌 상한을 찾는 데 쓴다)
+        base = self.write_run('base', [self.row('a', 'unknown'), self.row('b', 'unknown')], {'prompt': 'v3'})
+        merged = self.write_run('merged', [dict(self.row('a', 'known'), source_run='long104')], {'prompt': 'v3'})
+        out = os.path.join(self.dir, 'again')
+        s.merge_runs(base, merged, out)
+        rows = {r['notice_id']: r for r in s.read_jsonl(os.path.join(out, 'results.jsonl'))}
+        self.assertEqual(rows['a']['source_run'], 'long104')
+        self.assertEqual(rows['b']['source_run'], 'base')
+
+    def test_merge_append_adds_new_notices(self):
+        # 공용 DB 로 바꾼 뒤 새로 읽은 공고를 전량 결과에 붙인다(2026-09-28 --merge-append)
+        base = self.write_run('base', [self.row('a', 'unknown'), self.row('c', 'unknown')],
+                              {'prompt': 'v3', 'population': 2, 'notice_ids': ['a', 'c']})
+        new = self.write_run('new', [self.row('b', 'known')], {'prompt': 'v3', 'source': 'shared'})
+        out = os.path.join(self.dir, 'appended')
+        meta, _ = s.merge_runs(base, new, out, append=True)
+        rows = s.read_jsonl(os.path.join(out, 'results.jsonl'))
+        self.assertEqual([r['notice_id'] for r in rows], ['a', 'b', 'c'])
+        self.assertEqual(rows[1]['source_run'], 'new')
+        self.assertEqual((meta['population'], meta['appended'], meta['source']), (3, 1, 'shared'))
+
+    def test_only_new_keeps_missing_or_changed(self):
+        base = self.write_run('base', [dict(self.row('a', 'unknown'), document_sha256='h1'),
+                                       dict(self.row('b', 'unknown'), document_sha256='h2')], {'prompt': 'v3'})
+        items = [{'notice_id': 'a', 'document_sha256': 'h1'}, {'notice_id': 'b', 'document_sha256': 'CHANGED'},
+                 {'notice_id': 'c', 'document_sha256': 'h3'}]
+        kept, skipped = s.only_new(items, base)
+        self.assertEqual(([it['notice_id'] for it in kept], skipped), (['b', 'c'], 1))
+
+    def test_shared_items_compute_regex_without_lab(self):
+        class Cursor:
+            def __init__(self):
+                self.last = ''
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def execute(self, sql, args=None):
+                self.last = sql
+
+            def fetchone(self):
+                return ('n1', '제조업 지원', '', '지원대상: 도내 제조업을 영위하는 중소기업', '중소기업', '', '')
+
+            def fetchall(self):
+                return [('□ 지원대상 도내 제조기업',)]
+
+        class Conn:
+            def cursor(self):
+                return Cursor()
+
+        items = s.load_items_shared(Conn(), ['n1'])
+        self.assertEqual(items[0]['notice_id'], 'n1')
+        self.assertIn(items[0]['regex']['status'], ('known', 'unknown', 'no_limit'))
+        self.assertTrue(items[0]['document_sha256'])
+        self.assertEqual(items[0]['attachments'], ['□ 지원대상 도내 제조기업'])
 
     def test_read_ids(self):
         p = os.path.join(self.dir, 'ids.txt')

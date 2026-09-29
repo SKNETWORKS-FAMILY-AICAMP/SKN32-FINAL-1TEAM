@@ -107,10 +107,23 @@ def _build_bm25():
 
 def boot():
     started = time.time()
-    STATE['collection'] = _collection()
-    print('벡터 DB 색인 %d건' % STATE['collection'].count())
-    # 정형 필터 통과 공고 안에서만 의미 검색을 하려면 색인에 있는 ID 를 알아야 한다(_dense_within)
-    STATE['vector_ids'] = set(STATE['collection'].get(include=[])['ids']) - {'__watermark__'}
+    # 벡터 DB·임베딩이 죽어 있어도 서버는 연다(2026-09-28 Codex 통합 검수 P1). 공고 정보·BM25 만 있으면
+    # match() 가 BM25 단독으로 내려간다(E). 여기서 막히면 대체 경로가 서버 재시작 때 쓸모가 없다.
+    # 공고 정보(DB)·BM25 는 정형 필터와 대체 검색의 바탕이라 실패하면 그대로 멈춘다.
+    STATE['boot_errors'] = {}
+    STATE['collection'] = STATE['vector_ids'] = None
+    try:
+        STATE['collection'] = _collection()
+        print('벡터 DB 색인 %d건' % STATE['collection'].count())
+        # 정형 필터 통과 공고 안에서만 의미 검색을 하려면 색인에 있는 ID 를 알아야 한다(_dense_within)
+        STATE['vector_ids'] = set(STATE['collection'].get(include=[])['ids']) - {'__watermark__'}
+    except BaseException as exc:                  # _collection() 은 색인이 없으면 SystemExit 를 낸다
+        if isinstance(exc, KeyboardInterrupt):
+            raise
+        STATE['collection'] = STATE['vector_ids'] = None
+        STATE['boot_errors']['vector_db'] = _describe(exc, '벡터 DB 연결')
+        print('경고: 벡터 DB 를 열지 못했다 — 의미 검색 없이 시작한다 (%s)' % STATE['boot_errors']['vector_db']['error'],
+              file=sys.stderr)
 
     connection = _connect()
     try:
@@ -127,16 +140,64 @@ def boot():
     STATE['bm25'] = _build_bm25()
     print('BM25 색인 %d건 · %.1f초' % (len(STATE['bm25']), time.time() - t0))
 
+    # 업종 순위 신호(2026-09-28)·신청자 유형(G). 없으면 해당 기능이 꺼진다
+    from search import industry_rank
+    from search import applicant_types
+    # 판정(2026-09-28): 공용 DB(배치 13단계가 올린 표)를 먼저 읽고, 없거나 실패하면 배치 PC 의 파일을 쓴다.
+    # 신청자 유형은 기본 auto, 업종은 기본 file(final5 — Codex 재검수 뒤 바꾸기로 한 결정). 환경 변수로 바꾼다
+    try:
+        judgments_conn = _connect()
+    except Exception as exc:
+        judgments_conn = None
+        STATE['boot_errors']['judgments_db'] = _describe(exc, '판정 DB 연결')
+    try:
+        # expected: DB 표가 "다 올라간" 것인지 보는 기준(공고 수의 95%, Codex 검수 P1)
+        STATE['industry'] = industry_rank.load_auto(judgments_conn, expected=len(STATE['rows']))
+        STATE['applicant_types'] = applicant_types.load_auto(judgments_conn, expected=len(STATE['rows']))
+    finally:
+        if judgments_conn is not None:
+            judgments_conn.close()
+    # 업력 근거(2026-09-28 B). 자격 확인의 업력 줄에 공고문 추출 값을 **근거로만** 보여 준다. 실패해도 서버는 연다
+    from search import age_evidence
+    # load() 는 예외를 내지 않는다 — DB·파일 중 실패한 쪽만 비우고 error 에 적는다(Codex 검수 P1)
+    try:
+        connection = _connect()
+    except Exception as exc:
+        connection = None
+        STATE['boot_errors']['age_evidence'] = _describe(exc, '업력 근거 읽기(DB 연결)')
+    try:
+        STATE['age_evidence'] = age_evidence.load(connection)
+    finally:
+        if connection is not None:
+            connection.close()
+    if STATE['age_evidence']['error']:
+        STATE['boot_errors']['age_evidence'] = {'where': '업력 근거 읽기', 'error': STATE['age_evidence']['error']}
+    print('업력 근거 %d건 (%s)' % (len(STATE['age_evidence']['notices']), ' + '.join(STATE['age_evidence']['sources'])))
+    for label, key in (('신청자 유형', 'applicant_types'), ('업종 순위 신호', 'industry')):
+        t = STATE[key]
+        print('%s %d건 (%s)%s%s' % (label, len(t['notices']), t['source'],
+                                    ' · ' + t['error'] if t.get('error') else '', ' · ' + t['note'] if t.get('note') else ''))
+
     if ON_EC2:
-        from sentence_transformers import SentenceTransformer
-        model = SentenceTransformer('BAAI/bge-m3')
-        model.max_seq_length = 512
-        STATE['model'] = model
+        try:
+            from sentence_transformers import SentenceTransformer
+            model = SentenceTransformer('BAAI/bge-m3')
+            model.max_seq_length = 512
+            STATE['model'] = model
+        except Exception as exc:
+            STATE['boot_errors']['embedding'] = _describe(exc, '임베딩 모델 올리기')
+            print('경고: 임베딩 모델을 올리지 못했다 — %s' % STATE['boot_errors']['embedding']['error'], file=sys.stderr)
 
     # 첫 질의가 20초 걸린다. 첫 사용자가 그걸 기다리지 않게 미리 털어낸다.
     print('워밍업...')
-    _encode('워밍업')
-    print('준비 완료 · %.1f초' % (time.time() - started))
+    try:
+        _encode('워밍업')
+    except Exception as exc:
+        # 요청마다 다시 시도한다. 그동안은 match() 가 BM25 단독으로 답한다
+        STATE['boot_errors']['embedding'] = _describe(exc, '임베딩 워밍업')
+        print('경고: 임베딩 워밍업 실패 — %s' % STATE['boot_errors']['embedding']['error'], file=sys.stderr)
+    print('준비 완료 · %.1f초%s' % (time.time() - started,
+                                 ' · 경고 %s' % ', '.join(sorted(STATE['boot_errors'])) if STATE['boot_errors'] else ''))
 
 
 # ── 질의 문장 만들기 ─────────────────────────────────────────
@@ -211,6 +272,8 @@ class Weights(BaseModel):
     penalty_group: float = 0.5     # score 방식에서 집단 근거 없음
     penalty_region: float = 1.0    # score 방식에서 다른 시·도 전용
     penalty_district: float = 0.3  # score 방식에서 같은 시·도의 다른 시·군·구
+    penalty_industry: float = 0.5  # score 방식에서 업종 허용 목록 밖 (잠정 — LLM 추출이라 지역보다 약하게)
+    penalty_pre_implied: float = 0.5  # score 방식에서 예비창업자인데 대상이 기존 사업자로 보이는 공고(추정)
 
 
 class MatchRequest(BaseModel):
@@ -220,7 +283,10 @@ class MatchRequest(BaseModel):
     idea: str
     team: list[TeamMember] = []
     revenue: list[RevenueItem] = []
-    top: int = 3
+    # 후보 수(기능정의서 T-C2 topK·offset, 2026-09-28 D): 첫 조회 10건(상위 3 카드 + 7 리스트),
+    # 추가 조회는 offset=10 으로 다음 10건, 누적 최대 MAX_CANDIDATES(20)건. 평가 스크립트는 top 을 크게 줘 후보 전체를 받는다
+    top: int = 10
+    offset: int = 0
     # 정형 필터(검색 전, gate.prefilter). hide_expired 는 그중 모집 상태·접수 마감 부분이다.
     # 둘 다 비교·평가용 스위치이며 서비스 화면은 항상 True 로 부른다
     structured_filter: bool = True
@@ -244,7 +310,13 @@ class MatchRequest(BaseModel):
     district: str = ''                  # 시·군·구. 공고 제목에 적힌 곳과 맞춰 본다
     demote_district: bool = True
     certifications: list[str] = []      # 질의 + 규칙
-    main_industry: str = ''             # 질의 + 규칙
+    main_industry: str = ''             # 질의 + 규칙 + 업종 순위(industry_rank)
+    # 주 업종이 공고 허용 업종 목록 밖이면 뒤로 보낸다. 빼지 않는다. 모르면 건드리지 않는다(2026-09-28)
+    # **기본 꺼짐**(2026-09-28 사용자 결정): Codex 블라인드 판정에서 밀린 공고 34건 중 11건이 부당하게 밀렸다
+    # (허가·상품·창업 예정 업종·역할 갈래를 신청자 업종 제한으로 읽음). 추출을 고친 뒤 다시 켠다. 평가는 True 로 부른다
+    demote_industry: bool = False
+    # 공고 본문의 신청자 유형(G, 2026-09-28). 예비창업자 신청자에게만 쓴다(search/applicant_types.py)
+    use_applicant_types: bool = True
     hiring_plan: bool = False           # 질의
     partners: list[str] = []            # 규칙 (협력 기관·기업)
     equipment: list[str] = []           # 저장만
@@ -265,8 +337,41 @@ class GateRequest(BaseModel):
 
 
 # ── API ─────────────────────────────────────────────────────
+def _public(req):
+    """공개 경로의 요청 — 누적 MAX_CANDIDATES 건을 넘지 않게 top 을 자른다(기능정의서 T-C2 최대 20건,
+    2026-09-28 Codex 통합 검수 P2). 평가 도구는 HTTP 가 아니라 match() 를 직접 불러 후보 전체를 받는다."""
+    offset = max(0, req.offset)
+    return req.model_copy(update={'top': max(0, min(req.top, MAX_CANDIDATES - offset))})
+
+
 @app.post('/api/match')
+def api_match(req: MatchRequest):
+    return match(_public(req))
+
+
+def eligible_with_types(nid, row, age_months, today, check_deadline=True, types_table=None):
+    """정형 필터 한 건 — gate.prefilter 에 공고 본문 신청자 유형 판정(G)을 얹는다. (남길지, 이유, 바뀜)
+
+    types_table 은 예비창업자 신청자일 때만 넘긴다(None 이면 prefilter 그대로). 바뀜은 None | 'restored' | 'blocked'.
+    매칭(match)과 평가 채점(eval/filter_first_eval.py)이 같은 기준을 쓰도록 한곳에 둔다(2026-09-28).
+    """
+    from search import applicant_types as types_mod
+    keep, why = gate.prefilter(row, age_months, today, check_deadline=check_deadline)
+    if types_table is None:
+        return keep, why, None
+    verdict = types_mod.pre_founder(types_table, nid)
+    if verdict == 'allowed' and '업력·신청자 유형' in why:
+        # K-Startup API 업력 칸은 예비창업자 불가인데 본문은 가능 — 본문을 우선한다(Codex 판정 9/9)
+        why = [w for w in why if w != '업력·신청자 유형']
+        return not why, why, 'restored'
+    if verdict == 'blocked' and '업력·신청자 유형' not in why:
+        return False, why + ['예비창업자 불가(공고 본문)'], 'blocked'
+    return keep, why, None
+
+
 def match(req: MatchRequest):
+    """매칭 본체. 공개 경로(/api/match)는 _public() 으로 20건을 넘지 않게 자른 뒤 이것을 부른다.
+    파이썬에서 직접 부르면(평가 도구) top 제한이 없다 — offset 을 쓸 때만 누적 20건으로 자른다."""
     query = build_query(req)
     hybrid_on = req.search != 'dense'
     col = STATE['collection']
@@ -276,57 +381,123 @@ def match(req: MatchRequest):
     # 기능정의서는 그 순서를 결함으로 본다(R-3 ①). 지역·업종은 여기서 쓰지 않고 순위에만 쓴다.
     today = date.today()
     age_months = gate.applicant_age(req.applicant_type, req.founded_at, today)
+    # 신청자 유형(G): 예비창업자 신청자에게만. 본문 '불가'(강한 근거)는 빼고, 본문 '가능'은 API 업력 칸보다 우선한다
+    from search import applicant_types as types_mod
+    types_table = STATE.get('applicant_types') or {}
+    use_types = bool(req.use_applicant_types and req.structured_filter and types_table.get('active')
+                     and req.applicant_type == types_mod.PRE_FOUNDER)
     passed, excluded = [], {}
+    types_blocked, types_restored = [], []
     for nid, row in STATE['rows'].items():
-        keep, why = ((True, []) if not req.structured_filter
-                     else gate.prefilter(row, age_months, today, check_deadline=req.hide_expired))
+        if not req.structured_filter:
+            keep, why = True, []
+        else:
+            keep, why, change = eligible_with_types(nid, row, age_months, today, req.hide_expired,
+                                                    types_table if use_types else None)
+            if change == 'restored':
+                types_restored.append(nid)
+            elif change == 'blocked':
+                types_blocked.append(nid)
         if keep:
             passed.append(nid)
         for reason in why:
             excluded[reason] = excluded.get(reason, 0) + 1
     allowed = set(passed)
 
+    # 쪽수 나누기(D). offset 이 있으면 누적 MAX_CANDIDATES 를 넘지 않게 자른다
+    offset = max(0, req.offset)
+    top = max(0, req.top)
+    if offset:
+        top = max(0, min(top, MAX_CANDIDATES - offset))
+
     # 각 검색에서 합치기 전에 가져올 후보 수. 필터를 통과한 공고 안에서만 센다
-    depth = max(req.top, _hybrid_depth())
+    depth = max(offset + top, _hybrid_depth())
 
     # 검색 구간 전체를 바깥에서 잰다. dense·BM25 세부 시간만 더하면 그 사이에 일어나는
     # 벡터 추가 조회(_fill_distances)·RRF 결합 시간이 빠져 화면에 실제보다 짧게 찍힌다
     # (2026-09-18 Codex 검토 P3). 세부 시간은 어디에 시간이 쓰였는지 보려고 그대로 둔다.
     # 필터 통과 0건이면 질의를 인코딩하지도 검색하지도 않고 빈 결과를 돌려준다(R-3 ②, Codex 검수 P2 2026-09-28)
+    #
+    # 대체 경로(E, 기능정의서 R-3 ③·E-C2-EMBED, 2026-09-28): 인코딩·Chroma·BM25 오류를 따로 잡는다.
+    #   임베딩 쪽 오류 → BM25 단독 · BM25 오류 → 임베딩 단독 · 둘 다 → 필터 통과 공고를 마감 임박순(잠정)
+    #   정형 필터는 어느 경로에서도 생략하지 않는다. dense 방식도 의미 검색이 실패하면 BM25 단독으로 간다
     encode_ms = 0.0
     search_started = time.time()
     dense_ms = bm25_ms = 0.0
     ranks = {}
     ordered = []
     dense_path = dense_error = None
+    fallback_mode = None
+    search_errors = {}
+    fit_max = None
+    w = req.weights
     if passed:
         # ── 2. 필터 통과 공고 안에서만 검색 ──
+        qv = dense = lexical = None
         t0 = time.time()
-        qv = _encode(query)
+        try:
+            qv = _encode(query)
+        except Exception as exc:
+            search_errors['embedding'] = _describe(exc, '질의 인코딩')
         encode_ms = (time.time() - t0) * 1000
         search_started = time.time()
-        t0 = time.time()
-        dense, dense_path, dense_error = _dense_within(col, qv, passed, depth)
-        dense_ms = (time.time() - t0) * 1000
-        if hybrid_on:
-            from search import hybrid
+        if qv is not None and col is None:
+            boot_error = (STATE.get('boot_errors') or {}).get('vector_db') or {}
+            search_errors['embedding'] = {'where': '의미 검색',
+                                          'error': '벡터 DB 가 열려 있지 않다(서버 시작 때 실패 — %s)'
+                                                   % (boot_error.get('error') or '원인 기록 없음')}
+        elif qv is not None:
+            t0 = time.time()
+            try:
+                dense, dense_path, dense_error = _dense_within(col, qv, passed, depth)
+            except Exception as exc:
+                search_errors['embedding'] = _describe(exc, '의미 검색')
+            dense_ms = (time.time() - t0) * 1000
+        if hybrid_on or dense is None:
             t1 = time.time()
-            lexical = STATE['bm25'].search(query, top=depth, allowed=allowed)
+            try:
+                lexical = STATE['bm25'].search(query, top=depth, allowed=allowed)
+            except Exception as exc:
+                search_errors['bm25'] = _describe(exc, '단어 검색')
             bm25_ms = (time.time() - t1) * 1000
+
+        from search import hybrid
+        if dense is not None and lexical is not None and hybrid_on:
             ranks = {nid: {'dense_rank': i} for i, (nid, _) in enumerate(dense, 1)}
             for i, (nid, _) in enumerate(lexical, 1):
                 ranks.setdefault(nid, {})['bm25_rank'] = i
-            fused = hybrid.rrf(dense, lexical, k=req.weights.rrf_k,
-                               weights=(req.weights.dense, req.weights.bm25))
+            fused = hybrid.rrf(dense, lexical, k=w.rrf_k, weights=(w.dense, w.bm25))
             # 표시용 점수(유사도)와 3단 라벨은 예전 기준 그대로다. 단어 검색에서만 올라온
             # 공고는 Chroma 에서 벡터를 꺼내 질의와의 코사인을 구한다.
             dist_of = dict(dense)
-            _fill_distances(col, qv, [nid for nid, _ in fused if nid not in dist_of], dist_of)
-            ordered = [(nid, dist_of[nid]) for nid, _ in fused if nid in dist_of]
+            try:
+                _fill_distances(col, qv, [nid for nid, _ in fused if nid not in dist_of], dist_of)
+                ordered = [(nid, dist_of[nid]) for nid, _ in fused if nid in dist_of]
+            except Exception as exc:
+                # 보조 조회만 실패했다(2026-09-28 Codex 통합 검수 P1). 순위(RRF)는 그대로 쓰고,
+                # 단어 검색에서만 찾은 공고는 유사도 없이(score·band None) 보여 준다. 500 으로 끝내지 않는다
+                search_errors['embedding'] = _describe(exc, '벡터 추가 조회')
+                ordered = [(nid, dist_of.get(nid)) for nid, _ in fused]
             for nid, sc in fused:
                 ranks[nid]['rrf_score'] = round(sc, 5)
-        else:
+            fit_max = (w.dense + w.bm25) / (w.rrf_k + 1)
+        elif dense is not None:
+            # 의미 검색만(dense 방식) 또는 BM25 가 실패한 하이브리드
+            if hybrid_on:
+                fallback_mode = '임베딩단독'
             ordered = dense
+            for i, (nid, _) in enumerate(dense, 1):
+                ranks[nid] = {'dense_rank': i, 'rrf_score': round(w.dense / (w.rrf_k + i), 5)}
+            fit_max = w.dense / (w.rrf_k + 1)
+        elif lexical is not None:
+            fallback_mode = 'BM25단독'
+            ordered = [(nid, None) for nid, _ in lexical]
+            for i, (nid, _) in enumerate(lexical, 1):
+                ranks[nid] = {'bm25_rank': i, 'rrf_score': round(w.bm25 / (w.rrf_k + i), 5)}
+            fit_max = w.bm25 / (w.rrf_k + 1)
+        else:
+            fallback_mode = '마감임박순'
+            ordered = [(nid, None) for nid in _by_deadline(passed)][:depth]
     search_ms = (time.time() - search_started) * 1000
 
     candidates = [(nid, dist, STATE['rows'][nid]) for nid, dist in ordered if nid in allowed]
@@ -336,8 +507,11 @@ def match(req: MatchRequest):
     #   order 방식  걸린 것을 맨 뒤로 보낸다 (지금 서비스)
     #   score 방식  걸린 만큼 점수를 깎아 다시 정렬한다 (가중치 시험)
     from search import rank_rules
+    from search import industry_rank
     applicant_words = rank_rules.applicant_text(
         req.idea, [m.career for m in req.team or []] + applicant_mod.rule_words(req))
+    industry_table = STATE.get('industry') or {}
+    industry_section = industry_rank.applicant_section(req.main_industry) if req.demote_industry else None
     flags = {}
     for nid, _dist, row in candidates:
         groups = (rank_rules.groups_not_matched(row.get('title'), row.get('target_category'),
@@ -348,7 +522,10 @@ def match(req: MatchRequest):
         off_district = (req.demote_district and req.district and req.region
                         and region_mod.district_matches(row.get('title'), row.get('region'),
                                                         req.region, req.district) is False)
-        flags[nid] = {'groups': groups, 'region': bool(off_region), 'district': bool(off_district)}
+        off_industry = industry_rank.off_industry(industry_table, nid, industry_section)
+        pre_implied = use_types and types_mod.pre_founder(types_table, nid) == 'implied_no'
+        flags[nid] = {'groups': groups, 'region': bool(off_region), 'district': bool(off_district),
+                      'industry': off_industry, 'pre_implied': pre_implied}
 
     scored_mode = req.weights.mode == 'score'
     if scored_mode:
@@ -363,11 +540,15 @@ def match(req: MatchRequest):
                 f *= max(0.0, 1 - w.penalty_region)
             if hit['district']:
                 f *= max(0.0, 1 - w.penalty_district)
+            if hit['industry']:
+                f *= max(0.0, 1 - w.penalty_industry)
+            if hit['pre_implied']:
+                f *= max(0.0, 1 - w.penalty_pre_implied)
             return f
 
         # 한 검색 안에서는 한 가지 점수만 쓴다. 하이브리드면 RRF, 의미 검색만이면 유사도.
         # 섞으면 척도가 달라 감점을 하나도 주지 않아도 순서가 바뀐다(검토 2번).
-        base = {nid: (ranks[nid]['rrf_score'] if hybrid_on else (1.0 - dist))
+        base = {nid: (ranks.get(nid, {}).get('rrf_score') or 0.0 if (hybrid_on or dist is None) else (1.0 - dist))
                 for nid, dist, _row in candidates}
         order = {nid: i for i, (nid, _d, _r) in enumerate(candidates)}
         candidates.sort(key=lambda c: (-base[c[0]] * factor(c[0]), order[c[0]]))
@@ -384,16 +565,21 @@ def match(req: MatchRequest):
     #
     #   1) 다른 시·도 전용    신청 자체가 안 된다 — 가장 강함
     #   2) 다른 시·군·구 전용  대개 신청이 안 된다
-    #   3) 집단 근거 없음      신청자가 실제로 그 집단일 수 있다 — 가장 약함
-    #   4) 같은 조건이면 검색 순서를 그대로 둔다
-    demoted, region_demoted, district_demoted = [], [], []
+    #   3) 예비창업자인데 대상이 기존 사업자로 보임(추정)  Codex 판정 23/23 이 불가·추정. 추정이라 빼지 않는다(2026-09-28 G)
+    #   4) 업종 허용 목록 밖   신청이 안 될 가능성이 크다. 다만 LLM 추출이라 사람 검증 전 — 지역보다 약하게. 기본 꺼짐
+    #   5) 집단 근거 없음      신청자가 실제로 그 집단일 수 있다 — 가장 약함
+    #   6) 같은 조건이면 검색 순서를 그대로 둔다
+    demoted, region_demoted, district_demoted, industry_demoted = [], [], [], []
     if not scored_mode:
         order_of = {nid: i for i, (nid, _d, _r) in enumerate(candidates)}
         candidates.sort(key=lambda c: (flags[c[0]]['region'],
                                        flags[c[0]]['district'],
+                                       flags[c[0]]['pre_implied'],
+                                       flags[c[0]]['industry'],
                                        bool(flags[c[0]]['groups']),
                                        order_of[c[0]]))
-        demoted = [{'notice_id': nid, 'title': row.get('title') or '', 'score': round(1.0 - dist, 4),
+        demoted = [{'notice_id': nid, 'title': row.get('title') or '',
+                    'score': None if dist is None else round(1.0 - dist, 4),
                     'groups': flags[nid]['groups']}
                    for nid, dist, row in candidates if flags[nid]['groups']][:5]
         region_demoted = [{'notice_id': nid, 'title': row.get('title') or '',
@@ -403,11 +589,20 @@ def match(req: MatchRequest):
                              'districts': sorted(region_mod.districts_in_title(row.get('title'),
                                                                               req.region))}
                             for nid, _dist, row in candidates if flags[nid]['district']][:5]
+        industry_demoted = [{'notice_id': nid, 'title': row.get('title') or '',
+                             'sections': industry_table['notices'][nid]['sections'],
+                             'allowed': industry_table['notices'][nid]['allowed']}
+                            for nid, _dist, row in candidates if flags[nid]['industry']][:5]
 
     results = []
-    for nid, dist, row in candidates:
+    for position, (nid, dist, row) in enumerate(candidates, 1):
+        if position <= offset:
+            continue
+        if len(results) >= top:
+            break
         end = row.get('apply_end')
-        score = 1.0 - dist
+        score = None if dist is None else 1.0 - dist
+        rrf_score = ranks.get(nid, {}).get('rrf_score')
         results.append({
             'notice_id': nid,
             'title': row.get('title') or '',
@@ -420,8 +615,14 @@ def match(req: MatchRequest):
             'apply_end': str(end or ''),
             'apply_period_type': row.get('apply_period_type'),
             'url': row.get('url') or row.get('apply_url') or '',
-            'score': round(score, 4),
-            'band': band(score),
+            'score': None if score is None else round(score, 4),
+            'band': None if score is None else band(score),
+            # 순위(전체 기준)와 표시 방식(T-C2 AnnouncementCard.rank·displayType)
+            'rank': position,
+            'display_type': 'card' if position <= CARD_COUNT else 'list',
+            # 적합도(H, 잠정) — 이 요청이 쓴 검색 경로의 RRF 점수 ÷ 그 경로의 이론 최대값(모두 1위). 규칙으로 밀려도 값은 그대로다
+            'fit_score': (round(min(1.0, rrf_score / fit_max), 3)
+                          if rrf_score is not None and fit_max else None),
             'region': row.get('region') or '',
             # True 대상 지역 · False 다른 지역 전용 · None 판단 불가(공고에 지역이
             # 없거나 신청자가 고르지 않음). None 을 False 로 바꾸지 않는다.
@@ -433,7 +634,9 @@ def match(req: MatchRequest):
         hit = flags.get(nid, {})
         results[-1]['rules'] = {'groups': hit.get('groups') or [],
                                 'off_region': bool(hit.get('region')),
-                                'off_district': bool(hit.get('district'))}
+                                'off_district': bool(hit.get('district')),
+                                'off_industry': bool(hit.get('industry')),
+                                'pre_founder_implied_no': bool(hit.get('pre_implied'))}
         if scored_mode:
             results[-1]['weighted_score'] = ranks.get(nid, {}).get('weighted_score')
         if hybrid_on:
@@ -442,8 +645,6 @@ def match(req: MatchRequest):
             results[-1].update({'dense_rank': info.get('dense_rank'),
                                 'bm25_rank': info.get('bm25_rank'),
                                 'rrf_score': info.get('rrf_score')})
-        if len(results) >= req.top:
-            break
 
     out = {'query': query, 'count': len(results),
            'encode_ms': round(encode_ms, 1), 'search_ms': round(search_ms, 2),
@@ -455,13 +656,33 @@ def match(req: MatchRequest):
            'district': req.district,
            'demote_district': bool(req.demote_district and req.district and req.region),
            'district_demoted': district_demoted,
+           # 업종 순위 신호. active 가 False 면 결과 파일이 없어 규칙이 꺼진 것이다.
+           # section 이 None 이면 신청자 업종을 대분류 하나로 정할 수 없어 업종으로 순서를 바꾸지 않았다
+           'industry': {'main_industry': req.main_industry, 'section': industry_section,
+                        'demote_industry': bool(req.demote_industry),
+                        'active': bool(industry_table.get('active')),
+                        'source': industry_table.get('source'),
+                        'notices_with_rule': len(industry_table.get('notices') or {})},
+           'industry_demoted': industry_demoted,
+           # 신청자 유형(G). 예비창업자 신청자일 때만 active. blocked 는 정형 필터에서 뺀 수, restored 는 본문 우선으로 되살린 수
+           'applicant_types': {'active': use_types, 'source': types_table.get('source'),
+                               'blocked': len(types_blocked), 'restored': len(types_restored),
+                               'restored_examples': types_restored[:5],
+                               'implied_demoted': sum(1 for f in flags.values() if f.get('pre_implied'))},
            # 무엇이 매칭에 쓰였고 무엇이 저장만 됐는지 화면에 그대로 보여 준다
            'weights': req.weights.model_dump(),
            'rule_words': applicant_mod.rule_words(req),
            'stored_only': applicant_mod.stored_only(req),
            'why_not_used': applicant_mod.why_not_used()}
     # 필터 → 검색 → 순위 통합 순서가 결과에 남는다(R-3). filtered_count 는 기능정의서 filteredCount
-    out.update({'depth': depth, 'search_rounds': 1,
+    out.update({'offset': offset, 'top': top, 'max_candidates': MAX_CANDIDATES,
+                'has_more': offset + len(results) < min(len(candidates), MAX_CANDIDATES),
+                # 대체 경로(E). fallback_mode: None | '임베딩단독' | 'BM25단독' | '마감임박순'
+                'fallback_used': fallback_mode is not None, 'fallback_mode': fallback_mode,
+                'search_errors': search_errors,
+                'fit_basis': ('RRF ÷ 이론 최대값(%s, 잠정)' % ('두 검색 모두 1위' if fallback_mode is None and hybrid_on
+                                                          else '사용한 검색 1위')) if fit_max else None,
+                'depth': depth, 'search_rounds': 1,
                 'filter': {'applied': bool(req.structured_filter), 'check_deadline': bool(req.hide_expired),
                            'total': len(STATE['rows']), 'excluded': excluded},
                 'filtered_count': len(passed), 'dense_path': dense_path, 'dense_error': dense_error,
@@ -470,6 +691,25 @@ def match(req: MatchRequest):
     if hybrid_on:
         out.update({'dense_ms': round(dense_ms, 2), 'bm25_ms': round(bm25_ms, 2)})
     return out
+
+
+MAX_CANDIDATES = 20     # 누적 최대 후보 수(T-C2 offset 0|10)
+CARD_COUNT = 3          # 상위 3건은 카드, 나머지는 리스트
+
+
+def _describe(exc, where):
+    """검색 오류를 응답·stderr 에 남길 한 줄. 조용히 넘기지 않는다(E-C2-EMBED)."""
+    text = '%s: %s' % (type(exc).__name__, (str(exc).splitlines() or [''])[0][:200])
+    print('[match] %s 실패 — %s' % (where, text), file=sys.stderr)
+    return {'where': where, 'error': text}
+
+
+def _by_deadline(ids):
+    """마감 임박순(둘 다 실패한 경우의 잠정 순서). 마감일 없는 공고는 뒤, 같으면 공고 ID 순."""
+    def key(nid):
+        end = STATE['rows'][nid].get('apply_end')
+        return (end is None, str(end or ''), nid)
+    return sorted(ids, key=key)
 
 
 def _hybrid_depth():
@@ -529,6 +769,7 @@ def match_compare(req: MatchRequest):
     가중치를 시험할 때 눈으로 볼 것은 점수가 아니라 **순위가 어떻게 달라지는가** 다.
     그래서 양쪽 상위 목록과, 공고별로 몇 계단 움직였는지를 함께 싣는다.
     """
+    req = _public(req)
     base = match(req.model_copy(update={'weights': Weights()}))
     tuned = match(req)
 
@@ -576,18 +817,57 @@ def eligibility(req: GateRequest):
 
     # 예비창업자는 미설립(None), 설립일이 없거나 형식이 이상한 사업자는 '모른다'(UNKNOWN_AGE).
     # 매칭의 정형 필터와 같은 함수를 쓴다
-    verdict = gate.judge(row, gate.applicant_age(req.applicant_type, req.founded_at))
+    age_months = gate.applicant_age(req.applicant_type, req.founded_at)
+    verdict = gate.judge(row, age_months)
 
-    # gate.py 는 업력·접수기간·모집상태를 본다. 화면이 요구하는 '지원대상 유형'
-    # 은 개인/법인 구분 데이터가 DB 에 없어 판정하지 않고 '확인 필요' 로 둔다.
-    # 여기서 임의로 통과시키면 자격을 확인받은 것으로 읽힌다.
-    checks = [{
-        '조건': '지원대상 유형',
-        '요구': row.get('target_category') or '지원대상 정보 없음',
-        '내 값': req.applicant_type,
-        '판정': None,
-        '설명': '개인사업자·법인 구분 정보가 공고 데이터에 없습니다. 원문을 확인하세요.',
-    }] + verdict['checks']
+    # '지원대상 유형'은 공고 본문에서 읽은 신청자 유형으로 판정한다(2026-09-28 G, search/applicant_types.py).
+    # 예비창업자는 본문 '불가'(강한 근거)면 미달, '가능'이면 통과, 추정·모름은 확인 필요.
+    # 개인사업자·법인은 자동 판정하지 않고 근거만 보여 준다. 결과 파일에 없는 공고는 예전처럼 확인 필요다.
+    from search import applicant_types as types_mod
+    types_table = STATE.get('applicant_types') or {}
+    typed = types_mod.type_check(types_table, req.notice_id, req.applicant_type)
+    if typed:
+        type_verdict, type_need, type_why = typed
+    else:
+        type_verdict, type_need = None, row.get('target_category') or '지원대상 정보 없음'
+        type_why = '개인사업자·법인 구분 정보가 공고 데이터에 없습니다. 원문을 확인하세요.'
+    checks = [{'조건': '지원대상 유형', '요구': type_need, '내 값': req.applicant_type,
+               '판정': type_verdict, '설명': type_why}] + verdict['checks']
+    # 본문에 예비창업자 가능이 명시됐으면 업력 줄도 본문을 따른다.
+    #   API 업력 칸이 예비 불가라 미달로 나온 경우 — 본문 우선
+    #   업력 칸이 없어(기업마당) 모름으로 나온 경우 — "예비창업자 또는 창업 N년 미만 기업" 처럼 업력은 기존 사업자 쪽
+    #   조건이다. 예비창업자에게는 해당하지 않으므로 통과로 둔다(2026-09-28 A, 반려동물 창업 경진대회 공고)
+    pre_allowed = req.applicant_type == types_mod.PRE_FOUNDER and type_verdict is True
+    # 세부사업별로 예비창업자 허용이 갈리는 공고 — 업력을 통과로도 미달로도 두지 않는다(Codex 검수 P2)
+    pre_partial = (req.applicant_type == types_mod.PRE_FOUNDER and types_mod.varies(types_table, req.notice_id)
+                   and types_mod.pre_founder(types_table, req.notice_id) == 'allowed')
+    for c in checks:
+        if c['조건'] != '업력':
+            continue
+        # 세부사업별 예비 허용은 업력이 이미 통과여도 확인 필요로 둔다(Codex 재검수 P2 — K-Startup 5건은
+        # API 업력 칸이 "예비창업자, …년미만" 이라 True 였고, 먼저 건너뛰어 통과로 남았다)
+        if not pre_partial and c['판정'] is True:
+            continue
+        if pre_partial:
+            c['판정'] = None
+            c['요구'] = '세부사업에 따라 예비창업자 신청 가능(공고 본문) — 업력 조건은 세부사업별로 확인 · 업력 칸: %s' % c['요구']
+            c['설명'] = type_why or ''
+        elif pre_allowed and c['판정'] is False:
+            c['판정'] = True
+            c['요구'] = '예비창업자 신청 가능(공고 본문 우선 · API 업력 칸: %s)' % c['요구']
+            c['설명'] = '업력 칸(API)은 예비창업자 불가지만, 공고 본문에 예비창업자 신청 가능이 명시돼 본문을 따릅니다.'
+        elif pre_allowed:
+            c['판정'] = True
+            c['요구'] = '예비창업자 신청 가능(공고 본문) — 업력 조건은 이미 창업한 기업에 붙는 조건'
+            c['설명'] = ('공고 본문에 예비창업자 신청 가능이 명시돼 있습니다. %s' % (type_why or '')).strip()
+        else:
+            # 업력 칸이 없거나 못 읽었다 — 공고문 추출 값을 근거로만 보여 준다(판정은 확인 필요 그대로, B)
+            from search import age_evidence
+            shown = age_evidence.evidence_check(STATE.get('age_evidence'), req.notice_id, age_months)
+            if shown:
+                c['요구'], c['설명'] = shown
+                if age_months is gate.UNKNOWN_AGE:
+                    c['설명'] = '설립일이 없어 비교하지 못했습니다. ' + c['설명']
 
     return {
         'notice_id': req.notice_id,
@@ -698,7 +978,12 @@ def review():
 
 @app.get('/api/health')
 def health():
-    return {'indexed': STATE['collection'].count(),
+    col = STATE.get('collection')
+    try:
+        indexed = col.count() if col is not None else None
+    except Exception:
+        indexed = None
+    return {'indexed': indexed, 'boot_errors': STATE.get('boot_errors') or {},
             'notices': len(STATE['rows']),
             'bm25_indexed': len(STATE['bm25']) if STATE.get('bm25') else 0,
             'on_ec2': ON_EC2, 'source': 'chroma+bm25', 'default_search': 'hybrid'}
@@ -723,6 +1008,7 @@ def _scorer():
 @app.post('/api/match_rerank')
 def match_rerank(req: MatchRequest):
     """검색만 한 결과와 리랭커를 얹은 결과를 **둘 다** 돌려준다."""
+    req = _public(req)
     base = match(req.model_copy(update={'top': 30, 'demote_groups': False}))
     before = base['results']
     if not before:
@@ -796,16 +1082,10 @@ def _classifier():
 
 def _rule_verdict(quote):
     """extract_conditions.py 의 검산 규칙을 그대로 적용해 본다."""
+    # 10단계와 같은 함수를 쓴다(2026-09-28 Codex 검수 P3 — 따로 적어 두어 새 검사가 빠졌었다)
     from collect import extract_conditions as ec
-    if not quote.strip():
-        return False, '근거 문장 없음'
-    if ec.AGE_DECOY.search(quote) and not ec.AGE_EVIDENCE.search(quote):
-        return False, '근거가 사람 나이·근속연수로 보임'
-    if not ec.AGE_EVIDENCE.search(quote):
-        return False, '근거에 업력 표현이 없음'
-    if ec.AGE_MONTH_ONLY.search(quote) and not ec.AGE_YEAR.search(quote):
-        return False, '근거가 개월 단위인데 연 단위로 읽음'
-    return True, '업력 근거로 인정'
+    problem = ec.age_quote_problem(quote)
+    return (False, problem) if problem else (True, '업력 근거로 인정')
 
 
 @app.post('/api/classify')

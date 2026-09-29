@@ -23,6 +23,9 @@ data/labeling/
 data/recommendation_*
 data/backup_*.sql
 data/conditions_sample_*.json
+# 매일 배치 11단계 신청자 유형 누적 결과(약 4.7MB). EC2 전달 방법은 따로 정한다(2026-09-28 Codex 통합 검수 P3)
+data/applicant_types/
+data/industries/
 eval/snapshot/
 
 .idea/

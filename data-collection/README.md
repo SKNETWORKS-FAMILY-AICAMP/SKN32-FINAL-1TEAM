@@ -5,6 +5,7 @@
 시작 전에 [공통 작업 규칙](AGENTS.md) → [현재 상태](docs/STATUS.md) →
 [최근 작업 이력](docs/WORKLOG.md)을 읽습니다. Claude의 진입 안내는 [CLAUDE.md](CLAUDE.md)입니다.
 기능 연결은 [FLOW.md](docs/FLOW.md)에서 확인하고, 작업 후에는 상태와 이력을 갱신합니다.
+문서 위치는 [문서 지도](docs/README.md), 전체 흐름 그림은 검증 화면 `http://127.0.0.1:8010/flow`에서 봅니다.
 **Git 커밋과 push는 사용자가 직접 합니다. AI는 실행하지 않습니다.**
 
 아래 수집 건수·시간 및 기존 문서의 수치는 기록 당시 값입니다. 현재 상태는 실제 코드와 실행 결과로 확인합니다.
@@ -25,9 +26,13 @@ K-Startup·기업마당 오픈API 에서 지원사업 공고를 매일 한 번 �
   7  벡터 색인 갱신        Chroma 에 그것만 넣는다
   8  벡터 업로드           공용 MySQL 로. 팀이 같은 벡터를 쓴다
   9  첨부 파일 업로드      공용 MySQL 로. 팀이 파일로 개발한다
+ 10  자격요건 추출 (LLM)    지원금액·업력 등 → notice_conditions
+ 11  신청자 유형 추출 (LLM) 예비창업자·개인사업자·법인 → data/applicant_types/ (2026-09-28, 날짜당 최대 300건)
+ 12  업종 추출 (LLM) 신청 가능 업종 → data/industries/ (2026-09-28, 날짜당 최대 300건)
+ 13  판정 올리기 신청자 유형·업종 → 공용 DB notice_applicant_types·notice_industries (바뀐 행만, 2026-09-28)
 ```
 
-**5·6·7·8·9단계는 바뀐 것만 처리합니다.** 실측으로 신규 49건이 들어온 날
+**5~11단계는 바뀐 것만 처리합니다.** 실측으로 신규 49건이 들어온 날
 첨부 49건 · 임베딩 49건만 처리하고 나머지 1,951건은 건너뛰었습니다.
 
 ---
@@ -43,7 +48,7 @@ scripts/      가끔 한 번 돌리는 도구
 db/           테이블 생성문과 변경 이력 (.sql)
 web/          시험용 화면 (search/app.py 가 내려줍니다)
 tests/        시험 코드
-docs/         문서 · 제출물
+docs/         문서 · 제출물 — 무엇이 어디 있는지는 docs/README.md(문서 지도)
 eval/         검색 품질 평가 (질의·판정·지표)
 ml/           리랭커·업력 분류기 학습 (서비스 미연결)
 data/         산출물 — 원본 스냅샷·벡터·첨부 (git 제외)
@@ -91,7 +96,7 @@ reports/      배치 실행 기록 (git 제외)
 | `run_daily.bat` | 매일 실제로 실행되는 것. 파이썬을 부르고 로그를 남긴다 |
 | `schedule-task.ps1` | 예약을 등록·조회·해제하는 것. 처음 한 번만 쓴다 |
 
-📄 **[SCHEDULER.md](docs/SCHEDULER.md)** — 등록하는 법, 상태 보는 법, 문제 해결
+📄 **[SCHEDULER.md](docs/guides/SCHEDULER.md)** — 등록하는 법, 상태 보는 법, 문제 해결
 
 ### 3. DB SQL문
 
@@ -100,10 +105,11 @@ reports/      배치 실행 기록 (git 제외)
 | `db/mysql_schema.sql` | 테이블 생성문 (DDL) |
 | `db/mysql_migration_002_embedding.sql` | `notices` 에 임베딩 컬럼 5개 추가 |
 | `db/mysql_migration_003_attachment_files.sql` | 첨부 원본 파일 보관 테이블 |
+| `db/mysql_migration_006_notice_judgments.sql` | 공고 판정 테이블 `notice_applicant_types`·`notice_industries` (2026-09-28 생성, 설계 [docs/guides/JUDGMENT_TABLES.md](docs/guides/JUDGMENT_TABLES.md)) |
 
-📄 **[QUERIES.md](docs/QUERIES.md)** — 배치가 실행하는 SQL 전체와 그 뜻
-📄 **[FIELD_MAP.md](docs/FIELD_MAP.md)** — API 필드가 어느 DB 컬럼이 되는지
-📄 **[TEAM_DATA.md](docs/TEAM_DATA.md)** — **팀원용.** 공고·첨부 파일·벡터를 개발에 쓰는 법
+📄 **[QUERIES.md](docs/guides/QUERIES.md)** — 배치가 실행하는 SQL 전체와 그 뜻
+📄 **[FIELD_MAP.md](docs/guides/FIELD_MAP.md)** — API 필드가 어느 DB 컬럼이 되는지
+📄 **[TEAM_DATA.md](docs/guides/TEAM_DATA.md)** — **팀원용.** 공고·첨부 파일·벡터를 개발에 쓰는 법
 
 ---
 
@@ -129,7 +135,7 @@ DB 를 처음 만든다면,
 .\.venv\Scripts\python.exe -X utf8 -m collect.daily_pipeline              # 전체
 ```
 
-여기서 성공하면 예약을 겁니다 → [SCHEDULER.md](docs/SCHEDULER.md)
+여기서 성공하면 예약을 겁니다 → [SCHEDULER.md](docs/guides/SCHEDULER.md)
 
 명령줄 옵션:
 
@@ -143,9 +149,12 @@ DB 를 처음 만든다면,
 --skip-upload      벡터를 공용 DB 로 올리지 않는다
 --skip-files       첨부 원본 파일을 올리지 않는다
 --force            건수 급감 경고 무시
+--skip-conditions  자격요건 추출(LLM) 생략
+--skip-applicant-types     신청자 유형 추출(LLM) 생략
+--applicant-types-limit N  이번 실행에서 신청자 유형을 뽑을 공고 상한 (기본 300)
 ```
 
-종료 코드: `0` 성공 · `1` 실패 · `2` 부분 실패 · `3` 이미 실행 중
+종료 코드: `0` 성공 · `1` 실패 · `2` 부분 실패 · `3` 이미 실행 중 · `4` 수집은 성공, 후처리(LLM 10·11단계) 경고(로그 `stage_warnings`, 매칭은 막지 않음)
 
 ## 검증
 

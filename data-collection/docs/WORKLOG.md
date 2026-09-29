@@ -23,6 +23,678 @@
 
 ## 작업 기록
 
+### 2026-09-28 · Claude · Jev(TypeSafe AI) 채점 시험
+
+- 요청·목적: 사용자 — 새 모델 Jev(글 대신 정해진 보기 중 선택 + 확신도, 2026-09-15 공개)를 무료 크레딧($5)으로 시험. 평가 채점(주제 관련도 0·1·2)에 쓸 수 있는지.
+- 변경 파일: `eval/jev_judge_probe.py`(신규 — 블라인드 사람 판정 143쌍을 같은 입력·같은 기준으로 Jev 에 채점시키고 merge_qrels 와 같은 지표로 비교). 가상환경에 `typesafe-sdk==0.7.2`(PyPI, TypeSafe AI 공식) 설치. 키는 사용자가 `.env` 의 `TYPESAFE_API_KEY` 에 넣었다.
+  기존 `eval/llm_judgments.jsonl`·qrels·공용 DB 는 건드리지 않았다.
+- 결과 ([reports/jev_judge_probe_20260928T110603Z](../reports/jev_judge_probe_20260928T110603Z/summary.md), jev-1.13.0, 143쌍 오류 0, 응답 중앙값 230ms, 입력 약 24.6만 토큰 ≈ $0.01):
+  - 정확 일치 Jev 0.52 vs gpt-4.1-mini 0.64(같은 143쌍), 가중 카파 0.47 vs 0.62, 0↔2 뒤바뀜 7.7% vs 7.0%. **기존 LLM 보다 낮다.**
+  - Jev 는 1 로 몰린다(1 을 59번 — 사람 36번). 사람 2 → Jev 1 이 23쌍.
+  - 확신도 0.9 이상 25쌍은 정확 일치 0.84·0↔2 0% 지만, 같은 25쌍에서 LLM 도 0.80 — 쉬운 쌍이 몰린 것에 가깝다. 확신도 순서(0.84 → 0.61 → 0.40)는 맞게 나온다.
+  - Jev 와 LLM 이 같은 답인 97쌍도 사람과 0.66 — 둘을 합쳐도 크게 나아지지 않는다.
+  - 5쌍 시험(`…T110547Z`)은 형식 확인용.
+- 화면: 8010 `/jev-probe`(메뉴 "Jev 채점 시험") — Jev vs LLM 막대, 확신도 구간별(같은 쌍 LLM 대조), 혼동표, 쌍별 사람·Jev(보기별 확률)·LLM(이유) 비교와 거르기(Jev만 틀림 28 · Jev만 맞음 11 · 둘 다 틀림 40).
+  `experiments/sql_semantic/jev_probe_results.py`(파일만 읽음), `web/jev_probe.html`, `viewer.py` 경로·메뉴, `tests/test_jev_probe_ui.py` +3.
+- 결론: 지금 형태로는 LLM 채점을 대신하지 못한다. 프롬프트를 이 143쌍에 맞춰 고치면 시험 문제로 공부하는 셈이라 수치를 믿을 수 없게 된다.
+- 다음 단계: 없음(사용자 판단).
+
+### 2026-09-28 · Claude · 매칭 방식 비교에 "처음(벡터만)" 추가 + 그래프
+
+- 요청·목적: 사용자 — "처음에 공고를 임베딩해 벡터 DB 유사도만 보던 방식과 지금 방식을 숫자로 비교하고 시각적으로도 보고 싶다".
+- 작업 전 상태: `/filter-first-eval` 은 9/22(검색 먼저, 이미 하이브리드·규칙 포함)와 지금(필터 먼저)만 비교했다. 처음 방식과의 수치는 없었다.
+- 변경 파일:
+  - `eval/filter_first_eval.py` — 세 번째 대상 `vector_only`(지금 코드에서 정형 필터·마감 제외·단어 검색·지역/집단/유형/업종 규칙을 모두 끈 재현, `VECTOR_ONLY`). 요약에 `vector_only`·`diff_vs_vector` 추가(기존 `diff` 는 그대로 지금−9/22).
+    신청 불가 채점을 서비스와 같은 기준(`app.eligible_with_types`)으로 바꿨다 — API 업력 칸만 보면 본문으로 살린 공고(kstartup:179011, 본문 "여성 예비창업자")를 불가로 셌다.
+  - `search/app.py` — 정형 필터 한 건 판정(`gate.prefilter` + 예비창업자 본문 판정 G)을 `eligible_with_types()` 로 분리. 매칭 동작은 같다.
+  - `web/filter_first_eval.html` — 세 방식 막대그래프 6개(신청 불가 비율·섞인 질의 수·내용 적합도·쓸모@3·쓸모@10·순서 품질, 보수적~낙관적 빗금), 단계 비교표, 비교 기준 전환(벡터만/9/22 → 지금). vector_only 없는 예전 결과 폴더도 두 방식으로 열린다.
+  - 메뉴 이름 "매칭 순서 비교" → "매칭 방식 비교"(`viewer.py` NAV, `web/flow.html` 링크 글자).
+  - `tests/test_filter_first_eval.py` +2 — `VECTOR_ONLY` 키가 실제 요청 필드이고 켜진 스위치가 없음(오타면 pydantic 이 조용히 무시), 3열 요약·예전 요약 렌더.
+- 결과 ([reports/filter_first_eval_20260928T104212Z](../reports/filter_first_eval_20260928T104212Z/summary.md), 기준일 9/15 · 정상 질의 58 · 말뭉치 2,084 · 정답 1,617쌍, 하이브리드):
+  - 신청 불가@10 벡터만 24.3% → 9/22 5.5% → 지금 0.0%. 상위 10에 불가가 섞인 질의 50/58 → 22/58 → 0/58.
+  - P@3(2) 하한 49.4% → 62.6% → 62.1% (지금−벡터만 +0.126 [+0.040, +0.213]). 쓸모@3 하한 1.10 → 1.81 → 1.86.
+  - nDCG@10(판정분)은 세 방식 모두 약 0.60 으로 차이 없음.
+  - 지금−9/22 는 신청 불가 외 대부분 구간이 0 포함(기존 결론과 같다). 9/22 신청 불가가 4.8%→5.5% 로 오른 것은 채점 기준 변경(본문 "불가" 공고도 불가로 셈) 때문이다.
+- 검증: 전체 unittest 621개 통과(건너뜀 13). 8010 화면 — 새·예전 결과 폴더, 뜻 검색만 모드, 375px 폭 가로 넘침 없음 확인.
+  채점 기준을 고치기 전 첫 실행(`…T103959Z`)은 결과 목록에서 빼 세션 임시 폴더로 옮겼다.
+- 미검증·남은 문제: 정답 대부분이 LLM 판정(사람 일치 0.64), 질의 58개. 벡터만은 과거 커밋이 아니라 지금 코드의 스위치로 재현한 것이다(질의 문장 구성은 지금과 같다).
+- 다음 단계: 없음(사용자 확인).
+
+### 2026-09-28 · Codex · 판정 테이블 수정 재검수
+
+- 요청·목적: [Claude 응답](reviews/integration/JUDGMENT_TABLES_REVIEW_RESPONSE_20260928.md)의 수정과 재검수 요청 3가지를 독립 확인한다.
+- 작업 전 상태: Claude가 서비스 95%·파일 해시 보호, 업로드 90% 가드, 문서·체크포인트·C-3 보완을 적용했다. 기존 스테이징과 변경은 보존했다.
+- 변경 파일: [재검수 결과](reviews/integration/JUDGMENT_TABLES_REVIEW_RECHECK_20260928.md), 이 WORKLOG, [STATUS](STATUS.md), [문서 지도](README.md)만. 코드·DB는 수정하지 않았다.
+- 전후 차이·선택 이유: 가짜 DB·임시 파일로 옛 파일이 DB의 새 판정을 `blocked`로 덮고, 손상 파일이 정상 DB에도 `JSONDecodeError`를 발생시키며, 파일 없는 호스트에서 부분 DB의 `blocked`를 쓰는 P1 잔여를 확인했다. 90% 가드의 정상 범위 축소 차단·중복 통과와 흐름 화면의 옛 상태 문구도 기록했다.
+- 검증: 공용 DB SELECT로 공고·두 표 각 2,476행, 두 파일의 각 2,476 고유 ID와 변경 0을 확인. 표적 테스트 156개 통과. 전체 테스트와 8000 재시작은 Python/가상환경 확장 모듈 불일치로 독립 재실행하지 않았다. 9/29 배치는 아직 실행 전이다.
+- 미검증·남은 문제: 실제 9/29 배치의 stage_warnings·두 표 갱신·서비스 재시작 상태, EC2의 파일 없는 경로, 사람 기준 업종 판정. 코드·DB·Git 스테이징·커밋·유료 API 호출 없음.
+- 다음 단계: Claude가 P1 파일 오류/신선도 보호를 보완하고, 업로드 완료 세대와 공고 해시를 연결하는 설계를 사용자에게 제시한다. 9/29 배치 뒤 결과 문서의 점검표를 실행한다.
+
+### 2026-09-28 · Claude · 판정 테이블 검수 지적 수정(P1·P2)
+
+- 요청·목적: [Codex 결과](reviews/integration/JUDGMENT_TABLES_REVIEW_20260928.md)(조건부 승인)의 지적을 고친다.
+- 변경 파일:
+  - `search/applicant_types.py` `load`·`load_db`(문서 해시), `load_auto`(완전성 95%·공고별 신선도·db 강제 error).
+  - `search/industry_rank.py` `load_auto`(완전성·db 강제).
+  - `search/app.py`: `expected` 전달.
+  - `collect/upload_judgments.py`: 파일이 90% 미만이면 중단.
+  - `search/age_evidence.py`: `db_read`.
+  - `collect/industry_daily.py`: 체크포인트 스키마·엔진.
+  - `experiments/sql_semantic/age_rerun.py`: 실제 반영 행 수·missed.
+  - `docs/guides/JUDGMENT_TABLES.md`: varies·usable_for_rank·스키마 한정 문구·서비스 읽기·한계. `web/flow.html` 문구.
+  - 테스트 3개 파일, [응답](reviews/integration/JUDGMENT_TABLES_REVIEW_RESPONSE_20260928.md).
+- 검증:
+  - 전체 619개 통과.
+  - 8000 재시작: `db:notice_applicant_types`, 옛 값 교체 0, 매칭 결과 동일(177·9·10). DB 쓰기 없음.
+- 남은 것: `judgment_uploads` 표 여부(사용자), 업종 DB 전환(사람 판정 뒤), 9/29 배치 확인.
+
+### 2026-09-28 · Codex · 판정 테이블·12·13단계·업력 반영 검수
+
+- 요청·목적: [Claude 요청서](reviews/integration/JUDGMENT_TABLES_REVIEW_REQUEST_20260928.md)에 따라 저녁 수정과 두 판정표, 일일 업종 추출·업로드, 서비스 DB 읽기, 업력 C-3 반영을 검수했다.
+- 작업 전 상태: Claude 코드·문서 변경과 판정표 각 2,476행, 업력 78행 반영이 있었으며 다른 기존 변경과 스테이징은 보존했다.
+- 변경 파일: [검수 결과](reviews/integration/JUDGMENT_TABLES_REVIEW_20260928.md), 이 WORKLOG, [STATUS](STATUS.md), [문서 지도](README.md)만. 코드·DB는 수정하지 않았다.
+- 전후 차이·선택 이유: 현재 DB/파일 일치를 독립 확인하고, 13단계 부분 실패 후 DB 우선 읽기가 오래되거나 불완전한 판정을 사용할 수 있다는 P1과 사용 범위·출처·강제 DB 모드 P2를 기록했다. 업종 DB 기본 전환은 보류 권고했다.
+- 검증: 공용 DB에 SELECT와 `information_schema` SELECT만 실행해 테이블·분포·FK·업력·백업을 확인했다. 두 결과 파일과 DB의 2,476행씩 전 열 비교에서 변경 0. 시스템 Python 표적 테스트 151개 통과. 전체 테스트는 현재 Python과 `.venv`의 `pydantic_core` 바이너리 불일치로 import 오류가 나 검증하지 못했다. API 호출·Git 스테이징·커밋 없음.
+- 미검증·남은 문제: 실제 9/29 배치/서비스 재시작, 화면 표시, 사람 기준 업종 정확도. P1 신선도 보호와 P2 문서·규칙 출처를 보완한 뒤 재검수한다.
+- 다음 단계: Claude가 결과 문서의 우선순위대로 수정하고 실패/누락 재현 테스트를 보강한다. 공용 DB 갱신은 별도 사용자 결정에 따른다.
+
+### 2026-09-28 · Claude · Codex 재검수 P2 3건 수정 + 판정 테이블 검수 요청서
+
+- 요청·목적:
+  - [재검수](reviews/integration/RECHECK_AND_EVENING_REVIEW_RECHECK_20260928.md)의 P2를 9/29 배치 전에 고친다.
+  - 오늘 만든 판정 테이블·12·13단계·서비스 DB 읽기·C-3를 Codex에 맡길 [요청서](reviews/integration/JUDGMENT_TABLES_REVIEW_REQUEST_20260928.md)를 만든다.
+- 변경 파일:
+  - `collect/extract_conditions.py`: `AGE_BENEFIT`, `_clean_age_clauses`, `_value_in`. `age_quote_problem(quote, values)` — 섞인 근거는 연수 대조를 하고, 우대·지원금 구간은 버린다.
+  - `search/app.py` `eligibility`: pre_partial을 먼저 처리한다.
+  - `search/age_evidence.py`: DB 우선, 파일은 해시가 같고 DB에 업력이 없을 때만 쓴다. DB 값도 지금 검사로 거른다(`hidden`·`file_skipped`).
+  - 테스트 3개 파일.
+- 확인:
+  - 반례 4개 모두 걸림. DB 업력 225 중 새 검사에 걸리는 4건(서비스는 숨김, DB는 그대로).
+  - 서비스 근거 221. 8000 재시작: `kstartup:176208` 유형·업력 확인 필요.
+  - 전체 614개 통과.
+- 남은 결정: 공용 DB 4건 정리(사용자). 새 프롬프트 4o-mini 소표본 무쓰기 실험(Codex 권고, 유료).
+
+### 2026-09-28 · 사용자·Claude · C-3 업력 luna 재추출 78건 공용 DB 반영
+
+- 코드: `experiments/sql_semantic/age_rerun.py --apply`(`apply_plan`·`apply_to_db`)와 `tests/test_extract_conditions_age.py` `AgeApplyPlanTests`.
+  - 업력 칸(하한·상한·근거·버린 이유)과 `uncertain`의 출처 메모만 바꾼다.
+  - `extractor_version`은 그대로 둔다. 매일 10단계 `already_done`이 다시 부르지 않게 하려는 것이다.
+  - `input_sha256`이 재추출 문서와 같을 때만 바꾼다.
+  - 바꾸기 전 값을 백업한다.
+- Claude의 쓰기 명령은 자동 권한 검사에서 막혔다. **사용자가 직접 실행**했다: 반영 78행, 백업 `reports/age_rerun_luna_20260928T054509Z/applied_backup_20260928T074751Z.jsonl`(78줄).
+- 확인(읽기만):
+  - 다시 `--plan`: 반영 0 · 같음 78.
+  - `notice_conditions` 업력 있음 147 → **225**, 버림 233 → 155. 버전은 전부 4o-mini 그대로이고, 출처 메모는 78행이다.
+  - 반려동물 공고: 최대 10년, 버림 NULL. `already_done`에 남아 있어 배치가 다시 부르지 않는다.
+  - DB만으로 읽은 업력 근거가 225건이다(파일 없이도 같은 값).
+
+### 2026-09-28 · Claude · 검색 서비스가 판정을 공용 DB에서 읽기
+
+- 요청·목적: 파일이 없는 곳(EC2·팀원 PC)에서도 같은 판정으로 매칭하게 한다.
+- 변경 파일:
+  - `search/applicant_types.py`: 행 해석을 `_info()`로 모았다. `load_db()`, `load_auto()`(환경 변수 `APPLICANT_TYPES_SOURCE`, 기본 auto: DB → 비었거나 실패하면 파일). 등록 사업자 규칙은 DB 값에 지금 코드를 다시 적용한다.
+  - `search/industry_rank.py`: `load_db()`, `load_auto()`(`INDUSTRY_SOURCE`, **기본 file** — final5 유지 결정).
+  - `search/app.py` `boot`: 연결 한 번으로 두 판정을 읽는다. 연결 실패는 `boot_errors.judgments_db`에 남기고 파일로 간다. 로그에 출처와 대체 이유를 찍는다.
+  - `tests/test_judgments_source.py`(5), `tests/test_match_deh.py` 시작 테스트 대역, `web/flow.html` 데이터 지도 표, JUDGMENT_TABLES 6절.
+- 확인:
+  - DB와 파일 비교: 신청자 유형 2,476건 정보 동일, 서비스 결론 차이 0. 업종 순위 공고 217 동일.
+  - 8000 재시작: "신청자 유형 2476건 (db:notice_applicant_types)", `boot_errors` {}.
+  - 예비창업자·경기·친환경 매칭 결과는 전과 같다(blocked 177·restored 9·뒤로 10). 반려동물 공고 자격 확인도 같다.
+  - 전체 611개 통과.
+- 남은 것: 업종 서비스 전환(final5 → DB)은 Codex 재검수 뒤에 한다. 서비스는 시작할 때 한 번 읽으므로 배치 뒤 재시작이 필요하다(운영 자동화는 별도).
+
+### 2026-09-28 · Claude · 매일 배치 12단계 — 업종 추출 (`collect/industry_daily.py`)
+
+- 요청·목적: 업종 판정도 신청자 유형처럼 매일 채워 13단계가 공용 DB `notice_industries`에 올리게 한다.
+- 변경 파일:
+  - `collect/industry_daily.py` 신규.
+    - 11단계와 같은 구조: 새·바뀐 공고만, 날짜당 300건(부르기 전 예약), 같은 문서 3회 실패 시 중단, `run.lock`.
+    - 누적 `data/industries/`, 시작은 final6.
+    - 추출은 전량 실행과 같다(v3·rough·luna@medium). 검사에 발췌 상한 6,000자를 넘긴다(None이면 잘림 판정이 꺼진다).
+  - `industry_llm_sample.only_new`에 `reports_dir`를 추가했다(누적 파일의 `source_run` 폴더를 reports/에서 찾는다).
+  - `collect/upload_judgments.py`: 업종 원본 기본값을 12단계 누적 파일로 바꿨다(없으면 final6).
+  - `collect/daily_pipeline.py`에 12단계를 붙였다(`--skip-industries`·`--industries-limit`, 경고 `industries`).
+  - `.gitignore`에 `data/industries/`를 추가했다. 수집 상태 화면 단계 이름, README, JUDGMENT_TABLES를 고쳤다.
+  - `tests/test_industry_daily.py`(5).
+- 확인:
+  - `--plan`: 부를 것 0(final6이 최신).
+  - 단독 실행 1회: 호출 0·$0으로 누적 파일을 만들었다.
+  - 13단계 `--plan`: 업종 원본이 `data/industries/results.jsonl`로 바뀌었고 같음 2,476.
+  - 전체 606개 통과.
+- 비용 예상: 새 공고가 하루 수십 건이면 건당 약 $0.0011, 하루 $0.1 미만.
+- 남은 것: 새로 잘린 공고(6,000자)를 길게 다시 읽는 것은 매일 하지 않는다(업종 순위를 다시 켤 때 결정).
+
+### 2026-09-28 · Claude · 판정 첫 업로드(공용 DB)와 13단계 배치 연결
+
+- **공용 DB 쓰기(사용자 확인)**: `python -m collect.upload_judgments`
+  - `notice_applicant_types`에 2,476행을 올렸다. 결론은 implied_no 1,701 · allowed 289 · blocked 183 · NULL 303.
+  - `notice_industries`에 2,476행을 올렸다. known 830(순위 사용 가능 217) · not_mentioned 1,088 · excluded_only 287 · unknown 240 · conditional 26 · no_limit 5.
+  - 곧바로 `--plan`을 다시 돌려 같음 2,476·올릴 것 0을 확인했다(비교가 실제 DB 형식에서도 맞다).
+- `collect/daily_pipeline.py`에 **13단계**를 11단계 뒤에 붙였다. `--skip-judgments`로 끌 수 있고 `--skip-upload`도 따른다. 결과는 로그 `judgments_upload`에 남고, 실패하면 `stage_warnings`로 종료 코드 4가 된다.
+- 수집 상태 화면의 단계 이름, README 단계 목록, TEAM_DATA·JUDGMENT_TABLES를 고쳤다. 전체 601개 통과.
+- 남은 것: 12단계(업종 매일 추출), 서비스가 DB에서 읽기, C-3(업력 luna 반영).
+
+### 2026-09-28 · Claude · 13단계 판정 올리기 코드 (`collect/upload_judgments.py`) — 첫 업로드 전
+
+- 요청·목적: 신청자 유형·업종 판정 파일을 공용 DB의 새 표 두 개로 올린다. 8단계 벡터 올리기와 같은 방식이다.
+- 변경 파일:
+  - `collect/upload_judgments.py` 신규.
+    - 서비스 결론(`pre_founder_verdict`·`registered_only_phrase`)은 `search/applicant_types`의 같은 함수로 계산한다.
+    - 업종 `allowed_sections`·`usable_for_rank`는 `industry_groups`·`industry_rank` 규칙으로 계산한다.
+    - DB의 지금 값과 칸마다 비교해 바뀐 행만 UPSERT한다. `notices`에 없는 공고는 세기만 한다.
+    - `--plan`은 쓰지 않는다.
+  - `tests/test_upload_judgments.py`(5)에 가짜 DB를 넣었다.
+  - `notice_industries.status`의 칸 설명을 실제 값(known·not_mentioned·excluded_only·unknown·conditional·no_limit)에 맞게 고쳤다. SQL 파일, 설계 문서, 빈 표의 `ALTER … COMMENT`.
+- 확인(`--plan`, DB 읽기만): 두 표 모두 새로 2,476행, 공고 없음 0.
+  - 신청자 유형 결론: implied_no 1,701 · blocked 183 · allowed 289 · 모름 303, varies 78.
+  - 업종: known 830, 순위 사용 가능 217, 대분류가 묶인 공고 417.
+- 검증: 전체 601개 통과(건너뜀 13).
+- **아직 올리지 않았다. 매일 배치에도 넣지 않았다.** 넣으면 내일 09:00에 첫 업로드가 사용자 확인 없이 일어나기 때문이다. 첫 업로드를 확인받은 뒤 13단계로 연결한다.
+
+### 2026-09-28 · Claude · 공고 판정 테이블 두 개 생성 (공용 DB)
+
+- 요청·목적: 배치는 사용자 PC에서 돌리되, 판정 결과를 팀원·EC2도 쓰게 한다. 사용자 결정 A(새 테이블 두 개)로 설계와 생성을 요청했다.
+- 변경 파일:
+  - `db/mysql_migration_006_notice_judgments.sql`: `notice_applicant_types` 21칸, `notice_industries` 21칸. `notices.notice_id` 외래 키에 CASCADE, utf8mb4_bin — `notice_conditions`와 같은 형식이다.
+  - `docs/guides/JUDGMENT_TABLES.md` 설계·사용법 신규.
+  - `docs/guides/TEAM_DATA.md`·`README.md`·`docs/README.md`에 연결했다.
+- **공용 DB 쓰기(사용자 요청)**: 위 SQL로 `CREATE TABLE IF NOT EXISTS` 두 개를 실행했다.
+  - 실행 전: 같은 이름의 표가 없음을 확인했다.
+  - 실행 후: 두 표 모두 0행이다. 기존 표·데이터는 건드리지 않았다.
+- 다음 단계: 배치 13단계(판정 → 공용 DB 올리기, 바뀐 행만) 코드와 테스트, `--plan`으로 올릴 건수를 확인한다. 첫 업로드는 사용자 확인 뒤에 한다. 12단계(업종 매일 추출)도 남았다.
+
+### 2026-09-28 · Codex · 저녁 변경 수정 재검수
+
+- 요청·목적: [Claude 응답](reviews/integration/RECHECK_AND_EVENING_REVIEW_RESPONSE_20260928.md)의 수정과 재검수 요청 3가지(구절 분할, `varies` 매칭/자격, 원답 재검사)를 확인했다.
+- 작업 전 상태: Claude가 P1·P2·P3 조치를 코드에 반영하고 업력 근거 225건·전체 596개 통과를 보고했다. 기존 스테이징과 수정 파일은 보존했다.
+- 변경 파일: [재검수 결과](reviews/integration/RECHECK_AND_EVENING_REVIEW_RECHECK_20260928.md), [STATUS](STATUS.md), [문서 지도](README.md), 이 작업 이력. 코드·DB는 수정하지 않았다.
+- 전후 차이·선택 이유: 손상 파일 오류 격리, 업력 경계 안내, 재개 문서 해시, 11단계 잠금 등은 수정 확인했다. 세 가지 재검수 요청에는 P2 세 건을 재현 근거와 함께 남겼다: 업력 구절 존재만으로 잘못 뽑은 숫자/우대 문맥이 통과함, `varies` K-Startup 5건의 API 업력 `True`가 남음, 옛 재추출 파일이 새 DB 업력을 덮을 수 있음.
+- 검증: 시스템 Python에서 `tests.test_applicant_type_daily tests.test_industry_llm_sample` 127개와 업력 혼합/재개 표적 2개 통과. 순수 함수에 거주 2년/창업 7년·금리 우대/금액표 반례를 넣어 검사 통과 확인. 가짜 DB 새 5년과 파일 옛 10년을 넣어 파일 우선 덮어쓰기 재현. 실제 DB·유료 API 호출 없음.
+- 미검증·남은 문제: 프로젝트 `.venv` 실행 경로 손상과 시스템 Python의 FastAPI 부재로 전체 테스트/실제 8000 응답은 독립 재실행하지 못했다. Claude의 596개 통과·서버 225건은 Claude 기록이다. 기존 final6 요약의 “lab_conditions” 문구도 남아 있다.
+- 다음 단계: Claude가 P2 세 건을 수정하고, 9/29 배치 전 변경된 4o-mini 업력 추출을 무쓰기 표본으로 확인한 뒤 재검수한다. Git 스테이징·커밋은 사용자가 직접 한다.
+
+### 2026-09-28 · Claude · 저녁 변경 검수 지적 수정 (P1 1·P2 5·P3)
+
+- 요청·목적: [Codex 결과](reviews/integration/RECHECK_AND_EVENING_REVIEW_20260928.md)의 지적을 9/29 배치 전에 고친다.
+- 변경 파일:
+  - `search/age_evidence.py`: `load`가 예외를 내지 않는다. 원답을 지금 규칙으로 재검사하고, 경계 비교를 고쳤으며, 하한 0년만 있는 값은 뺀다.
+  - `search/app.py`: `boot` 업력 근거 격리, `eligibility` varies 처리, `_rule_verdict` 통일.
+  - `search/applicant_types.py`: `type_check` varies, `varies()`.
+  - `collect/extract_conditions.py`: `age_quote_problem`, 혼합 구절 분할.
+  - `collect/applicant_type_daily.py`: 실행 잠금.
+  - `experiments/sql_semantic/age_rerun.py`: 재개 해시·조건 비교, `reusable`.
+  - `experiments/sql_semantic/industry_llm_sample.py`: 합침 원 실행 이름, 요약 문구.
+  - `web/app.html`: 부분 오류 배너.
+  - 테스트 4개 파일, [응답](reviews/integration/RECHECK_AND_EVENING_REVIEW_RESPONSE_20260928.md).
+- 검증:
+  - 전체 596개 통과(건너뜀 13).
+  - 저장 근거 회귀: 기존 통과 147건 중 새로 떨어지는 것 0건, 버린 204건 중 통과 92건, 재추출 살아남 77 → 79.
+  - 8000 재시작: 업력 근거 225건. 126505 경계 안내, 126769 확인 필요, 117511 되살아남을 실제 응답으로 확인했다.
+- 남은 문제: 새 프롬프트의 모델 성능(4o-mini 소표본)은 미검증이다. Codex 재검수를 기다린다.
+
+### 2026-09-28 · Codex · 8건 재검수와 저녁 변경 검수
+
+- 요청·목적: [Claude 요청서](reviews/integration/RECHECK_AND_EVENING_REVIEW_REQUEST_20260928.md)의 앞선 8건 수정과 업력 검사·표시, 업종 final6, 재추출·화면을 검수했다.
+- 작업 전 상태: Claude의 코드/문서 수정과 결과 파일이 이미 존재했고, 새 626건 결과 및 final6 합침도 완료된 상태였다. 기존 스테이징·미추적 파일은 보존했다.
+- 변경 파일: [검수 결과](reviews/integration/RECHECK_AND_EVENING_REVIEW_20260928.md), [STATUS](STATUS.md), [문서 지도](README.md), 이 작업 이력. 코드·DB는 수정하지 않았다.
+- 전후 차이·선택 이유: 앞선 8건은 순차 실행 기준 수정 확인으로 기록하고, 새 P1(손상된 업력 근거 파일이 서버 시작을 막음)과 P2(혼합 문장 과잉 버림, 미만 경계, 세부사업 통과, 재개 문서 해시, 독립 실행 동시 상한)를 재현 근거와 함께 분리했다. 결과 문서의 링크를 문서 지도에 추가했다.
+- 검증: 시스템 Python에서 `python -X utf8 -m unittest tests.test_extract_conditions_age tests.test_industry_llm_sample tests.test_applicant_type_daily` 130개 통과. 저장된 204건 업력 재추출 결과·final6 2,476행 및 `industry_rank.load()`의 적용 가능 217건·신청자 유형 66건을 파일로 확인. `age_evidence.compare()`의 10년 미만 경계와 손상 JSONL 예외를 순수 함수로 재현. DB·유료 API 호출 없음.
+- 미검증·남은 문제: 프로젝트 `.venv\Scripts\python.exe`가 삭제된 Python 3.12 경로를 가리켜 전체 통합 테스트와 실제 웹 화면/배치를 재실행하지 못했다. Claude의 전체 587개 통과 기록은 이번 독립 검증이 아니다. 9/29 배치 전 P1·P2 조치와 무쓰기 소표본 검증 권고.
+- 다음 단계: Claude가 결과 문서의 우선순위대로 수정한 뒤 해당 사례를 다시 검수한다. Git 스테이징·커밋은 사용자가 직접 한다.
+
+### 2026-09-28 · Claude · 업종 추출 626건(공용 DB) → final6 합침 (A 방향 2단계)
+
+- 실행: `reports/industry_llm_new626_luna_20260928/`(luna@medium · v3 · rough · `--source shared --only-new final5`).
+  - 626건 호출·실패 0, 입력 1,572,215·출력 327,846 토큰, **약 $0.71**. 단일 모델이다.
+  - 결과: known 216 · unknown 409 · no_limit 1. 6,000자 발췌에서 잘린 공고 54건.
+- 합침: `reports/industry_llm_full_luna_20260928_final6/`(`--merge-append`, 호출 0).
+  - 2,476건 = final5 1,852(바뀐 2건은 새 결과로 교체) + 새 공고 624.
+  - known 848 · unknown 1,623 · no_limit 5. 잘린 공고 66건(final5에서 18,000자로 읽고도 남은 12 + 새 54).
+  - `industry_rank.load` 기준 순위에 쓸 수 있는 공고 217건(final5 174).
+- 서비스는 아직 final5를 읽는다(`search/industry_rank.py` 기본값·환경 변수 `INDUSTRY_RESULTS`). 바꿀지는 사용자가 확인한다. 업종 순위는 기본 꺼짐이라 매칭 결과에는 영향이 없다.
+- 남은 것: 새로 잘린 54건을 길게(18,000자) 다시 읽을지 정한다(유료).
+
+### 2026-09-28 · Claude · 업종 추출 입력을 실험 DB → 공용 DB(읽기만)로 (A 방향 1단계)
+
+- 요청·목적: 실험 DB(9/21 사본 1,852건) 대신 공용 DB를 읽는다. 쓰기는 없고, 계산 결과는 파일에 둔다. 업종 결과에서 빠진 최근 공고를 채우는 것이 목적이다.
+- 변경 파일: `experiments/sql_semantic/industry_llm_sample.py`
+  - `--source shared`를 새 실행의 기본으로 했다. 공용 DB `notices`를 SELECT하고, 정규식 업종 판정은 `conditions.industry_condition()`으로 그 자리에서 계산한다. 재개·재검사는 처음 실행의 `meta.source`를 따르고, 없으면 lab이다.
+  - `--only-new BASE`: 기준 결과에 없거나 문서 해시가 달라진 공고만 부른다. 합친 결과는 공고마다 `source_run`의 발췌 상한으로 문서를 다시 만들어 비교한다. 18,000자로 다시 읽은 공고를 바뀐 것으로 잘못 세지 않기 위해서다.
+  - `--merge-append`: 기준에 없던 공고를 합치기에 더한다.
+  - 테스트 3개를 추가했다(`tests/test_industry_llm_sample.py` 116개 통과).
+- 확인(읽기만):
+  - 공용 DB 2,476건 중 실험 DB에 없는 공고는 624건(기업마당 440·K-Startup 184)이다. 실험 DB에만 있는 공고는 0건이다.
+  - 같은 공고의 문서는 실험 DB와 공용 DB에서 글자까지 같다(40건 대조). 프롬프트·스키마 해시도 final5와 같다.
+  - `--plan` 결과: 부를 공고 626건(새 공고 624 + 제목·본문이 바뀐 2), 예상 약 $1.67(보수적 추정), 호출 없음.
+- 다음 단계: 사용자 승인 뒤 luna@medium·rough로 626건을 추출하고 final5에 `--merge-append`로 합친다. 6,000자에서 잘린 공고는 이전처럼 길게 다시 읽을지 따로 정한다.
+
+### 2026-09-28 · Claude · 업력 "못 찾음" 1,460건 표본 100건 luna 재추출
+
+- 요청·목적: 공용 DB `notice_conditions`에서 4o-mini가 업력을 못 찾은 공고(값 없음·버림 없음·"제한 없음" 명시 아님, 1,460건)를 새 규칙과 luna로 다시 읽으면 얼마나 달라지는지 본다. 전량 재추출(약 $2) 여부를 정하기 위해서다.
+- 변경 파일: `experiments/sql_semantic/age_rerun.py`에 `--missing --sample N`을 추가했다(seed 20260928, 결과 폴더 `age_rerun_luna_missing_*`).
+- 결과: `reports/age_rerun_luna_missing_20260928T061903Z/`. 100건 호출·실패 0, **약 $0.14**. DB 쓰기 없음.
+  - **업력 없음 97건** — 두 모델 모두 업력 조건이 없다고 봤다.
+  - 새로 찾음 1건(`125335` "3년이내 창업기업이 창업교육 수료 시 …" — 신청 자격보다 우대 조건에 가깝다).
+  - 다시 버림 2건: "1-3년차 스타트업"은 업력이 맞지만 "년차"가 검사 목록에 없다. "영업 개시 후 6개월"은 개월 단위라 버렸다.
+- 판단: 기업마당 공고의 업력이 비어 있는 것은 대부분 **공고에 업력 제한이 실제로 없어서**다. 전량 재추출로 얻을 것은 1~3% 정도로 보여 하지 않는 편이 낫다.
+- 남은 문제: "N년차" 표현은 검사 목록에 없다. 추가할지는 사소한 문제다.
+
+### 2026-09-28 · Claude · 흐름 화면에 "③-1 매칭에 쓰는 입력"
+
+- 요청·목적: 매칭에 어떤 입력(파라미터)을 쓰는지 흐름 화면에 정리.
+- 변경 파일: `web/flow.html`에 구역을 하나 추가했다. 내용은 거르기·검색 문장·순서 다듬기·저장만 네 용도의 입력표와 고정 설정값(하이브리드·RRF k=60·후보 50·결과 10/20·order)이다. 코드(`search/app.py MatchRequest`·`build_query`, `search/applicant.py`)와 같은 사실을 옮겼다.
+- 검증: 8010에서 구역 제목과 표 23행이 표시되는 것을 확인했고, 가로 넘침은 없었다. `tests.test_viewer_nav` 통과.
+
+### 2026-09-28 · Claude · 자격 확인 업력 줄 — A(예비창업자)·B(공고문 추출 근거)
+
+- 요청·목적: 반려동물 창업 경진대회 공고(`bizinfo:PBLN_000000000126505`)에서 예비창업자의 업력이 "확인 필요"로 나오던 문제.
+- 변경 파일:
+  - `search/app.py` `eligibility()`
+    - **A**: 본문에 예비창업자 가능(`type_check` 통과)이면, 업력이 모름일 때도 통과로 둔다. 요구 칸에는 "업력 조건은 이미 창업한 기업에 붙는 조건"이라고 적는다. 예전에는 업력이 미달일 때만 덮었다.
+    - **B**: 그 밖에 업력이 모름이면 공고문 추출 업력을 **근거로만** 보여 준다. 판정은 확인 필요 그대로다.
+    - `boot()`: 업력 근거를 읽는다. 실패해도 서버를 열고 `boot_errors.age_evidence`에 남긴다.
+  - `search/age_evidence.py` 신규. 공용 DB `notice_conditions` 업력 147건(SELECT)에 재추출 파일에서 되찾은 77건을 더해 224건이다.
+  - `tests/test_age_evidence.py`(7개) 신규. `tests/test_match_deh.py` 시작 테스트에 업력 근거 읽기를 대역으로 넣었다.
+  - `web/flow.html` 데이터 지도 문구.
+- 선택 이유: 추출 값 77건 중 약 11건이 세부사업 혼합, "또는" 조건, 우대 조건이라 숫자 하나로 판정하면 틀린다. 그래서 요구 칸에 "공고문 추출(추정): 업력 최대 10년"과 근거 문장을 두고, 신청자 업력과의 비교는 "(참고)"로만 적는다.
+- 검증:
+  - 전체 583개 통과(건너뜀 13).
+  - 8000을 재시작했다. 서버 기록 "업력 근거 224건", `boot_errors` `{}`.
+  - 반려동물 공고:
+    - 예비창업자: 업력 **통과**.
+    - 법인 2014년 설립: 확인 필요, "최대 10년 · 12년 8개월은 범위 밖(참고)".
+    - 개인 2023년 설립: 확인 필요, "범위 안(참고)".
+  - 시험 화면의 자격 확인 표에서 업력 통과를 확인했다.
+- 남은 문제:
+  - 모집 상태도 기업마당은 칸이 없어 확인 필요로 남는다.
+  - 공용 DB 반영(C-3)은 미결이다. 결과 파일은 이 PC에만 있다.
+
+### 2026-09-28 · Claude · 업력 버림 204건 — 검사 보완(C-1)·luna 재추출(C-2)
+
+- 요청·목적: 반려동물 창업 경진대회 공고의 업력 "확인 필요"에서 출발했다. 10단계 자격요건 추출의 업력 검사가 "사업자등록 후 1년 이상 10년 미만" 같은 실제 조건을 버린 204건을 되살린다(사용자 선택: luna).
+- 변경 파일:
+  - `collect/extract_conditions.py`
+    - `AGE_EVIDENCE`에 표현을 더했다: 사업개시일·사업자등록일/후·창업한 지·설립된 지·영업신고 후·가동 중·N년 이내 창업기업 등.
+    - `AGE_DECOY_STRONG`을 새로 두었다: 입사·근무·경력·거주·의무 운영 기간 등은 업력이 아니다.
+    - 프롬프트 규칙 9에 추가한 것: 예외 조항의 연수는 쓰지 않는다. "예비창업자 또는 N년 미만"이면 기업 쪽 조건으로 기록한다.
+    - 추출기 버전(`extractor_version`)은 올리지 않았다. 올리면 매일 배치가 1,864건을 다시 부른다.
+  - `tests/test_extract_conditions_age.py`(5개) 신규.
+  - `experiments/sql_semantic/age_rerun.py` 신규(재추출, **DB 쓰기 없음**).
+- 검증:
+  - 저장된 근거로 새 검사를 미리 돌렸다. 204건 중 92건이 통과하고, 기존 통과 147건은 모두 그대로다(새로 떨어지는 것 0건).
+  - 전체 테스트 576개 통과(건너뜀 13).
+  - 재추출 `reports/age_rerun_luna_20260928T054509Z/`: 204건 호출·실패 0, 입력 925,266·출력 117,673 토큰, **약 $0.33**.
+    - 살아남 77건(반려동물 공고 `126505`: 10년 미만·예비 가능 포함).
+    - 업력 없음 85건, 다시 버림 42건(개월 단위 18건 등).
+- 미검증·남은 문제:
+  - 살아남은 77건을 Claude가 읽었다(AI 참고). 약 11건은 한 숫자에 담기 어렵다.
+    - 세부사업 둘이 섞였다(`117632` 2~3년, `119636`·`125856` 3~3년).
+    - "또는" 조건이다(수출초보 "창업 5년 이내 **또는** 수출실적 8천달러 이하" 4건).
+    - 우대·혜택 조건이다(`117751` 금리 감면 7년, `126019` 항공료 50%).
+  - 다시 버림 중 일부("운영실적 1년 이상" 6건, "영업자 시작일로부터 1년")는 실제 업력일 수 있다.
+  - **공용 DB 반영(C-3)은 하지 않았다.** 반영하려면 사용자 승인이 필요하다. 또 매일 배치의 `already_done`이 추출기 버전으로 걸러, luna 결과를 4o-mini가 다시 덮어쓰지 않도록 함께 고쳐야 한다.
+- 다음 단계: 반영 방식을 결정한다. 추천은 자격 판정(통과/미달)이 아니라 "근거 표시(B) + 추정"으로 쓰는 것이다.
+
+### 2026-09-28 · Claude · 흐름 화면에 데이터 지도
+
+- 요청·목적: 테스트하던 것(실험 DB·결과 파일)과 원래 DB가 어떻게 나뉘어 있는지 한눈에 보기. 계기는 기업마당 반려동물 경진대회 공고의 업력 "확인 필요"(API에 업력 칸 없음 + 10단계가 "사업자등록 후 1년 이상 10년 미만"을 찾았지만 검사에서 버림 + 서비스는 10단계 결과를 안 읽음).
+- 변경 파일:
+  - `web/flow.html`: ⓪ 데이터 지도 구역을 추가했다. 그림(SVG), 데이터별 표, 어긋나는 곳 4가지를 넣었다. 그 밖에 다음을 고쳤다.
+    - ② A를 "일부 — K-Startup만"으로 바꿨다.
+    - A2(10단계 자격요건, 연결 안 됨)를 추가했다.
+    - 적합도 표기를 순위 점수로 바꾸고, 테스트 수를 571로 고쳤다.
+  - `experiments/sql_semantic/viewer.py` `/api/flow`: 신청자 유형 파일의 줄 수와 마지막 배치 시각을 더했다(파일만 읽는다).
+- 조회 수치(읽기만):
+  - 공용 DB: 공고 2,476건(기업마당 2,041건은 API 업력 칸이 모두 빔), `notice_conditions` 1,864건(전부 gpt-4o-mini, 업력 버림 233건 중 "근거에 업력 표현이 없음" 204건).
+  - 실험 DB: `lab_notices` 1,852건(마지막 실행 9/21).
+- 검증: `tests.test_viewer_nav` 5개 통과. 8010을 재시작해 화면·실시간 숫자를 확인했고, 가로 넘침이 없었다.
+- 남은 문제: 정본 결정(판정 결과를 DB에 저장할지, 파일로 복사할지)은 팀과 정한다. 업력 표시 A·B(비용 없음)와 10단계 재추출 C(luna 여부)는 사용자 결정을 기다린다.
+
+### 2026-09-28 · Claude · 오후 변경 검수 지적 8건 수정
+
+- 요청·목적: [Codex 검수 결과](reviews/integration/UNREVIEWED_CHANGES_REVIEW_20260928.md)의 P1 2·P2 4·P3 2를 커밋 전에 고친다.
+- 작업 전 상태: 지적 8건을 코드에서 모두 사실로 확인했다.
+- 변경 파일:
+  - 검색 서비스: `search/app.py`(boot 장애 격리·보조 벡터 조회 예외·공개 경로 `_public`·health).
+  - 신청자 유형: `search/applicant_types.py`(등록 사업자 규칙 문맥), `collect/applicant_type_daily.py`(날짜당 상한·실패 재시도 상한).
+  - 매일 배치·수집 상태: `collect/daily_pipeline.py`(`stage_warnings`·종료 코드 4), `run_daily.bat`(주석), `search/collection_status.py`, `web/collection_status.html`.
+  - 화면·Git: `web/app.html`(순위 점수 표기), `.gitignore`.
+  - 테스트: `tests/test_match_deh.py`, `test_applicant_type_daily.py`, `test_applicant_types.py`.
+  - 문서: [응답](reviews/integration/UNREVIEWED_CHANGES_REVIEW_RESPONSE_20260928.md).
+- 전후 차이·선택 이유:
+  - 벡터 DB·임베딩이 서버 시작 때 죽어 있어도 서버가 열리고 BM25 단독으로 답한다.
+  - 11단계 실패는 status를 'partial'로 바꾸지 않는다. 바꾸면 수집 상태 판정이 매칭을 막기 때문이다. 대신 경고와 종료 코드 4로 알린다.
+  - 등록 사업자 규칙 67건을 한 줄씩 읽었고, "마감일 내 등록 완료" 1건을 예외로 빼 66건이 됐다(AI 참고).
+- 검증:
+  - `.\.venv\Scripts\python.exe -X utf8 -m unittest discover -s tests` → 571개 통과(건너뜀 13).
+  - 실제 서비스(재시작 후) 예비창업자·경기·친환경 생활용품: `top=100`은 20건, `offset=10`은 10건, 기본은 10건. blocked 177·restored 9.
+  - 시험 화면에 "순위 점수 0.86", 수집 상태 화면에 "후처리(LLM) 경고: 없음"이 나온다.
+  - DB 쓰기·유료 호출 없음.
+- 미검증·남은 문제:
+  - 실제 장애(Chroma 중단) 상황의 서버 시작은 가짜 의존성 테스트로만 확인했다.
+  - 11단계 실패 시 매칭을 막을지는 운영 결정이다.
+- 다음 단계: Codex 재검수, 사용자 커밋.
+
+### 2026-09-28 · Codex · 오후 변경 커밋 전 검수
+
+- 요청·목적: [Claude 요청서](reviews/integration/UNREVIEWED_CHANGES_REVIEW_REQUEST_20260928.md)의 미검수 변경을 `data-collection/` 범위에서 검토.
+- 변경 파일: [검수 결과](reviews/integration/UNREVIEWED_CHANGES_REVIEW_20260928.md), 문서 지도 `README.md`, 상태·이력 문서만 작성. 코드·DB·Git 스테이징/커밋 변경 없음.
+- 판정: P1 2건, P2 4건, P3 2건. 매칭 초기화·보조 벡터 조회 예외와 일일 유료 호출 상한·실패 상태를 우선 수정할 필요가 있다. 구체적 재현·근거는 검수 결과 참조.
+- 검증: `python -X utf8 -m unittest tests.test_applicant_type_daily tests.test_sql_semantic tests.test_applicant_type_llm tests.test_industry_groups tests.test_label_score` → 121개 통과. 임시 공고 5건·가짜 호출로 같은 날 `limit=2` 배치를 두 번 실행해 총 4호출 확인. 전체 테스트용 `.venv`는 없어진 Python 3.12 경로를 가리켰고, 시스템 Python에 FastAPI가 없어 서비스 통합 테스트를 실행하지 못했다. 실제 DB·Chroma·유료 API 호출 없음.
+- 다음 단계: Claude 수정 후 특히 하이브리드 부분 장애·일일 호출 수·11단계 오류 기록의 회귀 검증.
+
+### 2026-09-28 · Claude · 매일 배치 11단계 — 신청자 유형 추출
+
+- 요청·목적: 오늘 전량 결과(2,476건) 뒤에 새로 수집되는 공고도 신청자 유형 판정을 갖게 한다.
+- 변경:
+  - `collect/applicant_type_daily.py` 신규. `run_batch()`는 출처 DB 공고의 발췌 해시를 누적 결과와 비교해 새 공고·바뀐 공고만 LLM을 부른다(전량 실행과 같은 문서·프롬프트·코드 검사).
+    - 누적 파일 `data/applicant_types/results.jsonl`. 없으면 전량 결과로 시작해 같은 공고를 다시 부르지 않는다.
+    - 성공한 호출은 `checkpoint.jsonl`에 바로 적고, 다음 실행이 반영한다. 하루 상한 300건(약 $0.25), 넘치면 다음 날로 미룬다. `--plan`은 호출 없이 할 일만 보여 준다. DB 쓰기 없음.
+  - `collect/daily_pipeline.py`: 10단계(자격요건) 뒤 **11단계**. 옵션 `--skip-applicant-types`·`--applicant-types-limit`, 로그와 출력에 결과를 남긴다. 실패해도 앞 단계는 끝나 있다.
+  - `search/applicant_types.py` `default_path()`: 환경 변수 → 매일 누적 파일 → 전량 결과 순서.
+  - `README.md` 배치 단계·옵션, `docs/FLOW.md`, 전체 흐름 화면. `tests/test_applicant_type_daily.py` 신규 5개.
+- 검증: 전체 561개 통과(건너뜀 13).
+  - 실제로 11단계를 단독 실행했다: 대상 2,476 · 이미 있음 2,476 · 호출 0 · $0. 누적 파일이 생겼다.
+  - 서비스가 누적 파일을 읽을 때 판정 분포가 전과 같았다(blocked 183 · allowed 289 · implied 1,702 · 모름 302, 등록 사업자 규칙 67).
+- 주의: 누적 파일은 배치 PC의 `data/`에만 있다. 서비스는 서버를 켤 때 읽으므로, 배치 뒤 서버를 다시 켜야 반영된다(BM25와 같다). EC2 서비스에는 이 파일이 없어 기능이 꺼진다(배포 시 옮기거나 DB 저장 결정 필요).
+
+### 2026-09-28 · Claude · 신청자 유형 애매·누락 8건 원문 대조와 등록 사업자 규칙
+
+- 요청·목적: Codex가 지목한 애매 5건(P044·P047·P055·P086·P090)과 LLM이 놓친 3건(P084·P085·P089)을 원문과 대조했다. 이어서 사용자 승인으로 놓침을 줄이는 규칙을 넣었다.
+- 대조 결과([문서](reviews/applicant_type/APPLICANT_TYPE_AMBIGUOUS_CHECK_20260928.md)):
+  - 지금 게이트가 잘못 빼는 경우는 0건이다. P055는 뒤로만 보내며, 이것이 적절하다.
+  - 놓침은 6건이다(P044·P047은 LLM이 맞았지만 weak, P084·P085·P086·P089는 LLM이 판정하지 못함). Codex 블라인드도 P044·P047·P086을 과소 판정했다.
+- 변경: `search/applicant_types.py` `registered_only()`.
+  - 예비창업자 판정이 언급 없음이나 weak 불가이고 varies가 아닌 공고에 적용한다.
+  - 저장된 근거 문장에 등록 사업자 전용 표현(사업자등록증명원 상의 소재지·사업자 미등록 제외·정상가동 중·영업활동을 하고 있는·등록을 필한·신고서 제출 완료 등)이 있으면 **불가 추정(뒤로)**으로 올린다. 빼지 않는다.
+  - "예비·없이·무관·예정"이 있으면 올리지 않는다. '가능' 판정은 바꾸지 않는다.
+  - 자격 확인의 '지원대상 유형' 요구 칸에 "등록 사업자 대상으로 보임(추정 · 표현)"과 근거를 보여 준다.
+  - `tests/test_applicant_types.py` +3(놓친 6건 문장, 올리면 안 되는 문장, 언급 없음·weak만 올림·가능/varies 불변).
+- 결과: 2,476건 중 67건이 올라갔다(weak 불가 47 + 언급 없음 20). 놓친 6건이 모두 포함된다. 예비창업자 판정 분포는 blocked 183 · allowed 289 · implied_no 1,702 · 모름 302이다. LLM·DB 호출 0.
+- 검증: 전체 556개 통과(건너뜀 13). 실제 서비스에서 `...117316` 의성군 운전자금 자격 확인이 "등록 사업자 대상으로 보임(추정)"과 근거를 표시하는 것을 확인했다.
+
+### 2026-09-28 · Claude · 업종 순위 기본 끄기 · 신청자 유형(예비창업자) 게이트 연결
+
+- 요청·목적: [Codex 블라인드 판정 결과](reviews/applicant_type/APPLICANT_TYPE_INDUSTRY_LABEL_RESULT_20260928.md)를 보고 사용자가 결정했다.
+  ① 업종 순위는 끈다(가안). ② 신청자 유형은 추천대로 연결한다.
+- ① `search/app.py` `MatchRequest.demote_industry` 기본 True → **False**. 판정에서 밀린 공고 34건 중 11건(업종 쌍 32개)이 부당하게 밀렸다. 허가·상품 조건·창업 예정 업종·역할 갈래를 신청자 업종 제한으로 읽은 경우다.
+  코드와 평가(`eval/industry_rank_check.py`는 명시적으로 켜고 끔)는 그대로 두었다. `industry_rank.py` 머리말에 이유를 적었다. 테스트는 규칙 시험 시 명시적으로 켜게 했고, 기본 꺼짐 테스트 1개를 추가했다.
+- ② `search/applicant_types.py` 신규. `reports/applicant_type_llm_full_20260928T023916Z/results.jsonl`(환경 변수 `APPLICANT_TYPES_RESULTS`)을 서버 시작 시 읽는다. 없으면 기능이 꺼진다.
+  - 매칭(`/api/match`, 신청자가 **예비창업자**일 때만, `use_applicant_types` 기본 True):
+    - 본문 '예비창업자 불가' + 강한 근거 + 세부사업 공통 → 정형 필터에서 뺀다(이유 "예비창업자 불가(공고 본문)"). Codex 30/30.
+    - 본문 '가능' → API 업력 칸의 예비 불가를 덮어 되살린다. Codex 9/9.
+    - '불가 추정' → 빼지 않고 뒤로 보낸다. 우선순위는 시·도 → 시·군·구 → **추정** → 업종 → 집단.
+    - 약한 불가와 개인/법인은 쓰지 않는다. 응답에 `applicant_types`(blocked·restored·implied_demoted), 결과별 `rules.pre_founder_implied_no`.
+  - 자격 확인(`/api/eligibility`): '지원대상 유형'을 이 값으로 판정한다. 예비창업자는 불가=미달·가능=통과·추정/모름=확인 필요이고, 근거 문장을 설명에 적는다.
+    본문 가능이면 API 업력 미달을 통과로 바꾸고 요구 칸에 "공고 본문 우선 · API 업력 칸: …"을 적는다. 개인/법인은 근거만 참고로 보여 주고 판정은 하지 않는다.
+  - `tests/test_applicant_types.py` 신규 9개.
+- 검증: 전체 553개 통과(건너뜀 13).
+  실제 서비스(8000, 예비창업자·경기·친환경 생활용품):
+  - 본문 불가로 **177건 제외**, API 업력 칸을 덮어 **9건 되살림**(`kstartup:179011` 경기도여성창업보육센터 등), 불가 추정 24건을 뒤로 보냈다.
+  - 필터 통과는 1,717 → 1,595건이고, 상위 10 중 2건이 바뀌었다. 빠진 2건은 모두 불가 추정(소상공인 대상, 섬유·의류 소재기업 대상)이었다.
+  - `kstartup:179011` 자격 확인: 지원대상 유형 통과, 업력 통과(본문 우선), 접수기간 미달(9/15 마감).
+- 남은 것:
+  - Codex가 사후 점검에서 지목한 애매한 판정(P044·P047·P055·P086·P090)과 LLM이 놓친 명시 불가(P084·P085·P089)는 사람 검토 전이다.
+  - 표본 기준 A 30/30은 183건 전량 보증이 아니다. 운영에서 빠진 공고와 근거를 관찰해야 한다.
+  - 결과 파일 이후 새로 수집된 공고는 판정이 없다(예전처럼 동작한다). EC2에는 배포하지 않았다.
+
+### 2026-09-28 · Claude · 기획서 대조 B — 실험 경로의 지역·업종·규모 제외를 순위 신호로
+
+- 요청·목적: 실험 경로(`experiments/sql_semantic/search.py`)가 지역을 SQL `WHERE`로, 지역·업종·기업 규모 불충족을 파이썬에서 **제외**했다. 기획서 4-2·5-3과 기능정의서 R-2·R-3(게이트는 유형·업력·접수기간, 지역·업종은 순위)과 서비스(`search/app.py`)에 맞춘다.
+- 변경:
+  - `search.py`:
+    - `build_filter`: 지역 조건을 없애 SQL은 마감만 거른다(지역 값은 계속 가져온다).
+    - `evaluate`: 4값(checks, excluded, unsure, demote)을 돌려준다. `HARD_FIELDS`(업력·접수기간) NO만 제외하고, `SOFT_FIELDS`(지역→업종→규모) NO는 demote.
+    - `rank`: 지역·업종·규모 불일치 순으로 뒤로 보내고 `rank_reason`에 "… 불일치 → 뒤로"를 적는다. 결과에 `demoted_by`, `counts.demoted`, `demoted_examples`.
+  - `fixtures.py`: 후보 0건 사례(fx-case03)를 지역 불일치 대신 마감 지난 공고로 만든다.
+  - `viewer.py` `drop_split`에 `demoted`, `web/verify.html` 단계표("조건 제외 (업력·접수기간)", "그중 뒤로 보냄").
+  - `compare_input.py` 입력 쓰임 설명, `experiments/sql_semantic/README.md` 설계 원칙.
+  - 테스트(`test_sql_semantic.py`): 옛 설계를 고정하던 7개를 새 설계로 고쳤다. 지역은 SQL 필터가 아니고, 지역·업종·규모 불일치는 남고 뒤로 가며, 0건은 마감으로 만든다. 지역 불일치 순위 테스트 1개를 추가했다.
+- 검증: 전체 543개 통과(건너뜀 13). 검증 화면 fixture에서 fx-case01은 제외 1(업력)·뒤로 1(지역), fx-case03은 0건(접수기간)이다.
+- 주의: 예전 결과 폴더(`reports/sql_semantic_*`)의 수치는 옛 방식(지역 제외)이다. 새로 돌리지 않았다(실험 DB 실행은 사용자 요청 시).
+
+### 2026-09-28 · Codex · 신청자 유형·업종 밀림 블라인드 판정
+
+- 요청·목적: Claude의 [판정 지시서](reviews/applicant_type/APPLICANT_TYPE_INDUSTRY_LABEL_TASK_20260928.md)에 따라 신청자 유형 게이트와 업종 순위의 안전성을 독립 평가한다. AI 참고 판정이며 사람 정답이 아니다.
+- 작업 전 상태: `reports/label_pack_20260928/`의 공개 신청자 자료 93건·업종 자료 34건, 숨김 LLM 답이 분리되어 있었다. 관련 코드·DB와 기존의 다른 수정은 건드리지 않았다.
+- 변경 파일: 같은 꾸러미에 `applicant_labels.jsonl`(93건), `industry_labels.jsonl`(34건), 채점기가 생성한 `score.md`·`score.json`; [결과 문서](reviews/applicant_type/APPLICANT_TYPE_INDUSTRY_LABEL_RESULT_20260928.md). `docs/README.md`·`docs/STATUS.md`에 위치와 상태를 반영했다.
+- 전후 차이·선택 이유: 공개 자격 문장으로 두 라벨 파일을 먼저 확정했다. 이후 숨김 답을 열어 독립 판정과 LLM의 일치·불일치를 계산했다. 원 블라인드 라벨은 대조 후 수정하지 않아 판정 절차를 보존했다.
+- 검증: ID·상태값·원문 근거 포함·업종 질문 코드 누락을 검사해 93/93·34/34 통과. `python -X utf8 experiments/sql_semantic/label_score.py reports/label_pack_20260928` 성공. 예비창업자 strong 불가 30/30, API 충돌 9/9, 업종 잘못 밀림 11개 공고·32개 업종쌍, 불명확 2쌍. 점수는 LLM과의 일치이지 사람 정답 대비 정확도가 아니다.
+- 미검증·남은 문제: 사후 자체 점검에서 `P044`·`P047`·`P086` 등 원 판정 수정 후보 확인. `I003` 등 업종은 제품·허가 요건을 별도 확인해야 한다. 사람 검수 전 운영용 정답으로 확정하거나 업종 순위 안전성을 승인하지 않는다.
+- 다음 단계: [결과 문서](reviews/applicant_type/APPLICANT_TYPE_INDUSTRY_LABEL_RESULT_20260928.md)의 수정 후보와 부당 밀림 목록을 사람이 판정한 뒤, 명시적 불가 게이트와 업종 순위의 적용 범위를 결정한다. 코드·DB·Git 스테이징/커밋은 변경하지 않았다.
+
+### 2026-09-28 · Claude · 매칭 결과 기획서 맞춤 — D(10+10건)·E(대체 검색)·H(적합도)
+
+- 요청·목적: 기획서 대조 D·E·H. 필터 선행 매칭(A)이 Codex 승인을 받아 `search/app.py`를 고칠 수 있게 됐다.
+- 변경 파일: `search/app.py`
+  - **D**: `MatchRequest.top` 기본 3 → 10, `offset` 추가, 누적 최대 `MAX_CANDIDATES=20`(offset을 쓸 때만 자름. 평가 스크립트의 큰 top은 그대로).
+    결과마다 `rank`(전체 순위)·`display_type`(1~3 card, 나머지 list), 응답에 `offset`·`top`·`has_more`. 검색 깊이는 `max(offset+top, 50)`.
+  - **E**: 질의 인코딩·Chroma 의미 검색·BM25를 각각 try로 감쌌다. 임베딩 쪽 실패는 `BM25단독`, BM25 실패는 `임베딩단독`, 둘 다 실패는 필터 통과 공고의 `마감임박순`(잠정)이다.
+    응답에 `fallback_used`·`fallback_mode`·`search_errors`를 넣고 stderr에도 원인을 남긴다. dense 방식도 의미 검색이 실패하면 BM25로 간다. 정형 필터는 모든 경로에서 돈다. 유사도가 없는 경로는 `score`·`band`가 None이다.
+  - **H**: `fit_score` = 이번 경로의 RRF 점수 ÷ 이론 최대값. 하이브리드는 (w_dense+w_bm25)/(k+1), 한쪽이면 그 한쪽의 1위 점수다. 마감임박순은 None. 응답 `fit_basis`에 기준을 적는다.
+  - `web/app.html`(8000 시험 화면): `top:10`, 카드 3 + 리스트 7, "10건 더 보기"(offset), 대체 검색 안내 배너, 적합도 표시.
+  - `tests/test_match_deh.py` 신규 9개: 쪽수·20건 상한·큰 top, 정상 경로 fit=1.0, 인코딩/Chroma/BM25/둘 다 실패, 대체 경로에서 필터 유지.
+    `tests/test_query_ablation.py`의 기본값 안전장치 기대값을 3 → 10으로 고쳤다(query_ablation은 top을 직접 넘겨 수치 영향 없음).
+  - 문서: `PLAN_ALIGNMENT` D·E·H 해결 표시, `FLOW.md`, 전체 흐름 화면.
+- 검증: 전체 541개 통과(건너뜀 13).
+  - 실제 서비스(8000, 로컬 DB·Chroma): 필터 통과 1,740건 중 첫 조회 10건(rank 1~10, card 3), `offset=10`은 11~20위(겹침 0), `has_more` false, `offset=20`은 0건, 1위 fit 0.898, 대체 경로 없음.
+  - 화면에서 "제조 법인" 예시로 카드 3 + 리스트 7, "10건 더 보기" 뒤 리스트 04~20위, 버튼 사라짐을 확인했다.
+  - 대체 경로는 실제 서버에서 오류를 일으켜 보지 않았다(단위 테스트로 확인).
+- 남은 것: 수집 상태(F)를 매칭 앞에 연결하는 일은 배치 위치·24시간 기준 결정 뒤로 미룬다. EC2에는 배포하지 않았다(사용자 판단).
+
+### 2026-09-28 · Claude · Codex 판정 지시서·꾸러미 (신청자 유형 · 업종 밀림)
+
+- 요청·목적: 신청자 유형 게이트 연결과 업종 순위 안전성 판단에 쓸 독립 판정(AI 참고 정답)을 Codex에게 요청한다.
+- 변경 파일:
+  - `experiments/sql_semantic/label_pack.py` 신규: 판정 꾸러미를 만든다(DB 읽기만). 판정지에는 발췌만 넣고, LLM 답은 `answers_hidden.jsonl`에 따로 둔다(블라인드).
+  - `experiments/sql_semantic/label_score.py` 신규: 표준 라이브러리만 쓰는 채점. 게이트 안전(예비 불가 strong의 정답률과 "가능" 오류), B 본문 우선, 약한 불가, 개인/법인, 불가 추정, 놓침, 업종 잘못 밀림을 계산한다.
+  - `tests/test_label_score.py` 3개.
+  - [지시서](reviews/applicant_type/APPLICANT_TYPE_INDUSTRY_LABEL_TASK_20260928.md) 신규, 문서 지도에 `reviews/applicant_type/` 추가.
+- 꾸러미 `reports/label_pack_20260928/`: 신청자 유형 93건과 업종 34건.
+  - 신청자 유형 묶음: A 30/183 · B 9/9 · C 15/87 · D 9/9 · E 20/1,632 · F 10/262. 93건 모두 LLM이 본 발췌와 같다(document_sha256).
+  - D는 20건을 목표로 했지만, 개인/법인 불가 공고 대부분이 예비 불가(A)에 먼저 들어가 9건이다. A 안의 개인/법인 판정도 채점에 포함된다.
+  - 업종 34건은 최신 평가 `industry_rank_check_20260928T031858Z`의 밀린 공고 전부다. 발췌는 지금 출처 DB로 다시 만들었다(9/18 스냅샷과 조금 다를 수 있음).
+- 검증: 채점 테스트 3개 통과. OpenAI 0, DB 쓰기 0.
+- 다음: Codex 판정 → `label_score.py` → 결과 문서(같은 폴더) → 게이트 연결 설계.
+
+### 2026-09-28 · Claude · Codex 통합 재검수 새 P1(허용 갈래 누락) 수정
+
+- 요청·목적: [통합 재검수](reviews/integration/CURRENT_PROGRESS_REVIEW_RECHECK_20260928.md)의 새 P1. LLM의 `list_complete`만 믿어, 원문에 있는 다른 허용 갈래("또는 수출 기업" 등)가 빠진 공고 5건이 업종 불일치로 밀렸다. 추가 확인 3건도 포함한다. 같은 재검수에서 필터 선행 매칭(A)의 P2 두 건은 **승인**됐다([재검수](reviews/matching/MATCH_FILTER_FIRST_REVIEW_RECHECK_20260928.md)).
+- 변경: `search/industry_rank.py` `branch_problem()`. 허용값을 지운 근거 문장에 갈래 단서(또는·~의 경우·①② 등)나 다른 대상(농업인·소상공인·수출 등)이 남으면 순위에 쓰지 않는다. 소재지 "본사 또는 공장"은 예외다.
+  `industry_groups.SECTION_PHRASES`에 KSIC 26·27 공식 명칭(C)을 추가했다. 테스트는 `test_industry_rank.py`에 반례 5건과 예외 1건, `test_industry_groups.py`에 1줄을 더했다.
+- 결과: 순위 대상 255 → 174건. 지적 7건은 모두 비교 불가가 됐고, `...120877`은 `{C}`만 남았다. 재평가 `reports/industry_rank_check_20260928T031858Z/`(서비스 깊이 50)에서 불변식 위반 0건, 밀린 공고 58 → 34건.
+- 정정: 신청자 유형 "API 불가인데 본문에 예비창업자 명시 9건"은 명시 8건과 "누구나" 1건(`kstartup:179162`)이다. 이전 항목의 표현을 이 기록으로 정정한다.
+  P3은 "안내 보강만, `reports/` 원본 링크 6개는 여전히 깨져 있다"가 정확한 상태다.
+- 검증: 전체 529개 통과(건너뜀 13). OpenAI 호출 0, DB 쓰기 0.
+- 남은 것: 밀린 34건의 업종 추출 독립 판정(Codex 재검수 요청). 업종 순위의 안전성 승인은 그 뒤다.
+
+### 2026-09-28 · Claude · 수집 상태 판정 (기획서 대조 F) — 매칭 연결 전
+
+- 요청·목적: 기획서 대조 F. 기능정의서 R-1 ①("소스 응답 실패 → collectionStatus='실패', 조용한 실패 금지")과
+  R-3 ②("'실패' 또는 최종 수집 24시간 초과 → 매칭을 진행하지 않고 수집 상태 경고", E-C2-STALE)를 구현한다.
+  Codex 재검수 중이라 `search/app.py`는 건드리지 않고, 판정 모듈과 화면만 만들었다.
+- 변경 파일: `search/collection_status.py` 신규.
+  - `judge()`는 순수 함수다. 실패는 기록 없음·최근 배치 error·출처 partial·기업마당 스냅샷 재사용, 지연은 마지막 저장 24시간 초과, 그 밖은 정상이다. 실패·지연이면 `block_matching=True`.
+  - `check()`는 공용 MySQL `import_runs` 최근 행(SELECT만)과 배치 로그 `data/collect_log.jsonl`의 최근 pipeline 행을 읽는다. 로그가 없으면 DB만으로 판정한다.
+  - `history()`는 저장 이력과 "멈췄을" 구간을 계산한다.
+  - `experiments/sql_semantic/viewer.py`: `/api/collection-status`·`/collection-status`, 메뉴 "수집 상태". `web/collection_status.html` 신규. 전체 흐름 화면 ① 구역에 지금 상태를 표시한다.
+  - `tests/test_collection_status.py` 신규 11개. `docs/FLOW.md`에 한 줄 추가.
+- 확인(실제 DB·로그, 읽기만): 지금은 **정상**이다. 마지막 저장은 2026-09-28 09:00 KST(3.3시간 전), 두 출처 모두 ok.
+- 발견: 이 규칙을 `import_runs` 20회(9/8~9/28, 19.9일)에 적용하면 **매칭이 멈췄을 시간이 233.3시간(약 49%)**이다.
+  간격은 9/10→9/14 89시간, 9/18→9/21 72시간, 9/22→9/28 144시간이다. 배치를 돌리는 PC가 꺼져 있던 기간으로 보인다(주말 등).
+  또 매일 09:00 실행은 전날 저장과의 간격이 24시간을 몇 초 넘기도 한다(9/15→9/16 24시간 12초). 이 경우 몇 초씩 "지연"이 된다.
+- 검증: 전체 528개 통과(건너뜀 13). 브라우저에서 `/collection-status` 내용·이력 표를 확인했고 콘솔 오류는 없었다.
+- 남은 것(사용자·팀 결정):
+  1. 배치를 계속 켜져 있는 곳(EC2 등)으로 옮길지. 옮기지 않으면 규칙대로 주말마다 매칭이 멈춘다.
+  2. 24시간 기준에 예약 시각 흔들림을 흡수할 여유(예: 26시간)를 둘지. 기능정의서 수치를 바꾸는 일이라 팀 확인이 필요하다.
+  3. `/api/match` 연결(재검수 뒤): 멈춤이면 매칭하지 않고 `collectionStatus`와 경고를 돌려준다.
+
+### 2026-09-28 · Codex · Claude 수정 재검수와 업종 허용 갈래 누락 발견
+
+- 요청·목적: Claude가 통합 검수와 정형 필터 선행 매칭 P2를 수정한 뒤 사용자 재검수 요청.
+- 변경 파일: [통합 재검수](reviews/integration/CURRENT_PROGRESS_REVIEW_RECHECK_20260928.md), [매칭 재검수](reviews/matching/MATCH_FILTER_FIRST_REVIEW_RECHECK_20260928.md) 신규. 문서 지도와 STATUS에 판정·남은 문제를 반영했다. 서비스 코드·저장 결과는 수정하지 않았다.
+- 확인: P1 재개 모드 거부를 완료된 전량 폴더(2,476 ID)로 직접 호출해 확인. 업종 평가 348쌍의 실제 서비스 깊이 50, 전체 후보 깊이 100000, `식품기업`의 순위 대상 제외를 확인. 업종 평가의 밀린 공고 58건을 근거 문장과 대조해 허용 갈래가 빠진 공고 5건(Top 10 이탈 22쌍)을 찾았다. 보고서의 "57건" 표기는 실제 58건과 다르다. 신청자 유형 전량 2,476행과 게이트용 192건·API 대조 363건/차이 68건을 읽기 전용 재계산했다.
+- 검증: 시스템 Python에서 신청자 유형 7개·업종 분류 17개, FastAPI 라우트 메모리 대역으로 정형 필터 선행 13개·업종 순위 10개 통과. 전체 517개와 실제 DB·Chroma·HTTP·EC2는 이 환경의 Python 의존성 문제로 독립 재현하지 못했다. `git diff --check -- data-collection` 통과.
+- 다음: Claude는 업종 허용 목록의 누락 갈래를 저장 원문으로 재검증하고 보수적으로 순위 대상에서 제외하거나 오프라인 후처리한 뒤 서비스 조건 평가를 다시 실행한다. 정형 필터 선행 P2 두 건은 승인. Git 스테이징·커밋·push는 하지 않았다.
+
+### 2026-09-28 · Claude · Codex 통합 검수 P1·P2·P2·P3 수정
+
+- 요청·목적: [통합 검수](reviews/integration/CURRENT_PROGRESS_REVIEW_20260928.md)의 수정 요청 네 건. 응답은 [응답서](reviews/integration/CURRENT_PROGRESS_REVIEW_RESPONSE_20260928.md).
+- 변경:
+  - `applicant_type_llm.py`: `run_spec.json`을 남기고, 재개 모드·대상 검사(`check_resume`)를 결과를 쓰기 전에 한다.
+  - `eval/industry_rank_check.py`: 서비스 조건(top=10, 깊이 50)과 전체 후보 호출을 분리했다. 불변식 3을 추가하고 밀린 공고에 원문 근거를 붙였다.
+  - `industry_groups.allowed_sections`: 제조업은 "제조·생산·가공…"이나 KSIC 코드가 있어야 순위에 쓴다. 순위 대상은 273 → 255건.
+  - 인계서 경로를 고치고, `reports/search_comparison_*` 3곳에 `DOCS_MOVED.md`를 두었다.
+  - 테스트: `test_applicant_type_llm.py` +2, `test_industry_groups.py` 반례를 추가했다.
+- 검증: 전체 517개 통과(건너뜀 13). 재평가는 `reports/industry_rank_check_20260928T025746Z/`에 있고, 서비스 응답 깊이 50 × 348쌍, 불변식 위반 0건이다.
+- 남은 것: 밀린 공고 57건의 업종 추출 정확성은 독립 판정 전이다. Codex 재검수를 요청했다.
+
+### 2026-09-28 · Claude · 신청자 유형 LLM 추출 — 전량 2,476건과 결과 화면
+
+- 요청·목적: 표본 뒤 사용자가 전량 실행과 "서버를 켜서 눈으로 확인할 수 있는 화면"을 요청했다.
+- 실행: `applicant_type_llm.py --all --workers 8`(gpt-5.6-luna@medium). 2,476건(기업마당 2,041 · K-Startup 435) 성공, 실패 0.
+  토큰 입력 5,791,539 · 출력 743,682, **약 $2.05**(단가 추정). 약 25분 걸렸다. DB 쓰기 0. 결과는 `reports/applicant_type_llm_full_20260928T023916Z/`.
+- 결과(검사 후):
+
+  | 유형 | 가능 | 불가 | 불가 추정 | 언급 없음 | 검사로 내림 |
+  |---|---:|---:|---:|---:|---:|
+  | 예비창업자 | 289 | 274(strong 185) | 1,635 | 278 | 184 |
+  | 개인사업자 | 152 | 45(strong 30) | — | 2,279 | 33 |
+  | 법인 | 200 | 25(strong 15) | — | 2,251 | 44 |
+
+  세부사업별로 다름 78건. 게이트가 쓸 수 있는 "확실한 불가"(varies 아님 + strong)가 있는 공고는 **192건**이다.
+- K-Startup API 업력 칸과 대조(LLM이 판정한 363건): 일치 295 · 불일치 68.
+  - API는 가능인데 LLM은 불가 추정: 57건. 본문 대상이 "업력 N년 미만 창업기업"인 경우다.
+  - API는 가능인데 LLM은 불가(명시): 2건.
+  - **API는 불가인데 본문에 예비창업자가 명시(LLM 가능): 9건.** 지금 게이트가 예비창업자에게서 잘못 빼는 공고다. 예: 한라대 창업보육센터 "예비창업자 또는 창업 7년 미만", 달서구 중장년 기술창업센터, 앤틀러 "개인 예비 창업자".
+- 눈 검토: strong 불가 표본은 근거가 맞았다. weak 불가에는 맞는 것("사업자 미등록 업체 제외")과 틀린 것("영리 및 비영리 법인사업자"를 법인 불가로, "예비창업자"를 법인 불가로)이 섞여 있어, 게이트용 값에서 weak를 빼는 설계가 필요하다.
+  "근거에 사업자·창업 관련 말이 없음"으로 내린 114건 중 97건은 불가 추정이다. 농가·여행사·스타트업·소공인 같은 말이 검사 단어 목록에 없어서 내려갔다. 보수 쪽 오류이며, 목록을 넓힌 오프라인 재검사는 후속으로 남긴다.
+- 화면: 검증 서버 `/applicant-types`(메뉴 "신청자 유형"). `experiments/sql_semantic/applicant_type_results.py`(읽기 전용), `web/applicant_types.html`, `viewer.py` `/api/applicant-types`·`/api/applicant-types/runs`, `tests/test_applicant_type_ui.py` 4개.
+  숫자 칸 필터, 출처·예비창업자 판정·개인/법인 명시·게이트 사용 가능·API/기존값 불일치·검사로 내림 필터, 근거·판단 이유·원문 링크를 보여 준다. 실행 중인 폴더는 진행 건수를 보여 준다.
+  전체 흐름 화면의 G 상자도 갱신했다.
+- 남은 것: 게이트 연결은 하지 않았다. 연결은 명시 불가(strong)를 필터로, 불가 추정은 순위·확인 필요로, 본문의 "예비창업자 가능"이 API 업력 칸보다 우선하게 한다. 연결 전에 Codex 판정과 안전 확인이 필요하다.
+
+### 2026-09-28 · Codex · 진행분 통합 검수 문서화
+
+- 요청·목적: 사용자가 현재 진행분 리뷰를 Claude가 볼 수 있는 문서로 남기도록 요청했다.
+- 변경 파일: [통합 검수 결과](reviews/integration/CURRENT_PROGRESS_REVIEW_20260928.md) 신규, 문서 지도·STATUS에 위치와 수정 대기 상태 추가. 서비스 코드·평가 결과·실행 중인 checkpoint는 수정하지 않았다.
+- 검수: 신청자 유형 전량 재개 시 `--all` 누락으로 표본 결과를 같은 폴더에 쓸 수 있는 경로(P1), 업종 평가 `top=100000`과 실제 서비스 깊이 차이(P2), `식품기업`의 제조업 단정과 저장 평가의 5쌍 순위 변경(P2), 문서 이동 뒤 링크(P3)를 확인했다. 업종 분류 17개와 신청자 유형 검사 5개가 시스템 Python에서 통과했다. `git diff --check -- data-collection` 통과.
+- 미검증·다음: `.venv` 실행 파일 불일치와 시스템 Python의 `fastapi` 부재로 서비스 통합 테스트를 독립 재현하지 못했다. Claude가 P1을 먼저 수정하고 P2를 수정·재평가한 뒤 재검수를 요청한다. Git 스테이징·커밋·push는 하지 않았다.
+
+### 2026-09-28 · Claude · 신청자 유형(예비창업자·개인사업자·법인) LLM 추출 — 표본 60건
+
+- 요청·목적: 기획서 대조 G(지원대상 유형 정형화)를 업종 때 방식으로 가져올 수 있는지. 사용자가 표본 60건 실행을 승인했다(잔액 약 $9, 필요하면 학원 지원 $300).
+- 작업 전 발견: 매일 배치 추출기(`collect/extract_conditions.py`, gpt-4o-mini)가 이미 `notice_conditions.business_type`·`pre_startup_allowed`를 기업마당 1,864건에 채우고 있었다. 그러나 게이트는 이 값을 쓰지 않는다.
+  근거가 공고당 한 문장(대개 지원 금액 문장)이라 확인할 수 없고, 표본에서 오판이 보였다("정선군 소재 중소 제조기업" → 법인만, "법인사업자이어야 함" → 예비창업자 가능).
+  전체 첨부 본문 검색(DB 읽기)으로 보면 "법인에 한함" 30건 대부분이 제출 서류 설명이었다. 개인·법인을 실제로 가르는 공고는 드물다.
+- 변경 파일: `experiments/sql_semantic/applicant_type_llm.py` 신규. 업종 v3처럼 유형마다 status(가능·불가·불가 추정[예비만]·언급 없음)와 원문 근거를 받고,
+  코드가 근거 원문 존재·제출 서류 문맥·지원 내용 문맥을 검사한다(`industry_llm_sample`의 `loose_found`·`quote_role` 재사용).
+  게이트용 값은 varies가 아니고, 자격·제외 머리말 아래(strong)의 "불가"만 쓴다. `tests/test_applicant_type_llm.py` 신규 5개.
+- 실행: gpt-5.6-luna@medium, 기업마당 40 + K-Startup 20(seed 20260928). 성공 60 · 실패 0, 토큰 입력 138,075 · 출력 18,144, **약 $0.049**(단가 추정, 청구액 아님). DB 쓰기 0.
+  결과는 `reports/applicant_type_llm_20260928T023631Z/`.
+- 결과(사람 정답 없음, 눈 검토):
+  - 예비창업자: 가능 11 · **불가(명시) 7** · 불가 추정 39 · 언급 없음 3. 명시 불가 7건은 모두 근거가 맞았다("사업자등록증 보유", "사업자등록을 하고 영업 중이어야만", "사업자 미등록 업체 제외" 등).
+    그중 3건을 기존 4o-mini는 "예비창업자 가능"으로 적었다.
+  - 개인사업자·법인: 60건 중 명시가 2건뿐이고 둘 다 "개인 또는 법인 모두 가능"이었다. **개인/법인을 가르는 제한은 표본에 없다.** G의 실익은 예비창업자 쪽이다.
+  - K-Startup API 업력 칸과 대조하면 일치 12 · 불일치 6 · LLM 모름 2였다. 불일치 5건은 API가 "예비창업자"까지 나열했는데 본문 대상은 "업력 7년 미만 창업기업"이어서 LLM이 불가 추정으로 본 경우다.
+    나머지 1건(`kstartup:179011` 경기도여성창업보육센터)은 반대였다. **API 업력 칸이 "3년미만"뿐이라 지금 게이트가 예비창업자에게서 빼는데, 본문에는 "여성 예비창업자"가 대상으로 명시돼 있다.** 지금 게이트가 잘못 빼는 사례다.
+  - 불가 추정(39)은 "본사·공장이 소재한 중소기업"처럼 대부분 타당하다. 다만 "개인, 개인사업자, 작목반, 법인"(군산 로컬푸드)처럼 사업자가 아닌 개인이 포함된 경우도 불가 추정으로 봤다. 추정은 탈락 근거로 쓰지 않는다.
+- 미검증·다음: Codex 판정 대조와 전량 실행(예상 약 $2)은 사용자 결정 대기. 게이트 연결 전에 안전 확인이 필요하다.
+
+### 2026-09-28 · Claude · 업종 순위 반영 (허용 목록 밖이면 뒤로) — "가" 방식 안전 확인
+
+- 요청·목적: F2와 A안 결정 뒤 업종을 매칭 순위에 반영. 효과 측정은 "가"(잘못된 순서가 생기지 않는지만)로 하기로 사용자가 정했다. 평가 질의 66개 중 업종이 들어간 질의가 6개뿐이라 효과를 잴 정답이 없다.
+- 변경 파일:
+  - `search/industry_rank.py` 신규 — 업종 결과 파일(기본 `reports/industry_llm_full_luna_20260928_final5/results.jsonl`, 환경 변수 `INDUSTRY_RESULTS`)을 서버를 켤 때 읽는다.
+    known · 목록 완전 · 잘림 없음 · 통합공고 아님 · 허용값 전부 KSIC 대분류인 공고만 쓴다. 파일이 없으면 규칙이 꺼진다.
+  - `search/app.py` — `MatchRequest.demote_industry`(기본 True), `Weights.penalty_industry`(score 방식, 잠정 0.5).
+    order 방식 우선순위는 다른 시·도 → 다른 시·군·구 → **업종 목록 밖** → 대상 집단이다. LLM 추출이라 지역보다 약하게 뒀다.
+    응답에 `industry`(신청자 대분류·활성 여부·출처·대상 공고 수), `industry_demoted`, 결과별 `rules.off_industry`를 추가했다. `boot()`가 업종 표를 읽는다.
+  - `experiments/sql_semantic/industry_groups.py` `allowed_sections` — 분야·산업·관련·연관·유관·전후방·수출이 들어간 허용값이 있으면 비교 불가(None). 아래 확인에서 찾은 반례 때문이다.
+  - `search/applicant.py` 설명 한 줄, `docs/FLOW.md` 매칭 흐름·우선순위.
+  - 테스트: `tests/test_industry_rank.py` 신규 10개, `test_industry_groups.py` 반례 추가.
+  - `eval/industry_rank_check.py` 신규 — 정상 질의 58개 × 대표 업종 6개(제조·음식점·정보통신·농업·건설·도소매)로 규칙을 끈 결과와 켠 결과를 비교한다(region_eval과 같은 방식).
+- 확인 결과(실제 DB·Chroma, OpenAI 0, DB 쓰기 0):
+  1. `industry_rank_check_20260928T021254Z` — **무효**. 응답을 `top=50`으로 받아 밀린 공고가 잘려 나가 "빠짐" 위반 324건으로 보였다. 스크립트 착오이며 폴더에 NOTE.md를 남겼다.
+  2. `…T021723Z`(후보 전체를 받도록 수정) — 위반 0건. 순위 대상 329건. 밀린 공고를 눈으로 검토하다 오판 3종을 찾았다.
+     "IT 서비스·솔루션 분야"(디캠프, J로만 읽혀 24쌍에서 밀렸고 그중 주제 판정 2가 10쌍), "의료·바이오 산업" → Q(실제는 의료기기 제조), "농림축산식품 수출업체" → C.
+  3. `…T022212Z`(범위가 넓은 표현 제외 후, **현재 기준**) — **불변식 위반 0건**(빠지는 공고 없음, 밀린 공고는 모두 확실한 불일치). 순위 대상 273건 / 공고 2,476건.
+     상위 10이 바뀐 (질의, 업종) 쌍은 업종별로 17~36쌍 / 58쌍(제조 17, 음식점 30, 정보통신 29, 농업 29, 건설 36, 도소매 29)이다. 밀린 공고는 여행업·음식점·제조기업·게임 등 업종이 분명히 적힌 공고였다.
+- 미검증·남은 문제: 사람 정답이 없어 순위가 **좋아졌는지는 모른다**. 업종 추출 자체도 사람 검증 전이다.
+  눈 검토에서 애매한 것 1건: `kstartup:179241` SDGs 소셜벤처 챔피언십 "1인 미디어 콘텐츠 창작자"(한 부문만일 가능성). 효과 측정("나" 방식: 평가 질의에 업종을 채우고 Codex 판정)은 하지 않았다.
+- 검증: 전체 테스트 506개 통과(건너뜀 13). 서비스(8000)·EC2에는 배포하지 않았다(EC2에는 업종 결과 파일이 없어 배포해도 규칙이 꺼진다).
+
+### 2026-09-28 · Claude · 전체 흐름 화면 (`/flow`)
+
+- 요청·목적: 지금까지 만든 것의 흐름을 눈으로 확인하고 싶다는 사용자 요청.
+- 변경 파일: `web/flow.html` 신규. `experiments/sql_semantic/viewer.py`에 `/flow`, `/api/flow`(업종 순위 신호 수·최신 평가 폴더, 파일만 읽음)를 추가하고, 메뉴 맨 앞에 "전체 흐름"을 넣었다. `tests/test_viewer_nav.py` +1.
+- 화면 구성: ① 공고 모으기(매일 배치 5단계) ② 공고 조건 정리(업력·마감, LLM 업종, KSIC 묶음, 신청자 유형) ③ 매칭(`/api/match` 6단계와 뒤로 보내는 순서 4가지, 자격 확인) ④ 확인·평가(화면·스크립트·최근 결과) ⑤ 기획서 대비 남은 것(B~H·ML·검수 대기).
+  상자마다 한 줄 설명, 담당 파일, 상태(완료·일부·연결 안 됨·미구현)를 적고, 9/28에 바뀐 곳은 파란 테두리로 표시했다. 좁은 화면에서는 세로로 쌓인다.
+- 검증: 브라우저에서 `/flow`를 열어 확인했다. 숫자 연결, 상자 넘침 0, 가로 스크롤 없음, 콘솔 오류 없음. 긴 상태 표시가 상자 밖으로 넘치던 것을 고쳤다.
+- 한계: 상태·설명은 손으로 적은 것이라 코드가 바뀌면 이 파일도 고쳐야 한다(`docs/FLOW.md`와 같은 원칙).
+
+### 2026-09-28 · Claude · docs 폴더 정리와 문서 지도
+
+- 요청·목적: docs 폴더가 지저분하다, 정리하고 Codex가 헷갈리지 않게 해 달라는 사용자 요청.
+- 변경: `docs/` 맨 위에 흩어져 있던 49개 항목(파일·폴더)을 `specs/`(기획서·기능정의서), `guides/`(FIELD_MAP·QUERIES·SCHEDULER·TEAM_DATA·VERIFY_UI·구조도),
+  `reviews/<matching|industry|search|sql_semantic|ui|chroma>/`(작업 지시·검수 요청·검수 결과), `ml/`, `deliverables/`(docx, `_qa_claude_*` → `_qa/`), `archive/`(9/14·9/22 인계서)로 옮겼다.
+  맨 위에는 STATUS·WORKLOG·FLOW·PLAN_ALIGNMENT·최신 인계서만 남겼다. **지운 파일은 없다.**
+- 링크: 스크립트로 저장소 안 `.md`·`.py`·`.html`의 상대 링크와 `docs/…` 경로 문자열 약 180곳을 새 위치로 고쳤다(`reports/`·`data/`는 결과 보존 원칙에 따라 손대지 않음).
+  이동 뒤 깨진 링크를 검사해 0건을 확인했다. 이동 전부터 깨져 있던 `guides/FIELD_MAP.md` → `collect/normalize.py` 링크도 고쳤다.
+- Codex 혼동 방지:
+  - `docs/README.md`(문서 지도) 신규: 먼저 읽을 5개, 폴더별 내용, 주제별 검수 상태, 새 문서 이름·위치 규칙, 옛 경로 → 새 경로 안내.
+  - `AGENTS.md`: 작업 시작 0단계로 문서 지도를 읽게 하고, "새 검수·지시 문서는 `docs/reviews/<주제>/`에, `docs/` 맨 위에는 만들지 않는다"는 문서 위치 규칙을 추가했다.
+  - 재검수 대기 중인 [요청서](reviews/matching/MATCH_FILTER_FIRST_REVIEW_REQUEST_20260928.md) 끝에 이동 사실과 결과 파일 위치를 적었다. 인계서의 재검수 확인 경로도 새 위치로 고쳤다.
+- 검증: 전체 테스트 506개 통과(건너뜀 13). 코드가 문서 파일을 실행 중에 읽는 곳은 없다(주석·문자열만 있음).
+- 주의: Git에서는 삭제 + 추가로 보일 수 있다. 커밋할 때 `git add -A docs`로 올리면 이동으로 인식된다(사용자 판단).
+
+### 2026-09-28 · Claude · 검증 화면(8010) 공통 메뉴
+
+- 요청·목적: 진행했던 화면을 메뉴를 눌러 오가고 싶다는 사용자 요청.
+- 변경 파일: `experiments/sql_semantic/viewer.py` — `NAV` 목록과 `page(filename, current)` 추가. 화면을 내려보낼 때 `<body>` 바로 뒤에 메뉴 막대를 끼운다.
+  대상은 검증 화면(`/`)·검색 방식 비교(`/compare`)·매칭 순서 비교(`/filter-first-eval`)·업종 추출 결과(`/industry-results`)·업종 강조 실험(`/industry-probe`)이고, 현재 화면에 `aria-current="page"`를 단다.
+  HTML 파일은 고치지 않았다. 자체 시험 화면(`/compare/selftest`)에는 메뉴를 넣지 않는다. 새 화면은 `NAV`에 한 줄만 더하면 된다.
+  메뉴는 위에 고정(sticky)되고, 좁은 창에서는 다음 줄로 넘어간다.
+- `tests/test_viewer_nav.py` 신규(4개).
+- 검증: 전체 495개 통과(건너뜀 13). 브라우저에서 서버를 다시 켜 메뉴 클릭으로 `/`→`/industry-results` 이동과 현재 화면 표시를 확인했다. 다섯 화면 모두 메뉴 1개·현재 표시 1개, 콘솔 오류 없음.
+- 남은 것: 일부 화면 본문의 옛 바로가기 링크(예: 업종 추출 결과의 "검증 화면 · 방식 비교 · 업종 강조 실험")는 그대로 두었다. 서비스(8000, `search/app.py`) 화면은 대상이 아니다.
+
+### 2026-09-28 · Claude · 제외 업종 비교 방식 결정(A안) 기록과 '증기' 오분류 수정
+
+- 요청·목적: F2에서 발견한 "제외 목록은 대분류로 비교하면 안 된다" 문제에 대한 사용자 결정.
+- 조사(final5, 읽기만): 제외 목록이 있는 공고 370건(excluded_only 242, known 91, unknown 30, conditional 7). 주제별 공고 수는 사행·도박 174, 도소매 특정 품목(담배 중개·총포·모피 도매 등) 146, 유흥·주점 125, 사치·향락 포괄 122, 금융·보험·대부 89, 부동산 54.
+  대부분 소상공인 정책자금 제외 업종 목록을 옮겨 적은 세부 업종이다. 대분류 이름 그대로인 제외값("부동산업", "숙박 및 음식점업")은 소수이고, "금융업"(KSIC 64)처럼 대분류 일부인 경우가 섞여 있다.
+- **결정(사용자): A안 — 업종 순위에는 허용 목록만 쓰고 제외 목록은 쓰지 않는다.** B안(대분류 전체 제외만)·C안(세부 코드 비교)은 채택하지 않았다. 평가 뒤 필요하면 B안을 덧붙일 수 있다.
+- 변경 파일: [PLAN_ALIGNMENT_20260928.md](PLAN_ALIGNMENT_20260928.md) 순위 반영 표의 `excluded_only` 행과 근거, `industry_groups.py` 머리말, STATUS.
+- 수정: `industry_groups.py` D 핵심어 `'증기'` → `'증기공급'`. `신용보증 기관에서 보증을…`이 '보증기관'의 '증기'로 D가 되던 오류다. `전기, 가스, 증기 및 수도사업`은 공식 명칭 규칙으로 계속 D가 된다. 테스트 2줄 추가, `tests.test_industry_groups` 17개 통과.
+- 영향: F1-2(제외표 참조문)는 순위와 무관해져 화면 정확도 문제로만 남는다.
+
+### 2026-09-28 · Claude · F2 업종 코드 맞추기 (KSIC 대분류 규칙 보강·신청자 업종 변환)
+
+- 요청·목적: 사용자가 업종 작업 중 F2부터 시작하기로 함. 업종 순위 반영([기획서 대조](PLAN_ALIGNMENT_20260928.md) 2절)은 신청자 주 업종과 공고 업종이 같은 코드여야 성립한다.
+- 작업 전 상태: final5 허용값 1,798개 중 미분류 167개, 제외값 2,104개 중 미분류 611개. 공식 복합 명칭이 가운뎃점·및에서 쪼개져 M 을 잃음(`전문·과학 및 기술서비스업 → X`). 신청자 입력을 대분류로 바꾸는 함수 없음.
+- 변경 파일: `experiments/sql_semantic/industry_groups.py`
+  - 나누기 전에 공식·복합 명칭을 찾아 표시(`SECTION_PHRASES`) — 띄어쓰기·가운뎃점·쉼표 무시
+  - KSIC 세부 번호(3~5자리, `390 …`, `(5616)`, `47811 중 …`)를 믿는다. 면적(`330평방미터`)·산재보험 코드·`100대`·연도 모양은 뺀다. 이름과 다른 대분류면 기존처럼 `?`
+  - 괄호 밖 본문으로 대분류를 정하고, 괄호 안은 "…포함"일 때만 덧붙인다(`(전력)반도체 … 제조기업`이 D 를 얻지 않게)
+  - 뜻이 분명한 핵심어 보강(측량·편의점·주점·노래방·카센터·금형·발전사업자·파견 등). `마트`·`슈퍼`·`법률`은 조각 전체일 때만(`스마트`, 법 이름). `청소`→`청소업`(청소년), `증기탕` S(기존 D 오류)
+  - 새 함수 `applicant_section(text)`: 신청자 입력 → 대분류 하나 또는 None(대분류 문자 입력도 받음). `allowed_sections(texts)`: 공고 허용 목록 → 대분류 집합, 값 하나라도 표준 대분류가 아니면 None(비교 불가)
+- `tests/test_industry_groups.py`: +6개(복합 명칭, 세부 번호, 미분류 보강, 걸리면 안 되는 부분 문자열, 신청자 변환, 허용 목록 비교 가능 여부).
+- 전후 차이(final5 값 전체, 규칙만 다시 적용):
+
+  | | 표준 대분류 | 분야 X | 미분류 | 모호 ? |
+  |---|---:|---:|---:|---:|
+  | 허용값 1,798 전 → 후 | 1,357 → 1,433 | 267 → 256 | 167 → 100 | 0 → 2 |
+  | 제외값 2,104 전 → 후 | 1,445 → 1,842 | 24 → 13 | 611 → 211 | 0 → 14 |
+
+  `known` 616건 중 허용 목록 전체가 표준 대분류로 바뀌는 공고 406 → 421, 그중 목록 완전·잘림 없음 428건 기준 322 → 329.
+  이미 묶이던 값의 변화 약 50개를 하나씩 읽었다: 개선(예: `전문·과학 및 기술서비스업` X→M, `회계서비스업` X→M, `자동차학원` C→P, `증기탕` D→S, `(56212)` 번호로 I) 또는 번호·이름 충돌로 `?`(`3402 … 수리업`, `52992 화물운송 중개…`, `(91249)`, `(63999-1)`).
+  남은 미분류 100개는 대부분 분야·모호 표현(`디스플레이`, `ADAS`, `수출`, `관련 기업`, `전∙후방 업종`)이라 규칙을 넣지 않았다.
+- **설계상 발견 — 제외 목록은 대분류로 비교하면 안 된다**: 제외값은 `유흥주점업`·`약국`·`골프장`처럼 세부 업종이다. 대분류(I·G·R)로 올리면 일반 음식점·편의점·체육시설 신청자까지 "제외 목록 안"이 된다. 승인된 순위 규칙의 `excluded_only` 행은 세부 업종 수준 비교(글자·세부 KSIC 번호)가 필요하며, 이 결정은 사용자에게 남긴다. 허용 목록은 대분류 비교가 보수적이다(대분류가 같으면 감점하지 않는 쪽으로만 틀린다).
+- 검증: `.venv\Scripts\python.exe -X utf8 -m unittest discover -s tests` → 491개 통과(건너뜀 13). LLM·DB·결과 폴더 쓰기 없음. `reports/`의 결과 파일은 바꾸지 않았다(묶음은 화면이 읽을 때 규칙으로 계산).
+- 미검증·남은 문제: 사람 정답 없이 눈으로 읽은 검토뿐이다. F2-2(화면의 재독 수·"허용값 총수/미분류 값 수" 표시)는 하지 않았다. 순위 반영 자체는 미구현.
+- 다음 단계: 제외 목록 비교 수준 결정 → F1-2 제외표 참조문 → 업종 순위 반영 구현·평가.
+
 ### 2026-09-28 · Claude · 종료 인계서 작성 (계정 전환 전)
 
 - 요청·목적: 사용자가 Claude 계정을 바꿔(대화 맥락이 이어지지 않을 수 있음) 새 세션이 이어받을 문서가 필요하다고 판단.
@@ -32,10 +704,10 @@
 
 ### 2026-09-28 · Claude · 불일치 A — Codex 검수 P2 두 건 수정
 
-- 요청·목적: [Codex 검수](MATCH_FILTER_FIRST_REVIEW_20260928.md)가 최종 승인 전 수정으로 둔 P2 두 건.
+- 요청·목적: [Codex 검수](reviews/matching/MATCH_FILTER_FIRST_REVIEW_20260928.md)가 최종 승인 전 수정으로 둔 P2 두 건.
 - 변경 파일: `search/app.py`(`match()`가 필터 통과 공고가 있을 때만 인코딩·검색, 응답 `dense_error`·실행한 단계만 담은 `pipeline`;
   `_dense_within()`이 ids 미지원 TypeError 와 그 밖의 오류를 구분해 stderr·응답에 원인 기록), `tests/test_match_rules.py`(+2, 기존 1개 보강),
-  [요청서](MATCH_FILTER_FIRST_REVIEW_REQUEST_20260928.md) 6절 재검수 요청.
+  [요청서](reviews/matching/MATCH_FILTER_FIRST_REVIEW_REQUEST_20260928.md) 6절 재검수 요청.
 - 검증: 전체 485개 통과(건너뜀 13). `eval/filter_first_eval.py` 재실행 수치 동일(`reports/filter_first_eval_20260928T011252Z/`).
   EC2 읽기 전용 SSH: chromadb 1.5.9, `query`에 `ids` 인자 있음, `search/app.py` 미배포.
 - 미검증: EC2에서 필터 질의·대신 계산 시간 측정(공용 서버 실행은 사용자 승인 필요). 임베딩 오류 시 BM25 단독 폴백은 불일치 E로 남음.
@@ -78,9 +750,9 @@
 
 ### 2026-09-28 · Codex · Claude 필터 선행 매칭 검수
 
-- 요청·목적: 사용자 요청과 [Claude 검수 요청](MATCH_FILTER_FIRST_REVIEW_REQUEST_20260928.md)에 따라 불일치 A의 구현·계약·평가 영향을 독립 검토.
+- 요청·목적: 사용자 요청과 [Claude 검수 요청](reviews/matching/MATCH_FILTER_FIRST_REVIEW_REQUEST_20260928.md)에 따라 불일치 A의 구현·계약·평가 영향을 독립 검토.
 - 작업 전 상태: Claude의 `search/app.py`, `search/gate.py`, `search/hybrid.py` 및 관련 테스트·문서가 미커밋 상태. 기존 변경은 수정하지 않음.
-- 변경 파일: [검수 결과](MATCH_FILTER_FIRST_REVIEW_20260928.md) 신규, STATUS 판정 기록, WORKLOG 이 항목.
+- 변경 파일: [검수 결과](reviews/matching/MATCH_FILTER_FIRST_REVIEW_20260928.md) 신규, STATUS 판정 기록, WORKLOG 이 항목.
 - 판단: 필터 통과 ID 안에서만 두 검색을 하는 핵심 구현은 확인. 통과 후보 0건이어도 인코더를 먼저 실행하는 P2, Chroma 오류를 모두 대량 벡터 조회로 전환하는 P2를 기록. 최종 승인은 수정·회귀 확인 뒤. 접수 시작 전 공고는 명시된 R-3의 종료일 기준과 일치한다.
 - 검증: 로컬 Python에서 FastAPI 최소 대역으로 `FilterFirstTests` 11개 통과. 인코더 오류 대역과 전체 마감 공고로 빈 후보 계약 위반 재현. 로컬 정규화 스냅샷 1,734건 중 17건은 2026-09-28 이후 접수 시작.
 - 미검증·남은 문제: 전체 475개, HTTP 테스트, 실 Chroma·DB 비교, EC2 버전·성능은 독립 재현하지 못함. 기존 검색 평가 수치는 새 파이프라인 기준으로 다시 측정할 필요가 있다.
@@ -108,7 +780,7 @@
   `search/app.py`(`match()` 재구성, `_dense_within`, `boot()`의 `vector_ids`, `MatchRequest.structured_filter`, 응답 `filtered_count`·`filter`·`dense_path`·`pipeline`,
   `/api/eligibility`가 `applicant_age` 사용), `eval/search_comparison.py`(A단계 `structured_filter: False`),
   `tests/test_match_rules.py`(`CandidateRefillTests` → `FilterFirstTests` 11개), `tests/test_query_ablation.py`(가짜 BM25 `allowed`), `docs/FLOW.md`,
-  [검수 요청](MATCH_FILTER_FIRST_REVIEW_REQUEST_20260928.md) 신규, 대조 문서 A 해결·순위 원칙 확정 표시.
+  [검수 요청](reviews/matching/MATCH_FILTER_FIRST_REVIEW_REQUEST_20260928.md) 신규, 대조 문서 A 해결·순위 원칙 확정 표시.
 - 전후 차이·선택 이유: 필터는 확실한 미달만 뺀다(모집 상태 closed, 마감일 < 오늘, `_check_age` False). 설립일 미상 사업자는 게이트와 같이 아무것도 빼지 않는다.
   시작 전 공고는 R-3 문구(`applyEnd >= today`)대로 남긴다. 실제 Chroma는 색인에 없는 ID를 `query(ids=)`에 넘기면 `InternalError`를 내서(직접 재현)
   boot 때 색인 ID를 기억하고 교집합만 넘긴다. `ids` 인자가 없거나 실패하면 벡터를 꺼내 직접 코사인 계산.
@@ -139,9 +811,9 @@
 
 ### 2026-09-28 · Codex · Claude F1-1 통합공고 수정 검수
 
-- 요청·목적: 사용자 요청과 [Claude 검수 요청](INDUSTRY_F1_UMBRELLA_REVIEW_REQUEST_20260928.md)에 따라 코드·`final5`·화면 데이터 계약을 독립 검토.
+- 요청·목적: 사용자 요청과 [Claude 검수 요청](reviews/industry/INDUSTRY_F1_UMBRELLA_REVIEW_REQUEST_20260928.md)에 따라 코드·`final5`·화면 데이터 계약을 독립 검토.
 - 작업 전 상태: Claude의 코드·문서 변경과 새 결과 폴더가 미커밋 상태. 기존 변경은 수정하지 않음.
-- 변경 파일: [검수 결과](INDUSTRY_F1_UMBRELLA_REVIEW_20260928.md) 신규 작성, STATUS에 판정과 다음 단계 기록, WORKLOG에 이 항목 추가.
+- 변경 파일: [검수 결과](reviews/industry/INDUSTRY_F1_UMBRELLA_REVIEW_20260928.md) 신규 작성, STATUS에 판정과 다음 단계 기록, WORKLOG에 이 항목 추가.
 - 판단: F1-1 전역 판정 방지 목표 승인. 제목에서 상위 통합공고를 참조하는 개별 공고와 챗봇 안내의 P2 오분류는 후속 수정 대상으로 기록. 업종 정형 필터 연결은 승인하지 않음.
 - 검증: `final4/final5` 1,852개 ID와 의미 필드 12종 비교 → 8행의 판정·이유만 변화. 범위 표시 25행, 필터 사용 가능 0행. `industry_results.load_run()`의 기본 결과·집계 확인. 로컬 Python에서 업종 추출 113개, 업종 묶음 11개 테스트 통과.
 - 미검증·남은 문제: `fastapi`가 없어 UI 테스트 및 전체 469개 통과는 독립 재현하지 못함. 브라우저 렌더링·외부 호출 감시는 하지 않음. F1-2, F2와 사람 표본 평가가 남음.
@@ -149,7 +821,7 @@
 
 ### 2026-09-28 · Claude · F1-1 통합공고 전역 판정 방지 + 오프라인 재검사(final5) — LLM 호출 0
 
-- 요청·목적: [인계](NEXT_SESSION_HANDOFF_20260922.md) F1-1 / [Codex 2차 후속 재검토](INDUSTRY_LLM_FULL_LUNA_REVIEW_20260922.md) F1.
+- 요청·목적: [인계](archive/NEXT_SESSION_HANDOFF_20260922.md) F1-1 / [Codex 2차 후속 재검토](reviews/industry/INDUSTRY_LLM_FULL_LUNA_REVIEW_20260922.md) F1.
   통합공고 보호가 `known` 분기 안에만 있어, 원답이 `unknown`+quote인 통합공고 7건은 `not_mentioned`, 1건은 `excluded_only`로 공고 전체 판정이 됐다.
 - 작업 전 상태: Git 변경 없음(`.claude/`, `.idea/` 미추적만). 최신 결과 final4.
 - 변경 파일:
@@ -184,7 +856,7 @@
      이들이 실제로 여러 세부사업을 묶었는지는 확인하지 않았다 — 넓힐지 판단 필요.
   2. `kstartup:175817`은 통합공고 요약본 챗봇 안내라 엄밀한 통합공고는 아니지만 제목에 걸려 conditional이 됐다(보수 쪽 오차).
   3. 세부사업별 업종을 실제로 분리하는 것(재추출)은 하지 않았다. 이번 수정은 "전역 판정을 막는 것"까지다.
-- 다음 단계: Codex 검수([검수 요청서](INDUSTRY_F1_UMBRELLA_REVIEW_REQUEST_20260928.md)) → F1-2 제외표 참조문 분리. Git commit·push는 사용자가 한다.
+- 다음 단계: Codex 검수([검수 요청서](reviews/industry/INDUSTRY_F1_UMBRELLA_REVIEW_REQUEST_20260928.md)) → F1-2 제외표 참조문 분리. Git commit·push는 사용자가 한다.
 
 ### 2026-09-22 · Codex · final4 2차 후속 리뷰 및 다음 세션 인계
 
@@ -195,8 +867,8 @@
   merge 이력·토큰·비용 정상. 업종 추출·묶음 테스트 120개 통과. `/industry-results` final4 화면 직접 확인.
 - 남은 리뷰: F1 통합공고 25건 중 `not_mentioned` 7·`excluded_only` 1, F1 구체 업종 없이 제외표 참조문만 가진
   `excluded_only` 25건, F2 공식 복합 명칭 분리로 M 누락 및 값 단위 미분류 167개, F2 화면의 고정 “97건 재독” 문구.
-- 변경 파일: [전량 리뷰](INDUSTRY_LLM_FULL_LUNA_REVIEW_20260922.md)에 2차 후속 재검토 추가,
-  [다음 세션 인수인계](NEXT_SESSION_HANDOFF_20260922.md) 신규 작성, STATUS 최신 진입점 갱신.
+- 변경 파일: [전량 리뷰](reviews/industry/INDUSTRY_LLM_FULL_LUNA_REVIEW_20260922.md)에 2차 후속 재검토 추가,
+  [다음 세션 인수인계](archive/NEXT_SESSION_HANDOFF_20260922.md) 신규 작성, STATUS 최신 진입점 갱신.
 - 다음 단계: 인수인계 문서의 F1-1 → F1-2 → F2 순서. 저장 checkpoint 오프라인 재검사, 새 폴더 합치기,
   화면 확인, 사람 표본 평가 전까지 DB·정형 필터 연결 금지. LLM·DB 호출, 코드 수정, Git commit·push는 이번 정리에서 하지 않음.
 
@@ -239,7 +911,7 @@
 
 ### 2026-09-22 · Claude · Codex 후속 리뷰(러프·KSIC·매칭용 판정) F1×3·F2×2 반영 — LLM 호출 없음
 
-- 근거: [전량 리뷰 후속 재검토](INDUSTRY_LLM_FULL_LUNA_REVIEW_20260922.md#후속-재검토--러프-검사ksic-묶음매칭용-판정18000자-재독-2026-09-22).
+- 근거: [전량 리뷰 후속 재검토](reviews/industry/INDUSTRY_LLM_FULL_LUNA_REVIEW_20260922.md#후속-재검토--러프-검사ksic-묶음매칭용-판정18000자-재독-2026-09-22).
 - 변경 파일:
   - `experiments/sql_semantic/industry_llm_sample.py` `industry_status()`:
     F1 — 제외 업종 **후보**(검사에서 빠진 것 포함)나 허용 업종 후보가 있었으면 `not_mentioned` 로 올리지 않고 `unknown`.
@@ -312,7 +984,7 @@
 
 ### 2026-09-22 · Claude · 업종 검사 "러프" 강도 + Codex 전량 리뷰 F1(상태·값 불변식)·F2(폴더 재사용·규모 단어) 반영 — LLM 호출 없음
 
-- 요청·목적: [Codex 전량 리뷰](INDUSTRY_LLM_FULL_LUNA_REVIEW_20260922.md) 확인 후, 사용자가 "업종을 너무 빡세게 잡는다, 러프하게도 가능한가"를 물었고
+- 요청·목적: [Codex 전량 리뷰](reviews/industry/INDUSTRY_LLM_FULL_LUNA_REVIEW_20260922.md) 확인 후, 사용자가 "업종을 너무 빡세게 잡는다, 러프하게도 가능한가"를 물었고
   세 방법(① 검사 완화 ② 분야 한정도 업종으로 — LLM 재실행 ③ 큰 묶음) 중 **① 검사 완화부터** 하기로 했다.
 - 변경 파일: `experiments/sql_semantic/industry_llm_sample.py`
   - `verify_v3(..., profile)` — `strict`(기존) / `rough`. rough 는 원문 대조에서 공백·글머리표·가운뎃점·괄호·원문자 차이를 무시하고
@@ -457,7 +1129,7 @@
 
 ### 2026-09-22 · Claude · 업종 LLM 표본 — Codex 4차 후속 리뷰 F1(제외 머리말) 반영 (LLM 호출 없음)
 
-- 요청·목적: [4차 후속 재검토](INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md#4차-후속-재검토--구역-경계제외-목록복합-업종-반영-2026-09-22) —
+- 요청·목적: [4차 후속 재검토](reviews/industry/INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md#4차-후속-재검토--구역-경계제외-목록복합-업종-반영-2026-09-22) —
   "제외업종:"·"지원제외 업종:"·"비대상 업종:"이 이름의 업종·대상 때문에 자격 머리말로 분류돼, 제외 값을 allowed 로 잘못 받으면 known 이 되던 문제.
 - 변경: `_header_events()` 가 콜론 머리말 이름에서 **제외 머리말(`EXCLUSION_HEADERS` + 제외·불가·비대상·금지·제한·배제·미해당)을 먼저** 보고
   `X` 로 둔다. 가장 가까운 머리말이 `X` 면 `quote_role` = `exclusion` → known 불가. 테스트 +2(리뷰 반례 세 건의 quote_role·verify_v3,
@@ -475,7 +1147,7 @@
 - 새 반례: 일반 콜론 머리말에 `업종/대상`이 있으면 eligibility로 두는 분기가 `제외업종: 유흥업`,
   `지원제외 업종: 금융ㆍ보험업`, `비대상 업종: 도박업`까지 자격 구역으로 인정한다.
   각 값을 allowed로 넣으면 `verify_v3()`가 실제로 `known`을 반환했다.
-- 변경 파일: [상세 리뷰](INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md#4차-후속-재검토--구역-경계제외-목록복합-업종-반영-2026-09-22),
+- 변경 파일: [상세 리뷰](reviews/industry/INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md#4차-후속-재검토--구역-경계제외-목록복합-업종-반영-2026-09-22),
   `STATUS.md`, 이 기록. 구현·테스트·결과 데이터는 수정하지 않았다.
 - 검증: 전용 68개와 프로젝트 Python 3.12 전체 **403개 통과·13개 건너뜀**을 독립 확인했다.
   기존 `search_comparison.py`의 닫히지 않은 파일 ResourceWarning은 출력됐지만 종료코드는 0이었다.
@@ -484,7 +1156,7 @@
 
 ### 2026-09-22 · Claude · 업종 LLM 표본 — Codex 3차 후속 리뷰 F1×2·F2 반영 (LLM 호출 없음)
 
-- 요청·목적: [3차 후속 재검토](INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md#3차-후속-재검토--quote-역할제외-관계-휴리스틱-반영-2026-09-22)의 세 반례.
+- 요청·목적: [3차 후속 재검토](reviews/industry/INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md#3차-후속-재검토--quote-역할제외-관계-휴리스틱-반영-2026-09-22)의 세 반례.
 - 변경 파일: `experiments/sql_semantic/industry_llm_sample.py`, `tests/test_industry_llm_sample.py`.
   - F1(구역 상속): `quote_role()` 이 머리말 "사건"을 모아 가장 가까운 것을 본다. 등록된 자격/지원 머리말 외에
     **콜론으로 끝나는 모든 머리말**("기타 안내:")과 새 구역 글머리(□■◆◎▶)를 `O`(등록 안 된 구역)로 두어 앞 자격 문맥을 끊는다.
@@ -515,7 +1187,7 @@
 - 새 반례: (1) `지원대상: 도내 중소기업. 기타 안내: 제조업 기업 우대 프로그램`에서 기타 안내 quote가 앞의 자격 머리말을 상속해 known,
   (2) `유흥업 교육, 제조업은 지원 제외`에서 유흥업을 쉼표 제외 목록으로 오인,
   (3) `금융ㆍ보험업은 지원 제외`는 값 내부 `ㆍ`를 먼저 분리해 제외 관계를 찾지 못함.
-- 변경 파일: [상세 리뷰](INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md#3차-후속-재검토--quote-역할제외-관계-휴리스틱-반영-2026-09-22),
+- 변경 파일: [상세 리뷰](reviews/industry/INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md#3차-후속-재검토--quote-역할제외-관계-휴리스틱-반영-2026-09-22),
   `STATUS.md`, 이 기록. 구현·테스트·결과 데이터는 수정하지 않았다.
 - 검증: 전용 58개 통과. 프로젝트 Python 3.12로 전체 **393개 통과·13개 건너뜀**을 독립 확인했다.
   전체 실행에서 업종 작업과 무관한 기존 `search_comparison.py` 닫히지 않은 파일 ResourceWarning이 출력됐지만 종료코드는 0이었다.
@@ -524,7 +1196,7 @@
 
 ### 2026-09-22 · Claude · 업종 LLM 표본 — Codex 2차 후속 리뷰 F1(quote 역할)·F2(제외 관계) 반영 (LLM 호출 없음)
 
-- 요청·목적: [2차 후속 재검토](INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md#2차-후속-재검토--값별-evidence재개-provenance-반영-2026-09-22)가
+- 요청·목적: [2차 후속 재검토](reviews/industry/INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md#2차-후속-재검토--값별-evidence재개-provenance-반영-2026-09-22)가
   재개(F2)는 승인하고, 두 반례를 막은 뒤 v3 를 호출하라고 했다.
 - 변경 파일: `experiments/sql_semantic/industry_llm_sample.py`, `tests/test_industry_llm_sample.py`.
   - F1 `quote_role()`: '대상' 같은 단어 하나(`ELIGIBILITY_CUES`, 삭제)를 증거로 쓰지 않는다. quote 와 원문의 바로 앞 80자에서
@@ -562,7 +1234,7 @@
   `지원내용: 제조업을 대상으로 디지털 전환 비용 지원`이 `known/list_complete=True`로 통과한다.
   (2) excluded text와 제외 cue가 같은 evidence에 따로 존재하기만 하면 관계를 인정해
   `유흥업 교육 포함, 제조업은 지원 제외`에서 유흥업이 제외 업종으로 남는다.
-- 변경 파일: [상세 리뷰](INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md#2차-후속-재검토--값별-evidence재개-provenance-반영-2026-09-22),
+- 변경 파일: [상세 리뷰](reviews/industry/INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md#2차-후속-재검토--값별-evidence재개-provenance-반영-2026-09-22),
   `STATUS.md`, 이 기록. 구현·테스트·결과 데이터는 수정하지 않았다.
 - 검증: 전용 41개 통과, 위 두 추가 반례 재현. 전체 테스트는 `.venv`가 없는 Python 3.12 실행기를 가리키고
   현재 Python과 프로젝트 네이티브 패키지 버전이 달라 수집 단계에서 중단되어 Claude의 376개 통과를 독립 확인하지 못했다.
@@ -571,7 +1243,7 @@
 
 ### 2026-09-22 · Claude · 업종 LLM 표본 — Codex 후속 리뷰 F1(값별 근거)·F2(재개 provenance) 반영 (LLM 호출 없음)
 
-- 요청·목적: [후속 재검토](INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md#후속-재검토--v3-코드-반영-2026-09-22)가 v3 호출 전 수정을 요구.
+- 요청·목적: [후속 재검토](reviews/industry/INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md#후속-재검토--v3-코드-반영-2026-09-22)가 v3 호출 전 수정을 요구.
 - 변경 파일: `experiments/sql_semantic/industry_llm_sample.py`, `tests/test_industry_llm_sample.py`.
   - F1: v3 스키마의 `allowed[]`·`excluded[]` 에 `evidence`(원문 근거 문장)를 **필수**로 추가하고 프롬프트에 "quote 는 신청 자격 문장,
     허용 업종은 모두 quote 안에" 를 명시. `verify_v3` 는 값마다 ① evidence 가 원문에 있고 ② 값이 evidence 안에 있을 때만 남기고,
@@ -593,7 +1265,7 @@
 
 ### 2026-09-22 · Codex · 업종 LLM v3 코드 반영 재검토
 
-- 요청·목적: Claude가 [업종 LLM 리뷰](INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md)의 F1·F2·F3를 반영한 뒤 재검토.
+- 요청·목적: Claude가 [업종 LLM 리뷰](reviews/industry/INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md)의 F1·F2·F3를 반영한 뒤 재검토.
 - 판정: 대부분 해결. 프롬프트 필수·legacy 차단, no_limit/규모 정의 반례, 원문 값 보존, 목록 완전성,
   `filter_ready=False`, 실행 지문, 체크포인트·재개, 비용 문구와 29개 테스트를 확인했다.
 - 남은 F1: 각 allowed/excluded 값에 별도 근거 span이 없다. 값이 quote가 아닌 문서 다른 위치에 있어도
@@ -606,7 +1278,7 @@
 
 ### 2026-09-22 · Claude · 업종 LLM 표본 코드 — Codex 리뷰 F1·F2·F3 반영 (LLM 호출 없음)
 
-- 요청·목적: 사용자가 [업종 LLM 리뷰](INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md)의 코드 수정부터 하라고 요청.
+- 요청·목적: 사용자가 [업종 LLM 리뷰](reviews/industry/INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md)의 코드 수정부터 하라고 요청.
 - 변경 파일:
   - `experiments/sql_semantic/industry_llm_sample.py`(재작성). v1·v2 프롬프트와 v2 검사는 저장된 두 결과 재현용으로
     그대로 두고(`verify_legacy`, 이전 이름 `verify` 유지) **v3** 를 추가했다.
@@ -637,7 +1309,7 @@
 
 ### 2026-09-22 · Claude · 정정 — 업종 탐침·업종 LLM 표본 기록의 틀린 서술 (Codex 리뷰 두 건의 F2)
 
-- 근거: [업종 탐침 리뷰](INDUSTRY_WEIGHT_PROBE_REVIEW_20260922.md) F2, [업종 LLM 리뷰](INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md) F2·F3.
+- 근거: [업종 탐침 리뷰](reviews/industry/INDUSTRY_WEIGHT_PROBE_REVIEW_20260922.md) F2, [업종 LLM 리뷰](reviews/industry/INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md) F2·F3.
   아래 수치는 Claude 가 저장 결과(`per_query.jsonl`, `qrels.jsonl`)로 다시 세어 Codex 수치와 일치함을 확인했다.
 - **업종 강조 탐침**(아래 "업종(main_industry) 강조 탐침" 항목 정정):
   - "qrels +340쌍·정답 340건"은 틀렸다. 340은 LLM 원시 호출(170쌍 × A/B)이고, qrels 에 채택된 것은 **131쌍**(A/B 불일치 39쌍)이다.
@@ -661,7 +1333,7 @@
 ### 2026-09-22 · Codex · 업종 LLM 추출 v1·v2 리뷰
 
 - 요청·목적: Claude의 업종 원문 추출 30건 v1·v2 코드와 저장 결과 재검토.
-- 판정: [상세 리뷰](INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md). 30건 탐색과 “탈락 필터가 아닌 참고/확인 필요로만 사용” 결론은 승인한다.
+- 판정: [상세 리뷰](reviews/industry/INDUSTRY_LLM_SAMPLE_REVIEW_20260922.md). 30건 탐색과 “탈락 필터가 아닌 참고/확인 필요로만 사용” 결론은 승인한다.
   v2 추출값 자체의 운영 필터·전량 적재 사용은 승인하지 않는다.
 - F1: 후처리가 quote 포함과 표면어만 확인해 가짜 `no_limit`·`농가→농업`을 통과시키고,
   실제 제조업 조건도 `상시근로자`가 있다는 이유로 내리는 반례를 재현했다. 제외 업종은 원문 검증도 없다.
@@ -723,13 +1395,13 @@
 - 다음 단계(사용자 결정): ① 프롬프트를 좁혀(근거 문장에 업종명이 직접 있어야 known, 규모 표현·기술 분야 금지,
   서비스업 같은 넓은 분류는 원문에 그 말이 있을 때만) 같은 30건으로 다시 비교(약 $0.012) ② 사람이 30건 정답을 달아
   정확도를 잰다. 두 가지 없이 전량을 돌리면 틀린 업종 조건이 필터에 들어가 멀쩡한 신청자를 떨어뜨릴 수 있다.
-- 별도로 남은 일: [Codex 업종 탐침 리뷰](INDUSTRY_WEIGHT_PROBE_REVIEW_20260922.md)의 F1 2건·F2 3건은 아직 반영하지 않았다.
+- 별도로 남은 일: [Codex 업종 탐침 리뷰](reviews/industry/INDUSTRY_WEIGHT_PROBE_REVIEW_20260922.md)의 F1 2건·F2 3건은 아직 반영하지 않았다.
 
 ### 2026-09-22 · Codex · 업종 가중치 탐침·화면 리뷰
 
 - 요청·목적: Claude가 추가한 업종 강조 평가와 `/industry-probe` 화면의 코드·저장 결과·평가 계약 재검토.
 - 판정: 화면은 탐색용으로 사용할 수 있으나, 현재 수치로 운영 결론을 확정하면 안 된다.
-  상세 근거와 수정 기준은 [업종 가중치 탐침·화면 리뷰](INDUSTRY_WEIGHT_PROBE_REVIEW_20260922.md)에 기록했다.
+  상세 근거와 수정 기준은 [업종 가중치 탐침·화면 리뷰](reviews/industry/INDUSTRY_WEIGHT_PROBE_REVIEW_20260922.md)에 기록했다.
 - 필수 수정 F1: 기준 검색어로만 만든 후보 풀을 네 변형의 최종 Top 3 채점에 사용해 변형별 미판정이 다르다.
   하이브리드 18칸 중 풀 밖은 그대로/없음/반복/앞배치 각각 2/3/0/2칸, 미판정은 5/5/3/6칸이다.
 - 필수 수정 F1: LLM 판정용 신청자 설명에 `main_industry`가 없고, 새 아이디어 문장 자체가 업종을 직접 드러내
@@ -808,8 +1480,8 @@
 
 - 요청·목적: Claude가 Codex의 `/compare` 입력 확장 리뷰와 검색어 ablation 리뷰를 반영한 뒤 사용자 재검토 요청.
 - 작업 전 상태: Claude 보고상 전체 335개 통과, `/compare/selftest` 14개 통과, ablation을 실제 서비스 `match()` 경로로 재실행한 상태.
-- 변경 파일: [입력 확장 리뷰](COMPARE_INPUT_EXPANSION_REVIEW_20260921.md)와
-  [ablation 리뷰](QUERY_ABLATION_REVIEW_20260921.md)에 후속 판정 추가, `STATUS.md`와 이 기록 갱신.
+- 변경 파일: [입력 확장 리뷰](reviews/ui/COMPARE_INPUT_EXPANSION_REVIEW_20260921.md)와
+  [ablation 리뷰](reviews/search/QUERY_ABLATION_REVIEW_20260921.md)에 후속 판정 추가, `STATUS.md`와 이 기록 갱신.
   구현·테스트·검색 결과는 수정하지 않았다.
 - 전후 차이·선택 이유: `/compare` 기존 P1·P2×4·P3는 해결로 승인했다. 검색어 실험의 최종 경로와
   “차이를 말할 수 없다”는 해석도 승인했지만, DB 지문이 `notice_id|apply_end`만 해시해 실제 검색 문서와 규칙 필드 변경을
@@ -824,7 +1496,7 @@
 
 ### 2026-09-21 · Claude · 검색어 구성 비교 재실행 — 서비스 match() 통과 (Codex ablation 리뷰 반영)
 
-- 요청·목적: [Codex ablation 리뷰](QUERY_ABLATION_REVIEW_20260921.md) P1·P2·P2 반영. 첫 실행(`081116Z`)은 검색 직후 순위만 쟀고
+- 요청·목적: [Codex ablation 리뷰](reviews/search/QUERY_ABLATION_REVIEW_20260921.md) P1·P2·P2 반영. 첫 실행(`081116Z`)은 검색 직후 순위만 쟀고
   입력에서 팀 칸을 지워 대상 집단 규칙에서도 빠졌다 — **운영 결정 근거로 쓰지 않는다(정정).**
 - 변경 파일:
   - `eval/query_ablation.py`(재작성): 서비스 `search/app.match()` 를 **그대로** 부른다. 입력은 그대로 두고 `build_query` 만 바꿔 끼워
@@ -846,7 +1518,7 @@
 
 ### 2026-09-21 · Claude · /compare 입력 확장 리뷰 반영 (P1·P2×4·P3)
 
-- 요청·목적: [Codex 입력 확장 리뷰](COMPARE_INPUT_EXPANSION_REVIEW_20260921.md) 반영.
+- 요청·목적: [Codex 입력 확장 리뷰](reviews/ui/COMPARE_INPUT_EXPANSION_REVIEW_20260921.md) 반영.
 - 변경 파일:
   - `web/compare.html`: P1 `resetForm()` — 예시 적용 전에 모든 입력·체크박스·반복 행·조건부 값을 지운다(몇 개씩은 유지).
     P2 결과 무효화 — 제출한 입력 복사본을 페이지 메모리에만 두고 지금 입력과 다르면 결과·사용 여부 표를 지우고
@@ -869,8 +1541,8 @@
 ### 2026-09-21 · Codex · 최신 Claude 작업 재검토
 
 - 요청·목적: `/compare` 신청자 입력 확장과 함께 추가된 검색어 구성 ablation을 독립 검토하고 Claude가 읽을 문서로 남긴다.
-- 변경 파일: 리뷰 문서 [COMPARE_INPUT_EXPANSION_REVIEW_20260921.md](COMPARE_INPUT_EXPANSION_REVIEW_20260921.md),
-  [QUERY_ABLATION_REVIEW_20260921.md](QUERY_ABLATION_REVIEW_20260921.md), 상태 인계 문서만 갱신. 구현·테스트·데이터는 수정하지 않았다.
+- 변경 파일: 리뷰 문서 [COMPARE_INPUT_EXPANSION_REVIEW_20260921.md](reviews/ui/COMPARE_INPUT_EXPANSION_REVIEW_20260921.md),
+  [QUERY_ABLATION_REVIEW_20260921.md](reviews/search/QUERY_ABLATION_REVIEW_20260921.md), 상태 인계 문서만 갱신. 구현·테스트·데이터는 수정하지 않았다.
 - 확인 결과: `/compare` 전용 30개와 전체 322개 통과(13개 건너뜀). 큰 입력 계약은 맞지만 실제 브라우저에서
   예시 미초기화로 이전 인증이 섞이고 입력 변경 뒤 이전 결과가 남는 문제를 확인했다. 서버는 날짜 뒤 문자열을 승인하고
   반복 행 21개를 오류 없이 20개로 줄였다. ablation 저장 수치는 맞지만 실제 서비스의 마감 필터·규칙 재정렬 전 순위다.
@@ -899,7 +1571,7 @@
 
 ### 2026-09-21 · Claude · /compare 신청자 입력 확장
 
-- 요청·목적: [Codex 지시서](COMPARE_INPUT_EXPANSION_TASK_20260921.md) — 사용자가 정한 신청자 정보 전체를 /compare 에서 받고,
+- 요청·목적: [Codex 지시서](reviews/ui/COMPARE_INPUT_EXPANSION_TASK_20260921.md) — 사용자가 정한 신청자 정보 전체를 /compare 에서 받고,
   세 방식에 넘기는 값과 실제 사용 여부를 구분해 보여 준다.
 - 사용자 결정(2026-09-21): **설립일은 개인사업자·법인만 필수**(업력 판정에 필요, 예비창업자는 받지 않음) ·
   **성별은 여성/남성/응답 안 함 중 필수**('응답 안 함' 은 성별 규칙 미적용).
@@ -925,14 +1597,14 @@
 
 ### 2026-09-21 · Claude · /compare Codex 승인 기록
 
-- [Codex 후속 재검토](COMPARE_UI_REVIEW_20260921.md#후속-재검토--p2p3-반영-결과-2026-09-21): P2 2건·P3 3건 해결 확인, **/compare 승인**. 새 차단 결함 없음.
+- [Codex 후속 재검토](reviews/ui/COMPARE_UI_REVIEW_20260921.md#후속-재검토--p2p3-반영-결과-2026-09-21): P2 2건·P3 3건 해결 확인, **/compare 승인**. 새 차단 결함 없음.
   Codex 독립 확인: /compare 테스트 13개·전체 305개 통과, 실행 중 8010 에서 잘못된 top → 400, 외식 예시 세 방식 Top 5 공통 2건, 콘솔 오류 없음.
 - 유지되는 한계: 두 방식의 공고 집합·검색어가 다르고 사람 판정이 없어 이 화면으로 품질 우위를 말하지 않는다.
 - 비차단으로 남은 것: `eval/search_comparison.py` 와 기존 테스트의 ResourceWarning(이전 리뷰에서 기록).
 
 ### 2026-09-21 · Claude · /compare 리뷰 반영 (P2 2건 · P3 3건)
 
-- 요청·목적: [Codex /compare 리뷰](COMPARE_UI_REVIEW_20260921.md) 반영. 리뷰는 세 검색 실행·표시 기본 동작을 정상으로 봤다.
+- 요청·목적: [Codex /compare 리뷰](reviews/ui/COMPARE_UI_REVIEW_20260921.md) 반영. 리뷰는 세 검색 실행·표시 기본 동작을 정상으로 봤다.
 - 변경 파일:
   - `experiments/sql_semantic/viewer.py`
     - P2 Top N 범위: 겹침은 세 방식의 **Top N 목록 안에서만** 센다는 것을 응답에 `top`·`overlap_scope` 로 명시.
@@ -959,7 +1631,7 @@
     나왔는지·새 방식 데이터에 있는 공고인지 표시. 서비스·실험 DB 실패는 그 열에 이유로 보여 주고 죽지 않는다. top 은 1~10.
   - `web/compare.html`(신규): 입력 폼·예시 3개·세 열 결과·비교 한계 안내. 외부 자원 없음.
   - `web/verify.html`: 비교 화면 링크. `tests/test_verify_ui.py` +7(페이지·필수 입력·세 열과 겹침 표시·서비스 꺼짐·새 방식 실패·top 제한·링크).
-  - `docs/VERIFY_UI.md`: 사용법.
+  - `docs/guides/VERIFY_UI.md`: 사용법.
 - 서비스 코드(`search/`, `web/app.html`)는 바꾸지 않았다.
 - 검증(2026-09-21, 작업 PC): 전체 **299개 통과(건너뜀 13)**. 8000(기존 서비스, 오늘 켬)과 8010 을 띄우고 실제 비교 1회:
   20초(모델 첫 로드 포함), 오류 없음. 제조 예시에서 세 방식 모두에 나온 공고 0건, 새 방식은 SQL 762 → 조건 740 → 반환 5.
@@ -988,7 +1660,7 @@
 
 ### 2026-09-21 · Claude · Chroma 검사 도구 Codex 승인 반영
 
-- [Codex 후속 재검토](CHROMA_INTEGRITY_REVIEW_20260921.md#후속-재검토--사전-검사-재사용-조건-보완-2026-09-21): **검사 도구 승인.**
+- [Codex 후속 재검토](reviews/chroma/CHROMA_INTEGRITY_REVIEW_20260921.md#후속-재검토--사전-검사-재사용-조건-보완-2026-09-21): **검사 도구 승인.**
   46개·전체 292개 통과와 실제 일반 비교의 부팅 전 중단을 독립 확인했다.
 - 도구는 승인됐지만 **데이터는 아직 통과가 아니다** — `kstartup:179193` 한 건의 NPZ↔Chroma 불일치가 남아 있다.
 - 변경: `viewer.py` Chroma 상태를 `검사 도구 Codex 승인 · 데이터 불일치 1건` 으로.
@@ -998,7 +1670,7 @@
 
 ### 2026-09-21 · Claude · Chroma 사전 검사 재사용 조건 보완 (Codex 후속 리뷰 P2)
 
-- 요청·목적: [Codex 후속 재검토](CHROMA_INTEGRITY_REVIEW_20260921.md#후속-재검토--1차-리뷰-반영-결과-2026-09-21)의 P2 를 고친다.
+- 요청·목적: [Codex 후속 재검토](reviews/chroma/CHROMA_INTEGRITY_REVIEW_20260921.md#후속-재검토--1차-리뷰-반영-결과-2026-09-21)의 P2 를 고친다.
   재검토는 앞선 P1·P2·P2·낮음 2건을 **해결로 확인**했고, 최신 실제 검사(`034104Z`)를 신뢰할 수 있다고 봤다.
 - 문제: `data_check(preflight)` 가 DB 해시만 같으면 사전 검사 결과를 재사용했다. 사전 검사 뒤 `app.boot()` 나 동시 배치가
   NPZ·Chroma 벡터만 바꾸면(ID 는 그대로) 옛 통과 판정으로 검색할 수 있었다. 지금은 사전 검사에서 이미 멈추므로 실제로 일어나지는 않았다.
@@ -1017,7 +1689,7 @@
 
 ### 2026-09-21 · Claude · Chroma 검사 도구 리뷰 3건 반영과 재실행
 
-- 요청·목적: [Codex Chroma 리뷰](CHROMA_INTEGRITY_REVIEW_20260921.md)의 P1·P2·P2 와 낮은 우선순위 2건을 고친다.
+- 요청·목적: [Codex Chroma 리뷰](reviews/chroma/CHROMA_INTEGRITY_REVIEW_20260921.md)의 P1·P2·P2 와 낮은 우선순위 2건을 고친다.
   리뷰는 **불일치 1건 발견 자체는 타당**(독립 재현)하다고 봤고, 도구의 거짓 통과·중단 순서를 지적했다.
 - 변경 파일:
   - `eval/chroma_integrity.py`
@@ -1044,7 +1716,7 @@
 
 ### 2026-09-21 · Claude · Chroma 실제 벡터 내용 검증
 
-- 요청·목적: [지시서](CHROMA_INTEGRITY_TASK_20260918.md)대로 DB 공고 → NPZ → Chroma 실제 벡터의 내용 정합성을 읽기 전용으로 확인하고,
+- 요청·목적: [지시서](reviews/chroma/CHROMA_INTEGRITY_TASK_20260918.md)대로 DB 공고 → NPZ → Chroma 실제 벡터의 내용 정합성을 읽기 전용으로 확인하고,
   확인되지 않으면 비교 실행이 멈추게 한다.
 - 작업 전 상태: `search_comparison.data_check()` 는 Chroma 의 ID·건수만 보고 `chroma_content_verified: False` 로 기록했다.
 - 변경 파일:
@@ -1079,7 +1751,7 @@
 
 ### 2026-09-21 · Claude · F2·F3 Codex 승인 반영
 
-- 요청·목적: [Codex F2·F3 재검토](SQL_SEMANTIC_F2_F3_REVIEW_20260921.md) 결과를 화면·기록에 반영한다.
+- 요청·목적: [Codex F2·F3 재검토](reviews/sql_semantic/SQL_SEMANTIC_F2_F3_REVIEW_20260921.md) 결과를 화면·기록에 반영한다.
 - 재검토 결과: **F2 승인, F3 승인.** 새 결함 없음. Codex 가 전체 246개 통과를 독립 실행으로 확인했고,
   실험 DB `lab_vectors` 1,852건을 SELECT 로 **전수 대조**해 메타데이터가 모두 현재와 같고 재생성 대상이 0건임을 확인했다
   (Claude 는 검색 한 건만 확인했었다).
@@ -1095,7 +1767,7 @@
 
 ### 2026-09-21 · Claude · F2·F3 수정 — 모델 리비전 대조와 벡터 메타데이터 갱신
 
-- 요청·목적: 사용자 지시로 [리뷰 F2·F3](SQL_SEMANTIC_REVIEW_20260918.md#남은-수정-사항)를 고친다.
+- 요청·목적: 사용자 지시로 [리뷰 F2·F3](reviews/sql_semantic/SQL_SEMANTIC_REVIEW_20260918.md#남은-수정-사항)를 고친다.
 - 작업 전 상태: 실제 `lab_vectors` 1,852건은 모두 모델 `BAAI/bge-m3` · 리비전 `5617a9f6…` · 1024 · float32 · 정규화로
   현재 인코더와 같다. 즉 두 문제 모두 **지금 결과를 틀리게 만들지는 않았고**, 모델이 바뀔 때 드러나는 문제다.
 - 변경 파일:
@@ -1154,7 +1826,7 @@
 
 ### 2026-09-21 · Claude · F1 Codex 승인 반영
 
-- 요청·목적: [Codex F1 재검토](SQL_SEMANTIC_F1_REVIEW_20260921.md#2차-수정-재검토-결과-2026-09-21) 결과를 화면·기록에 반영한다.
+- 요청·목적: [Codex F1 재검토](reviews/sql_semantic/SQL_SEMANTIC_F1_REVIEW_20260921.md#2차-수정-재검토-결과-2026-09-21) 결과를 화면·기록에 반영한다.
 - 재검토 결과: **F1 승인.** 교차 필드 반례 4건과 표현 변형, 실제 1,852건 수치(54건 변경·업종 no_limit 1건),
   전체 233개 통과를 Codex 가 독립 실행으로 확인했다. 새 F1 결함 없음.
 - 변경 파일: `experiments/sql_semantic/viewer.py`(F1 상태 `해결 · Codex 승인`),
@@ -1167,7 +1839,7 @@
 
 ### 2026-09-21 · Claude · F1 2차 수정 — 다른 조건의 '제한 없음'이 새던 문제
 
-- 요청·목적: [Codex F1 리뷰](SQL_SEMANTIC_F1_REVIEW_20260921.md) P1 을 고친다.
+- 요청·목적: [Codex F1 리뷰](reviews/sql_semantic/SQL_SEMANTIC_F1_REVIEW_20260921.md) P1 을 고친다.
 - 작업 전 상태: 1차 수정의 `_says_no_limit` 이 지원대상 전체에서 '제한 없'·'무관'·'누구나'·'모든 기업'을
   찾아 **규모와 업종 모두**에 적용했다. "지역 제한 없음", "업력 무관", "연령제한 없음" 이
   규모·업종의 제한 없음이 되어 "업종 제한 없이 중소기업만" 공고에서 **대기업 신청자가 충족**이 됐다.
@@ -1203,7 +1875,7 @@
 
 ### 2026-09-21 · Claude · F1 수정 — 자격 문구 오해석 (규모·업종)
 
-- 요청·목적: 사용자 지시로 [리뷰 F1](SQL_SEMANTIC_REVIEW_20260918.md#남은-수정-사항)을 고친다.
+- 요청·목적: 사용자 지시로 [리뷰 F1](reviews/sql_semantic/SQL_SEMANTIC_REVIEW_20260918.md#남은-수정-사항)을 고친다.
   F2·F3 는 이번 범위가 아니며 화면에서 계속 `미해결` 이다.
 - 작업 전 상태: 제목·사업 분류까지 뒤져 규모/업종 단어가 보이면 제한으로 단정했다.
   "규모 제한 없이 모든 기업" → 대기업 전용, "제조업은 제외" → 제조업만 가능으로 뒤집혔다.
@@ -1243,7 +1915,7 @@
 
 ### 2026-09-21 · Claude · 검증 화면 리뷰 2건 반영 (flaky 테스트·SQL 단계 제외 분리)
 
-- 요청·목적: [Codex 리뷰](VERIFY_UI_REVIEW_20260921.md)의 P1·P2를 수정한다.
+- 요청·목적: [Codex 리뷰](reviews/ui/VERIFY_UI_REVIEW_20260921.md)의 P1·P2를 수정한다.
 - 작업 전 상태: 이전 기록의 **`210개 통과`는 틀렸다.** 전체 테스트를 반복 실행하면
   `FixtureTests.test_same_every_time` 이 실행마다 통과·실패가 갈렸다(3회 중 2회 실패 재현).
   한 번 통과한 결과만 보고 `reports/verify_ui/test_result.json` 에 적은 것이 원인이다.
@@ -1256,7 +1928,7 @@
     기준이 없거나 더 작으면 음수를 만들지 않고 `None` 과 이유를 돌려준다.
   - `web/verify.html`: `전체 후보 → SQL 제외 → SQL 통과 → 조건 제외 → 조건 통과 → 벡터 제외 →
     유사도 비교 → 반환` 표로 표시한다. 계산할 수 없는 칸은 `계산 안 함`과 이유를 적는다.
-  - `docs/VERIFY_UI.md`, `reports/verify_ui/test_result.json` 갱신.
+  - `docs/guides/VERIFY_UI.md`, `reports/verify_ui/test_result.json` 갱신.
 - 전후 차이·선택 이유: 실패한 테스트를 지우거나 검증을 약하게 하지 않았다. 비결정적인 것은
   실행 시간뿐이므로 그 칸만 비교에서 뺐다. SQL 제외 수는 사람이 두 칸을 빼서 구해야 했는데
   화면이 직접 계산해 보여 준다.
@@ -1274,7 +1946,7 @@
 
 ### 2026-09-21 · Claude · 사람이 눈으로 확인하는 검증 화면 추가
 
-- 요청·목적: [지시서](CLAUDE_UI_VERIFICATION_TASK_20260921.md)에 따라 실행 상태·정형 조건 판정·
+- 요청·목적: [지시서](reviews/ui/CLAUDE_UI_VERIFICATION_TASK_20260921.md)에 따라 실행 상태·정형 조건 판정·
   검색 결과·벡터 상태를 로컬 브라우저에서 직접 확인할 수 있게 한다.
   사용자 선택으로 **F1~F3 수정은 이번에 하지 않고 화면에 `미해결`로 표시**한다.
   화면 데이터는 **저장된 결과 + fixture** 로 한다(실제 DB·모델 재실행 없음).
@@ -1288,7 +1960,7 @@
     저장 결과 폴더·fixture 목록, 실행 상태, 사례별 필터 켬/끔 비교, 벡터 상태, 조건 반례,
     실험 DB 에서 근거 문장만 SELECT 로 읽는 경로.
   - `web/verify.html`(신규): 화면. 외부 스크립트·글꼴을 받아오지 않고 데이터를 밖으로 보내지 않는다.
-  - `tests/test_verify_ui.py`(신규 25개), `docs/VERIFY_UI.md`(신규 실행·확인 절차),
+  - `tests/test_verify_ui.py`(신규 25개), `docs/guides/VERIFY_UI.md`(신규 실행·확인 절차),
     `experiments/sql_semantic/README.md`(뷰어 안내), `reports/verify_ui/test_result.json`(테스트 요약).
 - 전후 차이·선택 이유: 기존 서비스(`search/app.py`, 8000)와 **다른 앱·다른 포트**로 분리해
   운영 검색 결과와 섞이지 않게 했다. 기존 실험 코드·저장 결과·Chroma·NPZ 는 읽기만 했다.
@@ -1316,7 +1988,7 @@
 - 요청·목적: Claude가 수정 후 작성한 코드·작업 기록·비교 산출물을 확인한다.
 - 작업 전 상태: Claude는 리뷰 5건 수정·벡터 1,852건 생성 완료·토큰 메타데이터 보정·비교 실행을 보고했다.
   STATUS에는 이전 실행 대기 상태가 남아 있어 최신 WORKLOG/저장 결과와 구분해 갱신했다.
-- 변경 파일: `docs/SQL_SEMANTIC_REVIEW_20260918.md` 후속 확인 1 추가, STATUS, 이 WORKLOG.
+- 변경 파일: `docs/reviews/sql_semantic/SQL_SEMANTIC_REVIEW_20260918.md` 후속 확인 1 추가, STATUS, 이 WORKLOG.
   구현·테스트·기존 보고서·DB·벡터에는 쓰지 않았다.
 - 판단: 최초 3번 혼합 차원과 4번 시작일 수정 확인, 5번 잘림 계산/보정 코드 확인.
   1번 자격 추출·2번 벡터 호환 검사는 부분 해결. 남은 P2 3건은 F1 자격/제외 문구의 허용 목록 오변환,
@@ -1337,7 +2009,7 @@
 
 ### 2026-09-18 · Claude · 실험 리뷰 5건 수정 + 전량 적재·비교 실행
 
-- 요청·목적: Codex 리뷰 [SQL_SEMANTIC_REVIEW_20260918.md](SQL_SEMANTIC_REVIEW_20260918.md) 의 P2 5건을
+- 요청·목적: Codex 리뷰 [SQL_SEMANTIC_REVIEW_20260918.md](reviews/sql_semantic/SQL_SEMANTIC_REVIEW_20260918.md) 의 P2 5건을
   고치고, 전량 임베딩을 마친 뒤 필터 켬/끔 비교까지 실행한다. 사용자 지시로 진행 중이던 벡터 생성은 두고(A안)
   메타데이터는 재임베딩 없이 보정했다.
 - **이전 기록 정정**: 2026-09-18 Claude '정형 필터 + 의미 검색 실험 구현' 항목에서
@@ -1379,7 +2051,7 @@
 - 요청·목적: 사용자가 전달한 Claude 구현 보고에 따라 새 실험 코드·테스트·작업 기록을 지시서와 대조했다.
 - 작업 전 상태: 아래 Claude ‘실제 실행은 대기’ 기록보다 최신 사용자 보고는 로컬 1,852건 적재·50건 임베딩 시험·
   실제 검색 성공·전량 임베딩 진행 중이다. 해당 실행 수치는 전달받은 값이며 Codex가 실제 DB에서 재측정하지 않았다.
-- 변경 파일: `docs/SQL_SEMANTIC_REVIEW_20260918.md` 신규 작성, `docs/STATUS.md` 최신 인계, 이 작업 이력.
+- 변경 파일: `docs/reviews/sql_semantic/SQL_SEMANTIC_REVIEW_20260918.md` 신규 작성, `docs/STATUS.md` 최신 인계, 이 작업 이력.
   구현·테스트·기존 보고서는 수정하지 않았다.
 - 확인 사항: 업종에 지원 분야를 저장하고 업종·규모 자격 판정이 빠져 있음, 저장 벡터의 현재 입력 해시 미검사,
   모델과 다른 차원에서 전체 검색 실패, 미래 접수 시작일 미판정, truncated=0 상수 저장. 각각 근거·재현·수정 기준을 리뷰에 기록했다.
@@ -1397,7 +2069,7 @@
 
 ### 2026-09-18 · Claude · 정형 필터 + 의미 검색 실험 구현 (실제 실행은 대기)
 
-- 요청·목적: [지시서](SQL_SEMANTIC_EXPERIMENT_TASK_20260918.md) 대로 기존 구현·DB·결과를 보존한 채
+- 요청·목적: [지시서](reviews/sql_semantic/SQL_SEMANTIC_EXPERIMENT_TASK_20260918.md) 대로 기존 구현·DB·결과를 보존한 채
   별도 로컬 MySQL 에서 `정형 필터(SQL) → 후보 벡터 직접 비교 → 규칙 정렬 → Top N` 경로를 만든다.
 - 작업 전 상태: 기존 서비스는 dense+BM25 하이브리드. 실험용 로컬 DB·코드·스키마는 없었다.
   사용자 선택으로 **로컬 MySQL 계정 없이 코드·가상 테스트까지 먼저** 진행했다.
@@ -1442,7 +2114,7 @@
 - 요청·목적: 사용자가 기존 것을 비교용으로 보존하고 별도 로컬 DB에서 새로운 검색 형식을 Claude에게 구현시키도록 요청했다.
 - 작업 전 상태: 기존 A–E 작업은 중지된 상태이며 팀의 SQL 선필터→임베딩→규칙→Top N 제안을 검토했다.
   현재 데이터/벡터 BLOB 규약·연결 설정·검색 흐름을 읽어 지시서에 반영했다.
-- 변경 파일: `docs/SQL_SEMANTIC_EXPERIMENT_TASK_20260918.md` 신규, STATUS·WORKLOG.
+- 변경 파일: `docs/reviews/sql_semantic/SQL_SEMANTIC_EXPERIMENT_TASK_20260918.md` 신규, STATUS·WORKLOG.
   기존 코드·DB·색인·실험 결과·사람 판정 파일은 수정하지 않았다.
 - 전후 차이·선택 이유: 검토 단계에서 Claude가 실행할 수 있는 별도 실험 범위로 구체화했다.
   신규 로컬 MySQL과 `experiments/sql_semantic/` 격리, 소스 읽기 전용/대상 쓰기 구분,
@@ -1492,8 +2164,8 @@
 
 - 요청·목적: 사용자가 다음 Claude 작업을 문서로 작성해 전달하도록 요청했다.
 - 작업 전 상태: 날짜 경계 문제는 해결 확인됐고 Chroma 실제 벡터 내용은 미검증으로 남아 있었다.
-  기존 코드·실험 결과·문서 수정과 미추적 `docs/hybrid_flow.html`은 보존했다.
-- 변경 파일: `docs/CHROMA_INTEGRITY_TASK_20260918.md` 신규, `docs/STATUS.md`, `docs/WORKLOG.md`.
+  기존 코드·실험 결과·문서 수정과 미추적 `docs/guides/hybrid_flow.html`은 보존했다.
+- 변경 파일: `docs/reviews/chroma/CHROMA_INTEGRITY_TASK_20260918.md` 신규, `docs/STATUS.md`, `docs/WORKLOG.md`.
 - 전후 차이·선택 이유: DB 입력 해시→NPZ→실제 Chroma 벡터 대조를 후속 작업으로 명시했다.
   검사 전용 실행, 모델 추론·검색·색인 변경 제외, 메타데이터 대조, 실패 시 검색 중단,
   관련 테스트·새 검사 보고서·과거 실행에 소급 적용 금지까지 완료 기준을 정했다.
@@ -1508,7 +2180,7 @@
 
 - 요청·목적: Claude의 날짜 경계 추가 P2 수정과 최신 `reports/search_comparison_20260918T054314Z/`를 재검토한다.
 - 작업 전 상태: 비교 도구·신규 날짜 회귀 테스트·네 번째 결과 폴더·상태/이력의 기존 변경이 있었다. 보존했다.
-- 변경 파일: `docs/SEARCH_COMPARISON_REVIEW_20260918.md` 후속 확인 2, STATUS·WORKLOG.
+- 변경 파일: `docs/reviews/search/SEARCH_COMPARISON_REVIEW_20260918.md` 후속 확인 2, STATUS·WORKLOG.
   서비스·비교 코드·테스트·실험 결과 파일은 수정하지 않았다.
 - 전후 차이·선택 이유: 날짜 변경 시 정상 발행하던 P2를 해결로 변경했다.
   호출 전후·실행 시작/종료 날짜를 검증하고, 혼합되면 종료코드 3과 진단용 원본만 남긴다.
@@ -1527,7 +2199,7 @@
 
 ### 2026-09-18 · Claude · 날짜 경계 무효 처리(재검토 추가 P2)와 최종 재실행
 
-- 요청·목적: Codex 재검토([리뷰 문서](SEARCH_COMPARISON_REVIEW_20260918.md) 후속 확인)의 추가 [P2] —
+- 요청·목적: Codex 재검토([리뷰 문서](reviews/search/SEARCH_COMPARISON_REVIEW_20260918.md) 후속 확인)의 추가 [P2] —
   실행 중 로컬 날짜가 바뀌어도 경고만 남기고 혼합된 결과를 성공으로 저장한다.
 - 작업 전 상태: 이전 수정에서 날짜 경고만 넣었다. 종료코드 0 으로 끝나고 비교표·manifest·HTML 이 모두 저장돼,
   나중에 그 표를 하루치 기준으로 읽을 수 있었다. Codex 가 가상 날짜 변경으로 재현했다.
@@ -1563,7 +2235,7 @@
 
 - 요청·목적: Claude가 이전 리뷰 4건을 반영한 코드와 `reports/search_comparison_20260918T053148Z/`를 재검토한다.
 - 작업 전 상태: Claude의 비교 도구·새 결과 폴더·NOTE·STATUS·WORKLOG 수정이 존재했다. 기존 수정은 보존했다.
-- 변경 파일: `docs/SEARCH_COMPARISON_REVIEW_20260918.md`에 후속 확인 추가, STATUS·WORKLOG 갱신.
+- 변경 파일: `docs/reviews/search/SEARCH_COMPARISON_REVIEW_20260918.md`에 후속 확인 추가, STATUS·WORKLOG 갱신.
   서비스·비교 코드·결과물·색인·판정 데이터는 변경하지 않았다.
 - 전후 차이·선택 이유: 기존 기준일 표시·규칙 수치·깊이 요약 3건은 해결 확인.
   내용 검사는 NPZ·BM25 및 오류 중단까지 보강됐으나 실제 Chroma 내용은 미검증으로 부분 해결 처리했다.
@@ -1584,7 +2256,7 @@
 
 ### 2026-09-18 · Claude · 검색 비교 리뷰 4건 반영과 재실행 (이전 기록 정정 포함)
 
-- 요청·목적: Codex 리뷰 [SEARCH_COMPARISON_REVIEW_20260918.md](SEARCH_COMPARISON_REVIEW_20260918.md)
+- 요청·목적: Codex 리뷰 [SEARCH_COMPARISON_REVIEW_20260918.md](reviews/search/SEARCH_COMPARISON_REVIEW_20260918.md)
   의 P2 3건·P3 1건을 고치고, 보완된 조건으로 다시 실행한다.
 - 작업 전 상태: 첫 실행(`reports/search_comparison_20260918T051606Z/`)의 집계는 원본과 일치했으나
   날짜 표시·규칙 수치 해석·정합성 검사·깊이 요약에 문제가 있었다. Claude 가 산출물로 4건을 모두 재현했다.
@@ -1626,7 +2298,7 @@
 - 요청·목적: Claude가 실행한 임베딩 단독·하이브리드 비교를 작업 지시서와 실제 코드·산출물에 대조한다.
 - 작업 전 상태: `eval/search_comparison.py`와 `reports/search_comparison_20260918T051606Z/`가 미추적 파일로 존재했다.
   STATUS·WORKLOG의 기존 Claude 수정과 결과물은 보존했다.
-- 변경 파일: `docs/SEARCH_COMPARISON_REVIEW_20260918.md` 신규, `docs/STATUS.md`, `docs/WORKLOG.md`.
+- 변경 파일: `docs/reviews/search/SEARCH_COMPARISON_REVIEW_20260918.md` 신규, `docs/STATUS.md`, `docs/WORKLOG.md`.
   서비스·비교 도구·원본 산출물·가중치·qrels는 수정하지 않았다.
 - 전후 차이·선택 이유: 핵심 집계는 확인했지만 해석에 영향을 주는 P2 3건과 P3 1건을 구분해 인계했다.
   P2는 HTML 기준일 9/15와 실제 실행일 9/18의 불일치, 규칙 후보 예시를 최종 노출 건수로 오해,
@@ -1646,7 +2318,7 @@
 
 ### 2026-09-18 · Claude · 임베딩 단독·하이브리드 검색 비교 실행
 
-- 요청·목적: Codex 가 남긴 [검색 비교 작업 지시서](SEARCH_COMPARISON_TASK_20260918.md) 대로
+- 요청·목적: Codex 가 남긴 [검색 비교 작업 지시서](reviews/search/SEARCH_COMPARISON_TASK_20260918.md) 대로
   같은 입력에서 dense 와 hybrid 가 어떤 공고를 추천하는지 실제 데이터로 비교한다.
   결과를 좋게 만들기 위한 코드 수정·가중치 튜닝은 범위에 넣지 않았다.
 - 작업 전 상태: 기존 평가(`eval/evaluate.py`)는 마감·지역·집단 규칙 없이 재는 경로라
@@ -1680,7 +2352,7 @@
 - 요청·목적: 사용자가 실제 임베딩 단독·하이브리드 공고 비교를 Claude에게 맡길 수 있도록 지시서를 문서로 남긴다.
 - 작업 전 상태: 원 검토 2번·3번 수정은 Codex가 확인했고, 마지막 검색시간 P3는 Claude의 수정·검증 기록이 있다.
   이번에는 새 비교를 실행하지 않고 최신 코드의 설정과 기존 평가 경로 차이를 확인했다.
-- 변경 파일: `docs/SEARCH_COMPARISON_TASK_20260918.md`, `docs/STATUS.md`, `docs/WORKLOG.md`.
+- 변경 파일: `docs/reviews/search/SEARCH_COMPARISON_TASK_20260918.md`, `docs/STATUS.md`, `docs/WORKLOG.md`.
 - 전후 차이·선택 이유: 대표 입력 10개(정상 8·무관 2)에 대해 후처리 제외/서비스 조건 두 단계에서
   dense/hybrid를 비교하도록 정의했다. 검색 방식의 차이와 최종 규칙의 영향을 구분해 보고할 수 있게 했다.
   원본 응답·공고 근거·메타데이터·정적 HTML 비교표·빈 사람 판정 양식·요약을 결과물로 지정했다.
@@ -1693,7 +2365,7 @@
 
 ### 2026-09-18 · Claude · 검색 시간 표시 보완(P3)
 
-- 요청·목적: Codex 후속 검토 [FOLLOWUP](MATCHING_REVIEW_20260918_FOLLOWUP.md) 의 [P3] —
+- 요청·목적: Codex 후속 검토 [FOLLOWUP](reviews/matching/MATCHING_REVIEW_20260918_FOLLOWUP.md) 의 [P3] —
   `search_ms` 에 벡터 추가 조회·RRF 결합 시간이 빠져 화면에 실제보다 짧게 찍힌다.
 - 작업 전 상태: 2·3번을 고치며 `search_ms = dense_ms + bm25_ms` 로 바꿨다. 두 값은 Chroma 질의와
   BM25 검색만 재므로, 그 사이의 `_fill_distances()`(단어 검색에서만 올라온 공고의 벡터를 꺼내는 호출)와
@@ -1719,7 +2391,7 @@
 
 - 요청·목적: Claude의 점수 혼용·후보 미보충 수정 리뷰.
 - 작업 전 상태: `search/app.py`와 `tests/test_match_rules.py` 변경을 Git diff 및 최신 Claude 기록으로 확인했다.
-- 변경 파일: 이번 Codex 작업은 `docs/STATUS.md`, `docs/WORKLOG.md`, `docs/MATCHING_REVIEW_20260918_FOLLOWUP.md`만 갱신했다.
+- 변경 파일: 이번 Codex 작업은 `docs/STATUS.md`, `docs/WORKLOG.md`, `docs/reviews/matching/MATCHING_REVIEW_20260918_FOLLOWUP.md`만 갱신했다.
 - 전후 차이·선택 이유: 2번은 하이브리드에서 RRF만 사용하고, 3번은 충분한 후보 또는 색인 끝에 도달할 때까지 검색 깊이를 늘려 해결했다.
   이전 네 건의 재현과 날짜 오류 해결 상태를 유지하며 확인 기록을 추가했다.
 - 검증: 관련 세 테스트 파일 53개 통과. 별도 가상 시나리오 12개(점수 방식, dense/hybrid 보충,
@@ -1732,7 +2404,7 @@
 
 ### 2026-09-18 · Claude · 검토 2번·3번 수정(후보 보충과 점수 체계 통일)
 
-- 요청·목적: Codex 검토 [MATCHING_REVIEW_20260918.md](MATCHING_REVIEW_20260918.md) 의
+- 요청·목적: Codex 검토 [MATCHING_REVIEW_20260918.md](reviews/matching/MATCHING_REVIEW_20260918.md) 의
   2번(score 방식이 RRF 점수와 코사인 유사도를 섞음)과 3번(마감 제외 후 후보 미보충)을 고친다.
 - 작업 전 상태: 후보를 고정 깊이(하이브리드 50)로 한 번만 가져오고, 마감 공고를 걸러 건수가 모자라면
   **의미 검색 51위 이하를 꼬리로 붙였다.** 그 꼬리에는 RRF 점수가 없어 코사인 유사도로 대신했다.
@@ -1773,7 +2445,7 @@
 - 작업 전 상태: `search/gate.py`의 `parse_ymd()`가 날짜 생성의 `ValueError`를 잡고 None을 반환하도록 변경됐고,
   `tests/test_match_rules.py`에 날짜 경계·HTTP 회귀 테스트가 추가돼 있었다.
 - 변경 파일: 이번 Codex 작업은 `docs/STATUS.md`, `docs/WORKLOG.md`,
-  `docs/MATCHING_REVIEW_20260918_FOLLOWUP.md`의 확인 기록만 갱신했다. 서비스·테스트 코드는 수정하지 않았다.
+  `docs/reviews/matching/MATCHING_REVIEW_20260918_FOLLOWUP.md`의 확인 기록만 갱신했다. 서비스·테스트 코드는 수정하지 않았다.
 - 전후 차이·선택 이유: 기존 지적은 해결 확인. 이전 검토 증거는 보존하고 같은 검토 문서 뒤에 해결 확인을 추가했다.
 - 검증: `test_gate.py` 18개 + `test_applicant.py` 15개 + `test_match_rules.py` 12개 = 45개 통과, 건너뜀 없음.
   별도 TestClient에서 무효 날짜·빈 값 8종과 정상 날짜 3종을 두 API로 보내 22건 모두 200을 확인했다.
@@ -1785,7 +2457,7 @@
 
 ### 2026-09-18 · Claude · 재검토 지적 수정(달력에 없는 설립일이 HTTP 500 이 되던 문제)
 
-- 요청·목적: Codex 재검토 [MATCHING_REVIEW_20260918_FOLLOWUP.md](MATCHING_REVIEW_20260918_FOLLOWUP.md) 의
+- 요청·목적: Codex 재검토 [MATCHING_REVIEW_20260918_FOLLOWUP.md](reviews/matching/MATCHING_REVIEW_20260918_FOLLOWUP.md) 의
   [P2] 지적 — 형식은 맞지만 달력에 없는 날짜(`2026-02-30` 등)가 여전히 HTTP 500 을 낸다.
 - 작업 전 상태: 같은 날 앞선 수정에서 `business_age_months()` 가 `parse_ymd()` 의 None 만 처리하게 했다.
   형식 검사를 통과한 값은 날짜 생성까지 들어가므로 실제로 없는 날짜면 예외가 그대로 올라갔다.
@@ -1811,7 +2483,7 @@
 
 - 요청·목적: Claude가 수정한 지역 규칙 우선순위와 설립일 미상 처리를 리뷰한다.
 - 작업 전 상태: Claude는 최초 리뷰 1번·4번만 수정하고 회귀 테스트 9개를 추가했다. 2번·3번은 수정 범위 밖이다.
-- 변경 파일: `docs/MATCHING_REVIEW_20260918_FOLLOWUP.md`, `docs/STATUS.md`, `docs/WORKLOG.md`만 작성·갱신.
+- 변경 파일: `docs/reviews/matching/MATCHING_REVIEW_20260918_FOLLOWUP.md`, `docs/STATUS.md`, `docs/WORKLOG.md`만 작성·갱신.
   서비스 코드·테스트 코드는 수정하지 않았다.
 - 전후 차이·선택 이유: 지역 순서가 dense/hybrid 모두 수원→성남→서울로 나오는 것을 확인했다.
   설립일 빈 값과 일반 문자열은 판단 불가로 처리하나, `2026-02-30`처럼 형식에 맞는 무효 날짜는 예외가 남아 있음을 발견했다.
@@ -1825,7 +2497,7 @@
 
 ### 2026-09-18 · Claude · 검토 지적 4번·1번 수정(자격 판정·규칙 우선순위)
 
-- 요청·목적: Codex 검토 [MATCHING_REVIEW_20260918.md](MATCHING_REVIEW_20260918.md) 의 4번(설립일 미상 오판정)과
+- 요청·목적: Codex 검토 [MATCHING_REVIEW_20260918.md](reviews/matching/MATCHING_REVIEW_20260918.md) 의 4번(설립일 미상 오판정)과
   1번(시·군·구 규칙이 시·도 우선순위를 덮어씀)을 고친다. 2번·3번은 이번 범위가 아니다.
 - 작업 전 상태: Codex 가 코드 수정 없이 네 건을 보고한 상태. 검토자가 쓴 재현 조건과 별개로
   Claude 가 `app.match()`·`app.eligibility()` 를 가짜 색인으로 직접 불러 네 건이 모두 재현됨을 확인했다.
@@ -1863,7 +2535,7 @@
 
 - 요청·목적: Claude가 구현한 정형 조건과 하이브리드 검색을 확인한다.
 - 작업 전 상태: Claude의 하이브리드·지역·신청자 입력·가중치 관련 작업 기록과 기존 수정 상태를 읽었다.
-- 변경 파일: `docs/MATCHING_REVIEW_20260918.md`(검토 근거·재현 조건·수정 방향),
+- 변경 파일: `docs/reviews/matching/MATCHING_REVIEW_20260918.md`(검토 근거·재현 조건·수정 방향),
   `docs/STATUS.md`(진행·완료 및 미수정 문제), `docs/WORKLOG.md`(이번 기록). 서비스·테스트 코드는 수정하지 않았다.
 - 전후 차이·선택 이유: 검색 전에 정형 필터를 거는 구조가 아니라 검색 후 마감 제외·규칙 재정렬을 하는 구조임을 확인했다.
   시도/시군구 우선순위 역전, score 모드 점수 혼용, 마감 제외 후 후보 미보충, 설립일 누락 오판정 4건을 가상 데이터로 재현했다.

@@ -225,7 +225,7 @@ def main():
         b''.join(io.open(os.path.join(HERE, name), 'rb').read()
                  for name in sorted(os.listdir(HERE)) if name.endswith('.py'))).hexdigest()
     manifest = {
-        'task': 'docs/SQL_SEMANTIC_EXPERIMENT_TASK_20260918.md',
+        'task': 'docs/reviews/sql_semantic/SQL_SEMANTIC_EXPERIMENT_TASK_20260918.md',
         'run_at': run_at.isoformat(timespec='seconds'),
         'as_of_date': as_of.isoformat(),
         'baseline_folder': os.path.relpath(baseline, ROOT),
