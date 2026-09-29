@@ -53,6 +53,8 @@ async function updateConsent(consent){
     body:JSON.stringify({
       termsAgreed:!!consent.termsAgreed,
       privacyAgreed:!!consent.privacyAgreed,
+      // [2026-09-29] 만 16세 이상 확인(필수) — 서버 저장·검사는 백엔드_요청사항_4차.md C-1.
+      ageConfirmed:!!consent.ageConfirmed,
       aiTrainingAgreed:!!consent.aiTrainingAgreed,
       notifyAgreed:consent.notifyAgreed!==false,
     }),
@@ -145,6 +147,11 @@ const CONSENT_TERMS={
     '제1조(목적) 이 약관은 S-Brain(이하 "회사")이 제공하는 정부지원사업 매칭·사업계획서 및 프로토타입 생성 서비스(이하 "서비스")의 이용과 관련하여 회사와 이용자의 권리·의무 및 책임사항을 정함을 목적으로 합니다.',
     '제2조(서비스의 제공) 회사는 이용자가 입력한 정보를 바탕으로 공고 매칭, 사업계획서 초안 작성, 프로토타입 생성을 지원합니다. 생성된 결과물은 초안이며 제출 전 이용자 본인의 확인과 수정이 필요합니다.',
     '제3조(이용자의 의무) 이용자는 서비스 이용 시 정확한 정보를 제공해야 하며, 생성된 문서를 관계 법령 및 공고 요건에 맞게 검토할 책임이 있습니다.',
+    '제4조(이용 연령) 서비스는 만 16세 이상만 이용할 수 있습니다. 만 16세 미만임이 확인되면 회사는 이용을 제한하고 계정을 삭제할 수 있습니다.',
+  ]},
+  age:{title:'만 16세 이상 확인',body:[
+    'S-Brain은 만 16세 이상만 이용할 수 있습니다(이용약관 제4조).',
+    '만 16세 미만임이 확인되면 이용이 제한되고 계정과 작성한 자료가 삭제될 수 있습니다.',
   ]},
   privacy:{title:'개인정보 수집·이용 동의',body:[
     '수집 항목: 이메일, 프로필 이름, 사업 아이템 정보, 첨부 문서에서 추출한 텍스트',
@@ -163,14 +170,15 @@ const CONSENT_TERMS={
 };
 
 function StepConsent({onAgree,submitting,error}){
+  const [ageConfirmed,setAgeConfirmed]=useState(false);
   const [termsAgreed,setTermsAgreed]=useState(false);
   const [privacyAgreed,setPrivacyAgreed]=useState(false);
   const [aiTrainingAgreed,setAiTrainingAgreed]=useState(false);
   const [notifyAgreed,setNotifyAgreed]=useState(false);
   const [expandedTerm,setExpandedTerm]=useState(null);
-  const requiredOk=termsAgreed&&privacyAgreed;
-  const allChecked=termsAgreed&&privacyAgreed&&aiTrainingAgreed&&notifyAgreed;
-  const toggleAll=checked=>{setTermsAgreed(checked);setPrivacyAgreed(checked);setAiTrainingAgreed(checked);setNotifyAgreed(checked)};
+  const requiredOk=ageConfirmed&&termsAgreed&&privacyAgreed;
+  const allChecked=ageConfirmed&&termsAgreed&&privacyAgreed&&aiTrainingAgreed&&notifyAgreed;
+  const toggleAll=checked=>{setAgeConfirmed(checked);setTermsAgreed(checked);setPrivacyAgreed(checked);setAiTrainingAgreed(checked);setNotifyAgreed(checked)};
   // "보기" 링크는 <label> 안에 있어 그냥 두면 클릭이 체크박스 토글로도 번진다 —
   // preventDefault로 label의 기본 동작(연결된 input에 클릭 전달)을 막는다.
   const toggleView=key=>e=>{e.preventDefault();setExpandedTerm(prev=>prev===key?null:key)};
@@ -194,13 +202,14 @@ function StepConsent({onAgree,submitting,error}){
         전체 동의
       </label>
       <div className="flex flex-col">
+        <ConsentRow termKey="age" checked={ageConfirmed} onChange={setAgeConfirmed} tag="[필수]" tagTone="text-[var(--primary)]" label="만 16세 이상입니다"/>
         <ConsentRow termKey="terms" checked={termsAgreed} onChange={setTermsAgreed} tag="[필수]" tagTone="text-[var(--primary)]" label="이용약관 동의"/>
         <ConsentRow termKey="privacy" checked={privacyAgreed} onChange={setPrivacyAgreed} tag="[필수]" tagTone="text-[var(--primary)]" label="개인정보 수집·이용 동의"/>
         <ConsentRow termKey="ai" checked={aiTrainingAgreed} onChange={setAiTrainingAgreed} tag="[선택]" tagTone="text-[var(--muted-fg)]" label="서비스 개선을 위한 학습 데이터 활용 동의"/>
         <ConsentRow termKey="notify" checked={notifyAgreed} onChange={setNotifyAgreed} tag="[선택]" tagTone="text-[var(--muted-fg)]" label="제작 진행 알림 수신 동의"/>
       </div>
       <p className="mt-3 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">선택 동의는 이후 언제든 철회할 수 있습니다. 다만 철회 전 이미 학습에 반영된 데이터는 되돌릴 수 없습니다.</p>
-      <button onClick={()=>onAgree({termsAgreed,privacyAgreed,aiTrainingAgreed,notifyAgreed})} disabled={!requiredOk||submitting}
+      <button onClick={()=>onAgree({ageConfirmed,termsAgreed,privacyAgreed,aiTrainingAgreed,notifyAgreed})} disabled={!requiredOk||submitting}
         className="w-full mt-6 rounded-xl bg-[var(--primary)] text-white py-3 text-[14.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--primary-dim)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">{submitting?'처리 중…':'동의하고 계속하기'}</button>
       {!requiredOk&&<p className="mt-2 text-[12px] text-[var(--muted-fg)] text-center">필수 항목에 모두 동의해야 계속할 수 있어요</p>}
       {error&&<p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-600 text-center leading-relaxed">{error}</p>}
