@@ -103,9 +103,15 @@ _INPUT_KEYWORDS = ('입력값', '형식 오류', 'validation', 'invalid input', 
 
 
 def classify_error_kind(exc: BaseException) -> str:
-    """예외 메시지를 보고 일시/입력/운영 중 하나로 분류한다. 위 키워드 중 아무것도 안
-    맞으면 기본값은 '일시'다 — 지금까지 해온 대로 "일단 재개를 시도해본다"는 기존 동작과
-    같다(모르는 오류를 섣불리 영구 오류로 단정해 재개 기회 자체를 없애지 않기 위함)."""
+    """예외가 이미 분류를 갖고 있으면(향후 실제 Agent 연동 시 Orchestration tools.llm의
+    ToolCallExhausted처럼 error_kind 속성을 직접 실어오는 예외) 그 값을 그대로 쓰고,
+    없을 때만(지금 더미 파이프라인처럼) 예외 메시지 키워드로 추측한다 — 프론트 3차
+    요청 B-3. 키워드로도 못 맞추면 기본값은 '일시'다 — 지금까지 해온 대로 "일단 재개를
+    시도해본다"는 기존 동작과 같다(모르는 오류를 섣불리 영구 오류로 단정해 재개 기회
+    자체를 없애지 않기 위함)."""
+    declared = getattr(exc, 'error_kind', None)
+    if declared in ERROR_KINDS:
+        return declared
     message = str(exc).lower()
     if any(kw in message for kw in _OPERATIONAL_KEYWORDS):
         return ERROR_KIND_OPERATIONAL

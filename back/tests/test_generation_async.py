@@ -489,3 +489,153 @@ def test_list_projects_classifies_completed_for_display(authed_client, db_sessio
     assert res.status_code == 200, res.text
     row = next(r for r in res.json() if r['project_id'] == done.project_id)
     assert row['display_status'] == '완료'
+
+
+# ============================================================================
+# [2026-09-29 신규] 프론트 요청사항 3차 — 완전 실패 후 "처음부터 다시 생성"을 task별
+# 재작성(rework_cap)과 분리해서 세는 부분(B-1/B-2/B-3/B-4).
+# ============================================================================
+
+def test_regenerate_restart_tags_agent_execution_and_bumps_streak(authed_client, db_session, monkeypatch):
+    """완전 실패(status='failed')한 stage를 POST /plan/start로 "처음부터 다시 생성"했는데
+    또 실패하면, agent_executions 행이 'rerun'이 아니라 'regenerate'로 남아야 한다 — 실제
+    Agent가 붙어 이 경로에 성공 행이 생기더라도 retry_task의 rework_cap 카운트
+    (rerun_type='rerun' AND status='completed'만 셈)를 오염시키지 않기 위함이다.
+    Project.regenerate_fail_streak도 이번 확정 실패로 1 늘어야 하고, 아직 상한(기본
+    2)에 안 닿았으니 알림의 regenerate_exhausted는 False여야 한다."""
+    from app.models import AgentExecution
+
+    monkeypatch.setattr(projects_router, 'DUMMY_GENERATION_STEP_SECONDS', 0.02)
+    match = _create_match(authed_client, db_session, 'NOTICE-REGEN-TAG')
+    match.stage = projects_router.ps.STAGE_PLAN_WRITING
+    match.status = 'failed'
+    match.failure_reason = '이전 시도 실패(테스트)'
+    match.worker_claimed_at = None
+    db_session.commit()
+
+    _monkeypatch_boom(monkeypatch, message='결제 크레딧 소진으로 호출 실패(테스트)')
+    r = authed_client.post(f'/projects/{match.project_id}/plan/start')
+    assert r.status_code == 200, r.text
+    assert r.json()['regenerate_fail_streak'] == 0, '아직 이번 시도 결과가 나오기 전이라 0이어야 함'
+
+    _wait_until_status(db_session, match, 'failed')
+    assert match.regenerate_fail_streak == 1
+    assert match.is_regenerating is True, '다음 재시도도 여전히 regenerate 계열이라는 표시가 남아있어야 함'
+
+    execution = (
+        db_session.query(AgentExecution)
+        .filter(AgentExecution.project_id == match.project_id, AgentExecution.task_key == 'writing')
+        .order_by(AgentExecution.attempt_no.desc())
+        .first()
+    )
+    assert execution is not None
+    assert execution.rerun_type == 'regenerate'
+
+    alert = (
+        db_session.query(projects_router.GenerationFailureAlert)
+        .filter_by(project_id=match.project_id)
+        .order_by(projects_router.GenerationFailureAlert.alert_id.desc())
+        .first()
+    )
+    assert alert is not None
+    assert alert.regenerate_exhausted is False, '기본 상한(2)에 아직 안 닿았으니 False여야 함'
+
+    status = authed_client.get(f'/projects/{match.project_id}/status').json()
+    assert status['regenerate_fail_streak'] == 1
+    assert status['regenerate_cap'] == 2
+
+
+def test_regenerate_fail_streak_blocks_plan_start_after_cap(authed_client, db_session, monkeypatch):
+    """연속으로 regenerate_cap(기본 2)번 "처음부터 다시 생성"이 최종 실패하면, 그 다음
+    POST /plan/start는 409로 막혀야 하고 마지막 확정 알림은 regenerate_exhausted=True로
+    남아야 한다(관리자가 우선 확인할 건)."""
+    monkeypatch.setattr(projects_router, 'DUMMY_GENERATION_STEP_SECONDS', 0.02)
+    match = _create_match(authed_client, db_session, 'NOTICE-REGEN-CAP')
+    match.stage = projects_router.ps.STAGE_PLAN_WRITING
+    match.status = 'failed'
+    match.worker_claimed_at = None
+    db_session.commit()
+
+    _monkeypatch_boom(monkeypatch, message='결제 크레딧 소진으로 호출 실패(테스트)')
+
+    for _ in range(2):  # verification_policies.regenerate_cap 기본값
+        r = authed_client.post(f'/projects/{match.project_id}/plan/start')
+        assert r.status_code == 200, r.text
+        _wait_until_status(db_session, match, 'failed')
+
+    assert match.regenerate_fail_streak == 2
+
+    r3 = authed_client.post(f'/projects/{match.project_id}/plan/start')
+    assert r3.status_code == 409, r3.text
+    assert r3.json()['detail'] == '문제가 기록됐고 확인 후 조치할게요. 잠시 후 다시 시도해 주세요.'
+
+    alert = (
+        db_session.query(projects_router.GenerationFailureAlert)
+        .filter_by(project_id=match.project_id)
+        .order_by(projects_router.GenerationFailureAlert.alert_id.desc())
+        .first()
+    )
+    assert alert.regenerate_exhausted is True, '상한에 닿은 마지막 확정 실패는 관리자가 우선 봐야 함'
+
+
+def test_regenerate_success_resets_fail_streak(authed_client, db_session, monkeypatch):
+    """이전에 몇 번 실패했더라도, "처음부터 다시 생성"이 이번엔 성공하면 연속 실패
+    스트릭이 0으로, is_regenerating도 False로 완전히 되돌아가야 한다."""
+    monkeypatch.setattr(projects_router, 'DUMMY_GENERATION_STEP_SECONDS', 0.02)
+    match = _create_match(authed_client, db_session, 'NOTICE-REGEN-RESET')
+    match.stage = projects_router.ps.STAGE_PLAN_WRITING
+    match.status = 'failed'
+    match.regenerate_fail_streak = 1  # 이전에 한 번 실패했던 상태를 흉내
+    match.worker_claimed_at = None
+    db_session.commit()
+
+    r = authed_client.post(f'/projects/{match.project_id}/plan/start')
+    assert r.status_code == 200, r.text
+
+    _wait_until_done(db_session, match, projects_router.ps.STAGE_PLAN_REVIEW_PENDING)
+    assert match.regenerate_fail_streak == 0
+    assert match.is_regenerating is False
+
+
+def test_task_level_retry_still_uses_rerun_not_regenerate(authed_client, db_session):
+    """task별 재작성(POST /retry-task)은 "처음부터 다시 생성"과 무관한 별개 경로이므로,
+    Project.is_regenerating이 켜져 있어도 agent_executions.rerun_type은 여전히
+    'rerun'이어야 한다(회귀 방지 — 두 예산을 헷갈리면 안 됨)."""
+    from app.models import AgentExecution
+
+    match = _create_match(authed_client, db_session, 'NOTICE-REGEN-VS-RERUN')
+    match.stage = projects_router.ps.STAGE_DONE
+    match.status = 'completed'
+    match.is_regenerating = True  # 다른 stage 재시도가 아직 안 끝난 상황을 흉내
+    db_session.commit()
+
+    r = authed_client.post(
+        f'/projects/{match.project_id}/retry-task',
+        json={'task_key': 'writing', 'bundle_id': projects_router.ps.WRITING_BUNDLES[0]},
+    )
+    assert r.status_code == 200, r.text
+
+    execution = (
+        db_session.query(AgentExecution)
+        .filter(AgentExecution.project_id == match.project_id, AgentExecution.task_key == 'writing')
+        .order_by(AgentExecution.attempt_no.desc())
+        .first()
+    )
+    assert execution is not None
+    assert execution.rerun_type == 'rerun'
+
+
+def test_classify_error_kind_prefers_declared_error_kind_over_keywords(authed_client, db_session):
+    """[2026-09-29 신규, 프론트 요청사항 3차 B-3] 실제 Agent가 붙으면 Orchestration
+    tools.llm이 올리는 예외(예: ToolCallExhausted)가 error_kind 속성을 이미 실어서 온다
+    — 메시지 키워드로 다시 추측하지 말고 그 값을 그대로 써야 한다. 아래 예외는 메시지에
+    '크레딧'(운영 키워드)이 들어있지만 error_kind='입력'을 명시적으로 실어 보냈으므로,
+    분류 결과는 '입력'이어야 한다(키워드 추측이 이겼다면 '운영'이 나왔을 것)."""
+
+    class _FakeToolCallExhausted(Exception):
+        def __init__(self, message, error_kind):
+            super().__init__(message)
+            self.error_kind = error_kind
+
+    exc = _FakeToolCallExhausted('크레딧 관련 입력값이 스키마와 안 맞음', projects_router.ps.ERROR_KIND_INPUT)
+    assert projects_router.ps.classify_error_kind(exc) == projects_router.ps.ERROR_KIND_INPUT

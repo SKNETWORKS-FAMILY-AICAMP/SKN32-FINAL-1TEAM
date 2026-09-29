@@ -170,6 +170,15 @@ CREATE TABLE IF NOT EXISTS projects (
     -- [2026-09-26 신규] 이번 실패 스트릭의 첫 실패 시각 — "재개 총 대기 상한"(12시간,
     -- 재개 대기+실행 시간 합산)을 재는 기준점. 성공하거나 수동 재시작 시 초기화된다.
     resume_started_at DATETIME(6) NULL COMMENT '이번 실패 스트릭 시작 시각(재개 총 대기 상한 12시간 계산용)',
+    -- [2026-09-29 신규, 프론트 요청사항 3차 B-1/B-2] 완전 실패(status='failed')한 stage를
+    -- 사용자가 "처음부터 다시 생성"으로 재시작한 시도 중인지 — 켜져 있는 동안 남는
+    -- agent_executions 행은 rerun_type='regenerate'로 남아 task별 재작성(rerun) 예산과
+    -- 섞이지 않는다. stage가 완전히 성공하면 False로 되돌아간다.
+    is_regenerating BOOLEAN NOT NULL DEFAULT FALSE COMMENT '"처음부터 다시 생성" 재시도 진행 중 여부',
+    -- 같은 stage에서 "처음부터 다시 생성"이 연속으로 최종 실패(status=failed 확정)한 횟수 —
+    -- 단계가 온전히 성공해야만 0으로 돌아간다. verification_policies.regenerate_cap에
+    -- 닿으면 plan/start·prototype/start를 409로 막는다.
+    regenerate_fail_streak TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '"처음부터 다시 생성" 연속 실패 횟수(성공하면 0)',
     archived_at DATETIME(6) NULL COMMENT '사용자가 프로젝트를 삭제해 보관 처리된 일시(NULL 가능)',
     archived_by VARCHAR(20) NULL COMMENT "보관 처리 주체('user' 고정, NULL 가능)",
     -- [2026-09-17 인덱싱 개정] 읽기 위주 접근 패턴 반영. projects.py list_projects()가
@@ -359,10 +368,10 @@ CREATE TABLE IF NOT EXISTS match_score_reasons (
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
--- [2026-09-23 신규] 생성 작업이 자동 재시도(최대 5회, 백오프)를 전부 소진하고
--- projects.status='failed'로 확정될 때마다 한 행씩 쌓는 관리자 알림 로그.
--- projects는 최신 상태만 담아서 "몇 번이나 실패했었는지" 이력이 안 남으므로 별도로
--- 보존한다(app/routers/projects.py _simulate_generation 참고).
+-- [2026-09-23 신규, 2026-09-29 주석 정정] 생성 작업이 projects.status='failed'로 확정될
+-- 때마다(자동 재시도 최대 5회·백오프 소진 또는 입력·운영 영구 오류로 즉시 확정, 둘 다) 한
+-- 행씩 쌓는 관리자 알림 로그. projects는 최신 상태만 담아서 "몇 번이나 실패했었는지"
+-- 이력이 안 남으므로 별도로 보존한다(app/routers/projects.py _simulate_generation 참고).
 -- [2026-09-28, match_results 테이블 통합] project_id와 함께 match_id도 들고 있었으나
 -- (둘이 항상 같은 project를 가리켰음), match_results가 projects로 합쳐지면서
 -- project_id 하나만 남긴다.
@@ -378,6 +387,10 @@ CREATE TABLE IF NOT EXISTS generation_failure_alerts (
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     -- 관리자가 확인 처리한 시각 — NULL이면 미확인. 재시도 자체를 막지는 않는다.
     acknowledged_at DATETIME(6) NULL COMMENT '관리자 확인 처리 시각(NULL이면 미확인)',
+    -- [2026-09-29 신규, 프론트 요청사항 3차 B-4] "처음부터 다시 생성" 연속 실패 상한까지
+    -- 도달한 뒤 확정된 실패인지 — 사용자 화면이 이미 재시도 버튼을 거둔 상태라 관리자가
+    -- 먼저 봐야 하는 건이다.
+    regenerate_exhausted BOOLEAN NOT NULL DEFAULT FALSE COMMENT '"처음부터 다시 생성" 연속 실패 상한 도달 후 확정된 실패인지',
     KEY ix_generation_failure_alerts_project (project_id),
     KEY ix_generation_failure_alerts_unacked (acknowledged_at),
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
@@ -618,7 +631,7 @@ CREATE TABLE IF NOT EXISTS agent_executions (
     task_key VARCHAR(50) NULL COMMENT 'app/models.py FIXED_TASK_SEQUENCE의 세부 Task 키 — 같은 agent_name이 여러 Task를 맡을 때 구분용',
     attempt_no INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '같은 task_key 안에서 몇 번째 실행인지(1=최초, 2=재시도 1회차, ...)',
     model_used VARCHAR(50) NOT NULL COMMENT '사용 모델명(Claude Opus/Sonnet/Haiku 또는 자체 파인튜닝 모델 버전)',
-    rerun_type VARCHAR(20) NOT NULL COMMENT '최초 실행/선별 재수행/전체 재실행 구분',
+    rerun_type VARCHAR(20) NOT NULL COMMENT "'initial'(최초)/'rerun'(사용자 task별 재작성, rework_cap 대상)/'regenerate'(완전 실패 stage 처음부터 다시 생성, rework_cap 제외 — 2026-09-29 신규) 중 하나",
     token_usage INT UNSIGNED NOT NULL COMMENT '실행에 사용된 토큰 수',
     -- [2026-09-23 개정] projects.status와 같은 enum(6종)을 쓴다 — 예전엔 여기만
     -- 'success'라는 다른 이름을 썼는데(seed_dummy_pipeline.py), 'completed'로 통일한다.
@@ -664,6 +677,7 @@ CREATE TABLE IF NOT EXISTS verification_policies (
     rework_cap INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '재작성(사용자가 POST /projects/{id}/retry-task로 묶음을 다시 만드는 것) 최대 횟수 — 묶음마다 1회, 첫 실행은 안 세고 실패하면 환불(rerun_cap과 별개, 2026-09-28 신규)',
     deviation_cap DECIMAL(5,2) NOT NULL DEFAULT 5 COMMENT '문서층 재채점 편차 상한(경고 알림 기준)',
     token_retry_cap INT UNSIGNED NOT NULL DEFAULT 2 COMMENT '검수(표현) Task 내부 보호 토큰 위반 문단 재시도 최대 횟수(rerun_cap과 별개)',
+    regenerate_cap INT UNSIGNED NOT NULL DEFAULT 2 COMMENT '"처음부터 다시 생성"(완전 실패한 stage 재시작) 연속 실패 상한 — 닿으면 plan/start·prototype/start를 409로 막음(rework_cap/rerun_cap과 별개, 2026-09-29 프론트 3차 요청 B-2)',
     updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '정책 마지막 수정 일시'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 

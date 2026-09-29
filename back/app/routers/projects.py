@@ -957,6 +957,12 @@ def _simulate_generation(project_id: int, running_stage: str, done_stage: str) -
                     if done_stage == ps.STAGE_DONE:
                         project.status = ps.GENERATION_STATUS_COMPLETED
                         project.failure_reason = None
+                    # [2026-09-29 신규, 프론트 요청사항 3차 B-2] "처음부터 다시 생성"
+                    # 시도든 아니든, 이 stage가 온전히 성공했으므로 연속 실패 스트릭을
+                    # 리셋한다 — resume_count(스텝마다 리셋)와 달리 이 값은 "시도 전체가
+                    # 끝내 성공했는지"만 본다.
+                    project.regenerate_fail_streak = 0
+                    project.is_regenerating = False
                     # [2026-09-27 신규, SB-141] 이 stage에 도달한 게 사용자 알림 대상이면
                     # (지금은 문서평가만 실제로 도달 가능 — 산출물확인/표현검수는 아직
                     # 없는 stage) notifications에 한 행 남긴다.
@@ -997,6 +1003,9 @@ def _simulate_generation(project_id: int, running_stage: str, done_stage: str) -
                 project.failure_reason = str(exc)[:2000]
                 error_kind = ps.classify_error_kind(exc)
                 project.last_error_kind = error_kind
+                # [2026-09-29 신규, 프론트 요청사항 3차 B-2] 아래 두 실패-확정 분기가 둘 다
+                # regenerate_cap을 봐야 해서 미리 한 번만 조회해둔다.
+                policy = _get_verification_policy(db)
                 # [2026-09-28 신규] 관리자 "에이전트 테스크" 탭이 stage 단위 실패도 볼 수
                 # 있도록 agent_executions에도 남긴다 — 재시도(POST .../retry-task)와 같은
                 # attempt_no 채번 규칙(같은 task_key 안에서 이어서 증가)을 쓴다.
@@ -1015,7 +1024,16 @@ def _simulate_generation(project_id: int, running_stage: str, done_stage: str) -
                         task_key=stage_task_key,
                         attempt_no=(last_stage_attempt.attempt_no + 1) if last_stage_attempt is not None else 1,
                         model_used='dummy',
-                        rerun_type='initial' if last_stage_attempt is None else 'rerun',
+                        # [2026-09-29 신규, 프론트 요청사항 3차 B-1] "처음부터 다시 생성"
+                        # (project.is_regenerating, _start_generation의 can_retry_failed)
+                        # 시도 중이면 'rerun'이 아니라 'regenerate'로 남긴다 — retry_task의
+                        # rework_cap 카운트는 rerun_type='rerun'만 세므로, 실제 Agent가 붙어
+                        # 이 경로에 성공 행이 생기더라도 사용자의 재작성 1회로 잘못 잡히지
+                        # 않는다.
+                        rerun_type=(
+                            'regenerate' if project.is_regenerating
+                            else ('initial' if last_stage_attempt is None else 'rerun')
+                        ),
                         token_usage=0,
                         status=ps.GENERATION_STATUS_FAILED,
                         error_kind=error_kind,
@@ -1024,12 +1042,17 @@ def _simulate_generation(project_id: int, running_stage: str, done_stage: str) -
                 if error_kind != ps.ERROR_KIND_TRANSIENT:
                     project.status = ps.GENERATION_STATUS_FAILED
                     project.next_retry_at = None
+                    # [2026-09-29 신규, 프론트 요청사항 3차 B-2] "처음부터 다시 생성" 시도가
+                    # 최종 실패로 확정됐을 때만(백오프 중간이 아니라) 연속 실패 스트릭을 늘린다.
+                    if project.is_regenerating:
+                        project.regenerate_fail_streak = (project.regenerate_fail_streak or 0) + 1
                     db.add(GenerationFailureAlert(
                         project_id=project.project_id,
                         stage=project.stage,
                         resume_count=project.resume_count or 0,
                         last_error_kind=error_kind,
                         failure_reason=project.failure_reason,
+                        regenerate_exhausted=project.is_regenerating and project.regenerate_fail_streak >= policy.regenerate_cap,
                     ))
                     # [2026-09-27 신규, SB-141] 실행 실패(E-RUN-FAIL) 사용자 알림. 재작성
                     # 실패(failure_scope='재작성')는 재작성 기능(2-1/2-2)이 아직 없어서
@@ -1048,12 +1071,15 @@ def _simulate_generation(project_id: int, running_stage: str, done_stage: str) -
                 if project.resume_count > GENERATION_RESUME_MAX_ATTEMPTS or elapsed > GENERATION_RESUME_TOTAL_CAP_SECONDS:
                     project.status = ps.GENERATION_STATUS_FAILED
                     project.next_retry_at = None
+                    if project.is_regenerating:
+                        project.regenerate_fail_streak = (project.regenerate_fail_streak or 0) + 1
                     db.add(GenerationFailureAlert(
                         project_id=project.project_id,
                         stage=project.stage,
                         resume_count=project.resume_count - 1,
                         last_error_kind=error_kind,
                         failure_reason=project.failure_reason,
+                        regenerate_exhausted=project.is_regenerating and project.regenerate_fail_streak >= policy.regenerate_cap,
                     ))
                     db.add(Notification(
                         project_id=project.project_id,
@@ -1159,6 +1185,12 @@ def _start_generation(db: Session, project: Project, start_from: tuple, running_
     # 두므로(_simulate_generation), 실패한 바로 그 단계에 대해서만(stage == running_stage)
     # 재시작을 허용한다 — 다른 단계에서 실패했는데 엉뚱한 단계가 리셋되면 안 되니까.
     can_retry_failed = project.status == ps.GENERATION_STATUS_FAILED and project.stage == running_stage
+    policy = _get_verification_policy(db)
+    # [2026-09-29 신규, 프론트 요청사항 3차 B-2] 완전 실패한 stage를 "처음부터 다시 생성"할
+    # 때만 연속 실패 상한을 본다(최초 시작엔 적용 안 됨) — 서버 문제(API 키 만료 등)가 안
+    # 고쳐진 채 몇 번을 다시 눌러도 소용없는 상황에서 무한정 재시도를 받아주지 않기 위함.
+    if can_retry_failed and (project.regenerate_fail_streak or 0) >= policy.regenerate_cap:
+        raise HTTPException(status_code=409, detail='문제가 기록됐고 확인 후 조치할게요. 잠시 후 다시 시도해 주세요.')
     if project.stage in start_from or can_retry_failed:
         project.stage = running_stage
         project.progress_percent = 0
@@ -1175,6 +1207,11 @@ def _start_generation(db: Session, project: Project, start_from: tuple, running_
         project.resume_started_at = datetime.datetime.utcnow() if can_retry_failed else None
         project.last_error_kind = None
         project.next_retry_at = None
+        # [2026-09-29 신규, 프론트 요청사항 3차 B-1/B-2] 완전 실패한 stage를 재시작하는
+        # 이번 시도(들)에 "regenerate" 표시를 켠다 — _simulate_generation이 이 플래그를
+        # 보고 agent_executions.rerun_type과 연속 실패 스트릭 증가 여부를 결정한다. 최초
+        # 시작(재시도가 아닌 경우)은 끈다.
+        project.is_regenerating = can_retry_failed
         db.commit()
     # 이미 진행 중이면(다른 요청/복구 루프가 먼저 클레임했으면) 새로 시작하지 않는다 —
     # _try_claim_and_run의 원자적 UPDATE가 중복 실행 방지를 대신한다. status='waiting_resume'
@@ -1192,6 +1229,8 @@ def _start_generation(db: Session, project: Project, start_from: tuple, running_
         failure_reason=project.failure_reason,
         resume_count=project.resume_count or 0,
         next_retry_at=project.next_retry_at,
+        regenerate_fail_streak=project.regenerate_fail_streak or 0,
+        regenerate_cap=policy.regenerate_cap,
     )
 
 
@@ -1845,6 +1884,7 @@ def get_project_status(
         return ProjectStatusOut(project_id=project.project_id, screen=ps.NO_MATCH_SCREEN)
 
     screen = ps.STAGE_TO_SCREEN.get(project.stage) if project.stage is not None else None
+    policy = _get_verification_policy(db)
     return ProjectStatusOut(
         project_id=project.project_id,
         screen=screen,
@@ -1855,6 +1895,8 @@ def get_project_status(
         resume_count=project.resume_count or 0,
         next_retry_at=project.next_retry_at,
         notice_closed=_is_notice_closed(db, project.notice_id),
+        regenerate_fail_streak=project.regenerate_fail_streak or 0,
+        regenerate_cap=policy.regenerate_cap,
     )
 
 

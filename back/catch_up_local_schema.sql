@@ -279,6 +279,15 @@ CALL _add_col_if_missing('artifacts', 'is_current', "BOOLEAN NOT NULL DEFAULT TR
 -- 있었다 — item_code만 내려가면 화면에 코드가 그대로 노출된다. 그동안 누락돼 있었다.
 CALL _add_col_if_missing('plan_score_reasons', 'display_name', "VARCHAR(100) NULL COMMENT '화면에 보여줄 짧은 항목 이름 (예: 목표 고객 문제 정의)'");
 
+-- [2026-09-29 신규, 프론트 요청사항 3차 B-1/B-2/B-4] "처음부터 다시 생성"(완전 실패한
+-- stage 재시작)을 task별 재작성(rework_cap)과 분리해서 세기 위한 컬럼들
+-- (app/models.py Project.is_regenerating/regenerate_fail_streak,
+-- VerificationPolicy.regenerate_cap, GenerationFailureAlert.regenerate_exhausted 참고).
+CALL _add_col_if_missing('projects', 'is_regenerating', "BOOLEAN NOT NULL DEFAULT FALSE COMMENT '\"처음부터 다시 생성\" 재시도 진행 중 여부'");
+CALL _add_col_if_missing('projects', 'regenerate_fail_streak', "TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '\"처음부터 다시 생성\" 연속 실패 횟수(성공하면 0)'");
+CALL _add_col_if_missing('verification_policies', 'regenerate_cap', "INT UNSIGNED NOT NULL DEFAULT 2 COMMENT '\"처음부터 다시 생성\" 연속 실패 상한 — 닿으면 plan/start·prototype/start를 409로 막음'");
+CALL _add_col_if_missing('generation_failure_alerts', 'regenerate_exhausted', "BOOLEAN NOT NULL DEFAULT FALSE COMMENT '\"처음부터 다시 생성\" 연속 실패 상한 도달 후 확정된 실패인지'");
+
 DROP PROCEDURE IF EXISTS _add_col_if_missing;
 
 -- [2026-09-29 신규, SB-155] is_current로 "현재 버전"을 빠르게 찾는 조회(GET /result 등)를

@@ -289,9 +289,11 @@ def list_generation_alerts(
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
-    """생성 작업(계획서/프로토타입)이 자동 재시도 5회를 전부 소진하고 확정 실패할 때마다
-    쌓이는 관리자 알림 목록 — 기본은 아직 확인 안 한 것만 최신순으로 보여준다
-    (include_acknowledged=true면 확인 처리된 것까지 전부)."""
+    """생성 작업(계획서/프로토타입)이 status='failed'로 확정될 때마다(자동 재시도 5회 소진
+    또는 영구 오류로 즉시 확정) 쌓이는 관리자 알림 목록 — 기본은 아직 확인 안 한 것만
+    최신순으로 보여준다(include_acknowledged=true면 확인 처리된 것까지 전부). 각 행의
+    regenerate_exhausted가 True면 "처음부터 다시 생성" 연속 실패 상한까지 도달한 건이라
+    우선 확인이 필요하다."""
     query = db.query(GenerationFailureAlert)
     if not include_acknowledged:
         query = query.filter(GenerationFailureAlert.acknowledged_at.is_(None))

@@ -401,6 +401,19 @@ class Project(Base):
     # 시작하면 초기화된다(resume_count가 0/1로 리셋되는 시점과 항상 같이 움직인다).
     resume_started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # [2026-09-29 신규, 프론트 요청사항 3차 B-1/B-2] 완전 실패(status='failed')한 stage를
+    # 사용자가 "처음부터 다시 생성"으로 재시작한 시도(_start_generation의 can_retry_failed)를
+    # 표시한다. 이 플래그가 켜져 있는 동안 남는 agent_executions 행은 rerun_type='regenerate'로
+    # 남아 task별 재작성(rerun) 예산과 섞이지 않는다(실제 Agent가 성공 행도 남기게 되면 이
+    # 구분이 rework_cap 오카운트를 막아준다). stage가 완전히 끝나면(성공) False로 되돌아간다.
+    is_regenerating: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 같은 stage에서 "처음부터 다시 생성"이 연속으로 최종 실패(status='failed' 확정)한
+    # 횟수 — 자동 재개(resume_count, 15분~4시간 백오프)와 달리 backoff 중간 실패마다가
+    # 아니라 이 시도 전체가 끝내 실패로 확정될 때만 +1이고, 단계가 온전히 성공해야만 0으로
+    # 되돌아간다. regenerate_cap(VerificationPolicy)에 닿으면 plan/start·prototype/start를
+    # 409로 막는다(app/routers/projects.py _start_generation 참고).
+    regenerate_fail_streak: Mapped[int] = mapped_column(_UnsignedInt, default=0)
+
     company: Mapped['Company'] = relationship(back_populates='projects')
     attachments: Mapped[list['ProjectAttachment']] = relationship(back_populates='project')
     team_members: Mapped[list['TeamMember']] = relationship(back_populates='project')
@@ -632,11 +645,13 @@ class MatchScoreReason(Base):
 
 
 class GenerationFailureAlert(Base):
-    """[2026-09-23 신규] 생성 작업이 자동 재시도(최대 5회, 백오프)를 전부 소진하고
-    status='failed'로 확정될 때마다 한 행씩 쌓는 관리자 알림 로그. projects 자체는
-    최신 상태만 담아서 "몇 번이나 실패했었는지"가 남지 않으므로, 그 이력을 여기 별도로
-    보존한다. 관리자 대시보드가 이 테이블을 조회해 미확인 실패를 보여준다
-    (app/routers/projects.py _simulate_generation 참고).
+    """[2026-09-23 신규, 2026-09-29 docstring 정정] 생성 작업이 status='failed'로 확정될
+    때마다(자동 재시도 최대 5회·백오프를 전부 소진했거나, 입력·운영 같은 영구 오류라 재개
+    없이 바로 확정된 경우 둘 다) 한 행씩 쌓는 관리자 알림 로그 — 프론트 3차 요청서가 지적한
+    대로, 실제로는 영구 오류일 때도 재개를 기다리지 않고 바로 이 행이 생긴다(last_error_kind로
+    어느 쪽인지 구분 가능). projects 자체는 최신 상태만 담아서 "몇 번이나 실패했었는지"가
+    남지 않으므로, 그 이력을 여기 별도로 보존한다. 관리자 대시보드가 이 테이블을 조회해
+    미확인 실패를 보여준다(app/routers/projects.py _simulate_generation 참고).
 
     [2026-09-28, match_results 테이블 통합] project_id와 함께 match_id도 들고 있었으나
     (둘이 사실상 항상 같은 project를 가리켰음), match_results가 projects로 합쳐지면서
@@ -658,6 +673,12 @@ class GenerationFailureAlert(Base):
     # 관리자가 확인 처리한 시각 — NULL이면 아직 미확인. 재시도 자체를 막지는 않는다
     # (사용자는 확인 여부와 무관하게 "다시 이어가기"를 누를 수 있음).
     acknowledged_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    # [2026-09-29 신규, 프론트 요청사항 3차 B-4] 이 실패가 "처음부터 다시 생성" 연속 실패
+    # 상한(Project.regenerate_fail_streak >= VerificationPolicy.regenerate_cap)까지 도달한
+    # 뒤에 확정된 것인지 — 사용자 화면이 이미 "다시 생성" 버튼을 거두고 "문제가 기록됐고
+    # 확인 후 조치할게요"로 바뀐 상태라는 뜻이므로, 관리자가 먼저 봐야 하는 건이다(프론트가
+    # 목록 맨 위에 띄움).
+    regenerate_exhausted: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Notification(Base):
@@ -1058,6 +1079,9 @@ class AgentExecution(Base):
     attempt_no: Mapped[int] = mapped_column(_UnsignedInt, default=1)
 
     model_used: Mapped[str] = mapped_column(String(50))
+    # 'initial'(최초 실행) / 'rerun'(사용자 task별 재작성, rework_cap 대상) / 'regenerate'
+    # (완전 실패한 stage를 "처음부터 다시 생성", 2026-09-29 신규 — rework_cap 카운트에서
+    # 제외됨. Project.is_regenerating/regenerate_fail_streak 참고) 셋 중 하나.
     rerun_type: Mapped[str] = mapped_column(String(20))
     token_usage: Mapped[int] = mapped_column(_UnsignedInt)  # app_schema.sql: INT UNSIGNED
     # [2026-09-23 개정] match_results.status와 같은 enum(6종)을 쓴다 — 예전엔 여기만
@@ -1123,6 +1147,12 @@ class VerificationPolicy(Base):
     # 최대 횟수 — rerun_cap(Task 단위 재수행 상한)과는 별개로 관리된다. admin-dashboard.html
     # 목업 기본값 2를 그대로 따름. 2026-09-14 정재희님과 논의 후 컬럼 추가 확정.
     token_retry_cap: Mapped[int] = mapped_column(_UnsignedInt, default=2)  # app_schema.sql: INT UNSIGNED
+    # [2026-09-29 신규, 프론트 요청사항 3차 B-2] "처음부터 다시 생성" 연속 실패 상한 —
+    # 서버 문제(API 키 만료 등)가 안 고쳐진 채 사용자가 계속 눌러도 소용없을 때, 이 값에
+    # 닿으면 plan/start·prototype/start를 409로 막고 화면은 "문제가 기록됐고 확인 후
+    # 조치할게요"로 바꾼다(Project.regenerate_fail_streak과 짝, rework_cap/rerun_cap과는
+    # 별개 값).
+    regenerate_cap: Mapped[int] = mapped_column(_UnsignedInt, default=2)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 

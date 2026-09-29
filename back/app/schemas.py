@@ -538,6 +538,13 @@ class ProjectStatusOut(BaseModel):
     # 막지 않는다). 매칭 자체가 없거나(screen=NO_MATCH_SCREEN) 공고 정보를 못 찾으면
     # False.
     notice_closed: bool = False
+    # [2026-09-29 신규, 프론트 요청사항 3차 B-2] 같은 stage에서 "처음부터 다시 생성"이
+    # 연속으로 최종 실패(status='failed' 확정)한 횟수와 그 상한 — 자동 재개(resume_count)
+    # 와 달리 backoff 중간 실패가 아니라 이 시도 전체가 끝내 실패로 확정될 때만 늘고,
+    # 단계가 온전히 성공하면 0으로 돌아간다. regenerate_fail_streak >= regenerate_cap이면
+    # plan/start·prototype/start가 409를 돌려준다.
+    regenerate_fail_streak: int = 0
+    regenerate_cap: int = 2
 
 
 class RetryTaskRequest(BaseModel):
@@ -799,8 +806,9 @@ class ItemArchiveIn(BaseModel):
 
 
 class GenerationFailureAlertOut(BaseModel):
-    """GET /admin/generation-alerts 응답 — 생성 작업이 자동 재시도 5회를 전부 소진하고
-    확정 실패할 때마다 한 행씩 쌓이는 관리자 알림(generation_failure_alerts)."""
+    """GET /admin/generation-alerts 응답 — 생성 작업이 status='failed'로 확정될 때마다(자동
+    재시도 5회 소진 또는 입력·운영 같은 영구 오류로 즉시 확정) 한 행씩 쌓이는 관리자 알림
+    (generation_failure_alerts)."""
 
     model_config = ConfigDict(from_attributes=True)
     alert_id: int
@@ -811,6 +819,10 @@ class GenerationFailureAlertOut(BaseModel):
     failure_reason: str | None = None
     created_at: datetime.datetime
     acknowledged_at: datetime.datetime | None = None
+    # [2026-09-29 신규, 프론트 요청사항 3차 B-4] True면 이 실패가 "처음부터 다시 생성"
+    # 연속 실패 상한까지 도달한 뒤 확정된 것 — 사용자 화면은 이미 재시도 버튼을 거두고
+    # "문제가 기록됐고 확인 후 조치할게요"로 바뀐 상태이므로 관리자가 우선 봐야 한다.
+    regenerate_exhausted: bool = False
 
 
 class GenerationFailureAlertAckIn(BaseModel):
