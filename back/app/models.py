@@ -66,11 +66,11 @@ _MediumBlob = LargeBinary().with_variant(MEDIUMBLOB, 'mysql')
 # ---------------------------------------------------------------------------
 class Notice(Base):
     """[2026-09-17 정합성 점검 보고서 반영 — embedding 3컬럼 복원] 앞서(같은 날 1차 재검증)
-    이근준님의 실제 수집 파이프라인 레포(https://github.com/geunlee00/skn32_test)의
+    수집 파이프라인 담당의 실제 수집 파이프라인 레포(https://github.com/geunlee00/skn32_test)의
     mysql_schema.sql 원본을 확인해 embedding/embedding_fingerprint/embedding_input_sha256
     3개 컬럼을 "실제 스키마엔 없다"는 이유로 뺐었다. 그런데 기획서 v1.7·요구사항 정의서 v2·
     수집 데이터 보고서(2026-09-16) 3개 원본 문서를 직접 대조하는 정합성 점검을 진행하면서,
-    이근준님이 직접 작성한 수집 데이터 보고서(2026-09-16) 원문에 이 3개 컬럼이 실제로
+    수집 파이프라인 담당이 직접 작성한 수집 데이터 보고서(2026-09-16) 원문에 이 3개 컬럼이 실제로
     존재하고 이미 2,153건 전량(결측 0건) 채워져 있으며 공고 매칭·관심 공고 알림에 쓰인다고
     명시돼 있는 것을 확인했다 — GitHub 레포 스냅샷이 이 시점 기준 최신이 아니었던 것으로
     판단해 3개 컬럼을 다시 복원한다.
@@ -136,7 +136,7 @@ class Notice(Base):
 
 
 class NoticeCondition(Base):
-    """[2026-09-17 최종 확인] 하정원님이 실제 공유 DB에서 이 테이블의 컬럼 목록을
+    """[2026-09-17 최종 확인] 담당자가 실제 공유 DB에서 이 테이블의 컬럼 목록을
     스크린샷으로 직접 확인해줬다 — 더 이상 추정이 아니다. 바로 앞 시도에서
     (https://github.com/geunlee00/skn32_test)의 mysql_schema.sql "main 브랜치" 원본엔
     이 테이블이 안 보여서 "존재 자체가 불확실"이라고 적어놨었는데, 실제로는 존재한다
@@ -150,7 +150,7 @@ class NoticeCondition(Base):
     input_sha256 — 실제 mysql_schema.sql의 attachment_texts와 같은 패턴)까지 같이 기록한다.
     [2026-09-17 DESCRIBE notice_conditions; 결과로 최종 확정] 정합성 점검 보고서가 uncertain
     타입을 스크린샷(JSON)과 수집 데이터 보고서(TINYINT)가 서로 다르게 말한다고 지적한
-    직후, 하정원님이 실제 DESCRIBE notice_conditions; 결과 스크린샷을 받아왔다 — uncertain은
+    직후, 담당자가 실제 DESCRIBE notice_conditions; 결과 스크린샷을 받아왔다 — uncertain은
     json(YES, 기본값 NULL)으로 확정. 수집 데이터 보고서 쪽 설명(TINYINT)이 틀렸던 것으로
     결론.
 
@@ -288,7 +288,7 @@ class Company(Base):
     # 새로 만들 수 있도록 제거한다. user_id로 조회는 여전히 자주 하니 인덱스는 남긴다.
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('users.user_id'), index=True)
     # [2026-09-17 삭제] IntakeForm.jsx에 이 값을 물어보는 입력칸이 아예 없어서 App.jsx가
-    # 항상 '온라인' 고정값을 채워 보내고 있었다(하정원님 지적으로 발견, "지워" 지시에 따라
+    # 항상 '온라인' 고정값을 채워 보내고 있었다(담당자 지적으로 발견, "지워" 지시에 따라
     # ProjectCreateRequest에서 필드 삭제) — 컬럼은 남겨두되 NULL을 허용해서 기존 행/코드가
     # 깨지지 않게 했다. 나중에 진짜 입력칸이 생기면 다시 required로 되돌리면 된다.
     # [2026-09-17 배선] IntakeForm.jsx가 필수로 물어보는 "신청자 유형"이 요청 바디에도
@@ -529,7 +529,7 @@ class ProjectPartner(Base):
 
 
 class ProjectPlanInput(Base):
-    """[2026-09-22 신규, 하정원님] IntakeForm.jsx가 2026-09-18 정재희님 커밋(병합 시점
+    """[2026-09-22 신규] IntakeForm.jsx가 2026-09-18 프론트 커밋(병합 시점
     담당자 인수인계 불가로 확인 — 이 파일은 그 커밋의 사용부만 보고 재구성했다)에서 새로
     받기 시작한 "사업 계획" 입력을 담는다. App.jsx의 intakeDetailPayload가 이미
     이 스키마 그대로(snake_case) 보내고 있었는데 ProjectCreateRequest에 대응 필드가 없어
@@ -955,7 +955,7 @@ class ProofreadLog(Base):
     행에는 이 3컬럼이 다 NULL이다(라벨링 대상이 아니므로).
 
     [2026-09-18 추가] score — 그동안 passed(통과/반려) 불리언만 있어서 "재시도할수록
-    실제로 나아지고 있는지"를 숫자로 확인할 방법이 없었다(하정원님 지적). business_plans.
+    실제로 나아지고 있는지"를 숫자로 확인할 방법이 없었다(담당자 지적). business_plans.
     doc_score/artifacts.artifact_score와 같은 형식(0~100, 소수 둘째 자리까지)으로 맞춘다."""
     __tablename__ = 'proofread_logs'
 
@@ -998,7 +998,7 @@ class Faq(Base):
 # 마이페이지 프로필 (계정 단위, 슬롯형 — SB-59 v2)
 # ---------------------------------------------------------------------------
 class UserProfile(Base):
-    """[2026-09-18 v2, 정재희님 프론트 커밋(front/src/store/useMyPageStore.js) 반영] 계정당
+    """[2026-09-18 v2, 프론트 커밋(front/src/store/useMyPageStore.js) 반영] 계정당
     최대 3개까지 독립된 정보 슬롯을 둘 수 있게 바뀌었다(예: 아이템별로 다른 신청자 정보) —
     v1(계정당 1행, user_id UNIQUE)은 이 다중 슬롯 구조와 근본적으로 안 맞아 DROP 후 재생성
     했다(마이그레이션 시점 0행이라 데이터 손실 없음). 최대 개수(3)는 여기서 강제하지 않고
@@ -1152,7 +1152,7 @@ class VerificationPolicy(Base):
     deviation_cap: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2), default=5)
     # 검수(표현) Task 내부에서 보호 토큰(수치/날짜/고유명사/기능명) 위반 문단을 재시도하는
     # 최대 횟수 — rerun_cap(Task 단위 재수행 상한)과는 별개로 관리된다. admin-dashboard.html
-    # 목업 기본값 2를 그대로 따름. 2026-09-14 정재희님과 논의 후 컬럼 추가 확정.
+    # 목업 기본값 2를 그대로 따름. 2026-09-14 프론트 담당자와 논의 후 컬럼 추가 확정.
     token_retry_cap: Mapped[int] = mapped_column(_UnsignedInt, default=2)  # app_schema.sql: INT UNSIGNED
     # [2026-09-29 신규, 프론트 요청사항 3차 B-2] "처음부터 다시 생성" 연속 실패 상한 —
     # 서버 문제(API 키 만료 등)가 안 고쳐진 채 사용자가 계속 눌러도 소용없을 때, 이 값에

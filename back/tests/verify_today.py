@@ -108,16 +108,18 @@ else:
 
 print('\n입력 완료 — 실행합니다...\n')
 
-import app.security as security  # noqa: E402
-from app.main import app  # noqa: E402
-from app.hwp_export import RHWP_BIN  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+
+import app.security as security  # noqa: E402
+from app.hwp_export import RHWP_BIN  # noqa: E402
+from app.main import app  # noqa: E402
 
 client = TestClient(app)
 security.verify_google_id_token = lambda id_token_str: {
     'sub': 'verify-today-sub', 'email': 'verify-today@example.com', 'name': '검증용',
 }
 import app.routers.auth as auth_router  # noqa: E402
+
 auth_router.verify_google_id_token = security.verify_google_id_token
 
 r = client.post('/auth/google', json={'id_token': 'dummy', 'aiTrainingAgreed': True, 'notifyAgreed': True})
@@ -130,7 +132,7 @@ project_id = r.json()['project_id']
 print(f'[2/4] 프로젝트 생성 OK (project_id={project_id})')
 
 plan_input = client.get(f'/projects/{project_id}').json()['plan_input']
-print(f'[3/4] 저장된 값 확인:')
+print('[3/4] 저장된 값 확인:')
 for key in ('region_sido', 'main_industry', 'dev_start_month', 'dev_end_month', 'hires', 'partners', 'occupation'):
     if key in plan_input:
         print(f'  - {key}: {plan_input[key]}')

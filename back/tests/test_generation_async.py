@@ -66,7 +66,7 @@ def _wait_until_done(db_session, match: Project, done_stage: str, timeout_s: flo
 def test_prototype_building_completion_replaces_dummy_artifact_with_v2(authed_client, db_session, monkeypatch):
     """[2026-09-29 신규, 프론트 5차 D-2] prototype_building 워커가 100%에 도달하면
     seed_dummy_pipeline이 매칭 시점에 미리 만들어둔 더미 산출물(version=1)을 구현
-    Agent(T-B1/T-B2) 실제 호출 결과(version=2)로 교체해야 한다 — 구현·검증-2 담당(정재희)
+    Agent(T-B1/T-B2) 실제 호출 결과(version=2)로 교체해야 한다 — 구현·검증-2 담당
     확인(옵션 A, Downloads/백엔드_답변_D2_구현Agent_호출시점.md) 반영. 더미 v1은 점수 비교
     없이 즉시 is_current=False가 되고(조건 2-2), 교체 자체는 rework_cap을 쓰지 않아야
     한다(조건 2-3, rerun_type='initial')."""

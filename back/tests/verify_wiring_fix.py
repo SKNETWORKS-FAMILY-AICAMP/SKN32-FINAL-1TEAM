@@ -19,13 +19,13 @@ os.environ['MYSQL_DATABASE'] = 'sbrain_test'
 os.environ.setdefault('GOOGLE_CLIENT_ID', 'ci-dummy-client-id')
 os.environ.setdefault('JWT_SECRET', 'ci-dummy-secret-not-for-production')
 
-from fastapi.testclient import TestClient  # noqa: E402
 from docx import Document  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
 import app.security as security  # noqa: E402
 from app.database import IS_SQLITE, SessionLocal  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import Company, Project, ProjectBudgetItem, ProjectPartner, ProjectScheduleItem, User  # noqa: E402
+from app.models import User  # noqa: E402
 
 assert not IS_SQLITE
 

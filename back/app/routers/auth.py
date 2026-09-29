@@ -85,7 +85,7 @@ def login_with_google(body: GoogleLoginRequest, response: Response, db: Session 
     # DB INSERT 시점에 알 수 없는 500으로 죽는다 — 구글 ID 토큰 표준 클레임상 email은
     # 거의 항상 오지만(Google Identity Services 로그인 버튼은 별도 scope 동의 없이도
     # 기본 프로필 클레임으로 내려준다), 계정 정책상 이메일 없는 구글 계정처럼 드문
-    # 경우까지 대비해 여기서 명확한 4xx로 막는다(하정원님 지시 — "이메일을 필수로").
+    # 경우까지 대비해 여기서 명확한 4xx로 막는다(담당자 지시 — "이메일을 필수로").
     if not email:
         raise HTTPException(status_code=400, detail='이 구글 계정에서 이메일 정보를 가져올 수 없어 로그인할 수 없습니다')
     name = payload.get('name') or email.split('@')[0]

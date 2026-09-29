@@ -46,7 +46,7 @@ class UserOut(BaseModel):
     # [2026-09-29 신규, 프론트 요청사항 4차 C-1] "만 16세 이상입니다" 동의 완료 시각 —
     # 위 둘과 같은 용도(NULL이면 아직 동의 전).
     age_confirmed_at: datetime.datetime | None = None
-    # [2026-09-18 추가, 정재희님 인계서] User 테이블 컬럼이 아니라 요청마다 계산해서 채운다
+    # [2026-09-18 추가, 프론트 담당자 인계서] User 테이블 컬럼이 아니라 요청마다 계산해서 채운다
     # (app/routers/profile.py compute_has_profile) — user_profiles 슬롯 중 하나라도 필수
     # 입력 항목(신청자 유형/대표자 정보/지역/주업종/대표자 이력 1건 이상, biz 유형이면
     # 사업자번호까지)을 전부 채웠는지. 기본값 False는 UserOut.model_validate(user)가 User
@@ -116,7 +116,7 @@ class PricingItemIn(BaseModel):
     unit_price: float | None = Field(None, description='단가(원), 미정이면 NULL')
 
 
-# [2026-09-22 신규, 하정원님] IntakeForm.jsx "사업 계획" 섹션의 목록 항목들 — App.jsx
+# [2026-09-22 신규, 담당자] IntakeForm.jsx "사업 계획" 섹션의 목록 항목들 — App.jsx
 # intakeDetailPayload가 이미 이 키 이름 그대로(snake_case) 보내고 있다. 항목 모양이 아직
 # 팀 논의 중이라(채용예정인력·협업회사 필수입력 전환 제안) 여기서도 필드를 꽉 채우지 않고
 # 전부 선택으로 둔다 — project_plan_inputs에 JSON 그대로 저장(app/models.py 참고).
@@ -182,7 +182,7 @@ class ProjectCreateRequest(BaseModel):
     #
     # [2026-09-17 삭제] start_type(시작 유형: 온라인/오프라인/전자상거래 등)은 IntakeForm.jsx에
     # 이걸 물어보는 입력칸이 아예 없어서 App.jsx가 항상 '온라인'을 고정값으로 채워 보내고
-    # 있었다(하정원님 지적으로 발견). 실제 사용자 입력이 아닌 가짜 값을 계속 저장하느니
+    # 있었다(리뷰 중 발견). 실제 사용자 입력이 아닌 가짜 값을 계속 저장하느니
     # 필드 자체를 없앴다. [2026-09-18] 그 뒤로 모든 행이 NULL로만 쌓이는 게 확인돼
     # companies.start_type 컬럼 자체도 완전히 지웠다(app_schema.sql/models.py/CompanyOut).
     # 나중에 진짜 입력칸이 생기면 컬럼부터 다시 추가해야 한다.
@@ -219,7 +219,7 @@ class ProjectCreateRequest(BaseModel):
     team_members: list[TeamMemberIn] = Field(default_factory=list)
     pricing_items: list[PricingItemIn] = Field(default_factory=list, description='수익모델 단가 — 4-6 정책상 최소 1건 권장')
 
-    # [2026-09-22 배선, 하정원님] IntakeForm.jsx가 2026-09-18 정재희님 커밋(병합 시점 담당자
+    # [2026-09-22 배선] IntakeForm.jsx가 2026-09-18 프론트 커밋(병합 시점 담당자
     # 인수인계 불가로 확인)에서 새로 받기 시작한 "사업 계획" 입력. App.jsx intakeDetailPayload가
     # 이미 이 이름 그대로(snake_case) 보내고 있었는데 여기 대응 필드가 없어 pydantic 기본
     # extra='ignore'로 조용히 버려지고 있었다(App.jsx 자체 주석 "서버 ProjectCreateRequest에
@@ -1183,7 +1183,7 @@ class BasicProfileIn(BaseModel):
     @field_validator('budget_scale')
     @classmethod
     def _check_budget_scale(cls, v: str) -> str:
-        """[2026-09-18, 정재희님 인계서] 만원 단위 숫자 문자열, 0~2000 — 프론트가 입력
+        """[2026-09-18, 프론트 담당자 인계서] 만원 단위 숫자 문자열, 0~2000 — 프론트가 입력
         자체를 2000에서 자르지만(clampBudget, BasicInfo.jsx) 서버도 한 번 더 막는다."""
         if v == '':
             return v

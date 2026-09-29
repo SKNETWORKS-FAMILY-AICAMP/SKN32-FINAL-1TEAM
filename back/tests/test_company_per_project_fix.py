@@ -9,7 +9,7 @@ User 행 락으로 분리한 수정 검증용. 두 가지를 확인한다:
 
 [2026-09-17] start_type/notify_region/notify_industry는 IntakeForm.jsx에 입력칸이
 아예 없어서 항상 고정값('예비창업'/'전국'/'기타' 등)만 보내고 있던 가짜 필드였다
-(하정원님 지적, "지워" 지시로 ProjectCreateRequest에서 제거) — 이 테스트 파일도
+(담당자 지적, "지워" 지시로 ProjectCreateRequest에서 제거) — 이 테스트 파일도
 같이 정리했다. [2026-09-18] 그 뒤로 모든 행이 NULL로만 쌓이는 게 확인돼 컬럼 자체도
 완전히 지웠다(companies.start_type/projects.notify_region/notify_industry) —
 _payload()가 안 보내도 여전히 201로 성공해야 한다.
@@ -98,7 +98,7 @@ def test_concurrency_limit_still_blocks_without_shared_company(authed_client, db
 
 def test_applicant_type_is_persisted(authed_client, db_session):
     """[2026-09-17] IntakeForm.jsx가 필수로 물어보는 "신청자 유형"이 요청 바디에도 안 실리고
-    저장할 컬럼도 없어서 화면에서 고른 값이 버려지고 있었다(하정원님 지적으로 발견) — 이제
+    저장할 컬럼도 없어서 화면에서 고른 값이 버려지고 있었다(리뷰 중 발견) — 이제
     받아서 companies.applicant_type에 저장되는지 확인한다."""
     res = authed_client.post('/projects', data=_payload(applicant_type='individual'))
     assert res.status_code == 201, res.text

@@ -35,7 +35,7 @@ import app.security as security  # noqa: E402
 from app.main import app  # noqa: E402
 
 security.verify_google_id_token = lambda id_token_str: {
-    'sub': 'google-sub-abc', 'email': 'hjwon2001@gmail.com', 'name': '하정원',
+    'sub': 'google-sub-abc', 'email': 'test@example.com', 'name': '테스트',
 }
 import app.routers.auth as auth_router  # noqa: E402
 
@@ -50,7 +50,7 @@ from app.models import EligibilityCheck, Notice, Project  # noqa: E402
 
 PAYLOAD = {
     'biz_type': 'AI 서비스',
-    'ceo_name': '하정원',
+    'ceo_name': '테스트',
     'description': '이어하기 상태 조회 엔드포인트 검증용 프로젝트',
     'team_members': [],
     'pricing_items': [],

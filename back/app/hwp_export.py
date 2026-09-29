@@ -96,7 +96,7 @@ def _fill_rows(
     넘치면 뒤쪽은 잘린다(모듈 docstring의 "아직 안 된 것" 참고)."""
     for i in range(slot_count):
         values = rows[i] if i < len(rows) else tuple('' for _ in cols)
-        for col, value in zip(cols, values):
+        for col, value in zip(cols, values, strict=True):
             _set_cell(steps, table, start_row + i, col, value)
 
 

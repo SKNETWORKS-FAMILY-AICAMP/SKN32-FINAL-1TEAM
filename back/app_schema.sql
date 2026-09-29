@@ -1,5 +1,5 @@
 -- S-Brain 서비스 앱 스키마 (schema_version=2).
--- "SK 네트웍스 Family AI 32기 1팀 데이터베이스_저장소 설계 문서"(정재희·하정원, 2026-09-09,
+-- "SK 네트웍스 Family AI 32기 1팀 데이터베이스_저장소 설계 문서"(팀, 2026-09-09,
 -- 최종 수정 2026-09-09)의 논리/물리 데이터 모델을 그대로 DDL로 옮긴 것이다.
 -- mysql_schema.sql(공고 수집 파이프라인 — notices/notice_attachments/import_runs)에 이어서 붙인다.
 -- 기존 테이블은 절대 재정의하지 않고, 없는 테이블만 생성한다(CREATE TABLE IF NOT EXISTS).
@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS companies (
     -- 모델(app/models.py Company)에서도 이미 매핑을 지운 상태였다(정합성 점검으로 발견).
     -- [2026-09-17 배선] IntakeForm.jsx가 "신청자 유형(예비창업자/개인사업자/법인)"을 필수로
     -- 물어보고 제출을 막기까지 하는데, 정작 POST /projects 요청 바디에 실려 오지도 않고 저장할
-    -- 컬럼도 없어서 화면에서 고른 값이 그냥 버려지고 있었다(하정원님 지적으로 발견). 기능정의서
+    -- 컬럼도 없어서 화면에서 고른 값이 그냥 버려지고 있었다(리뷰 중 발견). 기능정의서
     -- v1.5의 매칭·게이트 입력 companyInfo가 요구하는 3개 필드(applicantType, foundedAt,
     -- 대표자명) 중 하나이기도 해서 실제로 필요한 값이다.
     applicant_type VARCHAR(20) NULL COMMENT '신청자 유형: preliminary/individual/corp',
@@ -211,7 +211,7 @@ CREATE TABLE IF NOT EXISTS project_attachments (
     file_name VARCHAR(255) NOT NULL COMMENT '첨부파일 원본 파일명',
     file_url VARCHAR(500) NOT NULL COMMENT '첨부파일 저장 경로/URL',
     -- [2026-09-17 신규] 멘토링 피드백 "원본 파일과 파싱 결과를 별도 저장(재시도 안정성
-    -- 확보), 파싱 결과는 마크다운화해 재사용" 반영. 공고 수집 파이프라인(이근준님)의
+    -- 확보), 파싱 결과는 마크다운화해 재사용" 반영. 공고 수집 파이프라인의
     -- attachment_files/attachment_texts 분리 패턴과 같은 방향 — 원본(file_url)은 그대로
     -- 두고, 파싱 결과만 이 두 컬럼에 캐싱해서 재시도할 때마다 원본을 다시 파싱하지 않게 한다.
     parsed_markdown LONGTEXT NULL COMMENT '첨부파일에서 추출해 마크다운화한 본문 — 있으면 재파싱 없이 재사용',
@@ -285,7 +285,7 @@ CREATE TABLE IF NOT EXISTS project_partners (
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
--- [2026-09-22 신규, 하정원님] IntakeForm.jsx가 2026-09-18 정재희님 커밋(병합 시점 담당자
+-- [2026-09-22 신규] IntakeForm.jsx가 2026-09-18 프론트 커밋(병합 시점 담당자
 -- 인수인계 불가로 확인 — front/src/features/workflow/ProjectPlanFields.jsx는 그 커밋의
 -- 사용부만 보고 재구성했다)에서 새로 받기 시작한 "사업 계획" 입력을 담는다. App.jsx의
 -- intakeDetailPayload가 이미 이 컬럼명 그대로(snake_case) 보내고 있었는데
@@ -598,7 +598,7 @@ CREATE TABLE IF NOT EXISTS faqs (
 -- 같이 생기는" 성격이고, 이 테이블은 "계정 자체에 딸린, 프로젝트와 무관한" 프로필이라
 -- 성격이 달라 별도 테이블로 둔다.
 -- [2026-09-18 v2] 계정당 최대 3개 슬롯(app/routers/profile.py에서 강제) — v1(계정당 1행,
--- user_id UNIQUE, 판정용 컬럼 + history_json)은 정재희님의 새 프론트(다중 슬롯, 재창업
+-- user_id UNIQUE, 판정용 컬럼 + history_json)은 프론트 담당자의 새 프론트(다중 슬롯, 재창업
 -- 이력 추적 안 함)와 안 맞아 DROP 후 재생성했다(마이그레이션 시점 0행, 데이터 손실 없음).
 CREATE TABLE IF NOT EXISTS user_profiles (
     profile_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '정보 슬롯 고유 식별자',

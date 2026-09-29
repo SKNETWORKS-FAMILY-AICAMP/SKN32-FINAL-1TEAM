@@ -1,6 +1,6 @@
 """마이페이지 프로필 저장/조회 — SB-59 v2. 계정당 최대 3개 정보 슬롯을 둘 수 있다
 (front/src/store/useMyPageStore.js MAX_PROFILES와 동일). v1(계정당 1행, GET·PUT /profile/me)은
-정재희님의 새 프론트(다중 슬롯) 커밋을 받은 뒤 DROP+CREATE로 완전히 대체했다 — 프론트가
+프론트 담당자의 새 프론트(다중 슬롯) 커밋을 받은 뒤 DROP+CREATE로 완전히 대체했다 — 프론트가
 아직 /profile/me를 호출한 적이 없었고(순수 localStorage), v1 스키마가 새 프론트 모양과
 근본적으로 안 맞아 나란히 유지할 실익이 없었다.
 
@@ -64,7 +64,7 @@ def _get_owned_profile(db: Session, user_id: int, profile_id: int) -> UserProfil
     return profile
 
 
-# [2026-09-18, 정재희님 인계서 "필수 입력 항목" 표] 신청자 유형은 항상 필수, 대표자
+# [2026-09-18, 프론트 담당자 인계서 "필수 입력 항목" 표] 신청자 유형은 항상 필수, 대표자
 # 정보(이름·생년월일·성별)·지역(시/도)·주업종도 항상 필수, 대표자 이력 1건 이상도 항상
 # 필수 — individual/corp면 사업자번호(작성 여부만, 국세청 조회 성공까지는 요구 안 함)까지.
 _APPLICANT_TYPES_REQUIRING_BIZ_NO = {'individual', 'corp'}
@@ -136,7 +136,7 @@ def create_profile(
 ):
     existing_count = db.query(UserProfile).filter(UserProfile.user_id == current_user.user_id).count()
     if existing_count >= MAX_PROFILES:
-        # [2026-09-18, 정재희님 인계서] "이미 3개면 409" — 입력값 자체가 잘못된 게 아니라
+        # [2026-09-18, 프론트 담당자 인계서] "이미 3개면 409" — 입력값 자체가 잘못된 게 아니라
         # 계정 상태와 충돌하는 요청이라 422(검증 실패)가 아니라 409(Conflict)로 맞춘다.
         raise HTTPException(status_code=409, detail=f'정보 슬롯은 계정당 최대 {MAX_PROFILES}개까지만 만들 수 있습니다')
 

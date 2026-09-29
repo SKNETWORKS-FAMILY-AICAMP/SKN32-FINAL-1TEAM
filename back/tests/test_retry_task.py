@@ -170,7 +170,7 @@ def test_strategy_retry_writes_canonical_data_not_sections(retry_setup, db_sessi
 
 
 def test_writing_retry_also_rescores_verify1(retry_setup, db_session):
-    """"본문 작성을 재작성했는데 점수가 그대로다"는 지적(하정원님) — 화면에 검증-1을 따로
+    """"본문 작성을 재작성했는데 점수가 그대로다"는 지적 — 화면에 검증-1을 따로
     재시도하는 버튼이 없어서 실제로 점수를 바꿀 방법이 없었다. writing 재시도에 검증-1
     (rubric+evidence) 재채점을 자동으로 붙여 고쳤다."""
     from app.models import VerificationScoreHistory

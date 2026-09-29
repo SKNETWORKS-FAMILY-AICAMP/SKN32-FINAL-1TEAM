@@ -143,7 +143,7 @@ export default function App(){
   return ()=>{cancelled=true};
  },[]);
  // 마이페이지를 "저장"으로 확정하기 전까지는 실제 기능 화면으로 못 들어가게 막는다 —
- // user.has_profile은 서버가 /auth/me·로그인 응답마다 계산해서 내려주는 값이라(정재희님
+ // user.has_profile은 서버가 /auth/me·로그인 응답마다 계산해서 내려주는 값이라(프론트 담당자
  // 인계서, back/app/routers/profile.py compute_has_profile) 로그아웃 후 재로그인하거나
  // 다른 기기에서 로그인해도 정확하다 — 브라우저 로컬 상태(예전 useMyPageStore의 onboarded)
  // 에만 의존하면 로그아웃 시 로컬을 비우는 순간 "저장 안 한 것"처럼 보이는 문제가 있었다.
@@ -170,13 +170,13 @@ export default function App(){
   try{
    const payload={
     // [2026-09-17] applicant_type(신청자 유형)은 IntakeForm이 필수로 물어보는데도 지금까지
-    // 여기서 빠져 있어서, 화면에서 고른 값이 서버로 안 가고 그냥 버려지고 있었다(하정원님
+    // 여기서 빠져 있어서, 화면에서 고른 값이 서버로 안 가고 그냥 버려지고 있었다(담당자
     // 지적으로 발견) — companies.applicant_type 컬럼/저장 로직 추가(app/models.py,
     // app/routers/projects.py)와 같이 고쳤다.
     applicant_type:info.applicantType||null,
     // [2026-09-17 삭제] start_type/notify_region/notify_industry는 IntakeForm이 입력칸 자체를
     // 안 물어보는데도 팀 테스트 스크립트와 맞추려고 '온라인'/'전국'/'기타' 고정값을 계속
-    // 보내고 있었다(하정원님이 실제 INSERT 로그를 보고 지적, "지워" 지시). 백엔드도 더 이상
+    // 보내고 있었다(리뷰 중 실제 INSERT 로그로 발견, "지워" 지시). 백엔드도 더 이상
     // 이 필드들을 받지 않으므로(app/schemas.py ProjectCreateRequest 참고) 여기서도 뺐다.
     // 나중에 진짜 입력칸이 생기면 그때 다시 추가.
     biz_type:null,

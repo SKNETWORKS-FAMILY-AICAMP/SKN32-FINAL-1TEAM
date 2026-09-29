@@ -271,7 +271,7 @@ def test_budget_scale_at_cap_is_accepted(authed_client):
 
 
 # ============================================================================
-# has_profile (GET /auth/me, POST /auth/google) — 정재희님 인계서 "필수 입력 항목" 기준
+# has_profile (GET /auth/me, POST /auth/google) — 프론트 담당자 인계서 "필수 입력 항목" 기준
 # ============================================================================
 
 def test_has_profile_false_when_no_profile_saved(authed_client):

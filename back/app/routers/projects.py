@@ -259,7 +259,7 @@ def _rescore_verify2(db: Session, plan: BusinessPlan, artifact: Artifact, verify
 #
 # 두 방식 모두 GET /result의 plan.sections/plan.artifacts는 항상 지금 채택된 버전
 # 하나만 내려가서, 프론트가 "여러 버전 중 뭐가 현재 버전인지" 고민할 필요가 없다
-# (정재희님 우려 사항 — API 응답 모양은 안 바뀐다).
+# (프론트 담당자 우려 사항 — API 응답 모양은 안 바뀐다).
 
 def _snapshot_plan_doc_state(plan: BusinessPlan) -> dict:
     """writing 재시도 직전 문서층 상태 스냅샷 — doc_score/plan_sections/plan_score_reasons
@@ -312,7 +312,7 @@ _CATEGORY_TO_AGENT = {'onepage': '원페이지', 'webdev': '웹개발', 'aiapi':
 
 def _build_implement_agent_kwargs(db: Session, project: Project, plan: BusinessPlan, artifact: Artifact) -> dict:
     """구현 Agent 재시도(agents.run_implement_agent_retry) 호출에 넘길 kwargs를 DB에서
-    조립한다 — 구현·검증-2 담당(정재희) "백엔드 요청 — 구현 Agent 연동 입력 확장"
+    조립한다 — 구현·검증-2 담당 "백엔드 요청 — 구현 Agent 연동 입력 확장"
     반영(2026-09-29). 어떤 필드를 어디서 근사하는지는 agents.py의 해당 함수 위 주석
     참고. artifact.category로 이미 확정된 카테고리를 쓰므로 이 함수는 재시도 경로
     전용이다(최초 생성 경로는 category를 호출부가 별도로 정해야 한다)."""
@@ -398,7 +398,7 @@ def _run_initial_implement_and_rescore(db: Session, project: Project, plan: Busi
     시점에 구현 Agent(T-B1/T-B2)를 실제로 호출해, seed_dummy_pipeline()이 매칭 시점에 미리
     만들어둔 더미 산출물(placeholder, version=1)을 실제 결과로 교체한다.
 
-    구현·검증-2 담당(정재희) 확인 반영(Downloads/백엔드_답변_D2_구현Agent_호출시점.md):
+    구현·검증-2 담당 확인 반영(Downloads/백엔드_답변_D2_구현Agent_호출시점.md):
       - T-B1/T-B2/검증-2는 version 번호에 의존하지 않는다 — 그래서 "버전1로 처음부터
         다시 만드는" 대신 "버전2로 교체"하는 옵션 A로 간다(_clone_artifact_as_new_version
         재사용). 최초 실제 산출물은 version=2로 기록된다.
@@ -621,7 +621,7 @@ def _create_company_for_project(db: Session, current_user: User, body: ProjectCr
     company = Company(
         user_id=current_user.user_id,
         # [2026-09-17 배선] IntakeForm.jsx가 필수로 물어보는 신청자 유형이 여기까지 안 실려서
-        # 화면에서 고른 값이 버려지고 있었다 — 이제 받아서 저장한다(하정원님 지적으로 발견).
+        # 화면에서 고른 값이 버려지고 있었다 — 이제 받아서 저장한다(리뷰 중 발견).
         applicant_type=body.applicant_type,
         biz_type=body.biz_type,
         ceo_name=body.ceo_name,
@@ -2205,7 +2205,7 @@ def retry_task(
             changed['sections'] = {d.tag: _upsert_plan_section(db, plan.plan_id, d) for d in drafts}
             output_ref = [{'table': 'plan_sections', 'id': v['id']} for v in changed['sections'].values()]
 
-            # [2026-09-18 추가] "본문/그래프/표를 재작성했는데 왜 점수가 그대로냐"는 지적(하정원님)
+            # [2026-09-18 추가] "본문/그래프/표를 재작성했는데 왜 점수가 그대로냐"는 지적
             # — 작성은 콘텐츠만 바꾸고 채점은 검증-1 몫이라 그동안 점수가 안 바뀌었는데, 실제
             # 화면에도 검증-1을 따로 재시도하는 버튼이 없어(재작성 버튼뿐) 사용자가 점수를 갱신할
             # 방법 자체가 없었다. 그래서 작성 재시도에 검증-1(rubric+evidence) 재채점을 자동으로
@@ -2256,7 +2256,7 @@ def retry_task(
 
             before_artifact_score = old_artifact.artifact_score
 
-            # [2026-09-29 신규, 구현·검증-2 담당(정재희) 요청] T-B1/T-B2는 feature_list가
+            # [2026-09-29 신규, 구현·검증-2 담당 요청] T-B1/T-B2는 feature_list가
             # 최소 1개 있어야 계약상 돌 수 있다(ItemSpec.core_features min_length=1) —
             # Agent를 호출하기 전에 서버에서 먼저 막는다.
             implement_kwargs = _build_implement_agent_kwargs(db, project, plan, old_artifact)

@@ -35,8 +35,8 @@ os.environ.setdefault('JWT_SECRET', 'ci-dummy-secret-not-for-production')
 import app.database as appdb  # noqa: E402
 from app.models import (  # noqa: E402
     AgentExecution,
-    ArtifactScoreReason,
     Artifact,
+    ArtifactScoreReason,
     BusinessPlan,
     Company,
     EligibilityCheck,
@@ -44,8 +44,8 @@ from app.models import (  # noqa: E402
     Notice,
     PlanScoreReason,
     PlanSection,
-    ProofreadLog,
     Project,
+    ProofreadLog,
     RubricItem,
     User,
     Verdict,

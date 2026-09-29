@@ -23,10 +23,12 @@ profile 라우터(`GET`/`POST /profile`, `PUT`/`DELETE /profile/{profile_id}`, 2
 """
 import os
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 
-from app.database import init_sqlite_dev_db
+from app.database import get_db, init_sqlite_dev_db
+from app.models import Notice
 from app.request_logging import RequestLoggingMiddleware
 from app.routers import admin, auth, biz_check, faqs, profile, projects, uploads
 from app.routers.projects import UPLOAD_DIR
@@ -77,11 +79,6 @@ app.include_router(profile.router)
 def _resume_pending_generations() -> None:
     projects.start_generation_recovery_loop()
 
-
-from fastapi import Depends
-from sqlalchemy.orm import Session
-from app.database import get_db
-from app.models import Notice
 
 @app.get('/test-db')
 def test_db(db: Session = Depends(get_db)):

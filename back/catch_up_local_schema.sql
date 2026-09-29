@@ -2,7 +2,7 @@
 --
 -- app_schema.sql은 전부 `CREATE TABLE IF NOT EXISTS`라서, 테이블이 이미 있으면 새로 추가된
 -- 컬럼이 자동으로 반영되지 않는다(이 세션 동안 companies/projects에 여러 컬럼을 추가했는데,
--- 하정원님 로컬 DB는 그 전에 이미 테이블이 만들어져 있어서 계속 옛날 구조 그대로였다).
+-- 본인 로컬 DB는 그 전에 이미 테이블이 만들어져 있어서 계속 옛날 구조 그대로였다).
 --
 -- 이 스크립트는 몇 번을 실행해도 안전하다 — 컬럼이 이미 있으면 건너뛰고, 없으면 추가한다
 -- (MySQL 버전에 상관없이 동작하도록 information_schema로 직접 확인하는 방식을 썼다).
@@ -101,7 +101,7 @@ CALL _add_col_if_missing('projects', 'regional_priority_area', "VARCHAR(100) NUL
 -- failure_reason/retry_count/next_retry_at/resume_started_at/last_error_kind, 2026-09-22~27
 -- 사이 추가됨)을 지웠다 — projects/match_results 통합(SB-118) 이후 match_results 테이블
 -- 자체가 없어져서, 이미 통합이 끝난 DB에서 이 CALL들이 "Table 'match_results' doesn't
--- exist"(Error 1146)로 실패하는 걸 실제로 확인했다(하정원님). 아직 통합 전인(=match_results가
+-- exist"(Error 1146)로 실패하는 걸 실제로 확인했다. 아직 통합 전인(=match_results가
 -- 남아있는) DB는 없다고 보고 안전하게 지운다 — 혹시 있다면 _migrate_match_results_into_
 -- projects()가 이 컬럼들 없이 UPDATE를 시도해 실패할 텐데, 그건 이 컬럼들을 여기서 되살리는
 -- 것보다 먼저 어떤 DB인지 확인하는 게 맞다.
@@ -214,7 +214,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 -- 만들어져 있어서(팀 공유 AWS MySQL에 더미 프로젝트 데이터가 새는 걸 막으려는 안전장치,
 -- seed_dummy_admin_data.py 8번째 줄 참고) 정작 MySQL엔 절대 못 돌린다 — MySQL로 켜서
 -- 관리자 체크리스트 화면을 열면 데이터가 하나도 없어서 안 뜨는 원인이 바로 이거였다
--- (프론트 담당자 협의사항 스크린샷, 하정원님이 실제로 겪음). 이건 사용자별 더미 데이터가
+-- (프론트 쪽과의 협의사항 스크린샷, 실제로 겪은 문제). 이건 사용자별 더미 데이터가
 -- 아니라 전체 팀이 같이 쓰는 채점 기준표라 seed_dummy_admin_data.py가 아니라 이 마이그레이션
 -- 스크립트 자신이 다시 심어야 맞다 — 그래서 app_schema.sql의 INSERT 블록을 그대로 옮겨왔다.
 DELETE FROM verification_checklist_items;
@@ -314,7 +314,7 @@ DROP PROCEDURE IF EXISTS _add_index_if_missing;
 -- 완전히 삭제됐다(app_schema.sql 67/100번째 줄 주석 참고) — 지금 스키마엔 이 컬럼들이
 -- 아예 없어서 "NULL 허용으로 바꾸는" ALTER 자체가 "Unknown column" 에러만 낸다. 이미 이
 -- 컬럼들이 없는 DB(=현재 스키마와 일치)에서 이 스크립트를 실행하면 여기서 막힌다는 걸
--- 실제로 확인해서(하정원님) 지웠다 — 그 앞의 CALL들은 전부 이 줄보다 먼저 실행되므로
+-- 실제로 확인해서 지웠다 — 그 앞의 CALL들은 전부 이 줄보다 먼저 실행되므로
 -- 안전했다.
 
 -- [2026-09-28 신규] plan_sections.tag를 실제 MySQL ENUM으로 강제한다(app/models.py

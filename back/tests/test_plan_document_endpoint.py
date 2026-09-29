@@ -10,6 +10,7 @@ import shutil
 import pytest
 from docx import Document
 
+from app.hwp_export import RHWP_BIN as _RHWP_BIN
 from app.models import Notice
 
 
@@ -129,8 +130,6 @@ def test_plan_document_requires_ownership(login_as, db_session):
 # rhwp 실행 파일을 안 가리키는 환경(팀 공용 CI 등, 개인 다운로드 경로를 박아둘 수
 # 없음)에서는 500(rhwp 실행 파일을 찾을 수 없음)이 정상이고, RHWP_BIN을 로컬에
 # 실제로 맞춘 환경(.env)에서는 진짜 200 + .hwp가 나와야 한다 — 두 경우 다 검증한다.
-from app.hwp_export import RHWP_BIN as _RHWP_BIN
-
 _RHWP_AVAILABLE = shutil.which(_RHWP_BIN) is not None or os.path.isfile(_RHWP_BIN)
 
 

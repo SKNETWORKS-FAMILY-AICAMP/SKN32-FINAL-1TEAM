@@ -84,7 +84,7 @@ class ImplementArtifactResult:
     file_ext: str  # 예: '.html' — UPLOAD_DIR에 저장할 때 확장자로 쓴다.
 
 
-# [2026-09-29 개정, 구현·검증-2 담당(정재희) "백엔드 요청 — 구현 Agent 연동 입력 확장"]
+# [2026-09-29 개정, 구현·검증-2 담당 "백엔드 요청 — 구현 Agent 연동 입력 확장"]
 # SB-192에서 만들었던 ImplementInputs dataclass를 걷어내고, 요청받은 그대로 TB1In/TB2In
 # (agent-orchestration/sbrain/contracts/tasks.py)에 바로 대응하는 평평한 kwargs로 바꿨다.
 # item_spec/plan_doc은 ItemSpec/PlanDoc pydantic 모델 필드명 그대로인 dict — Agent 담당이
@@ -124,7 +124,7 @@ class ProofreadResult:
     호출부(projects.py)는 passed=False인 결과를 plan_sections 등 실제 계획서 본문에
     반영하지 않고 proofread_logs 이력에만 남긴다.
 
-    score(0~100)는 재시도할수록 실제로 나아지는지 숫자로 보여달라는 요청(하정원님)으로
+    score(0~100)는 재시도할수록 실제로 나아지는지 숫자로 보여달라는 요청 으로
     추가했다 — business_plans.doc_score와 같은 형식."""
 
     corrected_text: str
@@ -250,7 +250,7 @@ def run_implement_agent_retry(
     rework_issues: list[str] | None = None,
 ) -> ImplementArtifactResult:
     """구현 Agent 재시도 — artifact_kind='prototype'|'infographic' 파일을 새로 만든다
-    (채점은 검증-2 몫이라 여기서 하지 않는다). [2026-09-29, 구현·검증-2 담당(정재희)
+    (채점은 검증-2 몫이라 여기서 하지 않는다). [2026-09-29, 구현·검증-2 담당
     "백엔드 요청 — 구현 Agent 연동 입력 확장"] 예전엔 project_description 한 줄만
     받았는데(SB-192에서 한 번 더 손봤다가, 이 요청서 반영으로 다시 바꿨다), T-B1/T-B2가
     실제로 필요로 하는 값을 agent-orchestration 계약(TB1In/TB2In) 필드 이름 그대로
@@ -317,7 +317,7 @@ def run_review_token_check_retry(project_description: str, attempt_no: int = 1) 
 
     score도 같은 취지로 attempt_no가 늘수록 기본점이 올라가고(60 -> 70 -> 80 -> ...,
     최대 100), 그 시도에서 위반이 나면 20점을 깎는다 — "재시도할수록 나아지되, 위반이
-    나오면 그 시도는 확실히 낮게 나온다"를 눈으로 보이게 하기 위함(하정원님 지적)."""
+    나오면 그 시도는 확실히 낮게 나온다"를 눈으로 보이게 하기 위함(담당자 지적)."""
     violation_chance = max(0.0, 0.4 - (attempt_no - 1) * 0.2)
     base_score = min(100, 60 + (attempt_no - 1) * 10)
     if random.random() < violation_chance:

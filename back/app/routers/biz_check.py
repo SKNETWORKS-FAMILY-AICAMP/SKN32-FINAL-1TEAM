@@ -18,13 +18,12 @@ import requests
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+import config
 from app.database import get_db
 from app.logging_config import web_logger
 from app.models import User, UserProfile
 from app.schemas import BizCheckOut, BizCheckRequest
 from app.security import get_current_user
-
-import config
 
 router = APIRouter(prefix='/biz-check', tags=['biz-check'])
 
