@@ -733,6 +733,46 @@ def test_onepage_result_omits_prototype_bundle_and_executable_path(db_session):
     assert artifact['infographic_path'] is not None
 
 
+def test_generate_endpoint_does_not_pre_consume_rework_budget(authed_client, db_session):
+    """[2026-09-29 신규, 실사용 흐름 전체 E2E 점검 중 발견] POST /projects/{id}/generate는
+    seed_dummy_pipeline.py를 그대로 호출하는데(app/routers/projects.py "임시 데모 우회"),
+    그 함수의 retry_agents 기본값('작성','구현')이 "이미 재시도 이력이 있는 것처럼" 가짜
+    rerun_type='rerun' 행을 writing/implement_prototype/implement_infographic에 미리
+    하나씩 만들어둔다 — 로컬 CLI로 시연용 화면을 확인해보는 용도였는데, 이 엔드포인트가
+    실제 유일한 생성 경로가 되면서 신규 프로젝트마다 실행 파일·인포그래픽 재작성이 사용자가
+    누르기도 전에 이미 상한(기본 1회)에 도달한 채로 시작하는 버그가 됐다. bundle_id가 없는
+    문서(writing) 쪽 가짜 행은 PSST 묶음 카운팅과 안 겹쳐서 우연히 무사했다."""
+    import json
+
+    from app.models import Notice
+
+    notice = Notice(
+        notice_id='NOTICE-NO-PRECONSUMED-REWORK', source='k-startup', title='테스트 공고',
+        organizer='창업진흥원', recruitment_status='open', url='https://example.com/notice/no-preconsumed-rework',
+    )
+    db_session.add(notice)
+    db_session.commit()
+
+    payload = {
+        'biz_type': '개인', 'ceo_name': '박테스트', 'founded_at': None,
+        'description': 'AI 기반 동네 헬스장 통합 예약 서비스', 'team_members': [], 'pricing_items': [],
+    }
+    r = authed_client.post('/projects', data={'payload': json.dumps(payload)})
+    assert r.status_code == 201, r.text
+    project_id = r.json()['project_id']
+
+    r = authed_client.post(f'/projects/{project_id}/generate', json={'notice_id': notice.notice_id})
+    assert r.status_code == 200, r.text
+
+    result = authed_client.get(f'/projects/{project_id}/result')
+    assert result.status_code == 200, result.text
+    for item in result.json()['bundle_usages']:
+        assert item['used'] == 0, (
+            f"{item['bundle_id']!r} 묶음이 생성 직후인데 벌써 {item['used']}회 사용된 것으로 나옴 "
+            '— seed_dummy_pipeline의 가짜 이력이 다시 들어감(회귀)'
+        )
+
+
 # ============================================================================
 # [2026-09-28 신규, 프론트 2차 요청 C] 재채점 시 reason_text도 같이 갱신되는지 —
 # 예전엔 score/evidence_locator만 바뀌고 reason_text는 재채점 전 문장("...통과") 그대로

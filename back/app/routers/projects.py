@@ -856,7 +856,17 @@ def generate_pipeline_result(
     import seed_dummy_pipeline as _seed_pipeline  # 지연 import — 위 주석 참고(순환 import 회피)
 
     try:
-        verdict = _seed_pipeline.seed_dummy_pipeline(db, project_id, notice_id=body.notice_id)
+        # [2026-09-29 신규] seed_dummy_pipeline()의 retry_agents 기본값('작성','구현')은
+        # "로컬에서 CLI로 돌려서 이미 재시도 이력이 있는 것처럼 화면을 확인해보는" 용도로
+        # 만든 편의 옵션이었는데, 이 엔드포인트가 진짜 유저의 유일한 생성 경로가 되면서
+        # (실제 Agent가 아직 안 붙어 이 "임시 데모 우회"가 곧 실서비스 로직이다) 새
+        # 프로젝트를 만들 때마다 writing/implement_prototype/implement_infographic에
+        # rerun_type='rerun' 행이 미리 하나씩 깔려버렸다 — retry_task의 rework_cap 카운팅이
+        # task_key/bundle_id별 rerun+completed 행 개수를 그대로 세기 때문에, 유저가 재작성
+        # 버튼을 한 번도 안 눌렀는데도 실행 파일·인포그래픽 재작성이 이미 상한(기본 1회)에
+        # 도달한 채로 시작하는 버그였다(문서 재작성 4묶음은 bundle_id가 없는 이 가짜 행과
+        # 안 겹쳐서 우연히 무사했다). 실제 유저 생성 경로에는 이 가짜 이력을 남기지 않는다.
+        verdict = _seed_pipeline.seed_dummy_pipeline(db, project_id, notice_id=body.notice_id, retry_agents=())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
