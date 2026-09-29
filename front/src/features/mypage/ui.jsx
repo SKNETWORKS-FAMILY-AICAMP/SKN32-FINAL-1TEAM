@@ -73,8 +73,8 @@ export function Field({ label, required, children }) {
   );
 }
 
-export function TextInput({ label, value, onChange, type = 'text', placeholder }) {
-  return <Field label={label}><input type={type} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} className={inputCls} /></Field>;
+export function TextInput({ label, value, onChange, type = 'text', placeholder, min, max }) {
+  return <Field label={label}><input type={type} value={value} placeholder={placeholder} min={min} max={max} onChange={(e) => onChange(e.target.value)} className={inputCls} /></Field>;
 }
 
 // [2026-09-28] 기간을 자유 텍스트로 받던 칸(대표자 이력 등)을 달력으로 바꾼다. 사람마다

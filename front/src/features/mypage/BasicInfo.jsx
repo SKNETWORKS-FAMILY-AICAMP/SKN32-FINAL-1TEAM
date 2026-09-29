@@ -1,7 +1,7 @@
 import React from 'react';
 import { useSection } from '../../store/useMyPageStore.js';
 import BizNoField from './BizNoField.jsx';
-import { CERTS, careerBadge, regionBadge, youthBadge } from './derive.js';
+import { CERTS, careerBadge, latestBirthDate, regionBadge, youthBadge } from './derive.js';
 import { Badges, ChipSelect, IndustryField, RegionInput, Section, Segmented, Select, TextInput, errorFor } from './ui.jsx';
 
 const APPLICANT_TYPES = [['preliminary', '예비창업자'], ['individual', '개인사업자'], ['corp', '법인']];
@@ -28,7 +28,7 @@ export default function BasicInfo({ error }) {
       <Section id="mp-ceo" error={errorFor(error, 'mp-ceo')} title="대표자" required>
         <div className="grid gap-3 sm:grid-cols-3">
           <TextInput label="이름" value={b.ceoName} placeholder="홍길동" onChange={set('ceoName')} />
-          <TextInput label="생년월일" type="date" value={b.birthDate} onChange={set('birthDate')} />
+          <TextInput label="생년월일" type="date" min="1900-01-01" max={latestBirthDate()} value={b.birthDate} onChange={set('birthDate')} />
           <Select label="성별" value={b.gender} options={['남성', '여성']} onChange={set('gender')} />
         </div>
         <Badges items={[youthBadge(b.birthDate), b.gender === '여성' && { tone: 'info', text: '여성 대표자' }]} />
