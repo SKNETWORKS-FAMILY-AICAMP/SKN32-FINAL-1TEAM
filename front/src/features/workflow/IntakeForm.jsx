@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 import { Icon } from '../../components/Icons.jsx';
 import { useMyPageStore } from '../../store/useMyPageStore.js';
 import {
-  CAREER_FIELDS, CERTS, EMPTY_TEAM_ROW, EQUIPMENT_FIELDS, HIRE_FIELDS, PARTNER_FIELDS, profileToIntake,
+  CAREER_FIELDS, CERTS, EMPTY_TEAM_ROW, EQUIPMENT_FIELDS, HIRE_FIELDS, MIN_CEO_AGE, PARTNER_FIELDS, isUnderMinAge, latestBirthDate, profileToIntake,
 } from '../mypage/derive.js';
 import {
   ChipSelect, Check, IndustryField, ListEditor, RegionInput, Section, Segmented, Select, TextInput, errorFor, focusSection, textareaCls,
@@ -136,7 +136,7 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
   // 화면 위에서부터의 순서 — 제출하면 이 중 첫 빈 항목으로 스크롤한다.
   const missing = [
     [!applicantType, '신청자 유형', 'intake-applicant'],
-    [!ceoName.trim() || !birthDate || !gender, '대표자 정보', 'intake-ceo'],
+    [!ceoName.trim() || !birthDate || !gender || isUnderMinAge(birthDate), '대표자 정보', 'intake-ceo'],
     [applicantType && !isPreliminary && (!companyName || !foundedAt), '사업자 정보', 'intake-founded'],
     [!extra.careers.length || !extra.skills.trim(), '대표자 역량', 'intake-career'],
     [!extra.region.sido || !extra.industry?.trim(), '지역 · 주업종', 'intake-region'],
@@ -211,9 +211,10 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
         <Section id="intake-ceo" title="대표자 정보" required error={errorFor(error, 'intake-ceo')}>
           <div className="grid gap-3 sm:grid-cols-3">
             <TextInput label="이름" value={ceoName} placeholder="홍길동" onChange={setCeoName} />
-            <TextInput label="생년월일" type="date" value={birthDate} onChange={setBirthDate} />
+            <TextInput label="생년월일" type="date" min="1900-01-01" max={latestBirthDate()} value={birthDate} onChange={setBirthDate} />
             <Select label="성별" value={gender} options={['남성', '여성']} onChange={setGender} />
           </div>
+          {isUnderMinAge(birthDate) && <p role="alert" className="mt-2 text-[12px] text-[var(--danger)]">대표자는 만 {MIN_CEO_AGE}세 이상만 입력할 수 있어요.</p>}
         </Section>
 
         {applicantType && !isPreliminary && (

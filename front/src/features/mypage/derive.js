@@ -24,6 +24,17 @@ export function monthsBetween(from, to = new Date()) {
   return m < 0 ? null : m;
 }
 
+// 대표자 생년월일 — 만 16세 이상만 고를 수 있다(사용자 요청). 달력(max)에서 막고, 손으로
+// 입력해 넘어온 값은 isUnderMinAge로 걸러 안내·제출 차단에 쓴다.
+export const MIN_CEO_AGE = 16;
+export function latestBirthDate(today = new Date()) {
+  const d = new Date(today.getFullYear() - MIN_CEO_AGE, today.getMonth(), today.getDate());
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+export function isUnderMinAge(birthDate) {
+  return !!birthDate && birthDate > latestBirthDate();
+}
+
 export function formatMonths(m) {
   const y = Math.floor(m / 12);
   const r = m % 12;
@@ -32,6 +43,7 @@ export function formatMonths(m) {
 }
 
 export function youthBadge(birthDate) {
+  if (isUnderMinAge(birthDate)) return { tone: 'warn', text: `만 ${MIN_CEO_AGE}세 이상만 입력할 수 있어요` };
   const m = monthsBetween(birthDate);
   if (m == null) return null;
   const age = Math.floor(m / 12);
@@ -136,7 +148,7 @@ export function missingRequiredFields(profile) {
   const missing = [];
   const need = (cond, label, tab, anchor) => { if (cond) missing.push({ label, tab, anchor }); };
   need(!basic.applicantType, '신청자 유형', 'basic', 'mp-applicant');
-  need(!basic.ceoName || !basic.birthDate || !basic.gender, '대표자 정보', 'basic', 'mp-ceo');
+  need(!basic.ceoName || !basic.birthDate || !basic.gender || isUnderMinAge(basic.birthDate), '대표자 정보', 'basic', 'mp-ceo');
   need(!basic.region.sido || !basic.industry?.trim(), '지역 · 주업종', 'basic', 'mp-region');
   need(biz && (!basic.bizNo || !basic.companyName || !basic.openedAt), '사업자 정보', 'basic', 'mp-biz');
   need(!cap.careers.length || !cap.skills?.trim(), '대표자 이력', 'capability', 'mp-career');
