@@ -128,7 +128,14 @@
 .project-row{flex-wrap:wrap}
 .project-row-confirm{flex-basis:100%;justify-content:flex-end;flex-wrap:wrap;margin-right:0;padding:0 12px 20px;white-space:normal}
 .project-row:has(.project-row-confirm) .project-row-main{padding-bottom:12px}
+/* 공고 제목이 길면 제목 칸이 폭을 다 먹어서 "준비 완료" 배지와 "…수정" 날짜가 글자 단위로
+   줄바꿈된다(사용자 지적). 배지·날짜는 한 줄 고정, 줄어드는 건 제목 칸만. */
+.status-pill,.project-date{white-space:nowrap;flex-shrink:0}@media(min-width:761px){.project-title{flex:1;min-width:0}}
 /* 관리자 상세 모달 — 실행 로그가 주기적으로 갱신되는 중임을 알리는 점. */
 .live-dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:live-pulse 1.4s ease-in-out infinite}
 @keyframes live-pulse{0%,100%{opacity:1}50%{opacity:.25}}
 @media(prefers-reduced-motion:reduce){.live-dot{animation:none}}
+/* 완전 실패(서버·에이전트 문제로 결과물 없음) — 진행 애니메이션 자리를 대신한다. */
+.generation-failed{text-align:center}.generation-failed-symbol{display:grid!important;place-items:center;width:64px;height:64px;margin:0 auto 22px!important;border-radius:20px;background:#fff0f0;color:#bb3434}.generation-failed-actions{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:32px}.generation-failed-note{margin-top:14px;font-size:12.5px;color:#8b95a1}
+/* 실패 카드는 진행 애니메이션(아래로 긴 영역)이 없어서 위쪽에 붙어 보였다(사용자 지적) — 화면 가운데로. */
+.generation-failed{min-height:calc(100vh - 260px);display:flex;flex-direction:column;justify-content:center;padding:40px 0!important}

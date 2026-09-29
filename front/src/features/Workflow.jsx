@@ -8,6 +8,7 @@ export { EligibilityGate } from './workflow/EligibilityGate.jsx';
 export { PipelineProgress, PlanForm } from './workflow/PlanForm.jsx';
 export { ArtifactProgress, ArtifactResult } from './workflow/ArtifactResult.jsx';
 export { default as GenerationProgress } from './workflow/GenerationProgress.jsx';
+export { GenerationFailed } from './workflow/GenerationProgress.jsx';
 export { FinalVerdict } from './workflow/FinalVerdict.jsx';
 export { ReviewScreen } from './workflow/ReviewScreen.jsx';
 export { NotificationBell } from './workflow/shared.jsx';

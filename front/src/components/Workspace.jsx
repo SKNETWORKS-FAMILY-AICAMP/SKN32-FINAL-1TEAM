@@ -117,7 +117,7 @@ export function Dashboard({onNewProject,onOpenProject}){
 
   {!loading&&inProgress&&<div className={'continue-card'+(inProgress.failed?' is-failed':'')}>
    <button className="continue-open" onClick={()=>onOpenProject(inProgress)}><span className="continue-icon"><Icon name={inProgress.failed?'close':'file'} size={32}/></span><div><p>{inProgress.failed?'작업이 중단됐어요':'이어서 준비하기'}</p><h2>{inProgress.name}</h2><span>{inProgress.failed?(inProgress.failedStage==='plan_writing'?'사업계획서':'프로토타입')+' 작성 중 실패하였습니다.':inProgress.matched?'계획서·프로토타입 준비를 이어서 진행해요':'공고 선택부터 이어서 진행해요'}</span></div></button>
-   <div className="continue-status"><span>{inProgress.failed?'실패했습니다':inProgress.generating||(inProgress.matched?'진행 중':'매칭 대기 중')}</span>{inProgress.failed?<button type="button" className="continue-retry" disabled={retryingId===inProgress.id} onClick={()=>retryProject(inProgress)}>{retryingId===inProgress.id?'재실행 중…':'재실행'} <Icon name="chevron" size={19}/></button>:<button type="button" onClick={()=>onOpenProject(inProgress)}>이어서 진행하기 <Icon name="chevron" size={19}/></button>}</div>
+   <div className="continue-status"><span>{inProgress.failed?'실패했습니다':inProgress.generating||(inProgress.matched?'진행 중':'매칭 대기 중')}</span>{inProgress.failed?<button type="button" className="continue-retry" disabled={retryingId===inProgress.id} onClick={()=>retryProject(inProgress)}>{retryingId===inProgress.id?'다시 생성하는 중…':'다시 생성'} <Icon name="chevron" size={19}/></button>:<button type="button" onClick={()=>onOpenProject(inProgress)}>이어서 진행하기 <Icon name="chevron" size={19}/></button>}</div>
   </div>}
   {retryError&&<p role="alert" className="workspace-retry-error">{retryError}</p>}
 
@@ -130,7 +130,7 @@ export function Dashboard({onNewProject,onOpenProject}){
    {filtered.map(p=><div className="project-row" key={p.id}>
      <button className="project-row-main" onClick={()=>onOpenProject(p)}>
       <span className={'project-symbol '+(p.failed?'failed':p.progress===100?'done':'')}><Icon name={p.failed?'close':p.progress===100?'check':'folder'} size={26}/></span>
-      <div className="project-title"><h3>{p.name}</h3><p>{p.announcementTitle}<span>·</span>{(p.updatedAt||'').replaceAll('-','.')} 수정</p></div>
+      <div className="project-title"><h3>{p.name}</h3><p>{p.announcementTitle}<span>·</span><span className="project-date">{(p.updatedAt||'').replaceAll('-','.')} 수정</span></p></div>
       <span className={'status-pill '+(p.failed?'failed':p.progress===100?'done':'')}>{p.failed?'실패했습니다':p.progress===100?'준비 완료':p.generating||(p.matched?'진행 중':'공고 선택 대기')}</span>
       <Icon name="chevron" size={21}/>
      </button>
