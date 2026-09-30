@@ -70,15 +70,6 @@
       "classificationSourceUrl": "https://www.mss.go.kr/common/board/Download.do?bcIdx=1066579&cbIdx=310&streFileNm=236d517e-fc4d-4607-8ba0-6b2557afeb62.pdf"
     },
     {
-      "programId": "restart",
-      "programName": "재도전성공패키지",
-      "track": "2026 모집공고",
-      "industryRestriction": "not_enumerated_in_notice_pdf",
-      "industries": [],
-      "note": "공고 PDF는 예비재창업자 또는 7년 이내 재창업기업을 지원하며 산업별 모집표는 제시하지 않는다. 제외 업종은 공고 PDF 확인.",
-      "sourceUrl": "https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1065552&cbIdx=310"
-    },
-    {
       "programId": "early_general",
       "programName": "초기창업패키지",
       "track": "일반형",

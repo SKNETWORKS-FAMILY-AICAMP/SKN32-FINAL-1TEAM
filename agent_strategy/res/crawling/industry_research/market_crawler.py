@@ -32,7 +32,6 @@ KEYWORD_HISTORY = OUTPUT_DIR / "keyword_history.json"
 MSS_PRESS = "https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1064518&cbIdx=86&parentSeq=1064518"
 MSS_NOTICES = {
     "pre_startup": "https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1066579&cbIdx=310",
-    "restart": "https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1065552&cbIdx=310",
     "early_general": "https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1065015&cbIdx=310",
     "early_deeptech": "https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1064566&cbIdx=310",
 }
@@ -99,7 +98,6 @@ def build_keyword_list(session: requests.Session | None = None, output: Path = K
             raise ValueError(f"중기부 보도자료에서 공식 분야를 확인할 수 없음: {name}")
     titles = {
         "pre_startup": "예비창업패키지",
-        "restart": "재도전성공패키지",
         "early_general": "초기창업패키지(일반형)",
         "early_deeptech": "초기창업패키지(딥테크 특화형)",
     }
@@ -112,7 +110,6 @@ def build_keyword_list(session: requests.Session | None = None, output: Path = K
             raise ValueError(f"예비창업패키지 PDF에서 분류 확인 실패: {name}")
     programs = [
         {"programId": "pre_startup", "programName": "예비창업패키지", "track": "2026 모집공고", "industryRestriction": "all_technology_fields_with_non_exhaustive_examples", "industries": [{"industryId": f"PRE-EXAMPLE-{i:02d}", "industryName": name, "classificationType": "official_non_exhaustive_example", "idOrigin": "internal_generated", "sourceUrl": MSS_PRE_PDF} for i, name in enumerate(PRE_EXAMPLES, 1)], "specializedTracks": ["여성", "소셜벤처", "사내벤처"], "note": "일반분야는 전 기술 분야 지원이며 industries는 공고에 든 예시다. 특화분야 3개는 산업이 아닌 신청 유형이고 사내벤처는 별도 공고 예정이다.", "sourceUrl": MSS_NOTICES["pre_startup"], "classificationSourceUrl": MSS_PRE_PDF},
-        {"programId": "restart", "programName": "재도전성공패키지", "track": "2026 모집공고", "industryRestriction": "not_enumerated_in_notice_pdf", "industries": [], "note": "공고 PDF는 예비재창업자 또는 7년 이내 재창업기업을 지원하며 산업별 모집표는 제시하지 않는다. 제외 업종은 공고 PDF 확인.", "sourceUrl": MSS_NOTICES["restart"]},
         {"programId": "early_general", "programName": "초기창업패키지", "track": "일반형", "industryRestriction": "all_fields_subject_to_notice_eligibility", "industries": [], "note": "중기부 2026 창업패키지 유형표에서 일반형은 전 분야 창업기업으로 표기한다. 공고상 제외 업종은 별도 확인.", "sourceUrl": MSS_NOTICES["early_general"], "classificationSourceUrl": MSS_PRESS},
         {"programId": "early_deeptech", "programName": "초기창업패키지", "track": "딥테크 특화형", "industryRestriction": "five_official_fields", "industries": [{"industryId": f"EARLY-DEEPTECH-{i:02d}", "industryName": name, "classificationType": "official_program_field", "idOrigin": "internal_generated", "sourceUrl": MSS_PRESS} for i, name in enumerate(DEEPTECH, 1)], "sourceUrl": MSS_NOTICES["early_deeptech"], "classificationSourceUrl": MSS_PRESS},
     ]
