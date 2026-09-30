@@ -23,3 +23,14 @@ agent_strategy/runtime/pipeline.py
 따라서 현재 검증 1은 독립된 코드 영역을 유지하면서 전략·작성 테스트 파이프라인에 연결되어 실행된다. 추후 전체 `agent-orchestration` Supervisor가 연결되면 동일한 검증 1 인터페이스를 통해 조율 Agent의 실행 흐름에 편입한다.
 
 검증 결과는 항목별 `results[].validation`, 전체 `validation1`, 별도 `validation_results` 배열에 기록하며, 실행 폴더에는 `validation.json`을 별도로 저장한다.
+# 검증 1 Agent
+
+## 커밋 규칙
+
+검증 1 Agent 변경은 다음 형식을 사용한다.
+
+```text
+SB-127 [FEAT] 검증1 agent - <수행 내용>
+```
+
+유형별 접두사는 `[FEAT]`, `[FIX]`, `[DOCS]`, `[TEST]`, `[REFACTOR]`, `[CHORE]` 등을 사용한다. 전략·작성 Agent 변경은 `SB-127 [TYPE] 전략/작성 agent - <수행 내용>` 형식을 사용하며, 두 Agent의 변경을 한 커밋에 섞지 않는다.
