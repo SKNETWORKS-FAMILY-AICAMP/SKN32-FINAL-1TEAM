@@ -240,6 +240,7 @@ class Engine:
         if spec.receives_tools:
             cfg = self.tools_config(ctx, spec)
             rec.model, rec.provider, rec.temperature = cfg.model, cfg.provider, cfg.temperature
+            rec.reasoning_effort = cfg.reasoning_effort
             sink = CallSink()
             tools = self.make_tools(ctx, spec, rec, cfg, sink)
             try:
@@ -338,6 +339,7 @@ class Engine:
             agent=spec.agent, provider=agent.provider, model=agent.model, temperature=temperature,
             timeout_sec=s.task_timeouts.get(spec.task_id, 120.0),
             retry_count=s.retry.retry_count, retry_interval_sec=s.retry.retry_interval_sec,
+            reasoning_effort=agent.reasoning_effort,
         )
 
     def make_tools(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord,

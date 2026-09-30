@@ -21,11 +21,16 @@ AGENTS: tuple[str, ...] = ("조율", "전략", "작성", "구현", "검증-1", "
 
 @dataclass(frozen=True)
 class TempRule:
-    """온도 덮어쓰기. fixed가 있으면 그 값, max가 있으면 Agent 기본 온도를 그 값 이하로 자른다."""
+    """온도 덮어쓰기. fixed가 있으면 그 값, max가 있으면 Agent 기본 온도를 그 값 이하로 자른다.
+
+    Agent 설정에 온도가 없으면(추론 모델) 덮어쓰지 않고 None을 돌려준다 (잠정).
+    """
     fixed: float | None = None
     max: float | None = None
 
-    def apply(self, base: float) -> float:
+    def apply(self, base: float | None) -> float | None:
+        if base is None:
+            return None
         if self.fixed is not None:
             return self.fixed
         if self.max is not None:

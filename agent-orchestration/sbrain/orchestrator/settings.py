@@ -49,18 +49,28 @@ class ScoringSettings(SBModel):
     artifact_layer_max: float = 30
 
 
+# 추론 강도 — OpenAI 추론 모델의 reasoning_effort 값 (모델마다 받는 값이 다르다)
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+
+
 class AgentSetting(SBModel):
-    """Agent 등록부 값 — 기획서 5-2에 따라 관리자 설정값."""
+    """Agent 등록부 값 — 기획서 5-2에 따라 관리자 설정값.
+
+    temperature가 None이면 호출에 싣지 않는다. 추론 모델은 온도 대신 추론 강도(reasoning_effort, 확장)를 쓴다.
+    """
     provider: str
     model: str
-    temperature: float
+    temperature: float | None
+    reasoning_effort: ReasoningEffort | None = None
 
 
 def _default_agents() -> dict[str, AgentSetting]:
     # 모델명 · 호출처 · 기본 온도는 기준 문서가 정하지 않았다 (잠정).
     # 조율은 OpenAI, 검수는 자체 GPU 서버의 파인튜닝 모델(기획서 5-2 · 5-7).
+    # 조율 모델은 사용자 지정(2026-09-30): 후보 gpt-5-mini · gpt-5.6-luna · gpt-6-luna 중 가장 싼 gpt-6-luna,
+    # 추론 강도 low. 추론 모델이라 온도를 보내지 않는다.
     return {
-        "조율": AgentSetting(provider="openai", model="미정", temperature=0.7),
+        "조율": AgentSetting(provider="openai", model="gpt-6-luna", temperature=None, reasoning_effort="low"),
         "전략": AgentSetting(provider="미정", model="미정", temperature=0.7),
         "작성": AgentSetting(provider="미정", model="미정", temperature=0.7),
         "구현": AgentSetting(provider="미정", model="미정", temperature=0.7),
@@ -97,7 +107,8 @@ PROVISIONAL: dict[str, str] = {
     "proofread.concurrency": "검수 동시 처리 수 — 구현하면서 정함",
     "proofread.failureRatioThreshold": "검수 실패 비율 기준 — 구현하면서 정함",
     "proofread.judgeTiming": "검수 실패 비율 판단 시점 — 구현하면서 정함",
-    "agents": "Agent별 모델 · 호출처 · 기본 온도, 실행 시작 시점 고정 — 기준 문서에 없음",
+    "agents": "Agent별 모델 · 호출처 · 기본 온도 · 추론 강도, 실행 시작 시점 고정 — 기준 문서에 없음 "
+              "(조율 gpt-6-luna · low는 사용자 지정, 나머지 Agent는 미정)",
 }
 
 

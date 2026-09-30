@@ -54,11 +54,16 @@ class FakeLLM:
 
     def __init__(self) -> None:
         self.script: dict[tuple[str, str | None], list[str]] = {}
+        self.responders: dict[str, Callable[[LLMRequest], str]] = {}
         self.requests: list[LLMRequest] = []
         self._lock = threading.Lock()
 
     def plan(self, task_id: str, outcomes: list[str], item_key: str | None = None) -> None:
         self.script[(task_id, item_key)] = list(outcomes)
+
+    def respond(self, task_id: str, fn: Callable[[LLMRequest], str]) -> None:
+        """'ok'일 때 돌려줄 응답 본문을 정한다 (실제 Task 구현을 스텁 호출처로 시험할 때)."""
+        self.responders[task_id] = fn
 
     def complete(self, request: LLMRequest) -> str:
         with self._lock:
@@ -76,7 +81,8 @@ class FakeLLM:
             raise ProviderError("401", status=401)
         if outcome == "bad_json":
             return "not json"
-        return '{"ok": true}'
+        responder = self.responders.get(key[0])
+        return responder(request) if responder else '{"ok": true}'
 
 
 # ── 시나리오 ──────────────────────────────────────────

@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable
 
+from ..intake import MissingRequired, ProjectInputSource, to_pre_input
 from ..models import Announcement, Notice, Notification, PreInput, ReworkOrder, Run
 from ..models.run import ACTIVE_PROGRESS, make_state
 from ..orchestrator.context import RunContext
@@ -60,6 +61,7 @@ class SBrainOrchestrator:
         settings: SettingsProvider,
         announcements: Callable[[str], Announcement],
         profile_count: Callable[[str], int],
+        project_inputs: ProjectInputSource | None = None,
         now: Callable[[], datetime] = datetime.now,
         new_id: Callable[[], str] | None = None,
     ) -> None:
@@ -69,6 +71,7 @@ class SBrainOrchestrator:
         self.settings = settings
         self.announcements = announcements
         self.profile_count = profile_count
+        self.project_inputs = project_inputs
         self.now = now
         self.new_id = new_id or (lambda: uuid.uuid4().hex[:12])
 
@@ -80,7 +83,24 @@ class SBrainOrchestrator:
         return self.engine.tick(now)
 
     # ── 사전 정보 제출 → 공고 후보 ─────────────────────
-    def start_run(self, account_id: str, form: PreInput) -> StartResult:
+    def start_run_for_project(self, account_id: str, project_id: int | str) -> StartResult:
+        """웹이 저장한 사전 정보(create_project)를 DB에서 읽어 사전 단계를 시작한다.
+
+        필수 항목이 비어 있으면 T-C1을 실행하지 않고 E-C1-REQUIRED로 돌려준다 (폼 단계 차단의 재확인).
+        """
+        if self.project_inputs is None:
+            raise CommandError("NO_PROJECT_SOURCE")
+        record = self.project_inputs.load(project_id)
+        if record is None or str(record.company.user_id) != str(account_id):
+            raise CommandError("PROJECT_NOT_FOUND", str(project_id))
+        try:
+            form = to_pre_input(record)
+        except MissingRequired as e:
+            return StartResult(False, code="E-C1-REQUIRED",
+                               message=message("E-C1-REQUIRED", **{"누락 항목": ", ".join(e.labels)}))
+        return self.start_run(account_id, form, project_id=str(project_id))
+
+    def start_run(self, account_id: str, form: PreInput, *, project_id: str | None = None) -> StartResult:
         if self.profile_count(account_id) <= 0:
             return StartResult(False, code="E-AUTH-PROFILE", message=message("E-AUTH-PROFILE"))
         active = self.store.find_active_run(account_id)
@@ -90,7 +110,7 @@ class SBrainOrchestrator:
         now = self.now()
         run = Run(run_id=self.new_id(), account_id=account_id, state=make_state("공고선택", "실행"),
                   current_phase="setup", settings_snapshot=self.settings.snapshot(),
-                  updated_at=now, created_at=now)
+                  updated_at=now, created_at=now, project_id=project_id)
         ctx = self.engine.open_context(run, provisional=True)
         ctx.put("formInput", form, producer="user:start")
         run.queue = (["R-8"] if form.attachments else []) + ["T-C1", "T-C2"]

@@ -78,6 +78,7 @@ class TC1Out(SBModel):
     category_reason: str
     confidence: float | None = Field(None, ge=0, le=1)
     reference_summary: ReferenceSummary | None = None
+    category_defaulted: bool = ext(False, note="카테고리 판정 실패로 기본값(웹개발)을 썼는지. 추적 기록용 (시트 2 T-C1 ③)")
 
 
 class TC2In(SBModel):

@@ -10,6 +10,7 @@ from typing import Callable
 
 from .agents.stubs import FakeLLM, StubScenario, bind_stubs, make_announcement, make_constants
 from .flow import IMMUTABLE_KEYS, SBrainFlow, SBrainOrchestrator, artifact_types, build_registry
+from .intake import ProjectInputSource
 from .orchestrator import ArtifactTypes, Engine, MemoryStore, Settings, SettingsProvider
 from .orchestrator.registry import TaskRegistry
 
@@ -31,8 +32,12 @@ def build_stub_app(
     settings: Settings | None = None,
     now: Callable[[], datetime] = datetime.now,
     profile_count: Callable[[str], int] = lambda account_id: 1,
+    project_inputs: ProjectInputSource | None = None,
 ) -> App:
-    """스텁 Agent와 메모리 저장소로 뼈대 전체를 조립한다 (테스트 · 시연용)."""
+    """스텁 Agent와 메모리 저장소로 뼈대 전체를 조립한다 (테스트 · 시연용).
+
+    project_inputs를 주면 start_run_for_project로 웹 DB에 저장된 사전 정보를 읽어 시작할 수 있다.
+    """
     scenario = scenario or StubScenario()
     store = MemoryStore(now=now)
     registry = build_registry()
@@ -49,5 +54,5 @@ def build_stub_app(
     orch = SBrainOrchestrator(
         engine=engine, flow=flow, settings=provider,
         announcements=lambda aid: make_announcement(aid, now().date(), eligible=aid not in scenario.gate_fail_ids),
-        profile_count=profile_count, now=now)
+        profile_count=profile_count, project_inputs=project_inputs, now=now)
     return App(orch, engine, store, registry, llm, scenario, provider)

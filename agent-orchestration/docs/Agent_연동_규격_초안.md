@@ -6,7 +6,7 @@
 | 작성일 | 2026-09-26 |
 | 기준 문서 | S-Brain Agent 기능정의서 v1.9 (시트 2 · 3 · 4 · 5 · 7) |
 | 코드 위치 | `sbrain/` — 입출력 규격 `contracts/tasks.py`, 공통 타입 `models/`, 호출 도구 `orchestrator/tools.py` |
-| 검증 방식 | 7개 Agent 모두 스텁으로 두고 Orchestrator가 20단계를 끝까지 도는 테스트로 검증했다 (`tests/`, 44건 통과) |
+| 검증 방식 | 7개 Agent를 스텁으로 두고 Orchestrator가 20단계를 끝까지 도는 테스트로 검증했다. 2026-09-29 조율 T-C1을 실제 구현으로 바꿨다 (`tests/`, 75건 통과) |
 | 독자 | 전략 · 작성 · 구현 · 검증-1 · 검증-2 · 검수 Agent 구현 담당, 공고팀(G-01 · T-C2), 웹팀(명령 창구 연동) |
 
 ---
@@ -214,6 +214,7 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 
 | Task | 특례 |
 |---|---|
+| T-C1 | `formInput`은 명령 창구가 웹 DB에서 읽어 넣는다(`start_run_for_project`). 필수 항목이 비면 T-C1을 실행하지 않는다(E-C1-REQUIRED). 카테고리 판정 실패 시 `categoryDefaulted`(확장)를 참으로 내면 Orchestrator가 추적 기록에 남긴다. 자세한 내용은 `docs/T-C1_요구사항해석_구현.md` |
 | T-C2 | `topK=10`, 추가 조회는 `offset=10`으로 1회. 대체 경로는 Task 안에서 처리한다. Task 자체가 예외를 올리면 실행 건을 만들지 않고 다시 시도를 안내한다(확장 코드 X-C2-FAIL, 잠정) |
 | G-01 | `eligibility` · `eligibilityParsed`는 선택 공고에서 꺼내 넘긴다 |
 | T-V1 | `rubric`은 상수 공급처에서 넘긴다. 공급처는 기준 문서에 명시가 없다(검증 파트와 확인 필요) |
@@ -232,10 +233,14 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | ReworkInput | sourceRefs, feedbackId | 피드백 출처 추적 |
 | ReworkComparison | cycleId, screen, basis, comparedAt | 어느 재작성 사이클 · 화면 · 비교 기준인지 |
 | AttemptRef → ExecutionRecord | executionId, runId, agent, stepKind, model, provider, temperature, inputs, outputs, outputMeta, status, cycleId, reworkRole, redoCount, resumeCount, feedbackIn, error, errorKind, startedAt, endedAt | 실행 추적 |
-| Run | createdAt, segment, queue, segmentTotal, redoState, cycle, resumeWindowStartedAt, adminAlert, decisionRef, checkRefs, moreUsed, notices, endedAt | 재개 지점 · 재작성 사이클 상태 |
+| Run | createdAt, projectId, segment, queue, segmentTotal, redoState, cycle, resumeWindowStartedAt, adminAlert, decisionRef, checkRefs, moreUsed, notices, endedAt | 재개 지점 · 재작성 사이클 상태 |
 | Notification | notificationId | 알림 식별 |
 | G02aIn · G02bIn | cycleInfo, settingsSnapshot, rubricVersion | 전후 비교 결과 전달, 판정 설정값 · rubric 버전 기록 |
 | TP2Out | nextRedoHint | 위반 유형별 재수행 지시 |
+| TC1Out | categoryDefaulted | 카테고리 판정 실패로 기본값(웹개발)을 썼는지 — 추적 기록용 |
+| PreInput · CompanyInfo | revenueItems, companyName, bizType, representativeType, outputSummary, techField, regionalPriorityArea, occupation, representativeCapability, selfInKindResources | 기준 문서에 자리가 없는 웹 입력값(사용자 결정 2026-09-30). T-C1이 companyInfo로 그대로 옮긴다. 수익모델은 `revenueItems`에 전부 있고 `revenueUnitPrice`는 호환용 첫 항목 단가다. 작성 Agent는 매출 추정에 `revenueItems`를 쓰기를 권한다 |
+| (신규) RevenueItem | serviceName, unitPrice | 수익모델 항목 하나 (단가, 원) |
+| ExecutionRecord · CallLog | reasoningEffort | 추론 모델의 추론 강도 기록 |
 | (신규) SentenceResult · ReworkCycleInfo · M1~M4 입출력 | — | T-P2 결과 모음, 사이클 정보, 합치기 |
 
 ## 10. 합의가 필요한 사항
@@ -248,4 +253,5 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | 4 | T-W2 · T-W3 확정 동작의 본문 수정 경로. "본문의 차트 참조 문구 제거", "표 제거 후 본문 서술로 대체"는 본문을 바꾸는데 두 Task의 출력은 charts · tables뿐이다. 특히 서술 대체는 글을 새로 써야 해서 규칙 합치기로는 할 수 없다 | 작성 |
 | 5 | 종합 평가 계획서 재작성의 HTML 반영 방법(기준 문서 미확정). T-B1 입력에 planDoc이 없어, 지금은 `reworkInput.issues`에 반영할 계획서 버전만 알린다 | 구현 |
 | 6 | rubric 공급처 (T-V1 입력 `rubric`: 상수) | 검증-1 |
-| 7 | 호출처 어댑터(OpenAI · 자체 GPU 서버)의 오류 → `TimeoutError` · `ProviderError(status)` 변환 | 조율 · 검수 · 인프라 |
+| 7 | 호출처 어댑터의 오류 → `TimeoutError` · `ProviderError(status)` 변환. OpenAI는 구현했다(`orchestrator/openai_provider.py`). 자체 GPU 서버는 미정 | 검수 · 인프라 |
+| 8 | Agent 설정에 추론 강도(`reasoningEffort`) 추가. 온도가 비어 있으면(추론 모델) Task별 온도 규칙(T-V1 0 고정, T-P2 0.2 이하)을 적용하지 않는다(잠정). 추론 모델을 쓰는 Agent는 이 점을 확인한다 | 검증-1 · 검수 |

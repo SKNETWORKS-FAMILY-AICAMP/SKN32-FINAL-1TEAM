@@ -32,11 +32,12 @@ T = TypeVar("T")
 class LLMRequest:
     provider: str
     model: str
-    temperature: float
+    temperature: float | None            # None이면 호출처가 싣지 않는다 (추론 모델)
     messages: list[dict[str, Any]]
     timeout_sec: float
     response_schema: dict[str, Any] | None
     metadata: dict[str, Any]
+    reasoning_effort: str | None = None  # 추론 모델의 추론 강도
 
 
 class LLMProvider(Protocol):
@@ -52,10 +53,11 @@ class ToolsConfig:
     agent: str
     provider: str
     model: str
-    temperature: float
+    temperature: float | None
     timeout_sec: float
     retry_count: int
     retry_interval_sec: float
+    reasoning_effort: str | None = None
 
 
 def classify_status(status: int | None) -> ErrorKind:
@@ -131,6 +133,7 @@ class Tools:
             messages=messages,
             timeout_sec=cfg.timeout_sec,
             response_schema=schema.model_json_schema() if schema else None,
+            reasoning_effort=cfg.reasoning_effort,
             metadata={
                 "run_id": self._ctx.run_id,
                 "task_id": self._ctx.task_id,
@@ -175,6 +178,7 @@ class Tools:
             provider=cfg.provider if call_type == "llm" else None,
             model=cfg.model if call_type == "llm" else None,
             temperature=cfg.temperature if call_type == "llm" else None,
+            reasoning_effort=cfg.reasoning_effort if call_type == "llm" else None,
             timeout_sec=cfg.timeout_sec,
         )
         error: CallError = "호출실패"

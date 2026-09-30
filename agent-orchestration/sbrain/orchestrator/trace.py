@@ -38,6 +38,7 @@ class ExecutionRecord(AttemptRef):
     model: str | None = ext(None, note="실제로 쓴 모델. tools를 받지 않는 단계는 없음")
     provider: str | None = ext(None)
     temperature: float | None = ext(None, note="실제로 쓴 온도 (Task 덮어쓰기 적용 후)")
+    reasoning_effort: str | None = ext(None, note="실제로 쓴 추론 강도 (추론 모델)")
     inputs: list[str] = ext(default_factory=list, note="입력 산출물명@버전 (모든 실행)")
     outputs: list[str] = ext(default_factory=list, note="출력 산출물명@버전")
     output_meta: OutputMeta = ext(default_factory=OutputMeta)
@@ -76,6 +77,7 @@ class CallLog(SBModel):
     provider: str | None = None
     model: str | None = None
     temperature: float | None = None
+    reasoning_effort: str | None = None
     timeout_sec: float
     tries: list[CallTry] = Field(default_factory=list)
     final_outcome: str = "진행"

@@ -1,4 +1,9 @@
 # 공통 타입 검증 · JSON 직렬화 (기능정의서 시트 3 · 4)
 pydantic==2.13.5
+# 웹 DB(공유 MySQL)에서 사전 정보 입력 읽기 — sbrain/intake/sql_source.py
+SQLAlchemy==2.1.1
+PyMySQL==1.2.3
+# 조율 Agent의 OpenAI 호출처 어댑터 — sbrain/orchestrator/openai_provider.py
+openai==3.20.0
 # 테스트
 pytest==9.1.1

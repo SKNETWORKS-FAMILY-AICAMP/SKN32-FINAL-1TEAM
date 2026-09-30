@@ -188,6 +188,11 @@ class SBrainFlow:
             for doc in out.get("reference_docs", []):
                 if doc.extract_status == "실패":
                     self._notice(ctx, "E-C1-DOC", 파일명=doc.file_name)
+        elif step_id == "T-C1" and out.get("category_defaulted"):
+            # 카테고리 판정 실패 → 웹개발 기본 처리, 로그에 기록 (시트 2 T-C1 ③)
+            ctx.add_event("카테고리기본값", f"T-C1 카테고리 판정 실패 — {out['category']}로 기본 처리",
+                          refs=[ctx.ref("category")],
+                          execution_id=outcome.record.execution_id if outcome.record else None)
         elif step_id == "T-C2" and out.get("fallback_used"):
             self._notice(ctx, "E-C2-EMBED")
 
@@ -312,6 +317,7 @@ class SBrainFlow:
         try:
             cfg = engine.tools_config(ctx, spec)
             rec.model, rec.provider, rec.temperature = cfg.model, cfg.provider, cfg.temperature
+            rec.reasoning_effort = cfg.reasoning_effort
             tools = engine.make_tools(ctx, spec, rec, cfg, sink)
             plan = ctx.get("planDoc")
             sentences = {x.sentence_id: x for sec in plan.sections for x in sec.sentences}

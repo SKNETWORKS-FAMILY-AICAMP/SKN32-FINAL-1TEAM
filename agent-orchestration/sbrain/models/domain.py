@@ -13,7 +13,7 @@ from pydantic import Field
 from .base import (
     AgentName, ApplicantType, Category, ChartType, EndingRule, ExtractStatus,
     FileFormat, ImageFormat, JudgedBy, KeptReason, PrototypeKind, SBModel,
-    StyleType, TokenType, ViolationType,
+    StyleType, TokenType, ViolationType, ext,
 )
 
 
@@ -24,7 +24,31 @@ class File(SBModel):
     uploaded_at: datetime
 
 
-class PreInput(SBModel):
+class RevenueItem(SBModel):
+    """확장 — 수익모델 항목 하나(서비스 · 상품명과 단가). 기준 문서는 단가 1개(int)만 둔다."""
+    service_name: str
+    unit_price: int                      # 원
+
+
+class FormExtension(SBModel):
+    """확장 — 사전 정보 입력 중 기준 문서 PreInput · CompanyInfo에 자리가 없는 값 (웹 DB 원본 그대로).
+
+    PreInput과 CompanyInfo가 함께 쓴다. T-C1이 폼 값 그대로 companyInfo에 옮겨 계획서 작성까지 전달한다.
+    """
+    revenue_items: list[RevenueItem] = ext(
+        default_factory=list, note="수익모델 항목 전체. revenueUnitPrice는 호환용으로 첫 항목 단가")
+    company_name: str | None = ext(None, note="기업명 · 법인명(상호)")
+    biz_type: str | None = ext(None, note="업종 (companies.biz_type)")
+    representative_type: str | None = ext(None, note="대표자 유형(단독 · 공동 · 각자대표)")
+    output_summary: str | None = ext(None, note="산출물 — 협약기간 내 목표(형태 · 수량)")
+    tech_field: str | None = ext(None, note="전문기술분야")
+    regional_priority_area: str | None = ext(None, note="지방우대 지역(해당 시 지역명)")
+    occupation: str | None = ext(None, note="예비창업자 직업(직장명 제외)")
+    representative_capability: str | None = ext(None, note="대표자의 기술력 · 노하우 · 인적 네트워크")
+    self_in_kind_resources: str | None = ext(None, note="현물 자기부담 자원(보유 장비 · 공간 등)")
+
+
+class PreInput(FormExtension):
     idea_text: str
     applicant_type: ApplicantType
     representative_name: str
@@ -48,7 +72,7 @@ class PreInput(SBModel):
     attachments: list[File] | None = None
 
 
-class CompanyInfo(SBModel):
+class CompanyInfo(FormExtension):
     representative_name: str
     representative_career: list[str]
     founded_at: date | None = None

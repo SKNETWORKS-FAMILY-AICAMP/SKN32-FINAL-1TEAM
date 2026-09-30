@@ -5,9 +5,9 @@ S-Brain의 AI Agent 7개를 정해진 순서대로 부르고, 실패하거나 �
 | 항목 | 내용 |
 |---|---|
 | 언어 · 버전 | Python 3.12 |
-| 의존성 | `pydantic` (타입 검증 · JSON 변환), `pytest` (테스트) |
+| 의존성 | `pydantic` (타입 검증 · JSON 변환), `SQLAlchemy` · `PyMySQL` (웹 DB 읽기), `openai` (조율 Agent 호출처), `pytest` (테스트) |
 | 구현 근거 | S-Brain Agent 기능정의서 v1.9 (기준 문서). 보조 참고: 프로젝트 기획서 v1.10 |
-| 현재 상태 | 뼈대 완성. 7개 Agent는 모두 **스텁(가짜 구현)**, 저장소는 **메모리** 구현. 테스트 44건 통과 |
+| 현재 상태 | 뼈대 완성. 조율 **T-C1은 실제 구현**, 나머지 Agent는 **스텁(가짜 구현)**, 저장소는 **메모리** 구현. 사전 정보는 웹 DB에서 읽을 수 있음. 테스트 75건 통과 |
 
 > 이 문서의 파일 경로는 저장소 폴더 기준입니다. 기능정의서 · 기획서는 저장소에 포함되지 않습니다.
 
@@ -71,7 +71,9 @@ Orchestrator는 **7개 Agent를 같은 방식으로 등록하고 호출하는 �
 ### 1.3 지금 어디까지 되어 있는가
 
 - 20단계 전체 흐름, 사용자 대기 지점, 재수행 · 재개 · 재작성 · 되돌리기, 추적 기록이 동작합니다.
-- **7개 Agent는 모두 스텁**입니다. 규격에 맞는 더미 결과를 돌려주며, 실제 LLM을 부르지 않습니다.
+- **조율 T-C1(요구사항 해석)은 실제 구현**입니다(`agents/supervisor/tc1.py`). 나머지 Agent · 조율 Task는 스텁이며, 규격에 맞는 더미 결과를 돌려줍니다. 스텁 조립(`build_stub_app`)은 T-C1도 스텁을 쓰고, `bind_supervisor(app.registry)`로 바꿔 끼웁니다. 실제 OpenAI(`gpt-6-luna`)로 1회 호출에 성공했습니다(2026-09-30).
+- 사전 정보 입력은 웹 백엔드가 DB에 저장한 값을 **프로젝트 ID로 읽어** T-C1에 넣습니다(`intake/`, `start_run_for_project`). 테이블 · 컬럼은 웹 스키마(`app_schema.sql`, 저장소 미포함)와 맞췄습니다. 기준 문서에 자리가 없는 웹 입력값(수익모델 항목 전체, 기업명, 산출물 목표 등)은 확장 필드로 싣습니다. 첨부 문서 텍스트 추출(R-8)은 아직입니다.
+- OpenAI 호출처 어댑터가 있습니다(`orchestrator/openai_provider.py`). 조율 Agent는 `gpt-6-luna`, 추론 강도 low가 기본값입니다(온도는 보내지 않음).
 - **저장소는 메모리 구현**이라 프로그램을 끄면 데이터가 사라집니다. MySQL 구현은 같은 인터페이스로 나중에 교체합니다.
 - 웹 서버는 없습니다. 웹 서버가 부를 함수(명령 창구)까지만 있습니다.
 
@@ -141,8 +143,9 @@ python -m pytest
 정상이면 다음과 같이 나옵니다.
 
 ```text
-............................................                             [100%]
-44 passed in 0.67s
+........................................................................ [ 96%]
+...                                                                      [100%]
+75 passed in 2.19s
 ```
 
 ---
@@ -193,6 +196,8 @@ print([r.task_id for r in app.store.executions(run_id)])
 ```
 
 **보는 법:** 명령(`select_announcement`, `start_writing`, `decide` 등)은 상태를 확인하고 **할 일을 대기열에 넣기만** 합니다. 실제 실행은 `advance`가 다음 대기 지점까지 합니다. 단, `start_run`은 사전 단계를 바로 실행하고, 화면 8의 '진행'은 실행할 단계 없이 화면 9로 넘어가므로 `advance`가 필요 없습니다.
+
+**웹 DB에서 읽어 실제 T-C1로 시작하기:** 웹 DB 공급처(`SqlProjectInputSource`)를 `build_stub_app(project_inputs=...)`로 넘기고, `bind_supervisor(app.registry)`로 T-C1을 바꿔 끼운 뒤 `start_run_for_project(account_id, project_id)`를 부릅니다. 조립 예시는 `docs/T-C1_요구사항해석_구현.md` 7절에 있습니다.
 
 ---
 
@@ -271,8 +276,8 @@ flowchart TD
 ```text
 agent-orchestration/
 ├── README.md                  # 이 문서
-├── .gitignore                 # Git 제외 목록 (.venv, __pycache__, .pytest_cache)
-├── requirements.txt           # 의존성 (pydantic, pytest)
+├── .gitignore                 # Git 제외 목록 (.venv, __pycache__, .pytest_cache, .env)
+├── requirements.txt           # 의존성 (pydantic, SQLAlchemy, PyMySQL, openai, pytest)
 ├── pytest.ini                 # 테스트 설정 (tests 폴더, -q)
 ├── docs/                      # 설계 문서 (13절 참고)
 ├── sbrain/
@@ -285,10 +290,16 @@ agent-orchestration/
 │   │   └── scoring.py         #   점수 · 채점 결과
 │   ├── contracts/
 │   │   └── tasks.py           # Task별 입력 · 출력 규격 (기준 문서 시트 3)
+│   ├── intake/                # 사전 정보 입력 연동 — 웹 DB → PreInput
+│   │   ├── record.py          #   웹 DB 행 그릇 (잠정 규격)
+│   │   ├── mapping.py         #   행 → PreInput 변환, 필수 항목 재확인 (E-C1-REQUIRED)
+│   │   ├── source.py          #   공급처 인터페이스 · 메모리 구현
+│   │   └── sql_source.py      #   공유 MySQL 구현 (SQLAlchemy)
 │   ├── orchestrator/          # 범용 뼈대 — S-Brain 고유 규칙이 없음
 │   │   ├── engine.py          #   실행 엔진: 대기열 실행, 재수행 · 재개 · 실패, 재작성 사이클
 │   │   ├── registry.py        #   Agent 등록부 · Task 등록부(TaskSpec), 입력 연결(Bind)
 │   │   ├── tools.py           #   Task에 넘기는 호출 도구: 재시도 · 제한 시간 · 오류 분류 · 호출 기록
+│   │   ├── openai_provider.py #   OpenAI 호출처 어댑터 (LLMProvider 구현)
 │   │   ├── context.py         #   실행 중 산출물 버전 관리, 한 번에 저장할 기록 모음
 │   │   ├── store.py           #   저장소 인터페이스 (Store, CommitBatch)
 │   │   ├── memory_store.py    #   저장소의 메모리 구현
@@ -301,8 +312,9 @@ agent-orchestration/
 │   │   ├── rework_map.py      #   재작성 · 재수행 대응표 (시트 7)
 │   │   └── service.py         #   명령 창구 SBrainOrchestrator (웹 서버가 부름)
 │   └── agents/
+│       ├── supervisor/        # 조율 Agent 구현 — 지금은 T-C1 (tc1.py), bind_supervisor()
 │       └── stubs.py           # 스텁 Agent, 가짜 LLM(FakeLLM), 시나리오(StubScenario)
-└── tests/                     # pytest 테스트 (44건)
+└── tests/                     # pytest 테스트 (75건)
 ```
 
 **설계 원칙:** `orchestrator/`에는 어떤 서비스에도 쓸 수 있는 범용 장치만 두고, 화면 번호 · 알림 대상 · 재작성 경로 같은 S-Brain 고유 규칙은 `flow/`에만 둡니다. 엔진은 `Flow` 인터페이스(`engine.py`)를 통해서만 S-Brain 규칙을 부릅니다.
@@ -421,7 +433,13 @@ app.registry.bind("T-S1", my_ts1)  # T-S1만 실제 구현으로, 나머지는 �
 
 ### 8.3 실제 LLM 호출처 연결
 
-LLM 호출처는 `LLMProvider` 인터페이스(`orchestrator/tools.py`)를 구현해 `Engine`의 `providers`에 이름별로 넣습니다. 호출처 이름(`openai`, `gpu-server` 등)은 Agent 설정값에 있습니다.
+LLM 호출처는 `LLMProvider` 인터페이스(`orchestrator/tools.py`)를 구현해 `Engine`의 `providers`에 이름별로 넣습니다. 호출처 이름(`openai`, `gpu-server` 등)은 Agent 설정값에 있습니다. OpenAI는 `OpenAIProvider`(`orchestrator/openai_provider.py`)가 있습니다. API 키는 환경 변수 `OPENAI_API_KEY`에서 읽습니다.
+
+```python
+from sbrain.orchestrator.openai_provider import OpenAIProvider
+
+app.engine.providers["openai"] = OpenAIProvider()   # 조율 Agent 모델은 Settings.agents["조율"] (기본 gpt-6-luna · 추론 강도 low)
+```
 
 ```python
 class LLMProvider(Protocol):
@@ -445,7 +463,8 @@ class LLMProvider(Protocol):
 
 | 함수 | 화면 | 하는 일 |
 |---|---|---|
-| `start_run(account_id, form)` | 2 | 프로필 · 동시 실행 확인 → 사전 단계 실행 → 후보가 있으면 실행 건 생성. 결과는 `StartResult` |
+| `start_run_for_project(account_id, project_id)` | 2 | 웹 DB에 저장된 사전 정보(`create_project`)를 읽어 PreInput으로 옮긴 뒤 `start_run`. 필수 항목이 비면 T-C1을 실행하지 않고 `E-C1-REQUIRED`. 프로젝트가 없거나 다른 계정 것이면 `CommandError("PROJECT_NOT_FOUND")` |
+| `start_run(account_id, form, project_id=None)` | 2 | 프로필 · 동시 실행 확인 → 사전 단계 실행 → 후보가 있으면 실행 건 생성. 결과는 `StartResult` |
 | `more_candidates(run_id)` | 3 | 공고 추가 조회 (1회, 최대 20건) |
 | `select_announcement(run_id, announcement_id)` | 3 | 공고 선택 → 자격요건 확인 대기열 |
 | `start_writing(run_id)` | 5 | 계획서 작성 대기열 |
@@ -457,7 +476,7 @@ class LLMProvider(Protocol):
 
 - 현재 상태에서 받을 수 없는 명령이면 `CommandError`가 납니다 (예: 대기 지점이 아닐 때, 이미 쓴 재작성 기회를 고를 때).
 - 실행 상태는 `step`(공고선택 … 결과물)과 `progress`(실행 · 재개대기 · 사용자대기 · 실패 · 완료 · 중단) 두 축으로 관리합니다. 화면 상태(진행 중 · 확인 필요 · 문제 발생 · 완료 · 중단됨)는 `progress`에서 계산합니다.
-- **누가 `advance` · `tick`을 부를지**(웹 서버 스레드 · 별도 워커 · 작업 큐)는 웹팀 연동 때 정합니다.
+- **누가 `advance` · `tick`을 부를지**는 별도 워커 프로세스가 공유 MySQL을 조회해 처리하기로 웹팀과 합의했습니다(`워커_구동_방식_제안.md`, 저장소 미포함, 확정). 웹은 명령 · 조회 함수만 부릅니다. 구현 전입니다.
 
 ---
 
@@ -475,7 +494,7 @@ class LLMProvider(Protocol):
 | 검수 동시 처리 수 | 4 | 잠정 |
 | 검수 실패 비율 기준 | 30% (모든 문장을 본 뒤 판단) | 잠정 |
 | Task별 제한 시간 | 대부분 120초, `T-W1` · `T-B1` · `T-B2` 300초, `T-C2` 30초, `T-P2` 60초 | 잠정 |
-| Agent별 모델 · 호출처 · 온도 | 모델 '미정', 조율 `openai`, 검수 `gpu-server` 등 | 잠정 |
+| Agent별 모델 · 호출처 · 온도 · 추론 강도 | 조율은 `openai` · `gpt-6-luna` · 추론 강도 low · 온도 없음(사용자 지정). 나머지 Agent 모델은 '미정', 검수 `gpu-server` 등 | 조율 외 잠정 |
 
 잠정 항목 목록은 `settings.py`의 `PROVISIONAL`에 있습니다. 다른 값으로 돌려 보려면 `build_stub_app(settings=Settings(...))`로 넘깁니다.
 
@@ -496,6 +515,9 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 | `test_redo_resume.py` | 8 | 재수행 횟수 · 확정 동작, 재개 후 성공, 재개 상한 초과 실패, 영구 오류, `featureList` 불변 |
 | `test_tools.py` | 6 | 호출 단위 재시도, 오류 분류, 형식 오류, 스레드 안전, 로그에 내용 없음 |
 | `test_proofread_trace.py` | 6 | `T-P2` 문장 병렬 처리 · 재수행, 추적 기록 원칙, 설정값 고정 |
+| `test_intake.py` | 12 | 웹 DB 행 → PreInput 변환, 확장 필드 · 수익모델 여러 건 · 팀원 없음, 필수 항목 결측 목록, SQL 공급처(SQLite로 웹 스키마 흉내) |
+| `test_tc1.py` | 12 | T-C1 아이템 사양 · 회사 정보(확장 필드 포함) 그대로 옮김, 조율 모델 · 추론 강도, 카테고리 기본값 · 추적 기록, 형식 오류 재시도, DB에서 읽어 시작, 참조 자료 발췌 확인 |
+| `test_openai_provider.py` | 7 | OpenAI 요청 모양(추론 강도 · 온도 생략 포함) · 오류 변환 (가짜 클라이언트, 네트워크 없음) |
 
 ### 상황을 흉내 내는 법
 
@@ -529,10 +551,11 @@ app.orchestrator.tick(datetime.now() + timedelta(minutes=15))   # 재개 시각�
 
 **아직 구현하지 않은 것**
 
-- 실제 Agent 구현 (지금은 7개 모두 스텁)
+- 실제 Agent 구현 (조율 T-C1 말고는 스텁)
+- R-8 첨부 문서 텍스트 추출과 웹 DB 첨부(`project_attachments`) 읽기
 - MySQL 저장소 (지금은 메모리. `Store` 인터페이스에 맞춰 교체 예정)
-- 실제 LLM 호출처 어댑터 (OpenAI · 자체 GPU 서버)
-- `advance` · `tick`을 부를 백그라운드 워커 (웹팀 연동 때 결정)
+- 자체 GPU 서버 호출처 어댑터 (OpenAI는 있음)
+- 워커 프로세스 · MySQL 저장 · 조회 함수 · 토큰 사용량 기록 · project_id 중단 — 웹팀 합의로 방식 확정, 구현 지시는 `작업지시_조율코드반영_워커_웹연동.md`(다른 세션에서 진행, 저장소 미포함)
 - 실행 로그 보관 기간 이후의 식별자 분리 · 통계 전환
 
 **타 팀과 합의가 필요한 것** — 자세한 내용은 `docs/Agent_연동_규격_초안.md` 10절
@@ -542,6 +565,10 @@ app.orchestrator.tick(datetime.now() + timedelta(minutes=15))   # 재개 시각�
 
 **기준 문서에 값이나 규칙이 없어 임시로 정한 것** — 목록은 `docs/Orchestrator_구조와_흐름.md` 11절
 
+**T-C1 · 웹 DB 연동** — 웹팀 확인(단위 · 첫 창업 여부 · 팀원 없음)은 끝났다. 잠정값과 남은 사항은 `docs/T-C1_요구사항해석_구현.md` 8 · 9절
+
+**기준 문서(기능정의서 · 기획서)에 반영할 변경** — 수익모델 여러 건, 확장 필드, 팀원 없음, 첫 창업 여부 미수집 등. `기준문서_개정필요사항_T-C1_사전정보입력.md` (저장소 미포함)
+
 ---
 
 ## 13. 더 읽을 문서
@@ -550,5 +577,11 @@ app.orchestrator.tick(datetime.now() + timedelta(minutes=15))   # 재개 시각�
 |---|---|---|
 | `docs/Orchestrator_구조와_흐름.md` | 실행 흐름도, 재작성 경로, 실행 상태, 저장 · 추적 기록, 잠정값 · 해석 목록 | Orchestrator · 조율 담당, 웹팀 |
 | `docs/Agent_연동_규격_초안.md` | Task 함수 · `tools` 규격, Task별 입출력 · 실행 설정 표, 확장 필드, 합의 필요 사항 | 각 Agent 구현 담당 |
+| `docs/T-C1_요구사항해석_구현.md` | 웹 DB → PreInput 매핑 · 확장 필드, 필수 항목 재확인, T-C1 처리, 조율 모델 · OpenAI 어댑터, 잠정 · 확인 필요 목록 | 조율 담당, 웹팀 |
+| `기준문서_개정필요사항_T-C1_사전정보입력.md` (저장소 미포함) | 기능정의서 · 기획서에 반영할 변경 목록 (T-C1 · 사전 정보 입력) | 기준 문서 관리자 |
+| `워커_구동_방식_제안.md` (저장소 미포함) | 누가 언제 Orchestrator를 돌릴지 — 워커 방식 (웹팀 합의로 확정) | 사용자, 웹팀 |
+| `웹스키마_교체목록_웹팀전달.md` (저장소 미포함) | 웹 스키마의 오케스트레이션 관련 테이블 · 컬럼 교체 · 삭제 · 유지 목록 (기준 문서 근거 포함) | 웹팀 |
+| `작업지시_조율코드반영_워커_웹연동.md` (저장소 미포함) | 워커 · MySQL 저장 · 조회 함수 · 토큰 · 중단 구현 지시 (단계 S0~S9) | 구현 세션 |
+| `작업지시_기준문서개정_T-C1_웹연동.md` (저장소 미포함) | 기능정의서 · 기획서 개정 지시 (T-C1 사전 정보 입력 · 웹 연동) | 기준 문서 관리 세션 |
 | S-Brain Agent 기능정의서 v1.9 (저장소 미포함) | 구현 기준 문서 (Source of Truth) | 전원 |
 | 프로젝트 기획서 v1.10 (저장소 미포함) | 서비스 기획 (보조 참고) | 전원 |
