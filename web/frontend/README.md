@@ -1,16 +1,50 @@
-# React + Vite
+    # S-Brain 프런트엔드 리디자인
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+정부지원사업 준비를 위한 랜딩 페이지와 프로젝트 워크스페이스입니다. 기존 HTML의 단계별 데모 로직을 유지하면서 화면을 다시 구성했습니다.
 
-Currently, two official plugins are available:
+## 실행
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Node.js 22.12 이상을 사용합니다.
 
-## React Compiler
+```sh
+npm ci
+npm run dev
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+브라우저에서는 **`http://localhost:5174`로 접속** — `127.0.0.1`로 열면 구글 로그인 origin 검증(`origin_mismatch`)에 걸리고, 로그인이 되더라도 세션 쿠키가 `localhost`와 `127.0.0.1`을 다른 site로 취급해 그다음 요청에 실려가지 않습니다. (`vite --host 127.0.0.1`로 서버를 띄우는 건 일부 Windows 환경에서 `--host localhost`가 IPv6(`::1`)에만 바인딩되는 문제를 피하기 위함이고, 브라우저 접속 주소는 여전히 `localhost`여야 합니다.)
 
-## Expanding the Oxlint configuration
+배포 파일 생성: `npm run build`. 정적 결과물은 `dist/`에 만들어집니다.
+단일 HTML 생성: `npm run standalone`. 상위 폴더에 `S-Brain-redesign.html`이 생성되며, 브라우저에서 바로 열 수 있습니다.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+## 구조
+
+- `src/components/Landing.jsx`: 서비스 소개, 결과물 탭, FAQ
+- `src/components/Workspace.jsx`: 작업 공간 레이아웃, 프로젝트 목록, 검색·상태 필터
+- `src/components/Preparation.jsx`: 매칭·계획서·산출물 준비 진행 화면
+- `src/components/Icons.jsx`: 공통 아이콘과 로고
+- `src/features/Workflow.jsx`: 기존 공고 매칭·자격 확인·문서·프로토타입·검증·결과물 데모
+- `src/features/Admin.jsx`: 관리자 대시보드 (공고 관리·운영 현황·진행 현황·에이전트 테스크·검증 정책·검수 회수 문단·사용자 관리 7개 탭)
+- `src/App.jsx`: 화면 전환과 프로젝트별 상태 연결
+- `src/styles.css`: 디자인 토큰, 랜딩, 워크스페이스, 반응형 스타일
+
+## 디자인
+
+토스 공식 웹페이지의 간결한 한국어 제목, 넉넉한 여백, 명확한 행동 버튼을 참고했습니다. 화이트·라이트 그레이·블루를 중심으로 랜딩부터 최종 검수까지 다시 구성했습니다. 기존 원형 진행 표시와 장식적인 사이드바는 제거하고, 큰 진행 숫자와 단계별 상태 목록을 새로 구현했습니다. 작은 화면에서는 콘텐츠를 한 열로 배치하고 단계 메뉴만 가로로 스크롤합니다. 움직임 감소 설정도 지원합니다.
+
+## 구현 범위
+
+현재는 시연용 프런트엔드입니다. 공고·점수·생성 결과는 예시입니다. 실제 OAuth, 서버 저장, LLM, SSE는 연결하지 않았습니다. 새로고침하면 데모 상태가 초기화됩니다. 파일 첨부는 브라우저에서 파일을 선택하는 기능이며 서버로 전송되지 않습니다. 결과물 다운로드의 기존 목업 제한은 화면에 표시합니다.
+
+관리자 대시보드(`src/features/Admin.jsx`)도 예시 데이터로만 동작합니다. 관리자 판별은 `.env`의 `VITE_ADMIN_EMAILS`(쉼표로 구분된 구글 이메일 목록)로 프런트에서만 걸러내는 임시 방식이며, 이 목록은 브라우저로 내려가는 값이라 실제 접근 제한이 아닙니다. `back/app/routers/admin.py`에 이미 이 화면이 기대하는 JSON 계약에 맞춘 실제 API가 있으니, 실 연동 시에는 그쪽 엔드포인트에 붙이고 이 임시 이메일 목록 방식은 제거해야 합니다.
+
+기술선정서의 스택은 참고했습니다. React 18과 Vite를 사용하고 Tailwind를 빌드해 브라우저 내 Babel 변환과 CDN 의존성을 제거했습니다. 추가 애니메이션 라이브러리 없이 CSS로 전환을 구현합니다. 폰트·이미지도 외부 요청 없이 시스템 폰트와 인터페이스 요소를 사용합니다.
+
+원본 HTML과 기술선정서는 수정하지 않았습니다. 기존 `front/README.md`만 있던 상태에서 추가할 수 있도록 독립 프로젝트로 구성했습니다.
+
+## 검증
+
+`npm run check:render`는 랜딩, 작업 레이아웃, 신규/기존 사용자 대시보드와 각 작업 단계를 서버 렌더링해 미정의 컴포넌트·속성으로 인한 오류를 확인합니다. 브라우저 클릭 테스트를 대신하지는 않습니다.
+
+실제 브라우저에서 아이템 입력 → 공고 선택 → 자격 확인 → 계획서 → 산출물 → 재작성 → 최종 검수 흐름을 확인했습니다. 결과물 확대 모달 2종, 모바일 진행 모달의 시작 위치, 모바일 주요 5개 화면의 가로 넘침을 추가 확인했습니다.
+
+`audit.html`은 15가지 화면 상태를 직접 확인하는 개발용 검토 페이지입니다. 상단 영문 상태 링크는 검토용으로, 배포되는 단일 HTML에는 포함되지 않습니다. 전체 ZIP의 `review/`에서 이전 구현 기록, 변경 내역, 전후 스크린샷을 확인할 수 있습니다.
