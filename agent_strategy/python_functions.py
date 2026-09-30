@@ -1,4 +1,4 @@
-"""Local research / exact calculations; Luna only for interpretation, 검증 1 for F19."""
+﻿"""Local research / exact calculations; Luna only for interpretation, 검증 1 for F19."""
 from __future__ import annotations
 from typing import Any
 from agent_strategy.runtime.llm_runtime import request_json, compact
@@ -43,9 +43,10 @@ def generate_table(columns: list[str], rows: list[dict], rules: dict) -> dict:
             'issues':[] if rows else ['원본 행 없음: 입력 확인 필요'],'sourceRefs':[]}
 # F19 validate_section()
 def validate_section(section_spec: dict, content: dict, source_data: dict) -> dict:
-    from agent_validation.validation_1 import validate_section as validation1
+    from agent_validation_1.validation_1 import validate_section as validation1
     return validation1(section_spec,content,source_data)
 # F20 assemble_document()
 def assemble_document(sections: list, tables: list, images: list) -> dict:
     if any(s['validation']['status'] not in ['pass','skipped'] for s in sections):raise ValueError('검증 1 미통과 항목은 조립할 수 없습니다.')
     return {'status':'validation1_passed','sections':sections,'tables':tables,'images':images,'pageCountVerified':False}
+

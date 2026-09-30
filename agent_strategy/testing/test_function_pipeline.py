@@ -1,4 +1,4 @@
-import json
+﻿import json
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -9,7 +9,7 @@ from agent_strategy import gpt_functions as gpt, python_functions as py
 from agent_strategy.runtime import pipeline
 from agent_strategy.testing import test_server as server
 from agent_strategy.runtime.research_context import retrieve
-from agent_validation import validation_1 as validation
+from agent_validation_1 import validation_1 as validation
 
 
 def fake_response(fid,payload):
@@ -176,3 +176,4 @@ class PipelineTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+

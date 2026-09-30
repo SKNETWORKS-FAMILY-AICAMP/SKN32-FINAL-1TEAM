@@ -1,4 +1,4 @@
-# Validation 1
+﻿# Validation 1
 
 `validation_1.py`가 F19를 수행한다. 필수 텍스트·항목 개수·줄 수·필수 필드·표 컬럼(표가 요청된 경우)·이미지 노드·원본 facts·출처 ID·원 단위 금액을 Python으로 검사한다. 구조 오류가 없을 때만 GPT-5.6 Terra로 원본 충실성·근거 관련성·논리·항목 요구조건을 검증한다.
 
@@ -8,14 +8,14 @@
 
 검증 1의 판정 코드는 이 폴더의 `validation_1.py`에 별도 Agent 영역으로 관리한다. 전략·작성 Agent 코드에 검증 규칙을 복사해 넣지 않는다.
 
-현재 개발·테스트 단계에서는 `agent_strategy/runtime/pipeline.py`가 F16/F17/F18 작성 결과를 만든 뒤 `agent_validation.validation_1.validate_section()`을 호출하는 방식으로 연결되어 있다. UI 요청과 실행 상태 관리는 `agent_strategy/testing/test_server.py`가 담당한다.
+현재 개발·테스트 단계에서는 `agent_strategy/runtime/pipeline.py`가 F16/F17/F18 작성 결과를 만든 뒤 `agent_validation_1.validation_1.validate_section()`을 호출하는 방식으로 연결되어 있다. UI 요청과 실행 상태 관리는 `agent_strategy/testing/test_server.py`가 담당한다.
 
 ```text
 agent_strategy/testing/test_server.py
         ↓
 agent_strategy/runtime/pipeline.py
         ├─ 전략·작성 결과 생성
-        └─ agent_validation.validation_1 호출
+        └─ agent_validation_1.validation_1 호출
                 ↓
         검증 1 결과(validation/issues/warnings)
 ```
@@ -34,3 +34,4 @@ SB-127 [FEAT] 검증1 agent - <수행 내용>
 ```
 
 유형별 접두사는 `[FEAT]`, `[FIX]`, `[DOCS]`, `[TEST]`, `[REFACTOR]`, `[CHORE]` 등을 사용한다. 전략·작성 Agent 변경은 `SB-127 [TYPE] 전략/작성 agent - <수행 내용>` 형식을 사용하며, 두 Agent의 변경을 한 커밋에 섞지 않는다.
+

@@ -6,11 +6,11 @@
 SB-127 [FEAT] 전략/작성 agent - <수행 내용>
 `` 
 
-검증 1 Agent 변경은 `agent_validation/README.md` 규칙에 따라 `SB-127 [TYPE] 검증1 agent - <수행 내용>`으로 작성한다.
+검증 1 Agent 변경은 `agent_validation_1/README.md` 규칙에 따라 `SB-127 [TYPE] 검증1 agent - <수행 내용>`으로 작성한다.
 
 # 사업계획서 전략·작성 Agent
 
-일반·예비창업·초기창업 사업계획서의 전략 분석, 항목별 작성, 검증 1 연동, 결과 전달을 담당한다. 검증 1 판정 코드는 별도 `agent_validation` Agent가 소유하며, 전략·작성 Agent는 생성 결과를 검증 1에 전달하고 검증 결과에 따라 재작성 흐름을 연결한다. 재도전성공패키지는 범위에 포함하지 않는다.
+일반·예비창업·초기창업 사업계획서의 전략 분석, 항목별 작성, 검증 1 연동, 결과 전달을 담당한다. 검증 1 판정 코드는 별도 `agent_validation_1` Agent가 소유하며, 전략·작성 Agent는 생성 결과를 검증 1에 전달하고 검증 결과에 따라 재작성 흐름을 연결한다. 재도전성공패키지는 범위에 포함하지 않는다.
 
 ## 실행 방법
 
@@ -116,7 +116,7 @@ HTML은 Python을 직접 실행하지 않는다. API 요청은 `http://127.0.0.1
 1. F01~F15가 전략·조사·계획 데이터를 한 번 만든다. F17 표 생성은 사용자 지시에 따라 실행하지 않는다.
 2. `runtime/pipeline.py`가 각 항목에 필요한 `sourceKeys`와 관련 원본 사실만 전달한다.
 3. F16은 본문을, F18은 이미지 명세를 생성한다. F18 명세는 SVG 개념도로 표시하며 실물 이미지 생성 API는 호출하지 않는다.
-4. `agent_validation/validation_1.py`가 구조 검사 후 F19 Terra 의미 검증을 한다. 실패한 항목은 최대 한 번 재작성하며, 계속 실패하면 F20 조립을 막는다.
+4. `agent_validation_1/validation_1.py`가 구조 검사 후 F19 Terra 의미 검증을 한다. 실패한 항목은 최대 한 번 재작성하며, 계속 실패하면 F20 조립을 막는다.
 5. F20 Python 조립은 모든 검증이 통과한 경우에만 수행한다.
 
 재시도 영역은 전체 실행 전에도 현재 탭과 선택 항목으로 연관 위치를 조회할 수 있다. **연관 항목 보기**에는 선택한 위치를 제외한 함께 재생성 대상 위치만 표시한다. 재시도는 선택 항목 및 같은 Canonical Data를 직접 쓰는 연관 항목만 F16/F18·F19로 다시 수행한다. F01~F15는 다시 호출하지 않는다.
@@ -162,7 +162,7 @@ F16 본문 작성       F18 이미지 명세
                     USERFLOW·서비스 구조도
         └───────┬───────┘
                 ▼
-       F19 검증 1 (agent_validation)
+       F19 검증 1 (agent_validation_1)
           ├─ 통과 ─→ F20 Python 조립
           │             │
           │             ▼
@@ -376,7 +376,7 @@ res/to_back/runs/<실행시각>_<문서유형>_<runId>/
 
 ## 검증
 
-검증 1은 전략·작성 Agent 내부에 섞여 있지 않다. 판정 코드는 별도 [`agent_validation`](../agent_validation) Agent 영역에서 관리하며, 전략·작성 Agent는 생성 결과와 원본 근거를 검증 Agent에 전달하는 오케스트레이션만 담당한다.
+검증 1은 전략·작성 Agent 내부에 섞여 있지 않다. 판정 코드는 별도 [`agent_validation_1`](../agent_validation_1) Agent 영역에서 관리하며, 전략·작성 Agent는 생성 결과와 원본 근거를 검증 Agent에 전달하는 오케스트레이션만 담당한다.
 
 ````text
 agent_strategy
@@ -384,7 +384,7 @@ agent_strategy
   F16~F18 본문·표·이미지 생성
           │
           ▼
-agent_validation
+agent_validation_1
   F19 구조·필수 개수·표 컬럼·원본 대조·의미 검증
           │
           ├─ 통과 → F20 Python 조립
@@ -444,7 +444,7 @@ back JSON에 `_strategy_limits`를 전달하면 작성 결과 검증에 공고 �
 
 ## Agent 영역 연결 상태
 
-검증 1 판정 코드는 `agent_validation/validation_1.py`에 별도 Agent 영역으로 관리한다. 현재 개발 테스트에서는 `agent_strategy/runtime/pipeline.py`가 F16/F17/F18 결과 생성 후 검증 1을 호출하고, `agent_strategy/testing/test_server.py`가 UI 요청·진행 상태·결과 저장을 담당한다. 전체 Supervisor인 `agent-orchestration`과의 통합은 이후 연동 단계이며, 현재 전략·작성 테스트가 전체 7개 Agent가 완료된 것처럼 결과를 기록하지 않는다.
+검증 1 판정 코드는 `agent_validation_1/validation_1.py`에 별도 Agent 영역으로 관리한다. 현재 개발 테스트에서는 `agent_strategy/runtime/pipeline.py`가 F16/F17/F18 결과 생성 후 검증 1을 호출하고, `agent_strategy/testing/test_server.py`가 UI 요청·진행 상태·결과 저장을 담당한다. 전체 Supervisor인 `agent-orchestration`과의 통합은 이후 연동 단계이며, 현재 전략·작성 테스트가 전체 7개 Agent가 완료된 것처럼 결과를 기록하지 않는다.
 
 ## 전략 Agent 분석 기록
 
@@ -465,6 +465,7 @@ ules.unassignedOriginalRows와 생성 텍스트에 단계 미지정 원본으로
 ules.additions에 별도로 관리하며 현재 자동 추가하지 않는다. 미입력 수량·단가는 확인 필요로 남긴다.
 - F16의 빈 응답·{}를 본문 성공 결과로 저장하지 않으며, 출력 토큰 한도 도달도 실패로 처리한다.
 - 기존 저장 파일의 빈 본문은 자동 복구하지 않으므로 해당 항목을 재생성해야 한다.
+
 
 
 
