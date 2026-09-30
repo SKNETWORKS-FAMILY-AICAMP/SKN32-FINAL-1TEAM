@@ -61,8 +61,7 @@ def score_artifact(*, kind: str, entry_file_path: str, source_text: str,
                    feature_list: list[str], plan_text: str | None) -> tuple[dict, dict]:
     """산출물층 채점 본체. (코드 점검 결과, 계획서 대조 결과)를 dict로 돌려준다.
 
-    run_tv2(조율 계약)와 backend_entry(웹 백엔드)가 같이 쓴다. 계약 모델에 의존하지
-    않으므로 sbrain 없이도 돈다.
+    계약 모델에 의존하지 않으므로 sbrain 없이도 돈다.
     """
     readme = _read(readme_path) if readme_path else None
     svg = _read(infographic_path)
