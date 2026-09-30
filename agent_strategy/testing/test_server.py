@@ -16,6 +16,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from agent_strategy.runtime.llm_runtime import CONTRACT, model_config
 from agent_strategy.runtime.pipeline import impact_plan, retry_sections, run_pipeline, normalize_back_input
+from agent_strategy import gpt_functions as gpt
 
 BASE = Path(__file__).resolve().parents[1]
 KINDS = {'general', 'pre_startup', 'early_startup'}
@@ -44,13 +45,16 @@ def flow_image(output):
         output['flowType']='USER_FLOW'
         output.setdefault('warnings',[]).append('모델 nodes 형식 오류로 기본 USER_FLOW 흐름도를 사용함')
     width = 1100 / len(nodes)
-    svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 200"><rect width="1140" height="200" fill="#f4f6fa"/>'
+    flow_type = output.get('flowType','USER_FLOW')
+    title = 'USERFLOW' if flow_type == 'USER_FLOW' else '서비스 구조도'
+    colors = ['#2563eb','#7c3aed','#0891b2','#059669','#d97706','#db2777']
+    svg = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 230"><rect width="1140" height="230" rx="16" fill="#f8fafc"/><text x="40" y="38" font-family="sans-serif" font-size="22" font-weight="700" fill="#172033">{title}</text>'
     for i, node in enumerate(nodes):
         x = 20 + i * width
-        svg += f'<rect x="{x}" y="65" width="{width-22}" height="65" rx="10" fill="#2457d6"/><text x="{x+(width-22)/2}" y="104" text-anchor="middle" font-family="sans-serif" font-size="14" fill="white">{html.escape(node)}</text>'
+        svg += f'<rect x="{x}" y="65" width="{width-22}" height="65" rx="12" fill="{colors[i%len(colors)]}"/><text x="{x+(width-22)/2}" y="104" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="white">{html.escape(node)}</text>'
         if i < len(nodes)-1:
             svg += f'<text x="{x+width-21}" y="104" fill="#2457d6">→</text>'
-    svg += '<text x="20" y="170" font-family="sans-serif" font-size="14">AI 생성 명세 기반 개념도 · 상세 설계 검토 필요</text></svg>'
+    svg += '<text x="40" y="185" font-family="sans-serif" font-size="13" fill="#667085">AI 생성 명세 기반 개념도 · 상세 설계 검토 필요</text></svg>'
     return {'mimeType':'image/svg+xml', 'svg':svg, 'origin':'generate_image_spec.nodes', 'status':'proposed'}
 
 
@@ -68,10 +72,18 @@ def save_result(result):
     (out/'result.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
     (out/'validation.json').write_text(json.dumps({'runId':result['runId'],'documentType':result['documentType'],'status':result['status'],'validation1':validation_results}, ensure_ascii=False, indent=2), encoding='utf-8')
     (out/'result.html').write_text(report_html(result), encoding='utf-8')
+    image_files=[]
+    for row in result.get('results',[]):
+        for idx,image in enumerate(row.get('images',[]) or []):
+            svg=image.get('svg') if isinstance(image,dict) else None
+            if svg:
+                name=f"{row.get('sectionId','section')}_{idx+1}.svg"
+                (out/name).write_text(svg, encoding='utf-8')
+                image_files.append(name)
     (out/'manifest.json').write_text(json.dumps({
         'runId': result['runId'], 'createdAt': result['createdAt'],
         'documentType': result['documentType'], 'status': result['status'],
-        'retry': result.get('retry'), 'files': ['result.json', 'validation.json', 'result.html']
+        'retry': result.get('retry'), 'files': ['result.json', 'validation.json', 'result.html'] + image_files
     }, ensure_ascii=False, indent=2), encoding='utf-8')
     return str(out)
 
@@ -145,6 +157,19 @@ def run_validate_all_job(job_id, result):
     except Exception as exc: JOBS[job_id].update(status='error',error=str(exc))
     finally: LOCK.release()
 
+def run_image_retry_job(job_id, result, section_id):
+    try:
+        row=next(r for r in result.get('results',[]) if r.get('sectionId')==section_id)
+        source={'item':result.get('research',{}).get('sources',[])}
+        outs=[]
+        for flow_type in ('USER_FLOW','SERVICE_ARCHITECTURE'):
+            outs.append(gpt.generate_image_spec(item=source,architecture={'design':{},'retryInstruction':'이미지 디자인만 재생성'},flow_type=flow_type))
+        row['images']=[flow_image(o) for o in outs]; row['functionOutput']=outs[0]; row['imageRetry']={'flows':['USER_FLOW','SERVICE_ARCHITECTURE'],'relatedSectionsSkipped':True}
+        result['message']='이미지 명세와 이미지 결과만 재생성했습니다. 연관 사업계획서 항목은 실행하지 않았습니다.'; result['runId']=str(uuid.uuid4()); result['createdAt']=datetime.now(timezone.utc).isoformat()
+        JOBS[job_id].update(status='done',result=result,outputDirectory=save_result(result),message=result['message'],completedCalls=2)
+    except Exception as exc: JOBS[job_id].update(status='error',error=str(exc))
+    finally: LOCK.release()
+
 
 class Handler(BaseHTTPRequestHandler):
     def respond(self, status, payload, content_type='application/json; charset=utf-8'):
@@ -177,6 +202,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed=urlparse(self.path)
+        if parsed.path == '/favicon.ico':
+            return self.respond(204, b'', 'image/x-icon')
         if parsed.path.startswith('/api/jobs/'):
             job=JOBS.get(parsed.path.rsplit('/',1)[-1])
             return self.respond(200, public_job(job) if job else {'status':'error','error':'Unknown run'})
@@ -196,6 +223,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(200, {'apiKeyConfigured':configured,'apiReachable':reachable,'apiStatus':detail,'model':'함수별 GPT-5.6 Sol / Terra / Luna','models':{fid:model_config(fid) for fid in CONTRACT['functions']},'validationAgent':'검증 1','tableGenerationEnabled':False})
         if self.path in ['/', '/test']:
             return self.respond(200, (BASE/'strategy_writing_agent.html').read_bytes(), 'text/html; charset=utf-8')
+        if parsed.path in ['/strategy_writing_agent.css', '/strategy_writing_agent.js']:
+            asset = BASE / parsed.path.lstrip('/')
+            if asset.exists():
+                content_type = 'text/css; charset=utf-8' if asset.suffix == '.css' else 'application/javascript; charset=utf-8'
+                return self.respond(200, asset.read_bytes(), content_type)
+            return self.respond(404, {'error':'asset not found'})
         if self.path == '/api/examples':
             files = {'general':'example_general_part2.json','pre_startup':'example_pre_startup.json','early_startup':'example_early_startup.json'}
             examples = {k: json.loads((BASE/'res/from_back'/name).read_text(encoding='utf-8')) for k,name in files.items()}
@@ -225,7 +258,7 @@ class Handler(BaseHTTPRequestHandler):
         # Serve the UI and API on one loopback origin; no wildcard CORS or file origin writes.
         if self.headers.get('Origin') not in {None, 'null', f'http://127.0.0.1:{self.server.server_port}', f'http://localhost:{self.server.server_port}'}:
             return self.respond(403, {'error':'Open the local test page.'})
-        if self.path not in ['/api/run','/api/retry','/api/retry-latest','/api/validate-latest','/api/validate-all-latest']:
+        if self.path not in ['/api/run','/api/retry','/api/retry-latest','/api/validate-latest','/api/validate-all-latest','/api/image-retry-latest']:
             return self.respond(404, {'error':'not found'})
         acquired=False
         try:
@@ -244,6 +277,11 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError('문서 유형과 입력 JSON을 확인하세요.')
                 JOBS[job_id] = {'status':'running','message':'함수 실행 준비 중','completedCalls':0,'_input':body['input'],'executionScope':body.get('executionScope','full')}
                 threading.Thread(target=run_job, args=(job_id,body), daemon=True).start()
+            elif self.path == '/api/image-retry-latest':
+                kind=body.get('documentType'); section_id=body.get('sectionId'); runs=BASE/'res/to_back'/'runs'; files=sorted(runs.glob(f'*_{kind}_*/result.json'),key=lambda p:p.stat().st_mtime,reverse=True)
+                if not files or kind not in KINDS or section_id not in {'2.3.6','3.3.6'}: raise ValueError('이미지 사업계획서 항목과 최신 결과가 필요합니다.')
+                saved=json.loads(files[0].read_text(encoding='utf-8')); JOBS[job_id]={'status':'running','message':'이미지만 재생성 중','completedCalls':0}
+                threading.Thread(target=run_image_retry_job,args=(job_id,saved,section_id),daemon=True).start()
             elif self.path == '/api/validate-all-latest':
                 kind=body.get('documentType'); runs=BASE/'res/to_back'/'runs'; files=sorted(runs.glob(f'*_{kind}_*/result.json'),key=lambda p:p.stat().st_mtime,reverse=True)
                 if not files or kind not in KINDS: raise ValueError('최신 실행 결과와 사업계획서 유형이 필요합니다.')
