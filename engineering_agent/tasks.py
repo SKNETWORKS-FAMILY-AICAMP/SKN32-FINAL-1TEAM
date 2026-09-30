@@ -121,6 +121,17 @@ def _check_content(category: str, content: dict, plan_text: str) -> list[str]:
         if _is_blank(value):
             failures.append(f"{label} 누락")
 
+    # 아래는 선택 항목이라 비어도 누락이 아니다. 숫자 대조만 한다.
+    # 핵심 수치 카드(원페이지)와 웹개발 · AI API 지면의 기능 설명.
+    if category == "원페이지":
+        extracted += [(f"핵심 수치({m.get('label', '')})", str(m.get("value", "")))
+                      for m in content.get("key_metrics") or [] if isinstance(m, dict)]
+    else:
+        details = content.get("feature_details") or []
+        extracted += [(f"기능 설명({name})", details[i])
+                      for i, name in enumerate(content.get("features") or [])
+                      if i < len(details) and not _is_blank(details[i])]
+
     for label, value in extracted:
         if _is_blank(value):
             continue
@@ -158,12 +169,11 @@ def run_tb2(inp: TB2In, tools: Tools) -> TB2Out:
     content["item_name"] = inp.item_spec.item_name
     content["target_users"] = inp.item_spec.target_customer
     content["features"] = inp.plan_doc.feature_list
-    if inp.category == "원페이지":
-        # LLM이 준 설명을 기능 목록 순서에 맞춰 문자열로 편다. 이름이 목록과 다른 항목은
-        # 버린다 — 검증-2가 기능명으로 설명을 찾으므로 어긋난 이름은 없는 설명과 같다.
-        by_name = {str(d.get("name", "")).strip(): str(d.get("detail", "")).strip()
-                   for d in content.get("feature_details") or []}
-        content["feature_details"] = [by_name.get(f, "") for f in inp.plan_doc.feature_list]
+    # LLM이 준 설명을 기능 목록 순서에 맞춰 문자열로 편다. 이름이 목록과 다른 항목은
+    # 버린다 — 검증-2가 기능명으로 설명을 찾으므로 어긋난 이름은 없는 설명과 같다.
+    by_name = {str(d.get("name", "")).strip(): str(d.get("detail", "")).strip()
+               for d in content.get("feature_details") or []}
+    content["feature_details"] = [by_name.get(f, "") for f in inp.plan_doc.feature_list]
 
     failures = _check_content(inp.category, content, plan_text)
     # 검사에 걸려도 파일은 만든다. 기획서 5-4가 원페이지 6항목에 부분 점수를 둔 이유가

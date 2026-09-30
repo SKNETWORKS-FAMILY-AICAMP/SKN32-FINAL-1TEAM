@@ -17,9 +17,9 @@ BRAND_COLORS = {
 
 # 카테고리별 강조색 — 배지·플로우 박스 테두리 등 카테고리를 한눈에 구분하는 용도.
 CATEGORY_ACCENT = {
-    "원페이지": "#2563EB",
+    "원페이지": "#1D4ED8",
     "웹개발": "#7C3AED",
-    "AI_API": "#0EA5A4",
+    "AI_API": "#0F766E",
 }
 
 CATEGORY_LABEL = {

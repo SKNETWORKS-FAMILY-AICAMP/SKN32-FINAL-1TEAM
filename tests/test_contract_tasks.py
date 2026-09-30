@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -27,6 +28,11 @@ def setUpModule():
 def tearDownModule():
     if _PATCHER is not None:
         _PATCHER.stop()
+
+
+def _json(**fields) -> str:
+    """모델이 돌려주는 JSON 응답 문자열(인포그래픽 추출)."""
+    return json.dumps(fields, ensure_ascii=False)
 
 
 class _Tools:
@@ -134,7 +140,7 @@ class ContractTaskTests(TestCase):
         inp = TB2In(plan_doc=_plan_doc(list(sentences), list(feature_list)),
                     item_spec=_item_spec(category=category), category=category,
                     instruction="만들어라")
-        tools = _Tools(lambda schema: schema(**extracted))
+        tools = _Tools(lambda _: _json(**extracted))
         directory = TemporaryDirectory(dir=self._OUTPUT)
         with patch.object(infographic_render, "_OUTPUT_DIR", Path(directory.name)):
             out = run_tb2(inp, tools)
@@ -199,7 +205,7 @@ class ContractTaskTests(TestCase):
                         item_spec=_item_spec(category="웹개발"),
                         category="웹개발", instruction="만들어라")
             with patch.object(infographic_render, "_OUTPUT_DIR", Path(directory)):
-                tb2 = run_tb2(inp, _Tools(lambda schema: schema(
+                tb2 = run_tb2(inp, _Tools(lambda _: _json(
                     item_name="동네 주문", features=["주문 조회"],
                     flow_steps=["탐색", "주문"])))
 
@@ -237,7 +243,7 @@ class ContractTaskTests(TestCase):
             inp = TB2In(plan_doc=plan, item_spec=_item_spec(), category="원페이지",
                         instruction="만들어라")
             with patch.object(infographic_render, "_OUTPUT_DIR", Path(directory)):
-                tb2 = run_tb2(inp, _Tools(lambda schema: schema(
+                tb2 = run_tb2(inp, _Tools(lambda _: _json(
                     item_name="동네 주문", features=["주문 조회"], target_users="동네 매장",
                     problem="주문 대기가 길다", solution="빠른 주문으로 줄인다",
                     revenue_unit_price="월 10000원", timeline_baseline="2026-12-01",

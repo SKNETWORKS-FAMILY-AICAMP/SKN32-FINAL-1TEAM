@@ -6,12 +6,7 @@ verification_agent/feature_match.py도 같이 바꿔야 한다."""
 from __future__ import annotations
 
 from engineering_agent.infographic.style import BRAND_COLORS
-from engineering_agent.infographic.layout import (
-    W_ONEPAGE_VALUE,
-    W_FEATURE_LIST,
-    W_FEATURE_DETAIL,
-    fit,
-)
+from engineering_agent.infographic.layout import W_FEATURE_LIST, fit, wrap
 
 
 def esc(text: object) -> str:
@@ -46,14 +41,27 @@ EMPTY_VALUE_TEXT = "정보 없음"
 DETAIL_TEXT = "#334155"
 
 
-def value_text(x: int, y: int, field: str, value: str, size: int = 16,
-                max_width: float = W_ONEPAGE_VALUE) -> str:
-    """값 노드. data-field로 어떤 항목의 값인지 표시한다 — 채점기가 '라벨 다음
-    노드'라는 순서 가정 없이 항목을 찾을 수 있어야 템플릿 수정에 안 깨진다."""
-    shown = str(value).strip() or EMPTY_VALUE_TEXT
-    shown = fit(shown, size, max_width)
-    return (f'<text x="{x}" y="{y}" font-size="{size}" data-field="{field}" '
-            f'data-role="value" fill="{BRAND_COLORS["text"]}">{esc(shown)}</text>')
+def card(x: float, y: float, w: float, h: float, fill: str = "#FFFFFF",
+         stroke: str = "#E2E8F0") -> str:
+    """흰 카드. 검증-2 명도 대비는 글자를 감싸는 가장 작은 rect의 fill을 배경으로 본다."""
+    return (f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="14" fill="{fill}" '
+            f'stroke="{stroke}" stroke-width="1"/>')
+
+
+def wrapped_text(x: float, y: float, text: str, *, size: int, max_width: float,
+                 max_lines: int, line_height: float, fill: str, attrs: str = "",
+                 anchor: str = "start") -> tuple[str, int]:
+    """여러 줄 값. text 하나에 줄마다 tspan을 둔다 — 검증-2가 노드 하나로 값을 읽고,
+    줄 끝 띄어쓰기를 남겨 이어 읽으면 원문과 같다. (SVG 조각, 줄 수)."""
+    shown = str(text).strip() or EMPTY_VALUE_TEXT
+    lines, _ = wrap(shown, size, max_width, max_lines)
+    spans = "".join(
+        f'<tspan x="{x}" dy="{0 if i == 0 else line_height}">'
+        f'{esc(line + (" " if i < len(lines) - 1 else ""))}</tspan>'
+        for i, line in enumerate(lines))
+    anchor_attr = f' text-anchor="{anchor}"' if anchor != "start" else ""
+    return (f'<text x="{x}" y="{y}" font-size="{size}"{anchor_attr} {attrs} fill="{fill}">'
+            f'{spans}</text>'.replace("  ", " "), len(lines))
 
 
 def feature_bullet_list(x: int, y: int, features: list[str]) -> tuple[str, int]:
@@ -73,31 +81,6 @@ def feature_bullet_list(x: int, y: int, features: list[str]) -> tuple[str, int]:
             f'fill="{BRAND_COLORS["text"]}">{esc(fit(feat, 16, W_FEATURE_LIST))}</text>'
         )
         y += 34
-    return "\n".join(parts), y
-
-
-def feature_detail_list(x: int, y: int, features: list[str],
-                         details: list[str]) -> tuple[str, int]:
-    """원페이지 핵심 기능: 기능명 한 줄 + 계획서에서 뽑은 설명 한 줄.
-
-    설명 노드의 data-field="feature_detail"과 data-feature="기능명"은 검증-2가 기능별
-    설명을 찾는 표식이다. 설명이 비면 "정보 없음"을 적고, 검증-2는 그 기능을 인정하지 않는다.
-    """
-    if not features:
-        return feature_bullet_list(x, y, features)
-    parts: list[str] = []
-    for i, feat in enumerate(features):
-        detail = (str(details[i]) if i < len(details) else "").strip() or EMPTY_VALUE_TEXT
-        parts.append(
-            f'<circle cx="{x + 6}" cy="{y - 6}" r="5" fill="{BRAND_COLORS["secondary"]}"/>'
-            f'<text x="{x + 22}" y="{y}" font-size="16" font-weight="700" data-field="feature" '
-            f'data-feature="{esc(feat)}" data-role="value" fill="{BRAND_COLORS["text"]}">'
-            f'{esc(fit(feat, 16, W_FEATURE_LIST))}</text>'
-            f'<text x="{x + 22}" y="{y + 24}" font-size="14" data-field="feature_detail" '
-            f'data-feature="{esc(feat)}" data-role="value" fill="{DETAIL_TEXT}">'
-            f'{esc(fit(detail, 14, W_FEATURE_DETAIL))}</text>'
-        )
-        y += 58
     return "\n".join(parts), y
 
 

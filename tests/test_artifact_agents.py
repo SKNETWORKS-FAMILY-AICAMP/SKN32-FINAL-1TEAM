@@ -1,3 +1,4 @@
+import json
 import sys
 import types
 from pathlib import Path
@@ -53,6 +54,11 @@ def _stub_sbrain_errors():
         "sbrain.orchestrator": orchestrator,
         "sbrain.orchestrator.errors": errors,
     })
+
+
+def _json(**fields) -> str:
+    """모델이 돌려주는 JSON 응답 문자열(인포그래픽 추출)."""
+    return json.dumps(fields, ensure_ascii=False)
 
 
 class _Tools:
@@ -138,6 +144,18 @@ class ArtifactAgentTests(TestCase):
             "변수로 받아 연결": (button, "const b = document.getElementById('order');"
                                        " b.addEventListener('click', () => {})", True),
             "인라인 onclick": ('<button onclick="run()">주문 조회</button>', "", True),
+            # getElementById를 감싸기만 한 도우미 함수는 직접 연결과 같다.
+            "화살표 도우미 $": (button, "const $ = id => document.getElementById(id);"
+                                     " $('order').addEventListener('click', () => {})", True),
+            "function 도우미를 변수로": (
+                button, "function byId(id) { return document.getElementById(id); }"
+                        " const b = byId('order'); b.onclick = () => {};", True),
+            "도우미가 다른 버튼에 붙음": (
+                button + other, "const $ = id => document.getElementById(id);"
+                                " $('help').addEventListener('click', () => {})", False),
+            # 인자를 그대로 넘기지 않는 함수는 도우미로 보지 않는다.
+            "도우미 아닌 함수": (button, "const $ = id => document.getElementById('help');"
+                                        " $('order').addEventListener('click', () => {})", False),
         }
         for label, (body, script, expected) in cases.items():
             with self.subTest(label):
@@ -156,6 +174,16 @@ class ArtifactAgentTests(TestCase):
         self.assertFalse(items[7]["passed"])             # #result 는 문서에 없음
         self.assertIn("result", items[7]["evidence"])
         self.assertFalse(items[8]["passed"])             # lorem ipsum
+
+        # 도우미 함수로 찾는 id도 끊어진 참조 검사 대상이다.
+        helper = _page('<button id="a">주문</button>'
+                       "<script>const $ = id => document.getElementById(id);"
+                       " $('a').addEventListener('click', () => { $('gone').textContent = 'ok'; });"
+                       "</script>")
+        items = {i["id"]: i for i in check_html(helper)}
+        self.assertTrue(items[1]["passed"])
+        self.assertFalse(items[7]["passed"])
+        self.assertIn("gone", items[7]["evidence"])
 
     def test_html_width_over_1440_fails(self):
         wide = check_html(_page("<p>x</p>", "body{color:#000;background-color:#fff}"
@@ -303,11 +331,24 @@ class ArtifactAgentTests(TestCase):
             self.assertEqual(result["implementedFeatures"], [])
             self.assertEqual(tools.kwargs["purpose"], "T-B1 HTML 생성")
 
-    def test_infographic_extraction_uses_schema(self):
-        tools = _Tools(lambda schema: schema(item_name="테스트", features=["조회"]))
-        result = infographic.generate_infographic_content("웹개발", "본문", tools)
-        self.assertEqual(result["features"], ["조회"])
-        self.assertEqual(tools.kwargs["schema"].__name__, "InfographicContent")
+    def test_infographic_extraction_reads_wrapped_json(self):
+        """실제 tools는 schema=를 받으면 응답 전체를 순수 JSON으로 검사한다. 모델이
+        코드블록이나 설명을 붙여도 산출물이 나오도록 추출은 parse=로 직접 읽는다."""
+        body = _json(item_name="테스트", features=["조회"])
+        for label, reply in (("순수 JSON", body),
+                             ("코드블록", f"```json\n{body}\n```"),
+                             ("앞뒤 설명", f"추출 결과입니다.\n{body}\n이상입니다.")):
+            with self.subTest(label):
+                tools = _Tools(reply)
+                result = infographic.generate_infographic_content("웹개발", "본문", tools)
+                self.assertEqual(result["features"], ["조회"])
+                self.assertIsNone(tools.kwargs["schema"])
+        # 읽을 수 없는 응답은 tools가 재시도하도록 FormatError를 올린다.
+        for label, reply in (("JSON 없음", "죄송합니다"), ("잘린 JSON", '{"item_name": "t"'),
+                             ("필수 값 없음", '{"features": ["조회"]}')):
+            with self.subTest(label), _stub_sbrain_errors():
+                with self.assertRaises(_FakeFormatError):
+                    infographic.generate_infographic_content("웹개발", "본문", _Tools(reply))
 
     def test_unusable_llm_response_raises_instead_of_reporting_failure(self):
         """완전실패_예외처리.md R2 — 빈 응답·코드블록 0개는 품질 실패가 아니라
@@ -395,6 +436,18 @@ class ArtifactAgentTests(TestCase):
         self.assertEqual(match_features(["결제"], html, "html")["score"], 0.0)
         many = [f"기능{i}" for i in range(4)] + ["주문 조회", "주문 등록"]
         self.assertEqual(match_features(many, html, "html")["score"], 5.0)
+
+    def test_contrast_skips_transparent_background(self):
+        """투명 배경 짝은 대비를 계산할 수 없어 판정 대상에서 빠진다(감점하지 않는다)."""
+        def contrast(css):
+            return check_contrast(parse_page(f"<html><head><style>{css}</style></head></html>"))
+        mixed = contrast("body{color:#0f172a;background-color:#fff}"
+                         ".tag{color:#fff;background-color:transparent}"
+                         ".chip{color:#fff;background-color:rgba(0,0,0,0)}")
+        self.assertTrue(mixed["passed"], mixed["evidence"])
+        self.assertIn("1쌍", mixed["evidence"])
+        # 투명 짝만 있으면 판정 대상 0개 → 미충족
+        self.assertFalse(contrast(".tag{color:#fff;background-color:transparent}")["passed"])
 
     def test_contrast_reads_background_shorthand(self):
         """background 단축 속성만 쓴 산출물이 '판정 대상 0개'로 미통과가 되지 않는다."""

@@ -57,7 +57,8 @@ def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str
    이 주석에는 아래 기능 목록 중 네가 실제로 구현에 반영한 것만, 표현 그대로 적어라:
    `<!-- IMPLEMENTED_FEATURES: 기능명1 | 기능명2 | ... -->`
 8. 글자색과 배경색은 **같은 셀렉터 블록 안에** `color`와 `background-color` 두 속성으로
-   나란히 선언하라(`background` 단축 속성이나 CSS 변수로 흘리지 마라). 그 짝의 명도 대비는
+   나란히 선언하라(`background` 단축 속성이나 CSS 변수로 흘리지 마라). 배경색은 `transparent`가 아닌
+   실제 색으로 적어라. 그 짝의 명도 대비는
    4.5:1 이상이어야 한다. 최소한 `body`와 버튼·카드 등 글자가 놓이는 주요 셀렉터에 적용하라.
    예: `body {{ color:#0F172A; background-color:#FFFFFF; }}`
 9. 각 기능을 실행하는 버튼·입력·폼에는 해당 기능명을 `data-feature` 속성으로 붙이고

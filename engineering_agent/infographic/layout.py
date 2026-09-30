@@ -9,12 +9,28 @@ PAGE_WIDTH = 900
 # 각 자리의 글자가 쓸 수 있는 최대 폭(px). 본문 builder가 실제로 쓰는 좌표에서 나온 값이라
 # 레이아웃을 바꾸면 여기도 같이 바꿔야 한다 — overflow_fields()가 이 값으로 판정한다.
 W_TITLE = 660          # 머리말 아이템명: x=40, 배지가 x=716에서 시작
-W_ONEPAGE_VALUE = 820  # 원페이지 값: x=40, 우여백 40
 W_FEATURE_LIST = 800   # 불릿 리스트: x=62, 우여백 40
-W_FEATURE_DETAIL = 800  # 원페이지 기능 설명: 기능명 아랫줄, 같은 폭
-W_WEBDEV_FEATURE = 330  # 2단 그리드 한 칸: col_w 400 - 아이콘 영역
-W_WEBDEV_FLOW = 170    # 플로우 박스 190 - 좌우 여백
-W_AI_PIPELINE = 200    # 파이프라인 박스 220 - 좌우 여백
+
+# 원페이지 카드 배치(bodies._build_onepage_body). 값은 카드 안에서 여러 줄로 감긴다.
+ONEPAGE_GAP = 20
+ONEPAGE_HALF_CARD = (PAGE_WIDTH - 80 - ONEPAGE_GAP) // 2   # 2단 카드 한 칸 폭 400
+ONEPAGE_CARD_PAD = 22
+W_ONEPAGE_TARGET = 600                                     # 머리말 목표 고객 한 줄
+W_ONEPAGE_VALUE = ONEPAGE_HALF_CARD - 2 * ONEPAGE_CARD_PAD  # 카드 속 값 356
+W_FEATURE_DETAIL = W_ONEPAGE_VALUE                         # 기능 카드 설명
+W_ONEPAGE_FEATURE = ONEPAGE_HALF_CARD - 62 - ONEPAGE_CARD_PAD  # 기능 카드 이름(번호 배지 옆) 316
+W_METRIC_LABEL = 230                                       # 핵심 수치 카드 설명
+ONEPAGE_VALUE_LINES = 3    # 문제 · 해결 카드
+ONEPAGE_FOOT_LINES = 2     # 수익 모델 · 추진 일정 카드
+ONEPAGE_DETAIL_LINES = 2   # 기능 설명
+# 웹개발 흐름 · AI API 파이프라인 카드(bodies._build_webdev_body · _build_ai_api_body).
+FLOW_BOX = 140          # 흐름 단계 상자 폭. 한 줄에 최대 5개
+FLOW_PER_ROW = 5
+W_WEBDEV_FLOW = FLOW_BOX - 20
+FLOW_LINES = 2
+PIPE_BOX = 240          # 입력 · 처리 · 출력 상자 폭
+W_AI_PIPELINE = PIPE_BOX - 2 * ONEPAGE_CARD_PAD
+PIPE_LINES = 3
 
 
 def estimate_text_width(text: str, font_size: float) -> float:
@@ -43,28 +59,76 @@ def fit(text: str, font_size: float, max_width: float) -> str:
     return kept + "…"
 
 
-def _slots(category: str, data: dict) -> list[tuple[str, str, float, float]]:
-    """(필드명, 글자, 글자크기, 허용폭) 목록. 본문 builder가 쓰는 자리와 일치한다."""
+def _split_long(word: str, font_size: float, max_width: float) -> list[str]:
+    """한 줄 폭보다 긴 낱말을 글자 단위로 쪼갠다."""
+    pieces, cur = [], ""
+    for ch in word:
+        if cur and estimate_text_width(cur + ch, font_size) > max_width:
+            pieces.append(cur)
+            cur = ""
+        cur += ch
+    return pieces + [cur] if cur else pieces
+
+
+def wrap(text: str, font_size: float, max_width: float, max_lines: int) -> tuple[list[str], bool]:
+    """띄어쓰기 단위로 줄을 감는다. (줄 목록, 잘렸는지).
+
+    줄 수가 넘치면 마지막 줄을 말줄임표로 자른다. 줄 끝 띄어쓰기는 앞 줄에 남겨 두어
+    줄을 이어 붙이면 원문과 같아지게 한다 — 검증-2는 text 노드의 글자를 이어 읽는다.
+    """
+    text = " ".join(str(text).split())
+    lines: list[str] = []
+    cur = ""
+    for word in text.split(" "):
+        cand = f"{cur} {word}" if cur else word
+        if estimate_text_width(cand, font_size) <= max_width:
+            cur = cand
+            continue
+        if cur:
+            lines.append(cur)
+        parts = _split_long(word, font_size, max_width)
+        lines += parts[:-1]
+        cur = parts[-1] if parts else ""
+    if cur:
+        lines.append(cur)
+    if len(lines) <= max_lines:
+        return lines, False
+    kept = lines[:max_lines]
+    kept[-1] = fit(" ".join(lines[max_lines - 1:]), font_size, max_width)
+    return kept, True
+
+
+# (필드명, 글자, 글자크기, 허용폭, 최대 줄 수)
+Slot = tuple[str, str, float, float, int]
+
+
+def _slots(category: str, data: dict) -> list[Slot]:
+    """본문 builder가 쓰는 자리와 일치한다."""
     features = [str(f) for f in (data.get("features") or [])]
-    slots: list[tuple[str, str, float, float]] = [
-        ("item_name", str(data.get("item_name", "")), 30, W_TITLE),
-    ]
+    slots: list[Slot] = [("item_name", str(data.get("item_name", "")), 30, W_TITLE, 1)]
     if category == "원페이지":
-        for field in ("target_users", "problem", "solution",
-                      "revenue_unit_price", "timeline_baseline"):
-            slots.append((field, str(data.get(field, "")), 16, W_ONEPAGE_VALUE))
-        slots += [("feature", f, 16, W_FEATURE_LIST) for f in features]
-        slots += [("feature_detail", str(d), 14, W_FEATURE_DETAIL)
+        slots.append(("target_users", str(data.get("target_users", "")), 15, W_ONEPAGE_TARGET, 1))
+        for field in ("problem", "solution"):
+            slots.append((field, str(data.get(field, "")), 15, W_ONEPAGE_VALUE, ONEPAGE_VALUE_LINES))
+        for field in ("revenue_unit_price", "timeline_baseline"):
+            slots.append((field, str(data.get(field, "")), 15, W_ONEPAGE_VALUE, ONEPAGE_FOOT_LINES))
+        slots += [("feature", f, 16, W_ONEPAGE_FEATURE, 1) for f in features]
+        slots += [("feature_detail", str(d), 14, W_FEATURE_DETAIL, ONEPAGE_DETAIL_LINES)
                   for d in (data.get("feature_details") or [])]
+        slots += [("key_metric", str(m.get("label", "")), 13, W_METRIC_LABEL, 1)
+                  for m in (data.get("key_metrics") or []) if isinstance(m, dict)]
     elif category == "웹개발":
-        slots += [("feature", f, 16, W_WEBDEV_FEATURE) for f in features]
-        slots += [("flow_steps", str(s), 15, W_WEBDEV_FLOW)
+        slots += [("flow_steps", str(s), 15, W_WEBDEV_FLOW, FLOW_LINES)
                   for s in (data.get("flow_steps") or [])]
     else:  # AI_API
         pipeline = data.get("pipeline") or {}
-        slots += [(f"pipeline.{key}", str(pipeline.get(key, "")), 15, W_AI_PIPELINE)
+        slots += [(f"pipeline.{key}", str(pipeline.get(key, "")), 15, W_AI_PIPELINE, PIPE_LINES)
                   for key in ("input", "process", "output")]
-        slots += [("feature", f, 16, W_FEATURE_LIST) for f in features]
+    if category != "원페이지":
+        # 기능 카드는 세 카테고리가 같다(bodies._feature_cards).
+        slots += [("feature", f, 16, W_ONEPAGE_FEATURE, 1) for f in features]
+        slots += [("feature_detail", str(d), 14, W_FEATURE_DETAIL, ONEPAGE_DETAIL_LINES)
+                  for d in (data.get("feature_details") or [])]
     return slots
 
 
@@ -78,7 +142,7 @@ def overflow_fields(category: str, data: dict) -> list[str]:
     if category not in CATEGORY_TEMPLATE_FILE:
         raise ValueError(f"알 수 없는 카테고리: {category!r}")
     seen: list[str] = []
-    for field, text, size, max_width in _slots(category, data):
-        if text.strip() and estimate_text_width(text, size) > max_width and field not in seen:
+    for field, text, size, max_width, max_lines in _slots(category, data):
+        if text.strip() and wrap(text, size, max_width, max_lines)[1] and field not in seen:
             seen.append(field)
     return seen

@@ -1,11 +1,11 @@
 <svg width="900" height="{{svg_height}}" viewBox="0 0 900 {{svg_height}}" xmlns="http://www.w3.org/2000/svg" font-family="'Malgun Gothic','Apple SD Gothic Neo',sans-serif">
 <title>{{alt_text}}</title>
 <desc>{{desc_text}}</desc>
-<rect x="0" y="0" width="900" height="{{svg_height}}" fill="{{color_bg}}"/>
-<rect x="0" y="0" width="900" height="110" fill="{{color_primary}}"/>
+<rect x="0" y="0" width="900" height="{{svg_height}}" fill="#F1F5F9"/>
+<rect x="0" y="0" width="900" height="154" fill="{{color_primary}}"/>
 <text x="40" y="38" font-size="13" font-weight="600" fill="#FFFFFF" letter-spacing="1">S-BRAIN 프로토타입</text>
 <text x="40" y="84" font-size="30" font-weight="700" fill="#FFFFFF" data-field="item_name" data-role="title">{{item_name}}</text>
-<rect x="716" y="33" width="144" height="44" rx="22" fill="{{category_color}}"/>
-<text x="788" y="61" font-size="16" font-weight="700" fill="#FFFFFF" text-anchor="middle">{{category_label}}</text>
+<rect x="716" y="33" width="144" height="44" rx="22" fill="#FFFFFF"/>
+<text x="788" y="61" font-size="16" font-weight="700" fill="{{category_color}}" text-anchor="middle">{{category_label}}</text>
 {{body_block}}
 </svg>
