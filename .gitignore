@@ -1,6 +1,4 @@
-<<<<<<< HEAD
-<<<<<<< HEAD
-# 개인 업무 정리 문서
+﻿# 개인 업무 정리 문서
 /박상희.md
 
 # 발표·검토를 위해 내려받은 원본 자료
@@ -28,7 +26,6 @@ __pycache__/
 **/generate_reports/
 
 /tools/
-=======
 # Python
 __pycache__/
 *.pyc
@@ -48,8 +45,6 @@ dist-ssr/
 .idea/
 .DS_Store
 Thumbs.db
->>>>>>> deb5c81cc62f58d52d8a384f2b8aac6e881d7fef
-=======
 # --- 비밀값 (절대 커밋 금지) ---
 .env
 *.env.local
@@ -105,4 +100,22 @@ login_test.html
 
 # --- rhwp CLI 실행 파일 (28MB, 각자 릴리즈에서 받음 — back/scripts/README.md) ---
 back/rhwp.exe
->>>>>>> 1054eaaaad9eb6ca6f73dd9ab5b529519b535a6f
+
+# --- 전략 작성 Agent 로컬 비밀값·실행 산출물 ---
+/agent_strategy/.env
+/agent_strategy/.env.*
+!/agent_strategy/.env.example
+/agent_strategy/res/to_back/runs/
+/agent_strategy/res/to_back/tmp/
+/agent_strategy/testing/*.log
+/agent_strategy/testing/__pycache__/
+/agent_strategy/runtime/__pycache__/
+/agent_strategy/agent_strategy.log
+# 로컬 실행 결과·캐시
+**/result.json
+**/result.html
+**/manifest.json
+# --- 생성·백업 자료 ---
+/agent/_strategy/
+**/output/
+/agent_strategy/res/from_back/before/
