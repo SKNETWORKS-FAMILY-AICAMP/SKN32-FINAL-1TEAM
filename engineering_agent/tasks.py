@@ -5,6 +5,7 @@ import re
 from typing import TYPE_CHECKING
 
 from engineering_agent.builder_html import build_prototype_html
+from engineering_agent.infographic.compose_guide import RETRY_HINT
 from engineering_agent.infographic import (
     generate_infographic_content,
     overflow_fields,
@@ -77,6 +78,34 @@ def _unbacked_numbers(value: str, plan_text: str) -> list[str]:
     return [n for n in _numbers(value) if n not in plan_numbers]
 
 
+def _block_texts(content: dict) -> list[tuple[str, str]]:
+    """블록 구성(composer)에 들어가는 구절들. 지면에 그대로 찍히므로 계획서에 없는 숫자를 본다."""
+    out: list[tuple[str, str]] = []
+    for key in ("outcome", "tagline"):
+        if str(content.get(key, "")).strip():
+            out.append((key, str(content[key])))
+    for key in ("before_after", "market_levels", "effects"):
+        for row in content.get(key) or []:
+            if isinstance(row, dict):
+                out += [(key, str(v)) for v in row.values() if str(v).strip()]
+    comparison = content.get("comparison") or {}
+    if isinstance(comparison, dict):
+        out += [("comparison", str(comparison.get("others", "")))] if comparison.get("others") else []
+        for row in comparison.get("rows") or []:
+            if isinstance(row, dict):
+                out += [("comparison", str(v)) for v in row.values() if str(v).strip()]
+    flow = content.get("revenue_flow") or {}
+    if isinstance(flow, dict):
+        out += [("revenue_flow", str(v)) for v in flow.values() if str(v).strip()]
+    for m in content.get("key_metrics") or []:
+        if isinstance(m, dict) and str(m.get("before", "")).strip():
+            out.append(("핵심 수치 이전 값", str(m["before"])))
+    for b in content.get("layout") or []:
+        if isinstance(b, dict) and str(b.get("title", "")).strip():
+            out.append(("블록 제목", str(b["title"])))
+    return out
+
+
 def _check_content(category: str, content: dict, plan_text: str) -> list[str]:
     """T-B2 자체 검사. 기능정의서 T-B2 Failure ①(이미지 미생성 · altText 공백 ·
     도식 수치 불일치)에 대응하는 실패 목록을 만든다.
@@ -121,10 +150,18 @@ def _check_content(category: str, content: dict, plan_text: str) -> list[str]:
         if _is_blank(value):
             failures.append(f"{label} 누락")
 
+    # 블록 구성 재료 — 선택 항목이라 비어도 누락이 아니다. 숫자 대조만 한다.
+    extracted += _block_texts(content)
+
     # 아래는 선택 항목이라 비어도 누락이 아니다. 숫자 대조만 한다.
     # 핵심 수치 카드(원페이지)와 웹개발 · AI API 지면의 기능 설명.
     if category == "원페이지":
         extracted += [(f"핵심 수치({m.get('label', '')})", str(m.get("value", "")))
+                      for m in content.get("key_metrics") or [] if isinstance(m, dict)]
+        extracted += [(f"해결 절차 {i + 1}단계", str(step))
+                      for i, step in enumerate(content.get("solution_steps") or [])]
+        # 수치 카드의 설명에 목표/실적 기간 등 숫자가 들어갈 수도 있다.
+        extracted += [("핵심 수치 설명", str(m.get("label", "")))
                       for m in content.get("key_metrics") or [] if isinstance(m, dict)]
     else:
         details = content.get("feature_details") or []
@@ -164,10 +201,12 @@ def run_tb2(inp: TB2In, tools: Tools) -> TB2Out:
     content = generate_infographic_content(
         inp.category, f"아이템명: {inp.item_spec.item_name}\n목표 고객: {inp.item_spec.target_customer}\n"
         f"기능 목록: {', '.join(inp.plan_doc.feature_list)}\n{plan_text}\n"
-        f"작업 지시: {_instruction(inp.instruction, inp.rework_input)}", tools,
+        f"작업 지시: {_instruction(inp.instruction, inp.rework_input)}"
+        + (f"\n{RETRY_HINT}" if inp.rework_input is not None else ""), tools,
     )
     content["item_name"] = inp.item_spec.item_name
     content["target_users"] = inp.item_spec.target_customer
+    content["item_summary"] = inp.item_spec.one_line_summary
     content["features"] = inp.plan_doc.feature_list
     # LLM이 준 설명을 기능 목록 순서에 맞춰 문자열로 편다. 이름이 목록과 다른 항목은
     # 버린다 — 검증-2가 기능명으로 설명을 찾으므로 어긋난 이름은 없는 설명과 같다.

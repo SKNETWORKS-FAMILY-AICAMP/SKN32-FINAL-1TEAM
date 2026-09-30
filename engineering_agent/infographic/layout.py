@@ -1,36 +1,106 @@
 """글자 폭 추정과 지면 폭 판정. 값이 잘리거나 넘치는지는 여기서 정한다."""
 from __future__ import annotations
 
+import re
+
 from engineering_agent.infographic.style import CATEGORY_TEMPLATE_FILE
+from engineering_agent.infographic.design_kit import TITLE_SIZE, TITLE_WIDTH  # noqa: F401 (showcase · composer가 여기서 가져간다)
 
 
 PAGE_WIDTH = 900
 
 # 각 자리의 글자가 쓸 수 있는 최대 폭(px). 본문 builder가 실제로 쓰는 좌표에서 나온 값이라
 # 레이아웃을 바꾸면 여기도 같이 바꿔야 한다 — overflow_fields()가 이 값으로 판정한다.
-W_TITLE = 660          # 머리말 아이템명: x=40, 배지가 x=716에서 시작
+W_TITLE = TITLE_WIDTH
 W_FEATURE_LIST = 800   # 불릿 리스트: x=62, 우여백 40
 
-# 원페이지 카드 배치(bodies._build_onepage_body). 값은 카드 안에서 여러 줄로 감긴다.
-ONEPAGE_GAP = 20
-ONEPAGE_HALF_CARD = (PAGE_WIDTH - 80 - ONEPAGE_GAP) // 2   # 2단 카드 한 칸 폭 400
-ONEPAGE_CARD_PAD = 22
-W_ONEPAGE_TARGET = 600                                     # 머리말 목표 고객 한 줄
-W_ONEPAGE_VALUE = ONEPAGE_HALF_CARD - 2 * ONEPAGE_CARD_PAD  # 카드 속 값 356
-W_FEATURE_DETAIL = W_ONEPAGE_VALUE                         # 기능 카드 설명
-W_ONEPAGE_FEATURE = ONEPAGE_HALF_CARD - 62 - ONEPAGE_CARD_PAD  # 기능 카드 이름(번호 배지 옆) 316
-W_METRIC_LABEL = 230                                       # 핵심 수치 카드 설명
-ONEPAGE_VALUE_LINES = 3    # 문제 · 해결 카드
-ONEPAGE_FOOT_LINES = 2     # 수익 모델 · 추진 일정 카드
-ONEPAGE_DETAIL_LINES = 2   # 기능 설명
-# 웹개발 흐름 · AI API 파이프라인 카드(bodies._build_webdev_body · _build_ai_api_body).
-FLOW_BOX = 140          # 흐름 단계 상자 폭. 한 줄에 최대 5개
+# 웹개발 사용자 흐름 · AI API 파이프라인(bodies). 기능 타일은 원페이지와 같다.
 FLOW_PER_ROW = 5
-W_WEBDEV_FLOW = FLOW_BOX - 20
+FLOW_GAP = 40
 FLOW_LINES = 2
-PIPE_BOX = 240          # 입력 · 처리 · 출력 상자 폭
-W_AI_PIPELINE = PIPE_BOX - 2 * ONEPAGE_CARD_PAD
+PIPE_GAP = 56
+PIPE_PANEL = (PAGE_WIDTH - 80 - 2 * PIPE_GAP) / 3   # 236
+W_AI_PIPELINE = PIPE_PANEL - 48
 PIPE_LINES = 3
+
+
+def flow_layout(n: int):
+    """흐름 단계 배치: 줄마다 (시작 번호, 개수, 왼쪽 x, 상자 폭, 간격). 폭은 첫 줄 기준으로 통일."""
+    per = min(max(n, 1), FLOW_PER_ROW)
+    width = (PAGE_WIDTH - 80 - (per - 1) * FLOW_GAP) / per
+    rows = []
+    for start in range(0, n, per):
+        chunk = min(per, n - start)
+        left = (PAGE_WIDTH - (chunk * width + (chunk - 1) * FLOW_GAP)) / 2
+        rows.append((start, chunk, left, width, FLOW_GAP))
+    return rows
+
+
+def flow_text_width(n: int) -> float:
+    return flow_layout(n)[0][3] - 20 if n else 0
+
+
+# 원페이지 지면(onepage.build_onepage_body). 머리말 → 핵심 수치 → 문제·해결 → 핵심 기능 → 수익·일정.
+OP_GAP = 16
+OP_PANEL = (PAGE_WIDTH - 80 - 56) // 2   # 문제 · 해결 패널 폭 382 (사이 화살표 56)
+OP_PAD = 24
+W_OP_TARGET = 520                       # 머리말 목표 고객 알약 안
+W_OP_VALUE = OP_PANEL - 2 * OP_PAD      # 문제 · 해결 값 334
+OP_VALUE_LINES = 3
+OP_FOOT = (PAGE_WIDTH - 80 - OP_GAP) // 2  # 수익 · 일정 패널 폭 402
+W_OP_FOOT = OP_FOOT - 2 * OP_PAD           # 354
+OP_FOOT_LINES = 2
+OP_DETAIL_SIZE = 13
+OP_DETAIL_LINES = 4
+W_OP_METRIC_LABEL = 150
+
+
+def feature_columns(n: int) -> int:
+    """기능 타일 열 수. 한 줄에 최대 4개, 마지막 줄이 하나만 남지 않게 고른다."""
+    if n <= 4:
+        return max(n, 1)
+    return 3 if n in (5, 6, 9) else 4
+
+
+def feature_tile_width(n: int) -> float:
+    cols = feature_columns(n)
+    return (PAGE_WIDTH - 80 - (cols - 1) * OP_GAP) / cols
+
+
+_DATE_RE = re.compile(
+    r"\d{4}\s*년(?:\s*\d{1,2}\s*월)?(?:\s*\d{1,2}\s*일)?(?:\s*[1-4]\s*분기)?"
+    # 기간(예: 2026년 11월~12월, 2026년 12월~2027년 3월)은 한 날짜로 묶는다.
+    r"(?:\s*[~\-–]\s*(?:\d{4}\s*년\s*)?\d{1,2}\s*월(?:\s*\d{1,2}\s*일)?)?"
+    r"|\d{4}[-./]\d{1,2}(?:[-./]\d{1,2})?")
+_EVENT_TRIM_RE = re.compile(r"^[\s,·에은는부터까지]+|(?:하고|하며|하여|이고|고|,|·|및|\s)+$")
+
+
+def parse_milestones(text: str) -> list[tuple[str, str]]:
+    """추진 일정 문구를 (날짜, 할 일) 목록으로 나눈다. 두 개 미만이면 빈 목록.
+
+    글자는 모두 원문에서 잘라 쓴다 — 없는 날짜나 낱말을 만들지 않는다.
+    """
+    text = " ".join(str(text).split())
+    # 괄호 속 날짜(예: '시범 운영(2027년 1월 15일 개시)')는 앞 단계의 설명이라 단계로 나누지 않는다.
+    inside = [False] * len(text)
+    depth = 0
+    for i, ch in enumerate(text):
+        depth += ch == "("
+        inside[i] = depth > 0
+        depth -= ch == ")" and depth > 0
+    matches = [m for m in _DATE_RE.finditer(text) if not inside[m.start()]]
+    if len(matches) < 2:
+        return []
+    out = []
+    for i, m in enumerate(matches):
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        event = _EVENT_TRIM_RE.sub("", text[m.end():end]).strip()
+        out.append((m.group(0).strip(), event))
+    return out if all(event for _, event in out) else []
+
+
+def milestone_width(n: int) -> float:
+    return W_OP_FOOT / max(n, 1) - 10
 
 
 def estimate_text_width(text: str, font_size: float) -> float:
@@ -41,6 +111,14 @@ def estimate_text_width(text: str, font_size: float) -> float:
     """
     wide = sum(1 for ch in text if ord(ch) > 0x2000)
     return wide * font_size + (len(text) - wide) * font_size * 0.55
+
+
+def fit_size(text: str, font_size: float, max_width: float, min_size: float = 16) -> float:
+    """큰 숫자처럼 자르면 안 되는 글자는 폭에 맞을 때까지 글자 크기를 줄인다."""
+    size = font_size
+    while size > min_size and estimate_text_width(text, size) > max_width:
+        size -= 1
+    return size
 
 
 def fit(text: str, font_size: float, max_width: float) -> str:
@@ -103,33 +181,9 @@ Slot = tuple[str, str, float, float, int]
 
 
 def _slots(category: str, data: dict) -> list[Slot]:
-    """본문 builder가 쓰는 자리와 일치한다."""
-    features = [str(f) for f in (data.get("features") or [])]
-    slots: list[Slot] = [("item_name", str(data.get("item_name", "")), 30, W_TITLE, 1)]
-    if category == "원페이지":
-        slots.append(("target_users", str(data.get("target_users", "")), 15, W_ONEPAGE_TARGET, 1))
-        for field in ("problem", "solution"):
-            slots.append((field, str(data.get(field, "")), 15, W_ONEPAGE_VALUE, ONEPAGE_VALUE_LINES))
-        for field in ("revenue_unit_price", "timeline_baseline"):
-            slots.append((field, str(data.get(field, "")), 15, W_ONEPAGE_VALUE, ONEPAGE_FOOT_LINES))
-        slots += [("feature", f, 16, W_ONEPAGE_FEATURE, 1) for f in features]
-        slots += [("feature_detail", str(d), 14, W_FEATURE_DETAIL, ONEPAGE_DETAIL_LINES)
-                  for d in (data.get("feature_details") or [])]
-        slots += [("key_metric", str(m.get("label", "")), 13, W_METRIC_LABEL, 1)
-                  for m in (data.get("key_metrics") or []) if isinstance(m, dict)]
-    elif category == "웹개발":
-        slots += [("flow_steps", str(s), 15, W_WEBDEV_FLOW, FLOW_LINES)
-                  for s in (data.get("flow_steps") or [])]
-    else:  # AI_API
-        pipeline = data.get("pipeline") or {}
-        slots += [(f"pipeline.{key}", str(pipeline.get(key, "")), 15, W_AI_PIPELINE, PIPE_LINES)
-                  for key in ("input", "process", "output")]
-    if category != "원페이지":
-        # 기능 카드는 세 카테고리가 같다(bodies._feature_cards).
-        slots += [("feature", f, 16, W_ONEPAGE_FEATURE, 1) for f in features]
-        slots += [("feature_detail", str(d), 14, W_FEATURE_DETAIL, ONEPAGE_DETAIL_LINES)
-                  for d in (data.get("feature_details") or [])]
-    return slots
+    """본문 builder가 쓰는 자리와 일치한다(showcase)."""
+    from engineering_agent.infographic.showcase import showcase_slots
+    return showcase_slots(category, data)
 
 
 def overflow_fields(category: str, data: dict) -> list[str]:
@@ -141,6 +195,10 @@ def overflow_fields(category: str, data: dict) -> list[str]:
     """
     if category not in CATEGORY_TEMPLATE_FILE:
         raise ValueError(f"알 수 없는 카테고리: {category!r}")
+    if (data.get("design_variant") or ("composed" if data.get("layout") else "showcase")) == "composed":
+        # 블록 구성은 모델이 고르므로 자리를 미리 셀 수 없다. 실제로 조립해 잘린 값을 찾는다.
+        from engineering_agent.infographic.composer import truncated_fields
+        return truncated_fields(category, data)
     seen: list[str] = []
     for field, text, size, max_width, max_lines in _slots(category, data):
         if text.strip() and wrap(text, size, max_width, max_lines)[1] and field not in seen:

@@ -102,6 +102,27 @@ class ArtifactAgentTests(TestCase):
         with patch.object(infographic_render, "_OUTPUT_DIR", Path(directory.name)):
             return infographic.render_infographic("원페이지", data)
 
+    def test_every_theme_keeps_onepage_readable(self):
+        """사업 분야마다 색 테마가 바뀌어도 명도 대비 등 원페이지 8항목이 모두 통과한다."""
+        from engineering_agent.infographic import themes
+        for name in themes.THEMES:
+            with self.subTest(name), patch.object(themes, "pick", return_value=name):
+                saved = self._render_onepage()
+                checked = compute_infographic_check(saved["file_path"], saved["source_text"], "열람")
+                self.assertEqual(checked["total"], 15, [(i["name"], i["evidence"]) for i in checked["items"]
+                                                        if not i["passed"]])
+                if name != themes.BASE:
+                    self.assertIn(themes.THEMES[name]["accent_deep"], saved["source_text"])
+                    self.assertNotIn(themes.THEMES[themes.BASE]["accent_deep"], saved["source_text"])
+
+    def test_theme_follows_business_words(self):
+        from engineering_agent.infographic import themes
+        self.assertEqual(themes.pick({"item_name": "반찬온", "item_summary": "동네 반찬가게"}), "orange")
+        self.assertEqual(themes.pick({"item_name": "점검콕", "features": ["설비 점검"]}), "steel")
+        self.assertEqual(themes.pick({"item_name": "민원요약AI"}), "violet")
+        # 맞는 낱말이 없으면 아이템명으로 정해 다시 만들어도 같은 색
+        self.assertEqual(themes.pick({"item_name": "무명"}), themes.pick({"item_name": "무명"}))
+
     def test_onepage_code_score_and_missing_fields(self):
         saved = self._render_onepage()
         checked = compute_infographic_check(

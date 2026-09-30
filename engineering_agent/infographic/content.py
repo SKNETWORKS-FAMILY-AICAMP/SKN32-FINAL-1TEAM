@@ -8,17 +8,19 @@ from pydantic import BaseModel, Field, ValidationError
 
 from engineering_agent.infographic.layout import (
     FLOW_LINES,
-    ONEPAGE_DETAIL_LINES,
-    ONEPAGE_FOOT_LINES,
-    ONEPAGE_VALUE_LINES,
+    OP_DETAIL_LINES,
+    OP_DETAIL_SIZE,
+    OP_FOOT_LINES,
+    OP_VALUE_LINES,
     PIPE_LINES,
     W_AI_PIPELINE,
-    W_FEATURE_DETAIL,
-    W_METRIC_LABEL,
-    W_ONEPAGE_TARGET,
-    W_ONEPAGE_VALUE,
-    W_WEBDEV_FLOW,
+    W_OP_FOOT,
+    W_OP_TARGET,
+    W_OP_VALUE,
+    feature_tile_width,
+    flow_text_width,
 )
+from engineering_agent.infographic.compose_guide import COMPOSE_GUIDE
 from engineering_agent.infographic.style import CATEGORY_TEMPLATE_FILE
 
 
@@ -30,13 +32,17 @@ _SCHEMA_HINTS: dict[str, str] = {
         '"problem": str, "solution": str, "revenue_unit_price": str, '
         '"timeline_baseline": str, '
         '"feature_details": [{"name": str, "detail": str}, ...], '
-        '"key_metrics": [{"value": str, "label": str}, ...]}'
+        '"key_metrics": [{"value": str, "label": str}, ...], "solution_steps": [str, ...]}'
     ),
     "웹개발": ('{"item_name": str, "features": [str, ...], "flow_steps": [str, ...], '
+             '"problem": str, "solution": str, "revenue_unit_price": str, "timeline_baseline": str, '
+             '"key_metrics": [{"value": str, "label": str}, ...], '
              '"feature_details": [{"name": str, "detail": str}, ...]}'),
     "AI_API": (
         '{"item_name": str, "features": [str, ...], '
         '"pipeline": {"input": str, "process": str, "output": str}, '
+        '"problem": str, "solution": str, "revenue_unit_price": str, "timeline_baseline": str, '
+        '"key_metrics": [{"value": str, "label": str}, ...], '
         '"feature_details": [{"name": str, "detail": str}, ...]}'
     ),
 }
@@ -49,16 +55,25 @@ def _max_chars(width: float, font_size: float) -> int:
 
 # 값 자리의 글자 수 한도. layout._slots()의 폭 · 글자 크기와 같은 값에서 나온다 — 한도를
 # 알려주지 않으면 모델이 문장을 통째로 옮겨 넣어 지면 폭을 넘기고 잘린다.
+_COMMON_LEN = ("problem · solution 각 40자 이내, revenue_unit_price 40자 이내, timeline_baseline 100자 이내"
+               "(계획서의 추진 단계를 빠짐없이 '날짜(기간) 할 일' 짝으로 쉼표로 이어 적어라)")
 _LENGTH_HINTS: dict[str, str] = {
-    "원페이지": (f"target_users {_max_chars(W_ONEPAGE_TARGET, 15)}자 이내, problem · solution 각 "
-               f"{_max_chars(W_ONEPAGE_VALUE, 15) * ONEPAGE_VALUE_LINES}자 이내, "
-               f"revenue_unit_price · timeline_baseline 각 "
-               f"{_max_chars(W_ONEPAGE_VALUE, 15) * ONEPAGE_FOOT_LINES}자 이내"),
+    "원페이지": (f"target_users {_max_chars(W_OP_TARGET, 15)}자 이내, problem · solution 각 "
+               f"{_max_chars(W_OP_VALUE, 15) * OP_VALUE_LINES}자 이내, "
+               f"revenue_unit_price {_max_chars(W_OP_FOOT, 15) * OP_FOOT_LINES}자 이내, "
+               "timeline_baseline 100자 이내. timeline_baseline에는 계획서의 추진 단계를 빠짐없이 모두 "
+               "'2026년 12월~2027년 3월 개발, 2027년 4월 1일 정식 출시, 2027년 5월~12월 확산'처럼 "
+               "'날짜(기간) 할 일' 짝을 쉼표로 이어 적어라. 할 일은 한 단계당 8자 안팎"),
     "웹개발": (f"flow_steps는 사용자가 화면에서 하는 행동 순서 3~5개, 각 "
-             f"{_max_chars(W_WEBDEV_FLOW, 15) * FLOW_LINES}자 이내 (예: '메뉴 고르기')"),
+             f"{_max_chars(flow_text_width(5), 15) * FLOW_LINES}자 이내 (예: '메뉴 고르기'). " + _COMMON_LEN),
     "AI_API": (f"pipeline의 input · process · output은 각각 "
-               f"{_max_chars(W_AI_PIPELINE, 15) * PIPE_LINES}자 이내"),
+               f"{_max_chars(W_AI_PIPELINE, 15) * PIPE_LINES}자 이내. " + _COMMON_LEN),
 }
+
+
+def _detail_chars(category: str) -> int:
+    """기능 설명 글자 수 한도. 한 줄 4칸 타일(가장 좁은 경우) 기준 — 세 카테고리 공용."""
+    return _max_chars(feature_tile_width(4) - 24, OP_DETAIL_SIZE) * OP_DETAIL_LINES
 
 
 class FeatureDetail(BaseModel):
@@ -69,6 +84,8 @@ class FeatureDetail(BaseModel):
 class KeyMetric(BaseModel):
     value: str
     label: str = ""
+    # 전후 막대(metrics · bars)용 이전 값. 계획서에 '18%에서 9%로'처럼 둘 다 있을 때만.
+    before: str = ""
 
 
 class InfographicContent(BaseModel):
@@ -88,6 +105,16 @@ class InfographicContent(BaseModel):
     # 원페이지 전용. 지면 위쪽 큰 숫자 카드. 계획서에 적힌 숫자만 — T-B2 자체 검사와
     # 검증-2 계획서 대조가 둘 다 계획서에 없는 숫자를 잡는다.
     key_metrics: list[KeyMetric] = Field(default_factory=list)
+    solution_steps: list[str] = Field(default_factory=list, max_length=4)
+    # ── 블록 구성(composer.py) ── 모델이 고른 지면 구성과 블록별 짧은 구절.
+    layout: list[dict] = Field(default_factory=list)
+    outcome: str = ""
+    before_after: list[dict] = Field(default_factory=list)
+    market_levels: list[dict] = Field(default_factory=list)
+    comparison: dict = Field(default_factory=dict)
+    revenue_flow: dict = Field(default_factory=dict)
+    effects: list[dict] = Field(default_factory=list)
+    tagline: str = ""
 
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.S | re.I)
@@ -99,6 +126,41 @@ def _format_error(message: str) -> Exception:
     from sbrain.orchestrator.errors import FormatError
 
     return FormatError(message)
+
+
+_LIST_KEYS = ("features", "flow_steps", "feature_details", "key_metrics", "solution_steps", "layout",
+              "before_after", "market_levels", "effects")
+_DICT_KEYS = ("pipeline", "comparison", "revenue_flow")
+
+
+def _tidy(obj):
+    """모델이 자주 틀리는 모양을 스키마 검사 전에 바로잡는다. 내용은 바꾸지 않는다 —
+    잘못된 모양의 선택 항목은 비우고, 절차는 네 단계까지만 쓴다."""
+    if not isinstance(obj, dict):
+        return obj
+    for key in _LIST_KEYS:
+        if key in obj and not isinstance(obj[key], list):
+            obj[key] = []
+    for key in _DICT_KEYS:
+        if key in obj and not isinstance(obj[key], dict):
+            obj[key] = {}
+    for key in ("before_after", "market_levels", "effects", "layout", "feature_details"):
+        if key in obj:
+            obj[key] = [row for row in obj[key] if isinstance(row, dict)]
+    if "key_metrics" in obj:
+        obj["key_metrics"] = [m for m in obj["key_metrics"]
+                              if isinstance(m, dict) and str(m.get("value", "")).strip()]
+        for m in obj["key_metrics"]:
+            m.update({k: str(v) for k, v in m.items() if not isinstance(v, str)})
+    if "solution_steps" in obj:
+        obj["solution_steps"] = [str(s) for s in obj["solution_steps"]][:4]
+    if isinstance(obj.get("pipeline"), dict):
+        obj["pipeline"] = {k: str(v) for k, v in obj["pipeline"].items()}
+    for key in ("problem", "solution", "outcome", "tagline", "target_users",
+                "revenue_unit_price", "timeline_baseline"):
+        if key in obj and not isinstance(obj[key], str):
+            obj[key] = str(obj[key]) if obj[key] is not None else ""
+    return obj
 
 
 def parse_content(text) -> InfographicContent:
@@ -119,7 +181,7 @@ def parse_content(text) -> InfographicContent:
     if start < 0 or end <= start:
         raise _format_error("T-B2 응답에 JSON 객체가 없음")
     try:
-        return InfographicContent.model_validate(json.loads(raw[start:end + 1]))
+        return InfographicContent.model_validate(_tidy(json.loads(raw[start:end + 1])))
     except (json.JSONDecodeError, ValidationError) as exc:
         raise _format_error(f"T-B2 응답 JSON을 읽을 수 없음: {type(exc).__name__}") from None
 
@@ -128,10 +190,8 @@ def generate_infographic_content(category: str, plan_text: str, tools) -> dict:
     """T-B2 1단계: 사업계획서 본문(작성 Agent 산출물)에서 인포그래픽 데이터를 추출한다.
 
     반환값은 render_infographic()의 data 인자로 그대로 넘길 수 있는 형태다.
-    팀 경력·수익모델 단가처럼 조율 Agent가 사용자에게서 직접 받아야 하는 사실
-    항목은 이 스키마에 아예 없다 — render_infographic이 소비하는 필드(기능,
-    목표 고객층, 플로우, 파이프라인 단계 등)만 뽑으므로 이 함수가 사실을
-    지어낼 대상 자체가 없다.
+    렌더러가 소비하는 사실·수치·절차만 추출한다. 없는 내용은 채우지 않는다.
+    추출 결과의 누락·수치·길이는 Task의 자체 검사와 검증-2에서 따로 검사한다.
     """
     if category not in CATEGORY_TEMPLATE_FILE:
         raise ValueError(
@@ -151,16 +211,35 @@ def generate_infographic_content(category: str, plan_text: str, tools) -> dict:
     system_prompt += (
         "\n5. feature_details에는 '기능 목록'의 기능마다 하나씩, name에 기능명을 그대로 "
         "쓰고 detail에 그 기능이 무엇을 하는지 본문에서 찾은 한 문장을 원문 낱말 그대로 "
-        f"적어라. {_max_chars(W_FEATURE_DETAIL, 14) * ONEPAGE_DETAIL_LINES}자를 넘기지 마라. "
+        f"적어라. {_detail_chars(category)}자를 넘기지 마라. "
         "기능명을 되풀이하지 말고, 본문이 그 기능을 설명하지 않으면 detail을 빈 문자열로 남겨라."
+    )
+    system_prompt += (
+            "\n6. key_metrics에는 본문에서 사업을 가장 잘 보여주는 숫자를 최대 3개 골라라. "
+            "value는 본문에 적힌 숫자와 단위를 그대로(예: '18%', '12분', '29,000원'), "
+            "label은 그 숫자가 무엇인지 14자 이내로 적어라"
+            "(예: '반찬 폐기율'). 본문에 숫자가 없으면 빈 리스트로 남겨라."
+            "\n7. solution은 기능 이름을 나열하지 말고, 이 사업이 problem을 어떤 방식으로 "
+            "푸는지를 한 구절로 적어라(형식 예: 'A를 미리 받아 B를 줄인다'). 기능 목록은 지면에 "
+            "따로 들어간다."
     )
     if category == "원페이지":
         system_prompt += (
-            "\n6. key_metrics에는 본문에서 사업을 가장 잘 보여주는 숫자를 최대 3개 골라라. "
-            "value는 본문에 적힌 숫자와 단위를 그대로(예: '18%', '12분', '29,000원'), "
-            f"label은 그 숫자가 무엇인지 {_max_chars(W_METRIC_LABEL, 13)}자 이내로 적어라"
-            "(예: '반찬 폐기율'). 본문에 숫자가 없으면 빈 리스트로 남겨라."
+            "\n8. solution_steps는 본문에 명시된 서비스 제공 또는 운영 절차가 있을 때만 "
+            "2~4개 순서대로 적어라. 각 단계는 행위와 대상을 짝지은 짧은 구절로, "
+            f"{_max_chars(flow_text_width(4), 15) * FLOW_LINES}자 이내로 적어라. "
+            "순서가 명시되지 않으면 빈 리스트로 남겨라. 기능 목록을 임의로 절차로 바꾸지 마라."
         )
+    system_prompt += (
+        "\n편집 원칙: '혁신적인', '최적의', '차별화된', '스마트한 솔루션'처럼 "
+        "구체적 정보를 전달하지 않는 수식어를 덧붙이지 마라. 누가 무엇을 하는지와 "
+        "어떤 결과가 나오는지 보여주는 구절을 우선하라. 수치는 목표·현재 실적·문제 현황을 "
+        "혼동하지 않도록 label에 본문의 맥락을 보존하라."
+    )
+    # 블록 구성: 모델이 이 사업에 맞는 블록 · 변형 · 순서 · 폭과 블록별 구절을 고른다(composer.py).
+    system_prompt += COMPOSE_GUIDE
+    system_prompt += ('\n출력 스키마에 다음 키를 더한다: "layout", "outcome", "before_after", "market_levels", '
+                      '"comparison", "revenue_flow", "effects", "tagline" (재료가 없으면 빈 값).')
     result = tools.llm(
         [{"role": "system", "content": system_prompt},
          {"role": "user", "content": plan_text}],

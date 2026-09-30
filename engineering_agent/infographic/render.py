@@ -11,9 +11,12 @@ from engineering_agent.infographic.style import (
     CATEGORY_LABEL,
     CATEGORY_TEMPLATE_FILE,
 )
-from engineering_agent.infographic.layout import W_TITLE, fit
+from engineering_agent.infographic.layout import fit
 from engineering_agent.infographic.svg_parts import esc, build_alt_text, build_desc_text
-from engineering_agent.infographic.bodies import BODY_BUILDERS
+from engineering_agent.infographic import fonts, themes
+from engineering_agent.infographic.design_kit import TITLE_SIZE, TITLE_WIDTH
+from engineering_agent.infographic.showcase import build_showcase
+from engineering_agent.infographic.composer import compose
 
 
 # 템플릿과 산출물 폴더는 패키지 밖(engineering_agent/)에 그대로 둔다 —
@@ -66,13 +69,22 @@ def render_infographic(category: str, data: dict, run_id: str | None = None) -> 
     item_name = str(data.get("item_name", "")).strip() or "이름 미정 아이템"
     features = [str(f) for f in (data.get("features") or [])]
 
-    body_svg, height = BODY_BUILDERS[category](data, features)
+    # 모델이 블록 구성(layout)을 골랐으면 그 구성으로 조립하고, 없으면 기본 showcase.
+    variant = data.get("design_variant") or ("composed" if data.get("layout") else "showcase")
+    if variant == "composed":
+        body_svg, height = compose(category, data, features)
+        title_block = ""
+    elif variant == "showcase":
+        body_svg, height = build_showcase(category, data, features)
+        title_block = ""  # Showcase owns its centered title and hero composition.
+    else:
+        raise ValueError(f"알 수 없는 디자인 변형: {variant!r}")
     alt_text = build_alt_text(category, item_name, features)
 
     template = _load_template(CATEGORY_TEMPLATE_FILE[category])
     mapping = {
             "svg_height": str(height),
-            "item_name": esc(fit(item_name, 30, W_TITLE)),
+            "item_name": esc(fit(item_name, TITLE_SIZE, TITLE_WIDTH)),
             "category_label": CATEGORY_LABEL[category],
             "category_color": CATEGORY_ACCENT[category],
             "color_bg": BRAND_COLORS["bg"],
@@ -80,11 +92,16 @@ def render_infographic(category: str, data: dict, run_id: str | None = None) -> 
             "color_text_muted": BRAND_COLORS["text_muted"],
             "alt_text": esc(alt_text),
             "body_block": body_svg,
+            "title_block": title_block,
     }
     if category == "원페이지":
         # <title>과 다른 문장이어야 검증 2번이 형식만 통과하지 않는다.
         mapping["desc_text"] = esc(build_desc_text(category, item_name, data))
     svg = _substitute(template, mapping)
+    # 사업 분야에 맞춰 지면 색을 바꾼다. 같은 아이템이면 같은 색.
+    svg = themes.apply(svg, themes.pick(data))
+    # 디자인 글꼴(미리 잘라 둔 Pretendard)을 넣는다. 글자는 그대로 <text>다.
+    svg = fonts.embed(svg)
 
     run_id = run_id or uuid.uuid4().hex
     if not re.fullmatch(r"[A-Za-z0-9_-]+", run_id):
