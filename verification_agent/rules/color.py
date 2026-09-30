@@ -24,6 +24,16 @@ _RGB_RE = re.compile(
 )
 
 
+_ZERO_ALPHA_RE = re.compile(r"^rgba\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*,\s*0*(?:\.0*)?\s*\)$")
+
+
+def is_transparent(value: str) -> bool:
+    """transparent · 알파 0인 rgba · 끝 두 자리가 00인 8자리 hex."""
+    v = value.strip().lower()
+    return (v == "transparent" or bool(_ZERO_ALPHA_RE.match(v))
+            or (len(v) == 9 and v.startswith("#") and v.endswith("00")))
+
+
 def parse_color(value: str) -> tuple[int, int, int] | None:
     """hex/rgb/rgba/기본 명명색만 지원한다. HSL 등은 판정불가로 처리."""
     v = value.strip().lower()

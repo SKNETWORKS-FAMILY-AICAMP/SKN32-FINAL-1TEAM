@@ -26,7 +26,8 @@ from __future__ import annotations
 
 import re
 
-from verification_agent.rules.color import contrast_ratio, extract_paired_declarations, parse_color
+from verification_agent.rules.color import (contrast_ratio, extract_paired_declarations, is_transparent,
+                                            parse_color)
 from verification_agent.rules.gates import ignored_apis
 from verification_agent.rules.html_parser import (
     EXCLUDED_INPUT_TYPES,
@@ -35,7 +36,7 @@ from verification_agent.rules.html_parser import (
     parse_page,
 )
 from verification_agent.rules.items import item
-from verification_agent.rules.wiring import ID_REF_RE, control_label, is_wired, wired_ids
+from verification_agent.rules.wiring import control_label, id_refs, is_wired, wired_ids
 
 def check_action_wiring(parser: PageParser) -> dict:
     """1. 동작 연결: 버튼·조작 요소 중 핸들러가 직접 붙은 비율로 부분 점수."""
@@ -110,7 +111,10 @@ def check_input_label(parser: PageParser) -> dict:
 def check_contrast(parser: PageParser) -> dict:
     """4. 명도 대비 4.5:1. 판정 대상(색상 짝) 0개면 해당 없음이 아니라 미통과다 —
     생성 지시(T-B1 규칙 8)가 짝 선언을 요구하므로, 없으면 지시를 어긴 것이다."""
-    pairs = extract_paired_declarations("".join(parser.style_chunks))
+    # 배경이 투명이면 실제 배경은 부모 요소 것이라 이 짝으로는 대비를 계산할 수 없다.
+    # 판정 대상이 아니므로 뺀다(실패로 치지 않는다). 남은 짝이 0개면 아래에서 미충족.
+    pairs = [(selector, decl) for selector, decl in extract_paired_declarations("".join(parser.style_chunks))
+             if not is_transparent(decl["background-color"])]
     if not pairs:
         return item(4, "명도 대비 4.5:1", 2, False,
                     "color/background-color가 함께 명시된 셀렉터 없음(판정 대상 0개)")
@@ -174,7 +178,7 @@ def check_script_errors(parser: PageParser, html_content: str) -> dict:
     id 참조도 무시되는 API도 없으면 해당 없음.
     """
     script = "\n".join(parser.script_chunks)
-    refs = {a or b for a, b in ID_REF_RE.findall(script)}
+    refs = id_refs(script)
     ignored = ignored_apis(html_content)
     if not refs and not ignored:
         return item(7, "스크립트 동작 오류 없음", 2, True, "스크립트의 id 참조 · 막히는 API 0개",
