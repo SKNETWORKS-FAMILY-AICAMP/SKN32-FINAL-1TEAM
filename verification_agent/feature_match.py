@@ -32,8 +32,8 @@ TOTAL = 15.0
 _NUMBER_PENALTY = 1.0
 _NUMBER_PENALTY_CAP = 3.0
 
-# 아이템명·목표 고객은 사용자 입력(ItemSpec)을 그대로 옮긴 값이라 계획서 대조 대상이 아니다.
-_USER_INPUT_FIELDS = {"item_name", "target_users"}
+# 아이템명·목표 고객·한 줄 소개는 사용자 입력(ItemSpec)을 그대로 옮긴 값이라 계획서 대조 대상이 아니다.
+_USER_INPUT_FIELDS = {"item_name", "target_users", "item_summary"}
 _PLACEHOLDER_VALUES = {"정보 없음", "미정", "해당 없음", "n/a", "na", "-", "tbd", "없음"}
 _NUMBER_RE = re.compile(r"\d[\d,._]*")
 _TERM_RE = re.compile(r"[가-힣A-Za-z]{2,}")

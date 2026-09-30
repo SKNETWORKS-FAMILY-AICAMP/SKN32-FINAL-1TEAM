@@ -43,9 +43,13 @@ def _is_placeholder(value: str) -> bool:
     return any(marker in v for marker in _PLACEHOLDER_MARKERS)
 
 
+_DATA_URI_RE = re.compile(r"data:[\w.+-]+/[\w.+-]+;base64,[A-Za-z0-9+/=]+")
+
+
 def find_secret(*texts: str | None) -> str | None:
     """의심되는 비밀값 하나를 돌려준다. 없으면 None. 플레이스홀더는 오탐으로 거른다."""
-    combined = "\n".join(t for t in texts if t)
+    # 끼워 넣은 글꼴 · 그림(data URI의 base64)은 임의 문자열이라 키 모양과 우연히 겹칠 수 있다.
+    combined = _DATA_URI_RE.sub("data:,", "\n".join(t for t in texts if t))
     for pattern in _SECRET_PATTERNS:
         for match in pattern.finditer(combined):
             # key=value 형태는 따옴표 안 값(group 2)을, 나머지는 매치 전체를 본다.
