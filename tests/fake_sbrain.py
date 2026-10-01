@@ -199,6 +199,7 @@ class TB1In(SBModel):
     category: Category
     instruction: str
     rework_input: ReworkInput | None = None
+    plan_doc: PlanDoc | None = None  # 조율이 추가하기로 한 확장 필드(요청 8, A안)
 
 
 class TB1Out(SBModel):

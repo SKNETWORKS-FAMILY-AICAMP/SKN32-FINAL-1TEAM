@@ -32,9 +32,13 @@ def run_tb1(inp: TB1In, tools: Tools) -> TB1Out:
     from sbrain.contracts.tasks import TB1Out
     from sbrain.models import CheckResult, Prototype
 
+    # plan_doc은 조율이 TB1In에 추가하기로 한 필드다(조율 요청서 요청 8, A안). 계약에 들어오기 전에는
+    # 없으므로 있을 때만 쓴다 — 없으면 예전처럼 기능 이름만으로 만든다.
+    plan_doc = getattr(inp, "plan_doc", None)
     result = build_prototype_html(
         inp.feature_list, inp.item_spec.dump(), inp.category,
         _instruction(inp.instruction, inp.rework_input), tools,
+        plan_text=_plan_text(plan_doc) if plan_doc is not None else "",
     )
     passed = result["status"] == "success"
     failures = [] if passed else [result["summary"]]

@@ -20,8 +20,31 @@ _ENTRY_FILENAME = "index.html"
 _IMPLEMENTED_FEATURES_RE = re.compile(r'<!--\s*IMPLEMENTED_FEATURES:\s*(.*?)-->', re.DOTALL)
 
 
-def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str) -> str:
-    """카테고리별로 요구되는 흐름(화면 전환 vs 입력→처리→출력)을 갈라 지시한다."""
+# 프롬프트에 싣는 계획서 본문 길이 상한.
+_PLAN_CHARS = 12000
+
+
+def feature_notes(feature_list: list[str], plan_text: str) -> dict[str, str]:
+    """기능마다 계획서가 그 기능을 정의한 줄(기능 이름이 그대로 들어간 줄). 없으면 빈 문자열.
+
+    기능 이름만 주면 모델은 계획서가 말한 입력 항목 · 표시 정보를 알 수 없다. "고장 신고 접수"만 받으면
+    증상 입력 화면을 만들지만, 계획서는 "사진과 증상을 올리면"이라고 적었다. 검증-2는 계획서를 기준으로
+    대조하므로 그 차이가 그대로 감점이 됐다(실측: 기능 4개 중 2~2.5개 인정).
+    """
+    lines = [line.strip() for line in plan_text.splitlines() if line.strip()]
+    notes = {}
+    for feature in feature_list:
+        whole = feature.replace(" ", "").casefold()
+        found = [line for line in lines
+                 if whole in line.replace(" ", "").casefold() and line.replace(" ", "").casefold() != whole]
+        notes[feature] = " ".join(found[:3])
+    return notes
+
+
+def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str,
+                         plan_text: str = "") -> str:
+    """카테고리별로 요구되는 흐름(화면 전환 vs 입력→처리→출력)을 갈라 지시한다.
+    plan_text(사업계획서 본문)가 있으면 기능마다 계획서의 설명을 붙이고 본문도 함께 싣는다."""
     if category == "웹개발":
         flow_instruction = (
             "이 프로토타입은 '웹개발' 카테고리다. 최소 2개 이상의 화면(또는 화면 상태)을 "
@@ -35,7 +58,20 @@ def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str
             "더미/시뮬레이션(예: setTimeout으로 처리 중 상태를 보여준 뒤 규칙 기반 결과 출력)으로 구현하라."
         )
 
-    feature_lines = "\n".join(f"- {f}" for f in feature_list)
+    notes = feature_notes(feature_list, plan_text) if plan_text.strip() else {}
+    feature_lines = "\n".join(
+        f"- {f}" + (f"\n  계획서의 설명: {notes[f]}" if notes.get(f) else "") for f in feature_list)
+    plan_rule = plan_section = ""
+    if plan_text.strip():
+        plan_rule = (
+            "\n14. 기능마다 '계획서의 설명'에 적힌 것을 화면에 빠짐없이 넣어라. 설명에 나온 입력 항목"
+            "(예: 사진, 증상, 비용)은 각각 입력칸으로, 표시 정보(예: 요일별 판매량, 폐기량, 후보 순위)는 "
+            "각각 화면에 보이는 값으로, 조건(예: 30분 단위, 5개 이하)은 그 조건대로 동작하게 만들어라. "
+            "화면의 낱말은 계획서의 낱말을 그대로 써라. 서버 저장 · 실제 발송 · 결제 · 실제 AI 처리는 "
+            "더미 데이터와 간단한 규칙으로 흉내 내되, 그 결과가 계획서가 말한 모양으로 화면에 보여야 한다."
+        )
+        plan_section = ("\n\n## 사업계획서 본문 (기능 설명의 근거. 여기에 없는 기능 · 수치를 지어내지 마라)\n"
+                        + plan_text.strip()[:_PLAN_CHARS])
 
     return f"""너는 정부지원사업 신청용 프로토타입을 만드는 엔지니어다.
 사업계획서의 "준비 정도"를 뒷받침할, 동작을 확인할 수 있는 수준의 실행 파일을 만든다.
@@ -61,6 +97,14 @@ def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str
    실제 색으로 적어라. 그 짝의 명도 대비는
    4.5:1 이상이어야 한다. 최소한 `body`와 버튼·카드 등 글자가 놓이는 주요 셀렉터에 적용하라.
    예: `body {{ color:#0F172A; background-color:#FFFFFF; }}`
+   이 기준은 `color`와 `background-color`를 함께 적은 **모든** 셀렉터에 적용된다. 자주 틀리는 곳:
+   - 보조 글자 · 안내 문구 · 날짜 · 배지: 흐리게 보이려고 옅은 회색 글자를 쓰지 마라.
+     흰색 · 옅은 배경 위 글자는 `#475569`보다 어둡게 쓰고, 덜 중요한 글은 색 대신 글자 크기 · 굵기로 구분하라.
+   - 비활성(`:disabled`) · 선택 안 됨 · 지난 날짜 같은 상태: 이때도 글자가 읽혀야 한다. 대비 4.5:1을 지켜라.
+   - 색 배경(버튼 · 배지 · 띠) 위 흰 글자: 배경을 충분히 진하게 써라(예: `#1D4ED8`, `#15803D`, `#B91C1C`).
+     밝은 주황 · 노랑 · 하늘색 배경에는 흰 글자 대신 진한 글자를 써라.
+   - 점 · 막대 · 구분선처럼 글자가 없는 장식 요소: `background-color`만 적고 `color`는 적지 마라.
+   - 색 값에 `!important`를 붙이지 마라.
 9. 각 기능을 실행하는 버튼·입력·폼에는 해당 기능명을 `data-feature` 속성으로 붙이고
    고유한 `id`도 붙여라. 이벤트는 **그 요소에 직접** 연결하라:
    `document.getElementById('그 id').addEventListener('click', ...)` 또는
@@ -81,7 +125,7 @@ def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str
 12. 스크립트에서 `getElementById`·`querySelector('#...')`로 찾는 id는 전부 문서에 실제로
     있어야 한다.
 13. 화면에 lorem ipsum, TODO:, FIXME, TBD, "샘플 텍스트", "여기에 내용" 같은 임시 문구를
-    남기지 마라. 화면의 글은 이 아이템에 맞는 실제 문장으로 채워라.
+    남기지 마라. 화면의 글은 이 아이템에 맞는 실제 문장으로 채워라.{plan_rule}
 
 ## 카테고리 지시
 {flow_instruction}
@@ -90,7 +134,7 @@ def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str
 {feature_lines}
 
 ## 산출물 스펙(item_spec)
-{item_spec}
+{item_spec}{plan_section}
 
 ## 출력 형식
 아래 코드블록 하나만 출력하라. README는 별도 규칙 단계에서 생성한다.
@@ -145,7 +189,8 @@ def _extract_implemented_features(html_content: str) -> list[str]:
 
 
 def build_prototype_html(
-    feature_list: list[str], item_spec: dict, category: str, instruction: str, tools
+    feature_list: list[str], item_spec: dict, category: str, instruction: str, tools,
+    plan_text: str = "",
 ) -> dict:
     """T-B1 진입점: LLM 생성 → 코드블록 파싱 → 자체 게이트(E-B1-ENTRY, E-B1-DEP,
     E-B1-SANDBOX) → 저장.
@@ -158,7 +203,7 @@ def build_prototype_html(
         raise ValueError("T-B1은 웹개발/AI_API 카테고리만 지원합니다")
     run_id = uuid.uuid4().hex
 
-    system_prompt = _build_system_prompt(feature_list, item_spec, category)
+    system_prompt = _build_system_prompt(feature_list, item_spec, category, plan_text)
     files = tools.llm(
         [{"role": "system", "content": system_prompt},
          {"role": "user", "content": instruction}],
