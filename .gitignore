@@ -118,6 +118,8 @@ back/rhwp.exe
 **/result.json
 **/result.html
 **/manifest.json
+# 조사·크롤링 실행으로 생성되는 JSON 산출물
+/agent_strategy/res/crawling/industry_research/output/*.json
 # --- 생성·백업 자료 ---
 /agent/_strategy/
 **/output/
