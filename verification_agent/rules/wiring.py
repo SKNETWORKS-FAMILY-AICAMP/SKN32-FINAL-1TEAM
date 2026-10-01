@@ -14,7 +14,10 @@ _BIND = r"\s*(?:\?\.|\.)\s*(?:addEventListener\s*\(|on[a-z]+\s*=(?!=))"
 # 인자를 그대로 getElementById에 넘기기만 하는 도우미 함수. 모델이 흔히 만든다.
 #   const $ = id => document.getElementById(id);
 #   function byId(id) { return document.getElementById(id); }
+#   const $ = function (id) { return document.getElementById(id); };
 _HELPER_RES = (
+    re.compile(rf"\b(?:const|let|var)\s+({_NAME})\s*=\s*function\s*\(\s*({_NAME})\s*\)\s*\{{\s*"
+               rf"return\s+document\s*\.\s*getElementById\(\s*\2\s*\)"),
     re.compile(rf"\b(?:const|let|var)\s+({_NAME})\s*=\s*\(?\s*({_NAME})\s*\)?\s*=>\s*"
                rf"(?:\{{\s*return\s+)?document\s*\.\s*getElementById\(\s*\2\s*\)"),
     re.compile(rf"\bfunction\s+({_NAME})\s*\(\s*({_NAME})\s*\)\s*\{{\s*"

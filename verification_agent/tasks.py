@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from verification_agent.feature_match import match_features
-from verification_agent.llm_judge import make_judge
+from verification_agent.llm_judge import make_field_judge, make_judge
 from verification_agent.rules import items as item_rules
 from verification_agent.score import compute_code_check, compute_infographic_check
 
@@ -83,7 +83,8 @@ def score_artifact(*, kind: str, entry_file_path: str, source_text: str,
 
     source = source_text if raw["passed"] else ""
     judge = make_judge(tools, kind, source, plan_text) if source else None
-    feature = match_features(feature_list, source, kind, plan_text, judge)
+    field_judge = make_field_judge(tools, plan_text) if source and kind == "svg-onepage" else None
+    feature = match_features(feature_list, source, kind, plan_text, judge, field_judge)
     return raw, feature
 
 

@@ -23,6 +23,14 @@ LLM이 기능마다 하나씩 충족 · 부분 · 미충족으로 다시 판정�
 충족이면 1, 부분이면 0.5, 미충족이면 0으로 센다(미충족만 누락 기능). 규칙에서 떨어진 기능은
 LLM에 묻지 않는다. LLM 호출이 실패한 기능은 규칙 판정을 그대로 쓴다(T-V2 Failure ④).
 점수 계산(15 × 인정 몫 ÷ 전체)과 원페이지의 지어낸 수치 감점은 규칙이 한다.
+
+## 원페이지 핵심 칸
+
+원페이지는 기능 설명에 더해 문제 정의 · 해결 방안 · 수익모델 단가 · 추진 일정 네 칸도 대조한다.
+이 칸들은 모델이 계획서를 줄여 쓴 글인데, 코드 점검은 비어 있지 않은지만 봐서 내용이 틀려도
+만점이었다. 칸마다 LLM이 계획서와 같은 뜻인지 판정하고, 분모는 기능 수 + 4가 된다. 네 칸은
+누락 기능 목록(missing_features)에 넣지 않고 사유(findings)에만 적는다 — 조율은 그 목록의
+이름을 기능으로 다룬다. LLM을 쓸 수 없으면 네 칸은 대조에 넣지 않는다(분모는 기능 수 그대로).
 """
 from __future__ import annotations
 
@@ -142,12 +150,68 @@ def _match_html(feature_list: list[str], source: str, judge: Judge | None) -> di
                                if c["feature"] and _norm(c["feature"]) not in known))
     rule_ok = len(feature_list) - len(missing)
     ok, note = _apply_judge(judge, feature_list, missing, findings)
-    findings.insert(0, f"인정 {ok:g}/{len(feature_list)}개 (규칙: 화면 문구 + 직접 연결된 조작 요소 "
+    findings.insert(0, f"인정 {round(ok, 2):g}/{len(feature_list)}개 (규칙: 화면 문구 + 직접 연결된 조작 요소 "
                        f"{rule_ok}건{note})")
     return _result(TOTAL * ok / len(feature_list), missing, findings, "htmlParse", extra)
 
 
 # ── 원페이지 SVG ───────────────────────────────────────────────
+
+
+# 대조하는 핵심 칸: (지면 표식 data-field, 이름). 아이템명 · 목표 고객은 사용자 입력이라 대조하지 않는다.
+_KEY_FIELDS = (("problem", "문제 정의"), ("solution", "해결 방안"),
+               ("revenue_unit_price", "수익모델 단가"), ("timeline_baseline", "추진 일정"))
+# 핵심 칸 판정 함수: {칸 이름: 지면 내용} → {칸 이름: (몫, 이유) 또는 None(판정 실패)}
+FieldJudge = Callable[[dict[str, str]], dict[str, "tuple[float, str] | None"]]
+
+
+def _key_fields(nodes: list) -> dict[str, str]:
+    """핵심 칸마다 지면에 적힌 글. 한 칸이 여러 글자 노드로 나뉘어 있으면 이어 붙인다.
+    비었거나 자리 채움 문구뿐인 칸은 빈 문자열이다."""
+    out = {}
+    for key, label in _KEY_FIELDS:
+        parts = []
+        for node in nodes:
+            text = "".join(node.itertext()).strip().rstrip("…").strip()
+            if node.get("data-field") == key and text and text.casefold() not in _PLACEHOLDER_VALUES \
+                    and text not in parts:
+                parts.append(text)
+        out[label] = " / ".join(parts)
+    return out
+
+
+def _apply_field_judge(field_judge: FieldJudge | None, nodes: list,
+                       findings: list[str]) -> tuple[float, int, str]:
+    """(핵심 칸 인정 몫 합계, 핵심 칸 수, 요약 문구). field_judge가 없으면 (0, 0, "")."""
+    if field_judge is None:
+        return 0.0, 0, ""
+    fields = _key_fields(nodes)
+    shown = {label: text for label, text in fields.items() if text}
+    verdicts = field_judge(shown)
+    credit, counts = 0.0, {"충족": 0, "부분": 0, "미충족": 0, "실패": 0}
+    for label, text in fields.items():
+        if not text:
+            counts["미충족"] += 1
+            findings.append(f"{label}: 지면에 없거나 자리 채움 문구")
+            continue
+        verdict = verdicts.get(label)
+        if not verdict:          # 판정 실패는 감점하지 않는다
+            credit += 1.0
+            counts["실패"] += 1
+            continue
+        credit += verdict[0]
+        if verdict[0] >= 1:
+            counts["충족"] += 1
+        elif verdict[0] > 0:
+            counts["부분"] += 1
+            findings.append(f"{label}: 부분 인정 — {verdict[1]}")
+        else:
+            counts["미충족"] += 1
+            findings.append(f"{label}: {verdict[1]}")
+    note = (f" · 핵심 칸 {round(credit, 2):g}/{len(fields)} (충족 {counts['충족']} · 부분 {counts['부분']}"
+            f" · 미충족 {counts['미충족']}")
+    note += f", LLM 판정 실패 {counts['실패']}건은 감점하지 않음)" if counts["실패"] else ")"
+    return credit, len(fields), note
 
 
 def _svg_texts(source: str) -> list:
@@ -180,7 +244,7 @@ def _detail_verdict(feature: str, detail: str | None, plan_compact: str,
 
 
 def _match_onepage(feature_list: list[str], source: str, plan_text: str | None,
-                   judge: Judge | None) -> dict:
+                   judge: Judge | None, field_judge: FieldJudge | None = None) -> dict:
     if plan_text is None:
         return _result(0.0, list(feature_list),
                        ["계획서 원문(plan_doc)이 전달되지 않아 근거 대조 불가 — 0점 처리",
@@ -208,18 +272,21 @@ def _match_onepage(feature_list: list[str], source: str, plan_text: str | None,
 
     rule_ok = len(feature_list) - len(missing)
     ok, note = _apply_judge(judge, feature_list, missing, findings)
-    findings.insert(0, f"인정 {ok:g}/{len(feature_list)}개 (규칙: 기능 설명이 계획서 원문에 근거 "
-                       f"{rule_ok}건{note})")
+    field_ok, field_count, field_note = _apply_field_judge(field_judge, nodes, findings)
+    findings.insert(0, f"인정 {round(ok, 2):g}/{len(feature_list)}개 (규칙: 기능 설명이 계획서 원문에 근거 "
+                       f"{rule_ok}건{note}){field_note}")
     if invented:
         findings.append(f"지면에 계획서에 없는 수치 {len(invented)}건 "
                         f"({', '.join(invented[:5])}) — {penalty:g}점 감점")
-    return _result(TOTAL * ok / len(feature_list) - penalty, missing, findings, "svgTextParse")
+    score = TOTAL * (ok + field_ok) / (len(feature_list) + field_count) - penalty
+    return _result(score, missing, findings, "svgTextParse")
 
 
 def match_features(feature_list: list[str], source: str, kind: str,
-                   plan_text: str | None = None, judge: Judge | None = None) -> dict:
+                   plan_text: str | None = None, judge: Judge | None = None,
+                   field_judge: FieldJudge | None = None) -> dict:
     """source가 빈 문자열이면 통과 필수 조건을 못 넘긴 산출물이다 — 전부 누락으로 본다.
-    judge가 없으면 규칙만으로 판정한다."""
+    judge가 없으면 규칙만으로 판정한다. field_judge는 원페이지 핵심 칸 판정(없으면 넣지 않는다)."""
     judged_by = "svgTextParse" if kind == "svg-onepage" else "htmlParse"
     if not feature_list:
         return _result(0.0, [], ["계획서 기능 목록이 비어 있음"], judged_by)
@@ -227,5 +294,5 @@ def match_features(feature_list: list[str], source: str, kind: str,
         return _result(0.0, list(feature_list),
                        ["산출물이 통과 필수 조건을 넘지 못해 대조 생략"], judged_by)
     if kind == "svg-onepage":
-        return _match_onepage(feature_list, source, plan_text, judge)
+        return _match_onepage(feature_list, source, plan_text, judge, field_judge)
     return _match_html(feature_list, source, judge)
