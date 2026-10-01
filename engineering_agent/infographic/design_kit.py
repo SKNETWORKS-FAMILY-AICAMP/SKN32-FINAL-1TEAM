@@ -7,14 +7,6 @@ from __future__ import annotations
 
 TITLE_SIZE = 36
 TITLE_WIDTH = 820
-RADIUS = 4
-
-# Showcase is the default composition; editorial remains available for dense reports.
-SHOWCASE = {
-    "margin": 28, "gap": 14, "title_size": 36, "section_size": 18,
-    "body_size": 15, "detail_size": 13, "metric_size": 28,
-    "section_radius": 12, "icon_size": 46, "hero_height": 252,
-}
 
 
 def showcase_defs(colors: dict[str, str]) -> str:
@@ -59,6 +51,3 @@ def arrow(x1: float, y1: float, x2: float, y2: float, color: str) -> str:
             f'<path d="M{a[0]},{a[1]} L{x2},{y2} L{b[0]},{b[1]} Z" fill="{color}"/>')
 
 
-def rule(x: float, y: float, width: float, color: str) -> str:
-    return (f'<line x1="{x}" y1="{y}" x2="{x + width}" y2="{y}" '
-            f'stroke="{color}" stroke-width="1"/>')

@@ -11,8 +11,6 @@ PAGE_WIDTH = 900
 
 # 각 자리의 글자가 쓸 수 있는 최대 폭(px). 본문 builder가 실제로 쓰는 좌표에서 나온 값이라
 # 레이아웃을 바꾸면 여기도 같이 바꿔야 한다 — overflow_fields()가 이 값으로 판정한다.
-W_TITLE = TITLE_WIDTH
-W_FEATURE_LIST = 800   # 불릿 리스트: x=62, 우여백 40
 
 # 웹개발 사용자 흐름 · AI API 파이프라인(bodies). 기능 타일은 원페이지와 같다.
 FLOW_PER_ROW = 5
@@ -52,7 +50,6 @@ W_OP_FOOT = OP_FOOT - 2 * OP_PAD           # 354
 OP_FOOT_LINES = 2
 OP_DETAIL_SIZE = 13
 OP_DETAIL_LINES = 4
-W_OP_METRIC_LABEL = 150
 
 
 def feature_columns(n: int) -> int:
@@ -97,10 +94,6 @@ def parse_milestones(text: str) -> list[tuple[str, str]]:
         event = _EVENT_TRIM_RE.sub("", text[m.end():end]).strip()
         out.append((m.group(0).strip(), event))
     return out if all(event for _, event in out) else []
-
-
-def milestone_width(n: int) -> float:
-    return W_OP_FOOT / max(n, 1) - 10
 
 
 def estimate_text_width(text: str, font_size: float) -> float:

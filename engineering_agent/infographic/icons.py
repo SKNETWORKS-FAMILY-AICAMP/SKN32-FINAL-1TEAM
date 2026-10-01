@@ -18,8 +18,6 @@ _ICONS: dict[str, str] = {
     "funnel": '<path d="M3 5h18l-7 8v6l-4 2v-8z"/><path d="M3 5c0 2 18 2 18 0"/>',
     "clipboard": ('<rect x="5" y="5" width="14" height="16" rx="2"/><rect x="9" y="3" width="6" height="4" rx="1"/>'
                   '<path d="M9 12l2 2 4-4M9 17h6"/>'),
-    "trophy": ('<path d="M7 3h10v7a5 5 0 0 1-10 0zM7 5H3v3a4 4 0 0 0 4 4M17 5h4v3a4 4 0 0 1-4 4"/>'
-               '<path d="M12 15v5M8 21h8"/>'),
     "users": ('<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/>'
               '<circle cx="17" cy="9" r="2.5"/><path d="M15.6 14.2c2.6.3 4.4 2.1 4.4 4.8"/>'),
     "alert": '<path d="M12 3.8 21 19.5H3z"/><path d="M12 10v4"/><circle cx="12" cy="16.9" r=".7" class="dot"/>',
@@ -54,8 +52,6 @@ _ICONS: dict[str, str] = {
     "pie": '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5V12h8.5"/>',
     "check": '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
     "flag": '<path d="M5.5 21V4M5.5 4H17l-2 4 2 4H5.5"/>',
-    "rocket": ('<path d="M12 3c3.5 2 5 5.5 4.5 10l-2.5 2.5h-4L7.5 13C7 8.5 8.5 5 12 3z"/>'
-               '<circle cx="12" cy="9.5" r="1.8"/><path d="M9.5 17.5 8 21M14.5 17.5 16 21"/>'),
 }
 
 # 낱말 → 아이콘. 위에서부터 먼저 맞는 것을 쓴다.
