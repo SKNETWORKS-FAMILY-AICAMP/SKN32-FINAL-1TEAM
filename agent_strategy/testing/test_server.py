@@ -1,4 +1,4 @@
-"""Local test transport for the existing strategy functions (no replacement generation)."""
+﻿"""Local test transport for the existing strategy functions (no replacement generation)."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from datetime import datetime, timezone
@@ -10,13 +10,14 @@ import uuid
 import os
 import html
 import threading
+import traceback
 from openai import OpenAI
 from urllib.parse import parse_qs, urlparse
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from agent_strategy.runtime.llm_runtime import CONTRACT, model_config
 from agent_strategy.runtime.pipeline import impact_plan, retry_sections, run_pipeline, normalize_back_input
-from agent_strategy import gpt_functions as gpt
+from agent_strategy import gpt_functions as gpt, python_functions as py
 
 BASE = Path(__file__).resolve().parents[1]
 KINDS = {'general', 'pre_startup', 'early_startup'}
@@ -65,7 +66,7 @@ def run_test(raw, kind, progress=None, execution_scope='full'):
 def save_result(result):
     # Keep an immutable history even when the same input is run repeatedly.
     stamp=datetime.now().strftime('%Y%m%d-%H%M%S')
-    out = BASE/'res/to_back'/'runs'/f"{stamp}_{result['documentType']}_{result['runId']}"
+    out = BASE/'res/back_output'/'runs'/f"{stamp}_{result['documentType']}_{result['runId']}"
     out.mkdir(parents=True)
     validation_results=[{'sectionId':row.get('sectionId'),'title':row.get('title'),'status':row.get('validation',{}).get('status'),'issues':row.get('validation',{}).get('issues',[]),'warnings':row.get('validation',{}).get('warnings',[]),'agent':row.get('validation',{}).get('agent','검증 1'),'attempts':row.get('attempts',[])} for row in result.get('results',[]) if row.get('validation')]
     result['validation_results']=validation_results
@@ -91,23 +92,43 @@ def save_result(result):
 def public_job(job):
     return {key:value for key,value in job.items() if not key.startswith('_')}
 
+def validation_source_for(row, content):
+    stored=row.get('validationSource')
+    if isinstance(stored, dict) and (stored.get('originalFacts') or stored.get('evidence') or stored.get('sourceRefs')):
+        return stored
+    return {'originalFacts':content.get('originalFacts',{}),'evidence':content.get('evidence',[]),
+            'sourceRefs':content.get('sourceRefs',[]),'_fallbackValidationSource':True}
+
 
 def run_job(job_id, body):
     try:
         def progress(message, count):
             JOBS[job_id].update(message=message, completedCalls=count)
+            print(f'[{job_id[:8]}] {message} · 완료 호출 수: {count}', flush=True)
         raw=body['input']; contract=raw.get('2_지금_입력받는값') if isinstance(raw,dict) else None
         valid=(isinstance(raw,dict) and ((isinstance(raw.get('tableData'),dict) and raw['tableData']) or (isinstance(contract,dict) and contract.get('POST_projects_body',{}).get('description'))))
         if not valid:
             files={'general':'example_general_part2.json','pre_startup':'example_pre_startup.json','early_startup':'example_early_startup.json'}
-            raw=json.loads((BASE/'res/from_back'/files[body['documentType']]).read_text(encoding='utf-8'))
+            raw=json.loads((BASE/'res/back_input'/files[body['documentType']]).read_text(encoding='utf-8'))
             body=dict(body,input=raw)
             JOBS[job_id].update(message='입력 JSON이 비어 있어 현재 유형 back JSON으로 자동 보정')
         result = run_test(raw, body['documentType'], progress, body.get('executionScope','full'))
         JOBS[job_id].update(status='done', result=result, outputDirectory=save_result(result))
     except Exception as exc:
-        partial={'documentType':body.get('documentType'),'status':'error_partial','message':'오류 발생 전까지 생성된 결과를 저장했습니다.','error':str(exc),'trace':getattr(exc,'partial_trace',[]),'results':[],'document':None}
-        JOBS[job_id].update(status='error', error=str(exc), result=partial, outputDirectory=save_result(partial), partialResult=partial)
+        partial={'runId':str(uuid.uuid4()),'createdAt':datetime.now(timezone.utc).isoformat(),
+                 'documentType':body.get('documentType'),'status':'error_partial',
+                 'message':'오류 발생 전까지 생성된 결과를 저장했습니다.',
+                 'error':str(exc),'errorType':type(exc).__name__,
+                 'errorTraceback':traceback.format_exc(),
+                 'trace':getattr(exc,'partial_trace',[]),'results':[], 'document':None}
+        output_directory=None
+        try:
+            output_directory=save_result(partial)
+        except Exception as save_exc:
+            partial['saveError']=str(save_exc)
+        JOBS[job_id].update(status='error', error=str(exc), errorType=type(exc).__name__,
+                            errorTraceback=traceback.format_exc(), result=partial,
+                            outputDirectory=output_directory, partialResult=partial)
     finally:
         LOCK.release()
 
@@ -119,7 +140,22 @@ def run_retry_job(job_id, parent_job, section_id, instruction):
         result=retry_sections(parent_job['_input'],parent_job['result'],section_id,instruction,progress,render_image=flow_image)
         JOBS[job_id].update(status='done',result=result,outputDirectory=save_result(result))
     except Exception as exc:
-        JOBS[job_id].update(status='error',error=str(exc))
+        # Retry failures must leave an inspectable artifact as well; otherwise
+        # the UI reports an error but the last successful/partial content is lost.
+        partial=parent_job.get('result') or {'results':[]}
+        partial=dict(partial)
+        partial['runId']=str(uuid.uuid4())
+        partial['createdAt']=datetime.now(timezone.utc).isoformat()
+        partial['status']='error_partial'
+        partial['error']=str(exc)
+        partial['errorType']=type(exc).__name__
+        partial['errorTraceback']=traceback.format_exc()
+        output_directory=None
+        try: output_directory=save_result(partial)
+        except Exception as save_exc: partial['saveError']=str(save_exc)
+        JOBS[job_id].update(status='error',error=str(exc),errorType=type(exc).__name__,
+                            errorTraceback=partial['errorTraceback'],result=partial,
+                            partialResult=partial,outputDirectory=output_directory)
     finally:
         LOCK.release()
 
@@ -132,7 +168,9 @@ def run_validate_job(job_id, parent_job, section_id):
         for item in plan['affected']:
             spec=specs[item['sectionId']]; row=rows.get(item['sectionId'])
             if not row: continue
-            result=py.validate_section(section_spec=spec,content={'generatedText':row.get('generatedText',''),'tables':row.get('tables',[])},source_data={})
+            content=row.get('functionOutput') or {'generatedText':row.get('generatedText',''),'tables':row.get('tables',[])}
+            source=validation_source_for(row,content)
+            result=py.validate_section(section_spec=spec,content=content,source_data=source)
             row['validation']=result; checked.append(item['sectionId'])
         parent_job['result']['validation1']=[{'sectionId':sid,'status':rows[sid]['validation'].get('status'),'issues':rows[sid]['validation'].get('issues',[])} for sid in checked]
         parent_job['result']['status']='validation1_failed' if any(rows[sid]['validation'].get('status')=='fail' for sid in checked) else 'validation1_passed'
@@ -148,13 +186,28 @@ def run_validate_all_job(job_id, result):
         for row in result.get('results',[]):
             spec=specs.get(row['sectionId'])
             if spec and spec.get('enabled'):
-                row['validation']=py.validate_section(spec,{'generatedText':row.get('generatedText',''),'tables':row.get('tables',[])},{})
+                content=row.get('functionOutput') or {'generatedText':row.get('generatedText',''),'tables':row.get('tables',[])}
+                source=validation_source_for(row,content)
+                row['validation']=py.validate_section(spec,content,source)
         failed=any(r.get('validation',{}).get('status')=='fail' for r in result['results'])
         result['status']='validation1_failed' if failed else 'validation1_passed'
         if not failed: result['document']=py.assemble_document(result['results'],[t for r in result['results'] for t in r.get('tables',[])],[i for r in result['results'] for i in r.get('images',[])])
         result['message']='전체 항목 검증 1 및 조립 완료.' if not failed else '검증 1 미통과 항목이 있어 조립을 보류했습니다.'
         JOBS[job_id].update(status='done',result=result,outputDirectory=save_result(result),message=result['message'])
-    except Exception as exc: JOBS[job_id].update(status='error',error=str(exc))
+    except Exception as exc:
+        partial=dict(result)
+        partial['runId']=str(uuid.uuid4())
+        partial['createdAt']=datetime.now(timezone.utc).isoformat()
+        partial['status']='error_partial'
+        partial['error']=str(exc)
+        partial['errorType']=type(exc).__name__
+        partial['errorTraceback']=traceback.format_exc()
+        output_directory=None
+        try: output_directory=save_result(partial)
+        except Exception as save_exc: partial['saveError']=str(save_exc)
+        JOBS[job_id].update(status='error',error=str(exc),errorType=type(exc).__name__,
+                            errorTraceback=partial['errorTraceback'],result=partial,
+                            partialResult=partial,outputDirectory=output_directory)
     finally: LOCK.release()
 
 def run_image_retry_job(job_id, result, section_id):
@@ -172,6 +225,15 @@ def run_image_retry_job(job_id, result, section_id):
 
 
 class Handler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        # The browser polls /api/jobs every 1.2 seconds. Keep that transport
+        # traffic out of the terminal so the actual function progress/errors
+        # remain readable.
+        request_line = str(args[0]) if args else ''
+        if request_line.startswith('GET /api/jobs/'):
+            return
+        super().log_message(format, *args)
+
     def respond(self, status, payload, content_type='application/json; charset=utf-8'):
         data = payload if isinstance(payload, bytes) else json.dumps(payload, ensure_ascii=False).encode()
         self.send_response(status)
@@ -223,27 +285,36 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(200, {'apiKeyConfigured':configured,'apiReachable':reachable,'apiStatus':detail,'model':'함수별 GPT-5.6 Sol / Terra / Luna','models':{fid:model_config(fid) for fid in CONTRACT['functions']},'validationAgent':'검증 1','tableGenerationEnabled':False})
         if self.path in ['/', '/test']:
             return self.respond(200, (BASE/'strategy_writing_agent.html').read_bytes(), 'text/html; charset=utf-8')
-        if parsed.path in ['/strategy_writing_agent.css', '/strategy_writing_agent.js']:
-            asset = BASE / parsed.path.lstrip('/')
+        asset_paths = {
+            '/strategy_writing_agent.css': BASE/'res'/'css'/'strategy_writing_agent.css',
+            '/strategy_writing_agent.js': BASE/'res'/'js'/'strategy_writing_agent.js',
+            '/res/css/strategy_writing_agent.css': BASE/'res'/'css'/'strategy_writing_agent.css',
+            '/res/js/strategy_writing_agent.js': BASE/'res'/'js'/'strategy_writing_agent.js',
+        }
+        if parsed.path in asset_paths:
+            asset = asset_paths[parsed.path]
             if asset.exists():
                 content_type = 'text/css; charset=utf-8' if asset.suffix == '.css' else 'application/javascript; charset=utf-8'
                 return self.respond(200, asset.read_bytes(), content_type)
             return self.respond(404, {'error':'asset not found'})
         if self.path == '/api/examples':
             files = {'general':'example_general_part2.json','pre_startup':'example_pre_startup.json','early_startup':'example_early_startup.json'}
-            examples = {k: json.loads((BASE/'res/from_back'/name).read_text(encoding='utf-8')) for k,name in files.items()}
+            examples = {k: json.loads((BASE/'res/back_input'/name).read_text(encoding='utf-8')) for k,name in files.items()}
             return self.respond(200, examples)
         if parsed.path == '/api/latest-results':
-            runs=BASE/'res/to_back'/'runs'; latest={}
+            runs=BASE/'res/back_output'/'runs'; latest={}
             if runs.exists():
                 for kind in KINDS:
                     matches=sorted(runs.glob(f'*_{kind}_*/result.json'),key=lambda p:p.stat().st_mtime,reverse=True)
                     if matches:
-                        try: latest[kind]=json.loads(matches[0].read_text(encoding='utf-8'))
+                        try:
+                            latest[kind]=json.loads(matches[0].read_text(encoding='utf-8'))
+                            latest[kind]['resultPath']=str(matches[0].resolve())
+                            latest[kind]['outputDirectory']=str(matches[0].parent.resolve())
                         except Exception: pass
             return self.respond(200,latest)
         if self.path == '/api/section-mapping':
-            mapping=json.loads((BASE/'res/from_back'/'section_mapping.json').read_text(encoding='utf-8'))
+            mapping=json.loads((BASE/'res/back_input'/'section_mapping.json').read_text(encoding='utf-8'))
             mapping['executionSourceKeys']={kind:{spec['sectionId']:spec['sourceKeys'] for spec in specs} for kind,specs in CONTRACT['documents'].items()}
             mapping['rewriteDependencies']={}
             for kind,specs in CONTRACT['documents'].items():
@@ -278,25 +349,25 @@ class Handler(BaseHTTPRequestHandler):
                 JOBS[job_id] = {'status':'running','message':'함수 실행 준비 중','completedCalls':0,'_input':body['input'],'executionScope':body.get('executionScope','full')}
                 threading.Thread(target=run_job, args=(job_id,body), daemon=True).start()
             elif self.path == '/api/image-retry-latest':
-                kind=body.get('documentType'); section_id=body.get('sectionId'); runs=BASE/'res/to_back'/'runs'; files=sorted(runs.glob(f'*_{kind}_*/result.json'),key=lambda p:p.stat().st_mtime,reverse=True)
+                kind=body.get('documentType'); section_id=body.get('sectionId'); runs=BASE/'res/back_output'/'runs'; files=sorted(runs.glob(f'*_{kind}_*/result.json'),key=lambda p:p.stat().st_mtime,reverse=True)
                 if not files or kind not in KINDS or section_id not in {'2.3.6','3.3.6'}: raise ValueError('이미지 사업계획서 항목과 최신 결과가 필요합니다.')
                 saved=json.loads(files[0].read_text(encoding='utf-8')); JOBS[job_id]={'status':'running','message':'이미지만 재생성 중','completedCalls':0}
                 threading.Thread(target=run_image_retry_job,args=(job_id,saved,section_id),daemon=True).start()
             elif self.path == '/api/validate-all-latest':
-                kind=body.get('documentType'); runs=BASE/'res/to_back'/'runs'; files=sorted(runs.glob(f'*_{kind}_*/result.json'),key=lambda p:p.stat().st_mtime,reverse=True)
+                kind=body.get('documentType'); runs=BASE/'res/back_output'/'runs'; files=sorted(runs.glob(f'*_{kind}_*/result.json'),key=lambda p:p.stat().st_mtime,reverse=True)
                 if not files or kind not in KINDS: raise ValueError('최신 실행 결과와 사업계획서 유형이 필요합니다.')
                 saved=json.loads(files[0].read_text(encoding='utf-8')); JOBS[job_id]={'status':'running','message':'전체 검증 및 조립 준비 중','completedCalls':0}
                 threading.Thread(target=run_validate_all_job,args=(job_id,saved),daemon=True).start()
             elif self.path == '/api/validate-latest':
-                kind=body.get('documentType'); section_id=body.get('sectionId'); runs=BASE/'res/to_back'/'runs'; files=sorted(runs.glob(f'*_{kind}_*/result.json'),key=lambda p:p.stat().st_mtime,reverse=True)
+                kind=body.get('documentType'); section_id=body.get('sectionId'); runs=BASE/'res/back_output'/'runs'; files=sorted(runs.glob(f'*_{kind}_*/result.json'),key=lambda p:p.stat().st_mtime,reverse=True)
                 if not files or kind not in KINDS or not isinstance(section_id,str): raise ValueError('최신 실행 결과와 사업계획서 항목 위치가 필요합니다.')
                 saved=json.loads(files[0].read_text(encoding='utf-8')); parent={'result':saved}; plan=impact_plan(kind,section_id)
                 JOBS[job_id]={'status':'running','message':'선택 항목 및 연관 항목 검증 준비 중','completedCalls':0,'impact':plan}
                 threading.Thread(target=run_validate_job,args=(job_id,parent,section_id),daemon=True).start()
             elif self.path == '/api/retry-latest':
-                kind=body.get('documentType'); section_id=body.get('sectionId'); runs=BASE/'res/to_back'/'runs'; files=sorted(runs.glob(f'*_{kind}_*/result.json'),key=lambda p:p.stat().st_mtime,reverse=True)
+                kind=body.get('documentType'); section_id=body.get('sectionId'); runs=BASE/'res/back_output'/'runs'; files=sorted(runs.glob(f'*_{kind}_*/result.json'),key=lambda p:p.stat().st_mtime,reverse=True)
                 if not files or kind not in KINDS or not isinstance(section_id,str): raise ValueError('최신 실행 결과와 사업계획서 항목 위치가 필요합니다.')
-                saved=json.loads(files[0].read_text(encoding='utf-8')); back=json.loads((BASE/'res/from_back'/{'general':'example_general_part2.json','pre_startup':'example_pre_startup.json','early_startup':'example_early_startup.json'}[kind]).read_text(encoding='utf-8')); parent={'result':saved,'_input':normalize_back_input(back,kind)}
+                saved=json.loads(files[0].read_text(encoding='utf-8')); back=json.loads((BASE/'res/back_input'/{'general':'example_general_part2.json','pre_startup':'example_pre_startup.json','early_startup':'example_early_startup.json'}[kind]).read_text(encoding='utf-8')); parent={'result':saved,'_input':normalize_back_input(back,kind)}
                 plan=impact_plan(kind,section_id); JOBS[job_id]={'status':'running','message':'최신 저장 결과 기준 재작성 준비 중','completedCalls':0,'_input':parent['_input'],'_parentJobId':'latest','impact':plan}
                 threading.Thread(target=run_retry_job,args=(job_id,parent,section_id,body.get('instruction','')),daemon=True).start()
             else:
@@ -328,3 +399,4 @@ if __name__ == '__main__':
         os.environ['OPENAI_API_KEY'] = getpass('OpenAI API key (hidden, session only): ').strip()
     print(f'Function test: http://127.0.0.1:{args.port}', flush=True)
     ThreadingHTTPServer(('127.0.0.1', args.port), Handler).serve_forever()
+

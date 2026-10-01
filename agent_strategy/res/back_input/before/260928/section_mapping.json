@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "description": "back 수령 JSON 필드와 strategy_writing_agent.html의 sectionId 매핑. generatedText는 해당 sectionId를 기준으로 back 결과에 덮어쓴다.",
+  "documentTypes": {
+    "general": {
+      "sourceFile": "docs_plan_example_일반.json",
+      "sections": {
+        "1.1.1": {"title": "기술개발 개요", "inputPaths": ["sectionText.기술개발의_개요_및_필요성", "tableData.기술개발_개요_및_필요성.개발대상_개요"], "writeTarget": "generatedText"},
+        "1.1.2": {"title": "기존기술 문제점", "inputPaths": ["tableData.기술개발_개요_및_필요성.기존기술_문제점"], "writeTarget": "generatedText"},
+        "1.1.3": {"title": "시장동향·개발 필요성", "inputPaths": ["tableData.기술개발_개요_및_필요성.수요처_개선요구", "tableData.기술개발_개요_및_필요성.시장변화_및_개발필요성"], "writeTarget": "generatedText"},
+        "1.2.1": {"title": "최종 개발목표", "inputPaths": ["sectionText.기술개발의_목표", "tableData.기술개발_목표.최종목표"], "writeTarget": "generatedText"},
+        "1.2.2": {"title": "핵심기술 개발내용", "inputPaths": ["tableData.기술개발_목표.핵심기술_개발내용"], "writeTarget": "tableSkipped"},
+        "1.2.3": {"title": "성능지표·측정방법", "inputPaths": ["tableData.기술개발_목표.성능지표"], "writeTarget": "tableSkipped"},
+        "1.3.1": {"title": "기술개발 방법·확보방안", "inputPaths": ["sectionText.기술개발의_방법", "tableData.기술개발_방법.핵심기술별_개발방법", "tableData.기술개발_방법.단계별_개발계획"], "writeTarget": "generatedText"},
+        "1.4.1": {"title": "제품 개발계획", "inputPaths": ["tableData.기술개발_방법.단계별_개발계획"], "writeTarget": "generatedText"},
+        "1.4.2": {"title": "양산 계획", "inputPaths": ["tableData.사업화_계획.제품화_및_양산계획"], "writeTarget": "generatedText"},
+        "1.4.3": {"title": "마케팅·시장진입 전략", "inputPaths": ["sectionText.사업화_계획", "tableData.사업화_계획.시장진입_및_마케팅", "tableData.사업화_계획.수익모델_및_성장계획"], "writeTarget": "generatedText"}
+      }
+    },
+    "pre_startup": {
+      "sourceFile": "docs_plan_example_예비.json",
+      "sections": {
+        "2.1.1": {"title": "일반현황·산출물", "inputPaths": ["tableData.generalStatus"], "writeTarget": "generatedText"},
+        "2.1.2": {"title": "개요 요약", "inputPaths": ["tableData.itemSummary"], "writeTarget": "generatedText"},
+        "2.1.3": {"title": "문제인식", "inputPaths": ["sectionText.problem", "tableData.itemSummary.문제인식"], "writeTarget": "generatedText"},
+        "2.1.4": {"title": "실현가능성", "inputPaths": ["sectionText.solution", "tableData.itemSummary.실현가능성", "tableData.implementationSchedule", "tableData.budgetPlanStep1", "tableData.budgetPlanStep2"], "writeTarget": "generatedText"},
+        "2.1.5": {"title": "성장전략", "inputPaths": ["sectionText.scaleUp", "tableData.itemSummary.성장전략"], "writeTarget": "generatedText"},
+        "2.1.6": {"title": "팀 구성", "inputPaths": ["sectionText.team", "tableData.itemSummary.팀구성", "tableData.teamPlan"], "writeTarget": "generatedText"},
+        "2.2.1": {"title": "창업아이템명", "inputPaths": ["tableData.generalStatus.창업아이템명", "tableData.itemSummary.명칭"], "writeTarget": "generatedText"},
+        "2.2.2": {"title": "산출물", "inputPaths": ["tableData.generalStatus.산출물"], "writeTarget": "generatedText"},
+        "2.3.1": {"title": "아이템 개요", "inputPaths": ["tableData.itemSummary.아이템개요"], "writeTarget": "generatedText"},
+        "2.3.2": {"title": "문제인식 본문", "inputPaths": ["sectionText.problem"], "writeTarget": "generatedText"},
+        "2.3.3": {"title": "실현가능성 본문", "inputPaths": ["sectionText.solution"], "writeTarget": "generatedText"},
+        "2.3.4": {"title": "성장전략 본문", "inputPaths": ["sectionText.scaleUp"], "writeTarget": "generatedText"},
+        "2.3.5": {"title": "역량 활용계획", "inputPaths": ["sectionText.team", "tableData.teamPlan"], "writeTarget": "generatedText"},
+        "2.3.6": {"title": "이미지·서비스 구조도", "inputPaths": [], "writeTarget": "imageSpec"},
+        "2.4.1": {"title": "문제인식 세부 3가지", "inputPaths": ["sectionText.problem"], "writeTarget": "generatedText"},
+        "2.5.1": {"title": "실현가능성 명시", "inputPaths": ["sectionText.solution"], "writeTarget": "generatedText"},
+        "2.5.2": {"title": "개발계획 표", "inputPaths": ["tableData.implementationSchedule"], "writeTarget": "tableSkipped"},
+        "2.5.3": {"title": "1단계 사업비 표", "inputPaths": ["tableData.budgetPlanStep1"], "writeTarget": "tableSkipped"},
+        "2.5.4": {"title": "2단계 사업비 표", "inputPaths": ["tableData.budgetPlanStep2"], "writeTarget": "tableSkipped"},
+        "2.6.1": {"title": "성장전략 명시", "inputPaths": ["sectionText.scaleUp"], "writeTarget": "generatedText"},
+        "2.6.2": {"title": "전체 사업추진 일정 표", "inputPaths": ["tableData.fullScaleSchedule"], "writeTarget": "tableSkipped"},
+        "2.7.1": {"title": "팀 역량", "inputPaths": ["sectionText.team", "tableData.teamPlan"], "writeTarget": "generatedText"},
+        "2.7.2": {"title": "장비·시설 계획", "inputPaths": [], "writeTarget": "generatedText"},
+        "2.7.3": {"title": "채용 역량 계획", "inputPaths": ["tableData.teamPlan"], "writeTarget": "generatedText"},
+        "2.7.4": {"title": "협력기관 협업", "inputPaths": ["tableData.partnerPlan"], "writeTarget": "generatedText"}
+      }
+    },
+    "early_startup": {
+      "sourceFile": "docs_plan_example_초기.json",
+      "sections": {
+        "3.1.1": {"title": "일반현황·산출물", "inputPaths": ["tableData.일반현황"], "writeTarget": "generatedText"},
+        "3.1.2": {"title": "개요 요약", "inputPaths": ["tableData.창업아이템개요"], "writeTarget": "generatedText"},
+        "3.1.3": {"title": "문제인식", "inputPaths": ["sectionText.문제인식_본문", "tableData.창업아이템개요.요약_문제인식"], "writeTarget": "generatedText"},
+        "3.1.4": {"title": "실현가능성", "inputPaths": ["sectionText.실현가능성_본문", "tableData.실현가능성_일정", "tableData.사업비_집행계획"], "writeTarget": "generatedText"},
+        "3.1.5": {"title": "성장전략", "inputPaths": ["sectionText.성장전략_본문", "tableData.창업아이템개요.요약_성장전략"], "writeTarget": "generatedText"},
+        "3.1.6": {"title": "팀 구성", "inputPaths": ["sectionText.팀구성_본문", "tableData.팀구성현황", "tableData.협력기관"], "writeTarget": "generatedText"},
+        "3.2.1": {"title": "창업아이템명", "inputPaths": ["tableData.일반현황.창업아이템명", "tableData.창업아이템개요.아이템_명칭"], "writeTarget": "generatedText"},
+        "3.2.2": {"title": "산출물", "inputPaths": ["tableData.일반현황.산출물"], "writeTarget": "generatedText"},
+        "3.3.1": {"title": "아이템 개요", "inputPaths": ["tableData.창업아이템개요.아이템_개요"], "writeTarget": "generatedText"},
+        "3.3.2": {"title": "문제인식 본문", "inputPaths": ["sectionText.문제인식_본문"], "writeTarget": "generatedText"},
+        "3.3.3": {"title": "실현가능성 본문", "inputPaths": ["sectionText.실현가능성_본문"], "writeTarget": "generatedText"},
+        "3.3.4": {"title": "성장전략 본문", "inputPaths": ["sectionText.성장전략_본문"], "writeTarget": "generatedText"},
+        "3.3.5": {"title": "역량 활용계획", "inputPaths": ["sectionText.팀구성_본문", "tableData.팀구성_안"], "writeTarget": "generatedText"},
+        "3.3.6": {"title": "이미지·서비스 구조도", "inputPaths": [], "writeTarget": "imageSpec"},
+        "3.4.1": {"title": "문제인식 세부 3가지", "inputPaths": ["sectionText.문제인식_본문"], "writeTarget": "generatedText"},
+        "3.5.1": {"title": "실현가능성 명시", "inputPaths": ["sectionText.실현가능성_본문"], "writeTarget": "generatedText"},
+        "3.5.2": {"title": "개발계획 표", "inputPaths": ["tableData.실현가능성_일정"], "writeTarget": "tableSkipped"},
+        "3.5.3": {"title": "1단계 사업비 표", "inputPaths": ["tableData.사업비_집행계획"], "writeTarget": "tableSkipped"},
+        "3.5.4": {"title": "2단계 사업비 표", "inputPaths": ["tableData.사업비_집행계획"], "writeTarget": "tableSkipped"},
+        "3.6.1": {"title": "성장전략 명시", "inputPaths": ["sectionText.성장전략_본문"], "writeTarget": "generatedText"},
+        "3.6.2": {"title": "전체 사업추진 일정 표", "inputPaths": ["tableData.성장전략_일정"], "writeTarget": "tableSkipped"},
+        "3.7.1": {"title": "팀 역량", "inputPaths": ["sectionText.팀구성_본문", "tableData.팀구성_안"], "writeTarget": "generatedText"},
+        "3.7.2": {"title": "장비·시설 계획", "inputPaths": [], "writeTarget": "generatedText"},
+        "3.7.3": {"title": "채용 역량 계획", "inputPaths": ["tableData.팀구성_안"], "writeTarget": "generatedText"},
+        "3.7.4": {"title": "협력기관 협업", "inputPaths": ["tableData.협력기관"], "writeTarget": "generatedText"}
+      }
+    }
+  }
+}

@@ -129,7 +129,7 @@ HTML은 Python을 직접 실행하지 않는다. API 요청은 `http://127.0.0.1
 - [`res/business_plan_prompts/writing_rules.json`](res/business_plan_prompts/writing_rules.json): 일반·예비창업·초기창업 F16 작성 규칙
 - [`res/business_plan_prompts/business_plan_prompt_template_general.md`](res/business_plan_prompts/business_plan_prompt_template_general.md): 일반 사업계획서 전체 출력 참고 템플릿
 - [`runtime/execution_contract.json`](runtime/execution_contract.json): 함수별 입력·출력·모델·토큰 계약
-- [`res/from_back/section_mapping.json`](res/from_back/section_mapping.json): back JSON 필드와 사업계획서 위치 매핑
+- [`res/back_input/section_mapping.json`](res/back_input/section_mapping.json): back JSON 필드와 사업계획서 위치 매핑
 
 `llm_runtime.py`는 호출 직전에 한국어 공통 지시, 해당 함수의 JSON 계약, 근거·개인정보·환각 방지 제약, 함수별 `FIELDS`를 하나의 프롬프트로 합성한다. 따라서 F16은 전체 문서를 한 번에 전달하지 않고 항목별 `sourceKeys`만 받아 필요한 범위만 작성한다.
 
@@ -351,10 +351,30 @@ F01~F04 전략 함수의 입력 컨텍스트
 5. F02와 F05 이후 함수는 앞 단계 전략 결과와 원본 입력을 함께 사용해 아이템·팀 역량을 구체화한다.
 6. F16 작성 단계에는 전체 원본이 아니라 항목별 `sourceKeys`와 선택된 근거만 전달한다.
 
+### 사용자 산업·서비스 키워드 조사 갱신
+
+전략·작성 실행 서버는 `start_function_test.cmd`에서 `SBRAIN_AUTO_RESEARCH=1`을 설정한다. 실행할 때마다 back JSON의 `POST_projects_body.tech_field`를 우선 사용자 산업 키워드로 사용하고, 해당 값이 없으면 `POST_projects_body.description`의 앞부분을 검색 키워드로 사용한다.
+
+키워드 갱신 흐름은 다음과 같다.
+
+1. `market_crawler.add_keyword()`가 `keyword_list.json`의 `userKeywords`를 확인한다.
+2. 이미 동일한 키워드가 있으면 중복 등록하지 않는다.
+3. 새 키워드이거나 재수집이 필요한 경우 KIET 검색을 실행한다.
+4. 수집 결과를 `raw_kiet_results.json`에 저장한다.
+5. 키워드별 최신 실행 이력을 `keyword_history.json`에 기록한다.
+6. 사업계획서용 구조화 결과를 `results.json`으로 다시 만든다.
+7. 이후 F01·F03·F04가 갱신된 로컬 JSON을 검색 원본으로 사용한다.
+
+수집 결과는 사업계획서 본문에 사실처럼 직접 삽입하지 않는다. F03은 시장 근거, F04는 별도로 검색한 경쟁·대체재 근거를 받고, 각 결과의 `sourceRef`, URL, 원문 위치를 보존한다. 근거가 부족하면 내용을 추정하지 않고 `no_relevant_evidence`와 이슈를 기록한다.
+
+KIET 접속 실패, 검색 타임아웃, 키워드 누락 등으로 자동 수집이 실패해도 전체 작성 실행을 중단하지 않는다. 기존 `res/crawling/` 자료를 사용해 계속 실행하며, 실행 결과 JSON의 `research.industryRefresh`에 `status`, 검색 키워드, 결과 수 또는 오류 내용을 남긴다. 따라서 실행 결과에서 해당 필드로 산업별 조사 갱신 성공 여부를 확인할 수 있다.
+
+자동 수집을 사용하지 않는 단위 테스트 환경에서는 `SBRAIN_AUTO_RESEARCH`를 설정하지 않는다. 이 경우 네트워크 수집 없이 저장된 로컬 JSON만 사용한다.
+
 ### 현재 방식의 의미
 
-- 별도 VectorDB, LangChain Retriever, 임베딩 서버를 사용하지 않는다.
-- 로컬 JSON을 대상으로 키워드·필드·근거 위치를 검색하는 경량 RAG 구조다.
+- 별도 VectorDB, LangChain Retriever, 임베딩 서버를 사용하지 않는다. 현재 조사 자료 규모에서는 추가 모델·서버·임베딩 비용 없이 결과를 재현할 수 있는 로컬 키워드 검색을 우선 선택했다.
+- 로컬 JSON을 대상으로 키워드·필드·근거 위치를 검색하는 경량 RAG 구조다. 임베딩 검색은 자료 규모가 커지거나 동의어·문맥 검색의 정확도 요구가 높아질 때 교체 가능한 확장 경로로 남겨둔다.
 - 생성 결과의 `sourceRefs`, `selectedSourceRefs`, `evidence`에 근거 경로를 남겨 원본 대조와 검증 1에 사용한다.
 - 실행 중 웹을 다시 크롤링하거나 `res/crawling/` 원본을 수정하지 않는다.
 - 향후 VectorDB를 연결하더라도 현재 함수 계약은 검색 결과를 `sources[]`, `evidence[]`, `sourceRefs[]` 형태로 받도록 유지할 수 있다.
@@ -363,10 +383,14 @@ F01~F04 전략 함수의 입력 컨텍스트
 
 ## 결과와 이력
 
+### res 하위 JSON 관리
+
+- 실제 실행 계약은 `runtime/execution_contract.json`이 기준이며, 위 두 JSON은 런타임 입력이나 함수 계약을 덮어쓰지 않습니다.
+
 실행마다 덮어쓰지 않고 다음 폴더에 새 이력을 저장한다.
 
 ````text
-res/to_back/runs/<실행시각>_<문서유형>_<runId>/
+res/back_output/runs/<실행시각>_<문서유형>_<runId>/
   result.json
   result.html
   manifest.json
@@ -399,7 +423,7 @@ agent_validation_1
 python -B -m unittest agent_strategy.testing.test_function_pipeline -v
 ```
 
-현재 테스트는 16개이며 back JSON 파일명 변경과 새 예산·일정 값에 맞춰 검증한다. 실제 전략·작성 실행은 OpenAI API를 호출하므로 테스트 통과 여부와 별도로 API 비용이 발생한다.
+현재 테스트는 17개이며 back JSON 파일명 변경과 새 예산·일정 값에 맞춰 검증한다. 실제 전략·작성 실행은 OpenAI API를 호출하므로 테스트 통과 여부와 별도로 API 비용이 발생한다.
 
 ## 2026-09-30 최신 구현 상태
 
@@ -410,7 +434,12 @@ python -B -m unittest agent_strategy.testing.test_function_pipeline -v
 - 예비창업 `2.3.6`, 초기창업 `3.3.6`은 F18을 `USER_FLOW`와 `SERVICE_ARCHITECTURE`로 각각 호출한다. 생성된 두 SVG는 `result.json`의 `images`에 저장되고 UI 생성 영역에도 표시된다.
 - 최신 결과의 모델 열에는 `설정 모델`, `실행 모델`, 대체 호출 시 `대체 사유`가 함께 표시된다. OpenAI 연결 확인 버튼은 `.env`/환경변수의 키 설정 여부와 실제 API 연결 성공·실패 상태를 UI와 로그에 남긴다.
 - 함수 실행 테스트의 기존 `현재 탭 JSON 불러오기` 버튼은 `현재 탭 사용자 입력데이터 JSON 다운로드`로 변경했다. 입력 영역에는 back JSON이 탭 선택 시 자동 적용된다. 별도로 `result.json 다운로드` 버튼을 제공한다.
-- 설명 탭은 함수 흐름 카드 없이 `함수별 데이터 계약` 표만 표시한다. 실행 결과는 `res/to_back/runs/<시각>_<유형>_<runId>/`에 `result.json`, `result.html`, `manifest.json`으로 누적 저장한다.
+- 설명 탭은 함수 흐름 카드 없이 `함수별 데이터 계약` 표만 표시한다. 실행 결과는 `res/back_output/runs/<시각>_<유형>_<runId>/`에 `result.json`, `result.html`, `manifest.json`으로 누적 저장한다.
+- 사용자 산업·서비스 키워드는 서버 실행 시 `industry_research`의 `market_crawler.add_keyword()`로 갱신할 수 있다. 신규 키워드는 KIET 자료를 수집하고, 중복 키워드는 중복 등록하지 않는다. 갱신 상태는 결과 JSON의 `research.industryRefresh`에 기록하며, 수집 실패 시 기존 로컬 자료로 계속 실행한다.
+- RAG는 시장·경쟁사·개발 영역을 분리 검색한다. F03은 `market_evidence`, F04는 별도 `competitor_evidence`를 사용하고, 개발계획·핵심기술 같은 복합어는 검색 동의어로 확장한다.
+- F04 경쟁사 분석은 가격 조사를 필수로 요구하지 않는다. `competitors[]`에 기업명 또는 제품·서비스명, 직접경쟁·대체재·산업동향 관계, `evidenceRefs`, 확인 수준을 기록한다. 실제 기업·제품 근거가 없으면 빈 배열과 확인 필요 이슈를 반환하며 KIET 산업 경쟁 동향을 특정 경쟁사로 확정하지 않는다.
+- 검색 결과가 없을 때는 `no_relevant_evidence`와 이슈를 저장하고 근거 없는 수치·경쟁사·사실을 생성하지 않는다. 현재 점수는 임베딩 유사도가 아닌 lexical coverage 점수다.
+- F16/F17/F18 테스트 응답도 실제 계약에 맞는 불릿·표·이미지 `nodes`를 반환하도록 보완했으며, 전략·작성·검증 1 자동 테스트 17개가 모두 통과한다.
 
 ### 서버 재시작
 
@@ -459,12 +488,84 @@ F01~F15 trace는 사업계획서 항목별 생성 결과와 분리해 UI의 `전
 
 - F17 표 생성을 Python 원본 행 변환으로 복구했다. 전략·작성 실행에도 표를 포함한다.
 - 예비창업은 수령한 단계별 예산을 사용하고, 초기창업은 사업비_집행계획을 보존한다.
-- 단계가 없는 예산은 두 단계에 임의 배분하지 않고 각 표의 
-ules.unassignedOriginalRows와 생성 텍스트에 단계 미지정 원본으로 표시하며 합계에는 중복 산입하지 않는다.
-- 추가 항목은 
-ules.additions에 별도로 관리하며 현재 자동 추가하지 않는다. 미입력 수량·단가는 확인 필요로 남긴다.
+- 단계가 없는 예산은 두 단계에 임의 배분하지 않고 각 표의 `rules.unassignedOriginalRows`와 생성 텍스트에 단계 미지정 원본으로 표시하며 합계에는 중복 산입하지 않는다.
+- 추가 항목은 `rules.additions`에 별도로 관리하며 현재 자동 추가하지 않는다. 미입력 수량·단가는 확인 필요로 남긴다.
 - F16의 빈 응답·{}를 본문 성공 결과로 저장하지 않으며, 출력 토큰 한도 도달도 실패로 처리한다.
 - 기존 저장 파일의 빈 본문은 자동 복구하지 않으므로 해당 항목을 재생성해야 한다.
+
+### 2026-10-01 누적 보완 내역
+
+아래 항목은 최근 실행 결과에서 확인된 오류와 운영 중 발견한 사용성 문제를 기준으로 보완했다.
+
+#### 1. 생성 본문과 원본 근거의 연결
+
+1. F01~F15 결과에 `sourceRefs`, `evidence`, `originalFacts`를 보존한다.
+2. F16 입력에는 항목별 `sourceKeys`, 선택된 근거, 상위 전략 결과의 `strategyProvenance`를 전달한다.
+3. F16 결과에는 사용한 `sourceRefs`와 `facts`를 함께 기록한다.
+4. 원본 경로를 확인할 수 없는 과거 저장 결과는 검증을 중단하지 않고 구조 검증 후 provenance 경고로 남긴다.
+5. 새 실행에서 확정 fact가 원본과 다르면 계속 실패 처리한다.
+
+#### 2. 확정값·제안값·확인 필요값 구분
+
+1. 전략 결과와 F16 facts에 `provided`, `proposed`, `needs_confirmation` 상태를 사용한다.
+2. 사용자 입력에 없는 기술언어·KPI·시험조건·일정은 사업계획 수립을 위한 제안값으로 생성할 수 있다.
+3. 제안값은 확정 실적처럼 표현하지 않고 본문에 목표·계획·제안임을 표시한다.
+4. 제안값의 직접 근거 부족은 F19 실패가 아니라 경고와 `needsUserConfirmation`으로 기록한다.
+5. 확정값으로 표시된 내용의 원본 불일치와 근거 없는 확정 수치는 계속 실패시킨다.
+
+#### 3. F16 본문 출력 정리
+
+1. F16은 전체 문서가 아니라 선택 항목의 `sourceKeys`만 전달받는다.
+2. `generatedText`에는 본문만 반환하도록 프롬프트를 강화했다.
+3. `1.1.3 시장동향`, `1.2.2 핵심기술`, `1.2.3 성능지표`, `1.3.1 개발방법`, `1.4.1 제품 개발계획`, `1.4.2 양산 계획`처럼 항목 번호와 제목을 본문에 반복하지 않도록 했다.
+4. 기존 결과를 자동 수정하지 않으며, 제목이 포함된 항목은 재작성 시 새 규칙이 적용된다.
+
+#### 4. F19 검증 오탐 보완
+
+1. 기능 목록은 괄호·가운뎃점·공백·하이픈 차이를 정규화해 비교한다. 예를 들어 `모델 경량화(양자화)`와 `모델 경량화·양자화`를 같은 기능으로 인식한다.
+2. 개발 단계명도 구분자와 공백 차이를 정규화한다.
+3. `2027-02`, `2027.02`, `2027/02`를 동일한 월로 비교한다.
+4. `50,000,000원`과 `50000000`을 동일한 금액으로 비교한다.
+5. 제안 본문의 sourceRefs·facts 경로가 원본과 직접 연결되지 않으면 경고로 기록한다.
+6. 과거 결과의 provenance가 불완전하면 추가 F19 LLM 호출 없이 구조 검증과 경고만 남긴다.
+7. 필수 본문·표·이미지 nodes·확정 fact 불일치·마감일 초과·지원금 상한 초과는 계속 실패 기준으로 유지한다.
+
+#### 5. 부분 결과와 오류 이력 보존
+
+1. F01~F20 중간에 API 연결, JSON 파싱, 출력 토큰 한도, 검증 오류가 발생해도 부분 결과를 저장한다.
+2. 재작성·검증 중 오류도 `result.json`, `validation.json`, `result.html`로 남긴다.
+3. 결과 JSON에 `errorType`, `error`, `errorTraceback`, `partialResult`, `outputDirectory`를 기록한다.
+4. 저장 실패를 저장하는 과정에서 다시 실패하지 않도록 `runId`·`createdAt`을 오류 경로에서도 보장한다.
+5. 최신 실행 폴더는 덮어쓰지 않고 `res/back_output/runs/<시각>_<유형>_<runId>/`에 누적한다.
+
+#### 6. 표·이미지·조립 처리
+
+1. F17은 예비창업·초기창업의 개발계획·사업비·일정 표를 원본 행과 필수 컬럼 기준으로 생성한다.
+2. 단계가 지정되지 않은 예산은 임의로 양쪽 단계에 중복 배분하지 않고 원본 미지정 상태로 표시한다.
+3. F18은 예비창업 `2.3.6`, 초기창업 `3.3.6`에서 USER_FLOW와 SERVICE_ARCHITECTURE 두 이미지를 생성한다.
+4. SVG에는 제목과 색상 노드를 포함하고, 실행 폴더에 개별 SVG 파일로 저장한다.
+5. 이미지 재생성은 연관 본문 항목을 실행하지 않고 선택한 이미지 두 종류만 다시 생성한다.
+6. F20은 F19가 통과한 결과만 최종 문서로 조립한다.
+
+#### 7. UI·실행 안정성
+
+1. OpenAI 연결 확인 결과는 별도 Console 카드에 API 키 설정 여부와 실제 연결 상태를 표시한다.
+2. 반복적인 `/api/jobs` polling 로그는 터미널에서 숨기고 실제 함수 진행·오류만 표시한다.
+3. 함수별 요청 모델·실제 모델·대체 사유·토큰 사용량을 전략 trace에 기록한다.
+4. F19 상태는 pass·warning·fail에 따라 색상으로 구분한다.
+5. 설명 탭에는 함수별 데이터 계약만 표시하고 입력 데이터·실행 결과·전략 trace 카드는 숨긴다.
+6. 결과 JSON 경로 복사와 다운로드를 제공하며, 복사 성공 여부를 UI에 표시한다.
+
+#### 8. 테스트 및 현재 확인 상태
+
+1. `python -B -m unittest agent_strategy.testing.test_function_pipeline -q` 기준 회귀 테스트 17개가 통과한다.
+2. `pipeline.py`, `llm_runtime.py`, `validation_1.py`, `test_server.py` Python 문법 검사를 수행한다.
+3. `strategy_writing_agent.js`는 `node --check`로 문법을 확인한다.
+4. 실제 OpenAI 실행과 로컬 회귀 테스트는 별도이며, 실제 실행은 API 비용이 발생한다.
+5. 검증만 다시 실행할 때는 F01~F18을 호출하지 않고 최신 결과에 F19·F20만 적용한다.
+
+
+
 
 
 

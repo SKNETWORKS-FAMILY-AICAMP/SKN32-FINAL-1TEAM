@@ -17,8 +17,15 @@ def fake_response(fid,payload):
     text='검토 계획임'
     if spec.get('rules',{}).get('exactItems'):text='\n'.join(f'- 항목 {i} 계획임' for i in range(spec['rules']['exactItems']))
     if spec.get('rules',{}).get('stages'):text='1차 검토 후 2차 검증 계획임'
-    return {'generatedText':text,'tables':[],'issues':[],'sourceRefs':[],'facts':[],
-            'nodes':['입력','개발','검증'],'coreFeatures':['기능'],'core_technologies':['기술'],'kpi':[{'name':str(i),'unit':'건','target':1,'measurementEnvironment':'시험'} for i in range(5)],
+    feature_list=payload.get('source_data',{}).get('strategy_limits',{}).get('featureList',[])
+    if feature_list:text += ' ' + ' '.join(str(feature) for feature in feature_list)
+    tables=[]
+    required=spec.get('rules',{}).get('requiredColumns',[])
+    if required:
+        tables=[{'columns':required,'rows':[dict((column, '테스트') for column in required)]}]
+    nodes=['입력','개발','검증'] if spec.get('contentType')=='image' or fid=='F18' else []
+    return {'generatedText':text,'tables':tables,'issues':[],'sourceRefs':[],'facts':[],
+            'nodes':nodes,'coreFeatures':['기능'],'core_technologies':['기술'],'kpi':[{'name':str(i),'unit':'건','target':1,'measurementEnvironment':'시험'} for i in range(5)],
             'passed':True,'warnings':[],'status':'generated','model':runtime.model_config(fid)['apiModel'],
             'responseId':'fake-'+fid,'inputChars':100,'usage':{'input_tokens':10,'output_tokens':5,'total_tokens':15}}
 
@@ -37,8 +44,11 @@ class PipelineTests(unittest.TestCase):
 
     def sample(self,name='예비'):
         filename={'일반':'example_general_part2.json','예비':'example_pre_startup.json','초기':'example_early_startup.json'}[name]
-        raw=json.loads((Path(__file__).resolve().parents[1]/'res/from_back'/filename).read_text(encoding='utf-8'))
-        return pipeline.normalize_back_input(raw, {'일반':'general','예비':'pre_startup','초기':'early_startup'}[name])
+        raw=json.loads((Path(__file__).resolve().parents[1]/'res/back_input'/filename).read_text(encoding='utf-8'))
+        # 이 통합 테스트는 전략·작성 흐름을 검증하므로 공고별 제한 검증은 전용 테스트에서 다룬다.
+        raw['_strategy_limits']={'deadline':'2099-12','supportLimit':999999999999,'featureList':[]}
+        normalized=pipeline.normalize_back_input(raw, {'일반':'general','예비':'pre_startup','초기':'early_startup'}[name])
+        return normalized
 
     def mocked(self,side_effect=fake_response):
         stack=ExitStack()
@@ -155,6 +165,12 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(all(s['sourceRef'] and s['text'] for s in result['sources']))
         self.assertEqual(retrieve('zzqunknownzz')['sources'],[])
 
+    def test_local_retrieval_expands_business_plan_development_terms(self):
+        result=retrieve('개발계획 핵심기술',domains=('development',))
+        self.assertEqual(result['status'],'retrieved')
+        self.assertTrue(result['sources'])
+        self.assertEqual(result['queryTerms'],['개발계획','핵심기술'])
+
     def test_image_labels_are_escaped(self):
         image=server.flow_image({'nodes':['<script>','개발','검증']})
         self.assertNotIn('<script>',image['svg']);self.assertIn('&lt;script&gt;',image['svg'])
@@ -176,4 +192,5 @@ class PipelineTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
 

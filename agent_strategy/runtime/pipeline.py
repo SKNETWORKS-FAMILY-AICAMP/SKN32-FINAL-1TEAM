@@ -1,12 +1,45 @@
 ﻿"""Canonical strategy once; narrow section inputs; validation 1 and bounded rewrite."""
 import copy
 import json
+import os
+import re
 import time
 import uuid
 from datetime import datetime,timezone
 from agent_strategy import gpt_functions as gpt, python_functions as py
 from agent_strategy.runtime.llm_runtime import CONTRACT,compact
 from agent_strategy.runtime.research_context import retrieve
+
+def _strip_section_heading(text, spec):
+    """F16 본문에 반복 삽입된 항목 번호·제목 줄만 제거한다."""
+    if not isinstance(text, str):
+        return text
+    sid=str(spec.get('sectionId','')).strip()
+    title=str(spec.get('title','')).strip()
+    kept=[]
+    for line in text.splitlines():
+        compact=re.sub(r'^[#\s]+','',line.strip())
+        numbered=bool(sid and re.match(r'^'+re.escape(sid)+r'(?:\s*[.)·:\-]\s*|\s+)', compact))
+        titled=bool(title and (compact == title or compact.endswith(title)))
+        if numbered or titled:
+            continue
+        kept.append(line)
+    return '\n'.join(kept).strip()
+
+
+def refresh_user_industry_research(project):
+    """Optionally refresh KIET data for the current user's industry keyword."""
+    if os.getenv('SBRAIN_AUTO_RESEARCH','0').lower() not in {'1','true','yes'}:
+        return {'status':'skipped','reason':'SBRAIN_AUTO_RESEARCH disabled'}
+    keyword=(project.get('tech_field') or project.get('description') or '').strip()
+    if not keyword:
+        return {'status':'skipped','reason':'industry keyword missing'}
+    try:
+        from agent_strategy.res.crawling.industry_research.market_crawler import add_keyword
+        result=add_keyword(keyword[:120])
+        return {'status':'refreshed','keyword':keyword[:120],'resultCount':result.get('resultCount',0)}
+    except Exception as exc:
+        return {'status':'failed','keyword':keyword[:120],'error':str(exc)}
 
 
 def select_path(data,path):
@@ -15,6 +48,45 @@ def select_path(data,path):
         data=data.get(key)
     return compact(data)
 
+
+def _annotate_status(fid, output, input_data):
+    """Mark strategy facts as provided/proposed/needs_confirmation for downstream F16/F19."""
+    if not isinstance(output, dict):
+        return output
+    source_json=json.dumps(input_data, ensure_ascii=False)
+    def mark(row, key=None):
+        if not isinstance(row, dict): return
+        if row.get("status") in {"provided", "proposed", "needs_confirmation"}: return
+        value=row.get(key) if key else None
+        row["status"] = "provided" if value not in (None, "", [], "확인 필요", "미정") and str(value) in source_json else ("needs_confirmation" if value in (None, "", [], "확인 필요", "미정") else "proposed")
+    if fid == "F02":
+        features=output.get("coreFeatures", [])
+        if isinstance(features, list):
+            output["coreFeatureStatus"]=[{"feature": (row.get("name") if isinstance(row, dict) else row), "status": ("provided" if str(row) in source_json else "proposed")} for row in features]
+    elif fid == "F06":
+        for row in output.get("kpi", []):
+            if isinstance(row, dict):
+                value=row.get("target")
+                row["status"] = "provided" if value not in (None, "", "확인 필요", "미정") and str(value) in source_json else ("needs_confirmation" if value in (None, "", "확인 필요", "미정") else "proposed")
+        for row in output.get("core_technologies", []):
+            if isinstance(row, dict): mark(row, "name")
+    elif fid == "F08":
+        for row in output.get("phases", []):
+            if isinstance(row, dict):
+                period=row.get("period") or row.get("기간")
+                row["status"] = "provided" if period and str(period) in source_json else ("needs_confirmation" if not period else "proposed")
+    elif fid == "F09":
+        for row in output.get("stages", []):
+            if isinstance(row, dict):
+                period=row.get("period") or row.get("기간")
+                row["status"] = "provided" if period and str(period) in source_json else ("needs_confirmation" if not period else "proposed")
+    return output
+
+
+def _provenance(value):
+    if not isinstance(value, dict):
+        return {"sourceRefs": [], "evidence": [], "originalFacts": {}}
+    return {"sourceRefs": value.get("sourceRefs", []), "evidence": value.get("evidence", []), "originalFacts": value.get("originalFacts", value.get("facts", []))}
 
 def section_source(spec,canonical,original,research):
     selected={key:select_path(canonical,key) for key in spec['sourceKeys']}
@@ -38,7 +110,12 @@ def section_source(spec,canonical,original,research):
     gather(selected)
     evidence=[s for s in research if s['sourceRef'] in refs]
     if not evidence:evidence=[s for s in research if s['domain'] in domains][:4]
-    return {**selected,'originalFacts':facts,'strategy_limits':original.get('strategy_limits',{}),'evidence':evidence}
+    strategy_provenance={root: _provenance(canonical.get(root, {})) for root in roots if root in canonical}
+    for provenance in strategy_provenance.values():
+        refs.extend(ref for ref in provenance.get('sourceRefs', []) if isinstance(ref, str))
+    # Keep provenance from every upstream strategy output available to F16 and F19.
+    return {**selected,'originalFacts':facts,'strategy_limits':original.get('strategy_limits',{}),'evidence':evidence,
+            'strategyProvenance':strategy_provenance,'sourceRefs':sorted(set(refs))}
 
 
 def _won(value):
@@ -123,6 +200,30 @@ def table_arguments(raw,kind,spec,canonical):
             rows=[{'핵심기술':r if isinstance(r,str) else r.get('technology',r.get('name','확인 필요')),'개발기능':r.get('function','확인 필요') if isinstance(r,dict) else '확인 필요'} for r in values]
     return dict(columns=spec['rules']['requiredColumns'],rows=rows,rules=rules)
 
+def _attach_provenance(fid, value, kwargs):
+    """Persist upstream evidence/facts on every F02-F15 canonical result."""
+    if not isinstance(value, dict) or fid not in {f"F{i:02}" for i in range(1, 16)}:
+        return value
+    refs=[]; evidence=[]
+    def walk(node):
+        if isinstance(node, dict):
+            ref=node.get("sourceRef")
+            if isinstance(ref, str): refs.append(ref)
+            if isinstance(node.get("sources"), list):
+                evidence.extend(x for x in node["sources"] if isinstance(x, dict) and isinstance(x.get("sourceRef"), str))
+            for child in node.values(): walk(child)
+        elif isinstance(node, list):
+            for child in node: walk(child)
+    walk(kwargs)
+    if not value.get("sourceRefs"):
+        value["sourceRefs"] = sorted(set(refs))
+    if not value.get("evidence"):
+        value["evidence"] = evidence
+    # Keep the exact input contract available to F16/F19 without replacing generated fields.
+    if not value.get("originalFacts"):
+        value["originalFacts"] = kwargs.get("originalFacts") or {k: v for k, v in kwargs.items() if k not in {"research_data", "market_data", "competitor_data", "constraints"}}
+    return value
+
 def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,execution_scope='full'):
     if kind not in CONTRACT['documents']:raise ValueError('문서 유형 오류')
     if execution_scope not in {'full','strategy_writing'}:raise ValueError('실행 범위 오류')
@@ -150,29 +251,32 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
         except Exception as exc:
             exc.partial_trace=trace
             raise
+        value=_attach_provenance(fid, value, kwargs)
         trace.append({'functionId':fid,'functionName':fn.__name__,'module':fn.__module__,
                       'durationMs':round((time.monotonic()-started)*1000),'inputChars':len(json.dumps(kwargs,ensure_ascii=False,separators=(',',':'))),
                       'inputKeys':list(kwargs),'output':value,'model':value.get('model'),'usage':value.get('usage',{}),'status':value.get('status','returned')})
         return value
     query=project['description']+' '+project.get('tech_field','')
+    industry_refresh=refresh_user_industry_research(project)
     web=call('F01',py.collect_web_data,query=query,source_type='attached_crawling',target_fields=['market','development','design'])
     market_evidence=retrieve(query,domains=('market',),limit=4,char_budget=5500)
+    competitor_evidence=retrieve(query+' 경쟁사 경쟁 비교',domains=('market',),limit=4,char_budget=4500)
     dev_evidence=retrieve(query,domains=('development',),limit=3,char_budget=3000)
-    evidence={s['sourceRef']:s for context in [web,market_evidence,dev_evidence] for s in context['sources']}
+    evidence={s['sourceRef']:s for context in [web,market_evidence,competitor_evidence,dev_evidence] for s in context['sources']}
     item_input={k:project.get(k) for k in ['description','output_summary','tech_field','target_customer']}
     c={'web_data':{'sources':web['sources'],'issues':web['issues']}}
-    c['item_spec']=compact(call('F02',gpt.analyze_item,item_input=item_input,research_data=dev_evidence))
+    c['item_spec']=_annotate_status('F02',compact(call('F02',gpt.analyze_item,item_input=item_input,research_data=dev_evidence)),{'item_input':item_input,'research_data':dev_evidence})
     c['market_analysis']=compact(call('F03',gpt.analyze_market,item=c['item_spec'],market_data=market_evidence,analysis_type='need_and_trend'))
-    competitors=compact(call('F04',gpt.analyze_competitors,item=c['item_spec'],market_data=c['market_analysis'],competitor_data=market_evidence))
+    competitors=compact(call('F04',gpt.analyze_competitors,item=c['item_spec'],market_data=c['market_analysis'],competitor_data=competitor_evidence))
     team_input={'representative':{'capabilities':plan.get('ceo_capability'),'careers':plan.get('ceo_careers',[])},
                 'members':[{k:r.get(k) for k in ['role','experience']} for r in inp.get('team_members',[])]}
     requirements=c['item_spec'].get('coreFeatures') or [project.get('tech_field','')]
     c['team_capability']=compact(call('F05',gpt.analyze_team_capability,team_data=team_input,item_requirements=requirements))
-    c['development_goal']=compact(call('F06',gpt.define_development_goal,item_spec=c['item_spec'],duration=duration,target_field=project.get('tech_field','')))
+    c['development_goal']=_annotate_status('F06',compact(call('F06',gpt.define_development_goal,item_spec=c['item_spec'],duration=duration,target_field=project.get('tech_field',''))),{'item_spec':c['item_spec'],'duration':duration,'target_field':project.get('tech_field','')})
     c['development_method']=compact(call('F07',gpt.define_development_method,core_technologies=c['development_goal'].get('core_technologies',requirements),constraints={'duration':duration,'research':dev_evidence}))
     c['architecture']=c['development_method'].get('architecture',{})
-    c['development_plan']=compact(call('F08',gpt.create_development_plan,goals=c['development_goal'],duration=duration,phases=schedules))
-    c['production_plan']=compact(call('F09',gpt.create_production_plan,product=c['item_spec'],development_plan=c['development_plan'],phases=schedules))
+    c['development_plan']=_annotate_status('F08',compact(call('F08',gpt.create_development_plan,goals=c['development_goal'],duration=duration,phases=schedules)),{'goals':c['development_goal'],'duration':duration,'phases':schedules})
+    c['production_plan']=_annotate_status('F09',compact(call('F09',gpt.create_production_plan,product=c['item_spec'],development_plan=c['development_plan'],phases=schedules)),{'product':c['item_spec'],'development_plan':c['development_plan'],'phases':schedules})
     c['marketing_strategy']=compact(call('F10',gpt.create_marketing_strategy,item=c['item_spec'],market=c['market_analysis'],target_customer=project.get('target_customer','미입력'),stage='초기시장'))
     bm=compact(call('F11',gpt.create_business_model,item=c['item_spec'],market=c['market_analysis'],customer=project.get('target_customer','미입력'),strategy=c['marketing_strategy']))
     c['growth_strategy']=compact(call('F12',gpt.create_growth_strategy,market=c['market_analysis'],competitors=competitors,bm=bm,investment={},social_value={}))
@@ -182,7 +286,7 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
     c['schedule']=compact(call('F15',py.create_schedule,tasks=[r['category'] for r in schedules],duration=duration,milestones=schedules))
     c['feasibility_plan']={'goal':c['development_goal'],'development':c['development_plan'],'budget':c['budget']}
     original={'item':item_input,'period':{'start':plan.get('dev_start_month'),'end':plan.get('dev_end_month'),'durationMonths':duration},'strategy_limits':plan.get('strategy_limits',{}),'team':team_input,'resources':resource_input,
-              'budget':{k:c['budget'][k] for k in ['items','total','government_amount','self_cash_amount','self_in_kind_amount','phase']},'schedule':schedules}
+              'budget':{k:c['budget'][k] for k in ['items','total','government_amount','self_cash_amount','self_in_kind_amount','phase']},'schedule':schedules,'strategyOutputs':{k:_provenance(v) for k,v in c.items() if not k.startswith('_')}}
     sections=[]; images=[]; decisions=[]; selected_chars=0; full_chars=0
     for base_spec in CONTRACT['documents'][kind]:
         spec=copy.deepcopy(base_spec)
@@ -205,7 +309,7 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
                 image_outputs=[output,call('F18',gpt.generate_image_spec,item=source['item_spec'],architecture={'design':source.get('architecture',{}),'validationFeedback':attempts[-1]['validation']['issues'] if attempts else []},flow_type='SERVICE_ARCHITECTURE')]
             else:
                 output=call('F16',gpt.generate_section,section_spec=spec,source_data=source,writing_rules={'documentType':kind,'tableGenerationEnabled':False,
-                            'validationFeedback':attempts[-1]['validation']['issues'] if attempts else [],'previousText':attempts[-1]['generatedText'] if attempts else None})
+                            'validationFeedback':attempts[-1]['validation']['issues'] if attempts else [],'previousText':attempts[-1]['generatedText'] if attempts else None,'preserveProvenance':True,'statusPolicy':['provided','proposed','needs_confirmation']})
                 image_outputs=[output]
             validation=(call('F19',py.validate_section,section_spec=spec,content=output,source_data=source)
                         if execution_scope=='full' else {'status':'not_run','agent':'검증 1','issues':[]})
@@ -214,7 +318,8 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
         rendered=[]
         if spec['functionId']=='F18' and validation['status'] in {'pass','not_run'} and render_image:
             rendered=[render_image(item) for item in image_outputs];images.extend(rendered)
-        sections.append({**spec,'generatedText':output['generatedText'],'tables':output.get('tables',[]),'images':rendered,'functionOutput':output,'validation':validation,'attempts':attempts,'sourceKeys':list(spec['sourceKeys'])})
+        output['generatedText']=_strip_section_heading(output.get('generatedText',''),spec)
+        sections.append({**spec,'generatedText':output['generatedText'],'tables':output.get('tables',[]),'images':rendered,'functionOutput':output,'validationSource':source,'validation':validation,'attempts':attempts,'sourceKeys':list(spec['sourceKeys'])})
         decisions.append({'sectionId':sid,'status':validation['status'],'attemptCount':len(attempts)})
     failed=execution_scope=='full' and any(s['validation']['status']=='fail' for s in sections)
     document=None if execution_scope!='full' or failed else call('F20',py.assemble_document,sections=sections,tables=[t for row in sections for t in row.get('tables',[])],images=images)
@@ -227,7 +332,7 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
             'results':sections,'document':document,'trace':trace,'validation1':decisions,'usage':usage,
             'executionScope':execution_scope,
             'contextMetrics':{'selectedSectionChars':selected_chars,'fullCanonicalCharsIfRepeated':full_chars,'note':'문자 수 비교이며 토큰 청구량은 usage 참조'},
-            'research':{'sources':list(evidence.values()),'availableFiles':web['availableFiles'],'issues':market_evidence['issues']+dev_evidence['issues']},
+            'research':{'sources':list(evidence.values()),'availableFiles':web['availableFiles'],'issues':market_evidence['issues']+competitor_evidence['issues']+dev_evidence['issues'],'industryRefresh':industry_refresh},
             'skippedFunctions':[]}
 
 
@@ -323,6 +428,7 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
     def call(fid,fn,**kwargs):
         if progress:progress(f'재시도: {fid} {fn.__name__} 실행 중',len(trace))
         started=time.monotonic(); value=fn(**kwargs)
+        value=_attach_provenance(fid, value, kwargs)
         trace.append({'functionId':fid,'functionName':fn.__name__,'module':fn.__module__,
                       'durationMs':round((time.monotonic()-started)*1000),'inputChars':len(json.dumps(kwargs,ensure_ascii=False,separators=(',',':'))),
                       'inputKeys':list(kwargs),'output':value,'model':value.get('model'),'usage':value.get('usage',{}),'status':value.get('status','returned'),'retryOf':prior_result['runId']})
@@ -347,7 +453,7 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
             else:
                 output=call('F16',gpt.generate_section,section_spec=spec,source_data=source,
                             writing_rules={'documentType':kind,'tableGenerationEnabled':False,'retryInstruction':retry_instruction,
-                                           'validationFeedback':feedback,'previousText':previous.get('generatedText') if not attempts else attempts[-1]['generatedText']})
+                                           'validationFeedback':feedback,'previousText':previous.get('generatedText') if not attempts else attempts[-1]['generatedText'],'preserveProvenance':True,'statusPolicy':['provided','proposed','needs_confirmation']})
                 image_outputs=[output]
             validation=call('F19',py.validate_section,section_spec=spec,content=output,source_data=source)
             attempts.append({'attempt':attempt+1,'generatedText':output['generatedText'],'validation':validation,'responseId':output.get('responseId')})
@@ -355,7 +461,9 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
         images=[]
         if spec['functionId']=='F18' and validation['status']=='pass' and render_image:
             images=[render_image(item) for item in image_outputs]
+        output['generatedText']=_strip_section_heading(output.get('generatedText',''),spec)
         rows[spec['sectionId']]={**previous,**spec,'generatedText':output['generatedText'],'tables':output.get('tables',[]), 'images':images,
+                                 'validationSource':source,
                                  'functionOutput':output,'validation':validation,'attempts':previous.get('attempts',[])+attempts,
                                  'sourceKeys':list(spec['sourceKeys']),'retryInstruction':retry_instruction}
     result['results']=[rows[row['sectionId']] for row in result['results']]

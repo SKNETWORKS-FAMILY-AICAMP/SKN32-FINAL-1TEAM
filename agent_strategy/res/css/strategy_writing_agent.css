@@ -7,3 +7,6 @@
 .trace-summary{line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;max-height:none;overflow:visible}#strategy-trace-panel details{margin-top:6px}#strategy-trace-panel pre{white-space:pre-wrap;max-height:240px;overflow:auto;font:12px/1.45 ui-monospace,monospace;background:#f8fafc;padding:8px;border-radius:6px}
 
 .trace-inline-table{width:100%;border-collapse:collapse;margin-top:6px;font-size:11px}.trace-inline-table th,.trace-inline-table td{border:1px solid #dfe4ec;padding:5px;text-align:left;vertical-align:top}.trace-inline-table th{background:#f8fafc}
+.hint.validation-fail{background:#fef3f2!important;color:#b42318!important;border:1px solid #fecdca!important}
+.hint.validation-pass{background:#ecfdf3!important;color:#067647!important;border:1px solid #abefc6!important}
+.hint.validation-warning{background:#fffaeb!important;color:#b54708!important;border:1px solid #fedf89!important}
