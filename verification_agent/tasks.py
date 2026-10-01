@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from verification_agent.feature_match import match_features
+from verification_agent.llm_judge import make_judge
 from verification_agent.rules import items as item_rules
 from verification_agent.score import compute_code_check, compute_infographic_check
 
@@ -58,10 +59,12 @@ def _check_infographic_alt(raw: dict, kind: str, svg: str, alt_text: str) -> Non
 
 def score_artifact(*, kind: str, entry_file_path: str, source_text: str,
                    readme_path: str | None, infographic_path: str, infographic_alt_text: str,
-                   feature_list: list[str], plan_text: str | None) -> tuple[dict, dict]:
+                   feature_list: list[str], plan_text: str | None,
+                   tools=None) -> tuple[dict, dict]:
     """산출물층 채점 본체. (코드 점검 결과, 계획서 대조 결과)를 dict로 돌려준다.
 
-    계약 모델에 의존하지 않으므로 sbrain 없이도 돈다.
+    계약 모델에 의존하지 않으므로 sbrain 없이도 돈다. tools가 있으면 계획서 대조에서 규칙을
+    넘긴 기능을 LLM이 하나씩 다시 판정한다(llm_judge.py). 코드 점검은 규칙만 쓴다.
     """
     readme = _read(readme_path) if readme_path else None
     svg = _read(infographic_path)
@@ -78,7 +81,9 @@ def score_artifact(*, kind: str, entry_file_path: str, source_text: str,
         raw = compute_code_check(entry_file_path, source_text, readme, svg)
     _check_infographic_alt(raw, kind, svg, infographic_alt_text)
 
-    feature = match_features(feature_list, source_text if raw["passed"] else "", kind, plan_text)
+    source = source_text if raw["passed"] else ""
+    judge = make_judge(tools, kind, source, plan_text) if source else None
+    feature = match_features(feature_list, source, kind, plan_text, judge)
     return raw, feature
 
 
@@ -94,6 +99,7 @@ def run_tv2(inp: TV2In, tools: Tools) -> TV2Out:
         infographic_alt_text=inp.infographic.alt_text, feature_list=inp.feature_list,
         # plan_doc은 계약 추가 요청 중인 필드다(조율_계약필드_요청_검증2.md). 오기 전에는 None.
         plan_text=plan_text_of(getattr(inp, "plan_doc", None)),
+        tools=tools,
     )
     # gate_failures · defect_sources는 조율이 확장 필드로 추가하는 중이다(조율 회신 2-2).
     # 실계약에 아직 없으면 넣지 않는다 — extra="forbid"라 넣으면 검증 오류가 난다.

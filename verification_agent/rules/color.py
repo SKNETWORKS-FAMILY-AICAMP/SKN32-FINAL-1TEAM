@@ -36,7 +36,8 @@ def is_transparent(value: str) -> bool:
 
 def parse_color(value: str) -> tuple[int, int, int] | None:
     """hex/rgb/rgba/기본 명명색만 지원한다. HSL 등은 판정불가로 처리."""
-    v = value.strip().lower()
+    # "!important"는 우선순위 표시일 뿐 색 값이 아니다. 붙어 있으면 떼고 읽는다.
+    v = value.lower().replace("!important", "").strip()
     if v in _NAMED_COLORS:
         return _NAMED_COLORS[v]
 

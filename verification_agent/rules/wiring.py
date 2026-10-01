@@ -71,6 +71,22 @@ def is_wired(control: dict, wired: set[str]) -> bool:
                 and (form["handler"] or (form["id"] and form["id"] in wired)))
 
 
+_FIELD_TAGS = {"input", "select", "textarea"}
+
+
+def is_used(control: dict, wired: set[str], refs: set[str]) -> bool:
+    """조작 요소가 화면 동작에 쓰이는지. 버튼은 이벤트가 직접 붙어야 하고(is_wired),
+    입력칸(input · select · textarea)은 스크립트가 그 id로 값을 읽어 가면 쓰이는 것으로 본다.
+
+    입력칸은 보통 자기 이벤트가 없다. "등록" 버튼의 핸들러가 getElementById('title').value로
+    값을 읽는다. 이것을 연결 없음으로 치면 입력 화면이 많은 프로토타입일수록 점수가 깎인다
+    (실측: 버튼 12개가 모두 동작하는 화면이 12/23으로 채점됨).
+    """
+    if is_wired(control, wired):
+        return True
+    return control["tag"] in _FIELD_TAGS and bool(control["id"]) and control["id"] in refs
+
+
 def control_label(control: dict) -> str:
     return (control["feature"] or "".join(control["text"]).strip() or control["aria"]
             or control["value"] or control["id"] or f"<{control['tag']}>")

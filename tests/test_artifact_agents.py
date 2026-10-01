@@ -190,7 +190,7 @@ class ArtifactAgentTests(TestCase):
             "<script>document.getElementById('a').addEventListener('click', () => {"
             " document.getElementById('result').textContent = 'ok'; });</script>")
         items = {i["id"]: i for i in check_html(page)}
-        self.assertAlmostEqual(items[1]["earned"], 1.5)  # 버튼 2개 중 1개만 연결
+        self.assertAlmostEqual(items[1]["earned"], 1.0)  # 버튼 2개 중 1개만 연결 — 50% 구간
         self.assertIn("취소", items[1]["evidence"])
         self.assertFalse(items[7]["passed"])             # #result 는 문서에 없음
         self.assertIn("result", items[7]["evidence"])
@@ -490,8 +490,8 @@ class ArtifactAgentTests(TestCase):
         )
         self.assertTrue(checked["passed"])
         self.assertFalse(checked["items"][1]["passed"])
-        self.assertAlmostEqual(checked["items"][1]["earned"], 3 * 5 / 6, places=3)
-        self.assertAlmostEqual(checked["total"], 14.5)
+        self.assertAlmostEqual(checked["items"][1]["earned"], 2.0, places=3)  # 5/6 — 80% 구간
+        self.assertAlmostEqual(checked["total"], 14.0)
 
     def test_webdev_flow_stays_inside_svg(self):
         data = {"item_name": "테스트", "features": ["조회"],

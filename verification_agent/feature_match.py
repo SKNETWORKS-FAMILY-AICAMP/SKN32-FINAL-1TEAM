@@ -15,13 +15,19 @@
   적힌 **설명**이 계획서 원문(plan_doc)에 근거가 있는지를 본다. 계획서 원문이 오지 않으면
   근거를 확인할 수 없으므로 이름 비교로 되돌아가지 않고 0점으로 둔다.
 
-지면이나 화면 문구가 계획서와 표현만 다른 경우(동의어)는 아직 누락으로 친다. 여기를
-LLM 보조가 맡을 예정이다 — 규칙이 누락이라고 한 기능만 LLM에 묻고, 최종 판정은 규칙이
-다시 한다. 검증-2용 모델은 조율의 통보를 기다리고 있다.
+## 규칙 → LLM 두 단계
+
+규칙은 "이름이 화면에 있고 버튼에 이벤트가 붙었다"까지만 본다. 그 이벤트가 계획서가 말한 일을
+하는지는 못 봐서, 구현 쪽이 규칙에 맞춰 만들면 늘 만점이 났다. 그래서 규칙을 넘긴 기능만
+LLM이 기능마다 하나씩 충족 · 부분 · 미충족으로 다시 판정한다(llm_judge.py). 규칙을 넘기고 LLM이
+충족이면 1, 부분이면 0.5, 미충족이면 0으로 센다(미충족만 누락 기능). 규칙에서 떨어진 기능은
+LLM에 묻지 않는다. LLM 호출이 실패한 기능은 규칙 판정을 그대로 쓴다(T-V2 Failure ④).
+점수 계산(15 × 인정 몫 ÷ 전체)과 원페이지의 지어낸 수치 감점은 규칙이 한다.
 """
 from __future__ import annotations
 
 import re
+from typing import Callable
 from xml.etree import ElementTree as ET
 
 from verification_agent.rules.html_parser import parse_page
@@ -65,6 +71,37 @@ def _terms(text: str) -> list[str]:
     return out
 
 
+# 기능 목록 → {기능: (얻은 몫 0 · 0.5 · 1, 이유) 또는 None(판정 실패)}. llm_judge.make_judge가 만든다.
+Judge = Callable[[list[str]], dict[str, "tuple[float, str] | None"]]
+
+
+def _apply_judge(judge: Judge | None, feature_list: list[str], missing: list[str],
+                 findings: list[str]) -> tuple[float, str]:
+    """규칙을 넘긴 기능을 LLM으로 다시 판정해 missing · findings를 고친다.
+    (인정 몫 합계, 요약 문구)를 돌려준다. judge가 없으면 규칙을 넘긴 기능 수 그대로다."""
+    passed = [f for f in feature_list if f not in missing]
+    if judge is None or not passed:
+        return float(len(passed)), ""
+    verdicts = judge(passed)
+    failed = [f for f in passed if not verdicts.get(f)]
+    judged = [f for f in passed if f not in failed]
+    rejected = [f for f in judged if verdicts[f][0] == 0]
+    partial = [f for f in judged if 0 < verdicts[f][0] < 1]
+    for feature in rejected:
+        missing.append(feature)
+        findings.append(f"{feature}: {verdicts[feature][1]}")
+    for feature in partial:
+        findings.append(f"{feature}: 부분 인정 — {verdicts[feature][1]}")
+    # 화면 · 결과 순서를 계획서 기능 순서에 맞춘다.
+    missing.sort(key=feature_list.index)
+    credit = len(failed) + sum(verdicts[f][0] for f in judged)
+    note = (f" → LLM 확인 {len(judged)}건: 충족 {len(judged) - len(rejected) - len(partial)}"
+            f" · 부분 {len(partial)} · 미충족 {len(rejected)}")
+    if failed:
+        note += f", LLM 판정 실패 {len(failed)}건은 규칙 결과로 대체"
+    return credit, note
+
+
 def _result(score: float, missing: list[str], findings: list[str], judged_by: str,
             extra: list[str] | None = None) -> dict:
     return {"score": round(max(0.0, min(TOTAL, score)), 2), "missing_features": missing,
@@ -74,7 +111,7 @@ def _result(score: float, missing: list[str], findings: list[str], judged_by: st
 # ── HTML ────────────────────────────────────────────────────────
 
 
-def _match_html(feature_list: list[str], source: str) -> dict:
+def _match_html(feature_list: list[str], source: str, judge: Judge | None) -> dict:
     parser = parse_page(source)
     visible = _norm(" ".join(parser.visible))
     wired = wired_ids("\n".join(parser.script_chunks))
@@ -103,8 +140,10 @@ def _match_html(feature_list: list[str], source: str) -> dict:
     known = {_norm(f) for f in feature_list}
     extra = list(dict.fromkeys(c["feature"] for c in parser.controls
                                if c["feature"] and _norm(c["feature"]) not in known))
-    ok = len(feature_list) - len(missing)
-    findings.insert(0, f"인정 {ok}/{len(feature_list)}개 (화면 문구 + 직접 연결된 조작 요소)")
+    rule_ok = len(feature_list) - len(missing)
+    ok, note = _apply_judge(judge, feature_list, missing, findings)
+    findings.insert(0, f"인정 {ok:g}/{len(feature_list)}개 (규칙: 화면 문구 + 직접 연결된 조작 요소 "
+                       f"{rule_ok}건{note})")
     return _result(TOTAL * ok / len(feature_list), missing, findings, "htmlParse", extra)
 
 
@@ -140,7 +179,8 @@ def _detail_verdict(feature: str, detail: str | None, plan_compact: str,
     return None
 
 
-def _match_onepage(feature_list: list[str], source: str, plan_text: str | None) -> dict:
+def _match_onepage(feature_list: list[str], source: str, plan_text: str | None,
+                   judge: Judge | None) -> dict:
     if plan_text is None:
         return _result(0.0, list(feature_list),
                        ["계획서 원문(plan_doc)이 전달되지 않아 근거 대조 불가 — 0점 처리",
@@ -166,8 +206,10 @@ def _match_onepage(feature_list: list[str], source: str, plan_text: str | None) 
     invented = list(dict.fromkeys(n for n in _numbers(shown) if n not in plan_numbers))
     penalty = min(_NUMBER_PENALTY_CAP, _NUMBER_PENALTY * len(invented))
 
-    ok = len(feature_list) - len(missing)
-    findings.insert(0, f"인정 {ok}/{len(feature_list)}개 (기능 설명이 계획서 원문에 근거)")
+    rule_ok = len(feature_list) - len(missing)
+    ok, note = _apply_judge(judge, feature_list, missing, findings)
+    findings.insert(0, f"인정 {ok:g}/{len(feature_list)}개 (규칙: 기능 설명이 계획서 원문에 근거 "
+                       f"{rule_ok}건{note})")
     if invented:
         findings.append(f"지면에 계획서에 없는 수치 {len(invented)}건 "
                         f"({', '.join(invented[:5])}) — {penalty:g}점 감점")
@@ -175,8 +217,9 @@ def _match_onepage(feature_list: list[str], source: str, plan_text: str | None) 
 
 
 def match_features(feature_list: list[str], source: str, kind: str,
-                   plan_text: str | None = None) -> dict:
-    """source가 빈 문자열이면 통과 필수 조건을 못 넘긴 산출물이다 — 전부 누락으로 본다."""
+                   plan_text: str | None = None, judge: Judge | None = None) -> dict:
+    """source가 빈 문자열이면 통과 필수 조건을 못 넘긴 산출물이다 — 전부 누락으로 본다.
+    judge가 없으면 규칙만으로 판정한다."""
     judged_by = "svgTextParse" if kind == "svg-onepage" else "htmlParse"
     if not feature_list:
         return _result(0.0, [], ["계획서 기능 목록이 비어 있음"], judged_by)
@@ -184,5 +227,5 @@ def match_features(feature_list: list[str], source: str, kind: str,
         return _result(0.0, list(feature_list),
                        ["산출물이 통과 필수 조건을 넘지 못해 대조 생략"], judged_by)
     if kind == "svg-onepage":
-        return _match_onepage(feature_list, source, plan_text)
-    return _match_html(feature_list, source)
+        return _match_onepage(feature_list, source, plan_text, judge)
+    return _match_html(feature_list, source, judge)

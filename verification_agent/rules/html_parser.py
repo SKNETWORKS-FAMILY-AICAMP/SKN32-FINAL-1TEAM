@@ -104,8 +104,13 @@ class PageParser(HTMLParser):
         elif tag == "img":
             self.img_records.append({"alt": a.get("alt")})
         elif tag == "svg":
-            record = {"aria_label": a.get("aria-label"), "has_title": False}
-            self.svg_records.append(record)
+            if self._svg_stack:
+                # svg 안의 svg는 바깥 그림의 한 부분이다(그림 조각을 잘라 넣는 자리 등).
+                # 대체 텍스트는 바깥 svg 하나에 붙으면 된다. 따로 세지 않는다.
+                record = self._svg_stack[-1]
+            else:
+                record = {"aria_label": a.get("aria-label"), "has_title": False}
+                self.svg_records.append(record)
             if not self_closing:
                 self._svg_stack.append(record)
         elif tag == "title" and self._svg_stack:

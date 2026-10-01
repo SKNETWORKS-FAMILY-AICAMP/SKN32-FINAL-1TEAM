@@ -30,6 +30,22 @@ def item(no: int, name: str, weight: float, passed: bool, evidence: str, *,
             "defect_sources": [] if passed else list(defect_sources or [])}
 
 
+# 부분 점수 구간. 비율 그대로 주면 "6개 중 5개"도 2.5점이라 점수가 늘 만점 근처에 몰린다.
+# 전부 충족해야 만점이고, 아래로는 구간마다 한 단계씩 내린다.
+_BANDS = ((1.0, 1.0), (0.8, 2 / 3), (0.5, 1 / 3))
+
+
+def banded(weight: float, ok: int, count: int) -> float:
+    """count개 중 ok개 충족일 때 얻는 점수. 100% 만점 · 80% 이상 2/3 · 50% 이상 1/3 · 그 아래 0."""
+    if count <= 0:
+        return 0.0
+    ratio = ok / count
+    for floor, share in _BANDS:
+        if ratio >= floor:
+            return weight * share
+    return 0.0
+
+
 def skipped(defs: tuple[tuple[int, str, float], ...], reason: str) -> list[dict]:
     """통과 필수 조건이 깨졌을 때 8칸을 전부 0점으로 채운다."""
     return [item(no, name, weight, False, reason) for no, name, weight in defs]

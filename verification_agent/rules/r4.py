@@ -35,23 +35,25 @@ from verification_agent.rules.html_parser import (
     PageParser,
     parse_page,
 )
-from verification_agent.rules.items import item
-from verification_agent.rules.wiring import control_label, id_refs, is_wired, wired_ids
+from verification_agent.rules.items import banded, item
+from verification_agent.rules.wiring import control_label, id_refs, is_used, wired_ids
 
 def check_action_wiring(parser: PageParser) -> dict:
-    """1. 동작 연결: 버튼·조작 요소 중 핸들러가 직접 붙은 비율로 부분 점수."""
+    """1. 동작 연결: 조작 요소 중 화면 동작에 쓰이는 비율로 구간 점수(items.banded).
+    버튼은 핸들러가 직접 붙어야 하고, 입력칸은 스크립트가 값을 읽어 가면 된다(wiring.is_used)."""
     controls = parser.controls
     if not controls:
         return item(1, "동작 연결", 3, False, "조작 요소(button 등) 0개 — 동작하는 화면이 없음")
-    wired = wired_ids("\n".join(parser.script_chunks))
-    dead = [control_label(c) for c in controls if not is_wired(c, wired)]
+    script = "\n".join(parser.script_chunks)
+    wired, refs = wired_ids(script), id_refs(script)
+    dead = [control_label(c) for c in controls if not is_used(c, wired, refs)]
     ok = len(controls) - len(dead)
     evidence = f"조작 요소 {ok}/{len(controls)}개 연결"
     if dead:
         evidence += f" — 연결 없음: {', '.join(repr(d[:20]) for d in dead[:3])}"
         if len(dead) > 3:
             evidence += f" 외 {len(dead) - 3}개"
-    return item(1, "동작 연결", 3, not dead, evidence, earned=3 * ok / len(controls))
+    return item(1, "동작 연결", 3, not dead, evidence, earned=banded(3, ok, len(controls)))
 
 
 # ── 2. 대체 텍스트 ───────────────────────────────────────────────

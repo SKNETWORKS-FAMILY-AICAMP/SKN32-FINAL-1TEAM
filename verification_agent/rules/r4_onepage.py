@@ -42,7 +42,7 @@ from __future__ import annotations
 from xml.etree import ElementTree as ET
 
 from verification_agent.rules.color import contrast_ratio, parse_color
-from verification_agent.rules.items import item
+from verification_agent.rules.items import banded, item
 
 # 값이 실재하지 않는데 자리만 채운 문구. 구현 Agent가 빈 값에 적는 문구
 # (engineering_agent/infographic/svg_parts.py의 EMPTY_VALUE_TEXT)를 포함하며,
@@ -62,8 +62,9 @@ _REQUIRED_FIELDS: tuple[tuple[str, str], ...] = (
 _PAGE_WIDTH = 900.0
 _MIN_FONT_PX = 12.0
 # 7번: 래스터에 묻힌 비율 상한. 기획서 5-4가 "래스터 이미지에 묻힌 비율 검사"라고
-# 쓴 것을 지면 면적 대비 <image> 면적으로 구현한다.
-_MAX_IMAGE_AREA_RATIO = 0.1
+# 쓴 것을 지면 면적 대비 보이는 그림 면적으로 구현한다. 일러스트(대표 그림 + 구역 그림)는
+# 지면의 15~25%를 차지한다(실측). 그 이상이면 글자를 그림으로 대신한 지면으로 본다.
+_MAX_IMAGE_AREA_RATIO = 0.35
 
 
 def _parse_svg(source: str):
@@ -150,7 +151,7 @@ def check_alt_text(root) -> dict:
 
 
 def check_six_fields(root) -> dict:
-    """필수 6항목이 data-field 표식을 달고 실재하는지. 충족 개수로 부분 점수.
+    """필수 6항목이 data-field 표식을 달고 실재하는지. 충족 개수로 구간 점수(items.banded).
 
     "정보 없음" 같은 자리 채우기 문구는 충족으로 세지 않는다 — 세면 지면에 아무 사실도
     없는데 만점이 나온다. 지면 한 장이 산출물 전체라 가장 무거운 3점을 준다.
@@ -166,7 +167,7 @@ def check_six_fields(root) -> dict:
     if missing:
         detail += f" — 누락: {', '.join(missing)}"
     return item(2, "핵심 정보 6항목", 3, not missing, detail,
-                earned=3 * len(met) / len(_REQUIRED_FIELDS))
+                earned=banded(3, len(met), len(_REQUIRED_FIELDS)))
 
 
 # ── 3. 명도 대비 ────────────────────────────────────────────────
@@ -277,7 +278,11 @@ def check_overflow(root) -> dict:
 def check_text_real(root) -> dict:
     """지면 문자열이 text 요소로 있는지 + 래스터 이미지에 묻힌 면적 비율."""
     texts = [node for node in _nodes(root, "text") if _text_of(node)]
-    images = _nodes(root, "image")
+    # 지면에 실제로 보이는 그림만 센다. <defs> 안의 그림은 원본을 한 번 실어 둔 것이고,
+    # 지면에는 그것을 잘라 쓰는 자리(data-role="art")만큼만 보인다.
+    stored = {id(n) for d in _nodes(root, "defs") for n in d.iter()}
+    images = [n for n in _nodes(root, "image") if id(n) not in stored]
+    images += [n for n in _nodes(root, "svg") if n is not root and n.get("data-role") == "art"]
     page_w, page_h = _page_size(root)
     image_area = sum(_float(n, "width") * _float(n, "height") for n in images)
     ratio = (image_area / (page_w * page_h)) if page_h else 0.0
