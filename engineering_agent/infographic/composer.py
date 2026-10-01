@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 
-from engineering_agent.infographic import icons
+from engineering_agent.infographic import artsheet, icons
 from engineering_agent.infographic.design_kit import arrow, section_frame, showcase_defs
 from engineering_agent.infographic.layout import (
     PAGE_WIDTH, TITLE_SIZE, TITLE_WIDTH, estimate_text_width, fit, fit_size, parse_milestones, wrap,
@@ -76,11 +76,26 @@ def _journey(data, x, y, w):
     nodes = [n for n in nodes if str(n[3]).strip() or n[2] != "outcome"]
     step = w / len(nodes)
     parts, heights = [], []
+    if artsheet.has(data, artsheet.HERO):
+        # 제목 아래 대표 도식이 이미 문제 → 사용 → 결과를 그림으로 보여 준다. 같은 원을 또 그리지 않고
+        # 그림의 세 부분 아래에 글만 붙인다.
+        for i, (name, _, field, value, tone, _) in enumerate(nodes):
+            cx = x + (i + .5) * step
+            parts.append(f'<rect x="{cx - 22}" y="{y}" width="44" height="5" rx="2.5" fill="{tone}"/>')
+            parts.append(text(cx, y + 34, name, 19, tone, 800, "middle", 'data-role="label"'))
+            svg, lines = _para(cx, y + 62, value or EMPTY_VALUE_TEXT, step - 44, 3, 15, C["body"],
+                               f'data-field="{field}" data-role="value"', "middle")
+            parts.append(svg)
+            heights.append(62 + (lines - 1) * 22)
+        return "".join(parts), max(heights) + 14
     for i, (name, icon_name, field, value, tone, tint) in enumerate(nodes):
         cx = x + (i + .5) * step
-        parts.append(f'<circle cx="{cx}" cy="{y + 66}" r="62" fill="{tint}" stroke="{tone}" '
-                     f'stroke-opacity=".35" stroke-width="2" filter="url(#kit-shadow)"/>')
-        parts.append(icons.icon(icon_name, cx, y + 66, 60, tone, 2))
+        custom = artsheet.icon(data, artsheet.key("story", field), cx, y + 66, 124)
+        parts.append(custom + f'<circle cx="{cx}" cy="{y + 66}" r="62" fill="none" stroke="{tone}" '
+                     f'stroke-opacity=".35" stroke-width="2"/>' if custom else
+                     f'<circle cx="{cx}" cy="{y + 66}" r="62" fill="{tint}" stroke="{tone}" '
+                     f'stroke-opacity=".35" stroke-width="2" filter="url(#kit-shadow)"/>'
+                     + icons.icon(icon_name, cx, y + 66, 60, tone, 2))
         parts.append(text(cx, y + 160, name, 18, C["ink"], 700, "middle", 'data-role="label"'))
         svg, lines = _para(cx, y + 188, value or EMPTY_VALUE_TEXT, step - 40, 3, 15, C["body"],
                            f'data-field="{field}" data-role="value"', "middle")
@@ -89,6 +104,24 @@ def _journey(data, x, y, w):
         if i < len(nodes) - 1:
             parts.append(_thick_arrow(cx + 76, cx + step - 76, y + 66, C["accent"]))
     return "".join(parts), max(heights) + 16
+
+
+def _pipeline_captions(data, x, y, w):
+    """AI API의 입력 → 처리 → 출력. 제목 아래 대표 도식이 이 흐름을 그리므로 여기서는 그림 아래 글만 붙인다.
+    (대표 도식이 없으면 예전 개념도 showcase._hero를 쓴다.)"""
+    pipeline = data.get("pipeline") or {}
+    stages = [("입력", "input"), ("AI 처리", "process"), ("출력", "output")]
+    step = w / len(stages)
+    parts, heights = [], []
+    for i, (name, field) in enumerate(stages):
+        cx = x + (i + .5) * step
+        parts.append(f'<rect x="{cx - 22}" y="{y}" width="44" height="5" rx="2.5" fill="{C["accent_deep"]}"/>')
+        parts.append(text(cx, y + 34, name, 19, C["accent_deep"], 800, "middle", 'data-role="label"'))
+        svg, lines = _para(cx, y + 62, pipeline.get(field, "") or EMPTY_VALUE_TEXT, step - 44, 4, 15, C["body"],
+                           f'data-field="pipeline.{field}" data-role="value"', "middle")
+        parts.append(svg)
+        heights.append(62 + (lines - 1) * 22)
+    return "".join(parts), max(heights) + 14
 
 
 def _thick_arrow(x1, x2, y, color):
@@ -109,8 +142,9 @@ def _split(data, x, y, w):
         body, lines = _para(cx + 22, y + 70, value or EMPTY_VALUE_TEXT, col - 44, 3, 15, C["body"],
                             f'data-field="{field}" data-role="value"')
         heights.append(70 + (lines - 1) * 22 + 22)
-        parts.append((cx, fill, icons.badge(icon_name, cx + 38, y + 34, 20,
-                                            PROBLEM_TINT if i == 0 else "#FFFFFF", tone)
+        parts.append((cx, fill, (artsheet.icon(data, artsheet.key("story", field), cx + 38, y + 34, 48)
+                                 or icons.badge(icon_name, cx + 38, y + 34, 20,
+                                                PROBLEM_TINT if i == 0 else "#FFFFFF", tone))
                       + text(cx + 68, y + 40, name, 17, C["ink"], 700, attrs='data-role="label"') + body))
     h = max(heights)
     svg = "".join(f'<rect x="{cx}" y="{y}" width="{col}" height="{h}" rx="12" fill="{fill}" '
@@ -173,7 +207,8 @@ def _feature_grid(data, features, x, y, w):
         dt_y = cy + 22 + nl * 22
         dt, dl = _para(cx + 58, dt_y, detail or EMPTY_VALUE_TEXT, col - 70, 2, 13, C["body"],
                        f'data-field="feature_detail" data-feature="{esc(feat)}" data-role="value"')
-        parts += [icons.badge(icons.pick(feat), cx + 24, cy + 20, 20, C["tint"], C["accent_deep"]), name, dt]
+        parts += [artsheet.icon(data, artsheet.key("feature", feat), cx + 24, cy + 22, 48)
+                  or icons.badge(icons.pick(feat), cx + 24, cy + 20, 20, C["tint"], C["accent_deep"]), name, dt]
         heights.append(22 + nl * 22 + (dl - 1) * 20 + 8)
     cy += max(heights or [0])
     return "".join(parts), cy - y + 4
@@ -245,24 +280,28 @@ def _revenue_flow(data, x, y, w):
     left, right = x + 60, x + w - 60
     cy = y + 60
     parts = [
-        f'<circle cx="{left}" cy="{cy}" r="38" fill="{C["tint"]}" filter="url(#kit-shadow)"/>',
-        icons.icon(icons.pick(payer, "users"), left, cy, 40, C["accent_deep"], 1.8),
-        f'<circle cx="{right}" cy="{cy}" r="38" fill="url(#kit-solid)" filter="url(#kit-shadow)"/>',
-        icons.icon(icons.pick(str(data.get("item_summary", "")), "target"), right, cy, 40, "#FFFFFF", 1.8),
+        artsheet.icon(data, artsheet.key("revenue", "payer"), left, cy, 80) or (
+            f'<circle cx="{left}" cy="{cy}" r="38" fill="{C["tint"]}" filter="url(#kit-shadow)"/>'
+            + icons.icon(icons.pick(payer, "users"), left, cy, 40, C["accent_deep"], 1.8)),
+        artsheet.icon(data, artsheet.key("revenue", "service"), right, cy, 80) or (
+            f'<circle cx="{right}" cy="{cy}" r="38" fill="url(#kit-solid)" filter="url(#kit-shadow)"/>'
+            + icons.icon(icons.pick(str(data.get("item_summary", "")), "target"), right, cy, 40, "#FFFFFF", 1.8)),
         text(left, cy + 62, fit(payer, 14, 150), 14, C["ink"], 700, "middle", 'data-field="revenue_flow"'),
         text(right, cy + 62, fit(str(data.get("item_name", "")), 14, 150), 14, C["ink"], 700, "middle"),
         arrow(left + 48, cy - 12, right - 48, cy - 12, C["accent_deep"]),
     ]
     span = right - left - 110
+    # 반 칸에서는 화살표 사이가 좁다. 한 줄에 안 들어가면 자르지 않고 두 줄로 쓴다.
+    mid = (left + right) / 2
     if payment:
-        size = fit_size(payment, 15, span, 12)
-        parts.append(text((left + right) / 2, cy - 22, fit(payment, size, span), size, C["accent_deep"], 800,
-                          "middle", 'data-field="revenue_flow"'))
+        _, n = _para(mid, 0, payment, span, 2, 15, C["accent_deep"], "", "middle", 800)
+        svg, _ = _para(mid, cy - 22 - (n - 1) * 22, payment, span, 2, 15, C["accent_deep"],
+                       'data-field="revenue_flow"', "middle", 800)
+        parts.append(svg)
     if value:
         parts.append(arrow(right - 48, cy + 14, left + 48, cy + 14, C["muted"]))
-        size = fit_size(value, 13, span, 12)
-        parts.append(text((left + right) / 2, cy + 36, fit(value, size, span), size, C["body"], 400,
-                          "middle", 'data-field="revenue_flow"'))
+        svg, _ = _para(mid, cy + 36, value, span, 2, 13, C["body"], 'data-field="revenue_flow"', "middle")
+        parts.append(svg)
     body, lines = _para(x + 4, cy + 104, data.get("revenue_unit_price", "") or EMPTY_VALUE_TEXT, w - 8, 2, 14,
                         C["body"], 'data-field="revenue_unit_price" data-role="value"')
     parts.append(f'<line x1="{x}" y1="{cy + 80}" x2="{x + w}" y2="{cy + 80}" stroke="{C["line"]}"/>')
@@ -273,7 +312,8 @@ def _revenue_flow(data, x, y, w):
 def _revenue_card(data, x, y, w):
     value = str(data.get("revenue_unit_price", ""))
     price = _PRICE_RE.search(value)
-    parts = [icons.badge("coin", x + 30, y + 30, 26, C["tint"], C["accent_deep"])]
+    parts = [artsheet.icon(data, artsheet.key("revenue", "service"), x + 30, y + 30, 60)
+             or icons.badge("coin", x + 30, y + 30, 26, C["tint"], C["accent_deep"])]
     if price:
         size = fit_size(price.group(), 30, w - 80)
         parts.append(text(x + 72, y + 42, fit(price.group(), size, w - 80), size, C["accent_deep"], 800,
@@ -334,8 +374,9 @@ def _metric_cards(data, x, y, w):
     parts, heights = [], []
     for i, m in enumerate(metrics):
         cx = x + (i + .5) * cell
-        parts.append(icons.badge(icons.pick_metric(str(m["value"]), str(m.get("label", ""))),
-                                 cx, y + 30, 26, C["tint"], C["accent_deep"]))
+        parts.append(artsheet.icon(data, artsheet.key("metric", m.get("label", "")), cx, y + 32, 64)
+                     or icons.badge(icons.pick_metric(str(m["value"]), str(m.get("label", ""))),
+                                    cx, y + 30, 26, C["tint"], C["accent_deep"]))
         size = fit_size(str(m["value"]), 28, cell - 16)
         parts.append(text(cx, y + 96, fit(str(m["value"]), size, cell - 16), size, C["accent_deep"], 800, "middle",
                           'data-field="key_metric"'))
@@ -386,7 +427,20 @@ def _effects(data, x, y, w):
     rows = _items(data, "effects", ("who", "what"), 4)
     if not rows:
         return "", 0
-    cols = len(rows) if w > 600 else min(2, len(rows))
+    if w <= 600:
+        # 반 칸에 두 열로 놓으면 세 번째가 혼자 아래 줄로 내려간다. 한 줄에 하나씩 세로로 놓는다.
+        parts, cy = [], y + 4
+        for row in rows:
+            parts.append(artsheet.icon(data, artsheet.key("effect", row["who"]), x + 28, cy + 28, 56)
+                         or icons.badge(icons.pick(row["who"], "users"), x + 28, cy + 28, 24, C["tint"],
+                                        C["accent_deep"]))
+            parts.append(text(x + 70, cy + 22, fit(row["who"], 15, w - 80), 15, C["ink"], 700,
+                              attrs='data-field="effects"'))
+            wt, wl = _para(x + 70, cy + 44, row["what"], w - 80, 2, 13, C["body"], 'data-field="effects"')
+            parts.append(wt)
+            cy += max(62, 44 + (wl - 1) * 20 + 16)
+        return "".join(parts), cy - y
+    cols = len(rows)
     col = (w - (cols - 1) * GAP) / cols
     parts, cy, heights = [], y, []
     for i, row in enumerate(rows):
@@ -395,7 +449,8 @@ def _effects(data, x, y, w):
             cy += max(heights) + 12
             heights = []
         cx = x + c * (col + GAP) + col / 2
-        parts.append(icons.badge(icons.pick(row["who"], "users"), cx, cy + 30, 26, C["tint"], C["accent_deep"]))
+        parts.append(artsheet.icon(data, artsheet.key("effect", row["who"]), cx, cy + 32, 64)
+                     or icons.badge(icons.pick(row["who"], "users"), cx, cy + 30, 26, C["tint"], C["accent_deep"]))
         parts.append(text(cx, cy + 82, fit(row["who"], 15, col - 16), 15, C["ink"], 700, "middle",
                           'data-field="effects"'))
         wt, wl = _para(cx, cy + 106, row["what"], col - 20, 2, 13, C["body"], 'data-field="effects"', "middle")
@@ -416,6 +471,10 @@ def _tagline(data, x, y, w):
 
 
 # ── 구성 정리 · 조립 ─────────────────────────────────────────────
+
+
+# 내용이 반 칸 폭이면 충분한 도식.
+_NARROW = {("market", "nested"), ("revenue", "flow"), ("revenue", "card"), ("competition", "table")}
 
 
 def default_layout(category: str) -> list[dict]:
@@ -501,6 +560,34 @@ def normalize_layout(category: str, data: dict) -> list[dict]:
         out = [b for b in out if need.get((b["block"], b["variant"]), lambda: True)()]
         if category == "AI_API" and not any(b["block"] == "hero" for b in out):
             out.insert(0, {"block": "hero", "variant": "hub", "width": "full", "title": ""})
+    # 폭이 좁은 도식(겹친 원 · 수익 흐름 등)이 한 줄 전체를 차지하면 옆이 빈다. 둘이 이어지면 반 칸씩 나란히 둔다.
+    for a, b in zip(out, out[1:]):
+        if all(bb["width"] == "full" and (bb["block"], bb["variant"]) in _NARROW for bb in (a, b)):
+            a["width"] = b["width"] = "half"
+    # 좁은 도식이 혼자 남으면(짝이던 블록이 재료가 없어 빠진 경우 등) 반 칸으로 줄일 수 있는 옆 블록과 짝짓는다.
+    paired = set()
+    i = 0
+    while i < len(out) - 1:
+        if out[i]["width"] == "half" and out[i + 1]["width"] == "half":
+            paired.update((i, i + 1))
+            i += 2
+        else:
+            i += 1
+    for i, b in enumerate(out):
+        if i in paired or (b["block"], b["variant"]) not in _NARROW:
+            continue
+        for j in (i + 1, i - 1):
+            if not 0 <= j < len(out) or j in paired:
+                continue
+            other = out[j]
+            if other["block"] in ("hero", "tagline", "process") or (other["block"], other["variant"]) == (
+                    "features", "band") or "half" not in CATALOG[other["block"]][other["variant"]]:
+                continue
+            if other["block"] == "roadmap" and len(parse_milestones(str(data.get("timeline_baseline", "")))) >= 4:
+                continue
+            b["width"] = other["width"] = "half"
+            paired.update((i, j))
+            break
     # 하단 메시지는 항상 맨 끝.
     out.sort(key=lambda b: b["block"] == "tagline")
     return out
@@ -512,6 +599,8 @@ def _render_block(category, data, features, b, x, y, w):
     if block == "hero":
         if variant == "journey":
             return _journey(data, x, y, w)
+        if category == "AI_API" and artsheet.has(data, artsheet.HERO):
+            return _pipeline_captions(data, x, y, w)
         svg, end = _hero(category, data, features, y)
         return svg, end - y
     if block == "features" and variant == "band":
@@ -550,10 +639,13 @@ def _framed(b, x, y, w, body, h):
 
 
 def compose(category: str, data: dict, features: list[str]) -> tuple[str, int]:
-    if data.get("style", "poster") == "poster":
+    # 맞춤 아이콘(artsheet)이 있으면 탭 달린 구역 틀로 그린다. 아이콘이 구역마다 들어가는 모양이라
+    # 아이콘이 볼거리가 된다. 없으면 아이콘에 기대지 않는 포스터 모양으로 그린다.
+    style = data.get("style") or ("framed" if data.get("_art") else "poster")
+    if style == "poster":
         body, h = compose_poster(category, data, features)
         return showcase_defs(C) + body, h
-    parts = [showcase_defs(C)]
+    parts = [showcase_defs(C), artsheet.defs(data)]
     parts.append(text(450, 62, fit(str(data.get("item_name", "")), TITLE_SIZE, TITLE_WIDTH),
                       TITLE_SIZE, C["ink"], 800, "middle", 'data-field="item_name" data-role="title"'))
     summary = str(data.get("item_summary", ""))
@@ -567,6 +659,10 @@ def compose(category: str, data: dict, features: list[str]) -> tuple[str, int]:
                  + text(450 + 12, 131, target, 15, C["ink"], 400, "middle",
                         'data-field="target_users" data-role="value"'))
     y = 168
+    banner = artsheet.slot(data, artsheet.HERO, M, y, INNER, 216, 18)
+    if banner:
+        parts.append(banner)
+        y += 216 + 10
     layout = [dict(b) for b in normalize_layout(category, data)]
     # 포스터의 대표 도식은 문제 · 해결을 이미 크게 보여 준다(AI API 제외). split 판은 반복이다.
     if category != "AI_API" and any(b["block"] == "hero" for b in layout):
@@ -594,7 +690,9 @@ def compose(category: str, data: dict, features: list[str]) -> tuple[str, int]:
                         rendered.append(("RAW", bb, bx, res[1], res[0]))
             h = max(r[3] for r in rendered)
             # 짝의 높이가 크게 다르면 짧은 쪽 아래가 비어 보인다. 반 칸 전용이 아니면 한 줄씩 편다.
-            fixed = any(r[0] in ("ORBIT", "MREV") for r in rendered)
+            # 폭이 좁은 도식은 펴면 옆이 더 크게 비므로 짝을 유지한다.
+            fixed = any(r[0] in ("ORBIT", "MREV") or (r[1]["block"], r[1]["variant"]) in _NARROW
+                        for r in rendered)
             if not fixed and min(r[3] for r in rendered) < h * .6:
                 left["width"] = right["width"] = "full"
                 continue

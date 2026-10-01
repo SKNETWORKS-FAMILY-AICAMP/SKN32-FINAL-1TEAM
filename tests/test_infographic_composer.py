@@ -109,8 +109,9 @@ class ComposerTests(TestCase):
 
         seen = {}
 
-        def fake_generate(category, plan_text, tools):
-            seen["text"] = plan_text
+        def fake_generate(category, plan_text, tools, variation=0):
+            seen.setdefault("texts", []).append(plan_text)
+            seen.setdefault("variations", []).append(variation)
             return {"item_name": "반찬온", "features": ["반찬 사전주문"], "feature_details": []}
 
         doc = PlanDoc(sections=[PlanSection(section_code="1", title="t", sentences=[
@@ -123,4 +124,47 @@ class ComposerTests(TestCase):
             tasks.run_tb2(TB2In(plan_doc=doc, item_spec=spec, category="원페이지", instruction="만들어라",
                                 rework_input=ReworkInput(mode="재수행", previous_result_ref="p", issues=[],
                                                          is_final_attempt=False)), tools=None)
-        self.assertIn(RETRY_HINT, seen["text"])
+            tasks.run_tb2(TB2In(plan_doc=doc, item_spec=spec, category="원페이지", instruction="만들어라"),
+                          tools=None)
+        retry, first = seen["variations"]
+        self.assertIn(RETRY_HINT, seen["texts"][0])
+        self.assertNotIn(RETRY_HINT, seen["texts"][1])
+        from engineering_agent.infographic.compose_guide import SKELETONS
+        self.assertNotEqual(retry % len(SKELETONS), first % len(SKELETONS))  # 다시 만들면 다른 뼈대를 준다
+
+    def test_each_variation_hands_the_model_a_different_skeleton(self):
+        """작은 모델은 예시를 따른다. 예시가 하나면 어떤 계획서든 같은 구성이 나온다."""
+        from engineering_agent.infographic.compose_guide import SKELETONS, layout_example
+
+        examples = [layout_example("원페이지", n) for n in range(len(SKELETONS))]
+        self.assertEqual(len(set(examples)), len(SKELETONS))
+        self.assertEqual(layout_example("원페이지", 0), layout_example("원페이지", len(SKELETONS)))
+        self.assertGreaterEqual(len({e.split('"variant": "')[1].split('"')[0] for e in examples}), 2)
+        for n in range(len(SKELETONS)):
+            self.assertIn('"hero", "variant": "hub"', layout_example("AI_API", n))
+            self.assertIn('"process"', layout_example("웹개발", n))
+
+    def test_two_narrow_blocks_in_a_row_share_one_line(self):
+        from engineering_agent.infographic.composer import normalize_layout
+
+        layout = normalize_layout("원페이지", dict(DATA, layout=[
+            {"block": "hero", "variant": "journey"}, {"block": "features", "variant": "band"},
+            {"block": "market", "variant": "nested", "width": "full"},
+            {"block": "revenue", "variant": "flow", "width": "full"},
+            {"block": "roadmap", "variant": "line"}]))
+        widths = {b["block"]: b["width"] for b in layout}
+        self.assertEqual((widths["market"], widths["revenue"]), ("half", "half"))
+
+    def test_lone_narrow_block_pairs_with_a_neighbour(self):
+        """짝이던 블록이 빠져 좁은 도식이 혼자 남으면 한 줄을 다 차지해 옆이 빈다."""
+        from engineering_agent.infographic.composer import normalize_layout
+
+        layout = normalize_layout("원페이지", dict(DATA, layout=[
+            {"block": "hero", "variant": "journey"}, {"block": "features", "variant": "band"},
+            {"block": "roadmap", "variant": "line"}, {"block": "revenue", "variant": "card", "width": "half"},
+            {"block": "metrics", "variant": "cards"},
+            {"block": "market", "variant": "nested", "width": "half"},
+            {"block": "effects", "variant": "cards"}]))
+        widths = {b["block"]: b["width"] for b in layout}
+        self.assertEqual((widths["market"], widths["effects"]), ("half", "half"))
+        self.assertEqual(widths["features"], "full")

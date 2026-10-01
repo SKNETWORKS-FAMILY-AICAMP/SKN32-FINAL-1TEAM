@@ -37,7 +37,7 @@ COMPOSE_GUIDE = """
 - effects / cards(대상별 아이콘 카드, effects 필요) / full · half
 - tagline / band(맨 아래 한 줄 메시지 띠) / full
 규칙:
-- 5~8개 블록. 첫 블록은 hero, 마지막은 tagline을 권한다.
+- 구성은 맨 아래 [이번 지면의 뼈대]를 따른다. 마지막은 tagline이다.
 - half 블록은 반드시 두 개씩 연달아 놓는다(한 줄에 나란히). 홀로 남은 half는 full로 바꿔라.
 - 같은 형식이 연달아 반복되지 않게 섞어라. 재료(필요한 필드)가 계획서에 없는 블록은 고르지 마라.
 - 원페이지는 문제 · 해결(journey 또는 problem_solution), features, 수익(revenue 또는 metrics with_revenue),
@@ -57,12 +57,48 @@ COMPOSE_GUIDE = """
   before_after나 problem에 넣고 key_metrics에 섞지 마라.
 - 날짜 · 기간 · 금액 · 수량은 계획서 표현 그대로. 줄이다가 연도 · 월을 바꾸지 마라. 없는 숫자를 만들지 마라.
 - 한국어 한글로만. 한자 · 일본어 금지.
-
-layout 예: [{"block": "hero", "variant": "journey", "width": "full", "title": ""},
- {"block": "problem_solution", "variant": "before_after", "width": "half", "title": "도입 전후"},
- {"block": "market", "variant": "nested", "width": "half", "title": "시장 규모"}, ...,
- {"block": "tagline", "variant": "band", "width": "full", "title": ""}]
+- 글자 수를 맞추려고 띄어쓰기를 없애지 마라(예: '2027년 2월~6월', '시범 운영'). 길면 낱말을 줄여라.
 """
 
-RETRY_HINT = ("이전 결과를 보고 다시 만들기를 눌렀다. 이전과 다른 대표 도식(hero variant)과 다른 블록 순서 · "
-              "변형 · 배치(half 짝)를 골라 다른 지면을 만들어라.")
+# 작은 모델은 "다양하게 골라라"는 지시보다 예시를 따른다. 예시를 하나만 두었더니 어떤 계획서든
+# 그 예시와 같은 구성(journey → band → line)이 나왔다(실측). 그래서 뼈대를 여러 개 두고
+# 아이템마다 다른 것을 준다. 다시 만들기를 누르면 다음 뼈대로 넘어간다.
+_B = lambda block, variant, width="full": {"block": block, "variant": variant, "width": width, "title": ""}  # noqa: E731
+SKELETONS: tuple[tuple[dict, ...], ...] = (
+    (_B("hero", "journey"), _B("features", "band"), _B("market", "nested", "half"), _B("revenue", "flow", "half"),
+     _B("process", "steps"), _B("roadmap", "line"), _B("metrics", "cards"), _B("tagline", "band")),
+    (_B("problem_solution", "split"), _B("features", "grid"), _B("process", "steps"),
+     _B("roadmap", "orbit", "half"), _B("metrics", "with_revenue", "half"), _B("effects", "cards"),
+     _B("tagline", "band")),
+    (_B("problem_solution", "before_after"), _B("features", "band"), _B("roadmap", "orbit", "half"),
+     _B("revenue", "flow", "half"), _B("metrics", "cards"), _B("market", "nested", "half"),
+     _B("competition", "table", "half"), _B("effects", "cards"), _B("tagline", "band")),
+    (_B("hero", "journey"), _B("problem_solution", "before_after"), _B("features", "grid"),
+     _B("metrics", "bars", "half"), _B("revenue", "card", "half"), _B("roadmap", "line"),
+     _B("effects", "cards"), _B("tagline", "band")),
+    (_B("problem_solution", "split"), _B("process", "steps"), _B("features", "band"),
+     _B("market", "nested", "half"), _B("competition", "table", "half"),
+     _B("roadmap", "orbit", "half"), _B("revenue", "flow", "half"), _B("metrics", "cards"),
+     _B("tagline", "band")),
+    (_B("hero", "journey"), _B("process", "steps"), _B("features", "grid"),
+     _B("revenue", "flow", "half"), _B("roadmap", "orbit", "half"), _B("effects", "cards"),
+     _B("metrics", "cards", "half"), _B("market", "nested", "half"), _B("tagline", "band")),
+)
+
+
+def layout_example(category: str, variation: int) -> str:
+    """이번 지면의 뼈대. variation이 같으면 같은 뼈대다."""
+    import json
+
+    skeleton = [dict(b) for b in SKELETONS[variation % len(SKELETONS)]]
+    if category == "AI_API":  # 처리 단계 도식(hub)은 AI API 지면의 필수 정보다.
+        skeleton = [_B("hero", "hub")] + [b for b in skeleton if b["block"] != "hero"]
+    if category == "웹개발" and not any(b["block"] == "process" for b in skeleton):
+        skeleton.insert(2, _B("process", "steps"))
+    return ("\n[이번 지면의 뼈대]\n아래 구성을 그대로 따른다. 블록의 순서 · 변형 · 폭을 바꾸지 않는다. "
+            "재료(필요한 필드)가 계획서에 없는 블록만 뺀다. title은 이 사업에 맞게 새로 쓴다.\n"
+            "layout: " + json.dumps(skeleton, ensure_ascii=False))
+
+
+RETRY_HINT = ("이전 결과를 보고 다시 만들기를 눌렀다. 이번 뼈대는 이전과 다르다. 뼈대를 따르고, "
+              "블록 제목과 구절도 이전과 다르게 새로 다듬어라.")

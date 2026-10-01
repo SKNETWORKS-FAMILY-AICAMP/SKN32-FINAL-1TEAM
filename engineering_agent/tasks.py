@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import re
+import zlib
 from typing import TYPE_CHECKING
 
 from engineering_agent.builder_html import build_prototype_html
+from engineering_agent.infographic import artsheet
 from engineering_agent.infographic.compose_guide import RETRY_HINT
 from engineering_agent.infographic import (
     generate_infographic_content,
@@ -193,6 +195,15 @@ def _plan_text(plan_doc) -> str:
     return f"{sections}\n{tables}"
 
 
+def _layout_variation(item_name: str, rework_input) -> int:
+    """지면 뼈대 번호. 같은 아이템은 같은 뼈대로 시작하고, 다시 만들 때마다 다른 뼈대로 넘어간다."""
+    base = zlib.adler32(str(item_name).encode("utf-8"))
+    if rework_input is None:
+        return base
+    ref = str(getattr(rework_input, "previous_result_ref", "") or "")
+    return base + 1 + zlib.adler32(ref.encode("utf-8")) % 2
+
+
 def run_tb2(inp: TB2In, tools: Tools) -> TB2Out:
     from sbrain.contracts.tasks import TB2Out
     from sbrain.models import CheckResult, Infographic
@@ -203,6 +214,7 @@ def run_tb2(inp: TB2In, tools: Tools) -> TB2Out:
         f"기능 목록: {', '.join(inp.plan_doc.feature_list)}\n{plan_text}\n"
         f"작업 지시: {_instruction(inp.instruction, inp.rework_input)}"
         + (f"\n{RETRY_HINT}" if inp.rework_input is not None else ""), tools,
+        variation=_layout_variation(inp.item_spec.item_name, inp.rework_input),
     )
     content["item_name"] = inp.item_spec.item_name
     content["target_users"] = inp.item_spec.target_customer
@@ -213,6 +225,11 @@ def run_tb2(inp: TB2In, tools: Tools) -> TB2Out:
     by_name = {str(d.get("name", "")).strip(): str(d.get("detail", "")).strip()
                for d in content.get("feature_details") or []}
     content["feature_details"] = [by_name.get(f, "") for f in inp.plan_doc.feature_list]
+
+    # 맞춤 아이콘(선택 재료). 이미지 호출 통로(tools.image)가 없거나 실패하면 None이고 지면은 기본
+    # 아이콘으로 나간다. 아이콘이 있으면 지면 모양이 달라져 글자 칸 폭도 달라지므로, 넘침 검사
+    # (_check_content)보다 먼저 만든다.
+    content["_art"] = artsheet.generate(inp.category, content, tools)
 
     failures = _check_content(inp.category, content, plan_text)
     # 검사에 걸려도 파일은 만든다. 기획서 5-4가 원페이지 6항목에 부분 점수를 둔 이유가

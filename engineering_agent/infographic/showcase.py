@@ -8,7 +8,7 @@ from __future__ import annotations
 import math
 import re
 
-from engineering_agent.infographic import icons
+from engineering_agent.infographic import artsheet, icons
 from engineering_agent.infographic.design_kit import arrow, section_frame, showcase_defs
 from engineering_agent.infographic.layout import (
     fit, fit_size, wrap, parse_milestones, PAGE_WIDTH, TITLE_SIZE, TITLE_WIDTH,
@@ -153,7 +153,8 @@ def _features(data, features, y, category):
             i = start + j
             cx = left + (j + .5) * width
             feat = features[i]
-            row_parts.append(icons.icon(icons.pick(feat), cx, cursor + 35, 46, C["accent_deep"], 1.7))
+            row_parts.append(artsheet.icon(data, artsheet.key("feature", feat), cx, cursor + 32, 68)
+                             or icons.icon(icons.pick(feat), cx, cursor + 35, 46, C["accent_deep"], 1.7))
             name, name_lines = wrapped_text(cx, cursor + 83, feat, size=16, max_width=width - 26,
                                            max_lines=2, line_height=22, fill=C["ink"],
                                            attrs=f'font-weight="700" data-field="feature" data-feature="{esc(feat)}" data-role="value"',
@@ -212,6 +213,11 @@ def _business(data, y):
     return "".join(parts), y + h
 
 
+# 원형 일정의 원 크기. 원이 작으면(반지름 51) 실제 일정 글자("2026년 12월~2027년 3월")가 들어가지
+# 않아 늘 직선 타임라인으로 바뀌었다. 날짜 두 줄 + 내용 두 줄이 들어가게 키운다.
+_ORBIT_NODE, _ORBIT_RADIUS, _ORBIT_TEXT = 62, 94, 104
+
+
 def _roadmap(data, x, y, w, h):
     timeline = str(data.get("timeline_baseline", ""))
     milestones = parse_milestones(timeline)
@@ -224,8 +230,8 @@ def _roadmap(data, x, y, w, h):
     # Open orbital path shows a chronological progression, not an invented cycle.
     n = min(len(milestones), 4)
     cx, cy = x + w / 2, y + 167
-    radius = min(102, w / 2 - 84)
-    node_r = 51
+    radius = min(_ORBIT_RADIUS, w / 2 - _ORBIT_NODE - 10)
+    node_r = _ORBIT_NODE
     pts = [(cx + radius * math.cos(math.radians(-90 + i * 360 / n)),
             cy + radius * math.sin(math.radians(-90 + i * 360 / n))) for i in range(n)]
     for i in range(n - 1):
@@ -240,20 +246,26 @@ def _roadmap(data, x, y, w, h):
             parts.append(arrow(p2[0] - 8 * (-math.sin(a2)), p2[1] - 8 * math.cos(a2),
                                p2[0], p2[1], C["accent"]))
     # A white backing keeps the center icon distinct from the orbit.
-    parts.append(icons.icon("flag", cx, cy, 40, C["accent_deep"], 1.7))
+    parts.append(artsheet.icon(data, artsheet.key("timeline"), cx, cy, 72)
+                 or icons.icon("flag", cx, cy, 40, C["accent_deep"], 1.7))
     for (px, py), (date, event) in zip(pts, milestones):
         parts.append(f'<circle cx="{px}" cy="{py}" r="{node_r}" fill="url(#kit-wash)" '
                      f'stroke="{C["accent"]}" stroke-width="1.4"/>')
-        parts.append(text(px, py - 10, fit(date, 12, 94), 12, C["accent_deep"], 700, "middle",
-                          'data-field="timeline_baseline" data-role="value"'))
-        parts.append(paragraph(px, py + 12, event, 86, 2, 13, "timeline_baseline", anchor="middle"))
+        date_svg, dn = wrapped_text(px, py - 12 - (len(wrap(date, 12, _ORBIT_TEXT, 2)[0]) - 1) * 15, date,
+                                    size=12, max_width=_ORBIT_TEXT, max_lines=2, line_height=15,
+                                    fill=C["accent_deep"], anchor="middle",
+                                    attrs='font-weight="700" data-field="timeline_baseline" data-role="value"')
+        parts.append(date_svg)
+        parts.append(wrapped_text(px, py + 8, event, size=12, max_width=_ORBIT_TEXT, max_lines=2,
+                                  line_height=16, fill=C["body"], anchor="middle",
+                                  attrs='data-field="timeline_baseline" data-role="value"')[0])
     return "".join(parts)
 
 
 def _orbital_milestones(milestones):
     """Use the orbit only if every date and action fits; otherwise retain full prose."""
     return (2 <= len(milestones) <= 4
-            and all(not wrap(date, 12, 94, 1)[1] and not wrap(event, 13, 86, 2)[1]
+            and all(not wrap(date, 12, _ORBIT_TEXT, 2)[1] and not wrap(event, 12, _ORBIT_TEXT, 2)[1]
                     for date, event in milestones))
 
 
@@ -264,8 +276,9 @@ def _metrics_revenue(data, x, y, w, h):
         cell = (w - 30) / len(metrics)
         for i, metric in enumerate(metrics):
             cx = x + 15 + (i + .5) * cell
-            parts.append(icons.icon(icons.pick_metric(str(metric["value"]), str(metric.get("label", ""))),
-                                    cx, y + 61, 38, C["accent_deep"], 1.6))
+            parts.append(artsheet.icon(data, artsheet.key("metric", metric.get("label", "")), cx, y + 60, 54)
+                         or icons.icon(icons.pick_metric(str(metric["value"]), str(metric.get("label", ""))),
+                                       cx, y + 61, 38, C["accent_deep"], 1.6))
             size = fit_size(str(metric["value"]), 26, cell - 14)
             parts.append(text(cx, y + 108, fit(str(metric["value"]), size, cell - 14), size,
                               C["accent_deep"], 800, "middle", 'data-field="key_metric"'))
@@ -303,7 +316,8 @@ def _process(data, category, y):
         left = M + 16 + (n - count) * width / 2
         cx = left + (col + .5) * width
         ry = y + row * 118
-        parts.append(icons.badge(icons.pick(step), cx, ry + 62, 26, C["tint"], C["accent_deep"]))
+        parts.append(artsheet.icon(data, artsheet.key("step", step), cx, ry + 62, 64)
+                     or icons.badge(icons.pick(step), cx, ry + 62, 26, C["tint"], C["accent_deep"]))
         field = "solution_steps" if category == "원페이지" else "flow_steps"
         parts.append(paragraph(cx, ry + 116, step, width - 28, 2, 15, field, anchor="middle"))
         if col < count - 1:
