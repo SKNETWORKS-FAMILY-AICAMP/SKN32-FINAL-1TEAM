@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, urlparse
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from agent_strategy.runtime.llm_runtime import CONTRACT, model_config
-from agent_strategy.runtime.pipeline import impact_plan, retry_sections, run_pipeline, normalize_back_input
+from agent_strategy.runtime.pipeline import impact_plan, retry_sections, run_pipeline, normalize_back_input, _reconcile_validation
 from agent_validation_1.scoring import score_section, aggregate_scores
 from agent_strategy.functions import gpt_functions as gpt, python_functions as py
 try:
@@ -197,7 +197,7 @@ def run_validate_job(job_id, parent_job, section_id):
                 checked.append(item['sectionId'])
                 continue
             source=validation_source_for(row,content)
-            result=py.validate_section(section_spec=spec,content=content,source_data=source)
+            result=_reconcile_validation(spec,content,py.validate_section(section_spec=spec,content=content,source_data=source))
             row['validation']=result; checked.append(item['sectionId'])
         parent_job['result']['validation1']=[{'sectionId':sid,'status':rows[sid]['validation'].get('status'),'issues':rows[sid]['validation'].get('issues',[])} for sid in checked]
         parent_job['result']['status']='validation1_failed' if any(rows[sid]['validation'].get('status')=='fail' for sid in checked) else 'validation1_passed'
@@ -229,7 +229,7 @@ def run_validate_all_job(job_id, result, skip_passed=False):
                     row['validation']=previous
                     continue
                 source=validation_source_for(row,content)
-                row['validation']=py.validate_section(spec,content,source)
+                row['validation']=_reconcile_validation(spec,content,py.validate_section(spec,content,source))
                 row['evaluation']=score_section(spec,content,row['validation'],result['documentType'],source)
         result['evaluationSummary']=aggregate_scores(result.get('results',[]))
         result['validation1']=[{'sectionId':row.get('sectionId'),'status':row.get('validation',{}).get('status','not_run'),

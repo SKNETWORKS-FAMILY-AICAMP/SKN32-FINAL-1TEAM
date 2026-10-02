@@ -123,6 +123,15 @@ def validate_section(section_spec, content, source_data):
         nodes=content.get('nodes')
         if not isinstance(nodes,list) or not 3<=len(nodes)<=6 or not all(isinstance(n,str) and 0<len(n)<=35 for n in nodes):
             issues.append('이미지 nodes는 3~6개의 짧은 문자열이어야 함')
+        specs=content.get('imageSpecs')
+        if isinstance(specs,list):
+            types={item.get('flowType') for item in specs if isinstance(item,dict)}
+            if not {'USER_FLOW','SERVICE_ARCHITECTURE'}.issubset(types):
+                issues.append('USERFLOW 및 SERVICE_ARCHITECTURE 이미지 명세가 모두 필요함')
+            for item in specs:
+                item_nodes=item.get('nodes') if isinstance(item,dict) else None
+                if not isinstance(item_nodes,list) or not 3<=len(item_nodes)<=6:
+                    issues.append('이미지 명세별 nodes는 3~6개여야 함')
     for table in tables:
         if not isinstance(table,dict):issues.append('표 객체 형식 오류');continue
         missing=_string_set(rules.get('requiredColumns',[]))-_string_set(table.get('columns',[]))
