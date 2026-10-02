@@ -46,7 +46,7 @@
       "output": "team_capability",
       "modelLabel": "GPT-5.6 Luna",
       "apiModel": "gpt-5.6-luna",
-      "maxOutputTokens": 1400
+      "maxOutputTokens": 2800
     },
     "F06": {
       "name": "define_development_goal",

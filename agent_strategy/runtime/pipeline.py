@@ -146,6 +146,28 @@ def _month(value):
     return f'{match.group(1)}-{int(match.group(2)):02d}' if match else None
 
 
+def _period_months(rows):
+    """'2026.05~2026.07' 같은 추진기간에서 모든 월을 읽어 (가장 이른 월, 가장 늦은 월)을 반환한다."""
+    import re
+    months=[f'{y}-{int(m):02d}' for row in rows for y,m in re.findall(r'(20\d{2})[-./]?(\d{1,2})',str(row.get('추진기간') or ''))]
+    return (min(months),max(months)) if months else (None,None)
+
+
+def _pre_startup_budget_phases(budget,items):
+    """예비창업 예산을 1·2단계로 나눠 budget.phase_1/phase_2를 채운다.
+
+    calculate_budget()은 모든 유형에서 phase_1/phase_2를 None으로 돌려주므로, 2.5.3/2.5.4가
+    근거로 읽는 단계별 예산이 비어 검증이 1단계 표에 2단계 항목이 없다고 오판한다.
+    """
+    budget=dict(budget or {})
+    for key,label in (('phase_1','1단계'),('phase_2','2단계')):
+        rows=[row for row in items if row.get('phase')==label]
+        budget[key]={'items':rows,'total':sum(row.get('total_amount',0) for row in rows),
+                     'government_amount':sum(row.get('government_amount',0) for row in rows)}
+    budget['items']=items; budget['phase']='1·2단계 구분(항목별 phase, phase_1/phase_2 참고)'
+    return budget
+
+
 def normalize_back_input(raw,kind):
     """Accept the back tableData/sectionText contract as pipeline input."""
     if not isinstance(raw,dict): return raw
@@ -162,10 +184,19 @@ def normalize_back_input(raw,kind):
         budget_rows=budgets
         members=[]
     elif kind=='pre_startup':
-        status=table.get('generalStatus',{}); summary=table.get('itemSummary',{}); schedules=(table.get('implementationSchedule') or [])+(table.get('fullScaleSchedule') or [])
+        status=table.get('generalStatus',{}); summary=table.get('itemSummary',{}); agreement=table.get('implementationSchedule') or []; schedules=agreement+(table.get('fullScaleSchedule') or [])
+        # 개발 기간은 협약기간 일정만으로 계산한다. fullScaleSchedule은 협약 이후 로드맵이라
+        # _strategy_limits.deadline(협약 종료 기한) 비교에 넣지 않고, 표·일정 데이터에만 쓴다.
+        dev_start,dev_end=_period_months(agreement)
+        if limits.get('deadline'):
+            limits={**limits,'deadlineScope':'협약 종료 기한. 협약기간 일정(implementationSchedule)에만 적용하며, 협약 이후 전체 사업단계 일정(fullScaleSchedule)은 이 기한을 넘어도 위반이 아님'}
+        # teamPlan은 한글 키(직위·담당업무·보유역량)라 전략 함수가 읽는 role/experience로 옮긴다.
+        team_rows=table.get('teamPlan') or []
+        members=[{**row,'role':' - '.join(v for v in (row.get('직위'),row.get('담당업무')) if v),'experience':row.get('보유역량')} for row in team_rows]
+        ceo=next((row for row in team_rows if '대표' in str(row.get('직위',''))),{})
         project={'description':summary.get('아이템개요') or summary.get('명칭'),'output_summary':status.get('산출물'),'tech_field':status.get('전문기술분야'),'target_customer':'확인 필요'}
-        plan={'main_industry':status.get('지원분야'),'dev_start_month':_month(schedules[0].get('추진기간')) if schedules else None,'dev_end_month':_month(schedules[-1].get('추진기간')) if schedules else None,'ceo_capability':None,'ceo_careers':[],'strategy_limits':limits,'no_partners':not bool(table.get('partnerPlan')),'partners':table.get('partnerPlan',[])}
-        budget_rows=(table.get('budgetPlanStep1') or [])+(table.get('budgetPlanStep2') or []); members=table.get('teamPlan',[])
+        plan={'main_industry':status.get('지원분야'),'dev_start_month':dev_start,'dev_end_month':dev_end,'ceo_capability':ceo.get('보유역량'),'ceo_careers':[],'strategy_limits':limits,'no_partners':not bool(table.get('partnerPlan')),'partners':table.get('partnerPlan',[])}
+        budget_rows=[{**row,'_phase':'1단계'} for row in table.get('budgetPlanStep1') or []]+[{**row,'_phase':'2단계'} for row in table.get('budgetPlanStep2') or []]
     elif kind=='early_startup':
         status=table.get('일반현황',{}); summary=table.get('창업아이템개요',{}); schedules=(table.get('실현가능성_일정') or [])+(table.get('성장전략_일정') or [])
         project={'description':summary.get('아이템_개요') or status.get('창업아이템명'),'output_summary':status.get('산출물'),'tech_field':status.get('전문기술분야'),'target_customer':'확인 필요'}
@@ -182,7 +213,8 @@ def normalize_back_input(raw,kind):
     for row in budget_rows:
         total=_won(row.get('총사업비')); government=_won(row.get('정부지원사업비')); cash=_won(row.get('자기부담_현금',row.get('자기부담금'))); in_kind=_won(row.get('자기부담_현물'))
         if total and government+cash+in_kind != total: total=government+cash+in_kind
-        if total: parsed_budget.append({'category':row.get('비목','확인 필요'),'execution_plan':row.get('집행계획',''),'total_amount':total,'government_amount':government,'self_cash_amount':cash,'self_in_kind_amount':in_kind})
+        # '_phase'는 예비창업 분기에서만 붙이므로 다른 유형의 항목 모양은 그대로다.
+        if total: parsed_budget.append({'category':row.get('비목','확인 필요'),'execution_plan':row.get('집행계획',''),'total_amount':total,'government_amount':government,'self_cash_amount':cash,'self_in_kind_amount':in_kind,**({'phase':row['_phase']} if row.get('_phase') else {})})
     return {'2_지금_입력받는값':{'POST_projects_body':project,'project_plan_inputs':plan,'project_budget_items':parsed_budget,'project_schedule_items':schedules,'team_members':members,'_back_source':raw}}
 
 
@@ -197,6 +229,9 @@ def table_arguments(raw,kind,spec,canonical):
         if kind=='early_startup' and suffix=='6.2':
             # Early-startup full schedule includes feasibility and scale-up.
             rows=copy.deepcopy(tables.get('실현가능성_일정',[]))+copy.deepcopy(tables.get('성장전략_일정',[]))
+        if kind=='pre_startup' and suffix=='6.2':
+            # 예비창업 '사업추진 일정(전체 사업단계)'은 협약기간 일정부터 이후 로드맵까지 모두 담는다.
+            rows=copy.deepcopy(tables.get('implementationSchedule',[]))+rows
         if suffix in ('5.3','5.4'):
             if kind=='early_startup' and suffix=='5.3':
                 # Initial-startup form has one business-expense plan; do not
@@ -334,6 +369,7 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
     resource_input={k:plan.get(k) for k in ['no_hires','hires','no_equipment','equipment','no_partners','partners','self_in_kind_resources']}
     c['resource_plan']=compact(call('F13',gpt.create_resource_plan,item=c['item_spec'],required_capabilities=requirements,team={'analysis':c['team_capability'],'originalFacts':resource_input},resource_type=['장비','채용','협력기관']))
     c['budget']=compact(call('F14',py.calculate_budget,items=budgets,quantity=[1]*len(budgets),unit_price=[r['total_amount'] for r in budgets],phase='미구분',rules={'self_funding_allowed':plan.get('self_funding_allowed')}))
+    if kind=='pre_startup':c['budget']=_pre_startup_budget_phases(c['budget'],budgets)
     c['schedule']=compact(call('F15',py.create_schedule,tasks=[r['category'] for r in schedules],duration=duration,milestones=schedules))
     c['feasibility_plan']={'goal':c['development_goal'],'development':c['development_plan'],'budget':c['budget']}
     original={'item':item_input,'period':{'start':plan.get('dev_start_month'),'end':plan.get('dev_end_month'),'durationMonths':duration},'strategy_limits':plan.get('strategy_limits',{}),'team':team_input,'resources':resource_input,
@@ -502,6 +538,12 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
     plan=impact_plan(kind, section_id)
     result=copy.deepcopy(prior_result)
     canonical, original, duration=_retry_context(raw, result)
+    if kind=='pre_startup':
+        # 재시도는 저장된 F14 결과를 재사용하므로, 단계 구분이 없던 이전 실행 결과에도 현재 입력의 단계 정보를 반영한다.
+        budget_items=raw.get('2_지금_입력받는값',raw).get('project_budget_items') or []
+        canonical['budget']=_pre_startup_budget_phases(canonical['budget'],budget_items)
+        canonical['feasibility_plan']['budget']=canonical['budget']
+        original['budget']={key:canonical['budget'].get(key) for key in ['items','total','government_amount','self_cash_amount','self_in_kind_amount','phase']}
     specs={spec['sectionId']:copy.deepcopy(spec) for spec in CONTRACT['documents'][kind]}
     rows={row['sectionId']:row for row in result['results']}
     trace=result['trace']

@@ -50,6 +50,13 @@
   · 비용은 **API 가 보고한 토큰 × 이 파일에 적은 단가**로 계산한 값이다. 청구액이 아니다(F3).
 
 읽기 전용: 실험 DB·출처 DB 모두 SELECT 만. 결과는 `reports/industry_llm_sample_<시각>/` 에만 남긴다.
+
+입력 출처 (2026-09-28 사용자 결정 — 실험 DB 대신 공용 DB 를 읽는다, A 방향)
+  `--source shared`  **새 실행의 기본값.** 공용 DB notices 에서 공고 칸을 SELECT 하고, 정규식 업종 판정은
+                     conditions.industry_condition() 으로 그 자리에서 계산한다(쓰기 없음). 실험 DB 9/21 사본에 없던
+                     공고(624건)도 대상이 된다. 같은 공고의 문서는 실험 DB 와 글자까지 같다(40건 대조, 2026-09-28)
+  `--source lab`     실험 DB lab_notices(9/21 사본). 재개·재검사는 처음 실행의 meta.source 를 따른다(없으면 lab)
+  `--only-new BASE`  BASE 결과 폴더에 없거나 문서 해시가 달라진 공고만 부른다. 합치기는 `--merge-append`
 """
 import argparse
 import hashlib
@@ -902,6 +909,72 @@ def pick_sample(lab_connection, take_all=False):
     return sorted(rng.sample(ids, min(SAMPLE, len(ids)))), len(ids)
 
 
+SHARED_FIELDS = ('notice_id', 'title', 'body', 'target_text', 'target_category', 'category', 'subcategory')
+
+
+def pick_shared(source_connection):
+    """공용 DB 공고 전부(ID 순). SELECT 만."""
+    with source_connection.cursor() as cursor:
+        cursor.execute('SELECT notice_id FROM notices ORDER BY notice_id')
+        return [r[0] for r in cursor.fetchall()]
+
+
+def load_items_shared(source_connection, ids, max_chars=None):
+    """공용 DB 의 공고 칸 + 그 자리에서 계산한 정규식 판정 + 첨부 본문. 실험 DB 를 쓰지 않는다."""
+    items = []
+    with source_connection.cursor() as cursor:
+        for nid in ids:
+            cursor.execute('SELECT ' + ','.join(SHARED_FIELDS) + ' FROM notices WHERE notice_id = %s', (nid,))
+            found = cursor.fetchone()
+            if not found:
+                raise SystemExit('공용 DB 에 없는 공고 ID: %s' % nid)
+            row = dict(zip(SHARED_FIELDS, found))
+            c = conditions.industry_condition(row)
+            row['regex'] = {'status': c['status'], 'value': c.get('value_text'), 'evidence': c.get('evidence')}
+            cursor.execute("""
+                SELECT at.extracted_text
+                  FROM notices n
+                  JOIN notice_attachments na ON na.notice_fk = n.id
+                  JOIN attachment_texts at ON at.attachment_fk = na.id
+                 WHERE n.notice_id = %s AND at.last_status = 'ok' AND at.extracted_text IS NOT NULL
+                 ORDER BY at.text_chars DESC""", (nid,))
+            row['attachments'] = [r[0] for r in cursor.fetchall()]
+            items.append(prepare(row, max_chars))
+    return items
+
+
+def only_new(items, base_folder, reports_dir=None):
+    """BASE 결과에 없거나 문서 해시가 다른 공고만. (남은 items, 건너뛴 수).
+
+    BASE 가 합친 결과면 공고마다 source_run 의 발췌 상한(max_chars)이 다를 수 있다(잘린 공고를 18,000자로 다시 읽음).
+    그 공고는 같은 상한으로 문서를 다시 만들어 비교한다 — 기본 상한으로 비교하면 바뀌지 않은 공고가 바뀐 것처럼 보인다.
+    """
+    base_rows = {r['notice_id']: r for r in read_jsonl(os.path.join(base_folder, 'results.jsonl'))}
+    # source_run 폴더를 찾을 곳. 기본은 BASE 옆(reports/). 매일 누적 파일(data/industries/)은 reports/ 를 넘긴다
+    reports = reports_dir or os.path.dirname(os.path.normpath(base_folder))
+    caps = {}
+
+    def cap_of(run):
+        if run not in caps:
+            path = os.path.join(reports, run or '', 'meta.json')
+            caps[run] = (read_json(path).get('max_chars') if run and os.path.exists(path) else None) or ec.MAX_CHARS
+        return caps[run]
+
+    kept = []
+    for it in items:
+        row = base_rows.get(it['notice_id'])
+        if row is None:
+            kept.append(it)
+            continue
+        sha = it['document_sha256']
+        cap = cap_of(row.get('source_run'))
+        if cap != ec.MAX_CHARS and row.get('document_sha256') != sha:
+            sha = prepare(dict(it), cap)['document_sha256']
+        if row.get('document_sha256') != sha:
+            kept.append(it)
+    return kept, len(items) - len(kept)
+
+
 def load_items(lab_connection, source_connection, ids, max_chars=None):
     """실험 DB 의 공고 칸 + 정규식 판정, 출처 DB 의 첨부 본문."""
     items = []
@@ -1096,7 +1169,9 @@ def write_report(outdir, items, meta):
         lines += ['**혼합 실행: 응답 모델이 여러 개다(%s).** 재개 사이에 모델이 바뀌었다. 이 결과로 비교를 확정하지 않는다.'
                   % ', '.join(meta.get('response_models') or []), '']
     lines += ['| | known | no_limit | unknown |', '|---|---:|---:|---:|',
-              '| 정규식 (lab_conditions) | %d | %d | %d |' % (rx['known'], rx['no_limit'], rx['unknown'])]
+              '| 정규식 (%s) | %d | %d | %d |' % (
+                  'conditions.py 즉석 계산' if meta.get('source') == 'shared' else 'lab_conditions',
+                  rx['known'], rx['no_limit'], rx['unknown'])]
     if has_prev:
         pv = _count(items, 'previous')
         lines.append('| LLM 이전 실행 (%s) | %d | %d | %d |' % (meta.get('previous_prompt'), pv['known'],
@@ -1195,6 +1270,12 @@ def build_parser():
                     help='이 파일(한 줄에 공고 ID 하나)의 공고만 부른다. --all·표본 대신')
     ap.add_argument('--max-chars', dest='max_chars', type=int, default=ec.MAX_CHARS,
                     help='LLM 에 보낼 발췌 상한(기본 %d자). 잘린 공고를 길게 다시 읽을 때 늘린다' % ec.MAX_CHARS)
+    ap.add_argument('--source', choices=('shared', 'lab'),
+                    help='공고를 읽을 곳. 새 실행 기본 shared(공용 DB), 재개는 처음 실행을 따른다')
+    ap.add_argument('--only-new', dest='only_new',
+                    help='이 결과 폴더에 없거나 문서가 바뀐 공고만 부른다(--all 과 함께)')
+    ap.add_argument('--merge-append', dest='merge_append', action='store_true',
+                    help='합치기에서 기준에 없는 공고도 더한다(--only-new 결과를 전량 결과에 붙일 때)')
     ap.add_argument('--merge-base', dest='merge_base', help='결과 합치기: 기준 결과 폴더')
     ap.add_argument('--merge-override', dest='merge_override', help='결과 합치기: 이 폴더의 공고로 기준을 덮는다')
     ap.add_argument('--counterpart', help='--reverify 결과 화면에서 비교할 다른 결과 폴더 이름')
@@ -1208,13 +1289,19 @@ def main_reverify(args):
         raise SystemExit('재검사는 --prompt v3 결과만 된다')
     source = read_json(os.path.join(args.reverify, 'meta.json'))
     from shared import store_mysql
-    lab = config.connect()
     src = store_mysql.connect()
     try:
-        ids = source.get('notice_ids') or pick_sample(lab, bool(source.get('take_all')))[0]
-        items = load_items(lab, src, ids, source.get('max_chars') or ec.MAX_CHARS)
+        if source.get('source') == 'shared':
+            ids = source.get('notice_ids') or pick_shared(src)
+            items = load_items_shared(src, ids, source.get('max_chars') or ec.MAX_CHARS)
+        else:
+            lab = config.connect()
+            try:
+                ids = source.get('notice_ids') or pick_sample(lab, bool(source.get('take_all')))[0]
+                items = load_items(lab, src, ids, source.get('max_chars') or ec.MAX_CHARS)
+            finally:
+                lab.close()
     finally:
-        lab.close()
         src.close()
     meta, lines = reverify(args.reverify, items, args.profile, args.out, args.counterpart)
     print('\n'.join(lines[:14]))
@@ -1317,7 +1404,9 @@ def run_experiment(args, items, ids, population, make_call):
                  'ids_file': getattr(args, 'ids_file', None), 'profile': getattr(args, 'profile', 'strict'),
                  'prompt': args.prompt, 'prompt_sha256': prompt_sha256(args.prompt),
                  'schema_sha256': schema_sha256(args.prompt),
-                 'previous': previous_path, 'previous_prompt': previous_prompt, 'previous_grade': previous_grade}
+                 'previous': previous_path, 'previous_prompt': previous_prompt, 'previous_grade': previous_grade,
+                 'source': getattr(args, 'source', None) or 'lab', 'only_new': getattr(args, 'only_new', None),
+                 'notice_ids': [it['notice_id'] for it in items] if getattr(args, 'only_new', None) else None}
     if not args.resume:          # 실패해도 재개할 수 있게 호출 전에 남긴다
         with io.open(os.path.join(outdir, 'meta.json'), 'w', encoding='utf-8', newline='\n') as f:
             json.dump(base_meta, f, ensure_ascii=False, indent=1)
@@ -1371,7 +1460,7 @@ def read_ids(path):
     return list(dict.fromkeys(ids))
 
 
-def merge_runs(base, override, outdir):
+def merge_runs(base, override, outdir, append=False):
     """base 결과에서 override 에 있는 공고만 override 결과로 바꾼다. **LLM 호출 없음.**
 
     2026-09-22 — 발췌가 6,000자에서 잘린 공고만 길게 다시 읽어(override) 전량 결과(base)에 끼워 넣는다.
@@ -1389,8 +1478,8 @@ def merge_runs(base, override, outdir):
     orows = {r['notice_id']: r for r in read_jsonl(os.path.join(override, 'results.jsonl'))}
     base_ids = {r['notice_id'] for r in brows}
     stray = [i for i in orows if i not in base_ids]
-    if stray:
-        raise SystemExit('덮을 결과에 기준에 없는 공고가 있다: %s' % stray[:5])
+    if stray and not append:
+        raise SystemExit('덮을 결과에 기준에 없는 공고가 있다: %s (새 공고를 붙이려면 --merge-append)' % stray[:5])
     if any(os.path.exists(os.path.join(outdir, n)) for n in ('meta.json', 'results.jsonl')):
         raise SystemExit('출력 폴더에 이미 결과가 있다: %s' % outdir)
     os.makedirs(outdir, exist_ok=True)
@@ -1399,8 +1488,15 @@ def merge_runs(base, override, outdir):
     for r in brows:
         row = dict(orows.get(r['notice_id']) or r)
         # 기준 행이 이미 앞선 합치기에서 온 것이면 그 출처를 지킨다(여러 번 합쳐도 어느 실행의 답인지 남는다)
-        row['source_run'] = oname if r['notice_id'] in orows else (r.get('source_run') or bname)
+        # 덮는 쪽도 이미 합친 결과면 그 행의 원래 실행 이름을 지킨다(2026-09-28 Codex 검수 — only_new 가
+        # source_run 으로 발췌 상한을 찾는다. 합친 폴더 이름으로 바뀌면 18,000자 행을 6,000자로 비교한다)
+        row['source_run'] = ((orows[r['notice_id']].get('source_run') or oname) if r['notice_id'] in orows
+                             else (r.get('source_run') or bname))
         items.append(row)
+    # --merge-append: 기준에 없던 공고(공용 DB 로 바꾼 뒤 새로 읽은 공고)를 뒤에 붙인다(2026-09-28)
+    for nid in stray:
+        items.append(dict(orows[nid], source_run=orows[nid].get('source_run') or oname))
+    items.sort(key=lambda r: r['notice_id'])
     this_merge = {'base': bname, 'override': oname, 'override_count': len(orows),
                   'override_max_chars': ometa.get('max_chars'), 'override_profile': ometa.get('profile')}
     history = list(bmeta.get('merge_history') or ([bmeta['merged_from']] if bmeta.get('merged_from') else []))
@@ -1421,6 +1517,10 @@ def merge_runs(base, override, outdir):
                 cost_basis='합치기 — LLM 호출 없음. 토큰·source_cost_usd = 기준 원답 + 다시 읽은 공고(토큰 × 기록 단가)',
                 code_sha256=sha256_file(CODE_PATH), response_models=models, mixed_models=len(models) > 1,
                 downgraded=sum(1 for it in items if (it.get('llm') or {}).get('downgraded')), db_writes=0)
+    if stray:
+        # 새 공고를 붙였으면 모집단·출처가 바뀐다(공용 DB 기준)
+        meta.update(population=len(items), notice_ids=[it['notice_id'] for it in items], appended=len(stray),
+                    source=ometa.get('source') or bmeta.get('source') or 'lab')
     lines = write_report(outdir, items, meta)
     return meta, lines
 
@@ -1478,7 +1578,7 @@ def main(argv=None):
     if args.merge_base or args.merge_override:
         if not (args.merge_base and args.merge_override and args.out):
             raise SystemExit('합치기에는 --merge-base·--merge-override·--out 이 모두 필요하다')
-        meta, lines = merge_runs(args.merge_base, args.merge_override, args.out)
+        meta, lines = merge_runs(args.merge_base, args.merge_override, args.out, append=args.merge_append)
         print('\n'.join(lines[:14]))
         print('합침 → %s · LLM 호출 0' % args.out)
         return 0
@@ -1490,21 +1590,48 @@ def main(argv=None):
     if args.take_all and args.previous:
         raise SystemExit('--all 은 --previous 와 함께 쓰지 않는다(이전 실행은 30건 표본이다)')
 
+    if args.resume:
+        saved_source = read_json(os.path.join(args.resume, 'meta.json')).get('source') or 'lab'
+        if args.source and args.source != saved_source:
+            raise SystemExit('재개 폴더는 --source %s 실행이었다' % saved_source)
+        args.source = saved_source
+    args.source = args.source or 'shared'
+    if args.only_new and not args.take_all:
+        raise SystemExit('--only-new 는 --all 과 함께 쓴다')
+
     from shared import store_mysql
-    lab = config.connect()
     source = store_mysql.connect()
     try:
-        ids, population = pick_sample(lab, args.take_all)
+        if args.source == 'shared':
+            all_ids = pick_shared(source)
+            ids, population = (all_ids if args.take_all else sorted(random.Random(SEED).sample(all_ids, min(SAMPLE, len(all_ids))))), len(all_ids)
+            known_ids = set(all_ids)
+        else:
+            lab = config.connect()
+            try:
+                ids, population = pick_sample(lab, args.take_all)
+                known_ids = set(pick_sample(lab, True)[0])
+            finally:
+                lab.close()
         if args.ids_file:
             ids = read_ids(args.ids_file)
-            known_ids = set(pick_sample(lab, True)[0])
             unknown_ids = [i for i in ids if i not in known_ids]
             if unknown_ids:
-                raise SystemExit('실험 DB 에 없는 공고 ID: %s' % unknown_ids[:5])
-        items = load_items(lab, source, ids, args.max_chars)
+                raise SystemExit('%s 에 없는 공고 ID: %s' % ('공용 DB' if args.source == 'shared' else '실험 DB', unknown_ids[:5]))
+        if args.source == 'shared':
+            items = load_items_shared(source, ids, args.max_chars)
+        else:
+            lab = config.connect()
+            try:
+                items = load_items(lab, source, ids, args.max_chars)
+            finally:
+                lab.close()
     finally:
-        lab.close()
         source.close()
+    if args.only_new:
+        items, skipped = only_new(items, args.only_new)
+        ids = [it['notice_id'] for it in items]
+        print('--only-new %s — 이미 있는 %d건은 건너뛴다' % (os.path.basename(os.path.normpath(args.only_new)), skipped))
 
     def make_call():
         key = pipeline_config.get('OPENAI_API_KEY')

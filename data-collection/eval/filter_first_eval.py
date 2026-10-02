@@ -1,22 +1,28 @@
 # -*- coding: utf-8 -*-
-"""검색 먼저(예전) vs 정형 필터 먼저(2026-09-28) — 같은 평가 질의로 수치 비교. OpenAI 호출 없음.
+"""벡터만(처음) vs 검색 먼저(9/22) vs 정형 필터 먼저(2026-09-28) — 같은 평가 질의로 수치 비교. OpenAI 호출 없음.
 
   python -X utf8 eval/filter_first_eval.py            DB·Chroma 읽기만. 결과는 reports/filter_first_eval_<시각>/
 
 2026-09-28 사용자 요청: 매칭 순서를 바꿨는데 더 나은지 숫자로 보고 싶다.
 기획서 대조 [PLAN_ALIGNMENT_20260928.md](../docs/PLAN_ALIGNMENT_20260928.md) 불일치 A.
 
-두 방식
+세 방식
+  vector_only   처음 방식 재현 — 지금 search/app.py 에서 정형 필터·마감 제외·단어 검색·규칙(지역·시군구·집단·
+                신청자 유형·업종)을 모두 끄고 부른다. 공고 벡터와 질의 벡터의 유사도 순서 그대로 상위 K.
+                검색 방식(hybrid·dense)과 상관없이 늘 같은 결과라 두 표에 같은 값으로 들어간다.
+                (2026-09-28 사용자 요청: "처음에 벡터 DB 유사도만 쓰던 방식과 지금 방식을 숫자로 비교")
   legacy        커밋 LEGACY_COMMIT 의 search/app.py 를 그대로 불러온다(검색 상위 → 마감 제외 → 모자라면 더 깊이)
   filter_first  지금 search/app.py (정형 필터 → 통과 공고 안에서만 검색)
-  두 방식 모두 같은 Chroma·같은 질의 벡터·같은 BM25·같은 규칙(rank_rules)·같은 기준일을 쓴다.
+  legacy·filter_first 는 같은 Chroma·같은 질의 벡터·같은 BM25·같은 규칙(rank_rules)·같은 기준일을 쓴다.
 
 말뭉치
   판정(qrels)은 2026-09-15 에 만든 풀에서 나왔다. 그 뒤에 수집된 공고는 판정이 있을 수 없으므로,
   CORPUS_BEFORE 전에 들어온 공고만 두 방식에 똑같이 보여 준다(Chroma 는 CorpusCollection 으로 감싼다).
 
 지표 (정상 질의, 상위 K=10, 두 검색 방식 hybrid·dense 각각)
-  신청 불가@10   상위 10 중 gate.prefilter 로 확실히 신청할 수 없는 공고 비율(마감·업력·유형). 판정 불필요
+  신청 불가@10   상위 10 중 확실히 신청할 수 없는 공고 비율(마감·업력·유형). 판정 불필요.
+                 서비스와 같은 기준(app.eligible_with_types = gate.prefilter + 예비창업자면 공고 본문 신청자 유형 판정)으로
+                 세 방식을 똑같이 채점한다(2026-09-28 — API 업력 칸만 보면 본문으로 살린 공고를 불가로 잘못 셌다)
   P@3(2)         상위 3 중 topic_rel=2 비율(evaluate.py 주 지표). 미판정은 0 으로 센 하한과 2 로 센 상한을 같이 낸다
   nDCG@10        판정된 공고만으로 계산(evaluate.ndcg, condensed)
   쓸모@3·@10     "내용이 맞고(topic_rel=2) + 신청 가능"한 공고 수. 하한(미판정=아님)·상한(미판정=맞음)
@@ -46,7 +52,11 @@ LEGACY_COMMIT = '35358be'            # 필터 먼저로 바꾸기 직전 커밋(
 CORPUS_BEFORE = '2026-09-16'         # 이 날짜 전에 수집된 공고만(판정 풀 기준일 2026-09-15)
 K = 10
 MODES = ('hybrid', 'dense')
-SYSTEMS = ('legacy', 'filter_first')
+SYSTEMS = ('vector_only', 'legacy', 'filter_first')
+# 처음 방식(벡터 유사도만)을 지금 코드로 재현하는 스위치. 과거 커밋을 불러오지 않고 끌 수 있는 것을 모두 끈다
+VECTOR_ONLY = {'search': 'dense', 'structured_filter': False, 'hide_expired': False, 'demote_region': False,
+               'demote_groups': False, 'demote_district': False, 'demote_industry': False,
+               'use_applicant_types': False}
 
 
 # ── 지표 (순수 함수 — tests/test_filter_first_eval.py) ─────────────────────────
@@ -173,17 +183,25 @@ def main(argv=None):
     app._encode = legacy._encode = cached
 
     rows = app.STATE['rows']
+    from search import applicant_types as types_mod
+    types_table = app.STATE.get('applicant_types') or {}
     per = {m: {s: [] for s in SYSTEMS} for m in MODES}
     lists, shown = [], set()
     for q in queries:
         age = gate.applicant_age(q['payload'].get('applicant_type'), q['payload'].get('founded_at'), as_of)
         rels = qrels.get(q['qid'], {})
+        # 벡터만은 검색 방식과 무관하다 — 한 번만 부르고 두 표에 같은 결과를 넣는다
+        vector_ranked = [r['notice_id'] for r in app.match(app.MatchRequest(**dict(q['payload'], top=K, **VECTOR_ONLY)))['results']]
         for mode in MODES:
-            for name, module in (('legacy', legacy), ('filter_first', app)):
-                req = module.MatchRequest(**dict(q['payload'], top=K, search=mode))
-                out = module.match(req)
-                ranked = [r['notice_id'] for r in out['results']]
-                checks = {n: gate.prefilter(rows[n], age, as_of) for n in ranked}
+            for name, module in (('vector_only', None), ('legacy', legacy), ('filter_first', app)):
+                if module is None:
+                    ranked = vector_ranked
+                else:
+                    req = module.MatchRequest(**dict(q['payload'], top=K, search=mode))
+                    ranked = [r['notice_id'] for r in module.match(req)['results']]
+                use_types = bool(types_table.get('active')) and q['payload'].get('applicant_type') == types_mod.PRE_FOUNDER
+                checks = {n: app.eligible_with_types(n, rows[n], age, as_of, True, types_table if use_types else None)[:2]
+                          for n in ranked}
                 eligible = {n: ok for n, (ok, _why) in checks.items()}
                 m = query_metrics(ranked, rels, eligible)
                 per[mode][name].append(m)
@@ -198,17 +216,21 @@ def main(argv=None):
     for mode in MODES:
         summary[mode] = {}
         for key, label, better in METRICS:
+            v = [m[key] for m in per[mode]['vector_only']]
             a = [m[key] for m in per[mode]['legacy']]
             b = [m[key] for m in per[mode]['filter_first']]
-            summary[mode][key] = {'label': label, 'better': better, 'legacy': mean(a), 'filter_first': mean(b),
-                                  'diff': evaluate.paired_diff(a, b)}
+            # diff 는 예전 결과 폴더와 같은 뜻(지금 − 9/22)으로 둔다. 벡터만과의 차이는 diff_vs_vector
+            summary[mode][key] = {'label': label, 'better': better, 'vector_only': mean(v), 'legacy': mean(a),
+                                  'filter_first': mean(b), 'diff': evaluate.paired_diff(a, b),
+                                  'diff_vs_vector': evaluate.paired_diff(v, b)}
 
     out_dir = args.out or os.path.join(ROOT, 'reports', 'filter_first_eval_' + started.strftime('%Y%m%dT%H%M%SZ'))
     os.makedirs(out_dir, exist_ok=False)
     meta = {'run_at': started.isoformat(timespec='seconds'), 'legacy_commit': LEGACY_COMMIT,
             'corpus_before': CORPUS_BEFORE, 'corpus_notices': len(corpus_ids), 'as_of': as_of.isoformat(),
             'queries': len(queries), 'k': K, 'modes': list(MODES), 'qrels_pairs': sum(len(v) for v in qrels.values()),
-            'judges': 'all (human·llm·llm_old)', 'openai_calls': 0, 'db_writes': 0}
+            'judges': 'all (human·llm·llm_old)', 'openai_calls': 0, 'db_writes': 0,
+            'systems': list(SYSTEMS), 'vector_only_settings': VECTOR_ONLY}
     with io.open(os.path.join(out_dir, 'results.json'), 'w', encoding='utf-8') as f:
         # 화면(/filter-first-eval)이 DB 없이 보여 줄 수 있게 질의·공고 요약을 함께 남긴다
         json.dump({'meta': meta, 'summary': summary, 'lists': lists,
@@ -234,19 +256,22 @@ def fmt(v, key):
 
 
 def render(meta, summary):
-    lines = ['# 검색 먼저 vs 정형 필터 먼저 — 수치 비교', '',
+    lines = ['# 벡터만 vs 검색 먼저 vs 정형 필터 먼저 — 수치 비교', '',
              '- 기준일 %s · 정상 질의 %d개 · 상위 %d · 말뭉치 %d건(%s 전 수집) · 예전 코드 커밋 `%s`'
              % (meta['as_of'], meta['queries'], meta['k'], meta['corpus_notices'], meta['corpus_before'],
                 meta['legacy_commit']),
-             '- 정답: qrels %d쌍(%s). OpenAI 호출 0 · DB 쓰기 0' % (meta['qrels_pairs'], meta['judges']), '']
+             '- 정답: qrels %d쌍(%s). OpenAI 호출 0 · DB 쓰기 0' % (meta['qrels_pairs'], meta['judges']),
+             '- 벡터만 = 처음 방식 재현(정형 필터·마감 제외·단어 검색·규칙 모두 끔). 검색 방식과 무관해 두 표에 같은 값', '']
     for mode, rows in summary.items():
-        lines += ['## %s' % mode, '', '| 지표 | 예전(검색 먼저) | 지금(필터 먼저) | 차이(지금−예전) [95% 구간] | 좋은 쪽 |',
-                  '|---|---:|---:|---|---|']
+        lines += ['## %s' % mode, '',
+                  '| 지표 | 벡터만(처음) | 9/22(검색 먼저) | 지금(필터 먼저) | 지금−벡터만 [95% 구간] | 지금−9/22 [95% 구간] | 좋은 쪽 |',
+                  '|---|---:|---:|---:|---|---|---|']
+        span = lambda d: '-' if not d else ('%+.3f [%+.3f, %+.3f]' % tuple(d))
         for key, s in rows.items():
-            d = s['diff']
-            diff = '-' if not d else ('%+.3f [%+.3f, %+.3f]' % d)
-            lines.append('| %s | %s | %s | %s | %s |' % (s['label'], fmt(s['legacy'], key), fmt(s['filter_first'], key),
-                                                        diff, {'lower': '낮을수록', 'higher': '높을수록', 'info': '참고'}[s['better']]))
+            lines.append('| %s | %s | %s | %s | %s | %s | %s |' % (
+                s['label'], fmt(s.get('vector_only'), key), fmt(s['legacy'], key), fmt(s['filter_first'], key),
+                span(s.get('diff_vs_vector')), span(s['diff']),
+                {'lower': '낮을수록', 'higher': '높을수록', 'info': '참고'}[s['better']]))
         lines.append('')
     return lines
 

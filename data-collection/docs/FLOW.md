@@ -15,7 +15,8 @@
 | 공고 수집 | K-Startup·기업마당 API → 정규화 → MySQL 공고 저장 | `collect/daily_pipeline.py`, `collect/normalize.py`, `shared/store_mysql.py` |
 | 첨부 처리 | 첨부 파일 → 텍스트 추출·저장 → 자격요건 추출 | `collect/attachment_pipeline.py`, `collect/doctext.py`, `collect/extract_conditions.py` |
 | 검색 준비 | 공고 필드 → BGE-M3 임베딩 → 로컬 벡터 색인·공용 DB 업로드 | `shared/embed.py`, `search/vecstore.py`, `collect/upload_vectors.py` |
-| 공고 매칭 | 신청자 입력 → **정형 필터(모집 상태·접수 마감·업력/신청자 유형, `gate.prefilter`)** → 필터 통과 공고 안에서 벡터/BM25 검색·RRF 결합 → 지역·집단 규칙 재정렬 → 공고 반환 | `search/app.py`, `search/gate.py`, `search/applicant.py`, `search/hybrid.py`, `search/rank_rules.py`, `shared/region.py` |
+| 수집 상태 | 공용 DB `import_runs` 최근 저장 시각 + 배치 PC 로그 `data/collect_log.jsonl` → 정상/지연/실패 판정(실패·지연이면 매칭을 멈춰야 함, 기능정의서 R-1 ①·R-3 ②). **2026-09-28 판정만 구현, `/api/match` 연결 전**. 화면 `http://127.0.0.1:8010/collection-status` | `search/collection_status.py` |
+| 공고 매칭 | 신청자 입력 → **정형 필터(모집 상태·접수 마감·업력/신청자 유형, `gate.prefilter`)** → 필터 통과 공고 안에서 벡터/BM25 검색·RRF 결합 → 지역·업종·집단 규칙 재정렬(빼지 않고 뒤로) → 공고 반환 | `search/app.py`, `search/gate.py`, `search/applicant.py`, `search/hybrid.py`, `search/rank_rules.py`, `search/industry_rank.py`, `shared/region.py` |
 | 자격 확인 | 선택한 공고·신청자 정보 → 조건 판정 → 판정 근거 반환 | `search/app.py`, `search/gate.py` |
 | 검색 평가 | 고정 질의·판정 자료 → 검색 방식별 결과 → 품질 지표 | `eval/README.md`, `eval/evaluate.py` |
 
@@ -23,11 +24,16 @@
 `search='hybrid'`는 임베딩과 BM25를 RRF로 합치는 방식입니다.
 최종 순위는 가중치·마감·지역·지원대상 옵션에 따라서도 바뀌므로 검색 비교 시 함께 기록합니다.
 2026-09-28부터 정형 필터가 검색보다 먼저 돈다(기획서 5-3, 기능정의서 R-3). 지역·업종은 필터가 아니라 순위에만 쓴다.
+2026-09-28부터 첫 조회 10건(`top`), 추가 조회 `offset=10`, 누적 최대 20건이다(D). 결과에 `rank`·`display_type`·`fit_score`(H)가 붙는다. 인코딩·Chroma·BM25 오류는 따로 잡아 `BM25단독`·`임베딩단독`·`마감임박순`으로 대신 찾고 `fallback_mode`에 남긴다(E). 정형 필터는 모든 경로에서 유지한다.
+재정렬 우선순위는 다른 시·도 전용 → 다른 시·군·구 전용 → 예비창업자 불가 추정 → 업종 허용 목록 밖(**기본 꺼짐**) → 대상 집단 근거 없음이다.
+신청자 유형(2026-09-28 G, `search/applicant_types.py`): 신청자가 예비창업자면 공고 본문의 '예비창업자 불가'(강한 근거·세부사업 공통)를 정형 필터에서 빼고, 본문 '가능'은 K-Startup API 업력 칸의 불가를 덮는다. 결과 파일 `reports/applicant_type_llm_full_20260928T023916Z/results.jsonl`(환경 변수 `APPLICANT_TYPES_RESULTS`)을 서버 시작 시 읽는다. `/api/eligibility`의 '지원대상 유형'도 이 값으로 판정한다(개인/법인은 근거만 표시). 업종 규칙(2026-09-28)은 LLM 업종 추출 결과 파일(`reports/industry_llm_full_luna_20260928_final5/results.jsonl`, 환경 변수 `INDUSTRY_RESULTS`로 변경)을 서버를 켤 때 읽는다. 파일이 없으면 규칙이 꺼지고 응답 `industry.active`가 False다. 업종 제한이 확실한 공고(known·목록 완전·잘림 없음·통합공고 아님·허용값 전부 KSIC 대분류)만 쓰고, 제외 목록은 쓰지 않는다.
 응답의 `filtered_count`·`filter.excluded`·`pipeline`으로 필터 → 검색 → 순위 통합 순서와 뺀 이유를 확인한다.
 가중치 비교, 리랭커 및 분류기 시험 경로도 있으므로 상세 동작은 현재 API 구현을 확인합니다.
 
 아래는 기존 배치 상세 설명입니다. 실제 `collect/daily_pipeline.py`에는 첨부 업로드 뒤
-`collect/extract_conditions.py`로 자격요건을 추출하는 10단계도 있습니다.
+`collect/extract_conditions.py`로 자격요건을 추출하는 10단계와, `collect/applicant_type_daily.py`로 신청자 유형(예비창업자·개인사업자·법인)을
+추출하는 11단계(2026-09-28)가 있습니다. 11단계는 공고문 발췌 해시가 바뀐 공고만 LLM(gpt-5.6-luna)으로 부르고(날짜당 최대 300건 — 부르기 전에 세고, 같은 발췌로 3번 실패하면 멈춤),
+`data/applicant_types/results.jsonl`에 누적합니다. 매칭 서비스(`search/applicant_types.py`)는 이 파일을 먼저 읽습니다(서버를 다시 켜야 반영).
 
 ## 배치 상세
 
@@ -457,7 +463,7 @@ collect/upload_attachments.py
 `image_only` · `parse_error` 건은 파일이 올라가 있어도 공고에서 조인으로
 따라갈 수 없습니다. 로컬 1,646개를 전부 올리므로 파일 자체는 DB 에 있고,
 `ext` 로 훑어 찾을 수 있습니다. 파서를 개선하려는 팀원에게는 오히려 그쪽이
-관심 대상입니다. 자세한 것은 [TEAM_DATA.md](TEAM_DATA.md).
+관심 대상입니다. 자세한 것은 [TEAM_DATA.md](guides/TEAM_DATA.md).
 
 ---
 
@@ -519,7 +525,7 @@ DB 값이 이상하다
 9단계 실패 → 파일은 로컬에 있다. 8MB 단위로 커밋했으므로 거기까지는 남는다
 ```
 
-**한 출처가 죽어도 나머지는 갱신됩니다.** 그 경우 상태가 `partial` 로 기록되고 종료 코드 `2` 가 나옵니다.
+**한 출처가 죽어도 나머지는 갱신됩니다.** 그 경우 상태가 `partial` 로 기록되고 종료 코드 `2` 가 나옵니다. 수집은 됐는데 LLM 후처리(10·11단계)만 실패하면 status 는 그대로 두고 `stage_warnings` 와 종료 코드 `4` 로 알립니다.
 
 ---
 

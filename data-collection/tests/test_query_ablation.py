@@ -123,8 +123,10 @@ class ServiceDefaultsTests(unittest.TestCase):
 
     def test_match_request_defaults(self):
         req = app.MatchRequest(applicant_type='법인', idea='x')
-        self.assertEqual((req.top, req.hide_expired, req.demote_groups, req.demote_region,
-                          req.demote_district, req.search), (3, True, True, True, True, 'hybrid'))
+        # top 기본값 3 → 10 (2026-09-28 D, 기능정의서 T-C2 topK=10). query_ablation 은 top 을 직접 넘기고
+        # 기본값은 meta 에 기록만 하므로 비교 수치는 바뀌지 않는다. offset 기본 0
+        self.assertEqual((req.top, req.offset, req.hide_expired, req.demote_groups, req.demote_region,
+                          req.demote_district, req.search), (10, 0, True, True, True, True, 'hybrid'))
 
     def test_weights_and_depth(self):
         w = app.Weights()

@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>수집 상태</title>
+<!--
+  2026-09-28 사용자 요청(기획서 대조 F) — 공고 데이터가 매칭에 쓸 만큼 새것인지 눈으로 본다.
+  /api/collection-status 가 search/collection_status.py 로 판정한다(공용 MySQL SELECT + 배치 로그 읽기).
+-->
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--line:#d9dee7;--ink:#20242b;--dim:#6b7280;--head:#1f3864;--accent:#2f5fb3;
+  --ok:#1a7f4b;--ok-bg:#e3f4ea;--warn:#9a6200;--warn-bg:#fdf1dc;--bad:#8a2130;--bad-bg:#fbe5e8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 "맑은 고딕","Malgun Gothic",system-ui,sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:20px 16px 48px}
+h1{margin:4px 0 6px;font-size:24px;color:var(--head)}
+h2{margin:0 0 8px;font-size:17px;color:var(--head)}
+.lead{color:var(--dim);margin:0 0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:0 0 14px}
+.big{display:flex;flex-wrap:wrap;gap:14px 24px;align-items:center}
+.state{font-size:30px;font-weight:800;padding:6px 18px;border-radius:12px}
+.state.정상{color:var(--ok);background:var(--ok-bg)} .state.지연{color:var(--warn);background:var(--warn-bg)} .state.실패{color:var(--bad);background:var(--bad-bg)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13.5px}
+.kv dt{color:var(--dim)} .kv dd{margin:0}
+ul.reasons{margin:10px 0 0;padding-left:20px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}
+th{color:var(--dim);background:#f7f8fa}
+td.n{text-align:right;font-variant-numeric:tabular-nums}
+.bar{position:relative;height:16px;background:#eef1f6;border-radius:4px;overflow:hidden;margin:6px 0 2px}
+.bar i{position:absolute;top:0;bottom:0;background:#e7a5ae}
+.muted{color:var(--dim);font-size:13px}
+.rule li{margin:2px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>수집 상태</h1>
+  <p class="lead">매칭에 쓰는 공고 데이터가 믿을 만큼 새것인지 판정합니다. 기능정의서 규칙: <b>수집이 실패했거나 마지막 수집이 24시간을 넘으면 매칭을 멈추고 경고</b>한다(옛 데이터로 조용히 동작하지 않게).
+    아직 매칭(<code>/api/match</code>)에 연결하지 않았고, 판정만 보여 줍니다.</p>
+
+  <div class="card" id="nowCard"><span class="muted">불러오는 중…</span></div>
+
+  <div class="card">
+    <h2>판정 규칙</h2>
+    <ul class="rule">
+      <li><b>실패</b> — 저장 기록이 없거나, 가장 최근 배치가 실패했거나, 출처 하나라도 실패해 직전 데이터를 재사용했을 때 → 매칭 멈춤</li>
+      <li><b>지연</b> — 마지막 저장 성공이 24시간을 넘었을 때 → 매칭 멈춤</li>
+      <li><b>정상</b> — 그 밖 → 매칭 진행</li>
+    </ul>
+    <p class="muted">읽는 곳: 공용 DB의 저장 기록(<code>import_runs</code>, 어디서든 읽힘) + 배치 PC의 로그(<code>data/collect_log.jsonl</code>, 있으면). 코드: <code>search/collection_status.py</code></p>
+  </div>
+
+  <div class="card" id="histCard"><span class="muted">불러오는 중…</span></div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const kst = iso => iso ? new Date(iso).toLocaleString('ko-KR', {timeZone:'Asia/Seoul', hour12:false}) : '—';
+const SRC = {kstartup:'K-Startup', bizinfo:'기업마당'};
+const STAGE = {conditions:'자격요건 추출(10단계)', applicant_types:'신청자 유형 추출(11단계)', industries:'업종 추출(12단계)', judgments_upload:'판정 올리기(13단계)'};
+
+(async () => {
+  let d;
+  try {
+    const r = await fetch('/api/collection-status');
+    d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.status);
+  } catch (e) {
+    $('nowCard').innerHTML = `<b>수집 상태를 읽지 못했습니다.</b> <span class="muted">${esc(e.message)}</span>`;
+    $('histCard').innerHTML = '';
+    return;
+  }
+  const n = d.now;
+  const src = n.latest_batch ? Object.entries(n.latest_batch.sources || {}).map(([k, v]) =>
+      `${SRC[k] || k} ${esc(v.status)}${v.count != null ? ` · ${v.count.toLocaleString()}건` : ''}${v.error ? ` — ${esc(v.error)}` : ''}`).join('<br>') : '배치 로그 없음(DB만으로 판정)';
+  $('nowCard').innerHTML = `
+    <div class="big">
+      <span class="state ${esc(n.status)}">${esc(n.status)}</span>
+      <div><b>${n.block_matching ? '지금이라면 매칭을 멈추고 경고합니다' : '매칭을 진행해도 됩니다'}</b>
+        <div class="muted">판정 시각 ${kst(n.checked_at)} · 근거 ${n.basis.join(' + ')}</div></div>
+    </div>
+    ${n.reasons.length ? `<ul class="reasons">${n.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
+    <dl class="kv" style="margin-top:12px">
+      <dt>마지막 저장 성공</dt><dd>${kst(n.last_run_at)} (${n.age_hours ?? '—'}시간 전 · 기준 ${n.max_age_hours}시간)</dd>
+      <dt>가장 최근 배치</dt><dd>${n.latest_batch ? `${esc(n.latest_batch.status)} · ${kst(n.latest_batch.run_at)}` : '—'}</dd>
+      <dt>출처별</dt><dd>${src}</dd>
+      <dt>후처리(LLM) 경고</dt><dd>${n.latest_batch && (n.latest_batch.stage_warnings || []).length
+        ? n.latest_batch.stage_warnings.map(w => `${esc(STAGE[w.stage] || w.stage)} — ${w.error ? esc(w.error) : `호출 실패 ${w.failed}건`}`).join('<br>')
+          + '<div class="muted">매칭은 막지 않습니다. 공고 데이터는 새것이고, 판정 결과만 갱신이 늦습니다.</div>'
+        : '없음'}</dd>
+      <dt>기업마당 스냅샷</dt><dd>${kst(n.bizinfo_snapshot_at)}</dd>
+      <dt>저장한 공고 수</dt><dd>${n.stored_counts ? Object.entries(n.stored_counts).map(([k, v]) => `${SRC[k] || k} ${v.toLocaleString()}`).join(' · ') : '—'}</dd>
+    </dl>`;
+
+  const h = d.history;
+  const t0 = h.runs.length ? new Date(h.runs[0].at).getTime() : 0;
+  const t1 = h.runs.length ? new Date(h.runs[h.runs.length - 1].at).getTime() : 1;
+  const span = Math.max(1, t1 - t0);
+  const blocks = h.gaps.map(g => {
+    const s = new Date(g.from).getTime() + h.max_age_hours * 3600e3, e = new Date(g.to).getTime();
+    return `<i style="left:${((s - t0) / span * 100).toFixed(2)}%;width:${Math.max(0.3, (e - s) / span * 100).toFixed(2)}%"></i>`;
+  }).join('');
+  const pct = h.span_days ? Math.round(h.blocked_hours / (h.span_days * 24) * 100) : 0;
+  $('histCard').innerHTML = `
+    <h2>이 규칙을 지난 기록에 적용하면</h2>
+    <p>저장 기록 ${h.runs.length}회 (${kst(h.runs[0]?.at)} ~ ${kst(h.runs[h.runs.length - 1]?.at)}, ${h.span_days}일) 중
+      매칭이 멈췄을 시간 <b>${h.blocked_hours}시간 (약 ${pct}%)</b>. 빨간 칸이 멈췄을 구간입니다.</p>
+    <div class="bar" aria-label="멈춤 구간">${blocks}</div>
+    <div class="muted" style="display:flex;justify-content:space-between"><span>${kst(h.runs[0]?.at)}</span><span>${kst(h.runs[h.runs.length - 1]?.at)}</span></div>
+    <p class="muted">대부분 배치를 돌리는 PC가 꺼져 있던 기간(주말 등)입니다. 배치가 PC에서 도는 한 반복됩니다.</p>
+    <table><thead><tr><th>이전 저장</th><th>다음 저장</th><th>간격</th><th>멈췄을 시간</th></tr></thead><tbody>
+      ${h.gaps.map(g => `<tr><td>${kst(g.from)}</td><td>${kst(g.to)}</td><td class="n">${g.gap_hours}시간</td><td class="n">${g.blocked_hours}시간</td></tr>`).join('') || '<tr><td colspan="4" class="muted">없음</td></tr>'}
+    </tbody></table>`;
+})();
+</script>
+</body>
+</html>

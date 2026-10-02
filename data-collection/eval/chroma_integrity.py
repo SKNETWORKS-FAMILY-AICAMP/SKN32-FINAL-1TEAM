@@ -4,7 +4,7 @@
   python -X utf8 eval/chroma_integrity.py              검사만 하고 끝낸다 (검색 없음)
   python -X utf8 eval/search_comparison.py --check-only   같은 검사 (비교 도구 진입점)
 
-지시서: docs/CHROMA_INTEGRITY_TASK_20260918.md
+지시서: docs/reviews/chroma/CHROMA_INTEGRITY_TASK_20260918.md
 
 무엇을 대조하나
 

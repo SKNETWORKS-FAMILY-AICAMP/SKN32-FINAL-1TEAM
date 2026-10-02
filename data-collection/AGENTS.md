@@ -13,7 +13,8 @@
 
 ## 작업 시작
 
-1. [현재 상태](docs/STATUS.md)와 [작업 이력](docs/WORKLOG.md)의 최근 항목을 읽는다.
+0. **[문서 지도](docs/README.md)를 먼저 본다.** 어떤 문서가 지금 기준이고 어떤 것이 지난 기록인지, 새 문서를 어디에 두는지 적혀 있다.
+1. [현재 상태](docs/STATUS.md)와 [작업 이력](docs/WORKLOG.md)의 최근 항목을 읽는다. 새 세션이면 최신 인계서 `docs/NEXT_SESSION_HANDOFF_*.md`도 읽는다.
 2. [구조 안내](README.md), [기능 흐름](docs/FLOW.md) 중 작업과 관련된 부분과 실제 코드를 확인한다.
 3. `git status --short -- data-collection` 등 읽기 전용 명령으로 기존 변경을 확인한다.
 4. 사용자에게 이번 목적과 변경 범위를 짧게 설명한다.
@@ -49,7 +50,18 @@
 | [FLOW.md](docs/FLOW.md) | 현재 입력 → 처리 → 저장·출력의 연결 | 관련 기능이 바뀌면 수정 |
 | [STATUS.md](docs/STATUS.md) | 현재 진행 상황·문제·다음 단계 | 최신 상태로 유지, 다른 AI의 진행 항목 보존 |
 | [WORKLOG.md](docs/WORKLOG.md) | 변경 이유·전후 차이·검증 근거 | 작업마다 추가 |
-| [HANDOFF.md](docs/HANDOFF.md) | 기존 인계 시점의 배경과 기록 | 과거 자료로 참고, 현재 상태로 단정하지 않음 |
+| [docs/README.md](docs/README.md) | 문서 지도 — 폴더별 내용, 최신 문서, 새 문서 위치 규칙 | 문서를 옮기거나 만들면 표를 고침 |
+| [PLAN_ALIGNMENT_20260928.md](docs/PLAN_ALIGNMENT_20260928.md) | 기획서·기능정의서 대조와 방향 결정 | 결정이 바뀌면 수정 |
+| `docs/reviews/<주제>/` | 작업 지시서·검수 요청서·검수 결과 | 새 요청·결과를 **같은 주제 폴더에** 추가 |
+| `docs/specs/` | 기준 문서(기획서 v1.10, 기능정의서 v1.9) | 고치지 않음 |
+| `docs/archive/` | 지난 인계서([HANDOFF.md](docs/archive/HANDOFF.md) 등) | 과거 자료로 참고, 현재 상태로 단정하지 않음 |
+
+### 문서 위치 규칙 (2026-09-28 정리 후)
+
+- `docs/` 맨 위에는 STATUS · WORKLOG · FLOW · PLAN_ALIGNMENT · 최신 인계서 · README만 둔다. **새 검수·지시 문서를 맨 위에 만들지 않는다.**
+- 검수 요청(`…_REVIEW_REQUEST_날짜.md`)과 검수 결과(`…_REVIEW_날짜.md`)는 `docs/reviews/<주제>/` 한 폴더에 둔다.
+  예: 매칭 검수 → `docs/reviews/matching/`, 업종 → `docs/reviews/industry/`.
+- 옛 문서에 `docs/이름.md`처럼 적힌 경로를 찾지 못하면 [문서 지도](docs/README.md) 5절에서 새 위치를 찾는다. 파일 이름은 바꾸지 않았다.
 
 ## 검색 비교 작업 시 남길 조건
 
@@ -62,4 +74,4 @@
 
 도구마다 지침 파일을 읽는 범위가 다를 수 있다. 저장소 루트에서 시작하거나 자동으로 읽었는지 불확실하면 다음 지시로 시작한다.
 
-> data-collection/AGENTS.md를 읽고, docs/STATUS.md와 최근 WORKLOG.md를 확인한 뒤 작업해줘. 커밋과 push는 내가 직접 한다.
+> data-collection/AGENTS.md와 docs/README.md(문서 지도)를 읽고, docs/STATUS.md와 최근 WORKLOG.md를 확인한 뒤 작업해줘. 커밋과 push는 내가 직접 한다.

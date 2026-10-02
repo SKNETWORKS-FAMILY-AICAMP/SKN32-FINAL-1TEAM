@@ -5,7 +5,7 @@
   python -X utf8 eval/search_comparison.py           40개 응답 수집 + 결과물 생성
   python -X utf8 eval/search_comparison.py --check-only   Chroma 실제 벡터 정합성만 검사 (검색 없음)
 
-지시서: docs/SEARCH_COMPARISON_TASK_20260918.md
+지시서: docs/reviews/search/SEARCH_COMPARISON_TASK_20260918.md
 
 이 파일은 **얇은 실행 도구**다. 검색·규칙은 서비스(`search/app.py`)의 함수를 그대로 부르고
 여기서 다시 구현하지 않는다. 서비스 코드·가중치는 건드리지 않는다.
@@ -644,7 +644,7 @@ def main():
     ids = {hit['notice_id'] for r in responses for hit in r['response']['results']}
     notices = notice_records(ids)
     manifest = {
-        'task': 'docs/SEARCH_COMPARISON_TASK_20260918.md',
+        'task': 'docs/reviews/search/SEARCH_COMPARISON_TASK_20260918.md',
         'run_at': run_at.isoformat(timespec='seconds'),
         'as_of_today': start_day,
         'run_end_date': end_day,

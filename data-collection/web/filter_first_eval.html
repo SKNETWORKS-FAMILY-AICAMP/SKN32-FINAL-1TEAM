@@ -3,15 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>매칭 순서 비교</title>
+<title>매칭 방식 비교</title>
 <!--
   experiments/sql_semantic/viewer.py 의 /filter-first-eval (기본 8010 포트).
   2026-09-28 사용자 요청 — "검색 먼저(예전)" 와 "정형 필터 먼저(지금)" 의 수치 비교를 사이트에서 확인한다.
+  2026-09-28 추가 요청 — 처음 방식(벡터 DB 유사도만)과도 비교하고 그래프로 보여 준다(vector_only).
   reports/filter_first_eval_* 의 results.json 만 읽는다. DB·모델·LLM 을 부르지 않고 아무것도 저장하지 않는다.
+  vector_only 가 없는 예전 결과 폴더도 그대로 열린다(벡터만 칸·버튼을 숨긴다).
 -->
 <style>
 :root{--bg:#f5f6f8;--card:#fff;--line:#d9dee7;--ink:#20242b;--dim:#6b7280;--head:#1f3864;--tag:#eef1f6;
-  --good:#1d6b3a;--goodBg:#dcefe2;--bad:#a3282b;--badBg:#fbe3e3;--same:#55617a;--sameBg:#eef1f6;--warnBg:#fdecc8;--warn:#8a6212}
+  --good:#1d6b3a;--goodBg:#dcefe2;--bad:#a3282b;--badBg:#fbe3e3;--same:#55617a;--sameBg:#eef1f6;--warnBg:#fdecc8;--warn:#8a6212;
+  --c-vector:#9aa3b2;--c-legacy:#6f9bd8;--c-now:#1f3864}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 "맑은 고딕","Malgun Gothic",system-ui,sans-serif}
 .wrap{max-width:1400px;margin:0 auto;padding:18px 16px 80px}
@@ -25,23 +28,47 @@ input[type=search]{min-width:220px}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
 .seg button{border:0;background:#fff;padding:4px 12px;font:inherit;font-size:13px;cursor:pointer;color:var(--head)}
 .seg button.on{background:var(--head);color:#fff}
-.flow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media (max-width:800px){.flow{grid-template-columns:1fr}}
-.flow div{border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.seg button[hidden]{display:none}
+.flow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.flow.two-col{grid-template-columns:1fr 1fr}
+@media (max-width:900px){.flow,.flow.two-col{grid-template-columns:1fr}}
+.flow div{border:1px solid var(--line);border-radius:8px;padding:10px 12px;border-top-width:4px}
 .flow b{color:var(--head)}
+.flow .s-vector{border-top-color:var(--c-vector)}.flow .s-legacy{border-top-color:var(--c-legacy)}.flow .s-now{border-top-color:var(--c-now)}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th,td{border-bottom:1px solid #eceff4;padding:6px 8px;text-align:left;font-size:12.8px;vertical-align:top}
+th{background:#f4f6fa;color:#55617a}
+td.num,th.num{text-align:right;white-space:nowrap}
+td.c,th.c{text-align:center}
+.yes{color:var(--good);font-weight:bold}.no{color:#b0b6c1}.part{color:var(--warn);font-weight:bold}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+/* 그래프 */
+.charts{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:14px 22px}
+@media (max-width:520px){.charts{grid-template-columns:1fr}}
+.chart h3{font-size:13.5px;margin:0 0 2px;color:var(--head)}
+.chart .sub{font-size:12px;color:var(--dim);margin-bottom:6px}
+.bar{display:grid;grid-template-columns:118px 1fr 92px;gap:8px;align-items:center;margin:5px 0}
+.bar .nm{font-size:12.5px;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar .track{position:relative;height:20px;background:#f1f3f7;border-radius:4px;overflow:hidden}
+.bar .fill,.bar .ext{position:absolute;top:0;bottom:0;left:0}
+.bar .ext{opacity:.28;background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.55) 0 4px,transparent 4px 8px)}
+.bar .val{font-size:12.5px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.bar .val b{color:var(--ink)}
+.chart .foot{font-size:12px;margin-top:4px}
+.legend2{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:#374151;margin-bottom:10px}
+.legend2 .ext-sw{display:inline-block;width:22px;height:10px;border-radius:2px;background:var(--c-now);opacity:.28;vertical-align:-1px;margin-right:5px}
+.big{font-size:13px;line-height:1.7;margin:12px 0 0;padding:10px 12px;border-radius:8px;background:#f4f7fc;border:1px solid #dfe6f2}
+.big b{color:var(--head)}
 .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
 .tile{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff}
 .tile .l{font-size:12.5px;color:var(--dim)}
 .tile .n{font-size:20px;font-weight:bold;color:var(--head)}
 .tile .n .arrow{color:var(--dim);font-weight:normal;margin:0 6px}
 .tile .d{font-size:12px;color:#4b5563}
-.v{display:inline-block;border-radius:9px;padding:0 8px;font-size:12px;font-weight:bold}
+.v{display:inline-block;border-radius:9px;padding:0 8px;font-size:12px;font-weight:bold;white-space:nowrap}
 .v.good{background:var(--goodBg);color:var(--good)}.v.bad{background:var(--badBg);color:var(--bad)}
 .v.same{background:var(--sameBg);color:var(--same)}.v.info{background:#f3f4f6;color:var(--dim)}
-table{width:100%;border-collapse:collapse}
-th,td{border-bottom:1px solid #eceff4;padding:6px 8px;text-align:left;font-size:12.8px;vertical-align:top}
-th{background:#f4f6fa;color:#55617a}
-td.num{text-align:right;white-space:nowrap}
 details.q{border:1px solid var(--line);border-radius:10px;background:#fff;margin-bottom:8px}
 details.q>summary{cursor:pointer;padding:9px 12px;list-style:none;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center}
 details.q>summary::-webkit-details-marker{display:none}
@@ -69,34 +96,60 @@ ol.list a:hover{text-decoration:underline}
 </head>
 <body>
 <div class="wrap">
-  <h1>매칭 순서 비교 — 찾고 거르기 vs 거르고 찾기</h1>
+  <h1>매칭 방식 비교 — 벡터만 · 찾고 거르기 · 거르고 찾기</h1>
   <div class="row muted" style="margin-bottom:12px">
     결과 폴더 <select id="run" aria-label="결과 폴더"></select>
     <div class="seg" id="terms" role="group" aria-label="용어">
       <button type="button" data-t="easy">쉬운 말</button>
       <button type="button" data-t="expert">전문 용어</button>
     </div>
+    <div class="seg" id="mode" role="group" aria-label="검색 방식">
+      <button type="button" data-m="hybrid" class="on"><span data-term="easy">뜻+단어 검색 (서비스 기본)</span><span data-term="expert">hybrid (서비스 기본)</span></button>
+      <button type="button" data-m="dense"><span data-term="easy">뜻 검색만</span><span data-term="expert">dense</span></button>
+    </div>
     <span id="meta"></span>
   </div>
 
   <div class="card">
     <h2>무엇을 비교했나</h2>
-    <div class="flow">
-      <div><b>예전 — 찾고 거르기</b><br>벡터 DB·단어 검색으로 비슷한 공고를 먼저 뽑고, 그중 마감된 공고만 뺐다.
+    <div class="flow" id="flowBoxes">
+      <div class="s-vector" data-sys="vector_only"><b><span class="sw" style="background:var(--c-vector)"></span>처음 — 벡터만</b><br>공고와 신청자 입력을 벡터로 바꿔
+        <b>뜻이 가장 비슷한 순서</b>대로 보여 준다. 마감·업력·지역 등은 전혀 보지 않는다.
+        <span class="muted">지금 코드에서 거르기·단어 검색·규칙 스위치를 모두 끄고 재현했다.</span></div>
+      <div class="s-legacy"><b><span class="sw" style="background:var(--c-legacy)"></span>9/22 — 찾고 거르기</b><br>벡터 DB·단어 검색으로 비슷한 공고를 먼저 뽑고, 그중 마감된 공고만 뺐다.
         업력·신청자 유형은 공고를 고른 뒤 자격 확인에서야 걸렸다.</div>
-      <div><b>지금 — 거르고 찾기</b><br>마감·업력·신청자 유형으로 <b>확실히 신청할 수 없는 공고를 먼저</b> 빼고,
+      <div class="s-now"><b><span class="sw" style="background:var(--c-now)"></span>지금 — 거르고 찾기</b><br>마감·업력·신청자 유형으로 <b>확실히 신청할 수 없는 공고를 먼저</b> 빼고,
         남은 공고 안에서만 벡터 DB·단어 검색을 한다. 조건을 모르는 공고는 빼지 않는다. 지역·업종은 순서에만 쓴다.</div>
     </div>
-    <p class="muted" style="margin:10px 0 0">같은 평가 질의·같은 벡터·같은 기준일로 두 방식을 돌렸다. 내용 판정(정답)은 지역·업력·마감을 무시하고
-      <b>내용만</b> 본 판정이라, 신청 가능 여부는 규칙으로 따로 매겼다. <span data-term="expert">판정이 없는 공고는 "관련 없음"으로 센 <b>하한</b>과 "딱 맞음"으로 센 <b>상한</b>을 함께 보인다.</span><span data-term="easy">정답이 없어 채점 못 한 공고는 "안 맞는다"고 친 <b>보수적</b> 숫자와 "맞는다"고 친 <b>낙관적</b> 숫자를 함께 보인다. 진짜 값은 그 사이다.</span></p>
+    <div class="scroll" style="margin-top:12px">
+      <table id="stages">
+        <thead><tr><th>단계</th><th class="c" data-sys="vector_only">처음 — 벡터만</th><th class="c">9/22 — 찾고 거르기</th><th class="c">지금 — 거르고 찾기</th></tr></thead>
+        <tbody>
+          <tr><td>① 신청 못 하는 공고 빼기 (마감·업력·신청자 유형)</td><td class="c no" data-sys="vector_only">없음</td><td class="c part">마감만, 검색 뒤에</td><td class="c yes">검색 전에 전부</td></tr>
+          <tr><td>② 뜻 검색 (벡터 DB · BGE-M3)</td><td class="c yes" data-sys="vector_only">✓</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+          <tr><td>③ 단어 검색 (BM25) 을 합치기 (RRF)</td><td class="c no" data-sys="vector_only">없음</td><td class="c yes">✓ <span class="muted">(뜻 검색만 모드에선 끔)</span></td><td class="c yes">✓ <span class="muted">(뜻 검색만 모드에선 끔)</span></td></tr>
+          <tr><td>④ 규칙으로 뒤로 보내기 (다른 지역 · 특정 집단 등)</td><td class="c no" data-sys="vector_only">없음</td><td class="c yes">✓</td><td class="c yes">✓ <span class="muted">+ 예비창업자 추정</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted" style="margin:10px 0 0">같은 평가 질의·같은 벡터·같은 기준일로 세 방식을 돌렸다. 내용 판정(정답)은 지역·업력·마감을 무시하고
+      <b>내용만</b> 본 판정이라, 신청 가능 여부는 규칙으로 따로 매겼다. <span data-term="expert">판정이 없는 공고는 "관련 없음"으로 센 <b>하한</b>과 "딱 맞음"으로 센 <b>상한</b>을 함께 보인다.</span><span data-term="easy">정답이 없어 채점 못 한 공고는 "안 맞는다"고 친 <b>보수적</b> 숫자와 "맞는다"고 친 <b>낙관적</b> 숫자를 함께 보인다. 진짜 값은 그 사이다.</span>
+      <span data-sys="vector_only">벡터만은 검색 방식과 상관없이 결과가 같아서 두 모드에서 같은 막대로 보인다.</span></p>
+  </div>
+
+  <div class="card">
+    <h2>한눈에 보기</h2>
+    <div class="legend2" id="legend2"></div>
+    <div class="charts" id="charts"></div>
+    <div class="big" id="headline"></div>
   </div>
 
   <div class="card">
     <div class="row" style="justify-content:space-between;margin-bottom:10px">
-      <h2 style="margin:0">핵심 결과</h2>
-      <div class="seg" id="mode" role="group" aria-label="검색 방식">
-        <button type="button" data-m="hybrid" class="on">hybrid (서비스 기본)</button>
-        <button type="button" data-m="dense">dense</button>
+      <h2 style="margin:0">핵심 결과 <span class="muted" id="baseLabel"></span></h2>
+      <div class="seg" id="base" role="group" aria-label="비교 기준">
+        <button type="button" data-b="vector_only">처음(벡터만) → 지금</button>
+        <button type="button" data-b="legacy">9/22 → 지금</button>
       </div>
     </div>
     <div class="tiles" id="tiles"></div>
@@ -105,17 +158,21 @@ ol.list a:hover{text-decoration:underline}
 
   <div class="card">
     <h2>전체 지표</h2>
-    <table>
-      <thead><tr><th>지표</th><th>뜻</th><th class="num">예전</th><th class="num">지금</th><th><span data-term="expert">차이 (지금−예전) [95% 구간]</span><span data-term="easy">차이 (지금−예전) [믿을 수 있는 범위]</span></th><th>판정</th></tr></thead>
-      <tbody id="metrics"></tbody>
-    </table>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>지표</th><th>뜻</th><th class="num" data-sys="vector_only">처음(벡터만)</th><th class="num">9/22</th><th class="num">지금</th>
+          <th data-sys="vector_only"><span data-term="expert">지금−벡터만 [95% 구간]</span><span data-term="easy">지금−벡터만 [믿을 수 있는 범위]</span></th>
+          <th><span data-term="expert">지금−9/22 [95% 구간]</span><span data-term="easy">지금−9/22 [믿을 수 있는 범위]</span></th></tr></thead>
+        <tbody id="metrics"></tbody>
+      </table>
+    </div>
   </div>
 
   <div class="card">
-    <h2>질의별 비교 (상위 10)</h2>
+    <h2>질의별 비교 (상위 10) <span class="muted" id="qbaseLabel"></span></h2>
     <div class="row" style="margin-bottom:8px">
       <div class="seg" id="qfilter" role="group" aria-label="질의 거르기">
-        <button type="button" data-f="inel" class="on">예전에 신청 불가가 있던 질의</button>
+        <button type="button" data-f="inel" class="on">비교 기준에 신청 불가가 있던 질의</button>
         <button type="button" data-f="changed">순위가 바뀐 질의</button>
         <button type="button" data-f="all">전체</button>
       </div>
@@ -134,7 +191,11 @@ ol.list a:hover{text-decoration:underline}
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const safeUrl = u => /^https:\/\//.test(u || '') ? u : '';
-let data = null, mode = 'hybrid', qf = 'inel';
+let data = null, mode = 'hybrid', qf = 'inel', base = 'vector_only';
+
+const SYS = {vector_only: {name: '처음 — 벡터만', short: '벡터만', color: 'var(--c-vector)'},
+             legacy: {name: '9/22 — 찾고 거르기', short: '9/22', color: 'var(--c-legacy)'},
+             filter_first: {name: '지금 — 거르고 찾기', short: '지금', color: 'var(--c-now)'}};
 
 // 지표마다 쉬운 설명. 키는 eval/filter_first_eval.py METRICS 와 같다
 const PLAIN = {
@@ -169,17 +230,19 @@ const PCT = new Set(['ineligible_k', 'p3_lo', 'p3_hi', 'unjudged3', 'unjudgedk']
 const fmt = (v, k) => v == null ? '-' : PCT.has(k) ? (v * 100).toFixed(1) + '%' : (+v).toFixed(k === 'ndcg_k' ? 3 : 2);
 
 // 95% 구간이 0 밖이면 차이가 있다고 본다. 좋은 방향이면 개선, 반대면 악화
-function verdict(s){
-  if(s.better === 'info' || !s.diff) return ['info', '참고'];
-  const [, lo, hi] = s.diff;
+function verdict(better, d){
+  if(better === 'info' || !d) return ['info', '참고'];
+  const [, lo, hi] = d;
   if(lo > 0 || hi < 0){
     const up = lo > 0;
-    const good = (s.better === 'higher') === up;
+    const good = (better === 'higher') === up;
     return good ? ['good', '개선'] : ['bad', '악화'];
   }
   return ['same', '차이 없음'];
 }
+const diffOf = (x, b) => b === 'vector_only' ? x.diff_vs_vector : x.diff;
 const diffText = d => !d ? '-' : (d[0] >= 0 ? '+' : '') + d[0].toFixed(3) + ' [' + d[1].toFixed(3) + ', ' + d[2].toFixed(3) + ']';
+const hasVector = () => !!(data && data.summary[mode] && data.summary[mode].ineligible_k && data.summary[mode].ineligible_k.vector_only != null);
 
 async function load(run){
   const res = await fetch('/api/filter-first-eval' + (run ? '?run=' + encodeURIComponent(run) : ''));
@@ -189,28 +252,115 @@ async function load(run){
   $('run').innerHTML = d.runs.map(r => '<option' + (r === d.run ? ' selected' : '') + '>' + esc(r) + '</option>').join('');
   const m = d.meta;
   $('meta').textContent = '기준일 ' + m.as_of + ' · 정상 질의 ' + m.queries + '개 · 공고 ' + m.corpus_notices + '건(' + m.corpus_before +
-    ' 전 수집) · 정답 ' + m.qrels_pairs + '쌍 · 예전 코드 커밋 ' + m.legacy_commit + ' · OpenAI 호출 ' + m.openai_calls;
+    ' 전 수집) · 정답 ' + m.qrels_pairs + '쌍 · 9/22 코드 커밋 ' + m.legacy_commit + ' · OpenAI 호출 ' + m.openai_calls;
   render();
 }
 
-function render(){
+function syncVectorUi(){
+  const on = hasVector();
+  if(!on && base === 'vector_only') base = 'legacy';
+  document.querySelectorAll('[data-sys="vector_only"]').forEach(el => { el.hidden = !on; });
+  $('flowBoxes').classList.toggle('two-col', !on);
+  [...$('base').children].forEach(b => { b.hidden = b.dataset.b === 'vector_only' && !on; b.classList.toggle('on', b.dataset.b === base); });
+}
+
+function systems(){ return hasVector() ? ['vector_only', 'legacy', 'filter_first'] : ['legacy', 'filter_first']; }
+
+// 막대 하나. lo 는 진한 막대, hi 가 있으면 그 사이를 옅은 빗금으로 이어 "진짜 값은 이 사이"를 보인다
+function barRow(sys, lo, hi, max, key){
+  const w = v => Math.max(0, Math.min(100, (v || 0) / max * 100));
+  const c = SYS[sys].color;
+  const ext = hi != null && hi > lo ? '<div class="ext" style="left:' + w(lo) + '%;width:' + (w(hi) - w(lo)) + '%;background-color:' + c + '"></div>' : '';
+  const val = '<b>' + fmt(lo, key) + '</b>' + (hi != null ? ' <span class="muted">~ ' + fmt(hi, key) + '</span>' : '');
+  return '<div class="bar"><span class="nm" title="' + esc(SYS[sys].name) + '">' + esc(SYS[sys].short) +
+    '</span><div class="track" role="img" aria-label="' + esc(SYS[sys].name + ' ' + fmt(lo, key) + (hi != null ? ' ~ ' + fmt(hi, key) : '')) + '">' +
+    ext + '<div class="fill" style="width:' + w(lo) + '%;background:' + c + '"></div></div><span class="val">' + val + '</span></div>';
+}
+
+function chart(title, sub, loKey, hiKey, max, better){
   const s = data.summary[mode];
+  const rows = systems().map(sys => barRow(sys, s[loKey][sys], hiKey ? s[hiKey][sys] : null, max, loKey)).join('');
+  const feet = [];
+  if(hasVector()){ const [c, w] = verdict(better, s[loKey].diff_vs_vector); feet.push('벡터만 → 지금 <span class="v ' + c + '">' + w + '</span>'); }
+  { const [c, w] = verdict(better, s[loKey].diff); feet.push('9/22 → 지금 <span class="v ' + c + '">' + w + '</span>'); }
+  return '<div class="chart"><h3>' + esc(title) + '</h3><div class="sub">' + esc(sub) + '</div>' + rows +
+    '<div class="foot muted">' + feet.join(' &nbsp; ') + '</div></div>';
+}
+
+// 질의 단위로 센 값 — "상위 10 에 신청 불가가 하나라도 섞인 질의" 수
+function inelQueries(sys){
+  const ls = data.lists.filter(l => l.mode === mode && l.system === sys);
+  return {n: ls.filter(l => l.ineligible.length).length, of: ls.length};
+}
+
+function renderCharts(){
+  const easy = terms === 'easy';
+  $('legend2').innerHTML = systems().map(s => '<span><span class="sw" style="background:' + SYS[s].color + '"></span>' + esc(SYS[s].name) + '</span>').join('') +
+    '<span><span class="ext-sw"></span>' + (easy ? '옅은 빗금 = 채점 못 한 공고를 맞는다고 쳤을 때까지' : '빗금 = 하한~상한(미판정)') + '</span>';
+  const qn = systems().map(s => ({s, ...inelQueries(s)}));
+  const maxQ = Math.max(1, ...qn.map(x => x.of));
+  const qChart = '<div class="chart"><h3>신청 못 하는 공고가 섞인 질의 수</h3><div class="sub">질의 ' + maxQ + '개 중, 상위 10건에 신청 불가 공고가 1건이라도 있던 질의 · 낮을수록 좋음</div>' +
+    qn.map(x => { const w = x.n / maxQ * 100; return '<div class="bar"><span class="nm">' + esc(SYS[x.s].short) + '</span><div class="track" role="img" aria-label="' +
+      esc(SYS[x.s].name + ' ' + x.n + '개') + '"><div class="fill" style="width:' + w + '%;background:' + SYS[x.s].color + '"></div></div><span class="val"><b>' + x.n + '개</b> <span class="muted">/ ' + x.of + '</span></span></div>'; }).join('') +
+    '<div class="foot muted">질의마다 따로 센 값이라 구간은 없다</div></div>';
+  $('charts').innerHTML = [
+    chart(easy ? '신청 못 하는 공고 비율 (상위 10)' : '신청 불가@10', '마감·업력·신청자 유형 때문에 신청조차 못 하는 공고 · 낮을수록 좋음', 'ineligible_k', null, maxOf('ineligible_k', 1, 0.1), 'lower'),
+    qChart,
+    chart(easy ? '내용 적합도 (상위 3)' : 'P@3(2) 하한~상한', '상위 3건 중 내용이 딱 맞는 공고 비율 · 높을수록 좋음', 'p3_lo', 'p3_hi', 1, 'higher'),
+    chart(easy ? '쓸모 있는 추천 수 (상위 3)' : '쓸모@3 하한~상한', '상위 3건 중 "내용 딱 맞음 + 신청 가능" 공고 수(최대 3) · 높을수록 좋음', 'useful3_lo', 'useful3_hi', 3, 'higher'),
+    chart(easy ? '쓸모 있는 추천 수 (상위 10)' : '쓸모@10 하한~상한', '상위 10건 중 "내용 딱 맞음 + 신청 가능" 공고 수(최대 10) · 높을수록 좋음', 'usefulk_lo', 'usefulk_hi', 10, 'higher'),
+    chart(easy ? '순서 품질 (상위 10)' : 'nDCG@10(판정분)', '채점된 공고만으로 본 상위 10건의 순서 품질(0~1) · 높을수록 좋음', 'ndcg_k', null, 1, 'higher'),
+  ].join('');
+  renderHeadline();
+}
+
+// 비율 막대의 눈금 — 값이 작으면(신청 불가 %) 0~100% 로 그리면 막대가 안 보여 최대값에 맞춘다(최소 floor)
+function maxOf(key, cap, floor){
+  const s = data.summary[mode][key];
+  const top = Math.max(...systems().map(x => s[x] || 0));
+  return Math.min(cap, Math.max(floor, Math.ceil(top * 1.25 * 20) / 20));
+}
+
+function renderHeadline(){
+  const s = data.summary[mode];
+  const pct = v => v == null ? '-' : (v * 100).toFixed(1) + '%';
+  const num = v => v == null ? '-' : (+v).toFixed(2);
+  const parts = [];
+  if(hasVector()){
+    const [pc] = verdict('higher', s.p3_lo.diff_vs_vector), [uc] = verdict('higher', s.useful3_lo.diff_vs_vector);
+    parts.push('<b>처음(벡터만) → 지금</b>: 신청 못 하는 공고 ' + pct(s.ineligible_k.vector_only) + ' → <b>' + pct(s.ineligible_k.filter_first) + '</b> · ' +
+      '내용 적합도(상위 3, 보수적) ' + pct(s.p3_lo.vector_only) + ' → <b>' + pct(s.p3_lo.filter_first) + '</b>' + (pc === 'good' ? ' (개선)' : pc === 'bad' ? ' (악화)' : ' (오차 범위 안)') + ' · ' +
+      '쓸모 있는 추천(상위 3) ' + num(s.useful3_lo.vector_only) + ' → <b>' + num(s.useful3_lo.filter_first) + '</b>건' + (uc === 'good' ? ' (개선)' : uc === 'bad' ? ' (악화)' : ' (오차 범위 안)'));
+  }
+  parts.push('<b>9/22 → 지금</b>: 신청 못 하는 공고 ' + pct(s.ineligible_k.legacy) + ' → <b>' + pct(s.ineligible_k.filter_first) + '</b> · 내용 적합도 ' +
+    pct(s.p3_lo.legacy) + ' → ' + pct(s.p3_lo.filter_first) + ' (' + (verdict('higher', s.p3_lo.diff)[0] === 'same' ? '오차 범위 안' : verdict('higher', s.p3_lo.diff)[1]) + ')');
+  parts.push('<span class="muted">정답 대부분이 LLM 판정(사람과 일치율 0.64)이고 질의가 ' + data.meta.queries + '개라 참고용이다. "오차 범위 안"은 좋아졌다고도 나빠졌다고도 말할 수 없다는 뜻이다.</span>');
+  $('headline').innerHTML = parts.join('<br>');
+}
+
+function render(){
+  syncVectorUi();
+  renderCharts();
+  const s = data.summary[mode];
+  $('baseLabel').textContent = '(' + SYS[base].name + ' → 지금)';
+  $('qbaseLabel').textContent = '(' + SYS[base].name + ' vs 지금)';
   const tile = k => {
-    const x = s[k], [cls, word] = verdict(x);
-    return '<div class="tile"><div class="l">' + esc(L(k, x)) + '</div><div class="n">' + fmt(x.legacy, k) +
+    const x = s[k], [cls, word] = verdict(x.better, diffOf(x, base));
+    return '<div class="tile"><div class="l">' + esc(L(k, x)) + '</div><div class="n">' + fmt(x[base], k) +
       '<span class="arrow">→</span>' + fmt(x.filter_first, k) + '</div><div class="d"><span class="v ' + cls + '">' + word +
       '</span> ' + esc(say(PLAIN[k] || '')) + '</div></div>';
   };
   $('tiles').innerHTML = ['ineligible_k', 'useful3_lo', 'p3_lo', 'unjudged3'].map(tile).join('');
-  const inel = data.lists.filter(l => l.mode === mode && l.system === 'legacy' && l.ineligible.length).length;
-  const nq = data.lists.filter(l => l.mode === mode && l.system === 'legacy').length;
-  $('verdictNote').textContent = '예전 방식은 질의 ' + nq + '개 중 ' + inel + '개에서 상위 10건에 신청 불가 공고가 섞여 있었다. ' +
+  const inel = inelQueries(base);
+  $('verdictNote').textContent = SYS[base].name + ' 방식은 질의 ' + inel.of + '개 중 ' + inel.n + '개에서 상위 10건에 신청 불가 공고가 섞여 있었다. ' +
     (terms === 'easy' ? '"차이 없음"은 오차 범위 안이라 좋아졌다고도 나빠졌다고도 말할 수 없다는 뜻이다(질의 수가 적어 작은 차이는 가려진다).'
                       : '"차이 없음"은 95% 구간이 0을 포함한다는 뜻이다(질의 수가 적어 작은 차이는 가려진다).');
+  const v = hasVector();
   $('metrics').innerHTML = Object.entries(s).map(([k, x]) => {
-    const [cls, word] = verdict(x);
-    return '<tr><td>' + esc(L(k, x)) + '</td><td class="muted">' + esc(say(PLAIN[k] || '')) + '</td><td class="num">' + fmt(x.legacy, k) +
-      '</td><td class="num">' + fmt(x.filter_first, k) + '</td><td>' + esc(diffText(x.diff)) + '</td><td><span class="v ' + cls + '">' + word + '</span></td></tr>';
+    const cell = d => { const [cls, word] = verdict(x.better, d); return '<td>' + esc(diffText(d)) + ' <span class="v ' + cls + '">' + word + '</span></td>'; };
+    return '<tr><td>' + esc(L(k, x)) + '</td><td class="muted">' + esc(say(PLAIN[k] || '')) + '</td>' +
+      (v ? '<td class="num">' + fmt(x.vector_only, k) + '</td>' : '') + '<td class="num">' + fmt(x.legacy, k) +
+      '</td><td class="num">' + fmt(x.filter_first, k) + '</td>' + (v ? cell(x.diff_vs_vector) : '') + cell(x.diff) + '</tr>';
   }).join('');
   renderQueries();
 }
@@ -239,28 +389,29 @@ function renderQueries(){
   const by = {};
   data.lists.filter(l => l.mode === mode).forEach(l => { (by[l.qid] = by[l.qid] || {})[l.system] = l; });
   const shown = data.queries.filter(q => {
-    const p = by[q.qid]; if(!p || !p.legacy || !p.filter_first) return false;
-    if(qf === 'inel' && !p.legacy.ineligible.length) return false;
-    if(qf === 'changed' && p.legacy.ranked.join() === p.filter_first.ranked.join()) return false;
+    const p = by[q.qid]; if(!p || !p[base] || !p.filter_first) return false;
+    if(qf === 'inel' && !p[base].ineligible.length) return false;
+    if(qf === 'changed' && p[base].ranked.join() === p.filter_first.ranked.join()) return false;
     if(!term) return true;
-    const titles = p.legacy.ranked.concat(p.filter_first.ranked).map(n => (data.notices[n] || {}).title || '').join(' ');
+    const titles = p[base].ranked.concat(p.filter_first.ranked).map(n => (data.notices[n] || {}).title || '').join(' ');
     return ((q.idea || '') + ' ' + (q.category || '') + ' ' + q.qid + ' ' + titles).toLowerCase().includes(term);
   });
   $('qcount').textContent = shown.length + '개 질의';
   $('queries').innerHTML = shown.map(q => {
-    const p = by[q.qid], a = p.legacy, b = p.filter_first;
+    const p = by[q.qid], a = p[base], b = p.filter_first;
     const who = [q.applicant_type, q.founded_at ? q.founded_at + ' 설립' : ''].filter(Boolean).join(' · ');
     return '<details class="q"' + (a.ineligible.length ? ' open' : '') + '><summary><span class="qid">' + esc(q.qid) + '</span>' +
       (q.category ? '<span class="tag">' + esc(q.category) + '</span>' : '') + '<span class="muted">' + esc(who) + '</span>' +
       '<span class="idea">' + esc(q.idea || '') + '</span>' +
       '<span class="muted">신청 불가 ' + a.ineligible.length + '→' + b.ineligible.length + ' · ' + (terms === 'easy' ? '쓸모 있는 추천(상위 3) ' : '쓸모@3 ') + a.metrics.useful3_lo + '→' + b.metrics.useful3_lo + '</span></summary>' +
-      '<div class="two"><div><h3>예전 — 찾고 거르기</h3>' + listHtml(a, b, 'old') + '</div>' +
+      '<div class="two"><div><h3>' + esc(SYS[base].name) + '</h3>' + listHtml(a, b, 'old') + '</div>' +
       '<div><h3>지금 — 거르고 찾기</h3>' + listHtml(b, a, 'new') + '</div></div></details>';
   }).join('') || '<p class="muted">해당하는 질의가 없다.</p>';
 }
 
-$('mode').onclick = e => { const m = e.target.dataset.m; if(!m) return; mode = m;
-  [...$('mode').children].forEach(b => b.classList.toggle('on', b.dataset.m === m)); render(); };
+$('mode').onclick = e => { const btn = e.target.closest('button'); if(!btn) return; mode = btn.dataset.m;
+  [...$('mode').children].forEach(b => b.classList.toggle('on', b.dataset.m === mode)); render(); };
+$('base').onclick = e => { const btn = e.target.closest('button'); if(!btn) return; base = btn.dataset.b; render(); };
 $('qfilter').onclick = e => { const f = e.target.dataset.f; if(!f) return; qf = f;
   [...$('qfilter').children].forEach(b => b.classList.toggle('on', b.dataset.f === f)); renderQueries(); };
 $('q').oninput = renderQueries;

@@ -19,5 +19,5 @@ echo [%date% %time%] start >> "data\run.log"
 set "EXITCODE=%errorlevel%"
 echo [%date% %time%] exit=%EXITCODE% >> "data\run.log"
 
-REM 0 성공 / 1 실패 / 2 부분 실패 / 3 이미 실행 중
+REM 0 성공 / 1 실패 / 2 부분 실패 / 3 이미 실행 중 / 4 수집은 성공, 후처리(LLM 자격요건·신청자 유형) 경고
 exit /b %EXITCODE%

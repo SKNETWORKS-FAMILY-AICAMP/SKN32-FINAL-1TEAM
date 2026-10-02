@@ -10,6 +10,7 @@
   python daily_pipeline.py --skip-upload   벡터를 공용 DB 로 올리지 않는다
   python daily_pipeline.py --skip-files    첨부 원본 파일을 올리지 않는다
   python daily_pipeline.py --skip-conditions  자격요건 추출(LLM)을 건너뛴다
+  python daily_pipeline.py --skip-applicant-types  신청자 유형 추출(LLM)을 건너뛴다
 
 기존 `daily_job.py` 는 K-Startup → `data/notices.json` 경로만 담당한다.
 화면(`chat_app.py`)과 추천(`match.py`)이 아직 그 파일을 읽으므로 그대로 두고,
@@ -186,13 +187,17 @@ def write_log(entry):
 def run(dry_run=False, skip_store=False, force=False, say=print,
         skip_attach=False, attach_limit=None, attach_interval=1.0,
         skip_embed=False, embed_limit=None, skip_upload=False,
-        skip_files=False, skip_conditions=False, conditions_limit=None):
+        skip_files=False, skip_conditions=False, conditions_limit=None,
+        skip_applicant_types=False, applicant_types_limit=None, skip_judgments=False,
+        skip_industries=False, industries_limit=None):
     try:
         with job_lock.acquire(LOCK):
             return _run(dry_run, skip_store, force, say,
                         skip_attach, attach_limit, attach_interval,
                         skip_embed, embed_limit, skip_upload, skip_files,
-                        skip_conditions, conditions_limit)
+                        skip_conditions, conditions_limit,
+                        skip_applicant_types, applicant_types_limit, skip_judgments,
+                        skip_industries, industries_limit)
     except job_lock.JobBusy as exc:
         return {'status': 'busy', 'job': 'pipeline', 'error': str(exc)}
 
@@ -200,7 +205,9 @@ def run(dry_run=False, skip_store=False, force=False, say=print,
 def _run(dry_run, skip_store, force, say,
          skip_attach=False, attach_limit=None, attach_interval=1.0,
          skip_embed=False, embed_limit=None, skip_upload=False,
-         skip_files=False, skip_conditions=False, conditions_limit=None):
+         skip_files=False, skip_conditions=False, conditions_limit=None,
+         skip_applicant_types=False, applicant_types_limit=None, skip_judgments=False,
+         skip_industries=False, industries_limit=None):
     started = time.time()
     sources = {}
 
@@ -337,6 +344,57 @@ def _run(dry_run, skip_store, force, say,
     elif skip_conditions:
         say('--skip-conditions — 자격요건 추출을 건너뛴다')
 
+    # ── 11. 신청자 유형 뽑기 (LLM, 2026-09-28) ─────────────────
+    # 매칭·자격 확인이 쓰는 예비창업자·개인사업자·법인 판정(search/applicant_types.py). 공고문 발췌 해시가 같으면
+    # 건너뛰므로 새 공고·바뀐 공고만 부른다. 하루 상한 300건(약 $0.25). 결과는 data/applicant_types/ 에만 쓴다(DB 쓰기 없음).
+    # 실패해도 1~10단계는 이미 끝나 있다. 다음 실행이 못 뽑은 것을 다시 고른다.
+    applicant_types_result = None
+    if stored and not skip_applicant_types:
+        say('신청자 유형 추출')
+        try:
+            from collect import applicant_type_daily
+            applicant_types_result = applicant_type_daily.run_batch(
+                limit=applicant_types_limit, say=lambda line: say('  ' + line))
+        except Exception as exc:
+            say('  신청자 유형 추출 실패: %s' % type(exc).__name__)
+            applicant_types_result = {'error': '%s: %s' % (type(exc).__name__, str(exc)[:200])}
+    elif skip_applicant_types:
+        say('--skip-applicant-types — 신청자 유형 추출을 건너뛴다')
+
+    # ── 12. 업종 뽑기 (LLM, 2026-09-28) ──────────────────────
+    # 새 공고·바뀐 공고의 신청 가능 업종(collect/industry_daily.py). 11단계와 같은 방식 — 문서 해시가 같으면 건너뛰고,
+    # 날짜당 상한 300건(약 $0.35), 같은 문서로 3번 실패하면 멈춘다. 결과는 data/industries/ 에만 쓴다(13단계가 올린다)
+    industries_result = None
+    if stored and not skip_industries:
+        say('업종 추출')
+        try:
+            from collect import industry_daily
+            industries_result = industry_daily.run_batch(
+                limit=industries_limit, say=lambda line: say('  ' + line))
+        except Exception as exc:
+            say('  업종 추출 실패: %s' % type(exc).__name__)
+            industries_result = {'error': '%s: %s' % (type(exc).__name__, str(exc)[:200])}
+    elif skip_industries:
+        say('--skip-industries — 업종 추출을 건너뛴다')
+
+    # ── 13. 공고 판정을 공용 DB 로 올리기 (2026-09-28) ─────────
+    # 신청자 유형(11단계 누적 파일)·업종 판정을 notice_applicant_types·notice_industries 로 올린다.
+    # 8단계 벡터 올리기와 같다 — 바뀐 행만 UPSERT, 팀원·EC2 가 SQL 로 읽는다(docs/guides/JUDGMENT_TABLES.md).
+    # 첫 업로드는 2026-09-28 사용자 확인 뒤 손으로 했다(4,952행). --skip-upload 도 따른다(공용 DB 로 올리지 않음)
+    judgments_result = None
+    if stored and not skip_judgments and not skip_upload:
+        say('판정 올리기')
+        try:
+            from collect import upload_judgments
+            parts = upload_judgments.run(say=lambda line: say('  ' + line))
+            errors = ['%s: %s' % (k, v['error']) for k, v in parts.items() if v.get('error')]
+            judgments_result = dict(parts, error='; '.join(errors) or None)
+        except Exception as exc:
+            say('  판정 올리기 실패: %s' % type(exc).__name__)
+            judgments_result = {'error': '%s: %s' % (type(exc).__name__, str(exc)[:200])}
+    elif skip_judgments or skip_upload:
+        say('판정 올리기를 건너뛴다(--skip-judgments 또는 --skip-upload)')
+
     removed = prune('bizinfo') + prune('kstartup')
     if removed:
         say('오래된 원본 스냅샷 %d개 정리' % removed)
@@ -344,12 +402,19 @@ def _run(dry_run, skip_store, force, say,
     # 한 소스라도 정상이 아니면 부분 실패로 본다
     degraded = [s for s, v in sources.items() if v['status'] not in ('ok', 'dry-run')]
     ok = not degraded and (stored or dry_run or skip_store)
+    # 후처리(LLM) 경고 — 10·11단계가 실패했거나 일부 호출이 실패했다(2026-09-28 Codex 통합 검수 P2).
+    # 수집 자체는 끝났으므로 status 는 그대로 둔다. 'partial' 로 바꾸면 수집 상태 판정(search/collection_status.py)이
+    # 매칭을 막는다 — 공고 데이터는 새것인데 LLM 후처리만 늦은 것이라 막을 일이 아니다.
+    # 대신 로그에 stage_warnings 로 남기고 종료 코드 4 로 알린다(run_daily.bat 이 run.log 에 exit=4 를 남긴다).
+    stage_warnings = stage_warnings_of({'conditions': conditions_result, 'applicant_types': applicant_types_result,
+                                        'industries': industries_result, 'judgments_upload': judgments_result})
 
     return write_log({
         'status': 'ok' if ok else 'partial',
         'job': 'pipeline',
         'sources': sources,
         'degraded': degraded,
+        'stage_warnings': stage_warnings,
         'normalized': os.path.basename(norm_path),
         'normalized_count': summary['accepted_count'],
         'rejected_count': summary['rejected_count'],
@@ -361,8 +426,24 @@ def _run(dry_run, skip_store, force, say,
         'vector_upload': upload_result,
         'file_upload': file_result,
         'conditions': conditions_result,
+        'applicant_types': applicant_types_result,
+        'industries': industries_result,
+        'judgments_upload': judgments_result,
         'elapsed_sec': round(time.time() - started, 1),
     })
+
+
+def stage_warnings_of(results):
+    """{단계: 결과} → [{'stage', 'error'|'failed'}]. 단계 예외·API 키 없음·일부 호출 실패를 모은다."""
+    out = []
+    for stage, result in results.items():
+        if not result:
+            continue
+        if result.get('error'):
+            out.append({'stage': stage, 'error': result['error']})
+        elif result.get('failed'):
+            out.append({'stage': stage, 'failed': result['failed']})
+    return out
 
 
 def main():
@@ -382,6 +463,14 @@ def main():
                     help='첨부 원본 파일을 공용 DB 로 올리지 않는다')
     ap.add_argument('--skip-conditions', action='store_true',
                     help='자격요건 추출(LLM)을 건너뛴다')
+    ap.add_argument('--skip-applicant-types', action='store_true',
+                    help='신청자 유형 추출(LLM)을 건너뛴다')
+    ap.add_argument('--skip-industries', action='store_true', help='업종 추출(LLM)을 건너뛴다')
+    ap.add_argument('--industries-limit', type=int, help='이번 날짜의 업종 추출 공고 상한 (기본 300)')
+    ap.add_argument('--skip-judgments', action='store_true',
+                    help='판정(신청자 유형·업종)을 공용 DB 로 올리지 않는다')
+    ap.add_argument('--applicant-types-limit', type=int,
+                    help='이번 실행에서 신청자 유형을 추출할 공고 상한 (기본 300)')
     ap.add_argument('--conditions-limit', type=int,
                     help='이번 실행에서 추출할 공고 상한')
     args = ap.parse_args()
@@ -392,7 +481,11 @@ def main():
             skip_embed=args.skip_embed, embed_limit=args.embed_limit,
             skip_upload=args.skip_upload, skip_files=args.skip_files,
             skip_conditions=args.skip_conditions,
-            conditions_limit=args.conditions_limit)
+            conditions_limit=args.conditions_limit,
+            skip_applicant_types=args.skip_applicant_types,
+            applicant_types_limit=args.applicant_types_limit,
+            skip_judgments=args.skip_judgments,
+            skip_industries=args.skip_industries, industries_limit=args.industries_limit)
 
     if r['status'] == 'busy':
         print('이미 수집 작업이 실행 중이다.', file=sys.stderr)
@@ -434,6 +527,25 @@ def main():
                % (fu.get('uploaded', 0), fu.get('sent_mb', 0),
                   '  ⚠ 해시 불일치 %d개' % fu['hash_mismatch']
                   if fu.get('hash_mismatch') else ''))))
+    at = r.get('applicant_types') or {}
+    if at:
+        print('  %-10s %s' % ('신청자 유형', at.get('error') or
+              ('추출 %d건 · 누적 %d건%s%s'
+               % (at.get('extracted', 0), at.get('total', 0),
+                  '  ⚠ 실패 %d건' % at['failed'] if at.get('failed') else '',
+                  '  · 상한으로 미룸 %d건' % at['deferred'] if at.get('deferred') else ''))))
+    ind = r.get('industries') or {}
+    if ind:
+        print('  %-10s %s' % ('업종', ind.get('error') or
+              ('추출 %d건 · 누적 %d건%s%s'
+               % (ind.get('extracted', 0), ind.get('total', 0),
+                  '  ⚠ 실패 %d건' % ind['failed'] if ind.get('failed') else '',
+                  '  · 상한으로 미룸 %d건' % ind['deferred'] if ind.get('deferred') else ''))))
+    ju = r.get('judgments_upload') or {}
+    if ju:
+        print('  %-10s %s' % ('판정 올리기', ju.get('error') or ' · '.join(
+            '%s 올림 %d' % ({'types': '유형', 'industries': '업종'}.get(k, k), v.get('uploaded', 0))
+            for k, v in ju.items() if isinstance(v, dict))))
     cd = r.get('conditions') or {}
     if cd:
         print('  %-10s %s' % ('자격요건', cd.get('error') or
@@ -443,6 +555,10 @@ def main():
     if r['status'] == 'partial':
         print('\n일부 소스가 갱신되지 않았다. 해당 소스는 직전 데이터를 유지한다.')
         return 2
+    if r.get('stage_warnings'):
+        print('\n수집은 끝났지만 후처리(LLM)에 경고가 있다: %s'
+              % ', '.join(w['stage'] for w in r['stage_warnings']))
+        return 4
     return 0
 
 

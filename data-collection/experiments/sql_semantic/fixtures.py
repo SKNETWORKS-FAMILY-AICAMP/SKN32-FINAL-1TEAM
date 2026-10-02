@@ -326,9 +326,10 @@ def _fixture_run():
         elif case['applicant_key'] == 'sparse':
             applicant, case_rows = APPLICANT_SPARSE, rows
         else:
-            # 지역이 모두 다른 공고만 남겨 후보 0건을 만든다
-            applicant = dict(APPLICANT, region='제주')
-            case_rows = [r for r in rows if r['notice_id'] == 'fx-002']
+            # 마감이 지난 공고만 남겨 후보 0건을 만든다. 2026-09-28 부터 지역이 달라도 빼지 않으므로(기획서 대조 B)
+            # 예전처럼 지역으로 0건을 만들 수 없다. 접수기간은 여전히 빼는 조건이다
+            applicant = APPLICANT
+            case_rows = [dict(r, apply_end='2000-01-01') for r in rows if r['notice_id'] == 'fx-002']
         for mode, use_filter in (('filter_on', True), ('filter_off', False)):
             responses.append({'case_id': case['case_id'], 'qid': case['case_id'],
                               'mode': mode, 'at': '(fixture — 실행 시각 없음)',
@@ -343,7 +344,7 @@ def _fixture_run():
         'run_id': 'fixture',
         'kind': 'fixture',
         'banner': BANNER,
-        'task': 'docs/CLAUDE_UI_VERIFICATION_TASK_20260921.md',
+        'task': 'docs/reviews/ui/CLAUDE_UI_VERIFICATION_TASK_20260921.md',
         'run_at': '(fixture — 실행 시각 없음)',
         'as_of_date': AS_OF.isoformat(),
         'comparable': '아니오 — 가짜 입력이다. 실제 공고·실제 검색 결과가 아니다.',

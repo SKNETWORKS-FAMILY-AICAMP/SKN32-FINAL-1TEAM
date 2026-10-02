@@ -1,8 +1,8 @@
 # 검색 평가셋 (topic-v1)
 
 공고 매칭 검색이 **좋아졌는지 숫자로 증명**하기 위한 평가셋이다.
-방향은 [ML_DIRECTION.md](../docs/ML_DIRECTION.md) P0, 데이터 계약은
-[ML_CODEX_DESIGN.md](../docs/ML_CODEX_DESIGN.md) 4절을 따른다.
+방향은 [ML_DIRECTION.md](../docs/ml/ML_DIRECTION.md) P0, 데이터 계약은
+[ML_CODEX_DESIGN.md](../docs/ml/ML_CODEX_DESIGN.md) 4절을 따른다.
 
 > 판정 화면(`label_app.py`)은 **내부 검토 전용**이다. 서비스 배포 대상이 아니다.
 

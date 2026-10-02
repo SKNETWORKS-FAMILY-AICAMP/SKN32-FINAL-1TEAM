@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>신청자 유형 추출 결과</title>
+<!--
+  2026-09-28 사용자 요청 — 공고마다 "예비창업자·개인사업자·법인이 신청할 수 있나"를 LLM 이 읽은 결과를 눈으로 본다.
+  /api/applicant-types 가 reports/applicant_type_llm_* 를 읽는다(파일만 — DB·LLM 호출 없음).
+-->
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--line:#d9dee7;--ink:#20242b;--dim:#6b7280;--head:#1f3864;--accent:#2f5fb3;
+  --ok:#1a7f4b;--ok-bg:#e3f4ea;--no:#8a2130;--no-bg:#fbe5e8;--guess:#9a6200;--guess-bg:#fdf1dc;--none:#4b5563;--none-bg:#eceff3}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 "맑은 고딕","Malgun Gothic",system-ui,sans-serif}
+.wrap{max-width:1400px;margin:0 auto;padding:20px 16px 48px}
+h1{margin:4px 0 6px;font-size:24px;color:var(--head)}
+.lead{color:var(--dim);margin:0 0 12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:0 0 14px}
+.row{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+select,input[type=search]{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:#fff;max-width:100%}
+input[type=search]{min-width:220px}
+label.f{display:flex;gap:6px;align-items:center;color:var(--dim);font-size:13px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin:0 0 14px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;text-align:left;font:inherit;color:inherit}
+.tile:hover{border-color:var(--accent)}
+.tile.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.tile b{display:block;font-size:22px;color:var(--head)}
+.tile span{font-size:12.5px;color:var(--dim)}
+.b{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:1px 8px;white-space:nowrap}
+.b.allowed{color:var(--ok);background:var(--ok-bg)} .b.not_allowed{color:var(--no);background:var(--no-bg)}
+.b.implied_no{color:var(--guess);background:var(--guess-bg)} .b.not_mentioned{color:var(--none);background:var(--none-bg)}
+.weak{font-size:11px;color:var(--dim)}
+.drop{display:block;font-size:11.5px;color:var(--no)}
+table{border-collapse:collapse;width:100%;font-size:13px;background:var(--card)}
+th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:top}
+th{background:#f7f8fa;color:var(--dim);font-weight:700}
+td.t a{color:var(--accent);font-weight:600;text-decoration:none}
+td.t .id{display:block;font-size:11.5px;color:var(--dim);font-family:Consolas,monospace}
+td.ev{color:#39404b;max-width:420px}
+td.ev q{quotes:"“" "”"}
+.tag{display:inline-block;font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:0 6px;margin:2px 4px 0 0;color:var(--dim)}
+.tag.warn{border-color:#e7b3bb;color:var(--no);background:#fff5f6}
+.tag.gate{border-color:#9fd1b5;color:var(--ok);background:#f2fbf6}
+details summary{cursor:pointer;color:var(--accent);font-size:12.5px}
+.explain{font-size:13.5px;color:#39404b}
+.explain li{margin:2px 0}
+.muted{color:var(--dim)}
+.pager{display:flex;gap:8px;align-items:center;margin:10px 0}
+.pager button{font:inherit;padding:4px 10px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer}
+.running{padding:18px;border:1px dashed var(--accent);border-radius:10px;background:#f4f8ff}
+@media (max-width:760px){ td.ev{max-width:none} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>신청자 유형 추출 결과</h1>
+  <p class="lead">공고마다 <b>예비창업자 · 개인사업자 · 법인</b>이 신청할 수 있는지 LLM이 공고문을 읽고 근거 문장과 함께 답한 결과입니다.
+    코드가 근거를 다시 검사합니다. 아직 매칭·게이트에 연결하지 않았고 DB에도 넣지 않았습니다.</p>
+
+  <div class="card">
+    <div class="row">
+      <label class="f">결과 폴더 <select id="run"></select></label>
+      <span class="muted" id="runMeta"></span>
+    </div>
+  </div>
+
+  <div id="runningBox" class="running" hidden></div>
+
+  <div id="main" hidden>
+    <details class="card explain">
+      <summary>판정 읽는 법 (눌러서 펼치기)</summary>
+      <ul>
+        <li><span class="b allowed">가능</span> 그 유형이 신청할 수 있다고 적혀 있다. 예) "예비창업자 및 창업 7년 이내 기업"</li>
+        <li><span class="b not_allowed">불가</span> 안 된다고 <b>명시</b>돼 있다. 예) "사업자등록증 보유", "법인사업자에 한함"</li>
+        <li><span class="b implied_no">불가 추정</span> 예비창업자만. 대상이 "본사·공장이 있는 중소기업"처럼 이미 사업하는 곳으로만 적혀 있다. <b>명시가 아니라 추정</b>이라 탈락 근거로 쓰지 않는다</li>
+        <li><span class="b not_mentioned">언급 없음</span> 판단할 문장이 없다. "중소기업·소상공인"은 규모 분류라 개인/법인 판단에 쓰지 않는다</li>
+        <li><span class="weak">(약)</span> 근거가 자격 머리말(지원대상·신청자격 등) 아래인지 확인하지 못함. 빨간 글씨는 코드 검사가 내린 이유(근거가 원문에 없음·제출 서류 설명·지원 내용 문맥)</li>
+        <li><span class="tag gate">게이트 사용 가능</span> 세부사업별로 다르지 않고, 자격 머리말 아래의 <b>명시적 불가</b>가 있다 — 나중에 게이트가 걸러 낼 수 있는 공고</li>
+        <li><span class="tag warn">API와 다름</span> K-Startup API 업력 칸(예: "예비창업자, 1년미만")과 예비창업자 판정이 다름. <span class="tag warn">기존값과 다름</span> 매일 배치(gpt-4o-mini)가 적어 둔 값과 다름</li>
+      </ul>
+    </details>
+
+    <div class="tiles" id="tiles"></div>
+
+    <div class="card">
+      <div class="row">
+        <label class="f">출처 <select id="fSource"><option value="">전체</option><option value="bizinfo">기업마당</option><option value="kstartup">K-Startup</option></select></label>
+        <label class="f">예비창업자 <select id="fPre"><option value="">전체</option><option value="allowed">가능</option><option value="not_allowed">불가</option><option value="implied_no">불가 추정</option><option value="not_mentioned">언급 없음</option></select></label>
+        <label class="f"><input type="checkbox" id="fBiz"> 개인·법인 명시만</label>
+        <label class="f"><input type="checkbox" id="fGate"> 게이트 사용 가능만</label>
+        <label class="f"><input type="checkbox" id="fDiff"> API·기존값과 다른 것만</label>
+        <label class="f"><input type="checkbox" id="fDrop"> 검사로 내린 것만</label>
+        <input type="search" id="fText" placeholder="제목·근거·공고 ID 검색">
+        <span class="muted" id="count"></span>
+      </div>
+    </div>
+
+    <table>
+      <thead><tr><th style="width:26%">공고</th><th>예비창업자</th><th>개인사업자</th><th>법인</th><th style="width:34%">근거 · 이유</th><th>비교</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="pager"><button id="prev">이전</button><span id="page" class="muted"></span><button id="next">다음</button></div>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ST = {allowed:'가능', not_allowed:'불가', implied_no:'불가 추정', not_mentioned:'언급 없음'};
+const PAGE = 100;
+let DATA = null, rows = [], page = 0, tileFilter = null;
+
+async function loadRuns() {
+  const r = await fetch('/api/applicant-types/runs').then(r => r.json());
+  const sel = $('run');
+  sel.innerHTML = r.runs.map(x => `<option value="${esc(x.name)}">${x.full ? '전량' : '표본'} · ${esc(x.name)}${x.running ? ` (실행 중 ${x.progress}건)` : (x.n ? ` · ${x.n}건` : '')}</option>`).join('');
+  const want = new URLSearchParams(location.search).get('run') || r.default;
+  if (want) sel.value = want;
+  sel.onchange = () => { history.replaceState(null, '', '?run=' + encodeURIComponent(sel.value)); load(); };
+  load();
+}
+
+async function load() {
+  const name = $('run').value;
+  const res = await fetch('/api/applicant-types?run=' + encodeURIComponent(name));
+  const d = await res.json();
+  if (!res.ok) { $('runMeta').textContent = d.error || '불러오지 못함'; return; }
+  if (d.running) {
+    $('main').hidden = true; $('runningBox').hidden = false;
+    $('runningBox').innerHTML = `<b>실행 중입니다.</b> 지금까지 <b>${d.progress.toLocaleString()}건</b>을 받았습니다. 끝나면 이 폴더에서 결과가 보입니다. (새로고침하면 갱신)`;
+    $('runMeta').textContent = '';
+    return;
+  }
+  $('runningBox').hidden = true; $('main').hidden = false;
+  DATA = d;
+  const m = d.meta;
+  $('runMeta').textContent = `${m.engine} · ${m.n}건 (기업마당 ${m.n_bizinfo} · K-Startup ${m.n_kstartup}) · 실패 ${m.failures} · 약 $${(m.cost_usd||0).toFixed(3)} (토큰 단가 추정)`;
+  tiles();
+  apply();
+}
+
+function tiles() {
+  const s = DATA.summary, p = s.by_type.pre_founder || {};
+  const T = [
+    ['pre:allowed', p.allowed||0, '예비창업자 가능'], ['pre:not_allowed', p.not_allowed||0, '예비창업자 불가 (명시)'],
+    ['pre:implied_no', p.implied_no||0, '예비창업자 불가 추정'], ['pre:not_mentioned', p.not_mentioned||0, '예비창업자 언급 없음'],
+    ['gate', s.gate_any, '게이트 사용 가능 (확실한 불가)'], ['biz', s.biz_explicit, `개인·법인 명시 (그중 불가 ${s.biz_no})`],
+    ['api', s.api_diff, `K-Startup API와 다름 / 비교 ${s.api_compared}`], ['legacy', s.legacy_diff, `기존 4o-mini와 다름 / 비교 ${s.legacy_compared}`],
+    ['drop', s.dropped, '코드 검사로 내린 판정'], ['varies', s.varies, '세부사업별로 다름'],
+  ];
+  $('tiles').innerHTML = T.map(([k, n, label]) => `<button class="tile${tileFilter===k?' on':''}" data-k="${k}"><b>${n.toLocaleString()}</b><span>${esc(label)}</span></button>`).join('');
+  $('tiles').querySelectorAll('.tile').forEach(b => b.onclick = () => { tileFilter = tileFilter === b.dataset.k ? null : b.dataset.k; tiles(); apply(); });
+}
+
+function match(r) {
+  if ($('fSource').value && r.source !== $('fSource').value) return false;
+  if ($('fPre').value && r.types.pre_founder.status !== $('fPre').value) return false;
+  const biz = ['sole_proprietor','corporation'].some(t => r.types[t].status !== 'not_mentioned');
+  if ($('fBiz').checked && !biz) return false;
+  if ($('fGate').checked && !r.gate.length) return false;
+  if ($('fDiff').checked && !(r.api_diff || r.legacy_diff)) return false;
+  const dropped = Object.values(r.types).some(c => c.dropped);
+  if ($('fDrop').checked && !dropped) return false;
+  if (tileFilter) {
+    const [k, v] = tileFilter.split(':');
+    if (k === 'pre' && r.types.pre_founder.status !== v) return false;
+    if (k === 'gate' && !r.gate.length) return false;
+    if (k === 'biz' && !biz) return false;
+    if (k === 'api' && !r.api_diff) return false;
+    if (k === 'legacy' && !r.legacy_diff) return false;
+    if (k === 'drop' && !dropped) return false;
+    if (k === 'varies' && !r.varies) return false;
+  }
+  const q = $('fText').value.trim();
+  if (q) {
+    const hay = [r.id, r.title, r.reason, ...Object.values(r.types).map(c => c.evidence || '')].join(' ');
+    if (!hay.includes(q)) return false;
+  }
+  return true;
+}
+
+function apply() { rows = DATA.rows.filter(match); page = 0; render(); }
+
+function cell(c) {
+  if (!c) return '';
+  let h = `<span class="b ${c.status}">${ST[c.status]}</span>`;
+  if (c.strength === 'weak') h += ' <span class="weak">(약)</span>';
+  if (c.dropped) h += `<span class="drop">LLM: ${ST[c.raw_status] || c.raw_status} → 내림: ${esc(c.dropped)}</span>`;
+  return h;
+}
+
+function render() {
+  const slice = rows.slice(page * PAGE, (page + 1) * PAGE);
+  $('count').textContent = `${rows.length.toLocaleString()}건`;
+  $('tbody').innerHTML = slice.map(r => {
+    const ev = ['pre_founder','sole_proprietor','corporation']
+      .filter(t => r.types[t].evidence)
+      .map(t => `<div><span class="muted">${DATA.type_names[t]}:</span> <q>${esc(r.types[t].evidence)}</q></div>`);
+    const uniq = [...new Set(ev)];
+    const cmp = [];
+    if (r.gate.length) cmp.push(`<span class="tag gate">게이트 사용 가능: ${r.gate.map(t => DATA.type_names[t]).join('·')} 불가</span>`);
+    if (r.varies) cmp.push('<span class="tag">세부사업별로 다름</span>');
+    if (r.api_pre !== null) cmp.push(`<span class="tag${r.api_diff ? ' warn' : ''}">API: ${esc(r.age_condition_raw)} → 예비 ${r.api_pre ? '가능' : '불가'}${r.api_diff ? ' (다름)' : ''}</span>`);
+    if (r.legacy) {
+      const lp = r.legacy.pre_startup_allowed;
+      cmp.push(`<span class="tag${r.legacy_diff ? ' warn' : ''}">기존: ${(r.legacy.business_type || []).join('/') || '형태 []'} · 예비 ${lp === null ? '?' : (lp ? '가능' : '불가')}${r.legacy_diff ? ' (다름)' : ''}</span>`);
+    }
+    return `<tr>
+      <td class="t"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a><span class="id">${esc(r.id)} · ${esc(r.target_category)}</span></td>
+      <td>${cell(r.types.pre_founder)}</td><td>${cell(r.types.sole_proprietor)}</td><td>${cell(r.types.corporation)}</td>
+      <td class="ev">${uniq.join('') || '<span class="muted">근거 없음</span>'}${r.reason ? `<details><summary>LLM 판단 이유</summary>${esc(r.reason)}</details>` : ''}</td>
+      <td>${cmp.join('')}</td></tr>`;
+  }).join('') || '<tr><td colspan="6" class="muted">조건에 맞는 공고가 없습니다.</td></tr>';
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE));
+  $('page').textContent = `${page + 1} / ${pages} 쪽`;
+  $('prev').disabled = page === 0; $('next').disabled = page >= pages - 1;
+}
+
+$('prev').onclick = () => { page--; render(); scrollTo(0, 0); };
+$('next').onclick = () => { page++; render(); scrollTo(0, 0); };
+['fSource','fPre','fBiz','fGate','fDiff','fDrop'].forEach(id => $(id).onchange = apply);
+$('fText').oninput = apply;
+loadRuns();
+</script>
+</body>
+</html>

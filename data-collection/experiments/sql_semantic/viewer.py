@@ -4,7 +4,7 @@
   .\\.venv\\Scripts\\python.exe -X utf8 -m experiments.sql_semantic.viewer
   → http://127.0.0.1:8010
 
-지시서: `docs/CLAUDE_UI_VERIFICATION_TASK_20260921.md`
+지시서: `docs/reviews/ui/CLAUDE_UI_VERIFICATION_TASK_20260921.md`
 
 **읽기 전용이다.** 저장된 결과 폴더(`reports/sql_semantic_*`)와 fixture 만 읽는다.
 DB 에 쓰지 않는다. 근거 문장만 요청이 있을 때 실험 DB 에서 읽어 온다(SELECT 만).
@@ -26,6 +26,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -40,6 +41,52 @@ from experiments.sql_semantic import embedding, fixtures  # noqa: E402
 
 REPORTS = os.path.join(ROOT, 'reports')
 WEB = os.path.join(ROOT, 'web')
+
+
+# ─────────────────────────────────────────────────────────── 공통 메뉴
+# 2026-09-28 사용자 요청 — 진행했던 화면을 메뉴로 오간다. HTML 파일마다 고치지 않고 내려보낼 때 한곳에서 끼운다.
+# 새 화면을 만들면 여기에 한 줄 더한다. /compare/selftest(자체 시험)는 메뉴에 넣지 않는다.
+NAV = [
+    ('/flow', '전체 흐름'),
+    ('/', '검증 화면'),
+    ('/compare', '검색 방식 비교'),
+    ('/filter-first-eval', '매칭 방식 비교'),
+    ('/jev-probe', 'Jev 채점 시험'),
+    ('/industry-results', '업종 추출 결과'),
+    ('/industry-probe', '업종 강조 실험'),
+    ('/applicant-types', '신청자 유형'),
+    ('/collection-status', '수집 상태'),
+]
+_NAV_STYLE = (
+    '<style>'
+    '.sbnav{position:sticky;top:0;z-index:1000;background:#1f3864;'
+    'font:14px/1.4 "맑은 고딕","Malgun Gothic",system-ui,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.18)}'
+    '.sbnav-in{display:flex;flex-wrap:wrap;align-items:center;gap:0 4px;padding:0 16px}'
+    '.sbnav-in>*{white-space:nowrap}'
+    '.sbnav-brand{color:#c9d3e6;font-weight:700;margin-right:12px;padding:10px 0}'
+    '.sbnav a{color:#fff;text-decoration:none;padding:10px 12px;border-bottom:3px solid transparent}'
+    '.sbnav a:hover{background:rgba(255,255,255,.1)}'
+    '.sbnav a:focus-visible{outline:2px solid #fff;outline-offset:-2px}'
+    '.sbnav a[aria-current=page]{border-bottom-color:#8fb3ff;font-weight:700}'
+    '</style>'
+)
+_BODY_OPEN = re.compile(r'<body[^>]*>', re.I)
+
+
+def nav_html(current):
+    links = ''.join('<a href="%s"%s>%s</a>' % (path, ' aria-current="page"' if path == current else '', label)
+                    for path, label in NAV)
+    return ('%s<nav class="sbnav" aria-label="검증 화면 메뉴"><div class="sbnav-in">'
+            '<span class="sbnav-brand">data-collection 검증</span>%s</div></nav>' % (_NAV_STYLE, links))
+
+
+def page(filename, current):
+    """web/ 의 화면 파일을 읽어 맨 위에 공통 메뉴를 끼워 돌려준다. <body> 가 없으면 맨 앞에 붙인다."""
+    with io.open(os.path.join(WEB, filename), encoding='utf-8') as f:
+        html = f.read()
+    nav = nav_html(current)
+    m = _BODY_OPEN.search(html)
+    return html[:m.end()] + nav + html[m.end():] if m else nav + html
 FIXTURE_ID = 'fixture'
 
 # 화면 맨 위에 항상 띄우는 미해결 목록. 고쳤다고 바꿔 쓰지 않는다 — 코드가 바뀌면 여기도 고친다.
@@ -281,6 +328,8 @@ def drop_split(response, baseline_response=None):
         'dropped_by_vector': vector_dropped,
         'compared': counts.get('compared'),
         'returned': counts.get('returned'),
+        # 빼지 않고 뒤로 보낸 후보(지역·업종·규모 불충족) — 2026-09-28 기획서 대조 B. 옛 결과 폴더에는 없다(None)
+        'demoted': counts.get('demoted'),
         'dropped_fields_in_examples': fields,
         'note': ('모두 사례 단위의 줄 수이며 고유 공고 수가 아니다. '
                  '조건별 사유는 저장된 예시(최대 10건) 기준이고 전체 탈락의 집계가 아니다.'),
@@ -626,8 +675,7 @@ def compare_selftest_page():
 
 @app.get('/compare', response_class=HTMLResponse)
 def compare_page():
-    with io.open(os.path.join(WEB, 'compare.html'), encoding='utf-8') as f:
-        return f.read()
+    return page('compare.html', '/compare')
 
 
 @app.post('/api/industry-probe')
@@ -657,8 +705,7 @@ def api_industry_probe(body: dict):
 
 @app.get('/industry-probe', response_class=HTMLResponse)
 def industry_probe_page():
-    with io.open(os.path.join(WEB, 'industry_probe.html'), encoding='utf-8') as f:
-        return f.read()
+    return page('industry_probe.html', '/industry-probe')
 
 
 @app.get('/api/industry-results')
@@ -679,8 +726,7 @@ def api_industry_results(run: str = ''):
 
 @app.get('/industry-results', response_class=HTMLResponse)
 def industry_results_page():
-    with io.open(os.path.join(WEB, 'industry_results.html'), encoding='utf-8') as f:
-        return f.read()
+    return page('industry_results.html', '/industry-results')
 
 
 @app.get('/api/filter-first-eval')
@@ -699,8 +745,114 @@ def api_filter_first_eval(run: str = ''):
 
 @app.get('/filter-first-eval', response_class=HTMLResponse)
 def filter_first_eval_page():
-    with io.open(os.path.join(WEB, 'filter_first_eval.html'), encoding='utf-8') as f:
-        return f.read()
+    return page('filter_first_eval.html', '/filter-first-eval')
+
+
+@app.get('/api/jev-probe')
+def api_jev_probe(run: str = ''):
+    """Jev 채점 시험(`reports/jev_judge_probe_*`) — 쌍마다 사람·Jev·LLM 판정. 파일만 읽는다(DB·모델·Jev 호출 없음).
+
+    2026-09-28 사용자 요청 — "jev 로 한 것도 눈으로 확인 가능?"
+    """
+    from experiments.sql_semantic import jev_probe_results
+    data = jev_probe_results.load_run(run)
+    if data is None:
+        return JSONResponse({'error': '결과 폴더를 찾을 수 없다. eval/jev_judge_probe.py 를 먼저 돌린다.',
+                             'runs': jev_probe_results.list_runs()}, status_code=404)
+    return JSONResponse(data)
+
+
+@app.get('/jev-probe', response_class=HTMLResponse)
+def jev_probe_page():
+    return page('jev_probe.html', '/jev-probe')
+
+
+@app.get('/api/flow')
+def api_flow():
+    """전체 흐름 화면(/flow)의 숫자 몇 개. 파일만 읽는다 — DB·모델·LLM 호출 없음 (2026-09-28)."""
+    from search import industry_rank
+    table = industry_rank.load()
+    reports = os.path.join(ROOT, 'reports')
+
+    def latest(prefix):
+        names = sorted(n for n in (os.listdir(reports) if os.path.isdir(reports) else [])
+                       if n.startswith(prefix) and os.path.isdir(os.path.join(reports, n)))
+        return names[-1] if names else None
+
+    irc = latest('industry_rank_check_')
+    irc_info = None
+    if irc:
+        irc_info = {'name': irc, 'violations': None}
+        try:
+            with io.open(os.path.join(reports, irc, 'results.json'), encoding='utf-8') as f:
+                irc_info['violations'] = json.load(f)['meta']['violations']
+        except (OSError, ValueError, KeyError):
+            pass
+    # 신청자 유형(데이터 지도용). 서비스가 읽는 파일의 줄 수와 매일 배치 기록 시각만 — 판정 로직은 돌리지 않는다
+    from search import applicant_types
+    types_path = applicant_types.default_path()
+    types_rows = 0
+    if os.path.exists(types_path):
+        with io.open(types_path, encoding='utf-8') as f:
+            types_rows = sum(1 for line in f if line.strip())
+    types_updated = None
+    meta_path = os.path.join(os.path.dirname(types_path), 'meta.json')
+    if os.path.exists(meta_path):
+        try:
+            with io.open(meta_path, encoding='utf-8') as f:
+                types_updated = json.load(f).get('run_at')
+        except ValueError:
+            pass
+    return JSONResponse({
+        'industry': {'active': table['active'], 'source': table['source'], 'rows': table['rows'],
+                     'notices': len(table['notices']), 'error': table['error']},
+        'applicant_types': {'rows': types_rows, 'source': os.path.basename(os.path.dirname(types_path)),
+                            'updated': types_updated},
+        'latest': {'filter_first_eval': latest('filter_first_eval_'), 'industry_rank_check': irc_info},
+    })
+
+
+@app.get('/api/applicant-types/runs')
+def api_applicant_type_runs():
+    """신청자 유형 LLM 추출 결과 폴더 목록. 실행 중인 폴더는 진행 건수만 (2026-09-28)."""
+    from experiments.sql_semantic import applicant_type_results as atr
+    return JSONResponse({'runs': atr.list_runs(), 'default': atr.default_run()})
+
+
+@app.get('/api/applicant-types')
+def api_applicant_types(run: str = ''):
+    """신청자 유형 LLM 추출 결과(`reports/applicant_type_llm_*`). 읽기 전용 — DB·LLM 호출 없음."""
+    from experiments.sql_semantic import applicant_type_results as atr
+    name = run or atr.default_run()
+    data = atr.load_run(name) if name else None
+    if data is None:
+        return JSONResponse({'error': '결과 폴더를 찾을 수 없다: %s' % (name or '')[:80]}, status_code=404)
+    return JSONResponse(data)
+
+
+@app.get('/applicant-types', response_class=HTMLResponse)
+def applicant_types_page():
+    return page('applicant_types.html', '/applicant-types')
+
+
+@app.get('/api/collection-status')
+def api_collection_status():
+    """수집 상태(search/collection_status.py) + 저장 이력. 공용 MySQL SELECT 만 (2026-09-28)."""
+    from search import collection_status as cs
+    try:
+        return JSONResponse({'now': cs.check(), 'history': cs.history()})
+    except Exception as exc:
+        return JSONResponse({'error': 'DB 를 읽지 못했다: %s' % type(exc).__name__}, status_code=503)
+
+
+@app.get('/collection-status', response_class=HTMLResponse)
+def collection_status_page():
+    return page('collection_status.html', '/collection-status')
+
+
+@app.get('/flow', response_class=HTMLResponse)
+def flow_page():
+    return page('flow.html', '/flow')
 
 
 @app.get('/api/health')
@@ -711,8 +863,7 @@ def api_health():
 
 @app.get('/', response_class=HTMLResponse)
 def index():
-    with io.open(os.path.join(WEB, 'verify.html'), encoding='utf-8') as f:
-        return f.read()
+    return page('verify.html', '/')
 
 
 def main():

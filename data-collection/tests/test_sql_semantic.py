@@ -277,13 +277,14 @@ class FilterTests(unittest.TestCase):
     def test_sql_uses_parameters_only(self):
         sql, params = search.build_filter({'region': '경기'}, date(2026, 9, 18))
         self.assertNotIn('경기', sql)
-        self.assertIn('경기', params)
         self.assertIn('%s', sql)
 
-    def test_region_filter_keeps_unknown_and_nationwide(self):
-        sql, _ = search.build_filter({'region': '경기'}, date(2026, 9, 18))
-        self.assertIn("c_region.status <> 'known'", sql)   # 모르면 남긴다
-        self.assertIn('FIND_IN_SET', sql)
+    def test_region_is_not_a_sql_filter(self):
+        # 2026-09-28 기획서 대조 B — 지역은 순위 신호다. SQL 에서 거르지 않고 값만 가져온다
+        sql, params = search.build_filter({'region': '경기'}, date(2026, 9, 18))
+        self.assertNotIn('FIND_IN_SET', sql)
+        self.assertNotIn('경기', params)
+        self.assertIn('c_region.status AS region_status', sql)
 
     def test_parameter_order_matches_sql(self):
         # 물음표는 SQL 에 나온 순서대로 채워진다. 계약은 LEFT JOIN 안이라 WHERE 보다 앞이다.
@@ -291,7 +292,6 @@ class FilterTests(unittest.TestCase):
         sql, params = search.build_filter({'region': '경기'}, date(2026, 9, 18))
         self.assertEqual(params[0], embedding.CONTRACT)
         self.assertEqual(params[1], '2026-09-18')
-        self.assertEqual(params[2], '경기')
         self.assertEqual(sql.count('%s'), len(params))
         self.assertLess(sql.index('v.contract = %s'), sql.index('WHERE'))
 
@@ -463,13 +463,24 @@ class RunTests(unittest.TestCase):
         return out, connection
 
     def test_only_candidates_are_compared(self):
+        # 업력·접수기간 불충족만 뺀다. 마감이 지난 공고는 빠진다
         rows = [row('keep', [1.0, 0.0]),
-                row('drop', [1.0, 0.0], region_status='known', region_value='서울',
-                    apply_end='2026-12-31')]
+                row('drop', [1.0, 0.0], apply_end='2026-01-31')]
         out, _ = self.run_search(rows, {'idea': 'x', 'region': '경기', 'founded_at': '2025-01-01'})
         self.assertEqual(out['counts']['after_conditions'], 1)
         self.assertEqual([r['notice_id'] for r in out['results']], ['keep'])
-        self.assertEqual(out['dropped_examples'][0]['fields'], ['region'])
+        self.assertEqual(out['dropped_examples'][0]['fields'], ['application_period'])
+
+    def test_region_mismatch_is_kept_but_ranked_after(self):
+        # 2026-09-28 기획서 대조 B — 다른 지역 전용 공고는 빼지 않고 뒤로 보낸다(서비스와 같은 원칙)
+        rows = [row('other', [1.0, 0.0], region_status='known', region_value='서울'),
+                row('mine', [0.8, 0.6], region_status='known', region_value='경기')]
+        out, _ = self.run_search(rows, {'idea': 'x', 'region': '경기', 'founded_at': '2025-01-01'})
+        self.assertEqual([r['notice_id'] for r in out['results']], ['mine', 'other'])
+        self.assertEqual(out['results'][1]['demoted_by'], ['region'])
+        self.assertIn('지역 불일치 → 뒤로', out['results'][1]['rank_reason'])
+        self.assertEqual(out['counts']['dropped'], 0)
+        self.assertEqual(out['counts']['demoted'], 1)
 
     def test_missing_vector_is_reported_not_silent(self):
         rows = [row('a', [1.0, 0.0]), dict(row('b', [1.0, 0.0]), vector=None)]
@@ -487,7 +498,8 @@ class RunTests(unittest.TestCase):
         self.assertEqual(out['counts']['returned'], 1)
 
     def test_zero_candidates_returns_zero(self):
-        rows = [row('x', [1.0, 0.0], region_status='known', region_value='서울')]
+        # 후보 0건은 빼는 조건(접수기간)으로 만든다. 지역이 달라도 이제 빼지 않는다(2026-09-28 B)
+        rows = [row('x', [1.0, 0.0], apply_end='2026-01-31')]
         out, _ = self.run_search(rows, {'idea': 'x', 'region': '경기', 'founded_at': '2025-01-01'})
         self.assertEqual(out['counts']['returned'], 0)
         self.assertEqual(out['results'], [])
@@ -539,24 +551,28 @@ class ReviewRegressionTests(RunTests):
         self.assertEqual(checks['verdict'], 'check')
         self.assertIn('예정', checks['why'])
 
-    def test_company_size_mismatch_is_excluded(self):
-        # 리뷰 1번 — 규모가 명시된 공고와 신청자 규모가 다르면 제외한다
+    def test_company_size_mismatch_is_demoted_not_excluded(self):
+        # 리뷰 1번은 "규모 불일치 제외"였다. 2026-09-28 기획서 대조 B 로 게이트는 유형·업력·접수기간뿐이라
+        # 규모 불일치는 판정(NO)은 그대로 두고 후보에서 빼지 않고 뒤로 보낸다
         small = row('small', [1.0, 0.0], size_status='known', size_value='중소기업')
         out, _ = self.run_search([small], {'idea': 'x', 'region': '', 'founded_at': '2025-01-01',
                                            'company_size': '대기업'})
-        self.assertEqual(out['counts']['returned'], 0)
-        self.assertEqual(out['dropped_examples'][0]['fields'], ['company_size'])
+        self.assertEqual(out['counts']['returned'], 1)
+        self.assertEqual(out['results'][0]['conditions']['company_size']['verdict'], 'no')
+        self.assertEqual(out['results'][0]['demoted_by'], ['company_size'])
 
     def test_company_size_missing_input_is_check(self):
         small = row('small', [1.0, 0.0], size_status='known', size_value='중소기업')
         out, _ = self.run_search([small])
         self.assertIn('company_size', out['results'][0]['needs_check'])
 
-    def test_industry_mismatch_is_excluded(self):
+    def test_industry_mismatch_is_demoted_not_excluded(self):
+        # 2026-09-28 기획서 대조 B — 업종은 순위 신호다. 불일치는 뒤로 보낸다
         maker = row('maker', [1.0, 0.0], industry_status='known', industry_value='제조업')
         out, _ = self.run_search([maker], {'idea': 'x', 'region': '', 'founded_at': '2025-01-01',
                                            'industry': '서비스업'})
-        self.assertEqual(out['counts']['returned'], 0)
+        self.assertEqual(out['counts']['returned'], 1)
+        self.assertEqual(out['results'][0]['demoted_by'], ['industry'])
 
     def test_industry_unknown_keeps_candidate(self):
         out, _ = self.run_search([row('a', [1.0, 0.0])],

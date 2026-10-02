@@ -36,5 +36,32 @@ class QueryMetricsTests(unittest.TestCase):
         self.assertIsNone(ffe.mean([None]))
 
 
+class VectorOnlyTests(unittest.TestCase):
+    """처음 방식(벡터만) 재현 스위치 — 이름이 틀리면 MatchRequest 가 조용히 무시해 스위치가 켜진 채 남는다."""
+
+    def test_switches_are_real_fields_and_all_off(self):
+        from search import app
+        fields = app.MatchRequest.model_fields
+        for key in ffe.VECTOR_ONLY:
+            self.assertIn(key, fields, key)
+        req = app.MatchRequest(idea='x', applicant_type='예비창업자', **ffe.VECTOR_ONLY)
+        self.assertEqual(req.search, 'dense')
+        # 매칭을 바꾸는 켜고 끄는 스위치는 모두 꺼져 있어야 한다(새 스위치가 생기면 여기서 걸린다)
+        # (hiring_plan 은 신청자 입력이라 기본값 False 로 통과한다)
+        toggles = [k for k, f in fields.items() if f.annotation is bool]
+        on = [k for k in toggles if getattr(req, k)]
+        self.assertEqual(on, [], '벡터만인데 켜진 스위치: %s' % on)
+
+    def test_render_has_three_columns_and_old_summary_still_renders(self):
+        meta = {'as_of': '2026-09-15', 'queries': 2, 'k': 10, 'corpus_notices': 5, 'corpus_before': '2026-09-16',
+                'legacy_commit': 'abc', 'qrels_pairs': 3, 'judges': 'all'}
+        row = {'label': '신청 불가@10', 'better': 'lower', 'vector_only': 0.3, 'legacy': 0.05, 'filter_first': 0.0,
+               'diff': (-0.05, -0.1, 0.0), 'diff_vs_vector': (-0.3, -0.4, -0.2)}
+        text = '\n'.join(ffe.render(meta, {'hybrid': {'ineligible_k': row}}))
+        self.assertIn('| 신청 불가@10 | 30.0% | 5.0% | 0.0% | -0.300 [-0.400, -0.200] | -0.050 [-0.100, +0.000] | 낮을수록 |', text)
+        old = {k: v for k, v in row.items() if k not in ('vector_only', 'diff_vs_vector')}
+        self.assertIn('| 신청 불가@10 | - | 5.0% | 0.0% | - |', '\n'.join(ffe.render(meta, {'hybrid': {'ineligible_k': old}})))
+
+
 if __name__ == '__main__':
     unittest.main()
