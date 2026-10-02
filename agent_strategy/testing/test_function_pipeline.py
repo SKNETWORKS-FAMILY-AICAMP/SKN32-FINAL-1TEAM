@@ -31,16 +31,23 @@ def fake_response(fid,payload):
 
 
 class PipelineTests(unittest.TestCase):
+    def test_early_startup_uses_single_budget_section(self):
+        early_ids = {spec['sectionId'] for spec in runtime.CONTRACT['documents']['early_startup']}
+        pre_ids = {spec['sectionId'] for spec in runtime.CONTRACT['documents']['pre_startup']}
+        self.assertIn('3.5.3', early_ids)
+        self.assertNotIn('3.5.4', early_ids)
+        self.assertIn('2.5.4', pre_ids)
+
     def test_early_budget_original_preserved_without_duplicate_phase_assignment(self):
         raw=self.sample('초기')
         originals=raw['2_지금_입력받는값']['_back_source']['tableData']['사업비_집행계획']
-        for sid in ('3.5.3','3.5.4'):
-            spec=next(s for s in runtime.CONTRACT['documents']['early_startup'] if s['sectionId']==sid)
-            args=pipeline.table_arguments(raw,'early_startup',spec,{})
-            output=py.generate_table(**args)
-            self.assertEqual(output['tables'][0]['rows'],[])
-            self.assertEqual(output['tables'][0]['rules']['unassignedOriginalRows'],originals)
-            self.assertIn('단계 미지정 원본',output['generatedText'])
+        sid='3.5.3'
+        spec=next(s for s in runtime.CONTRACT['documents']['early_startup'] if s['sectionId']==sid)
+        args=pipeline.table_arguments(raw,'early_startup',spec,{})
+        output=py.generate_table(**args)
+        expected=[dict(row,산출근거=row.get('집행계획','확인 필요')) for row in originals]
+        self.assertEqual(output['tables'][0]['rows'],expected)
+        self.assertNotIn('단계 미지정 원본',output['generatedText'])
 
     def sample(self,name='예비'):
         filename={'일반':'example_general_part2.json','예비':'example_pre_startup.json','초기':'example_early_startup.json'}[name]
@@ -56,7 +63,7 @@ class PipelineTests(unittest.TestCase):
         return stack
 
     def test_pipeline_all_types_and_local_evidence(self):
-        for kind,name,prefix,count in [('general','일반','1.',10),('pre_startup','예비','2.',25),('early_startup','초기','3.',25)]:
+        for kind,name,prefix,count in [('general','일반','1.',10),('pre_startup','예비','2.',25),('early_startup','초기','3.',24)]:
             with self.mocked():result=server.run_test(self.sample(name),kind)
             self.assertEqual(len(result['results']),count)
             self.assertTrue(all(r['sectionId'].startswith(prefix) for r in result['results']))
@@ -64,7 +71,7 @@ class PipelineTests(unittest.TestCase):
             if kind=='general': self.assertFalse(any(t['functionId']=='F17' for t in result['trace']))
             else:
                 self.assertTrue(any(t['functionId']=='F17' for t in result['trace']))
-                self.assertTrue(all(r['tables'] for r in result['results'] if r['functionId']=='F17'))
+                self.assertTrue(all(r['tables'] for r in result['results'] if r['functionId']=='F17' and r.get('enabled',True)))
             self.assertLess(result['contextMetrics']['selectedSectionChars'],result['contextMetrics']['fullCanonicalCharsIfRepeated'])
             self.assertTrue(result['research']['availableFiles'])
             if kind=='pre_startup':
