@@ -216,10 +216,12 @@ def validate_section(section_spec, content, source_data):
     amounts={int(n.replace(',','')) for n in re.findall(r'(?<![\d.])(\d[\d,]*)\s*원',text)}
     provenance_text=json.dumps(source_data.get('strategyProvenance',{}),ensure_ascii=False)
     known={int(n) for n in re.findall(r'(?<![\w.])\d+(?![\w.])',original_text+' '+provenance_text)}
+    proposed_fact_paths={str(f.get('path','')) for f in _as_list(content.get('facts',[]))
+                         if isinstance(f,dict) and f.get('status') in {'proposed','needs_confirmation'}}
     for amount in amounts:
         if amount not in known:
             proposed_text=any(('제안' in line or '예상' in line or '계획' in line) for line in text.splitlines() if str(amount) in line)
-            if proposed_text:warnings.append(f'사업계획 제안 금액: {amount}원')
+            if proposed_text or any('budget' in path or '지원' in path for path in proposed_fact_paths):warnings.append(f'사업계획 제안 금액: {amount}원')
             else:issues.append(f'원본에 없는 원 단위 금액: {amount}')
     issues=_unique_messages(issues); warnings=_unique_messages(warnings)
     if issues:
