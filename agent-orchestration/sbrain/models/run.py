@@ -5,12 +5,12 @@ Run의 확장 필드는 Orchestrator가 재개 지점을 잃지 않기 위해 �
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, computed_field, model_validator
 
 from .base import (
-    ErrorKind, FailureScope, NotificationKind, RunPhase, RunProgress,
+    ErrorKind, FailureScope, KeptSide, NotificationKind, RunPhase, RunProgress,
     RunStep, SBModel, ScreenStatus, Trigger, ext,
 )
 from .rework import BundleUsage, ReworkComparison
@@ -31,6 +31,7 @@ RESUME_STEP: dict[str, int] = {
 }
 
 ACTIVE_PROGRESS = ("실행", "재개대기", "사용자대기")
+FAILURE_REASON_MAX = 500   # 실패 사유 길이 상한 (잠정)
 
 
 class RunState(SBModel):
@@ -95,7 +96,11 @@ class RedoState(SBModel):
 
 
 class CycleState(SBModel):
-    """확장 — 진행 중인 재작성 사이클."""
+    """확장 — 진행 중인 재작성 사이클.
+
+    collect_until이 있으면 그 시각까지는 '모으는 중'이다: 같은 화면의 재작성 요청을 이 사이클에 더하고
+    (counted_bundles = 지금까지 모인 묶음), 워커는 이 실행 건을 가져가지 않는다. 시각이 지나면 워커가 진행한다.
+    """
     cycle_id: str
     screen: int
     snapshot: dict[str, int]
@@ -106,6 +111,44 @@ class CycleState(SBModel):
     started_at: datetime
     comparisons: list[ReworkComparison] = Field(default_factory=list)
     rescored_layers: list[str] = Field(default_factory=list)
+    collect_until: datetime | None = None   # 재작성 요청을 모으는 시간이 끝나는 시각 (첫 요청 + 잠정 2초)
+
+
+ReworkResultStatus = Literal["진행중", "완료", "실패"]
+
+
+class ReworkSummary(SBModel):
+    """확장 — 마지막 재작성 한 건의 결과 요약 (재작성 결과 조회가 읽는다).
+
+    재작성을 시작할 때(첫 요청 접수) '진행중'으로 새로 만든다 — 이전 재작성의 결과는 마지막으로 남지 않는다.
+    전후 비교 뒤 남긴 쪽 · 전후 점수 · 바뀐 산출물 참조를 채우고, 끝나면 '완료'.
+    실패(재개 상한 초과 · 영구 오류)로 되돌렸으면 '실패' — 되돌림 · 돌려준 묶음 · 안내 코드만 남기고 전후 내용은 비운다.
+    """
+    cycle_id: str
+    screen: int
+    bundles: list[str]                       # 모은 묶음 (요청 순서)
+    status: ReworkResultStatus
+    started_at: datetime
+    ended_at: datetime | None = None
+    # 완료
+    kept: KeptSide | None = None             # 남긴 쪽 (전 · 후)
+    basis: str | None = None                 # 비교 기준: document · artifact · total
+    before_score: float | None = None
+    after_score: float | None = None
+    before_refs: list[str] = Field(default_factory=list)   # 바뀐 산출물의 재작성 전 '이름@버전'
+    after_refs: list[str] = Field(default_factory=list)    # 바뀐 산출물의 재작성 후 '이름@버전'
+    # 실패
+    rolled_back: bool = False
+    refunded_bundles: list[str] = Field(default_factory=list)
+    failure_reason: str | None = None        # 재개상한초과 · 영구오류 · 운영오류 (내용 없음)
+    notice_code: str | None = None           # 사용자 안내 (E-RUN-ROLLBACK)
+
+
+def collecting(run: Run, now: datetime) -> bool:
+    """재작성 요청을 모으는 중인지 — '실행'이고 사이클의 모으는 시간이 아직 끝나지 않았다."""
+    cyc = run.cycle
+    return (run.state.progress == "실행" and cyc is not None and cyc.collect_until is not None
+            and now < cyc.collect_until)
 
 
 class Run(SBModel):
@@ -132,6 +175,7 @@ class Run(SBModel):
     segment_total: int = ext(0, note="진행률 계산용 구간 단계 수")
     redo_state: RedoState | None = ext(None)
     cycle: CycleState | None = ext(None)
+    last_rework: ReworkSummary | None = ext(None, note="마지막 재작성 한 건의 결과 요약 (진행중 · 완료 · 실패)")
     resume_window_started_at: datetime | None = ext(None, note="재개 총 대기 상한 계산 시작 시각")
     admin_alert: bool = ext(False, note="영구 오류로 실패 — 관리자 알림 대상")
     decision_ref: str | None = ext(None, note="현재 구간을 연 사용자 명령 산출물@버전")
@@ -139,3 +183,18 @@ class Run(SBModel):
     more_used: bool = ext(False, note="공고 추가 조회 사용 여부")
     notices: list[Notice] = ext(default_factory=list)
     ended_at: datetime | None = ext(None)
+    failure_reason: str | None = ext(None, note="실패 사유 '<Task>: <사유> — <오류 요약>' (웹 실패 알림에도 쓴다)")
+
+
+def progress_percent(run: Run) -> int:
+    """진행률(%) — 진행 중(실행 · 재개대기)이면 지금 구간에서 끝난 단계 비율, 완료 100, 그 밖(대기 · 실패 · 중단) 0.
+
+    화면 상태(view)가 쓴다(웹 projects.progress_percent에는 쓰지 않는다). 실패 · 중단은 대기열을 비우므로
+    구간 비율로 세면 100이 되어 0으로 둔다 (잠정).
+    """
+    if run.state.progress == "완료":
+        return 100
+    total = run.segment_total
+    if run.state.progress in ("실행", "재개대기") and total:
+        return int(round((total - len(run.queue)) / total * 100))
+    return 0

@@ -1,4 +1,4 @@
-"""웹 DB 행 → PreInput 매핑과 SQL 공급처 (웹 스키마 app_schema.sql, 저장소 미포함)."""
+"""웹 DB 행 → PreInput 매핑과 SQL 공급처 (웹 스키마 web/backend/app_schema.sql)."""
 from __future__ import annotations
 
 import json
@@ -21,7 +21,7 @@ def test_corp_record_maps_to_pre_input():
     assert f.idea_text == "동네 헬스장 회원 관리 서비스"
     assert f.applicant_type == "법인"
     assert f.representative_name == "김서준"
-    assert f.representative_career == ["경력 · OO피트니스 운영 · 5년"]      # 증빙여부(참 · 거짓)는 뺀다
+    assert f.representative_career == ["경력: OO피트니스 운영 (5년, 증빙 있음)"]
     assert f.revenue_unit_price == 35000                                   # 호환용 — 첫 항목
     assert [(i.service_name, i.unit_price) for i in f.revenue_items] == [("월 구독", 35000), ("연 구독", 350000)]
     assert f.development_period == "2026-03 ~ 2026-12"
@@ -29,7 +29,7 @@ def test_corp_record_maps_to_pre_input():
     assert (f.birth_date, f.gender) == (date(1990, 1, 1), "남")
     assert (f.region, f.industry_code) == ("서울특별시 마포구", "정보·통신")
     assert f.certifications == ["노란우산공제"]
-    assert (f.hiring_plan, f.facilities, f.partners) == ("없음", "태블릿 · 보유", "없음")
+    assert (f.hiring_plan, f.facilities, f.partners) == ("없음", "태블릿 (보유)", "없음")
     assert (f.founded_at, f.business_reg_no, f.self_fund_amount) == (date(2025, 3, 2), "123-45-67890", 10_000_000)
     assert f.desired_scale is None and f.is_first_startup is None and f.attachments is None
 
@@ -73,6 +73,63 @@ def test_json_columns_given_as_strings():
                                "ceo_careers": json.dumps([{"a": "가", "b": "나", "c": False}])})
     f = to_pre_input(rec)
     assert f.certifications == ["벤처기업"] and f.representative_career == ["가 · 나"]
+
+
+# ── 목록 입력 키 이름 변환 (웹 코드 user-input-example.py의 PlanCareerIn 등) ──
+def careers(*items: dict) -> list[str]:
+    return to_pre_input(project_record(plan={"ceo_careers": list(items)})).representative_career
+
+
+def career(type=None, title=None, period=None, has_proof=False) -> dict:
+    return dict(type=type, title=title, period=period, has_proof=has_proof)
+
+
+@pytest.mark.parametrize("item, expected", [
+    (career("경력", "OO피트니스 운영", "5년", True), "경력: OO피트니스 운영 (5년, 증빙 있음)"),
+    (career(None, "OO피트니스 운영", "5년"), "OO피트니스 운영 (5년)"),              # 구분 없음
+    (career("학력", "OO대학교 체육학과"), "학력: OO대학교 체육학과"),               # 기간 · 증빙 없음 → 괄호 생략
+    (career("자격", "생활스포츠지도사", " ", True), "자격: 생활스포츠지도사 (증빙 있음)"),
+    (career("경력", None, "3년"), "경력 (3년)"),                                    # 내용 없음
+])
+def test_career_by_keys(item, expected):
+    assert careers(item) == [expected]
+
+
+def test_career_proof_only_when_true_and_not_alone():
+    # 증빙은 참일 때만 붙고, 증빙 말고는 값이 없는 항목은 뺀다
+    assert careers(career("경력", "OO", "5년", False), career(has_proof=True)) == ["경력: OO (5년)"]
+
+
+def test_hires_by_keys():
+    hires = [dict(job="개발자", headcount="2", required_skill="React", hire_month="2026-06"),
+             dict(job="디자이너", headcount="1~2명", required_skill=None, hire_month=None),
+             dict(job="영업", headcount=None, required_skill="B2B 영업", hire_month="2026-09"),
+             dict(job=None, headcount=3, required_skill=None, hire_month=None)]
+    f = to_pre_input(project_record(plan={"no_hires": False, "hires": hires}))
+    assert f.hiring_plan == ("개발자 2명 · 요구역량: React · 채용 시기: 2026-06; 디자이너 1~2명; "
+                             "영업 · 요구역량: B2B 영업 · 채용 시기: 2026-09; 3명")
+
+
+def test_equipment_and_partners_by_keys():
+    f = to_pre_input(project_record(plan={
+        "equipment": [dict(name="태블릿", status="보유"), dict(name="POS 단말기", status=None)],
+        "no_partners": False, "partners": [dict(name="OO대학교", status="협의 중")]}))
+    assert (f.facilities, f.partners) == ("태블릿 (보유); POS 단말기", "OO대학교 (협의 중)")
+
+
+def test_unknown_keys_fall_back_to_values():
+    # 아는 키가 하나도 없으면 지금처럼 값만 잇는다
+    f = to_pre_input(project_record(plan={
+        "ceo_careers": [{"구분": "경력", "내용": "OO", "증빙": True}],
+        "no_hires": False, "hires": [{"role": "개발", "count": 2}],
+        "equipment": ["태블릿"]}))
+    assert f.representative_career == ["경력 · OO"]
+    assert (f.hiring_plan, f.facilities) == ("개발 · 2", "태블릿")
+
+
+def test_unknown_keys_next_to_known_keys_are_kept():
+    # 웹이 키를 더하면 그 값은 버리지 않고 뒤에 잇는다
+    assert careers({**career("경력", "OO", "5년"), "org": "OO헬스"}) == ["경력: OO (5년) · OO헬스"]
 
 
 def test_missing_required_items_are_listed():

@@ -5,5 +5,7 @@ SQLAlchemy==2.1.1
 PyMySQL==1.2.3
 # 조율 Agent의 OpenAI 호출처 어댑터 — sbrain/orchestrator/openai_provider.py
 openai==3.20.0
+# .env 파일에서 환경 변수 읽기 (OPENAI_API_KEY 등) — sbrain/env.py
+python-dotenv==1.2.3
 # 테스트
 pytest==9.1.1

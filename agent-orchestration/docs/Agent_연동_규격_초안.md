@@ -3,10 +3,10 @@
 | 항목 | 내용 |
 |---|---|
 | 상태 | **잠정 규격 — 타 팀 합의 전.** 합의 결과에 따라 바뀔 수 있다 |
-| 작성일 | 2026-09-26 |
+| 작성일 | 2026-09-26 (2026-10-01 갱신: 호출처 응답의 토큰 사용량, 확장 필드. 2026-10-02 갱신: T-P2 시도별 기록 · 검수 회수 문단, 사용자 재작성 지시의 묶음 이름) |
 | 기준 문서 | S-Brain Agent 기능정의서 v1.9 (시트 2 · 3 · 4 · 5 · 7) |
 | 코드 위치 | `sbrain/` — 입출력 규격 `contracts/tasks.py`, 공통 타입 `models/`, 호출 도구 `orchestrator/tools.py` |
-| 검증 방식 | 7개 Agent를 스텁으로 두고 Orchestrator가 20단계를 끝까지 도는 테스트로 검증했다. 2026-09-29 조율 T-C1을 실제 구현으로 바꿨다 (`tests/`, 75건 통과) |
+| 검증 방식 | 7개 Agent를 스텁으로 두고 Orchestrator가 20단계를 끝까지 도는 테스트로 검증했다. 2026-09-29 조율 T-C1을 실제 구현으로 바꿨다 (`tests/`, 412건 통과 — 메모리 · SQLite · MySQL 저장소 포함) |
 | 독자 | 전략 · 작성 · 구현 · 검증-1 · 검증-2 · 검수 Agent 구현 담당, 공고팀(G-01 · T-C2), 웹팀(명령 창구 연동) |
 
 ---
@@ -74,7 +74,7 @@ tools를 거치지 않으면 재시도 · 제한 시간 · 오류 분류 · 호�
 | 제한 시간 | 호출처(HTTP 클라이언트)의 timeout으로 건다. 동기 호출은 강제로 끊을 수 없기 때문이다 | Task별 (7절 표, 잠정) |
 | 형식 오류 | ① `schema` 검사 실패 ② `parse`가 `FormatError`를 올림 — 둘 다 재시도 | — |
 | 오류 분류 | 재시도를 다 쓴 뒤 재개할지(일시) 실패로 끝낼지(입력 · 운영)를 가른다 | 아래 표 |
-| 호출 기록 | 호출마다 시도별 결과 · 오류 종류 · 모델 · 온도를 남긴다. 재시도는 새 산출물 버전을 만들지 않는다 | — |
+| 호출 기록 | 호출마다 시도별 결과 · 오류 종류 · 모델 · 온도 · **토큰 사용량**을 남긴다. 재시도는 새 산출물 버전을 만들지 않는다 | — |
 | 동시성 | 여러 스레드에서 동시에 써도 안전하다 | — |
 
 | 상황 | 오류 | 오류 종류 |
@@ -95,7 +95,7 @@ tools가 `ToolCallExhausted(error, error_kind, tries, call_id)`를 올린다.
 |---|---|---|
 | T-C2 공고 매칭 | Task 함수가 받는다 | 대체 경로: 임베딩 오류 → BM25 단독, BM25 오류 → 임베딩 단독, 둘 다 → 마감 임박순(잠정). `fallbackUsed` · `fallbackMode`를 채운다 |
 | T-V2 프로토타입 검증 | Task 함수가 받는다 | 보조 LLM 실패 → 문자열 대조 결과만으로 점수 산출 |
-| T-P2 한국어 문장 윤문 | Orchestrator | 그 문장만 원문 유지(`keptReason='호출실패'`). 실패 비율이 기준을 넘으면 재개 |
+| T-P2 한국어 문장 윤문 | Orchestrator | 그 문장만 원문 유지(`keptReason='호출실패'`). 실패 비율이 기준을 넘으면 재개. 이 호출은 시도 기록(8절)에 세지 않는다 |
 | 그 밖의 Task | **받지 말고 그대로 올려 보낸다** | Orchestrator가 Task 단위로 재개한다(일시 오류만). 재개 상한을 넘기거나 영구 오류면 실행 실패, 재작성 중이면 재작성 실패 |
 
 T-C1은 아직 실행 건이 없어 재개하지 않고 진입 전 상태로 되돌린다(E-C1-TIMEOUT).
@@ -103,13 +103,29 @@ T-C1은 아직 실행 건이 없어 재개하지 않고 진입 전 상태로 되
 ### 4.5 호출처 어댑터 (Orchestrator 쪽에서 준비)
 
 ```python
+@dataclass(frozen=True)
+class TokenUsage:                      # 확장 — 응답 하나의 토큰 사용량
+    input_tokens: int | None = None          # 입력 — 캐시 입력을 포함한 전체
+    cached_input_tokens: int | None = None   # 캐시 입력 — 입력의 일부
+    output_tokens: int | None = None         # 출력 — 추론을 포함한 전체
+    reasoning_tokens: int | None = None      # 추론 — 출력의 일부
+
+@dataclass(frozen=True)
+class LLMResponse:                     # 확장 — 본문과 사용량
+    text: str
+    usage: TokenUsage | None = None
+
 class LLMProvider(Protocol):
-    def complete(self, request: LLMRequest) -> str: ...
+    def complete(self, request: LLMRequest) -> str | LLMResponse: ...
 ```
 
 - `request.timeout_sec`를 HTTP 클라이언트 timeout으로 건다.
 - 시간 초과는 `TimeoutError`, 응답 코드 오류는 `ProviderError(status=...)`로 올린다.
+- **토큰 사용량(확장, 2026-10-01):** 응답의 사용량을 알 수 있으면 `LLMResponse(text, usage)`로 돌려준다. 본문만(`str`) 돌려줘도 계속 동작한다(사용량 없음으로 기록). tools는 응답을 받은 시도마다 사용량을 **스키마 검사 · parse 전에** 기록하므로 형식 오류로 버린 응답의 비용도 남는다.
+- 응답은 받았지만 쓸 수 없어 호출처가 형식 오류를 올릴 때(빈 응답 등)는 `FormatError("…", usage=…)`로 사용량을 실어 보낸다.
+- OpenAI 어댑터(`orchestrator/openai_provider.py`)의 대응: `usage.prompt_tokens` → 입력, `prompt_tokens_details.cached_tokens` → 캐시 입력, `usage.completion_tokens` → 출력, `completion_tokens_details.reasoning_tokens` → 추론. **자체 GPU 서버 어댑터를 만드는 팀(검수 · 인프라)은 같은 뜻으로 채운다.**
 - 조율은 OpenAI, 검수는 자체 GPU 서버처럼 Agent마다 호출처가 다를 수 있다. 호출처 이름은 Agent 등록부(관리자 설정값)에 있다.
+- Task 함수는 바뀌는 것이 없다. `tools.llm`은 예전처럼 검사한 값을 돌려준다.
 
 ## 5. 검사 결과와 다시 만들기
 
@@ -137,7 +153,15 @@ class LLMProvider(Protocol):
 
 ### 5.2 사용자 재작성
 
-사용자가 화면 6 · 8 · 9에서 묶음을 고르면 Orchestrator가 대상 Task에 `ReworkInput(mode='재작성', order=<고른 묶음의 ReworkOrder>)`를 넘긴다. `order.reason`과 `order.instructionDelta`가 지시문에 덧붙는다. 같은 Task에 묶음 여러 개가 걸리면 한 번의 호출로 합친다.
+사용자가 화면 6 · 8 · 9에서 묶음을 고르면 Orchestrator가 대상 Task에 `ReworkInput(mode='재작성', order=<그 Task의 ReworkOrder>)`를 넘긴다. `order.reason`과 `order.instructionDelta`(비어 있지 않고 사유와 다를 때)가 지시문에 덧붙는다. 같은 Task에 묶음 여러 개가 걸리면 한 번의 호출로 합친다. (2026-10-02 갱신)
+
+| `order` 필드 | 값 |
+|---|---|
+| `targets` | 사용자가 고른 **묶음 이름**: 산출물층 `실행 파일`(T-B1) · `인포그래픽`(T-B2), 문서층 `문제인식` · `실현가능성` · `성장전략` · `팀 구성`(임시 구성, 잠정). 판정 지시의 대상 이름이 아니다 |
+| `reason` · `instructionDelta` | 그 묶음에 해당하는 판정(G-02a · G-02b) 지시의 사유 · 보완 지시. 산출물층은 Task가 같은 지시를, 문서층은 판정이 낸 문서층 지시를 모두 합쳐 쓴다 |
+| (판정 지시가 없을 때) | 미달로 짚이지 않은 묶음도 사용자가 고를 수 있다(확장). 이때 `reason`과 `instructionDelta`가 모두 '사용자가 이 묶음의 재작성을 요청했습니다.'(잠정)이다(시트 4: `instructionDelta`는 비워 둘 수 없다) |
+
+- 문서층은 묶음 구성이 정해질 때까지 임시로 처리한다: 어느 묶음 이름이든 T-W1 · T-W2 · T-W3이 모두 같은 지시로 다시 불린다(잠정). 작성 Agent는 `targets`의 묶음 이름을 보고 고칠 곳을 정할 수 있지만 계획서 전체를 다시 낸다.
 
 ### 5.3 featureList는 바꾸지 않는다
 
@@ -171,7 +195,7 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | G-02b | doc_score ← docScore<br>artifact_score ← artifactScore<br>threshold ← setting:scoring.threshold<br>rework_usage ← run:rework_usage<br>selected_orders ← cmd:selectedOrders<br>checks ← 이번 구간 check 목록<br>user_action ← cmd:userAction<br>cycle_info ← flow:cycleInfo (확장)<br>settings_snapshot ← run:settings_snapshot (확장)<br>rubric_version ← flow:rubricVersion (확장) | score_report → scoreReport.overall<br>failed_task_ids → G-02b.failedTaskIds<br>rework_orders → G-02b.reworkOrders<br>next_action → G-02b.nextAction<br>rework_diff → reworkDiff |
 | G-03 | plan_doc ← planDoc<br>announcement ← selectedAnnouncement<br>company_info ← companyInfo<br>feature_list ← featureList<br>reference_summary ← referenceSummary (선택)<br>numeric_tokens ← numericTokens | protected_tokens → protectedTokens |
 | T-P1 | plan_doc ← planDoc<br>format_spec ← selectedAnnouncement.form_spec.format_spec<br>protected_tokens ← protectedTokens | format_findings → formatFindings<br>target_sentence_ids → targetSentenceIds |
-| T-P2 | 문장마다 `TP2In(sentence, protectedTokens, formatFindings(이 문장), formatSpec, redoHint, redoCount)` | 문장별 출력을 모아 sentenceResults (확장) |
+| T-P2 | 문장마다 `TP2In(sentence, protectedTokens, formatFindings(이 문장), formatSpec, redoHint, redoCount)` | 문장별 출력을 모아 sentenceResults (확장, 문장마다 시도별 기록 `attempts` 포함) |
 | M-4 | plan_doc ← planDoc<br>sentence_results ← sentenceResults<br>target_sentence_ids ← targetSentenceIds<br>model_version ← setting:agents.검수.model | plan_doc → planDoc<br>proofread_log → proofreadLog |
 | T-C4 | plan_doc ← planDoc<br>prototype ← prototype<br>infographic ← infographic<br>score_report ← scoreReport.overall<br>proofread_log ← proofreadLog | deliverable → deliverable<br>user_message → userMessage |
 
@@ -221,8 +245,35 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | T-V2 | 보조 LLM 실패 시 문자열 대조만으로 산출한다(Task 안에서 처리) |
 | G-02a · G-02b | 재작성 사이클이면 `cycleInfo`(확장)로 전후 비교 결과 · 재채점한 층 · 승계한 층 · 재작성 전 점수를 받는다. 전후 비교(높은 쪽 선택과 되돌리기)는 Orchestrator가 먼저 하고, G-02는 그 결과를 `scoreReport.comparisons` · `carriedOverLayer` · `reworkDiff`에 담는다 |
 | T-P1 | `formatSpec`은 Orchestrator가 선택 공고의 양식에서 주입한다 |
-| T-P2 | 문장 하나당 한 번 호출된다. `redoHint` · `redoCount`는 Orchestrator가 채운다. 출력의 `adopted`는 R-5 보호 토큰 검사 결과로 정한다. 위반이면 `nextRedoHint`(확장)에 위반 유형별 지시를 담는다. Orchestrator가 누적해 다음 호출의 `redoHint`로 넘기고, 같은 출력이 반복되면 조기 중단한다 |
+| T-P2 | 문장 하나당 한 번 호출된다. `redoHint` · `redoCount`는 Orchestrator가 채운다. 출력의 `adopted`는 R-5 보호 토큰 검사 결과로 정한다. 위반이면 `nextRedoHint`(확장)에 위반 유형별 지시를 담는다. Orchestrator가 누적해 다음 호출의 `redoHint`로 넘기고, 같은 출력이 반복되면 조기 중단한다. 결과를 돌려준 호출마다 Orchestrator가 시도 기록을 남긴다(아래 8.1) |
 | featureList | 첫 버전 이후 바뀌지 않는다(5.3) |
+
+### 8.1 T-P2 시도별 기록과 검수 회수 문단 (확장, 2026-10-02)
+
+검수 팀에 알리는 내용이다. **T-P2 함수의 입력 · 출력 모양은 바뀌지 않는다.** Orchestrator가 T-P2 호출 결과로 기록을 만든다.
+
+| 항목 | 규칙 |
+|---|---|
+| 시도 | 문장 하나에 대해 T-P2 함수가 결과를 돌려준 호출 하나. 재시도를 다 쓴 호출 실패(`keptReason='호출실패'`)는 시도가 아니다 |
+| 시도 번호 | 문장마다 1부터. T-P2가 재개되어 그 문장을 다시 처리해도 이전 시도 수 + 1부터 이어서 센다 |
+| 채택 | `adopted`가 참이고 `tokenCheck.passed`가 참인 시도 |
+| 반려된 시도 | `tokenCheck.passed`가 거짓인 시도. 채택하지 않았어도 토큰 검사를 통과했으면 반려가 아니다 |
+| 위반 종류 | 위반 토큰(`missingTokens` → `alteredTokens` → `contaminatedTokens` 순)을 G-03 보호 토큰 목록과 값으로 맞춰 처음 맞는 토큰의 종류 하나. 웹 표기 `날짜` · `수치·금액` · `고유명사` · `기능명`(시트 4 `TokenType`의 `수치금액`은 `수치·금액`으로). 못 맞추면 비운다 |
+
+`SentenceResult.attempts`의 모양 (`ProofreadAttempt`, JSON 이름):
+
+| 필드 | 타입 | 뜻 |
+|---|---|---|
+| `attemptNo` | int (1 이상) | 시도 번호 |
+| `text` | string | 시도한 문장(그 시도의 `revised.text`) |
+| `adopted` | bool | 채택 여부 |
+| `tokenCheck` | TokenCheckResult | 그 시도의 토큰 검사 결과 |
+| `violationType` | enum('날짜','수치·금액','고유명사','기능명')? | 위반 종류. 통과한 시도는 비운다 |
+
+- 화면 10 조회는 학습 동의와 관계없이 모든 계정에 시도별 기록을 준다(웹 화면의 '1차 반려 → 2차 통과' 표시용).
+- **검수 회수 문단:** 프로젝트 주인이 학습 데이터 편입에 동의한 경우에만, 반려된 시도마다 웹 `proofread_logs`에 한 행을 만든다(원문 문장, 반려된 시도 문장, 위반 요약, 시도 번호, 위반 종류, 위반 토큰 목록, 그 시도를 만든 T-P2 실행의 모델 이름). 관리자가 라벨링해 학습 데이터로 편입하는 곳이다(기획서 4-7 · 6-6).
+- 회수 단위가 기획서 6-6("재수행으로도 통과하지 못한 문장")보다 넓다. 1차 시도가 반려되고 2차 시도가 통과한 문장도 1차 시도 한 행이 생긴다. 검수 팀은 이 회수 단위가 라벨링 · 학습 계획과 맞는지 확인해 준다(10절 9번).
+- 이 문장들은 웹 `proofread_logs`에만 있다. 실행 기록 · 호출 기록 · 추적 사건 · 로그 · 관리자 조회에는 싣지 않는다.
 
 ## 9. 확장 필드 (기준 문서에 없음)
 
@@ -233,7 +284,7 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | ReworkInput | sourceRefs, feedbackId | 피드백 출처 추적 |
 | ReworkComparison | cycleId, screen, basis, comparedAt | 어느 재작성 사이클 · 화면 · 비교 기준인지 |
 | AttemptRef → ExecutionRecord | executionId, runId, agent, stepKind, model, provider, temperature, inputs, outputs, outputMeta, status, cycleId, reworkRole, redoCount, resumeCount, feedbackIn, error, errorKind, startedAt, endedAt | 실행 추적 |
-| Run | createdAt, projectId, segment, queue, segmentTotal, redoState, cycle, resumeWindowStartedAt, adminAlert, decisionRef, checkRefs, moreUsed, notices, endedAt | 재개 지점 · 재작성 사이클 상태 |
+| Run | createdAt, projectId, segment, queue, segmentTotal, redoState, cycle, lastRework, resumeWindowStartedAt, adminAlert, decisionRef, checkRefs, moreUsed, notices, endedAt | 재개 지점 · 재작성 사이클 상태 · 마지막 재작성 결과 요약 |
 | Notification | notificationId | 알림 식별 |
 | G02aIn · G02bIn | cycleInfo, settingsSnapshot, rubricVersion | 전후 비교 결과 전달, 판정 설정값 · rubric 버전 기록 |
 | TP2Out | nextRedoHint | 위반 유형별 재수행 지시 |
@@ -241,7 +292,16 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | PreInput · CompanyInfo | revenueItems, companyName, bizType, representativeType, outputSummary, techField, regionalPriorityArea, occupation, representativeCapability, selfInKindResources | 기준 문서에 자리가 없는 웹 입력값(사용자 결정 2026-09-30). T-C1이 companyInfo로 그대로 옮긴다. 수익모델은 `revenueItems`에 전부 있고 `revenueUnitPrice`는 호환용 첫 항목 단가다. 작성 Agent는 매출 추정에 `revenueItems`를 쓰기를 권한다 |
 | (신규) RevenueItem | serviceName, unitPrice | 수익모델 항목 하나 (단가, 원) |
 | ExecutionRecord · CallLog | reasoningEffort | 추론 모델의 추론 강도 기록 |
+| CallTry · CallLog · ExecutionRecord | inputTokens, cachedInputTokens, outputTokens, reasoningTokens | 토큰 사용량 — 시도별 · 호출 합계 · 실행 합계(T-P2는 문장 호출 합산). 관리자 조회에 보인다(웹팀 합의 4) |
+| Run | failureReason | 실패 사유 `"<Task>: <사유> — <오류 요약>"` (관리자 실행 건 목록 · 웹 `generation_failure_alerts`) |
+| Settings.scoring | deviationCap | 문서층 재채점 편차 상한 — 웹 `verification_policies.deviation_cap`을 담아만 둔다(검증-1 연동 전, 잠정) |
+| (신규) TokenUsage · LLMResponse | — | 호출처 응답의 토큰 사용량 (4.5) |
+| (신규) StartRequest | — | 사전 단계 시작 요청 (Orchestrator 내부 — 웹 연동, Agent와 무관) |
 | (신규) SentenceResult · ReworkCycleInfo · M1~M4 입출력 | — | T-P2 결과 모음, 사이클 정보, 합치기 |
+| SentenceResult | attempts | T-P2 시도별 기록 `ProofreadAttempt[]` (8.1, 2026-10-02) |
+| (신규) ProofreadAttempt | attemptNo, text, adopted, tokenCheck, violationType | T-P2 시도 하나 (8.1) |
+| (신규) RejectedAttempt | — | 반려된 시도 하나 → 웹 `proofread_logs` 한 행 (Orchestrator 내부, Task와 무관) |
+| CycleState | collectUntil | 재작성 요청을 모으는 시간이 끝나는 시각 (Orchestrator 내부) |
 
 ## 10. 합의가 필요한 사항
 
@@ -253,5 +313,7 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | 4 | T-W2 · T-W3 확정 동작의 본문 수정 경로. "본문의 차트 참조 문구 제거", "표 제거 후 본문 서술로 대체"는 본문을 바꾸는데 두 Task의 출력은 charts · tables뿐이다. 특히 서술 대체는 글을 새로 써야 해서 규칙 합치기로는 할 수 없다 | 작성 |
 | 5 | 종합 평가 계획서 재작성의 HTML 반영 방법(기준 문서 미확정). T-B1 입력에 planDoc이 없어, 지금은 `reworkInput.issues`에 반영할 계획서 버전만 알린다 | 구현 |
 | 6 | rubric 공급처 (T-V1 입력 `rubric`: 상수) | 검증-1 |
-| 7 | 호출처 어댑터의 오류 → `TimeoutError` · `ProviderError(status)` 변환. OpenAI는 구현했다(`orchestrator/openai_provider.py`). 자체 GPU 서버는 미정 | 검수 · 인프라 |
+| 7 | 호출처 어댑터의 오류 → `TimeoutError` · `ProviderError(status)` 변환과 토큰 사용량(`LLMResponse`, 4.5). OpenAI는 구현했다(`orchestrator/openai_provider.py`). 자체 GPU 서버는 미정 | 검수 · 인프라 |
 | 8 | Agent 설정에 추론 강도(`reasoningEffort`) 추가. 온도가 비어 있으면(추론 모델) Task별 온도 규칙(T-V1 0 고정, T-P2 0.2 이하)을 적용하지 않는다(잠정). 추론 모델을 쓰는 Agent는 이 점을 확인한다 | 검증-1 · 검수 |
+| 9 | T-P2 시도별 기록(`SentenceResult.attempts`)과 검수 회수 문단의 회수 단위(반려된 시도마다 한 행, 8.1). 기획서 6-6은 5-7의 관리자 로그를 이 회수 경로로 함께 설계한다고 적는다 | 검수 |
+| 10 | 사용자 재작성 지시(5.2): `targets`가 묶음 이름이고, 판정 지시가 없는 묶음은 `reason` · `instructionDelta`가 모두 고정 문구로 온다(잠정). 문서층은 임시로 계획서 전체를 다시 만든다 | 작성 · 구현 |

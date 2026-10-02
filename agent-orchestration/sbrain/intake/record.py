@@ -1,10 +1,11 @@
-"""웹 DB에 저장된 사전 정보 입력 — 웹 스키마(app_schema.sql, 저장소 미포함) 기준.
+"""웹 DB에 저장된 사전 정보 입력 — 웹 스키마(web/backend/app_schema.sql) 기준.
 
 웹 백엔드의 create_project(user-input-example.py, 저장소 미포함)가 폼을 받아 저장한 행을
 T-C1 입력으로 옮기기 전에 그대로 담는 그릇이다. 필드 이름은 테이블 컬럼 이름과 같다.
 
-- JSON 컬럼(ceo_careers · hires · equipment · partners)은 스키마에 항목 구성만 적혀 있고
-  키 이름이 없다(프론트 항목 모양 그대로 저장). 그래서 안쪽 구조에 기대지 않고 읽는다.
+- JSON 컬럼(ceo_careers · hires · equipment · partners)은 스키마에 키 이름이 없다(프론트 항목 모양
+  그대로 저장). 키 이름은 웹 코드(user-input-example.py의 PlanCareerIn 등)에서 확인했고, 여기서는
+  안쪽 구조를 검사하지 않고 그대로 담는다. 키 이름으로 옮기는 일은 mapping.py가 한다.
 - 첨부(project_attachments)는 R-8과 함께 다룬다. 지금은 읽지 않는다.
 """
 from __future__ import annotations
@@ -71,7 +72,7 @@ class PlanInputRow(_Row):
     main_industry: str | None = None       # 개인사업자 · 법인 (드롭다운 9종)
     main_industry_free: str | None = None  # 예비창업자 (자유 입력)
     certifications: list[Any] | None = None
-    ceo_careers: list[Any] | None = None   # 구분 · 내용 · 기간 · 증빙여부
+    ceo_careers: list[Any] | None = None   # type · title · period · has_proof (구분 · 내용 · 기간 · 증빙여부)
     ceo_capability: str | None = None
     occupation: str | None = None
     dev_start_month: str | None = None
@@ -81,11 +82,11 @@ class PlanInputRow(_Row):
     self_cash_limit: int | None = None     # 원 (웹팀 확인 2026-09-30)
     self_in_kind_resources: str | None = None
     no_hires: bool | None = None
-    hires: list[Any] | None = None         # 직무 · 인원 · 요구역량 · 채용시기
+    hires: list[Any] | None = None         # job · headcount · required_skill · hire_month (직무 · 인원 · 요구역량 · 채용 시기)
     no_equipment: bool | None = None
-    equipment: list[Any] | None = None     # 이름 · 상태
+    equipment: list[Any] | None = None     # name · status (이름 · 상태)
     no_partners: bool | None = None
-    partners: list[Any] | None = None      # 기관명 · 협력내용 · 상태
+    partners: list[Any] | None = None      # name · status (기관명 · 상태)
 
     _parse_json = field_validator(
         "certifications", "ceo_careers", "hires", "equipment", "partners", mode="before",

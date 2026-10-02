@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from ..models.base import SBModel
+from ..models.base import SBModel, ext
 
 
 class RetrySettings(SBModel):
@@ -47,6 +47,7 @@ class ScoringSettings(SBModel):
     threshold: float = 80
     doc_layer_max: float = 70
     artifact_layer_max: float = 30
+    deviation_cap: float | None = ext(None, note="문서층 재채점 편차 상한 — 웹 verification_policies 값을 담아만 둔다 (검증-1 연동 전)")
 
 
 # 추론 강도 — OpenAI 추론 모델의 reasoning_effort 값 (모델마다 받는 값이 다르다)
@@ -109,6 +110,22 @@ PROVISIONAL: dict[str, str] = {
     "proofread.judgeTiming": "검수 실패 비율 판단 시점 — 구현하면서 정함",
     "agents": "Agent별 모델 · 호출처 · 기본 온도 · 추론 강도, 실행 시작 시점 고정 — 기준 문서에 없음 "
               "(조율 gpt-6-luna · low는 사용자 지정, 나머지 Agent는 미정)",
+    "scoring.deviationCap": "문서층 재채점 편차 상한 (확장) — 웹 verification_policies.deviation_cap을 담아만 둔다. "
+                            "검증-1 연동 전이라 쓰는 곳 없음",
+    # 워커 (sbrain/worker.py · flow/service.py) — 실행 건 설정값이 아니라 워커 프로세스 값이다
+    "worker.pollSec": "할 일이 없을 때 쉬는 시간 1초 (SBRAIN_WORKER_POLL_SEC)",
+    "worker.threads": "워커 스레드 4 (SBRAIN_WORKER_THREADS)",
+    "worker.leaseSec": "점유 시간 120초 (SBRAIN_WORKER_LEASE_SEC) — 워커가 멈추면 이만큼 뒤에 다른 워커가 이어받는다",
+    "worker.heartbeatSec": "하트비트 30초 — 점유 시간의 1/4",
+    "worker.maxStartClaims": "시작 요청을 가져간 횟수 상한 3 — 넘으면 E-C1-TIMEOUT으로 끝낸다",
+    "worker.errorBackoff": "단계 밖 오류 뒤 그 실행 건을 점유 시간만큼 다시 가져가지 않는다",
+    # 재작성 요청 (flow/service.py) — 실행 건 설정값이 아니라 명령 창구 값이다
+    "reworkRequest.collectSec": "재작성 요청을 모으는 시간 2초 — 같은 화면에서 첫 요청부터 이 시간 안의 요청을 "
+                                "재작성 한 번으로 합친다. 그동안 워커는 그 실행 건을 가져가지 않는다",
+    "reworkRequest.leaseRetrySec": "재작성 요청의 점유 재시도 최대 5초 — 그래도 못 잡으면 BUSY",
+    # 진행 기다리기 (flow/service.py wait_project) — 명령 창구 값이다
+    "waitProject.timeoutSec": "wait_project 기본 제한 시간 60초 — 넘기면 그때의 진행 상태를 그대로 준다",
+    "waitProject.pollSec": "wait_project가 DB를 다시 읽는 간격 0.5초",
 }
 
 

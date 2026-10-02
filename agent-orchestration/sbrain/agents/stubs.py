@@ -25,9 +25,9 @@ from ..models import (
 )
 from ..orchestrator.errors import ProviderError, ToolCallExhausted
 from ..orchestrator.registry import TaskRegistry
-from ..orchestrator.tools import LLMRequest, Tools
+from ..orchestrator.tools import LLMRequest, LLMResponse, TokenUsage, Tools
 from ..flow.rework_map import (
-    CODE_CHECK_TARGET, FEATURE_MISSING_TARGET, LIST_README_BUNDLE, TASK_BUNDLE,
+    CODE_CHECK_TARGET, FEATURE_MISSING_TARGET, LIST_README_BUNDLE, TASK_BUNDLE, order_bundles,
 )
 
 DOC_LAYER_MAX = 70.0
@@ -56,6 +56,7 @@ class FakeLLM:
         self.script: dict[tuple[str, str | None], list[str]] = {}
         self.responders: dict[str, Callable[[LLMRequest], str]] = {}
         self.requests: list[LLMRequest] = []
+        self.usage: dict[str, TokenUsage] = {}   # Task별 토큰 사용량 — 응답(형식 오류 응답 포함)에 실어 돌려준다
         self._lock = threading.Lock()
 
     def plan(self, task_id: str, outcomes: list[str], item_key: str | None = None) -> None:
@@ -80,9 +81,15 @@ class FakeLLM:
         if outcome == "auth":
             raise ProviderError("401", status=401)
         if outcome == "bad_json":
-            return "not json"
+            return self._with_usage(key[0], "not json")
         responder = self.responders.get(key[0])
-        return responder(request) if responder else '{"ok": true}'
+        return self._with_usage(key[0], responder(request) if responder else '{"ok": true}')
+
+    def _with_usage(self, task_id: str, reply: str | LLMResponse) -> str | LLMResponse:
+        usage = self.usage.get(task_id)
+        if usage is None or isinstance(reply, LLMResponse):
+            return reply
+        return LLMResponse(reply, usage)
 
 
 # ── 시나리오 ──────────────────────────────────────────
@@ -489,7 +496,7 @@ def _next_action(passed: bool, orders: list[ReworkOrder], usage) -> str:
     if passed:
         return "진행가능"
     remaining = {u.bundle_id: u.remaining for u in usage}
-    names = [t for o in orders for t in (o.targets if o.layer == "document" else [TASK_BUNDLE.get(o.task_id, o.task_id)])]
+    names = [b for o in orders for b in order_bundles(o)]   # 기회를 세는 묶음 이름 (spec 3.2)
     if names and all(remaining.get(b, 1) <= 0 for b in names):
         return "상한도달"
     return "재작성권유"

@@ -7,9 +7,14 @@
   WRITE    T-C3 → T-S1 → T-S2 → T-W1 → T-W2 → T-W3 → M-1 → T-V1 → G-02a   → 6 문서 평가 대기
   PROTO    T-B1* → T-B2 → M-2** → G-04 → M-3 → T-V2 → G-02b              → 8 산출물 확인 대기
   REVIEW   G-03 → T-P1 → T-P2 → M-4 → T-C4                               → 11 완료
-  REWORK6 · REWORK8 · REWORK9  재작성 사이클 (rework_queue 참고)
+  REWORK6 · REWORK8 · REWORK9  재작성 사이클 (rework_queue 참고) — 묶음 요청을 모으는 시간 동안 모아 한 번에 연다
+                               (service.request_rework_for_project, 지시는 bundle_orders)
   * 원페이지면 생략  ** 원페이지만
 G-02b는 T-V2 직후 계산하고(시트 2 "T-V2 종료 직후"), 화면 8을 거쳐 화면 9에서 보여준다.
+
+T-P2 시도 기록: 문장마다 T-P2 함수가 결과를 돌려준 호출 하나가 시도다(호출 실패는 시도가 아니다). 시도는 문장 결과
+(sentenceResults)의 attempts에 쌓고, 보호 토큰 검사를 통과하지 못한 시도(반려)는 같은 저장에서 웹 proofread_logs
+후보(RejectedAttempt)로 넘긴다 — 학습 동의 확인과 쓰기는 저장소가 한다. 재개해도 이번에 새로 만든 시도만 넘긴다.
 """
 from __future__ import annotations
 
@@ -20,7 +25,7 @@ from datetime import date, datetime
 from typing import Any, Callable
 
 from ..contracts import tasks as c
-from ..models import Notice, Notification, ReworkInput, ReworkOrder
+from ..models import Notice, Notification, RejectedAttempt, ReworkInput, ReworkOrder, Token, TokenCheckResult
 from ..models.run import RedoState, make_state
 from ..orchestrator.context import RunContext
 from ..orchestrator.engine import Engine, Outcome
@@ -28,13 +33,45 @@ from ..orchestrator.errors import ToolCallExhausted, message
 from ..orchestrator.registry import TaskRegistry, TaskSpec
 from ..orchestrator.tools import CallSink
 from ..orchestrator.trace import FeedbackLink
-from .rework_map import DOCUMENT_TASKS
+from .rework_map import ARTIFACT_BUNDLES, BUNDLE_LAYER, BUNDLE_TASK, DOCUMENT_TASKS
 
 WRITE = ["T-C3", "T-S1", "T-S2", "T-W1", "T-W2", "T-W3", "M-1", "T-V1", "G-02a"]
 REVIEW = ["G-03", "T-P1", "T-P2", "M-4", "T-C4"]
 CYCLE_END = "CYCLE-END"
 SCREEN_STEP = {6: "문서평가", 8: "산출물확인", 9: "종합평가"}
+STEP_SCREEN = {step: screen for screen, step in SCREEN_STEP.items()}
 STEP_LABEL = {CYCLE_END: "재작성 전후 비교"}
+# 판정 지시가 없는 묶음의 재작성 지시 문구 (잠정)
+REWORK_DEFAULT_REASON = "사용자가 이 묶음의 재작성을 요청했습니다."
+
+# 보호 토큰 종류(시트 4 TokenType) → 웹 proofread_logs.violation_type 표기
+VIOLATION_LABEL = {"날짜": "날짜", "수치금액": "수치·금액", "고유명사": "고유명사", "기능명": "기능명"}
+# 위반 내용 — 종류를 정하는 순서이기도 하다 (빠진 → 바뀐 → 섞인)
+VIOLATION_PARTS = (("빠짐", "missing_tokens"), ("바뀜", "altered_tokens"), ("섞임", "contaminated_tokens"))
+
+
+def violation_type(check: TokenCheckResult, tokens: list[Token]) -> str | None:
+    """위반 토큰을 보호 토큰 목록(G-03)과 값으로 맞춰 처음 맞는 토큰의 종류 (빠진 → 바뀐 → 섞인). 못 맞추면 None."""
+    kind: dict[str, str] = {}
+    for t in tokens:
+        kind.setdefault(t.value, t.type)
+    for _, part in VIOLATION_PARTS:
+        for value in getattr(check, part):
+            if value in kind:
+                return VIOLATION_LABEL[kind[value]]
+    return None
+
+
+def violation_note(check: TokenCheckResult) -> str:
+    """위반 토큰 목록 전체 — '빠짐: 1억원 / 섞임: A, B' (표기 잠정)."""
+    return " / ".join(f"{label}: {', '.join(values)}" for label, part in VIOLATION_PARTS
+                      if (values := getattr(check, part)))
+
+
+def violation_reason(check: TokenCheckResult) -> str:
+    """위반 요약 — '보호 토큰 검사 불통과 (빠짐 1건 · 섞임 2건)' (표기 잠정)."""
+    counts = [f"{label} {len(values)}건" for label, part in VIOLATION_PARTS if (values := getattr(check, part))]
+    return "보호 토큰 검사 불통과" + (f" ({' · '.join(counts)})" if counts else "")
 
 
 def proto_queue(category: str) -> list[str]:
@@ -62,12 +99,46 @@ def rework_queue(screen: int, orders: list[ReworkOrder], category: str) -> list[
     return q
 
 
+def bundle_orders(bundles: list[str], offered: list[ReworkOrder]) -> dict[str, ReworkOrder]:
+    """모은 묶음 → Task별 재작성 지시 (기준 문서 순서: T-W1 · T-W2 · T-W3 · T-B1 · T-B2).
+
+    - 대상(targets)은 그 층에서 모은 묶음 이름이다(기회를 세는 이름과 같다).
+    - 산출물층: 그 Task에 대한 판정 지시(사유 · 보완 지시)를 쓴다. 같은 Task 지시가 여럿이면 합친다.
+    - 문서층 (임시 처리, 잠정): 어느 묶음이든 계획서 전체(T-W1 · T-W2 · T-W3)를 다시 만든다. 판정이 낸 문서층 지시를
+      모두 합쳐 세 Task에 같은 지시로 준다.
+    - 해당 판정 지시가 없으면(미달이 아닌 묶음, 확장) 사유 · 보완 지시 모두 고정 문구 REWORK_DEFAULT_REASON을 쓴다.
+      판정 지시의 보완 지시가 비어 있어도 같다(시트 4 ReworkOrder.instructionDelta는 비워 둘 수 없다).
+    """
+    out: dict[str, ReworkOrder] = {}
+    docs = [b for b in bundles if BUNDLE_LAYER.get(b) == "document"]
+    if docs:
+        doc_orders = [o for o in offered if o.layer == "document"]
+        for task_id in DOCUMENT_TASKS:
+            out[task_id] = _merge_orders(task_id, "document", docs, doc_orders)
+    for b in ARTIFACT_BUNDLES:
+        if b in bundles:
+            task_id = BUNDLE_TASK[b]
+            out[task_id] = _merge_orders(task_id, "artifact", [b],
+                                         [o for o in offered if o.layer == "artifact" and o.task_id == task_id])
+    return out
+
+
+def _merge_orders(task_id: str, layer: str, targets: list[str], orders: list[ReworkOrder]) -> ReworkOrder:
+    reasons = list(dict.fromkeys(o.reason for o in orders if o.reason))
+    deltas = list(dict.fromkeys(o.instruction_delta for o in orders if o.instruction_delta))
+    return ReworkOrder(task_id=task_id, unit="묶음", targets=list(targets),
+                       reason="; ".join(reasons) or REWORK_DEFAULT_REASON,
+                       instruction_delta="\n".join(deltas) or REWORK_DEFAULT_REASON, layer=layer)
+
+
 def default_instruction_builder(base: str, rework_input: ReworkInput | None) -> str:
     """재작성 · 재수행 때 기존 지시문에 문제가 된 내용을 덧붙인다 (조율 Agent 구현으로 교체 예정)."""
     if rework_input is None:
         return base
     if rework_input.order is not None:
-        return f"{base}\n\n[재작성] {rework_input.order.reason}\n{rework_input.order.instruction_delta}"
+        delta = rework_input.order.instruction_delta
+        reason = rework_input.order.reason
+        return f"{base}\n\n[재작성] {reason}" + (f"\n{delta}" if delta and delta != reason else "")
     return base + "\n\n[" + rework_input.mode + " — 문제가 된 내용]\n- " + "\n- ".join(rework_input.issues)
 
 
@@ -260,6 +331,8 @@ class SBrainFlow:
         self.engine.end_cycle(ctx)
         self._wait(ctx, SCREEN_STEP[screen], "document" if screen == 6 else "artifact")
         self._notice(ctx, "E-RUN-ROLLBACK")
+        if ctx.run.last_rework is not None:
+            ctx.run.last_rework.notice_code = "E-RUN-ROLLBACK"
         self._notify(ctx, "실패", screen, scope="재작성")
 
     # ── 재작성 전후 비교 (Orchestrator 내부 단계) ──────────
@@ -333,34 +406,41 @@ class SBrainFlow:
                 hint: list[str] = []
                 redo, prev_hash = 0, None
                 mine = [f for f in findings if f.sentence_id == sid]
+                attempts = list(prior[sid].attempts) if sid in prior else []   # 재개면 이전 시도에 이어서 센다
+
+                def result(**kw: Any) -> c.SentenceResult:
+                    return c.SentenceResult(sentence_id=sid, final_redo_count=redo, attempts=attempts, **kw)
                 while True:
                     try:
                         out = spec.fn(c.TP2In(sentence=original, protected_tokens=tokens, format_findings=mine,
                                               format_spec=fspec, redo_hint=list(hint), redo_count=redo), item_tools)
-                    except ToolCallExhausted:
-                        return c.SentenceResult(sentence_id=sid, adopted=False, kept_reason="호출실패",
-                                                final_redo_count=redo)
+                    except ToolCallExhausted:   # 호출 실패는 시도가 아니다
+                        return result(adopted=False, kept_reason="호출실패")
                     out = out if isinstance(out, c.TP2Out) else c.TP2Out.model_validate(out)
-                    if out.adopted and out.token_check.passed:
-                        return c.SentenceResult(sentence_id=sid, adopted=True, revised=out.revised,
-                                                final_redo_count=redo, token_check=out.token_check)
+                    adopted = out.adopted and out.token_check.passed
+                    attempts.append(c.ProofreadAttempt(
+                        attempt_no=len(attempts) + 1, text=out.revised.text, adopted=adopted,
+                        token_check=out.token_check,
+                        violation_type=None if out.token_check.passed else violation_type(out.token_check, tokens)))
+                    if adopted:
+                        return result(adopted=True, revised=out.revised, token_check=out.token_check)
                     h = hashlib.sha256(out.revised.text.encode("utf-8")).hexdigest()
                     if prev_hash is not None and h == prev_hash:
-                        return c.SentenceResult(sentence_id=sid, adopted=False, kept_reason="조기중단",
-                                                final_redo_count=redo, token_check=out.token_check)
+                        return result(adopted=False, kept_reason="조기중단", token_check=out.token_check)
                     if redo >= limit:
-                        return c.SentenceResult(sentence_id=sid, adopted=False, kept_reason="검증실패",
-                                                final_redo_count=redo, token_check=out.token_check)
+                        return result(adopted=False, kept_reason="검증실패", token_check=out.token_check)
                     hint.extend(x for x in out.next_redo_hint if x not in hint)  # 교체하지 않고 누적
                     prev_hash, redo = h, redo + 1
 
             with ThreadPoolExecutor(max_workers=max(1, s.proofread.concurrency)) as pool:
                 done = dict(zip(todo, pool.map(one, todo)))
-            ctx.batch.call_logs.extend(sink.drain())
+            engine.collect_calls(ctx, rec, sink)   # 문장별 호출 토큰을 T-P2 실행 기록에 합산
         except Exception as e:  # Agent 코드 오류 등
-            ctx.batch.call_logs.extend(sink.drain())
+            engine.collect_calls(ctx, rec, sink)
             return engine.on_step_error(ctx, spec, rec, e)
 
+        # 반려된 시도는 이번 T-P2 저장(완료 또는 재개 예약)과 같은 묶음으로 넘긴다
+        self._hand_over_rejected(ctx, rec.model, sentences, prior, done)
         merged = {**prior, **done}
         results = [merged[sid] for sid in targets if sid in merged]
         failed = [r for r in results if r.kept_reason == "호출실패"]
@@ -373,6 +453,21 @@ class SBrainFlow:
             ctx.add_event("검수재개상한", "실패 비율이 기준을 넘었으나 재개 상한 초과 — 원문 유지한 채 완료",
                           execution_id=rec.execution_id)
         return finish(results, "성공")
+
+    @staticmethod
+    def _hand_over_rejected(ctx: RunContext, model: str | None, sentences: dict[str, Any],
+                            prior: dict[str, c.SentenceResult], done: dict[str, c.SentenceResult]) -> None:
+        """이번에 새로 만든 반려된 시도만 저장 묶음에 넘긴다 (이전 저장에서 넘긴 시도는 다시 넘기지 않는다)."""
+        for sid, res in done.items():
+            before = len(prior[sid].attempts) if sid in prior else 0
+            for a in res.attempts[before:]:
+                if a.token_check.passed:
+                    continue
+                ctx.add_rejected_attempt(RejectedAttempt(
+                    run_id=ctx.run.run_id, original_text=sentences[sid].text, corrected_text=a.text,
+                    reason=violation_reason(a.token_check), attempt_no=a.attempt_no,
+                    violation_type=a.violation_type, violation_note=violation_note(a.token_check),
+                    model_version=model))
 
     # ── 도움 함수 ─────────────────────────────────────
     def _wait(self, ctx: RunContext, step: str, phase: str) -> None:

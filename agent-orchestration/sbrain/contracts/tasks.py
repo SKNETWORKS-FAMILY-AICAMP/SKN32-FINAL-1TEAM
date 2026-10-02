@@ -18,7 +18,7 @@ from ..models import (
     CodeCheckResult, CompanyInfo, Deliverable, DocScore, DocScoreItem,
     EligibilityRule, EvalItem, FeatureMatchResult, File, FormatFinding,
     FormatSpec, FormSpec, GateResult, Infographic, ItemSpec, MarketAnalysis,
-    PlanDoc, PlanSection, PreInput, ProofreadLog, Prototype, ReferenceDoc,
+    PlanDoc, PlanSection, PreInput, ProofreadLog, ProofreadViolationType, Prototype, ReferenceDoc,
     ReferenceSummary, RequirementAnalysis, ReworkComparison, ReworkDiff,
     ReworkInput, ReworkOrder, Rubric, ScoreReport, Sentence, TableSpec,
     TaskInstruction, TaskPlan, Token, TokenCheckResult, BundleUsage,
@@ -47,6 +47,19 @@ class ReworkCycleInfo(SBModel):
     previous_artifact_score: ArtifactScore | None = None
 
 
+class ProofreadAttempt(SBModel):
+    """확장 — T-P2 시도 하나의 기록 (SentenceResult.attempts).
+
+    시도 = T-P2 함수가 결과를 돌려준 호출 하나. 호출 실패(재시도 소진)는 시도가 아니다.
+    보호 토큰 검사를 통과하지 못한 시도가 '반려된 시도'다(채택하지 않았어도 통과했으면 반려가 아니다).
+    """
+    attempt_no: int = Field(ge=1)               # 문장마다 1부터. T-P2가 재개되어 다시 처리해도 이어서 센다
+    text: str                                   # 시도한 문장
+    adopted: bool
+    token_check: TokenCheckResult               # 통과 여부와 위반 내용(빠진 · 바뀐 · 섞인 보호 토큰)
+    violation_type: ProofreadViolationType | None = None   # 위반 토큰을 보호 토큰 목록과 값으로 맞춘 종류
+
+
 class SentenceResult(SBModel):
     """확장 — T-P2 문장별 결과를 Task 단위로 모은 산출물(sentenceResults)."""
     sentence_id: str
@@ -55,6 +68,9 @@ class SentenceResult(SBModel):
     kept_reason: KeptReason | None = None
     final_redo_count: int
     token_check: TokenCheckResult | None = None
+    attempts: list[ProofreadAttempt] = ext(
+        default_factory=list,
+        note="시도별 기록 (시도 순서). 반려된 시도는 학습 동의 계정이면 웹 proofread_logs에도 한 행씩 쓴다")
 
 
 # ── 조율 ─────────────────────────────────────────────

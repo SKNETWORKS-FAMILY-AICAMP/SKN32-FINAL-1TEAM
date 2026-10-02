@@ -3,7 +3,7 @@
 - 테이블 구조는 처음 읽을 때 DB에서 가져오고(reflection), 필요한 컬럼이 없으면 SchemaMismatch를 올린다.
   기본키 이름을 몰라도 저장 순서(기본키 순)로 읽을 수 있다.
 - 필요한 컬럼만 SELECT 한다. 웹 쪽에 컬럼이 늘어도 영향이 없다.
-- 테이블 · 컬럼 이름은 웹 스키마(app_schema.sql, 저장소 미포함)와 맞췄다 (2026-09-30 확인).
+- 테이블 · 컬럼 이름은 웹 스키마(web/backend/app_schema.sql)와 맞췄다 (2026-09-30 확인).
   기본키는 companies.company_id · projects.project_id · team_members.member_id ·
   pricing_items.pricing_id · project_plan_inputs.input_id이다.
 - 접속 예: create_engine("mysql+pymysql://user:pw@host:3306/db") — 접속 정보는 코드에 넣지 않는다.

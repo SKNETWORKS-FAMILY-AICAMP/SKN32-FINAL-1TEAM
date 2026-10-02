@@ -5,11 +5,11 @@ S-Brain의 AI Agent 7개를 정해진 순서대로 부르고, 실패하거나 �
 | 항목 | 내용 |
 |---|---|
 | 언어 · 버전 | Python 3.12 |
-| 의존성 | `pydantic` (타입 검증 · JSON 변환), `SQLAlchemy` · `PyMySQL` (웹 DB 읽기), `openai` (조율 Agent 호출처), `pytest` (테스트) |
+| 의존성 | `pydantic` (타입 검증 · JSON 변환), `SQLAlchemy` · `PyMySQL` (공유 MySQL — 저장소 · 웹 DB), `openai` (조율 Agent 호출처), `python-dotenv` (`.env` 읽기), `pytest` (테스트) |
 | 구현 근거 | S-Brain Agent 기능정의서 v1.9 (기준 문서). 보조 참고: 프로젝트 기획서 v1.10 |
-| 현재 상태 | 뼈대 완성. 조율 **T-C1은 실제 구현**, 나머지 Agent는 **스텁(가짜 구현)**, 저장소는 **메모리** 구현. 사전 정보는 웹 DB에서 읽을 수 있음. 테스트 75건 통과 |
+| 현재 상태 | 뼈대 완성. 조율 **T-C1은 실제 구현**, 나머지 Agent는 **스텁(가짜 구현)**. 저장소는 **메모리 · 공유 MySQL** 두 가지, **워커 프로세스**와 **웹 연동 함수**(시작 요청 · 명령 · 재작성 묶음 요청 · 진행 상태 · 화면 · 결과 조회 · 관리자 조회 · 중단 · 완전 삭제)까지 구현. 웹 `projects`에는 쓰지 않는다(2026-10-02). 테스트 412건 통과(MySQL 8 통합 포함) |
 
-> 이 문서의 파일 경로는 저장소 폴더 기준입니다. 기능정의서 · 기획서는 저장소에 포함되지 않습니다.
+> 이 문서의 파일 경로는 저장소 폴더(`agent-orchestration`) 기준입니다. 기능정의서 · 기획서는 저장소에 포함되지 않습니다.
 
 ---
 
@@ -72,10 +72,13 @@ Orchestrator는 **7개 Agent를 같은 방식으로 등록하고 호출하는 �
 
 - 20단계 전체 흐름, 사용자 대기 지점, 재수행 · 재개 · 재작성 · 되돌리기, 추적 기록이 동작합니다.
 - **조율 T-C1(요구사항 해석)은 실제 구현**입니다(`agents/supervisor/tc1.py`). 나머지 Agent · 조율 Task는 스텁이며, 규격에 맞는 더미 결과를 돌려줍니다. 스텁 조립(`build_stub_app`)은 T-C1도 스텁을 쓰고, `bind_supervisor(app.registry)`로 바꿔 끼웁니다. 실제 OpenAI(`gpt-6-luna`)로 1회 호출에 성공했습니다(2026-09-30).
-- 사전 정보 입력은 웹 백엔드가 DB에 저장한 값을 **프로젝트 ID로 읽어** T-C1에 넣습니다(`intake/`, `start_run_for_project`). 테이블 · 컬럼은 웹 스키마(`app_schema.sql`, 저장소 미포함)와 맞췄습니다. 기준 문서에 자리가 없는 웹 입력값(수익모델 항목 전체, 기업명, 산출물 목표 등)은 확장 필드로 싣습니다. 첨부 문서 텍스트 추출(R-8)은 아직입니다.
-- OpenAI 호출처 어댑터가 있습니다(`orchestrator/openai_provider.py`). 조율 Agent는 `gpt-6-luna`, 추론 강도 low가 기본값입니다(온도는 보내지 않음).
-- **저장소는 메모리 구현**이라 프로그램을 끄면 데이터가 사라집니다. MySQL 구현은 같은 인터페이스로 나중에 교체합니다.
-- 웹 서버는 없습니다. 웹 서버가 부를 함수(명령 창구)까지만 있습니다.
+- 사전 정보 입력은 웹 백엔드가 DB에 저장한 값을 **프로젝트 ID로 읽어** T-C1에 넣습니다(`intake/`, `start_run_for_project`). 테이블 · 컬럼은 웹 스키마(저장소의 `web/backend/app_schema.sql`)와 맞췄습니다. 기준 문서에 자리가 없는 웹 입력값(수익모델 항목 전체, 기업명, 산출물 목표 등)은 확장 필드로 싣습니다. 첨부 문서 텍스트 추출(R-8)은 아직입니다.
+- OpenAI 호출처 어댑터가 있습니다(`orchestrator/openai_provider.py`). 조율 Agent는 `gpt-6-luna`, 추론 강도 low가 기본값입니다(온도는 보내지 않음). 응답마다 토큰 사용량(입력 · 캐시 입력 · 출력 · 추론)을 기록합니다.
+- **저장소는 두 가지**입니다. 메모리 구현(`MemoryStore`, 테스트 · 시연)과 공유 MySQL 구현(`SqlStore`, `store_sql/`)이 같은 동작을 하며, 흐름 테스트 전체를 두 저장소로 돌려 확인합니다. MySQL 테이블 정의는 `sql/orchestrator_schema.sql`이고 공유 DB 적용은 담당자가 직접 합니다.
+- **워커 프로세스**(`python -m sbrain.worker`)가 시작 요청 · 구간 진행 · 재개를 가져가 처리합니다. 웹 서버와 별도 프로세스로 같은 MySQL을 봅니다(웹팀 합의 2026-09-30).
+- 웹 서버 코드는 웹팀 몫입니다. 웹이 부를 함수(시작 요청 · 명령 · 재작성 묶음 요청 · 진행 상태 · 화면 · 결과 · 재작성 결과 조회 · 관리자 조회 · 중단 · 완전 삭제)와 웹 프로세스 조립(`build_web`)까지 있습니다 — `docs/Orchestrator_웹연동_함수명세.md`. 이번 변경으로 웹이 할 일은 `docs/웹연동_변경사항_웹팀전달.md`에 있습니다.
+- **진행 상태의 원본은 Orchestrator**입니다. 웹 `projects`의 진행 컬럼에는 쓰지 않고, 웹은 함수로 읽습니다. Orchestrator가 쓰는 웹 테이블은 알림(`notifications`) · 관리자 실패 알림(`generation_failure_alerts`) · 검수 회수 문단(`proofread_logs`) INSERT 셋뿐입니다.
+- 표현 검수(T-P2)는 문장마다 **시도별 기록**을 남깁니다. 학습 데이터 편입에 동의한 계정이면 보호 토큰 검사를 통과하지 못한 시도를 웹 `proofread_logs`에 한 행씩 씁니다(웹 스키마 변경 전에는 건너뜀).
 
 ---
 
@@ -94,7 +97,7 @@ Orchestrator는 **7개 Agent를 같은 방식으로 등록하고 호출하는 �
 | **재시도** | 호출이 실패하거나 늦거나 응답 형식이 깨져서 **같은 호출을 바로 다시 보내는 것** (최대 5회) |
 | **재개** | 재시도를 다 써서 멈춘 실행을 **시간을 두고 실패한 지점부터 다시 하는 것** (15분 → 30분 → … 최대 5번) |
 | **재수행** | 결과가 **검사를 통과하지 못해 시스템이 다시 만드는 것** (최대 2회) |
-| **재작성** | 사용자가 화면에서 **항목(묶음)을 골라 다시 만들게 하는 것** (묶음마다 1회) |
+| **재작성** | 사용자가 화면에서 **묶음을 골라 다시 만들게 하는 것** (묶음마다 1회). 묶음 이름은 문서층 `문제인식` · `실현가능성` · `성장전략` · `팀 구성`(임시), 산출물층 `실행 파일` · `인포그래픽`. 같은 화면에서 2초 안에 들어온 요청은 한 번에 실행 |
 | **확정 동작** | 재수행을 다 해도 통과하지 못할 때 적용하는 정해진 처리 (예: 출처 없는 수치 제거) |
 | **스텁** | 실제 구현 대신 끼워 둔 가짜 구현. 뼈대를 검증하려고 둡니다 |
 | **잠정** | 기준 문서가 값을 정하지 않아 임시로 둔 값. 코드 주석과 문서에 `(잠정)`으로 표시합니다 |
@@ -118,7 +121,7 @@ Orchestrator는 **7개 Agent를 같은 방식으로 등록하고 호출하는 �
 
 ## 3. 설치와 테스트
 
-모든 명령은 저장소 폴더에서 실행합니다. 패키지는 가상환경(`.venv`)에만 설치합니다.
+모든 명령은 이 `agent-orchestration` 폴더에서 실행합니다. 패키지는 가상환경(`.venv`)에만 설치합니다.
 
 **Windows (PowerShell)**
 
@@ -140,13 +143,63 @@ python -m pip install -r requirements.txt
 python -m pytest
 ```
 
-정상이면 다음과 같이 나옵니다.
+정상이면 마지막 줄이 다음과 같습니다(MySQL 통합 테스트 34건은 아래 설정이 없으면 건너뜁니다).
 
 ```text
-........................................................................ [ 96%]
-...                                                                      [100%]
-75 passed in 2.19s
+378 passed, 34 skipped in 44.60s
 ```
+
+**환경 변수와 `.env`**
+
+OpenAI API 키 같은 값은 환경 변수로 주거나, 이 폴더의 `.env` 파일에 적습니다. `.env.example`을 `.env`로 복사해 값을 채우면 됩니다.
+
+```powershell
+copy .env.example .env     # macOS / Linux: cp .env.example .env
+```
+
+| 변수 | 쓰는 곳 |
+|---|---|
+| `OPENAI_API_KEY` | OpenAI 호출처 `OpenAIProvider` (8.3). 워커 필수 |
+| `SBRAIN_DB_URL` | 공유 MySQL 접속 URL — 워커 · 웹 조립(`build_web`) 필수 |
+| `SBRAIN_WORKER_POLL_SEC` · `SBRAIN_WORKER_THREADS` · `SBRAIN_WORKER_LEASE_SEC` | 워커 설정 (선택, 기본 1초 · 4 · 120초, 잠정) |
+| `SBRAIN_TEST_MYSQL_URL` | MySQL 8 통합 테스트용 **로컬** DB (선택) |
+| `SBRAIN_TEST_WEB_SCHEMA` | MySQL 통합 테스트가 읽는 웹 스키마 `app_schema.sql` 경로 (선택 — 없으면 이 폴더 한 단계 위의 `web/backend/`에서 찾음) |
+
+- 찾는 순서는 **환경 변수 → `.env` → 기본값**입니다. 이미 설정된 환경 변수가 이깁니다. 빈 값(`KEY=`)은 없는 것으로 봅니다.
+- 값은 적힌 그대로 읽습니다(`${VAR}` 치환 없음). 공백이나 `#`이 들어가면 따옴표로 감쌉니다.
+- 코드에서는 `sbrain.env.get_env("이름")`으로 읽습니다. `os.environ`은 바꾸지 않습니다.
+- `.env`에는 비밀 값이 들어가므로 Git이나 저장소 사본에 올리지 않습니다.
+
+**MySQL 8 통합 테스트 켜기**
+
+로컬 Docker로 MySQL 8을 띄우고 접속 URL을 `.env`(또는 환경 변수)에 넣으면 MySQL 테스트도 돕니다.
+
+```powershell
+docker compose -f docker/mysql-test.yml up -d --wait     # mysql:8.4, 127.0.0.1:3307, 데이터는 메모리에만
+# .env:  SBRAIN_TEST_MYSQL_URL=mysql+pymysql://root:sbrain-test@127.0.0.1:3307/sbrain_test?charset=utf8mb4
+python -m pytest                                          # 412 passed
+docker compose -f docker/mysql-test.yml down              # 끄기
+```
+
+- 테스트가 그 DB의 테이블을 모두 지우고 새로 만듭니다. 그래서 **로컬 주소이고 DB 이름에 `test`가 들어간 URL만** 받습니다. 공유 DB 주소를 넣지 않습니다.
+- 준비 순서: 테스트용 최소 `notices` → 웹 스키마(`app_schema.sql`, 읽기만 — 위치는 `SBRAIN_TEST_WEB_SCHEMA` 참고) → 테스트 DB에서만 `proofread_logs`를 웹팀이 바꿀 모양으로(`project_id` · `model_version` 추가) → `sql/orchestrator_schema.sql`.
+
+**워커 실행**
+
+```powershell
+python -m sbrain.worker          # Ctrl+C로 멈춤 — 하던 단계를 끝내고 점유를 푼다
+python -m sbrain.worker --once   # 한 바퀴만 돌고 끝낸다 (점검용)
+```
+
+`SBRAIN_DB_URL` · `OPENAI_API_KEY`가 없으면 시작하지 않습니다. 로그는 표준 출력에 한 줄씩(가져간 일 · 끝난 상태)이고 프롬프트 · 응답 내용은 남기지 않습니다.
+
+**웹 서버에서 쓰기** — 웹 프로세스는 이 폴더를 패키지로 설치해 `build_web`으로 조립합니다(`pyproject.toml`). 함수 명세는 `docs/Orchestrator_웹연동_함수명세.md`.
+
+```powershell
+pip install -e <이 폴더>
+```
+
+**Orchestrator 테이블 DDL 다시 만들기** — 테이블 정의(`sbrain/store_sql/schema.py`)를 바꾸면 `python -m sbrain.store_sql.ddl`로 `sql/orchestrator_schema.sql`을 다시 만듭니다(테스트가 둘이 같은지 확인합니다). 2026-10-02에 `orch_runs.collect_until` 컬럼이 늘었습니다. 그 전 DDL을 공유 DB에 이미 적용했다면 ALTER가 필요합니다(아직 적용 전이면 DDL 파일만 쓰면 됩니다).
 
 ---
 
@@ -195,9 +248,11 @@ print([r.task_id for r in app.store.executions(run_id)])
 ['T-C1', 'T-C2', 'G-01', 'T-C3', 'T-S1', 'T-S2', 'T-W1', 'T-W2', 'T-W3', 'M-1', 'T-V1', 'G-02a', 'T-B1', 'T-B2', 'G-04', 'M-3', 'T-V2', 'G-02b', 'G-03', 'T-P1', 'T-P2', 'M-4', 'T-C4']
 ```
 
-**보는 법:** 명령(`select_announcement`, `start_writing`, `decide` 등)은 상태를 확인하고 **할 일을 대기열에 넣기만** 합니다. 실제 실행은 `advance`가 다음 대기 지점까지 합니다. 단, `start_run`은 사전 단계를 바로 실행하고, 화면 8의 '진행'은 실행할 단계 없이 화면 9로 넘어가므로 `advance`가 필요 없습니다.
+**보는 법:** 명령(`select_announcement`, `start_writing`, `decide` 등)은 상태를 확인하고 **할 일을 대기열에 넣기만** 합니다. 실제 실행은 `advance`가 다음 대기 지점까지 합니다. 단, `start_run`은 사전 단계를 바로 실행하고, 화면 8의 '진행'은 실행할 단계 없이 화면 9로 넘어가므로 `advance`가 필요 없습니다. 재작성을 요청하면 **모으는 시간(2초, 잠정)** 이 지나야 `advance`가 단계를 돕니다(그 전에는 아무것도 하지 않음).
 
-**웹 DB에서 읽어 실제 T-C1로 시작하기:** 웹 DB 공급처(`SqlProjectInputSource`)를 `build_stub_app(project_inputs=...)`로 넘기고, `bind_supervisor(app.registry)`로 T-C1을 바꿔 끼운 뒤 `start_run_for_project(account_id, project_id)`를 부릅니다. 조립 예시는 `docs/T-C1_요구사항해석_구현.md` 7절에 있습니다.
+**운영에서는** 위의 `start_run` · `advance`를 웹이 부르지 않습니다. 웹은 `request_start`(시작 요청)와 `*_for_project` 명령 · 조회만 부르고, 사전 단계 · `advance` · 재개는 워커가 합니다(9절). `start_run`은 두 조각을 차례로 부르는 테스트 · 시연용 동기 경로이고, 웹 조립(`build_web`)에서 부르면 `WEB_NOT_ALLOWED`입니다.
+
+**공유 MySQL과 실제 T-C1로 조립하기:** `build_app(db_url)`(워커용)이 `SqlStore` · 웹 DB 입력 공급처 · DB 설정 입력 · OpenAI 호출처 · 조율 T-C1 실구현을 묶습니다. 나머지 Agent는 스텁이고, 스텁 Task는 실제 OpenAI를 부르지 않습니다.
 
 ---
 
@@ -233,7 +288,7 @@ flowchart TD
 | WRITE | `T-C3` → `T-S1` → `T-S2` → `T-W1` → `T-W2` → `T-W3` → `M-1` → `T-V1` → `G-02a` | 화면 6 |
 | PROTO | `T-B1`\* → `T-B2` → `M-2`\*\* → `G-04` → `M-3` → `T-V2` → `G-02b` | 화면 8 |
 | REVIEW | `G-03` → `T-P1` → `T-P2` → `M-4` → `T-C4` | 화면 11 (완료) |
-| REWORK6 · 8 · 9 | 사용자가 고른 묶음에 따라 다시 돌릴 단계 | 요청한 화면 |
+| REWORK6 · 8 · 9 | 사용자가 고른 묶음에 따라 다시 돌릴 단계(같은 화면에서 2초 안에 들어온 묶음 요청의 합집합). 문서층 묶음은 지금 임시로 계획서 전체(`T-W1` → `T-W2` → `T-W3`)를 다시 만든다 | 요청한 화면 |
 
 \* 카테고리가 '원페이지'면 생략 &nbsp; \*\* '원페이지'일 때만
 
@@ -276,20 +331,28 @@ flowchart TD
 ```text
 agent-orchestration/
 ├── README.md                  # 이 문서
-├── .gitignore                 # Git 제외 목록 (.venv, __pycache__, .pytest_cache, .env)
-├── requirements.txt           # 의존성 (pydantic, SQLAlchemy, PyMySQL, openai, pytest)
+├── .gitignore                 # Git 제외 목록
+├── docs/                      # 설계 · 연동 문서 (13절 참고)
+├── .env.example               # 환경 변수 예시 — .env로 복사해 값을 채운다 (.env는 올리지 않음)
+├── requirements.txt           # 의존성 (pydantic, SQLAlchemy, PyMySQL, openai, python-dotenv, pytest)
+├── pyproject.toml             # 패키지 정의 — 웹 프로세스가 설치해 쓴다, sbrain-worker 명령
 ├── pytest.ini                 # 테스트 설정 (tests 폴더, -q)
-├── docs/                      # 설계 문서 (13절 참고)
+├── sql/
+│   └── orchestrator_schema.sql  # Orchestrator 테이블 DDL (생성 파일 — 공유 DB 적용은 담당자)
+├── docker/
+│   └── mysql-test.yml         # MySQL 8 통합 테스트용 로컬 DB (Compose)
 ├── sbrain/
-│   ├── bootstrap.py           # 전체 구성 조립 (build_stub_app)
+│   ├── bootstrap.py           # 구성 조립 — build_stub_app(테스트) · build_app(워커) · build_web(웹 서버)
+│   ├── worker.py              # 워커 프로세스 (python -m sbrain.worker)
+│   ├── env.py                 # 환경 변수 읽기 — 환경 변수 → .env 순서 (get_env)
 │   ├── models/                # 공통 타입 (기준 문서 시트 4)
 │   │   ├── base.py            #   공통 기반 SBModel, 확장 표시 ext(), 열거형
 │   │   ├── domain.py          #   입력 · 공고 · 계획서 · 프로토타입 등 업무 타입
 │   │   ├── rework.py          #   CheckResult · ReworkOrder · ReworkInput 등 다시 만들기 관련
-│   │   ├── run.py             #   실행 건(Run), 실행 상태, 알림
+│   │   ├── run.py             #   실행 건(Run), 실행 상태, 알림, 재작성 사이클 · 마지막 재작성 결과
 │   │   └── scoring.py         #   점수 · 채점 결과
 │   ├── contracts/
-│   │   └── tasks.py           # Task별 입력 · 출력 규격 (기준 문서 시트 3)
+│   │   └── tasks.py           # Task별 입력 · 출력 규격 (기준 문서 시트 3), T-P2 문장 결과 · 시도 기록
 │   ├── intake/                # 사전 정보 입력 연동 — 웹 DB → PreInput
 │   │   ├── record.py          #   웹 DB 행 그릇 (잠정 규격)
 │   │   ├── mapping.py         #   행 → PreInput 변환, 필수 항목 재확인 (E-C1-REQUIRED)
@@ -301,7 +364,7 @@ agent-orchestration/
 │   │   ├── tools.py           #   Task에 넘기는 호출 도구: 재시도 · 제한 시간 · 오류 분류 · 호출 기록
 │   │   ├── openai_provider.py #   OpenAI 호출처 어댑터 (LLMProvider 구현)
 │   │   ├── context.py         #   실행 중 산출물 버전 관리, 한 번에 저장할 기록 모음
-│   │   ├── store.py           #   저장소 인터페이스 (Store, CommitBatch)
+│   │   ├── store.py           #   저장소 인터페이스 (Store, CommitBatch, StartRequest)
 │   │   ├── memory_store.py    #   저장소의 메모리 구현
 │   │   ├── settings.py        #   설정값과 기본값, 잠정 항목 목록(PROVISIONAL)
 │   │   ├── trace.py           #   추적 기록 타입 (실행 기록 · 호출 로그 · 피드백 연결 등)
@@ -309,12 +372,20 @@ agent-orchestration/
 │   ├── flow/                  # S-Brain 고유 규칙
 │   │   ├── catalog.py         #   S-Brain의 Task 등록부 (25개 단계)
 │   │   ├── sbrain_flow.py     #   구간 · 대기 지점 · 재작성 경로 · 알림, T-P2 병렬 실행
-│   │   ├── rework_map.py      #   재작성 · 재수행 대응표 (시트 7)
-│   │   └── service.py         #   명령 창구 SBrainOrchestrator (웹 서버가 부름)
+│   │   ├── rework_map.py      #   재작성 · 재수행 대응표 (시트 7), 재작성 묶음 이름
+│   │   ├── service.py         #   명령 창구 SBrainOrchestrator — 시작 요청 · 명령 · 재작성 요청 · 진행 상태 · 중단 · 완전 삭제
+│   │   └── reads.py           #   화면 조회(모양 초안) · 지금까지 결과 · 재작성 결과 · 관리자 조회
+│   ├── store_sql/             # SQL 저장소 — 공유 MySQL 8 (테스트는 SQLite)
+│   │   ├── schema.py          #   Orchestrator 테이블 정의 (DDL의 단일 원본)
+│   │   ├── ddl.py             #   MySQL DDL 파일 생성 (python -m sbrain.store_sql.ddl)
+│   │   ├── db.py              #   접속 엔진 (MySQL · SQLite)
+│   │   ├── store.py           #   SqlStore — 저장소 인터페이스 구현
+│   │   ├── web_tables.py      #   Orchestrator가 읽고 쓰는 웹 테이블 (알림 · 실패 알림 · 검수 회수 문단 INSERT, 학습 동의 · 설정 읽기)
+│   │   └── settings_source.py #   DbSettingsProvider — verification_policies를 설정 입력으로
 │   └── agents/
 │       ├── supervisor/        # 조율 Agent 구현 — 지금은 T-C1 (tc1.py), bind_supervisor()
 │       └── stubs.py           # 스텁 Agent, 가짜 LLM(FakeLLM), 시나리오(StubScenario)
-└── tests/                     # pytest 테스트 (75건)
+└── tests/                     # pytest 테스트 (412건) — conftest.py(저장소 선택) · webdb.py · mysqldb.py 도움 모듈
 ```
 
 **설계 원칙:** `orchestrator/`에는 어떤 서비스에도 쓸 수 있는 범용 장치만 두고, 화면 번호 · 알림 대상 · 재작성 경로 같은 S-Brain 고유 규칙은 `flow/`에만 둡니다. 엔진은 `Flow` 인터페이스(`engine.py`)를 통해서만 S-Brain 규칙을 부릅니다.
@@ -327,18 +398,19 @@ agent-orchestration/
 
 ```mermaid
 flowchart LR
-  Web["웹 서버<br/>(아직 없음)"] -->|명령| Svc["SBrainOrchestrator<br/>flow/service.py"]
-  Svc -->|"advance · tick"| Eng["Engine<br/>orchestrator/engine.py"]
+  Web["웹 서버 (웹팀)<br/>build_web"] -->|"시작 요청 · 명령 · 조회"| Svc["SBrainOrchestrator<br/>flow/service.py · reads.py"]
+  Wk["워커<br/>worker.py · build_app"] -->|"가져가기 → 사전 단계 · advance · resume"| Eng["Engine<br/>orchestrator/engine.py"]
+  Svc -->|명령 · 상태| Store
   Eng <-->|S-Brain 고유 규칙| Flow["SBrainFlow<br/>flow/sbrain_flow.py"]
   Eng -->|단계 정보 조회| Reg["TaskRegistry<br/>flow/catalog.py"]
   Eng -->|"입력 모으기 · 출력 보관"| Ctx["RunContext<br/>orchestrator/context.py"]
-  Ctx -->|"CommitBatch로 한 번에 저장"| Store[("Store<br/>지금은 MemoryStore")]
-  Eng -->|호출| Fn["Task 함수<br/>지금은 agents/stubs.py"]
+  Ctx -->|"CommitBatch로 한 번에 저장"| Store[("Store<br/>MemoryStore · SqlStore(MySQL)")]
+  Eng -->|호출| Fn["Task 함수<br/>agents/stubs.py · supervisor/tc1.py"]
   Fn -->|"llm · search"| Tools["Tools<br/>orchestrator/tools.py"]
-  Tools --> Prov["LLMProvider<br/>지금은 FakeLLM"]
+  Tools --> Prov["LLMProvider<br/>FakeLLM · OpenAIProvider"]
 ```
 
-`bootstrap.py`의 `build_stub_app()`이 이 구성 요소들을 만들어 서로 연결하고 `App` 객체로 돌려줍니다. `App`에는 `orchestrator`(명령 창구), `engine`, `store`, `registry`, `llm`(가짜 호출처), `scenario`, `settings`가 들어 있습니다.
+`bootstrap.py`의 조립 함수(`build_stub_app` · `build_app` · `build_web`)가 이 구성 요소들을 만들어 서로 연결하고 `App` 객체로 돌려줍니다. `App`에는 `orchestrator`(명령 창구), `engine`, `store`, `registry`, `llm`(가짜 호출처), `scenario`, `settings`가 들어 있습니다.
 
 ### 7.2 단계 하나가 실행되는 과정
 
@@ -367,7 +439,7 @@ flowchart LR
 | 재개 상한 초과, 또는 영구 오류(입력 · 운영) | `Engine` | 실행 **실패**. 단, 재작성 중이었다면 실행은 계속하고 재작성 전 결과로 되돌린 뒤 재작성 기회를 돌려줌 |
 | 규칙 단계 · 합치기에서 코드 오류 | `Engine` | 위와 같이 실패 처리 (잠정). `G-04`만 기준 문서대로 오류가 나도 계속 진행 |
 | 결과가 검사 불통과 | `Engine` | 문제 내용을 실어 최대 2회 **재수행**. 그래도 불통과면 그대로 다음 단계로 (여섯 Task는 확정 동작 적용) |
-| 사용자가 점수 미달 항목을 고름 | `Engine` + `Flow` | 고른 묶음만 **재작성** → 다시 채점 → 전후 점수를 비교해 높은 쪽을 남김 |
+| 사용자가 묶음을 골라 요청 (미달이 아니어도) | 명령 창구 + `Engine` + `Flow` | 같은 화면에서 2초 안의 요청을 모아 **재작성** 한 번 → 다시 채점 → 전후 점수를 비교해 높은 쪽을 남김 |
 
 일부 Task는 재시도를 다 쓴 예외를 Task 안에서 받아 대체 경로로 갑니다. 예: `T-C2`는 임베딩 검색이 실패하면 BM25 단독 순위로, `T-V2`는 보조 LLM이 실패하면 문자열 대조만으로 점수를 냅니다.
 
@@ -378,7 +450,7 @@ flowchart LR
 | 기록 | 담는 것 |
 |---|---|
 | `ExecutionRecord` | 어떤 단계를, 어떤 모델로, 어떤 입력 버전으로 실행해 어떤 출력 버전을 만들었는지 |
-| `CallLog` | 호출 한 건과 시도별 결과 (프롬프트 · 응답 내용은 남기지 않음) |
+| `CallLog` | 호출 한 건과 시도별 결과 · 토큰 사용량 (프롬프트 · 응답 내용은 남기지 않음) |
 | `FeedbackLink` | 검사 결과 · 사용자 선택이 어느 실행으로 전달되었는지 |
 | `ReworkComparison` | 재작성 전후 점수와 남긴 쪽 |
 | `PointerEvent` | 되돌리기로 현재 버전 포인터가 옮겨진 기록 |
@@ -433,7 +505,7 @@ app.registry.bind("T-S1", my_ts1)  # T-S1만 실제 구현으로, 나머지는 �
 
 ### 8.3 실제 LLM 호출처 연결
 
-LLM 호출처는 `LLMProvider` 인터페이스(`orchestrator/tools.py`)를 구현해 `Engine`의 `providers`에 이름별로 넣습니다. 호출처 이름(`openai`, `gpu-server` 등)은 Agent 설정값에 있습니다. OpenAI는 `OpenAIProvider`(`orchestrator/openai_provider.py`)가 있습니다. API 키는 환경 변수 `OPENAI_API_KEY`에서 읽습니다.
+LLM 호출처는 `LLMProvider` 인터페이스(`orchestrator/tools.py`)를 구현해 `Engine`의 `providers`에 이름별로 넣습니다. 호출처 이름(`openai`, `gpu-server` 등)은 Agent 설정값에 있습니다. OpenAI는 `OpenAIProvider`(`orchestrator/openai_provider.py`)가 있습니다. API 키는 환경 변수 `OPENAI_API_KEY`에서, 없으면 `.env` 파일에서 읽습니다(3절).
 
 ```python
 from sbrain.orchestrator.openai_provider import OpenAIProvider
@@ -443,11 +515,13 @@ app.engine.providers["openai"] = OpenAIProvider()   # 조율 Agent 모델은 Set
 
 ```python
 class LLMProvider(Protocol):
-    def complete(self, request: LLMRequest) -> str: ...
+    def complete(self, request: LLMRequest) -> str | LLMResponse: ...   # LLMResponse(text, usage: TokenUsage)
 ```
 
 - `request.timeout_sec`를 HTTP 클라이언트의 timeout으로 겁니다.
 - 시간 초과는 `TimeoutError`, 응답 코드 오류는 `ProviderError(status=...)`로 올립니다. 응답 코드로 오류 종류(일시 · 입력 · 운영)가 갈립니다.
+- 토큰 사용량을 알 수 있으면 `LLMResponse(text, TokenUsage(...))`로 돌려줍니다(입력 · 캐시 입력 · 출력 · 추론). 문자열만 돌려줘도 동작합니다. 형식 오류로 버린 응답의 사용량도 기록되고, 실행 기록 · 관리자 조회에 합계가 보입니다.
+- 가짜 호출처는 `app.llm.usage["T-C1"] = TokenUsage(...)`로 사용량을 돌려줄 수 있습니다.
 
 ### 8.4 코드 규칙
 
@@ -459,24 +533,49 @@ class LLMProvider(Protocol):
 
 ## 9. 명령 창구 (웹 서버 연동)
 
-웹 서버는 `SBrainOrchestrator`(`flow/service.py`)의 함수만 부릅니다.
+웹 서버는 `build_web(db_url, profile_count=...)`으로 조립한 `SBrainOrchestrator`의 함수만 부릅니다. 웹은 project_id만 알므로 웹용 함수는 모두 **project_id로** 받습니다. 인자 · 돌려주는 모양 · 오류 코드 · 부르는 시점은 **`docs/Orchestrator_웹연동_함수명세.md`**(웹팀 전달용)에 있습니다.
+
+**웹이 부르는 함수**
 
 | 함수 | 화면 | 하는 일 |
 |---|---|---|
-| `start_run_for_project(account_id, project_id)` | 2 | 웹 DB에 저장된 사전 정보(`create_project`)를 읽어 PreInput으로 옮긴 뒤 `start_run`. 필수 항목이 비면 T-C1을 실행하지 않고 `E-C1-REQUIRED`. 프로젝트가 없거나 다른 계정 것이면 `CommandError("PROJECT_NOT_FOUND")` |
-| `start_run(account_id, form, project_id=None)` | 2 | 프로필 · 동시 실행 확인 → 사전 단계 실행 → 후보가 있으면 실행 건 생성. 결과는 `StartResult` |
+| `request_start(account_id, project_id)` | 2 | 웹 DB 입력 읽기 · 주인 확인 → 필수 항목(`E-C1-REQUIRED`, 누락 항목 이름) → 프로필(`E-AUTH-PROFILE`) → 동시 실행(`E-RUN-CONCURRENT`, 진행 중 작업 정보) → 시작 요청 '대기'. 결과 `StartCheck` |
+| `start_status(project_id)` | 2 | 마지막 시작 요청의 상태(대기 · 처리중 · 완료 · 실패 · 취소) · 코드 · 안내 · run_id |
+| `active_work(account_id)` | 2 | 사전 정보를 저장하기 전 동시 실행 확인 — 진행 중인 작업(`ActiveWork`) 또는 `None` |
+| `view_project(project_id)` | — | 실행 건이 있으면 `view()`(재시도 · 재개 횟수, 다음 재개 시각, 재작성 화면, 모으는 중 여부, 선택 공고 포함), 없으면 시작 요청 상태 |
+| `project_views(project_ids)` | 목록 | 여러 프로젝트의 `view_project`를 한 번에 |
+| `wait_project(project_id, timeout_sec=60)` | 3 · 4 | 진행이 멈출 때(대기 지점 · 재개대기 · 끝남)까지 기다린 뒤 `view_project`. 제한 시간을 넘기면 그때 상태 |
+| `screen(project_id, n)` | 3 · 4 · 6 · 8 · 9 · 10 · 11 | 화면별 내용(모양 초안, `flow/reads.py`). 대기 지점이 아니면 `SCREEN_NOT_READY`. 화면 10은 문장별 시도 기록 포함 |
+| `outputs(project_id)` | 이어하기 · 9 · 10 · 11 | 지금까지 만든 결과(현재 버전)와 묶음별 남은 기회. 실패 · 중단이면 `RUN_NOT_VIEWABLE` |
+| `more_candidates_for_project` · `select_announcement_for_project` · `start_writing_for_project` · `decide_for_project` | 3 · 5 · 6 · 8 · 9 | 아래 run_id 명령과 같음. 공고 다시 고르기 · 추가 조회는 자격 통과 뒤에도 작성 시작 전이면 받는다 |
+| `request_rework_for_project(project_id, bundle)` | 6 · 8 · 9 | 재작성 묶음 요청(묶음마다 한 번). 같은 화면에서 2초 안의 요청은 재작성 한 번으로 합친다. 접수만 하고 돌아온다(`ReworkAccepted`) |
+| `rework_result(project_id)` | 9 | 마지막 재작성 한 건의 결과(진행중 · 완료 · 실패, 전후 점수 · 계획서 섹션 · 파일 경로) |
+| `abort_project(project_id)` | — | 대기 요청 취소 · 처리 중 요청 취소 요청 · 진행 중 실행 건 중단 → `AbortResult` |
+| `delete_project_data(project_id)` | — | 완전 삭제 — 산출물 · 입력 사본 삭제, 실행 로그 유지. 워커가 단계를 도는 중이면 `BUSY` |
+| `admin_executions(...)` · `admin_calls(execution_id)` | 관리자 | 여러 프로젝트의 실행 기록 · 호출 기록 (메타데이터 · 토큰만) |
+| `admin_runs(...)` · `admin_score_history(project_id)` · `admin_summary()` · `admin_agent_tasks()` | 관리자 | 실행 건 목록 · 층별 점수 이력 · 운영 요약 · Agent별 Task (메타데이터 · 점수 · 개수만) |
+
+**워커 · 내부 · 테스트용**
+
+| 함수 | 화면 | 하는 일 |
+|---|---|---|
+| `run_start_request(request_id, owner, lease_sec)` | 2 | (워커) 요청 점유 → 사전 단계 → 후보가 있으면 실행 건 생성과 요청 '완료'를 한 번에. 웹 조립에서는 `WEB_NOT_ALLOWED` |
+| `start_run_for_project(account_id, project_id)` · `start_run(account_id, form, project_id=None)` | 2 | 동기 경로 — 시작 확인과 사전 단계를 차례로 부른다. 결과 `StartResult`. 웹 조립에서는 `WEB_NOT_ALLOWED` |
 | `more_candidates(run_id)` | 3 | 공고 추가 조회 (1회, 최대 20건) |
 | `select_announcement(run_id, announcement_id)` | 3 | 공고 선택 → 자격요건 확인 대기열 |
 | `start_writing(run_id)` | 5 | 계획서 작성 대기열 |
-| `decide(run_id, screen, action, selected_orders, confirmed)` | 6 · 8 · 9 | `"진행"` 또는 `"재작성"`. 화면 9에서 점수 미달 상태로 진행하면 먼저 확인 요청(`ConfirmationNeeded`)을 돌려줌 |
+| `decide(run_id, screen, action, selected_orders, confirmed)` | 6 · 8 · 9 | `"진행"` 또는 `"재작성"`. 화면 9에서 점수 미달 상태로 진행하면 먼저 확인 요청(`ConfirmationNeeded`)을 돌려줌. `"재작성"`은 산출물층 지시만 받아 묶음 요청으로 바꾼다(문서층 지시는 `INVALID_ORDER`) |
 | `abort(run_id, confirmed)` | — | 확인을 받은 뒤 실행 중단 |
 | `advance(run_id)` | — | 다음 대기 지점까지 실행 |
-| `tick(now)` | — | 재개 시각이 된 실행을 깨움 |
+| `tick(now)` | — | 재개 시각이 된 실행을 모두 깨움 (테스트 · 시연용 — 워커는 `Engine.resume(run_id)`로 한 건씩) |
 | `view(run_id)` | — | 화면 표시용 상태: 단계 · 진행 상태 · 화면 상태 · 복귀 화면 · 진행률(%) · 현재 작업 한 줄 · 안내 · 알림 |
 
 - 현재 상태에서 받을 수 없는 명령이면 `CommandError`가 납니다 (예: 대기 지점이 아닐 때, 이미 쓴 재작성 기회를 고를 때).
 - 실행 상태는 `step`(공고선택 … 결과물)과 `progress`(실행 · 재개대기 · 사용자대기 · 실패 · 완료 · 중단) 두 축으로 관리합니다. 화면 상태(진행 중 · 확인 필요 · 문제 발생 · 완료 · 중단됨)는 `progress`에서 계산합니다.
-- **누가 `advance` · `tick`을 부를지**는 별도 워커 프로세스가 공유 MySQL을 조회해 처리하기로 웹팀과 합의했습니다(`워커_구동_방식_제안.md`, 저장소 미포함, 확정). 웹은 명령 · 조회 함수만 부릅니다. 구현 전입니다.
+- **누가 `advance` · `tick`을 부를지:** 워커 프로세스가 공유 MySQL에서 할 일을 가져가(`SKIP LOCKED` + 점유) 처리합니다(`워커_구동_방식_제안.md`, 저장소 미포함, 확정 · 구현 완료). 웹은 명령 · 조회 함수만 부릅니다.
+- **웹 테이블 쓰기**는 알림(`notifications`) · 실패 알림(`generation_failure_alerts`) · 검수 회수 문단(`proofread_logs`, 학습 동의 계정의 반려된 T-P2 시도만) INSERT 셋뿐이고, `SqlStore`가 단계 저장과 같은 트랜잭션으로 씁니다. 웹 `projects`(옛 요약 컬럼 `status` · `stage` · `progress_percent` · `notice_id` · `failure_reason` 포함)에는 쓰지 않습니다.
+- **재작성 요청 모으기:** 같은 실행 건 · 같은 화면에서 첫 요청부터 2초(잠정) 안에 들어온 묶음 요청은 재작성 한 번(합집합, 기준 문서 순서)으로 합칩니다. 그동안 워커는 그 실행 건을 가져가지 않습니다. 시간이 지난 뒤 · 재작성 중의 요청은 `INVALID_STATE`, 남은 기회가 없으면 `E-G2-LIMIT`입니다. 미달이 아닌 묶음도 받습니다(확장).
+- 사용자용 결과(`view_project` · `outputs` · `rework_result` · 화면)에는 관리자용 실패 사유가 없습니다. 실패 사유는 관리자 함수(`admin_runs`)와 `generation_failure_alerts`에만 있습니다.
 
 ---
 
@@ -496,7 +595,11 @@ class LLMProvider(Protocol):
 | Task별 제한 시간 | 대부분 120초, `T-W1` · `T-B1` · `T-B2` 300초, `T-C2` 30초, `T-P2` 60초 | 잠정 |
 | Agent별 모델 · 호출처 · 온도 · 추론 강도 | 조율은 `openai` · `gpt-6-luna` · 추론 강도 low · 온도 없음(사용자 지정). 나머지 Agent 모델은 '미정', 검수 `gpu-server` 등 | 조율 외 잠정 |
 
-잠정 항목 목록은 `settings.py`의 `PROVISIONAL`에 있습니다. 다른 값으로 돌려 보려면 `build_stub_app(settings=Settings(...))`로 넘깁니다.
+실행 건 설정이 아닌 명령 창구 값(`flow/service.py`)도 있습니다: 재작성 요청을 모으는 시간 2초, 재작성 요청의 점유 재시도 최대 5초, `wait_project` 기본 제한 시간 60초(0.5초마다 다시 읽음) — 모두 잠정이며 관리자 설정으로 바꾸지 않습니다.
+
+잠정 항목 목록은 `settings.py`의 `PROVISIONAL`에 있습니다(워커 수치 · 명령 창구 값 포함). 다른 값으로 돌려 보려면 `build_stub_app(settings=Settings(...))`로 넘깁니다.
+
+**관리자 설정 입력:** 워커 · 웹 조립에서는 `DbSettingsProvider`가 웹 `verification_policies` 첫 행을 기본값 위에 덮어씁니다 — `doc_weight` → 문서층 배점, `code_weight + plan_weight` → 산출물층 배점, `pass_threshold` → 기준 점수, `rerun_cap` → 재수행 횟수, `rework_cap` → 재작성 횟수, `token_retry_cap` → 검수 재수행 횟수, `deviation_cap` → 확장 필드에 담아만 둠(잠정). 나머지는 코드 기본값입니다(웹팀 답 대기).
 
 ---
 
@@ -510,14 +613,28 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 
 | 파일 | 건수 | 확인하는 것 |
 |---|---|---|
-| `test_flow_basic.py` | 13 | 20단계 실행 순서, 원페이지 분기, 대기 지점 상태, 자격요건 불통과 후 재선택, 추가 조회, 사전 단계 오류, 동시 실행 · 프로필 차단, 중단 |
-| `test_rework.py` | 11 | 화면 6 · 8 · 9 재작성 경로, 점수 하락 시 되돌리기, 재작성 실패 시 기회 반환, 잘못된 선택 거절 |
-| `test_redo_resume.py` | 8 | 재수행 횟수 · 확정 동작, 재개 후 성공, 재개 상한 초과 실패, 영구 오류, `featureList` 불변 |
+| `test_flow_basic.py` | 26 | 20단계 실행 순서, 원페이지 분기, 대기 지점 상태, 자격요건 불통과 후 재선택, 추가 조회, 사전 단계 오류, 동시 실행 · 프로필 차단, 중단 |
+| `test_rework.py` | 51 | 화면 6 · 8 · 9 재작성 경로, 묶음 이름 요청 · 같은 화면 요청 모으기(합집합 · 중복 · 늦은 요청 · 진행 중 요청 · BUSY · 모으는 중 중단), 이름 · 층 · 상태 규칙, 미달 아닌 묶음, 묶음 기회, 점수 하락 시 되돌리기, 재작성 실패 시 모은 묶음 기회 반환 |
+| `test_redo_resume.py` | 16 | 재수행 횟수 · 확정 동작, 재개 후 성공, 재개 상한 초과 실패, 영구 오류, `featureList` 불변 |
 | `test_tools.py` | 6 | 호출 단위 재시도, 오류 분류, 형식 오류, 스레드 안전, 로그에 내용 없음 |
-| `test_proofread_trace.py` | 6 | `T-P2` 문장 병렬 처리 · 재수행, 추적 기록 원칙, 설정값 고정 |
-| `test_intake.py` | 12 | 웹 DB 행 → PreInput 변환, 확장 필드 · 수익모델 여러 건 · 팀원 없음, 필수 항목 결측 목록, SQL 공급처(SQLite로 웹 스키마 흉내) |
-| `test_tc1.py` | 12 | T-C1 아이템 사양 · 회사 정보(확장 필드 포함) 그대로 옮김, 조율 모델 · 추론 강도, 카테고리 기본값 · 추적 기록, 형식 오류 재시도, DB에서 읽어 시작, 참조 자료 발췌 확인 |
+| `test_proofread_trace.py` | 25 | `T-P2` 문장 병렬 처리 · 재수행, 시도별 기록, 반려 시도 `proofread_logs` 행(학습 동의 · 재개 때 중복 없음 · 위반 종류), 옛 구조면 건너뜀, 추적 기록 원칙, 설정값 고정 |
+| `test_intake.py` | 22 | 웹 DB 행 → PreInput 변환, 목록 입력 키 이름 변환 · 증빙 표기 · 모르는 키 대체, 확장 필드 · 수익모델 여러 건 · 팀원 없음, 필수 항목 결측 목록, SQL 공급처(SQLite로 웹 스키마 흉내) |
+| `test_tc1.py` | 20 | T-C1 아이템 사양 · 회사 정보(확장 필드 포함) 그대로 옮김, 조율 모델 · 추론 강도, 카테고리 기본값 · 추적 기록, 형식 오류 재시도, DB에서 읽어 시작, 참조 자료 발췌 확인 |
 | `test_openai_provider.py` | 7 | OpenAI 요청 모양(추론 강도 · 온도 생략 포함) · 오류 변환 (가짜 클라이언트, 네트워크 없음) |
+| `test_env.py` | 6 | `.env` 읽기(따옴표 · 주석 · BOM · 빈 값), 환경 변수 우선, API 키를 `.env`에서 읽기 |
+| `test_store_contract.py` | 66 | 저장소 계약 — 메모리 · SQLite · MySQL이 같은 동작인지 (점유, 동시 실행 제한, 모으는 중 건너뛰기, 포인터 · 키 순서, 기록 왕복, 반려 시도 조건, 시작 요청, 관리자 · 여러 실행 건 조회) |
+| `test_store_sql.py` | 10 | DDL 파일 = 생성 결과, 설정 입력(`verification_policies`), 웹 테이블 구조 확인, `proofread_logs` 옛 구조 · 쓰기 오류, 학습 동의 확인 |
+| `test_start_request.py` | 24 | 시작 요청 → 워커 실행, 필수 항목 · 프로필 · 동시 실행, 실패 후 재시도, 취소, 점유 이어받기, 진행 중 작업 확인 |
+| `test_worker.py` | 17 | 워커 2개 중복 없음(SQLite · MySQL), 점유 만료 이어받기, 단계 사이 중단, 종료 신호, 하트비트, 재개, 모으는 중 가져가지 않음, 조립(웹 조립 사전 단계 `WEB_NOT_ALLOWED`) |
+| `test_reads.py` | 22 | 진행 상태 · 화면 3 ~ 11 · 관리자 실행 기록 조회 · project_id 명령 |
+| `test_web_functions.py` | 43 | 진행 상태 새 필드 · 여러 건 · 기다리기, 사용자용 결과에 실패 사유 없음, 지금까지 결과, 재작성 결과, 실패 · 중단 뒤 볼 수 없음, 자격 통과 뒤 다시 고르기, 화면 10 시도 기록 |
+| `test_admin_reads.py` | 10 | 관리자 실행 건 목록 · 점수 이력 · 운영 요약 · Agent별 Task |
+| `test_summary.py` | 11 | 단계를 저장해도 웹 `projects` 행이 바뀌지 않음, 실패 알림 · 실패 사유 (SQLite · MySQL) |
+| `test_tokens.py` | 10 | 토큰 시도별 · 호출 · 실행 합계, OpenAI 매핑, 관리자 조회 |
+| `test_abort_delete.py` | 14 | project_id 중단 · 완전 삭제 |
+| `test_mysql_integration.py` | 6 | 실제 웹 스키마 위 MySQL 8 흐름 · 동시 재작성 요청 합치기 · 반려 시도 행 · 삭제 뒤 로그 보존 · 웹 → 워커 조립 · 웹 스키마 위치 찾기(DB 없이) |
+
+흐름 테스트(`clock` 고정 장치를 쓰는 테스트)는 **메모리 저장소와 `SqlStore`(SQLite 임시 파일 DB)로 한 번씩** 돕니다(`conftest.py`의 `store_backend`). 위 건수는 이렇게 늘어난 수입니다.
 
 ### 상황을 흉내 내는 법
 
@@ -553,21 +670,24 @@ app.orchestrator.tick(datetime.now() + timedelta(minutes=15))   # 재개 시각�
 
 - 실제 Agent 구현 (조율 T-C1 말고는 스텁)
 - R-8 첨부 문서 텍스트 추출과 웹 DB 첨부(`project_attachments`) 읽기
-- MySQL 저장소 (지금은 메모리. `Store` 인터페이스에 맞춰 교체 예정)
 - 자체 GPU 서버 호출처 어댑터 (OpenAI는 있음)
-- 워커 프로세스 · MySQL 저장 · 조회 함수 · 토큰 사용량 기록 · project_id 중단 — 웹팀 합의로 방식 확정, 구현 지시는 `작업지시_조율코드반영_워커_웹연동.md`(다른 세션에서 진행, 저장소 미포함)
+- 공고 조회 · T-C2 · G-01 실구현 연동 (공고팀) — 지금은 스텁 공고
+- 공유 DB에 Orchestrator 테이블 적용 — `sql/orchestrator_schema.sql`로 담당자가 직접
 - 실행 로그 보관 기간 이후의 식별자 분리 · 통계 전환
+
+**웹팀과 맞출 것** — 화면별 모양(초안), 공고 ID = `notices.notice_id`, 실패 알림 범위, 완전 삭제 중 `BUSY` 처리, 완전 삭제 때 `proofread_logs` 처리, 오래 걸리는 웹 요청 제한 시간. 웹팀이 할 스키마 · 프론트 변경은 `docs/웹연동_변경사항_웹팀전달.md`, 함수 약속은 `docs/Orchestrator_웹연동_함수명세.md`
 
 **타 팀과 합의가 필요한 것** — 자세한 내용은 `docs/Agent_연동_규격_초안.md` 10절
 
 - `tools` 인터페이스(`llm` · `search`)와 "Task 안의 호출은 반드시 `tools`로" 규칙 (전 Agent 팀)
 - `G-02a` · `G-02b` 입력 확장(`cycleInfo` 등), `T-P2` 재수행 루프 소유, rubric 공급처 등
+- `T-P2` 시도별 기록과 검수 회수 문단의 회수 단위(검수), 사용자 재작성 지시의 묶음 이름 · 빈 보완 지시(작성 · 구현)
 
 **기준 문서에 값이나 규칙이 없어 임시로 정한 것** — 목록은 `docs/Orchestrator_구조와_흐름.md` 11절
 
 **T-C1 · 웹 DB 연동** — 웹팀 확인(단위 · 첫 창업 여부 · 팀원 없음)은 끝났다. 잠정값과 남은 사항은 `docs/T-C1_요구사항해석_구현.md` 8 · 9절
 
-**기준 문서(기능정의서 · 기획서)에 반영할 변경** — 수익모델 여러 건, 확장 필드, 팀원 없음, 첫 창업 여부 미수집 등. `기준문서_개정필요사항_T-C1_사전정보입력.md` (저장소 미포함)
+**기준 문서(기능정의서 · 기획서)에 반영할 변경** — 수익모델 여러 건, 확장 필드, 팀원 없음, 첫 창업 여부 미수집 등은 `기준문서_개정필요사항_T-C1_사전정보입력.md`(저장소 미포함). 미달이 아닌 묶음 재작성, 재작성 요청 모으기, 문서층 임시 묶음, 자격 통과 뒤 다시 고르기, T-P2 시도별 기록 · 검수 회수 단위는 `기준문서_개정필요사항_워커_웹연동.md`(저장소 미포함)
 
 ---
 
@@ -579,9 +699,12 @@ app.orchestrator.tick(datetime.now() + timedelta(minutes=15))   # 재개 시각�
 | `docs/Agent_연동_규격_초안.md` | Task 함수 · `tools` 규격, Task별 입출력 · 실행 설정 표, 확장 필드, 합의 필요 사항 | 각 Agent 구현 담당 |
 | `docs/T-C1_요구사항해석_구현.md` | 웹 DB → PreInput 매핑 · 확장 필드, 필수 항목 재확인, T-C1 처리, 조율 모델 · OpenAI 어댑터, 잠정 · 확인 필요 목록 | 조율 담당, 웹팀 |
 | `기준문서_개정필요사항_T-C1_사전정보입력.md` (저장소 미포함) | 기능정의서 · 기획서에 반영할 변경 목록 (T-C1 · 사전 정보 입력) | 기준 문서 관리자 |
-| `워커_구동_방식_제안.md` (저장소 미포함) | 누가 언제 Orchestrator를 돌릴지 — 워커 방식 (웹팀 합의로 확정) | 사용자, 웹팀 |
-| `웹스키마_교체목록_웹팀전달.md` (저장소 미포함) | 웹 스키마의 오케스트레이션 관련 테이블 · 컬럼 교체 · 삭제 · 유지 목록 (기준 문서 근거 포함) | 웹팀 |
-| `작업지시_조율코드반영_워커_웹연동.md` (저장소 미포함) | 워커 · MySQL 저장 · 조회 함수 · 토큰 · 중단 구현 지시 (단계 S0~S9) | 구현 세션 |
+| `기준문서_개정필요사항_워커_웹연동.md` (저장소 미포함) | 기능정의서 · 기획서에 반영할 변경 목록 (재작성 요청 · 문서층 임시 묶음 · 자격 통과 뒤 다시 고르기 · T-P2 시도 기록 · 검수 회수 문단) | 기준 문서 관리자, 검수 팀 |
+| `docs/Orchestrator_웹연동_함수명세.md` | 웹이 부르는 함수 전부 — 인자 · 돌려주는 모양 · 오류 코드 · 부르는 시점, 웹 프로세스 조립, 계정 삭제 순서 | 웹팀 |
+| `워커_구동_방식_제안.md` (저장소 미포함) | 누가 언제 Orchestrator를 돌릴지 — 워커 방식 (웹팀 합의로 확정, 구현 완료) | 사용자, 웹팀 |
+| `docs/웹연동_변경사항_웹팀전달.md` | 웹 백엔드가 더미 파이프라인 대신 Orchestrator로 돌게 하는 변경 — 엔드포인트별 대응, 값 대응표, 필수 웹 스키마 · 프론트 변경 (2026-10-02) | 웹팀 |
+| `웹스키마_교체목록_웹팀전달.md` (저장소 미포함) | 웹 스키마의 오케스트레이션 관련 테이블 · 컬럼 교체 · 삭제 · 유지 목록 (기준 문서 근거 포함, 2026-10-02 바뀐 분류는 위 문서) | 웹팀 |
+| `작업지시_조율코드반영_워커_웹연동.md` (저장소 미포함) | 워커 · MySQL 저장 · 조회 함수 · 토큰 · 중단 구현 지시 (단계 S0~S9, S8까지 반영) | 구현 세션 |
 | `작업지시_기준문서개정_T-C1_웹연동.md` (저장소 미포함) | 기능정의서 · 기획서 개정 지시 (T-C1 사전 정보 입력 · 웹 연동) | 기준 문서 관리 세션 |
 | S-Brain Agent 기능정의서 v1.9 (저장소 미포함) | 구현 기준 문서 (Source of Truth) | 전원 |
 | 프로젝트 기획서 v1.10 (저장소 미포함) | 서비스 기획 (보조 참고) | 전원 |

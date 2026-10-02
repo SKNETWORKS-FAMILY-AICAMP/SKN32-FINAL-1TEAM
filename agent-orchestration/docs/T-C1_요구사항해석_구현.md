@@ -2,11 +2,11 @@
 
 | 항목 | 내용 |
 |---|---|
-| 작성일 | 2026-09-29 (2026-09-30 갱신: 웹 스키마 반영, 확장 필드 · 수익모델 여러 건 · 팀원 없음 · 조율 모델 결정 반영, 웹팀 확인 결과 반영) |
+| 작성일 | 2026-09-29 (2026-09-30 갱신: 웹 스키마 반영, 확장 필드 · 수익모델 여러 건 · 팀원 없음 · 조율 모델 결정 반영, 웹팀 확인 결과 반영. 2026-10-01 갱신: 목록 입력 키 이름 변환, API 키 `.env` 읽기) |
 | 기준 문서 | S-Brain Agent 기능정의서 v1.9 — 시트 2 T-C1, 시트 3 R2~R9, 시트 4 PreInput · CompanyInfo · ItemSpec · ReferenceSummary, 시트 6 E-C1-* |
-| 참고 | `user-input-example.py` (웹 `create_project`, 저장소 미포함), `app_schema.sql` (웹 DB 스키마, 저장소 미포함) |
+| 참고 | `user-input-example.py` (웹 `create_project`, 저장소 미포함), `web/backend/app_schema.sql` (웹 DB 스키마, 같은 저장소) |
 | 코드 | `sbrain/intake/` (웹 DB → PreInput), `sbrain/agents/supervisor/tc1.py` (T-C1), `sbrain/orchestrator/openai_provider.py` (OpenAI 호출처) |
-| 테스트 | `tests/test_intake.py` 12건, `test_tc1.py` 12건, `test_openai_provider.py` 7건 — 전체 75건 통과 |
+| 테스트 | `tests/test_intake.py` 22건, `test_tc1.py` 20건(메모리 · SQLite 저장소로 한 번씩), `test_openai_provider.py` 7건, `test_env.py` 6건 — 전체 286건 통과 |
 | 관련 문서 | `기준문서_개정필요사항_T-C1_사전정보입력.md` (기준 문서에 반영할 변경, 저장소 미포함), `워커_구동_방식_제안.md` (누가 언제 실행을 돌릴지, 저장소 미포함) |
 | 독자 | 조율 Agent · Orchestrator 담당, 웹팀(사전 정보 저장 · 명령 창구 연동) |
 
@@ -59,7 +59,7 @@ flowchart TD
 | ideaText | 필수 | `projects.description` | 앞뒤 공백 제거 | |
 | applicantType | 필수 | `companies.applicant_type` | `preliminary` → 예비창업자, `individual` → 개인사업자, `corp` → 법인 | |
 | representativeName | 필수 | `companies.ceo_name` | 그대로 | |
-| representativeCareer | 필수 | `project_plan_inputs.ceo_careers` (구분 · 내용 · 기간 · 증빙여부) | 항목마다 값을 순서대로 ` · `로 이어 한 줄. 참 · 거짓 값(증빙여부)은 뺀다 | 잠정 |
+| representativeCareer | 필수 | `project_plan_inputs.ceo_careers` (`type` · `title` · `period` · `has_proof` = 구분 · 내용 · 기간 · 증빙여부) | 항목마다 `구분: 내용 (기간, 증빙 있음)` 한 줄. 구분이 없으면 `내용 (기간)`, 기간 · 증빙이 없으면 괄호 생략. **증빙은 참일 때만 `증빙 있음`**(사용자 결정 2026-09-30). 증빙 말고는 값이 없는 항목은 뺀다 | 잠정 |
 | foundedAt | 개인사업자 · 법인 필수 | `companies.founded_at` | 예비창업자는 비움 | |
 | revenueUnitPrice | 필수 | `pricing_items.unit_price` | **호환용** — 첫 항목 단가. 전체는 확장 필드 `revenueItems`(4.2) | 잠정 |
 | developmentPeriod | 필수 | `dev_start_month` · `dev_end_month` | `YYYY-MM ~ YYYY-MM`. 둘 다 있어야 한다 | 잠정 |
@@ -69,16 +69,16 @@ flowchart TD
 | region | 필수 | `region_sido` · `region_sigungu` (사업장 소재지 · 창업 예정 지역) | `시도 시군구`. 시도가 있어야 한다 | 잠정 |
 | industryCode | 필수 | `main_industry`(개인 · 법인, 9종), 없으면 `main_industry_free`(예비창업자) | 그대로 | |
 | certifications | 선택 | `certifications` (문자열 배열) | 그대로 | |
-| hiringPlan | 필수 | `no_hires` · `hires` (직무 · 인원 · 요구역량 · 채용시기) | '없음'을 골랐으면 `없음`, 아니면 항목을 `; `로 이은 한 줄 | 잠정 |
-| facilities | 필수 | `no_equipment` · `equipment` (이름 · 상태) | 위와 같음 | 잠정 |
-| partners | 필수 | `no_partners` · `partners` (기관명 · 협력내용 · 상태) | 위와 같음 | 잠정 |
+| hiringPlan | 필수 | `no_hires` · `hires` (`job` · `headcount` · `required_skill` · `hire_month` = 직무 · 인원 · 요구역량 · 채용 시기) | '없음'을 골랐으면 `없음`, 아니면 항목마다 `직무 인원 · 요구역량: … · 채용 시기: …`(빈 값 생략)를 `; `로 이은 한 줄. 인원(문자열)이 숫자만이면 `명`을 붙인다. 예: `개발자 2명 · 요구역량: React · 채용 시기: 2026-06` | 잠정 |
+| facilities | 필수 | `no_equipment` · `equipment` (`name` · `status` = 이름 · 상태) | '없음'을 골랐으면 `없음`, 아니면 항목마다 `이름 (상태)`를 `; `로 이은 한 줄. 상태가 없으면 괄호 생략. 예: `태블릿 (보유)` | 잠정 |
+| partners | 필수 | `no_partners` · `partners` (`name` · `status` = 기관명 · 상태) | 위와 같음. 예: `OO대학교 (협의 중)` | 잠정 |
 | isFirstStartup | (기준 문서: 예비창업자 필수) | 없음 | 비움. **받지 않는다** (웹팀 확인) | 개정 필요 |
 | desiredScale | 예비창업자 필수 | `budget_scale_manwon` (만원, 웹팀 확인) | `{값}만원` | 표기는 잠정 |
 | businessRegNo | 개인사업자 · 법인 선택 | `companies.business_reg_no` | 예비창업자는 비움 | |
 | selfFundAmount | 개인사업자 · 법인 필수 | `self_funding_allowed` · `self_cash_limit` (원, 웹팀 확인) | 자기부담을 하지 않으면 0, 아니면 `self_cash_limit` | 0 처리는 잠정 |
 | attachments | 선택 | (`project_attachments`) | 지금은 읽지 않음 | R-8과 함께 |
 
-- JSON 컬럼은 스키마에 항목 구성만 적혀 있고 키 이름이 없다. 그래서 키 이름에 기대지 않고 값만 순서대로 잇는다. 드라이버가 문자열로 돌려줘도 풀어서 쓴다.
+- JSON 컬럼은 스키마에 키 이름이 없어 웹 코드(`user-input-example.py`의 PlanCareerIn · PlanHireIn · PlanEquipmentIn · PlanPartnerIn)에서 확인한 키 이름으로 옮긴다. 아는 키가 하나도 없는 항목은 값만 순서대로 ` · `로 잇는다(참 · 거짓 값은 뺀다). 아는 키와 모르는 키가 섞여 있으면 모르는 키의 값을 뒤에 ` · `로 이어, 웹이 키를 더해도 입력이 버려지지 않게 한다. 드라이버가 문자열로 돌려줘도 풀어서 쓴다.
 - 단가는 `DECIMAL(12,2)`이다. 원 단위 정수로 바꾸고, 소수 부분이 있으면 반올림하지 않고 오류로 본다.
 - 값을 옮기기만 하고 요약 · 보완 · 추정하지 않는다. 수익모델 단가와 경력은 사용자 입력만 쓴다(기획서 4-6).
 
@@ -181,7 +181,7 @@ PreInput에 자리가 없는 웹 입력값을 확장 필드로 싣는다. `PreIn
 | 재시도 | SDK 재시도는 끈다(`max_retries=0`). 재시도는 tools가 한다 |
 | 응답 형식 | 스키마가 있으면 `response_format={"type": "json_schema", …, "strict": False}`. 검사는 tools가 다시 한다 |
 | 오류 변환 | 시간 초과 → `TimeoutError`, 연결 오류 → `ConnectionError`, 응답 코드 오류 → `ProviderError(status)`, 빈 응답 → 형식 오류 |
-| API 키 | 환경 변수 `OPENAI_API_KEY` (SDK 기본). 코드 · 설정 파일에 넣지 않는다 |
+| API 키 | 환경 변수 `OPENAI_API_KEY`, 없으면 코드 폴더의 `.env` 파일(`sbrain/env.py`, 사용자 요청 2026-10-01). 이미 설정된 환경 변수가 이긴다. 코드에 넣지 않고, `.env`는 저장소에 올리지 않는다. 적을 항목은 `.env.example` |
 
 조립 예시 (웹 DB + 실제 T-C1, 나머지 Agent는 스텁):
 
@@ -202,6 +202,8 @@ res = app.orchestrator.start_run_for_project(account_id="7", project_id=101)
 
 이 예시는 SQLite와 가짜 OpenAI 클라이언트로 바꿔 끝까지 도는 것을 확인했다.
 
+워커 조립 `build_app(db_url)`(2026-10-01)이 같은 일을 한다 — SqlStore · 웹 DB 입력 · DB 설정 입력 · OpenAI 호출처 · `bind_supervisor`. 이때 구현된 Task(T-C1)만 실제 OpenAI로 보내고 나머지 스텁 조율 Task는 가짜 호출처로 보낸다.
+
 ### 7.3 실제 OpenAI 호출 확인 (2026-09-30, 1회 성공)
 
 | 항목 | 내용 |
@@ -214,7 +216,7 @@ res = app.orchestrator.start_run_for_project(account_id="7", project_id=101)
 | 회사 정보 | 폼 값이 그대로 옮겨졌다(단가 35000, 경력 · 팀 문구 그대로). `revenueItems`가 빈 목록인 것은 스크립트가 폼을 직접 만들면서 수익모델 항목을 넣지 않았기 때문이다. 웹 DB에서 읽는 경로(`start_run_for_project`)는 항목을 채운다 |
 
 - 확인한 것: OpenAI 어댑터의 요청 형식(추론 강도 low, 온도 생략, JSON 스키마 응답 형식)이 `gpt-6-luna`에서 동작한다. T-C1의 응답 검사 · 카테고리 판정 · 회사 정보 복사가 실제 응답으로 동작한다.
-- 아직 확인하지 않은 것: 엔진 · 웹 DB를 거친 전체 경로의 실제 호출, 첨부 참조 자료 정리(R-8 보류), 토큰 사용량(기록 기능은 구현 전 — `작업지시_조율코드반영_워커_웹연동.md` 6단계, 저장소 미포함), 응답 시간.
+- 아직 확인하지 않은 것: 엔진 · 웹 DB를 거친 전체 경로의 실제 호출, 첨부 참조 자료 정리(R-8 보류), 응답 시간. 토큰 사용량 기록은 2026-10-01 구현했다 — 다음 실제 호출 때 `tc1_real_call.py` 출력(호출 · 시도별 토큰)으로 확인한다.
 
 ## 8. 잠정 · 확장 목록
 
@@ -223,7 +225,7 @@ res = app.orchestrator.start_run_for_project(account_id="7", project_id=101)
 | 항목 | 잠정값 | 위치 |
 |---|---|---|
 | DB → PreInput 변환 규칙 | 4.1절 표의 '잠정' 행 | `intake/mapping.py` |
-| JSON 목록 항목 → 문자열 | 값만 순서대로 ` · `로 잇고 참 · 거짓 값은 뺀다 | `intake/mapping.py` |
+| JSON 목록 항목 → 문자열 | 키 이름으로 형식을 만든다(4.1). 아는 키가 없으면 값만 ` · `로 잇고 참 · 거짓 값은 뺀다. 모르는 키의 값은 뒤에 잇는다 | `intake/mapping.py` |
 | 수익모델 단가 필수 판정 | 1건 이상, 항목마다 단가 필수 | `intake/mapping.py` |
 | 빈 문자열 · 빈 목록 | 필수 항목 결측으로 봄 (팀 구성원 제외) | `intake/mapping.py` |
 | 참조 자료 슬롯 | 7종 (6.3) | `tc1.py` `REFERENCE_SLOTS` |
@@ -257,7 +259,7 @@ res = app.orchestrator.start_run_for_project(account_id="7", project_id=101)
 
 **남은 사항**
 
-1. JSON 컬럼의 키 이름은 웹 코드(`user-input-example.py`)에서 확인했다: 대표자 이력 `type` · `title` · `period` · `has_proof`, 채용 계획 `job` · `headcount` · `required_skill` · `hire_month`, 장비 · 협력 기관 `name` · `status`. 키 이름을 쓰는 변환과 증빙 표기(`증빙 있음`, 사용자 결정)는 `작업지시_조율코드반영_워커_웹연동.md`(저장소 미포함) S0에 넣었다(지금 코드는 값만 잇는다).
-2. 누가 언제 부를지는 웹팀과 합의했다 — 웹은 시작 요청만 넣고 사전 단계는 워커가 돈다(`워커_구동_방식_제안.md`, 저장소 미포함, 확정). `start_run_for_project`는 확인(즉시)과 실행(워커)으로 나눈다.
+1. **반영 완료 (2026-10-01)** — JSON 컬럼을 웹 코드(`user-input-example.py`)의 키 이름(대표자 이력 `type` · `title` · `period` · `has_proof`, 채용 계획 `job` · `headcount` · `required_skill` · `hire_month`, 장비 · 협력 기관 `name` · `status`)으로 옮기고 증빙 표기(`증빙 있음`, 사용자 결정)를 붙인다. 형식은 4.1절 표(`작업지시_조율코드반영_워커_웹연동.md` S0, 저장소 미포함).
+2. 누가 언제 부를지는 웹팀과 합의했다 — 웹은 시작 요청만 넣고 사전 단계는 워커가 돈다(`워커_구동_방식_제안.md`, 저장소 미포함, 확정). **확인(즉시, `request_start`)과 실행(워커, `run_start_request`)으로 나눴다(2026-10-01).** `start_run_for_project`는 두 조각을 차례로 부르는 동기 경로다. 웹이 부르는 함수는 `docs/Orchestrator_웹연동_함수명세.md`.
 
 **기준 문서 개정** — 수익모델 여러 건, 확장 필드, 팀원 없음, 첫 창업 여부 미수집 등은 `기준문서_개정필요사항_T-C1_사전정보입력.md`(저장소 미포함)에 따로 정리했다.

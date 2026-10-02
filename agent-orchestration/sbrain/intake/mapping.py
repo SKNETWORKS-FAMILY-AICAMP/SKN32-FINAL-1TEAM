@@ -6,11 +6,15 @@
 - DB 구조와 PreInput 필드가 1:1이 아닌 곳의 변환 규칙은 기준 문서에 없어 잠정이다.
   목록은 docs/T-C1_요구사항해석_구현.md 4절에 있다.
 - PreInput에 자리가 없는 웹 입력값은 확장 필드(FormExtension)로 그대로 싣는다.
+- 목록 입력(대표자 이력 · 채용 계획 · 장비 · 협력 기관)은 웹 코드(user-input-example.py의
+  PlanCareerIn · PlanHireIn · PlanEquipmentIn · PlanPartnerIn)의 키 이름으로 한 줄을 만든다.
+  모르는 키만 있는 항목은 값만 순서대로 잇는다.
 """
 from __future__ import annotations
 
+import re
 from decimal import Decimal
-from typing import Any
+from typing import Any, Callable
 
 from ..models import PreInput, RevenueItem
 from ..models.base import ApplicantType
@@ -45,6 +49,12 @@ LABELS: dict[str, str] = {
 }
 
 NONE_TEXT = "없음"  # '해당 없음'을 고른 항목 (시트 4 hiringPlan · facilities · partners)
+PROOF_TEXT = "증빙 있음"  # 대표자 이력에 증빙이 있을 때 붙인다 (사용자 결정 2026-09-30)
+
+# 목록 입력 항목의 키 (웹 코드 user-input-example.py)
+CAREER_KEYS = ("type", "title", "period", "has_proof")           # PlanCareerIn — 구분 · 내용 · 기간 · 증빙여부
+HIRE_KEYS = ("job", "headcount", "required_skill", "hire_month")  # PlanHireIn — 직무 · 인원 · 요구역량 · 채용 시기
+NAMED_KEYS = ("name", "status")                                   # PlanEquipmentIn · PlanPartnerIn — 이름 · 상태
 
 
 class MissingRequired(Exception):
@@ -65,7 +75,7 @@ def to_pre_input(record: ProjectInputRecord) -> PreInput:
         "idea_text": _text(record.project.description),
         "applicant_type": applicant,
         "representative_name": _text(company.ceo_name),
-        "representative_career": _describe_all(plan.ceo_careers),
+        "representative_career": _describe_all(plan.ceo_careers, _career_item),
         # 기준 문서는 단가 1개(int) — 호환용으로 첫 항목 단가, 전체는 확장 필드 revenue_items
         "revenue_unit_price": revenue[0].unit_price if revenue else None,
         "development_period": _period(plan.dev_start_month, plan.dev_end_month),
@@ -76,9 +86,9 @@ def to_pre_input(record: ProjectInputRecord) -> PreInput:
         "region": _join(plan.region_sido, plan.region_sigungu) if _text(plan.region_sido) else None,
         "industry_code": _text(plan.main_industry) or _text(plan.main_industry_free),
         "certifications": _describe_all(plan.certifications) if plan.certifications is not None else None,
-        "hiring_plan": _none_or_list(plan.no_hires, plan.hires),
-        "facilities": _none_or_list(plan.no_equipment, plan.equipment),
-        "partners": _none_or_list(plan.no_partners, plan.partners),
+        "hiring_plan": _none_or_list(plan.no_hires, plan.hires, _hire_item),
+        "facilities": _none_or_list(plan.no_equipment, plan.equipment, _named_item),
+        "partners": _none_or_list(plan.no_partners, plan.partners, _named_item),
         # 유형별 항목 — 예비창업자는 설립일자 · 사업자 항목이 없다 (시트 4 foundedAt · businessRegNo)
         "founded_at": company.founded_at if business else None,
         "business_reg_no": _text(company.business_reg_no) if business else None,
@@ -128,9 +138,9 @@ def _join(*parts: Any, sep: str = " ") -> str:
 
 
 def _describe(item: Any) -> str | None:
-    """JSON 목록의 항목 하나를 한 줄로 — 키 이름을 모르므로 값만 순서대로 잇는다 (잠정).
+    """키 이름을 모르는 항목을 한 줄로 — 값만 순서대로 잇는다 (잠정).
 
-    참 · 거짓 값(대표자 이력의 증빙여부 등)은 이름 없이 옮기면 뜻이 없어 뺀다.
+    참 · 거짓 값은 이름 없이 옮기면 뜻이 없어 뺀다.
     """
     if isinstance(item, bool):
         return None
@@ -141,8 +151,73 @@ def _describe(item: Any) -> str | None:
     return _text(item)
 
 
-def _describe_all(items: list[Any] | None) -> list[str]:
-    return [s for s in (_describe(i) for i in items or []) if s]
+def _describe_all(items: list[Any] | None, describe: Callable[[Any], str | None] = _describe) -> list[str]:
+    return [s for s in (describe(i) for i in items or []) if s]
+
+
+def _keyed(item: Any, keys: tuple[str, ...], fmt: Callable[[dict[str, Any]], str | None]) -> str | None:
+    """키 이름을 아는 항목은 fmt로 한 줄을 만든다 (잠정).
+
+    아는 키가 하나도 없으면 값만 잇기(_describe)로 돌아간다. 아는 키와 모르는 키가 섞여 있으면
+    모르는 키의 값을 뒤에 ` · `로 이어 사용자 입력을 버리지 않는다.
+    """
+    if not isinstance(item, dict) or not any(k in item for k in keys):
+        return _describe(item)
+    rest = _describe({k: v for k, v in item.items() if k not in keys})
+    return _join(fmt(item), rest, sep=" · ") or None
+
+
+def _with_notes(head: str | None, notes: list[str]) -> str | None:
+    """'머리 (덧붙임, 덧붙임)'. 덧붙일 것이 없으면 괄호를 생략한다."""
+    if not notes:
+        return head
+    note = ", ".join(notes)
+    return f"{head} ({note})" if head else note
+
+
+def _career(c: dict[str, Any]) -> str | None:
+    """대표자 이력 — '구분: 내용 (기간, 증빙 있음)' (잠정).
+
+    구분이 없으면 '내용 (기간)', 기간 · 증빙이 없으면 괄호를 생략한다. 증빙은 참일 때만 붙인다
+    (사용자 결정 2026-09-30). 증빙 말고는 값이 없는 항목은 뜻이 없어 뺀다.
+    """
+    kind, title, period = _describe(c.get("type")), _describe(c.get("title")), _describe(c.get("period"))
+    if not (kind or title or period):
+        return None
+    head = f"{kind}: {title}" if kind and title else (title or kind)
+    notes = [s for s in (period, PROOF_TEXT if c.get("has_proof") is True else None) if s]
+    return _with_notes(head, notes)
+
+
+def _hire(h: dict[str, Any]) -> str | None:
+    """채용 계획 — '직무 인원 · 요구역량: … · 채용 시기: …' (잠정).
+
+    인원(headcount)은 문자열이다. 숫자만 있으면 '명'을 붙이고 아니면 그대로 쓴다. 빈 값은 생략한다.
+    """
+    job, count = _describe(h.get("job")), _describe(h.get("headcount"))
+    if count and re.fullmatch(r"[0-9]+", count):
+        count += "명"
+    skill, month = _describe(h.get("required_skill")), _describe(h.get("hire_month"))
+    return _join(_join(job, count), f"요구역량: {skill}" if skill else None,
+                 f"채용 시기: {month}" if month else None, sep=" · ") or None
+
+
+def _named(item: dict[str, Any]) -> str | None:
+    """장비 · 시설, 협력 기관 — '이름 (상태)' (잠정). 상태가 없으면 괄호를 생략한다."""
+    name, status = _describe(item.get("name")), _describe(item.get("status"))
+    return _with_notes(name, [status] if status else [])
+
+
+def _career_item(item: Any) -> str | None:
+    return _keyed(item, CAREER_KEYS, _career)
+
+
+def _hire_item(item: Any) -> str | None:
+    return _keyed(item, HIRE_KEYS, _hire)
+
+
+def _named_item(item: Any) -> str | None:
+    return _keyed(item, NAMED_KEYS, _named)
 
 
 def _member(m: TeamMemberRow) -> str | None:
@@ -177,11 +252,12 @@ def _period(start: str | None, end: str | None) -> str | None:
     return f"{start} ~ {end}" if start and end else None
 
 
-def _none_or_list(none_selected: bool | None, items: list[Any] | None) -> str | None:
+def _none_or_list(none_selected: bool | None, items: list[Any] | None,
+                  describe: Callable[[Any], str | None]) -> str | None:
     """'없음'을 골랐으면 '없음', 아니면 항목을 '; '로 이은 한 줄 (잠정)."""
     if none_selected:
         return NONE_TEXT
-    return "; ".join(_describe_all(items)) or None
+    return "; ".join(_describe_all(items, describe)) or None
 
 
 def _self_fund(plan: PlanInputRow) -> int | None:

@@ -4,7 +4,8 @@
 - 재수행 루프: check.passed=false면 횟수를 세고 문제 내용(ReworkInput)을 실어 같은 Task를 다시 부른다.
 - 재시도는 tools가 호출 단위로 하고, 재시도를 다 쓰면 Task 단위로 재개한다(R-11).
 - 재작성 사이클: 시작 시점 포인터를 스냅샷으로 남기고, 전후 점수로 높은 쪽을 남기며,
-  실패하면 스냅샷으로 되돌리고 기회를 돌려준다(R-6의 실행 부분).
+  실패하면 스냅샷으로 되돌리고 기회를 돌려준다(R-6의 실행 부분). 모으는 시각(collect_until)까지는 묶음을 더할 수
+  있고 진행하지 않는다. 마지막 재작성 한 건의 결과는 Run.last_rework에 요약한다.
 - S-Brain 고유 규칙(구간 · 대기 지점 · 재작성 경로 · 알림)은 Flow가 맡는다.
 """
 from __future__ import annotations
@@ -19,13 +20,13 @@ from pydantic import ValidationError
 
 from ..models import BundleUsage, CycleState, ReworkComparison, ReworkInput, Run
 from ..models.base import ErrorKind
-from ..models.run import RedoState, make_state
+from ..models.run import FAILURE_REASON_MAX, RedoState, ReworkSummary, collecting, make_state
 from .context import ArtifactTypes, ImmutableArtifactError, RunContext
 from .errors import ContractError, ToolCallExhausted
 from .registry import AgentRegistry, TaskRegistry, TaskSpec
 from .store import Store
 from .tools import CallSink, LLMProvider, Tools, ToolsConfig, ToolsContext
-from .trace import ExecutionRecord, FeedbackLink, output_meta_of
+from .trace import ExecutionRecord, FeedbackLink, add_tokens, output_meta_of
 
 # 재작성 비교 · 되돌리기에서 제외하는 산출물 (Orchestrator가 만든 입력)
 INTERNAL_PREFIXES = ("decision",)
@@ -97,48 +98,61 @@ class Engine:
         self.new_id = new_id or (lambda: uuid.uuid4().hex[:12])
         self.owner = owner
         self.lease_sec = lease_sec
+        # 워커 종료 신호 — 참이면 단계 사이에서 멈춘다. 실행 건은 '실행'으로 남아 다른 워커가 이어받는다
+        self.stop_requested: Callable[[], bool] = lambda: False
 
     # ── Context ──────────────────────────────────────
-    def open_context(self, run: Run, provisional: bool = False) -> RunContext:
-        return RunContext(self.store, run, self.owner, self.types, self.now,
+    def open_context(self, run: Run, provisional: bool = False, owner: str | None = None) -> RunContext:
+        return RunContext(self.store, run, owner or self.owner, self.types, self.now,
                           self.immutable_keys, provisional)
 
     # ── 진행 ─────────────────────────────────────────
-    def advance(self, run_id: str) -> str:
-        """다음 대기 지점까지 진행한다. 다른 곳이 점유 중이면 'busy'."""
-        if not self.store.acquire(run_id, self.owner, self.lease_sec):
+    def advance(self, run_id: str, owner: str | None = None, lease_sec: float | None = None) -> str:
+        """다음 대기 지점까지 진행한다. 다른 곳이 점유 중이면 'busy'.
+
+        워커는 스레드마다 다른 점유자(owner)로 부른다. 끝나면(오류 포함) 점유를 푼다.
+        """
+        owner = owner or self.owner
+        if not self.store.acquire(run_id, owner, lease_sec or self.lease_sec):
             return "busy"
         try:
             run = self.store.load_run(run_id)
             if run.state.progress != "실행":
                 return run.state.progress
-            ctx = self.open_context(run)
+            if collecting(run, self.now()):
+                return run.state.progress   # 재작성 요청을 모으는 중 — 모으는 시간이 지난 뒤 진행한다
+            ctx = self.open_context(run, owner=owner)
             self.drain(ctx)
             return ctx.run.state.progress
         finally:
-            self.store.release(run_id, self.owner)
+            self.store.release(run_id, owner)
+
+    def resume(self, run_id: str, owner: str | None = None, lease_sec: float | None = None) -> str | None:
+        """재개대기 실행 건 하나를 깨워 다음 대기 지점까지 진행한다. 진행 상태를 돌려준다.
+
+        다른 곳이 점유 중이거나 재개대기가 아니면 None. 재개 시각은 부르는 쪽(tick · 워커 가져가기)이 확인한다.
+        """
+        owner = owner or self.owner
+        if not self.store.acquire(run_id, owner, lease_sec or self.lease_sec):
+            return None
+        try:
+            run = self.store.load_run(run_id)
+            if run.state.progress != "재개대기":
+                return None
+            run.state = make_state(run.state.step, "실행", run.rework_screen)
+            run.next_resume_at = None
+            ctx = self.open_context(run, owner=owner)
+            ctx.add_event("재개", f"{run.current_task} 재개 ({run.resume_count}번째)")
+            ctx.commit()
+            self.drain(ctx)
+            return ctx.run.state.progress
+        finally:
+            self.store.release(run_id, owner)
 
     def tick(self, now: datetime | None = None) -> list[str]:
-        """재개 시각이 된 실행을 깨워 진행한다."""
+        """재개 시각이 된 실행을 모두 깨워 진행한다 (테스트 · 시연용 — 워커는 한 건씩 resume을 부른다)."""
         now = now or self.now()
-        resumed = []
-        for run_id in self.store.runs_due_for_resume(now):
-            if not self.store.acquire(run_id, self.owner, self.lease_sec):
-                continue
-            try:
-                run = self.store.load_run(run_id)
-                if run.state.progress != "재개대기":
-                    continue
-                run.state = make_state(run.state.step, "실행", run.rework_screen)
-                run.next_resume_at = None
-                ctx = self.open_context(run)
-                ctx.add_event("재개", f"{run.current_task} 재개 ({run.resume_count}번째)")
-                ctx.commit()
-                self.drain(ctx)
-                resumed.append(run_id)
-            finally:
-                self.store.release(run_id, self.owner)
-        return resumed
+        return [rid for rid in self.store.runs_due_for_resume(now) if self.resume(rid) is not None]
 
     def drain(self, ctx: RunContext) -> Outcome | None:
         """대기열이 빌 때까지 진행한다. 마지막으로 성공하지 못한 결과를 돌려준다."""
@@ -148,6 +162,8 @@ class Engine:
                 self.flow.on_abort(ctx)
                 ctx.commit()
                 return last
+            if not ctx.provisional and self.stop_requested():
+                return last   # 워커 종료 — 하던 단계는 저장됐다. 남은 대기열은 다른 워커가 이어받는다
             if not ctx.run.queue:
                 before = (ctx.run.state.step, ctx.run.state.progress, ctx.run.segment)
                 self.flow.on_queue_empty(ctx)
@@ -246,7 +262,7 @@ class Engine:
             try:
                 out = spec.fn(model_in, tools)
             finally:
-                ctx.batch.call_logs.extend(sink.drain())
+                self.collect_calls(ctx, rec, sink)
         else:
             out = spec.fn(model_in)
         return self.store_outputs(ctx, spec, rec, out)
@@ -342,6 +358,13 @@ class Engine:
             reasoning_effort=agent.reasoning_effort,
         )
 
+    @staticmethod
+    def collect_calls(ctx: RunContext, rec: ExecutionRecord, sink: CallSink) -> None:
+        """호출 기록을 저장 묶음에 옮기고 그 토큰을 실행 기록 합계에 더한다(재개하면 이어서 더한다)."""
+        logs = sink.drain()
+        ctx.batch.call_logs.extend(logs)
+        add_tokens(rec, logs)
+
     def make_tools(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord,
                    cfg: ToolsConfig, sink: CallSink) -> Tools:
         return Tools(cfg, ToolsContext(
@@ -424,6 +447,9 @@ class Engine:
         run.admin_alert = permanent
         run.ended_at = self.now()
         run.state = make_state(run.state.step, "실패")
+        task = rec.task_id if rec else run.current_task
+        summary = f" — {rec.error}" if rec and rec.error else ""
+        run.failure_reason = f"{task}: {reason}{summary}"[:FAILURE_REASON_MAX]
         ctx.add_event("실행실패", reason, execution_id=rec.execution_id if rec else None)
         self.flow.on_run_failed(ctx, reason)
         return Outcome("failed", record=rec)
@@ -450,7 +476,50 @@ class Engine:
     # ── 재작성 사이클 ─────────────────────────────────
     def start_cycle(self, ctx: RunContext, *, screen: int, selected_orders_ref: str,
                     orders_by_task: dict[str, dict], counted_bundles: list[tuple[str, str]],
-                    layers: list[str]) -> CycleState:
+                    layers: list[str], collect_until: datetime | None = None) -> CycleState:
+        """재작성 사이클을 연다 — 지금 포인터를 스냅샷으로 남기고 묶음 기회를 쓴다. 마지막 재작성 요약을 새로 만든다.
+
+        collect_until을 주면 그 시각까지 '모으는 중'이다: extend_cycle로 묶음을 더할 수 있고, 진행(advance)과
+        워커 가져가기는 그 시각이 지난 뒤에 한다.
+        """
+        run = ctx.run
+        self._use_bundles(ctx, counted_bundles)
+        now = self.now()
+        cycle = CycleState(
+            cycle_id=self.new_id(), screen=screen, snapshot=dict(ctx.pointers),
+            counted_bundles=[b for b, _ in counted_bundles], selected_orders_ref=selected_orders_ref,
+            orders_by_task=orders_by_task, layers=layers, started_at=now, collect_until=collect_until)
+        run.cycle = cycle
+        run.rework_screen = screen
+        run.check_refs = {}
+        run.last_rework = ReworkSummary(cycle_id=cycle.cycle_id, screen=screen,
+                                        bundles=list(cycle.counted_bundles), status="진행중", started_at=now)
+        ctx.add_event("재작성시작", f"화면 {screen}, 묶음 {cycle.counted_bundles}", refs=[selected_orders_ref])
+        return cycle
+
+    def extend_cycle(self, ctx: RunContext, *, selected_orders_ref: str, orders_by_task: dict[str, dict],
+                     counted_bundles: list[tuple[str, str]], layers: list[str]) -> CycleState:
+        """모으는 중인 사이클에 묶음을 더한다 (첫 단계를 돌기 전에만). 새로 더한 묶음만 기회를 쓴다.
+
+        스냅샷은 첫 요청 때 것을 그대로 쓴다 — 그 뒤로 바뀐 것은 내부 산출물(decision)뿐이다.
+        """
+        cycle = ctx.run.cycle
+        assert cycle is not None
+        added = [(b, layer) for b, layer in counted_bundles if b not in cycle.counted_bundles]
+        self._use_bundles(ctx, added)
+        cycle.counted_bundles += [b for b, _ in added]
+        cycle.selected_orders_ref = selected_orders_ref
+        cycle.orders_by_task = orders_by_task
+        cycle.layers = layers
+        summary = self._summary(ctx)
+        if summary is not None:
+            summary.bundles = list(cycle.counted_bundles)
+        ctx.add_event("재작성묶음추가", f"화면 {cycle.screen}, 묶음 {[b for b, _ in added]}",
+                      refs=[selected_orders_ref])
+        return cycle
+
+    @staticmethod
+    def _use_bundles(ctx: RunContext, counted_bundles: list[tuple[str, str]]) -> None:
         run = ctx.run
         usage = {u.bundle_id: u for u in run.rework_usage}
         for bundle_id, layer in counted_bundles:
@@ -462,15 +531,12 @@ class Engine:
             u = usage[bundle_id]
             u.used_count += 1
             u.remaining -= 1
-        cycle = CycleState(
-            cycle_id=self.new_id(), screen=screen, snapshot=dict(ctx.pointers),
-            counted_bundles=[b for b, _ in counted_bundles], selected_orders_ref=selected_orders_ref,
-            orders_by_task=orders_by_task, layers=layers, started_at=self.now())
-        run.cycle = cycle
-        run.rework_screen = screen
-        run.check_refs = {}
-        ctx.add_event("재작성시작", f"화면 {screen}, 묶음 {cycle.counted_bundles}", refs=[selected_orders_ref])
-        return cycle
+
+    @staticmethod
+    def _summary(ctx: RunContext) -> ReworkSummary | None:
+        """지금 사이클의 마지막 재작성 요약 (다른 사이클의 것이면 None)."""
+        s, cycle = ctx.run.last_rework, ctx.run.cycle
+        return s if s is not None and cycle is not None and s.cycle_id == cycle.cycle_id else None
 
     def changed_since_snapshot(self, ctx: RunContext) -> dict[str, tuple[int | None, int]]:
         snap = ctx.run.cycle.snapshot if ctx.run.cycle else {}
@@ -496,6 +562,10 @@ class Engine:
             for k, (old, _) in changed.items():
                 if old is not None:
                     ctx.move_pointer(k, old, "재작성 되돌리기 (점수 하락)", cycle.cycle_id)
+        summary = self._summary(ctx)
+        if summary is not None:
+            summary.kept, summary.basis, summary.before_score, summary.after_score = kept, basis, before, after
+            summary.before_refs, summary.after_refs = before_refs, after_refs
         ctx.add_event("전후비교", f"{basis} {before} → {after}, 남김={kept}", refs=before_refs + after_refs)
         return kept
 
@@ -510,10 +580,19 @@ class Engine:
             if u.bundle_id in cycle.counted_bundles:
                 u.used_count -= 1
                 u.remaining += 1
+        summary = self._summary(ctx)
+        if summary is not None:   # 실패는 되돌림 · 돌려준 묶음만 남긴다 — 산출물은 요청 전 그대로다
+            summary.status, summary.rolled_back, summary.failure_reason = "실패", True, reason
+            summary.refunded_bundles = list(cycle.counted_bundles)
+            summary.kept = summary.basis = summary.before_score = summary.after_score = None
+            summary.before_refs, summary.after_refs, summary.ended_at = [], [], self.now()
         ctx.add_event("재작성실패", reason)
         ctx.run.queue = []
 
     def end_cycle(self, ctx: RunContext) -> None:
+        summary = self._summary(ctx)
+        if summary is not None and summary.status == "진행중":
+            summary.status, summary.ended_at = "완료", self.now()
         ctx.add_event("재작성종료", f"화면 {ctx.run.rework_screen}")
         ctx.run.cycle = None
         ctx.run.rework_screen = None

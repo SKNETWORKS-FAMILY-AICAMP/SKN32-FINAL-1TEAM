@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 from pydantic import TypeAdapter
 
-from ..models import AttemptRef, Notification, ReworkComparison, Run
+from ..models import AttemptRef, Notification, RejectedAttempt, ReworkComparison, Run
 from .settings import Settings
 from .store import ArtifactVersion, CommitBatch, Store
 from .trace import ExecutionRecord, FeedbackLink, PointerEvent, TraceEvent
@@ -185,6 +185,10 @@ class RunContext:
     def notify(self, notification: Notification) -> None:
         self.batch.notifications.append(notification)
 
+    def add_rejected_attempt(self, attempt: RejectedAttempt) -> None:
+        """반려된 시도 — 저장소가 주인 계정의 학습 동의를 확인해 같은 저장에서 쓴다 (내용 포함, 기록 · 로그와 별도)."""
+        self.batch.rejected_attempts.append(attempt)
+
     # ── 한 번에 저장 ──────────────────────────────────
     def commit(self) -> None:
         self.run.updated_at = self.now()
@@ -208,6 +212,7 @@ class RunContext:
         pb.comparisons += b.comparisons
         pb.events += b.events
         pb.notifications += b.notifications
+        pb.rejected_attempts += b.rejected_attempts
         self.batch = CommitBatch()
 
     def take_provisional(self) -> CommitBatch:

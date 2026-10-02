@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from ..models.base import CallError, ErrorKind
 
@@ -48,6 +49,29 @@ ERROR_CODES: dict[str, ErrorCode] = {e.code: e for e in [
 ]}
 
 
+# CommandError 코드 (확장) — 웹이 받는 명령 · 조회 거절 사유. 시트 6 결과 코드(E-…)는 위 ERROR_CODES에 있다
+# (E-G2-LIMIT는 둘 다에 쓴다). 웹은 code로 가르고, detail은 사람이 읽는 설명이다.
+COMMAND_ERROR_CODES: dict[str, str] = {
+    "PROJECT_NOT_FOUND": "프로젝트가 없거나, 보관됐거나, 다른 계정 것 (구분하지 않음)",
+    "PROJECT_ALREADY_STARTED": "끝난 실행 건이 있는 프로젝트 — 새 프로젝트로 시작",
+    "NO_PROJECT_SOURCE": "조립 오류 — 웹 DB 입력 공급처가 없음",
+    "RUN_NOT_FOUND": "실행 건이 없는 프로젝트에 명령 · 조회",
+    "RUN_NOT_VIEWABLE": "실패 · 중단된 실행 건 — 지금까지 결과 · 재작성 결과를 보여 주지 않음 (공고 마감 안내 E-RUN-CLOSED와 다름)",
+    "WEB_NOT_ALLOWED": "웹 조립(build_web)에서 부를 수 없는 함수 — 사전 단계 실행(run_start_request)은 워커가 한다",
+    "SCREEN_NOT_READY": "그 화면을 여는 대기 지점이 아님",
+    "INVALID_SCREEN": "없는 화면 번호",
+    "INVALID_STATE": "지금 단계 · 진행 상태에서 받을 수 없는 명령",
+    "BUSY": "다른 곳이 그 실행 건을 점유 중 — 잠시 뒤 다시",
+    "MORE_LIMIT": "공고 추가 조회 한도 (1회 · 합계 20건)",
+    "INVALID_ANNOUNCEMENT": "후보에 없는 공고",
+    "NO_SELECTION": "재작성 선택 없음",
+    "INVALID_ORDER": "목록에 없는 재작성 지시 · 묶음 이름 · 화면에 맞지 않는 층",
+    "INVALID_ACTION": "잘못된 동작",
+    "E-G2-LIMIT": "재작성 기회 소진",
+    "NOT_ACTIVE": "진행 중이 아닌 실행 건을 중단 (내부 — abort_project가 받는다)",
+}
+
+
 def message(code: str, **slots: str) -> str:
     text = ERROR_CODES[code].message
     for k, v in slots.items():
@@ -60,7 +84,14 @@ class OrchestratorError(Exception):
 
 
 class FormatError(OrchestratorError):
-    """응답 형식 오류. tools가 스키마 검사에서 올리거나 Task의 parse 함수가 올린다. tools가 재시도한다."""
+    """응답 형식 오류. tools가 스키마 검사에서 올리거나 Task의 parse 함수가 올린다. tools가 재시도한다.
+
+    호출처가 응답을 받고도 쓸 수 없어 올릴 때(빈 응답 등)는 그 응답의 토큰 사용량(usage)을 실어 비용을 남긴다.
+    """
+
+    def __init__(self, message: str = "", *, usage: Any = None) -> None:
+        super().__init__(message)
+        self.usage = usage
 
 
 class ProviderError(OrchestratorError):
@@ -98,3 +129,7 @@ class CommandError(OrchestratorError):
 
 class StoreConflict(OrchestratorError):
     """실행 점유(잠금)를 갖지 않은 쪽이 저장하려 함."""
+
+
+class ProjectRunExists(OrchestratorError):
+    """프로젝트에 이미 실행 건이 있음 (확장). 프로젝트 1건에 실행 건은 최대 1건 — 새로 시작은 새 프로젝트로 한다."""

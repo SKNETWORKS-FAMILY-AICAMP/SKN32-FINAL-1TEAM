@@ -7,6 +7,9 @@
 - 재시도는 새 버전을 만들지 않고 호출 로그(CallLog)에 따로 남긴다.
 - 되돌리기는 현재 버전 포인터만 옮기고(PointerEvent) 기록은 지우지 않는다.
 - T-P2는 호출 로그는 문장별(itemKey), 입력 · 출력 이력은 Task 단위로 남긴다.
+- 토큰 사용량(확장): 시도마다 응답의 사용량을 남기고(CallTry), 호출(CallLog) · 실행(ExecutionRecord)에 합계를 둔다.
+  입력은 캐시 입력을 포함한 전체이고 캐시 입력은 그 일부다. 출력은 추론을 포함한 전체이고 추론은 그 일부다.
+  사용량을 주지 않는 호출처면 None이다. 비용(원 · 달러)은 계산하지 않는다.
 """
 from __future__ import annotations
 
@@ -27,6 +30,16 @@ class OutputMeta(SBModel):
     score: float | None = None
     passed: bool | None = None
     note: str | None = None
+    # 산출물층 채점의 항목별 점수 — 관리자 점수 이력 · 운영 요약이 산출물을 읽지 않고(완전 삭제 뒤에도) 쓴다
+    code_check_score: float | None = None
+    feature_match_score: float | None = None
+
+
+TOKEN_FIELDS = ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens")
+
+
+def _token(what: str):
+    return ext(None, note=f"토큰 — {what}")
 
 
 class ExecutionRecord(AttemptRef):
@@ -52,6 +65,10 @@ class ExecutionRecord(AttemptRef):
     error_kind: ErrorKind | None = ext(None)
     started_at: datetime | None = ext(None)
     ended_at: datetime | None = ext(None)
+    input_tokens: int | None = _token("이 실행의 호출 합계, 입력 (캐시 입력 포함)")
+    cached_input_tokens: int | None = _token("이 실행의 호출 합계, 캐시 입력")
+    output_tokens: int | None = _token("이 실행의 호출 합계, 출력 (추론 포함)")
+    reasoning_tokens: int | None = _token("이 실행의 호출 합계, 추론")
 
 
 class CallTry(SBModel):
@@ -62,6 +79,10 @@ class CallTry(SBModel):
     outcome: str                    # 성공 · 호출실패 · 응답지연 · 형식오류
     error_kind: ErrorKind | None = None
     detail: str | None = None       # 오류 종류 설명만 (응답 내용 없음)
+    input_tokens: int | None = _token("이 시도의 응답, 입력 (캐시 입력 포함)")
+    cached_input_tokens: int | None = _token("이 시도의 응답, 캐시 입력")
+    output_tokens: int | None = _token("이 시도의 응답, 출력 (추론 포함)")
+    reasoning_tokens: int | None = _token("이 시도의 응답, 추론")
 
 
 class CallLog(SBModel):
@@ -83,6 +104,10 @@ class CallLog(SBModel):
     final_outcome: str = "진행"
     error: CallError | None = None
     error_kind: ErrorKind | None = None
+    input_tokens: int | None = _token("시도 합계, 입력 (캐시 입력 포함)")
+    cached_input_tokens: int | None = _token("시도 합계, 캐시 입력")
+    output_tokens: int | None = _token("시도 합계, 출력 (추론 포함)")
+    reasoning_tokens: int | None = _token("시도 합계, 추론")
 
 
 class FeedbackLink(SBModel):
@@ -125,6 +150,14 @@ class TraceEvent(SBModel):
     at: datetime
 
 
+def add_tokens(target: Any, sources: list[Any]) -> None:
+    """sources(시도 · 호출 기록)의 토큰을 target(호출 · 실행 기록)에 더한다. 기록이 하나도 없는 항목은 그대로 둔다."""
+    for f in TOKEN_FIELDS:
+        values = [v for v in (getattr(s, f, None) for s in sources) if v is not None]
+        if values:
+            setattr(target, f, (getattr(target, f) or 0) + sum(values))
+
+
 def output_meta_of(outputs: dict[str, Any]) -> OutputMeta:
     """출력에서 요약 메타만 뽑는다 (내용 복사 없음)."""
     meta = OutputMeta()
@@ -143,4 +176,9 @@ def output_meta_of(outputs: dict[str, Any]) -> OutputMeta:
     gate = outputs.get("gate_result")
     if gate is not None:
         meta.passed = gate.passed
+    code_check, feature_match = outputs.get("code_check"), outputs.get("feature_match")
+    if code_check is not None:
+        meta.code_check_score = getattr(code_check, "total", None)
+    if feature_match is not None:
+        meta.feature_match_score = getattr(feature_match, "score", None)
     return meta

@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -333,6 +333,27 @@ class ProofreadLog(SBModel):
     early_stopped_sentence_ids: list[str]
     token_preservation_rate: float = Field(ge=0, le=1)
     model_version: str
+
+
+# 보호 토큰 위반 종류 — 웹 proofread_logs.violation_type 표기 (시트 4 TokenType의 '수치금액'은 '수치·금액')
+ProofreadViolationType = Literal["날짜", "수치·금액", "고유명사", "기능명"]
+
+
+class RejectedAttempt(SBModel):
+    """확장 — 보호 토큰 검사를 통과하지 못한(반려된) T-P2 시도 하나. 웹 proofread_logs '검수 회수 문단' 한 행.
+
+    문장 내용(원문 · 시도 문장)을 담는다 — 산출물 내용을 기록에 남기지 않는 규칙의 유일한 예외라서
+    웹 proofread_logs에만 쓰고(프로젝트 주인이 학습 데이터 편입에 동의한 경우만), 실행 기록 · 추적 사건 · 로그 ·
+    관리자 조회에는 싣지 않는다.
+    """
+    run_id: str
+    original_text: str
+    corrected_text: str             # 반려된 시도 문장
+    reason: str                     # 위반 요약
+    attempt_no: int = Field(ge=1)
+    violation_type: ProofreadViolationType | None = None
+    violation_note: str             # 위반 토큰 목록 전체
+    model_version: str | None = None  # 그 시도를 만든 T-P2 실행의 모델
 
 
 # ── 결과물 ───────────────────────────────────────────

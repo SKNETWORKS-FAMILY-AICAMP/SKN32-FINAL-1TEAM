@@ -1,0 +1,27 @@
+# MySQL 8 통합 테스트용 로컬 DB (작업지시 결정 11). 공유 DB 정보는 이 파일에 넣지 않는다.
+#
+# 띄우기 (agent-orchestration 폴더에서):  docker compose -f docker/mysql-test.yml up -d --wait
+# 끄기:                       docker compose -f docker/mysql-test.yml down
+#
+# 테스트 접속 URL — 환경 변수 또는 agent-orchestration/.env의 SBRAIN_TEST_MYSQL_URL:
+#   mysql+pymysql://root:sbrain-test@127.0.0.1:3307/sbrain_test?charset=utf8mb4
+#
+# - 비밀번호는 테스트용 값이다. 포트는 이 PC에서만 열린다(127.0.0.1).
+# - 데이터는 메모리(tmpfs)에만 있어 끄면 사라진다. 테스트가 매번 테이블을 지우고 새로 만든다.
+name: sbrain-mysql-test
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: sbrain-test
+      MYSQL_DATABASE: sbrain_test
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_bin"]
+    ports:
+      - "127.0.0.1:3307:3306"
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-psbrain-test"]
+      interval: 3s
+      timeout: 3s
+      retries: 60

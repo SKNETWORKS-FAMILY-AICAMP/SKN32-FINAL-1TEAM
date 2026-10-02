@@ -44,7 +44,7 @@ def request(schema: dict | None = None, **over) -> LLMRequest:
 def test_request_shape_with_json_schema():
     p, comp = provider(['{"a": 1}'])
     schema = ItemDraft.model_json_schema()
-    assert p.complete(request(schema)) == '{"a": 1}'
+    assert p.complete(request(schema)).text == '{"a": 1}'
     call = comp.calls[0]
     assert (call["model"], call["temperature"], call["timeout"]) == ("gpt-test", 0.3, 12.0)
     assert "reasoning_effort" not in call
@@ -56,7 +56,7 @@ def test_request_shape_with_json_schema():
 
 def test_reasoning_model_request_has_effort_and_no_temperature():
     p, comp = provider(["답"])
-    assert p.complete(request(model="gpt-6-luna", temperature=None, reasoning_effort="low")) == "답"
+    assert p.complete(request(model="gpt-6-luna", temperature=None, reasoning_effort="low")).text == "답"
     call = comp.calls[0]
     assert call["model"] == "gpt-6-luna" and call["reasoning_effort"] == "low"
     assert "response_format" not in call and "temperature" not in call
