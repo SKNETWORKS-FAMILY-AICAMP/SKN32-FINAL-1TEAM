@@ -1,0 +1,11 @@
+﻿{
+  "pre_startup": [
+    "agent_validation_1/res/reference/regulations/[별첨 4] 2026년 예비창업패키지 예비창업자 모집공고 주요 질의응답(수정).pdf.json",
+    "agent_validation_1/res/reference/regulations/[참고]_2020년_예비창업패키지_세부_관리기준.pdf.json",
+    "agent_validation_1/res/reference/regulations/예비창업패키지 세부관리기준(2025년).hwp.json"
+  ],
+  "early_startup": [
+    "agent_validation_1/res/reference/regulations/초기창업패키지 세부관리기준(2025년).hwp.json"
+  ],
+  "general": []
+}
