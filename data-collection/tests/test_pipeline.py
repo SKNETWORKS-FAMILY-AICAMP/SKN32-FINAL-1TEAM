@@ -133,6 +133,65 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(r['sources']['bizinfo']['status'], 'ok')
         self.assertIn('kstartup', r['degraded'])
 
+    # ── 모집 종료 처리(2026-09-30) — 저장 단계에 넘기는 목록 ────────────
+    def run_storing(self, collect_result=None, collect_error=None):
+        """저장까지 가되 실제 DB 대신 store 를 가로채 넘긴 목록(listed)을 돌려준다. 뒤 단계는 모두 끈다."""
+        from collect import fetch_bizinfo
+        seen = []
+
+        def fake_store(path, say, listed=None):
+            seen.append(listed)
+            return True, {'processed': 1, 'closed_missing': 0 if listed else None}
+
+        k = (patch.object(daily_job, 'collect', side_effect=collect_error) if collect_error
+             else patch.object(daily_job, 'collect', return_value=collect_result))
+        with k, patch.object(daily_pipeline, 'store', fake_store), \
+                patch.object(fetch_bizinfo, 'fetch_snapshot', self.fake_fetch([biz_row(1)])):
+            r = self.run_pipeline(skip_store=False, skip_attach=True, skip_embed=True, skip_upload=True,
+                                  skip_files=True, skip_conditions=True, skip_applicant_types=True,
+                                  skip_judgments=True, skip_industries=True)
+        self.assertEqual(len(seen), 1)
+        return r, seen[0]
+
+    def test_K_목록이_서버_건수와_맞으면_목록을_넘긴다(self):
+        row2 = dict(KS_ROW, pbanc_sn='2')
+        r, listed = self.run_storing(([KS_ROW, row2], 2))
+        self.assertEqual(listed, {'kstartup': {'1', '2'}})
+        self.assertTrue(r['sources']['kstartup']['complete'])
+
+    def test_K_목록이_서버_건수보다_적으면_닫지_않는다(self):
+        r, listed = self.run_storing(([KS_ROW], 2))
+        self.assertIsNone(listed)
+        self.assertEqual(r['sources']['kstartup']['status'], 'ok')     # 저장은 그대로 한다
+        self.assertFalse(r['sources']['kstartup']['complete'])
+
+    def test_K_목록에_같은_공고가_겹치면_닫지_않는다(self):
+        _, listed = self.run_storing(([KS_ROW, dict(KS_ROW)], 2))
+        self.assertIsNone(listed)
+
+    def test_K_수집이_실패해_어제_파일을_쓰면_닫지_않는다(self):
+        self.run_storing(([KS_ROW], 1))                                  # 어제: 정상 수집으로 파일이 생긴다
+        r, listed = self.run_storing(collect_error=RuntimeError('K 다운'))
+        self.assertEqual(r['sources']['kstartup']['status'], 'error')
+        self.assertIsNone(listed)
+
+    def test_완전한_목록_판단(self):
+        rows = [dict(KS_ROW, pbanc_sn=str(i)) for i in range(3)]
+        self.assertTrue(daily_job.is_complete(rows, 3))
+        self.assertFalse(daily_job.is_complete(rows, 4))                 # 덜 받음
+        self.assertFalse(daily_job.is_complete(rows + [rows[0]], 4))     # 겹침
+        self.assertFalse(daily_job.is_complete([], 0))                   # 서버 보고 0
+        # 공백만 다른 번호는 같은 공고다(DB source_id 와 같은 다듬기 — Codex 검수 P2-1)
+        self.assertFalse(daily_job.is_complete([KS_ROW, dict(KS_ROW, pbanc_sn=' 1 ')], 2))
+
+    def test_목록_번호를_DB_와_같은_방식으로_다듬는다(self):
+        # Codex 검수 P2-1: ' 100 ' 을 그대로 넘기면 방금 '100' 으로 저장한 공고를 목록에 없다고 보고 닫는다
+        _, listed = self.run_storing(([dict(KS_ROW, pbanc_sn=' 100 ')], 1))
+        self.assertEqual(listed, {'kstartup': {'100'}})
+        from collect import normalize
+        self.assertEqual(normalize.normalize_sources([('kstartup', {'notices': [dict(KS_ROW, pbanc_sn=' 100 ')]})])
+                         ['notices'][0]['source_id'], '100')
+
     # ── 안전장치 ────────────────────────────────────────────
     def test_dry_run_은_기존_공고_파일을_교체하지_않는다(self):
         from collect import fetch_bizinfo

@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>어려운 시험 결과</title>
+<style>__STYLE__
+  .grp { font-size: 12px; font-weight: 600; color: var(--ink-2); margin: 10px 0 0; padding-top: 8px; border-top: 2px solid var(--grid); }
+  .chip { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--axis); margin: 2px 4px 2px 0; color: var(--ink); }
+  .chip.bad { border-color: var(--crit); color: var(--crit); font-weight: 600; }
+  .chip.ok { border-color: var(--s1); }
+  table.items { border-collapse: collapse; width: 100%; font-size: 13px; margin: 6px 0; }
+  table.items th, table.items td { text-align: left; padding: 3px 8px; border-top: 1px solid var(--grid); vertical-align: top; }
+  table.items th { color: var(--ink-2); font-weight: 500; border-top: 0; }
+  .sec { border-top: 1px solid var(--grid); padding: 6px 0; font-size: 13px; }
+  .sec .txt { color: var(--ink-2); white-space: pre-wrap; margin-top: 2px; }
+  .ask { background: var(--page); border-radius: 8px; padding: 8px 10px; font-size: 13px; color: var(--ink-2); margin: 6px 0; }
+  .lv { display: inline-block; min-width: 46px; text-align: center; }
+  button.row { display: grid; grid-template-columns: 1fr auto; width: 100%; text-align: left; background: transparent; border: 0; border-top: 1px solid var(--grid); padding: 6px 4px; cursor: pointer; font: inherit; color: inherit; }
+  button.row.sel { background: var(--accent-bg, rgba(42,120,214,.1)); }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<div id="tip" role="tooltip"></div>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+(function () {
+  const D = JSON.parse(document.getElementById('data').textContent);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const mean = (a) => { a = a.filter((x) => x != null); return a.length ? a.reduce((x, y) => x + y, 0) / a.length : null; };
+  const f1 = (x) => x == null ? '–' : x.toFixed(1);
+  const pct = (x) => x == null ? '–' : Math.round(100 * x) + '<small> %</small>';
+  const SLOTS = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)'];
+  const slot = (i) => SLOTS[i % SLOTS.length];
+  const app = document.getElementById('app'), tip = document.getElementById('tip');
+  const tcls = (f) => (f > .6 ? ' t60' : '') + (f > .8 ? ' t80' : '');
+  const LV = [['good', '좋음'], ['medium', '보통'], ['poor', '나쁨']];
+  const state = { cand: null, sel: null };
+  const legend = () => D.candidates.map((c, i) => `<span><span class="swatch" style="background:${slot(i)}"></span>${esc(c.id)}</span>`).join('');
+
+  function showTip(e, html) {
+    tip.innerHTML = html; tip.style.display = 'block';
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = e.clientX + 14, y = e.clientY + 14;
+    if (x + w > innerWidth - 8) x = e.clientX - w - 14;
+    if (y + h > innerHeight - 8) y = e.clientY - h - 14;
+    tip.style.left = Math.max(8, x) + 'px'; tip.style.top = Math.max(8, y) + 'px';
+  }
+  const hideTip = () => { tip.style.display = 'none'; };
+
+  const INTRO = {
+    gradient: '같은 계획서를 <b>좋음 / 보통 / 나쁨</b> 3단계로 만들어 채점시켰습니다. 노골적으로 망가뜨린 게 아니라 <b>문장은 멀쩡한데 근거가 약해진</b> 정도의 차이를 구분하는지 보는 시험입니다. 보통은 시장성의 출처를 지우고 문제 인식·실현 가능성의 수치를 “상당수”로 흐린 것이고, 나쁨은 거기에 시장성 부풀림과 팀 소개 뭉뚱그림을 더한 것입니다.',
+    strategy: '전략 Agent의 시장 분석에 <b>함정이 있는 참고 자료</b>를 줬습니다. 새 값과 낡은 값이 충돌하거나, 자료가 오래됐거나, 관련 없는 통계뿐이거나, 단위가 “3,000백만 원”으로 적혀 있는 경우에 옳게 처리하는지 봅니다.',
+    writer: '작성 Agent에게 <b>규칙을 어기고 싶어지는 상황</b>을 줬습니다. 경력 정보가 없거나, 사용자가 상한을 넘는 사업비를 요청하거나, 분량 제한이 빡빡하거나, 구체 수치를 강조해 달라고 하는 경우에 규칙을 지키는지 봅니다.'
+  };
+
+  function header() {
+    const r = D.run;
+    return `<div class="topbar"><div><h1>어려운 시험 · ${esc(D.label)}</h1><p class="sub">${INTRO[D.kind]}</p>
+      <p class="note">${esc(r.name)} · 호출 ${r.calls}건 · 실제 비용 $${(r.total_cost || 0).toFixed(3)}${r.estimated_usd != null ? ' (예상 $' + r.estimated_usd.toFixed(3) + ')' : ''}</p></div>
+      <button class="theme" id="themeBtn" type="button">화면 밝기 바꾸기</button></div>`;
+  }
+
+  // ─────────── 검증-1 기울기 ───────────
+  function gTiles() {
+    const cards = D.candidates.map((c, i) => {
+      const g = D.gradient[c.id] || {};
+      return `<div class="card tile"><h3><span class="swatch" style="background:${slot(i)}"></span>${esc(c.id)}</h3><div class="mode">${esc(c.model)} · ${esc(c.mode)}</div>
+        <div class="kpi"><div class="k">순서를 맞힌 비율<small>좋음 &gt; 보통 &gt; 나쁨이고 각 단계가 ${D.margin}점 이상 벌어짐</small></div><div class="v">${pct(g.order_ok)}</div></div>
+        <div class="kpi"><div class="k">좋음과 보통의 차이<small>평균 점수 차 (${pct(g.hit_gm).replace(/<[^>]+>/g, '')}가 ${D.margin}점 이상)</small></div><div class="v">${f1(g.gap_gm)}<small> 점</small></div></div>
+        <div class="kpi"><div class="k">보통과 나쁨의 차이<small>평균 점수 차 (${pct(g.hit_mp).replace(/<[^>]+>/g, '')}가 ${D.margin}점 이상)</small></div><div class="v">${f1(g.gap_mp)}<small> 점</small></div></div>
+        <div class="kpi"><div class="k">평균 점수<small>좋음 / 보통 / 나쁨 (70점 만점)</small></div><div class="v" style="font-size:16px">${g.mean ? LV.map(([k]) => f1(g.mean[k])).join(' / ') : '–'}</div></div>
+        <div class="kpi"><div class="k">비용 · 시간</div><div class="v">$${((D.cost || {})[c.id] || 0).toFixed(3)}<small> · ${D.sec[c.id] == null ? '–' : D.sec[c.id].toFixed(1) + '초'}</small></div></div></div>`;
+    }).join('');
+    return `<h2>한눈에 보기</h2><div class="tiles">${cards}</div>`;
+  }
+
+  function slope() {
+    const W = 1000, H = 380, L = 110, R = 190, T = 20, B = 50;
+    const ys = [];
+    D.candidates.forEach((c) => { const g = D.gradient[c.id]; if (g && g.mean) LV.forEach(([k]) => ys.push(g.mean[k])); });
+    const lo = Math.max(0, Math.floor((Math.min(...ys) - 4) / 5) * 5), hi = Math.min(70, Math.ceil((Math.max(...ys) + 3) / 5) * 5);
+    const x = (i) => L + i * (W - L - R) / 2, y = (v) => T + (hi - v) / (hi - lo) * (H - T - B);
+    let g = '';
+    for (let v = lo; v <= hi; v += 5) g += `<line x1="${L - 10}" x2="${W - R + 10}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text class="axis-label" x="${L - 16}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+    LV.forEach(([k, l], i) => { g += `<text x="${x(i)}" y="${H - 18}" text-anchor="middle" style="fill:var(--ink);font-size:14px">${l}</text>`; });
+    D.candidates.forEach((c, ci) => {
+      const gr = D.gradient[c.id];
+      if (!gr || !gr.mean) return;
+      const pts = LV.map(([k], i) => [x(i), y(gr.mean[k]), gr.mean[k]]);
+      g += `<polyline points="${pts.map((p) => p[0] + ',' + p[1]).join(' ')}" fill="none" stroke="${slot(ci)}" stroke-width="2.5" stroke-linejoin="round"/>`;
+      pts.forEach((p, i) => { g += `<circle cx="${p[0]}" cy="${p[1]}" r="5.5" fill="${slot(ci)}" stroke="var(--surface)" stroke-width="2"/><circle class="hit" data-t="${esc(c.id)}|${LV[i][1]}|${p[2].toFixed(1)}점" cx="${p[0]}" cy="${p[1]}" r="12" fill="transparent"/>`; });
+      g += `<text x="${pts[2][0] + 14}" y="${pts[2][1] + 4}" style="fill:var(--ink)">${esc(c.id)} ${pts[2][2].toFixed(1)}</text>`;
+    });
+    return `<h2>기울기: 좋음에서 나쁨으로 갈수록 점수가 내려가나</h2>
+      <p class="sub">선 하나가 후보 하나입니다(계획서 4편 × 반복의 평균). <b>가파르게 내려갈수록</b> 품질 차이를 잘 구분하는 것이고, 평평하면 차이를 못 느낀다는 뜻입니다. 특히 <b>좋음→보통</b> 구간이 미묘한 차이입니다.</p>
+      <div class="card"><div class="legend">${legend()}</div><div class="scroll"><svg viewBox="0 0 ${W} ${H}" style="min-width:680px;width:100%;height:auto" role="img" aria-label="품질 단계별 평균 점수">${g}</svg></div></div>`;
+  }
+
+  function itemMap() {
+    const head = `<tr><th></th>${D.items.map((it) => `<th>${esc(it.name)}<small>${it.max}점</small></th>`).join('')}</tr>`;
+    const rows = [];
+    D.candidates.forEach((c, ci) => {
+      LV.forEach(([lv, lb], li) => {
+        const cells = D.items.map((it) => {
+          const v = mean(D.detail.filter((d) => d.cand === c.id && d.level === lv).map((d) => d.items[it.code]));
+          const gd = mean(D.detail.filter((d) => d.cand === c.id && d.level === 'good').map((d) => d.items[it.code]));
+          const f = v == null ? 0 : v / it.max, drop = gd != null && v != null ? v - gd : 0;
+          return `<td class="cellwrap"><button class="cell${tcls(f)}" type="button" style="--f:${f.toFixed(3)}" disabled><span class="n">${f1(v)}</span>${lv !== 'good' && Math.abs(drop) >= .5 ? `<span class="p">${drop < 0 ? '−' : '+'}${Math.abs(drop).toFixed(1)}</span>` : ''}</button></td>`;
+        }).join('');
+        rows.push(`<tr><td class="rowlabel" style="width:190px">${li === 0 ? `<span class="swatch" style="background:${slot(ci)}"></span> <b>${esc(c.id)}</b>` : ''}<span class="muted" style="float:right">${lb}</span></td>${cells}</tr>`);
+      });
+    });
+    return `<h2>어느 평가항목이 내려갔나</h2><p class="sub">칸은 그 단계에서 항목별 평균 점수이고 작은 숫자는 좋음 대비 하락폭입니다. <b>보통·나쁨에서 문제 인식·시장성·실현 가능성이 내려가고, 팀 역량은 나쁨에서만</b> 내려가야 정상입니다.</p>
+      <div class="card"><div class="scroll"><table class="heat" style="min-width:600px"><thead>${head}</thead><tbody>${rows.join('')}</tbody></table></div></div>`;
+  }
+
+  function gPlans() {
+    const cs = D.candidates.map((c, i) => `<button type="button" class="tab${state.cand === c.id ? ' on' : ''}" data-cand="${esc(c.id)}"><span class="swatch" style="background:${slot(i)}"></span> ${esc(c.id)}</button>`).join('');
+    state.cand = state.cand || D.candidates[0].id;
+    const rows = [];
+    D.plans.forEach((p) => {
+      const ds = D.detail.filter((d) => d.cand === state.cand && d.plan === p);
+      const reps = [...new Set(ds.map((d) => d.rep))].sort();
+      reps.forEach((rep) => {
+        const t = {}; LV.forEach(([k]) => { const d = ds.find((x) => x.rep === rep && x.level === k); t[k] = d ? d.total : null; });
+        const ok = t.good != null && t.medium != null && t.poor != null && t.good - t.medium >= D.margin && t.medium - t.poor >= D.margin;
+        rows.push(`<tr><td>${esc(D.plan_titles[p])}</td><td>${rep}회차</td>${LV.map(([k]) => `<td><b>${f1(t[k])}</b></td>`).join('')}<td>${t.good != null && t.medium != null ? (t.good - t.medium).toFixed(1) : '–'}</td><td>${t.medium != null && t.poor != null ? (t.medium - t.poor).toFixed(1) : '–'}</td><td>${ok ? '<span class="chip ok">순서 맞힘</span>' : '<span class="chip bad">못 맞힘</span>'}</td></tr>`);
+      });
+    });
+    return `<h2>계획서별로 보기</h2><div class="tabs">${cs}</div><div class="card"><div class="scroll"><table class="items" style="min-width:640px"><thead><tr><th>계획서</th><th>반복</th><th>좋음</th><th>보통</th><th>나쁨</th><th>좋음−보통</th><th>보통−나쁨</th><th>판정</th></tr></thead><tbody>${rows.join('')}</tbody></table></div></div>`;
+  }
+
+  // ─────────── 전략·작성 함정 ───────────
+  const okRate = (c, t) => { const v = ((D.rates[c] || {})[t]) || [0, 0]; return v[1] ? v[0] / v[1] : null; };
+  function hTiles() {
+    const cards = D.candidates.map((cd, i) => {
+      const c = cd.id, all = D.types.reduce((a, t) => { const v = ((D.rates[c] || {})[t]) || [0, 0]; return [a[0] + v[0], a[1] + v[1]]; }, [0, 0]);
+      return `<div class="card tile"><h3><span class="swatch" style="background:${slot(i)}"></span>${esc(c)}</h3><div class="mode">${esc(cd.model)} · ${esc(cd.mode)}</div>
+        <div class="kpi"><div class="k">전체 성공률<small>${all[0]} / ${all[1]}호출</small></div><div class="v">${pct(all[1] ? all[0] / all[1] : null)}</div></div>
+        ${D.types.map((t) => { const v = ((D.rates[c] || {})[t]) || [0, 0]; return `<div class="kpi"><div class="k">${esc(t)}<small>${v[0]} / ${v[1]}</small></div><div class="v" style="font-size:18px">${pct(okRate(c, t))}</div></div>`; }).join('')}
+        <div class="kpi"><div class="k">비용 · 시간</div><div class="v">$${((D.cost || {})[c] || 0).toFixed(3)}<small> · ${D.sec[c] == null ? '–' : D.sec[c].toFixed(1) + '초'}</small></div></div></div>`;
+    }).join('');
+    return `<h2>한눈에 보기</h2><div class="tiles">${cards}</div>`;
+  }
+  function typeMap() {
+    const head = `<tr><th></th>${D.candidates.map((c, i) => `<th><span class="swatch" style="background:${slot(i)}"></span> ${esc(c.id)}</th>`).join('')}</tr>`;
+    const body = D.types.map((t) => `<tr><td class="rowlabel" style="width:160px"><b>${esc(t)}</b></td>${D.candidates.map((c) => {
+      const v = ((D.rates[c.id] || {})[t]) || [0, 0], f = v[1] ? v[0] / v[1] : 0;
+      return `<td class="cellwrap"><button class="cell${tcls(f)}${f < 1 ? ' bad' : ''}" type="button" style="--f:${f.toFixed(3)}" disabled><span class="n">${v[0]}/${v[1]}</span></button></td>`;
+    }).join('')}</tr>`).join('');
+    return `<h2>어떤 함정에서 걸렸나</h2><p class="sub">칸은 성공한 호출 수입니다. <b>색이 진할수록 잘 통과</b>했고 붉은 테두리는 한 번이라도 실패했다는 뜻입니다.</p>
+      <div class="card"><div class="scroll"><table class="heat" style="min-width:540px"><thead>${head}</thead><tbody>${body}</tbody></table></div></div>`;
+  }
+  function caseMap() {
+    const head = `<tr><th></th>${D.candidates.map((c, i) => `<th><span class="swatch" style="background:${slot(i)}"></span> ${esc(c.id)}</th>`).join('')}</tr>`;
+    let last = null, body = '';
+    D.cases.forEach((cs) => {
+      if (cs.type !== last) { last = cs.type; body += `<tr class="group"><td colspan="${D.candidates.length + 1}">${esc(cs.type)}</td></tr>`; }
+      body += `<tr><td class="rowlabel" style="width:160px">${esc(cs.name)} <span class="muted">${esc(cs.base)}</span></td>${D.candidates.map((c) => {
+        const list = D.calls.filter((x) => x.cand === c.id && x.case === cs.id && x.valid);
+        if (!list.length) return `<td class="cellwrap"><button class="cell empty" type="button" disabled>–</button></td>`;
+        const ok = list.filter((x) => x.success).length, f = ok / list.length;
+        return `<td class="cellwrap"><button class="cell${tcls(f)}${ok < list.length ? ' bad' : ''}" type="button" style="--f:${f.toFixed(3)}" data-c="${esc(c.id)}" data-case="${esc(cs.id)}"><span class="n">${ok}/${list.length}</span></button></td>`;
+      }).join('')}</tr>`;
+    });
+    return `<h2>사례별로 보기</h2><p class="sub">칸을 누르면 모델이 낸 답과 실패 이유가 나옵니다.</p>
+      <div class="card"><div class="scroll"><table class="heat" style="min-width:540px"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+      <div class="detail muted" id="detail">칸을 누르세요.</div></div>`;
+  }
+  function showCase(btn) {
+    document.querySelectorAll('button.cell.sel').forEach((b) => b.classList.remove('sel'));
+    btn.classList.add('sel');
+    const { c, case: id } = btn.dataset, cs = D.cases.find((x) => x.id === id);
+    let html = `<b>${esc(cs.type)} · ${esc(cs.name)} · ${esc(c)}</b>`;
+    if (D.kind === 'strategy') html += `<div class="ask">모델에게 준 참고 자료:<br>${(D.pack[id] || []).map((f) => `· ${esc(f.label)}: ${esc(f.display)} <span class="muted">(${esc(f.source)})</span>`).join('<br>')}</div>`;
+    else html += `<div class="ask">${D.asks[id] ? '사용자 추가 요청: ' + esc(D.asks[id]) : (cs.type === '경력없음' ? '회사 정보에 대표자·팀 경력이 비어 있음' : '섹션당 250자 제한')}</div>`;
+    D.calls.filter((x) => x.cand === c && x.case === id).sort((a, b) => a.rep - b.rep).forEach((r) => {
+      if (!r.valid) { html += `<div class="rep"><div class="ans bad">${r.rep}회차 실패</div><div class="ev">${esc(r.why)}</div></div>`; return; }
+      let body = '';
+      if (D.kind === 'strategy') {
+        body = (r.items.length ? `<table class="items"><thead><tr><th>항목</th><th>값</th><th>출처</th><th>판정</th><th>기준</th></tr></thead><tbody>${r.items.map((it) => `<tr><td>${esc(it.label)}</td><td>${esc(it.value)} ${esc(it.unit)}</td><td>${esc(it.source_name)}</td><td><span class="chip">${esc(it.tag)}</span></td><td class="muted">${esc(it.basis)}</td></tr>`).join('')}</tbody></table>` : '<div class="ev">수치 없이 정성 서술만 함</div>')
+          + `<div class="ev">시장 정의: ${esc(r.market.market_definition)}</div>`;
+      } else {
+        body = r.sections.map((s) => `<div class="sec"><b>[${esc(s.code)}] ${esc(s.title)}</b> <span class="muted">${s.text.length}자</span><div class="txt">${esc(s.text)}</div></div>`).join('');
+      }
+      html += `<div class="rep"><div class="ans${r.success ? '' : ' bad'}">${r.rep}회차<br>${r.success ? '성공 ✓' : '실패 ✗'}</div><div><span class="chip ${r.success ? 'ok' : 'bad'}">${esc(r.note)}</span>${body}</div></div>`;
+    });
+    const d = document.getElementById('detail'); d.className = 'detail'; d.innerHTML = html;
+  }
+
+  function tableView() {
+    const rows = D.candidates.map((c) => D.kind === 'gradient'
+      ? (() => { const g = D.gradient[c.id] || {}; return `<tr><td>${esc(c.id)}</td><td>${g.n}</td><td>${f1(g.order_ok == null ? null : g.order_ok * 100)}%</td><td>${f1(g.gap_gm)}</td><td>${f1(g.gap_mp)}</td><td>${g.mean ? LV.map(([k]) => f1(g.mean[k])).join(' / ') : '–'}</td><td>${((D.cost || {})[c.id] || 0).toFixed(3)}</td></tr>`; })()
+      : `<tr><td>${esc(c.id)}</td>${D.types.map((t) => { const v = ((D.rates[c.id] || {})[t]) || [0, 0]; return `<td>${v[0]}/${v[1]}</td>`; }).join('')}<td>${((D.cost || {})[c.id] || 0).toFixed(3)}</td></tr>`).join('');
+    const head = D.kind === 'gradient' ? '<th>후보</th><th>채점 수</th><th>순서 맞힘</th><th>좋음−보통</th><th>보통−나쁨</th><th>평균(좋음/보통/나쁨)</th><th>비용($)</th>' : `<th>후보</th>${D.types.map((t) => `<th>${esc(t)}</th>`).join('')}<th>비용($)</th>`;
+    return `<details class="tbl"><summary>표로 보기 (같은 숫자, 접근성용)</summary><div class="scroll" style="margin-top:8px"><table class="data"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div></details>`;
+  }
+  function limits() {
+    return `<h2>이 결과를 읽을 때</h2><div class="card note">
+      <p style="margin-top:0">· 입력은 모두 가상 샘플이고 판정은 자동입니다. ${D.kind === 'gradient' ? '“보통”과 “나쁨”은 <b>제가 규칙으로 만든 단계</b>라서 사람이 느끼는 품질 차이와 다를 수 있습니다. 사람 점수와의 대조는 별도(사람 채점 도구)로 준비했습니다.' : '성공 기준은 제가 정한 것이며, 한계를 밝혔는지는 “오래된·참고·직접 아니다” 같은 표현을 찾는 근사 판정입니다.'}</p>
+      ${D.kind === 'writer' ? '<p>· <b>상한충돌</b>은 공고 규칙(자금 운용 금액 합계가 지원규모 상한 이내)을 그대로 적용한 “엄격” 기준의 결과입니다. 항목 합이 상한을 넘어도 지원금은 상한 이내라고 밝히고 나머지를 자체 자금으로 나눈 답은 사례별 설명에 “관대한 기준으론 통과”로 표시했고, 요약표(summary.md)에 두 기준의 통과 수를 함께 적었습니다.</p>' : ''}
+      <p style="margin-bottom:0">· 반복 횟수가 적어 작은 차이는 오차 범위일 수 있습니다. ${D.kind === 'gradient' ? '이 시험은 결과를 본 뒤 기준을 고치지 않았습니다.' : '<b>채점 기준은 결과를 본 뒤 여러 번 고쳤습니다</b>(대부분 채점기의 오탐을 없애는 방향이었고 한 곳은 더 엄격하게 좁혔습니다. 내용은 인계서 3-7절에 적었습니다).'}</p></div>`;
+  }
+
+  function render() {
+    const body = D.kind === 'gradient'
+      ? gTiles() + slope() + itemMap() + gPlans()
+      : hTiles() + typeMap() + caseMap();
+    app.innerHTML = header() + body + tableView() + limits();
+    const tb = document.getElementById('themeBtn');
+    if (tb) tb.addEventListener('click', () => {
+      const root = document.documentElement;
+      const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+      root.dataset.theme = dark ? 'light' : 'dark';
+    });
+  }
+  render();
+  app.addEventListener('click', (e) => {
+    const t = e.target.closest('button');
+    if (!t) return;
+    if (t.dataset.cand) { state.cand = t.dataset.cand; const y = scrollY; render(); scrollTo(0, y); return; }
+    if (t.classList.contains('cell') && !t.disabled && t.dataset.case) showCase(t);
+  });
+  app.addEventListener('mousemove', (e) => {
+    const r = e.target.closest('circle.hit');
+    if (r) { const [c, k, v] = r.dataset.t.split('|'); return showTip(e, `<b>${esc(c)}</b>${esc(k)}: ${esc(v)}`); }
+    hideTip();
+  });
+  app.addEventListener('mouseleave', hideTip);
+})();
+</script>
+</body>
+</html>

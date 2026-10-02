@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>구현 T-B1·T-B2 모델 비교 결과</title>
+<style>__STYLE__
+  .grp { font-size: 12px; font-weight: 600; color: var(--ink-2); margin: 10px 0 0; padding-top: 8px; border-top: 2px solid var(--grid); }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 8px; }
+  button.tab { background: var(--surface); color: var(--ink-2); border: 1px solid var(--ring); border-radius: 999px; padding: 6px 14px; cursor: pointer; font: inherit; font-size: 13px; }
+  button.tab.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+  button.tab:focus-visible { outline: 3px solid var(--s1); outline-offset: 2px; }
+  .chip { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--axis); margin: 2px 4px 2px 0; color: var(--ink); }
+  .chip.bad { border-color: var(--crit); color: var(--crit); font-weight: 600; }
+  .chip.ok { border-color: var(--s1); }
+  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-top: 10px; }
+  .gcard { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 10px; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+  .gcard:hover { border-color: var(--axis); }
+  .gcard.sel { box-shadow: 0 0 0 3px var(--s1); }
+  .gcard:focus-visible { outline: 3px solid var(--s1); outline-offset: 2px; }
+  .gcard .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
+  .gcard .score { font-weight: 700; font-size: 16px; }
+  .thumb { position: relative; height: 200px; overflow: hidden; border-radius: 8px; border: 1px solid var(--grid); background: #fff; }
+  .thumb iframe, .thumb img { position: absolute; top: 0; left: 0; width: 1200px; height: 800px; border: 0; transform-origin: 0 0; pointer-events: none; background: #fff; }
+  .thumb.err { display: flex; align-items: center; justify-content: center; color: var(--crit); font-size: 13px; text-align: center; padding: 8px; }
+  .big { position: relative; width: 100%; height: 620px; border: 1px solid var(--grid); border-radius: 8px; background: #fff; overflow: auto; }
+  .big iframe, .big img { width: 100%; height: 100%; border: 0; background: #fff; object-fit: contain; }
+  table.items { border-collapse: collapse; width: 100%; font-size: 13px; margin: 6px 0; }
+  table.items th, table.items td { text-align: left; padding: 3px 8px; border-top: 1px solid var(--grid); vertical-align: top; }
+  table.items th { color: var(--ink-2); font-weight: 500; border-top: 0; }
+  pre.code { max-height: 320px; overflow: auto; background: var(--page); border-radius: 8px; padding: 10px; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+  details.src summary { cursor: pointer; color: var(--ink-2); font-size: 13px; }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<div id="tip" role="tooltip"></div>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+(function () {
+  const D = JSON.parse(document.getElementById('data').textContent);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const mean = (a) => { a = a.filter((x) => x != null); return a.length ? a.reduce((x, y) => x + y, 0) / a.length : null; };
+  const f1 = (x) => x == null ? '–' : x.toFixed(1);
+  const pct = (x) => x == null ? '–' : Math.round(100 * x) + '<small> %</small>';
+  const SLOTS = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)'];
+  const slot = (i) => SLOTS[i % SLOTS.length];
+  const app = document.getElementById('app'), tip = document.getElementById('tip');
+  const tcls = (f) => (f > .6 ? ' t60' : '') + (f > .8 ? ' t80' : '');
+  const HTML_CASES = D.cases.filter((c) => c.category !== '원페이지');
+  const state = { task: 'b1', caseId: (HTML_CASES[0] || D.cases[0]).id, cand: null, rep: 1 };
+  const callsOf = (c, task, id) => D.calls.filter((x) => x.cand === c && x.task === task && x.case === id).sort((a, b) => a.rep - b.rep);
+
+  function showTip(e, html) {
+    tip.innerHTML = html; tip.style.display = 'block';
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = e.clientX + 14, y = e.clientY + 14;
+    if (x + w > innerWidth - 8) x = e.clientX - w - 14;
+    if (y + h > innerHeight - 8) y = e.clientY - h - 14;
+    tip.style.left = Math.max(8, x) + 'px'; tip.style.top = Math.max(8, y) + 'px';
+  }
+  const hideTip = () => { tip.style.display = 'none'; };
+  const legendOf = () => D.candidates.map((c, i) => `<span><span class="swatch" style="background:${slot(i)}"></span>${esc(c.id)}</span>`).join('');
+
+  function header() {
+    const r = D.run;
+    return `<div class="topbar"><div>
+      <h1>구현 T-B1·T-B2 모델 비교 결과</h1>
+      <p class="sub">구현 Agent가 만든 <b>프로토타입 HTML</b>(웹개발·AI API 아이템)과 <b>SVG 인포그래픽</b>이 접근성 검사를 통과하는지, 기준 기능을 빠뜨리지 않았는지 본 실험입니다. 아래 <b>갤러리에서 모델이 만든 화면을 직접</b> 볼 수 있습니다.</p>
+      <p class="note">${esc(r.name)} · 아이템 ${D.cases.length}건 · 호출 ${r.calls}건 · 실제 비용 $${(r.total_cost || 0).toFixed(3)}${r.estimated_usd != null ? ' (예상 $' + r.estimated_usd.toFixed(3) + ')' : ''} · 프롬프트 ${esc(r.prompt_version)}</p>
+    </div><button class="theme" id="themeBtn" type="button">화면 밝기 바꾸기</button></div>`;
+  }
+
+  function tiles() {
+    const cards = D.candidates.map((c, i) => {
+      const m = D.metrics[c.id] || {};
+      return `<div class="card tile"><h3><span class="swatch" style="background:${slot(i)}"></span>${esc(c.id)}</h3>
+        <div class="mode">${esc(c.model)} · ${esc(c.mode)}</div>
+        <div class="grp" style="border-top:0;margin-top:0">T-B1 HTML 프로토타입</div>
+        <div class="kpi"><div class="k">코드 검증<small>15점 만점 (안내 문서 1점은 자동 지급)</small></div><div class="v">${f1(m.b1_code)}<small> / 15</small></div></div>
+        <div class="kpi"><div class="k">기능 대조<small>15점 만점, 기능 하나 누락마다 −4점</small></div><div class="v">${f1(m.b1_match)}<small> / 15</small></div></div>
+        <div class="kpi"><div class="k">모든 기능을 구현한 비율<small>기준 기능 3개를 다 넣음</small></div><div class="v">${pct(m.b1_full_features)}</div></div>
+        <div class="kpi"><div class="k">외부 CDN 의존 · 진입 실패<small>규칙 위반 (0이어야 함)</small></div><div class="v">${m.b1_external}<small> · ${m.b1_entry_fail}</small></div></div>
+        <div class="grp">T-B2 SVG 인포그래픽</div>
+        <div class="kpi"><div class="k">코드 검증<small>15점 만점</small></div><div class="v">${f1(m.b2_code)}<small> / 15</small></div></div>
+        <div class="kpi"><div class="k">핵심 정보 6항목 포함<small>이름·고객·문제·해결·단가·일정</small></div><div class="v">${pct(m.b2_info)}</div></div>
+        <div class="grp">비용 · 시간</div>
+        <div class="kpi"><div class="k">호출 ${m.calls}건 합계 · 평균</div><div class="v">$${(m.cost || 0).toFixed(3)}<small> · ${m.sec == null ? '–' : m.sec.toFixed(0) + '초'}</small></div></div>
+      </div>`;
+    }).join('');
+    return `<h2>한눈에 보기</h2><p class="sub">후보마다 카드 하나입니다. 점수는 정적 파싱으로 잰 값이라 화면이 예쁜지는 반영하지 않습니다. 그건 아래 갤러리에서 눈으로 확인하세요.</p><div class="tiles">${cards}</div>`;
+  }
+
+  // ── 총점 막대 ─────────────────────────────────────────
+  function bars() {
+    const groups = [['T-B1 HTML 합계 (코드 15 + 대조 15 = 30점)', (m) => m.b1_total, 30, f1],
+                    ['T-B1 HTML 코드 검증 (15점)', (m) => m.b1_code, 15, f1],
+                    ['T-B2 SVG 코드 검증 (15점)', (m) => m.b2_code, 15, f1],
+                    ['T-B2 핵심 정보 6항목 포함 비율', (m) => m.b2_info, 1, (v) => Math.round(v * 100) + '%']];
+    const W = 1000, L = 300, R = 60, T = 14, laneH = 15, pad = 22;
+    const bandH = D.candidates.length * laneH + pad, H = T + groups.length * bandH + 20;
+    let g = '';
+    groups.forEach(([label, fn, max, fmt], gi) => {
+      const y0 = T + gi * bandH;
+      g += `<text x="${L - 12}" y="${y0 + bandH / 2 - 4}" text-anchor="end" dominant-baseline="middle" style="fill:var(--ink)">${label}</text>`;
+      g += `<line x1="${L}" x2="${L}" y1="${y0}" y2="${y0 + bandH - pad + 6}" stroke="var(--axis)"/>`;
+      D.candidates.forEach((c, ci) => {
+        const v = fn(D.metrics[c.id] || {}), cy = y0 + 4 + ci * laneH;
+        if (v == null) return;
+        const w = Math.max(2, Math.min(1, v / max) * (W - L - R));
+        g += `<rect class="hit" data-t="${esc(c.id)}|${esc(label)}|${fmt(v)}" x="${L}" y="${cy}" width="${w}" height="${laneH - 4}" rx="3" fill="${slot(ci)}"/>`;
+        g += `<text x="${L + w + 6}" y="${cy + laneH - 6}">${fmt(v)}</text>`;
+      });
+    });
+    return `<h2>점수 비교</h2><p class="sub">막대가 길수록 검사를 많이 통과했습니다. 코드 점수는 안내 문서 항목(1점)을 모두가 자동으로 받으므로 실제 최대는 14점입니다.</p>
+      <div class="card"><div class="legend">${legendOf()}</div><div class="scroll"><svg viewBox="0 0 ${W} ${H}" style="min-width:720px;width:100%;height:auto" role="img" aria-label="구현 점수 비교">${g}</svg></div></div>`;
+  }
+
+  // ── 검사 항목별 통과율 지도 ─────────────────────────────
+  function checkMap() {
+    const html = state.mapTask === 'b2' ? false : true;
+    const names = html ? D.html_names : D.svg_names, w = html ? D.html_weights : D.svg_weights, key = html ? 'b1_rates' : 'b2_rates';
+    const head = `<tr><th></th>${D.candidates.map((c, i) => `<th><span class="swatch" style="background:${slot(i)}"></span> ${esc(c.id)}</th>`).join('')}</tr>`;
+    const body = names.map((nm, i) => {
+      if (nm.includes('(규칙)')) return '';
+      return `<tr><td class="rowlabel" style="width:200px">${esc(nm)} <span class="muted">${w[i]}점</span></td>${D.candidates.map((c) => {
+        const v = ((D.metrics[c.id] || {})[key] || {})[i + 1];
+        if (v == null) return `<td class="cellwrap"><button class="cell empty" type="button" disabled>–</button></td>`;
+        return `<td class="cellwrap"><button class="cell${tcls(v)}${v < 1 ? ' bad' : ''}" type="button" style="--f:${v.toFixed(3)}" disabled><span class="n">${Math.round(v * 100)}%</span></button></td>`;
+      }).join('')}</tr>`;
+    }).join('');
+    return `<h2>어떤 검사에서 떨어졌나</h2><p class="sub">칸은 그 검사를 통과한 비율입니다. <b>색이 진할수록 잘 통과</b>했고, 붉은 테두리는 한 번이라도 떨어졌다는 뜻입니다.</p>
+      <div class="tabs" role="tablist">${[['b1', 'HTML 프로토타입'], ['b2', 'SVG 인포그래픽']].map(([k, l]) => `<button type="button" class="tab${(state.mapTask || 'b1') === k ? ' on' : ''}" data-map="${k}" role="tab">${l}</button>`).join('')}</div>
+      <div class="card"><div class="scroll"><table class="heat" style="min-width:560px"><thead>${head}</thead><tbody>${body}</tbody></table></div></div>`;
+  }
+
+  // ── 갤러리 ────────────────────────────────────────────
+  function thumb(call) {
+    if (!call || !call.valid) return `<div class="thumb err">${esc(call ? call.why : '없음')}</div>`;
+    if (call.task === 'b1') return `<div class="thumb"><iframe sandbox="allow-scripts" srcdoc="${esc(call.src)}" style="transform:scale(.25)" tabindex="-1" title="미리보기"></iframe></div>`;
+    return `<div class="thumb"><img alt="" style="transform:scale(.25)" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(call.src)}"></div>`;
+  }
+  function gallery() {
+    const cases = state.task === 'b1' ? HTML_CASES : D.cases;
+    if (!cases.find((c) => c.id === state.caseId)) state.caseId = cases[0].id;
+    const cs = D.cases.find((c) => c.id === state.caseId);
+    const tabs = `<div class="tabs" role="tablist">${[['b1', 'HTML 프로토타입 (T-B1)'], ['b2', 'SVG 인포그래픽 (T-B2)']].map(([k, l]) => `<button type="button" class="tab${state.task === k ? ' on' : ''}" data-task="${k}" role="tab">${l}</button>`).join('')}</div>
+      <div class="tabs" role="tablist">${cases.map((c) => `<button type="button" class="tab${state.caseId === c.id ? ' on' : ''}" data-case="${c.id}" role="tab">${esc(c.name)} <span class="muted">${esc(c.category)}</span></button>`).join('')}</div>`;
+    const cards = D.candidates.map((c, i) => {
+      const list = callsOf(c.id, state.task, state.caseId), call = list.find((x) => x.rep === state.rep) || list[0];
+      const sc = call && call.valid ? (state.task === 'b1' ? call.total : call.code) : null;
+      return `<button type="button" class="gcard${state.cand === c.id ? ' sel' : ''}" data-c="${esc(c.id)}"><div class="top"><span><span class="swatch" style="background:${slot(i)}"></span> <b>${esc(c.id)}</b></span>
+        <span class="score">${sc == null ? '–' : sc.toFixed(1)}<small class="muted" style="font-weight:400"> / ${state.task === 'b1' ? 30 : 15}</small></span></div>${thumb(call)}</button>`;
+    }).join('');
+    const reps = [...new Set(D.calls.map((x) => x.rep))].sort();
+    const repTabs = reps.length > 1 ? `<div class="tabs">${reps.map((r) => `<button type="button" class="tab${state.rep === r ? ' on' : ''}" data-rep="${r}">${r}회차</button>`).join('')}</div>` : '';
+    return `<h2>모델이 만든 화면 보기</h2>
+      <p class="sub">한 아이템에 대해 후보들이 만든 결과를 나란히 봅니다. 위에서 아이템을 고르고, <b>카드를 누르면 아래에 크게</b> 나옵니다. 점수는 카드 오른쪽 위입니다.<br><b>${esc(cs.name)}</b> — ${esc(cs.summary)}<br><span class="muted">기준 기능: ${cs.features.map(esc).join(' / ')}</span></p>
+      ${tabs}${repTabs}<div class="gallery">${cards}</div><div class="card detail muted" id="detail" style="margin-top:12px">카드를 누르면 여기에 크게 보이고, 검사 결과가 나옵니다.</div>`;
+  }
+
+  function showDetail(cid) {
+    state.cand = cid;
+    document.querySelectorAll('.gcard').forEach((b) => b.classList.toggle('sel', b.dataset.c === cid));
+    const list = callsOf(cid, state.task, state.caseId), call = list.find((x) => x.rep === state.rep) || list[0];
+    const d = document.getElementById('detail');
+    d.className = 'card detail';
+    if (!call || !call.valid) { d.innerHTML = `<b>${esc(cid)}</b> 실패: ${esc(call ? call.why : '호출 없음')}`; return; }
+    const isHtml = state.task === 'b1';
+    const big = isHtml ? `<div class="big"><iframe sandbox="allow-scripts" srcdoc="${esc(call.src)}" title="${esc(cid)} 미리보기"></iframe></div>`
+      : `<div class="big"><img alt="${esc(cid)} 인포그래픽" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(call.src)}"></div>`;
+    const names = isHtml ? D.html_names : D.svg_names;
+    const rows = call.checks.map((c) => `<tr><td>${c.no}. ${esc(c.name)}</td><td>${c.earned}/${c.weight}</td><td>${c.ok ? '<span class="chip ok">통과</span>' : '<span class="chip bad">실패</span>'}</td><td class="muted">${esc(c.note)}</td></tr>`).join('');
+    const info = (call.info || []).length ? `<div>${call.info.map((i) => `<span class="chip ${i.ok ? 'ok' : 'bad'}">${esc(i.name)} ${i.ok ? '✓' : '✗'}</span>`).join('')}</div>` : '';
+    const feat = call.match == null ? '<span class="muted">이 인포그래픽은 프로토타입 본체가 아니라 기능 대조를 하지 않습니다.</span>'
+      : (call.missing.length ? call.missing.map((m) => `<span class="chip bad">기능 누락: ${esc(m)}</span>`).join('') : '<span class="chip ok">기능 3개 모두 구현</span>') + ` <b>기능 대조 ${call.match}/15</b>`;
+    d.innerHTML = `<b>${esc(cid)} · ${esc(D.cases.find((c) => c.id === state.caseId).name)} · ${state.rep}회차</b>
+      <span class="muted"> 코드 검증 ${call.code}/15 · ${call.chars.toLocaleString()}자 · ${call.sec == null ? '' : call.sec.toFixed(0) + '초 · '}$${(call.cost || 0).toFixed(4)}</span>
+      <div style="margin-top:8px">${big}</div>
+      <table class="items" style="margin-top:10px"><thead><tr><th>검사 항목</th><th>점수</th><th>결과</th><th>내용</th></tr></thead><tbody>${rows}</tbody></table>
+      ${info}<div style="margin-top:6px">${feat}</div>
+      <details class="src" style="margin-top:8px"><summary>만들어진 코드 보기</summary><pre class="code">${esc(call.src)}</pre></details>`;
+  }
+
+  function tableView() {
+    const P = (x) => x == null ? '–' : Math.round(100 * x) + '%';
+    const rows = D.candidates.map((c) => {
+      const m = D.metrics[c.id] || {};
+      return `<tr><td>${esc(c.id)}</td><td>${m.b1_valid}/${m.b1_calls}</td><td>${f1(m.b1_code)}</td><td>${f1(m.b1_match)}</td><td>${f1(m.b1_total)}</td><td>${P(m.b1_full_features)}</td><td>${m.b1_external}</td>
+        <td>${m.b2_valid}/${m.b2_calls}</td><td>${f1(m.b2_code)}</td><td>${P(m.b2_info)}</td><td>${m.sec == null ? '–' : m.sec.toFixed(0)}</td><td>${(m.cost || 0).toFixed(3)}</td></tr>`;
+    }).join('');
+    const failed = D.calls.filter((r) => !r.valid);
+    const fl = failed.length ? `<h3 style="margin-top:16px">실패 또는 형식 불량 ${failed.length}건</h3><ul class="note">${failed.map((r) => `<li class="fail">${esc(r.cand)} / ${esc(r.task)} / ${esc(r.case)} / ${r.rep}회차: ${esc(r.why)}</li>`).join('')}</ul>` : '';
+    return `<details class="tbl"><summary>표로 보기 (같은 숫자, 접근성용)</summary><div class="scroll" style="margin-top:8px"><table class="data">
+      <thead><tr><th>후보</th><th>HTML 성공</th><th>코드</th><th>대조</th><th>합계</th><th>모든 기능</th><th>외부 의존</th><th>SVG 성공</th><th>SVG 코드</th><th>핵심 정보</th><th>시간(초)</th><th>비용($)</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>${fl}</details>`;
+  }
+
+  function limits() {
+    return `<h2>이 결과를 읽을 때</h2><div class="card note">
+      <p style="margin-top:0">· 점수는 <b>정적 파싱</b>(HTML·CSS·SVG를 읽어서 검사)으로 잰 것이라 <b>화면이 실제로 동작하는지, 보기 좋은지는 반영하지 않습니다.</b> 그건 갤러리 미리보기로 눈으로 판단하세요. 버튼이 눌리는지 같은 동작은 자동으로 시험하지 못했습니다.</p>
+      <p>· 명도 대비는 단순 CSS(태그·클래스·아이디 선택자, :root 변수)만 읽는 <b>근사 판정</b>입니다. 그라데이션이나 복잡한 선택자로 칠한 글자는 세지 않았습니다.</p>
+      <p>· 코드 검증의 “실행 안내(README)”는 규칙 모듈이 만드는 것이라 모두 자동 통과로 처리했습니다. 최소 글자 크기 12px과 기능 대조(80% 이상 글자쌍이 한 요소에 있으면 구현으로 봄)는 제가 정한 잠정 기준입니다.</p>
+      <p>· 아이템·회사는 모두 시험용 가상 값이고, 프롬프트는 이 실험용 기준선입니다. 후보는 코드 특화 모델 gpt-5.3-codex와 일반 모델 4종입니다.</p>
+      <p style="margin-bottom:0">· 채점기를 손으로 만든 좋은/나쁜 예로 검증했지만, 이 실험 결과를 보고 고친 부분이 있으면 기록에 적었습니다.</p></div>`;
+  }
+
+  function render() {
+    state.mapTask = state.mapTask || 'b1';
+    app.innerHTML = header() + tiles() + bars() + checkMap() + gallery() + tableView() + limits();
+    const tb = document.getElementById('themeBtn');
+    if (tb) tb.addEventListener('click', () => {
+      const root = document.documentElement;
+      const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+      root.dataset.theme = dark ? 'light' : 'dark';
+    });
+  }
+  render();
+
+  function rerender(keepScroll) { const y = scrollY; render(); if (keepScroll) scrollTo(0, y); if (state.cand) showDetail(state.cand); }
+  app.addEventListener('click', (e) => {
+    const t = e.target.closest('button');
+    if (!t) return;
+    if (t.dataset.map) { state.mapTask = t.dataset.map; return rerender(true); }
+    if (t.dataset.task) { state.task = t.dataset.task; state.cand = null; return rerender(true); }
+    if (t.dataset.case) { state.caseId = t.dataset.case; state.cand = null; return rerender(true); }
+    if (t.dataset.rep) { state.rep = +t.dataset.rep; return rerender(true); }
+    if (t.classList.contains('gcard')) { showDetail(t.dataset.c); document.getElementById('detail').scrollIntoView({ block: 'nearest' }); }
+  });
+  app.addEventListener('mousemove', (e) => {
+    const r = e.target.closest('rect.hit');
+    if (r) { const [c, k, v] = r.dataset.t.split('|'); return showTip(e, `<b>${esc(c)}</b>${esc(k)}: ${esc(v)}`); }
+    hideTip();
+  });
+  app.addEventListener('mouseleave', hideTip);
+})();
+</script>
+</body>
+</html>

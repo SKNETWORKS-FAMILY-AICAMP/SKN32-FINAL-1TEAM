@@ -1,0 +1,335 @@
+<meta charset="utf-8">
+<title>공고 DB 테이블 구조</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@500;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* 레이아웃: 한 열 참고 문서. 관계도 → 배치 단계별 쓰기 → 알아 둘 것 → 표마다 칸(접이식). 다른 공유 페이지와 같은 색·글꼴 */
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --ink: #111a28;
+  --ink-2: #47526a;
+  --muted: #6b7690;
+  --line: #c9d1dd;
+  --grid: #e9edf2;
+  --s2: #2a78d6;
+  --hd1: #dce9fa;   /* 수집·저장 표 머리 */
+  --hd2: #f3e6cf;   /* LLM 판정 표 머리 */
+  --font-display: "Hahmlet", "Noto Serif KR", "Apple SD Gothic Neo", serif;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151c; --surface: #181d26; --ink: #eef2f8; --ink-2: #b7c0d0; --muted: #8d97aa;
+    --line: #35405a; --grid: #232a36; --s2: #3987e5; --hd1: #1d2d45; --hd2: #3a3020;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151c; --surface: #181d26; --ink: #eef2f8; --ink-2: #b7c0d0; --muted: #8d97aa;
+  --line: #35405a; --grid: #232a36; --s2: #3987e5; --hd1: #1d2d45; --hd2: #3a3020;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.65; }
+.wrap { max-width: 1040px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; display: grid; gap: 44px; }
+h1, h2 { font-family: var(--font-display); font-weight: 700; line-height: 1.25; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(28px, 4.2vw, 40px); }
+h2 { font-size: 22px; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font-size: 12px; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.lede { color: var(--ink-2); font-size: 16px; }
+.mono { font-family: var(--font-mono); }
+section { display: grid; gap: 18px; min-width: 0; }
+header { display: grid; gap: 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--muted); font-size: 13px; }
+.meta b { color: var(--ink-2); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* 관계도 */
+figure { margin: 0; display: grid; gap: 12px; }
+.erd { overflow-x: auto; background: var(--surface); border: 1px solid var(--grid); border-radius: 10px; padding: 16px; }
+.erd svg { display: block; width: 100%; min-width: 860px; height: auto; color: var(--ink-2); }
+.erd text { font-family: var(--font-body); fill: var(--ink); }
+.erd .box { fill: var(--surface); }
+.erd .outline { fill: none; stroke: var(--line); stroke-width: 1.2; }
+.erd .hd1 { fill: var(--hd1); }
+.erd .hd2 { fill: var(--hd2); }
+.erd .band { fill: var(--grid); }
+.erd .other { fill: none; stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 5 4; }
+.erd .tname { font-family: var(--font-mono); font-weight: 600; font-size: 12.5px; }
+.erd .oname { font-weight: 600; font-size: 12.5px; }
+.erd .rows { font-family: var(--font-mono); font-size: 11px; fill: var(--ink-2); }
+.erd .col { font-size: 11.5px; }
+.erd .col .mono { font-family: var(--font-mono); fill: var(--ink); }
+.erd .col .note { fill: var(--muted); }
+.erd .col .strong { font-weight: 600; fill: var(--ink); }
+.erd .stage { font-size: 11px; fill: var(--muted); }
+.erd .edge { fill: none; stroke: currentColor; stroke-width: 1.3; }
+.erd .edge.soft { stroke-dasharray: 4 4; }
+.erd .elabel { font-family: var(--font-mono); font-size: 10.5px; fill: var(--ink-2); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
+.erd .elabel.sub { font-family: var(--font-body); fill: var(--muted); }
+figcaption { font-size: 13.5px; color: var(--ink-2); display: grid; gap: 8px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-2); }
+.legend span { display: inline-flex; gap: 7px; align-items: center; }
+.sw { width: 16px; height: 11px; border-radius: 3px; border: 1px solid var(--line); flex: none; }
+.sw.h1 { background: var(--hd1); } .sw.h2 { background: var(--hd2); }
+.sw.dash { background: transparent; border: 1.5px dashed var(--muted); }
+.arrow { font-family: var(--font-mono); color: var(--ink-2); }
+
+/* 표 공통 */
+.tbl { overflow-x: auto; }
+table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--grid); text-align: left; vertical-align: top; }
+thead th { color: var(--muted); font-weight: 500; font-size: 12px; white-space: nowrap; }
+.steps-t { min-width: 680px; }
+.steps-t td:first-child { font-family: var(--font-mono); color: var(--muted); white-space: nowrap; width: 3.5em; }
+.steps-t td.w { white-space: nowrap; }
+.steps-t td.file { color: var(--muted); }
+.steps-t td.today { font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.steps-t tr.db td.w { font-weight: 500; }
+.tn { font-family: var(--font-mono); font-size: 12.5px; background: var(--grid); padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
+
+/* 알아 둘 것 */
+.notes { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.notes li { background: var(--surface); border: 1px solid var(--grid); border-radius: 10px; padding: 14px 16px; display: grid; gap: 4px; }
+.notes b { font-weight: 600; }
+.notes p { color: var(--ink-2); font-size: 14px; }
+code { font-family: var(--font-mono); font-size: .92em; }
+
+/* 칸 목록 */
+.colgroup { display: grid; gap: 10px; }
+details { background: var(--surface); border: 1px solid var(--grid); border-radius: 10px; padding: 12px 16px; min-width: 0; }
+summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+summary .mono { font-weight: 600; font-size: 14px; }
+summary .sm { font-size: 13px; color: var(--muted); }
+summary:focus-visible { outline: 2px solid var(--s2); outline-offset: 2px; }
+details .tbl { margin-top: 10px; }
+table.cols { min-width: 720px; }
+.cols td.cn { font-family: var(--font-mono); font-size: 12.5px; white-space: nowrap; }
+.cols td.ct { font-family: var(--font-mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+.cols td.cd { color: var(--ink-2); }
+.tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.tags:empty { display: none; }
+.k { font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--grid); color: var(--ink-2); font-weight: 500; }
+.k.fk { background: var(--hd1); }
+.k.null { background: transparent; border: 1px solid var(--grid); color: var(--muted); }
+footer { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--grid); padding-top: 16px; display: grid; gap: 4px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">공고팀 · 공용 MySQL</div>
+  <h1>공고 DB 테이블 구조</h1>
+  <p class="lede">공고 한 건은 표 8개에 나뉘어 저장됩니다. 공고 원문은 <code>notices</code>에, 첨부는 표 세 개에 단계별로, LLM 판정 결과는 표 세 개에 들어갑니다.</p>
+  <div class="meta">
+    <span>기준 <b>2026-09-30 09:13</b> 배치 끝난 뒤</span>
+    <span>공고 <b>2,603건</b> (기업마당 2,126 · K-Startup 477)</span>
+    <span>공용 DB 표 <b>42개</b> 중 공고팀 표 <b>8개</b></span>
+    <span>행 수는 DB에서 직접 셈</span>
+  </div>
+</header>
+
+<section>
+  <h2>표 사이의 관계</h2>
+  <figure>
+    <div class="erd">
+<svg viewBox="0 0 990 560" role="img" aria-label="공고 표 8개의 관계. notices가 가운데 있고, 첨부 표 세 개는 notices.id로, LLM 판정 표 세 개와 다른 팀 표는 notice_id로 이어진다.">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+<g>
+<rect class="box" x="340" y="20" width="320" height="275" rx="8"/>
+<path class="hd1" d="M340,48 V28 Q340,20 348,20 H652 Q660,20 660,28 V48 Z"/>
+<rect class="outline" x="340" y="20" width="320" height="275" rx="8"/>
+<text class="tname" x="352" y="39">notices</text>
+<text class="rows" x="648" y="39" text-anchor="end">2,603행</text>
+<text class="col" x="352" y="69"><tspan class="mono">id</tspan><tspan class="note" dx="6">PK · 내부 번호</tspan></text>
+<text class="col" x="352" y="88"><tspan class="mono">notice_id</tspan><tspan class="note" dx="6">고유 · 출처:원본ID</tspan></text>
+<text class="col" x="352" y="107"><tspan class="mono">source · source_id</tspan></text>
+<text class="col" x="352" y="126"><tspan class="mono">title · body · target_text</tspan></text>
+<text class="col" x="352" y="145"><tspan class="mono">age_condition_raw · region</tspan></text>
+<text class="col" x="352" y="164"><tspan class="mono">apply_start · apply_end</tspan></text>
+<text class="col" x="352" y="183"><tspan class="mono">recruitment_status</tspan><tspan class="note" dx="6">API 모집 상태</tspan></text>
+<text class="col" x="352" y="202"><tspan class="mono">raw</tspan><tspan class="note" dx="6">API 원본 JSON</tspan></text>
+<text class="stage" x="352" y="283">4단계가 저장 · 목록에 있는 공고는 매일 다시 저장</text>
+</g>
+<rect class="band" x="352" y="222" width="296" height="44" rx="6"/>
+<text class="col" x="364" y="240"><tspan class="strong">임베딩 5칸</tspan><tspan class="mono" dx="8">embedding · …_updated_at</tspan></text>
+<text class="col" x="364" y="257"><tspan class="note">8단계가 채움 · EC2 색인이 읽음</tspan></text>
+<g>
+<rect class="box" x="20" y="20" width="210" height="110" rx="8"/>
+<path class="hd1" d="M20,48 V28 Q20,20 28,20 H222 Q230,20 230,28 V48 Z"/>
+<rect class="outline" x="20" y="20" width="210" height="110" rx="8"/>
+<text class="tname" x="32" y="39">import_runs</text>
+<text class="rows" x="218" y="39" text-anchor="end">22행</text>
+<text class="col" x="32" y="69"><tspan class="mono">run_id</tspan><tspan class="note" dx="6">PK</tspan></text>
+<text class="col" x="32" y="88"><tspan class="mono">report</tspan><tspan class="note" dx="6">저장 결과 JSON</tspan></text>
+<text class="stage" x="32" y="118">4단계 · 하루 한 행</text>
+</g>
+<g><rect class="other" x="20" y="180" width="210" height="120" rx="8"/><text class="oname" x="32" y="202">다른 팀 표</text><text class="col" x="32" y="224"><tspan class="mono">projects</tspan><tspan class="note" dx="6">18행</tspan></text><text class="col" x="32" y="243"><tspan class="mono">match_candidates</tspan><tspan class="note" dx="6">220행</tspan></text><text class="col" x="32" y="262"><tspan class="mono">notice_alerts</tspan><tspan class="note" dx="6">0행</tspan></text><text class="stage" x="32" y="288">조율·웹 쪽이 씀</text></g>
+<g>
+<rect class="box" x="770" y="20" width="200" height="112" rx="8"/>
+<path class="hd1" d="M770,48 V28 Q770,20 778,20 H962 Q970,20 970,28 V48 Z"/>
+<rect class="outline" x="770" y="20" width="200" height="112" rx="8"/>
+<text class="tname" x="782" y="39">notice_attachments</text>
+<text class="rows" x="958" y="39" text-anchor="end">3,688행</text>
+<text class="col" x="782" y="69"><tspan class="mono">id</tspan><tspan class="note" dx="6">PK</tspan></text>
+<text class="col" x="782" y="88"><tspan class="mono">notice_fk</tspan><tspan class="note" dx="6">→ notices.id</tspan></text>
+<text class="col" x="782" y="107"><tspan class="mono">role · url · active</tspan></text>
+<text class="stage" x="782" y="120">4단계 · 링크만</text>
+</g>
+<g>
+<rect class="box" x="770" y="190" width="200" height="112" rx="8"/>
+<path class="hd1" d="M770,218 V198 Q770,190 778,190 H962 Q970,190 970,198 V218 Z"/>
+<rect class="outline" x="770" y="190" width="200" height="112" rx="8"/>
+<text class="tname" x="782" y="209">attachment_texts</text>
+<text class="rows" x="958" y="209" text-anchor="end">2,134행</text>
+<text class="col" x="782" y="239"><tspan class="mono">attachment_fk</tspan><tspan class="note" dx="6">PK</tspan></text>
+<text class="col" x="782" y="258"><tspan class="mono">extracted_text</tspan><tspan class="note" dx="6">뽑은 본문</tspan></text>
+<text class="col" x="782" y="277"><tspan class="mono">content_sha256</tspan><tspan class="note" dx="6">파일 지문</tspan></text>
+<text class="stage" x="782" y="290">5단계 · 받아서 본문 뽑기</text>
+</g>
+<g>
+<rect class="box" x="770" y="360" width="200" height="96" rx="8"/>
+<path class="hd1" d="M770,388 V368 Q770,360 778,360 H962 Q970,360 970,368 V388 Z"/>
+<rect class="outline" x="770" y="360" width="200" height="96" rx="8"/>
+<text class="tname" x="782" y="379">attachment_files</text>
+<text class="rows" x="958" y="379" text-anchor="end">2,075행</text>
+<text class="col" x="782" y="409"><tspan class="mono">content_sha256</tspan><tspan class="note" dx="6">PK</tspan></text>
+<text class="col" x="782" y="428"><tspan class="mono">bytes</tspan><tspan class="note" dx="6">원본 파일</tspan></text>
+<text class="stage" x="782" y="444">9단계</text>
+</g>
+<g>
+<rect class="box" x="20" y="395" width="230" height="150" rx="8"/>
+<path class="hd2" d="M20,423 V403 Q20,395 28,395 H242 Q250,395 250,403 V423 Z"/>
+<rect class="outline" x="20" y="395" width="230" height="150" rx="8"/>
+<text class="tname" x="32" y="414">notice_conditions</text>
+<text class="rows" x="238" y="414" text-anchor="end">1,947행</text>
+<text class="col" x="32" y="444"><tspan class="mono">notice_id</tspan><tspan class="note" dx="6">PK</tspan></text>
+<text class="col" x="32" y="463"><tspan class="mono">amount_max_won</tspan><tspan class="note" dx="6">최대 지원금</tspan></text>
+<text class="col" x="32" y="482"><tspan class="mono">business_type</tspan><tspan class="note" dx="6">사업자 형태</tspan></text>
+<text class="col" x="32" y="501"><tspan class="mono">age_years_min · max</tspan><tspan class="note" dx="6">업력</tspan></text>
+<text class="col" x="32" y="520"><tspan class="mono">input_sha256</tspan><tspan class="note" dx="6">입력 지문</tspan></text>
+<text class="stage" x="32" y="533">10단계 · 기업마당 공고만</text>
+</g>
+<g>
+<rect class="box" x="265" y="395" width="230" height="150" rx="8"/>
+<path class="hd2" d="M265,423 V403 Q265,395 273,395 H487 Q495,395 495,403 V423 Z"/>
+<rect class="outline" x="265" y="395" width="230" height="150" rx="8"/>
+<text class="tname" x="277" y="414">notice_applicant_types</text>
+<text class="rows" x="483" y="414" text-anchor="end">2,603행</text>
+<text class="col" x="277" y="444"><tspan class="mono">notice_id</tspan><tspan class="note" dx="6">PK</tspan></text>
+<text class="col" x="277" y="463"><tspan class="mono">pre_founder_verdict</tspan><tspan class="note" dx="6">서비스 결론</tspan></text>
+<text class="col" x="277" y="482"><tspan class="mono">…_status · strength</tspan><tspan class="note" dx="6">유형 3개</tspan></text>
+<text class="col" x="277" y="501"><tspan class="mono">…_evidence</tspan><tspan class="note" dx="6">근거 문장</tspan></text>
+<text class="col" x="277" y="520"><tspan class="mono">document_sha256</tspan><tspan class="note" dx="6">공고문 지문</tspan></text>
+<text class="stage" x="277" y="533">11단계 추출 → 13단계 올림</text>
+</g>
+<g>
+<rect class="box" x="510" y="395" width="230" height="150" rx="8"/>
+<path class="hd2" d="M510,423 V403 Q510,395 518,395 H732 Q740,395 740,403 V423 Z"/>
+<rect class="outline" x="510" y="395" width="230" height="150" rx="8"/>
+<text class="tname" x="522" y="414">notice_industries</text>
+<text class="rows" x="728" y="414" text-anchor="end">2,603행</text>
+<text class="col" x="522" y="444"><tspan class="mono">notice_id</tspan><tspan class="note" dx="6">PK</tspan></text>
+<text class="col" x="522" y="463"><tspan class="mono">status</tspan><tspan class="note" dx="6">업종 판정</tspan></text>
+<text class="col" x="522" y="482"><tspan class="mono">allowed_sections</tspan><tspan class="note" dx="6">KSIC 대분류</tspan></text>
+<text class="col" x="522" y="501"><tspan class="mono">usable_for_rank</tspan><tspan class="note" dx="6">순위 사용 가능</tspan></text>
+<text class="col" x="522" y="520"><tspan class="mono">document_sha256</tspan><tspan class="note" dx="6">공고문 지문</tspan></text>
+<text class="stage" x="522" y="533">12단계 추출 → 13단계 올림</text>
+</g>
+<path class="edge" d="M340,70 L230,70" marker-end="url(#ah)"/>
+<text class="elabel" x="285" y="62" text-anchor="middle">last_import_id</text>
+<path class="edge" d="M230,240 L340,240" marker-end="url(#ah)"/>
+<text class="elabel" x="285" y="232" text-anchor="middle">notice_id</text>
+<path class="edge" d="M770,70 L660,70" marker-end="url(#ah)"/>
+<text class="elabel" x="715" y="62" text-anchor="middle">notice_fk → id</text>
+<path class="edge" d="M870,190 L870,132" marker-end="url(#ah)"/>
+<text class="elabel" x="862" y="165" text-anchor="end">attachment_fk → id</text>
+<path class="edge soft" d="M870,302 L870,360"/>
+<text class="elabel" x="862" y="326" text-anchor="end">content_sha256 값으로 이음</text>
+<text class="elabel sub" x="862" y="340" text-anchor="end">(FK 없음)</text>
+<path class="edge" d="M135,395 V355 H625 V395 M380,355 V395"/>
+<path class="edge" d="M500,355 L500,295" marker-end="url(#ah)"/>
+<text class="elabel" x="258" y="347" text-anchor="middle">notice_id → notices.notice_id</text>
+</svg>
+    </div>
+    <figcaption>
+      <div class="legend">
+        <span><i class="sw h1"></i>수집·저장이 채우는 표</span>
+        <span><i class="sw h2"></i>LLM 판정이 채우는 표</span>
+        <span><i class="sw dash"></i>다른 팀 표</span>
+        <span><span class="arrow">──▶</span>이 칸이 화살표 끝 표를 가리킨다</span>
+      </div>
+      <p>공고를 가리키는 번호는 두 가지입니다. 첨부 표만 내부 번호 <code>notices.id</code>를 쓰고, 판정 표와 다른 팀 표는 <code>notice_id</code>(예: <code>bizinfo:PBLN_000000000126760</code>)를 씁니다.</p>
+    </figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>배치 단계별로 쓰는 곳</h2>
+  <p>매일 09:00 배치는 13단계입니다. 공용 DB에 쓰는 단계는 굵게 표시했고, 나머지는 이 PC의 파일에만 씁니다.</p>
+  <div class="tbl">
+    <table class="steps-t">
+      <thead><tr><th>단계</th><th>하는 일</th><th>쓰는 곳</th><th>9/30 배치에서</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td class="w">K-Startup 공고 받기</td><td class="file">파일 <code>data/notices.json</code></td><td class="today">242건 (신규 38)</td></tr>
+        <tr><td>2</td><td class="w">기업마당 공고 받기</td><td class="file">파일 <code>data/raw/</code></td><td class="today">1,535건</td></tr>
+        <tr><td>3</td><td class="w">두 출처를 한 형식으로</td><td class="file">파일 <code>data/normalized/</code></td><td class="today">1,777건</td></tr>
+        <tr class="db"><td>4</td><td class="w">MySQL에 넣기</td><td><span class="tn">import_runs</span> <span class="tn">notices</span> <span class="tn">notice_attachments</span></td><td class="today">공고 새로 78 · 첨부 링크 새로 71 · 목록의 1,777행 다시 저장</td></tr>
+        <tr class="db"><td>5</td><td class="w">첨부 받아 본문 뽑기</td><td><span class="tn">attachment_texts</span></td><td class="today">46건 처리 · 새 행 41</td></tr>
+        <tr><td>6</td><td class="w">공고 요약을 벡터로</td><td class="file">파일 <code>data/embeddings_v1.npz</code></td><td class="today">79건</td></tr>
+        <tr><td>7</td><td class="w">벡터 색인 갱신</td><td class="file">이 PC의 Chroma</td><td class="today">79건</td></tr>
+        <tr class="db"><td>8</td><td class="w">벡터를 공용 DB로</td><td><span class="tn">notices</span>의 임베딩 5칸</td><td class="today">79건</td></tr>
+        <tr class="db"><td>9</td><td class="w">첨부 원본 파일 올리기</td><td><span class="tn">attachment_files</span></td><td class="today">41개 · 15.9MB</td></tr>
+        <tr class="db"><td>10</td><td class="w">자격요건 추출 (LLM)</td><td><span class="tn">notice_conditions</span></td><td class="today">새로 40 · 다시 6</td></tr>
+        <tr><td>11</td><td class="w">신청자 유형 추출 (LLM)</td><td class="file">파일 <code>data/applicant_types/</code></td><td class="today">84건</td></tr>
+        <tr><td>12</td><td class="w">업종 추출 (LLM)</td><td class="file">파일 <code>data/industries/</code></td><td class="today">84건</td></tr>
+        <tr class="db"><td>13</td><td class="w">판정 올리기</td><td><span class="tn">notice_applicant_types</span> <span class="tn">notice_industries</span></td><td class="today">새로 78 · 바뀜 8 / 6</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>알아 둘 것</h2>
+  <ul class="notes">
+    <li><b><code>notices.updated_at</code>으로는 공고 내용이 바뀌었는지 알 수 없습니다</b>
+      <p>4단계가 API 목록에 있는 공고를 매일 모두 다시 저장합니다(<code>snapshot_at</code>·<code>last_import_id</code>가 바뀜). 그래서 9/30에는 1,777행 모두 그날 시각이 찍혔습니다. 실제로 내용이 바뀐 공고는 1건이었고, 이 수는 전날과 그날의 정규화 파일을 비교해서 셌습니다.</p></li>
+    <li><b>첨부는 기업마당 공고에만 있습니다</b>
+      <p>K-Startup 공고는 API에서 첨부 링크를 받지 못해 <code>pending_crawl</code> 상태로 남아 있습니다. 그래서 첨부 표 세 개와 <code>notice_conditions</code>에는 기업마당 공고만 있습니다. 본문 추출은 공고문 첨부(<code>role = notice</code>)만 하고, 서식(<code>form</code>)은 링크만 남깁니다.</p></li>
+    <li><b>모집 상태 칸은 API 값을 그대로 옮긴 것입니다</b>
+      <p>K-Startup 477건은 모두 <code>open</code>, 기업마당 2,126건은 모두 <code>unknown</code>입니다. K-Startup은 모집 중인 목록만 받기 때문에, 마감일이 지나도 <code>open</code>으로 남은 공고가 230건 있습니다. 마감은 이 칸 대신 <code>apply_end</code>로 봐야 합니다. 다만 <code>apply_end</code>가 비어 있는 공고도 992건 있습니다.</p>
+      <p>9/30에 고쳤습니다. 다음 배치부터는 K-Startup 목록을 빠짐없이 받은 날, 목록에서 빠진 공고를 <code>closed</code>로 바꿉니다. 첫날에는 235건이 바뀝니다.</p></li>
+    <li><b>첨부 링크는 지우지 않고 <code>active = 0</code>으로 남깁니다</b>
+      <p>공고에서 빠진 첨부 링크 13행이 비활성으로 남아 있습니다. 판정할 때는 <code>active</code>인 첨부만 읽어야 합니다. 9/29에 고친 판정표 지문 문제가 바로 이 조건이 빠져서 생겼습니다.</p></li>
+    <li><b><code>attachment_files</code>는 파일 내용 해시로 한 번만 저장합니다</b>
+      <p>FK가 없어서 <code>attachment_texts.content_sha256</code>과 값이 같은 행을 찾아 잇습니다. 지금 본문 행과 이어지지 않는 파일도 178개 있습니다.</p></li>
+    <li><b>판정 표는 입력 지문으로 다시 추출할지 정합니다</b>
+      <p><code>input_sha256</code>·<code>document_sha256</code>은 LLM에 보낸 글의 지문입니다. 지문이 같으면 다시 부르지 않습니다. 신청자 유형 판정은 서비스가 켜질 때 이 지문을 지금 공고문과 대조하고, 같은 판정만 씁니다.</p></li>
+    <li><b>다른 팀 표 세 개가 <code>notice_id</code>를 참조합니다</b>
+      <p><code>projects</code>(18행) · <code>match_candidates</code>(220행) · <code>notice_alerts</code>(0행)가 FK로 <code>notices.notice_id</code>를 가리킵니다. <code>notice_id</code> 형식을 바꾸거나 공고 행을 지우면 이 표들이 영향을 받습니다.</p></li>
+  </ul>
+</section>
+
+<section>
+  <h2>표마다 칸</h2>
+  <p>설명은 DB에 적힌 칸 주석을 그대로 옮겼습니다. 표 이름을 누르면 펼쳐집니다.</p>
+  <div class="colgroup">
+<details open><summary><span class="mono">notices</span><span class="sm">2,603행 · 칸 38개 — 공고 한 건당 한 행. API 원문과 정규화한 칸, 임베딩 벡터</span></summary><div class="tbl"><table class="cols"><thead><tr><th>칸</th><th>형식</th><th>설명 (DB 주석 그대로)</th></tr></thead><tbody><tr><td class="cn">id</td><td class="ct">bigint unsigned</td><td class="cd">공고 내부 기본 키, 첨부 테이블에서 참조<div class="tags"><span class="k">PK</span></div></td></tr><tr><td class="cn">notice_id</td><td class="ct">varchar(320)</td><td class="cd">통합 공고 식별자: 출처:원본ID<div class="tags"><span class="k">고유</span></div></td></tr><tr><td class="cn">source</td><td class="ct">varchar(32)</td><td class="cd">공고 출처: kstartup 또는 bizinfo<div class="tags"><span class="k">색인</span></div></td></tr><tr><td class="cn">source_id</td><td class="ct">varchar(255)</td><td class="cd">출처 API의 원본 공고 ID, source와 함께 고유 키<div class="tags"></div></td></tr><tr><td class="cn">schema_version</td><td class="ct">int</td><td class="cd">정규화 데이터 구조 버전<div class="tags"></div></td></tr><tr><td class="cn">title</td><td class="ct">text</td><td class="cd">정제한 공고 제목<div class="tags"></div></td></tr><tr><td class="cn">body</td><td class="ct">longtext</td><td class="cd">HTML 및 공백을 정제한 API 사업개요, 첨부문서 전문 아님<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">target_text</td><td class="ct">longtext</td><td class="cd">지원대상 자유서술 원문을 정제한 텍스트, 미확보 시 NULL<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">target_text_status</td><td class="ct">varchar(32)</td><td class="cd">지원대상 원문 확보 상태: available 또는 not_available<div class="tags"></div></td></tr><tr><td class="cn">target_category</td><td class="ct">text</td><td class="cd">API가 제공한 지원대상 분류, 예: 중소기업<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">exclude_text</td><td class="ct">longtext</td><td class="cd">지원 제외 조건 텍스트, 미확보 시 NULL<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">age_condition_raw</td><td class="ct">text</td><td class="cd">API 업력 조건 문자열, 미확보는 제한 없음을 뜻하지 않음<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">region</td><td class="ct">text</td><td class="cd">API 지원 지역 값, 기관명으로 추정하지 않으며 미확보 시 NULL<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">category</td><td class="ct">text</td><td class="cd">출처별 지원사업 대분류, 기술 분야 판정값과 구분<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">subcategory</td><td class="ct">text</td><td class="cd">출처별 지원사업 중분류, 미제공 시 NULL<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">organizer</td><td class="ct">text</td><td class="cd">K-Startup 공고 기관명<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">supervising_org</td><td class="ct">text</td><td class="cd">기업마당 소관기관명<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">executing_org</td><td class="ct">text</td><td class="cd">기업마당 수행기관명<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">apply_start</td><td class="ct">date</td><td class="cd">유효한 접수 시작일, 미확보 또는 해석 불가 시 NULL<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">apply_end</td><td class="ct">date</td><td class="cd">유효한 접수 종료일, 미확보 또는 고정 종료일 없으면 NULL<div class="tags"><span class="k">색인</span><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">apply_period_raw</td><td class="ct">json</td><td class="cd">접수기간 원본(JSON), 출처별 객체 또는 문자열 보존<div class="tags"></div></td></tr><tr><td class="cn">apply_period_type</td><td class="ct">varchar(32)</td><td class="cd">기간 유형: fixed, budget_exhaustion, rolling, until_filled, unknown<div class="tags"></div></td></tr><tr><td class="cn">recruitment_status</td><td class="ct">varchar(32)</td><td class="cd">API 모집 상태: open, closed, unknown, 날짜로 추정하지 않음<div class="tags"><span class="k">색인</span></div></td></tr><tr><td class="cn">url</td><td class="ct">text</td><td class="cd">공고 원문 페이지 URL<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">apply_url</td><td class="ct">text</td><td class="cd">지원사업 신청 페이지 URL, 미제공 시 NULL<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">attachment_discovery_status</td><td class="ct">varchar(32)</td><td class="cd">첨부 탐색 상태: pending_crawl, api_links_available, not_available<div class="tags"></div></td></tr><tr><td class="cn">source_updated_at_raw</td><td class="ct">json</td><td class="cd">API 원본 수정 시각 값(JSON), 미제공은 JSON null<div class="tags"></div></td></tr><tr><td class="cn">issues</td><td class="ct">json</td><td class="cd">날짜 및 URL 등 정규화 경고 목록(JSON)<div class="tags"></div></td></tr><tr><td class="cn">raw</td><td class="ct">json</td><td class="cd">출처 API 공고 행 전체 원본(JSON)<div class="tags"></div></td></tr><tr><td class="cn">snapshot_at</td><td class="ct">datetime(6)</td><td class="cd">마지막 반영 정규화 파일 생성 시각(UTC), 과거 입력 덮어쓰기 방지 기준<div class="tags"></div></td></tr><tr><td class="cn">last_import_id</td><td class="ct">char(32)</td><td class="cd">이 공고를 마지막으로 저장한 import_runs.run_id<div class="tags"><span class="k">색인</span><span class="k fk">→ import_runs.run_id</span></div></td></tr><tr><td class="cn">created_at</td><td class="ct">datetime(6)</td><td class="cd">공고 행 최초 생성 시각(UTC)<div class="tags"></div></td></tr><tr><td class="cn">updated_at</td><td class="ct">datetime(6)</td><td class="cd">공고 행 마지막 변경 시각(UTC)<div class="tags"></div></td></tr><tr><td class="cn">embedding</td><td class="ct">mediumblob</td><td class="cd">공고 요약 임베딩. float32 리틀엔디안 연속 바이트, 정규화됨. 미생성 시 NULL<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">embedding_dim</td><td class="ct">smallint unsigned</td><td class="cd">임베딩 차원 수. 현재 1024, 바이트 길이는 이 값의 4배여야 한다<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">embedding_input_sha256</td><td class="ct">char(64)</td><td class="cd">벡터를 만든 입력 텍스트의 SHA-256. 공고가 바뀌었는지 판정하는 기준<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">embedding_fingerprint</td><td class="ct">char(16)</td><td class="cd">인코딩 설정 지문(model·revision·input_version·max_tokens·dim·dtype·normalized). 다르면 재생성 대상<div class="tags"><span class="k">색인</span><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">embedding_updated_at</td><td class="ct">datetime(6)</td><td class="cd">이 벡터를 마지막으로 올린 시각(UTC)<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr></tbody></table></div></details>
+<details><summary><span class="mono">import_runs</span><span class="sm">22행 · 칸 6개 — 4단계 저장 작업 한 번당 한 행</span></summary><div class="tbl"><table class="cols"><thead><tr><th>칸</th><th>형식</th><th>설명 (DB 주석 그대로)</th></tr></thead><tbody><tr><td class="cn">run_id</td><td class="ct">char(32)</td><td class="cd">성공한 저장 작업 식별자(UUID 32자리)<div class="tags"><span class="k">PK</span></div></td></tr><tr><td class="cn">input_sha256</td><td class="ct">char(64)</td><td class="cd">입력 정규화 JSON 파일의 SHA-256 해시<div class="tags"></div></td></tr><tr><td class="cn">generated_at</td><td class="ct">datetime(6)</td><td class="cd">입력 정규화 파일 생성 시각(UTC), 원본 공고 수정 시각과 다름<div class="tags"></div></td></tr><tr><td class="cn">imported_at</td><td class="ct">datetime(6)</td><td class="cd">MySQL 저장 작업 기록 생성 시각(UTC)<div class="tags"></div></td></tr><tr><td class="cn">notice_count</td><td class="ct">int unsigned</td><td class="cd">입력 공고 수, 실제 처리 및 과거 자료 건너뛰기 수는 report 참조<div class="tags"></div></td></tr><tr><td class="cn">report</td><td class="ct">json</td><td class="cd">입력 메타데이터, 정제 집계, 중복 후보 및 저장 결과(JSON)<div class="tags"></div></td></tr></tbody></table></div></details>
+<details><summary><span class="mono">notice_attachments</span><span class="sm">3,688행 · 칸 11개 — 첨부 링크 하나당 한 행(기업마당 공고만)</span></summary><div class="tbl"><table class="cols"><thead><tr><th>칸</th><th>형식</th><th>설명 (DB 주석 그대로)</th></tr></thead><tbody><tr><td class="cn">id</td><td class="ct">bigint unsigned</td><td class="cd">첨부 링크 내부 기본 키<div class="tags"><span class="k">PK</span></div></td></tr><tr><td class="cn">notice_fk</td><td class="ct">bigint unsigned</td><td class="cd">첨부가 속한 notices.id<div class="tags"><span class="k">색인</span><span class="k fk">→ notices.id</span></div></td></tr><tr><td class="cn">attachment_key</td><td class="ct">char(64)</td><td class="cd">첨부 역할과 URL의 SHA-256 해시, 공고 내 중복 방지<div class="tags"></div></td></tr><tr><td class="cn">role</td><td class="ct">varchar(32)</td><td class="cd">첨부 용도: notice 공고문, form 서식<div class="tags"></div></td></tr><tr><td class="cn">url</td><td class="ct">text</td><td class="cd">첨부 다운로드 URL, 파일 자체가 아닌 링크<div class="tags"></div></td></tr><tr><td class="cn">name</td><td class="ct">text</td><td class="cd">API가 제공한 첨부 파일명<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">source_status</td><td class="ct">varchar(32)</td><td class="cd">정규화 입력의 첨부 상태, 현재 not_downloaded<div class="tags"></div></td></tr><tr><td class="cn">download_status</td><td class="ct">varchar(32)</td><td class="cd">실제 다운로드 처리 상태, 기본 pending, 재수집으로 초기화하지 않음<div class="tags"></div></td></tr><tr><td class="cn">active</td><td class="ct">tinyint(1)</td><td class="cd">현재 확인된 첨부 목록에서 사용 여부, 비활성 행도 보존<div class="tags"></div></td></tr><tr><td class="cn">created_at</td><td class="ct">datetime(6)</td><td class="cd">첨부 행 최초 생성 시각(UTC)<div class="tags"></div></td></tr><tr><td class="cn">updated_at</td><td class="ct">datetime(6)</td><td class="cd">첨부 행 마지막 변경 시각(UTC)<div class="tags"></div></td></tr></tbody></table></div></details>
+<details><summary><span class="mono">attachment_texts</span><span class="sm">2,134행 · 칸 18개 — 공고문 첨부(role=notice)에서 뽑은 본문. 첨부 한 건당 한 행</span></summary><div class="tbl"><table class="cols"><thead><tr><th>칸</th><th>형식</th><th>설명 (DB 주석 그대로)</th></tr></thead><tbody><tr><td class="cn">attachment_fk</td><td class="ct">bigint unsigned</td><td class="cd">추출 대상 notice_attachments.id, 첨부 한 건당 한 행<div class="tags"><span class="k">PK</span><span class="k fk">→ notice_attachments.id</span></div></td></tr><tr><td class="cn">last_status</td><td class="ct">varchar(32)</td><td class="cd">최근 시도 결과: ok, image_only, unsupported, download_fail, parse_error, empty_text<div class="tags"><span class="k">색인</span></div></td></tr><tr><td class="cn">last_kind</td><td class="ct">varchar(16)</td><td class="cd">최근 판별 형식: pdf, hwp, hwpx, docx, image, zip, rtf, unknown 또는 NULL<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">last_attempt_started_at</td><td class="ct">datetime(6)</td><td class="cd">최근 시도 시작 시각(UTC), 과거 응답 덮어쓰기 방지<div class="tags"></div></td></tr><tr><td class="cn">last_attempted_at</td><td class="ct">datetime(6)</td><td class="cd">최근 시도 완료 시각(UTC)<div class="tags"></div></td></tr><tr><td class="cn">last_source_updated_at</td><td class="ct">text</td><td class="cd">최근 시도 시작 시 관측한 API 원본 수정 시각 문자열<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">last_extractor_version</td><td class="ct">varchar(64)</td><td class="cd">최근 시도의 추출기 및 의존성 버전<div class="tags"></div></td></tr><tr><td class="cn">last_error</td><td class="ct">text</td><td class="cd">최근 실패 사유, URL 및 비밀값 제거 후 저장<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">last_result_sha256</td><td class="ct">char(64)</td><td class="cd">정규화한 시도 결과 해시, 동일 시도 재전송 검증<div class="tags"></div></td></tr><tr><td class="cn">extracted_text</td><td class="ct">longtext</td><td class="cd">마지막 성공 본문, 최근 재시도 실패 시에도 보존<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">text_chars</td><td class="ct">int unsigned</td><td class="cd">성공 본문의 문자 수, 성공 이력 없으면 NULL<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">text_kind</td><td class="ct">varchar(16)</td><td class="cd">마지막 성공 파일 형식: pdf, hwp, hwpx, docx<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">extracted_at</td><td class="ct">datetime(6)</td><td class="cd">마지막 성공 시도 완료 시각(UTC)<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">text_source_updated_at</td><td class="ct">text</td><td class="cd">마지막 성공 본문에 대응하는 API 수정 시각 문자열<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">text_extractor_version</td><td class="ct">varchar(64)</td><td class="cd">마지막 성공 본문을 만든 추출기 버전<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">content_sha256</td><td class="ct">char(64)</td><td class="cd">마지막 성공 다운로드 파일 바이트의 SHA-256<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">created_at</td><td class="ct">datetime(6)</td><td class="cd">추출 저장 행 최초 생성 시각(UTC)<div class="tags"></div></td></tr><tr><td class="cn">updated_at</td><td class="ct">datetime(6)</td><td class="cd">추출 저장 행 마지막 변경 시각(UTC)<div class="tags"></div></td></tr></tbody></table></div></details>
+<details><summary><span class="mono">attachment_files</span><span class="sm">2,075행 · 칸 5개 — 첨부 원본 파일 바이트. 같은 파일은 한 번만</span></summary><div class="tbl"><table class="cols"><thead><tr><th>칸</th><th>형식</th><th>설명 (DB 주석 그대로)</th></tr></thead><tbody><tr><td class="cn">content_sha256</td><td class="ct">char(64)</td><td class="cd">파일 바이트의 SHA-256. attachment_texts.content_sha256 과 조인되며 배치 PC 의 파일명과 같다<div class="tags"><span class="k">PK</span></div></td></tr><tr><td class="cn">byte_size</td><td class="ct">int unsigned</td><td class="cd">파일 바이트 수. LENGTH(bytes) 와 같아야 한다<div class="tags"></div></td></tr><tr><td class="cn">ext</td><td class="ct">varchar(16)</td><td class="cd">내려받은 파일의 확장자: pdf, hwp, hwpx, docx, img<div class="tags"><span class="k">색인</span></div></td></tr><tr><td class="cn">bytes</td><td class="ct">longblob</td><td class="cd">파일 원본 바이트. 가공하거나 압축하지 않은 그대로<div class="tags"></div></td></tr><tr><td class="cn">uploaded_at</td><td class="ct">datetime(6)</td><td class="cd">이 파일을 올린 시각(UTC)<div class="tags"></div></td></tr></tbody></table></div></details>
+<details><summary><span class="mono">notice_conditions</span><span class="sm">1,947행 · 칸 19개 — LLM이 뽑은 지원금·사업자 형태·업력</span></summary><div class="tbl"><table class="cols"><thead><tr><th>칸</th><th>형식</th><th>설명 (DB 주석 그대로)</th></tr></thead><tbody><tr><td class="cn">notice_id</td><td class="ct">varchar(320)</td><td class="cd">대상 공고. notices.notice_id 와 같은 값<div class="tags"><span class="k">PK</span><span class="k fk">→ notices.notice_id</span></div></td></tr><tr><td class="cn">amount_max_won</td><td class="ct">bigint unsigned</td><td class="cd">기업 1곳이 받는 최대 지원금(원). 사업 총예산·매출 기준과 구분한 값. 미확보 시 NULL<div class="tags"><span class="k">색인</span><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">business_type</td><td class="ct">json</td><td class="cd">신청 가능한 사업자 형태 배열: [&quot;개인사업자&quot;,&quot;법인&quot;,&quot;예비창업자&quot;,&quot;비영리&quot;,&quot;기타&quot;]. 특정 못 하면 빈 배열<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">pre_startup_allowed</td><td class="ct">tinyint(1)</td><td class="cd">예비창업자(사업자등록 전) 신청 가능 여부. 알 수 없으면 NULL<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">age_years_max</td><td class="ct">smallint unsigned</td><td class="cd">업력 상한(년). 오답률이 높아 판정에 쓰지 않는다. 참고용<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">age_years_min</td><td class="ct">smallint unsigned</td><td class="cd">업력 하한(년). 참고용<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">age_source_quote</td><td class="ct">text</td><td class="cd">업력 값의 근거 문장 원문. 값이 버려졌으면 근거만 남는다<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">no_age_limit</td><td class="ct">tinyint(1)</td><td class="cd">문서가 업력 제한 없음을 명시했는가. 못 찾은 것과 구분한다<div class="tags"></div></td></tr><tr><td class="cn">source_quote</td><td class="ct">text</td><td class="cd">금액·형태 값의 근거 문장 원문. 없으면 값을 신뢰할 수 없다<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">uncertain</td><td class="ct">json</td><td class="cd">판단하지 못한 것과 검증에서 버린 이유 배열<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">amount_corrected</td><td class="ct">json</td><td class="cd">금액을 근거와 대조해 고친 기록 {&quot;from&quot;:..,&quot;to&quot;:..}. 안 고쳤으면 NULL<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">amount_rejected</td><td class="ct">varchar(120)</td><td class="cd">금액 값을 버린 이유. 버리지 않았으면 NULL<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">age_rejected</td><td class="ct">varchar(80)</td><td class="cd">업력 값을 버린 이유. 버리지 않았으면 NULL<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">input_sha256</td><td class="ct">char(64)</td><td class="cd">LLM 에 보낸 문서의 SHA-256. 같으면 다시 추출하지 않는다<div class="tags"></div></td></tr><tr><td class="cn">extractor_version</td><td class="ct">varchar(64)</td><td class="cd">추출기와 모델 버전. 바뀌면 전량 재추출 대상<div class="tags"><span class="k">색인</span></div></td></tr><tr><td class="cn">prompt_tokens</td><td class="ct">int unsigned</td><td class="cd">이 건에 쓴 입력 토큰<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">completion_tokens</td><td class="ct">int unsigned</td><td class="cd">이 건에 쓴 출력 토큰<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">extracted_at</td><td class="ct">datetime(6)</td><td class="cd">추출 시각(UTC)<div class="tags"></div></td></tr><tr><td class="cn">updated_at</td><td class="ct">datetime(6)</td><td class="cd">행 마지막 변경 시각(UTC)<div class="tags"></div></td></tr></tbody></table></div></details>
+<details><summary><span class="mono">notice_applicant_types</span><span class="sm">2,603행 · 칸 21개 — LLM이 판정한 신청자 유형(예비창업자·개인사업자·법인)</span></summary><div class="tbl"><table class="cols"><thead><tr><th>칸</th><th>형식</th><th>설명 (DB 주석 그대로)</th></tr></thead><tbody><tr><td class="cn">notice_id</td><td class="ct">varchar(320)</td><td class="cd">대상 공고. notices.notice_id 와 같은 값<div class="tags"><span class="k">PK</span><span class="k fk">→ notices.notice_id</span></div></td></tr><tr><td class="cn">pre_founder_verdict</td><td class="ct">varchar(16)</td><td class="cd">예비창업자 신청자에 대한 서비스 판정: blocked(명시 불가·빼기) · allowed(본문 가능) · implied_no(불가 추정·뒤로) · NULL(모름). search/applicant_types.pre_founder() 결과<div class="tags"><span class="k">색인</span><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">registered_only_phrase</td><td class="ct">varchar(120)</td><td class="cd">등록 사업자 전용 표현 규칙에 걸린 표현(&quot;사업자 미등록 업체&quot; 등). implied_no 로 올린 근거. 없으면 NULL<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">varies</td><td class="ct">tinyint(1)</td><td class="cd">세부사업마다 신청 가능 유형이 다르다. TRUE 면 공고 전체를 한 값으로 판정하지 않는다<div class="tags"></div></td></tr><tr><td class="cn">pre_founder_status</td><td class="ct">varchar(16)</td><td class="cd">예비창업자: allowed · not_allowed · implied_no · not_mentioned<div class="tags"></div></td></tr><tr><td class="cn">pre_founder_strength</td><td class="ct">varchar(8)</td><td class="cd">근거 강도: strong(명시) · weak(간접). 없으면 NULL<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">pre_founder_evidence</td><td class="ct">text</td><td class="cd">예비창업자 판정의 근거 문장 원문(코드로 원문 존재 확인)<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">sole_proprietor_status</td><td class="ct">varchar(16)</td><td class="cd">개인사업자: allowed · not_allowed · implied_no · not_mentioned. 매칭에 쓰지 않는다(참고)<div class="tags"></div></td></tr><tr><td class="cn">sole_proprietor_strength</td><td class="ct">varchar(8)</td><td class="cd">근거 강도<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">sole_proprietor_evidence</td><td class="ct">text</td><td class="cd">근거 문장 원문<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">corporation_status</td><td class="ct">varchar(16)</td><td class="cd">법인: allowed · not_allowed · implied_no · not_mentioned. 매칭에 쓰지 않는다(참고)<div class="tags"></div></td></tr><tr><td class="cn">corporation_strength</td><td class="ct">varchar(8)</td><td class="cd">근거 강도<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">corporation_evidence</td><td class="ct">text</td><td class="cd">근거 문장 원문<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">reason</td><td class="ct">text</td><td class="cd">LLM 이 적은 판단 이유(설명용)<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">document_sha256</td><td class="ct">char(64)</td><td class="cd">LLM 에 보낸 공고문 발췌의 SHA-256. 같으면 다시 추출하지 않는다<div class="tags"></div></td></tr><tr><td class="cn">prompt_sha256</td><td class="ct">char(64)</td><td class="cd">프롬프트·스키마의 SHA-256<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">extractor_version</td><td class="ct">varchar(64)</td><td class="cd">추출기와 모델. 예: applicant_type_llm gpt-5.6-luna@medium<div class="tags"><span class="k">색인</span></div></td></tr><tr><td class="cn">prompt_tokens</td><td class="ct">int unsigned</td><td class="cd">이 건에 쓴 입력 토큰<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">completion_tokens</td><td class="ct">int unsigned</td><td class="cd">이 건에 쓴 출력 토큰(추론 포함)<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">uploaded_at</td><td class="ct">datetime(6)</td><td class="cd">처음 올린 시각(UTC)<div class="tags"></div></td></tr><tr><td class="cn">updated_at</td><td class="ct">datetime(6)</td><td class="cd">행 마지막 변경 시각(UTC)<div class="tags"></div></td></tr></tbody></table></div></details>
+<details><summary><span class="mono">notice_industries</span><span class="sm">2,603행 · 칸 21개 — LLM이 판정한 신청 가능 업종</span></summary><div class="tbl"><table class="cols"><thead><tr><th>칸</th><th>형식</th><th>설명 (DB 주석 그대로)</th></tr></thead><tbody><tr><td class="cn">notice_id</td><td class="ct">varchar(320)</td><td class="cd">대상 공고. notices.notice_id 와 같은 값<div class="tags"><span class="k">PK</span><span class="k fk">→ notices.notice_id</span></div></td></tr><tr><td class="cn">status</td><td class="ct">varchar(16)</td><td class="cd">코드 검사 뒤 업종 판정: known(허용 업종 확인) · no_limit(업종 무관 명시) · excluded_only(제외 업종만) · conditional(조건부) · not_mentioned(언급 없음) · unknown(판단 불가)<div class="tags"><span class="k">색인</span></div></td></tr><tr><td class="cn">allowed_sections</td><td class="ct">json</td><td class="cd">허용 업종을 KSIC 대분류(A~U)로 묶은 배열. 예: [&quot;C&quot;,&quot;J&quot;]. 묶을 수 없으면 NULL (industry_groups.allowed_sections)<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">usable_for_rank</td><td class="ct">tinyint(1)</td><td class="cd">업종 순위 신호에 쓸 수 있는가(목록 완전·잘림 없음·갈래 문제 없음 등, search/industry_rank.py 기준). 업종 순위는 2026-09-28 기본 꺼짐<div class="tags"><span class="k">색인</span></div></td></tr><tr><td class="cn">allowed</td><td class="ct">json</td><td class="cd">허용 업종 배열 [{&quot;text&quot;:원문 표현,&quot;label&quot;:어휘 라벨,&quot;evidence&quot;:근거 문장}]<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">excluded</td><td class="ct">json</td><td class="cd">제외 업종 배열(같은 모양). 제외 표현과 같은 절에서 연결된 것만<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">list_complete</td><td class="ct">tinyint(1)</td><td class="cd">허용 목록이 전부인가. 별표·&quot;등&quot;·누락이 보이면 FALSE<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">quote</td><td class="ct">text</td><td class="cd">업종 판정의 근거가 된 신청 자격 문장 원문<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">quote_role</td><td class="ct">varchar(16)</td><td class="cd">근거 문장의 역할: eligibility(신청 자격) 등<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">truncated</td><td class="ct">tinyint(1)</td><td class="cd">LLM 에 보낸 발췌가 상한에서 잘렸다. TRUE 면 목록이 불완전할 수 있다<div class="tags"></div></td></tr><tr><td class="cn">scope_unresolved</td><td class="ct">tinyint(1)</td><td class="cd">업종 조건이 어느 세부사업에 붙는지 정하지 못했다<div class="tags"></div></td></tr><tr><td class="cn">excerpt_chars</td><td class="ct">int unsigned</td><td class="cd">발췌 상한(자). 6000 또는 긴 공고 18000<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">verify_profile</td><td class="ct">varchar(16)</td><td class="cd">코드 검사 강도: rough · strict<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">document_sha256</td><td class="ct">char(64)</td><td class="cd">LLM 에 보낸 공고문 발췌의 SHA-256<div class="tags"></div></td></tr><tr><td class="cn">prompt_sha256</td><td class="ct">char(64)</td><td class="cd">프롬프트의 SHA-256<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">extractor_version</td><td class="ct">varchar(64)</td><td class="cd">추출기와 모델. 예: industry_llm v3 gpt-5.6-luna@medium<div class="tags"><span class="k">색인</span></div></td></tr><tr><td class="cn">source_run</td><td class="ct">varchar(80)</td><td class="cd">이 값을 만든 결과 폴더 이름(reports/ 아래). 추적용<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">prompt_tokens</td><td class="ct">int unsigned</td><td class="cd">이 건에 쓴 입력 토큰<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">completion_tokens</td><td class="ct">int unsigned</td><td class="cd">이 건에 쓴 출력 토큰(추론 포함)<div class="tags"><span class="k null">빈 값 가능</span></div></td></tr><tr><td class="cn">uploaded_at</td><td class="ct">datetime(6)</td><td class="cd">처음 올린 시각(UTC)<div class="tags"></div></td></tr><tr><td class="cn">updated_at</td><td class="ct">datetime(6)</td><td class="cd">행 마지막 변경 시각(UTC)<div class="tags"></div></td></tr></tbody></table></div></details>
+  </div>
+</section>
+
+<footer>
+  <span>근거: 공용 DB <code>information_schema</code>와 행 수(2026-09-30 SELECT), <code>db/mysql_schema.sql</code>·<code>mysql_migration_002~006</code>, <code>docs/FLOW.md</code>, 9/30 <code>data/run.log</code>.</span>
+  <span>행 수는 그날 기준이라 매일 배치가 돌면 달라집니다. 이 페이지는 자동으로 바뀌지 않습니다.</span>
+</footer>
+</div>

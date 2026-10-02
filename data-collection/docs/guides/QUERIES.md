@@ -108,6 +108,18 @@ ON DUPLICATE KEY UPDATE
 **`DELETE` 가 없다.** API 목록에서 사라진 공고도 DB 에는 남는다.
 API 가 일시적으로 빠뜨렸을 때 데이터를 잃지 않기 위함이다.
 
+대신 **K-Startup 모집 중 목록에서 빠진 공고는 모집 종료로 표시한다**(2026-09-30). 같은 트랜잭션에서 저장 뒤에 돈다.
+그날 K-Startup 목록을 새로 받았고 받은 건수가 서버 보고 건수와 꼭 맞을 때만 한다(`daily_pipeline.kstartup_listed`).
+목록에 다시 나타나면 위 upsert 가 `open` 으로 되돌린다. 닫은 공고 ID는 `import_runs.report` 의 `closed_missing` 에 남는다.
+
+```sql
+-- 이 목록(snapshot 시각 %s)보다 오래된 open 행만 본다. 더 최신 행은 닫지 않는다
+SELECT id, source_id, notice_id FROM notices
+ WHERE source = 'kstartup' AND recruitment_status = 'open' AND snapshot_at < %s FOR UPDATE;
+-- 오늘 목록에 없는 id 만 골라 500건씩. 시각·실행 ID 도 바꿔 옛 파일 재적재가 되살리지 못하게 한다
+UPDATE notices SET recruitment_status = 'closed', snapshot_at = %s, last_import_id = %s WHERE id IN (%s, ...);
+```
+
 갱신 목록에서 앞 세 컬럼(`notice_id`·`source`·`source_id`)이 빠져 있다.
 **신원이라 바뀌면 안 된다.**
 

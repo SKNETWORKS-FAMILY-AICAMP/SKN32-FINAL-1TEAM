@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>전략 T-S1·T-S2 모델 비교 결과</title>
+<style>__STYLE__
+  .grp { font-size: 12px; font-weight: 600; color: var(--ink-2); margin: 10px 0 0; padding-top: 8px; border-top: 2px solid var(--grid); }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 8px; }
+  button.tab { background: var(--surface); color: var(--ink-2); border: 1px solid var(--ring); border-radius: 999px; padding: 6px 14px; cursor: pointer; font: inherit; font-size: 13px; }
+  button.tab.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+  button.tab:focus-visible { outline: 3px solid var(--s1); outline-offset: 2px; }
+  button.cell.plain { background: var(--cell-lo); color: var(--on-lo); }
+  button.cell .mk { font-size: 12px; font-weight: 700; }
+  .chip { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--axis); margin: 2px 4px 2px 0; color: var(--ink); }
+  .chip.exact { border-color: var(--ink-2); }
+  .chip.para { border-style: dashed; border-color: var(--s2); }
+  .chip.extra { border-color: var(--crit); color: var(--crit); }
+  .chip.bad { border-color: var(--crit); color: var(--crit); font-weight: 600; }
+  .chip.ok { border-color: var(--s1); }
+  table.items { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 6px; }
+  table.items th, table.items td { text-align: left; padding: 4px 8px; border-top: 1px solid var(--grid); vertical-align: top; }
+  table.items th { color: var(--ink-2); font-weight: 500; border-top: 0; }
+  .facts { font-size: 13px; color: var(--ink-2); margin: 4px 0 8px; }
+  .facts li { margin: 1px 0; }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<div id="tip" role="tooltip"></div>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+(function () {
+  const D = JSON.parse(document.getElementById('data').textContent);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const mean = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+  const pct = (x) => x == null ? '–' : Math.round(100 * x) + '<small> %</small>';
+  const SLOTS = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)'];
+  const slot = (i) => SLOTS[i % SLOTS.length];
+  const app = document.getElementById('app'), tip = document.getElementById('tip');
+  const tcls = (f) => (f > .6 ? ' t60' : '') + (f > .8 ? ' t80' : '');
+  const state = { cond: 'facts' };
+  const cl = (c, task, id, cond) => D.calls.filter((x) => x.cand === c && x.task === task && x.case === id && (cond == null || x.cond === cond));
+  const caseOf = (id) => D.cases.find((x) => x.id === id);
+
+  function showTip(e, html) {
+    tip.innerHTML = html; tip.style.display = 'block';
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = e.clientX + 14, y = e.clientY + 14;
+    if (x + w > innerWidth - 8) x = e.clientX - w - 14;
+    if (y + h > innerHeight - 8) y = e.clientY - h - 14;
+    tip.style.left = Math.max(8, x) + 'px'; tip.style.top = Math.max(8, y) + 'px';
+  }
+  const hideTip = () => { tip.style.display = 'none'; };
+
+  function header() {
+    const r = D.run;
+    return `<div class="topbar"><div>
+      <h1>전략 T-S1·T-S2 모델 비교 결과</h1>
+      <p class="sub">전략 Agent가 ① <b>기준 기능 목록을 빠뜨리지 않고</b> 이어받는지(T-S1), ② 시장 분석에서 <b>출처 있는 수치만</b> 쓰고 지어내지 않는지(T-S2)를 본 실험입니다.</p>
+      <p class="note">${esc(r.name)} · 아이템 ${D.cases.length}건 · 호출 ${r.calls}건 · 실제 비용 $${(r.total_cost || 0).toFixed(3)}${r.estimated_usd != null ? ' (예상 $' + r.estimated_usd.toFixed(3) + ')' : ''} · 프롬프트 ${esc(r.prompt_version)}</p>
+    </div><button class="theme" id="themeBtn" type="button">화면 밝기 바꾸기</button></div>`;
+  }
+
+  function tiles() {
+    const cards = D.candidates.map((c, i) => {
+      const m = D.metrics[c.id] || {};
+      return `<div class="card tile"><h3><span class="swatch" style="background:${slot(i)}"></span>${esc(c.id)}</h3>
+        <div class="mode">${esc(c.model)} · ${esc(c.mode)}</div>
+        <div class="grp" style="border-top:0;margin-top:0">T-S1 요구사항 분석</div>
+        <div class="kpi"><div class="k">기능 목록 그대로 포함<small>핵심 기능을 글자 그대로 모두 담음</small></div><div class="v">${pct(m.s1_strict)}</div></div>
+        <div class="kpi"><div class="k">기준 목록을 바꾼 호출<small>말을 바꾸거나 기능을 쪼개고 풀어씀</small></div><div class="v">${m.s1_changed}<small> / ${m.s1_n}</small></div></div>
+        <div class="kpi"><div class="k">기능을 덧붙임<small>호출당 평균 (기준에 없는 기능)</small></div><div class="v">${m.s1_extras == null ? '–' : m.s1_extras.toFixed(1)}</div></div>
+        <div class="grp">T-S2 시장 분석 · 참고 자료 있음</div>
+        <div class="kpi"><div class="k">자료를 활용<small>자료 3건 중 쓴 비율</small></div><div class="v">${pct(m.f_used_rate)}</div></div>
+        <div class="kpi"><div class="k">함정 통계를 한계 없이 씀<small>다른 분야 통계를 그냥 사용한 호출 (한계를 밝히고 쓴 ${m.f_trap_calls - m.f_trap_plain_calls}건은 제외)</small></div><div class="v">${m.f_trap_plain_calls}<small> / ${m.f_n}</small></div></div>
+        <div class="kpi"><div class="k">설명 안 되는 수치<small>자료로도 계산으로도 설명이 안 되는 호출</small></div><div class="v">${m.f_other_calls}<small> / ${m.f_n}</small></div></div>
+        <div class="kpi"><div class="k">자료로 계산한 수치<small>참고: 근거를 밝힌 계산은 정상</small></div><div class="v">${m.f_derived_calls}<small> / ${m.f_n}</small></div></div>
+        <div class="grp">T-S2 시장 분석 · 참고 자료 없음</div>
+        <div class="kpi"><div class="k">수치 없이 서술만 한 호출<small>규칙상 가장 안전한 답</small></div><div class="v">${m.o_zero_calls}<small> / ${m.o_n}</small></div></div>
+        <div class="kpi"><div class="k">출처 없는 수치 항목<small>규칙 위반 (0이어야 함)</small></div><div class="v">${m.o_unsourced}</div></div>
+        <div class="grp">비용 · 시간</div>
+        <div class="kpi"><div class="k">호출 ${m.calls}건 합계 · 평균</div><div class="v">$${(m.cost || 0).toFixed(3)}<small> · ${m.sec == null ? '–' : m.sec.toFixed(1) + '초'}</small></div></div>
+      </div>`;
+    }).join('');
+    return `<h2>한눈에 보기</h2><p class="sub">후보마다 카드 하나입니다. “기준 목록을 바꾼 호출”, “덧붙임”, “함정을 한계 없이 씀”, “설명 안 되는 수치”, “출처 없는 수치”는 작을수록 좋고 나머지는 클수록 좋습니다.</p><div class="tiles">${cards}</div>`;
+  }
+
+  // ── 차트 공통 ──────────────────────────────────────────
+  const legendOf = () => D.candidates.map((c, i) => `<span><span class="swatch" style="background:${slot(i)}"></span>${esc(c.id)}</span>`).join('');
+
+  function s1Chart() {
+    const W = 1000, L = 170, R = 50, T = 14, laneH = 15, pad = 22, groups = [['s1_strict', '글자 그대로 포함'], ['s1_lenient', '뜻이 같으면 포함(느슨)']];
+    const bandH = D.candidates.length * laneH + pad, H = T + groups.length * bandH + 34;
+    const x = (v) => L + v * (W - L - R);
+    let g = '';
+    [0, .25, .5, .75, 1].forEach((t) => {
+      g += `<line x1="${x(t)}" x2="${x(t)}" y1="${T - 6}" y2="${H - 30}" stroke="var(--grid)"/><text class="axis-label" x="${x(t)}" y="${H - 14}" text-anchor="middle">${Math.round(t * 100)}%</text>`;
+    });
+    groups.forEach(([k, label], gi) => {
+      const y0 = T + gi * bandH;
+      g += `<text x="${L - 12}" y="${y0 + bandH / 2 - 4}" text-anchor="end" dominant-baseline="middle" style="fill:var(--ink)">${label}</text>`;
+      D.candidates.forEach((c, ci) => {
+        const v = (D.metrics[c.id] || {})[k], cy = y0 + 4 + ci * laneH;
+        if (v == null) return;
+        g += `<rect class="hit" data-t="${esc(c.id)}|${label}|${Math.round(v * 100)}%" x="${L}" y="${cy}" width="${Math.max(2, x(v) - L)}" height="${laneH - 4}" rx="3" fill="${slot(ci)}"/>`;
+        g += `<text x="${x(v) + 6}" y="${cy + laneH - 6}">${Math.round(v * 100)}%</text>`;
+      });
+    });
+    return `<h2>T-S1 · 기준 기능 목록을 그대로 이어받나</h2>
+      <p class="sub">기능 목록은 이후 프로토타입 대조와 문장 보호의 <b>기준</b>이라 한 글자도 달라지면 안 됩니다. 위 막대(글자 그대로)가 진짜 기준이고, 아래 막대(뜻이 같으면 포함)와 차이가 크면 모델이 기능 이름을 슬쩍 바꿔 쓴다는 뜻입니다.</p>
+      <div class="card"><div class="legend">${legendOf()}</div><div class="scroll"><svg viewBox="0 0 ${W} ${H}" style="min-width:640px;width:100%;height:auto" role="img" aria-label="T-S1 기능 목록 포함률">${g}</svg></div></div>`;
+  }
+
+  function factsChart() {
+    const groups = [['used', '자료를 활용한 비율 (높을수록 좋음)', (m) => m.f_used_rate],
+                    ['trap', '함정 통계를 한계 없이 쓴 호출 (0이어야 함)', (m) => m.f_n ? m.f_trap_plain_calls / m.f_n : null],
+                    ['other', '설명 안 되는 수치가 든 호출 (0이어야 함)', (m) => m.f_n ? m.f_other_calls / m.f_n : null],
+                    ['derived', '자료로 계산한 수치가 든 호출 (참고)', (m) => m.f_n ? m.f_derived_calls / m.f_n : null]];
+    const W = 1000, L = 250, R = 50, T = 14, laneH = 15, pad = 22;
+    const bandH = D.candidates.length * laneH + pad, H = T + groups.length * bandH + 34;
+    const x = (v) => L + v * (W - L - R);
+    let g = '';
+    [0, .25, .5, .75, 1].forEach((t) => {
+      g += `<line x1="${x(t)}" x2="${x(t)}" y1="${T - 6}" y2="${H - 30}" stroke="var(--grid)"/><text class="axis-label" x="${x(t)}" y="${H - 14}" text-anchor="middle">${Math.round(t * 100)}%</text>`;
+    });
+    groups.forEach(([k, label, fn], gi) => {
+      const y0 = T + gi * bandH;
+      g += `<text x="${L - 12}" y="${y0 + bandH / 2 - 4}" text-anchor="end" dominant-baseline="middle" style="fill:var(--ink)">${label}</text>`;
+      D.candidates.forEach((c, ci) => {
+        const v = fn(D.metrics[c.id] || {}), cy = y0 + 4 + ci * laneH;
+        if (v == null) return;
+        g += `<rect class="hit" data-t="${esc(c.id)}|${label}|${Math.round(v * 100)}%" x="${L}" y="${cy}" width="${Math.max(2, x(v) - L)}" height="${laneH - 4}" rx="3" fill="${slot(ci)}"/>`;
+        g += `<text x="${x(v) + 6}" y="${cy + laneH - 6}">${Math.round(v * 100)}%</text>`;
+      });
+    });
+    return `<h2>T-S2 · 참고 자료를 주면 그 안에서만 쓰나</h2>
+      <p class="sub">모델에게 통계 3건과 <b>일부러 섞은 엉뚱한 통계 1건(함정)</b>을 줬습니다. 첫 번째 막대는 길수록, 두 번째·세 번째 막대는 <b>짧을수록(0%일수록)</b> 좋습니다. 모델이 함정 통계를 <b>“직접 시장이 아니라 전방 산업 규모”처럼 한계를 밝히고</b> 쓴 것은 실패로 세지 않았고, 자료 두 개를 곱해 <b>계산 근거를 밝힌 수치</b>도 정상으로 봅니다(네 번째 막대는 참고용).</p>
+      <div class="card"><div class="legend">${legendOf()}</div><div class="scroll"><svg viewBox="0 0 ${W} ${H}" style="min-width:720px;width:100%;height:auto" role="img" aria-label="참고 자료가 있을 때 활용·함정·자료 밖 수치 비율">${g}</svg></div></div>`;
+  }
+
+  function openChart() {
+    const W = 1000, L = 170, R = 40, T = 16, rowH = 30, H = T + D.candidates.length * rowH + 44;
+    const per = {};
+    let mx = 4;
+    D.candidates.forEach((c) => { per[c.id] = D.cases.map((cs) => mean(cl(c.id, 's2', cs.id, 'open').filter((x) => x.valid).map((x) => x.ev.n_items))).filter((v) => v != null); mx = Math.max(mx, ...per[c.id]); });
+    mx = Math.ceil(mx);
+    const x = (v) => L + (v / mx) * (W - L - R);
+    let g = '';
+    for (let t = 0; t <= mx; t++) g += `<line x1="${x(t)}" x2="${x(t)}" y1="${T - 6}" y2="${H - 34}" stroke="var(--grid)"/><text class="axis-label" x="${x(t)}" y="${H - 18}" text-anchor="middle">${t}</text>`;
+    g += `<text class="axis-label" x="${(L + W - R) / 2}" y="${H}" text-anchor="middle">호출당 시장 규모 수치 항목 수 (점 = 아이템 1건)</text>`;
+    D.candidates.forEach((c, ci) => {
+      const y = T + ci * rowH + 14, vs = per[c.id];
+      g += `<text x="${L - 12}" y="${y}" text-anchor="end" dominant-baseline="middle" style="fill:var(--ink)">${esc(c.id)}</text>`;
+      if (!vs.length) return;
+      g += `<line x1="${x(Math.min(...vs))}" x2="${x(Math.max(...vs))}" y1="${y}" y2="${y}" stroke="${slot(ci)}" stroke-width="2" opacity=".45" stroke-linecap="round"/>`;
+      g += `<rect x="${x(mean(vs)) - 1.5}" y="${y - 7}" width="3" height="14" rx="1.5" fill="${slot(ci)}"/>`;
+      vs.forEach((v) => { g += `<circle cx="${x(v)}" cy="${y}" r="4.5" fill="${slot(ci)}" stroke="var(--surface)" stroke-width="2"/><circle class="hit" data-t="${esc(c.id)}|수치 항목 평균|${v.toFixed(1)}개" cx="${x(v)}" cy="${y}" r="9" fill="transparent"/>`; });
+    });
+    return `<h2>T-S2 · 참고 자료가 없으면 어떻게 하나</h2>
+      <p class="sub">이번엔 자료를 주지 않았습니다. 모델은 기억에만 의존해야 하고, 규칙은 “<b>출처를 댈 수 없는 수치는 넣지 말고 정성 서술만</b>”입니다. 점이 왼쪽(0)에 있을수록 수치를 지어내지 않고 조심한 것입니다. 오른쪽으로 갈수록 그럴듯한 출처와 숫자를 만들어 낸 것이며, <b>그 수치가 사실인지는 검증하지 못했습니다.</b></p>
+      <div class="card"><div class="legend">${legendOf()}</div><div class="scroll"><svg viewBox="0 0 ${W} ${H}" style="min-width:640px;width:100%;height:auto" role="img" aria-label="참고 자료가 없을 때 시장 규모 수치 개수">${g}</svg></div></div>`;
+  }
+
+  // ── 아이템 × 후보 표 ────────────────────────────────────
+  function matrix(kind) {
+    const isS1 = kind === 's1';
+    const head = `<tr><th></th>${D.candidates.map((c, i) => `<th><span class="swatch" style="background:${slot(i)}"></span> ${esc(c.id)}</th>`).join('')}</tr>`;
+    const body = D.cases.map((cs) => {
+      const cells = D.candidates.map((c) => {
+        const list = cl(c.id, isS1 ? 's1' : 's2', cs.id, isS1 ? null : state.cond).filter((x) => x.valid);
+        if (!list.length) return `<td class="cellwrap"><button class="cell empty" type="button" disabled>–</button></td>`;
+        const data = `data-c="${esc(c.id)}" data-case="${esc(cs.id)}" data-kind="${isS1 ? 's1' : 's2'}"`;
+        if (isS1) {
+          const ok = list.filter((x) => x.ev.strict).length, para = list.filter((x) => x.ev.paraphrased).length, f = ok / list.length;
+          return `<td class="cellwrap"><button class="cell${tcls(f)}${ok < list.length ? ' bad' : ''}" type="button" style="--f:${f.toFixed(3)}" ${data}><span class="n">${ok}/${list.length}</span>${para ? `<span class="p">말바꿈 ${para}</span>` : ''}</button></td>`;
+        }
+        if (state.cond === 'facts') {
+          const used = mean(list.map((x) => x.ev.used)), trap = list.reduce((a, x) => a + x.ev.trap_plain, 0), other = list.reduce((a, x) => a + x.ev.other, 0), f = used / 3;
+          return `<td class="cellwrap"><button class="cell${tcls(f)}${trap || other ? ' bad' : ''}" type="button" style="--f:${f.toFixed(3)}" ${data}><span class="n">${used.toFixed(1)}/3</span><span class="p">${trap ? '⚠함정' + trap + ' ' : ''}${other ? '＊설명불가' + other : ''}</span></button></td>`;
+        }
+        const n = mean(list.map((x) => x.ev.n_items)), un = list.reduce((a, x) => a + x.ev.unsourced, 0);
+        return `<td class="cellwrap"><button class="cell plain${un ? ' bad' : ''}" type="button" ${data}><span class="n">${n.toFixed(1)}개</span>${un ? `<span class="p">출처X ${un}</span>` : ''}</button></td>`;
+      }).join('');
+      return `<tr><td class="rowlabel">${esc(cs.id)} · ${esc(cs.name)}<br><small>${esc(cs.summary.slice(0, 40))}…</small></td>${cells}</tr>`;
+    }).join('');
+    return `<div class="card"><div class="scroll"><table class="heat"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+      <div class="detail muted" id="detail-${isS1 ? 's1' : 's2'}">칸을 누르면 여기에 모델의 답이 나옵니다.</div></div>`;
+  }
+
+  function s1Section() {
+    return `<h3 style="margin:16px 0 4px">아이템별로 보기</h3><p class="sub">칸은 반복 3번 중 <b>글자 그대로 포함한 횟수</b>입니다. 붉은 테두리는 한 번이라도 빠뜨렸거나 바꿔 썼다는 뜻입니다. 누르면 기능 목록이 어떻게 달라졌는지 볼 수 있습니다.</p>${matrix('s1')}`;
+  }
+
+  function s2Section() {
+    const tabs = `<div class="tabs" role="tablist">${[['facts', '참고 자료 있음'], ['open', '참고 자료 없음']].map(([k, l]) => `<button type="button" class="tab${state.cond === k ? ' on' : ''}" role="tab" data-cond="${k}" aria-selected="${state.cond === k}">${l}</button>`).join('')}</div>`;
+    const help = state.cond === 'facts'
+      ? '칸은 자료 3건 중 평균 몇 건을 인용했는지입니다. <b>⚠ 함정</b>은 엉뚱한 통계를 한계 없이 쓴 횟수, <b>＊설명불가</b>는 자료로도 계산으로도 설명이 안 되는 수치를 쓴 횟수입니다.'
+      : '칸은 호출당 평균 시장 규모 수치 개수입니다. <b>출처X</b>는 출처가 비어 있는 수치(규칙 위반)입니다.';
+    return `<h3 style="margin:16px 0 4px">아이템별로 보기</h3>${tabs}<p class="sub">${help} 누르면 모델이 낸 수치 표를 볼 수 있습니다.</p><div id="s2box">${matrix('s2')}</div>`;
+  }
+
+  function showDetail(btn) {
+    const { c, case: id, kind } = btn.dataset, cs = caseOf(id);
+    const box = document.getElementById('detail-' + kind);
+    btn.closest('table').querySelectorAll('button.cell.sel').forEach((b) => b.classList.remove('sel'));
+    btn.classList.add('sel');
+    let html = `<b>${esc(cs.id)} · ${esc(cs.name)} · ${esc(c)}</b>`;
+    if (kind === 's1') {
+      html += `<div class="facts">핵심 기능(기준): ${cs.core.map((f) => `<span class="chip exact">${esc(f)}</span>`).join('')}</div>`;
+      cl(c, 's1', id).filter((x) => x.valid).sort((a, b) => a.rep - b.rep).forEach((r) => {
+        html += `<div class="rep"><div class="ans${r.ev.strict ? '' : ' bad'}">${r.rep}회차<br>${r.ev.strict ? '그대로 ✓' : (r.ev.paraphrased ? '말 바꿈 ~' : '누락 ✗')}</div><div>
+          ${r.features.map((f) => `<span class="chip ${f.kind}">${f.kind === 'para' ? '~ ' : f.kind === 'extra' ? '+ ' : ''}${esc(f.text)}</span>`).join('')}
+          <div class="ev">문제: ${esc(r.analysis.problem_statement)}<br>차별점: ${esc(r.analysis.differentiator)}</div>
+          ${r.ev.invented ? `<div class="ev fail">입력에 없는 숫자 포함</div>` : ''}</div></div>`;
+      });
+      html += `<div class="ev" style="margin-top:6px">범례: 실선=기준 기능 그대로 · 점선(~)=말만 바꿈 · 붉은 실선(+)=기준에 없는 기능을 덧붙임</div>`;
+    } else {
+      if (state.cond === 'facts') {
+        html += `<ul class="facts"><li>제공한 자료:</li>${cs.facts.map((f) => `<li>· ${esc(f.label)}: ${esc(f.display)} (${esc(f.source)})</li>`).join('')}<li style="color:var(--s2)">· 함정(다른 분야): ${esc(cs.trap.label)}: ${esc(cs.trap.display)}</li></ul>`;
+      }
+      cl(c, 's2', id, state.cond).filter((x) => x.valid).sort((a, b) => a.rep - b.rep).forEach((r) => {
+        const rows = r.items.map((it) => {
+          const st = it.status === 'used' ? `<span class="chip ok">자료 사용 ✓${it.source_ok ? '' : ' (기관 오표기)'}</span>` : it.status === 'trap' ? (it.disclaimed ? `<span class="chip">함정 통계 · 한계를 밝힘</span>` : `<span class="chip bad">함정 통계 ⚠ 그냥 사용</span>`) :
+            it.status === 'derived' ? `<span class="chip ok">자료로 계산한 값</span>` :
+            it.status === 'other' ? `<span class="chip bad">설명 안 되는 수치 ＊</span>` : (String(it.source_name || '').trim() ? '<span class="chip">출처 주장 (검증 불가)</span>' : '<span class="chip bad">출처 없음</span>');
+          return `<tr><td>${esc(it.label)}</td><td>${esc(it.value)} ${esc(it.unit)}</td><td>${esc(it.source_name)}</td><td>${st}</td><td>${esc(it.basis)}</td></tr>`;
+        }).join('');
+        html += `<div class="rep"><div class="ans">${r.rep}회차<br><span class="muted" style="font-weight:400">수치 ${r.items.length}개</span></div><div>
+          ${r.items.length ? `<table class="items"><thead><tr><th>항목</th><th>값</th><th>출처</th><th>판정</th><th>기준</th></tr></thead><tbody>${rows}</tbody></table>` : '<div class="ev">수치 없이 정성 서술만 함</div>'}
+          <div class="ev" style="margin-top:4px">시장 정의: ${esc(r.market.market_definition)}<br>경쟁: ${(r.market.competitors || []).map(esc).join(' / ')}<br>포지셔닝: ${esc(r.market.positioning)}</div></div></div>`;
+      });
+    }
+    box.className = 'detail';
+    box.innerHTML = html;
+  }
+
+  function tableView() {
+    const P = (x) => x == null ? '–' : Math.round(100 * x) + '%';
+    const rows = D.candidates.map((c) => {
+      const m = D.metrics[c.id] || {};
+      return `<tr><td>${esc(c.id)}</td><td>${P(m.s1_strict)}</td><td>${P(m.s1_lenient)}</td><td>${m.s1_changed}</td><td>${m.s1_extras == null ? '–' : m.s1_extras.toFixed(2)}</td>
+        <td>${P(m.f_used_rate)}</td><td>${m.f_trap_plain_calls}</td><td>${m.f_other_calls}</td><td>${m.o_zero_calls}/${m.o_n}</td><td>${m.o_unsourced}</td>
+        <td>${m.sec == null ? '–' : m.sec.toFixed(1)}</td><td>${m.reasoning == null ? '–' : Math.round(m.reasoning)}</td><td>${(m.cost || 0).toFixed(3)}</td></tr>`;
+    }).join('');
+    const failed = D.calls.filter((r) => !r.valid);
+    const fl = failed.length ? `<h3 style="margin-top:16px">실패 또는 형식 불량 ${failed.length}건</h3><ul class="note">${failed.map((r) => `<li class="fail">${esc(r.cand)} / ${esc(r.task)} / ${esc(r.case)} / ${r.rep}회차: ${esc(r.why)}</li>`).join('')}</ul>` : '';
+    return `<details class="tbl"><summary>표로 보기 (같은 숫자, 접근성용)</summary><div class="scroll" style="margin-top:8px"><table class="data">
+      <thead><tr><th>후보</th><th>S1 그대로</th><th>S1 느슨</th><th>목록 바꿈</th><th>덧붙임</th><th>S2 자료 사용</th><th>함정 그냥 사용</th><th>설명 안 되는 수치</th><th>수치 0개(자료 없음)</th><th>출처 없음</th><th>시간(초)</th><th>추론 토큰</th><th>비용($)</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>${fl}</details>`;
+  }
+
+  function limits() {
+    return `<h2>이 결과를 읽을 때</h2><div class="card note">
+      <p style="margin-top:0">· 아이템 8건과 참고 자료의 기관·수치는 모두 <b>시험용 가상 값</b>입니다. 자료는 실제 통계가 아닙니다.</p>
+      <p>· 모두 자동 판정입니다. 글의 <b>품질</b>(설득력, 문장 완성도, 논리)은 채점하지 않았습니다.</p>
+      <p>· <b>“참고 자료 없음” 조건의 수치는 사실 여부를 검증하지 못했습니다.</b> 출처 이름을 댔다고 실제 있는 통계가 아닙니다. 이 조건은 모델이 얼마나 조심하는지만 보여 줍니다.</p>
+      <p>· 프롬프트는 이 실험용 기준선이며 팀의 실제 프롬프트가 아닙니다. 팀은 시장 분석에 검색 도구를 붙일지 정하지 않았습니다.</p>
+      <p>· <b>채점 기준을 결과를 본 뒤에 고쳤습니다.</b> 처음에는 함정 통계 사용과 계산한 수치를 모두 나쁜 것으로 셌는데, 응답을 읽어 보니 한계를 밝히고 쓰거나 계산 근거를 밝힌 경우가 대부분이었습니다. 그래서 구분했고, 고치기 전 숫자와 다릅니다. 기준을 나중에 고쳤다는 점을 감안하고 보세요.</p>
+      <p style="margin-bottom:0">· numericTokens(보호 토큰 후보)는 모델이 아니라 코드가 만들 수 있어 시험하지 않았습니다.</p></div>`;
+  }
+
+  function render() {
+    app.innerHTML = header() + tiles() + s1Chart() + s1Section() + factsChart() + openChart() + `<h2>어느 아이템에서 그랬나</h2>` + s2Section() + tableView() + limits();
+    bindTheme();
+  }
+  function bindTheme() {
+    const tb = document.getElementById('themeBtn');
+    if (tb) tb.addEventListener('click', () => {
+      const root = document.documentElement;
+      const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+      root.dataset.theme = dark ? 'light' : 'dark';
+    });
+  }
+  render();
+
+  app.addEventListener('click', (e) => {
+    const t = e.target.closest('button.tab');
+    if (t) { state.cond = t.dataset.cond; render(); document.querySelector('.tabs').scrollIntoView({ block: 'center' }); return; }
+    const b = e.target.closest('button.cell');
+    if (b && !b.disabled) showDetail(b);
+  });
+  app.addEventListener('mousemove', (e) => {
+    const r = e.target.closest('rect.hit, circle.hit');
+    if (r) { const [c, k, v] = r.dataset.t.split('|'); return showTip(e, `<b>${esc(c)}</b>${esc(k)}: ${esc(v)}`); }
+    hideTip();
+  });
+  app.addEventListener('mouseleave', hideTip);
+})();
+</script>
+</body>
+</html>

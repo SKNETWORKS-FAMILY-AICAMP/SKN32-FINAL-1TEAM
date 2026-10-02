@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>검증-1 모델 비교 결과</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,.10);
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+    --cell-lo: #cde2fb; --cell-hi: #0d366b; --on-lo: #0b0b0b; --on-hi: #ffffff;
+    --good: #0ca30c; --critical: #d03b3b; --good-text: #006300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,.10);
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+      --cell-lo: #202a36; --cell-hi: #6da7ec; --on-lo: #ffffff; --on-hi: #0b0b0b; --good-text: #0ca30c;
+    }
+    :root:where(:not([data-theme="light"])) button.cell.t60:not(.t80) { color: var(--on-lo); }
+    :root:where(:not([data-theme="light"])) button.cell.t80 { color: var(--on-hi); }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --cell-lo: #202a36; --cell-hi: #6da7ec; --on-lo: #ffffff; --on-hi: #0b0b0b; --good-text: #0ca30c;
+  }
+  :root[data-theme="dark"] button.cell.t60:not(.t80) { color: var(--on-lo); }
+  :root[data-theme="dark"] button.cell.t80 { color: var(--on-hi); }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+  main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 36px 0 4px; }
+  h3 { font-size: 15px; margin: 0; }
+  .sub { color: var(--ink-2); margin: 0 0 12px; }
+  .muted { color: var(--muted); }
+  .topbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  button.theme { background: var(--surface); color: var(--ink-2); border: 1px solid var(--ring); border-radius: 8px;
+    padding: 6px 12px; cursor: pointer; font: inherit; font-size: 13px; }
+  .card { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 16px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin-top: 12px; }
+  .tile h3 { display: flex; align-items: center; gap: 8px; }
+  .tile .mode { color: var(--ink-2); font-size: 13px; margin: 2px 0 10px 20px; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  .kpi { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 6px 0; border-top: 1px solid var(--grid); }
+  .kpi:first-of-type { border-top: 0; }
+  .kpi .k { color: var(--ink-2); font-size: 13px; }
+  .kpi .k small { display: block; color: var(--muted); font-size: 12px; }
+  .kpi .v { font-size: 22px; font-weight: 600; white-space: nowrap; }
+  .kpi .v small { font-size: 13px; font-weight: 400; color: var(--muted); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 6px 0 10px; font-size: 13px; color: var(--ink-2); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .scroll { overflow-x: auto; }
+  svg text { fill: var(--ink-2); font-size: 12px; font-family: inherit; }
+  svg .axis-label { fill: var(--muted); }
+  /* 히트맵 */
+  table.heat { border-collapse: separate; border-spacing: 2px; width: 100%; min-width: 760px; }
+  table.heat th { font-weight: 500; font-size: 12px; color: var(--ink-2); text-align: center; padding: 4px 2px; vertical-align: bottom; }
+  table.heat th small { display: block; color: var(--muted); font-weight: 400; }
+  table.heat td.rowlabel { text-align: left; font-size: 13px; padding: 4px 8px 4px 0; width: 230px; }
+  table.heat td.rowlabel small { display: block; color: var(--muted); font-size: 12px; }
+  table.heat td.cellwrap { padding: 0; }
+  button.cell { position: relative; width: 100%; height: 56px; border: 0; border-radius: 6px; cursor: pointer;
+    background: color-mix(in oklab, var(--cell-hi) calc(var(--f) * 100%), var(--cell-lo));
+    color: var(--on-lo); font: inherit; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2; }
+  /* 글자색: 밝은 화면은 f>0.6부터 흰 글자, 어두운 화면은 f>0.8부터 어두운 글자(중간 색에서 대비가 가장 나쁘다) */
+  button.cell.t60 { color: #ffffff; }
+  button.cell .n { font-size: 17px; font-weight: 600; }
+  button.cell .d { font-size: 11px; opacity: .85; }
+  button.cell .mark { position: absolute; top: 3px; left: 5px; font-size: 10px; }
+  button.cell .res { position: absolute; top: 2px; right: 5px; font-size: 13px; font-weight: 700; }
+  button.cell.expect { outline: 2px solid var(--ink-2); outline-offset: -2px; }
+  button.cell.sel { box-shadow: 0 0 0 3px var(--s1); }
+  button.cell:focus-visible { outline: 3px solid var(--s1); outline-offset: 1px; }
+  button.cell.empty { background: transparent; border: 1px dashed var(--axis); color: var(--muted); cursor: default; }
+  td.total button.cell { border-radius: 6px; }
+  .heatlegend { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ink-2); flex-wrap: wrap; margin: 8px 0 0; }
+  .ramp { width: 120px; height: 10px; border-radius: 5px; background: linear-gradient(90deg, var(--cell-lo), var(--cell-hi)); }
+  .detail { margin-top: 12px; border-top: 1px solid var(--grid); padding-top: 12px; font-size: 14px; }
+  .detail .rep { display: grid; grid-template-columns: 64px 1fr; gap: 4px 12px; padding: 8px 0; border-top: 1px solid var(--grid); }
+  .detail .rep:first-of-type { border-top: 0; }
+  .detail .sc { font-weight: 600; }
+  .detail .ev { color: var(--ink-2); font-size: 13px; }
+  .detail q { color: var(--ink); }
+  .cand-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .cand-head .mode { color: var(--ink-2); font-size: 13px; }
+  table.data { border-collapse: collapse; width: 100%; font-size: 13px; min-width: 720px; }
+  table.data th, table.data td { text-align: right; padding: 6px 8px; border-top: 1px solid var(--grid); white-space: nowrap; }
+  table.data th:first-child, table.data td:first-child { text-align: left; }
+  table.data th { color: var(--ink-2); font-weight: 500; border-top: 0; }
+  details.tbl { margin-top: 24px; }
+  details.tbl summary { cursor: pointer; color: var(--ink-2); }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 4px; }
+  button.tab { background: var(--surface); color: var(--ink-2); border: 1px solid var(--ring); border-radius: 999px; padding: 6px 14px; cursor: pointer; font: inherit; font-size: 13px; }
+  button.tab.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+  button.tab:focus-visible { outline: 3px solid var(--s1); outline-offset: 2px; }
+  .note { font-size: 13px; color: var(--ink-2); }
+  .fail { color: var(--critical); }
+  #tip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface); color: var(--ink);
+    border: 1px solid var(--ring); border-radius: 8px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.18);
+    max-width: 280px; display: none; }
+  #tip b { display: block; margin-bottom: 2px; }
+  .empty-state { text-align: center; padding: 48px 0; color: var(--ink-2); }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<div id="tip" role="tooltip"></div>
+<script id="data" type="application/json">{"run": {"name": "v1_20260930T123328_trial", "started_at": "2026-09-30T12:33:28", "prompt_version": "v1-baseline", "estimated_usd": 0.0359, "reps": 1, "total_cost": 0.0092036, "calls": 6}, "items": [{"code": "E1", "name": "문제 인식", "max": 15}, {"code": "E2", "name": "해결 방안", "max": 15}, {"code": "E3", "name": "시장성", "max": 15}, {"code": "E4", "name": "실현 가능성", "max": 15}, {"code": "E5", "name": "팀 역량", "max": 10}], "total_max": 70, "margin_item": 0.1, "margin_total": 0.05, "plans": [{"id": "base_01", "title": "금형 불량 검출 비전 AI 검사 장비 '몰드아이'"}], "variants": [{"plan": "base_01", "id": "original", "note": "원본(좋은 계획서)", "short": "원본", "expect": []}, {"plan": "base_01", "id": "drop_E3", "note": "시장성 섹션 삭제", "short": "시장성 삭제", "expect": ["E3"]}, {"plan": "base_01", "id": "drop_E5", "note": "팀 역량 섹션 삭제", "short": "팀 역량 삭제", "expect": ["E5"]}, {"plan": "base_01", "id": "unsourced_E3", "note": "시장성을 출처 없는 부풀린 수치로 교체", "short": "시장성 수치 부풀림", "expect": ["E3"]}, {"plan": "base_01", "id": "offtopic_E2", "note": "해결 방안을 무관한 내용(카페)으로 교체", "short": "해결 방안 무관 교체", "expect": ["E2"]}, {"plan": "base_01", "id": "halved", "note": "모든 섹션을 문장 절반으로 축소(총점만 본다)", "short": "분량 절반", "expect": []}], "candidates": [{"id": "luna-medium", "model": "gpt-5.6-luna", "mode": "추론 강도 medium", "reasoning": true}], "metrics": {"luna-medium": {"calls": 6, "ok": 6, "parsed": 6, "orig_mean": 65.0, "order_hit": 5, "order_n": 5, "cause_hit": 4, "cause_n": 4, "cause_depth": 0.85, "jitter": null, "sec": 9.110833333333334, "reasoning": 97.16666666666667, "cost": 0.0092036}}, "rows": [{"cand": "luna-medium", "plan": "base_01", "variant": "original", "rep": 1, "ok": true, "valid": true, "total": 65.0, "scores": {"E1": {"score": 14.0, "comment": "중소 금형·사출 공장이라는 대상 고객이 구체적이며, 불량 누락률·인터뷰 결과·인건비·기존 장비 가격 등 현재 불편과 비용을 정량적으로 제시했다.", "evidence": "“경기 안산·시흥 지역 사출 업체 12곳 인터뷰에서 11곳이 '숙련 검사원 구인난'을 가장 큰 어려움으로 꼽았고, 검사 인력 1명의 연간 인건비는 약 3,800만 원이었다.” / “미세 스크래치와 버 불량을 놓치는 비율이 평균 4~6%에 이르러”"}, "E2": {"score": 14.0, "comment": "핵심 기능이 외관 불량 검사와 원인 추적이라는 문제에 직접 연결된다. 기존 장비 대비 자동화된 맞춤 학습과 낮은 목표 가격을 제시해 차별성도 비교적 명확하다.", "evidence": "“산업용 카메라 2대와 조명 모듈, 엣지 컴퓨터로 구성된 설치형 검사 장비다.” / “제품 1개당 1초 이내에 스크래치·버·미성형을 분류한다.” / “소량 다품종 환경에 맞춰 학습 절차를 자동화한 점이 차별점이다.”"}, "E3": {"score": 13.0, "comment": "시장 규모와 도입률에 통계청 및 산업통상자원부 자료 출처를 제시했고, 시범 설치와 지역 협동조합 확산이라는 초기 고객 확보 전략도 있다. 다만 초기 목표 시장의 ‘도입 여력이 있는 업체 10%’는 가정에 근거가 제시되지 않았다.", "evidence": "“국내 금형·사출 성형 사업체는 통계청 2023년 광업·제조업조사 기준 약 1만 1천 곳” / “산업통상자원부 2024년 스마트공장 보급 현황 자료에 따르면 소규모 제조업의 스마트 검사 장비 도입률은 7% 수준이다.” / “안산 스마트제조혁신센터와 협업해 시범 설치 5곳을 확보하고”"}, "E4": {"score": 14.0, "comment": "월별 개발 단계와 검증 일정이 구체적이며, 이미지 데이터·프로토타입 정확도·시제품 제작 등 현재 준비 정도도 제시되어 실현 가능성이 높다. 조명 변화 안정성이라는 남은 과제와 대응 실험도 명시했다.", "evidence": "“개발은 6개월 3단계로 진행한다. 1~2개월차에 카메라·조명 하드웨어를 확정하고, 3~4개월차에 불량 분류 모델을 학습하며, 5~6개월차에 시범 업체 2곳에 설치해 검증한다.” / “현재 사출 제품 이미지 3,200장으로 만든 프로토타입에서 3개 불량 유형 분류 정확도 91%를 확인했고, 하드웨어는 시판 부품으로 구성해 시제품 1대를 제작했다.”"}, "E5": {"score": 10.0, "comment": "품질관리·AI 모델·광학 설계 경력이 사업과 직접 연결되며, 고객·모델·장비로 역할 분담도 명확하다.", "evidence": "“대표 김하늘은 사출 금형 업체에서 품질 관리자로 8년 근무하며 검사 공정을 직접 운영했다.” / “공동창업자 이도윤은 제조 영상 검사 AI 연구소에서 4년간 딥러닝 모델을 개발했다.” / “하드웨어 담당 박서준은 산업용 카메라 제조사에서 6년간 광학 설계를 맡았다.” / “대표가 고객 발굴과 현장 검증, 이도윤이 모델 학습, 박서준이 장비 설계를 담당한다.”"}}, "sec": 9.344, "reasoning": 0, "cost": 0.0013836, "error": null}, {"cand": "luna-medium", "plan": "base_01", "variant": "drop_E5", "rep": 1, "ok": true, "valid": true, "total": 55.0, "scores": {"E1": {"score": 14.0, "comment": "중소 금형·사출 공장이라는 대상 고객과 육안검사의 불편, 불량 누락률·인터뷰·인건비 등 정량 및 사례 근거가 구체적으로 제시되어 높은 점수를 부여했다.", "evidence": "국내 중소 금형·사출 공장은 제품 출하 전 외관 불량을 숙련 검사원이 육안으로 확인한다. 2인 1조로 하루 8시간 검사해도 미세 스크래치와 버 불량을 놓치는 비율이 평균 4~6%에 이르러, 납품처 반품과 재작업이 반복된다. 경기 안산·시흥 지역 사출 업체 12곳 인터뷰에서 11곳이 '숙련 검사원 구인난'을 가장 큰 어려움으로 꼽았고, 검사 인력 1명의 연간 인건비는 약 3,800만 원이었다."}, "E2": {"score": 14.0, "comment": "제시된 문제인 육안검사와 숙련 인력 의존에 직접 대응하는 핵심 기능이 구체적이며, 소량 다품종 대응과 학습 자동화라는 기존 장비 대비 차별점도 명확하다.", "evidence": "몰드아이는 산업용 카메라 2대와 조명 모듈, 엣지 컴퓨터로 구성된 설치형 검사 장비다. 핵심 기능은 세 가지다. 첫째, 제품 1개당 1초 이내에 스크래치·버·미성형을 분류한다. 둘째, 불량 유형과 위치를 이미지로 남겨 원인 공정을 추적할 수 있게 한다. 셋째, 업체가 자기 제품 사진 50장만 올리면 하루 안에 모델을 맞춤 학습한다. 기존 고가 장비는 제품마다 검사 조건을 새로 설정해야 하지만, 몰드아이는 소량 다품종 환경에 맞춰 학습 절차를 자동화한 점이 차별점이다."}, "E3": {"score": 13.0, "comment": "시장 규모와 도입률에 통계청 및 산업통상자원부 자료 출처가 제시되고, 시범 설치와 지역 협동조합 확산이라는 초기 고객 확보 전략도 있다. 다만 도입 여력 10%와 매출 규모는 가정에 기반해 일부 감점했다.", "evidence": "국내 금형·사출 성형 사업체는 통계청 2023년 광업·제조업조사 기준 약 1만 1천 곳이며, 이 중 종사자 50인 미만이 약 82%다. 산업통상자원부 2024년 스마트공장 보급 현황 자료에 따르면 소규모 제조업의 스마트 검사 장비 도입률은 7% 수준이다. 도입 여력이 있는 업체를 전체의 10%로 가정하면 초기 목표 시장은 약 900곳, 연 매출 규모로 약 324억 원이다. 진입 전략은 안산 스마트제조혁신센터와 협업해 시범 설치 5곳을 확보하고, 불량률 개선 사례를 지역 협동조합에 공유해 확산하는 것이다."}, "E4": {"score": 14.0, "comment": "월별 단계 일정과 시범 검증 계획이 있으며, 이미지 3,200장 기반 프로토타입·정확도 91%·시제품 1대 등 현재 준비 정도가 구체적이다. 잔여 기술 과제와 대응 실험도 제시되어 실현 가능성이 높다.", "evidence": "개발은 6개월 3단계로 진행한다. 1~2개월차에 카메라·조명 하드웨어를 확정하고, 3~4개월차에 불량 분류 모델을 학습하며, 5~6개월차에 시범 업체 2곳에 설치해 검증한다. 현재 사출 제품 이미지 3,200장으로 만든 프로토타입에서 3개 불량 유형 분류 정확도 91%를 확인했고, 하드웨어는 시판 부품으로 구성해 시제품 1대를 제작했다. 남은 과제는 조명 변화에 대한 안정성이며, 편광 필터 적용 실험을 3개월차에 수행한다."}, "E5": {"score": 0.0, "comment": "대표자와 팀 구성원의 경력 및 역할 분담에 관한 내용이 사업계획서에 제시되어 있지 않다.", "evidence": "없음"}}, "sec": 9.603, "reasoning": 93, "cost": 0.001609, "error": null}, {"cand": "luna-medium", "plan": "base_01", "variant": "drop_E3", "rep": 1, "ok": true, "valid": true, "total": 54.0, "scores": {"E1": {"score": 14.0, "comment": "중소 금형·사출 공장이라는 대상 고객이 구체적이며, 불량 누락률·인터뷰 결과·인건비 등 현재 불편을 정량적으로 제시했다. 다만 인터뷰의 조사 방식이나 불량률 산출 근거가 더 제시되지는 않았다.", "evidence": "국내 중소 금형·사출 공장은 제품 출하 전 외관 불량을 숙련 검사원이 육안으로 확인한다. 2인 1조로 하루 8시간 검사해도 미세 스크래치와 버 불량을 놓치는 비율이 평균 4~6%에 이르러, 납품처 반품과 재작업이 반복된다. 경기 안산·시흥 지역 사출 업체 12곳 인터뷰에서 11곳이 '숙련 검사원 구인난'을 가장 큰 어려움으로 꼽았고, 검사 인력 1명의 연간 인건비는 약 3,800만 원이었다."}, "E2": {"score": 14.0, "comment": "제시된 검사 문제와 직접 연결되는 핵심 기능이 구체적이고, 기존 고가 장비 대비 소량 다품종 및 자동 학습이라는 차별점도 명확하다. 실제 성능 목표의 검증 조건은 추가 설명이 필요하다.", "evidence": "몰드아이는 산업용 카메라 2대와 조명 모듈, 엣지 컴퓨터로 구성된 설치형 검사 장비다. 핵심 기능은 세 가지다. 첫째, 제품 1개당 1초 이내에 스크래치·버·미성형을 분류한다. 둘째, 불량 유형과 위치를 이미지로 남겨 원인 공정을 추적할 수 있게 한다. 셋째, 업체가 자기 제품 사진 50장만 올리면 하루 안에 모델을 맞춤 학습한다. 기존 고가 장비는 제품마다 검사 조건을 새로 설정해야 하지만, 몰드아이는 소량 다품종 환경에 맞춰 학습 절차를 자동화한 점이 차별점이다."}, "E3": {"score": 2.0, "comment": "가격 정책은 제시했지만 목표 시장 규모·성장성에 대한 출처 있는 수치가 없고, 초기 고객 확보 전략도 구체적으로 제시되지 않았다. 시범 업체 2곳 설치 계획은 실현 가능성에 해당하는 내용으로 시장 진입 전략으로 보기에는 제한적이다.", "evidence": "장비 가격은 대당 2,500만 원, 월 구독료 30만 원을 목표로 한다."}, "E4": {"score": 14.0, "comment": "월별 단계 일정과 시범 검증 계획이 구체적이며, 이미지 데이터·프로토타입 정확도·시제품 제작 등 현재 준비 정도도 제시했다. 다만 정확도 검증 규모와 시범 업체의 확정 여부 등은 보완이 필요하다.", "evidence": "개발은 6개월 3단계로 진행한다. 1~2개월차에 카메라·조명 하드웨어를 확정하고, 3~4개월차에 불량 분류 모델을 학습하며, 5~6개월차에 시범 업체 2곳에 설치해 검증한다. 현재 사출 제품 이미지 3,200장으로 만든 프로토타입에서 3개 불량 유형 분류 정확도 91%를 확인했고, 하드웨어는 시판 부품으로 구성해 시제품 1대를 제작했다. 남은 과제는 조명 변화에 대한 안정성이며, 편광 필터 적용 실험을 3개월차에 수행한다."}, "E5": {"score": 10.0, "comment": "대표와 팀원 모두 사출 검사, 제조 AI, 산업용 카메라·광학 등 사업과 직접 관련된 경력을 보유하고 있으며, 고객·AI·하드웨어 역할 분담도 명확하다.", "evidence": "대표 김하늘은 사출 금형 업체에서 품질 관리자로 8년 근무하며 검사 공정을 직접 운영했다. 공동창업자 이도윤은 제조 영상 검사 AI 연구소에서 4년간 딥러닝 모델을 개발했다. 하드웨어 담당 박서준은 산업용 카메라 제조사에서 6년간 광학 설계를 맡았다. 역할은 대표가 고객 발굴과 현장 검증, 이도윤이 모델 학습, 박서준이 장비 설계를 담당한다."}}, "sec": 10.096, "reasoning": 101, "cost": 0.0015932, "error": null}, {"cand": "luna-medium", "plan": "base_01", "variant": "unsourced_E3", "rep": 1, "ok": true, "valid": true, "total": 55.5, "scores": {"E1": {"score": 14.5, "comment": "중소 금형·사출 공장이라는 대상 고객이 구체적이며, 불량 누락률·인터뷰 결과·인건비 등 현재 불편을 정량적으로 제시했다. 다만 인터뷰와 수치의 세부 출처가 명시되지는 않았다.", "evidence": "국내 중소 금형·사출 공장은 제품 출하 전 외관 불량을 숙련 검사원이 육안으로 확인한다. 2인 1조로 하루 8시간 검사해도 미세 스크래치와 버 불량을 놓치는 비율이 평균 4~6%에 이르러, 납품처 반품과 재작업이 반복된다. 경기 안산·시흥 지역 사출 업체 12곳 인터뷰에서 11곳이 '숙련 검사원 구인난'을 가장 큰 어려움으로 꼽았고, 검사 인력 1명의 연간 인건비는 약 3,800만 원이었다."}, "E2": {"score": 14.5, "comment": "육안검사의 불량 누락 및 숙련 인력 의존 문제와 연결되는 핵심 기능을 구체적으로 제시했다. 소량 다품종 환경에서 제품별 설정을 자동화한다는 기존 고가 장비 대비 차별점도 명확하다.", "evidence": "몰드아이는 산업용 카메라 2대와 조명 모듈, 엣지 컴퓨터로 구성된 설치형 검사 장비다. 핵심 기능은 세 가지다. 첫째, 제품 1개당 1초 이내에 스크래치·버·미성형을 분류한다. 둘째, 불량 유형과 위치를 이미지로 남겨 원인 공정을 추적할 수 있게 한다. 셋째, 업체가 자기 제품 사진 50장만 올리면 하루 안에 모델을 맞춤 학습한다. 기존 고가 장비는 제품마다 검사 조건을 새로 설정해야 하지만, 몰드아이는 소량 다품종 환경에 맞춰 학습 절차를 자동화한 점이 차별점이다."}, "E3": {"score": 2.0, "comment": "시장 규모와 성장률을 제시했지만 출처가 없고, 도입률 및 점유율 전망도 근거 없이 과도하게 제시됐다. 초기 고객 확보 전략은 '열심히 영업하고 홍보'하는 수준으로 구체성이 부족하다.", "evidence": "국내 시장 규모는 약 2조 원이며 연평균 성장률은 25%로 추정된다. 스마트 검사 장비 도입률은 곧 50%를 넘을 것이며, 우리 제품은 이 시장의 30%를 차지할 수 있다. 진입 전략은 열심히 영업하고 홍보하는 것이다."}, "E4": {"score": 14.5, "comment": "월별 단계와 시범 설치 계획이 구체적이며, 이미지 데이터·분류 정확도·시제품 제작 현황 등 현재 준비 정도를 제시했다. 조명 변화 안정성이라는 잔여 과제와 대응 실험도 밝혀 계획의 현실성이 높다.", "evidence": "개발은 6개월 3단계로 진행한다. 1~2개월차에 카메라·조명 하드웨어를 확정하고, 3~4개월차에 불량 분류 모델을 학습하며, 5~6개월차에 시범 업체 2곳에 설치해 검증한다. 현재 사출 제품 이미지 3,200장으로 만든 프로토타입에서 3개 불량 유형 분류 정확도 91%를 확인했고, 하드웨어는 시판 부품으로 구성해 시제품 1대를 제작했다. 남은 과제는 조명 변화에 대한 안정성이며, 편광 필터 적용 실험을 3개월차에 수행한다."}, "E5": {"score": 10.0, "comment": "대표·AI·광학 담당자의 경력이 제조 검사 사업과 직접 연결되며, 고객 발굴·모델 학습·장비 설계로 역할 분담도 명확하다.", "evidence": "대표 김하늘은 사출 금형 업체에서 품질 관리자로 8년 근무하며 검사 공정을 직접 운영했다. 공동창업자 이도윤은 제조 영상 검사 AI 연구소에서 4년간 딥러닝 모델을 개발했다. 하드웨어 담당 박서준은 산업용 카메라 제조사에서 6년간 광학 설계를 맡았다. 역할은 대표가 고객 발굴과 현장 검증, 이도윤이 모델 학습, 박서준이 장비 설계를 담당한다."}}, "sec": 10.7, "reasoning": 123, "cost": 0.0016842000000000003, "error": null}, {"cand": "luna-medium", "plan": "base_01", "variant": "halved", "rep": 1, "ok": true, "valid": true, "total": 44.0, "scores": {"E1": {"score": 12.0, "comment": "대상 고객이 국내 중소 금형·사출 공장으로 구체적이며, 검사 인력·시간과 불량 누락률, 반품·재작업 문제를 제시했다. 다만 4~6% 수치의 출처나 조사 근거가 없어 일부 감점했다.", "evidence": "국내 중소 금형·사출 공장은 제품 출하 전 외관 불량을 숙련 검사원이 육안으로 확인한다. 2인 1조로 하루 8시간 검사해도 미세 스크래치와 버 불량을 놓치는 비율이 평균 4~6%에 이르러, 납품처 반품과 재작업이 반복된다."}, "E2": {"score": 7.0, "comment": "카메라·조명·엣지 컴퓨터를 활용해 육안검사의 불량 판별 문제와 직접 연결되는 기능을 제시했다. 그러나 기존 검사 장비 대비 차별점이 명확하지 않고, 핵심 기능이 세 가지라고 했으나 한 가지 기능만 구체적으로 설명되어 감점했다.", "evidence": "몰드아이는 산업용 카메라 2대와 조명 모듈, 엣지 컴퓨터로 구성된 설치형 검사 장비다. 핵심 기능은 세 가지다. 첫째, 제품 1개당 1초 이내에 스크래치·버·미성형을 분류한다."}, "E3": {"score": 8.0, "comment": "시장 규모와 도입률을 통계청 및 산업통상자원부 자료에 근거한 수치로 제시했다. 다만 시장 성장성에 대한 자료와 초기 고객 확보 전략이 계획서에 없어 높은 점수를 주기 어렵다.", "evidence": "국내 금형·사출 성형 사업체는 통계청 2023년 광업·제조업조사 기준 약 1만 1천 곳이며, 이 중 종사자 50인 미만이 약 82%다. 산업통상자원부 2024년 스마트공장 보급 현황 자료에 따르면 소규모 제조업의 스마트 검사 장비 도입률은 7% 수준이다."}, "E4": {"score": 10.0, "comment": "하드웨어 확정, 모델 학습, 시범 설치·검증으로 이어지는 단계별 6개월 일정이 구체적이다. 다만 현재 개발된 시제품, 데이터 확보, 기술 검증 결과 등 현재 준비 정도가 제시되지 않았다.", "evidence": "개발은 6개월 3단계로 진행한다. 1~2개월차에 카메라·조명 하드웨어를 확정하고, 3~4개월차에 불량 분류 모델을 학습하며, 5~6개월차에 시범 업체 2곳에 설치해 검증한다."}, "E5": {"score": 7.0, "comment": "대표자의 검사 공정 경험과 공동창업자의 제조 영상 AI 개발 경력이 사업과 직접 관련된다. 다만 두 사람의 구체적인 역할 분담은 명시되어 있지 않다.", "evidence": "대표 김하늘은 사출 금형 업체에서 품질 관리자로 8년 근무하며 검사 공정을 직접 운영했다. 공동창업자 이도윤은 제조 영상 검사 AI 연구소에서 4년간 딥러닝 모델을 개발했다."}}, "sec": 6.922, "reasoning": 154, "cost": 0.0013224, "error": null}, {"cand": "luna-medium", "plan": "base_01", "variant": "offtopic_E2", "rep": 1, "ok": true, "valid": true, "total": 51.0, "scores": {"E1": {"score": 14.0, "comment": "중소 금형·사출 공장이라는 대상 고객과 육안검사, 검사 누락률, 인건비, 인터뷰 결과 등 현재 불편이 구체적인 수치와 사례로 제시되어 높은 점수를 부여한다.", "evidence": "국내 중소 금형·사출 공장은 제품 출하 전 외관 불량을 숙련 검사원이 육안으로 확인한다. 2인 1조로 하루 8시간 검사해도 미세 스크래치와 버 불량을 놓치는 비율이 평균 4~6%에 이르러, 납품처 반품과 재작업이 반복된다. 경기 안산·시흥 지역 사출 업체 12곳 인터뷰에서 11곳이 '숙련 검사원 구인난'을 가장 큰 어려움으로 꼽았고, 검사 인력 1명의 연간 인건비는 약 3,800만 원이었다."}, "E2": {"score": 0.0, "comment": "제조 현장의 외관 불량 검사 문제와 연결된 해결책, 핵심 기능 또는 기존 자동 검사 장비 대비 차별점이 제시되지 않았고, 내용도 동네 카페 사업에 관한 것이다.", "evidence": "본 사업은 동네 카페의 신메뉴 개발을 다룬다. 원두는 산지별로 세 가지를 블렌딩하고, 여름에는 과일 음료를 추가한다."}, "E3": {"score": 12.0, "comment": "통계청과 산업통상자원부 자료를 출처로 제시하고 초기 고객 확보 및 확산 전략도 구체적이다. 다만 전체 1만 1천 곳과 10% 가정으로 산출한 약 900곳 및 324억 원의 계산 근거가 명확하지 않아 일부 감점한다.", "evidence": "국내 금형·사출 성형 사업체는 통계청 2023년 광업·제조업조사 기준 약 1만 1천 곳이며, 이 중 종사자 50인 미만이 약 82%다. 산업통상자원부 2024년 스마트공장 보급 현황 자료에 따르면 소규모 제조업의 스마트 검사 장비 도입률은 7% 수준이다. 도입 여력이 있는 업체를 전체의 10%로 가정하면 초기 목표 시장은 약 900곳, 연 매출 규모로 약 324억 원이다. 진입 전략은 안산 스마트제조혁신센터와 협업해 시범 설치 5곳을 확보하고, 불량률 개선 사례를 지역 협동조합에 공유해 확산하는 것이다."}, "E4": {"score": 15.0, "comment": "월별 단계 일정, 구현 방법, 시범 설치 계획이 구체적이며 이미지 데이터·정확도·시제품 등 현재 준비 정도와 남은 기술 과제까지 제시되어 실현 가능성이 높다.", "evidence": "개발은 6개월 3단계로 진행한다. 1~2개월차에 카메라·조명 하드웨어를 확정하고, 3~4개월차에 불량 분류 모델을 학습하며, 5~6개월차에 시범 업체 2곳에 설치해 검증한다. 현재 사출 제품 이미지 3,200장으로 만든 프로토타입에서 3개 불량 유형 분류 정확도 91%를 확인했고, 하드웨어는 시판 부품으로 구성해 시제품 1대를 제작했다. 남은 과제는 조명 변화에 대한 안정성이며, 편광 필터 적용 실험을 3개월차에 수행한다."}, "E5": {"score": 10.0, "comment": "대표와 팀원의 경력이 품질검사, 제조 AI, 산업용 카메라·광학 설계와 직접 연결되며 고객·AI·하드웨어 역할 분담도 명확하다.", "evidence": "대표 김하늘은 사출 금형 업체에서 품질 관리자로 8년 근무하며 검사 공정을 직접 운영했다. 공동창업자 이도윤은 제조 영상 검사 AI 연구소에서 4년간 딥러닝 모델을 개발했다. 하드웨어 담당 박서준은 산업용 카메라 제조사에서 6년간 광학 설계를 맡았다. 역할은 대표가 고객 발굴과 현장 검증, 이도윤이 모델 학습, 박서준이 장비 설계를 담당한다."}}, "sec": 8.0, "reasoning": 112, "cost": 0.0016112, "error": null}]}</script>
+<script>
+(function () {
+  const D = JSON.parse(document.getElementById('data').textContent);
+  const $ = (h) => { const t = document.createElement('template'); t.innerHTML = h.trim(); return t.content.firstChild; };
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const mean = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+  const fmt = (x, n = 1) => x == null ? '–' : x.toFixed(n);
+  const SLOTS = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)'];
+  const slot = (i) => SLOTS[i % SLOTS.length];
+  const app = document.getElementById('app');
+  const tip = document.getElementById('tip');
+
+  // ── 데이터 도우미 ─────────────────────────────────────────
+  const valid = D.rows.filter((r) => r.valid);
+  const rowsOf = (c, p, v) => valid.filter((r) => r.cand === c && r.plan === p && r.variant === v);
+  const itemVals = (c, p, v, code) => rowsOf(c, p, v).map((r) => r.scores[code].score);
+  const totalVals = (c, p, v) => rowsOf(c, p, v).map((r) => r.total);
+  const plans = D.plans.map((p) => p.id);
+  const state = { plan: plans[0] };
+  const VARS = () => D.variants.filter((v) => v.plan === state.plan);
+
+  // ── 툴팁 ────────────────────────────────────────────────
+  function showTip(e, html) {
+    tip.innerHTML = html; tip.style.display = 'block';
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = e.clientX + 14, y = e.clientY + 14;
+    if (x + w > innerWidth - 8) x = e.clientX - w - 14;
+    if (y + h > innerHeight - 8) y = e.clientY - h - 14;
+    tip.style.left = Math.max(8, x) + 'px'; tip.style.top = Math.max(8, y) + 'px';
+  }
+  const hideTip = () => { tip.style.display = 'none'; };
+
+  // ── 머리말 ──────────────────────────────────────────────
+  function header() {
+    const r = D.run;
+    return `<div class="topbar"><div>
+      <h1>검증-1 모델 비교 결과</h1>
+      <p class="sub">사업계획서 채점 Agent에 어떤 모델이 맞는지 본 실험입니다. 망가뜨린 계획서를 알아채는지, 같은 입력에 점수가 흔들리는지를 봅니다.</p>
+      <p class="note">${esc(r.name)} · 계획서 ${D.plans.length}편 · 호출 ${r.calls}건 · 실제 비용 $${(r.total_cost || 0).toFixed(3)}${r.estimated_usd != null ? ' (예상 $' + r.estimated_usd.toFixed(3) + ')' : ''} · 프롬프트 ${esc(r.prompt_version)}</p>
+    </div><button class="theme" id="themeBtn" type="button">화면 밝기 바꾸기</button></div>`;
+  }
+
+  // ── 한눈에 보기: 후보별 타일 ─────────────────────────────
+  function tiles() {
+    const cards = D.candidates.map((c, i) => {
+      const m = D.metrics[c.id] || {};
+      const okPct = m.calls ? Math.round(100 * m.parsed / m.calls) : 0;
+      const ratio = (h, n) => n ? `${h}<small> / ${n}</small>` : '–';
+      return `<div class="card tile">
+        <h3><span class="swatch" style="background:${slot(i)}"></span>${esc(c.id)}</h3>
+        <div class="mode">${esc(c.model)} · ${esc(c.mode)}</div>
+        <div class="kpi"><div class="k">순서 맞힘<small>망가진 계획서에 뚜렷하게 낮은 총점을 줌</small></div><div class="v">${ratio(m.order_hit, m.order_n)}</div></div>
+        <div class="kpi"><div class="k">원인 짚기<small>망가뜨린 그 항목을 뚜렷하게 깎음</small></div><div class="v">${ratio(m.cause_hit, m.cause_n)}</div></div>
+        <div class="kpi"><div class="k">깎은 폭<small>깎아야 할 항목을 만점의 몇 %나 내렸나(클수록 정확)</small></div><div class="v">${m.cause_depth == null ? '–' : Math.round(100 * m.cause_depth) + '<small> %</small>'}</div></div>
+        <div class="kpi"><div class="k">흔들림<small>같은 입력 반복 시 총점 편차(작을수록 안정)</small></div><div class="v">${m.jitter == null ? '–' : fmt(m.jitter, 1) + '<small> 점</small>'}</div></div>
+        <div class="kpi"><div class="k">원본 평균 점수<small>좋은 계획서가 높게 나오는지 (만점 ${D.total_max})</small></div><div class="v">${fmt(m.orig_mean, 1)}</div></div>
+        <div class="kpi"><div class="k">형식 통과<small>항목 5개가 빠짐없이 나온 비율</small></div><div class="v">${okPct}<small> %</small></div></div>
+        <div class="kpi"><div class="k">비용 · 시간<small>호출 ${m.calls}건 합계 · 호출당 평균</small></div><div class="v">$${(m.cost || 0).toFixed(3)}<small> · ${fmt(m.sec, 0)}초</small></div></div>
+      </div>`;
+    }).join('');
+    return `<h2>한눈에 보기</h2><p class="sub">후보마다 카드 하나입니다. 숫자가 클수록 좋은 것은 위 두 개, 작을수록 좋은 것은 흔들림입니다.</p><div class="tiles">${cards}</div>`;
+  }
+
+  // ── 총점 점 그래프 ───────────────────────────────────────
+  function dotChart() {
+    const W = 1000, L = 190, R = 30, T = 30;
+    const lanes = D.candidates.length, laneH = 13, pad = 16;
+    const bandH = lanes * laneH + pad;
+    const vars = VARS();
+    const H = T + vars.length * bandH + 40;
+    const x = (v) => L + (v / D.total_max) * (W - L - R);
+    let g = '';
+    for (let t = 0; t <= D.total_max; t += 10) {
+      g += `<line x1="${x(t)}" x2="${x(t)}" y1="${T - 6}" y2="${H - 34}" stroke="var(--grid)" stroke-width="1"/>`;
+      g += `<text class="axis-label" x="${x(t)}" y="${H - 18}" text-anchor="middle">${t}</text>`;
+    }
+    g += `<text class="axis-label" x="${(L + W - R) / 2}" y="${H}" text-anchor="middle">총점 (만점 ${D.total_max})</text>`;
+    vars.forEach((v, vi) => {
+      const y0 = T + vi * bandH;
+      if (v.id === 'original') g += `<rect x="4" y="${y0 - 2}" width="${W - 8}" height="${bandH - 2}" rx="6" fill="var(--grid)" opacity=".35"/>`;
+      g += `<text x="${L - 12}" y="${y0 + bandH / 2 - 2}" text-anchor="end" dominant-baseline="middle" style="fill:var(--ink)">${esc(v.short)}</text>`;
+      D.candidates.forEach((c, ci) => {
+        const cy = y0 + 6 + ci * laneH + laneH / 2;
+        const vals = totalVals(c.id, v.plan, v.id);
+        if (vals.length) {
+          const mn = mean(vals);
+          g += `<line x1="${x(Math.min(...vals))}" x2="${x(Math.max(...vals))}" y1="${cy}" y2="${cy}" stroke="${slot(ci)}" stroke-width="2" opacity=".45" stroke-linecap="round"/>`;
+          g += `<rect x="${x(mn) - 1.5}" y="${cy - 6}" width="3" height="12" rx="1.5" fill="${slot(ci)}"/>`;
+        }
+        rowsOf(c.id, v.plan, v.id).forEach((r) => {
+          g += `<circle cx="${x(r.total)}" cy="${cy}" r="4.5" fill="${slot(ci)}" stroke="var(--surface)" stroke-width="2"/>`;
+          g += `<circle class="hit" data-c="${esc(c.id)}" data-v="${esc(v.short)}" data-t="${r.total.toFixed(1)}" data-r="${r.rep}" cx="${x(r.total)}" cy="${cy}" r="9" fill="transparent"/>`;
+        });
+      });
+    });
+    const legend = D.candidates.map((c, i) => `<span><span class="swatch" style="background:${slot(i)}"></span>${esc(c.id)}</span>`).join('');
+    return `<h3 style="margin:20px 0 4px">총점 비교</h3>
+      <p class="sub">한 줄이 계획서 한 종류입니다. 점 하나가 호출 한 번이고, 세로 막대는 평균입니다. <b>위에 있는 원본은 오른쪽(높은 점수)에, 나머지는 왼쪽으로 내려가야 정상</b>입니다. 점이 넓게 퍼질수록 같은 입력에도 점수가 흔들린다는 뜻입니다.</p>
+      <div class="card"><div class="legend">${legend}</div><div class="scroll"><svg id="dots" viewBox="0 0 ${W} ${H}" style="min-width:720px;width:100%;height:auto" role="img" aria-label="변형별 총점 점 그래프">${g}</svg></div></div>`;
+  }
+
+  // ── 계획서 4편에서 일관됐나: 원본 대비 하락폭 ──────────────────
+  function dropChart() {
+    const base = D.variants.filter((v) => v.plan === plans[0] && v.id !== 'original');
+    const W = 1000, L = 190, R = 30, T = 30, laneH = 13, pad = 16;
+    const lanes = D.candidates.length, bandH = lanes * laneH + pad;
+    const H = T + base.length * bandH + 40;
+    const drops = (cid, vid) => plans.map((p) => {
+      const o = mean(totalVals(cid, p, 'original')), t = mean(totalVals(cid, p, vid));
+      return o == null || t == null ? null : o - t;
+    }).filter((d) => d != null);
+    let mx = 10;
+    D.candidates.forEach((c) => base.forEach((v) => drops(c.id, v.id).forEach((d) => { mx = Math.max(mx, d); })));
+    mx = Math.ceil(mx / 5) * 5;
+    const x = (v) => L + (v / mx) * (W - L - R);
+    let g = '';
+    for (let t = 0; t <= mx; t += 5) {
+      g += `<line x1="${x(t)}" x2="${x(t)}" y1="${T - 6}" y2="${H - 34}" stroke="var(--grid)"/>`;
+      g += `<text class="axis-label" x="${x(t)}" y="${H - 18}" text-anchor="middle">${t}</text>`;
+    }
+    g += `<text class="axis-label" x="${(L + W - R) / 2}" y="${H}" text-anchor="middle">원본보다 총점이 내려간 폭 (점) — 오른쪽일수록 크게 깎음</text>`;
+    base.forEach((v, vi) => {
+      const y0 = T + vi * bandH;
+      g += `<text x="${L - 12}" y="${y0 + bandH / 2 - 2}" text-anchor="end" dominant-baseline="middle" style="fill:var(--ink)">${esc(v.short)}</text>`;
+      D.candidates.forEach((c, ci) => {
+        const cy = y0 + 6 + ci * laneH + laneH / 2, ds = drops(c.id, v.id);
+        if (!ds.length) return;
+        g += `<line x1="${x(Math.min(...ds))}" x2="${x(Math.max(...ds))}" y1="${cy}" y2="${cy}" stroke="${slot(ci)}" stroke-width="2" opacity=".45" stroke-linecap="round"/>`;
+        g += `<rect x="${x(mean(ds)) - 1.5}" y="${cy - 6}" width="3" height="12" rx="1.5" fill="${slot(ci)}"/>`;
+        plans.forEach((p) => {
+          const o = mean(totalVals(c.id, p, 'original')), t = mean(totalVals(c.id, p, v.id));
+          if (o == null || t == null) return;
+          g += `<circle cx="${x(o - t)}" cy="${cy}" r="4.5" fill="${slot(ci)}" stroke="var(--surface)" stroke-width="2"/>`;
+          g += `<circle class="hit" data-c="${esc(c.id)}" data-v="${esc(v.short)}" data-t="${(o - t).toFixed(1)}" data-r="${esc(p)}" data-mode="drop" cx="${x(o - t)}" cy="${cy}" r="9" fill="transparent"/>`;
+        });
+      });
+    });
+    const legend = D.candidates.map((c, i) => `<span><span class="swatch" style="background:${slot(i)}"></span>${esc(c.id)}</span>`).join('');
+    return `<h2>계획서 ${plans.length}편에서 일관되게 깎았나</h2>
+      <p class="sub">점 하나는 계획서 한 편의 결과(반복 평균)이고, 세로 막대는 ${plans.length}편의 평균입니다. 점들이 <b>모여 있으면 계획서가 달라도 같은 판단</b>을 한다는 뜻이고, 흩어지면 계획서에 따라 들쭉날쭉하다는 뜻입니다. 오른쪽일수록 망가진 것을 크게 알아챈 것입니다.</p>
+      <div class="card"><div class="legend">${legend}</div><div class="scroll"><svg viewBox="0 0 ${W} ${H}" style="min-width:720px;width:100%;height:auto" role="img" aria-label="계획서별 원본 대비 총점 하락폭">${g}</svg></div></div>`;
+  }
+
+  function planTabs() {
+    if (plans.length < 2) return '';
+    return `<div class="tabs" role="tablist">${D.plans.map((p) => `<button type="button" role="tab" class="tab${p.id === state.plan ? ' on' : ''}" data-plan="${esc(p.id)}" aria-selected="${p.id === state.plan}">${esc(p.title)}</button>`).join('')}</div>`;
+  }
+
+  function detailSection() {
+    return `<h2>계획서별 자세히 보기</h2><p class="sub">계획서를 골라 총점과 항목별 점수를 봅니다.</p>${planTabs()}${dotChart()}${heatmaps()}`;
+  }
+
+  // ── 히트맵 ──────────────────────────────────────────────
+  function heatmaps() {
+    let out = `<h3 style="margin:24px 0 4px">어느 항목을 깎았나</h3>
+      <p class="sub">칸 하나가 (계획서 종류 × 평가항목)의 평균 점수입니다. 색이 진할수록 고득점입니다. <b>▼ 표시 칸은 이 변형에서 원본보다 깎여야 하는 곳</b>이고, 실제로 <b>뚜렷하게(그 항목 만점의 10% 이상)</b> 깎였으면 ✓, 아니면 ✗입니다. 칸을 누르면 모델이 준 이유를 볼 수 있습니다.</p>`;
+    D.candidates.forEach((c, ci) => {
+      const m = D.metrics[c.id] || {};
+      const head = `<tr><th></th>${D.items.map((it) => `<th>${esc(it.name)}<small>${it.code} · ${it.max}점</small></th>`).join('')}<th>총점<small>${D.total_max}점</small></th></tr>`;
+      const body = VARS().map((v) => {
+        const isOrig = v.id === 'original';
+        const cells = D.items.map((it) => cell(c.id, v, it.code, it.max, isOrig)).join('');
+        const tv = totalVals(c.id, v.plan, v.id), to = totalVals(c.id, v.plan, 'original');
+        const tc = totalCell(c.id, v, isOrig, tv, to);
+        return `<tr><td class="rowlabel">${esc(v.short)}<small>${esc(v.note)} · ${isOrig ? '기준' : '깎여야 할 항목: ' + (v.expect.length ? v.expect.join(', ') : '총점만 확인')}</small></td>${cells}<td class="total cellwrap">${tc}</td></tr>`;
+      }).join('');
+      out += `<div class="card" style="margin-top:12px" data-cand="${esc(c.id)}">
+        <div class="cand-head"><span class="swatch" style="background:${slot(ci)}"></span><h3>${esc(c.id)}</h3>
+          <span class="mode">${esc(c.model)} · ${esc(c.mode)}</span>
+          <span class="mode">· 원인 짚기 ${m.cause_n ? m.cause_hit + '/' + m.cause_n : '–'}</span></div>
+        <div class="scroll"><table class="heat"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+        <div class="detail muted" data-detail>칸을 누르면 여기에 모델이 준 점수와 이유가 나옵니다.</div></div>`;
+    });
+    out += `<div class="heatlegend"><span>낮은 점수</span><span class="ramp"></span><span>높은 점수</span>
+      <span>· ▼ 깎여야 할 칸 (윤곽선)</span><span>· ✓ 뚜렷하게 깎임(만점의 10% 이상)</span><span>· ✗ 안 깎이거나 조금만 깎임</span></div>`;
+    return out;
+  }
+
+  const tcls = (f) => (f > .6 ? ' t60' : '') + (f > .8 ? ' t80' : '');
+  function cell(cid, v, code, max, isOrig) {
+    const vals = itemVals(cid, v.plan, v.id, code);
+    if (!vals.length) return `<td class="cellwrap"><button class="cell empty" type="button" disabled>–</button></td>`;
+    const mn = mean(vals);
+    const base = mean(itemVals(cid, v.plan, 'original', code));
+    const f = Math.max(0, Math.min(1, mn / max));
+    const exp = v.expect.includes(code);
+    let res = '', d = '';
+    if (!isOrig && base != null) {
+      const diff = mn - base;
+      d = `<span class="d">${diff >= 0 ? '+' : '−'}${Math.abs(diff).toFixed(1)} vs 원본</span>`;
+      if (exp) res = diff < -D.margin_item * max ? `<span class="res" style="color:inherit" aria-label="깎임">✓</span>` : `<span class="res" aria-label="안 깎임">✗</span>`;
+    }
+    const mark = exp ? `<span class="mark" aria-hidden="true">▼</span>` : '';
+    return `<td class="cellwrap"><button class="cell${tcls(f)}${exp ? ' expect' : ''}" type="button" style="--f:${f.toFixed(3)}"
+      data-c="${esc(cid)}" data-p="${esc(v.plan)}" data-v="${esc(v.id)}" data-i="${code}" data-max="${max}">
+      ${mark}${res}<span class="n">${fmt(mn, 1)}</span>${d}</button></td>`;
+  }
+
+  function totalCell(cid, v, isOrig, tv, to) {
+    if (!tv.length) return `<button class="cell empty" type="button" disabled>–</button>`;
+    const mn = mean(tv), f = Math.max(0, Math.min(1, mn / D.total_max));
+    const d = (!isOrig && to.length) ? `<span class="d">${mean(tv) - mean(to) >= 0 ? '+' : '−'}${Math.abs(mean(tv) - mean(to)).toFixed(1)} vs 원본</span>` : '';
+    return `<button class="cell${tcls(f)}" type="button" style="--f:${f.toFixed(3)}" data-c="${esc(cid)}" data-p="${esc(v.plan)}" data-v="${esc(v.id)}" data-i="__total" data-max="${D.total_max}">
+      <span class="n">${fmt(mn, 1)}</span>${d}</button>`;
+  }
+
+  // ── 상세(칸 클릭) ────────────────────────────────────────
+  function showDetail(btn) {
+    const card = btn.closest('.card');
+    card.querySelectorAll('button.cell.sel').forEach((b) => b.classList.remove('sel'));
+    btn.classList.add('sel');
+    const { c, p, v, i } = btn.dataset;
+    const variant = D.variants.find((x) => x.plan === p && x.id === v);
+    const reps = rowsOf(c, p, v);
+    const name = i === '__total' ? '총점' : (D.items.find((x) => x.code === i) || {}).name;
+    const body = reps.map((r) => {
+      if (i === '__total') {
+        const parts = D.items.map((it) => `${it.name} ${r.scores[it.code].score.toFixed(1)}`).join(' · ');
+        return `<div class="rep"><div class="sc">${r.rep}회차<br><span class="muted" style="font-weight:400">${r.total.toFixed(1)}점</span></div><div class="ev">${esc(parts)}</div></div>`;
+      }
+      const s = r.scores[i];
+      const q = s.evidence && s.evidence !== '없음' ? `<div class="ev">인용: <q>${esc(s.evidence)}</q></div>` : `<div class="ev">인용 없음</div>`;
+      return `<div class="rep"><div class="sc">${r.rep}회차<br><span class="muted" style="font-weight:400">${s.score.toFixed(1)}점</span></div><div>${esc(s.comment)}${q}</div></div>`;
+    }).join('');
+    card.querySelector('[data-detail]').className = 'detail';
+    card.querySelector('[data-detail]').innerHTML = `<b>${esc(variant.note)} · ${esc(name)}</b><div class="muted" style="font-size:13px">반복 ${reps.length}회</div>${body}`;
+  }
+
+  // ── 표 보기 + 실패 ───────────────────────────────────────
+  function tableView() {
+    const rows = D.candidates.map((c) => {
+      const m = D.metrics[c.id] || {};
+      return `<tr><td>${esc(c.id)}</td><td>${m.calls}</td><td>${m.ok}</td><td>${m.parsed}</td><td>${fmt(m.orig_mean)}</td>
+        <td>${m.order_n ? m.order_hit + '/' + m.order_n : '–'}</td><td>${m.cause_n ? m.cause_hit + '/' + m.cause_n : '–'}</td><td>${m.cause_depth == null ? '–' : Math.round(100 * m.cause_depth) + '%'}</td>
+        <td>${fmt(m.jitter, 2)}</td><td>${fmt(m.sec, 1)}</td><td>${fmt(m.reasoning, 0)}</td><td>${(m.cost || 0).toFixed(3)}</td></tr>`;
+    }).join('');
+    const failed = D.rows.filter((r) => !r.ok || !r.valid);
+    const fl = failed.length ? `<h3 style="margin-top:16px">실패 또는 형식 불량 ${failed.length}건</h3><ul class="note">${failed.map((r) =>
+      `<li class="fail">${esc(r.cand)} / ${esc(r.variant)} / ${r.rep}회차: ${esc(r.error || '항목 누락·중복(형식 불량)')}</li>`).join('')}</ul>` : '';
+    return `<details class="tbl"><summary>표로 보기 (같은 숫자, 접근성용)</summary><div class="scroll" style="margin-top:8px"><table class="data">
+      <thead><tr><th>후보</th><th>호출</th><th>성공</th><th>형식 통과</th><th>원본 평균</th><th>순서 맞힘</th><th>원인 짚기</th><th>깎은 폭</th><th>흔들림 σ</th><th>평균 시간(초)</th><th>추론 토큰</th><th>비용($)</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>${fl}</details>`;
+  }
+
+  function limits() {
+    return `<h2>이 결과를 읽을 때</h2><div class="card note">
+      <p style="margin-top:0">· 계획서는 <b>가상 샘플(AI 초안) 한 편</b>이고, 이 실험은 노골적으로 나쁜 글을 걸러내는지만 봅니다. 미묘한 품질 차이는 사람이 매긴 점수로 따로 확인해야 합니다.</p>
+      <p>· 모델이 낸 총점은 쓰지 않고 항목 점수를 코드가 합산했습니다.</p>
+      <p style="margin-bottom:0">· 반복 횟수가 적으면 “흔들림”은 참고용입니다.</p></div>`;
+  }
+
+  // ── 그리기 ──────────────────────────────────────────────
+  if (!D.rows.length) {
+    app.innerHTML = header() + '<div class="empty-state">아직 결과가 없습니다.</div>';
+  } else {
+    app.innerHTML = header() + tiles() + (plans.length > 1 ? dropChart() : '') + '<div id="detail">' + detailSection() + '</div>' + tableView() + limits();
+  }
+
+  app.addEventListener('click', (e) => {
+    const t = e.target.closest('button.tab');
+    if (t) { state.plan = t.dataset.plan; document.getElementById('detail').innerHTML = detailSection(); return; } const b = e.target.closest('button.cell'); if (b && !b.disabled) showDetail(b); });
+  app.addEventListener('mousemove', (e) => {
+    const h = e.target.closest('circle.hit');
+    if (h && h.dataset.mode === 'drop') {
+      const pl = D.plans.find((p) => p.id === h.dataset.r);
+      return showTip(e, `<b>${esc(h.dataset.c)}</b>${esc(h.dataset.v)}<br>${esc(pl ? pl.title : h.dataset.r)}<br>원본보다 ${h.dataset.t}점 하락`);
+    }
+    if (h) return showTip(e, `<b>${esc(h.dataset.c)}</b>${esc(h.dataset.v)}<br>${h.dataset.r}회차 · 총점 ${h.dataset.t}`);
+    const b = e.target.closest('button.cell');
+    if (b && !b.disabled) {
+      const v = D.variants.find((x) => x.plan === b.dataset.p && x.id === b.dataset.v);
+      const nm = b.dataset.i === '__total' ? '총점' : (D.items.find((x) => x.code === b.dataset.i) || {}).name;
+      const vals = b.dataset.i === '__total' ? totalVals(b.dataset.c, b.dataset.p, b.dataset.v) : itemVals(b.dataset.c, b.dataset.p, b.dataset.v, b.dataset.i);
+      return showTip(e, `<b>${esc(v.note)}</b>${esc(nm)}: ${vals.map((x) => x.toFixed(1)).join(', ')} (만점 ${b.dataset.max})`);
+    }
+    hideTip();
+  });
+  app.addEventListener('mouseleave', hideTip);
+  const themeBtn = document.getElementById('themeBtn');
+  if (themeBtn) themeBtn.addEventListener('click', () => {
+    const root = document.documentElement;
+    const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    root.dataset.theme = dark ? 'light' : 'dark';
+  });
+})();
+</script>
+</body>
+</html>

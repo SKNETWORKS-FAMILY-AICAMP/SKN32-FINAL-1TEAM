@@ -40,12 +40,13 @@
 1. **Codex 재검수 P2 네 건 — 반영 완료. 2차 재검수 지적도 반영(3차 개정, [2차 응답](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK2_RESPONSE_20260929.md)). 남은 것은 조율 담당 합의.** [재검수 응답](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK_RESPONSE_20260929.md)을 본다.
    - Codex 제출 전 내부 교차 검토에서 6건을 더 고쳤다.
    - 특히 `tc2()`의 수집 상태 분기는 **첫 조회에만** 적용한다. 조율 흐름은 더 보기 뒤에 수집 상태를 보지 않기 때문이다.
+   - **9/30 Codex 4차 재검수 승인**([RECHECK4](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK4_20260930.md)) — 설명서 쪽 검수는 끝났다.
 2. **조율 담당과 합의**: 설명서 2절 ①마감일, ②금액, ③양식·평가 항목, ⑦확인 필요 표시가 급하다. 합의 뒤 **실제 공고 공급**으로 통합 시험을 한다.
-3. **판정표 지문 수정은 Codex 승인됨**(9/29). 9/30 배치에서 10·11·12단계가 비활성 첨부 공고 5건씩 다시 판정하고, 13단계가 신청자 유형 결론(A안 2건, 재판정 뒤 126490)을 올리는지 확인한다.
+3. ~~**판정표 지문 수정은 Codex 승인됨**(9/29). 9/30 배치에서 10·11·12단계가 비활성 첨부 공고 5건씩 다시 판정하고, 13단계가 신청자 유형 결론(A안 2건, 재판정 뒤 126490)을 올리는지 확인한다.~~ → **9/30 확인 완료**(정상, WORKLOG 9/30).
    - [조율 설명서](guides/ORCHESTRATION_HANDOFF.md)의 `search/app.py` 줄 번호는 9/29 승인 뒤 맞췄다(`MatchRequest` 294 등). `daily_pipeline.py` 종료 코드 4 주석도 9/29에 고쳤다.
 4. **9/29 점검에서 나온 코드 과제**(아직 손대지 않음, 사용자가 순서를 정한다)
    - EC2 색인 누락 가능성: `collect/upload_vectors.py`가 묶음마다 같은 시각을 찍고, `ec2/ec2_vecstore.py`는 `> 워터마크`로 고른다. 업로드 도중 09:10 갱신이 돌면 나머지 묶음이 빠진다. 벡터를 전부 다시 올리는 날이 위험하다.
-   - K-Startup 조기 마감: 모집 중 목록만 받고 빠진 공고를 닫지 않는다. 마감일 전에 닫힌 공고가 `open`으로 남는다.
+   - ~~K-Startup 조기 마감: 모집 중 목록만 받고 빠진 공고를 닫지 않는다. 마감일 전에 닫힌 공고가 `open`으로 남는다.~~ → **9/30 수정(A안), Codex 재검수 승인**([RECHECK](reviews/integration/KSTARTUP_CLOSE_MISSING_REVIEW_RECHECK_20260930.md)). **10/1 배치 뒤 닫은 건수를 확인한다**(예상 약 235건, 로그와 `import_runs.report.closed_missing`).
    - `collect/backup_db.py` 백업 대상에 LLM 결과 표(`notice_conditions`·`notice_applicant_types`·`notice_industries`)가 없다.
    - `collect/daily_job.py`가 없는 모듈 `match_bge`를 부른다(매일 배치는 이 경로를 건너뛰어 영향 없음).
    - 보안: 옛 인계서 `archive/HANDOFF.md`에 DB 포트 3306 "개방"과 EC2 주소가 적혀 있다. 저장소 공개 여부 확인 뒤 포트 제한(AWS 설정, 사용자 승인 필요)과 문서 가리기를 정한다.

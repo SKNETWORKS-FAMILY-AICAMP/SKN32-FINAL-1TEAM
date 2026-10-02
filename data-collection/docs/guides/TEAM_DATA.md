@@ -195,9 +195,14 @@ SELECT notice_id, title, apply_end ...  20ms     ← 2.8배 차이
 필요한 공고만 골라 읽는 쪽이 낫습니다.
 
 ```sql
--- 목록 화면
+-- 목록 화면 (모집 중으로 볼 공고)
+-- recruitment_status = 'open' 만 쓰면 기업마당(모두 unknown)이 전부 빠진다. 마감일은 따로 본다
+-- 날짜는 한국 날짜로 비교한다. store_mysql.connect() 는 세션 시간대를 UTC(+00:00)로 두므로
+-- CURDATE() 를 쓰면 한국 00:00~08:59 에 전날 마감 공고가 남는다
 SELECT notice_id, title, organizer, apply_start, apply_end, recruitment_status
-  FROM notices WHERE recruitment_status = 'open';
+  FROM notices
+ WHERE recruitment_status <> 'closed'
+   AND (apply_end IS NULL OR apply_end >= DATE(UTC_TIMESTAMP() + INTERVAL 9 HOUR));
 
 -- 검색할 때만
 SELECT notice_id, embedding FROM notices WHERE embedding IS NOT NULL;
@@ -227,7 +232,7 @@ SELECT COLUMN_NAME, COLUMN_TYPE, COLUMN_COMMENT
 | 컬럼 | 주의 |
 |---|---|
 | `apply_end` | NULL 이면 **마감일 없음이 아니라** 고정 종료일이 없거나 해석 불가입니다. `apply_period_type` 을 함께 보세요 |
-| `recruitment_status` | API 가 준 값입니다. 날짜로 추정하지 않았습니다 |
+| `recruitment_status` | 날짜로 추정하지 않았습니다. K-Startup 은 API 값(`open`)이고, **모집 중 목록에서 빠지면 `closed`** 로 바꿉니다(2026-09-30부터, 그날 목록을 빠짐없이 받았을 때만). 기업마당은 원문에 칸이 없어 모두 `unknown` 입니다 |
 | `age_condition_raw` | 없다고 **업력 제한이 없다는 뜻이 아닙니다.** 알 수 없음입니다 |
 | `region` | 기관명으로 추정하지 않았습니다. 없으면 NULL |
 | `body` | API 사업개요입니다. **첨부 전문이 아닙니다.** 전문은 `attachment_texts` |

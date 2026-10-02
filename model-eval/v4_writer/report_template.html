@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>작성 T-W1·T-W2·T-W3 모델 비교 결과</title>
+<style>__STYLE__
+  .grp { font-size: 12px; font-weight: 600; color: var(--ink-2); margin: 10px 0 0; padding-top: 8px; border-top: 2px solid var(--grid); }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 8px; }
+  button.tab { background: var(--surface); color: var(--ink-2); border: 1px solid var(--ring); border-radius: 999px; padding: 6px 14px; cursor: pointer; font: inherit; font-size: 13px; }
+  button.tab.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+  button.tab:focus-visible { outline: 3px solid var(--s1); outline-offset: 2px; }
+  .chip { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--axis); margin: 2px 4px 2px 0; color: var(--ink); }
+  .chip.bad { border-color: var(--crit); color: var(--crit); font-weight: 600; }
+  .chip.ok { border-color: var(--s1); }
+  mark { background: color-mix(in oklab, var(--crit) 28%, transparent); color: inherit; border-radius: 3px; padding: 0 2px; }
+  .sec { border-top: 1px solid var(--grid); padding: 6px 0; font-size: 13px; }
+  .sec b { font-size: 13px; }
+  .sec .txt { color: var(--ink-2); white-space: pre-wrap; margin-top: 2px; }
+  table.items { border-collapse: collapse; width: 100%; font-size: 13px; margin: 4px 0 8px; }
+  table.items th, table.items td { text-align: left; padding: 3px 8px; border-top: 1px solid var(--grid); vertical-align: top; }
+  table.items th { color: var(--ink-2); font-weight: 500; border-top: 0; }
+  button.cell.warn { background: color-mix(in oklab, var(--s2) calc(var(--f) * 100%), var(--grid)); color: var(--ink); }
+  button.cell.warn.t60 { color: #fff; }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<div id="tip" role="tooltip"></div>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+(function () {
+  const D = JSON.parse(document.getElementById('data').textContent);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const mean = (a) => { a = a.filter((x) => x != null); return a.length ? a.reduce((x, y) => x + y, 0) / a.length : null; };
+  const pct = (x) => x == null ? '–' : Math.round(100 * x) + '<small> %</small>';
+  const SLOTS = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)'];
+  const slot = (i) => SLOTS[i % SLOTS.length];
+  const app = document.getElementById('app'), tip = document.getElementById('tip');
+  const tcls = (f) => (f > .6 ? ' t60' : '') + (f > .8 ? ' t80' : '');
+  const state = { task: 'w1' };
+  const TASKS = [['w1', '본문 (T-W1)'], ['w2', '그래프 (T-W2)'], ['w3', '표 (T-W3)']];
+  const cl = (c, task, id) => D.calls.filter((x) => x.cand === c && x.task === task && x.case === id && x.valid);
+  const caseOf = (id) => D.cases.find((x) => x.id === id);
+
+  function showTip(e, html) {
+    tip.innerHTML = html; tip.style.display = 'block';
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = e.clientX + 14, y = e.clientY + 14;
+    if (x + w > innerWidth - 8) x = e.clientX - w - 14;
+    if (y + h > innerHeight - 8) y = e.clientY - h - 14;
+    tip.style.left = Math.max(8, x) + 'px'; tip.style.top = Math.max(8, y) + 'px';
+  }
+  const hideTip = () => { tip.style.display = 'none'; };
+  const legendOf = () => D.candidates.map((c, i) => `<span><span class="swatch" style="background:${slot(i)}"></span>${esc(c.id)}</span>`).join('');
+
+  function header() {
+    const r = D.run;
+    return `<div class="topbar"><div>
+      <h1>작성 T-W1·T-W2·T-W3 모델 비교 결과</h1>
+      <p class="sub">작성 Agent가 ① 양식에 맞는 <b>사업계획서 본문</b>을 쓰면서 입력에 없는 수치·경력을 지어내지 않는지, ② <b>그래프</b>가 본문의 수치와 일치하는지, ③ <b>표</b>의 합계가 맞고 지원금 상한을 넘지 않는지를 본 실험입니다.</p>
+      <p class="note">${esc(r.name)} · 아이템 ${D.cases.length}건 · 호출 ${r.calls}건 · 실제 비용 $${(r.total_cost || 0).toFixed(3)}${r.estimated_usd != null ? ' (채점자 포함 예상 $' + r.estimated_usd.toFixed(3) + ')' : ''} · 글 품질 채점자 ${esc(r.judge)} · 프롬프트 ${esc(r.prompt_version)}</p>
+    </div><button class="theme" id="themeBtn" type="button">화면 밝기 바꾸기</button></div>`;
+  }
+
+  function tiles() {
+    const cards = D.candidates.map((c, i) => {
+      const m = D.metrics[c.id] || {};
+      return `<div class="card tile"><h3><span class="swatch" style="background:${slot(i)}"></span>${esc(c.id)}</h3>
+        <div class="mode">${esc(c.model)} · ${esc(c.mode)}</div>
+        <div class="grp" style="border-top:0;margin-top:0">T-W1 사업계획서 본문</div>
+        <div class="kpi"><div class="k">필수 규칙 통과<small>섹션 1:1 · 상한 이내 · 기능 목록 유지 · 지어낸 경력 없음</small></div><div class="v">${pct(m.w1_hard_ok)}</div></div>
+        <div class="kpi"><div class="k">글 품질 채점자 점수<small>70점 만점 (채점자는 luna-medium)</small></div><div class="v">${m.judge == null ? '–' : m.judge.toFixed(1)}<small> / 70</small></div></div>
+        <div class="kpi"><div class="k">지어낸 수치가 든 호출<small>입력·자료·계산으로 설명 안 되는 수치</small></div><div class="v">${m.w1_invented_calls}<small> / ${m.w1_n}</small></div></div>
+        <div class="kpi"><div class="k">지어낸 경력이 든 호출<small>회사 정보에 없는 경력 연수</small></div><div class="v">${m.w1_career_calls}<small> / ${m.w1_n}</small></div></div>
+        <div class="grp">T-W2 그래프 · T-W3 표</div>
+        <div class="kpi"><div class="k">그래프 통과<small>수치 일치 · 축 이름 · 근거 섹션</small></div><div class="v">${pct(m.w2_ok)}</div></div>
+        <div class="kpi"><div class="k">표 통과<small>합계·상한·칸 수·본문 금액</small></div><div class="v">${pct(m.w3_ok)}</div></div>
+        <div class="grp">비용 · 시간</div>
+        <div class="kpi"><div class="k">호출 ${m.calls}건 합계 · 평균</div><div class="v">$${(m.cost || 0).toFixed(3)}<small> · ${m.sec == null ? '–' : m.sec.toFixed(1) + '초'}</small></div></div>
+      </div>`;
+    }).join('');
+    return `<h2>한눈에 보기</h2><p class="sub">후보마다 카드 하나입니다. “지어낸 …”은 작을수록 좋고 나머지는 클수록 좋습니다.</p><div class="tiles">${cards}</div>`;
+  }
+
+  // ── 본문 막대 ──────────────────────────────────────────
+  function bars(title, groups, note, aria) {
+    const W = 1000, L = 260, R = 60, T = 14, laneH = 15, pad = 22;
+    const bandH = D.candidates.length * laneH + pad, H = T + groups.length * bandH + 34;
+    let g = '';
+    [0, .25, .5, .75, 1].forEach((t) => {
+      const xx = L + t * (W - L - R);
+      g += `<line x1="${xx}" x2="${xx}" y1="${T - 6}" y2="${H - 30}" stroke="var(--grid)"/><text class="axis-label" x="${xx}" y="${H - 14}" text-anchor="middle">${Math.round(t * 100)}%</text>`;
+    });
+    groups.forEach(([label, fn, max, fmt], gi) => {
+      const y0 = T + gi * bandH;
+      g += `<text x="${L - 12}" y="${y0 + bandH / 2 - 4}" text-anchor="end" dominant-baseline="middle" style="fill:var(--ink)">${label}</text>`;
+      D.candidates.forEach((c, ci) => {
+        const v = fn(D.metrics[c.id] || {}), cy = y0 + 4 + ci * laneH;
+        if (v == null) return;
+        const w = Math.max(2, Math.min(1, v / max) * (W - L - R));
+        g += `<rect class="hit" data-t="${esc(c.id)}|${esc(label)}|${fmt(v)}" x="${L}" y="${cy}" width="${w}" height="${laneH - 4}" rx="3" fill="${slot(ci)}"/>`;
+        g += `<text x="${L + w + 6}" y="${cy + laneH - 6}">${fmt(v)}</text>`;
+      });
+    });
+    return `<h2>${title}</h2><p class="sub">${note}</p><div class="card"><div class="legend">${legendOf()}</div><div class="scroll"><svg viewBox="0 0 ${W} ${H}" style="min-width:720px;width:100%;height:auto" role="img" aria-label="${aria}">${g}</svg></div></div>`;
+  }
+  const P = (v) => Math.round(v * 100) + '%';
+  function w1Chart() {
+    return bars('T-W1 · 본문: 규칙을 지키고 글이 좋은가', [
+      ['필수 규칙 통과율 (길수록 좋음)', (m) => m.w1_hard_ok, 1, P],
+      ['글 품질 채점자 점수 (70점 만점)', (m) => m.judge == null ? null : m.judge / 70, 1, (v) => (v * 70).toFixed(1)],
+      ['지어낸 수치가 든 호출 (짧을수록 좋음)', (m) => m.w1_n ? m.w1_invented_calls / m.w1_n : null, 1, P],
+      ['종결 형식 위반 문장 비율 (짧을수록 좋음)', (m) => m.w1_bad_end, 1, P]],
+      '필수 규칙은 섹션이 양식과 1:1이고, 지원금 상한 이내이고, 기준 기능 목록을 그대로 유지하고, 회사 정보에 없는 경력을 쓰지 않는 것입니다. 글 품질 점수는 <b>같은 luna-medium이 채점</b>해서 luna 계열에 후할 수 있습니다.', 'T-W1 본문 지표');
+  }
+  function w23Chart() {
+    return bars('T-W2·T-W3 · 그래프와 표: 수치가 맞고 상한을 지키나', [
+      ['그래프 통과율 (길수록 좋음)', (m) => m.w2_ok, 1, P],
+      ['표 통과율 (길수록 좋음)', (m) => m.w3_ok, 1, P],
+      ['그래프에 지어낸 수치가 든 호출', (m) => m.w2_n ? m.w2_invented_calls / m.w2_n : null, 1, P],
+      ['표에 문제가 있는 호출 (합계·상한·금액)', (m) => m.w3_n ? (m.w3_sum_bad + m.w3_over + m.w3_invented) / m.w3_n : null, 1, P]],
+      '그래프는 본문·시장 분석에 적힌 값과 다른 숫자를 쓰면 실패입니다(단위 환산도 실패). 표는 합계 행이 항목 합과 다르거나, 지원금 상한을 넘거나, 본문에 없는 금액을 쓰면 실패입니다.', 'T-W2 T-W3 지표');
+  }
+
+  // ── 위반 지도 ─────────────────────────────────────────
+  function issueMap() {
+    const rows = [
+      ['섹션이 양식과 어긋남', (m) => m.w1_missing_calls], ['지원금 상한 초과', (m) => m.w1_fund_over],
+      ['기준 기능 목록을 바꿈', (m, n) => n - Math.round((m.w1_list_same || 0) * n)], ['지어낸 경력', (m) => m.w1_career_calls],
+      ['지어낸 수치', (m) => m.w1_invented_calls], ['금지 표현 사용', (m) => m.w1_banned_calls],
+      ['분량 초과', (m) => m.w1_over_calls], ['분량이 너무 짧은 섹션', (m) => m.w1_short_calls],
+      ['일정이 개발 기간을 넘김 (관찰)', (m) => m.w1_sched_over]];
+    const head = `<tr><th></th>${D.candidates.map((c, i) => `<th><span class="swatch" style="background:${slot(i)}"></span> ${esc(c.id)}</th>`).join('')}</tr>`;
+    const body = rows.map(([label, fn]) => `<tr><td class="rowlabel" style="width:220px">${label}</td>${D.candidates.map((c) => {
+      const m = D.metrics[c.id] || {}, n = m.w1_n || 0, v = n ? fn(m, n) : 0, f = n ? v / n : 0;
+      return `<td class="cellwrap"><button class="cell warn${tcls(Math.min(1, f * 2))}" type="button" style="--f:${Math.min(1, f * 2).toFixed(3)}" disabled><span class="n">${v}</span><span class="p">/ ${n}</span></button></td>`;
+    }).join('')}</tr>`).join('');
+    return `<h2>본문에서 어떤 실수가 잦은가</h2><p class="sub">칸의 숫자는 본문 호출 중 그 실수를 한 번이라도 한 호출 수입니다. <b>주황색이 진할수록 자주 틀린 것</b>이고, 0이면 한 번도 없었다는 뜻입니다.</p>
+      <div class="card"><div class="scroll"><table class="heat" style="min-width:560px"><thead>${head}</thead><tbody>${body}</tbody></table></div></div>`;
+  }
+
+  // ── 아이템 × 후보 ─────────────────────────────────────
+  function matrix() {
+    const t = state.task;
+    const head = `<tr><th></th>${D.candidates.map((c, i) => `<th><span class="swatch" style="background:${slot(i)}"></span> ${esc(c.id)}</th>`).join('')}</tr>`;
+    const body = D.cases.map((cs) => {
+      const cells = D.candidates.map((c) => {
+        const list = cl(c.id, t, cs.id);
+        if (!list.length) return `<td class="cellwrap"><button class="cell empty" type="button" disabled>–</button></td>`;
+        const data = `data-c="${esc(c.id)}" data-case="${esc(cs.id)}"`;
+        if (t === 'w1') {
+          const js = mean(list.map((x) => x.judge ? x.judge.total : null)), bad = list.filter((x) => !x.ev.hard_ok).length, f = js == null ? 0 : js / 70;
+          return `<td class="cellwrap"><button class="cell${tcls(f)}${bad ? ' bad' : ''}" type="button" style="--f:${f.toFixed(3)}" ${data}><span class="n">${js == null ? '–' : js.toFixed(0)}</span><span class="p">${bad ? '⚠규칙' + bad : '규칙 통과'}</span></button></td>`;
+        }
+        const ok = list.filter((x) => x.ev.ok).length, f = ok / list.length;
+        return `<td class="cellwrap"><button class="cell${tcls(f)}${ok < list.length ? ' bad' : ''}" type="button" style="--f:${f.toFixed(3)}" ${data}><span class="n">${ok}/${list.length}</span><span class="p">통과</span></button></td>`;
+      }).join('');
+      return `<tr><td class="rowlabel">${esc(cs.id)} · ${esc(cs.name)}<br><small>${cs.max_chars ? '분량 ' + cs.max_chars + '자 제한 · ' : ''}상한 ${(cs.max_amount / 10000).toLocaleString()}만 원</small></td>${cells}</tr>`;
+    }).join('');
+    const help = { w1: '칸의 큰 숫자는 <b>글 품질 채점자 점수(70점 만점)</b>의 평균이고, ⚠는 필수 규칙을 어긴 호출 수입니다. 누르면 본문과 잘못된 곳이 나옵니다.',
+      w2: '칸은 반복 3번 중 통과한 횟수입니다. 누르면 그래프의 수치가 본문과 맞는지 볼 수 있습니다.', w3: '칸은 반복 3번 중 통과한 횟수입니다. 누르면 표와 문제점을 볼 수 있습니다.' }[t];
+    return `<div class="tabs" role="tablist">${TASKS.map(([k, l]) => `<button type="button" class="tab${t === k ? ' on' : ''}" role="tab" data-task="${k}" aria-selected="${t === k}">${l}</button>`).join('')}</div>
+      <p class="sub">${help}</p><div class="card"><div class="scroll"><table class="heat"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+      <div class="detail muted" id="detail">칸을 누르면 여기에 자세한 내용이 나옵니다.</div></div>`;
+  }
+
+  const hl = (text, marks) => { let h = esc(text); (marks || []).forEach((m) => { const e = esc(m); if (e) h = h.split(e).join('<mark>' + e + '</mark>'); }); return h; };
+
+  function showDetail(btn) {
+    document.querySelectorAll('button.cell.sel').forEach((b) => b.classList.remove('sel'));
+    btn.classList.add('sel');
+    const { c, case: id } = btn.dataset, cs = caseOf(id), t = state.task;
+    let html = `<b>${esc(cs.id)} · ${esc(cs.name)} · ${esc(c)}</b> <span class="muted">${esc(cs.summary)}</span>`;
+    cl(c, t, id).sort((a, b) => a.rep - b.rep).forEach((r) => {
+      if (t === 'w1') {
+        const e = r.ev, chips = [];
+        if (e.missing || e.extra || e.dup) chips.push(`<span class="chip bad">섹션 어긋남 (빠짐 ${e.missing}, 추가 ${e.extra}, 중복 ${e.dup})</span>`);
+        if (e.fund_over) chips.push(`<span class="chip bad">지원금 상한 초과 (${(e.fund_total / 10000).toLocaleString()}만 원)</span>`);
+        if (!e.list_same) chips.push(`<span class="chip bad">기준 기능 목록을 바꿈</span>`);
+        if (e.invented_career) chips.push(`<span class="chip bad">지어낸 경력 ${e.invented_career}</span>`);
+        if (e.invented) chips.push(`<span class="chip bad">지어낸 수치 ${e.invented}</span>`);
+        if (e.sched_over) chips.push(`<span class="chip bad">일정이 개발 기간을 넘김</span>`);
+        if (e.banned) chips.push(`<span class="chip bad">금지 표현 ${e.banned}</span>`);
+        if (e.bad_end_rate > 0) chips.push(`<span class="chip">종결 위반 ${Math.round(e.bad_end_rate * 100)}%</span>`);
+        if (!chips.length) chips.push('<span class="chip ok">규칙 위반 없음</span>');
+        const j = r.judge ? `채점자 ${r.judge.total.toFixed(1)}/70 (${Object.entries(r.judge.items).map(([k, v]) => k + ' ' + v.toFixed(0)).join(' · ')})` : '채점 없음';
+        html += `<div class="rep"><div class="ans${e.hard_ok ? '' : ' bad'}">${r.rep}회차<br><span class="muted" style="font-weight:400">${e.chars}자</span></div><div>${chips.join('')}<div class="ev">${j}</div>
+          ${r.sections.map((s) => `<div class="sec"><b>[${esc(s.code)}] ${esc(s.title)}</b> <span class="muted">${s.chars}자${s.short ? ' · 너무 짧음' : ''}${s.over ? ' · 분량 초과' : ''}</span><div class="txt">${hl(s.text, [].concat(s.invented, s.career, s.banned))}</div></div>`).join('')}</div></div>`;
+      } else if (t === 'w2') {
+        html += `<div class="rep"><div class="ans${r.ev.ok ? '' : ' bad'}">${r.rep}회차<br>${r.ev.ok ? '통과 ✓' : '실패 ✗'}</div><div>
+          ${r.ev.n_charts === 0 ? '<span class="chip bad">그래프를 만들지 않음</span>' : ''}
+          ${(r.charts || []).map((ch) => `<div class="sec"><b>${esc(ch.title)}</b> <span class="muted">${esc(ch.type)} · 축: ${(ch.axis_labels || []).map(esc).join(' / ') || '없음'} · 근거 ${esc(ch.source_ref || '없음')}</span><div>${ch.series.map((p) => `<span class="chip ${p.ok ? 'ok' : 'bad'}">${esc(p.label)}: ${esc(p.value)} ${p.ok ? '✓' : '본문에 없는 수치 ✗'}</span>`).join('')}</div></div>`).join('')}</div></div>`;
+      } else {
+        const e = r.ev, chips = [];
+        if (!e.has_fund) chips.push('<span class="chip bad">자금 운용표 없음</span>');
+        if (!e.has_sched) chips.push('<span class="chip bad">일정표 없음</span>');
+        if (e.row_bad) chips.push('<span class="chip bad">칸 수 불일치</span>');
+        if (e.sum_mismatch) chips.push('<span class="chip bad">합계 행 ≠ 항목 합</span>');
+        if (e.over) chips.push(`<span class="chip bad">지원금 상한 초과 (${(e.fund_total / 10000).toLocaleString()}만 원 > ${(cs.max_amount / 10000).toLocaleString()}만 원)</span>`);
+        if (e.invented_amounts) chips.push(`<span class="chip bad">본문에 없는 금액 ${e.invented_amounts}</span>`);
+        if (!chips.length) chips.push('<span class="chip ok">문제 없음</span>');
+        html += `<div class="rep"><div class="ans${e.ok ? '' : ' bad'}">${r.rep}회차<br>${e.ok ? '통과 ✓' : '실패 ✗'}</div><div>${chips.join('')}
+          ${(r.tables || []).map((tb) => `<div class="sec"><b>${esc(tb.title)}</b> <span class="muted">근거 ${esc(tb.source_ref)}</span><table class="items"><thead><tr>${tb.headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${tb.rows.map((row) => `<tr>${row.map((cell) => `<td>${esc(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`).join('')}</div></div>`;
+      }
+    });
+    const d = document.getElementById('detail');
+    d.className = 'detail';
+    d.innerHTML = html;
+  }
+
+  function tableView() {
+    const Pc = (x) => x == null ? '–' : Math.round(100 * x) + '%';
+    const rows = D.candidates.map((c) => {
+      const m = D.metrics[c.id] || {};
+      return `<tr><td>${esc(c.id)}</td><td>${Pc(m.w1_hard_ok)}</td><td>${m.judge == null ? '–' : m.judge.toFixed(1)}</td><td>${m.w1_invented_calls}</td><td>${m.w1_career_calls}</td><td>${m.w1_fund_over}</td><td>${Pc(m.w1_list_same)}</td>
+        <td>${Pc(m.w1_bad_end)}</td><td>${Pc(m.w2_ok)}</td><td>${Pc(m.w3_ok)}</td><td>${m.w1_chars == null ? '–' : Math.round(m.w1_chars)}</td><td>${m.sec == null ? '–' : m.sec.toFixed(1)}</td><td>${(m.cost || 0).toFixed(3)}</td></tr>`;
+    }).join('');
+    const failed = D.calls.filter((r) => !r.valid);
+    const fl = failed.length ? `<h3 style="margin-top:16px">실패 또는 형식 불량 ${failed.length}건</h3><ul class="note">${failed.map((r) => `<li class="fail">${esc(r.cand)} / ${esc(r.task)} / ${esc(r.case)} / ${r.rep}회차: ${esc(r.why)}</li>`).join('')}</ul>` : '';
+    return `<details class="tbl"><summary>표로 보기 (같은 숫자, 접근성용)</summary><div class="scroll" style="margin-top:8px"><table class="data">
+      <thead><tr><th>후보</th><th>본문 규칙 통과</th><th>채점자 점수</th><th>지어낸 수치 호출</th><th>지어낸 경력 호출</th><th>상한 초과</th><th>목록 유지</th><th>종결 위반</th><th>그래프 통과</th><th>표 통과</th><th>본문 글자 수</th><th>시간(초)</th><th>비용($)</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>${fl}</details>`;
+  }
+
+  function limits() {
+    return `<h2>이 결과를 읽을 때</h2><div class="card note">
+      <p style="margin-top:0">· 아이템·회사·통계는 모두 <b>시험용 가상 값</b>입니다. 그래프·표 실험의 입력 계획서는 <b>코드가 만든 고정 문서</b>라서 모델이 쓴 본문에 의존하지 않습니다.</p>
+      <p>· 규칙 검사는 자동입니다. 글의 <b>품질</b>은 검증-1 채점자(luna-medium)가 매긴 점수이며, <b>후보 중 luna 계열과 같은 모델이라 자기 글에 후할 가능성</b>이 있습니다. gpt-4.1-mini는 채점자로 부적합한 것으로 앞서 확인했습니다.</p>
+      <p>· 최소 분량(${D.min_chars}자)과 종결 형식 판정(“~다/~요”로 끝나면 위반)은 기능정의서에 값이 없어 제가 정한 잠정 기준입니다.</p>
+      <p>· “지어낸 수치”는 입력·참고 자료·자료로 계산한 값 밖의 수치입니다. 사업의 <b>성장 목표</b>처럼 계획서에서 흔히 쓰는 전망 수치도 입력에 없으면 여기에 걸립니다.</p>
+      <p><b>채점 기준을 결과를 본 뒤에 여러 번 고쳤습니다.</b> 처음 결과표에서 “지원금 상한 초과”가 후보에 따라 4~16건씩 나왔는데, 응답을 읽어 보니 채점기 오류였습니다(상한 문구를 항목으로 더함, 수익모델 단가를 사업비로 더함, 표의 세부 내용 칸을 합계로 읽음, 근거 섹션 표기 <code>[2-1]</code>를 불인정, <code>11~12개월차</code>의 11을 수치로 잡음, 원형 그래프의 나머지 비율을 불인정). 모두 오탐을 없애는 방향이고 특정 후보에 유리하도록 고치지는 않았지만, 결과를 본 뒤 고쳤다는 점을 감안해 주세요. “일정이 개발 기간을 넘김”은 표를 보다가 발견해 추가한 관찰 지표입니다.</p>
+      <p style="margin-bottom:0">· 일정표의 날짜 기준선(접수 마감일 이내)은 규칙 해석이 모호해 검사하지 않았습니다.</p></div>`;
+  }
+
+  function render() {
+    app.innerHTML = header() + tiles() + w1Chart() + issueMap() + w23Chart() + `<h2>어느 아이템에서 그랬나</h2>` + `<div id="mx">${matrix()}</div>` + tableView() + limits();
+    const tb = document.getElementById('themeBtn');
+    if (tb) tb.addEventListener('click', () => {
+      const root = document.documentElement;
+      const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+      root.dataset.theme = dark ? 'light' : 'dark';
+    });
+  }
+  render();
+
+  app.addEventListener('click', (e) => {
+    const t = e.target.closest('button.tab');
+    if (t) { state.task = t.dataset.task; document.getElementById('mx').innerHTML = matrix(); return; }
+    const b = e.target.closest('button.cell');
+    if (b && !b.disabled) showDetail(b);
+  });
+  app.addEventListener('mousemove', (e) => {
+    const r = e.target.closest('rect.hit');
+    if (r) { const [c, k, v] = r.dataset.t.split('|'); return showTip(e, `<b>${esc(c)}</b>${esc(k)}: ${esc(v)}`); }
+    hideTip();
+  });
+  app.addEventListener('mouseleave', hideTip);
+})();
+</script>
+</body>
+</html>

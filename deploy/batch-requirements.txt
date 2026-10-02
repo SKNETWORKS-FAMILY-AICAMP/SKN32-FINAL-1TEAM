@@ -1,0 +1,17 @@
+# 매일 수집 배치용 패키지. 배치 PC(.venv, Python 3.12.10)의 2026-10-02 버전과 맞췄다.
+# torch 는 batch.Dockerfile 에서 CPU 판으로 먼저 설치한다(기본 판은 GPU용이라 수 GB).
+requests==2.34.2
+PyMySQL[rsa]==1.2.0
+cryptography==50.0.1
+pdfplumber==0.11.10
+pdfminer.six==20260107
+pypdfium2==5.13.0
+olefile==0.47
+numpy==2.5.3
+sentence-transformers==6.0.1
+transformers==5.17.0
+tokenizers==0.23.2
+safetensors==0.8.0
+huggingface_hub==1.31.0
+chromadb==1.5.9
+openai==3.13.0

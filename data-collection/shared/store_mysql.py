@@ -179,7 +179,42 @@ def upsert_sql():
     return sql
 
 
-def store_payload(connection, payload, input_sha256):
+def missing_open(open_rows, listed_ids):
+    """DB 의 open 행 [(id, source_id, notice_id)] 중 오늘 모집 중 목록에 없는 것."""
+    return [(row_id, notice_id) for row_id, source_id, notice_id in open_rows
+            if str(source_id) not in listed_ids]
+
+
+def close_missing(cursor, listed, stamp, run_id):
+    """모집 중 목록에서 빠진 공고를 recruitment_status='closed' 로 바꾼다(2026-09-30).
+
+    listed = {출처: 오늘 받은 모집 중 목록의 원본 ID 집합}. daily_pipeline 이 **오늘 새로 받았고 서버 보고
+    건수와 꼭 맞는** 출처만 넘긴다(지금은 K-Startup 만. 기업마당은 모집 상태가 없어 unknown 이다).
+    K-Startup 은 모집 중(rcrt_prgs_yn=Y) 목록만 주므로, 빠졌다는 것은 모집이 끝났다는 뜻이다. 행은 지우지 않는다.
+    목록에 다시 나타나면 다음 저장의 upsert 가 open 으로 되돌린다. 빈 집합이면 아무것도 닫지 않는다.
+
+    시간 순서(Codex 검수 P1-1): upsert 의 `snapshot_at > stamp` 보호와 맞춘다.
+      - 이 목록(stamp)보다 **최신이거나 같은** 행은 닫지 않는다(snapshot_at < stamp 만) — 늦게 도착한 옛 목록이 최신 공고를 닫지 않게.
+      - 닫은 행의 snapshot_at·last_import_id 를 이 목록의 stamp·run_id 로 바꾼다 — 옛 파일 재적재가 되살리지 않게.
+    """
+    closed = {}
+    for source, ids in sorted((listed or {}).items()):
+        if not ids:
+            continue
+        ids = {str(i) for i in ids}
+        cursor.execute("SELECT id,source_id,notice_id FROM notices WHERE source=%s AND recruitment_status='open' "
+                       'AND snapshot_at < %s FOR UPDATE', (source, stamp))
+        gone = missing_open(cursor.fetchall(), ids)
+        for start in range(0, len(gone), 500):
+            chunk = [row_id for row_id, _ in gone[start:start + 500]]
+            cursor.execute("UPDATE notices SET recruitment_status='closed', snapshot_at=%s, last_import_id=%s WHERE id IN ("
+                           + ','.join(['%s'] * len(chunk)) + ')', [stamp, run_id] + chunk)
+        closed[source] = sorted(notice_id for _, notice_id in gone)
+    return closed
+
+
+def store_payload(connection, payload, input_sha256, listed=None):
+    """listed 를 주면 저장한 뒤 같은 트랜잭션에서 목록에서 빠진 공고를 닫는다(close_missing)."""
     stamp = validate_payload(payload)
     run_id = uuid.uuid4().hex
     counts = {'processed': 0, 'skipped_older': 0, 'attachment_links': 0, 'run_id': run_id}
@@ -222,6 +257,10 @@ def store_payload(connection, payload, input_sha256):
                          item.get('name'), item['status']))
                     counts['attachment_links'] += 1
                 counts['processed'] += 1
+            if listed:
+                closed = close_missing(cursor, listed, stamp, run_id)
+                counts['closed_missing'] = sum(len(ids) for ids in closed.values())
+                report['closed_missing'] = closed
             report['storage_result'] = counts
             cursor.execute('UPDATE import_runs SET report=%s WHERE run_id=%s', (dumps(report), run_id))
         connection.commit()

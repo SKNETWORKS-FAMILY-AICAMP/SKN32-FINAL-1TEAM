@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent별 모델 시험 요약</title>
+<style>
+  :root { color-scheme: light; --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781; --grid:#e1e0d9; --ring:rgba(11,11,11,.10);
+    --accent:#2a78d6; --accent-bg:#e8f1fc; --bar:#c3c2b7; --crit:#d03b3b; --warn-bg:#fbe9e3; }
+  @media (prefers-color-scheme: dark) { :root:where(:not([data-theme="light"])) { color-scheme: dark; --page:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink-2:#c3c2b7;
+    --muted:#898781; --grid:#2c2c2a; --ring:rgba(255,255,255,.10); --accent:#3987e5; --accent-bg:#14263b; --bar:#4a4a46; --crit:#e66767; --warn-bg:#3a2622; } }
+  :root[data-theme="dark"] { color-scheme: dark; --page:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781; --grid:#2c2c2a;
+    --ring:rgba(255,255,255,.10); --accent:#3987e5; --accent-bg:#14263b; --bar:#4a4a46; --crit:#e66767; --warn-bg:#3a2622; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.6 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 28px 16px 64px; }
+  h1 { font-size: 26px; margin: 0 0 4px; } h2 { font-size: 18px; margin: 34px 0 8px; } h3 { font-size: 15px; margin: 0; }
+  .sub { color: var(--ink-2); margin: 0 0 6px; } .note { font-size: 13px; color: var(--muted); } .muted { color: var(--muted); }
+  .topbar { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+  button.theme { background: var(--surface); color: var(--ink-2); border: 1px solid var(--ring); border-radius: 8px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 13px; }
+  .card { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 16px; }
+  .hero { border-left: 5px solid var(--accent); background: var(--accent-bg); margin-top: 16px; }
+  .hero p { margin: 0 0 6px; } .hero b { font-size: 17px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 14px; }
+  .stat { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 10px 14px; }
+  .stat b { display: block; font-size: 24px; } .stat span { font-size: 12px; color: var(--ink-2); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; }
+  .agent h3 { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .agent .tag { font-size: 11px; color: var(--muted); font-weight: 400; }
+  .pick { margin: 8px 0 4px; } .pick .ok { display: inline-block; background: var(--accent-bg); border: 1px solid var(--accent); color: var(--ink); border-radius: 999px; padding: 1px 10px; font-size: 13px; font-weight: 600; }
+  .avoid { font-size: 13px; color: var(--ink-2); } .avoid b { color: var(--crit); }
+  .why { font-size: 13px; color: var(--ink-2); margin-top: 6px; }
+  .bars { margin-top: 10px; } .row { display: grid; grid-template-columns: 130px 1fr; gap: 10px; align-items: center; padding: 5px 0; border-top: 1px solid var(--grid); }
+  .row:first-child { border-top: 0; } .row .name { font-size: 13px; } .row .name small { display: block; color: var(--muted); font-size: 12px; }
+  .track { position: relative; height: 22px; } .fill { position: absolute; left: 0; top: 0; height: 22px; border-radius: 4px; background: var(--bar); min-width: 4px; }
+  .fill.me { background: var(--accent); } .lbl { position: absolute; top: 2px; font-size: 13px; white-space: nowrap; }
+  ol.find, ul.prop { padding-left: 20px; margin: 0; } ol.find li, ul.prop li { margin: 7px 0; }
+  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .warn { background: var(--warn-bg); }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; } th, td { text-align: left; padding: 6px 8px; border-top: 1px solid var(--grid); } th { color: var(--ink-2); font-weight: 500; border-top: 0; }
+  code { background: var(--page); padding: 0 5px; border-radius: 4px; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="topbar"><div>
+    <h1>Agent별 모델 시험 결과 요약</h1>
+    <p class="sub">S-Brain 팀 공유용 · 2026-09-30 · 시험 진행 이근준, 코드·분석 Claude</p>
+    <p class="note">팀이 정한 결정이 아니라 한 사람이 자체적으로 시험한 결과입니다. 입력은 모두 가상 샘플이고 점수는 자동 채점입니다.</p>
+  </div><button class="theme" id="tb" type="button">화면 밝기 바꾸기</button></div>
+
+  <div class="card hero">
+    <p><b>gpt-6-luna가 가격 대비 가장 낫습니다.</b></p>
+    <p>gpt-5.6-luna와 대체로 같은 품질을 <b>절반 가격</b>에 냈고, 구현에서는 코드 특화 모델과 같은 점수를 <b>1/20 비용</b>에 냈습니다. gpt-4.1-mini는 여러 Agent에서 약점이 뚜렷했고, 비싼 모델(terra·sol·astra)은 값을 하지 못했습니다.</p>
+  </div>
+  <div class="stats">
+    <div class="stat"><b>5종</b><span>시험한 Agent 실험</span></div><div class="stat"><b>2,106건</b><span>모델 호출</span></div>
+    <div class="stat"><b>$6.08</b><span>총 시험 비용</span></div><div class="stat"><b>1/20</b><span>구현: gpt-6-luna 대 codex 비용</span></div>
+  </div>
+
+  <h2>구현 Agent: 점수는 같은데 값은 20배 차이</h2>
+  <p class="sub">HTML 프로토타입 합계 점수(30점 만점)와, 같은 14호출을 돌리는 데 든 비용입니다. 막대가 짧을수록 쌉니다.</p>
+  <div class="card bars" id="bars"></div>
+
+  <h2>Agent별 추천 (잠정)</h2>
+  <div class="grid">
+    <div class="card agent"><h3>검증-1 <span class="tag">계획서 채점</span></h3><div class="pick"><span class="ok">gpt-6-luna</span> <span class="ok">gpt-5.6-luna</span></div>
+      <div class="avoid"><b>피할 것</b> gpt-4.1-mini</div><div class="why">4.1-mini는 지워진 섹션에도 점수를 줌(시장성을 지워도 10/15).</div></div>
+    <div class="card agent"><h3>조율 T-C1 <span class="tag">카테고리 판정</span></h3><div class="pick"><span class="ok">gpt-6-luna</span> <span class="ok">luna-low</span></div>
+      <div class="avoid"><b>피할 것</b> gpt-4.1-mini</div><div class="why">쉬운 작업이라 모두 100%. 4.1-mini만 끼워 넣은 지시("원페이지로 해 줘")에 속음.</div></div>
+    <div class="card agent"><h3>전략 <span class="tag">요구사항·시장 분석</span></h3><div class="pick"><span class="ok">gpt-6-luna</span> <span class="ok">luna-medium</span></div>
+      <div class="avoid"><b>피할 것</b> gpt-4.1-mini</div><div class="why">참고 자료가 없으면 그럴듯한 출처와 수치를 지어냄(24/24).</div></div>
+    <div class="card agent"><h3>작성 <span class="tag">본문·그래프·표</span></h3><div class="pick"><span class="ok">gpt-5.6-luna</span> <span class="ok">gpt-6-luna</span></div>
+      <div class="avoid"><b>피할 것</b> gpt-4.1-mini</div><div class="why">본문이 얕고(평균 1,342자) 개발 기간을 넘는 일정을 지어냄(19/24).</div></div>
+    <div class="card agent"><h3>구현 <span class="tag">HTML·SVG</span></h3><div class="pick"><span class="ok">gpt-6-luna</span></div>
+      <div class="avoid"><b>피할 것</b> gpt-4.1</div><div class="why">명도 대비(글자·배경 색 대비 4.5:1) 통과가 6건 중 1건.</div></div>
+    <div class="card agent"><h3>검증-2 · 검수 <span class="tag">미시험</span></h3><div class="pick muted">아직 시험하지 않음</div>
+      <div class="why">검증-2는 후순위, 검수는 자체 파인튜닝 모델이라 API 비교 대상이 아님.</div></div>
+  </div>
+
+  <h2>알아 두면 좋은 발견</h2>
+  <div class="card"><ol class="find">
+    <li><b>비싼 모델이 낫지 않았다.</b> terra는 luna의 약 9~10배 비용인데 조율·전략·작성 어디서도 이점이 없었습니다. 기획서의 "추론 성능 우선 모델"은 비싼 모델을 뜻하지 않습니다.</li>
+    <li><b>추론 모델(luna)은 이 작업들에서 거의 생각하지 않습니다</b>(평균 추론 토큰 수십~수백 개). 그래서 쌉니다.</li>
+    <li><b>gpt-4.1-mini의 반복되는 약점:</b> 없는 내용에 점수 주기, 자료가 없을 때 출처 지어내기, 입력에 없는 일정 만들기, 끼워 넣은 지시문에 속기.</li>
+    <li><b>시험이 쉬워 변별이 안 되는 Agent가 있다.</b> 조율과 구현은 대부분 천장(100%)이라, 후보를 확정하려면 더 어려운 입력이 필요합니다.</li>
+    <li><b>구현의 차이는 접근성 "명도 대비" 하나</b>였고 기능 구현은 모두 100%였습니다.</li>
+    <li><b>비용 감각:</b> gpt-6-luna로 한 번 끝까지 돌리는 데 실험 입력(짧은 문서) 기준 약 <b>$0.01~0.02</b>. 실제 긴 문서면 몇 배로 늘 수 있습니다.</li>
+  </ol></div>
+
+  <h2>팀 코드에 반영하면 좋은 제안</h2>
+  <div class="two">
+    <div class="card"><h3>T-S1 기능 목록은 코드가 복사</h3><p class="why">강한 모델일수록 기능 이름을 쪼개거나 풀어써서(terra 8/24, gpt-6-luna 6/24) 뒤 공정의 기준 목록이 깨집니다. <code>featureList</code>는 LLM이 다시 쓰지 말고 코드가 <code>coreFeatures</code>를 그대로 복사하세요.</p></div>
+    <div class="card"><h3>T-S2는 자료를 주고 코드로 걸러내기</h3><p class="why">모델에게 검색 도구가 없어 그냥 시키면 지어낼 수 있습니다. 참고 자료를 넣어 주고, 자료에 없는 출처의 수치는 코드로 제거하세요.</p></div>
+    <div class="card"><h3>검증-1 "온도 0 고정"은 지킬 수 없음</h3><p class="why">추론 모델(luna)은 온도를 받지 않습니다. 재현성은 재채점 편차 감시(<code>varianceFlag</code>)로 확보해야 하고, luna의 편차는 약 1점(70점 만점의 1.4%)이었습니다.</p></div>
+    <div class="card"><h3>검증-1 rubric을 실제 공고 기준으로</h3><p class="why">이번엔 자체 기준(문서층 70점 구조만 맞춤)이었습니다. 실제 평가항목으로 바꿔 다시 시험해야 합니다.</p></div>
+  </div>
+
+  <h2>한계와 아직 안 한 것</h2>
+  <div class="card warn"><ul class="prop">
+    <li>입력이 전부 <b>가상 샘플(AI 초안)</b>이라 AI가 쓴 글을 AI가 채점하는 편향이 남습니다. 작성 글 품질 채점자(luna 5.6)는 luna 계열에 후할 수 있습니다.</li>
+    <li><b>사람 점수와의 일치도는 재지 않았습니다.</b> 검증-1이 특히 그렇습니다.</li>
+    <li>반복 3회(구현은 1회), 아이템 8건이라 작은 차이는 오차 범위입니다.</li>
+    <li>정적 파싱 채점이라 <b>프로토타입의 실제 동작·미관은 반영하지 않았습니다</b>(리포트 갤러리로 눈으로 확인).</li>
+    <li><b>채점 기준을 결과를 본 뒤 여러 번 고쳤습니다</b>(채점기 오탐 제거 위주). 내역은 인계서에 있습니다.</li>
+    <li>시험하지 않은 것: 검증-2, 검수(자체 파인튜닝), Claude·로컬 모델(집 3060, RunPod), 사람 점수 대조.</li>
+  </ul></div>
+
+  <h2>자료 위치</h2>
+  <p class="sub">저장소 <code>model-eval/</code>: 인계서 <code>docs/HANDOFF_20260930.md</code> · 시각 리포트(브라우저로 열림, 모델이 만든 화면 갤러리 포함) <code>reports/v*/report.html</code>, 목록 <code>reports/index.html</code> · 실행 방법 <code>README.md</code>.</p>
+</main>
+<script>
+  const rows = [
+    ['gpt-6-luna', '30.0', 0.045, true], ['gpt-5.3-codex', '30.0', 0.900, false], ['gpt-5.4-mini', '29.3', 0.781, false],
+    ['gpt-5.6-luna', '28.7', 0.084, false], ['gpt-4.1-mini', '28.7', 0.059, false], ['gpt-4.1', '28.3', 0.530, false]];
+  const max = 0.9;
+  document.getElementById('bars').innerHTML = rows.map(([n, sc, c, me]) => {
+    const w = Math.max(1.5, c / max * 80);          // 오른쪽에 금액 라벨이 들어갈 자리를 남긴다
+    return `<div class="row"><div class="name"><b>${n}</b><small>HTML 합계 ${sc} / 30</small></div>
+      <div class="track"><div class="fill${me ? ' me' : ''}" style="width:${w}%"></div><span class="lbl" style="left:calc(${w}% + 8px)">$${c.toFixed(3)}</span></div></div>`;
+  }).join('');
+  document.getElementById('tb').addEventListener('click', () => {
+    const r = document.documentElement, d = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    r.dataset.theme = d ? 'light' : 'dark';
+  });
+</script>
+</body>
+</html>

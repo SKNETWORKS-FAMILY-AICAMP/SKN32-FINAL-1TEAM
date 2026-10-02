@@ -100,6 +100,30 @@ def validate(rows, prev, force):
     return True, ''
 
 
+def listed_id(row):
+    """원본 행의 공고 번호를 DB source_id 와 같은 방식(normalize.text)으로 다듬는다. 못 다듬으면 None.
+
+    목록 비교와 DB 저장이 같은 규칙을 써야 ' 100 ' 같은 입력을 방금 저장한 '100' 과 다른 공고로 보고
+    닫지 않는다(2026-09-30 Codex 검수 P2-1).
+    """
+    from collect import normalize
+    try:
+        return normalize.text(row.get('pbanc_sn')) or None
+    except ValueError:
+        return None
+
+
+def is_complete(rows, total):
+    """받은 목록이 서버가 보고한 모집 중 공고 전부인가.
+
+    fetch_all 은 빈 쪽을 만나면 멈추고 그대로 돌려주고, validate 는 전일 대비 50% 만 본다.
+    그래서 "목록에서 빠진 공고 = 모집 종료"(daily_pipeline → store_mysql) 는 이 값이 True 인 날만 쓴다.
+    고유 공고 번호 수(listed_id 기준)와 받은 행 수가 모두 서버 보고 건수와 같아야 한다(2026-09-30).
+    """
+    ids = {listed_id(r) for r in rows} - {None}
+    return bool(total) and len(rows) == total and len(ids) == total
+
+
 def archive(prev):
     """교체 전 파일을 날짜별로 남긴다. 신규 공고 탐지(INT-ID-001)에도 쓴다."""
     if not prev or not os.path.exists(OUT):
@@ -162,6 +186,9 @@ def _run(skip_embed=False, dry_run=False, force=False, say=print):
                           'prev_count': prev_count,
                           'elapsed_sec': round(time.time() - started, 1)})
     say('수집 %d건 (서버 보고 %d건)' % (len(rows), total))
+    complete = is_complete(rows, total)
+    if not complete:
+        say('  경고: 받은 목록이 서버 보고 건수와 맞지 않는다 — 오늘은 목록에서 빠진 공고를 닫지 않는다')
 
     # ── 2. 검증 ──────────────────────────────────────────────
     ok, why = validate(rows, prev, force)
@@ -175,7 +202,7 @@ def _run(skip_embed=False, dry_run=False, force=False, say=print):
 
     if dry_run:
         return {'status': 'dry-run', 'count': len(rows), 'prev_count': prev_count,
-                'new_count': len(added),
+                'new_count': len(added), 'complete': complete,
                 'elapsed_sec': round(time.time() - started, 1)}
 
     # ── 3. 임시 파일에 쓰고 원자적으로 교체 ──────────────────────
@@ -184,6 +211,7 @@ def _run(skip_embed=False, dry_run=False, force=False, say=print):
         'source': 'K-Startup getAnnouncementInformation01 (rcrt_prgs_yn=Y)',
         'count': len(rows),
         'reported_total': total,
+        'complete': complete,
         'notices': rows,
     }
     os.makedirs(DATA, exist_ok=True)
@@ -210,6 +238,7 @@ def _run(skip_embed=False, dry_run=False, force=False, say=print):
         'prev_count': prev_count,
         'new_count': len(added),
         'reported_total': total,
+        'complete': complete,
         'embedded': embedded,
         'embed_error': embed_err,
         'archived': archived,

@@ -1,0 +1,12 @@
+# 빌드 위치가 저장소 루트라 이 파일이 없으면 data-collection/data(수백 MB)·.venv 까지 Docker 로 넘어간다.
+# 백엔드 이미지에 필요한 web/backend 만 남긴다.
+*
+!web/backend/
+web/backend/.env
+web/backend/.venv/
+web/backend/**/__pycache__/
+web/backend/tests/
+web/backend/uploads/
+web/backend/logs/
+web/backend/dev.db
+web/backend/rhwp.exe

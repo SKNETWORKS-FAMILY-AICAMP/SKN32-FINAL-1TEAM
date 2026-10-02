@@ -1,0 +1,3 @@
+# 배치 이미지에는 패키지 목록만 넘긴다. 코드·데이터는 실행할 때 붙인다.
+*
+!deploy/batch-requirements.txt

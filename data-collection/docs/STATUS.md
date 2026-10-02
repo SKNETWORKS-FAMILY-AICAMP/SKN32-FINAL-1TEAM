@@ -1,6 +1,96 @@
 # 현재 작업 상태
 
-마지막 갱신: 2026-09-29 · Claude (판정표 지문 수정 Codex 승인 확인) · 이전: Codex (설명서 3차 개정 재검수)
+마지막 갱신: 2026-10-02 · Claude (**매일 배치를 PC → 서버 EC2 `sbrain-web` 으로 전환**, 10/3 09:00 첫 실행) · 이전: 2026-09-30 Claude (model-eval/ 실험)
+
+## 2026-10-02 · Claude · 매일 배치 서버 전환 — 10/3 09:00 첫 실행 점검 필요
+
+- **매일 수집 배치가 이제 이 PC 가 아니라 서버에서 돈다.** 서버: 개인 AWS 계정의 EC2 `sbrain-web`(c7i-flex.large 4GB, Ubuntu 26.04, Docker). 예약: crontab `0 0 * * *`(UTC 00:00 = 한국 09:00) → `deploy/run_batch.sh` → `batch` 컨테이너에서 `python -m collect.daily_pipeline`.
+- **PC 작업 스케줄러 `S-Brain-DailyCollection` 은 사용 안 함으로 바꿨다**(지우지 않음). 이 PC 의 `data/run.log` 는 10/2 09:05 에서 멈춘다. 이후 로그는 서버 `~/sbrain/data-collection/data/run.log` 에 있다.
+- 서버 코드는 10/2 10:54 에 이 PC 작업 폴더를 복사한 것이다(미커밋 수정 포함). **이 PC 에서 data-collection 코드를 고쳐도 서버에는 반영되지 않는다.** 다시 복사해야 한다.
+- 이 PC 의 8000 은 이 PC `data/` 의 색인을 읽는다. 그래서 새 공고가 색인에 들어오지 않는다. 필요하면 서버 `data/` 를 받아 온다.
+- 시험(10/2, DB 쓰기 0·비용 $0): dry-run 두 번 `exit=0`(예약과 같은 빈 환경 포함), 팀 DB 암호화 SELECT 성공, BGE-M3 리비전 `5617a9f…` 고정으로 설정 지문 `0a803d170f58c36e` 가 PC 와 같다(전량 재임베딩 없음), 112건 임베딩 110초·여유 메모리 최저 2,058MB.
+- 다음 단계: **10/3 09:20 쯤 서버 run.log·`import_runs`·건수를 PC 때처럼 점검**한다. 정상이면 서버의 `~/sbrain/_old/data_test_20261002` 를 지운다. 되돌리는 방법·구성은 [deploy/README.md](../../deploy/README.md) "매일 수집 배치" 절.
+
+## 2026-09-30 · Claude · Agent별 모델 비교 실험 — `model-eval/` (data-collection 밖, 새 폴더)
+
+- 이 작업은 `data-collection/`이 아니라 저장소 루트의 **`model-eval/`** 에서 진행한다. 기존 코드는 수정하지 않았다. 사용자가 팀과 별개로 자체 시험하는 것이며 팀이 정한 모델 배치가 아니다. (팀의 배치 **방침**은 기획서 v1.10 5-2절에 있고 구체 모델은 미정이다. 앞서 이 항목이 "기준 문서 없음"이라 한 것은 틀렸다 — WORKLOG 정정 참고.)
+- 진행 상황: 검증-1 1차 완료. **조율 T-C1(카테고리 판정) 1차 완료**(480호출, $0.54): 5개 후보 모두 명확·경계 100%로 시험이 너무 쉬웠고, 지시문 삽입에서 gpt-4.1-mini만 속았다. 사람 검수 전 정답, 더 어려운 사례 필요.
+- 최신(9/30 밤 늦게): **더 어려운 시험 3종 완료**(`model-eval/v6_hard/`, 396호출, $0.52, 인계서 3-7절): 검증-1 좋음/보통/나쁨은 luna 둘이 100%·gpt-4.1-mini 75%(좋음-보통 2점밖에 못 벌림), 전략 함정은 luna6 94%·luna-medium 73%·mini 56%, 작성 유혹은 luna 둘 92%·mini 48%(상한충돌 관대 기준으론 67%). 채점 기준을 결과 본 뒤 여러 번 고쳤다(WORKLOG 참고). 사람 채점 도구(`model-eval/human/rating_tool.html`)를 만들어 뒀으나 사용자가 도메인 지식이 얕아 직접 채점하지 않기로 했다. **Codex에게 12편 채점을 맡기는 지시서**(`model-eval/docs/CODEX_RATING_TASK_20260930.md`, 꾸러미 `model-eval/human/codex_pack/`)를 만들었다. Codex의 결과 파일은 `model-eval/human/codex_pack/ratings.json`이고 AI 참고 점수로 쓴다. 대조는 아직 안 했다. 그 전: **gpt-6-luna를 5개 실험에 추가**($0.22): 5.6과 대체로 같은 품질을 절반 가격에 내고, 구현 HTML은 codex-5.3과 같은 30.0/30을 1/20 비용으로 냄. 전략 T-S1 기능 목록 유지는 75%로 5.6(88%)보다 낮음. sol·astra·terra는 비용 때문에 쓰지 않기로 함. 그 전: **구현 T-B1·T-B2 1차 완료**(반복 1, 70호출, $2.35): 기능 대조·대부분 접근성은 5개 후보 모두 통과하고 차이는 명도 대비뿐. gpt-5.3-codex가 HTML 30.0/30으로 최고, luna-medium은 비용 1/10에 28.7. 리포트 갤러리에서 모델이 만든 화면을 직접 볼 수 있다. 그 전: **작성 T-W1·T-W2·T-W3 1차 완료**(480호출, $1.44). 규칙 검사는 5개 후보가 거의 같고, gpt-4.1-mini는 본문이 짧고 채점자 점수가 가장 낮으며 개발 기간을 넘는 일정을 19/24에서 지어냄. terra는 luna-medium의 9배 비용에 이점 없음. 채점기 오탐을 결과를 보고 여러 번 고쳤다(WORKLOG 참고). 그 전: **전략 T-S1·T-S2 1차 완료**(360호출, $0.94). gpt-4.1-mini만 기준 기능 목록을 그대로 유지하지만 참고 자료가 없으면 출처·수치를 지어내고, terra는 luna의 10배 비용에 목록을 쪼개 바꿈. luna-medium이 시장 분석에서 가장 균형. 채점 기준은 결과를 본 뒤 수정했다(WORKLOG 참고).
+- **주의(Codex 참고):** 배치는 하루 약 $0.165를 쓴다. 9/30 저녁 사용자가 사비 $10을 충전해 잔액이 **$12.17**이 되었다(배치 약 74일치, 10/26까지 약 $4.3). 지금 개인 계정(배치 키)은 배치 전용으로 둔다. 나중에 만들 **새 계정**(팀원들이 학원 지원 $300을 나눠 씀)으로 **매일 배치와 model-eval 실험을 모두 옮길 예정**이다(사용자, 9/30). 배치 키는 `data-collection/.env`의 `OPENAI_API_KEY`이고 사용자가 직접 바꾼다. **(정정, 9/30 저녁 사용자)** "너무 계산해서 쓰지 말고 일단 그냥 쓰자"고 해서 새 계정이 생기기 전까지는 지금 키로 수 달러 이내의 실험을 되묻지 않고 돌린다(약 $5 이상만 먼저 확인). 실험 v1~v6 누적은 $6.60이고 잔액은 대시보드에서 확인해야 한다.
+- 내용: S-Brain Agent 7개에 쓸 모델을 Agent별로 비교한다. 1차로 **검증-1(계획서 채점)** 을 가상 계획서 4편·후보 4개(gpt-4.1-mini, gpt-5.6-luna low/medium/high)·반복 3회로 시험했다(288호출, 약 $0.46). 잠정: gpt-4.1-mini는 없는 섹션에도 점수를 줘 부적합, luna-medium이 가성비 후보. **사람 점수와의 일치는 아직 측정하지 않았다.**
+- 읽을 곳: [model-eval/docs/HANDOFF_20260930.md](../../model-eval/docs/HANDOFF_20260930.md)(결과·한계·다음 단계), [규칙 model-eval/AGENTS.md](../../model-eval/AGENTS.md). 결과 화면은 `model-eval/reports/v1_20260930T124257_plans4/report.html`.
+- Codex 참고: 이 폴더의 `data-collection` 파일·DB·서비스 코드는 건드리지 않았다. 유료 호출(OpenAI)은 사용자 승인 후 실행했다. 다음 단계(로컬 모델 추가·사람 점수 대조·조율 Agent 시험)는 사용자가 순서를 정한다. 커밋은 하지 않았다.
+
+## 2026-09-30 · Codex · 매칭 관련도 448쌍 판정 — 완료, 사람 검토 필요
+
+- 결과: [판정 결과](reviews/matching/RELEVANCE_LABEL_RESULT_20260930.md), [labels](../reports/relevance_label_pack_20260930/labels.jsonl), [채점](../reports/relevance_label_pack_20260930/score.md). topic-v2 AI 참고 정답이며 사람 정답이 아니다.
+- 전체 448쌍: 0=185·1=209·2=54·null=0, borderline=28. 대조군 제외 대상 408쌍은 0=167·1=192·2=49, borderline=25. codex_qrels.jsonl 408줄을 만들었으며 기존 eval/qrels.jsonl은 병합하지 않았다.
+- 검증: hidden 열람 전 독립 형식 검사 통과. 지정 채점 모듈 정상 종료. 사람 대조군 40쌍 정확 일치 20/40(50.0%)·한 등급 이내 36/40(90.0%)·2점 여부 31/40(77.5%)·선형 가중 카파 0.3103. 채점 전후 labels 및 기존 qrels의 SHA-256 동일.
+- 다음 단계: 결과 문서의 수정 후보·대조군 불일치 20쌍을 사람이 검토하고 병합할 버전을 결정한다. 채점 뒤 labels는 고정했으며 새 판정이 필요하면 별도 버전으로 처리한다. 코드·DB·API·Git 스테이징 변경 없음. 아래 Claude의 기존 진행 기록은 보존했다.
+
+## 2026-09-30 · Codex · K-Startup 모집 종료 처리 재검수 — 승인
+
+- 결과: [재검수 문서](reviews/integration/KSTARTUP_CLOSE_MISSING_REVIEW_RECHECK_20260930.md). 기존 P1 1·P2 2 해결, 추가 지적 없음. 종료 시각·실행 ID와 최신 행 보호, 공통 ID 정규화, 한국 날짜 SQL 확인.
+- 검증: 관련 시험 34개 중 28개 통과·MySQL 통합 6개 건너뜀, 실패·오류 0. 실제 저장 함수와 메모리 SQL 대역으로 시간 순서·ID·rollback·날짜 경계 8개 시나리오 그룹 통과.
+- 코드·DB·운영 설명서·스테이징은 수정하지 않았다. 자신의 STATUS·WORKLOG 기록과 문서 지도 결과 링크만 함께 갱신했다.
+- 다음 단계: 10/1 09:00 배치 뒤 실제 종료 건수·import 보고서 확인. 235건 예상은 이번에 재집계하지 않았다. 실제 DB 시험·API·배치 실행은 하지 않았고, 자세한 범위는 WORKLOG 최신 항목과 결과 문서에 있다.
+
+## 2026-09-30 · Codex · K-Startup 모집 종료 처리 검수 — 보류
+
+- 결과: [검수 문서](reviews/integration/KSTARTUP_CLOSE_MISSING_REVIEW_20260930.md). **P1 1·P2 2**: 종료 처리의 시간 순서 보호 누락, 원본/저장 ID 정규화 불일치, UTC 세션 `CURDATE()`와 한국 날짜 불일치.
+- 검증: 관련 회귀 시험 29개 실행(실패·오류 0, MySQL 통합 4개 건너뜀). DB 없는 대역에서 오래된 재적재로 재개·오래된 목록으로 최신 공고 종료·ID 공백에 의한 즉시 종료를 재현했다.
+- 코드·DB·스테이징은 변경하지 않았다. 이번 문서 작업 기록은 WORKLOG 최신 항목에 있다.
+- 다음 단계: Claude가 지적을 반영한 뒤 재검수. 10/1 09:00 예약 배치는 현재 코드로 실행되므로 그 전에 확인이 필요하다. 예약 작업은 중지하지 않았다.
+
+## 2026-09-30 · Claude · 매칭 성능 — Codex 판정 도착, 후보 A~C 모두 입증 안 됨, 판정 기준 결정 대기
+
+- Codex 관련도 판정: 사람 대조군 정확 일치 **0.50**(카파 0.31). 기존 LLM보다 엄격하다(대상 2 비율 12%). [결과](reviews/matching/RELEVANCE_LABEL_RESULT_20260930.md). qrels에는 아직 합치지 않았다.
+- Codex 판정을 덧붙인 재측정([결과](../reports/match_variants_20260930T020435Z/summary.md)): A는 개발·시험 방향 엇갈림, C는 시험용에서 나빠짐, B05는 조금 나은 쪽이지만 구간이 0을 걸친다. 서비스 코드 변경 없음.
+- 결정 대기: Codex 판정을 합칠지, LLM(gpt-4.1-mini)으로 408쌍을 다시 매겨 기존 판정과 기준을 맞출지.
+
+## 2026-09-30 · Claude · 매칭 성능 작업 — Codex 판정 대기, 개선 후보 정리 (→ 위 항목으로 이어짐)
+
+- 사용자 결정: 매칭 성능 개선에 집중한다. 평가 빈칸 채우기와 실패 분석을 같이 한다.
+- Codex 판정 요청: [RELEVANCE_LABEL_TASK_20260930.md](reviews/matching/RELEVANCE_LABEL_TASK_20260930.md). **448쌍**이다(base 빈칸 284 + 후보 A~C가 올린 빈칸 124 + 사람 대조 40).
+- 후보 스위치 A(BM25 질의 줄이기)·B(무게)·C(비슷한 공고 묶기): `eval/match_variants.py`. 첫 측정은 [결과](../reports/match_variants_20260930T010314Z/summary.md)에 있고, 모든 차이가 구간 안이라 판정 뒤 다시 잰다. 결과는 `reports/relevance_label_pack_20260930/labels.jsonl`과 `reviews/matching/RELEVANCE_LABEL_RESULT_20260930.md`다.
+- 실패 분석: [summary](../reports/match_miss_analysis_20260930/summary.md). 정답이 11~50위에 밀린 것이 많다(292건). 원인은 BM25 곁가지 단어, 비슷한 공고 반복, 안내글이다.
+- 서비스 코드 변경 없음.
+
+## 2026-09-30 · Claude 확인 · K-Startup 모집 종료 처리 **Codex 재검수 승인**
+
+- [재검수](reviews/integration/KSTARTUP_CLOSE_MISSING_REVIEW_RECHECK_20260930.md): P1-1·P2-1·P2-2 해결, 추가 지적 없음. Codex가 따로 만든 8개 시나리오(시간 순서·ID 다듬기·rollback·한국 날짜)도 통과했다.
+- **남은 확인: 10/1 09:00 배치 뒤** 로그의 "모집 종료로 바꾼 K-Startup 공고 N건"과 `import_runs.report.closed_missing`을 대조한다(예상 약 235건, 확정 수치 아님).
+- 미검증 한계: 페이지를 받는 사이 API 목록이 바뀔 때의 스냅샷 일관성.
+
+## 2026-09-30 · Claude · K-Startup 모집 종료 — Codex 보류(P1 1·P2 2) 반영, 재검수 대기 (→ 위에서 승인)
+
+- [Codex 검수](reviews/integration/KSTARTUP_CLOSE_MISSING_REVIEW_20260930.md): 보류. 종료 처리가 시간 순서 보호를 우회한다(P1-1), 목록 ID 다듬기가 DB와 다르다(P2-1), 안내 SQL `CURDATE()`가 UTC다(P2-2).
+- 세 건 모두 반영: `close_missing(…, stamp, run_id)`는 `snapshot_at < stamp`만 닫고 닫은 행의 시각·실행을 바꾼다. `daily_job.listed_id`는 `normalize.text`를 쓴다. SQL은 `DATE(UTC_TIMESTAMP() + INTERVAL 9 HOUR)`로 바꿨다. [응답·재검수 요청](reviews/integration/KSTARTUP_CLOSE_MISSING_REVIEW_RESPONSE_20260930.md).
+- 검증: 전체 686개 통과, 실험용 MySQL 통합 17개 통과(Codex 재현 2경로 포함).
+- **10/1 09:00 배치가 이 코드로 돈다.** 재검수 결과는 `KSTARTUP_CLOSE_MISSING_REVIEW_RECHECK_20260930.md`.
+
+## 2026-09-30 · Claude · K-Startup 모집 종료 처리 완료 — (위 항목에서 보류·수정됨)
+
+- 문제: K-Startup은 모집 중 목록만 받는다. 마감일 전에 끝난 공고가 목록에서 사라져도 DB에 `open`으로 남았다(9/30 실제 5건).
+- 사용자 결정: **A안** — 새 칸 없이 기존 `recruitment_status`에 `closed`를 쓴다.
+- 변경: `collect/daily_job.py`(`is_complete` — 받은 목록이 서버 보고 건수와 꼭 맞는지), `collect/daily_pipeline.py`(`kstartup_listed` — 오늘 새로·빠짐없이 받은 날만 목록을 넘김), `shared/store_mysql.py`(`close_missing` — 같은 트랜잭션에서 목록에 없는 `open`을 `closed`로), 테스트 2개 파일, 문서 5곳.
+- 검증: 전체 unittest **673개 통과**(건너뜀 14). 임시 DB 통합 시험은 공용 서버 권한이 없어 이 PC 실험용 MySQL로 돌려 13개 통과(임시 DB 삭제 확인).
+- **10/1 09:00 배치 첫 실행에 235건이 `closed`로 바뀐다**(230건 마감일 지남 + 5건 9/30 마감). 배치 뒤 로그의 "모집 종료로 바꾼 K-Startup 공고 N건"과 `import_runs.report.closed_missing`을 확인한다.
+- Codex 검수 요청: [KSTARTUP_CLOSE_MISSING_REVIEW_REQUEST_20260930.md](reviews/integration/KSTARTUP_CLOSE_MISSING_REVIEW_REQUEST_20260930.md) → 결과 `KSTARTUP_CLOSE_MISSING_REVIEW_20260930.md`.
+
+## 2026-09-30 · Codex → Claude 확인 · 조율 설명서 4차 개정 **승인**
+
+- [Codex 재검수](reviews/orchestration/ORCHESTRATION_HANDOFF_REVIEW_RECHECK4_20260930.md): 직전 P2 닫음, 추가 지적 없음. 줄 번호 링크 19개·코드 블록 3개 대조, 프로브 D·A·B·C 통과(2,603건), `test_judgments_source.py` 37개 통과.
+- 뜻: **설명서를 조율 담당에게 넘겨 합의를 시작해도 된다.** 실제 공고 공급·확인 필요 화면 표시는 합의 뒤 검증한다.
+- K-Startup 검수(`KSTARTUP_CLOSE_MISSING_REVIEW_20260930.md`)는 아직 결과 없음 — Codex가 이 요청은 받지 않은 것으로 보인다.
+
+## 2026-09-30 · Claude · 9/30 매일 배치 점검 — 정상, 판정표 지문 수정 확인 완료
+
+- 배치 `exit=0`(13분 40초). 공고 **2,603건**(신규 78), 경고 없음.
+- 10·11·12단계가 지문이 바뀐 5건 + 오늘 내용이 바뀐 126760을 다시 판정했다. 13단계 신청자 유형 바뀜 8(재판정 6 + A안 2)·업종 바뀜 6.
+- 결론 칸: 126490 `blocked`(근거가 지금 공고문에 있음), 126586·126651 NULL(확인 필요).
+- 읽기 전용 확인: `load_auto` 2,603건 전부 지문 같음·다름 0·확인 필요 2, `upload_judgments --plan` 올릴 것 0. 상세는 [WORKLOG](WORKLOG.md) 9/30.
+- 판정표 지문 수정 건은 끝났다. 남은 일은 [인계서](NEXT_SESSION_HANDOFF_20260929.md) 4절.
 
 ## 2026-09-29 · Codex → Claude 확인 · 판정표 지문 수정 **승인**
 

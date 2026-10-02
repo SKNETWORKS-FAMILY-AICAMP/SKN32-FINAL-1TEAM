@@ -1,0 +1,39 @@
+{
+  "exp": "gradient",
+  "label": "검증-1 미묘한 차이(좋음/보통/나쁨)",
+  "started_at": "2026-09-30T17:12:01",
+  "candidates": [
+    {
+      "id": "luna6-medium",
+      "model": "gpt-6-luna",
+      "reasoning": true,
+      "reasoning_effort": "medium",
+      "price": [
+        0.1,
+        0.5
+      ]
+    },
+    {
+      "id": "luna-medium",
+      "model": "gpt-5.6-luna",
+      "reasoning": true,
+      "reasoning_effort": "medium",
+      "price": [
+        0.2,
+        1.2
+      ]
+    },
+    {
+      "id": "gpt-4.1-mini",
+      "model": "gpt-4.1-mini",
+      "reasoning": false,
+      "temperature": 0,
+      "price": [
+        0.4,
+        1.6
+      ]
+    }
+  ],
+  "reps": 3,
+  "estimated_usd": 0.1612
+}

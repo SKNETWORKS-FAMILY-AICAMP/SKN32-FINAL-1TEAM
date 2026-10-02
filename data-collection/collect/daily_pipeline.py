@@ -152,8 +152,30 @@ def build_normalized(sources, say):
     return out, s
 
 
-def store(path, say):
-    """MySQL 저장. 실패해도 예외를 올리지 않고 (성공여부, 결과) 를 돌려준다."""
+def kstartup_listed(ks):
+    """오늘 새로 받았고 서버 보고 건수와 꼭 맞는 K-Startup 모집 중 목록의 공고 번호 집합. 아니면 None.
+
+    None 이면 저장 단계가 목록에서 빠진 공고를 닫지 않는다(2026-09-30). K-Startup 수집이 실패·거부되면
+    파이프라인은 어제 notices.json 을 그대로 정규화해 저장하므로, 그날 '빠졌다'는 판단을 할 수 없다.
+    """
+    if ks.get('status') != 'ok' or not ks.get('complete'):
+        return None
+    try:
+        with open(daily_job.OUT, encoding='utf-8') as f:
+            payload = json.load(f)
+    except Exception:
+        return None
+    ids = {daily_job.listed_id(r) for r in payload.get('notices') or []} - {None}
+    if not payload.get('complete') or not ids or len(ids) != payload.get('reported_total'):
+        return None
+    return ids
+
+
+def store(path, say, listed=None):
+    """MySQL 저장. 실패해도 예외를 올리지 않고 (성공여부, 결과) 를 돌려준다.
+
+    listed = {출처: 오늘 모집 중 목록의 원본 ID 집합}. 주면 목록에서 빠진 open 공고를 closed 로 바꾼다.
+    """
     from shared import store_mysql
 
     connection = None
@@ -164,7 +186,7 @@ def store(path, say):
         store_mysql.validate_payload(payload)
         connection = store_mysql.connect()
         result = store_mysql.store_payload(
-            connection, payload, hashlib.sha256(content).hexdigest())
+            connection, payload, hashlib.sha256(content).hexdigest(), listed=listed)
         say('  MySQL 저장 %s' % json.dumps(result, ensure_ascii=False)[:160])
         return True, result
     except Exception as exc:
@@ -217,7 +239,8 @@ def _run(dry_run, skip_store, force, say,
     # 다시 잡으려다 스스로 busy 가 되므로 잠금 없는 _run() 을 직접 부른다.
     ks = daily_job._run(skip_embed=True, dry_run=dry_run, force=force, say=say)
     sources['kstartup'] = {'status': ks['status'], 'count': ks.get('count'),
-                           'new_count': ks.get('new_count'), 'error': ks.get('error')}
+                           'new_count': ks.get('new_count'), 'error': ks.get('error'),
+                           'complete': ks.get('complete')}
     # ── 2. 기업마당 — 실패해도 직전 스냅샷으로 이어간다 ────────────
     say('기업마당 수집')
     biz_path, biz_count, biz_status, biz_why = collect_bizinfo(force, say)
@@ -252,7 +275,14 @@ def _run(dry_run, skip_store, force, say,
         say('--skip-store — DB 저장을 건너뛴다')
     else:
         say('MySQL 저장')
-        stored, store_result = store(norm_path, say)
+        # K-Startup 을 오늘 빠짐없이 받은 날에만 모집 중 목록에서 빠진 공고를 닫는다(2026-09-30)
+        ks_ids = kstartup_listed(ks)
+        if ks_ids is None:
+            say('  K-Startup 목록을 오늘 빠짐없이 받지 못해 모집 종료 처리를 건너뛴다')
+        stored, store_result = store(norm_path, say,
+                                     listed={'kstartup': ks_ids} if ks_ids else None)
+        if stored and store_result.get('closed_missing') is not None:
+            say('  모집 중 목록에서 빠져 모집 종료로 바꾼 K-Startup 공고 %d건' % store_result['closed_missing'])
 
     # ── 5. 첨부 받기·본문 추출 ────────────────────────────────
     # 공고 저장이 끝난 뒤에 한다. 여기서 실패해도 공고 데이터는 이미 최신이다.
@@ -510,6 +540,9 @@ def main():
         print('  %-10s %-9s %s건%s'
               % (source, v['status'], v.get('count'),
                  ' — ' + v['error'] if v.get('error') else ''))
+    sr = r.get('store_result') or {}
+    if sr.get('closed_missing') is not None:
+        print('  %-10s 모집 중 목록에서 빠진 K-Startup %d건 → closed' % ('모집 종료', sr['closed_missing']))
     a = r.get('attachments') or {}
     if a.get('counts') or a.get('error'):
         print('  %-10s %s' % ('첨부', a.get('error') or

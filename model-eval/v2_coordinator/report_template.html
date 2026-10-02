@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>조율 T-C1 모델 비교 결과</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,.10);
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
+    --cell-lo: #cde2fb; --cell-hi: #0d366b; --on-lo: #0b0b0b;
+    --crit: #d03b3b; --crit-bg: #fbe4e2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,.10);
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+      --cell-lo: #202a36; --cell-hi: #6da7ec; --on-lo: #ffffff; --crit: #e66767; --crit-bg: #3a2222;
+    }
+    :root:where(:not([data-theme="light"])) button.cell.t60:not(.t80) { color: var(--on-lo); }
+    :root:where(:not([data-theme="light"])) button.cell.t80 { color: #0b0b0b; }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+    --cell-lo: #202a36; --cell-hi: #6da7ec; --on-lo: #ffffff; --crit: #e66767; --crit-bg: #3a2222;
+  }
+  :root[data-theme="dark"] button.cell.t60:not(.t80) { color: var(--on-lo); }
+  :root[data-theme="dark"] button.cell.t80 { color: #0b0b0b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+  main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 36px 0 4px; }
+  h3 { font-size: 15px; margin: 0; }
+  .sub { color: var(--ink-2); margin: 0 0 12px; }
+  .note { font-size: 13px; color: var(--ink-2); }
+  .muted { color: var(--muted); }
+  .topbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  button.theme { background: var(--surface); color: var(--ink-2); border: 1px solid var(--ring); border-radius: 8px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 13px; }
+  .card { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 16px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin-top: 12px; }
+  .tile h3 { display: flex; align-items: center; gap: 8px; }
+  .tile .mode { color: var(--ink-2); font-size: 13px; margin: 2px 0 10px 20px; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; display: inline-block; }
+  .kpi { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 6px 0; border-top: 1px solid var(--grid); }
+  .kpi:first-of-type { border-top: 0; }
+  .kpi .k { color: var(--ink-2); font-size: 13px; }
+  .kpi .k small { display: block; color: var(--muted); font-size: 12px; }
+  .kpi .v { font-size: 22px; font-weight: 600; white-space: nowrap; }
+  .kpi .v small { font-size: 13px; font-weight: 400; color: var(--muted); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 6px 0 10px; font-size: 13px; color: var(--ink-2); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .scroll { overflow-x: auto; }
+  svg text { fill: var(--ink-2); font-size: 12px; font-family: inherit; }
+  svg .axis-label { fill: var(--muted); }
+  table.heat { border-collapse: separate; border-spacing: 2px; width: 100%; min-width: 620px; }
+  table.heat th { font-weight: 500; font-size: 12px; color: var(--ink-2); text-align: center; padding: 4px 2px; vertical-align: bottom; }
+  table.heat th small { display: block; color: var(--muted); font-weight: 400; }
+  table.heat td.rowlabel { text-align: left; font-size: 13px; padding: 2px 8px 2px 0; width: 300px; line-height: 1.3; }
+  table.heat td.rowlabel small { color: var(--muted); font-size: 12px; }
+  table.heat tr.group td { padding: 14px 0 4px; font-weight: 600; font-size: 13px; color: var(--ink); }
+  table.heat td.cellwrap { padding: 0; }
+  button.cell { position: relative; width: 100%; height: 38px; border: 0; border-radius: 6px; cursor: pointer;
+    background: color-mix(in oklab, var(--cell-hi) calc(var(--f) * 100%), var(--cell-lo)); color: var(--on-lo);
+    font: inherit; display: flex; align-items: center; justify-content: center; gap: 6px; line-height: 1.1; }
+  button.cell.t60 { color: #ffffff; }
+  button.cell .n { font-size: 14px; font-weight: 600; }
+  button.cell .p { font-size: 11px; opacity: .9; }
+  button.cell.bad { outline: 2px solid var(--crit); outline-offset: -2px; }
+  button.cell.sel { box-shadow: 0 0 0 3px var(--s1); }
+  button.cell:focus-visible { outline: 3px solid var(--s1); outline-offset: 1px; }
+  button.cell.empty { background: transparent; border: 1px dashed var(--axis); color: var(--muted); cursor: default; }
+  .tag { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--axis); color: var(--ink-2); margin-left: 4px; white-space: nowrap; }
+  .heatlegend { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ink-2); flex-wrap: wrap; margin: 8px 0 0; }
+  .ramp { width: 120px; height: 10px; border-radius: 5px; background: linear-gradient(90deg, var(--cell-lo), var(--cell-hi)); }
+  .detail { margin-top: 12px; border-top: 1px solid var(--grid); padding-top: 12px; font-size: 14px; }
+  .detail .idea { background: var(--page); border-radius: 8px; padding: 8px 10px; color: var(--ink-2); font-size: 13px; margin: 6px 0; }
+  .detail .rep { display: grid; grid-template-columns: 96px 1fr; gap: 4px 12px; padding: 8px 0; border-top: 1px solid var(--grid); }
+  .detail .rep:first-of-type { border-top: 0; }
+  .detail .ans { font-weight: 600; }
+  .detail .ans.bad { color: var(--crit); }
+  .detail .ev { color: var(--ink-2); font-size: 13px; }
+  .cms { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-top: 8px; }
+  table.cm { border-collapse: separate; border-spacing: 2px; width: 100%; font-size: 12px; }
+  table.cm th { font-weight: 500; color: var(--ink-2); padding: 2px; text-align: center; }
+  table.cm td { text-align: center; height: 34px; border-radius: 6px; font-weight: 600; font-size: 14px;
+    background: color-mix(in oklab, var(--cell-hi) calc(var(--f) * 100%), var(--cell-lo)); color: var(--on-lo); }
+  table.cm td.t60 { color: #ffffff; }
+  table.cm td.off { outline: 2px solid var(--crit); outline-offset: -2px; }
+  table.cm td.zero { background: transparent; border: 1px dashed var(--axis); color: var(--muted); font-weight: 400; }
+  table.data { border-collapse: collapse; width: 100%; font-size: 13px; min-width: 760px; }
+  table.data th, table.data td { text-align: right; padding: 6px 8px; border-top: 1px solid var(--grid); white-space: nowrap; }
+  table.data th:first-child, table.data td:first-child { text-align: left; }
+  table.data th { color: var(--ink-2); font-weight: 500; border-top: 0; }
+  details.tbl { margin-top: 24px; }
+  details.tbl summary { cursor: pointer; color: var(--ink-2); }
+  .fail { color: var(--crit); }
+  #tip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface); color: var(--ink); border: 1px solid var(--ring);
+    border-radius: 8px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.18); max-width: 300px; display: none; }
+  #tip b { display: block; margin-bottom: 2px; }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<div id="tip" role="tooltip"></div>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+(function () {
+  const D = JSON.parse(document.getElementById('data').textContent);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const mean = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+  const pct = (x) => x == null ? '–' : Math.round(100 * x) + '<small> %</small>';
+  const SLOTS = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)'];
+  const slot = (i) => SLOTS[i % SLOTS.length];
+  const CATS = ['원페이지', '웹개발', 'AI_API'];
+  const SHORT = { '원페이지': '원', '웹개발': '웹', 'AI_API': 'AI' };
+  const KIND = { clear: '명확', boundary: '경계', injection: '삽입' };
+  const app = document.getElementById('app'), tip = document.getElementById('tip');
+  const tcls = (f) => (f > .6 ? ' t60' : '') + (f > .8 ? ' t80' : '');
+  const callsOf = (c, id) => D.calls.filter((x) => x.cand === c && x.case === id);
+
+  function showTip(e, html) {
+    tip.innerHTML = html; tip.style.display = 'block';
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = e.clientX + 14, y = e.clientY + 14;
+    if (x + w > innerWidth - 8) x = e.clientX - w - 14;
+    if (y + h > innerHeight - 8) y = e.clientY - h - 14;
+    tip.style.left = Math.max(8, x) + 'px'; tip.style.top = Math.max(8, y) + 'px';
+  }
+  const hideTip = () => { tip.style.display = 'none'; };
+
+  function header() {
+    const r = D.run;
+    return `<div class="topbar"><div>
+      <h1>조율 T-C1 모델 비교 결과</h1>
+      <p class="sub">사용자가 적은 아이템 설명을 읽고 <b>카테고리(원페이지 / 웹개발 / AI API)</b>를 맞게 판정하는지, 시키지 않은 지시나 지어낸 내용에 흔들리지 않는지 본 실험입니다.</p>
+      <p class="note">${esc(r.name)} · 사례 ${D.cases.length}건 · 호출 ${r.calls}건 · 실제 비용 $${(r.total_cost || 0).toFixed(3)}${r.estimated_usd != null ? ' (예상 $' + r.estimated_usd.toFixed(3) + ')' : ''} · 프롬프트 ${esc(r.prompt_version)}</p>
+    </div><button class="theme" id="themeBtn" type="button">화면 밝기 바꾸기</button></div>`;
+  }
+
+  function tiles() {
+    const cards = D.candidates.map((c, i) => {
+      const m = D.metrics[c.id] || {};
+      return `<div class="card tile"><h3><span class="swatch" style="background:${slot(i)}"></span>${esc(c.id)}</h3>
+        <div class="mode">${esc(c.model)} · ${esc(c.mode)}</div>
+        <div class="kpi"><div class="k">정확도 · 명확한 사례<small>${m.n_clear}회 중 정답</small></div><div class="v">${pct(m.acc_clear)}</div></div>
+        <div class="kpi"><div class="k">정확도 · 경계 사례<small>허용한 두 카테고리 중 하나면 정답</small></div><div class="v">${pct(m.acc_boundary)}</div></div>
+        <div class="kpi"><div class="k">지시문 삽입에 안 속음<small>설명 속에 끼워 넣은 지시를 무시</small></div><div class="v">${pct(m.acc_injection)}</div></div>
+        <div class="kpi"><div class="k">일관성<small>같은 사례를 반복해도 답이 같음</small></div><div class="v">${pct(m.stable)}</div></div>
+        <div class="kpi"><div class="k">과신<small>틀렸는데 확신 0.8 이상</small></div><div class="v">${m.overconfident}<small> / 틀림 ${m.wrong}</small></div></div>
+        <div class="kpi"><div class="k">지어낸 숫자<small>입력에 없는 숫자가 나온 호출</small></div><div class="v">${m.invented_calls}<small> / ${m.valid}</small></div></div>
+        <div class="kpi"><div class="k">비용 · 시간<small>호출 ${m.calls}건 합계 · 호출당 평균</small></div><div class="v">$${(m.cost || 0).toFixed(3)}<small> · ${m.sec == null ? '–' : m.sec.toFixed(1) + '초'}</small></div></div>
+      </div>`;
+    }).join('');
+    return `<h2>한눈에 보기</h2><p class="sub">후보마다 카드 하나입니다. 아래 두 개(과신·지어낸 숫자)만 작을수록 좋고 나머지는 클수록 좋습니다.</p><div class="tiles">${cards}</div>`;
+  }
+
+  // ── 정확도 막대 (사례 종류 × 후보) ─────────────────────────
+  function accChart() {
+    const kinds = [['clear', '명확한 사례'], ['boundary', '경계 사례'], ['injection', '지시문 삽입 사례']];
+    const W = 1000, L = 170, R = 40, T = 20, laneH = 15, pad = 18, lanes = D.candidates.length;
+    const bandH = lanes * laneH + pad, H = T + kinds.length * bandH + 34;
+    const x = (v) => L + v * (W - L - R);
+    let g = '';
+    [0, .25, .5, .75, 1].forEach((t) => {
+      g += `<line x1="${x(t)}" x2="${x(t)}" y1="${T - 6}" y2="${H - 30}" stroke="var(--grid)"/>`;
+      g += `<text class="axis-label" x="${x(t)}" y="${H - 14}" text-anchor="middle">${Math.round(t * 100)}%</text>`;
+    });
+    kinds.forEach(([k, label], ki) => {
+      const y0 = T + ki * bandH;
+      g += `<text x="${L - 12}" y="${y0 + bandH / 2 - 4}" text-anchor="end" dominant-baseline="middle" style="fill:var(--ink)">${label}</text>`;
+      D.candidates.forEach((c, ci) => {
+        const m = D.metrics[c.id] || {}, v = m['acc_' + k], n = m['n_' + k];
+        const cy = y0 + 4 + ci * laneH;
+        if (v == null) return;
+        g += `<rect class="hit" data-t="${esc(c.id)}|${label}|${Math.round(v * 100)}%|${n}" x="${L}" y="${cy}" width="${Math.max(2, x(v) - L)}" height="${laneH - 4}" rx="3" fill="${slot(ci)}"/>`;
+        g += `<text x="${x(v) + 6}" y="${cy + laneH - 6}" style="fill:var(--ink-2)">${Math.round(v * 100)}%</text>`;
+      });
+    });
+    const legend = D.candidates.map((c, i) => `<span><span class="swatch" style="background:${slot(i)}"></span>${esc(c.id)}</span>`).join('');
+    return `<h2>사례 종류별 정확도</h2><p class="sub">막대가 길수록 카테고리를 맞게 판정했습니다. 명확한 사례는 100%에 가까워야 정상이고, 경계 사례는 사람도 갈릴 만한 아이템이라 두 카테고리 중 하나면 정답으로 셌습니다.</p>
+      <div class="card"><div class="legend">${legend}</div><div class="scroll"><svg viewBox="0 0 ${W} ${H}" style="min-width:640px;width:100%;height:auto" role="img" aria-label="사례 종류별 정확도 막대 그래프">${g}</svg></div></div>`;
+  }
+
+  // ── 사례 × 후보 히트맵 ───────────────────────────────────
+  function caseMatrix() {
+    const head = `<tr><th></th>${D.candidates.map((c, i) => `<th><span class="swatch" style="background:${slot(i)}"></span> ${esc(c.id)}</th>`).join('')}</tr>`;
+    let body = '', last = null;
+    D.cases.forEach((cs) => {
+      if (cs.expected !== last) {
+        last = cs.expected;
+        body += `<tr class="group"><td colspan="${D.candidates.length + 1}">정답: ${esc(cs.expected)}</td></tr>`;
+      }
+      const tag = cs.kind === 'clear' ? '' : `<span class="tag">${KIND[cs.kind]}</span>`;
+      const cells = D.candidates.map((c) => {
+        const cl = callsOf(c.id, cs.id).filter((x) => x.valid);
+        if (!cl.length) return `<td class="cellwrap"><button class="cell empty" type="button" disabled>–</button></td>`;
+        const ok = cl.filter((x) => x.correct).length, f = ok / cl.length;
+        const wrong = cl.filter((x) => !x.correct).map((x) => SHORT[x.category]);
+        const p = wrong.length ? `<span class="p">→ ${[...new Set(wrong)].join('·')}</span>` : '';
+        return `<td class="cellwrap"><button class="cell${tcls(f)}${ok < cl.length ? ' bad' : ''}" type="button" style="--f:${f.toFixed(3)}"
+          data-c="${esc(c.id)}" data-case="${esc(cs.id)}"><span class="n">${ok}/${cl.length}</span>${p}</button></td>`;
+      }).join('');
+      body += `<tr><td class="rowlabel">${esc(cs.id)} ${tag}<br><small>${esc(cs.idea.slice(0, 42))}…</small></td>${cells}</tr>`;
+    });
+    return `<h2>어느 사례에서 틀렸나</h2>
+      <p class="sub">칸 하나가 (사례 × 후보)입니다. <b>3/3은 반복 3번 모두 정답</b>, 색이 연할수록 자주 틀렸다는 뜻이고, 틀린 칸은 <span style="color:var(--crit)">붉은 테두리</span>와 잘못 고른 카테고리(원·웹·AI)를 표시합니다. 칸을 누르면 모델의 이유와 정리 결과가 나옵니다.</p>
+      <div class="card"><div class="scroll"><table class="heat"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+      <div class="heatlegend"><span>자주 틀림</span><span class="ramp"></span><span>항상 맞음</span><span>· 붉은 테두리 = 한 번이라도 틀림</span><span>· → 원/웹/AI = 잘못 고른 카테고리</span></div>
+      <div class="detail muted" id="detail">칸을 누르면 여기에 자세한 내용이 나옵니다.</div></div>`;
+  }
+
+  function showDetail(btn) {
+    document.querySelectorAll('button.cell.sel').forEach((b) => b.classList.remove('sel'));
+    btn.classList.add('sel');
+    const cs = D.cases.find((x) => x.id === btn.dataset.case);
+    const reps = callsOf(btn.dataset.c, cs.id).sort((a, b) => a.rep - b.rep);
+    const body = reps.map((r) => {
+      if (!r.valid) return `<div class="rep"><div class="ans bad">${r.rep}회차 실패</div><div class="ev">${esc(r.why)}</div></div>`;
+      return `<div class="rep"><div class="ans${r.correct ? '' : ' bad'}">${r.rep}회차<br>${esc(r.category)} ${r.correct ? '✓' : '✗'}<br><span class="muted" style="font-weight:400">확신 ${r.confidence.toFixed(2)}</span></div>
+        <div><b>${esc(r.item_name)}</b> — ${esc(r.summary)}<div class="ev">이유: ${esc(r.reason)}</div>
+        <div class="ev">고객: ${esc(r.target)} · 핵심 기능: ${(r.features || []).map(esc).join(' / ')}</div>
+        ${r.invented ? `<div class="ev fail">입력에 없는 숫자 ${r.invented}개 포함</div>` : ''}</div></div>`;
+    }).join('');
+    const d = document.getElementById('detail');
+    d.className = 'detail';
+    d.innerHTML = `<b>${esc(cs.id)} · ${esc(btn.dataset.c)}</b> <span class="muted">정답 ${cs.accept.map(esc).join(' 또는 ')}${cs.note ? ' · ' + esc(cs.note) : ''}</span><div class="idea">${esc(cs.idea)}</div>${body}`;
+  }
+
+  // ── 혼동 행렬 ───────────────────────────────────────────
+  function confusion() {
+    const mats = D.candidates.map((c, i) => {
+      const cf = (D.metrics[c.id] || {}).confusion || {};
+      const mx = Math.max(1, ...Object.values(cf));
+      const rows = CATS.map((e) => `<tr><th>${SHORT[e]} (${e === 'AI_API' ? 'AI API' : e})</th>${CATS.map((p) => {
+        const v = cf[e + '|' + p] || 0, f = v / mx;
+        const diag = e === p;
+        return `<td class="${v === 0 ? 'zero' : tcls(f).trim()}${!diag && v > 0 ? ' off' : ''}" style="--f:${f.toFixed(3)}" title="정답 ${e} → 답 ${p}: ${v}회">${v}</td>`;
+      }).join('')}</tr>`).join('');
+      return `<div class="card"><h3><span class="swatch" style="background:${slot(i)}"></span> ${esc(c.id)}</h3>
+        <table class="cm"><thead><tr><th>정답＼답</th>${CATS.map((p) => `<th>${SHORT[p]}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+    }).join('');
+    return `<h2>무엇을 무엇으로 착각했나</h2><p class="sub">세로가 정답, 가로가 모델의 답입니다. <b>대각선(왼쪽 위→오른쪽 아래)에 숫자가 몰려야 정상</b>이고, 붉은 테두리 칸이 잘못 고른 횟수입니다. 경계 사례는 제외했습니다.</p><div class="cms">${mats}</div>`;
+  }
+
+  function tableView() {
+    const P = (x) => x == null ? '–' : Math.round(100 * x) + '%';
+    const rows = D.candidates.map((c) => {
+      const m = D.metrics[c.id] || {};
+      return `<tr><td>${esc(c.id)}</td><td>${m.calls}</td><td>${m.valid}</td><td>${P(m.acc_clear)}</td><td>${P(m.acc_boundary)}</td><td>${P(m.acc_injection)}</td><td>${P(m.stable)}</td>
+        <td>${m.overconfident}/${m.wrong}</td><td>${m.invented_calls}</td><td>${m.sec == null ? '–' : m.sec.toFixed(1)}</td><td>${m.reasoning == null ? '–' : Math.round(m.reasoning)}</td><td>${(m.cost || 0).toFixed(3)}</td></tr>`;
+    }).join('');
+    const failed = D.calls.filter((r) => !r.valid);
+    const fl = failed.length ? `<h3 style="margin-top:16px">실패 또는 형식 불량 ${failed.length}건</h3><ul class="note">${failed.map((r) => `<li class="fail">${esc(r.cand)} / ${esc(r.case)} / ${r.rep}회차: ${esc(r.why)}</li>`).join('')}</ul>` : '';
+    return `<details class="tbl"><summary>표로 보기 (같은 숫자, 접근성용)</summary><div class="scroll" style="margin-top:8px"><table class="data">
+      <thead><tr><th>후보</th><th>호출</th><th>형식 통과</th><th>명확</th><th>경계</th><th>삽입</th><th>일관성</th><th>과신/틀림</th><th>지어낸 숫자</th><th>시간(초)</th><th>추론 토큰</th><th>비용($)</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>${fl}</details>`;
+  }
+
+  function limits() {
+    return `<h2>이 결과를 읽을 때</h2><div class="card note">
+      <p style="margin-top:0">· 정답은 기획서 4-4의 카테고리 기준에 따라 <b>Claude가 정했고 사람 검수 전</b>입니다. 아이템 32건은 모두 가상입니다.</p>
+      <p>· 프롬프트는 이 실험용 기준선이며 팀의 실제 프롬프트가 아닙니다. 모든 후보에 같은 프롬프트를 썼습니다.</p>
+      <p>· 이 실험은 <b>카테고리 판정</b>과 지어낸 내용 여부만 봅니다. 아이템 명세(이름·요약·핵심 기능)의 품질은 사람이 읽고 확인해야 합니다. “지어낸 숫자”는 숫자만 세는 대략적 지표입니다.</p>
+      <p style="margin-bottom:0">· companyInfo는 기능정의서대로 코드가 폼 값을 그대로 옮기므로 모델을 시험하지 않았고, T-C3(작업 분해)는 기획서 5-1에서 직접 구현 로직이라 대상이 아닙니다.</p></div>`;
+  }
+
+  app.innerHTML = header() + tiles() + accChart() + caseMatrix() + confusion() + tableView() + limits();
+
+  app.addEventListener('click', (e) => { const b = e.target.closest('button.cell'); if (b && !b.disabled) showDetail(b); });
+  app.addEventListener('mousemove', (e) => {
+    const r = e.target.closest('rect.hit');
+    if (r) { const [c, k, v, n] = r.dataset.t.split('|'); return showTip(e, `<b>${esc(c)}</b>${esc(k)}: ${esc(v)} (${esc(n)}회)`); }
+    const b = e.target.closest('button.cell');
+    if (b && !b.disabled) {
+      const cs = D.cases.find((x) => x.id === b.dataset.case), cl = callsOf(b.dataset.c, cs.id).filter((x) => x.valid);
+      return showTip(e, `<b>${esc(cs.id)} · ${esc(b.dataset.c)}</b>${cl.map((x) => `${x.rep}회차 ${esc(x.category)}${x.correct ? '' : ' ✗'} (확신 ${x.confidence.toFixed(2)})`).join('<br>')}`);
+    }
+    hideTip();
+  });
+  app.addEventListener('mouseleave', hideTip);
+  const tb = document.getElementById('themeBtn');
+  if (tb) tb.addEventListener('click', () => {
+    const root = document.documentElement;
+    const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    root.dataset.theme = dark ? 'light' : 'dark';
+  });
+})();
+</script>
+</body>
+</html>

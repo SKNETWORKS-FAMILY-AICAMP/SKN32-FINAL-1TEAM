@@ -1,0 +1,448 @@
+{"item_id": "r001", "qid": "q001", "notice_id": "bizinfo:PBLN_000000000125778", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r002", "qid": "q001", "notice_id": "kstartup:176741", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r003", "qid": "q001", "notice_id": "kstartup:178023", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r004", "qid": "q001", "notice_id": "bizinfo:PBLN_000000000122329", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r005", "qid": "q001", "notice_id": "bizinfo:PBLN_000000000126347", "control": true, "human_topic_rel": 2, "modes": []}
+{"item_id": "r006", "qid": "q002", "notice_id": "bizinfo:PBLN_000000000120215", "control": false, "human_topic_rel": null, "modes": ["variant:A+C"]}
+{"item_id": "r007", "qid": "q002", "notice_id": "bizinfo:PBLN_000000000120423", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r008", "qid": "q002", "notice_id": "bizinfo:PBLN_000000000125056", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:C"]}
+{"item_id": "r009", "qid": "q002", "notice_id": "bizinfo:PBLN_000000000124307", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r010", "qid": "q002", "notice_id": "bizinfo:PBLN_000000000125054", "control": true, "human_topic_rel": 1, "modes": []}
+{"item_id": "r011", "qid": "q002", "notice_id": "bizinfo:PBLN_000000000121591", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r012", "qid": "q002", "notice_id": "bizinfo:PBLN_000000000125303", "control": false, "human_topic_rel": null, "modes": ["variant:A+B07+C"]}
+{"item_id": "r013", "qid": "q002", "notice_id": "bizinfo:PBLN_000000000124859", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r014", "qid": "q003", "notice_id": "bizinfo:PBLN_000000000124325", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r015", "qid": "q003", "notice_id": "bizinfo:PBLN_000000000119212", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r016", "qid": "q003", "notice_id": "kstartup:179141", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r017", "qid": "q003", "notice_id": "kstartup:175849", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r018", "qid": "q003", "notice_id": "kstartup:179038", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A+B07", "variant:A+B07+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r019", "qid": "q003", "notice_id": "bizinfo:PBLN_000000000121291", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r020", "qid": "q003", "notice_id": "kstartup:177837", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r021", "qid": "q003", "notice_id": "bizinfo:PBLN_000000000117291", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r022", "qid": "q003", "notice_id": "kstartup:179196", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C"]}
+{"item_id": "r023", "qid": "q003", "notice_id": "bizinfo:PBLN_000000000119567", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C"]}
+{"item_id": "r024", "qid": "q004", "notice_id": "bizinfo:PBLN_000000000119706", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r025", "qid": "q004", "notice_id": "kstartup:176442", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r026", "qid": "q004", "notice_id": "bizinfo:PBLN_000000000126041", "control": true, "human_topic_rel": 1, "modes": []}
+{"item_id": "r027", "qid": "q004", "notice_id": "kstartup:179085", "control": true, "human_topic_rel": 0, "modes": []}
+{"item_id": "r028", "qid": "q004", "notice_id": "bizinfo:PBLN_000000000126361", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r029", "qid": "q004", "notice_id": "kstartup:179057", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r030", "qid": "q004", "notice_id": "bizinfo:PBLN_000000000120091", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r031", "qid": "q004", "notice_id": "bizinfo:PBLN_000000000120201", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r032", "qid": "q004", "notice_id": "bizinfo:PBLN_000000000126346", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r033", "qid": "q004", "notice_id": "kstartup:179054", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r034", "qid": "q004", "notice_id": "bizinfo:PBLN_000000000118875", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r035", "qid": "q004", "notice_id": "bizinfo:PBLN_000000000120673", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r036", "qid": "q005", "notice_id": "bizinfo:PBLN_000000000119131", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r037", "qid": "q005", "notice_id": "kstartup:178023", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r038", "qid": "q005", "notice_id": "bizinfo:PBLN_000000000125996", "control": true, "human_topic_rel": 1, "modes": []}
+{"item_id": "r039", "qid": "q005", "notice_id": "bizinfo:PBLN_000000000126309", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r040", "qid": "q006", "notice_id": "bizinfo:PBLN_000000000122153", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r041", "qid": "q006", "notice_id": "kstartup:177837", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r042", "qid": "q006", "notice_id": "kstartup:176755", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r043", "qid": "q006", "notice_id": "kstartup:179085", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r044", "qid": "q006", "notice_id": "kstartup:179035", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05"]}
+{"item_id": "r045", "qid": "q007", "notice_id": "bizinfo:PBLN_000000000125823", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:base"]}
+{"item_id": "r046", "qid": "q007", "notice_id": "bizinfo:PBLN_000000000126212", "control": true, "human_topic_rel": 0, "modes": []}
+{"item_id": "r047", "qid": "q007", "notice_id": "bizinfo:PBLN_000000000123513", "control": false, "human_topic_rel": null, "modes": ["variant:C"]}
+{"item_id": "r048", "qid": "q007", "notice_id": "bizinfo:PBLN_000000000121478", "control": false, "human_topic_rel": null, "modes": ["variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r049", "qid": "q007", "notice_id": "bizinfo:PBLN_000000000125055", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:B05", "variant:B07", "variant:base"]}
+{"item_id": "r050", "qid": "q007", "notice_id": "bizinfo:PBLN_000000000126060", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r051", "qid": "q007", "notice_id": "bizinfo:PBLN_000000000121288", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r052", "qid": "q007", "notice_id": "bizinfo:PBLN_000000000126320", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r053", "qid": "q007", "notice_id": "bizinfo:PBLN_000000000119739", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r054", "qid": "q007", "notice_id": "kstartup:178489", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r055", "qid": "q007", "notice_id": "bizinfo:PBLN_000000000122875", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:C"]}
+{"item_id": "r056", "qid": "q007", "notice_id": "bizinfo:PBLN_000000000125664", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r057", "qid": "q007", "notice_id": "bizinfo:PBLN_000000000118556", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07"]}
+{"item_id": "r058", "qid": "q007", "notice_id": "bizinfo:PBLN_000000000125985", "control": false, "human_topic_rel": null, "modes": ["variant:C"]}
+{"item_id": "r059", "qid": "q007", "notice_id": "bizinfo:PBLN_000000000125166", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:C"]}
+{"item_id": "r060", "qid": "q008", "notice_id": "kstartup:176741", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r061", "qid": "q008", "notice_id": "kstartup:177072", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r062", "qid": "q008", "notice_id": "bizinfo:PBLN_000000000126433", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r063", "qid": "q008", "notice_id": "kstartup:179171", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:C"]}
+{"item_id": "r064", "qid": "q008", "notice_id": "bizinfo:PBLN_000000000121025", "control": true, "human_topic_rel": 1, "modes": []}
+{"item_id": "r065", "qid": "q008", "notice_id": "kstartup:176739", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r066", "qid": "q008", "notice_id": "bizinfo:PBLN_000000000123093", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r067", "qid": "q009", "notice_id": "bizinfo:PBLN_000000000120620", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r068", "qid": "q009", "notice_id": "kstartup:178817", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r069", "qid": "q009", "notice_id": "bizinfo:PBLN_000000000126048", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r070", "qid": "q009", "notice_id": "bizinfo:PBLN_000000000119239", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r071", "qid": "q010", "notice_id": "bizinfo:PBLN_000000000123093", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r072", "qid": "q010", "notice_id": "kstartup:179158", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r073", "qid": "q010", "notice_id": "bizinfo:PBLN_000000000126309", "control": true, "human_topic_rel": 0, "modes": []}
+{"item_id": "r074", "qid": "q010", "notice_id": "bizinfo:PBLN_000000000124903", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r075", "qid": "q010", "notice_id": "bizinfo:PBLN_000000000125978", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r076", "qid": "q010", "notice_id": "bizinfo:PBLN_000000000126133", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r077", "qid": "q010", "notice_id": "bizinfo:PBLN_000000000124433", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r078", "qid": "q010", "notice_id": "bizinfo:PBLN_000000000120527", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r079", "qid": "q010", "notice_id": "bizinfo:PBLN_000000000116004", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r080", "qid": "q010", "notice_id": "kstartup:179195", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r081", "qid": "q011", "notice_id": "kstartup:177328", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C"]}
+{"item_id": "r082", "qid": "q011", "notice_id": "bizinfo:PBLN_000000000125827", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07"]}
+{"item_id": "r083", "qid": "q011", "notice_id": "kstartup:178990", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07"]}
+{"item_id": "r084", "qid": "q011", "notice_id": "bizinfo:PBLN_000000000117336", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r085", "qid": "q011", "notice_id": "bizinfo:PBLN_000000000126405", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C", "variant:B05", "variant:B07"]}
+{"item_id": "r086", "qid": "q012", "notice_id": "bizinfo:PBLN_000000000120418", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r087", "qid": "q012", "notice_id": "bizinfo:PBLN_000000000119809", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:C"]}
+{"item_id": "r088", "qid": "q012", "notice_id": "bizinfo:PBLN_000000000118527", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A+B07", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r089", "qid": "q012", "notice_id": "bizinfo:PBLN_000000000121389", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r090", "qid": "q012", "notice_id": "bizinfo:PBLN_000000000119103", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r091", "qid": "q012", "notice_id": "bizinfo:PBLN_000000000122801", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r092", "qid": "q012", "notice_id": "bizinfo:PBLN_000000000125365", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r093", "qid": "q012", "notice_id": "bizinfo:PBLN_000000000118318", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r094", "qid": "q012", "notice_id": "kstartup:177072", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r095", "qid": "q012", "notice_id": "bizinfo:PBLN_000000000121003", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r096", "qid": "q013", "notice_id": "bizinfo:PBLN_000000000126244", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r097", "qid": "q013", "notice_id": "bizinfo:PBLN_000000000118524", "control": false, "human_topic_rel": null, "modes": ["variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r098", "qid": "q013", "notice_id": "bizinfo:PBLN_000000000121593", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r099", "qid": "q013", "notice_id": "bizinfo:PBLN_000000000118556", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r100", "qid": "q013", "notice_id": "bizinfo:PBLN_000000000125664", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r101", "qid": "q013", "notice_id": "bizinfo:PBLN_000000000121288", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r102", "qid": "q014", "notice_id": "bizinfo:PBLN_000000000124433", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r103", "qid": "q014", "notice_id": "bizinfo:PBLN_000000000121614", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r104", "qid": "q014", "notice_id": "kstartup:177837", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r105", "qid": "q014", "notice_id": "bizinfo:PBLN_000000000117162", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r106", "qid": "q014", "notice_id": "bizinfo:PBLN_000000000126313", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r107", "qid": "q014", "notice_id": "bizinfo:PBLN_000000000126217", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r108", "qid": "q014", "notice_id": "bizinfo:PBLN_000000000126321", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r109", "qid": "q014", "notice_id": "bizinfo:PBLN_000000000125987", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:B05", "variant:B07", "variant:base"]}
+{"item_id": "r110", "qid": "q014", "notice_id": "kstartup:179125", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07+C", "variant:B05"]}
+{"item_id": "r111", "qid": "q014", "notice_id": "bizinfo:PBLN_000000000119587", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r112", "qid": "q015", "notice_id": "bizinfo:PBLN_000000000126181", "control": false, "human_topic_rel": null, "modes": ["variant:A+C"]}
+{"item_id": "r113", "qid": "q015", "notice_id": "kstartup:176316", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05"]}
+{"item_id": "r114", "qid": "q015", "notice_id": "kstartup:179020", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A+B07", "variant:A+B07+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r115", "qid": "q015", "notice_id": "kstartup:179125", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r116", "qid": "q015", "notice_id": "bizinfo:PBLN_000000000126372", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r117", "qid": "q015", "notice_id": "kstartup:179135", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A+B07", "variant:A+B07+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r118", "qid": "q015", "notice_id": "bizinfo:PBLN_000000000122863", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r119", "qid": "q015", "notice_id": "bizinfo:PBLN_000000000120946", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r120", "qid": "q015", "notice_id": "bizinfo:PBLN_000000000126286", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r121", "qid": "q015", "notice_id": "bizinfo:PBLN_000000000117984", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r122", "qid": "q015", "notice_id": "kstartup:176755", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r123", "qid": "q015", "notice_id": "bizinfo:PBLN_000000000126188", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r124", "qid": "q015", "notice_id": "bizinfo:PBLN_000000000121634", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r125", "qid": "q015", "notice_id": "kstartup:177864", "control": false, "human_topic_rel": null, "modes": ["variant:A"]}
+{"item_id": "r126", "qid": "q016", "notice_id": "bizinfo:PBLN_000000000118891", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r127", "qid": "q016", "notice_id": "bizinfo:PBLN_000000000117511", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r128", "qid": "q016", "notice_id": "bizinfo:PBLN_000000000124246", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r129", "qid": "q016", "notice_id": "bizinfo:PBLN_000000000119802", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r130", "qid": "q017", "notice_id": "bizinfo:PBLN_000000000118294", "control": true, "human_topic_rel": 2, "modes": []}
+{"item_id": "r131", "qid": "q017", "notice_id": "bizinfo:PBLN_000000000121480", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C"]}
+{"item_id": "r132", "qid": "q017", "notice_id": "bizinfo:PBLN_000000000122254", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r133", "qid": "q017", "notice_id": "bizinfo:PBLN_000000000121001", "control": false, "human_topic_rel": null, "modes": ["variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r134", "qid": "q017", "notice_id": "bizinfo:PBLN_000000000121288", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r135", "qid": "q017", "notice_id": "bizinfo:PBLN_000000000123202", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r136", "qid": "q018", "notice_id": "kstartup:179035", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r137", "qid": "q018", "notice_id": "kstartup:179138", "control": false, "human_topic_rel": null, "modes": ["variant:C"]}
+{"item_id": "r138", "qid": "q018", "notice_id": "bizinfo:PBLN_000000000120031", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r139", "qid": "q018", "notice_id": "bizinfo:PBLN_000000000126244", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r140", "qid": "q018", "notice_id": "kstartup:179139", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r141", "qid": "q018", "notice_id": "kstartup:177922", "control": false, "human_topic_rel": null, "modes": ["variant:B05"]}
+{"item_id": "r142", "qid": "q018", "notice_id": "bizinfo:PBLN_000000000123901", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r143", "qid": "q018", "notice_id": "kstartup:179135", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r144", "qid": "q019", "notice_id": "bizinfo:PBLN_000000000125664", "control": false, "human_topic_rel": null, "modes": ["variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r145", "qid": "q019", "notice_id": "kstartup:179132", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r146", "qid": "q020", "notice_id": "bizinfo:PBLN_000000000126129", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r147", "qid": "q020", "notice_id": "bizinfo:PBLN_000000000125664", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r148", "qid": "q020", "notice_id": "bizinfo:PBLN_000000000121288", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r149", "qid": "q020", "notice_id": "bizinfo:PBLN_000000000123138", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r150", "qid": "q020", "notice_id": "bizinfo:PBLN_000000000124341", "control": true, "human_topic_rel": 1, "modes": []}
+{"item_id": "r151", "qid": "q020", "notice_id": "bizinfo:PBLN_000000000126329", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r152", "qid": "q021", "notice_id": "bizinfo:PBLN_000000000122611", "control": false, "human_topic_rel": null, "modes": ["variant:B05", "variant:B07", "variant:C"]}
+{"item_id": "r153", "qid": "q021", "notice_id": "bizinfo:PBLN_000000000121221", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:C", "variant:base"]}
+{"item_id": "r154", "qid": "q021", "notice_id": "bizinfo:PBLN_000000000120138", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r155", "qid": "q021", "notice_id": "bizinfo:PBLN_000000000119692", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r156", "qid": "q021", "notice_id": "bizinfo:PBLN_000000000126165", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r157", "qid": "q021", "notice_id": "bizinfo:PBLN_000000000125266", "control": false, "human_topic_rel": null, "modes": ["variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r158", "qid": "q021", "notice_id": "bizinfo:PBLN_000000000125682", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r159", "qid": "q021", "notice_id": "bizinfo:PBLN_000000000126270", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r160", "qid": "q022", "notice_id": "kstartup:176442", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r161", "qid": "q022", "notice_id": "bizinfo:PBLN_000000000123900", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r162", "qid": "q022", "notice_id": "bizinfo:PBLN_000000000125523", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r163", "qid": "q022", "notice_id": "kstartup:178968", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r164", "qid": "q022", "notice_id": "kstartup:179126", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C"]}
+{"item_id": "r165", "qid": "q022", "notice_id": "bizinfo:PBLN_000000000125089", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r166", "qid": "q022", "notice_id": "kstartup:178831", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r167", "qid": "q023", "notice_id": "kstartup:179125", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r168", "qid": "q023", "notice_id": "bizinfo:PBLN_000000000126330", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r169", "qid": "q023", "notice_id": "bizinfo:PBLN_000000000125992", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r170", "qid": "q023", "notice_id": "bizinfo:PBLN_000000000120444", "control": true, "human_topic_rel": 0, "modes": []}
+{"item_id": "r171", "qid": "q023", "notice_id": "kstartup:179057", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r172", "qid": "q023", "notice_id": "bizinfo:PBLN_000000000123841", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r173", "qid": "q023", "notice_id": "bizinfo:PBLN_000000000123170", "control": true, "human_topic_rel": 2, "modes": []}
+{"item_id": "r174", "qid": "q024", "notice_id": "kstartup:179135", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r175", "qid": "q024", "notice_id": "kstartup:177837", "control": false, "human_topic_rel": null, "modes": ["variant:C"]}
+{"item_id": "r176", "qid": "q024", "notice_id": "bizinfo:PBLN_000000000117336", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r177", "qid": "q024", "notice_id": "kstartup:176286", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C", "variant:B05", "variant:B07"]}
+{"item_id": "r178", "qid": "q024", "notice_id": "kstartup:176755", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:C", "variant:base"]}
+{"item_id": "r179", "qid": "q024", "notice_id": "bizinfo:PBLN_000000000117334", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07"]}
+{"item_id": "r180", "qid": "q024", "notice_id": "bizinfo:PBLN_000000000121634", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r181", "qid": "q024", "notice_id": "bizinfo:PBLN_000000000121068", "control": false, "human_topic_rel": null, "modes": ["variant:A+C"]}
+{"item_id": "r182", "qid": "q024", "notice_id": "bizinfo:PBLN_000000000126358", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r183", "qid": "q024", "notice_id": "bizinfo:PBLN_000000000126372", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C"]}
+{"item_id": "r184", "qid": "q024", "notice_id": "bizinfo:PBLN_000000000126088", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r185", "qid": "q024", "notice_id": "bizinfo:PBLN_000000000118301", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C"]}
+{"item_id": "r186", "qid": "q024", "notice_id": "bizinfo:PBLN_000000000125723", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r187", "qid": "q025", "notice_id": "kstartup:178802", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r188", "qid": "q025", "notice_id": "bizinfo:PBLN_000000000126061", "control": false, "human_topic_rel": null, "modes": ["variant:A"]}
+{"item_id": "r189", "qid": "q025", "notice_id": "bizinfo:PBLN_000000000123983", "control": true, "human_topic_rel": 2, "modes": []}
+{"item_id": "r190", "qid": "q025", "notice_id": "kstartup:179137", "control": true, "human_topic_rel": 1, "modes": []}
+{"item_id": "r191", "qid": "q025", "notice_id": "bizinfo:PBLN_000000000126164", "control": true, "human_topic_rel": 2, "modes": []}
+{"item_id": "r192", "qid": "q025", "notice_id": "bizinfo:PBLN_000000000126359", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r193", "qid": "q025", "notice_id": "bizinfo:PBLN_000000000120681", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r194", "qid": "q025", "notice_id": "bizinfo:PBLN_000000000124120", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C", "variant:B05", "variant:B07"]}
+{"item_id": "r195", "qid": "q025", "notice_id": "bizinfo:PBLN_000000000126458", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:C", "variant:base"]}
+{"item_id": "r196", "qid": "q025", "notice_id": "bizinfo:PBLN_000000000126426", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r197", "qid": "q025", "notice_id": "kstartup:179134", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07"]}
+{"item_id": "r198", "qid": "q025", "notice_id": "bizinfo:PBLN_000000000120653", "control": false, "human_topic_rel": null, "modes": ["variant:A+C"]}
+{"item_id": "r199", "qid": "q026", "notice_id": "bizinfo:PBLN_000000000124779", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r200", "qid": "q026", "notice_id": "bizinfo:PBLN_000000000121025", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r201", "qid": "q026", "notice_id": "bizinfo:PBLN_000000000126366", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r202", "qid": "q026", "notice_id": "bizinfo:PBLN_000000000118858", "control": true, "human_topic_rel": 0, "modes": []}
+{"item_id": "r203", "qid": "q026", "notice_id": "kstartup:179115", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r204", "qid": "q026", "notice_id": "bizinfo:PBLN_000000000125144", "control": true, "human_topic_rel": 2, "modes": []}
+{"item_id": "r205", "qid": "q027", "notice_id": "bizinfo:PBLN_000000000126169", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r206", "qid": "q027", "notice_id": "bizinfo:PBLN_000000000123056", "control": true, "human_topic_rel": 0, "modes": []}
+{"item_id": "r207", "qid": "q027", "notice_id": "bizinfo:PBLN_000000000125525", "control": true, "human_topic_rel": 0, "modes": []}
+{"item_id": "r208", "qid": "q027", "notice_id": "bizinfo:PBLN_000000000126132", "control": false, "human_topic_rel": null, "modes": ["variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r209", "qid": "q027", "notice_id": "bizinfo:PBLN_000000000126280", "control": true, "human_topic_rel": 0, "modes": []}
+{"item_id": "r210", "qid": "q027", "notice_id": "bizinfo:PBLN_000000000120355", "control": true, "human_topic_rel": 2, "modes": []}
+{"item_id": "r211", "qid": "q028", "notice_id": "bizinfo:PBLN_000000000123336", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r212", "qid": "q028", "notice_id": "kstartup:179176", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r213", "qid": "q028", "notice_id": "bizinfo:PBLN_000000000119373", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C"]}
+{"item_id": "r214", "qid": "q028", "notice_id": "bizinfo:PBLN_000000000126269", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r215", "qid": "q028", "notice_id": "kstartup:179166", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r216", "qid": "q028", "notice_id": "kstartup:178831", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r217", "qid": "q028", "notice_id": "kstartup:178976", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r218", "qid": "q028", "notice_id": "kstartup:179135", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r219", "qid": "q028", "notice_id": "kstartup:179125", "control": true, "human_topic_rel": 0, "modes": []}
+{"item_id": "r220", "qid": "q029", "notice_id": "bizinfo:PBLN_000000000123203", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r221", "qid": "q029", "notice_id": "bizinfo:PBLN_000000000123299", "control": true, "human_topic_rel": 1, "modes": []}
+{"item_id": "r222", "qid": "q029", "notice_id": "bizinfo:PBLN_000000000125778", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r223", "qid": "q029", "notice_id": "bizinfo:PBLN_000000000120312", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:C", "variant:base"]}
+{"item_id": "r224", "qid": "q030", "notice_id": "bizinfo:PBLN_000000000122877", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:C", "variant:base"]}
+{"item_id": "r225", "qid": "q030", "notice_id": "bizinfo:PBLN_000000000126293", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r226", "qid": "q030", "notice_id": "kstartup:179146", "control": true, "human_topic_rel": 0, "modes": []}
+{"item_id": "r227", "qid": "q030", "notice_id": "bizinfo:PBLN_000000000120113", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r228", "qid": "q030", "notice_id": "kstartup:179038", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r229", "qid": "q030", "notice_id": "bizinfo:PBLN_000000000122470", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r230", "qid": "q030", "notice_id": "bizinfo:PBLN_000000000122876", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r231", "qid": "q030", "notice_id": "kstartup:178990", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r232", "qid": "q030", "notice_id": "kstartup:178976", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C", "variant:B05"]}
+{"item_id": "r233", "qid": "q031", "notice_id": "kstartup:178234", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:C", "variant:base"]}
+{"item_id": "r234", "qid": "q031", "notice_id": "bizinfo:PBLN_000000000126302", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r235", "qid": "q031", "notice_id": "bizinfo:PBLN_000000000125974", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r236", "qid": "q032", "notice_id": "bizinfo:PBLN_000000000126148", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r237", "qid": "q032", "notice_id": "bizinfo:PBLN_000000000119373", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r238", "qid": "q032", "notice_id": "kstartup:178589", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r239", "qid": "q032", "notice_id": "kstartup:179134", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C", "variant:B05", "variant:B07", "variant:C"]}
+{"item_id": "r240", "qid": "q032", "notice_id": "kstartup:176208", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r241", "qid": "q032", "notice_id": "kstartup:179083", "control": false, "human_topic_rel": null, "modes": ["variant:A+C"]}
+{"item_id": "r242", "qid": "q032", "notice_id": "bizinfo:PBLN_000000000121634", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r243", "qid": "q033", "notice_id": "kstartup:179134", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r244", "qid": "q033", "notice_id": "bizinfo:PBLN_000000000118556", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r245", "qid": "q033", "notice_id": "bizinfo:PBLN_000000000122497", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r246", "qid": "q033", "notice_id": "bizinfo:PBLN_000000000121478", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r247", "qid": "q033", "notice_id": "bizinfo:PBLN_000000000124107", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r248", "qid": "q033", "notice_id": "kstartup:176755", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r249", "qid": "q033", "notice_id": "kstartup:179196", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07"]}
+{"item_id": "r250", "qid": "q033", "notice_id": "kstartup:179010", "control": true, "human_topic_rel": 0, "modes": []}
+{"item_id": "r251", "qid": "q034", "notice_id": "bizinfo:PBLN_000000000123790", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r252", "qid": "q034", "notice_id": "bizinfo:PBLN_000000000119698", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r253", "qid": "q034", "notice_id": "bizinfo:PBLN_000000000120385", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r254", "qid": "q034", "notice_id": "bizinfo:PBLN_000000000121784", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r255", "qid": "q034", "notice_id": "bizinfo:PBLN_000000000126362", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r256", "qid": "q034", "notice_id": "bizinfo:PBLN_000000000117158", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r257", "qid": "q034", "notice_id": "bizinfo:PBLN_000000000126272", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r258", "qid": "q034", "notice_id": "bizinfo:PBLN_000000000125054", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r259", "qid": "q035", "notice_id": "kstartup:179182", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C", "variant:B05", "variant:B07"]}
+{"item_id": "r260", "qid": "q035", "notice_id": "kstartup:176129", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r261", "qid": "q035", "notice_id": "bizinfo:PBLN_000000000121634", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r262", "qid": "q035", "notice_id": "bizinfo:PBLN_000000000125300", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r263", "qid": "q035", "notice_id": "bizinfo:PBLN_000000000120459", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r264", "qid": "q036", "notice_id": "bizinfo:PBLN_000000000120054", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r265", "qid": "q036", "notice_id": "bizinfo:PBLN_000000000117908", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r266", "qid": "q036", "notice_id": "bizinfo:PBLN_000000000124246", "control": true, "human_topic_rel": 2, "modes": []}
+{"item_id": "r267", "qid": "q036", "notice_id": "bizinfo:PBLN_000000000126449", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r268", "qid": "q037", "notice_id": "bizinfo:PBLN_000000000124779", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r269", "qid": "q037", "notice_id": "kstartup:179132", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r270", "qid": "q037", "notice_id": "bizinfo:PBLN_000000000120620", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r271", "qid": "q037", "notice_id": "bizinfo:PBLN_000000000125778", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r272", "qid": "q037", "notice_id": "bizinfo:PBLN_000000000123466", "control": false, "human_topic_rel": null, "modes": ["variant:B07"]}
+{"item_id": "r273", "qid": "q037", "notice_id": "bizinfo:PBLN_000000000116998", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r274", "qid": "q037", "notice_id": "bizinfo:PBLN_000000000118943", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r275", "qid": "q037", "notice_id": "kstartup:177899", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05"]}
+{"item_id": "r276", "qid": "q037", "notice_id": "bizinfo:PBLN_000000000119499", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r277", "qid": "q037", "notice_id": "bizinfo:PBLN_000000000126048", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r278", "qid": "q037", "notice_id": "bizinfo:PBLN_000000000119919", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r279", "qid": "q037", "notice_id": "bizinfo:PBLN_000000000124459", "control": true, "human_topic_rel": 2, "modes": []}
+{"item_id": "r280", "qid": "q037", "notice_id": "kstartup:179093", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r281", "qid": "q037", "notice_id": "kstartup:178927", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r282", "qid": "q037", "notice_id": "kstartup:176755", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:C", "variant:base"]}
+{"item_id": "r283", "qid": "q038", "notice_id": "bizinfo:PBLN_000000000120275", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r284", "qid": "q038", "notice_id": "bizinfo:PBLN_000000000121193", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r285", "qid": "q038", "notice_id": "bizinfo:PBLN_000000000118681", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r286", "qid": "q038", "notice_id": "kstartup:177899", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r287", "qid": "q038", "notice_id": "bizinfo:PBLN_000000000117722", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r288", "qid": "q038", "notice_id": "bizinfo:PBLN_000000000120681", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r289", "qid": "q038", "notice_id": "bizinfo:PBLN_000000000118122", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r290", "qid": "q038", "notice_id": "kstartup:179049", "control": true, "human_topic_rel": 2, "modes": []}
+{"item_id": "r291", "qid": "q038", "notice_id": "kstartup:177152", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r292", "qid": "q039", "notice_id": "bizinfo:PBLN_000000000117480", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07"]}
+{"item_id": "r293", "qid": "q039", "notice_id": "kstartup:179002", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A+B07", "variant:A+B07+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r294", "qid": "q039", "notice_id": "bizinfo:PBLN_000000000125892", "control": true, "human_topic_rel": 1, "modes": []}
+{"item_id": "r295", "qid": "q039", "notice_id": "bizinfo:PBLN_000000000125365", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r296", "qid": "q039", "notice_id": "kstartup:179093", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r297", "qid": "q039", "notice_id": "kstartup:179052", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r298", "qid": "q039", "notice_id": "bizinfo:PBLN_000000000121892", "control": false, "human_topic_rel": null, "modes": ["variant:A+C"]}
+{"item_id": "r299", "qid": "q039", "notice_id": "bizinfo:PBLN_000000000120498", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r300", "qid": "q040", "notice_id": "kstartup:179047", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r301", "qid": "q040", "notice_id": "bizinfo:PBLN_000000000122863", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r302", "qid": "q040", "notice_id": "kstartup:179088", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r303", "qid": "q040", "notice_id": "bizinfo:PBLN_000000000120091", "control": true, "human_topic_rel": 1, "modes": []}
+{"item_id": "r304", "qid": "q040", "notice_id": "kstartup:179038", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r305", "qid": "q040", "notice_id": "kstartup:178968", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:C", "variant:base"]}
+{"item_id": "r306", "qid": "q040", "notice_id": "kstartup:176248", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r307", "qid": "q041", "notice_id": "bizinfo:PBLN_000000000123858", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r308", "qid": "q041", "notice_id": "kstartup:179199", "control": true, "human_topic_rel": 2, "modes": []}
+{"item_id": "r309", "qid": "q041", "notice_id": "kstartup:179194", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r310", "qid": "q041", "notice_id": "kstartup:179115", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r311", "qid": "q041", "notice_id": "kstartup:177072", "control": true, "human_topic_rel": 1, "modes": []}
+{"item_id": "r312", "qid": "q041", "notice_id": "bizinfo:PBLN_000000000126317", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05"]}
+{"item_id": "r313", "qid": "q041", "notice_id": "kstartup:179094", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r314", "qid": "q041", "notice_id": "kstartup:179054", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r315", "qid": "q041", "notice_id": "kstartup:179145", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r316", "qid": "q042", "notice_id": "kstartup:176316", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r317", "qid": "q042", "notice_id": "kstartup:179196", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r318", "qid": "q042", "notice_id": "kstartup:179141", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r319", "qid": "q042", "notice_id": "kstartup:178968", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r320", "qid": "q042", "notice_id": "kstartup:179069", "control": false, "human_topic_rel": null, "modes": ["variant:A+B07", "variant:A+B07+C"]}
+{"item_id": "r321", "qid": "q042", "notice_id": "kstartup:175849", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r322", "qid": "q042", "notice_id": "kstartup:178835", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r323", "qid": "q042", "notice_id": "kstartup:179045", "control": true, "human_topic_rel": 2, "modes": []}
+{"item_id": "r324", "qid": "q043", "notice_id": "kstartup:176755", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r325", "qid": "q043", "notice_id": "kstartup:179141", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r326", "qid": "q043", "notice_id": "kstartup:179219", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r327", "qid": "q043", "notice_id": "bizinfo:PBLN_000000000123746", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r328", "qid": "q043", "notice_id": "bizinfo:PBLN_000000000125166", "control": true, "human_topic_rel": 1, "modes": []}
+{"item_id": "r329", "qid": "q044", "notice_id": "kstartup:177837", "control": false, "human_topic_rel": null, "modes": ["variant:C"]}
+{"item_id": "r330", "qid": "q044", "notice_id": "kstartup:178927", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r331", "qid": "q044", "notice_id": "kstartup:179094", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r332", "qid": "q044", "notice_id": "bizinfo:PBLN_000000000117984", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r333", "qid": "q044", "notice_id": "bizinfo:PBLN_000000000124279", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r334", "qid": "q044", "notice_id": "bizinfo:PBLN_000000000125992", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r335", "qid": "q045", "notice_id": "kstartup:176741", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:B05"]}
+{"item_id": "r336", "qid": "q045", "notice_id": "kstartup:178990", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r337", "qid": "q045", "notice_id": "bizinfo:PBLN_000000000119795", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r338", "qid": "q045", "notice_id": "kstartup:177152", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C", "variant:B05", "variant:B07"]}
+{"item_id": "r339", "qid": "q045", "notice_id": "kstartup:179093", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r340", "qid": "q045", "notice_id": "bizinfo:PBLN_000000000126267", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:base"]}
+{"item_id": "r341", "qid": "q045", "notice_id": "kstartup:179038", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:C", "variant:base"]}
+{"item_id": "r342", "qid": "q045", "notice_id": "bizinfo:PBLN_000000000122229", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r343", "qid": "q045", "notice_id": "kstartup:176856", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r344", "qid": "q045", "notice_id": "kstartup:179194", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r345", "qid": "q046", "notice_id": "bizinfo:PBLN_000000000120342", "control": true, "human_topic_rel": 1, "modes": []}
+{"item_id": "r346", "qid": "q046", "notice_id": "bizinfo:PBLN_000000000122153", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r347", "qid": "q046", "notice_id": "kstartup:179125", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C"]}
+{"item_id": "r348", "qid": "q046", "notice_id": "bizinfo:PBLN_000000000125089", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r349", "qid": "q046", "notice_id": "kstartup:176076", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07+C"]}
+{"item_id": "r350", "qid": "q046", "notice_id": "bizinfo:PBLN_000000000119567", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r351", "qid": "q046", "notice_id": "kstartup:176190", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r352", "qid": "q046", "notice_id": "bizinfo:PBLN_000000000119017", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C"]}
+{"item_id": "r353", "qid": "q047", "notice_id": "kstartup:178968", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r354", "qid": "q047", "notice_id": "bizinfo:PBLN_000000000118204", "control": true, "human_topic_rel": 2, "modes": []}
+{"item_id": "r355", "qid": "q047", "notice_id": "bizinfo:PBLN_000000000123170", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r356", "qid": "q047", "notice_id": "kstartup:179122", "control": true, "human_topic_rel": 0, "modes": []}
+{"item_id": "r357", "qid": "q047", "notice_id": "bizinfo:PBLN_000000000121634", "control": false, "human_topic_rel": null, "modes": ["variant:B05", "variant:C"]}
+{"item_id": "r358", "qid": "q047", "notice_id": "kstartup:178835", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r359", "qid": "q047", "notice_id": "kstartup:179196", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r360", "qid": "q047", "notice_id": "bizinfo:PBLN_000000000123050", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r361", "qid": "q048", "notice_id": "bizinfo:PBLN_000000000126338", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r362", "qid": "q048", "notice_id": "bizinfo:PBLN_000000000118099", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r363", "qid": "q048", "notice_id": "bizinfo:PBLN_000000000126096", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r364", "qid": "q048", "notice_id": "bizinfo:PBLN_000000000119324", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r365", "qid": "q049", "notice_id": "bizinfo:PBLN_000000000126264", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r366", "qid": "q049", "notice_id": "bizinfo:PBLN_000000000126061", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r367", "qid": "q049", "notice_id": "kstartup:179182", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r368", "qid": "q049", "notice_id": "kstartup:179057", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r369", "qid": "q049", "notice_id": "bizinfo:PBLN_000000000126458", "control": false, "human_topic_rel": null, "modes": ["variant:C", "variant:base"]}
+{"item_id": "r370", "qid": "q049", "notice_id": "bizinfo:PBLN_000000000121226", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r371", "qid": "q049", "notice_id": "bizinfo:PBLN_000000000125893", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r372", "qid": "q049", "notice_id": "bizinfo:PBLN_000000000123352", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07"]}
+{"item_id": "r373", "qid": "q049", "notice_id": "kstartup:179202", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A+B07", "variant:A+B07+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r374", "qid": "q049", "notice_id": "bizinfo:PBLN_000000000125182", "control": true, "human_topic_rel": 2, "modes": []}
+{"item_id": "r375", "qid": "q050", "notice_id": "kstartup:175817", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r376", "qid": "q050", "notice_id": "bizinfo:PBLN_000000000126239", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r377", "qid": "q050", "notice_id": "bizinfo:PBLN_000000000126037", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+C", "variant:C", "variant:base"]}
+{"item_id": "r378", "qid": "q050", "notice_id": "bizinfo:PBLN_000000000125365", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r379", "qid": "q050", "notice_id": "bizinfo:PBLN_000000000125627", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r380", "qid": "q050", "notice_id": "bizinfo:PBLN_000000000121593", "control": false, "human_topic_rel": null, "modes": ["variant:C"]}
+{"item_id": "r381", "qid": "q050", "notice_id": "bizinfo:PBLN_000000000125664", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r382", "qid": "q050", "notice_id": "bizinfo:PBLN_000000000124537", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r383", "qid": "q050", "notice_id": "bizinfo:PBLN_000000000126321", "control": true, "human_topic_rel": 0, "modes": []}
+{"item_id": "r384", "qid": "q050", "notice_id": "bizinfo:PBLN_000000000124433", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C", "variant:B05", "variant:B07"]}
+{"item_id": "r385", "qid": "q050", "notice_id": "kstartup:179038", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:C", "variant:base"]}
+{"item_id": "r386", "qid": "q051", "notice_id": "bizinfo:PBLN_000000000122104", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r387", "qid": "q051", "notice_id": "bizinfo:PBLN_000000000123108", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r388", "qid": "q051", "notice_id": "bizinfo:PBLN_000000000118398", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r389", "qid": "q051", "notice_id": "bizinfo:PBLN_000000000125563", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r390", "qid": "q051", "notice_id": "bizinfo:PBLN_000000000126450", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r391", "qid": "q051", "notice_id": "bizinfo:PBLN_000000000125970", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r392", "qid": "q051", "notice_id": "kstartup:178891", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r393", "qid": "q052", "notice_id": "bizinfo:PBLN_000000000125339", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r394", "qid": "q052", "notice_id": "bizinfo:PBLN_000000000126112", "control": true, "human_topic_rel": 1, "modes": []}
+{"item_id": "r395", "qid": "q052", "notice_id": "bizinfo:PBLN_000000000123863", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r396", "qid": "q053", "notice_id": "kstartup:179112", "control": false, "human_topic_rel": null, "modes": ["hybrid"]}
+{"item_id": "r397", "qid": "q053", "notice_id": "bizinfo:PBLN_000000000120418", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r398", "qid": "q053", "notice_id": "bizinfo:PBLN_000000000126272", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r399", "qid": "q053", "notice_id": "bizinfo:PBLN_000000000122333", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r400", "qid": "q053", "notice_id": "bizinfo:PBLN_000000000126064", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r401", "qid": "q053", "notice_id": "bizinfo:PBLN_000000000126116", "control": false, "human_topic_rel": null, "modes": ["variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r402", "qid": "q053", "notice_id": "bizinfo:PBLN_000000000121956", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r403", "qid": "q054", "notice_id": "bizinfo:PBLN_000000000126339", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r404", "qid": "q054", "notice_id": "bizinfo:PBLN_000000000121478", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r405", "qid": "q054", "notice_id": "bizinfo:PBLN_000000000123926", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r406", "qid": "q054", "notice_id": "bizinfo:PBLN_000000000126080", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r407", "qid": "q054", "notice_id": "kstartup:177922", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r408", "qid": "q054", "notice_id": "bizinfo:PBLN_000000000124693", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r409", "qid": "q054", "notice_id": "bizinfo:PBLN_000000000120010", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r410", "qid": "q055", "notice_id": "kstartup:179164", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r411", "qid": "q055", "notice_id": "bizinfo:PBLN_000000000123973", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r412", "qid": "q055", "notice_id": "bizinfo:PBLN_000000000126433", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r413", "qid": "q055", "notice_id": "bizinfo:PBLN_000000000126270", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r414", "qid": "q055", "notice_id": "bizinfo:PBLN_000000000118556", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r415", "qid": "q055", "notice_id": "bizinfo:PBLN_000000000119051", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r416", "qid": "q055", "notice_id": "kstartup:178489", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r417", "qid": "q055", "notice_id": "bizinfo:PBLN_000000000126188", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r418", "qid": "q055", "notice_id": "kstartup:175817", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:B05"]}
+{"item_id": "r419", "qid": "q055", "notice_id": "kstartup:179191", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r420", "qid": "q055", "notice_id": "bizinfo:PBLN_000000000121175", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r421", "qid": "q055", "notice_id": "kstartup:177837", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r422", "qid": "q055", "notice_id": "kstartup:179190", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r423", "qid": "q056", "notice_id": "bizinfo:PBLN_000000000126456", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r424", "qid": "q056", "notice_id": "bizinfo:PBLN_000000000119255", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r425", "qid": "q056", "notice_id": "bizinfo:PBLN_000000000120527", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r426", "qid": "q056", "notice_id": "bizinfo:PBLN_000000000125987", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:B05", "variant:B07", "variant:base"]}
+{"item_id": "r427", "qid": "q056", "notice_id": "bizinfo:PBLN_000000000126239", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:C"]}
+{"item_id": "r428", "qid": "q056", "notice_id": "kstartup:179193", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r429", "qid": "q056", "notice_id": "bizinfo:PBLN_000000000125913", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r430", "qid": "q056", "notice_id": "bizinfo:PBLN_000000000126323", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r431", "qid": "q056", "notice_id": "bizinfo:PBLN_000000000126321", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r432", "qid": "q057", "notice_id": "bizinfo:PBLN_000000000121634", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r433", "qid": "q057", "notice_id": "kstartup:176741", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C"]}
+{"item_id": "r434", "qid": "q057", "notice_id": "bizinfo:PBLN_000000000121785", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r435", "qid": "q057", "notice_id": "bizinfo:PBLN_000000000117085", "control": false, "human_topic_rel": null, "modes": ["dense"]}
+{"item_id": "r436", "qid": "q058", "notice_id": "bizinfo:PBLN_000000000123336", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r437", "qid": "q058", "notice_id": "kstartup:176442", "control": false, "human_topic_rel": null, "modes": ["variant:C"]}
+{"item_id": "r438", "qid": "q058", "notice_id": "kstartup:178835", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r439", "qid": "q058", "notice_id": "kstartup:179202", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07"]}
+{"item_id": "r440", "qid": "q058", "notice_id": "kstartup:179182", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07", "variant:A+B07+C"]}
+{"item_id": "r441", "qid": "q058", "notice_id": "kstartup:177837", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A+B07", "variant:A+B07+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r442", "qid": "q058", "notice_id": "bizinfo:PBLN_000000000126244", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C"]}
+{"item_id": "r443", "qid": "q058", "notice_id": "bizinfo:PBLN_000000000121681", "control": false, "human_topic_rel": null, "modes": ["dense", "hybrid", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r444", "qid": "q058", "notice_id": "bizinfo:PBLN_000000000126060", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A", "variant:A+B07", "variant:A+B07+C", "variant:A+C", "variant:B05", "variant:B07"]}
+{"item_id": "r445", "qid": "q058", "notice_id": "bizinfo:PBLN_000000000122346", "control": false, "human_topic_rel": null, "modes": ["variant:A", "variant:A+C"]}
+{"item_id": "r446", "qid": "q058", "notice_id": "bizinfo:PBLN_000000000120482", "control": false, "human_topic_rel": null, "modes": ["dense", "variant:A+B07+C"]}
+{"item_id": "r447", "qid": "q058", "notice_id": "kstartup:177072", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:B05", "variant:B07", "variant:C", "variant:base"]}
+{"item_id": "r448", "qid": "q058", "notice_id": "kstartup:179135", "control": false, "human_topic_rel": null, "modes": ["hybrid", "variant:C", "variant:base"]}

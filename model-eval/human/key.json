@@ -1,0 +1,62 @@
+{
+ "D01": {
+  "case_id": "base_03|medium",
+  "plan": "base_03",
+  "level": "medium"
+ },
+ "D02": {
+  "case_id": "base_04|poor",
+  "plan": "base_04",
+  "level": "poor"
+ },
+ "D03": {
+  "case_id": "base_02|good",
+  "plan": "base_02",
+  "level": "good"
+ },
+ "D04": {
+  "case_id": "base_04|medium",
+  "plan": "base_04",
+  "level": "medium"
+ },
+ "D05": {
+  "case_id": "base_03|poor",
+  "plan": "base_03",
+  "level": "poor"
+ },
+ "D06": {
+  "case_id": "base_02|medium",
+  "plan": "base_02",
+  "level": "medium"
+ },
+ "D07": {
+  "case_id": "base_04|good",
+  "plan": "base_04",
+  "level": "good"
+ },
+ "D08": {
+  "case_id": "base_01|medium",
+  "plan": "base_01",
+  "level": "medium"
+ },
+ "D09": {
+  "case_id": "base_01|good",
+  "plan": "base_01",
+  "level": "good"
+ },
+ "D10": {
+  "case_id": "base_03|good",
+  "plan": "base_03",
+  "level": "good"
+ },
+ "D11": {
+  "case_id": "base_01|poor",
+  "plan": "base_01",
+  "level": "poor"
+ },
+ "D12": {
+  "case_id": "base_02|poor",
+  "plan": "base_02",
+  "level": "poor"
+ }
+}

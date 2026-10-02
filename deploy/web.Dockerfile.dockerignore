@@ -1,0 +1,7 @@
+# 화면 빌드에 필요한 web/frontend 와 Caddyfile 만 Docker 로 넘긴다.
+*
+!web/frontend/
+!deploy/Caddyfile
+web/frontend/.env
+web/frontend/node_modules/
+web/frontend/dist/

@@ -1,0 +1,16 @@
+# SITE_ADDRESS 가 비어 있으면 :80(HTTP만, 로컬 시험용).
+# 도메인(예: sbrain.example.com)을 넣으면 Caddy 가 HTTPS 인증서를 받아 443 으로 연다.
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	# 백엔드 라우트에는 /api 가 없다(/auth/me, /projects …). 앞의 /api 만 떼서 넘긴다.
+	handle_path /api/* {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

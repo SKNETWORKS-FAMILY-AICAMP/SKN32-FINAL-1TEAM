@@ -1,0 +1,20 @@
+{
+  "_note": "price = [입력, 출력] USD / 1M 토큰. 2026-09-30 OpenAI 요금 페이지(developers.openai.com/api/docs/pricing)에서 확인한 값(gpt-4.1-mini·luna·terra·codex-5.3·gpt-5.4-mini·gpt-4.1·gpt-6-luna·gpt-6-sol; gpt-6.1-sol $2/$10, gpt-6-astra $10/$50은 미등록). codex-5.3은 Responses API 전용이다(api: responses). 실행 전에 요금 페이지로 다시 확인할 것. 추론 토큰은 출력 요금으로 청구된다.",
+  "candidates": [
+    {"id": "gpt-4.1-mini", "model": "gpt-4.1-mini", "reasoning": false, "temperature": 0, "price": [0.40, 1.60]},
+    {"id": "luna-low", "model": "gpt-5.6-luna", "reasoning": true, "reasoning_effort": "low", "price": [0.20, 1.20]},
+    {"id": "luna-medium", "model": "gpt-5.6-luna", "reasoning": true, "reasoning_effort": "medium", "price": [0.20, 1.20]},
+    {"id": "luna-high", "model": "gpt-5.6-luna", "reasoning": true, "reasoning_effort": "high", "price": [0.20, 1.20]},
+    {"id": "terra-medium", "model": "gpt-5.6-terra", "reasoning": true, "reasoning_effort": "medium", "price": [2.00, 12.00]},
+    {"id": "codex-5.3", "model": "gpt-5.3-codex", "api": "responses", "reasoning": true, "reasoning_effort": "medium", "price": [1.75, 14.00]},
+    {"id": "gpt-5.4-mini", "model": "gpt-5.4-mini", "reasoning": true, "reasoning_effort": "medium", "price": [0.75, 4.50]},
+    {"id": "gpt-4.1", "model": "gpt-4.1", "reasoning": false, "temperature": 0, "price": [2.00, 8.00]},
+    {"id": "luna6-medium", "model": "gpt-6-luna", "reasoning": true, "reasoning_effort": "medium", "price": [0.10, 0.50]},
+    {"id": "sol6-medium", "model": "gpt-6-sol", "reasoning": true, "reasoning_effort": "medium", "price": [2.00, 10.00]}
+  ],
+  "local_example": {
+    "_note": "로컬 모델(Ollama 등)은 OpenAI 호환 주소로 붙인다. 위 candidates 배열에 이 모양으로 한 줄 추가하면 된다. 이 항목 자체는 실행 대상이 아니다.",
+    "id": "local-qwen-7b", "model": "qwen2.5:7b", "reasoning": false, "temperature": 0,
+    "base_url": "http://localhost:11434/v1", "api_key": "local", "json_mode": "object", "price": [0, 0]
+  }
+}

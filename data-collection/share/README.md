@@ -10,6 +10,7 @@
 | [업종추출결과.html](업종추출결과.html) | `/industry-results` | [업종 추출 결과](https://claude.ai/artifact/CTumyNQb6KUoVB3tps8jaN) | `reports/industry_llm_full_luna_20260928_final5`(+ final6 비교, `label_pack_20260928`) | `build_industry.py` (페이지 안 `/*DATA*/…/*END*/`만 다시 채운다) |
 | [Jev채점시험.html](Jev채점시험.html) | `/jev-probe` | [Jev 채점 시험](https://claude.ai/artifact/K2WJfq5XcxoZz8nrn68myc) | `reports/jev_judge_probe_20260928T110603Z` | `build_jev.py` + `jev_template.html` |
 | [신청자유형.html](신청자유형.html) | `/applicant-types` | [신청자 유형 판정](https://claude.ai/artifact/SwEHA6bDVei9PPVFe1KrUp) | `reports/applicant_type_llm_full_20260928T023916Z` | `build_applicant_types.py` + `applicant_types.template.html` |
+| [테이블구조.html](테이블구조.html) | 없음 (2026-09-30 새로 만듦) | [공고 DB 테이블 구조](https://claude.ai/artifact/5iu7oSKGHENt3hdbcgtiLL) | 공용 DB `information_schema`·행 수(9/30 SELECT), 9/30 `data/run.log` | 손으로 쓴 페이지 — 칸 목록만 9/30 DB 주석에서 뽑아 넣었다. 직접 고친다 |
 
 ## 다시 만들기 (data-collection 에서)
 
@@ -27,7 +28,7 @@
 ## 알아 둘 것
 
 - **결과는 자동으로 바뀌지 않는다.** 저장된 실행 결과를 넣은 것이라, 새 실험·새 배치 결과는 다시 만들어야 반영된다. 예: 신청자 유형은 9/28 실행(2,476건) 기준이고, 9/29 공용 DB는 2,525건이다.
-- 페이지 디자인(색·글꼴·다크 모드)은 다섯 장이 같다. 새 페이지를 만들면 `filter_first.template.html` 의 `<style>` 을 재사용한다.
+- 페이지 디자인(색·글꼴·다크 모드)은 여섯 장이 같다(테이블구조는 9/30 추가). 새 페이지를 만들면 `filter_first.template.html` 의 `<style>` 을 재사용한다.
 - **보는 법: HTML 파일을 더블클릭해 브라우저로 열면 된다.** 서버·설치가 필요 없다. 맨 첫 줄 `<meta charset="utf-8">` 덕분에 한글이 깨지지 않는다(2026-09-29 추가 — 틀 파일에도 넣어 다시 만들어도 유지된다).
 - 페이지 파일에는 `<!doctype>`·`<html>`·`<body>` 태그가 없다. claude.ai 게시가 이 틀을 씌우며, 첫 줄의 charset 선언은 게시본에서 영향이 없다.
 - 비밀번호·API 키·서버 주소는 넣지 않는다.

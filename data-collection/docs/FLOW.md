@@ -192,6 +192,16 @@ shared/store_mysql.py
 
 해시를 같이 넘기는 이유는 **같은 파일을 두 번 넣었는지** 나중에 알기 위함입니다. `import_runs.input_sha256` 에 남습니다.
 
+**모집 종료 처리(2026-09-30).** K-Startup 은 모집 중 공고 목록만 줍니다. 그래서 마감일 전에 모집이 끝난 공고는 목록에서 사라질 뿐이고, 예전에는 DB에 `open` 으로 남았습니다.
+이제 저장 뒤 같은 트랜잭션에서 **오늘 목록에 없는 K-Startup `open` 공고를 `closed` 로 바꿉니다**(`store_mysql.close_missing`). 행은 지우지 않습니다.
+
+- 조건: 그날 K-Startup 을 새로 받았고(`status == 'ok'`), 받은 행 수와 고유 공고 번호 수가 서버 보고 건수와 같을 때만입니다(`daily_job.is_complete`, `daily_pipeline.kstartup_listed`). 수집이 실패해 어제 파일을 다시 쓰는 날이나 목록이 덜 온 날은 건너뛰고 로그에 한 줄 남깁니다.
+- 되돌림: 공고가 목록에 다시 나타나면 upsert 가 `open` 으로 되돌립니다.
+- 시간 순서: 이 목록보다 최신인 행(`snapshot_at >= 이번 시각`)은 닫지 않고, 닫은 행은 `snapshot_at`·`last_import_id` 를 이번 목록 값으로 바꿉니다. 그래서 옛 파일을 다시 넣어도 닫힌 공고가 되살아나지 않고, 늦게 도착한 옛 목록이 최신 공고를 닫지 않습니다(Codex 검수 P1-1).
+- 공고 번호는 DB `source_id` 와 같은 방식(`normalize.text`)으로 다듬어 비교합니다(`daily_job.listed_id`).
+- 기록: 닫은 건수는 결과의 `closed_missing`, 공고 ID는 `import_runs.report.closed_missing` 에 남습니다.
+- 매칭 필터(`search/gate.prefilter`)는 원래 `closed` 를 빼므로 따로 고칠 곳이 없습니다. 서비스(8000)는 켤 때 읽으므로 다시 켜야 반영됩니다.
+
 돌려받는 것:
 
 ```python

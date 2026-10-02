@@ -1,0 +1,26 @@
+{
+ "pack": "relevance_label_pack_20260930",
+ "items": 448,
+ "controls": 40,
+ "controls_null": 0,
+ "exact": 0.5,
+ "within1": 0.9,
+ "binary_2": 0.775,
+ "weighted_kappa": 0.3103448275862069,
+ "confusion_human_to_codex": {
+  "0→0": 8,
+  "0→1": 5,
+  "1→0": 6,
+  "1→1": 7,
+  "2→0": 4,
+  "2→1": 5,
+  "2→2": 5
+ },
+ "targets": 408,
+ "target_labels": {
+  "0": 167,
+  "1": 192,
+  "2": 49
+ },
+ "borderline": 25
+}

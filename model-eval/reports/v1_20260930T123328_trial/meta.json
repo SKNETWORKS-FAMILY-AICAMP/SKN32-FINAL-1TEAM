@@ -1,0 +1,21 @@
+{
+  "prompt_version": "v1-baseline",
+  "started_at": "2026-09-30T12:33:28",
+  "candidates": [
+    {
+      "id": "luna-medium",
+      "model": "gpt-5.6-luna",
+      "reasoning": true,
+      "reasoning_effort": "medium",
+      "price": [
+        0.2,
+        1.2
+      ]
+    }
+  ],
+  "plans": [
+    "base_01"
+  ],
+  "reps": 1,
+  "estimated_usd": 0.0359
+}
