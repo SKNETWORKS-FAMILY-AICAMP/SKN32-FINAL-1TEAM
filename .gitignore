@@ -1,12 +1,15 @@
 # --- 비밀값 (절대 커밋 금지) ---
 .env
 *.env.local
+/.env.*
+!.env.example
 
 # Python
 __pycache__/
 *.py[cod]
 *.pyc
 .egg-info/
+*.egg-info/
 .eggs/
 .venv/
 venv/
@@ -41,3 +44,61 @@ login_test.html
 
 # --- rhwp CLI 실행 파일 (28MB, 각자 릴리즈에서 받음 — web/backend/scripts/README.md) ---
 web/backend/rhwp.exe
+
+# --- 개인 업무 정리 문서 ---
+/박상희.md
+/to정재희.txt
+/S-Brain-작업기록.md
+
+# --- 발표·검토를 위해 내려받은 원본 자료 ---
+/docs/공유자료/
+/docs/발표자료/
+
+# --- 개인 문서 추출 결과 ---
+/test/docextract/results/
+
+# --- 크롤링 원문 보관 폴더 (깊이에 관계없이) ---
+**/raw/
+# 수집 데이터 보고서 자동 생성 스크립트/임시 산출물
+**/generate_reports.py
+**/generate_report.py
+**/generated_reports/
+**/generate_reports/
+
+/tools/
+
+# --- 작업 중 임시 파일/결과물 ---
+/tmp/
+# build_verification_report.py로 만드는 PDF — 스크립트만 커밋하고 결과물은 제외
+/output/pdf/*.pdf
+# 참고용으로 떠둔 캡처 (초기창업패키지 사업계획서 양식)
+/image.png
+
+# --- 로컬 보관 문서 (용량이 커서 git에 올리지 않음) ---
+/프로젝트_기획서_*.docx
+
+# --- 전략 작성 Agent 로컬 비밀값·실행 산출물 ---
+/agent_strategy/.env
+/agent_strategy/.env.*
+!/agent_strategy/.env.example
+/agent_strategy/res/to_back/runs/
+/agent_strategy/res/to_back/tmp/
+# 이름이 변경된 back 결과 저장소도 실행 산출물만 제외한다.
+/agent_strategy/res/back_output/runs/
+/agent_strategy/res/back_output/tmp/
+/agent_strategy/testing/*.log
+/agent_strategy/testing/__pycache__/
+/agent_strategy/runtime/__pycache__/
+/agent_strategy/agent_strategy.log
+# 로컬 실행 결과·캐시
+**/result.json
+**/result.html
+**/manifest.json
+# data-collection 평가 보고서의 manifest.json은 커밋 대상이다.
+!/data-collection/reports/**/manifest.json
+# 조사·크롤링 실행으로 생성되는 JSON 산출물
+/agent_strategy/res/crawling/industry_research/output/*.json
+# --- 생성·백업 자료 ---
+/agent/_strategy/
+**/output/
+/agent_strategy/res/from_back/before/

@@ -1,0 +1,362 @@
+[
+  {
+    "url": "https://www.atlassian.com/agile/project-management/waterfall-methodology",
+    "checkedAt": "2026-09-14T00:47:05.808864+00:00",
+    "status": "collected",
+    "finalUrl": "https://www.atlassian.com/agile/project-management/waterfall-methodology",
+    "title": "What is the Waterfall Methodology? | Atlassian",
+    "sha256": "ac98e8c2c1a042adb07e948da203f89b53934402a6cbdaecaf0970818f7ac1f4",
+    "textLength": 14519,
+    "localPath": "raw/182e8cd62c1c6fda6c87.txt"
+  },
+  {
+    "url": "https://agilemanifesto.org/principles",
+    "checkedAt": "2026-09-14T00:47:05.809479+00:00",
+    "status": "collected",
+    "finalUrl": "https://agilemanifesto.org/principles",
+    "title": "Principles behind the Agile Manifesto",
+    "sha256": "efe1d58c7729d5698a3aa25a7bb991aa3f74edd387734c77db29798f1b9c89ee",
+    "textLength": 1384,
+    "localPath": "raw/12e4cc72eaca010e3ca8.txt"
+  },
+  {
+    "url": "https://scrumguides.org/scrum-guide.html",
+    "checkedAt": "2026-09-14T00:47:05.810040+00:00",
+    "status": "collected",
+    "finalUrl": "https://scrumguides.org/scrum-guide.html",
+    "title": "Scrum Guide | Scrum Guides",
+    "sha256": "64aade688c3f2bceb1051268310e1cdcf503ac424e052a07414f60cabea8bcc0",
+    "textLength": 24875,
+    "localPath": "raw/d5ac2c381c4c767b2617.txt"
+  },
+  {
+    "url": "https://kanbanguides.org/the-kanban-guide/2020.12/",
+    "checkedAt": "2026-09-14T00:47:05.810308+00:00",
+    "status": "collected",
+    "finalUrl": "https://kanbanguides.org/the-kanban-guide/2020.12/",
+    "title": "December 2020 | The Kanban Guide | Kanban Guides",
+    "sha256": "84de35d0e3eeba78ead30e7f1ba4a5723dd940de708615d45bcab509993ac372",
+    "textLength": 4336,
+    "localPath": "raw/9558da618ccc31d61548.txt"
+  },
+  {
+    "url": "https://martinfowler.com/bliki/TestDrivenDevelopment.html",
+    "checkedAt": "2026-09-14T00:47:05.810625+00:00",
+    "status": "collected",
+    "finalUrl": "https://martinfowler.com/bliki/TestDrivenDevelopment.html",
+    "title": "Test Driven Development",
+    "sha256": "ff15c033e5594863e931fec3750383d3e491ffc7068088685eca372d506129d2",
+    "textLength": 2323,
+    "localPath": "raw/adee5362a5ea289d0418.txt"
+  },
+  {
+    "url": "https://cucumber.io/docs/bdd/",
+    "checkedAt": "2026-09-14T00:47:05.811140+00:00",
+    "status": "collected",
+    "finalUrl": "https://cucumber.io/docs/bdd/",
+    "title": "Behaviour-Driven Development | Cucumber",
+    "sha256": "9a9ae6c1ab2d22252bbe0c1f4c5759409f27e8c0512c496e073067b1b1b34df4",
+    "textLength": 6333,
+    "localPath": "raw/642e49ac2548ec6137c3.txt"
+  },
+  {
+    "url": "https://www.domainlanguage.com/ddd/reference/",
+    "checkedAt": "2026-09-14T00:47:06.082195+00:00",
+    "status": "collected",
+    "finalUrl": "https://www.domainlanguage.com/ddd/reference/",
+    "title": "DDD Reference - Domain Language",
+    "sha256": "18ec3cf2f3011076d9b3c39fb972ee17de16d07387cf70e2cffc9c446f347b05",
+    "textLength": 1535,
+    "localPath": "raw/f36f6de8aeee7f7e5569.txt"
+  },
+  {
+    "url": "https://martinfowler.com/articles/lean-inception/",
+    "checkedAt": "2026-09-14T00:47:06.234710+00:00",
+    "status": "collected",
+    "finalUrl": "https://martinfowler.com/articles/lean-inception/",
+    "title": "Lean Inception",
+    "sha256": "851113ac67fba387c68bf0b4d5831964a57a26e20c64657281494fb9bdac32b7",
+    "textLength": 7890,
+    "localPath": "raw/3805ff7e3434a58c913d.txt"
+  },
+  {
+    "url": "https://www.ibm.com/training/enterprise-design-thinking/framework",
+    "checkedAt": "2026-09-14T00:47:06.261715+00:00",
+    "status": "collected",
+    "finalUrl": "https://www.ibm.com/training/enterprise-design-thinking/framework",
+    "title": "Enterprise Design Thinking Framework | IBM",
+    "sha256": "5efb733515f66c537d3d2bf44bdade1085db04036e499ff9b58fbaa8426d405b",
+    "textLength": 43297,
+    "localPath": "raw/d60479ddd4dd16d0f86b.txt"
+  },
+  {
+    "url": "https://martinfowler.com/articles/newMethodology.html",
+    "checkedAt": "2026-09-14T00:47:06.450336+00:00",
+    "status": "collected",
+    "finalUrl": "https://martinfowler.com/articles/newMethodology.html",
+    "title": "The New Methodology",
+    "sha256": "8b2356d83bf06f053fbc1c28a59e4c412cb35bab75517e3c3ac2b22d5cdf08d3",
+    "textLength": 56516,
+    "localPath": "raw/e0b761035674ce5b6a31.txt"
+  },
+  {
+    "url": "https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/architectural-principles",
+    "checkedAt": "2026-09-14T00:47:06.582769+00:00",
+    "status": "collected",
+    "finalUrl": "https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/architectural-principles",
+    "title": "Architectural principles - .NET | Microsoft Learn",
+    "sha256": "adc1bb8814af50ed32e10843a0e062cd431fe7ff1b8a88ddacfbdce52d2e0d02",
+    "textLength": 12830,
+    "localPath": "raw/35f5e0ac677284d534c0.txt"
+  },
+  {
+    "url": "https://martinfowler.com/bliki/BeckDesignRules.html",
+    "checkedAt": "2026-09-14T00:47:06.779621+00:00",
+    "status": "collected",
+    "finalUrl": "https://martinfowler.com/bliki/BeckDesignRules.html",
+    "title": "Beck Design Rules",
+    "sha256": "018b4a4df8f058d5f70e64db98180e62c1e0dea9d3519a97ee43a3d18fa9816c",
+    "textLength": 6716,
+    "localPath": "raw/d0a7a1b559143b0937ca.txt"
+  },
+  {
+    "url": "https://learn.microsoft.com/en-us/aspnet/core/mvc/overview",
+    "checkedAt": "2026-09-14T00:47:06.853675+00:00",
+    "status": "collected",
+    "finalUrl": "https://learn.microsoft.com/en-us/aspnet/core/mvc/overview?view=aspnetcore-10.0",
+    "title": "Overview of ASP.NET Core MVC | Microsoft Learn",
+    "sha256": "484fcc05a3f8fd2d22b07e6b89cff35054a7dca75918cb1404919c3c35c62816",
+    "textLength": 13866,
+    "localPath": "raw/c44fecb10770b1373b34.txt"
+  },
+  {
+    "url": "https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures",
+    "checkedAt": "2026-09-14T00:47:06.891243+00:00",
+    "status": "collected",
+    "finalUrl": "https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures",
+    "title": "Common web application architectures - .NET | Microsoft Learn",
+    "sha256": "a46f03ebd83d6439fdd317b7904e5dab2971db39e2703d40fea7966ea08eefbd",
+    "textLength": 29152,
+    "localPath": "raw/7aa0023dd3ec0f676e6d.txt"
+  },
+  {
+    "url": "https://learn.microsoft.com/en-us/azure/architecture/guide/architecture-styles/n-tier",
+    "checkedAt": "2026-09-14T00:47:07.220163+00:00",
+    "status": "collected",
+    "finalUrl": "https://learn.microsoft.com/en-us/azure/architecture/guide/architecture-styles/n-tier",
+    "title": "N-tier Architecture Style - Azure Architecture Center | Microsoft Learn",
+    "sha256": "2d4a40582116568fb1175cf627bba01b11e0bad351448fd25f50e40a5725e786",
+    "textLength": 9601,
+    "localPath": "raw/14effcb2adbc3df97be3.txt"
+  },
+  {
+    "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods",
+    "checkedAt": "2026-09-14T00:47:07.290393+00:00",
+    "status": "collected",
+    "finalUrl": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods",
+    "title": "HTTP request methods - HTTP | MDN",
+    "sha256": "5635fe0ec9c46c3a891fe9662db6ba93ec6706b09711215bb6ef1ac38dc4bdf5",
+    "textLength": 2314,
+    "localPath": "raw/610be2db9a01c04461ce.txt"
+  },
+  {
+    "url": "https://www.postgresql.org/docs/current/tutorial-transactions.html",
+    "checkedAt": "2026-09-14T00:47:07.366031+00:00",
+    "status": "collected",
+    "finalUrl": "https://www.postgresql.org/docs/current/tutorial-transactions.html",
+    "title": "PostgreSQL: Documentation: 18: 3.4. Transactions",
+    "sha256": "8301bc52363edcf236bddb454ffc550bb27b26b5d1ffaafcd4a75ddc9bb00bac",
+    "textLength": 6956,
+    "localPath": "raw/92ca41586e78d3f14584.txt"
+  },
+  {
+    "url": "https://refactoring.guru/design-patterns",
+    "checkedAt": "2026-09-14T00:47:07.513897+00:00",
+    "status": "collected",
+    "finalUrl": "https://refactoring.guru/design-patterns",
+    "title": "Design Patterns",
+    "sha256": "b3c1133bc8d054a03a85adcac43d27ef4c8b08215a12e6cc98440f40febdcedd",
+    "textLength": 4533,
+    "localPath": "raw/6cbeee01500374bba9df.txt"
+  },
+  {
+    "url": "https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection/overview",
+    "checkedAt": "2026-09-14T00:47:07.564525+00:00",
+    "status": "collected",
+    "finalUrl": "https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection/overview",
+    "title": "Dependency injection - .NET | Microsoft Learn",
+    "sha256": "9ba066c250af4ebdf5029ae35e745ac32be9aa354bb5a5d1a978b747a382b26d",
+    "textLength": 16611,
+    "localPath": "raw/573d0aa85c2cb47ad188.txt"
+  },
+  {
+    "url": "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches",
+    "checkedAt": "2026-09-14T00:47:07.604145+00:00",
+    "status": "collected",
+    "finalUrl": "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches",
+    "title": "About protected branches - GitHub Docs",
+    "sha256": "e4ed1b4acc5fed925ffa174513cff9186629a7dc42d0e65d60d59507047c73ee",
+    "textLength": 18399,
+    "localPath": "raw/7fe9cb81f146595557fa.txt"
+  },
+  {
+    "url": "https://docs.github.com/en/pull-requests/reference/pull-request-reviews",
+    "checkedAt": "2026-09-14T00:47:07.612099+00:00",
+    "status": "collected",
+    "finalUrl": "https://docs.github.com/en/pull-requests/reference/pull-request-reviews",
+    "title": "Pull request reviews - GitHub Docs",
+    "sha256": "3bdfb805f97ab212dbeae63c7f707d9a2672bff44bb3563cba4d04752fe4cf33",
+    "textLength": 2334,
+    "localPath": "raw/a0392ef3766f82db045a.txt"
+  },
+  {
+    "url": "https://docs.pytest.org/en/stable/getting-started.html",
+    "checkedAt": "2026-09-14T00:47:07.936054+00:00",
+    "status": "collected",
+    "finalUrl": "https://docs.pytest.org/en/stable/getting-started.html",
+    "title": "Get Started - pytest documentation",
+    "sha256": "cc7c90cd39be862bfa85bfec64220f547bb037a083bb28377ba19c62ec7022a8",
+    "textLength": 9538,
+    "localPath": "raw/39c1fd08c0ff4c3ae788.txt"
+  },
+  {
+    "url": "https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests",
+    "checkedAt": "2026-09-14T00:47:08.060747+00:00",
+    "status": "collected",
+    "finalUrl": "https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests?view=aspnetcore-10.0",
+    "title": "Integration tests in ASP.NET Core | Microsoft Learn",
+    "sha256": "a76e14645a0d17fea4001dd7902ca25e61ad32a4bd7620944e2e560e1d452703",
+    "textLength": 192559,
+    "localPath": "raw/226f3b9489990526195f.txt"
+  },
+  {
+    "url": "https://playwright.dev/docs/intro",
+    "checkedAt": "2026-09-14T00:47:08.063979+00:00",
+    "status": "collected",
+    "finalUrl": "https://playwright.dev/docs/intro",
+    "title": "Installation | Playwright",
+    "sha256": "b5574608fb70327a982d856b8191d6bc339c293e774a0afdb7162f20876f1c54",
+    "textLength": 4046,
+    "localPath": "raw/766bc9d6c0c853fd7b02.txt"
+  },
+  {
+    "url": "https://docs.github.com/en/actions/get-started/continuous-integration",
+    "checkedAt": "2026-09-14T00:47:08.069367+00:00",
+    "status": "collected",
+    "finalUrl": "https://docs.github.com/en/actions/get-started/continuous-integration",
+    "title": "Continuous integration - GitHub Docs",
+    "sha256": "11acbd151e1bde0088d22d48aba54090ca81de332a7d4482e36d2bf4e5376d3a",
+    "textLength": 3219,
+    "localPath": "raw/4d3ffc653561a7c743eb.txt"
+  },
+  {
+    "url": "https://docs.github.com/en/actions/get-started/continuous-deployment",
+    "checkedAt": "2026-09-14T00:47:08.166086+00:00",
+    "status": "collected",
+    "finalUrl": "https://docs.github.com/en/actions/get-started/continuous-deployment",
+    "title": "Continuous deployment - GitHub Docs",
+    "sha256": "7aa5ce80ca514e420f4f2de781d778478db7a0078504d30dda82acdb4ed596bc",
+    "textLength": 2908,
+    "localPath": "raw/eee54cf50fd6d280ea9b.txt"
+  },
+  {
+    "url": "https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Scripting/Debugging_JavaScript",
+    "checkedAt": "2026-09-14T00:47:08.192268+00:00",
+    "status": "collected",
+    "finalUrl": "https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Scripting/Debugging_JavaScript",
+    "title": "JavaScript debugging and error handling - Learn web development | MDN",
+    "sha256": "c082f2f01362ed43d4976b9c82f74124d61047f9996d90a18cba68980f1bd96c",
+    "textLength": 22048,
+    "localPath": "raw/026298a872efb0c73e4e.txt"
+  },
+  {
+    "url": "https://owasp.org/www-project-top-ten/",
+    "checkedAt": "2026-09-14T00:47:08.367568+00:00",
+    "status": "collected",
+    "finalUrl": "https://owasp.github.io/www-project-top-ten/",
+    "title": "OWASP Top Ten Web Application Security Risks | OWASP Foundation",
+    "sha256": "e80eb9e34c074a179cfcdaa96e497a079cb786a2f6c86b3132a0ffd80ebc0e3a",
+    "textLength": 17093,
+    "localPath": "raw/7933aa42aecc0fafe4df.txt"
+  },
+  {
+    "url": "https://web.dev/articles/vitals",
+    "checkedAt": "2026-09-14T00:47:08.443728+00:00",
+    "status": "collected",
+    "finalUrl": "https://web.dev/articles/vitals",
+    "title": "Web Vitals  |  Articles  |  web.dev",
+    "sha256": "73bd70245d6948d1319a90195c1c741dc8d4ea1d04e6bcc550e54aed23109bd9",
+    "textLength": 13134,
+    "localPath": "raw/1f2734e7294c86f2b8da.txt"
+  },
+  {
+    "url": "https://developer.mozilla.org/en-US/docs/Learn_web_development",
+    "checkedAt": "2026-09-14T00:47:08.773030+00:00",
+    "status": "collected",
+    "finalUrl": "https://developer.mozilla.org/en-US/docs/Learn_web_development",
+    "title": "Learn web development | MDN",
+    "sha256": "40161eb954a723ce98218c200bcd7e07202cef8b045ac3431ae38dcc8e89578d",
+    "textLength": 5221,
+    "localPath": "raw/fc6e4086dd56c84750bb.txt"
+  },
+  {
+    "url": "https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Frameworks_libraries",
+    "checkedAt": "2026-09-14T00:47:08.853300+00:00",
+    "status": "collected",
+    "finalUrl": "https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Frameworks_libraries",
+    "title": "JavaScript frameworks and libraries - Learn web development | MDN",
+    "sha256": "e4b2ab85d62bf64050ace3cc4d5a0a967549272f426a63a820a4df7dc80f8e84",
+    "textLength": 7013,
+    "localPath": "raw/5ed80bdd76227ef7bf71.txt"
+  },
+  {
+    "url": "https://github.com/skills/introduction-to-github",
+    "checkedAt": "2026-09-14T00:47:08.857410+00:00",
+    "status": "collected",
+    "finalUrl": "https://github.com/skills/introduction-to-github",
+    "title": "GitHub - skills/introduction-to-github: Get started using GitHub in less than an hour. · GitHub",
+    "sha256": "a324e27662a74afd539ab6bb870e0096667060ff798df436f42e706ee9004e57",
+    "textLength": 2886,
+    "localPath": "raw/53282cf3f3342c6f782f.txt"
+  },
+  {
+    "url": "https://sfia-online.org/en/sfia-9/skills/programming-software-development",
+    "checkedAt": "2026-09-14T00:47:08.868949+00:00",
+    "status": "collected",
+    "finalUrl": "https://sfia-online.org/en/sfia-9/skills/programming-software-development",
+    "title": "Programming/software development — English",
+    "sha256": "77a9dec384b4e6e62165d6e36f8a454e62ae235e6d1ba0b1bddcbd07611bab82",
+    "textLength": 7302,
+    "localPath": "raw/81ccabe1343ba8e81bd0.txt"
+  },
+  {
+    "url": "https://sfia-online.org/en/sfia-9/skills/functional-testing",
+    "checkedAt": "2026-09-14T00:47:08.960611+00:00",
+    "status": "collected",
+    "finalUrl": "https://sfia-online.org/en/sfia-9/skills/functional-testing",
+    "title": "Functional testing — English",
+    "sha256": "49318c1ff0283989de7ed37e786062507e8d025feab38d10a4455f54647d57f9",
+    "textLength": 8691,
+    "localPath": "raw/2a2175e92b7dc5c0e3ee.txt"
+  },
+  {
+    "url": "https://sfia-online.org/en/sfia-9/skills/solution-architecture",
+    "checkedAt": "2026-09-14T00:47:09.032027+00:00",
+    "status": "collected",
+    "finalUrl": "https://sfia-online.org/en/sfia-9/skills/solution-architecture",
+    "title": "Solution architecture — English",
+    "sha256": "76bd29a13db2c449b69f965a4a9a9bd6aa8f40685e74d90b93375b3e9b5345b0",
+    "textLength": 7050,
+    "localPath": "raw/2b66907b730f62621ad7.txt"
+  },
+  {
+    "url": "https://sfia-online.org/en/about-sfia/how-sfia-works",
+    "checkedAt": "2026-09-14T00:47:09.132527+00:00",
+    "status": "collected",
+    "finalUrl": "https://sfia-online.org/en/about-sfia/how-sfia-works",
+    "title": "How SFIA works - Levels of responsibility and skills — English",
+    "sha256": "c1ea8e52c99c0449ed720320fc1b343fa73cf4451afda600685bbe5f090d6e3e",
+    "textLength": 15589,
+    "localPath": "raw/ed42a3aeaa13edf1059a.txt"
+  }
+]

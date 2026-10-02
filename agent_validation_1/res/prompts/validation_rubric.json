@@ -1,0 +1,163 @@
+{
+  "version": "2026-10-01.10",
+  "evaluationItems": [
+    {
+      "id": "structure",
+      "label": "필수 구조",
+      "severity": "fail",
+      "checks": [
+        "generatedText",
+        "exactItems",
+        "minItems",
+        "maxLines",
+        "maxSentences",
+        "requiredFields"
+      ]
+    },
+    {
+      "id": "table",
+      "label": "표 계약",
+      "severity": "fail",
+      "checks": [
+        "requiredColumns",
+        "requiredRows"
+      ]
+    },
+    {
+      "id": "image",
+      "label": "이미지 계약",
+      "severity": "fail",
+      "checks": [
+        "nodes_3_to_6",
+        "node_length"
+      ]
+    },
+    {
+      "id": "deadline",
+      "label": "일정 마감일",
+      "severity": "fail",
+      "checks": [
+        "development_end_not_after_deadline"
+      ]
+    },
+    {
+      "id": "budget",
+      "label": "지원금 상한",
+      "severity": "fail",
+      "checks": [
+        "government_amount_not_over_support_limit"
+      ]
+    },
+    {
+      "id": "feature_invariant",
+      "label": "전략 기능 목록 불변식",
+      "severity": "fail",
+      "checks": [
+        "feature_tokens_preserved"
+      ]
+    },
+    {
+      "id": "confirmed_fact",
+      "label": "확정 사실 일치",
+      "severity": "fail",
+      "checks": [
+        "provided_confirmed_fact_matches_original"
+      ]
+    },
+    {
+      "id": "provenance",
+      "label": "근거와 출처",
+      "severity": "warning",
+      "checks": [
+        "sourceRefs",
+        "evidence",
+        "originalFacts"
+      ]
+    },
+    {
+      "id": "proposal",
+      "label": "제안값 상태",
+      "severity": "warning",
+      "checks": [
+        "proposed_status",
+        "planning_language"
+      ]
+    },
+    {
+      "id": "semantic",
+      "label": "의미·논리 검토",
+      "severity": "warning",
+      "checks": [
+        "evidence_relevance",
+        "measurement_conditions",
+        "clarity"
+      ]
+    }
+  ],
+  "decisionPolicy": {
+    "failOnlyWhen": [
+      "구조 계약 위반",
+      "확정값 원본 불일치",
+      "마감일 초과",
+      "지원금 상한 초과",
+      "필수 기능 누락",
+      "확정 사실로 표현한 무근거 값"
+    ],
+    "warningWhen": [
+      "계획·제안·확인 필요",
+      "근거 직접성 부족",
+      "시험조건 미확정",
+      "목표 고객·세부 사양 보완 필요",
+      "날짜·금액 단위의 표현 차이",
+      "동일 원인의 중복 경고"
+    ],
+    "f16PlanningRule": "F16 본문은 사업계획 제안 작성 단계이므로 계획·제안·확인 필요 표현만으로 실패시키지 않는다."
+  },
+  "normalizationRules": {
+    "featureNames": "괄호·대괄호·가운데점·쉼표·슬래시·하이픈·공백과 및/과/와 연결어 차이를 제거한 핵심 토큰 비교",
+    "stageNames": "숫자·구분자·공백 표기 차이를 제거하고 의미 토큰 비교",
+    "sourceRefs": "문자열 배열만 비교하며 표현 설명의 차이는 출처 불일치로 보지 않음",
+    "authority": "Python 구조 검증 결과를 계약 판정의 기준으로 삼고 F19 의미 검증은 표현 보완만 warnings로 기록",
+    "dates": "YYYY-MM, YYYY.MM, YYYY/MM과 기간 구분자(~, -, to)의 표기 차이를 동일 월·기간으로 비교",
+    "amounts": "원·원화·₩·콤마 표기를 숫자 금액으로 정규화하고 반올림 차이는 의미 오류로 보지 않음",
+    "status": "provided·confirmed는 확정값, proposed·needs_confirmation은 제안/확인값으로 구분",
+    "duplicates": "동일 원인·동일 경로의 issues와 warnings는 한 번만 기록",
+    "numericUnits": "%, FPS, 건, 시간, 원 등 단위와 콤마·소수 표기 차이를 정규화해 비교하고 단위가 실제로 바뀐 경우만 오류로 판단",
+    "listOrder": "동일한 기능·단계·표 행의 순서 변경은 내용 누락으로 보지 않음",
+    "emptyValues": "빈 문자열·null·빈 배열은 미입력으로 통일하고 숫자 0은 명시된 값으로 보존",
+    "messageDeduplication": "동일 문자열의 issues·warnings는 결과에 한 번만 기록",
+    "featureAliases": {
+      "조명 강건": "조명 변화 대응",
+      "모델 경량화(양자화)": "모델 경량화 + 양자화"
+    },
+    "generatedFactPaths": "item.originalFacts.*와 source_data.originalFacts.*처럼 생성 과정에서 붙은 중복 접두사는 provenance 경고로 기록"
+  },
+  "responseContract": {
+    "passed": "boolean",
+    "issues": "string[]; empty when passed=true",
+    "warnings": "string[]",
+    "needsUserConfirmation": "string[]",
+    "deduplicate": "same message once"
+  },
+  "reviewAgent": {
+    "name": "검증 1 판정 재검토자",
+    "file": "semantic_review.py",
+    "mode": "deterministic_second_pass",
+    "extraLlmCall": false,
+    "hardFailuresRemain": [
+      "구조 계약 위반",
+      "확정 사실 불일치",
+      "마감일 초과",
+      "지원금 상한 초과"
+    ]
+  },
+  "documentTypeTemplates": {
+    "general": "res/prompts/templates/general.md",
+    "pre_startup": "res/prompts/templates/pre_startup.md",
+    "early_startup": "res/prompts/templates/early_startup.md",
+    "commonReference": [
+      "res/prompts/reference/validation_persona.md",
+      "res/prompts/reference/validation_checklist.md"
+    ]
+  }
+}
