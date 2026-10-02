@@ -421,34 +421,14 @@
           }
         },
         "3.5.3": {
-          "title": "1단계 사업비 표",
+          "title": "정부지원사업비 집행계획 표",
           "inputPaths": [
             "tableData.사업비_집행계획"
           ],
           "writeTarget": "table",
           "sourceSelection": {
-            "phase": "phase_1",
-            "unassignedPolicy": "do_not_duplicate"
-          },
-          "requiredColumns": [
-            "비목",
-            "산출근거",
-            "정부지원사업비"
-          ],
-          "validation": {
-            "tableRequired": true,
-            "amountLimit": "_strategy_limits.supportLimit"
-          }
-        },
-        "3.5.4": {
-          "title": "2단계 사업비 표",
-          "inputPaths": [
-            "tableData.사업비_집행계획"
-          ],
-          "writeTarget": "table",
-          "sourceSelection": {
-            "phase": "phase_2",
-            "unassignedPolicy": "do_not_duplicate"
+            "phase": null,
+            "unassignedPolicy": "preserve_original_rows"
           },
           "requiredColumns": [
             "비목",

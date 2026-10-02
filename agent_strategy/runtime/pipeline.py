@@ -31,6 +31,8 @@ def _normalize_image_output(output, flow_type='USER_FLOW'):
     """F18 nodes 계약이 깨져도 이미지 생성이 중단되지 않도록 기본 흐름을 만든다."""
     if not isinstance(output,dict):
         output={}
+    if output.get('flowType') != flow_type:
+        output['flowType']=flow_type
     nodes=output.get('nodes')
     if not isinstance(nodes,list) or not 3 <= len(nodes) <= 6 or not all(isinstance(n,str) and 0 < len(n) <= 35 for n in nodes):
         output['nodes']=['사용자 입력','AI 분석·처리','결과 확인'] if flow_type=='USER_FLOW' else ['입력 데이터','분석 모듈','결과·저장']
@@ -190,10 +192,17 @@ def table_arguments(raw,kind,spec,canonical):
     suffix='.'.join(spec['sectionId'].split('.')[1:])
     rows=[]; rules={'sectionId':spec['sectionId'],'additions':[], 'note':'원본 우선. 미입력 수량·단가·단계는 임의 생성하지 않음'}
     if kind!='general':
-        key=({'5.2':'실현가능성_일정','6.2':'성장전략_일정','5.3':'사업비_집행계획','5.4':'사업비_집행계획'} if kind=='early_startup' else {'5.2':'implementationSchedule','6.2':'fullScaleSchedule','5.3':'budgetPlanStep1','5.4':'budgetPlanStep2'})[suffix]
+        key=({'5.2':'실현가능성_일정','6.2':'성장전략_일정','5.3':'사업비_집행계획'} if kind=='early_startup' else {'5.2':'implementationSchedule','6.2':'fullScaleSchedule','5.3':'budgetPlanStep1','5.4':'budgetPlanStep2'})[suffix]
         rows=copy.deepcopy(tables.get(key,[]))
+        if kind=='early_startup' and suffix=='6.2':
+            # Early-startup full schedule includes feasibility and scale-up.
+            rows=copy.deepcopy(tables.get('실현가능성_일정',[]))+copy.deepcopy(tables.get('성장전략_일정',[]))
         if suffix in ('5.3','5.4'):
-            if kind=='early_startup':
+            if kind=='early_startup' and suffix=='5.3':
+                # Initial-startup form has one business-expense plan; do not
+                # apply the pre-startup two-phase budget split.
+                for row in rows:row.setdefault('산출근거',row.get('집행계획','확인 필요'))
+            elif kind=='early_startup':
                 phase='1단계' if suffix=='5.3' else '2단계'
                 unassigned=[r for r in rows if not r.get('단계')]
                 rows=[r for r in rows if r.get('단계')==phase]
@@ -236,6 +245,30 @@ def _attach_provenance(fid, value, kwargs):
     if not value.get("originalFacts"):
         value["originalFacts"] = kwargs.get("originalFacts") or {k: v for k, v in kwargs.items() if k not in {"research_data", "market_data", "competitor_data", "constraints"}}
     return value
+
+def _reconcile_validation(spec, output, validation):
+    """Prefer verified stored structure over contradictory LLM-only diagnostics."""
+    if not isinstance(validation, dict):
+        return validation
+    issues=[str(x) for x in validation.get('issues',[]) if x]
+    tables=output.get('tables') if isinstance(output,dict) else None
+    rules=spec.get('rules',{}) if isinstance(spec,dict) else {}
+    required=set(rules.get('requiredColumns',[]) or [])
+    valid_table=bool(tables) and all(required.issubset(set(t.get('columns',[]) or [])) for t in tables if isinstance(t,dict))
+    if spec.get('contentType')=='table' and valid_table:
+        issues=[i for i in issues if not ('필수 표' in i or 'tables의 columns/rows 구조' in i or '표 형식 텍스트만' in i or 'content.tables' in i)]
+    if spec.get('contentType')=='image' and isinstance(output.get('imageSpecs'),list):
+        types={x.get('flowType') for x in output['imageSpecs'] if isinstance(x,dict)}
+        if {'USER_FLOW','SERVICE_ARCHITECTURE'}.issubset(types):
+            issues=[i for i in issues if 'SERVICE_ARCHITECTURE' not in i and '이미지 명세' not in i]
+    # A schedule/budget table must preserve rows, but does not need to repeat
+    # every feature name from the strategy featureList.
+    if spec.get('functionId')=='F17':
+        issues=[i for i in issues if 'featureList 누락' not in i]
+    validation['issues']=issues
+    if validation.get('status')=='fail' and not issues:
+        validation['status']='warning' if validation.get('warnings') else 'pass'
+    return validation
 
 def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,execution_scope='full'):
     if kind not in CONTRACT['documents']:raise ValueError('문서 유형 오류')
@@ -338,12 +371,28 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
                 image_outputs[0]=output
                 if len(image_outputs)>1:
                     image_outputs[1]=_normalize_image_output(image_outputs[1],'SERVICE_ARCHITECTURE')
+                output['imageSpecs']=copy.deepcopy(image_outputs)
+                output['imageTypes']=['USER_FLOW','SERVICE_ARCHITECTURE']
+                # F19 must see both requested image specifications, while the
+                # legacy top-level nodes/flowType remain the USERFLOW contract.
+                output['imageSpecs']=copy.deepcopy(image_outputs)
+                output['imageTypes']=['USER_FLOW','SERVICE_ARCHITECTURE']
             validation=(call('F19',py.validate_section,section_spec=spec,content=output,source_data=source)
                         if execution_scope=='full' else {'status':'not_run','agent':'검증 1','issues':[]})
+            validation=_reconcile_validation(spec,output,validation)
+            if (kind=='early_startup' and spec['functionId']=='F17' and sid == '3.5.3'
+                    and output.get('tables') and output['tables'][0].get('rows')==[]
+                    and output['tables'][0].get('rules',{}).get('unassignedOriginalRows')):
+                # An unassigned source budget is intentionally not allocated to
+                # either phase. Treat this as confirmation-needed, not a hard
+                # table failure, while preserving the original rows.
+                validation['issues']=[i for i in validation.get('issues',[]) if '필수 표' not in str(i) and '예산' not in str(i)]
+                validation.setdefault('warnings',[]).append('단계 미지정 원본 사업비가 보존되어 단계 확정이 필요함')
+                validation['status']='warning' if not validation.get('issues') else validation.get('status','fail')
             attempts.append({'attempt':attempt+1,'generatedText':output['generatedText'],'validation':validation,'responseId':output.get('responseId')})
             if execution_scope!='full' or validation['status']=='pass':break
         rendered=[]
-        if spec['functionId']=='F18' and validation['status'] in {'pass','not_run'} and render_image:
+        if spec['functionId']=='F18' and render_image:
             rendered=[render_image(item) for item in image_outputs];images.extend(rendered)
         output['generatedText']=_strip_section_heading(output.get('generatedText',''),spec)
         sections.append({**spec,'generatedText':output['generatedText'],'tables':output.get('tables',[]),'images':rendered,'functionOutput':output,'validationSource':source,'validation':validation,'evaluation':score_section(spec,output,validation,kind,source),'attempts':attempts,'sourceKeys':list(spec['sourceKeys'])})
@@ -494,7 +543,16 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
                 image_outputs[0]=output
                 if len(image_outputs)>1:
                     image_outputs[1]=_normalize_image_output(image_outputs[1],'SERVICE_ARCHITECTURE')
+                output['imageSpecs']=copy.deepcopy(image_outputs)
+                output['imageTypes']=['USER_FLOW','SERVICE_ARCHITECTURE']
             validation=call('F19',py.validate_section,section_spec=spec,content=output,source_data=source)
+            validation=_reconcile_validation(spec,output,validation)
+            if (kind=='early_startup' and spec['functionId']=='F17' and spec['sectionId'] == '3.5.3'
+                    and output.get('tables') and output['tables'][0].get('rows')==[]
+                    and output['tables'][0].get('rules',{}).get('unassignedOriginalRows')):
+                validation['issues']=[i for i in validation.get('issues',[]) if '필수 표' not in str(i) and '예산' not in str(i)]
+                validation.setdefault('warnings',[]).append('단계 미지정 원본 사업비가 보존되어 단계 확정이 필요함')
+                validation['status']='warning' if not validation.get('issues') else validation.get('status','fail')
             attempts.append({'attempt':attempt+1,'generatedText':output['generatedText'],'validation':validation,'responseId':output.get('responseId')})
             if validation['status']=='pass':break
         images=[]

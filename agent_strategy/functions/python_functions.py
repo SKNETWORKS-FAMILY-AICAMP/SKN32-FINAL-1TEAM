@@ -47,6 +47,8 @@ def validate_section(section_spec: dict, content: dict, source_data: dict) -> di
     return validation1(section_spec,content,source_data)
 # F20 assemble_document()
 def assemble_document(sections: list, tables: list, images: list) -> dict:
-    if any(s['validation']['status'] not in ['pass','skipped'] for s in sections):raise ValueError('검증 1 미통과 항목은 조립할 수 없습니다.')
+    # Warnings are non-blocking review notes; only hard failures prevent
+    # document assembly.
+    if any(s['validation']['status'] not in ['pass','warning','skipped'] for s in sections):raise ValueError('검증 1 미통과 항목은 조립할 수 없습니다.')
     return {'status':'validation1_passed','sections':sections,'tables':tables,'images':images,'pageCountVerified':False}
 

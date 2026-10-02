@@ -841,28 +841,11 @@
       },
       {
         "sectionId": "3.5.3",
-        "title": "1단계 정부지원사업비 집행계획 - 근거와 갯수, 단가를 명시한 표 형태로 제안 가능. 비목/산출근거/정부지원사업비",
+        "title": "정부지원사업비 집행계획 - 근거와 금액을 명시한 표 형태로 제안 가능. 비목/산출근거/정부지원사업비",
         "functionId": "F17",
         "contentType": "table",
         "sourceKeys": [
           "budget.phase_1"
-        ],
-        "rules": {
-          "requiredColumns": [
-            "비목",
-            "산출근거",
-            "정부지원사업비"
-          ]
-        },
-        "enabled": true
-      },
-      {
-        "sectionId": "3.5.4",
-        "title": "2단계 정부지원사업비 집행계획 - 근거와 갯수, 단가를 명시한 표 형태로 제안 가능. 비목/산출근거/정부지원사업비",
-        "functionId": "F17",
-        "contentType": "table",
-        "sourceKeys": [
-          "budget.phase_2"
         ],
         "rules": {
           "requiredColumns": [
