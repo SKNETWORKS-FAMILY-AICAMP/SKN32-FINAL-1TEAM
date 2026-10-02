@@ -1,4 +1,4 @@
-"""Function-specific model routing, bounded output and auditable API usage."""
+﻿"""Function-specific model routing, bounded output and auditable API usage."""
 import json
 import os
 import time
@@ -7,6 +7,7 @@ from pathlib import Path
 from openai import OpenAI
 
 BASE=Path(__file__).resolve().parents[1]
+VALIDATION_RUBRIC_PATH=BASE.parent/'agent_validation_1'/'res'/'prompts'/'validation_rubric.json'
 def _load_dotenv():
     env_path=BASE/'.env'
     if env_path.exists():
@@ -16,6 +17,50 @@ def _load_dotenv():
                 key,value=line.split('=',1); os.environ[key.strip()]=value.strip().strip('"\'')
 _load_dotenv()
 CONTRACT=json.loads((BASE/'runtime/execution_contract.json').read_text(encoding='utf-8-sig'))
+
+def _validation_rubric_text():
+    if not VALIDATION_RUBRIC_PATH.exists():
+        return ''
+    return '\n검증 rubric 상수:\n'+VALIDATION_RUBRIC_PATH.read_text(encoding='utf-8-sig')
+
+def _validation_reference_text(document_type):
+    folder=BASE.parent/'agent_validation_1'/'res'/'prompts'
+    names=['reference/validation_persona.md','reference/validation_style_guide.md','reference/validation_checklist.md',
+           {'general':'templates/general.md','pre_startup':'templates/pre_startup.md','early_startup':'templates/early_startup.md'}.get(document_type,'templates/general.md')]
+    parts=[]
+    for name in names:
+        path=folder/name
+        if path.exists(): parts.append(f'[검증 참고 기준: {name}]\n'+path.read_text(encoding='utf-8-sig')[:2500])
+    manifest=folder/'reference'/'validation_sources.json'
+    if manifest.exists():
+        sources=json.loads(manifest.read_text(encoding='utf-8-sig')).get(document_type,[])
+        repo=BASE.parent
+        keywords=('지원','협약','사업비','기간','대상','성과','집행','비목','자부담','선정')
+        def relevant_excerpt(raw):
+            try:
+                obj=json.loads(raw)
+                chunks=[]
+                def walk(value, path=''):
+                    if isinstance(value, dict):
+                        for key,item in value.items(): walk(item, f'{path}.{key}' if path else str(key))
+                    elif isinstance(value, list):
+                        for index,item in enumerate(value): walk(item, f'{path}[{index}]')
+                    elif value not in (None,''):
+                        chunks.append(f'{path}: {value}')
+                walk(obj)
+            except Exception:
+                chunks=[chunk.strip() for chunk in raw.replace('\\n','\n').splitlines() if chunk.strip()]
+            selected=[chunk for chunk in chunks if any(word in chunk for word in keywords)]
+            text='\n'.join(selected[:80])
+            return (text or raw)[:3500]
+        for source in sources:
+            path=repo/source
+            if path.exists():
+                raw=path.read_text(encoding='utf-8-sig')
+                parts.append(f'[공고·관리기준 핵심 기준 발췌: {source}]\n{relevant_excerpt(raw)}')
+            else:
+                parts.append(f'[검증 자료 누락: {source}]\n해당 원문을 근거로 단정하지 말고 확인 필요 경고로 기록한다.')
+    return '\n'.join(parts)
 FIELDS={
  'F01':'summary와 selectedSourceRefs(배열)를 반환한다. 제공된 근거를 다시 쓰거나 왜곡하지 않는다.',
  'F02':'coreFeatures(배열), targetCustomer, deliverables(배열), differentiation을 반환한다.',
@@ -34,10 +79,18 @@ FIELDS={
  'F15':'제공된 일정만 설명한다. 날짜를 바꾸지 않는다.',
 'F16':'section_spec에 해당하는 항목만 작성하고 section_spec.rules를 따른다. generatedText에는 본문만 반환하며 sectionId, 항목 번호, 항목 제목, 소제목 헤더(예: "1.4.1 제품 개발계획")를 반복하거나 덧붙이지 않는다. 표는 제외하며 tables는 빈 배열이다. 원본에 없는 값이 사업계획 수립에 필요하면 합리적인 계획 제안으로 생성할 수 있지만 완료 실적이나 사용자 확정 사실처럼 쓰지 않는다. 그런 값은 facts에 {path,value,status:"proposed"}로 표시하고 generatedText에도 제안임을 드러낸다. 계획 중인 목표는 반드시 "개발 목표", "달성 목표" 또는 "계획"으로 표현하고 "미달성"처럼 이미 실패한 사실로 단정하는 표현은 사용하지 않는다.',
  'F18':'nodes는 3~6개의 문자열이며 각 문자열은 35자 이하다. flowType을 반환하며 SVG·HTML은 만들지 않는다.',
- 'F19':'passed(불리언), issues(수정 가능한 구체적 오류 배열), warnings(근거 누락 또는 사용자 확인 필요 배열)를 반환한다. '
-       'originalFacts 충실성, 논리 일관성, 출처 관련성, 항목 요구조건을 점검한다. '
-       '불확실성은 명시하며, 입력에 사실이 없고 본문이 미확정임을 분명히 한 경우만으로 실패 처리하지 않는다. '
-       '근거 없는 값을 확정 사실·완료 실적으로 표현하면 실패 처리한다. facts.status가 proposed이고 본문도 제안·계획으로 표시한 값은 경고로 허용한다. passed가 true이면 issues는 빈 배열이다.',
+'F19':'passed(불리언), issues(실패를 유발하는 구조·확정사실 오류 배열), warnings(근거 누락·제안값·사용자 확인 배열)를 반환한다. '
+       '다음 순서로 판정한다: (1) 필수 항목·표·이미지·일정·예산·featureList 누락은 issues, (2) originalFacts와 다른 provided/confirmed 값은 issues, '
+       '(3) 원본에 없는 계획·목표·기술·KPI·일정·효과가 본문에서 제안·계획·확인 필요로 표시되면 warnings, (4) 출처가 직접 관련되지 않거나 시험조건이 미확정이면 warnings. '
+       '사업계획서 작성 섹션(F16)은 제안 계획을 만드는 단계이므로 근거 부족·구체화 필요·표현 보완만으로 실패시키지 않는다. '
+       '근거 없는 값을 확정 사실·완료 실적으로 표현한 경우에만 issues로 처리한다. facts.status가 proposed이고 본문도 제안·계획으로 표시한 값은 warnings로 허용한다. '
+       '기능명·기술명·단계명은 괄호(), 대괄호[], 가운데점(·), 쉼표, 슬래시, 하이픈, 공백, 및/과/와 같은 연결어 차이를 제거한 핵심 토큰으로 비교한다. '
+       '예를 들어 모델 경량화(양자화), 모델 경량화·양자화, 모델 경량화 및 양자화는 같은 기능이다. '
+       '날짜는 YYYY-MM, YYYY.MM, YYYY/MM을 같은 월로 비교하고 기간 구분자(~, -, to)의 차이를 오류로 보지 않는다. 금액은 원·원화·₩·콤마 표기를 숫자로 정규화한다. '
+       'provided·confirmed는 확정값, proposed·needs_confirmation은 제안·확인값으로 구분하며 같은 원인과 경로의 중복 issues/warnings는 한 번만 기록한다. '
+       '%, FPS, 건, 시간, 원 등의 단위와 콤마·소수 표기 차이는 정규화하고, 기능·단계·표 행의 순서 변경은 누락으로 보지 않는다. null·빈 문자열·빈 배열은 미입력으로, 숫자 0은 실제 입력값으로 구분한다. '
+       'Python 구조 검증이 정규화된 기능 목록·표·이미지·일정 조건을 통과한 경우, 의미 검증은 표현 차이를 이유로 issues를 추가하지 않는다. '
+       '동일한 입력에 대해 동일한 판정을 유지하고, issues가 없으면 passed=true로 반환한다.',
 }
 
 
@@ -50,10 +103,21 @@ def model_config(fid):
 
 @lru_cache(maxsize=3)
 def writing_prompt(kind):
-    folder=BASE/'res/business_plan_prompts'
+    folder=BASE/'res'/'prompts'
     rules=json.loads((folder/'writing_rules.json').read_text(encoding='utf-8'))
     selected=rules['documentTypes'].get(kind, rules['documentTypes']['general'])
-    return '\n'.join(['[항목별 작성 규칙: '+selected['label']+']']+['- '+rule for rule in rules['commonRules']+selected['rules']])
+    parts=['[항목별 작성 규칙: '+selected['label']+']']+['- '+rule for rule in rules['commonRules']+selected['rules']]
+    template={'general':'templates/general.md','pre_startup':'templates/pre_startup.md','early_startup':'templates/early_startup.md'}.get(kind)
+    references=[template,'reference/agent_persona.md','reference/style_guide.md','reference/section_checklist.md']
+    # These authored references are guidance, not raw user data. Include bounded
+    # excerpts so they affect F16 while keeping prompt tokens predictable.
+    for name in references:
+        if not name: continue
+        path=folder/name
+        if path.exists():
+            text=path.read_text(encoding='utf-8-sig')
+            parts.append(f'[작성 참고 기준: {name}]\n'+text[:3500])
+    return '\n'.join(parts)
 
 
 def request_json(fid, payload):
@@ -71,7 +135,9 @@ def request_json(fid, payload):
         '개인 성명, 성별, 생년월일, 학교, 상세 주소를 노출하지 않는다. '
         '원본 사실을 인용하면 facts:[{path:string,value:originalValue}]를 반환하고 path는 originalFacts 기준 상대 경로로 쓴다. 없는 값을 채우지 않는다. '
         +FIELDS[fid])
-    if fid=='F19': instructions+=' 검증 결과는 passed, issues, warnings, needsUserConfirmation, sourceRefs, generatedText를 반환하고 각 issues/warnings는 200자 이내로 간결하게 작성한다. 제안값은 warnings에, 사용자의 결정이 필요한 값은 needsUserConfirmation에 기록한다.'
+    if fid=='F19':
+        document_type=payload.get('source_data',{}).get('documentType','general') if isinstance(payload.get('source_data',{}),dict) else 'general'
+        instructions+=' 검증 결과는 passed, issues, warnings, needsUserConfirmation, sourceRefs, generatedText를 반환하고 각 issues/warnings는 200자 이내로 간결하게 작성한다. 제안값은 warnings에, 사용자의 결정이 필요한 값은 needsUserConfirmation에 기록한다. 공고·관리기준을 판단에 사용했다면 해당 내부 파일 경로를 sourceRefs에 포함하고, 자료의 연도·유형이 현재 문서와 다르면 warning으로 기록한다.'+_validation_rubric_text()+_validation_reference_text(document_type)
     if fid=='F01': instructions+=' 검색 결과를 새로 요약하거나 장문으로 재작성하지 말고 summary는 3문장 이내, selectedSourceRefs는 실제 sourceRef만 반환한다.'
     if fid=='F16':
         kind=payload.get('writing_rules',{}).get('documentType','general')
@@ -128,6 +194,11 @@ def request_json(fid, payload):
     if not isinstance(result.get('facts',[]),list):raise ValueError(fid+' facts는 목록이어야 합니다.')
     if fid=='F19' and (not isinstance(result.get('passed'),bool) or not isinstance(result.get('warnings'),list)):
         raise ValueError('F19 의미 검증 결과 형식 오류')
+    if fid=='F19' and (not all(isinstance(v,str) for v in result['warnings']) or
+                        not all(isinstance(v,str) for v in result['needsUserConfirmation'])):
+        raise ValueError('F19 issues/warnings/needsUserConfirmation은 문자열 목록이어야 합니다.')
+    if fid=='F19' and result.get('passed') and result.get('issues'):
+        raise ValueError('F19 passed=true일 때 issues는 비어 있어야 합니다.')
     usage=response.usage.model_dump() if response.usage else {}
     result.update(status='generated',functionId=fid,functionName=config['name'],model=(fallback_model if used_fallback else requested_model),requestedModel=requested_model,fallbackUsed=used_fallback,fallbackReason=fallback_reason,responseId=response.id,
                   usage=usage,inputChars=len(serialized),maxOutputTokens=config['maxOutputTokens'])
@@ -140,3 +211,4 @@ def compact(value):
     if isinstance(value,dict):return {k:compact(v) for k,v in value.items() if k not in omit}
     if isinstance(value,list):return [compact(v) for v in value]
     return value
+

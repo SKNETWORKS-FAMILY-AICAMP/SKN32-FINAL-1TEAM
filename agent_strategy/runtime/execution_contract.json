@@ -10,7 +10,7 @@
       "output": "web_data",
       "modelLabel": "GPT-5.6 Luna + Web",
       "apiModel": "gpt-5.6-luna",
-      "maxOutputTokens": 2200
+      "maxOutputTokens": 3200
     },
     "F02": {
       "name": "analyze_item",
@@ -19,7 +19,7 @@
       "output": "item_spec",
       "modelLabel": "GPT-5.6 Terra",
       "apiModel": "gpt-5.6-terra",
-      "maxOutputTokens": 2200
+      "maxOutputTokens": 3000
     },
     "F03": {
       "name": "analyze_market",
@@ -28,7 +28,7 @@
       "output": "market_analysis",
       "modelLabel": "GPT-5.6 Sol + RAG",
       "apiModel": "gpt-5.6-sol",
-      "maxOutputTokens": 2600
+      "maxOutputTokens": 3200
     },
     "F04": {
       "name": "analyze_competitors",
@@ -37,7 +37,7 @@
       "output": "competitor_analysis",
       "modelLabel": "GPT-5.6 Terra + Web",
       "apiModel": "gpt-5.6-terra",
-      "maxOutputTokens": 2000
+      "maxOutputTokens": 2800
     },
     "F05": {
       "name": "analyze_team_capability",
@@ -55,7 +55,7 @@
       "output": "development_goal",
       "modelLabel": "GPT-5.6 Sol",
       "apiModel": "gpt-5.6-sol",
-      "maxOutputTokens": 2800
+      "maxOutputTokens": 3200
     },
     "F07": {
       "name": "define_development_method",
@@ -64,7 +64,7 @@
       "output": "development_method",
       "modelLabel": "GPT-5.6 Sol",
       "apiModel": "gpt-5.6-sol",
-      "maxOutputTokens": 2600
+      "maxOutputTokens": 3200
     },
     "F08": {
       "name": "create_development_plan",
@@ -73,7 +73,7 @@
       "output": "development_plan",
       "modelLabel": "GPT-5.6 Sol",
       "apiModel": "gpt-5.6-sol",
-      "maxOutputTokens": 2200
+      "maxOutputTokens": 3000
     },
     "F09": {
       "name": "create_production_plan",
@@ -82,7 +82,7 @@
       "output": "production_plan",
       "modelLabel": "GPT-5.6 Terra",
       "apiModel": "gpt-5.6-terra",
-      "maxOutputTokens": 1800
+      "maxOutputTokens": 2800
     },
     "F10": {
       "name": "create_marketing_strategy",
@@ -91,7 +91,7 @@
       "output": "marketing_strategy",
       "modelLabel": "GPT-5.6 Sol",
       "apiModel": "gpt-5.6-sol",
-      "maxOutputTokens": 2000
+      "maxOutputTokens": 2800
     },
     "F11": {
       "name": "create_business_model",
@@ -100,7 +100,7 @@
       "output": "business_model",
       "modelLabel": "GPT-5.6 Sol",
       "apiModel": "gpt-5.6-sol",
-      "maxOutputTokens": 1600
+      "maxOutputTokens": 2400
     },
     "F12": {
       "name": "create_growth_strategy",
@@ -109,7 +109,7 @@
       "output": "growth_strategy",
       "modelLabel": "GPT-5.6 Sol",
       "apiModel": "gpt-5.6-sol",
-      "maxOutputTokens": 2400
+      "maxOutputTokens": 3000
     },
     "F13": {
       "name": "create_resource_plan",
@@ -118,7 +118,7 @@
       "output": "resource_plan",
       "modelLabel": "GPT-5.6 Luna",
       "apiModel": "gpt-5.6-luna",
-      "maxOutputTokens": 1600
+      "maxOutputTokens": 2200
     },
     "F14": {
       "name": "calculate_budget",
@@ -127,7 +127,7 @@
       "output": "budget",
       "modelLabel": "GPT-5.6 Luna + Python",
       "apiModel": "gpt-5.6-luna",
-      "maxOutputTokens": 1000
+      "maxOutputTokens": 2200
     },
     "F15": {
       "name": "create_schedule",
@@ -136,7 +136,7 @@
       "output": "schedule",
       "modelLabel": "GPT-5.6 Luna + Python",
       "apiModel": "gpt-5.6-luna",
-      "maxOutputTokens": 1200
+      "maxOutputTokens": 3500
     },
     "F16": {
       "name": "generate_section",
@@ -145,7 +145,7 @@
       "output": "section_content",
       "modelLabel": "GPT-5.6 Sol",
       "apiModel": "gpt-5.6-sol",
-      "maxOutputTokens": null
+      "maxOutputTokens": 4000
     },
     "F17": {
       "name": "generate_table",
@@ -163,7 +163,7 @@
       "output": "image_spec",
       "modelLabel": "GPT-5.6 Luna",
       "apiModel": "gpt-5.6-luna",
-      "maxOutputTokens": 1200
+      "maxOutputTokens": 1600
     },
     "F19": {
       "name": "validate_section",
@@ -172,7 +172,7 @@
       "output": "validation_result",
       "modelLabel": "Python + GPT-5.6 Terra",
       "apiModel": "gpt-5.6-terra",
-      "maxOutputTokens": 2400
+      "maxOutputTokens": 3200
     },
     "F20": {
       "name": "assemble_document",

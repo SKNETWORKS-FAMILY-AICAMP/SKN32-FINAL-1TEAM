@@ -5,9 +5,9 @@ from unittest.mock import patch
 from types import SimpleNamespace
 from contextlib import ExitStack
 from agent_strategy.runtime import llm_runtime as runtime
-from agent_strategy import gpt_functions as gpt, python_functions as py
+from agent_strategy.functions import gpt_functions as gpt, python_functions as py
 from agent_strategy.runtime import pipeline
-from agent_strategy.testing import test_server as server
+from agent_strategy.app.testing import test_server as server
 from agent_strategy.runtime.research_context import retrieve
 from agent_validation_1 import validation_1 as validation
 

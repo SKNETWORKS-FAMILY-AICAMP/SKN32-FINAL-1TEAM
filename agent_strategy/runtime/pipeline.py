@@ -6,7 +6,8 @@ import re
 import time
 import uuid
 from datetime import datetime,timezone
-from agent_strategy import gpt_functions as gpt, python_functions as py
+from agent_strategy.functions import gpt_functions as gpt, python_functions as py
+from agent_validation_1.scoring import score_section, aggregate_scores
 from agent_strategy.runtime.llm_runtime import CONTRACT,compact
 from agent_strategy.runtime.research_context import retrieve
 
@@ -25,6 +26,17 @@ def _strip_section_heading(text, spec):
             continue
         kept.append(line)
     return '\n'.join(kept).strip()
+
+def _normalize_image_output(output, flow_type='USER_FLOW'):
+    """F18 nodes 계약이 깨져도 이미지 생성이 중단되지 않도록 기본 흐름을 만든다."""
+    if not isinstance(output,dict):
+        output={}
+    nodes=output.get('nodes')
+    if not isinstance(nodes,list) or not 3 <= len(nodes) <= 6 or not all(isinstance(n,str) and 0 < len(n) <= 35 for n in nodes):
+        output['nodes']=['사용자 입력','AI 분석·처리','결과 확인'] if flow_type=='USER_FLOW' else ['입력 데이터','분석 모듈','결과·저장']
+        output.setdefault('flowType',flow_type)
+        output.setdefault('warnings',[]).append('F18 nodes 형식 오류로 기본 이미지 흐름을 사용함')
+    return output
 
 
 def refresh_user_industry_research(project):
@@ -115,6 +127,7 @@ def section_source(spec,canonical,original,research):
         refs.extend(ref for ref in provenance.get('sourceRefs', []) if isinstance(ref, str))
     # Keep provenance from every upstream strategy output available to F16 and F19.
     return {**selected,'originalFacts':facts,'strategy_limits':original.get('strategy_limits',{}),'evidence':evidence,
+            'documentType':spec.get('_documentType') or original.get('_documentType'),
             'strategyProvenance':strategy_provenance,'sourceRefs':sorted(set(refs))}
 
 
@@ -244,12 +257,17 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
         duration=(end.year-start.year)*12+end.month-start.month+1
         if duration<1:raise ValueError('개발 종료월이 시작월보다 빠릅니다.')
     trace=[]
+    # Keep completed section rows available even when a later model call
+    # fails. The server uses these snapshots to persist a partial result.
+    sections=[]; images=[]; decisions=[]; selected_chars=0; full_chars=0
     def call(fid,fn,**kwargs):
         if progress:progress(f'{fid} {fn.__name__} 실행 중',len(trace))
         started=time.monotonic()
         try: value=fn(**kwargs)
         except Exception as exc:
             exc.partial_trace=trace
+            exc.partial_results=copy.deepcopy(sections)
+            exc.partial_images=copy.deepcopy(images)
             raise
         value=_attach_provenance(fid, value, kwargs)
         trace.append({'functionId':fid,'functionName':fn.__name__,'module':fn.__module__,
@@ -287,10 +305,10 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
     c['feasibility_plan']={'goal':c['development_goal'],'development':c['development_plan'],'budget':c['budget']}
     original={'item':item_input,'period':{'start':plan.get('dev_start_month'),'end':plan.get('dev_end_month'),'durationMonths':duration},'strategy_limits':plan.get('strategy_limits',{}),'team':team_input,'resources':resource_input,
               'budget':{k:c['budget'][k] for k in ['items','total','government_amount','self_cash_amount','self_in_kind_amount','phase']},'schedule':schedules,'strategyOutputs':{k:_provenance(v) for k,v in c.items() if not k.startswith('_')}}
-    sections=[]; images=[]; decisions=[]; selected_chars=0; full_chars=0
     for base_spec in CONTRACT['documents'][kind]:
         spec=copy.deepcopy(base_spec)
         sid=spec['sectionId']
+        spec['_documentType']=kind
         if not spec['enabled']:
             sections.append({**spec,'generatedText':'표 생성 제외 (사용자 지정)','tables':[],'images':[],'validation':{'status':'skipped','agent':'검증 1','issues':[]},'status':'skipped'})
             continue
@@ -311,6 +329,15 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
                 output=call('F16',gpt.generate_section,section_spec=spec,source_data=source,writing_rules={'documentType':kind,'tableGenerationEnabled':False,
                             'validationFeedback':attempts[-1]['validation']['issues'] if attempts else [],'previousText':attempts[-1]['generatedText'] if attempts else None,'preserveProvenance':True,'statusPolicy':['provided','proposed','needs_confirmation']})
                 image_outputs=[output]
+            # Validate the same body that will be stored; repeated section
+            # headings must not consume maxLines or exact-item limits.
+            if spec['functionId']=='F16':
+                output['generatedText']=_strip_section_heading(output.get('generatedText',''),spec)
+            if spec['functionId']=='F18':
+                output=_normalize_image_output(output,'USER_FLOW')
+                image_outputs[0]=output
+                if len(image_outputs)>1:
+                    image_outputs[1]=_normalize_image_output(image_outputs[1],'SERVICE_ARCHITECTURE')
             validation=(call('F19',py.validate_section,section_spec=spec,content=output,source_data=source)
                         if execution_scope=='full' else {'status':'not_run','agent':'검증 1','issues':[]})
             attempts.append({'attempt':attempt+1,'generatedText':output['generatedText'],'validation':validation,'responseId':output.get('responseId')})
@@ -319,9 +346,14 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
         if spec['functionId']=='F18' and validation['status'] in {'pass','not_run'} and render_image:
             rendered=[render_image(item) for item in image_outputs];images.extend(rendered)
         output['generatedText']=_strip_section_heading(output.get('generatedText',''),spec)
-        sections.append({**spec,'generatedText':output['generatedText'],'tables':output.get('tables',[]),'images':rendered,'functionOutput':output,'validationSource':source,'validation':validation,'attempts':attempts,'sourceKeys':list(spec['sourceKeys'])})
+        sections.append({**spec,'generatedText':output['generatedText'],'tables':output.get('tables',[]),'images':rendered,'functionOutput':output,'validationSource':source,'validation':validation,'evaluation':score_section(spec,output,validation,kind,source),'attempts':attempts,'sourceKeys':list(spec['sourceKeys'])})
         decisions.append({'sectionId':sid,'status':validation['status'],'attemptCount':len(attempts)})
-    failed=execution_scope=='full' and any(s['validation']['status']=='fail' for s in sections)
+    # Build the summary from the final stored rows. Retry/validation passes can
+    # replace an earlier failed attempt; the top-level summary must never keep
+    # that stale intermediate status.
+    decisions=[{'sectionId':row.get('sectionId'),'status':row.get('validation',{}).get('status','not_run'),
+                'attemptCount':len(row.get('attempts',[]))} for row in sections]
+    failed=execution_scope=='full' and any(s.get('validation',{}).get('status')=='fail' for s in sections)
     document=None if execution_scope!='full' or failed else call('F20',py.assemble_document,sections=sections,tables=[t for row in sections for t in row.get('tables',[])],images=images)
     usage={'input_tokens':0,'output_tokens':0,'total_tokens':0}
     for event in trace:
@@ -329,7 +361,7 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
     return {'runId':str(uuid.uuid4()),'createdAt':datetime.now(timezone.utc).isoformat(),'documentType':kind,
             'status':'strategy_writing_completed' if execution_scope=='strategy_writing' else ('validation1_failed' if failed else 'validation1_passed'),
             'message':'전략(F01~F15)과 작성(F16/F18)만 완료했습니다. 검증 1(F19)과 조립(F20)은 실행하지 않았습니다.' if execution_scope=='strategy_writing' else ('검증 1 미통과 항목이 있어 최종 조립을 보류했습니다.' if failed else '검증 1 통과 및 조립 완료. 원본 기반 표 포함. 실제 문서 페이지 수는 별도 확인이 필요합니다.'),
-            'results':sections,'document':document,'trace':trace,'validation1':decisions,'usage':usage,
+            'results':sections,'evaluationSummary':aggregate_scores(sections),'document':document,'trace':trace,'validation1':decisions,'usage':usage,
             'executionScope':execution_scope,
             'contextMetrics':{'selectedSectionChars':selected_chars,'fullCanonicalCharsIfRepeated':full_chars,'note':'문자 수 비교이며 토큰 청구량은 usage 참조'},
             'research':{'sources':list(evidence.values()),'availableFiles':web['availableFiles'],'issues':market_evidence['issues']+competitor_evidence['issues']+dev_evidence['issues'],'industryRefresh':industry_refresh},
@@ -455,6 +487,13 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
                             writing_rules={'documentType':kind,'tableGenerationEnabled':False,'retryInstruction':retry_instruction,
                                            'validationFeedback':feedback,'previousText':previous.get('generatedText') if not attempts else attempts[-1]['generatedText'],'preserveProvenance':True,'statusPolicy':['provided','proposed','needs_confirmation']})
                 image_outputs=[output]
+            if spec['functionId']=='F16':
+                output['generatedText']=_strip_section_heading(output.get('generatedText',''),spec)
+            if spec['functionId']=='F18':
+                output=_normalize_image_output(output,'USER_FLOW')
+                image_outputs[0]=output
+                if len(image_outputs)>1:
+                    image_outputs[1]=_normalize_image_output(image_outputs[1],'SERVICE_ARCHITECTURE')
             validation=call('F19',py.validate_section,section_spec=spec,content=output,source_data=source)
             attempts.append({'attempt':attempt+1,'generatedText':output['generatedText'],'validation':validation,'responseId':output.get('responseId')})
             if validation['status']=='pass':break
@@ -464,9 +503,10 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
         output['generatedText']=_strip_section_heading(output.get('generatedText',''),spec)
         rows[spec['sectionId']]={**previous,**spec,'generatedText':output['generatedText'],'tables':output.get('tables',[]), 'images':images,
                                  'validationSource':source,
-                                 'functionOutput':output,'validation':validation,'attempts':previous.get('attempts',[])+attempts,
+                                 'functionOutput':output,'validation':validation,'evaluation':score_section(spec,output,validation,kind,source),'attempts':previous.get('attempts',[])+attempts,
                                  'sourceKeys':list(spec['sourceKeys']),'retryInstruction':retry_instruction}
     result['results']=[rows[row['sectionId']] for row in result['results']]
+    result['evaluationSummary']=aggregate_scores(result['results'])
     failed=any(row['validation']['status']=='fail' for row in result['results'])
     images=[image for row in result['results'] for image in row.get('images',[])]
     result['document']=None if failed else call('F20',py.assemble_document,sections=result['results'],tables=[t for row in result['results'] for t in row.get('tables',[])],images=images)
