@@ -426,7 +426,7 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
                 validation.setdefault('warnings',[]).append('단계 미지정 원본 사업비가 보존되어 단계 확정이 필요함')
                 validation['status']='warning' if not validation.get('issues') else validation.get('status','fail')
             attempts.append({'attempt':attempt+1,'generatedText':output['generatedText'],'validation':validation,'responseId':output.get('responseId')})
-            if execution_scope!='full' or validation['status']=='pass':break
+            if execution_scope!='full' or validation['status'] in {'pass','warning'}:break
         rendered=[]
         if spec['functionId']=='F18' and render_image:
             rendered=[render_image(item) for item in image_outputs];images.extend(rendered)
@@ -596,9 +596,9 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
                 validation.setdefault('warnings',[]).append('단계 미지정 원본 사업비가 보존되어 단계 확정이 필요함')
                 validation['status']='warning' if not validation.get('issues') else validation.get('status','fail')
             attempts.append({'attempt':attempt+1,'generatedText':output['generatedText'],'validation':validation,'responseId':output.get('responseId')})
-            if validation['status']=='pass':break
+            if validation['status'] in {'pass','warning'}:break
         images=[]
-        if spec['functionId']=='F18' and validation['status']=='pass' and render_image:
+        if spec['functionId']=='F18' and validation['status'] in {'pass','warning'} and render_image:
             images=[render_image(item) for item in image_outputs]
         output['generatedText']=_strip_section_heading(output.get('generatedText',''),spec)
         rows[spec['sectionId']]={**previous,**spec,'generatedText':output['generatedText'],'tables':output.get('tables',[]), 'images':images,
@@ -613,6 +613,8 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
     result['status']='validation1_failed' if failed else 'validation1_passed'
     result['message']='재시도 후 검증 1 미통과 항목이 있어 최종 조립을 보류했습니다.' if failed else '선택 항목과 연관 항목 재생성 및 검증 1 완료.'
     result['runId']=str(uuid.uuid4()); result['createdAt']=datetime.now(timezone.utc).isoformat()
+    retry_event={'timestamp':result['createdAt'],'mode':'manual','selectedSectionId':section_id,'instruction':retry_instruction,'impact':plan,'status':result['status']}
+    result['retryHistory']=list(prior_result.get('retryHistory',[]))+[retry_event]
     result['retry']={'parentRunId':prior_result['runId'],'selectedSectionId':section_id,'instruction':retry_instruction,'impact':plan}
     result['usage']={key:sum(event.get('usage',{}).get(key,0) for event in trace) for key in ['input_tokens','output_tokens','total_tokens']}
     return result

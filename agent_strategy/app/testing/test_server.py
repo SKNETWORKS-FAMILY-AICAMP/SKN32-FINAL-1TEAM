@@ -153,11 +153,13 @@ def run_job(job_id, body):
         LOCK.release()
 
 
-def run_retry_job(job_id, parent_job, section_id, instruction):
+def run_retry_job(job_id, parent_job, section_id, instruction, mode='manual'):
     try:
         def progress(message, count):
             JOBS[job_id].update(message=message, completedCalls=count)
         result=retry_sections(parent_job['_input'],parent_job['result'],section_id,instruction,progress,render_image=flow_image)
+        if result.get('retryHistory'):
+            result['retryHistory'][-1]['mode']=mode
         JOBS[job_id].update(status='done',result=result,outputDirectory=save_result(result))
     except Exception as exc:
         # Retry failures must leave an inspectable artifact as well; otherwise
@@ -227,9 +229,10 @@ def run_validate_all_job(job_id, result, skip_passed=False):
                 if previous.get('status') in {'pass','fail'} and previous.get('contentHash')==content_hash and previous.get('policyVersion')==VALIDATION_POLICY_VERSION:
                     previous['reused']=True
                     row['validation']=previous
-                    continue
+                else:
+                    source=validation_source_for(row,content)
+                    row['validation']=_reconcile_validation(spec,content,py.validate_section(spec,content,source))
                 source=validation_source_for(row,content)
-                row['validation']=_reconcile_validation(spec,content,py.validate_section(spec,content,source))
                 row['evaluation']=score_section(spec,content,row['validation'],result['documentType'],source)
         result['evaluationSummary']=aggregate_scores(result.get('results',[]))
         result['validation1']=[{'sectionId':row.get('sectionId'),'status':row.get('validation',{}).get('status','not_run'),
@@ -264,7 +267,7 @@ def run_image_retry_job(job_id, result, section_id):
         for flow_type in ('USER_FLOW','SERVICE_ARCHITECTURE'):
             outs.append(gpt.generate_image_spec(item=source,architecture={'design':{},'retryInstruction':'이미지 디자인만 재생성'},flow_type=flow_type))
         row['images']=[flow_image(o) for o in outs]; row['functionOutput']=outs[0]; row['imageRetry']={'flows':['USER_FLOW','SERVICE_ARCHITECTURE'],'relatedSectionsSkipped':True}
-        result['message']='이미지 명세와 이미지 결과만 재생성했습니다. 연관 사업계획서 항목은 실행하지 않았습니다.'; result['runId']=str(uuid.uuid4()); result['createdAt']=datetime.now(timezone.utc).isoformat()
+        result['message']='이미지 명세와 이미지 결과만 재생성했습니다. 연관 사업계획서 항목은 실행하지 않았습니다.'; result['runId']=str(uuid.uuid4()); result['createdAt']=datetime.now(timezone.utc).isoformat(); result['retryHistory']=list(result.get('retryHistory',[]))+[{'timestamp':result['createdAt'],'mode':'image_only','selectedSectionId':section_id,'status':result.get('status','generated')}]
         JOBS[job_id].update(status='done',result=result,outputDirectory=save_result(result),message=result['message'],completedCalls=2)
     except Exception as exc:
         partial=dict(result)
@@ -425,7 +428,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not files or kind not in KINDS or not isinstance(section_id,str): raise ValueError('최신 실행 결과와 사업계획서 항목 위치가 필요합니다.')
                 saved=json.loads(files[0].read_text(encoding='utf-8')); back=json.loads((BASE/'res/back_input'/{'general':'example_general_part2.json','pre_startup':'example_pre_startup.json','early_startup':'example_early_startup.json'}[kind]).read_text(encoding='utf-8')); parent={'result':saved,'_input':normalize_back_input(back,kind)}
                 plan=impact_plan(kind,section_id); JOBS[job_id]={'status':'running','message':'최신 저장 결과 기준 재작성 준비 중','completedCalls':0,'_input':parent['_input'],'_parentJobId':'latest','impact':plan}
-                threading.Thread(target=run_retry_job,args=(job_id,parent,section_id,body.get('instruction','')),daemon=True).start()
+                threading.Thread(target=run_retry_job,args=(job_id,parent,section_id,body.get('instruction',''),body.get('mode','manual')),daemon=True).start()
             else:
                 parent=JOBS.get(body.get('parentJobId'))
                 section_id=body.get('sectionId')
