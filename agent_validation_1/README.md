@@ -33,6 +33,30 @@ agent_strategy/runtime/pipeline.py
 `scoring.py`는 검증 1의 판정과 분리된 결정론적 평가기다. `res/prompts/evaluation_rubric.json`의 유형별 가중치와 내부 규정 근거 경로를 사용해 각 항목에 0~100점을 계산한다. 구조·작성 목적·근거 추적·내용 일관성·표현 명확성을 평가하며, `issues`, `warnings`, `needsUserConfirmation`의 원인과 감점 내역을 함께 반환한다.
 
 점수는 임베딩 유사도나 임의의 정부 평가점수가 아니다. 규정에 없는 기준을 만들어내지 않고, 검증 결과와 관찰 가능한 계약만 계산한다. 실제 제출용 평가지표로 사용하려면 해당 공고의 공식 배점표를 `evaluation_rubric.json`에 추가하고 근거 파일을 함께 등록해야 한다.
+
+## 판정·평가 기준의 분리
+
+- `validation_1.py`는 필수 구조, 원본과 다른 확정 사실, 마감일·지원금 한도, 필수 기능·표·이미지 누락을 `fail`로 판정한다.
+- 계획·제안·확인 필요 문구, 시험 조건 미확정, 직접 근거가 약한 출처는 `warning` 또는 `needsUserConfirmation`으로 분류한다.
+- `semantic_review.py`는 의미 검증 결과를 재검토할 때 표현 차이만으로 실패시키지 않고, 구조 검증 결과와 충돌할 때만 재판정을 요청한다.
+- 기능명·기술명·단계명·날짜·금액은 정규화하여 괄호, 구분자, 공백, 표기 형식 차이로 인한 오탐을 줄인다.
+- 성능지표·서비스 개요에는 `featureList` 전체 반복 검사를 적용하지 않고, 실제 기능·개발방법·개발계획 항목에만 기능 불변식을 적용한다.
+
+## 공고 유형별 기준과 한도
+
+일반 사업계획서는 사용자 입력과 실행 계약을 중심으로 평가한다. 예비·초기창업패키지는 `res/reference/regulations`의 원문 JSON을 `validation_sources.json`으로 연결해 지원 대상, 협약 기간, 사업비 집행, 성과·실증 기준을 참고한다. 규정 원문에 없는 조건을 임의로 만들지 않으며, 자료가 없으면 확인 필요 경고로 남긴다.
+
+전략·작성 Agent가 back JSON에 넣은 `_strategy_limits.deadline`, `_strategy_limits.supportLimit`, `_strategy_limits.featureList`는 검증 1이 동일하게 받아 일정 초과, 지원금 합계 초과, 확정 기능 목록 변경을 판정한다. 날짜·금액 표기는 월·숫자로 정규화하고, 제안값은 계획 수립을 위한 값으로 표시된 경우 실패가 아닌 경고로 처리한다.
+
+## 결과 저장과 회귀 흐름
+
+각 실행 항목에는 `validation`, `evaluation`, `contentHash`, `policyVersion`이 저장된다. 실행 폴더의 `validation.json`에는 검증 결과만 별도로 보존하고, `result.json`에는 전체 결과와 `evaluationSummary`를 함께 저장한다. 동일 본문과 동일 정책 버전이면 기존 판정을 재사용해 불필요한 LLM 호출을 줄인다.
+
+검증 실패 회귀 재작성은 실패 항목과 검증 사유를 전략·작성 Agent에 전달하고, 동일 Canonical Data를 사용하는 연관 항목만 재생성한 뒤 F19를 다시 호출한다. 자동 회귀는 항목별 최대 횟수에 도달하면 중지하며, 각 시도와 중지 사유를 history에 기록한다. API·크레딧·토큰 오류가 발생해도 이미 완료된 항목과 trace를 `error_partial` 결과로 보존한다.
+
+## 현재 검증 범위와 한계
+
+회귀 테스트 17개와 Python 문법 검사를 통과했다. 점수는 정부기관 공식 배점이 아니라 내부 계약·규정 근거 기반 품질 지표이며, 실제 공고의 공식 배점표가 제공되면 `evaluation_rubric.json`에 별도 반영해야 한다. 규정 자료가 갱신되면 원문 JSON, `validation_sources.json`, rubric 정책 버전을 함께 갱신한다.
 # 검증 1 Agent
 
 ## 커밋 규칙
