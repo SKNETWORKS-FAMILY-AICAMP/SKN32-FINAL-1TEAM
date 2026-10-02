@@ -11,25 +11,39 @@ import os
 import html
 import threading
 import traceback
+import hashlib
 from openai import OpenAI
 from urllib.parse import parse_qs, urlparse
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from agent_strategy.runtime.llm_runtime import CONTRACT, model_config
 from agent_strategy.runtime.pipeline import impact_plan, retry_sections, run_pipeline, normalize_back_input
-from agent_strategy import gpt_functions as gpt, python_functions as py
+from agent_validation_1.scoring import score_section, aggregate_scores
+from agent_strategy.functions import gpt_functions as gpt, python_functions as py
+try:
+    from agent_validation_1.validation_1 import VALIDATION_POLICY_VERSION
+except ModuleNotFoundError:
+    # strategy 브랜치만 분리해 실행할 때도 F01~F18 UI는 시작할 수 있게 한다.
+    VALIDATION_POLICY_VERSION='validation-agent-unavailable'
 
-BASE = Path(__file__).resolve().parents[1]
+BASE = Path(__file__).resolve().parents[2]
 KINDS = {'general', 'pre_startup', 'early_startup'}
 JOBS = {}
 LOCK = threading.Lock()
 
+def _content_hash(content):
+    return hashlib.sha256(json.dumps(content,ensure_ascii=False,sort_keys=True,default=str).encode('utf-8')).hexdigest()
+
 
 def report_html(result):
-    body = '<h1>실제 함수 실행 결과</h1><p>' + html.escape(result['message']) + '</p>'
+    body = '<h1>실제 함수 실행 결과</h1><p>' + html.escape(str(result.get('message','부분 실행 결과'))) + '</p>'
     for row in result['results']:
-        body += '<article><h2>'+html.escape(row['sectionId']+' · '+row['title'])+'</h2><pre>'+html.escape(row['generatedText'])+'</pre>'
-        body += '<p>검증 1: '+html.escape(row['validation']['status'])+'</p><pre>'+html.escape(json.dumps(row['validation'],ensure_ascii=False,indent=2))+'</pre>'
+        section_id=str(row.get('sectionId','알 수 없는 항목'))
+        title=str(row.get('title',''))
+        generated=row.get('generatedText','')
+        validation=row.get('validation') or {'status':'not_run','issues':['부분 결과로 검증되지 않음']}
+        body += '<article><h2>'+html.escape(section_id+' · '+title)+'</h2><pre>'+html.escape(str(generated))+'</pre>'
+        body += '<p>검증 1: '+html.escape(str(validation.get('status','not_run')))+'</p><pre>'+html.escape(json.dumps(validation,ensure_ascii=False,indent=2))+'</pre>'
         for image in row.get('images', []):
             body += image['svg']
         if row.get('tables'):
@@ -65,6 +79,10 @@ def run_test(raw, kind, progress=None, execution_scope='full'):
 
 def save_result(result):
     # Keep an immutable history even when the same input is run repeatedly.
+    result.setdefault('runId',str(uuid.uuid4()))
+    result.setdefault('createdAt',datetime.now(timezone.utc).isoformat())
+    result.setdefault('documentType','unknown')
+    result.setdefault('status','error_partial')
     stamp=datetime.now().strftime('%Y%m%d-%H%M%S')
     out = BASE/'res/back_output'/'runs'/f"{stamp}_{result['documentType']}_{result['runId']}"
     out.mkdir(parents=True)
@@ -120,7 +138,9 @@ def run_job(job_id, body):
                  'message':'오류 발생 전까지 생성된 결과를 저장했습니다.',
                  'error':str(exc),'errorType':type(exc).__name__,
                  'errorTraceback':traceback.format_exc(),
-                 'trace':getattr(exc,'partial_trace',[]),'results':[], 'document':None}
+                 'trace':getattr(exc,'partial_trace',[]),
+                 'results':getattr(exc,'partial_results',[]),
+                 'images':getattr(exc,'partial_images',[]), 'document':None}
         output_directory=None
         try:
             output_directory=save_result(partial)
@@ -169,6 +189,13 @@ def run_validate_job(job_id, parent_job, section_id):
             spec=specs[item['sectionId']]; row=rows.get(item['sectionId'])
             if not row: continue
             content=row.get('functionOutput') or {'generatedText':row.get('generatedText',''),'tables':row.get('tables',[])}
+            content_hash=_content_hash(content)
+            previous=row.get('validation',{}) or {}
+            if previous.get('status') in {'pass','fail'} and previous.get('contentHash')==content_hash and previous.get('policyVersion')==VALIDATION_POLICY_VERSION:
+                previous['reused']=True
+                row['validation']=previous
+                checked.append(item['sectionId'])
+                continue
             source=validation_source_for(row,content)
             result=py.validate_section(section_spec=spec,content=content,source_data=source)
             row['validation']=result; checked.append(item['sectionId'])
@@ -177,22 +204,41 @@ def run_validate_job(job_id, parent_job, section_id):
         parent_job['result']['message']='선택 항목 및 연관 항목 검증 1 완료.'
         JOBS[job_id].update(status='done',result=parent_job['result'],outputDirectory=save_result(parent_job['result']),message='선택 항목 및 연관 항목 검증 1 완료',completedCalls=len(checked))
     except Exception as exc:
-        JOBS[job_id].update(status='error',error=str(exc))
+        partial=dict(parent_job.get('result') or {})
+        partial['runId']=str(uuid.uuid4()); partial['createdAt']=datetime.now(timezone.utc).isoformat()
+        partial['status']='error_partial'; partial['error']=str(exc); partial['errorType']=type(exc).__name__; partial['errorTraceback']=traceback.format_exc()
+        output_directory=None
+        try: output_directory=save_result(partial)
+        except Exception as save_exc: partial['saveError']=str(save_exc)
+        JOBS[job_id].update(status='error',error=str(exc),errorType=type(exc).__name__,errorTraceback=partial['errorTraceback'],result=partial,partialResult=partial,outputDirectory=output_directory)
     finally: LOCK.release()
 
-def run_validate_all_job(job_id, result):
+def run_validate_all_job(job_id, result, skip_passed=False):
     try:
         specs={s['sectionId']:s for s in CONTRACT['documents'][result['documentType']]}
         for row in result.get('results',[]):
             spec=specs.get(row['sectionId'])
             if spec and spec.get('enabled'):
+                if skip_passed and row.get('validation',{}).get('status')=='pass':
+                    continue
                 content=row.get('functionOutput') or {'generatedText':row.get('generatedText',''),'tables':row.get('tables',[])}
+                content_hash=_content_hash(content)
+                previous=row.get('validation',{}) or {}
+                if previous.get('status') in {'pass','fail'} and previous.get('contentHash')==content_hash and previous.get('policyVersion')==VALIDATION_POLICY_VERSION:
+                    previous['reused']=True
+                    row['validation']=previous
+                    continue
                 source=validation_source_for(row,content)
                 row['validation']=py.validate_section(spec,content,source)
+                row['evaluation']=score_section(spec,content,row['validation'],result['documentType'],source)
+        result['evaluationSummary']=aggregate_scores(result.get('results',[]))
+        result['validation1']=[{'sectionId':row.get('sectionId'),'status':row.get('validation',{}).get('status','not_run'),
+                               'issues':row.get('validation',{}).get('issues',[]),'warnings':row.get('validation',{}).get('warnings',[]),
+                               'attemptCount':len(row.get('attempts',[]))} for row in result.get('results',[]) if row.get('validation')]
         failed=any(r.get('validation',{}).get('status')=='fail' for r in result['results'])
         result['status']='validation1_failed' if failed else 'validation1_passed'
         if not failed: result['document']=py.assemble_document(result['results'],[t for r in result['results'] for t in r.get('tables',[])],[i for r in result['results'] for i in r.get('images',[])])
-        result['message']='전체 항목 검증 1 및 조립 완료.' if not failed else '검증 1 미통과 항목이 있어 조립을 보류했습니다.'
+        result['message']=('기존 pass 항목은 건너뛰고 미통과·미검증 항목만 검증한 뒤 조립했습니다.' if skip_passed and not failed else ('전체 항목 검증 1 및 조립 완료.' if not failed else '검증 1 미통과 항목이 있어 조립을 보류했습니다.'))
         JOBS[job_id].update(status='done',result=result,outputDirectory=save_result(result),message=result['message'])
     except Exception as exc:
         partial=dict(result)
@@ -220,7 +266,14 @@ def run_image_retry_job(job_id, result, section_id):
         row['images']=[flow_image(o) for o in outs]; row['functionOutput']=outs[0]; row['imageRetry']={'flows':['USER_FLOW','SERVICE_ARCHITECTURE'],'relatedSectionsSkipped':True}
         result['message']='이미지 명세와 이미지 결과만 재생성했습니다. 연관 사업계획서 항목은 실행하지 않았습니다.'; result['runId']=str(uuid.uuid4()); result['createdAt']=datetime.now(timezone.utc).isoformat()
         JOBS[job_id].update(status='done',result=result,outputDirectory=save_result(result),message=result['message'],completedCalls=2)
-    except Exception as exc: JOBS[job_id].update(status='error',error=str(exc))
+    except Exception as exc:
+        partial=dict(result)
+        partial['runId']=str(uuid.uuid4()); partial['createdAt']=datetime.now(timezone.utc).isoformat()
+        partial['status']='error_partial'; partial['error']=str(exc); partial['errorType']=type(exc).__name__; partial['errorTraceback']=traceback.format_exc()
+        output_directory=None
+        try: output_directory=save_result(partial)
+        except Exception as save_exc: partial['saveError']=str(save_exc)
+        JOBS[job_id].update(status='error',error=str(exc),errorType=type(exc).__name__,errorTraceback=partial['errorTraceback'],result=partial,partialResult=partial,outputDirectory=output_directory)
     finally: LOCK.release()
 
 
@@ -284,7 +337,7 @@ class Handler(BaseHTTPRequestHandler):
                     detail='OpenAI 크레딧·사용 한도 초과(insufficient_quota)' if 'insufficient_quota' in raw or 'no credits' in raw else f'{type(exc).__name__}: 연결 실패'
             return self.respond(200, {'apiKeyConfigured':configured,'apiReachable':reachable,'apiStatus':detail,'model':'함수별 GPT-5.6 Sol / Terra / Luna','models':{fid:model_config(fid) for fid in CONTRACT['functions']},'validationAgent':'검증 1','tableGenerationEnabled':False})
         if self.path in ['/', '/test']:
-            return self.respond(200, (BASE/'strategy_writing_agent.html').read_bytes(), 'text/html; charset=utf-8')
+            return self.respond(200, (BASE/'app'/'strategy_writing_agent.html').read_bytes(), 'text/html; charset=utf-8')
         asset_paths = {
             '/strategy_writing_agent.css': BASE/'res'/'css'/'strategy_writing_agent.css',
             '/strategy_writing_agent.js': BASE/'res'/'js'/'strategy_writing_agent.js',
@@ -356,8 +409,11 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == '/api/validate-all-latest':
                 kind=body.get('documentType'); runs=BASE/'res/back_output'/'runs'; files=sorted(runs.glob(f'*_{kind}_*/result.json'),key=lambda p:p.stat().st_mtime,reverse=True)
                 if not files or kind not in KINDS: raise ValueError('최신 실행 결과와 사업계획서 유형이 필요합니다.')
-                saved=json.loads(files[0].read_text(encoding='utf-8')); JOBS[job_id]={'status':'running','message':'전체 검증 및 조립 준비 중','completedCalls':0}
-                threading.Thread(target=run_validate_all_job,args=(job_id,saved),daemon=True).start()
+                saved=json.loads(files[0].read_text(encoding='utf-8'))
+                if saved.get('status')=='error_partial' or not isinstance(saved.get('results'),list) or not saved.get('results'):
+                    raise ValueError('최신 결과가 부분 결과이거나 작성 항목이 없어 검증·조립할 수 없습니다. 먼저 전략·작성 실행을 완료하세요.')
+                JOBS[job_id]={'status':'running','message':'전체 검증 및 조립 준비 중','completedCalls':0}
+                threading.Thread(target=run_validate_all_job,args=(job_id,saved,bool(body.get('skipPassed'))),daemon=True).start()
             elif self.path == '/api/validate-latest':
                 kind=body.get('documentType'); section_id=body.get('sectionId'); runs=BASE/'res/back_output'/'runs'; files=sorted(runs.glob(f'*_{kind}_*/result.json'),key=lambda p:p.stat().st_mtime,reverse=True)
                 if not files or kind not in KINDS or not isinstance(section_id,str): raise ValueError('최신 실행 결과와 사업계획서 항목 위치가 필요합니다.')
