@@ -20,7 +20,7 @@ SB-127 [FEAT] 전략/작성 agent - <수행 내용>
 
    ```cmd
    cd D:\\Personal\\P-PJT\\Sbrain
-   cmd /c agent_strategy\\testing\\start_function_test.cmd
+   cmd /c agent_strategy\\app\\testing\\start_function_test.cmd
    ```
 
 스크립트가 `OPENAI_API_KEY`를 확인하고 `http://127.0.0.1:8765` 로컬 테스트 서버를 시작한다.
@@ -126,8 +126,8 @@ HTML은 Python을 직접 실행하지 않는다. API 요청은 `http://127.0.0.1
 ### 프롬프트 원본
 
 - [`runtime/llm_runtime.py`](runtime/llm_runtime.py): 모든 GPT 호출의 공통 프롬프트 조립과 JSON 응답 파싱
-- [`res/business_plan_prompts/writing_rules.json`](res/business_plan_prompts/writing_rules.json): 일반·예비창업·초기창업 F16 작성 규칙
-- [`res/business_plan_prompts/business_plan_prompt_template_general.md`](res/business_plan_prompts/business_plan_prompt_template_general.md): 일반 사업계획서 전체 출력 참고 템플릿
+- [`agent_strategy/res/prompts/writing_rules.json`](agent_strategy/res/prompts/writing_rules.json): 일반·예비창업·초기창업 F16 작성 규칙
+- [`agent_strategy/res/prompts/templates/general.md`](agent_strategy/res/prompts/templates/general.md): 일반 사업계획서 전체 출력 참고 템플릿
 - [`runtime/execution_contract.json`](runtime/execution_contract.json): 함수별 입력·출력·모델·토큰 계약
 - [`res/back_input/section_mapping.json`](res/back_input/section_mapping.json): back JSON 필드와 사업계획서 위치 매핑
 
@@ -445,7 +445,7 @@ python -B -m unittest agent_strategy.testing.test_function_pipeline -v
 
 ```powershell
 Get-Process python,pythonw -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-cmd /c agent_strategy\\testing\\start_function_test.cmd
+cmd /c agent_strategy\\app\\testing\\start_function_test.cmd
 ```
 
 서버는 `http://127.0.0.1:8765/`에서 실행하며, `file://` UI도 로컬 API에 연결할 수 있다.
@@ -473,7 +473,7 @@ back JSON에 `_strategy_limits`를 전달하면 작성 결과 검증에 공고 �
 
 ## Agent 영역 연결 상태
 
-검증 1 판정 코드는 `agent_validation_1/validation_1.py`에 별도 Agent 영역으로 관리한다. 현재 개발 테스트에서는 `agent_strategy/runtime/pipeline.py`가 F16/F17/F18 결과 생성 후 검증 1을 호출하고, `agent_strategy/testing/test_server.py`가 UI 요청·진행 상태·결과 저장을 담당한다. 전체 Supervisor인 `agent-orchestration`과의 통합은 이후 연동 단계이며, 현재 전략·작성 테스트가 전체 7개 Agent가 완료된 것처럼 결과를 기록하지 않는다.
+검증 1 판정 코드는 `agent_validation_1/validation_1.py`에 별도 Agent 영역으로 관리한다. 현재 개발 테스트에서는 `agent_strategy/runtime/pipeline.py`가 F16/F17/F18 결과 생성 후 검증 1을 호출하고, `agent_strategy/app/testing/test_server.py`가 UI 요청·진행 상태·결과 저장을 담당한다. 전체 Supervisor인 `agent-orchestration`과의 통합은 이후 연동 단계이며, 현재 전략·작성 테스트가 전체 7개 Agent가 완료된 것처럼 결과를 기록하지 않는다.
 
 ## 전략 Agent 분석 기록
 
@@ -576,3 +576,396 @@ F01~F15 trace는 사업계획서 항목별 생성 결과와 분리해 UI의 `전
 
 
 
+
+
+## F19 평가항목과 rubric 관리
+
+검증 1의 평가항목과 판정 기준은 agent_validation_1/res/prompts/validation_rubric.json에서 별도 관리한다. F19 프롬프트와 Python 검증기가 같은 파일을 참조하므로, 구조 검증과 의미 검증의 기준이 분리되어 불일치하는 문제를 줄인다.
+
+- fail: 필수 구조·표·이미지 계약 위반, 확정값 원본 불일치, 마감일 초과, 지원금 상한 초과, 필수 기능 누락
+- warning: 계획·제안·확인 필요 값, 근거 직접성 부족, 시험조건 미확정, 목표 고객·세부 사양 보완 필요
+- 기능명은 괄호·구분자·공백·연결어 차이를 정규화한다.
+- 날짜·기간·금액·단위 표기를 정규화해 의미가 같은 표현을 동일하게 비교한다.
+- provided·confirmed는 확정값, proposed·
+eeds_confirmation은 제안·확인값으로 구분한다.
+- 동일 본문과 동일 rubric 버전의 검증 결과는 contentHash와 policyVersion으로 재사용한다. 기준을 바꾸면 rubric 버전 변경으로 캐시가 무효화된다.
+- F19 응답은 passed, issues, warnings, 
+eedsUserConfirmation의 JSON 계약을 검사하며, passed=true일 때 issues는 비어 있어야 한다.
+
+현재 rubric 버전은 2026-10-01.6이며, 회귀 테스트 17개가 통과한다.
+
+
+## 2026-10-02 폴더 구조 정리
+
+실행 코드와 참고 자료를 구분하기 위해 다음 구조로 정리했다.
+
+- app/: HTML UI와 테스트 서버
+- app/testing/: 로컬 테스트 서버 및 실행 명령
+- functions/: GPT·Python 함수 구현
+- 
+untime/: 실행 파이프라인·LLM 런타임·계약 파일
+- res/prompts/: 작성 규칙과 프롬프트 템플릿
+- res/prompts/templates/: 일반·예비창업·초기창업 템플릿
+- res/prompts/reference/: Agent persona·문체 가이드·섹션 체크리스트
+- 
+es/: CSS·JS·back 입력·크롤링 자료
+
+계약 파일과 검증 1 코드는 전략·작성 코드와 합치지 않고 각각 
+untime/execution_contract.json, agent_validation_1/validation_1.py, agent_validation_1/res/prompts/validation_rubric.json에 유지했다. HTML의 CSS·JS 상대 경로, Python import, 테스트 서버 모듈 경로를 새 구조에 맞춰 수정했다.
+
+서버 실행 명령:
+
+`powershell
+cd D:\Personal\P-PJT\Sbrain
+cmd /c agent_strategy\app\testing\start_function_test.cmd
+`
+
+구조 개편 후 회귀 테스트 17개와 Python 문법 검사를 통과했다.
+
+
+
+## 현재 구현 및 보완 내역
+
+### 1. Agent 범위와 폴더 구조
+
+- 전략·작성 Agent는 일반·예비창업·초기창업 사업계획서를 대상으로 한다.
+- 재도전성공패키지는 범위에 포함하지 않는다.
+- 전략·작성 코드는 `agent_strategy`, 검증 1 코드는 `agent_validation_1`로 분리했다.
+- 두 Agent를 각각 브랜치로 분리할 수 있도록 프롬프트와 참고자료를 각 Agent의 `res` 아래에 배치했다.
+- 전략 프롬프트는 `agent_strategy/res/prompts`에, 검증 프롬프트와 rubric은 `agent_validation_1/res/prompts`에 둔다.
+
+### 2. 입력 데이터와 조사 자료
+
+- 일반·예비창업·초기창업 back 입력 예시는 `agent_strategy/res/back_input`에서 관리한다.
+- 항목 위치와 back 필드 매핑은 `section_mapping.json`에서 관리한다.
+- 산업·시장·경쟁·트렌드 조사 자료는 `agent_strategy/res/crawling`에서 검색한다.
+- 사용자 산업·서비스 키워드를 기준으로 조사 자료를 재검색하며, 자료가 없으면 임의 생성하지 않고 이슈로 남긴다.
+- 입력 범위는 항목별 `sourceKeys`로 제한해 F16에 전체 사업계획서 원문을 전달하지 않는다.
+
+### 3. 전략 Agent F01~F15
+
+- F01 조사부터 F15 일정까지 함수별 입력 계약과 모델 설정을 유지한다.
+- 함수별 요청 모델과 실제 사용 모델을 결과 JSON에 분리 기록한다.
+- 모델 호출 실패 시 오류 종류·기본 모델·대체 모델·fallback 사유를 기록한다.
+- 산업 조사, 시장 분석, 경쟁사 분석, 팀 역량, 개발 목표·방법·계획, 사업화·마케팅·예산·일정 결과에 `sourceRefs`, `evidence`, `originalFacts`, `status`를 보존한다.
+- 경쟁사 자료가 없으면 기업·제품을 임의로 확정하지 않고 확인 필요 상태로 남긴다.
+
+### 4. 작성 Agent F16~F18
+
+- F16은 항목별 `section_spec`, `sourceKeys`, 작성 규칙만 전달받아 본문을 생성한다.
+- F17은 원본 행을 표로 변환하고 표 컬럼·행·단계별 합계를 보존한다.
+- F18은 USERFLOW와 서비스 구조도를 각각 생성하고 SVG로 저장한다.
+- 예비·초기창업의 개발계획·사업비·일정 표는 원본 입력을 우선 사용한다.
+- 표와 이미지 생성 결과는 `result.json`과 실행 폴더의 SVG에 함께 기록한다.
+- F16의 빈 응답, `{}`, 출력 토큰 절단 응답은 성공으로 저장하지 않는다.
+- 본문에 앞 단계에 없는 확정 수치·기능·일정을 추가하지 않도록 프롬프트와 검증 규칙을 적용한다.
+- 원본에 없는 계획·목표는 `proposed`, 사용자 확인이 필요한 값은 `needs_confirmation`으로 구분한다.
+
+### 5. 검증 1
+
+- 검증 코드는 `agent_validation_1/validation_1.py`에 별도 Agent로 유지한다.
+- 구조·필수 항목·표 컬럼·이미지 nodes·마감일·지원금 상한·featureList·확정 사실을 Python으로 검증한다.
+- F19 의미 검증은 구조 검증 후 수행하며, 검증 결과는 `issues`, `warnings`, `needsUserConfirmation`, `sourceRefs`로 반환한다.
+- 필수 계약 위반·확정 사실 불일치·마감일 초과·지원금 상한 초과는 `fail`이다.
+- 제안값·근거 부족·시험 조건 미확정·목표 고객 보완은 `warning`이다.
+- 표현 순서·괄호·구분자·날짜·금액·단위 차이는 정규화해 불필요한 실패를 줄인다.
+- 동일 원인의 메시지는 중복 기록하지 않는다.
+- `semantic_review.py`는 페르소나·체크리스트를 직접 중복하지 않고 `res/prompts/reference` 파일을 읽어 재검토한다.
+
+### 6. 공고·관리기준 근거
+
+- 예비·초기창업 관리기준과 질의응답 JSON은 `agent_validation_1/res/reference/regulations`에 보관한다.
+- `validation_sources.json`이 문서 유형별 규정 파일을 연결한다.
+- F19는 규정 JSON에서 지원 대상·협약기간·사업비·성과·집행 비목 관련 값을 우선 추출한다.
+- 규정 자료의 연도·사업 유형이 현재 문서와 다르면 확정 근거로 사용하지 않고 경고한다.
+- 규정 원문에 없는 내용은 공고 조건으로 단정하지 않는다.
+- 규정 파일을 사용한 경우 내부 파일 경로를 `sourceRefs`에 남긴다.
+
+### 7. 평가 점수 서비스
+
+- `agent_validation_1/scoring.py`와 `res/prompts/evaluation_rubric.json`을 추가했다.
+- 평가 점수는 임베딩 유사도가 아니라 구조·작성 목적·근거 추적·일관성·명확성을 계산한다.
+- 일반·예비창업·초기창업별 가중치를 분리한다.
+- `_strategy_limits.deadline`과 `_strategy_limits.supportLimit`을 평가에도 전달한다.
+- 일정 초과 가능성과 지원금 상한 초과는 `evaluation.deductions`에 감점 사유와 기준 경로를 기록한다.
+- 평가 결과는 각 항목의 `evaluation.score`, `components`, `weights`, `deductions`, `basis`, `scorePolicyVersion`에 저장한다.
+- 공식 공고 배점표가 추가되면 `evaluation_rubric.json`에 근거 파일과 배점을 확장할 수 있다.
+
+### 8. 재작성과 결과 보존
+
+- 선택 항목 재작성은 동일 Canonical Data를 사용하는 연관 항목만 다시 실행한다.
+- 재작성 후 F19 검증과 평가 점수를 다시 계산한다.
+- 실패 시에도 완료된 항목과 부분 결과를 실행 폴더에 저장한다.
+- 결과는 유형·실행 시각·runId별 `result.json`, `validation.json`, SVG로 보존한다.
+- 결과 산출물과 실행 로그는 Git에 포함하지 않도록 `.gitignore`에서 제외한다.
+
+### 9. UI와 실행 안정성
+
+- HTML·CSS·JS를 분리하고 CSS·JS는 `agent_strategy/res/css`, `agent_strategy/res/js`에서 관리한다.
+- 탭별 back 입력 자동 적용, 전략·작성 실행, 전체 실행, 검증·조립, 선택 항목 재작성·검증을 제공한다.
+- 함수 실행 콘솔에 API 연결 상태, 진행 단계, 완료 호출 수, 실패 원문을 표시한다.
+- F01~F18 전략·작성 실행과 F19·F20 전체 실행을 구분한다.
+- 검증 결과의 `pass`, `warning`, `fail` 상태를 UI에서 색상으로 구분한다.
+- `agent_strategy/app/testing/start_function_test.cmd`로 서버를 실행한다.
+
+### 10. 검증 및 테스트 현황
+
+- Python 문법 검사와 회귀 테스트 17개를 통과했다.
+- 규정 파일 내부 복사 및 핵심 기준 발췌 로딩을 확인했다.
+- 평가기 단독 호출에서 정상 본문은 100점 기준으로 계산되고, 검증 이슈·한도 위반은 감점 내역으로 기록된다.
+- 실제 제출용 배점은 공고별 공식 배점표를 추가한 뒤 별도 검증해야 한다.
+
+### 11. 추가 점검 보완
+
+- 평가기가 생성 본문만 보지 않고 `tables`, `images`, 중첩된 결과 객체까지 함께 펼쳐 확인하도록 보완했다.
+- `deadline`은 연도 문자열이 아니라 `YYYY.MM`, `YYYY-MM`, `YYYY/MM`을 월 단위로 정규화해 개발·사업화 일정의 종료월과 비교한다.
+- 표 안에 있는 정부지원사업비도 `_strategy_limits.supportLimit`과 비교한다.
+- 한도 위반 감점에는 `_strategy_limits.deadline` 또는 `_strategy_limits.supportLimit` 경로를 남긴다.
+- 단순 표현 차이와 실제 한도 초과를 구분해 평가한다.
+
+### 12. 검증 실패 점수 상한
+
+- `validation.status`가 `fail`인 항목은 구성요소 점수가 높더라도 최종 평가점수를 59점 이하로 제한한다.
+- 이를 통해 필수 구조·확정 사실·마감일·지원금 상한 위반 항목이 점수상 합격처럼 보이는 문제를 방지한다.
+- `warning`은 점수 감점으로 기록하되 합격 가능성을 자동 차단하지 않는다.
+
+### 13. 중복 감점 방지
+
+- 동일한 원인 메시지가 `issues`, `warnings`, `needsUserConfirmation`에 반복되어도 평가 단계에서 한 번만 감점한다.
+- 검증 메시지 표현이 조금 달라도 동일 문자열 기준으로 중복 감점을 방지한다.
+- 실제 오류 수와 평가 감점 수가 불필요하게 부풀려지지 않도록 `evaluation.deductions`에 한 번만 기록한다.
+
+### 14. 사용자 확인 필요 값의 평가 반영
+
+- `needsUserConfirmation`은 실패로 승격하지 않는다.
+- 다만 미확정 값이 남아 있으면 명확성 점수에서 소폭 감점한다.
+- 확인 필요 메시지는 `evaluation.deductions`에 기록해 사용자가 재작성·보완해야 할 이유를 확인할 수 있게 한다.
+- 동일 확인 필요 메시지는 중복 감점하지 않는다.
+
+### 15. 평가 기준 파일 상태 확인
+
+- 유형별 평가 기준에 등록된 규정 파일이 실제로 존재하는지 `basisStatus`로 기록한다.
+- 규정 파일이 누락되면 규정 기반 점수로 오해하지 않도록 명확성 점수를 감점한다.
+- 누락 파일 경로는 평가 결과에 남기며, 임의의 공고 조건으로 대체하지 않는다.
+
+### 16. 평가 재현성 추적
+
+- 평가 대상 항목·생성 결과·검증 결과를 SHA-256으로 해시해 `evaluationHash`에 저장한다.
+- 동일 입력과 동일 `scorePolicyVersion`이면 평가 결과를 재현할 수 있다.
+- 본문·표·검증 결과가 변경되면 해시가 달라져 재평가 여부를 확인할 수 있다.
+
+### 17. 전체 평가 요약
+
+- `aggregate_scores()`로 항목별 평가를 숨기지 않고 전체 평균점수·최저점·실패 항목을 집계할 수 있다.
+- 하나라도 검증 실패 항목이 있으면 전체 상태는 `fail`이다.
+- 실패가 없고 경고 항목이 있으면 `warning`, 모두 통과하면 `pass`로 기록한다.
+- 평균점수만으로 실패 항목이 가려지지 않도록 `failedSections`를 별도로 제공한다.
+
+### 18. 평가 요약 결과 저장
+
+- 전체 재작성·재검증 실행이 끝나면 `result.json`에 `evaluationSummary`를 저장한다.
+- 요약에는 평균점수·최저점·실패 항목·전체 상태가 포함된다.
+- 부분 재작성 결과도 현재 저장된 항목 기준으로 집계해 이전 점수와 새 점수를 비교할 수 있다.
+
+### 19. 점수 범위 계약
+
+- 모든 구성요소 점수와 최종 점수는 0~100 범위로 강제한다.
+- 감점 누적이나 가중치 변경으로 음수 또는 100점 초과 점수가 저장되지 않는다.
+- `evaluation_rubric.json`의 점수 범위와 실제 결과 범위를 일치시킨다.
+
+### 20. 내부 평가 점수와 공식 배점 구분
+
+- 평가 결과에 `isOfficial: false`와 `basisType`을 저장한다.
+- 현재 점수는 내부 계약·관리기준 기반 품질 점수이며 정부기관의 공식 배점이 아니다.
+- 공고별 공식 배점표를 추가할 때만 `evaluation_rubric.json`과 `isOfficial` 정책을 별도로 갱신한다.
+
+### 21. 최종 보완 점검
+
+- 입력 근거, 규정 자료, 검증 판정, 한도 비교, 항목별 평가, 전체 집계, 재작성 후 재평가 흐름을 다시 점검했다.
+- 현재 단계에서 추가로 발견된 기능적 결함은 없다.
+- 남은 작업은 공고별 공식 배점표가 제공될 때 `evaluation_rubric.json`에 공식 항목·배점·근거 경로를 추가하는 것이다.
+- 그 전까지는 `isOfficial: false`를 유지하고 내부 품질 평가로만 사용한다.
+
+### 22. 한글 일정 표기 정규화
+
+- `2026년 10월`, `2026.10`, `2026-10`, `2026/10`을 동일한 월 값으로 정규화한다.
+- 한글 표기로 작성된 개발·사업화 일정도 `_strategy_limits.deadline`과 비교한다.
+
+### 23. 지원금 한도 표기 정규화
+
+- `_strategy_limits.supportLimit`이 숫자, 콤마 포함 문자열, `원` 단위 문자열로 들어와도 숫자로 정규화한다.
+- `50,000,000`, `50000000원`, `₩50,000,000`을 동일한 상한으로 비교한다.
+- 숫자로 해석할 수 없는 한도 값은 임의로 0으로 처리하지 않고 확인 필요 대상으로 남긴다.
+
+### 24. 제한값 형식 오류 처리
+
+- `deadline`이 존재하지만 월 형식으로 해석되지 않으면 확인 필요 감점을 기록한다.
+- `supportLimit`이 존재하지만 숫자로 해석되지 않으면 확인 필요 감점을 기록한다.
+- 해석할 수 없는 제한값을 임의의 날짜나 0원으로 대체하지 않는다.
+
+### 25. 규정 기준 반영 점검
+
+- 예비창업 평가는 지원 대상·자격, 협약기간, 집행 가능·제외 비목, 문제 검증·MVP·실증 계획을 규정 반영 항목으로 명시했다.
+- 초기창업 평가는 지원 대상·자격, 협약기간·성과 목표, 정부지원사업비·자기부담금·집행 비목, 개발·PoC·매출·사업화 구분을 반영 항목으로 명시했다.
+- 각 항목의 `evaluation.regulationFocus`와 `basis`에 적용 기준과 내부 원문 경로를 함께 저장한다.
+- 규정 원문은 F19 프롬프트에서 발췌해 사용하고, 평가기는 `_strategy_limits`의 프로젝트별 실제 한도를 직접 비교한다.
+- 공식 배점표가 아닌 내부 품질 평가라는 상태는 계속 `isOfficial: false`로 유지한다.
+
+## 최근 평가·검증·UI 개선 내역
+
+### 26. 평가 서비스와 결과 구조
+
+- `agent_validation_1/scoring.py`를 추가해 검증 1의 판정과 별도로 항목별 0~100점 평가를 계산한다.
+- 평가 구성요소는 구조 계약, 작성 목적 충족, 근거 추적성, 내용 일관성, 표현 명확성이다.
+- 일반·예비창업·초기창업별 가중치와 규정 반영 항목은 `res/prompts/evaluation_rubric.json`에서 관리한다.
+- 각 항목 결과에 `evaluation.score`, `components`, `weights`, `deductions`, `basis`, `regulationFocus`, `basisStatus`, `evaluationHash`, `scorePolicyVersion`을 저장한다.
+- `isOfficial: false`와 `basisType`으로 내부 품질 평가와 정부기관 공식 배점을 구분한다.
+- 검증 실패 항목의 최종 점수는 59점 이하로 제한한다.
+- `needsUserConfirmation`은 실패로 승격하지 않고 소폭 감점하며, `evaluation.deductions`에 기록한다.
+- 동일한 감점 사유는 한 번만 계산해 중복 감점을 방지한다.
+- 점수와 구성요소는 0~100 범위로 제한한다.
+- 항목별 결과를 `aggregate_scores()`로 집계해 `evaluationSummary`에 평균점수, 최저점수, 실패 항목, 전체 상태를 기록한다.
+- 평가 대상 본문·표·검증 결과의 SHA-256 해시를 `evaluationHash`로 저장해 재현성을 확보한다.
+
+### 27. 한도와 규정 근거 평가
+
+- back JSON의 `_strategy_limits.deadline`과 `_strategy_limits.supportLimit`을 검증과 평가에 함께 전달한다.
+- `YYYY.MM`, `YYYY-MM`, `YYYY/MM`, `YYYY년 MM월` 형식의 일정을 월 단위로 정규화한다.
+- 지원금 한도는 숫자, 콤마 포함 문자열, `원`·`₩` 표기를 모두 숫자로 정규화한다.
+- 본문뿐 아니라 표·중첩 결과에 포함된 일정과 사업비도 평가한다.
+- 제한값을 해석할 수 없으면 임의의 값으로 대체하지 않고 확인 필요 감점을 기록한다.
+- 평가 기준 파일의 존재 여부는 `basisStatus`로 기록한다.
+- 예비창업은 지원 대상·자격, 협약기간, 집행 가능·제외 비목, 문제 검증·MVP·실증을 반영한다.
+- 초기창업은 지원 대상·자격, 협약기간·성과 목표, 정부지원사업비·자기부담금·집행 비목, 개발·PoC·매출·사업화를 반영한다.
+- 규정 원문은 `agent_validation_1/res/reference/regulations`에 내부 보관하며, `validation_sources.json`으로 유형별 연결한다.
+
+### 28. 평가 UI
+
+- 함수 실행 테스트 카드 아래에 평가 요약 카드를 추가했다.
+- 전체 상태, 평균점수, 최저점수, 평가 항목 수, 실패 항목을 표시한다.
+- 항목별로 사업계획서 위치, 작성 목적, 점수, 상태를 표시한다.
+- `pass`는 초록색, `warning`은 회색, `fail`은 빨간색으로 표시한다.
+- 점수 개선이 가능한 실패·저점 항목에는 실제 `deductions`를 이용한 개선 제안을 표시한다.
+- 개선 제안 수락 시 해당 항목을 재작성 목록에 선택하고 보완 지시문을 전달한다.
+- 평가 결과 JSON 다운로드와 최신 `result.json` 경로 복사 버튼을 제공한다.
+- 새로고침 시 `/api/latest-results`에서 마지막 결과와 `evaluationSummary`를 복원한다.
+- 평가 결과가 아직 없을 때는 `평가 결과 대기 중입니다`를 표시한다.
+- 설명 탭에서는 평가 카드와 실행용 카드를 숨긴다.
+
+### 29. 기존 결과 재검증
+
+- `현재 탭 기존 결과 검증·조립만 (F19·F20)`은 F01~F18을 다시 호출하지 않고 기존 생성 결과를 검증·평가한다.
+- `Pass 항목 건너뛰기`는 이미 정책 버전과 contentHash가 일치하는 Pass 항목을 재사용한다.
+- 검증 정책이 변경되면 `policyVersion`이 달라져 기존 결과를 자동 재검증한다.
+- 재검증 후 항목별 `evaluation`과 전체 `evaluationSummary`를 갱신한다.
+- 이전 정책으로 저장된 `원본에 없는 fact 경로`는 최신 정책에서 계획값 경고로 재분류할 수 있다.
+- 다만 실제 필수 내용이 누락된 항목은 재검증만으로 통과시키지 않고 선택 항목 재작성 대상으로 남긴다.
+
+### 30. 현재 평가 결과 해석
+
+- `fail`은 필수 계약, 확정 사실, 한도, 필수 항목에 문제가 있어 재작성 또는 수정이 필요한 상태다.
+- `warning`은 검증은 통과했지만 근거·시험조건·제안값 상태를 보완하면 품질이 높아지는 상태다.
+- `pass`는 현재 계약과 검증 기준을 충족한 상태다.
+- 일반 사업계획서는 내부 작성 계약과 사용자 입력 근거 중심으로 평가한다.
+- 예비·초기창업은 내부 규정 원문과 프로젝트별 `_strategy_limits`를 함께 사용한다.
+- 현재 점수는 공식 심사 점수가 아니며, 공고별 공식 배점표가 제공될 때 `evaluation_rubric.json`을 확장해야 한다.
+
+### 31. 검증 실패 회귀 재작성 카드
+
+- 함수 실행 테스트 카드 아래에 `검증 실패 회귀 재작성` 카드를 추가했다.
+- 최신 결과에서 F19 `fail`인 항목만 선택 목록에 표시한다.
+- 항목별 검증 실패 사유를 함께 표시한다.
+- 사용자가 보완 지시문을 입력하고 `선택 항목 회귀 재작성`을 누르면 기존 선택 항목 재작성 API를 호출한다.
+- 연관 Canonical Data를 사용하는 downstream 항목과 F19 검증을 기존 재작성 흐름으로 수행한다.
+- F01~F15 전체 전략 함수를 재호출하지 않아 불필요한 토큰을 사용하지 않는다.
+- 설명 탭에서는 회귀 재작성 카드를 숨긴다.
+
+## 32. 최근 운영 흐름 및 토큰 절약 보완
+
+### 검증·평가·재작성 흐름
+
+1. 최신 `result.json`을 불러온다.
+2. F19 검증 결과에서 `pass`, `warning`, `fail`을 구분한다.
+3. `warning`은 생성 결과를 유지하고 평가 감점과 개선 제안으로 기록한다.
+4. `fail` 항목만 검증 실패 회귀 재작성 카드에 표시한다.
+5. 항목별 요청사항은 해당 항목의 검증 사유를 기본값으로 자동 입력한다.
+6. 선택 항목 재작성 시 동일 Canonical Data를 사용하는 연관 항목만 재생성한다.
+7. 재작성 완료 후 F19를 다시 실행하고 항목별 평가와 전체 `evaluationSummary`를 자동 갱신한다.
+
+### 실패 항목 전체 재작성
+
+- 실패 항목 전체 회귀 재작성 버튼은 현재 `fail`인 항목만 수집한다.
+- 항목 ID를 중복 제거한다.
+- 앞 항목 재작성 후 최신 결과에서 이미 Pass가 된 항목은 건너뛴다.
+- 각 항목 재작성과 검증이 끝난 뒤 다음 항목의 상태를 다시 확인한다.
+- Pass 항목과 warning 항목은 불필요하게 다시 호출하지 않는다.
+
+### 평가 결과 표시
+
+- 평가 카드에는 전체 상태, 평균 점수, 최저 점수, 항목별 점수와 작성 목적을 표시한다.
+- `pass`는 초록색, `warning`은 회색, `fail`은 빨간색으로 표시한다.
+- 점수 미달 항목에는 실제 감점 사유 기반 개선 제안을 표시한다.
+- 개선 제안 수락은 해당 항목 재작성 API와 연결된다.
+- 평가 결과 JSON 다운로드와 최신 결과 경로 복사를 제공한다.
+- 새로고침 시 마지막 결과와 평가 요약을 자동 복원한다.
+
+### 검증 규칙과 평가 점수의 구분
+
+- 검증 1은 계약 위반 여부를 판정한다.
+- 평가 서비스는 검증 결과와 규정 근거를 사용해 항목별 내부 품질 점수를 계산한다.
+- `fail` 항목은 평가점수를 59점 이하로 제한한다.
+- `warning`과 `needsUserConfirmation`은 실패로 승격하지 않고 감점·개선 제안으로 남긴다.
+- 현재 점수는 공식 정부 배점이 아니며 `isOfficial: false`를 유지한다.
+
+### 토큰 사용 원칙
+
+- F01~F15 전략 함수는 선택 항목 재작성 때 반복하지 않는다.
+- F16~F18은 선택 항목과 직접 연결된 영역만 실행한다.
+- 검증만 수행할 때는 기존 생성 결과를 재사용한다.
+- 정책 버전과 contentHash가 같으면 검증 결과를 재사용한다.
+- 평가 점수 계산은 저장된 결과를 대상으로 수행하며 LLM을 추가 호출하지 않는다.
+
+### 33. 자동 회귀 입력 보호
+
+- 실패 항목별 요청사항은 최초 표시 시 검증 사유로 자동 입력한다.
+- 사용자가 내용을 수정하거나 지운 뒤에는 자동 기본 문구가 다시 덮어쓰지 않는다.
+- 입력창별 수정 여부를 추적해 자동 실행과 수동 요청을 구분한다.
+
+### 34. 자동 회귀 중단 이력
+
+- 자동 재작성 최대 횟수에 도달하면 추가 호출을 중지한다.
+- 남아 있는 실패 항목과 설정된 최대 횟수를 회귀 이력 아코디언에 기록한다.
+- 동일 실행의 중단 메시지는 한 번만 기록한다.
+
+### 35. featureList 적용 범위 오탐 보완
+
+- 서비스 개요·요약 항목에 전략의 모든 기능을 반복하지 않았다는 이유로 실패시키던 문제를 수정했다.
+- `featureList` 불변식은 핵심기술·개발 기능·개발방법·개발계획·양산·기능 목록 항목에만 적용한다.
+- 성능지표와 서비스 개요는 기능 목록 반복 검증에서 제외한다.
+- `1.1.1`과 같은 개요 항목은 내용·근거·제안 상태만 검증하고, 기능 누락은 개발 관련 항목에서 확인한다.
+
+### 36. F15 일정 출력 토큰 한도 보완
+
+- F15 일정 JSON이 1,200 토큰 한도에서 잘려 실패하던 문제를 확인했다.
+- F15 출력 한도를 3,000 토큰으로 상향했다.
+- F14 예산 출력도 표 행이 많은 경우를 고려해 1,800 토큰으로 상향했다.
+- 출력이 잘린 응답은 계속 성공으로 저장하지 않고 오류와 부분 결과를 함께 보존한다.
+- 서버 재시작 후 F15부터 다시 실행하거나, 저장된 앞 단계 결과를 사용해 현재 유형 전체 실행을 재시도한다.
+
+### 37. 함수별 출력 토큰 잘림 사전 보완
+
+F15 일정 생성에서 `출력 토큰 한도 도달`이 발생한 원인을 특정 함수의 한도 부족으로 확인하고, 동일한 구조를 가진 장문 JSON 함수도 사전에 점검했다. 일정·시장·경쟁사·개발계획·사업화계획·성장전략·본문 작성·검증처럼 배열, 표 규칙, 근거, 상태값을 함께 반환하는 함수의 `maxOutputTokens`를 계약 파일에서 상향했다.
+
+- F01~F04 조사·분석: 2,800~3,200 토큰
+- F06~F15 목표·방법·개발·사업화·예산·일정: 2,200~3,500 토큰
+- F16 항목별 본문: 4,000 토큰
+- F18 이미지 명세: 1,600 토큰
+- F19 검증 결과: 3,200 토큰
+
+F17 표 생성과 F20 조립은 계약상 출력 길이를 별도 제한하지 않는다. 한도를 올려도 실제 응답 길이만큼만 사용되며, `finish_reason=length`인 응답은 불완전한 JSON으로 저장하지 않고 부분 결과와 오류를 함께 저장한다. 따라서 다음 실행에서 같은 항목만 재작성·재검증할 수 있다. 이 설정은 `runtime/execution_contract.json`이 단일 기준이며 모델별 파라미터(`max_completion_tokens`/`max_tokens`)는 `llm_runtime.py`가 자동 선택한다.
+
+### 38. 크레딧 소진·호출 중단 시 부분 결과 보존
+
+OpenAI가 `429 insufficient_quota` 또는 기타 호출 오류를 반환해 F16/F15 등 중간 단계에서 실행이 중단되어도, 완료된 항목을 빈 배열로 덮어쓰지 않는다. 파이프라인은 각 호출 시점의 완료 섹션, 이미지 목록, 함수 호출 trace를 예외 객체에 붙이고 테스트 서버가 이를 `error_partial` 결과로 저장한다.
+
+부분 결과 폴더에는 `result.json`, `validation.json`, `result.html`, `manifest.json`이 생성되며 UI에는 오류 원인과 함께 `완료 호출 수`, 마지막 단계, 부분 결과 복원 상태가 표시된다. 따라서 크레딧을 충전한 뒤 전체 실행을 반복하지 않고 저장된 결과를 기준으로 필요한 항목만 재작성하거나 검증·조립할 수 있다. 현재 진행 중인 실행에서 이미 발생한 오류 결과는 변경되지 않으므로, 새 코드 적용 후 다시 실행해야 한다.
