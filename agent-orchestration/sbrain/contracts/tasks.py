@@ -114,15 +114,20 @@ class TC2Out(SBModel):
 
 
 class G01In(SBModel):
+    """G-01 입력. 기준 문서와 다름: 판정은 공고 서버가 공고 ID로 하므로 eligibility · eligibilityParsed는 비울 수 있고
+    Orchestrator가 넣지 않는다. 대신 고른 공고 ID(announcementId, 확장)를 받는다 (spec 5)."""
     company_info: CompanyInfo
-    eligibility: EligibilityRule
-    eligibility_parsed: bool
+    eligibility: EligibilityRule | None = None
+    eligibility_parsed: bool | None = None
     today: date
+    announcement_id: str = ext(note="고른 공고 ID — 마지막 공고 선택 명령(decision)의 announcementId")
 
 
 class G01Out(SBModel):
     gate_result: GateResult
     business_age_years: float | None = None
+    selected_announcement: Announcement = ext(
+        note="자격 확인한 공고의 상세 → 산출물 selectedAnnouncement. 자격 결과 · 업력과 한 번에 저장한다 (spec 4.3.2)")
 
 
 class TC3In(SBModel):

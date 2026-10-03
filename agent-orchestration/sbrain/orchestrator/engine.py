@@ -3,6 +3,8 @@
 - 대기열(Run.queue)의 단계를 순서대로 실행하고, 단계가 끝날 때마다 한 번에 저장한다.
 - 재수행 루프: check.passed=false면 횟수를 세고 문제 내용(ReworkInput)을 실어 같은 Task를 다시 부른다.
 - 재시도는 tools가 호출 단위로 하고, 재시도를 다 쓰면 Task 단위로 재개한다(R-11).
+- 실패를 흐름에 넘기기(확장): 실패 정책의 rescue_segments에 지금 구간이 있으면, 그 단계가 어떤 오류로 끝나든
+  재개 · 실행 실패 대신 Flow.on_rescue가 받는다(StepFailure — 대상없음 · 재시도소진 · 오류).
 - 재작성 사이클: 시작 시점 포인터를 스냅샷으로 남기고, 전후 점수로 높은 쪽을 남기며,
   실패하면 스냅샷으로 되돌리고 기회를 돌려준다(R-6의 실행 부분). 모으는 시각(collect_until)까지는 묶음을 더할 수
   있고 진행하지 않는다. 마지막 재작성 한 건의 결과는 Run.last_rework에 요약한다.
@@ -14,7 +16,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Literal, Protocol
 
 from pydantic import ValidationError
 
@@ -22,7 +24,7 @@ from ..models import BundleUsage, CycleState, ReworkComparison, ReworkInput, Run
 from ..models.base import ErrorKind
 from ..models.run import FAILURE_REASON_MAX, RedoState, ReworkSummary, collecting, make_state
 from .context import ArtifactTypes, ImmutableArtifactError, RunContext
-from .errors import ContractError, ToolCallExhausted
+from .errors import ContractError, ResourceNotFound, ToolCallExhausted
 from .registry import AgentRegistry, TaskRegistry, TaskSpec
 from .store import Store
 from .tools import CallSink, LLMProvider, Tools, ToolsConfig, ToolsContext
@@ -37,13 +39,26 @@ def is_internal_key(key: str) -> bool:
     return key.startswith(INTERNAL_PREFIXES) or key.endswith(INTERNAL_SUFFIXES)
 
 
+# 흐름에 넘긴 실패의 종류: 대상없음(ResourceNotFound) · 재시도소진(ToolCallExhausted) · 오류(그 밖 — 코드 오류 · 규격 위반)
+FailureKind = Literal["대상없음", "재시도소진", "오류"]
+
+
+@dataclass
+class StepFailure:
+    """흐름에 넘기는 단계 실패 (확장, FailurePolicy.rescue_segments). 실행 기록은 이미 '실패'로 남았다."""
+    kind: FailureKind
+    error: Exception
+    record: ExecutionRecord
+
+
 @dataclass
 class Outcome:
-    status: str                      # ok · resume_wait · failed · rework_failed · unresumable
+    status: str                      # ok · resume_wait · failed · rework_failed · unresumable · rescued
     outputs: dict[str, Any] = field(default_factory=dict)
     record: ExecutionRecord | None = None
     error: ToolCallExhausted | None = None
     skipped: bool = False
+    failure: StepFailure | None = None   # rescued — 흐름이 받아 처리한 실패
 
 
 class Flow(Protocol):
@@ -58,6 +73,10 @@ class Flow(Protocol):
     def after_step(self, ctx: RunContext, step_id: str, outcome: Outcome) -> None: ...
     def on_queue_empty(self, ctx: RunContext) -> None: ...
     def on_unresumable(self, ctx: RunContext, step_id: str, outcome: Outcome) -> None: ...
+    def on_rescue(self, ctx: RunContext, step_id: str, failure: StepFailure) -> None:
+        """실패 정책이 흐름에 넘기도록 정한 구간의 단계 실패를 받는다. 실행 건을 그 단계가 다시 돌지 않는 상태
+        (대기 지점 등)로 옮겨야 한다 — 그대로 두면 엔진이 오류를 올린다."""
+        ...
     def on_abort(self, ctx: RunContext) -> None: ...
     def on_run_failed(self, ctx: RunContext, reason: str) -> None: ...
     def on_cycle_failed(self, ctx: RunContext, reason: str) -> None: ...
@@ -398,6 +417,8 @@ class Engine:
         ctx.record_execution(rec)
         ctx.run.retry_count = max(e.tries - 1, 0)
         ctx.run.last_error_kind = e.error_kind
+        if self._rescues(ctx, spec):
+            return self._rescue(ctx, spec, rec, StepFailure("재시도소진", e, rec))
         if not spec.failure.resumable:
             ctx.run.redo_state = None
             return Outcome("unresumable", record=rec, error=e)
@@ -459,12 +480,36 @@ class Engine:
         rec.error = f"{type(exc).__name__}: {str(exc)[:200]}"
         ctx.record_execution(rec)
         ctx.run.last_error_kind = "운영"
+        if self._rescues(ctx, spec):
+            kind: FailureKind = "대상없음" if isinstance(exc, ResourceNotFound) else "오류"
+            return self._rescue(ctx, spec, rec, StepFailure(kind, exc, rec))
         if spec.kind in ("rule", "merge") and spec.failure.on_step_error == "continue":
             ctx.add_event("단계오류계속", f"{spec.task_id} 오류 — 기준 문서대로 계속 진행", execution_id=rec.execution_id)
             ctx.run.redo_state = None
             return Outcome("ok", record=rec, skipped=True)
         ctx.add_event("단계오류", f"{spec.task_id}: {rec.error}", execution_id=rec.execution_id)
         return self.fail(ctx, rec, "운영오류", permanent=True)
+
+    @staticmethod
+    def _rescues(ctx: RunContext, spec: TaskSpec) -> bool:
+        """실패 정책이 지금 구간의 실패를 흐름에 넘기도록 정했는지."""
+        return ctx.run.segment is not None and ctx.run.segment in spec.failure.rescue_segments
+
+    def _rescue(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, failure: StepFailure) -> Outcome:
+        """실행을 실패시키지 않고 흐름에 넘긴다 — 재개 · 실행 실패 · 재작성 되돌리기를 하지 않는다.
+
+        흐름은 실행 건을 그 단계가 다시 돌지 않는 상태로 옮겨야 한다(대기 지점 등). 같은 단계가 여전히 다음 차례면
+        같은 실패를 되풀이하므로 오류를 올린다.
+        """
+        ctx.run.redo_state = None
+        ctx.add_event("단계실패흐름처리", f"{spec.task_id} {failure.kind} — 실행을 실패시키지 않고 흐름이 처리",
+                      execution_id=rec.execution_id)
+        self.flow.on_rescue(ctx, spec.task_id, failure)
+        run = ctx.run
+        if run.state.progress == "실행" and run.queue[:1] == [spec.task_id]:
+            raise RuntimeError(f"실패 처리 없음: {spec.task_id}")
+        return Outcome("rescued", record=rec, failure=failure,
+                       error=failure.error if isinstance(failure.error, ToolCallExhausted) else None)
 
     def _reset_resume_episode(self, ctx: RunContext) -> None:
         # 재개 횟수는 실패한 지점이 성공하면 다시 센다 (잠정 — 기준 문서에 세는 범위 없음)

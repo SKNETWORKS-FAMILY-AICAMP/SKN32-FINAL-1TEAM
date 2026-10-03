@@ -190,8 +190,9 @@ def test_outputs_accumulate_current_results(clock):
     app.orchestrator.select_announcement(rid, "A01")
     out = app.orchestrator.outputs(p)                                            # 진행 중에도 본다
     assert out.progress == "실행" and len(out.more_candidates) == 10
-    assert out.selected_announcement.announcement_id == "A01" and out.gate_result is None
+    assert out.selected_announcement is None and out.gate_result is None         # 선택 공고는 G-01이 받아 온다
     app.orchestrator.advance(rid)
+    assert app.orchestrator.outputs(p).selected_announcement.announcement_id == "A01"
     app.orchestrator.start_writing(rid)
     app.orchestrator.advance(rid)
     out = app.orchestrator.outputs(p)
@@ -290,10 +291,10 @@ def test_reselect_announcement_after_gate_pass(clock):
     assert code_of(lambda: app.orchestrator.select_announcement_for_project(p, "없는-공고")) == "INVALID_ANNOUNCEMENT"
     app.orchestrator.select_announcement_for_project(p, "A02")
     run = app.store.load_run(rid)
-    assert (run.state.step, run.state.progress, run.announcement_id) == ("자격확인", "실행", "A02")
+    assert (run.state.step, run.state.progress, run.announcement_id) == ("자격확인", "실행", "A01")  # G-01 전
     app.orchestrator.advance(rid)
     run = app.store.load_run(rid)
-    assert (run.state.step, run.state.progress) == ("계획서작성", "사용자대기")
+    assert (run.state.step, run.state.progress, run.announcement_id) == ("계획서작성", "사용자대기", "A02")
     assert executed(app, rid).count("G-01") == 2                                 # G-01을 다시 돌았다
     ctx = app.engine.open_context(run)
     assert ctx.get("selectedAnnouncement").announcement_id == "A02" and ctx.version("selectedAnnouncement") == 2

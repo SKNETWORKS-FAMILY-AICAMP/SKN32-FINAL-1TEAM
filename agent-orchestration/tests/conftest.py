@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from mysqldb import require_mysql  # noqa: E402
 from webdb import create_web_tables, new_project, set_training_consent  # noqa: E402
 
+from sbrain import env  # noqa: E402
 from sbrain.agents.stubs import StubScenario  # noqa: E402
 from sbrain.bootstrap import App, build_stub_app  # noqa: E402
 from sbrain.intake import ProjectInputRecord  # noqa: E402
@@ -20,6 +21,34 @@ from sbrain.models import PreInput  # noqa: E402
 from sbrain.orchestrator import MemoryStore  # noqa: E402
 from sbrain.orchestrator.store import Store  # noqa: E402
 from sbrain.store_sql import SqlStore, create_orchestrator_tables, create_sqlite_engine  # noqa: E402
+
+# ── 공고 서버 격리 ─────────────────────────────────────
+# 개발 PC의 환경 변수나 agent-orchestration/.env에 SBRAIN_NOTICE_API_URL이 있어도 테스트가 실제 공고 서버를 부르지 않게,
+# 모든 테스트에서 이 키 하나만 없는 것으로 본다. 다른 키(SBRAIN_TEST_MYSQL_URL 등)는 지금처럼 읽는다.
+# 실제 모드를 시험할 때는 build_app(notice_api_url=…, notice_transport=가짜 전송)으로 넘기거나 그 테스트 안에서
+# monkeypatch.setenv로 가짜 주소(http://example.invalid:8000)를 넣고 가짜 전송을 함께 준다.
+NOTICE_URL_KEY = "SBRAIN_NOTICE_API_URL"
+
+
+def isolate_notice_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    """환경 변수와 .env의 SBRAIN_NOTICE_API_URL을 없는 것으로 본다 (테스트가 끝나면 monkeypatch가 되돌린다)."""
+    monkeypatch.delenv(NOTICE_URL_KEY, raising=False)
+    original = env.read_env_file
+    if getattr(original, "without_notice_url", False):
+        return
+
+    def read_env_file(path=None) -> dict[str, str]:
+        values = original(path)
+        values.pop(NOTICE_URL_KEY, None)
+        return values
+    read_env_file.without_notice_url = True
+    monkeypatch.setattr(env, "read_env_file", read_env_file)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_notice_server(monkeypatch):
+    isolate_notice_api(monkeypatch)
+
 
 # ── 저장소 선택 ────────────────────────────────────────
 # 흐름 테스트(clock을 쓰는 테스트)는 메모리 저장소와 SqlStore(SQLite)로 한 번씩 돈다.

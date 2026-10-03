@@ -4,8 +4,8 @@
 
 | 화면 | 열리는 때 | 내용 (산출물 키는 flow/catalog.py 출력 연결, 현재 버전) |
 |---|---|---|
-| 3 공고 후보 | 공고선택 · 사용자대기, 계획서작성 · 사용자대기(자격 통과 뒤 작성 시작 전, 3.3) | candidates(첫 조회 · 추가 조회), collectionStatus, filteredCount, fallbackUsed · fallbackMode |
-| 4 자격 확인 | 공고선택 · 계획서작성 사용자대기, gateResult가 있을 때 | gateResult, businessAgeYears |
+| 3 공고 후보 | 공고선택 · 사용자대기, 계획서작성 · 사용자대기(자격 통과 뒤 작성 시작 전, 3.3) | 후보는 sbrain_flow.candidate_lists(첫 조회 candidates@1, 유효한 추가 조회가 있으면 firstCandidates · moreCandidates), collectionStatus, filteredCount, fallbackUsed · fallbackMode, 막힌 공고 blockedAnnouncementIds(Run) |
+| 4 자격 확인 | 공고선택 · 계획서작성 사용자대기, gateResult가 있을 때 | gateResult(확인 필요 unknownConditions면 notices에 E-G1-UNPARSED), businessAgeYears |
 | 6 문서 평가 | 문서평가 · 사용자대기 | planDoc, scoreReport.document, G-02a.failedTaskIds · reworkOrders · nextAction |
 | 8 산출물 확인 | 산출물확인 · 사용자대기 | prototype, infographic, codeCheck, featureMatch, G-02b.reworkOrders(산출물층) |
 | 9 종합 평가 | 종합평가 · 사용자대기 | scoreReport.overall, G-02b.reworkOrders · nextAction, reworkDiff |
@@ -34,17 +34,18 @@ from ..models import (
     ReworkDiff, ReworkOrder, Run,
 )
 from ..models.base import (
-    AgentName, CollectionStatus, FallbackMode, KeptReason, KeptSide, NextAction, RunProgress, SBModel,
+    AgentName, CollectionStatus, FallbackMode, KeptReason, KeptSide, NextAction, RunProgress, SBModel, ext,
 )
 from ..models.domain import FormatFinding, Infographic, ProofreadLog
 from ..models.rework import ReworkComparison
 from ..models.run import ReworkResultStatus
 from ..models.scoring import ArtifactScore, CodeCheckResult, DocScore, FeatureMatchResult, ScoreReport
 from ..orchestrator.context import RunContext, parse_ref
-from ..orchestrator.errors import CommandError
+from ..orchestrator.errors import CommandError, message
 from ..orchestrator.store import ExecutionFilter, RunFilter
 from ..orchestrator.trace import ExecutionRecord
 from .rework_map import ARTIFACT_BUNDLES, BUNDLE_EXECUTABLE, BUNDLE_LAYER, DOCUMENT_BUNDLES, order_bundles
+from .sbrain_flow import CANDIDATE_LIMIT, candidate_lists
 
 if TYPE_CHECKING:
     from .service import SBrainOrchestrator
@@ -84,7 +85,11 @@ class ScoreView(SBModel):
 
 
 class CandidatesScreen(Screen):
-    """3 공고 후보."""
+    """3 공고 후보. 자격 정보는 막힌 공고(blockedAnnouncementIds)뿐이다 — 카드에는 싣지 않는다(spec 4.2.2 · 4.3.6).
+
+    candidates는 첫 조회(추가 조회에 다시 나온 카드는 새 내용 · contentChanged), moreCandidates는 첫 조회와 겹친 공고를 뺀
+    추가 조회 후보다. 실패한 추가 조회는 없던 것으로 본다 — 후보 · 수집 상태 · 대체 경로 표시가 조회 전 그대로다(4.2.3).
+    """
     candidates: list[AnnouncementCard]
     more_candidates: list[AnnouncementCard]
     more_available: bool
@@ -92,10 +97,13 @@ class CandidatesScreen(Screen):
     filtered_count: int
     fallback_used: bool
     fallback_mode: FallbackMode | None = None
+    blocked_announcement_ids: list[str] = ext(
+        default_factory=list, note="막힌 공고 ID — 자격 불통과로 이 실행 건에서 고를 수 없는 공고 (Run 값 그대로)")
 
 
 class GateScreen(Screen):
-    """4 자격 확인 결과."""
+    """4 자격 확인 결과. 확인 필요 조건(gateResult.unknownConditions)이 있으면 notices에 E-G1-UNPARSED를 붙인다 —
+    실행 건 안내 목록에는 쌓지 않고 열 때마다 지금 자격 결과로 다시 만든다(spec 4.3.3)."""
     announcement_id: str | None
     gate_result: GateResult
     business_age_years: float | None = None
@@ -414,16 +422,19 @@ def screen(orch: SBrainOrchestrator, project_id: int | str, number: int) -> Scre
     base: dict[str, Any] = dict(screen=number, project_id=run.project_id, run_id=run.run_id, step=state[0],
                                 progress=state[1], notices=list(run.notices))
     if number == 3:
-        latest = ctx.latest.get("candidates", 0)
-        more = [c for v in range(2, latest + 1) for c in ctx.get("candidates", v)]
-        first = ctx.get("candidates", 1)
+        first, more = candidate_lists(ctx)
         return CandidatesScreen(
             **base, candidates=first, more_candidates=more,
-            more_available=not run.more_used and len(first) + len(more) < 20,
+            more_available=not run.more_used and len(first) + len(more) < CANDIDATE_LIMIT,
             collection_status=ctx.get("collectionStatus"), filtered_count=ctx.get("filteredCount"),
-            fallback_used=ctx.get("fallbackUsed"), fallback_mode=ctx.get("fallbackMode", default=None))
+            fallback_used=ctx.get("fallbackUsed"), fallback_mode=ctx.get("fallbackMode", default=None),
+            blocked_announcement_ids=list(run.blocked_announcement_ids))
     if number == 4:
-        return GateScreen(**base, announcement_id=run.announcement_id, gate_result=ctx.get("gateResult"),
+        gate = ctx.get("gateResult")
+        if gate.unknown_conditions:   # 확인 필요 — 막지 않는 안내, 화면 4에만 (spec 4.3.3)
+            base["notices"] = [*base["notices"],
+                               Notice(code="E-G1-UNPARSED", message=message("E-G1-UNPARSED"), at=orch.now())]
+        return GateScreen(**base, announcement_id=run.announcement_id, gate_result=gate,
                           business_age_years=ctx.get("businessAgeYears", default=None),
                           can_start_writing=state[0] == "계획서작성")
     if number == 6:
@@ -509,13 +520,12 @@ def outputs(orch: SBrainOrchestrator, project_id: int | str) -> Outputs:
 
     def cur(key: str) -> Any:
         return ctx.get(key, default=None)
-    latest = ctx.latest.get("candidates", 0)
+    first, more = candidate_lists(ctx)   # 화면 3과 같은 후보 — 실패한 추가 조회는 보지 않는다
     document, overall = cur("scoreReport.document"), cur("scoreReport.overall")
     category = cur("category")
     return Outputs(
         project_id=run.project_id, run_id=run.run_id, step=run.state.step, progress=run.state.progress,
-        candidates=ctx.get("candidates", 1) if latest else [],
-        more_candidates=[c for v in range(2, latest + 1) for c in ctx.get("candidates", v)],
+        candidates=first, more_candidates=more,
         selected_announcement=cur("selectedAnnouncement"), gate_result=cur("gateResult"),
         business_age_years=cur("businessAgeYears"), category=category, plan_doc=cur("planDoc"),
         doc_score=cur("docScore"), document_score_report=_score(document) if document is not None else None,

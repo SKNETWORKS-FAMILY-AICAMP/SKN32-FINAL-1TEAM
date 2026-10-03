@@ -13,6 +13,10 @@ from ..orchestrator.registry import (
 from .rework_map import FINAL_ACTION_EXCEPTIONS
 
 SA = "selectedAnnouncement"
+# 추가 조회 결과 (확장, 등록부 밖 — Orchestrator가 만든다, spec 4.2.2). 유효한(성공한) 추가 조회만 그 결과와 같은 저장에서
+# 남긴다. 실패한 추가 조회가 남긴 T-C2 출력(candidates 버전)은 화면 · 결과 · 한도 · 공고 선택 어디서도 읽지 않는다.
+FIRST_CANDIDATES = "firstCandidates"   # 첫 조회 목록 — 추가 조회에 다시 나온 카드를 새 내용으로 바꾼 것 (자리 · 순위 그대로)
+MORE_CANDIDATES = "moreCandidates"     # 추가 조회 목록 — 첫 조회와 겹친 공고를 뺀 것 (받은 순서 그대로)
 
 # 산출물 키 중 첫 버전 이후 바뀌면 안 되는 것 (시트 2 T-S1 · T-W1: 확정 후 변경 불가)
 IMMUTABLE_KEYS = frozenset({"featureList"})
@@ -51,11 +55,19 @@ def build_registry() -> TaskRegistry:
          {"candidates": "candidates", "collection_status": "collectionStatus",
           "filtered_count": "filteredCount", "fallback_used": "fallbackUsed",
           "fallback_mode": "fallbackMode"}, "candidates",
-         uses_llm=False, failure=FailurePolicy(resumable=False, fallback_in_task=True))
-    rule("G-01", "자격요건 게이트", "조율", 3, c.G01In, c.G01Out,
-         {"company_info": art("companyInfo"), "eligibility": art(SA, "eligibility"),
-          "eligibility_parsed": art(SA, "eligibility_parsed"), "today": TODAY},
-         {"gate_result": "gateResult", "business_age_years": "businessAgeYears"}, "gate_result")
+         # 추가 조회 구간(MORE)에서는 어떤 오류든 흐름이 받아 공고선택 대기로 돌리고 기회를 돌려준다(spec 4.2.3).
+         # 사전 단계(PRE, 첫 조회)는 그대로 — 시작 요청이 X-C2-FAIL로 끝난다
+         uses_llm=False, failure=FailurePolicy(resumable=False, fallback_in_task=True,
+                                               rescue_segments=frozenset({"MORE"})))
+    # G-01 — 고른 공고(마지막 decision의 공고 ID)의 상세 받기와 자격 판정을 한 단계에서 한다. 공고 서버를 tools로 부르는
+    # Task(LLM 없음)이고 기준 문서와 다르다(외부 호출). 선택 공고 · 자격 결과 · 업력을 한 번에 저장한다(spec 4.3.2).
+    # 재개하지 않고, 자격 확인 구간(GATE)에서는 어떤 오류든 흐름이 받아 고르기 전 대기 지점으로 돌린다(4.3.4).
+    # 고정 Task 14개에 세지 않는다(기획서 4-4).
+    task("G-01", "자격요건 게이트", "조율", 3, c.G01In, c.G01Out,
+         {"company_info": art("companyInfo"), "today": TODAY, "announcement_id": cmd("announcementId")},
+         {"gate_result": "gateResult", "business_age_years": "businessAgeYears", "selected_announcement": SA},
+         "gate_result", counted=False, uses_llm=False,
+         failure=FailurePolicy(resumable=False, rescue_segments=frozenset({"GATE"})))
 
     # ── 계획서 작성 ───────────────────────────────────
     task("T-C3", "작업 분해", "조율", 4, c.TC3In, c.TC3Out,
@@ -164,14 +176,18 @@ def build_registry() -> TaskRegistry:
 
 
 def artifact_types(registry: TaskRegistry) -> tuple[dict, dict]:
-    """산출물 키 → 타입. Task 출력 외에 Orchestrator · 사용자 명령이 만드는 산출물을 더한다."""
-    from ..models import Announcement, PreInput, ReworkInput
+    """산출물 키 → 타입. Task 출력 외에 Orchestrator · 사용자 명령이 만드는 산출물을 더한다.
+
+    선택 공고(selectedAnnouncement)는 G-01 출력이라 등록부에서 온다 — 여기 따로 적지 않는다.
+    """
+    from ..models import AnnouncementCard, PreInput, ReworkInput
     exact = registry.artifact_types()
     exact.update({
         "formInput": PreInput,
-        SA: Announcement,
         "sentenceResults": list[c.SentenceResult],
         "decision": dict,
+        FIRST_CANDIDATES: list[AnnouncementCard],
+        MORE_CANDIDATES: list[AnnouncementCard],
     })
     suffix = {".reworkInput": ReworkInput}
     return exact, suffix

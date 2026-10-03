@@ -47,6 +47,10 @@ class FailurePolicy:
     on_step_error: Literal["fail", "continue"] = "fail"
     # 규칙 단계 · 합치기의 오류 처리. 기본 'fail' = 운영 오류로 실행 실패, 재작성 중이면 재작성 실패 (잠정)
     # G-04는 기준 문서대로 'continue' (해당 검증 항목만 미충족, 파이프라인 계속)
+    rescue_segments: frozenset[str] = frozenset()
+    # 실패를 흐름에 넘기는 구간 (확장). 실행 건의 구간(Run.segment)이 여기 있으면 이 단계가 어떤 오류로 끝나든
+    # (재시도 소진 · 코드 오류 · 규격 위반 · 대상 없음) 재개 · 실행 실패 대신 Flow.on_rescue가 받아 처리한다.
+    # 비어 있거나 다른 구간이면 위 정책 그대로다. 구간 이름은 워크플로가 정한다.
 
 
 @dataclass(frozen=True)

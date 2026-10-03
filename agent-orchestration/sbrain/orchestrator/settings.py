@@ -87,6 +87,7 @@ def _default_timeouts() -> dict[str, float]:
         "T-C1", "T-C3", "T-S1", "T-S2", "T-W2", "T-W3", "T-V1", "T-V2", "T-P1", "T-C4",
     )}
     base.update({"T-W1": 300.0, "T-B1": 300.0, "T-B2": 300.0, "T-C2": 30.0, "T-P2": 60.0})
+    base["G-01"] = 30.0   # 공고 서버 상세 · 판정 호출 — T-C2와 같음 (잠정)
     return base
 
 
@@ -112,6 +113,19 @@ PROVISIONAL: dict[str, str] = {
               "(조율 gpt-6-luna · low는 사용자 지정, 나머지 Agent는 미정)",
     "scoring.deviationCap": "문서층 재채점 편차 상한 (확장) — 웹 verification_policies.deviation_cap을 담아만 둔다. "
                             "검증-1 연동 전이라 쓰는 곳 없음",
+    # 공고 연결 (공고 선택 · 자격 확인 G-01) — 기준 문서에 없음
+    "taskTimeouts.G-01": "G-01 제한 시간 30초 — 공고 서버의 공고 상세 · 자격 판정 호출, T-C2와 같음",
+    "announcement.unknownStatus": "공고 서버 모집 상태가 모름(unknown 등)이면 선택 공고 status를 '모집중'으로 둔다 — "
+                                  "그래서 마감 안내(E-RUN-CLOSED)가 붙지 않는다",
+    "announcement.formSpec": "선택 공고의 신청서 양식(formSpec) · 평가 항목(evaluationItems)은 기본 양식(지금 스텁 값) — "
+                             "작성 · 검수 Agent 연동 때 정한다",
+    "notice.X-C2-GONE": "공고 없음 안내(확장) 문구 '선택하신 공고를 더 이상 확인할 수 없습니다. 다른 공고를 선택해주세요.'",
+    # 공고 서버 연결 (agents/notice) — 실행 건 설정값이 아니라 워커 프로세스 값 · 고정 문장이다
+    "announcement.matchReason": "추천 이유 문장 틀 (spec 4.1.4) — 공고 서버의 band(매우 적합 · 적합 · 참고, 없으면 대체 경로 "
+                                "'마감임박순'일 때 '마감이 가까운 신청 가능 공고입니다')와 지역(전국 · 희망 지역 일치 · 불일치)으로 "
+                                "정해진 문장을 ' · '로 잇는다. AI를 부르지 않는다",
+    "noticeServer.serialCalls": "공고 서버 호출을 워커 프로세스 안에서 한 번에 하나씩 보낸다(네 API 모두, 프로세스 공용 잠금). "
+                                "프로세스끼리는 막지 않으므로 운영 워커는 1대 — 공고팀이 동시 호출 안전성을 확인하기 전까지",
     # 워커 (sbrain/worker.py · flow/service.py) — 실행 건 설정값이 아니라 워커 프로세스 값이다
     "worker.pollSec": "할 일이 없을 때 쉬는 시간 1초 (SBRAIN_WORKER_POLL_SEC)",
     "worker.threads": "워커 스레드 4 (SBRAIN_WORKER_THREADS)",

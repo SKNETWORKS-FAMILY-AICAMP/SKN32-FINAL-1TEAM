@@ -2,10 +2,10 @@
 
 | 항목 | 내용 |
 |---|---|
-| 작성일 | 2026-09-26 (2026-10-01 갱신: MySQL 저장소 · 워커 · 웹 연동 함수 · 토큰 기록. 2026-10-02 갱신: 웹 `projects` 쓰기 제거 · 재작성 묶음 요청과 모으기 · T-P2 시도 기록과 `proofread_logs` · 웹 조회 함수 — 바뀐 곳은 4 · 8.1 · 10 · 11 · 12절) |
+| 작성일 | 2026-09-26 (2026-10-01 갱신: MySQL 저장소 · 워커 · 웹 연동 함수 · 토큰 기록. 2026-10-02 갱신: 웹 `projects` 쓰기 제거 · 재작성 묶음 요청과 모으기 · T-P2 시도 기록과 `proofread_logs` · 웹 조회 함수 — 바뀐 곳은 4 · 8.1 · 10 · 11 · 12절. 2026-10-03 갱신: 공고 서버 연결(T-C2 · G-01) — 바뀐 곳은 2 · 3 · 5 · 11 · 12절) |
 | 기준 문서 | S-Brain Agent 기능정의서 v1.9 (참고: 프로젝트 기획서 v1.10) |
 | 코드 | `sbrain/` |
-| 테스트 | `tests/` — 412건 통과 (흐름 테스트는 메모리 · SQLite 두 저장소로, 저장소 계약 · 통합은 MySQL 8로도. 조율 T-C1만 실제 구현, 나머지 Agent는 스텁) |
+| 테스트 | `tests/` — 805건 (MySQL 테스트 DB 없이 771건 통과 · 34건 건너뜀(MySQL 전용). 흐름 테스트는 메모리 · SQLite 두 저장소로, 저장소 계약 · 통합은 MySQL 8로도. 조율 T-C1과 공고 서버 연결 T-C2 · G-01만 실제 구현, 나머지 Agent는 스텁. 공고 서버는 가짜 전송 · 127.0.0.1 임시 서버로만 시험) |
 | 독자 | Orchestrator · 조율 Agent 구현 담당, 웹팀(명령 창구 연동) |
 
 이 문서는 코드에서 도출했다. Task 표는 코드의 Task 등록부에서 뽑았다. Agent 연동 규격은 [Agent_연동_규격_초안.md](Agent_연동_규격_초안.md)에 따로 있다.
@@ -48,6 +48,8 @@ Orchestrator는 조율을 포함한 7개 Agent를 같은 방식으로 등록하�
 | `sbrain/intake/` | 사전 정보 입력 연동: 웹 DB 행 → PreInput, 필수 항목 재확인(E-C1-REQUIRED), SQL 공급처 |
 | `sbrain/orchestrator/openai_provider.py` | OpenAI 호출처 어댑터 (LLMProvider 구현) |
 | `sbrain/agents/supervisor/` | 조율 Agent 구현 — 지금은 T-C1 |
+| `sbrain/agents/notice/` | 공고 서버 연결 — HTTP 클라이언트(`client`), 실제 T-C2(`tc2`) · G-01(`g01`), 응답 검사(`convert`). 워커 조립이 `SBRAIN_NOTICE_API_URL`이 있을 때 스텁 대신 끼운다 (2026-10-03) |
+| `sbrain/agents/form_defaults.py` | 선택 공고의 기본 양식 · 평가 항목 (잠정) — 스텁 공고와 공고 서버 연결이 함께 쓴다 |
 | `sbrain/agents/stubs.py` | 스텁 Agent · 가짜 LLM 호출처 |
 | `sbrain/bootstrap.py` | 구성 조립 — `build_stub_app`(테스트 · 시연) · `build_app`(워커) · `build_web`(웹 서버) |
 | `sbrain/store_sql/` | SQL 저장소: `schema.py`(테이블 정의 — DDL의 단일 원본) · `ddl.py`(MySQL DDL 파일 생성) · `db.py`(접속) · `store.py`(`SqlStore`) · `web_tables.py`(Orchestrator가 쓰는 웹 테이블) · `settings_source.py`(`DbSettingsProvider`) |
@@ -67,10 +69,14 @@ flowchart TD
   C -- 예 --> Q["시작 요청 '대기'"] --> PRE["PRE (워커 — run_start_request)<br>R-8(첨부 있을 때) → T-C1 → T-C2"]
   PRE -- "T-C1 실패 · 후보 0건 · 수집 지연" --> N[실행 건을 만들지 않음<br>E-C1-TIMEOUT · E-C2-NOMATCH · E-C2-STALE]
   PRE -- 후보 1건 이상 --> W3(("3 공고 선택<br>사용자대기"))
-  W3 -- 추가 조회 1회 --> MORE["MORE<br>T-C2 offset=10"] --> W3
-  W3 -- 공고 선택 --> GATE["GATE<br>G-01"]
-  GATE -- 불통과 · 판정 불가 --> W3
-  GATE -- 통과 --> W5(("5 작성 시작<br>사용자대기"))
+  W3 -- 추가 조회 1회 --> MORE["MORE<br>T-C2 offset=10<br>(실패 · 수집 지연이면 기회 반환)"] --> W3
+  W3 -- 공고 선택 --> GATE["GATE<br>G-01 (공고 상세 + 자격 판정)"]
+  GATE -- "불통과(막힘) · 설립일 없음" --> W3
+  GATE -- "통과(확인 필요 포함)" --> W5(("5 작성 시작<br>사용자대기"))
+  GATE -. "실패(X-C2-GONE · X-C2-FAIL)<br>3에서 골랐으면" .-> W3
+  GATE -. "실패(X-C2-GONE · X-C2-FAIL)<br>5에서 골랐으면" .-> W5
+  W5 -- "추가 조회(작성 시작 전)" --> MORE
+  W5 -- "다른 공고 선택(작성 시작 전)" --> GATE
   W5 -- 작성 시작 --> WRITE["WRITE<br>T-C3 → T-S1 → T-S2 → T-W1 → T-W2 → T-W3<br>→ M-1 → T-V1 → G-02a"]
   WRITE --> W6(("6 문서 평가<br>사용자대기"))
   W6 -- 재작성 --> R6[REWORK6] --> W6
@@ -132,7 +138,8 @@ sequenceDiagram
 | 설정값 | 실행 시작 때 전체를 `settingsSnapshot`에 고정. Agent별 모델도 포함(잠정) |
 | 중단 | 사용자 '중단'은 확인을 받은 뒤 반영. 진행 중이면 Task 사이에서 반영 |
 | 알림 | 문서평가(6) · 산출물확인(8) · 표현검수(10) · 실패(실행: 대상 없음 / 재작성: 요청 화면) |
-| 공고 마감 | 이어하기 화면 조회 때 선택 공고가 마감이면 E-RUN-CLOSED 안내만 붙인다 |
+| 공고 마감 | 진행 상태 보기 때 선택 공고의 마감일이 지났거나(비어 있으면 보지 않음) G-01이 받은 모집 상태가 '마감'이면 E-RUN-CLOSED 안내만 붙인다(2026-10-03) |
+| 막힌 공고 | 자격 불통과 공고는 실행 건의 막힌 공고 목록(`blockedAnnouncementIds`)에 넣어 다시 고를 수 없게 하고(`ANNOUNCEMENT_BLOCKED`), 추가 조회에서 내용이 바뀌면 푼다(2026-10-03) |
 
 ## 6. 호출 실패 처리
 
@@ -245,7 +252,7 @@ sequenceDiagram
 | 항목 | 잠정값 |
 |---|---|
 | 재시도 간격 | 2초 |
-| 제한 시간 (Task별) | LLM Task 120초, T-W1 · T-B1 · T-B2 300초, T-C2 30초, T-P2 60초 |
+| 제한 시간 (Task별) | LLM Task 120초, T-W1 · T-B1 · T-B2 300초, T-C2 · G-01 30초(G-01은 2026-10-03), T-P2 60초 |
 | 검수 동시 처리 수 | 4 |
 | 검수 실패 비율 기준 · 판단 시점 | 30%, 모든 문장을 본 뒤 판단 |
 | Agent별 모델 · 호출처 · 기본 온도 · 추론 강도 | 조율은 openai · gpt-6-luna · 추론 강도 low · 온도 없음(사용자 지정 2026-09-30). 나머지 Agent 모델은 '미정', 검수 gpu-server, 검증-1 · 검증-2 온도 0, 검수 0.2, 그 밖 0.7. 실행 시작 시점 고정 |
@@ -254,12 +261,12 @@ sequenceDiagram
 | 규칙 단계 · 합치기 오류 | 운영 오류 → 실행 실패, 재작성 중이면 재작성 실패 (G-04만 계속) |
 | 재개 횟수를 세는 범위 | 실패한 지점이 성공하면 다시 센다 |
 | 전후 비교 동점 | 재작성 결과('후')를 남긴다 |
-| T-C2 전체 실패 | 확장 코드 X-C2-FAIL로 다시 시도 안내 |
+| T-C2 전체 실패 | 확장 코드 X-C2-FAIL로 다시 시도 안내. 2026-10-03부터 추가 조회 실패 · 자격 확인(G-01) 실패에도 쓴다(11.5) |
 | 워커 수치 | 조회 주기 1초 · 스레드 4 · 점유 120초 · 하트비트 30초(점유의 1/4) — 환경 변수로 바꾼다 |
 | 시작 요청을 가져간 횟수 상한 | 3 — 넘으면 다시 돌지 않고 E-C1-TIMEOUT |
 | 단계 밖 오류 뒤 | 그 실행 건을 점유 시간만큼 다시 가져가지 않는다 |
 | 실패 알림 범위 | `generation_failure_alerts`에 모든 실패를 쌓고 `last_error_kind`로 구분(일시 = 재개 상한 초과, 입력 · 운영 = 영구 오류) — 기준 문서는 영구 오류만 관리자 알림. 웹팀 확인 대기 |
-| 공고 ID와 `notices.notice_id` | 2026-10-02부터 Orchestrator는 `notices`를 읽지 않고 `projects.notice_id`도 쓰지 않는다('공고ID없음' 사건 없음). 선택 공고 ID(`RunView.announcement_id`)가 `notices.notice_id`와 같은 값인지는 웹이 공고 정보를 보여 줄 때의 문제로, 웹팀 · 공고팀 확인 중 |
+| 공고 ID와 `notices.notice_id` | 2026-10-02부터 Orchestrator는 `notices`를 읽지 않고 `projects.notice_id`도 쓰지 않는다('공고ID없음' 사건 없음). 2026-10-03 확인 끝남: 공고 ID(공고 서버의 `notice_id`)는 공고 표 `notices.notice_id`와 같다 — 공고팀 추천이 그 표를 읽는다. Orchestrator는 여전히 공고 표를 읽지 않고 공고 서버 API로만 받는다 |
 | 진행률(`progress_percent`) | 진행 중(실행 · 재개대기)만 구간 비율, 완료 100, 그 밖 0. 진행 상태 보기(`RunView.percent`)에만 쓴다(웹 `projects`에는 쓰지 않음) |
 | 실패 사유 길이 | 500자 |
 | `deviation_cap` | 웹 `verification_policies` 값을 설정에 담아만 둔다(검증-1 연동 전) |
@@ -285,7 +292,7 @@ sequenceDiagram
 
 - 실행 로그 12개월 뒤 식별자 분리 · 통계 전환(기획서 6-7)
 - 공유 DB에 Orchestrator 테이블 적용 — DDL 파일(`sql/orchestrator_schema.sql`)로 사용자가 한다
-- 공고 조회 · T-C2 · G-01 실구현 연동(공고팀) — 지금은 스텁 공고
+- 공고 서버에 실제로 연결하기 — 연결 코드(`agents/notice/`)는 2026-10-03 완성했다. 공고팀 API(수집 상태 · 공고 상세 · 자격 판정, 추천 결과 키 추가)가 준비되고 확인을 마친 뒤 사용자가 `SBRAIN_NOTICE_API_URL`을 설정해 켠다. 그 전까지 워커는 스텁 공고 · 스텁 판정을 쓴다
 - 실제 Agent 구현 (조율 T-C3 포함). T-C1은 2026-09-29 구현 — `docs/T-C1_요구사항해석_구현.md`
 - R-8 첨부 문서 텍스트 추출 (요청 시 구현)
 
@@ -315,6 +322,44 @@ sequenceDiagram
 | 재작성 모으기가 끝나는 시각 | `CycleState.collect_until`, 컬럼 `orch_runs.collect_until` | 확장 | `models/run.py` · `store_sql/schema.py` |
 | 산출물층 항목별 점수 | 실행 기록 출력 요약 `OutputMeta.code_check_score` · `feature_match_score`(관리자 점수 이력 · 운영 요약용) | 확장 | `orchestrator/trace.py` |
 
+### 11.5 공고 서버 연결(2026-10-03)에서 생긴 잠정 · 확장
+
+기준 문서와 다르게 구현한 것은 `기준문서_개정필요사항_공고연동.md`(저장소 미포함)에, 공고팀에 요청한 API 약속은 [공고서버_API요청_공고팀전달.md](공고서버_API요청_공고팀전달.md)에 따로 모았다.
+
+**잠정** (`orchestrator/settings.py` `PROVISIONAL`)
+
+| 항목 | 값 · 내용 | `PROVISIONAL` 키 | 코드 |
+|---|---|---|---|
+| G-01 제한 시간 | 30초 — 공고 서버의 공고 상세 · 자격 판정 호출, T-C2와 같음 | `taskTimeouts.G-01` | `settings._default_timeouts` |
+| 모집 상태 모름 | 공고 서버 모집 상태가 `open` · `closed` 밖(`unknown` 등)이면 선택 공고 `status`를 '모집중'으로 둔다 — 마감 안내가 붙지 않는다 | `announcement.unknownStatus` | `agents/notice/g01.py` `to_announcement` |
+| 기본 양식 | 선택 공고의 `formSpec` · `evaluationItems`는 기본 양식(스텁 공고 · 공고 서버 연결 공통) — 작성 · 검수 Agent 연동 때 정한다 | `announcement.formSpec` | `agents/form_defaults.py` |
+| X-C2-GONE 문구 | "선택하신 공고를 더 이상 확인할 수 없습니다. 다른 공고를 선택해주세요." | `notice.X-C2-GONE` | `orchestrator/errors.py` `ERROR_CODES` |
+| 추천 이유 문장 틀 | 공고 서버의 `band`(매우 적합 · 적합 · 참고, 없으면 대체 경로 '마감임박순'일 때 '마감이 가까운 신청 가능 공고입니다')와 지역(전국 · 희망 지역 일치 · 불일치)으로 정한 문장을 " · "로 잇는다. AI를 부르지 않는다 | `announcement.matchReason` | `agents/notice/tc2.py` `match_reason` |
+| 공고 서버 호출 하나씩 · 워커 1대 | 워커 프로세스 안에서 공고 서버 호출을 한 번에 하나씩(네 API 모두, 프로세스 공용 잠금). 프로세스끼리는 막지 않으므로 운영 워커는 1대 — 공고팀이 동시 호출 안전성을 확인하기 전까지 | `noticeServer.serialCalls` | `agents/notice/client.py` `_CALL_LOCK` |
+
+- 시 · 도 바꾸기 표(웹 17개 → 공고팀 16개)는 웹 값을 확인해 잠정이 아니다(`agents/notice/tc2.py` `REGION_MAP`).
+- 마감 임박순 덧붙임 " 마감 임박순으로 보여드립니다."(`orchestrator/errors.py` `EMBED_DEADLINE_SUFFIX`)는 기준 문서 시트 6 E-C2-EMBED E열 문구라 잠정 · 확장이 아니다.
+
+**확장** (`ext()` 필드와 Orchestrator 내부 값)
+
+| 항목 | 값 · 내용 | 표시 | 코드 |
+|---|---|---|---|
+| 모집 형태 | `Announcement.applyPeriodType` · `AnnouncementCard.applyPeriodType` — 기간 있음 · 예산 소진 시까지 · 상시·수시 · 선착순·모집 완료 시까지 · 모름(기본) | 확장(`ext()`) | `models/domain.py`, 표기 `agents/notice/convert.py` `PERIOD_LABELS` |
+| 내용 바뀜 · 내용 버전 | `AnnouncementCard.contentChanged`(기본 거짓) · `contentVersion`(기본 `null`) | 확장(`ext()`) | `models/domain.py`, 규칙 `flow/sbrain_flow.py` `card_content_changed` |
+| 가산점 | `AnnouncementCard.bonusScore`(`null` = 계산 못 함, `0` = 해당 없음) · `bonusItems`, 새 타입 `BonusItem`(`name` · `points`) | 확장(`ext()`) | `models/domain.py` |
+| 확인 필요 조건 | `GateResult.unknownConditions`(`지원대상 유형` · `업력`) — 화면 4에만 E-G1-UNPARSED | 확장(`ext()`) | `models/domain.py`, `flow/reads.py` `screen` |
+| G-01 입출력 | `G01In.announcementId`(마지막 공고 선택 명령의 공고 ID), `G01Out.selectedAnnouncement`(선택 공고, 자격 결과 · 업력과 한 번에 저장). `G01In.eligibility` · `eligibilityParsed`는 비울 수 있고 넣지 않는다 | 확장(`ext()`) · 기준 문서와 다름 | `contracts/tasks.py`, 등록 `flow/catalog.py` |
+| G-01 등록 | 규칙 단계 → `tools`를 받는 Task(LLM 없음, `uses_llm=False`), 재개 없음, 고정 Task 14개에 세지 않음(`counted=False`) | 기준 문서와 다름 | `flow/catalog.py` |
+| 공고 없음 안내 | X-C2-GONE — G-01이 공고 없음을 받으면 고르기 전 대기 지점으로 | 확장 · 잠정 | `orchestrator/errors.py`, `flow/sbrain_flow.py` `on_rescue` |
+| 막힌 공고 | `Run.blockedAnnouncementIds`(기본 빈 목록) — G-01 불통과면 넣고(G-01 결과와 같은 저장), 추가 조회에서 내용이 바뀌면 뺀다(추가 조회 결과와 같은 저장) | 확장(`ext()`) | `models/run.py`, `flow/sbrain_flow.py` `block_announcement` · `unblock_announcement` |
+| 화면 3 막힌 공고 | `CandidatesScreen.blockedAnnouncementIds` — `Run` 값 그대로, 카드에는 싣지 않음 | 확장(`ext()`) | `flow/reads.py` |
+| 명령 오류 | `ANNOUNCEMENT_BLOCKED` — 막힌 공고 선택 거절(`INVALID_ANNOUNCEMENT` 확인 뒤) | 확장 | `orchestrator/errors.py` `COMMAND_ERROR_CODES`, `flow/service.py` `select_announcement` |
+| 추가 조회 결과 산출물 | `firstCandidates`(첫 조회 갱신본 — 자리 · `rank` · `displayType` 그대로) · `moreCandidates`(겹침을 뺀 추가 후보). 성공한 추가 조회만 그 결과와 같은 저장에서 남긴다. 화면 3 · `outputs` · 20건 한도 · 공고 선택 후보 확인은 이것만 읽는다(`candidate_lists`) | 확장(등록부 밖 산출물) | `flow/catalog.py` `FIRST_CANDIDATES` · `MORE_CANDIDATES` · `artifact_types`, `flow/sbrain_flow.py` `candidate_lists` |
+| 사용자 명령 기록의 되돌아갈 곳 | `decision`의 `beforeStep`(공고 선택 명령 — 고르기 전 대기 지점, G-01 실패 때 그리로) · `beforePointers`(추가 조회 명령 — 조회 전 T-C2 출력 버전, 실패 때 그리로 포인터를 돌림) | 확장(내부 값) | `flow/service.py`, `flow/sbrain_flow.py` `_before_selection` · `_more_failed` |
+| 실패를 흐름에 넘기는 장치 | 실패 정책 `FailurePolicy.rescue_segments`에 지금 구간이 있으면 그 단계가 어떤 오류로 끝나도 재개 · 실행 실패 대신 `Flow.on_rescue(ctx, step_id, StepFailure)`가 받는다(`kind`: 대상없음 · 재시도소진 · 오류). T-C2는 `MORE`, G-01은 `GATE` | 확장(엔진) | `orchestrator/registry.py` · `orchestrator/engine.py` |
+| 공고 없음 공용 예외 | `ResourceNotFound` — 호출 함수는 공고 없음을 값으로 돌려줘 성공한 호출로 기록하고 재시도하지 않으며, 그 값을 받은 Task가 올린다 | 확장 | `orchestrator/errors.py`, `agents/notice/g01.py` |
+| 공고 서버 주소 | 워커 프로세스 값 `SBRAIN_NOTICE_API_URL` — 있으면 실제 T-C2 · G-01, 없으면 스텁. 실행 건 설정(`Settings`)이 아니다. 비밀 값처럼 다룬다(로그 · 문서 · 사본에 실제 값을 쓰지 않음) | 확장(조립) | `bootstrap.build_app` |
+
 ## 12. 테스트 목록
 
 | 파일 | 확인 내용 |
@@ -330,7 +375,7 @@ sequenceDiagram
 | `test_store_contract.py` | 저장소 계약 — 메모리 · SQLite · MySQL 8이 같은 동작인지: 점유 경합 · 만료, 점유 없는 저장 거부, 동시 실행 제한(동시 생성 6개 중 1개), 프로젝트당 실행 건 1건, 재개 대상, 중단 요청, 포인터 · 최신 버전 · 키 순서, 실행 기록 덮어쓰기, 기록 왕복, 시작 요청 수명 · 취소, 관리자 조회. 모으는 중 건너뛰기, 반려된 시도는 프로젝트 · 동의가 있을 때만, 여러 실행 건 · 여러 프로젝트 조회, 진행 중 작업 찾기, 실행 기록 수. |
 | `test_store_sql.py` | DDL 파일 = 생성 결과, 설정 입력(`verification_policies`), 실행 시작 때 설정 고정, 웹 테이블 구조 확인. `proofread_logs` 옛 구조 · 채우지 않는 필수 컬럼 · 쓰기 오류(내용 숨김 · 전체 되돌림), 동의 컬럼 확인. |
 | `test_start_request.py` | 시작 요청 → 워커 실행, 필수 항목 · 주인 · 프로필, 동시 실행 차단 정보, 실패 후 재시도, 안내 유지, 대기 · 처리 중 · 도중 취소, 점유 만료 이어받기, 처리 중 다른 실행 건 |
-| `test_worker.py` | 워커 2개가 같은 일을 하지 않음(SQLite · MySQL), 죽은 워커 점유 만료 · 이어받기, 시작 요청 가져간 횟수 상한, 단계 사이 중단, 종료 신호, 하트비트 · 로그에 내용 없음, 재개 시각, 오류 뒤 대기, 조립(`build_app` · `build_web`), `pyproject` 의존성. 재작성 모으는 시간 동안 가져가지 않음, 웹 조립 사전 단계 `WEB_NOT_ALLOWED`. |
+| `test_worker.py` | 워커 2개가 같은 일을 하지 않음(SQLite · MySQL), 죽은 워커 점유 만료 · 이어받기, 시작 요청 가져간 횟수 상한, 단계 사이 중단, 종료 신호, 하트비트 · 로그에 내용 없음, 재개 시각, 오류 뒤 대기, 조립(`build_app` · `build_web`), `pyproject` 의존성. 재작성 모으는 시간 동안 가져가지 않음, 웹 조립 사전 단계 `WEB_NOT_ALLOWED`. 공고 서버 주소가 있으면 실제 T-C2 · G-01, 없으면 스텁, 주소 형식 오류는 주소를 싣지 않고 조립 실패, 워커 조립의 실제 T-C2 · G-01로 추가 조회 · 막힌 공고 · 공고 없음 흐름(가짜 전송, 2026-10-03). |
 | `test_reads.py` | `view_project`, 화면 3 · 4 · 6 · 8 · 9 · 10 · 11, 화면 오류, 관리자 조회 조건 · 정렬 · 쪽 나누기, 호출 기록, project_id 명령 |
 | `test_summary.py` | 실행 전체 동안 웹 `projects` 행이 바뀌지 않음, 실패 알림 한 번 · 실패 사유 · 오류 종류, 중단 (SQLite · MySQL) |
 | `test_web_functions.py` | 진행 상태 새 필드 · 여러 건 · 기다리기, 사용자용 결과에 실패 사유 없음, 지금까지 결과, 재작성 결과(모으는 중 · 완료 · 실패), 실패 · 중단 뒤 볼 수 없음, 자격 통과 뒤 다시 고르기 · 추가 조회 · 작성 시작 뒤 거절, 화면 10 시도 기록 |
@@ -339,3 +384,9 @@ sequenceDiagram
 | `test_abort_delete.py` | project_id 중단(요청 대기 · 처리 중, 실행 중 · 사용자 대기 · 이미 끝남), 완전 삭제(산출물 · 입력 사본 삭제, 실행 로그 유지, 단계 진행 중 BUSY, 완료 프로젝트) |
 | `test_mysql_integration.py` | 실제 웹 스키마 위 MySQL 8 전체 흐름, 프로젝트 삭제 뒤 실행 로그 보존, 웹 조립 → 워커 조립 실제 입력 읽기. 동시에 들어온 재작성 요청 합치기, 반려 시도 행. |
 | `test_env.py` | `.env` 읽기, 환경 변수 우선, API 키 |
+| `test_step_rescue.py` | 실패를 흐름에 넘기는 장치 — 정한 구간에서는 코드 오류 · 규격 위반 · 대상 없음 · 재시도 소진을 흐름이 받고, 정하지 않은 구간은 지금 처리 그대로, 흐름이 처리하지 않으면 엔진 오류 (2026-10-03) |
+| `test_announcement_gate.py` | 공고 선택은 ID만 · G-01이 선택 공고 · 자격 결과 · 업력을 한 번에 저장, G-01 실패(X-C2-GONE · X-C2-FAIL) 뒤 고르기 전 대기 지점(공고선택 · 계획서작성), 막힌 공고 · `ANNOUNCEMENT_BLOCKED`, 확인 필요는 화면 4에만, 다시 고르기, 마감 안내 조건 (2026-10-03) |
+| `test_more_candidates.py` | 추가 조회 겹침 빼기 · 첫 조회 카드 갱신 · 내용 바뀜 참 · 거짓, 막힌 공고 풀기, 오류 · 수집 상태 비정상 때 기회 반환과 화면 3 값 유지, 마감 임박순 안내 (2026-10-03) |
+| `test_gate_stubs.py` | 스텁 공고 · 스텁 G-01 판정 규칙(업력 상한 없음 · 확인 필요 · 공고 없음 · 설립일 없음) · 업력 계산, 스텁 T-C2 상황 조절 (2026-10-03) |
+| `test_notice_client.py` | 공고 서버 클라이언트(127.0.0.1 임시 서버) — 시간 초과 · 연결 실패 · HTTP 오류 · JSON 오류 변환, 404 + `NOTICE_NOT_FOUND`와 코드 없는 404 구분, 공고 ID 퍼센트 인코딩, 예외 메시지에 주소 · 본문 없음, 호출 하나씩 (2026-10-03) |
+| `test_notice_tasks.py` | 실제 T-C2 · G-01(가짜 전송) — 보내는 칸 · 시 · 도 바꾸기, 카드 변환 · 가산점 · 내용 버전 · 추천 이유 · 받은 순서, 약속한 키 · 유한한 수 검사, 상세 → 선택 공고, 판정 → 자격 결과 · 업력, 공고 없음 · 코드 없는 404, 재시도 소진을 받지 않음, 흐름과 함께(확인 필요는 화면 4에만, 공고 없음이면 고르기 전으로, 수집 지연이면 시작 요청 E-C2-STALE) (2026-10-03) |

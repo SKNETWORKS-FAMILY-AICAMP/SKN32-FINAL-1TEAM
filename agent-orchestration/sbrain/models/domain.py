@@ -177,36 +177,61 @@ class Rubric(SBModel):
     items: list[RubricItem]
 
 
+# 공고 모집 형태 표기 (확장) — 공고 서버 값을 바꾼 것. 모르면 '모름' (spec 4.4)
+APPLY_PERIOD_UNKNOWN = "모름"
+
+
 class Announcement(SBModel):
+    """시트 4 공고. 기준 문서와 다름(개정 필요): 접수 시작 · 마감일 · 지원 금액 · 금액 표기는 비어 있을 수 있다
+    (마감일 없는 공고 · 금액 정보 없는 공고, spec 5)."""
     announcement_id: str
     title: str
     agency: str
-    support_field: str  # enum('창업(06)','기술개발(02)')
-    apply_start: date
-    apply_end: date
+    support_field: str  # enum('창업(06)','기술개발(02)') — 공고 서버의 분류 문자열을 그대로 받는다
+    apply_start: date | None = None
+    apply_end: date | None = None
     status: str  # enum('모집중','마감')
     eligibility: EligibilityRule
     eligibility_parsed: bool
-    support_amount_max: int
-    support_amount_text: str
+    support_amount_max: int | None = None
+    support_amount_text: str | None = None
     form_spec: FormSpec
     evaluation_items: list[EvalItem]
     summary_embedding: list[float]
     bonus_info: str | None = None
+    apply_period_type: str = ext(
+        APPLY_PERIOD_UNKNOWN,
+        note="모집 형태 표기: 기간 있음 · 예산 소진 시까지 · 상시·수시 · 선착순·모집 완료 시까지 · 모름 (spec 4.4)")
+
+
+class BonusItem(SBModel):
+    """확장 — 가산점 항목별 근거 하나(공고 서버 추천 결과의 bonus_items 한 항목). 기준 문서에는 공고의 가산점
+    정보(Announcement.bonusInfo, 글자)만 있다."""
+    name: str
+    points: float
 
 
 class AnnouncementCard(SBModel):
+    """시트 4 공고 카드. 기준 문서와 다름: 마감일 · 지원 금액이 비어 있을 수 있다(추천 결과에는 금액이 없다, spec 5)."""
     announcement_id: str
     title: str
     agency: str
-    apply_end: date
-    support_amount_max: int
+    apply_end: date | None = None
+    support_amount_max: int | None = None
     fit_score: float = Field(ge=0, le=1)
     rank: int = Field(ge=1, le=20)
     display_type: str  # enum('card','list')
     match_reason: str
     source_notice: str
     original_url: str
+    apply_period_type: str = ext(APPLY_PERIOD_UNKNOWN, note="모집 형태 표기 (Announcement.applyPeriodType과 같은 값)")
+    content_changed: bool = ext(
+        False, note="추가 조회에서 다시 나온 첫 조회 카드의 공고 내용이 바뀌었는지 — Orchestrator가 정한다 (spec 4.2.2)")
+    content_version: str | None = ext(
+        None, note="공고 서버의 내용 버전. 공고 내용이 바뀔 때만 바뀐다. 같은지만 비교하며 웹은 쓰지 않는다")
+    bonus_score: float | None = ext(
+        None, note="이 신청자가 받을 수 있는 가산점 합계. 0 = 해당 가점 없음, null = 계산하지 못함")
+    bonus_items: list[BonusItem] = ext(default_factory=list, note="가산점 항목별 근거 (합계와 맞는다)")
 
 
 class GateResult(SBModel):
@@ -214,6 +239,9 @@ class GateResult(SBModel):
     failed_conditions: list[str]
     missing_inputs: list[str]
     undecidable: bool
+    unknown_conditions: list[str] = ext(
+        default_factory=list,
+        note="확인 필요 조건 이름('지원대상 유형' · '업력') — 읽지 못해 통과로 본 조건. 진행을 막지 않고 화면 4에 안내 (spec 4.3.3)")
 
 
 # ── 작업 분해 ─────────────────────────────────────────

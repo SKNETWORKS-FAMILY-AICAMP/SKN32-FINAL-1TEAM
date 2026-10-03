@@ -3,7 +3,10 @@
 구간(segment)
   PRE      R-8? → T-C1 → T-C2                         (실행 건 생성 전)
   MORE     T-C2 (offset=10)                           → 3 공고 선택 대기
+           첫 조회와 겹친 후보는 빼고 첫 조회 카드를 새 내용으로 바꾼다 — 내용 바뀜 표시 · 막힌 공고 풀기 (after_step).
+           어떤 오류든 · 수집 상태 비정상이면 조회 전 후보로 두고 기회를 돌려준다 (on_rescue · after_step, spec 4.2.3)
   GATE     G-01                                       → 5 작성 시작 대기 / 3 공고 선택 대기
+           G-01이 어떤 오류로 끝나도 실행을 살리고 고르기 전 대기 지점(3 또는 5)으로 돌아간다 (on_rescue)
   WRITE    T-C3 → T-S1 → T-S2 → T-W1 → T-W2 → T-W3 → M-1 → T-V1 → G-02a   → 6 문서 평가 대기
   PROTO    T-B1* → T-B2 → M-2** → G-04 → M-3 → T-V2 → G-02b              → 8 산출물 확인 대기
   REVIEW   G-03 → T-P1 → T-P2 → M-4 → T-C4                               → 11 완료
@@ -25,14 +28,17 @@ from datetime import date, datetime
 from typing import Any, Callable
 
 from ..contracts import tasks as c
-from ..models import Notice, Notification, RejectedAttempt, ReworkInput, ReworkOrder, Token, TokenCheckResult
+from ..models import (
+    AnnouncementCard, Notice, Notification, RejectedAttempt, ReworkInput, ReworkOrder, Run, Token, TokenCheckResult,
+)
 from ..models.run import RedoState, make_state
 from ..orchestrator.context import RunContext
-from ..orchestrator.engine import Engine, Outcome
-from ..orchestrator.errors import ToolCallExhausted, message
+from ..orchestrator.engine import Engine, Outcome, StepFailure
+from ..orchestrator.errors import EMBED_DEADLINE_SUFFIX, ToolCallExhausted, message
 from ..orchestrator.registry import TaskRegistry, TaskSpec
 from ..orchestrator.tools import CallSink
 from ..orchestrator.trace import FeedbackLink
+from .catalog import FIRST_CANDIDATES, MORE_CANDIDATES
 from .rework_map import ARTIFACT_BUNDLES, BUNDLE_LAYER, BUNDLE_TASK, DOCUMENT_TASKS
 
 WRITE = ["T-C3", "T-S1", "T-S2", "T-W1", "T-W2", "T-W3", "M-1", "T-V1", "G-02a"]
@@ -43,6 +49,77 @@ STEP_SCREEN = {step: screen for screen, step in SCREEN_STEP.items()}
 STEP_LABEL = {CYCLE_END: "재작성 전후 비교"}
 # 판정 지시가 없는 묶음의 재작성 지시 문구 (잠정)
 REWORK_DEFAULT_REASON = "사용자가 이 묶음의 재작성을 요청했습니다."
+# 공고를 고를 수 있는 대기 지점 — 공고 선택 명령이 decision의 beforeStep에 남기고, G-01이 실패하면 그리로 돌아간다 (4.3.4)
+SELECTION_STEPS = ("공고선택", "계획서작성")
+
+
+def block_announcement(run: Run, announcement_id: str) -> None:
+    """막힌 공고 목록에 넣는다 (자격 불통과, spec 4.3.6). 이미 있으면 그대로 둔다. G-01 결과 저장과 같은 저장에서 부른다."""
+    if announcement_id not in run.blocked_announcement_ids:
+        run.blocked_announcement_ids.append(announcement_id)
+
+
+def unblock_announcement(run: Run, announcement_id: str) -> None:
+    """막힌 공고 목록에서 뺀다 (추가 조회에서 내용이 바뀜, spec 4.2.2 · 4.3.6). 추가 조회 결과 저장과 같은 저장에서 부른다."""
+    if announcement_id in run.blocked_announcement_ids:
+        run.blocked_announcement_ids.remove(announcement_id)
+
+
+# ── 공고 후보 · 추가 조회 (spec 4.2) ──────────────────────
+CANDIDATE_LIMIT = 20   # 공고 후보 합계 상한 — 첫 조회 + 추가 조회 (추가 조회는 1회)
+# 내용 바뀜을 가르는 공고 정보 필드 (spec 4.2.2 ①) — 적합도 · 추천 이유 · 가산점 · 출처 고지는 보지 않는다
+CARD_INFO_FIELDS = ("title", "agency", "apply_end", "apply_period_type", "support_amount_max", "original_url")
+# 첫 조회 카드를 추가 조회 카드 내용으로 바꿀 때 그대로 두는 필드 (spec 4.2.2)
+CARD_KEPT_FIELDS = ("rank", "display_type")
+# 추가 조회 명령(decision)이 남기는 조회 전 T-C2 출력 포인터 — 실패하면 이 버전으로 돌린다 (spec 4.2.3)
+MORE_BEFORE_POINTERS = "beforePointers"
+
+
+def candidate_lists(ctx: RunContext) -> tuple[list[AnnouncementCard], list[AnnouncementCard]]:
+    """공고 후보 (첫 조회, 추가 조회) — 화면 3 · outputs · 20건 한도 · 공고 선택 후보 확인이 모두 이것만 쓴다.
+
+    유효한(성공한) 추가 조회가 있으면 그것이 남긴 두 목록(첫 조회 갱신본 firstCandidates · 겹침을 뺀 moreCandidates),
+    없으면 첫 조회(candidates@1)와 빈 목록이다. candidates 버전 범위는 읽지 않는다 — 실패한 추가 조회가 남긴 버전은
+    없던 것으로 본다 (spec 4.2.3).
+    """
+    if ctx.has(MORE_CANDIDATES):
+        return ctx.get(FIRST_CANDIDATES), ctx.get(MORE_CANDIDATES)
+    return (ctx.get("candidates", 1) if ctx.latest.get("candidates") else []), []
+
+
+def card_content_changed(before: AnnouncementCard, after: AnnouncementCard) -> bool:
+    """공고 내용이 바뀌었는지 (spec 4.2.2) — 공고 정보 필드가 다르거나, 두 카드 모두 내용 버전이 있고 서로 다르다.
+
+    한쪽이라도 내용 버전이 없으면 공고 정보만 본다. 적합도 · 추천 이유 · 가산점만 달라졌으면 거짓이다. 이전 자격 결과
+    (공고 없음 · 불통과 · 통과)는 보지 않는다.
+    """
+    if any(getattr(before, f) != getattr(after, f) for f in CARD_INFO_FIELDS):
+        return True
+    return (before.content_version is not None and after.content_version is not None
+            and before.content_version != after.content_version)
+
+
+def merge_more_candidates(first: list[AnnouncementCard], received: list[AnnouncementCard],
+                          ) -> tuple[list[AnnouncementCard], list[AnnouncementCard]]:
+    """추가 조회 결과를 첫 조회에 맞춘다 (spec 4.2.2, Orchestrator 규칙 — T-C2 함수는 첫 조회를 모른다).
+
+    - 첫 조회와 공고 ID가 같은 카드는 추가 후보에서 뺀다. 첫 조회의 그 카드는 받은 카드 내용(가산점 · 내용 버전 포함)으로
+      바꾸고 자리 · 순위 · 표시 방식은 그대로 두며, contentChanged는 card_content_changed로 정한다.
+    - 다시 나오지 않은 첫 조회 카드는 그대로, 추가 후보는 받은 순서 그대로다.
+    돌려주는 것: (첫 조회 갱신본, 추가 후보)
+    """
+    first_ids = {card.announcement_id for card in first}
+    again: dict[str, AnnouncementCard] = {}
+    for card in received:
+        if card.announcement_id in first_ids:
+            again.setdefault(card.announcement_id, card)
+    refreshed = []
+    for card in first:
+        new = again.get(card.announcement_id)
+        refreshed.append(card if new is None else new.model_copy(update={
+            **{f: getattr(card, f) for f in CARD_KEPT_FIELDS}, "content_changed": card_content_changed(card, new)}))
+    return refreshed, [card for card in received if card.announcement_id not in first_ids]
+
 
 # 보호 토큰 종류(시트 4 TokenType) → 웹 proofread_logs.violation_type 표기
 VIOLATION_LABEL = {"날짜": "날짜", "수치금액": "수치·금액", "고유명사": "고유명사", "기능명": "기능명"}
@@ -264,22 +341,41 @@ class SBrainFlow:
             ctx.add_event("카테고리기본값", f"T-C1 카테고리 판정 실패 — {out['category']}로 기본 처리",
                           refs=[ctx.ref("category")],
                           execution_id=outcome.record.execution_id if outcome.record else None)
-        elif step_id == "T-C2" and out.get("fallback_used"):
-            self._notice(ctx, "E-C2-EMBED")
+        elif step_id == "T-C2":
+            more = ctx.run.segment == "MORE"
+            if more and out["collection_status"] != "정상":
+                # 수집 상태가 정상이 아니라 매칭하지 않은 추가 조회 — 실패로 본다 (spec 4.2.3). 첫 조회(PRE)는 시작 요청이
+                # E-C2-STALE로 끝난다(service.run_start_request)
+                self._more_failed(ctx, "E-C2-STALE")
+                return
+            if out.get("fallback_used"):
+                # 대체 경로 안내. 마감 임박순이면 문구 끝에 덧붙인다 (spec 4.1.3) — 첫 조회 · 추가 조회 모두
+                suffix = EMBED_DEADLINE_SUFFIX if out.get("fallback_mode") == "마감임박순" else ""
+                self._notice(ctx, "E-C2-EMBED", suffix=suffix)
+            if more:
+                self._keep_more(ctx, out["candidates"], outcome)
+        elif step_id == "G-01":
+            # 선택 공고 · 자격 결과 · 업력을 저장하는 같은 저장에서 공고 포인터를 바꾸고, 불통과면 막는다 (4.3.2 · 4.3.6).
+            # 설립일 없음(missingInputs)은 불통과가 아니라 막지 않는다
+            aid = out["selected_announcement"].announcement_id
+            ctx.run.announcement_id = aid
+            gate = out["gate_result"]
+            if not gate.passed and not gate.missing_inputs:
+                block_announcement(ctx.run, aid)
 
     def on_queue_empty(self, ctx: RunContext) -> None:
         run, seg = ctx.run, ctx.run.segment
         if seg in ("PRE", "MORE"):
             self._wait(ctx, "공고선택", "setup")
         elif seg == "GATE":
+            # 판정 결과에 따른 다음 상태 (spec 4.3.2). 확인 필요(unknownConditions)는 막지 않는다 — 화면 4에만 안내.
+            # undecidable은 쓰지 않는다(늘 거짓)
             gate = ctx.get("gateResult")
-            if gate.passed and not gate.undecidable and not gate.missing_inputs:
+            if gate.passed and not gate.missing_inputs:
                 self._wait(ctx, "계획서작성", "setup")
             else:
                 if gate.missing_inputs:
                     self._notice(ctx, "E-G1-MISSING")
-                elif gate.undecidable:
-                    self._notice(ctx, "E-G1-UNPARSED")
                 else:
                     self._notice(ctx, "E-G1-REJECT", 사유=", ".join(gate.failed_conditions))
                 self._wait(ctx, "공고선택", "setup")
@@ -309,10 +405,72 @@ class SBrainFlow:
     def on_unresumable(self, ctx: RunContext, step_id: str, outcome: Outcome) -> None:
         if ctx.provisional:
             return  # 사전 단계 — 실행 건을 만들지 않고 호출한 쪽이 안내한다
-        if step_id == "T-C2":  # 추가 조회 실패 — 다시 시도 안내 (잠정)
-            ctx.run.queue = []
-            self._notice(ctx, "X-C2-FAIL")
-            self._wait(ctx, "공고선택", "setup")
+        # 재개하지 않는 단계는 사전 단계(T-C1 · T-C2)에서만 돌거나, 실패를 흐름이 받는 구간(추가 조회 T-C2 · 자격 확인 G-01,
+        # on_rescue)에서만 돈다. 여기 오면 실행 건이 같은 단계를 되풀이하므로 멈춘다
+        raise RuntimeError(f"흐름이 받지 않는 재개 불가 실패: {step_id}")
+
+    def on_rescue(self, ctx: RunContext, step_id: str, failure: StepFailure) -> None:
+        """실패 정책이 흐름에 넘긴 실패 (등록부 rescue_segments). 실행을 실패시키지 않는다."""
+        if step_id == "T-C2" and ctx.run.segment == "MORE":
+            # 추가 조회 실패 (spec 4.2.3) — 재시도 소진 · 코드 오류 · 규격 위반 등 어떤 오류든 X-C2-FAIL(잠정).
+            # 실패한 T-C2는 산출물을 남기지 않았다
+            self._more_failed(ctx, "X-C2-FAIL")
+            return
+        if step_id == "G-01":
+            # 자격 확인 실패 (spec 4.3.4) — 공고 없음은 X-C2-GONE, 그 밖의 모든 오류는 X-C2-FAIL. 고르기 전 대기 지점으로
+            # 돌아가고, 선택 공고 · 자격 결과 · 업력 · announcement_id는 고르기 전 그대로다(G-01이 아무것도 저장하지 않았다).
+            # 막힌 공고 목록에도 넣지 않는다(4.3.6)
+            self._notice(ctx, "X-C2-GONE" if failure.kind == "대상없음" else "X-C2-FAIL")
+            self._wait(ctx, self._before_selection(ctx), "setup")
+            return
+        raise RuntimeError(f"흐름이 받지 않는 단계 실패: {step_id}")
+
+    # ── 추가 조회 (spec 4.2.2 · 4.2.3) ─────────────────────
+    def more_lookup_pointers(self, ctx: RunContext) -> dict[str, int | None]:
+        """추가 조회 전 T-C2 출력의 현재 버전 — 추가 조회 명령이 decision에 남기고, 실패하면 이 버전으로 돌린다."""
+        return {key: ctx.version(key) for key in self.registry.get("T-C2").outputs.values()}
+
+    def _keep_more(self, ctx: RunContext, received: list[AnnouncementCard], outcome: Outcome) -> None:
+        """유효한(성공한) 추가 조회 — 추가 조회 결과(T-C2 출력)와 같은 저장에서 겹침 뺀 추가 후보 · 첫 조회 갱신본을 남기고,
+        내용이 바뀐 막힌 공고를 푼다 (4.2.2 · 4.3.6). 내용이 그대로인 막힌 공고는 겹쳐 나와도 막힌 채다."""
+        first, _ = candidate_lists(ctx)
+        refreshed, more = merge_more_candidates(first, received)
+        producer = f"orchestrator:{outcome.record.execution_id}" if outcome.record else "orchestrator:추가조회"
+        refs = [ctx.put(FIRST_CANDIDATES, refreshed, producer=producer),
+                ctx.put(MORE_CANDIDATES, more, producer=producer)]
+        changed = [card.announcement_id for card in refreshed if card.content_changed]
+        released = [aid for aid in changed if aid in ctx.run.blocked_announcement_ids]
+        for aid in released:
+            unblock_announcement(ctx.run, aid)
+        ctx.add_event("추가조회반영", f"겹침 {len(received) - len(more)}건 · 내용 바뀜 {len(changed)}건 · "
+                                      f"막힘 풀림 {len(released)}건", refs=refs,
+                      execution_id=outcome.record.execution_id if outcome.record else None)
+
+    def _more_failed(self, ctx: RunContext, code: str) -> None:
+        """실패한 추가 조회 (4.2.3) — 실행을 살리고 안내(X-C2-FAIL · E-C2-STALE) 후 공고선택 · 사용자대기로 간다.
+
+        - 기회를 돌려준다(more_used 거짓 → 화면 3 moreAvailable 참).
+        - T-C2 출력 포인터를 조회 전 버전으로 돌린다(수집 상태 비정상이면 T-C2가 새 버전을 남겼다 — 버전은 지우지 않는다).
+          화면 3의 수집 상태 · 통과 건수 · 대체 경로 표시는 조회 전 값이고, 후보 목록은 candidate_lists가 실패한 조회를 보지 않는다.
+        - 추가 후보 · 첫 조회 갱신본을 남기지 않고, 막힌 공고를 풀지 않는다(4.3.6).
+        - 돌아가는 곳은 늘 공고선택이다 — 자격 통과 뒤(계획서작성 · 사용자대기)에 누른 추가 조회도 같다(고르기 전 대기 지점 아님).
+        """
+        decision = ctx.get_ref(ctx.run.decision_ref) if ctx.run.decision_ref else {}
+        before = decision.get(MORE_BEFORE_POINTERS) if isinstance(decision, dict) else None
+        for key, version in (before or {}).items():
+            if version is not None:
+                ctx.move_pointer(key, version, f"추가 조회 실패 — 조회 전으로 ({code})")
+        ctx.run.more_used = False
+        ctx.add_event("추가조회실패", f"{code} — 조회 전 후보로 두고 추가 조회 기회를 돌려줌")
+        self._notice(ctx, code)
+        self._wait(ctx, "공고선택", "setup")
+
+    @staticmethod
+    def _before_selection(ctx: RunContext) -> str:
+        """공고 선택 명령이 남긴 고르기 전 대기 지점(단계). 없거나 알 수 없으면 공고선택."""
+        decision = ctx.get_ref(ctx.run.decision_ref) if ctx.run.decision_ref else {}
+        step = decision.get("beforeStep") if isinstance(decision, dict) else None
+        return step if step in SELECTION_STEPS else "공고선택"
 
     def on_abort(self, ctx: RunContext) -> None:
         run = ctx.run
@@ -476,8 +634,9 @@ class SBrainFlow:
         run.current_phase = phase
         run.segment, run.segment_total, run.queue = None, 0, []
 
-    def _notice(self, ctx: RunContext, code: str, **slots: str) -> None:
-        ctx.run.notices.append(Notice(code=code, message=message(code, **slots), at=self.now()))
+    def _notice(self, ctx: RunContext, code: str, *, suffix: str = "", **slots: str) -> None:
+        """안내를 쌓는다. 문구는 errors.message — suffix는 errors가 둔 덧붙임(EMBED_DEADLINE_SUFFIX)만 쓴다."""
+        ctx.run.notices.append(Notice(code=code, message=message(code, **slots) + suffix, at=self.now()))
 
     def _notify(self, ctx: RunContext, kind: str, target: int | None, scope: str | None = None) -> None:
         ctx.notify(Notification(run_id=ctx.run.run_id, kind=kind, failure_scope=scope, target_step=target,

@@ -3,8 +3,8 @@
 | 함수 | 쓰는 곳 | 저장소 · 입력 · 설정 | Agent |
 |---|---|---|---|
 | build_stub_app | 테스트 · 시연 | 메모리(또는 주어진 저장소) · 기본 설정 | 전부 스텁, 가짜 LLM |
-| build_app | 워커 (sbrain/worker.py) | 공유 MySQL — SqlStore · SqlProjectInputSource · DbSettingsProvider | 조율 T-C1 실구현(OpenAI), 나머지 스텁 |
-| build_web | 웹 서버 | 공유 MySQL — 같음 | 단계를 돌지 않는다 (명령 · 조회만) |
+| build_app | 워커 (sbrain/worker.py) | 공유 MySQL — SqlStore · SqlProjectInputSource · DbSettingsProvider | 조율 T-C1 실구현(OpenAI), T-C2 · G-01은 SBRAIN_NOTICE_API_URL이 있으면 공고 서버 연결(실제 모드) · 없으면 스텁, 나머지 스텁 |
+| build_web | 웹 서버 | 공유 MySQL — 같음 | 단계를 돌지 않는다 (명령 · 조회만). 공고 서버를 부르지 않는다 |
 
 실제 Agent 구현이 나오면 registry.bind(task_id, fn)로 스텁을 교체한다.
 """
@@ -15,7 +15,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable
 
-from .agents.stubs import FakeLLM, StubScenario, bind_stubs, make_announcement, make_constants
+from .agents.notice import NoticeClient, Transport, bind_notice
+from .agents.stubs import FakeLLM, StubScenario, bind_stubs, make_constants
 from .agents.supervisor import IMPLEMENTED_TASKS, bind_supervisor
 from .env import get_env
 from .flow import IMMUTABLE_KEYS, SBrainFlow, SBrainOrchestrator, artifact_types, build_registry
@@ -86,13 +87,19 @@ def build_app(
     now: Callable[[], datetime] = datetime.now,
     project_inputs: ProjectInputSource | None = None,
     llm: LLMProvider | None = None,
+    notice_api_url: str | None = None,
+    notice_transport: Transport | None = None,
 ) -> App:
     """워커 조립 — 공유 MySQL(SqlStore · SqlProjectInputSource · DbSettingsProvider), 조율 T-C1 실구현, OpenAI 호출처.
 
     - db_url이 없으면 SBRAIN_DB_URL(환경 변수 → .env)을 쓴다.
     - 나머지 Agent는 스텁이다. 스텁 Task는 실제 호출처를 부르지 않는다(TaskRoutedProvider).
-    - 공고 조회(선택한 공고 · 자격 조건)는 공고팀 연동 전까지 스텁 공고를 쓴다 (잠정).
-    - project_inputs · llm은 시험용으로 바꿔 끼울 때만 준다. llm이 없으면 OpenAIProvider(OPENAI_API_KEY).
+    - 공고 매칭(T-C2) · 자격 확인(G-01): 공고 서버 주소가 있으면 공고 서버 연결(agents/notice, 실제 모드), 없으면 스텁
+      (스텁 모드 — 스텁 G-01이 스텁 공고를 만들고 판정한다, spec 3.1 · 4.6).
+      주소는 notice_api_url, 주지 않으면(None) SBRAIN_NOTICE_API_URL(환경 변수 → .env). 빈 문자열이면 스텁이다.
+      주소 형식이 틀리면 조립할 때 ValueError다(메시지에 주소를 싣지 않는다).
+    - project_inputs · llm · notice_transport는 시험용으로 바꿔 끼울 때만 준다. llm이 없으면 OpenAIProvider(OPENAI_API_KEY),
+      notice_transport가 없으면 표준 라이브러리 HTTP 전송.
     """
     from .intake.sql_source import SqlProjectInputSource
     from .orchestrator.openai_provider import OpenAIProvider
@@ -104,6 +111,9 @@ def build_app(
         sleep=time.sleep, profile_count=lambda account_id: 1,   # 워커는 시작 확인(request_start)을 하지 않는다
         project_inputs=project_inputs or SqlProjectInputSource(db), stubs=True)
     bind_supervisor(app.registry)
+    notice_url = get_env("SBRAIN_NOTICE_API_URL") if notice_api_url is None else notice_api_url
+    if notice_url:   # 실제 모드 — 공고 서버 연결로 스텁 T-C2 · G-01을 바꾼다
+        bind_notice(app.registry, NoticeClient(notice_url, transport=notice_transport))
     app.engine.providers["openai"] = TaskRoutedProvider(llm or OpenAIProvider(), app.llm, IMPLEMENTED_TASKS)
     return app
 
@@ -158,9 +168,8 @@ def _assemble(*, store: Store, settings: SettingsProvider, scenario: StubScenari
     engine = Engine(store=store, registry=registry, flow=flow, providers=providers,
                     types=ArtifactTypes(exact, suffix), immutable_keys=IMMUTABLE_KEYS, now=now, sleep=sleep)
     flow.engine = engine
+    # 공고 선택 명령은 고른 ID만 남긴다 — 공고 상세는 워커의 G-01이 받는다 (명령 창구에 공고 공급처가 없다)
     orch = SBrainOrchestrator(
         engine=engine, flow=flow, settings=settings,
-        # 공고 조회 — 공고팀 연동 전까지 스텁 공고 (잠정)
-        announcements=lambda aid: make_announcement(aid, now().date(), eligible=aid not in scenario.gate_fail_ids),
         profile_count=profile_count, project_inputs=project_inputs, now=now, sleep=sleep)
     return App(orch, engine, store, registry, llm, scenario, settings)

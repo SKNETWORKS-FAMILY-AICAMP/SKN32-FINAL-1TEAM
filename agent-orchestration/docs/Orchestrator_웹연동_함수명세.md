@@ -2,12 +2,27 @@
 
 | 항목 | 내용 |
 |---|---|
-| 작성일 | 2026-10-01 (2026-10-02 갱신 — 웹 더미 파이프라인 떼어 내기) |
+| 작성일 | 2026-10-01 (2026-10-02 갱신 — 웹 더미 파이프라인 떼어 내기. 2026-10-03 갱신 — 공고 서버 연결) |
 | 상태 | 함수 이름 · 인자 · 결과 필드 · 오류 코드는 **구현 완료**. 화면 조회(5.1절)의 화면별 모양은 **초안** — 웹팀과 맞춰 고친다 |
-| 근거 | 웹팀 합의(2026-09-30) 1~10번, 사용자 결정(2026-10-01 ~ 10-02), `워커_구동_방식_제안.md`(확정), `웹스키마_교체목록_웹팀전달.md`(두 문서 저장소 미포함) |
+| 근거 | 웹팀 합의(2026-09-30) 1~10번, 사용자 결정(2026-10-01 ~ 10-03), `워커_구동_방식_제안.md`(확정), `웹스키마_교체목록_웹팀전달.md`(두 문서 저장소 미포함) |
 | 코드 | `sbrain/` — 명령 창구 `flow/service.py`(`SBrainOrchestrator`), 화면 · 결과 · 관리자 조회 `flow/reads.py`, 재작성 묶음 `flow/rework_map.py`, 조립 `bootstrap.py`, 워커 `worker.py`, 웹 테이블 쓰기 `store_sql/web_tables.py` |
 | 독자 | 웹팀(백엔드) |
-| 함께 볼 문서 | `docs/웹연동_변경사항_웹팀전달.md` — 웹 엔드포인트마다 어떤 함수를 부르고 응답을 어떻게 채우는지, 값 대응표, 웹 스키마 · 프론트 변경 |
+| 함께 볼 문서 | `docs/웹연동_변경사항_웹팀전달.md` — 웹 엔드포인트마다 어떤 함수를 부르고 응답을 어떻게 채우는지, 값 대응표, 웹 스키마 · 프론트 변경. `docs/공고연동_변경사항_웹팀전달.md` — 공고 서버 연결로 바뀐 화면 3 · 4 · 진행 상태(2026-10-03) |
+
+### 2026-10-03 바뀐 점 (요약) — 공고 서버 연결
+
+공고 매칭(T-C2)과 자격 확인(G-01)을 공고팀 공고 서버에 연결했다. 웹이 할 일은 `docs/공고연동_변경사항_웹팀전달.md`에 화면별로 있다.
+
+| 구분 | 내용 | 절 |
+|---|---|---|
+| 공고 선택 | 명령은 고른 공고 ID만 남긴다. 선택 공고 · 자격 결과 · `announcement_id`는 워커의 G-01이 끝난 뒤 바뀐다. G-01이 실패하면 X-C2-GONE · X-C2-FAIL 안내 후 고르기 전 대기 지점으로 | 6.1 |
+| 새 명령 오류 | `ANNOUNCEMENT_BLOCKED` — 자격 불통과로 막힌 공고 | 6.1, 10.2 |
+| 화면 3 | 새 필드 `blockedAnnouncementIds`. 카드에 `applyPeriodType` · `contentChanged` · `contentVersion` · `bonusScore` · `bonusItems`, `applyEnd` · `supportAmountMax`는 `null` 가능. 추가 조회는 첫 조회와 겹치는 공고를 빼고 첫 조회 카드를 갱신 | 5.1 |
+| 추가 조회 실패 | 어떤 오류든 X-C2-FAIL, 수집 상태 비정상은 E-C2-STALE. 공고선택 대기로 돌아가고 기회를 돌려준다 | 6.1 |
+| 화면 4 | `gateResult.unknownConditions`(확인 필요). 있으면 화면 4 `notices`에만 E-G1-UNPARSED. `undecidable`은 늘 거짓 | 5.1 |
+| 선택 공고 | 날짜 · 금액 `null` 가능, `applyPeriodType`, `summaryEmbedding`은 빈 목록 | 5.2 |
+| 안내 코드 | X-C2-GONE 새로, X-C2-FAIL 쓰임 확대, E-C2-EMBED 마감 임박순 덧붙임, E-RUN-CLOSED 조건 | 10.1 |
+| 공고 ID | `announcementId` = 공고 표 `notices.notice_id`(확인 끝남) | 2.5, 12 |
 
 ### 2026-10-02 바뀐 점 (요약)
 
@@ -110,7 +125,7 @@ orch = sbrain.orchestrator          # 서버 시작 때 한 번 만들어 모든
 
 - `build_web`은 LLM 호출처가 없고 단계를 돌지 않는다. 여러 스레드에서 함께 써도 된다(상태는 DB에만 있다).
 - **사전 단계 차단:** 웹 조립에서 `run_start_request`(와 동기 경로 `start_run` · `start_run_for_project`)를 부르면 시작 요청을 점유하거나 바꾸지 않고 바로 `CommandError("WEB_NOT_ALLOWED")`를 올린다. 사전 단계는 워커가 돈다.
-- 공고 조회(선택한 공고의 자격 조건 · 양식)는 공고팀 연동 전까지 Orchestrator 안의 스텁 공고를 쓴다(잠정).
+- 웹 조립은 공고 서버를 부르지 않는다. 공고 후보 · 공고 상세 · 자격 판정은 워커가 공고 서버에서 받는다(2.3). 공고 선택 명령은 고른 공고 ID만 남긴다(6.1). (2026-10-03 바뀜)
 
 ### 2.3 워커 (참고 — 웹 프로세스와 따로 띄운다)
 
@@ -118,7 +133,7 @@ orch = sbrain.orchestrator          # 서버 시작 때 한 번 만들어 모든
 python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로 멈춤 (하던 단계는 끝낸다)
 ```
 
-환경 변수(또는 `agent-orchestration/.env`): `SBRAIN_DB_URL`(필수), `OPENAI_API_KEY`(필수), `SBRAIN_WORKER_POLL_SEC` · `SBRAIN_WORKER_THREADS` · `SBRAIN_WORKER_LEASE_SEC`(선택, 잠정 기본값 1초 · 4 · 120초). 여러 대를 띄워도 같은 일을 두 번 하지 않는다(`SKIP LOCKED` + 점유). 재작성 요청을 모으는 중인 실행 건(`orch_runs.collect_until`이 지금보다 뒤)은 그 시각이 지날 때까지 가져가지 않는다.
+환경 변수(또는 `agent-orchestration/.env`): `SBRAIN_DB_URL`(필수), `OPENAI_API_KEY`(필수), `SBRAIN_WORKER_POLL_SEC` · `SBRAIN_WORKER_THREADS` · `SBRAIN_WORKER_LEASE_SEC`(선택, 잠정 기본값 1초 · 4 · 120초), `SBRAIN_NOTICE_API_URL`(선택 — 공고 서버 주소. 있으면 공고 매칭 · 자격 확인이 공고 서버에 연결되고, 없으면 Orchestrator 안의 스텁 공고 · 스텁 판정을 쓴다. 공고팀 API가 준비된 뒤 Orchestrator 담당이 설정한다. 어느 쪽이든 웹이 보는 동작은 같다). 여러 대를 띄워도 같은 일을 두 번 하지 않는다(`SKIP LOCKED` + 점유). 재작성 요청을 모으는 중인 실행 건(`orch_runs.collect_until`이 지금보다 뒤)은 그 시각이 지날 때까지 가져가지 않는다.
 
 ### 2.4 공유 DB 준비
 
@@ -134,7 +149,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | `account_id` | 웹 `users.user_id`를 문자열로 (`str(user_id)`) |
 | `project_id` | 웹 `projects.project_id` (정수 또는 숫자 문자열) |
 | `run_id` · `request_id` · `execution_id` · `cycle_id` | Orchestrator가 만드는 12자 문자열. 웹이 보관할 필요는 없다(관리자 상세 조회의 `execution_id`만 쓴다) |
-| `announcement_id` | 공고 ID (T-C2 후보 카드의 `announcementId`). 웹 `notices.notice_id`와 같은지는 확인 중(12절) |
+| `announcement_id` | 공고 ID (T-C2 후보 카드의 `announcementId`). 공고 표 `notices.notice_id`와 같은 값이다 — 공고팀 추천이 그 표를 읽는다(2026-10-03 확인 끝남) |
 
 ## 3. 시작 — 사전 정보 제출 → 공고 후보
 
@@ -212,14 +227,14 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | `resume_step` | 이어하기 복귀 화면 번호 (재작성 중이면 요청한 화면) |
 | `percent` | 진행률(%) — 진행 중(실행 · 재개대기)이면 지금 구간에서 끝난 단계 비율, 완료 100, 그 밖 0 |
 | `current_label` | 지금 하는 단계 한 줄 (예: "요구사항 분석") |
-| `notices` | 안내 목록 `Notice(code, message, at)` — 마감된 공고면 E-RUN-CLOSED가 붙는다 |
+| `notices` | 안내 목록 `Notice(code, message, at)` — 실행 건의 안내를 계속 쌓는다. 진행 중 · 대기 중이고 선택 공고의 `applyEnd`가 오늘보다 앞이거나(`null`이면 보지 않음) `status`가 '마감'이면 E-RUN-CLOSED가 붙는다(2026-10-03 바뀜 — 모집 상태 모름은 마감이 아니다) |
 | `notifications` | 작업 알림 목록 `Notification` — 웹 `notifications` 테이블의 행. `notificationId`는 그 행의 ID |
 | `retry_count` · `resume_count` | 재시도 · 재개 횟수 (실행 건 값 그대로) — **새로** |
 | `next_resume_at` | 다음 재개 예정 시각 (재개대기일 때) — **새로** |
 | `last_error_kind` | 마지막 오류 종류 (일시 · 입력 · 운영) — **새로** |
 | `rework_screen` | 재작성 중인 화면 (6 · 8 · 9, 재작성 중이 아니면 `None`) — **새로** |
 | `collecting` | 재작성 요청을 모으는 중이면 참 (6.3) — **새로** |
-| `announcement_id` | 선택 공고 ID (고르기 전이면 `None`) — **새로** |
+| `announcement_id` | 선택 공고 ID (고르기 전이면 `None`) — **새로**. 자격 확인(G-01)이 끝났을 때 그 공고 ID로 바뀐다(불통과여도). 공고 선택 명령 직후에는 아직 이전 값이고, G-01이 실패하면 고르기 전 값 그대로다(2026-10-03) |
 
 - 재작성을 요청한 화면을 다시 열었을 때: `rework_screen`이 그 화면이고 `progress`가 실행 · 재개대기면 '진행 중'으로 보인다(모으는 중도 실행).
 - 실행 건이 실패로 끝나면 `progress="실패"`, `screen_status="문제 발생"`, `notices`에 E-RUN-FAIL(새 작업으로 시작 안내). 관리자용 실패 사유는 관리자 조회(8.4)에만 있다.
@@ -273,8 +288,8 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 
 | 화면 | 여는 때 | 내용 (필드) |
 |---|---|---|
-| 3 공고 후보 | 공고선택 · 사용자대기, **계획서작성 · 사용자대기(자격 통과 뒤 작성 시작 전, 2026-10-02 확장)** | `candidates`(첫 조회) · `moreCandidates`(추가 조회) · `moreAvailable`(추가 조회 가능 — 1회, 합계 최대 20건) · `collectionStatus` · `filteredCount` · `fallbackUsed` · `fallbackMode` |
-| 4 자격 확인 | 공고선택 · 계획서작성 사용자대기, 자격 확인 결과가 있을 때 | `announcementId` · `gateResult`(통과 · 불통과 조건 · 누락 입력 · 판정 불가) · `businessAgeYears` · `canStartWriting`(통과해 화면 5로 갈 수 있음) |
+| 3 공고 후보 | 공고선택 · 사용자대기, **계획서작성 · 사용자대기(자격 통과 뒤 작성 시작 전, 2026-10-02 확장)** | `candidates`(첫 조회 — 추가 조회에 다시 나온 카드는 새 내용) · `moreCandidates`(추가 조회 — 첫 조회와 겹친 공고 없음) · `moreAvailable`(추가 조회 가능 — 1회, 합계 최대 20건) · `collectionStatus` · `filteredCount` · `fallbackUsed` · `fallbackMode` · **`blockedAnnouncementIds`**(막힌 공고 ID, 2026-10-03 확장) |
+| 4 자격 확인 | 공고선택 · 계획서작성 사용자대기, 자격 확인 결과가 있을 때 | `announcementId` · `gateResult`(통과 · 불통과 조건 `failedConditions` · 누락 입력 `missingInputs` · **확인 필요 조건 `unknownConditions`**(2026-10-03 확장) · `undecidable`(늘 거짓)) · `businessAgeYears` · `canStartWriting`(통과해 화면 5로 갈 수 있음). 확인 필요 조건이 있으면 `notices`에 E-G1-UNPARSED |
 | 6 문서 평가 | 문서평가 · 사용자대기 | `planDoc`(계획서) · `score`(환산 점수 등) · `failedTaskIds` · `reworkOptions`(재작성 목록) · `nextAction`(진행가능 · 재작성권유 · 상한도달) |
 | 8 산출물 확인 | 산출물확인 · 사용자대기 | `prototype` · `infographic` · `codeCheck` · `featureMatch` · `reworkOptions`(산출물층만) |
 | 9 종합 평가 | 종합평가 · 사용자대기 | `score`(종합 점수 · 층별 내역 `docScore` · `artifactScore` · 전후 비교 `comparisons`) · `reworkOptions` · `nextAction` · `reworkDiff`(변경 내역) |
@@ -282,6 +297,10 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | 11 결과물 | 결과물 · 완료 | `deliverable` · `userMessage` · `planDoc` · `prototype` · `infographic` |
 
 - 화면 3은 작성을 시작한 뒤(계획서작성 · 실행 이후)에는 `CommandError("INVALID_STATE")`다(공고 다시 고르기 · 추가 조회와 같은 거절). 그 밖에 맞지 않는 상태는 `SCREEN_NOT_READY`.
+- **화면 3 카드(`AnnouncementCard`, 2026-10-03 바뀜)** — `announcementId` · `title` · `agency` · `applyEnd`(`null` 가능 — 마감일 없는 공고) · `supportAmountMax`(`null` 가능 — 추천 결과에는 금액이 없어 지금은 늘 `null`) · `fitScore` · `rank` · `displayType` · `matchReason` · `sourceNotice` · `originalUrl`, 확장 `applyPeriodType`(모집 형태 표기) · `contentChanged`(내용 바뀜) · `contentVersion`(웹은 쓰지 않음) · `bonusScore`(가산점 합계, `null` = 계산 못 함, `0` = 해당 없음) · `bonusItems`(`name` · `points`). 순서는 `rank` 그대로이며 웹이 다시 정렬하지 않는다. 자세한 뜻과 표시는 `공고연동_변경사항_웹팀전달.md` 1절.
+- **화면 3 추가 조회 반영** — 성공한 추가 조회가 있으면 `candidates`는 첫 조회 카드 중 다시 나온 것을 새 내용으로 바꾼 목록(자리 · `rank` · `displayType` 그대로, 내용이 바뀌었으면 `contentChanged` 참)이고, `moreCandidates`는 첫 조회와 겹친 공고를 뺀 목록이다(0건일 수 있다). 실패한 추가 조회는 없던 것으로 본다 — 후보 · `collectionStatus` · `filteredCount` · `fallbackUsed` · `fallbackMode`가 조회 전 그대로다.
+- **`blockedAnnouncementIds`** — 자격 불통과(E-G1-REJECT)가 나온 공고 ID. 그 실행 건에서 고를 수 없다(`ANNOUNCEMENT_BLOCKED`, 6.1). 추가 조회에서 그 공고 카드가 `contentChanged` 참이 되면 빠진다. 공고 없음 · 오류 · 설립일 없음은 들어가지 않는다. 카드에는 자격 정보를 싣지 않는다.
+- **화면 4 확인 필요** — `gateResult.unknownConditions`(`지원대상 유형` · `업력`)가 있으면 `notices`에 E-G1-UNPARSED가 하나 붙는다. 진행을 막지 않고(`canStartWriting` 참), 실행 건 안내 목록에는 쌓지 않아 `view_project`의 `notices`에는 나오지 않는다. 화면 4를 열 때마다 지금 자격 결과로 다시 만든다.
 - 없는 화면 번호는 `INVALID_SCREEN`, 실행 건이 없으면 `RUN_NOT_FOUND`.
 - `score`(`ScoreView`): `displayScore`(환산 점수) · `total` · `threshold` · `passed` · `phase` · `docScore` · `artifactScore` · `carriedOverLayer` · `comparisons` · `notices`. 판정에 쓴 실행 설정 스냅샷은 싣지 않는다.
 - `reworkOptions`(`ReworkOption`): `order`(판정 G-02a · G-02b의 재작성 지시를 그대로) · `bundles`(그 지시의 기회를 세는 **묶음 이름**, 6.3) · `remaining`(남은 기회) · `selectable`(고를 수 있음).
@@ -299,8 +318,8 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | 필드 (JSON) | 내용 |
 |---|---|
 | `projectId` · `runId` · `step` · `progress` | |
-| `candidates` · `moreCandidates` | 공고 후보(첫 조회 · 추가 조회) `AnnouncementCard` 목록 |
-| `selectedAnnouncement` | 선택 공고 `Announcement` 전체(양식 `formSpec` 포함. `summaryEmbedding`도 들어 있어 클 수 있다) |
+| `candidates` · `moreCandidates` | 공고 후보(첫 조회 · 추가 조회) `AnnouncementCard` 목록 — 화면 3과 같다(추가 조회 반영 · 실패한 추가 조회 무시, 5.1) |
+| `selectedAnnouncement` | 선택 공고 `Announcement` 전체(양식 `formSpec` 포함). 2026-10-03부터: `applyStart` · `applyEnd` · `supportAmountMax` · `supportAmountText`는 `null`일 수 있고, 확장 `applyPeriodType`(모집 형태 표기)이 있으며, `summaryEmbedding`은 늘 빈 목록이다. `status`가 '모집중'이어도 공고 서버가 모집 상태를 몰랐을 수 있다. 워커의 G-01이 성공할 때만 바뀐다 |
 | `gateResult` · `businessAgeYears` | 자격 확인 결과 · 업력 |
 | `category` | 원페이지 · 웹개발 · AI_API |
 | `planDoc` · `docScore` | 계획서(섹션 · 문장 · 차트 · 표 · 보호 토큰) · 문서층 점수 |
@@ -338,13 +357,23 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 
 | 함수 | 받는 때 | 하는 일 · 오류 |
 |---|---|---|
-| `more_candidates_for_project(project_id)` | 공고선택 · 사용자대기, **계획서작성 · 사용자대기(자격 통과 뒤 작성 시작 전)** | 공고 추가 조회 (1회, 합계 최대 20건). 넘으면 `MORE_LIMIT`. 끝나면 공고선택 · 사용자대기로 돌아간다 |
-| `select_announcement_for_project(project_id, announcement_id)` | 위와 같음 | 후보(첫 조회 · 추가 조회) 중 하나를 고른다 → 선택 공고 새 버전 → 자격 확인(G-01) → 결과에 따라 대기. 후보에 없으면 `INVALID_ANNOUNCEMENT` |
+| `more_candidates_for_project(project_id)` | 공고선택 · 사용자대기, **계획서작성 · 사용자대기(자격 통과 뒤 작성 시작 전)** | 공고 추가 조회 (1회, 합계 최대 20건). 넘으면 `MORE_LIMIT`. 성공 · 실패 모두 끝나면 공고선택 · 사용자대기로 돌아간다. 한도는 성공한 추가 조회만 센다 |
+| `select_announcement_for_project(project_id, announcement_id)` | 위와 같음 | 후보(첫 조회 · 성공한 추가 조회) 중 하나를 고른다 → 고른 공고 ID와 고르기 전 대기 지점만 남기고 자격 확인(G-01)을 대기열에 넣는다 → 워커가 공고 상세 · 자격 판정을 받아 결과에 따라 대기. 후보에 없으면 `INVALID_ANNOUNCEMENT`, 그다음 막힌 공고면 `ANNOUNCEMENT_BLOCKED` (2026-10-03 바뀜) |
 | `start_writing_for_project(project_id)` | 계획서작성 · 사용자대기 | 계획서 작성 구간 시작 |
 
 - 자격 확인 화면의 '매칭 결과로 돌아가기'로 돌아온 화면이 지금처럼 동작하도록, 자격 통과 뒤에도 작성을 시작하기 전이면 화면 3 조회 · 추가 조회 · 다른 공고 선택을 받는다(확장).
 - 작성을 시작한 뒤(계획서작성 · 실행 이후)에는 셋 다 `INVALID_STATE`다. 이 거절은 점유를 잡기 전에 하므로 워커가 점유 중이어도 `BUSY`가 아니라 `INVALID_STATE`다.
-- 오류: `INVALID_ANNOUNCEMENT` · `MORE_LIMIT` · `INVALID_STATE` · `BUSY` · `RUN_NOT_FOUND`.
+- 오류: `INVALID_ANNOUNCEMENT` · `ANNOUNCEMENT_BLOCKED` · `MORE_LIMIT` · `INVALID_STATE` · `BUSY` · `RUN_NOT_FOUND`. 거절하면 실행 건은 바뀌지 않는다.
+
+**공고 선택 뒤 (2026-10-03 바뀜)**
+- 명령은 선택 공고를 만들지 않고 `announcement_id`도 바꾸지 않는다. 워커의 G-01이 공고 상세(선택 공고) · 자격 결과 · 업력을 한 번에 저장할 때 `RunView.announcement_id`와 `outputs.selectedAnnouncement`가 바뀐다. 웹은 지금처럼 `wait_project`로 기다린 뒤 화면 4를 연다.
+- G-01 결과에 따라: 통과(확인 필요 포함) → 계획서작성 · 사용자대기. 불통과 → 공고선택 · 사용자대기 + E-G1-REJECT, 그 공고는 `blockedAnnouncementIds`에 들어간다. 설립일 없음 → 공고선택 · 사용자대기 + E-G1-MISSING(막지 않음).
+- **G-01 실패**(공고 서버 오류 · 응답 형식 오류 · 코드 오류 등 어떤 오류든, 또는 공고 없음)는 실행을 실패시키지 않는다. 공고 없음이면 X-C2-GONE, 그 밖은 X-C2-FAIL 안내를 `notices`에 남기고 **고르기 전 대기 지점**(공고선택 또는 계획서작성 · 사용자대기 — 명령을 받을 때의 단계)으로 돌아간다. 선택 공고 · 자격 결과 · 업력 · `announcement_id`는 고르기 전 그대로라 화면 4는 이전 공고의 결과다(없으면 `SCREEN_NOT_READY`).
+- 공고 없음 · 오류였던 공고는 막지 않는다. 작성 시작 전이면 언제든 다시 고를 수 있고, 고를 때마다 공고 서버에 새로 묻는다.
+
+**추가 조회 실패 (2026-10-03 바뀜)**
+- 추가 조회의 공고 매칭이 어떤 오류로 끝나면 X-C2-FAIL, 수집 상태가 정상이 아니어서 매칭하지 않았으면 E-C2-STALE을 `notices`에 남긴다. 실행을 실패시키지 않고 공고선택 · 사용자대기로 돌아간다.
+- 추가 조회 기회를 돌려준다(`moreAvailable` 다시 참). 화면 3의 나머지 값은 추가 조회 전 그대로이고, 실패한 추가 조회의 카드는 보이지도 고를 수도 없으며 20건 한도에 세지 않는다.
 
 ### 6.2 진행 — `decide_for_project(project_id, screen, "진행", confirmed=False)`
 
@@ -541,11 +570,13 @@ Agent별(기준 문서 Agent 순서) 한 줄: `agent` · `taskCount`(등록된 �
 | E-AUTH-PROFILE | `request_start` | 프로필 없음 |
 | E-RUN-CONCURRENT | `request_start` · `start_status` | 진행 중인 작업 있음 — `active` |
 | E-C1-TIMEOUT | `start_status` | 요구사항 해석 실패 — 다시 시도 (워커가 여러 번 멈춘 요청도 이 코드). 웹이 `request_start`를 다시 부른다 |
-| X-C2-FAIL | `start_status` · `notices`(추가 조회 실패) | 공고 매칭 실패 — 다시 시도 (확장, 잠정). 사전 단계면 웹이 `request_start`를 다시 부른다 |
-| E-C2-STALE · E-C2-NOMATCH | `start_status` | 공고 수집 갱신 중(웹이 `request_start`를 다시 부른다) · 신청 가능한 공고 없음(다시 부르지 않음) |
-| E-C2-EMBED · E-C1-DOC | `notices` | 추천 정확도 낮음 · 첨부 문서를 읽지 못함 |
-| E-G1-MISSING · E-G1-UNPARSED · E-G1-REJECT | `notices` (화면 4) | 자격 확인 판정 보류 · 자동 확인 불가 · 불통과 |
-| E-RUN-FAIL · E-RUN-ROLLBACK · E-RUN-CLOSED · E-W1-REMOVED | `notices` | 실행 실패(새 작업으로 시작) · 재작성 실패 되돌림 · 공고 마감 · 입력에 없는 경력 등 삭제 |
+| X-C2-FAIL | `start_status` · `notices`(추가 조회 실패 · 자격 확인 실패) | 공고 매칭 · 자격 확인 실패 — 다시 시도 (확장, 잠정). 사전 단계면 웹이 `request_start`를 다시 부른다. 2026-10-03부터: 추가 조회의 모든 오류(기회 반환), G-01의 공고 없음이 아닌 모든 오류(고르기 전 대기 지점으로) |
+| X-C2-GONE | `notices`(자격 확인 실패) | **2026-10-03 새로** (확장, 잠정). "선택하신 공고를 더 이상 확인할 수 없습니다. 다른 공고를 선택해주세요." — 고른 공고가 공고 서버에 없음. 고르기 전 대기 지점으로 돌아가며, 그 공고는 막지 않는다 |
+| E-C2-STALE · E-C2-NOMATCH | `start_status`, E-C2-STALE은 `notices`(추가 조회)에도 | 공고 수집 갱신 중(사전 단계면 웹이 `request_start`를 다시 부른다. 추가 조회면 기회를 돌려준다) · 신청 가능한 공고 없음(다시 부르지 않음) |
+| E-C2-EMBED · E-C1-DOC | `notices` · `start_status.notices` | 추천 정확도 낮음(대체 경로가 마감 임박순이면 문구 끝에 " 마감 임박순으로 보여드립니다.") · 첨부 문서를 읽지 못함 |
+| E-G1-MISSING · E-G1-REJECT | `notices` | 자격 확인 판정 보류 · 불통과 |
+| E-G1-UNPARSED | **화면 4 결과의 `notices`에만** | 확인 필요 조건이 있음 — 진행을 막지 않는 안내(2026-10-03 바뀜). 실행 건 안내 목록 · `view_project`에는 없다 |
+| E-RUN-FAIL · E-RUN-ROLLBACK · E-RUN-CLOSED · E-W1-REMOVED | `notices` | 실행 실패(새 작업으로 시작) · 재작성 실패 되돌림 · 공고 마감(조건은 4.1) · 입력에 없는 경력 등 삭제 |
 
 ### 10.2 `CommandError.code`
 
@@ -560,6 +591,7 @@ Agent별(기준 문서 Agent 순서) 한 줄: `agent` · `taskCount`(등록된 �
 | INVALID_STATE | 지금 단계 · 진행 상태에서 받을 수 없는 명령 — 점유를 기다리지 않는다 (재작성: 대기 지점이 아님 · 모으는 시간 끝남 · 진행 중, 공고 다시 고르기 · 추가 조회 · 화면 3: 작성 시작 뒤, 작성 시작 · 진행: 워커가 단계를 도는 중 · 재작성을 모으는 중) |
 | BUSY | 받을 수 있는 상태에서 다른 명령과 점유가 겹침(재작성 요청은 5초 다시 시도한 뒤), 완전 삭제는 워커가 단계를 도는 중(7.2) — 잠시 뒤 다시 |
 | MORE_LIMIT · INVALID_ANNOUNCEMENT | 추가 조회 한도(1회 · 합계 20건) · 후보에 없는 공고 |
+| ANNOUNCEMENT_BLOCKED | 자격 불통과로 막힌 공고 — 그 실행 건에서 다시 고를 수 없음(추가 조회에서 내용이 바뀌면 풀림). `INVALID_ANNOUNCEMENT` 확인 뒤에 본다. 문구는 웹이 정한다(예: "신청 자격에 맞지 않는 공고예요. 다른 공고를 선택해 주세요.") (확장, **2026-10-03 새로**) |
 | NO_SELECTION · INVALID_ORDER · INVALID_ACTION · E-G2-LIMIT | 재작성 선택 없음 · 목록에 없는 지시 · 묶음 이름이 아님 · 화면에 맞지 않는 층 · 원페이지 실행 파일 · 잘못된 동작 · 기회 소진 |
 | NO_PROJECT_SOURCE | 조립 오류 (웹 DB 입력 공급처 없음) — `build_web`으로 조립하면 생기지 않는다 |
 
@@ -577,7 +609,8 @@ Agent별(기준 문서 Agent 순서) 한 줄: `agent` · `taskCount`(등록된 �
 |---|---|
 | 화면별 모양(5.1) | 초안. 필요한 필드 · 이름을 알려 주면 맞춘다 |
 | `RunView.percent` | 대기 · 실패 · 중단은 0. 웹 응답(`progress_percent`)에서 해당 없는 단계를 NULL로 둘지는 웹이 정한다 |
-| 공고 ID = `notices.notice_id` | 확인 중(공고팀 포함). 웹이 공고 제목 · 마감 등을 `notices`에서 찾는다면 필요하다 |
+| 공고 ID = `notices.notice_id` | **확인 끝남(2026-10-03).** 같은 값이다 — 공고팀 추천이 공고 표를 읽는다 |
+| 공고 화면 표시 | "내용 바뀜" 문구, 가산점 `null` 표시, 화면 4 확인 필요 표시 — `공고연동_변경사항_웹팀전달.md` 9절 |
 | `generation_failure_alerts` | 모든 실패를 쌓고 `last_error_kind`로 구분 (잠정) |
 | 완전 삭제 때 `proofread_logs` | 라벨링된 학습 데이터를 포함해 어떻게 할지 웹팀 확인 |
 | 완전 삭제 중 `BUSY` | 웹이 다시 부르는 방식. 기다리게 하는 쪽이 낫다면 알려 달라 |
@@ -600,3 +633,19 @@ Agent별(기준 문서 Agent 순서) 한 줄: `agent` · `taskCount`(등록된 �
 | 자격 통과 뒤 공고 다시 고르기 · 화면 3 · 추가 조회 | 5.1 · 6.1 | 확장 |
 | T-P2 시도별 기록(`attempts`) | 5.1 | 확장 |
 | 새 함수 · 오류 코드 | 1절 표, `WEB_NOT_ALLOWED` · `RUN_NOT_VIEWABLE` | 확장 |
+
+## 14. 공고 서버 연결의 잠정 · 확장 값 (2026-10-03)
+
+| 항목 | 값 · 내용 | 표시 |
+|---|---|---|
+| X-C2-GONE 문구 | "선택하신 공고를 더 이상 확인할 수 없습니다. 다른 공고를 선택해주세요." | 확장 · 잠정 |
+| 자격 확인(G-01) 제한 시간 | 30초 (공고 상세 · 자격 판정 호출, 공고 매칭과 같음) | 잠정 |
+| 모집 상태 모름 | 선택 공고 `status`를 '모집중'으로 둔다 — 마감 안내가 붙지 않는다 | 잠정 |
+| 선택 공고의 양식 · 평가 항목 | 기본 양식(`formSpec` · `evaluationItems`) — 작성 · 검수 Agent 연동 때 정한다 | 잠정 |
+| 추천 이유(`matchReason`) | 공고 서버의 적합 구간 · 지역 일치로 정한 문장(AI 없음) | 잠정 |
+| 공고 서버 호출 | 워커 프로세스 안에서 한 번에 하나씩, 운영 워커 1대(공고팀이 동시 호출 안전성을 확인하기 전까지) | 잠정 |
+| 카드 확장 필드 | `applyPeriodType` · `contentChanged` · `contentVersion` · `bonusScore` · `bonusItems`(`BonusItem`) | 확장 |
+| 선택 공고 확장 필드 | `applyPeriodType` | 확장 |
+| 자격 결과 확장 필드 | `gateResult.unknownConditions` | 확장 |
+| 화면 3 · 실행 건 | `blockedAnnouncementIds`(실행 건의 막힌 공고 목록) | 확장 |
+| 명령 오류 | `ANNOUNCEMENT_BLOCKED` | 확장 |

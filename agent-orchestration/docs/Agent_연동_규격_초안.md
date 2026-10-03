@@ -3,10 +3,10 @@
 | 항목 | 내용 |
 |---|---|
 | 상태 | **잠정 규격 — 타 팀 합의 전.** 합의 결과에 따라 바뀔 수 있다 |
-| 작성일 | 2026-09-26 (2026-10-01 갱신: 호출처 응답의 토큰 사용량, 확장 필드. 2026-10-02 갱신: T-P2 시도별 기록 · 검수 회수 문단, 사용자 재작성 지시의 묶음 이름) |
+| 작성일 | 2026-09-26 (2026-10-01 갱신: 호출처 응답의 토큰 사용량, 확장 필드. 2026-10-02 갱신: T-P2 시도별 기록 · 검수 회수 문단, 사용자 재작성 지시의 묶음 이름. 2026-10-03 갱신: T-C2 · G-01 공고 서버 연결, 비어 있을 수 있는 공고 값 — 2 · 3 · 4.4 · 6 · 7 · 8 · 8.2 · 8.3 · 9 · 10절) |
 | 기준 문서 | S-Brain Agent 기능정의서 v1.9 (시트 2 · 3 · 4 · 5 · 7) |
-| 코드 위치 | `sbrain/` — 입출력 규격 `contracts/tasks.py`, 공통 타입 `models/`, 호출 도구 `orchestrator/tools.py` |
-| 검증 방식 | 7개 Agent를 스텁으로 두고 Orchestrator가 20단계를 끝까지 도는 테스트로 검증했다. 2026-09-29 조율 T-C1을 실제 구현으로 바꿨다 (`tests/`, 412건 통과 — 메모리 · SQLite · MySQL 저장소 포함) |
+| 코드 위치 | `sbrain/` — 입출력 규격 `contracts/tasks.py`, 공통 타입 `models/`, 호출 도구 `orchestrator/tools.py`, 공고 서버 연결 `agents/notice/` |
+| 검증 방식 | 7개 Agent를 스텁으로 두고 Orchestrator가 20단계를 끝까지 도는 테스트로 검증했다. 2026-09-29 조율 T-C1을 실제 구현으로 바꿨고, 2026-10-03 T-C2 · G-01을 공고 서버 연결로 구현했다(공고 서버는 가짜 전송 · 로컬 임시 서버로 시험) (`tests/`, 805건 — MySQL 테스트 DB 없이 771건 통과 · 34건 건너뜀(MySQL 전용)) |
 | 독자 | 전략 · 작성 · 구현 · 검증-1 · 검증-2 · 검수 Agent 구현 담당, 공고팀(G-01 · T-C2), 웹팀(명령 창구 연동) |
 
 ---
@@ -29,7 +29,7 @@
 | 재작성 실행(고른 묶음만 다시 돌리기 · 되돌리기 · 기회 반환) | Orchestrator | 시트 5 R-6 |
 | 재작성 판정(점수 환산 · 다음 동작 · 재작성 목록) | 조율 Agent (G-02a · G-02b) | 시트 5 R-6 |
 | T-C1 · T-C3 · T-C4 · G-04 · 합치기 4종 · R-8 | 조율 Agent | 시트 2 |
-| T-C2 · G-01 | 조율 Agent 소속, 공고팀 구현 | 팀 분업 |
+| T-C2 · G-01 | 조율 Agent 소속. 추천 · 자격 판정 · 수집 상태 규칙은 공고팀 공고 서버에 있고, Task 함수는 Orchestrator 쪽이 공고 서버 HTTP API를 부르는 형태로 구현했다(`agents/notice/`, 8.2) | 팀 분업, 사용자 결정(2026-10-03) |
 | T-P1의 "formatSpec 미주입 → 조율에 재요청" | Orchestrator가 공고의 formSpec.formatSpec을 주입한다 | 시트 2 T-P1 |
 
 ## 3. Task 함수 규격
@@ -39,7 +39,7 @@
 def run(inp: TS1In, tools: Tools) -> TS1Out: ...
 
 # 규칙 단계 · 합치기 (tools를 받지 않는다)
-def run(inp: G01In) -> G01Out: ...
+def run(inp: M1In) -> M1Out: ...
 ```
 
 - 입력 · 출력 모델은 `contracts/tasks.py`에 Task마다 있다. 필드 이름은 시트 3 변수명이며, 파이썬에서는 snake_case, JSON에서는 camelCase다.
@@ -61,7 +61,7 @@ tools를 거치지 않으면 재시도 · 제한 시간 · 오류 분류 · 호�
 | 함수 | 용도 |
 |---|---|
 | `tools.llm(messages, *, schema=None, parse=None, purpose="")` | LLM 호출. `schema`(pydantic 모델)가 있으면 JSON을 그 모델로 검사해 돌려준다. `parse`가 있으면 결과를 넘겨 받은 값을 돌려준다 |
-| `tools.search(purpose, fn)` | LLM이 아닌 호출(임베딩 검색 · BM25 등)을 감싼다. `fn(timeout_sec)` 형태로 부른다 |
+| `tools.search(purpose, fn)` | LLM이 아닌 호출(임베딩 검색 · BM25 · 공고 서버 API 등)을 감싼다. `fn(timeout_sec)` 형태로 부른다 |
 
 - 모델 · 호출처 · 온도 · 제한 시간은 담당 Agent 설정(관리자 설정값)과 Task 설정에서 tools가 입힌다. Task가 정하지 않는다.
 - `purpose`는 호출 로그에 남는 짧은 설명이다. 프롬프트 · 응답 내용은 로그에 남지 않는다.
@@ -93,7 +93,8 @@ tools가 `ToolCallExhausted(error, error_kind, tries, call_id)`를 올린다.
 
 | Task | 받는 쪽 | 처리 |
 |---|---|---|
-| T-C2 공고 매칭 | Task 함수가 받는다 | 대체 경로: 임베딩 오류 → BM25 단독, BM25 오류 → 임베딩 단독, 둘 다 → 마감 임박순(잠정). `fallbackUsed` · `fallbackMode`를 채운다 |
+| T-C2 공고 매칭 | 공고 서버 연결 구현은 **받지 않고 올려 보낸다**(2026-10-03) | 대체 경로(임베딩 오류 → BM25 단독, BM25 오류 → 임베딩 단독, 둘 다 → 마감 임박순)는 공고 서버가 안에서 쓰고 `fallback_used` · `fallback_mode`로 알려 준다. 공고 서버 호출이 재시도를 다 쓰면 첫 조회는 시작 요청이 X-C2-FAIL로 끝나고, 추가 조회는 흐름이 X-C2-FAIL 안내 후 공고 선택 대기로 돌리고 기회를 돌려준다. 스텁 T-C2는 지금처럼 Task 안에서 대체 경로를 흉내 낸다 |
+| G-01 자격 확인 | **받지 않고 올려 보낸다**(2026-10-03) | 흐름이 X-C2-FAIL 안내 후 고르기 전 대기 지점으로 돌린다(실행 실패 아님, 8.2) |
 | T-V2 프로토타입 검증 | Task 함수가 받는다 | 보조 LLM 실패 → 문자열 대조 결과만으로 점수 산출 |
 | T-P2 한국어 문장 윤문 | Orchestrator | 그 문장만 원문 유지(`keptReason='호출실패'`). 실패 비율이 기준을 넘으면 재개. 이 호출은 시도 기록(8절)에 세지 않는다 |
 | 그 밖의 Task | **받지 말고 그대로 올려 보낸다** | Orchestrator가 Task 단위로 재개한다(일시 오류만). 재개 상한을 넘기거나 영구 오류면 실행 실패, 재작성 중이면 재작성 실패 |
@@ -176,7 +177,7 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | R-8 | attachments ← formInput.attachments | reference_docs → referenceDocs |
 | T-C1 | form_input ← formInput<br>reference_docs ← referenceDocs (선택) | item_spec → itemSpec<br>category → category<br>company_info → companyInfo<br>category_reason → categoryReason<br>confidence → confidence<br>reference_summary → referenceSummary |
 | T-C2 | item_spec ← itemSpec<br>company_info ← companyInfo<br>today ← 기준일자<br>top_k ← const:topK<br>offset ← cmd:offset | candidates → candidates<br>collection_status → collectionStatus<br>filtered_count → filteredCount<br>fallback_used → fallbackUsed<br>fallback_mode → fallbackMode |
-| G-01 | company_info ← companyInfo<br>eligibility ← selectedAnnouncement.eligibility<br>eligibility_parsed ← selectedAnnouncement.eligibility_parsed<br>today ← 기준일자 | gate_result → gateResult<br>business_age_years → businessAgeYears |
+| G-01 | company_info ← companyInfo<br>today ← 기준일자<br>announcement_id ← cmd:announcementId (확장) | gate_result → gateResult<br>business_age_years → businessAgeYears<br>selected_announcement → selectedAnnouncement (확장) |
 | T-C3 | selected_announcement ← selectedAnnouncement<br>item_spec ← itemSpec<br>gate_result ← gateResult<br>company_info ← companyInfo<br>reference_summary ← referenceSummary (선택) | task_plan → taskPlan<br>task_count → taskCount<br>instruction_set → instructionSet |
 | T-S1 | item_spec ← itemSpec<br>selected_announcement ← selectedAnnouncement<br>instruction ← 지시문(taskPlan)<br>rework_input ← 재작성·재수행 입력 | requirement_analysis → requirementAnalysis<br>feature_list → featureList<br>check → T-S1.check |
 | T-S2 | item_spec ← itemSpec<br>requirement_analysis ← requirementAnalysis<br>selected_announcement ← selectedAnnouncement<br>instruction ← 지시문(taskPlan)<br>rework_input ← 재작성·재수행 입력 | market_analysis → marketAnalysis<br>numeric_tokens → numericTokens<br>check → T-S2.check |
@@ -205,8 +206,8 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | — | R-8 | 첨부 문서 텍스트 추출 | 조율 | rule | — | — | — | 오류 시 실패(잠정) | — | — | — |
 | 1 | T-C1 | 요구사항 해석 | 조율 | task | 받음 | 120 | Agent 기본 | 재개 없음 | — | — | ○ |
-| 2 | T-C2 | 공고 매칭 | 조율 | task | 받음 | 30 | Agent 기본 | Task 안 대체 경로, 재개 없음 | — | — | ○ |
-| 3 | G-01 | 자격요건 게이트 | 조율 | rule | — | — | — | 오류 시 실패(잠정) | — | — | — |
+| 2 | T-C2 | 공고 매칭 | 조율 | task | 받음 | 30 | Agent 기본 | Task 안 대체 경로, 재개 없음, 추가 조회 구간(MORE) 실패는 흐름이 받음 | — | — | ○ |
+| 3 | G-01 | 자격요건 게이트 | 조율 | task | 받음 | 30 | Agent 기본 | 재개 없음, 자격 확인 구간(GATE) 실패는 흐름이 받음 | — | — | — |
 | 4 | T-C3 | 작업 분해 | 조율 | task | 받음 | 120 | Agent 기본 | Task 단위 재개 | — | — | ○ |
 | 5 | T-S1 | 요구사항 분석 | 전략 | task | 받음 | 120 | Agent 기본 | Task 단위 재개 | ○ | ○ | ○ |
 | 6 | T-S2 | 목표 시장 분석 | 전략 | task | 받음 | 120 | Agent 기본 | Task 단위 재개 | ○ | ○ | ○ |
@@ -230,17 +231,19 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | 20 | T-C4 | 결과 통합 · 전달 | 조율 | task | 받음 | 120 | Agent 기본 | Task 단위 재개 | — | — | — |
 
 - M-1 ~ M-4 · R-8은 기준 문서에 Task ID가 없어 붙인 구현용 ID다. 합치기는 조율 소속 규칙 단계이며 LLM을 쓰지 않고 14개 Task에 계상하지 않는다.
-- 규칙 단계(G-01 · G-02a · G-02b · G-03 · G-04)와 합치기는 tools를 받지 않는다. 담당 Agent는 기록용이다.
+- 규칙 단계(G-02a · G-02b · G-03 · G-04)와 합치기는 tools를 받지 않는다. 담당 Agent는 기록용이다.
 - "오류 시 실패(잠정)": 규칙 단계 · 합치기에서 오류가 나면 운영 오류로 실행 실패, 재작성 중이면 재작성 실패로 처리한다. 기준 문서에 처리 규칙이 없어 둔 기본값이다. G-04만 기준 문서대로 계속 진행한다.
 - T-C4는 LLM 사용 여부가 기준 문서에 없어 tools를 받게 두었다(미정).
+- **G-01은 2026-10-03부터 tools를 받는 Task다**(기준 문서는 규칙 단계 R-2). 공고 서버의 공고 상세 · 자격 판정을 `tools.search`로 부르며 LLM은 부르지 않는다. T-C2도 LLM을 부르지 않는다. 그래서 두 단계의 온도는 쓰이지 않는다. G-01은 고정 Task 14개에 세지 않는다(기획서 4-4 그대로).
+- "흐름이 받음": 그 구간에서는 어떤 오류(재시도 소진 · 코드 오류 · 출력 규격 위반 · 공고 없음)로 끝나도 실행을 실패시키지 않고 Orchestrator 흐름이 처리한다(8.2). 사전 단계(첫 조회) T-C2의 실패는 지금처럼 시작 요청 X-C2-FAIL이다.
 
 ## 8. Task별 특례
 
 | Task | 특례 |
 |---|---|
 | T-C1 | `formInput`은 명령 창구가 웹 DB에서 읽어 넣는다(`start_run_for_project`). 필수 항목이 비면 T-C1을 실행하지 않는다(E-C1-REQUIRED). 카테고리 판정 실패 시 `categoryDefaulted`(확장)를 참으로 내면 Orchestrator가 추적 기록에 남긴다. 자세한 내용은 `docs/T-C1_요구사항해석_구현.md` |
-| T-C2 | `topK=10`, 추가 조회는 `offset=10`으로 1회. 대체 경로는 Task 안에서 처리한다. Task 자체가 예외를 올리면 실행 건을 만들지 않고 다시 시도를 안내한다(확장 코드 X-C2-FAIL, 잠정) |
-| G-01 | `eligibility` · `eligibilityParsed`는 선택 공고에서 꺼내 넘긴다 |
+| T-C2 | `topK=10`, 추가 조회는 `offset=10`으로 1회. 대체 경로는 공고 서버가 안에서 처리한다(스텁은 Task 안에서 흉내). 첫 조회에서 Task가 예외를 올리면 실행 건을 만들지 않고 다시 시도를 안내한다(확장 코드 X-C2-FAIL, 잠정). 추가 조회에서 실패하면 흐름이 받는다(8.2). 첫 조회와 겹치는 추가 조회 후보 빼기 · 첫 조회 카드 갱신 · "내용 바뀜"은 Orchestrator 흐름 규칙이라 T-C2 함수는 첫 조회를 모른다 |
+| G-01 | 2026-10-03 바뀜: `announcementId`(확장)는 마지막 공고 선택 명령에서 넘긴다. `eligibility` · `eligibilityParsed`는 비울 수 있고 Orchestrator가 넣지 않는다(판정은 공고 서버가 공고 ID로 한다). 출력에 선택 공고 `selectedAnnouncement`(확장)를 함께 낸다(8.2) |
 | T-V1 | `rubric`은 상수 공급처에서 넘긴다. 공급처는 기준 문서에 명시가 없다(검증 파트와 확인 필요) |
 | T-V2 | 보조 LLM 실패 시 문자열 대조만으로 산출한다(Task 안에서 처리) |
 | G-02a · G-02b | 재작성 사이클이면 `cycleInfo`(확장)로 전후 비교 결과 · 재채점한 층 · 승계한 층 · 재작성 전 점수를 받는다. 전후 비교(높은 쪽 선택과 되돌리기)는 Orchestrator가 먼저 하고, G-02는 그 결과를 `scoreReport.comparisons` · `carriedOverLayer` · `reworkDiff`에 담는다 |
@@ -275,6 +278,42 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 - 회수 단위가 기획서 6-6("재수행으로도 통과하지 못한 문장")보다 넓다. 1차 시도가 반려되고 2차 시도가 통과한 문장도 1차 시도 한 행이 생긴다. 검수 팀은 이 회수 단위가 라벨링 · 학습 계획과 맞는지 확인해 준다(10절 9번).
 - 이 문장들은 웹 `proofread_logs`에만 있다. 실행 기록 · 호출 기록 · 추적 사건 · 로그 · 관리자 조회에는 싣지 않는다.
 
+### 8.2 T-C2 · G-01 — 공고 서버 연결 (2026-10-03)
+
+공고팀에 알리는 내용이다. 공고 서버 API 약속 전체는 `docs/공고서버_API요청_공고팀전달.md`에 있다.
+
+| 항목 | 내용 |
+|---|---|
+| 구현 위치 | `agents/notice/` — `NoticeClient`(HTTP 클라이언트, 표준 라이브러리), `make_tc2(client)` · `make_g01(client)`(Task 함수), `bind_notice(registry, client)` |
+| 켜기 | 워커 조립(`bootstrap.build_app`)이 환경 변수 `SBRAIN_NOTICE_API_URL`이 있으면 `registry.bind`로 T-C2 · G-01에 공고 서버 연결을 끼운다(실제 모드). 없으면 스텁(스텁 모드). 웹 조립(`build_web`)은 공고 서버를 부르지 않는다 |
+| 호출 | 모든 호출은 `tools.search(목적, fn)`. 호출 기록의 목적은 T-C2 `수집 상태` · `공고 매칭`, G-01 `공고 상세` · `자격 판정`. 받은 제한 시간을 HTTP timeout에 건다 |
+| 오류 변환 | 시간 초과 `TimeoutError`, 연결 실패 `ConnectionError`, HTTP 오류 코드 `ProviderError(status)`, JSON이 아니거나 약속한 키가 없거나 값이 약속 밖 `FormatError`. 예외 메시지에는 주소 · 요청 · 응답 본문을 넣지 않는다 |
+| 공고 없음 | 404 + 본문 `{"code": "NOTICE_NOT_FOUND"}`(공고 상세 · 자격 판정)는 예외가 아니라 값으로 받아 그 호출은 성공으로 기록하고 재시도하지 않는다. 그 값을 받은 G-01이 공용 예외 `ResourceNotFound`(`orchestrator/errors.py`)를 올린다. 본문 코드가 없는 404는 일반 오류다 |
+| T-C2 순서 | 수집 상태 → 정상이 아니면 후보 0건 · 그 상태 · `filteredCount=0` · `fallbackUsed=False`로 끝(첫 조회 E-C2-STALE, 추가 조회는 흐름이 E-C2-STALE 안내 후 기회 반환) → 정상이면 공고 추천(`top = min(topK, 10)`, `offset`)을 받아 카드로 바꾼다. 순서 · `rank`는 받은 그대로 |
+| G-01 순서 | 공고 상세 → `Announcement` → 사업자인데 `foundedAt`이 없으면 판정 API를 부르지 않고 `passed=False` · `missingInputs=["foundedAt"]` → 그 밖에는 자격 판정 → `GateResult`(`unknownConditions` 포함, `undecidable`은 늘 거짓) · `businessAgeYears`(개월 / 12, 소수 한 자리 사사오입, 예비창업자 `null`) |
+| 저장 | G-01의 선택 공고 · 자격 결과 · 업력은 한 단계 · 한 저장이다. 성공하면 `Run.announcement_id`가 그 공고 ID가 되고, 불통과면 그 공고를 막힌 공고 목록(`Run.blockedAnnouncementIds`)에 넣는다 |
+| G-01 실패 | 어떤 오류든(공고 없음 포함) 실행을 실패시키지 않는다. 공고 없음은 X-C2-GONE, 그 밖은 X-C2-FAIL 안내를 남기고 고르기 전 대기 지점(공고선택 또는 계획서작성 · 사용자대기)으로 돌아간다. 선택 공고 · 자격 결과 · 업력 · `announcement_id`는 고르기 전 그대로 |
+| 보내는 신청자 정보 | T-C2: 순위에 쓰이는 칸만(신청자 유형, 아이템 설명, 설립일, 시 · 도 · 시 · 군 · 구, 성별, 인증, 첫 창업 여부, 업종 이름, 채용 계획 여부, 협력 기관, 팀원 경력, 수익모델 항목). G-01: 신청자 유형 · 설립일 · 기준일. 대표자 이름 · 생년월일 · 사업자등록번호 · 자기부담금 · 희망 사업 규모 · 보유 시설은 보내지 않는다 |
+| 동시 호출 | 워커 프로세스 안에서 공고 서버 호출은 한 번에 하나씩(프로세스 공용 잠금, 잠정). 운영 워커는 1대(공고팀이 동시 호출 안전성을 확인하기 전까지) |
+| 스텁 모드 | 흐름은 실제 모드와 같다. 스텁 G-01은 같은 판정 원칙(확실한 미달만 불통과, 읽지 못한 조건은 확인 필요, 접수기간 미판정)으로 스텁 공고를 판정한다. 스텁 공고는 업력 상한이 없다 |
+
+### 8.3 뒤 단계 Agent가 받는 공고 값 (2026-10-03)
+
+선택 공고(`selectedAnnouncement`, `Announcement`)는 이제 공고 서버의 공고 상세로 만든다. 선택 공고를 받는 Task(T-C3 · T-S1 · T-S2 · T-W1 · T-W3 · G-03 · G-04)와 선택 공고에서 양식 · 평가 항목을 주입받는 Task(T-W1 · T-V1 · T-P1 · T-P2)는 아래를 처리해야 한다.
+
+| 필드 | 값 | 처리 |
+|---|---|---|
+| `applyStart` · `applyEnd` | 날짜 또는 **`null`** | 마감일 없는 공고(예산 소진 · 상시 · 선착순)는 `null`이다. 날짜가 있다고 가정하지 않는다 |
+| `applyPeriodType` (확장) | `기간 있음` · `예산 소진 시까지` · `상시·수시` · `선착순·모집 완료 시까지` · `모름` | 마감일이 없을 때 일정 서술의 근거로 쓸 수 있다 |
+| `supportAmountMax` · `supportAmountText` | 원 · 원문 금액 표기 또는 **`null`** | 금액 정보가 없는 공고는 `null`이다. 0으로 바꾸지 않는다 |
+| `status` | `모집중` · `마감` | 공고 서버가 모집 상태를 모르면 `모집중`이다 |
+| `supportField` | 공고 서버의 분류 문자열 그대로 | 기준 문서의 두 값(창업(06) · 기술개발(02))이 아닐 수 있다 |
+| `bonusInfo` | 공고의 가점 · 우대 조건 원문 또는 `null` | |
+| `summaryEmbedding` | 늘 빈 목록 | 쓰지 않는다 |
+| `formSpec` · `evaluationItems` | 기본 양식(잠정, `agents/form_defaults.py`) | 실제 값은 작성 · 검수 Agent 연동 때 정한다 |
+
+- 지금 스텁은 값이 비면 T-C3 지시 맥락의 `applyEnd` · `supportAmountMax`를 `null`로 두고, G-03 스텁은 그 보호 토큰(날짜 · 금액)을 만들지 않는다. 실제 Agent도 빈 값에서 멈추지 않아야 한다.
+
 ## 9. 확장 필드 (기준 문서에 없음)
 
 코드에서는 `ext()`로 선언되어 JSON 스키마에 `x-extension`이 붙는다.
@@ -284,7 +323,13 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | ReworkInput | sourceRefs, feedbackId | 피드백 출처 추적 |
 | ReworkComparison | cycleId, screen, basis, comparedAt | 어느 재작성 사이클 · 화면 · 비교 기준인지 |
 | AttemptRef → ExecutionRecord | executionId, runId, agent, stepKind, model, provider, temperature, inputs, outputs, outputMeta, status, cycleId, reworkRole, redoCount, resumeCount, feedbackIn, error, errorKind, startedAt, endedAt | 실행 추적 |
-| Run | createdAt, projectId, segment, queue, segmentTotal, redoState, cycle, lastRework, resumeWindowStartedAt, adminAlert, decisionRef, checkRefs, moreUsed, notices, endedAt | 재개 지점 · 재작성 사이클 상태 · 마지막 재작성 결과 요약 |
+| Run | createdAt, projectId, segment, queue, segmentTotal, redoState, cycle, lastRework, resumeWindowStartedAt, adminAlert, decisionRef, checkRefs, moreUsed, blockedAnnouncementIds, notices, endedAt | 재개 지점 · 재작성 사이클 상태 · 마지막 재작성 결과 요약 · 막힌 공고(자격 불통과, 2026-10-03) |
+| Announcement | applyPeriodType | 모집 형태 표기 — 기간 있음 · 예산 소진 시까지 · 상시·수시 · 선착순·모집 완료 시까지 · 모름 (2026-10-03, 8.3) |
+| AnnouncementCard | applyPeriodType, contentChanged, contentVersion, bonusScore, bonusItems | 모집 형태, 추가 조회의 내용 바뀜, 공고 서버 내용 버전, 신청자별 가산점 합계 · 항목별 근거 (2026-10-03) |
+| (신규) BonusItem | name, points | 가산점 항목별 근거 하나 (2026-10-03) |
+| GateResult | unknownConditions | 확인 필요 조건 이름(`지원대상 유형` · `업력`) — 진행을 막지 않음 (2026-10-03) |
+| G01In | announcementId | 고른 공고 ID — 판정은 공고 서버가 공고 ID로 한다. `eligibility` · `eligibilityParsed`는 비울 수 있고 넣지 않는다 (2026-10-03) |
+| G01Out | selectedAnnouncement | 자격 확인한 공고의 상세 → 산출물 `selectedAnnouncement`. 자격 결과 · 업력과 한 번에 저장 (2026-10-03) |
 | Notification | notificationId | 알림 식별 |
 | G02aIn · G02bIn | cycleInfo, settingsSnapshot, rubricVersion | 전후 비교 결과 전달, 판정 설정값 · rubric 버전 기록 |
 | TP2Out | nextRedoHint | 위반 유형별 재수행 지시 |
@@ -317,3 +362,5 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | 8 | Agent 설정에 추론 강도(`reasoningEffort`) 추가. 온도가 비어 있으면(추론 모델) Task별 온도 규칙(T-V1 0 고정, T-P2 0.2 이하)을 적용하지 않는다(잠정). 추론 모델을 쓰는 Agent는 이 점을 확인한다 | 검증-1 · 검수 |
 | 9 | T-P2 시도별 기록(`SentenceResult.attempts`)과 검수 회수 문단의 회수 단위(반려된 시도마다 한 행, 8.1). 기획서 6-6은 5-7의 관리자 로그를 이 회수 경로로 함께 설계한다고 적는다 | 검수 |
 | 10 | 사용자 재작성 지시(5.2): `targets`가 묶음 이름이고, 판정 지시가 없는 묶음은 `reason` · `instructionDelta`가 모두 고정 문구로 온다(잠정). 문서층은 임시로 계획서 전체를 다시 만든다 | 작성 · 구현 |
+| 11 | T-C2 · G-01을 공고 서버 HTTP API로 구현(8.2). 새 API 3개(수집 상태 · 공고 상세 · 자격 판정)와 추천 결과 키 추가는 `docs/공고서버_API요청_공고팀전달.md`로 요청 중 | 공고팀 |
+| 12 | 선택 공고의 비어 있을 수 있는 값(`applyStart` · `applyEnd` · `supportAmountMax` · `supportAmountText`)과 `applyPeriodType`(8.3). 계획서 일정 · 금액 서술과 보호 토큰이 빈 값을 다루는 방법, 실제 양식 · 평가 항목 | 조율(T-C3) · 작성 · 검수 · 검증-1 |

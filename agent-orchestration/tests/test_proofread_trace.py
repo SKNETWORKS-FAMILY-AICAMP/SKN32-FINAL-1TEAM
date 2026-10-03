@@ -126,9 +126,12 @@ def test_trace_covers_rule_and_merge_steps_without_content(clock):
     app.orchestrator.start_writing(rid)
     app.orchestrator.advance(rid)
     recs = {r.task_id: r for r in app.store.executions(rid)}
-    for tid in ("G-01", "M-1", "G-02a"):
+    for tid in ("M-1", "G-02a"):
         assert recs[tid].step_kind in ("rule", "merge") and recs[tid].model is None
         assert recs[tid].inputs and recs[tid].outputs
+    # G-01은 tools를 받는 Task(공고 서버 호출, LLM 없음) — 모델 표시는 T-C2와 같다 (spec 5)
+    assert recs["G-01"].step_kind == "task" and recs["G-01"].model == recs["T-C2"].model
+    assert recs["G-01"].inputs and recs["G-01"].outputs
     # 첫 실행도 입력 산출물명@버전을 남긴다
     assert "planDoc@2" in recs["T-V1"].inputs and "planDoc@1" in recs["M-1"].inputs
     assert recs["T-S1"].model == "미정" and recs["T-S1"].agent == "전략"

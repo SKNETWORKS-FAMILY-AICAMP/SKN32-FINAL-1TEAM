@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 from typing import Any, Callable
 
 from ..intake import MissingRequired, ProjectInputSource, to_pre_input
-from ..models import Announcement, Notice, Notification, PreInput, ReworkOrder, Run
+from ..models import Notice, Notification, PreInput, ReworkOrder, Run
 from ..models.run import ACTIVE_PROGRESS, collecting, make_state, progress_percent
 from ..orchestrator.context import RunContext
 from ..orchestrator.engine import Engine
@@ -35,7 +35,8 @@ from ..orchestrator.store import PENDING_REQUEST, RunFilter, StartRequest
 from . import reads
 from .rework_map import BUNDLE_EXECUTABLE, BUNDLE_LAYER, LAYER_SCREENS, TASK_BUNDLE
 from .sbrain_flow import (
-    REVIEW, SCREEN_STEP, STEP_LABEL, STEP_SCREEN, WRITE, SBrainFlow, bundle_orders, proto_queue, rework_queue,
+    CANDIDATE_LIMIT, MORE_BEFORE_POINTERS, REVIEW, SCREEN_STEP, SELECTION_STEPS, STEP_LABEL, STEP_SCREEN, WRITE,
+    SBrainFlow, bundle_orders, candidate_lists, proto_queue, rework_queue,
 )
 
 MAX_START_CLAIMS = 3   # 시작 요청을 가져간 횟수 상한 — 넘으면 E-C1-TIMEOUT으로 끝낸다 (잠정)
@@ -48,7 +49,8 @@ REWORK_LEASE_RETRY_INTERVAL_SEC = 0.05   # 점유를 다시 시도하는 간격 
 WAIT_TIMEOUT_SEC = 60.0             # wait_project 기본 제한 시간 — 넘기면 그때의 상태를 그대로 준다
 WAIT_POLL_SEC = 0.5                 # wait_project가 DB를 다시 읽는 간격
 # 작성 시작 전 공고 다시 고르기 · 추가 조회를 받는 단계 — 공고선택 · 사용자대기, 자격 통과 뒤 계획서작성 · 사용자대기 (3.3)
-ANNOUNCEMENT_STEPS = ("공고선택", "계획서작성")
+# G-01이 실패하면 돌아가는 대기 지점과 같은 목록이다 (sbrain_flow.SELECTION_STEPS)
+ANNOUNCEMENT_STEPS = SELECTION_STEPS
 
 
 @dataclass
@@ -187,7 +189,6 @@ class SBrainOrchestrator:
         engine: Engine,
         flow: SBrainFlow,
         settings: SettingsProvider,
-        announcements: Callable[[str], Announcement],
         profile_count: Callable[[str], int],
         project_inputs: ProjectInputSource | None = None,
         now: Callable[[], datetime] = datetime.now,
@@ -199,7 +200,6 @@ class SBrainOrchestrator:
         self.flow = flow
         self.store = engine.store
         self.settings = settings
-        self.announcements = announcements
         self.profile_count = profile_count
         self.project_inputs = project_inputs
         self.now = now
@@ -367,30 +367,38 @@ class SBrainOrchestrator:
         """공고 추가 조회 — 공고선택 · 사용자대기, 자격 통과 뒤 작성 시작 전(계획서작성 · 사용자대기)에도 받는다(3.3).
 
         끝나면 공고선택 · 사용자대기로 돌아간다. 작성을 시작한 뒤에는 INVALID_STATE (워커 점유 중이어도 BUSY 아님).
+        한도(1회 · 합계 20건)는 유효한 추가 조회만 센다 — 실패한 추가 조회(어떤 오류 · 수집 상태 비정상)는 기회를 돌려받고
+        한도에도 세지 않는다(spec 4.2.3). decision에 조회 전 T-C2 출력 버전을 남겨 실패하면 흐름이 그리로 돌린다.
         """
         def act(ctx: RunContext) -> None:
-            total = sum(len(ctx.get("candidates", v)) for v in range(1, ctx.latest.get("candidates", 0) + 1))
-            if ctx.run.more_used or total >= 20:
+            first, more = candidate_lists(ctx)
+            if ctx.run.more_used or len(first) + len(more) >= CANDIDATE_LIMIT:
                 raise CommandError("MORE_LIMIT", "추가 조회는 1회, 최대 20건")
-            self._decide(ctx, {"command": "more", "offset": 10})
+            self._decide(ctx, {"command": "more", "offset": 10,
+                               MORE_BEFORE_POINTERS: self.flow.more_lookup_pointers(ctx)})
             ctx.run.more_used = True
             self._enqueue(ctx, ["T-C2"], "MORE", "공고선택")
         self._command(run_id, ANNOUNCEMENT_STEPS, act)
 
     def select_announcement(self, run_id: str, announcement_id: str) -> None:
-        """공고 선택 — 후보(첫 · 추가 조회)에 있는 공고만(INVALID_ANNOUNCEMENT). 선택 공고 새 버전 → G-01 → 결과에 따라 대기.
+        """공고 선택 — 고른 공고 ID와 고르기 전 대기 지점만 남기고 G-01을 넣는다 (spec 4.3.1).
 
-        자격 통과 뒤 작성 시작 전(계획서작성 · 사용자대기)에도 같은 처리로 다시 고를 수 있다(3.3). 작성 시작 뒤에는
-        INVALID_STATE — 워커가 점유 중이어도 점유를 기다리지 않고 상태로 거절한다(BUSY 아님).
+        - 후보(첫 · 추가 조회)에 없는 공고는 INVALID_ANNOUNCEMENT, 그다음 막힌 공고(자격 불통과)는 ANNOUNCEMENT_BLOCKED.
+          거절하면 실행 건을 바꾸지 않는다.
+        - 선택 공고를 만들지 않고 Run.announcement_id도 바꾸지 않는다. 공고 상세와 자격 판정은 워커의 G-01이 함께 받아
+          한 번에 저장하고, 그때 announcement_id가 바뀐다. G-01이 실패하면 decision의 beforeStep으로 돌아간다.
+        - 자격 통과 뒤 작성 시작 전(계획서작성 · 사용자대기)에도 같은 처리로 다시 고를 수 있다(3.3). 작성 시작 뒤에는
+          INVALID_STATE — 워커가 점유 중이어도 점유를 기다리지 않고 상태로 거절한다(BUSY 아님).
         """
         def act(ctx: RunContext) -> None:
-            ids = {card.announcement_id
-                   for v in range(1, ctx.latest.get("candidates", 0) + 1) for card in ctx.get("candidates", v)}
+            first, more = candidate_lists(ctx)   # 첫 조회 + 유효한 추가 조회 (실패한 추가 조회의 카드는 고를 수 없다)
+            ids = {card.announcement_id for card in first + more}
             if announcement_id not in ids:
                 raise CommandError("INVALID_ANNOUNCEMENT", announcement_id)
-            dref = self._decide(ctx, {"command": "select", "announcementId": announcement_id})
-            ctx.put("selectedAnnouncement", self.announcements(announcement_id), producer=f"user:{dref}")
-            ctx.run.announcement_id = announcement_id
+            if announcement_id in ctx.run.blocked_announcement_ids:
+                raise CommandError("ANNOUNCEMENT_BLOCKED", announcement_id)
+            self._decide(ctx, {"command": "select", "announcementId": announcement_id,
+                               "beforeStep": ctx.run.state.step})
             self._enqueue(ctx, ["G-01"], "GATE", "자격확인")
         self._command(run_id, ANNOUNCEMENT_STEPS, act)
 
@@ -647,9 +655,12 @@ class SBrainOrchestrator:
     def _view(self, run: Run) -> RunView:
         notices = list(run.notices)
         if run.state.progress in ACTIVE_PROGRESS and run.announcement_id:
+            # 마감 안내 (spec 4.5) — 마감일이 지났거나(비어 있으면 보지 않음), G-01이 상세를 받을 때 모집 상태가 '마감'.
+            # 알리기만 하고 진행을 막지 않는다
             ctx = self.engine.open_context(run)
             ann = ctx.get("selectedAnnouncement", default=None)
-            if ann is not None and ann.apply_end < self.now().date():
+            if ann is not None and ((ann.apply_end is not None and ann.apply_end < self.now().date())
+                                    or ann.status == "마감"):
                 notices.append(Notice(code="E-RUN-CLOSED", message=message("E-RUN-CLOSED"), at=self.now()))
         percent = progress_percent(run)
         current = run.queue[0] if run.queue else None

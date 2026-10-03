@@ -22,6 +22,7 @@ ERROR_CODES: dict[str, ErrorCode] = {e.code: e for e in [
     ErrorCode("E-C2-STALE", "T-C2", "공고 정보를 갱신하는 중입니다. 갱신 후 다시 확인해주세요.", "매칭 중단, 수집 상태 경고"),
     ErrorCode("E-C2-EMBED", "T-C2", "추천 정확도가 낮아질 수 있습니다.", "폴백 순위 표시"),
     ErrorCode("E-G1-MISSING", "G-01", "신청 가능 여부를 확인하려면 사전 정보의 필수 항목이 필요합니다. 입력한 정보를 확인해주세요.", "판정 보류"),
+    # 쓰임은 기준 문서와 다름 — 확인 필요 조건(unknownConditions)이 있으면 화면 4에만 붙는 막지 않는 안내 (spec 4.3.3)
     ErrorCode("E-G1-UNPARSED", "G-01", "이 공고는 자격요건 자동 확인이 어렵습니다. 공고문을 직접 확인해주세요.", "undecidable=true"),
     ErrorCode("E-G1-REJECT", "G-01", "이 공고는 {사유}로 신청이 어렵습니다. 다른 공고를 보여드릴까요?", "실행 차단"),
     ErrorCode("E-C1-REQUIRED", "T-C1", "필수 항목을 입력해주세요: {누락 항목}", "폼 단계 차단"),
@@ -45,8 +46,15 @@ ERROR_CODES: dict[str, ErrorCode] = {e.code: e for e in [
     ErrorCode("E-RUN-CLOSED", "R-9", "선택하신 공고의 접수가 마감되었습니다. 계속 진행할지 선택해주세요.", "마감 사실만 알림"),
     ErrorCode("E-W1-REMOVED", "T-W1 · R-6", "입력하지 않은 경력이나 지원 규모를 넘는 금액이 반복해서 작성되어 해당 부분을 지웠습니다. 필요하면 직접 보완해주세요.", "notices로 알림"),
     # 확장(잠정) — 기준 문서에 T-C2 전체 실패 처리가 없다. T-C1과 같이 다시 시도 안내.
-    ErrorCode("X-C2-FAIL", "T-C2", "잠시 문제가 있었습니다. 다시 시도해주세요.", "확장(잠정): 사전 단계라 재개 없이 다시 시도 안내"),
+    ErrorCode("X-C2-FAIL", "T-C2 · G-01", "잠시 문제가 있었습니다. 다시 시도해주세요.",
+              "확장(잠정): 재개 없이 다시 시도 안내 — 사전 단계 · 추가 조회 실패, 자격 확인(G-01) 실패는 고르기 전 대기 지점으로"),
+    # 확장(잠정) — 고른 공고가 공고 서버에 없음. 고르기 전 대기 지점으로 돌아가고, 막지 않으므로 다시 고를 수 있다
+    ErrorCode("X-C2-GONE", "G-01", "선택하신 공고를 더 이상 확인할 수 없습니다. 다른 공고를 선택해주세요.",
+              "확장(잠정): 공고 없음 — 고르기 전 대기 지점으로"),
 ]}
+
+# E-C2-EMBED 덧붙임 — 대체 경로가 마감 임박순이면 문구 끝에 붙인다 (기준 문서 T-C2, spec 4.1.3)
+EMBED_DEADLINE_SUFFIX = " 마감 임박순으로 보여드립니다."
 
 
 # CommandError 코드 (확장) — 웹이 받는 명령 · 조회 거절 사유. 시트 6 결과 코드(E-…)는 위 ERROR_CODES에 있다
@@ -64,6 +72,7 @@ COMMAND_ERROR_CODES: dict[str, str] = {
     "BUSY": "다른 곳이 그 실행 건을 점유 중 — 잠시 뒤 다시",
     "MORE_LIMIT": "공고 추가 조회 한도 (1회 · 합계 20건)",
     "INVALID_ANNOUNCEMENT": "후보에 없는 공고",
+    "ANNOUNCEMENT_BLOCKED": "자격 불통과로 막힌 공고 — 그 실행 건에서 다시 고를 수 없음 (추가 조회에서 내용이 바뀌면 풀림)",
     "NO_SELECTION": "재작성 선택 없음",
     "INVALID_ORDER": "목록에 없는 재작성 지시 · 묶음 이름 · 화면에 맞지 않는 층",
     "INVALID_ACTION": "잘못된 동작",
@@ -116,6 +125,16 @@ class ToolCallExhausted(OrchestratorError):
 
 class ContractError(OrchestratorError):
     """Task가 규격에 맞지 않는 출력을 돌려줌."""
+
+
+class ResourceNotFound(OrchestratorError):
+    """Task가 찾는 외부 대상(예: 고른 공고)이 호출처에 없음 (확장).
+
+    재시도할 오류가 아니라 호출 결과다. 호출 함수는 '없음'을 예외가 아닌 값으로 돌려주어 tools가 성공한 호출로 기록하고
+    재시도하지 않게 하며, 그 값을 받은 Task가 이 예외를 올린다. 실패 정책(FailurePolicy.rescue_segments)이 흐름에
+    넘기도록 정한 단계면 엔진이 '대상없음'으로 분류해 Flow.on_rescue에 넘기고, 그 밖의 단계에서는 다른 예외처럼 운영
+    오류다. 메시지에 주소 · 요청 · 응답 본문 · 입력 값(대상 ID 등)을 넣지 않는다.
+    """
 
 
 class CommandError(OrchestratorError):

@@ -181,6 +181,10 @@ class Run(SBModel):
     decision_ref: str | None = ext(None, note="현재 구간을 연 사용자 명령 산출물@버전")
     check_refs: dict[str, str] = ext(default_factory=dict, note="이번 구간 · 사이클의 Task별 최종 check@버전")
     more_used: bool = ext(False, note="공고 추가 조회 사용 여부")
+    blocked_announcement_ids: list[str] = ext(
+        default_factory=list,
+        note="막힌 공고 ID — 자격 불통과(E-G1-REJECT)가 나온 공고. 공고 선택 명령이 거절한다(ANNOUNCEMENT_BLOCKED). "
+             "G-01 결과 저장과 같은 저장에서 넣고, 추가 조회에서 내용이 바뀌면 뺀다 (spec 4.3.6)")
     notices: list[Notice] = ext(default_factory=list)
     ended_at: datetime | None = ext(None)
     failure_reason: str | None = ext(None, note="실패 사유 '<Task>: <사유> — <오류 요약>' (웹 실패 알림에도 쓴다)")
