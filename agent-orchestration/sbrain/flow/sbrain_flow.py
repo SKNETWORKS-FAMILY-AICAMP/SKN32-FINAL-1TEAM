@@ -15,6 +15,12 @@
   * 원페이지면 생략  ** 원페이지만
 G-02b는 T-V2 직후 계산하고(시트 2 "T-V2 종료 직후"), 화면 8을 거쳐 화면 9에서 보여준다.
 
+재작성 · 재수행 지시문 (T-C3 spec 5): 대상 Task의 지시문 입력을 build_instruction이 만든다.
+  첫 실행은 taskPlan의 지시문 그대로다. 검사 불통과 재수행 · 사용자 재작성의 대상 · 재작성 중 재수행이면 조율 다시 쓰기
+  함수(rewriter, 조립이 끼운다)가 안내 부분만 다시 쓰고, 문제 내용 원문을 덧붙여 <taskId>.instruction으로 저장한다
+  (같은 입력으로 재개하면 다시 쓰지 않고 저장한 것을 쓴다). 반영 실행(T-B1)과 다시 쓰기 함수가 없는 조립(스텁)은
+  덧붙이기만 한다. 재작성 중 재수행이면 어느 경로든 그 사이클의 재작성 지시도 함께 남긴다(5.4).
+
 T-P2 시도 기록: 문장마다 T-P2 함수가 결과를 돌려준 호출 하나가 시도다(호출 실패는 시도가 아니다). 시도는 문장 결과
 (sentenceResults)의 attempts에 쌓고, 보호 토큰 검사를 통과하지 못한 시도(반려)는 같은 저장에서 웹 proofread_logs
 후보(RejectedAttempt)로 넘긴다 — 학습 동의 확인과 쓰기는 저장소가 한다. 재개해도 이번에 새로 만든 시도만 넘긴다.
@@ -25,20 +31,22 @@ import hashlib
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 
 from ..contracts import tasks as c
 from ..models import (
-    AnnouncementCard, Notice, Notification, RejectedAttempt, ReworkInput, ReworkOrder, Run, Token, TokenCheckResult,
+    AnnouncementCard, CompanyInfo, Notice, Notification, RejectedAttempt, ReworkInput, ReworkOrder, Run,
+    TaskInstruction, Token, TokenCheckResult,
 )
 from ..models.run import RedoState, make_state
 from ..orchestrator.context import RunContext
-from ..orchestrator.engine import Engine, Outcome, StepFailure
-from ..orchestrator.errors import EMBED_DEADLINE_SUFFIX, ToolCallExhausted, message
+from ..orchestrator.engine import Engine, Outcome, StepFailure, ToolsFactory
+from ..orchestrator.errors import EMBED_DEADLINE_SUFFIX, ContractError, ToolCallExhausted, message
 from ..orchestrator.registry import TaskRegistry, TaskSpec
-from ..orchestrator.tools import CallSink
+from ..orchestrator.tools import CallSink, Tools
 from ..orchestrator.trace import FeedbackLink
-from .catalog import FIRST_CANDIDATES, MORE_CANDIDATES
+from .catalog import FIRST_CANDIDATES, FORM_SPEC, INSTRUCTION_SUFFIX, MORE_CANDIDATES, RUBRIC
+from .instruction import append_problems, extract_frame, replace_guidance
 from .rework_map import ARTIFACT_BUNDLES, BUNDLE_LAYER, BUNDLE_TASK, DOCUMENT_TASKS
 
 WRITE = ["T-C3", "T-S1", "T-S2", "T-W1", "T-W2", "T-W3", "M-1", "T-V1", "G-02a"]
@@ -208,15 +216,43 @@ def _merge_orders(task_id: str, layer: str, targets: list[str], orders: list[Rew
                        instruction_delta="\n".join(deltas) or REWORK_DEFAULT_REASON, layer=layer)
 
 
+# ── 재작성 · 재수행 지시문 (T-C3 spec 5) ──────────────────────
+REWRITE_AGENT = "조율"           # 다시 쓰기는 조율 Agent 설정(호출처 · 모델 · 추론 강도)으로 부른다
+REWRITE_TIMEOUT_TASK = "T-C3"    # 다시 쓰기 제한 시간은 T-C3의 제한 시간 설정을 쓴다 (잠정)
+MASK_MIN_CHARS = 2               # 이보다 짧은 회사 정보 값은 가리지 않는다 (잠정)
+REFLECT_ROLE = "반영"            # 화면 9 계획서 재작성의 T-B1 반영 실행 — 다시 쓰지 않는다 (T-C3 spec 5.1)
+
+
+class GuidanceRewriter(Protocol):
+    """조율의 안내 다시 쓰기 함수 (agents/supervisor/rewrite.py — 조립이 끼운다. 흐름은 agents/를 import하지 않는다).
+
+    문제 내용: 재작성이면 order(묶음 이름 · 사유 · 보완 지시), 재수행이면 issues, 재작성 중 재수행이면 둘 다.
+    mask_values는 문제 내용에서 가릴 회사 정보 값이다. 새 안내(정리한 것)를 돌려준다. ToolCallExhausted는 받지 않는다."""
+
+    def __call__(self, *, task_id: str, name: str, frame: str, guidance: str, order: ReworkOrder | None,
+                 issues: list[str], mask_values: list[str], tools: Tools) -> str: ...
+
+
+def rewrite_mask_values(info: CompanyInfo) -> list[str]:
+    """다시 쓰기 요청의 문제 내용에서 가릴 회사 정보 값 (T-C3 spec 5.2) — 대표자 이름 · 기업명 · 사업자등록번호, 생년월일(ISO),
+    수익모델 단가(revenueUnitPrice · revenueItems[].unitPrice — 숫자만 · 천 단위 쉼표 표기), 대표자 이력 · 팀 구성원의 각 항목.
+    MASK_MIN_CHARS보다 짧은 값은 뺀다 (잠정). 같은 값은 한 번만."""
+    prices = [info.revenue_unit_price, *(item.unit_price for item in info.revenue_items)]
+    values = [info.representative_name, info.company_name, info.business_reg_no, info.birth_date.isoformat(),
+              *(form for price in prices for form in (str(price), f"{price:,}")),
+              *info.representative_career, *info.team_careers]
+    return list(dict.fromkeys(v for v in values if v is not None and len(v.strip()) >= MASK_MIN_CHARS))
+
+
+def reflect_issues(ctx: RunContext) -> list[str]:
+    """화면 9 계획서 재작성 반영 실행(T-B1)의 문제 내용 — 반영 입력을 만들 때와 반영 실행 중 재수행 지시문이 같이 쓴다."""
+    return [f"계획서 재작성 반영 ({ctx.ref('planDoc')})"]
+
+
 def default_instruction_builder(base: str, rework_input: ReworkInput | None) -> str:
-    """재작성 · 재수행 때 기존 지시문에 문제가 된 내용을 덧붙인다 (조율 Agent 구현으로 교체 예정)."""
-    if rework_input is None:
-        return base
-    if rework_input.order is not None:
-        delta = rework_input.order.instruction_delta
-        reason = rework_input.order.reason
-        return f"{base}\n\n[재작성] {reason}" + (f"\n{delta}" if delta and delta != reason else "")
-    return base + "\n\n[" + rework_input.mode + " — 문제가 된 내용]\n- " + "\n- ".join(rework_input.issues)
+    """기존 지시문에 문제가 된 내용을 덧붙인다 — 재작성 · 재수행 입력 하나만 보는 덧붙이기(append_problems와 같은 글자).
+    재작성 중 재수행 · 반영 실행 중 재수행은 SBrainFlow.build_instruction이 정한다."""
+    return append_problems(base, rework_input)
 
 
 class SBrainFlow:
@@ -226,13 +262,14 @@ class SBrainFlow:
         *,
         constants: Callable[[RunContext, str], Any],
         now: Callable[[], datetime] = datetime.now,
-        instruction_builder: Callable[[str, ReworkInput | None], str] = default_instruction_builder,
+        rewriter: GuidanceRewriter | None = None,
         new_id: Callable[[], str] | None = None,
     ) -> None:
         self.registry = registry
         self.constants = constants
         self.now = now
-        self.instruction_builder = instruction_builder
+        # 재작성 · 재수행 때 안내를 다시 쓰는 조율 함수 — 없으면(스텁 조립) 덧붙이기만 한다. 조립이 끼운다
+        self.rewriter: GuidanceRewriter | None = rewriter
         self.new_id = new_id or (lambda: uuid.uuid4().hex[:12])
         self.engine: Engine | None = None
 
@@ -244,8 +281,53 @@ class SBrainFlow:
             return self._run_tp2
         return None
 
-    def build_instruction(self, base: str, rework_input: ReworkInput | None) -> str:
-        return self.instruction_builder(base, rework_input)
+    def build_instruction(self, ctx: RunContext, spec: TaskSpec, task: TaskInstruction,
+                          rework_input: ReworkInput | None, rs: RedoState,
+                          tools_for: ToolsFactory) -> tuple[str, list[str]]:
+        """대상 Task의 지시문 입력 (T-C3 spec 5.1 · 5.3 · 5.4 · 5.5). (지시문, 실행 기록 입력 참조에 더할 산출물 참조)를 돌려준다.
+
+        - 첫 실행(입력 없음): taskPlan의 지시문 그대로.
+        - 반영 실행(T-B1, 역할 '반영'): 다시 쓰지 않는다. 반영 블록, 반영 실행 중 재수행이면 반영 블록 → 재수행 블록.
+        - 재작성 중 재수행(사이클 · 역할 '대상' · 입력 '재수행'): 그 사이클의 그 Task 재작성 지시도 함께 쓴다(5.4). Task가
+          받는 rework_input은 바꾸지 않는다.
+        - 다시 쓰기 함수가 없으면 덧붙이기만 한다. 있으면 안내 부분만 다시 쓰고(원래 안내는 늘 taskPlan의 guidance) 문제
+          내용 원문을 덧붙여 <taskId>.instruction으로 저장한다. 같은 입력으로 재개하면 저장한 지시문을 쓴다.
+        다시 쓰기의 재시도 소진(ToolCallExhausted)은 받지 않는다 — 엔진이 대상 Task를 재개한다(5.7).
+        """
+        base = task.instruction
+        if rework_input is None:
+            return base, []
+        reflecting = rs.rework_role == REFLECT_ROLE and spec.task_id == "T-B1"   # 반영 실행은 T-B1뿐 (_role)
+        cycle_order = self._cycle_order(ctx, spec.task_id, rework_input, rs)
+        carried = reflect_issues(ctx) if reflecting and rework_input.mode == "재수행" else None
+        if self.rewriter is None or reflecting:
+            return append_problems(base, rework_input, cycle_order=cycle_order, reflect_issues=carried), []
+        producer = f"orchestrator:{rs.rework_input_ref}"   # 이 지시문을 만든 재작성 · 재수행 입력
+        if rs.instruction_ref is not None and ctx.producer_of(rs.instruction_ref) == producer:
+            return ctx.get_ref(rs.instruction_ref), [rs.instruction_ref]   # 재개 — 다시 쓰지 않는다 (5.5)
+        try:
+            frame = extract_frame(base)
+        except ValueError:
+            raise ContractError(f"{spec.task_id} 지시문에 안내 부분이 없어 다시 쓸 수 없음") from None
+        order = rework_input.order or cycle_order
+        guidance = self.rewriter(
+            task_id=spec.task_id, name=spec.name, frame=frame, guidance=task.guidance, order=order,
+            issues=list(rework_input.issues) if rework_input.order is None else [],
+            mask_values=rewrite_mask_values(ctx.get("companyInfo")),
+            tools=tools_for(REWRITE_AGENT, REWRITE_TIMEOUT_TASK))
+        text = append_problems(replace_guidance(base, guidance), rework_input, cycle_order=cycle_order)
+        ref = ctx.put(f"{spec.task_id}{INSTRUCTION_SUFFIX}", text, producer=producer)
+        rs.instruction_ref = ref   # 대상 Task가 재시도를 다 쓰면 재개 위치와 같은 저장에 남는다
+        return text, [ref]
+
+    @staticmethod
+    def _cycle_order(ctx: RunContext, task_id: str, rework_input: ReworkInput, rs: RedoState) -> ReworkOrder | None:
+        """재작성 사이클 안에서 대상 Task가 재수행할 때 그 사이클의 그 Task 재작성 지시 (T-C3 spec 5.4). 아니면 None."""
+        cyc = ctx.run.cycle
+        if (cyc is None or rs.rework_role != "대상" or rework_input.mode != "재수행" or rework_input.order is not None
+                or task_id not in cyc.orders_by_task):
+            return None
+        return ReworkOrder.model_validate(cyc.orders_by_task[task_id])
 
     def today(self, ctx: RunContext) -> date:
         return self.now().date()
@@ -256,8 +338,8 @@ class SBrainFlow:
         return self.constants(ctx, name)
 
     def value(self, ctx: RunContext, name: str, spec: TaskSpec) -> Any:
-        if name == "rubricVersion":
-            return self.constants(ctx, "rubric").version
+        if name == "rubricVersion":   # 채점에 쓴 채점 기준표 — T-C3가 고른 것 (T-C3 spec 4)
+            return ctx.get(RUBRIC).version
         if name == "cycleInfo":
             cyc = ctx.run.cycle
             if cyc is None:
@@ -289,12 +371,11 @@ class SBrainFlow:
             self._attach_rework(ctx, rs, spec, kind="재작성", source_refs=source_refs,
                                 ri=dict(mode="재작성", previous_result_ref=prev, issues=issues, order=order),
                                 bundle_id=",".join(order.targets))
-        elif role == "반영" and tid == "T-B1":
+        elif role == REFLECT_ROLE and tid == "T-B1":
             plan_ref = ctx.ref("planDoc")
             prev = ctx.ref("prototype") if ctx.has("prototype") else ""
             self._attach_rework(ctx, rs, spec, kind="재작성반영", source_refs=[plan_ref],
-                                ri=dict(mode="재작성", previous_result_ref=prev,
-                                        issues=[f"계획서 재작성 반영 ({plan_ref})"], order=None),
+                                ri=dict(mode="재작성", previous_result_ref=prev, issues=reflect_issues(ctx), order=None),
                                 bundle_id=None)
         return rs
 
@@ -328,7 +409,7 @@ class SBrainFlow:
             return "재채점"
         if task_id in ("G-02a", "G-02b"):
             return "판정"
-        return "반영"  # T-B1(계획서 반영) · G-04
+        return REFLECT_ROLE  # T-B1(계획서 반영) · G-04
 
     def after_step(self, ctx: RunContext, step_id: str, outcome: Outcome) -> None:
         out = outcome.outputs
@@ -527,7 +608,7 @@ class SBrainFlow:
         rs = rs or self.initial_redo_state(ctx, spec)
         rec = engine.open_execution(ctx, spec, rs)
         rec.inputs = [ctx.ref(k) for k in ("targetSentenceIds", "protectedTokens", "formatFindings",
-                                           "planDoc", "selectedAnnouncement") if ctx.has(k)]
+                                           "planDoc", FORM_SPEC) if ctx.has(k)]
         targets: list[str] = ctx.get("targetSentenceIds")
         tokens = ctx.get("protectedTokens")
 
@@ -552,7 +633,7 @@ class SBrainFlow:
             tools = engine.make_tools(ctx, spec, rec, cfg, sink)
             plan = ctx.get("planDoc")
             sentences = {x.sentence_id: x for sec in plan.sections for x in sec.sentences}
-            fspec = ctx.get("selectedAnnouncement").form_spec.format_spec
+            fspec = ctx.get(FORM_SPEC).format_spec   # 서술 형식 — T-C3가 고른 양식 (T-C3 spec 4)
             findings = ctx.get("formatFindings")
             prior = {r.sentence_id: r for r in ctx.get("sentenceResults", default=[])} if resuming else {}
             todo = [sid for sid in targets if sid not in prior or prior[sid].kept_reason == "호출실패"]

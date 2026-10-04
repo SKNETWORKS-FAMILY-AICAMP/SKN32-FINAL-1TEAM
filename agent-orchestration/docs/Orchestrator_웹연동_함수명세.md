@@ -2,12 +2,23 @@
 
 | 항목 | 내용 |
 |---|---|
-| 작성일 | 2026-10-01 (2026-10-02 갱신 — 웹 더미 파이프라인 떼어 내기. 2026-10-03 갱신 — 공고 서버 연결) |
+| 작성일 | 2026-10-01 (2026-10-02 갱신 — 웹 더미 파이프라인 떼어 내기. 2026-10-03 갱신 — 공고 서버 연결. 2026-10-04 갱신 — 작업 분해(T-C3)가 고른 평가 항목) |
 | 상태 | 함수 이름 · 인자 · 결과 필드 · 오류 코드는 **구현 완료**. 화면 조회(5.1절)의 화면별 모양은 **초안** — 웹팀과 맞춰 고친다 |
 | 근거 | 웹팀 합의(2026-09-30) 1~10번, 사용자 결정(2026-10-01 ~ 10-03), `워커_구동_방식_제안.md`(확정), `웹스키마_교체목록_웹팀전달.md`(두 문서 저장소 미포함) |
 | 코드 | `sbrain/` — 명령 창구 `flow/service.py`(`SBrainOrchestrator`), 화면 · 결과 · 관리자 조회 `flow/reads.py`, 재작성 묶음 `flow/rework_map.py`, 조립 `bootstrap.py`, 워커 `worker.py`, 웹 테이블 쓰기 `store_sql/web_tables.py` |
 | 독자 | 웹팀(백엔드) |
 | 함께 볼 문서 | `docs/웹연동_변경사항_웹팀전달.md` — 웹 엔드포인트마다 어떤 함수를 부르고 응답을 어떻게 채우는지, 값 대응표, 웹 스키마 · 프론트 변경. `docs/공고연동_변경사항_웹팀전달.md` — 공고 서버 연결로 바뀐 화면 3 · 4 · 진행 상태(2026-10-03) |
+
+### 2026-10-04 바뀐 점 (요약) — 작업 분해(T-C3)
+
+조율 Agent의 작업 분해(T-C3)를 실제로 구현했다. 작업 분해가 신청자 유형으로 양식 · 평가 항목 · 채점 기준표를 고르고, 계획서 작성 · 채점 · 검수가 그 값을 쓴다. **함수 이름 · 인자 · 오류 코드는 그대로이고, 결과 필드는 `outputs`에 하나만 늘었다.**
+
+| 구분 | 내용 | 절 |
+|---|---|---|
+| `outputs` | 확장 `evaluationItems` — 작업 분해가 고른 평가 항목(`itemCode` · `itemName` · `maxScore` · `description`). 점수 항목 이름(`display_name`)은 `docScore.items[].itemCode`를 여기 `itemCode`와 맞춰 `itemName`으로 만든다 | 5.2 |
+| 선택 공고 | `outputs.selectedAnnouncement`의 `formSpec` · `evaluationItems`는 **자리 표시 값**이 되었다. 웹은 이 값을 쓰지 않는다 | 5.2, 14 |
+| 계획서 섹션 코드 | 작업 분해가 신청자 유형으로 고른 양식에서 온다(읽는 곳은 지금처럼 `planDoc.sections`). 지금 잠정 양식의 섹션은 웹 태그와 같은 `1-1` · `2-1` · `3-1` · `4-1`이다 | 5.2 |
+| 그 밖 | 다른 함수(`screen` 등)의 결과 · 필드는 바뀌지 않는다 | — |
 
 ### 2026-10-03 바뀐 점 (요약) — 공고 서버 연결
 
@@ -319,7 +330,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 |---|---|
 | `projectId` · `runId` · `step` · `progress` | |
 | `candidates` · `moreCandidates` | 공고 후보(첫 조회 · 추가 조회) `AnnouncementCard` 목록 — 화면 3과 같다(추가 조회 반영 · 실패한 추가 조회 무시, 5.1) |
-| `selectedAnnouncement` | 선택 공고 `Announcement` 전체(양식 `formSpec` 포함). 2026-10-03부터: `applyStart` · `applyEnd` · `supportAmountMax` · `supportAmountText`는 `null`일 수 있고, 확장 `applyPeriodType`(모집 형태 표기)이 있으며, `summaryEmbedding`은 늘 빈 목록이다. `status`가 '모집중'이어도 공고 서버가 모집 상태를 몰랐을 수 있다. 워커의 G-01이 성공할 때만 바뀐다 |
+| `selectedAnnouncement` | 선택 공고 `Announcement` 전체(양식 `formSpec` 포함). **2026-10-04부터 `formSpec` · `evaluationItems`는 자리 표시 값(기본 양식 `1-1` · `2-1` · `3-3`)이라 쓰지 않는다** — 평가 항목은 아래 `evaluationItems`, 섹션 코드 · 제목은 `planDoc.sections`에서 읽는다. 2026-10-03부터: `applyStart` · `applyEnd` · `supportAmountMax` · `supportAmountText`는 `null`일 수 있고, 확장 `applyPeriodType`(모집 형태 표기)이 있으며, `summaryEmbedding`은 늘 빈 목록이다. `status`가 '모집중'이어도 공고 서버가 모집 상태를 몰랐을 수 있다. 워커의 G-01이 성공할 때만 바뀐다 |
 | `gateResult` · `businessAgeYears` | 자격 확인 결과 · 업력 |
 | `category` | 원페이지 · 웹개발 · AI_API |
 | `planDoc` · `docScore` | 계획서(섹션 · 문장 · 차트 · 표 · 보호 토큰) · 문서층 점수 |
@@ -329,6 +340,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | `deliverable` · `userMessage` | 결과물 · 안내 문구 |
 | `reworkUsage` | 묶음 이름 6개(문서층 4 · 산출물층 2, 원페이지는 `실행 파일` 제외)마다 `BundleUsage`(`bundleId` · `layer` · `usedCount` · `remaining`). 쓴 적 없는 묶음은 상한 그대로 |
 | `reworkLimit` | 실행 시작 때 고정한 묶음마다의 재작성 상한(`rework.perBundle`) |
+| `evaluationItems` | **확장(2026-10-04).** 작업 분해(T-C3)가 신청자 유형으로 고른 평가 항목 `EvalItem` 목록(현재 버전) — 항목마다 `itemCode` · `itemName` · `maxScore` · `description`. 작업 분해 전이면 빈 목록. 점수 항목 이름은 `docScore.items[].itemCode`를 이 목록의 `itemCode`와 맞춰 `itemName`으로 만든다. 지금 값은 잠정이다(`문제인식` 20 · `실현가능성` 20 · `성장전략` 15 · `팀구성` 15) |
 
 - 실행 건이 실패 · 중단이면 `CommandError("RUN_NOT_VIEWABLE")`(기준 문서 E-RUN-FAIL — 결과를 볼 수 없음. 공고 마감 안내 `E-RUN-CLOSED`와 다른 코드). 실행 건이 없으면 `RUN_NOT_FOUND`.
 - 프로토타입 · 인포그래픽 파일을 어디에 둘지는 구현 Agent를 연동할 때 정한다. 그 전까지 `prototype.entryFilePath` · `infographic.imagePath`는 스텁 값이다.
@@ -641,7 +653,7 @@ Agent별(기준 문서 Agent 순서) 한 줄: `agent` · `taskCount`(등록된 �
 | X-C2-GONE 문구 | "선택하신 공고를 더 이상 확인할 수 없습니다. 다른 공고를 선택해주세요." | 확장 · 잠정 |
 | 자격 확인(G-01) 제한 시간 | 30초 (공고 상세 · 자격 판정 호출, 공고 매칭과 같음) | 잠정 |
 | 모집 상태 모름 | 선택 공고 `status`를 '모집중'으로 둔다 — 마감 안내가 붙지 않는다 | 잠정 |
-| 선택 공고의 양식 · 평가 항목 | 기본 양식(`formSpec` · `evaluationItems`) — 작성 · 검수 Agent 연동 때 정한다 | 잠정 |
+| 선택 공고의 양식 · 평가 항목 | 기본 양식(`formSpec` · `evaluationItems`) — **2026-10-04부터 자리 표시 값이며 쓰지 않는다.** 양식 · 평가 항목은 작업 분해가 신청자 유형으로 고르고(값 잠정 — 예비창업자 `예비창업패키지(잠정)`, 개인사업자 · 법인 `초기창업패키지-일반형(잠정)`, 섹션 `1-1` · `2-1` · `3-1` · `4-1`), 평가 항목은 `outputs.evaluationItems`(확장)로 준다. 실제 값은 담당자 회신 뒤 정한다 | 잠정 |
 | 추천 이유(`matchReason`) | 공고 서버의 적합 구간 · 지역 일치로 정한 문장(AI 없음) | 잠정 |
 | 공고 서버 호출 | 워커 프로세스 안에서 한 번에 하나씩, 운영 워커 1대(공고팀이 동시 호출 안전성을 확인하기 전까지) | 잠정 |
 | 카드 확장 필드 | `applyPeriodType` · `contentChanged` · `contentVersion` · `bonusScore` · `bonusItems`(`BonusItem`) | 확장 |

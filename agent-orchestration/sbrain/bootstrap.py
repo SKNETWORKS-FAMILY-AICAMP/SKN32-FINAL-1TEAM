@@ -2,8 +2,8 @@
 
 | 함수 | 쓰는 곳 | 저장소 · 입력 · 설정 | Agent |
 |---|---|---|---|
-| build_stub_app | 테스트 · 시연 | 메모리(또는 주어진 저장소) · 기본 설정 | 전부 스텁, 가짜 LLM |
-| build_app | 워커 (sbrain/worker.py) | 공유 MySQL — SqlStore · SqlProjectInputSource · DbSettingsProvider | 조율 T-C1 실구현(OpenAI), T-C2 · G-01은 SBRAIN_NOTICE_API_URL이 있으면 공고 서버 연결(실제 모드) · 없으면 스텁, 나머지 스텁 |
+| build_stub_app | 테스트 · 시연 | 메모리(또는 주어진 저장소) · 기본 설정 | 전부 스텁, 가짜 LLM, 지시문 다시 쓰기 없음(덧붙이기만) |
+| build_app | 워커 (sbrain/worker.py) | 공유 MySQL — SqlStore · SqlProjectInputSource · DbSettingsProvider | 조율 T-C1 · T-C3 실구현과 재작성 · 재수행 지시문 다시 쓰기(OpenAI), T-C2 · G-01은 SBRAIN_NOTICE_API_URL이 있으면 공고 서버 연결(실제 모드) · 없으면 스텁, 나머지 스텁 |
 | build_web | 웹 서버 | 공유 MySQL — 같음 | 단계를 돌지 않는다 (명령 · 조회만). 공고 서버를 부르지 않는다 |
 
 실제 Agent 구현이 나오면 registry.bind(task_id, fn)로 스텁을 교체한다.
@@ -18,8 +18,11 @@ from typing import Callable
 from .agents.notice import NoticeClient, Transport, bind_notice
 from .agents.stubs import FakeLLM, StubScenario, bind_stubs, make_constants
 from .agents.supervisor import IMPLEMENTED_TASKS, bind_supervisor
+from .agents.supervisor.plan import PURPOSE_REWRITE
+from .agents.supervisor.rewrite import rewrite_guidance
 from .env import get_env
 from .flow import IMMUTABLE_KEYS, SBrainFlow, SBrainOrchestrator, artifact_types, build_registry
+from .flow.sbrain_flow import REWRITE_AGENT, GuidanceRewriter
 from .intake import ProjectInputSource
 from .orchestrator import ArtifactTypes, Engine, MemoryStore, Settings, SettingsProvider
 from .orchestrator.registry import TaskRegistry
@@ -39,18 +42,27 @@ class App:
 
 
 class TaskRoutedProvider:
-    """구현이 들어온 Task만 실제 호출처로, 나머지(스텁)는 가짜 호출처로 보낸다 (잠정).
+    """구현이 들어온 호출만 실제 호출처로, 나머지(스텁 Task)는 가짜 호출처로 보낸다 (잠정, T-C3 spec 6.1).
 
-    조율 Agent는 T-C1만 구현됐다. 호출처는 Agent마다 정해지므로, 그대로 두면 같은 Agent의 스텁 Task(T-C3 등)도
-    실제 OpenAI를 부른다. 각 Task 구현이 들어오면 real_tasks가 늘어난다.
+    호출처는 Agent마다 정해지므로, 그대로 두면 스텁 Task도 실제 OpenAI를 부른다. 실제 호출처로 보내는 규칙:
+    - 호출 기록의 task_id가 real_tasks(조율 구현 Task — T-C1 · T-C3)에 있으면 실제.
+    - 조율 Agent의 지시문 다시 쓰기(agent = 조율, purpose = PURPOSE_REWRITE)면 실제. 다시 쓰기는 대상 Task의 실행 기록
+      안에서 불려 task_id가 대상 Task(스텁 T-W1 등)이므로, Task ID만으로는 나눌 수 없어 agent · purpose로 본다.
+    - 그 밖(스텁 Task 자신의 호출)은 가짜.
+    각 Task 구현이 들어오면 real_tasks가 늘어난다.
     """
 
     def __init__(self, real: LLMProvider, fake: LLMProvider, real_tasks: frozenset[str]) -> None:
         self.real, self.fake, self.real_tasks = real, fake, real_tasks
 
+    def is_real(self, request: LLMRequest) -> bool:
+        meta = request.metadata
+        if meta.get("task_id") in self.real_tasks:
+            return True
+        return meta.get("agent") == REWRITE_AGENT and meta.get("purpose") == PURPOSE_REWRITE
+
     def complete(self, request: LLMRequest):
-        target = self.real if request.metadata.get("task_id") in self.real_tasks else self.fake
-        return target.complete(request)
+        return (self.real if self.is_real(request) else self.fake).complete(request)
 
 
 class NoProvider:
@@ -90,10 +102,12 @@ def build_app(
     notice_api_url: str | None = None,
     notice_transport: Transport | None = None,
 ) -> App:
-    """워커 조립 — 공유 MySQL(SqlStore · SqlProjectInputSource · DbSettingsProvider), 조율 T-C1 실구현, OpenAI 호출처.
+    """워커 조립 — 공유 MySQL(SqlStore · SqlProjectInputSource · DbSettingsProvider), 조율 T-C1 · T-C3 실구현, OpenAI 호출처.
 
     - db_url이 없으면 SBRAIN_DB_URL(환경 변수 → .env)을 쓴다.
-    - 나머지 Agent는 스텁이다. 스텁 Task는 실제 호출처를 부르지 않는다(TaskRoutedProvider).
+    - 흐름의 지시문 만들기에 조율 다시 쓰기(rewrite_guidance)를 끼운다 — 재작성 · 재수행 대상의 안내를 다시 쓴다.
+    - 나머지 Agent는 스텁이다. 스텁 Task는 실제 호출처를 부르지 않는다(TaskRoutedProvider). 다시 쓰기 호출은 대상이
+      스텁 Task여도 실제 호출처로 간다.
     - 공고 매칭(T-C2) · 자격 확인(G-01): 공고 서버 주소가 있으면 공고 서버 연결(agents/notice, 실제 모드), 없으면 스텁
       (스텁 모드 — 스텁 G-01이 스텁 공고를 만들고 판정한다, spec 3.1 · 4.6).
       주소는 notice_api_url, 주지 않으면(None) SBRAIN_NOTICE_API_URL(환경 변수 → .env). 빈 문자열이면 스텁이다.
@@ -109,7 +123,7 @@ def build_app(
     app = _assemble(
         store=SqlStore(db, now=now), settings=DbSettingsProvider(db, settings), scenario=StubScenario(), now=now,
         sleep=time.sleep, profile_count=lambda account_id: 1,   # 워커는 시작 확인(request_start)을 하지 않는다
-        project_inputs=project_inputs or SqlProjectInputSource(db), stubs=True)
+        project_inputs=project_inputs or SqlProjectInputSource(db), stubs=True, rewriter=rewrite_guidance)
     bind_supervisor(app.registry)
     notice_url = get_env("SBRAIN_NOTICE_API_URL") if notice_api_url is None else notice_api_url
     if notice_url:   # 실제 모드 — 공고 서버 연결로 스텁 T-C2 · G-01을 바꾼다
@@ -155,7 +169,8 @@ def _db_url(db_url: str | None) -> str:
 
 def _assemble(*, store: Store, settings: SettingsProvider, scenario: StubScenario, now: Callable[[], datetime],
               sleep: Callable[[float], None], profile_count: Callable[[str], int],
-              project_inputs: ProjectInputSource | None, stubs: bool) -> App:
+              project_inputs: ProjectInputSource | None, stubs: bool,
+              rewriter: GuidanceRewriter | None = None) -> App:
     registry = build_registry()
     llm = FakeLLM()
     if stubs:
@@ -163,7 +178,8 @@ def _assemble(*, store: Store, settings: SettingsProvider, scenario: StubScenari
         providers: dict[str, LLMProvider] = {name: llm for name in ("openai", "gpu-server", "미정")}
     else:
         providers = {name: NoProvider() for name in ("openai", "gpu-server", "미정")}
-    flow = SBrainFlow(registry, constants=make_constants(), now=now)
+    # 지시문 다시 쓰기는 워커 조립만 끼운다. 없으면(스텁 · 웹 조립) 재작성 · 재수행 문제를 덧붙이기만 한다
+    flow = SBrainFlow(registry, constants=make_constants(), now=now, rewriter=rewriter)
     exact, suffix = artifact_types(registry)
     engine = Engine(store=store, registry=registry, flow=flow, providers=providers,
                     types=ArtifactTypes(exact, suffix), immutable_keys=IMMUTABLE_KEYS, now=now, sleep=sleep)

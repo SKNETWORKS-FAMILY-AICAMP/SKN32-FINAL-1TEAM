@@ -387,6 +387,7 @@ def test_null_dates_and_amounts_flow_to_the_end(clock):
     ann = ctx.get("selectedAnnouncement")
     assert (ann.apply_end, ann.support_amount_max, ann.support_amount_text) == (None, None, None)
     context = ctx.get("taskPlan").tasks[0].context
+    assert set(context) == {"formVersion", "applyEnd", "supportAmountMax", "evaluationItems", "formatSpec"}
     assert (context["applyEnd"], context["supportAmountMax"]) == (None, None)
     tokens = ctx.get("protectedTokens")
     assert not [t for t in tokens if t.type == "날짜"] and "None" not in [t.value for t in tokens]

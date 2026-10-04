@@ -2,10 +2,10 @@
 
 | 항목 | 내용 |
 |---|---|
-| 작성일 | 2026-09-26 (2026-10-01 갱신: MySQL 저장소 · 워커 · 웹 연동 함수 · 토큰 기록. 2026-10-02 갱신: 웹 `projects` 쓰기 제거 · 재작성 묶음 요청과 모으기 · T-P2 시도 기록과 `proofread_logs` · 웹 조회 함수 — 바뀐 곳은 4 · 8.1 · 10 · 11 · 12절. 2026-10-03 갱신: 공고 서버 연결(T-C2 · G-01) — 바뀐 곳은 2 · 3 · 5 · 11 · 12절) |
+| 작성일 | 2026-09-26 (2026-10-01 갱신: MySQL 저장소 · 워커 · 웹 연동 함수 · 토큰 기록. 2026-10-02 갱신: 웹 `projects` 쓰기 제거 · 재작성 묶음 요청과 모으기 · T-P2 시도 기록과 `proofread_logs` · 웹 조회 함수 — 바뀐 곳은 4 · 8.1 · 10 · 11 · 12절. 2026-10-03 갱신: 공고 서버 연결(T-C2 · G-01) — 바뀐 곳은 2 · 3 · 5 · 11 · 12절. 2026-10-04 갱신: 조율 T-C3 작업 분해 · 지시문 다시 쓰기 — 바뀐 곳은 2 · 11절) |
 | 기준 문서 | S-Brain Agent 기능정의서 v1.9 (참고: 프로젝트 기획서 v1.10) |
 | 코드 | `sbrain/` |
-| 테스트 | `tests/` — 805건 (MySQL 테스트 DB 없이 771건 통과 · 34건 건너뜀(MySQL 전용). 흐름 테스트는 메모리 · SQLite 두 저장소로, 저장소 계약 · 통합은 MySQL 8로도. 조율 T-C1과 공고 서버 연결 T-C2 · G-01만 실제 구현, 나머지 Agent는 스텁. 공고 서버는 가짜 전송 · 127.0.0.1 임시 서버로만 시험) |
+| 테스트 | `tests/` — 985건 (MySQL 테스트 DB 없이 951건 통과 · 34건 건너뜀(MySQL 전용). 흐름 테스트는 메모리 · SQLite 두 저장소로, 저장소 계약 · 통합은 MySQL 8로도. 조율 T-C1 · T-C3(작업 분해)와 재작성 · 재수행 지시문 다시 쓰기, 공고 서버 연결 T-C2 · G-01만 실제 구현, 나머지 Agent는 스텁. 공고 서버는 가짜 전송 · 127.0.0.1 임시 서버로만 시험) |
 | 독자 | Orchestrator · 조율 Agent 구현 담당, 웹팀(명령 창구 연동) |
 
 이 문서는 코드에서 도출했다. Task 표는 코드의 Task 등록부에서 뽑았다. Agent 연동 규격은 [Agent_연동_규격_초안.md](Agent_연동_규격_초안.md)에 따로 있다.
@@ -47,9 +47,10 @@ Orchestrator는 조율을 포함한 7개 Agent를 같은 방식으로 등록하�
 | `sbrain/flow/reads.py` | 화면 조회(모양 초안) · 관리자 실행 기록 조회 |
 | `sbrain/intake/` | 사전 정보 입력 연동: 웹 DB 행 → PreInput, 필수 항목 재확인(E-C1-REQUIRED), SQL 공급처 |
 | `sbrain/orchestrator/openai_provider.py` | OpenAI 호출처 어댑터 (LLMProvider 구현) |
-| `sbrain/agents/supervisor/` | 조율 Agent 구현 — 지금은 T-C1 |
+| `sbrain/agents/supervisor/` | 조율 Agent 구현 — T-C1(`tc1`), T-C3 작업 분해(`tc3`, 2026-10-04), 작업 계획 부품(`plan` — 확인 · Task 목록 · 틀 · 참조 조각 배정 · 맥락, 스텁 T-C3와 함께 씀), 재작성 · 재수행 안내 다시 쓰기(`rewrite` — 워커 조립이 흐름에 끼운다) |
+| `sbrain/flow/instruction.py` | 지시문 공용 부품 — 틀 · 안내 · 참조 자료 세 부분 잇기 · 나누기, 안내 부분만 바꾸기, 문제 내용 덧붙임 형식 (2026-10-04) |
 | `sbrain/agents/notice/` | 공고 서버 연결 — HTTP 클라이언트(`client`), 실제 T-C2(`tc2`) · G-01(`g01`), 응답 검사(`convert`). 워커 조립이 `SBRAIN_NOTICE_API_URL`이 있을 때 스텁 대신 끼운다 (2026-10-03) |
-| `sbrain/agents/form_defaults.py` | 선택 공고의 기본 양식 · 평가 항목 (잠정) — 스텁 공고와 공고 서버 연결이 함께 쓴다 |
+| `sbrain/agents/form_defaults.py` | 신청자 유형별 양식 · 평가 항목 · 채점 기준표 표(`FORM_TABLE`, 잠정)와 고르기 · 불변식 확인 — 작업 분해(T-C3)가 쓴다(2026-10-04). 선택 공고의 기본 양식(자리 표시 값) — 스텁 공고와 공고 서버 연결이 함께 쓴다 |
 | `sbrain/agents/stubs.py` | 스텁 Agent · 가짜 LLM 호출처 |
 | `sbrain/bootstrap.py` | 구성 조립 — `build_stub_app`(테스트 · 시연) · `build_app`(워커) · `build_web`(웹 서버) |
 | `sbrain/store_sql/` | SQL 저장소: `schema.py`(테이블 정의 — DDL의 단일 원본) · `ddl.py`(MySQL DDL 파일 생성) · `db.py`(접속) · `store.py`(`SqlStore`) · `web_tables.py`(Orchestrator가 쓰는 웹 테이블) · `settings_source.py`(`DbSettingsProvider`) |
@@ -272,7 +273,7 @@ sequenceDiagram
 | `deviation_cap` | 웹 `verification_policies` 값을 설정에 담아만 둔다(검증-1 연동 전) |
 | 설정 입력 | `verification_policies` 첫 행(배점 · Threshold · 재수행 · 재작성 · 검수 재수행 횟수). 나머지(재시도 · 재개 · 제한 시간 · Agent 모델)는 코드 기본값 — 웹팀 답 대기 |
 | MySQL 접속 | 격리 수준 READ COMMITTED, 계정 잠금 대기 10초, 점유 시각은 서버 시계(여러 서버면 시계가 맞아야 한다) |
-| 워커의 스텁 Task 호출처 | 구현된 Task(T-C1)만 실제 OpenAI로, 나머지 스텁은 가짜 호출처로 보낸다(`TaskRoutedProvider`) |
+| 워커의 스텁 Task 호출처 | 구현된 Task(T-C1 · T-C3, 2026-10-04)와 조율의 지시문 다시 쓰기 호출만 실제 OpenAI로, 나머지 스텁은 가짜 호출처로 보낸다(`TaskRoutedProvider`) |
 | 완전 삭제 중 단계 진행 | 지우지 않고 BUSY — 웹이 다시 부른다 |
 
 ### 11.2 기준 문서에 명시가 없어 해석한 것
@@ -293,7 +294,7 @@ sequenceDiagram
 - 실행 로그 12개월 뒤 식별자 분리 · 통계 전환(기획서 6-7)
 - 공유 DB에 Orchestrator 테이블 적용 — DDL 파일(`sql/orchestrator_schema.sql`)로 사용자가 한다
 - 공고 서버에 실제로 연결하기 — 연결 코드(`agents/notice/`)는 2026-10-03 완성했다. 공고팀 API(수집 상태 · 공고 상세 · 자격 판정, 추천 결과 키 추가)가 준비되고 확인을 마친 뒤 사용자가 `SBRAIN_NOTICE_API_URL`을 설정해 켠다. 그 전까지 워커는 스텁 공고 · 스텁 판정을 쓴다
-- 실제 Agent 구현 (조율 T-C3 포함). T-C1은 2026-09-29 구현 — `docs/T-C1_요구사항해석_구현.md`
+- 실제 Agent 구현. 조율 T-C1은 2026-09-29 구현 — `docs/T-C1_요구사항해석_구현.md`, T-C3는 2026-10-04 구현 — `docs/T-C3_작업분해_구현.md`
 - R-8 첨부 문서 텍스트 추출 (요청 시 구현)
 
 ### 11.4 웹 연동 분리(2026-10-02)에서 생긴 잠정 · 확장
@@ -332,7 +333,7 @@ sequenceDiagram
 |---|---|---|---|
 | G-01 제한 시간 | 30초 — 공고 서버의 공고 상세 · 자격 판정 호출, T-C2와 같음 | `taskTimeouts.G-01` | `settings._default_timeouts` |
 | 모집 상태 모름 | 공고 서버 모집 상태가 `open` · `closed` 밖(`unknown` 등)이면 선택 공고 `status`를 '모집중'으로 둔다 — 마감 안내가 붙지 않는다 | `announcement.unknownStatus` | `agents/notice/g01.py` `to_announcement` |
-| 기본 양식 | 선택 공고의 `formSpec` · `evaluationItems`는 기본 양식(스텁 공고 · 공고 서버 연결 공통) — 작성 · 검수 Agent 연동 때 정한다 | `announcement.formSpec` | `agents/form_defaults.py` |
+| 기본 양식 | 선택 공고의 `formSpec` · `evaluationItems`는 기본 양식(`1-1` · `2-1` · `3-3`, 스텁 공고 · 공고 서버 연결 공통)인 자리 표시 값 — 2026-10-04부터 뒷 단계는 읽지 않고 작업 분해(T-C3)가 신청자 유형으로 고른 양식 · 평가 항목 · 채점 기준표를 쓴다(값 잠정, `PROVISIONAL["taskPlan.formTable"]` · `docs/T-C3_작업분해_구현.md` 14절) | `announcement.formSpec` | `agents/form_defaults.py` `default_form_spec` |
 | X-C2-GONE 문구 | "선택하신 공고를 더 이상 확인할 수 없습니다. 다른 공고를 선택해주세요." | `notice.X-C2-GONE` | `orchestrator/errors.py` `ERROR_CODES` |
 | 추천 이유 문장 틀 | 공고 서버의 `band`(매우 적합 · 적합 · 참고, 없으면 대체 경로 '마감임박순'일 때 '마감이 가까운 신청 가능 공고입니다')와 지역(전국 · 희망 지역 일치 · 불일치)으로 정한 문장을 " · "로 잇는다. AI를 부르지 않는다 | `announcement.matchReason` | `agents/notice/tc2.py` `match_reason` |
 | 공고 서버 호출 하나씩 · 워커 1대 | 워커 프로세스 안에서 공고 서버 호출을 한 번에 하나씩(네 API 모두, 프로세스 공용 잠금). 프로세스끼리는 막지 않으므로 운영 워커는 1대 — 공고팀이 동시 호출 안전성을 확인하기 전까지 | `noticeServer.serialCalls` | `agents/notice/client.py` `_CALL_LOCK` |

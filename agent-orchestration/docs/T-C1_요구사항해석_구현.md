@@ -194,7 +194,7 @@ from sbrain.orchestrator.openai_provider import OpenAIProvider
 
 engine = create_engine(db_url)            # 예: mysql+pymysql://… — 접속 정보는 코드 밖에서 받는다
 app = build_stub_app(project_inputs=SqlProjectInputSource(engine))   # 조율은 기본값 gpt-6-luna · low
-bind_supervisor(app.registry)             # T-C1만 실제 구현으로
+bind_supervisor(app.registry)             # 구현된 조율 Task(지금 T-C1 · T-C3)를 실제 구현으로
 app.engine.providers["openai"] = OpenAIProvider()
 
 res = app.orchestrator.start_run_for_project(account_id="7", project_id=101)
@@ -202,7 +202,7 @@ res = app.orchestrator.start_run_for_project(account_id="7", project_id=101)
 
 이 예시는 SQLite와 가짜 OpenAI 클라이언트로 바꿔 끝까지 도는 것을 확인했다.
 
-워커 조립 `build_app(db_url)`(2026-10-01)이 같은 일을 한다 — SqlStore · 웹 DB 입력 · DB 설정 입력 · OpenAI 호출처 · `bind_supervisor`. 이때 구현된 Task(T-C1)만 실제 OpenAI로 보내고 나머지 스텁 조율 Task는 가짜 호출처로 보낸다.
+워커 조립 `build_app(db_url)`(2026-10-01)이 같은 일을 한다 — SqlStore · 웹 DB 입력 · DB 설정 입력 · OpenAI 호출처 · `bind_supervisor`. 이때 구현된 조율 Task(T-C1 · T-C3)와 재작성 · 재수행 지시문 다시 쓰기 호출만 실제 OpenAI로 보내고 나머지 스텁 Task는 가짜 호출처로 보낸다. 위 예시처럼 나누지 않은 `OpenAIProvider()`를 끼우면 T-C3(실행 건마다 7번)와 스텁 조율 호출까지 실제 OpenAI로 가므로, 지금 확인은 워커 조립이나 `docs/T-C3_작업분해_구현.md` 13절의 방법을 쓴다(2026-10-04).
 
 ### 7.3 실제 OpenAI 호출 확인 (2026-09-30, 1회 성공)
 

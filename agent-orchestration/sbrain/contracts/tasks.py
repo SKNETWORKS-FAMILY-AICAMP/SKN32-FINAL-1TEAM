@@ -136,12 +136,22 @@ class TC3In(SBModel):
     gate_result: GateResult
     company_info: CompanyInfo
     reference_summary: ReferenceSummary | None = None
+    business_age_years: float | None = ext(
+        None, note="업력(년) — G-01 출력 businessAgeYears. 예비창업자는 null. companyInfo.businessAgeYears는 T-C1이 "
+                   "비워 두므로 이 값을 쓴다")
+    prior_guidance: dict[str, str] = ext(
+        default_factory=dict,
+        note="재개 때 이어 쓰는 받은 안내(Task ID → 정리된 안내) — 앞 실행이 재시도 소진 전에 받은 것(T-C3.partial). "
+             "엔진이 재개 때만 채운다. 이번 지시 대상이고 빈 문자열이 아닌 것만 쓰고 그 Task는 다시 부르지 않는다")
 
 
 class TC3Out(SBModel):
     task_plan: TaskPlan
     task_count: int
     instruction_set: list[TaskInstruction]
+    form_spec: FormSpec = ext(note="신청자 유형으로 고른 양식 → 산출물 formSpec. 선택 공고의 formSpec 대신 뒷 단계가 읽는다")
+    evaluation_items: list[EvalItem] = ext(note="고른 평가 항목 → 산출물 evaluationItems (T-V1 · 웹 outputs)")
+    rubric: Rubric = ext(note="고른 채점 기준표 → 산출물 rubric (T-V1, G-02a · G-02b의 rubricVersion)")
 
 
 class G02aIn(SBModel):

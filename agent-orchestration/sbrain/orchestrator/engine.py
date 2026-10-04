@@ -8,31 +8,39 @@
 - 재작성 사이클: 시작 시점 포인터를 스냅샷으로 남기고, 전후 점수로 높은 쪽을 남기며,
   실패하면 스냅샷으로 되돌리고 기회를 돌려준다(R-6의 실행 부분). 모으는 시각(collect_until)까지는 묶음을 더할 수
   있고 진행하지 않는다. 마지막 재작성 한 건의 결과는 Run.last_rework에 요약한다.
+- 지시문 입력은 Flow.build_instruction이 만든다(재작성 · 재수행 때 덧붙이기 · 다시 쓰기). 엔진은 실행 건 맥락 · 단계 정보 ·
+  원래 지시 · 재작성 · 재수행 입력 · 진행 위치(RedoState) 객체와, 지금 실행 기록에 호출이 남는 tools를 만드는 수단을 넘기고,
+  돌려받은 산출물 참조를 그 실행 기록의 입력 참조에 더한다. 입력을 만들며 부른 호출도 Task 함수의 호출처럼 그 실행 기록에
+  모인다(성공 · 재시도 소진 모두). 어느 Agent 설정으로 무엇을 부를지는 Flow가 정한다.
 - S-Brain 고유 규칙(구간 · 대기 지점 · 재작성 경로 · 알림)은 Flow가 맡는다.
 """
 from __future__ import annotations
 
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any, Callable, Literal, Protocol
 
 from pydantic import ValidationError
 
-from ..models import BundleUsage, CycleState, ReworkComparison, ReworkInput, Run
+from ..models import BundleUsage, CycleState, ReworkComparison, ReworkInput, Run, TaskInstruction
 from ..models.base import ErrorKind
 from ..models.run import FAILURE_REASON_MAX, RedoState, ReworkSummary, collecting, make_state
 from .context import ArtifactTypes, ImmutableArtifactError, RunContext
 from .errors import ContractError, ResourceNotFound, ToolCallExhausted
-from .registry import AgentRegistry, TaskRegistry, TaskSpec
+from .registry import PARTIAL_SUFFIX, AgentRegistry, TaskRegistry, TaskSpec, keeps_partial
 from .store import Store
 from .tools import CallSink, LLMProvider, Tools, ToolsConfig, ToolsContext
 from .trace import ExecutionRecord, FeedbackLink, add_tokens, output_meta_of
 
-# 재작성 비교 · 되돌리기에서 제외하는 산출물 (Orchestrator가 만든 입력)
+# 재작성 비교 · 되돌리기에서 제외하는 산출물 (Orchestrator가 만든 입력 — 사용자 명령 · 재작성 · 재수행 입력 · 다시 쓴 지시문 ·
+# 재개 때 이어 쓸 받은 결과)
 INTERNAL_PREFIXES = ("decision",)
-INTERNAL_SUFFIXES = (".reworkInput",)
+INTERNAL_SUFFIXES = (".reworkInput", ".instruction", PARTIAL_SUFFIX)
+
+# 지금 실행 기록에 호출이 남는 tools를 만드는 수단 — (Agent 이름, 제한 시간을 쓸 Task ID) → Tools
+ToolsFactory = Callable[[str, str], Tools]
 
 
 def is_internal_key(key: str) -> bool:
@@ -66,7 +74,15 @@ class Flow(Protocol):
 
     def custom_step(self, step_id: str) -> Callable[["Engine", RunContext], Outcome] | None: ...
     def initial_redo_state(self, ctx: RunContext, spec: TaskSpec) -> RedoState: ...
-    def build_instruction(self, base: str, rework_input: ReworkInput | None) -> str: ...
+    def build_instruction(self, ctx: RunContext, spec: TaskSpec, task: TaskInstruction,
+                          rework_input: ReworkInput | None, rs: RedoState,
+                          tools_for: ToolsFactory) -> tuple[str, list[str]]:
+        """이번 실행의 지시문 입력과, 그 실행 기록의 입력 참조에 더할 산출물 참조('이름@버전')를 돌려준다.
+
+        task는 taskPlan의 이 Task 지시, rs는 지금 진행 위치 객체 그 자체다 — 흐름이 여기에 쓴 값은 재개 예약 때 그대로
+        저장된다. tools_for(agent, timeout_task_id)로 만든 tools의 호출은 이 실행 기록에 남고 토큰이 합계에 더해진다.
+        여기서 올린 ToolCallExhausted는 Task 함수의 것과 같게 재개 · 실패로 처리된다."""
+        ...
     def today(self, ctx: RunContext) -> Any: ...
     def constant(self, ctx: RunContext, name: str) -> Any: ...
     def value(self, ctx: RunContext, name: str, spec: TaskSpec) -> Any: ...
@@ -80,6 +96,10 @@ class Flow(Protocol):
     def on_abort(self, ctx: RunContext) -> None: ...
     def on_run_failed(self, ctx: RunContext, reason: str) -> None: ...
     def on_cycle_failed(self, ctx: RunContext, reason: str) -> None: ...
+
+
+def _no_tools(agent_name: str, timeout_task_id: str) -> Tools:
+    raise RuntimeError("호출 도구 없음 — 실행 기록 밖에서 지시문 입력을 만들었다")
 
 
 def _dig(obj: Any, path: str) -> Any:
@@ -264,26 +284,26 @@ class Engine:
         return rec
 
     def _invoke(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, rs: RedoState) -> dict[str, Any]:
-        values, refs = self.resolve_inputs(ctx, spec, rs)
-        rec.inputs = refs
+        # 이 실행 기록의 호출 — 입력을 만들며 부른 호출(지시문 다시 쓰기 등)과 Task 함수의 호출. 성공 · 실패 모두 모은다
+        sink = CallSink()
         try:
-            model_in = spec.input_model.model_validate(values)
-        except ValidationError as e:
-            raise ContractError(f"{spec.task_id} 입력 규격 불일치: {e.error_count()}건") from None
-        if spec.fn is None:
-            raise ContractError(f"{spec.task_id} 실행 함수 없음")
-        if spec.receives_tools:
-            cfg = self.tools_config(ctx, spec)
-            rec.model, rec.provider, rec.temperature = cfg.model, cfg.provider, cfg.temperature
-            rec.reasoning_effort = cfg.reasoning_effort
-            sink = CallSink()
-            tools = self.make_tools(ctx, spec, rec, cfg, sink)
+            values, refs = self.resolve_inputs(ctx, spec, rs, tools_for=self._tools_factory(ctx, spec, rec, sink))
+            rec.inputs = refs
             try:
-                out = spec.fn(model_in, tools)
-            finally:
-                self.collect_calls(ctx, rec, sink)
-        else:
-            out = spec.fn(model_in)
+                model_in = spec.input_model.model_validate(values)
+            except ValidationError as e:
+                raise ContractError(f"{spec.task_id} 입력 규격 불일치: {e.error_count()}건") from None
+            if spec.fn is None:
+                raise ContractError(f"{spec.task_id} 실행 함수 없음")
+            if spec.receives_tools:
+                cfg = self.tools_config(ctx, spec)
+                rec.model, rec.provider, rec.temperature = cfg.model, cfg.provider, cfg.temperature
+                rec.reasoning_effort = cfg.reasoning_effort
+                out = spec.fn(model_in, self.make_tools(ctx, spec, rec, cfg, sink))
+            else:
+                out = spec.fn(model_in)
+        finally:
+            self.collect_calls(ctx, rec, sink)
         return self.store_outputs(ctx, spec, rec, out)
 
     def store_outputs(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, out: Any) -> dict[str, Any]:
@@ -310,7 +330,8 @@ class Engine:
         ctx.record_attempt(rec)
         return outputs
 
-    def resolve_inputs(self, ctx: RunContext, spec: TaskSpec, rs: RedoState | None) -> tuple[dict[str, Any], list[str]]:
+    def resolve_inputs(self, ctx: RunContext, spec: TaskSpec, rs: RedoState | None,
+                       tools_for: ToolsFactory | None = None) -> tuple[dict[str, Any], list[str]]:
         values: dict[str, Any] = {}
         refs: list[str] = []
 
@@ -343,10 +364,15 @@ class Engine:
             elif b.kind == "instr":
                 plan = ctx.get("taskPlan")
                 add_ref(ctx.ref("taskPlan"))
-                base = next((t.instruction for t in plan.tasks if t.task_id == spec.task_id), None)
-                if base is None:
+                task = next((t for t in plan.tasks if t.task_id == spec.task_id), None)
+                if task is None:
                     raise ContractError(f"taskPlan에 {spec.task_id} 지시문 없음")
-                values[fname] = self.flow.build_instruction(base, rework_input)
+                text, extra = self.flow.build_instruction(
+                    ctx, spec, task, rework_input, rs if rs is not None else RedoState(task_id=spec.task_id),
+                    tools_for or _no_tools)
+                values[fname] = text
+                for r in extra:   # 흐름이 만든 산출물(다시 쓴 지시문 등)도 이 실행의 입력 참조다
+                    add_ref(r)
             elif b.kind == "rework":
                 values[fname] = rework_input
                 if rs and rs.rework_input_ref:
@@ -362,20 +388,38 @@ class Engine:
                 values[fname] = self.flow.constant(ctx, b.key)
             elif b.kind == "flow":
                 values[fname] = self.flow.value(ctx, b.key, spec)
+            elif b.kind == "partial":
+                # 재개 위치에 저장된 받은 결과가 있을 때만 넣는다 — 없으면 입력 모델 기본값(엔진은 필드 타입을 모른다)
+                if rs and rs.partial_ref:
+                    values[fname] = ctx.get_ref(rs.partial_ref)
+                    add_ref(rs.partial_ref)
             else:
                 raise ContractError(f"알 수 없는 입력 연결: {b.kind}")
         return values, refs
 
     def tools_config(self, ctx: RunContext, spec: TaskSpec) -> ToolsConfig:
+        cfg = self.agent_tools_config(ctx, spec.agent, spec.task_id)
+        if spec.temperature:
+            cfg = replace(cfg, temperature=spec.temperature.apply(cfg.temperature))
+        return cfg
+
+    def agent_tools_config(self, ctx: RunContext, agent_name: str, timeout_task_id: str) -> ToolsConfig:
+        """Agent 설정(호출처 · 모델 · 기본 온도 · 추론 강도)과 그 Task의 제한 시간을 입힌 호출 설정 (Task 온도 규칙 없음)."""
         s = ctx.settings
-        agent = self.agents.config(s, spec.agent)
-        temperature = spec.temperature.apply(agent.temperature) if spec.temperature else agent.temperature
+        agent = self.agents.config(s, agent_name)
         return ToolsConfig(
-            agent=spec.agent, provider=agent.provider, model=agent.model, temperature=temperature,
-            timeout_sec=s.task_timeouts.get(spec.task_id, 120.0),
+            agent=agent_name, provider=agent.provider, model=agent.model, temperature=agent.temperature,
+            timeout_sec=s.task_timeouts.get(timeout_task_id, 120.0),
             retry_count=s.retry.retry_count, retry_interval_sec=s.retry.retry_interval_sec,
             reasoning_effort=agent.reasoning_effort,
         )
+
+    def _tools_factory(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, sink: CallSink) -> ToolsFactory:
+        """지금 실행 기록(rec)에 호출이 남는 tools를 만드는 수단 — 호출 기록의 task_id는 이 단계, Agent · 호출처 · 모델 ·
+        추론 강도는 넘긴 Agent의 설정, 제한 시간은 넘긴 Task의 설정이다. Flow.build_instruction에 넘긴다."""
+        def make(agent_name: str, timeout_task_id: str) -> Tools:
+            return self.make_tools(ctx, spec, rec, self.agent_tools_config(ctx, agent_name, timeout_task_id), sink)
+        return make
 
     @staticmethod
     def collect_calls(ctx: RunContext, rec: ExecutionRecord, sink: CallSink) -> None:
@@ -423,7 +467,8 @@ class Engine:
             ctx.run.redo_state = None
             return Outcome("unresumable", record=rec, error=e)
         rs.pending_execution_id = rec.execution_id
-        return self.schedule_resume(ctx, rec, rs, e.error_kind)
+        partial = e.partial if keeps_partial(spec) else None
+        return self.schedule_resume(ctx, rec, rs, e.error_kind, partial=partial)
 
     def can_resume(self, ctx: RunContext) -> timedelta | None:
         """재개할 수 있으면 기다릴 시간을, 재개 횟수 · 재개 총 대기 상한을 넘으면 None."""
@@ -435,7 +480,12 @@ class Engine:
         return None
 
     def schedule_resume(self, ctx: RunContext, rec: ExecutionRecord, rs: RedoState | None,
-                        kind: ErrorKind) -> Outcome:
+                        kind: ErrorKind, *, partial: dict[str, Any] | None = None) -> Outcome:
+        """일시 오류고 재개할 수 있으면 '재개대기'를 예약하고, 아니면 실패로 간다.
+
+        partial(받은 결과)은 재개를 실제로 예약할 때만 '<taskId>.partial'(만든 쪽 = 이 실행 기록)로 저장하고 그 참조를
+        재개 위치에 적는다 — 같은 저장에 남는다. 비어 있으면 저장하지 않고 재개 위치의 기존 참조를 그대로 둔다.
+        """
         run, now = ctx.run, self.now()
         if kind == "일시":
             start = run.resume_window_started_at or now
@@ -444,6 +494,9 @@ class Engine:
                 run.resume_window_started_at = start
                 run.resume_count += 1
                 run.next_resume_at = now + wait
+                # rs 없이 부르는 곳(흐름의 재개 예약)은 partial을 넘기지 않는다 — 진행 위치가 없으면 이어 쓸 곳도 없다
+                if partial and rs is not None:
+                    rs.partial_ref = ctx.put(f"{rec.task_id}{PARTIAL_SUFFIX}", partial, producer=rec.execution_id)
                 run.redo_state = rs
                 run.state = make_state(run.state.step, "재개대기", run.rework_screen)
                 rec.status = "재개대기"

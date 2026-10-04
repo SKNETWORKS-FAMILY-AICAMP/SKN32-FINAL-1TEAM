@@ -93,6 +93,12 @@ class RedoState(SBModel):
     pending_execution_id: str | None = None
     bundle_id: str | None = None
     rework_role: str | None = None
+    instruction_ref: str | None = ext(
+        None, note="재작성 · 재수행 때 다시 쓴 지시문 산출물 '<taskId>.instruction@버전'. 같은 재작성 · 재수행 입력으로 "
+                   "재개하면 다시 쓰지 않고 이 지시문을 쓴다. 새 입력이면 새 진행 위치라 비어 있다 (T-C3 spec 5.5)")
+    partial_ref: str | None = ext(
+        None, note="재시도 소진으로 재개를 예약할 때 Task가 받은 결과 '<taskId>.partial@버전'. 재개하면 PARTIAL로 연결한 "
+                   "입력에 넣는다. 단계 성공 · 재수행 · 다른 단계 · 실행 실패 · 중단이면 재개 위치와 함께 사라진다(산출물은 남음)")
 
 
 class CycleState(SBModel):

@@ -22,8 +22,7 @@ from ..models import (
     FeatureMatchResult, FormatFinding, GateResult,
     Infographic, ItemSpec, MarketAnalysis, MarketSizeItem, PlanDoc, PlanSection,
     ProofreadLog, Prototype, ReferenceDoc, RequirementAnalysis, ReworkDiff, ReworkOrder,
-    Rubric, RubricItem, ScoreReport, Sentence, TableSpec, TaskInstruction, TaskPlan,
-    Token, TokenCheckResult,
+    ScoreReport, Sentence, TableSpec, Token, TokenCheckResult,
 )
 from ..orchestrator.errors import ProviderError, ResourceNotFound, ToolCallExhausted
 from ..orchestrator.registry import TaskRegistry
@@ -31,8 +30,9 @@ from ..orchestrator.tools import LLMRequest, LLMResponse, TokenUsage, Tools
 from ..flow.rework_map import (
     CODE_CHECK_TARGET, FEATURE_MISSING_TARGET, LIST_README_BUNDLE, TASK_BUNDLE, order_bundles,
 )
-from .form_defaults import EVAL_ITEMS, default_evaluation_items, default_form_spec
+from .form_defaults import EVAL_ITEMS, default_evaluation_items, default_form_spec, stub_rubric
 from .notice.g01 import PRE_STARTUP, business_age_years   # 업력(년) 반올림은 실제 G-01과 한 곳에서 (스텁 테스트도 이 이름을 쓴다)
+from .supervisor import plan as task_plan   # 작업 분해 부품 — 실제 T-C3와 같은 확인 · 양식 고르기 · 목록 · 틀 · 맥락
 
 DOC_LAYER_MAX = 70.0
 HTML_WEIGHTS = [3, 2, 2, 1, 2, 2, 1, 2]
@@ -47,6 +47,8 @@ STUB_BONUS = [BonusItem(name="가점 항목", points=1.0)]
 STUB_BONUS_CHANGED = [BonusItem(name="가점 항목", points=1.0), BonusItem(name="추가 가점", points=1.0)]
 # 추가 조회에서 카드 내용을 바꾸는 종류 (StubScenario.more_changes)
 MORE_CHANGE_KINDS = ("정보", "버전", "적합도", "가산점")
+# 스텁 T-C3의 안내 — LLM 대신 쓰는 고정 더미 문장
+STUB_GUIDANCE = "{task_id} 스텁 안내 — 이 아이템 · 공고에 맞춘 안내 자리입니다."
 
 # 기획서 6-8 고정 문구
 DISCLAIMER = "본 문서는 S-Brain이 생성한 초안입니다. 제출 전 작성자 본인의 확인과 수정이 필요합니다."
@@ -216,13 +218,9 @@ def stub_gate(company: CompanyInfo, ann: Announcement, today: date) -> tuple[Gat
     return GateResult(passed=not failed, failed_conditions=failed, missing_inputs=[], undecidable=False), age_years
 
 
-def stub_rubric() -> Rubric:
-    return Rubric(rubric_id="rubric-stub", version="stub-1", items=[
-        RubricItem(item_code=code, criteria=["기준"], score_bands=[{"min": 0, "max": m, "label": "구간"}],
-                   evidence_required=True) for code, m in EVAL])
-
-
 def make_constants() -> Callable:
+    """상수 공급처 (조립이 흐름에 넘긴다). 채점 기준표는 이제 T-C3 출력(rubric 산출물)에서 오고, 이 공급처의 'rubric'을
+    읽는 단계는 없다 — 조립(bootstrap)이 쓰므로 남겨 둔다."""
     rubric = stub_rubric()
 
     def constants(ctx, name: str) -> Any:
@@ -342,23 +340,12 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
         return c.G01Out(gate_result=gate, business_age_years=age, selected_announcement=ann)
 
     def tc3(inp: c.TC3In, tools: Tools) -> c.TC3Out:
+        """스텁 T-C3 (spec 6.2) — 확인 · 양식 고르기 · Task 목록 · 틀 · 맥락 · 확장 출력은 실제 T-C3와 같은 부품으로 만들고,
+        안내만 LLM 대신 고정 더미 문장이다. 확인(① · ② · ④)은 LLM을 부르기 전에 한다."""
+        bundle = task_plan.prepare(inp)
         _ask(tools, "작업 분해")
-        order = ["T-C1", "T-C2", "T-C3", "T-S1", "T-S2", "T-W1", "T-W2", "T-W3", "T-V1", "T-B1", "T-B2",
-                 "T-V2", "T-P1", "T-P2"]
-        agent = {"C": "조율", "S": "전략", "W": "작성", "B": "구현", "P": "검수"}
-        if inp.item_spec.category == "원페이지":
-            order.remove("T-B1")
-        ann = inp.selected_announcement
-        # 공고의 마감일 · 지원 금액은 비어 있을 수 있다 — 맥락 값은 null로 둔다 (spec 5)
-        tasks = [TaskInstruction(task_id=t, agent=("검증-1" if t == "T-V1" else "검증-2" if t == "T-V2"
-                                                     else agent[t[2]]),
-                                 order=i + 1, instruction=f"{t} 지시",
-                                 context={"formVersion": ann.form_spec.form_version,
-                                          "applyEnd": ann.apply_end.isoformat() if ann.apply_end else None,
-                                          "supportAmountMax": ann.support_amount_max})
-                 for i, t in enumerate(order)]
-        plan = TaskPlan(plan_id="plan-1", category=inp.item_spec.category, tasks=tasks)
-        return c.TC3Out(task_plan=plan, task_count=len(tasks), instruction_set=tasks)
+        guidance = {t: STUB_GUIDANCE.format(task_id=t) for t in task_plan.instructed_tasks(inp.item_spec.category)}
+        return task_plan.assemble(inp, bundle, guidance)
 
     def ts1(inp: c.TS1In, tools: Tools) -> c.TS1Out:
         _ask(tools, "요구사항 분석")

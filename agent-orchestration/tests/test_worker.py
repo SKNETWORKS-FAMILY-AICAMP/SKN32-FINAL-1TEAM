@@ -19,9 +19,13 @@ from webdb import create_web_tables, new_project
 
 from sbrain import env
 from sbrain.agents.stubs import FakeLLM, StubScenario
-from sbrain.bootstrap import App, build_app, build_stub_app, build_web
+from sbrain.agents.supervisor import IMPLEMENTED, IMPLEMENTED_TASKS, tc3
+from sbrain.agents.supervisor.plan import PURPOSE_REWRITE, PURPOSE_WRITE
+from sbrain.agents.supervisor.rewrite import rewrite_guidance
+from sbrain.bootstrap import App, TaskRoutedProvider, build_app, build_stub_app, build_web
 from sbrain.intake import MemoryProjectInputSource
 from sbrain.orchestrator.errors import CommandError
+from sbrain.orchestrator.tools import LLMRequest
 from sbrain.store_sql import DbSettingsProvider, SqlStore, create_orchestrator_tables, create_sqlite_engine
 from sbrain.worker import Worker, WorkerConfig, install_signal_handlers, main
 
@@ -326,6 +330,124 @@ def test_build_app_routes_only_real_tasks_to_real_llm(tmp_path, db):
     assert web.orchestrator.view(rid).step == "계획서작성"
     assert {q.metadata["task_id"] for q in real.requests} == {"T-C1"}              # 실제 호출처는 T-C1만
     assert "T-C1" not in {q.metadata["task_id"] for q in app.llm.requests}
+
+
+# ── 워커 조립: 실제 T-C3 · 다시 쓰기는 실제 호출처, 스텁 Task는 가짜 (T-C3 spec 6.1) ──
+REWRITE_TARGETS = ("T-S1", "T-S2", "T-W1", "T-W2", "T-W3", "T-B1", "T-B2")
+
+
+def _guidance_reply(request: LLMRequest) -> str:
+    """실제 T-C3(항목 키 = 지시 대상)와 다시 쓰기(task_id = 대상) 호출 모두 안내 하나로 답한다."""
+    target = request.metadata.get("item_key") or request.metadata["task_id"]
+    return json.dumps({"guidance": f"{target} 안내 — {request.metadata['purpose']}"}, ensure_ascii=False)
+
+
+def real_worker_app(tmp_path, clock=datetime.now) -> tuple[App, App, FakeLLM, MemoryProjectInputSource]:
+    """워커 조립(build_app) + 웹 조립. 실제 호출처는 가짜 LLM — T-C1 · T-C3 · 다시 쓰기 호출에 답한다 (네트워크 없음)."""
+    url = f"sqlite:///{(tmp_path / 'worker.db').as_posix()}"
+    source = projects(1)
+    real = FakeLLM()
+    real.respond("T-C1", lambda r: item_json())
+    real.respond("T-C3", _guidance_reply)
+    for task_id in REWRITE_TARGETS:                                              # 다시 쓰기 호출의 task_id는 대상 Task
+        real.respond(task_id, _guidance_reply)
+    app = build_app(url, project_inputs=source, llm=real, now=clock)
+    web = build_web(url, profile_count=lambda a: 1, project_inputs=source, now=clock)
+    return app, web, real, source
+
+
+def worker_to_screen6(app: App, web: App, source: MemoryProjectInputSource) -> str:
+    start(web, source)
+    w = worker(app, lease_sec=60)
+    w.run_once("w")
+    rid = web.orchestrator.start_status(201).run_id
+    web.orchestrator.select_announcement(rid, "A01")
+    w.run_once("w")
+    web.orchestrator.start_writing(rid)
+    w.run_once("w")
+    run = web.store.load_run(rid)
+    assert (run.state.step, run.state.progress) == ("문서평가", "사용자대기")
+    return rid
+
+
+def by_purpose(llm: FakeLLM, purpose: str) -> list[LLMRequest]:
+    return [q for q in llm.requests if q.metadata["purpose"] == purpose]
+
+
+def test_build_app_routes_real_tc3_to_real_llm(tmp_path, db):
+    """T-C3까지 진행 — 실제 T-C3 호출(지시 대상 7개)은 실제 호출처, 스텁 Task 호출은 가짜 호출처. 첫 실행은 다시 쓰지 않는다."""
+    app, web, real, source = real_worker_app(tmp_path)
+    assert app.registry.get("T-C3").fn is tc3.run
+    rid = worker_to_screen6(app, web, source)
+    tc3_calls = [q for q in real.requests if q.metadata["task_id"] == "T-C3"]
+    assert len(tc3_calls) == 7 and {q.metadata["purpose"] for q in tc3_calls} == {PURPOSE_WRITE}
+    assert {q.metadata["task_id"] for q in real.requests} == {"T-C1", "T-C3"}
+    fake_tasks = {q.metadata["task_id"] for q in app.llm.requests}
+    assert not fake_tasks & {"T-C1", "T-C3"}
+    assert {"T-S1", "T-S2", "T-W1", "T-W2", "T-W3"} <= fake_tasks                # 스텁 Task는 가짜로
+    assert by_purpose(real, PURPOSE_REWRITE) == by_purpose(app.llm, PURPOSE_REWRITE) == []
+    assert "T-C3" in [e.task_id for e in web.store.executions(rid)]
+
+
+def test_build_app_routes_redo_rewrite_to_real_llm(tmp_path, db):
+    """재수행 — 다시 쓰기 호출(task_id = 대상 T-S1)은 실제 호출처, 대상 스텁 T-S1의 호출은 가짜 호출처."""
+    app, web, real, source = real_worker_app(tmp_path)
+    app.scenario.check_fail_times["T-S1"] = 1                                     # 첫 실행 불통과 → 재수행 한 번
+    rid = worker_to_screen6(app, web, source)
+    [rw] = by_purpose(real, PURPOSE_REWRITE)
+    assert (rw.metadata["task_id"], rw.metadata["agent"]) == ("T-S1", "조율")
+    assert by_purpose(app.llm, PURPOSE_REWRITE) == []
+    assert [q.metadata["task_id"] for q in app.llm.requests].count("T-S1") == 2   # 첫 실행 + 재수행
+    assert "T-S1" not in {q.metadata["task_id"] for q in real.requests if q.metadata["purpose"] != PURPOSE_REWRITE}
+    ctx = app.engine.open_context(app.store.load_run(rid))
+    assert "T-S1 안내" in ctx.get("T-S1.instruction")                              # 실제 호출처의 안내로 다시 썼다
+
+
+def test_build_app_routes_rework_rewrite_to_real_llm(tmp_path, db):
+    """재작성(문서층) — T-W1 · T-W2 · T-W3 다시 쓰기는 실제 호출처, 대상 스텁 Task의 호출은 가짜 호출처."""
+    clock = Clock()
+    app, web, real, source = real_worker_app(tmp_path, clock)
+    rid = worker_to_screen6(app, web, source)
+    before = {t: [q.metadata["task_id"] for q in app.llm.requests].count(t) for t in ("T-W1", "T-W2", "T-W3")}
+    pid = web.store.load_run(rid).project_id
+    acc = web.orchestrator.request_rework_for_project(pid, "문제인식")
+    clock.t = acc.collect_until
+    assert worker(app, lease_sec=60).run_once("w") == [f"진행 {rid} 사용자대기"]
+    rws = by_purpose(real, PURPOSE_REWRITE)
+    assert [q.metadata["task_id"] for q in rws] == ["T-W1", "T-W2", "T-W3"]
+    assert {q.metadata["agent"] for q in rws} == {"조율"}
+    assert by_purpose(app.llm, PURPOSE_REWRITE) == []
+    after = {t: [q.metadata["task_id"] for q in app.llm.requests].count(t) for t in ("T-W1", "T-W2", "T-W3")}
+    assert all(after[t] > before[t] for t in after)                               # 재작성 실행은 가짜로
+    assert not {q.metadata["task_id"] for q in real.requests} & {"T-V1", "M-1", "G-02a"}
+
+
+def test_task_routed_provider_rule():
+    """실제 호출처로 가는 것: 구현 Task의 호출, 또는 조율의 '지시문 다시 쓰기' 호출(대상 Task와 관계없이)."""
+    real, fake = FakeLLM(), FakeLLM()
+    router = TaskRoutedProvider(real, fake, IMPLEMENTED_TASKS)
+
+    def req(task_id: str, agent: str, purpose: str | None) -> LLMRequest:
+        return LLMRequest(provider="openai", model="m", temperature=None, messages=[], timeout_sec=1,
+                          response_schema=None, metadata={"run_id": "r", "task_id": task_id, "agent": agent,
+                                                          "purpose": purpose, "item_key": None})
+    cases = [("T-C1", "조율", None, real), ("T-C3", "조율", PURPOSE_WRITE, real),
+             ("T-W1", "조율", PURPOSE_REWRITE, real), ("T-B2", "조율", PURPOSE_REWRITE, real),
+             ("T-W1", "작성", None, fake), ("T-W1", "조율", PURPOSE_WRITE, fake),
+             ("T-W1", "작성", PURPOSE_REWRITE, fake), ("T-S1", "설계", None, fake)]
+    for task_id, agent, purpose, target in cases:
+        before = len(target.requests)
+        router.complete(req(task_id, agent, purpose))
+        assert len(target.requests) == before + 1, (task_id, agent, purpose)
+    assert len(real.requests) == 4 and len(fake.requests) == 4
+
+
+def test_only_worker_assembly_has_rewriter(tmp_path, db):
+    url = f"sqlite:///{(tmp_path / 'worker.db').as_posix()}"
+    assert "T-C3" in IMPLEMENTED_TASKS and IMPLEMENTED["T-C3"] is tc3.run
+    assert build_app(url, project_inputs=projects(1), llm=FakeLLM()).engine.flow.rewriter is rewrite_guidance
+    assert build_stub_app().engine.flow.rewriter is None
+    assert build_web(url, profile_count=lambda a: 1, project_inputs=projects(1)).engine.flow.rewriter is None
 
 
 def test_build_web_refuses_pre_stage_and_leaves_request(tmp_path, db):

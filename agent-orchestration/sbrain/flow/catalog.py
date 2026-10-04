@@ -7,12 +7,16 @@ from __future__ import annotations
 
 from ..contracts import tasks as c
 from ..orchestrator.registry import (
-    CHECKS, INSTR, REWORK, TODAY, FailurePolicy, TaskRegistry, TaskSpec, TempRule,
+    CHECKS, INSTR, PARTIAL, PARTIAL_SUFFIX, REWORK, TODAY, FailurePolicy, TaskRegistry, TaskSpec, TempRule,
     art, cmd, const, flow_value, run_field, setting,
 )
 from .rework_map import FINAL_ACTION_EXCEPTIONS
 
 SA = "selectedAnnouncement"
+# T-C3가 고른 양식 · 평가 항목 · 채점 기준표 (확장 출력, 시트 4 이름)
+FORM_SPEC, EVAL_ITEMS, RUBRIC = "formSpec", "evaluationItems", "rubric"
+# 재작성 · 재수행 때 다시 쓴 지시문 (내부 산출물 <taskId>.instruction, 문자열 — 재작성 비교 · 되돌리기 대상 아님)
+INSTRUCTION_SUFFIX = ".instruction"
 # 추가 조회 결과 (확장, 등록부 밖 — Orchestrator가 만든다, spec 4.2.2). 유효한(성공한) 추가 조회만 그 결과와 같은 저장에서
 # 남긴다. 실패한 추가 조회가 남긴 T-C2 출력(candidates 버전)은 화면 · 결과 · 한도 · 공고 선택 어디서도 읽지 않는다.
 FIRST_CANDIDATES = "firstCandidates"   # 첫 조회 목록 — 추가 조회에 다시 나온 카드를 새 내용으로 바꾼 것 (자리 · 순위 그대로)
@@ -70,10 +74,16 @@ def build_registry() -> TaskRegistry:
          failure=FailurePolicy(resumable=False, rescue_segments=frozenset({"GATE"})))
 
     # ── 계획서 작성 ───────────────────────────────────
+    # T-C3 — 신청자 유형으로 양식 · 평가 항목 · 채점 기준표를 고르고(확장 출력 formSpec · evaluationItems · rubric),
+    # 뒷 단계(T-W1 · T-V1 · T-P1 · T-P2 · G-02a · G-02b)는 선택 공고의 같은 이름 필드 대신 이 출력을 읽는다 (T-C3 spec 4).
+    # 선택 공고의 formSpec · evaluationItems는 자리 표시 값으로 남는다. 업력은 G-01 출력에서 받는다(확장 입력)
+    # 재개 때는 앞 실행이 받은 안내(T-C3.partial)를 prior_guidance로 받아 빠진 Task만 부른다(엔진 일반 장치 PARTIAL)
     task("T-C3", "작업 분해", "조율", 4, c.TC3In, c.TC3Out,
          {"selected_announcement": art(SA), "item_spec": art("itemSpec"), "gate_result": art("gateResult"),
-          "company_info": art("companyInfo"), "reference_summary": art("referenceSummary", optional=True)},
-         {"task_plan": "taskPlan", "task_count": "taskCount", "instruction_set": "instructionSet"}, "task_plan")
+          "company_info": art("companyInfo"), "reference_summary": art("referenceSummary", optional=True),
+          "business_age_years": art("businessAgeYears", optional=True), "prior_guidance": PARTIAL},
+         {"task_plan": "taskPlan", "task_count": "taskCount", "instruction_set": "instructionSet",
+          "form_spec": FORM_SPEC, "evaluation_items": EVAL_ITEMS, "rubric": RUBRIC}, "task_plan")
     task("T-S1", "요구사항 분석", "전략", 5, c.TS1In, c.TS1Out,
          {"item_spec": art("itemSpec"), "selected_announcement": art(SA), "instruction": INSTR,
           "rework_input": REWORK},
@@ -87,7 +97,7 @@ def build_registry() -> TaskRegistry:
     task("T-W1", "사업계획서 본문 작성", "작성", 7, c.TW1In, c.TW1Out,
          {"requirement_analysis": art("requirementAnalysis"), "market_analysis": art("marketAnalysis"),
           "selected_announcement": art(SA), "company_info": art("companyInfo"),
-          "form_spec": art(SA, "form_spec"), "instruction": INSTR, "rework_input": REWORK},
+          "form_spec": art(FORM_SPEC), "instruction": INSTR, "rework_input": REWORK},
          {"plan_doc": "planDoc", "sections": "sections", "feature_list": "featureList",
           "check": _check_key("T-W1")}, "plan_doc", redo=True)
     task("T-W2", "그래프 생성", "작성", 8, c.TW2In, c.TW2Out,
@@ -104,7 +114,7 @@ def build_registry() -> TaskRegistry:
           "table_check": art(_check_key("T-W3"), optional=True)},
          {"plan_doc": "planDoc"}, "plan_doc", kind="merge")
     task("T-V1", "사업계획서 검증", "검증-1", 10, c.TV1In, c.TV1Out,
-         {"plan_doc": art("planDoc"), "evaluation_items": art(SA, "evaluation_items"), "rubric": const("rubric")},
+         {"plan_doc": art("planDoc"), "evaluation_items": art(EVAL_ITEMS), "rubric": art(RUBRIC)},
          {"doc_score": "docScore", "items": "T-V1.items", "variance_flag": "varianceFlag"}, "doc_score",
          temperature=TempRule(fixed=0.0))
     rule("G-02a", "문서 평가 판정", "조율", 11, c.G02aIn, c.G02aOut,
@@ -157,7 +167,7 @@ def build_registry() -> TaskRegistry:
           "numeric_tokens": art("numericTokens")},
          {"protected_tokens": "protectedTokens"}, "protected_tokens")
     task("T-P1", "사업계획서 문장 형식 검수", "검수", 18, c.TP1In, c.TP1Out,
-         {"plan_doc": art("planDoc"), "format_spec": art(SA, "form_spec.format_spec"),
+         {"plan_doc": art("planDoc"), "format_spec": art(FORM_SPEC, "format_spec"),
           "protected_tokens": art("protectedTokens")},
          {"format_findings": "formatFindings", "target_sentence_ids": "targetSentenceIds"}, "format_findings")
     # T-P2는 문장별 병렬 실행이라 전용 실행기(flow)가 부르고, 결과는 sentenceResults로 모은다
@@ -189,5 +199,6 @@ def artifact_types(registry: TaskRegistry) -> tuple[dict, dict]:
         FIRST_CANDIDATES: list[AnnouncementCard],
         MORE_CANDIDATES: list[AnnouncementCard],
     })
-    suffix = {".reworkInput": ReworkInput}
+    # 재개 때 이어 쓸 받은 결과 <taskId>.partial (엔진 일반 장치 PARTIAL — 키 → 받은 값 문자열)
+    suffix = {".reworkInput": ReworkInput, INSTRUCTION_SUFFIX: str, PARTIAL_SUFFIX: dict[str, str]}
     return exact, suffix

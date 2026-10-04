@@ -112,15 +112,22 @@ class ProviderError(OrchestratorError):
 
 
 class ToolCallExhausted(OrchestratorError):
-    """재시도를 다 쓴 호출. Task가 받아 대체 경로로 가거나(T-C2 · T-V2), Orchestrator가 재개한다."""
+    """재시도를 다 쓴 호출. Task가 받아 대체 경로로 가거나(T-C2 · T-V2), Orchestrator가 재개한다.
 
-    def __init__(self, *, error: CallError, error_kind: ErrorKind, tries: int, call_id: str, detail: str = "") -> None:
+    partial (확장, 선택): 재시도를 다 쓰기 전까지 Task가 받은 결과. 입력 하나를 PARTIAL로 연결한 Task가 다시 올리며
+    싣는다 — 엔진이 재개를 예약할 때만 '<taskId>.partial'로 저장하고, 재개하면 그 입력에 넣는다. 내용이라 예외
+    메시지 · str · repr에 넣지 않는다(생성 인자로 super에 넘기지 않음).
+    """
+
+    def __init__(self, *, error: CallError, error_kind: ErrorKind, tries: int, call_id: str, detail: str = "",
+                 partial: dict[str, Any] | None = None) -> None:
         super().__init__(f"{error}/{error_kind} after {tries} tries: {detail}")
         self.error = error
         self.error_kind = error_kind
         self.tries = tries
         self.call_id = call_id
         self.detail = detail
+        self.partial = partial
 
 
 class ContractError(OrchestratorError):

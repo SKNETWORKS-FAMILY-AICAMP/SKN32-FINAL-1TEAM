@@ -45,8 +45,8 @@ class MiniFlow:
     def initial_redo_state(self, ctx, spec):
         return RedoState(task_id=spec.task_id)
 
-    def build_instruction(self, base, rework_input):
-        return base
+    def build_instruction(self, ctx, spec, task, rework_input, rs, tools_for):
+        return task.instruction, []
 
     def today(self, ctx):
         return date(2026, 9, 26)

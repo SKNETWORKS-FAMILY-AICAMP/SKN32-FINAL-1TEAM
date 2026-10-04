@@ -117,8 +117,15 @@ PROVISIONAL: dict[str, str] = {
     "taskTimeouts.G-01": "G-01 제한 시간 30초 — 공고 서버의 공고 상세 · 자격 판정 호출, T-C2와 같음",
     "announcement.unknownStatus": "공고 서버 모집 상태가 모름(unknown 등)이면 선택 공고 status를 '모집중'으로 둔다 — "
                                   "그래서 마감 안내(E-RUN-CLOSED)가 붙지 않는다",
-    "announcement.formSpec": "선택 공고의 신청서 양식(formSpec) · 평가 항목(evaluationItems)은 기본 양식(지금 스텁 값) — "
-                             "작성 · 검수 Agent 연동 때 정한다",
+    "announcement.formSpec": "선택 공고의 양식 필드(formSpec · evaluationItems)는 자리 표시 값(기본 양식 1-1 · 2-1 · 3-3) — "
+                             "뒷 단계는 읽지 않고 작업 분해(T-C3)가 고른 양식 · 평가 항목 · 채점 기준표를 쓴다",
+    # 작업 분해 (T-C3, agents/form_defaults.py · agents/supervisor/plan.py) — 실행 건 설정값이 아니라 코드 표다
+    "taskPlan.formTable": "신청자 유형별 양식 · 평가 항목 · 채점 기준표 — 예비창업자 '예비창업패키지(잠정)', 개인사업자 · 법인 "
+                          "'초기창업패키지-일반형(잠정)'. 섹션은 웹 계획서 태그와 같은 1-1 · 2-1 · 3-1 · 4-1, 평가 항목 · "
+                          "채점 기준표는 기본값(문서층 70점 · rubric-stub@stub-1). 담당자 회신 뒤 이 표만 바꾼다",
+    "taskPlan.referenceSlots": "참조 조각 대응표(Task → 받는 슬롯) — T-S1 문제 · 필요성 · 목표 고객 · 핵심 기능, T-S2 시장 규모 · "
+                               "목표 고객 · 경쟁 · 차별성, T-W1 7개 전부, T-W2 시장 규모 · 수익 모델, T-W3 수익 모델 · 추진 계획, "
+                               "T-B1 핵심 기능, T-B2 문제 · 필요성 · 핵심 기능 · 시장 규모 · 수익 모델 · 추진 계획",
     "notice.X-C2-GONE": "공고 없음 안내(확장) 문구 '선택하신 공고를 더 이상 확인할 수 없습니다. 다른 공고를 선택해주세요.'",
     # 공고 서버 연결 (agents/notice) — 실행 건 설정값이 아니라 워커 프로세스 값 · 고정 문장이다
     "announcement.matchReason": "추천 이유 문장 틀 (spec 4.1.4) — 공고 서버의 band(매우 적합 · 적합 · 참고, 없으면 대체 경로 "

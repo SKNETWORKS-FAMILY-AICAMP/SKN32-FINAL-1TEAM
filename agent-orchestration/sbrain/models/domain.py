@@ -251,6 +251,9 @@ class TaskInstruction(SBModel):
     order: int
     instruction: str
     context: dict[str, Any]
+    guidance: str = ext(
+        "", note="작업 분해가 쓴 안내(정리한 것) — 지시문의 안내 부분과 같은 글자. 지시 대상이 아니면 빈 문자열. "
+                 "재작성 · 재수행 때 안내를 다시 쓰는 출발점이다")
 
 
 class TaskPlan(SBModel):

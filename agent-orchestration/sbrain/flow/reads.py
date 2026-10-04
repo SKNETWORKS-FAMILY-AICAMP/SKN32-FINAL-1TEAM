@@ -36,7 +36,7 @@ from ..models import (
 from ..models.base import (
     AgentName, CollectionStatus, FallbackMode, KeptReason, KeptSide, NextAction, RunProgress, SBModel, ext,
 )
-from ..models.domain import FormatFinding, Infographic, ProofreadLog
+from ..models.domain import EvalItem, FormatFinding, Infographic, ProofreadLog
 from ..models.rework import ReworkComparison
 from ..models.run import ReworkResultStatus
 from ..models.scoring import ArtifactScore, CodeCheckResult, DocScore, FeatureMatchResult, ScoreReport
@@ -198,6 +198,10 @@ class Outputs(SBModel):
     user_message: str | None = None
     rework_usage: list[BundleUsage]
     rework_limit: int
+    evaluation_items: list[EvalItem] = ext(
+        default_factory=list,
+        note="작업 분해(T-C3)가 고른 평가 항목(현재 버전). T-C3 전이면 빈 목록. 웹은 점수 항목 이름을 docScore.items[].itemCode와 "
+             "이 목록의 itemCode로 맞춰 itemName에서 만든다 — 선택 공고의 evaluationItems는 자리 표시 값이다")
 
 
 class ReworkFileChange(SBModel):
@@ -534,7 +538,8 @@ def outputs(orch: SBrainOrchestrator, project_id: int | str) -> Outputs:
         feature_match=cur("featureMatch"), format_findings=cur("formatFindings") or [],
         sentence_results=cur("sentenceResults") or [], proofread_log=cur("proofreadLog"),
         deliverable=cur("deliverable"), user_message=cur("userMessage"),
-        rework_usage=_bundle_usage(ctx, category), rework_limit=ctx.settings.rework.per_bundle)
+        rework_usage=_bundle_usage(ctx, category), rework_limit=ctx.settings.rework.per_bundle,
+        evaluation_items=cur("evaluationItems") or [])
 
 
 def _bundle_usage(ctx: RunContext, category: str | None) -> list[BundleUsage]:

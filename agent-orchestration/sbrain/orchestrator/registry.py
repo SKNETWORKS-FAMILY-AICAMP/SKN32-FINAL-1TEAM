@@ -68,6 +68,8 @@ class Bind:
       today    — 기준일자
       const    — 상수 공급처 (예: rubric)
       flow     — 워크플로가 만들어 주는 값 (예: cycleInfo)
+      partial  — 재개 때 이어 쓸 받은 결과 (확장). 재개 위치(RedoState.partial_ref)에 저장된 결과가 있으면 그 값,
+                 없으면 값을 넣지 않아 입력 모델의 기본값을 쓴다. 이 종류로 연결한 Task만 저장 · 재개 장치를 쓴다
     """
     kind: str
     key: str = ""
@@ -104,6 +106,15 @@ INSTR = Bind("instr")
 REWORK = Bind("rework", optional=True)
 CHECKS = Bind("checks", optional=True)
 TODAY = Bind("today")
+# 재개 때 받은 결과 이어 쓰기 (확장) — 재시도 소진(ToolCallExhausted.partial)으로 재개를 예약할 때 '<taskId>.partial'로
+# 저장하고 재개하면 이 연결의 입력에 넣는다. 산출물 타입은 워크플로가 접미 규칙으로 등록한다
+PARTIAL = Bind("partial", optional=True)
+PARTIAL_SUFFIX = ".partial"
+
+
+def keeps_partial(spec: "TaskSpec") -> bool:
+    """입력 하나를 PARTIAL 종류로 연결한 Task인지 (받은 결과를 재개 때 이어 쓰는 Task)."""
+    return any(b.kind == "partial" for b in spec.inputs.values())
 
 
 @dataclass
