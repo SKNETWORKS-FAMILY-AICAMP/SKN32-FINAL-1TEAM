@@ -4,7 +4,7 @@ sbrain의 결과 dataclass와 같은 필드를 가진 사본을 둔다(test_orch
 FakeOrch는 부른 함수 이름과 인자를 calls에 쌓고, 미리 정한 값(또는 예외, 함수)을 돌려준다.
 """
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from types import SimpleNamespace as NS
 from typing import Any
 
@@ -237,6 +237,56 @@ def make_outputs(**overrides: Any) -> NS:
     return NS(**base)
 
 
+def make_tokens(input_tokens: int | None = None, output_tokens: int | None = None) -> NS:
+    return NS(input_tokens=input_tokens, cached_input_tokens=None, output_tokens=output_tokens, reasoning_tokens=None)
+
+
+def make_admin_run(project_id: int | str = 1, **overrides: Any) -> NS:
+    """admin_runs 한 줄(AdminRun) — updated_at은 시간대 있는 UTC."""
+    base = dict(
+        project_id=str(project_id), run_id='r1', step='계획서작성', progress='실행', current_task='작성-1', agent='작성',
+        attempt=1, updated_at=datetime.now(UTC), doc_score=None, artifact_score=None, total_score=None,
+        resume_count=0, last_error_kind=None, failure_reason=None)
+    base.update(overrides)
+    return NS(**base)
+
+
+def make_admin_execution(**overrides: Any) -> NS:
+    base = dict(
+        project_id='1', run_id='r1', execution_id='e1', task_id='T-W1', agent='작성', attempt=1, trigger='첫실행',
+        redo_count=0, status='성공', model='gpt-test', reasoning_effort=None, temperature=None, error_kind=None,
+        error=None, started_at=datetime.now(UTC), ended_at=None, duration_sec=1.5, tokens=make_tokens(100, 20))
+    base.update(overrides)
+    return NS(**base)
+
+
+def make_admin_agent_task(**overrides: Any) -> NS:
+    base = dict(agent='작성', task_count=3, task_ids=['T-W1'], execution_count=5, recent_project_id='1',
+                recent_status='성공')
+    base.update(overrides)
+    return NS(**base)
+
+
+def make_score_entry(score: float, after_rework: bool = False, scored_at: datetime | None = None) -> NS:
+    return NS(scored_at=scored_at or datetime.now(UTC), score=score, after_rework=after_rework, execution_id='e1')
+
+
+def make_admin_score_history(**overrides: Any) -> NS:
+    base = dict(project_id='1', run_id='r1', doc_score=[], code_check=[], feature_match=[])
+    base.update(overrides)
+    return NS(**base)
+
+
+def make_admin_summary(**overrides: Any) -> NS:
+    base = dict(
+        status_counts={}, doc_avg=None, doc_count=0, total_avg=None, total_count=0, pass_count=0, pass_rate=None,
+        pass_threshold=80.0, reworked_runs=0, runs_with_executions=0, rework_rate=None, score_buckets=[],
+        layer_changes=[], triggers=[], total_tokens=0, proofread_attempts=0, proofread_rejected=0,
+        proofread_reject_rate=None)
+    base.update(overrides)
+    return NS(**base)
+
+
 def run_not_found(*_args: Any, **_kwargs: Any) -> None:
     raise OrchError('RUN_NOT_FOUND', '실행 건 없음')
 
@@ -244,6 +294,7 @@ def run_not_found(*_args: Any, **_kwargs: Any) -> None:
 def default_responses() -> dict[str, Any]:
     """진행 중인 작업 없음 · 시작 요청 통과 · 실행 건 없음 — 라우터 테스트의 기본 상태."""
     return {
+        'admin_runs': lambda **kwargs: [],
         'outputs': run_not_found,
         'screen': run_not_found,
         'active_work': None,

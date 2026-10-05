@@ -611,13 +611,6 @@ class ProjectStatusOut(BaseModel):
     # 막지 않는다). 매칭 자체가 없거나(screen=NO_MATCH_SCREEN) 공고 정보를 못 찾으면
     # False.
     notice_closed: bool = False
-    # [2026-09-29 신규, 프론트 요청사항 3차 B-2] 같은 stage에서 "처음부터 다시 생성"이
-    # 연속으로 최종 실패(status='failed' 확정)한 횟수와 그 상한 — 자동 재개(resume_count)
-    # 와 달리 backoff 중간 실패가 아니라 이 시도 전체가 끝내 실패로 확정될 때만 늘고,
-    # 단계가 온전히 성공하면 0으로 돌아간다. regenerate_fail_streak >= regenerate_cap이면
-    # plan/start·prototype/start가 409를 돌려준다.
-    regenerate_fail_streak: int = 0
-    regenerate_cap: int = 2
 
 
 class RetryTaskRequest(BaseModel):
@@ -828,10 +821,6 @@ class PolicyThresholdsIn(BaseModel):
     rework_cap: int = Field(ge=0)
     deviation_cap: float = Field(ge=0, le=100, allow_inf_nan=False)
     token_retry_cap: int = Field(ge=0)
-    # [2026-09-29 신규, 프론트 요청사항 3차 B-2] "verification_policies에 두면 관리자가
-    # 조절 가능"이라고 요청하신 부분 — DB 컬럼만으로는 관리자 화면에서 실제로 바꿀 방법이
-    # 없어서 다른 상한들과 같은 자리(PUT /admin/policy/thresholds)에 같이 넣는다.
-    regenerate_cap: int = Field(ge=0)
 
 
 class ChecklistItemIn(BaseModel):
@@ -866,7 +855,6 @@ class VerificationPolicyOut(BaseModel):
     rework_cap: int
     deviation_cap: float
     token_retry_cap: int
-    regenerate_cap: int
 
 
 class ItemOut(BaseModel):
@@ -927,10 +915,6 @@ class GenerationFailureAlertOut(BaseModel):
     failure_reason: str | None = None
     created_at: datetime.datetime
     acknowledged_at: datetime.datetime | None = None
-    # [2026-09-29 신규, 프론트 요청사항 3차 B-4] True면 이 실패가 "처음부터 다시 생성"
-    # 연속 실패 상한까지 도달한 뒤 확정된 것 — 사용자 화면은 이미 재시도 버튼을 거두고
-    # "문제가 기록됐고 확인 후 조치할게요"로 바뀐 상태이므로 관리자가 우선 봐야 한다.
-    regenerate_exhausted: bool = False
 
 
 class GenerationFailureAlertAckIn(BaseModel):
@@ -938,7 +922,7 @@ class GenerationFailureAlertAckIn(BaseModel):
 
 
 class ScoreHistoryEntryOut(BaseModel):
-    scored_at: datetime.datetime
+    scored_at: datetime.datetime | None = None  # 채점 끝 시각을 모르면 None
     score: float
     is_rerun: bool
 

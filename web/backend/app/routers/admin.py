@@ -10,17 +10,12 @@
 이 필드를 그대로 다룬다.
 """
 import datetime
-from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app import pipeline_stages as ps
 from app.database import get_db
 from app.models import (
-    FIXED_TASK_SEQUENCE,
-    AgentExecution,
-    Artifact,
     BusinessPlan,
     Faq,
     GenerationFailureAlert,
@@ -32,8 +27,8 @@ from app.models import (
     Verdict,
     VerificationChecklistItem,
     VerificationPolicy,
-    VerificationScoreHistory,
 )
+from app.orch import OrchError, OrchGateway, admin_mapping, require_gateway
 from app.schemas import (
     AgentOpsSummaryOut,
     AgentTaskOut,
@@ -48,7 +43,6 @@ from app.schemas import (
     ItemArchiveIn,
     ItemOut,
     ItemScoreHistoryOut,
-    LayerDeviationOut,
     NoticeAdminOut,
     NoticeSourceStatusOut,
     OpsSummaryOut,
@@ -56,8 +50,6 @@ from app.schemas import (
     PolicyThresholdsIn,
     RecoveryItemOut,
     RecoveryLabelIn,
-    ScoreBucketOut,
-    ScoreHistoryEntryOut,
     UserOut,
     UserRoleStatusIn,
     VerificationPolicyOut,
@@ -105,7 +97,6 @@ def save_policy_thresholds(body: PolicyThresholdsIn, db: Session = Depends(get_d
     policy.rework_cap = body.rework_cap
     policy.deviation_cap = body.deviation_cap
     policy.token_retry_cap = body.token_retry_cap
-    policy.regenerate_cap = body.regenerate_cap
     db.commit()
     db.refresh(policy)
     # TODO: notifyRecheckCapViolations() 에 해당하는 재채점 편차 점검을
@@ -154,109 +145,56 @@ def save_checklist(body: list[ChecklistItemIn], db: Session = Depends(get_db), _
     return [ChecklistItemOut.model_validate(i) for i in items_sorted]
 
 
-_STALLED_AFTER = datetime.timedelta(hours=48)
+_ADMIN_PAGE = 200  # admin_runs를 한 번에 가져오는 줄 수
 
 
-def _build_item_out(db: Session, project: Project) -> ItemOut:
-    """진행 현황 탭 행 하나를 실제 DB 값으로 조립한다 — list_items/archive 토글이 공유한다.
-    "정체"(stalled)는 마지막 agent_executions 실행 후 48시간 기준(모듈 상단 _STALLED_AFTER)
-    — 완료·보관 상태는 정체로 치지 않는다. score는 doc_score+artifact_score 합계(문서
-    평가만 끝났으면 doc_score만, 산출물까지 끝났으면 둘 다 더함).
+def _all_admin_runs(gateway: OrchGateway) -> dict[int, object]:
+    """관리자 조회 범위(마지막 활동이 최근 12개월 안)의 실행 건을 모두 읽는다 — project_id → AdminRun.
+    웹에서 지워진 프로젝트의 실행 건(project_id 없음)은 뺀다."""
+    runs: dict[int, object] = {}
+    offset = 0
+    while True:
+        page = gateway.admin_runs(limit=_ADMIN_PAGE, offset=offset)
+        for run in page:
+            if run.project_id is not None:
+                runs[int(run.project_id)] = run
+        if len(page) < _ADMIN_PAGE:
+            return runs
+        offset += _ADMIN_PAGE
 
-    [2026-09-28, match_results 테이블 통합] 예전엔 project와 별도로 MatchResult를 조회해야
-    했으나, 이제 project 자체가 그 상태를 들고 있다 — project.notice_id가 None이면
-    "아직 매칭 전"이다."""
-    if project.notice_id is None:
-        return ItemOut(
-            project_id=project.project_id,
-            description=project.description,
-            user_name=project.company.user.name,
-            created_at=project.created_at,
-            status_label='공고 매칭 전',
-            last_updated=project.created_at,
-        )
 
-    latest_execution = (
-        db.query(AgentExecution)
-        .filter(AgentExecution.project_id == project.project_id)
-        .order_by(AgentExecution.execution_id.desc())
-        .first()
-    )
-    last_updated = latest_execution.started_at if latest_execution else project.created_at
-
-    plan = (
-        db.query(BusinessPlan)
-        .filter(BusinessPlan.project_id == project.project_id)
-        .order_by(BusinessPlan.plan_id.desc())
-        .first()
-    )
-    # [2026-09-29 수정, SB-155] artifact_id 최댓값이 아니라 is_current로 "현재 버전"을
-    # 고른다 — 재작성이 거부된 새 버전은 artifact_id가 더 크면서도 is_current=False일 수
-    # 있다(app/routers/projects.py _get_current_artifact와 같은 이유).
-    artifact = (
-        db.query(Artifact)
-        .filter(Artifact.plan_id == plan.plan_id, Artifact.is_current.is_(True))
-        .order_by(Artifact.artifact_id.desc()).first()
-        if plan is not None else None
-    )
-    score = None
-    if plan is not None:
-        score = float((plan.doc_score or 0) + (artifact.artifact_score if artifact and artifact.artifact_score else 0))
-
-    archived = project.archived_at is not None
-    if project.stage == ps.STAGE_DONE:
-        status_label = '완료'
-    elif project.stage in (ps.STAGE_PLAN_REVIEW_PENDING, ps.STAGE_FINAL_REVIEW_PENDING):
-        status_label = '판단 대기'
-    elif project.status == ps.GENERATION_STATUS_HALTED:
-        status_label = '중단'
-    # [2026-09-23 신규] 'waiting_resume'(자동 재시도 백오프 대기 중)은 여전히 '진행중'으로
-    # 보여준다(화면 설계상 실행/재개대기 둘 다 "진행"으로 같이 보임) — 'failed'(자동
-    # 재시도 5회 소진, 확정된 실패)만 구분해서 관리자가 바로 알아볼 수 있게 한다.
-    elif project.status == ps.GENERATION_STATUS_FAILED:
-        status_label = '실패'
-    else:
-        status_label = '진행중'
-
-    stalled = (
-        not archived
-        and status_label == '진행중'
-        and (datetime.datetime.utcnow() - last_updated) > _STALLED_AFTER
-    )
-
-    return ItemOut(
-        project_id=project.project_id,
-        description=project.description,
-        user_name=project.company.user.name,
-        created_at=project.created_at,
-        match_status=project.status,
-        failure_reason=project.failure_reason if project.status == 'failed' else None,
-        stage=project.stage,
-        status_label=status_label,
-        step=latest_execution.agent_name if latest_execution else None,
-        attempts=latest_execution.attempt_no if latest_execution else None,
-        last_updated=last_updated,
-        stalled=stalled,
-        score=score,
-        archived=archived,
-        generation_resume_count=project.resume_count or 0,
-        generation_failure_reason=project.failure_reason,
-        generation_last_error_kind=project.last_error_kind,
-    )
+def _build_items(db: Session, gateway: OrchGateway, projects: list[Project] | None = None) -> list[ItemOut]:
+    """진행 현황 탭 행 — 웹 projects 하나당 한 줄. 실행 건이 있으면 오케스트레이터 값(단계 · 시도 · 점수 · 정체),
+    없으면 '공고 매칭 전'이다. 관리자 조회 범위(12개월) 밖의 실행 건은 진행 상태만으로 채운다(점수 · Agent 없음)."""
+    if projects is None:
+        projects = db.query(Project).order_by(Project.created_at.desc()).all()
+    runs = _all_admin_runs(gateway)
+    outside_range = [p.project_id for p in projects if p.project_id not in runs]
+    views = {int(v.project_id): v for v in gateway.project_views(outside_range)} if outside_range else {}
+    now = datetime.datetime.now(datetime.UTC)
+    items = []
+    for project in projects:
+        run = runs.get(project.project_id)
+        if run is not None:
+            items.append(admin_mapping.item_from_run(project, run, now))
+            continue
+        view = views.get(project.project_id)
+        if view is not None and view.run is not None:
+            items.append(admin_mapping.item_from_view(project, view.run))
+        else:
+            items.append(admin_mapping.item_no_run(project))
+    return items
 
 
 @router.get('/items', response_model=list[ItemOut])
-def list_items(db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
-    """진행 현황 탭용 — 전체 프로젝트 목록(_build_item_out 참고).
-
-    (이전엔 여기가 `from app.models import Item`을 참조하고 있었다 — items→projects
-    개명(backend_decisions.md #5) 때 이 파일만 안 고쳐진 채 남아있던 잔재. main.py에
-    admin 라우터가 아직 연결 안 돼 있어서 지금까지는 안 터졌을 뿐, 라우터를 붙이는 순간
-    임포트 단계에서 바로 죽었을 버그였다 — Project로 고치고 ItemOut도 실제로 존재하는
-    필드로 다시 만들었다. 2026-09-18: 프론트 "진행 현황" 탭이 실제로 쓸 수 있도록
-    단계·시도·정체·점수·보관 여부를 채워 확장했다.)"""
-    projects = db.query(Project).order_by(Project.created_at.desc()).all()
-    return [_build_item_out(db, project) for project in projects]
+def list_items(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+    gateway: OrchGateway = Depends(require_gateway),
+):
+    """진행 현황 탭용 — 전체 프로젝트 목록(_build_items 참고). [SB-245] 단계 · 시도 · 점수 · 정체(48시간)는
+    오케스트레이터 admin_runs 값이고, 설명 · 사용자 · 등록일 · 보관 여부는 웹 테이블 값이다."""
+    return _build_items(db, gateway)
 
 
 @router.put('/items/{project_id}/archive', response_model=ItemOut)
@@ -265,14 +203,19 @@ def set_item_archived(
     body: ItemArchiveIn,
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
+    gateway: OrchGateway = Depends(require_gateway),
 ):
     """진행 현황 탭의 "보관"/"복원" 버튼 — 사용자가 대시보드에서 직접 지울 때(DELETE
     /projects/{id})와 같은 projects.archived_at/archived_by를 관리자가 대신
-    조작한다. archived_by만 'admin'으로 남겨 사용자 본인이 지운 것과 구분한다."""
+    조작한다. archived_by만 'admin'으로 남겨 사용자 본인이 지운 것과 구분한다.
+
+    [SB-245] "아직 매칭 결과가 없다"는 실행 건 유무로 판단한다. 진행 중인 실행 건을 보관만 하면 그 계정은 그
+    실행 건이 끝날 때까지 새 작업을 시작할 수 없다(동시 실행 제한) — 보관할 때 오케스트레이터에 중단을 알릴지는
+    정해지지 않아 지금은 보관만 한다(사용자 휴지통과 달리 관리자 보관은 되돌릴 수 있어야 해서)."""
     project = db.get(Project, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail='프로젝트를 찾을 수 없습니다')
-    if project.notice_id is None:
+    if gateway.view_project(project_id).run is None:
         raise HTTPException(status_code=400, detail='아직 매칭 결과가 없어 보관 처리할 수 없습니다')
     if body.archived:
         project.archived_at = datetime.datetime.utcnow()
@@ -281,7 +224,7 @@ def set_item_archived(
         project.archived_at = None
         project.archived_by = None
     db.commit()
-    return _build_item_out(db, project)
+    return _build_items(db, gateway, [project])[0]
 
 
 @router.get('/generation-alerts', response_model=list[GenerationFailureAlertOut])
@@ -323,31 +266,20 @@ def get_item_score_history(
     project_id: int,
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
+    gateway: OrchGateway = Depends(require_gateway),
 ):
-    """진행 현황 탭의 "이력보기" 모달 — verification_score_history를 layer(doc/code/plan)별로
-    묶어 최신순으로 내려준다. 매칭/계획서가 아직 없으면 세 층 모두 빈 목록을 돌려준다
+    """진행 현황 탭의 "이력보기" 모달 — 층(doc/code/plan)별 채점 이력을 최신순으로 내려준다.
+    [SB-245] 오케스트레이터 admin_score_history 값이다. 실행 건이 아직 없으면 세 층 모두 빈 목록을 돌려준다
     (에러가 아니라 "아직 이력이 없다"는 정상 상태)."""
-    project = db.get(Project, project_id)
-    if project is None:
+    if db.get(Project, project_id) is None:
         raise HTTPException(status_code=404, detail='프로젝트를 찾을 수 없습니다')
-    plan = (
-        db.query(BusinessPlan).filter(BusinessPlan.project_id == project_id)
-        .order_by(BusinessPlan.plan_id.desc()).first()
-    )
-    if plan is None:
-        return ItemScoreHistoryOut()
-
-    rows = (
-        db.query(VerificationScoreHistory)
-        .filter(VerificationScoreHistory.plan_id == plan.plan_id)
-        .order_by(VerificationScoreHistory.scored_at.desc())
-        .all()
-    )
-    grouped: dict[str, list[ScoreHistoryEntryOut]] = {'doc': [], 'code': [], 'plan': []}
-    for r in rows:
-        if r.layer in grouped:
-            grouped[r.layer].append(ScoreHistoryEntryOut(scored_at=r.scored_at, score=float(r.score), is_rerun=r.is_rerun))
-    return ItemScoreHistoryOut(**grouped)
+    try:
+        history = gateway.admin_score_history(project_id)
+    except OrchError as exc:
+        if exc.code == 'RUN_NOT_FOUND':
+            return ItemScoreHistoryOut()
+        raise
+    return admin_mapping.score_history_out(history)
 
 
 @router.get('/notices', response_model=list[NoticeAdminOut])
@@ -497,204 +429,61 @@ def list_agent_executions(
     project_id: int | None = None,
     status: str | None = None,
     limit: int = 100,
-    db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
+    gateway: OrchGateway = Depends(require_gateway),
 ):
-    """에이전트 테스크 탭 — 실행 로그 원시 목록. 응답 모델을 스키마로 고정하지 않고
-    dict 로 내려서 admin-dashboard.html 쪽 표 컬럼이 바뀌어도 유연하게 대응한다.
+    """에이전트 테스크 탭 — 실행 기록 목록(메타데이터만, 최신순). 응답 모델을 스키마로 고정하지 않고 dict로 내려
+    표 컬럼이 바뀌어도 유연하게 대응한다.
 
-    [2026-09-28 신규] status='failed'로 필터링하면 "최근 500건" 캡에 최근 성공 실행이
-    섞여 정작 봐야 할 실패 건이 밀려나는 문제 없이, 지금 쌓여 있는 실패 건만 최대 500개
-    받을 수 있다. error_kind/error_reason은 status='failed'일 때만 값이 있고(app/models.py
-    AgentExecution), retryable은 error_kind가 '일시'(=자동 재개 대상)인지로 여기서
-    계산해 내려준다 — 별도 컬럼으로 저장하면 error_kind와 값이 어긋날 수 있어서다.
-
-    [2026-09-28 신규, SB-148] output_ref — 이 실행이 만들거나 바꾼 산출물 참조
-    ({'table', 'id'} 또는 그 리스트, app/models.py AgentExecution 참고). 프롬프트·응답
-    원문은 담지 않는다 — 실제 내용을 보려면 참조가 가리키는 테이블(plan_sections 등)을
-    따로 조회해야 한다."""
-    q = db.query(AgentExecution).order_by(AgentExecution.execution_id.desc())
-    if project_id is not None:
-        q = q.filter(AgentExecution.project_id == project_id)
-    if status is not None:
-        q = q.filter(AgentExecution.status == status)
-    rows = q.limit(min(limit, 500)).all()
-    return [
-        {
-            'execution_id': r.execution_id,
-            'project_id': r.project_id,
-            'task_key': r.task_key,
-            'agent_name': r.agent_name,
-            'model_used': r.model_used,
-            'rerun_type': r.rerun_type,
-            'token_usage': r.token_usage,
-            'status': r.status,
-            'error_kind': r.error_kind,
-            'error_reason': r.error_reason,
-            'retryable': (r.error_kind == ps.ERROR_KIND_TRANSIENT) if r.error_kind is not None else None,
-            'output_ref': r.output_ref,
-            'started_at': r.started_at.isoformat() if r.started_at else None,
-        }
-        for r in rows
-    ]
+    [SB-245] 오케스트레이터 admin_executions 값이다. status 거름 값은 웹 표기(failed · completed …)와 한글 표기(실패 ·
+    성공 …)를 모두 받고, 응답의 status · rerun_type은 화면이 쓰던 웹 표기로 주면서 원래 표기를 status_ko · trigger로
+    덧붙인다. error_kind/error_reason은 실패 기록에만 있고 retryable은 error_kind가 '일시'(자동 재개 대상)인지다.
+    프롬프트 · 응답 원문과 output_ref는 없다."""
+    rows = gateway.admin_executions(
+        project_id=project_id, status=admin_mapping.exec_status_from_web(status), limit=min(limit, 500))
+    return [admin_mapping.execution_dict(r) for r in rows]
 
 
 @router.get('/agent-tasks', response_model=list[AgentTaskOut])
-def list_agent_tasks(db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
+def list_agent_tasks(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+    gateway: OrchGateway = Depends(require_gateway),
+):
     """에이전트 테스크 탭의 "Task별 보기" — Agent 1개당 한 행(AgentTaskOut 참고).
-    defined_task_count는 FIXED_TASK_SEQUENCE(코드에 고정된 실제 파이프라인 구조)에서
-    세고, 최근 실행 프로젝트·상태는 agent_executions에서 그 Agent의 execution_id가 가장
-    큰(=최신) 행 하나를 찾아 project_id로 project를 직접 조회해 채운다."""
-    task_keys_by_agent: dict[str, set[str]] = defaultdict(set)
-    for task_key, agent_name in FIXED_TASK_SEQUENCE:
-        task_keys_by_agent[agent_name].add(task_key)
-
-    rows = []
-    for agent_name, task_keys in task_keys_by_agent.items():
-        latest = (
-            db.query(AgentExecution)
-            .filter(AgentExecution.agent_name == agent_name)
-            .order_by(AgentExecution.execution_id.desc())
-            .first()
-        )
-        total_executions = db.query(AgentExecution).filter(AgentExecution.agent_name == agent_name).count()
-
-        recent_project_id = None
-        recent_project_description = None
-        if latest is not None and latest.project_id is not None:
-            project = db.get(Project, latest.project_id)
-            if project is not None:
-                recent_project_id = project.project_id
-                recent_project_description = project.description
-
-        rows.append(AgentTaskOut(
-            agent_name=agent_name,
-            defined_task_count=len(task_keys),
-            total_executions=total_executions,
-            recent_project_id=recent_project_id,
-            recent_project_description=recent_project_description,
-            recent_status=latest.status if latest is not None else None,
-        ))
-
-    # FIXED_TASK_SEQUENCE에 Agent가 처음 등장하는 순서(조율→전략→작성→...) 그대로 정렬한다.
-    order = list(dict.fromkeys(agent_name for _task_key, agent_name in FIXED_TASK_SEQUENCE))
-    rows.sort(key=lambda r: order.index(r.agent_name))
-    return rows
+    [SB-245] 오케스트레이터 admin_agent_tasks 값이다(등록된 Task 수는 규칙 · 합치기 단계를 포함해 세므로 웹의 옛
+    FIXED_TASK_SEQUENCE 기준 개수와 다르다). 최근 실행 프로젝트의 설명만 웹 projects에서 채운다."""
+    tasks = gateway.admin_agent_tasks()
+    project_ids = [int(t.recent_project_id) for t in tasks if t.recent_project_id is not None]
+    descriptions = (
+        {p.project_id: p.description for p in db.query(Project).filter(Project.project_id.in_(project_ids))}
+        if project_ids else {}
+    )
+    return [admin_mapping.agent_task_out(t, descriptions) for t in tasks]
 
 
 @router.get('/agent-ops-summary', response_model=AgentOpsSummaryOut)
-def get_agent_ops_summary(db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
-    """에이전트 테스크 탭의 "운영 지표 요약" 아코디언 — agent_executions/proofread_logs
-    전체를 집계한다(AgentOpsSummaryOut 주석 참고 — "선별/전체 재실행" 구분은 이 앱에
-    그 값을 남기는 컬럼이 없어 만들지 않았다)."""
-    rows = db.query(AgentExecution).all()
-    initial = [r for r in rows if r.rerun_type == 'initial']
-    rerun = [r for r in rows if r.rerun_type == 'rerun']
-
-    # run_review_token_check_retry가 아직 더미(무작위) 판정이라 실제 위반율로 볼 수 없다.
-    # 진짜 판정 로직이 들어오기 전까지는 0으로 고정한다.
-    token_check_count = db.query(ProofreadLog).count()
-    token_violation_count = 0
-    token_violation_rate = 0.0 if token_check_count else None
-
-    return AgentOpsSummaryOut(
-        total_executions=len(rows),
-        initial_executions=len(initial),
-        rerun_executions=len(rerun),
-        total_tokens=sum(r.token_usage for r in rows),
-        initial_avg_tokens=round(sum(r.token_usage for r in initial) / len(initial), 1) if initial else None,
-        rerun_avg_tokens=round(sum(r.token_usage for r in rerun) / len(rerun), 1) if rerun else None,
-        token_violation_rate=token_violation_rate,
-        token_violation_count=token_violation_count,
-        token_check_count=token_check_count,
-    )
+def get_agent_ops_summary(
+    _admin: User = Depends(require_admin),
+    gateway: OrchGateway = Depends(require_gateway),
+):
+    """에이전트 테스크 탭의 "운영 지표 요약" 아코디언 — [SB-245] 오케스트레이터 admin_summary 값이다(최근 12개월 범위).
+    최초 실행 대비 재작성 · 재수행 실행의 평균 토큰, 표현 검수 시도 중 보호 토큰 검사 불통과 비율."""
+    return admin_mapping.agent_ops_summary_out(gateway.admin_summary())
 
 
 @router.get('/ops-summary', response_model=OpsSummaryOut)
-def get_ops_summary(db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
-    """운영 현황 탭 — business_plans/artifacts/verdicts/match_results/agent_executions/
-    verification_score_history/proofread_logs 실제 집계값(OpsSummaryOut 주석 참고).
-    [2026-09-18] retry_task의 verify1_*/verify2_*가 이제 verification_score_history에
-    새 행을 남기므로(app/routers/projects.py 참고) 채점 편차(deviations)도 재채점이
-    실제로 있었으면 sample_count>0으로 나온다."""
-    projects = db.query(Project).all()
-    items = [_build_item_out(db, p) for p in projects]
+def get_ops_summary(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+    gateway: OrchGateway = Depends(require_gateway),
+):
+    """운영 현황 탭 — [SB-245] 오케스트레이터 admin_summary 값(최근 12개월 범위: 점수 평균 · 통과율 · 구간 · 재작성
+    비율 · 층별 변화 · 표현 검수)이다. 상태별 건수만 진행 현황 탭과 같은 표(공고 매칭 전 포함)에서 센다."""
     status_counts: dict[str, int] = {}
-    for item in items:
+    for item in _build_items(db, gateway):
         status_counts[item.status_label] = status_counts.get(item.status_label, 0) + 1
-
-    plans = db.query(BusinessPlan).all()
-    doc_scores = [float(p.doc_score) for p in plans if p.doc_score is not None]
-    doc_avg = round(sum(doc_scores) / len(doc_scores), 1) if doc_scores else None
-
-    totals: list[float] = []
-    for plan in plans:
-        if plan.doc_score is None:
-            continue
-        artifact = (
-            db.query(Artifact).filter(Artifact.plan_id == plan.plan_id, Artifact.is_current.is_(True))
-            .order_by(Artifact.artifact_id.desc()).first()
-        )
-        if artifact is not None and artifact.artifact_score is not None:
-            totals.append(float(plan.doc_score) + float(artifact.artifact_score))
-    total_avg = round(sum(totals) / len(totals), 1) if totals else None
-
-    policy = _get_policy(db)
-    threshold = float(policy.pass_threshold)
-    pass_count = sum(1 for t in totals if t >= threshold)
-    pass_rate = round(pass_count / len(totals) * 100, 1) if totals else None
-
-    buckets = (('90~100점', 90, 100), ('80~89점', 80, 89), ('70~79점', 70, 79), ('60~69점', 60, 69), ('60점 미만', 0, 59))
-    score_buckets = [
-        ScoreBucketOut(label=label, count=sum(1 for t in totals if lo <= t <= hi))
-        for label, lo, hi in buckets
-    ]
-
-    project_ids_with_exec = {pid for (pid,) in db.query(AgentExecution.project_id).distinct().all() if pid is not None}
-    rerun_project_ids = {
-        pid for (pid,) in db.query(AgentExecution.project_id)
-        .filter(AgentExecution.rerun_type == 'rerun').distinct().all() if pid is not None
-    }
-    matches_with_execution = len(project_ids_with_exec)
-    rerun_matches = len(rerun_project_ids)
-    rerun_rate = round(rerun_matches / matches_with_execution * 100, 1) if matches_with_execution else None
-
-    history_by_plan_layer: dict[tuple[int, str], list[float]] = {}
-    for row in db.query(VerificationScoreHistory).order_by(VerificationScoreHistory.scored_at.asc()).all():
-        history_by_plan_layer.setdefault((row.plan_id, row.layer), []).append(float(row.score))
-
-    deviations = []
-    for layer in ('doc', 'code', 'plan'):
-        pairs = [scores[:2] for (_pid, lyr), scores in history_by_plan_layer.items() if lyr == layer and len(scores) >= 2]
-        if not pairs:
-            deviations.append(LayerDeviationOut(layer=layer, sample_count=0))
-            continue
-        round1_avg = round(sum(p[0] for p in pairs) / len(pairs), 1)
-        round2_avg = round(sum(p[1] for p in pairs) / len(pairs), 1)
-        deviations.append(LayerDeviationOut(
-            layer=layer, round1_avg=round1_avg, round2_avg=round2_avg,
-            delta_avg=round(round2_avg - round1_avg, 1), sample_count=len(pairs),
-        ))
-
-    # [2026-09-18] 보호 토큰 위반율 — proofread_logs 전체 시도(전체 프로젝트) 중
-    # passed=False 비율. 모델 버전별로는 못 쪼갠다(어느 버전이 만든 시도인지 남기는
-    # 컬럼이 없음, OpsSummaryOut 주석 참고) — 그래서 "전체 평균" 하나만 낸다.
-    # run_review_token_check_retry가 아직 더미(무작위) 판정이라 실제 위반율로 볼 수 없다.
-    # 진짜 판정 로직이 들어오기 전까지는 0으로 고정한다.
-    token_check_count = db.query(ProofreadLog).count()
-    token_violation_count = 0
-    token_violation_rate = 0.0 if token_check_count else None
-
-    return OpsSummaryOut(
-        status_counts=status_counts,
-        doc_avg=doc_avg, doc_count=len(doc_scores),
-        total_avg=total_avg, total_count=len(totals),
-        pass_count=pass_count, pass_rate=pass_rate, pass_threshold=threshold,
-        rerun_matches=rerun_matches, matches_with_execution=matches_with_execution, rerun_rate=rerun_rate,
-        score_buckets=score_buckets, deviations=deviations,
-        token_violation_rate=token_violation_rate, token_violation_count=token_violation_count,
-        token_check_count=token_check_count,
-    )
+    return admin_mapping.ops_summary_out(gateway.admin_summary(), status_counts)
 
 
 def _recovery_item_out(row: ProofreadLog, db: Session) -> RecoveryItemOut:

@@ -42,6 +42,18 @@ def test_fake_gate_and_score_view_fields_match_real():
     assert set(vars(orch_fakes.make_sentence(1, 'x'))) == set(domain.Sentence.model_fields)
 
 
+def test_fake_admin_results_match_real():
+    reads = pytest.importorskip('sbrain.flow.reads')
+    pairs = [
+        (orch_fakes.make_admin_run(), reads.AdminRun), (orch_fakes.make_admin_execution(), reads.AdminExecution),
+        (orch_fakes.make_admin_agent_task(), reads.AdminAgentTask), (orch_fakes.make_score_entry(1.0), reads.ScoreEntry),
+        (orch_fakes.make_admin_score_history(), reads.AdminScoreHistory), (orch_fakes.make_admin_summary(), reads.AdminSummary),
+        (orch_fakes.make_tokens(), reads.TokenTotals),
+    ]
+    for fake, real in pairs:
+        assert set(vars(fake)) == set(real.model_fields), real.__name__
+
+
 def test_allowed_functions_exist_on_real_orchestrator():
     missing = [n for n in sorted(ALLOWED) if not callable(getattr(service.SBrainOrchestrator, n, None))]
     assert missing == []
