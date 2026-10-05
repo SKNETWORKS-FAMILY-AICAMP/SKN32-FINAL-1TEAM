@@ -52,6 +52,7 @@ from app.models import (
     Verdict,
     VerificationScoreHistory,
 )
+from app.orch import OrchGateway, account_id_of, require_gateway
 from app.routers.profile import compute_has_profile
 from app.schemas import (
     AuthMeOut,
@@ -244,11 +245,28 @@ def _delete_account_cascade(db: Session, user: User) -> None:
     db.commit()
 
 
+def _delete_orchestrator_data(db: Session, gateway: OrchGateway, user: User) -> None:
+    """[SB-244] 웹 행을 지우기 전에 오케스트레이터 쪽 그 계정 데이터를 모두 지운다(명세 11.2).
+
+    프로젝트마다 `delete_project_data`(진행 중이면 먼저 중단, 산출물 · 입력 사본 삭제) → 모두 끝나면
+    `delete_account_data`(남은 실행 건 · 시작 요청을 식별자 없는 통계 줄로 옮기고 지움). 워커가 단계를 도는 중이면
+    BUSY(409)로 멈추고 웹 행은 하나도 지우지 않는다 — 다시 호출하면 남은 것부터 이어서 한다(여러 번 불러도 안전).
+    삭제 중에는 이 계정의 시작 요청(request_start)을 넣지 않는다."""
+    project_ids = [
+        p.project_id for p in db.query(Project.project_id).join(Company, Project.company_id == Company.company_id)
+        .filter(Company.user_id == user.user_id)
+    ]
+    for project_id in project_ids:
+        gateway.delete_project_data(project_id)
+    gateway.delete_account_data(account_id_of(user.user_id))
+
+
 @router.delete('/me', status_code=204)
 def delete_account(
     response: Response,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
 ):
     """계정 삭제(탈퇴) — 프로젝트 기획서 v1.10 6-7절. 계정 식별자, 마이페이지 프로필,
     회사 프로필, 프로젝트와 그 아래 매칭·계획서·산출물·검증 이력까지 전부 지운다.
@@ -257,7 +275,10 @@ def delete_account(
     refresh_tokens 행 자체가 _delete_account_cascade에서 통째로 삭제되므로
     revoke_refresh_token을 따로 부를 필요가 없다(행이 없으면 재발급도 당연히 안 됨).
     쿠키는 주입받은 response에 직접 지워야 한다 — 새 Response 객체를 만들어 반환하면
-    FastAPI가 그 객체를 쓰지 않고 이 쿠키 삭제가 사라진다(logout()과 같은 패턴)."""
+    FastAPI가 그 객체를 쓰지 않고 이 쿠키 삭제가 사라진다(logout()과 같은 패턴).
+
+    [SB-244] 오케스트레이터 데이터를 먼저 지운다(_delete_orchestrator_data). BUSY면 409로 멈추고 웹 행은 그대로다."""
+    _delete_orchestrator_data(db, gateway, current_user)
     _delete_account_cascade(db, current_user)
     clear_auth_cookies(response)
 

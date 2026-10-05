@@ -26,7 +26,6 @@ POST /projects 는 #6(첨부파일 처리) 확정대로 multipart/form-data 로 
 import datetime
 import json
 import os
-import random
 import sys
 import uuid
 from decimal import Decimal
@@ -86,7 +85,8 @@ from app.schemas import (
     ProjectListItemOut,
     ProjectStatusOut,
     RetryTaskRequest,
-    RetryTaskResponse,
+    ReworkAcceptedOut,
+    ReworkResultOut,
 )
 from app.security import get_current_user
 
@@ -929,11 +929,6 @@ def _plan_section_bodies(gateway: OrchGateway, project_id: int) -> dict[str, str
     return mapping.section_bodies(outputs.plan_doc) if outputs.plan_doc is not None else {}
 
 
-# 생성 중인 단계(영구 삭제 보호용). projects.stage는 더 이상 갱신되지 않아 사실상 작동하지 않는다 —
-# [SB-244]에서 영구 삭제를 abort_project → delete_project_data 흐름으로 바꾸면서 없앤다.
-_RUNNING_GENERATION_STAGES = {ps.STAGE_PLAN_WRITING: ps.STAGE_PLAN_REVIEW_PENDING, ps.STAGE_PROTOTYPE_BUILDING: ps.STAGE_DONE}
-
-
 # companies.applicant_type -> 양식의 "사업자 구분" 표기. 사용자가 직접 고른 값이라
 # 추측할 필요가 없다 — 예전엔 설립일 유무로 갈랐는데, 개인사업자도 설립일이 있으니
 # 항상 '법인사업자'로 찍히는 버그였다(사용자 지적, 생성된 PDF로 확인).
@@ -1458,21 +1453,17 @@ def delete_project_permanently(
     project_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
 ):
-    """"건별 삭제"(완전 삭제) — 프로젝트 기획서 v1.10 6-7절. 보관(archive) 여부·매칭 진행
-    상태와 무관하게 바로 실제로 지운다 — DELETE /projects/{id}(휴지통, 매칭 이후엔 archive만
-    함)와는 독립된 별도 액션이다. 되돌릴 수 없다 — 프론트는 호출 전 확인 다이얼로그를
-    거쳐야 한다.
+    """"건별 삭제"(완전 삭제) — 프로젝트 기획서 v1.10 6-7절. 보관(archive) 여부·진행 상태와 무관하게 바로 실제로
+    지운다 — DELETE /projects/{id}(휴지통, 실행 건이 있으면 archive만 함)와는 독립된 별도 액션이다. 되돌릴 수
+    없다 — 프론트는 호출 전 확인 다이얼로그를 거쳐야 한다.
 
-    [2026-09-28 신규] 프론트 요청 3 — 계획서·프로토타입 생성이 threading.Thread로 도는
-    중(_simulate_generation)에 행이 사라지면 그 쓰레드가 없는 project_id를 계속 쓰게
-    된다. 지금까지는 프론트가 버튼을 잠그는 게 유일한 방어선이었다 — _RUNNING_GENERATION_
-    STAGES(=_simulate_generation이 감시하는 stage 집합, _start_generation과 항상 같은
-    값)에 있는 동안이면 서버도 409로 거절한다. 휴지통(delete_project, archive만 함)은
-    이 제한과 무관하다."""
+    [SB-244] 먼저 오케스트레이터의 산출물 · 입력 사본을 지운다(`delete_project_data` — 진행 중이면 먼저 중단한다).
+    워커가 단계를 도는 중이면 BUSY로 409("잠시 뒤 다시")를 돌려주고 웹 행은 지우지 않는다 — 재시도는 하지 않고
+    사용자가 다시 누른다. 그 뒤 웹 행을 지운다(실행 건의 project_id는 비워지고 실행 로그는 남는다)."""
     project = _get_owned_project(db, project_id, current_user)
-    if project.stage in _RUNNING_GENERATION_STAGES:
-        raise HTTPException(status_code=409, detail='생성이 끝난 뒤에 완전히 삭제할 수 있습니다')
+    gateway.delete_project_data(project_id)
     _delete_project_cascade(db, project)
     return Response(status_code=204)
 
@@ -1528,385 +1519,41 @@ def get_project_status(
     return mapping.project_status_out(project_id, gateway.view_project(project_id))
 
 
-@router.post('/{project_id}/retry-task', response_model=RetryTaskResponse)
+@router.post('/{project_id}/retry-task', response_model=ReworkAcceptedOut)
 def retry_task(
     project_id: int,
     body: RetryTaskRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
 ):
-    """개별 작업 재시도 — 기능정의서 cf. 요구사항 대응(RetryTaskRequest 문서 참고): "재시도
-    시 단순히 동일한 결과를 반환하지 않고, 실제 작업을 다시 수행하도록 구현 / 재시도에
-    따라 결과물이 실제로 변경되는 것을 확인할 수 있도록 구현".
+    """재작성 요청 — 화면 6 · 8 · 9의 묶음 하나(문서층 4개 · 산출물층 2개)를 다시 만든다.
 
-    실제 작업 재수행 자체(오케스트레이터, Agent 실제 재호출)는 app/agents.py에 인터페이스로
-    분리해뒀다 — 이 함수는 DB 조회/락/저장(트랜잭션)만 책임지고, "값을 어떻게 다시 만들지"는
-    app.agents의 task_key별 run_*_retry() 함수 호출로 위임한다(전략/작성은 섹션 본문 재작성,
-    검증-1/검증-2는 채점 근거 재채점 + 합계 점수 재계산, 구현은 새 파일 저장, 검수는
-    format_findings/proofread_logs 새 행 추가 — 매핑은 _RETRIABLE_TASK_KEYS 위 주석과
-    app/agents.py 모듈 docstring 참고). 지금은 그 함수들이 전부 더미(무작위) 구현이지만,
-    Agent 담당자가 실제 기능을 연동할 때는 app/agents.py 안의 구현부만 바꾸면 되고 이
-    라우터는 손댈 필요가 없다. agent_executions는 기존 행을 덮어쓰지 않고 attempt_no를
-    증가시켜 항상 새 행으로 쌓는다(재시도 이력 보존 — show_agent_log.py로 확인 가능).
-    """
-    if body.task_key not in _RETRIABLE_TASK_KEYS:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f'재시도 가능한 task_key가 아닙니다: {body.task_key!r} '
-                f'(가능한 값: {sorted(_RETRIABLE_TASK_KEYS)})'
-            ),
-        )
-
-    project = _get_owned_project(db, project_id, current_user)
-
-    if project.notice_id is None:
-        raise HTTPException(status_code=404, detail='이 프로젝트엔 아직 매칭 결과가 없어 재시도할 작업이 없습니다')
-
-    plan = (
-        db.query(BusinessPlan)
-        .filter(BusinessPlan.project_id == project.project_id)
-        .order_by(BusinessPlan.plan_id.desc())
-        .first()
-    )
-    if plan is None:
-        raise HTTPException(status_code=404, detail='이 프로젝트엔 아직 사업계획서가 없어 재시도할 수 없습니다')
-
-    # [2026-09-28 신규, 프론트 답변 반영] writing은 화면상 묶음 3개를 공유하므로 bundle_id가
-    # 필수다 — 안 보내면 어느 묶음을 재작성한 건지 서버가 구분할 수 없다. 그 외 task_key는
-    # 이미 묶음과 1:1이라(app/pipeline_stages.py TASK_KEY_TO_FIXED_BUNDLE) 생략하면 그 고정
-    # 값으로 채우고, 보냈다면 그 고정값과 일치하는지만 검증한다(둘 다 없는 task_key는 묶음
-    # 개념이 아니므로 bundle_id를 그냥 무시한다). 프로젝트/계획서 존재 확인(404)보다는 뒤에
-    # 둔다 — "매칭도 없는 프로젝트"에 bundle_id 누락까지 같이 따질 이유가 없다.
-    if body.task_key == 'writing':
-        if body.bundle_id not in ps.WRITING_BUNDLES:
-            raise HTTPException(
-                status_code=400,
-                detail=f'writing 재시도는 bundle_id가 필요합니다 (가능한 값: {ps.WRITING_BUNDLES})',
-            )
-        bundle_id = body.bundle_id
-    elif body.task_key in ps.TASK_KEY_TO_FIXED_BUNDLE:
-        fixed_bundle = ps.TASK_KEY_TO_FIXED_BUNDLE[body.task_key]
-        if body.bundle_id is not None and body.bundle_id != fixed_bundle:
-            raise HTTPException(
-                status_code=400,
-                detail=f'{body.task_key!r}의 bundle_id는 {fixed_bundle!r}로 고정입니다',
-            )
-        bundle_id = fixed_bundle
-    else:
-        bundle_id = None
-
-    agent_name = _TASK_KEY_TO_AGENT[body.task_key]
-    last_attempt = (
-        db.query(AgentExecution)
-        .filter(AgentExecution.project_id == project.project_id, AgentExecution.task_key == body.task_key)
-        .order_by(AgentExecution.attempt_no.desc())
-        .first()
-    )
-    next_attempt_no = (last_attempt.attempt_no + 1) if last_attempt is not None else 1
-
-    # [2026-09-28 신규] 프론트 요청 1 — "재작성" 상한(rework_cap) 초과를 서버가 막는다.
-    # 첫 실행(rerun_type='initial', _simulate_generation이 만듦)은 세지 않고, 이 엔드포인트가
-    # 만든 행 중 실제로 성공(status='completed')한 것만 센다 — 실패한 재작성은 기획서
-    # 5-6절 "재작성이 실패하면 쓴 기회를 돌려준다" 규칙에 따라 소진되지 않는다.
-    policy = _get_verification_policy(db)
-    rework_used_query = db.query(AgentExecution).filter(
-        AgentExecution.project_id == project.project_id,
-        AgentExecution.task_key == body.task_key,
-        AgentExecution.rerun_type == 'rerun',
-        AgentExecution.status == ps.GENERATION_STATUS_COMPLETED,
-    )
-    # writing만 bundle_id로 추가 필터링한다 — 나머지는 task_key만으로 이미 묶음 하나와
-    # 1:1이라 더 좁힐 필요가 없다(위 bundle_id 해석 로직 주석 참고).
-    if body.task_key == 'writing':
-        rework_used_query = rework_used_query.filter(AgentExecution.bundle_id == bundle_id)
-    rework_used = rework_used_query.count()
-    if rework_used >= policy.rework_cap:
-        raise HTTPException(
-            status_code=409,
-            detail=f'"{bundle_id}" 항목은 재작성 상한 {policy.rework_cap}회를 이미 사용했습니다',
-        )
-
-    changed: dict = {}
-    output_ref: dict | list | None = None
-    task_key = body.task_key
-    # implement_prototype/infographic이 파일을 디스크에 쓴 뒤 DB 트랜잭션이 실패하면(아래
-    # except) 방금 쓴 파일이 아무 행도 가리키지 않는 진짜 고아 파일로 남는다 — 이 경우에만
-    # 정리 대상이라 여기서 미리 None으로 잡아두고, 파일을 쓴 직후 채운다.
-    written_dest_path: str | None = None
-
+    [SB-244] 웹 (task_key, bundle_id)를 오케스트레이터 묶음 이름으로 바꿔 `request_rework_for_project`에 넘긴다 —
+    묶음마다 한 번씩 부른다. 접수만 하고 바로 돌아오며(응답은 ReworkAcceptedOut), 실제 재작성은 워커가 하고
+    같은 화면에서 모으는 시간 안의 요청은 한 번에 실행된다. 끝난 뒤 전후 비교는 GET /rework-result로 읽는다.
+    사용자 재작성 대상이 아닌 task_key(전략 · 검증 · 검수)와 맞지 않는 bundle_id는 400.
+    오류: 대기 지점이 아니거나 모으는 시간이 끝났거나 진행 중이면 409, 상한을 다 썼으면 409(E-G2-LIMIT),
+    화면에 맞지 않는 층 · 원페이지의 실행 파일이면 422, 실행 건이 없으면 404."""
+    _get_owned_project(db, project_id, current_user)
     try:
-        if task_key == 'strategy':
-            # app/agents.py — 실제 Agent가 연동되면 이 호출 하나만 실제 구현으로 바뀐다(계약은
-            # 동일하게 유지). 지금은 더미 구현이 무작위 값을 돌려준다. [2026-09-22 수정]
-            # plan_sections '3-1' 대신 plan_canonical_data에 쓴다 — agents.py 모듈 docstring의
-            # "2026-09-22 수정" 참고(Strategy Agent는 분석 자료를 만들 뿐, 최종 문단은 작성
-            # Agent 몫이라는 시트 구조에 맞춤).
-            results = agents.run_strategy_agent_retry(project.description)
-            changed['canonical_data'] = {r.data_key: _upsert_canonical_data(db, plan.plan_id, r) for r in results}
-            output_ref = [{'table': 'plan_canonical_data', 'id': v['id']} for v in changed['canonical_data'].values()]
+        orch_bundle = mapping.orch_bundle_of(body.task_key, body.bundle_id)
+    except mapping.NotReworkable as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    accepted = gateway.request_rework_for_project(project_id, orch_bundle)
+    return mapping.rework_accepted_out(project_id, body.task_key, orch_bundle, accepted)
 
-        elif task_key == 'writing':
-            # [2026-09-28 신규, 프론트 2차 요청 A-2] 재작성 직전 상태를 먼저 찍어둔다 —
-            # 재채점 후 점수가 떨어지면 이 스냅샷으로 되돌린다.
-            before_snapshot = _snapshot_plan_doc_state(plan)
-            before_doc_score = plan.doc_score
 
-            # [2026-09-29 수정] 예전엔 bundle_id와 무관하게 항상 ['1-1', '2-1']만 재생성해서,
-            # "성장전략"이나 "팀 구성" 묶음을 재작성해도 실제로는 문제인식/실현가능성만 바뀌고
-            # 정작 고른 섹션은 그대로였다 — bundle_id가 가리키는 섹션 하나만 정확히 재생성한다.
-            drafts = agents.run_writing_agent_retry(
-                project.description, tags=[ps.BUNDLE_PSST_TO_SECTION_TAG[bundle_id]],
-            )
-            changed['sections'] = {d.tag: _upsert_plan_section(db, plan.plan_id, d) for d in drafts}
-            output_ref = [{'table': 'plan_sections', 'id': v['id']} for v in changed['sections'].values()]
-
-            # [2026-09-18 추가] "본문/그래프/표를 재작성했는데 왜 점수가 그대로냐"는 지적
-            # — 작성은 콘텐츠만 바꾸고 채점은 검증-1 몫이라 그동안 점수가 안 바뀌었는데, 실제
-            # 화면에도 검증-1을 따로 재시도하는 버튼이 없어(재작성 버튼뿐) 사용자가 점수를 갱신할
-            # 방법 자체가 없었다. 그래서 작성 재시도에 검증-1(rubric+evidence) 재채점을 자동으로
-            # 붙인다 — 채점 근거가 아직 없으면(초기 파이프라인 전) 조용히 건너뛴다.
-            verify1_changed = {}
-            for verify1_key in ('verify1_rubric', 'verify1_evidence'):
-                result = _rescore_verify1(db, plan, verify1_key)
-                if result is not None:
-                    verify1_changed[verify1_key] = result
-            if verify1_changed:
-                changed['verify1_rescore'] = verify1_changed
-
-            # [2026-09-28 신규, 프론트 2차 요청 A-2] 기획서 5-6절 — 재작성 전후 점수를
-            # 비교해 낮아졌으면 이전 상태로 되돌린다("이전 결과는 삭제하지 않고 보존한다").
-            # 채점 근거가 아직 없어 재채점 자체가 안 됐으면(verify1_changed가 비어있으면)
-            # 비교할 게 없으니 새 콘텐츠를 그냥 둔다.
-            version_entry = _decide_version(
-                before_snapshot=before_snapshot, before_score=before_doc_score,
-                after_score=plan.doc_score, task_key=task_key,
-            )
-            if version_entry['kept'] == 'previous':
-                _restore_plan_doc_state(plan, before_snapshot)
-            plan.version_history = (plan.version_history or []) + [version_entry]
-            changed['version_kept'] = version_entry['kept']
-            changed['version_comparison'] = {
-                'before_score': version_entry['before_score'], 'after_score': version_entry['after_score'],
-            }
-
-        elif task_key in ('verify1_rubric', 'verify1_evidence'):
-            result = _rescore_verify1(db, plan, task_key)
-            if result is None:
-                raise HTTPException(status_code=404, detail='재채점할 채점 근거(plan_score_reasons)가 없습니다')
-            changed.update(result)
-            output_ref = {'table': 'business_plans', 'id': plan.plan_id}
-
-        elif task_key in ('implement_prototype', 'implement_infographic'):
-            old_artifact = _get_current_artifact(db, plan.plan_id)
-            if old_artifact is None:
-                raise HTTPException(status_code=404, detail='재시도할 산출물(artifacts)이 없습니다')
-            if task_key == 'implement_prototype' and old_artifact.category == 'onepage':
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "category='onepage' 산출물은 설계상 실행 파일(executable_path)이 없어서 "
-                        '프로토타입 재시도 대상이 아닙니다 (인포그래픽 재시도만 가능)'
-                    ),
-                )
-
-            before_artifact_score = old_artifact.artifact_score
-
-            # [2026-09-29 신규, 구현·검증-2 담당 요청] T-B1/T-B2는 feature_list가
-            # 최소 1개 있어야 계약상 돌 수 있다(ItemSpec.core_features min_length=1) —
-            # Agent를 호출하기 전에 서버에서 먼저 막는다.
-            implement_kwargs = _build_implement_agent_kwargs(db, project, plan, old_artifact)
-            if not implement_kwargs['feature_list']:
-                raise HTTPException(status_code=400, detail='기능 목록(feature_list)이 비어 있어 구현 Agent를 호출할 수 없습니다')
-
-            # 구현 Agent는 파일만 새로 만든다 — 채점(점수 갱신)은 검증-2(verify2_*) 몫이다.
-            artifact_kind = 'prototype' if task_key == 'implement_prototype' else 'infographic'
-            result = agents.run_implement_agent_retry(artifact_kind=artifact_kind, **implement_kwargs)
-
-            # 파일은 app/agents.py가 만들어 돌려준 바이트를 그대로 저장한다 — 어디에 저장할지
-            # (UPLOAD_DIR)는 여전히 이쪽(호출부) 책임. _save_attachment()는 업로드용이라 재사용
-            # 하지 않고, 같은 저장 위치만 맞춘다.
-            os.makedirs(UPLOAD_DIR, exist_ok=True)
-            stored_name = f'{uuid.uuid4().hex}{result.file_ext}'
-            dest_path = os.path.join(UPLOAD_DIR, stored_name)
-            with open(dest_path, 'wb') as out:
-                out.write(result.file_bytes)
-            written_dest_path = dest_path  # 아래에서 실패하면 except가 이 파일을 지운다.
-            new_url = f'/uploads/{stored_name}'
-
-            # [2026-09-29 신규, SB-155] old_artifact는 그대로 두고(버전 보존), 새 버전 행을
-            # 만들어 거기에만 새 파일 경로를 반영한다.
-            artifact = _clone_artifact_as_new_version(db, old_artifact)
-            if task_key == 'implement_prototype':
-                changed['executable_path'] = {'before': old_artifact.executable_path, 'after': new_url}
-                artifact.executable_path = new_url
-            else:
-                changed['infographic_path'] = {'before': old_artifact.infographic_path, 'after': new_url}
-                artifact.infographic_path = new_url
-            output_ref = {'table': 'artifacts', 'id': artifact.artifact_id}
-
-            # [2026-09-18 추가] writing과 같은 이유 — 구현(파일 재생성)에도 검증-2(static+
-            # crosscheck) 재채점을 자동으로 붙인다. 채점 근거가 없으면 조용히 건너뛴다.
-            verify2_changed = {}
-            for verify2_key in ('verify2_static', 'verify2_crosscheck'):
-                result = _rescore_verify2(db, plan, artifact, verify2_key)
-                if result is not None:
-                    verify2_changed[verify2_key] = result
-            if verify2_changed:
-                changed['verify2_rescore'] = verify2_changed
-
-            # [2026-09-29 신규, SB-155] 재작성 전후 점수를 비교해 새 버전을 채택할지 정한다
-            # — 낮아지면 새 행은 그냥 is_current=False로 남고(파일도 안 지움, "이전 결과는
-            # 삭제하지 않고 보존한다"), old_artifact가 계속 현재 버전으로 남는다.
-            keep_new = _new_version_wins(before_artifact_score, artifact.artifact_score)
-            artifact.is_current = keep_new
-            if keep_new:
-                old_artifact.is_current = False
-            changed['version_kept'] = 'new' if keep_new else 'previous'
-            changed['version_comparison'] = {
-                'before_score': _num(before_artifact_score), 'after_score': _num(artifact.artifact_score),
-            }
-
-        elif task_key in ('verify2_static', 'verify2_crosscheck'):
-            artifact = _get_current_artifact(db, plan.plan_id)
-            if artifact is None:
-                raise HTTPException(status_code=404, detail='재채점할 산출물(artifacts)이 없습니다')
-
-            result = _rescore_verify2(db, plan, artifact, task_key)
-            if result is None:
-                prefixes = _VERIFY2_STATIC_PREFIXES if task_key == 'verify2_static' else _VERIFY2_CROSSCHECK_PREFIXES
-                raise HTTPException(
-                    status_code=404,
-                    detail=f'{task_key}에 해당하는 채점 근거(item_code 접두어 {prefixes})가 없습니다',
-                )
-            changed.update(result)
-            output_ref = {'table': 'artifacts', 'id': artifact.artifact_id}
-
-        elif task_key == 'review_expression':
-            latest = (
-                db.query(FormatFinding)
-                .filter(FormatFinding.plan_id == plan.plan_id)
-                .order_by(FormatFinding.finding_id.desc())
-                .first()
-            )
-            result = agents.run_review_expression_retry(project.description)
-            finding_row = FormatFinding(
-                plan_id=plan.plan_id,
-                finding_type=result.finding_type,
-                location=result.location,
-                message=result.message,
-                severity=result.severity,
-            )
-            db.add(finding_row)
-            db.flush()  # finding_id 확보 — agent_executions.output_ref가 이 행을 참조한다.
-            changed['finding'] = {
-                'before': latest.message if latest is not None else None,
-                'after': result.message,
-            }
-            output_ref = {'table': 'format_findings', 'id': finding_row.finding_id}
-
-        elif task_key == 'review_token_check':
-            latest = (
-                db.query(ProofreadLog)
-                .filter(ProofreadLog.plan_id == plan.plan_id)
-                .order_by(ProofreadLog.log_id.desc())
-                .first()
-            )
-            next_attempt_no = (latest.attempt_no + 1) if latest is not None else 1
-            result = agents.run_review_token_check_retry(project.description, attempt_no=next_attempt_no)
-            log_row = ProofreadLog(
-                plan_id=plan.plan_id,
-                # [2026-09-29 신규] 예전엔 이 필드가 아예 빠져있어서 재시도로 만든 행은
-                # 전부 section_id=NULL이 됐다 — 프론트 reviewParagraphsFrom(SB-165)이
-                # section_id로 시도 이력을 묶는데, 그러면 최초 시드 행(section_id 있음)과
-                # 재시도 행(NULL)이 서로 다른 문단으로 갈라져 보였다. original_text와 같은
-                # 이유로 이전 행에서 이어받는다.
-                section_id=(latest.section_id if latest is not None else None),
-                original_text=(latest.corrected_text if latest is not None else project.description),
-                corrected_text=result.corrected_text,
-                reason=result.reason,
-                attempt_no=next_attempt_no,
-                score=result.score,
-                passed=result.passed,
-                violation_type=result.violation_type,
-                violation_note=result.violation_note,
-                # passed=False인 시도는 그 즉시 "검수 회수 문단" 탭의 라벨링 대기열로 들어간다.
-                recovery_status=None if result.passed else 'pending',
-            )
-            db.add(log_row)
-            db.flush()  # log_id 확보 — agent_executions.output_ref가 이 행을 참조한다.
-            changed['corrected_text'] = {
-                'before': latest.corrected_text if latest is not None else None,
-                'after': result.corrected_text,
-            }
-            changed['score'] = {'before': _num(latest.score) if latest is not None else None, 'after': _num(result.score)}
-            changed['passed'] = result.passed
-            if not result.passed:
-                changed['violation_type'] = result.violation_type
-                changed['violation_note'] = result.violation_note
-            output_ref = {'table': 'proofread_logs', 'id': log_row.log_id}
-
-        else:  # pragma: no cover — _RETRIABLE_TASK_KEYS 체크를 통과했으면 도달할 수 없다.
-            raise HTTPException(status_code=500, detail=f'처리 로직이 없는 task_key: {task_key!r}')
-    except HTTPException:
-        raise
-    except Exception as exc:
-        # [2026-09-28 신규] 지금은 app.agents의 run_*_retry()가 전부 더미(무작위)라 실패할
-        # 일이 없지만, 실제 Agent가 연동된 뒤에는 여기서 예외가 날 수 있다 — 그때도 이
-        # 라우터를 다시 손대지 않도록 실패 기록을 미리 준비해둔다(_simulate_generation의
-        # 예외 분류 방식과 동일하게 classify_error_kind를 재사용).
-        error_kind = ps.classify_error_kind(exc)
-        # [2026-09-29 신규] 이 db.rollback()이 빠져있었다 — 그 결과 implement_prototype/
-        # infographic 도중(_clone_artifact_as_new_version으로 flush까지 된 새 버전 행이
-        # 있는 상태에서) run_verify2_retry 등이 실패하면, 그 flush된 새 행이 롤백되지 않고
-        # 아래 db.commit()에 실패 로그와 함께 그대로 같이 커밋돼버렸다(재채점 전 상태로
-        # 반쯤 멈춘 행이 DB에 남는 버그). _simulate_generation의 예외 처리와 같은 패턴으로
-        # 맞춘다 — 여기서 롤백해야 아래 "고아 파일 삭제"도 실제로 어떤 행도 안 가리키는
-        # 파일만 지우는 게 보장된다(안 그러면 방금 커밋된 행이 가리키는 파일을 지워버림).
-        db.rollback()
-        # 파일은 썼는데 그 뒤(버전 행 생성/재채점)가 실패해 트랜잭션이 롤백되면, 이 파일은
-        # 어떤 DB 행도 가리키지 않는 진짜 고아 파일이다 — SB-155가 보존 대상으로 삼는
-        # "채택 안 된 버전"과는 다르므로(그건 행이라도 있다) 여기서는 지운다.
-        if written_dest_path is not None and os.path.exists(written_dest_path):
-            os.remove(written_dest_path)
-        db.add(AgentExecution(
-            project_id=project_id,
-            agent_name=agent_name,
-            task_key=body.task_key,
-            bundle_id=bundle_id,
-            attempt_no=next_attempt_no,
-            model_used='dummy-retry',
-            rerun_type='rerun',
-            token_usage=0,
-            status=ps.GENERATION_STATUS_FAILED,
-            error_kind=error_kind,
-            error_reason=str(exc)[:2000],
-        ))
-        db.commit()
-        raise HTTPException(
-            status_code=502,
-            detail={'message': '작업 재시도 중 오류가 발생했습니다', 'task_key': body.task_key, 'error_kind': error_kind},
-        ) from exc
-
-    execution = AgentExecution(
-        project_id=project.project_id,
-        agent_name=agent_name,
-        task_key=body.task_key,
-        bundle_id=bundle_id,
-        attempt_no=next_attempt_no,
-        model_used='dummy-retry',
-        rerun_type='rerun',
-        token_usage=random.randint(100, 3000),
-        status=ps.GENERATION_STATUS_COMPLETED,
-        output_ref=output_ref,
-    )
-    db.add(execution)
-    db.commit()
-
-    return RetryTaskResponse(
-        project_id=project.project_id,
-        task_key=body.task_key,
-        agent_name=agent_name,
-        attempt_no=next_attempt_no,
-        changed=changed,
-    )
+@router.get('/{project_id}/rework-result', response_model=ReworkResultOut)
+def get_rework_result(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
+):
+    """마지막 재작성 한 건의 결과(진행중 · 완료 · 실패). 재작성한 적이 없으면 404, 실패 · 중단된 실행이면 409."""
+    _get_owned_project(db, project_id, current_user)
+    result = gateway.rework_result(project_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail='재작성한 적이 없어요.')
+    return mapping.rework_result_out(project_id, result)

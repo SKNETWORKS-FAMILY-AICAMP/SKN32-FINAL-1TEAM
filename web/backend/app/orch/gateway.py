@@ -22,7 +22,7 @@ ALLOWED = frozenset({
     'screen', 'outputs', 'rework_result',
     'more_candidates_for_project', 'select_announcement_for_project', 'start_writing_for_project',
     'decide_for_project', 'request_rework_for_project',
-    'abort_project', 'delete_project_data',
+    'abort_project', 'delete_project_data', 'delete_account_data',
     'admin_executions', 'admin_calls', 'admin_runs', 'admin_score_history', 'admin_summary', 'admin_agent_tasks',
 })
 

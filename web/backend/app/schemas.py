@@ -658,29 +658,50 @@ class RetryTaskRequest(BaseModel):
     )
 
 
-class RetryTaskResponse(BaseModel):
+class ReworkAcceptedOut(BaseModel):
+    """POST /projects/{id}/retry-task 응답 — [SB-243~244] 재작성은 이제 접수만 하고 바로 돌아온다. 결과(전후 비교)는
+    진행 상태(GET /status의 rework_screen · match_status)를 보다가 끝나면 GET /rework-result로 읽는다."""
     project_id: int
     task_key: str
-    agent_name: str
-    attempt_no: int
-    changed: dict = Field(
-        ...,
-        description=(
-            '재시도 전/후 값 비교. task_key에 따라 모양이 다르다 — 전략(strategy)은 '
-            "{'canonical_data': {data_key: {'before', 'after'}}}, 작성(writing)은 "
-            "{'sections': {tag: {'before', 'after'}}}, 채점(verify1_*/verify2_*)은 "
-            "{'scores': {item_code: {'before', 'after'}}, 'doc_score' 또는 'artifact_score': "
-            "{'before', 'after'}}, 산출물 재생성(implement_*)은 {'executable_path' 또는 "
-            "'infographic_path': {'before', 'after'}}, 검수(review_expression/"
-            "review_token_check)는 {'finding' 또는 'corrected_text': {'before', 'after'}} 형태. "
-            '어느 모양이든 호출할 때마다 실제로 값이 달라졌는지(=진짜로 다시 수행했는지) '
-            '이 필드로 바로 확인 가능. writing/implement_*는 추가로 '
-            "'version_kept': 'new'|'previous'와 'version_comparison': {'before_score', "
-            "'after_score'}를 담는다 — 재작성 후 점수가 떨어지면 서버가 자동으로 이전 "
-            "버전을 유지하고('previous'), 이때 위 'sections'/'executable_path' 등에 보이는 "
-            "'after' 값은 실제로 반영되지 않은(되돌려진) 시도값이다."
-        ),
-    )
+    bundle_id: str  # 웹 묶음 이름(문제인식 · 실현가능성 · 성장전략 · 팀 구성 · 실행 파일 제작 · 인포그래픽 제작)
+    cycle_id: str  # 같은 화면에서 모으는 시간 안에 들어온 요청은 같은 cycle_id로 합쳐진다
+    screen: int
+    bundles: list[str]  # 지금까지 모인 묶음(웹 이름, 요청 순서)
+    collect_until: datetime.datetime
+    duplicate: bool = False  # 이미 모은 묶음이라 한 번으로 쳤다(기회를 더 쓰지 않음)
+
+
+class ReworkFileChangeOut(BaseModel):
+    artifact: str  # 'prototype' | 'infographic'
+    before_path: str | None = None
+    after_path: str | None = None
+
+
+class ReworkResultOut(BaseModel):
+    """GET /projects/{id}/rework-result 응답 — 마지막 재작성 한 건. 재작성한 적이 없으면 404.
+
+    status: '진행중' | '완료' | '실패'. 진행 중이면 공통 필드만 있다. `changed`는 예전 retry-task 응답과 같은 모양
+    (sections · executable_path · infographic_path · version_kept · version_comparison)으로 풀어 둔 값이라 화면이 그대로 쓸 수 있다."""
+    project_id: int
+    cycle_id: str
+    screen: int
+    bundles: list[str]
+    status: str
+    started_at: datetime.datetime
+    ended_at: datetime.datetime | None = None
+    kept: str | None = None  # '전' | '후'
+    basis: str | None = None  # document | artifact | total
+    before_score: float | None = None
+    after_score: float | None = None
+    before_refs: list[str] = Field(default_factory=list)
+    after_refs: list[str] = Field(default_factory=list)
+    plan_before: list[PlanSectionOut] | None = None
+    plan_after: list[PlanSectionOut] | None = None
+    files: list[ReworkFileChangeOut] = Field(default_factory=list)
+    rolled_back: bool = False
+    refunded_bundles: list[str] = Field(default_factory=list)
+    notice_code: str | None = None
+    changed: dict = Field(default_factory=dict)
 
 
 class AgentExecutionOut(BaseModel):

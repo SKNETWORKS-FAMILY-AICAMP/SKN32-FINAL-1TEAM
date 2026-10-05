@@ -123,3 +123,41 @@ def test_delete_account_removes_refresh_tokens(authed_client, db_session):
     authed_client.delete('/auth/me')
 
     assert db_session.query(RefreshToken).count() == 0
+
+
+def test_delete_account_clears_orchestrator_data_first(authed_client, db_session, orch):
+    """[SB-244] 프로젝트마다 delete_project_data → 모두 끝나면 delete_account_data → 웹 행 삭제 순서."""
+    ids = []
+    for i in range(2):
+        payload = {'description': f'탈퇴 프로젝트 {i}', 'team_members': [], 'pricing_items': []}
+        ids.append(authed_client.post('/projects', data={'payload': json.dumps(payload)}).json()['project_id'])
+    user = db_session.query(User).one()
+    user_id = user.user_id
+
+    res = authed_client.delete('/auth/me')
+
+    assert res.status_code == 204, res.text
+    names = [(n, a) for n, a, _kw in orch.calls if n in ('delete_project_data', 'delete_account_data')]
+    assert names == [('delete_project_data', (ids[0],)), ('delete_project_data', (ids[1],)),
+                     ('delete_account_data', (str(user_id),))]
+    assert db_session.query(User).count() == 0
+
+
+def test_delete_account_busy_keeps_web_rows(authed_client, db_session, orch):
+    """어느 단계에서든 BUSY면 웹 행을 하나도 지우지 않는다 — 다시 부르면 남은 것부터 이어서 한다."""
+    from app.orch import OrchError
+
+    payload = {'description': '탈퇴 BUSY 프로젝트', 'team_members': [], 'pricing_items': []}
+    project_id = authed_client.post('/projects', data={'payload': json.dumps(payload)}).json()['project_id']
+    orch.responses['delete_account_data'] = OrchError('BUSY', '점유 중')
+
+    res = authed_client.delete('/auth/me')
+
+    assert res.status_code == 409
+    assert db_session.query(User).count() == 1
+    assert db_session.query(Project).filter_by(project_id=project_id).count() == 1
+    assert authed_client.get('/auth/me').status_code == 200  # 세션도 그대로
+
+    orch.responses['delete_account_data'] = lambda account_id: None
+    assert authed_client.delete('/auth/me').status_code == 204
+    assert db_session.query(User).count() == 0

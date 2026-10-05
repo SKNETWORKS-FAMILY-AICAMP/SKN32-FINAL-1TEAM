@@ -95,6 +95,16 @@ class DeleteResult:
 
 
 @dataclass
+class AccountDeleteResult:
+    account_id: str
+    cancelled_requests: list = field(default_factory=list)
+    aborted_runs: list = field(default_factory=list)
+    deleted_runs: int = 0
+    deleted_requests: int = 0
+    stats_rows: int = 0
+
+
+@dataclass
 class ReworkAccepted:
     project_id: str | None
     run_id: str
@@ -241,6 +251,7 @@ def default_responses() -> dict[str, Any]:
         'view_project': lambda project_id: ProjectView(project_id=str(project_id)),
         'wait_project': lambda project_id, timeout_sec=60.0: ProjectView(project_id=str(project_id)),
         'project_views': lambda project_ids: [ProjectView(project_id=str(i)) for i in project_ids],
+        'delete_account_data': lambda account_id: AccountDeleteResult(account_id=str(account_id)),
         'abort_project': lambda project_id: AbortResult(project_id=str(project_id)),
         'delete_project_data': lambda project_id: DeleteResult(
             project_id=str(project_id), abort=AbortResult(project_id=str(project_id))),

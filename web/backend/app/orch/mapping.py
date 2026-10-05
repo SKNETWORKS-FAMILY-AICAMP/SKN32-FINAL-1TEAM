@@ -457,3 +457,68 @@ def result_out(project_id: int, outputs, policy) -> schemas.DemoGenerateResponse
         rework_cap=outputs.rework_limit,
         bundle_usages=bundle_usages_out(outputs),
     )
+
+
+# ── 재작성 접수 · 결과 ────────────────────────────────────────────────────────────────
+def rework_accepted_out(project_id: int, task_key: str, orch_bundle: str, accepted) -> schemas.ReworkAcceptedOut:
+    """request_rework_for_project 결과 → 접수 응답. orch_bundle은 이번에 요청한 묶음(오케스트레이터 이름)."""
+    return schemas.ReworkAcceptedOut(
+        project_id=project_id,
+        task_key=task_key,
+        bundle_id=web_bundle_id_of(orch_bundle),
+        cycle_id=accepted.cycle_id,
+        screen=accepted.screen,
+        bundles=[web_bundle_id_of(b) for b in accepted.bundles],
+        collect_until=accepted.collect_until,
+        duplicate=accepted.duplicate,
+    )
+
+
+def _plan_section_out(section) -> schemas.PlanSectionOut:
+    return schemas.PlanSectionOut(tag=section.section_code, title=section.title, body=section_body(section))
+
+
+def rework_changed(result) -> dict:
+    """예전 retry-task 응답의 changed 모양 — 화면이 전후 비교에 쓰던 값."""
+    changed: dict = {}
+    if result.plan_before is not None and result.plan_after is not None:
+        before = {s.section_code: section_body(s) for s in result.plan_before}
+        after = {s.section_code: section_body(s) for s in result.plan_after}
+        changed['sections'] = {
+            tag: {'before': before.get(tag), 'after': after.get(tag)}
+            for tag in [*before, *[t for t in after if t not in before]]
+            if before.get(tag) != after.get(tag)
+        }
+    for f in result.files:
+        key = 'executable_path' if f.artifact == 'prototype' else 'infographic_path'
+        changed[key] = {'before': f.before_path, 'after': f.after_path}
+    if result.kept is not None:
+        changed['version_kept'] = 'new' if result.kept == '후' else 'previous'
+        changed['version_comparison'] = {'before_score': result.before_score, 'after_score': result.after_score}
+    return changed
+
+
+def rework_result_out(project_id: int, result) -> schemas.ReworkResultOut:
+    return schemas.ReworkResultOut(
+        project_id=project_id,
+        cycle_id=result.cycle_id,
+        screen=result.screen,
+        bundles=[web_bundle_id_of(b) for b in result.bundles],
+        status=result.status,
+        started_at=result.started_at,
+        ended_at=result.ended_at,
+        kept=result.kept,
+        basis=result.basis,
+        before_score=result.before_score,
+        after_score=result.after_score,
+        before_refs=list(result.before_refs),
+        after_refs=list(result.after_refs),
+        plan_before=[_plan_section_out(s) for s in result.plan_before] if result.plan_before is not None else None,
+        plan_after=[_plan_section_out(s) for s in result.plan_after] if result.plan_after is not None else None,
+        files=[schemas.ReworkFileChangeOut(
+            artifact=f.artifact, before_path=f.before_path, after_path=f.after_path) for f in result.files],
+        rolled_back=result.rolled_back,
+        refunded_bundles=[web_bundle_id_of(b) for b in result.refunded_bundles],
+        notice_code=result.notice_code,
+        changed=rework_changed(result),
+    )

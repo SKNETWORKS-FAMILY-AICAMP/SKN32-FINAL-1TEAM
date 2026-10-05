@@ -9,7 +9,7 @@ from app.orch.gateway import ALLOWED
 service = pytest.importorskip('sbrain.flow.service')
 
 MIRRORED = ['RunView', 'ProjectView', 'ActiveWork', 'StartCheck', 'StartStatus', 'AbortResult', 'DeleteResult',
-            'ReworkAccepted', 'ConfirmationNeeded']
+            'ReworkAccepted', 'ConfirmationNeeded', 'AccountDeleteResult']
 
 # 웹이 부르면 안 되는 함수(명세 11절)
 WEB_FORBIDDEN = {'advance', 'tick', 'run_start_request', 'start_run', 'start_run_for_project', 'decide', 'abort'}

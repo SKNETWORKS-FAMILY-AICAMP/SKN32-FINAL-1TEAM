@@ -179,19 +179,18 @@ class TestErrorCases:
         res = authed_client.post(f'/projects/{project_id}/generate', json={'notice_id': 'no-such-notice'})
         assert res.status_code < 500, f'존재하지 않는 공고로 generate 호출 시 서버 에러(500) 발생: {res.status_code} {res.text}'
 
-    def test_retry_task_on_project_without_match_gets_404(self, authed_client):
+    def test_retry_task_on_project_without_run_gets_404(self, authed_client, orch):
+        from app.orch import OrchError
         r = authed_client.post('/projects', data=_payload())
         assert r.status_code == 201
         project_id = r.json()['project_id']
-        res = authed_client.post(f'/projects/{project_id}/retry-task', json={'task_key': 'strategy'})
+        orch.responses['request_rework_for_project'] = OrchError('RUN_NOT_FOUND', 'x')
+        res = authed_client.post(f'/projects/{project_id}/retry-task', json={'task_key': 'writing', 'bundle_id': '문제인식'})
         assert res.status_code == 404
 
-    def test_retry_task_invalid_task_key_gets_400(self, authed_client, db_session):
-        from seed_dummy_pipeline import seed_dummy_pipeline
+    def test_retry_task_invalid_task_key_gets_400(self, authed_client, orch):
         r = authed_client.post('/projects', data=_payload())
         project_id = r.json()['project_id']
-        notice = _seed_notice(db_session, 'test:PBLN_RETRY400')
-        seed_dummy_pipeline(db_session, project_id=project_id, notice_id=notice.notice_id, write_real_files=False)
-        db_session.commit()
         res = authed_client.post(f'/projects/{project_id}/retry-task', json={'task_key': 'not_a_real_task'})
         assert res.status_code == 400
+        assert [c for c in orch.calls if c[0] == 'request_rework_for_project'] == []
