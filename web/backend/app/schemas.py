@@ -386,6 +386,11 @@ class DemoGenerateRequest(BaseModel):
     )
 
 
+class BonusItemOut(BaseModel):
+    name: str
+    points: float
+
+
 class MatchCandidateOut(BaseModel):
     """GET /projects/{id}/match-candidates 응답 항목 하나 — 아직 match_results에 저장된
     행이 아니라, notices 테이블에서 후보로 뽑아 화면에 보여주기 위한 임시 값이다(사용자가
@@ -395,15 +400,37 @@ class MatchCandidateOut(BaseModel):
     title: str
     org: str | None = None
     apply_end: datetime.date | None = None
-    bonus_score: float  # 가산점(만점 기준 없음, 공고마다 다름)
+    # 가산점(만점 기준 없음, 공고마다 다름). None = 계산 못 함("가산점 정보 없음"), 0 = 해당 가점 없음.
+    bonus_score: float | None = None
     reason: str
     url: str | None = None
     batch: int = 1  # 1=첫 매칭, 2=재실행
+    # [SB-242] 오케스트레이터(공고 서버 추천) 카드에서 새로 오는 값 — 모두 선택이라 없어도 된다.
+    rank: int | None = None
+    fit_score: float | None = None  # 0이면 마감 임박순 대체 경로라 적합도를 숨긴다
+    content_changed: bool = False  # 추가 조회에서 다시 나온 공고의 내용이 바뀜
+    apply_period_type: str | None = None
+    bonus_items: list[BonusItemOut] = Field(default_factory=list)
+    source_notice: str | None = None  # 카드마다 출처 고지
+
+
+class OrchNoticeOut(BaseModel):
+    """오케스트레이터 안내(시트 6 오류코드 문구) — 화면에 함께 보여준다."""
+
+    code: str
+    message: str
 
 
 class MatchCandidatesOut(BaseModel):
     candidates: list[MatchCandidateOut]
     rematch_used: bool
+    # [SB-242] 공고 매칭은 워커가 비동기로 돌려 응답이 늦을 수 있다. 'ready' 말고는 candidates가 비어 있고
+    # 프론트가 다시 부른다(pending) 또는 안내만 보여준다(failed · no_match).
+    status: str = 'ready'  # 'ready' | 'pending' | 'failed' | 'no_match'
+    code: str | None = None
+    message: str | None = None
+    notices: list[OrchNoticeOut] = Field(default_factory=list)
+    blocked_notice_ids: list[str] = Field(default_factory=list)  # 자격 불통과로 고를 수 없는 공고 ID
 
 
 class EligibilityCheckOut(BaseModel):

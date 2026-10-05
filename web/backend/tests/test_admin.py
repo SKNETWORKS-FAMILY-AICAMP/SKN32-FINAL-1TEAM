@@ -276,9 +276,6 @@ def test_get_items_reflects_match_status(admin_client, user_client, db_session):
     project.stage = 'prototype_building'
     project.failure_reason = '프로토타입 작업 오류'
     db_session.commit()
-    user_item = next(row for row in user_client.get('/projects').json() if row['project_id'] == project_id)
-    assert user_item['match_status'] == 'failed'
-    assert user_item['failure_reason'] == '프로토타입 작업 오류'
     admin_item = next(row for row in admin_client.get('/admin/items').json() if row['project_id'] == project_id)
     assert admin_item['status_label'] == '실패'
     assert admin_item['failure_reason'] == '프로토타입 작업 오류'

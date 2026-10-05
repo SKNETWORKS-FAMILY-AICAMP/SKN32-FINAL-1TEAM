@@ -8,10 +8,8 @@ projects(지원 아이템) N건으로 정규화돼 있다.
 다른 신청자 정보로 지원하고 싶은 사용자에게 부작용이 있었다. 이제 companies.user_id는
 더 이상 UNIQUE가 아니고, POST /projects는 매번 그 요청에 담긴 값으로 회사 프로필을
 새로 만든다 — 계정당 여러 프로젝트가 각자 다른 회사 프로필을 가질 수 있다. 계정당 동시
-실행 1건 제한(기획서 4-7, backend_decisions.md #11)은 회사 프로필이 아니라 User 행 자체를
-잠그는 방식으로 분리했다(_lock_user_for_concurrency_check 참고) — 원래 그 제한을 위해
-회사 프로필을 계정당 1건으로 묶었던 건데, 락 대상과 데이터 저장소가 같은 테이블이라 이런
-부작용이 생겼던 것이었다.
+실행 1건 제한(기획서 4-7)은 회사 프로필과 무관하다 — [SB-242]부터 오케스트레이터가 계정 잠금 안에서
+최종 확인한다(active_work · request_start).
 
 URL/DB 테이블/컬럼/응답 필드까지 전부 `project`로 통일했다(backend_decisions.md #5 개정 —
 원래는 URL만 /projects, DB는 items 그대로 두기로 했다가, API 표면과 DB 이름이 다르면
@@ -77,6 +75,7 @@ from app.models import (
     VerificationPolicy,
     VerificationScoreHistory,
 )
+from app.orch import OrchGateway, account_id_of, mapping, require_gateway
 from app.routers.profile import compute_has_profile
 from app.schemas import (
     AgentExecutionOut,
@@ -85,7 +84,6 @@ from app.schemas import (
     DemoGenerateRequest,
     DemoGenerateResponse,
     EligibilityCheckOut,
-    MatchCandidateOut,
     MatchCandidatesOut,
     MatchResultOut,
     NotificationOut,
@@ -590,29 +588,6 @@ def _save_attachment(file: UploadFile) -> tuple[str, str]:
     return file.filename or stored_name, file_url
 
 
-def _lock_user_for_concurrency_check(db: Session, current_user: User) -> None:
-    """계정당 동시 실행 1건 제한(기획서 4-7, backend_decisions.md #11)을 위한 락 지점.
-
-    User 행은 계정마다 정확히 1개, 항상 이미 존재한다(로그인 시점에 만들어짐) — 그래서
-    회사 프로필처럼 "없으면 만드는" 동작이 필요 없고, 그냥 잠그기만 하면 된다. 이 락을
-    create_project()에서 회사/프로젝트를 만들기 전에 가장 먼저 걸어서, 같은 유저가 거의
-    동시에 두 번 요청을 보내도 두 번째 요청은 첫 번째 트랜잭션이 끝날 때까지 대기했다가
-    최신 상태(진행 중 매칭 여부)로 다시 판정하게 한다 — 그렇지 않으면 두 요청이 동시에
-    "진행 중 매칭 없음"을 읽어 둘 다 통과해버리는 race가 이론상 가능하다.
-
-    SQLite는 FOR UPDATE 구문 자체가 없어 이 호출이 조용히 무시되지만, SQLite는 쓰기
-    트랜잭션을 파일 단위로 직렬화하므로 로컬 개발 환경에서는 어차피 문제되지 않는다 —
-    운영(MySQL)에서만 실제로 잠금이 걸린다.
-
-    [2026-09-15 개정] 원래는 companies.user_id UNIQUE 제약 덕분에 항상 존재가 보장되는
-    회사 프로필 행을 락 대상으로 재사용했었다 — 그런데 그러면서 "동시성 제어용 락 앵커"와
-    "신청자 정보 저장소"가 같은 테이블이 돼버려, 프로젝트마다 다른 신청자 정보를 쓰고
-    싶어도 두 번째 프로젝트부터 값이 무시되는 부작용이 생겼다. User 행은 애초에 계정과
-    1:1이라 회사 프로필처럼 "계정당 1건" 가정을 새로 만들 필요도 없고, 회사 프로필 데이터
-    모델도 프로젝트마다 자유롭게 둘 수 있어 더 깔끔하다."""
-    db.query(User).filter(User.user_id == current_user.user_id).with_for_update().first()
-
-
 def _create_company_for_project(db: Session, current_user: User, body: ProjectCreateRequest) -> Company:
     """이 프로젝트용 회사 프로필을 새로 만든다. 계정당 여러 프로젝트가 각자 다른 신청자
     유형/대표자명/설립일자를 가질 수 있도록, 재사용하지 않고 매번 새로 만든다 — 동시
@@ -640,6 +615,7 @@ def _create_company_for_project(db: Session, current_user: User, body: ProjectCr
 def list_projects(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
 ):
     """대시보드 "내 프로젝트" 목록. [2026-09-15 개정] 계정당 회사 프로필이 이제 여러 건일
     수 있으므로(프로젝트마다 따로 만듦), Company를 거치지 않고 Project를 Company와 join해
@@ -657,43 +633,18 @@ def list_projects(
         .order_by(Project.created_at.desc())
         .all()
     )
-    notices_by_id = {}
-    notice_ids = [p.notice_id for p in projects if p.notice_id is not None]
-    if notice_ids:
-        notices_by_id = {
-            n.notice_id: n
-            for n in db.query(Notice).filter(Notice.notice_id.in_(notice_ids)).all()
-        }
+    visible = [p for p in projects if p.archived_at is None]  # 사용자가 지운(보관 처리한) 프로젝트는 숨긴다
+    # [SB-242] 진행 상태는 projects 컬럼이 아니라 오케스트레이터가 원본이다 — 한 번에 읽는다.
+    views = {v.project_id: v for v in gateway.project_views([p.project_id for p in visible])}
+    announcement_ids = [v.run.announcement_id for v in views.values() if v.run and v.run.announcement_id]
+    titles = {}
+    if announcement_ids:
+        titles = {n.notice_id: n.title for n in db.query(Notice).filter(Notice.notice_id.in_(announcement_ids)).all()}
     items = []
-    for project in projects:
-        if project.archived_at is not None:
-            continue  # 사용자가 지운(보관 처리한) 프로젝트는 본인 목록에서 숨긴다 — DELETE /projects/{id} 참고.
-        notice_title = None
-        screen = ps.NO_MATCH_SCREEN
-        if project.notice_id is not None:
-            notice = notices_by_id.get(project.notice_id)
-            notice_title = notice.title if notice is not None else None
-            screen = ps.STAGE_TO_SCREEN.get(project.stage) if project.stage is not None else None
-        items.append(ProjectListItemOut(
-            project_id=project.project_id,
-            description=project.description,
-            created_at=project.created_at,
-            notice_id=project.notice_id,
-            notice_title=notice_title,
-            match_status=project.status,
-            # [2026-09-23 신규] 화면 헤더 종모양 알림용 — 프론트가 이미 이 목록 엔드포인트를
-            # 폴링하고 있어서(NotificationBell, front/src/features/workflow/shared.jsx)
-            # 별도 알림 엔드포인트 대신 여기 필드만 추가한다. 서비스 내부 상태(실행/재개대기/
-            # 사용자대기/실패/완료/중단)를 화면 문구(진행/확인이 필요합니다/문제가 생겨
-            # 멈췄다/완료/중단됨)로 분류한다(app/pipeline_stages.py status_to_display).
-            display_status=ps.status_to_display(project.status),
-            stage=project.stage,
-            progress_percent=project.progress_percent,
-            screen=screen,
-            resume_count=project.resume_count or 0,
-            next_retry_at=project.next_retry_at,
-            failure_reason=project.failure_reason,
-        ))
+    for project in visible:
+        view = views.get(str(project.project_id))
+        announcement_id = view.run.announcement_id if view is not None and view.run is not None else None
+        items.append(mapping.project_list_item(project, view, titles.get(announcement_id)))
     return items
 
 
@@ -742,60 +693,29 @@ def mark_notification_read(
     return notification
 
 
-MATCH_CANDIDATES_PER_BATCH = 10
+# [SB-242] 공고 후보 · 추가 조회 — 공고 추천은 워커가 돌리고 웹은 결과를 읽는다(무작위 임시 후보 제거).
+# 응답을 기다리는 제한 시간(초). 명세 기본값은 60초지만 동기 엔드포인트가 스레드를 오래 붙잡지 않도록 줄였다(잠정 —
+# 배포 때 웹 서버 · 프록시 제한 시간에 맞춰 다시 정한다). 못 끝내면 status='pending'으로 답하고 프론트가 다시 부른다.
+ORCH_WAIT_TIMEOUT_SEC = 25.0
+_EXECUTING = ('실행', '재개대기')
 
 
-def _add_candidate_batch(db: Session, project_id: int, batch: int, exclude_notice_ids: list[str]) -> int:
-    """[임시 구현] 실제 임베딩 유사도 매칭(notices.embedding_status 반영 이후 예정)이 아직 없어서,
-    모집중(open) 공고 중 아직 안 보여준 것을 골라 무작위 적합도를 붙여 저장한다."""
-    def pick(open_only: bool):
-        q = db.query(Notice)
-        if open_only:
-            q = q.filter(Notice.recruitment_status == 'open')
-        if exclude_notice_ids:
-            q = q.filter(Notice.notice_id.notin_(exclude_notice_ids))
-        return q.order_by(Notice.id.asc()).limit(MATCH_CANDIDATES_PER_BATCH).all()
-
-    # 모집중 공고가 모자라면(로컬 개발 DB가 비어있는 등) 마감된 공고라도 채운다 —
-    # 화면이 빈 채로 막히는 것보다는 흐름을 테스트해볼 수 있는 쪽이 낫다.
-    notices = pick(open_only=True) or pick(open_only=False)
-    for notice in notices:
-        db.add(MatchCandidate(
-            project_id=project_id,
-            notice_id=notice.notice_id,
-            batch=batch,
-            # [임시] 실제 가산점 산정 전까지 1~5점 랜덤
-            bonus_score=Decimal(random.randint(1, 5)),
-            reason=f'"{notice.title[:30]}" — 아이템 설명과 키워드가 겹치는 것으로 보입니다.',
-        ))
-    db.commit()
-    return len(notices)
-
-
-def _candidates_response(db: Session, project_id: int) -> MatchCandidatesOut:
-    rows = db.query(MatchCandidate).filter(MatchCandidate.project_id == project_id).all()
-    notices = {
-        n.notice_id: n
-        for n in db.query(Notice).filter(Notice.notice_id.in_([r.notice_id for r in rows])).all()
-    } if rows else {}
-    candidates = []
-    for r in rows:
-        notice = notices.get(r.notice_id)
-        if notice is None:
-            continue
-        candidates.append(MatchCandidateOut(
-            notice_id=notice.notice_id,
-            title=notice.title,
-            org=notice.organizer or notice.supervising_org or notice.executing_org,
-            apply_end=notice.apply_end,
-            bonus_score=float(r.bonus_score),
-            reason=r.reason,
-            url=notice.url,
-            batch=r.batch,
-        ))
-    # 재실행 후보(batch 2)가 위로, 각 묶음 안에서는 가산점 높은 순
-    candidates.sort(key=lambda c: (-c.batch, -c.bonus_score))
-    return MatchCandidatesOut(candidates=candidates, rematch_used=any(r.batch == 2 for r in rows))
+def _candidates_response(gateway: OrchGateway, project: Project) -> MatchCandidatesOut:
+    project_id = project.project_id
+    view = gateway.wait_project(project_id, timeout_sec=ORCH_WAIT_TIMEOUT_SEC)
+    start = view.start
+    if view.run is None and start is not None and start.status == '실패' and start.code in mapping.START_RETRYABLE:
+        # 다시 시도할 수 있는 시작 실패(명세 3.1) — 같은 프로젝트로 시작 요청을 다시 넣고 기다린다.
+        check = gateway.request_start(account_id_of(project.company.user_id), project_id)
+        if not check.ok:
+            return MatchCandidatesOut(
+                candidates=[], rematch_used=False, status='failed', code=check.code, message=check.message)
+        view = gateway.wait_project(project_id, timeout_sec=ORCH_WAIT_TIMEOUT_SEC)
+    if view.run is None:
+        return mapping.candidates_unavailable(view.start)
+    if view.run.progress in _EXECUTING:
+        return mapping.pending_candidates()
+    return mapping.candidates_out(gateway.screen(project_id, 3))
 
 
 @router.get('/{project_id}/match-candidates', response_model=MatchCandidatesOut)
@@ -803,15 +723,12 @@ def get_match_candidates(
     project_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
 ):
-    """처음 부르면 후보 10건을 뽑아 저장하고, 그 뒤로는 저장된 후보를 그대로 돌려준다 —
-    새로고침할 때마다 새 후보가 나오면 재실행 1회 제한이 무의미해진다.
-    사용자가 이 중 하나를 고르면 POST /projects/{id}/generate 로 match_results 행이 생긴다."""
-    _get_owned_project(db, project_id, current_user)
-    exists = db.query(MatchCandidate.candidate_id).filter(MatchCandidate.project_id == project_id).first()
-    if exists is None:
-        _add_candidate_batch(db, project_id, batch=1, exclude_notice_ids=[])
-    return _candidates_response(db, project_id)
+    """공고 후보(화면 3). 사전 단계가 끝났으면 후보를, 아직이면 status='pending'을(프론트가 다시 부른다),
+    후보가 없거나 실패면 status='no_match'·'failed'와 안내 문구를 돌려준다. 순서는 공고팀 순위 그대로다."""
+    project = _get_owned_project(db, project_id, current_user)
+    return _candidates_response(gateway, project)
 
 
 @router.post('/{project_id}/match-candidates/rematch', response_model=MatchCandidatesOut)
@@ -819,18 +736,16 @@ def rematch_candidates(
     project_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
 ):
-    """공고 매칭 재실행 — 프로젝트당 1회. 앞서 보여준 후보는 지우지 않고 새 후보 10건을 더한다."""
-    _get_owned_project(db, project_id, current_user)
-    shown = db.query(MatchCandidate).filter(MatchCandidate.project_id == project_id).all()
-    if not shown:
-        raise HTTPException(status_code=400, detail='먼저 공고 매칭 결과를 불러와 주세요.')
-    if any(r.batch == 2 for r in shown):
-        raise HTTPException(status_code=409, detail='공고 다시 찾기는 한 번만 할 수 있어요.')
-    added = _add_candidate_batch(db, project_id, batch=2, exclude_notice_ids=[r.notice_id for r in shown])
-    if added == 0:
-        raise HTTPException(status_code=404, detail='지금은 더 보여드릴 공고가 없어요.')
-    return _candidates_response(db, project_id)
+    """공고 추가 조회(다시 찾기) — 1회, 합계 최대 20건. 새 후보가 없으면 message로 안내하고 갱신된 목록을 준다.
+    추가 조회가 실패하면 기회를 돌려받으므로 notices에 안내만 붙고 rematch_used는 거짓이다."""
+    project = _get_owned_project(db, project_id, current_user)
+    gateway.more_candidates_for_project(project_id)
+    out = _candidates_response(gateway, project)
+    if out.status == 'ready':
+        out.message = mapping.rematch_message(out)
+    return out
 
 
 def _build_demo_response(db: Session, project_id: int, project: Project) -> DemoGenerateResponse:
@@ -1718,6 +1633,7 @@ async def create_project(
     files: list[UploadFile] = File(default_factory=list, description='첨부파일 (여러 개 가능, 없어도 됨)'),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
 ):
     try:
         body = ProjectCreateRequest.model_validate_json(payload)
@@ -1764,50 +1680,14 @@ async def create_project(
         if (f.size or 0) > ATTACH_MAX_BYTES:
             raise HTTPException(status_code=413, detail=f'"{f.filename}" 파일이 {ATTACH_MAX_MB}MB를 초과했어요')
 
-    # 계정당 동시 실행 1건 제한(기획서 4-7, backend_decisions.md #11)의 락은 회사 프로필이
-    # 아니라 계정(User 행) 자체를 잠가서 건다 — 회사 프로필을 만들기 전에 가장 먼저 걸어야
-    # 같은 유저가 거의 동시에 두 번 요청을 보내도 두 번째 요청이 첫 번째 트랜잭션이 끝날
-    # 때까지 대기했다가 최신 상태로 판정한다(_lock_user_for_concurrency_check 참고).
-    _lock_user_for_concurrency_check(db, current_user)
-
-    # 진행 중(in_progress) 매칭을 가진 프로젝트가 있는지로 판단한다(projects 자체엔 상태
-    # 컬럼이 없다 — 설계 문서 원안). [2026-09-15 개정] 계정당 회사 프로필이 이제 여러 건일
-    # 수 있어 Company.company_id 하나로는 못 좁히고, Company.user_id로 전체를 본다. 위에서
-    # 이미 User 행을 잠갔으므로 이 조회 자체엔 with_for_update()가 필요 없다.
-    active = (
-        db.query(Project)
-        .join(Company, Company.company_id == Project.company_id)
-        .filter(
-            Company.user_id == current_user.user_id,
-            Project.status.in_(ACTIVE_MATCH_STATUSES),
-            Project.archived_at.is_(None),
-            or_(Project.stage.is_(None), Project.stage != ps.STAGE_DONE),
-        )
-        .first()
-    )
+    # [SB-242] 계정당 동시 실행 1건 제한(기획서 4-7) — 저장하기 전에 오케스트레이터에 묻는다. 진행 중인 작업이
+    # 있으면 새 프로젝트를 만들지 않고 409 blocked(이어하기 또는 중단 후 새로 시작 선택)로 답한다. "중단 후 새로
+    # 시작"은 기존 DELETE /projects/{id}(abort_project 후 보관)가 맡는다. 최종 확인은 아래 request_start가 계정
+    # 잠금 안에서 다시 한다(그 사이에 생긴 작업은 E-RUN-CONCURRENT).
+    account_id = account_id_of(current_user.user_id)
+    active = gateway.active_work(account_id)
     if active is not None:
-        # [2026-09-27 신규, SB-138] 공식 기능정의서 v1.9 E-RUN-CONCURRENT: "새 Run을 만들지
-        # 않고 blocked=true를 반환한다. 진행 중인 작업의 현재 단계를 보여주고 이어하기와
-        # 중단 후 새로 시작 중 선택하게 한다." 예전엔 사람이 읽는 문장 하나만 detail로
-        # 내려줘서 프론트가 이 선택 화면을 만들 정보(어느 프로젝트인지, 지금 몇 화면인지)를
-        # 파싱할 방법이 없었다 — 구조화된 필드로 바꾼다.
-        #
-        # "중단 후 새로 시작"은 별도 엔드포인트를 새로 만들지 않는다 — 기존 DELETE
-        # /projects/{id}가 이미 정확히 이 역할이다(상태와 무관하게 보관 처리하고 계정당
-        # 1건 제한에서 제외시킨다, test_archived_running_project_does_not_block 참고).
-        # 프론트가 active_project_id로 그 엔드포인트를 부르면 된다. "결과를 다시 볼 수
-        # 없다는 사실을 확인받는다"는 프론트 쪽 확인 다이얼로그의 몫이다.
-        raise HTTPException(
-            status_code=409,
-            detail={
-                'message': '진행 중인 작업이 있습니다. 이어서 진행하거나, 중단하고 새로 시작할 수 있습니다. 중단하면 지금까지의 결과를 다시 볼 수 없습니다.',
-                'blocked': True,
-                'active_project_id': active.project_id,
-                'active_stage': active.stage,
-                'active_screen': ps.STAGE_TO_SCREEN.get(active.stage) if active.stage is not None else None,
-                'active_display_status': ps.status_to_display(active.status),
-            },
-        )
+        raise HTTPException(status_code=409, detail=mapping.blocked_detail(active))
 
     company = _create_company_for_project(db, current_user, body)
 
@@ -1861,7 +1741,26 @@ async def create_project(
 
     db.commit()
     db.refresh(project)
+
+    # 저장한 입력을 오케스트레이터가 읽어 사전 단계(요구사항 해석 → 공고 매칭)를 시작한다. 시작 요청이 거절되면
+    # 방금 만든 프로젝트는 쓸 곳이 없으니 지운다(입력을 고쳐 다시 제출하면 새 프로젝트로 만들어진다).
+    check = gateway.request_start(account_id, project.project_id)
+    if not check.ok:
+        _purge_unstarted_project(db, project.project_id)
+        raise _start_failure(check)
     return ProjectDetailOut.model_validate(project)
+
+
+def _start_failure(check) -> HTTPException:
+    """request_start가 거절한 이유(StartCheck)를 웹 응답으로 바꾼다."""
+    if check.code == 'E-RUN-CONCURRENT' and check.active is not None:
+        return HTTPException(status_code=409, detail=mapping.blocked_detail(check.active))
+    if check.code == 'E-AUTH-PROFILE':
+        return HTTPException(status_code=403, detail=check.message)
+    if check.code == 'E-C1-REQUIRED':
+        return HTTPException(
+            status_code=422, detail={'message': check.message, 'code': check.code, 'missing': check.missing})
+    return HTTPException(status_code=400, detail={'message': check.message, 'code': check.code})
 
 
 @router.get('/{project_id}', response_model=ProjectDetailOut)
@@ -1874,30 +1773,9 @@ def get_project(
     return ProjectDetailOut.model_validate(project)
 
 
-@router.delete('/{project_id}', status_code=204)
-def delete_project(
-    project_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """대시보드 "내 프로젝트"의 휴지통 버튼 — 사용자가 자기 프로젝트를 목록에서 지운다.
-
-    아직 공고 매칭 전(notice_id가 없음)이면 남길 데이터가 없으니 그냥 실제로 지운다.
-    매칭 이후(계획서·산출물 등 이미 만들어진 뒤)면 실제로 지우지 않고
-    projects.archived_at/archived_by에 보관 처리만 한다(app_schema.sql 설계 그대로
-    — "사용자가 프로젝트를 삭제해 보관 처리된 일시") — 이미 만든 계획서·산출물 데이터를
-    보존하기 위해서고, 관리자 대시보드(진행 현황 탭)는 이 프로젝트를 계속 "보관중"으로
-    조회·복원할 수 있다. list_projects()는 archived_at이 있는 프로젝트를 걸러서 본인
-    목록에서는 안 보이게 한다."""
-    project = _get_owned_project(db, project_id, current_user)
-    if project.notice_id is not None:
-        project.archived_at = datetime.datetime.utcnow()
-        project.archived_by = 'user'
-        db.commit()
-        return Response(status_code=204)
-
-    # 매칭 자체가 없던 프로젝트 — 진짜로 지운다. ORM 관계에 delete cascade를 안 걸어뒀고
-    # SQLite는 기본적으로 FK도 강제 안 하므로, 자식 행을 먼저 지우는 순서를 직접 지킨다.
+def _purge_unstarted_project(db: Session, project_id: int) -> None:
+    """실행 건이 한 번도 만들어지지 않은 프로젝트를 실제로 지운다. ORM 관계에 delete cascade를 안 걸어뒀고 SQLite는
+    기본적으로 FK도 강제 안 하므로 자식 행을 먼저 지우는 순서를 직접 지킨다."""
     db.query(ProjectAttachment).filter(ProjectAttachment.project_id == project_id).delete()
     db.query(TeamMember).filter(TeamMember.project_id == project_id).delete()
     db.query(PricingItem).filter(PricingItem.project_id == project_id).delete()
@@ -1905,6 +1783,32 @@ def delete_project(
     db.query(ProjectPlanInput).filter(ProjectPlanInput.project_id == project_id).delete()
     db.query(Project).filter(Project.project_id == project_id).delete()
     db.commit()
+
+
+@router.delete('/{project_id}', status_code=204)
+def delete_project(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
+):
+    """대시보드 "내 프로젝트"의 휴지통 버튼 — 사용자가 자기 프로젝트를 목록에서 지운다.
+
+    [SB-242] 먼저 오케스트레이터에 중단을 알린다(진행 중인 실행 건 중단, 대기·처리 중인 시작 요청 취소) —
+    빠뜨리면 주인 없는 실행 건이 남아 그 계정이 새 작업을 시작하지 못한다. 그다음 실행 건이 한 번이라도
+    만들어졌으면(공고 매칭 이후) 실제로 지우지 않고 projects.archived_at/archived_by에 보관 처리만 한다 —
+    이미 만든 계획서·산출물을 보존하고 관리자 대시보드(진행 현황 탭)가 계속 "보관중"으로 조회하게 한다.
+    실행 건이 없는 프로젝트(매칭 전)는 남길 데이터가 없으니 입력 사본까지 지우고 실제로 지운다."""
+    project = _get_owned_project(db, project_id, current_user)
+    gateway.abort_project(project_id)
+    if gateway.view_project(project_id).run is not None:
+        project.archived_at = datetime.datetime.utcnow()
+        project.archived_by = 'user'
+        db.commit()
+        return Response(status_code=204)
+
+    gateway.delete_project_data(project_id)
+    _purge_unstarted_project(db, project_id)
     return Response(status_code=204)
 
 
@@ -2038,6 +1942,7 @@ def get_project_status(
     project_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
 ):
     """이어하기(기획서 v1.7 4-7절, p.20 8케이스) — 프론트가 이 프로젝트를 다시 열었을 때
     몇 번 화면으로 돌려보내야 하는지를 판별해서 내려준다.
@@ -2049,27 +1954,8 @@ def get_project_status(
     (detect_resume_screen()과 동일한 로직 — 거기서는 아직 실제 API가 없어 DB를 직접
     조회해 검증했지만, 여기서는 라우터로 옮기고 소유권 체크(_get_owned_project)만 추가했다).
     """
-    project = _get_owned_project(db, project_id, current_user)
-
-    if project.notice_id is None:
-        # 매칭 자체가 없음 — 아직 공고를 고르기 전(8케이스의 ①) -> 화면 3(공고 매칭)으로.
-        return ProjectStatusOut(project_id=project.project_id, screen=ps.NO_MATCH_SCREEN)
-
-    screen = ps.STAGE_TO_SCREEN.get(project.stage) if project.stage is not None else None
-    policy = _get_verification_policy(db)
-    return ProjectStatusOut(
-        project_id=project.project_id,
-        screen=screen,
-        stage=project.stage,
-        progress_percent=project.progress_percent,
-        match_status=project.status,
-        failure_reason=project.failure_reason,
-        resume_count=project.resume_count or 0,
-        next_retry_at=project.next_retry_at,
-        notice_closed=_is_notice_closed(db, project.notice_id),
-        regenerate_fail_streak=project.regenerate_fail_streak or 0,
-        regenerate_cap=policy.regenerate_cap,
-    )
+    _get_owned_project(db, project_id, current_user)
+    return mapping.project_status_out(project_id, gateway.view_project(project_id))
 
 
 @router.post('/{project_id}/retry-task', response_model=RetryTaskResponse)

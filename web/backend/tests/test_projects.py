@@ -9,6 +9,7 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
+from orch_fakes import ProjectView, make_run
 
 import app.routers.auth as auth_router
 import app.security as security
@@ -83,9 +84,10 @@ def test_delete_project_without_match_hard_deletes(user_client, db_session):
     assert db_session.get(Project, project_id) is None, '매칭 전 프로젝트인데 DB에서 실제로 안 지워짐'
 
 
-def test_delete_project_with_match_archives_instead_of_deleting(user_client, db_session):
+def test_delete_project_with_match_archives_instead_of_deleting(user_client, db_session, orch):
     """매칭 이후(계획서·산출물 등 이미 생김)면 실제로 지우지 않고 보관 처리만 한다 —
     목록에서는 사라지지만(사용자 기준), DB에는 projects.archived_at과 함께 남는다."""
+    orch.responses['view_project'] = lambda pid: ProjectView(str(pid), run=make_run())  # 실행 건이 있다 → 보관 처리
     project_id = _create_project(user_client)
     notice = Notice(
         notice_id='DELETE-TEST-001', source='k-startup', title='삭제 테스트용 더미 공고', recruitment_status='진행중',

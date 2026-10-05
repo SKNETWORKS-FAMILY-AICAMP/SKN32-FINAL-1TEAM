@@ -1,5 +1,5 @@
 """app/orch/mapping.py — 웹연동_변경사항_웹팀전달.md 3절 대응표."""
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 from orch_fakes import Notice, ProjectView, make_run
@@ -87,10 +87,12 @@ def test_status_percent_during_rework_and_review():
 
 
 def test_status_resume_wait_exposes_next_retry_and_count():
-    at = datetime(2026, 10, 5, 12, 0, 0)
+    # 오케스트레이터 시각은 시간대 있는 UTC다(2026-10-05 변경) — 응답에도 Z가 붙어 브라우저가 한국 시간으로 바꿀 수 있다
+    at = datetime(2026, 10, 5, 12, 0, 0, tzinfo=UTC)
     run = make_run(progress='재개대기', resume_count=2, next_resume_at=at)
     out = mapping.project_status_out(7, ProjectView('7', run=run))
     assert (out.match_status, out.resume_count, out.next_retry_at) == ('waiting_resume', 2, at)
+    assert out.model_dump(mode='json')['next_retry_at'].endswith('Z')
 
 
 def test_status_failed_run_hides_failure_reason():

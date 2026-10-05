@@ -8,6 +8,8 @@
 """
 import json
 
+from orch_fakes import ProjectView, make_run
+
 from app.models import (
     AgentExecution,
     Artifact,
@@ -139,9 +141,10 @@ def test_permanent_delete_removes_all_artifact_version_files_from_disk(authed_cl
     assert authed_client.get(executable_url).status_code == 404
 
 
-def test_permanent_delete_works_on_already_archived_project(authed_client, db_session):
+def test_permanent_delete_works_on_already_archived_project(authed_client, db_session, orch):
     """archive된(휴지통) 프로젝트도 permanent delete로 완전히 지울 수 있어야 한다 —
     두 액션이 서로 배타적이지 않다."""
+    orch.responses['view_project'] = lambda pid: ProjectView(str(pid), run=make_run())  # 실행 건이 있다 → 보관 처리
     payload = {'description': '보관 후 완전삭제 테스트', 'team_members': [], 'pricing_items': []}
     project_id = authed_client.post('/projects', data={'payload': json.dumps(payload)}).json()['project_id']
     notice = Notice(notice_id='PERM-DEL-002', source='k-startup', title='보관 테스트용 공고', recruitment_status='open')

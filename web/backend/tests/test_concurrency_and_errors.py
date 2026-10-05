@@ -8,7 +8,9 @@
 안 건드리는지까지 확인한다."""
 import json
 
-from app.models import Notice, Project
+from orch_fakes import ActiveWork, StartCheck
+
+from app.models import Notice, Project, User
 
 
 def _payload(**overrides):
@@ -46,72 +48,89 @@ def _set_match(db_session, project_id: int, notice_id: str, fit_score=80, status
 # ---------------------------------------------------------------------------
 # 2) 동시 실행 1건 제한
 # ---------------------------------------------------------------------------
+def _active(project_id, step='계획서작성', resume_step=5, screen_status='진행 중'):
+    return ActiveWork(project_id=str(project_id), run_id='r1', step=step, resume_step=resume_step,
+                      screen_status=screen_status)
+
+
 class TestConcurrencyLimit:
-    def test_blocks_second_project_while_first_in_progress(self, authed_client, db_session):
-        r1 = authed_client.post('/projects', data=_payload())
-        assert r1.status_code == 201
-        project1_id = r1.json()['project_id']
+    """[SB-242] 동시 실행 1건 제한은 오케스트레이터가 판단한다 — 웹은 저장 전에 active_work로 묻고, 저장 뒤
+    request_start가 계정 잠금 안에서 최종 확인한다. 가짜 오케스트레이터로 그 답을 정해 웹 응답을 확인한다."""
 
-        notice = _seed_notice(db_session)
-        _set_match(db_session, project1_id, notice.notice_id)
-        db_session.commit()
+    def test_blocks_while_first_in_progress(self, authed_client, db_session, orch):
+        orch.responses['active_work'] = _active(7)
+        res = authed_client.post('/projects', data=_payload())
+        assert res.status_code == 409
+        detail = res.json()['detail']
+        assert detail['blocked'] is True
+        assert detail['active_project_id'] == 7  # 어느 프로젝트가 막았는지 나와야 함
+        assert detail['active_stage'] == 'plan_writing'
+        assert detail['active_screen'] == 5
+        assert detail['active_display_status'] == '진행'
+        assert db_session.query(Project).count() == 0, '막힌 요청이 프로젝트를 만들었다'
 
-        r2 = authed_client.post('/projects', data=_payload())
-        assert r2.status_code == 409
-        # [2026-09-27 개정, SB-138] detail이 사람이 읽는 문장 하나였던 것에서 구조화된
-        # 필드(blocked/active_project_id 등)로 바뀌었다 — E-RUN-CONCURRENT 대응.
-        assert r2.json()['detail']['blocked'] is True
-        assert r2.json()['detail']['active_project_id'] == project1_id  # 어느 프로젝트가 막았는지 나와야 함
+    def test_blocks_while_first_user_waiting(self, authed_client, orch):
+        """사용자 판단 대기(확인 필요)도 진행 중으로 센다 — 기능정의서 v1.9 R-9."""
+        orch.responses['active_work'] = _active(7, step='문서평가', resume_step=6, screen_status='확인 필요')
+        res = authed_client.post('/projects', data=_payload())
+        assert res.status_code == 409
+        assert res.json()['detail']['active_stage'] == 'plan_review_pending'
+        assert res.json()['detail']['active_display_status'] == '확인이 필요합니다'
 
-    def test_blocks_second_project_while_first_user_waiting(self, authed_client, db_session):
-        """[2026-09-28 신규] user_waiting(문서평가 등 사용자 판단 대기)도 ACTIVE_MATCH_STATUSES에
-        포함돼야 한다 — 기능정의서 v1.9 R-9: "계정당 1건 제한은 진행 중·확인 필요만 센다."
-        (app/routers/projects.py:281 ACTIVE_MATCH_STATUSES 참고)."""
-        r1 = authed_client.post('/projects', data=_payload())
-        assert r1.status_code == 201
-        project1_id = r1.json()['project_id']
+    def test_pre_stage_in_progress_blocks_and_points_to_screen_3(self, authed_client, orch):
+        """실행 건이 아직 없고 사전 단계(요구사항 해석 · 공고 매칭)만 도는 중이어도 막는다."""
+        orch.responses['active_work'] = ActiveWork(project_id='7', request_id='q1')
+        detail = authed_client.post('/projects', data=_payload()).json()['detail']
+        assert (detail['active_stage'], detail['active_screen']) == (None, 3)
 
-        notice = _seed_notice(db_session, 'test:PBLN_USERWAIT')
-        _set_match(db_session, project1_id, notice.notice_id, status='user_waiting')
-        db_session.commit()
+    def test_nothing_active_creates_project_and_requests_start(self, authed_client, db_session, orch):
+        res = authed_client.post('/projects', data=_payload())
+        assert res.status_code == 201, res.text
+        project_id = res.json()['project_id']
+        starts = [c for c in orch.calls if c[0] == 'request_start']
+        assert len(starts) == 1 and starts[0][1][1] == project_id
 
-        r2 = authed_client.post('/projects', data=_payload())
-        assert r2.status_code == 409, 'user_waiting(확인 필요)도 진행 중으로 세서 막아야 함'
-        assert r2.json()['detail']['blocked'] is True
-
-    def test_completed_match_does_not_block(self, authed_client, db_session):
-        """status='completed'(제출 완료)는 ACTIVE_MATCH_STATUSES에 없으니 막으면 안 된다 —
-        '진행 중'과 '이미 끝남'을 혼동하는 회귀가 생기면 이 테스트가 잡아준다."""
-        r1 = authed_client.post('/projects', data=_payload())
-        assert r1.status_code == 201
-        project1_id = r1.json()['project_id']
-
-        notice = _seed_notice(db_session, 'test:PBLN_DONE')
-        _set_match(db_session, project1_id, notice.notice_id, status='completed')
-        db_session.commit()
-
-        r2 = authed_client.post('/projects', data=_payload())
-        assert r2.status_code == 201, f'완료된 매칭인데도 막힘: {r2.text}'
-
-    def test_limit_is_per_account_not_global(self, login_as, db_session):
-        """User 행 락으로 옮긴 게 계정 범위를 벗어나 다른 계정까지 막아버리는 회귀가 없는지 —
-        A 계정이 진행 중이어도 B 계정은 정상적으로 새 프로젝트를 만들 수 있어야 한다."""
+    def test_limit_is_asked_per_account(self, login_as, db_session, orch):
+        """계정마다 자기 account_id(users.user_id 문자열)로 묻는다 — A가 진행 중이어도 B는 따로 판단된다."""
         client_a = login_as('concurrency-a@example.com', 'A유저')
-        ra = client_a.post('/projects', data=_payload())
-        assert ra.status_code == 201
-        project_a_id = ra.json()['project_id']
-        notice = _seed_notice(db_session, 'test:PBLN_A')
-        _set_match(db_session, project_a_id, notice.notice_id)
-        db_session.commit()
+        account_a = str(db_session.query(User).filter_by(email='concurrency-a@example.com').one().user_id)
+        orch.responses['active_work'] = lambda account_id: _active(7) if account_id == account_a else None
 
-        # A는 두 번째 프로젝트를 못 만든다
-        ra2 = client_a.post('/projects', data=_payload())
-        assert ra2.status_code == 409
-
-        # B는 A와 무관하게 만들 수 있어야 한다
+        assert client_a.post('/projects', data=_payload()).status_code == 409
         client_b = login_as('concurrency-b@example.com', 'B유저')
-        rb = client_b.post('/projects', data=_payload())
-        assert rb.status_code == 201, f'B 계정까지 같이 막힘 — User 락이 계정 범위를 벗어남: {rb.text}'
+        assert client_b.post('/projects', data=_payload()).status_code == 201
+        asked = [c[1][0] for c in orch.calls if c[0] == 'active_work']
+        assert len(set(asked)) == 2
+
+    def test_race_after_save_is_blocked_and_project_is_removed(self, authed_client, db_session, orch):
+        """저장 사이에 다른 작업이 생겨 request_start가 E-RUN-CONCURRENT로 거절하면 같은 409 응답이고,
+        방금 만든 프로젝트는 남기지 않는다."""
+        orch.responses['request_start'] = lambda account_id, project_id: StartCheck(
+            ok=False, code='E-RUN-CONCURRENT', active=_active(7))
+        res = authed_client.post('/projects', data=_payload())
+        assert res.status_code == 409 and res.json()['detail']['blocked'] is True
+        assert db_session.query(Project).count() == 0
+
+    def test_missing_required_inputs_is_422_and_project_is_removed(self, authed_client, db_session, orch):
+        orch.responses['request_start'] = lambda account_id, project_id: StartCheck(
+            ok=False, code='E-C1-REQUIRED', message='필수 항목이 비어 있어요', missing=['수익모델 단가', '성별'])
+        res = authed_client.post('/projects', data=_payload())
+        assert res.status_code == 422
+        assert res.json()['detail'] == {
+            'message': '필수 항목이 비어 있어요', 'code': 'E-C1-REQUIRED', 'missing': ['수익모델 단가', '성별']}
+        assert db_session.query(Project).count() == 0
+
+    def test_profile_error_from_orchestrator_is_403(self, authed_client, db_session, orch):
+        orch.responses['request_start'] = lambda account_id, project_id: StartCheck(
+            ok=False, code='E-AUTH-PROFILE', message='프로필을 먼저 만들어 주세요')
+        res = authed_client.post('/projects', data=_payload())
+        assert res.status_code == 403 and res.json()['detail'] == '프로필을 먼저 만들어 주세요'
+        assert db_session.query(Project).count() == 0
+
+    def test_gateway_not_ready_is_503(self, authed_client):
+        from app.orch import reset_gateway
+        reset_gateway()
+        assert authed_client.post('/projects', data=_payload()).status_code == 503
 
 
 # ---------------------------------------------------------------------------

@@ -108,11 +108,73 @@ class ConfirmationNeeded:
     items: dict
 
 
+@dataclass
+class BonusItem:
+    name: str
+    points: float
+
+
+@dataclass
+class Card:
+    announcement_id: str
+    title: str
+    agency: str = '테스트기관'
+    apply_end: Any = None
+    support_amount_max: int | None = None
+    fit_score: float = 0.8
+    rank: int = 1
+    display_type: str = 'card'
+    match_reason: str = '아이디어와 맞는 공고예요'
+    source_notice: str = '출처: 테스트'
+    original_url: str = 'https://example.com/n'
+    apply_period_type: str = '기간 있음'
+    content_changed: bool = False
+    content_version: str | None = None
+    bonus_score: float | None = None
+    bonus_items: list = field(default_factory=list)
+
+
+@dataclass
+class CandidatesScreen:
+    candidates: list
+    more_candidates: list = field(default_factory=list)
+    more_available: bool = True
+    collection_status: str = '정상'
+    filtered_count: int = 0
+    fallback_used: bool = False
+    fallback_mode: str | None = None
+    blocked_announcement_ids: list = field(default_factory=list)
+    notices: list = field(default_factory=list)
+    screen: int = 3
+    project_id: str | None = None
+    run_id: str = 'r1'
+    step: str = '공고선택'
+    progress: str = '사용자대기'
+
+
+def make_cards(start: int, count: int) -> list[Card]:
+    return [Card(announcement_id=f'N-{i:02d}', title=f'테스트 공고 {i}', rank=i) for i in range(start, start + count)]
+
+
 def make_run(**overrides: Any) -> RunView:
     base = dict(run_id='r1', step='계획서작성', progress='실행', screen_status='진행 중', resume_step=5, percent=40,
                 current_label='계획서 작성')
     base.update(overrides)
     return RunView(**base)
+
+
+def default_responses() -> dict[str, Any]:
+    """진행 중인 작업 없음 · 시작 요청 통과 · 실행 건 없음 — 라우터 테스트의 기본 상태."""
+    return {
+        'active_work': None,
+        'request_start': lambda account_id, project_id: StartCheck(ok=True, request_id='req-1'),
+        'view_project': lambda project_id: ProjectView(project_id=str(project_id)),
+        'wait_project': lambda project_id, timeout_sec=60.0: ProjectView(project_id=str(project_id)),
+        'project_views': lambda project_ids: [ProjectView(project_id=str(i)) for i in project_ids],
+        'abort_project': lambda project_id: AbortResult(project_id=str(project_id)),
+        'delete_project_data': lambda project_id: DeleteResult(
+            project_id=str(project_id), abort=AbortResult(project_id=str(project_id))),
+    }
 
 
 class FakeOrch:

@@ -11,6 +11,8 @@ import os
 from collections.abc import Callable
 from typing import Any
 
+from fastapi import HTTPException
+
 from .errors import OrchError
 
 # 명세 1절 표의 함수. 이 밖의 이름은 WEB_NOT_ALLOWED.
@@ -98,7 +100,15 @@ def reset_gateway() -> None:
 
 
 def get_gateway() -> OrchGateway:
-    """FastAPI 의존성으로 쓴다. 서버 시작에서 init_gateway를 부르지 않았으면 분명하게 실패한다."""
+    """서버 시작에서 init_gateway를 부르지 않았으면 분명하게 실패한다."""
     if _gateway is None:
         raise RuntimeError('오케스트레이터 gateway가 초기화되지 않았습니다 — init_gateway를 먼저 부르세요')
     return _gateway
+
+
+def require_gateway() -> OrchGateway:
+    """라우터용 FastAPI 의존성. 준비 전(예: SQLite 개발 모드)에는 500 대신 503으로 알린다."""
+    try:
+        return get_gateway()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail='작업 서버가 아직 준비되지 않았어요. 잠시 뒤 다시 시도해 주세요.') from exc
