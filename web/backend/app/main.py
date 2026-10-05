@@ -74,14 +74,6 @@ app.include_router(biz_check.router)
 app.include_router(profile.router)
 
 
-# [2026-09-22] 계획서/프로토타입 생성 진행(match_results.stage)을 다시 살리는 백그라운드
-# 루프 — 서버가 재시작되면서 끊긴 작업을 이어받는다(app/routers/projects.py
-# _generation_recovery_loop 참고. Redis 등 별도 브로커 없이 DB 클레임 컬럼만으로 동작).
-@app.on_event('startup')
-def _resume_pending_generations() -> None:
-    projects.start_generation_recovery_loop()
-
-
 # [SB-242] 웹이 오케스트레이터(sbrain) 함수를 부르는 통로(gateway)를 서버 시작 때 한 번 만든다.
 # MySQL 모드에서만 만든다 — SQLite 개발 모드에서는 만들지 않고, 라우터가 쓰려 하면 503으로 답한다.
 @app.on_event('startup')

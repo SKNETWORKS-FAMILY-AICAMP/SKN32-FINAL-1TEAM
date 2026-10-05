@@ -5,7 +5,10 @@ FakeOrch는 부른 함수 이름과 인자를 calls에 쌓고, 미리 정한 값
 """
 from dataclasses import dataclass, field
 from datetime import datetime
+from types import SimpleNamespace as NS
 from typing import Any
+
+from app.orch.errors import OrchError
 
 
 @dataclass
@@ -163,9 +166,76 @@ def make_run(**overrides: Any) -> RunView:
     return RunView(**base)
 
 
+class Dumpable(NS):
+    """pydantic 모델처럼 model_dump를 가진 값(차트 · 표)."""
+
+    def model_dump(self, mode: str = 'python') -> dict:
+        return dict(vars(self))
+
+
+def make_sentence(i: int, text: str, paragraph_no: int = 1, is_title: bool = False) -> NS:
+    return NS(sentence_id=f's{i}', text=text, is_title=is_title, paragraph_no=paragraph_no)
+
+
+def make_section(code: str, title: str, *texts: str) -> NS:
+    """texts마다 문장 하나, 문단 번호는 인자 순서대로 1부터(문단 사이는 줄바꿈으로 이어진다)."""
+    return NS(section_code=code, title=title, sentences=[make_sentence(i, t, paragraph_no=i) for i, t in enumerate(texts, 1)])
+
+
+def make_plan_doc(sections: list | None = None, **overrides: Any) -> NS:
+    base = dict(
+        sections=sections if sections is not None else [make_section('1-1', '문제 인식', '문제를 설명한다.', '근거를 든다.')],
+        feature_list=['예약', '결제'], charts=[], tables=[], protected_tokens=[])
+    base.update(overrides)
+    return NS(**base)
+
+
+def make_gate(passed: bool = True, **overrides: Any) -> NS:
+    base = dict(passed=passed, failed_conditions=[], missing_inputs=[], undecidable=False, unknown_conditions=[])
+    base.update(overrides)
+    return NS(**base)
+
+
+def make_gate_screen(announcement_id: str = 'N-01', gate: NS | None = None, **overrides: Any) -> NS:
+    """화면 4(GateScreen)의 필드."""
+    base = dict(
+        screen=4, project_id=None, run_id='r1', step='계획서작성', progress='사용자대기', notices=[],
+        announcement_id=announcement_id, gate_result=gate or make_gate(), business_age_years=None, can_start_writing=True)
+    base.update(overrides)
+    return NS(**base)
+
+
+def make_score_view(total: float = 82.0, threshold: float = 80.0, passed: bool = True, with_artifact: bool = True) -> NS:
+    artifact = NS(
+        total=30.0, code_check=NS(total=15.0, checks=[]), feature_match=NS(
+            score=15.0, missing_features=[], extra_features=[], findings=[], judged_by='규칙'),
+    ) if with_artifact else None
+    return NS(
+        display_score=total, total=total, threshold=threshold, passed=passed, phase='종합',
+        doc_score=NS(total=52.0, items=[]), artifact_score=artifact, carried_over_layer=None, comparisons=[], notices=[])
+
+
+def make_outputs(**overrides: Any) -> NS:
+    """outputs(project_id) 결과 — sbrain.flow.reads.Outputs와 같은 필드(test_orch_fake_contract가 확인한다)."""
+    base = dict(
+        project_id='1', run_id='r1', step='문서평가', progress='사용자대기', candidates=[], more_candidates=[],
+        selected_announcement=None, gate_result=None, business_age_years=None, category=None, plan_doc=None,
+        doc_score=None, document_score_report=None, overall_score_report=None, prototype=None, infographic=None,
+        code_check=None, feature_match=None, format_findings=[], sentence_results=[], proofread_log=None,
+        deliverable=None, user_message=None, rework_usage=[], rework_limit=1, evaluation_items=[])
+    base.update(overrides)
+    return NS(**base)
+
+
+def run_not_found(*_args: Any, **_kwargs: Any) -> None:
+    raise OrchError('RUN_NOT_FOUND', '실행 건 없음')
+
+
 def default_responses() -> dict[str, Any]:
     """진행 중인 작업 없음 · 시작 요청 통과 · 실행 건 없음 — 라우터 테스트의 기본 상태."""
     return {
+        'outputs': run_not_found,
+        'screen': run_not_found,
         'active_work': None,
         'request_start': lambda account_id, project_id: StartCheck(ok=True, request_id='req-1'),
         'view_project': lambda project_id: ProjectView(project_id=str(project_id)),

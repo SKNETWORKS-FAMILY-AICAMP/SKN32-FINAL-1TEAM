@@ -4,40 +4,21 @@ Strategy Agent(구글 드라이브 "전략/작성/검증1" 시트 F01~F15)가 �
 아직 그 Agent도, 이 테이블을 읽고 쓰는 라우터 코드도 없다 — 지금은 스키마만 먼저 준비해두는
 단계라, 이 테스트는 "테이블/모델이 의도대로 배선됐는지"(FK, JSON 왕복, (plan_id, data_key)
 유일성)만 확인한다."""
-import json
-
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from app.models import Notice, PlanCanonicalData
-
-
-def _payload(**overrides):
-    base = {
-        'biz_type': '개인', 'ceo_name': '박테스트',
-        'founded_at': None, 'description': 'AI 기반 동네 헬스장 통합 예약 서비스',
-        'team_members': [], 'pricing_items': [],
-    }
-    base.update(overrides)
-    return base
+from app.models import PlanCanonicalData
 
 
 def _create_plan(authed_client, db_session):
-    """POST /generate로 실제 엔드포인트를 태워 business_plans 행을 하나 만든다 —
-    match/company/project FK를 손으로 채우는 대신 기존 파이프라인을 재사용."""
-    notice = Notice(
-        notice_id='NOTICE-CANONICAL-TEST', source='k-startup', title='테스트 공고',
-        organizer='창업진흥원', recruitment_status='open', url='https://example.com/notice/canonical',
-    )
-    db_session.add(notice)
-    db_session.commit()
+    """프로젝트를 만들고 더미 파이프라인 결과를 직접 심어 business_plans 행을 하나 만든다 — FK를 손으로 채우지 않으려고."""
+    from dummy_seed import create_match
 
-    r = authed_client.post('/projects', data={'payload': json.dumps(_payload())})
-    assert r.status_code == 201, r.text
-    project_id = r.json()['project_id']
-    r = authed_client.post(f'/projects/{project_id}/generate', json={'notice_id': notice.notice_id})
-    assert r.status_code == 200, r.text
-    return r.json()['plan']['plan_id']
+    from app.models import BusinessPlan
+
+    project = create_match(authed_client, db_session, 'NOTICE-CANONICAL-TEST')
+    plan = db_session.query(BusinessPlan).filter(BusinessPlan.project_id == project.project_id).one()
+    return plan.plan_id
 
 
 def test_json_round_trips_and_survives_reload(authed_client, db_session):

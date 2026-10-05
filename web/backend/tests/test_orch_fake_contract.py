@@ -22,6 +22,26 @@ def test_fake_dataclass_fields_match_real(name):
     assert fake == real
 
 
+def test_fake_outputs_fields_match_real():
+    reads = pytest.importorskip('sbrain.flow.reads')
+    assert set(vars(orch_fakes.make_outputs())) == set(reads.Outputs.model_fields)
+
+
+def test_fake_gate_screen_fields_match_real():
+    reads = pytest.importorskip('sbrain.flow.reads')
+    assert set(vars(orch_fakes.make_gate_screen())) == set(reads.GateScreen.model_fields)
+
+
+def test_fake_gate_and_score_view_fields_match_real():
+    domain = pytest.importorskip('sbrain.models.domain')
+    reads = pytest.importorskip('sbrain.flow.reads')
+    assert set(vars(orch_fakes.make_gate())) == set(domain.GateResult.model_fields)
+    assert set(vars(orch_fakes.make_score_view())) == set(reads.ScoreView.model_fields)
+    assert set(vars(orch_fakes.make_plan_doc())) == set(domain.PlanDoc.model_fields)
+    assert set(vars(orch_fakes.make_section('1-1', 't', 'x'))) == set(domain.PlanSection.model_fields)
+    assert set(vars(orch_fakes.make_sentence(1, 'x'))) == set(domain.Sentence.model_fields)
+
+
 def test_allowed_functions_exist_on_real_orchestrator():
     missing = [n for n in sorted(ALLOWED) if not callable(getattr(service.SBrainOrchestrator, n, None))]
     assert missing == []

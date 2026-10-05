@@ -28,15 +28,12 @@ import json
 import os
 import random
 import sys
-import threading
-import time
 import uuid
 from decimal import Decimal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import ValidationError
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import agents
@@ -75,26 +72,21 @@ from app.models import (
     VerificationPolicy,
     VerificationScoreHistory,
 )
-from app.orch import OrchGateway, account_id_of, mapping, require_gateway
+from app.orch import OrchError, OrchGateway, account_id_of, mapping, require_gateway
 from app.routers.profile import compute_has_profile
 from app.schemas import (
-    AgentExecutionOut,
-    BundleUsageOut,
-    BusinessPlanOut,
     DemoGenerateRequest,
     DemoGenerateResponse,
-    EligibilityCheckOut,
     MatchCandidatesOut,
-    MatchResultOut,
     NotificationOut,
     NotificationReadIn,
+    ProceedRequest,
     ProjectCreateRequest,
     ProjectDetailOut,
     ProjectListItemOut,
     ProjectStatusOut,
     RetryTaskRequest,
     RetryTaskResponse,
-    VerdictOut,
 )
 from app.security import get_current_user
 
@@ -748,142 +740,47 @@ def rematch_candidates(
     return out
 
 
-def _build_demo_response(db: Session, project_id: int, project: Project) -> DemoGenerateResponse:
-    """project_id 하나로 DemoGenerateResponse를 조립한다 — POST /generate(방금 막 만든
-    project)와 GET /result(예전에 만들어둔 project를 다시 조회) 둘 다 이 함수를 공유한다.
+# [SB-243] 공고 선택 → 자격 확인 · 계획서 · 프로토타입 · 종합 평가 · 검수 시작 · 결과 조회.
+# 단계를 도는 일은 워커가 하고 웹은 명령을 넣은 뒤 진행 상태(view_project)와 결과(outputs)를 읽는다.
+# 같은 단계를 여러 번 시작해도(INVALID_STATE) 한 번만 시작되고 지금 상태를 돌려준다 — 기존 동작 그대로.
+_BEFORE_WRITING_STEPS = {
+    '공고선택': '먼저 공고를 선택해 주세요.',
+    '자격확인': '자격 확인이 끝난 뒤에 시작할 수 있어요.',
+}
 
-    [2026-09-28, match_results 테이블 통합] 예전엔 match(MatchResult) 인자를 받았으나,
-    그 필드들이 전부 Project로 옮겨오면서 project 하나만 받으면 된다."""
-    plan = (
-        db.query(BusinessPlan)
-        .filter(BusinessPlan.project_id == project.project_id)
-        .order_by(BusinessPlan.plan_id.desc())
-        .first()
-    )
-    # [2026-09-22 수정, 프론트 전달사항 3번] 예전엔 verdict(=artifact)까지 없으면 통째로
-    # 404였다 — 계획서만 먼저 끝나고 프로토타입/검증은 아직인 상태(실제 단계별 생성
-    # 흐름에선 흔한 중간 상태)에서도 "완성된 계획서"는 돌려줘야 한다는 요구사항과
-    # 어긋났다. 이제 plan이 있으면(=계획서 작성이 끝났으면) 200을 내려주고, artifact/
-    # verdict가 아직 없으면 verdict만 None으로 비워서 응답한다.
-    artifact = None
-    verdict = None
-    if plan is not None:
-        artifact = _get_current_artifact(db, plan.plan_id)
-        if artifact is not None:
-            # [2026-09-29 수정, SB-155] artifact_id가 아니라 plan_id로 찾는다 — 산출물이
-            # 재작성마다 새 행(다른 artifact_id)으로 쌓이면서, 초기 채점 때 만들어진 verdict가
-            # 가리키던 artifact_id와 "지금 현재 버전"의 artifact_id가 달라질 수 있기 때문
-            # (Verdict는 plan_id도 갖고 있어 그쪽으로 찾으면 버전이 바뀌어도 계속 찾아진다).
-            verdict = (
-                db.query(Verdict)
-                .filter(Verdict.plan_id == plan.plan_id)
-                .order_by(Verdict.verdict_id.desc())
-                .first()
-            )
-    if plan is None:
-        raise HTTPException(
-            status_code=404,
-            detail='이 프로젝트엔 아직 계획서가 없습니다 — POST /projects/{id}/generate 또는 .../plan/start 로 먼저 만들어야 합니다',
-        )
 
-    eligibility = (
-        db.query(EligibilityCheck)
-        .filter(EligibilityCheck.project_id == project.project_id)
-        .order_by(EligibilityCheck.check_id.desc())
-        .first()
-    )
-    executions = (
-        db.query(AgentExecution)
-        .filter(AgentExecution.project_id == project.project_id)
-        .order_by(AgentExecution.execution_id.asc())
-        .all()
-    )
-    policy = _get_verification_policy(db)
+def _eligibility_response(
+    gateway: OrchGateway, project_id: int, notice_id: str | None, notices_before: int | None,
+) -> DemoGenerateResponse:
+    """자격 확인(G-01) 결과를 기다려 화면 4 모양으로 답한다.
 
-    verdict_out = None
-    if verdict is not None:
-        # [2026-09-22, 프론트 전달사항 10번] 검증결과서 "종합 판정" 행 — 문서층/자동검증/
-        # 계획서대조 세 층 점수를 verification_policies 가중치 기준으로 합산한다. 자동검증/
-        # 계획서대조는 artifact_score_reasons 하나에 섞여 있어서 item_code 접두어(_VERIFY2_
-        # STATIC_PREFIXES='CHECK-'/_VERIFY2_CROSSCHECK_PREFIXES='FEATURE-')로 갈라 합산한다 —
-        # _rescore_verify2가 재채점할 때 쓰는 것과 같은 구분.
-        code_score = sum(
-            (r.score or Decimal('0')) for r in artifact.score_reasons
-            if r.item_code and r.item_code.startswith(_VERIFY2_STATIC_PREFIXES)
-        )
-        plan_match_score = sum(
-            (r.score or Decimal('0')) for r in artifact.score_reasons
-            if r.item_code and r.item_code.startswith(_VERIFY2_CROSSCHECK_PREFIXES)
-        )
-        doc_score = plan.doc_score or Decimal('0')
-        total_score = doc_score + code_score + plan_match_score
-        # [2026-09-28 수정, 프론트 2차 요청 B-3] verdict.overall_passed는 최초 생성 시점에
-        # 한 번 저장된 값이라, 그 뒤 재채점으로 doc_score/code_score/plan_match_score가
-        # 바뀌어도 안 따라온다 — 총점은 매번 새로 합산하면서 판정은 저장된 값을 그대로
-        # 내려주니 "총점 15.07인데 통과"처럼 서로 다른 계산에서 나온 값이 어긋났다.
-        # 판정을 항상 그 순간의 총점·기준값에서 유도한다(first_pass_passed는 "최초 결과가
-        # 통과였는지"의 역사적 사실이라 그대로 저장값을 쓴다 — 재채점으로 안 바뀌어야 함).
-        overall_passed = total_score >= policy.pass_threshold
-        verdict_out = VerdictOut(
-            overall_passed=overall_passed,
-            model_version=verdict.model_version,
-            first_pass_passed=verdict.first_pass_passed,
-            doc_score=_num(doc_score),
-            doc_max_score=_num(policy.doc_weight),
-            code_score=_num(code_score),
-            code_max_score=_num(policy.code_weight),
-            plan_match_score=_num(plan_match_score),
-            plan_match_max_score=_num(policy.plan_weight),
-            total_score=_num(total_score),
-            pass_threshold=_num(policy.pass_threshold),
-        )
-
-    # [2026-09-28 신규] 프론트 요청 2 — 화면에 보이는 "묶음(bundle)" 단위 재작성 사용/잔여
-    # 횟수. retry_task의 409 판정과 같은 규칙(rerun_type='rerun' AND status='completed'만
-    # 센다)을 그대로 써야 화면과 서버가 같은 숫자를 본다 — executions는 이미 조회해뒀으니
-    # 쿼리 추가 없이 메모리에서 센다.
-    # [2026-09-28 수정] task_key로 세면 writing 하나가 화면상 묶음 3개(본문/그래프/표)를
-    # 가리켜서 틀린다 — writing은 bundle_id로, 이미 1:1인 구현 쪽은 task_key로 센 뒤 고정
-    # 묶음 이름에 매핑한다(app/pipeline_stages.py WRITING_BUNDLES/TASK_KEY_TO_FIXED_BUNDLE).
-    # strategy/verify1_*/verify2_*/review_*는 화면에 "재작성" 버튼이 없는 자동 연동 재시도라
-    # 애초에 묶음 개념이 아니므로 이 목록에 안 넣는다.
-    rework_used_by_bundle: dict[str, int] = {}
-    for e in executions:
-        if e.rerun_type != 'rerun' or e.status != ps.GENERATION_STATUS_COMPLETED:
-            continue
-        if e.task_key == 'writing' and e.bundle_id:
-            rework_used_by_bundle[e.bundle_id] = rework_used_by_bundle.get(e.bundle_id, 0) + 1
-        elif e.task_key in ps.TASK_KEY_TO_FIXED_BUNDLE:
-            bundle = ps.TASK_KEY_TO_FIXED_BUNDLE[e.task_key]
-            rework_used_by_bundle[bundle] = rework_used_by_bundle.get(bundle, 0) + 1
-
-    bundle_ids = list(ps.WRITING_BUNDLES)
-    if artifact is not None:
-        # category='onepage'는 실행 파일(executable_path) 자체가 없어 그 묶음이 없다
-        # (retry_task의 같은 규칙 참고 — "category='onepage' 산출물은... 실행 파일이 없어서").
-        if artifact.category != 'onepage':
-            bundle_ids.append(ps.BUNDLE_ARTIFACT_PROTOTYPE)
-        bundle_ids.append(ps.BUNDLE_ARTIFACT_INFOGRAPHIC)
-
-    bundle_usages = [
-        BundleUsageOut(
-            bundle_id=b,
-            layer=ps.BUNDLE_TO_LAYER[b],
-            used=rework_used_by_bundle.get(b, 0),
-            remaining=max(policy.rework_cap - rework_used_by_bundle.get(b, 0), 0),
-        )
-        for b in bundle_ids
-    ]
-
+    notice_id: 방금 고른 공고(있으면 자격 확인이 그 공고로 끝났는지 본다 — 공고 서버 오류면 고르기 전 값 그대로라 다르다).
+    notices_before: 명령 전 안내 개수. 그 뒤에 쌓인 안내(E-G1-* · X-C2-*)만 이번 결과의 안내로 쓴다(None이면 화면 4 안내만).
+    """
+    view = gateway.wait_project(project_id, timeout_sec=ORCH_WAIT_TIMEOUT_SEC)
+    run = view.run
+    if run is None:
+        raise OrchError('RUN_NOT_FOUND', str(project_id))
+    new_notices = list(run.notices)[notices_before:] if notices_before is not None else []
+    if run.progress in _EXECUTING:
+        return mapping.select_pending(project_id)
+    try:
+        screen = gateway.screen(project_id, 4)
+    except OrchError as exc:
+        if exc.code != 'SCREEN_NOT_READY':
+            raise
+        return mapping.select_failed(project_id, new_notices)
+    if notice_id is not None and screen.announcement_id != notice_id:
+        return mapping.select_failed(project_id, new_notices)
+    outputs = gateway.outputs(project_id)
+    notices = mapping.notices_out([*new_notices, *screen.notices])
+    seen: set[str] = set()
+    notices = [n for n in notices if not (n.code in seen or seen.add(n.code))]
     return DemoGenerateResponse(
         project_id=project_id,
-        match=MatchResultOut.model_validate(project),
-        eligibility=EligibilityCheckOut.model_validate(eligibility),
-        plan=BusinessPlanOut.model_validate(plan),
-        verdict=verdict_out,
-        agent_executions=[AgentExecutionOut.model_validate(e) for e in executions],
-        rework_cap=policy.rework_cap,
-        bundle_usages=bundle_usages,
+        match=mapping.match_out(outputs, screen.announcement_id),
+        eligibility=mapping.eligibility_out(screen.gate_result),
+        notices=notices,
     )
 
 
@@ -893,416 +790,49 @@ def generate_pipeline_result(
     body: DemoGenerateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
 ):
-    """[2026-09-15, 프론트 통합 임시 구현] 사용자가 매칭 후보 중 하나를 고른 뒤 호출 —
-    seed_dummy_pipeline.py의 더미 로직으로 매칭+자격판정+계획서+산출물+최종판정을 한 번에
-    만들어서 DB에 저장하고, 화면(매칭결과~검수)이 그대로 쓸 수 있는 모양으로 돌려준다.
+    """공고 선택 → 자격 확인(화면 3 → 4). 고른 공고를 오케스트레이터에 알리면 워커가 공고 상세 · 자격 판정을 받아 온다.
+    응답은 DemoGenerateResponse의 status로 갈린다 — 'ready'면 eligibility(통과 · 불통과 · 확인 필요) · match,
+    'pending'이면 아직 확인 중(GET /eligibility로 다시 읽는다), 'failed'면 공고 서버 오류 · 공고 없음이라
+    고르기 전 화면으로 돌아간다(message 안내). 이 시점엔 계획서 · 점수가 없어 plan 이하는 비어 있다.
+    후보에 없는 공고는 422, 자격 불통과로 막힌 공고는 409(오류 코드는 app/orch/errors.py)."""
+    _get_owned_project(db, project_id, current_user)
+    if not body.notice_id:
+        raise HTTPException(status_code=422, detail='고를 공고를 알려 주세요.')
+    view = gateway.view_project(project_id)
+    notices_before = len(view.run.notices) if view.run is not None else 0
+    gateway.select_announcement_for_project(project_id, body.notice_id)
+    return _eligibility_response(gateway, project_id, body.notice_id, notices_before)
 
-    [2026-09-28, match_results 테이블 통합] 예전엔 project 하나에 match_results가
-    여러 건 쌓일 수 있었다(호출할 때마다 새 세트가 하나 더 쌓임, seed_dummy_pipeline.py
-    자체 동작) — 이 엔드포인트 자체 주석에 "임시 데모 우회"라고 명시돼 있던 그 동작이다.
-    project(1):match(1)로 합쳐진 지금은 project 행 하나에 이 값들을 얹는 구조라 더 이상
-    "여러 세트"가 존재할 수 없다 — project.notice_id가 이미 채워져 있으면(=이미 한 번
-    생성됨) seed_dummy_pipeline을 다시 돌려 덮어쓰지 않고, 기존 상태를 그대로 재사용해
-    돌려준다(계정당 동시 실행 1건 제한과 같은 "진행 중/완료된 실행은 새로 만들지 않는다"
-    원칙, ACTIVE_MATCH_STATUSES/E-RUN-CONCURRENT 참고). 다시 매칭부터 새로 하고 싶으면
-    SB-138 패턴대로 새 프로젝트를 만들면 된다(POST /projects)."""
-    project = _get_owned_project(db, project_id, current_user)
-    if project.notice_id is not None:
-        return _build_demo_response(db, project_id, project)
 
-    import seed_dummy_pipeline as _seed_pipeline  # 지연 import — 위 주석 참고(순환 import 회피)
+@router.get('/{project_id}/eligibility', response_model=DemoGenerateResponse)
+def get_eligibility(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
+):
+    """자격 확인 결과(화면 4)를 다시 읽는다 — POST /generate가 'pending'으로 답했을 때나 화면을 다시 열 때."""
+    _get_owned_project(db, project_id, current_user)
+    return _eligibility_response(gateway, project_id, None, None)
 
+
+def _start_stage(project_id: int, gateway: OrchGateway, command) -> ProjectStatusOut:
+    """단계 시작 명령을 넣고 지금 진행 상태를 돌려준다. 이미 시작됐거나 지난 단계(INVALID_STATE)면 명령 없이 상태만 준다."""
     try:
-        # [2026-09-29 신규] seed_dummy_pipeline()의 retry_agents 기본값('작성','구현')은
-        # "로컬에서 CLI로 돌려서 이미 재시도 이력이 있는 것처럼 화면을 확인해보는" 용도로
-        # 만든 편의 옵션이었는데, 이 엔드포인트가 진짜 유저의 유일한 생성 경로가 되면서
-        # (실제 Agent가 아직 안 붙어 이 "임시 데모 우회"가 곧 실서비스 로직이다) 새
-        # 프로젝트를 만들 때마다 writing/implement_prototype/implement_infographic에
-        # rerun_type='rerun' 행이 미리 하나씩 깔려버렸다 — retry_task의 rework_cap 카운팅이
-        # task_key/bundle_id별 rerun+completed 행 개수를 그대로 세기 때문에, 유저가 재작성
-        # 버튼을 한 번도 안 눌렀는데도 실행 파일·인포그래픽 재작성이 이미 상한(기본 1회)에
-        # 도달한 채로 시작하는 버그였다(문서 재작성 4묶음은 bundle_id가 없는 이 가짜 행과
-        # 안 겹쳐서 우연히 무사했다). 실제 유저 생성 경로에는 이 가짜 이력을 남기지 않는다.
-        verdict = _seed_pipeline.seed_dummy_pipeline(db, project_id, notice_id=body.notice_id, retry_agents=())
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    db.commit()
-    db.refresh(verdict)
-
-    plan = db.get(BusinessPlan, verdict.plan_id)
-    project = db.get(Project, plan.project_id)
-    # 공고 선택·자격 확인까지만 끝난 상태 — 계획서/프로토타입 생성은 사용자가 각각
-    # POST .../plan/start, .../prototype/start 로 시작한다(stage NULL = 계획서 시작 전).
-    project.stage = None
-    project.progress_percent = None
-    db.commit()
-    return _build_demo_response(db, project_id, project)
-
-
-# ---------------------------------------------------------------------------
-# [더미 콘텐츠 + 실제 비동기 인프라, 2026-09-22] 계획서·프로토타입을 실제로 만드는 로직
-# (_simulate_generation 본문)은 여전히 sleep+progress_percent 증가 흉내다 — 실제 에이전트
-# 파이프라인은 별도 작업(프론트 전달사항 1번 "실제 에이전트 파이프라인으로 교체")이고, 오늘
-# 바꾼 건 그걸 "어떻게 돌리는가"다.
-#
-# 예전엔 threading.Thread(daemon=True) + 프로세스 메모리 안의 _running_generations 셋으로
-# 중복 실행만 막았는데, 그러면 (a) 서버가 재시작되면 스레드가 통째로 사라지고 진행률이
-# 영영 멈추고, (b) uvicorn을 여러 워커 프로세스로 띄우면 워커마다 셋이 따로 있어서 같은
-# match_id가 워커 수만큼 중복 실행될 수 있었다. Redis 등 별도 브로커를 새로 두지 않기로
-# 했으므로(팀 인프라에 아직 없음), match_results에 클레임 시각 컬럼 하나(worker_claimed_at)
-# 를 추가해서 "지금 어떤 프로세스가 이 stage를 처리 중인지"를 DB 자체로 표현한다:
-#   - _try_claim_and_run: UPDATE ... WHERE stage=X AND (클레임 없음 또는 오래됨) 을
-#     한 번의 원자적 SQL 문으로 실행해 rowcount로 성공 여부를 판정한다 — 여러 프로세스가
-#     동시에 같은 match_id를 클레임하려 해도 DB 행 잠금 덕에 단 하나만 성공한다.
-#   - _simulate_generation은 매 스텝 커밋마다 worker_claimed_at도 같이 갱신한다(하트비트) —
-#     정상 진행 중인 작업은 클레임이 계속 "최근"으로 유지되어 다른 프로세스가 가로채지 않는다.
-#   - _generation_recovery_loop: 앱 시작 시(그리고 주기적으로) "진행 중 stage인데 클레임이
-#     없거나 오래된" match_results 행을 찾아 다시 클레임·실행한다 — 서버가 재시작돼 스레드가
-#     죽었거나, 워커 프로세스 자체가 죽은 경우를 이 루프가 이어받는다.
-# ---------------------------------------------------------------------------
-DUMMY_GENERATION_STEPS = 10
-DUMMY_GENERATION_STEP_SECONDS = float(os.getenv('DUMMY_GENERATION_STEP_SECONDS', '1.5'))
-# 클레임이 이만큼 갱신 안 되면 "처리하던 워커가 죽었다"고 보고 다른 워커가 가로챈다.
-# 스텝 간격(기본 1.5초)보다 충분히 커야 정상 진행 중인 작업을 실수로 가로채지 않는다.
-GENERATION_CLAIM_STALE_SECONDS = float(os.getenv('GENERATION_CLAIM_STALE_SECONDS', '30'))
-# 복구 루프가 "고아" 작업(클레임 없음/오래됨)을 찾는 주기.
-GENERATION_POLL_INTERVAL_SECONDS = float(os.getenv('GENERATION_POLL_INTERVAL_SECONDS', '10'))
-
-# [2026-09-23 신규, 2026-09-26 정정] 실패 시 자동 "재개" 정책 — 공식 기능정의서 v1.9
-# (시트 1_개요 "횟수·간격 설정값", R-11) 기준. 세션 초반엔 단위 없이 전달받아 초 단위로
-# 잘못 구현했었다 — 실제로는 "재개 첫 간격" 15분부터 2배씩 늘려(15→30→60→120→240분)
-# 최대 5번("재개 횟수")까지 자동 재개하고, 그래도 안 되면 status='failed'로 확정하고
-# 관리자 알림(generation_failure_alerts)을 남긴다. 공식 스펙은 이 "재개"(시간을 두고
-# 실패 지점부터 다시 시작)와 "재시도"(호출 실패 시 같은 호출을 즉시 다시 보냄, 5회,
-# 간격은 구현하면서 정함)를 별개 2단계로 구분하는데, 지금 더미 시뮬레이션엔 개별 호출
-# 재시도라는 더 낮은 층위가 없어서(실제 Agent가 API를 호출하기 전까진 의미가 없음)
-# 이 코드는 "재개" 계층만 구현한다 — 실제 Agent가 붙으면 그 안에서 별도로 "재시도"
-# 계층을 추가하면 된다.
-GENERATION_RESUME_MAX_ATTEMPTS = int(os.getenv('GENERATION_RESUME_MAX_ATTEMPTS', '5'))
-GENERATION_RESUME_BASE_SECONDS = float(os.getenv('GENERATION_RESUME_BASE_SECONDS', str(15 * 60)))  # 15분
-# [2026-09-26 신규] "재개 총 대기 상한" — 재개 대기 + 재개 실행 시간을 모두 합한 바깥
-# 상한(12시간). 재개 횟수(5번) 자체를 다 쓰기 전이라도 이 시간을 넘기면 바로 실패로
-# 확정한다(무한 반복으로 비용이 발산하지 않게 하는 게 원칙).
-GENERATION_RESUME_TOTAL_CAP_SECONDS = float(os.getenv('GENERATION_RESUME_TOTAL_CAP_SECONDS', str(12 * 3600)))  # 12시간
-
-# running_stage -> done_stage. 복구 루프가 어떤 stage들을 감시해야 하는지 여기 한 곳에 모은다
-# — _start_generation이 쓰는 (running_stage, done_stage) 쌍과 항상 같은 값이어야 한다.
-_RUNNING_GENERATION_STAGES = {
-    ps.STAGE_PLAN_WRITING: ps.STAGE_PLAN_REVIEW_PENDING,
-    ps.STAGE_PROTOTYPE_BUILDING: ps.STAGE_DONE,
-}
-
-
-def _simulate_generation(project_id: int, running_stage: str, done_stage: str) -> None:
-    from app.database import SessionLocal
-
-    db = SessionLocal()
-    try:
-        try:
-            project = db.get(Project, project_id)
-            step = (project.progress_percent or 0) * DUMMY_GENERATION_STEPS // 100 if project else DUMMY_GENERATION_STEPS
-            while step < DUMMY_GENERATION_STEPS:
-                time.sleep(DUMMY_GENERATION_STEP_SECONDS)
-                db.expire_all()
-                project = db.get(Project, project_id)
-                if project is None or project.stage != running_stage:
-                    return
-                step += 1
-                if step >= DUMMY_GENERATION_STEPS:
-                    # [2026-09-29 신규, 프론트 요청사항 5차 D-2] prototype_building이 끝나는
-                    # 시점에만 구현 Agent를 실제로 호출한다 — 여기서 예외가 나면 project.stage가
-                    # 아직 running_stage 그대로라 아래 except 블록이 기존 실패/재개 로직을 그대로
-                    # 탄다(project.stage를 아직 done_stage로 바꾸지 않았기 때문에 가능).
-                    if running_stage == ps.STAGE_PROTOTYPE_BUILDING:
-                        plan = (
-                            db.query(BusinessPlan)
-                            .filter(BusinessPlan.project_id == project.project_id)
-                            .order_by(BusinessPlan.plan_id.desc())
-                            .first()
-                        )
-                        if plan is not None:
-                            _run_initial_implement_and_rescore(db, project, plan)
-                    project.stage = done_stage
-                    project.progress_percent = 100
-                    if done_stage == ps.STAGE_DONE:
-                        project.status = ps.GENERATION_STATUS_COMPLETED
-                        project.failure_reason = None
-                    # [2026-09-29 신규, 프론트 요청사항 3차 B-2] "처음부터 다시 생성"
-                    # 시도든 아니든, 이 stage가 온전히 성공했으므로 연속 실패 스트릭을
-                    # 리셋한다 — resume_count(스텝마다 리셋)와 달리 이 값은 "시도 전체가
-                    # 끝내 성공했는지"만 본다.
-                    project.regenerate_fail_streak = 0
-                    project.is_regenerating = False
-                    # [2026-09-27 신규, SB-141] 이 stage에 도달한 게 사용자 알림 대상이면
-                    # (지금은 문서평가만 실제로 도달 가능 — 산출물확인/표현검수는 아직
-                    # 없는 stage) notifications에 한 행 남긴다.
-                    notif_kind = ps.STAGE_TO_NOTIFICATION_KIND.get(done_stage)
-                    if notif_kind is not None:
-                        db.add(Notification(
-                            project_id=project.project_id,
-                            kind=notif_kind,
-                            target_step=ps.NOTIFICATION_KIND_TO_TARGET_STEP[notif_kind],
-                        ))
-                else:
-                    project.progress_percent = step * 100 // DUMMY_GENERATION_STEPS
-                project.worker_claimed_at = datetime.datetime.utcnow()  # 하트비트 — 진행 중엔 클레임이 안 늙는다
-                # [2026-09-23 신규] 한 스텝이라도 성공하면(=다시 정상 진행되면) 이전 실패
-                # 스트릭을 리셋한다 — 재개 예산(5회/12시간)은 "연속 실패"에 대한 것이지, 이
-                # 작업 전체 수명 동안 누적되는 값이 아니다.
-                project.resume_count = 0
-                project.resume_started_at = None
-                project.last_error_kind = None
-                db.commit()
-        except Exception as exc:
-            # [2026-09-23 신규, 2026-09-26 정정, 2026-09-27 SB-134 분기 추가] 지금 더미
-            # 로직(sleep+progress 증가)은 실패할 일이 없지만, 실제 에이전트가 붙으면 여기서
-            # 예외가 날 수 있다. 공식 기능정의서 v1.9(R-11): "재개는 일시 오류일 때만 하며,
-            # 재개 상한을 넘기거나 영구 오류가 나면 실행을 실패로 끝낸다." — 그래서 예외를
-            # 먼저 분류(pipeline_stages.classify_error_kind)하고 갈린다:
-            #   - 일시(ERROR_KIND_TRANSIENT): 기존 그대로 15분 -> 30 -> 60 -> 120 -> 240분
-            #     백오프로 최대 5번까지 자동 재개한다(status='waiting_resume').
-            #   - 입력·운영(영구 오류): 재개를 아예 시도하지 않고 바로 status='failed'로
-            #     확정한다 — 같은 입력이나 API 키 문제는 기다린다고 나아지지 않는다.
-            # 두 경우 다 관리자 알림(GenerationFailureAlert)을 남긴다. progress_percent는
-            # 안 건드리므로 재개할 때마다 이미 진행된 부분부터 이어간다(처음부터 다시
-            # 하지 않음).
-            db.rollback()
-            project = db.get(Project, project_id)
-            if project is not None and project.stage == running_stage:
-                now = datetime.datetime.utcnow()
-                project.failure_reason = str(exc)[:2000]
-                error_kind = ps.classify_error_kind(exc)
-                project.last_error_kind = error_kind
-                # [2026-09-29 신규, 프론트 요청사항 3차 B-2] 아래 두 실패-확정 분기가 둘 다
-                # regenerate_cap을 봐야 해서 미리 한 번만 조회해둔다.
-                policy = _get_verification_policy(db)
-                # [2026-09-28 신규] 관리자 "에이전트 테스크" 탭이 stage 단위 실패도 볼 수
-                # 있도록 agent_executions에도 남긴다 — 재시도(POST .../retry-task)와 같은
-                # attempt_no 채번 규칙(같은 task_key 안에서 이어서 증가)을 쓴다.
-                stage_agent_task = ps.STAGE_TO_AGENT_TASK.get(running_stage)
-                if stage_agent_task is not None:
-                    stage_agent_name, stage_task_key = stage_agent_task
-                    last_stage_attempt = (
-                        db.query(AgentExecution)
-                        .filter(AgentExecution.project_id == project.project_id, AgentExecution.task_key == stage_task_key)
-                        .order_by(AgentExecution.attempt_no.desc())
-                        .first()
-                    )
-                    db.add(AgentExecution(
-                        project_id=project.project_id,
-                        agent_name=stage_agent_name,
-                        task_key=stage_task_key,
-                        attempt_no=(last_stage_attempt.attempt_no + 1) if last_stage_attempt is not None else 1,
-                        model_used='dummy',
-                        # [2026-09-29 신규, 프론트 요청사항 3차 B-1] "처음부터 다시 생성"
-                        # (project.is_regenerating, _start_generation의 can_retry_failed)
-                        # 시도 중이면 'rerun'이 아니라 'regenerate'로 남긴다 — retry_task의
-                        # rework_cap 카운트는 rerun_type='rerun'만 세므로, 실제 Agent가 붙어
-                        # 이 경로에 성공 행이 생기더라도 사용자의 재작성 1회로 잘못 잡히지
-                        # 않는다.
-                        rerun_type=(
-                            'regenerate' if project.is_regenerating
-                            else ('initial' if last_stage_attempt is None else 'rerun')
-                        ),
-                        token_usage=0,
-                        status=ps.GENERATION_STATUS_FAILED,
-                        error_kind=error_kind,
-                        error_reason=project.failure_reason,
-                    ))
-                if error_kind != ps.ERROR_KIND_TRANSIENT:
-                    project.status = ps.GENERATION_STATUS_FAILED
-                    project.next_retry_at = None
-                    # [2026-09-29 신규, 프론트 요청사항 3차 B-2] "처음부터 다시 생성" 시도가
-                    # 최종 실패로 확정됐을 때만(백오프 중간이 아니라) 연속 실패 스트릭을 늘린다.
-                    if project.is_regenerating:
-                        project.regenerate_fail_streak = (project.regenerate_fail_streak or 0) + 1
-                    db.add(GenerationFailureAlert(
-                        project_id=project.project_id,
-                        stage=project.stage,
-                        resume_count=project.resume_count or 0,
-                        last_error_kind=error_kind,
-                        failure_reason=project.failure_reason,
-                        regenerate_exhausted=project.is_regenerating and project.regenerate_fail_streak >= policy.regenerate_cap,
-                    ))
-                    # [2026-09-27 신규, SB-141] 실행 실패(E-RUN-FAIL) 사용자 알림. 재작성
-                    # 실패(failure_scope='재작성')는 재작성 기능(2-1/2-2)이 아직 없어서
-                    # 여기선 항상 '실행'이다.
-                    db.add(Notification(
-                        project_id=project.project_id,
-                        kind=ps.NOTIFICATION_KIND_FAILURE,
-                        failure_scope=ps.NOTIFICATION_FAILURE_SCOPE_RUN,
-                    ))
-                    db.commit()
-                    return
-                if project.resume_count == 0:
-                    project.resume_started_at = now  # 이번 실패 스트릭의 시작 시각
-                project.resume_count = (project.resume_count or 0) + 1
-                elapsed = (now - project.resume_started_at).total_seconds() if project.resume_started_at else 0.0
-                if project.resume_count > GENERATION_RESUME_MAX_ATTEMPTS or elapsed > GENERATION_RESUME_TOTAL_CAP_SECONDS:
-                    project.status = ps.GENERATION_STATUS_FAILED
-                    project.next_retry_at = None
-                    if project.is_regenerating:
-                        project.regenerate_fail_streak = (project.regenerate_fail_streak or 0) + 1
-                    db.add(GenerationFailureAlert(
-                        project_id=project.project_id,
-                        stage=project.stage,
-                        resume_count=project.resume_count - 1,
-                        last_error_kind=error_kind,
-                        failure_reason=project.failure_reason,
-                        regenerate_exhausted=project.is_regenerating and project.regenerate_fail_streak >= policy.regenerate_cap,
-                    ))
-                    db.add(Notification(
-                        project_id=project.project_id,
-                        kind=ps.NOTIFICATION_KIND_FAILURE,
-                        failure_scope=ps.NOTIFICATION_FAILURE_SCOPE_RUN,
-                    ))
-                else:
-                    delay = GENERATION_RESUME_BASE_SECONDS * (2 ** (project.resume_count - 1))
-                    project.status = ps.GENERATION_STATUS_WAITING_RESUME
-                    project.next_retry_at = now + datetime.timedelta(seconds=delay)
-                db.commit()
-    finally:
-        db.close()
-
-
-def _try_claim_and_run(project_id: int, running_stage: str, done_stage: str) -> bool:
-    """project_id의 running_stage 작업을 원자적으로 클레임하고, 성공한 경우에만 실행 스레드를
-    띄운다. 실패(이미 다른 곳에서 처리 중)하면 아무 것도 안 하고 False를 돌려준다 — 즉시시작
-    경로(_start_generation)와 복구 루프(_generation_recovery_loop)가 공유한다."""
-    from app.database import SessionLocal
-
-    db = SessionLocal()
-    try:
-        stale_before = datetime.datetime.utcnow() - datetime.timedelta(seconds=GENERATION_CLAIM_STALE_SECONDS)
-        claimed = (
-            db.query(Project)
-            .filter(
-                Project.project_id == project_id,
-                Project.stage == running_stage,
-                or_(Project.worker_claimed_at.is_(None), Project.worker_claimed_at < stale_before),
-            )
-            # [2026-09-23] status='waiting_resume'로 대기하던 행을 자동 재시도가 실제로
-            # 집어 들 때, 상태를 다시 '실행'으로 되돌린다(next_retry_at도 비움) — 화면상
-            # 둘 다 "진행"으로 같이 보이긴 하지만, 내부 상태는 지금 실제로 도는 중임을
-            # 정확히 반영해야 한다.
-            .update(
-                {Project.worker_claimed_at: datetime.datetime.utcnow(), Project.status: ps.GENERATION_STATUS_IN_PROGRESS, Project.next_retry_at: None},
-                synchronize_session=False,
-            )
-        )
-        db.commit()
-    finally:
-        db.close()
-    if claimed == 1:
-        threading.Thread(target=_simulate_generation, args=(project_id, running_stage, done_stage), daemon=True).start()
-        return True
-    return False
-
-
-def _recover_orphaned_generations_once(db: Session) -> None:
-    """진행 중 stage인데 클레임이 없거나 오래된(GENERATION_CLAIM_STALE_SECONDS) projects
-    행을 한 번 훑어 이어받는다 — _generation_recovery_loop이 매 tick 호출하고, 테스트도
-    무한루프 대신 이 함수 하나만 직접 불러 검증한다.
-
-    [2026-09-23 개정] status='waiting_resume'(자동 백오프 대기 중)인 행도 이제 여기서
-    이어받는다 — 단, next_retry_at이 아직 안 지났으면 건드리지 않는다(백오프 간격 준수).
-    status='failed'(자동 재시도 5회 소진, 확정된 실패)만 여전히 자동으로 건드리지 않고
-    사용자가 "다시 이어가기"를 눌러야(_start_generation) 재개된다."""
-    stale_before = datetime.datetime.utcnow() - datetime.timedelta(seconds=GENERATION_CLAIM_STALE_SECONDS)
-    now = datetime.datetime.utcnow()
-    for running_stage, done_stage in _RUNNING_GENERATION_STAGES.items():
-        orphans = (
-            db.query(Project.project_id)
-            .filter(
-                Project.stage == running_stage,
-                Project.status != ps.GENERATION_STATUS_FAILED,
-                or_(Project.worker_claimed_at.is_(None), Project.worker_claimed_at < stale_before),
-                or_(Project.next_retry_at.is_(None), Project.next_retry_at <= now),
-            )
-            .all()
-        )
-        for (orphan_project_id,) in orphans:
-            _try_claim_and_run(orphan_project_id, running_stage, done_stage)
-
-
-def _generation_recovery_loop() -> None:
-    """앱이 살아있는 동안 계속 도는 백그라운드 루프 — 재시작 직후 멈춰있던 작업이나, 스레드가
-    예외로 죽어 클레임이 오래된 작업을 찾아 이어받는다. 이 루프 자체는 무슨 일이 있어도
-    죽으면 안 되므로 매 tick을 통째로 try/except로 감싼다."""
-    from app.database import SessionLocal
-
-    while True:
-        try:
-            db = SessionLocal()
-            try:
-                _recover_orphaned_generations_once(db)
-            finally:
-                db.close()
-        except Exception:
-            pass  # 이번 tick만 건너뛰고 다음 tick에 다시 시도 — 루프 자체는 계속 산다
-        time.sleep(GENERATION_POLL_INTERVAL_SECONDS)
-
-
-def start_generation_recovery_loop() -> None:
-    """app/main.py가 앱 시작 시 한 번 호출한다(백그라운드 데몬 스레드로 루프를 띄움)."""
-    threading.Thread(target=_generation_recovery_loop, daemon=True).start()
-
-
-def _start_generation(db: Session, project: Project, start_from: tuple, running_stage: str, done_stage: str) -> ProjectStatusOut:
-    if project.notice_id is None:
-        raise HTTPException(status_code=400, detail='먼저 공고를 선택해 주세요.')
-    # [2026-09-22 신규, 프론트 전달사항 4번] "다시 시도" — 실패는 stage를 실패한 단계 그대로
-    # 두므로(_simulate_generation), 실패한 바로 그 단계에 대해서만(stage == running_stage)
-    # 재시작을 허용한다 — 다른 단계에서 실패했는데 엉뚱한 단계가 리셋되면 안 되니까.
-    can_retry_failed = project.status == ps.GENERATION_STATUS_FAILED and project.stage == running_stage
-    policy = _get_verification_policy(db)
-    # [2026-09-29 신규, 프론트 요청사항 3차 B-2] 완전 실패한 stage를 "처음부터 다시 생성"할
-    # 때만 연속 실패 상한을 본다(최초 시작엔 적용 안 됨) — 서버 문제(API 키 만료 등)가 안
-    # 고쳐진 채 몇 번을 다시 눌러도 소용없는 상황에서 무한정 재시도를 받아주지 않기 위함.
-    if can_retry_failed and (project.regenerate_fail_streak or 0) >= policy.regenerate_cap:
-        raise HTTPException(status_code=409, detail='문제가 기록됐고 확인 후 조치할게요. 잠시 후 다시 시도해 주세요.')
-    if project.stage in start_from or can_retry_failed:
-        project.stage = running_stage
-        project.progress_percent = 0
-        project.worker_claimed_at = None  # 새 단계 시작 — 이전 단계의 클레임 흔적을 지운다
-        project.status = ps.GENERATION_STATUS_IN_PROGRESS
-        project.failure_reason = None
-        # [2026-09-23 신규, 2026-09-26 정정] 수동 "다시 이어가기"는 재개 횟수를 0으로
-        # 완전히 리셋하지 않고 1로 둔다 — 이 수동 클릭 자체를 재개 1회로 친다(원래 재개
-        # 예산 5회의 연장선). 그래서 이 시도도 또 실패하면 바로 2번째 백오프(30분)부터
-        # 이어간다. resume_started_at도 지금(수동 클릭 시각)으로 다시 잡아서 "재개 총
-        # 대기 상한"(12시간)도 이 시점부터 새로 잰다. 최초 시작(재개가 아니라 처음
-        # 시작하는 경우)은 둘 다 비운다.
-        project.resume_count = 1 if can_retry_failed else 0
-        project.resume_started_at = datetime.datetime.utcnow() if can_retry_failed else None
-        project.last_error_kind = None
-        project.next_retry_at = None
-        # [2026-09-29 신규, 프론트 요청사항 3차 B-1/B-2] 완전 실패한 stage를 재시작하는
-        # 이번 시도(들)에 "regenerate" 표시를 켠다 — _simulate_generation이 이 플래그를
-        # 보고 agent_executions.rerun_type과 연속 실패 스트릭 증가 여부를 결정한다. 최초
-        # 시작(재시도가 아닌 경우)은 끈다.
-        project.is_regenerating = can_retry_failed
-        db.commit()
-    # 이미 진행 중이면(다른 요청/복구 루프가 먼저 클레임했으면) 새로 시작하지 않는다 —
-    # _try_claim_and_run의 원자적 UPDATE가 중복 실행 방지를 대신한다. status='waiting_resume'
-    # 이면서 next_retry_at이 아직 안 지났으면 여기서도 건드리지 않는다 — 백오프 대기를
-    # 사용자가 화면을 다시 열었다고 건너뛰면 안 된다(복구 루프와 같은 규칙).
-    backoff_pending = project.status == ps.GENERATION_STATUS_WAITING_RESUME and project.next_retry_at and project.next_retry_at > datetime.datetime.utcnow()
-    if project.stage == running_stage and project.status != ps.GENERATION_STATUS_FAILED and not backoff_pending:
-        _try_claim_and_run(project.project_id, running_stage, done_stage)
-    return ProjectStatusOut(
-        project_id=project.project_id,
-        screen=ps.STAGE_TO_SCREEN.get(project.stage) if project.stage is not None else None,
-        stage=project.stage,
-        progress_percent=project.progress_percent,
-        match_status=project.status,
-        failure_reason=project.failure_reason,
-        resume_count=project.resume_count or 0,
-        next_retry_at=project.next_retry_at,
-        regenerate_fail_streak=project.regenerate_fail_streak or 0,
-        regenerate_cap=policy.regenerate_cap,
-    )
+        command()
+    except OrchError as exc:
+        if exc.code == 'RUN_NOT_FOUND':
+            raise HTTPException(status_code=400, detail=_BEFORE_WRITING_STEPS['공고선택']) from exc
+        if exc.code != 'INVALID_STATE':
+            raise
+    view = gateway.view_project(project_id)
+    if view.run is None:
+        raise HTTPException(status_code=400, detail=_BEFORE_WRITING_STEPS['공고선택'])
+    if view.run.step in _BEFORE_WRITING_STEPS and view.run.progress == '사용자대기':
+        raise HTTPException(status_code=400, detail=_BEFORE_WRITING_STEPS[view.run.step])
+    return mapping.project_status_out(project_id, view)
 
 
 @router.post('/{project_id}/plan/start', response_model=ProjectStatusOut)
@@ -1310,12 +840,12 @@ def start_plan_generation(
     project_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
 ):
-    """사업계획서 생성 시작. 바로 응답하고 생성은 백그라운드에서 돈다 — 진행 상황은
-    GET /projects/{id}/status 의 stage='plan_writing' + progress_percent 로 확인한다.
-    끝나면 stage='plan_review_pending'. 여러 번 불러도 한 번만 시작한다."""
-    project = _get_owned_project(db, project_id, current_user)
-    return _start_generation(db, project, (None,), ps.STAGE_PLAN_WRITING, ps.STAGE_PLAN_REVIEW_PENDING)
+    """사업계획서 생성 시작(화면 5). 바로 응답하고 작성은 워커가 한다 — 진행은 GET /projects/{id}/status의
+    stage='plan_writing' + progress_percent로 보고, 끝나면 stage='plan_review_pending'. 여러 번 불러도 한 번만 시작한다."""
+    _get_owned_project(db, project_id, current_user)
+    return _start_stage(project_id, gateway, lambda: gateway.start_writing_for_project(project_id))
 
 
 @router.post('/{project_id}/prototype/start', response_model=ProjectStatusOut)
@@ -1323,11 +853,48 @@ def start_prototype_generation(
     project_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
 ):
-    """프로토타입 생성 시작(계획서 완료 후). stage='prototype_building' + progress_percent 로
-    진행되고, 끝나면 [더미] 이후 화면(산출물 확인~검수)이 아직 서버 단계를 안 쓰므로 곧장 'done'."""
-    project = _get_owned_project(db, project_id, current_user)
-    return _start_generation(db, project, (ps.STAGE_PLAN_REVIEW_PENDING,), ps.STAGE_PROTOTYPE_BUILDING, ps.STAGE_DONE)
+    """프로토타입 생성 시작(화면 6 '진행'). stage='prototype_building' + progress_percent로 진행되고,
+    끝나면 stage='artifact_review'(산출물 확인, 사용자 확인 대기)."""
+    _get_owned_project(db, project_id, current_user)
+    return _start_stage(project_id, gateway, lambda: gateway.decide_for_project(project_id, 6, '진행'))
+
+
+@router.post('/{project_id}/final-review/start', response_model=ProjectStatusOut)
+def start_final_review(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
+):
+    """산출물 확인 → 종합 평가(화면 8 → 9, '종합 평가 확인하기'). 실행할 단계 없이 바로 stage='final_review_pending'이 된다.
+    [SB-243 신규 — 엔드포인트 이름은 임시, 프론트와 맞춘다.]"""
+    _get_owned_project(db, project_id, current_user)
+    return _start_stage(project_id, gateway, lambda: gateway.decide_for_project(project_id, 8, '진행'))
+
+
+@router.post('/{project_id}/review/start', response_model=ProjectStatusOut)
+def start_review(
+    project_id: int,
+    body: ProceedRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
+):
+    """종합 평가 → 표현 검수(화면 9 → 10). stage='reviewing'으로 진행되고 끝나면 stage='done'.
+    기준 점수에 못 미친 채로 진행하면 검수 뒤에는 되돌릴 수 없어 409 + {confirmation_required, reason, items}로 확인을 받는다 —
+    사용자가 확인하면 body {"confirmed": true}로 다시 부른다. [SB-243 신규 — 엔드포인트 이름은 임시, 프론트와 맞춘다.]"""
+    _get_owned_project(db, project_id, current_user)
+    confirmed = body.confirmed if body is not None else False
+
+    def command():
+        needed = gateway.decide_for_project(project_id, 9, '진행', confirmed=confirmed)
+        if needed is not None:
+            raise HTTPException(status_code=409, detail={
+                'confirmation_required': True, 'reason': needed.reason, 'items': needed.items})
+
+    return _start_stage(project_id, gateway, command)
 
 
 @router.get('/{project_id}/result', response_model=DemoGenerateResponse)
@@ -1335,13 +902,36 @@ def get_pipeline_result(
     project_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
 ):
-    """[2026-09-15, 프론트 통합 임시 구현] POST /generate로 이미 만들어둔 결과를 다시
-    불러온다(재생성하지 않음) — 새로고침/재방문 시 "이어서 보기"용."""
-    project = _get_owned_project(db, project_id, current_user)
-    if project.notice_id is None:
-        raise HTTPException(status_code=404, detail='이 프로젝트엔 아직 매칭 결과가 없습니다')
-    return _build_demo_response(db, project_id, project)
+    """지금까지 만든 결과(계획서 · 점수 · 산출물 · 검수 기록)를 현재 버전으로 돌려준다 — 새로고침 · 이어하기용.
+    실행 건이 없으면 404, 실패 · 중단된 실행이면 409(결과를 볼 수 없음), 계획서가 아직 없으면 404(작성 중)."""
+    _get_owned_project(db, project_id, current_user)
+    outputs = gateway.outputs(project_id)
+    if outputs.plan_doc is None:
+        raise HTTPException(
+            status_code=404,
+            detail='이 프로젝트엔 아직 계획서가 없습니다 — POST /projects/{id}/plan/start 로 먼저 만들어야 합니다',
+        )
+    policy = db.query(VerificationPolicy).order_by(VerificationPolicy.policy_id.asc()).first()
+    return mapping.result_out(project_id, outputs, policy)
+
+
+def _plan_section_bodies(gateway: OrchGateway, project_id: int) -> dict[str, str]:
+    """계획서 본문(섹션 코드 → 본문)을 오케스트레이터의 지금 결과에서 읽는다. 실행 건이 없거나 계획서가 아직 없거나
+    실패 · 중단이면 비운다 — 그러면 문서는 입력값과 자리표시로 채운 미리보기가 된다(실패 · 중단은 본문을 싣지 않는다)."""
+    try:
+        outputs = gateway.outputs(project_id)
+    except OrchError as exc:
+        if exc.code in ('RUN_NOT_FOUND', 'RUN_NOT_VIEWABLE'):
+            return {}
+        raise
+    return mapping.section_bodies(outputs.plan_doc) if outputs.plan_doc is not None else {}
+
+
+# 생성 중인 단계(영구 삭제 보호용). projects.stage는 더 이상 갱신되지 않아 사실상 작동하지 않는다 —
+# [SB-244]에서 영구 삭제를 abort_project → delete_project_data 흐름으로 바꾸면서 없앤다.
+_RUNNING_GENERATION_STAGES = {ps.STAGE_PLAN_WRITING: ps.STAGE_PLAN_REVIEW_PENDING, ps.STAGE_PROTOTYPE_BUILDING: ps.STAGE_DONE}
 
 
 # companies.applicant_type -> 양식의 "사업자 구분" 표기. 사용자가 직접 고른 값이라
@@ -1350,7 +940,7 @@ def get_pipeline_result(
 _APPLICANT_TYPE_LABEL = {'corp': '법인사업자', 'individual': '개인사업자', 'preliminary': '예비창업자'}
 
 
-def _build_plan_document_data(db: Session, project: Project, plan: BusinessPlan | None):
+def _build_plan_document_data(db: Session, project: Project, section_bodies: dict[str, str]):
     """project(+company/team_members/pricing_items/budget_items/schedule_items/partners)와
     생성된 계획서(BusinessPlan.sections)를 공식 양식(별첨1) 구조(app/plan_document_export.py의
     PlanDocumentData)로 옮긴다. 반환값은 (data, template) 튜플 — template은 company.
@@ -1371,7 +961,6 @@ def _build_plan_document_data(db: Session, project: Project, plan: BusinessPlan 
     from app.plan_document_export import BudgetLineItem, PartnerRow, PlanDocumentData, ScheduleRow, TeamRow
 
     company = db.get(Company, project.company_id)
-    section_by_tag = {s.tag: s for s in (plan.sections if plan is not None else [])}
 
     # [2026-09-23] IntakeForm "사업 계획" 섹션 값은 2026-09-22부터 project_plan_inputs에
     # 저장되는데(create_project), 이 함수는 그때 같이 안 고쳐져서 계속 companies/projects만
@@ -1389,8 +978,7 @@ def _build_plan_document_data(db: Session, project: Project, plan: BusinessPlan 
             dev_period_text = f'{plan_input.dev_start_month} ~ {plan_input.dev_end_month}'
 
     def _section_body(tag: str) -> str:
-        section = section_by_tag.get(tag)
-        return section.body if section is not None and section.body else '※ 아직 생성된 계획서 문단이 없습니다.'
+        return section_bodies.get(tag) or '※ 아직 생성된 계획서 문단이 없습니다.'
 
     def _or_placeholder(value, placeholder):
         return value if value else placeholder
@@ -1528,6 +1116,7 @@ def download_plan_document(
     project_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
 ):
     """사업계획서를 공식 양식(별첨1) 구조로 채운 진짜 .docx로 내려준다
     (app/plan_document_export.py). company.applicant_type이 'preliminary'(예비창업자)면
@@ -1538,14 +1127,7 @@ def download_plan_document(
     from app.plan_document_export import render_plan_docx
 
     project = _get_owned_project(db, project_id, current_user)
-    plan = (
-        db.query(BusinessPlan)
-        .filter(BusinessPlan.project_id == project_id)
-        .order_by(BusinessPlan.plan_id.desc())
-        .first()
-    )
-
-    data, template = _build_plan_document_data(db, project, plan)
+    data, template = _build_plan_document_data(db, project, _plan_section_bodies(gateway, project_id))
     docx_bytes = render_plan_docx(data, template=template)
     filename = quote('사업계획서.docx')
     return Response(
@@ -1560,6 +1142,7 @@ def download_plan_document_pdf(
     project_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
 ):
     """download_plan_document(.docx)가 만든 그 파일을 그대로 PDF로 변환해 내려준다
     (app/pdf_export.py). 화면 미리보기(plan-form 우측 PDF 뷰어)가 쓰는 엔드포인트라
@@ -1569,14 +1152,7 @@ def download_plan_document_pdf(
     from app.plan_document_export import render_plan_docx
 
     project = _get_owned_project(db, project_id, current_user)
-    plan = (
-        db.query(BusinessPlan)
-        .filter(BusinessPlan.project_id == project_id)
-        .order_by(BusinessPlan.plan_id.desc())
-        .first()
-    )
-
-    data, template = _build_plan_document_data(db, project, plan)
+    data, template = _build_plan_document_data(db, project, _plan_section_bodies(gateway, project_id))
     try:
         pdf_bytes = docx_to_pdf(render_plan_docx(data, template=template))
     except PdfConversionError as exc:
@@ -1596,6 +1172,7 @@ def download_plan_document_hwp(
     project_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
 ):
     """download_plan_document(.docx)와 같은 데이터로 실제 .hwp를 내려준다
     (app/hwp_export.py, rhwp CLI 기반). [2026-09-18] 예비창업패키지·초기창업패키지
@@ -1604,14 +1181,7 @@ def download_plan_document_hwp(
     from app.hwp_export import render_plan_hwp
 
     project = _get_owned_project(db, project_id, current_user)
-    plan = (
-        db.query(BusinessPlan)
-        .filter(BusinessPlan.project_id == project_id)
-        .order_by(BusinessPlan.plan_id.desc())
-        .first()
-    )
-
-    data, template = _build_plan_document_data(db, project, plan)
+    data, template = _build_plan_document_data(db, project, _plan_section_bodies(gateway, project_id))
     try:
         hwp_bytes = render_plan_hwp(data, template=template)
     except FileNotFoundError as exc:

@@ -242,3 +242,218 @@ def rematch_message(out: schemas.MatchCandidatesOut) -> str | None:
     if any(c.batch == 2 for c in out.candidates):
         return None
     return NO_MORE_MESSAGE
+
+
+# ── 공고 선택 → 자격 확인 (화면 4) · 지금까지 결과 (outputs) ─────────────────────────────
+G1_FAILED_CODES = frozenset({'X-C2-GONE', 'X-C2-FAIL'})  # 자격 확인(G-01)이 공고 서버 오류로 못 끝났을 때
+SELECT_FAILED_MESSAGE = '공고를 확인하지 못했어요. 잠시 뒤 다시 시도해 주세요.'
+FEATURE_MATCH_MAX = 15  # 기능 대조 점수의 상한(오케스트레이터 모델 제약 0~15)
+# 웹 정책 행이 없을 때 쓰는 층별 만점(문서 70 · 산출물 30 = 코드 15 + 대조 15, 기능정의서 기본값)
+DEFAULT_DOC_MAX, DEFAULT_CODE_MAX, DEFAULT_PLAN_MAX = 70.0, 15.0, 15.0
+
+
+def notices_out(notices) -> list[schemas.OrchNoticeOut]:
+    return [_notice_out(n) for n in notices]
+
+
+def eligibility_out(gate) -> schemas.EligibilityCheckOut:
+    return schemas.EligibilityCheckOut(
+        passed=gate.passed,
+        undecidable=gate.undecidable,
+        failed_conditions=list(gate.failed_conditions),
+        missing_inputs=list(gate.missing_inputs),
+        unknown_conditions=list(gate.unknown_conditions),
+    )
+
+
+def _find_card(outputs, announcement_id: str | None):
+    for card in [*outputs.candidates, *outputs.more_candidates]:
+        if card.announcement_id == announcement_id:
+            return card
+    return None
+
+
+def match_out(outputs, announcement_id: str | None = None) -> schemas.MatchResultOut | None:
+    """선택 공고와 그 카드(적합도 · 이유). announcement_id를 안 주면 outputs의 선택 공고."""
+    selected = outputs.selected_announcement
+    notice_id = announcement_id or (selected.announcement_id if selected is not None else None)
+    if notice_id is None:
+        return None
+    card = _find_card(outputs, notice_id)
+    return schemas.MatchResultOut(
+        notice_id=notice_id,
+        fit_score=card.fit_score if card is not None else None,
+        reason=card.match_reason if card is not None else None,
+        status=match_status_of(outputs.progress),
+    )
+
+
+def select_failed(project_id: int, notices: list) -> schemas.DemoGenerateResponse:
+    """공고 서버 오류 · 공고 없음으로 자격 확인을 못 끝냈다 — 고르기 전 화면으로 돌아간다."""
+    failed = [n for n in notices if n.code in G1_FAILED_CODES]
+    return schemas.DemoGenerateResponse(
+        project_id=project_id, status='failed',
+        code=failed[-1].code if failed else None,
+        message=failed[-1].message if failed else SELECT_FAILED_MESSAGE,
+        notices=notices_out(notices))
+
+
+def select_pending(project_id: int) -> schemas.DemoGenerateResponse:
+    return schemas.DemoGenerateResponse(project_id=project_id, status='pending')
+
+
+# ── 계획서 본문 ───────────────────────────────────────────────────────────────────────
+def section_body(section) -> str:
+    """섹션의 문장을 문단(paragraph_no)별로 이어 붙인다 — 문단 사이는 줄바꿈."""
+    paragraphs: dict[int, list[str]] = {}
+    for sentence in section.sentences:
+        paragraphs.setdefault(sentence.paragraph_no, []).append(sentence.text)
+    return '\n'.join(' '.join(texts) for _, texts in sorted(paragraphs.items()))
+
+
+def section_bodies(plan_doc) -> dict[str, str]:
+    """섹션 코드 → 본문. 계획서 내려받기(.docx · .pdf · .hwp)가 쓴다."""
+    return {s.section_code: section_body(s) for s in plan_doc.sections}
+
+
+def plan_sections_out(plan_doc) -> list[schemas.PlanSectionOut]:
+    return [schemas.PlanSectionOut(tag=s.section_code, title=s.title, body=section_body(s)) for s in plan_doc.sections]
+
+
+# ── 점수 ──────────────────────────────────────────────────────────────────────────────
+def plan_score_reasons(outputs) -> list[schemas.PlanScoreReasonOut]:
+    """문서층 항목별 점수. 항목 이름은 작업 분해가 고른 평가 항목(evaluationItems)에서 만든다."""
+    if outputs.doc_score is None:
+        return []
+    names = {e.item_code: e.item_name for e in outputs.evaluation_items}
+    return [
+        schemas.PlanScoreReasonOut(
+            reason_text=i.comment, item_code=i.item_code, display_name=names.get(i.item_code),
+            score=i.score, max_score=i.max_score)
+        for i in outputs.doc_score.items
+    ]
+
+
+def artifact_score_reasons(outputs) -> list[schemas.ArtifactScoreReasonOut]:
+    """산출물층 — 코드 점검은 항목마다 'CHECK-이름', 기능 대조는 하나로 'FEATURE-MATCH'(접두어가 프론트가 층을 가르는 기준)."""
+    reasons: list[schemas.ArtifactScoreReasonOut] = []
+    if outputs.code_check is not None:
+        for c in outputs.code_check.checks:
+            reasons.append(schemas.ArtifactScoreReasonOut(
+                reason_text=c.detail, item_code=f'CHECK-{c.name}', display_name=c.name,
+                score=c.weight if c.passed else 0, max_score=c.weight))
+    if outputs.feature_match is not None:
+        fm = outputs.feature_match
+        notes = [*fm.findings, *[f'누락 기능: {m}' for m in fm.missing_features]]
+        reasons.append(schemas.ArtifactScoreReasonOut(
+            reason_text=' / '.join(notes) or '계획서와 구현 기능이 맞습니다.', item_code='FEATURE-MATCH',
+            display_name='계획서 대조', score=fm.score, max_score=FEATURE_MATCH_MAX))
+    return reasons
+
+
+def artifact_out(outputs) -> schemas.ArtifactOut | None:
+    if outputs.prototype is None and outputs.infographic is None:
+        return None
+    category = CATEGORY_TO_WEB.get(outputs.category, outputs.category or 'webdev')
+    report = outputs.overall_score_report
+    artifact_score = report.artifact_score.total if report is not None and report.artifact_score is not None else None
+    return schemas.ArtifactOut(
+        category=category,
+        infographic_path=outputs.infographic.image_path if outputs.infographic is not None else '',
+        # 원페이지는 실행 파일이 없다
+        executable_path=(outputs.prototype.entry_file_path
+                         if outputs.prototype is not None and category != 'onepage' else None),
+        artifact_score=artifact_score,
+        score_reasons=artifact_score_reasons(outputs),
+    )
+
+
+def verdict_out(outputs, policy) -> schemas.VerdictOut | None:
+    """종합 판정. 총점 · 통과는 오케스트레이터 값 그대로(웹이 다시 계산하지 않는다). 만점은 웹 정책(없으면 기본값)의
+    지금 값 — 실행 시작 뒤 관리자가 바꿨으면 어긋날 수 있다(명세 3.5)."""
+    report = outputs.overall_score_report
+    if report is None:
+        return None
+    artifact = report.artifact_score
+    return schemas.VerdictOut(
+        overall_passed=report.passed,
+        doc_score=report.doc_score.total,
+        doc_max_score=float(policy.doc_weight) if policy is not None else DEFAULT_DOC_MAX,
+        code_score=artifact.code_check.total if artifact is not None else None,
+        code_max_score=float(policy.code_weight) if policy is not None else DEFAULT_CODE_MAX,
+        plan_match_score=artifact.feature_match.score if artifact is not None else None,
+        plan_match_max_score=float(policy.plan_weight) if policy is not None else DEFAULT_PLAN_MAX,
+        total_score=report.total,
+        pass_threshold=report.threshold,
+    )
+
+
+def bundle_usages_out(outputs) -> list[schemas.BundleUsageOut]:
+    return [
+        schemas.BundleUsageOut(
+            bundle_id=web_bundle_id_of(u.bundle_id), layer=u.layer, used=u.used_count, remaining=u.remaining)
+        for u in outputs.rework_usage
+    ]
+
+
+# ── 검수 ──────────────────────────────────────────────────────────────────────────────
+def _violation_note(token_check) -> str | None:
+    parts = []
+    if token_check.missing_tokens:
+        parts.append('빠짐: ' + ', '.join(token_check.missing_tokens))
+    if token_check.altered_tokens:
+        parts.append('바뀜: ' + ', '.join(token_check.altered_tokens))
+    if token_check.contaminated_tokens:
+        parts.append('섞임: ' + ', '.join(token_check.contaminated_tokens))
+    return ' / '.join(parts) or None
+
+
+def proofread_logs_out(outputs) -> list[schemas.ProofreadLogOut]:
+    """문장별 시도 기록(모든 계정) → 시도마다 한 줄. 원문은 계획서의 같은 sentenceId 문장."""
+    originals = {}
+    if outputs.plan_doc is not None:
+        originals = {s.sentence_id: s.text for sec in outputs.plan_doc.sections for s in sec.sentences}
+    logs: list[schemas.ProofreadLogOut] = []
+    for result in outputs.sentence_results:
+        original = originals.get(result.sentence_id, '')
+        for a in result.attempts:
+            logs.append(schemas.ProofreadLogOut(
+                original_text=original, corrected_text=a.text, reason=None, attempt_no=a.attempt_no,
+                passed=a.token_check.passed, violation_type=a.violation_type,
+                violation_note=_violation_note(a.token_check), section_id=result.sentence_id))
+    return logs
+
+
+def format_findings_out(outputs) -> list[schemas.FormatFindingOut]:
+    return [
+        schemas.FormatFindingOut(finding_type=f.violation_type, message=f.detail, sentence_id=f.sentence_id)
+        for f in outputs.format_findings
+    ]
+
+
+# ── GET /result ───────────────────────────────────────────────────────────────────────
+def result_out(project_id: int, outputs, policy) -> schemas.DemoGenerateResponse:
+    """outputs(project_id) → 결과 응답. 계획서(planDoc)가 아직 없으면 호출한 쪽이 404로 답한다(plan_doc 확인 뒤 부른다)."""
+    plan_doc = outputs.plan_doc
+    report = outputs.document_score_report
+    plan = schemas.BusinessPlanOut(
+        doc_score=outputs.doc_score.total if outputs.doc_score is not None else None,
+        threshold=report.threshold if report is not None else None,
+        sections=plan_sections_out(plan_doc),
+        score_reasons=plan_score_reasons(outputs),
+        artifacts=[a for a in [artifact_out(outputs)] if a is not None],
+        format_findings=format_findings_out(outputs),
+        proofread_logs=proofread_logs_out(outputs),
+        feature_list=list(plan_doc.feature_list),
+        charts=[c.model_dump(mode='json') for c in plan_doc.charts],
+        tables=[t.model_dump(mode='json') for t in plan_doc.tables],
+    )
+    return schemas.DemoGenerateResponse(
+        project_id=project_id,
+        match=match_out(outputs),
+        eligibility=eligibility_out(outputs.gate_result) if outputs.gate_result is not None else None,
+        plan=plan,
+        verdict=verdict_out(outputs, policy),
+        rework_cap=outputs.rework_limit,
+        bundle_usages=bundle_usages_out(outputs),
+    )

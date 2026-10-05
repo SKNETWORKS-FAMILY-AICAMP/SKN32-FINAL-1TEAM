@@ -1,9 +1,9 @@
 """Regression tests for completion, archival, deletion and private downloads."""
 import json
 
+from dummy_seed import create_match as _create_match
 from fastapi.testclient import TestClient
 from orch_fakes import AbortResult, ActiveWork, ProjectView, make_run
-from test_generation_async import _create_match
 
 from app.models import Artifact, Project, ProjectPlanInput, User
 from app.routers import projects
@@ -11,27 +11,6 @@ from app.routers import projects
 
 def create(client):
     return client.post('/projects', data={'payload': json.dumps({'description': 'review test'})})
-
-
-def test_finished_generation_allows_new_project(authed_client, db_session, monkeypatch):
-    match = _create_match(authed_client, db_session, 'REVIEW-DONE')
-    match.stage = 'prototype_building'
-    match.status = 'in_progress'
-    match.progress_percent = 90
-    db_session.commit()
-    monkeypatch.setattr(projects, 'DUMMY_GENERATION_STEP_SECONDS', 0)
-    projects._simulate_generation(match.project_id, 'prototype_building', 'done')
-    db_session.refresh(match)
-    assert match.status == 'completed'
-    assert create(authed_client).status_code == 201
-
-
-def test_legacy_done_status_does_not_block(authed_client, db_session):
-    match = _create_match(authed_client, db_session, 'REVIEW-LEGACY')
-    match.stage = 'done'
-    match.status = 'in_progress'
-    db_session.commit()
-    assert create(authed_client).status_code == 201
 
 
 def _running_work(orch, state, project_id):

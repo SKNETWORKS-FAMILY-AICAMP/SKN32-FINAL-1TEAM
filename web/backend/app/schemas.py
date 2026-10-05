@@ -381,9 +381,13 @@ class ProjectDetailOut(ProjectOut):
 # 표현하는 용도다 — 오케스트레이터가 실제로 붙으면 이 스키마들은 그대로 두고
 # projects.py의 라우터 구현부만 바꾸면 된다(agents.py의 재시도 함수들과 같은 패턴).
 class DemoGenerateRequest(BaseModel):
-    notice_id: str | None = Field(
-        None, description='매칭시킬 공고 notice_id. 생략하면 모집중(open)인 공고 중 하나를 데모용으로 자동 선택한다.',
-    )
+    # [SB-243] 이제 필수다(후보 중 사용자가 고른 공고) — 생략하면 라우터가 422로 답한다. 임시 데모 자동 선택은 없어졌다.
+    notice_id: str | None = Field(None, description='사용자가 고른 공고 notice_id(공고 후보에 있는 값).')
+
+
+class ProceedRequest(BaseModel):
+    """review/start(종합 평가 → 표현 검수) 요청 — 기준 점수에 못 미친 채 진행한다는 사용자의 확인."""
+    confirmed: bool = False
 
 
 class BonusItemOut(BaseModel):
@@ -439,6 +443,8 @@ class EligibilityCheckOut(BaseModel):
     undecidable: bool
     failed_conditions: list | None = None
     missing_inputs: list | None = None
+    # [SB-243] 읽지 못해 통과로 본 조건('지원대상 유형' · '업력') — 진행을 막지 않고 화면 4에 '확인 필요'로 안내한다.
+    unknown_conditions: list = Field(default_factory=list)
 
 
 class PlanSectionOut(BaseModel):
@@ -459,7 +465,7 @@ class ArtifactScoreReasonOut(BaseModel):
 
 class ArtifactOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    artifact_id: int
+    artifact_id: int | None = None  # [SB-243] 산출물은 오케스트레이터가 갖고 있어 행 번호가 없다
     category: str
     infographic_path: str
     executable_path: str | None = None
@@ -481,6 +487,7 @@ class FormatFindingOut(BaseModel):
     finding_type: str
     message: str
     severity: str | None = None
+    sentence_id: str | None = None  # [SB-243]
 
 
 class ProofreadLogOut(BaseModel):
@@ -495,11 +502,13 @@ class ProofreadLogOut(BaseModel):
     passed: bool
     violation_type: str | None = None
     violation_note: str | None = None
+    # [SB-243] 같은 문장의 시도를 묶는 키(프론트 reviewParagraphsFrom이 section_id로 묶는다) ← sentenceId
+    section_id: str | None = None
 
 
 class BusinessPlanOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    plan_id: int
+    plan_id: int | None = None  # [SB-243] 계획서는 오케스트레이터가 갖고 있어 행 번호가 없다
     doc_score: float | None = None
     threshold: float | None = None
     sections: list[PlanSectionOut] = Field(default_factory=list)
@@ -507,13 +516,17 @@ class BusinessPlanOut(BaseModel):
     artifacts: list[ArtifactOut] = Field(default_factory=list)
     format_findings: list[FormatFindingOut] = Field(default_factory=list)
     proofread_logs: list[ProofreadLogOut] = Field(default_factory=list)
+    # [SB-243] 오케스트레이터 계획서의 차트 · 표 · 기능 목록(구조는 작성 Agent · 프론트와 맞추는 중이라 원본 그대로 싣는다)
+    feature_list: list[str] = Field(default_factory=list)
+    charts: list[dict] = Field(default_factory=list)
+    tables: list[dict] = Field(default_factory=list)
 
 
 class VerdictOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     overall_passed: bool
-    model_version: str
-    first_pass_passed: bool
+    model_version: str | None = None  # [SB-243] 오케스트레이터는 주지 않는다
+    first_pass_passed: bool | None = None  # [SB-243] 오케스트레이터는 주지 않는다
 
     # [2026-09-22 신규, 프론트 전달사항 10번] 검증결과서(front/src/features/workflow/
     # verificationReport.js)의 "종합 판정" 행 — 문서층/자동검증/계획서대조 세 층 점수와
@@ -697,10 +710,19 @@ class BundleUsageOut(BaseModel):
 
 
 class DemoGenerateResponse(BaseModel):
+    """POST /generate(공고 선택 → 자격 확인)와 GET /result(지금까지 결과)가 함께 쓴다.
+
+    [SB-243] 공고를 고른 직후엔 계획서 · 점수가 아직 없어 plan 이하가 비고(plan=None), 자격 확인 결과를 기다리는 중이면
+    status='pending', 공고 서버 오류로 자격 확인을 못 했으면 status='failed'(+ message · notices)로 답한다.
+    agent_executions는 더 이상 채우지 않는다(관리자 조회가 대신한다)."""
     project_id: int
-    match: MatchResultOut
-    eligibility: EligibilityCheckOut
-    plan: BusinessPlanOut
+    status: str = 'ready'  # 'ready' | 'pending' | 'failed'
+    code: str | None = None
+    message: str | None = None
+    notices: list[OrchNoticeOut] = Field(default_factory=list)
+    match: MatchResultOut | None = None
+    eligibility: EligibilityCheckOut | None = None
+    plan: BusinessPlanOut | None = None
     # [2026-09-22 수정, 프론트 전달사항 3번] "GET /result는 프로토타입이 아직 만들어지는
     # 중이어도 완성된 계획서는 돌려줘야 한다" — verdict는 산출물(artifact) 채점까지 끝나야
     # 나오는 값이라, 계획서만 끝나고 프로토타입/검증이 아직인 상태에선 없을 수 있다.
@@ -708,15 +730,15 @@ class DemoGenerateResponse(BaseModel):
     # 파이프라인(seed_dummy_pipeline)은 계획서·산출물·판정을 한 번에 만들어서 이 틈이
     # 안 드러났을 뿐 — 생성이 단계별로 끝나는 실제 흐름에선 이 틈이 그대로 404가 된다.
     verdict: VerdictOut | None = None
-    agent_executions: list[AgentExecutionOut]
+    agent_executions: list[AgentExecutionOut] = Field(default_factory=list)
     # [2026-09-28 신규] 프론트 요청 2 — RERUN_CAP 프론트 상수를 없애고 관리자가 상한을
     # 바꾸면 화면도 같이 따라가도록, 상한값과 묶음별 사용/잔여 횟수를 같이 내려준다.
     # [2026-09-28 수정] task_key 단위였던 retry_budget을 bundle_id 단위 bundle_usages로
     # 교체 — writing 하나가 화면상 묶음 3개를 가리키는 문제 때문(app/pipeline_stages.py
     # WRITING_BUNDLES 참고). strategy/verify1_*/verify2_*/review_* 처럼 화면에 "재작성"
     # 버튼이 없는 task_key는 애초에 묶음 개념이 아니라서 이 목록에 안 나온다.
-    rework_cap: int
-    bundle_usages: list[BundleUsageOut]
+    rework_cap: int = 0
+    bundle_usages: list[BundleUsageOut] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
