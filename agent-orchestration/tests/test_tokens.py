@@ -1,7 +1,6 @@
 """토큰 사용량 — 시도별 기록(형식 오류 응답 포함) · 호출 합계 · 실행 합계, OpenAI usage 옮기기, 관리자 조회."""
 from __future__ import annotations
 
-from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -10,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from sbrain.agents.stubs import StubScenario
+from sbrain.models.clock import utc_now
 from sbrain.orchestrator.errors import FormatError, ToolCallExhausted
 from sbrain.orchestrator.openai_provider import OpenAIProvider
 from sbrain.orchestrator.tools import (
@@ -43,7 +43,7 @@ def tools(provider, retry: int = 2) -> tuple[Tools, CallSink]:
                       retry_interval_sec=0)
     sink = CallSink()
     ctx = ToolsContext(run_id="r", execution_id="e", task_id="T-C1", providers={"p": provider}, sink=sink,
-                       now=datetime.now, sleep=lambda s: None)
+                       now=utc_now, sleep=lambda s: None)
     return Tools(cfg, ctx), sink
 
 

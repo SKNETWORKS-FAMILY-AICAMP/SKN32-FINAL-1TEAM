@@ -36,6 +36,7 @@ from ..models import (
 from ..models.base import (
     AgentName, CollectionStatus, FallbackMode, KeptReason, KeptSide, NextAction, RunProgress, SBModel, ext,
 )
+from ..models.clock import UTC_MIN
 from ..models.domain import EvalItem, FormatFinding, Infographic, ProofreadLog
 from ..models.rework import ReworkComparison
 from ..models.run import ReworkResultStatus
@@ -44,6 +45,10 @@ from ..orchestrator.context import RunContext, parse_ref
 from ..orchestrator.errors import CommandError, message
 from ..orchestrator.store import ExecutionFilter, RunFilter
 from ..orchestrator.trace import ExecutionRecord
+# 층별 채점 출처 · 현재 점수는 기록 통계 줄(finalScores · scores)과 같은 정의 하나 — log_stats.py에 있다
+from .log_stats import SCORE_LAYERS
+from .log_stats import current_scores as _current_scores
+from .retention import retention_cutoff
 from .rework_map import ARTIFACT_BUNDLES, BUNDLE_EXECUTABLE, BUNDLE_LAYER, DOCUMENT_BUNDLES, order_bundles
 from .sbrain_flow import CANDIDATE_LIMIT, candidate_lists
 
@@ -493,9 +498,15 @@ def _options(ctx: RunContext, orders: list[ReworkOrder]) -> list[ReworkOption]:
 
 
 def _sentence_changes(orch: SBrainOrchestrator, ctx: RunContext) -> list[SentenceChange]:
-    """검수 전 문장은 T-P1이 읽은 계획서 버전에서 찾는다 (M-4가 새 버전을 만들기 전)."""
-    tp1 = [r for r in orch.store.executions(ctx.run.run_id) if r.task_id == "T-P1" and r.status == "성공"]
-    ref = next((i for i in tp1[-1].inputs if i.startswith("planDoc@")), None) if tp1 else None
+    """검수 전 문장은 T-P1이 읽은 계획서 버전에서 찾는다 (M-4가 새 버전을 만들기 전).
+
+    T-P1 성공 저장에서 실행 건에 적은 참조(Run.proofread_base_ref)를 먼저 본다 — 12개월 처리로 실행 기록이 지워져도
+    같은 문장이 나온다. 이 값이 없던 실행 건은 지금처럼 T-P1 실행 기록의 입력 참조에서 찾는다.
+    """
+    ref = ctx.run.proofread_base_ref
+    if ref is None:
+        tp1 = [r for r in orch.store.executions(ctx.run.run_id) if r.task_id == "T-P1" and r.status == "성공"]
+        ref = next((i for i in tp1[-1].inputs if i.startswith("planDoc@")), None) if tp1 else None
     before: PlanDoc = ctx.get_ref(ref) if ref else ctx.get("planDoc")
     text = {s.sentence_id: s.text for sec in before.sections for s in sec.sentences}
     results: list[SentenceResult] = ctx.get("sentenceResults", default=[])
@@ -627,9 +638,6 @@ def _tokens(obj: Any) -> TokenTotals:
     return TokenTotals(**{f: getattr(obj, f, None) for f in TokenTotals.model_fields})
 
 
-# 층별 채점 출처 — (층 이름, 채점 Task, 실행 기록 출력 요약 필드). 산출물을 읽지 않고 실행 기록만 본다.
-SCORE_LAYERS = (("docScore", "T-V1", "score"), ("codeCheck", "T-V2", "code_check_score"),
-                ("featureMatch", "T-V2", "feature_match_score"))
 # 총점 구간 — 웹 admin.py ops-summary와 같은 경계 · 같은 비교(정수 경계 양 끝 포함, lo ≤ 총점 ≤ hi)
 SCORE_BUCKETS = (("90~100점", 90, 100), ("80~89점", 80, 89), ("70~79점", 70, 79), ("60~69점", 60, 69),
                  ("60점 미만", 0, 59))
@@ -648,19 +656,8 @@ def _score_events(records: list[ExecutionRecord]) -> dict[str, list[ScoreEntry]]
                 events[layer].append(ScoreEntry(scored_at=r.ended_at, score=score, after_rework=r.trigger == "재작성",
                                                 execution_id=r.execution_id))
     for entries in events.values():
-        entries.sort(key=lambda e: e.scored_at or datetime.min)
+        entries.sort(key=lambda e: e.scored_at or UTC_MIN)
     return events
-
-
-def _current_scores(pointers: dict[str, int], records: list[ExecutionRecord]) -> dict[str, float | None]:
-    """현재 버전(되돌리기 반영) 점수 — 포인터가 가리키는 버전을 만든 실행 기록의 출력 요약에서 읽는다."""
-    meta = {ref: r.output_meta for r in records if r.status == "성공" for ref in r.outputs}
-
-    def score(key: str) -> float | None:
-        version = pointers.get(key)
-        m = meta.get(f"{key}@{version}") if version is not None else None
-        return m.score if m is not None else None
-    return {"doc": score("docScore"), "artifact": score("artifactScore"), "total": score("scoreReport.overall")}
 
 
 def _avg(values: list[float]) -> float | None:
@@ -671,11 +668,20 @@ def _rate(part: int, whole: int) -> float | None:
     return round(part / whole * 100, 1) if whole else None
 
 
+def _admin_since(orch: SBrainOrchestrator) -> datetime:
+    """관리자 실행 건 목록 · 운영 요약의 범위 시작 — 지금에서 12개월 전 (보관 기간 작업의 기준 시각과 같다)."""
+    return retention_cutoff(orch.now())
+
+
 def admin_runs(orch: SBrainOrchestrator, *, progress: str | None = None, step: str | None = None, limit: int = 50,
                offset: int = 0) -> list[AdminRun]:
-    """여러 프로젝트의 실행 건 (마지막 갱신 최근 순). 진행 상태 · 단계로 거르고 limit · offset으로 나눈다."""
+    """여러 프로젝트의 실행 건 (마지막 갱신 최근 순). 진행 상태 · 단계로 거르고 limit · offset으로 나눈다.
+
+    마지막 활동(updated_at)이 최근 12개월 안인 실행 건만 — 기준 시각은 보관 기간 작업과 같은 계산(retention_cutoff).
+    """
     out = []
-    for run in orch.store.query_runs(RunFilter(progress=progress, step=step, limit=limit, offset=offset)):
+    for run in orch.store.query_runs(RunFilter(progress=progress, step=step, limit=limit, offset=offset,
+                                               updated_since=_admin_since(orch))):
         records = orch.store.executions(run.run_id)
         scores = _current_scores(orch.store.get_pointers(run.run_id), records)
         # 지금 Task — 대기열 맨 앞(도는 중 · 다음에 돌 단계, 재개대기면 재개할 단계), 대기열이 비었으면 마지막으로 돈 단계
@@ -717,14 +723,19 @@ def admin_summary(orch: SBrainOrchestrator) -> AdminSummary:
       반려 비율 = 반려 / 시도 × 100.
     - 비율은 분모가 0이면 None, 백분율 소수 1자리.
 
+    범위: 마지막 활동(updated_at)이 최근 12개월 안인 실행 건과 그 실행 건들의 실행 기록만 센다(admin_runs와 같은 기준
+    시각, retention_cutoff) — 진행 상태별 건수 · 점수 · 재작성 · 층별 변화 · 계기별 · 토큰 · 표현 검수가 모두 같은 범위다.
+
     우리 기록으로 셀 수 없어 뺀 것: 실행 건이 없는 프로젝트(웹의 '공고 매칭 전')는 세지 않고, 진행 상태는 웹의 상태
     표시('판단 대기' 등) 대신 실행 건의 진행 상태로 센다. 완전 삭제한 실행 건은 현재 점수 · 표현 검수 시도를 셀 수 없어
     그 항목에서 빠진다(채점 이력 · 실행 기록 수 · 토큰은 남는다).
     """
-    runs = orch.store.query_runs(RunFilter(limit=None))
+    runs = orch.store.query_runs(RunFilter(limit=None, updated_since=_admin_since(orch)))
+    in_scope = {run.run_id for run in runs}
     by_run: dict[str, list[ExecutionRecord]] = defaultdict(list)
     for row in orch.store.list_executions(ExecutionFilter(limit=None, order="asc")):
-        by_run[row.record.run_id].append(row.record)
+        if row.record.run_id in in_scope:   # 범위 밖(12개월 전) 실행 건의 기록은 세지 않는다
+            by_run[row.record.run_id].append(row.record)
     status: Counter[str] = Counter()
     docs: list[float] = []
     totals: list[float] = []

@@ -24,6 +24,7 @@ from ..models import (
     ProofreadLog, Prototype, ReferenceDoc, RequirementAnalysis, ReworkDiff, ReworkOrder,
     ScoreReport, Sentence, TableSpec, Token, TokenCheckResult,
 )
+from ..models.clock import kst_today, utc_clock, utc_now
 from ..orchestrator.errors import ProviderError, ResourceNotFound, ToolCallExhausted
 from ..orchestrator.registry import TaskRegistry
 from ..orchestrator.tools import LLMRequest, LLMResponse, TokenUsage, Tools
@@ -273,8 +274,9 @@ def _code_check(kind: str, code_total: float) -> CodeCheckResult:
 
 
 # ── 스텁 묶기 ─────────────────────────────────────────
-def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], datetime] = datetime.now) -> None:
-    today = lambda: now().date()  # noqa: E731
+def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], datetime] = utc_now) -> None:
+    now = utc_clock(now)                 # 시간대 있는 UTC (시간대 없는 시계는 UTC로 본다)
+    today = lambda: kst_today(now())  # noqa: E731 — 스텁의 '오늘'은 한국 날짜
 
     def r8(inp: c.R8In) -> c.R8Out:
         return c.R8Out(reference_docs=[ReferenceDoc(doc_id=f"doc-{i}", file_name=f.file_name, format=f.format,

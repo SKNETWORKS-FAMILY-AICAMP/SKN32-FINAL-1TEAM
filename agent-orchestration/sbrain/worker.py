@@ -6,6 +6,10 @@
 - 웹 서버와 같은 공유 MySQL을 본다(웹팀 합의 2026-09-30). 웹은 요청 · 명령만 넣고, 단계는 워커가 돈다.
 - 스레드마다 한 바퀴에 ① 시작 요청 ② '실행' 실행 건 ③ 재개 시각이 된 실행 건 순서로 하나씩 가져간다.
   할 일이 없으면 조회 주기만큼 쉰다. 같은 실행 건은 점유로 한 곳만 처리한다.
+- ④ 작업 확인 주기(10분, 잠정)마다 한 스레드가 실행 로그 보관 기간 작업(flow/retention.py)을 돌 때인지 확인한다.
+  여러 워커 중 한 대만, 마지막으로 끝까지 마친 지 24시간(잠정)이 지났을 때만 돈다(작업 점유 orch_jobs).
+  도는 동안 그 스레드는 다른 일을 가져가지 않고, 하트비트가 작업 점유를 연장한다. 종료 신호면 실행 건 사이에서 멈춘다.
+  이 작업의 로그는 시작 · 끝과 개수만 남긴다(실행 건 ID 없음).
 - 점유자 이름은 스레드마다 다르다(호스트:프로세스:스레드). 하트비트 스레드가 처리 중인 점유를 연장한다.
 - 종료 신호(SIGINT · SIGTERM)를 받으면 새 일을 가져가지 않고, 하던 단계를 끝낸 뒤 점유를 풀고 끝난다.
   남은 단계는 '실행'으로 남아 다른 워커가 이어받는다.
@@ -13,6 +17,7 @@
 - 설정: SBRAIN_DB_URL(필수), OPENAI_API_KEY(필수), SBRAIN_WORKER_POLL_SEC · SBRAIN_WORKER_THREADS ·
   SBRAIN_WORKER_LEASE_SEC(선택). 모두 환경 변수 → agent-orchestration/.env 순서로 읽는다.
 - 로그는 표준 출력에 한 줄씩 — 가져간 일과 끝난 상태만. 프롬프트 · 응답 내용은 남기지 않는다.
+  줄 앞의 시각은 UTC다(끝의 Z — 예: 2026-09-26 09:00:05Z).
 """
 from __future__ import annotations
 
@@ -22,25 +27,30 @@ import signal
 import socket
 import sys
 import threading
+import time
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Callable
 
 from .bootstrap import App
 from .env import get_env
+from .flow.retention import JOB_NAME, run_retention, start_retention
+from .models.clock import utc_now
 
 # 잠정값 (orchestrator/settings.py PROVISIONAL에도 적는다)
 POLL_SEC = 1.0
 THREADS = 4
 LEASE_SEC = 120.0
+JOB_CHECK_SEC = 600.0   # 보관 기간 작업을 돌 때인지 확인하는 주기 (10분)
+JOB_KIND = "작업"        # 하트비트 대상 종류 — 주기 작업 점유 (ID 자리에는 작업 이름)
 
 
 @dataclass(frozen=True)
 class WorkerConfig:
     poll_sec: float = POLL_SEC       # 할 일이 없을 때 쉬는 시간
     threads: int = THREADS           # 동시에 처리하는 일 수
-    lease_sec: float = LEASE_SEC     # 점유 시간 — 하트비트가 끊기면 이만큼 뒤에 다른 워커가 이어받는다
+    lease_sec: float = LEASE_SEC     # 점유 시간 — 하트비트가 끊기면 이만큼 뒤에 다른 워커가 이어받는다 (작업 점유도 같다)
+    job_check_sec: float = JOB_CHECK_SEC   # 보관 기간 작업을 돌 때인지 확인하는 주기
 
     @property
     def heartbeat_sec(self) -> float:
@@ -64,6 +74,8 @@ class Worker:
         self.stopping = threading.Event()
         self._held: dict[tuple[str, str], str] = {}     # (종류, ID) → 점유자 — 하트비트 대상
         self._held_lock = threading.Lock()
+        self._next_job_check = 0.0                      # 다음 작업 확인 시각 (time.monotonic)
+        self._job_lock = threading.Lock()
         app.engine.stop_requested = self.stopping.is_set
 
     def owner(self, index: int) -> str:
@@ -75,7 +87,10 @@ class Worker:
 
     # ── 한 바퀴 ───────────────────────────────────────
     def run_once(self, owner: str) -> list[str]:
-        """① 시작 요청 ② '실행' 실행 건 ③ 재개 시각이 된 실행 건을 하나씩 가져가 처리한다. 한 일을 돌려준다."""
+        """① 시작 요청 ② '실행' 실행 건 ③ 재개 시각이 된 실행 건을 하나씩 가져가 처리한다. 한 일을 돌려준다.
+
+        ④ 작업 확인 주기가 됐으면 보관 기간 작업을 확인해 돌 때면 돈다(돌려주는 목록에는 넣지 않는다 — 로그에만).
+        """
         store, lease = self.app.store, self.config.lease_sec
         steps = (
             ("시작요청", lambda: store.claim_start_request(owner, lease), self._start),
@@ -89,7 +104,45 @@ class Worker:
             item = claim()
             if item is not None:
                 done.append(self._do(kind, item, owner, work))
+        if not self.stopping.is_set() and self._job_check_due():
+            self._retention(owner)
         return done
+
+    # ── ④ 보관 기간 작업 ───────────────────────────────
+    def _job_check_due(self) -> bool:
+        """작업 확인 주기가 됐는지 — 이 프로세스의 스레드 중 하나만 참을 받는다."""
+        with self._job_lock:
+            now = time.monotonic()
+            if now < self._next_job_check:
+                return False
+            self._next_job_check = now + self.config.job_check_sec
+            return True
+
+    def _retention(self, owner: str) -> None:
+        """작업 점유를 잡으면 보관 기간 작업을 끝까지(또는 종료 신호까지) 돈다. 로그는 시작 · 끝과 개수만.
+
+        오류는 종류만 남긴다. 실행 건 점유 경로(_do의 점유 다시 잡기)를 타지 않는다.
+        """
+        store, lease = self.app.store, self.config.lease_sec
+        try:
+            if not start_retention(store, owner, lease):
+                return
+        except Exception as e:
+            self.log(owner, f"오류 보관 작업 시작 {type(e).__name__}")
+            return
+        key = (JOB_KIND, JOB_NAME)
+        with self._held_lock:
+            self._held[key] = owner
+        self.log(owner, "보관 작업 시작")
+        try:
+            out = run_retention(store, owner, now=self.app.engine.now(), lease_sec=lease,
+                                stop=self.stopping.is_set, log=lambda text: self.log(owner, text))
+        finally:
+            with self._held_lock:
+                self._held.pop(key, None)
+        s = out.summary
+        self.log(owner, f"보관 작업 {'끝' if out.finished else '멈춤'} — 옮긴 실행 건 {s.runs} · "
+                        f"지운 실행 건 {s.deleted_runs} · 옮긴 시작 요청 {s.requests} · 건너뜀 {s.skipped}")
 
     def _start(self, request_id: str, owner: str) -> str:
         st = self.app.orchestrator.run_start_request(request_id, owner, self.config.lease_sec)
@@ -132,14 +185,18 @@ class Worker:
                 self.stopping.wait(self.config.poll_sec)
 
     def heartbeat(self) -> None:
-        """처리 중인 실행 건 · 시작 요청의 점유를 연장한다. 놓친 점유는 기록만 한다."""
+        """처리 중인 실행 건 · 시작 요청 · 주기 작업의 점유를 연장한다. 놓친 점유는 기록만 한다."""
         with self._held_lock:
             held = list(self._held.items())
         store, lease = self.app.store, self.config.lease_sec
         for (kind, item), owner in held:
             try:
-                ok = (store.renew_start_request(item, owner, lease) if kind == "시작요청"
-                      else store.renew(item, owner, lease))
+                if kind == "시작요청":
+                    ok = store.renew_start_request(item, owner, lease)
+                elif kind == JOB_KIND:
+                    ok = store.renew_job(item, owner, lease)
+                else:
+                    ok = store.renew(item, owner, lease)
             except Exception as e:
                 ok = False
                 self.log(owner, f"오류 하트비트 {kind} {item}: {type(e).__name__}")
@@ -171,7 +228,7 @@ class Worker:
         self.log(self.name, "끝")
 
     def log(self, who: str, text: str) -> None:
-        self._log(f"{datetime.now():%Y-%m-%d %H:%M:%S} {who} {text}")
+        self._log(f"{utc_now():%Y-%m-%d %H:%M:%S}Z {who} {text}")
 
 
 def _print(line: str) -> None:

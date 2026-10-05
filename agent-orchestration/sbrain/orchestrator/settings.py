@@ -140,6 +140,16 @@ PROVISIONAL: dict[str, str] = {
     "worker.heartbeatSec": "하트비트 30초 — 점유 시간의 1/4",
     "worker.maxStartClaims": "시작 요청을 가져간 횟수 상한 3 — 넘으면 E-C1-TIMEOUT으로 끝낸다",
     "worker.errorBackoff": "단계 밖 오류 뒤 그 실행 건을 점유 시간만큼 다시 가져가지 않는다",
+    # 실행 로그 보관 기간 작업 (flow/retention.py · sbrain/worker.py) — 워커 프로세스 값이다
+    "retention.batchSize": "보관 기간 작업이 한 번에 가져오는 실행 건 · 시작 요청 수 100 (flow/retention.py BATCH_SIZE)",
+    "retention.intervalSec": "보관 기간 작업 간격 24시간 — 마지막으로 끝까지 마친 뒤 이만큼 지나야 다시 시작한다 "
+                             "(flow/retention.py INTERVAL_SEC)",
+    "retention.checkSec": "워커가 보관 기간 작업을 돌 때인지 확인하는 주기 10분 (sbrain/worker.py JOB_CHECK_SEC)",
+    "retention.leaseSec": "보관 기간 작업 점유 시간 = 워커 점유 시간(120초), 하트비트(30초)가 연장한다 — 워커가 멈추면 "
+                          "이만큼 뒤에 다른 워커가 이어받는다",
+    # 저장소 (orchestrator/store.py) — 메모리 · SQL 저장소가 함께 쓴다
+    "store.accountLockTimeoutSec": "계정 잠금 대기 10초 — 넘기면 StoreConflict (orchestrator/store.py "
+                                   "ACCOUNT_LOCK_TIMEOUT_SEC)",
     # 재작성 요청 (flow/service.py) — 실행 건 설정값이 아니라 명령 창구 값이다
     "reworkRequest.collectSec": "재작성 요청을 모으는 시간 2초 — 같은 화면에서 첫 요청부터 이 시간 안의 요청을 "
                                 "재작성 한 번으로 합친다. 그동안 워커는 그 실행 건을 가져가지 않는다",

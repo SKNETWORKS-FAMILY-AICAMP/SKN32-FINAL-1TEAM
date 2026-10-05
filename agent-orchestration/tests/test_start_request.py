@@ -155,6 +155,43 @@ def test_run_created_elsewhere_fails_request(clock):
     assert [r.run_id for r in app.store.list_runs("7")] == ["other-run"]
 
 
+def test_form_copy_is_cleared_when_request_ends(clock):
+    """입력 사본(form)은 요청이 끝나는 모든 경로에서 상태와 함께 비우고, 대기 · 처리중에는 남긴다 (spec 3)."""
+    app = app_with(clock, project(101), project(102), project(103), project(104), project(105))
+    form = lambda rid: app.store.get_start_request(rid).form                 # noqa: E731
+    done = app.orchestrator.request_start("7", 101)
+    assert form(done.request_id) is not None                                 # 대기
+    assert app.store.acquire_start_request(done.request_id, "worker-1", 60)
+    assert form(done.request_id) is not None                                 # 처리중
+    st = app.orchestrator.run_start_request(done.request_id, owner="worker-1")
+    assert st.status == "완료" and form(done.request_id) is None             # 실행 건 생성과 함께 완료
+    app.orchestrator.abort(st.run_id, confirmed=True)
+
+    app.llm.plan("T-C1", ["timeout"] * 6)
+    failed = app.orchestrator.request_start("7", 102)
+    assert app.orchestrator.run_start_request(failed.request_id).status == "실패"
+    assert form(failed.request_id) is None                                   # 처리 중 실패
+
+    waiting = app.orchestrator.request_start("7", 103)
+    assert app.store.cancel_start_request(waiting.request_id) == "취소"
+    assert form(waiting.request_id) is None                                  # 대기 중 취소
+
+    processing = app.orchestrator.request_start("7", 104)
+    assert app.store.acquire_start_request(processing.request_id, "worker-1", 60)
+    assert app.store.cancel_start_request(processing.request_id) == "취소요청"
+    assert form(processing.request_id) is not None                           # 취소 요청만 — 아직 처리중
+    assert app.orchestrator.run_start_request(processing.request_id, owner="worker-1").status == "취소"
+    assert form(processing.request_id) is None                               # 처리 중 취소 요청 뒤 취소
+
+    capped = app.orchestrator.request_start("7", 105)
+    for i in range(4):                                                       # 워커가 처리 도중 네 번 멈춤
+        assert app.store.acquire_start_request(capped.request_id, f"dead-{i}", 60)
+        clock.advance(seconds=61)
+    st = app.orchestrator.run_start_request(capped.request_id, owner="alive")
+    assert (st.status, st.code) == ("실패", "E-C1-TIMEOUT")
+    assert form(capped.request_id) is None                                   # 가져간 횟수 초과 실패
+
+
 def test_active_work_matches_request_start_counting(clock):
     """웹이 사전 정보를 저장하기 전에 보는 동시 실행 확인 — request_start와 같은 기준으로 센다."""
     app = app_with(clock, project(101), project(102), project(201, user=8))

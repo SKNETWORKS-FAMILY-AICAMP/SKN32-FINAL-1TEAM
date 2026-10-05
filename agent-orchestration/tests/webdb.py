@@ -4,6 +4,8 @@
 MySQL 통합 테스트는 실제 app_schema.sql을 쓴다(mysqldb.py).
 
 - proofread_logs는 웹 스키마 변경 뒤의 모양(project_id · model_version 있음, plan_id 없어도 됨)이다.
+  project_id는 NULL 허용 · projects 삭제 때 SET NULL(학습 데이터는 프로젝트를 지워도 남는다). created_at은 있다 —
+  Orchestrator가 저장 시각(UTC)을 직접 넣는다.
   옛 모양(plan_id NOT NULL, project_id 없음)은 use_old_proofread_logs로 바꿔 시험한다.
 - 학습 동의는 projects.company_id → companies.user_id → users.ai_training_agreed로 읽는다.
 """
@@ -15,8 +17,8 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, Engine, Integer, MetaData, Numeric, String, Table, Text, func, insert, select,
-    text,
+    Boolean, Column, DateTime, Engine, ForeignKey, Integer, MetaData, Numeric, String, Table, Text, func, insert,
+    select, text,
 )
 
 META = MetaData()
@@ -50,11 +52,15 @@ Table("generation_failure_alerts", META,
       Column("regenerate_exhausted", Boolean, nullable=False, server_default=text("0")))
 
 
-def proofread_columns(*, new: bool) -> list[Column]:
-    """proofread_logs 컬럼 — new면 웹 스키마 변경 뒤(project_id · model_version, plan_id NULL 허용)."""
+def proofread_columns(*, new: bool, fk: bool = False) -> list[Column]:
+    """proofread_logs 컬럼 — new면 웹 스키마 변경 뒤(project_id NULL 허용, model_version, plan_id NULL 허용).
+
+    fk: project_id → projects 외래 키(ON DELETE SET NULL). projects가 같은 MetaData에 있을 때만 준다.
+    """
     cols = [Column("log_id", Integer, primary_key=True)]
     if new:
-        cols.append(Column("project_id", Integer, nullable=False))
+        refs = [ForeignKey("projects.project_id", ondelete="SET NULL")] if fk else []
+        cols.append(Column("project_id", Integer, *refs, nullable=True))
     cols += [
         Column("plan_id", Integer, nullable=new),
         Column("section_id", Integer),
@@ -71,7 +77,7 @@ def proofread_columns(*, new: bool) -> list[Column]:
     return cols
 
 
-PROOFREAD_LOGS = Table("proofread_logs", META, *proofread_columns(new=True))
+PROOFREAD_LOGS = Table("proofread_logs", META, *proofread_columns(new=True, fk=True))
 OLD_PROOFREAD_LOGS = Table("proofread_logs", MetaData(), *proofread_columns(new=False))   # 웹 스키마 변경 전
 
 POLICIES = Table(

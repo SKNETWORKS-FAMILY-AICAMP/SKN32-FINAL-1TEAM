@@ -2,12 +2,27 @@
 
 | 항목 | 내용 |
 |---|---|
-| 작성일 | 2026-10-01 (2026-10-02 갱신 — 웹 더미 파이프라인 떼어 내기. 2026-10-03 갱신 — 공고 서버 연결. 2026-10-04 갱신 — 작업 분해(T-C3)가 고른 평가 항목) |
+| 작성일 | 2026-10-01 (2026-10-02 갱신 — 웹 더미 파이프라인 떼어 내기. 2026-10-03 갱신 — 공고 서버 연결. 2026-10-04 갱신 — 작업 분해(T-C3)가 고른 평가 항목. 2026-10-05 갱신 — 시각 UTC · 실행 로그 12개월 처리 · 탈퇴 함수) |
 | 상태 | 함수 이름 · 인자 · 결과 필드 · 오류 코드는 **구현 완료**. 화면 조회(5.1절)의 화면별 모양은 **초안** — 웹팀과 맞춰 고친다 |
-| 근거 | 웹팀 합의(2026-09-30) 1~10번, 사용자 결정(2026-10-01 ~ 10-03), `워커_구동_방식_제안.md`(확정), `웹스키마_교체목록_웹팀전달.md`(두 문서 저장소 미포함) |
-| 코드 | `sbrain/` — 명령 창구 `flow/service.py`(`SBrainOrchestrator`), 화면 · 결과 · 관리자 조회 `flow/reads.py`, 재작성 묶음 `flow/rework_map.py`, 조립 `bootstrap.py`, 워커 `worker.py`, 웹 테이블 쓰기 `store_sql/web_tables.py` |
+| 근거 | 웹팀 합의(2026-09-30) 1~10번, 사용자 결정(2026-10-01 ~ 10-05), 웹팀 회신(2026-10-05), `워커_구동_방식_제안.md`(확정), `웹스키마_교체목록_웹팀전달.md`(두 문서 저장소 미포함) |
+| 코드 | `sbrain/` — 명령 창구 `flow/service.py`(`SBrainOrchestrator`), 화면 · 결과 · 관리자 조회 `flow/reads.py`, 재작성 묶음 `flow/rework_map.py`, 조립 `bootstrap.py`, 워커 `worker.py`, 웹 테이블 쓰기 `store_sql/web_tables.py`, 시각 `models/clock.py`, 실행 로그 12개월 처리 `flow/retention.py` · 통계 줄 `flow/log_stats.py` |
 | 독자 | 웹팀(백엔드) |
-| 함께 볼 문서 | `docs/웹연동_변경사항_웹팀전달.md` — 웹 엔드포인트마다 어떤 함수를 부르고 응답을 어떻게 채우는지, 값 대응표, 웹 스키마 · 프론트 변경. `docs/공고연동_변경사항_웹팀전달.md` — 공고 서버 연결로 바뀐 화면 3 · 4 · 진행 상태(2026-10-03) |
+| 함께 볼 문서 | `docs/웹연동_변경사항_웹팀전달.md` — 웹 엔드포인트마다 어떤 함수를 부르고 응답을 어떻게 채우는지, 값 대응표, 웹 스키마 · 프론트 변경(2026-10-05 변경과 웹이 할 일은 그 문서 11절). `docs/공고연동_변경사항_웹팀전달.md` — 공고 서버 연결로 바뀐 화면 3 · 4 · 진행 상태(2026-10-03) |
+
+### 2026-10-05 바뀐 점 (요약) — 시각 UTC · 실행 로그 12개월 처리 · 탈퇴
+
+**함수 이름 · 인자 · 결과 필드 이름은 그대로이고, 새 함수 `delete_account_data` 하나가 늘었다.** 다만 **결과의 모든 시각에 시간대(UTC) 표시가 붙는다** — 앞선 안내("기존 함수 결과 모양은 바뀌지 않음")와 다른 점이다. 웹이 할 일은 `웹연동_변경사항_웹팀전달.md` 11절.
+
+| 구분 | 내용 | 절 |
+|---|---|---|
+| 시각 | 결과의 모든 시각은 시간대 있는 UTC(dataclass는 `tzinfo=UTC`, `.dump()`는 끝에 `Z`). 시간대 없는 입력(`admin_executions`의 `since` · `until`)은 UTC로 본다. "오늘"은 한국 날짜 | 2.6 |
+| 새 함수 | `delete_account_data(account_id) -> AccountDeleteResult` — 탈퇴. 그 계정의 Orchestrator 데이터를 식별자 없는 통계 줄로 옮긴 뒤 모두 지운다. 오류는 `BUSY` 하나, 여러 번 불러도 안전 | 7.3 |
+| 탈퇴 순서 | 프로젝트마다 `abort_project` → `delete_project_data` → 모두 끝나면 `delete_account_data` → 웹 행 삭제. `BUSY`면 웹 행을 지우지 않는다. 탈퇴 처리 중에는 그 계정으로 `request_start`를 부르지 않는다 | 7.3 |
+| 관리자 조회 범위 | `admin_runs` · `admin_summary`는 마지막 활동 최근 12개월 안 실행 건만. 그보다 오래된 것은 통계 표를 DB에서 직접 조회 | 8.4 · 8.6 |
+| 시작 요청 | 끝난 지 12개월이 지난 시작 요청(실패 · 취소 등)은 지워진다 — 실행 건 없이 그런 요청만 있던 프로젝트는 `start_status` · `view_project`의 시작 상태가 `None`(시작 전과 같음) | 3.2 · 4 |
+| `delete_project_data` | 결과 `cleared_forms`는 아직 남은(끝나지 않은 요청의) 입력 사본만 센다 — 시작 요청의 입력 사본은 요청이 끝나면 바로 비운다 | 7.2 |
+| 웹 테이블 쓰기 | `proofread_logs.created_at`을 워커가 저장 시각(UTC)으로 직접 넣는다. 웹 테이블 쓰기는 그대로 INSERT 세 가지 | 4.4 |
+| 공유 DB | `orch_` 테이블 10개 → 12개(`orch_log_stats` · `orch_jobs`), 기존 표 인덱스 두 개 추가. 웹은 두 표를 읽지도 쓰지도 않는다 | 2.4 |
 
 ### 2026-10-04 바뀐 점 (요약) — 작업 분해(T-C3)
 
@@ -93,6 +108,7 @@ sequenceDiagram
 | `request_rework_for_project(project_id, bundle)` | 화면 6 · 8 · 9 재작성 (묶음마다 한 번) | `ReworkAccepted` | 6.3 |
 | `abort_project(project_id)` | `DELETE /projects/{id}`(보관), 중단하고 새로 시작 | `AbortResult` | 7.1 |
 | `delete_project_data(project_id)` | `DELETE /projects/{id}/permanent`, 계정 삭제 | `DeleteResult` | 7.2 |
+| `delete_account_data(account_id)` | `DELETE /auth/me` — 프로젝트마다 위 둘을 마친 뒤, 웹 행을 지우기 전 (2026-10-05 새로) | `AccountDeleteResult` | 7.3 |
 | `admin_executions(**조건)` | 관리자 "에이전트 테스크" 탭 | `list[AdminExecution]` | 8.1 |
 | `admin_calls(execution_id)` | 관리자 실행 상세 | `list[AdminCall]` | 8.2 |
 | `admin_runs(...)` | 관리자 "진행 현황" 탭 | `list[AdminRun]` | 8.4 |
@@ -146,12 +162,16 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 
 환경 변수(또는 `agent-orchestration/.env`): `SBRAIN_DB_URL`(필수), `OPENAI_API_KEY`(필수), `SBRAIN_WORKER_POLL_SEC` · `SBRAIN_WORKER_THREADS` · `SBRAIN_WORKER_LEASE_SEC`(선택, 잠정 기본값 1초 · 4 · 120초), `SBRAIN_NOTICE_API_URL`(선택 — 공고 서버 주소. 있으면 공고 매칭 · 자격 확인이 공고 서버에 연결되고, 없으면 Orchestrator 안의 스텁 공고 · 스텁 판정을 쓴다. 공고팀 API가 준비된 뒤 Orchestrator 담당이 설정한다. 어느 쪽이든 웹이 보는 동작은 같다). 여러 대를 띄워도 같은 일을 두 번 하지 않는다(`SKIP LOCKED` + 점유). 재작성 요청을 모으는 중인 실행 건(`orch_runs.collect_until`이 지금보다 뒤)은 그 시각이 지날 때까지 가져가지 않는다.
 
+2026-10-05부터 워커는 실행 로그 12개월 처리도 한다 — 여러 워커 중 한 대만 하루 한 번(잠정) 돌며, 마지막 활동이 12개월보다 오래된 실행 건 · 끝난 시작 요청의 기록을 식별자 없는 통계 줄로 옮기고 지운다(웹 테이블은 건드리지 않는다). 웹 조립(`build_web`)은 이 일을 하지 않는다. 워커 로그 줄 앞의 시각은 UTC다(끝에 `Z`, 예: `2026-09-26 09:00:05Z`).
+
 ### 2.4 공유 DB 준비
 
 1. 웹 스키마(`app_schema.sql`)가 있어야 한다.
-2. `sql/orchestrator_schema.sql`을 적용한다 — `orch_` 테이블 10개, `CREATE TABLE IF NOT EXISTS`만 있다. `orch_runs.project_id`가 `projects(project_id)`를 참조한다(`ON DELETE SET NULL`). **공유 DB 적용은 사용자(Orchestrator 담당)가 한다.**
+2. `sql/orchestrator_schema.sql`을 적용한다 — `orch_` 테이블 12개(2026-10-05 바뀜 — 10개에 통계 표 `orch_log_stats` · 작업 상태 표 `orch_jobs`가 늘었다), `CREATE TABLE IF NOT EXISTS`만 있다. `orch_runs.project_id`가 `projects(project_id)`를 참조한다(`ON DELETE SET NULL`). **공유 DB 적용은 사용자(Orchestrator 담당)가 한다.**
 3. 2026-10-02: `orch_runs`에 `collect_until DATETIME(6) NULL` 컬럼이 늘었다(재작성 요청을 모으는 시간이 끝나는 시각). 이미 테이블을 만든 DB에는 Orchestrator 담당이 컬럼을 더한다. 웹은 `orch_` 테이블을 쓰지 않으므로 할 일이 없다.
 4. 검수 회수 문단(`proofread_logs`)을 쓰려면 웹 스키마 변경이 필요하다(4.4절, `웹연동_변경사항_웹팀전달.md` 4절). 바뀌기 전에는 쓰기만 건너뛴다.
+5. 2026-10-05: 새 표 두 개와 기존 표 인덱스 두 개(`ix_orch_runs_updated` ON `orch_runs (updated_at)`, `ix_orch_start_requests_status_updated` ON `orch_start_requests (status, updated_at)`)가 늘었다. `CREATE TABLE IF NOT EXISTS`는 이미 있는 표에 인덱스를 더하지 않으므로, 표를 다시 만들지 않는 DB에는 `CREATE INDEX` 문을 따로 넣는다(문장은 `웹연동_변경사항_웹팀전달.md` 11.5). **웹은 두 새 표를 읽지도 쓰지도 않는다** — 통계가 필요하면 `orch_log_stats`를 DB에서 직접 조회한다(계정 · 프로젝트 · 실행 건 ID 없음). 웹 로컬 DB의 `orch_` 데이터는 시간대가 섞여 있으니 지우고 새 DDL로 다시 만든다.
+6. 공유 DB 서버 시간대(2026-10-05 확인): `@@global.time_zone`=SYSTEM, `@@session.time_zone`=SYSTEM, `@@system_time_zone`=UTC — DB 기본값으로 채워지는 시각도 UTC다. 바꾸지 않는다.
 
 ### 2.5 식별자
 
@@ -161,6 +181,19 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | `project_id` | 웹 `projects.project_id` (정수 또는 숫자 문자열) |
 | `run_id` · `request_id` · `execution_id` · `cycle_id` | Orchestrator가 만드는 12자 문자열. 웹이 보관할 필요는 없다(관리자 상세 조회의 `execution_id`만 쓴다) |
 | `announcement_id` | 공고 ID (T-C2 후보 카드의 `announcementId`). 공고 표 `notices.notice_id`와 같은 값이다 — 공고팀 추천이 그 표를 읽는다(2026-10-03 확인 끝남) |
+
+### 2.6 시각 (2026-10-05 새로)
+
+**모든 시각은 UTC이고 시간대가 붙는다. 화면 표시는 한국 시간으로 바꾼다. 웹 코드가 우리 값과 자기 값(`utcnow`, 시간대 없음)을 비교 · 저장할 때는 시간대를 맞춘다.**
+
+| 구분 | 규칙 |
+|---|---|
+| 돌려주는 시각 | 모든 함수 결과의 시각은 시간대 있는 UTC다. dataclass(`RunView` · `ReworkAccepted` · `StartStatus` 등)의 `datetime`은 `tzinfo=UTC`(`isoformat()`이면 `+00:00`), pydantic `.dump()`의 시각 문자열은 끝에 `Z`. 필드 이름 · 자리는 그대로다. 대상 예: `next_resume_at` · 알림 `created_at` · `read_at` · 안내 `at` · `collect_until` · 재작성 결과 `startedAt` · `endedAt` · 관리자 조회 `updatedAt` · `startedAt` · `endedAt` · `scoredAt` |
+| 받는 시각 | 시간대 없는 값(`admin_executions`의 `since` · `until`)은 UTC로 본다 |
+| DB 칸 | `orch_` 표와 워커가 INSERT하는 웹 표 셋의 `DATETIME` 칸에는 시간대 없는 UTC를 넣는다 — 웹 `utcnow()`와 같은 기준. 웹 표에서 읽은 시각(예: 알림 `read_at`)에는 UTC를 붙여 돌려준다 |
+| "오늘" | 자격 확인 기준일 · 마감 안내(E-RUN-CLOSED)의 "오늘"은 한국 날짜(UTC+9) |
+
+- 시간대 있는 값과 시간대 없는 값(`datetime.datetime.utcnow()`)은 파이썬에서 빼거나 비교할 수 없다(`TypeError`). 웹이 우리 결과와 자기 값을 함께 계산하는 곳은 한쪽으로 맞춘다. 웹 코드에서 확인할 곳은 `웹연동_변경사항_웹팀전달.md` 11.1.
 
 ## 3. 시작 — 사전 정보 제출 → 공고 후보
 
@@ -203,6 +236,8 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 
 그 프로젝트의 **마지막** 시작 요청 상태. 요청이 없으면 `None`.
 
+- 2026-10-05부터 끝난 지(마지막 갱신) 12개월이 지난 시작 요청(완료 · 실패 · 취소)은 워커가 통계 줄로 옮기고 지운다. 그래서 실행 건 없이 실패 · 취소 요청만 있던 프로젝트는 12개월 뒤 `None`(시작 전과 같음)으로 보인다.
+
 | `status` | 뜻 | 웹 화면 |
 |---|---|---|
 | 대기 · 처리중 | 워커가 가져가기 전 · 사전 단계 진행 중 | 진행 중 |
@@ -225,7 +260,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 |---|---|
 | `project_id` | |
 | `run` | 실행 건이 있으면 `RunView` |
-| `start` | 실행 건이 없으면 마지막 시작 요청 `StartStatus` (요청도 없으면 `run` · `start` 모두 `None`) |
+| `start` | 실행 건이 없으면 마지막 시작 요청 `StartStatus` (요청도 없으면 `run` · `start` 모두 `None`). 끝난 지 12개월이 지난 시작 요청은 지워지므로, 실행 건 없이 그런 요청만 있던 프로젝트도 `None`이다(2026-10-05, 3.2) |
 
 ### 4.1 `RunView` (dataclass, 사용자용 — 실패 사유 없음)
 
@@ -238,10 +273,10 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | `resume_step` | 이어하기 복귀 화면 번호 (재작성 중이면 요청한 화면) |
 | `percent` | 진행률(%) — 진행 중(실행 · 재개대기)이면 지금 구간에서 끝난 단계 비율, 완료 100, 그 밖 0 |
 | `current_label` | 지금 하는 단계 한 줄 (예: "요구사항 분석") |
-| `notices` | 안내 목록 `Notice(code, message, at)` — 실행 건의 안내를 계속 쌓는다. 진행 중 · 대기 중이고 선택 공고의 `applyEnd`가 오늘보다 앞이거나(`null`이면 보지 않음) `status`가 '마감'이면 E-RUN-CLOSED가 붙는다(2026-10-03 바뀜 — 모집 상태 모름은 마감이 아니다) |
+| `notices` | 안내 목록 `Notice(code, message, at)` — 실행 건의 안내를 계속 쌓는다. 진행 중 · 대기 중이고 선택 공고의 `applyEnd`가 오늘(한국 날짜, 2026-10-05)보다 앞이거나(`null`이면 보지 않음) `status`가 '마감'이면 E-RUN-CLOSED가 붙는다(2026-10-03 바뀜 — 모집 상태 모름은 마감이 아니다) |
 | `notifications` | 작업 알림 목록 `Notification` — 웹 `notifications` 테이블의 행. `notificationId`는 그 행의 ID |
 | `retry_count` · `resume_count` | 재시도 · 재개 횟수 (실행 건 값 그대로) — **새로** |
-| `next_resume_at` | 다음 재개 예정 시각 (재개대기일 때) — **새로** |
+| `next_resume_at` | 다음 재개 예정 시각 (재개대기일 때) — **새로**. 시간대 있는 UTC(2.6) |
 | `last_error_kind` | 마지막 오류 종류 (일시 · 입력 · 운영) — **새로** |
 | `rework_screen` | 재작성 중인 화면 (6 · 8 · 9, 재작성 중이 아니면 `None`) — **새로** |
 | `collecting` | 재작성 요청을 모으는 중이면 참 (6.3) — **새로** |
@@ -284,7 +319,8 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | 대상 | **반려된 시도** = 보호 토큰 검사를 통과하지 못한 T-P2 시도. 채택하지 않았어도 토큰 검사를 통과한 시도는 반려가 아니다 |
 | 시도 | T-P2 함수가 결과를 돌려준 호출 하나. 호출 실패(재시도를 다 써서 원문 유지)는 시도가 아니다. 재개되어 같은 문장을 다시 처리해도 시도 번호를 이어서 센다 |
 | 조건 | 저장하는 순간 그 프로젝트 주인의 `users.ai_training_agreed`가 참일 때만. 미동의 계정은 쓰지 않는다(시도별 기록은 산출물에는 남는다) |
-| 채우는 컬럼 | `project_id` · `original_text`(원문 문장) · `corrected_text`(반려된 시도 문장) · `reason`(위반 요약, 예: "보호 토큰 검사 불통과 (빠짐 1건)") · `attempt_no` · `passed`(FALSE) · `violation_type` · `violation_note`(위반 토큰 목록 전체, 예: "빠짐: 1억원 / 섞임: A, B") · `recovery_status`('pending') · `model_version`(그 시도를 만든 T-P2 실행의 모델). 나머지 컬럼은 웹 기본값. `reason` · `violation_note` 표기는 잠정 |
+| 채우는 컬럼 | `project_id` · `original_text`(원문 문장) · `corrected_text`(반려된 시도 문장) · `reason`(위반 요약, 예: "보호 토큰 검사 불통과 (빠짐 1건)") · `attempt_no` · `passed`(FALSE) · `violation_type` · `violation_note`(위반 토큰 목록 전체, 예: "빠짐: 1억원 / 섞임: A, B") · `recovery_status`('pending') · `model_version`(그 시도를 만든 T-P2 실행의 모델) · `created_at`(단계 저장 시각, 시간대 없는 UTC — 2026-10-05부터 DB 기본값 대신 직접 넣는다). 나머지 컬럼은 웹 기본값. `reason` · `violation_note` 표기는 잠정 |
+| 남기는 행 (2026-10-05) | 학습에 반영된 행(`recovery_status='trained'`, 웹이 학습 데이터로 내보낼 때 표시)만 완전 삭제 · 탈퇴 뒤에도 남고 `project_id`가 끊긴다(웹 스키마 `project_id` NULL 허용 + `ON DELETE SET NULL`). `pending` · `labeled` · `excluded` 행은 웹이 프로젝트 행을 지우기 전에 지운다. 워커는 `pending`으로만 쓴다 — `웹연동_변경사항_웹팀전달.md` 11.7 |
 | `violation_type` | 웹 표기 `날짜` · `수치·금액` · `고유명사` · `기능명` 중 하나. 위반 토큰을 보호 토큰 목록과 값으로 맞춰 정하고, 여러 종류면 빠진 → 바뀐 → 섞인 순서로 처음 맞는 것. 못 맞추면 비운다 |
 | 중복 | 같은 시도를 두 번 쓰지 않는다. T-P2가 재개되면 다시 처리한 문장의 새 시도만 쓴다 |
 | 웹 스키마가 아직 안 바뀌었을 때 | 위 컬럼이 없거나, 우리가 채우지 않는 NOT NULL · 기본값 없는 컬럼(예: 지금의 `plan_id`)이 남아 있으면 **쓰기만 건너뛴다**. 실행 건마다 한 번 추적 사건 '검수회수기록생략'(이유만)을 남기고 T-P2 단계 저장과 검수는 정상으로 끝낸다. 맞지 않는 구조는 기억하지 않아 웹 스키마가 바뀌면 다음 저장부터 쓴다. 지난 시도를 나중에 채우지는 않는다 |
@@ -479,27 +515,58 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 
 - **워커가 그 실행 건의 단계를 도는 중이면** 중단 요청만 남기고 지우지 않은 채 `CommandError("BUSY")`를 올린다. 그 단계가 끝나며 저장하는 산출물이 지운 뒤에 남지 않게 하기 위해서다. 단계가 끝나면 워커가 곧 중단하므로 **잠시 뒤 다시 부르면 지워진다**(웹은 몇 초 간격으로 다시 부르거나 사용자에게 잠시 뒤 다시 시도하라고 안내).
 - `DeleteResult` (dataclass): `project_id` · `abort`(AbortResult) · `run_id` · `deleted_artifacts` · `cleared_forms`(입력 사본을 지운 시작 요청 수).
-- 웹이 `projects` 행을 지우면 `orch_runs.project_id`는 NULL이 되고(외래 키 `ON DELETE SET NULL`) 실행 로그는 남는다. 관리자 실행 기록의 `project_id`는 옛 번호로 남는다(실행 로그 식별자 분리는 12개월 보관 정책과 함께 정할 일).
-- 웹 `proofread_logs`의 행(라벨링된 학습 데이터 포함)은 웹 테이블이라 이 함수가 지우지 않는다. 완전 삭제 때 어떻게 할지는 웹팀 확인 사항이다(12절).
+- **`cleared_forms` (2026-10-05 바뀜):** 시작 요청의 입력 사본(`form_json`)은 이제 요청이 끝나면(완료 · 실패 · 취소) 그 상태를 바꾸는 같은 저장에서 비운다. 그래서 `cleared_forms`는 아직 남은 사본, 곧 끝나지 않은 요청의 사본만 센다. 대기 요청은 이 함수가 먼저 하는 중단(7.1)에서 취소되며 그때 비워지므로 실제로는 처리중 요청만 세는 일이 많고, 0이어도 정상이다. 결과 모양 · 이름은 그대로다.
+- 웹이 `projects` 행을 지우면 `orch_runs.project_id`는 NULL이 되고(외래 키 `ON DELETE SET NULL`) 실행 로그는 남는다. 관리자 실행 기록의 `project_id`는 옛 번호로 남는다. ~~실행 로그 식별자 분리는 12개월 보관 정책과 함께 정할 일~~ → 2026-10-05 정함: 마지막 활동 12개월 뒤 워커가 실행 로그를 식별자 없는 통계 줄로 옮기고 남은 실행 건 줄까지 지운다. 탈퇴하면 바로 지운다(7.3).
+- 웹 `proofread_logs`의 행은 웹 테이블이라 이 함수가 지우지 않는다. ~~완전 삭제 때 어떻게 할지는 웹팀 확인 사항이다~~ → 2026-10-05 정함: 학습에 반영된 `trained` 행만 남기고 나머지는 웹이 프로젝트 행을 지우기 전에 지운다(4.4, `웹연동_변경사항_웹팀전달.md` 11.7).
 
-### 7.3 계정 삭제(탈퇴)
+### 7.3 계정 삭제(탈퇴) — `delete_account_data(account_id) -> AccountDeleteResult` (2026-10-05 바뀜)
 
-기획서 6-7 "진행 중인 실행이 있으면 중단한 뒤 삭제". 웹이 그 계정의 **프로젝트마다** 다음을 부른다.
+기획서 6-7 "계정 식별자와 마이페이지 프로필, 모든 실행 건을 삭제한다. 진행 중인 실행이 있으면 중단한 뒤 삭제". 웹은 아래 순서로 부른다.
 
-1. `abort_project(project_id)`
-2. `delete_project_data(project_id)` — `BUSY`면 잠시 뒤 다시
-3. 웹이 프로젝트 · 계정 행을 지운다
+1. 그 계정의 **프로젝트마다** `abort_project(project_id)` → `delete_project_data(project_id)` — `BUSY`면 잠시 뒤 다시
+2. 모두 끝나면 `delete_account_data(account_id)` (확장, 2026-10-05 새로) — `account_id`는 `str(user_id)`
+3. 웹이 프로젝트 · 계정 행을 지운다 — **2가 `BUSY`면 지우지 않는다**(잠시 뒤 다시)
+
+- **탈퇴 처리 중에는 그 계정으로 `request_start`를 부르지 않는다.** 함수가 도는 동안 그 계정의 시작 요청 넣기는 계정 잠금을 기다리고, 함수가 끝난 뒤 들어간 요청은 지워지지 않고 남는다.
+
+`delete_account_data`가 하는 일 (계정 잠금을 잡은 채 끝까지):
+
+| 순서 | 처리 |
+|---|---|
+| ① | 대기 시작 요청은 취소, 처리중 요청에는 취소 요청을 남긴다 |
+| ② | 진행 중(실행 · 재개대기 · 사용자대기) 실행 건은 중단한다. 워커가 단계를 도는 중이면 중단 요청만 남는다 |
+| ③ | ① · ②에서 처리중 요청이나 단계를 도는 실행 건이 있으면 **아무것도 지우지 않고** `CommandError("BUSY")` — 중단 · 취소 요청은 남는다 |
+| ④ | 그 계정의 모든 실행 건(끝난 것 · 완전 삭제한 것 포함)마다 점유를 잡고 한 트랜잭션으로: 옮길 실행 로그가 있으면 식별자 없는 통계 줄(까닭 '탈퇴')을 쓰고, 산출물 · 현재 버전 포인터 · 실행 로그 · 실행 건 줄을 지운다(완전 삭제를 빠뜨려 남은 산출물도). 점유를 못 잡으면 `BUSY` — 이미 지운 실행 건은 지운 채로 두고, 다시 부르면 남은 것부터 한다 |
+| ⑤ | 모든 실행 건을 처리한 뒤, 끝난 시작 요청 전부를 통계 줄로 세고 같은 트랜잭션에서 지운다 |
+
+- **여러 번 불러도 안전하다.** 남은 것이 없으면(다시 부름 · 없는 계정) 목록은 비고 개수는 모두 0이다. 다른 곳이 그 사이 지운 실행 건은 세지 않고 건너뛴다.
+- 오류는 `BUSY` 하나다(기존 코드, 10.2). 계정 잠금을 제한 시간(잠정 10초) 안에 못 잡아도 `BUSY`. 메시지에 식별자를 싣지 않는다.
+- 주인 확인은 하지 않는다 — 웹이 로그인 계정을 확인한 뒤 부른다. 웹 테이블은 건드리지 않고, 단계를 돌지 않는다. 웹 조립(`build_web`)에서 부른다.
+- 같은 사람이 다시 가입해도 이전 기록과 연결되지 않는다.
+
+`AccountDeleteResult` (dataclass, 확장)
+
+| 필드 | 내용 |
+|---|---|
+| `account_id` | 넘긴 계정 ID |
+| `cancelled_requests` | 대기 → 취소한 시작 요청 ID 목록 |
+| `aborted_runs` | 바로 중단한 실행 건 ID 목록 |
+| `deleted_runs` | 지운 실행 건 줄 수 |
+| `deleted_requests` | 지운 시작 요청 줄 수 |
+| `stats_rows` | 쓴 통계 줄 수 (실행 + 시작요청) |
 
 ## 8. 관리자 조회 — 메타데이터 · 점수 · 개수만 (산출물 · 입력 · 문장 내용 없음)
 
-관리자 조회 결과는 pydantic이고 `.dump()`는 camelCase JSON이다.
+관리자 조회 결과는 pydantic이고 `.dump()`는 camelCase JSON이다. 시각은 끝에 `Z`가 붙은 UTC다(2.6).
+
+**범위 (2026-10-05 새로):** `admin_runs`(8.4) · `admin_summary`(8.6)는 **최근 12개월 기준** — 마지막 활동(실행 건의 마지막 갱신 시각)이 지금에서 12개월 전 이후인 실행 건만 본다. **그보다 오래된 것은 통계 표(`orch_log_stats`)를 DB에서 직접 조회한다**(조회 함수는 두지 않는다. 계정 · 프로젝트 · 실행 건 ID 없음). 나머지 관리자 조회(8.1 · 8.2 · 8.5 · 8.7)는 범위를 두지 않고 남은 기록을 보여 준다 — 워커가 마지막 활동 12개월이 지난 실행 건의 실행 로그를 통계 줄로 옮기고 지우므로, 그 몫은 어느 관리자 조회에도 없다. 12개월 처리 뒤 다시 움직인 실행 건은 8.4 · 8.6 범위에 다시 들어오지만 옮긴 기록 몫의 점수 이력 · 시도 수는 없다.
 
 ### 8.1 `admin_executions(...) -> list[AdminExecution]` — "에이전트 테스크" 탭
 
 | 조건 (모두 선택) | 내용 |
 |---|---|
 | `project_id` · `task_id` · `status` · `agent` | 같은 값만 (`status`: 실행 · 성공 · 실패 · 재개대기 · 생략) |
-| `since` · `until` | 시작 시각 `since` 이상 `until` 미만 (`datetime`) |
+| `since` · `until` | 시작 시각 `since` 이상 `until` 미만 (`datetime`. 시간대가 없으면 UTC로 본다 — 2026-10-05) |
 | `limit` · `offset` | 기본 50 · 0 |
 | `order` | `"desc"`(최근 순, 기본) · `"asc"` |
 
@@ -523,7 +590,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 
 ### 8.4 `admin_runs(*, progress=None, step=None, limit=50, offset=0) -> list[AdminRun]` — "진행 현황" 탭 (2026-10-02 새로)
 
-여러 프로젝트의 실행 건 목록. 마지막 갱신 시각(`updatedAt`) 최근 순. `progress`(진행 상태) · `step`(단계명)으로 거르고 `limit` · `offset`으로 나눈다. 실행 건이 없는 프로젝트는 나오지 않는다.
+여러 프로젝트의 실행 건 목록. 마지막 갱신 시각(`updatedAt`) 최근 순. `progress`(진행 상태) · `step`(단계명)으로 거르고 `limit` · `offset`으로 나눈다. 실행 건이 없는 프로젝트는 나오지 않는다. **마지막 갱신이 최근 12개월 안인 실행 건만 나온다**(2026-10-05, 8절 범위).
 
 | 필드 (JSON) | 내용 |
 |---|---|
@@ -538,11 +605,11 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 
 ### 8.5 `admin_score_history(project_id) -> AdminScoreHistory` — "이력보기" (2026-10-02 새로)
 
-층별 채점 이력(최근 순): `projectId` · `runId` · `docScore`(문서층 T-V1 `docScore.total`) · `codeCheck`(코드 점검 T-V2 `codeCheck.total`) · `featureMatch`(계획서 대조 T-V2 `featureMatch.score`). 각 항목은 `ScoreEntry`(`scoredAt` · `score` · `afterRework`(재작성 사이클 안의 채점) · `executionId`). 되돌린 채점도 남는다(채점 기록이다). 실행 건이 없으면 `RUN_NOT_FOUND`(웹은 지금 빈 목록을 돌려준다 — 웹이 받아 빈 목록으로 바꾼다).
+층별 채점 이력(최근 순): `projectId` · `runId` · `docScore`(문서층 T-V1 `docScore.total`) · `codeCheck`(코드 점검 T-V2 `codeCheck.total`) · `featureMatch`(계획서 대조 T-V2 `featureMatch.score`). 각 항목은 `ScoreEntry`(`scoredAt` · `score` · `afterRework`(재작성 사이클 안의 채점) · `executionId`). 되돌린 채점도 남는다(채점 기록이다). 실행 건이 없으면 `RUN_NOT_FOUND`(웹은 지금 빈 목록을 돌려준다 — 웹이 받아 빈 목록으로 바꾼다). 12개월 처리로 실행 로그를 옮긴 실행 건은 채점 이력이 빈 목록이다(2026-10-05).
 
 ### 8.6 `admin_summary() -> AdminSummary` — "운영 현황" · "운영 지표 요약" (2026-10-02 새로)
 
-모든 실행 건 · 실행 기록에서 센다. 비율은 분모가 0이면 `None`, 백분율 소수 1자리. 평균은 소수 1자리.
+~~모든 실행 건 · 실행 기록에서 센다~~ → 2026-10-05 바뀜: **마지막 갱신이 최근 12개월 안인 실행 건과 그 실행 건들의 실행 기록에서 센다**(8절 범위). 아래 모든 필드가 같은 범위다. 비율은 분모가 0이면 `None`, 백분율 소수 1자리. 평균은 소수 1자리.
 
 | 필드 (JSON) | 정의 |
 |---|---|
@@ -557,20 +624,20 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | `totalTokens` | 모든 실행 기록의 입력 + 출력 토큰 |
 | `proofreadAttempts` · `proofreadRejected` · `proofreadRejectRate` | 실행 건마다 현재 `sentenceResults`의 시도 수 · 보호 토큰 검사 불통과 시도 수, 반려 / 시도 × 100. 개수만 센다 |
 
-- 우리 기록으로 셀 수 없어 뺀 것: 실행 건이 없는 프로젝트(웹의 '공고 매칭 전'), 웹 상태 문구('판단 대기' 등). 완전 삭제한 실행 건은 현재 점수 · 표현 검수 시도를 셀 수 없어 그 항목에서 빠진다(채점 이력 · 실행 기록 수 · 토큰은 남는다).
-- 웹 지금 계산과 다른 점은 `웹연동_변경사항_웹팀전달.md` 3.9절 표에 있다.
-- 실행 기록 전체를 읽는다. 규모가 커지면 다시 본다.
+- 우리 기록으로 셀 수 없어 뺀 것: 실행 건이 없는 프로젝트(웹의 '공고 매칭 전'), 웹 상태 문구('판단 대기' 등). 완전 삭제한 실행 건은 현재 점수 · 표현 검수 시도를 셀 수 없어 그 항목에서 빠진다(채점 이력 · 실행 기록 수 · 토큰은 남는다 — 마지막 활동 12개월까지).
+- 웹 지금 계산과 다른 점은 `웹연동_변경사항_웹팀전달.md` 3.9절 표에 있다. 웹의 옛 익명화 스크립트(줄은 남기고 식별자만 비움)와 달리 12개월이 지난 실행은 이 숫자에서 빠진다.
+- 실행 기록 전체를 읽고 범위 안 실행 건의 것만 센다. 규모가 커지면 다시 본다.
 
 ### 8.7 `admin_agent_tasks() -> list[AdminAgentTask]` — "Task별 보기" (2026-10-02 새로)
 
-Agent별(기준 문서 Agent 순서) 한 줄: `agent` · `taskCount`(등록된 단계 수 — 규칙 · 합치기 단계 포함, 예: 조율 13개) · `taskIds` · `executionCount`(실행 기록 수) · `recentProjectId` · `recentStatus`(가장 최근 시작 실행의 프로젝트 · 상태).
+Agent별(기준 문서 Agent 순서) 한 줄: `agent` · `taskCount`(등록된 단계 수 — 규칙 · 합치기 단계 포함, 예: 조율 13개) · `taskIds` · `executionCount`(실행 기록 수 — 남은 기록만, 12개월 처리로 옮긴 몫은 빠진다) · `recentProjectId` · `recentStatus`(가장 최근 시작 실행의 프로젝트 · 상태).
 
 ## 9. 돌려주는 모양 정리
 
 | 종류 | 타입 | JSON으로 |
 |---|---|---|
-| `StartCheck` · `ActiveWork` · `StartStatus` · `ProjectView` · `RunView` · `ConfirmationNeeded` · `ReworkAccepted` · `AbortResult` · `DeleteResult` | dataclass (파이썬 이름 snake_case) | `dataclasses.asdict()` — 안의 `Notice` · `Notification`은 pydantic이라 `model_dump(mode="json")`이 필요하면 웹 직렬화에서 처리 |
-| 화면 모델(5.1) · `Outputs` · `ReworkResult` · `AdminExecution` · `AdminCall` · `AdminRun` · `AdminScoreHistory` · `AdminSummary` · `AdminAgentTask` | pydantic | `.dump()` — 기준 문서 이름(camelCase), 날짜는 ISO 문자열 |
+| `StartCheck` · `ActiveWork` · `StartStatus` · `ProjectView` · `RunView` · `ConfirmationNeeded` · `ReworkAccepted` · `AbortResult` · `DeleteResult` · `AccountDeleteResult` | dataclass (파이썬 이름 snake_case) | `dataclasses.asdict()` — 안의 `Notice` · `Notification`은 pydantic이라 `model_dump(mode="json")`이 필요하면 웹 직렬화에서 처리. `datetime`은 시간대 있는 UTC(2.6) |
+| 화면 모델(5.1) · `Outputs` · `ReworkResult` · `AdminExecution` · `AdminCall` · `AdminRun` · `AdminScoreHistory` · `AdminSummary` · `AdminAgentTask` | pydantic | `.dump()` — 기준 문서 이름(camelCase), 시각은 시간대 표시가 붙은 ISO 문자열(끝에 `Z`, 2026-10-05 바뀜 — 2.6) |
 
 ## 10. 오류 · 안내 코드
 
@@ -601,7 +668,7 @@ Agent별(기준 문서 Agent 순서) 한 줄: `agent` · `taskCount`(등록된 �
 | WEB_NOT_ALLOWED | 웹 조립(`build_web`)에서 부를 수 없는 함수 — 사전 단계 실행(`run_start_request` · `start_run` · `start_run_for_project`)은 워커가 한다. 시작 요청은 그대로 (확장, **2026-10-02 새로**) |
 | SCREEN_NOT_READY · INVALID_SCREEN | 대기 지점이 아님 · 없는 화면 번호 (확장) |
 | INVALID_STATE | 지금 단계 · 진행 상태에서 받을 수 없는 명령 — 점유를 기다리지 않는다 (재작성: 대기 지점이 아님 · 모으는 시간 끝남 · 진행 중, 공고 다시 고르기 · 추가 조회 · 화면 3: 작성 시작 뒤, 작성 시작 · 진행: 워커가 단계를 도는 중 · 재작성을 모으는 중) |
-| BUSY | 받을 수 있는 상태에서 다른 명령과 점유가 겹침(재작성 요청은 5초 다시 시도한 뒤), 완전 삭제는 워커가 단계를 도는 중(7.2) — 잠시 뒤 다시 |
+| BUSY | 받을 수 있는 상태에서 다른 명령과 점유가 겹침(재작성 요청은 5초 다시 시도한 뒤), 완전 삭제는 워커가 단계를 도는 중(7.2), 탈퇴(`delete_account_data`)는 단계를 도는 실행 건 · 처리중 시작 요청이 있거나 계정 잠금 · 점유를 못 잡음(7.3, 2026-10-05) — 잠시 뒤 다시. 탈퇴에서 `BUSY`면 웹 행을 지우지 않는다 |
 | MORE_LIMIT · INVALID_ANNOUNCEMENT | 추가 조회 한도(1회 · 합계 20건) · 후보에 없는 공고 |
 | ANNOUNCEMENT_BLOCKED | 자격 불통과로 막힌 공고 — 그 실행 건에서 다시 고를 수 없음(추가 조회에서 내용이 바뀌면 풀림). `INVALID_ANNOUNCEMENT` 확인 뒤에 본다. 문구는 웹이 정한다(예: "신청 자격에 맞지 않는 공고예요. 다른 공고를 선택해 주세요.") (확장, **2026-10-03 새로**) |
 | NO_SELECTION · INVALID_ORDER · INVALID_ACTION · E-G2-LIMIT | 재작성 선택 없음 · 목록에 없는 지시 · 묶음 이름이 아님 · 화면에 맞지 않는 층 · 원페이지 실행 파일 · 잘못된 동작 · 기회 소진 |
@@ -611,7 +678,9 @@ Agent별(기준 문서 Agent 순서) 한 줄: `agent` · `taskCount`(등록된 �
 
 - `run_start_request` · `advance` · `tick` · `resume`을 부르지 않는다(워커 몫). `build_web` 조립은 단계를 돌지 않고, `run_start_request`는 `WEB_NOT_ALLOWED`로 거절한다.
 - `orch_` 테이블을 직접 쓰지 않는다(합의 2). 웹 `projects`의 진행 컬럼은 이제 누구도 쓰지 않으므로 읽지 않고 함수 결과를 쓴다(정리 대상).
-- `notifications.read_at` · `generation_failure_alerts.acknowledged_at` · `proofread_logs` 라벨링(`recovery_status` · `recovery_label`) 갱신만 웹이 한다.
+- `notifications.read_at` · `generation_failure_alerts.acknowledged_at` · `proofread_logs` 라벨링(`recovery_status` · `recovery_label`) 갱신만 웹이 한다. 2026-10-05부터 `proofread_logs`의 `trained` 표시와 반영 전 행 지우기(완전 삭제 · 탈퇴 · 동의 철회)도 웹이 한다(`웹연동_변경사항_웹팀전달.md` 11.7). `notifications` · `generation_failure_alerts`의 살아 있는 프로젝트 행을 12개월 뒤 어떻게 할지도 웹팀이 정한다(완전 삭제 · 탈퇴 때는 웹이 이미 지운다).
+- 실행 로그 12개월 처리(통계 줄로 옮기고 지우기)는 하지 않는다 — 워커가 한다. 통계 표 `orch_log_stats` · 작업 상태 표 `orch_jobs`는 읽지도 쓰지도 않는다(통계가 필요하면 DB에서 직접 조회).
+- 탈퇴 처리 중에는 그 계정으로 `request_start`를 부르지 않는다(7.3).
 - 옛 가짜 파이프라인 · 클레임 · 복구 루프, "처음부터 다시 생성", 단계 사이 거꾸로 가기(8→6, 9→8)는 없앤다(`웹연동_변경사항_웹팀전달.md` 5 · 6절).
 - 오래 걸리는 재작성 · 검수를 웹 요청 안에서 끝날 때까지 붙잡고 기다리지 않는다. 접수 뒤 프론트가 진행 상태를 주기적으로 확인한다.
 
@@ -624,7 +693,8 @@ Agent별(기준 문서 Agent 순서) 한 줄: `agent` · `taskCount`(등록된 �
 | 공고 ID = `notices.notice_id` | **확인 끝남(2026-10-03).** 같은 값이다 — 공고팀 추천이 공고 표를 읽는다 |
 | 공고 화면 표시 | "내용 바뀜" 문구, 가산점 `null` 표시, 화면 4 확인 필요 표시 — `공고연동_변경사항_웹팀전달.md` 9절 |
 | `generation_failure_alerts` | 모든 실패를 쌓고 `last_error_kind`로 구분 (잠정) |
-| 완전 삭제 때 `proofread_logs` | 라벨링된 학습 데이터를 포함해 어떻게 할지 웹팀 확인 |
+| 완전 삭제 때 `proofread_logs` | **정함(2026-10-05).** 학습에 반영된 `trained` 행만 남기고 `project_id`를 끊는다(NULL 허용 + `ON DELETE SET NULL`), 반영 전 행은 웹이 지운다 — 4.4, `웹연동_변경사항_웹팀전달.md` 11.7 |
+| `notifications` · `generation_failure_alerts`의 12개월 처리 | 웹팀이 정한다(2026-10-05) — `웹연동_변경사항_웹팀전달.md` 11.8 |
 | 완전 삭제 중 `BUSY` | 웹이 다시 부르는 방식. 기다리게 하는 쪽이 낫다면 알려 달라 |
 | 오래 걸리는 웹 요청 제한 시간 | `wait_project` 기본 60초(잠정). 웹 서버 · 프록시 제한 시간에 맞춰 `timeout_sec`를 넘긴다 |
 | 프로토타입 · 인포그래픽 파일 위치 | 구현 Agent 연동 때 정한다. 그 전까지 화면은 예시 파일 |
@@ -661,3 +731,13 @@ Agent별(기준 문서 Agent 순서) 한 줄: `agent` · `taskCount`(등록된 �
 | 자격 결과 확장 필드 | `gateResult.unknownConditions` | 확장 |
 | 화면 3 · 실행 건 | `blockedAnnouncementIds`(실행 건의 막힌 공고 목록) | 확장 |
 | 명령 오류 | `ANNOUNCEMENT_BLOCKED` | 확장 |
+
+## 15. 시각 UTC · 실행 로그 12개월 · 탈퇴의 잠정 · 확장 값 (2026-10-05)
+
+| 항목 | 값 · 내용 | 표시 |
+|---|---|---|
+| 탈퇴 함수 | `delete_account_data(account_id) -> AccountDeleteResult` (7.3) | 확장 |
+| 통계 표 · 작업 상태 표 | `orch_log_stats` · `orch_jobs` (2.4) — 웹은 읽지도 쓰지도 않는다 | 확장 |
+| 관리자 조회 범위 | `admin_runs` · `admin_summary` — 마지막 활동 최근 12개월(달력 기준, 실행 로그 12개월 처리와 같은 기준 시각) (8절) | 확장 |
+| 계정 잠금 대기 | 10초 — `delete_account_data`는 넘기면 `BUSY` | 잠정(조정값) |
+| 실행 로그 12개월 처리 주기 · 묶음 | 하루 한 번(마지막으로 끝까지 마친 뒤 24시간), 워커가 10분마다 때가 됐는지 확인, 한 번에 100건, 작업 점유 120초(워커 점유와 같음) — 워커 값이라 웹에는 영향이 없다 | 잠정(조정값) |

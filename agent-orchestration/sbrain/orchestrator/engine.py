@@ -13,6 +13,7 @@
   돌려받은 산출물 참조를 그 실행 기록의 입력 참조에 더한다. 입력을 만들며 부른 호출도 Task 함수의 호출처럼 그 실행 기록에
   모인다(성공 · 재시도 소진 모두). 어느 Agent 설정으로 무엇을 부를지는 Flow가 정한다.
 - S-Brain 고유 규칙(구간 · 대기 지점 · 재작성 경로 · 알림)은 Flow가 맡는다.
+- 시각은 시간대 있는 UTC다. 주입한 시계 · tick(now)의 시간대 없는 값은 UTC로 본다.
 """
 from __future__ import annotations
 
@@ -26,6 +27,7 @@ from pydantic import ValidationError
 
 from ..models import BundleUsage, CycleState, ReworkComparison, ReworkInput, Run, TaskInstruction
 from ..models.base import ErrorKind
+from ..models.clock import as_utc, utc_clock, utc_now
 from ..models.run import FAILURE_REASON_MAX, RedoState, ReworkSummary, collecting, make_state
 from .context import ArtifactTypes, ImmutableArtifactError, RunContext
 from .errors import ContractError, ResourceNotFound, ToolCallExhausted
@@ -119,7 +121,7 @@ class Engine:
         types: ArtifactTypes,
         agents: AgentRegistry | None = None,
         immutable_keys: frozenset[str] = frozenset(),
-        now: Callable[[], datetime] = datetime.now,
+        now: Callable[[], datetime] = utc_now,
         sleep: Callable[[float], None] = time.sleep,
         new_id: Callable[[], str] | None = None,
         owner: str = "worker",
@@ -132,7 +134,7 @@ class Engine:
         self.types = types
         self.agents = agents or AgentRegistry()
         self.immutable_keys = immutable_keys
-        self.now = now
+        self.now = utc_clock(now)
         self.sleep = sleep
         self.new_id = new_id or (lambda: uuid.uuid4().hex[:12])
         self.owner = owner
@@ -190,7 +192,7 @@ class Engine:
 
     def tick(self, now: datetime | None = None) -> list[str]:
         """재개 시각이 된 실행을 모두 깨워 진행한다 (테스트 · 시연용 — 워커는 한 건씩 resume을 부른다)."""
-        now = now or self.now()
+        now = as_utc(now) if now is not None else self.now()
         return [rid for rid in self.store.runs_due_for_resume(now) if self.resume(rid) is not None]
 
     def drain(self, ctx: RunContext) -> Outcome | None:

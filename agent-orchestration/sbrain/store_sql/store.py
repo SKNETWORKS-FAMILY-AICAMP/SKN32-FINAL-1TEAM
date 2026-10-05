@@ -15,6 +15,12 @@
 | claim_* | 후보 한 건을 SELECT … FOR UPDATE SKIP LOCKED로 고르고 같은 트랜잭션에서 조건부 UPDATE로 점유. SQLite는 BEGIN IMMEDIATE로 직렬화되어 조건부 UPDATE만으로 같은 결과. claim_ready_run은 재작성 요청을 모으는 중(collect_until > now)인 실행 건을 건너뛴다 |
 | renew · renew_start_request | 하트비트 — 지금 점유자일 때만 점유 연장 |
 | query_runs · latest_start_requests · find_active_work · count_executions | 여러 실행 건 · 여러 프로젝트 · 동시 실행 확인 · 실행 기록 수 조회 (잠금 없이 읽기만, 확장) |
+| finish_start_request · create_run_for_request · cancel_start_request | 요청을 끝내는(완료 · 실패 · 취소) 같은 UPDATE에서 입력 사본 form_json을 NULL로 비운다 |
+| account_guard | 계정 잠금(add_start_request와 같은 잠금)을 잡은 채로 있는 구간 — 탈퇴용 (확장) |
+| retire_run | 한 트랜잭션: 점유 확인(SELECT … FOR UPDATE, 아니면 StoreConflict) → 통계 줄 → 여섯 기록 표 삭제 → (delete_run) 산출물 · 실행 건 줄 삭제 / (bump_parts) run_json의 statsParts만 +1 — updated_at은 그대로 (확장) |
+| retire_start_requests | 한 트랜잭션: 넘긴 요청이 모두 끝났는지 잠가서 확인(FOR UPDATE, 아니면 StoreConflict) → 통계 줄 → 요청 삭제 (확장) |
+| retention_run_targets · retention_request_targets | 12개월 처리 대상 (잠금 없이 읽기만 — 부르는 쪽이 실행 건 점유를 잡고 다시 본다, 확장) |
+| try_start_job · renew_job · finish_job · release_job | orch_jobs 점유 — 작업 줄이 없으면 만들고(INSERT … ON DUPLICATE KEY/ON CONFLICT) 같은 트랜잭션에서 조건부 UPDATE (확장) |
 
 - 알림은 웹 notifications에 쓴다. 기준 문서 Notification의 runId 자리에 project_id를 쓰고, project_id가 없는
   실행 건(테스트 · 시연용 직접 시작)은 웹 테이블에 쓰지 않는다. 웹 테이블에 쓸 project_id는 실행 건 행의
@@ -26,6 +32,8 @@
   추적 사건 '검수회수기록생략'을 실행 건마다 한 번 남긴다 — 단계 저장은 되돌리지 않는다.
 - 저장된 진행 상태가 실패가 아니었는데 이번에 실패면 generation_failure_alerts에 한 행을 쌓는다.
 - 점유 시각은 주입한 시계(now)로 잰다. 여러 서버가 같은 DB를 쓰면 서버 시계가 맞아야 한다(잠정).
+- 시각은 시간대 있는 UTC로 다루고, DB 칸에는 시간대 없는 UTC로 넣는다(schema.UtcDateTime · 웹 표는 web_tables).
+  주입한 시계 · 인자의 시간대 없는 값은 UTC로 본다.
 - 계정 잠금 대기 10초 (잠정).
 """
 from __future__ import annotations
@@ -38,26 +46,27 @@ from datetime import datetime, timedelta
 from typing import Any, Callable
 
 from sqlalchemy import (
-    Connection, Engine, Row, Select, Table, and_, case, delete, func, insert, or_, select, text, update,
+    Connection, Engine, Row, Select, Table, and_, case, delete, exists, func, insert, or_, select, text, update,
 )
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from ..models import Notice, Notification, RejectedAttempt, ReworkComparison, Run
+from ..models.clock import as_utc, utc_clock, utc_now
 from ..models.run import ACTIVE_PROGRESS
 from ..orchestrator.errors import ProjectRunExists, StoreConflict
 from ..orchestrator.store import (
-    PENDING_REQUEST, ArtifactVersion, CancelOutcome, CommitBatch, CreateOutcome, ExecutionFilter, ExecutionRow,
-    RunFilter, StartRequest, StartRequestStatus,
+    ACCOUNT_LOCK_TIMEOUT_SEC, BUSY_PROGRESS, FINISHED_REQUEST, PENDING_REQUEST, ArtifactVersion, CancelOutcome,
+    CommitBatch, CreateOutcome, ExecutionFilter, ExecutionRow, JobState, LogStatsRow, RunFilter, StartRequest,
+    StartRequestStatus, check_summary,
 )
 from ..orchestrator.trace import TOKEN_FIELDS, CallLog, ExecutionRecord, FeedbackLink, PointerEvent, TraceEvent
 from .schema import (
-    ARTIFACT_POINTERS, ARTIFACT_VERSIONS, CALL_LOGS, EXECUTIONS, FEEDBACK_LINKS, POINTER_EVENTS,
-    REWORK_COMPARISONS, RUNS, START_REQUESTS, TRACE_EVENTS,
+    ARTIFACT_POINTERS, ARTIFACT_VERSIONS, CALL_LOGS, EXECUTIONS, FEEDBACK_LINKS, JOBS, LOG_STATS, POINTER_EVENTS,
+    RECORD_TABLES, REWORK_COMPARISONS, RUNS, START_REQUESTS, TRACE_EVENTS,
 )
 from .web_tables import WebTables
 
-ACCOUNT_LOCK_TIMEOUT_SEC = 10   # 계정 잠금 대기 (잠정)
 PROOFREAD_SKIPPED = "검수회수기록생략"   # 웹 proofread_logs 구조가 맞지 않아 반려된 시도를 쓰지 않음 (실행 건마다 한 번)
 
 
@@ -72,15 +81,16 @@ def project_key(project_id: int | str | None) -> int | None:
 
 
 class SqlStore:
-    def __init__(self, engine: Engine, *, now: Callable[[], datetime] = datetime.now,
+    def __init__(self, engine: Engine, *, now: Callable[[], datetime] = utc_now,
                  web: WebTables | None = None) -> None:
         self.engine = engine
         self.web = web or WebTables()
-        self._now = now
+        self._now = utc_clock(now)
         self._mysql = engine.dialect.name == "mysql"
         self._local_locks: dict[str, threading.Lock] = {}
         self._local_guard = threading.Lock()
         self._lease_sec: dict[tuple[str, str], float] = {}   # 이 프로세스가 잡은 점유의 길이 (저장 때 연장)
+        self.account_lock_timeout: float = ACCOUNT_LOCK_TIMEOUT_SEC   # 계정 잠금 대기 (잠정)
 
     # ── 실행 건 ───────────────────────────────────────
     def create_run(self, run: Run, batch: CommitBatch, *, max_active: int = 1) -> bool:
@@ -101,7 +111,7 @@ class SqlStore:
         conn.execute(insert(RUNS).values(run_id=run.run_id, account_id=run.account_id, project_id=pid,
                                          abort_requested=False, **_run_values(run)))
         batch.run = None
-        self._apply(conn, run.run_id, batch, pid)
+        self._apply(conn, run.run_id, batch, pid, self._now())
         self._alert_on_failure(conn, run, pid, before=None)
         return True
 
@@ -141,6 +151,8 @@ class SqlStore:
             conds.append(RUNS.c.progress == f.progress)
         if f.step is not None:
             conds.append(RUNS.c.step == f.step)
+        if f.updated_since is not None:
+            conds.append(RUNS.c.updated_at >= f.updated_since)
         order = ([RUNS.c.updated_at.desc(), RUNS.c.run_id.desc()] if f.order == "desc"
                  else [RUNS.c.updated_at, RUNS.c.run_id])
         stmt = _paged(select(RUNS.c.run_json).where(*conds).order_by(*order), f.limit, f.offset)
@@ -332,9 +344,10 @@ class SqlStore:
                  detail: dict[str, Any] | None = None, notices: list[Notice] | None = None,
                  run_id: str | None = None) -> dict[str, Any]:
         now = self._now()
+        # 요청이 끝나면 입력 사본을 상태와 같은 UPDATE에서 비운다 (실행 건에는 formInput 산출물로 남는다)
         return dict(status=status, result_code=code, result_message=message, result_detail=detail,
                     notices=[n.dump() for n in notices or []], run_id=run_id, lease_owner=None, lease_until=None,
-                    finished_at=now, updated_at=now)
+                    finished_at=now, updated_at=now, form_json=None)
 
     # ── 실행 점유 ─────────────────────────────────────
     def acquire(self, run_id: str, owner: str, lease_sec: float) -> bool:
@@ -358,7 +371,7 @@ class SqlStore:
     def is_locked(self, run_id: str, now: datetime) -> bool:
         with self.engine.connect() as conn:
             until = conn.execute(select(RUNS.c.lease_until).where(RUNS.c.run_id == run_id)).scalar()
-        return bool(until and until > now)
+        return bool(until and until > as_utc(now))
 
     # ── 한 번에 저장 ──────────────────────────────────
     def commit(self, run_id: str, owner: str, batch: CommitBatch) -> None:
@@ -374,10 +387,12 @@ class SqlStore:
                 values["lease_until"] = now + timedelta(seconds=sec)   # 점유 연장
             if values:
                 conn.execute(update(RUNS).where(RUNS.c.run_id == run_id).values(**values))
-            self._apply(conn, run_id, batch, row.project_id)
+            self._apply(conn, run_id, batch, row.project_id, now)
             self._alert_on_failure(conn, batch.run, row.project_id, before=row)
 
-    def _apply(self, conn: Connection, run_id: str, batch: CommitBatch, project_id: int | None) -> None:
+    def _apply(self, conn: Connection, run_id: str, batch: CommitBatch, project_id: int | None,
+               now: datetime) -> None:
+        """now = 이 저장 시각 (웹 proofread_logs.created_at에 넣는다)."""
         if batch.versions:
             conn.execute(insert(ARTIFACT_VERSIONS), [
                 dict(run_id=run_id, artifact_key=v.key, version=v.version, value=v.value, producer=v.producer,
@@ -403,21 +418,21 @@ class SqlStore:
         if batch.notifications and project_id is not None:
             self.web.insert_notifications(conn, project_id, batch.notifications)
         if batch.rejected_attempts and project_id is not None:
-            self._write_rejected_attempts(conn, run_id, project_id, batch.rejected_attempts)
+            self._write_rejected_attempts(conn, run_id, project_id, batch.rejected_attempts, now)
 
     def _write_rejected_attempts(self, conn: Connection, run_id: str, project_id: int,
-                                 items: list[RejectedAttempt]) -> None:
-        """학습 동의 계정이면 웹 proofread_logs에 쓴다. 구조가 맞지 않으면 건너뛰고 사건을 실행 건마다 한 번 남긴다."""
+                                 items: list[RejectedAttempt], now: datetime) -> None:
+        """학습 동의 계정이면 웹 proofread_logs에 쓴다(created_at = 저장 시각 now). 구조가 맞지 않으면 건너뛰고
+        사건을 실행 건마다 한 번 남긴다."""
         if not self.web.training_agreed(conn, project_id):
             return
         table, problem = self.web.proofread_logs(conn)
         if table is not None:
-            self.web.insert_rejected_attempts(conn, table, project_id, items)
+            self.web.insert_rejected_attempts(conn, table, project_id, items, now)
             return
         seen = conn.execute(select(TRACE_EVENTS.c.seq).where(
             TRACE_EVENTS.c.run_id == run_id, TRACE_EVENTS.c.kind == PROOFREAD_SKIPPED).limit(1)).first()
         if seen is None:
-            now = self._now()
             ev = TraceEvent(run_id=run_id, kind=PROOFREAD_SKIPPED, at=now,
                             detail=f"웹 proofread_logs 구조가 맞지 않아 검수 회수 문단을 쓰지 않음 — {problem}")
             conn.execute(insert(TRACE_EVENTS).values(run_id=run_id, kind=ev.kind, execution_id=None, cycle_id=None,
@@ -457,16 +472,21 @@ class SqlStore:
         SQLite(테스트)는 프로세스 잠금으로 대신한다.
         """
         if not self._mysql:
-            with self._local_lock(account_id):
+            lock = self._local_lock(account_id)
+            if not lock.acquire(timeout=self.account_lock_timeout):
+                raise StoreConflict("계정 잠금을 얻지 못함 (대기 시간 초과)")
+            try:
                 yield
+            finally:
+                lock.release()
             return
         name = f"sbrain:acct:{account_id}"
         if len(name) > 64:   # MySQL 잠금 이름은 64자까지
             name = "sbrain:acct:" + hashlib.sha1(account_id.encode()).hexdigest()
-        got = conn.execute(text("SELECT GET_LOCK(:n, :t)"), {"n": name, "t": ACCOUNT_LOCK_TIMEOUT_SEC}).scalar()
+        got = conn.execute(text("SELECT GET_LOCK(:n, :t)"), {"n": name, "t": self.account_lock_timeout}).scalar()
         conn.commit()
         if got != 1:
-            raise StoreConflict(f"계정 잠금을 얻지 못함: {account_id}")
+            raise StoreConflict("계정 잠금을 얻지 못함 (대기 시간 초과)")   # 계정 ID는 싣지 않는다
         try:
             yield
         finally:
@@ -476,6 +496,16 @@ class SqlStore:
     def _local_lock(self, account_id: str) -> threading.Lock:
         with self._local_guard:
             return self._local_locks.setdefault(account_id, threading.Lock())
+
+    @contextmanager
+    def account_guard(self, account_id: str) -> Iterator[None]:
+        """계정 잠금을 잡은 채로 있는 구간 (확장 — 탈퇴용). 잠금 전용 연결을 열어 끝날 때까지 쥔다.
+
+        안에서 부르는 저장소 메서드는 각자 연결 · 트랜잭션을 연다. 같은 계정의 add_start_request · create_run ·
+        create_run_for_request는 부르지 않는다(MySQL은 다른 연결이라 이 잠금을 기다린다).
+        """
+        with self.engine.connect() as conn, self.account_lock(conn, account_id):
+            yield
 
     # ── 중단 요청 ─────────────────────────────────────
     def request_abort(self, run_id: str) -> None:
@@ -575,6 +605,134 @@ class SqlStore:
     def execution_calls(self, execution_id: str) -> list[CallLog]:
         return self._call_logs_where(CALL_LOGS.c.execution_id == execution_id)
 
+    # ── 기록 옮기기 · 보관 기간 · 탈퇴 (확장) ──────────
+    def list_start_requests(self, account_id: str) -> list[StartRequest]:
+        t = START_REQUESTS
+        with self.engine.connect() as conn:
+            rows = conn.execute(select(t).where(t.c.account_id == account_id)
+                                .order_by(t.c.created_at, t.c.request_id)).all()
+        return [_request_of(r) for r in rows]
+
+    def has_pointers(self, run_id: str) -> bool:
+        with self.engine.connect() as conn:
+            return conn.execute(select(ARTIFACT_POINTERS.c.run_id)
+                                .where(ARTIFACT_POINTERS.c.run_id == run_id).limit(1)).first() is not None
+
+    def retire_run(self, run_id: str, owner: str, *, stats: LogStatsRow | None = None, delete_run: bool = False,
+                   bump_parts: bool = False) -> None:
+        now = self._now()
+        with self.engine.begin() as conn:
+            row = conn.execute(select(RUNS.c.lease_owner, RUNS.c.run_json)
+                               .where(RUNS.c.run_id == run_id).with_for_update()).first()
+            if row is None or row.lease_owner != owner:
+                raise StoreConflict("점유하지 않은 실행 건의 기록을 옮기려 함")   # 실행 건 ID는 싣지 않는다
+            if stats is not None:
+                conn.execute(insert(LOG_STATS).values(**_stats_values(stats, now)))
+            for table in RECORD_TABLES:
+                conn.execute(delete(table).where(table.c.run_id == run_id))
+            if delete_run:
+                conn.execute(delete(ARTIFACT_VERSIONS).where(ARTIFACT_VERSIONS.c.run_id == run_id))
+                conn.execute(delete(ARTIFACT_POINTERS).where(ARTIFACT_POINTERS.c.run_id == run_id))
+                conn.execute(delete(RUNS).where(RUNS.c.run_id == run_id))
+            elif bump_parts:
+                # run_json의 옮긴 횟수만 바꾼다 — updated_at 컬럼 · run_json의 updatedAt · 점유는 그대로
+                stored = dict(row.run_json)
+                stored["statsParts"] = int(stored.get("statsParts") or 0) + 1
+                conn.execute(update(RUNS).where(RUNS.c.run_id == run_id).values(run_json=stored))
+
+    def retire_start_requests(self, request_ids: list[str], stats: list[LogStatsRow]) -> int:
+        if len(set(request_ids)) != len(request_ids):
+            raise ValueError("같은 시작 요청이 두 번 들어 있음")
+        t, now = START_REQUESTS, self._now()
+        with self.engine.begin() as conn:
+            if request_ids:
+                found = conn.execute(select(t.c.request_id).where(t.c.request_id.in_(request_ids),
+                                                                  t.c.status.in_(FINISHED_REQUEST))
+                                     .with_for_update()).all()
+                if len(found) != len(request_ids):
+                    raise StoreConflict("없거나 끝나지 않은 시작 요청이 섞여 있음")
+            self._insert(conn, LOG_STATS, [_stats_values(row, now) for row in stats])
+            if not request_ids:
+                return 0
+            return conn.execute(delete(t).where(t.c.request_id.in_(request_ids))).rowcount
+
+    def retention_run_targets(self, cutoff: datetime, limit: int) -> list[str]:
+        now = self._now()
+        has_records = or_(*[exists().where(table.c.run_id == RUNS.c.run_id) for table in RECORD_TABLES])
+        no_pointers = ~exists().where(ARTIFACT_POINTERS.c.run_id == RUNS.c.run_id)
+        stmt = (select(RUNS.c.run_id)
+                .where(RUNS.c.updated_at < cutoff, RUNS.c.progress.not_in(BUSY_PROGRESS),
+                       or_(RUNS.c.lease_owner.is_(None), RUNS.c.lease_until <= now),
+                       or_(has_records, no_pointers))   # 옮길 기록이 있거나 완전 삭제된 것만
+                .order_by(RUNS.c.updated_at, RUNS.c.run_id).limit(limit))
+        with self.engine.connect() as conn:
+            return list(conn.execute(stmt).scalars())
+
+    def retention_request_targets(self, cutoff: datetime, limit: int) -> list[StartRequest]:
+        t = START_REQUESTS
+        with self.engine.connect() as conn:
+            rows = conn.execute(select(t).where(t.c.status.in_(FINISHED_REQUEST), t.c.updated_at < cutoff)
+                                .order_by(t.c.updated_at, t.c.request_id).limit(limit)).all()
+        return [_request_of(r) for r in rows]
+
+    def log_stats(self, kind: str | None = None) -> list[LogStatsRow]:
+        t = LOG_STATS
+        stmt = select(t).order_by(t.c.seq)
+        if kind is not None:
+            stmt = stmt.where(t.c.kind == kind)
+        with self.engine.connect() as conn:
+            rows = conn.execute(stmt).all()
+        return [LogStatsRow(kind=r.kind, reason=r.reason, month=r.month, category=r.category, status=r.status,
+                            result_code=r.result_code, part=r.part, count=r.count, data=r.data_json,
+                            created_at=r.created_at) for r in rows]
+
+    # ── 주기 작업 점유 (확장) ─────────────────────────
+    def try_start_job(self, job_name: str, owner: str, lease_sec: float, interval_sec: float) -> bool:
+        """작업 줄이 없으면 만들고, 같은 트랜잭션에서 조건부 UPDATE로 점유한다 (영향 행 수로 판정).
+
+        MySQL은 다른 워커의 점유 UPDATE가 끝날 때까지 행 잠금을 기다린 뒤 최신 값으로 조건을 다시 본다.
+        """
+        t, now = JOBS, self._now()
+        if self._mysql:
+            ins = mysql_insert(t).values(job_name=job_name)
+            ins = ins.on_duplicate_key_update(job_name=ins.inserted.job_name)
+        else:
+            ins = sqlite_insert(t).values(job_name=job_name).on_conflict_do_nothing(index_elements=["job_name"])
+        free = or_(t.c.lease_owner.is_(None), t.c.lease_until.is_(None), t.c.lease_until <= now)
+        due = or_(t.c.last_finished_at.is_(None), t.c.last_finished_at <= now - timedelta(seconds=interval_sec))
+        with self.engine.begin() as conn:
+            conn.execute(ins)
+            n = conn.execute(update(t).where(t.c.job_name == job_name, free, due).values(
+                lease_owner=owner, lease_until=now + timedelta(seconds=lease_sec), last_started_at=now)).rowcount
+        return n == 1
+
+    def _update_job(self, job_name: str, owner: str, **values: Any) -> bool:
+        t = JOBS
+        with self.engine.begin() as conn:
+            n = conn.execute(update(t).where(t.c.job_name == job_name, t.c.lease_owner == owner)
+                             .values(**values)).rowcount
+        return n == 1
+
+    def renew_job(self, job_name: str, owner: str, lease_sec: float) -> bool:
+        return self._update_job(job_name, owner, lease_until=self._now() + timedelta(seconds=lease_sec))
+
+    def finish_job(self, job_name: str, owner: str, summary: dict[str, int]) -> bool:
+        summary = check_summary(summary)
+        return self._update_job(job_name, owner, lease_owner=None, lease_until=None, last_finished_at=self._now(),
+                                last_summary=summary)
+
+    def release_job(self, job_name: str, owner: str) -> bool:
+        return self._update_job(job_name, owner, lease_owner=None, lease_until=None)
+
+    def get_job(self, job_name: str) -> JobState | None:
+        t = JOBS
+        with self.engine.connect() as conn:
+            r = conn.execute(select(t).where(t.c.job_name == job_name)).first()
+        if r is None:
+            return None
+        return JobState(r.job_name, r.lease_owner, r.lease_until, r.last_started_at, r.last_finished_at,
+                        r.last_summary)
+
     def _records(self, table: Table, run_id: str) -> list[Any]:
         with self.engine.connect() as conn:
             rows = conn.execute(select(table.c.record_json).where(table.c.run_id == run_id).order_by(table.c.seq))
@@ -615,6 +773,12 @@ def _run_values(run: Run) -> dict[str, Any]:
         failure_reason=getattr(run, "failure_reason", None),
         collect_until=run.cycle.collect_until if run.cycle is not None else None,
         run_json=run.dump(), created_at=run.created_at, updated_at=run.updated_at, ended_at=run.ended_at)
+
+
+def _stats_values(row: LogStatsRow, now: datetime) -> dict[str, Any]:
+    """통계 줄 → orch_log_stats 행. created_at은 저장 시각(넘긴 값은 쓰지 않는다)."""
+    return dict(kind=row.kind, reason=row.reason, month=row.month, category=row.category, status=row.status,
+                result_code=row.result_code, part=row.part, count=row.count, data_json=row.data, created_at=now)
 
 
 def _request_free(now: datetime):

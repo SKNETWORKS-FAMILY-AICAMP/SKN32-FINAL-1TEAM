@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import itertools
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -121,7 +121,10 @@ def set_consent(app: App, rid: str, agreed: bool = True) -> None:
 
 
 class Clock:
-    def __init__(self, start: datetime = datetime(2026, 9, 26, 9, 0, 0), backend: Backend | None = None) -> None:
+    """고정 시계 — 부를 때마다 1밀리초씩 간다. 기본 시작은 2026-09-26 09:00 UTC(한국 18:00, 같은 날)."""
+
+    def __init__(self, start: datetime = datetime(2026, 9, 26, 9, 0, 0, tzinfo=timezone.utc),
+                 backend: Backend | None = None) -> None:
         self.t = start
         self.backend = backend
 

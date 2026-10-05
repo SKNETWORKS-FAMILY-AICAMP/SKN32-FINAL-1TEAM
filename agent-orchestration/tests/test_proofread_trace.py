@@ -339,3 +339,10 @@ def test_proofread_logs_writes_start_after_web_schema_change_without_restart(bac
     assert "검수회수기록생략" not in [e.kind for e in store.events(rid)]
     rows = proofread_rows(store.engine, int(store.load_run(rid).project_id))
     assert [(r["attempt_no"], bool(r["passed"])) for r in rows] == [(1, False)]
+
+
+def test_test_web_proofread_logs_shape():
+    """테스트용 웹 proofread_logs — project_id는 NULL 허용 · projects 삭제 때 SET NULL, created_at이 있다(저장 시각을 넣음)."""
+    col = PROOFREAD_LOGS.c.project_id
+    assert col.nullable and [fk.ondelete for fk in col.foreign_keys] == ["SET NULL"]
+    assert "created_at" in PROOFREAD_LOGS.c and "created_at" in OLD_PROOFREAD_LOGS.c

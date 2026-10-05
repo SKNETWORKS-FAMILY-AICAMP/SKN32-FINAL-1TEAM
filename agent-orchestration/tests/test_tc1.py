@@ -12,6 +12,7 @@ from sbrain.agents.supervisor import bind_supervisor, tc1
 from sbrain.contracts import TC1In
 from sbrain.intake import MemoryProjectInputSource
 from sbrain.models import ReferenceDoc
+from sbrain.models.clock import utc_now
 from sbrain.orchestrator.errors import CommandError, ToolCallExhausted
 from sbrain.orchestrator.tools import CallSink, LLMRequest, Tools, ToolsConfig, ToolsContext
 
@@ -148,7 +149,7 @@ def make_tools(llm: FakeLLM) -> Tools:
     cfg = ToolsConfig(agent="조율", provider="openai", model="test", temperature=0.2, timeout_sec=5,
                       retry_count=1, retry_interval_sec=0)
     ctx = ToolsContext(run_id="r1", execution_id="e1", task_id="T-C1", providers={"openai": llm},
-                       sink=CallSink(), now=datetime.now, sleep=lambda s: None)
+                       sink=CallSink(), now=utc_now, sleep=lambda s: None)
     return Tools(cfg, ctx)
 
 

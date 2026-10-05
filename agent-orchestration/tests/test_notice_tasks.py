@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import urllib.parse
-from datetime import date, datetime
+from datetime import date
 from typing import Any
 
 import pytest
@@ -21,6 +21,7 @@ from sbrain.agents.notice import (
 )
 from sbrain.contracts import tasks as c
 from sbrain.models import BonusItem, CompanyInfo, EligibilityRule, ItemSpec, RevenueItem
+from sbrain.models.clock import utc_now
 from sbrain.orchestrator.errors import ResourceNotFound, ToolCallExhausted, message
 from sbrain.orchestrator.settings import PROVISIONAL
 from sbrain.orchestrator.tools import CallSink, Tools, ToolsConfig, ToolsContext
@@ -144,7 +145,7 @@ def tools_for(task_id: str, retries: int = 1) -> tuple[Tools, CallSink]:
     cfg = ToolsConfig(agent="조율", provider="openai", model="gpt-6-luna", temperature=None, timeout_sec=30.0,
                       retry_count=retries, retry_interval_sec=0)
     ctx = ToolsContext(run_id="r1", execution_id="e1", task_id=task_id, providers={}, sink=sink,
-                       now=datetime.now, sleep=lambda s: None)
+                       now=utc_now, sleep=lambda s: None)
     return Tools(cfg, ctx), sink
 
 

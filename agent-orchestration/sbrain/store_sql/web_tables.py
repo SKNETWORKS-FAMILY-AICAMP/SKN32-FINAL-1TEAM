@@ -11,6 +11,8 @@
 - 이 테이블들의 아래 컬럼만 읽고 쓴다. 웹 테이블 쓰기는 notifications · generation_failure_alerts ·
   proofread_logs INSERT 세 가지뿐이다(projects 진행 컬럼은 쓰지 않는다). 그 밖의 웹 테이블 · 컬럼은 건드리지 않는다.
 - 쓰기는 SqlStore가 단계 저장과 같은 트랜잭션에서 부른다.
+- 시각은 시간대 없는 UTC로 넣고(naive_utc), 읽은 시각(웹이 UTC로 쓴 값)에는 UTC를 붙인다(모델이 붙임).
+  구조를 DB에서 읽어 오므로 orch_ 테이블의 UtcDateTime 형식이 아니다 — 여기서 직접 바꾼다.
 - 구조는 처음 쓸 때 DB에서 읽는다(reflection). 필요한 컬럼이 없으면 SchemaMismatch를 올린다.
   테이블마다 따로 읽어, 쓰지 않는 테이블이 없어도 다른 기능은 동작한다.
 - proofread_logs만 예외: 구조가 맞지 않으면 SchemaMismatch를 올리지 않고 이유를 돌려준다(proofread_logs()).
@@ -28,14 +30,16 @@ from sqlalchemy.exc import DBAPIError, NoSuchTableError
 
 from ..intake.sql_source import SchemaMismatch
 from ..models import Notification, RejectedAttempt, Run
+from ..models.clock import naive_utc
 
 
 class ProofreadWriteError(RuntimeError):
     """웹 proofread_logs INSERT 실패 — 메시지에 문장 내용을 싣지 않는다 (오류 종류 · 코드만)."""
 
 # proofread_logs에 Orchestrator가 채우는 컬럼 (웹 스키마 변경 뒤 모양 — 웹팀 확인 전 잠정)
+# created_at은 DB 기본값에 맡기지 않고 단계 저장 시각(UTC)을 넣는다
 PROOFREAD_WRITE = ["project_id", "original_text", "corrected_text", "reason", "attempt_no", "passed",
-                   "violation_type", "violation_note", "recovery_status", "model_version"]
+                   "violation_type", "violation_note", "recovery_status", "model_version", "created_at"]
 
 WEB_COLUMNS: dict[str, list[str]] = {
     "projects": ["project_id", "company_id"],
@@ -82,7 +86,7 @@ class WebTables:
         t = self.table(conn, "notifications")
         conn.execute(insert(t), [
             dict(project_id=project_id, kind=n.kind, failure_scope=n.failure_scope, target_step=n.target_step,
-                 channel=n.channel, created_at=n.created_at, read_at=n.read_at)
+                 channel=n.channel, created_at=naive_utc(n.created_at), read_at=naive_utc(n.read_at))
             for n in items])
 
     def notifications(self, conn: Connection, project_id: int, run_id: str) -> list[Notification]:
@@ -99,7 +103,8 @@ class WebTables:
         t = self.table(conn, "generation_failure_alerts")
         conn.execute(insert(t).values(
             project_id=project_id, stage=run.state.step, resume_count=run.resume_count,
-            last_error_kind=run.last_error_kind or "운영", failure_reason=run.failure_reason, created_at=at))
+            last_error_kind=run.last_error_kind or "운영", failure_reason=run.failure_reason,
+            created_at=naive_utc(at)))
 
     # ── 학습 동의 ─────────────────────────────────────
     def training_agreed(self, conn: Connection, project_id: int) -> bool:
@@ -120,8 +125,9 @@ class WebTables:
             return None, str(e)
 
     def insert_rejected_attempts(self, conn: Connection, table: Table, project_id: int,
-                                 items: list[RejectedAttempt]) -> None:
-        """반려된 시도마다 한 행 — passed=FALSE, recovery_status='pending'. 나머지 컬럼은 웹 기본값.
+                                 items: list[RejectedAttempt], at: datetime) -> None:
+        """반려된 시도마다 한 행 — passed=FALSE, recovery_status='pending', created_at = 저장 시각 at(시간대 없는 UTC).
+        나머지 컬럼은 웹 기본값.
 
         DB 오류는 오류 코드만 남긴 예외로 바꿔 올린다 — 원래 메시지의 SQL 인자 · 값에 문장 내용이 들어 있다.
         """
@@ -130,7 +136,7 @@ class WebTables:
                 dict(project_id=project_id, original_text=a.original_text, corrected_text=a.corrected_text,
                      reason=a.reason, attempt_no=a.attempt_no, passed=False, violation_type=a.violation_type,
                      violation_note=a.violation_note, recovery_status=RECOVERY_PENDING,
-                     model_version=a.model_version)
+                     model_version=a.model_version, created_at=naive_utc(at))
                 for a in items])
         except DBAPIError as e:
             code = e.orig.args[0] if e.orig is not None and e.orig.args else None

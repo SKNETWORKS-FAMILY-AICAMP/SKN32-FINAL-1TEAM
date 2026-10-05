@@ -5,6 +5,7 @@
 - JSON은 MySQL JSON 형식이 아니라 문자열(LONGTEXT)로 저장한다. MySQL JSON 형식은 객체 키 순서를 바꿔
   저장하는데, 순서가 뜻을 갖는 값(check_refs · orders_by_task 등)이 메모리 저장소와 다르게 돌아오기 때문이다.
 - 문자 집합 · 엔진은 웹 스키마와 같게(InnoDB · utf8mb4 · utf8mb4_bin), 시각은 DATETIME(6).
+- 시각 칸에는 시간대 없는 UTC 값을 넣고, 읽으면 UTC를 붙인다(UtcDateTime). 시간대 없는 인자는 UTC로 본다.
 - 1단계에서 이후 단계(시작 요청 · 워커 · 요약 값 · 토큰)가 쓸 컬럼까지 넣어 테이블 변경이 다시 생기지 않게 한다.
 - 웹 projects 테이블은 외래 키 대상 표시용으로만 둔다. DDL은 ORCH_TABLES만 만든다.
 - MySQL DDL 파일은 ddl.py가 만든다. 공유 DB 적용은 사용자가 한다.
@@ -15,10 +16,12 @@ import json
 from typing import Any
 
 from sqlalchemy import (
-    BigInteger, Boolean, Column, DateTime, Double, Engine, ForeignKey, Index, Integer, MetaData, String,
+    CHAR, BigInteger, Boolean, Column, DateTime, Double, Engine, ForeignKey, Index, Integer, MetaData, String,
     Table, Text, TypeDecorator, UniqueConstraint, false, text,
 )
 from sqlalchemy.dialects import mysql
+
+from ..models.clock import as_utc, naive_utc
 
 
 class JsonText(TypeDecorator):
@@ -37,12 +40,31 @@ class JsonText(TypeDecorator):
         return None if value is None else json.loads(value)
 
 
+class UtcDateTime(TypeDecorator):
+    """시각 — DB에는 시간대 없는 UTC(MySQL DATETIME(6)), 파이썬에는 시간대 있는 UTC.
+
+    넣을 때(비교 조건의 값 포함) UTC로 바꾼 뒤 시간대를 떼고(시간대 없는 값은 UTC로 본다), 읽을 때 UTC를 붙인다.
+    """
+
+    impl = DateTime
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        return dialect.type_descriptor(mysql.DATETIME(fsp=6) if dialect.name == "mysql" else DateTime())
+
+    def process_bind_param(self, value: Any, dialect) -> Any:
+        return naive_utc(value)
+
+    def process_result_value(self, value: Any, dialect) -> Any:
+        return as_utc(value)
+
+
 METADATA = MetaData()
 
 # 자동 증가 기본키 — SQLite는 INTEGER PRIMARY KEY여야 자동 증가한다
 SEQ = BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql").with_variant(Integer(), "sqlite")
 PROJECT_ID = BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql")  # 웹 projects.project_id와 같은 형식
-TS = DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql")
+TS = UtcDateTime()
 TOKENS = BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql")
 ZERO = text("0")
 TABLE_ARGS: dict[str, Any] = dict(mysql_engine="InnoDB", mysql_charset="utf8mb4", mysql_collate="utf8mb4_bin")
@@ -103,6 +125,7 @@ RUNS = Table(
     Index("ix_orch_runs_account_progress", "account_id", "progress"),
     Index("ix_orch_runs_progress_lease", "progress", "lease_until"),
     Index("ix_orch_runs_progress_resume", "progress", "next_resume_at"),
+    Index("ix_orch_runs_updated", "updated_at"),   # 마지막 활동 시각 — 12개월 처리 대상 · 관리자 조회 하한
     comment="실행 건 (Run) — 실행 상태의 원본. 프로젝트 1건에 최대 1건",
     **TABLE_ARGS,
 )
@@ -113,7 +136,7 @@ START_REQUESTS = Table(
     Column("project_id", PROJECT_ID, comment="웹 projects.project_id. 테스트 · 시연용 직접 시작은 NULL"),
     Column("account_id", String(64), nullable=False),
     Column("status", String(10), nullable=False, comment="대기 · 처리중 · 완료 · 실패 · 취소"),
-    Column("form_json", JsonText, comment="검사를 통과한 PreInput. 완전 삭제 때 지운다"),
+    Column("form_json", JsonText, comment="검사를 통과한 PreInput. 요청이 끝나면(완료 · 실패 · 취소) · 완전 삭제 때 비운다"),
     Column("result_code", String(40), comment="실패 코드 (시트 6)"),
     Column("result_message", Text, comment="안내 문구"),
     Column("result_detail", JsonText, comment="실패 상세 — 누락 항목 · 진행 중 작업 등 (확장)"),
@@ -129,6 +152,7 @@ START_REQUESTS = Table(
     Index("ix_orch_start_requests_status_created", "status", "created_at"),
     Index("ix_orch_start_requests_project", "project_id"),
     Index("ix_orch_start_requests_account_status", "account_id", "status"),
+    Index("ix_orch_start_requests_status_updated", "status", "updated_at"),   # 끝난 요청의 12개월 처리 대상
     comment="사전 단계 시작 요청 — 웹이 넣고 워커가 처리",
     **TABLE_ARGS,
 )
@@ -281,9 +305,45 @@ TRACE_EVENTS = Table(
     **TABLE_ARGS,
 )
 
+LOG_STATS = Table(
+    "orch_log_stats", METADATA,
+    _seq(),
+    Column("kind", String(10), nullable=False, comment="줄 종류 — 실행 · 시작요청"),
+    Column("reason", String(10), nullable=False, comment="옮긴 까닭 — 12개월 · 탈퇴"),
+    Column("month", CHAR(7), nullable=False, comment="YYYY-MM (한국 날짜 기준)"),
+    Column("category", String(20), comment="실행 줄만 — 카테고리"),
+    Column("status", String(10), comment="실행 줄 = 진행 상태, 시작요청 줄 = 요청 상태"),
+    Column("result_code", String(40), comment="시작요청 줄만 — 실패 코드"),
+    Column("part", Integer, nullable=False, server_default=text("1"),
+           comment="같은 실행 건에서 몇 번째로 옮긴 기록인지. 시작요청 줄은 1"),
+    Column("count", Integer, nullable=False, comment="실행 줄 = 1, 시작요청 줄 = 묶음의 요청 수"),
+    Column("data_json", JsonText, comment="실행 줄만 — 개수 묶음 (JSON)"),
+    Column("created_at", TS, nullable=False, comment="이 줄을 쓴 시각 (UTC)"),
+    Index("ix_orch_log_stats_kind_month", "kind", "month"),
+    comment="실행 로그 통계 줄 (확장) — 12개월 처리 · 탈퇴로 지운 기록의 개수. 계정 · 프로젝트 · 실행 건 ID와 자유 글 없음",
+    **TABLE_ARGS,
+)
+
+JOBS = Table(
+    "orch_jobs", METADATA,
+    Column("job_name", String(40), primary_key=True, comment="작업 이름 (log_retention 등)"),
+    Column("lease_owner", String(200), comment="점유자"),
+    Column("lease_until", TS, comment="점유 만료"),
+    Column("last_started_at", TS, comment="마지막 시작"),
+    Column("last_finished_at", TS, comment="마지막으로 끝까지 마친 시각"),
+    Column("last_summary", JsonText, comment="마지막 요약 — 개수만 (JSON)"),
+    comment="주기 작업 상태 (확장) — 여러 워커 중 하나만 돌게 하는 점유와 마지막 실행",
+    **TABLE_ARGS,
+)
+
+# 실행 건 하나에 딸린 기록 표 — 12개월 처리 · 탈퇴 때 통계 줄로 옮기고 지운다
+RECORD_TABLES: tuple[Table, ...] = (
+    EXECUTIONS, CALL_LOGS, TRACE_EVENTS, FEEDBACK_LINKS, REWORK_COMPARISONS, POINTER_EVENTS,
+)
+
 ORCH_TABLES: list[Table] = [
     RUNS, START_REQUESTS, ARTIFACT_VERSIONS, ARTIFACT_POINTERS, POINTER_EVENTS,
-    EXECUTIONS, CALL_LOGS, FEEDBACK_LINKS, REWORK_COMPARISONS, TRACE_EVENTS,
+    EXECUTIONS, CALL_LOGS, FEEDBACK_LINKS, REWORK_COMPARISONS, TRACE_EVENTS, LOG_STATS, JOBS,
 ]
 
 

@@ -70,7 +70,8 @@ def test_delete_removes_artifacts_and_forms_keeps_logs(clock):
     app.orchestrator.advance(rid)
     before = logs(app, rid)
     res = app.orchestrator.delete_project_data(101)
-    assert (res.run_id, res.deleted_artifacts, res.cleared_forms, res.abort.run_action) == (rid, True, 1, "중단")
+    # 완료된 시작 요청의 입력 사본은 요청이 끝날 때 이미 비웠다 — 지울 것이 남지 않는다 (spec 3)
+    assert (res.run_id, res.deleted_artifacts, res.cleared_forms, res.abort.run_action) == (rid, True, 0, "중단")
     assert app.store.get_pointers(rid) == {} and app.store.get_latest_versions(rid) == {}   # 산출물 · 입력 사본
     assert app.store.get_start_request(st.request_id).form is None
     after = logs(app, rid)

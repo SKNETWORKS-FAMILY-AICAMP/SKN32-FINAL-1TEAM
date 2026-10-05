@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 import pytest
 from conftest import make_app, pre_input, project_for, to_screen6, to_screen9
@@ -27,6 +27,7 @@ from sbrain.flow.instruction import (
 )
 from sbrain.flow.sbrain_flow import SBrainFlow, default_instruction_builder, rewrite_mask_values
 from sbrain.models import CheckResult, CompanyInfo, Excerpt, ReferenceSummary, RevenueItem, ReworkOrder
+from sbrain.models.clock import utc_now
 from sbrain.orchestrator import Settings
 from sbrain.orchestrator.engine import is_internal_key
 from sbrain.orchestrator.errors import ToolCallExhausted
@@ -315,7 +316,7 @@ def supervisor_tools(llm: FakeLLM, task_id: str = "T-W1") -> tuple[Tools, CallSi
     cfg = ToolsConfig(agent="조율", provider="p", model="gpt-6-luna", temperature=None, timeout_sec=120,
                       retry_count=5, retry_interval_sec=0, reasoning_effort="low")
     ctx = ToolsContext(run_id="r", execution_id="e", task_id=task_id, providers={"p": llm}, sink=sink,
-                       now=datetime.now, sleep=lambda s: None)
+                       now=utc_now, sleep=lambda s: None)
     return Tools(cfg, ctx), sink
 
 

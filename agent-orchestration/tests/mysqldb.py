@@ -8,7 +8,8 @@
   app_schema.sql은 공고 수집 스키마의 notices를 외래 키로 참조하는데 그 스키마는 이 프로젝트에 없어
   notice_id(UNIQUE)만 있는 notices를 먼저 만든다.
 - proofread_logs는 웹 스키마가 아직 business_plans 기준(plan_id NOT NULL)이라, 웹팀이 바꿀 모양을 테스트 DB에서만
-  흉내 낸다: plan_id NULL 허용 · business_plans/plan_sections 외래 키 제거, project_id(→ projects) · model_version 추가.
+  흉내 낸다: plan_id NULL 허용 · business_plans/plan_sections 외래 키 제거, project_id(→ projects, NULL 허용 ·
+  ON DELETE SET NULL) · model_version 추가. created_at은 웹 스키마에 이미 있다(Orchestrator가 저장 시각을 넣는다).
   app_schema.sql 파일은 고치지 않는다. 옛 모양은 old_proofread_logs()로 잠시 되돌려 시험한다.
 - app_schema.sql 위치: 환경 변수(또는 .env) SBRAIN_TEST_WEB_SCHEMA가 있으면 그 파일, 없으면 이 폴더 두 단계 위에서
   web/backend/app_schema.sql(웹과 같은 저장소에 둔 배치) → 01_원본/web/backend/app_schema.sql(작업 공간 배치) 순서로 찾는다.
@@ -104,11 +105,11 @@ def _proofread_logs_test_change(cur, database: str) -> None:
     cur.execute(
         "ALTER TABLE proofread_logs "
         "MODIFY plan_id BIGINT UNSIGNED NULL, "
-        "ADD COLUMN project_id BIGINT UNSIGNED NOT NULL AFTER log_id, "
+        "ADD COLUMN project_id BIGINT UNSIGNED NULL AFTER log_id, "
         "ADD COLUMN model_version VARCHAR(50) NULL, "
         "ADD KEY ix_proofread_logs_project (project_id), "
         "ADD CONSTRAINT fk_proofread_logs_project_test FOREIGN KEY (project_id) "
-        "REFERENCES projects(project_id) ON DELETE CASCADE")
+        "REFERENCES projects(project_id) ON DELETE SET NULL")
 
 
 def _old_proofread_logs_ddl() -> str:

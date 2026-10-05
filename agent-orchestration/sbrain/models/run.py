@@ -10,9 +10,10 @@ from typing import Any, Literal
 from pydantic import Field, computed_field, model_validator
 
 from .base import (
-    ErrorKind, FailureScope, KeptSide, NotificationKind, RunPhase, RunProgress,
+    Category, ErrorKind, FailureScope, KeptSide, NotificationKind, RunPhase, RunProgress,
     RunStep, SBModel, ScreenStatus, Trigger, ext,
 )
+from .clock import as_utc
 from .rework import BundleUsage, ReworkComparison
 
 SCREEN_STATUS: dict[str, ScreenStatus] = {
@@ -151,10 +152,10 @@ class ReworkSummary(SBModel):
 
 
 def collecting(run: Run, now: datetime) -> bool:
-    """재작성 요청을 모으는 중인지 — '실행'이고 사이클의 모으는 시간이 아직 끝나지 않았다."""
+    """재작성 요청을 모으는 중인지 — '실행'이고 사이클의 모으는 시간이 아직 끝나지 않았다 (now의 시간대가 없으면 UTC)."""
     cyc = run.cycle
     return (run.state.progress == "실행" and cyc is not None and cyc.collect_until is not None
-            and now < cyc.collect_until)
+            and as_utc(now) < cyc.collect_until)
 
 
 class Run(SBModel):
@@ -194,6 +195,13 @@ class Run(SBModel):
     notices: list[Notice] = ext(default_factory=list)
     ended_at: datetime | None = ext(None)
     failure_reason: str | None = ext(None, note="실패 사유 '<Task>: <사유> — <오류 요약>' (웹 실패 알림에도 쓴다)")
+    category: Category | None = ext(
+        None, note="카테고리(원페이지 · 웹개발 · AI_API) — 기록 통계 줄의 category. 완전 삭제 · 12개월 처리가 지우지 않는다")
+    stats_parts: int = ext(
+        0, note="실행 기록을 통계 줄로 옮긴 횟수. 옮길 때마다 통계 줄 part = 이 값 + 1. 이 값을 쓰는 저장은 "
+                "마지막 활동 시각(updatedAt)을 바꾸지 않는다")
+    proofread_base_ref: str | None = ext(None, note="표현 검수(화면 10) 전 계획서 산출물 '이름@버전'")
+    attempt_max: dict[str, int] = ext(default_factory=dict, note="Task별 마지막 시도 번호 (Task ID → 시도 번호)")
 
 
 def progress_percent(run: Run) -> int:

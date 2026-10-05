@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS orch_runs (
 	CONSTRAINT fk_orch_runs_project FOREIGN KEY(project_id) REFERENCES projects (project_id) ON DELETE SET NULL, 
 	KEY ix_orch_runs_account_progress (account_id, progress), 
 	KEY ix_orch_runs_progress_lease (progress, lease_until), 
-	KEY ix_orch_runs_progress_resume (progress, next_resume_at)
+	KEY ix_orch_runs_progress_resume (progress, next_resume_at), 
+	KEY ix_orch_runs_updated (updated_at)
 )ENGINE=InnoDB CHARSET=utf8mb4 COMMENT='실행 건 (Run) — 실행 상태의 원본. 프로젝트 1건에 최대 1건' COLLATE utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS orch_start_requests (
@@ -46,7 +47,7 @@ CREATE TABLE IF NOT EXISTS orch_start_requests (
 	project_id BIGINT UNSIGNED COMMENT '웹 projects.project_id. 테스트 · 시연용 직접 시작은 NULL', 
 	account_id VARCHAR(64) NOT NULL, 
 	status VARCHAR(10) NOT NULL COMMENT '대기 · 처리중 · 완료 · 실패 · 취소', 
-	form_json LONGTEXT COMMENT '검사를 통과한 PreInput. 완전 삭제 때 지운다', 
+	form_json LONGTEXT COMMENT '검사를 통과한 PreInput. 요청이 끝나면(완료 · 실패 · 취소) · 완전 삭제 때 비운다', 
 	result_code VARCHAR(40) COMMENT '실패 코드 (시트 6)', 
 	result_message TEXT COMMENT '안내 문구', 
 	result_detail LONGTEXT COMMENT '실패 상세 — 누락 항목 · 진행 중 작업 등 (확장)', 
@@ -62,7 +63,8 @@ CREATE TABLE IF NOT EXISTS orch_start_requests (
 	PRIMARY KEY (request_id), 
 	KEY ix_orch_start_requests_account_status (account_id, status), 
 	KEY ix_orch_start_requests_project (project_id), 
-	KEY ix_orch_start_requests_status_created (status, created_at)
+	KEY ix_orch_start_requests_status_created (status, created_at), 
+	KEY ix_orch_start_requests_status_updated (status, updated_at)
 )ENGINE=InnoDB CHARSET=utf8mb4 COMMENT='사전 단계 시작 요청 — 웹이 넣고 워커가 처리' COLLATE utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS orch_artifact_versions (
@@ -202,3 +204,29 @@ CREATE TABLE IF NOT EXISTS orch_trace_events (
 	PRIMARY KEY (seq), 
 	KEY ix_orch_trace_events_run (run_id)
 )ENGINE=InnoDB CHARSET=utf8mb4 COMMENT='그 밖의 추적 사건' COLLATE utf8mb4_bin;
+
+CREATE TABLE IF NOT EXISTS orch_log_stats (
+	seq BIGINT UNSIGNED NOT NULL COMMENT '기록 순서' AUTO_INCREMENT, 
+	kind VARCHAR(10) NOT NULL COMMENT '줄 종류 — 실행 · 시작요청', 
+	reason VARCHAR(10) NOT NULL COMMENT '옮긴 까닭 — 12개월 · 탈퇴', 
+	month CHAR(7) NOT NULL COMMENT 'YYYY-MM (한국 날짜 기준)', 
+	category VARCHAR(20) COMMENT '실행 줄만 — 카테고리', 
+	status VARCHAR(10) COMMENT '실행 줄 = 진행 상태, 시작요청 줄 = 요청 상태', 
+	result_code VARCHAR(40) COMMENT '시작요청 줄만 — 실패 코드', 
+	part INTEGER NOT NULL COMMENT '같은 실행 건에서 몇 번째로 옮긴 기록인지. 시작요청 줄은 1' DEFAULT 1, 
+	count INTEGER NOT NULL COMMENT '실행 줄 = 1, 시작요청 줄 = 묶음의 요청 수', 
+	data_json LONGTEXT COMMENT '실행 줄만 — 개수 묶음 (JSON)', 
+	created_at DATETIME(6) NOT NULL COMMENT '이 줄을 쓴 시각 (UTC)', 
+	PRIMARY KEY (seq), 
+	KEY ix_orch_log_stats_kind_month (kind, month)
+)ENGINE=InnoDB CHARSET=utf8mb4 COMMENT='실행 로그 통계 줄 (확장) — 12개월 처리 · 탈퇴로 지운 기록의 개수. 계정 · 프로젝트 · 실행 건 ID와 자유 글 없음' COLLATE utf8mb4_bin;
+
+CREATE TABLE IF NOT EXISTS orch_jobs (
+	job_name VARCHAR(40) NOT NULL COMMENT '작업 이름 (log_retention 등)', 
+	lease_owner VARCHAR(200) COMMENT '점유자', 
+	lease_until DATETIME(6) COMMENT '점유 만료', 
+	last_started_at DATETIME(6) COMMENT '마지막 시작', 
+	last_finished_at DATETIME(6) COMMENT '마지막으로 끝까지 마친 시각', 
+	last_summary LONGTEXT COMMENT '마지막 요약 — 개수만 (JSON)', 
+	PRIMARY KEY (job_name)
+)ENGINE=InnoDB CHARSET=utf8mb4 COMMENT='주기 작업 상태 (확장) — 여러 워커 중 하나만 돌게 하는 점유와 마지막 실행' COLLATE utf8mb4_bin;

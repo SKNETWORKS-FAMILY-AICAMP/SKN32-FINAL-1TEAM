@@ -24,6 +24,7 @@ from .env import get_env
 from .flow import IMMUTABLE_KEYS, SBrainFlow, SBrainOrchestrator, artifact_types, build_registry
 from .flow.sbrain_flow import REWRITE_AGENT, GuidanceRewriter
 from .intake import ProjectInputSource
+from .models.clock import utc_clock, utc_now
 from .orchestrator import ArtifactTypes, Engine, MemoryStore, Settings, SettingsProvider
 from .orchestrator.registry import TaskRegistry
 from .orchestrator.store import Store
@@ -76,7 +77,7 @@ def build_stub_app(
     scenario: StubScenario | None = None,
     *,
     settings: Settings | None = None,
-    now: Callable[[], datetime] = datetime.now,
+    now: Callable[[], datetime] = utc_now,
     profile_count: Callable[[str], int] = lambda account_id: 1,
     project_inputs: ProjectInputSource | None = None,
     store: Store | None = None,
@@ -96,7 +97,7 @@ def build_app(
     db_url: str | None = None,
     *,
     settings: Settings | None = None,
-    now: Callable[[], datetime] = datetime.now,
+    now: Callable[[], datetime] = utc_now,
     project_inputs: ProjectInputSource | None = None,
     llm: LLMProvider | None = None,
     notice_api_url: str | None = None,
@@ -137,7 +138,7 @@ def build_web(
     *,
     profile_count: Callable[[str], int],
     settings: Settings | None = None,
-    now: Callable[[], datetime] = datetime.now,
+    now: Callable[[], datetime] = utc_now,
     project_inputs: ProjectInputSource | None = None,
 ) -> App:
     """웹 서버 조립 — 명령 · 조회 함수만 쓰는 SBrainOrchestrator. LLM 호출처가 없고 단계를 돌지 않는다.
@@ -171,6 +172,7 @@ def _assemble(*, store: Store, settings: SettingsProvider, scenario: StubScenari
               sleep: Callable[[float], None], profile_count: Callable[[str], int],
               project_inputs: ProjectInputSource | None, stubs: bool,
               rewriter: GuidanceRewriter | None = None) -> App:
+    now = utc_clock(now)   # 모든 구성 요소가 같은 UTC 시계를 쓴다 (시간대 없는 시계는 UTC로 본다)
     registry = build_registry()
     llm = FakeLLM()
     if stubs:

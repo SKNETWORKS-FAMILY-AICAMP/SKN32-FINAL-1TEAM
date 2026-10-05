@@ -2,13 +2,18 @@
 
 - 파이썬 필드는 snake_case, JSON은 기준 문서의 camelCase 이름을 그대로 쓴다.
 - 기준 문서에 없는 필드는 ext()로 선언해 JSON 스키마에 x-extension 표시를 남긴다.
+- 시각(datetime) 필드는 모두 시간대 있는 UTC로 맞춘다. 시간대 없는 값(옛 JSON · DB 값 · 테스트 값)은 UTC로 본다.
+  JSON(.dump())에는 시간대 표시(Z)가 붙는다. 필드 이름 · JSON 이름은 그대로다.
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
+
+from .clock import as_utc
 
 
 class SBModel(BaseModel):
@@ -18,6 +23,12 @@ class SBModel(BaseModel):
         extra="forbid",
         protected_namespaces=(),
     )
+
+    @field_validator("*", mode="after")
+    @classmethod
+    def _utc_datetime(cls, v: Any) -> Any:
+        """시각 필드(선택 필드 포함)를 시간대 있는 UTC로 — 시간대가 없으면 UTC로 본다."""
+        return as_utc(v) if isinstance(v, datetime) else v
 
     def dump(self) -> dict[str, Any]:
         return self.model_dump(mode="json", by_alias=True)

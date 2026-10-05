@@ -10,10 +10,15 @@
   사전 단계를 돈 뒤, 실행 건 생성과 요청 '완료'를 한 번에 저장한다(create_run_for_request).
 - 반려된 시도(RejectedAttempt, 확장): 내용을 담은 기록이라 실행 건의 주인 계정이 학습 데이터 편입에 동의했을 때만
   저장한다. 동의 여부는 저장하는 순간 저장소가 확인한다(SQL은 웹 users, 메모리는 set_training_consent로 받은 값).
+- 시작 요청이 끝나면(완료 · 실패 · 취소) 상태를 바꾸는 같은 변경에서 입력 사본(form)을 비운다. 대기 · 처리중은 남긴다.
+- 기록 옮기기(확장): 보관 기간이 지난 실행 건의 기록을 식별자 없는 통계 줄(LogStatsRow)로 옮기고 지운다(retire_run ·
+  retire_start_requests). 실행 건 점유를 잡은 쪽만 하고, 마지막 활동 시각을 바꾸지 않는다. 주기 작업은 작업 점유
+  (try_start_job …)로 여러 워커 중 하나만 돈다.
 """
 from __future__ import annotations
 
 from collections.abc import Iterable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal, Protocol
@@ -22,10 +27,15 @@ from pydantic import Field
 
 from ..models import Notice, Notification, RejectedAttempt, ReworkComparison, Run
 from ..models.base import SBModel
+from ..models.clock import as_utc
 from .trace import CallLog, ExecutionRecord, FeedbackLink, PointerEvent, TraceEvent
 
 StartRequestStatus = Literal["대기", "처리중", "완료", "실패", "취소"]
 PENDING_REQUEST = ("대기", "처리중")
+FINISHED_REQUEST = ("완료", "실패", "취소")
+# 기록 옮기기 대상에서 빼는 진행 상태 — 워커가 단계를 돌거나 재개를 기다리는 실행 건
+BUSY_PROGRESS = ("실행", "재개대기")
+ACCOUNT_LOCK_TIMEOUT_SEC = 10   # 계정 잠금 대기 (잠정)
 # create_run_for_request 결과: 만듦 · 취소 요청이 있어 만들지 않음 · 진행 중 실행 건이 있음 · 점유를 잃음
 CreateOutcome = Literal["완료", "취소", "동시실행", "점유잃음"]
 # cancel_start_request 결과: 대기 중이라 바로 취소 · 처리 중이라 취소 요청만 남김 · 이미 끝나 할 일 없음
@@ -69,7 +79,10 @@ class CommitBatch:
 
 @dataclass(frozen=True)
 class ExecutionFilter:
-    """관리자 실행 기록 조회 조건 (확장). 시각은 시작 시각 기준 — since 이상, until 미만. limit이 None이면 모두."""
+    """관리자 실행 기록 조회 조건 (확장). 시각은 시작 시각 기준 — since 이상, until 미만. limit이 None이면 모두.
+
+    since · until은 시간대 있는 UTC로 바꿔 둔다 (웹이 넘기는 시간대 없는 값은 UTC로 본다).
+    """
     project_id: int | str | None = None
     task_id: str | None = None
     status: str | None = None
@@ -80,12 +93,17 @@ class ExecutionFilter:
     offset: int = 0
     order: Literal["desc", "asc"] = "desc"
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "since", as_utc(self.since))
+        object.__setattr__(self, "until", as_utc(self.until))
+
 
 @dataclass(frozen=True)
 class RunFilter:
     """여러 실행 건 조회 조건 (확장) — 관리자 실행 건 목록 · 운영 요약 · 여러 프로젝트 보기.
 
     마지막 갱신 시각(updatedAt) 순(같으면 run_id 순). project_ids가 있으면 그 프로젝트들의 실행 건만(빈 묶음이면 없음).
+    updated_since가 있으면 마지막 갱신 시각이 그 시각 이상인 것만 (시간대 없는 값은 UTC로 본다).
     limit이 None이면 모두.
     """
     project_ids: tuple[int | str, ...] | None = None
@@ -94,6 +112,48 @@ class RunFilter:
     limit: int | None = 50
     offset: int = 0
     order: Literal["desc", "asc"] = "desc"
+    updated_since: datetime | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "updated_since", as_utc(self.updated_since))
+
+
+@dataclass(frozen=True)
+class LogStatsRow:
+    """기록 통계 줄 한 줄 (확장 — orch_log_stats). 식별자 · 자유 글이 없는 개수 줄이다.
+
+    값은 부르는 쪽이 정하고 저장소는 그대로 저장한다(뜻을 보지 않는다). created_at은 저장소가 쓴 시각(UTC)이고,
+    넣을 때는 비워 둔다(읽을 때 채워진다).
+    """
+    kind: str                       # 줄 종류
+    reason: str                     # 옮긴 까닭
+    month: str                      # 'YYYY-MM'
+    category: str | None = None
+    status: str | None = None
+    result_code: str | None = None
+    part: int = 1                   # 같은 대상에서 몇 번째로 옮긴 기록인지
+    count: int = 1
+    data: dict[str, Any] | None = None   # 개수 묶음 (JSON)
+    created_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class JobState:
+    """주기 작업 상태 한 줄 (확장 — orch_jobs). last_summary는 개수만."""
+    job_name: str
+    lease_owner: str | None
+    lease_until: datetime | None
+    last_started_at: datetime | None
+    last_finished_at: datetime | None
+    last_summary: dict[str, int] | None
+
+
+def check_summary(summary: dict[str, int]) -> dict[str, int]:
+    """작업 요약은 개수만 — 키는 글자, 값은 정수(bool 아님). 아니면 ValueError (값은 메시지에 싣지 않는다)."""
+    if not isinstance(summary, dict) or not all(
+            isinstance(k, str) and isinstance(v, int) and not isinstance(v, bool) for k, v in summary.items()):
+        raise ValueError("작업 요약은 {글자: 정수}만 받는다")
+    return dict(summary)
 
 
 @dataclass(frozen=True)
@@ -258,3 +318,71 @@ class Store(Protocol):
         """list_executions와 같은 조건에 맞는 실행 기록 수 (limit · offset · order는 보지 않는다)."""
 
     def execution_calls(self, execution_id: str) -> list[CallLog]: ...
+
+    # ── 기록 옮기기 · 보관 기간 · 탈퇴 (확장) ──────────
+    # 예외 메시지에 계정 · 프로젝트 · 실행 건 · 요청 ID를 넣지 않는다. 통계 줄 · 작업 요약 값은 부르는 쪽이 정하고
+    # 저장소는 뜻을 보지 않고 저장한다.
+    def list_start_requests(self, account_id: str) -> list[StartRequest]:
+        """계정의 시작 요청 전부 (넣은 순서)."""
+
+    def account_guard(self, account_id: str) -> AbstractContextManager[None]:
+        """계정 잠금을 잡은 채로 있는 구간 — add_start_request · create_run · create_run_for_request와 같은 잠금.
+
+        잡은 동안 그 계정의 add_start_request 등은 기다린다. 기다리는 시간(account_lock_timeout, 기본 10초 잠정)을
+        넘기면 StoreConflict. 이 구간 안에서 같은 계정의 add_start_request · create_run · create_run_for_request를
+        부르지 않는다(MySQL은 다른 연결이라 자기 잠금을 기다린다).
+        """
+
+    def retire_run(self, run_id: str, owner: str, *, stats: LogStatsRow | None = None, delete_run: bool = False,
+                   bump_parts: bool = False) -> None:
+        """실행 건 하나의 기록을 옮긴다 — 한 트랜잭션. 점유자(owner)가 아니면 StoreConflict(아무것도 바꾸지 않음).
+
+        stats가 있으면 통계 줄 하나를 쓰고, 여섯 기록 표(실행 기록 · 호출 기록 · 추적 사건 · 피드백 연결 ·
+        재작성 전후 비교 · 포인터 이동)에서 그 실행 건의 줄을 지운다.
+        delete_run이면 산출물 버전 · 포인터와 실행 건 줄도 지운다(웹 테이블은 건드리지 않는다).
+        아니면 실행 건 줄 · 산출물은 남기고, bump_parts면 Run.stats_parts만 1 올린다 — 마지막 활동 시각
+        (updated_at 컬럼 · run_json의 updatedAt)과 점유는 바꾸지 않는다. 점유는 부른 쪽이 푼다.
+        """
+
+    def retire_start_requests(self, request_ids: list[str], stats: list[LogStatsRow]) -> int:
+        """끝난 시작 요청(완료 · 실패 · 취소)을 지우고 통계 줄을 쓴다 — 한 트랜잭션. 지운 요청 수.
+
+        넘긴 요청 중 하나라도 없거나 끝나지 않았으면 StoreConflict(아무것도 바꾸지 않음) — 다른 곳이 먼저 지웠으면
+        개수가 두 번 세지지 않게.
+        """
+
+    def retention_run_targets(self, cutoff: datetime, limit: int) -> list[str]:
+        """기록을 옮길 실행 건 ID (마지막 활동 시각이 오래된 순, 최대 limit).
+
+        조건: 마지막 활동 시각(updated_at) < cutoff, 진행 상태가 실행 · 재개대기가 아님, 점유 중이 아님(비었거나 만료),
+        그리고 (여섯 기록 표에 옮길 줄이 있음 또는 산출물 포인터가 하나도 없음). 잠금 없이 읽는다 — 부르는 쪽이
+        점유를 잡고(acquire) 다시 확인한다.
+        """
+
+    def retention_request_targets(self, cutoff: datetime, limit: int) -> list[StartRequest]:
+        """끝난 시작 요청(완료 · 실패 · 취소) 중 updated_at < cutoff인 것 (오래된 순, 최대 limit). 잠금 없이 읽는다."""
+
+    def has_pointers(self, run_id: str) -> bool:
+        """산출물 포인터가 하나라도 있는지 — 없으면 완전 삭제된 실행 건이다."""
+
+    def log_stats(self, kind: str | None = None) -> list[LogStatsRow]:
+        """저장된 통계 줄 (쓴 순서). 확인 · 테스트용 — 웹 함수가 아니다."""
+
+    # ── 주기 작업 점유 (확장) ─────────────────────────
+    def try_start_job(self, job_name: str, owner: str, lease_sec: float, interval_sec: float) -> bool:
+        """시작 조건 확인과 점유 기록을 한 트랜잭션으로. 작업 줄이 없으면 만든다.
+
+        조건: 점유가 비었거나 만료됐고, last_finished_at이 없거나 지금 − interval_sec 이전(이하). 시작하면
+        lease_owner = owner, lease_until = 지금 + lease_sec, last_started_at = 지금. 같은 점유자라도 점유 중이면 False.
+        """
+
+    def renew_job(self, job_name: str, owner: str, lease_sec: float) -> bool:
+        """하트비트 — 지금 점유자일 때만 연장한다. 만료됐어도 아직 아무도 이어받지 않았으면 연장된다."""
+
+    def finish_job(self, job_name: str, owner: str, summary: dict[str, int]) -> bool:
+        """끝까지 마침 — 점유자일 때만 last_finished_at = 지금, last_summary = summary(개수만), 점유를 푼다."""
+
+    def release_job(self, job_name: str, owner: str) -> bool:
+        """종료 신호 — 점유자일 때만 점유를 푼다. last_finished_at · last_summary는 그대로."""
+
+    def get_job(self, job_name: str) -> JobState | None: ...

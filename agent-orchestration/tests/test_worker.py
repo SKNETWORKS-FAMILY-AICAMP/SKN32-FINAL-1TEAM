@@ -8,7 +8,6 @@ import json
 import signal
 import threading
 import time
-from datetime import datetime
 
 import pytest
 from conftest import Clock, isolate_notice_api, pre_input, project_record
@@ -23,7 +22,9 @@ from sbrain.agents.supervisor import IMPLEMENTED, IMPLEMENTED_TASKS, tc3
 from sbrain.agents.supervisor.plan import PURPOSE_REWRITE, PURPOSE_WRITE
 from sbrain.agents.supervisor.rewrite import rewrite_guidance
 from sbrain.bootstrap import App, TaskRoutedProvider, build_app, build_stub_app, build_web
+from sbrain.flow.retention import JOB_NAME, start_retention
 from sbrain.intake import MemoryProjectInputSource
+from sbrain.models.clock import utc_now
 from sbrain.orchestrator.errors import CommandError
 from sbrain.orchestrator.tools import LLMRequest
 from sbrain.store_sql import DbSettingsProvider, SqlStore, create_orchestrator_tables, create_sqlite_engine
@@ -47,7 +48,7 @@ def projects(n: int, engine=None) -> MemoryProjectInputSource:
     return source
 
 
-def app_on(engine, source, now=datetime.now, scenario: StubScenario | None = None) -> App:
+def app_on(engine, source, now=utc_now, scenario: StubScenario | None = None) -> App:
     return build_stub_app(scenario, now=now, store=SqlStore(engine, now=now), project_inputs=source)
 
 
@@ -191,7 +192,7 @@ def test_stop_finishes_current_step_and_leaves_rest(db):
     assert w.run_once("w") == [f"진행 {rid} 실행"]
     run = app.store.load_run(rid)
     assert run.state.progress == "실행" and run.queue[0] == "T-S2"               # 남은 단계는 '실행'으로 남는다
-    assert not app.store.is_locked(rid, datetime.now())                          # 점유를 풀었다
+    assert not app.store.is_locked(rid, utc_now())                          # 점유를 풀었다
     app.llm.responders.clear()
     worker(app).run_once("next")                                                  # 다른 워커가 이어받는다
     assert app.store.load_run(rid).state.step == "문서평가"
@@ -310,6 +311,91 @@ def test_error_outside_steps_backs_off(db):
     assert w.run_once("w") == [f"진행 {rid} 사용자대기"]
 
 
+# ── ④ 보관 기간 작업 ───────────────────────────────────
+def test_loop_runs_retention_job_and_logs_only_counts(db):
+    clock = Clock()
+    source = projects(1)
+    app = app_on(db, source, clock)
+    rid = to_writing(app, source)
+    logs: list[str] = []
+    w = worker(app, logs, lease_sec=60, job_check_sec=0)
+    assert w.run_once("w") == [f"진행 {rid} 사용자대기"]                         # 작업은 돌려주는 목록에 넣지 않는다
+    assert app.store.get_job(JOB_NAME).last_summary["runs"] == 0                 # 한 바퀴에서 작업을 확인 · 돌았다
+    clock.advance(days=400)
+    logs.clear()
+    assert w.run_once("w") == []
+    job = app.store.get_job(JOB_NAME)
+    assert job.lease_owner is None and job.last_summary == {"runs": 1, "deletedRuns": 0, "requests": 1, "skipped": 0}
+    assert app.store.executions(rid) == [] and len(app.store.log_stats("실행")) == 1
+    assert [line.split(" ", 3)[3] for line in logs] == [
+        "보관 작업 시작", "보관 작업 끝 — 옮긴 실행 건 1 · 지운 실행 건 0 · 옮긴 시작 요청 1 · 건너뜀 0"]
+    assert all(line[:19].count(":") == 2 and line[19] == "Z" for line in logs)   # 시각은 UTC (끝의 Z)
+    assert rid not in "\n".join(logs)                                             # 실행 건 ID를 남기지 않는다
+    logs.clear()
+    w.run_once("w")
+    assert logs == []                                                             # 24시간 안에는 다시 돌지 않는다
+
+
+def test_retention_checked_once_per_check_interval(db):
+    clock = Clock()
+    app = app_on(db, projects(0), clock)
+    logs: list[str] = []
+    w = worker(app, logs)                                                         # 확인 주기 10분 (잠정)
+    w.run_once("w")
+    first = app.store.get_job(JOB_NAME).last_finished_at
+    clock.advance(days=2)
+    w.run_once("w")
+    assert app.store.get_job(JOB_NAME).last_finished_at == first                  # 주기 전에는 확인하지 않는다
+    assert sum("보관 작업 시작" in line for line in logs) == 1
+    w.stop()
+    w._next_job_check = 0
+    assert w.run_once("w") == [] and app.store.get_job(JOB_NAME).last_finished_at == first   # 멈추면 돌지 않는다
+
+
+def test_retention_stop_signal_between_runs(db):
+    clock = Clock()
+    source = projects(2)
+    app = app_on(db, source, clock)
+    rids = [app.orchestrator.run_start_request(r).run_id for r in start(app, source)]
+    clock.advance(days=400)
+    w = worker(app, lease_sec=60, job_check_sec=0)
+    retire = app.store.retire_run
+
+    def retire_then_stop(*a, **kw):
+        retire(*a, **kw)
+        w.stop()                                                                  # 종료 신호 — 실행 건 사이에서 멈춘다
+    app.store.retire_run = retire_then_stop
+    w.run_once("w")
+    job = app.store.get_job(JOB_NAME)
+    assert job.last_finished_at is None and job.lease_owner is None
+    assert sorted(len(app.store.executions(r)) == 0 for r in rids) == [False, True]
+
+
+def test_heartbeat_extends_job_lease(db):
+    clock = Clock()
+    app = app_on(db, projects(0), clock)
+    w = worker(app, lease_sec=60)
+    assert start_retention(app.store, "w", 60)
+    before = app.store.get_job(JOB_NAME).lease_until
+    clock.advance(seconds=30)
+    w._held[("작업", JOB_NAME)] = "w"
+    w.heartbeat()
+    assert app.store.get_job(JOB_NAME).lease_until > before
+    assert not start_retention(app.store, "other", 60)
+
+
+def test_build_web_never_runs_retention(tmp_path, db):
+    url = f"sqlite:///{(tmp_path / 'worker.db').as_posix()}"
+    source = projects(1)
+    web = build_web(url, profile_count=lambda a: 1, project_inputs=source)
+    start(web, source)
+    web.orchestrator.admin_summary()
+    web.orchestrator.admin_runs()
+    assert web.store.get_job(JOB_NAME) is None                                    # 웹 조립 · 웹 함수는 작업을 돌지 않는다
+    worker(app_on(db, source)).run_once("w")
+    assert web.store.get_job(JOB_NAME).last_finished_at is not None              # 워커만 돈다
+
+
 # ── 조립 (워커 · 웹) ───────────────────────────────────
 def test_build_app_routes_only_real_tasks_to_real_llm(tmp_path, db):
     url = f"sqlite:///{(tmp_path / 'worker.db').as_posix()}"
@@ -342,7 +428,7 @@ def _guidance_reply(request: LLMRequest) -> str:
     return json.dumps({"guidance": f"{target} 안내 — {request.metadata['purpose']}"}, ensure_ascii=False)
 
 
-def real_worker_app(tmp_path, clock=datetime.now) -> tuple[App, App, FakeLLM, MemoryProjectInputSource]:
+def real_worker_app(tmp_path, clock=utc_now) -> tuple[App, App, FakeLLM, MemoryProjectInputSource]:
     """워커 조립(build_app) + 웹 조립. 실제 호출처는 가짜 LLM — T-C1 · T-C3 · 다시 쓰기 호출에 답한다 (네트워크 없음)."""
     url = f"sqlite:///{(tmp_path / 'worker.db').as_posix()}"
     source = projects(1)

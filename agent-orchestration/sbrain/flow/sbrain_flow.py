@@ -38,6 +38,7 @@ from ..models import (
     AnnouncementCard, CompanyInfo, Notice, Notification, RejectedAttempt, ReworkInput, ReworkOrder, Run,
     TaskInstruction, Token, TokenCheckResult,
 )
+from ..models.clock import kst_today, utc_clock, utc_now
 from ..models.run import RedoState, make_state
 from ..orchestrator.context import RunContext
 from ..orchestrator.engine import Engine, Outcome, StepFailure, ToolsFactory
@@ -261,13 +262,13 @@ class SBrainFlow:
         registry: TaskRegistry,
         *,
         constants: Callable[[RunContext, str], Any],
-        now: Callable[[], datetime] = datetime.now,
+        now: Callable[[], datetime] = utc_now,
         rewriter: GuidanceRewriter | None = None,
         new_id: Callable[[], str] | None = None,
     ) -> None:
         self.registry = registry
         self.constants = constants
-        self.now = now
+        self.now = utc_clock(now)
         # 재작성 · 재수행 때 안내를 다시 쓰는 조율 함수 — 없으면(스텁 조립) 덧붙이기만 한다. 조립이 끼운다
         self.rewriter: GuidanceRewriter | None = rewriter
         self.new_id = new_id or (lambda: uuid.uuid4().hex[:12])
@@ -330,7 +331,8 @@ class SBrainFlow:
         return ReworkOrder.model_validate(cyc.orders_by_task[task_id])
 
     def today(self, ctx: RunContext) -> date:
-        return self.now().date()
+        """G-01 · T-C2 기준일(TODAY) — 한국 날짜 (UTC 15:00 이후는 다음 날)."""
+        return kst_today(self.now())
 
     def constant(self, ctx: RunContext, name: str) -> Any:
         if name == "topK":
@@ -417,11 +419,22 @@ class SBrainFlow:
             for doc in out.get("reference_docs", []):
                 if doc.extract_status == "실패":
                     self._notice(ctx, "E-C1-DOC", 파일명=doc.file_name)
-        elif step_id == "T-C1" and out.get("category_defaulted"):
-            # 카테고리 판정 실패 → 웹개발 기본 처리, 로그에 기록 (시트 2 T-C1 ③)
-            ctx.add_event("카테고리기본값", f"T-C1 카테고리 판정 실패 — {out['category']}로 기본 처리",
-                          refs=[ctx.ref("category")],
-                          execution_id=outcome.record.execution_id if outcome.record else None)
+        elif step_id == "T-C1":
+            # category 산출물을 저장하는 같은 저장에서 실행 건에도 적는다(사전 단계면 실행 건 생성 저장) — 기록 통계 줄의
+            # 카테고리. 완전 삭제 · 12개월 처리가 지우지 않는다
+            ctx.run.category = out["category"]
+            if out.get("category_defaulted"):
+                # 카테고리 판정 실패 → 웹개발 기본 처리, 로그에 기록 (시트 2 T-C1 ③)
+                ctx.add_event("카테고리기본값", f"T-C1 카테고리 판정 실패 — {out['category']}로 기본 처리",
+                              refs=[ctx.ref("category")],
+                              execution_id=outcome.record.execution_id if outcome.record else None)
+        elif step_id == "T-P1":
+            # 화면 10의 검수 전 문장 = T-P1이 읽은 계획서 버전(M-4가 새 버전을 만들기 전). 실행 기록이 지워져도 찾을 수
+            # 있게 T-P1 성공 저장에서 실행 건에 적는다 (reads._sentence_changes)
+            rec = outcome.record
+            base = next((i for i in rec.inputs if i.startswith("planDoc@")), None) if rec else None
+            if base is not None:
+                ctx.run.proofread_base_ref = base
         elif step_id == "T-C2":
             more = ctx.run.segment == "MORE"
             if more and out["collection_status"] != "정상":

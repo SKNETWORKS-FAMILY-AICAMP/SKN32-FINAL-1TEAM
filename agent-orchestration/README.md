@@ -7,7 +7,7 @@ S-Brain의 AI Agent 7개를 정해진 순서대로 부르고, 실패하거나 �
 | 언어 · 버전 | Python 3.12 |
 | 의존성 | `pydantic` (타입 검증 · JSON 변환), `SQLAlchemy` · `PyMySQL` (공유 MySQL — 저장소 · 웹 DB), `openai` (조율 Agent 호출처), `python-dotenv` (`.env` 읽기), `pytest` (테스트) |
 | 구현 근거 | S-Brain Agent 기능정의서 v1.9 (기준 문서). 보조 참고: 프로젝트 기획서 v1.10 |
-| 현재 상태 | 뼈대 완성. 조율 **T-C1 · T-C3와 재작성 · 재수행 지시문 다시 쓰기는 실제 구현**(2026-10-04 실제 OpenAI로 확인 — T-C3 지시문 작성을 동시 호출로 바꾼 뒤 작성 시작 → 화면 6이 52초 → 11초), 공고 매칭 **T-C2 · 자격 확인 G-01은 공고 서버(공고팀 HTTP API) 연결 코드 완료** — `SBRAIN_NOTICE_API_URL`을 넣어야 켜지며 공고팀 API를 기다리는 중이라 지금은 스텁. 나머지 Agent는 **스텁(가짜 구현)**. 저장소는 **메모리 · 공유 MySQL** 두 가지, **워커 프로세스**와 **웹 연동 함수**(시작 요청 · 명령 · 재작성 묶음 요청 · 진행 상태 · 화면 · 결과 조회 · 관리자 조회 · 중단 · 완전 삭제)까지 구현. 웹 `projects`에는 쓰지 않는다(2026-10-02). 테스트 985건(MySQL 8 통합 34건 포함) — 2026-10-04 기준 MySQL 없이 951 통과 · 34 건너뜀 |
+| 현재 상태 | 뼈대 완성. 조율 **T-C1 · T-C3와 재작성 · 재수행 지시문 다시 쓰기는 실제 구현**(2026-10-04 실제 OpenAI로 확인 — T-C3 지시문 작성을 동시 호출로 바꾼 뒤 작성 시작 → 화면 6이 52초 → 11초), 공고 매칭 **T-C2 · 자격 확인 G-01은 공고 서버(공고팀 HTTP API) 연결 코드 완료** — `SBRAIN_NOTICE_API_URL`을 넣어야 켜지며 공고팀 API를 기다리는 중이라 지금은 스텁. 나머지 Agent는 **스텁(가짜 구현)**. 저장소는 **메모리 · 공유 MySQL** 두 가지, **워커 프로세스**(실행 로그 12개월 처리 포함)와 **웹 연동 함수**(시작 요청 · 명령 · 재작성 묶음 요청 · 진행 상태 · 화면 · 결과 조회 · 관리자 조회 · 중단 · 완전 삭제 · 탈퇴)까지 구현. 웹 `projects`에는 쓰지 않는다(2026-10-02). 시각은 모두 UTC, '오늘'은 한국 날짜(2026-10-05). 테스트 1131건(MySQL 8 통합 47건 포함) — 2026-10-05 기준 MySQL 8.0 테스트 DB까지 켜고 1131 통과 · 건너뜀 0, MySQL 없이 1084 통과 · 47 건너뜀 |
 
 > 이 문서의 파일 경로는 저장소 폴더(`agent-orchestration`) 기준입니다. 기능정의서 · 기획서는 저장소에 포함되지 않습니다.
 
@@ -82,6 +82,9 @@ Orchestrator는 **7개 Agent를 같은 방식으로 등록하고 호출하는 �
 - 웹 서버 코드는 웹팀 몫입니다. 웹이 부를 함수(시작 요청 · 명령 · 재작성 묶음 요청 · 진행 상태 · 화면 · 결과 · 재작성 결과 조회 · 관리자 조회 · 중단 · 완전 삭제)와 웹 프로세스 조립(`build_web`)까지 있습니다 — `docs/Orchestrator_웹연동_함수명세.md`. 이번 변경으로 웹이 할 일은 `docs/웹연동_변경사항_웹팀전달.md`에 있습니다.
 - **진행 상태의 원본은 Orchestrator**입니다. 웹 `projects`의 진행 컬럼에는 쓰지 않고, 웹은 함수로 읽습니다. Orchestrator가 쓰는 웹 테이블은 알림(`notifications`) · 관리자 실패 알림(`generation_failure_alerts`) · 검수 회수 문단(`proofread_logs`) INSERT 셋뿐입니다.
 - 표현 검수(T-P2)는 문장마다 **시도별 기록**을 남깁니다. 학습 데이터 편입에 동의한 계정이면 보호 토큰 검사를 통과하지 못한 시도를 웹 `proofread_logs`에 한 행씩 씁니다(웹 스키마 변경 전에는 건너뜀).
+- **실행 로그 12개월 처리**(`flow/retention.py`, 2026-10-05): 워커가 하루 한 번(여러 대 중 한 대만 — 작업 상태 표 `orch_jobs`), 마지막 활동이 12개월보다 오래된 실행 건의 기록(실행 · 호출 기록 등 여섯 가지)과 끝난 시작 요청을 **식별자 없는 통계 줄**(`orch_log_stats`, 계산은 `flow/log_stats.py`)로 옮기고 지웁니다. 살아 있는 실행 건은 실행 건 줄 · 산출물을 남겨 화면 · 이어 쓰기가 그대로이고, 완전 삭제된 실행 건(포인터 0개)은 줄까지 지웁니다. 관리자 실행 건 목록 · 운영 요약은 최근 12개월만 셉니다.
+- **탈퇴 함수** `delete_account_data(account_id)`(확장): 웹이 프로젝트마다 중단 · 완전 삭제를 마친 뒤 부르면, 그 계정의 실행 건 · 산출물 · 기록 · 시작 요청을 통계 줄(까닭 '탈퇴')로 옮긴 뒤 바로 모두 지웁니다. 처리 중인 일이 있으면 아무것도 지우지 않고 `BUSY`입니다.
+- **시각**: 프로세스 안의 시각은 모두 시간대 있는 UTC(`models/clock.py`의 `utc_now()`)이고, 웹에 돌려주는 시각에도 시간대 표시가 붙습니다. DB 시각 칸에는 시간대 없는 UTC가 들어갑니다. 자격 판정 기준일 · 마감 안내처럼 '오늘'이 필요한 판단은 한국 날짜입니다. 시작 요청이 끝나면 입력 사본(`form_json`)을 바로 비웁니다.
 
 ---
 
@@ -148,10 +151,10 @@ python -m pip install -r requirements.txt
 python -m pytest
 ```
 
-정상이면 마지막 줄이 다음과 같습니다(MySQL 통합 테스트 34건은 아래 설정이 없으면 건너뜁니다).
+정상이면 마지막 줄이 다음과 같습니다(MySQL 통합 테스트 47건은 아래 설정이 없으면 건너뜁니다).
 
 ```text
-951 passed, 34 skipped in 101.19s (0:01:41)
+1084 passed, 47 skipped
 ```
 
 테스트는 네트워크에 나가지 않습니다. `.env`에 `SBRAIN_NOTICE_API_URL`을 넣어 두어도 `tests/conftest.py`가 모든 테스트에서 그 값을 없는 것으로 봐서 실제 공고 서버를 부르지 않습니다.
@@ -183,14 +186,15 @@ copy .env.example .env     # macOS / Linux: cp .env.example .env
 로컬 Docker로 MySQL 8을 띄우고 접속 URL을 `.env`(또는 환경 변수)에 넣으면 MySQL 테스트도 돕니다.
 
 ```powershell
-docker compose -f docker/mysql-test.yml up -d --wait     # mysql:8.4, 127.0.0.1:3307, 데이터는 메모리에만
+docker compose -f docker/mysql-test.yml up -d --wait     # mysql:8.0(공유 DB와 같은 8.0 계열), 127.0.0.1:3307, 데이터는 메모리에만
 # .env:  SBRAIN_TEST_MYSQL_URL=mysql+pymysql://root:sbrain-test@127.0.0.1:3307/sbrain_test?charset=utf8mb4
-python -m pytest                                          # 건너뜀 없이 전체 985건
+python -m pytest                                          # 건너뜀 없이 전체 1131건
 docker compose -f docker/mysql-test.yml down              # 끄기
 ```
 
 - 테스트가 그 DB의 테이블을 모두 지우고 새로 만듭니다. 그래서 **로컬 주소이고 DB 이름에 `test`가 들어간 URL만** 받습니다. 공유 DB 주소를 넣지 않습니다.
-- 준비 순서: 테스트용 최소 `notices` → 웹 스키마(`app_schema.sql`, 읽기만 — 위치는 `SBRAIN_TEST_WEB_SCHEMA` 참고) → 테스트 DB에서만 `proofread_logs`를 웹팀이 바꿀 모양으로(`project_id` · `model_version` 추가) → `sql/orchestrator_schema.sql`.
+- 준비 순서: 테스트용 최소 `notices` → 웹 스키마(`app_schema.sql`, 읽기만 — 위치는 `SBRAIN_TEST_WEB_SCHEMA` 참고) → 테스트 DB에서만 `proofread_logs`를 웹팀이 바꿀 모양으로(`project_id`(NULL 허용, `projects` 삭제 때 SET NULL) · `model_version` 추가) → `sql/orchestrator_schema.sql`.
+- 표를 지우고 새로 만드는 것은 pytest 프로세스에서 처음 한 번이고, 그 뒤 MySQL 테스트는 같은 표를 함께 씁니다. 대기 시작 요청처럼 워커가 가져갈 일을 남기는 MySQL 테스트는 끝에 취소해야 뒤의 워커 테스트가 깨지지 않습니다. MySQL 테스트를 고쳤으면 그 파일과 전체를 모두 돌립니다.
 
 **워커 실행**
 
@@ -199,7 +203,9 @@ python -m sbrain.worker          # Ctrl+C로 멈춤 — 하던 단계를 끝내�
 python -m sbrain.worker --once   # 한 바퀴만 돌고 끝낸다 (점검용)
 ```
 
-`SBRAIN_DB_URL` · `OPENAI_API_KEY`가 없으면 시작하지 않습니다. 로그는 표준 출력에 한 줄씩(가져간 일 · 끝난 상태)이고 프롬프트 · 응답 내용은 남기지 않습니다.
+`SBRAIN_DB_URL` · `OPENAI_API_KEY`가 없으면 시작하지 않습니다. 로그는 표준 출력에 한 줄씩(가져간 일 · 끝난 상태)이고 프롬프트 · 응답 내용은 남기지 않습니다. 줄 앞 시각은 UTC입니다(끝에 `Z`, 예 `2026-09-26 09:00:05Z` = 한국 18:00:05).
+
+워커는 시작 직후와 그 뒤 10분(잠정)마다 실행 로그 12개월 처리를 돌 때인지 확인합니다. 마지막으로 끝까지 마친 지 24시간(잠정)이 지났으면 여러 워커 중 한 대가 돌고, 로그에는 "보관 작업 시작" · "보관 작업 끝 — 옮긴 실행 건 N · 지운 실행 건 N · 옮긴 시작 요청 N · 건너뜀 N"만 남깁니다. `--once`도 때가 됐으면 이 처리를 돕니다.
 
 **공고 서버 연결 켜기 (실제 모드)** — 주소 설정은 담당자가 직접 합니다. 다음이 모두 맞은 뒤에 워커 환경 변수(또는 `.env`)에 `SBRAIN_NOTICE_API_URL`을 넣고 워커를 다시 띄웁니다.
 
@@ -216,7 +222,7 @@ python -m sbrain.worker --once   # 한 바퀴만 돌고 끝낸다 (점검용)
 pip install -e <이 폴더>
 ```
 
-**Orchestrator 테이블 DDL 다시 만들기** — 테이블 정의(`sbrain/store_sql/schema.py`)를 바꾸면 `python -m sbrain.store_sql.ddl`로 `sql/orchestrator_schema.sql`을 다시 만듭니다(테스트가 둘이 같은지 확인합니다). 2026-10-02에 `orch_runs.collect_until` 컬럼이 늘었습니다. 그 전 DDL을 공유 DB에 이미 적용했다면 ALTER가 필요합니다(아직 적용 전이면 DDL 파일만 쓰면 됩니다).
+**Orchestrator 테이블 DDL 다시 만들기** — 테이블 정의(`sbrain/store_sql/schema.py`)를 바꾸면 `python -m sbrain.store_sql.ddl`로 `sql/orchestrator_schema.sql`을 다시 만듭니다(테스트가 둘이 같은지 확인합니다). 테이블은 12개입니다. 2026-10-02에 `orch_runs.collect_until` 컬럼이, 2026-10-05에 표 2개(`orch_log_stats` · `orch_jobs`)와 인덱스 2개(`ix_orch_runs_updated` · `ix_orch_start_requests_status_updated`)가 늘었습니다. 그 전 DDL을 공유 DB에 이미 적용했다면 ALTER(와 새 DDL 다시 실행)가 필요합니다(아직 적용 전이면 DDL 파일만 쓰면 됩니다). 이 변경 전에 만든 개발 · 시연 DB는 시각이 로컬 시각으로 들어 있어(새 코드는 UTC로 읽음) `orch_` 표를 다시 만드는 편이 안전합니다.
 
 ---
 
@@ -359,13 +365,14 @@ agent-orchestration/
 ├── sql/
 │   └── orchestrator_schema.sql  # Orchestrator 테이블 DDL (생성 파일 — 공유 DB 적용은 담당자)
 ├── docker/
-│   └── mysql-test.yml         # MySQL 8 통합 테스트용 로컬 DB (Compose)
+│   └── mysql-test.yml         # MySQL 8 통합 테스트용 로컬 DB (Compose, mysql:8.0)
 ├── sbrain/
 │   ├── bootstrap.py           # 구성 조립 — build_stub_app(테스트) · build_app(워커) · build_web(웹 서버)
-│   ├── worker.py              # 워커 프로세스 (python -m sbrain.worker)
+│   ├── worker.py              # 워커 프로세스 (python -m sbrain.worker) — 일 가져가기 + 12개월 처리 확인
 │   ├── env.py                 # 환경 변수 읽기 — 환경 변수 → .env 순서 (get_env)
 │   ├── models/                # 공통 타입 (기준 문서 시트 4)
-│   │   ├── base.py            #   공통 기반 SBModel, 확장 표시 ext(), 열거형
+│   │   ├── base.py            #   공통 기반 SBModel(시각 필드를 UTC로 맞춤), 확장 표시 ext(), 열거형
+│   │   ├── clock.py           #   시각 — utc_now() · as_utc · naive_utc · utc_clock · 한국 날짜 kst_today · kst_month
 │   │   ├── domain.py          #   입력 · 공고 · 계획서 · 프로토타입 등 업무 타입
 │   │   ├── rework.py          #   CheckResult · ReworkOrder · ReworkInput 등 다시 만들기 관련
 │   │   ├── run.py             #   실행 건(Run), 실행 상태, 알림, 재작성 사이클 · 마지막 재작성 결과
@@ -393,10 +400,12 @@ agent-orchestration/
 │   │   ├── sbrain_flow.py     #   구간 · 대기 지점 · 재작성 경로 · 알림, 재작성 · 재수행 지시문(다시 쓰기 · 저장), T-P2 병렬 실행
 │   │   ├── instruction.py     #   지시문 세 부분(틀 · 안내 · 참조 자료) 나누기 · 안내 바꾸기 · 문제 내용 덧붙이기
 │   │   ├── rework_map.py      #   재작성 · 재수행 대응표 (시트 7), 재작성 묶음 이름
-│   │   ├── service.py         #   명령 창구 SBrainOrchestrator — 시작 요청 · 명령 · 재작성 요청 · 진행 상태 · 중단 · 완전 삭제
-│   │   └── reads.py           #   화면 조회(모양 초안) · 지금까지 결과 · 재작성 결과 · 관리자 조회
+│   │   ├── service.py         #   명령 창구 SBrainOrchestrator — 시작 요청 · 명령 · 재작성 요청 · 진행 상태 · 중단 · 완전 삭제 · 탈퇴
+│   │   ├── reads.py           #   화면 조회(모양 초안) · 지금까지 결과 · 재작성 결과 · 관리자 조회(최근 12개월 범위)
+│   │   ├── log_stats.py       #   기록 → 식별자 없는 통계 줄 계산 (실행 줄 · 시작요청 줄), 관리자 현재 점수와 같은 정의
+│   │   └── retention.py       #   실행 로그 12개월 처리 (워커가 하루 한 번, 작업 점유)
 │   ├── store_sql/             # SQL 저장소 — 공유 MySQL 8 (테스트는 SQLite)
-│   │   ├── schema.py          #   Orchestrator 테이블 정의 (DDL의 단일 원본)
+│   │   ├── schema.py          #   Orchestrator 테이블 12개 정의 (DDL의 단일 원본), 시각 형식 UtcDateTime
 │   │   ├── ddl.py             #   MySQL DDL 파일 생성 (python -m sbrain.store_sql.ddl)
 │   │   ├── db.py              #   접속 엔진 (MySQL · SQLite)
 │   │   ├── store.py           #   SqlStore — 저장소 인터페이스 구현
@@ -411,7 +420,7 @@ agent-orchestration/
 │       │   └── convert.py     #   응답 키 · 값 검사 (약속 밖이면 FormatError)
 │       ├── form_defaults.py   # 신청자 유형별 양식 · 평가항목 · 채점 기준표 묶음(FORM_TABLE), 선택 공고 자리 표시 양식 (모두 잠정)
 │       └── stubs.py           # 스텁 Agent(스텁 T-C2 · G-01 포함), 가짜 LLM(FakeLLM), 시나리오(StubScenario)
-└── tests/                     # pytest 테스트 (985건) — conftest.py(저장소 선택 · 공고 서버 주소 격리) · webdb.py · mysqldb.py 도움 모듈
+└── tests/                     # pytest 테스트 (1131건) — conftest.py(저장소 선택 · 공고 서버 주소 격리) · webdb.py · mysqldb.py 도움 모듈
 ```
 
 **설계 원칙:** `orchestrator/`에는 어떤 서비스에도 쓸 수 있는 범용 장치만 두고, 화면 번호 · 알림 대상 · 재작성 경로 같은 S-Brain 고유 규칙은 `flow/`에만 둡니다. 엔진은 `Flow` 인터페이스(`engine.py`)를 통해서만 S-Brain 규칙을 부릅니다.
@@ -486,6 +495,8 @@ flowchart LR
 | `TraceEvent` | 규격 위반, 재개 예약, 재작성 시작 · 종료 등 |
 
 기록 조회는 `app.store.executions(run_id)`, `app.store.call_logs(run_id)` 등 `Store`의 조회 함수로 합니다.
+
+이 여섯 기록은 실행 건의 마지막 활동 12개월 뒤(워커의 12개월 처리)나 탈퇴 때 식별자 없는 통계 줄(`orch_log_stats`)로 옮기고 지웁니다. 화면 · 시도 번호가 기록 없이도 같도록 실행 건에 카테고리 · 화면 10 비교 기준 버전 · Task별 마지막 시도 번호를 따로 적어 둡니다. 확인용으로 `app.store.log_stats()`가 통계 줄을 돌려줍니다(웹 함수 아님).
 
 ---
 
@@ -595,9 +606,10 @@ bind_notice(app.registry, NoticeClient("http://example.invalid:8000", transport=
 | `request_rework_for_project(project_id, bundle)` | 6 · 8 · 9 | 재작성 묶음 요청(묶음마다 한 번). 같은 화면에서 2초 안의 요청은 재작성 한 번으로 합친다. 접수만 하고 돌아온다(`ReworkAccepted`) |
 | `rework_result(project_id)` | 9 | 마지막 재작성 한 건의 결과(진행중 · 완료 · 실패, 전후 점수 · 계획서 섹션 · 파일 경로) |
 | `abort_project(project_id)` | — | 대기 요청 취소 · 처리 중 요청 취소 요청 · 진행 중 실행 건 중단 → `AbortResult` |
-| `delete_project_data(project_id)` | — | 완전 삭제 — 산출물 · 입력 사본 삭제, 실행 로그 유지. 워커가 단계를 도는 중이면 `BUSY` |
-| `admin_executions(...)` · `admin_calls(execution_id)` | 관리자 | 여러 프로젝트의 실행 기록 · 호출 기록 (메타데이터 · 토큰만) |
-| `admin_runs(...)` · `admin_score_history(project_id)` · `admin_summary()` · `admin_agent_tasks()` | 관리자 | 실행 건 목록 · 층별 점수 이력 · 운영 요약 · Agent별 Task (메타데이터 · 점수 · 개수만) |
+| `delete_project_data(project_id)` | — | 완전 삭제 — 산출물 · 남은 입력 사본 삭제, 실행 로그 유지(마지막 활동 12개월 뒤 통계로 옮기고 지움). 워커가 단계를 도는 중이면 `BUSY` |
+| `delete_account_data(account_id)` | — | 탈퇴(확장) — 프로젝트마다 중단 · 완전 삭제를 마친 뒤. 그 계정의 실행 건 · 산출물 · 기록 · 시작 요청을 통계 줄로 옮긴 뒤 모두 지움 → `AccountDeleteResult`. 처리 중인 일 · 점유 겹침 · 계정 잠금 대기 초과면 `BUSY` |
+| `admin_executions(...)` · `admin_calls(execution_id)` | 관리자 | 여러 프로젝트의 실행 기록 · 호출 기록 (메타데이터 · 토큰만, 남은 기록만) |
+| `admin_runs(...)` · `admin_score_history(project_id)` · `admin_summary()` · `admin_agent_tasks()` | 관리자 | 실행 건 목록 · 층별 점수 이력 · 운영 요약 · Agent별 Task (메타데이터 · 점수 · 개수만). 실행 건 목록 · 운영 요약은 최근 12개월 실행 건만 |
 
 **워커 · 내부 · 테스트용**
 
@@ -621,6 +633,7 @@ bind_notice(app.registry, NoticeClient("http://example.invalid:8000", transport=
 - **공고 선택 · 추가 조회:** 공고 선택은 고른 ID만 남기고 G-01을 넣습니다. 후보에 없으면 `INVALID_ANNOUNCEMENT`, 자격 불통과로 막힌 공고면 `ANNOUNCEMENT_BLOCKED`(화면 3 `blockedAnnouncementIds`)입니다. 선택 공고 · `announcement_id`는 G-01이 성공한 뒤 바뀌므로 웹은 `wait_project`로 기다린 뒤 화면 4를 엽니다. 추가 조회는 첫 조회와 겹친 공고를 `moreCandidates`에서 빼고 첫 조회 카드를 갱신하며(`contentChanged`), 실패하면 기회를 돌려줍니다.
 - **재작성 요청 모으기:** 같은 실행 건 · 같은 화면에서 첫 요청부터 2초(잠정) 안에 들어온 묶음 요청은 재작성 한 번(합집합, 기준 문서 순서)으로 합칩니다. 그동안 워커는 그 실행 건을 가져가지 않습니다. 시간이 지난 뒤 · 재작성 중의 요청은 `INVALID_STATE`, 남은 기회가 없으면 `E-G2-LIMIT`입니다. 미달이 아닌 묶음도 받습니다(확장).
 - 사용자용 결과(`view_project` · `outputs` · `rework_result` · 화면)에는 관리자용 실패 사유가 없습니다. 실패 사유는 관리자 함수(`admin_runs`)와 `generation_failure_alerts`에만 있습니다.
+- **돌려주는 시각**은 모두 시간대 있는 UTC입니다(`.dump()` JSON은 `…Z`). 한국 시각으로 보이는 일은 웹이 합니다. 웹이 넘기는 시간대 없는 시각(`admin_executions`의 `since` · `until`)은 UTC로 봅니다.
 
 ---
 
@@ -640,9 +653,9 @@ bind_notice(app.registry, NoticeClient("http://example.invalid:8000", transport=
 | Task별 제한 시간 | 대부분 120초, `T-W1` · `T-B1` · `T-B2` 300초, `T-C2` · `G-01` 30초(공고 서버 호출 한 건마다), `T-P2` 60초. 지시문 다시 쓰기는 `T-C3` 값 | 잠정 |
 | Agent별 모델 · 호출처 · 온도 · 추론 강도 | 조율은 `openai` · `gpt-6-luna` · 추론 강도 low · 온도 없음(사용자 지정). 나머지 Agent 모델은 '미정', 검수 `gpu-server` 등 | 조율 외 잠정 |
 
-실행 건 설정이 아닌 명령 창구 값(`flow/service.py`)도 있습니다: 재작성 요청을 모으는 시간 2초, 재작성 요청의 점유 재시도 최대 5초, `wait_project` 기본 제한 시간 60초(0.5초마다 다시 읽음) — 모두 잠정이며 관리자 설정으로 바꾸지 않습니다.
+실행 건 설정이 아닌 명령 창구 값(`flow/service.py`)도 있습니다: 재작성 요청을 모으는 시간 2초, 재작성 요청의 점유 재시도 최대 5초, `wait_project` 기본 제한 시간 60초(0.5초마다 다시 읽음) — 모두 잠정이며 관리자 설정으로 바꾸지 않습니다. 12개월 처리 값(한 번에 100건 · 다시 시작 간격 24시간 · 확인 주기 10분 · 작업 점유 = 워커 점유 120초)과 계정 잠금 대기 10초도 같은 성격의 잠정 값입니다.
 
-잠정 항목 목록은 `settings.py`의 `PROVISIONAL`에 있습니다(워커 수치 · 명령 창구 값, 공고 연결의 추천 이유 문장 틀 · 모집 상태 모름 처리 · 선택 공고 자리 표시 양식 · X-C2-GONE 문구 · 공고 서버 호출 하나씩, 작업 분해의 양식 묶음 표 · 참조 조각 대응표 포함). 다른 값으로 돌려 보려면 `build_stub_app(settings=Settings(...))`로 넘깁니다.
+잠정 항목 목록은 `settings.py`의 `PROVISIONAL`에 있습니다(워커 수치 · 명령 창구 값, 공고 연결의 추천 이유 문장 틀 · 모집 상태 모름 처리 · 선택 공고 자리 표시 양식 · X-C2-GONE 문구 · 공고 서버 호출 하나씩, 작업 분해의 양식 묶음 표 · 참조 조각 대응표, `retention.*` · `store.accountLockTimeoutSec` 포함). 다른 값으로 돌려 보려면 `build_stub_app(settings=Settings(...))`로 넘깁니다.
 
 **관리자 설정 입력:** 워커 · 웹 조립에서는 `DbSettingsProvider`가 웹 `verification_policies` 첫 행을 기본값 위에 덮어씁니다 — `doc_weight` → 문서층 배점, `code_weight + plan_weight` → 산출물층 배점, `pass_threshold` → 기준 점수, `rerun_cap` → 재수행 횟수, `rework_cap` → 재작성 횟수, `token_retry_cap` → 검수 재수행 횟수, `deviation_cap` → 확장 필드에 담아만 둠(잠정). 나머지는 코드 기본값입니다(웹팀 답 대기).
 
@@ -663,19 +676,24 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 | `test_redo_resume.py` | 16 | 재수행 횟수 · 확정 동작, 재개 후 성공, 재개 상한 초과 실패, 영구 오류, `featureList` 불변 |
 | `test_partial_resume.py` | 15 | 재개 때 받은 결과 이어 쓰기(엔진 장치) — 저장 조건, 재개 때 입력 · 입력 참조, 비거나 연결 없으면 저장 안 함, 영구 오류 · 상한 · 재개 불가 · 흐름에 넘김, 내용이 기록에 없음, 옛 진행 위치 읽기 |
 | `test_tools.py` | 6 | 호출 단위 재시도, 오류 분류, 형식 오류, 스레드 안전, 로그에 내용 없음 |
-| `test_proofread_trace.py` | 25 | `T-P2` 문장 병렬 처리 · 재수행, 시도별 기록, 반려 시도 `proofread_logs` 행(학습 동의 · 재개 때 중복 없음 · 위반 종류), 옛 구조면 건너뜀, 추적 기록 원칙, 설정값 고정 |
+| `test_proofread_trace.py` | 26 | `T-P2` 문장 병렬 처리 · 재수행, 시도별 기록, 반려 시도 `proofread_logs` 행(학습 동의 · 재개 때 중복 없음 · 위반 종류), 옛 구조면 건너뜀, 추적 기록 원칙, 설정값 고정 |
 | `test_intake.py` | 22 | 웹 DB 행 → PreInput 변환, 목록 입력 키 이름 변환 · 증빙 표기 · 모르는 키 대체, 확장 필드 · 수익모델 여러 건 · 팀원 없음, 필수 항목 결측 목록, SQL 공급처(SQLite로 웹 스키마 흉내) |
 | `test_tc1.py` | 20 | T-C1 아이템 사양 · 회사 정보(확장 필드 포함) 그대로 옮김, 조율 모델 · 추론 강도, 카테고리 기본값 · 추적 기록, 형식 오류 재시도, DB에서 읽어 시작, 참조 자료 발췌 확인 |
 | `test_openai_provider.py` | 7 | OpenAI 요청 모양(추론 강도 · 온도 생략 포함) · 오류 변환 (가짜 클라이언트, 네트워크 없음) |
 | `test_env.py` | 6 | `.env` 읽기(따옴표 · 주석 · BOM · 빈 값), 환경 변수 우선, API 키를 `.env`에서 읽기 |
-| `test_store_contract.py` | 66 | 저장소 계약 — 메모리 · SQLite · MySQL이 같은 동작인지 (점유, 동시 실행 제한, 모으는 중 건너뛰기, 포인터 · 키 순서, 기록 왕복, 반려 시도 조건, 시작 요청, 관리자 · 여러 실행 건 조회) |
-| `test_store_sql.py` | 10 | DDL 파일 = 생성 결과, 설정 입력(`verification_policies`), 웹 테이블 구조 확인, `proofread_logs` 옛 구조 · 쓰기 오류, 학습 동의 확인 |
-| `test_start_request.py` | 24 | 시작 요청 → 워커 실행, 필수 항목 · 프로필 · 동시 실행, 실패 후 재시도, 취소, 점유 이어받기, 진행 중 작업 확인 |
+| `test_store_contract.py` | 102 | 저장소 계약 — 메모리 · SQLite · MySQL이 같은 동작인지 (점유, 동시 실행 제한, 모으는 중 건너뛰기, 포인터 · 키 순서, 기록 왕복, 반려 시도 조건, 시작 요청 · 끝나면 입력 사본 비우기, 관리자 · 여러 실행 건 조회, 계정 잠금 대기 초과, 기록 옮기기 · 12개월 대상 · 작업 점유) |
+| `test_store_sql.py` | 11 | DDL 파일 = 생성 결과, 설정 입력(`verification_policies`), 웹 테이블 구조 확인, `proofread_logs` 옛 구조 · 쓰기 오류, 학습 동의 확인 |
+| `test_start_request.py` | 26 | 시작 요청 → 워커 실행, 필수 항목 · 프로필 · 동시 실행, 실패 후 재시도, 취소, 점유 이어받기, 진행 중 작업 확인, 끝난 요청의 입력 사본 비우기 |
+| `test_clock.py` | 21 | 시각 — 도움 함수, 시간대 없는 값은 UTC, DB 칸은 시간대 없는 UTC, 웹 표 시각 · `proofread_logs.created_at`, 웹에 돌려주는 시각 전부 UTC, 한국 날짜(G-01 기준일 · 마감 안내 · 스텁), 워커 로그 UTC |
+| `test_log_stats.py` | 16 | 통계 줄 계산 — 칸 · 고정 키 · 한국 달 · 카테고리 순서 · 층별 점수 · 최종 점수 · Task별 개수, 식별자 · 자유 글 없음, 시작 요청 묶기 |
+| `test_retention.py` | 28 | 12개월 처리 — 기준 시각 · 경계, 진행 중 · 점유 중 건너뜀, 살아 있는 실행 건 · 두 번째 옮김 · 완전 삭제된 실행 건, 시작 요청, 작업 점유 · 종료 신호 · 만료 이어받기, 한 건 실패, 로그 · 요약에 식별자 없음 |
+| `test_retention_preserve.py` | 12 | 기록을 지운 뒤에도 카테고리 · 화면 10 · 재작성 결과 · 시도 번호가 같음 |
+| `test_account_delete.py` | 19 | 탈퇴 — 통계로 옮기고 모두 지움, 대기 요청 취소, `BUSY`(처리중 요청 · 단계 진행 · 점유 겹침 · 잠금 대기 초과), 다시 부르면 0, 잠금 중 새 시작 요청이 끼어들지 않음, 웹 조립에서 부름 |
 | `test_tc3.py` | 55 | 실제 T-C3 — 지시 대상마다 안내 호출(7 · 6번, 동시에 · 결과는 실행 순서), 실패 순서(코드 오류 · 영구 오류 · 일시), 재개 때 빠진 것만 · 누적, 보내는 칸 제한 · 시 · 도만, 참조 조각은 지시문에만, 데이터 격리, LLM 전 확인(자격 · 이력 · E-C3-FORM), 형식 오류 재시도, 재시도 소진 → 재개 |
 | `test_task_plan.py` | 48 | 양식 묶음 표(불변식 · 배점 합 70), Task 목록 · 틀 · 맥락 · 확장 출력, 참조 조각 배정, 스텁 T-C3, 뒷 단계가 T-C3 출력을 읽음, `outputs.evaluationItems` |
 | `test_instruction.py` | 18 | 지시문 세 부분 나누기 · 안내만 바꾸기(틀 · 참조 바이트 보존) · 안내 정리 · 덧붙임 블록 형식 |
 | `test_rewrite.py` | 39 | 재작성 · 재수행 지시문 다시 쓰기 — 언제 부르나, 문서층 Task마다, 반영 실행은 덧붙이기만, 재작성 중 재수행에 재작성 지시 유지, 가리기, 재개 때 재사용, 호출 기록 위치, 되돌리기 제외 |
-| `test_worker.py` | 28 | T-C3 · 다시 쓰기 호출만 실제 호출처로, 워커 2개 중복 없음(SQLite · MySQL), 점유 만료 이어받기, 단계 사이 중단, 종료 신호, 하트비트, 재개, 모으는 중 가져가지 않음, 조립(웹 조립 사전 단계 `WEB_NOT_ALLOWED`, 공고 서버 주소 있음 → 실제 T-C2 · G-01 · 없음 · 빈 값 → 스텁, 주소 형식 오류, 테스트가 실제 주소를 보지 않음) |
+| `test_worker.py` | 33 | T-C3 · 다시 쓰기 호출만 실제 호출처로, 워커 2개 중복 없음(SQLite · MySQL), 점유 만료 이어받기, 단계 사이 중단, 종료 신호, 하트비트, 재개, 모으는 중 가져가지 않음, 12개월 처리(확인 주기 · 개수만 로그 · 종료 신호 · 작업 점유 하트비트 · 웹 조립은 안 돎), 조립(웹 조립 사전 단계 `WEB_NOT_ALLOWED`, 공고 서버 주소 있음 → 실제 T-C2 · G-01 · 없음 · 빈 값 → 스텁, 주소 형식 오류, 테스트가 실제 주소를 보지 않음) |
 | `test_announcement_gate.py` | 42 | 공고 선택은 ID만 · G-01이 선택 공고 · 자격 결과 · 업력을 한 번에 저장, 확인 필요(화면 4만 안내), G-01 실패 시 고르기 전 화면 · X-C2-GONE · X-C2-FAIL, 공고 없음 다시 고르기, 막힌 공고 · `ANNOUNCEMENT_BLOCKED`, 마감 안내, 빈 마감일 · 금액으로 끝까지 |
 | `test_more_candidates.py` | 46 | 추가 조회 겹침 빼기 · 첫 조회 카드 갱신 · 내용 바뀜 참 · 거짓, 막힌 공고 풀기, 추가 조회 실패 · 수집 상태 비정상 → 기회 반환 · 화면 3 값 유지, 마감 임박순 안내 문구 |
 | `test_step_rescue.py` | 14 | 엔진의 실패를 흐름에 넘기는 장치(정한 구간의 모든 오류, 다른 구간은 그대로, 흐름이 옮기지 않으면 오류) |
@@ -684,11 +702,11 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 | `test_notice_tasks.py` | 225 | 실제 T-C2 · G-01 (가짜 전송) — 보내는 칸 · 시 · 도 17개 바꾸기, 카드 · 상세 · 판정 변환, 약속 밖 응답 거절, 받은 순서 그대로, 공고 없음 |
 | `test_reads.py` | 22 | 진행 상태 · 화면 3 ~ 11 · 관리자 실행 기록 조회 · project_id 명령 |
 | `test_web_functions.py` | 43 | 진행 상태 새 필드 · 여러 건 · 기다리기, 사용자용 결과에 실패 사유 없음, 지금까지 결과, 재작성 결과, 실패 · 중단 뒤 볼 수 없음, 자격 통과 뒤 다시 고르기, 화면 10 시도 기록 |
-| `test_admin_reads.py` | 10 | 관리자 실행 건 목록 · 점수 이력 · 운영 요약 · Agent별 Task |
+| `test_admin_reads.py` | 12 | 관리자 실행 건 목록 · 점수 이력 · 운영 요약 · Agent별 Task, 실행 건 목록 · 운영 요약은 최근 12개월만 |
 | `test_summary.py` | 11 | 단계를 저장해도 웹 `projects` 행이 바뀌지 않음, 실패 알림 · 실패 사유 (SQLite · MySQL) |
 | `test_tokens.py` | 10 | 토큰 시도별 · 호출 · 실행 합계, OpenAI 매핑, 관리자 조회 |
 | `test_abort_delete.py` | 14 | project_id 중단 · 완전 삭제 |
-| `test_mysql_integration.py` | 6 | 실제 웹 스키마 위 MySQL 8 흐름 · 동시 재작성 요청 합치기 · 반려 시도 행 · 삭제 뒤 로그 보존 · 웹 → 워커 조립 · 웹 스키마 위치 찾기(DB 없이) |
+| `test_mysql_integration.py` | 7 | 실제 웹 스키마 위 MySQL 8 흐름 · 동시 재작성 요청 합치기 · 반려 시도 행 · 삭제 뒤 로그 보존 · 웹 → 워커 조립 · 탈퇴 중 계정 잠금 유지 · 웹 스키마 위치 찾기(DB 없이) |
 
 흐름 테스트(`clock` 고정 장치를 쓰는 테스트)는 **메모리 저장소와 `SqlStore`(SQLite 임시 파일 DB)로 한 번씩** 돕니다(`conftest.py`의 `store_backend`). 위 건수는 이렇게 늘어난 수입니다.
 
@@ -697,14 +715,14 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 스텁은 `StubScenario`와 `FakeLLM`으로 원하는 상황을 만들 수 있습니다. 새 테스트를 쓸 때 참고하세요. 공통 도움 함수는 `tests/conftest.py`에 있습니다.
 
 ```python
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sbrain.agents.stubs import StubScenario
 from sbrain.bootstrap import build_stub_app
 
 app = build_stub_app(StubScenario(category="원페이지"))   # 원페이지 카테고리 (T-B1 생략)
 app.llm.plan("T-S1", ["timeout"] * 6)   # T-S1의 LLM 호출이 6번(첫 시도 + 재시도 5회) 모두 시간 초과
 # … 작성 시작 후 advance → view().progress == "재개대기"
-app.orchestrator.tick(datetime.now() + timedelta(minutes=15))   # 재개 시각에 깨우면 이어서 진행
+app.orchestrator.tick(datetime.now(timezone.utc) + timedelta(minutes=15))   # 재개 시각에 깨우면 이어서 진행 (시각은 UTC)
 ```
 
 | 조절 수단 | 예 |
@@ -735,12 +753,12 @@ app.orchestrator.tick(datetime.now() + timedelta(minutes=15))   # 재개 시각�
 - 자체 GPU 서버 호출처 어댑터 (OpenAI는 있음)
 - 공고 서버 실제 연결 켜기 — 연결 코드는 끝났고, 공고팀이 수집 상태 · 공고 상세 · 자격 판정 API(그리고 추천 결과의 내용 버전 · 가산점)를 주면 함께 확인한 뒤 켠다. 그 전까지 스텁 모드
 - 가산점 계산에 필요한 신청자 입력(공고팀 답 대기), 고른 뒤 바뀐 모집 상태 반영(지금은 알 수 없음)
-- 공유 DB에 Orchestrator 테이블 적용 — `sql/orchestrator_schema.sql`로 담당자가 직접
-- 실행 로그 보관 기간 이후의 식별자 분리 · 통계 전환
+- 공유 DB에 Orchestrator 테이블 적용 — `sql/orchestrator_schema.sql`(표 12개)로 담당자가 직접
+- 웹 표(실패 알림 · 알림)의 12개월 처리 — 웹팀 몫
 
 **공고팀과 맞출 것** — 네 API 제공, 동시 호출 안전성(그 전까지 워커 1대), 인증 방식(지금은 내부망 전제), 공고 없음이 생기는 경우, 가산점 계산 입력. 요청서는 `docs/공고서버_API요청_공고팀전달.md`
 
-**웹팀과 맞출 것** — 화면별 모양(초안), 실패 알림 범위, 완전 삭제 중 `BUSY` 처리, 완전 삭제 때 `proofread_logs` 처리, 오래 걸리는 웹 요청 제한 시간. 웹팀이 할 스키마 · 프론트 변경은 `docs/웹연동_변경사항_웹팀전달.md`, 함수 약속은 `docs/Orchestrator_웹연동_함수명세.md`
+**웹팀과 맞출 것** — 화면별 모양(초안), 실패 알림 범위, 완전 삭제 · 탈퇴 중 `BUSY` 처리, 오래 걸리는 웹 요청 제한 시간, 화면의 시각 표시(UTC → 한국 시각). 완전 삭제 · 탈퇴 때 `proofread_logs`는 학습에 반영된 행(`trained`)만 남기고 프로젝트 연결을 끊기로 정했다(웹팀 회신 2026-10-05, 웹이 구현). 웹팀이 할 스키마 · 프론트 변경은 `docs/웹연동_변경사항_웹팀전달.md`, 함수 약속은 `docs/Orchestrator_웹연동_함수명세.md`
 
 **타 팀과 합의가 필요한 것** — 자세한 내용은 `docs/Agent_연동_규격_초안.md` 10절
 

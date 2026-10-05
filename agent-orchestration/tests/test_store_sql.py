@@ -35,6 +35,29 @@ def test_ddl_is_create_if_not_exists_only():
     assert "JSON" not in text.replace("_json", "").replace("JSON 이름", "").replace("(JSON)", "")
 
 
+def test_stats_and_job_tables_have_no_identifier_columns():
+    """통계 줄 · 작업 상태 표에는 계정 · 프로젝트 · 실행 건 · 실행 · 공고 ID나 자유 글 컬럼이 없다 (spec 4.1 · 5.4)."""
+    tables = {t.name: t for t in ORCH_TABLES}
+    assert len(ORCH_TABLES) == 12
+    stats, jobs = tables["orch_log_stats"], tables["orch_jobs"]
+    assert [c.name for c in stats.columns] == [
+        "seq", "kind", "reason", "month", "category", "status", "result_code", "part", "count", "data_json",
+        "created_at"]
+    assert [c.name for c in jobs.columns] == [
+        "job_name", "lease_owner", "lease_until", "last_started_at", "last_finished_at", "last_summary"]
+    assert [c.name for c in stats.primary_key] == ["seq"] and [c.name for c in jobs.primary_key] == ["job_name"]
+    nullable = {c.name: c.nullable for c in stats.columns}
+    assert not any(nullable[c] for c in ("kind", "reason", "month", "part", "count", "created_at"))
+    assert all(nullable[c] for c in ("category", "status", "result_code", "data_json"))
+    indexes = {t: {i.name: [c.name for c in i.columns] for i in tables[t].indexes} for t in tables}
+    assert indexes["orch_log_stats"] == {"ix_orch_log_stats_kind_month": ["kind", "month"]}
+    assert indexes["orch_runs"]["ix_orch_runs_updated"] == ["updated_at"]
+    assert indexes["orch_start_requests"]["ix_orch_start_requests_status_updated"] == ["status", "updated_at"]
+    ddl = render()
+    assert "part INTEGER NOT NULL COMMENT" in ddl and "DEFAULT 1, \n\tcount INTEGER NOT NULL" in ddl
+    assert "month CHAR(7) NOT NULL" in ddl
+
+
 @pytest.fixture
 def web_engine(tmp_path):
     engine = create_sqlite_engine(tmp_path / "web.db", fast=True)

@@ -1,6 +1,8 @@
 """관리자 조회 (spec 4.2) — 실행 건 목록 · 점수 이력 · 운영 요약 · Agent별 Task. 메타데이터 · 점수 · 개수만."""
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from conftest import make_app, pre_input, project_for, start_and_select, to_screen6
 
@@ -157,3 +159,32 @@ def test_admin_agent_tasks(clock):
     assert (by["검수"].recent_project_id, by["검수"].recent_status) == (pid(app, a), "성공")
     assert sum(t.task_count for t in tasks) == len(specs)
     no_content(*tasks)
+
+
+def test_admin_runs_and_summary_limited_to_last_twelve_months(clock):
+    """admin_runs · admin_summary는 마지막 활동이 최근 12개월 안인 실행 건만 (기준 시각은 보관 기간 작업과 같다)."""
+    app, a, b, c, d = fixture(clock)
+    old = records(app, a, b, c, d)
+    edge = app.store.load_run(d).updated_at
+    clock.t = edge.replace(year=edge.year + 1) - timedelta(milliseconds=2)       # 다음 호출 = 기준 시각이 마지막 활동 직전
+    assert d in [r.run_id for r in app.orchestrator.admin_runs()]
+    clock.t = edge.replace(year=edge.year + 1)                                   # 기준 시각이 마지막 활동 바로 뒤
+    assert d not in [r.run_id for r in app.orchestrator.admin_runs()]
+    clock.advance(days=30)
+    app.llm.plan("T-S1", [])
+    e = to_screen6(app, "acc-5")
+    rows = app.orchestrator.admin_runs()
+    assert [r.run_id for r in rows] == [e] and app.orchestrator.admin_runs(progress="완료") == []
+    s = app.orchestrator.admin_summary()
+    assert s.status_counts == {"실행": 0, "재개대기": 0, "사용자대기": 1, "실패": 0, "완료": 0, "중단": 0}
+    mine = records(app, e)
+    assert (s.runs_with_executions, s.reworked_runs, s.total_count, s.pass_count) == (1, 0, 0, 0)
+    assert s.doc_count == (1 if rows[0].doc_score is not None else 0)
+    assert [t.count for t in s.triggers] == [len([r for r in mine if r.trigger == t])
+                                             for t in ("첫실행", "재작성", "재수행")]
+    assert s.total_tokens == sum(tokens(r) for r in mine)
+    assert (s.proofread_attempts, s.layer_changes[0].count) == (0, 0)            # A의 검수 · 재작성 변화는 범위 밖
+    assert len(app.orchestrator.admin_executions(limit=None)) == len(old) + len(mine)   # 실행 기록 조회는 그대로
+    assert app.orchestrator.admin_score_history(pid(app, a)).doc_score                  # 점수 이력도 그대로
+    app.orchestrator.select_announcement(d, "A01")                               # 다시 움직이면 범위 안으로
+    assert d in [r.run_id for r in app.orchestrator.admin_runs()]

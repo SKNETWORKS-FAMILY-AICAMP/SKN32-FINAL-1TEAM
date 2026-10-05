@@ -1,7 +1,7 @@
 """스텁 공고 · 스텁 G-01 · 스텁 T-C2 (spec 4.6) — 공고 서버가 없을 때 · 테스트에서 쓰는 판정 규칙과 상황 조절."""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 
 import pytest
 from conftest import pre_input
@@ -12,6 +12,7 @@ from sbrain.agents.stubs import (
 from sbrain.contracts import tasks as c
 from sbrain.flow.catalog import build_registry
 from sbrain.models import BonusItem, CompanyInfo, EligibilityRule, ItemSpec
+from sbrain.models.clock import utc_now
 from sbrain.orchestrator.errors import ResourceNotFound, ToolCallExhausted
 from sbrain.orchestrator.tools import CallSink, Tools, ToolsConfig, ToolsContext
 
@@ -27,7 +28,7 @@ def tools() -> Tools:
     cfg = ToolsConfig(agent="조율", provider="openai", model="m", temperature=None, timeout_sec=30,
                       retry_count=5, retry_interval_sec=0)
     return Tools(cfg, ToolsContext(run_id="r", execution_id="e", task_id="X", providers={}, sink=CallSink(),
-                                   now=datetime.now, sleep=lambda s: None))
+                                   now=utc_now, sleep=lambda s: None))
 
 
 def stub(sc: StubScenario, task_id: str):

@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import threading
 from collections import Counter
-from datetime import date, datetime
+from datetime import date
 
 import pytest
 
@@ -24,6 +24,7 @@ from sbrain.agents.supervisor import IMPLEMENTED, IMPLEMENTED_TASKS, plan, tc1, 
 from sbrain.contracts import tasks as c
 from sbrain.flow.instruction import REFERENCE_TAG, split_instruction
 from sbrain.models import Excerpt, GateResult, ItemSpec, ReferenceSummary, RevenueItem
+from sbrain.models.clock import utc_now
 from sbrain.orchestrator.errors import ToolCallExhausted
 from sbrain.orchestrator.tools import CallSink, LLMRequest, Tools, ToolsConfig, ToolsContext
 
@@ -190,7 +191,7 @@ def make_tools(llm: FakeLLM) -> Tools:
     cfg = ToolsConfig(agent="조율", provider="openai", model="test", temperature=None, timeout_sec=5,
                       retry_count=1, retry_interval_sec=0, reasoning_effort="low")
     ctx = ToolsContext(run_id="r1", execution_id="e1", task_id="T-C3", providers={"openai": llm},
-                       sink=CallSink(), now=datetime.now, sleep=lambda s: None)
+                       sink=CallSink(), now=utc_now, sleep=lambda s: None)
     return Tools(cfg, ctx)
 
 

@@ -11,6 +11,7 @@
   요청은 재작성 한 번으로 합치고, 모으는 동안 워커는 그 실행 건을 가져가지 않는다.
 - 웹 조립(build_web)은 allow_pre_stage가 거짓이라 사전 단계를 돌지 않는다 — run_start_request(와 동기 경로)를 부르면
   시작 요청을 건드리지 않고 바로 CommandError("WEB_NOT_ALLOWED") (spec 3.4).
+- 탈퇴(delete_account_data, 확장): 계정 잠금 안에서 중단 · 취소한 뒤 그 계정의 실행 건 · 시작 요청을 통계 줄로 옮기고 지운다.
 - 웹이 쓰는 조회(spec 4): view_project · project_views · wait_project · outputs · rework_result · active_work,
   관리자 admin_runs · admin_score_history · admin_summary · admin_agent_tasks (모양은 flow/reads.py).
 """
@@ -26,13 +27,16 @@ from typing import Any, Callable
 
 from ..intake import MissingRequired, ProjectInputSource, to_pre_input
 from ..models import Notice, Notification, PreInput, ReworkOrder, Run
+from ..models.clock import as_utc, kst_today, utc_clock, utc_now
 from ..models.run import ACTIVE_PROGRESS, collecting, make_state, progress_percent
 from ..orchestrator.context import RunContext
 from ..orchestrator.engine import Engine
-from ..orchestrator.errors import CommandError, message
+from ..orchestrator.errors import CommandError, StoreConflict, message
 from ..orchestrator.settings import SettingsProvider
-from ..orchestrator.store import PENDING_REQUEST, RunFilter, StartRequest
+from ..orchestrator.store import FINISHED_REQUEST, PENDING_REQUEST, RunFilter, StartRequest
 from . import reads
+from .log_stats import start_request_rows
+from .retention import gather_run_stats
 from .rework_map import BUNDLE_EXECUTABLE, BUNDLE_LAYER, LAYER_SCREENS, TASK_BUNDLE
 from .sbrain_flow import (
     CANDIDATE_LIMIT, MORE_BEFORE_POINTERS, REVIEW, SCREEN_STEP, SELECTION_STEPS, STEP_LABEL, STEP_SCREEN, WRITE,
@@ -51,6 +55,7 @@ WAIT_POLL_SEC = 0.5                 # wait_project가 DB를 다시 읽는 간격
 # 작성 시작 전 공고 다시 고르기 · 추가 조회를 받는 단계 — 공고선택 · 사용자대기, 자격 통과 뒤 계획서작성 · 사용자대기 (3.3)
 # G-01이 실패하면 돌아가는 대기 지점과 같은 목록이다 (sbrain_flow.SELECTION_STEPS)
 ANNOUNCEMENT_STEPS = SELECTION_STEPS
+WITHDRAW_REASON = "탈퇴"   # 탈퇴로 옮긴 통계 줄의 까닭 (log_stats.REASONS)
 
 
 @dataclass
@@ -135,6 +140,20 @@ class DeleteResult:
 
 
 @dataclass
+class AccountDeleteResult:
+    """delete_account_data 결과 (확장) — 탈퇴. 그 계정의 orch_ 데이터를 통계 줄로 옮긴 뒤 지운 결과.
+
+    남은 것이 없으면(다시 부름 · 없는 계정) 목록은 비고 개수는 모두 0이다.
+    """
+    account_id: str
+    cancelled_requests: list[str] = field(default_factory=list)   # 대기 → 취소한 시작 요청 ID
+    aborted_runs: list[str] = field(default_factory=list)         # 바로 중단한 실행 건 ID
+    deleted_runs: int = 0                                         # 지운 실행 건 줄 수
+    deleted_requests: int = 0                                     # 지운 시작 요청 줄 수
+    stats_rows: int = 0                                           # 쓴 통계 줄 수 (실행 + 시작요청)
+
+
+@dataclass
 class ReworkAccepted:
     """request_rework_for_project 결과 (확장) — 접수만 하고 바로 돌아온다. 진행 · 결과는 진행 상태 · 재작성 결과로 본다.
 
@@ -191,7 +210,7 @@ class SBrainOrchestrator:
         settings: SettingsProvider,
         profile_count: Callable[[str], int],
         project_inputs: ProjectInputSource | None = None,
-        now: Callable[[], datetime] = datetime.now,
+        now: Callable[[], datetime] = utc_now,
         new_id: Callable[[], str] | None = None,
         sleep: Callable[[float], None] = time.sleep,
         allow_pre_stage: bool = True,
@@ -202,7 +221,7 @@ class SBrainOrchestrator:
         self.settings = settings
         self.profile_count = profile_count
         self.project_inputs = project_inputs
-        self.now = now
+        self.now = utc_clock(now)   # 시간대 있는 UTC (시간대 없는 시계는 UTC로 본다)
         self.new_id = new_id or (lambda: uuid.uuid4().hex[:12])
         self.sleep = sleep                       # wait_project가 다시 읽기 전에 쉰다 (테스트는 시계를 움직이는 함수)
         self.allow_pre_stage = allow_pre_stage   # 거짓이면(웹 조립) 사전 단계를 돌지 않는다 — WEB_NOT_ALLOWED
@@ -214,7 +233,8 @@ class SBrainOrchestrator:
         return self.engine.advance(run_id)
 
     def tick(self, now: datetime | None = None) -> list[str]:
-        return self.engine.tick(now)
+        """now의 시간대가 없으면 UTC로 본다."""
+        return self.engine.tick(as_utc(now))
 
     # ── 사전 정보 제출 → 공고 후보 ─────────────────────
     def request_start(self, account_id: str, project_id: int | str) -> StartCheck:
@@ -648,6 +668,99 @@ class SBrainOrchestrator:
         result.cleared_forms = self.store.clear_start_request_forms(project_id)
         return result
 
+    # ── 탈퇴 (확장) ─────────────────────────────────────
+    def delete_account_data(self, account_id: str) -> AccountDeleteResult:
+        """탈퇴용 — 그 계정의 orch_ 데이터를 식별자 없는 통계 줄(reason '탈퇴')로 옮긴 뒤 모두 지운다.
+
+        웹 순서: 프로젝트마다 abort_project → delete_project_data → 모두 끝나면 이 함수 → 웹 행 삭제.
+        ① 계정 잠금(add_start_request와 같은 잠금)을 끝날 때까지 쥔다 — 그동안 그 계정의 시작 요청이 새로 들어오지 않는다.
+        ② 대기 시작 요청 → 취소, 처리중 요청 → 취소 요청.
+        ③ 진행 중 실행 건(실행 · 재개대기 · 사용자대기) → 중단. 워커가 단계를 도는 중이면 중단 요청만 남는다.
+        ④ ② · ③에서 처리중 요청이나 단계를 도는 실행 건이 있으면 아무것도 지우지 않고 CommandError("BUSY")
+           (중단 · 취소 요청은 남는다. 웹은 웹 행을 지우지 않고 잠시 뒤 다시 부른다).
+        ⑤ 모든 실행 건(끝난 것 · 완전 삭제된 것 포함)마다 점유를 잡고 한 트랜잭션으로: 옮길 기록이 있으면 실행 줄을 쓰고
+           산출물 버전 · 포인터 · 여섯 기록 표 · 실행 건 줄을 지운다(완전 삭제를 빠뜨려 남은 산출물도). 점유를 못 잡으면
+           BUSY — 이미 처리한 실행 건은 지워진 채로 두고, 다시 부르면 남은 것부터 한다.
+        ⑥ 모든 시작 요청(끝난 것)을 시작요청 줄로 세고 같은 트랜잭션에서 지운다.
+        여러 번 불러도 안전하다(남은 것이 없으면 모두 0). 웹 표는 건드리지 않고 단계를 돌지 않는다. 계정 주인 확인은
+        하지 않는다(웹이 로그인 계정임을 확인한 뒤 부른다). 오류는 BUSY 하나이고 메시지에 식별자를 싣지 않는다.
+        """
+        account_id = str(account_id)
+        result = AccountDeleteResult(account_id)
+        try:
+            with self.store.account_guard(account_id):
+                # 이 안에서 같은 계정의 add_start_request · create_run · create_run_for_request를 부르지 않는다
+                # (MySQL은 다른 연결이라 자기 잠금을 기다린다). 중단 · 취소 · 기록 옮기기는 계정 잠금을 잡지 않는다.
+                self._withdraw_stop(account_id, result)
+                for run in self.store.list_runs(account_id):
+                    rows = self._withdraw_run(run.run_id)
+                    if rows is not None:
+                        result.stats_rows += rows
+                        result.deleted_runs += 1
+                requests = self.store.list_start_requests(account_id)
+                if any(r.status not in FINISHED_REQUEST for r in requests):
+                    raise CommandError("BUSY", "탈퇴 — 끝나지 않은 시작 요청이 있다. 잠시 뒤 다시 부른다")
+                if requests:
+                    rows = start_request_rows(requests, WITHDRAW_REASON)
+                    result.deleted_requests = self.store.retire_start_requests([r.request_id for r in requests], rows)
+                    result.stats_rows += len(rows)
+        except StoreConflict:
+            # 계정 잠금 대기 시간 초과 · 점유를 잃음 · 다른 곳이 먼저 지움 — 식별자 없이 BUSY로 바꾼다
+            raise CommandError("BUSY", "탈퇴 — 계정 잠금 또는 점유를 얻지 못했다. 잠시 뒤 다시 부른다") from None
+        return result
+
+    def _withdraw_stop(self, account_id: str, result: AccountDeleteResult) -> None:
+        """② · ③ · ④ — 시작 요청을 먼저 보고 실행 건을 나중에 본다. 아직 처리 중인 것이 남으면 BUSY(지우기 전)."""
+        busy = False
+        for req in self.store.list_start_requests(account_id):
+            if req.status not in PENDING_REQUEST:
+                continue
+            outcome = self.store.cancel_start_request(req.request_id)
+            if outcome == "취소":
+                result.cancelled_requests.append(req.request_id)
+            elif outcome == "취소요청":
+                busy = True
+        for run in self.store.list_runs(account_id):
+            if run.state.progress not in ACTIVE_PROGRESS:
+                continue
+            try:
+                self.abort(run.run_id, confirmed=True)
+            except CommandError as e:
+                if e.code != "NOT_ACTIVE":
+                    raise
+            after = self.store.load_run(run.run_id).state.progress
+            if after in ACTIVE_PROGRESS:
+                busy = True              # 워커가 단계를 도는 중 — 중단 요청만 남았다
+            elif after == "중단":
+                result.aborted_runs.append(run.run_id)
+        if busy:
+            raise CommandError("BUSY", "탈퇴 — 단계 진행 중이거나 처리 중인 시작 요청이 있다. 중단 · 취소 요청을 남겼다")
+
+    def _withdraw_run(self, run_id: str) -> int | None:
+        """⑤ 실행 건 하나 — 점유를 잡고 통계 줄(옮길 기록이 있을 때) · 산출물 · 기록 · 실행 건 줄을 한 트랜잭션으로 지운다.
+
+        쓴 통계 줄 수(0 또는 1). 그사이 다른 곳이 먼저 지웠으면 None. 점유를 못 잡거나 다시 진행 중이면 BUSY.
+        """
+        owner = f"withdraw-{self.new_id()}"
+        if not self.store.acquire(run_id, owner, COMMAND_LEASE_SEC):
+            try:
+                self.store.load_run(run_id)   # SQL 저장소는 없는 실행 건의 점유를 잡지 못한다 — 남아 있는지 본다
+            except KeyError:
+                return None   # 다른 곳(보관 기간 작업)이 먼저 지웠다 — KeyError에는 실행 건 ID가 있어 올리지 않는다
+            raise CommandError("BUSY", "탈퇴 — 실행 건 점유를 얻지 못했다. 잠시 뒤 다시 부른다")
+        try:
+            try:
+                run = self.store.load_run(run_id)
+            except KeyError:
+                return None   # 다른 곳(보관 기간 작업)이 먼저 지웠다 — KeyError에는 실행 건 ID가 있어 올리지 않는다
+            if run.state.progress in ACTIVE_PROGRESS:
+                raise CommandError("BUSY", "탈퇴 — 아직 진행 중인 실행 건이 있다. 잠시 뒤 다시 부른다")
+            row = gather_run_stats(self.store, run, reason=WITHDRAW_REASON)
+            self.store.retire_run(run_id, owner, stats=row, delete_run=True)
+            return 0 if row is None else 1
+        finally:
+            self.store.release(run_id, owner)   # 지웠으면 할 일 없음
+
     # ── 화면 상태 · 이어하기 ───────────────────────────
     def view(self, run_id: str) -> RunView:
         return self._view(self.store.load_run(run_id))
@@ -655,11 +768,11 @@ class SBrainOrchestrator:
     def _view(self, run: Run) -> RunView:
         notices = list(run.notices)
         if run.state.progress in ACTIVE_PROGRESS and run.announcement_id:
-            # 마감 안내 (spec 4.5) — 마감일이 지났거나(비어 있으면 보지 않음), G-01이 상세를 받을 때 모집 상태가 '마감'.
-            # 알리기만 하고 진행을 막지 않는다
+            # 마감 안내 (spec 4.5) — 마감일이 지났거나(비어 있으면 보지 않음, 오늘은 한국 날짜), G-01이 상세를 받을 때
+            # 모집 상태가 '마감'. 알리기만 하고 진행을 막지 않는다
             ctx = self.engine.open_context(run)
             ann = ctx.get("selectedAnnouncement", default=None)
-            if ann is not None and ((ann.apply_end is not None and ann.apply_end < self.now().date())
+            if ann is not None and ((ann.apply_end is not None and ann.apply_end < kst_today(self.now()))
                                     or ann.status == "마감"):
                 notices.append(Notice(code="E-RUN-CLOSED", message=message("E-RUN-CLOSED"), at=self.now()))
         percent = progress_percent(run)

@@ -1,7 +1,6 @@
 """OpenAI 호출처 어댑터 — SDK 클라이언트를 가짜로 바꿔 요청 모양과 오류 변환을 본다 (네트워크 없음)."""
 from __future__ import annotations
 
-from datetime import datetime
 from types import SimpleNamespace
 
 import httpx2
@@ -9,6 +8,7 @@ import openai
 import pytest
 
 from sbrain.agents.supervisor.tc1 import ItemDraft
+from sbrain.models.clock import utc_now
 from sbrain.orchestrator.errors import FormatError, ProviderError, ToolCallExhausted
 from sbrain.orchestrator.openai_provider import OpenAIProvider
 from sbrain.orchestrator.tools import CallSink, LLMRequest, Tools, ToolsConfig, ToolsContext
@@ -91,7 +91,7 @@ def test_through_tools_retry_and_classification():
     cfg = ToolsConfig(agent="조율", provider="openai", model="gpt-test", temperature=0.3, timeout_sec=12,
                       retry_count=2, retry_interval_sec=0)
     ctx = ToolsContext(run_id="r", execution_id="e", task_id="T-C1", providers={"openai": p}, sink=CallSink(),
-                       now=datetime.now, sleep=lambda s: None)
+                       now=utc_now, sleep=lambda s: None)
     with pytest.raises(ToolCallExhausted) as e:
         Tools(cfg, ctx).llm([{"role": "user", "content": "x"}], purpose="시험")
     assert e.value.error_kind == "입력" and len(comp.calls) == 3

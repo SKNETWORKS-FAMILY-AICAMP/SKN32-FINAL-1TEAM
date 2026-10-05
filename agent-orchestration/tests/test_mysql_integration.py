@@ -1,4 +1,5 @@
-"""MySQL 8 통합 — 실제 웹 스키마(app_schema.sql) 위에서 전체 흐름 1회, 완전 삭제 뒤 실행 로그 보존, 검수 회수 문단.
+"""MySQL 8 통합 — 실제 웹 스키마(app_schema.sql) 위에서 전체 흐름 1회, 완전 삭제 뒤 실행 로그 보존, 검수 회수 문단,
+탈퇴 중 계정 잠금(GET_LOCK).
 
 proofread_logs는 웹팀이 바꿀 모양(project_id · model_version)을 테스트 DB에서만 흉내 낸다(mysqldb.py).
 
@@ -14,7 +15,7 @@ import uuid
 from decimal import Decimal
 
 import pytest
-from conftest import Clock, executed, make_app, set_consent, to_screen9
+from conftest import Clock, executed, make_app, pre_input, set_consent, start_and_select, to_screen6, to_screen9
 from mysqldb import WEB_SCHEMA_ENV, require_mysql, web_schema
 from sqlalchemy import text
 from test_tc1 import item_json
@@ -22,6 +23,7 @@ from webdb import project_row, proofread_rows
 
 from sbrain.agents.stubs import FakeLLM, StubScenario
 from sbrain.bootstrap import build_app, build_web
+from sbrain.orchestrator.store import StartRequest
 from sbrain.store_sql import SqlStore
 from sbrain.worker import Worker
 
@@ -128,6 +130,53 @@ def test_project_delete_keeps_run_log():
     assert app.store.load_run(rid).state.step == "종합평가"
     assert len(app.store.executions(rid)) == 18
     assert app.store.notifications(rid) == []          # 웹 알림은 프로젝트와 함께 지워졌다
+
+
+def test_account_delete_holds_account_lock_on_mysql():
+    """탈퇴(delete_account_data) — 함수가 끝날 때까지 같은 계정의 add_start_request는 GET_LOCK을 기다린다(다른 연결).
+
+    끝난 실행 건 · 진행 중 실행 건 · 시작 요청은 통계 줄로 옮겨지고 지워진다. 뒤에 들어온 요청은 남는다.
+    """
+    clock = Clock()
+    app = make_app(clock, None, store=SqlStore(require_mysql(), now=clock))
+    acct = uuid.uuid4().hex[:12]
+    first = to_screen6(app, acct)
+    app.orchestrator.abort_project(app.store.load_run(first).project_id)
+    second = start_and_select(app, acct)                                    # 사용자대기 — 바로 중단된다
+    runs_before, reqs_before = len(app.store.log_stats("실행")), len(app.store.log_stats("시작요청"))
+    list_runs, seen = app.store.list_runs, {}
+
+    def add():
+        now = clock()
+        req = StartRequest(request_id=uuid.uuid4().hex[:12], project_id=None, account_id=acct, status="대기",
+                           form=pre_input().dump(), created_at=now, updated_at=now)
+        seen["result"] = app.store.add_start_request(req)
+        seen["request_id"] = req.request_id
+
+    def hooked(account_id):
+        if "thread" not in seen:
+            t = threading.Thread(target=add)
+            seen["thread"] = t
+            t.start()
+            t.join(0.5)
+            seen["alive_inside"] = t.is_alive()
+        return list_runs(account_id)
+    app.store.list_runs = hooked
+    res = app.orchestrator.delete_account_data(acct)
+    app.store.list_runs = list_runs
+    seen["thread"].join(15)
+    assert seen["alive_inside"] is True and seen["result"] is None
+    assert (res.aborted_runs, res.deleted_runs, res.deleted_requests, res.stats_rows) == ([second], 2, 2, 3)
+    assert app.store.list_runs(acct) == []
+    assert [r.request_id for r in app.store.list_start_requests(acct)] == [seen["request_id"]]
+    for rid in (first, second):
+        assert app.store.executions(rid) == [] and app.store.get_latest_versions(rid) == {}
+        with app.store.engine.connect() as conn:
+            assert conn.execute(text("SELECT COUNT(*) FROM orch_runs WHERE run_id = :r"), {"r": rid}).scalar() == 0
+    assert len(app.store.log_stats("실행")) == runs_before + 2
+    assert len(app.store.log_stats("시작요청")) == reqs_before + 1
+    # MySQL 테스트 DB는 테스트끼리 함께 쓴다 — 남은 '대기' 요청을 뒤 워커 테스트가 가져가지 않게 취소해 둔다
+    assert app.store.cancel_start_request(seen["request_id"]) == "취소"
 
 
 def insert_web_project(engine) -> tuple[int, int]:
