@@ -120,7 +120,12 @@ export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcom
   const finalize=async()=>{
     if(!projectId){onFinalize();return}
     setFinalizing(true);setFinalizeError('');
-    try{await startFinalReview(projectId);onFinalize();}
+    try{
+      // 이미 실패한 실행에도 200으로 지금 상태를 준다(백엔드 회신) — match_status로 가른다.
+      const status=await startFinalReview(projectId);
+      if(status?.match_status==='failed'){setFinalizeError('일시적인 문제로 작업을 완료하지 못했습니다. 새 작업으로 다시 시작해주세요.');return;}
+      onFinalize();
+    }
     catch(err){console.error('종합 평가로 넘어가지 못했어요',err);setFinalizeError(err.message||'종합 평가로 넘어가지 못했어요. 다시 시도해 주세요.');}
     finally{setFinalizing(false)}
   };

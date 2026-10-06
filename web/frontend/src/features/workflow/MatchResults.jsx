@@ -143,7 +143,12 @@ export function MatchResults({projectId,candidates,onCandidatesLoaded,onBack,onC
    for(let i=0;result?.status==='pending'&&i<ELIGIBILITY_MAX_POLLS;i++){
     await new Promise(resolve=>setTimeout(resolve,PENDING_RETRY_MS));
     if(request!==requestVersion.current)return;
-    result=await getEligibility(projectId);
+    result=await getEligibility(projectId,r.notice_id);
+   }
+   // 방금 고른 공고의 결과가 아니면(이전 공고 결과가 온 경우) 자격 확인을 못 끝낸 것으로 본다 —
+   // 다른 공고 이름 아래에 이전 공고 결과를 보이지 않게(서버가 notice_id 쿼리를 받기 전에도 막는다).
+   if(result?.status==='ready'&&result.match?.notice_id&&result.match.notice_id!==r.notice_id){
+    result={...result,status:'failed',message:'공고를 확인하지 못했어요. 잠시 뒤 다시 시도해 주세요.'};
    }
    if(request!==requestVersion.current)return;
    if(result?.status==='pending'){

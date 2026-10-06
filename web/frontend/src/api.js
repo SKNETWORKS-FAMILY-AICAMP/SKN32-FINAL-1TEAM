@@ -4,8 +4,10 @@
 // 열어야 한다(127.0.0.1로 열면 로그인 자체는 되는데 그 다음 요청에 쿠키가 안 실린다).
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
+// code: 서버 오류 코드(본문 최상위 code — 예: ANNOUNCEMENT_BLOCKED · BUSY · E-G2-LIMIT · CONFIRMATION_REQUIRED). 백엔드가
+// 붙이기 전이거나 코드가 없는 오류면 undefined다 — 그때는 detail 문구로만 안내한다(백엔드 회신 2026-10-06).
 export class ApiError extends Error{
-  constructor(status,detail){super(typeof detail==='string'?detail:JSON.stringify(detail));this.status=status;this.detail=detail}
+  constructor(status,detail,code){super(typeof detail==='string'?detail:JSON.stringify(detail));this.status=status;this.detail=detail;this.code=code}
 }
 
 // Access Token(세션 쿠키)은 30분 만료라, 그 사이 401을 받으면 여기서 조용히 POST /auth/refresh로
@@ -35,7 +37,7 @@ export async function apiFetch(path,{method='GET',body,headers,_retried=false}={
   }
   const text=await res.text();
   const data=text?JSON.parse(text):null;
-  if(!res.ok){throw new ApiError(res.status,data?.detail??data??res.statusText)}
+  if(!res.ok){throw new ApiError(res.status,data?.detail??data??res.statusText,data?.code)}
   return data;
 }
 
@@ -105,7 +107,7 @@ export const rematchCandidates=(projectId)=>api.post(`/projects/${projectId}/mat
 export const generatePipeline=(projectId,noticeId)=>api.post(`/projects/${projectId}/generate`,{notice_id:noticeId||null});
 
 // 화면 8 → 9 ('종합 평가 확인하기'). 실행할 단계 없이 바로 stage='final_review_pending'이 된다. 응답은 ProjectStatusOut.
-// [SB-243 — 엔드포인트 이름은 백엔드가 "임시"로 둠, 확정 요청 중(백엔드_요청사항_프론트_2026-10-06.md 3번)]
+// [SB-243 — 이름 확정(백엔드 회신 2026-10-06)]
 export const startFinalReview=(projectId)=>api.post(`/projects/${projectId}/final-review/start`);
 // 화면 9 → 10 (검수 진행). stage='reviewing'으로 진행되고 끝나면 'done'. 기준 점수에 못 미치면 409 +
 // detail {confirmation_required, reason, items}로 확인을 받는다 — 사용자가 확인하면 confirmed=true로 다시 부른다.
@@ -113,7 +115,9 @@ export const startReview=(projectId,confirmed=false)=>api.post(`/projects/${proj
 
 // 자격 확인 결과(화면 4)를 다시 읽는다 — POST /generate가 status='pending'으로 답했을 때, 이어하기로 화면 4를 열 때.
 // 응답 모양은 POST /generate와 같다(DemoGenerateResponse — status · eligibility · match · notices).
-export const getEligibility=(projectId)=>api.get(`/projects/${projectId}/eligibility`);
+// noticeId: 방금 고른 공고 — 그 공고의 자격 확인이 끝났는지로 답한다. 없으면 지금 자격 결과(이어하기 · 이전 공고로 계속하기).
+// [백엔드 회신 2026-10-06] 화면 5에서 다시 골랐는데 pending이면 notice_id 없이 부를 때 이전 공고 결과가 ready로 왔다.
+export const getEligibility=(projectId,noticeId)=>api.get(`/projects/${projectId}/eligibility${noticeId?`?notice_id=${encodeURIComponent(noticeId)}`:''}`);
 
 // 이미 generatePipeline으로 만들어둔 결과를 재생성 없이 다시 불러온다("이어서 보기").
 export const getProjectResult=(projectId)=>api.get(`/projects/${projectId}/result`);
@@ -140,7 +144,7 @@ async function fetchBlob(path){
     // 에러 본문이 JSON이 아닐 수도 있다(프록시가 낸 HTML 오류 페이지 등) — 그땐 본문/상태 문구를 쓴다.
     let data=null;
     try{data=text?JSON.parse(text):null}catch(e){data=text||null}
-    throw new ApiError(res.status,data?.detail??data??res.statusText);
+    throw new ApiError(res.status,data?.detail??data??res.statusText,data?.code);
   }
   return res.blob();
 }
