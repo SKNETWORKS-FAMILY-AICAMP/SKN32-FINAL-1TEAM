@@ -71,6 +71,28 @@ def configure_env(url_text: str) -> None:
     })
 
 
+def command_log_lines(project_id: int, command: str) -> list[str]:
+    """웹 로그 파일(SB-303)에서 그 프로젝트 · 명령의 `cmd` 줄을 읽는다 — 파일에 쓰일 시간을 잠깐 준다. configure_env 뒤에 부른다."""
+    import glob
+
+    from app.logging_config import LOG_DIR
+    needle_project, needle_cmd = f'project_id={project_id} ', f'command={command} '
+    for _ in range(10):
+        lines: list[str] = []
+        for path in sorted(glob.glob(os.path.join(LOG_DIR, 'web-*.log'))):
+            with open(path, encoding='utf-8') as fh:
+                lines += [ln.strip() for ln in fh if ' cmd at=' in ln and needle_project in ln and needle_cmd in ln]
+        if lines:
+            return lines
+        time.sleep(0.2)
+    return []
+
+
+def has_no_account(line: str) -> bool:
+    """명령 로그 줄에 계정을 가리키는 말이 없는지 — 계정 번호 · 산출물 내용은 넣지 않는 기준이다."""
+    return 'account' not in line and 'user' not in line
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--url', default=DEFAULT_URL)
@@ -232,6 +254,9 @@ def main() -> int:
             res = client.post(f'/projects/{pid}/final-review/start')
             step('종합 평가로 진행(8→9)', res.status_code == 200 and j(res).get('stage') == 'final_review_pending',
                  f"{res.status_code} stage={j(res).get('stage')}")
+            logged = command_log_lines(pid, 'decide_for_project')
+            step('웹 명령 로그에 화면 8 진행이 남음', bool(logged) and 'screen=8' in logged[-1] and 'result=ok' in logged[-1]
+                 and 'step=종합평가' in logged[-1] and has_no_account(logged[-1]), logged[-1][-140:] if logged else '줄 없음')
             result = j(client.get(f'/projects/{pid}/result'))
             verdict = result.get('verdict') or {}
             step('결과: 종합 판정', bool(verdict),

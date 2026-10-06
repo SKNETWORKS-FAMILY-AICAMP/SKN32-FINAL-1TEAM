@@ -84,6 +84,19 @@ uvicorn app.main:app --port 8000
 
 `WEB_NOT_ALLOWED` · 모르는 오케스트레이터 코드 같은 내부 오류는 내부 이름을 내지 않고 `INTERNAL_ERROR`(500)로 답한다.
 
+### 웹 명령 로그 (SB-303)
+
+웹이 오케스트레이터에 넣은 상태 변경 명령(`request_start` · `abort_project` · `decide_for_project` 등 9개)은 끝날 때마다 웹 로그(`web/backend/logs/web-날짜.log`)에 `cmd`로 시작하는 한 줄을 남긴다. 워커 로그에 줄이 없는 웹 쪽 상태 변경(대기 지점 중단 · 화면 8 진행 …)을 워커 로그와 맞춰 보려는 것이다.
+
+```
+2026-10-06 16:14:59 | INFO    | cmd at=2026-10-06T07:14:59Z project_id=1 command=abort_project result=ok run_action=중단 step=공고선택 progress=중단 elapsed_ms=94
+```
+
+- `at`은 UTC(`Z`)다. 줄 앞의 시각은 서버 로컬 시간이라, 워커 로그(UTC)와 맞출 때는 `at`을 본다.
+- `result`는 `ok` · `rejected`(시작 요청 거절) · `confirmation_required` · `error`(`code=오케스트레이터 오류 코드`) · `fail`(예상 못 한 예외)이다. `step` · `progress`는 명령 직후의 값이다.
+- 계정 번호 · 산출물 · 입력 내용은 남기지 않는다. 읽기 함수(`view_project` · `screen` · `outputs` …)는 남기지 않는다.
+- `scripts/e2e_worker_flow.py`(화면 8 진행)와 `scripts/e2e_concurrent_abort.py`(중단)가 로그 파일에 줄이 남았는지 확인한다.
+
 기존 DB에 스키마 변경을 적용하는 SQL은 `migrations/`에 있다(멱등, MySQL 8). 공유 DB 적용은 팀 합의 뒤에 한다.
 
 ---

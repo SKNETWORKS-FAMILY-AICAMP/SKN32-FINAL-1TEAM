@@ -23,7 +23,14 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_worker_flow import DEFAULT_URL, FULL_INPUT, PROFILE, configure_env  # noqa: E402
+from e2e_worker_flow import (  # noqa: E402
+    DEFAULT_URL,
+    FULL_INPUT,
+    PROFILE,
+    command_log_lines,
+    configure_env,
+    has_no_account,
+)
 
 results: list[tuple[str, bool, str]] = []
 
@@ -197,6 +204,11 @@ def main() -> int:
             step('3. 경로: 워커가 안 돌 때는 바로 중단', bool(aborts) and aborts[-1].run_action == '중단',
                  f'run_action={aborts[-1].run_action if aborts else None}')
             step('3. 실행 건 중단됨', run_progress(a) == '중단', f'진행={run_progress(a)}')
+            logged = command_log_lines(a, 'abort_project')
+            step('3. 웹 명령 로그에 중단 명령이 남음(계정 번호 없음)',
+                 bool(logged) and 'result=ok' in logged[-1] and 'run_action=중단' in logged[-1] and 'progress=중단' in logged[-1]
+                 and has_no_account(logged[-1]),
+                 logged[-1][-150:] if logged else '줄 없음')
             row = web_project(a)
             step('3. 보관 처리 · 목록에서 숨김', bool(row and row['archived_at'] and row['archived_by'] == 'user') and a not in listed_ids(),
                  f'웹 행={row} 목록={listed_ids()}')

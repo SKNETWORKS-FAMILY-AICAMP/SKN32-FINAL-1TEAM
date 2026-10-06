@@ -5,14 +5,17 @@
 - sbrain의 CommandError는 OrchError로 바꿔 올린다. sbrain은 gateway를 만들 때만 가져온다(지연 import) —
   테스트는 가짜 오케스트레이터로 gateway를 만들어 sbrain 없이 돈다.
 - 주인 확인은 하지 않는다. 라우터가 모든 호출 앞에서 한다(명세 6절 1번).
+- 상태를 바꾸는 명령(command_log.COMMANDS)은 끝날 때마다 웹 로그에 한 줄을 남긴다(SB-303).
 """
 import functools
 import os
+import time
 from collections.abc import Callable
 from typing import Any
 
 from fastapi import HTTPException
 
+from .command_log import COMMANDS, CommandLog
 from .errors import OrchError
 
 # 명세 1절 표의 함수. 이 밖의 이름은 WEB_NOT_ALLOWED.
@@ -40,8 +43,11 @@ def _translate(exc: Exception) -> OrchError | None:
 
 
 class OrchGateway:
-    def __init__(self, orchestrator: Any) -> None:
+    def __init__(self, orchestrator: Any, *, log_state: bool = False) -> None:
+        """log_state: 명령 로그에 명령 직후의 단계 · 진행 상태를 붙인다(view_project를 한 번 더 부른다). 운영 조립(build_gateway)만 켠다 —
+        가짜 오케스트레이터를 쓰는 테스트는 부르는 함수 기록이 달라지지 않게 끈다."""
         self._orch = orchestrator
+        self._command_log = CommandLog(state_reader=orchestrator.view_project if log_state else None)
 
     def __getattr__(self, name: str) -> Callable[..., Any]:
         if name.startswith('_'):
@@ -52,13 +58,19 @@ class OrchGateway:
 
         @functools.wraps(fn)
         def call(*args: Any, **kwargs: Any) -> Any:
+            started = time.monotonic()
             try:
-                return fn(*args, **kwargs)
+                value = fn(*args, **kwargs)
             except Exception as exc:
                 err = _translate(exc)
+                if name in COMMANDS:
+                    self._command_log.record(name, args, kwargs, started, error=exc, code=err.code if err else None)
                 if err is None:
                     raise
                 raise err from exc
+            if name in COMMANDS:
+                self._command_log.record(name, args, kwargs, started, value=value)
+            return value
 
         return call
 
@@ -83,7 +95,7 @@ def build_gateway(*, profile_count: Callable[[str], int], db_url: str | None = N
     """서버 시작 때 한 번 만든다. 여러 스레드에서 함께 써도 된다(상태는 DB에만 있다)."""
     from sbrain.bootstrap import build_web
     app = build_web(db_url or _default_db_url(), profile_count=profile_count)
-    return OrchGateway(app.orchestrator)
+    return OrchGateway(app.orchestrator, log_state=True)
 
 
 _gateway: OrchGateway | None = None
