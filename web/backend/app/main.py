@@ -55,7 +55,7 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
-# [2026-09-23, 팀 로깅 정책 "웹서비스" 담당분] 요청마다 시작/끝을 back/logs/에 파일로
+# [2026-09-23, 팀 로깅 정책 "웹서비스" 담당분] 요청마다 시작/끝을 web/backend/logs/에 파일로
 # 남긴다(DB엔 안 남김) — CORS보다 나중에 추가해서 미들웨어 스택 바깥쪽을 차지하게 했다
 # (Starlette는 add_middleware 호출 역순으로 스택을 쌓아서, 나중에 추가한 게 가장 바깥쪽 —
 # 즉 요청이 CORS를 타기도 전에 로그가 먼저 찍힌다). app/request_logging.py 참고.

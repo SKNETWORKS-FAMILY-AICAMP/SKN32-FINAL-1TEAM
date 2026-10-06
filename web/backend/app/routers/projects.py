@@ -401,7 +401,7 @@ def start_final_review(
     gateway: OrchGateway = Depends(require_gateway),
 ):
     """산출물 확인 → 종합 평가(화면 8 → 9, '종합 평가 확인하기'). 실행할 단계 없이 바로 stage='final_review_pending'이 된다.
-    [SB-243 신규 — 엔드포인트 이름은 임시, 프론트와 맞춘다.]"""
+    [SB-243 신규 — 엔드포인트 이름은 프론트와 합의해 확정(2026-10-06).]"""
     _get_owned_project(db, project_id, current_user)
     return _start_stage(project_id, gateway, lambda: gateway.decide_for_project(project_id, 8, '진행'))
 
@@ -416,7 +416,7 @@ def start_review(
 ):
     """종합 평가 → 표현 검수(화면 9 → 10). stage='reviewing'으로 진행되고 끝나면 stage='done'.
     기준 점수에 못 미친 채로 진행하면 검수 뒤에는 되돌릴 수 없어 409 + {confirmation_required, reason, items}로 확인을 받는다 —
-    사용자가 확인하면 body {"confirmed": true}로 다시 부른다. [SB-243 신규 — 엔드포인트 이름은 임시, 프론트와 맞춘다.]"""
+    사용자가 확인하면 body {"confirmed": true}로 다시 부른다. [SB-243 신규 — 엔드포인트 이름은 프론트와 합의해 확정(2026-10-06).]"""
     _get_owned_project(db, project_id, current_user)
     confirmed = body.confirmed if body is not None else False
 

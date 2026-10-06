@@ -36,7 +36,7 @@ from app.database import Base
 # (테스트)에서는 VARCHAR + CHECK 제약으로 동작한다(SQLAlchemy Enum의 기본 동작).
 _GenerationStatus = Enum(*ps.GENERATION_STATUSES, name='generation_status')
 # [2026-09-27 신규, SB-134] 실패 원인 분류 3종(일시/입력/운영) — app/pipeline_stages.py
-# classify_error_kind 참고.
+# app/pipeline_stages.py ERROR_KINDS 참고(분류는 오케스트레이터가 정해 준다).
 _ErrorKind = Enum(*ps.ERROR_KINDS, name='error_kind')
 # [2026-09-27 신규, SB-141] 사용자용 알림 종류·실패 범위 — app/pipeline_stages.py
 # NOTIFICATION_KINDS/NOTIFICATION_FAILURE_SCOPES 참고.
@@ -532,12 +532,12 @@ class NoticeAlert(Base):
 
 class GenerationFailureAlert(Base):
     """[2026-09-23 신규, 2026-09-29 docstring 정정] 생성 작업이 status='failed'로 확정될
-    때마다(자동 재시도 최대 5회·백오프를 전부 소진했거나, 입력·운영 같은 영구 오류라 재개
+    때마다(재개 상한을 전부 소진했거나, 입력·운영 같은 영구 오류라 재개
     없이 바로 확정된 경우 둘 다) 한 행씩 쌓는 관리자 알림 로그 — 프론트 3차 요청서가 지적한
     대로, 실제로는 영구 오류일 때도 재개를 기다리지 않고 바로 이 행이 생긴다(last_error_kind로
     어느 쪽인지 구분 가능). projects 자체는 최신 상태만 담아서 "몇 번이나 실패했었는지"가
     남지 않으므로, 그 이력을 여기 별도로 보존한다. 관리자 대시보드가 이 테이블을 조회해
-    미확인 실패를 보여준다(app/routers/projects.py _simulate_generation 참고).
+    미확인 실패를 보여준다. 행은 오케스트레이터 워커가 실패를 확정할 때 쓴다(웹 코드는 읽기 · 확인 처리 · 삭제만 한다).
 
     [2026-09-28, match_results 테이블 통합] project_id와 함께 match_id도 들고 있었으나
     (둘이 사실상 항상 같은 project를 가리켰음), match_results가 projects로 합쳐지면서
