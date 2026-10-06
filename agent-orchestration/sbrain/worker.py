@@ -279,8 +279,9 @@ def main(argv: list[str] | None = None) -> int:
     handler = attach_run_log(worker.run_log_line)   # 로거 처리기는 워커만 단다
     try:
         if args.once:
-            for line in worker.run_once(worker.owner(0)) or ["할 일 없음"]:
-                print(line)
+            # 한 일은 이미 '끝 …' 줄로 화면 · 파일에 남았다. 할 일이 없었을 때만 그 사실을 같은 곳에 한 줄 남긴다
+            if not worker.run_once(worker.owner(0)):
+                worker.log(worker.name, "할 일 없음")
             return 0
         install_signal_handlers(worker)
         worker.run()

@@ -69,6 +69,7 @@ class RunContext:
         self.pointers: dict[str, int] = {} if provisional else store.get_pointers(rid)
         self.latest: dict[str, int] = {} if provisional else store.get_latest_versions(rid)
         self._pending: dict[tuple[str, int], ArtifactVersion] = {}
+        self._after_commit: list[Callable[[], None]] = []
         self._cache: dict[tuple[str, int], Any] = {}
         # 시도 번호 시작값 = 실행 기록 · Run.attempt_max · Run.attempts 중 가장 큰 값.
         # 기록 보관 처리로 실행 기록이 지워져도 번호를 다시 쓰지 않는다. Run.attempts에는 성공한 시도만 있어
@@ -205,15 +206,22 @@ class RunContext:
         self.batch.rejected_attempts.append(attempt)
 
     # ── 한 번에 저장 ──────────────────────────────────
+    def after_commit(self, action: Callable[[], None]) -> None:
+        """다음 저장이 끝난 뒤 한 번 할 일(운영 로그 줄 등). 저장이 실패하면 버린다."""
+        self._after_commit.append(action)
+
     def commit(self) -> None:
         self.run.updated_at = self.now()
+        actions, self._after_commit = self._after_commit, []
         if self.provisional:
             self._merge_into_provisional()
-            return
-        self.batch.run = self.run
-        self.store.commit(self.run.run_id, self.owner, self.batch)
-        self._pending.clear()
-        self.batch = CommitBatch()
+        else:
+            self.batch.run = self.run
+            self.store.commit(self.run.run_id, self.owner, self.batch)
+            self._pending.clear()
+            self.batch = CommitBatch()
+        for action in actions:
+            action()
 
     def _merge_into_provisional(self) -> None:
         pb, b = self.provisional_batch, self.batch

@@ -297,6 +297,7 @@ def attach_run_log(write: Callable[[str], None]) -> RunLogHandler:
 def detach_run_log(handler: RunLogHandler) -> None:
     logger = logging.getLogger(RUN_LOGGER)
     logger.removeHandler(handler)
-    if not logger.handlers:
+    # 다른 쪽(예: pytest)이 단 처리기는 세지 않는다 — 워커 처리기가 다 빠지면 수준을 되돌린다.
+    # 위로 올리지 않는 것은 그대로 둔다(runlog — 웹 로그로 새지 않게).
+    if not any(isinstance(h, RunLogHandler) for h in logger.handlers):
         logger.setLevel(logging.NOTSET)
-        logger.propagate = True

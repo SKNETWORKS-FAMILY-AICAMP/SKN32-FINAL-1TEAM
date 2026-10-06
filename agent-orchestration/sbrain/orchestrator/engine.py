@@ -272,11 +272,13 @@ class Engine:
             runlog.run_end(ctx.run)
 
     def _log_step_end(self, ctx: RunContext, rec: ExecutionRecord | None) -> None:
-        """실행 기록 하나의 끝 줄. 이번에 연 시각부터 잰다."""
+        """실행 기록 하나의 끝 줄. 이번에 연 시각부터 잰다. 줄은 그 기록이 저장된 뒤에 남긴다(저장 실패면 남기지 않는다)."""
         if rec is None:
             return
         started = self._step_marks.pop(rec.execution_id, None)
-        runlog.step_end(ctx.run, rec, (self.now() - started).total_seconds() if started else None)
+        sec = (self.now() - started).total_seconds() if started else None
+        run, snap = ctx.run, rec.model_copy()   # 끝난 때의 값 그대로
+        ctx.after_commit(lambda: runlog.step_end(run, snap, sec))
 
     # ── 단계 실행 ─────────────────────────────────────
     def run_step(self, ctx: RunContext, step_id: str) -> Outcome:
@@ -288,7 +290,8 @@ class Engine:
             if outcome.record is not None:
                 self._log_step_end(ctx, outcome.record)
             else:
-                runlog.step_end_without_record(ctx.run, step_id, (self.now() - began).total_seconds())
+                run, sec = ctx.run, (self.now() - began).total_seconds()
+                ctx.after_commit(lambda: runlog.step_end_without_record(run, step_id, sec))
             return outcome
         spec = self.registry.get(step_id)
         rs = ctx.run.redo_state
@@ -307,7 +310,10 @@ class Engine:
                 outcome = self.on_step_error(ctx, spec, rec, e)
                 self._log_step_end(ctx, rec)
                 return outcome
-            self._log_step_end(ctx, rec)
+            else:
+                self._log_step_end(ctx, rec)
+            finally:
+                self._step_marks.pop(rec.execution_id, None)   # 처리 중 예외가 새도 시작 시각을 남기지 않는다
             check = outputs.get("check")
             if check is not None:
                 ctx.run.check_refs[spec.task_id] = ctx.ref(spec.outputs["check"])

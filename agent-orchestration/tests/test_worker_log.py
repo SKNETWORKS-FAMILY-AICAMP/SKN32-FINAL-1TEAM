@@ -65,6 +65,24 @@ class UtcClock:
 
 
 # ── 단계 · 실행 건 줄 ──────────────────────────────────
+def test_step_end_line_only_after_save(clock, runlog, monkeypatch):
+    """단계끝은 그 실행 기록이 저장된 뒤에 남는다 — 저장이 실패하면 끝 줄이 없다."""
+    app = make_app(clock)
+    real = app.store.commit
+
+    def failing(run_id, owner, batch):
+        if any(r.task_id == "T-S2" for r in batch.executions.values()):
+            raise RuntimeError("저장 실패")
+        return real(run_id, owner, batch)
+
+    monkeypatch.setattr(app.store, "commit", failing)
+    with pytest.raises(RuntimeError, match="저장 실패"):
+        to_screen6(app)
+    assert any(d["step"] == "T-S2" for d in of(runlog, "단계시작"))
+    assert not any(d["step"] == "T-S2" for d in of(runlog, "단계끝"))
+    assert any(d["step"] == "T-S1" for d in of(runlog, "단계끝"))   # 앞서 저장된 단계는 끝 줄이 있다
+
+
 def test_step_start_end_lines_and_key_order(clock, runlog):
     app = make_app(clock)
     rid = to_screen6(app)
@@ -168,9 +186,15 @@ def test_provisional_entries_for_worker_log():
 
 
 # ── 처리기는 워커만 ────────────────────────────────────
+def _run_handlers() -> list[logging.Handler]:
+    """워커가 단 실행 줄 처리기 (pytest가 위로 올리지 않는 로거에 다는 자기 처리기는 빼고 본다)."""
+    from sbrain.worker_log import RunLogHandler
+    return [h for h in logging.getLogger(RUN_LOGGER).handlers if isinstance(h, RunLogHandler)]
+
+
 def test_no_handler_outside_worker(clock, capsys):
     logger = logging.getLogger(RUN_LOGGER)
-    assert logger.handlers == [] and not logger.isEnabledFor(logging.INFO)
+    assert not _run_handlers() and not logger.isEnabledFor(logging.INFO)
     app = make_app(clock)
     to_screen6(app)
     out = capsys.readouterr()
@@ -183,8 +207,31 @@ def test_web_assembly_emits_nothing(tmp_path, capsys):
     path = tmp_path / "web.db"
     create_orchestrator_tables(create_sqlite_engine(path, fast=True))
     build_web(f"sqlite:///{path.as_posix()}", profile_count=lambda a: 1)
-    assert logging.getLogger(RUN_LOGGER).handlers == []
+    assert not _run_handlers()
     assert capsys.readouterr().out == ""
+
+
+def test_run_lines_do_not_reach_web_root_logger(clock):
+    """웹이 루트 로거를 INFO로 열고 처리기를 달아도 실행 줄은 올라가지 않는다(웹 로그로 새지 않음)."""
+    root, logger = logging.getLogger(), logging.getLogger(RUN_LOGGER)
+    seen: list[str] = []
+
+    class _Root(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            seen.append(record.getMessage())
+
+    handler, level, run_level = _Root(), root.level, logger.level
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+    logger.setLevel(logging.INFO)   # 워커가 아닌데 수준만 열린 경우까지
+    try:
+        assert logger.propagate is False
+        to_screen6(make_app(clock))
+    finally:
+        root.removeHandler(handler)
+        root.setLevel(level)
+        logger.setLevel(run_level)
+    assert not any(s.startswith(("단계시작", "단계끝")) for s in seen)
 
 
 # ── 파일 ───────────────────────────────────────────────
@@ -321,7 +368,7 @@ def test_worker_writes_all_lines_to_stdout_and_file(tmp_path, monkeypatch):
     finally:
         detach_run_log(handler)
         output.close()
-    assert logging.getLogger(RUN_LOGGER).handlers == []
+    assert not _run_handlers()
     [log] = list(folder.glob("*.log"))
     text = log.read_text("utf-8")
     assert text == "\n".join(screen) + "\n"                                        # 화면과 같은 줄
@@ -344,5 +391,5 @@ def test_main_attaches_and_detaches_handlers(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("SBRAIN_WORKER_LOG_DIR", str(tmp_path / "logs"))
     assert main(["--once"]) == 0
     assert "할 일 없음" in capsys.readouterr().out
-    assert logging.getLogger(RUN_LOGGER).handlers == []
+    assert not _run_handlers()
     assert (tmp_path / "logs" / "worker.lock").exists()

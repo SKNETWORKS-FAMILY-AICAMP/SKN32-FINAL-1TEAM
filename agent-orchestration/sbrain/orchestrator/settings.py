@@ -170,7 +170,7 @@ PROVISIONAL: dict[str, str] = {
     "taskTimeouts.T-B2.image": "T-B2 이미지 호출 한 번의 제한 시간 120초 — 조정 가능(실측 13 ~ 16초)",
     "scoring.deviationCap": "문서층 재채점 편차 상한 (확장) — 웹 verification_policies.deviation_cap을 담아만 둔다. "
                             "검증-1 연동 전이라 쓰는 곳 없음",
-    # 산출물층 검증 · 이미지 관리자 사건 종류 (flow/sbrain_flow.py) — 기준 문서에 없음. 관리자 사건 목록에 나온다
+    # 산출물층 검증 · 이미지 관리자 사건 종류 (flow/sbrain_flow.py) — 기준 문서에 없음. 추적 사건으로 남는다(관리자에게 보일 방식 · 조회 함수는 웹팀 결정)
     "event.대조보류": "T-V2 대조 판정 보류(withheld) — 'T-V2 대조 판정 보류 (<보류 사유>) — 0점 합산'. 관리자 알림 표시 방식은 웹팀 몫",
     "event.검증2진단": "T-V2 진단(diagnostics) 한 줄마다 하나 — 관리자 진단 전용, 흐름 제어에 쓰지 않음",
     "event.안내문서자체검사실패": "G-04 자체 검사가 재수행 횟수를 다 쓰고도 불통과 — 기록만 하고 계속 (점수 밖, T-C4 전달을 막지 않음)",

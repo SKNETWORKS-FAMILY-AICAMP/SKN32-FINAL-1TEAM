@@ -28,6 +28,8 @@ RUN_END = "실행끝"
 RESUME_SCHEDULED = "재개예약"
 
 logger = logging.getLogger(RUN_LOGGER)
+# 웹 쪽이 루트 로거를 INFO로 열어도 이 줄이 웹 로그로 새지 않게 — 위로 올려 보내지 않는다. 처리기는 워커가 단 것뿐이다
+logger.propagate = False
 
 
 def fmt_value(value: Any) -> str:
