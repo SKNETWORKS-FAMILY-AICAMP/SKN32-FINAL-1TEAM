@@ -1,4 +1,4 @@
-{
+﻿{
   "version": "2026-10-02.13",
   "evaluationItems": [
     {
@@ -133,16 +133,19 @@
     "generatedFactPaths": "item.originalFacts.*와 source_data.originalFacts.*처럼 생성 과정에서 붙은 중복 접두사는 provenance 경고로 기록"
   },
   "responseContract": {
-    "passed": "boolean",
-    "issues": "string[]; empty when passed=true",
-    "warnings": "string[]",
-    "needsUserConfirmation": "string[]",
-    "deduplicate": "same message once"
+    "status": "pass|warning|fail",
+    "issues": "string[]; 재작성 또는 계약 위반 오류",
+    "warnings": "string[]; 보완·근거·시험조건 경고",
+    "needsUserConfirmation": "string[]; 사용자 확인 필요 항목",
+    "semanticCalled": "boolean",
+    "contentHash": "string",
+    "policyVersion": "string",
+    "deduplicate": "동일 메시지는 한 번만 기록"
   },
   "reviewAgent": {
     "name": "검증 1 판정 재검토자",
     "file": "semantic_review.py",
-    "mode": "deterministic_second_pass",
+    "mode": "의미 검증 결과에 대한 결정론적 재분류",
     "extraLlmCall": false,
     "hardFailuresRemain": [
       "구조 계약 위반",

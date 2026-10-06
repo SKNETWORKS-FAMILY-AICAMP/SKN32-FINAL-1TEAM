@@ -1,11 +1,25 @@
-"""Deterministic section scoring based on validation results and regulation basis."""
+﻿"""Deterministic section scoring based on validation results and regulation basis."""
 import json
 import hashlib
 from pathlib import Path
 
 ROOT = Path(__file__).parent
 RUBRIC_PATH = ROOT / 'res' / 'prompts' / 'evaluation_rubric.json'
-RUBRIC = json.loads(RUBRIC_PATH.read_text(encoding='utf-8-sig'))
+try:
+    RUBRIC = json.loads(RUBRIC_PATH.read_text(encoding='utf-8-sig'))
+except (OSError, ValueError, UnicodeError):
+    RUBRIC = {'version':'fallback','documentTypes':{'general':{'weights':{}}}}
+SECTION_CRITERIA_PATH = ROOT / 'res' / 'reference' / 'regulations' / 'criteria_registry.json'
+SECTION_CRITERIA_FALLBACK_PATH = ROOT / 'res' / 'reference' / 'regulations' / 'section_scoring_criteria.json'
+try:
+    if SECTION_CRITERIA_PATH.exists():
+        SECTION_CRITERIA = json.loads(SECTION_CRITERIA_PATH.read_text(encoding='utf-8-sig'))
+    elif SECTION_CRITERIA_FALLBACK_PATH.exists():
+        SECTION_CRITERIA = json.loads(SECTION_CRITERIA_FALLBACK_PATH.read_text(encoding='utf-8-sig'))
+    else:
+        SECTION_CRITERIA = {}
+except (OSError, ValueError, UnicodeError):
+    SECTION_CRITERIA = {}
 
 def _count(value):
     return len(value) if isinstance(value, list) else (1 if value else 0)
@@ -22,6 +36,38 @@ def _month(value):
     m=re.search(r'(20\d{2})\s*(?:[.\-/년]\s*)?(\d{1,2})\s*월?',str(value))
     return int(m.group(1))*12+int(m.group(2)) if m else None
 
+def _source_evidence(paths, document_type):
+    """설정된 규정 JSON에서 추적 가능한 짧은 근거 발췌를 반환한다."""
+    terms = {
+        'early_startup': ['평가항목', '60점 미만', '사업화 자금', '협약기간'],
+        'pre_startup': ['선정평가', '사업비', '협약기간', '신청자격'],
+        'general': []
+    }.get(document_type, [])
+    evidence = []
+    for rel in paths:
+        path = Path(__file__).parents[1] / rel
+        if not path.exists() and rel.replace('\\\\','/').startswith('agent_validation_1/'):
+            path = Path(__file__).parents[2] / rel
+        item = {'path': rel, 'available': path.exists(), 'excerpts': []}
+        if path.exists() and terms:
+            try:
+                raw = path.read_text(encoding='utf-8-sig')
+                data = json.loads(raw)
+                text = _flatten_text(data)
+                compact = ' '.join(text.split())
+                seen = set()
+                for term in terms:
+                    pos = compact.find(term)
+                    if pos >= 0 and term not in seen:
+                        start = max(0, pos - 140)
+                        end = min(len(compact), pos + 360)
+                        item['excerpts'].append({'keyword': term, 'text': compact[start:end]})
+                        seen.add(term)
+            except (OSError, ValueError, UnicodeError):
+                item['readError'] = True
+        evidence.append(item)
+    return evidence
+
 def score_section(section_spec: dict, content: dict, validation: dict, document_type: str = 'general', source_data: dict | None = None) -> dict:
     """Return score, component scores, deductions, and regulation basis.
 
@@ -29,8 +75,15 @@ def score_section(section_spec: dict, content: dict, validation: dict, document_
     observable contracts and the validation result supplied by validation_1.
     """
     config = RUBRIC['documentTypes'].get(document_type, RUBRIC['documentTypes']['general'])
+    section_id = str(section_spec.get('sectionId', ''))
+    mapped = SECTION_CRITERIA.get('documentTypes', {}).get(document_type, {}).get('sections', {}).get(section_id, {})
     weights = config['weights']
-    basis_status = [{'path': path, 'available': (Path(__file__).parents[1] / path).exists()} for path in config.get('basis', [])]
+    basis_status = []
+    for path in config.get('basis', []):
+        resolved = Path(__file__).parents[1] / path
+        if not resolved.exists() and path.replace('\\\\','/').startswith('agent_validation_1/'):
+            resolved = Path(__file__).parents[2] / path
+        basis_status.append({'path': path, 'available': resolved.exists()})
     issues = validation.get('issues', []) if isinstance(validation, dict) else []
     warnings = validation.get('warnings', []) if isinstance(validation, dict) else []
     confirmations = validation.get('needsUserConfirmation', []) if isinstance(validation, dict) else []
@@ -97,6 +150,15 @@ def score_section(section_spec: dict, content: dict, validation: dict, document_
         weighted = min(weighted, 59.0)
     return {
         'score': weighted,
+        'internalQualityScore': weighted,
+        'estimatedPoints': {
+            'score': weighted,
+            'isOfficial': False,
+            'label': '내부 예상 배점',
+            'basis': ['공고문 평가영역', '사업계획서 필수 항목', '규정상 필수 조건'],
+            'confidence': 'medium' if document_type in ('pre_startup', 'early_startup') else 'low',
+            'method': '공고 평가영역과 항목 중요도를 내부 rubric에 반영한 추정값'
+        },
         'status': 'fail' if status == 'fail' else ('warning' if warnings or confirmations else 'pass'),
         'components': components,
         'weights': weights,
@@ -106,6 +168,17 @@ def score_section(section_spec: dict, content: dict, validation: dict, document_
         'basisStatus': basis_status,
         'isOfficial': False,
         'basisType': 'internal_contract_and_regulation_review',
+        'officialExpected': {
+            'status': RUBRIC.get('officialExpectedScoring', {}).get('status', 'criteria_only'),
+            'isOfficial': False,
+            'note': RUBRIC.get('officialExpectedScoring', {}).get('description', ''),
+            'basis': config.get('basis', []),
+            'criteriaApplied': config.get('regulationFocus', []),
+            'officialPoints': None,
+            'explicitCriteria': RUBRIC.get('officialExpectedScoring', {}).get('explicitCriteria', {}).get(document_type, {}),
+            'sourceMappings': mapped.get('sourceMappings', []),
+            'sourceEvidence': _source_evidence(config.get('basis', []), document_type)
+        },
         'evaluationHash': hashlib.sha256(json.dumps({'section': section_spec, 'content': content, 'validation': validation}, ensure_ascii=False, sort_keys=True, default=str).encode('utf-8')).hexdigest(),
         'scorePolicyVersion': RUBRIC['version']
     }
@@ -118,3 +191,4 @@ def aggregate_scores(rows: list[dict]) -> dict:
     return {'count':len(scores),'averageScore':round(sum(scores)/len(scores),1) if scores else None,
             'minimumScore':min(scores) if scores else None,'failedSections':failed,
             'status':'fail' if failed else ('warning' if any(item.get('status')=='warning' for item in evaluations) else 'pass')}
+

@@ -1,4 +1,4 @@
-"""검증 1: cheap structural checks first, Terra semantic review only when needed."""
+"""검증 1: 먼저 저비용 구조 검사를 수행하고 필요한 경우에만 Terra 의미 검증을 호출한다."""
 import json
 import re
 import hashlib
@@ -9,6 +9,11 @@ from agent_validation_1.semantic_review import review_issues, REVIEW_PERSONA
 RUBRIC_PATH=Path(__file__).parent/'res'/'prompts'/'validation_rubric.json'
 RUBRIC=json.loads(RUBRIC_PATH.read_text(encoding='utf-8-sig')) if RUBRIC_PATH.exists() else {}
 VALIDATION_POLICY_VERSION=RUBRIC.get('version','2026-10-01.3')
+REGISTRY_PATH=Path(__file__).parent/'res'/'reference'/'regulations'/'criteria_registry.json'
+try:
+    CRITERIA_REGISTRY=json.loads(REGISTRY_PATH.read_text(encoding='utf-8-sig')) if REGISTRY_PATH.exists() else {}
+except (OSError,ValueError,UnicodeError):
+    CRITERIA_REGISTRY={}
 
 
 def _at(data,path):
@@ -36,7 +41,7 @@ def _status_values(value):
             yield from _status_values(child)
 
 def _as_list(value):
-    """Return a safe list for optional JSON collection fields."""
+    """선택적 JSON 컬렉션 필드에서 안전한 목록을 반환한다."""
     if isinstance(value, list): return value
     if value in (None, ''): return []
     return [value]
@@ -55,6 +60,48 @@ def _unique_messages(values):
 def _confirmation_items(warnings):
     return [str(w) for w in warnings if any(word in str(w) for word in ('확인 필요','미확정','사용자 확인','입력 필요'))]
 
+def _regulation_evidence(criteria):
+    """항목 기준의 파일·검색어 주변에서 짧은 근거 문자열을 추출한다."""
+    evidence=[]
+    for mapping in criteria.get('sourceMappings',[]) if isinstance(criteria,dict) else []:
+        rel=mapping.get('path') if isinstance(mapping,dict) else None
+        if not rel: continue
+        path=Path(__file__).parent.parent/rel
+        if not path.exists() and rel.replace('\\\\','/').startswith('agent_validation_1/'):
+            path=Path(__file__).parent.parent.parent/rel
+        keywords=mapping.get('locatorKeywords',[]) if isinstance(mapping,dict) else []
+        if not isinstance(keywords,list): keywords=[keywords]
+        use_for=mapping.get('useFor',[]) if isinstance(mapping,dict) else []
+        item={'path':rel,'available':path.exists(),'keywords':keywords,'matchedKeywords':[],'relevance':'low','useFor':use_for,
+              'sourceRole':mapping.get('sourceRole','reference') if isinstance(mapping,dict) else 'reference',
+              'authorityLevel':mapping.get('authorityLevel','low') if isinstance(mapping,dict) else 'low',
+              'directFactAllowed':bool(mapping.get('directFactAllowed',False)) if isinstance(mapping,dict) else False,
+              'rationale':'','excerpts':[]}
+        if path.exists():
+            try:
+                raw=json.loads(path.read_text(encoding='utf-8-sig'))
+                text=' '.join(str(raw).split())
+                seen=set()
+                for keyword in item['keywords']:
+                    pos=text.find(str(keyword))
+                    if pos>=0 and keyword not in seen:
+                        item['matchedKeywords'].append(str(keyword))
+                        item['excerpts'].append({'keyword':keyword,'text':text[max(0,pos-100):min(len(text),pos+300)]})
+                        seen.add(keyword)
+                    if len(item['excerpts'])>=2: break
+                item['relevance']='high' if len(item['matchedKeywords'])>=2 else ('medium' if item['matchedKeywords'] else 'low')
+                purpose='·'.join(str(v) for v in use_for) if use_for else '해당 사업계획서 항목의 기준'
+                matched='·'.join(item['matchedKeywords']) if item['matchedKeywords'] else '일치 키워드 없음'
+                item['rationale']=(f'{rel} 파일에서 {matched}로 언급되어 있어 {purpose}에 맞춰 위와 같이 작성·검증함'
+                                   if item['matchedKeywords'] else
+                                   f'{rel} 파일에서 항목 관련 키워드가 확인되지 않아 직접 근거로 사용하지 않음')
+            except (OSError,ValueError,UnicodeError):
+                item['readError']=True
+        else:
+            item['available']=False
+        evidence.append(item)
+    return evidence
+
 def _feature_key(value):
     """기능명 표기의 괄호·구분점·공백 차이를 제거해 의미상 동일성을 비교한다."""
     return re.sub(r'[\s\(\)\[\]{}·•,/:;_\-]+', '', str(value)).lower()
@@ -63,7 +110,7 @@ def _feature_tokens(value):
     return [ _feature_key(t) for t in re.findall(r'[가-힣A-Za-z0-9]+', str(value)) if len(_feature_key(t))>=2 ]
 
 def _feature_present(feature, text):
-    """Match canonical feature tokens while allowing documented Korean synonyms."""
+    """등록된 한국어 동의어를 허용하면서 표준 기능 토큰을 비교한다."""
     fkey=_feature_key(feature); tkey=_feature_key(text)
     if fkey in tkey:
         return True
@@ -72,6 +119,12 @@ def _feature_present(feature, text):
         '경량화': ('경량화','양자화'),
     }
     tokens=_feature_tokens(feature)
+    # 생성 문장은 조사·계획 표현이 달라질 수 있다. 긴 기능명은 핵심
+    # 토큰 대부분이 본문에 있으면 같은 기능으로 인정한다.
+    if len(tokens)>=4:
+        matched=sum(1 for token in tokens if token in tkey)
+        if matched>=max(3, (len(tokens)*2+2)//3):
+            return True
     for token in tokens:
         if token in tkey:
             continue
@@ -86,12 +139,34 @@ def _month_key(value):
     return f'{m.group(1)}-{int(m.group(2)):02d}' if m else str(value).strip()
 
 def validate_section(section_spec, content, source_data):
-    # Stored results from older runs can omit one of these objects. Treat them
-    # as empty inputs so validation reports a useful warning/failure instead of
-    # crashing with AttributeError and losing the partial result.
+    # 이전 실행 결과에는 이 객체 중 일부가 없을 수 있다. 이를 빈 입력으로
+    # 처리해 AttributeError로 중단되거나 부분 결과가 사라지지 않도록 하고,
+    # 유용한 warning/fail을 기록한다.
     section_spec = section_spec if isinstance(section_spec, dict) else {}
     content = content if isinstance(content, dict) else {}
     source_data = source_data if isinstance(source_data, dict) else {}
+    document_type=str(source_data.get('documentType') or source_data.get('document_type') or '')
+    section_id=str(section_spec.get('sectionId',''))
+    section_criteria=CRITERIA_REGISTRY.get('documentTypes',{}).get(document_type,{}).get('sections',{}).get(section_id,{})
+    source_policy={
+        'official_announcement': '명시 조건·지원 기준 확인',
+        'application_form': '항목·표 구조 확인',
+        'management_standard': '협약·사업비·수행 조건 확인',
+        'faq_guidance': '공고 해석 보조만 사용',
+        'management_reference': '참고용·직접 사실 근거로 사용하지 않음',
+        'reference': '참고용·직접 사실 근거로 사용하지 않음',
+    }
+    regulation_evidence=_regulation_evidence(section_criteria)
+    criteria_meta={
+        'sectionId': section_id,
+        'documentType': document_type,
+        'criteriaApplied': section_criteria.get('criteria',[]) if isinstance(section_criteria,dict) else [],
+        'sourceMappings': section_criteria.get('sourceMappings',[]) if isinstance(section_criteria,dict) else [],
+        'sourceRefs': section_criteria.get('sourceRefs',[]) if isinstance(section_criteria,dict) else [],
+        'evidence': regulation_evidence,
+        'sourcePolicy': source_policy,
+        'evidenceRoles': sorted({str(e.get('sourceRole','reference')) for e in regulation_evidence}),
+    }
     content_hash=hashlib.sha256(json.dumps(content,ensure_ascii=False,sort_keys=True,default=str).encode('utf-8')).hexdigest()
     issues=[]; warnings=[str(item) for item in _as_list(content.get('issues',[]))]
     text=content.get('generatedText','')
@@ -104,7 +179,7 @@ def validate_section(section_spec, content, source_data):
     bullets=[line for line in lines if re.match(r'^(?:[◦•●\-]|\d+[.)]|[①-⑩])\s*',line)]
     numbered_bullets=[line for line in lines if re.match(r'^\d+[.)]\s*',line)]
     visual_top_level=[line for line in lines if re.match(r'^[◦•●]\s*',line)]
-    # When a top-level bullet has nested '-' details, count only the top level.
+    # 최상위 불릿 안에 '-' 세부 항목이 있으면 최상위 항목만 센다.
     top_level_bullets=numbered_bullets or visual_top_level or bullets
     if rules.get('exactItems') and len(top_level_bullets)!=rules['exactItems']:
         issues.append(f'항목은 {rules["exactItems"]}개 최상위 항목으로 작성해야 함 (현재 {len(top_level_bullets)}개)')
@@ -175,8 +250,8 @@ def validate_section(section_spec, content, source_data):
     # KPI/시험지표 항목은 기능 목록을 반복하는 영역이 아니므로
     # featureList 불변식 비교를 적용하지 않는다.
     section_title=str(section_spec.get('title',''))
-    # featureList is an implementation invariant, not a requirement to repeat
-    # every feature in introductory/summary sections.
+    # featureList는 구현 불변식이며 개요·요약 항목에서 모든 기능을
+    # 반복해서 작성해야 한다는 의미는 아니다.
     feature_check_allowed=any(token in section_title for token in ('핵심기술','개발 기능','개발방법','개발계획','양산','기능 목록')) and not any(token in section_title for token in ('성능지표','검증에 필요한 성능'))
     if feature_check_allowed and feature_list and isinstance(feature_list,list):
         text_key=_feature_key(text)
@@ -211,7 +286,7 @@ def validate_section(section_spec, content, source_data):
         if source_data.get('_fallbackValidationSource') or any(marker in text for marker in ('계획','목표','제안','확인 필요','미확정')):
             warnings.append('생성 계획문의 sourceRefs를 원본 근거와 직접 재연결하지 못해 출처 확인 필요로 기록함')
         else: issues.append('제공되지 않은 출처 참조: '+', '.join(sorted(invalid)))
-    # Numeric factual drift is checked cheaply for explicit currency figures.
+    # 명시된 통화 금액의 숫자 사실 불일치는 저비용으로 확인한다.
     original_text=json.dumps(original,ensure_ascii=False)
     amounts={int(n.replace(',','')) for n in re.findall(r'(?<![\d.])(\d[\d,]*)\s*원',text)}
     provenance_text=json.dumps(source_data.get('strategyProvenance',{}),ensure_ascii=False)
@@ -225,18 +300,26 @@ def validate_section(section_spec, content, source_data):
             else:issues.append(f'원본에 없는 원 단위 금액: {amount}')
     issues=_unique_messages(issues); warnings=_unique_messages(warnings)
     if issues:
-        return {'agent':'검증 1','status':'fail','issues':issues,'warnings':warnings,'needsUserConfirmation':_confirmation_items(warnings),'semanticCalled':False,'contentHash':content_hash,'policyVersion':VALIDATION_POLICY_VERSION}
+        return {'agent':'검증 1','status':'fail','issues':issues,'warnings':warnings,'needsUserConfirmation':_confirmation_items(warnings),'semanticCalled':False,'contentHash':content_hash,'policyVersion':VALIDATION_POLICY_VERSION,'criteria':criteria_meta}
     if source_data.get('_fallbackValidationSource'):
         warnings.append('기존 저장 결과의 provenance가 완전하지 않아 의미 검증은 생략하고 구조 검증만 통과 처리함')
         return {'agent':'검증 1','status':'pass','issues':[],'warnings':warnings,
-                'needsUserConfirmation':_confirmation_items(warnings),'semanticCalled':False,'contentHash':content_hash,'policyVersion':VALIDATION_POLICY_VERSION}
-    semantic=request_json('F19',{'section_spec':section_spec,'content':{k:content.get(k) for k in ['generatedText','sourceRefs','facts','nodes'] if k in content},'source_data':source_data})
+                'needsUserConfirmation':_confirmation_items(warnings),'semanticCalled':False,'contentHash':content_hash,'policyVersion':VALIDATION_POLICY_VERSION,'criteria':criteria_meta}
+
+    semantic_source=dict(source_data) if isinstance(source_data,dict) else {}
+    # 의미 검증에는 항목 키워드와 실제로 연결된 근거만 전달한다.
+    # 전체 evidence는 결과 JSON에 보존하되 low 관련도 자료가 판정을 오염시키지 않도록 분리한다.
+    prompt_evidence=[e for e in criteria_meta['evidence'] if e.get('relevance') in {'high','medium'}]
+    if section_criteria:
+        semantic_source['_sectionCriteria']={**section_criteria,'evidence':prompt_evidence}
+    prompt_criteria={**section_criteria,'evidence':prompt_evidence} if section_criteria else {}
+    semantic=request_json('F19',{'section_spec':section_spec,'content':{k:content.get(k) for k in ['generatedText','sourceRefs','facts','nodes'] if k in content},'source_data':semantic_source,'criteria':prompt_criteria})
     proposed_content=(source_data.get('_fallbackValidationSource',False) or not source_data.get('strategyProvenance') or
                       any(isinstance(f,dict) and f.get('status')=='proposed' for f in _as_list(content.get('facts',[]))) or
                       any(marker in text for marker in ('확인 필요','미확정','제안','계획','목표','활용','적용')))
     for semantic_issue in _as_list(semantic.get('issues',[])):
-        # Proposed planning values may have no direct source. Keep the provenance
-        # limitation visible as a warning, while still failing fabricated confirmed facts.
+        # 제안 계획값은 직접 출처가 없을 수 있다. 근거 추적 한계는 warning으로
+        # 표시하되, 조작된 확정 사실은 계속 fail로 판정한다.
         issue_text=str(semantic_issue)
         reviewed_hard, reviewed_warning = review_issues([issue_text])
         if reviewed_warning and issue_text.strip() != '표현 수정 필요':
@@ -258,4 +341,4 @@ def validate_section(section_spec, content, source_data):
         issues.append('의미 검증 미통과: 요구조건 재검토 필요')
     return {'agent':'검증 1','status':'pass' if passed else 'fail','issues':issues,'warnings':warnings,
             'needsUserConfirmation':_confirmation_items(warnings),
-            'semanticCalled':True,'model':semantic.get('model'),'responseId':semantic.get('responseId'),'usage':semantic.get('usage',{}),'contentHash':content_hash,'policyVersion':VALIDATION_POLICY_VERSION}
+            'semanticCalled':True,'model':semantic.get('model'),'responseId':semantic.get('responseId'),'usage':semantic.get('usage',{}),'contentHash':content_hash,'policyVersion':VALIDATION_POLICY_VERSION,'criteria':criteria_meta}
