@@ -341,7 +341,7 @@ export function ArtifactCarousel({ hasExecutable, infoSrc = null, siteSrc = null
   );
 }
 
-export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOutcome, artifactOutcome, setDocOutcome, setArtifactOutcome, projectId, reworkCounts = {}, onRework, scores = null, reworkBudget = null, onScoresRefresh, artifact = null }){
+export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, artifactOutcome, setDocOutcome, setArtifactOutcome, projectId, reworkCounts = {}, onRework, scores = null, reworkBudget = null, onScoresRefresh, artifact = null }){
   // 서버 채점 결과가 있으면 그 값으로 판정한다(utils.js scoresFromResult) — 없으면 기존 고정 표.
   const docScore = scores?.docScore || DOC_SCORE_BY_OUTCOME[docOutcome];
   const artifactScore = scores?.artifactScore || ARTIFACT_SCORE_BY_OUTCOME[artifactOutcome];
@@ -510,10 +510,8 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
 
   return (
     <section data-screen="final" className="max-w-3xl mx-auto px-6 py-16">
-      <div className="flex items-center justify-between gap-4 flex-wrap mb-6">
-        <button onClick={onBack} className="text-[13.5px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">
-          ‹ 산출물로 돌아가기
-        </button>
+      {/* 단계 사이 되돌아가기(9 → 8)는 없는 기능이라 '산출물로 돌아가기'를 뺐다(웹연동_변경사항_웹팀전달.md 5절). */}
+      <div className="flex items-center justify-end gap-4 flex-wrap mb-6">
         <div className="flex items-center gap-4">
           <button onClick={() => { setViewerCompare(false); setViewerOpen('plan'); }} className="text-[13px] font-semibold text-[var(--fg)] hover:text-[var(--primary)] transition-colors">계획서 보기</button>
           {hasExecutable && (

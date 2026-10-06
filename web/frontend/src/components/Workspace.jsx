@@ -1,7 +1,8 @@
 import React,{useState,useEffect} from 'react';
 import {Brand,Icon} from './Icons.jsx';
 import {NotificationBell} from '../features/Workflow.jsx';
-import {listProjects,deleteProject,deleteProjectPermanently,startPlanGeneration,startPrototypeGeneration} from '../api.js';
+import {listProjects,deleteProject,deleteProjectPermanently} from '../api.js';
+import {formatKstDate} from '../time.js';
 export const steps=[['intake','아이템 입력'],['match-results','공고 찾기'],['plan-form','사업계획서'],['artifact-result','프로토타입'],['final-verdict','제출 전 점검'],['review','최종 결과물']];
 export function WorkspaceShell({view,user,onHome,onDashboard,onMyPage,onNewProject,onLogout,notifyEnabled,onToggleNotify,onOpenProject,children}){
  const index=['match-progress','eligibility-gate','eligibility-fail'].includes(view)?1:view==='plan-progress'?2:view==='artifact-progress'?3:view==='final-pass'?4:steps.findIndex(x=>x[0]===view);
@@ -35,7 +36,6 @@ export function Dashboard({onNewProject,onOpenProject}){
  // "완전히 삭제"는 되돌릴 수 없어서 한 단계를 더 둔다 — 이 값이 그 프로젝트 id면 확인 자리가
  // 완전 삭제 최종 확인으로 바뀐다.
  const [permanentId,setPermanentId]=useState(null);
- const [retryingId,setRetryingId]=useState(null);const [retryError,setRetryError]=useState('');
 
  // 목록을 즉시 다시 받아야 할 때 쓴다(예: 삭제가 409로 거절당해 내 목록이 서버와 어긋났을 때).
  const [reloadKey,setReloadKey]=useState(0);
@@ -54,7 +54,7 @@ export function Dashboard({onNewProject,onOpenProject}){
     progress:isActuallyDone(r.project_id,r.stage)?100:0,
     failed:r.match_status==='failed',failedStage:r.stage,
     generating:r.match_status!=='failed'&&GENERATING_LABEL[r.stage]?`${GENERATING_LABEL[r.stage]} ${r.progress_percent??0}%`:null,
-    updatedAt:(r.created_at||'').slice(0,10),
+    updatedAt:formatKstDate(r.created_at),
    })));
    setLoading(false);
    if(rows.some(r=>r.match_status!=='failed'&&GENERATING_LABEL[r.stage]))timer=setTimeout(load,5000);
@@ -69,17 +69,9 @@ export function Dashboard({onNewProject,onOpenProject}){
  const isNewUser=!loading&&!loadError&&projects.length===0;
  const filtered=projects.filter(p=>(p.name+' '+p.announcementTitle).includes(query)&&(filter==='전체'||(filter==='진행 중'?p.progress<100:p.progress===100)));
  const inProgress=projects.find(p=>p.progress<100)||null;
- const start=()=>{if(inProgress)setGuard(true);else onNewProject()};
- const retryProject=async p=>{
-  if(retryingId!=null)return;
-  setRetryError('');setRetryingId(p.id);
-  try{
-   const startTask=p.failedStage==='plan_writing'?startPlanGeneration:startPrototypeGeneration;
-   await startTask(p.id);
-   onOpenProject(p,p.failedStage==='plan_writing'?'plan-progress':'artifact-progress');
-  }catch(err){setRetryError(err.message||'재실행하지 못했어요. 다시 시도해 주세요.');}
-  finally{setRetryingId(null)}
- };
+ // 실패한 프로젝트는 진행 중으로 세지 않는다 — 실패한 작업은 다시 시작할 수 없고 새 작업으로 시작한다
+ // (웹연동_변경사항_웹팀전달.md 3.2 · 5절, E-RUN-FAIL).
+ const start=()=>{if(inProgress&&!inProgress.failed)setGuard(true);else onNewProject()};
 
  // 휴지통 버튼 — 실수로 바로 지워지지 않게 한 번 더 확인을 거친다. 확인 자리에서 둘 중
  // 하나를 고른다(기획서 6-7 "건별 삭제" 대응):
@@ -116,10 +108,9 @@ export function Dashboard({onNewProject,onOpenProject}){
   {loadError&&<p className="workspace-note">프로젝트 목록을 불러오지 못했어요. 새로고침해 주세요.</p>}
 
   {!loading&&inProgress&&<div className={'continue-card'+(inProgress.failed?' is-failed':'')}>
-   <button className="continue-open" onClick={()=>onOpenProject(inProgress)}><span className="continue-icon"><Icon name={inProgress.failed?'close':'file'} size={32}/></span><div><p>{inProgress.failed?'작업이 중단됐어요':'이어서 준비하기'}</p><h2>{inProgress.name}</h2><span>{inProgress.failed?(inProgress.failedStage==='plan_writing'?'사업계획서':'프로토타입')+' 작성 중 실패하였습니다.':inProgress.matched?'계획서·프로토타입 준비를 이어서 진행해요':'공고 선택부터 이어서 진행해요'}</span></div></button>
-   <div className="continue-status"><span>{inProgress.failed?'실패했습니다':inProgress.generating||(inProgress.matched?'진행 중':'매칭 대기 중')}</span>{inProgress.failed?<button type="button" className="continue-retry" disabled={retryingId===inProgress.id} onClick={()=>retryProject(inProgress)}>{retryingId===inProgress.id?'다시 생성하는 중…':'다시 생성'} <Icon name="chevron" size={19}/></button>:<button type="button" onClick={()=>onOpenProject(inProgress)}>이어서 진행하기 <Icon name="chevron" size={19}/></button>}</div>
+   <button className="continue-open" onClick={()=>onOpenProject(inProgress)}><span className="continue-icon"><Icon name={inProgress.failed?'close':'file'} size={32}/></span><div><p>{inProgress.failed?'작업이 중단됐어요':'이어서 준비하기'}</p><h2>{inProgress.name}</h2><span>{inProgress.failed?(inProgress.failedStage==='plan_writing'?'사업계획서':'프로토타입')+' 작성 중 실패하였습니다. 새 작업으로 다시 시작해주세요.':inProgress.matched?'계획서·프로토타입 준비를 이어서 진행해요':'공고 선택부터 이어서 진행해요'}</span></div></button>
+   <div className="continue-status"><span>{inProgress.failed?'실패했습니다':inProgress.generating||(inProgress.matched?'진행 중':'매칭 대기 중')}</span>{inProgress.failed?<button type="button" className="continue-retry" onClick={onNewProject}>새로 시작하기 <Icon name="chevron" size={19}/></button>:<button type="button" onClick={()=>onOpenProject(inProgress)}>이어서 진행하기 <Icon name="chevron" size={19}/></button>}</div>
   </div>}
-  {retryError&&<p role="alert" className="workspace-retry-error">{retryError}</p>}
 
   {guard&&<div className="project-guard" role="status"><div><b>먼저 진행 중인 프로젝트를 확인해 주세요</b><p>한 번에 하나의 프로젝트를 준비할 수 있어요.</p></div><button className="btn small" onClick={()=>onOpenProject(inProgress||projects[0])}>이어서 준비하기</button><button className="btn btn-muted small" onClick={()=>{setGuard(false);onNewProject()}}>중단하고 새로 시작</button><button className="icon-button" aria-label="안내 닫기" onClick={()=>setGuard(false)}><Icon name="close"/></button></div>}
 

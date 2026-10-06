@@ -1,6 +1,7 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
 import React, {useState,useRef,useEffect} from 'react';
 import {listNotifications,listProjects,markNotificationRead} from '../../api.js';
+import {formatKstDate,parseServerTime} from '../../time.js';
 
 export function FloatingInput({inputRef,type,value,onChange,label}){
   return <label className="block text-[14px] text-[var(--muted-fg)]"><span className="block mb-2">{label}</span><input ref={inputRef} type={type} value={value} onChange={onChange} onInput={onChange} onBlur={onChange} className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg)]"/></label>;
@@ -66,15 +67,17 @@ const NOTIFICATION_TEXT = {
 };
 
 // "3분 전"/"어제" 같은 대략적인 시각 — 초 단위 정확도가 필요한 화면이 아니다.
+// 서버 시각은 UTC라 시간대 표시가 없으면 UTC로 읽는다(time.js) — new Date()에 그대로 넣으면 9시간 어긋난다.
 function formatNotifiedAt(value){
-  const at = new Date(value);
-  if (Number.isNaN(at.getTime())) return '';
+  const at = parseServerTime(value);
+  if (!at) return '';
   const minutes = Math.floor((Date.now() - at.getTime()) / 60000);
   if (minutes < 1) return '방금';
   if (minutes < 60) return `${minutes}분 전`;
   if (minutes < 60 * 24) return `${Math.floor(minutes / 60)}시간 전`;
   if (minutes < 60 * 24 * 7) return `${Math.floor(minutes / (60 * 24))}일 전`;
-  return `${at.getMonth() + 1}.${at.getDate()}`;
+  const [, month, day] = formatKstDate(at).split('-');
+  return `${Number(month)}.${Number(day)}`;
 }
 
 export function progressAlertsFrom(projects){

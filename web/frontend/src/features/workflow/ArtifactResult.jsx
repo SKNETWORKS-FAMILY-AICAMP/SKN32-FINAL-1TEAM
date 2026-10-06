@@ -110,7 +110,7 @@ export function ResultPreview({kind,onClose,siteSrc=null,infoSrc=null}){
  </dialog>;
 }
 
-export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, scoreOutcome = 'fail', projectId, reworkCounts = {}, onRework, scores = null, reworkBudget = null, onScoresRefresh, artifact = null }){
+export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcome = 'fail', projectId, reworkCounts = {}, onRework, scores = null, reworkBudget = null, onScoresRefresh, artifact = null }){
   const [preview,setPreview]=useState(null);
   // 서버가 이미 정한 카테고리(artifact.category)가 있으면 그걸 쓴다 — 없으면(아직 생성
   // 전이라 artifact 자체가 없는 극히 드문 진입 경로에서만) itemInfo 텍스트로 추측한다.
@@ -175,9 +175,8 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
 
   return (
     <section data-screen="artifact" className="max-w-6xl mx-auto px-6 py-16">
-      <button onClick={onBack} className="mb-6 text-[13.5px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">
-        ‹ 사업계획서로 돌아가기
-      </button>
+      {/* 단계 사이 되돌아가기(8 → 6)는 없는 기능이라 '사업계획서로 돌아가기'를 뺐다
+          (웹연동_변경사항_웹팀전달.md 5절). */}
 
       <div className={`grid gap-6 items-start transition-[grid-template-columns] duration-200 ${panelOpen ? 'md:grid-cols-[290px_1fr]' : 'md:grid-cols-[auto_1fr]'}`}>
         {/* 좌측 — 산출물 점검: 합격선은 물론 점수 자체도 표기하지 않는다(사용자 요청) —

@@ -1,6 +1,7 @@
 import React,{useState,useEffect,useRef} from 'react';
 import {Brand,Icon} from '../components/Icons.jsx';
 import {api,ApiError} from '../api.js';
+import {formatKstDate,formatKstDateTime,formatKstShort} from '../time.js';
 
 // 관리자 판별은 이제 App.jsx에서 /auth/me가 내려주는 실제 role로 한다(props.user.role).
 // 이 파일 안에서는 이미 관리자로 확인된 사용자만 보고 있다고 가정한다.
@@ -97,7 +98,7 @@ const userRowFromServer=u=>({id:u.user_id,name:u.name,email:u.email,
 // FaqOut엔 작성자 정보가 없어서(faqs 테이블에 user_id는 있지만 관리자 응답에 조인해 내려주지
 // 않음) 목업의 "작성자" 컬럼은 뺐다.
 const faqRowFromServer=(f,idx,total)=>({id:f.faq_id,no:total-idx,question:f.question,
-  date:f.created_at?.slice(0,10),answer:f.answer||'',visible:f.is_visible,answered:f.answer!=null});
+  date:formatKstDate(f.created_at),answer:f.answer||'',visible:f.is_visible,answered:f.answer!=null});
 
 // GET /admin/recovery-items(RecoveryItemOut 목록) -> 이 화면 행 모양. 동의(consent)가
 // False면 백엔드 recovery_status(pending 기본값)와 무관하게 화면 status는 무조건
@@ -105,7 +106,7 @@ const faqRowFromServer=(f,idx,total)=>({id:f.faq_id,no:total-idx,question:f.ques
 // 학습데이터 활용 동의 여부에 따라 자동으로 정해지는 상태이기 때문이다.
 const recoveryItemFromServer=r=>({
   id:r.log_id, project:r.project_description||'(삭제된 프로젝트)', model:r.model_version||'—',
-  violation:r.violation_type||'—', occurredAt:r.occurred_at.slice(0,16).replace('T',' '),
+  violation:r.violation_type||'—', occurredAt:formatKstDateTime(r.occurred_at),
   consent:r.consent, original:r.original, attempt:r.attempt,
   status:r.consent?r.recovery_status:'excluded', label:r.label||'',
 });
@@ -410,8 +411,8 @@ function AnnouncementTab(){
             const inputTotal=Object.values(r.input_counts||{}).reduce((a,b)=>a+b,0);
             return (
             <div key={r.run_id} className="grid grid-cols-[1.2fr_1.2fr_1fr_1fr_1.6fr] text-[13px] border-t border-[var(--border)] items-center">
-              <div className="p-4 text-[var(--muted-fg)]">{r.generated_at?r.generated_at.slice(0,16).replace('T',' '):'-'}</div>
-              <div className="p-4 text-[var(--muted-fg)]">{r.imported_at.slice(0,16).replace('T',' ')}</div>
+              <div className="p-4 text-[var(--muted-fg)]">{formatKstDateTime(r.generated_at)||'-'}</div>
+              <div className="p-4 text-[var(--muted-fg)]">{formatKstDateTime(r.imported_at)}</div>
               <div className="p-4 text-center font-medium">{inputTotal}건</div>
               <div className="p-4 text-center font-medium">{r.accepted_count}건</div>
               <div className={'p-4 '+(issues.length?'text-[var(--warn)]':'text-[var(--muted-fg)]')}>{issues.length?issues.join(', '):'없음'}</div>
@@ -522,7 +523,8 @@ function OpsTab(){
 }
 
 // GET /admin/items 응답의 last_updated(ISO)를 "MM-DD HH:mm" 짧은 표기로 바꾼다.
-const shortUpdated=iso=>iso?iso.slice(5,16).replace('T',' '):'-';
+// 서버 시각(UTC)을 한국 시간으로 — 잘라 쓰면 9시간 이른 시각이 보인다(time.js).
+const shortUpdated=iso=>formatKstShort(iso)||'-';
 // 상세 모달의 실행 로그 갱신 주기. 생성은 초 단위로 움직이지 않아 3초면 충분하고,
 // 모달이 열려 있는 동안 + 아직 진행 중일 때만 돈다.
 const EXEC_POLL_MS=3000;
@@ -659,7 +661,7 @@ function ProgressTab({focusProjectId=null}){
                   :scoreHistory[key].map((e,i,arr)=>(
                     <div key={e.scored_at+i} className="p-2.5">
                       <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-[11.5px] text-[var(--muted-fg)]">{e.scored_at.slice(0,10)}</span>
+                        <span className="text-[11.5px] text-[var(--muted-fg)]">{formatKstDate(e.scored_at)}</span>
                         <span className="font-semibold text-[13px]">
                           {e.is_rerun&&i+1<arr.length&&<span className="text-[var(--muted-fg)] font-normal">{arr[i+1].score}점 → </span>}{e.score}점
                         </span>
