@@ -2,7 +2,7 @@
 // [SB-244] POST /retry-task는 접수만 하고 바로 돌아온다(ReworkAcceptedOut). 같은 화면에서 모으는 시간(잠정 2초) 안의
 // 요청은 재작성 한 번(cycle_id 하나)으로 합쳐지고, 끝난 결과(전후 비교 · 실패 되돌림)는 GET /rework-result로 읽는다
 // (웹연동_변경사항_웹팀전달.md 2.1 retry-task 행 · 3.7, 명세 5.3 · 6.3).
-import {getReworkResult, retryTask} from '../../api.js';
+import {getProjectStatus, getReworkResult, retryTask} from '../../api.js';
 import {reworkDiffFromChanged} from './utils.js';
 import {DOC_REWORK_BUNDLES} from './data.js';
 
@@ -34,14 +34,17 @@ export async function waitRework(projectId, cycleId, isAlive = () => true) {
   }
 }
 
-// 화면을 열 때 — 이 화면에서 요청한 재작성이 아직 진행 중이면 그 결과를 준다(화면을 나갔다 돌아온 경우).
-// /status에 rework_screen이 생기면 그걸 쓰는 쪽으로 바꾼다(백엔드_요청사항_프론트_2026-10-06.md 1번).
+// 화면을 열 때 — 이 화면에서 요청한 재작성이 아직 진행 중이면 그 재작성(cycle_id · bundles)을 준다(화면을 나갔다 돌아온 경우).
+// 진행 중인지는 /status의 rework_screen(재작성 중인 화면, 모으는 중 포함)으로 보고(SB-272), 기다릴 cycle_id와
+// 묶음은 /rework-result에서 읽는다. 재작성 중이 아니면 /rework-result를 부르지 않는다.
 export async function findRunningRework(projectId, screen) {
+  const status = await getProjectStatus(projectId);
+  if (status?.rework_screen !== screen) return null;
   try {
     const result = await getReworkResult(projectId);
-    return result && result.status === '진행중' && result.screen === screen ? result : null;
+    return result && result.status === '진행중' ? result : null;
   } catch (err) {
-    if (err.status === 404 || err.status === 409) return null; // 재작성한 적 없음 · 결과를 볼 수 없는 실행
+    if (err.status === 404 || err.status === 409) return null; // 아직 기록 없음 · 결과를 볼 수 없는 실행
     throw err;
   }
 }
