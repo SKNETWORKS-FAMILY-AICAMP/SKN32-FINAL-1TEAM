@@ -9,13 +9,16 @@ tools는 호출마다 재시도 · 제한 시간 · 오류 종류 분류를 맡�
 - 여러 스레드에서 동시에 써도 안전하다(T-P2). 재시도 기록은 호출별로 따로 센다.
 - 기준 문서 문구대로 호출 실패는 오류 종류와 관계없이 재시도 횟수까지 다시 보낸다.
   오류 종류는 재시도를 다 쓴 뒤 재개할지(일시) 실패로 끝낼지(입력 · 운영)를 가른다.
+- 토큰 사용량(확장): 호출처가 LLMResponse(text, usage)를 돌려주면 시도마다 사용량을 CallTry에 남긴다.
+  스키마 검사 · parse 전에 남겨 형식 오류로 버린 응답의 비용도 기록된다. 호출 합계는 CallLog에 둔다.
+  호출처는 문자열만 돌려줘도 된다(사용량 없음).
 """
 from __future__ import annotations
 
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Callable, Protocol, TypeVar
 
@@ -23,7 +26,7 @@ from pydantic import BaseModel, ValidationError
 
 from ..models.base import CallError, ErrorKind
 from .errors import FormatError, ProviderError, ToolCallExhausted
-from .trace import CallLog, CallTry
+from .trace import CallLog, CallTry, add_tokens
 
 T = TypeVar("T")
 
@@ -32,18 +35,36 @@ T = TypeVar("T")
 class LLMRequest:
     provider: str
     model: str
-    temperature: float
+    temperature: float | None            # None이면 호출처가 싣지 않는다 (추론 모델)
     messages: list[dict[str, Any]]
     timeout_sec: float
     response_schema: dict[str, Any] | None
     metadata: dict[str, Any]
+    reasoning_effort: str | None = None  # 추론 모델의 추론 강도
+
+
+@dataclass(frozen=True)
+class TokenUsage:
+    """확장 — 응답 하나의 토큰 사용량. 입력은 캐시 입력을 포함한 전체, 출력은 추론을 포함한 전체."""
+    input_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    output_tokens: int | None = None
+    reasoning_tokens: int | None = None
+
+
+@dataclass(frozen=True)
+class LLMResponse:
+    """확장 — 호출처 응답: 본문과 토큰 사용량."""
+    text: str
+    usage: TokenUsage | None = None
 
 
 class LLMProvider(Protocol):
     """LLM 호출처 어댑터. timeout_sec를 HTTP 클라이언트 timeout으로 걸고,
-    시간 초과는 TimeoutError, 응답 코드 오류는 ProviderError(status=...)로 올린다."""
+    시간 초과는 TimeoutError, 응답 코드 오류는 ProviderError(status=...)로 올린다.
+    본문만(str) 돌려주거나, 토큰 사용량을 함께 LLMResponse로 돌려준다."""
 
-    def complete(self, request: LLMRequest) -> str: ...
+    def complete(self, request: LLMRequest) -> str | LLMResponse: ...
 
 
 @dataclass(frozen=True)
@@ -52,10 +73,11 @@ class ToolsConfig:
     agent: str
     provider: str
     model: str
-    temperature: float
+    temperature: float | None
     timeout_sec: float
     retry_count: int
     retry_interval_sec: float
+    reasoning_effort: str | None = None
 
 
 def classify_status(status: int | None) -> ErrorKind:
@@ -131,6 +153,7 @@ class Tools:
             messages=messages,
             timeout_sec=cfg.timeout_sec,
             response_schema=schema.model_json_schema() if schema else None,
+            reasoning_effort=cfg.reasoning_effort,
             metadata={
                 "run_id": self._ctx.run_id,
                 "task_id": self._ctx.task_id,
@@ -140,10 +163,18 @@ class Tools:
             },
         )
 
+        box: dict[str, TokenUsage | None] = {"usage": None}   # 이 시도의 사용량 (호출마다 따로 — 스레드 안전)
+
         def once() -> Any:
+            box["usage"] = None
             if provider is None:
                 raise ProviderError(f"호출처 없음: {cfg.provider}", status=404)
-            text = provider.complete(request)
+            try:
+                reply = provider.complete(request)
+            except FormatError as e:   # 응답은 받았지만 쓸 수 없음 — 사용량은 남긴다
+                box["usage"] = e.usage
+                raise
+            text, box["usage"] = (reply.text, reply.usage) if isinstance(reply, LLMResponse) else (reply, None)
             value: Any = text
             if schema is not None:
                 try:
@@ -154,14 +185,15 @@ class Tools:
                 value = parse(value)
             return value
 
-        return self._call("llm", purpose, once)
+        return self._call("llm", purpose, once, usage=lambda: box["usage"])
 
     def search(self, purpose: str, fn: Callable[[float], T]) -> T:
         """LLM이 아닌 호출(임베딩 검색 · BM25 등)을 감싼다. fn은 timeout_sec를 받는다."""
         return self._call("search", purpose, lambda: fn(self._config.timeout_sec))
 
     # ── 재시도 ────────────────────────────────────────
-    def _call(self, call_type: str, purpose: str, once: Callable[[], T]) -> T:
+    def _call(self, call_type: str, purpose: str, once: Callable[[], T],
+              usage: Callable[[], TokenUsage | None] = lambda: None) -> T:
         cfg, ctx = self._config, self._ctx
         log = CallLog(
             call_id=ctx.new_id(),
@@ -175,6 +207,7 @@ class Tools:
             provider=cfg.provider if call_type == "llm" else None,
             model=cfg.model if call_type == "llm" else None,
             temperature=cfg.temperature if call_type == "llm" else None,
+            reasoning_effort=cfg.reasoning_effort if call_type == "llm" else None,
             timeout_sec=cfg.timeout_sec,
         )
         error: CallError = "호출실패"
@@ -194,16 +227,23 @@ class Tools:
             except (ConnectionError, OSError) as e:
                 error, kind, detail = "호출실패", "일시", type(e).__name__
             else:
-                log.tries.append(CallTry(no=no, started_at=started, ended_at=ctx.now(), outcome="성공"))
+                log.tries.append(CallTry(no=no, started_at=started, ended_at=ctx.now(), outcome="성공",
+                                         **_usage_fields(usage())))
                 log.final_outcome = "성공"
+                add_tokens(log, log.tries)
                 ctx.sink.add(log)
                 return result
             log.tries.append(CallTry(no=no, started_at=started, ended_at=ctx.now(),
-                                     outcome=error, error_kind=kind, detail=detail))
+                                     outcome=error, error_kind=kind, detail=detail, **_usage_fields(usage())))
             if no < total and cfg.retry_interval_sec > 0:
                 ctx.sleep(cfg.retry_interval_sec)
         log.final_outcome = "소진"
         log.error, log.error_kind = error, kind
+        add_tokens(log, log.tries)
         ctx.sink.add(log)
         raise ToolCallExhausted(error=error, error_kind=kind, tries=len(log.tries),
                                 call_id=log.call_id, detail=detail)
+
+
+def _usage_fields(usage: TokenUsage | None) -> dict[str, int | None]:
+    return asdict(usage) if usage is not None else {}

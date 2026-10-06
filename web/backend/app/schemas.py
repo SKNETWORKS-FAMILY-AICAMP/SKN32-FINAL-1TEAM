@@ -381,9 +381,18 @@ class ProjectDetailOut(ProjectOut):
 # 표현하는 용도다 — 오케스트레이터가 실제로 붙으면 이 스키마들은 그대로 두고
 # projects.py의 라우터 구현부만 바꾸면 된다(agents.py의 재시도 함수들과 같은 패턴).
 class DemoGenerateRequest(BaseModel):
-    notice_id: str | None = Field(
-        None, description='매칭시킬 공고 notice_id. 생략하면 모집중(open)인 공고 중 하나를 데모용으로 자동 선택한다.',
-    )
+    # [SB-243] 이제 필수다(후보 중 사용자가 고른 공고) — 생략하면 라우터가 422로 답한다. 임시 데모 자동 선택은 없어졌다.
+    notice_id: str | None = Field(None, description='사용자가 고른 공고 notice_id(공고 후보에 있는 값).')
+
+
+class ProceedRequest(BaseModel):
+    """review/start(종합 평가 → 표현 검수) 요청 — 기준 점수에 못 미친 채 진행한다는 사용자의 확인."""
+    confirmed: bool = False
+
+
+class BonusItemOut(BaseModel):
+    name: str
+    points: float
 
 
 class MatchCandidateOut(BaseModel):
@@ -395,15 +404,37 @@ class MatchCandidateOut(BaseModel):
     title: str
     org: str | None = None
     apply_end: datetime.date | None = None
-    bonus_score: float  # 가산점(만점 기준 없음, 공고마다 다름)
+    # 가산점(만점 기준 없음, 공고마다 다름). None = 계산 못 함("가산점 정보 없음"), 0 = 해당 가점 없음.
+    bonus_score: float | None = None
     reason: str
     url: str | None = None
     batch: int = 1  # 1=첫 매칭, 2=재실행
+    # [SB-242] 오케스트레이터(공고 서버 추천) 카드에서 새로 오는 값 — 모두 선택이라 없어도 된다.
+    rank: int | None = None
+    fit_score: float | None = None  # 0이면 마감 임박순 대체 경로라 적합도를 숨긴다
+    content_changed: bool = False  # 추가 조회에서 다시 나온 공고의 내용이 바뀜
+    apply_period_type: str | None = None
+    bonus_items: list[BonusItemOut] = Field(default_factory=list)
+    source_notice: str | None = None  # 카드마다 출처 고지
+
+
+class OrchNoticeOut(BaseModel):
+    """오케스트레이터 안내(시트 6 오류코드 문구) — 화면에 함께 보여준다."""
+
+    code: str
+    message: str
 
 
 class MatchCandidatesOut(BaseModel):
     candidates: list[MatchCandidateOut]
     rematch_used: bool
+    # [SB-242] 공고 매칭은 워커가 비동기로 돌려 응답이 늦을 수 있다. 'ready' 말고는 candidates가 비어 있고
+    # 프론트가 다시 부른다(pending) 또는 안내만 보여준다(failed · no_match).
+    status: str = 'ready'  # 'ready' | 'pending' | 'failed' | 'no_match'
+    code: str | None = None
+    message: str | None = None
+    notices: list[OrchNoticeOut] = Field(default_factory=list)
+    blocked_notice_ids: list[str] = Field(default_factory=list)  # 자격 불통과로 고를 수 없는 공고 ID
 
 
 class EligibilityCheckOut(BaseModel):
@@ -412,6 +443,8 @@ class EligibilityCheckOut(BaseModel):
     undecidable: bool
     failed_conditions: list | None = None
     missing_inputs: list | None = None
+    # [SB-243] 읽지 못해 통과로 본 조건('지원대상 유형' · '업력') — 진행을 막지 않고 화면 4에 '확인 필요'로 안내한다.
+    unknown_conditions: list = Field(default_factory=list)
 
 
 class PlanSectionOut(BaseModel):
@@ -432,7 +465,7 @@ class ArtifactScoreReasonOut(BaseModel):
 
 class ArtifactOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    artifact_id: int
+    artifact_id: int | None = None  # [SB-243] 산출물은 오케스트레이터가 갖고 있어 행 번호가 없다
     category: str
     infographic_path: str
     executable_path: str | None = None
@@ -454,6 +487,7 @@ class FormatFindingOut(BaseModel):
     finding_type: str
     message: str
     severity: str | None = None
+    sentence_id: str | None = None  # [SB-243]
 
 
 class ProofreadLogOut(BaseModel):
@@ -468,11 +502,13 @@ class ProofreadLogOut(BaseModel):
     passed: bool
     violation_type: str | None = None
     violation_note: str | None = None
+    # [SB-243] 같은 문장의 시도를 묶는 키(프론트 reviewParagraphsFrom이 section_id로 묶는다) ← sentenceId
+    section_id: str | None = None
 
 
 class BusinessPlanOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    plan_id: int
+    plan_id: int | None = None  # [SB-243] 계획서는 오케스트레이터가 갖고 있어 행 번호가 없다
     doc_score: float | None = None
     threshold: float | None = None
     sections: list[PlanSectionOut] = Field(default_factory=list)
@@ -480,13 +516,17 @@ class BusinessPlanOut(BaseModel):
     artifacts: list[ArtifactOut] = Field(default_factory=list)
     format_findings: list[FormatFindingOut] = Field(default_factory=list)
     proofread_logs: list[ProofreadLogOut] = Field(default_factory=list)
+    # [SB-243] 오케스트레이터 계획서의 차트 · 표 · 기능 목록(구조는 작성 Agent · 프론트와 맞추는 중이라 원본 그대로 싣는다)
+    feature_list: list[str] = Field(default_factory=list)
+    charts: list[dict] = Field(default_factory=list)
+    tables: list[dict] = Field(default_factory=list)
 
 
 class VerdictOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     overall_passed: bool
-    model_version: str
-    first_pass_passed: bool
+    model_version: str | None = None  # [SB-243] 오케스트레이터는 주지 않는다
+    first_pass_passed: bool | None = None  # [SB-243] 오케스트레이터는 주지 않는다
 
     # [2026-09-22 신규, 프론트 전달사항 10번] 검증결과서(front/src/features/workflow/
     # verificationReport.js)의 "종합 판정" 행 — 문서층/자동검증/계획서대조 세 층 점수와
@@ -571,13 +611,6 @@ class ProjectStatusOut(BaseModel):
     # 막지 않는다). 매칭 자체가 없거나(screen=NO_MATCH_SCREEN) 공고 정보를 못 찾으면
     # False.
     notice_closed: bool = False
-    # [2026-09-29 신규, 프론트 요청사항 3차 B-2] 같은 stage에서 "처음부터 다시 생성"이
-    # 연속으로 최종 실패(status='failed' 확정)한 횟수와 그 상한 — 자동 재개(resume_count)
-    # 와 달리 backoff 중간 실패가 아니라 이 시도 전체가 끝내 실패로 확정될 때만 늘고,
-    # 단계가 온전히 성공하면 0으로 돌아간다. regenerate_fail_streak >= regenerate_cap이면
-    # plan/start·prototype/start가 409를 돌려준다.
-    regenerate_fail_streak: int = 0
-    regenerate_cap: int = 2
 
 
 class RetryTaskRequest(BaseModel):
@@ -585,7 +618,8 @@ class RetryTaskRequest(BaseModel):
     단순히 동일한 결과를 반환하는 방식이 아닌, 실제 작업을 다시 수행하도록 구현 /
     재시도에 따라 결과물이 실제로 변경되는 것을 확인할 수 있도록 구현") 대응.
 
-    task_key는 app/models.py의 FIXED_TASK_SEQUENCE에 있는 14개 값 중 '조율'(오케스트레이션
+    task_key는 웹이 쓰는 작업 이름이다 — 사용자가 재작성할 수 있는 건 writing · implement_prototype · implement_infographic뿐이고(app/orch/mapping.py
+    orch_bundle_of), 나머지는 400이다. 아래는 예전 14개 값 중 '조율'(오케스트레이션
     체크포인트 4개 — coordinate_intake/user_decision_doc/user_decision_final/
     coordinate_finalize, 콘텐츠를 만들지 않아 "재시도해도 결과물이 바뀐다"는 개념 자체가
     안 맞는다)만 빼고 나머지 10개를 전부 받는다. 각 값이 실제로 무엇을 다시 만드는지는
@@ -618,44 +652,50 @@ class RetryTaskRequest(BaseModel):
     )
 
 
-class RetryTaskResponse(BaseModel):
+class ReworkAcceptedOut(BaseModel):
+    """POST /projects/{id}/retry-task 응답 — [SB-243~244] 재작성은 이제 접수만 하고 바로 돌아온다. 결과(전후 비교)는
+    진행 상태(GET /status의 rework_screen · match_status)를 보다가 끝나면 GET /rework-result로 읽는다."""
     project_id: int
     task_key: str
-    agent_name: str
-    attempt_no: int
-    changed: dict = Field(
-        ...,
-        description=(
-            '재시도 전/후 값 비교. task_key에 따라 모양이 다르다 — 전략(strategy)은 '
-            "{'canonical_data': {data_key: {'before', 'after'}}}, 작성(writing)은 "
-            "{'sections': {tag: {'before', 'after'}}}, 채점(verify1_*/verify2_*)은 "
-            "{'scores': {item_code: {'before', 'after'}}, 'doc_score' 또는 'artifact_score': "
-            "{'before', 'after'}}, 산출물 재생성(implement_*)은 {'executable_path' 또는 "
-            "'infographic_path': {'before', 'after'}}, 검수(review_expression/"
-            "review_token_check)는 {'finding' 또는 'corrected_text': {'before', 'after'}} 형태. "
-            '어느 모양이든 호출할 때마다 실제로 값이 달라졌는지(=진짜로 다시 수행했는지) '
-            '이 필드로 바로 확인 가능. writing/implement_*는 추가로 '
-            "'version_kept': 'new'|'previous'와 'version_comparison': {'before_score', "
-            "'after_score'}를 담는다 — 재작성 후 점수가 떨어지면 서버가 자동으로 이전 "
-            "버전을 유지하고('previous'), 이때 위 'sections'/'executable_path' 등에 보이는 "
-            "'after' 값은 실제로 반영되지 않은(되돌려진) 시도값이다."
-        ),
-    )
+    bundle_id: str  # 웹 묶음 이름(문제인식 · 실현가능성 · 성장전략 · 팀 구성 · 실행 파일 제작 · 인포그래픽 제작)
+    cycle_id: str  # 같은 화면에서 모으는 시간 안에 들어온 요청은 같은 cycle_id로 합쳐진다
+    screen: int
+    bundles: list[str]  # 지금까지 모인 묶음(웹 이름, 요청 순서)
+    collect_until: datetime.datetime
+    duplicate: bool = False  # 이미 모은 묶음이라 한 번으로 쳤다(기회를 더 쓰지 않음)
 
 
-class AgentExecutionOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    agent_name: str
-    # [2026-09-28 신규] 프론트 요청 2 — 화면이 항목(task_key)별로 몇 번째 시도인지 알아야
-    # 재작성 버튼을 disabled 처리할 수 있는데, 이 응답엔 그 필드가 없었다.
-    task_key: str | None
-    attempt_no: int
-    model_used: str
-    rerun_type: str
-    token_usage: int
+class ReworkFileChangeOut(BaseModel):
+    artifact: str  # 'prototype' | 'infographic'
+    before_path: str | None = None
+    after_path: str | None = None
+
+
+class ReworkResultOut(BaseModel):
+    """GET /projects/{id}/rework-result 응답 — 마지막 재작성 한 건. 재작성한 적이 없으면 404.
+
+    status: '진행중' | '완료' | '실패'. 진행 중이면 공통 필드만 있다. `changed`는 예전 retry-task 응답과 같은 모양
+    (sections · executable_path · infographic_path · version_kept · version_comparison)으로 풀어 둔 값이라 화면이 그대로 쓸 수 있다."""
+    project_id: int
+    cycle_id: str
+    screen: int
+    bundles: list[str]
     status: str
     started_at: datetime.datetime
-    bundle_id: str | None = None
+    ended_at: datetime.datetime | None = None
+    kept: str | None = None  # '전' | '후'
+    basis: str | None = None  # document | artifact | total
+    before_score: float | None = None
+    after_score: float | None = None
+    before_refs: list[str] = Field(default_factory=list)
+    after_refs: list[str] = Field(default_factory=list)
+    plan_before: list[PlanSectionOut] | None = None
+    plan_after: list[PlanSectionOut] | None = None
+    files: list[ReworkFileChangeOut] = Field(default_factory=list)
+    rolled_back: bool = False
+    refunded_bundles: list[str] = Field(default_factory=list)
+    notice_code: str | None = None
+    changed: dict = Field(default_factory=dict)
 
 
 class BundleUsageOut(BaseModel):
@@ -670,10 +710,19 @@ class BundleUsageOut(BaseModel):
 
 
 class DemoGenerateResponse(BaseModel):
+    """POST /generate(공고 선택 → 자격 확인)와 GET /result(지금까지 결과)가 함께 쓴다.
+
+    [SB-243] 공고를 고른 직후엔 계획서 · 점수가 아직 없어 plan 이하가 비고(plan=None), 자격 확인 결과를 기다리는 중이면
+    status='pending', 공고 서버 오류로 자격 확인을 못 했으면 status='failed'(+ message · notices)로 답한다.
+    예전의 agent_executions 필드는 없어졌다(관리자 조회가 대신한다)."""
     project_id: int
-    match: MatchResultOut
-    eligibility: EligibilityCheckOut
-    plan: BusinessPlanOut
+    status: str = 'ready'  # 'ready' | 'pending' | 'failed'
+    code: str | None = None
+    message: str | None = None
+    notices: list[OrchNoticeOut] = Field(default_factory=list)
+    match: MatchResultOut | None = None
+    eligibility: EligibilityCheckOut | None = None
+    plan: BusinessPlanOut | None = None
     # [2026-09-22 수정, 프론트 전달사항 3번] "GET /result는 프로토타입이 아직 만들어지는
     # 중이어도 완성된 계획서는 돌려줘야 한다" — verdict는 산출물(artifact) 채점까지 끝나야
     # 나오는 값이라, 계획서만 끝나고 프로토타입/검증이 아직인 상태에선 없을 수 있다.
@@ -681,15 +730,14 @@ class DemoGenerateResponse(BaseModel):
     # 파이프라인(seed_dummy_pipeline)은 계획서·산출물·판정을 한 번에 만들어서 이 틈이
     # 안 드러났을 뿐 — 생성이 단계별로 끝나는 실제 흐름에선 이 틈이 그대로 404가 된다.
     verdict: VerdictOut | None = None
-    agent_executions: list[AgentExecutionOut]
     # [2026-09-28 신규] 프론트 요청 2 — RERUN_CAP 프론트 상수를 없애고 관리자가 상한을
     # 바꾸면 화면도 같이 따라가도록, 상한값과 묶음별 사용/잔여 횟수를 같이 내려준다.
     # [2026-09-28 수정] task_key 단위였던 retry_budget을 bundle_id 단위 bundle_usages로
     # 교체 — writing 하나가 화면상 묶음 3개를 가리키는 문제 때문(app/pipeline_stages.py
     # WRITING_BUNDLES 참고). strategy/verify1_*/verify2_*/review_* 처럼 화면에 "재작성"
     # 버튼이 없는 task_key는 애초에 묶음 개념이 아니라서 이 목록에 안 나온다.
-    rework_cap: int
-    bundle_usages: list[BundleUsageOut]
+    rework_cap: int = 0
+    bundle_usages: list[BundleUsageOut] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -758,10 +806,6 @@ class PolicyThresholdsIn(BaseModel):
     rework_cap: int = Field(ge=0)
     deviation_cap: float = Field(ge=0, le=100, allow_inf_nan=False)
     token_retry_cap: int = Field(ge=0)
-    # [2026-09-29 신규, 프론트 요청사항 3차 B-2] "verification_policies에 두면 관리자가
-    # 조절 가능"이라고 요청하신 부분 — DB 컬럼만으로는 관리자 화면에서 실제로 바꿀 방법이
-    # 없어서 다른 상한들과 같은 자리(PUT /admin/policy/thresholds)에 같이 넣는다.
-    regenerate_cap: int = Field(ge=0)
 
 
 class ChecklistItemIn(BaseModel):
@@ -796,7 +840,6 @@ class VerificationPolicyOut(BaseModel):
     rework_cap: int
     deviation_cap: float
     token_retry_cap: int
-    regenerate_cap: int
 
 
 class ItemOut(BaseModel):
@@ -857,10 +900,6 @@ class GenerationFailureAlertOut(BaseModel):
     failure_reason: str | None = None
     created_at: datetime.datetime
     acknowledged_at: datetime.datetime | None = None
-    # [2026-09-29 신규, 프론트 요청사항 3차 B-4] True면 이 실패가 "처음부터 다시 생성"
-    # 연속 실패 상한까지 도달한 뒤 확정된 것 — 사용자 화면은 이미 재시도 버튼을 거두고
-    # "문제가 기록됐고 확인 후 조치할게요"로 바뀐 상태이므로 관리자가 우선 봐야 한다.
-    regenerate_exhausted: bool = False
 
 
 class GenerationFailureAlertAckIn(BaseModel):
@@ -868,7 +907,7 @@ class GenerationFailureAlertAckIn(BaseModel):
 
 
 class ScoreHistoryEntryOut(BaseModel):
-    scored_at: datetime.datetime
+    scored_at: datetime.datetime | None = None  # 채점 끝 시각을 모르면 None
     score: float
     is_rerun: bool
 
@@ -1043,6 +1082,11 @@ class RecoveryItemOut(BaseModel):
     attempt: str
     recovery_status: str
     label: str | None = None
+
+
+class RecoveryTrainedIn(BaseModel):
+    """POST /admin/recovery-items/trained 요청 — 학습 데이터로 내보낸 검수 회수 문단의 log_id 목록."""
+    log_ids: list[int] = Field(..., min_length=1, max_length=1000)
 
 
 class RecoveryLabelIn(BaseModel):

@@ -19,9 +19,8 @@ from fastapi.testclient import TestClient
 
 import app.routers.auth as auth_router
 import app.security as security
-from app.models import Faq, ImportRun, Notice, Project, ProofreadLog, User, VerificationChecklistItem
+from app.models import Faq, ImportRun, Notice, ProofreadLog, User, VerificationChecklistItem
 from seed_dummy_admin_data import main as seed_admin_data_main
-from seed_dummy_pipeline import seed_dummy_pipeline
 
 ADMIN_EMAIL = 'admin-test@example.com'
 USER_EMAIL = 'plain-user@example.com'
@@ -141,7 +140,7 @@ def test_put_policy_thresholds(admin_client):
         '/admin/policy/thresholds',
         json={
             'pass_threshold': 75, 'rerun_cap': 5, 'rework_cap': 2, 'deviation_cap': 8,
-            'token_retry_cap': 4, 'regenerate_cap': 3,
+            'token_retry_cap': 4,
         },
     )
     assert res.status_code == 200, res.text
@@ -151,7 +150,7 @@ def test_put_policy_thresholds(admin_client):
     assert body['rework_cap'] == 2
     assert body['deviation_cap'] == 8.0
     assert body['token_retry_cap'] == 4
-    assert body['regenerate_cap'] == 3
+    assert 'regenerate_cap' not in body  # [SB-245] 없는 기능 — 응답 · 입력에서 뺐다
 
 
 @pytest.mark.parametrize('field,value', [
@@ -162,7 +161,7 @@ def test_put_policy_thresholds(admin_client):
 def test_invalid_thresholds_do_not_change_policy(admin_client, field, value):
     before = admin_client.get('/admin/policy').json()
     payload = {key: before[key] for key in (
-        'pass_threshold', 'rerun_cap', 'rework_cap', 'deviation_cap', 'token_retry_cap', 'regenerate_cap')}
+        'pass_threshold', 'rerun_cap', 'rework_cap', 'deviation_cap', 'token_retry_cap')}
     payload[field] = value
     response = admin_client.put('/admin/policy/thresholds', json=payload)
     assert response.status_code == 422
@@ -237,115 +236,6 @@ def test_put_checklist_validates_weight_sum_15_per_category(admin_client):
 # 진행 현황 (/admin/items)
 # ============================================================================
 
-def test_get_items_reflects_match_status(admin_client, user_client, db_session):
-    project_id = _create_project(user_client)
-
-    res = admin_client.get('/admin/items')
-    assert res.status_code == 200, res.text
-    matching = [row for row in res.json() if row['project_id'] == project_id]
-    assert len(matching) == 1, f'방금 만든 프로젝트가 /admin/items에 안 보임: {res.json()}'
-    assert matching[0]['user_name'] == '일반유저테스트'
-    assert matching[0]['match_status'] is None, '아직 매칭 전인데 match_status가 비어있지 않음'
-    assert matching[0]['status_label'] == '공고 매칭 전'
-    assert matching[0]['step'] is None
-    assert matching[0]['score'] is None
-    assert matching[0]['archived'] is False
-
-    notice = Notice(
-        notice_id='ADMIN-TEST-001', source='k-startup', title='admin 검증용 더미 공고', recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-001', retry_agents=())
-    db_session.commit()
-
-    res = admin_client.get('/admin/items')
-    matched = next(row for row in res.json() if row['project_id'] == project_id)
-    assert matched['match_status'] == 'completed', matched
-    # seed_dummy_pipeline은 stage=STAGE_DONE으로 채우므로 완료 상태여야 한다(app/pipeline_stages.py).
-    assert matched['status_label'] == '완료', matched
-    # FIXED_TASK_SEQUENCE 마지막 행(coordinate_finalize, agent_name='조율')이 최신 실행이어야 한다.
-    assert matched['step'] == '조율', matched
-    assert matched['attempts'] == 1
-    # DEFAULT_DOC_SCORE(58.50) + DEFAULT_ARTIFACT_SCORE(24.00) = 82.50 (seed_dummy_pipeline.py 기본값)
-    assert matched['score'] == pytest.approx(82.50), matched
-    assert matched['archived'] is False
-
-    project = db_session.get(Project, project_id)
-    project.status = 'failed'
-    project.stage = 'prototype_building'
-    project.failure_reason = '프로토타입 작업 오류'
-    db_session.commit()
-    user_item = next(row for row in user_client.get('/projects').json() if row['project_id'] == project_id)
-    assert user_item['match_status'] == 'failed'
-    assert user_item['failure_reason'] == '프로토타입 작업 오류'
-    admin_item = next(row for row in admin_client.get('/admin/items').json() if row['project_id'] == project_id)
-    assert admin_item['status_label'] == '실패'
-    assert admin_item['failure_reason'] == '프로토타입 작업 오류'
-
-
-def test_put_item_archive_toggles_match_archived_at(admin_client, user_client, db_session):
-    project_id = _create_project(user_client)
-    notice = Notice(
-        notice_id='ADMIN-TEST-ARCHIVE', source='k-startup', title='보관 처리 검증용 더미 공고',
-        recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-ARCHIVE', retry_agents=())
-    db_session.commit()
-
-    res = admin_client.put(f'/admin/items/{project_id}/archive', json={'archived': True})
-    assert res.status_code == 200, res.text
-    assert res.json()['archived'] is True
-
-    res = admin_client.get('/admin/items')
-    matched = next(row for row in res.json() if row['project_id'] == project_id)
-    assert matched['archived'] is True
-
-    res = admin_client.put(f'/admin/items/{project_id}/archive', json={'archived': False})
-    assert res.status_code == 200, res.text
-    assert res.json()['archived'] is False
-
-
-def test_put_item_archive_without_match_returns_400(admin_client, user_client):
-    project_id = _create_project(user_client)
-    res = admin_client.put(f'/admin/items/{project_id}/archive', json={'archived': True})
-    assert res.status_code == 400, res.text
-
-
-def test_items_shows_failed_status_and_resume_count(admin_client, user_client, db_session):
-    """[2026-09-23 신규, 2026-09-27 개명] 생성 작업이 자동 재개(최대 5회)를 소진하고
-    확정 실패하면 /admin/items의 status_label이 '실패'로, resume_count/failure_reason이
-    그대로 보여야 한다."""
-    import app.pipeline_stages as ps
-
-    project_id = _create_project(user_client)
-    notice = Notice(
-        notice_id='ADMIN-TEST-GENFAIL', source='k-startup', title='생성 실패 검증용 더미 공고',
-        recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    project = db_session.get(Project, project_id)
-    project.notice_id = notice.notice_id
-    project.status = 'failed'
-    project.stage = ps.STAGE_PLAN_WRITING
-    project.progress_percent = 70
-    project.resume_count = 6
-    project.last_error_kind = ps.ERROR_KIND_TRANSIENT
-    project.failure_reason = '6번째 실패(테스트)'
-    db_session.commit()
-
-    res = admin_client.get('/admin/items')
-    assert res.status_code == 200, res.text
-    matched = next(row for row in res.json() if row['project_id'] == project_id)
-    assert matched['status_label'] == '실패'
-    assert matched['generation_resume_count'] == 6
-    assert matched['generation_failure_reason'] == '6번째 실패(테스트)'
-    assert matched['generation_last_error_kind'] == '일시'
-
-
 # ============================================================================
 # 생성 실패 관리자 알림 (/admin/generation-alerts)
 # ============================================================================
@@ -355,19 +245,6 @@ def test_generation_alerts_lists_unacknowledged_by_default(admin_client, user_cl
     from app.models import GenerationFailureAlert
 
     project_id = _create_project(user_client)
-    notice = Notice(
-        notice_id='ADMIN-TEST-ALERT-LIST', source='k-startup', title='알림 목록 검증용 더미 공고',
-        recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    project = db_session.get(Project, project_id)
-    project.notice_id = notice.notice_id
-    project.status = 'failed'
-    project.stage = ps.STAGE_PLAN_WRITING
-    project.progress_percent = 70
-    project.resume_count = 6
-    db_session.flush()
     unacked = GenerationFailureAlert(
         project_id=project_id, stage=ps.STAGE_PLAN_WRITING,
         resume_count=5, last_error_kind=ps.ERROR_KIND_TRANSIENT, failure_reason='미확인 실패(테스트)',
@@ -396,19 +273,6 @@ def test_ack_generation_alert_toggles_acknowledged_at(admin_client, user_client,
     from app.models import GenerationFailureAlert
 
     project_id = _create_project(user_client)
-    notice = Notice(
-        notice_id='ADMIN-TEST-ALERT-ACK', source='k-startup', title='알림 확인 처리 검증용 더미 공고',
-        recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    project = db_session.get(Project, project_id)
-    project.notice_id = notice.notice_id
-    project.status = 'failed'
-    project.stage = ps.STAGE_PLAN_WRITING
-    project.progress_percent = 70
-    project.resume_count = 6
-    db_session.flush()
     alert = GenerationFailureAlert(
         project_id=project_id, stage=ps.STAGE_PLAN_WRITING,
         resume_count=5, last_error_kind=ps.ERROR_KIND_TRANSIENT, failure_reason='확인 처리 대상(테스트)',
@@ -423,36 +287,6 @@ def test_ack_generation_alert_toggles_acknowledged_at(admin_client, user_client,
     res = admin_client.put(f'/admin/generation-alerts/{alert.alert_id}/ack', json={'acknowledged': False})
     assert res.status_code == 200, res.text
     assert res.json()['acknowledged_at'] is None
-
-
-def test_get_item_score_history_groups_by_layer(admin_client, user_client, db_session):
-    project_id = _create_project(user_client)
-    notice = Notice(
-        notice_id='ADMIN-TEST-HISTORY', source='k-startup', title='점수 이력 검증용 더미 공고',
-        recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-HISTORY', retry_agents=())
-    db_session.commit()
-
-    res = admin_client.get(f'/admin/items/{project_id}/score-history')
-    assert res.status_code == 200, res.text
-    body = res.json()
-    # seed_dummy_pipeline이 verification_score_history에 doc/code 두 layer를 하나씩 남긴다
-    # (plan layer는 아직 채점 산식이 없어 만들지 않는다 — seed_dummy_pipeline.py 주석 참고).
-    assert len(body['doc']) == 1, body
-    assert len(body['code']) == 1, body
-    assert body['plan'] == []
-    assert body['doc'][0]['score'] == pytest.approx(58.50)
-    assert body['code'][0]['score'] == pytest.approx(24.00)
-
-
-def test_get_item_score_history_without_plan_returns_empty(admin_client, user_client):
-    project_id = _create_project(user_client)
-    res = admin_client.get(f'/admin/items/{project_id}/score-history')
-    assert res.status_code == 200, res.text
-    assert res.json() == {'doc': [], 'code': [], 'plan': []}
 
 
 # ============================================================================
@@ -541,183 +375,37 @@ def test_get_collection_status_empty_when_no_notices(admin_client):
 # 에이전트 테스크 — Task별 보기 (/admin/agent-tasks)
 # ============================================================================
 
-def test_get_agent_tasks_defined_counts_match_fixed_sequence(admin_client):
-    res = admin_client.get('/admin/agent-tasks')
-    assert res.status_code == 200, res.text
-    by_name = {r['agent_name']: r for r in res.json()}
-    # FIXED_TASK_SEQUENCE(app/models.py) 기준 — 조율 4개, 전략/작성 각 1개, 나머지 각 2개.
-    assert by_name['조율']['defined_task_count'] == 4
-    assert by_name['전략']['defined_task_count'] == 1
-    assert by_name['작성']['defined_task_count'] == 1
-    assert by_name['검증-1']['defined_task_count'] == 2
-    assert by_name['구현']['defined_task_count'] == 2
-    assert by_name['검증-2']['defined_task_count'] == 2
-    assert by_name['검수']['defined_task_count'] == 2
-    # 아직 아무 실행도 없는 신선한 테스트 DB에서는 전부 0건·최근 프로젝트 없음이어야 한다.
-    assert all(r['total_executions'] == 0 for r in by_name.values())
-    assert all(r['recent_project_id'] is None for r in by_name.values())
-
-
-def test_get_agent_tasks_reflects_recent_execution(admin_client, user_client, db_session):
-    project_id = _create_project(user_client, description='에이전트 테스크 검증용 프로젝트')
-    notice = Notice(
-        notice_id='ADMIN-TEST-AGENTTASK', source='k-startup', title='에이전트 테스크 검증용 공고',
-        recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-AGENTTASK', retry_agents=())
-    db_session.commit()
-
-    res = admin_client.get('/admin/agent-tasks')
-    assert res.status_code == 200, res.text
-    by_name = {r['agent_name']: r for r in res.json()}
-    # FIXED_TASK_SEQUENCE 마지막 행(coordinate_finalize)이 '조율'이라 그 Agent의 최근
-    # 실행이 이 프로젝트를 가리켜야 한다.
-    assert by_name['조율']['recent_project_id'] == project_id
-    assert by_name['조율']['recent_project_description'] == '에이전트 테스크 검증용 프로젝트'
-    assert by_name['조율']['recent_status'] == 'completed'
-    assert by_name['조율']['total_executions'] == 4  # coordinate_intake/user_decision_doc/user_decision_final/coordinate_finalize
-
-
 # ============================================================================
 # 에이전트 테스크 — 운영 지표 요약 (/admin/agent-ops-summary)
 # ============================================================================
-
-def test_get_agent_ops_summary_splits_initial_and_rerun(admin_client, user_client, db_session):
-    project_id = _create_project(user_client)
-    notice = Notice(
-        notice_id='ADMIN-TEST-OPSSUMMARY', source='k-startup', title='운영 지표 요약 검증용 공고',
-        recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    # 기본 retry_agents=('작성','구현')라 writing 1행 + implement_prototype/infographic 2행,
-    # 총 3개의 rerun 행이 FIXED_TASK_SEQUENCE 14행 위에 추가로 쌓인다(seed_dummy_pipeline.py 참고).
-    seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-OPSSUMMARY')
-    db_session.commit()
-
-    res = admin_client.get('/admin/agent-ops-summary')
-    assert res.status_code == 200, res.text
-    body = res.json()
-    assert body['total_executions'] == 17
-    assert body['initial_executions'] == 14
-    assert body['rerun_executions'] == 3
-    assert body['initial_avg_tokens'] == pytest.approx(800.0)
-    assert body['rerun_avg_tokens'] == pytest.approx(650.0)
-    assert body['total_tokens'] == 14 * 800 + 3 * 650
-
-
-def test_get_agent_ops_summary_empty_when_no_executions(admin_client):
-    res = admin_client.get('/admin/agent-ops-summary')
-    assert res.status_code == 200, res.text
-    body = res.json()
-    assert body['total_executions'] == 0
-    assert body['initial_avg_tokens'] is None
-    assert body['rerun_avg_tokens'] is None
-
 
 # ============================================================================
 # 운영 현황 (/admin/ops-summary)
 # ============================================================================
 
-def test_get_ops_summary_aggregates_scores_and_status(admin_client, user_client, db_session):
-    project_id = _create_project(user_client)
-    notice = Notice(
-        notice_id='ADMIN-TEST-OPS', source='k-startup', title='운영 현황 검증용 공고',
-        recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    # 기본 doc_score=58.50, artifact_score=24.00, threshold=80.00 -> 합계 82.50으로 통과.
-    seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-OPS')
-    db_session.commit()
-
-    res = admin_client.get('/admin/ops-summary')
-    assert res.status_code == 200, res.text
-    body = res.json()
-    assert body['status_counts'] == {'완료': 1}
-    assert body['doc_avg'] == pytest.approx(58.50)
-    assert body['doc_count'] == 1
-    assert body['total_avg'] == pytest.approx(82.50)
-    assert body['total_count'] == 1
-    assert body['pass_count'] == 1
-    assert body['pass_rate'] == pytest.approx(100.0)
-    assert body['pass_threshold'] == pytest.approx(80.0)
-    assert body['matches_with_execution'] == 1
-    assert body['rerun_matches'] == 1  # 기본 retry_agents가 비어있지 않아 재시도 행이 남는다
-    assert body['rerun_rate'] == pytest.approx(100.0)
-    buckets = {b['label']: b['count'] for b in body['score_buckets']}
-    assert buckets['80~89점'] == 1
-    assert sum(buckets.values()) == 1
-    # retry_task를 실제로 호출한 적이 없어 verification_score_history엔 layer당 1건뿐이라
-    # (1회->2회 비교가 안 됨) 편차는 항상 sample_count=0으로 나온다(admin.py get_ops_summary 주석 참고).
-    deviations = {d['layer']: d for d in body['deviations']}
-    assert deviations['doc']['sample_count'] == 0
-    assert deviations['code']['sample_count'] == 0
-    assert deviations['plan']['sample_count'] == 0
-
-
-def test_get_ops_summary_empty_when_no_projects(admin_client):
-    res = admin_client.get('/admin/ops-summary')
-    assert res.status_code == 200, res.text
-    body = res.json()
-    assert body['status_counts'] == {}
-    assert body['doc_avg'] is None
-    assert body['total_count'] == 0
-    assert body['pass_rate'] is None
-    assert body['rerun_rate'] is None
-    assert body['token_violation_rate'] is None
-
-
-def test_get_ops_summary_token_violation_rate_pinned_to_zero_while_dummy(admin_client, user_client, db_session):
-    # run_review_token_check_retry가 아직 더미(무작위) 판정이라, 실제 passed=False
-    # 건수가 있어도 위반율은 0으로 고정된다 (진짜 판정 로직이 들어오기 전까지).
-    project_id = _create_project(user_client)
-    notice = Notice(
-        notice_id='ADMIN-TEST-TOKENRATE', source='k-startup', title='토큰 위반율 검증용 공고',
-        recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    verdict = seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-TOKENRATE', retry_agents=())
-    db_session.add(ProofreadLog(
-        plan_id=verdict.plan_id, original_text='원문', corrected_text='반려된 시도안',
-        attempt_no=2, passed=False, violation_type='날짜', violation_note='테스트 위반', recovery_status='pending',
-    ))
-    db_session.commit()
-
-    res = admin_client.get('/admin/ops-summary')
-    assert res.status_code == 200, res.text
-    body = res.json()
-    assert body['token_check_count'] == 2
-    assert body['token_violation_count'] == 0
-    assert body['token_violation_rate'] == pytest.approx(0.0)
-
-
 # ============================================================================
 # 검수 회수 문단 (/admin/recovery-items)
 # ============================================================================
 
+def _worker_log(project_id, **overrides):
+    """오케스트레이터 워커가 쓰는 모양의 반려 행(project_id 기준, plan_id 없음)."""
+    base = dict(project_id=project_id, original_text='원문', corrected_text='반려안', attempt_no=2, passed=False,
+                violation_type='기능명', recovery_status='pending', model_version='tp2-test-model')
+    base.update(overrides)
+    return ProofreadLog(**base)
+
+
 def test_get_recovery_items_lists_only_failed_attempts(admin_client, user_client, db_session):
     project_id = _create_project(user_client, description='회수 문단 검증용 프로젝트')
-    notice = Notice(
-        notice_id='ADMIN-TEST-RECOVERY', source='k-startup', title='회수 문단 검증용 공고',
-        recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    verdict = seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-RECOVERY', retry_agents=())
-    db_session.add(ProofreadLog(
-        plan_id=verdict.plan_id, original_text='2026년 10월 16일 마감', corrected_text='10월 중순 마감',
-        attempt_no=2, passed=False, violation_type='날짜', violation_note='날짜 표기 훼손', recovery_status='pending',
-    ))
+    db_session.add(_worker_log(
+        project_id, original_text='2026년 10월 16일 마감', corrected_text='10월 중순 마감', violation_type='날짜',
+        violation_note='날짜 표기 훼손'))
+    db_session.add(_worker_log(project_id, passed=True, recovery_status=None))  # 통과한 시도는 목록에 안 나온다
     db_session.commit()
 
     res = admin_client.get('/admin/recovery-items')
     assert res.status_code == 200, res.text
     items = res.json()
-    # seed가 만든 passed=True 1건은 안 보이고, 방금 추가한 passed=False 1건만 보여야 한다.
     assert len(items) == 1
     item = items[0]
     assert item['project_id'] == project_id
@@ -726,23 +414,13 @@ def test_get_recovery_items_lists_only_failed_attempts(admin_client, user_client
     assert item['original'] == '2026년 10월 16일 마감'
     assert item['attempt'] == '10월 중순 마감'
     assert item['recovery_status'] == 'pending'
-    assert item['model_version'] == 'v1'  # seed_dummy_pipeline의 Verdict.model_version 기본값
+    assert item['model_version'] == 'tp2-test-model'  # [SB-246] 행의 model_version(워커가 채움)
     assert item['consent'] is True  # _login 헬퍼가 aiTrainingAgreed=True로 로그인시킴
 
 
 def test_put_recovery_item_updates_status_and_label(admin_client, user_client, db_session):
     project_id = _create_project(user_client)
-    notice = Notice(
-        notice_id='ADMIN-TEST-RECOVERY-PUT', source='k-startup', title='회수 라벨링 검증용 공고',
-        recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    verdict = seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-RECOVERY-PUT', retry_agents=())
-    failed = ProofreadLog(
-        plan_id=verdict.plan_id, original_text='원문', corrected_text='반려안',
-        attempt_no=2, passed=False, violation_type='기능명', recovery_status='pending',
-    )
+    failed = _worker_log(project_id)
     db_session.add(failed)
     db_session.commit()
     db_session.refresh(failed)
@@ -756,14 +434,10 @@ def test_put_recovery_item_updates_status_and_label(admin_client, user_client, d
 
 def test_put_recovery_item_on_passed_attempt_returns_404(admin_client, user_client, db_session):
     project_id = _create_project(user_client)
-    notice = Notice(
-        notice_id='ADMIN-TEST-RECOVERY-PASSED', source='k-startup', title='통과 시도 검증용 공고',
-        recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    verdict = seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-RECOVERY-PASSED', retry_agents=())
-    passed_log = db_session.query(ProofreadLog).filter(ProofreadLog.plan_id == verdict.plan_id).one()
+    passed_log = _worker_log(project_id, passed=True, recovery_status=None)
+    db_session.add(passed_log)
+    db_session.commit()
+    db_session.refresh(passed_log)
 
     res = admin_client.put(f'/admin/recovery-items/{passed_log.log_id}', json={'recovery_status': 'labeled'})
     assert res.status_code == 404, res.text
@@ -771,17 +445,7 @@ def test_put_recovery_item_on_passed_attempt_returns_404(admin_client, user_clie
 
 def test_put_recovery_item_invalid_status_returns_422(admin_client, user_client, db_session):
     project_id = _create_project(user_client)
-    notice = Notice(
-        notice_id='ADMIN-TEST-RECOVERY-422', source='k-startup', title='잘못된 상태값 검증용 공고',
-        recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    verdict = seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-RECOVERY-422', retry_agents=())
-    failed = ProofreadLog(
-        plan_id=verdict.plan_id, original_text='원문', corrected_text='반려안',
-        attempt_no=2, passed=False, recovery_status='pending',
-    )
+    failed = _worker_log(project_id)
     db_session.add(failed)
     db_session.commit()
     db_session.refresh(failed)
@@ -878,56 +542,6 @@ def test_get_put_faqs(admin_client, db_session):
 # 에이전트 실행 로그
 # ============================================================================
 
-def test_get_agent_executions(admin_client, user_client, db_session):
-    project_id = _create_project(user_client, description='에이전트 로그 검증용 프로젝트')
-    notice = Notice(
-        notice_id='ADMIN-TEST-002', source='k-startup', title='admin 검증용 더미 공고2', recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-002', retry_agents=())
-    db_session.commit()
-
-    res = admin_client.get('/admin/agent-executions')
-    assert res.status_code == 200, res.text
-    assert len(res.json()) >= 10, f'seed_dummy_pipeline이 남긴 실행 로그가 안 보임: {len(res.json())}건'
-    assert all('task_key' in row for row in res.json())
-
-
-def test_get_agent_executions_filters_by_status_and_reports_retryable(admin_client, user_client, db_session):
-    """[2026-09-28 신규] status='failed' 필터로 성공 실행 사이에 섞인 실패 건만 뽑을 수
-    있어야 하고, 응답의 error_kind/error_reason/retryable이 실제로 채워져야 한다.
-    retryable은 error_kind='일시'일 때만 True — 별도 컬럼이 아니라 여기서 계산된 값
-    (app/routers/admin.py list_agent_executions 참고)."""
-    import app.pipeline_stages as ps
-    from app.models import AgentExecution
-
-    project_id = _create_project(user_client, description='에이전트 실패 로그 검증용 프로젝트')
-    notice = Notice(
-        notice_id='ADMIN-TEST-003', source='k-startup', title='admin 검증용 더미 공고3', recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-003', retry_agents=())
-    db_session.add(AgentExecution(
-        project_id=project_id, agent_name='작성', task_key='writing', attempt_no=99,
-        model_used='dummy', rerun_type='rerun', token_usage=0, status='failed',
-        error_kind=ps.ERROR_KIND_TRANSIENT, error_reason='일시 오류(테스트)',
-    ))
-    db_session.commit()
-
-    res = admin_client.get('/admin/agent-executions', params={'status': 'failed'})
-    assert res.status_code == 200, res.text
-    rows = res.json()
-    assert len(rows) == 1, f'status=failed 필터가 성공 건까지 같이 돌려줌: {len(rows)}건'
-    assert rows[0]['error_kind'] == '일시'
-    assert rows[0]['error_reason'] == '일시 오류(테스트)'
-    assert rows[0]['retryable'] is True
-
-    completed = admin_client.get('/admin/agent-executions', params={'status': 'completed'}).json()
-    assert all(r['retryable'] is None for r in completed), '성공 건은 error_kind가 없으니 retryable도 None이어야 함'
-
-
 # ============================================================================
 # 권한 — 403(비관리자) / 401(정지 계정) 구분
 # ============================================================================
@@ -963,3 +577,265 @@ def test_suspended_account_gets_401(admin_client, user_client):
 
     suspended_res = user_client.get('/admin/policy')
     assert suspended_res.status_code == 401, f'정지된 계정인데 401이 아님: {suspended_res.status_code}'
+
+
+# ============================================================================
+# [SB-245] 오케스트레이터 경유 관리자 조회 — 진행 현황 · 이력보기 · 에이전트 테스크 · 운영 현황
+# ============================================================================
+from types import SimpleNamespace as NS  # noqa: E402
+
+from orch_fakes import (  # noqa: E402
+    ProjectView,
+    make_admin_agent_task,
+    make_admin_execution,
+    make_admin_run,
+    make_admin_score_history,
+    make_admin_summary,
+    make_run,
+    make_score_entry,
+    make_tokens,
+)
+
+from app.orch import OrchError  # noqa: E402
+
+
+def _items(admin_client):
+    res = admin_client.get('/admin/items')
+    assert res.status_code == 200, res.text
+    return {row['project_id']: row for row in res.json()}
+
+
+def test_items_without_run_are_before_matching(admin_client, user_client):
+    project_id = _create_project(user_client)
+
+    row = _items(admin_client)[project_id]
+
+    assert row['status_label'] == '공고 매칭 전'
+    assert row['user_name'] == '일반유저테스트'
+    assert row['match_status'] is None and row['step'] is None and row['score'] is None
+    assert row['archived'] is False and row['stalled'] is False
+
+
+def test_items_reflect_orchestrator_run(admin_client, user_client, orch):
+    project_id = _create_project(user_client)
+    orch.responses['admin_runs'] = lambda **kw: [make_admin_run(
+        project_id, step='결과물', progress='완료', agent='검수', attempt=2, doc_score=50.0, artifact_score=30.0,
+        total_score=82.5, resume_count=1, last_error_kind='일시')]
+
+    row = _items(admin_client)[project_id]
+
+    assert row['match_status'] == 'completed' and row['status_label'] == '완료' and row['stage'] == 'done'
+    assert row['step'] == '검수' and row['attempts'] == 2
+    assert row['score'] == pytest.approx(82.5)
+    assert row['generation_resume_count'] == 1 and row['generation_last_error_kind'] == '일시'
+    assert row['last_updated'].endswith('Z') or row['last_updated'].endswith('+00:00')  # 시간대가 붙는다
+
+
+def test_items_status_labels_by_progress(admin_client, user_client, orch):
+    project_id = _create_project(user_client)
+    for progress, label in [('실행', '진행중'), ('재개대기', '진행중'), ('사용자대기', '판단 대기'),
+                            ('실패', '실패'), ('완료', '완료'), ('중단', '중단')]:
+        orch.responses['admin_runs'] = lambda progress=progress, **kw: [make_admin_run(project_id, progress=progress)]
+        assert _items(admin_client)[project_id]['status_label'] == label, progress
+
+
+def test_items_failed_run_shows_failure_reason_to_admin(admin_client, user_client, orch):
+    project_id = _create_project(user_client)
+    orch.responses['admin_runs'] = lambda **kw: [make_admin_run(
+        project_id, progress='실패', resume_count=5, last_error_kind='일시', failure_reason='작성: 재개상한초과 — 시간 초과')]
+
+    row = _items(admin_client)[project_id]
+
+    assert row['status_label'] == '실패'
+    assert row['failure_reason'] == '작성: 재개상한초과 — 시간 초과'
+    assert row['generation_failure_reason'] == '작성: 재개상한초과 — 시간 초과'
+    assert row['generation_resume_count'] == 5
+
+
+def test_items_stalled_after_48_hours_without_update(admin_client, user_client, orch):
+    """시간대 있는 updatedAt과 웹의 현재 시각을 비교해도 TypeError가 나지 않고, 48시간 넘게 '진행중'이면 정체다."""
+    project_id = _create_project(user_client)
+    old = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=49)
+    fresh = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1)
+    orch.responses['admin_runs'] = lambda **kw: [make_admin_run(project_id, progress='실행', updated_at=old)]
+    assert _items(admin_client)[project_id]['stalled'] is True
+    orch.responses['admin_runs'] = lambda **kw: [make_admin_run(project_id, progress='실행', updated_at=fresh)]
+    assert _items(admin_client)[project_id]['stalled'] is False
+    orch.responses['admin_runs'] = lambda **kw: [make_admin_run(project_id, progress='완료', updated_at=old)]
+    assert _items(admin_client)[project_id]['stalled'] is False  # 끝난 것은 정체가 아니다
+
+
+def test_items_outside_admin_range_falls_back_to_run_view(admin_client, user_client, orch):
+    """마지막 활동이 12개월을 넘어 admin_runs에 없는 실행 건도 '공고 매칭 전'으로 잘못 보이지 않는다."""
+    project_id = _create_project(user_client)
+    orch.responses['project_views'] = lambda ids: [
+        ProjectView(str(i), run=make_run(step='결과물', progress='완료')) for i in ids]
+
+    row = _items(admin_client)[project_id]
+
+    assert row['status_label'] == '완료' and row['stage'] == 'done'
+    assert row['score'] is None and row['step'] is None  # 점수 · Agent는 범위 밖이라 없다
+
+
+def test_items_page_through_all_admin_runs(admin_client, user_client, orch):
+    project_id = _create_project(user_client)
+    pages = []
+
+    def admin_runs(limit, offset):
+        pages.append((limit, offset))
+        if offset == 0:
+            return [make_admin_run(900000 + i) for i in range(limit)]  # 웹에 없는 프로젝트(지워진 것 등)는 무시된다
+        return [make_admin_run(project_id, progress='완료')]
+
+    orch.responses['admin_runs'] = admin_runs
+
+    assert _items(admin_client)[project_id]['status_label'] == '완료'
+    assert pages == [(200, 0), (200, 200)]
+
+
+def test_archive_item_uses_run_existence_not_notice(admin_client, user_client, db_session, orch):
+    project_id = _create_project(user_client)
+    # 실행 건이 없으면 보관할 수 없다
+    assert admin_client.put(f'/admin/items/{project_id}/archive', json={'archived': True}).status_code == 400
+
+    orch.responses['view_project'] = lambda pid: ProjectView(str(pid), run=make_run())
+    orch.responses['admin_runs'] = lambda **kw: [make_admin_run(project_id, progress='완료', total_score=70.0)]
+    res = admin_client.put(f'/admin/items/{project_id}/archive', json={'archived': True})
+    assert res.status_code == 200, res.text
+    assert res.json()['archived'] is True and res.json()['score'] == pytest.approx(70.0)
+    assert _items(admin_client)[project_id]['archived'] is True
+    assert not [c for c in orch.calls if c[0] == 'abort_project']  # 보관만 하고 중단은 알리지 않는다
+
+    res = admin_client.put(f'/admin/items/{project_id}/archive', json={'archived': False})
+    assert res.status_code == 200 and res.json()['archived'] is False
+
+
+def test_score_history_groups_layers_from_orchestrator(admin_client, user_client, orch):
+    project_id = _create_project(user_client)
+    orch.responses['admin_score_history'] = lambda pid: make_admin_score_history(
+        doc_score=[make_score_entry(58.5), make_score_entry(55.0, after_rework=True)],
+        code_check=[make_score_entry(12.0)], feature_match=[])
+
+    res = admin_client.get(f'/admin/items/{project_id}/score-history')
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert [(e['score'], e['is_rerun']) for e in body['doc']] == [(58.5, False), (55.0, True)]
+    assert [e['score'] for e in body['code']] == [12.0]
+    assert body['plan'] == []
+
+
+def test_score_history_empty_without_run_and_404_without_project(admin_client, user_client, orch):
+    project_id = _create_project(user_client)
+    orch.responses['admin_score_history'] = OrchError('RUN_NOT_FOUND', 'x')
+    res = admin_client.get(f'/admin/items/{project_id}/score-history')
+    assert res.status_code == 200 and res.json() == {'doc': [], 'code': [], 'plan': []}
+    assert admin_client.get('/admin/items/999999/score-history').status_code == 404
+
+
+def test_agent_executions_use_web_labels_and_filters(admin_client, orch):
+    orch.responses['admin_executions'] = lambda **kw: [
+        make_admin_execution(execution_id='e1', status='성공', trigger='첫실행', tokens=make_tokens(100, 20)),
+        make_admin_execution(execution_id='e2', status='실패', trigger='재작성', error_kind='일시', error='시간 초과',
+                             tokens=make_tokens(None, None)),
+        make_admin_execution(execution_id='e3', status='실패', trigger='재수행', error_kind='운영', error='키 오류'),
+    ]
+
+    res = admin_client.get('/admin/agent-executions', params={'status': 'failed', 'project_id': 7, 'limit': 900})
+
+    assert res.status_code == 200, res.text
+    rows = {r['execution_id']: r for r in res.json()}
+    assert rows['e1']['status'] == 'completed' and rows['e1']['rerun_type'] == 'initial'
+    assert rows['e1']['token_usage'] == 120 and rows['e1']['agent_name'] == '작성' and rows['e1']['task_key'] == 'T-W1'
+    assert rows['e2']['status'] == 'failed' and rows['e2']['status_ko'] == '실패' and rows['e2']['rerun_type'] == 'rerun'
+    assert rows['e2']['trigger'] == '재작성' and rows['e2']['token_usage'] == 0
+    assert rows['e2']['retryable'] is True and rows['e3']['retryable'] is False
+    assert rows['e2']['error_reason'] == '시간 초과'
+    assert 'output_ref' not in rows['e1']
+    (_args, kwargs), = [(a, k) for n, a, k in orch.calls if n == 'admin_executions']
+    assert kwargs == {'project_id': 7, 'status': '실패', 'limit': 500}  # 웹 표기를 한글로 바꿔 넘기고 상한은 500
+
+
+def test_agent_executions_accept_korean_status_filter(admin_client, orch):
+    orch.responses['admin_executions'] = lambda **kw: []
+    admin_client.get('/admin/agent-executions', params={'status': '재개대기'})
+    (_args, kwargs), = [(a, k) for n, a, k in orch.calls if n == 'admin_executions']
+    assert kwargs['status'] == '재개대기' and kwargs['project_id'] is None
+
+
+def test_agent_tasks_come_from_orchestrator(admin_client, user_client, orch):
+    project_id = _create_project(user_client, '최근 실행 프로젝트')
+    orch.responses['admin_agent_tasks'] = lambda: [
+        make_admin_agent_task(agent='조율', task_count=13, execution_count=40, recent_project_id=str(project_id),
+                              recent_status='성공'),
+        make_admin_agent_task(agent='구현', task_count=2, execution_count=0, recent_project_id=None, recent_status=None),
+    ]
+
+    res = admin_client.get('/admin/agent-tasks')
+
+    assert res.status_code == 200, res.text
+    first, second = res.json()
+    assert first['agent_name'] == '조율' and first['defined_task_count'] == 13 and first['total_executions'] == 40
+    assert first['recent_project_id'] == project_id and first['recent_project_description'] == '최근 실행 프로젝트'
+    assert first['recent_status'] == 'completed'
+    assert second['recent_project_id'] is None and second['recent_status'] is None
+
+
+def test_agent_ops_summary_splits_initial_and_rerun(admin_client, orch):
+    orch.responses['admin_summary'] = lambda: make_admin_summary(
+        triggers=[NS(trigger='첫실행', count=10, avg_tokens=100.0), NS(trigger='재작성', count=2, avg_tokens=300.0),
+                  NS(trigger='재수행', count=2, avg_tokens=100.0)],
+        total_tokens=1800, proofread_attempts=20, proofread_rejected=5, proofread_reject_rate=25.0)
+
+    body = admin_client.get('/admin/agent-ops-summary').json()
+
+    assert body['total_executions'] == 14 and body['initial_executions'] == 10 and body['rerun_executions'] == 4
+    assert body['initial_avg_tokens'] == 100.0 and body['rerun_avg_tokens'] == 200.0  # 실행 수로 가중한 평균
+    assert body['total_tokens'] == 1800
+    assert (body['token_check_count'], body['token_violation_count'], body['token_violation_rate']) == (20, 5, 25.0)
+
+
+def test_agent_ops_summary_empty(admin_client, orch):
+    orch.responses['admin_summary'] = lambda: make_admin_summary()
+    body = admin_client.get('/admin/agent-ops-summary').json()
+    assert body['total_executions'] == 0 and body['initial_avg_tokens'] is None and body['rerun_avg_tokens'] is None
+    assert body['token_violation_rate'] is None
+
+
+def test_ops_summary_maps_orchestrator_summary_and_counts_unmatched_projects(admin_client, user_client, orch):
+    matched = _create_project(user_client, '매칭된 프로젝트')
+    _create_project(user_client, '매칭 전 프로젝트')
+    orch.responses['admin_runs'] = lambda **kw: [make_admin_run(matched, progress='사용자대기')]
+    orch.responses['admin_summary'] = lambda: make_admin_summary(
+        doc_avg=55.5, doc_count=3, total_avg=80.0, total_count=2, pass_count=1, pass_rate=50.0, pass_threshold=80.0,
+        reworked_runs=1, runs_with_executions=3, rework_rate=33.3,
+        score_buckets=[NS(label='80~89점', count=1), NS(label='60점 미만', count=1)],
+        layer_changes=[NS(layer='docScore', first_avg=50.0, after_avg=58.0, delta=8.0, count=2),
+                       NS(layer='codeCheck', first_avg=None, after_avg=None, delta=None, count=0),
+                       NS(layer='featureMatch', first_avg=10.0, after_avg=12.0, delta=2.0, count=1)],
+        proofread_attempts=8, proofread_rejected=2, proofread_reject_rate=25.0)
+
+    body = admin_client.get('/admin/ops-summary').json()
+
+    assert body['status_counts'] == {'판단 대기': 1, '공고 매칭 전': 1}
+    assert (body['doc_avg'], body['doc_count'], body['total_avg'], body['total_count']) == (55.5, 3, 80.0, 2)
+    assert (body['pass_count'], body['pass_rate'], body['pass_threshold']) == (1, 50.0, 80.0)
+    assert (body['rerun_matches'], body['matches_with_execution'], body['rerun_rate']) == (1, 3, 33.3)
+    assert [(b['label'], b['count']) for b in body['score_buckets']] == [('80~89점', 1), ('60점 미만', 1)]
+    layers = {d['layer']: d for d in body['deviations']}
+    assert set(layers) == {'doc', 'code', 'plan'}
+    assert (layers['doc']['round1_avg'], layers['doc']['round2_avg'], layers['doc']['delta_avg']) == (50.0, 58.0, 8.0)
+    assert layers['code']['sample_count'] == 0 and layers['plan']['sample_count'] == 1
+    assert (body['token_check_count'], body['token_violation_count'], body['token_violation_rate']) == (8, 2, 25.0)
+
+
+def test_ops_summary_empty_when_no_projects(admin_client, orch):
+    orch.responses['admin_summary'] = lambda: make_admin_summary()
+    body = admin_client.get('/admin/ops-summary').json()
+    assert body['status_counts'] == {} and body['doc_avg'] is None and body['total_count'] == 0
+
+
+def test_admin_orchestrator_endpoints_require_admin(user_client):
+    for path in ['/admin/items', '/admin/agent-executions', '/admin/agent-tasks', '/admin/agent-ops-summary',
+                 '/admin/ops-summary', '/admin/items/1/score-history']:
+        assert user_client.get(path).status_code == 403, path

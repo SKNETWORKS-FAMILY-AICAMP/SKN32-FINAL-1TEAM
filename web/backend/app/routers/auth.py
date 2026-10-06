@@ -21,22 +21,11 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import (
-    AgentExecution,
-    Artifact,
-    ArtifactScoreReason,
-    BusinessPlan,
     Company,
-    EligibilityCheck,
     Faq,
-    FormatFinding,
     GenerationFailureAlert,
-    MatchCandidate,
-    MatchScoreReason,
     NoticeAlert,
     Notification,
-    PlanCanonicalData,
-    PlanScoreReason,
-    PlanSection,
     PricingItem,
     Project,
     ProjectAttachment,
@@ -44,14 +33,13 @@ from app.models import (
     ProjectPartner,
     ProjectPlanInput,
     ProjectScheduleItem,
-    ProofreadLog,
     RefreshToken,
     TeamMember,
     User,
     UserProfile,
-    Verdict,
-    VerificationScoreHistory,
 )
+from app.orch import OrchGateway, account_id_of, require_gateway
+from app.proofread_retention import clear_project_logs, delete_untrained_logs, user_project_ids
 from app.routers.profile import compute_has_profile
 from app.schemas import (
     AuthMeOut,
@@ -167,6 +155,8 @@ def update_consent(
     """신규 가입 직후 동의 화면 제출, 또는 나중에 설정 화면에서 동의값을 바꿀 때 쓴다.
     전부 선택 필드라 일부만 보내도 된다(None은 그대로 둠).
 
+    [SB-246] 학습 동의를 false로 바꾸면 그 계정의 반영 전 검수 회수 문단을 지운다(trained 행은 남김).
+
     [2026-09-27 확장, 2026-09-29 프론트 요청사항 4차 C-1] 필수 동의(이용약관/개인정보/
     만 16세 이상)도 이제 이 엔드포인트로 기록한다 — true면 지금 시각을 저장하고, false면
     철회로 보고 NULL로 되돌린다(공식 기능정의서 v1.9 E-AUTH-CONSENT: "철회 이후 수집을
@@ -174,6 +164,10 @@ def update_consent(
     새 실행 시작(POST /projects)은 셋 다 값이 있어야 허용된다."""
     if body.ai_training_agreed is not None:
         current_user.ai_training_agreed = body.ai_training_agreed
+        if not body.ai_training_agreed:
+            # [SB-246] 학습 동의 철회 — 아직 학습에 반영되지 않은 검수 회수 문단(pending · labeled · excluded)을 지운다.
+            # 이미 학습 데이터로 내보낸(trained) 행은 되돌릴 수 없어 남는다(동의서 문구, 웹연동_변경사항 11.7).
+            delete_untrained_logs(db, user_project_ids(db, current_user.user_id))
     if body.notify_agreed is not None:
         current_user.notify_enabled = body.notify_agreed
     if body.terms_agreed is not None:
@@ -190,42 +184,20 @@ def update_consent(
 def _delete_account_cascade(db: Session, user: User) -> None:
     """[2026-09-28 신규] 계정 삭제(탈퇴) — 프로젝트 기획서 v1.10 6-7절: "계정 식별자와
     마이페이지 프로필, 모든 실행 건을 삭제한다. 진행 중인 실행이 있으면 중단한 뒤
-    삭제한다." 진행 중인 실행을 별도로 'halted'로 바꾸는 중간 단계는 두지 않는다 —
-    이 함수가 끝나면 그 실행의 project 행 자체가 사라지므로, 더미 생성 루프
-    (_simulate_generation)가 다음 루프에서 db.get(Project, ...)가 None을 보고
-    조용히 멈춘다(app/routers/projects.py 참고) — 실질적으로 "중단 후 삭제"와 같다.
+    삭제한다." 오케스트레이터 쪽 실행 건 · 산출물은 호출하는 쪽이 먼저 지운다(_delete_orchestrator_data) —
+    여기서는 웹 행만 지운다.
 
-    app_schema.sql(MySQL)에는 이미 이 테이블들 대부분에 ON DELETE CASCADE가 걸려있지만,
-    (1) SQLite 테스트 스키마(models.py에서 직접 생성)는 ForeignKey에 ondelete를 안 줘서
-    cascade가 전혀 없고, (2) 그래서 MySQL/SQLite 어느 쪽에서 돌든 동일하게 동작하도록
-    delete_project()와 같은 방식(자식부터 명시적으로 지우는 순서)을 따른다.
-
-    [2026-09-28, match_results 테이블 통합] project(1):match(1)로 합쳐지면서 match_ids
-    조회 단계 자체가 없어졌다 — project_ids가 곧 이전의 match_ids 역할을 겸한다."""
+    app_schema.sql(MySQL)에는 이미 이 테이블들 대부분에 ON DELETE CASCADE가 걸려있지만, SQLite 테스트 스키마
+    (models.py에서 직접 생성)는 cascade가 없어서 MySQL/SQLite 어느 쪽에서 돌든 동일하게 동작하도록 자식부터
+    명시적으로 지우는 순서를 따른다."""
     company_ids = [c.company_id for c in db.query(Company.company_id).filter(Company.user_id == user.user_id)]
     project_ids = [p.project_id for p in db.query(Project.project_id).filter(Project.company_id.in_(company_ids))] if company_ids else []
-    plan_ids = [p.plan_id for p in db.query(BusinessPlan.plan_id).filter(BusinessPlan.project_id.in_(project_ids))] if project_ids else []
 
-    if plan_ids:
-        artifact_ids = [a.artifact_id for a in db.query(Artifact.artifact_id).filter(Artifact.plan_id.in_(plan_ids))]
-        if artifact_ids:
-            db.query(ArtifactScoreReason).filter(ArtifactScoreReason.artifact_id.in_(artifact_ids)).delete(synchronize_session=False)
-        db.query(Verdict).filter(Verdict.plan_id.in_(plan_ids)).delete(synchronize_session=False)
-        db.query(Artifact).filter(Artifact.plan_id.in_(plan_ids)).delete(synchronize_session=False)
-        db.query(ProofreadLog).filter(ProofreadLog.plan_id.in_(plan_ids)).delete(synchronize_session=False)
-        db.query(FormatFinding).filter(FormatFinding.plan_id.in_(plan_ids)).delete(synchronize_session=False)
-        db.query(PlanScoreReason).filter(PlanScoreReason.plan_id.in_(plan_ids)).delete(synchronize_session=False)
-        db.query(PlanCanonicalData).filter(PlanCanonicalData.plan_id.in_(plan_ids)).delete(synchronize_session=False)
-        db.query(VerificationScoreHistory).filter(VerificationScoreHistory.plan_id.in_(plan_ids)).delete(synchronize_session=False)
-        db.query(PlanSection).filter(PlanSection.plan_id.in_(plan_ids)).delete(synchronize_session=False)
+    # [SB-246] 검수 회수 문단: 학습 반영 전 행은 지우고 trained 행은 연결만 끊는다(프로젝트 행을 지우기 전에)
+    clear_project_logs(db, project_ids)
     if project_ids:
-        db.query(BusinessPlan).filter(BusinessPlan.project_id.in_(project_ids)).delete(synchronize_session=False)
         db.query(Notification).filter(Notification.project_id.in_(project_ids)).delete(synchronize_session=False)
         db.query(GenerationFailureAlert).filter(GenerationFailureAlert.project_id.in_(project_ids)).delete(synchronize_session=False)
-        db.query(MatchScoreReason).filter(MatchScoreReason.project_id.in_(project_ids)).delete(synchronize_session=False)
-        db.query(EligibilityCheck).filter(EligibilityCheck.project_id.in_(project_ids)).delete(synchronize_session=False)
-        db.query(AgentExecution).filter(AgentExecution.project_id.in_(project_ids)).delete(synchronize_session=False)
-        db.query(MatchCandidate).filter(MatchCandidate.project_id.in_(project_ids)).delete(synchronize_session=False)
         db.query(NoticeAlert).filter(NoticeAlert.project_id.in_(project_ids)).delete(synchronize_session=False)
         db.query(ProjectAttachment).filter(ProjectAttachment.project_id.in_(project_ids)).delete(synchronize_session=False)
         db.query(TeamMember).filter(TeamMember.project_id.in_(project_ids)).delete(synchronize_session=False)
@@ -244,11 +216,28 @@ def _delete_account_cascade(db: Session, user: User) -> None:
     db.commit()
 
 
+def _delete_orchestrator_data(db: Session, gateway: OrchGateway, user: User) -> None:
+    """[SB-244] 웹 행을 지우기 전에 오케스트레이터 쪽 그 계정 데이터를 모두 지운다(명세 11.2).
+
+    프로젝트마다 `delete_project_data`(진행 중이면 먼저 중단, 산출물 · 입력 사본 삭제) → 모두 끝나면
+    `delete_account_data`(남은 실행 건 · 시작 요청을 식별자 없는 통계 줄로 옮기고 지움). 워커가 단계를 도는 중이면
+    BUSY(409)로 멈추고 웹 행은 하나도 지우지 않는다 — 다시 호출하면 남은 것부터 이어서 한다(여러 번 불러도 안전).
+    삭제 중에는 이 계정의 시작 요청(request_start)을 넣지 않는다."""
+    project_ids = [
+        p.project_id for p in db.query(Project.project_id).join(Company, Project.company_id == Company.company_id)
+        .filter(Company.user_id == user.user_id)
+    ]
+    for project_id in project_ids:
+        gateway.delete_project_data(project_id)
+    gateway.delete_account_data(account_id_of(user.user_id))
+
+
 @router.delete('/me', status_code=204)
 def delete_account(
     response: Response,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    gateway: OrchGateway = Depends(require_gateway),
 ):
     """계정 삭제(탈퇴) — 프로젝트 기획서 v1.10 6-7절. 계정 식별자, 마이페이지 프로필,
     회사 프로필, 프로젝트와 그 아래 매칭·계획서·산출물·검증 이력까지 전부 지운다.
@@ -257,7 +246,10 @@ def delete_account(
     refresh_tokens 행 자체가 _delete_account_cascade에서 통째로 삭제되므로
     revoke_refresh_token을 따로 부를 필요가 없다(행이 없으면 재발급도 당연히 안 됨).
     쿠키는 주입받은 response에 직접 지워야 한다 — 새 Response 객체를 만들어 반환하면
-    FastAPI가 그 객체를 쓰지 않고 이 쿠키 삭제가 사라진다(logout()과 같은 패턴)."""
+    FastAPI가 그 객체를 쓰지 않고 이 쿠키 삭제가 사라진다(logout()과 같은 패턴).
+
+    [SB-244] 오케스트레이터 데이터를 먼저 지운다(_delete_orchestrator_data). BUSY면 409로 멈추고 웹 행은 그대로다."""
+    _delete_orchestrator_data(db, gateway, current_user)
     _delete_account_cascade(db, current_user)
     clear_auth_cookies(response)
 

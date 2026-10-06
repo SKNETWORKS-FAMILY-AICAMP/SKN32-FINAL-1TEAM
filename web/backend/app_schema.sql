@@ -13,25 +13,16 @@
 -- embedding_updated_at/embedding_fail_reason 컬럼은 실제 notices 테이블에는 아직 없다 —
 -- 이 앱에서 추가하지 않았으니, 임베딩 상태 추적이 필요해지면 수집 파이프라인 쪽에서 별도 반영이 필요하다.
 --
--- [2026-09-17 인덱싱 개정 — 읽기 위주 구조 반영]
--- 이 서비스는 쓰기(등록/갱신)보다 읽기(목록·대시보드·재시도 조회)가 훨씬 잦다. app/routers/*.py
--- 전체를 grep해서 실제 order_by()/filter() 패턴을 확인하고, 그 패턴을 못 커버하던 컬럼에만
--- 인덱스를 추가/교체했다(무작정 다 걸지 않음 — 쓰기 비용과 트레이드오프). 상세 근거는 각 테이블
--- 정의 옆 주석 참고. 요약: projects(company_id+created_at 복합, created_at 단일 추가),
--- plan_sections(plan_id+tag 복합), agent_executions(project_id+task_key+attempt_no 복합),
--- faqs(is_visible+created_at 복합 신규), projects(status 단일 신규 — [2026-09-28] match_results
--- 통합 이전에는 match_results 소유였음). project_id/plan_id/artifact_id 등 "FK로 필터 + PK로
--- 정렬"류는 InnoDB가 보조 인덱스 리프에 PK를 항상 포함하는 특성상 기존 단일 컬럼 인덱스만으로
--- 이미 커버돼서 손대지 않았다.
---
--- [2026-09-28, match_results 테이블 통합] project(1):match_results(N)로 나뉘어 있던 예전
--- 설계를 projects(1):1로 합쳤다 — match_results 테이블 자체를 삭제하고 그 컬럼을 전부
--- projects로 옮겼다(위 projects CREATE TABLE 정의 참고). match_score_reasons/
--- eligibility_checks/business_plans/agent_executions의 match_id 컬럼은 project_id로 이름이
--- 바뀌어 projects(project_id)를 직접 가리키고, generation_failure_alerts/notifications는
--- project_id와 match_id를 둘 다 갖고 있던 것을 project_id 하나로 정리했다. 공유 AWS MySQL에
--- 이미 이 스키마가 올라간 상태라면 이 파일을 그대로 다시 적용하지 말고
--- catch_up_local_schema.sql의 해당 마이그레이션 섹션을 검토 후 실행할 것.
+-- [2026-10-06, SB-247 — 오케스트레이터 전환] 실행 건(진행 상태 · 계획서 · 산출물 · 점수 · 실행 기록)은 오케스트레이터가
+-- orch_ 테이블(agent-orchestration/sql/orchestrator_schema.sql)에 갖는다. 웹은 사전 정보 입력 · 알림 · 관리자 설정 ·
+-- 사용자 데이터만 이 파일의 테이블에 둔다. 그래서 예전 더미 파이프라인 테이블(business_plans, plan_sections,
+-- plan_canonical_data, plan_score_reasons, artifacts, artifact_score_reasons, verdicts, match_candidates,
+-- match_score_reasons, eligibility_checks, format_findings, agent_executions, verification_score_history)과
+-- projects의 진행 컬럼(status, stage, progress_percent, notice_id, failure_reason, resume_count, retry_count,
+-- next_retry_at, resume_started_at, last_error_kind, worker_claimed_at, is_regenerating, regenerate_fail_streak),
+-- verification_policies.regenerate_cap, generation_failure_alerts.regenerate_exhausted는 없다.
+-- 이미 예전 스키마가 올라간 DB는 이 파일을 다시 적용해도 바뀌지 않는다(CREATE TABLE IF NOT EXISTS) —
+-- migrations/ 의 번호 순서대로 SQL을 적용한다(001 proofread_logs 전환, 002 더미 파이프라인 삭제).
 
 -- ---------------------------------------------------------------------------
 -- 사용자
@@ -115,9 +106,9 @@ CREATE TABLE IF NOT EXISTS companies (
 -- 예전 설계를 project(1):1로 합쳤다 — 형제 저장소 agent-orchestration의 Run 개념(아이디어·
 -- 회사정보·공고선택·진행상태를 전부 담는 자기완결 단위 하나)과 우리 SB-138 "중단 후 새로
 -- 시작"(기존 프로젝트를 archive하고 새 프로젝트를 만드는 방식) 패턴을 보면 project 한 행이
--- 곧 실행 시도 하나이기 때문이다. 아래 notice_id부터 resume_started_at까지는 원래
--- match_results 테이블 소유였던 컬럼을 그대로 옮겨온 것(이름/타입/컬럼 코멘트 불변,
--- match_id 컬럼 자체만 사라짐 — project_id가 그 역할을 겸한다).
+-- 곧 실행 시도 하나이기 때문이다. [SB-247] 진행 상태(상태 · 단계 · 진행률 · 재개 · 실패)는 projects가 아니라 오케스트레이터(orch_ 테이블)가
+-- 갖고 읽기는 view_project · project_views 함수로 한다 — 그래서 그 컬럼들과 notice_id(공고 연결)는 없다.
+-- fit_score · reason은 오케스트레이터가 쓰지 않아 비어 있다(선택 공고 카드의 fitScore · matchReason으로 대체 가능, 확인 전이라 남김).
 CREATE TABLE IF NOT EXISTS projects (
     project_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '프로젝트(지원 아이템/사업 아이디어) 고유 식별자',
     company_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES companies(company_id)',
@@ -131,58 +122,8 @@ CREATE TABLE IF NOT EXISTS projects (
     output_summary TEXT NULL COMMENT '산출물(협약기간 내 목표 — 형태·수량)',
     tech_field VARCHAR(100) NULL COMMENT '전문기술분야',
     regional_priority_area VARCHAR(100) NULL COMMENT '지방우대 지역 해당여부(해당 시 지역명, 비해당이면 NULL)',
-    notice_id VARCHAR(320) NULL COMMENT 'REFERENCES notices(notice_id). NULL이면 아직 공고를 선택하기 전(=아직 매칭 전)',
     fit_score DECIMAL(5,2) NULL COMMENT '매칭 적합도 점수',
     reason TEXT NULL COMMENT '매칭 사유/근거 서술',
-    -- [2026-09-23 개정] 서비스 내부 상태 6종을 실제 MySQL ENUM으로 강제한다(app/models.py
-    -- _GenerationStatus, app/pipeline_stages.py GENERATION_STATUSES와 정확히 동일해야 함) —
-    -- agent_executions.status와 같은 값 집합을 공유한다. user_waiting/halted는 아직 실제로
-    -- 쓰는 코드가 없지만(향후 대비) 미리 넣어둔다.
-    -- [2026-09-28 주의] match_results 시절엔 DEFAULT 'in_progress'가 있었다(그 컬럼이 속한
-    -- 행 자체가 "매칭이 실제로 생겼을 때"만 만들어졌으므로 항상 안전했다) — 이 컬럼을
-    -- projects로 그대로 옮기면서 그 DEFAULT까지 옮기면, 아직 매칭 전인 방금 만든 project
-    -- 행도 INSERT 시점에 status='in_progress'가 채워져 버려서 계정당 동시 실행 1건 제한이
-    -- 막 생성된 모든 프로젝트를 "진행 중"으로 오판하는 회귀가 생긴다(app/models.py Project
-    -- 주석 참고, 실제로 이 리팩터 중 테스트로 발견) — 그래서 DEFAULT 없이 NULL 허용만 둔다.
-    status ENUM('in_progress','waiting_resume','user_waiting','failed','completed','halted') NULL COMMENT '서비스 내부 상태(실행/재개대기/사용자대기/실패/완료/중단). NULL이면 아직 매칭 전',
-    stage VARCHAR(30) NULL COMMENT '이어하기용 세부 진행 단계(app/pipeline_stages.py의 STAGE_* 상수 중 하나). NULL이면 아직 매칭만 되고 계획서 작성 전(또는 매칭 전)',
-    progress_percent TINYINT UNSIGNED NULL COMMENT 'stage 안에서도 오래 걸리는 구간(계획서 작성/프로토타입 제작)의 진행률 0~100. 해당 없는 stage에서는 NULL',
-    -- [2026-09-22 신규] 생성 작업 클레임 시각 — Redis 등 별도 브로커 없이 이 컬럼 하나로
-    -- "지금 이 stage를 어떤 워커가 처리 중인지"를 표현한다(app/routers/projects.py
-    -- _try_claim_and_run 참고). NULL이거나 GENERATION_CLAIM_STALE_SECONDS보다 오래됐으면
-    -- "아무도 처리 안 함"으로 보고 새로 클레임할 수 있다 — 서버 재시작·다중 워커 대응.
-    worker_claimed_at DATETIME(6) NULL COMMENT '생성 작업(plan_writing/prototype_building)을 처리 중인 워커의 마지막 클레임/하트비트 시각',
-    -- [2026-09-23 개정] status='failed'는 이제 자동 재시도(최대 5회, 백오프) 소진 뒤에만
-    -- 도달한다 — status='waiting_resume'이 그 사이 자동 대기 상태를 표현한다.
-    failure_reason TEXT NULL COMMENT '마지막 실패 사유(에러 메시지) — status=waiting_resume/failed일 때 값 있음',
-    -- [2026-09-27 신규, SB-134] 마지막 실패 원인 분류 — 일시 오류만 재개하고 입력·운영은
-    -- 재개 없이 바로 실패 확정한다(R-11). app/pipeline_stages.py classify_error_kind 참고.
-    last_error_kind ENUM('일시','입력','운영') NULL COMMENT '마지막 실패 원인 분류(NULL=실패 이력 없음/초기화됨)',
-    -- [2026-09-23 신규, 2026-09-26 정정, 2026-09-27 개명] 실패 후 자동 "재개" 횟수
-    -- (Run.resumeCount) — 공식 기능정의서 v1.9(R-11) 기준 15분→30→60→120→240분으로
-    -- 2배씩 늘려가며 최대 5번까지 자동 재개하고, 그래도 안 되면 status='failed'로
-    -- 확정한다(관리자 알림 대상, generation_failure_alerts 참고). 사용자가 수동으로
-    -- "다시 이어가기"를 누르면 1로 리셋된다. 예전 컬럼명 retry_count는 Run.retryCount
-    -- (호출 재시도)와 개념이 달라 resume_count로 바로잡았다.
-    resume_count TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '자동 재개 소진 횟수(최대 5)',
-    -- [2026-09-27 신규] 개별 Agent 호출 실패에 대한 즉시 재시도 횟수(Run.retryCount) —
-    -- 지금은 파이프라인이 100% 더미라 항상 0. 실제 Agent 호출 계층이 생기면 채운다.
-    retry_count TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '개별 호출 즉시 재시도 횟수(현재 미사용, 항상 0)',
-    -- [2026-09-23 신규] 다음 자동 재개 예정 시각(status='waiting_resume'일 때만 값 있음) —
-    -- 복구 루프가 이 시각 이전엔 재개하지 않는다(백오프 간격 준수).
-    next_retry_at DATETIME(6) NULL COMMENT '다음 자동 재개 예정 시각(waiting_resume 전용)',
-    -- [2026-09-26 신규] 이번 실패 스트릭의 첫 실패 시각 — "재개 총 대기 상한"(12시간,
-    -- 재개 대기+실행 시간 합산)을 재는 기준점. 성공하거나 수동 재시작 시 초기화된다.
-    resume_started_at DATETIME(6) NULL COMMENT '이번 실패 스트릭 시작 시각(재개 총 대기 상한 12시간 계산용)',
-    -- [2026-09-29 신규, 프론트 요청사항 3차 B-1/B-2] 완전 실패(status='failed')한 stage를
-    -- 사용자가 "처음부터 다시 생성"으로 재시작한 시도 중인지 — 켜져 있는 동안 남는
-    -- agent_executions 행은 rerun_type='regenerate'로 남아 task별 재작성(rerun) 예산과
-    -- 섞이지 않는다. stage가 완전히 성공하면 False로 되돌아간다.
-    is_regenerating BOOLEAN NOT NULL DEFAULT FALSE COMMENT '"처음부터 다시 생성" 재시도 진행 중 여부',
-    -- 같은 stage에서 "처음부터 다시 생성"이 연속으로 최종 실패(status=failed 확정)한 횟수 —
-    -- 단계가 온전히 성공해야만 0으로 돌아간다. verification_policies.regenerate_cap에
-    -- 닿으면 plan/start·prototype/start를 409로 막는다.
-    regenerate_fail_streak TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '"처음부터 다시 생성" 연속 실패 횟수(성공하면 0)',
     archived_at DATETIME(6) NULL COMMENT '사용자가 프로젝트를 삭제해 보관 처리된 일시(NULL 가능)',
     archived_by VARCHAR(20) NULL COMMENT "보관 처리 주체('user' 고정, NULL 가능)",
     -- [2026-09-17 인덱싱 개정] 읽기 위주 접근 패턴 반영. projects.py list_projects()가
@@ -193,16 +134,7 @@ CREATE TABLE IF NOT EXISTS projects (
     -- company_id 필터 없이 전체를 created_at으로만 정렬하므로 별도 단일 컬럼 인덱스가 필요.
     KEY ix_projects_company_created (company_id, created_at),
     KEY ix_projects_created (created_at),
-    KEY ix_projects_notice (notice_id),
-    -- [2026-09-17 신규 인덱스, match_results에서 이관] "진행 중(in_progress) 매칭이 있는지"
-    -- 동시성 체크(projects.py)가 status로 필터한다.
-    KEY ix_projects_status (status),
-    -- [2026-09-22 신규 인덱스, match_results에서 이관] _recover_orphaned_generations_once가
-    -- 10초(기본)마다 영원히 "WHERE stage=X AND (worker_claimed_at IS NULL OR 오래됨)"을
-    -- 도는데, 이 두 컬럼에 인덱스가 없으면 매번 테이블 풀스캔이 된다.
-    KEY ix_projects_stage_claim (stage, worker_claimed_at),
-    FOREIGN KEY (company_id) REFERENCES companies(company_id) ON DELETE CASCADE,
-    FOREIGN KEY (notice_id) REFERENCES notices(notice_id) ON DELETE RESTRICT
+    FOREIGN KEY (company_id) REFERENCES companies(company_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS project_attachments (
@@ -342,36 +274,6 @@ CREATE TABLE IF NOT EXISTS notice_alerts (
     FOREIGN KEY (notice_id) REFERENCES notices(notice_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
-CREATE TABLE IF NOT EXISTS match_candidates (
-    candidate_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '매칭 후보 고유 식별자',
-    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
-    notice_id VARCHAR(320) NOT NULL COMMENT 'REFERENCES notices(notice_id)',
-    batch SMALLINT NOT NULL COMMENT '1=첫 매칭, 2=재실행(프로젝트당 1회)',
-    bonus_score DECIMAL(4,1) NOT NULL COMMENT '공고별 가산점(만점 기준 없음)',
-    reason TEXT NOT NULL COMMENT '매칭 근거 서술',
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '후보 생성 일시',
-    KEY ix_match_candidates_project (project_id),
-    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE,
-    FOREIGN KEY (notice_id) REFERENCES notices(notice_id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
-
--- [2026-09-17 신규] 멘토링 피드백 "매칭 근거는 정성적 설명보다 '+2점' 같은 정량 점수로
--- 표시하는 게 더 설득력 있음" 반영. projects.reason(자유 텍스트 하나)만으로는 항목별
--- 점수를 못 보여주니, plan_score_reasons/artifact_score_reasons와 똑같은 모양(item_code/
--- score/max_score/evidence_locator)으로 매칭 단계에도 항목별 채점 근거 테이블을 둔다.
--- [2026-09-28, match_results 테이블 통합] match_id 대신 projects(project_id)를 직접 참조한다.
-CREATE TABLE IF NOT EXISTS match_score_reasons (
-    reason_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '사유 고유 식별자',
-    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
-    reason_text TEXT NOT NULL COMMENT '매칭 적합도 판단 사유',
-    item_code VARCHAR(50) NULL COMMENT '채점 항목 코드',
-    score DECIMAL(5,2) NULL COMMENT '해당 항목 획득 점수(예: +2.00)',
-    max_score DECIMAL(5,2) NULL COMMENT '해당 항목 배점',
-    evidence_locator VARCHAR(500) NULL COMMENT '근거 위치(공고문 내 위치 등)',
-    KEY ix_match_score_reasons_project (project_id),
-    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
-
 -- [2026-09-23 신규, 2026-09-29 주석 정정] 생성 작업이 projects.status='failed'로 확정될
 -- 때마다(자동 재시도 최대 5회·백오프 소진 또는 입력·운영 영구 오류로 즉시 확정, 둘 다) 한
 -- 행씩 쌓는 관리자 알림 로그. projects는 최신 상태만 담아서 "몇 번이나 실패했었는지"
@@ -391,10 +293,6 @@ CREATE TABLE IF NOT EXISTS generation_failure_alerts (
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     -- 관리자가 확인 처리한 시각 — NULL이면 미확인. 재시도 자체를 막지는 않는다.
     acknowledged_at DATETIME(6) NULL COMMENT '관리자 확인 처리 시각(NULL이면 미확인)',
-    -- [2026-09-29 신규, 프론트 요청사항 3차 B-4] "처음부터 다시 생성" 연속 실패 상한까지
-    -- 도달한 뒤 확정된 실패인지 — 사용자 화면이 이미 재시도 버튼을 거둔 상태라 관리자가
-    -- 먼저 봐야 하는 건이다.
-    regenerate_exhausted BOOLEAN NOT NULL DEFAULT FALSE COMMENT '"처음부터 다시 생성" 연속 실패 상한 도달 후 확정된 실패인지',
     KEY ix_generation_failure_alerts_project (project_id),
     KEY ix_generation_failure_alerts_unacked (acknowledged_at),
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
@@ -418,157 +316,27 @@ CREATE TABLE IF NOT EXISTS notifications (
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
--- [2026-09-28, match_results 테이블 통합] match_id 대신 projects(project_id)를 직접 참조한다.
-CREATE TABLE IF NOT EXISTS eligibility_checks (
-    check_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '자격요건 게이트 결과 고유 식별자',
-    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
-    passed BOOLEAN NOT NULL COMMENT '자격요건 통과 여부',
-    failed_conditions JSON NULL COMMENT '불통과 사유 목록(문자열 배열) — undecidable=TRUE면 의미 없음',
-    missing_inputs JSON NULL COMMENT '판정에 필요한데 빠진 입력값 목록(되묻기 대상)',
-    undecidable BOOLEAN NOT NULL DEFAULT FALSE COMMENT '공고문 정형화 실패 등으로 판정 자체가 불가능한 경우(E-G1-UNPARSED) — TRUE면 passed 값은 무시',
-    checked_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '검증 일시',
-    KEY ix_eligibility_checks_project (project_id),
-    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
-
--- ---------------------------------------------------------------------------
--- 사업계획서(문서층) 및 산출물(산출물층), 최종 판정
--- ---------------------------------------------------------------------------
--- [2026-09-28, match_results 테이블 통합] match_id 대신 projects(project_id)를 직접 참조한다.
-CREATE TABLE IF NOT EXISTS business_plans (
-    plan_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '사업계획서 고유 식별자',
-    project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
-    doc_score DECIMAL(5,2) NULL COMMENT '문서 적합도 점수(작성 Agent 산출)',
-    threshold DECIMAL(5,2) NULL COMMENT '통과 기준 점수',
-    version_history JSON NULL COMMENT '재작성 전후 버전 스냅샷 이력(점수가 낮으면 되돌리고 이전 상태를 여기 보존)',
-    KEY ix_business_plans_project (project_id),
-    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
-
-CREATE TABLE IF NOT EXISTS plan_sections (
-    section_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '계획서 섹션 고유 식별자',
-    plan_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES business_plans(plan_id)',
-    tag ENUM('1-1','2-1','3-1','4-1','G-01','G-02','G-03','G-04') NOT NULL COMMENT '양식 항목 코드 — 예비/초기(1-1 문제인식/2-1 실현가능성/3-1 성장전략/4-1 팀 구성) + 일반(G-01~G-04, PartⅡ 4섹션). app/pipeline_stages.py PLAN_SECTION_TAGS',
-    title VARCHAR(255) NOT NULL COMMENT '섹션 제목',
-    body LONGTEXT NULL COMMENT '섹션 본문',
-    -- [2026-09-17 인덱싱 개정] projects.py의 초안 저장이 "이 plan_id 안에 같은 tag(PSST 중 하나)
-    -- 섹션이 이미 있는지"를 매번 확인한다(plan_id, tag 동시 필터) — 복합 인덱스로 교체.
-    -- 선두 컬럼이 plan_id라 plan_id 단독 조회도 그대로 커버.
-    KEY ix_plan_sections_plan_tag (plan_id, tag),
-    FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
-
--- [2026-09-22 신규] Strategy Agent(구글 드라이브 "전략/작성/검증1" 시트 F01~F15)의 중간
--- 산출물("canonical data") 저장소 — market_analysis/development_plan/team_capability 등
--- 여러 섹션이 재사용하는 구조화된 데이터. plan_sections(완성된 최종 문단)와 다른 층으로,
--- 이게 없으면 최종 텍스트만 복붙해 재사용을 흉내낼 수밖에 없었다(models.py PlanCanonicalData
--- 참고). data_json 내부 구조는 여기서 정하지 않는다 — Strategy Agent 담당자 몫.
-CREATE TABLE IF NOT EXISTS plan_canonical_data (
-    data_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '캐노니컬 데이터 고유 식별자',
-    plan_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES business_plans(plan_id)',
-    data_key VARCHAR(50) NOT NULL COMMENT '블록 이름: item_spec/market_analysis/competitor_analysis/team_capability/development_goal/development_method/development_plan/production_plan/marketing_strategy/business_model/growth_strategy/resource_plan/budget/schedule/web_data 등(시트 그대로)',
-    data_json JSON NOT NULL COMMENT 'F01~F15 각 함수의 실제 output — 내부 구조는 Strategy Agent 담당자가 정함',
-    source_function VARCHAR(10) NULL COMMENT '이 데이터를 만든 F-함수 번호(예: F03) — 재시도 대상 식별·디버깅용',
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-    UNIQUE KEY uq_plan_canonical_data_plan_key (plan_id, data_key),
-    FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
-
-CREATE TABLE IF NOT EXISTS plan_score_reasons (
-    reason_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '사유 고유 식별자',
-    plan_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES business_plans(plan_id)',
-    reason_text TEXT NOT NULL COMMENT '문서 적합도 판단 사유',
-    item_code VARCHAR(50) NULL COMMENT '채점 항목 코드 — rubric_items.item_code와 매칭(FK로 강제하지 않음)',
-    score DECIMAL(5,2) NULL COMMENT '해당 항목 획득 점수',
-    max_score DECIMAL(5,2) NULL COMMENT '해당 항목 배점',
-    evidence_locator VARCHAR(500) NULL COMMENT '근거 위치(계획서 원문 내 위치) — 없으면 감점 무효(E-V1-EVIDENCE)',
-    display_name VARCHAR(100) NULL COMMENT '화면에 보여줄 짧은 항목 이름 (예: 목표 고객 문제 정의)',
-    KEY ix_plan_score_reasons_plan (plan_id),
-    FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
-
-CREATE TABLE IF NOT EXISTS artifacts (
-    artifact_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '산출물(구현 Agent 결과) 고유 식별자',
-    plan_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES business_plans(plan_id)',
-    category VARCHAR(32) NOT NULL COMMENT '산출물 카테고리(onepage/webdev/aiapi)',
-    infographic_path VARCHAR(500) NOT NULL COMMENT '인포그래픽 파일 경로',
-    executable_path VARCHAR(500) NULL COMMENT '실행 파일 경로(원페이지형은 NULL)',
-    artifact_score DECIMAL(5,2) NULL COMMENT '산출물 적합도 점수',
-    -- [2026-09-29 신규, SB-155] 재작성마다 새 행을 쌓는다(JSON 스냅샷 아님) — 형제 저장소
-    -- agent-orchestration의 "이름@버전" 설계와 맞춤. plan_id당 is_current=TRUE는 정확히
-    -- 한 행이어야 한다(app에서 보장, catch_up_local_schema.sql 참고).
-    version TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '이 산출물의 버전 번호(재작성마다 +1)',
-    is_current BOOLEAN NOT NULL DEFAULT TRUE COMMENT '이 plan_id에서 지금 채택된 버전인지 — GET /result 등은 이 값이 TRUE인 행만 내려준다',
-    KEY ix_artifacts_plan (plan_id),
-    KEY ix_artifacts_plan_current (plan_id, is_current),
-    FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
-
-CREATE TABLE IF NOT EXISTS artifact_score_reasons (
-    reason_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '사유 고유 식별자',
-    artifact_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES artifacts(artifact_id)',
-    reason_text TEXT NOT NULL COMMENT '산출물 적합도 판단 사유',
-    item_code VARCHAR(50) NULL COMMENT '채점/체크 항목 코드',
-    score DECIMAL(5,2) NULL COMMENT '해당 항목 획득 점수',
-    max_score DECIMAL(5,2) NULL COMMENT '해당 항목 배점',
-    evidence_locator VARCHAR(500) NULL COMMENT '근거 위치(코드 경로, 화면 위치 등)',
-    display_name VARCHAR(100) NULL COMMENT '화면에 보여줄 짧은 항목 이름 (예: 진입 파일 존재 여부)',
-    KEY ix_artifact_score_reasons_artifact (artifact_id),
-    FOREIGN KEY (artifact_id) REFERENCES artifacts(artifact_id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
-
-CREATE TABLE IF NOT EXISTS format_findings (
-    finding_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT 'T-P1(문장 형식 검수) 지적 사항 고유 식별자',
-    plan_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES business_plans(plan_id)',
-    section_id BIGINT UNSIGNED NULL COMMENT 'REFERENCES plan_sections(section_id), nullable',
-    finding_type VARCHAR(50) NOT NULL COMMENT '문제 유형(punctuation/spacing/tone_mismatch 등)',
-    location VARCHAR(500) NULL COMMENT '근거 위치(문단/문장 스니펫 등)',
-    message TEXT NOT NULL COMMENT '지적 내용 설명',
-    severity VARCHAR(20) NULL COMMENT '심각도(info/warning 등)',
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '생성 일시',
-    KEY ix_format_findings_plan (plan_id),
-    KEY ix_format_findings_section (section_id),
-    FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE,
-    FOREIGN KEY (section_id) REFERENCES plan_sections(section_id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
-
 -- [2026-09-18 확장] attempt_no/passed/violation_note 3컬럼 추가 — "1차 시도 반려(보호
 -- 토큰 위반) → 2차 시도 통과" 같은 시도별 판정을 표현하는 데 필요하다(app/models.py
 -- ProofreadLog 클래스 주석 참고). 공유 MySQL엔 이미 이 테이블이 있어 ALTER TABLE로
 -- 반영해야 한다(back/app_schema.sql은 새 설치 기준 CREATE만 갱신).
 CREATE TABLE IF NOT EXISTS proofread_logs (
     log_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT 'T-P2(윤문) 교정 기록 고유 식별자',
-    plan_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES business_plans(plan_id)',
-    section_id BIGINT UNSIGNED NULL COMMENT 'REFERENCES plan_sections(section_id), nullable',
+    project_id BIGINT UNSIGNED NULL COMMENT 'REFERENCES projects(project_id) — 워커가 채운다. NULL 허용 + ON DELETE SET NULL: 학습에 반영된(trained) 행은 프로젝트를 지워도 남기고 연결만 끊는다',
     original_text LONGTEXT NOT NULL COMMENT '윤문 전 원문',
     corrected_text LONGTEXT NOT NULL COMMENT '윤문 후 교정문(passed=FALSE면 반려된 시도안)',
     reason TEXT NULL COMMENT '교정 사유',
-    attempt_no INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '같은 plan_id+section_id 안에서 몇 번째 시도인지(1=최초)',
+    attempt_no INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '같은 문장 안에서 몇 번째 시도인지(1=최초)',
     score DECIMAL(5,2) NOT NULL DEFAULT 100.00 COMMENT '이 시도의 윤문 품질 점수(0~100) — business_plans.doc_score와 같은 형식',
     passed BOOLEAN NOT NULL DEFAULT TRUE COMMENT 'FALSE면 보호 토큰(수치·날짜·고유명사·기능명) 위반으로 반려된 시도',
     violation_note TEXT NULL COMMENT '반려 사유(passed=FALSE일 때만) — 어떤 보호 토큰이 어떻게 바뀌었는지',
     violation_type VARCHAR(20) NULL COMMENT '위반 종류: 날짜/수치·금액/고유명사/기능명 (passed=FALSE일 때만)',
-    recovery_status VARCHAR(20) NULL COMMENT '"검수 회수 문단" 탭 라벨링 상태: pending/labeled/excluded (passed=FALSE일 때만)',
+    recovery_status VARCHAR(20) NULL COMMENT '"검수 회수 문단" 탭 상태: pending(워커가 넣음)/labeled(라벨링 마침)/excluded/trained(학습 데이터로 내보냄 — 완전 삭제·탈퇴·동의 철회 때도 남기는 행)',
     recovery_label TEXT NULL COMMENT '라벨링 완료 시 사람이 정리한 정답 문장',
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '생성 일시',
-    KEY ix_proofread_logs_plan (plan_id),
-    KEY ix_proofread_logs_section (section_id),
-    FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE,
-    FOREIGN KEY (section_id) REFERENCES plan_sections(section_id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
-
-CREATE TABLE IF NOT EXISTS verdicts (
-    verdict_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '최종 판정 고유 식별자',
-    plan_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES business_plans(plan_id)',
-    artifact_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES artifacts(artifact_id)',
-    overall_passed BOOLEAN NOT NULL COMMENT '문서층·산출물층 통과 여부 종합 판정',
-    model_version VARCHAR(50) NOT NULL COMMENT '검수(표현) 자체 파인튜닝 모델 버전(v1/v2/v3)',
-    first_pass_passed BOOLEAN NOT NULL COMMENT '재시도 없이 1차 검수에서 통과했는지 여부',
-    KEY ix_verdicts_plan (plan_id),
-    KEY ix_verdicts_artifact (artifact_id),
-    FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE,
-    FOREIGN KEY (artifact_id) REFERENCES artifacts(artifact_id) ON DELETE CASCADE
+    model_version VARCHAR(50) NULL COMMENT '그 시도를 만든 검수 모델 이름(워커가 채운다)',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '생성 일시(워커가 저장 시각 UTC를 직접 넣는다)',
+    KEY ix_proofread_logs_project (project_id),
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- ---------------------------------------------------------------------------
@@ -625,47 +393,6 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- ---------------------------------------------------------------------------
--- 에이전트 실행 로그 (관리자 대시보드 "에이전트 테스크" 탭)
--- ---------------------------------------------------------------------------
--- [2026-09-28, match_results 테이블 통합] match_id 대신 projects(project_id)를 직접 참조한다.
-CREATE TABLE IF NOT EXISTS agent_executions (
-    execution_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '에이전트 실행 세션 고유 식별자',
-    project_id BIGINT UNSIGNED NULL COMMENT 'REFERENCES projects(project_id), nullable',
-    agent_name VARCHAR(50) NOT NULL COMMENT '실행 Agent 이름(조율/전략/작성/구현/검증-1/검증-2/검수)',
-    task_key VARCHAR(50) NULL COMMENT 'app/models.py FIXED_TASK_SEQUENCE의 세부 Task 키 — 같은 agent_name이 여러 Task를 맡을 때 구분용',
-    attempt_no INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '같은 task_key 안에서 몇 번째 실행인지(1=최초, 2=재시도 1회차, ...)',
-    model_used VARCHAR(50) NOT NULL COMMENT '사용 모델명(Claude Opus/Sonnet/Haiku 또는 자체 파인튜닝 모델 버전)',
-    rerun_type VARCHAR(20) NOT NULL COMMENT "'initial'(최초)/'rerun'(사용자 task별 재작성, rework_cap 대상)/'regenerate'(완전 실패 stage 처음부터 다시 생성, rework_cap 제외 — 2026-09-29 신규) 중 하나",
-    token_usage INT UNSIGNED NOT NULL COMMENT '실행에 사용된 토큰 수',
-    -- [2026-09-23 개정] projects.status와 같은 enum(6종)을 쓴다 — 예전엔 여기만
-    -- 'success'라는 다른 이름을 썼는데(seed_dummy_pipeline.py), 'completed'로 통일한다.
-    status ENUM('in_progress','waiting_resume','user_waiting','failed','completed','halted') NOT NULL COMMENT '서비스 내부 상태(실행/재개대기/사용자대기/실패/완료/중단) — projects.status와 같은 enum',
-    started_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '실행 시작 일시',
-    -- [2026-09-28 신규] status='failed'일 때만 채운다. error_kind는 projects.
-    -- last_error_kind와 같은 분류(일시/입력/운영) — "재시도 가능 여부"는 이 값이 '일시'인지로
-    -- API 응답에서 계산해 내려준다(별도 컬럼으로 중복 저장하지 않음, admin.py 참고).
-    error_kind ENUM('일시','입력','운영') NULL COMMENT '실패 원인 분류(status=failed일 때만)',
-    error_reason TEXT NULL COMMENT '실패 사유 원문(status=failed일 때만)',
-    -- [2026-09-28 신규, SB-148] 이 실행이 만들거나 바꾼 산출물 참조 — {'table','id'} 또는
-    -- 그 리스트(JSON). 형제 저장소 agent-orchestration의 ExecutionRecord/CallLog 설계(원본
-    -- 프롬프트·응답 내용은 남기지 않고 참조만 남김)를 관계형 id로 옮긴 것.
-    output_ref JSON NULL COMMENT '이 실행이 만들거나 바꾼 산출물 참조({table,id} 또는 리스트) — 프롬프트/응답 원문은 저장하지 않음',
-    -- [2026-09-28 신규, SB-152 프론트 답변 반영, 2026-09-29 SB-165 묶음명 확정] task_key=
-    -- 'writing' 하나가 화면상 묶음 여러 개(PSST 4항목: 문제인식/실현가능성/성장전략/
-    -- 팀 구성)를 가리켜서, rework_cap 소진 여부를 task_key만으로 셀 수 없다 — writing
-    -- 재시도일 때만 채워지고, 이미 task_key와 묶음이 1:1인 나머지(구현 등)는 NULL로 둔
-    -- 채 여전히 task_key 기준으로 센다.
-    bundle_id VARCHAR(50) NULL COMMENT '재작성 묶음 이름(writing만 사용 — PSST 4항목: 문제인식/실현가능성/성장전략/팀 구성)',
-    -- [2026-09-17 인덱싱 개정, 2026-09-28 match_results 통합으로 컬럼명만 변경] "이
-    -- 프로젝트의 이 task_key 최근 시도가 몇 번째인지" 조회가 재시도/이어하기 로직에서
-    -- 자주 호출된다(projects.py 재시도 처리, admin.py 에이전트 테스크 탭의 project_id
-    -- 필터). 복합 인덱스 선두가 project_id라 project_id 단독 필터(admin.py)도 그대로
-    -- 커버한다.
-    KEY ix_agent_executions_project_task (project_id, task_key, attempt_no),
-    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
-
--- ---------------------------------------------------------------------------
 -- 검증 정책 (admin-dashboard.html 검증 정책 탭)
 -- ---------------------------------------------------------------------------
 -- 설계 문서 6번 표: "단일 행 제약 — 운영 중 정책은 1행만 유지, 변경 시 UPDATE로 반영".
@@ -681,7 +408,6 @@ CREATE TABLE IF NOT EXISTS verification_policies (
     rework_cap INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '재작성(사용자가 POST /projects/{id}/retry-task로 묶음을 다시 만드는 것) 최대 횟수 — 묶음마다 1회, 첫 실행은 안 세고 실패하면 환불(rerun_cap과 별개, 2026-09-28 신규)',
     deviation_cap DECIMAL(5,2) NOT NULL DEFAULT 5 COMMENT '문서층 재채점 편차 상한(경고 알림 기준)',
     token_retry_cap INT UNSIGNED NOT NULL DEFAULT 2 COMMENT '검수(표현) Task 내부 보호 토큰 위반 문단 재시도 최대 횟수(rerun_cap과 별개)',
-    regenerate_cap INT UNSIGNED NOT NULL DEFAULT 2 COMMENT '"처음부터 다시 생성"(완전 실패한 stage 재시작) 연속 실패 상한 — 닿으면 plan/start·prototype/start를 409로 막음(rework_cap/rerun_cap과 별개, 2026-09-29 프론트 3차 요청 B-2)',
     updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '정책 마지막 수정 일시'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
@@ -735,22 +461,6 @@ CREATE TABLE IF NOT EXISTS rubric_items (
     criterion TEXT NOT NULL COMMENT '채점 기준 설명',
     max_score DECIMAL(5,2) NOT NULL COMMENT '배점',
     enabled BOOLEAN NOT NULL DEFAULT TRUE COMMENT '사용 여부(해제 시 채점에서 제외)'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
-
-CREATE TABLE IF NOT EXISTS verification_score_history (
-    history_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '점수 이력 고유 식별자',
-    plan_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES business_plans(plan_id)',
-    layer VARCHAR(20) NOT NULL COMMENT '채점 층 구분(doc/code/plan)',
-    score DECIMAL(5,2) NOT NULL COMMENT '해당 회차 점수',
-    is_rerun BOOLEAN NOT NULL DEFAULT FALSE COMMENT '재수행에 의한 재채점 여부',
-    policy_id BIGINT UNSIGNED NULL COMMENT 'REFERENCES verification_policies(policy_id) — 참고용, verification_policies는 단일 행 UPDATE라 재현 근거는 아래 스냅샷 컬럼이 진짜',
-    applied_weight DECIMAL(5,2) NULL COMMENT '판정 당시 이 layer에 적용된 weight 스냅샷',
-    applied_pass_threshold DECIMAL(5,2) NULL COMMENT '판정 당시 pass_threshold 스냅샷',
-    applied_rerun_cap INT UNSIGNED NULL COMMENT '판정 당시 rerun_cap 스냅샷',
-    scored_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '채점 일시',
-    KEY ix_verification_score_history_plan (plan_id),
-    FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE,
-    FOREIGN KEY (policy_id) REFERENCES verification_policies(policy_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- [2026-09-28 신규] 완전 삭제(DELETE /projects/{id}/permanent) 최소 감사 로그 — 식별자

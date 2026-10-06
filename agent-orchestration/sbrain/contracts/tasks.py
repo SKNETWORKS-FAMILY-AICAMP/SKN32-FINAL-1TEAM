@@ -18,7 +18,7 @@ from ..models import (
     CodeCheckResult, CompanyInfo, Deliverable, DocScore, DocScoreItem,
     EligibilityRule, EvalItem, FeatureMatchResult, File, FormatFinding,
     FormatSpec, FormSpec, GateResult, Infographic, ItemSpec, MarketAnalysis,
-    PlanDoc, PlanSection, PreInput, ProofreadLog, Prototype, ReferenceDoc,
+    PlanDoc, PlanSection, PreInput, ProofreadLog, ProofreadViolationType, Prototype, ReferenceDoc,
     ReferenceSummary, RequirementAnalysis, ReworkComparison, ReworkDiff,
     ReworkInput, ReworkOrder, Rubric, ScoreReport, Sentence, TableSpec,
     TaskInstruction, TaskPlan, Token, TokenCheckResult, BundleUsage,
@@ -47,6 +47,19 @@ class ReworkCycleInfo(SBModel):
     previous_artifact_score: ArtifactScore | None = None
 
 
+class ProofreadAttempt(SBModel):
+    """확장 — T-P2 시도 하나의 기록 (SentenceResult.attempts).
+
+    시도 = T-P2 함수가 결과를 돌려준 호출 하나. 호출 실패(재시도 소진)는 시도가 아니다.
+    보호 토큰 검사를 통과하지 못한 시도가 '반려된 시도'다(채택하지 않았어도 통과했으면 반려가 아니다).
+    """
+    attempt_no: int = Field(ge=1)               # 문장마다 1부터. T-P2가 재개되어 다시 처리해도 이어서 센다
+    text: str                                   # 시도한 문장
+    adopted: bool
+    token_check: TokenCheckResult               # 통과 여부와 위반 내용(빠진 · 바뀐 · 섞인 보호 토큰)
+    violation_type: ProofreadViolationType | None = None   # 위반 토큰을 보호 토큰 목록과 값으로 맞춘 종류
+
+
 class SentenceResult(SBModel):
     """확장 — T-P2 문장별 결과를 Task 단위로 모은 산출물(sentenceResults)."""
     sentence_id: str
@@ -55,6 +68,9 @@ class SentenceResult(SBModel):
     kept_reason: KeptReason | None = None
     final_redo_count: int
     token_check: TokenCheckResult | None = None
+    attempts: list[ProofreadAttempt] = ext(
+        default_factory=list,
+        note="시도별 기록 (시도 순서). 반려된 시도는 학습 동의 계정이면 웹 proofread_logs에도 한 행씩 쓴다")
 
 
 # ── 조율 ─────────────────────────────────────────────
@@ -78,6 +94,7 @@ class TC1Out(SBModel):
     category_reason: str
     confidence: float | None = Field(None, ge=0, le=1)
     reference_summary: ReferenceSummary | None = None
+    category_defaulted: bool = ext(False, note="카테고리 판정 실패로 기본값(웹개발)을 썼는지. 추적 기록용 (시트 2 T-C1 ③)")
 
 
 class TC2In(SBModel):
@@ -97,15 +114,20 @@ class TC2Out(SBModel):
 
 
 class G01In(SBModel):
+    """G-01 입력. 기준 문서와 다름: 판정은 공고 서버가 공고 ID로 하므로 eligibility · eligibilityParsed는 비울 수 있고
+    Orchestrator가 넣지 않는다. 대신 고른 공고 ID(announcementId, 확장)를 받는다 (spec 5)."""
     company_info: CompanyInfo
-    eligibility: EligibilityRule
-    eligibility_parsed: bool
+    eligibility: EligibilityRule | None = None
+    eligibility_parsed: bool | None = None
     today: date
+    announcement_id: str = ext(note="고른 공고 ID — 마지막 공고 선택 명령(decision)의 announcementId")
 
 
 class G01Out(SBModel):
     gate_result: GateResult
     business_age_years: float | None = None
+    selected_announcement: Announcement = ext(
+        note="자격 확인한 공고의 상세 → 산출물 selectedAnnouncement. 자격 결과 · 업력과 한 번에 저장한다 (spec 4.3.2)")
 
 
 class TC3In(SBModel):
@@ -114,12 +136,22 @@ class TC3In(SBModel):
     gate_result: GateResult
     company_info: CompanyInfo
     reference_summary: ReferenceSummary | None = None
+    business_age_years: float | None = ext(
+        None, note="업력(년) — G-01 출력 businessAgeYears. 예비창업자는 null. companyInfo.businessAgeYears는 T-C1이 "
+                   "비워 두므로 이 값을 쓴다")
+    prior_guidance: dict[str, str] = ext(
+        default_factory=dict,
+        note="재개 때 이어 쓰는 받은 안내(Task ID → 정리된 안내) — 앞 실행이 재시도 소진 전에 받은 것(T-C3.partial). "
+             "엔진이 재개 때만 채운다. 이번 지시 대상이고 빈 문자열이 아닌 것만 쓰고 그 Task는 다시 부르지 않는다")
 
 
 class TC3Out(SBModel):
     task_plan: TaskPlan
     task_count: int
     instruction_set: list[TaskInstruction]
+    form_spec: FormSpec = ext(note="신청자 유형으로 고른 양식 → 산출물 formSpec. 선택 공고의 formSpec 대신 뒷 단계가 읽는다")
+    evaluation_items: list[EvalItem] = ext(note="고른 평가 항목 → 산출물 evaluationItems (T-V1 · 웹 outputs)")
+    rubric: Rubric = ext(note="고른 채점 기준표 → 산출물 rubric (T-V1, G-02a · G-02b의 rubricVersion)")
 
 
 class G02aIn(SBModel):

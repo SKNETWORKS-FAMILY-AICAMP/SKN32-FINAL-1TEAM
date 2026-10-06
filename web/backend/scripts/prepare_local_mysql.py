@@ -1,0 +1,117 @@
+"""워커 E2E 테스트용 로컬 MySQL 준비 — 웹 스키마(app_schema.sql) + 오케스트레이터 표(orchestrator_schema.sql)를 새로 만든다.
+
+    python scripts/prepare_local_mysql.py                      # 기본: 127.0.0.1:3307 의 sbrain_e2e
+    python scripts/prepare_local_mysql.py --url mysql+pymysql://root:비밀번호@127.0.0.1:3307/내_e2e_db?charset=utf8mb4
+
+★ 그 DB의 테이블을 모두 지우고 새로 만든다. 그래서 로컬 호스트(127.0.0.1 · localhost) + DB 이름에 'e2e' 또는 'test'가 있는
+  경우만 받는다 — 팀 공유 DB 주소를 넣어도 거부한다.
+- 로컬 MySQL은 agent-orchestration 폴더에서 `docker compose -f docker/mysql-test.yml up -d --wait`로 띄운다(데이터는 메모리에만 있음).
+- 공고 표(notices 등)는 공고 수집 파이프라인 소유라, 저장소의 data-collection/db 스키마(mysql_schema.sql + 마이그레이션 002~006)를
+  그대로 적용한다 — 웹 코드가 읽는 컬럼이 실제 DB와 같아야 목록 · 관리자 화면이 로컬에서도 같은 SQL로 돈다.
+"""
+import argparse
+import pathlib
+import sys
+
+import pymysql
+from sqlalchemy import make_url
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
+WEB_SCHEMA = REPO_ROOT / 'web' / 'backend' / 'app_schema.sql'
+ORCH_SCHEMA = REPO_ROOT / 'agent-orchestration' / 'sql' / 'orchestrator_schema.sql'
+NOTICE_SCHEMA_DIR = REPO_ROOT / 'data-collection' / 'db'  # 공고 수집 파이프라인 스키마(웹 스키마가 notices를 참조)
+DEFAULT_URL = 'mysql+pymysql://root:sbrain-test@127.0.0.1:3307/sbrain_e2e?charset=utf8mb4'
+LOCAL_HOSTS = {'127.0.0.1', 'localhost', '::1'}
+
+if hasattr(sys.stdout, 'reconfigure'):  # 콘솔 인코딩(cp949 등)에 없는 문자(— 등)가 있어도 출력이 죽지 않게
+    sys.stdout.reconfigure(errors='replace')
+
+def notice_schema_files() -> list[pathlib.Path]:
+    """mysql_schema.sql 먼저, 그다음 마이그레이션을 번호 순서로."""
+    files = [NOTICE_SCHEMA_DIR / 'mysql_schema.sql', *sorted(NOTICE_SCHEMA_DIR.glob('mysql_migration_*.sql'))]
+    missing = [f for f in files if not f.is_file()]
+    if missing:
+        raise SystemExit(f'공고 스키마 파일을 찾지 못함: {missing}')
+    return files
+
+
+def split_sql(script: str) -> list[str]:
+    """SQL 스크립트를 문장으로 나눈다. 따옴표 안의 ; · -- 는 건드리지 않고, -- 주석은 지운다."""
+    stmts: list[str] = []
+    buf: list[str] = []
+    quote: str | None = None
+    i, n = 0, len(script)
+    while i < n:
+        ch = script[i]
+        if quote:
+            buf.append(ch)
+            if ch == '\\' and i + 1 < n:
+                buf.append(script[i + 1])
+                i += 2
+                continue
+            if ch == quote:
+                if script[i + 1:i + 2] == quote:
+                    buf.append(quote)
+                    i += 2
+                    continue
+                quote = None
+        elif ch in ("'", '"', '`'):
+            quote = ch
+            buf.append(ch)
+        elif script.startswith('--', i):
+            j = script.find('\n', i)
+            i = n if j < 0 else j
+            continue
+        elif ch == ';':
+            stmt = ''.join(buf).strip()
+            if stmt:
+                stmts.append(stmt)
+            buf = []
+        else:
+            buf.append(ch)
+        i += 1
+    tail = ''.join(buf).strip()
+    if tail:
+        stmts.append(tail)
+    return stmts
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--url', default=DEFAULT_URL, help='로컬 MySQL 접속 URL(DB 이름에 e2e 또는 test)')
+    args = parser.parse_args()
+
+    url = make_url(args.url)
+    database = url.database or ''
+    if url.host not in LOCAL_HOSTS or not ('e2e' in database or 'test' in database):
+        print(f'거부: 로컬 호스트의 e2e/test DB만 받습니다 (호스트={url.host}, DB={database!r}) — 테이블을 모두 지우기 때문입니다.')
+        return 2
+
+    conn = pymysql.connect(host=url.host, port=url.port or 3306, user=url.username, password=url.password or '',
+                           charset='utf8mb4', autocommit=True)
+    try:
+        cur = conn.cursor()
+        cur.execute(f'CREATE DATABASE IF NOT EXISTS `{database}` CHARACTER SET utf8mb4 COLLATE utf8mb4_bin')
+        cur.execute(f'USE `{database}`')
+        cur.execute('SELECT table_name FROM information_schema.tables WHERE table_schema = %s', (database,))
+        tables = [r[0] for r in cur.fetchall()]
+        cur.execute('SET FOREIGN_KEY_CHECKS=0')
+        for table in tables:
+            cur.execute(f'DROP TABLE IF EXISTS `{table}`')
+        cur.execute('SET FOREIGN_KEY_CHECKS=1')
+        for path in [*notice_schema_files(), WEB_SCHEMA, ORCH_SCHEMA]:
+            for stmt in split_sql(path.read_text(encoding='utf-8')):
+                cur.execute(stmt)  # 인자 없이 실행 — 문장 속 %를 형식 문자로 보지 않는다
+        cur.execute('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = %s', (database,))
+        count = cur.fetchone()[0]
+    finally:
+        conn.close()
+
+    print(f'준비 완료: {url.host}:{url.port}/{database} — 표 {count}개(웹 + orch_). 다음은 워커 → E2E 스크립트 순서입니다.')
+    print('  워커:  cd agent-orchestration  →  SBRAIN_DB_URL=<위 URL> python -m sbrain.worker   (OPENAI_API_KEY는 agent-orchestration/.env)')
+    print('  E2E :  cd web/backend  →  python scripts/e2e_worker_flow.py --url <위 URL>')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

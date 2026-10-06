@@ -20,7 +20,6 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
-    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.mysql import BIGINT as MySQLBigInteger
@@ -333,93 +332,12 @@ class Project(Base):
     tech_field: Mapped[str | None] = mapped_column(String(100), nullable=True)
     regional_priority_area: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    # [2026-09-28 신규, match_results 테이블 통합] project(1) : match_results(N)로
-    # 나뉘어 있던 예전 설계를 project(1):1로 합쳤다 — 실제 agent-orchestration 저장소의
-    # Run 개념(아이디어·회사정보·공고선택·진행상태를 전부 담는 자기완결 단위 하나)과
-    # 우리 SB-138 "중단 후 새로 시작"(기존 프로젝트를 archive하고 새 프로젝트를 만드는
-    # 방식) 패턴을 보면 project 한 행이 곧 실행 시도 하나다. 아래 컬럼들은 원래
-    # match_results 테이블 소유였던 필드를 그대로 옮겨온 것(이름/타입 불변) — 상세 주석은
-    # 예전 MatchResult 클래스 docstring/컬럼 주석 참고.
-    # [2026-09-28 주의] status는 MatchResult 시절엔 default=GENERATION_STATUS_IN_PROGRESS가
-    # 있었다(그 컬럼이 속한 행 자체가 "매칭이 실제로 생겼을 때"만 만들어졌으므로 항상
-    # 안전했다) — 그런데 이 컬럼을 그대로 Project로 옮기면서 그 default를 같이 옮기면,
-    # "아직 매칭 전"인 방금 만든 Project 행도 INSERT 시점에 status='in_progress'가 채워져
-    # 버려서 계정당 동시 실행 1건 제한(ACTIVE_MATCH_STATUSES)이 막 생성된 모든 프로젝트를
-    # "진행 중"으로 오판하는 회귀가 생긴다(실제로 이 리팩터 중 테스트로 발견). 그래서
-    # default 없이 두고, 매칭이 실제로 이뤄지는 시점(seed_dummy_pipeline / 실제 파이프라인)
-    # 에서 명시적으로 채운다 — notice_id가 NULL인지가 "아직 매칭 전" 판별 기준이다.
-    notice_id: Mapped[str | None] = mapped_column(String(320), ForeignKey('notices.notice_id'), nullable=True)
+    # [SB-247] fit_score · reason은 오케스트레이터가 쓰지 않아 지금은 아무도 채우지 않는다. 선택 공고 카드의 fitScore · matchReason으로
+    # 대체할 수 있어 지울 수 있지만(웹연동_변경사항 4.2) 확인 전이라 남겨 둔다.
     fit_score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[str | None] = mapped_column(_GenerationStatus, nullable=True)
     archived_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     archived_by: Mapped[str | None] = mapped_column(String(20), nullable=True)
-
-    # 이어하기(기획서 4-7절 p.20, 8케이스) 대응 — existing_user_resume_test_report.md에서
-    # 확인한 대로, 기존 컬럼(자식 행 존재 여부)만으로는 8케이스 중 6개가 서로 구분되지
-    # 않았다. stage는 app/pipeline_stages.py의 상수 중 하나(또는 아직 파이프라인 시작
-    # 전이라 생성이 시작되지 않았으면 NULL)이고, progress_percent는 stage='plan_writing'/
-    # 'prototype_building'처럼 한 단계 안에서도 오래 걸리는 구간의 진행률(0~100)을
-    # 담는다 — 실제 Agent 파이프라인이 각 Task를 처리할 때마다 이 두 컬럼을 갱신하게
-    # 될 자리다.
-    stage: Mapped[str | None] = mapped_column(String(30), nullable=True)
-    progress_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
-
-    # [2026-09-22 신규] 생성 작업(plan_writing/prototype_building) 비동기화용 클레임
-    # 시각 — Redis 등 별도 브로커 없이 이 컬럼 하나로 "지금 어떤 워커가 처리 중인지"를
-    # 표현한다. NULL이거나 오래됐으면(app/routers/projects.py GENERATION_CLAIM_STALE_SECONDS)
-    # 아무도 처리 안 하는 것으로 보고 새로 클레임한다 — 서버 재시작·다중 워커 대응
-    # (_try_claim_and_run/_generation_recovery_loop 참고).
-    worker_claimed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
-
-    # [2026-09-23 개정] status='failed'는 이제 "자동 재시도 5회를 전부 소진한 뒤"에만
-    # 도달한다(과거엔 첫 실패에서 바로 failed였음) — status='waiting_resume'이 그 사이의
-    # 자동 백오프 대기 상태를 표현한다. failure_reason엔 마지막 실패 원인을 남긴다.
-    # (_simulate_generation/_recover_orphaned_generations_once/_start_generation 참고).
-    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    # [2026-09-27 신규, SB-134] 마지막 실패의 원인 분류(일시/입력/운영) — 공식 기능정의서
-    # v1.9 Run.lastErrorKind. 일시 오류만 재개(백오프 재시도)하고, 입력·운영은 영구
-    # 오류로 보고 재개 없이 바로 status='failed'로 확정한다(R-11). NULL이면 아직 실패한
-    # 적이 없거나(정상 진행 중) 성공해서 초기화된 상태 — app/pipeline_stages.py
-    # classify_error_kind 참고.
-    last_error_kind: Mapped[str | None] = mapped_column(_ErrorKind, nullable=True)
-
-    # [2026-09-23 신규, 2026-09-26 정정, 2026-09-27 개명] 실패 후 자동 "재개" 횟수(공식
-    # 기능정의서 v1.9의 Run.resumeCount) — R-11 기준 15분 -> 30 -> 60 -> 120 -> 240분으로
-    # 2배씩 늘려가며 최대 5번까지 자동으로 재개하고, 그래도 안 되면 status='failed'로
-    # 확정한다(관리자 알림 + 사용자 "다시 이어가기" 버튼 대상). 사용자가 수동으로
-    # "다시 이어가기"를 누르면(_start_generation) 1로 리셋된다(그 클릭 자체가 1회
-    # 재개로 침). [2026-09-27] 예전엔 이 컬럼 이름이 retry_count였는데, 스펙의
-    # Run.retryCount("현재 호출의 재시도 횟수" — 같은 호출을 즉시 다시 보내는 것,
-    # 재개할 때마다 다시 채워짐)와 다른 개념이라 resume_count로 바로잡는다.
-    resume_count: Mapped[int] = mapped_column(_UnsignedInt, default=0)
-    # [2026-09-27 신규] 개별 Agent 호출 실패(타임아웃·응답 형식 오류 등)에 대한 즉시
-    # 재시도 횟수(Run.retryCount) — 지금은 파이프라인이 100% 더미(sleep만 함)라 실제로
-    # "호출이 실패해서 재시도"할 대상 자체가 없어서 항상 0이다. 실제 Agent 호출 계층이
-    # 생기면 그 안에서 이 컬럼을 채우면 된다(재개 시작마다 0으로 리셋 — resume_count와
-    # 달리 "연속 실패" 누적값이 아니라 "이번 재개 안에서의 호출 재시도" 값).
-    retry_count: Mapped[int] = mapped_column(_UnsignedInt, default=0)
-    # 다음 자동 재개를 시도할 시각(status='waiting_resume'일 때만 값이 있음) — 복구
-    # 루프가 이 시각이 지나기 전엔 재개하지 않는다(백오프 간격을 지키기 위함).
-    next_retry_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
-    # [2026-09-26 신규] 이번 실패 스트릭의 첫 실패 시각 — "재개 총 대기 상한"(12시간,
-    # 재개 대기+실행 시간 합산)을 재는 기준점이다. 성공하거나 사용자가 수동으로 다시
-    # 시작하면 초기화된다(resume_count가 0/1로 리셋되는 시점과 항상 같이 움직인다).
-    resume_started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
-
-    # [2026-09-29 신규, 프론트 요청사항 3차 B-1/B-2] 완전 실패(status='failed')한 stage를
-    # 사용자가 "처음부터 다시 생성"으로 재시작한 시도(_start_generation의 can_retry_failed)를
-    # 표시한다. 이 플래그가 켜져 있는 동안 남는 agent_executions 행은 rerun_type='regenerate'로
-    # 남아 task별 재작성(rerun) 예산과 섞이지 않는다(실제 Agent가 성공 행도 남기게 되면 이
-    # 구분이 rework_cap 오카운트를 막아준다). stage가 완전히 끝나면(성공) False로 되돌아간다.
-    is_regenerating: Mapped[bool] = mapped_column(Boolean, default=False)
-    # 같은 stage에서 "처음부터 다시 생성"이 연속으로 최종 실패(status='failed' 확정)한
-    # 횟수 — 자동 재개(resume_count, 15분~4시간 백오프)와 달리 backoff 중간 실패마다가
-    # 아니라 이 시도 전체가 끝내 실패로 확정될 때만 +1이고, 단계가 온전히 성공해야만 0으로
-    # 되돌아간다. regenerate_cap(VerificationPolicy)에 닿으면 plan/start·prototype/start를
-    # 409로 막는다(app/routers/projects.py _start_generation 참고).
-    regenerate_fail_streak: Mapped[int] = mapped_column(_UnsignedInt, default=0)
 
     company: Mapped['Company'] = relationship(back_populates='projects')
     attachments: Mapped[list['ProjectAttachment']] = relationship(back_populates='project')
@@ -430,9 +348,6 @@ class Project(Base):
     partners: Mapped[list['ProjectPartner']] = relationship(back_populates='project')
     # [2026-09-22 신규] ProjectPlanInput 참고 — project당 1행(1:1).
     plan_input: Mapped['ProjectPlanInput | None'] = relationship(back_populates='project', uselist=False)
-    eligibility_checks: Mapped[list['EligibilityCheck']] = relationship(back_populates='project')
-    business_plans: Mapped[list['BusinessPlan']] = relationship(back_populates='project')
-    score_reasons: Mapped[list['MatchScoreReason']] = relationship(back_populates='project')
 
 
 class ProjectAttachment(Base):
@@ -615,42 +530,6 @@ class NoticeAlert(Base):
     detected_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-class MatchCandidate(Base):
-    """GET /projects/{id}/match-candidates 가 보여준 공고 후보. 한 번 뽑은 후보를 저장해 두어야
-    새로고침해도 같은 목록이 나오고, 재실행(batch=2)을 서버가 프로젝트당 1회로 강제할 수 있다."""
-
-    __tablename__ = 'match_candidates'
-
-    candidate_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
-    notice_id: Mapped[str] = mapped_column(String(320), ForeignKey('notices.notice_id'))
-    batch: Mapped[int] = mapped_column(SmallInteger)  # 1=첫 매칭, 2=재실행
-    bonus_score: Mapped[decimal.Decimal] = mapped_column(Numeric(4, 1))  # 공고별 가산점(만점 기준 없음)
-    reason: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
-
-
-class MatchScoreReason(Base):
-    """멘토링 피드백 "매칭 근거는 정성적 설명보다 '+2점' 같은 정량 점수로 표시하는 게 더
-    설득력 있음" 반영. PlanScoreReason/ArtifactScoreReason과 똑같은 모양이다 — projects.
-    reason(자유 텍스트 하나)만으로는 항목별 점수를 못 보여줘서 매칭 단계에도 이 테이블을 둔다.
-
-    [2026-09-28, match_results 테이블 통합] 예전엔 match_results.match_id를 가리켰으나,
-    project(1):match(1)로 합쳐지면서 projects.project_id를 직접 가리키도록 바뀌었다."""
-
-    __tablename__ = 'match_score_reasons'
-
-    reason_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
-    reason_text: Mapped[str] = mapped_column(Text)
-    item_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    max_score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    evidence_locator: Mapped[str | None] = mapped_column(String(500), nullable=True)
-
-    project: Mapped['Project'] = relationship(back_populates='score_reasons')
-
-
 class GenerationFailureAlert(Base):
     """[2026-09-23 신규, 2026-09-29 docstring 정정] 생성 작업이 status='failed'로 확정될
     때마다(자동 재시도 최대 5회·백오프를 전부 소진했거나, 입력·운영 같은 영구 오류라 재개
@@ -680,12 +559,6 @@ class GenerationFailureAlert(Base):
     # 관리자가 확인 처리한 시각 — NULL이면 아직 미확인. 재시도 자체를 막지는 않는다
     # (사용자는 확인 여부와 무관하게 "다시 이어가기"를 누를 수 있음).
     acknowledged_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
-    # [2026-09-29 신규, 프론트 요청사항 3차 B-4] 이 실패가 "처음부터 다시 생성" 연속 실패
-    # 상한(Project.regenerate_fail_streak >= VerificationPolicy.regenerate_cap)까지 도달한
-    # 뒤에 확정된 것인지 — 사용자 화면이 이미 "다시 생성" 버튼을 거두고 "문제가 기록됐고
-    # 확인 후 조치할게요"로 바뀐 상태라는 뜻이므로, 관리자가 먼저 봐야 하는 건이다(프론트가
-    # 목록 맨 위에 띄움).
-    regenerate_exhausted: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Notification(Base):
@@ -718,220 +591,6 @@ class Notification(Base):
     read_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
 
-class EligibilityCheck(Base):
-    __tablename__ = 'eligibility_checks'
-
-    check_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
-    passed: Mapped[bool] = mapped_column(Boolean)
-
-    # db_review_response.md 2장 (B)-1 대응. 기능정의서의 GateResult는 passed 하나로는
-    # 못 담는 두 가지를 요구한다:
-    #   - undecidable: 공고문 자체가 정형화 실패라 "판정 불가"인 경우(E-G1-UNPARSED).
-    #     이건 "불통과"(E-G1-REJECT, 진짜 자격 미달)와 사용자에게 보여줄 문구도 후속
-    #     처리도 달라야 해서, undecidable=True일 땐 passed 값은 의미 없는 값(False)으로
-    #     채워 넣고 이 플래그로 구분한다 — 기존 passed 컬럼 타입은 그대로 둬서(bool),
-    #     이미 passed만 보고 있던 기존 코드를 깨지 않는다.
-    #   - failed_conditions / missing_inputs: 불통과 사유 목록과 되묻기 대상 목록.
-    #     MySQL/SQLite 둘 다 되는 JSON 컬럼으로 저장 — 예: failed_conditions는
-    #     ["ageMax 초과", "regionCodes 불일치"] 같은 문자열 리스트를 그대로 넣는다.
-    failed_conditions: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    missing_inputs: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    undecidable: Mapped[bool] = mapped_column(Boolean, default=False)
-
-    checked_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
-
-    project: Mapped['Project'] = relationship(back_populates='eligibility_checks')
-
-
-# ---------------------------------------------------------------------------
-# 사업계획서(문서층) / 산출물(산출물층) / 최종 판정
-# ---------------------------------------------------------------------------
-class BusinessPlan(Base):
-    __tablename__ = 'business_plans'
-
-    plan_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
-    doc_score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    threshold: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    # [2026-09-28 신규, 프론트 2차 요청 A-2] 기획서 5-6절 — 재작성(writing) 전후 점수를
-    # 비교해 높은 쪽만 남기고, 낮으면 이전 상태로 되돌린다("이전 결과는 삭제하지 않고
-    # 점수 변화 이력으로 보존한다"). 다른 세션에서 이미 확정한 방식(버전마다 새 행을
-    # 쌓지 않고 JSON 스냅샷으로 보존 — plan_sections/plan_score_reasons/artifacts 행 수는
-    # 그대로 유지) — GET /result의 plan.sections/artifacts가 항상 1세트만 내려가게 하려는
-    # 목적(프론트가 배열에 여러 버전이 섞이는 걸 우려함). 각 원소 모양은
-    # app/routers/projects.py _snapshot_plan_doc_state 참고.
-    version_history: Mapped[list | None] = mapped_column(JSON, nullable=True)
-
-    project: Mapped['Project'] = relationship(back_populates='business_plans')
-    sections: Mapped[list['PlanSection']] = relationship(back_populates='plan')
-    canonical_data: Mapped[list['PlanCanonicalData']] = relationship(back_populates='plan')
-    score_reasons: Mapped[list['PlanScoreReason']] = relationship(back_populates='plan')
-    artifacts: Mapped[list['Artifact']] = relationship(back_populates='plan')
-    score_history: Mapped[list['VerificationScoreHistory']] = relationship(back_populates='plan')
-    proofread_logs: Mapped[list['ProofreadLog']] = relationship(back_populates='plan')
-    format_findings: Mapped[list['FormatFinding']] = relationship(back_populates='plan')
-
-
-class PlanSection(Base):
-    __tablename__ = 'plan_sections'
-
-    section_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    plan_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('business_plans.plan_id'))
-    tag: Mapped[str] = mapped_column(_PlanSectionTag)  # app/pipeline_stages.py PLAN_SECTION_TAGS
-    title: Mapped[str] = mapped_column(String(255))
-    body: Mapped[str | None] = mapped_column(_LongText, nullable=True)  # app_schema.sql: LONGTEXT
-
-    plan: Mapped['BusinessPlan'] = relationship(back_populates='sections')
-
-
-class PlanCanonicalData(Base):
-    """[2026-09-22 신규] Strategy Agent(구글 드라이브 "전략/작성/검증1" 시트의 F01~F15)가
-    만드는 중간 산출물 저장소 — market_analysis/development_plan/team_capability 등, 여러
-    섹션이 재사용하는 구조화된 데이터. plan_sections(완성된 최종 문단 텍스트)와는 다른 층이다
-    — 이건 그 문단을 쓰는 데 쓰인 "재료"라서, F19(validate_section)의 "원본 데이터 대조"
-    검증이나 다른 섹션(예: 문제인식/성장전략 둘 다 market_analysis를 씀)이 같은 분석을
-    재사용할 때 여기서 읽는다. 지금까지는 이 재료 층이 아예 없어서 PlanSection.body(최종
-    텍스트)를 여러 자리에 그대로 복붙해 재사용을 흉내내고 있었다(routers/projects.py
-    _section_body 참고).
-
-    data_json의 내부 구조는 여기서 정하지 않는다 — F01~F15 각 함수가 실제로 어떤 모양을
-    만들지는 Strategy Agent 담당자 몫이라(app/agents.py 모듈 docstring의 "Agent 담당자가
-    우리 DB 스키마를 몰라도 되게" 원칙과 같은 이유로) JSON으로 느슨하게 받는다.
-
-    data_key는 시트의 canonical data 블록 이름을 그대로 쓴다 — item_spec / market_analysis /
-    competitor_analysis / team_capability / development_goal / development_method /
-    development_plan / production_plan / marketing_strategy / business_model /
-    growth_strategy / resource_plan / budget / schedule / web_data."""
-
-    __tablename__ = 'plan_canonical_data'
-    __table_args__ = (UniqueConstraint('plan_id', 'data_key', name='uq_plan_canonical_data_plan_key'),)
-
-    data_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    plan_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('business_plans.plan_id'))
-    data_key: Mapped[str] = mapped_column(String(50))
-    data_json: Mapped[dict] = mapped_column(JSON)
-    # 어느 F-함수가 만들었는지(예: 'F03') — 시트에 이미 번호가 붙어있어 그대로 남긴다.
-    # 재시도 대상 식별·디버깅용, 필수는 아니다.
-    source_function: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now(),
-    )
-
-    plan: Mapped['BusinessPlan'] = relationship(back_populates='canonical_data')
-
-
-class PlanScoreReason(Base):
-    __tablename__ = 'plan_score_reasons'
-
-    reason_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    plan_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('business_plans.plan_id'))
-    reason_text: Mapped[str] = mapped_column(Text)
-
-    # db_review_response.md 2장 (B)-2 대응. T-V1 성공 조건은 "모든 채점 항목에 점수와
-    # evidenceLocator가 함께 출력"이고, E-V1-EVIDENCE는 "evidenceLocator 없는 감점은
-    # 무효 처리하고 점수를 복원한다"고 명시한다 — 즉 evidence_locator는 감점의 유효성을
-    # 좌우하는 값이라 reason_text(자유 텍스트)만으로는 부족하다. 항목 단위로 쪼갠다.
-    #   - item_code: rubric_items.item_code(아래 RubricItem)와 1:1 대응하는 채점 항목 코드.
-    #     지금 당장은 어느 RubricItem인지 FK로 강제하지 않고 문자열만 둔다 — rubric_items가
-    #     이번에 막 생겨서 기존 문항 코드 체계가 아직 안 잡혀 있기 때문(넣고 싶으면 나중에
-    #     FK 추가). 기존 reason_text 전용 행(항목 단위로 안 쪼개는 경우)도 계속 쓸 수 있게
-    #     전부 nullable로 둔다.
-    item_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    max_score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    evidence_locator: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    # ArtifactScoreReason.display_name(아래 참고)과 같은 이유 — item_code만 내려가면
-    # 화면에 표시할 이름이 없다. 재채점(_rescore_verify1)은 이 필드를 건드리지 않는다.
-    display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
-
-    plan: Mapped['BusinessPlan'] = relationship(back_populates='score_reasons')
-
-
-class Artifact(Base):
-    __tablename__ = 'artifacts'
-
-    artifact_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    plan_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('business_plans.plan_id'))
-    category: Mapped[str] = mapped_column(String(32))  # onepage | webdev | aiapi
-    infographic_path: Mapped[str] = mapped_column(String(500))
-    executable_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    artifact_score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    # [2026-09-29 신규, SB-155] 구현(implement_prototype/infographic) 재작성 전후 점수를
-    # 비교해 높은 쪽을 남기되, JSON 스냅샷(BusinessPlan.version_history 방식)이 아니라
-    # 실제 행을 버전마다 새로 쌓는다 — 형제 저장소 agent-orchestration의 "이름@버전"
-    # 설계(이전 버전을 덮어쓰지 않고 쌓는 방식)와 맞춘 것. plan_id당 정확히 한 행만
-    # is_current=True고, 그 행이 GET /result 등에서 내려주는 "현재" 산출물이다. API
-    # 응답 모양(plan.artifacts 배열에 여전히 1개만 옴)은 바뀌지 않는다 — is_current로
-    # 필터링해서 내려주기 때문(app/routers/projects.py _get_current_artifact 참고).
-    version: Mapped[int] = mapped_column(_UnsignedInt, default=1)
-    is_current: Mapped[bool] = mapped_column(Boolean, default=True)
-
-    plan: Mapped['BusinessPlan'] = relationship(back_populates='artifacts')
-    score_reasons: Mapped[list['ArtifactScoreReason']] = relationship(back_populates='artifact')
-
-
-class ArtifactScoreReason(Base):
-    __tablename__ = 'artifact_score_reasons'
-
-    reason_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    artifact_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('artifacts.artifact_id'))
-    reason_text: Mapped[str] = mapped_column(Text)
-
-    # PlanScoreReason과 같은 이유(db_review_response.md 2장 (B)-2) — 여기서는 T-B2
-    # FeatureMatchResult.missingFeatures(계획서엔 있는데 프로토타입엔 없는 기능)처럼
-    # 항목 단위 근거가 필요하다. item_code에 어떤 기능/체크 항목인지, evidence_locator에
-    # 어디서 그렇게 판단했는지(코드 경로, 화면 위치 등)를 넣는다.
-    item_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    max_score: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    evidence_locator: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    # [2026-09-28 신규, 프론트 2차 요청 B-1] item_code('ENTRY-FILE' 등)만 내려가면 화면에
-    # 코드가 그대로 노출된다 — 실제 Agent가 뭘 채점하든 항목 이름을 보여줄 자리가 없었기
-    # 때문. 사람이 읽을 짧은 이름('진입 파일 존재 여부')을 따로 둔다(reason_text는 문장이라
-    # 라벨로 쓰기엔 김). 재채점(_rescore_verify2)은 score/evidence_locator/reason_text만
-    # 갱신하고 이 필드는 건드리지 않는다 — item_code가 그대로면 이름도 그대로여야 한다.
-    display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
-
-    artifact: Mapped['Artifact'] = relationship(back_populates='score_reasons')
-
-
-class Verdict(Base):
-    __tablename__ = 'verdicts'
-
-    verdict_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    plan_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('business_plans.plan_id'))
-    artifact_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('artifacts.artifact_id'))
-    overall_passed: Mapped[bool] = mapped_column(Boolean)
-    model_version: Mapped[str] = mapped_column(String(50))  # v1 | v2 | v3
-    first_pass_passed: Mapped[bool] = mapped_column(Boolean)
-
-
-# ---------------------------------------------------------------------------
-# 표현 검수 (화면 10 — STAGE_REVIEWING, 기능정의서 T-P1/T-P2)
-# ---------------------------------------------------------------------------
-# db_review_response.md에서 짚었던 대로, 검수 단계(T-P1 문장 형식 검수, T-P2 윤문)의
-# 산출물을 담을 테이블이 아예 없었다. 둘 다 business_plans 문서를 대상으로 하고,
-# 어느 섹션에서 나온 결과인지 알면 좋아서 plan_sections에도 nullable FK를 걸어둔다
-# (Agent가 섹션 단위로 결과를 못 주면 그냥 NULL로 두면 됨).
-class FormatFinding(Base):
-    """T-P1(문장 형식 검수) 결과 — 문장부호/띄어쓰기/문체 불일치 같은 "형식" 문제를
-    지적만 하고 고치지는 않는 항목. 실제로 고친 결과는 ProofreadLog 쪽에 남는다."""
-    __tablename__ = 'format_findings'
-
-    finding_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    plan_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('business_plans.plan_id'))
-    section_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('plan_sections.section_id'), nullable=True)
-    finding_type: Mapped[str] = mapped_column(String(50))  # 예: 'punctuation' | 'spacing' | 'tone_mismatch'
-    location: Mapped[str | None] = mapped_column(String(500), nullable=True)  # 근거 위치(문단/문장 스니펫 등)
-    message: Mapped[str] = mapped_column(Text)
-    severity: Mapped[str | None] = mapped_column(String(20), nullable=True)  # 예: 'info' | 'warning'
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
-
-    plan: Mapped['BusinessPlan'] = relationship(back_populates='format_findings')
-
-
 class ProofreadLog(Base):
     """T-P2(윤문) 결과 — 실제로 문장을 고친 전/후 텍스트 쌍을 남긴다. FormatFinding이
     "문제를 지적"한다면 이쪽은 "실제로 고친 기록"이라 원문/수정문을 통째로 담는다.
@@ -960,21 +619,23 @@ class ProofreadLog(Base):
     __tablename__ = 'proofread_logs'
 
     log_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    plan_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('business_plans.plan_id'))
-    section_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('plan_sections.section_id'), nullable=True)
+    # [SB-246] 이 표는 이제 오케스트레이터 워커가 INSERT한다 — 워커는 project_id · model_version을 채우고 plan_id ·
+    # section_id는 비운다(더미 시절 행만 plan_id가 있다). project_id는 NULL 허용 + ON DELETE SET NULL: 학습에 반영된
+    # (recovery_status='trained') 행은 프로젝트를 지워도 남기고 연결만 끊는다(웹연동_변경사항 11.7).
+    project_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('projects.project_id', ondelete='SET NULL'), nullable=True)
     original_text: Mapped[str] = mapped_column(_LongText)  # app_schema.sql: LONGTEXT
     corrected_text: Mapped[str] = mapped_column(_LongText)  # app_schema.sql: LONGTEXT
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)  # 왜 고쳤는지(윤문 사유)
-    attempt_no: Mapped[int] = mapped_column(_UnsignedInt, default=1)  # 같은 plan_id+section_id 안에서 몇 번째 시도인지(1=최초)
+    attempt_no: Mapped[int] = mapped_column(_UnsignedInt, default=1)  # 같은 문장 안에서 몇 번째 시도인지(1=최초)
     score: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2), default=decimal.Decimal('100'))
     passed: Mapped[bool] = mapped_column(Boolean, default=True)  # False면 보호 토큰 위반으로 반려된 시도
     violation_note: Mapped[str | None] = mapped_column(Text, nullable=True)  # 반려 사유(passed=False일 때만) — 예: "'2026년 10월 16일' 누락, '1억원'이 '100,000,000원'으로 표기 변경됨"
     violation_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # 날짜/수치·금액/고유명사/기능명 (passed=False일 때만)
-    recovery_status: Mapped[str | None] = mapped_column(String(20), nullable=True)  # pending/labeled/excluded (passed=False일 때만)
+    # pending(워커가 넣음) / labeled(라벨링을 마침, 아직 학습 반영 전) / excluded / trained(학습 데이터로 내보냄 — 남기는 행)
+    recovery_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     recovery_label: Mapped[str | None] = mapped_column(Text, nullable=True)  # 라벨링 완료 시 사람이 정리한 정답 문장
+    model_version: Mapped[str | None] = mapped_column(String(50), nullable=True)  # [SB-246] 그 시도를 만든 검수 모델(워커가 채움)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
-
-    plan: Mapped['BusinessPlan'] = relationship(back_populates='proofread_logs')
 
 
 # ---------------------------------------------------------------------------
@@ -1043,84 +704,6 @@ class UserProfile(Base):
 
 
 # ---------------------------------------------------------------------------
-# 에이전트 실행 로그 (관리자 대시보드 "에이전트 테스크" 탭)
-# ---------------------------------------------------------------------------
-# 고정 Task 14단계(기획서 4-4) — agent_executions 를 이 순서대로 14행 남긴다.
-# 테이블 자체에는 task_name 컬럼이 없으므로(설계 문서 원안), agent_name 만 기록되고
-# 같은 agent 가 여러 단계를 맡으면 그만큼 여러 행이 남는다(예: 검증-1 이 2행).
-FIXED_TASK_SEQUENCE = [
-    ('coordinate_intake', '조율'),
-    ('strategy', '전략'),
-    ('writing', '작성'),
-    ('verify1_rubric', '검증-1'),
-    ('verify1_evidence', '검증-1'),
-    ('user_decision_doc', '조율'),
-    ('implement_prototype', '구현'),
-    ('implement_infographic', '구현'),
-    ('verify2_static', '검증-2'),
-    ('verify2_crosscheck', '검증-2'),
-    ('user_decision_final', '조율'),
-    ('review_expression', '검수'),
-    ('review_token_check', '검수'),
-    ('coordinate_finalize', '조율'),
-]
-
-
-class AgentExecution(Base):
-    __tablename__ = 'agent_executions'
-
-    execution_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    project_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('projects.project_id'), nullable=True)
-    agent_name: Mapped[str] = mapped_column(String(50))
-
-    # 재시도 로그 구분 문제 대응 — FIXED_TASK_SEQUENCE(위)엔 '구현', '검증-1', '검증-2'
-    # 처럼 같은 agent_name이 두 번씩 나온다. agent_name만으로는 "구현(프로토타입)이
-    # 재시도됐는지 구현(인포그래픽)이 재시도됐는지" 구분이 안 됐던 문제(existing_user_
-    # resume_test_report.md에서 지적)를, FIXED_TASK_SEQUENCE의 첫 번째 값(task_key,
-    # 예: 'implement_prototype')을 그대로 같이 남기는 걸로 해결한다. 기존 행엔 이 값이
-    # 없을 수 있어 nullable로 둔다.
-    task_key: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    # 같은 task_key 안에서 몇 번째 실행인지(1=최초, 2=재시도 1회차, ...). rerun_type이
-    # 'initial'/'rerun'만 구분해서 재시도가 여러 번(verification_policies.rerun_cap
-    # 기본 3까지 허용) 있었을 때 서로 구분이 안 됐던 것까지 같이 해결한다.
-    attempt_no: Mapped[int] = mapped_column(_UnsignedInt, default=1)
-
-    model_used: Mapped[str] = mapped_column(String(50))
-    # 'initial'(최초 실행) / 'rerun'(사용자 task별 재작성, rework_cap 대상) / 'regenerate'
-    # (완전 실패한 stage를 "처음부터 다시 생성", 2026-09-29 신규 — rework_cap 카운트에서
-    # 제외됨. Project.is_regenerating/regenerate_fail_streak 참고) 셋 중 하나.
-    rerun_type: Mapped[str] = mapped_column(String(20))
-    token_usage: Mapped[int] = mapped_column(_UnsignedInt)  # app_schema.sql: INT UNSIGNED
-    # [2026-09-23 개정] match_results.status와 같은 enum(6종)을 쓴다 — 예전엔 여기만
-    # 'success'라는 다른 이름을 썼는데(seed_dummy_pipeline.py), match_results가 쓰는
-    # 'completed'로 통일한다(app/pipeline_stages.py GENERATION_STATUSES 참고).
-    status: Mapped[str] = mapped_column(_GenerationStatus)
-    started_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
-
-    # [2026-09-28 신규] status='failed'일 때만 채운다. error_kind는 match_results.
-    # last_error_kind와 같은 분류(일시/입력/운영, app/pipeline_stages.py classify_error_kind)
-    # 를 그대로 재사용한다 — "재시도 가능 여부"는 error_kind == '일시'로 파생되는 값이라
-    # 별도 컬럼을 두지 않는다(admin.py list_agent_executions가 응답에서 계산해 내려준다).
-    error_kind: Mapped[str | None] = mapped_column(_ErrorKind, nullable=True)
-    error_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    # [2026-09-28 신규, SB-148 검토 결과] 이 실행이 만들거나 바꾼 산출물 참조 —
-    # {'table': ..., 'id': ...} 하나 또는 그 리스트. 형제 저장소 agent-orchestration의
-    # ExecutionRecord(입력/출력을 원본이 아니라 "이름@버전" 참조로 남김)와 CallLog
-    # ("프롬프트·응답 내용은 남기지 않음") 설계를 우리 관계형 id로 옮긴 것 — 원본
-    # 프롬프트나 산출물 본문 텍스트는 여기 저장하지 않는다(용량·개인정보 문제 방지,
-    # 실제 내용은 참조가 가리키는 테이블에서 조회). app/routers/projects.py retry_task 참고.
-    output_ref: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
-
-    # [2026-09-28 신규, SB-152 프론트 답변 반영 — bundle_id 버그 수정] task_key='writing'
-    # 하나가 화면상 별개인 묶음 3개(본문/그래프/표)를 가리켜서, rework_cap 소진 여부를
-    # task_key만으로는 정확히 셀 수 없다(app/pipeline_stages.py WRITING_BUNDLES 참고).
-    # writing 재시도일 때만 실제로 채워지고, task_key와 묶음이 이미 1:1인 나머지
-    # task_key(구현 등)는 NULL로 둔 채 여전히 task_key 기준으로 센다.
-    bundle_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
-
-
-# ---------------------------------------------------------------------------
 # 검증 정책 (admin-dashboard.html 검증 정책 탭과 대응)
 # ---------------------------------------------------------------------------
 class VerificationPolicy(Base):
@@ -1154,12 +737,6 @@ class VerificationPolicy(Base):
     # 최대 횟수 — rerun_cap(Task 단위 재수행 상한)과는 별개로 관리된다. admin-dashboard.html
     # 목업 기본값 2를 그대로 따름. 2026-09-14 프론트 담당자와 논의 후 컬럼 추가 확정.
     token_retry_cap: Mapped[int] = mapped_column(_UnsignedInt, default=2)  # app_schema.sql: INT UNSIGNED
-    # [2026-09-29 신규, 프론트 요청사항 3차 B-2] "처음부터 다시 생성" 연속 실패 상한 —
-    # 서버 문제(API 키 만료 등)가 안 고쳐진 채 사용자가 계속 눌러도 소용없을 때, 이 값에
-    # 닿으면 plan/start·prototype/start를 409로 막고 화면은 "문제가 기록됐고 확인 후
-    # 조치할게요"로 바꾼다(Project.regenerate_fail_streak과 짝, rework_cap/rerun_cap과는
-    # 별개 값).
-    regenerate_cap: Mapped[int] = mapped_column(_UnsignedInt, default=2)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
@@ -1209,32 +786,6 @@ class RubricItem(Base):
     criterion: Mapped[str] = mapped_column(Text)  # 채점 기준 설명
     max_score: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-
-
-class VerificationScoreHistory(Base):
-    __tablename__ = 'verification_score_history'
-
-    history_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    plan_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('business_plans.plan_id'))
-    layer: Mapped[str] = mapped_column(String(20))  # doc | code | plan
-    score: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2))
-    is_rerun: Mapped[bool] = mapped_column(Boolean, default=False)
-
-    # db_review_response.md 2장 (B)-3 대응. G-02/R-6: "층별 배점·Threshold·재수행 상한은
-    # 관리자 설정값이므로 판정 시점의 설정값을 함께 기록해야 한다 — 없으면 과거 점수를
-    # 재현할 수 없다". db_review_response.md는 policy_id FK 하나면 될 거라고 봤는데,
-    # verification_policies는 "운영 중 정책은 1행만 유지, 변경 시 UPDATE로 반영"하는
-    # 설계라(app_schema.sql 주석) FK만 걸면 나중에 그 행이 UPDATE될 때 과거 기록이 같이
-    # 바뀐 것처럼 보이는 문제가 있다 — FK는 참고용으로만 남기고, 실제로 재현 가능하려면
-    # 판정 당시 값 자체를 이 행에 그대로 복사(스냅샷)해둬야 한다.
-    policy_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('verification_policies.policy_id'), nullable=True)
-    applied_weight: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)  # layer에 해당하는 weight
-    applied_pass_threshold: Mapped[decimal.Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    applied_rerun_cap: Mapped[int | None] = mapped_column(_UnsignedInt, nullable=True)
-
-    scored_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
-
-    plan: Mapped['BusinessPlan'] = relationship(back_populates='score_history')
 
 
 class PermanentDeletionLog(Base):
