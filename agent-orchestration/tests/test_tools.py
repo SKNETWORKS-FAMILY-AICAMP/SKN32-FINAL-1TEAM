@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 
 import pytest
 
 from sbrain.agents.stubs import Ack, FakeLLM
+from sbrain.models.clock import utc_now
 from sbrain.orchestrator.errors import FormatError, ProviderError, ToolCallExhausted
 from sbrain.orchestrator.tools import CallSink, Tools, ToolsConfig, ToolsContext, classify_status
 
@@ -16,7 +16,7 @@ def make_tools(llm: FakeLLM, retry: int = 5) -> tuple[Tools, CallSink, list]:
     cfg = ToolsConfig(agent="작성", provider="p", model="m-1", temperature=0.3, timeout_sec=42,
                       retry_count=retry, retry_interval_sec=2.0)
     ctx = ToolsContext(run_id="r", execution_id="e", task_id="T-W1", providers={"p": llm}, sink=sink,
-                       now=datetime.now, sleep=sleeps.append)
+                       now=utc_now, sleep=sleeps.append)
     return Tools(cfg, ctx), sink, sleeps
 
 

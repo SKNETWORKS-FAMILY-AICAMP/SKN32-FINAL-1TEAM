@@ -21,11 +21,16 @@ AGENTS: tuple[str, ...] = ("조율", "전략", "작성", "구현", "검증-1", "
 
 @dataclass(frozen=True)
 class TempRule:
-    """온도 덮어쓰기. fixed가 있으면 그 값, max가 있으면 Agent 기본 온도를 그 값 이하로 자른다."""
+    """온도 덮어쓰기. fixed가 있으면 그 값, max가 있으면 Agent 기본 온도를 그 값 이하로 자른다.
+
+    Agent 설정에 온도가 없으면(추론 모델) 덮어쓰지 않고 None을 돌려준다 (잠정).
+    """
     fixed: float | None = None
     max: float | None = None
 
-    def apply(self, base: float) -> float:
+    def apply(self, base: float | None) -> float | None:
+        if base is None:
+            return None
         if self.fixed is not None:
             return self.fixed
         if self.max is not None:
@@ -42,6 +47,10 @@ class FailurePolicy:
     on_step_error: Literal["fail", "continue"] = "fail"
     # 규칙 단계 · 합치기의 오류 처리. 기본 'fail' = 운영 오류로 실행 실패, 재작성 중이면 재작성 실패 (잠정)
     # G-04는 기준 문서대로 'continue' (해당 검증 항목만 미충족, 파이프라인 계속)
+    rescue_segments: frozenset[str] = frozenset()
+    # 실패를 흐름에 넘기는 구간 (확장). 실행 건의 구간(Run.segment)이 여기 있으면 이 단계가 어떤 오류로 끝나든
+    # (재시도 소진 · 코드 오류 · 규격 위반 · 대상 없음) 재개 · 실행 실패 대신 Flow.on_rescue가 받아 처리한다.
+    # 비어 있거나 다른 구간이면 위 정책 그대로다. 구간 이름은 워크플로가 정한다.
 
 
 @dataclass(frozen=True)
@@ -59,6 +68,8 @@ class Bind:
       today    — 기준일자
       const    — 상수 공급처 (예: rubric)
       flow     — 워크플로가 만들어 주는 값 (예: cycleInfo)
+      partial  — 재개 때 이어 쓸 받은 결과 (확장). 재개 위치(RedoState.partial_ref)에 저장된 결과가 있으면 그 값,
+                 없으면 값을 넣지 않아 입력 모델의 기본값을 쓴다. 이 종류로 연결한 Task만 저장 · 재개 장치를 쓴다
     """
     kind: str
     key: str = ""
@@ -95,6 +106,15 @@ INSTR = Bind("instr")
 REWORK = Bind("rework", optional=True)
 CHECKS = Bind("checks", optional=True)
 TODAY = Bind("today")
+# 재개 때 받은 결과 이어 쓰기 (확장) — 재시도 소진(ToolCallExhausted.partial)으로 재개를 예약할 때 '<taskId>.partial'로
+# 저장하고 재개하면 이 연결의 입력에 넣는다. 산출물 타입은 워크플로가 접미 규칙으로 등록한다
+PARTIAL = Bind("partial", optional=True)
+PARTIAL_SUFFIX = ".partial"
+
+
+def keeps_partial(spec: "TaskSpec") -> bool:
+    """입력 하나를 PARTIAL 종류로 연결한 Task인지 (받은 결과를 재개 때 이어 쓰는 Task)."""
+    return any(b.kind == "partial" for b in spec.inputs.values())
 
 
 @dataclass

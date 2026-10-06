@@ -6,14 +6,14 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
 from .base import (
     AgentName, ApplicantType, Category, ChartType, EndingRule, ExtractStatus,
     FileFormat, ImageFormat, JudgedBy, KeptReason, PrototypeKind, SBModel,
-    StyleType, TokenType, ViolationType,
+    StyleType, TokenType, ViolationType, ext,
 )
 
 
@@ -24,7 +24,31 @@ class File(SBModel):
     uploaded_at: datetime
 
 
-class PreInput(SBModel):
+class RevenueItem(SBModel):
+    """확장 — 수익모델 항목 하나(서비스 · 상품명과 단가). 기준 문서는 단가 1개(int)만 둔다."""
+    service_name: str
+    unit_price: int                      # 원
+
+
+class FormExtension(SBModel):
+    """확장 — 사전 정보 입력 중 기준 문서 PreInput · CompanyInfo에 자리가 없는 값 (웹 DB 원본 그대로).
+
+    PreInput과 CompanyInfo가 함께 쓴다. T-C1이 폼 값 그대로 companyInfo에 옮겨 계획서 작성까지 전달한다.
+    """
+    revenue_items: list[RevenueItem] = ext(
+        default_factory=list, note="수익모델 항목 전체. revenueUnitPrice는 호환용으로 첫 항목 단가")
+    company_name: str | None = ext(None, note="기업명 · 법인명(상호)")
+    biz_type: str | None = ext(None, note="업종 (companies.biz_type)")
+    representative_type: str | None = ext(None, note="대표자 유형(단독 · 공동 · 각자대표)")
+    output_summary: str | None = ext(None, note="산출물 — 협약기간 내 목표(형태 · 수량)")
+    tech_field: str | None = ext(None, note="전문기술분야")
+    regional_priority_area: str | None = ext(None, note="지방우대 지역(해당 시 지역명)")
+    occupation: str | None = ext(None, note="예비창업자 직업(직장명 제외)")
+    representative_capability: str | None = ext(None, note="대표자의 기술력 · 노하우 · 인적 네트워크")
+    self_in_kind_resources: str | None = ext(None, note="현물 자기부담 자원(보유 장비 · 공간 등)")
+
+
+class PreInput(FormExtension):
     idea_text: str
     applicant_type: ApplicantType
     representative_name: str
@@ -48,7 +72,7 @@ class PreInput(SBModel):
     attachments: list[File] | None = None
 
 
-class CompanyInfo(SBModel):
+class CompanyInfo(FormExtension):
     representative_name: str
     representative_career: list[str]
     founded_at: date | None = None
@@ -153,36 +177,61 @@ class Rubric(SBModel):
     items: list[RubricItem]
 
 
+# 공고 모집 형태 표기 (확장) — 공고 서버 값을 바꾼 것. 모르면 '모름' (spec 4.4)
+APPLY_PERIOD_UNKNOWN = "모름"
+
+
 class Announcement(SBModel):
+    """시트 4 공고. 기준 문서와 다름(개정 필요): 접수 시작 · 마감일 · 지원 금액 · 금액 표기는 비어 있을 수 있다
+    (마감일 없는 공고 · 금액 정보 없는 공고, spec 5)."""
     announcement_id: str
     title: str
     agency: str
-    support_field: str  # enum('창업(06)','기술개발(02)')
-    apply_start: date
-    apply_end: date
+    support_field: str  # enum('창업(06)','기술개발(02)') — 공고 서버의 분류 문자열을 그대로 받는다
+    apply_start: date | None = None
+    apply_end: date | None = None
     status: str  # enum('모집중','마감')
     eligibility: EligibilityRule
     eligibility_parsed: bool
-    support_amount_max: int
-    support_amount_text: str
+    support_amount_max: int | None = None
+    support_amount_text: str | None = None
     form_spec: FormSpec
     evaluation_items: list[EvalItem]
     summary_embedding: list[float]
     bonus_info: str | None = None
+    apply_period_type: str = ext(
+        APPLY_PERIOD_UNKNOWN,
+        note="모집 형태 표기: 기간 있음 · 예산 소진 시까지 · 상시·수시 · 선착순·모집 완료 시까지 · 모름 (spec 4.4)")
+
+
+class BonusItem(SBModel):
+    """확장 — 가산점 항목별 근거 하나(공고 서버 추천 결과의 bonus_items 한 항목). 기준 문서에는 공고의 가산점
+    정보(Announcement.bonusInfo, 글자)만 있다."""
+    name: str
+    points: float
 
 
 class AnnouncementCard(SBModel):
+    """시트 4 공고 카드. 기준 문서와 다름: 마감일 · 지원 금액이 비어 있을 수 있다(추천 결과에는 금액이 없다, spec 5)."""
     announcement_id: str
     title: str
     agency: str
-    apply_end: date
-    support_amount_max: int
+    apply_end: date | None = None
+    support_amount_max: int | None = None
     fit_score: float = Field(ge=0, le=1)
     rank: int = Field(ge=1, le=20)
     display_type: str  # enum('card','list')
     match_reason: str
     source_notice: str
     original_url: str
+    apply_period_type: str = ext(APPLY_PERIOD_UNKNOWN, note="모집 형태 표기 (Announcement.applyPeriodType과 같은 값)")
+    content_changed: bool = ext(
+        False, note="추가 조회에서 다시 나온 첫 조회 카드의 공고 내용이 바뀌었는지 — Orchestrator가 정한다 (spec 4.2.2)")
+    content_version: str | None = ext(
+        None, note="공고 서버의 내용 버전. 공고 내용이 바뀔 때만 바뀐다. 같은지만 비교하며 웹은 쓰지 않는다")
+    bonus_score: float | None = ext(
+        None, note="이 신청자가 받을 수 있는 가산점 합계. 0 = 해당 가점 없음, null = 계산하지 못함")
+    bonus_items: list[BonusItem] = ext(default_factory=list, note="가산점 항목별 근거 (합계와 맞는다)")
 
 
 class GateResult(SBModel):
@@ -190,6 +239,9 @@ class GateResult(SBModel):
     failed_conditions: list[str]
     missing_inputs: list[str]
     undecidable: bool
+    unknown_conditions: list[str] = ext(
+        default_factory=list,
+        note="확인 필요 조건 이름('지원대상 유형' · '업력') — 읽지 못해 통과로 본 조건. 진행을 막지 않고 화면 4에 안내 (spec 4.3.3)")
 
 
 # ── 작업 분해 ─────────────────────────────────────────
@@ -199,6 +251,9 @@ class TaskInstruction(SBModel):
     order: int
     instruction: str
     context: dict[str, Any]
+    guidance: str = ext(
+        "", note="작업 분해가 쓴 안내(정리한 것) — 지시문의 안내 부분과 같은 글자. 지시 대상이 아니면 빈 문자열. "
+                 "재작성 · 재수행 때 안내를 다시 쓰는 출발점이다")
 
 
 class TaskPlan(SBModel):
@@ -309,6 +364,27 @@ class ProofreadLog(SBModel):
     early_stopped_sentence_ids: list[str]
     token_preservation_rate: float = Field(ge=0, le=1)
     model_version: str
+
+
+# 보호 토큰 위반 종류 — 웹 proofread_logs.violation_type 표기 (시트 4 TokenType의 '수치금액'은 '수치·금액')
+ProofreadViolationType = Literal["날짜", "수치·금액", "고유명사", "기능명"]
+
+
+class RejectedAttempt(SBModel):
+    """확장 — 보호 토큰 검사를 통과하지 못한(반려된) T-P2 시도 하나. 웹 proofread_logs '검수 회수 문단' 한 행.
+
+    문장 내용(원문 · 시도 문장)을 담는다 — 산출물 내용을 기록에 남기지 않는 규칙의 유일한 예외라서
+    웹 proofread_logs에만 쓰고(프로젝트 주인이 학습 데이터 편입에 동의한 경우만), 실행 기록 · 추적 사건 · 로그 ·
+    관리자 조회에는 싣지 않는다.
+    """
+    run_id: str
+    original_text: str
+    corrected_text: str             # 반려된 시도 문장
+    reason: str                     # 위반 요약
+    attempt_no: int = Field(ge=1)
+    violation_type: ProofreadViolationType | None = None
+    violation_note: str             # 위반 토큰 목록 전체
+    model_version: str | None = None  # 그 시도를 만든 T-P2 실행의 모델
 
 
 # ── 결과물 ───────────────────────────────────────────
