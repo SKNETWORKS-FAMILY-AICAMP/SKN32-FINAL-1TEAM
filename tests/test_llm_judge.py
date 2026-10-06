@@ -121,6 +121,16 @@ class TwoStageMatchTests(TestCase):
         self.assertEqual(result["score"], 7.5)  # 15 × 1.5/3
         self.assertIn("반찬 사전주문: 부분 인정 — 결제 단계 없음", result["findings"])
         self.assertTrue(result["findings"][0].startswith("인정 1.5/3개"))
+        # 조율은 findings 문구가 아니라 이 칸으로 재작성 사유를 만든다. 누락 목록과 겹치지 않는다.
+        self.assertEqual(result["partial_features"], ["반찬 사전주문"])
+        self.assertFalse(result["withheld"])
+
+    def test_empty_feature_list_is_withheld_not_scored(self):
+        result = match_features([], HTML, "html", PLAN, None)
+        self.assertEqual(result["score"], 0.0)
+        self.assertTrue(result["withheld"])
+        self.assertEqual(result["withheld_reason"], "E-V2-NOFEATURE")
+        self.assertEqual((result["missing_features"], result["partial_features"]), ([], []))
 
     def test_without_tools_the_rules_decide_alone(self):
         self.assertIsNone(make_judge(None, "html", HTML, PLAN))

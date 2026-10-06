@@ -154,6 +154,10 @@ class ReworkInput(SBModel):
     issues: list[str]
     order: ReworkOrder | None = None
     is_final_attempt: bool
+    # 확장 필드 — 실계약(조율 2026-10-06 반영)과 같다.
+    source_refs: list[str] = Field(default_factory=list)
+    feedback_id: str | None = None
+    previous_source_text: str | None = None  # T-B1 재작성 대상 · 재수행일 때만 채운다
 
 
 # ── scoring ───────────────────────────────────────────────────
@@ -165,14 +169,14 @@ class CodeCheck(SBModel):
     weight: float
     passed: bool
     detail: str
-    # 확장 필드 — 조율 회신(2026-09-29) 2-2에서 합의. 실계약 반영 전까지 대역에만 있다.
+    # 확장 필드 — 실계약(조율 2026-10-06 반영)과 같다.
     defect_sources: list[Literal["prototype", "infographic"]] = Field(default_factory=list)
 
 
 class CodeCheckResult(SBModel):
     total: float = Field(ge=0, le=15)
     checks: list[CodeCheck] = Field(min_length=8, max_length=8)
-    # 확장 필드 — 조율 회신 2-2. 비어 있지 않으면 산출물층 0, 조율은 카테고리로 재작성 대상을 정한다.
+    # 확장 필드 — 비어 있지 않으면 산출물층 0, 조율은 카테고리로 재작성 대상을 정한다.
     gate_failures: list[Literal["entry", "secret", "sandbox"]] = Field(default_factory=list)
 
 
@@ -182,6 +186,10 @@ class FeatureMatchResult(SBModel):
     extra_features: list[str]
     findings: list[str]
     judged_by: JudgedBy
+    # 확장 필드 — 조율 흐름은 이 칸들로만 가른다(findings 문구로 가르지 않는다).
+    withheld: bool = False
+    withheld_reason: str | None = None
+    partial_features: list[str] = Field(default_factory=list)
 
 
 class ArtifactScore(SBModel):
@@ -199,7 +207,7 @@ class TB1In(SBModel):
     category: Category
     instruction: str
     rework_input: ReworkInput | None = None
-    plan_doc: PlanDoc | None = None  # 조율이 추가하기로 한 확장 필드(요청 8, A안)
+    plan_doc: PlanDoc | None = None  # 확장 필드. 조율은 늘 채운다
 
 
 class TB1Out(SBModel):
@@ -226,9 +234,7 @@ class TV2In(SBModel):
     prototype: Prototype
     infographic: Infographic
     feature_list: list[str]
-    # 실계약에는 아직 없다. 조율에 추가를 요청한 필드로,
-    # 원페이지 계획서 대조가 계획서 원문을 근거로 쓰려면 필요하다. 기본값 None이라
-    # 필드가 없는 지금의 실계약과 같은 호출도 그대로 검사된다.
+    # 확장 필드. 조율은 T-V2를 부를 때 늘 채운다(원페이지 계획서 대조의 근거).
     plan_doc: PlanDoc | None = None
 
 
@@ -236,6 +242,7 @@ class TV2Out(SBModel):
     artifact_score: ArtifactScore
     code_check: CodeCheckResult
     feature_match: FeatureMatchResult
+    diagnostics: list[str] = Field(default_factory=list)  # 확장 — 관리자 진단 전용
 
 
 _MODEL_NAMES = (

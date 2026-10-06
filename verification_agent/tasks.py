@@ -106,20 +106,15 @@ def run_tv2(inp: TV2In, tools: Tools) -> TV2Out:
         source_text=prototype.source_text, readme_path=prototype.readme_path,
         infographic_path=inp.infographic.image_path,
         infographic_alt_text=inp.infographic.alt_text, feature_list=inp.feature_list,
-        # plan_doc은 조율에 계약 추가를 요청 중인 필드다. 오기 전에는 None.
-        plan_text=plan_text_of(getattr(inp, "plan_doc", None)),
+        # plan_doc은 확장 필드다. 조율은 T-V2를 부를 때 늘 채우지만 타입은 None을 허용한다.
+        plan_text=plan_text_of(inp.plan_doc),
         tools=tools,
     )
-    # gate_failures · defect_sources는 조율이 확장 필드로 추가하는 중이다(조율 회신 2-2).
-    # 실계약에 아직 없으면 넣지 않는다 — extra="forbid"라 넣으면 검증 오류가 난다.
-    check_extra = "defect_sources" in CodeCheck.model_fields
-    result_extra = "gate_failures" in CodeCheckResult.model_fields
     checks = [CodeCheck(no=item["id"], name=item["name"], weight=item["weight"],
                         passed=bool(item["passed"]), detail=_detail(item),
-                        **({"defect_sources": item["defect_sources"]} if check_extra else {}))
+                        defect_sources=item["defect_sources"])
               for item in raw["items"]]
-    code = CodeCheckResult(total=raw["total"], checks=checks,
-                           **({"gate_failures": raw["gate_codes"]} if result_extra else {}))
+    code = CodeCheckResult(total=raw["total"], checks=checks, gate_failures=raw["gate_codes"])
     feature = FeatureMatchResult(**feature_raw)
     artifact = ArtifactScore(total=code.total + feature.score,
                              code_check=code, feature_match=feature)
