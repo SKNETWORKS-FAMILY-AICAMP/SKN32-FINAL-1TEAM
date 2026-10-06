@@ -117,6 +117,7 @@ uvicorn app.main:app --port 8000
 - 파일 이름은 `index.html`(웹개발 실행 파일) · `infographic.svg`(웹개발 인포그래픽) · `onepage.svg`(원페이지 — 프로토타입 본체이자 인포그래픽) 셋뿐이다.
 - `GET /projects/{project_id}/artifact-files/{시도 ID}/{파일}` — **프로젝트 소유자만** 받는다(관리자도 못 받는다, 기획서 6-7). 소유자가 아니거나 허용 이름이 아니거나 폴더 밖을 가리키면 모두 404(파일이 있는지 알 수 없게). 응답은 `text/html; charset=utf-8` · `image/svg+xml`이고 `nosniff` · `no-store` · `Content-Security-Policy: sandbox allow-scripts` + 외부로 나가는 요청 차단이 붙는다(프론트는 받은 파일을 샌드박스 iframe에 넣어 열기 때문에 헤더는 주소를 직접 열 때의 안전장치다).
 - 테스트: `tests/test_artifact_files.py`(소유자 · 타인 · 관리자 · 비로그인 · 이름 · 시도 ID 모양 · `..` · 다른 프로젝트 폴더 · 링크 탈출 · 2.5MB 파일).
+- **경로 → 주소 (SB-293)**: 오케스트레이터가 주는 상대 경로 `<project_id>/<시도 ID>/<파일>`을 결과(`GET /result`의 `infographic_path` · `executable_path`)와 재작성 결과(`files[]` · `changed`)에서 `/projects/{id}/artifact-files/{시도 ID}/{파일}`로 바꿔 준다(`artifact_store.artifact_url`). 저장 폴더 안을 가리키는 절대 경로도 바꾼다. 옛 값 · 다른 프로젝트 번호 · 허용 이름이 아닌 것 · `..`는 그대로 둔다(화면은 안 깨지고, 웹이 내려 줄 수 없는 경로를 주소로 꾸미지 않는다). 원페이지는 두 경로가 같은 onepage.svg라 인포그래픽 주소만 보이고 실행 경로는 없다. 테스트: `tests/test_artifact_urls.py`.
 - 조율이 구현 Agent에 `project_id`와 저장 폴더를 넘기는 방식이 정해지기 전에는 구현 Agent가 자기 패키지 안에 절대 경로로 쓰므로 웹이 내려 줄 수 없다.
 
 ### 응답 시각 (SB-264)

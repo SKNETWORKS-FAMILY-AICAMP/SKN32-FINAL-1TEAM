@@ -5,6 +5,7 @@
 """
 from app import pipeline_stages as ps
 from app import schemas
+from app.artifact_store import artifact_url
 
 # 3.1 단계 — 기준 문서 단계 ↔ 웹 stage. 공고선택 · 자격확인은 웹 stage가 없다(NULL).
 STEP_TO_STAGE: dict[str, str | None] = {
@@ -368,7 +369,8 @@ def artifact_score_reasons(outputs) -> list[schemas.ArtifactScoreReasonOut]:
     return reasons
 
 
-def artifact_out(outputs) -> schemas.ArtifactOut | None:
+def artifact_out(project_id: int, outputs) -> schemas.ArtifactOut | None:
+    """산출물. 파일 경로는 웹 주소로 바꿔 준다(SB-293) — 원페이지는 두 경로가 같은 onepage.svg라 인포그래픽만 보여 주고 실행 경로는 숨긴다."""
     if outputs.prototype is None and outputs.infographic is None:
         return None
     category = CATEGORY_TO_WEB.get(outputs.category, outputs.category or 'webdev')
@@ -376,9 +378,10 @@ def artifact_out(outputs) -> schemas.ArtifactOut | None:
     artifact_score = report.artifact_score.total if report is not None and report.artifact_score is not None else None
     return schemas.ArtifactOut(
         category=category,
-        infographic_path=outputs.infographic.image_path if outputs.infographic is not None else '',
+        infographic_path=(artifact_url(project_id, outputs.infographic.image_path)
+                          if outputs.infographic is not None else ''),
         # 원페이지는 실행 파일이 없다
-        executable_path=(outputs.prototype.entry_file_path
+        executable_path=(artifact_url(project_id, outputs.prototype.entry_file_path)
                          if outputs.prototype is not None and category != 'onepage' else None),
         artifact_score=artifact_score,
         score_reasons=artifact_score_reasons(outputs),
@@ -465,7 +468,7 @@ def result_out(project_id: int, outputs, policy, originals: dict[str, str] | Non
         threshold=report.threshold if report is not None else None,
         sections=plan_sections_out(plan_doc),
         score_reasons=plan_score_reasons(outputs),
-        artifacts=[a for a in [artifact_out(outputs)] if a is not None],
+        artifacts=[a for a in [artifact_out(project_id, outputs)] if a is not None],
         format_findings=format_findings_out(outputs),
         proofread_logs=proofread_logs_out(outputs, originals),
         feature_list=list(plan_doc.feature_list),
@@ -503,7 +506,7 @@ def _plan_section_out(section) -> schemas.PlanSectionOut:
     return schemas.PlanSectionOut(tag=section.section_code, title=section.title, body=section_body(section))
 
 
-def rework_changed(result) -> dict:
+def rework_changed(project_id: int, result) -> dict:
     """예전 retry-task 응답의 changed 모양 — 화면이 전후 비교에 쓰던 값."""
     changed: dict = {}
     if result.plan_before is not None and result.plan_after is not None:
@@ -516,7 +519,7 @@ def rework_changed(result) -> dict:
         }
     for f in result.files:
         key = 'executable_path' if f.artifact == 'prototype' else 'infographic_path'
-        changed[key] = {'before': f.before_path, 'after': f.after_path}
+        changed[key] = {'before': artifact_url(project_id, f.before_path), 'after': artifact_url(project_id, f.after_path)}
     if result.kept is not None:
         changed['version_kept'] = 'new' if result.kept == '후' else 'previous'
         changed['version_comparison'] = {'before_score': result.before_score, 'after_score': result.after_score}
@@ -541,9 +544,10 @@ def rework_result_out(project_id: int, result) -> schemas.ReworkResultOut:
         plan_before=[_plan_section_out(s) for s in result.plan_before] if result.plan_before is not None else None,
         plan_after=[_plan_section_out(s) for s in result.plan_after] if result.plan_after is not None else None,
         files=[schemas.ReworkFileChangeOut(
-            artifact=f.artifact, before_path=f.before_path, after_path=f.after_path) for f in result.files],
+            artifact=f.artifact, before_path=artifact_url(project_id, f.before_path),
+            after_path=artifact_url(project_id, f.after_path)) for f in result.files],
         rolled_back=result.rolled_back,
         refunded_bundles=[web_bundle_id_of(b) for b in result.refunded_bundles],
         notice_code=result.notice_code,
-        changed=rework_changed(result),
+        changed=rework_changed(project_id, result),
     )

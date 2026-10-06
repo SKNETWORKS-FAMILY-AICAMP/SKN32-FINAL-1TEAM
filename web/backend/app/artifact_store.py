@@ -13,7 +13,8 @@ import os
 import re
 from pathlib import Path
 
-from app.routers import projects
+# projects.py의 UPLOAD_DIR과 같은 계산(app/ 의 위 폴더/uploads) — projects를 가져오면 mapping과 순환하므로 여기서 직접 잡는다.
+_BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # 파일 이름 → 응답 Content-Type. 이 밖의 이름은 열지 않는다.
 ARTIFACT_MEDIA_TYPES = {
@@ -26,7 +27,7 @@ ARTIFACT_MEDIA_TYPES = {
 ATTEMPT_ID_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
 
 # 저장 폴더. 테스트와 배포에서 바꿀 수 있게 호출할 때마다 읽는다(모듈 값 · 환경변수 순).
-ARTIFACT_DIR = os.environ.get('ARTIFACT_DIR') or os.path.join(projects.UPLOAD_DIR, 'artifacts')
+ARTIFACT_DIR = os.environ.get('ARTIFACT_DIR') or os.path.join(_BACKEND_ROOT, 'uploads', 'artifacts')
 
 
 def artifact_root() -> Path:
@@ -36,6 +37,31 @@ def artifact_root() -> Path:
 def project_dir(project_id: int) -> Path:
     """그 프로젝트의 산출물 폴더(없을 수 있다). 삭제 · 청소도 이 경로를 쓴다."""
     return artifact_root() / str(int(project_id))
+
+
+def artifact_url(project_id: int, path: str | None) -> str | None:
+    """오케스트레이터가 준 산출물 경로 → 웹 주소 `/projects/{project_id}/artifact-files/{시도 ID}/{파일}` (SB-293).
+
+    합의된 상대 경로 `<project_id>/<시도 ID>/<파일>`(저장 폴더 기준)을 바꾼다. 저장 폴더 안을 가리키는 절대 경로도 같은 방식으로 바꾼다
+    (조율이 저장 폴더를 넘기기 전에 구현 Agent가 절대 경로로 쓰는 경우를 위해).
+    이 프로젝트의 산출물 모양이 아니면(옛 값 · 다른 프로젝트 · 허용 이름이 아님 · `..` 포함 · 이미 주소) 값을 그대로 돌려준다 — 화면이 깨지지 않게 하되
+    웹이 내려 줄 수 없는 경로를 주소로 꾸며 내지 않는다."""
+    if not path:
+        return path
+    text = str(path).replace('\\', '/')
+    if os.path.isabs(path) or re.match(r'^[A-Za-z]:/', text):
+        try:
+            parts = Path(os.path.abspath(path)).relative_to(artifact_root()).parts
+        except ValueError:
+            return path
+    else:
+        parts = tuple(p for p in text.split('/') if p not in ('', '.'))
+    if len(parts) != 3:
+        return path
+    pid, attempt_id, filename = parts
+    if pid != str(project_id) or filename not in ARTIFACT_MEDIA_TYPES or not ATTEMPT_ID_RE.match(attempt_id):
+        return path
+    return f'/projects/{int(project_id)}/artifact-files/{attempt_id}/{filename}'
 
 
 def artifact_file(project_id: int, attempt_id: str, filename: str) -> Path | None:
