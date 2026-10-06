@@ -1,9 +1,25 @@
 """Pydantic v2 요청/응답 스키마. app_schema.sql(설계 문서 기준)과 1:1로 대응한다."""
 import datetime
 import re
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_validator, model_validator
 
 from app import pipeline_stages as ps
+
+
+def _to_utc_z(value: datetime.datetime) -> str:
+    """[SB-264] 응답 시각은 항상 UTC · 끝에 Z로 내보낸다(명세 11.1 — 서버 시각은 전부 UTC).
+
+    웹 표(DB)에서 읽은 시각은 시간대 표시가 없다(utcnow() · DB 시계로 UTC를 저장한다) — UTC로 보고 Z를 붙인다. 오케스트레이터 값처럼
+    이미 시간대가 있는 값은 UTC로 바꿔 Z를 붙인다. 프론트(time.js)는 시간대 표시가 있든 없든 UTC로 읽어 한국 시간으로 바꾸므로
+    같은 시각이다 — Z를 붙이는 것은 다른 클라이언트가 시간대를 짐작하지 않게 하려는 것이다."""
+    value = value.replace(tzinfo=datetime.UTC) if value.tzinfo is None else value.astimezone(datetime.UTC)
+    return value.isoformat().replace('+00:00', 'Z')
+
+
+# 응답에 나가는 시각 필드의 타입. 요청 바디로 받을 때는 평소처럼 파싱하고, JSON으로 내보낼 때만 위 모양으로 바꾼다.
+UtcDatetime = Annotated[datetime.datetime, PlainSerializer(_to_utc_z, return_type=str, when_used='json')]
 
 
 # ---------------------------------------------------------------------------
@@ -42,11 +58,11 @@ class UserOut(BaseModel):
     ai_training_agreed: bool
     # [2026-09-27 신규] 필수 동의 완료 시각 — NULL이면 아직 동의 전. 설정 화면에서
     # 동의 상태를 보여주거나, 나중에 재동의를 유도할 때 쓴다.
-    terms_agreed_at: datetime.datetime | None = None
-    privacy_agreed_at: datetime.datetime | None = None
+    terms_agreed_at: UtcDatetime | None = None
+    privacy_agreed_at: UtcDatetime | None = None
     # [2026-09-29 신규, 프론트 요청사항 4차 C-1] "만 16세 이상입니다" 동의 완료 시각 —
     # 위 둘과 같은 용도(NULL이면 아직 동의 전).
-    age_confirmed_at: datetime.datetime | None = None
+    age_confirmed_at: UtcDatetime | None = None
     # [2026-09-18 추가, 프론트 담당자 인계서] User 테이블 컬럼이 아니라 요청마다 계산해서 채운다
     # (app/routers/profile.py compute_has_profile) — user_profiles 슬롯 중 하나라도 필수
     # 입력 항목(신청자 유형/대표자 정보/지역/주업종/대표자 이력 1건 이상, biz 유형이면
@@ -339,7 +355,7 @@ class ProjectOut(BaseModel):
     project_id: int
     company_id: int
     description: str
-    created_at: datetime.datetime
+    created_at: UtcDatetime
     output_summary: str | None = None
     tech_field: str | None = None
     regional_priority_area: str | None = None
@@ -622,7 +638,7 @@ class ProjectStatusOut(BaseModel):
     # 이 값은 스펙의 Run.resumeCount(재개 횟수)이지 Run.retryCount(호출 재시도 횟수)가
     # 아니다.
     resume_count: int = 0
-    next_retry_at: datetime.datetime | None = None
+    next_retry_at: UtcDatetime | None = None
     # [2026-09-27 신규, SB-139] 공식 기능정의서 v1.9 E-RUN-CLOSED: "이어하기로 돌아왔을
     # 때 선택 공고 마감" — 마감 사실만 알리고 계속 진행할지는 사용자가 정한다(실행을
     # 막지 않는다). 매칭 자체가 없거나(screen=NO_MATCH_SCREEN) 공고 정보를 못 찾으면
@@ -684,7 +700,7 @@ class ReworkAcceptedOut(BaseModel):
     cycle_id: str  # 같은 화면에서 모으는 시간 안에 들어온 요청은 같은 cycle_id로 합쳐진다
     screen: int
     bundles: list[str]  # 지금까지 모인 묶음(웹 이름, 요청 순서)
-    collect_until: datetime.datetime
+    collect_until: UtcDatetime
     duplicate: bool = False  # 이미 모은 묶음이라 한 번으로 쳤다(기회를 더 쓰지 않음)
 
 
@@ -704,8 +720,8 @@ class ReworkResultOut(BaseModel):
     screen: int
     bundles: list[str]
     status: str
-    started_at: datetime.datetime
-    ended_at: datetime.datetime | None = None
+    started_at: UtcDatetime
+    ended_at: UtcDatetime | None = None
     kept: str | None = None  # '전' | '후'
     basis: str | None = None  # document | artifact | total
     before_score: float | None = None
@@ -775,7 +791,7 @@ class ProjectListItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     project_id: int
     description: str
-    created_at: datetime.datetime
+    created_at: UtcDatetime
     notice_id: str | None = None
     notice_title: str | None = None
     match_status: str | None = None
@@ -787,7 +803,7 @@ class ProjectListItemOut(BaseModel):
     screen: int | None = None
     # [2026-09-27 개명] retry_count -> resume_count (ProjectStatusOut과 같은 이유).
     resume_count: int = 0
-    next_retry_at: datetime.datetime | None = None
+    next_retry_at: UtcDatetime | None = None
     failure_reason: str | None = None  # ProjectStatusOut과 같다 — 사용자 응답에서는 항상 None
     # [SB-272] ProjectStatusOut과 같은 값(재작성 중인 화면 · 요청 모으는 중)
     rework_screen: int | None = None
@@ -808,8 +824,8 @@ class NotificationOut(BaseModel):
     kind: str = Field(..., description="'문서평가'/'산출물확인'/'표현검수'/'실패' 중 하나")
     failure_scope: str | None = Field(None, description="kind='실패'일 때만: '실행' 또는 '재작성'")
     target_step: int | None = Field(None, description='알림을 누르면 들어갈 화면 번호. kind=실패면 None(이어하기 목록으로 연결)')
-    created_at: datetime.datetime
-    read_at: datetime.datetime | None = None
+    created_at: UtcDatetime
+    read_at: UtcDatetime | None = None
 
 
 class NotificationReadIn(BaseModel):
@@ -881,14 +897,14 @@ class ItemOut(BaseModel):
     project_id: int
     description: str
     user_name: str
-    created_at: datetime.datetime
+    created_at: UtcDatetime
     match_status: str | None = None
     failure_reason: str | None = None
     stage: str | None = None
     status_label: str = Field(..., description="'공고 매칭 전'/'진행중'/'판단 대기'/'완료'/'중단'/'실패' 중 하나")
     step: str | None = Field(None, description='마지막으로 실행된 Agent 이름(전략/작성/구현/검증-1/검증-2/검수) — 오케스트레이터 실행 기록 최신 행 기준')
     attempts: int | None = Field(None, description='같은 단계(step)를 몇 번째 시도 중인지 — 오케스트레이터 실행 기록 최신값')
-    last_updated: datetime.datetime | None = Field(None, description='오케스트레이터 실행 건의 마지막 갱신 시각, 없으면 프로젝트 등록 시각')
+    last_updated: UtcDatetime | None = Field(None, description='오케스트레이터 실행 건의 마지막 갱신 시각, 없으면 프로젝트 등록 시각')
     stalled: bool = Field(False, description='완료·보관 상태가 아니면서 마지막 갱신 후 48시간 이상 지났는지')
     score: float | None = Field(None, description='현재 버전의 문서 점수 + 산출물 점수 합계(둘 다 없으면 None)')
     archived: bool = False
@@ -918,8 +934,8 @@ class GenerationFailureAlertOut(BaseModel):
     resume_count: int
     last_error_kind: str = Field(..., description="'일시'/'입력'/'운영' 중 하나 — 실패 확정 시점의 원인 분류")
     failure_reason: str | None = None
-    created_at: datetime.datetime
-    acknowledged_at: datetime.datetime | None = None
+    created_at: UtcDatetime
+    acknowledged_at: UtcDatetime | None = None
 
 
 class GenerationFailureAlertAckIn(BaseModel):
@@ -927,7 +943,7 @@ class GenerationFailureAlertAckIn(BaseModel):
 
 
 class ScoreHistoryEntryOut(BaseModel):
-    scored_at: datetime.datetime | None = None  # 채점 끝 시각을 모르면 None
+    scored_at: UtcDatetime | None = None  # 채점 끝 시각을 모르면 None
     score: float
     is_rerun: bool
 
@@ -1029,8 +1045,8 @@ class ImportRunOut(BaseModel):
     # ImportRun에 매핑만 해두고 응답에는 안 내려주고 있었다 — imported_at(우리 쪽에서
     # 적재한 시각)과 다른 정보라(배치 생성→우리 적재까지 걸린 시간을 보여줄 수 있음) 굳이
     # 숨길 이유가 없어 같이 내려준다.
-    generated_at: datetime.datetime
-    imported_at: datetime.datetime
+    generated_at: UtcDatetime
+    imported_at: UtcDatetime
     accepted_count: int
     input_counts: dict[str, int] = Field(default_factory=dict)
     issue_counts: dict[str, int] = Field(default_factory=dict)
@@ -1094,7 +1110,7 @@ class RecoveryItemOut(BaseModel):
     project_description: str | None = None
     model_version: str | None = None
     violation_type: str | None = None
-    occurred_at: datetime.datetime
+    occurred_at: UtcDatetime
     consent: bool
     original: str
     attempt: str
@@ -1146,8 +1162,8 @@ class FaqOut(BaseModel):
     question: str
     answer: str | None = None
     is_visible: bool
-    created_at: datetime.datetime
-    answered_at: datetime.datetime | None = None
+    created_at: UtcDatetime
+    answered_at: UtcDatetime | None = None
 
 
 # ---------------------------------------------------------------------------

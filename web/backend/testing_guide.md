@@ -87,6 +87,14 @@ uvicorn app.main:app --port 8000
 
 `WEB_NOT_ALLOWED` · 모르는 오케스트레이터 코드 같은 내부 오류는 내부 이름을 내지 않고 `INTERNAL_ERROR`(500)로 답한다.
 
+### 응답 시각 (SB-264)
+
+응답의 시각은 모두 **UTC · 끝에 `Z`**다(`2026-10-06T07:14:59Z`, 명세 11.1). 웹 표(DB)에서 읽은 시각은 시간대 표시가 없는 UTC(`utcnow()` · `CURRENT_TIMESTAMP`)라 응답 스키마(`schemas.UtcDatetime`)가 `Z`를 붙여 내보낸다. 화면의 한국 시간 변환은 프론트(`time.js`)가 한다.
+
+- **DB 서버의 시간대가 UTC여야 한다.** `server_default=CURRENT_TIMESTAMP`로 쓰는 열(`created_at` 등)은 DB 시계를 쓴다. 서버가 UTC가 아니면 표시가 그만큼 어긋난다. 확인: `SELECT @@global.time_zone, @@session.time_zone, TIMEDIFF(NOW(), UTC_TIMESTAMP());` — 마지막 값이 `00:00:00`이어야 한다. 로컬 Docker MySQL은 UTC다(확인함). **공유 DB(AWS)는 접속 권한이 있는 사람이 위 쿼리로 확인해야 한다.**
+- `scripts/e2e_worker_flow.py`가 프로젝트 · 알림 시각이 `Z`이고 실제 UTC 시계와 맞는지 본다(개발 컴퓨터가 한국 시간이어도 9시간 어긋나면 실패한다). `tests/test_utc_timestamps.py`는 형식(`Z` · 마이크로초 · 다른 시간대 → UTC)과 API 응답을 본다.
+- 로그 파일의 앞쪽 시각은 서버 로컬 시간이다. 워커 로그(UTC)와 맞출 때는 웹 명령 로그의 `at=`(UTC)를 본다.
+
 ### 웹 명령 로그 (SB-303)
 
 웹이 오케스트레이터에 넣은 상태 변경 명령(`request_start` · `abort_project` · `decide_for_project` 등 9개)은 끝날 때마다 웹 로그(`web/backend/logs/web-날짜.log`)에 `cmd`로 시작하는 한 줄을 남긴다. 워커 로그에 줄이 없는 웹 쪽 상태 변경(대기 지점 중단 · 화면 8 진행 …)을 워커 로그와 맞춰 보려는 것이다.

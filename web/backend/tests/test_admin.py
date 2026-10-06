@@ -358,8 +358,8 @@ def test_get_collection_status_aggregates_by_source(admin_client, db_session):
     assert len(body['recent_runs']) == 1
     run = body['recent_runs'][0]
     assert run['run_id'] == 'RUN-TEST-1'
-    assert run['generated_at'] == '2026-09-18T00:00:00'
-    assert run['imported_at'] == '2026-09-18T00:00:05'
+    assert run['generated_at'] == '2026-09-18T00:00:00Z'
+    assert run['imported_at'] == '2026-09-18T00:00:05Z'
     assert run['accepted_count'] == 3
     assert run['input_counts'] == {'kstartup': 2, 'bizinfo': 1}
     assert run['issue_counts'] == {'unparsed_period': 1}

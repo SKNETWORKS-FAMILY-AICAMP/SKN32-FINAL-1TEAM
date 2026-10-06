@@ -19,6 +19,7 @@
 - 각 단계는 [OK]/[FAIL]로 찍고, 하나라도 실패하면 마지막에 요약하고 종료 코드 1로 끝난다.
 """
 import argparse
+import datetime
 import json
 import os
 import sys
@@ -169,6 +170,23 @@ def main() -> int:
             expected = 3 + (1 if args.rework else 0)
             return (res.status_code == 200 and len(mine) == expected,
                     f"HTTP {res.status_code} 이 프로젝트 {len(mine)}건(기대 {expected}): {sorted(n['kind'] for n in mine)}")
+
+        def check_times(pid: int):
+            """[SB-264] 응답 시각이 UTC · Z이고 실제 시계와 맞는지 — 서버 로컬 시간(이 컴퓨터는 한국 시간)이나 DB 서버 시간대가 UTC가 아니면
+            9시간쯤 어긋난다. 프로젝트 · 알림은 웹 표(DB 시계 CURRENT_TIMESTAMP), 실행 진행 시각은 오케스트레이터 값이라 두 갈래를 모두 본다."""
+            now = datetime.datetime.now(datetime.UTC)
+
+            def skew(value: str | None) -> float | None:
+                if not value or not value.endswith('Z'):
+                    return None
+                return abs((now - datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))).total_seconds())
+
+            project = next((p for p in j(client.get('/projects')) if p['project_id'] == pid), {})
+            notes = [n for n in j(client.get('/projects/notifications')) if n['project_id'] == pid]
+            created, notified = skew(project.get('created_at')), [skew(n.get('created_at')) for n in notes]
+            ok = (created is not None and created < 3600 and bool(notified) and all(v is not None and v < 3600 for v in notified))
+            return ok, (f"프로젝트 created_at={project.get('created_at')} (지금과 {created}초 차이) / 알림 {len(notes)}건 "
+                        f"created_at 차이 {[round(v) if v is not None else None for v in notified]}초")
 
         def check_cleanup(pid: int):
             res = client.delete(f'/projects/{pid}/permanent')
@@ -321,6 +339,7 @@ def main() -> int:
             # 10) 목록 · 알림 — 여기서 예외가 나도 뒤 단계(정리)는 계속한다
             check('목록 표시', lambda: check_listing(pid))
             check('알림', lambda: check_notifications(pid))
+            check('응답 시각이 UTC · Z이고 실제 시계와 맞음', lambda: check_times(pid))
 
             # 11) (선택) 정리
             if args.cleanup:
