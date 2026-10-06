@@ -299,6 +299,57 @@ try{
   await wait(1600);await ui.flush();assert.equal(ui.component('Preparation').props.progress,100);
   assert.ok(reviewCalls.every(m=>m==='GET'));ui.unmount();
 
-  console.log('PASS: orchestrator flows — resume screen map, candidates pending · blocked ids, eligibility pending · stale result · 409, gate fields, screen 8 · 9 proceed, onepage infographic rebuild, rework rollback · resume, review progress');
+  // ── 받을 수 없는 상태 · 부분 거절(2026-10-06 점검) ─────────────────────────────────────
+  // 서버는 받을 수 없는 상태에도 200으로 지금 상태만 준다 — 화면이 넘어가거나 끝없이 기다리면 안 된다.
+  // 화면 8: 재작성이 도는 중이면 종합 평가로 넘어가지 않는다(버튼 잠금 + 응답 stage 확인)
+  let finalizedAgain=0;
+  globalThis.fetch=route([
+    ['POST /projects/7/final-review/start',()=>response({stage:'prototype_building',match_status:'in_progress'})],
+    ['GET /projects/7/status',()=>response({stage:'artifact_review',rework_screen:null})],
+  ]);
+  ui=mount(ArtifactResult,{...artifactBase,onFinalize:()=>{finalizedAgain++}});await ui.flush();
+  await ui.find(n=>n.type==='button'&&String(n.props.children).includes('종합 평가 확인하기')).props.onClick();await ui.flush();
+  assert.equal(finalizedAgain,0);ui.unmount();
+
+  // 화면 9: 검수가 시작되지 않은 응답이면 기다리지 않고 안내(예전엔 끝나지 않는 '검수 진행 중')
+  let proceededAgain=0,reviewStatusCalls=0;
+  globalThis.fetch=route([
+    ['POST /projects/7/review/start',()=>response({stage:'plan_writing',match_status:'in_progress'})],
+    ['GET /projects/7/status',()=>{reviewStatusCalls++;return response({stage:'final_review_pending',rework_screen:null})}],
+  ]);
+  ui=mount(FinalVerdict,{...verdictBase,scores:{total:90,threshold:80},onProceed:async()=>{proceededAgain++}});await ui.flush();
+  await ui.find(n=>n.type==='button'&&String(n.props.children).includes('검수하기')).props.onClick();await ui.flush();
+  assert.equal(proceededAgain,0);assert.ok(flat(ui.nodes()[0]).includes('지금은 검수를 시작할 수 없어요'));
+  const statusCallsAfter=reviewStatusCalls;await wait(2200);assert.equal(reviewStatusCalls,statusCallsAfter);ui.unmount();
+
+  // 화면 6: 묶음 일부만 거절되면 접수된 묶음은 끝까지 추적하고, 끝나면 계획서 미리보기(PDF)를 다시 받는다
+  let pdfFetches=0,partialReworked=null;alerts.length=0;
+  globalThis.fetch=async(url,opt={})=>{const u=new URL(url);const key=(opt.method||'GET')+' '+u.pathname;
+    if(key==='GET /projects/2/plan-document.pdf'){pdfFetches++;return {ok:true,status:200,blob:async()=>new Blob(['pdf'])};}
+    if(key==='POST /projects/2/retry-task'){const b=JSON.parse(opt.body);
+      return b.bundle_id==='문제인식'?response({cycle_id:'C7',screen:6,bundles:['문제인식'],collect_until:'2026-10-06T00:00:02Z'})
+        :response({detail:'이 항목은 다시 만들 수 있는 횟수를 모두 사용했어요.',code:'E-G2-LIMIT'},409);}
+    if(key==='GET /projects/2/rework-result')return response({cycle_id:'C7',status:'완료',screen:6,bundles:['문제인식'],changed:{}});
+    if(key==='GET /projects/2/status')return response({stage:'plan_review_pending',rework_screen:null});
+    return response({detail:'not mocked'},404);};
+  ui=mount(PlanForm,{projectId:2,onRework:p=>{partialReworked=p}});await ui.flush();
+  const pdfBefore=pdfFetches;
+  const boxes=ui.nodes().filter(n=>n.type==='input'&&n.props.type==='checkbox');
+  boxes[0].props.onChange();await ui.flush();
+  ui.nodes().filter(n=>n.type==='input'&&n.props.type==='checkbox')[2].props.onChange();await ui.flush();
+  await ui.find(n=>n.type==='button'&&n.props.children==='선택 항목 재작성').props.onClick();await ui.flush();
+  assert.deepEqual(partialReworked,['문제인식']);
+  assert.ok(alerts.some(m=>m.includes('성장전략')&&m.includes('횟수를 모두 사용')),alerts.join());
+  assert.equal(pdfFetches,pdfBefore+1);ui.unmount();
+
+  // 진행 화면: 시작 요청 뒤에도 사용자대기면 시작되지 않은 것 — 0%에서 끝없이 기다리지 않고 안내
+  let stuckPolls=0;
+  globalThis.fetch=async(url)=>{stuckPolls++;return response(String(url).endsWith('/start')
+    ?{stage:'plan_review_pending',match_status:'user_waiting'}:{stage:'plan_review_pending',match_status:'user_waiting'})};
+  ui=mount(GenerationProgress,{kind:'artifact',projectId:5});await ui.flush();
+  assert.ok(ui.nodes().some(n=>n.props.role==='alert'&&flat(n).includes('작업을 시작하지 못했어요')));
+  const pollsAfter=stuckPolls;await wait(1700);assert.equal(stuckPolls,pollsAfter);ui.unmount();
+
+  console.log('PASS: orchestrator flows — resume screen map, candidates pending · blocked ids, eligibility pending · stale result · 409, gate fields, screen 8 · 9 proceed, onepage infographic rebuild, rework rollback · resume, review progress, not-started guards (screen 8 · 9 · progress), partial rework rejection · plan preview refresh');
   console.log('PASS: intake restoration, stale responses, final-stage lock, polling recovery, profile logout race, resume-screen routing, rewrite/generation exclusion');
 }finally{globalThis.fetch=originalFetch;await server.close()}

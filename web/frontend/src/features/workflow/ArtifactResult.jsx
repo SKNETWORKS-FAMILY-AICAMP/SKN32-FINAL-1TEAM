@@ -6,7 +6,7 @@ import {SiteMock,RerunLeftBadge} from './shared.jsx';
 import {detectItemCategory,buildCodeCheckItems,isRerunCapped,rerunLeftOf} from './utils.js';
 import {ARTIFACT_CATEGORY_COPY,ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,EXECUTABLE_COPY,PROTOTYPE_PAGE,RERUN_CAP} from './data.js';
 import {fetchUploadBlob,startFinalReview} from '../../api.js';
-import {REWORK_FAILED_MESSAGE,findRunningRework,requestRework,waitRework} from './rework.js';
+import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,requestRework,waitRework} from './rework.js';
 
 // ARTIFACT_SUBTASKS_BY_CATEGORY(data.js)의 라벨 -> app/schemas.py RetryTaskRequest.task_key.
 const TASK_KEY_BY_LABEL = { '실행 파일 제작': 'implement_prototype', '인포그래픽 제작': 'implement_infographic' };
@@ -124,6 +124,8 @@ export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcom
       // 이미 실패한 실행에도 200으로 지금 상태를 준다(백엔드 회신) — match_status로 가른다.
       const status=await startFinalReview(projectId);
       if(status?.match_status==='failed'){setFinalizeError('일시적인 문제로 작업을 완료하지 못했습니다. 새 작업으로 다시 시작해주세요.');return;}
+      // 받을 수 없는 상태(재작성이 도는 중 등)여도 200으로 지금 상태만 온다 — 종합 평가 대기로 바뀌었을 때만 넘어간다.
+      if(status?.stage!=='final_review_pending'){setFinalizeError('지금은 종합 평가로 넘어갈 수 없어요. 진행 중인 작업이 끝난 뒤 다시 시도해 주세요.');return;}
       onFinalize();
     }
     catch(err){console.error('종합 평가로 넘어가지 못했어요',err);setFinalizeError(err.message||'종합 평가로 넘어가지 못했어요. 다시 시도해 주세요.');}
@@ -201,8 +203,14 @@ export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcom
     setCheckedTasks([]);
     try {
       if (!projectId) { setCompletedTasks((prev) => [...new Set([...prev, ...picked])]); setRunningTasks([]); return; }
-      const accepted = await requestRework(projectId, picked, TASK_KEY_BY_LABEL);
-      await finishRework(accepted[0].cycle_id, picked);
+      const req = await requestRework(projectId, picked, TASK_KEY_BY_LABEL);
+      if (req.rejected.length > 0) {
+        // 일부만 거절 — 거절된 묶음은 다시 고를 수 있게 돌려 두고, 접수된 묶음만 진행 중으로 본다.
+        window.alert(rejectedReworkMessage(req.rejected));
+        setCheckedTasks(req.rejected.map((r) => r.label));
+        setRunningTasks(req.labels);
+      }
+      await finishRework(req.cycleId, req.labels);
     } catch (err) {
       console.error('재작성 요청이 실패했어요', err);
       window.alert(err.message || '재작성에 실패했어요. 다시 시도해 주세요.');
@@ -362,7 +370,7 @@ export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcom
           이 화면엔 합격선이 없으므로(기획서 4-5) 진행을 막는 컨펌 게이트도 두지 않는다. */}
       <div className="mt-10 pt-8 border-t border-[var(--border)] flex items-center justify-between gap-4 flex-wrap">
         <p className="text-[13.5px] text-[var(--muted-fg)]">사업계획서와 이 산출물을 대조한 최종 결과는 종합 평가에서 확인합니다</p>
-        <button onClick={finalize} disabled={finalizing}
+        <button onClick={finalize} disabled={finalizing||runningTasks.length>0}
           className="rounded-xl bg-[var(--primary)] text-white px-6 py-3 text-[14.5px] font-semibold hover:bg-[var(--primary-dim)] disabled:opacity-60 transition-[background-color,scale] duration-150 ease-out active:scale-[0.97] flex-shrink-0">
           {finalizing?'넘어가는 중…':'종합 평가 확인하기'}
         </button>

@@ -57,6 +57,12 @@ export default function GenerationProgress({kind, projectId, itemInfo, onDone, o
       setRetrying(false);
       const next = progressFor(kind, status);
       setProgress(next);
+      // 시작 명령은 상태를 바로 '실행'으로 바꾼다(오케스트레이터 _enqueue). 그런데도 끝나지 않은 채 사용자대기면
+      // 시작되지 않은 것이다(받을 수 없는 상태에도 서버는 200으로 지금 상태만 준다) — 0%에서 끝없이 기다리지 않는다.
+      if (next < 100 && status?.match_status === 'user_waiting') {
+        setError('작업을 시작하지 못했어요. 잠시 뒤 다시 시도해 주세요.');
+        return;
+      }
       if (next < 100) timer = setTimeout(poll, POLL_MS);
     };
     const fail = (err, again) => {

@@ -7,7 +7,7 @@ import {PrototypeFrame,ResultPreview,useArtifactFile,ArtifactLoadError} from './
 import {detectItemCategory,diffSentences,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
 import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,RERUN_CAP,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,DOC_REWORK_BUNDLES} from './data.js';
 import {startReview,getProjectStatus} from '../../api.js';
-import {REWORK_FAILED_MESSAGE,findRunningRework,requestRework,reworkDiffForLabel,waitRework} from './rework.js';
+import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,requestRework,reworkDiffForLabel,waitRework} from './rework.js';
 
 // 검수 진행 중 진행 상태를 다시 읽는 간격
 const REVIEW_POLL_MS = 2000;
@@ -448,7 +448,7 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
       const isPicked = picked.includes(label);
       if (label === '인포그래픽 제작' && infographicRebuilt) {
         const d = reworkDiffForLabel(changed, label);
-        return { label: `${label} (계획서와 함께 다시 만들어짐)`, layer, before: d.before, after: d.after, changed: true, fromServer: true };
+        return { label, note: ' (계획서와 함께 다시 만들어짐)', layer, before: d.before, after: d.after, changed: true, fromServer: true };
       }
       if (!isPicked) return { label, layer, before: '변경 없음', after: '변경 없음', changed: false };
       const fromServer = reworkDiffForLabel(changed, label);
@@ -498,8 +498,14 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
     try {
       if (!projectId) { await applyRework(picked, null, fromTotal); return; }
       // 라벨(묶음)별로 각각 접수한다 — 계획서 묶음은 전부 task_key='writing'이라 묶음 이름으로 구분한다.
-      const accepted = await requestRework(projectId, picked, TASK_KEY_BY_LABEL);
-      await finishRework(accepted[0].cycle_id, picked, fromTotal);
+      const req = await requestRework(projectId, picked, TASK_KEY_BY_LABEL);
+      if (req.rejected.length > 0) {
+        // 일부만 거절 — 거절된 묶음은 다시 고를 수 있게 돌려 두고, 접수된 묶음만 진행 중으로 본다.
+        window.alert(rejectedReworkMessage(req.rejected));
+        setCheckedTasks(req.rejected.map((r) => r.label));
+        setRunningTasks(req.labels);
+      }
+      await finishRework(req.cycleId, req.labels, fromTotal);
     } catch (err) {
       console.error('재작성 요청이 실패했어요', err);
       window.alert(err.message || '재작성에 실패했어요. 다시 시도해 주세요.');
@@ -525,11 +531,16 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
   const proceedToReview = async (confirmed) => {
     if (!projectId) { onProceed(); return; }
     setReviewError(''); setReviewing({ percent: null });
+    // 받을 수 없는 상태(재작성이 도는 중 등)여도 서버는 200으로 지금 상태만 준다 — 검수(reviewing)나 완료(done)가
+    // 아니면 검수가 시작되지 않은 것이라 기다리지 않는다(예전엔 끝나지 않는 '검수 진행 중'에 갇혔다).
+    const notStarted = (s) => s?.stage !== 'reviewing' && s?.stage !== 'done';
     try {
       let status = await startReview(projectId, confirmed);
       setConfirmProceed(false);
+      if (notStarted(status) && status?.match_status !== 'failed') throw new Error('지금은 검수를 시작할 수 없어요. 진행 중인 작업이 끝난 뒤 다시 시도해 주세요.');
       while (status?.stage !== 'done') {
         if (status?.match_status === 'failed') throw new Error('일시적인 문제로 작업을 완료하지 못했습니다. 새 작업으로 다시 시작해주세요.');
+        if (notStarted(status)) throw new Error('검수가 멈췄어요. 잠시 뒤 다시 시도해 주세요.');
         if (!alive.current) return;
         setReviewing({ percent: status?.progress_percent ?? null });
         await new Promise((resolve) => setTimeout(resolve, REVIEW_POLL_MS));
@@ -664,12 +675,12 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
             })}
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            <button onClick={handleRewrite} disabled={allCapped || checkedTasks.length === 0 || runningTasks.length > 0}
+            <button onClick={handleRewrite} disabled={allCapped || checkedTasks.length === 0 || runningTasks.length > 0 || !!reviewing}
               className="rounded-lg border border-[var(--border)] px-4 py-2.5 text-[13.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--bg)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
               선택 항목 다시 만들기
             </button>
-            <button onClick={handleProceedClick}
-              className="rounded-lg px-4 py-2.5 text-[13.5px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">
+            <button onClick={handleProceedClick} disabled={runningTasks.length > 0 || !!reviewing}
+              className="rounded-lg px-4 py-2.5 text-[13.5px] font-semibold text-[var(--primary)] hover:underline disabled:opacity-40 disabled:cursor-not-allowed transition-[scale] duration-150 ease-out active:scale-[0.96]">
               이대로 진행하기
             </button>
           </div>
@@ -696,7 +707,7 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
               {reworkDiff.map((d) => (
                 <li key={d.label} className="text-[12.5px] text-[var(--fg)] leading-relaxed">
                   <span className="text-[11px] font-semibold text-[var(--muted-fg)] mr-1.5">［{d.layer}］</span>
-                  {d.label} — {d.changed ? <React.Fragment><span className="text-[var(--muted-fg)]">{d.before}</span> → {d.after}</React.Fragment> : <span className="text-[var(--muted-fg)]">변경 없음</span>}
+                  {d.label}{d.note || ''} — {d.changed ? <React.Fragment><span className="text-[var(--muted-fg)]">{d.before}</span> → {d.after}</React.Fragment> : <span className="text-[var(--muted-fg)]">변경 없음</span>}
                 </li>
               ))}
             </ul>
@@ -717,7 +728,7 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
               className="text-[13px] font-semibold text-[var(--muted-fg)] hover:text-[var(--fg)] transition-[color,scale] duration-150 ease-out active:scale-[0.96]">
               취소
             </button>
-            <button onClick={() => proceedToReview(true)} disabled={!!reviewing}
+            <button onClick={() => proceedToReview(true)} disabled={!!reviewing || runningTasks.length > 0}
               className="text-[13px] font-semibold text-[var(--danger)] hover:underline disabled:opacity-50 transition-[scale] duration-150 ease-out active:scale-[0.96]">
               그래도 진행하기
             </button>
@@ -732,7 +743,7 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
       )}
       {reviewError && <p role="alert" className="mb-4 text-[13.5px] text-[var(--danger)]">{reviewError}</p>}
       {passed && (
-        <button onClick={handleProceedClick} disabled={!!reviewing}
+        <button onClick={handleProceedClick} disabled={!!reviewing || runningTasks.length > 0}
           className="w-full rounded-xl bg-[var(--primary)] text-white py-3.5 text-[15px] font-semibold hover:bg-[var(--primary-dim)] disabled:opacity-60 transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
           {reviewing ? '검수 중…' : '검수하기'}
         </button>

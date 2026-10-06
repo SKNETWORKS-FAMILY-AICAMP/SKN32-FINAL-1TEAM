@@ -11,9 +11,21 @@ export const REWORK_FAILED_MESSAGE = '일시적인 문제로 다시 만들지 �
 const POLL_MS = 2000;
 
 // 고른 묶음(라벨 — 문제인식 · 실현가능성 · 성장전략 · 팀 구성 · 실행 파일 제작 · 인포그래픽 제작)마다 접수한다.
-// 묶음마다 서버가 기회를 따로 세므로 하나로 뭉쳐 부르지 않는다. 돌려주는 값은 접수 응답 목록(같은 cycle_id).
-export function requestRework(projectId, labels, taskKeyByLabel) {
-  return Promise.all(labels.map((label) => retryTask(projectId, taskKeyByLabel[label], label)));
+// 묶음마다 서버가 기회를 따로 세므로 하나로 뭉쳐 부르지 않는다.
+// 일부만 거절될 수 있다(예: 한 묶음만 상한 E-G2-LIMIT) — 접수된 묶음은 서버에서 재작성이 돌기 때문에 끝까지 추적해야 한다.
+// 돌려주는 값: {cycleId, labels(접수된 묶음), rejected([{label, error}])}. 모두 거절되면 첫 오류를 그대로 던진다.
+export async function requestRework(projectId, labels, taskKeyByLabel) {
+  const settled = await Promise.allSettled(labels.map((label) => retryTask(projectId, taskKeyByLabel[label], label)));
+  const accepted = [];
+  const rejected = [];
+  settled.forEach((s, i) => (s.status === 'fulfilled' ? accepted.push({label: labels[i], value: s.value}) : rejected.push({label: labels[i], error: s.reason})));
+  if (accepted.length === 0) throw rejected[0].error;
+  return {cycleId: accepted[0].value.cycle_id, labels: accepted.map((a) => a.label), rejected};
+}
+
+// 거절된 묶음 안내 한 줄씩 — "성장전략: 이 항목은 다시 만들 수 있는 횟수를 모두 사용했어요."
+export function rejectedReworkMessage(rejected) {
+  return rejected.map((r) => `${r.label}: ${r.error?.message || '요청을 받지 못했어요.'}`).join('\n');
 }
 
 // cycleId의 재작성이 끝날 때까지(status 완료 · 실패) 기다려 결과(ReworkResultOut)를 돌려준다.

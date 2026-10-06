@@ -6,7 +6,7 @@ import {buildGeneralInfo,buildOverview,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunL
 import {RerunLeftBadge} from './shared.jsx';
 import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_TABLE_EXAMPLE,RERUN_CAP,SCORE_DISCLAIMER,DOC_REWORK_BUNDLES} from './data.js';
 import {ApiError,fetchPlanDocumentPdf,getProjectStatus} from '../../api.js';
-import {REWORK_FAILED_MESSAGE,findRunningRework,requestRework,waitRework} from './rework.js';
+import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,requestRework,waitRework} from './rework.js';
 
 // 재작성 묶음(PSST 4항목) -> 다시 돌릴 task_key. 묶음 하나를 고르면 그 항목의
 // 본문·차트·표가 함께 다시 만들어지는데(기능정의서 7_재작성·재수행매핑), 서버에는 그
@@ -236,6 +236,8 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
       // 실제로 다시 만든 뒤에만 횟수를 센다 — 실패는 서버가 기회를 돌려준다.
       if (onRework) onRework(picked);
       setCompletedTasks((prev) => [...new Set([...prev, ...picked])]);
+      // 계획서 본문이 바뀌었으니 오른쪽 미리보기(PDF)도 다시 받는다 — 처음 열 때 한 번만 받아 재작성 전 본문이 남아 있었다.
+      if (alive.current) setPdfRetry((n) => n + 1);
     }
     if (onScoresRefresh) await onScoresRefresh();
     if (alive.current) setRunningTasks([]);
@@ -263,8 +265,14 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
     setCheckedTasks([]);
     try {
       if (!projectId) { setCompletedTasks((prev) => [...new Set([...prev, ...picked])]); setRunningTasks([]); return; }
-      const accepted = await requestRework(projectId, picked, TASK_KEY_BY_LABEL);
-      await finishRework(accepted[0].cycle_id, picked);
+      const req = await requestRework(projectId, picked, TASK_KEY_BY_LABEL);
+      if (req.rejected.length > 0) {
+        // 일부만 거절 — 거절된 묶음은 다시 고를 수 있게 돌려 두고, 접수된 묶음만 진행 중으로 본다.
+        window.alert(rejectedReworkMessage(req.rejected));
+        setCheckedTasks(req.rejected.map((r) => r.label));
+        setRunningTasks(req.labels);
+      }
+      await finishRework(req.cycleId, req.labels);
     } catch (err) {
       console.error('재작성 요청이 실패했어요', err);
       window.alert(err.message || '재작성에 실패했어요. 다시 시도해 주세요.');
