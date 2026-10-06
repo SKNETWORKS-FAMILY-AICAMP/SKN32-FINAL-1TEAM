@@ -65,6 +65,10 @@ class DesignKitTests(TestCase):
         data["solution_steps"] = ["999초 이내 주문", "매장 준비"]
         failures = _check_content("원페이지", data, "18% 10곳 29,000원 2026년 12월 2027년 3월")
         self.assertTrue(any("해결 절차" in failure and "999" in failure for failure in failures))
+        # 천 단위 쉼표는 있든 없든 같은 값이다(검증-2 계획서 대조와 같은 규칙).
+        data["solution_steps"] = ["월 29000원 구독", "매장 준비"]
+        self.assertFalse(any("해결 절차" in failure for failure in
+                             _check_content("원페이지", data, "18% 10곳 29,000원 2026년 12월 2027년 3월")))
         data["key_metrics"] = [{"value": "123456789012345678901234567890원", "label": "요금"}] * 3
         data["item_name"] = "가" * 24  # Fits at 30px, overflows at the actual 36px title size.
         fields = overflow_fields("원페이지", data)

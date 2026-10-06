@@ -81,7 +81,7 @@ def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str
 1. 결과물은 단일 HTML 파일 하나(`{_ENTRY_FILENAME}`)로만 동작해야 한다.
    외부 CDN 스크립트(<script src="https://...">), 외부 스타일시트
    (<link rel="stylesheet" href="https://...">), 외부 이미지(<img src="https://...">),
-   외부 @import, npm/webpack 등 어떤 빌드 도구도 쓰지 마라. CSS는 <style> 태그 안에,
+   외부 @import, CSS 안의 외부 url(...)(배경 그림 · 웹 글꼴 포함), npm/webpack 등 어떤 빌드 도구도 쓰지 마라. CSS는 <style> 태그 안에,
    JS는 <script> 태그 안에 전부 인라인으로 작성하라. 이미지가 필요하면 data: URI나
    SVG/CSS로 대체하라.
 2. `<html lang="ko">`를 반드시 명시하라.
@@ -162,8 +162,8 @@ def _parse_llm_files(llm_output: str) -> dict[str, str]:
 
     "응답 자체가 쓸 수 없는 경우"(빈 응답, 코드블록 0개)는 품질 문제가 아니라 호출이
     사실상 실패한 것이므로 FormatError를 올려 tools가 재시도하게 한다. 재시도를 다
-    쓰면 tools가 ToolCallExhausted로 바꿔 올리고 서버가 완전 실패로 판정한다
-    (완전실패_예외처리.md R2). 반대로 코드는 왔는데 게이트를 위반한 경우(파일명 틀림,
+    쓰면 tools가 ToolCallExhausted로 바꿔 올리고 조율이 완전 실패로 판정한다.
+    반대로 코드는 왔는데 게이트를 위반한 경우(파일명 틀림,
     외부 CDN)는 품질 실패이므로 여기서 다루지 않고 CheckResult로 정상 반환한다.
     """
     if not llm_output or not llm_output.strip():

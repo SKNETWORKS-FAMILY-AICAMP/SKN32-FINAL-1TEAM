@@ -27,7 +27,7 @@ def run_tb1(inp: TB1In, tools: Tools) -> TB1Out:
     from sbrain.contracts.tasks import TB1Out
     from sbrain.models import CheckResult, Prototype
 
-    # plan_doc은 조율이 TB1In에 추가하기로 한 필드다(조율 요청서 요청 8, A안). 계약에 들어오기 전에는
+    # plan_doc은 조율이 TB1In에 추가하기로 한 필드다(조율과 합의). 계약에 들어오기 전에는
     # 없으므로 있을 때만 쓴다 — 없으면 예전처럼 기능 이름만으로 만든다.
     plan_doc = getattr(inp, "plan_doc", None)
     result = build_prototype_html(
@@ -63,8 +63,9 @@ def _is_blank(value: str) -> bool:
 
 
 def _numbers(text: str) -> list[str]:
-    """숫자 토큰만 뽑는다. 천 단위 구분 쉼표와 소수점은 한 덩이로 본다."""
-    return [m.group(0).rstrip(",._") for m in _NUMBER_RE.finditer(str(text))]
+    """숫자 토큰만 뽑는다. 천 단위 구분 쉼표와 소수점은 한 덩이로 보고, 쉼표는 떼어
+    "10,000"과 "10000"을 같은 값으로 본다(verification_agent/feature_match.py의 _numbers와 같은 규칙)."""
+    return [m.group(0).rstrip(",._").replace(",", "") for m in _NUMBER_RE.finditer(str(text))]
 
 
 def _unbacked_numbers(value: str, plan_text: str) -> list[str]:

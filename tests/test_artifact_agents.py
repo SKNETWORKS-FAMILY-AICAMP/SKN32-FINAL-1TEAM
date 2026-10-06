@@ -372,7 +372,7 @@ class ArtifactAgentTests(TestCase):
                     infographic.generate_infographic_content("웹개발", "본문", _Tools(reply))
 
     def test_unusable_llm_response_raises_instead_of_reporting_failure(self):
-        """완전실패_예외처리.md R2 — 빈 응답·코드블록 0개는 품질 실패가 아니라
+        """빈 응답·코드블록 0개는 품질 실패가 아니라
         호출 실패이므로 FormatError를 올려 tools가 재시도하게 한다."""
         for label, response in (("빈 응답", ""), ("코드블록 없음", "죄송합니다. 만들 수 없습니다."),
                                 ("공백만", "   \n  ")):
@@ -396,6 +396,24 @@ class ArtifactAgentTests(TestCase):
         result = build_prototype_html(["조회"], {"item_name": "t"}, "웹개발", "생성", external)
         self.assertEqual(result["status"], "failed")
         self.assertIn("E-B1-DEP", result["summary"])
+
+    def test_dependency_gate_sees_css_urls_and_quoted_imports(self):
+        """CSS 안에서 외부 파일을 불러오는 꼴도 막는다. data: 주소 · 상대 경로 · 본문 글은 걸리지 않는다."""
+        for html in ('<style>@import "https://fonts.example.com/a.css";</style>',
+                     "<style>@import url('//cdn.example.com/b.css');</style>",
+                     "<style>.hero{background:url(https://img.example.com/c.png) no-repeat}</style>",
+                     '<style>@font-face{font-family:X;src:url("https://f.example.com/x.woff2")}</style>',
+                     '<div style="background-image:url(\'https://img.example.com/d.png\')"></div>'):
+            with self.subTest(html=html[:40]):
+                ok, violations = gates.check_external_dependency_gate(html)
+                self.assertFalse(ok)
+                self.assertEqual(len(violations), 1, violations)
+        for html in ("<style>.a{background:url(data:image/png;base64,AAAA)}</style>",
+                     "<style>.a{background:url('./bg.png')}</style>",
+                     '<div style="color:#111">url(https://example.com)는 본문 글이다</div>',
+                     "<p>@import \"https://x.example.com/a.css\"</p>"):
+            with self.subTest(html=html[:40]):
+                self.assertEqual(gates.check_external_dependency_gate(html), (True, []))
 
     def test_sandbox_gate_blocks_apis_that_die_in_iframe(self):
         """프론트가 sandbox="allow-scripts" iframe에 띄우므로 스토리지·모달·submit은
