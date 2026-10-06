@@ -1,8 +1,9 @@
 """Pydantic v2 요청/응답 스키마. app_schema.sql(설계 문서 기준)과 1:1로 대응한다."""
 import datetime
 import re
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from app import pipeline_stages as ps
 
 
 # ---------------------------------------------------------------------------
@@ -281,6 +282,17 @@ class ProjectCreateRequest(BaseModel):
         if v is not None:
             _check_min_age(v)
         return v
+
+    @model_validator(mode='after')
+    def _check_main_industry_of_business(self) -> 'ProjectCreateRequest':
+        """개인사업자 · 법인의 주업종은 드롭다운 9종(pipeline_stages.MAIN_INDUSTRIES)만 저장된다(DB ENUM). 다른 값이 오면 저장하다
+        DB 오류(500)가 나므로 입력 단계에서 422로 막는다. 빈 값은 '없음'으로 본다. 예비창업자의 주업종은 자유 텍스트라 그대로 둔다."""
+        if self.applicant_type in ('individual', 'corp'):
+            if self.main_industry in ('', None):
+                self.main_industry = None
+            elif self.main_industry not in ps.MAIN_INDUSTRIES:
+                raise ValueError(f"개인사업자 · 법인의 주업종은 다음 중 하나여야 합니다: {', '.join(ps.MAIN_INDUSTRIES)}")
+        return self
 
 
 class TeamMemberOut(BaseModel):
