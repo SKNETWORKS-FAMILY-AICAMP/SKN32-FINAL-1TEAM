@@ -80,6 +80,7 @@ def test_retry_task_rejects_non_reworkable_task_keys_and_bad_bundles(authed_clie
     ]:
         r = _retry(authed_client, pid, task_key, bundle_id)
         assert r.status_code == 400, (task_key, bundle_id, r.text)
+        assert r.json()['code'] == 'NOT_REWORKABLE'
     assert _calls(orch, 'request_rework_for_project') == []
 
 
@@ -88,7 +89,9 @@ def test_retry_task_maps_orchestrator_errors(authed_client, orch):
     for code, status in [('INVALID_STATE', 409), ('E-G2-LIMIT', 409), ('BUSY', 409), ('INVALID_ORDER', 422),
                          ('RUN_NOT_FOUND', 404)]:
         orch.responses['request_rework_for_project'] = OrchError(code, 'x')
-        assert _retry(authed_client, pid, 'writing', '문제인식').status_code == status, code
+        r = _retry(authed_client, pid, 'writing', '문제인식')
+        assert r.status_code == status, code
+        assert r.json()['code'] == code  # 오케스트레이터 코드 그대로
 
 
 def test_retry_task_requires_ownership(login_as, orch):
@@ -157,7 +160,8 @@ def test_rework_result_failed_reports_rollback_and_refund(authed_client, orch):
 
 def test_rework_result_404_when_never_reworked_and_409_when_not_viewable(authed_client, orch):
     pid = _create(authed_client)
-    assert authed_client.get(f'/projects/{pid}/rework-result').status_code == 404  # 기본 None
+    r = authed_client.get(f'/projects/{pid}/rework-result')  # 기본 None
+    assert r.status_code == 404 and r.json()['code'] == 'NOT_REWORKED_YET'
     orch.responses['rework_result'] = OrchError('RUN_NOT_VIEWABLE', 'x')
     assert authed_client.get(f'/projects/{pid}/rework-result').status_code == 409
 

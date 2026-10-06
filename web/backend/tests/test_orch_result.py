@@ -35,12 +35,14 @@ def test_result_404_while_plan_is_not_written_yet(authed_client, orch):
     orch.responses['outputs'] = lambda p: make_outputs(step='계획서작성', progress='실행', plan_doc=None)
     r = _result(authed_client, pid)
     assert r.status_code == 404 and '계획서' in r.json()['detail']
+    assert r.json()['code'] == 'PLAN_NOT_READY'
 
 
 def test_result_409_when_run_failed_or_aborted(authed_client, orch):
     pid = _create(authed_client)
     orch.responses['outputs'] = OrchError('RUN_NOT_VIEWABLE', 'x')
-    assert _result(authed_client, pid).status_code == 409
+    r = _result(authed_client, pid)
+    assert r.status_code == 409 and r.json()['code'] == 'RUN_NOT_VIEWABLE'
 
 
 def test_result_requires_ownership(login_as, orch):

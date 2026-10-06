@@ -136,7 +136,7 @@ def test_generate_fails_when_no_gate_result_exists(authed_client, orch):
 def test_generate_requires_a_notice_id(authed_client, orch):
     pid = _create(authed_client)
     r = authed_client.post(f'/projects/{pid}/generate', json={})
-    assert r.status_code == 422
+    assert r.status_code == 422 and r.json()['code'] == 'NOTICE_REQUIRED'
     assert _calls(orch, 'select_announcement_for_project') == []
 
 
@@ -310,12 +310,14 @@ def test_plan_start_before_choosing_an_announcement_is_400(authed_client, orch):
     _status_view(orch, step='공고선택', progress='사용자대기', screen_status='확인 필요', resume_step=3)
     r = authed_client.post(f'/projects/{pid}/plan/start')
     assert r.status_code == 400 and '공고를 선택' in r.json()['detail']
+    assert r.json()['code'] == 'STAGE_NOT_REACHED'
 
 
 def test_plan_start_busy_is_409(authed_client, orch):
     pid = _create(authed_client)
     orch.responses['start_writing_for_project'] = OrchError('BUSY', 'x')
-    assert authed_client.post(f'/projects/{pid}/plan/start').status_code == 409
+    r = authed_client.post(f'/projects/{pid}/plan/start')
+    assert r.status_code == 409 and r.json()['code'] == 'BUSY'
 
 
 def test_prototype_start_decides_screen_6(authed_client, orch):
@@ -356,8 +358,10 @@ def test_review_start_needs_confirmation_when_below_threshold(authed_client, orc
 
     r = authed_client.post(f'/projects/{pid}/review/start')
     assert r.status_code == 409
-    assert r.json()['detail'] == {
-        'confirmation_required': True, 'reason': '기준 점수 미달', 'items': {'current': 70, 'threshold': 80}}
+    # detail은 객체 그대로 두고 code만 바깥에 더한다(프론트가 detail.confirmation_required · reason · items를 읽는다)
+    assert r.json() == {
+        'detail': {'confirmation_required': True, 'reason': '기준 점수 미달', 'items': {'current': 70, 'threshold': 80}},
+        'code': 'CONFIRMATION_REQUIRED'}
 
     r = authed_client.post(f'/projects/{pid}/review/start', json={'confirmed': True})
     assert r.status_code == 200 and r.json()['stage'] == 'reviewing'

@@ -270,7 +270,8 @@ def main() -> int:
             # 9) 표현 검수 (9 → 10)
             res = client.post(f'/projects/{pid}/review/start')
             if res.status_code == 409 and (j(res).get('detail') or {}).get('confirmation_required'):
-                step('기준 미달 확인 요청(409)', True, f"사유={j(res)['detail'].get('reason')}")
+                step('기준 미달 확인 요청(409)', j(res).get('code') == 'CONFIRMATION_REQUIRED',
+                     f"code={j(res).get('code')} 사유={j(res)['detail'].get('reason')}")
                 res = client.post(f'/projects/{pid}/review/start', json={'confirmed': True})
             step('표현 검수 시작', res.status_code == 200, f'{res.status_code}')
             poll('표현 검수', f'/projects/{pid}/status',

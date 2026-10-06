@@ -218,7 +218,7 @@ def main() -> int:
                 run_id = run_of(pid).run_id
                 res = client.delete(f'/projects/{pid}/permanent')
                 body = j(res)
-                step('2. 단계를 도는 중 영구 삭제 → 409(BUSY)', res.status_code == 409, f'{res.status_code} {body}')
+                step('2. 단계를 도는 중 영구 삭제 → 409(BUSY)', res.status_code == 409 and body.get('code') == 'BUSY', f'{res.status_code} {body}')
                 step('2. 웹 행은 그대로', client.get(f'/projects/{pid}').status_code == 200 and web_counts(pid)['project'])
                 abort_flag = scalar('SELECT abort_requested FROM orch_runs WHERE run_id=:r', r=run_id)
                 step('2. 중단 요청만 남음(단계는 아직 진행 중)', bool(abort_flag) and progress(pid) in ('실행',),
@@ -244,7 +244,7 @@ def main() -> int:
                 with engine.connect() as conn:
                     stats_before = conn.execute(text("SELECT COUNT(*) FROM orch_log_stats WHERE reason='탈퇴'")).scalar()
                 res = client.delete('/auth/me')
-                step('3. 단계를 도는 중 탈퇴 → 409(BUSY)', res.status_code == 409, f'{res.status_code} {j(res)}')
+                step('3. 단계를 도는 중 탈퇴 → 409(BUSY)', res.status_code == 409 and j(res).get('code') == 'BUSY', f'{res.status_code} {j(res)}')
                 step('3. 세션은 그대로', client.get('/auth/me').status_code == 200)
                 with SessionLocal() as db:
                     user_row = db.get(User, me['id']) is not None

@@ -155,8 +155,9 @@ def main() -> int:
 
         def blocked_by(res, pid: int):
             detail = j(res).get('detail') or {}
-            return (res.status_code == 409 and detail.get('blocked') is True and detail.get('active_project_id') == pid,
-                    f"HTTP {res.status_code} blocked={detail.get('blocked')} 진행 중 프로젝트={detail.get('active_project_id')} "
+            return (res.status_code == 409 and detail.get('blocked') is True and detail.get('active_project_id') == pid
+                    and j(res).get('code') == 'E-RUN-CONCURRENT',
+                    f"HTTP {res.status_code} code={j(res).get('code')} blocked={detail.get('blocked')} 진행 중 프로젝트={detail.get('active_project_id')} "
                     f"단계={detail.get('active_stage')} 화면={detail.get('active_screen')} 상태={detail.get('active_display_status')}")
 
         try:

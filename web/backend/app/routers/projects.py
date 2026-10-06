@@ -52,7 +52,7 @@ from app.models import (
     User,
     VerificationPolicy,
 )
-from app.orch import OrchError, OrchGateway, account_id_of, mapping, require_gateway
+from app.orch import CodedHTTPException, OrchError, OrchGateway, account_id_of, mapping, require_gateway
 from app.proofread_retention import clear_project_logs
 from app.routers.profile import compute_has_profile
 from app.schemas import (
@@ -326,7 +326,7 @@ def generate_pipeline_result(
     후보에 없는 공고는 422, 자격 불통과로 막힌 공고는 409(오류 코드는 app/orch/errors.py)."""
     _get_owned_project(db, project_id, current_user)
     if not body.notice_id:
-        raise HTTPException(status_code=422, detail='고를 공고를 알려 주세요.')
+        raise CodedHTTPException(422, 'NOTICE_REQUIRED', '고를 공고를 알려 주세요.')
     view = gateway.view_project(project_id)
     notices_before = len(view.run.notices) if view.run is not None else 0
     gateway.select_announcement_for_project(project_id, body.notice_id)
@@ -356,14 +356,14 @@ def _start_stage(project_id: int, gateway: OrchGateway, command) -> ProjectStatu
         command()
     except OrchError as exc:
         if exc.code == 'RUN_NOT_FOUND':
-            raise HTTPException(status_code=400, detail=_BEFORE_WRITING_STEPS['공고선택']) from exc
+            raise CodedHTTPException(400, 'STAGE_NOT_REACHED', _BEFORE_WRITING_STEPS['공고선택']) from exc
         if exc.code != 'INVALID_STATE':
             raise
     view = gateway.view_project(project_id)
     if view.run is None:
-        raise HTTPException(status_code=400, detail=_BEFORE_WRITING_STEPS['공고선택'])
+        raise CodedHTTPException(400, 'STAGE_NOT_REACHED', _BEFORE_WRITING_STEPS['공고선택'])
     if view.run.step in _BEFORE_WRITING_STEPS and view.run.progress == '사용자대기':
-        raise HTTPException(status_code=400, detail=_BEFORE_WRITING_STEPS[view.run.step])
+        raise CodedHTTPException(400, 'STAGE_NOT_REACHED', _BEFORE_WRITING_STEPS[view.run.step])
     return mapping.project_status_out(project_id, view)
 
 
@@ -423,7 +423,7 @@ def start_review(
     def command():
         needed = gateway.decide_for_project(project_id, 9, '진행', confirmed=confirmed)
         if needed is not None:
-            raise HTTPException(status_code=409, detail={
+            raise CodedHTTPException(409, 'CONFIRMATION_REQUIRED', {
                 'confirmation_required': True, 'reason': needed.reason, 'items': needed.items})
 
     return _start_stage(project_id, gateway, command)
@@ -441,9 +441,9 @@ def get_pipeline_result(
     _get_owned_project(db, project_id, current_user)
     outputs = gateway.outputs(project_id)
     if outputs.plan_doc is None:
-        raise HTTPException(
-            status_code=404,
-            detail='이 프로젝트엔 아직 계획서가 없습니다 — POST /projects/{id}/plan/start 로 먼저 만들어야 합니다',
+        raise CodedHTTPException(
+            404, 'PLAN_NOT_READY',
+            '이 프로젝트엔 아직 계획서가 없습니다 — POST /projects/{id}/plan/start 로 먼저 만들어야 합니다',
         )
     policy = db.query(VerificationPolicy).order_by(VerificationPolicy.policy_id.asc()).first()
     return mapping.result_out(project_id, outputs, policy)
@@ -749,9 +749,9 @@ async def create_project(
         or current_user.privacy_agreed_at is None
         or current_user.age_confirmed_at is None
     ):
-        raise HTTPException(
-            status_code=403,
-            detail='필수 항목(이용약관, 개인정보 수집·이용, 만 16세 이상 확인)에 동의해야 이용할 수 있습니다.',
+        raise CodedHTTPException(
+            403, 'E-AUTH-CONSENT',
+            '필수 항목(이용약관, 개인정보 수집·이용, 만 16세 이상 확인)에 동의해야 이용할 수 있습니다.',
         )
 
     # [2026-09-27 신규] 마이페이지 프로필 게이트 — 공식 기능정의서 v1.9 E-AUTH-PROFILE:
@@ -760,9 +760,8 @@ async def create_project(
     # /auth/me·로그인 응답이 쓰는 것과 같은 함수(compute_has_profile)를 그대로 재사용한다
     # — 슬롯 하나라도 필수 입력을 전부 채웠는지를 본다.
     if not compute_has_profile(db, current_user.user_id):
-        raise HTTPException(
-            status_code=403,
-            detail='서비스를 이용하려면 먼저 마이페이지에서 프로필을 만들어주세요.',
+        raise CodedHTTPException(
+            403, 'E-AUTH-PROFILE', '서비스를 이용하려면 먼저 마이페이지에서 프로필을 만들어주세요.',
         )
 
     # [2026-09-29 신규, 프론트 요청사항 3차 B-5] 첨부파일 개수·용량 상한 — 아직 회사/프로젝트
@@ -784,7 +783,7 @@ async def create_project(
     account_id = account_id_of(current_user.user_id)
     active = gateway.active_work(account_id)
     if active is not None:
-        raise HTTPException(status_code=409, detail=mapping.blocked_detail(active))
+        raise CodedHTTPException(409, 'E-RUN-CONCURRENT', mapping.blocked_detail(active))
 
     company = _create_company_for_project(db, current_user, body)
 
@@ -848,16 +847,16 @@ async def create_project(
     return ProjectDetailOut.model_validate(project)
 
 
-def _start_failure(check) -> HTTPException:
-    """request_start가 거절한 이유(StartCheck)를 웹 응답으로 바꾼다."""
+def _start_failure(check) -> CodedHTTPException:
+    """request_start가 거절한 이유(StartCheck)를 웹 응답으로 바꾼다. 오류 이름(code)은 오케스트레이터가 준 코드 그대로다."""
     if check.code == 'E-RUN-CONCURRENT' and check.active is not None:
-        return HTTPException(status_code=409, detail=mapping.blocked_detail(check.active))
+        return CodedHTTPException(409, 'E-RUN-CONCURRENT', mapping.blocked_detail(check.active))
     if check.code == 'E-AUTH-PROFILE':
-        return HTTPException(status_code=403, detail=check.message)
+        return CodedHTTPException(403, 'E-AUTH-PROFILE', check.message)
     if check.code == 'E-C1-REQUIRED':
-        return HTTPException(
-            status_code=422, detail={'message': check.message, 'code': check.code, 'missing': check.missing})
-    return HTTPException(status_code=400, detail={'message': check.message, 'code': check.code})
+        return CodedHTTPException(
+            422, 'E-C1-REQUIRED', {'message': check.message, 'code': check.code, 'missing': check.missing})
+    return CodedHTTPException(400, check.code or 'BAD_REQUEST', {'message': check.message, 'code': check.code})
 
 
 @router.get('/{project_id}', response_model=ProjectDetailOut)
@@ -1004,7 +1003,7 @@ def retry_task(
     try:
         orch_bundle = mapping.orch_bundle_of(body.task_key, body.bundle_id)
     except mapping.NotReworkable as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise CodedHTTPException(400, 'NOT_REWORKABLE', str(exc)) from exc
     accepted = gateway.request_rework_for_project(project_id, orch_bundle)
     return mapping.rework_accepted_out(project_id, body.task_key, orch_bundle, accepted)
 
@@ -1020,5 +1019,5 @@ def get_rework_result(
     _get_owned_project(db, project_id, current_user)
     result = gateway.rework_result(project_id)
     if result is None:
-        raise HTTPException(status_code=404, detail='재작성한 적이 없어요.')
+        raise CodedHTTPException(404, 'NOT_REWORKED_YET', '재작성한 적이 없어요.')
     return mapping.rework_result_out(project_id, result)
