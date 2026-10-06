@@ -350,6 +350,18 @@ try{
   assert.ok(ui.nodes().some(n=>n.props.role==='alert'&&flat(n).includes('작업을 시작하지 못했어요')));
   const pollsAfter=stuckPolls;await wait(1700);assert.equal(stuckPolls,pollsAfter);ui.unmount();
 
-  console.log('PASS: orchestrator flows — resume screen map, candidates pending · blocked ids, eligibility pending · stale result · 409, gate fields, screen 8 · 9 proceed, onepage infographic rebuild, rework rollback · resume, review progress, not-started guards (screen 8 · 9 · progress), partial rework rejection · plan preview refresh');
+  // 알림 이력을 눌러 열면 그 프로젝트의 공고 제목도 같이 넘긴다(번호만 넘겨 화면에 공고 제목이 비던 문제)
+  const {NotificationBell}=await server.ssrLoadModule('/src/features/workflow/shared.jsx');
+  let opened=null;
+  globalThis.fetch=async(url,opt={})=>{const path=new URL(url).pathname;
+    if(path==='/projects/notifications')return response([{notification_id:1,project_id:5,kind:'문서평가',read_at:null,created_at:'2026-10-06T01:00:00'}]);
+    if(path==='/projects')return response([{project_id:5,description:'B 프로젝트',notice_title:'초기창업패키지',stage:'plan_review_pending',match_status:'user_waiting',display_status:'확인이 필요합니다'}]);
+    return response({});};
+  ui=mount(NotificationBell,{enabled:true,onToggle(){},onOpenProject:p=>{opened=p},refreshKey:'x'});await ui.flush();
+  ui.find(n=>n.type==='button'&&n.props['aria-label']==='알림').props.onClick();await ui.flush();
+  ui.find(n=>typeof n.props.onClick==='function'&&flat(n).includes('사업계획서 평가가 끝났어요')).props.onClick();await ui.flush();
+  assert.equal(opened.id,5);assert.equal(opened.announcementTitle,'초기창업패키지');ui.unmount();
+
+  console.log('PASS: orchestrator flows — resume screen map, candidates pending · blocked ids, eligibility pending · stale result · 409, gate fields, screen 8 · 9 proceed, onepage infographic rebuild, rework rollback · resume, review progress, not-started guards (screen 8 · 9 · progress), partial rework rejection · plan preview refresh, notification history title');
   console.log('PASS: intake restoration, stale responses, final-stage lock, polling recovery, profile logout race, resume-screen routing, rewrite/generation exclusion');
 }finally{globalThis.fetch=originalFetch;await server.close()}

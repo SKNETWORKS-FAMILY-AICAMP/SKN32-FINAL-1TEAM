@@ -124,6 +124,8 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
   // 목록이 "지금 상태"라면 이건 "그동안 무슨 일이 있었는지"다. 읽음 여부가 서버에 저장돼
   // 브라우저를 바꿔도 유지된다(진행 목록의 seen은 localStorage라 이 기기에만 남는다).
   const [history, setHistory] = useState([]);
+  // 진행 알림용으로 받은 내 프로젝트 목록 — 알림 이력을 눌러 열 때 그 프로젝트의 공고 제목(notice_title)을 같이 넘긴다.
+  const [projectRows, setProjectRows] = useState([]);
   const runningKeys = useRef(new Set());
 
   useEffect(() => {
@@ -141,6 +143,7 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
     let timer = null;
     const load = () => listProjects().then((rows) => {
       if (cancelled) return;
+      setProjectRows(rows);
       const next = progressAlertsFrom(rows);
       const finished = next.find((a) => (a.done || a.failed) && runningKeys.current.has(a.key));
       if (finished) setToast(finished);
@@ -177,7 +180,9 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
     markNotificationRead(n.notification_id)
       .then(() => setHistory((rows) => rows.map((r) => (r.notification_id === n.notification_id ? { ...r, read_at: new Date().toISOString() } : r))))
       .catch((err) => console.error('알림을 읽음 처리하지 못했어요', err));
-    onOpenProject?.({ id: n.project_id, matched: true });
+    // 공고 제목을 함께 넘긴다 — 번호만 넘기면 열린 화면(자격 확인 · 계획서 등)에 공고 제목이 비어 보였다.
+    const row = projectRows.find((p) => p.project_id === n.project_id);
+    onOpenProject?.({ id: n.project_id, matched: true, announcementTitle: row?.notice_title || undefined });
   };
 
   const toggleOpen = () => {
