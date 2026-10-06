@@ -21,7 +21,7 @@
 |---|---|
 | 입력 | 없음 |
 | 출력 200 | `status`: `'정상'`·`'지연'`·`'실패'` 중 하나 (**약속 키는 이것뿐**). 참고 키: `reasons`(문장 목록), `db_status`(DB 기준 판정), `last_run_at`, `loaded_store_at`(서버가 올린 공고의 저장 시각), `checked_at` |
-| 오류 503 | `{"code": "COLLECTION_STATUS_UNAVAILABLE", "error": "<예외 이름>: 수집 상태를 읽지 못했다"}` — DB를 못 읽음. 상태를 지어내지 않는다. 다시 부르면 된다. DB 주소·오류 원문은 싣지 않는다 |
+| 오류 503 | `{"code": "COLLECTION_STATUS_UNAVAILABLE", "error": "<예외 이름>: 수집 상태를 읽지 못했다"}` — DB를 못 읽음. 상태를 지어내지 않는다. 다시 부르면 된다. 소비 쪽은 최상위 `code`만 본다. DB 주소·오류 원문은 싣지 않는다 |
 
 - `실패`: 저장 기록 없음 / 최근 배치 실패 / 최근 배치에서 출처 하나 이상 실패 / 기업마당 스냅샷 재사용.
 - `지연`: 마지막 저장이 24시간 초과, 또는 **서버가 올린 공고가 24시간 초과이거나 그 시각을 모름**.
@@ -39,7 +39,8 @@
 | `top` · `offset` | 정수, 기본 10 · 0 | 추가 조회는 `offset=10`. **누적 20건 상한**에서 잘린다 |
 | `region` · `district` | 시·도 이름(16개 중 하나) 또는 `''` · 시·군·구 | 순위에만 씀 |
 | `gender`, `certifications`(목록), `main_industry`, `first_startup`(참·거짓·null), `birth_date`, `team`, `revenue`, `hiring_plan`, `partners` | | 질의·규칙·가산점. 받기만 하는 칸은 응답 `stored_only`에 드러난다 |
-| `certifications` | 문자열 목록 | **`[]`는 "확인된 없음"**으로 계산한다(모름이 아니다) |
+| `certifications` | 문자열 목록 | **`[]`는 "확인된 없음"**으로 계산한다(모름이 아니다). 키가 없어도 `[]`로 받는다 |
+| `birth_date` | `'YYYY-MM-DD'` 또는 `''` | 청년 가점에만 쓴다. 조율 쪽에는 **아직 보내지 말아 달라**고 답했다(2026-10-06) — 보내지 않으면 청년 항목은 모름 |
 
 출력 200 — 결과 목록 `results`의 한 건:
 
@@ -75,7 +76,7 @@
 | `bonus_info` | 가점 원문(가점을 찾은 공고만), 없거나 못 읽으면 null. K-Startup은 늘 null |
 | `eligibility.applicant_types` | 신청 가능 유형 목록(세 유형 중 유형만으로 확실히 안 되는 것을 뺌) |
 | `eligibility.business_age_max_months` | 업력 상한(개월) 또는 null |
-| `eligibility.parsed` | 업력 칸을 읽었는지. **false면 상한 null은 "제한 없음"이 아니라 "모름"** |
+| `eligibility.parsed` | 업력 칸을 읽었는지. **false면 상한 null은 "제한 없음"이 아니라 "모름"**. true인데 상한이 null이면 예비창업자 전용 공고다(`applicant_types`에 사업자가 없다) |
 
 오류: 404 `NOTICE_NOT_FOUND`.
 
