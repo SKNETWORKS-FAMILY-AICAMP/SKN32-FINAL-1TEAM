@@ -44,6 +44,14 @@ export function formatKstDateTime(value){
   return p ? `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}` : '';
 }
 
+// '오후 3:15' — 오늘 안의 시각을 짧게(재개 대기의 다음 시도 시각 등)
+export function formatKstClock(value){
+  const p = kstParts(value);
+  if (!p) return '';
+  const h = Number(p.hour);
+  return `${h < 12 ? '오전' : '오후'} ${h % 12 || 12}:${p.minute}`;
+}
+
 // 'MM-DD HH:mm' — 관리자 표처럼 칸이 좁은 곳
 export function formatKstShort(value){
   const p = kstParts(value);

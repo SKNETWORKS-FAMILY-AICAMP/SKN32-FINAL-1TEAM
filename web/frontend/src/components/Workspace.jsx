@@ -5,7 +5,7 @@ import {listProjects,deleteProject,deleteProjectPermanently} from '../api.js';
 import {formatKstDate} from '../time.js';
 export const steps=[['intake','아이템 입력'],['match-results','공고 찾기'],['plan-form','사업계획서'],['artifact-result','프로토타입'],['final-verdict','제출 전 점검'],['review','최종 결과물']];
 export function WorkspaceShell({view,user,onHome,onDashboard,onMyPage,onNewProject,onLogout,notifyEnabled,onToggleNotify,onOpenProject,children}){
- const index=['match-progress','eligibility-gate','eligibility-fail'].includes(view)?1:view==='plan-progress'?2:view==='artifact-progress'?3:view==='final-pass'?4:steps.findIndex(x=>x[0]===view);
+ const index=['match-progress','eligibility-gate','eligibility-fail'].includes(view)?1:view==='plan-progress'?2:view==='artifact-progress'?3:view==='final-pass'?4:view==='review-progress'?5:steps.findIndex(x=>x[0]===view);
  // [2026-09-19] nav를 좌측 끝까지 넓히면서 상단 중앙에 빈 공간이 생겨서(사용자 지적),
  // 예전엔 topbar 아래 별도 줄이던 진행 단계(flow-navigation)를 topbar 안 중앙으로
  // 옮겨 그 공간을 쓴다 — 화면마다 줄 하나씩 줄어드는 효과도 겸한다.
@@ -98,7 +98,7 @@ export function Dashboard({onNewProject,onOpenProject}){
   {loadError&&<p className="workspace-note">프로젝트 목록을 불러오지 못했어요. 새로고침해 주세요.</p>}
 
   {!loading&&inProgress&&<div className={'continue-card'+(inProgress.failed?' is-failed':'')}>
-   <button className="continue-open" onClick={()=>onOpenProject(inProgress)}><span className="continue-icon"><Icon name={inProgress.failed?'close':'file'} size={32}/></span><div><p>{inProgress.failed?'작업이 중단됐어요':'이어서 준비하기'}</p><h2>{inProgress.name}</h2><span>{inProgress.failed?(inProgress.failedStage==='plan_writing'?'사업계획서':'프로토타입')+' 작성 중 실패하였습니다. 새 작업으로 다시 시작해주세요.':inProgress.matched?'계획서·프로토타입 준비를 이어서 진행해요':'공고 선택부터 이어서 진행해요'}</span></div></button>
+   <button className="continue-open" onClick={()=>onOpenProject(inProgress)}><span className="continue-icon"><Icon name={inProgress.failed?'close':'file'} size={32}/></span><div><p>{inProgress.failed?'작업이 중단됐어요':'이어서 준비하기'}</p><h2>{inProgress.name}</h2><span>{inProgress.failed?'일시적인 문제로 작업을 완료하지 못했습니다. 새 작업으로 다시 시작해주세요.':inProgress.matched?'계획서·프로토타입 준비를 이어서 진행해요':'공고 선택부터 이어서 진행해요'}</span></div></button>
    <div className="continue-status"><span>{inProgress.failed?'실패했습니다':inProgress.generating||(inProgress.matched?'진행 중':'매칭 대기 중')}</span>{inProgress.failed?<button type="button" className="continue-retry" onClick={onNewProject}>새로 시작하기 <Icon name="chevron" size={19}/></button>:<button type="button" onClick={()=>onOpenProject(inProgress)}>이어서 진행하기 <Icon name="chevron" size={19}/></button>}</div>
   </div>}
 

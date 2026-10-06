@@ -17,8 +17,11 @@ import {scoresFromResult,reworkBudgetFrom} from './features/workflow/utils.js';
 // stage로 다시 계산하지 않는다: 공고선택 · 자격확인은 stage가 둘 다 null이라 화면 3과 4를 가를 수 없고, 재작성 중에는
 // 요청한 화면이 들어 있다(웹연동_변경사항_웹팀전달.md 3.1).
 const VIEW_BY_SCREEN={3:'match-results',4:'eligibility-gate',5:'plan-progress',6:'plan-form',7:'artifact-progress',8:'artifact-result',9:'final-verdict',10:'review',11:'review'};
+// 표현 검수(reviewing)가 아직 도는 중 · 재개 대기 · 실패면 결과물 대신 검수 진행 화면을 연다 — 결과물은 검수가 끝나야 채워진다.
+const REVIEW_RUNNING=['in_progress','waiting_resume','failed'];
 function resumeViewOf(status){
  // 실패한 실행 건은 결과를 볼 수 없어(/result 409) 진행 화면의 실패 안내로 보낸다 — 계획서 단계면 계획서, 그 뒤면 프로토타입.
+ if(status.stage==='reviewing'&&REVIEW_RUNNING.includes(status.match_status))return 'review-progress';
  if(status.match_status==='failed')return ['plan_writing','plan_review_pending'].includes(status.stage)?'plan-progress':'artifact-progress';
  // 화면 5에서 사용자대기 = 자격 통과 뒤 작성 시작 전. 작성 시작 버튼은 자격 확인 화면에 있다 —
  // 진행 화면(plan-progress)으로 보내면 열자마자 작성이 시작돼 버린다.
@@ -290,7 +293,7 @@ export default function App(){
    // 계획서 작성 중 · 실패에는 아직 계획서가 없어 /result가 404, 실패한 실행 건은 409(결과를 볼 수 없음)다 —
    // 진행 화면은 결과 없이 열고 진행 상태만 폴링한다.
    const result=await getProjectResult(project.id).catch(err=>{
-    if((err.status===404||err.status===409)&&(nextView==='plan-progress'||nextView==='artifact-progress'))return null;
+    if((err.status===404||err.status===409)&&['plan-progress','artifact-progress','review-progress'].includes(nextView))return null;
     throw err;
    });
    if(request!==projectRequest.current)return;
@@ -371,6 +374,7 @@ export default function App(){
   {view==='plan-progress'&&<GenerationProgress kind="plan" projectId={projectId} onDone={()=>setView('plan-form')} onLeave={()=>setView('dashboard')}/>}
   {view==='plan-form'&&<PlanForm scores={scores} reworkBudget={reworkBudget} onScoresRefresh={refreshResult} announcement={announcement} onGenerate={()=>setView('artifact-progress')} scoreOutcome={scoreOutcome} itemInfo={itemInfo} projectId={projectId} reworkCounts={reworkCounts} onRework={countRework}/>}
   {view==='artifact-progress'&&<GenerationProgress kind="artifact" projectId={projectId} itemInfo={itemInfo} onDone={()=>setView('artifact-result')} onLeave={()=>setView('dashboard')}/>}
+  {view==='review-progress'&&<GenerationProgress kind="review" projectId={projectId} onDone={async()=>{await refreshResult();setView('review')}} onLeave={()=>setView('dashboard')}/>}
   {view==='artifact-result'&&<ArtifactResult scores={scores} reworkBudget={reworkBudget} artifact={pipelineResult?.plan?.artifacts?.[0]} onScoresRefresh={refreshResult} announcement={announcement} itemInfo={itemInfo} onFinalize={()=>setView('final-verdict')} scoreOutcome={scoreOutcome} projectId={projectId} reworkCounts={reworkCounts} onRework={countRework}/>}
   {view==='final-verdict'&&<FinalVerdict scores={scores} reworkBudget={reworkBudget} artifact={pipelineResult?.plan?.artifacts?.[0]} onScoresRefresh={refreshResult} announcement={announcement} itemInfo={itemInfo} onProceed={async()=>{await refreshResult();setView('review')}} docOutcome={docOutcome} artifactOutcome={artifactOutcome} setDocOutcome={setDocOutcome} setArtifactOutcome={setArtifactOutcome} projectId={projectId} reworkCounts={reworkCounts} onRework={countRework}/>}
   {view==='review'&&<ReviewScreen scores={scores} plan={pipelineResult?.plan} announcement={announcement} itemInfo={itemInfo} docOutcome={docOutcome} artifactOutcome={artifactOutcome} onGoDashboard={()=>setView('dashboard')} projectId={projectId} verdict={pipelineResult?.verdict}/>}
