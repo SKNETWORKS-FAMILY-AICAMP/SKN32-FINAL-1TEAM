@@ -160,5 +160,128 @@ try{
   assert.equal(proceed.props.disabled,true);proceed.props.onClick();assert.equal(generated,0);
   rewrite.resolve(response({cycle_id:'C1',screen:6,bundles:['문제인식'],collect_until:'2026-10-06T00:00:02Z'}));await rewriting;await ui.flush();
   assert.equal(ui.find(n=>n.type==='button'&&n.props.children==='프로토타입 생성').props.disabled,false);ui.unmount();
+
+  // ── 오케스트레이터 연동 흐름(2026-10-06) ─────────────────────────────────────────────
+  const flat=t=>{const o=[];const v=x=>{if(typeof x==='string'||typeof x==='number')o.push(String(x));else if(Array.isArray(x))x.forEach(v);else if(x&&x.props)v(x.props.children)};v(t);return o.join('')};
+  const route=handlers=>async(url,opt={})=>{const key=(opt.method||'GET')+' '+new URL(url).pathname+new URL(url).search;
+    for(const [prefix,fn] of handlers)if(key.startsWith(prefix))return fn(opt,key);
+    return response({detail:'not mocked: '+key},404);};
+  const alerts=[];window.alert=m=>alerts.push(m);
+
+  // 이어하기 — 서버 복귀 화면 번호(GET /status의 screen) → 화면
+  const appSource=(await import('node:fs')).readFileSync(new URL('../src/App.jsx',import.meta.url),'utf8');
+  const resumeViewOf=new Function(appSource.slice(appSource.indexOf('const VIEW_BY_SCREEN'),appSource.indexOf('\n}\n',appSource.indexOf('function resumeViewOf'))+3)+';return resumeViewOf;')();
+  for(const [status,view] of [
+    [{screen:3},'match-results'],
+    [{screen:3,stage:null,match_status:'user_waiting'},'match-results'],
+    [{screen:5,stage:'plan_writing',match_status:'user_waiting'},'eligibility-gate'],
+    [{screen:5,stage:'plan_writing',match_status:'in_progress'},'plan-progress'],
+    [{screen:5,stage:'plan_writing',match_status:'failed'},'plan-progress'],
+    [{screen:7,stage:'prototype_building',match_status:'failed'},'artifact-progress'],
+    [{screen:9,stage:'final_review_pending',match_status:'user_waiting'},'final-verdict'],
+    [{screen:10,stage:'reviewing',match_status:'in_progress'},'review-progress'],
+    [{screen:10,stage:'reviewing',match_status:'failed'},'review-progress'],
+    [{screen:11,stage:'done',match_status:'completed'},'review'],
+  ])assert.equal(resumeViewOf(status),view,JSON.stringify(status));
+
+  // 공고 후보 — 막힌 공고는 서버 ID 목록으로, 후보 조회 pending이면 다시 부른다
+  const cand={status:'ready',rematch_used:false,blocked_notice_ids:['N-2'],notices:[],
+    candidates:[{notice_id:'N-1',title:'공고1',batch:1},{notice_id:'N-2',title:'공고2',batch:1}]};
+  let candidateCalls=0,loaded=null;
+  globalThis.fetch=route([['GET /projects/1/match-candidates',()=>response(++candidateCalls<2?{status:'pending',candidates:[],rematch_used:false}:cand)]]);
+  ui=mount(MatchResults,{projectId:1,candidates:null,onCandidatesLoaded:v=>{loaded=v},onCheckEligibility(){}});await ui.flush();
+  await wait(1700);await ui.flush();assert.equal(candidateCalls,2);assert.equal(loaded.status,'ready');ui.unmount();
+  ui=mount(MatchResults,{projectId:1,candidates:cand,onCandidatesLoaded(){},onCheckEligibility(){}});await ui.flush();
+  assert.deepEqual(ui.component('CandidateGroup').props.blockedIds,['N-2']);ui.unmount();
+
+  // 자격 확인 — pending이면 방금 고른 공고 ID로 GET /eligibility, 이전 공고 결과가 오면 화면 4로 가지 않는다
+  const pickAndConfirm=async(props)=>{ui=mount(MatchResults,props);await ui.flush();
+    ui.component('CandidateGroup').props.onSelect('N-1');await ui.flush();
+    await ui.find(n=>n.type==='button'&&n.props.children==='신청 자격 확인하기').props.onClick();await ui.flush();};
+  let eligibilityPaths=[],checked=null;
+  globalThis.fetch=route([
+    ['POST /projects/1/generate',()=>response({status:'pending'})],
+    ['GET /projects/1/eligibility',(opt,key)=>{eligibilityPaths.push(key);return response({status:'ready',match:{notice_id:'N-1'},eligibility:{passed:true}})}],
+  ]);
+  await pickAndConfirm({projectId:1,candidates:cand,onCandidatesLoaded(){},onCheckEligibility:(c,r)=>{checked=[c,r]}});
+  assert.equal(checked[0].notice_id,'N-1');assert.equal(checked[1].status,'ready');
+  assert.deepEqual(eligibilityPaths,['GET /projects/1/eligibility?notice_id=N-1']);ui.unmount();
+  checked=null;
+  globalThis.fetch=route([
+    ['POST /projects/1/generate',()=>response({status:'pending'})],
+    ['GET /projects/1/eligibility?notice_id=N-1',()=>response({status:'ready',match:{notice_id:'N-9'},eligibility:{passed:true}})],
+    ['GET /projects/1/status',()=>response({screen:5,match_status:'user_waiting'})],
+  ]);
+  await pickAndConfirm({projectId:1,candidates:cand,onCandidatesLoaded(){},onCheckEligibility:(c,r)=>{checked=[c,r]}});
+  assert.equal(checked,null);assert.ok(ui.find(n=>n.type==='button'&&n.props.children==='이전에 확인한 공고로 계속하기'));ui.unmount();
+  // 409(막힌 공고 등)면 안내 후 후보를 다시 받는다
+  let reloaded=false;
+  globalThis.fetch=async()=>response({detail:'신청 자격에 맞지 않는 공고예요. 다른 공고를 선택해 주세요.',code:'ANNOUNCEMENT_BLOCKED'},409);
+  await pickAndConfirm({projectId:1,candidates:cand,onCandidatesLoaded:v=>{if(v===null)reloaded=true},onCheckEligibility(){}});
+  assert.ok(reloaded);ui.unmount();
+
+  // 자격 확인 화면 — 확인 필요 조건 · 업력 · can_start_writing
+  const {EligibilityGate}=await server.ssrLoadModule('/src/features/workflow/EligibilityGate.jsx');
+  const gate=(eligibility)=>flat(EligibilityGate({announcement:{title:'공고'},eligibility,notices:[],onProceed(){},onLeave(){}}));
+  let gateText=gate({passed:true,unknown_conditions:['업력'],business_age_years:2.5,can_start_writing:true});
+  assert.ok(gateText.includes('공고문을 직접 확인해 주세요')&&gateText.includes('업력 2.5년')&&gateText.includes('사업계획서 작성하기'),gateText);
+  assert.ok(gate({passed:true,can_start_writing:false}).includes('다른 공고 다시 보기'));
+  assert.ok(gate({passed:false,failed_conditions:[],missing_inputs:['foundedAt']}).includes('설립일'));
+
+  // 화면 8 → 9 — final-review/start, 실패한 실행(200 + failed)이면 넘어가지 않는다
+  const {ArtifactResult}=await server.ssrLoadModule('/src/features/workflow/ArtifactResult.jsx');
+  const artifactBase={announcement:{title:'공고'},itemInfo:{item:'웹 서비스'},projectId:7,reworkCounts:{}};
+  for(const [matchStatus,expected] of [['user_waiting',1],['failed',0]]){
+    let finalized=0;
+    globalThis.fetch=route([['POST /projects/7/final-review/start',()=>response({stage:'final_review_pending',match_status:matchStatus})],['GET /projects/7/status',()=>response({stage:'artifact_review'})]]);
+    ui=mount(ArtifactResult,{...artifactBase,onFinalize:()=>{finalized++}});await ui.flush();
+    await ui.find(n=>n.type==='button'&&String(n.props.children).includes('종합 평가 확인하기')).props.onClick();await ui.flush();
+    assert.equal(finalized,expected,matchStatus);ui.unmount();
+  }
+
+  // 화면 9 → 10 — review/start, 미달이면 서버 409 확인 내용 → confirmed=true, 끝날 때까지 상태 확인
+  const {FinalVerdict}=await server.ssrLoadModule('/src/features/workflow/FinalVerdict.jsx');
+  const verdictBase={announcement:{title:'공고'},itemInfo:{item:'웹 서비스'},projectId:7,docOutcome:'fail',artifactOutcome:'fail',setDocOutcome(){},setArtifactOutcome(){},onRework(){},onScoresRefresh:async()=>{}};
+  let reviewBodies=[],proceeded=0,statusPolls=0;
+  globalThis.fetch=route([
+    ['POST /projects/7/review/start',opt=>{reviewBodies.push(opt.body);return reviewBodies.length===1
+      ?response({detail:{confirmation_required:true,reason:'검수 진입 확인',items:{'현재 점수':72,'기준':80,'남는 미달 항목':['문제 근거 부족']}},code:'CONFIRMATION_REQUIRED'},409)
+      :response({stage:'reviewing',match_status:'in_progress',progress_percent:10})}],
+    ['GET /projects/7/status',()=>response(++statusPolls<2?{stage:'reviewing',match_status:'in_progress'}:{stage:'done',match_status:'completed'})],
+  ]);
+  ui=mount(FinalVerdict,{...verdictBase,scores:{total:72,threshold:80},onProceed:async()=>{proceeded++}});await ui.flush();
+  await ui.find(n=>n.type==='button'&&n.props.children==='이대로 진행하기').props.onClick();await ui.flush();
+  assert.ok(flat(ui.nodes()[0]).includes('문제 근거 부족'));
+  await ui.find(n=>n.type==='button'&&n.props.children==='그래도 진행하기').props.onClick();
+  assert.deepEqual(reviewBodies,['{"confirmed":false}','{"confirmed":true}']);assert.equal(proceeded,1);ui.unmount();
+
+  // 재작성(화면 6) — 실패면 되돌림 안내 · 횟수 안 셈, 화면을 다시 열면 /status rework_screen으로 진행 중을 이어 본다
+  let reworked=null,reworkReads=0;
+  globalThis.fetch=route([
+    ['POST /projects/2/retry-task',()=>response({cycle_id:'C2',screen:6,bundles:['문제인식'],collect_until:'2026-10-06T00:00:02Z'})],
+    ['GET /projects/2/rework-result',()=>response({cycle_id:'C2',status:'실패',screen:6,bundles:['문제인식'],rolled_back:true})],
+    ['GET /projects/2/status',()=>response({stage:'plan_review_pending',rework_screen:null})],
+  ]);
+  ui=mount(PlanForm,{projectId:2,onRework:p=>{reworked=p}});await ui.flush();
+  ui.find(n=>n.type==='input'&&n.props.type==='checkbox').props.onChange();await ui.flush();
+  alerts.length=0;await ui.find(n=>n.type==='button'&&n.props.children==='선택 항목 재작성').props.onClick();await ui.flush();
+  assert.equal(reworked,null);assert.ok(alerts.some(m=>m.includes('이전 결과로 되돌렸습니다')),alerts.join());ui.unmount();
+  globalThis.fetch=route([
+    ['GET /projects/2/status',()=>response({stage:'plan_review_pending',rework_screen:6,collecting:false})],
+    ['GET /projects/2/rework-result',()=>response(++reworkReads<2?{cycle_id:'C3',status:'진행중',screen:6,bundles:['성장전략']}:{cycle_id:'C3',status:'완료',screen:6,bundles:['성장전략'],changed:{}})],
+  ]);
+  reworked=null;ui=mount(PlanForm,{projectId:2,onRework:p=>{reworked=p}});await ui.flush();await wait(2200);await ui.flush();
+  assert.deepEqual(reworked,['성장전략']);ui.unmount();
+
+  // 검수 진행 화면 — 시작 API 없이 상태만, 재개 대기면 다음 시도 시각(한국 시간), 끝나면 100%
+  let reviewCalls=[],reviewPolls=0;
+  globalThis.fetch=async(url,opt={})=>{reviewCalls.push(opt.method||'GET');
+    return response(++reviewPolls<2?{stage:'reviewing',match_status:'waiting_resume',resume_count:1,next_retry_at:'2026-10-06T06:15:00Z'}:{stage:'done',match_status:'completed'})};
+  ui=mount(GenerationProgress,{kind:'review',projectId:3});await ui.flush();
+  assert.ok(flat(ui.nodes().find(n=>n.props.role==='status')).includes('오후 3:15에 자동으로 다시 시도해요 (1/5)'));
+  await wait(1600);await ui.flush();assert.equal(ui.component('Preparation').props.progress,100);
+  assert.ok(reviewCalls.every(m=>m==='GET'));ui.unmount();
+
+  console.log('PASS: orchestrator flows — resume screen map, candidates pending · blocked ids, eligibility pending · stale result · 409, gate fields, screen 8 · 9 proceed, rework rollback · resume, review progress');
   console.log('PASS: intake restoration, stale responses, final-stage lock, polling recovery, profile logout race, resume-screen routing, rewrite/generation exclusion');
 }finally{globalThis.fetch=originalFetch;await server.close()}
