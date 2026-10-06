@@ -40,7 +40,7 @@ try{
   const {PlanForm}=await server.ssrLoadModule('/src/features/workflow/PlanForm.jsx');
   const {useWorkflowStore:store}=await server.ssrLoadModule('/src/store/useWorkflowStore.js');
   const file=new Blob(['attachment']);
-  const draft={applicantType:'individual',ceoName:'대표',birthDate:'1990-01-01',gender:'남성',foundedAt:'2024-01-01',
+  const draft={applicantType:'individual',ceoName:'대표',birthDate:'1990-01-01',gender:'남성',foundedAt:'2024-01-01',companyName:'테스트상사',
     item:'아이디어 상세 설명',files:[file],team:[],noTeam:true,pricing:[{item:'서비스',price:'1000'}],region:{sido:'서울특별시',sigungu:'강남구'},
     industry:'정보·통신',careers:[{type:'경력',title:'개발',period:'2020-2024',hasProof:true}],skills:'개발 역량',certs:['벤처기업'],
     devPeriod:{start:'2026-10',end:'2026-12'},selfFunding:{available:true,cashLimit:'1000000',inKindResources:'보유 장비'},
@@ -72,9 +72,10 @@ try{
     if(++statusCalls===1)throw new Error('simulated temporary disconnect');
     return response({stage:'plan_review_pending',progress_percent:100});
   };
-  ui=mount(GenerationProgress,{kind:'plan',projectId:1});await ui.flush();await wait(1600);await ui.flush();
+  // 첫 상태 조회가 끊기면 바로 '연결이 잠시 끊겼어요' 안내 → 1.5초 뒤 다시 조회해 회복하고, 진행률이 끝까지 간다.
+  ui=mount(GenerationProgress,{kind:'plan',projectId:1});await ui.flush();
   assert.ok(ui.nodes().some(n=>n.props.role==='alert'));
-  await wait(1600);await ui.flush();assert.equal(ui.component('Preparation').props.progress,100);
+  await wait(1600);await ui.flush();await wait(1600);await ui.flush();assert.equal(ui.component('Preparation').props.progress,100);
   assert.ok(!ui.nodes().some(n=>n.props.role==='alert'));ui.unmount();
 
   let startCalls=0;
@@ -92,7 +93,7 @@ try{
     if(path==='/projects'&&options.method==='POST'){createRequest=deferred();return createRequest.promise;}
     if(path==='/projects/2')return response({description:'B project',company:{},team_members:[],pricing_items:[]});
     if(path==='/projects/2/result')return response({match:{fit_score:0},verdict:{overall_passed:true}});
-    if(path==='/projects/2/status')return response({stage:'done'});
+    if(path==='/projects/2/status')return response({screen:11,stage:'done',match_status:'completed'});
     throw new Error('Unexpected request: '+path);
   };
   store.getState().resetProject();
@@ -112,9 +113,8 @@ try{
   ui.component('Dashboard').props.onNewProject();await ui.flush();
   saving=ui.component('IntakeForm').props.onSubmit(draft);await ui.flush();
   ui.component('WorkspaceShell').props.onDashboard();await ui.flush();
-  cache.set('sbrain-last-view:2','review');
-  await ui.component('Dashboard').props.onOpenProject({id:2,matched:true,announcementTitle:'B notice'},'plan-form');await ui.flush();
-  assert.ok(ui.component('ReviewScreen'));assert.equal(cache.get('sbrain-last-view:2'),'review');
+  await ui.component('Dashboard').props.onOpenProject({id:2,matched:true,announcementTitle:'B notice'});await ui.flush();
+  assert.ok(ui.component('ReviewScreen'));
   createRequest.resolve(response({project_id:99}));await saving;await ui.flush();
   assert.equal(store.getState().projectId,2);assert.equal(store.getState().itemInfo.item,'B project');ui.unmount();
   // A delayed profile refresh must not log the user back in after logout.
@@ -126,10 +126,9 @@ try{
   refresh.resolve(response({user_id:1,name:'Old session',has_profile:true}));await refreshing;await ui.flush();
   assert.equal(ui.component('Landing').props.user,null);ui.unmount();
 
-  // Fresh browsers have no saved view: server stages must select the correct screen.
-  for(const [stage,screen] of [['artifact_review','ArtifactResult'],['final_review_pending','FinalVerdict']]){
-    cache.delete('sbrain-last-view:2');
-    globalThis.fetch=(url,options)=>String(url).endsWith('/projects/2/status')?Promise.resolve(response({stage})):appFetch(url,options);
+  // The server's resume screen (GET /status screen) must select the correct view.
+  for(const [stage,screenNo,screen] of [['artifact_review',8,'ArtifactResult'],['final_review_pending',9,'FinalVerdict']]){
+    globalThis.fetch=(url,options)=>String(url).endsWith('/projects/2/status')?Promise.resolve(response({screen:screenNo,stage,match_status:'user_waiting'})):appFetch(url,options);
     ui=mount(App);await ui.flush();ui.component('Landing').props.onStart();await ui.flush();
     await ui.component('Dashboard').props.onOpenProject({id:2,matched:true});await ui.flush();
     assert.ok(ui.component(screen));ui.unmount();
@@ -149,7 +148,9 @@ try{
 
   // Rewriting a plan and generating its prototype must not run concurrently.
   const rewrite=deferred();let generated=0;
-  globalThis.fetch=(url)=>String(url).endsWith('/retry-task')?rewrite.promise:Promise.resolve(response({stage:'plan_review_pending'}));
+  globalThis.fetch=(url)=>String(url).endsWith('/retry-task')?rewrite.promise
+    :String(url).endsWith('/rework-result')?Promise.resolve(response({cycle_id:'C1',status:'완료',screen:6,bundles:['문제인식'],changed:{}}))
+    :Promise.resolve(response({stage:'plan_review_pending'}));
   ui=mount(PlanForm,{projectId:2,onGenerate:()=>generated++});await ui.flush();
   ui.find(n=>n.type==='button'&&n.props.children==='프로토타입 생성').props.onClick();await ui.flush();
   ui.find(n=>n.type==='input'&&n.props.type==='checkbox').props.onChange();await ui.flush();
@@ -157,7 +158,7 @@ try{
   assert.equal(ui.find(n=>n.type==='button'&&n.props.children==='프로토타입 생성').props.disabled,true);
   const proceed=ui.find(n=>n.type==='button'&&n.props.children==='그래도 진행하기');
   assert.equal(proceed.props.disabled,true);proceed.props.onClick();assert.equal(generated,0);
-  rewrite.resolve(response({}));await rewriting;await ui.flush();
+  rewrite.resolve(response({cycle_id:'C1',screen:6,bundles:['문제인식'],collect_until:'2026-10-06T00:00:02Z'}));await rewriting;await ui.flush();
   assert.equal(ui.find(n=>n.type==='button'&&n.props.children==='프로토타입 생성').props.disabled,false);ui.unmount();
-  console.log('PASS: intake restoration, stale responses, final-stage lock, polling recovery, profile logout race, stage routing, rewrite/generation exclusion');
+  console.log('PASS: intake restoration, stale responses, final-stage lock, polling recovery, profile logout race, resume-screen routing, rewrite/generation exclusion');
 }finally{globalThis.fetch=originalFetch;await server.close()}
