@@ -982,7 +982,8 @@ class AgentOpsSummaryOut(BaseModel):
     total_executions: int
     initial_executions: int
     rerun_executions: int
-    total_tokens: int
+    total_tokens: int  # 글 토큰만(이미지 토큰은 total_image_tokens)
+    total_image_tokens: int = 0  # [SB-302] 이미지 입력 + 출력 토큰 합. 이미지 호출이 없으면 0
     initial_avg_tokens: float | None = None
     rerun_avg_tokens: float | None = None
     token_violation_rate: float | None = None

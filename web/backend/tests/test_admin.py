@@ -752,6 +752,9 @@ def test_agent_executions_use_web_labels_and_filters(admin_client, orch):
     assert rows['e2']['retryable'] is True and rows['e3']['retryable'] is False
     assert rows['e2']['error_reason'] == '시간 초과'
     assert 'output_ref' not in rows['e1']
+    # [SB-302] 이미지 호출이 없으면 합 0 · 칸은 None
+    assert rows['e1']['image_token_usage'] == 0
+    assert rows['e1']['image_tokens'] == {'input_tokens': None, 'output_tokens': None}
     (_args, kwargs), = [(a, k) for n, a, k in orch.calls if n == 'admin_executions']
     assert kwargs == {'project_id': 7, 'status': '실패', 'limit': 500}  # 웹 표기를 한글로 바꿔 넘기고 상한은 500
 
@@ -791,7 +794,7 @@ def test_agent_ops_summary_splits_initial_and_rerun(admin_client, orch):
 
     assert body['total_executions'] == 14 and body['initial_executions'] == 10 and body['rerun_executions'] == 4
     assert body['initial_avg_tokens'] == 100.0 and body['rerun_avg_tokens'] == 200.0  # 실행 수로 가중한 평균
-    assert body['total_tokens'] == 1800
+    assert body['total_tokens'] == 1800 and body['total_image_tokens'] == 0
     assert (body['token_check_count'], body['token_violation_count'], body['token_violation_rate']) == (20, 5, 25.0)
 
 
@@ -839,3 +842,28 @@ def test_admin_orchestrator_endpoints_require_admin(user_client):
     for path in ['/admin/items', '/admin/agent-executions', '/admin/agent-tasks', '/admin/agent-ops-summary',
                  '/admin/ops-summary', '/admin/items/1/score-history']:
         assert user_client.get(path).status_code == 403, path
+
+
+# ── [SB-302] 이미지 토큰 ─────────────────────────────────────────────────────────────────
+def test_agent_executions_show_image_tokens_apart_from_text_tokens(admin_client, orch):
+    orch.responses['admin_executions'] = lambda **kw: [
+        make_admin_execution(execution_id='img', task_id='T-B2', agent='구현', tokens=make_tokens(100, 20),
+                             image_input_tokens=300, image_output_tokens=1500),
+        make_admin_execution(execution_id='half', image_input_tokens=50, image_output_tokens=None),
+    ]
+
+    rows = {r['execution_id']: r for r in admin_client.get('/admin/agent-executions').json()}
+
+    assert rows['img']['token_usage'] == 120  # 글 토큰만 — 이미지 토큰이 섞이지 않는다
+    assert rows['img']['image_token_usage'] == 1800
+    assert rows['img']['image_tokens'] == {'input_tokens': 300, 'output_tokens': 1500}
+    assert rows['half']['image_token_usage'] == 50
+    assert rows['half']['image_tokens'] == {'input_tokens': 50, 'output_tokens': None}
+
+
+def test_agent_ops_summary_shows_total_image_tokens_apart_from_text_tokens(admin_client, orch):
+    orch.responses['admin_summary'] = lambda: make_admin_summary(total_tokens=1800, total_image_tokens=4200)
+
+    body = admin_client.get('/admin/agent-ops-summary').json()
+
+    assert body['total_tokens'] == 1800 and body['total_image_tokens'] == 4200
