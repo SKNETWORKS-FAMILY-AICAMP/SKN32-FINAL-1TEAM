@@ -56,3 +56,31 @@ class PlanInPromptTests(TestCase):
             tasks.run_tb1(TB1In(feature_list=FEATURES, item_spec=spec, category="웹개발", instruction="만들어라"),
                           tools=None)
             self.assertEqual(seen["plan_text"], "")
+
+    def test_rework_issues_are_not_appended_again(self):
+        """조율이 문제 내용을 지시문 끝에 이미 붙여 넘긴다. 여기서 또 붙이면 두 번 들어간다."""
+        from unittest.mock import patch
+
+        from tests import fake_sbrain
+
+        patcher = fake_sbrain.install()
+        self.addCleanup(patcher.stop)
+        from engineering_agent import tasks
+        from sbrain.contracts.tasks import TB1In
+        from sbrain.models import ItemSpec, ReworkInput
+
+        seen = {}
+
+        def fake_build(feature_list, item_spec, category, instruction, tools, plan_text=""):
+            seen["instruction"] = instruction
+            return {"status": "failed", "entryFilePath": None, "summary": "시험", "implementedFeatures": []}
+
+        flow_instruction = "만들어라\n\n[재수행 — 문제가 된 내용]\n- E-B1-DEP: 외부 스크립트"
+        spec = ItemSpec(item_name="점검콕", one_line_summary="요약", target_customer="고객",
+                        core_features=FEATURES, category="웹개발", keywords=[])
+        rework = ReworkInput(mode="재수행", previous_result_ref="prototype@1",
+                             issues=["E-B1-DEP: 외부 스크립트"], is_final_attempt=False)
+        with patch.object(tasks, "build_prototype_html", fake_build):
+            tasks.run_tb1(TB1In(feature_list=FEATURES, item_spec=spec, category="웹개발",
+                                instruction=flow_instruction, rework_input=rework), tools=None)
+        self.assertEqual(seen["instruction"], flow_instruction)

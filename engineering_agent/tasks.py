@@ -19,13 +19,8 @@ if TYPE_CHECKING:
     from sbrain.orchestrator.tools import Tools
 
 
-def _instruction(base: str, rework) -> str:
-    if rework is None:
-        return base
-    details = [base, *rework.issues]
-    if rework.order is not None:
-        details.append(rework.order.instruction_delta)
-    return "\n".join(part for part in details if part)
+# 재실행 때 rework_input의 issues · instruction_delta는 지시문에 다시 붙이지 않는다. 조율이 이미
+# 지시문 끝에 [재수행 — 문제가 된 내용] · [재작성] 블록으로 붙여서 넘긴다(T-C3 다시 쓰기).
 
 
 def run_tb1(inp: TB1In, tools: Tools) -> TB1Out:
@@ -37,7 +32,7 @@ def run_tb1(inp: TB1In, tools: Tools) -> TB1Out:
     plan_doc = getattr(inp, "plan_doc", None)
     result = build_prototype_html(
         inp.feature_list, inp.item_spec.dump(), inp.category,
-        _instruction(inp.instruction, inp.rework_input), tools,
+        inp.instruction, tools,
         plan_text=_plan_text(plan_doc) if plan_doc is not None else "",
     )
     passed = result["status"] == "success"
@@ -216,7 +211,7 @@ def run_tb2(inp: TB2In, tools: Tools) -> TB2Out:
     content = generate_infographic_content(
         inp.category, f"아이템명: {inp.item_spec.item_name}\n목표 고객: {inp.item_spec.target_customer}\n"
         f"기능 목록: {', '.join(inp.plan_doc.feature_list)}\n{plan_text}\n"
-        f"작업 지시: {_instruction(inp.instruction, inp.rework_input)}"
+        f"작업 지시: {inp.instruction}"
         + (f"\n{RETRY_HINT}" if inp.rework_input is not None else ""), tools,
         variation=_layout_variation(inp.item_spec.item_name, inp.rework_input),
     )
