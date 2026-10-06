@@ -215,10 +215,18 @@ def make_gate_screen(announcement_id: str = 'N-01', gate: NS | None = None, **ov
     return NS(**base)
 
 
+def make_feature_match(**overrides: Any) -> NS:
+    """계획서 대조 결과(FeatureMatchResult) — 확장 필드(withheld · withheld_reason · partial_features) 포함."""
+    base = dict(
+        score=15.0, missing_features=[], extra_features=[], findings=[], judged_by='규칙', withheld=False,
+        withheld_reason=None, partial_features=[])
+    base.update(overrides)
+    return NS(**base)
+
+
 def make_score_view(total: float = 82.0, threshold: float = 80.0, passed: bool = True, with_artifact: bool = True) -> NS:
     artifact = NS(
-        total=30.0, code_check=NS(total=15.0, checks=[]), feature_match=NS(
-            score=15.0, missing_features=[], extra_features=[], findings=[], judged_by='규칙'),
+        total=30.0, code_check=NS(total=15.0, checks=[]), feature_match=make_feature_match(),
     ) if with_artifact else None
     return NS(
         display_score=total, total=total, threshold=threshold, passed=passed, phase='종합',

@@ -5,6 +5,7 @@ from types import SimpleNamespace as NS
 from orch_fakes import (
     Card,
     Dumpable,
+    make_feature_match,
     make_gate,
     make_outputs,
     make_plan_doc,
@@ -102,8 +103,8 @@ def _full_outputs(category='웹개발', **overrides):
               NS(no=2, name='보안', weight=10.0, passed=False, detail='키가 노출돼요')]
     report = make_score_view(total=82.0, threshold=80.0, passed=True)
     report.artifact_score.code_check = NS(total=5.0, checks=checks)
-    report.artifact_score.feature_match = NS(
-        score=12.0, missing_features=['결제'], extra_features=[], findings=['로그인 일부 누락'], judged_by='AI')
+    report.artifact_score.feature_match = make_feature_match(
+        score=12.0, missing_features=['결제'], findings=['로그인 일부 누락'], judged_by='AI')
     base = dict(
         step='결과물', progress='완료', category=category, plan_doc=make_plan_doc(),
         doc_score=NS(total=52.0, items=[]), document_score_report=make_score_view(with_artifact=False),
@@ -130,6 +131,7 @@ def test_result_maps_verdict_artifact_and_bundle_usages(authed_client, orch):
     # 웹 정책 행이 없으면 기본 만점(문서 70 · 코드 15 · 대조 15)
     assert (verdict['doc_max_score'], verdict['code_max_score'], verdict['plan_match_max_score']) == (70.0, 15.0, 15.0)
     assert verdict['model_version'] is None and verdict['first_pass_passed'] is None
+    assert verdict['plan_match_withheld'] is False
 
     artifact = body['plan']['artifacts'][0]
     assert artifact['category'] == 'webdev'
@@ -176,3 +178,38 @@ def test_result_proofread_attempts_become_logs_grouped_by_sentence(authed_client
     assert logs[0]['violation_type'] == '수치·금액'
     assert logs[0]['violation_note'] == '빠짐: 1억원 / 바뀜: A / 섞임: B'
     assert logs[1]['violation_note'] is None
+
+
+# ── [SB-301] 계획서 대조 보류 — "대조 불가" ─────────────────────────────────────────────────
+def _withheld_outputs():
+    outputs = _full_outputs()
+    withheld = make_feature_match(
+        score=0.0, findings=['기능 목록이 비어 있어요'], judged_by='규칙', withheld=True, withheld_reason='E-V2-NOFEATURE')
+    outputs.overall_score_report.artifact_score.feature_match = withheld
+    outputs.feature_match = withheld
+    return outputs
+
+
+def test_result_marks_withheld_plan_match(authed_client, orch):
+    """대조가 보류되면 점수는 0점으로 합산되어 오지만 화면은 0점이 아니라 '대조 불가'로 보여 줘야 한다."""
+    pid = _create(authed_client)
+    orch.responses['outputs'] = lambda p: _withheld_outputs()
+    body = _result(authed_client, pid).json()
+
+    verdict = body['verdict']
+    assert verdict['plan_match_withheld'] is True
+    assert verdict['plan_match_score'] == 0.0 and verdict['plan_match_max_score'] == 15.0
+    assert verdict['total_score'] == 82.0  # 총점은 오케스트레이터 값 그대로(웹이 다시 계산하지 않는다)
+    reasons = {r['item_code']: r for r in body['plan']['artifacts'][0]['score_reasons']}
+    assert '대조 불가' in reasons['FEATURE-MATCH']['reason_text']
+    assert reasons['FEATURE-MATCH']['score'] == 0.0 and reasons['FEATURE-MATCH']['max_score'] == 15.0
+    assert 'E-V2-NOFEATURE' not in str(body)  # 보류 사유 코드는 사용자에게 내지 않는다
+
+
+def test_result_without_withheld_keeps_findings_text(authed_client, orch):
+    pid = _create(authed_client)
+    orch.responses['outputs'] = lambda p: _full_outputs()
+    body = _result(authed_client, pid).json()
+    reasons = {r['item_code']: r for r in body['plan']['artifacts'][0]['score_reasons']}
+    assert '로그인 일부 누락' in reasons['FEATURE-MATCH']['reason_text']
+    assert '대조 불가' not in reasons['FEATURE-MATCH']['reason_text']

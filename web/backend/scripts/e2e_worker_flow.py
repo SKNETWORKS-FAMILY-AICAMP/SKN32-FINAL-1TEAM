@@ -236,6 +236,9 @@ def main() -> int:
             verdict = result.get('verdict') or {}
             step('결과: 종합 판정', bool(verdict),
                  f"총점 {verdict.get('total_score')} / 기준 {verdict.get('pass_threshold')} 통과={verdict.get('overall_passed')}")
+            # [SB-301] 계획서 대조 보류 표시 — 스텁 Agent는 대조를 보류하지 않으므로 False로 와야 한다(필드가 실제로 내려오는지 본다)
+            step('결과: 계획서 대조 보류 표시(plan_match_withheld)', verdict.get('plan_match_withheld') is False,
+                 f"plan_match_withheld={verdict.get('plan_match_withheld')} 대조 점수={verdict.get('plan_match_score')}")
 
             # 8) (선택) 재작성
             if args.rework:

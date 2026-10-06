@@ -344,6 +344,9 @@ def plan_score_reasons(outputs) -> list[schemas.PlanScoreReasonOut]:
     ]
 
 
+WITHHELD_REASON_TEXT = '계획서와 구현 기능을 대조하지 못했습니다(대조 불가). 이 항목은 0점으로 합산됩니다.'
+
+
 def artifact_score_reasons(outputs) -> list[schemas.ArtifactScoreReasonOut]:
     """산출물층 — 코드 점검은 항목마다 'CHECK-이름', 기능 대조는 하나로 'FEATURE-MATCH'(접두어가 프론트가 층을 가르는 기준)."""
     reasons: list[schemas.ArtifactScoreReasonOut] = []
@@ -355,8 +358,12 @@ def artifact_score_reasons(outputs) -> list[schemas.ArtifactScoreReasonOut]:
     if outputs.feature_match is not None:
         fm = outputs.feature_match
         notes = [*fm.findings, *[f'누락 기능: {m}' for m in fm.missing_features]]
+        if fm.withheld:  # 판정 보류 — 점수는 0점으로 합산되고 화면은 '대조 불가'로 보인다(SB-301)
+            reason_text = WITHHELD_REASON_TEXT
+        else:
+            reason_text = ' / '.join(notes) or '계획서와 구현 기능이 맞습니다.'
         reasons.append(schemas.ArtifactScoreReasonOut(
-            reason_text=' / '.join(notes) or '계획서와 구현 기능이 맞습니다.', item_code='FEATURE-MATCH',
+            reason_text=reason_text, item_code='FEATURE-MATCH',
             display_name='계획서 대조', score=fm.score, max_score=FEATURE_MATCH_MAX))
     return reasons
 
@@ -393,6 +400,7 @@ def verdict_out(outputs, policy) -> schemas.VerdictOut | None:
         code_max_score=float(policy.code_weight) if policy is not None else DEFAULT_CODE_MAX,
         plan_match_score=artifact.feature_match.score if artifact is not None else None,
         plan_match_max_score=float(policy.plan_weight) if policy is not None else DEFAULT_PLAN_MAX,
+        plan_match_withheld=bool(artifact is not None and artifact.feature_match.withheld),
         total_score=report.total,
         pass_threshold=report.threshold,
     )

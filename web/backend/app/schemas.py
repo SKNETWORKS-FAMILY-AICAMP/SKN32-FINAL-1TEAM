@@ -544,6 +544,9 @@ class VerdictOut(BaseModel):
     code_max_score: float | None = None
     plan_match_score: float | None = None
     plan_match_max_score: float | None = None
+    # [SB-301] 계획서 대조 판정이 보류됐으면 True — 이때 plan_match_score는 0점으로 합산되어 오므로(총점에도 0점이 들어 있다)
+    # 화면은 0점이 아니라 "대조 불가"로 보여 준다. 보류 사유 코드는 사용자에게 내지 않는다(관리자 기록).
+    plan_match_withheld: bool = False
     total_score: float | None = None
     pass_threshold: float | None = None
 
