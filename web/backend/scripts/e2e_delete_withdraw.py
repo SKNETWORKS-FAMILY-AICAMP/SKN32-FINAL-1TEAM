@@ -9,7 +9,7 @@ e2e_failure_resume.py처럼 워커를 이 프로세스 안에서 돌린다(따�
 차례대로:
   1. 영구 삭제(쉬는 중)   화면 6 대기 프로젝트 → 204, 웹 행 · 알림 삭제, 산출물 삭제, 실행 기록은 남고 project_id만 비워짐, 삭제 기록 +1
   2. 영구 삭제 + BUSY     단계를 도는 중 → 409(웹 행 그대로, 중단 요청만 남음) → 단계가 끝난 뒤 다시 → 204
-  3. 탈퇴 + BUSY          프로젝트 2개(하나는 보관, 하나는 단계 진행 중) → 409(세션 · 웹 행 그대로, 먼저 처리한 프로젝트는 산출물만 지워짐)
+  3. 탈퇴 + BUSY          프로젝트 2개(하나는 보관, 하나는 단계 진행 중) → 409(세션 · 웹 행 그대로, 먼저 처리한 프로젝트는 산출물만 지워짐) · 멈춘 사이 새 프로젝트 시작은 막힘(SB-298)
                           → 단계가 끝난 뒤 다시 → 204, 웹 행 · 오케스트레이터 데이터 삭제, 통계 줄(탈퇴)만 남고 세션 무효
   4. 탈퇴 뒤 재가입       같은 구글 계정으로 다시 로그인 → 비어 있는 새 계정
   5. 탈퇴 + 시작 요청     (a) 프로젝트를 만든 직후(대기 중) 탈퇴 → 204 (b) 워커가 요청을 처리 중일 때 탈퇴 → 409 → 요청이 끝난 뒤 다시 → 204. 실행 건이 남지 않음
@@ -249,6 +249,20 @@ def main() -> int:
                 with SessionLocal() as db:
                     user_row = db.get(User, me['id']) is not None
                 step('3. 웹 행은 그대로(사용자 · 프로젝트 2개)', user_row and web_counts(pid_c)['project'] and web_counts(pid_d)['project'])
+                # [SB-298] 탈퇴가 BUSY로 멈춘 사이에도 새 프로젝트 시작은 막힌다 — 그 계정에 새 시작 요청이 생기면 안 된다
+                with SessionLocal() as db:
+                    marked = db.get(User, me['id']).status
+                    projects_before = db.query(Project).count()
+                requests_before = account_counts(account)['requests']
+                res = create_project()
+                step('3. 탈퇴가 BUSY로 멈춘 사이 새 프로젝트 시작이 막힘(ACCOUNT_WITHDRAWING)',
+                     res.status_code == 409 and j(res).get('code') == 'ACCOUNT_WITHDRAWING' and marked == 'withdrawing',
+                     f"{res.status_code} code={j(res).get('code')} 계정 상태={marked}")
+                with SessionLocal() as db:
+                    projects_after = db.query(Project).count()
+                step('3. 막힌 요청이 프로젝트 · 시작 요청을 남기지 않음',
+                     projects_after == projects_before and account_counts(account)['requests'] == requests_before,
+                     f"프로젝트 {projects_before}→{projects_after}, 시작 요청 {requests_before}→{account_counts(account)['requests']}")
                 step('3. 먼저 처리한 프로젝트 C는 산출물만 지워짐(다시 부르면 남은 것부터)',
                      orch_counts(run_c)['artifacts'] == 0 and orch_counts(run_d)['artifacts'] > 0,
                      f"C 산출물 {orch_counts(run_c)['artifacts']}개, D 산출물 {orch_counts(run_d)['artifacts']}개")

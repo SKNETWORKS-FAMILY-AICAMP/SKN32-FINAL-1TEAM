@@ -1112,7 +1112,8 @@ class RecoveryLabelIn(BaseModel):
 # ---------------------------------------------------------------------------
 class UserRoleStatusIn(BaseModel):
     role: str | None = Field(None, description="'user' 또는 'admin'")
-    status: str | None = Field(None, description="'active' / 'suspended' / 'dormant'")
+    status: str | None = Field(
+        None, description="'active' / 'suspended' / 'dormant' (조회에는 탈퇴 중인 계정의 'withdrawing'도 나온다 — 관리자가 정하는 값은 앞의 셋)")
 
 
 # ---------------------------------------------------------------------------

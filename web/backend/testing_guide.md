@@ -79,6 +79,7 @@ uvicorn app.main:app --port 8000
 | `E-RUN-CONCURRENT` | 진행 중인 작업이 있을 때 새 프로젝트(`detail`에 `active_project_id` · 단계 · 화면) | 409 |
 | `CONFIRMATION_REQUIRED` | `review/start`에서 기준 점수 미달 확인(`detail.confirmation_required` · `reason` · `items`) | 409 |
 | `E-AUTH-CONSENT` · `E-AUTH-PROFILE` · `E-C1-REQUIRED` | 필수 동의 · 프로필 · 필수 입력 누락 | 403 · 403 · 422 |
+| `ACCOUNT_WITHDRAWING` | 탈퇴 중인 계정이 새 프로젝트를 시작하려 할 때(`POST /projects`) · 시작 실패 뒤 후보를 다시 읽을 때(`GET …/match-candidates`는 `status='failed'`로 같은 code) (SB-298) | 409 |
 | `NOTICE_REQUIRED` · `STAGE_NOT_REACHED` · `PLAN_NOT_READY` · `NOT_REWORKABLE` · `NOT_REWORKED_YET` | 웹이 직접 내는 단계 · 입력 오류 | 400 · 404 · 422 |
 | `UNAUTHORIZED` · `FORBIDDEN` · `NOT_FOUND` · `VALIDATION_ERROR` · `INTERNAL_ERROR` 등 | 그 밖의 오류(상태 코드별 기본 이름) | 401 · 403 · 404 · 422 · 500 |
 

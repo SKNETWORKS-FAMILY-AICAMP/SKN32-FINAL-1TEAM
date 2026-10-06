@@ -31,7 +31,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from pydantic import ValidationError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.database import get_db
 from app.models import (
@@ -70,7 +70,7 @@ from app.schemas import (
     ReworkAcceptedOut,
     ReworkResultOut,
 )
-from app.security import get_current_user
+from app.security import ACCOUNT_WITHDRAWING, get_current_user
 
 router = APIRouter(prefix='/projects', tags=['projects'])
 
@@ -216,12 +216,27 @@ ORCH_WAIT_TIMEOUT_SEC = 25.0
 _EXECUTING = ('실행', '재개대기')
 
 
+def _is_withdrawing(user: User) -> bool:
+    """[SB-298] 지금(DB 최신 값) 탈퇴 중인 계정인지 — 탈퇴가 다른 요청에서 막 시작됐을 수 있어 매번 다시 읽는다."""
+    session = object_session(user)
+    if session is not None:
+        session.refresh(user)
+    return user.status == ACCOUNT_WITHDRAWING
+
+
+WITHDRAWING_MESSAGE = '계정 탈퇴를 처리하는 중이라 새로 시작할 수 없어요. 탈퇴를 마저 진행해 주세요.'
+
+
 def _candidates_response(gateway: OrchGateway, project: Project) -> MatchCandidatesOut:
     project_id = project.project_id
     view = gateway.wait_project(project_id, timeout_sec=ORCH_WAIT_TIMEOUT_SEC)
     start = view.start
     if view.run is None and start is not None and start.status == '실패' and start.code in mapping.START_RETRYABLE:
         # 다시 시도할 수 있는 시작 실패(명세 3.1) — 같은 프로젝트로 시작 요청을 다시 넣고 기다린다.
+        # 탈퇴 중인 계정은 시작 요청을 넣지 않는다(SB-298).
+        if _is_withdrawing(project.company.user):
+            return MatchCandidatesOut(
+                candidates=[], rematch_used=False, status='failed', code='ACCOUNT_WITHDRAWING', message=WITHDRAWING_MESSAGE)
         check = gateway.request_start(account_id_of(project.company.user_id), project_id)
         if not check.ok:
             return MatchCandidatesOut(
@@ -796,6 +811,9 @@ async def create_project(
     # 있으면 새 프로젝트를 만들지 않고 409 blocked(이어하기 또는 중단 후 새로 시작 선택)로 답한다. "중단 후 새로
     # 시작"은 기존 DELETE /projects/{id}(abort_project 후 보관)가 맡는다. 최종 확인은 아래 request_start가 계정
     # 잠금 안에서 다시 한다(그 사이에 생긴 작업은 E-RUN-CONCURRENT).
+    # [SB-298] 탈퇴 중인 계정은 새 프로젝트를 시작할 수 없다(명세 7.3: 탈퇴 처리 중에는 request_start를 부르지 않는다).
+    if current_user.status == ACCOUNT_WITHDRAWING:
+        raise CodedHTTPException(409, 'ACCOUNT_WITHDRAWING', WITHDRAWING_MESSAGE)
     account_id = account_id_of(current_user.user_id)
     active = gateway.active_work(account_id)
     if active is not None:
@@ -856,10 +874,19 @@ async def create_project(
 
     # 저장한 입력을 오케스트레이터가 읽어 사전 단계(요구사항 해석 → 공고 매칭)를 시작한다. 시작 요청이 거절되면
     # 방금 만든 프로젝트는 쓸 곳이 없으니 지운다(입력을 고쳐 다시 제출하면 새 프로젝트로 만들어진다).
+    # [SB-298] 저장하는 동안 탈퇴가 시작됐을 수 있다 — 시작 요청 직전에 다시 확인한다.
+    if _is_withdrawing(current_user):
+        _purge_unstarted_project(db, project.project_id)
+        raise CodedHTTPException(409, 'ACCOUNT_WITHDRAWING', WITHDRAWING_MESSAGE)
     check = gateway.request_start(account_id, project.project_id)
     if not check.ok:
         _purge_unstarted_project(db, project.project_id)
         raise _start_failure(check)
+    # 요청을 넣는 사이에 탈퇴가 시작됐으면 방금 넣은 요청을 거둔다(탈퇴가 끝난 뒤 남은 요청은 지워지지 않는다 — 명세 7.3)
+    if _is_withdrawing(current_user):
+        gateway.abort_project(project.project_id)
+        _purge_unstarted_project(db, project.project_id)
+        raise CodedHTTPException(409, 'ACCOUNT_WITHDRAWING', WITHDRAWING_MESSAGE)
     return ProjectDetailOut.model_validate(project)
 
 

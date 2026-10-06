@@ -234,6 +234,8 @@ class User(Base):
     # 않는다 — 셋 다 철회 불가능한 필수 항목이라는 게 팀 확정이다.
     age_confirmed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     role: Mapped[str] = mapped_column(String(20), default='user')
+    # 'active' · 'suspended' · 'dormant'(관리자가 바꾼다) · 'withdrawing'(탈퇴를 시작한 계정 — DELETE /auth/me가 표시하고 탈퇴가 끝나면 행과 함께
+    # 사라진다. 로그인 · 세션은 그대로이고 새 실행 시작만 막힌다, SB-298). 컬럼은 VARCHAR라 값이 늘어도 스키마 변경은 없다.
     status: Mapped[str] = mapped_column(String(20), default='active')
     # [2026-09-17] 얼굴 인증(face_verified_at) 게이트를 팀 결정으로 완전히 뺐다 — AWS
     # 공유 DB에 아직 이 스키마가 올라가지 않은 시점이라 컬럼 자체를 지웠다(예전엔 로직만
