@@ -44,6 +44,7 @@ from ..orchestrator.context import RunContext
 from ..orchestrator.engine import Engine, Outcome, StepFailure, ToolsFactory
 from ..orchestrator.errors import EMBED_DEADLINE_SUFFIX, ContractError, ToolCallExhausted, message
 from ..orchestrator.registry import TaskRegistry, TaskSpec
+from ..orchestrator.settings import REWRITE_SETTING_KEY
 from ..orchestrator.tools import CallSink, Tools
 from ..orchestrator.trace import FeedbackLink
 from .catalog import FIRST_CANDIDATES, FORM_SPEC, INSTRUCTION_SUFFIX, MORE_CANDIDATES, RUBRIC
@@ -218,8 +219,10 @@ def _merge_orders(task_id: str, layer: str, targets: list[str], orders: list[Rew
 
 
 # ── 재작성 · 재수행 지시문 (T-C3 spec 5) ──────────────────────
-REWRITE_AGENT = "조율"           # 다시 쓰기는 조율 Agent 설정(호출처 · 모델 · 추론 강도)으로 부른다
-REWRITE_TIMEOUT_TASK = "T-C3"    # 다시 쓰기 제한 시간은 T-C3의 제한 시간 설정을 쓴다 (잠정)
+REWRITE_AGENT = "조율"           # 다시 쓰기 호출 기록의 Agent 이름 — 옛 설정 사본이면 이 Agent 설정으로 부른다
+# 다시 쓰기 호출의 설정 키 — Task별 설정(Settings.tasks)의 '지시문 다시 쓰기' 항목(호출처 · 모델 · 추론 강도)과
+# 같은 키의 제한 시간(잠정 120초)을 쓴다. T-C3 설정과 따로 둔다 (orchestrator/settings.py REWRITE_SETTING_KEY)
+REWRITE_KEY = REWRITE_SETTING_KEY
 MASK_MIN_CHARS = 2               # 이보다 짧은 회사 정보 값은 가리지 않는다 (잠정)
 REFLECT_ROLE = "반영"            # 화면 9 계획서 재작성의 T-B1 반영 실행 — 다시 쓰지 않는다 (T-C3 spec 5.1)
 
@@ -315,7 +318,7 @@ class SBrainFlow:
             task_id=spec.task_id, name=spec.name, frame=frame, guidance=task.guidance, order=order,
             issues=list(rework_input.issues) if rework_input.order is None else [],
             mask_values=rewrite_mask_values(ctx.get("companyInfo")),
-            tools=tools_for(REWRITE_AGENT, REWRITE_TIMEOUT_TASK))
+            tools=tools_for(REWRITE_AGENT, REWRITE_KEY))
         text = append_problems(replace_guidance(base, guidance), rework_input, cycle_order=cycle_order)
         ref = ctx.put(f"{spec.task_id}{INSTRUCTION_SUFFIX}", text, producer=producer)
         rs.instruction_ref = ref   # 대상 Task가 재시도를 다 쓰면 재개 위치와 같은 저장에 남는다
@@ -338,6 +341,20 @@ class SBrainFlow:
         if name == "topK":
             return 10
         return self.constants(ctx, name)
+
+    def setting_value(self, ctx: RunContext, path: str) -> Any:
+        """설정값 연결(setting)의 값. 옛 설정 사본(tasks 없이 agents만)에서 'tasks.<키>.<필드>'는 그 키의 Agent별 설정에서
+        찾는다 — Task면 담당 Agent, 지시문 다시 쓰기면 조율 (예: M-4 model_version 'tasks.T-P2.model' → 'agents.검수.model')."""
+        s = ctx.settings
+        parts = path.split(".")
+        if s.tasks is None and parts[0] == "tasks" and len(parts) >= 2:
+            key = parts[1]
+            agent = REWRITE_AGENT if key == REWRITE_KEY else self.registry.get(key).agent
+            parts = ["agents", agent, *parts[2:]]
+        obj: Any = s
+        for part in parts:
+            obj = obj[part] if isinstance(obj, dict) else getattr(obj, part)
+        return obj
 
     def value(self, ctx: RunContext, name: str, spec: TaskSpec) -> Any:
         if name == "rubricVersion":   # 채점에 쓴 채점 기준표 — T-C3가 고른 것 (T-C3 spec 4)

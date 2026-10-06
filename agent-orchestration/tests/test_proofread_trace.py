@@ -146,7 +146,7 @@ def test_settings_snapshot_fixed_at_start(clock):
     res = app.orchestrator.start_run("acc-1", pre_input())
     s = app.settings.current().model_copy(deep=True)
     s.scoring.threshold = 50
-    s.agents["전략"].model = "바뀐 모델"
+    s.tasks["T-S1"].model = "바뀐 모델"
     app.settings.update(s)
     app.orchestrator.select_announcement(res.run_id, "A01")
     app.orchestrator.advance(res.run_id)

@@ -69,7 +69,11 @@ class LLMProvider(Protocol):
 
 @dataclass(frozen=True)
 class ToolsConfig:
-    """담당 Agent 설정을 입힌 호출 설정."""
+    """Task 설정을 입힌 호출 설정. agent는 호출 기록에 남는 Agent 이름(Task의 담당 Agent)이다.
+
+    image_*는 이미지 호출 설정(확장)이다 — image_model이 None이면 이미지 호출을 쓸 수 없다.
+    image_timeout_sec은 이미지 호출 한 번의 제한 시간이다.
+    """
     agent: str
     provider: str
     model: str
@@ -78,6 +82,11 @@ class ToolsConfig:
     retry_count: int
     retry_interval_sec: float
     reasoning_effort: str | None = None
+    image_provider: str | None = None
+    image_model: str | None = None
+    image_quality: str | None = None
+    image_size: str | None = None
+    image_timeout_sec: float = 120.0
 
 
 def classify_status(status: int | None) -> ErrorKind:

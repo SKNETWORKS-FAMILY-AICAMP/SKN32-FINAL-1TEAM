@@ -175,7 +175,7 @@ def build_registry() -> TaskRegistry:
          temperature=TempRule(max=0.2), failure=FailurePolicy(keep_original_per_item=True), redo=True)
     rule("M-4", "합치기④ 검수 결과를 계획서에 반영 · 검수 로그 집계", "조율", None, c.M4In, c.M4Out,
          {"plan_doc": art("planDoc"), "sentence_results": art("sentenceResults"),
-          "target_sentence_ids": art("targetSentenceIds"), "model_version": setting("agents.검수.model")},
+          "target_sentence_ids": art("targetSentenceIds"), "model_version": setting("tasks.T-P2.model")},
          {"plan_doc": "planDoc", "proofread_log": "proofreadLog"}, "plan_doc", kind="merge")
     task("T-C4", "결과 통합 · 전달", "조율", 20, c.TC4In, c.TC4Out,
          {"plan_doc": art("planDoc"), "prototype": art("prototype"), "infographic": art("infographic"),

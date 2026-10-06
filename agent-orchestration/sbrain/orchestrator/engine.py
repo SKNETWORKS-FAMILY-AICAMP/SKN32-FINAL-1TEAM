@@ -32,6 +32,7 @@ from ..models.run import FAILURE_REASON_MAX, RedoState, ReworkSummary, collectin
 from .context import ArtifactTypes, ImmutableArtifactError, RunContext
 from .errors import ContractError, ResourceNotFound, ToolCallExhausted
 from .registry import PARTIAL_SUFFIX, AgentRegistry, TaskRegistry, TaskSpec, keeps_partial
+from .settings import TaskModelSetting
 from .store import Store
 from .tools import CallSink, LLMProvider, Tools, ToolsConfig, ToolsContext
 from .trace import ExecutionRecord, FeedbackLink, add_tokens, output_meta_of
@@ -41,8 +42,10 @@ from .trace import ExecutionRecord, FeedbackLink, add_tokens, output_meta_of
 INTERNAL_PREFIXES = ("decision",)
 INTERNAL_SUFFIXES = (".reworkInput", ".instruction", PARTIAL_SUFFIX)
 
-# 지금 실행 기록에 호출이 남는 tools를 만드는 수단 — (Agent 이름, 제한 시간을 쓸 Task ID) → Tools
+# 지금 실행 기록에 호출이 남는 tools를 만드는 수단 — (호출 기록에 남길 Agent 이름, 설정 키) → Tools
 ToolsFactory = Callable[[str, str], Tools]
+# 이미지 호출 한 번의 제한 시간 키 접미 — task_timeouts['<설정 키>.image']
+IMAGE_TIMEOUT_SUFFIX = ".image"
 
 
 def is_internal_key(key: str) -> bool:
@@ -82,12 +85,17 @@ class Flow(Protocol):
         """이번 실행의 지시문 입력과, 그 실행 기록의 입력 참조에 더할 산출물 참조('이름@버전')를 돌려준다.
 
         task는 taskPlan의 이 Task 지시, rs는 지금 진행 위치 객체 그 자체다 — 흐름이 여기에 쓴 값은 재개 예약 때 그대로
-        저장된다. tools_for(agent, timeout_task_id)로 만든 tools의 호출은 이 실행 기록에 남고 토큰이 합계에 더해진다.
+        저장된다. tools_for(Agent 이름, 설정 키)로 만든 tools의 호출은 이 실행 기록에 남고 토큰이 합계에 더해진다 — 설정 키로
+        Task별 설정(모델 등)과 제한 시간을 찾고, Agent 이름은 호출 기록에 남긴다(옛 설정 사본이면 이 이름으로 설정을 찾는다).
         여기서 올린 ToolCallExhausted는 Task 함수의 것과 같게 재개 · 실패로 처리된다."""
         ...
     def today(self, ctx: RunContext) -> Any: ...
     def constant(self, ctx: RunContext, name: str) -> Any: ...
     def value(self, ctx: RunContext, name: str, spec: TaskSpec) -> Any: ...
+    def setting_value(self, ctx: RunContext, path: str) -> Any:
+        """설정값 연결(setting)의 값 — 옛 설정 사본처럼 경로가 바뀐 값을 흐름이 찾아 준다. 흐름에 없으면 엔진이 설정
+        사본에서 경로 그대로 찾는다(선택)."""
+        ...
     def after_step(self, ctx: RunContext, step_id: str, outcome: Outcome) -> None: ...
     def on_queue_empty(self, ctx: RunContext) -> None: ...
     def on_unresumable(self, ctx: RunContext, step_id: str, outcome: Outcome) -> None: ...
@@ -100,7 +108,7 @@ class Flow(Protocol):
     def on_cycle_failed(self, ctx: RunContext, reason: str) -> None: ...
 
 
-def _no_tools(agent_name: str, timeout_task_id: str) -> Tools:
+def _no_tools(agent_name: str, key: str) -> Tools:
     raise RuntimeError("호출 도구 없음 — 실행 기록 밖에서 지시문 입력을 만들었다")
 
 
@@ -353,7 +361,8 @@ class Engine:
                 add_ref(ctx.ref(b.key))
                 values[fname] = _dig(val, b.path) if b.path else val
             elif b.kind == "setting":
-                values[fname] = _dig(ctx.settings, b.key)
+                lookup = getattr(self.flow, "setting_value", None)
+                values[fname] = lookup(ctx, b.key) if lookup is not None else _dig(ctx.settings, b.key)
             elif b.kind == "run":
                 values[fname] = getattr(ctx.run, b.key)
             elif b.kind == "cmd":
@@ -400,27 +409,36 @@ class Engine:
         return values, refs
 
     def tools_config(self, ctx: RunContext, spec: TaskSpec) -> ToolsConfig:
+        """Task의 호출 설정 — 설정 키는 Task ID, Agent 이름은 담당 Agent. Task 온도 규칙(TempRule)을 위에 씌운다."""
         cfg = self.agent_tools_config(ctx, spec.agent, spec.task_id)
         if spec.temperature:
             cfg = replace(cfg, temperature=spec.temperature.apply(cfg.temperature))
         return cfg
 
-    def agent_tools_config(self, ctx: RunContext, agent_name: str, timeout_task_id: str) -> ToolsConfig:
-        """Agent 설정(호출처 · 모델 · 기본 온도 · 추론 강도)과 그 Task의 제한 시간을 입힌 호출 설정 (Task 온도 규칙 없음)."""
+    def agent_tools_config(self, ctx: RunContext, agent_name: str, key: str) -> ToolsConfig:
+        """설정 키(key)의 설정(호출처 · 모델 · 기본 온도 · 추론 강도 · 이미지 설정)과 제한 시간을 입힌 호출 설정 (Task 온도 규칙
+        없음). 호출 기록의 Agent 이름은 agent_name이다. 옛 설정 사본(tasks 없음)이면 agent_name의 Agent별 설정을 쓴다.
+        제한 시간은 task_timeouts[key](없으면 120초), 이미지 호출 한 번의 제한 시간은 task_timeouts['<key>.image']다."""
         s = ctx.settings
-        agent = self.agents.config(s, agent_name)
+        conf = self.agents.lookup(s, agent_name, key)
+        image = conf if isinstance(conf, TaskModelSetting) else None
         return ToolsConfig(
-            agent=agent_name, provider=agent.provider, model=agent.model, temperature=agent.temperature,
-            timeout_sec=s.task_timeouts.get(timeout_task_id, 120.0),
+            agent=agent_name, provider=conf.provider, model=conf.model, temperature=conf.temperature,
+            timeout_sec=s.task_timeouts.get(key, 120.0),
             retry_count=s.retry.retry_count, retry_interval_sec=s.retry.retry_interval_sec,
-            reasoning_effort=agent.reasoning_effort,
+            reasoning_effort=conf.reasoning_effort,
+            image_provider=image.image_provider if image else None,
+            image_model=image.image_model if image else None,
+            image_quality=image.image_quality if image else None,
+            image_size=image.image_size if image else None,
+            image_timeout_sec=s.task_timeouts.get(f"{key}{IMAGE_TIMEOUT_SUFFIX}", 120.0),
         )
 
     def _tools_factory(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, sink: CallSink) -> ToolsFactory:
-        """지금 실행 기록(rec)에 호출이 남는 tools를 만드는 수단 — 호출 기록의 task_id는 이 단계, Agent · 호출처 · 모델 ·
-        추론 강도는 넘긴 Agent의 설정, 제한 시간은 넘긴 Task의 설정이다. Flow.build_instruction에 넘긴다."""
-        def make(agent_name: str, timeout_task_id: str) -> Tools:
-            return self.make_tools(ctx, spec, rec, self.agent_tools_config(ctx, agent_name, timeout_task_id), sink)
+        """지금 실행 기록(rec)에 호출이 남는 tools를 만드는 수단 — 호출 기록의 task_id는 이 단계, Agent는 넘긴 Agent 이름,
+        호출처 · 모델 · 추론 강도 · 제한 시간은 넘긴 설정 키의 설정이다. Flow.build_instruction에 넘긴다."""
+        def make(agent_name: str, key: str) -> Tools:
+            return self.make_tools(ctx, spec, rec, self.agent_tools_config(ctx, agent_name, key), sink)
         return make
 
     @staticmethod

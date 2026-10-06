@@ -1,13 +1,13 @@
-"""설정값 — 기능정의서 시트 1 '횟수 · 간격 설정값' 표와 층별 배점 · Threshold, Agent 등록부 값.
+"""설정값 — 기능정의서 시트 1 '횟수 · 간격 설정값' 표와 층별 배점 · Threshold, Task별 호출 설정.
 
 - 실행을 시작할 때 전체를 Run.settingsSnapshot에 고정해 끝까지 쓴다.
 - PROVISIONAL에 있는 항목은 기준 문서가 값을 정하지 않아 임시로 둔 값이다(잠정).
 """
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from ..models.base import SBModel, ext
 
@@ -55,7 +55,7 @@ ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "
 
 
 class AgentSetting(SBModel):
-    """Agent 등록부 값 — 기획서 5-2에 따라 관리자 설정값.
+    """옛 Agent 등록부 값 — 옛 설정 사본(Settings.agents)을 읽을 때만 쓴다. 새 실행 건은 Task별 설정(TaskModelSetting)이다.
 
     temperature가 None이면 호출에 싣지 않는다. 추론 모델은 온도 대신 추론 강도(reasoning_effort, 확장)를 쓴다.
     """
@@ -65,20 +65,55 @@ class AgentSetting(SBModel):
     reasoning_effort: ReasoningEffort | None = None
 
 
-def _default_agents() -> dict[str, AgentSetting]:
-    # 모델명 · 호출처 · 기본 온도는 기준 문서가 정하지 않았다 (잠정).
-    # 조율은 OpenAI, 검수는 자체 GPU 서버의 파인튜닝 모델(기획서 5-2 · 5-7).
-    # 조율 모델은 사용자 지정(2026-09-30): 후보 gpt-5-mini · gpt-5.6-luna · gpt-6-luna 중 가장 싼 gpt-6-luna,
-    # 추론 강도 low. 추론 모델이라 온도를 보내지 않는다.
-    return {
-        "조율": AgentSetting(provider="openai", model="gpt-6-luna", temperature=None, reasoning_effort="low"),
-        "전략": AgentSetting(provider="미정", model="미정", temperature=0.7),
-        "작성": AgentSetting(provider="미정", model="미정", temperature=0.7),
-        "구현": AgentSetting(provider="미정", model="미정", temperature=0.7),
-        "검증-1": AgentSetting(provider="미정", model="미정", temperature=0.0),
-        "검증-2": AgentSetting(provider="미정", model="미정", temperature=0.0),
-        "검수": AgentSetting(provider="gpu-server", model="미정", temperature=0.2),
-    }
+class TaskModelSetting(SBModel):
+    """Task별 호출 설정 — 관리자 설정값(기획서 5-2). 키는 Task ID와 '지시문 다시 쓰기'다.
+
+    - temperature가 None이면 호출에 싣지 않는다. reasoning_effort(확장)도 None이면 싣지 않는다(모델 기본값).
+    - 이미지 설정(확장): image_model이 None이면 그 Task는 이미지 호출을 쓸 수 없다.
+      image_quality · image_size는 이미지 호출이 값을 받지 않았을 때의 기본값이다.
+    """
+    provider: str
+    model: str
+    temperature: float | None
+    reasoning_effort: ReasoningEffort | None = ext(None, note="추론 강도 — None이면 호출에 싣지 않는다")
+    image_provider: str | None = ext(None, note="이미지 호출처")
+    image_model: str | None = ext(None, note="이미지 모델 — None이면 이 Task는 이미지 호출을 쓸 수 없다")
+    image_quality: str | None = ext(None, note="이미지 품질 기본값")
+    image_size: str | None = ext(None, note="이미지 크기 기본값")
+
+
+# 재작성 · 재수행 때 조율이 대상 Task의 지시문 안내 부분을 다시 쓰는 호출의 설정 키 (Task가 아니다, 결정 0013).
+# 흐름이 tools_for(Agent 이름, 이 키)로 넘긴다. 엔진은 이 이름을 모른다
+REWRITE_SETTING_KEY = "지시문 다시 쓰기"
+
+
+def _default_tasks() -> dict[str, TaskModelSetting]:
+    # 모델명 · 호출처 · 기본 온도 · 추론 강도는 기준 문서가 정하지 않았다 (잠정).
+    # 옛 Agent별 값을 그 Agent의 Task에 옮겼다. 조율은 OpenAI, 검수는 자체 GPU 서버의 파인튜닝 모델(기획서 5-2 · 5-7).
+    # 조율 모델은 사용자 지정(2026-09-30): gpt-6-luna, 추론 강도 low. 추론 모델이라 온도를 보내지 않는다.
+    # T-B1 · T-B2 · T-V2는 구현 · 검증-2 담당 요청: gpt-6-luna, 추론 강도 기본값(보내지 않음), 온도 보내지 않음.
+    # T-B2 이미지: openai · gpt-image-2.5-flare · medium · 1024x1536 (담당 요청).
+    def supervisor() -> TaskModelSetting:
+        return TaskModelSetting(provider="openai", model="gpt-6-luna", temperature=None, reasoning_effort="low")
+
+    def undecided(temperature: float) -> TaskModelSetting:
+        return TaskModelSetting(provider="미정", model="미정", temperature=temperature)
+
+    def luna() -> TaskModelSetting:
+        return TaskModelSetting(provider="openai", model="gpt-6-luna", temperature=None)
+
+    tasks: dict[str, TaskModelSetting] = {k: supervisor() for k in ("T-C1", "T-C2", "G-01", "T-C3")}
+    tasks.update({k: undecided(0.7) for k in ("T-S1", "T-S2", "T-W1", "T-W2", "T-W3")})
+    tasks["T-V1"] = undecided(0.0)
+    tasks["T-B1"] = luna()
+    tasks["T-B2"] = luna().model_copy(update={
+        "image_provider": "openai", "image_model": "gpt-image-2.5-flare",
+        "image_quality": "medium", "image_size": "1024x1536"})
+    tasks["T-V2"] = luna()
+    tasks.update({k: TaskModelSetting(provider="gpu-server", model="미정", temperature=0.2) for k in ("T-P1", "T-P2")})
+    tasks["T-C4"] = supervisor()
+    tasks[REWRITE_SETTING_KEY] = supervisor()
+    return tasks
 
 
 def _default_timeouts() -> dict[str, float]:
@@ -88,6 +123,8 @@ def _default_timeouts() -> dict[str, float]:
     )}
     base.update({"T-W1": 300.0, "T-B1": 300.0, "T-B2": 300.0, "T-C2": 30.0, "T-P2": 60.0})
     base["G-01"] = 30.0   # 공고 서버 상세 · 판정 호출 — T-C2와 같음 (잠정)
+    base[REWRITE_SETTING_KEY] = 120.0   # 지시문 다시 쓰기 호출 한 번 (잠정) — T-C3 값을 빌리지 않는다
+    base["T-B2.image"] = 120.0          # T-B2 이미지 호출 한 번 (잠정 · 조정 가능, 실측 13 ~ 16초)
     return base
 
 
@@ -99,7 +136,23 @@ class Settings(SBModel):
     proofread: ProofreadSettings = Field(default_factory=ProofreadSettings)
     scoring: ScoringSettings = Field(default_factory=ScoringSettings)
     task_timeouts: dict[str, float] = Field(default_factory=_default_timeouts)
-    agents: dict[str, AgentSetting] = Field(default_factory=_default_agents)
+    # Task별 호출 설정. 옛 설정 사본(agents만 있음)을 읽으면 None이다 — 새 기본값으로 채우지 않는다
+    tasks: dict[str, TaskModelSetting] | None = Field(default_factory=_default_tasks)
+    # 옛 설정 사본의 Agent별 설정 — 읽기 전용. 새 설정 · 새 사본에는 없다(None이면 저장하지 않는다)
+    agents: dict[str, AgentSetting] | None = ext(None, note="옛 설정 사본의 Agent별 설정 — tasks가 None일 때만 쓴다")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_snapshot(cls, data: Any) -> Any:
+        """옛 설정 사본(원본에 tasks 없이 agents만)이면 tasks를 None으로 둔다 — 사본에 적힌 Agent 값 그대로 쓴다."""
+        if isinstance(data, dict) and "tasks" not in data and "agents" in data:
+            return {**data, "tasks": None}
+        return data
+
+    def dump(self) -> dict[str, Any]:
+        """None인 tasks · agents는 빼고 저장한다 (새 사본에는 agents가 없고, 옛 사본은 다시 읽어도 옛 사본이다)."""
+        exclude = {k for k in ("tasks", "agents") if getattr(self, k) is None}
+        return self.model_dump(mode="json", by_alias=True, exclude=exclude)
 
 
 # 기준 문서가 값을 정하지 않아 임시로 둔 항목 (문서 · 화면에 '잠정'으로 표시)
@@ -109,8 +162,12 @@ PROVISIONAL: dict[str, str] = {
     "proofread.concurrency": "검수 동시 처리 수 — 구현하면서 정함",
     "proofread.failureRatioThreshold": "검수 실패 비율 기준 — 구현하면서 정함",
     "proofread.judgeTiming": "검수 실패 비율 판단 시점 — 구현하면서 정함",
-    "agents": "Agent별 모델 · 호출처 · 기본 온도 · 추론 강도, 실행 시작 시점 고정 — 기준 문서에 없음 "
-              "(조율 gpt-6-luna · low는 사용자 지정, 나머지 Agent는 미정)",
+    "tasks": "Task별 모델 · 호출처 · 기본 온도 · 추론 강도 · 이미지 설정, 실행 시작 시점 고정 — 기준 문서에 없음 "
+             "(조율 Task · 지시문 다시 쓰기 gpt-6-luna · low는 사용자 지정, T-B1 · T-B2 · T-V2 gpt-6-luna(추론 강도 · "
+             "온도 보내지 않음)와 T-B2 이미지 openai · gpt-image-2.5-flare · medium · 1024x1536은 구현 · 검증-2 담당 요청, "
+             "나머지는 미정). 옛 설정 사본(agents만)은 그 Agent 값 그대로 쓴다",
+    f"taskTimeouts.{REWRITE_SETTING_KEY}": "지시문 다시 쓰기 호출 한 번의 제한 시간 120초 — T-C3 값을 빌려 쓰던 것을 따로 둠",
+    "taskTimeouts.T-B2.image": "T-B2 이미지 호출 한 번의 제한 시간 120초 — 조정 가능(실측 13 ~ 16초)",
     "scoring.deviationCap": "문서층 재채점 편차 상한 (확장) — 웹 verification_policies.deviation_cap을 담아만 둔다. "
                             "검증-1 연동 전이라 쓰는 곳 없음",
     # 공고 연결 (공고 선택 · 자격 확인 G-01) — 기준 문서에 없음
