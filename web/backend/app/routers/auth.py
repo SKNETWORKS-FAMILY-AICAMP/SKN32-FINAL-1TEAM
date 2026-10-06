@@ -19,6 +19,7 @@ import datetime
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
+from app import artifact_store
 from app.database import get_db
 from app.models import (
     Company,
@@ -253,12 +254,16 @@ def delete_account(
     [SB-244] 오케스트레이터 데이터를 먼저 지운다(_delete_orchestrator_data). BUSY면 409로 멈추고 웹 행은 그대로다.
 
     [SB-298] 지우기 전에 계정을 'withdrawing'으로 표시한다 — 탈퇴 처리 중에는 그 계정으로 request_start를 부르지 않는다(명세 7.3).
-    BUSY로 멈춘 뒤 다시 부르기까지의 사이에도 표시가 남아 새 프로젝트 시작이 막힌다(탈퇴를 마치면 계정 행과 함께 사라진다)."""
+    BUSY로 멈춘 뒤 다시 부르기까지의 사이에도 표시가 남아 새 프로젝트 시작이 막힌다(탈퇴를 마치면 계정 행과 함께 사라진다).
+
+    [SB-294] 웹 행까지 지운 다음 그 계정 모든 프로젝트의 산출물 파일 폴더를 지운다(보관된 프로젝트 포함)."""
     if current_user.status != ACCOUNT_WITHDRAWING:
         current_user.status = ACCOUNT_WITHDRAWING
         db.commit()
+    project_ids = user_project_ids(db, current_user.user_id)
     _delete_orchestrator_data(db, gateway, current_user)
     _delete_account_cascade(db, current_user)
+    artifact_store.delete_projects_artifacts(project_ids)  # [SB-294] 계정 행까지 지운 뒤 — 실패해도 고아 청소가 치운다
     clear_auth_cookies(response)
 
 

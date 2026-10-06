@@ -33,6 +33,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Respon
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, object_session
 
+from app import artifact_store
 from app.database import get_db
 from app.models import (
     Company,
@@ -979,6 +980,7 @@ def delete_project(
 
     gateway.delete_project_data(project_id)
     _purge_unstarted_project(db, project_id)
+    artifact_store.delete_project_artifacts(project_id)  # [SB-294] 웹 행을 지운 뒤 — 실패해도 고아 청소가 치운다
     return Response(status_code=204)
 
 
@@ -1003,10 +1005,13 @@ def delete_project_permanently(
 
     [SB-244] 먼저 오케스트레이터의 산출물 · 입력 사본을 지운다(`delete_project_data` — 진행 중이면 먼저 중단한다).
     워커가 단계를 도는 중이면 BUSY로 409("잠시 뒤 다시")를 돌려주고 웹 행은 지우지 않는다 — 재시도는 하지 않고
-    사용자가 다시 누른다. 그 뒤 웹 행을 지운다(실행 건의 project_id는 비워지고 실행 로그는 남는다)."""
+    사용자가 다시 누른다. 그 뒤 웹 행을 지운다(실행 건의 project_id는 비워지고 실행 로그는 남는다).
+
+    [SB-294] 웹 행까지 지운 다음 그 프로젝트의 산출물 파일 폴더(모든 시도)를 지운다 — 되돌릴 수 없다. 보관(휴지통)만 한 프로젝트는 파일을 남긴다."""
     project = _get_owned_project(db, project_id, current_user)
     gateway.delete_project_data(project_id)
     _delete_project_cascade(db, project)
+    artifact_store.delete_project_artifacts(project_id)  # [SB-294] 웹 행을 지운 뒤 — 실패해도 고아 청소가 치운다
     return Response(status_code=204)
 
 
