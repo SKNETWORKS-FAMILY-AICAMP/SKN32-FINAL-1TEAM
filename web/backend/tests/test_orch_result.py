@@ -58,12 +58,13 @@ def test_result_with_plan_only_has_no_verdict_or_artifacts(authed_client, orch):
         doc_score=NS(total=18.0, items=[NS(item_code='문제인식', score=18.0, max_score=20.0, evidence_locator=None, comment='좋아요')]),
         document_score_report=make_score_view(threshold=80.0, with_artifact=False),
         evaluation_items=[NS(item_code='문제인식', item_name='문제 인식', max_score=20.0, description='')],
-        gate_result=make_gate(), candidates=[Card(announcement_id='N-01', title='공고1')],
+        gate_result=make_gate(), business_age_years=2.5, candidates=[Card(announcement_id='N-01', title='공고1')],
         selected_announcement=NS(announcement_id='N-01', title='공고1'))
 
     body = _result(authed_client, pid).json()
 
     assert body['verdict'] is None
+    assert body['eligibility']['business_age_years'] == 2.5 and body['eligibility']['can_start_writing'] is True  # [SB-274]
     assert body['plan']['plan_id'] is None
     assert body['plan']['sections'] == [{'tag': '1-1', 'title': '문제 인식', 'body': '첫 문단. 둘째 문단.'}]
     assert body['plan']['doc_score'] == 18.0 and body['plan']['threshold'] == 80.0

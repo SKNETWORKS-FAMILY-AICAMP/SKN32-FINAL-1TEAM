@@ -29,7 +29,7 @@ import os
 import uuid
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
@@ -280,12 +280,15 @@ def _eligibility_response(
 
     notice_id: 방금 고른 공고(있으면 자격 확인이 그 공고로 끝났는지 본다 — 공고 서버 오류면 고르기 전 값 그대로라 다르다).
     notices_before: 명령 전 안내 개수. 그 뒤에 쌓인 안내(E-G1-* · X-C2-*)만 이번 결과의 안내로 쓴다(None이면 화면 4 안내만).
+        GET에서 notice_id만 받은 경우는 명령 전 개수를 모르므로 실패 안내를 전체 안내에서 찾는다(가장 최근 E-G1-* 하나).
     """
     view = gateway.wait_project(project_id, timeout_sec=ORCH_WAIT_TIMEOUT_SEC)
     run = view.run
     if run is None:
         raise OrchError('RUN_NOT_FOUND', str(project_id))
     new_notices = list(run.notices)[notices_before:] if notices_before is not None else []
+    # 화면 5에서 다시 고른 공고의 자격 확인이 실패하면 화면 4는 이전 공고 값 그대로다 — 방금 고른 공고(notice_id)와 다르면 실패로 답한다
+    failure_notices = new_notices if notices_before is not None or notice_id is None else list(run.notices)
     if run.progress in _EXECUTING:
         return mapping.select_pending(project_id)
     try:
@@ -293,9 +296,9 @@ def _eligibility_response(
     except OrchError as exc:
         if exc.code != 'SCREEN_NOT_READY':
             raise
-        return mapping.select_failed(project_id, new_notices)
+        return mapping.select_failed(project_id, failure_notices)
     if notice_id is not None and screen.announcement_id != notice_id:
-        return mapping.select_failed(project_id, new_notices)
+        return mapping.select_failed(project_id, failure_notices)
     outputs = gateway.outputs(project_id)
     notices = mapping.notices_out([*new_notices, *screen.notices])
     seen: set[str] = set()
@@ -303,7 +306,7 @@ def _eligibility_response(
     return DemoGenerateResponse(
         project_id=project_id,
         match=mapping.match_out(outputs, screen.announcement_id),
-        eligibility=mapping.eligibility_out(screen.gate_result),
+        eligibility=mapping.eligibility_out(screen.gate_result, screen.business_age_years, screen.can_start_writing),
         notices=notices,
     )
 
@@ -333,13 +336,18 @@ def generate_pipeline_result(
 @router.get('/{project_id}/eligibility', response_model=DemoGenerateResponse)
 def get_eligibility(
     project_id: int,
+    notice_id: str | None = Query(None, description='방금 고른 공고 ID(POST /generate 때 보낸 값). 주면 자격 확인이 그 공고로 끝났는지 확인한다.'),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     gateway: OrchGateway = Depends(require_gateway),
 ):
-    """자격 확인 결과(화면 4)를 다시 읽는다 — POST /generate가 'pending'으로 답했을 때나 화면을 다시 열 때."""
+    """자격 확인 결과(화면 4)를 다시 읽는다 — POST /generate가 'pending'으로 답했을 때나 화면을 다시 열 때.
+
+    화면 5에서 다시 고른 공고의 자격 확인이 실패하면 오케스트레이터는 이전 공고의 결과를 그대로 둔다(명세 6.1).
+    pending 뒤에 폴링할 때는 notice_id를 붙여야 그 이전 결과를 ready로 받지 않고 status='failed'로 받는다.
+    notice_id 없이 부르면 지금 화면 4의 공고 결과를 그대로 준다(화면을 다시 열 때)."""
     _get_owned_project(db, project_id, current_user)
-    return _eligibility_response(gateway, project_id, None, None)
+    return _eligibility_response(gateway, project_id, notice_id or None, None)
 
 
 def _start_stage(project_id: int, gateway: OrchGateway, command) -> ProjectStatusOut:

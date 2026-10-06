@@ -113,6 +113,8 @@ def project_status_out(project_id: int, view) -> schemas.ProjectStatusOut:
         resume_count=run.resume_count,
         next_retry_at=run.next_resume_at,
         notice_closed=notice_closed_of(run),
+        rework_screen=run.rework_screen,
+        collecting=run.collecting,
     )
 
 
@@ -166,6 +168,8 @@ def project_list_item(project, view, notice_title: str | None) -> schemas.Projec
         resume_count=run.resume_count,
         next_retry_at=run.next_resume_at,
         failure_reason=None,
+        rework_screen=run.rework_screen,
+        collecting=run.collecting,
     )
 
 
@@ -256,13 +260,19 @@ def notices_out(notices) -> list[schemas.OrchNoticeOut]:
     return [_notice_out(n) for n in notices]
 
 
-def eligibility_out(gate) -> schemas.EligibilityCheckOut:
+def eligibility_out(
+    gate, business_age_years: float | None = None, can_start_writing: bool | None = None,
+) -> schemas.EligibilityCheckOut:
+    """자격 확인 결과. 업력 · 작성 가능 여부는 화면 4(screen)가 주는 값을 넘긴다. 작성 가능 여부를 모르는 곳(outputs — 이미 작성 단계를
+    지난 실행 건)에서는 통과 여부로 대신한다(화면 4도 통과해 작성 단계로 들어가면 참이다)."""
     return schemas.EligibilityCheckOut(
         passed=gate.passed,
         undecidable=gate.undecidable,
         failed_conditions=list(gate.failed_conditions),
         missing_inputs=list(gate.missing_inputs),
         unknown_conditions=list(gate.unknown_conditions),
+        business_age_years=business_age_years,
+        can_start_writing=gate.passed if can_start_writing is None else can_start_writing,
     )
 
 
@@ -451,7 +461,8 @@ def result_out(project_id: int, outputs, policy) -> schemas.DemoGenerateResponse
     return schemas.DemoGenerateResponse(
         project_id=project_id,
         match=match_out(outputs),
-        eligibility=eligibility_out(outputs.gate_result) if outputs.gate_result is not None else None,
+        eligibility=(eligibility_out(outputs.gate_result, outputs.business_age_years)
+                     if outputs.gate_result is not None else None),
         plan=plan,
         verdict=verdict_out(outputs, policy),
         rework_cap=outputs.rework_limit,

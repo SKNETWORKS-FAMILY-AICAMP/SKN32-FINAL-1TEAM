@@ -445,6 +445,13 @@ class EligibilityCheckOut(BaseModel):
     missing_inputs: list | None = None
     # [SB-243] 읽지 못해 통과로 본 조건('지원대상 유형' · '업력') — 진행을 막지 않고 화면 4에 '확인 필요'로 안내한다.
     unknown_conditions: list = Field(default_factory=list)
+    # [SB-274] 화면 4(자격 확인)의 업력 표시와 작성 시작 버튼. 오케스트레이터 화면 4 값 그대로다.
+    # 업력은 년 단위 소수 한 자리이고 예비창업자 · 업력을 모르면 None이다.
+    business_age_years: float | None = None
+    # 자격 확인을 통과해 작성 단계로 들어갈 수 있는 상태면 True(불통과면 False). 잠정 주의: 지금 오케스트레이터는 확인 필요 조건
+    # (unknown_conditions)이 있어도 통과로 보고 True를 주는데, 기능정의서 v1.9 E-G1-UNPARSED("임의 통과를 허용하지 않는다")와 다르다 —
+    # 기능정의서 개정 여부를 누리님께 확인 중이라 결정에 따라 뜻이 바뀔 수 있다.
+    can_start_writing: bool = False
 
 
 class PlanSectionOut(BaseModel):
@@ -611,6 +618,11 @@ class ProjectStatusOut(BaseModel):
     # 막지 않는다). 매칭 자체가 없거나(screen=NO_MATCH_SCREEN) 공고 정보를 못 찾으면
     # False.
     notice_closed: bool = False
+    # [SB-272] 재작성 진행 — 기획서 4-7 · 5-8: 재작성 중에는 요청한 화면에서 '진행 중'으로 보이고 이어하기로 돌아와도 그 화면으로 온다.
+    # 재작성 중에도 stage는 재작성 전 단계 그대로이고 match_status는 in_progress이므로, 이 두 값으로 "그 화면에서 재작성 중"을
+    # 가려 버튼을 막고 '진행 중'을 보여 준다(오케스트레이터 RunView 값 그대로, 실행 건이 없으면 None · False).
+    rework_screen: int | None = Field(None, description='재작성 중인 화면(6 · 8 · 9). 재작성 중이 아니면 None')
+    collecting: bool = Field(False, description='재작성 요청을 모으는 중(잠정 2초)이면 True — 모으는 중에도 재작성 중으로 본다')
 
 
 class RetryTaskRequest(BaseModel):
@@ -654,7 +666,8 @@ class RetryTaskRequest(BaseModel):
 
 class ReworkAcceptedOut(BaseModel):
     """POST /projects/{id}/retry-task 응답 — [SB-243~244] 재작성은 이제 접수만 하고 바로 돌아온다. 결과(전후 비교)는
-    진행 상태(GET /status의 rework_screen · match_status)를 보다가 끝나면 GET /rework-result로 읽는다."""
+    진행 상태(GET /status의 rework_screen · collecting · match_status)를 보다가 끝나면 GET /rework-result로 읽는다
+    ([SB-272] 두 필드는 GET /status · GET /projects에 있다)."""
     project_id: int
     task_key: str
     bundle_id: str  # 웹 묶음 이름(문제인식 · 실현가능성 · 성장전략 · 팀 구성 · 실행 파일 제작 · 인포그래픽 제작)
@@ -767,6 +780,9 @@ class ProjectListItemOut(BaseModel):
     resume_count: int = 0
     next_retry_at: datetime.datetime | None = None
     failure_reason: str | None = None
+    # [SB-272] ProjectStatusOut과 같은 값(재작성 중인 화면 · 요청 모으는 중)
+    rework_screen: int | None = None
+    collecting: bool = False
 
 
 # ---------------------------------------------------------------------------

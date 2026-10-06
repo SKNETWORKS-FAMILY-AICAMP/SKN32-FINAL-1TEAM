@@ -188,6 +188,14 @@ def main() -> int:
                      f"HTTP {res.status_code} status={body.get('status')} 통과={ (body.get('eligibility') or {}).get('passed')} "
                      f"안내={[n['code'] for n in body.get('notices', [])]} {body.get('message') or ''}")
                 if passed:
+                    # [SB-274] 화면 4 값: 업력(예비창업자는 None) · 작성 가능 여부. 다시 읽어도(GET) 같다
+                    elig = body.get('eligibility') or {}
+                    again = (j(client.get(f'/projects/{pid}/eligibility')).get('eligibility')) or {}
+                    step('자격 확인 응답의 업력 · 작성 가능 여부',
+                         elig.get('can_start_writing') is True and elig.get('business_age_years') is None
+                         and again.get('can_start_writing') is True and 'business_age_years' in elig,
+                         f"POST: 업력={elig.get('business_age_years')} 작성 가능={elig.get('can_start_writing')} / "
+                         f"GET: 업력={again.get('business_age_years')} 작성 가능={again.get('can_start_writing')} (예비창업자는 업력 None)")
                     chosen = cand['notice_id']
                     break
             if chosen is None:
@@ -236,6 +244,15 @@ def main() -> int:
                 step('재작성 요청(문제인식)', res.status_code == 200,
                      f"{res.status_code} cycle={acc.get('cycle_id')} screen={acc.get('screen')} collect_until={acc.get('collect_until')}")
                 if res.status_code == 200:
+                    # [SB-272] 재작성 중에는 /status · 목록이 재작성 중인 화면을 알려 준다(stage는 재작성 전 단계 그대로)
+                    st = j(client.get(f'/projects/{pid}/status'))
+                    row = next((p for p in j(client.get('/projects')) if p['project_id'] == pid), {})
+                    step('재작성 중 /status · 목록에 재작성 화면 표시',
+                         st.get('rework_screen') == acc.get('screen') and row.get('rework_screen') == acc.get('screen')
+                         and st.get('match_status') == 'in_progress',
+                         f"status rework_screen={st.get('rework_screen')} collecting={st.get('collecting')} "
+                         f"match={st.get('match_status')} stage={st.get('stage')} / 목록 rework_screen={row.get('rework_screen')} "
+                         f"(기대 {acc.get('screen')})")
                     poll('재작성', f'/projects/{pid}/status',
                          lambda b: b.get('match_status') == 'user_waiting' and b.get('stage') == 'final_review_pending',
                          fail=lambda b: b.get('match_status') in ('failed', 'halted'), interval=3.0)
@@ -243,6 +260,9 @@ def main() -> int:
                     step('재작성 결과', rr.get('status') in ('완료', '실패'),
                          f"status={rr.get('status')} kept={rr.get('kept')} 점수 {rr.get('before_score')}→{rr.get('after_score')} "
                          f"변경 섹션 {list((rr.get('changed') or {}).get('sections', {}))}")
+                    st = j(client.get(f'/projects/{pid}/status'))
+                    step('재작성이 끝나면 재작성 표시가 사라짐', st.get('rework_screen') is None and st.get('collecting') is False,
+                         f"rework_screen={st.get('rework_screen')} collecting={st.get('collecting')}")
                     usage = {u['bundle_id']: (u['used'], u['remaining'])
                              for u in j(client.get(f'/projects/{pid}/result')).get('bundle_usages', [])}
                     step('재작성 기회 소진 표시', usage.get('문제인식', (None,))[0] == 1, f'문제인식 (사용, 남음)={usage.get("문제인식")}')

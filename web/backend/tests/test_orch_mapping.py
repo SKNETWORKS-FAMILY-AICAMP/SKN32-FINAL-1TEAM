@@ -1,5 +1,6 @@
 """app/orch/mapping.py — 웹연동_변경사항_웹팀전달.md 3절 대응표."""
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 from orch_fakes import Notice, ProjectView, make_run
@@ -105,3 +106,50 @@ def test_status_notice_closed_from_run_closed_notice():
     notice = Notice(code='E-RUN-CLOSED', message='마감', at=datetime(2026, 10, 5))
     out = mapping.project_status_out(7, ProjectView('7', run=make_run(notices=[notice])))
     assert out.notice_closed is True
+
+
+# ── [SB-272] 재작성 진행 필드 ───────────────────────────────────────────────────────────
+def test_status_exposes_rework_screen_and_collecting():
+    run = make_run(step='산출물확인', progress='실행', resume_step=8, percent=50, rework_screen=8, collecting=True)
+    out = mapping.project_status_out(7, ProjectView('7', run=run))
+    assert (out.rework_screen, out.collecting) == (8, True)
+    # 재작성 중에도 stage는 재작성 전 단계 그대로, match_status는 in_progress다
+    assert (out.screen, out.stage, out.match_status) == (8, 'artifact_review', 'in_progress')
+
+
+def test_status_rework_fields_default_when_not_reworking():
+    out = mapping.project_status_out(7, ProjectView('7', run=make_run()))
+    assert (out.rework_screen, out.collecting) == (None, False)
+
+
+def test_status_without_run_has_no_rework_fields():
+    out = mapping.project_status_out(7, ProjectView('7', run=None))
+    assert (out.rework_screen, out.collecting) == (None, False)
+
+
+def test_list_item_exposes_rework_fields():
+    project = SimpleNamespace(project_id=7, description='설명', created_at=datetime(2026, 10, 6))
+    reworking = make_run(step='종합평가', progress='실행', resume_step=9, rework_screen=9, collecting=False)
+    item = mapping.project_list_item(project, ProjectView('7', run=reworking), None)
+    assert (item.rework_screen, item.collecting) == (9, False)
+    plain = mapping.project_list_item(project, ProjectView('7', run=make_run()), None)
+    assert (plain.rework_screen, plain.collecting) == (None, False)
+    no_run = mapping.project_list_item(project, ProjectView('7', run=None), None)
+    assert (no_run.rework_screen, no_run.collecting) == (None, False)
+
+
+# ── [SB-274] 자격 확인 응답의 업력 · 작성 가능 여부 ─────────────────────────────────────────
+def test_eligibility_out_passes_screen_values_through():
+    from orch_fakes import make_gate
+    out = mapping.eligibility_out(make_gate(passed=True), 3.5, True)
+    assert (out.business_age_years, out.can_start_writing) == (3.5, True)
+    rejected = mapping.eligibility_out(make_gate(passed=False), 8.0, False)
+    assert (rejected.business_age_years, rejected.can_start_writing) == (8.0, False)
+
+
+def test_eligibility_out_defaults_can_start_writing_to_passed():
+    """outputs(이미 작성 단계를 지난 실행 건)에는 작성 가능 여부가 없어 통과 여부로 대신한다."""
+    from orch_fakes import make_gate
+    assert mapping.eligibility_out(make_gate(passed=True)).can_start_writing is True
+    assert mapping.eligibility_out(make_gate(passed=False)).can_start_writing is False
+    assert mapping.eligibility_out(make_gate(passed=True)).business_age_years is None

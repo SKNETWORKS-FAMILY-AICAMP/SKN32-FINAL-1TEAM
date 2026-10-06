@@ -3,7 +3,7 @@ import json
 from datetime import UTC, datetime
 from types import SimpleNamespace as NS
 
-from orch_fakes import ReworkAccepted, make_section
+from orch_fakes import ProjectView, ReworkAccepted, make_run, make_section
 
 from app.orch import OrchError
 
@@ -160,3 +160,31 @@ def test_rework_result_404_when_never_reworked_and_409_when_not_viewable(authed_
     assert authed_client.get(f'/projects/{pid}/rework-result').status_code == 404  # 기본 None
     orch.responses['rework_result'] = OrchError('RUN_NOT_VIEWABLE', 'x')
     assert authed_client.get(f'/projects/{pid}/rework-result').status_code == 409
+
+
+# ── [SB-272] 재작성 중인 화면 · 요청 모으는 중이 /status · 목록에 내려온다 ─────────────────────────
+def test_status_and_list_report_rework_screen_and_collecting(authed_client, orch):
+    pid = _create(authed_client)
+    reworking = make_run(step='종합평가', progress='실행', screen_status='진행 중', resume_step=9, percent=30,
+                         rework_screen=9, collecting=True)
+    orch.responses['view_project'] = lambda p: ProjectView(project_id=str(p), run=reworking)
+    orch.responses['project_views'] = lambda ids: [ProjectView(project_id=str(i), run=reworking) for i in ids]
+
+    status = authed_client.get(f'/projects/{pid}/status').json()
+    assert (status['rework_screen'], status['collecting']) == (9, True)
+    assert (status['screen'], status['stage'], status['match_status']) == (9, 'final_review_pending', 'in_progress')
+
+    row = next(p for p in authed_client.get('/projects').json() if p['project_id'] == pid)
+    assert (row['rework_screen'], row['collecting']) == (9, True)
+
+
+def test_status_and_list_have_no_rework_when_not_reworking(authed_client, orch):
+    pid = _create(authed_client)
+    normal = make_run()
+    orch.responses['view_project'] = lambda p: ProjectView(project_id=str(p), run=normal)
+    orch.responses['project_views'] = lambda ids: [ProjectView(project_id=str(i), run=normal) for i in ids]
+
+    status = authed_client.get(f'/projects/{pid}/status').json()
+    assert (status['rework_screen'], status['collecting']) == (None, False)
+    row = next(p for p in authed_client.get('/projects').json() if p['project_id'] == pid)
+    assert (row['rework_screen'], row['collecting']) == (None, False)
