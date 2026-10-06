@@ -33,6 +33,10 @@ class ReworkInput(SBModel):
     # 확장 — 피드백 추적
     source_refs: list[str] = ext(default_factory=list, note="이 입력의 근거가 된 산출물@버전 (check · reworkOrders · 사용자 선택)")
     feedback_id: str | None = ext(None, note="추적 기록 FeedbackLink 식별자")
+    # 확장 — 기능정의서의 reworkInput '기존 결과 + 문제가 된 내용' 자리 (이름은 담당자 임시안). 채우는 것은 흐름이
+    # 정한다(T-B1 재작성 대상 · 재수행만). 이 산출물(재작성 입력 JSON)에만 있고 기록 · 로그 · 사건 · 관리자 조회 · 예외
+    # 메시지 · 다시 쓰기 LLM 요청에는 싣지 않는다
+    previous_source_text: str | None = ext(None, note="재실행 대상의 이전 결과 원문. T-B1만 채운다")
 
 
 class BundleUsage(SBModel):

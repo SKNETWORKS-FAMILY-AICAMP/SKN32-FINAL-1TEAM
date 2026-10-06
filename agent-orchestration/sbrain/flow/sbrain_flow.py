@@ -9,6 +9,7 @@
            G-01이 어떤 오류로 끝나도 실행을 살리고 고르기 전 대기 지점(3 또는 5)으로 돌아간다 (on_rescue)
   WRITE    T-C3 → T-S1 → T-S2 → T-W1 → T-W2 → T-W3 → M-1 → T-V1 → G-02a   → 6 문서 평가 대기
   PROTO    T-B1* → T-B2 → M-2** → G-04 → M-3 → T-V2 → G-02b              → 8 산출물 확인 대기
+           G-04 자체 검사가 끝내 불통과면 관리자 기록 후 계속, T-V2 대조 보류 · 진단은 관리자 기록 (after_step)
   REVIEW   G-03 → T-P1 → T-P2 → M-4 → T-C4                               → 11 완료
   REWORK6 · REWORK8 · REWORK9  재작성 사이클 (rework_queue 참고) — 묶음 요청을 모으는 시간 동안 모아 한 번에 연다
                                (service.request_rework_for_project, 지시는 bundle_orders)
@@ -20,6 +21,10 @@ G-02b는 T-V2 직후 계산하고(시트 2 "T-V2 종료 직후"), 화면 8을 �
   함수(rewriter, 조립이 끼운다)가 안내 부분만 다시 쓰고, 문제 내용 원문을 덧붙여 <taskId>.instruction으로 저장한다
   (같은 입력으로 재개하면 다시 쓰지 않고 저장한 것을 쓴다). 반영 실행(T-B1)과 다시 쓰기 함수가 없는 조립(스텁)은
   덧붙이기만 한다. 재작성 중 재수행이면 어느 경로든 그 사이클의 재작성 지시도 함께 남긴다(5.4).
+
+산출물층 검증 반영: 재실행 때 T-B1에 이전 원문(previous_source_text)을 준다 — 재작성 대상(initial_redo_state)과 검사
+  불통과 재수행(redo_rework_input)만. 반영 실행 · 다른 Task는 채우지 않는다. T-B2 실행 기록에 최종 실패인 이미지 호출이
+  있으면 '이미지대체' 사건을 그 실행 기록과 같은 묶음에 남긴다(after_execution — 사용자 화면에는 알리지 않는다).
 
 T-P2 시도 기록: 문장마다 T-P2 함수가 결과를 돌려준 호출 하나가 시도다(호출 실패는 시도가 아니다). 시도는 문장 결과
 (sentenceResults)의 attempts에 쌓고, 보호 토큰 검사를 통과하지 못한 시도(반려)는 같은 저장에서 웹 proofread_logs
@@ -46,10 +51,10 @@ from ..orchestrator.errors import EMBED_DEADLINE_SUFFIX, ContractError, ToolCall
 from ..orchestrator.registry import TaskRegistry, TaskSpec
 from ..orchestrator.settings import REWRITE_SETTING_KEY
 from ..orchestrator.tools import CallSink, Tools
-from ..orchestrator.trace import FeedbackLink
+from ..orchestrator.trace import IMAGE_CALL, CallLog, ExecutionRecord, FeedbackLink
 from .catalog import FIRST_CANDIDATES, FORM_SPEC, INSTRUCTION_SUFFIX, MORE_CANDIDATES, RUBRIC
 from .instruction import append_problems, extract_frame, replace_guidance
-from .rework_map import ARTIFACT_BUNDLES, BUNDLE_LAYER, BUNDLE_TASK, DOCUMENT_TASKS
+from .rework_map import ARTIFACT_BUNDLES, BUNDLE_LAYER, BUNDLE_TASK, DOCUMENT_TASKS, alt_text_source_missing
 
 WRITE = ["T-C3", "T-S1", "T-S2", "T-W1", "T-W2", "T-W3", "M-1", "T-V1", "G-02a"]
 REVIEW = ["G-03", "T-P1", "T-P2", "M-4", "T-C4"]
@@ -59,6 +64,16 @@ STEP_SCREEN = {step: screen for screen, step in SCREEN_STEP.items()}
 STEP_LABEL = {CYCLE_END: "재작성 전후 비교"}
 # 판정 지시가 없는 묶음의 재작성 지시 문구 (잠정)
 REWORK_DEFAULT_REASON = "사용자가 이 묶음의 재작성을 요청했습니다."
+# 관리자 사건 종류 · 문구 (잠정 — orchestrator/settings.py PROVISIONAL event.*). 내용 · 지시문은 싣지 않는다
+EVENT_MATCH_WITHHELD = "대조보류"
+EVENT_V2_DIAGNOSTIC = "검증2진단"
+EVENT_README_CHECK_FAILED = "안내문서자체검사실패"
+EVENT_IMAGE_FALLBACK = "이미지대체"
+EVENT_ALT_SOURCE_MISSING = "대체텍스트출처누락"
+ALT_SOURCE_MISSING_DETAIL = "HTML 2번 미충족인데 defect_sources가 비어 있음 — T-B2로 보냄"
+IMAGE_FALLBACK_DETAIL = "T-B2 이미지 호출 실패 — 기본 아이콘으로 계속"
+# 이전 원문(previous_source_text)을 채우는 Task와 그 원문이 든 산출물 (spec 4.3 — T-B1만)
+SOURCE_TEXT_TASK, SOURCE_TEXT_KEY = "T-B1", "prototype"
 # 공고를 고를 수 있는 대기 지점 — 공고 선택 명령이 decision의 beforeStep에 남기고, G-01이 실패하면 그리로 돌아간다 (4.3.4)
 SELECTION_STEPS = ("공고선택", "계획서작성")
 
@@ -178,8 +193,8 @@ def rework_queue(screen: int, orders: list[ReworkOrder], category: str) -> list[
         q += [t for t in DOCUMENT_TASKS if t in tasks] + ["M-1", "T-V1"]
     if not onepage and (doc or "T-B1" in tasks):
         q.append("T-B1")  # 화면 9 계획서 재작성은 HTML에도 반영 (재작성 횟수 안 씀)
-    if "T-B2" in tasks:
-        q.append("T-B2")
+    if "T-B2" in tasks or (onepage and doc):
+        q.append("T-B2")  # 원페이지 화면 9 계획서 재작성은 인포그래픽에 반영 (재작성 횟수 안 씀, 2026-09-29 결정 7)
         if onepage:
             q.append("M-2")
     q += ["G-04", "M-3", "T-V2", CYCLE_END, "G-02b"]
@@ -387,10 +402,17 @@ class SBrainFlow:
             source_refs = list(decision.get("sourceRefs", [])) + [cyc.selected_orders_ref]
             prev = ctx.ref(spec.outputs[spec.primary_output]) if ctx.has(spec.outputs[spec.primary_output]) else ""
             issues = [order.reason] + ([order.instruction_delta] if order.instruction_delta else [])
+            # T-B1이면 재작성 직전 prototype 포인터의 원문을 함께 준다 (spec 4.3 — 고쳐 달라는 경우만)
+            source = (ctx.get(SOURCE_TEXT_KEY).source_text
+                      if tid == SOURCE_TEXT_TASK and ctx.has(SOURCE_TEXT_KEY) else None)
             self._attach_rework(ctx, rs, spec, kind="재작성", source_refs=source_refs,
-                                ri=dict(mode="재작성", previous_result_ref=prev, issues=issues, order=order),
+                                ri=dict(mode="재작성", previous_result_ref=prev, issues=issues, order=order,
+                                        previous_source_text=source),
                                 bundle_id=",".join(order.targets))
         elif role == REFLECT_ROLE and tid == "T-B1":
+            # 계획서 반영 실행 — T-B1 입력에 계획서(plan_doc, 확장)가 있지만, 추적 기록(FeedbackLink)을 위해 계획서 버전을
+            # 알리는 재작성 입력(issues)을 그대로 붙인다. 이전 원문은 채우지 않는다(새 계획서로 새로 만든다, spec 4.3).
+            # 원페이지 T-B2 반영에는 아무것도 붙이지 않는다 — T-B2는 planDoc을 직접 받아 첫 제작과 같은 경로다(결정 7)
             plan_ref = ctx.ref("planDoc")
             prev = ctx.ref("prototype") if ctx.has("prototype") else ""
             self._attach_rework(ctx, rs, spec, kind="재작성반영", source_refs=[plan_ref],
@@ -428,7 +450,7 @@ class SBrainFlow:
             return "재채점"
         if task_id in ("G-02a", "G-02b"):
             return "판정"
-        return REFLECT_ROLE  # T-B1(계획서 반영) · G-04
+        return REFLECT_ROLE  # T-B1(계획서 반영) · T-B2(원페이지 계획서 반영) · G-04
 
     def after_step(self, ctx: RunContext, step_id: str, outcome: Outcome) -> None:
         out = outcome.outputs
@@ -465,6 +487,17 @@ class SBrainFlow:
                 self._notice(ctx, "E-C2-EMBED", suffix=suffix)
             if more:
                 self._keep_more(ctx, out["candidates"], outcome)
+        elif step_id == "T-V2":
+            self._after_tv2(ctx, out, outcome)
+        elif step_id == "G-04":
+            # 자체 검사가 재수행 횟수를 다 쓰고도 불통과 — 관리자 기록만 하고 계속한다 (점수 밖, 결정 6). 오류로 건너뛴
+            # 경우(단계오류계속)는 출력이 없다
+            check = out.get("check")
+            if check is not None and not check.passed:
+                ctx.add_event(EVENT_README_CHECK_FAILED,
+                              f"G-04 자체 검사 불통과 {len(check.failures)}건 — 재수행 횟수를 다 써 그대로 계속",
+                              refs=[ctx.ref("G-04.check")],
+                              execution_id=outcome.record.execution_id if outcome.record else None)
         elif step_id == "G-01":
             # 선택 공고 · 자격 결과 · 업력을 저장하는 같은 저장에서 공고 포인터를 바꾸고, 불통과면 막는다 (4.3.2 · 4.3.6).
             # 설립일 없음(missingInputs)은 불통과가 아니라 막지 않는다
@@ -473,6 +506,43 @@ class SBrainFlow:
             gate = out["gate_result"]
             if not gate.passed and not gate.missing_inputs:
                 block_announcement(ctx.run, aid)
+
+    @staticmethod
+    def _after_tv2(ctx: RunContext, out: dict[str, Any], outcome: Outcome) -> None:
+        """T-V2 결과의 관리자 기록 (C3). 흐름은 필드로만 가른다 — findings · diagnostics 문구로 가르지 않는다.
+
+        - 대조 판정 보류(withheld): '대조보류' 사건 (결정 8 — 0점 합산은 T-V2 · 판정이 이미 했다, 화면 '대조 불가'는 웹)
+        - 진단(diagnostics): 줄마다 '검증2진단' 사건 (관리자 진단 전용)
+        - HTML 2번 미충족인데 결함 출처가 빔(담당자 쪽 누락): '대체텍스트출처누락' 사건 — 재작성 사유는 T-B2로 간다 (C4 규칙 2)
+        """
+        exec_id = outcome.record.execution_id if outcome.record else None
+        fm = out.get("feature_match")
+        if fm is not None and fm.withheld:
+            ctx.add_event(EVENT_MATCH_WITHHELD, f"T-V2 대조 판정 보류 ({fm.withheld_reason}) — 0점 합산",
+                          refs=[ctx.ref("featureMatch")], execution_id=exec_id)
+        for line in out.get("diagnostics") or []:
+            ctx.add_event(EVENT_V2_DIAGNOSTIC, line, execution_id=exec_id)
+        score = out.get("artifact_score")
+        if score is not None and alt_text_source_missing(score, ctx.get("prototype").kind):
+            ctx.add_event(EVENT_ALT_SOURCE_MISSING, ALT_SOURCE_MISSING_DETAIL,
+                          refs=[ctx.ref("codeCheck")], execution_id=exec_id)
+
+    def redo_rework_input(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord,
+                          rework_input: ReworkInput) -> ReworkInput:
+        """검사 불통과 재수행의 재작성 입력 (엔진 선택 확장 지점). T-B1이면 방금 실행이 만든 prototype의 원문을 채운다 —
+        그 실행이 대상 · 반영 · 첫 실행 중 무엇이었든 (spec 4.3). 다른 Task는 그대로다."""
+        if spec.task_id != SOURCE_TEXT_TASK or not rec.result_ref.startswith(f"{SOURCE_TEXT_KEY}@"):
+            return rework_input
+        source = ctx.get_ref(rec.result_ref).source_text
+        return rework_input.model_copy(update={"previous_source_text": source})
+
+    def after_execution(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, calls: list[CallLog]) -> None:
+        """실행 기록 하나가 성공으로 저장되는 같은 묶음 (엔진 선택 확장 지점). T-B2 실행에 최종 실패인 이미지 호출이 하나라도
+        있으면 '이미지대체' 사건을 남긴다 — 실행 기록마다(재수행으로 다시 돈 앞선 실행 포함, spec 3.3). 내용 · 지시문은 없다."""
+        if spec.task_id != "T-B2":
+            return
+        if any(log.call_type == IMAGE_CALL and log.final_outcome != "성공" for log in calls):
+            ctx.add_event(EVENT_IMAGE_FALLBACK, IMAGE_FALLBACK_DETAIL, execution_id=rec.execution_id)
 
     def on_queue_empty(self, ctx: RunContext) -> None:
         run, seg = ctx.run, ctx.run.segment

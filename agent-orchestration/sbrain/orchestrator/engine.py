@@ -13,6 +13,8 @@
   돌려받은 산출물 참조를 그 실행 기록의 입력 참조에 더한다. 입력을 만들며 부른 호출도 Task 함수의 호출처럼 그 실행 기록에
   모인다(성공 · 재시도 소진 모두). 어느 Agent 설정으로 무엇을 부를지는 Flow가 정한다.
 - S-Brain 고유 규칙(구간 · 대기 지점 · 재작성 경로 · 알림)은 Flow가 맡는다.
+- 선택 확장 지점(흐름에 없으면 기본 동작): Flow.redo_rework_input — 재수행 입력을 저장하기 전에 흐름이 칸을 채운다(기본: 그대로),
+  Flow.after_execution — 실행 기록이 성공으로 저장되는 같은 묶음에서 그 실행의 호출 기록을 본다(기본: 아무것도 안 함).
 - 시각은 시간대 있는 UTC다. 주입한 시계 · tick(now)의 시간대 없는 값은 UTC로 본다.
 """
 from __future__ import annotations
@@ -35,7 +37,7 @@ from .registry import PARTIAL_SUFFIX, AgentRegistry, TaskRegistry, TaskSpec, kee
 from .settings import TaskModelSetting
 from .store import Store
 from .tools import CallSink, ImageProvider, LLMProvider, Tools, ToolsConfig, ToolsContext
-from .trace import ExecutionRecord, FeedbackLink, add_tokens, output_meta_of
+from .trace import CallLog, ExecutionRecord, FeedbackLink, add_tokens, output_meta_of
 
 # 재작성 비교 · 되돌리기에서 제외하는 산출물 (Orchestrator가 만든 입력 — 사용자 명령 · 재작성 · 재수행 입력 · 다시 쓴 지시문 ·
 # 재개 때 이어 쓸 받은 결과)
@@ -95,6 +97,16 @@ class Flow(Protocol):
     def setting_value(self, ctx: RunContext, path: str) -> Any:
         """설정값 연결(setting)의 값 — 옛 설정 사본처럼 경로가 바뀐 값을 흐름이 찾아 준다. 흐름에 없으면 엔진이 설정
         사본에서 경로 그대로 찾는다(선택)."""
+        ...
+    def redo_rework_input(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord,
+                          rework_input: ReworkInput) -> ReworkInput:
+        """검사 불통과 재수행의 재작성 입력을 저장하기 전에 흐름이 칸을 채워 돌려준다(선택). rec는 방금 끝난(불통과) 실행이다.
+        흐름에 없으면 엔진이 만든 그대로 저장한다. 재개 때는 저장한 것을 다시 쓰고 다시 부르지 않는다."""
+        ...
+    def after_execution(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, calls: list[CallLog]) -> None:
+        """실행 기록 하나가 성공으로 저장된 직후, 같은 저장 묶음에서 그 실행의 이번 호출 기록(calls — 재개면 재개 뒤 호출만)을
+        흐름에 보여 준다(선택). 재수행은 실행 기록마다 저장 묶음을 비우므로 실행 기록마다 따질 일은 여기서 한다.
+        흐름에 없으면 아무것도 하지 않는다. 사건은 ctx.add_event로 같은 묶음에 넣는다."""
         ...
     def after_step(self, ctx: RunContext, step_id: str, outcome: Outcome) -> None: ...
     def on_queue_empty(self, ctx: RunContext) -> None: ...
@@ -299,6 +311,7 @@ class Engine:
     def _invoke(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, rs: RedoState) -> dict[str, Any]:
         # 이 실행 기록의 호출 — 입력을 만들며 부른 호출(지시문 다시 쓰기 등)과 Task 함수의 호출. 성공 · 실패 모두 모은다
         sink = CallSink()
+        calls: list[CallLog] = []
         try:
             values, refs = self.resolve_inputs(ctx, spec, rs, tools_for=self._tools_factory(ctx, spec, rec, sink))
             rec.inputs = refs
@@ -316,8 +329,12 @@ class Engine:
             else:
                 out = spec.fn(model_in)
         finally:
-            self.collect_calls(ctx, rec, sink)
-        return self.store_outputs(ctx, spec, rec, out)
+            calls = self.collect_calls(ctx, rec, sink)
+        outputs = self.store_outputs(ctx, spec, rec, out)
+        hook = getattr(self.flow, "after_execution", None)   # 선택 확장 지점 — 이 실행 기록과 같은 저장 묶음
+        if hook is not None:
+            hook(ctx, spec, rec, calls)
+        return outputs
 
     def store_outputs(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, out: Any) -> dict[str, Any]:
         if not isinstance(out, spec.output_model):
@@ -445,11 +462,12 @@ class Engine:
         return make
 
     @staticmethod
-    def collect_calls(ctx: RunContext, rec: ExecutionRecord, sink: CallSink) -> None:
-        """호출 기록을 저장 묶음에 옮기고 그 토큰을 실행 기록 합계에 더한다(재개하면 이어서 더한다)."""
+    def collect_calls(ctx: RunContext, rec: ExecutionRecord, sink: CallSink) -> list[CallLog]:
+        """호출 기록을 저장 묶음에 옮기고 그 토큰을 실행 기록 합계에 더한다(재개하면 이어서 더한다). 옮긴 기록을 돌려준다."""
         logs = sink.drain()
         ctx.batch.call_logs.extend(logs)
         add_tokens(rec, logs)
+        return logs
 
     def make_tools(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord,
                    cfg: ToolsConfig, sink: CallSink) -> Tools:
@@ -469,6 +487,9 @@ class Engine:
             order=None, is_final_attempt=rs.redo_count + 1 >= limit,
             source_refs=[check_ref], feedback_id=fid,
         )
+        fill = getattr(self.flow, "redo_rework_input", None)   # 선택 확장 지점 — 흐름이 칸을 채운다 (엔진은 Task를 모른다)
+        if fill is not None:
+            ri = fill(ctx, spec, rec, ri)
         ri_ref = ctx.put(f"{spec.task_id}.reworkInput", ri, producer=f"orchestrator:{rec.execution_id}")
         ctx.add_feedback(FeedbackLink(
             feedback_id=fid, run_id=ctx.run.run_id, kind="재수행", source_execution_id=rec.execution_id,

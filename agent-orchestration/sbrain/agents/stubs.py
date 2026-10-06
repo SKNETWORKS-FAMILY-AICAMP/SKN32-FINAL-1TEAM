@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import math
 import struct
 import threading
 import zlib
@@ -30,18 +31,21 @@ from ..models.clock import kst_today, utc_clock, utc_now
 from ..orchestrator.errors import FormatError, ProviderError, ResourceNotFound, ToolCallExhausted
 from ..orchestrator.registry import TaskRegistry
 from ..orchestrator.tools import ImageRequest, ImageResponse, LLMRequest, LLMResponse, TokenUsage, Tools
-from ..flow.rework_map import (
-    CODE_CHECK_TARGET, FEATURE_MISSING_TARGET, LIST_README_BUNDLE, TASK_BUNDLE, order_bundles,
-)
+from ..flow.rework_map import TASK_BUNDLE, artifact_rework_reasons, order_bundles
 from .form_defaults import EVAL_ITEMS, default_evaluation_items, default_form_spec, stub_rubric
 from .notice.g01 import PRE_STARTUP, business_age_years   # 업력(년) 반올림은 실제 G-01과 한 곳에서 (스텁 테스트도 이 이름을 쓴다)
 from .supervisor import plan as task_plan   # 작업 분해 부품 — 실제 T-C3와 같은 확인 · 양식 고르기 · 목록 · 틀 · 맥락
 
 DOC_LAYER_MAX = 70.0
-HTML_WEIGHTS = [3, 2, 2, 1, 2, 2, 1, 2]
-SVG_WEIGHTS = [3, 2, 2, 2, 2, 2, 1, 1]
-HTML_NAMES = ["진입 파일", "대체 텍스트", "label 연결", "html lang", "명도 대비", "제목 계층", "실행 안내", "비밀값"]
-SVG_NAMES = ["진입 파일", "대체 텍스트", "핵심 정보 항목", "명도 대비", "정보 계층", "텍스트 실재성", "최소 글자 크기", "열람 안내"]
+# 코드 점검 8칸 — 구현 · 검증-2 담당 개정안(1.3판)의 배점 · 이름. 진입 파일 · 비밀값 · sandbox는 통과 필수 조건으로 옮겨
+# 칸에 없다(gate_failures)
+HTML_WEIGHTS = [3, 2, 2, 2, 1, 2, 2, 1]
+SVG_WEIGHTS = [2, 3, 2, 2, 2, 2, 1, 1]
+HTML_NAMES = ["동작 연결", "대체 텍스트", "label 연결", "명도 대비", "제목 계층", "1440px 폭", "스크립트 동작 오류 없음",
+              "임시 문구 없음"]
+SVG_NAMES = ["대체 텍스트", "핵심 정보 6항목", "명도 대비", "정보 계층", "잘림 없음", "지면 밖 넘침 없음", "텍스트 실재성",
+             "최소 글자 크기"]
+ENTRY_FILE = "/index.html"   # 웹개발 · AI API 진입 파일명 (2026-09-30 결정 9)
 EVAL = list(EVAL_ITEMS)
 # 스텁 공고 · 카드 값 — 모집 형태 표기(spec 4.4), 가산점
 PERIOD_FIXED = "기간 있음"
@@ -164,10 +168,16 @@ class StubScenario:
     collection_status: str = "정상"                                         # T-C2 수집 상태. '정상'이 아니면 후보 0건
     gate_fail_ids: set[str] = field(default_factory=set)                    # 신청자 유형이 맞지 않아 불통과인 공고
     doc_scores: list[float] = field(default_factory=lambda: [60.0])         # T-V1 차례대로 (마지막 반복)
-    art_scores: list[tuple[float, float]] = field(default_factory=lambda: [(15.0, 11.0)])  # T-V2 (코드, 대조)
+    art_scores: list[tuple[float, float]] = field(default_factory=lambda: [(15.0, 11.0)])  # T-V2 (코드, 대조 손잡이 0 ~ 15)
     check_fail_times: dict[str, int] = field(default_factory=dict)          # Task별 검사 불통과 횟수
     omit_final_action: set[str] = field(default_factory=set)                # 확정 동작을 빠뜨릴 Task
     tw1_change_features: bool = False
+    # ── 산출물층 검증 (스텁 T-V2 · 1.4판 모양) ──
+    partial_features: list[str] | None = None       # 부분 인정으로 둘 기능 — 나머지 충족 · 미충족은 대조 손잡이로 다시 맞춘다
+    withhold_feature_match: bool = False            # 대조 판정 보류(E-V2-NOFEATURE)를 흉내 — featureList는 바꿀 수 없어서
+    gate_failures: list[str] = field(default_factory=list)                  # 통과 필수 조건 실패 (entry · secret · sandbox)
+    alt_defect_sources: list[str] = field(default_factory=lambda: ["infographic"])  # HTML 2번 불통과의 결함 출처
+    diagnostics: list[str] = field(default_factory=list)                    # T-V2 진단 (관리자 전용)
     tp1_targets: int = 3
     no_tokens: bool = False
     tp2_behavior: dict[str, list[str]] = field(default_factory=dict)       # 문장별 'ok' · 'violate' · 'same'
@@ -309,17 +319,59 @@ def _doc_score(total: float) -> DocScore:
     return DocScore(total=total, items=items)
 
 
-def _code_check(kind: str, code_total: float) -> CodeCheckResult:
+def _code_check(sc: StubScenario, kind: str, code_total: float) -> CodeCheckResult:
+    """결손 점수를 칸에 나눠 불통과로 표시한다. HTML 2번 불통과면 결함 출처를 채운다(시나리오 alt_defect_sources).
+    통과 필수 조건 실패(시나리오 gate_failures)면 칸 검사를 생략한 것으로 보고 모두 불통과 · 합계 0이다."""
     weights, names = (HTML_WEIGHTS, HTML_NAMES) if kind == "html" else (SVG_WEIGHTS, SVG_NAMES)
+    if sc.gate_failures:
+        detail = f"통과 필수 조건 실패로 검사 생략: {', '.join(sc.gate_failures)}"
+        checks = [CodeCheck(no=i + 1, name=names[i], weight=weights[i], passed=False, detail=detail) for i in range(8)]
+        return CodeCheckResult(total=0, checks=checks, gate_failures=list(sc.gate_failures))
     deficit, failed = 15 - code_total, set()
     for no in (4, 5, 3, 6, 8, 2, 7):
         w = weights[no - 1]
         if deficit >= w:
             failed.add(no)
             deficit -= w
-    checks = [CodeCheck(no=i + 1, name=names[i], weight=weights[i], passed=(i + 1) not in failed, detail="")
+    checks = [CodeCheck(no=i + 1, name=names[i], weight=weights[i], passed=(i + 1) not in failed, detail="",
+                        defect_sources=list(sc.alt_defect_sources) if kind == "html" and i == 1 and 2 in failed else [])
               for i in range(8)]
     return CodeCheckResult(total=code_total, checks=checks)
+
+
+def _feature_match(sc: StubScenario, features: list[str], knob: float, judged: str) -> FeatureMatchResult:
+    """스텁 대조 — 1.4판 모양 (충족 1 · 부분 0.5 · 미충족 0).
+
+    - 기능 수 m, 손잡이(0 ~ 15)로 인정 몫 u = round(손잡이 ÷ 15 × m × 2) ÷ 2. 앞에서부터 충족 floor(u)개, .5면 부분 1개,
+      나머지 미충족.
+    - 시나리오 partial_features가 있으면 그 기능을 부분으로 두고, 나머지를 앞에서부터 충족 floor(u − 0.5 × 부분 수)개 ·
+      나머지 미충족으로 다시 맞춘다.
+    - 점수 = 15 × (충족 + 0.5 × 부분) ÷ m. 기능이 없거나 시나리오 withhold_feature_match면 보류(E-V2-NOFEATURE) · 0점.
+    findings 첫 줄은 '인정 n/m개 (규칙 a건 → LLM 확인: 충족 x · 부분 y · 미충족 z)' — 스텁은 규칙 탈락이 없어 a = m.
+    """
+    m = len(features)
+    if m == 0 or sc.withhold_feature_match:
+        return FeatureMatchResult(score=0, missing_features=[], extra_features=[],
+                                  findings=["대조 판정 보류 (E-V2-NOFEATURE)"], judged_by=judged,
+                                  withheld=True, withheld_reason="E-V2-NOFEATURE")
+    u = round(knob / 15 * m * 2) / 2
+    if sc.partial_features is not None:
+        partial = [f for f in features if f in sc.partial_features]
+        rest = [f for f in features if f not in partial]
+        n_full = max(0, min(len(rest), math.floor(u - 0.5 * len(partial))))
+        full, missing = rest[:n_full], rest[n_full:]
+    else:
+        n_full = math.floor(u)
+        full = features[:n_full]
+        partial = features[n_full:n_full + 1] if u - n_full == 0.5 else []
+        missing = features[n_full + len(partial):]
+    recognized = len(full) + 0.5 * len(partial)
+    findings = [f"인정 {recognized:g}/{m}개 (규칙 {m}건 → LLM 확인: 충족 {len(full)} · 부분 {len(partial)} · "
+                f"미충족 {len(missing)})"]
+    findings += [f"'{f}' 기능이 프로토타입에 존재하지 않습니다." for f in missing]
+    findings += [f"{f}: 부분 인정 — 일부 요소가 빠졌습니다." for f in partial]
+    return FeatureMatchResult(score=15 * recognized / m, missing_features=missing, partial_features=partial,
+                              extra_features=[], findings=findings, judged_by=judged)
 
 
 # ── 스텁 묶기 ─────────────────────────────────────────
@@ -467,10 +519,10 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
 
     def tb1(inp: c.TB1In, tools: Tools) -> c.TB1Out:
         _ask(tools, "실행 파일 제작")
-        proto = Prototype(entry_file_path="/prototype.html", kind="html", source_text="<html lang='ko'></html>",
+        proto = Prototype(entry_file_path=ENTRY_FILE, kind="html", source_text="<html lang='ko'></html>",
                           asset_paths=[], implemented_features=list(inp.feature_list))
         return c.TB1Out(prototype=proto, implemented_features=list(inp.feature_list),
-                        entry_file_path="/prototype.html", check=_check(sc, "T-B1", inp.rework_input, ""))
+                        entry_file_path=ENTRY_FILE, check=_check(sc, "T-B1", inp.rework_input, ""))
 
     def tb2(inp: c.TB2In, tools: Tools) -> c.TB2Out:
         _ask(tools, "인포그래픽 제작")
@@ -485,8 +537,11 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
                                            implemented_features=list(inp.feature_list)))
 
     def g04(inp: c.G04In) -> c.G04Out:
+        # 자체 검사는 check_fail_times['G-04']로 불통과를 흉내 낸다. 실구현(템플릿 · 낱말 검사)이 지킬 것 — 웹개발 · AI API
+        # README에는 '실행' 또는 '열람', 원페이지 README에는 '열람'과 '인쇄'가 들어가야 한다(구현 · 검증-2 담당 요청, 검증-2
+        # 진단 기준과 같음). 끝내 실패해 AI 생성 고지(기획서 6-8)가 빠져도 T-C4 전달은 막지 않는다 (잠정 — 사용자 미답)
         _maybe_raise(sc, "G-04")
-        return c.G04Out(readme_path="/README.md")
+        return c.G04Out(readme_path="/README.md", check=_check(sc, "G-04", None, ""))
 
     def m3(inp: c.M3In) -> c.M3Out:
         _maybe_raise(sc, "M-3")
@@ -499,13 +554,11 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
         except ToolCallExhausted:
             judged = "htmlParse" if inp.prototype.kind == "html" else "svgTextParse"  # 문자열 대조만으로 산출
         code_total, feat = sc.pick("T-V2", sc.art_scores)
-        missing = max(0, round((15 - feat) / 4))
-        fm = FeatureMatchResult(score=feat, missing_features=inp.feature_list[:missing], extra_features=[],
-                                findings=[f"'{m}' 기능이 프로토타입에 존재하지 않습니다." for m in inp.feature_list[:missing]],
-                                judged_by=judged)
-        cc = _code_check(inp.prototype.kind, code_total)
-        return c.TV2Out(artifact_score=ArtifactScore(total=code_total + feat, code_check=cc, feature_match=fm),
-                        code_check=cc, feature_match=fm)
+        fm = _feature_match(sc, list(inp.feature_list), feat, judged)
+        cc = _code_check(sc, inp.prototype.kind, code_total)
+        total = 0.0 if cc.gate_failures else cc.total + fm.score   # 통과 필수 조건 실패면 산출물층 0
+        return c.TV2Out(artifact_score=ArtifactScore(total=total, code_check=cc, feature_match=fm),
+                        code_check=cc, feature_match=fm, diagnostics=list(sc.diagnostics))
 
     def g02b(inp: c.G02bIn) -> c.G02bOut:
         total = round(inp.doc_score.total + inp.artifact_score.total, 1)
@@ -636,20 +689,12 @@ def _doc_orders(ds: DocScore, threshold: float) -> list[ReworkOrder]:
 
 
 def _art_orders(score: ArtifactScore, category: str) -> list[ReworkOrder]:
+    """산출물층 재작성 지시 — 다시 돌릴 Task · 사유는 공용 규칙(artifact_rework_reasons)을 쓴다. 보류된 대조는 이미 0점이라
+    재정규화하지 않는다(2026-09-30 결정 8)."""
     kind = "svg-onepage" if category == "원페이지" else "html"
-    reasons: dict[str, list[str]] = {}
-    for ch in score.code_check.checks:
-        if not ch.passed:
-            reasons.setdefault(CODE_CHECK_TARGET[kind][ch.no], []).append(f"코드 검증 {ch.no}번 {ch.name}")
-    if score.feature_match.missing_features:
-        reasons.setdefault(FEATURE_MISSING_TARGET[kind], []).append(f"대조 {score.feature_match.score}/15")
-    orders = []
-    for task_id, rs in reasons.items():
-        if task_id == "G-04" and not LIST_README_BUNDLE:
-            continue
-        orders.append(ReworkOrder(task_id=task_id, unit="묶음", targets=[TASK_BUNDLE[task_id]], reason="; ".join(rs),
-                                  instruction_delta="; ".join(rs), layer="artifact"))
-    return orders
+    return [ReworkOrder(task_id=task_id, unit="묶음", targets=[TASK_BUNDLE[task_id]], reason="; ".join(rs),
+                        instruction_delta="; ".join(rs), layer="artifact")
+            for task_id, rs in artifact_rework_reasons(score, kind).items()]
 
 
 def _next_action(passed: bool, orders: list[ReworkOrder], usage) -> str:
