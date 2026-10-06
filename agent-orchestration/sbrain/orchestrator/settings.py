@@ -205,6 +205,16 @@ PROVISIONAL: dict[str, str] = {
     "worker.heartbeatSec": "하트비트 30초 — 점유 시간의 1/4",
     "worker.maxStartClaims": "시작 요청을 가져간 횟수 상한 3 — 넘으면 E-C1-TIMEOUT으로 끝낸다",
     "worker.errorBackoff": "단계 밖 오류 뒤 그 실행 건을 점유 시간만큼 다시 가져가지 않는다",
+    # 워커 운영 로그 (orchestrator/runlog.py · sbrain/worker_log.py) — 워커 프로세스 값이다
+    "workerLog.actions": "운영 로그 동작 · 키 이름 — 단계시작(run · project · step · exec · trigger · resumed · attempt) · "
+                         "단계끝(run · project · step · exec · status · sec · model · tokens · imageTokens · errorKind · "
+                         "error) · 대기(run · project · point) · 실행끝(run · project · status) · 재개예약(run · project · "
+                         "at · errorKind). 운영하면서 바꿀 수 있다 (orchestrator/runlog.py)",
+    "workerLog.errorMax": "단계끝 error 값 길이 상한 200자 (orchestrator/runlog.py ERROR_MAX)",
+    "workerLog.maxBytes": "로그 파일 하나의 상한 20MB — 넘게 되면 다음 순번 파일 (sbrain/worker_log.py MAX_BYTES)",
+    "workerLog.lockFile": "폴더 하나에 워커 하나 — 폴더 안 worker.lock OS 배타 잠금, 못 잡으면 화면에만 "
+                          "(sbrain/worker_log.py LOCK_FILE)",
+    "workerLog.writeFailure": "로그 파일 쓰기 실패 안내는 실패가 이어지는 동안 한 번만, 다음 줄부터 다시 파일에 쓰기를 시도한다",
     # 실행 로그 보관 기간 작업 (flow/retention.py · sbrain/worker.py) — 워커 프로세스 값이다
     "retention.batchSize": "보관 기간 작업이 한 번에 가져오는 실행 건 · 시작 요청 수 100 (flow/retention.py BATCH_SIZE)",
     "retention.intervalSec": "보관 기간 작업 간격 24시간 — 마지막으로 끝까지 마친 뒤 이만큼 지나야 다시 시작한다 "

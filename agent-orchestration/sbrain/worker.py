@@ -16,8 +16,10 @@
 - 단계 밖 오류(DB 오류 등)는 기록하고, 그 실행 건의 점유를 다시 잡아 두어 점유 시간 뒤에 다시 시도하게 한다 (잠정).
 - 설정: SBRAIN_DB_URL(필수), OPENAI_API_KEY(필수), SBRAIN_WORKER_POLL_SEC · SBRAIN_WORKER_THREADS ·
   SBRAIN_WORKER_LEASE_SEC(선택). 모두 환경 변수 → agent-orchestration/.env 순서로 읽는다.
-- 로그는 표준 출력에 한 줄씩 — 가져간 일과 끝난 상태만. 프롬프트 · 응답 내용은 남기지 않는다.
-  줄 앞의 시각은 UTC다(끝의 Z — 예: 2026-09-26 09:00:05Z).
+- 로그는 표준 출력에 한 줄씩 — 가져간 일과 끝난 상태, 엔진 · 흐름의 단계 · 실행 건 줄(로거 sbrain.run — 단계시작 · 단계끝 ·
+  대기 · 실행끝 · 재개예약). 프롬프트 · 응답 내용은 남기지 않는다. 줄 앞의 시각은 UTC다(끝의 Z — 예: 2026-09-26 09:00:05Z).
+  SBRAIN_WORKER_LOG_DIR(선택)을 넣으면 같은 줄을 그 폴더의 날짜 · 순번 파일에도 쓴다. SBRAIN_WORKER_LOG_KEEP_DAYS(선택)는
+  오래된 로그 파일 자동 삭제(기본 꺼짐). 자세한 규칙은 worker_log.py. 로거 처리기는 여기(main)서만 단다.
 """
 from __future__ import annotations
 
@@ -36,6 +38,7 @@ from .bootstrap import App
 from .env import get_env
 from .flow.retention import JOB_NAME, run_retention, start_retention
 from .models.clock import utc_now
+from .worker_log import KEEP_DAYS_ENV, LOG_DIR_ENV, attach_run_log, detach_run_log, open_worker_output
 
 # 잠정값 (orchestrator/settings.py PROVISIONAL에도 적는다)
 POLL_SEC = 1.0
@@ -71,6 +74,7 @@ class Worker:
         self.config = config or WorkerConfig()
         self.name = name or f"{socket.gethostname()}:{os.getpid()}"
         self._log = log or _print
+        self._local = threading.local()                 # 지금 스레드의 점유자 — 엔진 줄(sbrain.run)의 앞부분
         self.stopping = threading.Event()
         self._held: dict[tuple[str, str], str] = {}     # (종류, ID) → 점유자 — 하트비트 대상
         self._held_lock = threading.Lock()
@@ -91,6 +95,7 @@ class Worker:
 
         ④ 작업 확인 주기가 됐으면 보관 기간 작업을 확인해 돌 때면 돈다(돌려주는 목록에는 넣지 않는다 — 로그에만).
         """
+        self._local.owner = owner
         store, lease = self.app.store, self.config.lease_sec
         steps = (
             ("시작요청", lambda: store.claim_start_request(owner, lease), self._start),
@@ -230,6 +235,18 @@ class Worker:
     def log(self, who: str, text: str) -> None:
         self._log(f"{utc_now():%Y-%m-%d %H:%M:%S}Z {who} {text}")
 
+    def set_output(self, write: Callable[[str], None]) -> None:
+        """줄을 쓰는 곳을 바꾼다 (main — 화면 + 로그 파일)."""
+        self._log = write
+
+    def current_owner(self) -> str:
+        """지금 스레드가 일을 가져간 점유자 이름. 일을 가져가기 전이면 워커 이름."""
+        return getattr(self._local, "owner", None) or self.name
+
+    def run_log_line(self, text: str) -> None:
+        """엔진 · 흐름이 sbrain.run 로거에 남긴 줄 — 워커 줄과 같은 앞부분으로 같은 곳에 쓴다."""
+        self.log(self.current_owner(), text)
+
 
 def _print(line: str) -> None:
     print(line, flush=True)
@@ -257,13 +274,20 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     from .bootstrap import build_app
     worker = Worker(build_app(), WorkerConfig.from_env())
-    if args.once:
-        for line in worker.run_once(worker.owner(0)) or ["할 일 없음"]:
-            print(line)
+    output = open_worker_output(worker.name, get_env(LOG_DIR_ENV), get_env(KEEP_DAYS_ENV))
+    worker.set_output(output.write)
+    handler = attach_run_log(worker.run_log_line)   # 로거 처리기는 워커만 단다
+    try:
+        if args.once:
+            for line in worker.run_once(worker.owner(0)) or ["할 일 없음"]:
+                print(line)
+            return 0
+        install_signal_handlers(worker)
+        worker.run()
         return 0
-    install_signal_handlers(worker)
-    worker.run()
-    return 0
+    finally:
+        detach_run_log(handler)
+        output.close()
 
 
 if __name__ == "__main__":

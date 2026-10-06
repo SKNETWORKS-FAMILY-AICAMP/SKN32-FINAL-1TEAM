@@ -16,6 +16,8 @@
 - 선택 확장 지점(흐름에 없으면 기본 동작): Flow.redo_rework_input — 재수행 입력을 저장하기 전에 흐름이 칸을 채운다(기본: 그대로),
   Flow.after_execution — 실행 기록이 성공으로 저장되는 같은 묶음에서 그 실행의 호출 기록을 본다(기본: 아무것도 안 함).
 - 시각은 시간대 있는 UTC다. 주입한 시계 · tick(now)의 시간대 없는 값은 UTC로 본다.
+- 운영 로그 줄(runlog, 로거 sbrain.run): 실행 기록마다 단계시작 · 단계끝, 실행 건의 대기 · 실행끝 · 재개예약. 단계 ID와 실행 건 ·
+  실행 기록 값만 쓴다. 처리기는 워커만 단다 — 그 밖에서는 아무것도 나가지 않는다.
 """
 from __future__ import annotations
 
@@ -33,6 +35,7 @@ from ..models.clock import as_utc, utc_clock, utc_now
 from ..models.run import FAILURE_REASON_MAX, RedoState, ReworkSummary, collecting, make_state
 from .context import ArtifactTypes, ImmutableArtifactError, RunContext
 from .errors import ContractError, ResourceNotFound, ToolCallExhausted
+from . import runlog
 from .registry import PARTIAL_SUFFIX, AgentRegistry, TaskRegistry, TaskSpec, keeps_partial
 from .settings import TaskModelSetting
 from .store import Store
@@ -164,6 +167,10 @@ class Engine:
         self.lease_sec = lease_sec
         # 워커 종료 신호 — 참이면 단계 사이에서 멈춘다. 실행 건은 '실행'으로 남아 다른 워커가 이어받는다
         self.stop_requested: Callable[[], bool] = lambda: False
+        # 운영 로그 단계끝의 걸린 시간 — 실행 기록 ID → 이번에 연 시각 (스레드마다 다른 실행 기록이라 키가 겹치지 않는다)
+        self._step_marks: dict[str, datetime] = {}
+        # 운영 로그 재개예약의 오류 종류 — 실행 건 ID → 재개를 예약한 오류 종류 (저장 뒤 줄을 남기며 지운다)
+        self._resume_kinds: dict[str, str] = {}
 
     # ── Context ──────────────────────────────────────
     def open_context(self, run: Run, provisional: bool = False, owner: str | None = None) -> RunContext:
@@ -225,6 +232,7 @@ class Engine:
             if not ctx.provisional and self.store.is_abort_requested(ctx.run.run_id):
                 self.flow.on_abort(ctx)
                 ctx.commit()
+                self._log_progress(ctx)
                 return last
             if not ctx.provisional and self.stop_requested():
                 return last   # 워커 종료 — 하던 단계는 저장됐다. 남은 대기열은 다른 워커가 이어받는다
@@ -232,6 +240,7 @@ class Engine:
                 before = (ctx.run.state.step, ctx.run.state.progress, ctx.run.segment)
                 self.flow.on_queue_empty(ctx)
                 ctx.commit()
+                self._log_progress(ctx)
                 after = (ctx.run.state.step, ctx.run.state.progress, ctx.run.segment)
                 if not ctx.run.queue and before == after:
                     raise RuntimeError(f"구간 종료 처리 없음: {ctx.run.segment}")
@@ -246,16 +255,41 @@ class Engine:
                 if outcome.status == "unresumable":
                     self.flow.on_unresumable(ctx, step_id, outcome)
             ctx.commit()
+            self._log_progress(ctx)
             if ctx.provisional and outcome.status != "ok":
                 return last
         return last
+
+    def _log_progress(self, ctx: RunContext) -> None:
+        """저장 뒤 실행 건이 대기 지점에 멈췄거나 · 재개를 예약했거나 · 끝났으면 운영 로그 한 줄."""
+        progress = ctx.run.state.progress
+        kind = self._resume_kinds.pop(ctx.run.run_id, None)
+        if progress == "재개대기":
+            runlog.resume_scheduled(ctx.run, kind or ctx.run.last_error_kind)
+        elif progress == "사용자대기":
+            runlog.wait(ctx.run)
+        elif progress in ("완료", "실패", "중단"):
+            runlog.run_end(ctx.run)
+
+    def _log_step_end(self, ctx: RunContext, rec: ExecutionRecord | None) -> None:
+        """실행 기록 하나의 끝 줄. 이번에 연 시각부터 잰다."""
+        if rec is None:
+            return
+        started = self._step_marks.pop(rec.execution_id, None)
+        runlog.step_end(ctx.run, rec, (self.now() - started).total_seconds() if started else None)
 
     # ── 단계 실행 ─────────────────────────────────────
     def run_step(self, ctx: RunContext, step_id: str) -> Outcome:
         ctx.run.current_task = step_id
         custom = self.flow.custom_step(step_id)
-        if custom is not None:
-            return custom(self, ctx)
+        if custom is not None:   # 흐름 전용 실행기 — 실행 기록이 있으면 그 끝 줄, 없으면 끝 줄만
+            began = self.now()
+            outcome = custom(self, ctx)
+            if outcome.record is not None:
+                self._log_step_end(ctx, outcome.record)
+            else:
+                runlog.step_end_without_record(ctx.run, step_id, (self.now() - began).total_seconds())
+            return outcome
         spec = self.registry.get(step_id)
         rs = ctx.run.redo_state
         if rs is None or rs.task_id != step_id:
@@ -266,9 +300,14 @@ class Engine:
             try:
                 outputs = self._invoke(ctx, spec, rec, rs)
             except ToolCallExhausted as e:
-                return self._on_exhausted(ctx, spec, rec, rs, e)
+                outcome = self._on_exhausted(ctx, spec, rec, rs, e)
+                self._log_step_end(ctx, rec)
+                return outcome
             except Exception as e:  # 규칙 단계 오류 · 규격 위반 · Agent 코드 오류
-                return self.on_step_error(ctx, spec, rec, e)
+                outcome = self.on_step_error(ctx, spec, rec, e)
+                self._log_step_end(ctx, rec)
+                return outcome
+            self._log_step_end(ctx, rec)
             check = outputs.get("check")
             if check is not None:
                 ctx.run.check_refs[spec.task_id] = ctx.ref(spec.outputs["check"])
@@ -292,6 +331,8 @@ class Engine:
             if existing is not None:
                 existing.resume_count += 1
                 existing.status = "실행"
+                self._step_marks[existing.execution_id] = self.now()
+                runlog.step_start(ctx.run, existing, resumed=True)
                 return existing
         now = self.now()
         rec = ExecutionRecord(
@@ -306,6 +347,8 @@ class Engine:
             ri = ctx.get_ref(rs.rework_input_ref)
             if ri.feedback_id:
                 rec.feedback_in.append(ri.feedback_id)
+        self._step_marks[rec.execution_id] = now
+        runlog.step_start(ctx.run, rec, resumed=False)
         return rec
 
     def _invoke(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, rs: RedoState) -> dict[str, Any]:
@@ -547,6 +590,7 @@ class Engine:
                 rec.status = "재개대기"
                 ctx.record_execution(rec)
                 ctx.add_event("재개예약", f"{rec.task_id} {wait} 뒤 재개", execution_id=rec.execution_id)
+                self._resume_kinds[run.run_id] = kind   # 재개예약 줄은 저장 뒤 남긴다 (_log_progress)
                 return Outcome("resume_wait", record=rec)
             reason = "재개상한초과"
         else:
