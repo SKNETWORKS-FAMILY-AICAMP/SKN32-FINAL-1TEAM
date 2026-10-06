@@ -12,6 +12,10 @@ tools는 호출마다 재시도 · 제한 시간 · 오류 종류 분류를 맡�
 - 토큰 사용량(확장): 호출처가 LLMResponse(text, usage)를 돌려주면 시도마다 사용량을 CallTry에 남긴다.
   스키마 검사 · parse 전에 남겨 형식 오류로 버린 응답의 비용도 기록된다. 호출 합계는 CallLog에 둔다.
   호출처는 문자열만 돌려줘도 된다(사용량 없음).
+- 이미지 호출(확장): image()는 ImageProvider로 그림(PNG)을 그린다. 재시도 · 제한 시간 · 오류 종류 분류는 llm과 같다.
+  제한 시간은 Task 설정의 이미지 제한 시간(image_timeout_sec), 호출 기록은 call_type 'image' · 이미지 호출처 · 이미지 모델.
+  이미지 모델 설정이 없는 Task가 부르면 호출처를 부르지 않고 바로 실패한 호출 하나를 기록하고 ToolCallExhausted를 올린다.
+  지시문 · 입력 그림 · 결과 그림은 어떤 기록 · 예외 메시지에도 남기지 않는다(repr에서도 뺀다).
 """
 from __future__ import annotations
 
@@ -65,6 +69,35 @@ class LLMProvider(Protocol):
     본문만(str) 돌려주거나, 토큰 사용량을 함께 LLMResponse로 돌려준다."""
 
     def complete(self, request: LLMRequest) -> str | LLMResponse: ...
+
+
+@dataclass(frozen=True)
+class ImageRequest:
+    """확장 — 이미지 호출 요청. image가 있으면 그 그림을 바탕으로 그리고(편집), 없으면 새로 그린다.
+    size · quality가 None이면 호출처가 싣지 않는다(모델 기본값). 지시문 · 그림은 repr에 넣지 않는다."""
+    provider: str
+    model: str
+    prompt: str = field(repr=False)
+    image: bytes | None = field(repr=False)
+    size: str | None
+    quality: str | None
+    timeout_sec: float
+    metadata: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ImageResponse:
+    """확장 — 이미지 호출처 응답: 결과 그림(PNG 바이트)과 토큰 사용량(없으면 None)."""
+    png: bytes = field(repr=False)
+    usage: TokenUsage | None = None
+
+
+class ImageProvider(Protocol):
+    """이미지 호출처 어댑터 (확장). timeout_sec를 HTTP 클라이언트 timeout으로 걸고,
+    시간 초과는 TimeoutError, 응답 코드 오류는 ProviderError(status=...)로 올린다 (LLMProvider와 같다).
+    그림을 받지 못한 응답은 FormatError(사용량을 실어)로 올린다."""
+
+    def create(self, request: ImageRequest) -> ImageResponse: ...
 
 
 @dataclass(frozen=True)
@@ -124,10 +157,23 @@ class ToolsContext:
     now: Callable[[], datetime]
     sleep: Callable[[float], None] = time.sleep
     new_id: Callable[[], str] = field(default=lambda: uuid.uuid4().hex[:12])
+    image_providers: dict[str, ImageProvider] = field(default_factory=dict)   # 확장 — 이미지 호출처 (없으면 이미지 호출 실패)
+
+
+# 이미지 모델 설정이 없는 Task의 이미지 호출 — 기록의 설명 칸에 남기는 이유 (CallError 값은 늘리지 않는다)
+NO_IMAGE_SETTING = "이미지 모델 설정 없음"
+
+
+class _Immediate(Exception):
+    """재시도하지 않고 바로 끝내는 호출 실패 (tools 안에서만 쓴다)."""
+
+    def __init__(self, error: CallError, kind: ErrorKind, detail: str) -> None:
+        super().__init__(detail)
+        self.error, self.kind, self.detail = error, kind, detail
 
 
 class Tools:
-    """Task 함수에 넘기는 호출 도구 (잠정 규격: llm · search 두 가지)."""
+    """Task 함수에 넘기는 호출 도구 (잠정 규격: llm · search, 확장 image)."""
 
     def __init__(self, config: ToolsConfig, ctx: ToolsContext, item_key: str | None = None) -> None:
         self._config = config
@@ -200,10 +246,64 @@ class Tools:
         """LLM이 아닌 호출(임베딩 검색 · BM25 등)을 감싼다. fn은 timeout_sec를 받는다."""
         return self._call("search", purpose, lambda: fn(self._config.timeout_sec))
 
+    def image(
+        self,
+        prompt: str,
+        *,
+        image: bytes | None = None,
+        size: str | None = None,
+        quality: str | None = None,
+        purpose: str = "",
+    ) -> bytes:
+        """그림을 그려 PNG 바이트를 돌려준다(확장). image가 있으면 그 그림을 바탕으로 그린다(편집).
+        size · quality가 None이면 Task 설정의 image_size · image_quality를 쓴다.
+        재시도를 다 쓰거나 이미지 모델 설정이 없으면 ToolCallExhausted를 올린다."""
+        cfg = self._config
+        if cfg.image_model is None:
+            def refuse() -> bytes:   # 호출처를 부르지 않는다 — 실패한 시도 하나만 남긴다
+                raise _Immediate("호출실패", "운영", NO_IMAGE_SETTING)
+            return self._call("image", purpose, refuse)
+        provider = self._ctx.image_providers.get(cfg.image_provider or "")
+        request = ImageRequest(
+            provider=cfg.image_provider or "",
+            model=cfg.image_model,
+            prompt=prompt,
+            image=image,
+            size=size if size is not None else cfg.image_size,
+            quality=quality if quality is not None else cfg.image_quality,
+            timeout_sec=cfg.image_timeout_sec,
+            metadata={
+                "run_id": self._ctx.run_id,
+                "task_id": self._ctx.task_id,
+                "agent": cfg.agent,
+                "purpose": purpose,
+                "item_key": self._item_key,
+            },
+        )
+
+        box: dict[str, TokenUsage | None] = {"usage": None}   # 이 시도의 사용량 (호출마다 따로 — 스레드 안전)
+
+        def once() -> bytes:
+            box["usage"] = None
+            if provider is None:
+                raise ProviderError(f"이미지 호출처 없음: {cfg.image_provider}", status=404)
+            try:
+                reply = provider.create(request)
+            except FormatError as e:   # 응답은 받았지만 그림이 없음 — 사용량은 남긴다
+                box["usage"] = e.usage
+                raise
+            box["usage"] = reply.usage
+            if not reply.png:
+                raise FormatError("빈 그림")
+            return reply.png
+
+        return self._call("image", purpose, once, usage=lambda: box["usage"])
+
     # ── 재시도 ────────────────────────────────────────
     def _call(self, call_type: str, purpose: str, once: Callable[[], T],
               usage: Callable[[], TokenUsage | None] = lambda: None) -> T:
         cfg, ctx = self._config, self._ctx
+        llm, image = call_type == "llm", call_type == "image"
         log = CallLog(
             call_id=ctx.new_id(),
             run_id=ctx.run_id,
@@ -213,11 +313,11 @@ class Tools:
             call_type=call_type,
             purpose=purpose,
             item_key=self._item_key,
-            provider=cfg.provider if call_type == "llm" else None,
-            model=cfg.model if call_type == "llm" else None,
-            temperature=cfg.temperature if call_type == "llm" else None,
-            reasoning_effort=cfg.reasoning_effort if call_type == "llm" else None,
-            timeout_sec=cfg.timeout_sec,
+            provider=cfg.provider if llm else cfg.image_provider if image else None,
+            model=cfg.model if llm else cfg.image_model if image else None,
+            temperature=cfg.temperature if llm else None,
+            reasoning_effort=cfg.reasoning_effort if llm else None,
+            timeout_sec=cfg.image_timeout_sec if image else cfg.timeout_sec,
         )
         error: CallError = "호출실패"
         kind: ErrorKind = "일시"
@@ -227,6 +327,11 @@ class Tools:
             started = ctx.now()
             try:
                 result = once()
+            except _Immediate as e:   # 재시도하지 않는다
+                error, kind, detail = e.error, e.kind, e.detail
+                log.tries.append(CallTry(no=no, started_at=started, ended_at=ctx.now(),
+                                         outcome=error, error_kind=kind, detail=detail))
+                break
             except FormatError as e:
                 error, kind, detail = "형식오류", "일시", str(e)
             except TimeoutError:

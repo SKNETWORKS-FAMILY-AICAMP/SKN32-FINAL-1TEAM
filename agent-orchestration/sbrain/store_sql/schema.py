@@ -216,6 +216,9 @@ EXECUTIONS = Table(
     Column("redo_count", Integer, nullable=False, server_default=ZERO),
     Column("resume_count", Integer, nullable=False, server_default=ZERO),
     *_tokens(),
+    # 이미지 호출 토큰 (확장) — 글 토큰 합계에 넣지 않고 따로 센다. 이미지 호출이 없으면 NULL
+    Column("image_input_tokens", TOKENS, comment="이미지 호출 입력 토큰 합계"),
+    Column("image_output_tokens", TOKENS, comment="이미지 호출 출력 토큰 합계"),
     Column("created_at", TS, nullable=False),
     Column("started_at", TS),
     Column("ended_at", TS),
@@ -237,7 +240,7 @@ CALL_LOGS = Table(
     _id("execution_id", "실행 ID", nullable=False),
     Column("task_id", String(40), nullable=False),
     Column("agent", String(20), nullable=False),
-    Column("call_type", String(20), nullable=False, comment="llm · search"),
+    Column("call_type", String(20), nullable=False, comment="llm · search · image"),
     Column("purpose", String(200), nullable=False),
     Column("item_key", String(200), comment="T-P2 문장 ID 등"),
     Column("provider", String(50)),
@@ -255,7 +258,7 @@ CALL_LOGS = Table(
     UniqueConstraint("call_id", name="uq_orch_call_logs_call"),
     Index("ix_orch_call_logs_execution", "execution_id"),
     Index("ix_orch_call_logs_run", "run_id"),
-    comment="LLM · 검색 호출 기록 — 재시도는 tries에 쌓인다. 프롬프트 · 응답 내용 없음",
+    comment="LLM · 검색 · 이미지 호출 기록 — 재시도는 tries에 쌓인다. 프롬프트 · 응답 · 그림 내용 없음",
     **TABLE_ARGS,
 )
 

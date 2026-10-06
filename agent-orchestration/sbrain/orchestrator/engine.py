@@ -34,7 +34,7 @@ from .errors import ContractError, ResourceNotFound, ToolCallExhausted
 from .registry import PARTIAL_SUFFIX, AgentRegistry, TaskRegistry, TaskSpec, keeps_partial
 from .settings import TaskModelSetting
 from .store import Store
-from .tools import CallSink, LLMProvider, Tools, ToolsConfig, ToolsContext
+from .tools import CallSink, ImageProvider, LLMProvider, Tools, ToolsConfig, ToolsContext
 from .trace import ExecutionRecord, FeedbackLink, add_tokens, output_meta_of
 
 # 재작성 비교 · 되돌리기에서 제외하는 산출물 (Orchestrator가 만든 입력 — 사용자 명령 · 재작성 · 재수행 입력 · 다시 쓴 지시문 ·
@@ -134,11 +134,14 @@ class Engine:
         new_id: Callable[[], str] | None = None,
         owner: str = "worker",
         lease_sec: float = 3600,
+        image_providers: dict[str, ImageProvider] | None = None,
     ) -> None:
         self.store = store
         self.registry = registry
         self.flow = flow
         self.providers = providers
+        # 이미지 호출처 (확장) — 이름은 Task 설정의 image_provider. 없으면 이미지 호출은 '운영' 실패다
+        self.image_providers: dict[str, ImageProvider] = image_providers if image_providers is not None else {}
         self.types = types
         self.agents = agents or AgentRegistry()
         self.immutable_keys = immutable_keys
@@ -452,7 +455,8 @@ class Engine:
                    cfg: ToolsConfig, sink: CallSink) -> Tools:
         return Tools(cfg, ToolsContext(
             run_id=ctx.run.run_id, execution_id=rec.execution_id, task_id=spec.task_id,
-            providers=self.providers, sink=sink, now=self.now, sleep=self.sleep, new_id=self.new_id))
+            providers=self.providers, sink=sink, now=self.now, sleep=self.sleep, new_id=self.new_id,
+            image_providers=self.image_providers))
 
     # ── 재수행 ────────────────────────────────────────
     def _schedule_redo(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord,

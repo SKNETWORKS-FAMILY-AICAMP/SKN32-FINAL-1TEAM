@@ -60,7 +60,9 @@ from ..orchestrator.store import (
     CommitBatch, CreateOutcome, ExecutionFilter, ExecutionRow, JobState, LogStatsRow, RunFilter, StartRequest,
     StartRequestStatus, check_summary,
 )
-from ..orchestrator.trace import TOKEN_FIELDS, CallLog, ExecutionRecord, FeedbackLink, PointerEvent, TraceEvent
+from ..orchestrator.trace import (
+    IMAGE_TOKEN_FIELDS, TOKEN_FIELDS, CallLog, ExecutionRecord, FeedbackLink, PointerEvent, TraceEvent,
+)
 from .schema import (
     ARTIFACT_POINTERS, ARTIFACT_VERSIONS, CALL_LOGS, EXECUTIONS, FEEDBACK_LINKS, JOBS, LOG_STATS, POINTER_EVENTS,
     RECORD_TABLES, REWORK_COMPARISONS, RUNS, START_REQUESTS, TRACE_EVENTS,
@@ -829,7 +831,8 @@ def _execution_row(rec: ExecutionRecord, run_id: str, project_id: int | None) ->
         reasoning_effort=rec.reasoning_effort, status=rec.status, error_kind=rec.error_kind, error=rec.error,
         cycle_id=rec.cycle_id, redo_count=rec.redo_count, resume_count=rec.resume_count,
         created_at=rec.created_at, started_at=rec.started_at, ended_at=rec.ended_at, record_json=rec.dump(),
-        **{f: getattr(rec, f) for f in TOKEN_FIELDS})
+        **{f: getattr(rec, f) for f in TOKEN_FIELDS},
+        **{f: getattr(rec, f) for _, f in IMAGE_TOKEN_FIELDS})
 
 
 def _call_row(log: CallLog) -> dict[str, Any]:

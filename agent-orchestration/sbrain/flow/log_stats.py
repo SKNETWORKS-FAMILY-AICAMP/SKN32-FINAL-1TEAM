@@ -45,6 +45,8 @@ EXTRA_STATUSES = ("실행",)
 # 실행 기록 토큰 필드 → data_json 키 (없는 값은 0)
 TOKEN_KEYS = (("input_tokens", "input"), ("cached_input_tokens", "cachedInput"), ("output_tokens", "output"),
               ("reasoning_tokens", "reasoning"))
+# 이미지 호출 토큰 — tokens(글 토큰)와 따로 센다 (2026-10-05에 고정한 키 목록에 imageTokens 하나를 더했다, 2026-10-06)
+IMAGE_TOKEN_KEYS = (("image_input_tokens", "input"), ("image_output_tokens", "output"))
 REWORK_FAILED_EVENT = "재작성실패"   # 엔진 rollback_cycle이 남기는 추적 사건 종류
 
 
@@ -134,6 +136,7 @@ def _tasks(executions: list[ExecutionRecord], calls: list[CallLog]) -> dict[str,
             "errorKinds": _counts((r.error_kind for r in recs), ERROR_KINDS),
             "callErrorKinds": _counts((t.error_kind for t in tries), ERROR_KINDS),
             "tokens": {key: sum(getattr(r, attr) or 0 for r in recs) for attr, key in TOKEN_KEYS},
+            "imageTokens": {key: sum(getattr(r, attr) or 0 for r in recs) for attr, key in IMAGE_TOKEN_KEYS},
         }
     return out
 

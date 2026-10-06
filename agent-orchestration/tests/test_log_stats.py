@@ -23,7 +23,8 @@ M = "MARKER"                                     # 식별자 · 자유 글 표�
 
 TOP_KEYS = {"step", "scores", "finalScores", "tasks", "rework", "run"}
 SCORE_KEYS = {"docScore", "codeCheck", "featureMatch", "artifactScore", "overall"}
-TASK_KEYS = {"runs", "status", "resumes", "retries", "errorKinds", "callErrorKinds", "tokens"}
+# 2026-10-05에 고정한 키 목록 + imageTokens (이미지 호출 토큰 — 글 토큰과 따로 센다, 2026-10-06)
+TASK_KEYS = {"runs", "status", "resumes", "retries", "errorKinds", "callErrorKinds", "tokens", "imageTokens"}
 
 
 def at(minutes: int) -> datetime:
@@ -90,10 +91,11 @@ def full_records() -> RunRecords:
     executions = [
         # 일부러 끝 시각 순서와 다르게 둔다 — 점수는 끝 시각 순이어야 한다
         rec(9, "T-V1", "재작성", ended=90, outputs=["docScore@2"], meta=OutputMeta(score=60.0)),
-        rec(1, "T-W1", ended=10, input_tokens=1000, output_tokens=700, reasoning_tokens=100),
+        rec(1, "T-W1", ended=10, input_tokens=1000, output_tokens=700, reasoning_tokens=100,
+            image_input_tokens=500, image_output_tokens=4000),
         rec(2, "T-W1", "재수행", "실패", ended=20, error_kind="일시", resume_count=1, input_tokens=200,
             cached_input_tokens=50, output_tokens=100),
-        rec(3, "T-W1", "재수행", ended=30),
+        rec(3, "T-W1", "재수행", ended=30, image_input_tokens=10),
         rec(4, "T-W1", "재작성", "재개대기", ended=95, resume_count=2),
         rec(5, "T-V1", ended=40, outputs=["docScore@1"], meta=OutputMeta(score=52.0)),
         rec(6, "T-V1", "재작성", "실패", ended=91, error_kind="운영", meta=OutputMeta(score=99.0)),
@@ -183,6 +185,7 @@ def test_data_keys_exact():
     for task in data["tasks"].values():
         assert set(task) == TASK_KEYS
         assert set(task["tokens"]) == {"input", "cachedInput", "output", "reasoning"}
+        assert set(task["imageTokens"]) == {"input", "output"}
         assert set(task["runs"]) <= {"첫실행", "재작성", "재수행"}
         assert set(task["status"]) <= {"성공", "실패", "재개대기", "생략", "실행"}
         assert set(task["errorKinds"]) <= {"일시", "입력", "운영"}
@@ -222,12 +225,14 @@ def test_task_counts():
     assert w1["retries"] == (3 + 1 + 2) - 3                        # 시도 수 − 호출 수
     assert {k: v for k, v in w1["errorKinds"].items() if v} == {"일시": 1}
     assert {k: v for k, v in w1["callErrorKinds"].items() if v} == {"일시": 3, "입력": 1}
-    assert w1["tokens"] == {"input": 1200, "cachedInput": 50, "output": 800, "reasoning": 100}
+    assert w1["tokens"] == {"input": 1200, "cachedInput": 50, "output": 800, "reasoning": 100}   # 글 토큰만
+    assert w1["imageTokens"] == {"input": 510, "output": 4000}                                     # 이미지 토큰은 따로
     v1 = tasks["T-V1"]
     assert {k: v for k, v in v1["status"].items() if v} == {"성공": 2, "실패": 1}
     assert {k: v for k, v in v1["errorKinds"].items() if v} == {"운영": 1}
     assert v1["retries"] == 0
     assert v1["tokens"] == {"input": 0, "cachedInput": 0, "output": 0, "reasoning": 0}   # 없는 값은 0
+    assert v1["imageTokens"] == {"input": 0, "output": 0}
     assert tasks["T-V2"]["retries"] == 0 and not any(tasks["T-V2"]["callErrorKinds"].values())
 
 

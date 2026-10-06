@@ -8,7 +8,9 @@
 """
 from __future__ import annotations
 
+import struct
 import threading
+import zlib
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any, Callable
@@ -25,9 +27,9 @@ from ..models import (
     ScoreReport, Sentence, TableSpec, Token, TokenCheckResult,
 )
 from ..models.clock import kst_today, utc_clock, utc_now
-from ..orchestrator.errors import ProviderError, ResourceNotFound, ToolCallExhausted
+from ..orchestrator.errors import FormatError, ProviderError, ResourceNotFound, ToolCallExhausted
 from ..orchestrator.registry import TaskRegistry
-from ..orchestrator.tools import LLMRequest, LLMResponse, TokenUsage, Tools
+from ..orchestrator.tools import ImageRequest, ImageResponse, LLMRequest, LLMResponse, TokenUsage, Tools
 from ..flow.rework_map import (
     CODE_CHECK_TARGET, FEATURE_MISSING_TARGET, LIST_README_BUNDLE, TASK_BUNDLE, order_bundles,
 )
@@ -104,6 +106,53 @@ class FakeLLM:
         if usage is None or isinstance(reply, LLMResponse):
             return reply
         return LLMResponse(reply, usage)
+
+
+def _tiny_png() -> bytes:
+    """1×1 흰 점 PNG (가짜 이미지 호출처의 결과)."""
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    signature = bytes([137, 80, 78, 71, 13, 10, 26, 10])   # PNG 파일 머리
+    return (signature + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(bytes([0, 255, 255, 255]))) + chunk(b"IEND", b""))
+
+
+class FakeImage:
+    """스크립트대로 응답하는 가짜 이미지 호출처 (확장). script[(task_id, item_key)] = ['timeout', 'ok', ...].
+
+    결과는 늘 같은 작은 PNG(1×1)다. usage[task_id]를 주면 응답(빈 그림 응답 포함)에 사용량을 싣는다 — 없으면 None.
+    결과: ok · timeout · rate_limit(429) · bad_request(400) · auth(401) · empty(빈 그림 → 형식 오류).
+    requests에는 받은 요청을 모은다(시험 확인용 — 메모리에만 있고 기록에 남지 않는다).
+    """
+    PNG = _tiny_png()
+
+    def __init__(self) -> None:
+        self.script: dict[tuple[str, str | None], list[str]] = {}
+        self.requests: list[ImageRequest] = []
+        self.usage: dict[str, TokenUsage] = {}
+        self._lock = threading.Lock()
+
+    def plan(self, task_id: str, outcomes: list[str], item_key: str | None = None) -> None:
+        self.script[(task_id, item_key)] = list(outcomes)
+
+    def create(self, request: ImageRequest) -> ImageResponse:
+        with self._lock:
+            self.requests.append(request)
+            key = (request.metadata["task_id"], request.metadata.get("item_key"))
+            queue = self.script.get(key) or self.script.get((key[0], None)) or []
+            outcome = queue.pop(0) if queue else "ok"
+        usage = self.usage.get(key[0])
+        if outcome == "timeout":
+            raise TimeoutError()
+        if outcome == "rate_limit":
+            raise ProviderError("429", status=429)
+        if outcome == "bad_request":
+            raise ProviderError("400", status=400)
+        if outcome == "auth":
+            raise ProviderError("401", status=401)
+        if outcome == "empty":
+            raise FormatError("빈 그림", usage=usage)
+        return ImageResponse(self.PNG, usage)
 
 
 # ── 시나리오 ──────────────────────────────────────────
