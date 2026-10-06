@@ -26,37 +26,21 @@ POST /projects 는 #6(첨부파일 처리) 확정대로 multipart/form-data 로 
 import datetime
 import json
 import os
-import sys
 import uuid
-from decimal import Decimal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app import agents
-from app import pipeline_stages as ps
 from app.database import get_db
 from app.models import (
-    FIXED_TASK_SEQUENCE,
-    AgentExecution,
-    Artifact,
-    ArtifactScoreReason,
-    BusinessPlan,
     Company,
-    EligibilityCheck,
-    FormatFinding,
     GenerationFailureAlert,
-    MatchCandidate,
-    MatchScoreReason,
     Notice,
     NoticeAlert,
     Notification,
     PermanentDeletionLog,
-    PlanCanonicalData,
-    PlanScoreReason,
-    PlanSection,
     PricingItem,
     Project,
     ProjectAttachment,
@@ -66,9 +50,7 @@ from app.models import (
     ProjectScheduleItem,
     TeamMember,
     User,
-    Verdict,
     VerificationPolicy,
-    VerificationScoreHistory,
 )
 from app.orch import OrchError, OrchGateway, account_id_of, mapping, require_gateway
 from app.proofread_retention import clear_project_logs
@@ -90,450 +72,8 @@ from app.schemas import (
 )
 from app.security import get_current_user
 
-# [2026-09-15, 프론트 통합 임시 구현] seed_dummy_pipeline.py(repo 루트, back/)를 그대로
-# 불러다 쓴다 — 오케스트레이터가 아직 없어서(app/agents.py 모듈 docstring 참고)
-# "매칭→자격판정→계획서→산출물→최종판정"을 실제로 만들어주는 API가 하나도 없었는데,
-# 이미 이 더미 함수가 정확히 그 모양을 만들어주고 있어서 새로 짜지 않고 재사용한다.
-# database.py의 _REPO_ROOT 계산 방식과 동일하게 __file__ 기준으로 repo 루트를 잡는다.
-# 주의: seed_dummy_pipeline.py 쪽에서 다시 `from app.routers.projects import UPLOAD_DIR`로
-# 이 모듈을 가져오기 때문에, 여기서 모듈 최상단에 바로 import하면 순환 import로 죽는다 —
-# 그래서 generate_pipeline_result() 안에서 실제 호출 시점에만 지연 import한다(이땐 이
-# 모듈이 이미 다 로드된 뒤라 UPLOAD_DIR도 이미 정의돼 있어 안전하다).
-_REPO_ROOT_FOR_SEED = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if _REPO_ROOT_FOR_SEED not in sys.path:
-    sys.path.insert(0, _REPO_ROOT_FOR_SEED)
-
 router = APIRouter(prefix='/projects', tags=['projects'])
 
-# 재시도(POST /projects/{id}/retry-task) 가능한 task_key -> agent_name. FIXED_TASK_SEQUENCE의
-# 14단계 중 '조율'(오케스트레이션 체크포인트, 콘텐츠를 만들지 않음) 4개를 뺀 10개 전부 —
-# app/agents.py 모듈 docstring의 "Agent 7개 중 여기 6개만 있는 이유" 설명 참고.
-_RETRIABLE_TASK_KEYS = {
-    'strategy', 'writing',
-    'verify1_rubric', 'verify1_evidence',
-    'implement_prototype', 'implement_infographic',
-    'verify2_static', 'verify2_crosscheck',
-    'review_expression', 'review_token_check',
-}
-_TASK_KEY_TO_AGENT = dict(FIXED_TASK_SEQUENCE)
-
-# 검증-2(verify2_static/verify2_crosscheck)가 artifact_score_reasons 중 어느 item_code를
-# 다룰지 구분하는 접두어 — 실제 채점 기준표(rubric) item_code 체계가 정해지면 여기만 고치면 된다.
-_VERIFY2_STATIC_PREFIXES = ('CHECK-',)
-_VERIFY2_CROSSCHECK_PREFIXES = ('FEATURE-',)
-
-
-def _num(value: Decimal | None) -> float | None:
-    """Decimal -> float. 응답 JSON(changed 필드)에 그대로 넣기 위한 변환."""
-    return float(value) if value is not None else None
-
-
-def _to_decimal(value: float | int | None) -> Decimal | None:
-    """_num()의 역변환 — JSON 스냅샷(float)에서 DB 컬럼(Decimal)으로 되돌릴 때 쓴다."""
-    return Decimal(str(value)) if value is not None else None
-
-
-def _get_verification_policy(db: Session) -> VerificationPolicy:
-    """verification_policies는 운영 중 1행만 유지하는 설계다(app_schema.sql 주석) —
-    seed_dummy_pipeline.py가 이미 이 행을 보장해두므로, retry_task 시점엔 항상 있어야
-    정상이다. 없으면(예: seed 없이 직접 만든 plan) 500으로 명확히 알린다."""
-    policy = db.query(VerificationPolicy).order_by(VerificationPolicy.policy_id.asc()).first()
-    if policy is None:
-        raise HTTPException(status_code=500, detail='verification_policies 초기 행이 없습니다.')
-    return policy
-
-
-def _rescore_verify1(db: Session, plan: BusinessPlan, verify1_task_key: str) -> dict | None:
-    """검증-1(문서층) 재채점 — verify1_rubric/verify1_evidence 두 task_key가 공유하는 로직을
-    뽑아냈다. plan_score_reasons가 아직 없으면(초기 파이프라인이 한 번도 안 돌았거나 등)
-    None을 돌려준다 — 이 함수를 직접 호출하는 재시도 요청(verify1_rubric/verify1_evidence
-    task_key)은 호출부에서 그 경우 404로 막고, '작성' 재시도에 딸려오는 자동 재검증
-    (2026-09-18 추가, "재작성하면 점수도 바뀌어야 하지 않냐"는 지적)에서는 그냥 건너뛴다
-    (작성 자체는 이미 성공했으니 그 응답까지 실패시킬 이유가 없음)."""
-    reasons = db.query(PlanScoreReason).filter(PlanScoreReason.plan_id == plan.plan_id).all()
-    if not reasons:
-        return None
-    reasons_by_code = {r.item_code: r for r in reasons if r.item_code is not None}
-    rubric_input = [(r.item_code, r.max_score or Decimal('10')) for r in reasons if r.item_code is not None]
-
-    if verify1_task_key == 'verify1_rubric':
-        results = agents.run_verify1_rubric_retry(rubric_input)
-    else:
-        # E-V1-EVIDENCE: "evidenceLocator 없는 감점은 무효 처리하고 점수를 복원한다" —
-        # 이 규칙 자체는 app/agents.py의 run_verify1_evidence_retry() 안에 구현돼 있다.
-        results = agents.run_verify1_evidence_retry(rubric_input)
-
-    before_score = plan.doc_score
-    item_changes = {}
-    for result in results:
-        reason = reasons_by_code.get(result.item_code)
-        if reason is None:
-            continue  # 담당자 구현이 모르는 item_code를 돌려주면 조용히 무시(방어적)
-        item_changes[result.item_code] = {
-            'before': {'score': _num(reason.score), 'evidence_locator': reason.evidence_locator},
-            'after': {'score': _num(result.score), 'evidence_locator': result.evidence_locator},
-        }
-        reason.score = result.score
-        reason.evidence_locator = result.evidence_locator
-        # [2026-09-28 수정, 프론트 2차 요청 C] reason_text를 안 갱신해서 점수가 바뀌어도
-        # 사유 문장은 재채점 전('통과' 등) 그대로 남아있던 버그 — 점수와 사유가 같은
-        # 재채점 결과에서 같이 나와야 한다.
-        reason.reason_text = result.reason_text
-    plan.doc_score = sum((r.score or Decimal('0')) for r in reasons)
-
-    # [2026-09-18 수정] 재채점 시에도 verification_score_history에 새 행을 남긴다 — 예전엔
-    # plan.doc_score만 갱신하고 이력을 안 남겨서, 관리자 대시보드 "운영 현황"의 채점 편차
-    # (1회→2회)가 재시도가 있어도 항상 0건으로 보이는 버그가 있었다.
-    policy = _get_verification_policy(db)
-    db.add(VerificationScoreHistory(
-        plan_id=plan.plan_id, layer='doc', score=plan.doc_score, is_rerun=True,
-        policy_id=policy.policy_id, applied_weight=policy.doc_weight,
-        applied_pass_threshold=policy.pass_threshold, applied_rerun_cap=policy.rerun_cap,
-    ))
-    return {'scores': item_changes, 'doc_score': {'before': _num(before_score), 'after': _num(plan.doc_score)}}
-
-
-def _rescore_verify2(db: Session, plan: BusinessPlan, artifact: Artifact, verify2_task_key: str) -> dict | None:
-    """검증-2(산출물층) 재채점 — verify2_static/verify2_crosscheck 공유 로직. 채점 근거가
-    없으면(구현 재시도에 딸려오는 자동 재검증에서) None."""
-    prefixes = _VERIFY2_STATIC_PREFIXES if verify2_task_key == 'verify2_static' else _VERIFY2_CROSSCHECK_PREFIXES
-    all_reasons = db.query(ArtifactScoreReason).filter(ArtifactScoreReason.artifact_id == artifact.artifact_id).all()
-    reasons = [r for r in all_reasons if r.item_code and r.item_code.startswith(prefixes)]
-    if not reasons:
-        return None
-    reasons_by_code = {r.item_code: r for r in reasons}
-    rubric_input = [(r.item_code, r.max_score or Decimal('10')) for r in reasons]
-    results = agents.run_verify2_retry(
-        rubric_input, check_kind='static' if verify2_task_key == 'verify2_static' else 'crosscheck',
-    )
-
-    before_score = artifact.artifact_score
-    item_changes = {}
-    for result in results:
-        reason = reasons_by_code.get(result.item_code)
-        if reason is None:
-            continue
-        item_changes[result.item_code] = {'before': _num(reason.score), 'after': _num(result.score)}
-        reason.score = result.score
-        reason.evidence_locator = result.evidence_locator
-        # [2026-09-28 수정, 프론트 2차 요청 C] verify1과 같은 이유 — reason_text도 같이 갱신.
-        reason.reason_text = result.reason_text
-    artifact.artifact_score = sum((r.score or Decimal('0')) for r in all_reasons)
-
-    # [2026-09-18 수정] verify1_* 재채점과 같은 이유 — 산출물층(code)도 재채점 이력을 남긴다.
-    policy = _get_verification_policy(db)
-    db.add(VerificationScoreHistory(
-        plan_id=plan.plan_id, layer='code', score=artifact.artifact_score, is_rerun=True,
-        policy_id=policy.policy_id, applied_weight=policy.code_weight,
-        applied_pass_threshold=policy.pass_threshold, applied_rerun_cap=policy.rerun_cap,
-    ))
-    return {'scores': item_changes, 'artifact_score': {'before': _num(before_score), 'after': _num(artifact.artifact_score)}}
-
-
-# ---------------------------------------------------------------------------
-# 재작성 전후 점수 비교 + 버전 보존 (프론트 2차 요청 A-2, 기획서 5-6절)
-# ---------------------------------------------------------------------------
-# "재작성 전후의 검증 점수를 비교해 높은 쪽을 남긴다", "이전 결과는 삭제하지 않고
-# 보존한다" — writing(문서층)/implement_*(산출물층) 재시도는 콘텐츠만 바꾸고 바로
-# 확정해버려서, 재작성으로 점수가 떨어져도 그대로 남는 문제가 있었다(rework_comparisons
-# 같은 별도 테이블도 없었음).
-#
-# 문서(plan_sections 등) 쪽은 버전마다 새 행을 쌓지 않고, 재작성 직전 상태를 JSON
-# 스냅샷(BusinessPlan.version_history)으로 찍어뒀다가 점수가 낮으면 그 스냅샷으로
-# 되돌린다.
-#
-# [2026-09-29 개정, SB-155] 산출물(artifacts) 쪽은 JSON 스냅샷 대신 실제로 버전마다
-# 새 행을 쌓는 방식으로 바꿨다 — 형제 저장소 agent-orchestration의 "이름@버전"(이전
-# 버전을 덮어쓰지 않고 쌓는) 설계와 맞춘 것. Artifact.is_current로 "지금 채택된 버전"
-# 하나만 표시한다(app/routers/projects.py _get_current_artifact 참고).
-#
-# 두 방식 모두 GET /result의 plan.sections/plan.artifacts는 항상 지금 채택된 버전
-# 하나만 내려가서, 프론트가 "여러 버전 중 뭐가 현재 버전인지" 고민할 필요가 없다
-# (프론트 담당자 우려 사항 — API 응답 모양은 안 바뀐다).
-
-def _snapshot_plan_doc_state(plan: BusinessPlan) -> dict:
-    """writing 재시도 직전 문서층 상태 스냅샷 — doc_score/plan_sections/plan_score_reasons
-    전부를 담는다(작성 재시도가 자동으로 verify1_rubric/evidence까지 재채점하므로, 재작성이
-    건드린 태그뿐 아니라 채점 근거 전체가 같이 바뀔 수 있음)."""
-    return {
-        'doc_score': _num(plan.doc_score),
-        'sections': {s.tag: {'title': s.title, 'body': s.body} for s in plan.sections},
-        'score_reasons': {
-            r.item_code: {
-                'score': _num(r.score), 'max_score': _num(r.max_score),
-                'evidence_locator': r.evidence_locator, 'reason_text': r.reason_text,
-            }
-            for r in plan.score_reasons if r.item_code
-        },
-    }
-
-
-def _restore_plan_doc_state(plan: BusinessPlan, snapshot: dict) -> None:
-    """_snapshot_plan_doc_state가 찍어둔 스냅샷으로 되돌린다 — 재작성 후 점수가
-    낮아졌을 때만 호출한다."""
-    plan.doc_score = _to_decimal(snapshot['doc_score'])
-    sections_by_tag = {s.tag: s for s in plan.sections}
-    for tag, saved in snapshot['sections'].items():
-        section = sections_by_tag.get(tag)
-        if section is not None:
-            section.title = saved['title']
-            section.body = saved['body']
-    reasons_by_code = {r.item_code: r for r in plan.score_reasons if r.item_code}
-    for item_code, saved in snapshot['score_reasons'].items():
-        reason = reasons_by_code.get(item_code)
-        if reason is not None:
-            reason.score = _to_decimal(saved['score'])
-            reason.max_score = _to_decimal(saved['max_score'])
-            reason.evidence_locator = saved['evidence_locator']
-            reason.reason_text = saved['reason_text']
-
-
-# [2026-09-29 신규, SB-155] 산출물(artifacts)은 문서(plan)와 달리 JSON 스냅샷이 아니라
-# 버전마다 새 행을 쌓는다 — 형제 저장소 agent-orchestration의 "이름@버전"(이전 버전을
-# 덮어쓰지 않고 쌓는 방식) 설계와 맞춘 것. plan_id당 is_current=TRUE는 정확히 한 행만
-# 유지한다. API 응답(plan.artifacts는 여전히 1개만 옴)은 바뀌지 않는다 — is_current로
-# 필터링해서 내려주기 때문.
-
-# [2026-09-29 신규, 프론트 요청사항 5차 D-1] artifacts.category(onepage/webdev/aiapi)를
-# agent-orchestration의 Category(Literal['원페이지','웹개발','AI_API'])로 바꾸는 표 —
-# DB 쪽 영문 코드는 그대로 두고 Agent에 넘길 때만 여기서 번역한다.
-_CATEGORY_TO_AGENT = {'onepage': '원페이지', 'webdev': '웹개발', 'aiapi': 'AI_API'}
-
-
-def _build_implement_agent_kwargs(db: Session, project: Project, plan: BusinessPlan, artifact: Artifact) -> dict:
-    """구현 Agent 재시도(agents.run_implement_agent_retry) 호출에 넘길 kwargs를 DB에서
-    조립한다 — 구현·검증-2 담당 "백엔드 요청 — 구현 Agent 연동 입력 확장"
-    반영(2026-09-29). 어떤 필드를 어디서 근사하는지는 agents.py의 해당 함수 위 주석
-    참고. artifact.category로 이미 확정된 카테고리를 쓰므로 이 함수는 재시도 경로
-    전용이다(최초 생성 경로는 category를 호출부가 별도로 정해야 한다)."""
-    sections = (
-        db.query(PlanSection)
-        .filter(PlanSection.plan_id == plan.plan_id)
-        .order_by(PlanSection.section_id)
-        .all()
-    )
-    pricing_items = db.query(PricingItem).filter(PricingItem.project_id == project.project_id).all()
-    feature_list = [p.service_name for p in pricing_items if p.service_name] or (
-        [project.description] if project.description else []
-    )
-
-    reasons = db.query(ArtifactScoreReason).filter(ArtifactScoreReason.artifact_id == artifact.artifact_id).all()
-    rework_issues = [r.reason_text for r in reasons if r.score is not None and r.max_score is not None and r.score < r.max_score]
-
-    category = _CATEGORY_TO_AGENT.get(artifact.category, '웹개발')
-    item_spec = {
-        'item_name': project.description,
-        'one_line_summary': project.description,
-        'target_customer': project.description,
-        'core_features': feature_list,
-        'category': category,
-        'keywords': [],
-    }
-    plan_doc = {
-        'sections': [
-            {'section_code': s.tag, 'title': s.title, 'sentences': [s.body]} for s in sections if s.body
-        ],
-        'feature_list': feature_list,
-        'charts': [],
-        'tables': [],
-        'protected_tokens': [],
-    }
-    return {
-        'category': category,
-        'feature_list': feature_list,
-        'item_spec': item_spec,
-        'plan_doc': plan_doc,
-        'instruction': '',
-        'rework_issues': rework_issues,
-    }
-
-
-def _get_current_artifact(db: Session, plan_id: int) -> Artifact | None:
-    """이 plan의 "지금 채택된" 산출물 버전 하나 — GET /result, 재시도, 관리자 화면이
-    전부 이 함수를 공유한다. artifact_id 최댓값이 아니라 is_current로 고른다: 재작성이
-    거부된(점수가 낮아 채택 안 된) 새 버전은 artifact_id가 더 크면서도 is_current=False일
-    수 있기 때문이다."""
-    return (
-        db.query(Artifact)
-        .filter(Artifact.plan_id == plan_id, Artifact.is_current.is_(True))
-        .order_by(Artifact.artifact_id.desc())
-        .first()
-    )
-
-
-def _clone_artifact_as_new_version(db: Session, old: Artifact) -> Artifact:
-    """재작성 직전 산출물을 다음 버전 행으로 복제한다 — 새 파일 경로는 호출부가 바로
-    갱신하고, 점수 근거(artifact_score_reasons)는 재채점(_rescore_verify2)이 새 행을
-    바로 찾을 수 있도록 여기서 통째로 복사해둔다(재채점은 일부 item_code만 갱신하므로,
-    복사해두지 않은 나머지 항목이 새 버전에서 통째로 사라지는 걸 막기 위함)."""
-    new = Artifact(
-        plan_id=old.plan_id, category=old.category,
-        infographic_path=old.infographic_path, executable_path=old.executable_path,
-        artifact_score=old.artifact_score, version=old.version + 1, is_current=False,
-    )
-    db.add(new)
-    db.flush()  # artifact_id 확보 — 아래 score_reasons가 이 id를 참조한다.
-    for reason in old.score_reasons:
-        db.add(ArtifactScoreReason(
-            artifact_id=new.artifact_id, reason_text=reason.reason_text, item_code=reason.item_code,
-            score=reason.score, max_score=reason.max_score, evidence_locator=reason.evidence_locator,
-            display_name=reason.display_name,
-        ))
-    db.flush()
-    return new
-
-
-def _run_initial_implement_and_rescore(db: Session, project: Project, plan: BusinessPlan) -> None:
-    """[2026-09-29 신규, 프론트 요청사항 5차 D-2] prototype_building 워커가 100%에 도달하는
-    시점에 구현 Agent(T-B1/T-B2)를 실제로 호출해, seed_dummy_pipeline()이 매칭 시점에 미리
-    만들어둔 더미 산출물(placeholder, version=1)을 실제 결과로 교체한다.
-
-    구현·검증-2 담당 확인 반영(Downloads/백엔드_답변_D2_구현Agent_호출시점.md):
-      - T-B1/T-B2/검증-2는 version 번호에 의존하지 않는다 — 그래서 "버전1로 처음부터
-        다시 만드는" 대신 "버전2로 교체"하는 옵션 A로 간다(_clone_artifact_as_new_version
-        재사용). 최초 실제 산출물은 version=2로 기록된다.
-      - 이건 사용자가 고른 재작성이 아니라 최초 생성이므로, 점수 비교(_new_version_wins)
-        없이 무조건 새 버전을 채택한다 — 그래야 더미 v1이 이후 재작성 비교/되돌리기에
-        "이전 버전"으로 다시 등장하지 않는다(조건 2-2).
-      - agent_executions는 rerun_type='initial'(재생성 중이면 'regenerate')로 남긴다 —
-        retry_task의 rework_cap 카운트는 rerun_type='rerun'만 세므로, 이 교체는 사용자의
-        재작성 횟수에서 빠진다(조건 2-3).
-      - Verdict는 새로 만들 필요가 없다 — GET /result의 overall_passed는 저장된 값이
-        아니라 "지금 채택된(is_current) artifact의 score_reasons"에서 매번 새로 합산하므로
-        (아래 build_result 참고), is_current만 새 버전으로 옮기면 실제 점수가 반영된다.
-      - T-B1(원페이지가 아니면)·T-B2가 먼저 결과를 내고, 검증-2(T-V2)는 그 결과의 README가
-        나온 뒤에 돌아야 한다(조건 2-1) — 이 순서는 실제 Agent 구현부(app/agents.py) 내부
-        책임이고, 여기서는 "구현 완료 -> 검증" 순서만 보장한다.
-
-    예외가 나면 호출부(_simulate_generation)의 기존 except 블록이 그대로 failed/
-    waiting_resume으로 처리한다 — 이 함수 안에서 별도로 실패를 잡지 않는다.
-    """
-    old_artifact = _get_current_artifact(db, plan.plan_id)
-    if old_artifact is None:
-        return  # 방어적 — seed_dummy_pipeline이 항상 만들어두므로 정상 흐름에선 오지 않는다.
-
-    implement_kwargs = _build_implement_agent_kwargs(db, project, plan, old_artifact)
-    if not implement_kwargs['feature_list']:
-        # feature_list가 비어 있으면 T-B1/T-B2 계약(ItemSpec.core_features min_length=1)을
-        # 만족할 수 없다 — 실패로 취급하지 않고 더미 placeholder를 최종본으로 남겨둔다.
-        return
-
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-    artifact = _clone_artifact_as_new_version(db, old_artifact)
-
-    task_keys = ['implement_infographic'] if old_artifact.category == 'onepage' else [
-        'implement_prototype', 'implement_infographic',
-    ]
-    for task_key in task_keys:
-        artifact_kind = 'prototype' if task_key == 'implement_prototype' else 'infographic'
-        result = agents.run_implement_agent_retry(artifact_kind=artifact_kind, **implement_kwargs)
-        stored_name = f'{uuid.uuid4().hex}{result.file_ext}'
-        dest_path = os.path.join(UPLOAD_DIR, stored_name)
-        with open(dest_path, 'wb') as out:
-            out.write(result.file_bytes)
-        new_url = f'/uploads/{stored_name}'
-        if artifact_kind == 'prototype':
-            artifact.executable_path = new_url
-        else:
-            artifact.infographic_path = new_url
-
-        last_attempt = (
-            db.query(AgentExecution)
-            .filter(AgentExecution.project_id == project.project_id, AgentExecution.task_key == task_key)
-            .order_by(AgentExecution.attempt_no.desc())
-            .first()
-        )
-        db.add(AgentExecution(
-            project_id=project.project_id,
-            agent_name=_TASK_KEY_TO_AGENT[task_key],
-            task_key=task_key,
-            bundle_id=ps.TASK_KEY_TO_FIXED_BUNDLE.get(task_key),
-            attempt_no=(last_attempt.attempt_no + 1) if last_attempt is not None else 1,
-            model_used='dummy',
-            rerun_type='regenerate' if project.is_regenerating else 'initial',
-            token_usage=0,
-            status=ps.GENERATION_STATUS_COMPLETED,
-            output_ref={'table': 'artifacts', 'id': artifact.artifact_id},
-        ))
-
-    for verify2_key in ('verify2_static', 'verify2_crosscheck'):
-        _rescore_verify2(db, plan, artifact, verify2_key)
-
-    artifact.is_current = True
-    old_artifact.is_current = False
-    db.flush()
-
-
-def _new_version_wins(before_score: Decimal | None, after_score: Decimal | None) -> bool:
-    """재작성 전/후 점수를 비교해 새 버전을 채택(is_current)할지 정한다 — 점수가 없으면
-    (아직 채점 근거가 없어 비교 자체가 불가능한 경우) 새 버전을 그냥 채택한다."""
-    if before_score is None or after_score is None:
-        return True
-    return after_score >= before_score
-
-
-def _decide_version(
-    *, before_snapshot: dict, before_score: Decimal | None, after_score: Decimal | None, task_key: str,
-) -> dict:
-    """재작성 전/후 점수를 비교해 어느 쪽을 남길지 정하고, version_history에 追加할 항목을
-    만든다. 점수가 없으면(아직 채점 근거가 없는 초기 파이프라인 전이라 재채점이 조용히
-    건너뛰어진 경우) 비교 자체가 불가능하므로 새 버전을 그냥 채택한다."""
-    # 둘 중 하나라도 없으면(아직 채점 근거가 없어 비교 자체가 불가능한 경우) 비교하지
-    # 않고 새 버전을 그냥 채택한다 — 되돌릴 "이전 점수"라는 게 의미가 없기 때문.
-    if before_score is None or after_score is None:
-        kept = 'new'
-    else:
-        kept = 'new' if after_score >= before_score else 'previous'
-    return {
-        'kept': kept,
-        'task_key': task_key,
-        'before_score': _num(before_score),
-        'after_score': _num(after_score),
-        'snapshot': before_snapshot,
-        'recorded_at': datetime.datetime.utcnow().isoformat(),
-    }
-
-
-def _upsert_plan_section(db: Session, plan_id: int, draft) -> dict:
-    """plan_sections에 (plan_id, tag)로 찾아서 있으면 갱신, 없으면 새로 만든다 — 작성
-    Agent 재시도 로직. draft는 app.agents.SectionDraftResult."""
-    section = (
-        db.query(PlanSection)
-        .filter(PlanSection.plan_id == plan_id, PlanSection.tag == draft.tag)
-        .first()
-    )
-    before = section.body if section is not None else None
-    if section is None:
-        section = PlanSection(plan_id=plan_id, tag=draft.tag, title=draft.title, body=draft.body)
-        db.add(section)
-        db.flush()  # section_id 확보 — agent_executions.output_ref가 이 행을 참조한다.
-    else:
-        section.title = draft.title
-        section.body = draft.body
-    return {'before': before, 'after': draft.body, 'id': section.section_id}
-
-
-def _upsert_canonical_data(db: Session, plan_id: int, result) -> dict:
-    """plan_canonical_data에 (plan_id, data_key)로 찾아서 있으면 갱신, 없으면 새로 만든다 —
-    _upsert_plan_section과 같은 패턴, 전략 Agent(F01~F15) 재시도 전용. result는
-    app.agents.CanonicalDataResult."""
-    row = (
-        db.query(PlanCanonicalData)
-        .filter(PlanCanonicalData.plan_id == plan_id, PlanCanonicalData.data_key == result.data_key)
-        .first()
-    )
-    before = row.data_json if row is not None else None
-    if row is None:
-        row = PlanCanonicalData(
-            plan_id=plan_id, data_key=result.data_key,
-            data_json=result.data_json, source_function=result.source_function,
-        )
-        db.add(row)
-        db.flush()  # data_id 확보 — agent_executions.output_ref가 이 행을 참조한다.
-    else:
-        row.data_json = result.data_json
-        row.source_function = result.source_function
-    return {'before': before, 'after': result.data_json, 'id': row.data_id}
 
 # repo 루트/uploads — database.py의 _REPO_ROOT 계산 방식과 동일하게 __file__ 기준으로 잡는다
 # (app/routers/projects.py 에서 두 단계 위로 올라가면 app/ 이고, 그 위가 repo 루트).
@@ -547,24 +87,6 @@ UPLOAD_DIR = os.path.join(_REPO_ROOT, 'uploads')
 ATTACH_MAX_FILES = int(os.getenv('ATTACH_MAX_FILES', '5'))
 ATTACH_MAX_MB = int(os.getenv('ATTACH_MAX_MB', '10'))
 ATTACH_MAX_BYTES = ATTACH_MAX_MB * 1024 * 1024
-
-# 진행 중으로 취급하는 매칭 상태 — 이 상태의 매칭을 가진 프로젝트가 하나라도 있으면
-# 계정당 동시 실행 1건 제한(기획서 4-7, backend_decisions.md #11)에 걸려 새 프로젝트 생성을
-# 막는다. [2026-09-26 수정] waiting_resume(자동 재개 대기 중)도 화면상 "진행"으로 보이는
-# 실행 중 상태라 포함해야 한다(공식 기능정의서 v1.9 E-RUN-CONCURRENT, R-9) — 빠뜨리면
-# 재개 대기 중에도 사용자가 새 프로젝트를 하나 더 만들 수 있는 버그가 된다. failed는
-# 여기 안 들어가는 게 맞다("계정당 1건 제한에서 세지 않는다", E-RUN-FAIL).
-# [2026-09-28 수정] user_waiting(문서평가/산출물확인/종합평가 등 사용자 판단 대기, RunState.
-# screenStatus='확인 필요')도 포함해야 한다 — 기능정의서 v1.9 R-9: "계정당 1건 제한은
-# 진행 중·확인 필요만 센다"고 명시. 지금 더미 파이프라인엔 이 상태로 전환되는 코드 경로가
-# 아직 없어 당장 트리거되진 않지만(app/pipeline_stages.py 주석 참고), 실제 검증-2/검수
-# 단계가 붙어 이 상태가 쓰이기 시작하면 이 튜플이 자동으로 걸러줘야 한다.
-ACTIVE_MATCH_STATUSES = (
-    ps.GENERATION_STATUS_IN_PROGRESS,
-    ps.GENERATION_STATUS_WAITING_RESUME,
-    ps.GENERATION_STATUS_USER_WAITING,
-)
-
 
 def _save_attachment(file: UploadFile) -> tuple[str, str]:
     """첨부파일을 저장하고 (원본 파일명, 접근 가능한 URL)을 반환한다.
@@ -1338,15 +860,32 @@ def get_project(
     return ProjectDetailOut.model_validate(project)
 
 
+def _delete_project_rows(db: Session, project: Project) -> None:
+    """프로젝트 한 건의 웹 행을 지운다(자식부터). ORM 관계에 delete cascade를 안 걸어뒀고 SQLite는 기본적으로 FK도 강제
+    안 하므로 지우는 순서를 직접 지킨다. 실행 건의 결과 · 입력 사본은 오케스트레이터가 갖고 있어(delete_project_data) 여기엔 없다."""
+    project_id = project.project_id
+    # [SB-246] 검수 회수 문단: 학습 반영 전 행은 지우고 trained 행은 연결만 끊는다(프로젝트 행을 지우기 전에)
+    clear_project_logs(db, [project_id])
+    db.query(Notification).filter(Notification.project_id == project_id).delete(synchronize_session=False)
+    db.query(GenerationFailureAlert).filter(GenerationFailureAlert.project_id == project_id).delete(synchronize_session=False)
+    db.query(NoticeAlert).filter(NoticeAlert.project_id == project_id).delete(synchronize_session=False)
+    db.query(ProjectAttachment).filter(ProjectAttachment.project_id == project_id).delete(synchronize_session=False)
+    db.query(TeamMember).filter(TeamMember.project_id == project_id).delete(synchronize_session=False)
+    db.query(PricingItem).filter(PricingItem.project_id == project_id).delete(synchronize_session=False)
+    db.query(ProjectBudgetItem).filter(ProjectBudgetItem.project_id == project_id).delete(synchronize_session=False)
+    db.query(ProjectScheduleItem).filter(ProjectScheduleItem.project_id == project_id).delete(synchronize_session=False)
+    db.query(ProjectPartner).filter(ProjectPartner.project_id == project_id).delete(synchronize_session=False)
+    db.query(ProjectPlanInput).filter(ProjectPlanInput.project_id == project_id).delete(synchronize_session=False)
+    company_id = project.company_id
+    db.query(Project).filter(Project.project_id == project_id).delete(synchronize_session=False)
+    db.query(Company).filter(Company.company_id == company_id).delete(synchronize_session=False)
+
+
 def _purge_unstarted_project(db: Session, project_id: int) -> None:
-    """실행 건이 한 번도 만들어지지 않은 프로젝트를 실제로 지운다. ORM 관계에 delete cascade를 안 걸어뒀고 SQLite는
-    기본적으로 FK도 강제 안 하므로 자식 행을 먼저 지우는 순서를 직접 지킨다."""
-    db.query(ProjectAttachment).filter(ProjectAttachment.project_id == project_id).delete()
-    db.query(TeamMember).filter(TeamMember.project_id == project_id).delete()
-    db.query(PricingItem).filter(PricingItem.project_id == project_id).delete()
-    db.query(MatchCandidate).filter(MatchCandidate.project_id == project_id).delete()
-    db.query(ProjectPlanInput).filter(ProjectPlanInput.project_id == project_id).delete()
-    db.query(Project).filter(Project.project_id == project_id).delete()
+    """실행 건이 한 번도 만들어지지 않은 프로젝트를 실제로 지운다(휴지통 · 시작 실패 정리)."""
+    project = db.get(Project, project_id)
+    if project is not None:
+        _delete_project_rows(db, project)
     db.commit()
 
 
@@ -1377,74 +916,10 @@ def delete_project(
     return Response(status_code=204)
 
 
-def _delete_artifact_files(artifact: Artifact) -> None:
-    """[2026-09-29 신규, SB-160; 2026-09-29 단순화, SB-155] 완전 삭제 시 이 산출물 행이
-    디스크에 남긴 파일을 지운다. DB 행만 지우고 파일은 그대로 두면(예전
-    _delete_project_cascade가 그랬음) UPLOAD_DIR에 영원히 고아 파일로 남는다. [SB-155]
-    산출물이 이제 버전마다 새 행으로 쌓이므로(JSON 스냅샷이 아니라 실제 행), 이 함수를
-    부르는 쪽(_delete_project_cascade)이 그 plan의 모든 버전 행을 순회하기만 하면 되고,
-    이 함수는 "행 하나 몫의 파일"만 책임지면 된다 — 예전엔 한 행에 여러 버전이
-    version_history로 몰려 있어서 여기서 직접 그 목록을 펼쳐야 했다."""
-    paths = {artifact.infographic_path, artifact.executable_path}
-    for url in paths:
-        if not url:
-            continue
-        try:
-            os.remove(os.path.join(UPLOAD_DIR, os.path.basename(url)))
-        except OSError:
-            pass
-
-
 def _delete_project_cascade(db: Session, project: Project) -> None:
-    """[2026-09-28 신규] "건별 삭제" — 프로젝트 기획서 v1.10 6-7절 표: 사전 정보 입력값/
-    산출물은 "건별 삭제 가능"이라고 명시돼 있다. 위 delete_project()는 매칭 이후엔 archive만
-    하고 실제로 안 지우는데(관리자 대시보드 "진행 현황" 탭의 보관중/복원 기능을 위해 일부러
-    그렇게 둔 것) — 이 함수는 그것과 독립적으로, 보관 여부와 무관하게 바로 완전히 지우는
-    경로다(delete_project_permanently 참고). app/routers/auth.py _delete_account_cascade의
-    "프로젝트 하나 분량"과 같은 구조 — 차이는 그 프로젝트 전용 Company 행(1:1, company_id에
-    유니크 제약이 없는 이유는 app/models.py Company 주석 참고)도 여기서 같이 지운다는 것.
-
-    [2026-09-28, match_results 테이블 통합] project(1):match(1)로 합쳐지면서 match_ids
-    조회 단계 자체가 필요 없어졌다 — project_id로 바로 plan_ids를 구하고, project의
-    match 필드들(자식 테이블들)도 project_id로 바로 지운다."""
-    project_id = project.project_id
-    plan_ids = [p.plan_id for p in db.query(BusinessPlan.plan_id).filter(BusinessPlan.project_id == project_id)]
-    # [SB-246] 검수 회수 문단: 학습 반영 전 행은 지우고 trained 행은 연결만 끊는다(계획서 · 프로젝트 행을 지우기 전에)
-    clear_project_logs(db, [project_id])
-
-    if plan_ids:
-        artifacts = db.query(Artifact).filter(Artifact.plan_id.in_(plan_ids)).all()
-        for artifact in artifacts:
-            _delete_artifact_files(artifact)
-        artifact_ids = [a.artifact_id for a in artifacts]
-        if artifact_ids:
-            db.query(ArtifactScoreReason).filter(ArtifactScoreReason.artifact_id.in_(artifact_ids)).delete(synchronize_session=False)
-        db.query(Verdict).filter(Verdict.plan_id.in_(plan_ids)).delete(synchronize_session=False)
-        db.query(Artifact).filter(Artifact.plan_id.in_(plan_ids)).delete(synchronize_session=False)
-        db.query(FormatFinding).filter(FormatFinding.plan_id.in_(plan_ids)).delete(synchronize_session=False)
-        db.query(PlanScoreReason).filter(PlanScoreReason.plan_id.in_(plan_ids)).delete(synchronize_session=False)
-        db.query(PlanCanonicalData).filter(PlanCanonicalData.plan_id.in_(plan_ids)).delete(synchronize_session=False)
-        db.query(VerificationScoreHistory).filter(VerificationScoreHistory.plan_id.in_(plan_ids)).delete(synchronize_session=False)
-        db.query(PlanSection).filter(PlanSection.plan_id.in_(plan_ids)).delete(synchronize_session=False)
-    db.query(BusinessPlan).filter(BusinessPlan.project_id == project_id).delete(synchronize_session=False)
-    db.query(Notification).filter(Notification.project_id == project_id).delete(synchronize_session=False)
-    db.query(GenerationFailureAlert).filter(GenerationFailureAlert.project_id == project_id).delete(synchronize_session=False)
-    db.query(MatchScoreReason).filter(MatchScoreReason.project_id == project_id).delete(synchronize_session=False)
-    db.query(EligibilityCheck).filter(EligibilityCheck.project_id == project_id).delete(synchronize_session=False)
-    db.query(AgentExecution).filter(AgentExecution.project_id == project_id).delete(synchronize_session=False)
-    db.query(MatchCandidate).filter(MatchCandidate.project_id == project_id).delete(synchronize_session=False)
-    db.query(NoticeAlert).filter(NoticeAlert.project_id == project_id).delete(synchronize_session=False)
-    db.query(ProjectAttachment).filter(ProjectAttachment.project_id == project_id).delete(synchronize_session=False)
-    db.query(TeamMember).filter(TeamMember.project_id == project_id).delete(synchronize_session=False)
-    db.query(PricingItem).filter(PricingItem.project_id == project_id).delete(synchronize_session=False)
-    db.query(ProjectBudgetItem).filter(ProjectBudgetItem.project_id == project_id).delete(synchronize_session=False)
-    db.query(ProjectScheduleItem).filter(ProjectScheduleItem.project_id == project_id).delete(synchronize_session=False)
-    db.query(ProjectPartner).filter(ProjectPartner.project_id == project_id).delete(synchronize_session=False)
-    db.query(ProjectPlanInput).filter(ProjectPlanInput.project_id == project_id).delete(synchronize_session=False)
-    company_id = project.company_id
-    db.query(Project).filter(Project.project_id == project_id).delete(synchronize_session=False)
-    db.query(Company).filter(Company.company_id == company_id).delete(synchronize_session=False)
-    # [2026-09-28 신규] 프론트 요청 4 — 식별자 없이 "삭제됐다"는 사실과 시각만 남긴다.
+    """"건별 삭제"(완전 삭제) — 웹 행을 모두 지우고 식별자 없이 '삭제됐다'는 사실과 시각만 남긴다(프론트 요청 4).
+    프로젝트 전용 Company 행(1:1)도 같이 지운다."""
+    _delete_project_rows(db, project)
     db.add(PermanentDeletionLog())
     db.commit()
 
@@ -1476,27 +951,6 @@ def _get_owned_project(db: Session, project_id: int, user: User) -> Project:
     if project.company.user_id != user.user_id and user.role != 'admin':
         raise HTTPException(status_code=404, detail='프로젝트를 찾을 수 없습니다')
     return project
-
-
-def _is_notice_closed(db: Session, notice_id: str | None) -> bool:
-    """[2026-09-27 신규, SB-139] 이어하기로 복귀한 시점에 사용자가 고른 공고가 그새
-    마감됐는지 확인한다(E-RUN-CLOSED). recruitment_status가 수집 파이프라인 쪽에서
-    'open' 외의 값으로 바뀌었거나, apply_end가 오늘보다 이전이면 마감으로 본다 —
-    두 신호를 같이 보는 이유는 apply_period_type이 'budget_exhaustion'/'rolling'처럼
-    날짜만으로 마감을 판단할 수 없는 경우도 있고(Notice 모델 주석 참고), 반대로
-    recruitment_status 갱신이 apply_end 당일 자정에 딱 맞춰 반영된다는 보장도 없기
-    때문이다. 공고 자체를 못 찾으면(드묾 — 수집 데이터가 지워진 경우) 마감이 아니라고
-    본다: 판단할 근거가 없을 때 실행을 막는 쪽으로 오판하지 않기 위해서다."""
-    if notice_id is None:
-        return False
-    notice = db.query(Notice).filter(Notice.notice_id == notice_id).one_or_none()
-    if notice is None:
-        return False
-    if notice.recruitment_status != 'open':
-        return True
-    if notice.apply_end is not None and notice.apply_end < datetime.date.today():
-        return True
-    return False
 
 
 @router.get('/{project_id}/status', response_model=ProjectStatusOut)

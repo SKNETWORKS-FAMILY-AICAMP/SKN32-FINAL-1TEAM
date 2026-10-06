@@ -19,9 +19,8 @@ from fastapi.testclient import TestClient
 
 import app.routers.auth as auth_router
 import app.security as security
-from app.models import Faq, ImportRun, Notice, Project, ProofreadLog, User, VerificationChecklistItem
+from app.models import Faq, ImportRun, Notice, ProofreadLog, User, VerificationChecklistItem
 from seed_dummy_admin_data import main as seed_admin_data_main
-from seed_dummy_pipeline import seed_dummy_pipeline
 
 ADMIN_EMAIL = 'admin-test@example.com'
 USER_EMAIL = 'plain-user@example.com'
@@ -246,19 +245,6 @@ def test_generation_alerts_lists_unacknowledged_by_default(admin_client, user_cl
     from app.models import GenerationFailureAlert
 
     project_id = _create_project(user_client)
-    notice = Notice(
-        notice_id='ADMIN-TEST-ALERT-LIST', source='k-startup', title='알림 목록 검증용 더미 공고',
-        recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    project = db_session.get(Project, project_id)
-    project.notice_id = notice.notice_id
-    project.status = 'failed'
-    project.stage = ps.STAGE_PLAN_WRITING
-    project.progress_percent = 70
-    project.resume_count = 6
-    db_session.flush()
     unacked = GenerationFailureAlert(
         project_id=project_id, stage=ps.STAGE_PLAN_WRITING,
         resume_count=5, last_error_kind=ps.ERROR_KIND_TRANSIENT, failure_reason='미확인 실패(테스트)',
@@ -287,19 +273,6 @@ def test_ack_generation_alert_toggles_acknowledged_at(admin_client, user_client,
     from app.models import GenerationFailureAlert
 
     project_id = _create_project(user_client)
-    notice = Notice(
-        notice_id='ADMIN-TEST-ALERT-ACK', source='k-startup', title='알림 확인 처리 검증용 더미 공고',
-        recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    project = db_session.get(Project, project_id)
-    project.notice_id = notice.notice_id
-    project.status = 'failed'
-    project.stage = ps.STAGE_PLAN_WRITING
-    project.progress_percent = 70
-    project.resume_count = 6
-    db_session.flush()
     alert = GenerationFailureAlert(
         project_id=project_id, stage=ps.STAGE_PLAN_WRITING,
         resume_count=5, last_error_kind=ps.ERROR_KIND_TRANSIENT, failure_reason='확인 처리 대상(테스트)',
@@ -414,26 +387,25 @@ def test_get_collection_status_empty_when_no_notices(admin_client):
 # 검수 회수 문단 (/admin/recovery-items)
 # ============================================================================
 
+def _worker_log(project_id, **overrides):
+    """오케스트레이터 워커가 쓰는 모양의 반려 행(project_id 기준, plan_id 없음)."""
+    base = dict(project_id=project_id, original_text='원문', corrected_text='반려안', attempt_no=2, passed=False,
+                violation_type='기능명', recovery_status='pending', model_version='tp2-test-model')
+    base.update(overrides)
+    return ProofreadLog(**base)
+
+
 def test_get_recovery_items_lists_only_failed_attempts(admin_client, user_client, db_session):
     project_id = _create_project(user_client, description='회수 문단 검증용 프로젝트')
-    notice = Notice(
-        notice_id='ADMIN-TEST-RECOVERY', source='k-startup', title='회수 문단 검증용 공고',
-        recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-RECOVERY', retry_agents=())
-    db_session.add(ProofreadLog(
-        project_id=project_id, original_text='2026년 10월 16일 마감', corrected_text='10월 중순 마감',
-        attempt_no=2, passed=False, violation_type='날짜', violation_note='날짜 표기 훼손', recovery_status='pending',
-        model_version='tp2-test-model',
-    ))
+    db_session.add(_worker_log(
+        project_id, original_text='2026년 10월 16일 마감', corrected_text='10월 중순 마감', violation_type='날짜',
+        violation_note='날짜 표기 훼손'))
+    db_session.add(_worker_log(project_id, passed=True, recovery_status=None))  # 통과한 시도는 목록에 안 나온다
     db_session.commit()
 
     res = admin_client.get('/admin/recovery-items')
     assert res.status_code == 200, res.text
     items = res.json()
-    # seed가 만든 passed=True 1건(plan_id 행)은 안 보이고, 워커가 쓴 것처럼 project_id로 추가한 passed=False 1건만 보인다.
     assert len(items) == 1
     item = items[0]
     assert item['project_id'] == project_id
@@ -442,23 +414,13 @@ def test_get_recovery_items_lists_only_failed_attempts(admin_client, user_client
     assert item['original'] == '2026년 10월 16일 마감'
     assert item['attempt'] == '10월 중순 마감'
     assert item['recovery_status'] == 'pending'
-    assert item['model_version'] == 'tp2-test-model'  # [SB-246] verdicts가 아니라 행의 model_version(워커가 채움)
+    assert item['model_version'] == 'tp2-test-model'  # [SB-246] 행의 model_version(워커가 채움)
     assert item['consent'] is True  # _login 헬퍼가 aiTrainingAgreed=True로 로그인시킴
 
 
 def test_put_recovery_item_updates_status_and_label(admin_client, user_client, db_session):
     project_id = _create_project(user_client)
-    notice = Notice(
-        notice_id='ADMIN-TEST-RECOVERY-PUT', source='k-startup', title='회수 라벨링 검증용 공고',
-        recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    verdict = seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-RECOVERY-PUT', retry_agents=())
-    failed = ProofreadLog(
-        plan_id=verdict.plan_id, original_text='원문', corrected_text='반려안',
-        attempt_no=2, passed=False, violation_type='기능명', recovery_status='pending',
-    )
+    failed = _worker_log(project_id)
     db_session.add(failed)
     db_session.commit()
     db_session.refresh(failed)
@@ -472,14 +434,10 @@ def test_put_recovery_item_updates_status_and_label(admin_client, user_client, d
 
 def test_put_recovery_item_on_passed_attempt_returns_404(admin_client, user_client, db_session):
     project_id = _create_project(user_client)
-    notice = Notice(
-        notice_id='ADMIN-TEST-RECOVERY-PASSED', source='k-startup', title='통과 시도 검증용 공고',
-        recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    verdict = seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-RECOVERY-PASSED', retry_agents=())
-    passed_log = db_session.query(ProofreadLog).filter(ProofreadLog.plan_id == verdict.plan_id).one()
+    passed_log = _worker_log(project_id, passed=True, recovery_status=None)
+    db_session.add(passed_log)
+    db_session.commit()
+    db_session.refresh(passed_log)
 
     res = admin_client.put(f'/admin/recovery-items/{passed_log.log_id}', json={'recovery_status': 'labeled'})
     assert res.status_code == 404, res.text
@@ -487,17 +445,7 @@ def test_put_recovery_item_on_passed_attempt_returns_404(admin_client, user_clie
 
 def test_put_recovery_item_invalid_status_returns_422(admin_client, user_client, db_session):
     project_id = _create_project(user_client)
-    notice = Notice(
-        notice_id='ADMIN-TEST-RECOVERY-422', source='k-startup', title='잘못된 상태값 검증용 공고',
-        recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    verdict = seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-RECOVERY-422', retry_agents=())
-    failed = ProofreadLog(
-        plan_id=verdict.plan_id, original_text='원문', corrected_text='반려안',
-        attempt_no=2, passed=False, recovery_status='pending',
-    )
+    failed = _worker_log(project_id)
     db_session.add(failed)
     db_session.commit()
     db_session.refresh(failed)

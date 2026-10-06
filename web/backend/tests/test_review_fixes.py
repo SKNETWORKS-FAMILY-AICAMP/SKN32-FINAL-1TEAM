@@ -1,11 +1,10 @@
 """Regression tests for completion, archival, deletion and private downloads."""
 import json
 
-from dummy_seed import create_match as _create_match
 from fastapi.testclient import TestClient
 from orch_fakes import AbortResult, ActiveWork, ProjectView, make_run
 
-from app.models import Artifact, Project, ProjectPlanInput, User
+from app.models import Project, ProjectPlanInput, User
 from app.routers import projects
 
 
@@ -101,31 +100,3 @@ def test_private_uploads(authed_client, login_as, db_session, monkeypatch, tmp_p
     assert other.get('/uploads/untracked.txt').status_code == 404
 
 
-def test_artifact_owner_keeps_preview_access(authed_client, login_as, db_session, monkeypatch, tmp_path):
-    match = _create_match(authed_client, db_session, 'REVIEW-ARTIFACT')
-    artifact = db_session.query(Artifact).join(Artifact.plan).filter_by(project_id=match.project_id).first()
-    artifact.executable_path = '/uploads/preview.html'
-    db_session.commit()
-    monkeypatch.setattr(projects, 'UPLOAD_DIR', str(tmp_path))
-    (tmp_path / 'preview.html').write_text('<h1>Preview</h1>')
-    r = authed_client.get('/uploads/preview.html')
-    assert r.status_code == 200
-    assert r.headers['content-disposition'].startswith('inline')
-    assert r.headers['content-security-policy'] == 'sandbox allow-scripts'
-    assert login_as('stranger@example.com').get('/uploads/preview.html').status_code == 404
-
-
-def test_svg_artifact_served_with_correct_content_type(authed_client, db_session, monkeypatch, tmp_path):
-    """[2026-09-29 신규, 프론트 요청사항 5차 D-3] .svg 인포그래픽이 image/svg+xml로
-    나가야 프론트 미리보기가 image/*로 인식한다 — Starlette 기본 동작(mimetypes.guess_type)은
-    OS(특히 Windows 레지스트리)에 따라 .svg를 못 알아볼 수 있어 명시적으로 지정해야 한다
-    (app/routers/uploads.py _resolve_media_type)."""
-    match = _create_match(authed_client, db_session, 'REVIEW-SVG')
-    artifact = db_session.query(Artifact).join(Artifact.plan).filter_by(project_id=match.project_id).first()
-    artifact.infographic_path = '/uploads/preview.svg'
-    db_session.commit()
-    monkeypatch.setattr(projects, 'UPLOAD_DIR', str(tmp_path))
-    (tmp_path / 'preview.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg"></svg>')
-    r = authed_client.get('/uploads/preview.svg')
-    assert r.status_code == 200
-    assert r.headers['content-type'].startswith('image/svg+xml')

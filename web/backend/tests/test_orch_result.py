@@ -73,7 +73,7 @@ def test_result_with_plan_only_has_no_verdict_or_artifacts(authed_client, orch):
     assert body['plan']['feature_list'] == ['예약', '결제']
     assert body['eligibility']['passed'] is True
     assert body['match']['notice_id'] == 'N-01' and body['match']['fit_score'] == 0.8
-    assert body['agent_executions'] == []
+    assert 'agent_executions' not in body  # [SB-247] 관리자 조회가 대신한다
 
 
 def test_result_paragraphs_are_separated_by_newlines(authed_client, orch):

@@ -10,7 +10,7 @@ import json
 
 from orch_fakes import ActiveWork, StartCheck
 
-from app.models import Notice, Project, User
+from app.models import Project, User
 
 
 def _payload(**overrides):
@@ -23,31 +23,6 @@ def _payload(**overrides):
     return {'payload': json.dumps(body, default=str)}
 
 
-def _seed_notice(db_session, notice_id='test:PBLN_CONC'):
-    notice = Notice(
-        id=hash(notice_id) % 1_000_000 + 1, notice_id=notice_id, source='test', title='테스트 공고',
-        target_text=None, category=None, organizer=None, supervising_org=None,
-        executing_org=None, apply_start=None, apply_end=None,
-        recruitment_status='open', url=None,
-    )
-    db_session.add(notice)
-    db_session.flush()
-    return notice
-
-
-def _set_match(db_session, project_id: int, notice_id: str, fit_score=80, status='in_progress'):
-    """[2026-09-28, match_results 테이블 통합] 예전엔 MatchResult 행을 새로 만들었으나,
-    이제 매칭 상태는 project 행 자체에 있는 컬럼이라 기존 project를 가져와 갱신한다."""
-    project = db_session.get(Project, project_id)
-    project.notice_id = notice_id
-    project.fit_score = fit_score
-    project.status = status
-    return project
-
-
-# ---------------------------------------------------------------------------
-# 2) 동시 실행 1건 제한
-# ---------------------------------------------------------------------------
 def _active(project_id, step='계획서작성', resume_step=5, screen_status='진행 중'):
     return ActiveWork(project_id=str(project_id), run_id='r1', step=step, resume_step=resume_step,
                       screen_status=screen_status)

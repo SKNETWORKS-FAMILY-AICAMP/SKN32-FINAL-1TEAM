@@ -16,7 +16,6 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import (
-    BusinessPlan,
     Faq,
     GenerationFailureAlert,
     ImportRun,
@@ -490,13 +489,9 @@ def get_ops_summary(
 def _recovery_item_out(row: ProofreadLog, db: Session) -> RecoveryItemOut:
     """proofread_logs 행 하나를 RecoveryItemOut으로 조립한다.
 
-    [SB-246] 워커가 쓴 행은 project_id로 프로젝트 · 회사 · 사용자를 찾고 모델 버전은 행의 model_version이다. 더미 시절 행은
-    plan_id → 프로젝트로 거슬러 간다. 프로젝트가 지워져 연결이 끊긴 행(학습에 반영된 trained 행)은 프로젝트 설명이 없고,
+    [SB-246] 워커가 쓴 행은 project_id로 프로젝트 · 회사 · 사용자를 찾고 모델 버전은 행의 model_version이다. 프로젝트가 지워져 연결이 끊긴 행(학습에 반영된 trained 행)은 프로젝트 설명이 없고,
     동의 여부는 trained 행이면 동의한 것으로 본다(동의한 계정의 행만 학습에 쓰였다)."""
     project = db.get(Project, row.project_id) if row.project_id is not None else None
-    if project is None and row.plan_id is not None:
-        plan = db.get(BusinessPlan, row.plan_id)
-        project = db.get(Project, plan.project_id) if plan is not None else None
     user = project.company.user if project is not None else None
     return RecoveryItemOut(
         log_id=row.log_id,

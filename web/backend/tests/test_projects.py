@@ -13,8 +13,7 @@ from orch_fakes import ProjectView, make_run
 
 import app.routers.auth as auth_router
 import app.security as security
-from app.models import Notice, Project
-from seed_dummy_pipeline import seed_dummy_pipeline
+from app.models import Project
 
 USER_EMAIL = 'delete-test@example.com'
 
@@ -89,14 +88,6 @@ def test_delete_project_with_match_archives_instead_of_deleting(user_client, db_
     목록에서는 사라지지만(사용자 기준), DB에는 projects.archived_at과 함께 남는다."""
     orch.responses['view_project'] = lambda pid: ProjectView(str(pid), run=make_run())  # 실행 건이 있다 → 보관 처리
     project_id = _create_project(user_client)
-    notice = Notice(
-        notice_id='DELETE-TEST-001', source='k-startup', title='삭제 테스트용 더미 공고', recruitment_status='진행중',
-    )
-    db_session.add(notice)
-    db_session.flush()
-    seed_dummy_pipeline(db_session, project_id, notice_id='DELETE-TEST-001', retry_agents=())
-    db_session.commit()
-
     res = user_client.delete(f'/projects/{project_id}')
     assert res.status_code == 204, res.text
 

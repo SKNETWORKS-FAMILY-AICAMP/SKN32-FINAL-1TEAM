@@ -6,26 +6,17 @@
 import json
 
 from app.models import (
-    AgentExecution,
-    Artifact,
-    ArtifactScoreReason,
-    BusinessPlan,
     Company,
-    EligibilityCheck,
     GenerationFailureAlert,
-    MatchScoreReason,
-    Notice,
     Notification,
-    PlanScoreReason,
-    PlanSection,
+    PricingItem,
     Project,
     ProjectPlanInput,
     RefreshToken,
+    TeamMember,
     User,
     UserProfile,
-    Verdict,
 )
-from seed_dummy_pipeline import seed_dummy_pipeline
 
 
 def test_delete_account_with_no_projects_removes_user(authed_client, db_session):
@@ -43,30 +34,18 @@ def test_delete_account_with_no_projects_removes_user(authed_client, db_session)
     assert authed_client.get('/auth/me').status_code == 401
 
 
-def test_delete_account_cascades_full_pipeline_data(authed_client, db_session):
-    """[핵심] 계정 · 회사 · 프로젝트 · 매칭 · 계획서 · 산출물 · 검증 결과 · 알림까지
-    전부 지워져야 한다(v1.10: "모든 실행 건을 삭제한다")."""
-    payload = {'description': '탈퇴 테스트용 프로젝트', 'team_members': [], 'pricing_items': []}
+def test_delete_account_cascades_web_rows(authed_client, db_session):
+    """[핵심] 계정 · 회사 · 프로젝트 · 입력값 · 알림 · 생성 실패 알림이 전부 지워져야 한다(v1.10: "모든 실행 건을 삭제한다").
+    실행 건의 결과는 오케스트레이터가 갖고 있어 delete_project_data · delete_account_data가 지운다(아래 테스트)."""
+    payload = {'description': '탈퇴 테스트용 프로젝트', 'team_members': [{'name': '박팀원', 'role': '개발'}],
+               'pricing_items': [{'service_name': '구독', 'unit_price': 9900}]}
     project_id = authed_client.post('/projects', data={'payload': json.dumps(payload)}).json()['project_id']
-
-    notice = Notice(notice_id='ACCOUNT-DEL-001', source='k-startup', title='탈퇴 테스트용 더미 공고', recruitment_status='open')
-    db_session.add(notice)
-    db_session.flush()
-    verdict = seed_dummy_pipeline(db_session, project_id, notice_id='ACCOUNT-DEL-001', retry_agents=())
     db_session.add(Notification(project_id=project_id, kind='문서평가', target_step=6))
     db_session.add(GenerationFailureAlert(
-        project_id=project_id, stage='plan_writing',
-        resume_count=5, last_error_kind='일시', failure_reason='탈퇴 전 마지막 실패(테스트)',
-    ))
+        project_id=project_id, stage='계획서작성', resume_count=5, last_error_kind='일시',
+        failure_reason='탈퇴 전 마지막 실패(테스트)'))
     db_session.commit()
-
-    plan_id = verdict.plan_id
-    artifact_id = verdict.artifact_id
-
-    # 삭제 전 실제로 데이터가 있는지 먼저 확인 — 아니면 아래 0건 확인이 무의미해진다.
-    assert db_session.query(PlanSection).filter_by(plan_id=plan_id).count() > 0
-    assert db_session.query(ArtifactScoreReason).filter_by(artifact_id=artifact_id).count() > 0
-    assert db_session.query(AgentExecution).filter_by(project_id=project_id).count() > 0
+    assert db_session.query(TeamMember).count() == 1
 
     res = authed_client.delete('/auth/me')
     assert res.status_code == 204, res.text
@@ -75,19 +54,10 @@ def test_delete_account_cascades_full_pipeline_data(authed_client, db_session):
     assert db_session.query(Company).count() == 0
     assert db_session.query(Project).count() == 0
     assert db_session.query(ProjectPlanInput).count() == 0
-    assert db_session.query(EligibilityCheck).count() == 0
-    assert db_session.query(MatchScoreReason).count() == 0
-    assert db_session.query(BusinessPlan).count() == 0
-    assert db_session.query(PlanSection).count() == 0
-    assert db_session.query(PlanScoreReason).count() == 0
-    assert db_session.query(Artifact).count() == 0
-    assert db_session.query(ArtifactScoreReason).count() == 0
-    assert db_session.query(Verdict).count() == 0
-    assert db_session.query(AgentExecution).count() == 0
+    assert db_session.query(TeamMember).count() == 0
+    assert db_session.query(PricingItem).count() == 0
     assert db_session.query(Notification).count() == 0
     assert db_session.query(GenerationFailureAlert).count() == 0
-    # 공고 수집 파이프라인 소유 테이블은 계정과 무관하므로 그대로 남아야 한다.
-    assert db_session.query(Notice).filter_by(notice_id='ACCOUNT-DEL-001').count() == 1
 
 
 def test_delete_account_does_not_affect_other_accounts(authed_client, db_session, login_as):

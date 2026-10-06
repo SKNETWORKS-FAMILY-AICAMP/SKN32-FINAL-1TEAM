@@ -618,7 +618,8 @@ class RetryTaskRequest(BaseModel):
     단순히 동일한 결과를 반환하는 방식이 아닌, 실제 작업을 다시 수행하도록 구현 /
     재시도에 따라 결과물이 실제로 변경되는 것을 확인할 수 있도록 구현") 대응.
 
-    task_key는 app/models.py의 FIXED_TASK_SEQUENCE에 있는 14개 값 중 '조율'(오케스트레이션
+    task_key는 웹이 쓰는 작업 이름이다 — 사용자가 재작성할 수 있는 건 writing · implement_prototype · implement_infographic뿐이고(app/orch/mapping.py
+    orch_bundle_of), 나머지는 400이다. 아래는 예전 14개 값 중 '조율'(오케스트레이션
     체크포인트 4개 — coordinate_intake/user_decision_doc/user_decision_final/
     coordinate_finalize, 콘텐츠를 만들지 않아 "재시도해도 결과물이 바뀐다"는 개념 자체가
     안 맞는다)만 빼고 나머지 10개를 전부 받는다. 각 값이 실제로 무엇을 다시 만드는지는
@@ -697,21 +698,6 @@ class ReworkResultOut(BaseModel):
     changed: dict = Field(default_factory=dict)
 
 
-class AgentExecutionOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    agent_name: str
-    # [2026-09-28 신규] 프론트 요청 2 — 화면이 항목(task_key)별로 몇 번째 시도인지 알아야
-    # 재작성 버튼을 disabled 처리할 수 있는데, 이 응답엔 그 필드가 없었다.
-    task_key: str | None
-    attempt_no: int
-    model_used: str
-    rerun_type: str
-    token_usage: int
-    status: str
-    started_at: datetime.datetime
-    bundle_id: str | None = None
-
-
 class BundleUsageOut(BaseModel):
     """프론트 답변 반영 — 화면에 보이는 "묶음(bundle)" 단위 재작성(rework) 사용/잔여 횟수.
     task_key가 아니라 bundle_id로 센다(writing 하나가 묶음 3개를 가리키므로 — 자세한 배경은
@@ -728,7 +714,7 @@ class DemoGenerateResponse(BaseModel):
 
     [SB-243] 공고를 고른 직후엔 계획서 · 점수가 아직 없어 plan 이하가 비고(plan=None), 자격 확인 결과를 기다리는 중이면
     status='pending', 공고 서버 오류로 자격 확인을 못 했으면 status='failed'(+ message · notices)로 답한다.
-    agent_executions는 더 이상 채우지 않는다(관리자 조회가 대신한다)."""
+    예전의 agent_executions 필드는 없어졌다(관리자 조회가 대신한다)."""
     project_id: int
     status: str = 'ready'  # 'ready' | 'pending' | 'failed'
     code: str | None = None
@@ -744,7 +730,6 @@ class DemoGenerateResponse(BaseModel):
     # 파이프라인(seed_dummy_pipeline)은 계획서·산출물·판정을 한 번에 만들어서 이 틈이
     # 안 드러났을 뿐 — 생성이 단계별로 끝나는 실제 흐름에선 이 틈이 그대로 404가 된다.
     verdict: VerdictOut | None = None
-    agent_executions: list[AgentExecutionOut] = Field(default_factory=list)
     # [2026-09-28 신규] 프론트 요청 2 — RERUN_CAP 프론트 상수를 없애고 관리자가 상한을
     # 바꾸면 화면도 같이 따라가도록, 상한값과 묶음별 사용/잔여 횟수를 같이 내려준다.
     # [2026-09-28 수정] task_key 단위였던 retry_budget을 bundle_id 단위 bundle_usages로

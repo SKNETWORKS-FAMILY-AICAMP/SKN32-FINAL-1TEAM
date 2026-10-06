@@ -1,8 +1,6 @@
-"""Agent 파이프라인 진행 상태(match_results.stage) 상수와, 그 상태를 이어하기 화면
-번호로 변환하는 매핑. 실제 Agent 파이프라인이 각 단계를 처리할 때마다 이 값들로
-match_results.stage(+progress_percent)를 갱신하게 될 것이므로, 값 이름과 의미를
-여기 한 군데에 모아둔다 — seed_dummy_pipeline.py(더미)와 실제 파이프라인 코드,
-그리고 GET /projects/{id}/status(이어하기 조회) 엔드포인트가 전부 이 상수를 같이 쓴다.
+"""Agent 파이프라인 진행 상태 상수와, 그 상태를 이어하기 화면 번호로 변환하는 매핑.
+[SB-247] 진행 상태의 원본은 오케스트레이터(RunView)이고 웹 projects에는 더 이상 저장하지 않는다 — 이 값들은 오케스트레이터
+단계를 웹 응답의 stage · match_status 표기로 바꿀 때(app/orch/mapping.py) 쓰는 이름을 한 군데에 모아 둔 것이다.
 
 기획서 v1.7 4-7절(p.20 "중단 시점 | 복귀 화면" 표, 8케이스) 및 existing_user_resume_test_report.md
 에서 확인한 문제(6/8케이스가 기존 스키마만으로는 서로 구분 안 됨)를 이 stage 필드로 해소한다.
@@ -200,15 +198,6 @@ BIZ_STATUS_CODE_SUSPENDED = '02'
 BIZ_STATUS_CODE_CLOSED = '03'
 BIZ_STATUS_CODES = (BIZ_STATUS_CODE_ACTIVE, BIZ_STATUS_CODE_SUSPENDED, BIZ_STATUS_CODE_CLOSED)
 
-# [2026-09-28 신규] match_results.stage(=_simulate_generation이 도는 단계) 실패를
-# agent_executions에도 남기기 위한 매핑 — 이 테이블엔 stage 컬럼이 없고 agent_name/
-# task_key로만 구분하므로, 어느 단계가 실패했는지를 FIXED_TASK_SEQUENCE(app/models.py)의
-# 가장 대표적인 task_key로 근사한다(계획서 작성 단계 전체 실패는 '작성'/'writing'으로,
-# 프로토타입 제작 단계 전체 실패는 '구현'/'implement_prototype'으로 기록).
-STAGE_TO_AGENT_TASK = {
-    STAGE_PLAN_WRITING: ('작성', 'writing'),
-    STAGE_PROTOTYPE_BUILDING: ('구현', 'implement_prototype'),
-}
 
 # [2026-09-28 신규] 마이페이지/프로젝트 작성란 "주업종" — front/src/features/mypage/
 # derive.js INDUSTRY_OPTIONS와 동일(개인/법인 전용 드롭다운 9종). 예비창업자는 이

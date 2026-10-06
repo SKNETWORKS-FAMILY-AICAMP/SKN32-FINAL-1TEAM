@@ -1,11 +1,9 @@
 """[SB-246] proofread_logs(검수 회수 문단) 보관 규칙 — 학습에 반영된(trained) 행만 남긴다.
 
 완전 삭제 · 계정 탈퇴 · 학습 동의 철회 때 그 사용자의 pending · labeled · excluded 행(과 상태 없는 옛 행)은 지우고,
-trained 행은 프로젝트 · 계획서와의 연결만 끊은 채 남긴다. 워커는 project_id로 행을 쓴다(plan_id 없음).
+trained 행은 프로젝트와의 연결만 끊은 채 남긴다. 워커는 project_id로 행을 쓴다.
 """
 import json
-
-from dummy_seed import create_match
 
 from app.models import ProofreadLog, User
 
@@ -52,30 +50,11 @@ def test_permanent_delete_keeps_only_trained_rows_and_detaches_them(authed_clien
     for status in ('pending', 'labeled', 'excluded', None):
         assert mine[status] not in left, f'{status} 행은 지워져야 한다'
     kept = left[mine['trained']]
-    assert kept.project_id is None and kept.plan_id is None  # 연결만 끊긴다
+    assert kept.project_id is None  # 연결만 끊긴다
     assert kept.original_text == '원문-trained' and kept.model_version == 'tp2-test'
     # 다른 프로젝트의 행은 그대로
     assert all(log_id in left for log_id in others.values())
     assert all(left[log_id].project_id == other_id for log_id in others.values())
-
-
-def test_permanent_delete_clears_untrained_legacy_plan_rows(authed_client, db_session):
-    """더미 시절 행(plan_id만 있고 project_id는 없음)도 같은 규칙으로 지워진다."""
-    from app.models import BusinessPlan
-
-    project = create_match(authed_client, db_session, 'RETENTION-LEGACY')
-    plan = db_session.query(BusinessPlan).filter_by(project_id=project.project_id).one()
-    legacy_pending = ProofreadLog(plan_id=plan.plan_id, original_text='a', corrected_text='b', recovery_status='pending')
-    legacy_trained = ProofreadLog(plan_id=plan.plan_id, original_text='c', corrected_text='d', recovery_status='trained')
-    db_session.add_all([legacy_pending, legacy_trained])
-    db_session.commit()
-    pending_id, trained_id = legacy_pending.log_id, legacy_trained.log_id
-
-    assert authed_client.delete(f'/projects/{project.project_id}/permanent').status_code == 204
-
-    left = _surviving(db_session)
-    assert pending_id not in left and trained_id in left
-    assert left[trained_id].plan_id is None and left[trained_id].project_id is None
 
 
 def test_delete_account_keeps_only_trained_rows(authed_client, db_session):
