@@ -88,6 +88,14 @@ def score_artifact(*, kind: str, entry_file_path: str, source_text: str,
     return raw, feature
 
 
+def _detail(item: dict) -> str:
+    """계약의 CodeCheck에는 얻은 점수 칸이 없고 passed는 "만점인가"다. 부분 점수(3점 중 2점)가
+    화면에 "미통과"로만 보이지 않도록 근거 문구 앞에 얻은 점수를 적는다. 해당 없음 항목은 그대로."""
+    if not item.get("applicable", True):
+        return item["evidence"]
+    return f'{item["earned"]:g}/{item["weight"]:g}점 — {item["evidence"]}'
+
+
 def run_tv2(inp: TV2In, tools: Tools) -> TV2Out:
     from sbrain.contracts.tasks import TV2Out
     from sbrain.models import ArtifactScore, CodeCheck, CodeCheckResult, FeatureMatchResult
@@ -107,7 +115,7 @@ def run_tv2(inp: TV2In, tools: Tools) -> TV2Out:
     check_extra = "defect_sources" in CodeCheck.model_fields
     result_extra = "gate_failures" in CodeCheckResult.model_fields
     checks = [CodeCheck(no=item["id"], name=item["name"], weight=item["weight"],
-                        passed=bool(item["passed"]), detail=item["evidence"],
+                        passed=bool(item["passed"]), detail=_detail(item),
                         **({"defect_sources": item["defect_sources"]} if check_extra else {}))
               for item in raw["items"]]
     code = CodeCheckResult(total=raw["total"], checks=checks,

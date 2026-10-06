@@ -324,3 +324,18 @@ class ContractTaskTests(TestCase):
         self.assertEqual(out.code_check.gate_failures, [])
         self.assertFalse(alt.passed)
         self.assertEqual(alt.defect_sources, ["infographic"])
+
+
+class CodeCheckDetailTests(TestCase):
+    """계약에는 얻은 점수 칸이 없다. 부분 점수가 화면에 '미통과'로만 보이지 않게 근거 앞에 적는다."""
+
+    def test_detail_starts_with_earned_points(self):
+        from verification_agent.rules.items import item
+        from verification_agent.tasks import _detail
+
+        partial = item(1, "동작 연결", 3, False, "조작 요소 8/10개 연결", earned=2)
+        self.assertEqual(_detail(partial), "2/3점 — 조작 요소 8/10개 연결")
+        self.assertEqual(_detail(item(5, "제목 계층", 1, True, "h1 1개")), "1/1점 — h1 1개")
+        self.assertEqual(_detail(item(4, "명도 대비", 2, False, "대비 3.1:1")), "0/2점 — 대비 3.1:1")
+        na = item(3, "입력칸 label", 2, True, "입력칸 0개", applicable=False)
+        self.assertTrue(_detail(na).startswith("해당 없음"))
