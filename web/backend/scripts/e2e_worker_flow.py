@@ -188,6 +188,14 @@ def main() -> int:
                      f"HTTP {res.status_code} status={body.get('status')} 통과={ (body.get('eligibility') or {}).get('passed')} "
                      f"안내={[n['code'] for n in body.get('notices', [])]} {body.get('message') or ''}")
                 if passed:
+                    # [SB-274] 화면 4 값: 업력(예비창업자는 None) · 작성 가능 여부. 다시 읽어도(GET) 같다
+                    elig = body.get('eligibility') or {}
+                    again = (j(client.get(f'/projects/{pid}/eligibility')).get('eligibility')) or {}
+                    step('자격 확인 응답의 업력 · 작성 가능 여부',
+                         elig.get('can_start_writing') is True and elig.get('business_age_years') is None
+                         and again.get('can_start_writing') is True and 'business_age_years' in elig,
+                         f"POST: 업력={elig.get('business_age_years')} 작성 가능={elig.get('can_start_writing')} / "
+                         f"GET: 업력={again.get('business_age_years')} 작성 가능={again.get('can_start_writing')} (예비창업자는 업력 None)")
                     chosen = cand['notice_id']
                     break
             if chosen is None:

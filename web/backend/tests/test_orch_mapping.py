@@ -136,3 +136,20 @@ def test_list_item_exposes_rework_fields():
     assert (plain.rework_screen, plain.collecting) == (None, False)
     no_run = mapping.project_list_item(project, ProjectView('7', run=None), None)
     assert (no_run.rework_screen, no_run.collecting) == (None, False)
+
+
+# ── [SB-274] 자격 확인 응답의 업력 · 작성 가능 여부 ─────────────────────────────────────────
+def test_eligibility_out_passes_screen_values_through():
+    from orch_fakes import make_gate
+    out = mapping.eligibility_out(make_gate(passed=True), 3.5, True)
+    assert (out.business_age_years, out.can_start_writing) == (3.5, True)
+    rejected = mapping.eligibility_out(make_gate(passed=False), 8.0, False)
+    assert (rejected.business_age_years, rejected.can_start_writing) == (8.0, False)
+
+
+def test_eligibility_out_defaults_can_start_writing_to_passed():
+    """outputs(이미 작성 단계를 지난 실행 건)에는 작성 가능 여부가 없어 통과 여부로 대신한다."""
+    from orch_fakes import make_gate
+    assert mapping.eligibility_out(make_gate(passed=True)).can_start_writing is True
+    assert mapping.eligibility_out(make_gate(passed=False)).can_start_writing is False
+    assert mapping.eligibility_out(make_gate(passed=True)).business_age_years is None

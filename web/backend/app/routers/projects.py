@@ -303,7 +303,7 @@ def _eligibility_response(
     return DemoGenerateResponse(
         project_id=project_id,
         match=mapping.match_out(outputs, screen.announcement_id),
-        eligibility=mapping.eligibility_out(screen.gate_result),
+        eligibility=mapping.eligibility_out(screen.gate_result, screen.business_age_years, screen.can_start_writing),
         notices=notices,
     )
 

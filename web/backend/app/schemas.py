@@ -445,6 +445,13 @@ class EligibilityCheckOut(BaseModel):
     missing_inputs: list | None = None
     # [SB-243] 읽지 못해 통과로 본 조건('지원대상 유형' · '업력') — 진행을 막지 않고 화면 4에 '확인 필요'로 안내한다.
     unknown_conditions: list = Field(default_factory=list)
+    # [SB-274] 화면 4(자격 확인)의 업력 표시와 작성 시작 버튼. 오케스트레이터 화면 4 값 그대로다.
+    # 업력은 년 단위 소수 한 자리이고 예비창업자 · 업력을 모르면 None이다.
+    business_age_years: float | None = None
+    # 자격 확인을 통과해 작성 단계로 들어갈 수 있는 상태면 True(불통과면 False). 잠정 주의: 지금 오케스트레이터는 확인 필요 조건
+    # (unknown_conditions)이 있어도 통과로 보고 True를 주는데, 기능정의서 v1.9 E-G1-UNPARSED("임의 통과를 허용하지 않는다")와 다르다 —
+    # 기능정의서 개정 여부를 누리님께 확인 중이라 결정에 따라 뜻이 바뀔 수 있다.
+    can_start_writing: bool = False
 
 
 class PlanSectionOut(BaseModel):

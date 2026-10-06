@@ -33,7 +33,7 @@ def _calls(orch, name: str) -> list:
     return [(args, kwargs) for n, args, kwargs in orch.calls if n == name]
 
 
-def _ready_after_select(orch, *, gate=None, notices=(), announcement_id='N-01', screen_notices=()):
+def _ready_after_select(orch, *, gate=None, notices=(), announcement_id='N-01', screen_notices=(), screen_overrides=None):
     """공고 선택 → 자격 확인이 끝난 상태: 명령 전엔 안내 0개, 끝난 뒤엔 notices가 쌓인다."""
     before = ProjectView('1', run=make_run(step='공고선택', progress='사용자대기', screen_status='확인 필요', resume_step=3))
     after = ProjectView('1', run=make_run(
@@ -42,7 +42,7 @@ def _ready_after_select(orch, *, gate=None, notices=(), announcement_id='N-01', 
     orch.responses['view_project'] = lambda pid: before
     orch.responses['wait_project'] = lambda pid, timeout_sec=60.0: after
     orch.responses['screen'] = lambda pid, n: make_gate_screen(
-        announcement_id, gate or make_gate(), notices=list(screen_notices))
+        announcement_id, gate or make_gate(), notices=list(screen_notices), **(screen_overrides or {}))
     orch.responses['outputs'] = lambda pid: make_outputs(candidates=[
         Card(announcement_id='N-01', title='공고1', fit_score=0.9, match_reason='딱 맞아요')])
 
@@ -164,6 +164,58 @@ def test_eligibility_reads_screen_4_again(authed_client, orch):
 
     assert body['status'] == 'ready' and body['eligibility']['passed'] is True
     assert _calls(orch, 'select_announcement_for_project') == []
+
+
+# ── [SB-274] 업력 · 작성 가능 여부 ───────────────────────────────────────────────────────
+def test_generate_returns_business_age_and_can_start_writing(authed_client, orch):
+    pid = _create(authed_client)
+    _ready_after_select(orch, screen_overrides=dict(business_age_years=2.5, can_start_writing=True))
+
+    eligibility = authed_client.post(f'/projects/{pid}/generate', json={'notice_id': 'N-01'}).json()['eligibility']
+
+    assert eligibility['business_age_years'] == 2.5 and eligibility['can_start_writing'] is True
+
+
+def test_generate_preliminary_founder_has_no_business_age(authed_client, orch):
+    """예비창업자 · 업력을 모르면 business_age_years는 None이다."""
+    pid = _create(authed_client)
+    _ready_after_select(orch, screen_overrides=dict(business_age_years=None))
+
+    eligibility = authed_client.post(f'/projects/{pid}/generate', json={'notice_id': 'N-01'}).json()['eligibility']
+
+    assert eligibility['business_age_years'] is None and eligibility['can_start_writing'] is True
+
+
+def test_generate_rejected_gate_cannot_start_writing(authed_client, orch):
+    pid = _create(authed_client)
+    gate = make_gate(passed=False, failed_conditions=['업력'])
+    _ready_after_select(orch, gate=gate, screen_overrides=dict(business_age_years=7.0, can_start_writing=False))
+
+    eligibility = authed_client.post(f'/projects/{pid}/generate', json={'notice_id': 'N-01'}).json()['eligibility']
+
+    assert eligibility['passed'] is False and eligibility['can_start_writing'] is False
+    assert eligibility['business_age_years'] == 7.0
+
+
+def test_generate_unknown_conditions_still_can_start_writing(authed_client, orch):
+    """잠정: 오케스트레이터는 확인 필요 조건이 있어도 통과로 보고 작성 가능으로 준다(기능정의서 E-G1-UNPARSED와 다름 — 확인 중).
+    웹은 그 값을 그대로 전달한다."""
+    pid = _create(authed_client)
+    gate = make_gate(passed=True, unknown_conditions=['업력'])
+    _ready_after_select(orch, gate=gate, screen_overrides=dict(can_start_writing=True))
+
+    eligibility = authed_client.post(f'/projects/{pid}/generate', json={'notice_id': 'N-01'}).json()['eligibility']
+
+    assert eligibility['unknown_conditions'] == ['업력'] and eligibility['can_start_writing'] is True
+
+
+def test_eligibility_get_has_the_same_new_fields(authed_client, orch):
+    pid = _create(authed_client)
+    _ready_after_select(orch, screen_overrides=dict(business_age_years=1.2, can_start_writing=True))
+
+    eligibility = authed_client.get(f'/projects/{pid}/eligibility').json()['eligibility']
+
+    assert eligibility['business_age_years'] == 1.2 and eligibility['can_start_writing'] is True
 
 
 # ── 단계 시작 ─────────────────────────────────────────────────────────────────────────
