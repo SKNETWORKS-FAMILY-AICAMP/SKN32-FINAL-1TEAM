@@ -27,6 +27,9 @@ import time
 DEFAULT_URL = 'mysql+pymysql://root:sbrain-test@127.0.0.1:3307/sbrain_e2e?charset=utf8mb4'
 LOCAL_HOSTS = {'127.0.0.1', 'localhost', '::1'}
 
+if hasattr(sys.stdout, 'reconfigure'):  # 콘솔 인코딩(cp949 등)에 없는 문자(— 등)가 있어도 출력이 죽지 않게
+    sys.stdout.reconfigure(errors='replace')
+
 FULL_INPUT = {
     'description': 'E2E 아이템 — AI 반려동물 건강관리 앱', 'applicant_type': 'preliminary', 'ceo_name': 'E2E대표',
     'ceo_birth_date': '1990-01-01', 'ceo_gender': 'male', 'region_sido': '서울', 'region_sigungu': '',

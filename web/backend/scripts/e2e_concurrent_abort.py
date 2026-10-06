@@ -8,13 +8,15 @@
   1. 시작 요청이 처리되는 중에 새 프로젝트  → 409 blocked(진행 중인 프로젝트 안내), 웹 행이 생기지 않음
   2. 실행 건이 생긴 뒤(화면 3)에 새 프로젝트 → 409 blocked, 진행 단계 안내
   3. 휴지통(DELETE /projects/{id})으로 중단   → 204, 실행 건 '중단', 목록에서 숨김(보관), 동시 실행 제한이 풀려 새 프로젝트 201
-  4. 시작 요청이 처리되는 중에 바로 중단      → 204, 잠시 뒤 진행 중인 작업 없음(요청 취소 또는 실행 건 중단), 새 프로젝트 201
-  5. 워커가 단계를 도는 중에 중단            → 204, 단계가 끝나는 대로 실행 건 '중단', 제한 풀림
+  4. 시작 요청이 처리되는 중에 중단          → 204. 대기 중에 바로 지우는 경로(a)와, 워커가 처리 중일 때 취소 요청을 남기는 경로(b)
+                                              를 각각 만든다. (b)는 요청이 '처리중'이 되는 것을 보고 중단하며, 요청은 '취소'로 끝나고 실행 건은 안 생긴다
+  5. 워커가 단계를 도는 중에 중단            → 204. 워커가 실행 건을 점유한 것을 보고 중단해 '중단요청' 경로를 만든다 — 단계가 끝나는 대로 '중단'
 
-4 · 5는 워커와의 타이밍에 따라 "바로 중단"과 "중단 요청을 남기고 단계 사이에 반영" 두 경로 중 하나를 탄다 — 어느 쪽이든
-끝 상태(진행 중인 작업 없음, 실행 건 중단 또는 없음)가 같아야 하므로 그것을 확인하고, 탄 경로는 참고로 찍는다.
+abort_project가 돌려준 결과(어느 경로를 탔는지)를 가로채 기록하므로 경로까지 확인한다. 타이밍 때문에 원하는 경로를 못 만들면
+(워커가 먼저 끝냄) 새 프로젝트로 몇 번 다시 시도하고, 그래도 안 되면 FAIL로 남긴다.
 """
 import argparse
+import datetime
 import json
 import os
 import sys
@@ -24,6 +26,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_worker_flow import DEFAULT_URL, FULL_INPUT, PROFILE, configure_env  # noqa: E402
 
 results: list[tuple[str, bool, str]] = []
+
+if hasattr(sys.stdout, 'reconfigure'):  # 콘솔 인코딩(cp949 등)에 없는 문자(— 등)가 있어도 출력이 죽지 않게
+    sys.stdout.reconfigure(errors='replace')
 
 
 def step(name: str, ok: bool, detail: str = '') -> bool:
@@ -68,6 +73,15 @@ def main() -> int:
         auth_router.verify_google_id_token = security.verify_google_id_token
         gateway = get_gateway()
         user_id = {}
+        aborts = []  # 웹이 gateway.abort_project를 부른 결과(AbortResult)를 순서대로 모은다
+        real_abort = gateway.abort_project
+
+        def recording_abort(project_id):
+            result = real_abort(project_id)
+            aborts.append(result)
+            return result
+
+        gateway.abort_project = recording_abort  # 인스턴스에 덮어써 라우터가 같은 객체를 부를 때 기록된다
 
         def wait_for(label: str, cond, interval: float = 2.0):
             """cond()가 참이 될 때까지. 시간 초과면 Abort."""
@@ -98,6 +112,23 @@ def main() -> int:
         def listed_ids():
             res = client.get('/projects')
             return [p['project_id'] for p in j(res)] if res.status_code == 200 else []
+
+        def run_locked(pid: int) -> bool:
+            """워커가 그 프로젝트의 실행 건을 지금 점유하고 있는가(단계를 도는 중)."""
+            run = gateway.view_project(pid).run
+            return run is not None and gateway._orch.store.is_locked(run.run_id, datetime.datetime.now(datetime.UTC))
+
+        def request_status(pid: int):
+            req = gateway.start_status(pid)
+            return req.status if req is not None else None
+
+        def wait_until(cond, timeout: float = 90.0, interval: float = 0.1) -> bool:
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                if cond():
+                    return True
+                time.sleep(interval)
+            return False
 
         def project_count_in_db():
             with SessionLocal() as db:
@@ -162,6 +193,8 @@ def main() -> int:
             # 3) 휴지통으로 중단 → 제한 풀림
             res = client.delete(f'/projects/{a}')
             step('3. 휴지통(중단)', res.status_code == 204, f'{res.status_code}')
+            step('3. 경로: 워커가 안 돌 때는 바로 중단', bool(aborts) and aborts[-1].run_action == '중단',
+                 f'run_action={aborts[-1].run_action if aborts else None}')
             step('3. 실행 건 중단됨', run_progress(a) == '중단', f'진행={run_progress(a)}')
             row = web_project(a)
             step('3. 보관 처리 · 목록에서 숨김', bool(row and row['archived_at'] and row['archived_by'] == 'user') and a not in listed_ids(),
@@ -172,28 +205,59 @@ def main() -> int:
                 raise Abort('B 생성 실패')
             b = j(res)['project_id']
 
-            # 4) 시작 요청 처리 중에 바로 중단
+            # 4a) 시작 요청 처리 중에 바로 중단 — 대기 중이면 요청이 곧바로 취소된다(처리 중이면 취소 요청)
             res = client.delete(f'/projects/{b}')
-            step('4. 요청 처리 중 바로 중단', res.status_code == 204, f'{res.status_code}')
+            last = aborts[-1]
+            step('4a. 요청 처리 중 바로 중단', res.status_code == 204,
+                 f'{res.status_code} 취소={len(last.cancelled_requests)} 취소요청={len(last.cancel_requested)} run={last.run_action}')
             wait_for('B 정리', lambda: active() is None)
-            row = web_project(b)
             progress = run_progress(b)
-            path = '요청 취소(웹 행 삭제)' if row is None else f'실행 건이 만들어진 뒤 중단(보관, 진행={progress})'
-            step('4. 끝 상태: 진행 중인 작업 없음 · 실행 건 중단 또는 없음',
-                 active() is None and progress in (None, '중단'), f'경로={path}')
+            step('4a. 끝 상태: 진행 중인 작업 없음 · 실행 건 중단 또는 없음', active() is None and progress in (None, '중단'),
+                 f'실행 건={progress} 웹 행={"삭제됨" if web_project(b) is None else "보관"}')
+
+            # 4b) 워커가 요청을 처리 중(T-C1 등)일 때 중단 — 취소 요청이 남고 요청은 '취소'로 끝나야 한다
+            made = None
+            for attempt in range(1, 4):
+                res = create_project()
+                if res.status_code != 201:
+                    raise Abort(f'4b 프로젝트 생성 실패 {res.status_code} {j(res)}')
+                cand = j(res)['project_id']
+                if not wait_until(lambda pid=cand: request_status(pid) in ('처리중', '완료', '실패')):
+                    raise Abort('4b: 워커가 요청을 가져가지 않음 — 워커가 떠 있는지 확인하세요')
+                seen = request_status(cand)
+                res = client.delete(f'/projects/{cand}')
+                last = aborts[-1]
+                path_ok = bool(last.cancel_requested)
+                step(f'4b. 처리 중 요청 중단 (시도 {attempt})', res.status_code == 204 and path_ok,
+                     f'{res.status_code} 중단 직전 요청={seen} 취소요청={len(last.cancel_requested)} 취소={len(last.cancelled_requests)} '
+                     f'run={last.run_action}')
+                wait_for('4b 정리', lambda: active() is None)
+                if path_ok:
+                    made = cand
+                    break
+            if made is None:
+                raise Abort('4b: 처리 중 경로를 만들지 못함')
+            step('4b. 요청은 취소로 끝나고 실행 건은 안 생김', request_status(made) == '취소' and run_progress(made) is None,
+                 f'요청={request_status(made)} 실행 건={run_progress(made)}')
             res = create_project()
             if not step('4. 중단 뒤 새 프로젝트 C 생성', res.status_code == 201, f'{res.status_code}'):
                 raise Abort('C 생성 실패')
             c = j(res)['project_id']
 
-            # 5) 워커가 단계를 도는 중에 중단 — C를 계획서 작성까지 보낸 직후 바로 중단
+            # 5) 워커가 단계를 도는 중에 중단 — 점유한 것을 보고 중단하면 '중단요청'이 남고 단계 사이에 반영된다
             pick_eligible(c)
             res = client.post(f'/projects/{c}/plan/start')
-            step('5. C 계획서 작성 시작', res.status_code == 200, f'{res.status_code}')
+            if res.status_code != 200:
+                raise Abort(f'5 계획서 작성 시작 실패 {res.status_code} {j(res)}')
+            if not wait_until(lambda: run_locked(c)):
+                raise Abort('5: 워커가 실행 건을 점유하지 않음 — 워커가 떠 있는지 확인하세요')
             res = client.delete(f'/projects/{c}')
-            step('5. 단계 진행 중 중단', res.status_code == 204, f'{res.status_code}')
+            last = aborts[-1]
+            if not step('5. 단계 진행 중 중단 → 중단요청 경로', res.status_code == 204 and last.run_action == '중단요청',
+                        f'{res.status_code} run_action={last.run_action}'):
+                raise Abort('5: 중단요청 경로를 만들지 못함 — 점유를 본 뒤 단계가 먼저 끝났을 수 있음(다시 실행)')
             wait_for('C 중단 반영', lambda: run_progress(c) == '중단')
-            step('5. 실행 건 중단 · 진행 중인 작업 없음', run_progress(c) == '중단' and active() is None,
+            step('5. 단계가 끝나자 실행 건 중단 · 진행 중인 작업 없음', run_progress(c) == '중단' and wait_until(lambda: active() is None, 30),
                  f'진행={run_progress(c)} active_work={active()}')
             res = create_project()
             ok = step('5. 중단 뒤 새 프로젝트 D 생성', res.status_code == 201, f'{res.status_code}')
