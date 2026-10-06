@@ -1,4 +1,4 @@
-﻿"""Function-specific model routing, bounded output and auditable API usage."""
+﻿"""함수별 모델 라우팅, 출력 한도와 추적 가능한 API 사용량을 관리한다."""
 import json
 import os
 import time
@@ -137,11 +137,15 @@ def request_json(fid, payload):
         +FIELDS[fid])
     if fid=='F19':
         document_type=payload.get('source_data',{}).get('documentType','general') if isinstance(payload.get('source_data',{}),dict) else 'general'
-        instructions+=' 검증 결과는 passed, issues, warnings, needsUserConfirmation, sourceRefs, generatedText를 반환하고 각 issues/warnings는 200자 이내로 간결하게 작성한다. 제안값은 warnings에, 사용자의 결정이 필요한 값은 needsUserConfirmation에 기록한다. 공고·관리기준을 판단에 사용했다면 해당 내부 파일 경로를 sourceRefs에 포함하고, 자료의 연도·유형이 현재 문서와 다르면 warning으로 기록한다.'+_validation_rubric_text()+_validation_reference_text(document_type)
+        instructions+=' 검증 결과는 passed, issues, warnings, needsUserConfirmation, sourceRefs, generatedText를 반환하고 각 issues/warnings는 200자 이내로 간결하게 작성한다. 제안값은 warnings에, 사용자의 결정이 필요한 값은 needsUserConfirmation에 기록한다. 공고·관리기준을 판단에 사용했다면 해당 내부 파일 경로를 sourceRefs에 포함하고, 자료의 연도·유형이 현재 문서와 다르면 warning으로 기록한다. evidence의 sourceRole을 구분한다: official_announcement와 management_standard는 명시 조건 위반 판단에 사용하고, application_form은 구조·필수 항목 판단에 사용하며, faq_guidance와 management_reference는 해석 보조로만 사용한다. directFactAllowed가 false인 evidence는 확정 사실의 직접 근거로 판정하지 않는다.'+_validation_rubric_text()+_validation_reference_text(document_type)
     if fid=='F01': instructions+=' 검색 결과를 새로 요약하거나 장문으로 재작성하지 말고 summary는 3문장 이내, selectedSourceRefs는 실제 sourceRef만 반환한다.'
     if fid=='F16':
         kind=payload.get('writing_rules',{}).get('documentType','general')
+        section_criteria=payload.get('writing_rules',{}).get('sectionCriteria',{})
         instructions+='\n'+writing_prompt(kind)
+        if section_criteria:
+            prompt_section_criteria={k:v for k,v in section_criteria.items() if k!='excludedEvidence'}
+            instructions+='\n[항목별 공고·양식 기준]\n'+json.dumps(prompt_section_criteria,ensure_ascii=False,separators=(',',':'))+'\n이 기준은 본문 작성 전에 적용한다. sourceMappings의 sourceRole을 구분한다: official_announcement와 management_standard는 명시된 조건의 기준으로, application_form은 항목·표 구조로, faq_guidance와 management_reference는 해석 보조로만 사용한다. directFactAllowed가 false인 자료는 사업의 확정 사실이나 수치의 근거로 쓰지 않는다. POS·성능·고객 수치처럼 원문에 없는 사업 내용은 확정 사실로 쓰지 말고 proposed 또는 needs_confirmation으로 표시한다. 기준이 요구하는 문장·구조는 반드시 반영하고, 규정이 직접 증명하지 않는 기능은 사업계획 제안으로 구분한다.'
     serialized=json.dumps(payload,ensure_ascii=False,separators=(',',':'))
     requested_model=config['apiModel']; fallback_map={'gpt-5.6-luna':'gpt-4o','gpt-5.6-terra':'gpt-4o','gpt-5.6-sol':'gpt-4o'}
     fallback_model=fallback_map.get(requested_model); used_fallback=False; fallback_reason=''
@@ -211,4 +215,5 @@ def compact(value):
     if isinstance(value,dict):return {k:compact(v) for k,v in value.items() if k not in omit}
     if isinstance(value,list):return [compact(v) for v in value]
     return value
+
 

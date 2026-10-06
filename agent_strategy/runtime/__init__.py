@@ -1,1 +1,2 @@
-"""Runtime components for strategy generation."""
+﻿"""전략 생성을 위한 실행 구성요소를 제공한다."""
+

@@ -121,6 +121,8 @@ def validation_source_for(row, content):
 def run_job(job_id, body):
     try:
         def progress(message, count):
+            if JOBS.get(job_id, {}).get('cancelRequested'):
+                raise RuntimeError('사용자가 실행을 중단했습니다.')
             JOBS[job_id].update(message=message, completedCalls=count)
             print(f'[{job_id[:8]}] {message} · 완료 호출 수: {count}', flush=True)
         raw=body['input']; contract=raw.get('2_지금_입력받는값') if isinstance(raw,dict) else None
@@ -146,6 +148,10 @@ def run_job(job_id, body):
             output_directory=save_result(partial)
         except Exception as save_exc:
             partial['saveError']=str(save_exc)
+        cancelled=bool(JOBS.get(job_id, {}).get('cancelRequested'))
+        if cancelled:
+            partial['status']='cancelled_partial'
+            partial['message']='사용자 요청으로 실행을 중단했습니다. 완료된 결과만 저장했습니다.'
         JOBS[job_id].update(status='error', error=str(exc), errorType=type(exc).__name__,
                             errorTraceback=traceback.format_exc(), result=partial,
                             outputDirectory=output_directory, partialResult=partial)
@@ -156,6 +162,8 @@ def run_job(job_id, body):
 def run_retry_job(job_id, parent_job, section_id, instruction, mode='manual'):
     try:
         def progress(message, count):
+            if JOBS.get(job_id, {}).get('cancelRequested'):
+                raise RuntimeError('사용자가 실행을 중단했습니다.')
             JOBS[job_id].update(message=message, completedCalls=count)
         result=retry_sections(parent_job['_input'],parent_job['result'],section_id,instruction,progress,render_image=flow_image)
         if result.get('retryHistory'):
@@ -168,7 +176,9 @@ def run_retry_job(job_id, parent_job, section_id, instruction, mode='manual'):
         partial=dict(partial)
         partial['runId']=str(uuid.uuid4())
         partial['createdAt']=datetime.now(timezone.utc).isoformat()
-        partial['status']='error_partial'
+        partial['status']='cancelled_partial' if JOBS.get(job_id, {}).get('cancelRequested') else 'error_partial'
+        if partial['status']=='cancelled_partial':
+            partial['message']='사용자 요청으로 회귀 재작성을 중단했습니다. 완료된 결과만 저장했습니다.'
         partial['error']=str(exc)
         partial['errorType']=type(exc).__name__
         partial['errorTraceback']=traceback.format_exc()
@@ -188,6 +198,8 @@ def run_validate_job(job_id, parent_job, section_id):
         rows={r['sectionId']:r for r in parent_job['result'].get('results',[])}
         checked=[]
         for item in plan['affected']:
+            if JOBS.get(job_id, {}).get('cancelRequested'):
+                raise RuntimeError('사용자가 실행을 중단했습니다.')
             spec=specs[item['sectionId']]; row=rows.get(item['sectionId'])
             if not row: continue
             content=row.get('functionOutput') or {'generatedText':row.get('generatedText',''),'tables':row.get('tables',[])}
@@ -219,6 +231,8 @@ def run_validate_all_job(job_id, result, skip_passed=False):
     try:
         specs={s['sectionId']:s for s in CONTRACT['documents'][result['documentType']]}
         for row in result.get('results',[]):
+            if JOBS.get(job_id, {}).get('cancelRequested'):
+                raise RuntimeError('사용자가 실행을 중단했습니다.')
             spec=specs.get(row['sectionId'])
             if spec and spec.get('enabled'):
                 if skip_passed and row.get('validation',{}).get('status')=='pass':
@@ -265,6 +279,8 @@ def run_image_retry_job(job_id, result, section_id):
         source={'item':result.get('research',{}).get('sources',[])}
         outs=[]
         for flow_type in ('USER_FLOW','SERVICE_ARCHITECTURE'):
+            if JOBS.get(job_id, {}).get('cancelRequested'):
+                raise RuntimeError('사용자가 실행을 중단했습니다.')
             outs.append(gpt.generate_image_spec(item=source,architecture={'design':{},'retryInstruction':'이미지 디자인만 재생성'},flow_type=flow_type))
         row['images']=[flow_image(o) for o in outs]; row['functionOutput']=outs[0]; row['imageRetry']={'flows':['USER_FLOW','SERVICE_ARCHITECTURE'],'relatedSectionsSkipped':True}
         result['message']='이미지 명세와 이미지 결과만 재생성했습니다. 연관 사업계획서 항목은 실행하지 않았습니다.'; result['runId']=str(uuid.uuid4()); result['createdAt']=datetime.now(timezone.utc).isoformat(); result['retryHistory']=list(result.get('retryHistory',[]))+[{'timestamp':result['createdAt'],'mode':'image_only','selectedSectionId':section_id,'status':result.get('status','generated')}]
@@ -385,7 +401,7 @@ class Handler(BaseHTTPRequestHandler):
         # Serve the UI and API on one loopback origin; no wildcard CORS or file origin writes.
         if self.headers.get('Origin') not in {None, 'null', f'http://127.0.0.1:{self.server.server_port}', f'http://localhost:{self.server.server_port}'}:
             return self.respond(403, {'error':'Open the local test page.'})
-        if self.path not in ['/api/run','/api/retry','/api/retry-latest','/api/validate-latest','/api/validate-all-latest','/api/image-retry-latest']:
+        if self.path not in ['/api/run','/api/retry','/api/retry-latest','/api/validate-latest','/api/validate-all-latest','/api/image-retry-latest','/api/cancel']:
             return self.respond(404, {'error':'not found'})
         acquired=False
         try:
@@ -393,6 +409,13 @@ class Handler(BaseHTTPRequestHandler):
             if not 0 < size <= 2_000_000:
                 raise ValueError('입력 크기는 2MB 이하여야 합니다.')
             body = json.loads(self.rfile.read(size))
+            if self.path == '/api/cancel':
+                target=JOBS.get(body.get('jobId'))
+                if not target or target.get('status')!='running':
+                    return self.respond(404, {'error':'실행 중인 작업을 찾을 수 없습니다.'})
+                target['cancelRequested']=True
+                target['message']='사용자 중단 요청을 처리하는 중입니다.'
+                return self.respond(202, {'jobId':body.get('jobId'),'message':'중단 요청을 접수했습니다.'})
             if not os.getenv('OPENAI_API_KEY'):
                 raise ValueError('서버에 OPENAI_API_KEY가 없습니다. start_function_test.cmd에서 입력하세요.')
             if not LOCK.acquire(blocking=False):

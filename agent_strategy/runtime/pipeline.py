@@ -1,10 +1,11 @@
-﻿"""Canonical strategy once; narrow section inputs; validation 1 and bounded rewrite."""
+﻿"""전략을 한 번 확정하고 항목별 입력을 제한해 검증 1과 회귀 재작성을 연결한다."""
 import copy
 import json
 import os
 import re
 import time
 import uuid
+from pathlib import Path
 from datetime import datetime,timezone
 from agent_strategy.functions import gpt_functions as gpt, python_functions as py
 from agent_validation_1.scoring import score_section, aggregate_scores
@@ -42,7 +43,7 @@ def _normalize_image_output(output, flow_type='USER_FLOW'):
 
 
 def refresh_user_industry_research(project):
-    """Optionally refresh KIET data for the current user's industry keyword."""
+    """현재 사용자 산업 키워드에 대한 KIET 조사 데이터를 선택적으로 갱신한다."""
     if os.getenv('SBRAIN_AUTO_RESEARCH','0').lower() not in {'1','true','yes'}:
         return {'status':'skipped','reason':'SBRAIN_AUTO_RESEARCH disabled'}
     keyword=(project.get('tech_field') or project.get('description') or '').strip()
@@ -64,7 +65,11 @@ def select_path(data,path):
 
 
 def _annotate_status(fid, output, input_data):
-    """Mark strategy facts as provided/proposed/needs_confirmation for downstream F16/F19."""
+    """F16 본문 작성과 F19 검증에 전달할 전략 사실의 상태를 표시한다.
+
+    상태값은 확정값(provided), 제안값(proposed), 확인 필요값(needs_confirmation)으로
+    구분해 저장한다.
+    """
     if not isinstance(output, dict):
         return output
     source_json=json.dumps(input_data, ensure_ascii=False)
@@ -102,6 +107,45 @@ def _provenance(value):
         return {"sourceRefs": [], "evidence": [], "originalFacts": {}}
     return {"sourceRefs": value.get("sourceRefs", []), "evidence": value.get("evidence", []), "originalFacts": value.get("originalFacts", value.get("facts", []))}
 
+def _writing_criteria(document_type, section_id):
+    """F16 작성 전에 항목별 공고·양식 기준을 전달한다."""
+    root=Path(__file__).resolve().parents[2]
+    path=root/'agent_validation_1'/'res'/'reference'/'regulations'/'criteria_registry.json'
+    try:
+        registry=json.loads(path.read_text(encoding='utf-8-sig'))
+        section=registry.get('documentTypes',{}).get(document_type,{}).get('sections',{}).get(section_id,{})
+        if not section:return {}
+        evidence=[]
+        for mapping in section.get('sourceMappings',[]):
+            rel=mapping.get('path',''); fp=root/rel
+            item={'path':rel,'matchedKeywords':[],'excerpts':[],'relevance':'low',
+                  'sourceRole':mapping.get('sourceRole','reference'),'authorityLevel':mapping.get('authorityLevel','low'),
+                  'directFactAllowed':bool(mapping.get('directFactAllowed',False))}
+            try:
+                text=' '.join(json.dumps(json.loads(fp.read_text(encoding='utf-8-sig')),ensure_ascii=False).split())
+                for keyword in mapping.get('locatorKeywords',[]):
+                    pos=text.find(str(keyword))
+                    if pos>=0:
+                        item['matchedKeywords'].append(str(keyword)); item['excerpts'].append(text[max(0,pos-80):pos+320])
+                    if len(item['excerpts'])>=2: break
+                item['relevance']='high' if len(item['matchedKeywords'])>=2 else ('medium' if item['matchedKeywords'] else 'low')
+                matched='·'.join(item['matchedKeywords']) if item['matchedKeywords'] else '일치 키워드 없음'
+                purpose='·'.join(str(v) for v in mapping.get('useFor',[])) or section.get('purpose','해당 사업계획서 항목')
+                item['rationale']=(f'{rel} 파일에서 {matched}로 언급되어 있어 {purpose}에 맞춰 작성함'
+                                   if item['matchedKeywords'] else
+                                   f'{rel} 파일에서 항목 관련 키워드가 확인되지 않아 직접 근거로 사용하지 않음')
+            except (OSError,ValueError,TypeError):
+                item['readError']=True
+            evidence.append(item)
+        relevant=[e for e in evidence if e.get('relevance') in {'high','medium'}]
+        excluded=[e for e in evidence if e.get('relevance')=='low']
+        return {'criteria':section.get('criteria',[]),'purpose':section.get('purpose',''),
+                'sourceRefs':section.get('sourceRefs',[]),'sourceMappings':section.get('sourceMappings',[]),
+                'relevanceKeywords':section.get('relevanceKeywords',[]),'sourceEvidence':relevant,
+                'excludedEvidence':excluded}
+    except (OSError,ValueError,TypeError):
+        return {}
+
 def section_source(spec,canonical,original,research):
     selected={key:select_path(canonical,key) for key in spec['sourceKeys']}
     roots={k.split('.')[0] for k in spec['sourceKeys']}
@@ -134,7 +178,7 @@ def section_source(spec,canonical,original,research):
 
 
 def _won(value):
-    """Convert a back table amount such as '12,000,000원' to an integer."""
+    """back 표의 금액(예: '12,000,000원')을 정수로 변환한다."""
     if isinstance(value,(int,float)) and not isinstance(value,bool): return value
     digits=''.join(ch for ch in str(value or '') if ch.isdigit())
     return int(digits) if digits else 0
@@ -169,7 +213,7 @@ def _pre_startup_budget_phases(budget,items):
 
 
 def normalize_back_input(raw,kind):
-    """Accept the back tableData/sectionText contract as pipeline input."""
+    """back의 tableData/sectionText 계약을 파이프라인 입력으로 받는다."""
     if not isinstance(raw,dict): return raw
     if isinstance(raw.get('2_지금_입력받는값'),dict): return raw
     table=raw.get('tableData') or {}; text=raw.get('sectionText') or {}
@@ -258,7 +302,7 @@ def table_arguments(raw,kind,spec,canonical):
     return dict(columns=spec['rules']['requiredColumns'],rows=rows,rules=rules)
 
 def _attach_provenance(fid, value, kwargs):
-    """Persist upstream evidence/facts on every F02-F15 canonical result."""
+    """F02~F15의 모든 표준 결과에 상위 근거와 사실을 보존한다."""
     if not isinstance(value, dict) or fid not in {f"F{i:02}" for i in range(1, 16)}:
         return value
     refs=[]; evidence=[]
@@ -282,7 +326,7 @@ def _attach_provenance(fid, value, kwargs):
     return value
 
 def _reconcile_validation(spec, output, validation):
-    """Prefer verified stored structure over contradictory LLM-only diagnostics."""
+    """LLM 진단과 충돌할 때 검증된 저장 구조를 우선한다."""
     if not isinstance(validation, dict):
         return validation
     issues=[str(x) for x in validation.get('issues',[]) if x]
@@ -290,7 +334,9 @@ def _reconcile_validation(spec, output, validation):
     rules=spec.get('rules',{}) if isinstance(spec,dict) else {}
     required=set(rules.get('requiredColumns',[]) or [])
     valid_table=bool(tables) and all(required.issubset(set(t.get('columns',[]) or [])) for t in tables if isinstance(t,dict))
-    if spec.get('contentType')=='table' and valid_table:
+    # 일부 문서 계약은 contentType을 section으로 유지하면서 F17 표를
+    # 포함한다. requiredColumns/F17 기준으로 실제 저장 표를 판정한다.
+    if (spec.get('contentType')=='table' or spec.get('functionId')=='F17' or required) and valid_table:
         issues=[i for i in issues if not ('필수 표' in i or 'tables의 columns/rows 구조' in i or '표 형식 텍스트만' in i or 'content.tables' in i)]
     if spec.get('contentType')=='image' and isinstance(output.get('imageSpecs'),list):
         types={x.get('flowType') for x in output['imageSpecs'] if isinstance(x,dict)}
@@ -306,6 +352,8 @@ def _reconcile_validation(spec, output, validation):
     return validation
 
 def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,execution_scope='full'):
+    started_at=datetime.now(timezone.utc).isoformat()
+    started_clock=time.perf_counter()
     if kind not in CONTRACT['documents']:raise ValueError('문서 유형 오류')
     if execution_scope not in {'full','strategy_writing'}:raise ValueError('실행 범위 오류')
     if not isinstance(raw,dict):raise ValueError('입력 JSON은 객체여야 합니다.')
@@ -386,8 +434,11 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
             spec['rules']['stages']=['1차','2차']
         full_chars+=len(json.dumps(c,ensure_ascii=False)); selected_chars+=len(json.dumps(source,ensure_ascii=False))
         attempts=[]
-        attempt_limit=max_rewrites if execution_scope=='full' else 0
-        for attempt in range(attempt_limit+1):
+        # 재작성은 UI의 통합 회귀 재작성 컨트롤러가 담당한다. 전체 실행은
+        # 항목을 한 번만 생성하고 검증 결과를 반환하며, 실패 항목의 추가
+        # 호출은 /api/retry-latest를 통해서만 수행한다.
+        attempt_limit=0
+        for attempt in range(1):
             if spec['functionId']=='F17':
                 image_outputs=[]
                 output=call('F17',py.generate_table,**table_arguments(raw,kind,spec,c))
@@ -395,7 +446,7 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
                 output=call('F18',gpt.generate_image_spec,item=source['item_spec'],architecture={'design':source.get('architecture',{}),'validationFeedback':attempts[-1]['validation']['issues'] if attempts else []},flow_type='USER_FLOW')
                 image_outputs=[output,call('F18',gpt.generate_image_spec,item=source['item_spec'],architecture={'design':source.get('architecture',{}),'validationFeedback':attempts[-1]['validation']['issues'] if attempts else []},flow_type='SERVICE_ARCHITECTURE')]
             else:
-                output=call('F16',gpt.generate_section,section_spec=spec,source_data=source,writing_rules={'documentType':kind,'tableGenerationEnabled':False,
+                output=call('F16',gpt.generate_section,section_spec=spec,source_data=source,writing_rules={'documentType':kind,'sectionCriteria':_writing_criteria(kind,sid),'tableGenerationEnabled':False,
                             'validationFeedback':attempts[-1]['validation']['issues'] if attempts else [],'previousText':attempts[-1]['generatedText'] if attempts else None,'preserveProvenance':True,'statusPolicy':['provided','proposed','needs_confirmation']})
                 image_outputs=[output]
             # Validate the same body that will be stored; repeated section
@@ -443,7 +494,7 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
     usage={'input_tokens':0,'output_tokens':0,'total_tokens':0}
     for event in trace:
         for key in usage:usage[key]+=event.get('usage',{}).get(key,0)
-    return {'runId':str(uuid.uuid4()),'createdAt':datetime.now(timezone.utc).isoformat(),'documentType':kind,
+    return {'runId':str(uuid.uuid4()),'createdAt':datetime.now(timezone.utc).isoformat(),'startedAt':started_at,'completedAt':datetime.now(timezone.utc).isoformat(),'elapsedSeconds':round(time.perf_counter()-started_clock,3),'documentType':kind,
             'status':'strategy_writing_completed' if execution_scope=='strategy_writing' else ('validation1_failed' if failed else 'validation1_passed'),
             'message':'전략(F01~F15)과 작성(F16/F18)만 완료했습니다. 검증 1(F19)과 조립(F20)은 실행하지 않았습니다.' if execution_scope=='strategy_writing' else ('검증 1 미통과 항목이 있어 최종 조립을 보류했습니다.' if failed else '검증 1 통과 및 조립 완료. 원본 기반 표 포함. 실제 문서 페이지 수는 별도 확인이 필요합니다.'),
             'results':sections,'evaluationSummary':aggregate_scores(sections),'document':document,'trace':trace,'validation1':decisions,'usage':usage,
@@ -454,7 +505,7 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
 
 
 def impact_plan(kind, section_id):
-    """Return the selected writing section and sections sharing its canonical inputs."""
+    """선택한 작성 항목과 표준 입력을 공유하는 항목을 반환한다."""
     specs = CONTRACT['documents'].get(kind)
     if not specs:
         raise ValueError('문서 유형 오류')
@@ -533,7 +584,9 @@ def _retry_context(raw, result):
 
 
 def retry_sections(raw, prior_result, section_id, retry_instruction='', progress=None, render_image=None, max_rewrites=1):
-    """Regenerate one selected section and all sections sharing its direct canonical inputs."""
+    started_at=datetime.now(timezone.utc).isoformat()
+    started_clock=time.perf_counter()
+    """선택 항목과 직접 표준 입력을 공유하는 항목을 함께 재생성한다."""
     kind=prior_result['documentType']
     plan=impact_plan(kind, section_id)
     result=copy.deepcopy(prior_result)
@@ -560,12 +613,15 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
     evidence=result.get('research',{}).get('sources',[])
     for affected in plan['affected']:
         spec=specs[affected['sectionId']]
+        spec['_documentType']=kind
         source=section_source(spec,canonical,original,evidence)
         if kind=='general' and duration>=12 and spec['sectionId'] in ['1.2.1','1.3.1']:
             spec['rules']['stages']=['1차','2차']
         previous=rows[spec['sectionId']]
         attempts=[]
-        for attempt in range(max_rewrites+1):
+        # 이 함수는 한 번의 회귀 재작성만 수행한다. 항목별 최대 횟수와
+        # 자동 반복은 프런트의 통합 회귀 재작성 정책이 관리한다.
+        for attempt in range(1):
             feedback=attempts[-1]['validation']['issues'] if attempts else []
             if spec['functionId']=='F17':
                 image_outputs=[]
@@ -575,7 +631,7 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
                 image_outputs=[output,call('F18',gpt.generate_image_spec,item=source['item_spec'],architecture={'design':source.get('architecture',{}),'validationFeedback':feedback,'retryInstruction':retry_instruction},flow_type='SERVICE_ARCHITECTURE')]
             else:
                 output=call('F16',gpt.generate_section,section_spec=spec,source_data=source,
-                            writing_rules={'documentType':kind,'tableGenerationEnabled':False,'retryInstruction':retry_instruction,
+                            writing_rules={'documentType':kind,'sectionCriteria':_writing_criteria(kind,spec['sectionId']),'tableGenerationEnabled':False,'retryInstruction':retry_instruction,
                                            'validationFeedback':feedback,'previousText':previous.get('generatedText') if not attempts else attempts[-1]['generatedText'],'preserveProvenance':True,'statusPolicy':['provided','proposed','needs_confirmation']})
                 image_outputs=[output]
             if spec['functionId']=='F16':
@@ -612,10 +668,13 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
     result['document']=None if failed else call('F20',py.assemble_document,sections=result['results'],tables=[t for row in result['results'] for t in row.get('tables',[])],images=images)
     result['status']='validation1_failed' if failed else 'validation1_passed'
     result['message']='재시도 후 검증 1 미통과 항목이 있어 최종 조립을 보류했습니다.' if failed else '선택 항목과 연관 항목 재생성 및 검증 1 완료.'
-    result['runId']=str(uuid.uuid4()); result['createdAt']=datetime.now(timezone.utc).isoformat()
+    result['runId']=str(uuid.uuid4()); result['createdAt']=datetime.now(timezone.utc).isoformat(); result['startedAt']=started_at; result['completedAt']=datetime.now(timezone.utc).isoformat(); result['elapsedSeconds']=round(time.perf_counter()-started_clock,3)
     retry_event={'timestamp':result['createdAt'],'mode':'manual','selectedSectionId':section_id,'instruction':retry_instruction,'impact':plan,'status':result['status']}
     result['retryHistory']=list(prior_result.get('retryHistory',[]))+[retry_event]
     result['retry']={'parentRunId':prior_result['runId'],'selectedSectionId':section_id,'instruction':retry_instruction,'impact':plan}
     result['usage']={key:sum(event.get('usage',{}).get(key,0) for event in trace) for key in ['input_tokens','output_tokens','total_tokens']}
     return result
+
+
+
 

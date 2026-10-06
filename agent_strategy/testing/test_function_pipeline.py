@@ -10,6 +10,7 @@ from agent_strategy.runtime import pipeline
 from agent_strategy.app.testing import test_server as server
 from agent_strategy.runtime.research_context import retrieve
 from agent_validation_1 import validation_1 as validation
+from agent_validation_1.scoring import score_section
 
 
 def fake_response(fid,payload):
@@ -31,6 +32,13 @@ def fake_response(fid,payload):
 
 
 class PipelineTests(unittest.TestCase):
+    def test_estimated_points_are_separate_from_official_points(self):
+        result = score_section({'sectionId':'1.1.1'}, {'generatedText':'서비스 계획'}, {'status':'pass'}, 'early_startup')
+        self.assertIsNone(result['officialExpected']['officialPoints'])
+        self.assertEqual(result['estimatedPoints']['isOfficial'], False)
+        self.assertEqual(result['estimatedPoints']['score'], result['internalQualityScore'])
+        self.assertTrue(result['officialExpected']['sourceEvidence'])
+
     def test_early_startup_uses_single_budget_section(self):
         early_ids = {spec['sectionId'] for spec in runtime.CONTRACT['documents']['early_startup']}
         pre_ids = {spec['sectionId'] for spec in runtime.CONTRACT['documents']['pre_startup']}
@@ -146,9 +154,9 @@ class PipelineTests(unittest.TestCase):
         with self.mocked(fail),patch.object(py,'assemble_document') as assemble:
             result=server.run_test(self.sample('일반'),'general');assemble.assert_not_called()
         self.assertIsNone(result['document']);self.assertEqual(result['status'],'validation1_failed')
-        self.assertTrue(all(len(r['attempts'])==2 for r in result['results'] if r['enabled']))
+        self.assertTrue(all(len(r['attempts'])==1 for r in result['results'] if r['enabled']))
 
-    def test_rewrite_can_pass_second_attempt(self):
+    def test_failed_generation_is_left_for_integrated_regression(self):
         counts={}
         def retry(fid,payload):
             result=fake_response(fid,payload)
@@ -157,8 +165,8 @@ class PipelineTests(unittest.TestCase):
                 if counts[sid]==1:result.update(passed=False,issues=['표현 수정 필요'])
             return result
         with self.mocked(retry):result=server.run_test(self.sample('일반'),'general')
-        self.assertEqual(result['status'],'validation1_passed')
-        self.assertTrue(all(len(r['attempts'])==2 for r in result['results'] if r['enabled']))
+        self.assertEqual(result['status'],'validation1_failed')
+        self.assertTrue(all(len(r['attempts'])==1 for r in result['results'] if r['enabled']))
 
     def test_invalid_budget_never_calls_ai(self):
         raw=self.sample();raw['2_지금_입력받는값']['project_budget_items'][0]['total_amount']+=1
