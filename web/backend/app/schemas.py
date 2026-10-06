@@ -611,6 +611,11 @@ class ProjectStatusOut(BaseModel):
     # 막지 않는다). 매칭 자체가 없거나(screen=NO_MATCH_SCREEN) 공고 정보를 못 찾으면
     # False.
     notice_closed: bool = False
+    # [SB-272] 재작성 진행 — 기획서 4-7 · 5-8: 재작성 중에는 요청한 화면에서 '진행 중'으로 보이고 이어하기로 돌아와도 그 화면으로 온다.
+    # 재작성 중에도 stage는 재작성 전 단계 그대로이고 match_status는 in_progress이므로, 이 두 값으로 "그 화면에서 재작성 중"을
+    # 가려 버튼을 막고 '진행 중'을 보여 준다(오케스트레이터 RunView 값 그대로, 실행 건이 없으면 None · False).
+    rework_screen: int | None = Field(None, description='재작성 중인 화면(6 · 8 · 9). 재작성 중이 아니면 None')
+    collecting: bool = Field(False, description='재작성 요청을 모으는 중(잠정 2초)이면 True — 모으는 중에도 재작성 중으로 본다')
 
 
 class RetryTaskRequest(BaseModel):
@@ -654,7 +659,8 @@ class RetryTaskRequest(BaseModel):
 
 class ReworkAcceptedOut(BaseModel):
     """POST /projects/{id}/retry-task 응답 — [SB-243~244] 재작성은 이제 접수만 하고 바로 돌아온다. 결과(전후 비교)는
-    진행 상태(GET /status의 rework_screen · match_status)를 보다가 끝나면 GET /rework-result로 읽는다."""
+    진행 상태(GET /status의 rework_screen · collecting · match_status)를 보다가 끝나면 GET /rework-result로 읽는다
+    ([SB-272] 두 필드는 GET /status · GET /projects에 있다)."""
     project_id: int
     task_key: str
     bundle_id: str  # 웹 묶음 이름(문제인식 · 실현가능성 · 성장전략 · 팀 구성 · 실행 파일 제작 · 인포그래픽 제작)
@@ -767,6 +773,9 @@ class ProjectListItemOut(BaseModel):
     resume_count: int = 0
     next_retry_at: datetime.datetime | None = None
     failure_reason: str | None = None
+    # [SB-272] ProjectStatusOut과 같은 값(재작성 중인 화면 · 요청 모으는 중)
+    rework_screen: int | None = None
+    collecting: bool = False
 
 
 # ---------------------------------------------------------------------------

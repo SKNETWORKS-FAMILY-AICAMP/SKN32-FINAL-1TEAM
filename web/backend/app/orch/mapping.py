@@ -113,6 +113,8 @@ def project_status_out(project_id: int, view) -> schemas.ProjectStatusOut:
         resume_count=run.resume_count,
         next_retry_at=run.next_resume_at,
         notice_closed=notice_closed_of(run),
+        rework_screen=run.rework_screen,
+        collecting=run.collecting,
     )
 
 
@@ -166,6 +168,8 @@ def project_list_item(project, view, notice_title: str | None) -> schemas.Projec
         resume_count=run.resume_count,
         next_retry_at=run.next_resume_at,
         failure_reason=None,
+        rework_screen=run.rework_screen,
+        collecting=run.collecting,
     )
 
 
