@@ -11,6 +11,7 @@ e2e_worker_flow.py와 달리 워커를 따로 띄우지 않는다(띄워 둔 워
 차례대로(앞이 뒤의 상태를 만든다):
   1. 사전 단계 실패   T-C2 공고 서버 오류 → 공고 후보 'failed'(X-C2-FAIL), 후보 0건 → 'no_match'(E-C2-NOMATCH), 둘 다 동시 실행 제한을 막지 않음
   2. 공고 선택 실패 → 다시 시도   G-01 오류 → 'failed'(고르기 전 화면 유지) → 오류를 없애고 다시 고르면 통과
+  2b. 화면 5에서 다시 고른 공고 실패(SB-275)   G-01 오류 → 'failed' · 화면 5 유지, GET /eligibility는 notice_id를 붙이면 'failed'(없으면 이전 공고 결과)
   3. 일시 오류 → 재개 → 성공   계획서 작성(T-W1)이 시간 초과 3번(=재시도 소진) → '재개대기'(resume_count 1 · next_retry_at) → 재개 → 화면 6
   4. 재개 상한 초과 → 실패   시간 초과가 계속 → 재개 2번 뒤 '실패' → 관리자 알림 1건 · 사용자 알림 · 결과 409 · 새 프로젝트 가능
   5. 영구 오류 → 즉시 실패   잘못된 요청(400)이 재시도를 다 쓴 뒤 → 재개 없이 '실패' → 관리자 알림(원인 분류가 '일시'가 아님)
@@ -230,6 +231,43 @@ def main() -> int:
                 reset_faults()
                 chosen = select_eligible(pid, again)
                 step('2. 오류를 없애고 다시 고르면 통과', True, f'공고 {chosen}')
+
+                # 2b) 화면 5에서 다시 고른 공고의 자격 확인 실패 (SB-275) — 화면 4는 이전 공고 값 그대로다
+                other = next((c['notice_id'] for c in again['candidates']
+                              if c['notice_id'] not in set(again.get('blocked_notice_ids') or []) and c['notice_id'] != chosen), None)
+                if other is None:
+                    step('2b. 다시 고를 다른 공고', False, '후보가 하나뿐')
+                else:
+                    scenario.exhaust_in = {'G-01'}
+                    body = j(client.post(f'/projects/{pid}/generate', json={'notice_id': other}))
+                    polled_with_id = body.get('status') == 'pending'
+                    if polled_with_id:  # 프론트가 하는 대로 방금 고른 공고 ID를 붙여 폴링한다
+                        body = wait_for('자격 확인(다시 고르기)', lambda: (lambda b: b if b.get('status') != 'pending' else None)(
+                            j(client.get(f'/projects/{pid}/eligibility', params={'notice_id': other}))))
+                    st = status(pid)
+                    step('2b. 다시 고른 공고의 G-01 오류 → failed', body.get('status') == 'failed' and body.get('eligibility') is None,
+                         f"status={body.get('status')} code={body.get('code')} (pending 뒤 폴링={polled_with_id})")
+                    step('2b. 실패 뒤에도 화면 5 대기 지점', st.get('screen') == 5, f"screen={st.get('screen')} stage={st.get('stage')}")
+                    kept = j(client.get(f'/projects/{pid}/eligibility'))
+                    step('2b. notice_id 없이 읽으면 이전 공고 결과(명세 6.1)', kept.get('status') == 'ready'
+                         and (kept.get('match') or {}).get('notice_id') == chosen,
+                         f"status={kept.get('status')} 공고={(kept.get('match') or {}).get('notice_id')}(이전 {chosen})")
+                    asked = j(client.get(f'/projects/{pid}/eligibility', params={'notice_id': other}))
+                    step('2b. notice_id를 붙이면 failed(이전 공고를 ready로 주지 않음)',
+                         asked.get('status') == 'failed' and asked.get('eligibility') is None and asked.get('match') is None,
+                         f"status={asked.get('status')} code={asked.get('code')}")
+                    reset_faults()
+                    body = j(client.post(f'/projects/{pid}/generate', json={'notice_id': other}))
+                    if body.get('status') == 'pending':
+                        body = wait_for('자격 확인(오류 없앤 뒤)', lambda: (lambda b: b if b.get('status') != 'pending' else None)(
+                            j(client.get(f'/projects/{pid}/eligibility', params={'notice_id': other}))))
+                    step('2b. 오류를 없애고 다시 고르면 notice_id를 붙여도 ready',
+                         body.get('status') == 'ready' and (body.get('match') or {}).get('notice_id') == other,
+                         f"status={body.get('status')} 공고={(body.get('match') or {}).get('notice_id')}")
+                    if not (body.get('eligibility') or {}).get('passed'):  # 3)에서 계획서를 쓰려면 통과한 공고여야 한다
+                        j(client.post(f'/projects/{pid}/generate', json={'notice_id': chosen}))
+                        wait_for('통과 공고로 되돌리기', lambda: (lambda b: b if b.get('status') == 'ready' else None)(
+                            j(client.get(f'/projects/{pid}/eligibility', params={'notice_id': chosen}))))
 
                 # 3) 일시 오류 → 재개 → 성공
                 llm.plan('T-W1', ['timeout'] * TRIES_PER_EXHAUST)

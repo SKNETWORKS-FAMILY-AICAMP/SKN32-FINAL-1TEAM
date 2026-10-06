@@ -218,6 +218,60 @@ def test_eligibility_get_has_the_same_new_fields(authed_client, orch):
     assert eligibility['business_age_years'] == 1.2 and eligibility['can_start_writing'] is True
 
 
+# ── [SB-275] 화면 5 재선택 실패 — GET /eligibility?notice_id= ──────────────────────────────
+def test_get_eligibility_with_notice_id_fails_when_reselected_notice_failed(authed_client, orch):
+    """화면 5에서 다시 고른 공고(N-NEW)의 자격 확인이 실패하면 화면 4는 이전 공고(N-OLD) 그대로다 — ready로 주지 않는다."""
+    pid = _create(authed_client)
+    _ready_after_select(orch, announcement_id='N-OLD', notices=[_notice('X-C2-FAIL', '공고를 확인하지 못했어요.')])
+
+    body = authed_client.get(f'/projects/{pid}/eligibility', params={'notice_id': 'N-NEW'}).json()
+
+    assert body['status'] == 'failed'
+    assert body['code'] == 'X-C2-FAIL'
+    assert body['message'] == '공고를 확인하지 못했어요.'
+    assert body['eligibility'] is None and body['match'] is None
+
+
+def test_get_eligibility_with_notice_id_fails_with_generic_message_without_notice(authed_client, orch):
+    pid = _create(authed_client)
+    _ready_after_select(orch, announcement_id='N-OLD')
+
+    body = authed_client.get(f'/projects/{pid}/eligibility', params={'notice_id': 'N-NEW'}).json()
+
+    assert body['status'] == 'failed'
+    assert body['eligibility'] is None
+
+
+def test_get_eligibility_with_matching_notice_id_is_ready(authed_client, orch):
+    pid = _create(authed_client)
+    _ready_after_select(orch, announcement_id='N-01')
+
+    body = authed_client.get(f'/projects/{pid}/eligibility', params={'notice_id': 'N-01'}).json()
+
+    assert body['status'] == 'ready' and body['eligibility']['passed'] is True
+
+
+def test_get_eligibility_with_notice_id_stays_pending_while_worker_runs(authed_client, orch):
+    pid = _create(authed_client)
+    _ready_after_select(orch, announcement_id='N-OLD')
+    orch.responses['wait_project'] = lambda p, timeout_sec=60.0: ProjectView(
+        '1', run=make_run(step='자격확인', progress='실행'))
+
+    body = authed_client.get(f'/projects/{pid}/eligibility', params={'notice_id': 'N-NEW'}).json()
+
+    assert body['status'] == 'pending'
+
+
+def test_get_eligibility_with_notice_id_fails_when_no_gate_result_exists(authed_client, orch):
+    pid = _create(authed_client)
+    _ready_after_select(orch, notices=[_notice('X-C2-GONE', '공고가 사라졌어요')])
+    orch.responses['screen'] = OrchError('SCREEN_NOT_READY', '화면 4 — 자격 확인 전')
+
+    body = authed_client.get(f'/projects/{pid}/eligibility', params={'notice_id': 'N-NEW'}).json()
+
+    assert body['status'] == 'failed' and body['code'] == 'X-C2-GONE'
+
+
 # ── 단계 시작 ─────────────────────────────────────────────────────────────────────────
 def _status_view(orch, **run_overrides):
     orch.responses['view_project'] = lambda pid: ProjectView(str(pid), run=make_run(**run_overrides))
