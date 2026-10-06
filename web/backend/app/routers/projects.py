@@ -216,6 +216,17 @@ ORCH_WAIT_TIMEOUT_SEC = 25.0
 _EXECUTING = ('실행', '재개대기')
 
 
+def _release_db(db: Session | None) -> None:
+    """[SB-266] 워커를 기다리기 전에 이 요청의 DB 연결을 풀에 돌려준다.
+
+    요청의 DB 세션은 쿼리를 한 번 하면 요청이 끝날 때까지 연결을 붙잡는다. 워커를 기다리는 조회는 최대 ORCH_WAIT_TIMEOUT_SEC(운영 25초)
+    걸리는데, 그동안 연결을 쥐고 있으면 웹 DB 연결 풀(기본 15개)이 대기 요청으로 차서 DB를 쓰는 다른 요청이 모두 막히고 그 이상이면
+    풀 시간 초과(500)가 난다(scripts/load_check.py로 측정). 대기 앞에서는 읽기만 했으므로 rollback으로 연결만 돌려주고, 세션은 그대로 써서
+    대기 뒤에 필요하면 새 연결로 다시 읽는다(객체는 다음 접근 때 새로 읽힌다)."""
+    if db is not None:
+        db.rollback()
+
+
 def _is_withdrawing(user: User) -> bool:
     """[SB-298] 지금(DB 최신 값) 탈퇴 중인 계정인지 — 탈퇴가 다른 요청에서 막 시작됐을 수 있어 매번 다시 읽는다."""
     session = object_session(user)
@@ -229,6 +240,7 @@ WITHDRAWING_MESSAGE = '계정 탈퇴를 처리하는 중이라 새로 시작할 
 
 def _candidates_response(gateway: OrchGateway, project: Project) -> MatchCandidatesOut:
     project_id = project.project_id
+    _release_db(object_session(project))
     view = gateway.wait_project(project_id, timeout_sec=ORCH_WAIT_TIMEOUT_SEC)
     start = view.start
     if view.run is None and start is not None and start.status == '실패' and start.code in mapping.START_RETRYABLE:
@@ -241,6 +253,7 @@ def _candidates_response(gateway: OrchGateway, project: Project) -> MatchCandida
         if not check.ok:
             return MatchCandidatesOut(
                 candidates=[], rematch_used=False, status='failed', code=check.code, message=check.message)
+        _release_db(object_session(project))
         view = gateway.wait_project(project_id, timeout_sec=ORCH_WAIT_TIMEOUT_SEC)
     if view.run is None:
         return mapping.candidates_unavailable(view.start)
@@ -289,7 +302,7 @@ _BEFORE_WRITING_STEPS = {
 
 
 def _eligibility_response(
-    gateway: OrchGateway, project_id: int, notice_id: str | None, notices_before: int | None,
+    db: Session, gateway: OrchGateway, project_id: int, notice_id: str | None, notices_before: int | None,
 ) -> DemoGenerateResponse:
     """자격 확인(G-01) 결과를 기다려 화면 4 모양으로 답한다.
 
@@ -297,6 +310,7 @@ def _eligibility_response(
     notices_before: 명령 전 안내 개수. 그 뒤에 쌓인 안내(E-G1-* · X-C2-*)만 이번 결과의 안내로 쓴다(None이면 화면 4 안내만).
         GET에서 notice_id만 받은 경우는 명령 전 개수를 모르므로 실패 안내를 전체 안내에서 찾는다(가장 최근 E-G1-* 하나).
     """
+    _release_db(db)
     view = gateway.wait_project(project_id, timeout_sec=ORCH_WAIT_TIMEOUT_SEC)
     run = view.run
     if run is None:
@@ -345,7 +359,7 @@ def generate_pipeline_result(
     view = gateway.view_project(project_id)
     notices_before = len(view.run.notices) if view.run is not None else 0
     gateway.select_announcement_for_project(project_id, body.notice_id)
-    return _eligibility_response(gateway, project_id, body.notice_id, notices_before)
+    return _eligibility_response(db, gateway, project_id, body.notice_id, notices_before)
 
 
 @router.get('/{project_id}/eligibility', response_model=DemoGenerateResponse)
@@ -362,7 +376,7 @@ def get_eligibility(
     pending 뒤에 폴링할 때는 notice_id를 붙여야 그 이전 결과를 ready로 받지 않고 status='failed'로 받는다.
     notice_id 없이 부르면 지금 화면 4의 공고 결과를 그대로 준다(화면을 다시 열 때)."""
     _get_owned_project(db, project_id, current_user)
-    return _eligibility_response(gateway, project_id, notice_id or None, None)
+    return _eligibility_response(db, gateway, project_id, notice_id or None, None)
 
 
 def _start_stage(project_id: int, gateway: OrchGateway, command) -> ProjectStatusOut:
