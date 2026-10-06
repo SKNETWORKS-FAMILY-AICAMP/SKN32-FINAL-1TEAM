@@ -153,7 +153,9 @@ def list_projects(
     announcement_ids = [v.run.announcement_id for v in views.values() if v.run and v.run.announcement_id]
     titles = {}
     if announcement_ids:
-        titles = {n.notice_id: n.title for n in db.query(Notice).filter(Notice.notice_id.in_(announcement_ids)).all()}
+        # 제목만 필요하다 — 엔티티 전체를 읽으면 임베딩 벡터 · 원본 JSON까지 목록 조회마다 끌어온다
+        rows = db.query(Notice.notice_id, Notice.title).filter(Notice.notice_id.in_(announcement_ids)).all()
+        titles = {notice_id: title for notice_id, title in rows}
     items = []
     for project in visible:
         view = views.get(str(project.project_id))

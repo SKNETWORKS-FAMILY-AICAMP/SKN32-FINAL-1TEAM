@@ -121,6 +121,34 @@ def main() -> int:
                 time.sleep(interval)
             raise Abort(f'{label}: {args.wait_sec:.0f}초 안에 끝나지 않음(마지막 {last}) — 워커가 떠 있는지 확인하세요')
 
+        def check(name: str, fn) -> None:
+            """예상 못 한 예외(서버 오류 등)도 FAIL 한 줄로 남기고 다음 단계로 넘어간다."""
+            try:
+                ok, detail = fn()
+                step(name, ok, detail)
+            except Exception as exc:  # noqa: BLE001 - 점검 도구라 어떤 오류든 기록하고 계속한다
+                step(name, False, f'{type(exc).__name__}: {str(exc)[:300]}')
+
+        def check_listing(pid: int):
+            res = client.get('/projects')
+            row = next((p for p in j(res) if p['project_id'] == pid), {}) if res.status_code == 200 else {}
+            return (res.status_code == 200 and row.get('match_status') == 'completed' and row.get('display_status') == '완료',
+                    f"HTTP {res.status_code} match_status={row.get('match_status')} display={row.get('display_status')} "
+                    f"공고={row.get('notice_id')} 제목={row.get('notice_title')}")
+
+        def check_notifications(pid: int):
+            """이 프로젝트의 알림만 센다(목록 API는 사용자의 모든 프로젝트 알림을 주므로 project_id로 거른다).
+            워커 규칙: 문서평가(6) · 산출물확인(8) · 표현검수(10) 각 1건 + 재작성이 끝날 때마다 1건."""
+            res = client.get('/projects/notifications')
+            mine = [n for n in (j(res) if res.status_code == 200 else []) if n['project_id'] == pid]
+            expected = 3 + (1 if args.rework else 0)
+            return (res.status_code == 200 and len(mine) == expected,
+                    f"HTTP {res.status_code} 이 프로젝트 {len(mine)}건(기대 {expected}): {sorted(n['kind'] for n in mine)}")
+
+        def check_cleanup(pid: int):
+            res = client.delete(f'/projects/{pid}/permanent')
+            return res.status_code == 204, f'{res.status_code} {j(res) if res.status_code != 204 else ""}'
+
         try:
             # 1) 로그인 · 동의 · 프로필
             res = client.post('/auth/google', json={'id_token': 'x', 'aiTrainingAgreed': True, 'notifyAgreed': True})
@@ -230,18 +258,13 @@ def main() -> int:
             step('결과: 검수 · 최종', True,
                  f"형식 지적 {len(plan.get('format_findings', []))}건, 검수 시도 {len(plan.get('proofread_logs', []))}건")
 
-            # 10) 목록 · 알림
-            listing = j(client.get('/projects'))
-            row = next((p for p in listing if p['project_id'] == pid), {})
-            step('목록 표시', row.get('match_status') == 'completed' and row.get('display_status') == '완료',
-                 f"match_status={row.get('match_status')} display={row.get('display_status')} 공고={row.get('notice_id')}")
-            notes = j(client.get('/projects/notifications'))
-            step('알림', len(notes) >= 1, f"{len(notes)}건: {[n['kind'] for n in notes]}")
+            # 10) 목록 · 알림 — 여기서 예외가 나도 뒤 단계(정리)는 계속한다
+            check('목록 표시', lambda: check_listing(pid))
+            check('알림', lambda: check_notifications(pid))
 
             # 11) (선택) 정리
             if args.cleanup:
-                res = client.delete(f'/projects/{pid}/permanent')
-                step('영구 삭제', res.status_code == 204, f'{res.status_code} {j(res) if res.status_code != 204 else ""}')
+                check('영구 삭제', lambda: check_cleanup(pid))
         except Abort as exc:
             step('중단', False, str(exc))
 

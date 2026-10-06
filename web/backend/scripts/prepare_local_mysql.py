@@ -6,7 +6,8 @@
 ★ 그 DB의 테이블을 모두 지우고 새로 만든다. 그래서 로컬 호스트(127.0.0.1 · localhost) + DB 이름에 'e2e' 또는 'test'가 있는
   경우만 받는다 — 팀 공유 DB 주소를 넣어도 거부한다.
 - 로컬 MySQL은 agent-orchestration 폴더에서 `docker compose -f docker/mysql-test.yml up -d --wait`로 띄운다(데이터는 메모리에만 있음).
-- 공고 수집 파이프라인이 소유한 notices 표는 이 저장소에 없어서 notice_id만 있는 최소 표를 먼저 만든다(웹 스키마가 참조).
+- 공고 표(notices 등)는 공고 수집 파이프라인 소유라, 저장소의 data-collection/db 스키마(mysql_schema.sql + 마이그레이션 002~006)를
+  그대로 적용한다 — 웹 코드가 읽는 컬럼이 실제 DB와 같아야 목록 · 관리자 화면이 로컬에서도 같은 SQL로 돈다.
 """
 import argparse
 import pathlib
@@ -18,16 +19,17 @@ from sqlalchemy import make_url
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 WEB_SCHEMA = REPO_ROOT / 'web' / 'backend' / 'app_schema.sql'
 ORCH_SCHEMA = REPO_ROOT / 'agent-orchestration' / 'sql' / 'orchestrator_schema.sql'
+NOTICE_SCHEMA_DIR = REPO_ROOT / 'data-collection' / 'db'  # 공고 수집 파이프라인 스키마(웹 스키마가 notices를 참조)
 DEFAULT_URL = 'mysql+pymysql://root:sbrain-test@127.0.0.1:3307/sbrain_e2e?charset=utf8mb4'
 LOCAL_HOSTS = {'127.0.0.1', 'localhost', '::1'}
 
-TEST_NOTICES = """
-CREATE TABLE IF NOT EXISTS notices (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    notice_id VARCHAR(320) NOT NULL,
-    UNIQUE KEY uq_notices_notice_id (notice_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin
-"""
+def notice_schema_files() -> list[pathlib.Path]:
+    """mysql_schema.sql 먼저, 그다음 마이그레이션을 번호 순서로."""
+    files = [NOTICE_SCHEMA_DIR / 'mysql_schema.sql', *sorted(NOTICE_SCHEMA_DIR.glob('mysql_migration_*.sql'))]
+    missing = [f for f in files if not f.is_file()]
+    if missing:
+        raise SystemExit(f'공고 스키마 파일을 찾지 못함: {missing}')
+    return files
 
 
 def split_sql(script: str) -> list[str]:
@@ -94,10 +96,9 @@ def main() -> int:
         for table in tables:
             cur.execute(f'DROP TABLE IF EXISTS `{table}`')
         cur.execute('SET FOREIGN_KEY_CHECKS=1')
-        for stmt in split_sql(TEST_NOTICES) + split_sql(WEB_SCHEMA.read_text(encoding='utf-8')):
-            cur.execute(stmt)  # 인자 없이 실행 — 문장 속 %를 형식 문자로 보지 않는다
-        for stmt in split_sql(ORCH_SCHEMA.read_text(encoding='utf-8')):
-            cur.execute(stmt)
+        for path in [*notice_schema_files(), WEB_SCHEMA, ORCH_SCHEMA]:
+            for stmt in split_sql(path.read_text(encoding='utf-8')):
+                cur.execute(stmt)  # 인자 없이 실행 — 문장 속 %를 형식 문자로 보지 않는다
         cur.execute('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = %s', (database,))
         count = cur.fetchone()[0]
     finally:
