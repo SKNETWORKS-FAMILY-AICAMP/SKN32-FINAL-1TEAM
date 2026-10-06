@@ -6,7 +6,10 @@ import {GeneralInfoBlock,PlanExtrasBlock} from './PlanForm.jsx';
 import {PrototypeFrame,ResultPreview,useArtifactFile,ArtifactLoadError} from './ArtifactResult.jsx';
 import {detectItemCategory,diffSentences,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf,reworkDiffFromChanged} from './utils.js';
 import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,RERUN_CAP,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,DOC_REWORK_BUNDLES} from './data.js';
-import {retryTask} from '../../api.js';
+import {retryTask,startReview,getProjectStatus} from '../../api.js';
+
+// 검수 진행 중 진행 상태를 다시 읽는 간격
+const REVIEW_POLL_MS = 2000;
 
 // 계획서 라벨(WRITING_SUBTASKS)은 전부 '작성' Agent 하나(writing)로, 산출물 라벨은
 // ARTIFACT_SUBTASKS_BY_CATEGORY의 두 항목으로 각각 매핑한다 — app/schemas.py RetryTaskRequest 참고.
@@ -382,6 +385,13 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
   // 비교해야 한다(사용자 요청) — 같은 모달을 두 모드로 쓴다.
   const [viewerCompare, setViewerCompare] = useState(false);
   const [confirmProceed, setConfirmProceed] = useState(false);
+  // 서버가 돌려준 미달 확인 내용(409 detail.items — 현재 점수 · 기준 · 남는 미달 항목 · 되돌릴 수 없음). 없으면 화면 값으로 보인다.
+  const [serverConfirm, setServerConfirm] = useState(null);
+  // 검수 진행 — null | {percent} (진행 중) / 오류 문구
+  const [reviewing, setReviewing] = useState(null);
+  const [reviewError, setReviewError] = useState('');
+  const alive = useRef(true);
+  useEffect(() => () => { alive.current = false; }, []);
   const [reworkDiff, setReworkDiff] = useState(null); // null 이전엔 한 번도 재작성 안 함
   const [diffExpanded, setDiffExpanded] = useState(false);
   const [reworkFromTotal, setReworkFromTotal] = useState(null); // 변경 내역 헤더의 "X → Y" 중 X
@@ -487,11 +497,41 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
     );
   };
 
-  // 기준 이상이면 곧장 검수로, 미달이면 되돌릴 수 없음을 확인받은 뒤에만 검수로 넘어간다(E4).
-  const handleProceedClick = () => {
-    if (passed) { onProceed(); return; }
-    setConfirmProceed(true);
+  // 검수 진행(화면 9 → 10). 미달인지는 서버(판정 G-02b)가 정한다 — 미달이면 409로 확인 내용을 주므로
+  // 되돌릴 수 없음을 확인받은 뒤 confirmed=true로 다시 부른다(E4, 명세 6.2). 검수는 워커가 돌려 시간이 걸리므로
+  // 진행 상태를 주기적으로 읽다가 stage='done'(결과물 · 완료)이 되면 결과 화면으로 간다.
+  const proceedToReview = async (confirmed) => {
+    if (!projectId) { onProceed(); return; }
+    setReviewError(''); setReviewing({ percent: null });
+    try {
+      let status = await startReview(projectId, confirmed);
+      setConfirmProceed(false);
+      while (status?.stage !== 'done') {
+        if (status?.match_status === 'failed') throw new Error('일시적인 문제로 작업을 완료하지 못했습니다. 새 작업으로 다시 시작해주세요.');
+        if (!alive.current) return;
+        setReviewing({ percent: status?.progress_percent ?? null });
+        await new Promise((resolve) => setTimeout(resolve, REVIEW_POLL_MS));
+        if (!alive.current) return;
+        status = await getProjectStatus(projectId);
+      }
+      if (!alive.current) return;
+      await onProceed();
+    } catch (err) {
+      if (!alive.current) return;
+      setReviewing(null);
+      if (err.status === 409 && err.detail?.confirmation_required) {
+        setServerConfirm(err.detail.items || null);
+        setConfirmProceed(true);
+        return;
+      }
+      console.error('검수를 진행하지 못했어요', err);
+      setReviewError(err.message || '검수를 진행하지 못했어요. 다시 시도해 주세요.');
+    }
   };
+  const handleProceedClick = () => proceedToReview(false);
+  const confirmScore = serverConfirm?.['현재 점수'] ?? finalTotal;
+  const confirmThreshold = serverConfirm?.['기준'] ?? threshold;
+  const confirmShortfalls = serverConfirm?.['남는 미달 항목'] ?? remainingShortfalls;
 
   // 재작성 대조 모달의 책장 페이지 — 순서는 사업계획서 → 인포그래픽 → 실행 파일 고정,
   // 실제로 재작성한 항목만 페이지로 만든다(reworkedParts, 사용자 지적: 안 고른 항목까지
@@ -646,8 +686,8 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
         <div className="rounded-2xl border border-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_6%,white)] p-5 mb-6">
           <p className="text-[13px] font-bold text-[var(--danger)] mb-3">기준 미달 상태로 진행합니다 — 이 단계부터는 되돌릴 수 없습니다</p>
           <ul className="flex flex-col gap-1.5 mb-4">
-            <li className="text-[12.5px] text-[var(--fg)] leading-relaxed">· 현재 점수 — 총점 {finalTotal}점 · 기준 {FINAL_THRESHOLD}점 미달</li>
-            <li className="text-[12.5px] text-[var(--fg)] leading-relaxed">· 남는 미달 항목 — {remainingShortfalls.join(', ')}</li>
+            <li className="text-[12.5px] text-[var(--fg)] leading-relaxed">· 현재 점수 — 총점 {confirmScore}점 · 기준 {confirmThreshold}점 미달</li>
+            <li className="text-[12.5px] text-[var(--fg)] leading-relaxed">· 남는 미달 항목 — {confirmShortfalls.length > 0 ? confirmShortfalls.join(', ') : '없음'}</li>
             <li className="text-[12.5px] text-[var(--fg)] leading-relaxed">· 진행 후에는 다시 만들 수 없습니다. 검수 단계로 넘어가면 이 점수가 그대로 확정됩니다.</li>
           </ul>
           <div className="flex items-center gap-4">
@@ -655,18 +695,24 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
               className="text-[13px] font-semibold text-[var(--muted-fg)] hover:text-[var(--fg)] transition-[color,scale] duration-150 ease-out active:scale-[0.96]">
               취소
             </button>
-            <button onClick={onProceed}
-              className="text-[13px] font-semibold text-[var(--danger)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">
+            <button onClick={() => proceedToReview(true)} disabled={!!reviewing}
+              className="text-[13px] font-semibold text-[var(--danger)] hover:underline disabled:opacity-50 transition-[scale] duration-150 ease-out active:scale-[0.96]">
               그래도 진행하기
             </button>
           </div>
         </div>
       )}
 
+      {reviewing && (
+        <p role="status" className="mb-4 text-[13.5px] text-[var(--muted-fg)]">
+          표현 검수를 진행하고 있어요{reviewing.percent != null ? ` (${reviewing.percent}%)` : ''} — 끝나면 최종 결과물로 넘어가요.
+        </p>
+      )}
+      {reviewError && <p role="alert" className="mb-4 text-[13.5px] text-[var(--danger)]">{reviewError}</p>}
       {passed && (
-        <button onClick={handleProceedClick}
-          className="w-full rounded-xl bg-[var(--primary)] text-white py-3.5 text-[15px] font-semibold hover:bg-[var(--primary-dim)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-          검수하기
+        <button onClick={handleProceedClick} disabled={!!reviewing}
+          className="w-full rounded-xl bg-[var(--primary)] text-white py-3.5 text-[15px] font-semibold hover:bg-[var(--primary-dim)] disabled:opacity-60 transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
+          {reviewing ? '검수 중…' : '검수하기'}
         </button>
       )}
 

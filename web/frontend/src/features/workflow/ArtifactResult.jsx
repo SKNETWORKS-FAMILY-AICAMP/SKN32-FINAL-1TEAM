@@ -5,7 +5,7 @@ import {Icon} from '../../components/Icons.jsx';
 import {SiteMock,RerunLeftBadge} from './shared.jsx';
 import {detectItemCategory,buildCodeCheckItems,isRerunCapped,rerunLeftOf} from './utils.js';
 import {ARTIFACT_CATEGORY_COPY,ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,EXECUTABLE_COPY,PROTOTYPE_PAGE,RERUN_CAP} from './data.js';
-import {retryTask,fetchUploadBlob} from '../../api.js';
+import {retryTask,fetchUploadBlob,startFinalReview} from '../../api.js';
 
 // ARTIFACT_SUBTASKS_BY_CATEGORY(data.js)의 라벨 -> app/schemas.py RetryTaskRequest.task_key.
 const TASK_KEY_BY_LABEL = { '실행 파일 제작': 'implement_prototype', '인포그래픽 제작': 'implement_infographic' };
@@ -112,6 +112,17 @@ export function ResultPreview({kind,onClose,siteSrc=null,infoSrc=null}){
 
 export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcome = 'fail', projectId, reworkCounts = {}, onRework, scores = null, reworkBudget = null, onScoresRefresh, artifact = null }){
   const [preview,setPreview]=useState(null);
+  const [finalizing,setFinalizing]=useState(false);
+  const [finalizeError,setFinalizeError]=useState('');
+  // '종합 평가 확인하기' — 서버가 산출물 확인을 끝내고 종합 평가 대기로 넘긴 뒤 화면 9로 간다(명세 6.2 화면 8).
+  // 예전엔 서버 호출 없이 화면만 넘겼다. 이미 넘어간 뒤 다시 눌러도 서버는 지금 상태만 돌려준다.
+  const finalize=async()=>{
+    if(!projectId){onFinalize();return}
+    setFinalizing(true);setFinalizeError('');
+    try{await startFinalReview(projectId);onFinalize();}
+    catch(err){console.error('종합 평가로 넘어가지 못했어요',err);setFinalizeError(err.message||'종합 평가로 넘어가지 못했어요. 다시 시도해 주세요.');}
+    finally{setFinalizing(false)}
+  };
   // 서버가 이미 정한 카테고리(artifact.category)가 있으면 그걸 쓴다 — 없으면(아직 생성
   // 전이라 artifact 자체가 없는 극히 드문 진입 경로에서만) itemInfo 텍스트로 추측한다.
   // 예전엔 항상 추측만 써서, 사용자가 입력한 문구가 onepage 키워드(매장/가게/카페 등)에
@@ -324,11 +335,12 @@ export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcom
           이 화면엔 합격선이 없으므로(기획서 4-5) 진행을 막는 컨펌 게이트도 두지 않는다. */}
       <div className="mt-10 pt-8 border-t border-[var(--border)] flex items-center justify-between gap-4 flex-wrap">
         <p className="text-[13.5px] text-[var(--muted-fg)]">사업계획서와 이 산출물을 대조한 최종 결과는 종합 평가에서 확인합니다</p>
-        <button onClick={onFinalize}
-          className="rounded-xl bg-[var(--primary)] text-white px-6 py-3 text-[14.5px] font-semibold hover:bg-[var(--primary-dim)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.97] flex-shrink-0">
-          종합 평가 확인하기
+        <button onClick={finalize} disabled={finalizing}
+          className="rounded-xl bg-[var(--primary)] text-white px-6 py-3 text-[14.5px] font-semibold hover:bg-[var(--primary-dim)] disabled:opacity-60 transition-[background-color,scale] duration-150 ease-out active:scale-[0.97] flex-shrink-0">
+          {finalizing?'넘어가는 중…':'종합 평가 확인하기'}
         </button>
       </div>
+      {finalizeError&&<p role="alert" className="mt-3 text-right text-[13px] text-[var(--danger)]">{finalizeError}</p>}
       {preview&&<ResultPreview kind={preview} onClose={()=>setPreview(null)} siteSrc={siteUrl} infoSrc={infoUrl}/>}
     </section>
   );

@@ -9,7 +9,6 @@ import { RERUN_CAP } from '../features/workflow/data.js';
 export const useWorkflowStore = create((set) => ({
   itemInfo: null,
   announcement: null,
-  checkedFailedTitles: [],
   returnToDashboard: false,
   scoreOutcome: 'fail',
   docOutcome: 'fail',
@@ -30,10 +29,6 @@ export const useWorkflowStore = create((set) => ({
 
   setItemInfo: (itemInfo) => set({ itemInfo }),
   setAnnouncement: (announcement) => set({ announcement }),
-  setCheckedFailedTitles: (updater) =>
-    set((s) => ({
-      checkedFailedTitles: typeof updater === 'function' ? updater(s.checkedFailedTitles) : updater,
-    })),
   setReturnToDashboard: (returnToDashboard) => set({ returnToDashboard }),
   setDocOutcome: (docOutcome) => set({ docOutcome }),
   setArtifactOutcome: (artifactOutcome) => set({ artifactOutcome }),
@@ -55,5 +50,5 @@ export const useWorkflowStore = create((set) => ({
 
   resetScoreOutcome: (v) => set({ scoreOutcome: v, docOutcome: v, artifactOutcome: v }),
   resetProject: () =>
-    set({ projectId: null, itemInfo: null, announcement: null, checkedFailedTitles: [], pipelineResult: null, matchCandidates: null, returnToDashboard: false, verdictPending: false, reworkCounts: {} }),
+    set({ projectId: null, itemInfo: null, announcement: null, pipelineResult: null, matchCandidates: null, returnToDashboard: false, verdictPending: false, reworkCounts: {} }),
 }));

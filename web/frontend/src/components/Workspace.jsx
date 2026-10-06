@@ -16,18 +16,9 @@ export function WorkspaceShell({view,user,onHome,onDashboard,onMyPage,onNewProje
 // 받아온다. "신규 사용자 보기" 체크박스(사람이 데모용으로 직접 토글하던 것)는 없앴다 —
 // 로딩이 끝났는데 목록이 비어있으면 그게 곧 신규 사용자라는 뜻이라, isNewUser는 실제
 // 데이터에서 그대로 계산한다.
-// [2026-09-19] 더미 파이프라인은 공고를 고르는 순간 계획서·프로토타입·최종판정을 한 번에
-// 다 만들어 stage가 곧장 'done'이 된다(app/routers/projects.py generate_pipeline_result) —
-// 그래서 stage만 보면 사용자가 프로토타입 생성도, 검증도 안 열어봤는데 "준비 완료"로
-// 뜨는 버그가 있었다(사용자 지적: 공고매칭에서 나가면 "진행 중"으로 뜨는데 사업계획서
-// 이후 화면에서 나가면 그걸 인식 못 하고 무조건 완료로 뜸). App.jsx가 화면 전환마다
-// project별로 남겨두는 마지막 화면(localStorage `sbrain-last-view:{id}`, RESUMABLE_VIEWS)을
-// 같이 봐서 실제로 최종 결과물(review) 화면까지 가본 적 있는 프로젝트만 완료로 친다.
-const lastViewKey=(id)=>`sbrain-last-view:${id}`;
-const isActuallyDone=(projectId,stage)=>{
- if(stage!=='done')return false;
- try{return localStorage.getItem(lastViewKey(projectId))==='review'}catch(e){return false}
-};
+// 완료(준비 완료)는 서버 stage='done'(오케스트레이터 결과물 · 완료 — 표현 검수까지 끝남)으로 본다. 예전 더미 파이프라인은
+// 공고를 고르는 순간 stage가 곧장 'done'이 돼서 브라우저에 남긴 마지막 화면(localStorage)으로 다시 걸렀는데,
+// 오케스트레이터는 단계를 실제로 밟아 그 우회가 필요 없다.
 const GENERATING_LABEL={plan_writing:'계획서 작성 중',prototype_building:'프로토타입 제작 중'};
 export function Dashboard({onNewProject,onOpenProject}){
  const [query,setQuery]=useState('');const [filter,setFilter]=useState('전체');const [guard,setGuard]=useState(false);
@@ -51,7 +42,7 @@ export function Dashboard({onNewProject,onOpenProject}){
     name:r.description,
     announcementTitle:r.notice_title||'아직 매칭된 공고가 없어요',
     matched:!!r.notice_title,
-    progress:isActuallyDone(r.project_id,r.stage)?100:0,
+    progress:r.stage==='done'?100:0,
     failed:r.match_status==='failed',failedStage:r.stage,
     generating:r.match_status!=='failed'&&GENERATING_LABEL[r.stage]?`${GENERATING_LABEL[r.stage]} ${r.progress_percent??0}%`:null,
     updatedAt:formatKstDate(r.created_at),
@@ -85,7 +76,6 @@ export function Dashboard({onNewProject,onOpenProject}){
   try{
    await (permanent?deleteProjectPermanently(id):deleteProject(id));
    setProjects(list=>list.filter(p=>p.id!==id));
-   try{localStorage.removeItem(lastViewKey(id))}catch(e){}
   }catch(err){
    console.error('프로젝트를 지우지 못했어요',err);
    // 서버가 409로 거절할 때는 detail에 사유가 온다(예: 생성 중엔 완전 삭제 불가).

@@ -356,8 +356,21 @@ export function RerunLeftBadge({ left }){
     : null;
 }
 
-export function formatBonus(value){return `+${Number(value)}`;}
+// 가산점 — null(계산 못 함, "가산점 정보 없음")과 0(해당 가점 없음)은 뜻이 다르다(공고연동_변경사항_웹팀전달.md 1.4).
+// 공고팀이 가산점 기능을 만들기 전에는 모든 공고가 null이다.
+const hasBonus = (value) => value != null && Number.isFinite(Number(value));
+export function formatBonus(value){return hasBonus(value) ? `+${Number(value)}` : '-';}
+// 공고 카드 오른쪽 작은 표시
+export function BonusBadge({value}){
+  if (!hasBonus(value)) return <span className="match-fit is-empty"><b>-</b><span>가산점 정보 없음</span></span>;
+  if (Number(value) === 0) return <span className="match-fit is-zero"><b>0<small>점</small></b><span>해당 가점 없음</span></span>;
+  return <span className="match-fit"><b>{formatBonus(value)}<small>점</small></b><span>가산점</span></span>;
+}
+// 상세 패널의 큰 표시
 export function BonusScore({value}){
+  if (!hasBonus(value)) {
+    return <div className="bonus-score is-empty" role="img" aria-label="가산점 정보 없음"><b>-</b></div>;
+  }
   return (
     <div className="bonus-score" role="img" aria-label={`가산점 ${Number(value)}점`}>
       <b>{formatBonus(value)}</b><span>점</span>
@@ -365,12 +378,6 @@ export function BonusScore({value}){
   );
 }
 
-// [2026-09-15, 프론트 통합 임시 구현] 예전엔 클라이언트에서 evaluateEligibility(공고 조건 3개를
-// 입력값과 비교하는 순수 함수)를 직접 돌렸는데, 이제 MatchResults가 이미 호출해둔
-// POST /generate 응답의 eligibility(EligibilityCheckOut: passed/undecidable/failed_conditions/
-// missing_inputs — app/schemas.py)를 그대로 받아 보여준다. 더미 백엔드(seed_dummy_pipeline.py)는
-// 지금 항상 passed=True를 돌려주므로 실패/미결정 분기는 실제 오케스트레이터가 붙은 뒤에야
-// 흔히 보이게 될 것이다.
 export function RepeatableRow({ values, fields, onChange, onRemove, removable }){
   return (
     <div className="repeatable-row" style={{'--fields':fields.length}}>

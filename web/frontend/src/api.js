@@ -100,8 +100,20 @@ export const getMatchCandidates=(projectId)=>api.get(`/projects/${projectId}/mat
 // 공고 다시 찾기 — 프로젝트당 1회(서버가 409로 막음). 이전 후보는 유지하고 10건을 더한다.
 export const rematchCandidates=(projectId)=>api.post(`/projects/${projectId}/match-candidates/rematch`);
 
-// 선택한 공고로 매칭~최종판정까지 한 번에 생성(더미). noticeId 생략하면 서버가 아무 공고나 고른다.
+// 공고 선택 → 자격 확인(화면 3 → 4). 응답 status: ready(eligibility · match) · pending(GET /eligibility로 다시) ·
+// failed(공고 없음 · 공고 서버 오류 — message 안내). 계획서 · 점수(plan · verdict)는 아직 비어 있다. noticeId는 필수다(없으면 422).
 export const generatePipeline=(projectId,noticeId)=>api.post(`/projects/${projectId}/generate`,{notice_id:noticeId||null});
+
+// 화면 8 → 9 ('종합 평가 확인하기'). 실행할 단계 없이 바로 stage='final_review_pending'이 된다. 응답은 ProjectStatusOut.
+// [SB-243 — 엔드포인트 이름은 백엔드가 "임시"로 둠, 확정 요청 중(백엔드_요청사항_프론트_2026-10-06.md 3번)]
+export const startFinalReview=(projectId)=>api.post(`/projects/${projectId}/final-review/start`);
+// 화면 9 → 10 (검수 진행). stage='reviewing'으로 진행되고 끝나면 'done'. 기준 점수에 못 미치면 409 +
+// detail {confirmation_required, reason, items}로 확인을 받는다 — 사용자가 확인하면 confirmed=true로 다시 부른다.
+export const startReview=(projectId,confirmed=false)=>api.post(`/projects/${projectId}/review/start`,{confirmed});
+
+// 자격 확인 결과(화면 4)를 다시 읽는다 — POST /generate가 status='pending'으로 답했을 때, 이어하기로 화면 4를 열 때.
+// 응답 모양은 POST /generate와 같다(DemoGenerateResponse — status · eligibility · match · notices).
+export const getEligibility=(projectId)=>api.get(`/projects/${projectId}/eligibility`);
 
 // 이미 generatePipeline으로 만들어둔 결과를 재생성 없이 다시 불러온다("이어서 보기").
 export const getProjectResult=(projectId)=>api.get(`/projects/${projectId}/result`);

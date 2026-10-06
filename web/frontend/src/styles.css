@@ -141,3 +141,13 @@
 .generation-failed{min-height:calc(100vh - 260px);display:flex;flex-direction:column;justify-content:center;padding:40px 0!important}
 /* 안내 문장 끝 "주세요"만 다음 줄로 떨어지던 것(사용자 지적) — 어절 단위로 끊고 줄 길이를 고르게. */
 .generation-failed .preparation-heading>span:not(.generation-failed-symbol){word-break:keep-all;text-wrap:balance;max-width:440px;margin-left:auto;margin-right:auto}
+
+/* 공고 후보 — 오케스트레이터 카드 필드(공고연동_변경사항_웹팀전달.md 1 · 2절) */
+.match-changed{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;background:#fff4e1;color:#af7d2e;font-size:11px;font-weight:600;vertical-align:1px}
+.match-fit.is-empty>b,.match-fit.is-zero>b{color:#b0b8c1}
+.match-fit.is-empty>b{font-size:22px}
+.bonus-score.is-empty{background:#f2f4f6;color:#b0b8c1}
+.match-bonus-items{margin:12px 0 4px;padding:12px 14px;border-radius:12px;background:#f9fafb;display:flex;flex-direction:column;gap:6px}
+.match-bonus-items>li{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;color:#4e5968}
+.match-bonus-items>li>b{color:#3182f6;font-weight:600;white-space:nowrap}
+@media(max-width:760px){.match-changed{display:block;margin:4px 0 0;width:max-content}}
