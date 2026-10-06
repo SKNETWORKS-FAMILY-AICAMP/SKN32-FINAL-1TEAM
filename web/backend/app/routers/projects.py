@@ -64,7 +64,6 @@ from app.models import (
     ProjectPartner,
     ProjectPlanInput,
     ProjectScheduleItem,
-    ProofreadLog,
     TeamMember,
     User,
     Verdict,
@@ -72,6 +71,7 @@ from app.models import (
     VerificationScoreHistory,
 )
 from app.orch import OrchError, OrchGateway, account_id_of, mapping, require_gateway
+from app.proofread_retention import clear_project_logs
 from app.routers.profile import compute_has_profile
 from app.schemas import (
     DemoGenerateRequest,
@@ -1409,6 +1409,8 @@ def _delete_project_cascade(db: Session, project: Project) -> None:
     match 필드들(자식 테이블들)도 project_id로 바로 지운다."""
     project_id = project.project_id
     plan_ids = [p.plan_id for p in db.query(BusinessPlan.plan_id).filter(BusinessPlan.project_id == project_id)]
+    # [SB-246] 검수 회수 문단: 학습 반영 전 행은 지우고 trained 행은 연결만 끊는다(계획서 · 프로젝트 행을 지우기 전에)
+    clear_project_logs(db, [project_id])
 
     if plan_ids:
         artifacts = db.query(Artifact).filter(Artifact.plan_id.in_(plan_ids)).all()
@@ -1419,7 +1421,6 @@ def _delete_project_cascade(db: Session, project: Project) -> None:
             db.query(ArtifactScoreReason).filter(ArtifactScoreReason.artifact_id.in_(artifact_ids)).delete(synchronize_session=False)
         db.query(Verdict).filter(Verdict.plan_id.in_(plan_ids)).delete(synchronize_session=False)
         db.query(Artifact).filter(Artifact.plan_id.in_(plan_ids)).delete(synchronize_session=False)
-        db.query(ProofreadLog).filter(ProofreadLog.plan_id.in_(plan_ids)).delete(synchronize_session=False)
         db.query(FormatFinding).filter(FormatFinding.plan_id.in_(plan_ids)).delete(synchronize_session=False)
         db.query(PlanScoreReason).filter(PlanScoreReason.plan_id.in_(plan_ids)).delete(synchronize_session=False)
         db.query(PlanCanonicalData).filter(PlanCanonicalData.plan_id.in_(plan_ids)).delete(synchronize_session=False)

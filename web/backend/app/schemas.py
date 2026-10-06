@@ -1099,6 +1099,11 @@ class RecoveryItemOut(BaseModel):
     label: str | None = None
 
 
+class RecoveryTrainedIn(BaseModel):
+    """POST /admin/recovery-items/trained 요청 — 학습 데이터로 내보낸 검수 회수 문단의 log_id 목록."""
+    log_ids: list[int] = Field(..., min_length=1, max_length=1000)
+
+
 class RecoveryLabelIn(BaseModel):
     recovery_status: str = Field(..., description="'pending' / 'labeled' / 'excluded'")
     label: str | None = Field(None, description="recovery_status='labeled'일 때 사람이 정리한 정답 문장")

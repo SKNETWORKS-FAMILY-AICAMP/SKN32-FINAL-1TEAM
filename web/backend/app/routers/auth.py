@@ -44,7 +44,6 @@ from app.models import (
     ProjectPartner,
     ProjectPlanInput,
     ProjectScheduleItem,
-    ProofreadLog,
     RefreshToken,
     TeamMember,
     User,
@@ -53,6 +52,7 @@ from app.models import (
     VerificationScoreHistory,
 )
 from app.orch import OrchGateway, account_id_of, require_gateway
+from app.proofread_retention import clear_project_logs, delete_untrained_logs, user_project_ids
 from app.routers.profile import compute_has_profile
 from app.schemas import (
     AuthMeOut,
@@ -168,6 +168,8 @@ def update_consent(
     """신규 가입 직후 동의 화면 제출, 또는 나중에 설정 화면에서 동의값을 바꿀 때 쓴다.
     전부 선택 필드라 일부만 보내도 된다(None은 그대로 둠).
 
+    [SB-246] 학습 동의를 false로 바꾸면 그 계정의 반영 전 검수 회수 문단을 지운다(trained 행은 남김).
+
     [2026-09-27 확장, 2026-09-29 프론트 요청사항 4차 C-1] 필수 동의(이용약관/개인정보/
     만 16세 이상)도 이제 이 엔드포인트로 기록한다 — true면 지금 시각을 저장하고, false면
     철회로 보고 NULL로 되돌린다(공식 기능정의서 v1.9 E-AUTH-CONSENT: "철회 이후 수집을
@@ -175,6 +177,10 @@ def update_consent(
     새 실행 시작(POST /projects)은 셋 다 값이 있어야 허용된다."""
     if body.ai_training_agreed is not None:
         current_user.ai_training_agreed = body.ai_training_agreed
+        if not body.ai_training_agreed:
+            # [SB-246] 학습 동의 철회 — 아직 학습에 반영되지 않은 검수 회수 문단(pending · labeled · excluded)을 지운다.
+            # 이미 학습 데이터로 내보낸(trained) 행은 되돌릴 수 없어 남는다(동의서 문구, 웹연동_변경사항 11.7).
+            delete_untrained_logs(db, user_project_ids(db, current_user.user_id))
     if body.notify_agreed is not None:
         current_user.notify_enabled = body.notify_agreed
     if body.terms_agreed is not None:
@@ -206,6 +212,8 @@ def _delete_account_cascade(db: Session, user: User) -> None:
     company_ids = [c.company_id for c in db.query(Company.company_id).filter(Company.user_id == user.user_id)]
     project_ids = [p.project_id for p in db.query(Project.project_id).filter(Project.company_id.in_(company_ids))] if company_ids else []
     plan_ids = [p.plan_id for p in db.query(BusinessPlan.plan_id).filter(BusinessPlan.project_id.in_(project_ids))] if project_ids else []
+    # [SB-246] 검수 회수 문단: 학습 반영 전 행은 지우고 trained 행은 연결만 끊는다(계획서 · 프로젝트 행을 지우기 전에)
+    clear_project_logs(db, project_ids)
 
     if plan_ids:
         artifact_ids = [a.artifact_id for a in db.query(Artifact.artifact_id).filter(Artifact.plan_id.in_(plan_ids))]
@@ -213,7 +221,6 @@ def _delete_account_cascade(db: Session, user: User) -> None:
             db.query(ArtifactScoreReason).filter(ArtifactScoreReason.artifact_id.in_(artifact_ids)).delete(synchronize_session=False)
         db.query(Verdict).filter(Verdict.plan_id.in_(plan_ids)).delete(synchronize_session=False)
         db.query(Artifact).filter(Artifact.plan_id.in_(plan_ids)).delete(synchronize_session=False)
-        db.query(ProofreadLog).filter(ProofreadLog.plan_id.in_(plan_ids)).delete(synchronize_session=False)
         db.query(FormatFinding).filter(FormatFinding.plan_id.in_(plan_ids)).delete(synchronize_session=False)
         db.query(PlanScoreReason).filter(PlanScoreReason.plan_id.in_(plan_ids)).delete(synchronize_session=False)
         db.query(PlanCanonicalData).filter(PlanCanonicalData.plan_id.in_(plan_ids)).delete(synchronize_session=False)

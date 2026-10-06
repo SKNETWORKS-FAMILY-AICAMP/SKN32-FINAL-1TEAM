@@ -24,11 +24,11 @@ from app.models import (
     Project,
     ProofreadLog,
     User,
-    Verdict,
     VerificationChecklistItem,
     VerificationPolicy,
 )
 from app.orch import OrchError, OrchGateway, admin_mapping, require_gateway
+from app.proofread_retention import TRAINED
 from app.schemas import (
     AgentOpsSummaryOut,
     AgentTaskOut,
@@ -50,6 +50,7 @@ from app.schemas import (
     PolicyThresholdsIn,
     RecoveryItemOut,
     RecoveryLabelIn,
+    RecoveryTrainedIn,
     UserOut,
     UserRoleStatusIn,
     VerificationPolicyOut,
@@ -487,24 +488,24 @@ def get_ops_summary(
 
 
 def _recovery_item_out(row: ProofreadLog, db: Session) -> RecoveryItemOut:
-    """proofread_logs 행(passed=False) 하나를 RecoveryItemOut으로 조립한다 — plan ->
-    project -> company -> user로 거슬러 올라가 프로젝트 설명·동의 여부를 찾고,
-    plan -> verdicts로 모델 버전을 찾는다(근사치, RecoveryItemOut 주석 참고)."""
-    plan = db.get(BusinessPlan, row.plan_id)
-    project = db.get(Project, plan.project_id) if plan is not None else None
+    """proofread_logs 행 하나를 RecoveryItemOut으로 조립한다.
+
+    [SB-246] 워커가 쓴 행은 project_id로 프로젝트 · 회사 · 사용자를 찾고 모델 버전은 행의 model_version이다. 더미 시절 행은
+    plan_id → 프로젝트로 거슬러 간다. 프로젝트가 지워져 연결이 끊긴 행(학습에 반영된 trained 행)은 프로젝트 설명이 없고,
+    동의 여부는 trained 행이면 동의한 것으로 본다(동의한 계정의 행만 학습에 쓰였다)."""
+    project = db.get(Project, row.project_id) if row.project_id is not None else None
+    if project is None and row.plan_id is not None:
+        plan = db.get(BusinessPlan, row.plan_id)
+        project = db.get(Project, plan.project_id) if plan is not None else None
     user = project.company.user if project is not None else None
-    verdict = (
-        db.query(Verdict).filter(Verdict.plan_id == row.plan_id).order_by(Verdict.verdict_id.desc()).first()
-        if plan is not None else None
-    )
     return RecoveryItemOut(
         log_id=row.log_id,
         project_id=project.project_id if project is not None else None,
         project_description=project.description if project is not None else None,
-        model_version=verdict.model_version if verdict is not None else None,
+        model_version=row.model_version,
         violation_type=row.violation_type,
         occurred_at=row.created_at,
-        consent=bool(user.ai_training_agreed) if user is not None else False,
+        consent=bool(user.ai_training_agreed) if user is not None else row.recovery_status == TRAINED,
         original=row.original_text,
         attempt=row.corrected_text,
         recovery_status=row.recovery_status or 'pending',
@@ -538,7 +539,33 @@ def label_recovery_item(
     row = db.get(ProofreadLog, log_id)
     if row is None or row.passed:
         raise HTTPException(status_code=404, detail='반려된 시도(회수 대상)를 찾을 수 없습니다')
+    if row.recovery_status == TRAINED:
+        raise HTTPException(status_code=409, detail='이미 학습 데이터로 내보낸 행은 바꿀 수 없습니다')
     row.recovery_status = body.recovery_status
     row.recovery_label = body.label
     db.commit()
     return _recovery_item_out(row, db)
+
+
+@router.post('/recovery-items/trained', response_model=list[RecoveryItemOut])
+def mark_recovery_items_trained(
+    body: RecoveryTrainedIn,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """학습 데이터로 내보낸 행을 recovery_status='trained'로 표시한다 — 이 표시가 있는 행만 프로젝트 완전 삭제 ·
+    탈퇴 · 동의 철회 뒤에도 남는다(웹연동_변경사항 11.7). 내보내기 도구가 내보낸 log_id 목록으로 부른다.
+
+    라벨링을 마친(labeled) 행만 표시할 수 있다 — 동의가 없거나(excluded) 아직 대기(pending)인 행은 학습에 쓰지 않으므로
+    하나라도 섞여 있으면 아무것도 바꾸지 않고 409를 돌려준다. 없는 log_id는 404."""
+    rows = db.query(ProofreadLog).filter(ProofreadLog.log_id.in_(body.log_ids)).all()
+    missing = set(body.log_ids) - {r.log_id for r in rows}
+    if missing:
+        raise HTTPException(status_code=404, detail=f'없는 검수 회수 문단입니다: {sorted(missing)}')
+    not_ready = [r.log_id for r in rows if r.recovery_status not in ('labeled', TRAINED)]
+    if not_ready:
+        raise HTTPException(status_code=409, detail=f'라벨링을 마친 행만 학습 반영으로 표시할 수 있습니다: {sorted(not_ready)}')
+    for row in rows:
+        row.recovery_status = TRAINED
+    db.commit()
+    return [_recovery_item_out(r, db) for r in rows]

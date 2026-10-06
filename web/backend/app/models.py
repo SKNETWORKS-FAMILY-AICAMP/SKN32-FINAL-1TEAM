@@ -960,18 +960,24 @@ class ProofreadLog(Base):
     __tablename__ = 'proofread_logs'
 
     log_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    plan_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('business_plans.plan_id'))
+    # [SB-246] 이 표는 이제 오케스트레이터 워커가 INSERT한다 — 워커는 project_id · model_version을 채우고 plan_id ·
+    # section_id는 비운다(더미 시절 행만 plan_id가 있다). project_id는 NULL 허용 + ON DELETE SET NULL: 학습에 반영된
+    # (recovery_status='trained') 행은 프로젝트를 지워도 남기고 연결만 끊는다(웹연동_변경사항 11.7).
+    plan_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('business_plans.plan_id', ondelete='SET NULL'), nullable=True)
+    project_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('projects.project_id', ondelete='SET NULL'), nullable=True)
     section_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey('plan_sections.section_id'), nullable=True)
     original_text: Mapped[str] = mapped_column(_LongText)  # app_schema.sql: LONGTEXT
     corrected_text: Mapped[str] = mapped_column(_LongText)  # app_schema.sql: LONGTEXT
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)  # 왜 고쳤는지(윤문 사유)
-    attempt_no: Mapped[int] = mapped_column(_UnsignedInt, default=1)  # 같은 plan_id+section_id 안에서 몇 번째 시도인지(1=최초)
+    attempt_no: Mapped[int] = mapped_column(_UnsignedInt, default=1)  # 같은 문장 안에서 몇 번째 시도인지(1=최초)
     score: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2), default=decimal.Decimal('100'))
     passed: Mapped[bool] = mapped_column(Boolean, default=True)  # False면 보호 토큰 위반으로 반려된 시도
     violation_note: Mapped[str | None] = mapped_column(Text, nullable=True)  # 반려 사유(passed=False일 때만) — 예: "'2026년 10월 16일' 누락, '1억원'이 '100,000,000원'으로 표기 변경됨"
     violation_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # 날짜/수치·금액/고유명사/기능명 (passed=False일 때만)
-    recovery_status: Mapped[str | None] = mapped_column(String(20), nullable=True)  # pending/labeled/excluded (passed=False일 때만)
+    # pending(워커가 넣음) / labeled(라벨링을 마침, 아직 학습 반영 전) / excluded / trained(학습 데이터로 내보냄 — 남기는 행)
+    recovery_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     recovery_label: Mapped[str | None] = mapped_column(Text, nullable=True)  # 라벨링 완료 시 사람이 정리한 정답 문장
+    model_version: Mapped[str | None] = mapped_column(String(50), nullable=True)  # [SB-246] 그 시도를 만든 검수 모델(워커가 채움)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
 
     plan: Mapped['BusinessPlan'] = relationship(back_populates='proofread_logs')

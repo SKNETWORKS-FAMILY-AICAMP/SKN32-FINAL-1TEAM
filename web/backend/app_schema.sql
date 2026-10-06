@@ -539,22 +539,26 @@ CREATE TABLE IF NOT EXISTS format_findings (
 -- 반영해야 한다(back/app_schema.sql은 새 설치 기준 CREATE만 갱신).
 CREATE TABLE IF NOT EXISTS proofread_logs (
     log_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT 'T-P2(윤문) 교정 기록 고유 식별자',
-    plan_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES business_plans(plan_id)',
+    plan_id BIGINT UNSIGNED NULL COMMENT 'REFERENCES business_plans(plan_id) — 더미 시절 행만 값이 있다(워커는 비움). 2026-10-05 NULL 허용',
+    project_id BIGINT UNSIGNED NULL COMMENT 'REFERENCES projects(project_id) — 워커가 채운다. NULL 허용 + ON DELETE SET NULL: 학습에 반영된(trained) 행은 프로젝트를 지워도 남기고 연결만 끊는다',
     section_id BIGINT UNSIGNED NULL COMMENT 'REFERENCES plan_sections(section_id), nullable',
     original_text LONGTEXT NOT NULL COMMENT '윤문 전 원문',
     corrected_text LONGTEXT NOT NULL COMMENT '윤문 후 교정문(passed=FALSE면 반려된 시도안)',
     reason TEXT NULL COMMENT '교정 사유',
-    attempt_no INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '같은 plan_id+section_id 안에서 몇 번째 시도인지(1=최초)',
+    attempt_no INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '같은 문장 안에서 몇 번째 시도인지(1=최초)',
     score DECIMAL(5,2) NOT NULL DEFAULT 100.00 COMMENT '이 시도의 윤문 품질 점수(0~100) — business_plans.doc_score와 같은 형식',
     passed BOOLEAN NOT NULL DEFAULT TRUE COMMENT 'FALSE면 보호 토큰(수치·날짜·고유명사·기능명) 위반으로 반려된 시도',
     violation_note TEXT NULL COMMENT '반려 사유(passed=FALSE일 때만) — 어떤 보호 토큰이 어떻게 바뀌었는지',
     violation_type VARCHAR(20) NULL COMMENT '위반 종류: 날짜/수치·금액/고유명사/기능명 (passed=FALSE일 때만)',
-    recovery_status VARCHAR(20) NULL COMMENT '"검수 회수 문단" 탭 라벨링 상태: pending/labeled/excluded (passed=FALSE일 때만)',
+    recovery_status VARCHAR(20) NULL COMMENT '"검수 회수 문단" 탭 상태: pending(워커가 넣음)/labeled(라벨링 마침)/excluded/trained(학습 데이터로 내보냄 — 완전 삭제·탈퇴·동의 철회 때도 남기는 행)',
     recovery_label TEXT NULL COMMENT '라벨링 완료 시 사람이 정리한 정답 문장',
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '생성 일시',
+    model_version VARCHAR(50) NULL COMMENT '그 시도를 만든 검수 모델 이름(워커가 채운다)',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '생성 일시(워커가 저장 시각 UTC를 직접 넣는다)',
     KEY ix_proofread_logs_plan (plan_id),
+    KEY ix_proofread_logs_project (project_id),
     KEY ix_proofread_logs_section (section_id),
-    FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE CASCADE,
+    FOREIGN KEY (plan_id) REFERENCES business_plans(plan_id) ON DELETE SET NULL,
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE SET NULL,
     FOREIGN KEY (section_id) REFERENCES plan_sections(section_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 

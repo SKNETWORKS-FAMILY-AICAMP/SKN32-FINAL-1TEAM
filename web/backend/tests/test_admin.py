@@ -422,17 +422,18 @@ def test_get_recovery_items_lists_only_failed_attempts(admin_client, user_client
     )
     db_session.add(notice)
     db_session.flush()
-    verdict = seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-RECOVERY', retry_agents=())
+    seed_dummy_pipeline(db_session, project_id, notice_id='ADMIN-TEST-RECOVERY', retry_agents=())
     db_session.add(ProofreadLog(
-        plan_id=verdict.plan_id, original_text='2026년 10월 16일 마감', corrected_text='10월 중순 마감',
+        project_id=project_id, original_text='2026년 10월 16일 마감', corrected_text='10월 중순 마감',
         attempt_no=2, passed=False, violation_type='날짜', violation_note='날짜 표기 훼손', recovery_status='pending',
+        model_version='tp2-test-model',
     ))
     db_session.commit()
 
     res = admin_client.get('/admin/recovery-items')
     assert res.status_code == 200, res.text
     items = res.json()
-    # seed가 만든 passed=True 1건은 안 보이고, 방금 추가한 passed=False 1건만 보여야 한다.
+    # seed가 만든 passed=True 1건(plan_id 행)은 안 보이고, 워커가 쓴 것처럼 project_id로 추가한 passed=False 1건만 보인다.
     assert len(items) == 1
     item = items[0]
     assert item['project_id'] == project_id
@@ -441,7 +442,7 @@ def test_get_recovery_items_lists_only_failed_attempts(admin_client, user_client
     assert item['original'] == '2026년 10월 16일 마감'
     assert item['attempt'] == '10월 중순 마감'
     assert item['recovery_status'] == 'pending'
-    assert item['model_version'] == 'v1'  # seed_dummy_pipeline의 Verdict.model_version 기본값
+    assert item['model_version'] == 'tp2-test-model'  # [SB-246] verdicts가 아니라 행의 model_version(워커가 채움)
     assert item['consent'] is True  # _login 헬퍼가 aiTrainingAgreed=True로 로그인시킴
 
 
