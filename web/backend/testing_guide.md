@@ -32,13 +32,17 @@ pytest -q
 
 ---
 
-## 2. 실제 오케스트레이터 + MySQL로 돌려 보기 (로컬)
+## 2. 실제 워커 + MySQL로 끝까지 돌려 보기 (로컬)
 
-SQLite 개발 모드에서는 오케스트레이터를 쓸 수 없어 프로젝트 생성 · 단계 시작 · 결과 조회가 503으로 답한다. 실제 흐름을 보려면 MySQL이 필요하다.
+SQLite 개발 모드에서는 오케스트레이터를 쓸 수 없어 프로젝트 생성 · 단계 시작 · 결과 조회가 503으로 답한다. 실제 흐름은 MySQL + 워커가 필요하다.
+워커의 Agent 중 조율 T-C1 · T-C3만 실제 구현이고 나머지는 스텁이라(agent-orchestration README 1.3), 이 테스트는 "웹 ↔ 워커 배관과 흐름"을 확인한다(결과물 품질은 보지 않는다).
 
-1. 로컬 MySQL 띄우기 — Docker Desktop을 켠 뒤 `agent-orchestration/docker/mysql-test.yml`(127.0.0.1:3307, 데이터는 메모리에만 있음).
-2. 웹 스키마 + 오케스트레이터 테이블 준비 — `agent-orchestration/tests/mysqldb.py`의 `_prepared_engine(url)`이 `web/backend/app_schema.sql`과 `agent-orchestration/sql/orchestrator_schema.sql`을 적용한다(**테스트용 DB를 지우고 새로 만든다**).
-3. 웹 서버(`DB_BACKEND=mysql`, `SBRAIN_DB_URL`)와 워커(`python -m sbrain.worker`, `OPENAI_API_KEY` 필요)를 따로 띄운다.
+1. **로컬 MySQL** — Docker Desktop을 켜고 `agent-orchestration/`에서 `docker compose -f docker/mysql-test.yml up -d --wait`(127.0.0.1:3307, 데이터는 메모리에만 있음).
+2. **스키마 준비** — `python scripts/prepare_local_mysql.py` : `sbrain_e2e` DB를 지우고 웹 스키마 + orch_ 표를 새로 만든다. 로컬 호스트의 e2e/test DB만 받는다(팀 공유 DB 거부).
+3. **OpenAI 키** — `agent-orchestration/.env`의 `OPENAI_API_KEY`(`.env.example` 참고, 커밋되지 않음).
+4. **워커** — `agent-orchestration/`에서 `SBRAIN_DB_URL=mysql+pymysql://root:sbrain-test@127.0.0.1:3307/sbrain_e2e?charset=utf8mb4`를 주고 `python -m sbrain.worker`.
+   공고 서버 주소(`SBRAIN_NOTICE_API_URL`)가 없으면 스텁 공고 · 스텁 자격 판정으로 돈다.
+5. **E2E** — `python scripts/e2e_worker_flow.py [--rework] [--cleanup]` : 프로젝트 생성 → 공고 후보 → 공고 선택 → 계획서 → 프로토타입 → 종합 평가 → (재작성) → 표현 검수 → 결과 → (영구 삭제)를 워커가 처리하길 기다리며 단계마다 `[OK]/[FAIL]`로 찍는다.
 
 기존 DB에 스키마 변경을 적용하는 SQL은 `migrations/`에 있다(멱등, MySQL 8). 공유 DB 적용은 팀 합의 뒤에 한다.
 
