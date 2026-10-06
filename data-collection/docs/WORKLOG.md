@@ -23,6 +23,84 @@
 
 ## 작업 기록
 
+### 2026-10-06 · Claude · 공고 서버 API — 재검수 지적 보류·K-Startup 첨부 확인·04 계약 시험
+
+- 요청·목적: Codex 재검수 확인 → 사용자가 개선 보류 후 다음 작업 진행을 결정. K-Startup 가산점이 없는 이유 확인과 첨부 확보 가능성 조사. 04 계약 시험.
+- 작업 전 상태: 01~03 v4(미커밋), 8000은 v4로 켜짐. Codex 재검수 결과 "추가 수정 후 재검수 필요".
+- 변경 파일: 새 `experiments/notice_api_contract.py`, 새 `docs/notice_api/04_contract_test/README.md`, 진행표·결정(`docs/notice_api/README.md`)·STATUS. 결과 `reports/notice_api_contract_20261006T035438Z/`. 판정표 페이지(artifact, 비공개) 게시.
+- 전후 차이·선택 이유: 서비스 코드 변경 없음. K-Startup은 robots.txt `Disallow: /afile*/`(첨부 목록·다운로드 경로) 때문에 자동 수집하지 않기로 했다(파이썬 robotparser는 별표를 해석하지 못해 '허용'으로 잘못 답함 — 규칙을 직접 읽어 판단). 공공데이터포털 `kisedKstartupService01` 4개 기능을 1건씩 호출해 공고 첨부 칸이 없음, `prfn_matr`(우대 사항) 열린 221건 모두 빈 값, 외부 안내 주소 186건은 구글 설문·각 기관 사이트로 파일 0건임을 확인. 04는 조율 쪽 코드를 작업 트리 밖 임시 폴더에 `git archive`로 풀어 우리 `.venv`로 불렀다(pydantic 같은 판).
+- 검증: 계약 시험 16개 통과 — T-C2 8회(카드 10·rank·시·도 바꾸기), G-01 40회(업력 사사오입 일치), 공고 없음 `ResourceNotFound`, 경로 없음 `ProviderError(404)`, 설립일 없는 사업자 판정 생략, 모든 공고 G-01 2,765건 형식 오류 0(65초). 첫 실행에서 내 시험 코드가 한글 경로(`/없는경로`)를 써서 urllib 인코딩 오류가 났고 영문 경로로 고쳐 다시 돌렸다. OpenAI·DB 쓰기 없음.
+- 미검증·남은 문제: 조율 쪽 흐름 전체(워커·저장소·웹)는 범위 밖. 조율 기준 커밋 `b8e7f50`(10/5). 가산점 정확성은 보류 중.
+- 다음 단계: 05 답변서.
+
+### 2026-10-06 · Claude · Codex 검수(공고 서버 API 01~03) 13건 반영 — 가산점 추출기 v4·전량 재추출
+
+- 요청·목적: 사용자 "코덱스가 리뷰 남겼는데 확인 바랄게". [검수](notice_api/CODEX_REVIEW_20261006.md)를 확인하고 반영했다. 사용자가 비용은 덜 신경 써도 된다고 해서 재추출까지 진행했다.
+- 작업 전 상태: 01~03 미커밋. 검수 결론은 "수정 후 재검수 필요"(P1 2·P2 8·P3 3). 13건 모두 코드에서 재확인했다. v3 결과에서 같은 근거 문장이 점수 항목 여러 개로 나뉜 공고는 103건이었다.
+- 변경 파일
+  - `collect/extract_bonus.py`: v4. `build_parts`, `locate_all`, `_points_in`, `_total_supported`, `verify(complete)`, `plan_work` 3중 비교, `run_batch` 하루 누적, `--ids`.
+  - `search/bonus.py`: `load` 최신성, `item_hit` 추가 조건·전남/광주, `_groups`·`_score_scope`·세부사업.
+  - `search/app.py`: boot 가점 최신성, `Weights.bonus` 0.
+  - `search/notice_api.py`: `served_status`.
+  - `search/content_version.py`: active, cv2.
+  - `collect/daily_pipeline.py`: 설명.
+  - 새 `db/mysql_migration_008_notice_bonus_content_version.sql`.
+  - 시험: `tests/test_extract_bonus.py`·`test_bonus.py`·`test_match_deh.py`·`test_notice_api.py`.
+  - 문서: [응답서](notice_api/CODEX_REVIEW_RESPONSE_20261006.md)·03 README·01 README·진행표·FLOW·문서 지도·STATUS.
+- 전후 차이·선택 이유: 지적별 내용은 응답서 1절에 있다. 순위 세기는 근거가 부족해 0으로 내렸다. 결과의 `bonus_score`는 그대로 나간다. 지어내지 않는 쪽을 택해 null이 늘었다.
+- 검증
+  - 표본 30건(검수와 같은 공고) v4 재추출 3회, 약 $0.20. 첫 판의 묶음 오남용·괄호 숫자 누락·같은 문구 두 번을 고쳤다.
+  - 공용 DB `notice_bonus`에 칸 추가(008, 사용자 진행 지시). 전량 재추출 2,078행(LLM 969, 실패 0, 약 $1.79, `reports/bonus_full_20261006T024214Z/`).
+  - 서버 읽기에서 뺀 행 0. 가상 신청자 '여성기업·벤처·경기 성남시' 가산점 48건(v3 62).
+  - 전체 시험 758 통과(건너뜀 16).
+  - 10/7 비교 기준 `data/notice_api/content_version_20261006_cv2.json`(cv1 대비 첨부 지문이 바뀐 공고 8건).
+- 미검증·남은 문제
+  - 사람 정답 없음(표본은 Codex AI 판정과 대조).
+  - `points_source`를 LLM이 빼면 점수 null.
+  - 병합 표 해석은 LLM 몫.
+  - 서버 배치 복사본 미갱신. 8000은 옛 코드.
+- 다음 단계: 사용자가 Codex 재검수를 맡긴다 → 04·05. 사용자는 이 대화를 여기서 멈추고 다른 채팅에서 이어 간다.
+
+### 2026-10-06 · Claude · 공고 서버 API 03-2~3-5 — 가점 전량 추출·신청자별 가산점·순위 반영·매일 배치
+
+- 요청·목적: 사용자 "3-2 진행해줘"(공용 DB 표 생성·667건 추출 승인), "3번까지 마무리되면 Codex 검토". 03 나머지를 마치고 Codex 검토 요청서를 쓴다.
+- 작업 전 상태: 3-1 완료(추출기·표본). `notice_bonus` 표 없음.
+- 변경: 공용 DB에 `notice_bonus` 생성(생성 전 없음 확인)·2,057행 적재. 코드 `collect/extract_bonus.py`(no_mention·bonus_info 대조·`--all`·`run_batch`), 새 `search/bonus.py`, `search/app.py`(boot 가점·결과 가산점·`Weights.bonus` 기본 0.2·`bonus_boost`), `search/notice_api.py`(`bonus_info`), `collect/daily_pipeline.py`(14단계·`--skip-bonus`·`--bonus-limit`), 새 `eval/bonus_rank_eval.py`, 시험(`test_extract_bonus` 17·`test_bonus` 12·`test_notice_api` +3·`test_match_deh`), 문서 `docs/notice_api/03_bonus/`·진행표·[Codex 검토 요청](notice_api/CODEX_REVIEW_REQUEST_20261006.md)·문서 지도·FLOW·STATUS.
+- 전후 차이·선택 이유: 추천 결과의 `bonus_score`·`bonus_items`가 신청자 성별·인증·지역에 따라 채워진다(0 = 해당 가점 없음, null = 계산 못 함). 공고 상세 `bonus_info`. 가산점이 있는 후보가 있으면 같은 규칙 묶음 안에서 순서가 바뀐다(세기 0.2). 가산점 후보가 없으면 순서는 전과 같다. 판정 규칙은 실제 데이터 무작위 점검에서 너무 후한 4가지(장애인표준사업장·연구소 조건·여성연구자/가족친화·지역 근거 없는 항목)와 중복 집계, 너무 엄격한 1가지(대표이사 여성)를 고친 결과다.
+- 검증: 전량 추출 실패 0·약 $1.05(추정). 전체 시험 745 통과·건너뜀 16. 가상 신청자 4종 분포(예: 여성기업·벤처·경기 성남시 62건 가산점). 순위 측정(`reports/bonus_rank_eval_20261006T015155Z/`) 세기 0.1~0.3 관련도 지표 변화 0. 실제 `boot()` + `/api/match` 가산점 형식 어긋남 0, 속성 없는 신청자 세기 0·0.2 순서 동일. 8000 서버는 건드리지 않았다(10/6에 켠 01·02 코드 그대로).
+- 미검증·남은 문제: 사람 정답 없음(AI 참고). K-Startup은 가산점 늘 null. 순위 측정은 가점 공고가 드물어 효과가 작게 잡힘. 서버 매일 배치는 복사본이라 14단계가 아직 돌지 않는다. 10/7 지문 하루 비교 남음.
+- 다음 단계: 사용자가 Codex 검토를 맡긴다. 그 뒤 04(조율 쪽 코드로 불러 보기)·05(답변서).
+
+### 2026-10-06 · Claude · 공고 서버 API 03-1 — 가점 추출기와 표본 30건
+
+- 요청·목적: 조율 요청서 3.2(신청자별 가산점). 사용자 결정 "실제로 만든다". 03을 5단계로 나눠 첫 단계로 공고문 가점 추출기를 만들고 표본으로 품질을 본다.
+- 작업 전 상태: 01·02 완료(미커밋). 가점 데이터 없음. 10/6 조사: 열린 공고 중 가점 언급 약 610~670건(거의 기업마당), K-Startup은 첨부 미수집.
+- 변경 파일: 새 `collect/extract_bonus.py`, 새 `tests/test_extract_bonus.py`(13개), 새 `db/mysql_migration_007_notice_bonus.sql`(실행 안 함), 문서 `docs/notice_api/03_bonus/README.md`·진행표·STATUS. 결과 `reports/bonus_sample_20261006T011805Z/`·`…T012116Z/`.
+- 전후 차이·선택 이유: 서비스 동작은 바뀌지 않는다(추출기만 추가). 기존 추출기와 같은 원칙(문서에 적힌 것만, 근거 원문 필수, 근거가 없으면 코드가 버림). v1 결과를 30건 모두 읽고 고쳤다: 선정 뒤 혜택을 가점으로 잡음 → 지시문 규칙, 표 칸이 끼어든 근거를 지어낸 것으로 오판 → "같은 순서·가까이" 대조, 표의 단위 없는 숫자 점수 → 인정, 지역 17곳 → 상한, 가점 없음/모름 구분 → status. 청년 고용을 청년(나이)으로 분류 → v3 지시문.
+- 검증: v1 → v2 같은 표본 30건 비교(혜택 오인 3건 해소, 점수 있는 항목 16 → 31). 새 검사를 v1 원본에 다시 적용해 효과를 호출 없이 먼저 확인. 시험 13개 통과. 유료 호출 약 $0.08(추정). DB 쓰기 없음.
+- 미검증·남은 문제: 사람 정답 검증 없음(AI 참고). 웹 입력으로 맞출 수 있는 가점 종류가 적어 가산점이 null(정보 없음)인 공고가 많을 것이다. "최대 N점, 1점당 1점" 항목 점수는 최대값으로 적힌다.
+- 다음 단계: 3-2(공용 DB `notice_bonus` 표 생성 + 667건 추출, 약 $0.9) — 사용자 승인 필요.
+
+### 2026-10-06 · Claude · 공고 서버 API 02 — 공고 상세·자격 판정 창구
+
+- 요청·목적: 조율 요청서 2.4·2.5. 조율 에이전트가 후보 공고를 고를 때 부르는 공고 상세와 자격 판정 창구를 연다. 자격 판정은 추천의 정형 필터와 같은 규칙이어야 한다.
+- 작업 전 상태: 01 완료 직후(미커밋). 화면용 `/api/eligibility`만 있었고 판정 코드가 app.py 안에 있었다.
+- 변경 파일: 새 `search/eligibility.py`(app.py 판정 본문을 그대로 옮김, `today`·판정표를 인자로), `search/notice_api.py`(상세·판정 창구, 지원 금액 읽기), `search/app.py`(화면용 판정이 새 함수를 부름 · boot에서 지원 금액 읽기), `tests/test_notice_api.py`(11개 추가), `tests/test_match_deh.py`(가짜 DB 보강), 문서 `docs/notice_api/02_detail_eligibility/`·진행표·FLOW·STATUS.
+- 전후 차이·선택 이유: 새 창구 두 개가 생겼다. 화면용 판정 결과는 바뀌지 않는다. 규칙을 복사하지 않고 한 함수로 모은 것은 요청서가 "추천과 판정이 한 곳의 규칙에서 나오게" 해 달라고 했기 때문이다. 새 판정은 지원대상 유형·업력만 보고 접수기간·모집 상태는 보지 않는다. 판정표가 꺼져 있으면 본문 유형을 쓰지 않는다(추천 필터와 같음). 근거·정의는 [02 기록](notice_api/02_detail_eligibility/README.md).
+- 검증: 전체 시험 713 통과·건너뜀 16. 실제 `boot()` 후 2,765건 × 신청자 5가지 = 13,825회에서 추천 필터와 다른 결론 0건. 옛 app.py(`99a0bc9`)와 화면용 판정 16,590회 비교 다름 0건. 공고 상세 2,765건 형식 오류 0. 유료 호출·DB 쓰기 없음. 8000 서버는 건드리지 않았다.
+- 미검증·남은 문제: 사업자 신청자는 모든 공고에서 "지원대상 유형"이 확인 필요로 나온다(개인·법인 자동 판정 안 함, 9/28 결정). `support_amount_text`는 null. 05 답변서에 적는다.
+- 다음 단계: 03(가산점), 사용자가 시작을 정한다.
+
+### 2026-10-06 · Claude · 공고 서버 API 01 — 수집 상태 창구·추천 결과 키
+
+- 요청·목적: 조율 담당(4nchez)의 요청서(SB-87 브랜치 `agent-orchestration/docs/공고서버_API요청_공고팀전달.md`)에 따라 공고 서버에 HTTP 창구를 연다. 사용자가 작업을 01~05로 나눠 하나씩 진행하고, 작업별 기록은 `docs/notice_api/`에 두기로 했다. 이번은 01.
+- 작업 전 상태: 깨끗한 작업 트리(`99a0bc9`). 수집 상태 판정 함수는 있었지만 HTTP 창구가 없었고, 추천 결과에 내용 버전·가산점 키가 없었다.
+- 변경 파일: 새 `search/notice_api.py`(수집 상태 창구), 새 `search/content_version.py`(공고 내용 지문·하루 비교 명령), `search/app.py`(창구 연결·boot에서 저장 시각과 지문 읽기·결과 키 3개), 새 `tests/test_notice_api.py`(16개), `tests/test_match_deh.py`(boot 가짜 DB 보강), `.gitignore`(`data/notice_api/`), 문서 `docs/notice_api/`(새)·`docs/README.md`·`docs/FLOW.md`·STATUS.
+- 전후 차이·선택 이유: `GET /api/collection_status`가 생겼다. DB 판정에 더해 **서버가 메모리에 올린 공고가 24시간을 넘으면 정상 → 지연**으로 내린다(서버를 다시 켜야 새 공고가 반영되기 때문). DB를 못 읽으면 503. 추천 결과 한 건에 `content_version`(원문 칸 + 첨부 파일 바이트 SHA-256, 수집 시각·LLM 값 제외), `bonus_score: null`, `bonus_items: []`가 붙는다. 순위·필터 등 기존 동작은 바뀌지 않는다. 자세한 근거는 [01 기록](notice_api/01_status_match/README.md).
+- 검증: 전체 시험 702 통과·건너뜀 16. 실제 DB 지문 2,765건 0.2초·재계산 동일·충돌 0. 실제 `boot()`(25.4초) 후 TestClient로 수집 상태 200 `정상`, 가짜 신청 정보로 추천 offset 0·10 각각 10건·필수 키 누락 없음. 8000 서버는 건드리지 않았다. 유료 호출·DB 쓰기 없음.
+- 미검증·남은 문제: 지문이 날마다 수집 잡음으로 바뀌지 않는지는 10/7 배치 뒤 `python -m search.content_version --compare data/notice_api/content_version_20261006.json`으로 확인해야 한다. 이 PC의 8000은 옛 코드라 다시 켜야 새 창구가 열린다.
+- 다음 단계: 02(공고 상세·자격 판정), 사용자가 시작을 정한다.
+
 ### 2026-10-02 · Claude · 매일 수집 배치를 PC 에서 서버(EC2)로 전환
 
 - 요청·목적: PC 를 꺼 둔 날(10/1 병가) 수집이 멈추는 문제를 없앤다. 웹 배포용으로 만든 개인 계정 EC2 `sbrain-web` 에서 배치만 돌린다(공고 매칭 8000 은 옮기지 않음). 사용자 결정: 시험 1~3단계 뒤 "전환해 줘".

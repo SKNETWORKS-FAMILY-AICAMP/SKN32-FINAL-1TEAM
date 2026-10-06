@@ -3,6 +3,7 @@
 import os
 import sys
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -172,9 +173,27 @@ class BootTests(unittest.TestCase):
                 return False
 
             def execute(self, sql):
-                pass
+                self.sql = sql
+
+            def fetchone(self):                       # import_runs 가장 최근 행(공고 저장 시각, 2026-10-06)
+                return (datetime(2026, 10, 6, 0, 5), '{}')
 
             def fetchall(self):
+                # 공고 내용 지문(search/content_version.py) — 공고 칸 + 첨부 지문 두 조회
+                if 'content_sha256' in self.sql:
+                    return [(1, 'a' * 64)]
+                if 'FROM notice_conditions' in self.sql:      # 지원 금액(02)
+                    return [('n01', 50000000, '최대 5천만원 지원')]
+                if 'FROM notice_bonus' in self.sql:           # 공고 가점(03) — 지금 지문·버전과 같은 행만 쓴다
+                    from collect.extract_bonus import EXTRACTOR_VERSION
+                    cv = app.STATE['content_versions'].get('n01')
+                    return [('n01', 'none', None, None, '[]', cv, EXTRACTOR_VERSION),
+                            ('n02', 'none', None, None, '[]', 'cv2-old', EXTRACTOR_VERSION),     # 공고 없음·지문 다름
+                            ('n03', 'none', None, None, '[]', cv, 'extract_bonus/v3 old')]
+                if self.sql.startswith('SELECT id,notice_id,'):
+                    from search import content_version
+                    row = dict(notice('n01'), id=1)
+                    return [tuple(row.get(f) for f in ('id', 'notice_id') + content_version.CONTENT_FIELDS)]
                 return [tuple(notice('n01').get(f) for f in app.FIELDS)]
 
         class Conn:
@@ -210,6 +229,12 @@ class BootTests(unittest.TestCase):
         st = self.boot(lambda: FakeCollection(['n01']), lambda text: [0.0] * 4)
         self.assertEqual(st['boot_errors'], {})
         self.assertEqual(st['vector_ids'], {'n01'})
+        # 조율 창구용(2026-10-06): 올린 공고의 저장 시각(UTC)과 공고 내용 지문
+        self.assertEqual(st['loaded_store_at'], datetime(2026, 10, 6, 0, 5, tzinfo=timezone.utc))
+        self.assertEqual(list(st['content_versions']), ['n01'])
+        self.assertTrue(st['content_versions']['n01'].startswith('cv2-'))
+        self.assertEqual(st['amounts'], {'n01': {'won': 50000000, 'quote': '최대 5천만원 지원'}})
+        self.assertEqual(st['bonus'], {'n01': {'status': 'none', 'max_total_points': None, 'bonus_info': None, 'items': []}})
 
 
 if __name__ == '__main__':

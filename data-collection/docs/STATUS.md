@@ -1,6 +1,49 @@
 # 현재 작업 상태
 
-마지막 갱신: 2026-10-02 · Claude (**매일 배치를 PC → 서버 EC2 `sbrain-web` 으로 전환**, 10/3 09:00 첫 실행) · 이전: 2026-09-30 Claude (model-eval/ 실험)
+마지막 갱신: 2026-10-06 · Claude (**재검수 지적 보류 결정 · K-Startup 첨부 불가 확인 · 04 계약 시험 통과**) · 그 전: 2026-10-06 Claude (Codex 검수 13건 반영 — 가산점 추출기 v4·전량 재추출)
+
+## 2026-10-06 · Claude · 공고 서버 API — Codex 재검수 지적 보류 결정, 04 완료, 05 대기 ← **다음 채팅은 여기부터**
+
+- [Codex 재검수](notice_api/CODEX_REVIEW_RECHECK_20261006.md) 결론 "추가 수정 후 재검수 필요"(P1 1·P2 6·P3 2, 01·02·최신성은 통과). **사용자 결정: 개선 보류, 04·05 진행.** 조건: 실제 연결 켜기 전 가산점을 고치거나 모두 null로, 05 답변서에 "가산점 시험 단계" 명시. 근거·조건은 [notice_api/README.md](notice_api/README.md) "10/6 오후 사용자 결정".
+- **K-Startup 가산점 null 유지(사용자 결정 ③).** 첨부 경로 `/afile/`는 robots.txt 자동 수집 금지, 공공데이터포털 API 4종에 첨부 칸 없음·우대 사항 칸 비어 있음(10/6 직접 호출).
+- **04 완료**([기록](notice_api/04_contract_test/README.md)): 조율 쪽 실제 코드로 8000을 HTTP 호출, 16개 확인 통과, 모든 공고 G-01 2,765건 형식 오류 0. `experiments/notice_api_contract.py`.
+- 판정표 페이지(공유용, 비공개): https://claude.ai/artifact/XdbvF8DhvHBH9LEtv71eJm (v4 기준 실제 계산 값).
+- 다음: 05 답변서 — 사용자가 **새 세션**에서 진행. 진입점 [NEXT_SESSION_HANDOFF_20261006.md](NEXT_SESSION_HANDOFF_20261006.md)(이전 인계서는 `archive/`로 옮김).
+- 작업 흐름 페이지(비공개): https://claude.ai/artifact/MP9WGh7sM3P2jZGS6tSDe8
+
+## 2026-10-06 · Claude · Codex 검수(01~03) 반영 — 재검수 완료(위 항목으로 이어짐)
+
+- [Codex 검수](notice_api/CODEX_REVIEW_20261006.md)는 "수정 후 재검수 필요"(P1 2·P2 8·P3 3)였다. 13건 모두 코드에서 확인했고 모두 반영했다. 응답·재검수 요청은 [CODEX_REVIEW_RESPONSE_20261006.md](notice_api/CODEX_REVIEW_RESPONSE_20261006.md)에 있다. **사용자가 Codex에 재검수를 맡기면 된다.**
+- 핵심 변경
+  - 가점 추출기 v4: group·program·extra_conditions·points_source, 근거 실제 위치, 연번·부정어 제외, 가점 구간 먼저 12,000자, 우대까지 대상.
+  - 가산점 계산: 묶음은 한 번만, 세부사업별 최대, 추가 조건이면 모름, 한도는 큰 항목부터.
+  - 최신성: `notice_bonus.content_version`.
+  - 내용 지문 `cv2-`(지금 달린 첨부만), 저장 시각 모름 → 지연, 하루 상한은 한국 날짜 기준.
+  - **순위 세기 `Weights.bonus` 기본 0.**
+- **공용 DB 변경(이번 작업):** `notice_bonus`에 `content_version` 칸 추가([마이그레이션 008](../db/mysql_migration_008_notice_bonus_content_version.sql)). 가점 전량을 v4로 재추출해 2,078행을 저장했다(LLM 969, 실패 0, 약 $1.79). 표본 30건 재추출 3회 약 $0.20.
+- 검증: 전체 시험 758 통과(건너뜀 16). 서버 읽기 점검에서 지문·버전이 달라 뺀 행은 0. 가상 신청자별 분포는 응답서 3절에 있다.
+- 남은 일
+  - Codex 재검수.
+  - **10/7 09:00 배치 뒤** `python -m search.content_version --compare data/notice_api/content_version_20261006_cv2.json`(cv1 파일 아님).
+  - 서버 `sbrain-web` 배치 코드 다시 복사(14단계·v4는 아직 서버에 없음, 사용자 결정).
+  - 04(조율 쪽 코드로 불러 보기)·05(답변서 — P3-2 `certifications=[]` 의미, P3-3 항목 점수 정의 포함).
+- 이 PC 8000은 2026-10-06 13:07 KST(04:07 UTC)에 **v4 코드·데이터로 다시 켰다**(사용자 요청). 시작 오류 없음, 내용 지문 `cv2-`, N07 상세에 가점 원문 확인. 끄기 전 사용자 확인.
+
+## 2026-10-06 · Claude · 공고 서버 API(조율 요청) — 01·02·03 완료, Codex 검토 대기
+
+- **03 가산점 완료**([기록](notice_api/03_bonus/README.md)): 공용 DB `notice_bonus`(2,057행, 10/6 사용자 승인으로 생성), 추출 약 $1.05 + 표본 $0.08. 신청자별 가산점(`search/bonus.py`), 순위 반영 기본 세기 0.2, 매일 배치 14단계(코드만).
+- **Codex 검토 요청서:** [notice_api/CODEX_REVIEW_REQUEST_20261006.md](notice_api/CODEX_REVIEW_REQUEST_20261006.md) — 사용자가 맡긴다. 결과는 같은 폴더 `CODEX_REVIEW_20261006.md`.
+- **서버 배치 주의:** `sbrain-web` 배치는 10/2 복사본 코드라 14단계(가점)가 돌지 않는다. 넣으려면 서버에 코드 다시 복사(사용자 결정). 그 전까지 새 공고의 가점은 손으로 `python -m collect.extract_bonus --all`.
+- 이 PC 8000 서버는 10/6 Claude가 01·02 코드로 켠 것(가산점 없음). 끄거나 다시 켜기 전 사용자 확인.
+
+- **02 완료**([기록](notice_api/02_detail_eligibility/README.md)): `GET /api/notices/{id}`, `POST /api/notices/{id}/eligibility`. 판정 코드는 `search/eligibility.py` 한 곳(화면용과 함께 씀, 결과 불변 확인). 실제 데이터 13,825회 추천 필터와 결론 일치. 시험 713 통과.
+
+- 조율 담당(4nchez)의 요청서(SB-87 브랜치 `agent-orchestration/docs/공고서버_API요청_공고팀전달.md`)대로 공고 서버에 HTTP 창구를 연다. 전체 계획·진행표는 [notice_api/README.md](notice_api/README.md), 작업별 기록은 `docs/notice_api/0N_*/`.
+- 사용자 결정(10/6): 작업을 01~05로 나눠 하나씩 진행, 가산점은 실제로 만든다, 서버 위치는 나중에, 답변서는 마지막.
+- **01 완료**([기록](notice_api/01_status_match/README.md)): `GET /api/collection_status`, 추천 결과에 `content_version`·`bonus_score`(null)·`bonus_items`([]). 시험 702 통과.
+- **10/7 09:00 배치 뒤 할 일:** `python -m search.content_version --compare data/notice_api/content_version_20261006.json`으로 지문이 수집 잡음 없이 유지되는지 확인.
+- 참고: 10/6 09:00 서버 배치 저장 확인(import_runs 00:00 UTC). 이 PC 8000은 옛 코드라 새 창구를 쓰려면 다시 켜야 한다.
+- **10/6 "수집이 10/3에서 멈춘 것 같다" 점검 — 장애 아님.** 서버 `sbrain-web` 배치는 10/3~10/6 매일 `exit=0`·저장 성공. 새 공고가 10/4~10/6 0건인 것은 API에 새 공고가 없어서다: 기업마당 원본 등록일(`creatPnttm`) 최신이 10/2(금), 평일에만 올라오고 9/24~27 추석에도 0건. 10/3(토 개천절)·10/4(일)·10/5(월 대체공휴일) 연휴. 10/6 09:50 KST 직접 조회에도 10/6 등록분은 아직 없음(전날 공고가 다음 날 API에 잡히는 패턴). **10/7 09:00 배치에서 새 공고가 들어오는지 확인**한다.
 
 ## 2026-10-02 · Claude · 매일 배치 서버 전환 — 10/3 09:00 첫 실행 점검 필요
 

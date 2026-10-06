@@ -37,6 +37,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from search import applicant as applicant_mod
+from search import bonus as bonus_mod
 from search import gate
 from shared import region as region_mod
 
@@ -61,6 +62,11 @@ def _connect():
         return ec2_vecstore.connect()
     from shared import store_mysql
     return store_mysql.connect()
+
+
+# 조율 에이전트가 부르는 창구(수집 상태 등, 2026-10-06). 상태와 DB 연결 함수를 넘긴다 — 이유는 notice_api 머리말
+from search import notice_api  # noqa: E402
+app.include_router(notice_api.build_router(STATE, lambda: _connect()))  # 시험에서 _connect 를 바꿔 끼울 수 있게 감싼다
 
 
 def _collection():
@@ -125,14 +131,65 @@ def boot():
         print('경고: 벡터 DB 를 열지 못했다 — 의미 검색 없이 시작한다 (%s)' % STATE['boot_errors']['vector_db']['error'],
               file=sys.stderr)
 
+    from search import collection_status, content_version
     connection = _connect()
     try:
+        # 올릴 공고의 저장 시각 — 공고보다 **먼저** 읽는다(그 사이 배치가 저장해도 더 오래된 쪽으로 남는다).
+        # 수집 상태 창구가 "서버가 들고 있는 공고가 오래됐는가"를 볼 때 쓴다(search/notice_api.py). 실패해도 서버는 연다
+        try:
+            STATE['loaded_store_at'] = collection_status.read_latest_store(connection)[0]
+        except Exception as exc:
+            STATE['loaded_store_at'] = None
+            STATE['boot_errors']['loaded_store_at'] = _describe(exc, '공고 저장 시각 읽기')
         with connection.cursor() as cursor:
             cursor.execute('SELECT ' + ','.join(FIELDS) + ' FROM notices')
             STATE['rows'] = {r[0]: dict(zip(FIELDS, r)) for r in cursor.fetchall()}
     finally:
         connection.close()
     print('공고 정보 %d건' % len(STATE['rows']))
+
+    # 공고 내용 지문(조율 요청서 3.1, search/content_version.py). 실패하면 추천 결과의 content_version 이 null 이 된다
+    # (조율 쪽은 null 이면 카드 정보 비교로만 "내용 바뀜"을 판단한다)
+    STATE['content_versions'] = {}
+    try:
+        connection = _connect()
+        try:
+            STATE['content_versions'] = content_version.load(connection)
+        finally:
+            connection.close()
+    except Exception as exc:
+        STATE['boot_errors']['content_version'] = _describe(exc, '공고 내용 지문 계산')
+    print('공고 내용 지문 %d건' % len(STATE['content_versions']))
+    # 공고 상세 창구의 지원 금액(notice_conditions, 02). 실패하면 금액이 모두 null 이 된다
+    STATE['amounts'] = {}
+    try:
+        connection = _connect()
+        try:
+            STATE['amounts'] = notice_api.load_amounts(connection)
+        finally:
+            connection.close()
+    except Exception as exc:
+        STATE['boot_errors']['amounts'] = _describe(exc, '지원 금액 읽기')
+    print('지원 금액 %d건' % len(STATE['amounts']))
+    # 공고 가점(notice_bonus, 03_bonus). 실패하면 가산점이 모두 null(계산하지 못함)이 된다.
+    # 뽑을 때의 공고 내용 지문·추출기 버전이 지금과 다른 행은 쓰지 않는다(공고문이 바뀌었는데 아직 다시 뽑지 않음 → null).
+    # 지문을 계산하지 못했으면 가점도 쓰지 않는다(최신인지 알 수 없다) — 2026-10-06 Codex 검수 P2-4
+    STATE['bonus'] = {}
+    stale = {}
+    try:
+        if 'content_version' in STATE['boot_errors']:
+            raise RuntimeError('공고 내용 지문이 없어 가점 최신성을 확인할 수 없다')
+        from collect.extract_bonus import EXTRACTOR_VERSION
+        connection = _connect()
+        try:
+            STATE['bonus'] = bonus_mod.load(connection, versions=STATE['content_versions'],
+                                            extractor_version=EXTRACTOR_VERSION, stale=stale)
+        finally:
+            connection.close()
+    except Exception as exc:
+        STATE['boot_errors']['bonus'] = _describe(exc, '공고 가점 읽기')
+    print('공고 가점 %d건 (내용이 바뀌어 뺌 %d · 추출기 버전이 달라 뺌 %d)'
+          % (len(STATE['bonus']), stale.get('content', 0), stale.get('version', 0)))
 
     # 단어 검색 색인. 공고 문장은 임베딩과 **같은 입력**(embed.build_input)을 쓴다.
     # 평가(eval/build_pool.py corpus)와도 같다. 매일 배치 뒤에는 서버를 다시 켜야 반영된다.
@@ -289,6 +346,12 @@ class Weights(BaseModel):
     penalty_district: float = 0.3  # score 방식에서 같은 시·도의 다른 시·군·구
     penalty_industry: float = 0.5  # score 방식에서 업종 허용 목록 밖 (잠정 — LLM 추출이라 지역보다 약하게)
     penalty_pre_implied: float = 0.5  # score 방식에서 예비창업자인데 대상이 기존 사업자로 보이는 공고(추정)
+    # 가산점 반영 세기(03_bonus 3-4). 검색 점수 × (1 + bonus × min(가산점, 10)/10). 0 이면 가산점 전과 순서가 같다.
+    # order 방식에서는 규칙 묶음(다른 지역 등)을 넘지 않고 같은 묶음 안에서만 순서를 바꾼다.
+    # 기본 0(2026-10-06 Codex 검수 P3-1): 0.1~0.3 모두 관련도 지표 변화 0 이었지만(eval/bonus_rank_eval.py,
+    # reports/bonus_rank_eval_20261006T015155Z/) 정답이 가산점을 몰라 "좋은 순위"인지 재지 못했고 가점 추출 정확도도
+    # 사람 정답으로 확인하지 않았다. 확인될 때까지 순위에는 반영하지 않는다(결과의 bonus_score 는 그대로 나간다)
+    bonus: float = 0.0
 
 
 class MatchRequest(BaseModel):
@@ -382,6 +445,27 @@ def eligible_with_types(nid, row, age_months, today, check_deadline=True, types_
     if verdict == 'blocked' and '업력·신청자 유형' not in why:
         return False, why + ['예비창업자 불가(공고 본문)'], 'blocked'
     return keep, why, None
+
+
+BONUS_SCALE = 10.0     # 가산점 10점을 "가득"으로 본다(공고 가점 한도는 대개 3~10점, 2026-10-06 표본)
+
+
+def bonus_boost(candidates, ranks, hybrid_on, req):
+    """{공고 ID: 가산점을 얹은 검색 점수} — order 방식의 같은 규칙 묶음 안 정렬에 쓴다(03_bonus 3-4).
+
+    검색 점수는 scored 방식과 같은 척도: 하이브리드면 RRF, 의미 검색만이면 유사도. 점수가 없는 경로(마감임박순)는 빈 사전 —
+    순서를 바꾸지 않는다. 가산점이 null(계산하지 못함)·0 이면 얹지 않는다.
+    """
+    out, any_bonus = {}, False
+    for nid, dist, _row in candidates:
+        base = ranks.get(nid, {}).get('rrf_score') if (hybrid_on or dist is None) else 1.0 - dist
+        if base is None:
+            return {}
+        points = bonus_mod.score(STATE.get('bonus', {}).get(nid), req)[0] or 0.0
+        any_bonus = any_bonus or points > 0
+        out[nid] = base * (1.0 + req.weights.bonus * min(points, BONUS_SCALE) / BONUS_SCALE)
+    # 가산점이 있는 후보가 하나도 없으면 다시 정렬하지 않는다 — 가산점 전과 순서가 정확히 같다
+    return out if any_bonus else {}
 
 
 def match(req: MatchRequest):
@@ -584,14 +668,17 @@ def match(req: MatchRequest):
     #   4) 업종 허용 목록 밖   신청이 안 될 가능성이 크다. 다만 LLM 추출이라 사람 검증 전 — 지역보다 약하게. 기본 꺼짐
     #   5) 집단 근거 없음      신청자가 실제로 그 집단일 수 있다 — 가장 약함
     #   6) 같은 조건이면 검색 순서를 그대로 둔다
+    #   6') 가산점(03_bonus 3-4, weights.bonus > 0 일 때만) — 같은 묶음 안에서 검색 점수 × (1 + 세기 × 가산점/10)
     demoted, region_demoted, district_demoted, industry_demoted = [], [], [], []
     if not scored_mode:
         order_of = {nid: i for i, (nid, _d, _r) in enumerate(candidates)}
+        boosted = bonus_boost(candidates, ranks, hybrid_on, req) if req.weights.bonus > 0 else {}
         candidates.sort(key=lambda c: (flags[c[0]]['region'],
                                        flags[c[0]]['district'],
                                        flags[c[0]]['pre_implied'],
                                        flags[c[0]]['industry'],
                                        bool(flags[c[0]]['groups']),
+                                       -boosted.get(c[0], 0.0),
                                        order_of[c[0]]))
         demoted = [{'notice_id': nid, 'title': row.get('title') or '',
                     'score': None if dist is None else round(1.0 - dist, 4),
@@ -645,7 +732,11 @@ def match(req: MatchRequest):
             # True 내 시·군·구 · False 같은 시·도의 다른 시·군·구 · None 제목에 없음
             'district_match': region_mod.district_matches(row.get('title'), row.get('region'),
                                                           req.region, req.district),
+            # 조율 요청서 3.1·3.2 (2026-10-06). 지문을 계산하지 못한 공고는 null.
+            'content_version': STATE.get('content_versions', {}).get(nid),
         })
+        # 신청자별 가산점(search/bonus.py, 03_bonus 3-3). 0 = 해당 가점 없음, null = 계산하지 못함
+        results[-1]['bonus_score'], results[-1]['bonus_items'] = bonus_mod.score(STATE.get('bonus', {}).get(nid), req)
         hit = flags.get(nid, {})
         results[-1]['rules'] = {'groups': hit.get('groups') or [],
                                 'off_region': bool(hit.get('region')),
@@ -830,59 +921,11 @@ def eligibility(req: GateRequest):
     if row is None:
         return JSONResponse({'error': '공고를 찾을 수 없다'}, status_code=404)
 
-    # 예비창업자는 미설립(None), 설립일이 없거나 형식이 이상한 사업자는 '모른다'(UNKNOWN_AGE).
-    # 매칭의 정형 필터와 같은 함수를 쓴다
-    age_months = gate.applicant_age(req.applicant_type, req.founded_at)
-    verdict = gate.judge(row, age_months)
-
-    # '지원대상 유형'은 공고 본문에서 읽은 신청자 유형으로 판정한다(2026-09-28 G, search/applicant_types.py).
-    # 예비창업자는 본문 '불가'(강한 근거)면 미달, '가능'이면 통과, 추정·모름은 확인 필요.
-    # 개인사업자·법인은 자동 판정하지 않고 근거만 보여 준다. 결과 파일에 없는 공고는 예전처럼 확인 필요다.
-    from search import applicant_types as types_mod
-    types_table = STATE.get('applicant_types') or {}
-    typed = types_mod.type_check(types_table, req.notice_id, req.applicant_type)
-    if typed:
-        type_verdict, type_need, type_why = typed
-    else:
-        type_verdict, type_need = None, row.get('target_category') or '지원대상 정보 없음'
-        type_why = '개인사업자·법인 구분 정보가 공고 데이터에 없습니다. 원문을 확인하세요.'
-    checks = [{'조건': '지원대상 유형', '요구': type_need, '내 값': req.applicant_type,
-               '판정': type_verdict, '설명': type_why}] + verdict['checks']
-    # 본문에 예비창업자 가능이 명시됐으면 업력 줄도 본문을 따른다.
-    #   API 업력 칸이 예비 불가라 미달로 나온 경우 — 본문 우선
-    #   업력 칸이 없어(기업마당) 모름으로 나온 경우 — "예비창업자 또는 창업 N년 미만 기업" 처럼 업력은 기존 사업자 쪽
-    #   조건이다. 예비창업자에게는 해당하지 않으므로 통과로 둔다(2026-09-28 A, 반려동물 창업 경진대회 공고)
-    pre_allowed = req.applicant_type == types_mod.PRE_FOUNDER and type_verdict is True
-    # 세부사업별로 예비창업자 허용이 갈리는 공고 — 업력을 통과로도 미달로도 두지 않는다(Codex 검수 P2)
-    pre_partial = (req.applicant_type == types_mod.PRE_FOUNDER and types_mod.varies(types_table, req.notice_id)
-                   and types_mod.pre_founder(types_table, req.notice_id) == 'allowed')
-    for c in checks:
-        if c['조건'] != '업력':
-            continue
-        # 세부사업별 예비 허용은 업력이 이미 통과여도 확인 필요로 둔다(Codex 재검수 P2 — K-Startup 5건은
-        # API 업력 칸이 "예비창업자, …년미만" 이라 True 였고, 먼저 건너뛰어 통과로 남았다)
-        if not pre_partial and c['판정'] is True:
-            continue
-        if pre_partial:
-            c['판정'] = None
-            c['요구'] = '세부사업에 따라 예비창업자 신청 가능(공고 본문) — 업력 조건은 세부사업별로 확인 · 업력 칸: %s' % c['요구']
-            c['설명'] = type_why or ''
-        elif pre_allowed and c['판정'] is False:
-            c['판정'] = True
-            c['요구'] = '예비창업자 신청 가능(공고 본문 우선 · API 업력 칸: %s)' % c['요구']
-            c['설명'] = '업력 칸(API)은 예비창업자 불가지만, 공고 본문에 예비창업자 신청 가능이 명시돼 본문을 따릅니다.'
-        elif pre_allowed:
-            c['판정'] = True
-            c['요구'] = '예비창업자 신청 가능(공고 본문) — 업력 조건은 이미 창업한 기업에 붙는 조건'
-            c['설명'] = ('공고 본문에 예비창업자 신청 가능이 명시돼 있습니다. %s' % (type_why or '')).strip()
-        else:
-            # 업력 칸이 없거나 못 읽었다 — 공고문 추출 값을 근거로만 보여 준다(판정은 확인 필요 그대로, B)
-            from search import age_evidence
-            shown = age_evidence.evidence_check(STATE.get('age_evidence'), req.notice_id, age_months)
-            if shown:
-                c['요구'], c['설명'] = shown
-                if age_months is gate.UNKNOWN_AGE:
-                    c['설명'] = '설립일이 없어 비교하지 못했습니다. ' + c['설명']
+    # 판정은 search/eligibility.py 한 곳에 있다(2026-10-06 옮김 — 조율 창구와 함께 쓴다). 내용은 그대로다
+    from search import eligibility as eligibility_mod
+    checks, _age_months = eligibility_mod.conditions(
+        row, req.notice_id, req.applicant_type, req.founded_at,
+        types_table=STATE.get('applicant_types') or {}, age_table=STATE.get('age_evidence'))
 
     return {
         'notice_id': req.notice_id,

@@ -211,7 +211,7 @@ def run(dry_run=False, skip_store=False, force=False, say=print,
         skip_embed=False, embed_limit=None, skip_upload=False,
         skip_files=False, skip_conditions=False, conditions_limit=None,
         skip_applicant_types=False, applicant_types_limit=None, skip_judgments=False,
-        skip_industries=False, industries_limit=None):
+        skip_industries=False, industries_limit=None, skip_bonus=False, bonus_limit=None):
     try:
         with job_lock.acquire(LOCK):
             return _run(dry_run, skip_store, force, say,
@@ -219,7 +219,7 @@ def run(dry_run=False, skip_store=False, force=False, say=print,
                         skip_embed, embed_limit, skip_upload, skip_files,
                         skip_conditions, conditions_limit,
                         skip_applicant_types, applicant_types_limit, skip_judgments,
-                        skip_industries, industries_limit)
+                        skip_industries, industries_limit, skip_bonus, bonus_limit)
     except job_lock.JobBusy as exc:
         return {'status': 'busy', 'job': 'pipeline', 'error': str(exc)}
 
@@ -229,7 +229,7 @@ def _run(dry_run, skip_store, force, say,
          skip_embed=False, embed_limit=None, skip_upload=False,
          skip_files=False, skip_conditions=False, conditions_limit=None,
          skip_applicant_types=False, applicant_types_limit=None, skip_judgments=False,
-         skip_industries=False, industries_limit=None):
+         skip_industries=False, industries_limit=None, skip_bonus=False, bonus_limit=None):
     started = time.time()
     sources = {}
 
@@ -427,6 +427,25 @@ def _run(dry_run, skip_store, force, say,
     elif skip_judgments or skip_upload:
         say('판정 올리기를 건너뛴다(--skip-judgments 또는 --skip-upload)')
 
+    # ── 14. 공고 가점 뽑기 (LLM, 2026-10-06, docs/notice_api/03_bonus) ──
+    # 조율 창구의 신청자별 가산점이 쓰는 공고 가점(collect/extract_bonus.py → 공용 DB notice_bonus). 열린 공고 중
+    # 첨부 본문이 있는 공고만 본다. 발췌 해시·추출기 버전·공고 내용 지문이 같으면 건너뛰므로 새 공고·바뀐 공고만 부른다.
+    # 상한은 한국 날짜 하루 300건(같은 날 다시 돌려도 합산, data/bonus_daily_calls.json — 2026-10-06 Codex 검수 P2-6).
+    # 가점·우대 말이 없는 공고는 부르지 않고 no_mention 으로 적는다. --skip-upload 도 따른다(공용 DB 쓰기)
+    bonus_result = None
+    if stored and not skip_bonus and not skip_upload:
+        say('가점 추출')
+        try:
+            from collect import extract_bonus
+            bonus_result = extract_bonus.run_batch(
+                limit=bonus_limit if bonus_limit is not None else extract_bonus.DAILY_LIMIT,
+                say=lambda line: say('  ' + line))
+        except Exception as exc:
+            say('  가점 추출 실패: %s' % type(exc).__name__)
+            bonus_result = {'error': '%s: %s' % (type(exc).__name__, str(exc)[:200])}
+    elif skip_bonus or skip_upload:
+        say('가점 추출을 건너뛴다(--skip-bonus 또는 --skip-upload)')
+
     removed = prune('bizinfo') + prune('kstartup')
     if removed:
         say('오래된 원본 스냅샷 %d개 정리' % removed)
@@ -434,12 +453,13 @@ def _run(dry_run, skip_store, force, say,
     # 한 소스라도 정상이 아니면 부분 실패로 본다
     degraded = [s for s, v in sources.items() if v['status'] not in ('ok', 'dry-run')]
     ok = not degraded and (stored or dry_run or skip_store)
-    # 후처리 경고 — 10~13단계(LLM 추출·판정 올리기)가 실패했거나 일부 호출이 실패했거나 경고를 냈다(2026-09-28 Codex 통합 검수 P2).
+    # 후처리 경고 — 10~14단계(LLM 추출·판정 올리기·가점)가 실패했거나 일부 호출이 실패했거나 경고를 냈다(2026-09-28 Codex 통합 검수 P2).
     # 수집 자체는 끝났으므로 status 는 그대로 둔다. 'partial' 로 바꾸면 수집 상태 판정(search/collection_status.py)이
     # 매칭을 막는다 — 공고 데이터는 새것인데 LLM 후처리만 늦은 것이라 막을 일이 아니다.
     # 대신 로그에 stage_warnings 로 남기고 종료 코드 4 로 알린다(run_daily.bat 이 run.log 에 exit=4 를 남긴다).
     stage_warnings = stage_warnings_of({'conditions': conditions_result, 'applicant_types': applicant_types_result,
-                                        'industries': industries_result, 'judgments_upload': judgments_result})
+                                        'industries': industries_result, 'judgments_upload': judgments_result,
+                                        'bonus': bonus_result})
 
     return write_log({
         'status': 'ok' if ok else 'partial',
@@ -461,6 +481,7 @@ def _run(dry_run, skip_store, force, say,
         'applicant_types': applicant_types_result,
         'industries': industries_result,
         'judgments_upload': judgments_result,
+        'bonus': bonus_result,
         'elapsed_sec': round(time.time() - started, 1),
     })
 
@@ -506,6 +527,8 @@ def main():
                     help='신청자 유형 추출(LLM)을 건너뛴다')
     ap.add_argument('--skip-industries', action='store_true', help='업종 추출(LLM)을 건너뛴다')
     ap.add_argument('--industries-limit', type=int, help='이번 날짜의 업종 추출 공고 상한 (기본 300)')
+    ap.add_argument('--skip-bonus', action='store_true', help='공고 가점 추출(LLM, 14단계)을 건너뛴다')
+    ap.add_argument('--bonus-limit', type=int, help='가점을 추출할 공고의 한국 날짜 하루 상한 (기본 300, 같은 날 다시 돌려도 합산)')
     ap.add_argument('--skip-judgments', action='store_true',
                     help='판정(신청자 유형·업종)을 공용 DB 로 올리지 않는다')
     ap.add_argument('--applicant-types-limit', type=int,
@@ -524,7 +547,8 @@ def main():
             skip_applicant_types=args.skip_applicant_types,
             applicant_types_limit=args.applicant_types_limit,
             skip_judgments=args.skip_judgments,
-            skip_industries=args.skip_industries, industries_limit=args.industries_limit)
+            skip_industries=args.skip_industries, industries_limit=args.industries_limit,
+            skip_bonus=args.skip_bonus, bonus_limit=args.bonus_limit)
 
     if r['status'] == 'busy':
         print('이미 수집 작업이 실행 중이다.', file=sys.stderr)

@@ -13,11 +13,12 @@
 | 흐름 | 입력 → 처리 → 출력 | 주요 파일 |
 |---|---|---|
 | 공고 수집 | K-Startup·기업마당 API → 정규화 → MySQL 공고 저장 | `collect/daily_pipeline.py`, `collect/normalize.py`, `shared/store_mysql.py` |
-| 첨부 처리 | 첨부 파일 → 텍스트 추출·저장 → 자격요건 추출 | `collect/attachment_pipeline.py`, `collect/doctext.py`, `collect/extract_conditions.py` |
+| 첨부 처리 | 첨부 파일 → 텍스트 추출·저장 → 자격요건 추출 → 가점 추출(14단계, 2026-10-06, `notice_bonus` — 가점·우대 말이 있는 열린 공고, 발췌·추출기 버전·내용 지문이 바뀐 것만, 한국 날짜 하루 300건) | `collect/attachment_pipeline.py`, `collect/doctext.py`, `collect/extract_conditions.py`, `collect/extract_bonus.py` |
 | 검색 준비 | 공고 필드 → BGE-M3 임베딩 → 로컬 벡터 색인·공용 DB 업로드 | `shared/embed.py`, `search/vecstore.py`, `collect/upload_vectors.py` |
 | 수집 상태 | 공용 DB `import_runs` 최근 저장 시각 + 배치 PC 로그 `data/collect_log.jsonl` → 정상/지연/실패 판정(실패·지연이면 매칭을 멈춰야 함, 기능정의서 R-1 ①·R-3 ②). **2026-09-28 판정만 구현, `/api/match` 연결 전**. 화면 `http://127.0.0.1:8010/collection-status` | `search/collection_status.py` |
 | 공고 매칭 | 신청자 입력 → **정형 필터(모집 상태·접수 마감·업력/신청자 유형, `gate.prefilter`)** → 필터 통과 공고 안에서 벡터/BM25 검색·RRF 결합 → 지역·업종·집단 규칙 재정렬(빼지 않고 뒤로) → 공고 반환 | `search/app.py`, `search/gate.py`, `search/applicant.py`, `search/hybrid.py`, `search/rank_rules.py`, `search/industry_rank.py`, `shared/region.py` |
-| 자격 확인 | 선택한 공고·신청자 정보 → 조건 판정 → 판정 근거 반환 | `search/app.py`, `search/gate.py` |
+| 자격 확인 | 선택한 공고·신청자 정보 → 조건 판정 → 판정 근거 반환. 판정 본문은 2026-10-06부터 `search/eligibility.py` 한 곳(화면용 `/api/eligibility`와 조율용이 함께 씀) | `search/app.py`, `search/eligibility.py`, `search/gate.py` |
+| 조율 창구 | 조율 에이전트(Orchestrator)의 HTTP 요청 → 수집 상태(`GET /api/collection_status`: DB 판정 + **서버가 올린 공고가 24시간 넘으면 지연**)·추천 결과에 공고 내용 지문 `content_version`(`cv2-`, 지금 달린 첨부만)·가산점 키, 공고 상세(`GET /api/notices/{id}`)·자격 판정(`POST /api/notices/{id}/eligibility` — 지원대상 유형·업력만, `today` 기준, 추천 정형 필터와 같은 결론), 신청자별 가산점(공용 DB `notice_bonus` × 성별·인증·지역 → `bonus_score`·`bonus_items`. 선택 조건 묶음은 한 번만, 세부사업별 최대, 추가 조건이 있으면 모름. 뽑을 때의 내용 지문·추출기 버전이 지금과 다른 가점은 쓰지 않음. 순위 반영 `Weights.bonus` 기본 0 — Codex 검수 P3-1로 보류). 2026-10-06 01~03 작업·Codex 검수 반영(추출기 v4), 기록 `docs/notice_api/` | `search/notice_api.py`, `search/content_version.py`, `search/eligibility.py`, `search/bonus.py`, `search/app.py` |
 | 검색 평가 | 고정 질의·판정 자료 → 검색 방식별 결과 → 품질 지표 | `eval/README.md`, `eval/evaluate.py` |
 
 검색의 기본 진입점은 `search/app.py`의 `/api/match`입니다. `search='dense'`는 임베딩 단독,
