@@ -345,7 +345,10 @@ export function ArtifactCarousel({ hasExecutable, infoSrc = null, siteSrc = null
   );
 }
 
-export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, artifactOutcome, setDocOutcome, setArtifactOutcome, projectId, reworkCounts = {}, onRework, scores = null, reworkBudget = null, onScoresRefresh, artifact = null }){
+export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, artifactOutcome, setDocOutcome, setArtifactOutcome, projectId, reworkCounts = {}, onRework, scores = null, reworkBudget = null, onScoresRefresh, artifact = null, plan = null }){
+  // 서버 계획서(GET /result의 plan.sections — tag · title · body). 있으면 '계획서 보기'가 이걸 보이고, 없을 때만 예시 계획서.
+  // 예전엔 서버 계획서와 관계없이 늘 예시 계획서(PLAN_DOCUMENT_SECTIONS)를 보였다.
+  const planSections = plan?.sections?.length ? plan.sections : null;
   // 서버 채점 결과가 있으면 그 값으로 판정한다(utils.js scoresFromResult) — 없으면 기존 고정 표.
   const docScore = scores?.docScore || DOC_SCORE_BY_OUTCOME[docOutcome];
   const artifactScore = scores?.artifactScore || ARTIFACT_SCORE_BY_OUTCOME[artifactOutcome];
@@ -772,14 +775,15 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
             <div className="soft-scroll relative bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto p-8 shadow-2xl">
               <p className="text-[11px] text-[var(--muted-fg)] mb-4 pb-4 border-b border-[var(--border)]">{PLAN_AI_NOTICE}</p>
               <div className="flex flex-col gap-6">
-                <GeneralInfoBlock itemInfo={itemInfo} itemTitle={announcement ? announcement.title : ''} sections={PLAN_DOCUMENT_SECTIONS} />
-                {PLAN_DOCUMENT_SECTIONS.map((s, i) => (
-                  <div key={s.title}>
-                    <h2 className="font-display font-bold text-[15px] mb-1.5">{PSST_OFFICIAL_HEADERS[i]}</h2>
-                    <p className="text-[13px] leading-relaxed text-[var(--fg)]">{s.body}</p>
+                <GeneralInfoBlock itemInfo={itemInfo} itemTitle={announcement ? announcement.title : ''} sections={planSections || PLAN_DOCUMENT_SECTIONS} />
+                {(planSections || PLAN_DOCUMENT_SECTIONS).map((s, i) => (
+                  <div key={s.tag || s.title}>
+                    <h2 className="font-display font-bold text-[15px] mb-1.5">{planSections ? (s.title || PSST_OFFICIAL_HEADERS[i]) : PSST_OFFICIAL_HEADERS[i]}</h2>
+                    <p className="text-[13px] leading-relaxed text-[var(--fg)] whitespace-pre-line">{s.body}</p>
                   </div>
                 ))}
-                <PlanExtrasBlock size="compact" />
+                {/* 예시 그래프 · 표 — 서버 계획서가 있으면 실제 내용과 섞이지 않게 숨긴다(서버 차트 · 표 표시는 아직 없다) */}
+                {!planSections && <PlanExtrasBlock size="compact" />}
               </div>
             </div>
           ) : (

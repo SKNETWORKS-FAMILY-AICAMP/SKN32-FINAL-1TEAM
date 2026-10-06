@@ -350,6 +350,15 @@ try{
   assert.ok(ui.nodes().some(n=>n.props.role==='alert'&&flat(n).includes('작업을 시작하지 못했어요')));
   const pollsAfter=stuckPolls;await wait(1700);assert.equal(stuckPolls,pollsAfter);ui.unmount();
 
+  // 화면 9 '계획서 보기'는 서버 계획서(plan.sections)를 보인다 — 예전엔 늘 예시 계획서였다
+  globalThis.fetch=route([['GET /projects/7/status',()=>response({stage:'final_review_pending',rework_screen:null})]]);
+  ui=mount(FinalVerdict,{...verdictBase,scores:{total:90,threshold:80},onProceed(){},
+    plan:{sections:[{tag:'1-1',title:'문제 인식',body:'서버가 쓴 문제 인식 본문'},{tag:'2-1',title:'실현 가능성',body:'서버가 쓴 실현 본문'}]}});await ui.flush();
+  ui.find(n=>n.type==='button'&&n.props.children==='계획서 보기').props.onClick();await ui.flush();
+  const planText=flat(ui.nodes()[0]);
+  assert.ok(planText.includes('서버가 쓴 문제 인식 본문')&&planText.includes('서버가 쓴 실현 본문'),planText.slice(0,200));
+  assert.ok(!planText.includes('동네 헬스장'));ui.unmount();
+
   // 알림 이력을 눌러 열면 그 프로젝트의 공고 제목도 같이 넘긴다(번호만 넘겨 화면에 공고 제목이 비던 문제)
   const {NotificationBell}=await server.ssrLoadModule('/src/features/workflow/shared.jsx');
   let opened=null;
@@ -362,6 +371,6 @@ try{
   ui.find(n=>typeof n.props.onClick==='function'&&flat(n).includes('사업계획서 평가가 끝났어요')).props.onClick();await ui.flush();
   assert.equal(opened.id,5);assert.equal(opened.announcementTitle,'초기창업패키지');ui.unmount();
 
-  console.log('PASS: orchestrator flows — resume screen map, candidates pending · blocked ids, eligibility pending · stale result · 409, gate fields, screen 8 · 9 proceed, onepage infographic rebuild, rework rollback · resume, review progress, not-started guards (screen 8 · 9 · progress), partial rework rejection · plan preview refresh, notification history title');
+  console.log('PASS: orchestrator flows — resume screen map, candidates pending · blocked ids, eligibility pending · stale result · 409, gate fields, screen 8 · 9 proceed, onepage infographic rebuild, rework rollback · resume, review progress, not-started guards (screen 8 · 9 · progress), partial rework rejection · plan preview refresh, notification history title, screen 9 server plan');
   console.log('PASS: intake restoration, stale responses, final-stage lock, polling recovery, profile logout race, resume-screen routing, rewrite/generation exclusion');
 }finally{globalThis.fetch=originalFetch;await server.close()}
