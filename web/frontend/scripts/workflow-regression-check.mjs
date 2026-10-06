@@ -255,6 +255,23 @@ try{
   await ui.find(n=>n.type==='button'&&n.props.children==='그래도 진행하기').props.onClick();
   assert.deepEqual(reviewBodies,['{"confirmed":false}','{"confirmed":true}']);assert.equal(proceeded,1);ui.unmount();
 
+  // 원페이지 화면 9 — 계획서만 재작성해도 인포그래픽이 함께 다시 만들어지면 변경 내역 · 비교에 넣는다
+  window.addEventListener=()=>{};window.removeEventListener=()=>{};
+  let onepageReads=0;
+  globalThis.fetch=route([
+    ['POST /projects/7/retry-task',()=>response({cycle_id:'C9',screen:9,bundles:['문제인식'],collect_until:'2026-10-06T00:00:02Z'})],
+    ['GET /projects/7/status',()=>response({stage:'final_review_pending',rework_screen:null})],
+    ['GET /projects/7/rework-result',()=>response(++onepageReads<2?{cycle_id:'old',status:'완료',screen:9,bundles:[]}
+      :{cycle_id:'C9',status:'완료',screen:9,bundles:['문제인식'],changed:{sections:{'1-1':{before:'옛 문장',after:'새 문장'}},infographic_path:{before:'a/old.svg',after:'a/new.svg'}}})],
+  ]);
+  ui=mount(FinalVerdict,{...verdictBase,itemInfo:{item:'동네 카페 매장'},artifact:{category:'onepage'},scores:{total:70,threshold:80},onProceed(){}});await ui.flush();
+  ui.find(n=>n.type==='input'&&n.props.type==='checkbox').props.onChange();await ui.flush();
+  await ui.find(n=>n.type==='button'&&n.props.children==='선택 항목 다시 만들기').props.onClick();await ui.flush();
+  const diffToggle=ui.nodes().find(n=>n.type==='button'&&flat(n).includes('항목 변경됨'));
+  assert.ok(flat(diffToggle).includes('2개 항목 변경됨'),flat(diffToggle));
+  diffToggle.props.onClick();await ui.flush();
+  assert.ok(flat(ui.nodes()[0]).includes('계획서와 함께 다시 만들어짐'));ui.unmount();
+
   // 재작성(화면 6) — 실패면 되돌림 안내 · 횟수 안 셈, 화면을 다시 열면 /status rework_screen으로 진행 중을 이어 본다
   let reworked=null,reworkReads=0;
   globalThis.fetch=route([
@@ -282,6 +299,6 @@ try{
   await wait(1600);await ui.flush();assert.equal(ui.component('Preparation').props.progress,100);
   assert.ok(reviewCalls.every(m=>m==='GET'));ui.unmount();
 
-  console.log('PASS: orchestrator flows — resume screen map, candidates pending · blocked ids, eligibility pending · stale result · 409, gate fields, screen 8 · 9 proceed, rework rollback · resume, review progress');
+  console.log('PASS: orchestrator flows — resume screen map, candidates pending · blocked ids, eligibility pending · stale result · 409, gate fields, screen 8 · 9 proceed, onepage infographic rebuild, rework rollback · resume, review progress');
   console.log('PASS: intake restoration, stale responses, final-stage lock, polling recovery, profile logout race, resume-screen routing, rewrite/generation exclusion');
 }finally{globalThis.fetch=originalFetch;await server.close()}

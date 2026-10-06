@@ -441,8 +441,15 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
     if (onScoresRefresh) await onScoresRefresh();
     if (!alive.current) return;
     setRunningTasks([]);
+    // 원페이지는 계획서를 재작성하면 인포그래픽도 새 계획서로 다시 만들어진다(조율 웹연동 12.6) — 고르지 않았어도
+    // 재작성 결과에 인포그래픽 변경이 있으면 변경으로 보여 주고 비교 화면에도 넣는다.
+    const infographicRebuilt = !picked.includes('인포그래픽 제작') && !!reworkDiffForLabel(changed, '인포그래픽 제작');
     setReworkDiff(allTasks.map(({ label, layer }) => {
       const isPicked = picked.includes(label);
+      if (label === '인포그래픽 제작' && infographicRebuilt) {
+        const d = reworkDiffForLabel(changed, label);
+        return { label: `${label} (계획서와 함께 다시 만들어짐)`, layer, before: d.before, after: d.after, changed: true, fromServer: true };
+      }
       if (!isPicked) return { label, layer, before: '변경 없음', after: '변경 없음', changed: false };
       const fromServer = reworkDiffForLabel(changed, label);
       const summary = fromServer || TASK_REWORK_SUMMARY[label] || { before: '변경 없음', after: '변경 없음' };
@@ -454,7 +461,7 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
     setSectionDiff(writingPicked ? changed?.sections || null : null);
     setReworkedParts({
       plan: pickedLayers.has('계획서'),
-      infographic: picked.includes('인포그래픽 제작'),
+      infographic: picked.includes('인포그래픽 제작') || infographicRebuilt,
       prototype: picked.includes('실행 파일 제작'),
     });
     // 고른 층만 점수를 올린다 — 고르지 않은 층은 그대로 승계된다(v3 §2). ARTIFACT_
