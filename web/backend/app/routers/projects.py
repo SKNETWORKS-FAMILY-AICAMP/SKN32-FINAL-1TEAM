@@ -446,7 +446,23 @@ def get_pipeline_result(
             '이 프로젝트엔 아직 계획서가 없습니다 — POST /projects/{id}/plan/start 로 먼저 만들어야 합니다',
         )
     policy = db.query(VerificationPolicy).order_by(VerificationPolicy.policy_id.asc()).first()
-    return mapping.result_out(project_id, outputs, policy)
+    return mapping.result_out(project_id, outputs, policy, _proofread_originals(gateway, project_id, outputs))
+
+
+def _proofread_originals(gateway: OrchGateway, project_id: int, outputs) -> dict[str, str] | None:
+    """검수 기록이 있을 때 화면 10에서 문장별 검수 전 원문을 읽는다(sentenceId → before) — [SB-297].
+
+    표현 검수가 끝나면 현재 계획서(planDoc)의 문장이 검수 결과 문장으로 바뀌므로, 검수 전 원문은 계획서가 아니라 화면 10에서 읽는다.
+    화면 10은 결과물 · 완료에서만 열린다 — 아직 열 수 없으면(검수 중 등) 계획서가 바뀌기 전이라 None(계획서 문장을 쓴다)."""
+    if not outputs.sentence_results:
+        return None
+    try:
+        screen = gateway.screen(project_id, 10)
+    except OrchError as exc:
+        if exc.code in ('SCREEN_NOT_READY', 'INVALID_STATE'):
+            return None
+        raise
+    return {s.sentence_id: s.before for s in screen.sentences}
 
 
 def _plan_section_bodies(gateway: OrchGateway, project_id: int) -> dict[str, str]:

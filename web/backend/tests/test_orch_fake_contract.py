@@ -32,6 +32,12 @@ def test_fake_gate_screen_fields_match_real():
     assert set(vars(orch_fakes.make_gate_screen())) == set(reads.GateScreen.model_fields)
 
 
+def test_fake_proofread_screen_fields_match_real():
+    reads = pytest.importorskip('sbrain.flow.reads')
+    assert set(vars(orch_fakes.make_proofread_screen())) == set(reads.ProofreadScreen.model_fields)
+    assert set(vars(orch_fakes.make_sentence_change('s1', 'x'))) == set(reads.SentenceChange.model_fields)
+
+
 def test_fake_gate_and_score_view_fields_match_real():
     domain = pytest.importorskip('sbrain.models.domain')
     reads = pytest.importorskip('sbrain.flow.reads')

@@ -426,11 +426,16 @@ def _violation_note(token_check) -> str | None:
     return ' / '.join(parts) or None
 
 
-def proofread_logs_out(outputs) -> list[schemas.ProofreadLogOut]:
-    """문장별 시도 기록(모든 계정) → 시도마다 한 줄. 원문은 계획서의 같은 sentenceId 문장."""
-    originals = {}
+def proofread_logs_out(outputs, originals: dict[str, str] | None = None) -> list[schemas.ProofreadLogOut]:
+    """문장별 시도 기록(모든 계정) → 시도마다 한 줄.
+
+    검수 전 원문(originals: sentenceId → 문장)은 화면 10이 주는 값이다 — 표현 검수가 끝나면 현재 계획서(planDoc)의 문장이
+    채택된 검수 결과 문장으로 바뀌므로 계획서에서 읽으면 "검수 전"이 아니게 된다(SB-297). 화면 10을 읽을 수 없을 때(originals 없음)는
+    검수가 아직 계획서를 바꾸지 않은 때이므로 현재 계획서의 같은 sentenceId 문장을 쓴다."""
+    fallback = {}
     if outputs.plan_doc is not None:
-        originals = {s.sentence_id: s.text for sec in outputs.plan_doc.sections for s in sec.sentences}
+        fallback = {s.sentence_id: s.text for sec in outputs.plan_doc.sections for s in sec.sentences}
+    originals = {**fallback, **(originals or {})}
     logs: list[schemas.ProofreadLogOut] = []
     for result in outputs.sentence_results:
         original = originals.get(result.sentence_id, '')
@@ -450,8 +455,9 @@ def format_findings_out(outputs) -> list[schemas.FormatFindingOut]:
 
 
 # ── GET /result ───────────────────────────────────────────────────────────────────────
-def result_out(project_id: int, outputs, policy) -> schemas.DemoGenerateResponse:
-    """outputs(project_id) → 결과 응답. 계획서(planDoc)가 아직 없으면 호출한 쪽이 404로 답한다(plan_doc 확인 뒤 부른다)."""
+def result_out(project_id: int, outputs, policy, originals: dict[str, str] | None = None) -> schemas.DemoGenerateResponse:
+    """outputs(project_id) → 결과 응답. 계획서(planDoc)가 아직 없으면 호출한 쪽이 404로 답한다(plan_doc 확인 뒤 부른다).
+    originals: 검수 전 원문(화면 10의 sentences[].before) — 검수 기록이 있을 때 호출한 쪽이 읽어 넘긴다."""
     plan_doc = outputs.plan_doc
     report = outputs.document_score_report
     plan = schemas.BusinessPlanOut(
@@ -461,7 +467,7 @@ def result_out(project_id: int, outputs, policy) -> schemas.DemoGenerateResponse
         score_reasons=plan_score_reasons(outputs),
         artifacts=[a for a in [artifact_out(outputs)] if a is not None],
         format_findings=format_findings_out(outputs),
-        proofread_logs=proofread_logs_out(outputs),
+        proofread_logs=proofread_logs_out(outputs, originals),
         feature_list=list(plan_doc.feature_list),
         charts=[c.model_dump(mode='json') for c in plan_doc.charts],
         tables=[t.model_dump(mode='json') for t in plan_doc.tables],

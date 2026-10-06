@@ -187,6 +187,22 @@ def make_sentence(i: int, text: str, paragraph_no: int = 1, is_title: bool = Fal
     return NS(sentence_id=f's{i}', text=text, is_title=is_title, paragraph_no=paragraph_no)
 
 
+def make_sentence_change(sentence_id: str, before: str, after: str | None = None, adopted: bool = False, **overrides: Any) -> NS:
+    """화면 10 문장 하나의 전후(SentenceChange)."""
+    base = dict(sentence_id=sentence_id, before=before, after=after, adopted=adopted, kept_reason=None, attempts=[])
+    base.update(overrides)
+    return NS(**base)
+
+
+def make_proofread_screen(sentences: list | None = None, **overrides: Any) -> NS:
+    """화면 10(ProofreadScreen)의 필드."""
+    base = dict(
+        screen=10, project_id=None, run_id='r1', step='결과물', progress='완료', notices=[], format_findings=[],
+        sentences=list(sentences or []), proofread_log=None)
+    base.update(overrides)
+    return NS(**base)
+
+
 def make_section(code: str, title: str, *texts: str) -> NS:
     """texts마다 문장 하나, 문단 번호는 인자 순서대로 1부터(문단 사이는 줄바꿈으로 이어진다)."""
     return NS(section_code=code, title=title, sentences=[make_sentence(i, t, paragraph_no=i) for i, t in enumerate(texts, 1)])

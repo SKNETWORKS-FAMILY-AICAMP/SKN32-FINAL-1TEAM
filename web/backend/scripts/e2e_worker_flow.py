@@ -296,6 +296,8 @@ def main() -> int:
                     step('재작성 기회 소진 표시', usage.get('문제인식', (None,))[0] == 1, f'문제인식 (사용, 남음)={usage.get("문제인식")}')
 
             # 9) 표현 검수 (9 → 10)
+            before_review = j(client.get(f'/projects/{pid}/result')).get('plan') or {}
+            before_review_body = chr(10).join(sec.get('body', '') for sec in before_review.get('sections', []))
             res = client.post(f'/projects/{pid}/review/start')
             if res.status_code == 409 and (j(res).get('detail') or {}).get('confirmation_required'):
                 step('기준 미달 확인 요청(409)', j(res).get('code') == 'CONFIRMATION_REQUIRED',
@@ -309,6 +311,12 @@ def main() -> int:
             plan = result.get('plan') or {}
             step('결과: 검수 · 최종', True,
                  f"형식 지적 {len(plan.get('format_findings', []))}건, 검수 시도 {len(plan.get('proofread_logs', []))}건")
+            # [SB-297] 검수 기록의 '검수 전' 원문은 검수 시작 직전 계획서의 문장이어야 한다(검수가 끝나면 계획서 문장은 결과 문장으로 바뀐다)
+            logs = plan.get('proofread_logs', [])
+            wrong = [log for log in logs if log.get('original_text') and log['original_text'] not in before_review_body]
+            step('결과: 검수 기록의 검수 전 원문이 검수 시작 직전 계획서 문장', bool(logs) and not wrong,
+                 f'검수 시도 {len(logs)}건 중 원문이 다른 것 {len(wrong)}건'
+                 + (f" 예: 원문={wrong[0]['original_text'][:40]!r}" if wrong else ''))
 
             # 10) 목록 · 알림 — 여기서 예외가 나도 뒤 단계(정리)는 계속한다
             check('목록 표시', lambda: check_listing(pid))
