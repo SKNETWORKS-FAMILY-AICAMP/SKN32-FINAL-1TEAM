@@ -4,9 +4,10 @@ import {Icon} from '../../components/Icons.jsx';
 import {DiffText,RerunLeftBadge} from './shared.jsx';
 import {GeneralInfoBlock,PlanExtrasBlock} from './PlanForm.jsx';
 import {PrototypeFrame,ResultPreview,useArtifactFile,ArtifactLoadError} from './ArtifactResult.jsx';
-import {detectItemCategory,diffSentences,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf,reworkDiffFromChanged} from './utils.js';
+import {detectItemCategory,diffSentences,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
 import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,RERUN_CAP,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,DOC_REWORK_BUNDLES} from './data.js';
-import {retryTask,startReview,getProjectStatus} from '../../api.js';
+import {startReview,getProjectStatus} from '../../api.js';
+import {REWORK_FAILED_MESSAGE,findRunningRework,requestRework,reworkDiffForLabel,waitRework} from './rework.js';
 
 // 검수 진행 중 진행 상태를 다시 읽는 간격
 const REVIEW_POLL_MS = 2000;
@@ -424,62 +425,33 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
     if (isCapped(label)) return;
     setCheckedTasks((prev) => (prev.includes(label) ? prev.filter((t) => t !== label) : [...prev, label]));
   };
-  // 실제 재생성 파이프라인은 없는 목업이라, 체크한 항목을 잠깐 "재작성 중"으로
-  // 보여준 뒤 되돌린다 — PlanForm/ArtifactResult와 같은 국소 시뮬레이션 패턴. 완료되면
-  // "변경 내역"을 채운다(고른 항목만이 아니라 전체 Task를 넣어, 승계된(고르지 않은)
-  // 항목도 "변경 없음"으로 함께 보여준다). 목업 수정 요청서 v3 §2가 정확히 "바뀐
-  // 항목을 접힌 형태로 제시하고 펼치면 전후 대비가 나오게 한다"고 못 박아서,
-  // 여기서 자동으로 펼치지 않는다 — 접힌 채로 두고 사용자가 직접 펼쳐야 한다.
-  // 재작성된 층의 결과물은 곧바로 모달로 띄운다(사용자 요청) — 다시 만든 결과가
-  // 실제로 뭐가 나왔는지 계획서·프로토타입 화면으로 바로 보여준다. 두 층을 함께
-  // 골랐을 때 하나만(프로토타입) 보여주고 종합 판정으로 넘어가 버리면 계획서 쪽
-  // 대조 결과를 놓친다(사용자 지적) — viewerOpen을 'both'로 두고, 모달 안에서
-  // 계획서·프로토타입 비교를 위아래로 둘 다 보여준다.
-  // POST /projects/{id}/retry-task 실제 호출(app/routers/projects.py retry_task).
-  // [변경] 응답의 changed(실제 전/후 값)로 "변경 내역"을 채운다 — 예전엔 응답을 버리고
-  // TASK_REWORK_SUMMARY 고정 문구를 썼기 때문에 몇 번을 재작성해도 같은 문장이 나왔다.
-  // 서버가 쓸 만한 전/후를 안 준 task_key는 그때만 고정 문구로 돌아간다.
-  const handleRewrite = async () => {
-    const picked = checkedTasks.filter((label) => !isCapped(label));
-    if (picked.length === 0) return;
+  // 재작성이 끝나면 "변경 내역"을 채운다(고른 항목만이 아니라 전체 Task를 넣어, 승계된(고르지 않은)
+  // 항목도 "변경 없음"으로 함께 보여준다). 목업 수정 요청서 v3 §2가 "바뀐 항목을 접힌 형태로 제시하고
+  // 펼치면 전후 대비가 나오게 한다"고 못 박아서 자동으로 펼치지 않는다.
+  // 재작성된 층의 결과물은 곧바로 모달로 띄운다(사용자 요청). 두 층을 함께 골랐으면 viewerOpen='both'로
+  // 계획서 · 프로토타입 비교를 위아래로 둘 다 보여준다(사용자 지적).
+  // changed = 재작성 결과(GET /rework-result)의 changed — 예전 retry-task 응답과 같은 모양. 서버가 쓸 만한 전/후를
+  // 안 준 항목만 고정 문구(TASK_REWORK_SUMMARY)로 돌아간다.
+  const applyRework = async (picked, changed, fromTotal) => {
     const pickedLayers = new Set(allTasks.filter((t) => picked.includes(t.label)).map((t) => t.layer));
-    const fromTotal = finalTotal; // 재작성 전 총점 — 변경 내역 헤더의 "X → Y" 중 X
-    setRunningTasks(picked);
-    setCheckedTasks([]);
-    // 라벨(묶음)별로 각각 호출한다 — 계획서 묶음 여러 개를 같이 골라도 전부 task_key=
-    // 'writing'이라, 하나로 뭉쳐 부르면 서버가 어느 묶음 몫인지 몰라 나머지 묶음
-    // 사용 횟수까지 같이 깎인다.
-    const changedByLabel = {};
-    try {
-      const responses = projectId
-        ? await Promise.all(picked.map((label) => retryTask(projectId, TASK_KEY_BY_LABEL[label], label)))
-        : [];
-      picked.forEach((label, i) => { changedByLabel[label] = responses[i]?.changed || null; });
-    } catch (err) {
-      console.error('재작성 요청이 실패했어요', err);
-      window.alert(err.message || '재작성에 실패했어요. 다시 시도해 주세요.');
-      setRunningTasks([]);
-      setCheckedTasks(picked);
-      return;
-    }
-    // 실제로 재시도가 나간 뒤에만 횟수를 센다 — 위 catch로 빠진 실패 호출은 세지 않는다.
+    // 실제로 다시 만든 뒤에만 횟수를 센다 — 실패는 서버가 기회를 돌려준다.
     if (onRework) onRework(picked);
     // 서버 재채점 결과를 다시 받아온다(아래 setDocOutcome/setArtifactOutcome은 서버 점수가
     // 없을 때 쓰는 고정 표 경로용 — 실제 점수가 있으면 그쪽이 우선한다).
     if (onScoresRefresh) await onScoresRefresh();
+    if (!alive.current) return;
     setRunningTasks([]);
     setReworkDiff(allTasks.map(({ label, layer }) => {
-      const changed = picked.includes(label);
-      if (!changed) return { label, layer, before: '변경 없음', after: '변경 없음', changed: false };
-      const fromServer = reworkDiffFromChanged(changedByLabel[label]);
+      const isPicked = picked.includes(label);
+      if (!isPicked) return { label, layer, before: '변경 없음', after: '변경 없음', changed: false };
+      const fromServer = reworkDiffForLabel(changed, label);
       const summary = fromServer || TASK_REWORK_SUMMARY[label] || { before: '변경 없음', after: '변경 없음' };
       return { label, layer, before: summary.before, after: summary.after, changed: true, fromServer: !!fromServer };
     }));
     setReworkFromTotal(fromTotal);
-    // 계획서 묶음(PSST 항목)을 하나라도 골랐으면 그 응답의 sections로 비교를 그린다 —
-    // 서버는 어느 묶음이든 같은 writing 재작성을 돌리므로 내용은 동일하다.
-    const writingLabel = picked.find((label) => TASK_KEY_BY_LABEL[label] === 'writing');
-    setSectionDiff(writingLabel ? changedByLabel[writingLabel]?.sections || null : null);
+    // 계획서 묶음(PSST 항목)을 하나라도 골랐으면 sections로 비교를 그린다 — 어느 묶음이든 계획서 전체를 다시 만든다.
+    const writingPicked = picked.some((label) => TASK_KEY_BY_LABEL[label] === 'writing');
+    setSectionDiff(writingPicked ? changed?.sections || null : null);
     setReworkedParts({
       plan: pickedLayers.has('계획서'),
       infographic: picked.includes('인포그래픽 제작'),
@@ -496,6 +468,49 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
         : pickedLayers.has('프로토타입') ? 'artifact' : 'plan'
     );
   };
+
+  // 재작성 — 접수만 하고 바로 돌아온다. 같은 화면에서 2초 안의 요청은 한 번으로 합쳐지고(cycle_id),
+  // 끝날 때까지 GET /rework-result를 확인한다(rework.js). 실패면 서버가 이전 결과로 되돌리고 기회를 돌려준다.
+  const finishRework = async (cycleId, picked, fromTotal) => {
+    const result = await waitRework(projectId, cycleId, () => alive.current);
+    if (!result) return;
+    if (result.status === '실패') {
+      window.alert(REWORK_FAILED_MESSAGE);
+      if (onScoresRefresh) await onScoresRefresh();
+      if (alive.current) setRunningTasks([]);
+      return;
+    }
+    await applyRework(picked, result.changed || null, fromTotal);
+  };
+  const handleRewrite = async () => {
+    const picked = checkedTasks.filter((label) => !isCapped(label));
+    if (picked.length === 0) return;
+    const fromTotal = finalTotal; // 재작성 전 총점 — 변경 내역 헤더의 "X → Y" 중 X
+    setRunningTasks(picked);
+    setCheckedTasks([]);
+    try {
+      if (!projectId) { await applyRework(picked, null, fromTotal); return; }
+      // 라벨(묶음)별로 각각 접수한다 — 계획서 묶음은 전부 task_key='writing'이라 묶음 이름으로 구분한다.
+      const accepted = await requestRework(projectId, picked, TASK_KEY_BY_LABEL);
+      await finishRework(accepted[0].cycle_id, picked, fromTotal);
+    } catch (err) {
+      console.error('재작성 요청이 실패했어요', err);
+      window.alert(err.message || '재작성에 실패했어요. 다시 시도해 주세요.');
+      setRunningTasks([]);
+      setCheckedTasks(picked);
+    }
+  };
+  // 화면을 다시 열었을 때 이 화면의 재작성이 진행 중이면 '진행 중'으로 이어 본다.
+  useEffect(() => {
+    if (!projectId) return;
+    findRunningRework(projectId, 9).then((running) => {
+      if (!running || !alive.current) return;
+      const picked = running.bundles.filter((b) => allTasks.some((t) => t.label === b));
+      setRunningTasks(picked);
+      finishRework(running.cycle_id, picked, finalTotal).catch((err) => console.error('재작성 결과를 불러오지 못했어요', err));
+    }).catch((err) => console.error('재작성 상태를 확인하지 못했어요', err));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
   // 검수 진행(화면 9 → 10). 미달인지는 서버(판정 G-02b)가 정한다 — 미달이면 409로 확인 내용을 주므로
   // 되돌릴 수 없음을 확인받은 뒤 confirmed=true로 다시 부른다(E4, 명세 6.2). 검수는 워커가 돌려 시간이 걸리므로

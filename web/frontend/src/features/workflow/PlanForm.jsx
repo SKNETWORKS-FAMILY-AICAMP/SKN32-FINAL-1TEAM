@@ -1,11 +1,12 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import {Icon} from '../../components/Icons.jsx';
 import Preparation from '../../components/Preparation.jsx';
 import {buildGeneralInfo,buildOverview,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
 import {RerunLeftBadge} from './shared.jsx';
 import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_TABLE_EXAMPLE,RERUN_CAP,SCORE_DISCLAIMER,DOC_REWORK_BUNDLES} from './data.js';
-import {ApiError,fetchPlanDocumentPdf,getProjectStatus,retryTask} from '../../api.js';
+import {ApiError,fetchPlanDocumentPdf,getProjectStatus} from '../../api.js';
+import {REWORK_FAILED_MESSAGE,findRunningRework,requestRework,waitRework} from './rework.js';
 
 // 재작성 묶음(PSST 4항목) -> 다시 돌릴 task_key. 묶음 하나를 고르면 그 항목의
 // 본문·차트·표가 함께 다시 만들어지는데(기능정의서 7_재작성·재수행매핑), 서버에는 그
@@ -222,11 +223,35 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
     setCompletedTasks((prev) => prev.filter((t) => t !== label));
   };
 
-  // POST /projects/{id}/retry-task를 실제로 호출한다(app/routers/projects.py retry_task) —
-  // 예전엔 setTimeout으로 스피너만 흉내 내고 서버 호출이 없어 DB에 아무 변화도 안 남았다.
+  // 재작성 — 접수만 하고 바로 돌아온다. 같은 화면에서 2초 안의 요청은 한 번으로 합쳐지고(cycle_id),
+  // 끝날 때까지 GET /rework-result를 확인한다(rework.js). 화면을 나갔다 돌아와도 진행 중이면 이어서 본다.
+  const alive = useRef(true);
+  useEffect(() => () => { alive.current = false; }, []);
+  const finishRework = async (cycleId, picked) => {
+    const result = await waitRework(projectId, cycleId, () => alive.current);
+    if (!result) return;
+    if (result.status === '실패') {
+      window.alert(REWORK_FAILED_MESSAGE);
+    } else {
+      // 실제로 다시 만든 뒤에만 횟수를 센다 — 실패는 서버가 기회를 돌려준다.
+      if (onRework) onRework(picked);
+      setCompletedTasks((prev) => [...new Set([...prev, ...picked])]);
+    }
+    if (onScoresRefresh) await onScoresRefresh();
+    if (alive.current) setRunningTasks([]);
+  };
+  useEffect(() => {
+    if (!projectId) return;
+    findRunningRework(projectId, 6).then((running) => {
+      if (!running || !alive.current) return;
+      const picked = running.bundles.filter((b) => DOC_REWORK_BUNDLES.includes(b));
+      setRunningTasks(picked);
+      finishRework(running.cycle_id, picked).catch((err) => console.error('재작성 결과를 불러오지 못했어요', err));
+    }).catch((err) => console.error('재작성 상태를 확인하지 못했어요', err));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
   // 묶음(PSST 항목)마다 서버가 bundle_id로 사용 횟수를 따로 세므로, task_key가 같아도
-  // (전부 'writing') 묶음별로 각각 호출해야 한다 — 하나로 뭉쳐 부르면 서버가 어느 묶음
-  // 몫인지 몰라 나머지 묶음 횟수까지 같이 깎인다.
+  // (전부 'writing') 묶음별로 각각 호출한다 — 하나로 뭉쳐 부르면 다른 묶음 횟수까지 같이 깎인다.
   const handleRewrite = async () => {
     // 프로토타입이 이 계획서로 만들어지는 중이라 지금 본문을 다시 쓰면 둘이 어긋난다.
     if (generating || runningTasks.length > 0) return;
@@ -237,17 +262,13 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
     setRunningTasks(picked);
     setCheckedTasks([]);
     try {
-      if (projectId) await Promise.all(picked.map((label) => retryTask(projectId, TASK_KEY_BY_LABEL[label], label)));
-      // 실제로 재시도가 나간 뒤에만 횟수를 센다 — 실패한 호출로 상한을 깎으면 안 된다.
-      if (onRework) onRework(picked);
-      // 서버가 재채점까지 마친 뒤이므로 결과를 다시 받아 점수를 갱신한다.
-      if (onScoresRefresh) await onScoresRefresh();
-      setCompletedTasks((prev) => [...new Set([...prev, ...picked])]);
+      if (!projectId) { setCompletedTasks((prev) => [...new Set([...prev, ...picked])]); setRunningTasks([]); return; }
+      const accepted = await requestRework(projectId, picked, TASK_KEY_BY_LABEL);
+      await finishRework(accepted[0].cycle_id, picked);
     } catch (err) {
       console.error('재작성 요청이 실패했어요', err);
       window.alert(err.message || '재작성에 실패했어요. 다시 시도해 주세요.');
       setCheckedTasks(picked);
-    } finally {
       setRunningTasks([]);
     }
   };

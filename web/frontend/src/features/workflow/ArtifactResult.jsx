@@ -5,7 +5,8 @@ import {Icon} from '../../components/Icons.jsx';
 import {SiteMock,RerunLeftBadge} from './shared.jsx';
 import {detectItemCategory,buildCodeCheckItems,isRerunCapped,rerunLeftOf} from './utils.js';
 import {ARTIFACT_CATEGORY_COPY,ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,EXECUTABLE_COPY,PROTOTYPE_PAGE,RERUN_CAP} from './data.js';
-import {retryTask,fetchUploadBlob,startFinalReview} from '../../api.js';
+import {fetchUploadBlob,startFinalReview} from '../../api.js';
+import {REWORK_FAILED_MESSAGE,findRunningRework,requestRework,waitRework} from './rework.js';
 
 // ARTIFACT_SUBTASKS_BY_CATEGORY(data.js)의 라벨 -> app/schemas.py RetryTaskRequest.task_key.
 const TASK_KEY_BY_LABEL = { '실행 파일 제작': 'implement_prototype', '인포그래픽 제작': 'implement_infographic' };
@@ -161,25 +162,46 @@ export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcom
     setCheckedTasks((prev) => (prev.includes(label) ? prev.filter((t) => t !== label) : [...prev, label]));
     setCompletedTasks((prev) => prev.filter((t) => t !== label));
   };
-  // POST /projects/{id}/retry-task 실제 호출(app/routers/projects.py retry_task) — 예전엔
-  // setTimeout으로 스피너만 흉내 내고 서버 호출이 없어 artifacts 테이블이 안 바뀌었다.
+  // 재작성 — 접수만 하고 바로 돌아온다. 같은 화면에서 2초 안의 요청은 한 번으로 합쳐지고(cycle_id),
+  // 끝날 때까지 GET /rework-result를 확인한다(rework.js). 화면을 나갔다 돌아와도 진행 중이면 이어서 본다.
+  const alive = useRef(true);
+  useEffect(() => () => { alive.current = false; }, []);
+  const finishRework = async (cycleId, picked) => {
+    const result = await waitRework(projectId, cycleId, () => alive.current);
+    if (!result) return;
+    if (result.status === '실패') {
+      window.alert(REWORK_FAILED_MESSAGE);
+    } else {
+      // 실제로 다시 만든 뒤에만 횟수를 센다 — 실패는 서버가 기회를 돌려준다.
+      if (onRework) onRework(picked);
+      setCompletedTasks((prev) => [...new Set([...prev, ...picked])]);
+    }
+    if (onScoresRefresh) await onScoresRefresh();
+    if (alive.current) setRunningTasks([]);
+  };
+  useEffect(() => {
+    if (!projectId) return;
+    findRunningRework(projectId, 8).then((running) => {
+      if (!running || !alive.current) return;
+      const picked = running.bundles.filter((b) => subtasks.includes(b));
+      setRunningTasks(picked);
+      finishRework(running.cycle_id, picked).catch((err) => console.error('재작성 결과를 불러오지 못했어요', err));
+    }).catch((err) => console.error('재작성 상태를 확인하지 못했어요', err));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
   const handleRewrite = async () => {
     const picked = checkedTasks.filter((label) => !isCapped(label));
     if (picked.length === 0) return;
     setRunningTasks(picked);
     setCheckedTasks([]);
-    const taskKeys = [...new Set(picked.map((label) => TASK_KEY_BY_LABEL[label]).filter(Boolean))];
     try {
-      if (projectId) await Promise.all(taskKeys.map((key) => retryTask(projectId, key)));
-      // 실제로 재시도가 나간 뒤에만 횟수를 센다 — 실패한 호출로 상한을 깎지 않는다.
-      if (onRework) onRework(picked);
-      if (onScoresRefresh) await onScoresRefresh();
-      setCompletedTasks((prev) => [...new Set([...prev, ...picked])]);
+      if (!projectId) { setCompletedTasks((prev) => [...new Set([...prev, ...picked])]); setRunningTasks([]); return; }
+      const accepted = await requestRework(projectId, picked, TASK_KEY_BY_LABEL);
+      await finishRework(accepted[0].cycle_id, picked);
     } catch (err) {
       console.error('재작성 요청이 실패했어요', err);
       window.alert(err.message || '재작성에 실패했어요. 다시 시도해 주세요.');
       setCheckedTasks(picked);
-    } finally {
       setRunningTasks([]);
     }
   };

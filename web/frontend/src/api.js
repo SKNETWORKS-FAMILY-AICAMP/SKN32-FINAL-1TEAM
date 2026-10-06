@@ -118,12 +118,12 @@ export const getEligibility=(projectId)=>api.get(`/projects/${projectId}/eligibi
 // 이미 generatePipeline으로 만들어둔 결과를 재생성 없이 다시 불러온다("이어서 보기").
 export const getProjectResult=(projectId)=>api.get(`/projects/${projectId}/result`);
 
-// 개별 작업 재시도 — task_key: 'strategy'|'writing'|'verify1_rubric'|'verify1_evidence'|
-// 'implement_prototype'|'implement_infographic'|'verify2_static'|'verify2_crosscheck'|
-// 'review_expression'|'review_token_check' (app/schemas.py RetryTaskRequest 참고).
-// bundleId: task_key='writing'일 때 필수(서버가 PSST 4항목 중 하나를 요구 — 안 보내면
-// 400). implement_prototype/infographic은 서버가 고정 매핑을 쓰므로 생략 가능.
+// 재작성 접수 — task_key: 'writing'(계획서 묶음, bundle_id 필수: 문제인식 · 실현가능성 · 성장전략 · 팀 구성) ·
+// 'implement_prototype' · 'implement_infographic'. 나머지 task_key는 400. 접수만 하고 바로 돌아온다(ReworkAcceptedOut —
+// cycle_id · screen · bundles · collect_until · duplicate). 결과는 getReworkResult로(features/workflow/rework.js).
 export const retryTask=(projectId,taskKey,bundleId)=>api.post(`/projects/${projectId}/retry-task`,{task_key:taskKey,...(bundleId?{bundle_id:bundleId}:{})});
+// 마지막 재작성 한 건의 결과(status 진행중 · 완료 · 실패, changed는 예전 retry-task 응답과 같은 모양). 재작성한 적 없으면 404.
+export const getReworkResult=(projectId)=>api.get(`/projects/${projectId}/rework-result`);
 
 // [2026-09-15] 응답이 JSON이 아니라 실제 파일 바이너리인 다운로드 공용 헬퍼 — apiFetch(항상
 // JSON 파싱)를 못 쓰는 GET /projects/{id}/plan-document.docx 가 쓴다.
