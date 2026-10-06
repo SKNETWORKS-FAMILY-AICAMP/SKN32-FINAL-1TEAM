@@ -226,7 +226,7 @@ class TV2In(SBModel):
     prototype: Prototype
     infographic: Infographic
     feature_list: list[str]
-    # 실계약에는 아직 없다. 조율에 추가를 요청한 필드(조율_계약필드_요청_검증2.md)로,
+    # 실계약에는 아직 없다. 조율에 추가를 요청한 필드로,
     # 원페이지 계획서 대조가 계획서 원문을 근거로 쓰려면 필요하다. 기본값 None이라
     # 필드가 없는 지금의 실계약과 같은 호출도 그대로 검사된다.
     plan_doc: PlanDoc | None = None

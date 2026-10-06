@@ -1,6 +1,6 @@
 """코드 점검 15점을 조립한다: 통과 필수 조건 → 8항목 → 15점 환산.
 
-verification_agent는 engineering_agent를 import하지 않는다(ADR 0001) — 그래서 검사
+verification_agent는 engineering_agent를 import하지 않는다 — 그래서 검사
 대상은 파일 경로/문자열로만 받는다. 산출물을 메모리 객체로 공유하면 "계획서 대조가
 성립하려면 계획서와 프로토타입이 각각 독립적으로 존재해야 한다"는 전제가 깨진다.
 

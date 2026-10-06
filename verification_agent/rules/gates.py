@@ -10,7 +10,7 @@
 넣지 않고 경고(readme_warnings)로만 남긴다. 같은 이유로 비밀값 검사도 산출물 원문만 본다.
 
 sandbox 금지 API는 engineering_agent.gates에도 같은 목록이 있지만 import하지 않는다
-(ADR 0001 — 만드는 쪽과 채점하는 쪽을 코드로 섞지 않는다). 목록이 바뀌면 양쪽을 같이 고친다.
+(만드는 쪽과 채점하는 쪽을 코드로 섞지 않는다). 목록이 바뀌면 양쪽을 같이 고친다.
 """
 from __future__ import annotations
 
@@ -21,7 +21,10 @@ from xml.etree import ElementTree as ET
 # ── 비밀값 ─────────────────────────────────────────────────────
 
 _SECRET_PATTERNS: list[re.Pattern] = [
-    re.compile(r"sk-[A-Za-z0-9]{20,}"),
+    # OpenAI 키. 예전 꼴(sk- + 영숫자)과 요즘 꼴(sk-proj- · sk-svcacct- 등, 본문에 - · _가 섞임)을
+    # 둘 다 잡는다. 'task-' 같은 낱말 속 sk-와 'sk-fading-circle' 같은 CSS 이름은 거르려고
+    # 앞에 낱말 글자가 없어야 하고, 본문에 영숫자 16자가 끊김 없이 이어져야 한다.
+    re.compile(r"(?<![\w-])sk-[A-Za-z0-9_-]*[A-Za-z0-9]{16}[A-Za-z0-9_-]*"),
     re.compile(r"AKIA[0-9A-Z]{16}"),
     re.compile(r"ghp_[A-Za-z0-9]{30,}"),
     re.compile(r"AIza[A-Za-z0-9_-]{20,}"),

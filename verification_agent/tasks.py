@@ -24,7 +24,7 @@ def _read(path: str | None) -> str:
 
 def plan_text_of(plan_doc) -> str | None:
     """계획서 본문과 표를 대조용 평문으로 편다. PlanDoc 모델과 같은 모양의 dict 둘 다
-    받는다. engineering_agent에도 같은 일을 하는 함수가 있지만 import하지 않는다(ADR 0001)."""
+    받는다. engineering_agent에도 같은 일을 하는 함수가 있지만 import하지 않는다."""
     if plan_doc is None:
         return None
     get = (lambda o, k: o.get(k)) if isinstance(plan_doc, dict) else getattr
@@ -98,7 +98,7 @@ def run_tv2(inp: TV2In, tools: Tools) -> TV2Out:
         source_text=prototype.source_text, readme_path=prototype.readme_path,
         infographic_path=inp.infographic.image_path,
         infographic_alt_text=inp.infographic.alt_text, feature_list=inp.feature_list,
-        # plan_doc은 계약 추가 요청 중인 필드다(조율_계약필드_요청_검증2.md). 오기 전에는 None.
+        # plan_doc은 조율에 계약 추가를 요청 중인 필드다. 오기 전에는 None.
         plan_text=plan_text_of(getattr(inp, "plan_doc", None)),
         tools=tools,
     )

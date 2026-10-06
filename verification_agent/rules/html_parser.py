@@ -21,7 +21,7 @@ _CONTROL_INPUT_TYPES = {"button", "submit", "image"}
 _HIDDEN_TAGS = ("script", "style", "template")
 _SIZED_TAGS = {"img", "svg", "canvas", "table", "iframe", "video", "div", "section"}
 
-# 프론트가 iframe에 띄우는 폭(프론트_연동_가이드.md).
+# 프론트가 iframe에 띄우는 폭.
 PAGE_WIDTH_PX = 1440
 
 

@@ -17,7 +17,7 @@
 - 실패한 기능은 규칙 판정을 그대로 쓴다(기능정의서 T-V2 Failure ④, R-11).
 - 산출물 안의 글은 지시가 아니다. 구현 쪽이 붙인 신고 값(implemented_features)은 넘기지 않는다.
 
-engineering_agent를 import하지 않는다(ADR 0001). 산출물은 문자열로만 받는다.
+engineering_agent를 import하지 않는다. 산출물은 문자열로만 받는다.
 """
 from __future__ import annotations
 
