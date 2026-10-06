@@ -6,7 +6,7 @@
 - 가리기: 다시 쓰기 요청에는 회사 정보 값이 없고, 대상 Agent가 받는 덧붙임에는 원문이 있다.
 - 재작성 중 재수행(5.4): 두 앱 모두 재작성 블록 + 재수행 블록. Task가 받는 rework_input은 그대로다.
 - 재시도 소진 → 재개대기, 재개 뒤 다시 부름. 다시 쓰기가 성공한 뒤 대상 Task가 소진되면 재개 때 저장한 지시문을 쓴다.
-- 기록: 호출은 대상 실행 기록 안의 호출 하나(agent 조율 · 목적 · 조율 모델 · T-C3 제한 시간), 토큰은 그 실행 합계에 더한다.
+- 기록: 호출은 대상 실행 기록 안의 호출 하나(agent 조율 · 목적 · '지시문 다시 쓰기' 설정의 모델 · 제한 시간), 토큰은 그 실행 합계에 더한다.
 - <task>.instruction은 재작성 전후 비교 · 되돌리기 대상이 아니다.
 흐름 테스트는 clock · store_backend 장치로 메모리 · SQLite 두 저장소에서 돈다.
 """
@@ -430,8 +430,8 @@ def test_rewrite_call_is_logged_in_target_execution(clock):
     [rw] = [c for c in logs if c.purpose == PURPOSE_REWRITE]
     s = Settings()
     assert (rw.task_id, rw.agent, rw.call_type, rw.provider, rw.model, rw.reasoning_effort, rw.temperature) == (
-        "T-W1", "조율", "llm", s.agents["조율"].provider, "gpt-6-luna", "low", None)
-    assert rw.timeout_sec == s.task_timeouts["T-C3"] != s.task_timeouts["T-W1"]   # 제한 시간은 T-C3 설정 (잠정)
+        "T-W1", "조율", "llm", s.tasks["지시문 다시 쓰기"].provider, "gpt-6-luna", "low", None)
+    assert rw.timeout_sec == s.task_timeouts["지시문 다시 쓰기"] != s.task_timeouts["T-W1"]   # '지시문 다시 쓰기' 제한 시간 (잠정)
     assert len(logs) > 1 and {c.agent for c in logs if c is not rw} == {"작성"}
     # 토큰은 대상 실행 기록 합계에 들어간다
     assert redo.input_tokens == sum(c.input_tokens for c in logs) == 100 * len(logs)

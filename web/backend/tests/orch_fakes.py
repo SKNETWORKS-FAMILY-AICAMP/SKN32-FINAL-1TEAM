@@ -255,7 +255,8 @@ def make_admin_execution(**overrides: Any) -> NS:
     base = dict(
         project_id='1', run_id='r1', execution_id='e1', task_id='T-W1', agent='작성', attempt=1, trigger='첫실행',
         redo_count=0, status='성공', model='gpt-test', reasoning_effort=None, temperature=None, error_kind=None,
-        error=None, started_at=datetime.now(UTC), ended_at=None, duration_sec=1.5, tokens=make_tokens(100, 20))
+        error=None, started_at=datetime.now(UTC), ended_at=None, duration_sec=1.5, tokens=make_tokens(100, 20),
+        image_input_tokens=None, image_output_tokens=None)
     base.update(overrides)
     return NS(**base)
 
@@ -281,7 +282,7 @@ def make_admin_summary(**overrides: Any) -> NS:
     base = dict(
         status_counts={}, doc_avg=None, doc_count=0, total_avg=None, total_count=0, pass_count=0, pass_rate=None,
         pass_threshold=80.0, reworked_runs=0, runs_with_executions=0, rework_rate=None, score_buckets=[],
-        layer_changes=[], triggers=[], total_tokens=0, proofread_attempts=0, proofread_rejected=0,
+        layer_changes=[], triggers=[], total_tokens=0, total_image_tokens=0, proofread_attempts=0, proofread_rejected=0,
         proofread_reject_rate=None)
     base.update(overrides)
     return NS(**base)

@@ -105,6 +105,13 @@ def failing(kind: str):
     return fn
 
 
+def x_settings() -> dict:
+    """설정 사본 — 시험 Task X의 Task별 설정(조율 Task와 같은 값)을 더한다 (항목이 없으면 KeyError)."""
+    s = Settings()
+    s.tasks["X"] = s.tasks["T-C1"].model_copy()
+    return s.dump()
+
+
 def engine_with(clock: Clock, fn, *, segments: frozenset[str] = frozenset({"S1"}), handle: bool = True):
     registry = TaskRegistry()
     registry.register(TaskSpec("X", "외부 조회", "조율", "task", XIn, XOut, {}, {"value": "x.value"}, "value",
@@ -120,7 +127,7 @@ def engine_with(clock: Clock, fn, *, segments: frozenset[str] = frozenset({"S1"}
 def run_in(store: Store, clock: Clock, segment: str) -> str:
     now = clock()
     run = Run(run_id=f"r-{segment}", account_id="acc", state=make_state("자격확인", "실행"), current_phase="setup",
-              settings_snapshot=Settings().dump(), updated_at=now, created_at=now, queue=["X"], segment=segment,
+              settings_snapshot=x_settings(), updated_at=now, created_at=now, queue=["X"], segment=segment,
               segment_total=1)
     assert store.create_run(run, CommitBatch())
     return run.run_id

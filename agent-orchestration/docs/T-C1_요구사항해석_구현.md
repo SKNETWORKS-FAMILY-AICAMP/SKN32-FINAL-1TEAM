@@ -167,15 +167,15 @@ PreInput에 자리가 없는 웹 입력값을 확장 필드로 싣는다. `PreIn
 
 - 가격은 100만 토큰당이다. 세 모델 모두 OpenAI 문서에서 API ID · 가격 · Chat Completions · 구조화 출력 지원을 확인했다(2026-09-30). 두 Luna 모델은 입력이 272K 토큰을 넘으면 요금이 올라간다.
 - 세 모델 모두 추론 모델이다. 추론 강도는 우선 **low**로 둔다. 온도는 보내지 않는다(추론 모델의 온도 지원 여부는 문서에 없어 싣지 않는 쪽을 택했다).
-- 설정 위치: `Settings.agents["조율"] = AgentSetting(provider="openai", model="gpt-6-luna", temperature=None, reasoning_effort="low")`. 다른 후보로 바꿀 때는 `model`만 바꾼다. 실행을 시작할 때 설정값이 실행 건에 고정된다.
+- 설정 위치: ~~`Settings.agents["조율"] = AgentSetting(...)`~~ 2026-10-06 바뀜: Task별 설정 `Settings.tasks["T-C1"] = TaskModelSetting(provider="openai", model="gpt-6-luna", temperature=None, reasoning_effort="low")`(다른 조율 Task도 같은 값). 다른 후보로 바꿀 때는 그 Task 항목의 `model`만 바꾼다. 실행을 시작할 때 설정값이 실행 건에 고정된다.
 - 실행 기록(`ExecutionRecord`)과 호출 기록(`CallLog`)에 모델 · 추론 강도가 남는다(`reasoningEffort`, 확장).
-- 온도를 쓰는 모델의 Task별 온도 규칙(T-V1 0 고정, T-P2 0.2 이하)은 Agent 설정에 온도가 없으면 적용하지 않는다(잠정).
+- 온도를 쓰는 모델의 Task별 온도 규칙(T-V1 0 고정, T-P2 0.2 이하)은 Task 설정에 온도가 없으면 적용하지 않는다(잠정).
 
 ### 7.2 OpenAI 호출처 어댑터 (`orchestrator/openai_provider.py`)
 
 | 항목 | 처리 |
 |---|---|
-| 호출 | Chat Completions. `model` · `messages`는 tools가 Agent 설정에서 입힌 값 |
+| 호출 | Chat Completions. `model` · `messages`는 tools가 Task 설정에서 입힌 값 |
 | 온도 · 추론 강도 | 요청에 값이 있을 때만 싣는다. 조율은 `reasoning_effort="low"`만 싣는다 |
 | 제한 시간 | 요청마다 `timeout=request.timeout_sec` (T-C1 120초, 잠정) |
 | 재시도 | SDK 재시도는 끈다(`max_retries=0`). 재시도는 tools가 한다 |

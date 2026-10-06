@@ -196,7 +196,7 @@ flowchart TD
 
 - 지시 대상마다 따로, 한꺼번에 동시에 부른다(웹개발 · AI_API 7번, 원페이지 6번). 동시 개수는 지시 대상 수다(`tc3.GUIDANCE_CONCURRENCY` = 7, 잠정 — 사용자 결정). 모두 끝날 때까지 기다린 뒤, 결과는 끝난 순서와 상관없이 5절 순서로 조립한다(같은 응답이면 차례로 부를 때와 글자까지 같다). 호출 기록은 끝난 순서로 쌓인다.
 - 재개 때는 받아 둔 안내가 확장 입력 `prior_guidance`로 들어온다(12절). 이번 지시 대상이고 비어 있지 않은 것만 쓰고, 빠진 Task만 부른다.
-- `tools.for_item(<taskId>).llm(..., purpose="지시문 작성")` — 호출 기록의 항목 키가 Task ID다. 모델 · 추론 강도 · 제한 시간은 조율 Agent 설정을 tools가 입힌다(지금 `gpt-6-luna` · low · 온도 없음 · T-C3 제한 시간 120초, 잠정).
+- `tools.for_item(<taskId>).llm(..., purpose="지시문 작성")` — 호출 기록의 항목 키가 Task ID다. 모델 · 추론 강도 · 제한 시간은 T-C3의 Task 설정을 tools가 입힌다(지금 `gpt-6-luna` · low · 온도 없음 · 제한 시간 120초, 잠정. 2026-10-06 Agent별 설정에서 Task별 설정으로 바뀜).
 
 ### 7.2 보내는 것 — 이것만 보낸다
 
@@ -300,7 +300,7 @@ T-C3가 고른 값을 뒷 단계가 읽는다. 선택 공고의 같은 이름 �
 
 ### 10.2 다시 쓰기 호출 (`agents/supervisor/rewrite.py` `rewrite_guidance`)
 
-- LLM 호출 한 번, 목적 `지시문 다시 쓰기`. 조율 Agent 설정(호출처 · 모델 · 추론 강도)과 T-C3의 제한 시간 설정(잠정)을 쓴다.
+- LLM 호출 한 번, 목적 `지시문 다시 쓰기`. ~~조율 Agent 설정(호출처 · 모델 · 추론 강도)과 T-C3의 제한 시간 설정(잠정)을 쓴다.~~ 2026-10-06 바뀜: 설정 키 `지시문 다시 쓰기`의 Task 설정(호출처 · 모델 · 추론 강도 — 지금 `gpt-6-luna` · low)과 같은 키의 제한 시간(120초, 잠정)을 쓴다. T-C3 값을 빌리지 않는다. 호출 기록의 Agent 이름은 조율이다.
 - **보내는 것**
   - 대상 Task ID와 이름
   - 그 Task의 틀 — "바꾸지 말 것"이라는 규칙으로
@@ -514,7 +514,7 @@ app.orchestrator.advance(rid)                      # T-C3(실제 7번) → T-S1 
 | T-C3 프롬프트 문구 · 표시 태그 · 신청자 칸 키 | `<아이템>` · `<공고>` · `<신청자>`, `applicantType` · `businessAgeYears` · `industryCode` · `regionProvince` | `tc3.py` `SYSTEM` · `ITEM_TAG` · `ANNOUNCEMENT_TAG` · `APPLICANT_TAG` · `applicant_fields` |
 | 다시 쓰기 프롬프트 문구 · 표시 태그 | `<원래안내>` · `<문제내용>` | `rewrite.py` `SYSTEM_PROMPT` · `GUIDANCE_TAG` · `PROBLEM_TAG` |
 | 가리기 대체 문구 · 최소 길이 | `[가림]`, 2글자 미만은 가리지 않음 | `rewrite.MASK_TEXT`, `sbrain_flow.MASK_MIN_CHARS` |
-| 다시 쓰기 제한 시간 | T-C3의 제한 시간 설정(지금 120초) | `sbrain_flow.REWRITE_TIMEOUT_TASK` |
+| 다시 쓰기 제한 시간 | ~~T-C3의 제한 시간 설정(지금 120초)~~ 2026-10-06부터 `지시문 다시 쓰기` 키의 제한 시간(120초) — T-C3 값을 빌리지 않음 | `orchestrator/settings.py` `REWRITE_SETTING_KEY` · `task_timeouts` (옛 이름 `sbrain_flow.REWRITE_TIMEOUT_TASK`는 없앰) |
 | 동시 호출 개수 | 7 (지시 대상 수 — 원페이지는 6개만 부름) | `tc3.GUIDANCE_CONCURRENCY` |
 | 스텁 안내 문장 | `{task_id} 스텁 안내 — 이 아이템 · 공고에 맞춘 안내 자리입니다.` | `agents/stubs.py` `STUB_GUIDANCE` |
 

@@ -122,6 +122,8 @@ CREATE TABLE IF NOT EXISTS orch_executions (
 	cached_input_tokens BIGINT UNSIGNED COMMENT '캐시 입력 토큰 합계 (입력의 일부)', 
 	output_tokens BIGINT UNSIGNED COMMENT '출력 토큰 합계 (추론 포함)', 
 	reasoning_tokens BIGINT UNSIGNED COMMENT '추론 토큰 합계 (출력의 일부)', 
+	image_input_tokens BIGINT UNSIGNED COMMENT '이미지 호출 입력 토큰 합계', 
+	image_output_tokens BIGINT UNSIGNED COMMENT '이미지 호출 출력 토큰 합계', 
 	created_at DATETIME(6) NOT NULL, 
 	started_at DATETIME(6), 
 	ended_at DATETIME(6), 
@@ -141,7 +143,7 @@ CREATE TABLE IF NOT EXISTS orch_call_logs (
 	execution_id VARCHAR(64) NOT NULL COMMENT '실행 ID', 
 	task_id VARCHAR(40) NOT NULL, 
 	agent VARCHAR(20) NOT NULL, 
-	call_type VARCHAR(20) NOT NULL COMMENT 'llm · search', 
+	call_type VARCHAR(20) NOT NULL COMMENT 'llm · search · image', 
 	purpose VARCHAR(200) NOT NULL, 
 	item_key VARCHAR(200) COMMENT 'T-P2 문장 ID 등', 
 	provider VARCHAR(50), 
@@ -163,7 +165,7 @@ CREATE TABLE IF NOT EXISTS orch_call_logs (
 	CONSTRAINT uq_orch_call_logs_call UNIQUE (call_id), 
 	KEY ix_orch_call_logs_execution (execution_id), 
 	KEY ix_orch_call_logs_run (run_id)
-)ENGINE=InnoDB CHARSET=utf8mb4 COMMENT='LLM · 검색 호출 기록 — 재시도는 tries에 쌓인다. 프롬프트 · 응답 내용 없음' COLLATE utf8mb4_bin;
+)ENGINE=InnoDB CHARSET=utf8mb4 COMMENT='LLM · 검색 · 이미지 호출 기록 — 재시도는 tries에 쌓인다. 프롬프트 · 응답 · 그림 내용 없음' COLLATE utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS orch_feedback_links (
 	seq BIGINT UNSIGNED NOT NULL COMMENT '기록 순서' AUTO_INCREMENT, 

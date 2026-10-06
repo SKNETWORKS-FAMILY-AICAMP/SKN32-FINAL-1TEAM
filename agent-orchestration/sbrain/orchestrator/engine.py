@@ -13,7 +13,11 @@
   돌려받은 산출물 참조를 그 실행 기록의 입력 참조에 더한다. 입력을 만들며 부른 호출도 Task 함수의 호출처럼 그 실행 기록에
   모인다(성공 · 재시도 소진 모두). 어느 Agent 설정으로 무엇을 부를지는 Flow가 정한다.
 - S-Brain 고유 규칙(구간 · 대기 지점 · 재작성 경로 · 알림)은 Flow가 맡는다.
+- 선택 확장 지점(흐름에 없으면 기본 동작): Flow.redo_rework_input — 재수행 입력을 저장하기 전에 흐름이 칸을 채운다(기본: 그대로),
+  Flow.after_execution — 실행 기록이 성공으로 저장되는 같은 묶음에서 그 실행의 호출 기록을 본다(기본: 아무것도 안 함).
 - 시각은 시간대 있는 UTC다. 주입한 시계 · tick(now)의 시간대 없는 값은 UTC로 본다.
+- 운영 로그 줄(runlog, 로거 sbrain.run): 실행 기록마다 단계시작 · 단계끝, 실행 건의 대기 · 실행끝 · 재개예약. 단계 ID와 실행 건 ·
+  실행 기록 값만 쓴다. 처리기는 워커만 단다 — 그 밖에서는 아무것도 나가지 않는다.
 """
 from __future__ import annotations
 
@@ -31,18 +35,22 @@ from ..models.clock import as_utc, utc_clock, utc_now
 from ..models.run import FAILURE_REASON_MAX, RedoState, ReworkSummary, collecting, make_state
 from .context import ArtifactTypes, ImmutableArtifactError, RunContext
 from .errors import ContractError, ResourceNotFound, ToolCallExhausted
+from . import runlog
 from .registry import PARTIAL_SUFFIX, AgentRegistry, TaskRegistry, TaskSpec, keeps_partial
+from .settings import TaskModelSetting
 from .store import Store
-from .tools import CallSink, LLMProvider, Tools, ToolsConfig, ToolsContext
-from .trace import ExecutionRecord, FeedbackLink, add_tokens, output_meta_of
+from .tools import CallSink, ImageProvider, LLMProvider, Tools, ToolsConfig, ToolsContext
+from .trace import CallLog, ExecutionRecord, FeedbackLink, add_tokens, output_meta_of
 
 # 재작성 비교 · 되돌리기에서 제외하는 산출물 (Orchestrator가 만든 입력 — 사용자 명령 · 재작성 · 재수행 입력 · 다시 쓴 지시문 ·
 # 재개 때 이어 쓸 받은 결과)
 INTERNAL_PREFIXES = ("decision",)
 INTERNAL_SUFFIXES = (".reworkInput", ".instruction", PARTIAL_SUFFIX)
 
-# 지금 실행 기록에 호출이 남는 tools를 만드는 수단 — (Agent 이름, 제한 시간을 쓸 Task ID) → Tools
+# 지금 실행 기록에 호출이 남는 tools를 만드는 수단 — (호출 기록에 남길 Agent 이름, 설정 키) → Tools
 ToolsFactory = Callable[[str, str], Tools]
+# 이미지 호출 한 번의 제한 시간 키 접미 — task_timeouts['<설정 키>.image']
+IMAGE_TIMEOUT_SUFFIX = ".image"
 
 
 def is_internal_key(key: str) -> bool:
@@ -82,12 +90,27 @@ class Flow(Protocol):
         """이번 실행의 지시문 입력과, 그 실행 기록의 입력 참조에 더할 산출물 참조('이름@버전')를 돌려준다.
 
         task는 taskPlan의 이 Task 지시, rs는 지금 진행 위치 객체 그 자체다 — 흐름이 여기에 쓴 값은 재개 예약 때 그대로
-        저장된다. tools_for(agent, timeout_task_id)로 만든 tools의 호출은 이 실행 기록에 남고 토큰이 합계에 더해진다.
+        저장된다. tools_for(Agent 이름, 설정 키)로 만든 tools의 호출은 이 실행 기록에 남고 토큰이 합계에 더해진다 — 설정 키로
+        Task별 설정(모델 등)과 제한 시간을 찾고, Agent 이름은 호출 기록에 남긴다(옛 설정 사본이면 이 이름으로 설정을 찾는다).
         여기서 올린 ToolCallExhausted는 Task 함수의 것과 같게 재개 · 실패로 처리된다."""
         ...
     def today(self, ctx: RunContext) -> Any: ...
     def constant(self, ctx: RunContext, name: str) -> Any: ...
     def value(self, ctx: RunContext, name: str, spec: TaskSpec) -> Any: ...
+    def setting_value(self, ctx: RunContext, path: str) -> Any:
+        """설정값 연결(setting)의 값 — 옛 설정 사본처럼 경로가 바뀐 값을 흐름이 찾아 준다. 흐름에 없으면 엔진이 설정
+        사본에서 경로 그대로 찾는다(선택)."""
+        ...
+    def redo_rework_input(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord,
+                          rework_input: ReworkInput) -> ReworkInput:
+        """검사 불통과 재수행의 재작성 입력을 저장하기 전에 흐름이 칸을 채워 돌려준다(선택). rec는 방금 끝난(불통과) 실행이다.
+        흐름에 없으면 엔진이 만든 그대로 저장한다. 재개 때는 저장한 것을 다시 쓰고 다시 부르지 않는다."""
+        ...
+    def after_execution(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, calls: list[CallLog]) -> None:
+        """실행 기록 하나가 성공으로 저장된 직후, 같은 저장 묶음에서 그 실행의 이번 호출 기록(calls — 재개면 재개 뒤 호출만)을
+        흐름에 보여 준다(선택). 재수행은 실행 기록마다 저장 묶음을 비우므로 실행 기록마다 따질 일은 여기서 한다.
+        흐름에 없으면 아무것도 하지 않는다. 사건은 ctx.add_event로 같은 묶음에 넣는다."""
+        ...
     def after_step(self, ctx: RunContext, step_id: str, outcome: Outcome) -> None: ...
     def on_queue_empty(self, ctx: RunContext) -> None: ...
     def on_unresumable(self, ctx: RunContext, step_id: str, outcome: Outcome) -> None: ...
@@ -100,7 +123,7 @@ class Flow(Protocol):
     def on_cycle_failed(self, ctx: RunContext, reason: str) -> None: ...
 
 
-def _no_tools(agent_name: str, timeout_task_id: str) -> Tools:
+def _no_tools(agent_name: str, key: str) -> Tools:
     raise RuntimeError("호출 도구 없음 — 실행 기록 밖에서 지시문 입력을 만들었다")
 
 
@@ -126,11 +149,14 @@ class Engine:
         new_id: Callable[[], str] | None = None,
         owner: str = "worker",
         lease_sec: float = 3600,
+        image_providers: dict[str, ImageProvider] | None = None,
     ) -> None:
         self.store = store
         self.registry = registry
         self.flow = flow
         self.providers = providers
+        # 이미지 호출처 (확장) — 이름은 Task 설정의 image_provider. 없으면 이미지 호출은 '운영' 실패다
+        self.image_providers: dict[str, ImageProvider] = image_providers if image_providers is not None else {}
         self.types = types
         self.agents = agents or AgentRegistry()
         self.immutable_keys = immutable_keys
@@ -141,6 +167,10 @@ class Engine:
         self.lease_sec = lease_sec
         # 워커 종료 신호 — 참이면 단계 사이에서 멈춘다. 실행 건은 '실행'으로 남아 다른 워커가 이어받는다
         self.stop_requested: Callable[[], bool] = lambda: False
+        # 운영 로그 단계끝의 걸린 시간 — 실행 기록 ID → 이번에 연 시각 (스레드마다 다른 실행 기록이라 키가 겹치지 않는다)
+        self._step_marks: dict[str, datetime] = {}
+        # 운영 로그 재개예약의 오류 종류 — 실행 건 ID → 재개를 예약한 오류 종류 (저장 뒤 줄을 남기며 지운다)
+        self._resume_kinds: dict[str, str] = {}
 
     # ── Context ──────────────────────────────────────
     def open_context(self, run: Run, provisional: bool = False, owner: str | None = None) -> RunContext:
@@ -202,6 +232,7 @@ class Engine:
             if not ctx.provisional and self.store.is_abort_requested(ctx.run.run_id):
                 self.flow.on_abort(ctx)
                 ctx.commit()
+                self._log_progress(ctx)
                 return last
             if not ctx.provisional and self.stop_requested():
                 return last   # 워커 종료 — 하던 단계는 저장됐다. 남은 대기열은 다른 워커가 이어받는다
@@ -209,6 +240,7 @@ class Engine:
                 before = (ctx.run.state.step, ctx.run.state.progress, ctx.run.segment)
                 self.flow.on_queue_empty(ctx)
                 ctx.commit()
+                self._log_progress(ctx)
                 after = (ctx.run.state.step, ctx.run.state.progress, ctx.run.segment)
                 if not ctx.run.queue and before == after:
                     raise RuntimeError(f"구간 종료 처리 없음: {ctx.run.segment}")
@@ -223,16 +255,44 @@ class Engine:
                 if outcome.status == "unresumable":
                     self.flow.on_unresumable(ctx, step_id, outcome)
             ctx.commit()
+            self._log_progress(ctx)
             if ctx.provisional and outcome.status != "ok":
                 return last
         return last
+
+    def _log_progress(self, ctx: RunContext) -> None:
+        """저장 뒤 실행 건이 대기 지점에 멈췄거나 · 재개를 예약했거나 · 끝났으면 운영 로그 한 줄."""
+        progress = ctx.run.state.progress
+        kind = self._resume_kinds.pop(ctx.run.run_id, None)
+        if progress == "재개대기":
+            runlog.resume_scheduled(ctx.run, kind or ctx.run.last_error_kind)
+        elif progress == "사용자대기":
+            runlog.wait(ctx.run)
+        elif progress in ("완료", "실패", "중단"):
+            runlog.run_end(ctx.run)
+
+    def _log_step_end(self, ctx: RunContext, rec: ExecutionRecord | None) -> None:
+        """실행 기록 하나의 끝 줄. 이번에 연 시각부터 잰다. 줄은 그 기록이 저장된 뒤에 남긴다(저장 실패면 남기지 않는다)."""
+        if rec is None:
+            return
+        started = self._step_marks.pop(rec.execution_id, None)
+        sec = (self.now() - started).total_seconds() if started else None
+        run, snap = ctx.run, rec.model_copy()   # 끝난 때의 값 그대로
+        ctx.after_commit(lambda: runlog.step_end(run, snap, sec))
 
     # ── 단계 실행 ─────────────────────────────────────
     def run_step(self, ctx: RunContext, step_id: str) -> Outcome:
         ctx.run.current_task = step_id
         custom = self.flow.custom_step(step_id)
-        if custom is not None:
-            return custom(self, ctx)
+        if custom is not None:   # 흐름 전용 실행기 — 실행 기록이 있으면 그 끝 줄, 없으면 끝 줄만
+            began = self.now()
+            outcome = custom(self, ctx)
+            if outcome.record is not None:
+                self._log_step_end(ctx, outcome.record)
+            else:
+                run, sec = ctx.run, (self.now() - began).total_seconds()
+                ctx.after_commit(lambda: runlog.step_end_without_record(run, step_id, sec))
+            return outcome
         spec = self.registry.get(step_id)
         rs = ctx.run.redo_state
         if rs is None or rs.task_id != step_id:
@@ -243,9 +303,17 @@ class Engine:
             try:
                 outputs = self._invoke(ctx, spec, rec, rs)
             except ToolCallExhausted as e:
-                return self._on_exhausted(ctx, spec, rec, rs, e)
+                outcome = self._on_exhausted(ctx, spec, rec, rs, e)
+                self._log_step_end(ctx, rec)
+                return outcome
             except Exception as e:  # 규칙 단계 오류 · 규격 위반 · Agent 코드 오류
-                return self.on_step_error(ctx, spec, rec, e)
+                outcome = self.on_step_error(ctx, spec, rec, e)
+                self._log_step_end(ctx, rec)
+                return outcome
+            else:
+                self._log_step_end(ctx, rec)
+            finally:
+                self._step_marks.pop(rec.execution_id, None)   # 처리 중 예외가 새도 시작 시각을 남기지 않는다
             check = outputs.get("check")
             if check is not None:
                 ctx.run.check_refs[spec.task_id] = ctx.ref(spec.outputs["check"])
@@ -269,6 +337,8 @@ class Engine:
             if existing is not None:
                 existing.resume_count += 1
                 existing.status = "실행"
+                self._step_marks[existing.execution_id] = self.now()
+                runlog.step_start(ctx.run, existing, resumed=True)
                 return existing
         now = self.now()
         rec = ExecutionRecord(
@@ -283,11 +353,14 @@ class Engine:
             ri = ctx.get_ref(rs.rework_input_ref)
             if ri.feedback_id:
                 rec.feedback_in.append(ri.feedback_id)
+        self._step_marks[rec.execution_id] = now
+        runlog.step_start(ctx.run, rec, resumed=False)
         return rec
 
     def _invoke(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, rs: RedoState) -> dict[str, Any]:
         # 이 실행 기록의 호출 — 입력을 만들며 부른 호출(지시문 다시 쓰기 등)과 Task 함수의 호출. 성공 · 실패 모두 모은다
         sink = CallSink()
+        calls: list[CallLog] = []
         try:
             values, refs = self.resolve_inputs(ctx, spec, rs, tools_for=self._tools_factory(ctx, spec, rec, sink))
             rec.inputs = refs
@@ -305,8 +378,12 @@ class Engine:
             else:
                 out = spec.fn(model_in)
         finally:
-            self.collect_calls(ctx, rec, sink)
-        return self.store_outputs(ctx, spec, rec, out)
+            calls = self.collect_calls(ctx, rec, sink)
+        outputs = self.store_outputs(ctx, spec, rec, out)
+        hook = getattr(self.flow, "after_execution", None)   # 선택 확장 지점 — 이 실행 기록과 같은 저장 묶음
+        if hook is not None:
+            hook(ctx, spec, rec, calls)
+        return outputs
 
     def store_outputs(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, out: Any) -> dict[str, Any]:
         if not isinstance(out, spec.output_model):
@@ -353,7 +430,8 @@ class Engine:
                 add_ref(ctx.ref(b.key))
                 values[fname] = _dig(val, b.path) if b.path else val
             elif b.kind == "setting":
-                values[fname] = _dig(ctx.settings, b.key)
+                lookup = getattr(self.flow, "setting_value", None)
+                values[fname] = lookup(ctx, b.key) if lookup is not None else _dig(ctx.settings, b.key)
             elif b.kind == "run":
                 values[fname] = getattr(ctx.run, b.key)
             elif b.kind == "cmd":
@@ -400,41 +478,52 @@ class Engine:
         return values, refs
 
     def tools_config(self, ctx: RunContext, spec: TaskSpec) -> ToolsConfig:
+        """Task의 호출 설정 — 설정 키는 Task ID, Agent 이름은 담당 Agent. Task 온도 규칙(TempRule)을 위에 씌운다."""
         cfg = self.agent_tools_config(ctx, spec.agent, spec.task_id)
         if spec.temperature:
             cfg = replace(cfg, temperature=spec.temperature.apply(cfg.temperature))
         return cfg
 
-    def agent_tools_config(self, ctx: RunContext, agent_name: str, timeout_task_id: str) -> ToolsConfig:
-        """Agent 설정(호출처 · 모델 · 기본 온도 · 추론 강도)과 그 Task의 제한 시간을 입힌 호출 설정 (Task 온도 규칙 없음)."""
+    def agent_tools_config(self, ctx: RunContext, agent_name: str, key: str) -> ToolsConfig:
+        """설정 키(key)의 설정(호출처 · 모델 · 기본 온도 · 추론 강도 · 이미지 설정)과 제한 시간을 입힌 호출 설정 (Task 온도 규칙
+        없음). 호출 기록의 Agent 이름은 agent_name이다. 옛 설정 사본(tasks 없음)이면 agent_name의 Agent별 설정을 쓴다.
+        제한 시간은 task_timeouts[key](없으면 120초), 이미지 호출 한 번의 제한 시간은 task_timeouts['<key>.image']다."""
         s = ctx.settings
-        agent = self.agents.config(s, agent_name)
+        conf = self.agents.lookup(s, agent_name, key)
+        image = conf if isinstance(conf, TaskModelSetting) else None
         return ToolsConfig(
-            agent=agent_name, provider=agent.provider, model=agent.model, temperature=agent.temperature,
-            timeout_sec=s.task_timeouts.get(timeout_task_id, 120.0),
+            agent=agent_name, provider=conf.provider, model=conf.model, temperature=conf.temperature,
+            timeout_sec=s.task_timeouts.get(key, 120.0),
             retry_count=s.retry.retry_count, retry_interval_sec=s.retry.retry_interval_sec,
-            reasoning_effort=agent.reasoning_effort,
+            reasoning_effort=conf.reasoning_effort,
+            image_provider=image.image_provider if image else None,
+            image_model=image.image_model if image else None,
+            image_quality=image.image_quality if image else None,
+            image_size=image.image_size if image else None,
+            image_timeout_sec=s.task_timeouts.get(f"{key}{IMAGE_TIMEOUT_SUFFIX}", 120.0),
         )
 
     def _tools_factory(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, sink: CallSink) -> ToolsFactory:
-        """지금 실행 기록(rec)에 호출이 남는 tools를 만드는 수단 — 호출 기록의 task_id는 이 단계, Agent · 호출처 · 모델 ·
-        추론 강도는 넘긴 Agent의 설정, 제한 시간은 넘긴 Task의 설정이다. Flow.build_instruction에 넘긴다."""
-        def make(agent_name: str, timeout_task_id: str) -> Tools:
-            return self.make_tools(ctx, spec, rec, self.agent_tools_config(ctx, agent_name, timeout_task_id), sink)
+        """지금 실행 기록(rec)에 호출이 남는 tools를 만드는 수단 — 호출 기록의 task_id는 이 단계, Agent는 넘긴 Agent 이름,
+        호출처 · 모델 · 추론 강도 · 제한 시간은 넘긴 설정 키의 설정이다. Flow.build_instruction에 넘긴다."""
+        def make(agent_name: str, key: str) -> Tools:
+            return self.make_tools(ctx, spec, rec, self.agent_tools_config(ctx, agent_name, key), sink)
         return make
 
     @staticmethod
-    def collect_calls(ctx: RunContext, rec: ExecutionRecord, sink: CallSink) -> None:
-        """호출 기록을 저장 묶음에 옮기고 그 토큰을 실행 기록 합계에 더한다(재개하면 이어서 더한다)."""
+    def collect_calls(ctx: RunContext, rec: ExecutionRecord, sink: CallSink) -> list[CallLog]:
+        """호출 기록을 저장 묶음에 옮기고 그 토큰을 실행 기록 합계에 더한다(재개하면 이어서 더한다). 옮긴 기록을 돌려준다."""
         logs = sink.drain()
         ctx.batch.call_logs.extend(logs)
         add_tokens(rec, logs)
+        return logs
 
     def make_tools(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord,
                    cfg: ToolsConfig, sink: CallSink) -> Tools:
         return Tools(cfg, ToolsContext(
             run_id=ctx.run.run_id, execution_id=rec.execution_id, task_id=spec.task_id,
-            providers=self.providers, sink=sink, now=self.now, sleep=self.sleep, new_id=self.new_id))
+            providers=self.providers, sink=sink, now=self.now, sleep=self.sleep, new_id=self.new_id,
+            image_providers=self.image_providers))
 
     # ── 재수행 ────────────────────────────────────────
     def _schedule_redo(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord,
@@ -447,6 +536,9 @@ class Engine:
             order=None, is_final_attempt=rs.redo_count + 1 >= limit,
             source_refs=[check_ref], feedback_id=fid,
         )
+        fill = getattr(self.flow, "redo_rework_input", None)   # 선택 확장 지점 — 흐름이 칸을 채운다 (엔진은 Task를 모른다)
+        if fill is not None:
+            ri = fill(ctx, spec, rec, ri)
         ri_ref = ctx.put(f"{spec.task_id}.reworkInput", ri, producer=f"orchestrator:{rec.execution_id}")
         ctx.add_feedback(FeedbackLink(
             feedback_id=fid, run_id=ctx.run.run_id, kind="재수행", source_execution_id=rec.execution_id,
@@ -504,6 +596,7 @@ class Engine:
                 rec.status = "재개대기"
                 ctx.record_execution(rec)
                 ctx.add_event("재개예약", f"{rec.task_id} {wait} 뒤 재개", execution_id=rec.execution_id)
+                self._resume_kinds[run.run_id] = kind   # 재개예약 줄은 저장 뒤 남긴다 (_log_progress)
                 return Outcome("resume_wait", record=rec)
             reason = "재개상한초과"
         else:

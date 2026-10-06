@@ -70,7 +70,7 @@ def test_admin_runs_list_filters_and_pages(clock):
     ra = rows[-1]
     assert (ra.project_id, ra.step, ra.progress, ra.current_task, ra.agent, ra.attempt) == (
         pid(app, a), "결과물", "완료", "T-C4", "조율", 1)
-    assert (ra.doc_score, ra.artifact_score, ra.total_score) == (60.0, 26.0, 86.0)
+    assert (ra.doc_score, ra.artifact_score, ra.total_score) == (60.0, 26.25, 86.2)   # 대조 손잡이 11 → 11.25 (1.4판 몫)
     assert (ra.resume_count, ra.last_error_kind, ra.failure_reason) == (0, None, None)
     assert ra.updated_at == app.store.load_run(a).updated_at
     [rc] = app.orchestrator.admin_runs(progress="실패")
@@ -95,7 +95,7 @@ def test_admin_score_history_by_layer(clock):
     assert (h.project_id, h.run_id) == (pid(app, a), a)
     assert [(e.score, e.after_rework) for e in h.doc_score] == [(60.0, True), (52.0, False)]   # 최근 순
     assert [(e.score, e.after_rework) for e in h.code_check] == [(15.0, False)]
-    assert [(e.score, e.after_rework) for e in h.feature_match] == [(11.0, False)]
+    assert [(e.score, e.after_rework) for e in h.feature_match] == [(11.25, False)]   # 기능 2개 중 1.5 인정
     assert all(e.scored_at and e.execution_id for e in h.doc_score + h.code_check + h.feature_match)
     hb = app.orchestrator.admin_score_history(pid(app, b))
     assert [e.score for e in hb.doc_score] == [45.0] and hb.code_check == [] and hb.feature_match == []
@@ -112,7 +112,7 @@ def test_admin_summary_values(clock):
     s = app.orchestrator.admin_summary()
     assert s.status_counts == {"실행": 0, "재개대기": 0, "사용자대기": 2, "실패": 1, "완료": 1, "중단": 0}
     assert (s.doc_avg, s.doc_count) == (52.5, 2)                                 # 현재 버전 문서층 점수 (A 60 · B 45)
-    assert (s.total_avg, s.total_count, s.pass_count, s.pass_rate, s.pass_threshold) == (86.0, 1, 1, 100.0, 80.0)
+    assert (s.total_avg, s.total_count, s.pass_count, s.pass_rate, s.pass_threshold) == (86.2, 1, 1, 100.0, 80.0)
     assert (s.reworked_runs, s.runs_with_executions, s.rework_rate) == (1, 4, 25.0)
     assert [(x.label, x.count) for x in s.score_buckets] == [
         ("90~100점", 0), ("80~89점", 1), ("70~79점", 0), ("60~69점", 0), ("60점 미만", 0)]

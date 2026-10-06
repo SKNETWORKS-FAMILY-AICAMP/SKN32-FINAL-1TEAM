@@ -1,9 +1,10 @@
 """Agent 등록부와 Task 등록부.
 
-- Agent 등록부: Agent별 모델 · 기본 온도 · 호출처. 값은 관리자 설정값(Settings.agents)에서 온다.
+- Agent 등록부: 호출 설정 찾기. 값은 관리자 설정값의 Task별 설정(Settings.tasks, 키 = Task ID 등 흐름이 정한 설정 키)에서
+  온다. 옛 설정 사본(tasks 없음)이면 Agent별 설정(Settings.agents)에서 Agent 이름으로 찾는다.
 - Task 등록부: 담당 Agent, 입출력 규격, 실행 함수, 제한 시간, 온도 덮어쓰기,
   실패 정책, 재수행 여부 · 확정 동작 예외 여부, LLM 사용 여부, 입력 연결.
-- Orchestrator는 Task를 부를 때 담당 Agent 설정을 입힌 tools를 Task 함수에 넘긴다.
+- Orchestrator는 Task를 부를 때 그 Task 설정(호출 기록의 Agent 이름은 담당 Agent)을 입힌 tools를 Task 함수에 넘긴다.
   규칙 단계 · 합치기는 tools를 받지 않으며 담당 Agent는 기록용이다.
 """
 from __future__ import annotations
@@ -12,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Literal
 
 from ..models.base import SBModel
-from .settings import AgentSetting, Settings
+from .settings import AgentSetting, Settings, TaskModelSetting
 
 StepKind = Literal["task", "rule", "merge"]
 
@@ -46,7 +47,7 @@ class FailurePolicy:
     keep_original_per_item: bool = False     # 호출 실패 문장은 원문 유지 (T-P2)
     on_step_error: Literal["fail", "continue"] = "fail"
     # 규칙 단계 · 합치기의 오류 처리. 기본 'fail' = 운영 오류로 실행 실패, 재작성 중이면 재작성 실패 (잠정)
-    # G-04는 기준 문서대로 'continue' (해당 검증 항목만 미충족, 파이프라인 계속)
+    # G-04는 오류 시 계속. 자체 검사 불통과는 재수행 횟수까지 다시 만들고 관리자 기록 후 계속 (점수 밖)
     rescue_segments: frozenset[str] = frozenset()
     # 실패를 흐름에 넘기는 구간 (확장). 실행 건의 구간(Run.segment)이 여기 있으면 이 단계가 어떤 오류로 끝나든
     # (재시도 소진 · 코드 오류 · 규격 위반 · 대상 없음) 재개 · 실행 실패 대신 Flow.on_rescue가 받아 처리한다.
@@ -143,15 +144,22 @@ class TaskSpec:
 
 
 class AgentRegistry:
-    """Agent 등록부 — 설정 스냅샷에서 Agent별 모델 · 호출처 · 기본 온도를 꺼낸다."""
+    """Agent 등록부 — 설정 스냅샷에서 호출 설정(호출처 · 모델 · 기본 온도 · 추론 강도 · 이미지 설정)을 꺼낸다."""
 
     def __init__(self, agents: tuple[str, ...] = AGENTS) -> None:
         self.agents = agents
 
-    def config(self, settings: Settings, agent: str) -> AgentSetting:
-        if agent not in settings.agents:
-            raise KeyError(f"Agent 설정 없음: {agent}")
-        return settings.agents[agent]
+    def lookup(self, settings: Settings, agent_name: str, key: str) -> TaskModelSetting | AgentSetting:
+        """설정 키(key)의 Task별 설정. 옛 설정 사본(tasks가 None)이면 Agent 이름(agent_name)의 Agent별 설정.
+
+        옛 Agent별 설정에는 이미지 설정이 없다. 항목이 없으면 KeyError로 크게 실패한다."""
+        if settings.tasks is not None:
+            if key not in settings.tasks:
+                raise KeyError(f"Task 설정 없음: {key}")
+            return settings.tasks[key]
+        if not settings.agents or agent_name not in settings.agents:
+            raise KeyError(f"Agent 설정 없음(옛 설정 사본): {agent_name}")
+        return settings.agents[agent_name]
 
 
 class TaskRegistry:

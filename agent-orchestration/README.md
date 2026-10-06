@@ -7,7 +7,7 @@ S-Brain의 AI Agent 7개를 정해진 순서대로 부르고, 실패하거나 �
 | 언어 · 버전 | Python 3.12 |
 | 의존성 | `pydantic` (타입 검증 · JSON 변환), `SQLAlchemy` · `PyMySQL` (공유 MySQL — 저장소 · 웹 DB), `openai` (조율 Agent 호출처), `python-dotenv` (`.env` 읽기), `pytest` (테스트) |
 | 구현 근거 | S-Brain Agent 기능정의서 v1.9 (기준 문서). 보조 참고: 프로젝트 기획서 v1.10 |
-| 현재 상태 | 뼈대 완성. 조율 **T-C1 · T-C3와 재작성 · 재수행 지시문 다시 쓰기는 실제 구현**(2026-10-04 실제 OpenAI로 확인 — T-C3 지시문 작성을 동시 호출로 바꾼 뒤 작성 시작 → 화면 6이 52초 → 11초), 공고 매칭 **T-C2 · 자격 확인 G-01은 공고 서버(공고팀 HTTP API) 연결 코드 완료** — `SBRAIN_NOTICE_API_URL`을 넣어야 켜지며 공고팀 API를 기다리는 중이라 지금은 스텁. 나머지 Agent는 **스텁(가짜 구현)**. 저장소는 **메모리 · 공유 MySQL** 두 가지, **워커 프로세스**(실행 로그 12개월 처리 포함)와 **웹 연동 함수**(시작 요청 · 명령 · 재작성 묶음 요청 · 진행 상태 · 화면 · 결과 조회 · 관리자 조회 · 중단 · 완전 삭제 · 탈퇴)까지 구현. 웹 `projects`에는 쓰지 않는다(2026-10-02). 시각은 모두 UTC, '오늘'은 한국 날짜(2026-10-05). 테스트 1131건(MySQL 8 통합 47건 포함) — 2026-10-05 기준 MySQL 8.0 테스트 DB까지 켜고 1131 통과 · 건너뜀 0, MySQL 없이 1084 통과 · 47 건너뜀 |
+| 현재 상태 | 뼈대 완성. 조율 **T-C1 · T-C3와 재작성 · 재수행 지시문 다시 쓰기는 실제 구현**(2026-10-04 실제 OpenAI로 확인 — T-C3 지시문 작성을 동시 호출로 바꾼 뒤 작성 시작 → 화면 6이 52초 → 11초), 공고 매칭 **T-C2 · 자격 확인 G-01은 공고 서버(공고팀 HTTP API) 연결 코드 완료** — `SBRAIN_NOTICE_API_URL`을 넣어야 켜지며 공고팀 API를 기다리는 중이라 지금은 스텁. 나머지 Agent는 **스텁(가짜 구현)**. 저장소는 **메모리 · 공유 MySQL** 두 가지, **워커 프로세스**(실행 로그 12개월 처리 포함)와 **웹 연동 함수**(시작 요청 · 명령 · 재작성 묶음 요청 · 진행 상태 · 화면 · 결과 조회 · 관리자 조회 · 중단 · 완전 삭제 · 탈퇴)까지 구현. 웹 `projects`에는 쓰지 않는다(2026-10-02). 시각은 모두 UTC, '오늘'은 한국 날짜(2026-10-05). 2026-10-06: 모델 설정을 Task별로, 이미지 호출 `tools.image`, 산출물층 검증 반영(구현 · 검증-2 담당 합의), 워커 운영 로그 파일(선택). 테스트 1272건(MySQL 8 통합 47건 포함) — 2026-10-06 기준 MySQL 8.0 테스트 DB까지 켜고 1272 통과 · 건너뜀 0, MySQL 없이 1225 통과 · 47 건너뜀 |
 
 > 이 문서의 파일 경로는 저장소 폴더(`agent-orchestration`) 기준입니다. 기능정의서 · 기획서는 저장소에 포함되지 않습니다.
 
@@ -154,7 +154,7 @@ python -m pytest
 정상이면 마지막 줄이 다음과 같습니다(MySQL 통합 테스트 47건은 아래 설정이 없으면 건너뜁니다).
 
 ```text
-1084 passed, 47 skipped
+1225 passed, 47 skipped
 ```
 
 테스트는 네트워크에 나가지 않습니다. `.env`에 `SBRAIN_NOTICE_API_URL`을 넣어 두어도 `tests/conftest.py`가 모든 테스트에서 그 값을 없는 것으로 봐서 실제 공고 서버를 부르지 않습니다.
@@ -169,10 +169,11 @@ copy .env.example .env     # macOS / Linux: cp .env.example .env
 
 | 변수 | 쓰는 곳 |
 |---|---|
-| `OPENAI_API_KEY` | OpenAI 호출처 `OpenAIProvider` (8.3). 워커 필수 |
+| `OPENAI_API_KEY` | OpenAI 호출처 `OpenAIProvider` (8.4). 워커 필수 |
 | `SBRAIN_DB_URL` | 공유 MySQL 접속 URL — 워커 · 웹 조립(`build_web`) 필수 |
 | `SBRAIN_NOTICE_API_URL` | 공고 서버 기본 주소 `http(s)://호스트[:포트][/경로]` (선택) — 워커만 읽는다. 있으면 실제 모드, 비우면 스텁 모드. 실제 주소는 비밀 값처럼 다루고 문서 · 로그에 적지 않는다(예시는 `http://example.invalid:8000`) |
 | `SBRAIN_WORKER_POLL_SEC` · `SBRAIN_WORKER_THREADS` · `SBRAIN_WORKER_LEASE_SEC` | 워커 설정 (선택, 기본 1초 · 4 · 120초, 잠정) |
+| `SBRAIN_WORKER_LOG_DIR` · `SBRAIN_WORKER_LOG_KEEP_DAYS` | 워커 운영 로그 파일 (선택) — 폴더를 넣으면 화면과 같은 줄을 UTC 날짜 파일에도 쓴다(워커마다 다른 폴더). 일수 N을 넣으면 N일 넘은 로그 파일을 지운다(기본 지우지 않음, 운영은 366 이하 권장) |
 | `SBRAIN_TEST_MYSQL_URL` | MySQL 8 통합 테스트용 **로컬** DB (선택) |
 | `SBRAIN_TEST_WEB_SCHEMA` | MySQL 통합 테스트가 읽는 웹 스키마 `app_schema.sql` 경로 (선택 — 없으면 이 폴더 한 단계 위의 `web/backend/`에서 찾음) |
 
@@ -188,7 +189,7 @@ copy .env.example .env     # macOS / Linux: cp .env.example .env
 ```powershell
 docker compose -f docker/mysql-test.yml up -d --wait     # mysql:8.0(공유 DB와 같은 8.0 계열), 127.0.0.1:3307, 데이터는 메모리에만
 # .env:  SBRAIN_TEST_MYSQL_URL=mysql+pymysql://root:sbrain-test@127.0.0.1:3307/sbrain_test?charset=utf8mb4
-python -m pytest                                          # 건너뜀 없이 전체 1131건
+python -m pytest                                          # 건너뜀 없이 전체 1272건
 docker compose -f docker/mysql-test.yml down              # 끄기
 ```
 
@@ -203,7 +204,7 @@ python -m sbrain.worker          # Ctrl+C로 멈춤 — 하던 단계를 끝내�
 python -m sbrain.worker --once   # 한 바퀴만 돌고 끝낸다 (점검용)
 ```
 
-`SBRAIN_DB_URL` · `OPENAI_API_KEY`가 없으면 시작하지 않습니다. 로그는 표준 출력에 한 줄씩(가져간 일 · 끝난 상태)이고 프롬프트 · 응답 내용은 남기지 않습니다. 줄 앞 시각은 UTC입니다(끝에 `Z`, 예 `2026-09-26 09:00:05Z` = 한국 18:00:05).
+`SBRAIN_DB_URL` · `OPENAI_API_KEY`가 없으면 시작하지 않습니다. 로그는 표준 출력에 한 줄씩(가져간 일 · 끝난 상태, 단계마다 `단계시작` · `단계끝`, `대기` · `실행끝` · `재개예약`)이고 프롬프트 · 응답 내용 · 계정 번호는 남기지 않습니다. `SBRAIN_WORKER_LOG_DIR`을 넣으면 같은 줄을 그 폴더의 UTC 날짜 파일(`YYYY-MM-DD.log`, 20MB를 넘으면 `.1.log` …)에도 씁니다. 폴더 하나에 워커 하나라서 여러 대를 띄우면 워커마다 다른 폴더를 줍니다. 자동 삭제는 기본 꺼짐이라 파일이 기한 없이 남습니다(탈퇴 · 12개월 처리도 지우지 않음) — 운영에서는 `SBRAIN_WORKER_LOG_KEEP_DAYS`를 366 이하로 켜기를 권장합니다. 줄 앞 시각은 UTC입니다(끝에 `Z`, 예 `2026-09-26 09:00:05Z` = 한국 18:00:05).
 
 워커는 시작 직후와 그 뒤 10분(잠정)마다 실행 로그 12개월 처리를 돌 때인지 확인합니다. 마지막으로 끝까지 마친 지 24시간(잠정)이 지났으면 여러 워커 중 한 대가 돌고, 로그에는 "보관 작업 시작" · "보관 작업 끝 — 옮긴 실행 건 N · 지운 실행 건 N · 옮긴 시작 요청 N · 건너뜀 N"만 남깁니다. `--once`도 때가 됐으면 이 처리를 돕니다.
 
@@ -369,6 +370,7 @@ agent-orchestration/
 ├── sbrain/
 │   ├── bootstrap.py           # 구성 조립 — build_stub_app(테스트) · build_app(워커) · build_web(웹 서버)
 │   ├── worker.py              # 워커 프로세스 (python -m sbrain.worker) — 일 가져가기 + 12개월 처리 확인
+│   ├── worker_log.py          # 워커 운영 로그 — 화면 + 날짜 · 순번 파일, 폴더 잠금, 선택 자동 삭제
 │   ├── env.py                 # 환경 변수 읽기 — 환경 변수 → .env 순서 (get_env)
 │   ├── models/                # 공통 타입 (기준 문서 시트 4)
 │   │   ├── base.py            #   공통 기반 SBModel(시각 필드를 UTC로 맞춤), 확장 표시 ext(), 열거형
@@ -386,13 +388,15 @@ agent-orchestration/
 │   │   └── sql_source.py      #   공유 MySQL 구현 (SQLAlchemy)
 │   ├── orchestrator/          # 범용 뼈대 — S-Brain 고유 규칙이 없음
 │   │   ├── engine.py          #   실행 엔진: 대기열 실행, 재수행 · 재개 · 실패, 재작성 사이클
-│   │   ├── registry.py        #   Agent 등록부 · Task 등록부(TaskSpec), 입력 연결(Bind)
-│   │   ├── tools.py           #   Task에 넘기는 호출 도구: 재시도 · 제한 시간 · 오류 분류 · 호출 기록
+│   │   ├── registry.py        #   Agent 등록부(Task별 설정 찾기) · Task 등록부(TaskSpec), 입력 연결(Bind)
+│   │   ├── tools.py           #   Task에 넘기는 호출 도구(글 · 검색 · 이미지): 재시도 · 제한 시간 · 오류 분류 · 호출 기록
 │   │   ├── openai_provider.py #   OpenAI 호출처 어댑터 (LLMProvider 구현)
+│   │   ├── openai_image.py    #   OpenAI 이미지 호출처 어댑터 (ImageProvider 구현, 확장)
+│   │   ├── runlog.py          #   실행 로그 줄 — 로거 sbrain.run (워커만 처리기를 단다)
 │   │   ├── context.py         #   실행 중 산출물 버전 관리, 한 번에 저장할 기록 모음
 │   │   ├── store.py           #   저장소 인터페이스 (Store, CommitBatch, StartRequest)
 │   │   ├── memory_store.py    #   저장소의 메모리 구현
-│   │   ├── settings.py        #   설정값과 기본값, 잠정 항목 목록(PROVISIONAL)
+│   │   ├── settings.py        #   설정값과 기본값(Task별 호출 설정 Settings.tasks), 잠정 항목 목록(PROVISIONAL)
 │   │   ├── trace.py           #   추적 기록 타입 (실행 기록 · 호출 로그 · 피드백 연결 등)
 │   │   └── errors.py          #   오류 코드(시트 6)와 예외
 │   ├── flow/                  # S-Brain 고유 규칙
@@ -420,7 +424,7 @@ agent-orchestration/
 │       │   └── convert.py     #   응답 키 · 값 검사 (약속 밖이면 FormatError)
 │       ├── form_defaults.py   # 신청자 유형별 양식 · 평가항목 · 채점 기준표 묶음(FORM_TABLE), 선택 공고 자리 표시 양식 (모두 잠정)
 │       └── stubs.py           # 스텁 Agent(스텁 T-C2 · G-01 포함), 가짜 LLM(FakeLLM), 시나리오(StubScenario)
-└── tests/                     # pytest 테스트 (1131건) — conftest.py(저장소 선택 · 공고 서버 주소 격리) · webdb.py · mysqldb.py 도움 모듈
+└── tests/                     # pytest 테스트 (1272건) — conftest.py(저장소 선택 · 공고 서버 주소 격리) · webdb.py · mysqldb.py 도움 모듈
 ```
 
 **설계 원칙:** `orchestrator/`에는 어떤 서비스에도 쓸 수 있는 범용 장치만 두고, 화면 번호 · 알림 대상 · 재작성 경로 같은 S-Brain 고유 규칙은 `flow/`에만 둡니다. 엔진은 `Flow` 인터페이스(`engine.py`)를 통해서만 S-Brain 규칙을 부릅니다.
@@ -455,7 +459,7 @@ flowchart LR
 1. Task 등록부에서 그 단계의 정보(`TaskSpec`)를 꺼냅니다. 담당 Agent, 입출력 타입, 실행 함수, 실패 정책 등이 들어 있습니다.
 2. **입력을 모읍니다.** `TaskSpec.inputs`의 연결 정보(`Bind`)를 보고 산출물 · 설정값 · 사용자 명령 · 작업 지시문 등에서 값을 가져옵니다. 작업 지시문은 `Flow.build_instruction`이 만듭니다 — 재작성 · 재수행이면 워커 조립에서는 조율 LLM이 안내 부분을 다시 쓰고(그 호출도 이 실행 기록에 남음) 문제 내용을 덧붙여 `<Task>.instruction`으로 저장합니다. Task는 저장소에 직접 접근하지 않습니다.
 3. 입력을 규격 타입(`contracts/tasks.py`)으로 검사합니다.
-4. Task라면 담당 Agent 설정(모델 · 호출처 · 온도 · 제한 시간)을 입힌 `Tools`를 만들어 함께 넘깁니다. 규칙 단계 · 합치기는 `Tools`를 받지 않습니다.
+4. Task라면 그 Task의 설정 항목(모델 · 호출처 · 온도 · 추론 강도 · 이미지 설정 · 제한 시간)을 입힌 `Tools`를 만들어 함께 넘깁니다. 규칙 단계 · 합치기는 `Tools`를 받지 않습니다.
 5. 출력을 규격 타입으로 검사하고, 각 필드를 **새 산출물 버전**으로 보관합니다.
 6. 출력의 `check.passed`가 `false`이고 재수행 대상이면, 문제 내용을 담은 `ReworkInput`을 만들어 같은 Task를 다시 부릅니다(재수행).
 7. 산출물 버전 · 현재 버전 포인터 · 실행 상태 · 추적 기록을 `CommitBatch` **하나로 한 번에 저장**합니다. 중간에 멈춰도 어디까지 했는지 어긋나지 않게 하기 위해서입니다.
@@ -511,8 +515,9 @@ flowchart LR
 - **LLM · 검색 호출은 반드시 `tools`로 합니다.** HTTP 클라이언트나 SDK를 Task 안에서 직접 부르지 않습니다. `tools`를 거치지 않으면 재시도 · 제한 시간 · 호출 기록 · 재개가 동작하지 않습니다.
   - `tools.llm(messages, schema=..., parse=..., purpose="...")` — LLM 호출. `schema`(pydantic 모델)를 주면 응답 JSON을 검사해 그 타입으로 돌려줍니다.
   - `tools.search(purpose, fn)` — 임베딩 검색 · BM25처럼 LLM이 아닌 호출. `fn(timeout_sec)` 형태로 부릅니다.
-- 모델 · 온도 · 제한 시간은 `tools`가 설정값에서 입힙니다. Task가 정하지 않습니다.
-- 재시도를 다 쓴 예외(`ToolCallExhausted`)는 대체 경로가 정해진 Task(`T-V2`, 스텁 `T-C2`)가 아니면 **받지 말고 그대로 올려 보냅니다.** Orchestrator가 재개를 처리합니다.
+  - `tools.image(prompt, image=None, size=None, quality=None, purpose="...")` — 이미지 호출. 결과는 PNG 바이트입니다. `image`(입력 그림)를 주면 그 그림을 바탕으로 고쳐 그리고, 없으면 새로 그립니다. `size` · `quality`를 비우면 그 Task 설정값(`image_size` · `image_quality`)을 씁니다. 재시도 · 제한 시간 규칙은 `tools.llm`과 같습니다. 이미지 설정이 없는 Task가 부르면 호출하지 않고 바로 실패합니다(지금은 `T-B2`만 설정이 있습니다).
+- 모델 · 온도 · 추론 강도 · 이미지 모델 · 제한 시간은 `tools`가 그 Task의 설정 항목(`Settings.tasks[Task ID]`)에서 입힙니다. Task가 정하지 않습니다(바꾸는 법은 8.3).
+- 재시도를 다 쓴 예외(`ToolCallExhausted`)는 대체 경로가 정해진 Task(`T-V2`, 스텁 `T-C2`)가 아니면 **받지 말고 그대로 올려 보냅니다.** Orchestrator가 재개를 처리합니다. 예외: `T-B2`는 `tools.image`의 예외만 받아 기본 아이콘으로 계속해도 됩니다(관리자 기록 '이미지대체'가 남습니다). `T-B2`의 `tools.llm` 예외는 올려 보냅니다.
 - 재수행 대상 Task(`T-S1` · `T-S2` · `T-W1` · `T-W2` · `T-W3` · `T-B1` · `T-B2`)는 출력의 `check`에 자체 검사 결과를 채웁니다. 입력의 `rework_input.is_final_attempt`가 `true`인데도 통과하지 못하면, 확정 동작 대상 Task는 확정 동작을 적용하고 `check.final_action`에 그 내용을 적습니다.
 
 ### 8.2 예시
@@ -543,14 +548,43 @@ app = build_stub_app()
 app.registry.bind("T-S1", my_ts1)  # T-S1만 실제 구현으로, 나머지는 스텁 그대로
 ```
 
-### 8.3 실제 LLM 호출처 연결
+이미지를 쓰는 `T-B2`라면 이렇게 부릅니다(아이콘 그리기가 끝내 실패하면 기본 아이콘으로 계속).
 
-LLM 호출처는 `LLMProvider` 인터페이스(`orchestrator/tools.py`)를 구현해 `Engine`의 `providers`에 이름별로 넣습니다. 호출처 이름(`openai`, `gpu-server` 등)은 Agent 설정값에 있습니다. OpenAI는 `OpenAIProvider`(`orchestrator/openai_provider.py`)가 있습니다. API 키는 환경 변수 `OPENAI_API_KEY`에서, 없으면 `.env` 파일에서 읽습니다(3절).
+```python
+from sbrain.orchestrator import ToolCallExhausted
+
+
+def draw_icon(tools: Tools, prompt: str) -> bytes | None:
+    try:
+        return tools.image(prompt, purpose="아이콘")   # 크기 · 품질은 T-B2 설정값(1024x1536 · medium)
+    except ToolCallExhausted:
+        return None   # T-B2만 허용 — 호출자가 기본 아이콘을 쓴다
+```
+
+### 8.3 Task별 모델 바꾸기
+
+모델 · 호출처 · 온도 · 추론 강도 · 이미지 설정은 Task마다 하나씩 `Settings.tasks`에 있습니다. 기본값은 `orchestrator/settings.py`의 `_default_tasks()`이고, 키는 Task ID(`T-C1` … `T-C4`)와 재작성 · 재수행 지시문을 고쳐 쓰는 조율 호출 `지시문 다시 쓰기`입니다. 규칙 단계 · 합치기는 항목이 없습니다. 호출 한 번의 제한 시간은 `Settings.task_timeouts`(키 같음, 이미지는 `T-B2.image`)에 있습니다. 실행 건은 시작할 때 설정을 복사해 끝까지 쓰므로, 바꾼 값은 새로 시작하는 실행 건부터 적용됩니다.
+
+```python
+from sbrain.bootstrap import build_stub_app
+from sbrain.orchestrator.settings import Settings
+
+s = Settings()
+s.tasks["T-B1"] = s.tasks["T-B1"].model_copy(update={"model": "gpt-6-luna-mini"})   # T-B1만 다른 모델로 (예시 이름)
+s.task_timeouts["T-B2.image"] = 180                                                # 이미지 호출 한 번 제한 시간
+app = build_stub_app(settings=s)   # 워커 · 웹 조립(build_app · build_web)도 settings= 를 받습니다
+```
+
+`temperature` · `reasoning_effort`를 `None`으로 두면 호출에 싣지 않습니다(모델 기본값). T-V1 온도 0 · T-P2 온도 0.2 이하는 기준 문서 규칙이라 설정값보다 앞섭니다.
+
+### 8.4 실제 LLM 호출처 연결
+
+LLM 호출처는 `LLMProvider` 인터페이스(`orchestrator/tools.py`)를 구현해 `Engine`의 `providers`에 이름별로 넣습니다. 호출처 이름(`openai`, `gpu-server` 등)은 Task별 설정값(`Settings.tasks`)에 있습니다. 이미지 호출처는 `ImageProvider`를 구현해 `Engine`의 `image_providers`에 넣습니다(OpenAI는 `OpenAIImageProvider`, 실제 API 미확인). OpenAI는 `OpenAIProvider`(`orchestrator/openai_provider.py`)가 있습니다. API 키는 환경 변수 `OPENAI_API_KEY`에서, 없으면 `.env` 파일에서 읽습니다(3절).
 
 ```python
 from sbrain.orchestrator.openai_provider import OpenAIProvider
 
-app.engine.providers["openai"] = OpenAIProvider()   # 조율 Agent 모델은 Settings.agents["조율"] (기본 gpt-6-luna · 추론 강도 low)
+app.engine.providers["openai"] = OpenAIProvider()   # 모델은 Task별 Settings.tasks["T-C1"] 등 (조율 Task 기본 gpt-6-luna · 추론 강도 low)
 ```
 
 ```python
@@ -563,7 +597,7 @@ class LLMProvider(Protocol):
 - 토큰 사용량을 알 수 있으면 `LLMResponse(text, TokenUsage(...))`로 돌려줍니다(입력 · 캐시 입력 · 출력 · 추론). 문자열만 돌려줘도 동작합니다. 형식 오류로 버린 응답의 사용량도 기록되고, 실행 기록 · 관리자 조회에 합계가 보입니다.
 - 가짜 호출처는 `app.llm.usage["T-C1"] = TokenUsage(...)`로 사용량을 돌려줄 수 있습니다.
 
-### 8.4 공고 서버 연결 (T-C2 · G-01)
+### 8.5 공고 서버 연결 (T-C2 · G-01)
 
 T-C2 · G-01의 실제 구현은 공고 서버 HTTP API를 부르는 `agents/notice/`입니다. 워커 조립이 주소가 있을 때 끼우며, 직접 끼울 때는 다음과 같습니다(시험은 가짜 전송으로).
 
@@ -578,7 +612,7 @@ bind_notice(app.registry, NoticeClient("http://example.invalid:8000", transport=
 - 공고 없음(404 + 본문 `NOTICE_NOT_FOUND`)은 재시도하지 않고 G-01이 `ResourceNotFound`를 올려 X-C2-GONE으로 안내됩니다. 응답에 약속한 키가 없거나 값이 약속 밖이면 `FormatError`로 재시도한 뒤 X-C2-FAIL입니다.
 - API 약속(보내는 키 · 받는 키)은 `docs/공고서버_API요청_공고팀전달.md`에 있습니다.
 
-### 8.5 코드 규칙
+### 8.6 코드 규칙
 
 - 모든 타입은 `SBModel`(`models/base.py`)을 상속합니다. 파이썬 필드는 `snake_case`, JSON으로 내보낼 때(`.dump()`)는 기준 문서의 `camelCase` 이름을 씁니다.
 - 기준 문서에 없는 필드를 추가할 때는 `ext()`로 선언합니다. JSON 스키마에 `x-extension` 표시가 붙어 원래 규격과 구분됩니다.
@@ -650,8 +684,8 @@ bind_notice(app.registry, NoticeClient("http://example.invalid:8000", transport=
 | 기준 점수 · 층별 배점 | 80점 · 문서층 70 · 산출물층 30 | |
 | 검수 동시 처리 수 | 4 | 잠정 |
 | 검수 실패 비율 기준 | 30% (모든 문장을 본 뒤 판단) | 잠정 |
-| Task별 제한 시간 | 대부분 120초, `T-W1` · `T-B1` · `T-B2` 300초, `T-C2` · `G-01` 30초(공고 서버 호출 한 건마다), `T-P2` 60초. 지시문 다시 쓰기는 `T-C3` 값 | 잠정 |
-| Agent별 모델 · 호출처 · 온도 · 추론 강도 | 조율은 `openai` · `gpt-6-luna` · 추론 강도 low · 온도 없음(사용자 지정). 나머지 Agent 모델은 '미정', 검수 `gpu-server` 등 | 조율 외 잠정 |
+| Task별 제한 시간 (호출 한 번) | 대부분 120초, `T-W1` · `T-B1` · `T-B2` 300초, `T-C2` · `G-01` 30초(공고 서버 호출 한 건마다), `T-P2` 60초, `지시문 다시 쓰기` 120초, 이미지 `T-B2.image` 120초 | 잠정 |
+| Task별 모델 · 호출처 · 온도 · 추론 강도 · 이미지 (`Settings.tasks`) | 조율 Task · `지시문 다시 쓰기`는 `openai` · `gpt-6-luna` · 추론 강도 low · 온도 없음(사용자 지정). T-B1 · T-B2 · T-V2는 `gpt-6-luna` · 추론 강도 · 온도 보내지 않음, T-B2 이미지 `gpt-image-2.5-flare` · medium · 1024x1536(구현 · 검증-2 담당 요청). 나머지 '미정', 검수 `gpu-server` 등. 규칙 단계 · 합치기는 항목 없음 | 잠정 |
 
 실행 건 설정이 아닌 명령 창구 값(`flow/service.py`)도 있습니다: 재작성 요청을 모으는 시간 2초, 재작성 요청의 점유 재시도 최대 5초, `wait_project` 기본 제한 시간 60초(0.5초마다 다시 읽음) — 모두 잠정이며 관리자 설정으로 바꾸지 않습니다. 12개월 처리 값(한 번에 100건 · 다시 시작 간격 24시간 · 확인 주기 10분 · 작업 점유 = 워커 점유 120초)과 계정 잠금 대기 10초도 같은 성격의 잠정 값입니다.
 
@@ -688,9 +722,9 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 | `test_log_stats.py` | 16 | 통계 줄 계산 — 칸 · 고정 키 · 한국 달 · 카테고리 순서 · 층별 점수 · 최종 점수 · Task별 개수, 식별자 · 자유 글 없음, 시작 요청 묶기 |
 | `test_retention.py` | 28 | 12개월 처리 — 기준 시각 · 경계, 진행 중 · 점유 중 건너뜀, 살아 있는 실행 건 · 두 번째 옮김 · 완전 삭제된 실행 건, 시작 요청, 작업 점유 · 종료 신호 · 만료 이어받기, 한 건 실패, 로그 · 요약에 식별자 없음 |
 | `test_retention_preserve.py` | 12 | 기록을 지운 뒤에도 카테고리 · 화면 10 · 재작성 결과 · 시도 번호가 같음 |
-| `test_account_delete.py` | 19 | 탈퇴 — 통계로 옮기고 모두 지움, 대기 요청 취소, `BUSY`(처리중 요청 · 단계 진행 · 점유 겹침 · 잠금 대기 초과), 다시 부르면 0, 잠금 중 새 시작 요청이 끼어들지 않음, 웹 조립에서 부름 |
+| `test_account_delete.py` | 21 | 탈퇴 — 통계로 옮기고 모두 지움, 대기 요청 취소, `BUSY`(처리중 요청 · 단계 진행 · 점유 겹침 · 잠금 대기 초과), 다시 부르면 0, 잠금 중 새 시작 요청이 끼어들지 않음, 웹 조립에서 부름 |
 | `test_tc3.py` | 55 | 실제 T-C3 — 지시 대상마다 안내 호출(7 · 6번, 동시에 · 결과는 실행 순서), 실패 순서(코드 오류 · 영구 오류 · 일시), 재개 때 빠진 것만 · 누적, 보내는 칸 제한 · 시 · 도만, 참조 조각은 지시문에만, 데이터 격리, LLM 전 확인(자격 · 이력 · E-C3-FORM), 형식 오류 재시도, 재시도 소진 → 재개 |
-| `test_task_plan.py` | 48 | 양식 묶음 표(불변식 · 배점 합 70), Task 목록 · 틀 · 맥락 · 확장 출력, 참조 조각 배정, 스텁 T-C3, 뒷 단계가 T-C3 출력을 읽음, `outputs.evaluationItems` |
+| `test_task_plan.py` | 50 | 양식 묶음 표(불변식 · 배점 합 70), Task 목록 · 틀 · 맥락 · 확장 출력, 참조 조각 배정, 스텁 T-C3, 뒷 단계가 T-C3 출력을 읽음, `outputs.evaluationItems` |
 | `test_instruction.py` | 18 | 지시문 세 부분 나누기 · 안내만 바꾸기(틀 · 참조 바이트 보존) · 안내 정리 · 덧붙임 블록 형식 |
 | `test_rewrite.py` | 39 | 재작성 · 재수행 지시문 다시 쓰기 — 언제 부르나, 문서층 Task마다, 반영 실행은 덧붙이기만, 재작성 중 재수행에 재작성 지시 유지, 가리기, 재개 때 재사용, 호출 기록 위치, 되돌리기 제외 |
 | `test_worker.py` | 33 | T-C3 · 다시 쓰기 호출만 실제 호출처로, 워커 2개 중복 없음(SQLite · MySQL), 점유 만료 이어받기, 단계 사이 중단, 종료 신호, 하트비트, 재개, 모으는 중 가져가지 않음, 12개월 처리(확인 주기 · 개수만 로그 · 종료 신호 · 작업 점유 하트비트 · 웹 조립은 안 돎), 조립(웹 조립 사전 단계 `WEB_NOT_ALLOWED`, 공고 서버 주소 있음 → 실제 T-C2 · G-01 · 없음 · 빈 값 → 스텁, 주소 형식 오류, 테스트가 실제 주소를 보지 않음) |
@@ -706,6 +740,10 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 | `test_summary.py` | 11 | 단계를 저장해도 웹 `projects` 행이 바뀌지 않음, 실패 알림 · 실패 사유 (SQLite · MySQL) |
 | `test_tokens.py` | 10 | 토큰 시도별 · 호출 · 실행 합계, OpenAI 매핑, 관리자 조회 |
 | `test_abort_delete.py` | 14 | project_id 중단 · 완전 삭제 |
+| `test_task_settings.py` | 12 | Task별 설정 — 키 집합 = 등록부 task 단계 + `지시문 다시 쓰기`, 기본값 · 잠정, 새 사본에 `agents` 없음, 옛 사본(`agents`만) 읽기 · 이어 돌기, Task마다 자기 모델 · 온도 규칙, 다시 쓰기 자기 항목, M-4 `model_version`, 워커 나누기 |
+| `test_image.py` | 30 | `tools.image` 재시도 · 오류 종류 · 편집 / 새로 그리기 · 크기 · 품질 기본값 · 설정 없는 Task 즉시 실패 · 토큰 · 스레드 · 내용 없음, 실행 기록 이미지 토큰 따로 · 재개 때 이어 더함, 관리자 조회, 조립 · 이미지 호출처 나누기, OpenAI 이미지 어댑터(가짜 클라이언트) |
+| `test_artifact_layer.py` | 66 | 산출물층 검증 반영 — 확장 필드, 재작성 사유(통과 필수 조건 · 결함 출처 · 누락 · 부분 인정 · 보류), 스텁 T-V2 1.4판, `planDoc` 입력, 보류 · 진단 사건, G-04 자체 검사, 원페이지 계획서 반영 · 되돌리기, 이전 원문, T-B2 이미지 실패 예외 · '이미지대체' |
+| `test_worker_log.py` | 31 | 워커 운영 로그 — 단계 · 실행 건 줄과 키 순서, 단계끝은 저장 뒤, 웹 루트 로거로 안 올라감, 계정 번호 · 내용 없음, 웹 조립 출력 없음, 날짜 · 순번 파일 · 날짜 바뀜 · 이어 쓰기, 자동 삭제, 폴더 잠금, 쓰기 실패해도 계속 |
 | `test_mysql_integration.py` | 7 | 실제 웹 스키마 위 MySQL 8 흐름 · 동시 재작성 요청 합치기 · 반려 시도 행 · 삭제 뒤 로그 보존 · 웹 → 워커 조립 · 탈퇴 중 계정 잠금 유지 · 웹 스키마 위치 찾기(DB 없이) |
 
 흐름 테스트(`clock` 고정 장치를 쓰는 테스트)는 **메모리 저장소와 `SqlStore`(SQLite 임시 파일 DB)로 한 번씩** 돕니다(`conftest.py`의 `store_backend`). 위 건수는 이렇게 늘어난 수입니다.
