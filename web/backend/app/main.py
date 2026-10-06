@@ -33,7 +33,7 @@ from app.models import Notice
 from app.orch.errors import register_error_handlers
 from app.orch.startup import init_orchestrator
 from app.request_logging import RequestLoggingMiddleware
-from app.routers import admin, auth, biz_check, faqs, profile, projects, uploads
+from app.routers import admin, artifact_files, auth, biz_check, faqs, profile, projects, uploads
 from app.routers.projects import UPLOAD_DIR
 
 app = FastAPI(title='S-Brain API', version='0.1.0')
@@ -69,6 +69,7 @@ app.include_router(uploads.router)
 
 app.include_router(auth.router)
 app.include_router(projects.router)
+app.include_router(artifact_files.router)
 app.include_router(admin.router)
 app.include_router(faqs.router)
 app.include_router(biz_check.router)
