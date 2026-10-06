@@ -14,9 +14,11 @@
 3. 모델이 칸 위치를 조금씩 다시 나누므로(실측), 흰 여백을 찾아 실제 칸 위치를 읽는다(find_cells).
 4. 구역을 그리는 쪽(composer.py · showcase.py)이 icon()으로 칸 하나를 제 자리에 넣는다.
 
-이미지 호출은 tools.image로만 한다. 이 호출 통로는 조율에 요청할 규격이다:
-    tools.image(prompt, *, image: bytes | None, size: str, quality: str, purpose: str) -> bytes(PNG)
-통로가 없거나, 호출이 실패하거나, 칸 수가 맞지 않으면 None을 돌려주고 지면은 기본 아이콘으로 나간다.
+이미지 호출은 tools.image로만 한다(조율이 만든 통로, 2026-10-06):
+    tools.image(prompt, *, image: bytes | None, size: str | None, quality: str | None, purpose: str) -> bytes(PNG)
+통로가 없거나, 호출이 실패하거나(재시도를 다 쓴 ToolCallExhausted 포함), 칸 수가 맞지 않으면 None을
+돌려주고 지면은 기본 아이콘으로 나간다. 이미지 실패를 받아 계속하는 것은 조율이 T-B2에만 허용한 예외다 —
+T-B2의 글 호출(tools.llm) 실패는 받지 않고 올려 보낸다(content.py는 예외를 잡지 않는다).
 PNG 읽기 · 쓰기는 표준 라이브러리(zlib)만 쓴다.
 """
 from __future__ import annotations

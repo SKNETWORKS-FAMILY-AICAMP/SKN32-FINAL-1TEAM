@@ -188,9 +188,25 @@ def _extract_implemented_features(html_content: str) -> list[str]:
     return [f.strip() for f in raw.split('|') if f.strip()]
 
 
+def user_message(instruction: str, previous_html: str = "") -> str:
+    """지시문. 재실행에 이전 HTML이 오면 처음부터 새로 만들지 않고 그 HTML을 고치게 한다.
+
+    처음부터 다시 만들면 버튼 하나만 고치면 될 때도 화면 전체가 바뀌어, 잘 되던 부분이 달라지고
+    재작성 전후 비교에서 점수가 떨어질 수 있다. 문제 내용은 조율이 지시문 끝에 이미 붙여 보낸다."""
+    if not previous_html.strip():
+        return instruction
+    # 이전 HTML은 코드블록이 아니라 표시 태그로 감싼다. 출력 형식은 ```html:index.html인데, 여기서
+    # ```html을 보여 주면 모델이 파일 이름 없이 따라 써서 코드블록을 못 찾는(형식 오류 → 재시도) 일이 생긴다.
+    return (f"{instruction}\n\n## 이전 HTML (고칠 대상)\n"
+            "<이전HTML> 안의 HTML에서 위 지시문의 문제 내용만 고쳐라. 문제와 관계없는 화면 · 문구 · 동작 · "
+            "디자인은 그대로 둬라. 고친 뒤에도 '절대 규칙'을 모두 지키고, 시스템 지시의 출력 형식"
+            f"(html:{_ENTRY_FILENAME} 코드블록 하나)대로 파일 전체를 다시 출력하라.\n\n"
+            f"<이전HTML>\n{previous_html.strip()}\n</이전HTML>")
+
+
 def build_prototype_html(
     feature_list: list[str], item_spec: dict, category: str, instruction: str, tools,
-    plan_text: str = "",
+    plan_text: str = "", previous_html: str = "",
 ) -> dict:
     """T-B1 진입점: LLM 생성 → 코드블록 파싱 → 자체 게이트(E-B1-ENTRY, E-B1-DEP,
     E-B1-SANDBOX) → 저장.
@@ -206,7 +222,7 @@ def build_prototype_html(
     system_prompt = _build_system_prompt(feature_list, item_spec, category, plan_text)
     files = tools.llm(
         [{"role": "system", "content": system_prompt},
-         {"role": "user", "content": instruction}],
+         {"role": "user", "content": user_message(instruction, previous_html)}],
         parse=_parse_llm_files, purpose="T-B1 HTML 생성",
     )
 
@@ -229,6 +245,8 @@ def build_prototype_html(
             "entryFilePath": None,
             "readmePath": None,
             "implementedFeatures": [],
+            # 저장하지는 않지만 원문은 돌려준다 — 조율이 재수행 때 previous_source_text로 돌려줘 고쳐 만든다.
+            "sourceText": entry_content,
             "gate_failures": {"entry": None, "dependency": violations, "sandbox": []},
             "summary": f"E-B1-DEP 게이트 실패: 외부 의존성 {len(violations)}건 발견",
         }
@@ -240,6 +258,7 @@ def build_prototype_html(
             "entryFilePath": None,
             "readmePath": None,
             "implementedFeatures": [],
+            "sourceText": entry_content,
             "gate_failures": {"entry": None, "dependency": [],
                               "sandbox": sandbox_violations},
             "summary": ("E-B1-SANDBOX 게이트 실패: sandbox iframe에서 동작하지 않는 API "

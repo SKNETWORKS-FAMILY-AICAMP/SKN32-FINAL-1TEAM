@@ -27,13 +27,14 @@ def run_tb1(inp: TB1In, tools: Tools) -> TB1Out:
     from sbrain.contracts.tasks import TB1Out
     from sbrain.models import CheckResult, Prototype
 
-    # plan_doc은 조율이 TB1In에 추가하기로 한 필드다(조율과 합의). 계약에 들어오기 전에는
-    # 없으므로 있을 때만 쓴다 — 없으면 예전처럼 기능 이름만으로 만든다.
-    plan_doc = getattr(inp, "plan_doc", None)
+    # plan_doc은 확장 필드다. 조율은 늘 채우지만 타입은 None을 허용한다 — 없으면 기능 이름만으로 만든다.
+    # previous_source_text는 T-B1이 재작성 대상이거나 재수행일 때만 온다 — 오면 그 HTML을 고쳐 만든다.
+    previous = inp.rework_input.previous_source_text if inp.rework_input is not None else None
     result = build_prototype_html(
         inp.feature_list, inp.item_spec.dump(), inp.category,
         inp.instruction, tools,
-        plan_text=_plan_text(plan_doc) if plan_doc is not None else "",
+        plan_text=_plan_text(inp.plan_doc) if inp.plan_doc is not None else "",
+        previous_html=previous or "",
     )
     passed = result["status"] == "success"
     failures = [] if passed else [result["summary"]]

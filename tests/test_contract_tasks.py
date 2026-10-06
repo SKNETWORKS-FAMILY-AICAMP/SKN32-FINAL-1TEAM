@@ -132,6 +132,31 @@ class ContractTaskTests(TestCase):
         with self.assertRaises(ToolCallExhausted):
             run_tb1(inp, Exhausted())
 
+    def test_run_tb2_passes_text_failure_up_but_not_image_failure(self):
+        """조율 규칙: T-B2만 이미지 호출 실패를 받아 기본 아이콘으로 계속한다. 글 호출 실패는 올린다."""
+        from engineering_agent.infographic import artsheet
+        from engineering_agent.tasks import run_tb2
+        from sbrain.contracts.tasks import TB2In
+        from sbrain.orchestrator.errors import ToolCallExhausted
+
+        class TextFails:
+            def llm(self, messages, **kwargs):
+                raise ToolCallExhausted(error="응답지연", error_kind="일시", tries=5)
+
+            def image(self, prompt, **kwargs):
+                raise AssertionError("글 호출이 실패하면 그림까지 가지 않는다")
+
+        inp = TB2In(plan_doc=_plan_doc(["주문 조회는 매장별 주문 상태를 보여준다."], ["주문 조회"]),
+                    item_spec=_item_spec(category="원페이지"), category="원페이지", instruction="만들어라")
+        with self.assertRaises(ToolCallExhausted):
+            run_tb2(inp, TextFails())
+
+        class ImageFails:
+            def image(self, prompt, **kwargs):
+                raise ToolCallExhausted(error="호출실패", error_kind="운영", tries=1)
+
+        self.assertIsNone(artsheet.generate("원페이지", {"features": ["주문 조회"]}, ImageFails()))
+
     def _run_tb2(self, category, extracted, sentences, feature_list=("주문 조회",)):
         from engineering_agent.infographic import render as infographic_render
         from engineering_agent.tasks import run_tb2
