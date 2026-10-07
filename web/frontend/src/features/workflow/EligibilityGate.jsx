@@ -18,7 +18,7 @@ export function EligibilityGate({announcement,eligibility,notices=[],onProceed,o
  // (예전의 '판정 불가(undecidable)'는 없어졌다 — 오케스트레이터는 늘 거짓으로 준다)
  const unknownConditions=eligibility?.unknown_conditions||[];
  // 작성 시작 가능 여부는 서버 값(can_start_writing, SB-274)을 따른다 — 없으면(예전 응답 · 화면 검토 견본) 통과 여부로.
- // 확인 필요 조건이 있을 때 true로 둘지는 기획 확인 중(잠정)이라 서버 결정을 그대로 따른다.
+ // 확인 필요 조건(unknown_conditions)은 통과로 보고 진행한다(확정, 2026-10-07) — 서버도 이때 can_start_writing=true를 준다.
  const canStart=eligibility?.can_start_writing??passed;
  // 업력(년, 소수 한 자리). 예비창업자 · 모르면 null이라 표시하지 않는다.
  const businessAge=eligibility?.business_age_years;
@@ -40,7 +40,7 @@ export function EligibilityGate({announcement,eligibility,notices=[],onProceed,o
   {rows&&<div className="eligibility-list">
    {failedConditions.map((c,i)=><div className="eligibility-row" key={'fail-'+i}><div><b>충족하지 않는 조건</b><p>{labelOf(c)}</p></div><div><small className="fail-text">미충족</small></div></div>)}
    {missingInputs.map((m,i)=><div className="eligibility-row" key={'missing-'+i}><div><b>추가로 필요한 정보</b><p>{labelOf(m)}</p></div><div><small className="fail-text">입력 필요</small></div></div>)}
-   {unknownConditions.map((c,i)=><div className="eligibility-row" key={'unknown-'+i}><div><b>{labelOf(c)}</b><p>공고문을 직접 확인해 주세요</p></div><div><small className="fail-text">확인 필요</small></div></div>)}
+   {unknownConditions.map((c,i)=><div className="eligibility-row" key={'unknown-'+i}><div><b>{labelOf(c)}</b><p>자동으로 확인하지 못해 통과로 보고 진행해요. 공고문을 직접 확인해 주세요</p></div><div><small className="pass-text">통과 · 직접 확인</small></div></div>)}
   </div>}
   <div className="eligibility-action"><p>등록하신 정보를 기준으로 AI가 확인한 결과예요.</p><button className="btn" onClick={()=>canStart?onProceed():leave()}>{canStart?'사업계획서 작성하기':'다른 공고 다시 보기'}</button></div>
  </section></>;

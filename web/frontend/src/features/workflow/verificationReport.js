@@ -47,7 +47,9 @@ export function buildVerificationReportHtml({ projectName, announcementTitle, ca
   const passed = total >= passThreshold;
   const failedItems = codeCheckItems.filter((it) => !it.passed);
 
-  const opinion = crossCheck.reasons.length
+  const opinion = crossCheck.withheld
+    ? '계획서와 구현 기능을 대조하지 못했습니다(대조 불가). 이 항목은 0점으로 합산됩니다.'
+    : crossCheck.reasons.length
     ? `사업계획서에 쓴 내용 중 산출물에서 확인되지 않는 항목이 ${crossCheck.reasons.length}건 있습니다.`
     : '사업계획서에 쓴 기능·정보가 산출물에 모두 있습니다.';
   const fixes = [
@@ -121,7 +123,7 @@ export function buildVerificationReportHtml({ projectName, announcementTitle, ca
     </tbody>
   </table>${entryMissing ? '\n  <p class="rule">진입 파일이 없어 나머지 항목 검사가 성립하지 않으므로 자동 검증 점수는 0점으로 처리됩니다.</p>' : ''}
 
-  <h2><em>03</em>계획서 대조 의견 및 보완 사항<small>${crossCheck.raw} / ${crossCheck.max}점</small></h2>
+  <h2><em>03</em>계획서 대조 의견 및 보완 사항<small>${crossCheck.withheld ? '대조 불가 (0점 합산)' : `${crossCheck.raw} / ${crossCheck.max}점`}</small></h2>
   <dl class="notes">
     <dt>검증 의견</dt><dd>${lines([opinion], '')}</dd>
     <dt>보완 사항</dt><dd>${lines(fixes, '보완이 필요한 항목이 없습니다.')}</dd>

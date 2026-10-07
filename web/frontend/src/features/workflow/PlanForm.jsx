@@ -6,7 +6,7 @@ import {buildGeneralInfo,buildOverview,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunL
 import {RerunLeftBadge} from './shared.jsx';
 import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_TABLE_EXAMPLE,RERUN_CAP,SCORE_DISCLAIMER,DOC_REWORK_BUNDLES} from './data.js';
 import {ApiError,fetchPlanDocumentPdf,getProjectStatus} from '../../api.js';
-import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,requestRework,waitRework} from './rework.js';
+import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,relabelAfterReject,requestRework,waitRework} from './rework.js';
 
 // 재작성 묶음(PSST 4항목) -> 다시 돌릴 task_key. 묶음 하나를 고르면 그 항목의
 // 본문·차트·표가 함께 다시 만들어지는데(기능정의서 7_재작성·재수행매핑), 서버에는 그
@@ -269,15 +269,17 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
       if (req.rejected.length > 0) {
         // 일부만 거절 — 거절된 묶음은 다시 고를 수 있게 돌려 두고, 접수된 묶음만 진행 중으로 본다.
         window.alert(rejectedReworkMessage(req.rejected));
-        setCheckedTasks(req.rejected.map((r) => r.label));
+        setCheckedTasks(relabelAfterReject(picked, req.rejected)); // 상한(E-G2-LIMIT) 묶음은 다시 체크하지 않는다
         setRunningTasks(req.labels);
       }
       await finishRework(req.cycleId, req.labels);
     } catch (err) {
       console.error('재작성 요청이 실패했어요', err);
-      window.alert(err.message || '재작성에 실패했어요. 다시 시도해 주세요.');
-      setCheckedTasks(picked);
+      window.alert(err.rejected?.length > 1 ? rejectedReworkMessage(err.rejected) : (err.message || '재작성에 실패했어요. 다시 시도해 주세요.'));
+      setCheckedTasks(relabelAfterReject(picked, err.rejected));
       setRunningTasks([]);
+      // 상한에 걸렸으면 남은 횟수를 서버에서 다시 받아 그 묶음을 끈다
+      if (err.rejected?.some((r) => r.error?.code === 'E-G2-LIMIT') && onScoresRefresh) onScoresRefresh();
     }
   };
 

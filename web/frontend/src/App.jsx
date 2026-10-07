@@ -197,14 +197,14 @@ export default function App(){
    // [2026-09-28] 동시 실행 1건 제한(E-RUN-CONCURRENT)은 "실패"가 아니라 사용자가 고를 일이다 —
    // 서버가 409 detail에 {blocked, active_project_id, active_stage, active_screen}을 구조화해서
    // 주므로(app/routers/projects.py), alert로 JSON을 덤프하지 말고 선택 화면을 띄운다.
-   if(err.status===409&&err.detail&&err.detail.blocked){
+   if(err.code==='E-RUN-CONCURRENT'||(err.status===409&&err.detail&&err.detail.blocked)){
     setBlockedRun({...err.detail,info});
     setView('intake');
     return;
    }
    // 필수 동의 미완료(E-AUTH-CONSENT 403) — 원문 alert 대신 동의 화면을 띄운다. 입력값(itemInfo)은
    // 그대로 남아 있어서 동의 후 다시 제출하면 된다.
-   if(err.status===403&&String(err.message||'').includes('동의')){
+   if(err.code==='E-AUTH-CONSENT'||(err.status===403&&!err.code&&String(err.message||'').includes('동의'))){
     setConsentOpen(true);
     setView('intake');
     return;

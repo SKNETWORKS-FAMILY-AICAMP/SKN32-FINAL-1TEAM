@@ -115,7 +115,10 @@ function DeleteAccountSection({ email, onDeleted }) {
       onDeleted?.();
     } catch (e) {
       console.error('계정 삭제 실패:', e);
-      setError(e.message || '탈퇴 처리 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.');
+      // BUSY — 진행 중인 작업 때문에 멈췄다. 서버가 남은 것부터 이어서 지우므로 같은 버튼을 다시 누르면 된다.
+      setError(e?.code === 'BUSY'
+        ? '진행 중인 작업이 있어 탈퇴를 마치지 못했어요. 잠시 뒤 탈퇴 버튼을 다시 눌러 주세요.'
+        : (e.message || '탈퇴 처리 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.'));
       setBusy(false);
     }
   };

@@ -56,7 +56,9 @@ const AGENT_ROWS=[
 // GET /admin/agent-executions 응답(dict 목록, AgentExecutionOut 고정 스키마가 아니라 유연한 형태)을
 // 이 화면 행 모양으로 바꾼다. project(프로젝트명)는 API가 안 내려줘서 project_id로 대신 표시한다.
 const executionRowFromServer=r=>({
-  id:'EXEC-'+r.execution_id,projectId:r.project_id,agent:r.agent_name,tokens:Number(r.token_usage).toLocaleString(),
+  id:'EXEC-'+r.execution_id,projectId:r.project_id,agent:r.agent_name,
+  // [SB-302] 이미지 호출 토큰은 글 토큰(token_usage)과 따로 온다 — 있으면 옆에 붙인다
+  tokens:Number(r.token_usage).toLocaleString()+(Number(r.image_token_usage)>0?' (+이미지 '+Number(r.image_token_usage).toLocaleString()+')':''),
   rerun:r.rerun_type,rerunTone:r.rerun_type==='rerun'?'primary':'muted',
   status:r.status,statusTone:['completed','success','성공'].includes(r.status)?'ok':'danger',
   tone:!['completed','success','성공'].includes(r.status)?'danger':undefined,
@@ -727,6 +729,7 @@ function ProgressTab({focusProjectId=null}){
                           {shortUpdated(r.started_at)}
                           {r.model_used&&<span> · {r.model_used}</span>}
                           {r.token_usage!=null&&<span> · {Number(r.token_usage).toLocaleString()} tok</span>}
+                          {Number(r.image_token_usage)>0&&<span> · 이미지 {Number(r.image_token_usage).toLocaleString()} tok</span>}
                         </p>
                         {failed&&<p className="text-[11.5px] text-[var(--danger)] mt-1 break-words">
                           {r.error_kind&&<span className="font-semibold">［{r.error_kind}］ </span>}
@@ -820,11 +823,12 @@ function AgentsTab({focusProjectId=null}){
           {opsSummaryError?<p className="text-[13px] text-[var(--danger)] mb-6 mt-4">{opsSummaryError}</p>
           :opsSummary===null?<p className="text-[13px] text-[var(--muted-fg)] mb-6 mt-4">불러오는 중…</p>
           :<>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6 mt-4">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6 mt-4">
             <Card label="총 실행 세션" value={opsSummary.total_executions+'건'} sub="전체 누적 기준"/>
             <Card label="재시도 실행" value={opsSummary.rerun_executions+'건'} sub={'최초 실행 '+opsSummary.initial_executions+'건'}/>
             <Card label="최초 실행 평균 토큰" value={opsSummary.initial_avg_tokens!=null?Math.round(opsSummary.initial_avg_tokens).toLocaleString():'-'} sub="token_usage 평균"/>
             <Card label="재시도 평균 토큰" value={opsSummary.rerun_avg_tokens!=null?Math.round(opsSummary.rerun_avg_tokens).toLocaleString():'-'} sub="token_usage 평균"/>
+            <Card label="이미지 토큰 합" value={Number(opsSummary.total_image_tokens||0).toLocaleString()} sub="이미지 입력 + 출력"/>
           </div>
           {/* "선별/전체 재실행" 구분은 여전히 예시가 아니라 "만들지 않음"이다(그 값을
               남기는 컬럼이 없음, AgentOpsSummaryOut 주석 참고) — 보호 토큰 위반율은

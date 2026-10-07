@@ -19,8 +19,20 @@ export async function requestRework(projectId, labels, taskKeyByLabel) {
   const accepted = [];
   const rejected = [];
   settled.forEach((s, i) => (s.status === 'fulfilled' ? accepted.push({label: labels[i], value: s.value}) : rejected.push({label: labels[i], error: s.reason})));
-  if (accepted.length === 0) throw rejected[0].error;
+  if (accepted.length === 0) {
+    const err = rejected[0].error;
+    if (err && typeof err === 'object') err.rejected = rejected; // 화면이 묶음별로 다시 고를 수 있게(상한 묶음은 빼고)
+    throw err;
+  }
   return {cycleId: accepted[0].value.cycle_id, labels: accepted.map((a) => a.label), rejected};
+}
+
+// 재작성 상한(E-G2-LIMIT) — 다시 고를 수 없는 묶음이다. 화면은 이 묶음을 다시 체크해 두지 않고 남은 횟수를 새로 받아 버튼을 끈다.
+export const isReworkCapError = (err) => err?.code === 'E-G2-LIMIT';
+
+// 거절당한 뒤 다시 체크해 둘 묶음 — 상한에 걸린 묶음은 뺀다. rejected가 없으면(요청 전 오류 등) 고른 묶음 그대로.
+export function relabelAfterReject(picked, rejected) {
+  return rejected ? rejected.filter((r) => !isReworkCapError(r.error)).map((r) => r.label) : picked;
 }
 
 // 거절된 묶음 안내 한 줄씩 — "성장전략: 이 항목은 다시 만들 수 있는 횟수를 모두 사용했어요."

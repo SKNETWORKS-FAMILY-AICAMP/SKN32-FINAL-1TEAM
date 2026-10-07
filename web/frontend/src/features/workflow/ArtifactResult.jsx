@@ -6,7 +6,7 @@ import {SiteMock,RerunLeftBadge} from './shared.jsx';
 import {detectItemCategory,buildCodeCheckItems,isRerunCapped,rerunLeftOf} from './utils.js';
 import {ARTIFACT_CATEGORY_COPY,ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,EXECUTABLE_COPY,PROTOTYPE_PAGE,RERUN_CAP} from './data.js';
 import {fetchUploadBlob,startFinalReview} from '../../api.js';
-import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,requestRework,waitRework} from './rework.js';
+import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,relabelAfterReject,requestRework,waitRework} from './rework.js';
 
 // ARTIFACT_SUBTASKS_BY_CATEGORY(data.js)의 라벨 -> app/schemas.py RetryTaskRequest.task_key.
 const TASK_KEY_BY_LABEL = { '실행 파일 제작': 'implement_prototype', '인포그래픽 제작': 'implement_infographic' };
@@ -207,15 +207,17 @@ export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcom
       if (req.rejected.length > 0) {
         // 일부만 거절 — 거절된 묶음은 다시 고를 수 있게 돌려 두고, 접수된 묶음만 진행 중으로 본다.
         window.alert(rejectedReworkMessage(req.rejected));
-        setCheckedTasks(req.rejected.map((r) => r.label));
+        setCheckedTasks(relabelAfterReject(picked, req.rejected)); // 상한(E-G2-LIMIT) 묶음은 다시 체크하지 않는다
         setRunningTasks(req.labels);
       }
       await finishRework(req.cycleId, req.labels);
     } catch (err) {
       console.error('재작성 요청이 실패했어요', err);
-      window.alert(err.message || '재작성에 실패했어요. 다시 시도해 주세요.');
-      setCheckedTasks(picked);
+      window.alert(err.rejected?.length > 1 ? rejectedReworkMessage(err.rejected) : (err.message || '재작성에 실패했어요. 다시 시도해 주세요.'));
+      setCheckedTasks(relabelAfterReject(picked, err.rejected));
       setRunningTasks([]);
+      // 상한에 걸렸으면 남은 횟수를 서버에서 다시 받아 그 묶음을 끈다
+      if (err.rejected?.some((r) => r.error?.code === 'E-G2-LIMIT') && onScoresRefresh) onScoresRefresh();
     }
   };
 
@@ -277,7 +279,9 @@ export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcom
 
           <div className="mb-4">
             <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-2">계획서 대조 — 누락 기능</p>
-            {missingFeatures.length === 0 ? (
+            {artifactScore.crossCheck.withheld ? (
+              <p className="text-[12.5px] text-[var(--warn)] leading-relaxed">대조 불가 — 계획서와 구현 기능을 대조하지 못했어요. 이 항목은 0점으로 합산돼요.</p>
+            ) : missingFeatures.length === 0 ? (
               <p className="text-[12.5px] text-[var(--muted-fg)]">누락된 기능 없음</p>
             ) : (
               <ul className="flex flex-col gap-1.5">

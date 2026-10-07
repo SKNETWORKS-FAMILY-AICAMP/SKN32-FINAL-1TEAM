@@ -138,6 +138,11 @@ export function scoresFromResult(result){
     autoCheck: layer(artifactReasons.filter((r) => !isCross(r)), verdict.code_score, verdict.code_max_score),
     crossCheck: layer(artifactReasons.filter(isCross), verdict.plan_match_score, verdict.plan_match_max_score),
   };
+  // [SB-301] 계획서 대조 판정이 보류되면(plan_match_withheld) 점수는 0점으로 합산돼 오지만 기능이 빠진 게 아니다 —
+  // 화면은 0점 · 누락 기능 대신 "대조 불가"로 보인다. 서버 사유 문구("…대조 불가…0점으로 합산")는 누락 기능으로 세지 않는다.
+  if (verdict.plan_match_withheld) {
+    artifactScore.crossCheck = { ...artifactScore.crossCheck, withheld: true, reasons: [] };
+  }
 
   // 코드 검증 8항목 — 서버가 준 CHECK-* 항목을 그대로 쓴다. 이름은 item_code에서
   // 접두어만 떼고 보여준다(사람이 읽을 이름을 서버가 따로 주지 않는다).

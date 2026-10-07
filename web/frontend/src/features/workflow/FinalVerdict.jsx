@@ -7,7 +7,7 @@ import {PrototypeFrame,ResultPreview,useArtifactFile,ArtifactLoadError} from './
 import {detectItemCategory,diffSentences,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
 import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,RERUN_CAP,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,DOC_REWORK_BUNDLES} from './data.js';
 import {startReview,getProjectStatus} from '../../api.js';
-import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,requestRework,reworkDiffForLabel,waitRework} from './rework.js';
+import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,relabelAfterReject,requestRework,reworkDiffForLabel,waitRework} from './rework.js';
 
 // 검수 진행 중 진행 상태를 다시 읽는 간격
 const REVIEW_POLL_MS = 2000;
@@ -505,15 +505,17 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
       if (req.rejected.length > 0) {
         // 일부만 거절 — 거절된 묶음은 다시 고를 수 있게 돌려 두고, 접수된 묶음만 진행 중으로 본다.
         window.alert(rejectedReworkMessage(req.rejected));
-        setCheckedTasks(req.rejected.map((r) => r.label));
+        setCheckedTasks(relabelAfterReject(picked, req.rejected)); // 상한(E-G2-LIMIT) 묶음은 다시 체크하지 않는다
         setRunningTasks(req.labels);
       }
       await finishRework(req.cycleId, req.labels, fromTotal);
     } catch (err) {
       console.error('재작성 요청이 실패했어요', err);
-      window.alert(err.message || '재작성에 실패했어요. 다시 시도해 주세요.');
+      window.alert(err.rejected?.length > 1 ? rejectedReworkMessage(err.rejected) : (err.message || '재작성에 실패했어요. 다시 시도해 주세요.'));
       setRunningTasks([]);
-      setCheckedTasks(picked);
+      setCheckedTasks(relabelAfterReject(picked, err.rejected));
+      // 상한에 걸렸으면 남은 횟수를 서버에서 다시 받아 그 묶음을 끈다
+      if (err.rejected?.some((r) => r.error?.code === 'E-G2-LIMIT') && onScoresRefresh) onScoresRefresh();
     }
   };
   // 화면을 다시 열었을 때 이 화면의 재작성이 진행 중이면 '진행 중'으로 이어 본다.
@@ -624,7 +626,7 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
         <div className="rounded-2xl border border-[var(--border)] bg-white p-5">
           <p className="text-[12.5px] font-semibold text-[var(--muted-fg)] mb-3">프로토타입 점검</p>
           <p className="font-display font-bold text-[24px] leading-none mb-1">{artifactRawTotal} <span className="text-[13px] font-semibold text-[var(--muted-fg)]">/ 30점</span></p>
-          <p className="text-[12px] text-[var(--muted-fg)]">자동 검증 {artifactScore.autoCheck.raw}/{artifactScore.autoCheck.max} · 계획서 대조 {artifactScore.crossCheck.raw}/{artifactScore.crossCheck.max}</p>
+          <p className="text-[12px] text-[var(--muted-fg)]">자동 검증 {artifactScore.autoCheck.raw}/{artifactScore.autoCheck.max} · 계획서 대조 {artifactScore.crossCheck.withheld ? '대조 불가(0점 합산)' : `${artifactScore.crossCheck.raw}/${artifactScore.crossCheck.max}`}</p>
         </div>
       </div>
 

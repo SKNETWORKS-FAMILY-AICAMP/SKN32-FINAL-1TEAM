@@ -170,8 +170,8 @@ export function MatchResults({projectId,candidates,onCandidatesLoaded,onBack,onC
    console.error('신청 자격을 확인하지 못했어요',err);
    setConfirmError(err.message||'신청 자격을 확인하지 못했어요. 다시 시도해 주세요.');
    setConfirming(false);
-   // 409(자격 불통과로 막힌 공고 등) — 서버의 막힌 공고 목록이 바뀌었을 수 있어 후보를 다시 받는다.
-   if(err.status===409)onCandidatesLoaded(null);
+   // 막힌 공고(ANNOUNCEMENT_BLOCKED) — 서버의 막힌 공고 목록이 바뀌었으니 후보를 다시 받는다. BUSY 등 다른 409는 문구만 보인다.
+   if(err.code==='ANNOUNCEMENT_BLOCKED'||(err.status===409&&!err.code))onCandidatesLoaded(null);
   }
  };
  // 이전에 통과한 공고로 돌아가 작성을 시작한다 — 자격 결과를 다시 읽어 자격 확인 화면을 연다.

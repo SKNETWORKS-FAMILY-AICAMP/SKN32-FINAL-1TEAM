@@ -83,6 +83,8 @@ export function Dashboard({onNewProject,onOpenProject}){
    // 시작된 직후처럼 폴링이 아직 안 돈 순간엔 열려 있을 수 있다 — 그 틈으로 눌렀을 때
    // "다시 시도해 주세요"만 뜨면 왜 안 되는지 알 수가 없다. 사유가 오면 그대로 띄운다.
    const detail=typeof err?.detail==='string'?err.detail:null;
+   // BUSY — 워커가 단계를 도는 중이라 지금은 못 지운다(서버는 아무것도 지우지 않았다). 잠시 뒤 다시 누르면 된다.
+   if(err?.code==='BUSY'){window.alert('지금 작업이 진행 중이라 지우지 못했어요. 잠시 뒤 다시 시도해 주세요.');return;}
    window.alert(detail||'프로젝트를 지우지 못했어요. 다시 시도해 주세요.');
    // 거절당했다는 건 내 목록이 서버와 어긋나 있다는 뜻이라 즉시 다시 받아온다.
    if(err?.status===409)reload();
