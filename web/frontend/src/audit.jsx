@@ -4,7 +4,7 @@ import Landing from './components/Landing.jsx';
 import {WorkspaceShell,Dashboard} from './components/Workspace.jsx';
 import * as W from './features/Workflow.jsx';
 import './styles.css';
-const names=['landing','dashboard','empty','intake','match-progress','match-results','eligibility-gate','eligibility-fail','plan-progress','plan-form','artifact-progress','plan-failed','artifact-failed','artifact-result','final-verdict','final-pass','review'];
+const names=['landing','dashboard','empty','intake','match-progress','match-results','eligibility-gate','eligibility-fail','plan-progress','plan-form','artifact-progress','plan-failed','artifact-failed','artifact-result','artifact-gate-fail','artifact-partial','final-verdict','final-pass','review'];
 const page=new URLSearchParams(location.search).get('page')||'landing';
 const noop=()=>{};
 const info={item:'동네 헬스장 예약 서비스',ceoName:'김창업',foundedAt:page==='eligibility-fail'?'2010-01-10':'2025-01-10',applicantType:'individual',files:[],team:[],pricing:[]};
@@ -17,8 +17,11 @@ const SAMPLE_CANDIDATES={status:'ready',rematch_used:false,blocked_notice_ids:['
   {notice_id:'N-3',title:'예비창업패키지 특화분야',org:'중소벤처기업부',apply_end:'2026-11-15',bonus_score:0,bonus_items:[],reason:'아이템 분야가 특화분야와 맞습니다.',batch:1,rank:3,fit_score:0.65},
   {notice_id:'N-4',title:'지역 혁신 창업 지원사업',org:'-',apply_end:null,apply_period_type:'상시·수시',bonus_score:null,reason:'마감이 가까운 신청 가능 공고입니다.',batch:1,rank:4,fit_score:0},
  ]};
-const props={announcement:W.ANNOUNCEMENTS[0],itemInfo:info,onBack:noop,onSubmit:noop,onProceed:noop,onLeave:noop,onGenerate:noop,onFinalize:noop,onGoDashboard:noop,onCheckEligibility:noop,onComplete:noop,candidates:SAMPLE_CANDIDATES,onCandidatesLoaded:noop,docOutcome:page==='final-pass'?'pass':'fail',artifactOutcome:page==='final-pass'?'pass':'fail',setDocOutcome:noop,setArtifactOutcome:noop};
-const components={'intake':W.IntakeForm,'match-progress':W.MatchProgress,'match-results':W.MatchResults,'eligibility-gate':W.EligibilityGate,'eligibility-fail':W.EligibilityGate,'plan-progress':W.PipelineProgress,'plan-form':W.PlanForm,'artifact-progress':W.ArtifactProgress,'artifact-result':W.ArtifactResult,'final-verdict':W.FinalVerdict,'final-pass':W.FinalVerdict,'review':W.ReviewScreen};
+// 화면 8 서버 응답 견본 — 필수 조건 미통과 · 누락 · 부분 인정(실제 서버의 대역 채점으로는 잘 나오지 않아 여기서 본다)
+const SAMPLE_ARTIFACT={'artifact-gate-fail':{category:'webdev',gate_failures:[{code:'secret',display_name:'비밀값'}],missing_features:[],partial_features:[]},
+ 'artifact-partial':{category:'webdev',gate_failures:[],missing_features:['회원권 결제'],partial_features:['출석 체크']}}[page]||null;
+const props={announcement:W.ANNOUNCEMENTS[0],itemInfo:info,onBack:noop,onSubmit:noop,onProceed:noop,onLeave:noop,onGenerate:noop,onFinalize:noop,onGoDashboard:noop,onCheckEligibility:noop,onComplete:noop,candidates:SAMPLE_CANDIDATES,onCandidatesLoaded:noop,docOutcome:page==='final-pass'?'pass':'fail',artifactOutcome:page==='final-pass'?'pass':'fail',setDocOutcome:noop,setArtifactOutcome:noop,artifact:SAMPLE_ARTIFACT};
+const components={'intake':W.IntakeForm,'match-progress':W.MatchProgress,'match-results':W.MatchResults,'eligibility-gate':W.EligibilityGate,'eligibility-fail':W.EligibilityGate,'plan-progress':W.PipelineProgress,'plan-form':W.PlanForm,'artifact-progress':W.ArtifactProgress,'artifact-result':W.ArtifactResult,'artifact-gate-fail':W.ArtifactResult,'artifact-partial':W.ArtifactResult,'final-verdict':W.FinalVerdict,'final-pass':W.FinalVerdict,'review':W.ReviewScreen};
 // 완전 실패 카드 — 실제 흐름에선 서버가 status='failed'를 줘야 떠서 로컬 더미로는 재현이 어렵다.
 Object.assign(components,{'plan-failed':p=><W.GenerationFailed onLeave={noop}/>,'artifact-failed':p=><W.GenerationFailed onLeave={noop}/>});
 const C=components[page];

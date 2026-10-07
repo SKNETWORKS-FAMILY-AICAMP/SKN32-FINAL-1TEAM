@@ -143,7 +143,19 @@ export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcom
   const codeCheckItems = scores?.codeCheckItems || buildCodeCheckItems(category, scoreOutcome);
   const passedItems = codeCheckItems.filter((item) => item.passed);
   const failedItems = codeCheckItems.filter((item) => !item.passed);
-  const missingFeatures = artifactScore.crossCheck.reasons;
+  // [SB-239] 서버가 기능 목록을 따로 주면(missing_features · partial_features) 그걸 쓴다 — 예전엔 대조 사유 문장 하나를 통째로 보였다.
+  // 필드가 없는 예전 응답 · 예시 화면은 기존 사유 목록으로.
+  const hasFeatureLists = Array.isArray(artifact?.missing_features);
+  const missingFeatures = hasFeatureLists ? artifact.missing_features : artifactScore.crossCheck.reasons;
+  const partialFeatures = hasFeatureLists ? (artifact.partial_features || []) : [];
+  // 통과 필수 조건(진입 파일 · 비밀값 · 격리 화면 동작) — 하나라도 어기면 산출물층 30점이 0점(기획서 v1.11 4-5 · 5-4)
+  const gateFailures = artifact?.gate_failures || [];
+  // 사용자에게 보일 문구 — 서버 이름(진입 파일 · 비밀값 · 격리 화면 동작)은 개발 용어라 무엇이 문제인지 풀어 쓴다. 모르는 코드는 서버 이름 그대로.
+  const GATE_TEXT = {
+    entry: '산출물 파일이 비어 있거나 열 수 없어요',
+    secret: '코드에 API 키 · 비밀번호처럼 노출되면 안 되는 값이 들어 있어요',
+    sandbox: '미리보기에서 막히는 브라우저 저장 기능을 써서 화면이 동작하지 않아요',
+  };
   const subtasks = ARTIFACT_SUBTASKS_BY_CATEGORY[category] || ARTIFACT_SUBTASKS_BY_CATEGORY.webdev;
   const [checkedTasks, setCheckedTasks] = useState([]);
   const [runningTasks, setRunningTasks] = useState([]);
@@ -247,6 +259,19 @@ export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcom
           <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1">산출물 점검</p>
           <p className="text-[11.5px] text-[var(--muted-fg)] mb-4">코드 검증과 계획서 대조 결과입니다</p>
 
+          {/* 통과 필수 조건 — 8항목보다 먼저 본다(어기면 8항목 · 계획서 대조가 모두 0점) */}
+          {gateFailures.length > 0 ? (
+            <div role="alert" className="mb-4 rounded-xl border border-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_6%,white)] px-3.5 py-3">
+              <p className="text-[12px] font-bold text-[var(--danger)] mb-1">필수 조건을 통과하지 못했어요</p>
+              <ul className="mb-1.5 flex flex-col gap-0.5">
+                {gateFailures.map((g) => <li key={g.code} className="text-[11.5px] text-[var(--danger)] leading-relaxed">· {GATE_TEXT[g.code] || g.display_name || g.code}</li>)}
+              </ul>
+              <p className="text-[11.5px] text-[var(--fg)] leading-relaxed">필수 조건을 하나라도 어기면 산출물층 점수가 모두 0점이 돼요. {hasExecutable ? '실행 파일' : '인포그래픽'}을 다시 만들어 주세요.</p>
+            </div>
+          ) : Array.isArray(artifact?.gate_failures) && (
+            <p className="mb-4 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">필수 조건(파일 정상 · 민감한 값 없음{hasExecutable ? ' · 화면 동작 가능' : ''}) 모두 통과</p>
+          )}
+
           <div className="mb-4">
             <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-2">코드 검증 8항목</p>
             {/* 통과·미달이 섞여 있으면 무엇을 고쳐야 하는지 한눈에 안 들어와서 왼쪽 통과, 오른쪽 미달로 나눈다. */}
@@ -278,15 +303,19 @@ export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcom
           </div>
 
           <div className="mb-4">
-            <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-2">계획서 대조 — 누락 기능</p>
+            <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-2">계획서 대조 — 누락 기능{partialFeatures.length > 0 ? ' · 부분 인정' : ''}</p>
             {artifactScore.crossCheck.withheld ? (
               <p className="text-[12.5px] text-[var(--warn)] leading-relaxed">대조 불가 — 계획서와 구현 기능을 대조하지 못했어요. 이 항목은 0점으로 합산돼요.</p>
-            ) : missingFeatures.length === 0 ? (
+            ) : missingFeatures.length === 0 && partialFeatures.length === 0 ? (
               <p className="text-[12.5px] text-[var(--muted-fg)]">누락된 기능 없음</p>
             ) : (
               <ul className="flex flex-col gap-1.5">
                 {missingFeatures.map((r) => (
-                  <li key={r} className="text-[12.5px] text-[var(--danger)] leading-relaxed">· {r}</li>
+                  <li key={'m-' + r} className="text-[12.5px] text-[var(--danger)] leading-relaxed">· {r}</li>
+                ))}
+                {/* 부분 인정 — 일부 요소만 확인된 기능(점수 일부 인정). 누락과 겹치지 않는다. */}
+                {partialFeatures.map((r) => (
+                  <li key={'p-' + r} className="text-[12.5px] text-[var(--warn)] leading-relaxed">· {r} <span className="text-[11px] font-semibold">(부분 인정)</span></li>
                 ))}
               </ul>
             )}
