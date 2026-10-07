@@ -1082,9 +1082,8 @@ function PolicyTab({pushToast}){
             <button onClick={saveItems} className="rounded-xl bg-[var(--primary)] text-white px-4 py-2 text-[13px] font-semibold hover:bg-[var(--primary-dim)]">검증 항목 저장</button>
           </div>
         </Panel>
-        <p className="mt-2 text-[11px] text-[var(--muted-fg)]">체크를 해제하면 해당 항목은 채점에서 제외되고, 가중치는 <b>같은 묶음 안에서만</b> 다시 배분됩니다. 묶음마다 합계가 {CHECKLIST_CATEGORY_MAX}점이어야 저장됩니다.</p>
         {/* 검증-2(SB-125)는 아래 셋을 8항목과 따로 '통과 필수 조건'으로 본다 — 하나라도 어기면 산출물층 30점이 모두 0점 */}
-        <p className="mt-1 text-[11px] text-[var(--muted-fg)]">진입 파일 · 비밀값(API 키 등) · 스크립트를 멈추는 저장소 API는 항목이 아니라 <b>통과 필수 조건</b>이에요. 하나라도 어기면 산출물층 점수가 모두 0점이 됩니다.</p>
+        <p className="mt-2 text-[11px] text-[var(--muted-fg)]">진입 파일 · 비밀값(API 키 등) · 스크립트를 멈추는 저장소 API는 항목이 아니라 <b>통과 필수 조건</b>이에요. 하나라도 어기면 산출물층 점수가 모두 0점이 됩니다.</p>
       </div>
 
       <Panel>
