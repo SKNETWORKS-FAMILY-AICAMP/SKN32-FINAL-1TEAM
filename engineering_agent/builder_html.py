@@ -55,7 +55,11 @@ def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str
             "이 프로토타입은 'AI_API' 카테고리다. 사용자가 입력을 넣고 → 처리 과정을 "
             "시각적으로 확인하고 → 결과를 출력받는 입력→처리→출력 흐름을 명확히 보여주도록 "
             "구현하라. 실제 외부 API를 호출하지 말고(외부 네트워크 의존 금지), 처리 로직은 "
-            "더미/시뮬레이션(예: setTimeout으로 처리 중 상태를 보여준 뒤 규칙 기반 결과 출력)으로 구현하라."
+            "더미/시뮬레이션(예: setTimeout으로 처리 중 상태를 보여준 뒤 규칙 기반 결과 출력)으로 구현하라. "
+            "버튼 하나로 처리 전체를 돌리더라도, 기능 목록의 기능마다 그 기능만 실행하거나 그 기능의 결과를 "
+            "보여 주는 버튼을 따로 하나씩 두고(예: '담당 부서 자동 분류' 버튼, '처리 기한 안내' 버튼) 규칙 9대로 "
+            "data-feature와 id를 붙여 직접 연결하라. 처리 흐름의 한 단계로 결과만 나오고 그 기능의 버튼이 없으면 "
+            "그 기능은 동작하지 않는 것으로 본다."
         )
 
     notes = feature_notes(feature_list, plan_text) if plan_text.strip() else {}
@@ -68,9 +72,13 @@ def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str
             "(예: 사진, 증상, 비용)은 각각 입력칸으로, 표시 정보(예: 요일별 판매량, 폐기량, 후보 순위)는 "
             "각각 화면에 보이는 값으로, 조건(예: 30분 단위, 5개 이하)은 그 조건대로 동작하게 만들어라. "
             "화면의 낱말은 계획서의 낱말을 그대로 써라. 서버 저장 · 실제 발송 · 결제 · 실제 AI 처리는 "
-            "더미 데이터와 간단한 규칙으로 흉내 내되, 그 결과가 계획서가 말한 모양으로 화면에 보여야 한다."
+            "더미 데이터와 간단한 규칙으로 흉내 내되, 그 결과가 계획서가 말한 모양으로 화면에 보여야 한다. "
+            "계획서가 보여 준다고 한 정보인데 계획서에 실제 값이 없으면(예: 민원 종류별 처리 기한, 요일별 판매량) "
+            "그 자리를 비우거나 '연결되지 않아 표시하지 않는다'고 적지 마라. 그럴듯한 값을 더미 데이터로 넣어 "
+            "화면에 보이게 하고, 그 값이 있는 영역에 '시연용 예시 값'이라고 표시하라. 계획서에 값이 있으면 그 값을 그대로 써라."
         )
-        plan_section = ("\n\n## 사업계획서 본문 (기능 설명의 근거. 여기에 없는 기능 · 수치를 지어내지 마라)\n"
+        plan_section = ("\n\n## 사업계획서 본문 (기능 설명의 근거. 여기에 없는 기능을 지어내지 마라. "
+                        "계획서의 수치는 그대로 쓰고, 계획서에 없는 값은 규칙 14대로 '시연용 예시 값'으로 표시해 넣어라)\n"
                         + plan_text.strip()[:_PLAN_CHARS])
 
     return f"""너는 정부지원사업 신청용 프로토타입을 만드는 엔지니어다.
@@ -84,6 +92,9 @@ def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str
    외부 @import, CSS 안의 외부 url(...)(배경 그림 · 웹 글꼴 포함), npm/webpack 등 어떤 빌드 도구도 쓰지 마라. CSS는 <style> 태그 안에,
    JS는 <script> 태그 안에 전부 인라인으로 작성하라. 이미지가 필요하면 data: URI나
    SVG/CSS로 대체하라.
+   API 키 · 토큰 · 비밀번호 값을 코드에 적지 마라(`apiKey: "…"`, `password: "…"`, `sk-…` 같은 줄 금지).
+   외부 서비스 호출은 더미 함수로 흉내 내고, 로그인 시연은 비밀번호를 코드에 두고 비교하지 말고
+   빈칸이 아니면 무엇이든 받아들이게 하라.
 2. `<html lang="ko">`를 반드시 명시하라.
 3. 제목 계층을 지켜라: `<h1>`은 문서에 정확히 하나만 두고, h1→h2→h3 순서를 건너뛰지 마라.
 4. 폼 요소(input, textarea, select)가 있으면 반드시 `<label for="...">`로 연결하라.
@@ -209,7 +220,7 @@ def build_prototype_html(
     plan_text: str = "", previous_html: str = "",
 ) -> dict:
     """T-B1 진입점: LLM 생성 → 코드블록 파싱 → 자체 게이트(E-B1-ENTRY, E-B1-DEP,
-    E-B1-SANDBOX) → 저장.
+    E-B1-SANDBOX, E-B1-SECRET) → 저장.
 
     재시도 루프는 상위 Supervisor 몫이라 여기서는 게이트 실패 시 status="failed"로
     사유만 담아 한 번 반환한다. 다만 응답이 비었거나 코드블록이 없는 "호출 자체의
@@ -233,7 +244,7 @@ def build_prototype_html(
             "entryFilePath": None,
             "readmePath": None,
             "implementedFeatures": [],
-            "gate_failures": {"entry": entry_reason, "dependency": [], "sandbox": []},
+            "gate_failures": {"entry": entry_reason, "dependency": [], "sandbox": [], "secret": None},
             "summary": f"E-B1-ENTRY 게이트 실패: {entry_reason}",
         }
 
@@ -247,7 +258,7 @@ def build_prototype_html(
             "implementedFeatures": [],
             # 저장하지는 않지만 원문은 돌려준다 — 조율이 재수행 때 previous_source_text로 돌려줘 고쳐 만든다.
             "sourceText": entry_content,
-            "gate_failures": {"entry": None, "dependency": violations, "sandbox": []},
+            "gate_failures": {"entry": None, "dependency": violations, "sandbox": [], "secret": None},
             "summary": f"E-B1-DEP 게이트 실패: 외부 의존성 {len(violations)}건 발견",
         }
 
@@ -260,9 +271,22 @@ def build_prototype_html(
             "implementedFeatures": [],
             "sourceText": entry_content,
             "gate_failures": {"entry": None, "dependency": [],
-                              "sandbox": sandbox_violations},
+                              "sandbox": sandbox_violations, "secret": None},
             "summary": ("E-B1-SANDBOX 게이트 실패: sandbox iframe에서 동작하지 않는 API "
                         f"{len(sandbox_violations)}건 — {', '.join(sandbox_violations)}"),
+        }
+
+    secret_ok, secret = gates.check_secret_gate(entry_content)
+    if not secret_ok:
+        return {
+            "status": "failed",
+            "entryFilePath": None,
+            "readmePath": None,
+            "implementedFeatures": [],
+            "sourceText": entry_content,
+            "gate_failures": {"entry": None, "dependency": [], "sandbox": [], "secret": secret},
+            "summary": (f"E-B1-SECRET 게이트 실패: 코드에 API 키 · 토큰 · 비밀번호 값이 있음({secret}). "
+                        "값을 지우고 더미 함수 · 빈칸 아니면 통과하는 로그인으로 바꿀 것"),
         }
 
     saved_paths = save_files({_ENTRY_FILENAME: entry_content}, run_id)
@@ -274,6 +298,6 @@ def build_prototype_html(
         "readmePath": None,
         "sourceText": entry_content,
         "implementedFeatures": implemented,
-        "gate_failures": {"entry": None, "dependency": [], "sandbox": []},
+        "gate_failures": {"entry": None, "dependency": [], "sandbox": [], "secret": None},
         "summary": f"run_id={run_id}: {_ENTRY_FILENAME} 생성 및 자체 게이트 통과",
     }

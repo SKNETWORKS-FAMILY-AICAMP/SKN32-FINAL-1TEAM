@@ -442,6 +442,83 @@ class ArtifactAgentTests(TestCase):
         ok, violations = gates.check_sandbox_api_gate(prose)
         self.assertTrue(ok, violations)
 
+    def test_sandbox_gate_ignores_same_named_properties_and_declarations(self):
+        """전역 함수 · 전역 location만 막는다. 민원 '위치'를 담는 summary.location = …,
+        모달 객체의 modal.open(), 같은 이름의 함수 · 메서드 정의는 sandbox와 무관하다.
+        생성 쪽(E-B1-SANDBOX)과 채점 쪽(코드 점검 7번)이 같은 기준인지도 함께 본다."""
+        from verification_agent.rules.gates import ignored_apis
+
+        allowed = [
+            "summary.location = '서울시 중구';",
+            "const location = form.value;",
+            "let location = '';",
+            "if (location == null) {}",
+            "modal.open();",
+            "this.confirm('예');",
+            "function open(id) { show(id); }",
+            "const ui = { open() { show(); } };",
+            "class Dialog { alert(msg) { this.msg = msg; } }",
+            "buildPrompt('질문');",
+        ]
+        for code in allowed:
+            with self.subTest(code=code):
+                html = f'<html lang="ko"><body><script>{code}</script></body></html>'
+                self.assertEqual(gates.check_sandbox_api_gate(html), (True, []))
+                self.assertEqual(ignored_apis(html), [])
+
+        blocked = {
+            "location = '/next';": "페이지 이동(location)",
+            "window.location.href = '/next';": "페이지 이동(location)",
+            "document.location = '/next';": "페이지 이동(location)",
+            "window.open('/next');": "window.open()",
+            "open('/next');": "window.open()",
+            "if (confirm('삭제할까요')) { remove(); }": "confirm()",
+            "prompt('이름');": "prompt()",
+        }
+        for code, label in blocked.items():
+            with self.subTest(code=code):
+                html = f'<html lang="ko"><body><script>{code}</script></body></html>'
+                ok, violations = gates.check_sandbox_api_gate(html)
+                self.assertFalse(ok)
+                self.assertIn(label, violations)
+                self.assertIn(label, ignored_apis(html))
+
+    def test_secret_gate_matches_the_scoring_rule(self):
+        """하드코딩된 비밀값은 검증-2의 통과 필수 조건(산출물층 0)이다. 넘기기 전에 같은 기준으로 거른다."""
+        from verification_agent.rules.gates import find_secret
+
+        key = "sk-proj-" + "Ab3dEf6hIj9kLm2nOp5q"
+        caught = [f'const OPENAI_KEY = "{key}";',
+                  "const user = { id: 'demo', password: 'demo1234' };",
+                  'headers: { apiKey: "q9w8e7r6t5y4" }']
+        for code in caught:
+            with self.subTest(code=code[:30]):
+                ok, found = gates.check_secret_gate(f"<script>{code}</script>")
+                self.assertFalse(ok)
+                self.assertIsNotNone(find_secret(f"<script>{code}</script>"))
+                # 실패 사유에는 앞 8자만 — 값 전체가 지시문 · 로그로 새지 않는다
+                self.assertLessEqual(len(found), 9)
+                self.assertNotIn(key, found)
+
+        passed = ['const API_KEY = "your_api_key";', "password: 'dummy-pass'", "token: '{{TOKEN}}'",
+                  '<img alt="그림" src="data:image/png;base64,' + "A" * 200 + '">',
+                  "<p>비밀번호를 입력하세요</p>"]
+        for code in passed:
+            with self.subTest(code=code[:30]):
+                self.assertEqual(gates.check_secret_gate(code), (True, ""))
+                self.assertIsNone(find_secret(code))
+
+    def test_secret_reported_as_gate_failure_without_saving(self):
+        tools = _Tools('```html:index.html\n<html lang="ko"><body>'
+                       "<script>const login = { password: 'demo1234' };</script>"
+                       "</body></html>\n```")
+        result = build_prototype_html(["조회"], {"item_name": "t"}, "웹개발", "생성", tools)
+        self.assertEqual(result["status"], "failed")
+        self.assertIsNone(result["entryFilePath"])
+        self.assertIn("E-B1-SECRET", result["summary"])
+        self.assertNotIn("demo1234", result["summary"])
+        self.assertIn("demo1234", result["sourceText"])   # 재수행 때 고칠 원문은 돌려준다
+
     def test_sandbox_violation_reported_as_gate_failure(self):
         tools = _Tools('```html:index.html\n<html lang="ko"><body>'
                        "<script>localStorage.setItem('x', 1);</script>"

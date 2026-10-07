@@ -44,16 +44,21 @@ _SCRIPT_BLOCK_RE = re.compile(r'<script\b(?![^>]*\bsrc\s*=)[^>]*>(.*?)</script>'
                               re.IGNORECASE | re.DOTALL)
 _EVENT_ATTR_RE = re.compile(r'\bon[a-z]+\s*=\s*["\']([^"\']*)["\']', re.IGNORECASE)
 
+# 전역 함수 · 전역 location만 잡는다. 앞에 '.'이 붙은 남의 속성(modal.open(), summary.location = …),
+# 같은 이름의 함수 · 변수 선언(function open(, const location = …), 메서드 정의(open() { … })는
+# sandbox와 무관하다. verification_agent/rules/gates.py의 같은 목록과 함께 고친다.
+_GLOBAL = r'(?<![\w$.])(?<!function )(?<!const )(?<!let )(?<!var )(?:window\s*\.\s*)?'
+_CALL = r'\s*\((?![^()]*\)\s*\{)'
 _SANDBOX_FORBIDDEN: tuple[tuple[re.Pattern, str], ...] = (
     (re.compile(r'\b(?:window\s*\.\s*)?localStorage\b'), 'localStorage'),
     (re.compile(r'\b(?:window\s*\.\s*)?sessionStorage\b'), 'sessionStorage'),
     (re.compile(r'\bdocument\s*\.\s*cookie\b'), 'document.cookie'),
     (re.compile(r'\b(?:window\s*\.\s*)?indexedDB\b'), 'indexedDB'),
-    (re.compile(r'\b(?:window\s*\.\s*)?alert\s*\('), 'alert()'),
-    (re.compile(r'\b(?:window\s*\.\s*)?confirm\s*\('), 'confirm()'),
-    (re.compile(r'\b(?:window\s*\.\s*)?prompt\s*\('), 'prompt()'),
-    (re.compile(r'\b(?:window\s*\.\s*)?open\s*\('), 'window.open()'),
-    (re.compile(r'\blocation\s*(?:\.\s*href)?\s*='), '페이지 이동(location)'),
+    (re.compile(_GLOBAL + r'alert' + _CALL), 'alert()'),
+    (re.compile(_GLOBAL + r'confirm' + _CALL), 'confirm()'),
+    (re.compile(_GLOBAL + r'prompt' + _CALL), 'prompt()'),
+    (re.compile(_GLOBAL + r'open' + _CALL), 'window.open()'),
+    (re.compile(_GLOBAL + r'(?:document\s*\.\s*)?location\s*(?:\.\s*href)?\s*=(?!=)'), '페이지 이동(location)'),
     (re.compile(r'\.\s*submit\s*\(\s*\)'), 'form.submit()'),
 )
 
@@ -73,6 +78,49 @@ def check_sandbox_api_gate(html_content: str) -> tuple[bool, list[str]]:
         if pattern.search(code):
             violations.append(label)
     return not violations, violations
+
+
+# --- E-B1-SECRET: 하드코딩된 비밀값 검출 ------------------------------------
+# 검증-2는 하드코딩된 키 · 토큰을 통과 필수 조건으로 본다(걸리면 산출물층 30점 전체 0). 그대로 넘기면
+# 사용자가 재작성을 골라야 고쳐지므로, 넘기기 전에 같은 기준으로 걸러 재수행으로 고치게 한다.
+# verification_agent/rules/gates.py의 _SECRET_PATTERNS · _PLACEHOLDER_MARKERS · find_secret과 같은
+# 기준이다 — 두 패키지는 서로 import하지 않으므로 여기에 따로 두고 함께 고친다.
+_SECRET_PATTERNS: tuple[re.Pattern, ...] = (
+    re.compile(r"(?<![\w-])sk-[A-Za-z0-9_-]*[A-Za-z0-9]{16}[A-Za-z0-9_-]*"),
+    re.compile(r"AKIA[0-9A-Z]{16}"),
+    re.compile(r"ghp_[A-Za-z0-9]{30,}"),
+    re.compile(r"AIza[A-Za-z0-9_-]{20,}"),
+    re.compile(r"(?i)(api[_-]?key|secret|password|token)\s*[:=]\s*['\"]([^'\"]{8,})['\"]"),
+    re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),  # JWT
+)
+_PLACEHOLDER_MARKERS = (
+    "your_api_key", "your-api-key", "yourapikey", "xxx", "xxxxx",
+    "<your-key>", "example", "test", "dummy", "placeholder",
+)
+_TEMPLATE_RE = re.compile(r"^\{\{.*\}\}$")
+# 끼워 넣은 글꼴 · 그림(data URI의 base64)은 임의 문자열이라 키 모양과 우연히 겹칠 수 있다.
+_DATA_URI_RE = re.compile(r"data:[\w.+-]+/[\w.+-]+;base64,[A-Za-z0-9+/=]+")
+
+
+def _is_placeholder(value: str) -> bool:
+    v = value.strip().strip("'\"").lower()
+    return bool(_TEMPLATE_RE.match(v)) or any(marker in v for marker in _PLACEHOLDER_MARKERS)
+
+
+def check_secret_gate(html_content: str) -> tuple[bool, str]:
+    """E-B1-SECRET: 하드코딩된 API 키 · 토큰 · 비밀번호 값. 반환: (통과여부, 걸린 문자열의 앞 8자 + '…').
+
+    실패 사유는 조율의 지시문 · 로그로 흘러가므로 값 전체를 싣지 않는다. 앞 8자면 어느 줄인지 찾을 수 있다
+    (key=value 꼴이면 이름 쪽, 키 모양이면 sk-proj- 같은 머리말)."""
+    text = _DATA_URI_RE.sub("data:,", html_content)
+    for pattern in _SECRET_PATTERNS:
+        for match in pattern.finditer(text):
+            # key=value 꼴은 따옴표 안 값(group 2)을, 나머지는 매치 전체를 본다.
+            candidate = match.group(2) if match.lastindex and match.lastindex >= 2 else match.group(0)
+            if _is_placeholder(candidate) or _is_placeholder(match.group(0)):
+                continue
+            return False, match.group(0)[:8] + "…"
+    return True, ""
 
 
 def _is_external(url: str) -> bool:
