@@ -115,7 +115,38 @@ def run_tv2(inp: TV2In, tools: Tools) -> TV2Out:
                         defect_sources=item["defect_sources"])
               for item in raw["items"]]
     code = CodeCheckResult(total=raw["total"], checks=checks, gate_failures=raw["gate_codes"])
+    llm_failed = feature_raw.pop("llm_failed", [])
     feature = FeatureMatchResult(**feature_raw)
     artifact = ArtifactScore(total=code.total + feature.score,
                              code_check=code, feature_match=feature)
-    return TV2Out(artifact_score=artifact, code_check=code, feature_match=feature)
+    diagnostics = diagnostics_of(raw, feature_raw, llm_failed, prototype.implemented_features)
+    return TV2Out(artifact_score=artifact, code_check=code, feature_match=feature, diagnostics=diagnostics)
+
+
+def _norm_name(name: str) -> str:
+    return "".join(name.split()).casefold()
+
+
+def diagnostics_of(raw: dict, feature: dict, llm_failed: list[str],
+                   implemented_features: list[str]) -> list[str]:
+    """관리자 진단 기록(TV2Out.diagnostics, 기능정의서 T-V2 출력). 점수 · 흐름에는 쓰지 않는다.
+
+    통과 필수 조건 실패 사유, README 확인 결과, 대조 LLM 실패, 자기 신고와 파싱 결과의 차이를 담는다.
+    implemented_features는 여기서 차이를 적는 데만 쓴다 — 인정 근거가 아니다.
+    """
+    out = [f"통과 필수 조건 실패: {message}" for message in raw["gate_failures"]]
+    out += [f"README: {warning}" for warning in raw["warnings"]]
+    features = [name for name in llm_failed if not name.startswith("핵심 칸 ")]
+    fields = [name[len("핵심 칸 "):] for name in llm_failed if name.startswith("핵심 칸 ")]
+    if features:
+        out.append(f"대조 LLM 판정 실패 {len(features)}건 — 규칙 판정으로 대체: {', '.join(features)}")
+    if fields:
+        out.append(f"원페이지 핵심 칸 LLM 판정 실패 {len(fields)}건 — 감점하지 않음: {', '.join(fields)}")
+    # 산출물을 대조하지 못했으면(통과 필수 조건 실패 · 대조 보류) 파싱 결과가 없어 비교하지 않는다.
+    if raw["passed"] and not feature["withheld"]:
+        missing = {_norm_name(name) for name in feature["missing_features"]}
+        claimed_missing = [name for name in implemented_features if _norm_name(name) in missing]
+        if claimed_missing:
+            out.append(f"자기 신고 {len(implemented_features)}건 중 {len(claimed_missing)}건이 파싱 결과와 불일치: "
+                       f"{', '.join(claimed_missing)}")
+    return out

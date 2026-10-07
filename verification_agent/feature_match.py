@@ -84,9 +84,9 @@ Judge = Callable[[list[str]], dict[str, "tuple[float, str] | None"]]
 
 
 def _apply_judge(judge: Judge | None, feature_list: list[str], missing: list[str],
-                 findings: list[str], partial_out: list[str]) -> tuple[float, str]:
+                 findings: list[str], partial_out: list[str], failed_out: list[str]) -> tuple[float, str]:
     """규칙을 넘긴 기능을 LLM으로 다시 판정해 missing · findings를 고치고, 일부만 인정된 기능
-    (몫이 0보다 크고 1보다 작음)을 partial_out에 넣는다.
+    (몫이 0보다 크고 1보다 작음)을 partial_out에, LLM 판정에 실패한 기능을 failed_out에 넣는다.
     (인정 몫 합계, 요약 문구)를 돌려준다. judge가 없으면 규칙을 넘긴 기능 수 그대로다."""
     passed = [f for f in feature_list if f not in missing]
     if judge is None or not passed:
@@ -102,6 +102,7 @@ def _apply_judge(judge: Judge | None, feature_list: list[str], missing: list[str
     for feature in partial:
         findings.append(f"{feature}: 부분 인정 — {verdicts[feature][1]}")
     partial_out.extend(partial)
+    failed_out.extend(failed)
     # 화면 · 결과 순서를 계획서 기능 순서에 맞춘다.
     missing.sort(key=feature_list.index)
     credit = len(failed) + sum(verdicts[f][0] for f in judged)
@@ -114,13 +115,15 @@ def _apply_judge(judge: Judge | None, feature_list: list[str], missing: list[str
 
 def _result(score: float, missing: list[str], findings: list[str], judged_by: str,
             extra: list[str] | None = None, partial: list[str] | None = None,
-            withheld_reason: str | None = None) -> dict:
-    """FeatureMatchResult 모양. 조율 흐름은 missing_features · partial_features · withheld로만 가른다
-    (findings 문구로 가르지 않는다). 두 목록에는 기능 목록의 이름만, 겹치지 않게 들어간다."""
+            withheld_reason: str | None = None, llm_failed: list[str] | None = None) -> dict:
+    """FeatureMatchResult 모양 + llm_failed. 조율 흐름은 missing_features · partial_features · withheld로만
+    가른다(findings 문구로 가르지 않는다). 두 목록에는 기능 목록의 이름만, 겹치지 않게 들어간다.
+    llm_failed(LLM 판정에 실패해 규칙 결과로 대신한 기능 · 핵심 칸)는 계약 칸이 아니다 — run_tv2가 떼어
+    diagnostics에 옮긴다."""
     return {"score": round(max(0.0, min(TOTAL, score)), 2), "missing_features": missing,
             "extra_features": extra or [], "findings": findings, "judged_by": judged_by,
             "partial_features": partial or [], "withheld": withheld_reason is not None,
-            "withheld_reason": withheld_reason}
+            "withheld_reason": withheld_reason, "llm_failed": llm_failed or []}
 
 
 # ── HTML ────────────────────────────────────────────────────────
@@ -157,10 +160,12 @@ def _match_html(feature_list: list[str], source: str, judge: Judge | None) -> di
                                if c["feature"] and _norm(c["feature"]) not in known))
     rule_ok = len(feature_list) - len(missing)
     partial: list[str] = []
-    ok, note = _apply_judge(judge, feature_list, missing, findings, partial)
+    failed: list[str] = []
+    ok, note = _apply_judge(judge, feature_list, missing, findings, partial, failed)
     findings.insert(0, f"인정 {round(ok, 2):g}/{len(feature_list)}개 (규칙: 화면 문구 + 직접 연결된 조작 요소 "
                        f"{rule_ok}건{note})")
-    return _result(TOTAL * ok / len(feature_list), missing, findings, "htmlParse", extra, partial)
+    return _result(TOTAL * ok / len(feature_list), missing, findings, "htmlParse", extra, partial,
+                   llm_failed=failed)
 
 
 # ── 원페이지 SVG ───────────────────────────────────────────────
@@ -189,8 +194,9 @@ def _key_fields(nodes: list) -> dict[str, str]:
 
 
 def _apply_field_judge(field_judge: FieldJudge | None, nodes: list,
-                       findings: list[str]) -> tuple[float, int, str]:
-    """(핵심 칸 인정 몫 합계, 핵심 칸 수, 요약 문구). field_judge가 없으면 (0, 0, "")."""
+                       findings: list[str], failed_out: list[str]) -> tuple[float, int, str]:
+    """(핵심 칸 인정 몫 합계, 핵심 칸 수, 요약 문구). field_judge가 없으면 (0, 0, "").
+    판정에 실패한 칸은 failed_out에 '핵심 칸 이름'으로 넣는다."""
     if field_judge is None:
         return 0.0, 0, ""
     fields = _key_fields(nodes)
@@ -206,6 +212,7 @@ def _apply_field_judge(field_judge: FieldJudge | None, nodes: list,
         if not verdict:          # 판정 실패는 감점하지 않는다
             credit += 1.0
             counts["실패"] += 1
+            failed_out.append(f"핵심 칸 {label}")
             continue
         credit += verdict[0]
         if verdict[0] >= 1:
@@ -280,15 +287,16 @@ def _match_onepage(feature_list: list[str], source: str, plan_text: str | None,
 
     rule_ok = len(feature_list) - len(missing)
     partial: list[str] = []
-    ok, note = _apply_judge(judge, feature_list, missing, findings, partial)
-    field_ok, field_count, field_note = _apply_field_judge(field_judge, nodes, findings)
+    failed: list[str] = []
+    ok, note = _apply_judge(judge, feature_list, missing, findings, partial, failed)
+    field_ok, field_count, field_note = _apply_field_judge(field_judge, nodes, findings, failed)
     findings.insert(0, f"인정 {round(ok, 2):g}/{len(feature_list)}개 (규칙: 기능 설명이 계획서 원문에 근거 "
                        f"{rule_ok}건{note}){field_note}")
     if invented:
         findings.append(f"지면에 계획서에 없는 수치 {len(invented)}건 "
                         f"({', '.join(invented[:5])}) — {penalty:g}점 감점")
     score = TOTAL * (ok + field_ok) / (len(feature_list) + field_count) - penalty
-    return _result(score, missing, findings, "svgTextParse", partial=partial)
+    return _result(score, missing, findings, "svgTextParse", partial=partial, llm_failed=failed)
 
 
 def match_features(feature_list: list[str], source: str, kind: str,

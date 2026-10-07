@@ -253,6 +253,8 @@ class ContractTaskTests(TestCase):
         self.assertEqual(out.feature_match.missing_features, ["결제"])
         self.assertEqual(out.feature_match.score, 7.5)  # 15 × 1/2
         self.assertAlmostEqual(out.artifact_score.total, 22.5)
+        # README 있음 · 신고한 기능은 파싱으로 확인됨. 가짜 LLM이 빈 답을 내 판정 실패만 남는다.
+        self.assertEqual(out.diagnostics, ["대조 LLM 판정 실패 1건 — 규칙 판정으로 대체: 주문 조회"])
 
     def _run_onepage_tv2(self, *, with_plan: bool, detail: str):
         from engineering_agent.infographic import render as infographic_render
@@ -364,3 +366,58 @@ class CodeCheckDetailTests(TestCase):
         self.assertEqual(_detail(item(4, "명도 대비", 2, False, "대비 3.1:1")), "0/2점 — 대비 3.1:1")
         na = item(3, "입력칸 label", 2, True, "입력칸 0개", applicable=False)
         self.assertTrue(_detail(na).startswith("해당 없음"))
+
+
+class DiagnosticsTests(TestCase):
+    """TV2Out.diagnostics(관리자 진단 기록): 통과 필수 조건 실패 사유 · README 확인 결과 · 대조 LLM 실패 ·
+    자기 신고와 파싱 결과의 차이. 점수에는 쓰지 않는다."""
+
+    def _raw(self, **kw):
+        raw = {"passed": True, "gate_failures": [], "warnings": []}
+        raw.update(kw)
+        return raw
+
+    def _feature(self, missing=(), withheld=False):
+        return {"missing_features": list(missing), "withheld": withheld}
+
+    def test_collects_the_four_kinds(self):
+        from verification_agent.tasks import diagnostics_of
+
+        out = diagnostics_of(
+            self._raw(warnings=["실행 안내 문서(README) 없음 — G-04 재실행 필요"]),
+            self._feature(missing=["결제"]), ["주문 조회", "핵심 칸 추진 일정"], ["주문 조회", "결 제"])
+        self.assertEqual(out, [
+            "README: 실행 안내 문서(README) 없음 — G-04 재실행 필요",
+            "대조 LLM 판정 실패 1건 — 규칙 판정으로 대체: 주문 조회",
+            "원페이지 핵심 칸 LLM 판정 실패 1건 — 감점하지 않음: 추진 일정",
+            "자기 신고 2건 중 1건이 파싱 결과와 불일치: 결 제",   # 공백 차이는 무시하고 비교한다
+        ])
+
+    def test_nothing_to_report_is_an_empty_list(self):
+        from verification_agent.tasks import diagnostics_of
+
+        self.assertEqual(diagnostics_of(self._raw(), self._feature(), [], ["주문 조회"]), [])
+
+    def test_gate_failure_reports_the_reason_but_not_self_report(self):
+        """통과 필수 조건에 걸리면 대조를 하지 않아 전부 누락이다 — 자기 신고 차이는 적지 않는다."""
+        from verification_agent.tasks import diagnostics_of
+
+        out = diagnostics_of(self._raw(passed=False, gate_failures=["진입 파일 없음"]),
+                             self._feature(missing=["주문 조회"]), [], ["주문 조회"])
+        self.assertEqual(out, ["통과 필수 조건 실패: 진입 파일 없음"])
+        withheld = diagnostics_of(self._raw(), self._feature(withheld=True), [], ["주문 조회"])
+        self.assertEqual(withheld, [])
+
+    def test_failed_llm_verdict_is_named(self):
+        from verification_agent.feature_match import match_features
+
+        html = ('<html lang="ko"><body><h1>t</h1><button id="a">검색</button><button id="b">결제</button>'
+                "<script>document.getElementById('a').addEventListener('click', () => {});"
+                "document.getElementById('b').addEventListener('click', () => {});</script></body></html>")
+
+        def judge(features):
+            return {f: (None if f == "결제" else (1.0, "있음")) for f in features}
+
+        result = match_features(["검색", "결제"], html, "html", None, judge)
+        self.assertEqual(result["llm_failed"], ["결제"])
+        self.assertEqual(result["score"], 15.0)   # 실패한 기능은 규칙 결과(통과)를 그대로 쓴다
