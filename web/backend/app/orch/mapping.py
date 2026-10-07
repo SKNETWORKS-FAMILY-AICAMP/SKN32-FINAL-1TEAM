@@ -358,7 +358,8 @@ def artifact_score_reasons(outputs) -> list[schemas.ArtifactScoreReasonOut]:
                 score=c.weight if c.passed else 0, max_score=c.weight))
     if outputs.feature_match is not None:
         fm = outputs.feature_match
-        notes = [*fm.findings, *[f'누락 기능: {m}' for m in fm.missing_features]]
+        notes = [*fm.findings, *[f'누락 기능: {m}' for m in fm.missing_features],
+                 *[f'부분 인정 기능: {m}' for m in (getattr(fm, 'partial_features', None) or [])]]
         if fm.withheld:  # 판정 보류 — 점수는 0점으로 합산되고 화면은 '대조 불가'로 보인다(SB-301)
             reason_text = WITHHELD_REASON_TEXT
         else:
@@ -367,6 +368,26 @@ def artifact_score_reasons(outputs) -> list[schemas.ArtifactScoreReasonOut]:
             reason_text=reason_text, item_code='FEATURE-MATCH',
             display_name='계획서 대조', score=fm.score, max_score=FEATURE_MATCH_MAX))
     return reasons
+
+
+# 통과 필수 조건 코드(구현 Agent · 검증-2 계약의 gate_failures 값) → 화면 이름
+GATE_NAMES = {'entry': '진입 파일', 'secret': '비밀값', 'sandbox': '격리 화면 동작'}
+
+
+def gate_failures_out(outputs) -> list[schemas.GateFailureOut]:
+    code_check = outputs.code_check
+    return [
+        schemas.GateFailureOut(code=code, display_name=GATE_NAMES.get(code, code))
+        for code in (getattr(code_check, 'gate_failures', None) or [])
+    ]
+
+
+def _matched(outputs, field: str) -> list[str]:
+    """계획서 대조의 기능 목록. 대조가 보류되면 판정하지 않은 것이라 빈 목록이다."""
+    fm = outputs.feature_match
+    if fm is None or fm.withheld:
+        return []
+    return list(getattr(fm, field, None) or [])
 
 
 def artifact_out(project_id: int, outputs) -> schemas.ArtifactOut | None:
@@ -385,6 +406,9 @@ def artifact_out(project_id: int, outputs) -> schemas.ArtifactOut | None:
                          if outputs.prototype is not None and category != 'onepage' else None),
         artifact_score=artifact_score,
         score_reasons=artifact_score_reasons(outputs),
+        gate_failures=gate_failures_out(outputs),
+        missing_features=_matched(outputs, 'missing_features'),
+        partial_features=_matched(outputs, 'partial_features'),
     )
 
 

@@ -494,6 +494,11 @@ class ArtifactScoreReasonOut(BaseModel):
     max_score: float | None = None
 
 
+class GateFailureOut(BaseModel):
+    code: str = Field(description='어긴 통과 필수 조건 — entry(진입 파일) · secret(비밀값) · sandbox(격리 화면 동작)')
+    display_name: str
+
+
 class ArtifactOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     artifact_id: int | None = None  # [SB-243] 산출물은 오케스트레이터가 갖고 있어 행 번호가 없다
@@ -502,6 +507,12 @@ class ArtifactOut(BaseModel):
     executable_path: str | None = None
     artifact_score: float | None = None
     score_reasons: list[ArtifactScoreReasonOut] = Field(default_factory=list)
+    # 기획서 v1.11 4-5 · 5-4: 산출물 확인 화면은 통과 필수 조건 결과 → 코드 점검 8항목 → 대조 누락 · 부분 인정 기능을 보여 준다.
+    # 필수 조건을 하나라도 어기면 산출물층 30점이 0이 되므로(gate_failures가 비어 있지 않음) 화면이 이유를 알려 줄 수 있어야 한다.
+    gate_failures: list[GateFailureOut] = Field(default_factory=list)
+    # 계획서 대조에서 규칙 · LLM이 미충족으로 본 기능(0점) · 부분으로 본 기능(0.5점). 대조가 보류(withheld)되면 둘 다 빈 목록이다.
+    missing_features: list[str] = Field(default_factory=list)
+    partial_features: list[str] = Field(default_factory=list)
 
 
 class PlanScoreReasonOut(BaseModel):
