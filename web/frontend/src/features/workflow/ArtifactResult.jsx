@@ -59,7 +59,7 @@ export function useArtifactFile(path, { expect } = {}){
 export function ArtifactLoadError(){
   return (
     <p role="alert" className="mb-4 rounded-xl border border-[var(--warn)] bg-[color-mix(in_srgb,var(--warn)_8%,white)] px-4 py-3 text-[12.5px] text-[var(--fg)] leading-relaxed">
-      산출물 파일을 불러오지 못해 예시 화면을 대신 보여주고 있어요. 로그인이 풀렸을 수 있으니 새로고침해 주세요.
+      산출물 파일을 불러오지 못해 예시 화면을 대신 보여주고 있어요. 잠시 뒤 다시 열어 주세요.
     </p>
   );
 }
