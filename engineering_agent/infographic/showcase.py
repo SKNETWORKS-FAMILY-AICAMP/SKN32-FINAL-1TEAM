@@ -26,6 +26,21 @@ def text(x, y, value, size=15, color=None, weight=400, anchor="start", attrs="")
             f'text-anchor="{anchor}" fill="{color or C["body"]}" {attrs}>{esc(value)}</text>')
 
 
+SUMMARY_LINES = 2
+SUMMARY_LINE_HEIGHT = 22
+
+
+def summary_text(summary: str, y: float) -> tuple[str, float]:
+    """머리말의 한 줄 소개. (SVG, 한 줄일 때보다 늘어난 높이).
+
+    한 줄 소개는 조율이 준 입력값이라 재수행으로 짧아지지 않는다. 한 줄에 다 들어가지
+    않으면 두 줄로 감고, 아래 내용은 늘어난 높이만큼 내린다."""
+    svg, n = wrapped_text(450, y, summary, size=16, max_width=780, max_lines=SUMMARY_LINES,
+                          line_height=SUMMARY_LINE_HEIGHT, fill=C["ink"],
+                          attrs='font-weight="600" data-field="item_summary"', anchor="middle")
+    return svg, (n - 1) * SUMMARY_LINE_HEIGHT
+
+
 def paragraph(x, y, value, width, lines=3, size=15, field="", feature="", anchor="start"):
     attrs = f'data-field="{field}" data-role="value"'
     if feature:
@@ -105,9 +120,15 @@ def _hero(category, data, features, y):
     parts.append(text(x + w - 18, y + 34, "기능 개념도", 12, C["muted"], anchor="end"))
     parts.append(f'<line x1="{x + 16}" y1="{y + 48}" x2="{x + w - 16}" y2="{y + 48}" stroke="{C["line"]}"/>')
     output = pipeline.get("output", "") if category == "AI_API" else data.get("item_summary", "")
-    if output:
-        parts.append(paragraph(x + 20, y + 76, output, w - 40, 2, 14,
-                               "pipeline.output" if category == "AI_API" else "item_summary"))
+    if category == "AI_API":
+        if output:
+            parts.append(paragraph(x + 20, y + 76, output, w - 40, 2, 14, "pipeline.output"))
+    elif output:
+        # 한 줄 소개(입력값)를 여기 한 번 더 싣는다. 두 줄에 안 들어가면 글자를 줄이고, 그래도 넘치면
+        # 싣지 않는다 — 머리말에 이미 전부 있고, 잘린 채로 실으면 원페이지 잘림 감점만 생긴다.
+        size = next((s for s in (14, 12) if not wrap(str(output), s, w - 40, 2)[1]), None)
+        if size:
+            parts.append(paragraph(x + 20, y + 76, output, w - 40, 2, size, "item_summary"))
     metrics = [m for m in data.get("key_metrics") or [] if isinstance(m, dict) and m.get("value")][:3]
     details = data.get("feature_details") or []
     if metrics:
@@ -330,12 +351,13 @@ def build_showcase(category: str, data: dict, features: list[str]) -> tuple[str,
     parts.append(text(450, 62, fit(str(data.get("item_name", "")), TITLE_SIZE, TITLE_WIDTH),
                       TITLE_SIZE, C["ink"], 800, "middle", 'data-field="item_name" data-role="title"'))
     summary = str(data.get("item_summary", ""))
+    dy = 0
     if summary:
-        parts.append(text(450, 98, fit(summary, 16, 780), 16, C["ink"], 600, "middle",
-                          'data-field="item_summary"'))
-    parts.append(text(450, 130, fit(str(data.get("target_users", "")) or EMPTY_VALUE_TEXT, 15, 520),
+        svg, dy = summary_text(summary, 98)
+        parts.append(svg)
+    parts.append(text(450, 130 + dy, fit(str(data.get("target_users", "")) or EMPTY_VALUE_TEXT, 15, 520),
                       15, C["muted"], 400, "middle", 'data-field="target_users" data-role="value"'))
-    hero, y = _hero(category, data, features, 152)
+    hero, y = _hero(category, data, features, 152 + dy)
     parts.append(hero)
     if category == "원페이지":
         business, y = _business(data, y + 8)
@@ -358,7 +380,7 @@ def build_showcase(category: str, data: dict, features: list[str]) -> tuple[str,
 def showcase_slots(category: str, data: dict) -> list[tuple]:
     """Use actual composition widths to report source truncation before rendering."""
     slots = [("item_name", str(data.get("item_name", "")), TITLE_SIZE, TITLE_WIDTH, 1),
-             ("item_summary", str(data.get("item_summary", "")), 16, 780, 1),
+             ("item_summary", str(data.get("item_summary", "")), 16, 780, SUMMARY_LINES),
              ("target_users", str(data.get("target_users", "")), 15, 520, 1)]
     features = [str(f) for f in data.get("features") or []]
     cols = _feature_columns(features, data.get("feature_details") or [])

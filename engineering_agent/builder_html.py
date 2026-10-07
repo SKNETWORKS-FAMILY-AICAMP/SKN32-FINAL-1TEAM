@@ -121,8 +121,12 @@ def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str
    `document.getElementById('그 id').addEventListener('click', ...)` 또는
    `const btn = document.getElementById('그 id'); btn.addEventListener(...)`.
    document 하나에 리스너를 달고 대상을 가려내는 이벤트 위임, querySelectorAll 반복문으로
-   한꺼번에 다는 방식은 쓰지 마라. 화면의 모든 버튼은 실제로 무언가를 하게 연결하라.
-   기능명은 화면에도 글자로 표시하라.
+   한꺼번에 다는 방식은 쓰지 마라. id를 배열에 담아 for · forEach 반복문으로 연결하는 것도
+   쓰지 마라 — 메뉴 · 탭 버튼도 버튼마다 `getElementById('그 id')`로 한 줄씩 연결하라.
+   화면의 모든 버튼은 실제로 무언가를 하게 연결하라. 기능명은 화면에도 글자로 표시하라.
+   파일 · 사진 · 녹음처럼 보는 사람이 따로 준비해야 하는 입력이 있으면, 그 옆에 '예시로 실행'
+   버튼을 두고 파일 안에 넣어 둔 예시 데이터로 처리부터 결과까지 바로 돌게 하라.
+   파일을 올리지 않아도 모든 기능을 끝까지 시연할 수 있어야 한다.
 10. 이 파일은 `sandbox="allow-scripts"`만 허용된 iframe 안에서 돌아간다. 다음을 쓰면
     스크립트가 통째로 멈추거나 조용히 무시되어 화면이 동작하지 않는다. 절대 쓰지 마라.
     - `localStorage`, `sessionStorage`, `document.cookie`, `indexedDB`

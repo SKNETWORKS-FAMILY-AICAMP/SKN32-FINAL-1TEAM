@@ -27,6 +27,15 @@ class PlanInPromptTests(TestCase):
         for text in ("계획서의 설명", "14. 기능마다", "## 사업계획서 본문"):
             self.assertNotIn(text, without)
 
+    def test_prompt_asks_for_one_line_wiring_and_a_sample_run(self):
+        """메뉴 버튼을 id 배열 반복문으로 연결하면 채점(직접 연결)이 알아보지 못한다. 파일 입력만 있으면
+        보는 사람이 시연을 시작할 수 없다. 두 카테고리 모두 지시한다."""
+        for category in ("웹개발", "AI_API"):
+            prompt = _build_system_prompt(FEATURES, {"item_name": "점검콕"}, category, PLAN)
+            with self.subTest(category):
+                self.assertIn("for · forEach 반복문으로 연결하는 것도", prompt)
+                self.assertIn("'예시로 실행'", prompt)
+
     def test_run_tb1_passes_the_plan_when_the_contract_has_it(self):
         from unittest.mock import patch
 

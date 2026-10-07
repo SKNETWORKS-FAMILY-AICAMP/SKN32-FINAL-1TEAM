@@ -19,7 +19,8 @@ from engineering_agent.infographic.layout import (
     PAGE_WIDTH, TITLE_SIZE, TITLE_WIDTH, estimate_text_width, fit, fit_size, parse_milestones, wrap,
 )
 from engineering_agent.infographic.showcase import (
-    C, INNER, M, _features, _hero, _metrics_revenue, _orbital_milestones, _process, _roadmap, text,
+    C, INNER, M, _features, _hero, _metrics_revenue, _orbital_milestones, _process, _roadmap, summary_text,
+    text,
 )
 from engineering_agent.infographic.svg_parts import EMPTY_VALUE_TEXT, esc, wrapped_text
 
@@ -649,16 +650,17 @@ def compose(category: str, data: dict, features: list[str]) -> tuple[str, int]:
     parts.append(text(450, 62, fit(str(data.get("item_name", "")), TITLE_SIZE, TITLE_WIDTH),
                       TITLE_SIZE, C["ink"], 800, "middle", 'data-field="item_name" data-role="title"'))
     summary = str(data.get("item_summary", ""))
+    dy = 0
     if summary:
-        parts.append(text(450, 98, fit(summary, 16, 780), 16, C["ink"], 600, "middle",
-                          'data-field="item_summary"'))
+        svg, dy = summary_text(summary, 98)
+        parts.append(svg)
     target = fit(str(data.get("target_users", "")) or EMPTY_VALUE_TEXT, 15, 520)
     tw = estimate_text_width(target, 15) + 60
-    parts.append(f'<rect x="{450 - tw / 2}" y="{110}" width="{tw}" height="32" rx="16" fill="{C["tint"]}"/>'
-                 + icons.icon("users", 450 - tw / 2 + 22, 126, 18, C["accent_deep"], 1.8)
-                 + text(450 + 12, 131, target, 15, C["ink"], 400, "middle",
+    parts.append(f'<rect x="{450 - tw / 2}" y="{110 + dy}" width="{tw}" height="32" rx="16" fill="{C["tint"]}"/>'
+                 + icons.icon("users", 450 - tw / 2 + 22, 126 + dy, 18, C["accent_deep"], 1.8)
+                 + text(450 + 12, 131 + dy, target, 15, C["ink"], 400, "middle",
                         'data-field="target_users" data-role="value"'))
-    y = 168
+    y = 168 + dy
     banner = artsheet.slot(data, artsheet.HERO, M, y, INNER, 216, 18)
     if banner:
         parts.append(banner)

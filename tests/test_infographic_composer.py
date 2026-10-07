@@ -70,6 +70,35 @@ class ComposerTests(TestCase):
                                                         if not i["passed"]])
         self.assertEqual(_check_content("원페이지", data, PLAN), [])
 
+    def test_long_summary_wraps_instead_of_being_cut(self):
+        """한 줄 소개는 조율이 준 입력값이라 재수행으로 짧아지지 않는다. 한 줄을 넘으면 두 줄로 감고
+        아래 내용을 내린다 — 원페이지 잘림(5번) · 넘침(6번) 감점이 없어야 한다."""
+        from engineering_agent.infographic.layout import overflow_fields
+
+        long = ("POS 판매 데이터를 학습해 품목별 적정 재고량과 발주 시점을 자동 산출하고, "
+                "발주서를 거래처에 자동 전송하는 클라우드 서비스")
+        cases = {"구역 틀(그림 있음)": dict(DATA, layout=EVERY_BLOCK, style="framed", item_summary=long),
+                 "포스터(그림 없음)": dict(DATA, layout=EVERY_BLOCK, item_summary=long),
+                 "기본 지면": dict(DATA, item_summary=long)}
+        for name, data in cases.items():
+            with self.subTest(name):
+                self.assertNotIn("item_summary", overflow_fields("원페이지", data))
+                saved = self._render(data)
+                self.assertNotIn("…", saved["source_text"].split('data-field="item_summary"')[1].split("</text>")[0])
+                checked = compute_infographic_check(saved["file_path"], saved["source_text"], "열람")
+                self.assertEqual(checked["total"], 15, [(i["name"], i["evidence"]) for i in checked["items"]
+                                                        if not i["passed"]])
+
+    def test_overlong_input_values_are_not_rework_reasons(self):
+        """두 줄로도 넘치는 입력값(아이템명 · 한 줄 소개 · 목표 고객)은 잘리지만, 재수행해도 같으므로
+        자체 검사 실패로 올리지 않는다. LLM이 쓴 값의 넘침은 그대로 올린다."""
+        data = dict(DATA, layout=EVERY_BLOCK, style="framed", item_summary="아주 긴 소개 문장입니다 " * 12,
+                    target_users="아주 긴 목표 고객 설명입니다 " * 8)
+        failures = _check_content("원페이지", data, PLAN)
+        self.assertFalse([f for f in failures if f.startswith(("item_summary", "target_users"))], failures)
+        long_problem = dict(data, problem="판매량 예측 실패로 반찬이 버려지는 문제가 매우 심각하다 " * 6)
+        self.assertTrue([f for f in _check_content("원페이지", long_problem, PLAN) if f.startswith("problem")])
+
     def test_missing_required_blocks_are_filled(self):
         layout = normalize_layout("원페이지", {"layout": [{"block": "market", "variant": "nested"},
                                                           {"block": "tagline", "variant": "band"}]})

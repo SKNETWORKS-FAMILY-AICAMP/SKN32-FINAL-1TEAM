@@ -57,6 +57,9 @@ _NUMBER_RE = re.compile(r"\d[\d,._]*")
 # (verification_agent/rules/r4_onepage.py의 _PLACEHOLDER_VALUES와 같은 목록).
 _PLACEHOLDER_VALUES = {"정보 없음", "미정", "해당 없음", "n/a", "na", "-", "tbd", "없음"}
 
+# run_tb2가 item_spec에서 그대로 옮겨 넣는 지면 값. LLM이 고쳐 쓰지 않는다.
+_INPUT_FIELDS = {"item_name", "item_summary", "target_users"}
+
 
 def _is_blank(value: str) -> bool:
     text = str(value).strip()
@@ -180,6 +183,10 @@ def _check_content(category: str, content: dict, plan_text: str) -> list[str]:
             failures.append(f"{label}: 계획서에 없는 수치 {', '.join(unbacked)}")
 
     for field in overflow_fields(category, content):
+        # 아이템명 · 한 줄 소개 · 목표 고객은 조율이 준 입력값이라 재수행해도 짧아지지 않는다.
+        # 실패로 올리면 같은 결과를 내는 재수행(이미지 호출 포함)만 반복되므로 사유로 쓰지 않는다.
+        if field in _INPUT_FIELDS:
+            continue
         failures.append(f"{field}: 지면 폭을 넘겨 잘라 넣음 — 더 짧은 문장이 필요함")
     return failures
 

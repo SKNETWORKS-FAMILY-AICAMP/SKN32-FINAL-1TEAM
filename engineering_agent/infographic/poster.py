@@ -94,7 +94,8 @@ def header(category, data):
     summary = str(data.get("item_summary", "")).strip()
     y = 140
     if summary:
-        svg, n = para(40, y, summary, left_w, 2, 18, BODY, 'data-field="item_summary"', weight=500)
+        # 한 줄 소개는 입력값이라 재수행으로 짧아지지 않는다 — 세 줄까지 감는다.
+        svg, n = para(40, y, summary, left_w, 3, 18, BODY, 'data-field="item_summary"', weight=500)
         parts.append(svg)
         y += n * 26
     target = str(data.get("target_users", "")).strip() or EMPTY_VALUE_TEXT
