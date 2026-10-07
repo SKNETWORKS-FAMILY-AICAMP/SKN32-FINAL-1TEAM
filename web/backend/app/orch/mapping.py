@@ -390,6 +390,17 @@ def _matched(outputs, field: str) -> list[str]:
     return list(getattr(fm, field, None) or [])
 
 
+def _infographic_path(project_id: int, outputs, category: str) -> str:
+    """인포그래픽 경로. 원페이지는 onepage.svg가 프로토타입 본체이자 인포그래픽이라, 오케스트레이터가 인포그래픽을 비워 두고
+    prototype.entryFilePath만 채워 보내도 같은 파일을 인포그래픽으로 보여 준다."""
+    infographic = outputs.infographic
+    if infographic is not None and infographic.image_path:
+        return artifact_url(project_id, infographic.image_path)
+    if category == 'onepage' and outputs.prototype is not None and outputs.prototype.entry_file_path:
+        return artifact_url(project_id, outputs.prototype.entry_file_path)
+    return ''
+
+
 def artifact_out(project_id: int, outputs) -> schemas.ArtifactOut | None:
     """산출물. 파일 경로는 웹 주소로 바꿔 준다(SB-293) — 원페이지는 두 경로가 같은 onepage.svg라 인포그래픽만 보여 주고 실행 경로는 숨긴다."""
     if outputs.prototype is None and outputs.infographic is None:
@@ -399,8 +410,7 @@ def artifact_out(project_id: int, outputs) -> schemas.ArtifactOut | None:
     artifact_score = report.artifact_score.total if report is not None and report.artifact_score is not None else None
     return schemas.ArtifactOut(
         category=category,
-        infographic_path=(artifact_url(project_id, outputs.infographic.image_path)
-                          if outputs.infographic is not None else ''),
+        infographic_path=_infographic_path(project_id, outputs, category),
         # 원페이지는 실행 파일이 없다
         executable_path=(artifact_url(project_id, outputs.prototype.entry_file_path)
                          if outputs.prototype is not None and category != 'onepage' else None),

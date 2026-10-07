@@ -155,3 +155,25 @@ def test_rework_result_file_paths_are_urls(authed_client, orch):
         'artifact': 'prototype', 'before_path': _url(pid, 'index.html'), 'after_path': _url(pid, 'index.html', other)}]
     assert body['changed']['executable_path'] == {
         'before': _url(pid, 'index.html'), 'after': _url(pid, 'index.html', other)}
+
+
+def test_onepage_without_infographic_shows_the_prototype_svg_as_infographic(authed_client, orch):
+    """오케스트레이터가 원페이지의 인포그래픽을 비우고 prototype.entryFilePath만 보내도 같은 onepage.svg를 인포그래픽으로 보여 준다."""
+    pid = _create(authed_client)
+    path = f'{pid}/{ATTEMPT}/onepage.svg'
+    orch.responses['outputs'] = lambda p: _outputs(pid, '원페이지', NS(entry_file_path=path), None)
+
+    artifact = authed_client.get(f'/projects/{pid}/result').json()['plan']['artifacts'][0]
+
+    assert artifact['infographic_path'] == _url(pid, 'onepage.svg')
+    assert artifact['executable_path'] is None
+
+
+def test_webdev_without_infographic_keeps_an_empty_infographic_path(authed_client, orch):
+    """웹개발은 인포그래픽이 따로 있어야 하므로 비어 있으면 실행 파일을 대신 쓰지 않는다."""
+    pid = _create(authed_client)
+    orch.responses['outputs'] = lambda p: _outputs(pid, '웹개발', NS(entry_file_path=f'{pid}/{ATTEMPT}/index.html'), None)
+
+    artifact = authed_client.get(f'/projects/{pid}/result').json()['plan']['artifacts'][0]
+
+    assert artifact['infographic_path'] == '' and artifact['executable_path'] == _url(pid, 'index.html')
