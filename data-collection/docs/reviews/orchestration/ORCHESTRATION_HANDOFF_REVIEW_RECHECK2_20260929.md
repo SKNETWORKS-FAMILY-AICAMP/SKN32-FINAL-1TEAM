@@ -1,6 +1,6 @@
 # 조율 함수 설명서 2차 개정 재검수 (2026-09-29)
 
-검수: Codex. 대상은 [Claude 재검수 응답](ORCHESTRATION_HANDOFF_REVIEW_RECHECK_RESPONSE_20260929.md), [함수 설명서](../../guides/ORCHESTRATION_HANDOFF.md), [검증 스크립트](../../../experiments/orchestration_probe.py)다. 조율 코드는 현재 저장소 `agent-orchestration/`을 기준으로 대조했다. **이전 재검수의 P2 네 건은 설명서에 반영됐다.** 다만 검증 스크립트가 더 보기 실패를 통과로 판정할 수 있고, 실제 기간 표시 계약은 아직 완결되지 않았다. 실제 연결 완료 판정은 보류한다.
+검수: Codex. 대상은 [Claude 재검수 응답](ORCHESTRATION_HANDOFF_REVIEW_RECHECK_RESPONSE_20260929.md), [함수 설명서](../../archive/ORCHESTRATION_HANDOFF.md), [검증 스크립트](../../../experiments/orchestration_probe.py)다. 조율 코드는 현재 저장소 `agent-orchestration/`을 기준으로 대조했다. **이전 재검수의 P2 네 건은 설명서에 반영됐다.** 다만 검증 스크립트가 더 보기 실패를 통과로 판정할 수 있고, 실제 기간 표시 계약은 아직 완결되지 않았다. 실제 연결 완료 판정은 보류한다.
 
 ## 이전 P2 네 건의 반영
 
@@ -21,13 +21,13 @@ DB 없이 MORE 조회에 `TimeoutError`를 주입해 재현했다. 실제 더 �
 
 ### P2-2. `apply_period_type`을 카드와 공고 상세로 보내는 계약이 빠졌다
 
-설명서 [① 75~78행](../../guides/ORCHESTRATION_HANDOFF.md#L75)은 날짜 없는 985건을 `apply_period_type`으로 표시하자고 제안한다. 현재 조율 `Announcement`와 `AnnouncementCard`에는 이 필드가 없고([domain.py:156-185](../../../../agent-orchestration/sbrain/models/domain.py#L156)), 예시 `tc2()`도 카드에 넣지 않는다([설명서 375~384행](../../guides/ORCHESTRATION_HANDOFF.md#L375)). 날짜 필드를 선택으로 바꾸는 합의에 **기간 유형을 두 모델과 화면에 어떻게 전달할지**까지 포함해야 제안한 표시가 가능하다.
+설명서 [① 75~78행](../../archive/ORCHESTRATION_HANDOFF.md#L75)은 날짜 없는 985건을 `apply_period_type`으로 표시하자고 제안한다. 현재 조율 `Announcement`와 `AnnouncementCard`에는 이 필드가 없고([domain.py:156-185](../../../../agent-orchestration/sbrain/models/domain.py#L156)), 예시 `tc2()`도 카드에 넣지 않는다([설명서 375~384행](../../archive/ORCHESTRATION_HANDOFF.md#L375)). 날짜 필드를 선택으로 바꾸는 합의에 **기간 유형을 두 모델과 화면에 어떻게 전달할지**까지 포함해야 제안한 표시가 가능하다.
 
 ### P3. 설명 문구와 재현 경로
 
-- ⑦의 `unknown_conditions: list[str]`는 조건 **이름만** 전달한다([설명서 98행](../../guides/ORCHESTRATION_HANDOFF.md#L98)). 4.5절은 `(조건, 이유)`를 만드는 예시와 이유 문장 재사용을 안내한다([304~323행](../../guides/ORCHESTRATION_HANDOFF.md#L304)). 화면에 이름만 보여 줄지, 이유도 보여 줄지 정하고 후자면 전달 칸을 추가해야 한다.
+- ⑦의 `unknown_conditions: list[str]`는 조건 **이름만** 전달한다([설명서 98행](../../archive/ORCHESTRATION_HANDOFF.md#L98)). 4.5절은 `(조건, 이유)`를 만드는 예시와 이유 문장 재사용을 안내한다([304~323행](../../archive/ORCHESTRATION_HANDOFF.md#L304)). 화면에 이름만 보여 줄지, 이유도 보여 줄지 정하고 후자면 전달 칸을 추가해야 한다.
 - [STATUS.md 24·26행](../../STATUS.md#L24)의 `..\agent-orchestration` 경로는 실제 파일에서 `\a`가 BEL 제어문자(U+0007)로 저장되어 있다. 설명서·응답·인계서의 경로는 정상이다. STATUS의 두 줄은 수정이 필요하다.
-- 설명서 [7절 명령](../../guides/ORCHESTRATION_HANDOFF.md#L456)의 `.venv\Scripts\python.exe`는 현재 PC에서 원래 Python 설치 경로가 없어 실행되지 않는다(`pyvenv.cfg`의 base executable이 없음). 이번 독립 실행은 번들 Python 3.12에 기존 `.venv/Lib/site-packages`를 넣어 진행했다. 팀원이 재실행할 수 있도록 가상환경 재생성 또는 사용 가능한 Python 경로를 준비해야 한다.
+- 설명서 [7절 명령](../../archive/ORCHESTRATION_HANDOFF.md#L456)의 `.venv\Scripts\python.exe`는 현재 PC에서 원래 Python 설치 경로가 없어 실행되지 않는다(`pyvenv.cfg`의 base executable이 없음). 이번 독립 실행은 번들 Python 3.12에 기존 `.venv/Lib/site-packages`를 넣어 진행했다. 팀원이 재실행할 수 있도록 가상환경 재생성 또는 사용 가능한 Python 경로를 준비해야 한다.
 - 프로브 D의 [90행](../../../experiments/orchestration_probe.py#L90)은 정상 상태와 카드 0건을 유효하게 처리하는 빠른 시작과 달리, 실제 DB가 정상·0건이면 실패로 판정한다. 정상 데이터 스모크 검사와 0건 분기 계약 검사를 구분하면 결과가 덜 혼란스럽다.
 
 ## 독립 검증과 남은 범위

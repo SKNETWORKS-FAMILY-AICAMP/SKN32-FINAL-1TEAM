@@ -237,7 +237,7 @@ def _run(dry_run, skip_store, force, say,
     say('K-Startup 수집')
     # 잠금은 이 함수 바깥에서 이미 잡았다. daily_job.run() 을 부르면 같은 잠금을
     # 다시 잡으려다 스스로 busy 가 되므로 잠금 없는 _run() 을 직접 부른다.
-    ks = daily_job._run(skip_embed=True, dry_run=dry_run, force=force, say=say)
+    ks = daily_job._run(dry_run=dry_run, force=force, say=say)
     sources['kstartup'] = {'status': ks['status'], 'count': ks.get('count'),
                            'new_count': ks.get('new_count'), 'error': ks.get('error'),
                            'complete': ks.get('complete')}

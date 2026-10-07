@@ -8,7 +8,6 @@
 - `applicant_types.py`: 공고 본문 신청자 유형 판정 읽기(DB→파일, 지문 확인)와 해석. `industry_rank.py`: 업종 판정 읽기·허용 목록 밖 판정. `age_evidence.py`: 업력 근거(설명용).
 - `hybrid.py`: BM25와 RRF(`RRF_K=60`, `DEPTH=50`). `memvec.py`: 공용 DB 공고 벡터를 메모리에 올린 의미 검색 묶음(count·query·get — Chroma와 같은 모양, 전부 비교). `vecstore.py`: PC 질의 임베딩(`embed_query`)과 배치 7단계 로컬 Chroma 동기화(공고 서버 검색에는 안 씀). `rank_rules.py`: 대상 집단 규칙(서비스·평가 공용). `applicant.py`: 신청자 입력의 질의·규칙·받기만 갈래, 인증 목록.
 - `collection_status.py`: 수집 상태 판정(순수 함수 `judge`, 읽기 전용). `content_version.py`: 공고 내용 지문(`cv2-`)과 하루 비교 명령. `bonus.py`: 공고 가점 × 신청자 → 가산점.
-- `search_local.py`: 옛 시험용 명령줄 검색(서비스 경로 아님).
 
 ## 맡지 않는 것
 - 데이터 만들기·DB 쓰기 일체(`collect/`). 이 폴더 코드는 DB에 SELECT만 한다.

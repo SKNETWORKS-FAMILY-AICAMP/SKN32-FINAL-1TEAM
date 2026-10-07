@@ -2,11 +2,11 @@
 
 기준 시점: 2026-10-06 오후 작업 종료 (Claude)
 작업 범위: `data-collection/`만
-이 문서가 **최신 진입점**이다. 이전 인계서는 [archive/NEXT_SESSION_HANDOFF_20260929.md](archive/NEXT_SESSION_HANDOFF_20260929.md)다.
+이 문서가 **최신 진입점**이다. 이전 인계서는 [archive/NEXT_SESSION_HANDOFF_20260929.md](NEXT_SESSION_HANDOFF_20260929.md)다.
 
 ## 1. 새 세션이 가장 먼저 할 것
 
-1. 이 문서를 끝까지 읽는다. 이어서 [STATUS](STATUS.md) 맨 위 두 항목과 [notice_api 진행표](notice_api/README.md)를 읽는다.
+1. 이 문서를 끝까지 읽는다. 이어서 [STATUS](../STATUS.md) 맨 위 두 항목과 [notice_api 진행표](../notice_api/README.md)를 읽는다.
 2. 사용자는 이근준이다.
    - **커밋·push는 사용자가 직접 한다.** 묻지 않으면 커밋 이야기도 꺼내지 않는다.
    - 모든 답변·중간 안내를 **한국어**로, 비유를 먼저 들고 쉬운 말로 쓴다.
@@ -25,11 +25,11 @@
 
 | 작업 | 상태 | 기록 |
 |---|---|---|
-| 01 수집 상태 창구·추천 결과 키(`content_version` cv2·`bonus_score`·`bonus_items`) | ✅ | [01](notice_api/01_status_match/README.md) |
-| 02 공고 상세·자격 판정(판정 코드 `search/eligibility.py` 한 곳) | ✅ | [02](notice_api/02_detail_eligibility/README.md) |
-| 03 가산점(추출기 v4·공용 DB `notice_bonus`·계산·순위 세기 0·매일 배치 14단계 코드) | ✅ 구현 / Codex 재검수 지적 **보류** | [03](notice_api/03_bonus/README.md) |
-| Codex 검수 → 13건 반영 → 재검수 "추가 수정 후 재검수 필요"(P1 1·P2 6·P3 2) | 보류(사용자 결정) | [요청](notice_api/CODEX_REVIEW_REQUEST_20261006.md) · [결과](notice_api/CODEX_REVIEW_20261006.md) · [응답](notice_api/CODEX_REVIEW_RESPONSE_20261006.md) · [재검수](notice_api/CODEX_REVIEW_RECHECK_20261006.md) |
-| 04 계약 시험 — 조율 쪽 실제 코드로 8000 HTTP 호출 | ✅ 16/16, 모든 공고 G-01 2,765건 형식 오류 0 | [04](notice_api/04_contract_test/README.md) |
+| 01 수집 상태 창구·추천 결과 키(`content_version` cv2·`bonus_score`·`bonus_items`) | ✅ | [01](../notice_api/01_status_match/README.md) |
+| 02 공고 상세·자격 판정(판정 코드 `search/eligibility.py` 한 곳) | ✅ | [02](../notice_api/02_detail_eligibility/README.md) |
+| 03 가산점(추출기 v4·공용 DB `notice_bonus`·계산·순위 세기 0·매일 배치 14단계 코드) | ✅ 구현 / Codex 재검수 지적 **보류** | [03](../notice_api/03_bonus/README.md) |
+| Codex 검수 → 13건 반영 → 재검수 "추가 수정 후 재검수 필요"(P1 1·P2 6·P3 2) | 보류(사용자 결정) | [요청](../notice_api/CODEX_REVIEW_REQUEST_20261006.md) · [결과](../notice_api/CODEX_REVIEW_20261006.md) · [응답](../notice_api/CODEX_REVIEW_RESPONSE_20261006.md) · [재검수](../notice_api/CODEX_REVIEW_RECHECK_20261006.md) |
+| 04 계약 시험 — 조율 쪽 실제 코드로 8000 HTTP 호출 | ✅ 16/16, 모든 공고 G-01 2,765건 형식 오류 0 | [04](../notice_api/04_contract_test/README.md) |
 | **05 답변서**(4nchez에게 보낼 문서) | **다음 할 일** | 아래 4절 |
 
 ## 4. 다음 할 일

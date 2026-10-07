@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-r"""조율 에이전트용 함수 설명서(docs/guides/ORCHESTRATION_HANDOFF.md)의 예시 코드가 실제로 도는지 확인한다.
+r"""조율 에이전트용 함수 설명서(docs/archive/ORCHESTRATION_HANDOFF.md)의 예시 코드가 실제로 도는지 확인한다.
+
+지난 방식(9/29 직접 import) 확인용이다. 10/3부터 조율 쪽은 공고 서버 HTTP 창구를 부른다 — 지금 방식 확인은 notice_api_contract.py.
 
 2026-09-29 — 조율 에이전트(SB-86 `agent-orchestration/`)에 넘긴 설명서를 Codex 가 다시 검증할 수 있게 저장소에 둔다.
 설명서의 코드 블록을 **그대로 꺼내** 실행한다. 문서와 시험 코드가 따로 놀지 않게 하려는 것이다.
@@ -33,7 +35,7 @@ from datetime import date
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-DOC = os.path.join(ROOT, 'docs', 'guides', 'ORCHESTRATION_HANDOFF.md')
+DOC = os.path.join(ROOT, 'docs', 'archive', 'ORCHESTRATION_HANDOFF.md')
 PRE = '예비창업자'
 
 # G-01 대조에 쓰는 신청자 경우: (유형, 설립일). 설립일 None 은 예비창업자 또는 입력 누락

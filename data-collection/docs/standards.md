@@ -88,7 +88,7 @@
 
 ## 13. 문서 위치
 
-- `docs/` 맨 위에는 진행 일지(STATUS·WORKLOG·FLOW·PLAN_ALIGNMENT·최신 인계서·WORK_SUMMARY), 문서 지도(`docs/README.md`), 그리고 구조·원칙·보안·규칙·함정·운영·창구 문서 7개만 둔다. 범위 대비 진행·결정·미해결 문제는 `docs/tracking/`에 둔다.
+- `docs/` 맨 위에는 진행 일지(STATUS·WORKLOG·FLOW·최신 인계서), 지난 결정 기록 PLAN_ALIGNMENT, 문서 지도(`docs/README.md`), 그리고 구조·원칙·보안·규칙·함정·운영·창구 문서 7개만 둔다. 범위 대비 진행·결정·미해결 문제는 `docs/tracking/`에 둔다.
 - 검수 요청(`…_REVIEW_REQUEST_YYYYMMDD.md`)·결과(`…_REVIEW_YYYYMMDD.md`)·작업 지시(`…_TASK_YYYYMMDD.md`)는 `docs/reviews/<주제>/` 한 폴더에 둔다. 조율 창구 작업 기록은 `docs/notice_api/0N_<작업>/`에 둔다(코드는 기존 자리).
 - 새 인계서는 `docs/NEXT_SESSION_HANDOFF_YYYYMMDD.md`로 맨 위에 두고 이전 것은 `docs/archive/`로 옮긴다. 문서를 옮기거나 만들면 `docs/README.md` 표를 함께 고친다.
 - `docs/specs/`(기획서·기능정의서)와 `docs/deliverables/`(제출본)는 고치지 않는다.

@@ -1,6 +1,6 @@
 # 조율 함수 설명서 4차 개정 재검수 (2026-09-30)
 
-검수: Codex. 대상은 [Claude의 3차 재검수 응답·요청](ORCHESTRATION_HANDOFF_REVIEW_RECHECK3_RESPONSE_20260930.md), [4차 개정 설명서](../../guides/ORCHESTRATION_HANDOFF.md), [직전 Codex 재검수](ORCHESTRATION_HANDOFF_REVIEW_RECHECK3_20260929.md)다.
+검수: Codex. 대상은 [Claude의 3차 재검수 응답·요청](ORCHESTRATION_HANDOFF_REVIEW_RECHECK3_RESPONSE_20260930.md), [4차 개정 설명서](../../archive/ORCHESTRATION_HANDOFF.md), [직전 Codex 재검수](ORCHESTRATION_HANDOFF_REVIEW_RECHECK3_20260929.md)다.
 
 ## 결론
 
@@ -12,16 +12,16 @@
 
 | 항목 | 확인 결과와 근거 |
 |---|---|
-| ⑦ 가·⑩의 공고 ID 전달 | **수정 확인.** 설명서 [113행](../../guides/ORCHESTRATION_HANDOFF.md#L113)과 [457행](../../guides/ORCHESTRATION_HANDOFF.md#L457)이 `G01In` 모델과 G-01 입력 연결을 함께 바꾸도록 적었다. 현재 [catalog.py:55-58](../../../../agent-orchestration/sbrain/flow/catalog.py#L55)의 입력에는 공고 ID가 없다. [engine.py:277-331](../../../../agent-orchestration/sbrain/orchestrator/engine.py#L277)은 `spec.inputs`에 명시된 칸만 만들고, [232-237행](../../../../agent-orchestration/sbrain/orchestrator/engine.py#L232)에서 모델 검증한다. 따라서 새 필수 ID 칸만 추가하고 연결을 빠뜨리면 입력 검증에서 실패한다는 설명이 맞다. |
+| ⑦ 가·⑩의 공고 ID 전달 | **수정 확인.** 설명서 [113행](../../archive/ORCHESTRATION_HANDOFF.md#L113)과 [457행](../../archive/ORCHESTRATION_HANDOFF.md#L457)이 `G01In` 모델과 G-01 입력 연결을 함께 바꾸도록 적었다. 현재 [catalog.py:55-58](../../../../agent-orchestration/sbrain/flow/catalog.py#L55)의 입력에는 공고 ID가 없다. [engine.py:277-331](../../../../agent-orchestration/sbrain/orchestrator/engine.py#L277)은 `spec.inputs`에 명시된 칸만 만들고, [232-237행](../../../../agent-orchestration/sbrain/orchestrator/engine.py#L232)에서 모델 검증한다. 따라서 새 필수 ID 칸만 추가하고 연결을 빠뜨리면 입력 검증에서 실패한다는 설명이 맞다. |
 | (ㄱ) 확인 필요 목록만 추가 | **수정 확인.** 현재 [Announcement:164-165](../../../../agent-orchestration/sbrain/models/domain.py#L164)와 [G01In:101-102](../../../../agent-orchestration/sbrain/contracts/tasks.py#L101)의 `eligibility`·`eligibility_parsed`는 기본값 없는 필수 필드다. 이 계약을 유지한다면 공고 공급 단계의 `eligibility_of()`도 유지해야 한다는 설명이 맞다. |
 | (ㄴ) 공고 공급까지 단순화 | **수정 확인.** 두 필드를 `Announcement`와 `G01In`에서 선택으로 바꾸거나 제거하고 입력 연결에서도 빼야 한다는 범위가 적혔다. 그 뒤 G-01 내부에서 `eligibility_of(공고ID)`로 조건을 구하도록 안내한다. ID만 추가하고 공급 변환을 없애면 필수 칸이 비어 실패한다는 경고도 적절하다. |
-| 확인 필요의 화면 전달 경로 | **문서 보완 확인.** [RunView:42-51](../../../../agent-orchestration/sbrain/flow/service.py#L42)에 `gateResult`가 없다는 설명은 현재 코드와 같다. 화면이 해당 산출물을 읽거나 별도 표시용 칸을 받도록 합의해야 한다는 점을 [설명서 105행](../../guides/ORCHESTRATION_HANDOFF.md#L105)에 적었다. 화면 구현은 이번 범위 밖이다. |
+| 확인 필요의 화면 전달 경로 | **문서 보완 확인.** [RunView:42-51](../../../../agent-orchestration/sbrain/flow/service.py#L42)에 `gateResult`가 없다는 설명은 현재 코드와 같다. 화면이 해당 산출물을 읽거나 별도 표시용 칸을 받도록 합의해야 한다는 점을 [설명서 105행](../../archive/ORCHESTRATION_HANDOFF.md#L105)에 적었다. 화면 구현은 이번 범위 밖이다. |
 
 합격·불합격은 설명서의 `g01()` 규칙으로 정하고 `app.eligibility()`는 확인 필요 목록의 재료로만 사용하는 구분도 유지됐다. 후자는 접수 시작 전 공고를 X로 판정하므로 그대로 G-01의 통과 여부에 사용하면 안 된다는 4.5절 안내와 일치한다.
 
 ## 2. 3.3절 5번 판정표 동작 안내
 
-[설명서 164-170행](../../guides/ORCHESTRATION_HANDOFF.md#L164)을 현재 코드 및 관련 회귀 시험과 대조했다.
+[설명서 164-170행](../../archive/ORCHESTRATION_HANDOFF.md#L164)을 현재 코드 및 관련 회귀 시험과 대조했다.
 
 | 안내 | 확인 결과 |
 |---|---|

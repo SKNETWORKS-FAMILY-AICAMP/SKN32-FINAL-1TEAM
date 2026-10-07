@@ -7,7 +7,7 @@
 |---|---|
 | 요청서 | `origin/feature/SB-87-init-supervisor-integration:agent-orchestration/docs/공고서버_API요청_공고팀전달.md` (2026-10-03, 10-04 보완) |
 | 조율 쪽 연결 코드 | 같은 브랜치 `agent-orchestration/sbrain/agents/notice/` — `SBRAIN_NOTICE_API_URL`을 넣어야 켜진다. 지금은 꺼짐 |
-| 연결 방식 변경 | 9/29 "조율 쪽이 우리 코드를 직접 import"([옛 설명서](../guides/ORCHESTRATION_HANDOFF.md)) → 10/3 "공고 서버 HTTP API를 부른다" |
+| 연결 방식 변경 | 9/29 "조율 쪽이 우리 코드를 직접 import"([옛 설명서](../archive/ORCHESTRATION_HANDOFF.md)) → 10/3 "공고 서버 HTTP API를 부른다" |
 | 시작 | 2026-10-06 |
 
 ## 사용자 결정 (2026-10-06)
@@ -21,14 +21,15 @@
 
 | 작업 | 내용 | 상태 |
 |---|---|---|
-| [01_status_match](01_status_match/README.md) | `GET /api/collection_status` 창구, `/api/match` 결과에 `content_version`·`bonus_score`·`bonus_items` | ✅ 10/6 완료 (10/7 배치 뒤 지문 하루 비교 남음) |
+| [01_status_match](01_status_match/README.md) | `GET /api/collection_status` 창구, `/api/match` 결과에 `content_version`·`bonus_score`·`bonus_items` | ✅ 10/6 완료 · 10/7 지문 하루 비교 통과(`cv2-` 확정) |
 | [02_detail_eligibility](02_detail_eligibility/README.md) | `GET /api/notices/{id}`, `POST /api/notices/{id}/eligibility` (기존 판정 규칙을 `search/eligibility.py`로 옮겨 함께 씀) | ✅ 10/6 완료 |
-| [03_bonus](03_bonus/README.md) | 가점 추출(LLM) → DB 표 → 신청자별 계산 → 순위 반영 → 매일 배치 연결 | ✅ 10/6 완료 → Codex 검수 반영으로 **추출기 v4·전량 재추출**, 순위 세기 **0**(보류), 매일 배치 14단계는 서버 복사 전 |
+| [03_bonus](03_bonus/README.md) | 가점 추출(LLM) → DB 표 → 신청자별 계산 → 순위 반영 → 매일 배치 연결 | ✅ 10/6 완료 → Codex 검수 반영으로 **추출기 v4·전량 재추출**, 순위 세기 **0**(보류), 매일 배치 14단계는 10/7 서버에 복사(10/8 09:00 첫 실행) |
 | [Codex 검토 요청](CODEX_REVIEW_REQUEST_20261006.md) | 01~03 묶음 검토 | [결과](CODEX_REVIEW_20261006.md): 수정 후 재검수 필요(P1 2·P2 8·P3 3) → [응답·재검수 요청](CODEX_REVIEW_RESPONSE_20261006.md)(13건 반영) |
 | [04_contract_test](04_contract_test/README.md) | 조율 쪽 실제 연결 코드(`make_tc2`·`make_g01`·`NoticeClient`)로 8000 서버를 HTTP로 불러 보기(가짜 신청 정보) | ✅ 10/6 완료 — 16개 확인 통과, 모든 공고 G-01 2,765건 형식 오류 0 |
 | [05_reply](05_reply/README.md) | 질문 11개 답변·제공 범위·한계를 정리한 답변서 | ✅ 10/6 작성 — 보내기는 사용자 |
 | 가산점 정리(10/7) | "확실한 것만 남기기" — 계산 규칙만 줄임(재추출 없음), 하루 호출 기록 보호. [Codex 재검수 요청](CODEX_BONUS_RECHECK_REQUEST_20261007.md) → [결과](CODEX_BONUS_RECHECK_20261007.md)(추가 수정 필요) | ✅ 반영 |
 | 재검수 지적 처리(10/7 오후) | `bonus_score` = 확인된 가산점 부분합(결정 0012), 짚은 틈 모두 null, 하루 호출 잠금. [재재검수 요청](CODEX_BONUS_RECHECK2_REQUEST_20261007.md) · [조율 담당 알림 초안](BONUS_NOTICE_DRAFT_20261007.md) | ✅ 반영 · 재검수 대기(통과하면 "화면에 써도 됨" 알림), 알림은 사용자가 보냄 |
+| 설명 자료(10/7) | [연결 지도 HTML](공고매칭_조율연결_지도.html)(조율이 창구를 부르는 순서·가산점 책정), [API 사용법 엑셀](공고서버_API_사용법.xlsx)(창구별 보낼 칸·받는 키·실제 응답) | ✅ |
 | (나중) 배포 | 공고 서버를 올릴 곳 결정, 내부망 전용 | 미정 |
 
 ## 2026-10-06 오후 사용자 결정

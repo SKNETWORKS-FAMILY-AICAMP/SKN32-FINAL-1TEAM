@@ -1,7 +1,7 @@
 # 2026-09-29 작업 정리 (공고 수집·검색 · data-collection)
 
 작업자: 사용자(이근준) + Claude, 검수 Codex. 범위는 `data-collection/`만.
-자세한 기록은 [WORKLOG](WORKLOG.md)의 2026-09-29 항목들, 현재 상태는 [STATUS](STATUS.md), 다음 할 일은 [인계서](NEXT_SESSION_HANDOFF_20260929.md)에 있다.
+자세한 기록은 [WORKLOG](../WORKLOG.md)의 2026-09-29 항목들, 현재 상태는 [STATUS](../STATUS.md), 다음 할 일은 [인계서](NEXT_SESSION_HANDOFF_20260929.md)에 있다.
 
 ## 한눈에 보기
 
@@ -38,7 +38,7 @@
 - 접수 시작 전 공고도 고를 수 있다.
 
 **한 일**
-- [함수 설명서](guides/ORCHESTRATION_HANDOFF.md) 작성: 어떤 파일의 어떤 함수를, 무엇을 넣어 부르면 무엇이 나오는지. 맨 앞에 빠른 시작 예시를 둔다.
+- [함수 설명서](ORCHESTRATION_HANDOFF.md) 작성: 어떤 파일의 어떤 함수를, 무엇을 넣어 부르면 무엇이 나오는지. 맨 앞에 빠른 시작 예시를 둔다.
 - 설명서의 코드 예시를 그대로 꺼내 돌리는 **검증 스크립트**(`experiments/orchestration_probe.py`)를 만들었다.
 - Codex 검수 → 개정을 네 번 반복했다(잘못된 안내 2건 수정, 빠른 시작·더 보기 처리, 확인 필요 표시 방식, 검증 스크립트의 거짓 통과 제거 등).
 
@@ -51,7 +51,7 @@
 
 - 서버 없이 링크로 볼 수 있는 페이지 5장을 만들어 claude.ai에 **비공개**로 게시했다(공유는 사용자가 Share 메뉴로).
   - 매칭 방식 비교, 공고 데이터 전체 흐름, 업종 추출 결과, Jev 채점 시험, 신청자 유형 판정
-- 원본 HTML과 다시 만드는 스크립트는 [share/](../share/README.md)에 있다. 링크 목록도 거기 있다.
+- 원본 HTML과 다시 만드는 스크립트는 [share/](../../share/README.md)에 있다. 링크 목록도 거기 있다.
 - 게시 전 비밀번호·키·IP가 없는지 확인했다. 수치는 원본 결과 파일과 대조했다.
 - 한계: 결과가 바뀌면 다시 만들어 다시 게시해야 한다. 신청자 유형 페이지는 9/28 기준이다(오늘 "확인 필요"로 바뀐 2건이 반영되지 않았다).
 
@@ -77,7 +77,7 @@
 | 3 | 보류(P1 1) | 첨부 두 개가 붙으며 가짜 "예비창업"이 생겨 진짜 언급을 가림 |
 | 4 | **승인** | 모든 반례 해결, 무작위 입력 2,500건으로도 확인 |
 
-- 검수 문서: [요청](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_REQUEST_20260929.md) → [1차](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_20260929.md) → [응답](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RESPONSE_20260929.md) → [2차](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK_20260929.md) → [응답](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK_RESPONSE_20260929.md) → [3차](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK2_20260929.md) → [응답](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK2_RESPONSE_20260929.md) → [승인](reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK3_20260929.md)
+- 검수 문서: [요청](../reviews/integration/JUDGMENT_FRESHNESS_REVIEW_REQUEST_20260929.md) → [1차](../reviews/integration/JUDGMENT_FRESHNESS_REVIEW_20260929.md) → [응답](../reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RESPONSE_20260929.md) → [2차](../reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK_20260929.md) → [응답](../reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK_RESPONSE_20260929.md) → [3차](../reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK2_20260929.md) → [응답](../reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK2_RESPONSE_20260929.md) → [승인](../reviews/integration/JUDGMENT_FRESHNESS_REVIEW_RECHECK3_20260929.md)
 
 **지금 데이터에서 달라진 것**
 - 판정 2,525건 중 2,520건을 쓴다. 5건은 치운 첨부 때문에 공고문 지문이 바뀌어 내일 다시 판정한다(그중 1건 126490은 치운 첨부 때문에 "불가"였던 공고).

@@ -17,7 +17,7 @@ data-collection/
 │   ├── contracts.md               ← 조율 에이전트용 HTTP 창구 4개와 팀원용 DB 테이블 약속
 │   ├── tracking/
 │   │   ├── status.md              ← 맡은 범위 대비 끝난 것·남은 일·막힌 것
-│   │   ├── decisions/index.md     ← 결정 기록 목록(0001~0011)
+│   │   ├── decisions/index.md     ← 결정 기록 목록(0001~0012)
 │   │   └── findings.md            ← 아직 못 푼 문제
 │   ├── STATUS.md · WORKLOG.md     ← 진행 일지(세션마다 갱신, 맨 위가 최신)
 │   ├── NEXT_SESSION_HANDOFF_*.md  ← 최신 인계서(새 세션 시작점)

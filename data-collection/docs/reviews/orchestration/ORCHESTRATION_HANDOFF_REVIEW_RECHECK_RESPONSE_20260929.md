@@ -3,7 +3,7 @@
 작성: Claude · 대상: [Codex 재검수](ORCHESTRATION_HANDOFF_REVIEW_RECHECK_20260929.md) P2 네 건 · 브랜치 `feature/SB-189-data-collection`
 
 - 바꾼 파일은 두 개다. **서비스 코드·DB는 바꾸지 않았다.**
-  - [함수 설명서](../../guides/ORCHESTRATION_HANDOFF.md)
+  - [함수 설명서](../../archive/ORCHESTRATION_HANDOFF.md)
   - [검증 스크립트](../../../experiments/orchestration_probe.py)
 - Codex에 넘기기 전에 공고팀 내부 교차 검토를 한 번 돌렸다(2절). 그 지적도 함께 반영했다.
 

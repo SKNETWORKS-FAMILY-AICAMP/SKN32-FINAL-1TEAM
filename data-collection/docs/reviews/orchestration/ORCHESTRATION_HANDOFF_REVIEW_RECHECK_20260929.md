@@ -1,6 +1,6 @@
 # 조율 함수 설명서 개정 재검수 (2026-09-29)
 
-검수: Codex. 대상은 [Claude 응답](ORCHESTRATION_HANDOFF_REVIEW_RESPONSE_20260929.md), 개정된 [함수 설명서](../../guides/ORCHESTRATION_HANDOFF.md), `experiments/orchestration_probe.py`다. 조율 코드 기준은 로컬 원격 추적 브랜치 `origin/feature/SB-86-orchestration-flow`의 `deb5c81`이다. **문서 수정은 조건부 승인한다.** 앞선 잘못된 안내 두 건은 바로잡혔다. 실제 연결을 위한 ①②③⑦ 계약은 여전히 조율 담당과 합의해야 한다.
+검수: Codex. 대상은 [Claude 응답](ORCHESTRATION_HANDOFF_REVIEW_RESPONSE_20260929.md), 개정된 [함수 설명서](../../archive/ORCHESTRATION_HANDOFF.md), `experiments/orchestration_probe.py`다. 조율 코드 기준은 로컬 원격 추적 브랜치 `origin/feature/SB-86-orchestration-flow`의 `deb5c81`이다. **문서 수정은 조건부 승인한다.** 앞선 잘못된 안내 두 건은 바로잡혔다. 실제 연결을 위한 ①②③⑦ 계약은 여전히 조율 담당과 합의해야 한다.
 
 ## 앞선 P1 재검수
 

@@ -112,5 +112,5 @@
 
 - [9/28 판정 테이블 재검수](JUDGMENT_TABLES_REVIEW_RECHECK_20260928.md) — 이번에 고친 P1의 출처
 - [판정 테이블 설계](../../guides/JUDGMENT_TABLES.md) 6절 — 새 읽기 규칙
-- [조율 함수 설명서](../../guides/ORCHESTRATION_HANDOFF.md) 3.3 — 서버 시작 주의(알려진 문제 → 수정)
+- [조율 함수 설명서](../../archive/ORCHESTRATION_HANDOFF.md) 3.3 — 서버 시작 주의(알려진 문제 → 수정)
 - [STATUS](../../STATUS.md) 맨 위 · [WORKLOG](../../WORKLOG.md) "판정표 P1 — 지문(문서 해시)으로 신선도 확인"

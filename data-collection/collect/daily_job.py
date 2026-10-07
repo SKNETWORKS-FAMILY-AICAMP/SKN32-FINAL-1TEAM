@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """일일 공고 수집 작업 — 하루 한 번 돌린다.
 
-  python daily_job.py                 수집 + 검증 + 교체 + 임베딩 + 로그
-  python daily_job.py --skip-embed    임베딩 생략 (빠름)
+  python daily_job.py                 수집 + 검증 + 교체 + 로그 (임베딩은 daily_pipeline 6단계)
   python daily_job.py --dry-run       수집만 하고 저장하지 않는다
   python daily_job.py --force         건수 급감 경고를 무시하고 교체
 
@@ -135,16 +134,6 @@ def archive(prev):
     return os.path.basename(dst)
 
 
-def build_embeddings(notices):
-    """수집 시점에 임베딩을 만들어 둔다 (ANN-ID-005).
-
-    사용자 요청 시점에 만들면 첫 검색이 몇 분씩 걸린다.
-    """
-    import match_bge
-    match_bge.Index(notices)
-    return True
-
-
 def new_notice_ids(rows, prev):
     """전일에 없던 공고. 관심 공고 알림(INT-ID-001)의 입력이 된다."""
     if not prev:
@@ -153,16 +142,16 @@ def new_notice_ids(rows, prev):
     return [r.get('pbanc_sn') for r in rows if r.get('pbanc_sn') not in old]
 
 
-def run(skip_embed=False, dry_run=False, force=False, say=print):
+def run(dry_run=False, force=False, say=print):
     """예약 CLI와 수동 화면에 공통 실행 잠금을 적용한다."""
     try:
         with job_lock.acquire(os.path.join(DATA, 'collection.lock')):
-            return _run(skip_embed, dry_run, force, say)
+            return _run(dry_run, force, say)
     except job_lock.JobBusy as exc:
         return {'status': 'busy', 'stage': 'lock', 'error': str(exc)}
 
 
-def _run(skip_embed=False, dry_run=False, force=False, say=print):
+def _run(dry_run=False, force=False, say=print):
     """수집 한 사이클. 결과를 dict 로 돌려준다.
 
     CLI 와 화면(chat_app.py 의 수동 재수집 버튼)이 같은 코드를 쓰도록 분리했다.
@@ -222,25 +211,14 @@ def _run(skip_embed=False, dry_run=False, force=False, say=print):
     os.replace(TMP, OUT)          # 같은 볼륨이면 원자적이다
     say('교체 완료%s' % (' (이전본 %s)' % archived if archived else ''))
 
-    # ── 4. 임베딩 ────────────────────────────────────────────
-    embedded, embed_err = False, None
-    if not skip_embed:
-        try:
-            say('임베딩 생성 중… 몇 분 걸린다')
-            embedded = build_embeddings(rows)
-        except Exception as e:
-            embed_err = str(e)
-            say('임베딩 실패: %s (공고 데이터는 교체됐다)' % e)
-
+    # 임베딩은 매일 배치 6단계(shared/embed)가 만든다.
     return write_log({
-        'status': 'ok' if (embedded or skip_embed) else 'partial',
+        'status': 'ok',
         'count': len(rows),
         'prev_count': prev_count,
         'new_count': len(added),
         'reported_total': total,
         'complete': complete,
-        'embedded': embedded,
-        'embed_error': embed_err,
         'archived': archived,
         'elapsed_sec': round(time.time() - started, 1),
     })
@@ -262,12 +240,11 @@ def recent_logs(n=10):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--skip-embed', action='store_true', help='임베딩 생성을 건너뛴다')
     ap.add_argument('--dry-run', action='store_true', help='수집만 하고 저장하지 않는다')
     ap.add_argument('--force', action='store_true', help='건수 급감 경고를 무시한다')
     args = ap.parse_args()
 
-    r = run(skip_embed=args.skip_embed, dry_run=args.dry_run, force=args.force)
+    r = run(dry_run=args.dry_run, force=args.force)
 
     if r['status'] == 'busy':
         print(r['error'], file=sys.stderr)
@@ -280,7 +257,7 @@ def main():
     print('\n%s — %d건 / 신규 %d건 / %.1f초'
           % (r['status'], r.get('count', 0), r.get('new_count', 0),
              r.get('elapsed_sec', 0)))
-    return 2 if r['status'] == 'partial' else 0
+    return 0
 
 
 if __name__ == '__main__':

@@ -38,4 +38,3 @@
 - 관련 시험: `tests/test_pipeline.py`(단계 순서·종료 코드·stage_warnings), `test_normalize.py`, `test_doctext.py`, `test_attachment_store.py`, `test_active_attachments.py`, `test_store_mysql.py`, `test_extract_conditions_age.py`, `test_applicant_type_daily.py`, `test_industry_daily.py`, `test_upload_judgments.py`, `test_extract_bonus.py`.
 - 반드시 덮을 경우: 한 출처만 실패(다른 출처는 갱신·`partial`·종료 코드 2), 건수 급감(교체 거부), LLM 단계 예외·키 없음(`status` 그대로·종료 코드 4), 하루 상한(이미 쓴 만큼 줄어듦), 같은 해시 재실행(호출 0), K-Startup 목록 불완전(모집 종료 처리 건너뜀).
 - 실제 API·OpenAI·공용 DB를 부르는 시험을 만들지 않는다. 가짜 응답·가짜 연결로 한다. MySQL 통합 시험은 `MYSQL_INTEGRATION_TEST=1`일 때만.
-- `daily_job.py`에 옛 모듈 `match_bge`를 부르는 코드가 남아 있다(임베딩 경로, 배치는 `skip_embed=True`로 불러 닿지 않는다). 그 경로를 살리지 않는다.

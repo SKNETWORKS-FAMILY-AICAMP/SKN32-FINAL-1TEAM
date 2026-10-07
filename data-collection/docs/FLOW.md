@@ -8,14 +8,19 @@
 
 ### 전체 기능을 읽는 시작점
 
-2026-09-18 코드 읽기 기준입니다. 실행 검증 여부는 `STATUS.md`와 작업 이력을 확인합니다.
+2026-09-18 코드 읽기에서 시작해 단계가 늘 때마다 고쳐 왔습니다(2026-10-07 정리). 실행 검증 여부는 `STATUS.md`와 작업 이력을 확인합니다.
+
+> **지금 바뀐 것 세 가지 (먼저 읽기)**
+> - 매일 배치는 **서버**(`sbrain-web`, 저장소 루트 `deploy/run_batch.sh`)에서 돕니다(2026-10-02). 아래 "배치 PC"는 배치가 도는 곳(지금은 서버)으로 읽습니다.
+> - 공고 서버는 **Chroma를 쓰지 않고** 공용 DB `notices.embedding`을 메모리(`search/memvec.py`)에 올려 검색합니다(2026-10-07, 결정 0010). 7단계 Chroma 색인은 평가 도구용으로만 남아 있습니다.
+> - 조율 에이전트는 공고 서버 **HTTP 창구 4개**를 부릅니다(2026-10-03, [contracts.md](contracts.md)).
 
 | 흐름 | 입력 → 처리 → 출력 | 주요 파일 |
 |---|---|---|
 | 공고 수집 | K-Startup·기업마당 API → 정규화 → MySQL 공고 저장 | `collect/daily_pipeline.py`, `collect/normalize.py`, `shared/store_mysql.py` |
 | 첨부 처리 | 첨부 파일 → 텍스트 추출·저장 → 자격요건 추출 → 가점 추출(14단계, 2026-10-06, `notice_bonus` — 가점·우대 말이 있는 열린 공고, 발췌·추출기 버전·내용 지문이 바뀐 것만, 한국 날짜 하루 300건) | `collect/attachment_pipeline.py`, `collect/doctext.py`, `collect/extract_conditions.py`, `collect/extract_bonus.py` |
-| 검색 준비 | 공고 필드 → BGE-M3 임베딩 → 로컬 벡터 색인·공용 DB 업로드 | `shared/embed.py`, `search/vecstore.py`, `collect/upload_vectors.py` |
-| 수집 상태 | 공용 DB `import_runs` 최근 저장 시각 + 배치 PC 로그 `data/collect_log.jsonl` → 정상/지연/실패 판정(실패·지연이면 매칭을 멈춰야 함, 기능정의서 R-1 ①·R-3 ②). **2026-09-28 판정만 구현, `/api/match` 연결 전**. 화면 `http://127.0.0.1:8010/collection-status` | `search/collection_status.py` |
+| 검색 준비 | 공고 필드 → BGE-M3 임베딩 → 공용 DB `notices.embedding` 업로드(공고 서버가 이것을 메모리에 올림). 로컬 Chroma 색인(7단계)은 평가 도구용 | `shared/embed.py`, `collect/upload_vectors.py`, `search/memvec.py`, `search/vecstore.py` |
+| 수집 상태 | 공용 DB `import_runs` 최근 저장 시각(+ 배치가 도는 곳의 `data/collect_log.jsonl`) → 정상/지연/실패 판정(실패·지연이면 매칭을 멈춰야 함, 기능정의서 R-1 ①·R-3 ②). 조율 쪽은 `GET /api/collection_status`로 받는다(아래 조율 창구). 화면 `http://127.0.0.1:8010/collection-status` | `search/collection_status.py` |
 | 공고 매칭 | 신청자 입력 → **정형 필터(모집 상태·접수 마감·업력/신청자 유형, `gate.prefilter`)** → 필터 통과 공고 안에서 벡터/BM25 검색·RRF 결합 → 지역·업종·집단 규칙 재정렬(빼지 않고 뒤로) → 공고 반환 | `search/app.py`, `search/gate.py`, `search/applicant.py`, `search/hybrid.py`, `search/rank_rules.py`, `search/industry_rank.py`, `shared/region.py` |
 | 자격 확인 | 선택한 공고·신청자 정보 → 조건 판정 → 판정 근거 반환. 판정 본문은 2026-10-06부터 `search/eligibility.py` 한 곳(화면용 `/api/eligibility`와 조율용이 함께 씀) | `search/app.py`, `search/eligibility.py`, `search/gate.py` |
 | 조율 창구 | 조율 에이전트(Orchestrator)의 HTTP 요청 → 수집 상태(`GET /api/collection_status`: DB 판정 + **서버가 올린 공고가 24시간 넘으면 지연**)·추천 결과에 공고 내용 지문 `content_version`(`cv2-`, 지금 달린 첨부만)·가산점 키, 공고 상세(`GET /api/notices/{id}`)·자격 판정(`POST /api/notices/{id}/eligibility` — 지원대상 유형·업력만, `today` 기준, 추천 정형 필터와 같은 결론), 신청자별 가산점(공용 DB `notice_bonus` × 성별·인증·지역 → `bonus_score`·`bonus_items`. 선택 조건 묶음은 한 번만, 세부사업별 최대, 추가 조건이 있으면 모름. 뽑을 때의 내용 지문·추출기 버전이 지금과 다른 가점은 쓰지 않음. 순위 반영 `Weights.bonus` 기본 0 — Codex 검수 P3-1로 보류). 2026-10-06 01~03 작업·Codex 검수 반영(추출기 v4), 기록 `docs/notice_api/` | `search/notice_api.py`, `search/content_version.py`, `search/eligibility.py`, `search/bonus.py`, `search/app.py` |
@@ -25,7 +30,7 @@
 `search='hybrid'`는 임베딩과 BM25를 RRF로 합치는 방식입니다.
 최종 순위는 가중치·마감·지역·지원대상 옵션에 따라서도 바뀌므로 검색 비교 시 함께 기록합니다.
 2026-09-28부터 정형 필터가 검색보다 먼저 돈다(기획서 5-3, 기능정의서 R-3). 지역·업종은 필터가 아니라 순위에만 쓴다.
-2026-09-28부터 첫 조회 10건(`top`), 추가 조회 `offset=10`, 누적 최대 20건이다(D). 결과에 `rank`·`display_type`·`fit_score`(H)가 붙는다. 인코딩·Chroma·BM25 오류는 따로 잡아 `BM25단독`·`임베딩단독`·`마감임박순`으로 대신 찾고 `fallback_mode`에 남긴다(E). 정형 필터는 모든 경로에서 유지한다.
+2026-09-28부터 첫 조회 10건(`top`), 추가 조회 `offset=10`, 누적 최대 20건이다(D). 결과에 `rank`·`display_type`·`fit_score`(H)가 붙는다. 질의 인코딩·의미 검색·BM25 오류는 따로 잡아 `BM25단독`·`임베딩단독`·`마감임박순`으로 대신 찾고 `fallback_mode`에 남긴다(E). 정형 필터는 모든 경로에서 유지한다.
 재정렬 우선순위는 다른 시·도 전용 → 다른 시·군·구 전용 → 예비창업자 불가 추정 → 업종 허용 목록 밖(**기본 꺼짐**) → 대상 집단 근거 없음이다.
 신청자 유형(2026-09-28 G, `search/applicant_types.py`): 신청자가 예비창업자면 공고 본문의 '예비창업자 불가'(강한 근거·세부사업 공통)를 정형 필터에서 빼고, 본문 '가능'은 K-Startup API 업력 칸의 불가를 덮는다. 결과 파일 `reports/applicant_type_llm_full_20260928T023916Z/results.jsonl`(환경 변수 `APPLICANT_TYPES_RESULTS`)을 서버 시작 시 읽는다. `/api/eligibility`의 '지원대상 유형'도 이 값으로 판정한다(개인/법인은 근거만 표시). 업종 규칙(2026-09-28)은 LLM 업종 추출 결과 파일(`reports/industry_llm_full_luna_20260928_final5/results.jsonl`, 환경 변수 `INDUSTRY_RESULTS`로 변경)을 서버를 켤 때 읽는다. 파일이 없으면 규칙이 꺼지고 응답 `industry.active`가 False다. 업종 제한이 확실한 공고(known·목록 완전·잘림 없음·통합공고 아님·허용값 전부 KSIC 대분류)만 쓰고, 제외 목록은 쓰지 않는다.
 응답의 `filtered_count`·`filter.excluded`·`pipeline`으로 필터 → 검색 → 순위 통합 순서와 뺀 이유를 확인한다.
@@ -38,7 +43,7 @@
 
 ## 배치 상세
 
-매일 09:00 에 한 번, 파이썬 파일 열두 개가 순서대로 일합니다.
+매일 09:00 에 한 번, 14단계가 순서대로 돕니다(아래 그림은 1~9단계, 10~14단계 LLM 추출은 위 표와 [architecture.md](architecture.md)).
 이 문서는 **그 사이에 무엇이 오가는지**를 봅니다.
 
 먼저 알아둘 것이 하나 있습니다. 파일끼리 주고받는 방식이 두 가지입니다.
@@ -58,7 +63,7 @@
                         shared/config.py     .env 를 읽어 모두에게 준다
                         collect/job_lock.py   두 번 겹쳐 돌지 않게 잡는다
                              │
-     run_daily.bat ──→ collect/daily_pipeline.py          ← 지휘자
+  deploy/run_batch.sh ──→ collect/daily_pipeline.py          ← 지휘자  (서버 cron, 10/2 전에는 PC run_daily.bat)
                              │
         ┌──────────┬─────────┴────────┬──────────────┐
         ▼          ▼                  ▼              ▼
@@ -309,6 +314,8 @@ model · revision · input_version · max_tokens · dim · dtype · normalized
 
 ## 7단계 — 벡터 색인 갱신
 
+> 2026-10-07부터 **공고 서버는 이 색인을 쓰지 않습니다**(결정 0010). 공고 서버는 8단계가 올린 공용 DB 벡터를 메모리에 올립니다. 이 단계는 평가 도구(`eval/`)가 읽는 로컬 Chroma를 위해 남아 있고, 실패해도 배치는 계속됩니다. 아래는 이 단계의 동작 설명입니다.
+
 ```
 daily_pipeline
    │  vecstore.sync(changed_ids=6단계가 준 목록) 을 부른다
@@ -341,7 +348,7 @@ Chroma 49건 넣음 · 색인 2000건 · 벡터 파일 2000건
 ⚠ 색인에 N건이 없다. 검색 결과에서 빠진다.
 ```
 
-**색인에 없는 공고는 자격을 통과해도 검색 결과에 안 나옵니다.**
+**(Chroma를 쓰던 때) 색인에 없는 공고는 자격을 통과해도 검색 결과에 안 나왔습니다.** 지금 공고 서버에서는 공용 DB에 벡터가 없는 공고가 의미 검색에서 빠지고 단어 검색(BM25)으로만 찾힙니다(`/api/health`의 `vectors`).
 유사도를 잴 벡터가 없기 때문입니다. 조용히 빠지는 것이 제일 곤란해서 반드시 알립니다.
 
 ### 벡터도 이제 MySQL 에 들어갑니다
@@ -351,12 +358,12 @@ Chroma 49건 넣음 · 색인 2000건 · 벡터 파일 2000건
 
 ```
 EC2 MySQL     공고 · 첨부 · 본문 · 벡터     팀 공용
-배치 PC       npz · Chroma 색인            여기에만 (다시 만들 수 있는 것)
+배치 서버     npz · Chroma 색인            여기에만 (다시 만들 수 있는 것)
 ```
 
 첨부 **원본 파일**도 9단계에서 `attachment_files` 로 올립니다. 팀원이 파일
 자체를 개발에 쓸 수 있어야 해서입니다(HWP 파서 개선·이미지 PDF OCR·표 추출).
-배치 PC 에 남는 것은 다시 만들 수 있는 것들뿐입니다.
+배치가 도는 곳(서버)에 남는 것은 다시 만들 수 있는 것들뿐입니다.
 
 ---
 
@@ -487,7 +494,7 @@ data/
   normalized/notices_*.json     두 출처 통합본             8.6MB × 14개
   attachments/9f/9f3a….pdf      첨부 원본                 612MB · 1,607개
   embeddings_v1.npz             공고 요약 벡터             7.4MB · 2,000건
-  vecstore/chroma/              Chroma 색인               14MB
+  vecstore/chroma/              Chroma 색인(평가 도구용)    14MB
   history/                      어제 것들 · 처리 끝난 결과 파일
   collect_log.jsonl             실행마다 한 줄
   run.log                       배치 시작·종료 기록
