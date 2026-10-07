@@ -256,6 +256,21 @@ def validate_section(section_spec, content, source_data):
     end_month=period.get('end') if isinstance(period,dict) else None
     if deadline and end_month and _month_key(end_month) > _month_key(deadline):
         issues.append(f'개발 종료월 {end_month}이 공고 접수 마감일 {deadline} 이후임')
+    # 협약기간에 속한 개별 일정도 마감일을 넘기면 실패로 판정한다.
+    # 예비창업의 협약 이후 로드맵(fullScaleSchedule)은 roadmap으로 표시되어
+    # 사업기간 상한 비교에서 제외하고, 협약 일정만 필수 제약으로 검사한다.
+    schedule_rows=original.get('schedule',[]) if isinstance(original,dict) else []
+    if deadline and isinstance(schedule_rows,list):
+        for row in schedule_rows:
+            if not isinstance(row,dict) or row.get('_schedule_scope')=='roadmap':
+                continue
+            period_text=str(row.get('period') or row.get('추진기간') or row.get('기간') or '')
+            months=re.findall(r'(20\d{2})[-./~년\s]*(\d{1,2})', period_text)
+            if months:
+                row_end=max((f'{year}-{int(month):02d}' for year,month in months),default=None)
+                if row_end and _month_key(row_end)>_month_key(deadline):
+                    label=row.get('task') or row.get('category') or row.get('추진내용') or '일정'
+                    issues.append(f'협약기간 일정 {label}의 종료월 {row_end}이 마감일 {deadline} 이후임')
     support_limit=limits.get('supportLimit') if isinstance(limits,dict) else None
     if support_limit is not None:
         try:
@@ -299,7 +314,8 @@ def validate_section(section_spec, content, source_data):
             if malformed_generated_path or source_data.get('_fallbackValidationSource') or (isinstance(fact,dict) and fact.get('status') not in {'provided','confirmed'} and any(marker in text for marker in ('계획','목표','제안','확인 필요','미확정','활용','적용','개발'))):
                 warnings.append('생성 계획값의 원본 fact 경로를 확인할 수 없어 제안값으로 기록함')
             else: issues.append('원본에 없는 fact 경로')
-    allowed={str(ref) for ref in _refs(source_data)} | _string_set(source_data.get('sourceRefs',[]))
+    # 전략 근거와 함께 현재 항목에 적용한 규정 기준의 sourceRefs도 유효한 출처로 인정한다.
+    allowed={str(ref) for ref in _refs(source_data)} | _string_set(source_data.get('sourceRefs',[])) | _string_set(section_criteria.get('sourceRefs',[]) if isinstance(section_criteria,dict) else [])
     invalid=_string_set(content.get('sourceRefs',[]))-allowed
     if invalid:
         if source_data.get('_fallbackValidationSource') or any(marker in text for marker in ('계획','목표','제안','확인 필요','미확정')):
