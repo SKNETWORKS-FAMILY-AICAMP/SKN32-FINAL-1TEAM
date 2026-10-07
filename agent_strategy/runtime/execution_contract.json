@@ -172,7 +172,7 @@
       "output": "validation_result",
       "modelLabel": "Python + GPT-5.6 Terra",
       "apiModel": "gpt-5.6-terra",
-      "maxOutputTokens": 3200
+      "maxOutputTokens": 5000
     },
     "F20": {
       "name": "assemble_document",

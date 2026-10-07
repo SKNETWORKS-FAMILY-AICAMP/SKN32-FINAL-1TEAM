@@ -137,7 +137,7 @@ def request_json(fid, payload):
         +FIELDS[fid])
     if fid=='F19':
         document_type=payload.get('source_data',{}).get('documentType','general') if isinstance(payload.get('source_data',{}),dict) else 'general'
-        instructions+=' 검증 결과는 passed, issues, warnings, needsUserConfirmation, sourceRefs, generatedText를 반환하고 각 issues/warnings는 200자 이내로 간결하게 작성한다. 제안값은 warnings에, 사용자의 결정이 필요한 값은 needsUserConfirmation에 기록한다. 공고·관리기준을 판단에 사용했다면 해당 내부 파일 경로를 sourceRefs에 포함하고, 자료의 연도·유형이 현재 문서와 다르면 warning으로 기록한다. evidence의 sourceRole을 구분한다: official_announcement와 management_standard는 명시 조건 위반 판단에 사용하고, application_form은 구조·필수 항목 판단에 사용하며, faq_guidance와 management_reference는 해석 보조로만 사용한다. directFactAllowed가 false인 evidence는 확정 사실의 직접 근거로 판정하지 않는다.'+_validation_rubric_text()+_validation_reference_text(document_type)
+        instructions+=' 검증 결과는 passed, issues, warnings, needsUserConfirmation, sourceRefs, generatedText를 반환하고 각 issues/warnings는 200자 이내로 간결하게 작성한다. issues·warnings·needsUserConfirmation은 각각 최대 8개까지만 기록하고 같은 원인은 합친다. 제안값은 warnings에, 사용자의 결정이 필요한 값은 needsUserConfirmation에 기록한다. 공고·관리기준을 판단에 사용했다면 해당 내부 파일 경로를 sourceRefs에 포함하고, 자료의 연도·유형이 현재 문서와 다르면 warning으로 기록한다. evidence의 sourceRole을 구분한다: official_announcement와 management_standard는 명시 조건 위반 판단에 사용하고, application_form은 구조·필수 항목 판단에 사용하며, faq_guidance와 management_reference는 해석 보조로만 사용한다. directFactAllowed가 false인 evidence는 확정 사실의 직접 근거로 판정하지 않는다.'+_validation_rubric_text()+_validation_reference_text(document_type)
     if fid=='F01': instructions+=' 검색 결과를 새로 요약하거나 장문으로 재작성하지 말고 summary는 3문장 이내, selectedSourceRefs는 실제 sourceRef만 반환한다.'
     if fid=='F16':
         kind=payload.get('writing_rules',{}).get('documentType','general')
