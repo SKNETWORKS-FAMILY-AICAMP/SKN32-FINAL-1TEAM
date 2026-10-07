@@ -213,8 +213,13 @@ def run_validate_job(job_id, parent_job, section_id):
             source=validation_source_for(row,content)
             result=_reconcile_validation(spec,content,py.validate_section(section_spec=spec,content=content,source_data=source))
             row['validation']=result; checked.append(item['sectionId'])
-        parent_job['result']['validation1']=[{'sectionId':sid,'status':rows[sid]['validation'].get('status'),'issues':rows[sid]['validation'].get('issues',[])} for sid in checked]
-        parent_job['result']['status']='validation1_failed' if any(rows[sid]['validation'].get('status')=='fail' for sid in checked) else 'validation1_passed'
+        for sid in checked:
+            row=rows[sid]
+            source=validation_source_for(row,row.get('functionOutput') or {'generatedText':row.get('generatedText',''),'tables':row.get('tables',[])})
+            row['evaluation']=score_section(specs[sid],row.get('functionOutput') or {'generatedText':row.get('generatedText',''),'tables':row.get('tables',[])},row['validation'],kind,source)
+        parent_job['result']['evaluationSummary']=aggregate_scores(parent_job['result'].get('results',[]))
+        parent_job['result']['validation1']=[{'sectionId':row.get('sectionId'),'status':row.get('validation',{}).get('status','not_run'),'issues':row.get('validation',{}).get('issues',[]),'warnings':row.get('validation',{}).get('warnings',[])} for row in parent_job['result'].get('results',[]) if row.get('validation')]
+        parent_job['result']['status']='validation1_failed' if any(r.get('validation',{}).get('status')=='fail' for r in parent_job['result'].get('results',[])) else 'validation1_passed'
         parent_job['result']['message']='선택 항목 및 연관 항목 검증 1 완료.'
         JOBS[job_id].update(status='done',result=parent_job['result'],outputDirectory=save_result(parent_job['result']),message='선택 항목 및 연관 항목 검증 1 완료',completedCalls=len(checked))
     except Exception as exc:
