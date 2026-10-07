@@ -4,7 +4,7 @@
 - Task마다 자기 항목의 모델이 실행 기록에 남고, 온도 덮어쓰기(TempRule)는 그대로 위에 씌운다.
 - 다시 쓰기는 '지시문 다시 쓰기' 항목의 모델 · 제한 시간을 쓴다(T-C3 값을 빌리지 않는다). Agent 이름은 조율이다.
 - M-4 model_version은 T-P2 항목 값이다.
-- 옛 설정 사본(tasks 없이 agents만)인 실행 건은 사본의 Agent 값 그대로 이어서 돈다(재개 포함).
+- 설정 사본은 실행 시작 때 고정된다 — 시작 뒤 설정을 바꿔도 그 실행 건은 시작 때 값으로 돈다.
 - 워커 호출처 나누기: 다시 쓰기는 실제, 스텁 Task(호출처가 openai로 바뀐 T-B1 · T-B2 · T-V2 포함)는 가짜.
 흐름 테스트는 clock · store_backend 장치로 메모리 · SQLite 두 저장소에서 돈다.
 """
@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import json
 
-from conftest import make_app, to_screen6, to_screen9
-from test_worker import by_purpose, db, real_worker_app, worker, worker_to_screen6  # noqa: F401 — db는 장치
+from conftest import make_app, pre_input, to_screen6, to_screen9
+from flow_helpers import run_review
+from worker_helpers import by_purpose, real_worker_app, worker, worker_to_screen6
 
 from sbrain.agents.stubs import StubScenario
 from sbrain.agents.supervisor.plan import PURPOSE_REWRITE
@@ -38,11 +39,6 @@ def with_rewriter(app):
     for task_id in INSTRUCTED:
         app.llm.respond(task_id, reply)
     return app
-
-
-def run_review(app, rid):
-    app.orchestrator.decide(rid, 9, "진행", confirmed=True)
-    app.orchestrator.advance(rid)
 
 
 def records(app, rid) -> dict:
@@ -101,34 +97,23 @@ def test_new_snapshot_has_tasks_and_no_agents():
     assert back.agents is None and back.tasks["T-S1"].model == "미정"
 
 
-def legacy_snapshot(**agent_models: str) -> dict:
-    """옛 설정 사본 — tasks 없이 Agent 7개(agents), 제한 시간에 새 키 없음, T-C3 제한 시간은 다른 값."""
-    snap = Settings().dump()
-    del snap["tasks"]
-    for k in (REWRITE_KEY, "T-B2.image"):
-        del snap["taskTimeouts"][k]
-    snap["taskTimeouts"]["T-C3"] = 45.0
-    agents = {
-        "조율": {"provider": "openai", "model": "gpt-6-luna", "temperature": None, "reasoningEffort": "low"},
-        "전략": {"provider": "미정", "model": "미정", "temperature": 0.7, "reasoningEffort": None},
-        "작성": {"provider": "미정", "model": "미정", "temperature": 0.7, "reasoningEffort": None},
-        "구현": {"provider": "미정", "model": "미정", "temperature": 0.7, "reasoningEffort": None},
-        "검증-1": {"provider": "미정", "model": "미정", "temperature": 0.0, "reasoningEffort": None},
-        "검증-2": {"provider": "미정", "model": "미정", "temperature": 0.0, "reasoningEffort": None},
-        "검수": {"provider": "gpu-server", "model": "미정", "temperature": 0.2, "reasoningEffort": None},
-    }
-    for agent, model in agent_models.items():
-        agents[agent]["model"] = model
-    snap["agents"] = agents
-    return snap
-
-
-def test_legacy_snapshot_reads_without_filling_tasks():
-    s = Settings.model_validate(legacy_snapshot(전략="옛 전략"))
-    assert s.tasks is None and s.agents["전략"].model == "옛 전략"
-    dumped = s.dump()
-    assert "tasks" not in dumped and dumped["agents"]["전략"]["model"] == "옛 전략"
-    assert Settings.model_validate(dumped).tasks is None                   # 다시 읽어도 옛 사본 그대로
+# ── 설정 사본: 실행 시작 때 고정 ───────────────────────────
+def test_settings_snapshot_fixed_at_start(clock):
+    app = make_app(clock)
+    res = app.orchestrator.start_run("acc-1", pre_input())
+    s = app.settings.current().model_copy(deep=True)
+    s.scoring.threshold = 50
+    s.tasks["T-S1"].model = "바뀐 모델"
+    app.settings.update(s)
+    app.orchestrator.select_announcement(res.run_id, "A01")
+    app.orchestrator.advance(res.run_id)
+    app.orchestrator.start_writing(res.run_id)
+    app.orchestrator.advance(res.run_id)
+    recs = {r.task_id: r for r in app.store.executions(res.run_id)}
+    assert recs["T-S1"].model == "미정"  # 실행 시작 시점 값
+    ctx = app.engine.open_context(app.store.load_run(res.run_id))
+    assert ctx.get("scoreReport.document").threshold == 80
+    assert ctx.get("scoreReport.document").settings_snapshot["scoring"]["threshold"] == 80
 
 
 # ── 흐름: 실행 기록 · 온도 규칙 · M-4 ─────────────────────
@@ -169,41 +154,8 @@ def test_rewrite_uses_its_own_entry(clock):
     assert records(app, rid)["T-C3"].model == "작업분해-모델"
 
 
-# ── 옛 실행 건 ────────────────────────────────────────
-def test_legacy_snapshot_run_continues_with_agent_values(clock):
-    app = with_rewriter(make_app(clock, StubScenario(check_fail_times={"T-S1": 1}, tp1_targets=2)))
-    legacy = legacy_snapshot(조율="옛-조율", 전략="옛-전략", 구현="옛-구현", 검수="옛-검수")
-    app.settings.snapshot = lambda: json.loads(json.dumps(legacy))
-    app.llm.plan("T-S1", ["ok", "ok"] + ["timeout"] * 6)    # 첫 실행 · 다시 쓰기는 성공, 재수행 Task 호출이 재시도를 다 쓴다
-    rid = to_screen6(app)
-    run = app.store.load_run(rid)
-    assert (run.state.progress, run.current_task) == ("재개대기", "T-S1")
-    assert "tasks" not in run.settings_snapshot and "agents" in run.settings_snapshot
-
-    clock.advance(minutes=16)
-    assert app.orchestrator.tick(clock.t) == [rid]
-    assert app.store.load_run(rid).state.step == "문서평가"
-    app.orchestrator.decide(rid, 6, "진행")
-    app.orchestrator.advance(rid)
-    app.orchestrator.decide(rid, 8, "진행")
-    run_review(app, rid)
-
-    recs = records(app, rid)
-    assert recs["T-S1"].model == "옛-전략" and recs["T-S1"].temperature == 0.7
-    assert recs["T-C3"].model == "옛-조율" and recs["T-C3"].reasoning_effort == "low"
-    assert (recs["T-B1"].provider, recs["T-B1"].model, recs["T-B1"].temperature) == ("미정", "옛-구현", 0.7)
-    assert (recs["T-V2"].provider, recs["T-V2"].model, recs["T-V2"].temperature) == ("미정", "미정", 0.0)
-    assert recs["T-P2"].model == "옛-검수"
-    ctx = app.engine.open_context(app.store.load_run(rid))
-    assert ctx.get("proofreadLog").model_version == "옛-검수"
-    rws = rewrite_logs(app, rid)
-    assert rws and {(c.agent, c.model, c.timeout_sec) for c in rws} == {("조율", "옛-조율", 120.0)}
-    snap = app.store.load_run(rid).settings_snapshot
-    assert "tasks" not in snap and snap["agents"]["전략"]["model"] == "옛-전략"   # 사본을 새 기본값으로 바꾸지 않는다
-
-
 # ── 워커 호출처 나누기 ────────────────────────────────
-def test_worker_routes_rewrite_real_and_stub_tasks_fake(tmp_path, db):  # noqa: F811
+def test_worker_routes_rewrite_real_and_stub_tasks_fake(tmp_path, db):
     app, web, real, source = real_worker_app(tmp_path)
     app.scenario.check_fail_times["T-S1"] = 1
     rid = worker_to_screen6(app, web, source)

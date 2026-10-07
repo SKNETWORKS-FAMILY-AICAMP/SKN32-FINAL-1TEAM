@@ -10,12 +10,12 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-from conftest import Clock
+from conftest import Clock, x_settings
 
 from sbrain.models import Run
 from sbrain.models.base import SBModel
 from sbrain.models.run import RedoState, make_state
-from sbrain.orchestrator import ArtifactTypes, Engine, Settings
+from sbrain.orchestrator import ArtifactTypes, Engine
 from sbrain.orchestrator.engine import StepFailure
 from sbrain.orchestrator.errors import ProviderError, ResourceNotFound
 from sbrain.orchestrator.registry import FailurePolicy, TaskRegistry, TaskSpec
@@ -103,13 +103,6 @@ def failing(kind: str):
             tools.search("외부 호출", _down)
         return XOut(value="ok")
     return fn
-
-
-def x_settings() -> dict:
-    """설정 사본 — 시험 Task X의 Task별 설정(조율 Task와 같은 값)을 더한다 (항목이 없으면 KeyError)."""
-    s = Settings()
-    s.tasks["X"] = s.tasks["T-C1"].model_copy()
-    return s.dump()
 
 
 def engine_with(clock: Clock, fn, *, segments: frozenset[str] = frozenset({"S1"}), handle: bool = True):

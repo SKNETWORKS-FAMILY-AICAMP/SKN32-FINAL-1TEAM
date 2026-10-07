@@ -9,7 +9,7 @@ import threading
 from dataclasses import asdict
 
 import pytest
-from conftest import make_app, pre_input, start_and_select, to_screen6
+from conftest import TIMING, make_app, pre_input, start_and_select, to_screen6
 
 from sbrain.bootstrap import build_web
 from sbrain.flow.service import AccountDeleteResult
@@ -208,6 +208,7 @@ def test_leased_finished_run_is_busy_and_resumes_from_rest(clock):
     assert len(app.store.log_stats("실행")) == 2
 
 
+@TIMING
 def test_account_lock_timeout_is_busy(clock):
     app = make_app(clock)
     rid = finished_run(app)
@@ -231,6 +232,7 @@ def test_account_lock_timeout_is_busy(clock):
 
 
 # ── 계정 잠금 ─────────────────────────────────────────
+@TIMING
 def test_start_request_cannot_slip_in_while_deleting(clock):
     """함수가 끝날 때까지 같은 계정의 add_start_request는 계정 잠금을 기다린다 — 지우는 도중에 새 요청이 끼어들지 않는다."""
     app = make_app(clock)

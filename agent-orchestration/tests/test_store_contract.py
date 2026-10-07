@@ -6,15 +6,15 @@ MySQL은 SBRAIN_TEST_MYSQL_URL(환경 변수 또는 .env)이 있을 때만 돈�
 from __future__ import annotations
 
 import threading
-import uuid
 from datetime import datetime, timedelta
 
 import pytest
-from conftest import Backend, Clock
+from conftest import TIMING, Backend, Clock
 from sqlalchemy import select
+from store_helpers import new_run, rejected, uid
 from webdb import new_project
 
-from sbrain.models import CycleState, Notice, Notification, RejectedAttempt, ReworkComparison, Run
+from sbrain.models import CycleState, Notice, Notification, ReworkComparison, Run
 from sbrain.models.run import make_state
 from sbrain.orchestrator.errors import ProjectRunExists, StoreConflict
 from sbrain.orchestrator.store import (
@@ -31,10 +31,6 @@ def env(any_backend: Backend):
     return any_backend.make_store(clock), clock
 
 
-def uid() -> str:
-    return uuid.uuid4().hex[:12]
-
-
 def project(store: Store, *, agreed: bool = False) -> str:
     """프로젝트 ID. SqlStore면 웹 projects 행(주인 계정의 학습 동의 = agreed)을 만든다."""
     if isinstance(store, SqlStore):
@@ -42,13 +38,6 @@ def project(store: Store, *, agreed: bool = False) -> str:
     pid = uid()
     store.set_training_consent(pid, agreed)
     return pid
-
-
-def new_run(clock: Clock, account: str, *, project_id: str | None = None, progress: str = "실행",
-            step: str = "공고선택", **over) -> Run:
-    now = clock()
-    return Run(run_id=uid(), account_id=account, state=make_state(step, progress), current_phase="setup",
-               settings_snapshot={"note": "test"}, updated_at=now, created_at=now, project_id=project_id, **over)
 
 
 def created(store: Store, clock: Clock, account: str | None = None, **kw) -> Run:
@@ -115,6 +104,7 @@ def test_active_run_limit_per_account(env):
     assert [r.run_id for r in store.list_runs(account)] == [first.run_id, second.run_id]
 
 
+@TIMING
 def test_concurrent_create_run_allows_one(env):
     store, clock = env
     account = uid()
@@ -279,12 +269,6 @@ def test_run_without_project_has_no_web_notifications(env, any_backend):
     save(store, run, notifications=[note])
     expected = [] if any_backend.kind != "memory" else [note]
     assert store.notifications(run.run_id) == expected
-
-
-def rejected(run: Run, no: int) -> RejectedAttempt:
-    return RejectedAttempt(run_id=run.run_id, original_text="원문 (1억원)", corrected_text=f"반려 {no}",
-                           reason="보호 토큰 검사 불통과 (빠짐 1건)", attempt_no=no, violation_type="수치·금액",
-                           violation_note="빠짐: 1억원", model_version="미정")
 
 
 def test_rejected_attempts_need_project_and_consent(env):
@@ -753,6 +737,7 @@ def test_list_start_requests_of_account(env):
     assert store.list_start_requests(uid()) == []
 
 
+@TIMING
 def test_account_guard_blocks_add_start_request(env):
     store, clock = env
     account = uid()
@@ -780,6 +765,7 @@ def test_account_guard_blocks_add_start_request(env):
     assert done.is_set() and result == [None]
 
 
+@TIMING
 def test_account_guard_timeout_is_store_conflict(env):
     store, clock = env
     account = uid()
@@ -837,6 +823,7 @@ def test_job_lease(env):
     assert store.get_job(job).lease_owner == "D"
 
 
+@TIMING
 def test_job_concurrent_start_allows_one(env):
     store, clock = env
     job = "job-" + uid()

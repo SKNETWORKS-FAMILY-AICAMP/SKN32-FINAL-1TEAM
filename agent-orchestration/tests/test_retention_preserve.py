@@ -9,15 +9,9 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from conftest import make_app, pre_input, project_for, to_screen6, to_screen9
+from flow_helpers import finish, pid, rework
 
 from sbrain.agents.stubs import StubScenario
-from sbrain.orchestrator.store import CommitBatch
-
-WINDOW = 3   # 재작성 모으는 시간(잠정 2초)을 넘기는 초
-
-
-def pid(app, rid: str) -> str:
-    return app.store.load_run(rid).project_id
 
 
 def retire(app, rid: str) -> None:
@@ -26,19 +20,6 @@ def retire(app, rid: str) -> None:
     app.store.retire_run(rid, "retire", bump_parts=True)
     app.store.release(rid, "retire")
     assert app.store.executions(rid) == []
-
-
-def rework(app, clock, rid: str, *bundles: str) -> None:
-    for b in bundles:
-        app.orchestrator.request_rework_for_project(pid(app, rid), b)
-    clock.advance(seconds=WINDOW)
-    app.orchestrator.advance(rid)
-
-
-def finish(app, rid: str) -> None:
-    app.orchestrator.decide(rid, 9, "진행", confirmed=True)
-    app.orchestrator.advance(rid)
-    assert app.store.load_run(rid).state.progress == "완료"
 
 
 # ── 카테고리 ───────────────────────────────────────────
@@ -79,22 +60,6 @@ def test_screen10_and_outputs_same_after_records_retired(clock):
     assert app.orchestrator.screen(p, 11).dump() == s11
     assert app.orchestrator.outputs(p).dump() == out
     assert asdict(app.orchestrator.view(rid)) == view
-
-
-def test_screen10_falls_back_to_execution_record_for_old_runs(clock):
-    """확장 필드가 없던 실행 건(기록은 있음)은 지금처럼 T-P1 실행 기록의 입력 참조에서 찾는다."""
-    app = make_app(clock, StubScenario(tp1_targets=4))
-    rid = to_screen9(app)
-    finish(app, rid)
-    p = pid(app, rid)
-    expected = app.orchestrator.screen(p, 10).dump()
-    assert app.store.acquire(rid, "old", 60)
-    run = app.store.load_run(rid)
-    run.proofread_base_ref = None
-    app.store.commit(rid, "old", CommitBatch(run=run))
-    app.store.release(rid, "old")
-    assert app.store.load_run(rid).proofread_base_ref is None
-    assert app.orchestrator.screen(p, 10).dump() == expected
 
 
 # ── 재작성 결과 · 화면 6 · 9 ─────────────────────────────

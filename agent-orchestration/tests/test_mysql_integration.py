@@ -16,9 +16,9 @@ from decimal import Decimal
 
 import pytest
 from conftest import Clock, executed, make_app, pre_input, set_consent, start_and_select, to_screen6, to_screen9
-from mysqldb import WEB_SCHEMA_ENV, require_mysql, web_schema
+from fakes import item_json
+from mysqldb import MYSQL, WEB_SCHEMA_ENV, require_mysql, web_schema
 from sqlalchemy import text
-from test_tc1 import item_json
 from webdb import project_row, proofread_rows
 
 from sbrain.agents.stubs import FakeLLM, StubScenario
@@ -26,6 +26,8 @@ from sbrain.bootstrap import build_app, build_web
 from sbrain.orchestrator.store import StartRequest
 from sbrain.store_sql import SqlStore
 from sbrain.worker import Worker
+
+pytestmark = MYSQL   # 이 파일 전체가 MySQL 묶음 (mysqldb.py)
 
 
 def mysql_app(scenario: StubScenario | None = None):

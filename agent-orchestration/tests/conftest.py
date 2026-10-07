@@ -10,7 +10,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from mysqldb import require_mysql  # noqa: E402
+import mysqldb  # noqa: E402
+from mysqldb import MYSQL, MYSQL_GROUP, group_name, require_mysql, xdist_groups  # noqa: E402
 from webdb import create_web_tables, new_project, set_training_consent  # noqa: E402
 
 from sbrain import env  # noqa: E402
@@ -22,6 +23,7 @@ from sbrain.orchestrator import MemoryStore  # noqa: E402
 from sbrain.orchestrator import settings  # noqa: E402
 from sbrain.orchestrator.store import Store  # noqa: E402
 from sbrain.store_sql import SqlStore, create_orchestrator_tables, create_sqlite_engine  # noqa: E402
+
 
 # ── 공고 서버 격리 ─────────────────────────────────────
 # 개발 PC의 환경 변수나 agent-orchestration/.env에 SBRAIN_NOTICE_API_URL이 있어도 테스트가 실제 공고 서버를 부르지 않게,
@@ -51,6 +53,38 @@ def _no_real_notice_server(monkeypatch):
     isolate_notice_api(monkeypatch)
 
 
+# ── 동시 실행 묶음 (pytest.ini: 기본 동시 실행, --dist loadgroup) ─────────────
+# 같은 묶음의 테스트는 한 프로세스에서 하나씩 돈다.
+#   MYSQL (mysqldb.py) — MySQL에 닿는 테스트 전부. require_mysql()이 묶음을 확인한다.
+#   TIMING — 시간에 기대는 테스트(워커 신호 · 하트비트 · 스레드 대기 · 짧은 sleep · 경과 시간 검사).
+#            시간 기준(대기 · 제한 시간)은 그대로 두고 묶음으로만 다룬다. 함수에 @TIMING을 붙인다.
+# 한 테스트가 두 묶음에 들면 MySQL 묶음이 이긴다(함수에 붙인 TIMING을 뗀다). 그 밖에 묶음이 둘 이상이면 수집 오류.
+TIMING_GROUP = "timing"
+TIMING = pytest.mark.xdist_group(TIMING_GROUP)
+
+
+@pytest.hookimpl(tryfirst=True)   # pytest-xdist가 묶음 이름을 테스트 ID에 붙이기 전에
+def pytest_collection_modifyitems(items):
+    for item in items:
+        groups = xdist_groups(item)
+        if MYSQL_GROUP in groups and len(groups) > 1:
+            item.own_markers[:] = [m for m in item.own_markers
+                                   if m.name != "xdist_group" or group_name(m) == MYSQL_GROUP]
+            groups = xdist_groups(item)
+        if len(groups) > 1:
+            raise pytest.UsageError(f"테스트가 동시 실행 묶음 여러 개에 들었음 — {item.nodeid}: {sorted(groups)}")
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    """require_mysql()이 실행 중인 테스트의 묶음을 볼 수 있게 한다."""
+    mysqldb.set_current_test(item)
+    try:
+        return (yield)
+    finally:
+        mysqldb.set_current_test(None)
+
+
 # ── 가산점 스위치 (orchestrator/settings.py BONUS_ENABLED, 기본 꺼짐) ─────
 # 실제 T-C2 · 스텁 T-C2 · 웹 조회가 부를 때마다 모듈 속성으로 읽으므로 여기서 바꾸면 모든 곳에 닿는다.
 @pytest.fixture
@@ -67,9 +101,9 @@ def bonus_off(monkeypatch):
 
 # ── 저장소 선택 ────────────────────────────────────────
 # 흐름 테스트(clock을 쓰는 테스트)는 메모리 저장소와 SqlStore(SQLite)로 한 번씩 돈다.
-# 저장소 계약 테스트(any_backend)는 MySQL 8도 돈다 — SBRAIN_TEST_MYSQL_URL이 없으면 건너뜀.
+# 저장소 계약 테스트(any_backend)는 MySQL 8도 돈다 — SBRAIN_TEST_MYSQL_URL이 없으면 건너뜀. mysql은 MySQL 묶음.
 FLOW_STORES = ("memory", "sql")
-CONTRACT_STORES = ("memory", "sql", "mysql")
+CONTRACT_STORES = ("memory", "sql", pytest.param("mysql", marks=MYSQL))
 
 
 def pytest_generate_tests(metafunc):
@@ -109,6 +143,15 @@ def store_backend(request, tmp_path) -> Backend:
 @pytest.fixture
 def any_backend(request, tmp_path) -> Backend:
     return Backend(request.param, tmp_path)
+
+
+@pytest.fixture
+def db(tmp_path):
+    """워커 · 조립 테스트가 함께 쓰는 SQLite 파일 DB(오케스트레이터 표 + 웹 표 최소 정의). 같은 파일 주소로 웹 앱도 만든다."""
+    engine = create_sqlite_engine(tmp_path / "worker.db", fast=True)
+    create_orchestrator_tables(engine)
+    create_web_tables(engine)
+    return engine
 
 
 _memory_projects = itertools.count(5001)
@@ -233,3 +276,16 @@ def to_screen9(app: App, account: str = "acc-1") -> str:
 
 def executed(app: App, rid: str) -> list[str]:
     return [r.task_id for r in app.store.executions(rid)]
+
+
+# ── 공통 도움 (엔진 · 토큰) ────────────────────────────
+def x_settings() -> dict:
+    """설정 사본 — 시험 Task X의 Task별 설정(조율 Task와 같은 값)을 더한다 (항목이 없으면 KeyError)."""
+    s = settings.Settings()
+    s.tasks["X"] = s.tasks["T-C1"].model_copy()
+    return s.dump()
+
+
+def tok(obj) -> tuple:
+    """토큰 네 값 (입력 · 캐시 입력 · 출력 · 추론)."""
+    return (obj.input_tokens, obj.cached_input_tokens, obj.output_tokens, obj.reasoning_tokens)

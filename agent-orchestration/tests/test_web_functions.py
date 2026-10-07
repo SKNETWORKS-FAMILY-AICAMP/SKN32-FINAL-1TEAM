@@ -1,5 +1,5 @@
-"""웹이 쓰는 함수 (spec 4) — 진행 상태 확장 · 여러 프로젝트 보기 · 기다리기 · 지금까지 결과 · 재작성 결과,
-자격 통과 뒤 공고 다시 고르기 (3.3), 화면 10 시도별 기록, 화면 8 · 9 '진행'."""
+"""웹이 쓰는 함수 (spec 4) — 진행 상태(view_project) · 여러 프로젝트 보기 · 기다리기 · 지금까지 결과 · 재작성 결과,
+project_id로 부르는 명령, 자격 통과 뒤 공고 다시 고르기 (3.3), 화면 10 시도별 기록, 화면 8 · 9 '진행'."""
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -7,8 +7,9 @@ from datetime import timedelta
 
 import pytest
 from conftest import (
-    executed, make_app, pre_input, project_for, project_record, start_and_select, to_screen6, to_screen8, to_screen9,
+    executed, make_app, project_record, start_and_select, to_screen6, to_screen8, to_screen9,
 )
+from flow_helpers import WINDOW, code_of, pid, rework, run_review, started_with_pid
 
 from sbrain.agents.stubs import StubScenario
 from sbrain.flow import ConfirmationNeeded
@@ -17,36 +18,7 @@ from sbrain.flow.rework_map import ARTIFACT_BUNDLES, DOCUMENT_BUNDLES
 from sbrain.intake import MemoryProjectInputSource
 from sbrain.orchestrator.errors import COMMAND_ERROR_CODES, CommandError
 
-WINDOW = 3   # 재작성 요청을 모으는 시간(잠정 2초)을 넘기는 초
 BUNDLES = list(DOCUMENT_BUNDLES) + list(ARTIFACT_BUNDLES)
-
-
-def pid(app, rid: str) -> str:
-    return app.store.load_run(rid).project_id
-
-
-def code_of(fn) -> str:
-    with pytest.raises(CommandError) as e:
-        fn()
-    return e.value.code
-
-
-def rework(app, clock, rid, *bundles):
-    accepted = [app.orchestrator.request_rework_for_project(pid(app, rid), b) for b in bundles]
-    clock.advance(seconds=WINDOW)
-    app.orchestrator.advance(rid)
-    return accepted
-
-
-def complete(app, rid) -> None:
-    app.orchestrator.decide(rid, 9, "진행", confirmed=True)
-    app.orchestrator.advance(rid)
-
-
-def started(app) -> tuple[str, str]:
-    res = app.orchestrator.start_run("acc-1", pre_input(), project_id=project_for(app))
-    assert res.ok
-    return res.run_id, pid(app, res.run_id)
 
 
 def test_new_command_error_codes_are_listed():
@@ -54,6 +26,19 @@ def test_new_command_error_codes_are_listed():
 
 
 # ── view_project · project_views ──────────────────────────
+def test_view_project_follows_request_then_run(clock):
+    app = make_app(clock, project_inputs=MemoryProjectInputSource([project_record()]))
+    empty = app.orchestrator.view_project(101)
+    assert (empty.run, empty.start) == (None, None)
+    check = app.orchestrator.request_start("7", 101)
+    waiting = app.orchestrator.view_project(101)
+    assert waiting.run is None and (waiting.start.status, waiting.start.request_id) == ("대기", check.request_id)
+    st = app.orchestrator.run_start_request(check.request_id)
+    view = app.orchestrator.view_project(101)
+    assert view.start is None and view.run.run_id == st.run_id
+    assert (view.run.step, view.run.screen_status) == ("공고선택", "확인 필요")
+
+
 def test_view_project_reports_retry_resume_and_announcement(clock):
     app = make_app(clock)
     rid = start_and_select(app)
@@ -115,7 +100,7 @@ def test_project_views_several_projects_at_once(clock):
 # ── wait_project ───────────────────────────────────────
 def test_wait_project_timeout_returns_state_then(clock):
     app = make_app(clock)
-    rid, p = started(app)
+    rid, p = started_with_pid(app)
     app.orchestrator.select_announcement(rid, "A01")                             # '실행' — 워커가 아직 안 가져감
     naps: list[float] = []
 
@@ -131,7 +116,7 @@ def test_wait_project_timeout_returns_state_then(clock):
 
 def test_wait_project_returns_at_wait_point(clock):
     app = make_app(clock)
-    rid, p = started(app)
+    rid, p = started_with_pid(app)
     app.orchestrator.select_announcement(rid, "A01")
     app.orchestrator.sleep = lambda sec: app.orchestrator.advance(rid)          # 기다리는 동안 워커가 진행
     view = app.orchestrator.wait_project(p)
@@ -175,7 +160,7 @@ def test_wait_project_waits_while_rework_collecting(clock):
 def test_outputs_accumulate_current_results(clock):
     app = make_app(clock, StubScenario(tp1_targets=4, tp2_behavior={"s-1-1-2": ["violate", "ok"]}))
     assert code_of(lambda: app.orchestrator.outputs(424242)) == "RUN_NOT_FOUND"
-    rid, p = started(app)
+    rid, p = started_with_pid(app)
     out = app.orchestrator.outputs(p)
     assert isinstance(out, Outputs) and (out.run_id, out.step, out.progress) == (rid, "공고선택", "사용자대기")
     assert len(out.candidates) == 10 and out.more_candidates == [] and out.category == "웹개발"
@@ -208,7 +193,7 @@ def test_outputs_accumulate_current_results(clock):
     usage = {u.bundle_id: (u.used_count, u.remaining) for u in out.rework_usage}
     assert usage["문제인식"] == (1, 0) and usage["실현가능성"] == (0, 1) and len(usage) == 6
     app.orchestrator.decide(rid, 8, "진행")
-    complete(app, rid)
+    run_review(app, rid)
     out = app.orchestrator.outputs(p)
     assert out.progress == "완료" and out.deliverable and out.user_message and out.proofread_log
     assert len(out.format_findings) == 4 and len(out.sentence_results) == 4
@@ -219,14 +204,14 @@ def test_outputs_accumulate_current_results(clock):
 
 def test_outputs_onepage_has_no_executable_bundle(clock):
     app = make_app(clock, StubScenario(category="원페이지"))
-    _, p = started(app)
+    _, p = started_with_pid(app)
     out = app.orchestrator.outputs(p)
     assert [u.bundle_id for u in out.rework_usage] == list(DOCUMENT_BUNDLES) + ["인포그래픽"]
 
 
 def test_outputs_and_rework_result_not_viewable_after_abort(clock):
     app = make_app(clock)
-    rid, p = started(app)
+    rid, p = started_with_pid(app)
     app.orchestrator.abort(rid, confirmed=True)
     assert code_of(lambda: app.orchestrator.outputs(p)) == "RUN_NOT_VIEWABLE"
     assert code_of(lambda: app.orchestrator.rework_result(p)) == "RUN_NOT_VIEWABLE"
@@ -278,6 +263,27 @@ def test_rework_result_artifact_paths_then_failure(clock):
     assert (r.kept, r.before_score, r.after_score, r.before_refs, r.after_refs, r.plan_before, r.files) == (
         None, None, None, [], [], None, [])
     assert "failureReason" not in r.dump()
+
+
+# ── 웹 명령 (project_id) ────────────────────────────────
+def test_commands_by_project_id(clock):
+    """웹은 project_id만 안다 — 명령도 project_id로 부른다."""
+    app = make_app(clock)
+    rid, p = started_with_pid(app)
+    orch = app.orchestrator
+    orch.more_candidates_for_project(p)
+    orch.advance(rid)
+    orch.select_announcement_for_project(p, "A11")                               # 추가 조회 결과에서 선택
+    orch.advance(rid)
+    orch.start_writing_for_project(p)
+    orch.advance(rid)
+    assert orch.view_project(p).run.step == "문서평가"
+    orch.decide_for_project(p, 6, "진행")
+    orch.advance(rid)
+    assert orch.view_project(p).run.step == "산출물확인"
+    with pytest.raises(CommandError) as e:
+        orch.start_writing_for_project("989898")
+    assert e.value.code == "RUN_NOT_FOUND"
 
 
 # ── 자격 통과 뒤 공고 다시 고르기 (3.3) ────────────────────
@@ -394,7 +400,7 @@ def test_command_rechecks_state_when_lease_is_taken_in_between(clock, monkeypatc
 def test_screen10_includes_attempts(clock):
     app = make_app(clock, StubScenario(tp1_targets=4, tp2_behavior={"s-1-1-2": ["violate", "ok"]}))
     rid = to_screen9(app)
-    complete(app, rid)
+    run_review(app, rid)
     s10 = app.orchestrator.screen(pid(app, rid), 10)
     ctx = app.engine.open_context(app.store.load_run(rid))
     results = {r.sentence_id: r.attempts for r in ctx.get("sentenceResults")}

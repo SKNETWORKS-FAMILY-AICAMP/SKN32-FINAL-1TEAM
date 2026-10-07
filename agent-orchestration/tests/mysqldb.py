@@ -13,6 +13,10 @@
   app_schema.sql 파일은 고치지 않는다. 옛 모양은 old_proofread_logs()로 잠시 되돌려 시험한다.
 - app_schema.sql 위치: 환경 변수(또는 .env) SBRAIN_TEST_WEB_SCHEMA가 있으면 그 파일, 없으면 이 폴더 두 단계 위에서
   web/backend/app_schema.sql(웹과 같은 저장소에 둔 배치) → 01_원본/web/backend/app_schema.sql(작업 공간 배치) 순서로 찾는다.
+- MySQL 묶음: 테스트는 기본으로 여러 프로세스에서 동시에 돈다(pytest.ini). MySQL 테스트는 표를 처음 한 번만 새로 만들어
+  함께 쓰고, 남긴 일을 끝에 정리하는 규칙이 한 프로세스 안에서만 맞으므로 모두 MYSQL 묶음(xdist_group "mysql")에 넣어
+  한 프로세스에서 하나씩 돌린다. 넣는 법: 매개변수면 pytest.param("mysql", marks=MYSQL), 파일 전체면 pytestmark = MYSQL.
+  require_mysql()은 실행 중인 테스트가 그 묶음에만 들었는지 먼저 확인하고, 아니면 (DB가 없어 건너뛸 때도) 실패시킨다.
 """
 from __future__ import annotations
 
@@ -59,7 +63,36 @@ def web_schema() -> Path:
                 f"{WEB_SCHEMA_ENV}에 파일 경로를 넣는다")
 
 
+MYSQL_GROUP = "mysql"
+MYSQL = pytest.mark.xdist_group(MYSQL_GROUP)
+_current_test: pytest.Item | None = None   # conftest.py의 pytest_runtest_protocol이 테스트마다 넣고 뺀다
+
+
+def set_current_test(item: pytest.Item | None) -> None:
+    global _current_test
+    _current_test = item
+
+
+def group_name(mark: pytest.Mark) -> str:
+    """xdist_group 표시 하나의 묶음 이름."""
+    return str(mark.args[0] if mark.args else mark.kwargs.get("name", "default"))
+
+
+def xdist_groups(item: pytest.Item) -> set[str]:
+    """테스트가 든 동시 실행 묶음(xdist_group) 이름들 — 매개변수 · 함수 · 파일에 붙은 표시를 모두 본다."""
+    return {group_name(m) for m in item.iter_markers("xdist_group")}
+
+
+def check_mysql_group() -> None:
+    """실행 중인 테스트가 MySQL 묶음에만 들었는지 확인한다. 아니면 크게 실패 (테스트 밖에서 부르면 확인 안 함)."""
+    item = _current_test
+    if item is not None and xdist_groups(item) != {MYSQL_GROUP}:
+        pytest.fail(f"MySQL에 닿는 테스트는 MySQL 묶음(mysqldb.MYSQL)에만 넣어야 함 — {item.nodeid} "
+                    f"(지금 묶음: {sorted(xdist_groups(item)) or '없음'})", pytrace=False)
+
+
 def require_mysql() -> Engine:
+    check_mysql_group()                    # DB가 없어 건너뛸 때도 먼저 확인한다
     url = mysql_url()
     if not url:
         pytest.skip(f"{URL_ENV} 없음 — MySQL 통합 테스트 건너뜀 (docker/mysql-test.yml 참고)")

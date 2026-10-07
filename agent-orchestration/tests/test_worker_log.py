@@ -347,7 +347,7 @@ def test_keep_days_env_parsing(tmp_path):
 
 # ── 워커와 함께 ────────────────────────────────────────
 def test_worker_writes_all_lines_to_stdout_and_file(tmp_path, monkeypatch):
-    from test_worker import app_on, projects, start
+    from worker_helpers import app_on, projects, start
     from sbrain.store_sql import create_orchestrator_tables, create_sqlite_engine
     from sbrain.worker import Worker, WorkerConfig
     from webdb import create_web_tables

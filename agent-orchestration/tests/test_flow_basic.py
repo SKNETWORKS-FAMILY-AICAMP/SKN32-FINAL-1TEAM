@@ -68,42 +68,12 @@ def test_gate_fail_returns_to_selection_then_reselect(clock):
     assert executed(app, rid).count("G-01") == 2
 
 
-def test_more_candidates_once(clock):
-    app = make_app(clock)
-    res = app.orchestrator.start_run("acc-1", pre_input())
-    app.orchestrator.more_candidates(res.run_id)
-    app.orchestrator.advance(res.run_id)
-    ctx = app.engine.open_context(app.store.load_run(res.run_id))
-    assert ctx.version("candidates") == 2
-    rec = [r for r in app.store.executions(res.run_id) if r.task_id == "T-C2"][-1]
-    assert any(i.startswith("decision@") for i in rec.inputs)
-    import pytest
-    from sbrain.orchestrator.errors import CommandError
-    with pytest.raises(CommandError):
-        app.orchestrator.more_candidates(res.run_id)
-    app.orchestrator.select_announcement(res.run_id, "A15")  # 추가 조회 결과에서 선택
-
-
-def test_tc1_failure_rolls_back_without_run(clock):
-    app = make_app(clock)
-    app.llm.plan("T-C1", ["timeout"] * 6)
-    res = app.orchestrator.start_run("acc-1", pre_input())
-    assert not res.ok and res.code == "E-C1-TIMEOUT"
-    assert app.store.list_runs("acc-1") == []
-
-
 def test_no_candidates_and_stale_collection(clock):
     app = make_app(clock, StubScenario(candidate_count=0))
     res = app.orchestrator.start_run("acc-1", pre_input())
     assert res.code == "E-C2-NOMATCH" and app.store.list_runs("acc-1") == []
     app = make_app(clock, StubScenario(collection_status="지연"))
     assert app.orchestrator.start_run("acc-1", pre_input()).code == "E-C2-STALE"
-
-
-def test_embedding_fallback_notice(clock):
-    app = make_app(clock, StubScenario(embed_fail=True))
-    res = app.orchestrator.start_run("acc-1", pre_input())
-    assert res.ok and [n.code for n in res.notices] == ["E-C2-EMBED"]
 
 
 def test_concurrency_and_profile_block(clock):

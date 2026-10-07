@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import pytest
-from conftest import Clock, make_app, pre_input
-from mysqldb import split_sql
+from conftest import TIMING, Clock, make_app, pre_input
+from mysqldb import MYSQL, require_mysql, split_sql, xdist_groups
 from sqlalchemy import Column, Integer, MetaData, Table, UniqueConstraint, insert, update
-from test_store_contract import new_run, rejected
+from store_helpers import new_run, rejected
 from webdb import (
     POLICIES, PROOFREAD_LOGS, create_web_tables, new_project, proofread_columns, set_training_consent,
     use_old_proofread_logs,
@@ -178,3 +178,36 @@ def test_training_agreed_follows_owner_account(web_engine):
     set_training_consent(web_engine, refused, True)
     with web_engine.connect() as conn:
         assert web.training_agreed(conn, refused)
+
+
+# ── MySQL 묶음 확인 (DB 없이) ──────────────────────────
+def no_db_url(monkeypatch) -> None:
+    monkeypatch.setattr("mysqldb.get_env", lambda name, default=None: None)
+
+
+def test_require_mysql_outside_any_group_fails_even_without_db(monkeypatch):
+    """묶음 없는 테스트가 MySQL에 닿으면 건너뜀이 아니라 실패다 — DB 주소가 없어도 묶음을 먼저 본다."""
+    no_db_url(monkeypatch)
+    with pytest.raises(pytest.fail.Exception, match="MySQL 묶음"):
+        require_mysql()
+
+
+@TIMING
+def test_require_mysql_in_other_group_fails(monkeypatch):
+    no_db_url(monkeypatch)
+    with pytest.raises(pytest.fail.Exception, match="timing"):
+        require_mysql()
+
+
+@MYSQL
+def test_require_mysql_in_mysql_group_skips_without_db(monkeypatch):
+    no_db_url(monkeypatch)
+    with pytest.raises(pytest.skip.Exception):
+        require_mysql()
+
+
+@TIMING
+@pytest.mark.parametrize("kind", [pytest.param("mysql", marks=MYSQL)])
+def test_mysql_group_wins_over_timing(request, kind):
+    """MySQL 매개변수가 붙은 시간 테스트는 MySQL 묶음 하나에만 든다 (conftest.py)."""
+    assert xdist_groups(request.node) == {"mysql"}

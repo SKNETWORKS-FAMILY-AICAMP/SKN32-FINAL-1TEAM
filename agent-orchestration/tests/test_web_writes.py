@@ -9,6 +9,7 @@ from datetime import timedelta
 
 import pytest
 from conftest import Backend, Clock, make_app, pre_input, project_for, start_and_select, to_screen6
+from mysqldb import MYSQL
 from sqlalchemy import text
 from webdb import project_row
 
@@ -16,7 +17,7 @@ from sbrain.orchestrator.store import CommitBatch
 from sbrain.store_sql.web_tables import WEB_COLUMNS
 
 
-@pytest.fixture(params=["sql", "mysql"])
+@pytest.fixture(params=["sql", pytest.param("mysql", marks=MYSQL)])
 def sql_app(request, tmp_path):
     clock = Clock()
     return make_app(clock, store=Backend(request.param, tmp_path).make_store(clock)), clock

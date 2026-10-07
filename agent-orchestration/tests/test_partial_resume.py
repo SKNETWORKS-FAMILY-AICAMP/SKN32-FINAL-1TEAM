@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from conftest import Clock
+import pytest
+from conftest import Clock, x_settings
 from pydantic import Field
 
 from sbrain.flow.catalog import artifact_types, build_registry
@@ -113,13 +114,6 @@ def scripted(plan: list[tuple[str, dict | None]], seen: list[dict]):
     return fn
 
 
-def x_settings() -> dict:
-    """설정 사본 — 시험 Task X의 Task별 설정(조율 Task와 같은 값)을 더한다 (항목이 없으면 KeyError)."""
-    s = Settings()
-    s.tasks["X"] = s.tasks["T-C1"].model_copy()
-    return s.dump()
-
-
 def engine_with(clock: Clock, fn, *, bind_partial: bool = True, policy: FailurePolicy | None = None):
     registry = TaskRegistry()
     inputs = {"done": PARTIAL} if bind_partial else {}
@@ -218,20 +212,16 @@ def test_task_without_binding_does_not_save(clock):
     assert seen == [{}, {}]
 
 
-def test_permanent_error_does_not_save(clock):
-    engine, flow, store = engine_with(clock, scripted([("입력", {"a": SECRET})], []))
-    rid = new_run(store, clock)
+@pytest.mark.parametrize("kind, resume_count, failed", [
+    ("입력", 0, "영구오류"),                                    # 영구 오류
+    ("일시", Settings().resume.max_count, "재개상한초과"),       # 재개 상한을 넘김
+])
+def test_permanent_error_does_not_save(clock, kind, resume_count, failed):
+    """영구 오류 · 재개 상한 초과로 실패하면 받은 결과를 저장하지 않는다."""
+    engine, flow, store = engine_with(clock, scripted([(kind, {"a": SECRET})], []))
+    rid = new_run(store, clock, resume_count=resume_count)
     assert engine.advance(rid) == "실패"
-    assert flow.failed == ["영구오류"]
-    assert "X.partial" not in store.get_latest_versions(rid)
-    no_secret_anywhere(store, rid)
-
-
-def test_resume_cap_exceeded_does_not_save(clock):
-    engine, flow, store = engine_with(clock, scripted([("일시", {"a": SECRET})], []))
-    rid = new_run(store, clock, resume_count=Settings().resume.max_count)
-    assert engine.advance(rid) == "실패"
-    assert flow.failed == ["재개상한초과"]
+    assert flow.failed == [failed]
     assert "X.partial" not in store.get_latest_versions(rid)
     no_secret_anywhere(store, rid)
 
@@ -255,11 +245,6 @@ def test_partial_not_in_exception_text():
     assert e.partial == {"a": SECRET}
     assert SECRET not in str(e) and SECRET not in repr(e)
     assert ToolCallExhausted(error="호출실패", error_kind="일시", tries=1, call_id="c2").partial is None
-
-
-def test_old_redo_state_reads_without_partial_ref():
-    rs = RedoState.model_validate({"taskId": "X", "redoCount": 1})
-    assert rs.partial_ref is None
 
 
 def test_partial_type_is_registered_and_internal():

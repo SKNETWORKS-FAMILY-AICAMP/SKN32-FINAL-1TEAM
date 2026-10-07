@@ -135,12 +135,13 @@ def test_append_keeps_agreed_format(rework, expected):
     assert default_instruction_builder("기존 지시", rework) == expected
 
 
-def test_rework_redo_keeps_cycle_order_then_redo_issues():
-    out = append_problems("기존", ri(issues=("검사 문제",)), cycle_order=order())
-    assert out == "기존\n\n[재작성] 문제인식 10/20\n문제인식 보완\n\n[재수행 — 문제가 된 내용]\n- 검사 문제"
-
-
-def test_reflect_redo_keeps_reflect_block_then_redo_issues():
-    out = append_problems("기존", ri(issues=("검사 문제",)), reflect_issues=["계획서 재작성 반영 (planDoc@2)"])
-    assert out == ("기존\n\n[재작성 — 문제가 된 내용]\n- 계획서 재작성 반영 (planDoc@2)"
-                   "\n\n[재수행 — 문제가 된 내용]\n- 검사 문제")
+@pytest.mark.parametrize("extra, expected", [
+    (dict(cycle_order=order()),                                       # 재작성 사이클 안의 재수행 — 재작성 지시 먼저
+     "기존\n\n[재작성] 문제인식 10/20\n문제인식 보완\n\n[재수행 — 문제가 된 내용]\n- 검사 문제"),
+    (dict(reflect_issues=["계획서 재작성 반영 (planDoc@2)"]),         # 반영 재작성 안의 재수행 — 반영 블록 먼저
+     "기존\n\n[재작성 — 문제가 된 내용]\n- 계획서 재작성 반영 (planDoc@2)"
+     "\n\n[재수행 — 문제가 된 내용]\n- 검사 문제"),
+], ids=["재작성지시", "반영"])
+def test_rework_redo_keeps_cycle_order_then_redo_issues(extra, expected):
+    out = append_problems("기존", ri(issues=("검사 문제",)), **extra)
+    assert out == expected                                            # 글자 그대로 비교

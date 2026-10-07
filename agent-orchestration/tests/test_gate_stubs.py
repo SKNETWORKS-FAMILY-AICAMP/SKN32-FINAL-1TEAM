@@ -6,6 +6,7 @@ from datetime import date
 import pytest
 from conftest import pre_input
 
+from sbrain.agents.notice import business_age_years as notice_business_age_years
 from sbrain.agents.stubs import (
     StubScenario, bind_stubs, business_age_months, business_age_years, make_announcement, stub_gate,
 )
@@ -63,12 +64,9 @@ def test_business_age_months_counts_like_notice_team(founded, months):
     assert business_age_months(founded, TODAY) == months
 
 
-@pytest.mark.parametrize(("months", "years"), [(0, 0.0), (3, 0.3), (15, 1.3), (27, 2.3), (18, 1.5), (13, 1.1)])
-def test_business_age_years_rounds_half_up(months, years):
-    assert business_age_years(months) == years                                  # 반올림(사사오입), 짝수 맞춤이 아니다
-
-
 def test_stub_gate_rules():
+    # 업력(년)은 공고 서버 연결의 사사오입 함수 그대로 (경우별 값 · 재현 조건은 test_notice_g01.py)
+    assert business_age_years is notice_business_age_years
     corp = company()                                                             # 법인 · 18개월
     base = make_announcement("A01", TODAY)
 

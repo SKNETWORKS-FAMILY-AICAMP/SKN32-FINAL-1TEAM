@@ -7,6 +7,7 @@ from datetime import datetime
 import pytest
 
 from conftest import make_app, pre_input, project_record
+from fakes import item_json
 from sbrain.agents.stubs import FakeLLM
 from sbrain.agents.supervisor import bind_supervisor, tc1
 from sbrain.contracts import TC1In
@@ -15,14 +16,6 @@ from sbrain.models import ReferenceDoc
 from sbrain.models.clock import utc_now
 from sbrain.orchestrator.errors import CommandError, ToolCallExhausted
 from sbrain.orchestrator.tools import CallSink, LLMRequest, Tools, ToolsConfig, ToolsContext
-
-ITEM = dict(item_name="헬스장 회원관리", one_line_summary="동네 헬스장의 회원 · 수업 예약을 관리하는 웹 서비스",
-            target_customer="소규모 헬스장 운영자", core_features=["회원 등록", "수업 예약", "회원 등록"],
-            keywords=["헬스장", "회원관리"], category="웹개발", category_reason="회원 관리 화면 중심", confidence=0.82)
-
-
-def item_json(**over) -> str:
-    return json.dumps({**ITEM, **over}, ensure_ascii=False)
 
 
 def real_tc1_app(clock, **kw):

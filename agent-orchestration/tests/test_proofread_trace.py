@@ -6,7 +6,8 @@ from datetime import timedelta
 
 import pytest
 from conftest import Backend, Clock, executed, make_app, pre_input, set_consent, to_screen9
-from mysqldb import old_proofread_logs
+from flow_helpers import run_review
+from mysqldb import MYSQL, old_proofread_logs
 from webdb import OLD_PROOFREAD_LOGS, PROOFREAD_LOGS, count_rows, proofread_rows, use_old_proofread_logs
 
 from sbrain.agents.stubs import StubScenario
@@ -24,11 +25,6 @@ BEHAVIOR = {
     "s-2-1-2": ["violate", "violate", "violate"],
 }
 TARGETS = list(BEHAVIOR)
-
-
-def run_review(app, rid):
-    app.orchestrator.decide(rid, 9, "진행", confirmed=True)
-    app.orchestrator.advance(rid)
 
 
 def sentence_results(app, rid):
@@ -139,24 +135,6 @@ def test_trace_covers_rule_and_merge_steps_without_content(clock):
     dump = "".join(r.model_dump_json() for r in app.store.executions(rid))
     assert "헬스장" not in dump and "김서준" not in dump
     assert extension_fields(ExecutionRecord)  # 확장 필드 표시
-
-
-def test_settings_snapshot_fixed_at_start(clock):
-    app = make_app(clock)
-    res = app.orchestrator.start_run("acc-1", pre_input())
-    s = app.settings.current().model_copy(deep=True)
-    s.scoring.threshold = 50
-    s.tasks["T-S1"].model = "바뀐 모델"
-    app.settings.update(s)
-    app.orchestrator.select_announcement(res.run_id, "A01")
-    app.orchestrator.advance(res.run_id)
-    app.orchestrator.start_writing(res.run_id)
-    app.orchestrator.advance(res.run_id)
-    recs = {r.task_id: r for r in app.store.executions(res.run_id)}
-    assert recs["T-S1"].model == "미정"  # 실행 시작 시점 값
-    ctx = app.engine.open_context(app.store.load_run(res.run_id))
-    assert ctx.get("scoreReport.document").threshold == 80
-    assert ctx.get("scoreReport.document").settings_snapshot["scoring"]["threshold"] == 80
 
 
 # ── 시도별 기록 · 웹 proofread_logs ──────────────────────
@@ -271,7 +249,7 @@ def test_rejected_attempt_content_stays_out_of_records(clock):
         assert content not in blob
 
 
-@pytest.fixture(params=["sql", "mysql"])
+@pytest.fixture(params=["sql", pytest.param("mysql", marks=MYSQL)])
 def old_web(request, tmp_path):
     """웹 proofread_logs가 아직 옛 모양(project_id · model_version 없음, plan_id NOT NULL)인 SqlStore 앱."""
     clock = Clock()
@@ -309,7 +287,7 @@ def test_old_proofread_logs_structure_skips_rows_but_saves_step(old_web):
     assert count_rows(app.store.engine, "proofread_logs") == 0
 
 
-@pytest.mark.parametrize("backend", ["sql", "mysql"])
+@pytest.mark.parametrize("backend", ["sql", pytest.param("mysql", marks=MYSQL)])
 def test_proofread_logs_writes_start_after_web_schema_change_without_restart(backend, tmp_path):
     """맞지 않는 구조는 기억하지 않는다 — 웹팀이 구조를 바꾸면 같은 프로세스(같은 저장소)의 다음 T-P2 저장부터 쓴다."""
     clock = Clock()

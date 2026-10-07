@@ -21,10 +21,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest==9.1.1"]
+test = ["pytest==9.1.1", "pytest-xdist==3.8.0", "pytest-cov==7.1.0"]
 
 [project.scripts]
 sbrain-worker = "sbrain.worker:main"
 
 [tool.setuptools.packages.find]
 include = ["sbrain*"]
+
+# 줄 단위 확인 범위 측정 (pytest-cov) — 측정할 때만 쓴다: python -m pytest -n 0 --cov=sbrain --cov-report=json:<파일>
+# 파일 경로는 이 폴더 기준 상대 경로, 워커 스레드 안에서 실행된 줄도 센다.
+[tool.coverage.run]
+source = ["sbrain"]
+relative_files = true
+concurrency = ["thread"]

@@ -15,35 +15,21 @@ from typing import Callable
 
 import pytest
 from conftest import executed, make_app, pre_input, project_for, start_and_select
+from flow_helpers import code_of, ctx_of, pid, select, started, state
 
 from sbrain.agents.stubs import StubScenario
 from sbrain.flow.catalog import artifact_types, build_registry
 from sbrain.flow.sbrain_flow import card_content_changed
 from sbrain.models import AnnouncementCard, BonusItem
 from sbrain.orchestrator import settings
-from sbrain.orchestrator.errors import CommandError, message
+from sbrain.orchestrator.errors import message
 
 TC2_KEYS = ("candidates", "collectionStatus", "filteredCount", "fallbackUsed", "fallbackMode")
 DEADLINE_SUFFIX = " 마감 임박순으로 보여드립니다."
 
 
-def pid(app, rid: str) -> str:
-    return app.store.load_run(rid).project_id
-
-
-def started(app) -> str:
-    res = app.orchestrator.start_run("acc-1", pre_input(), project_id=project_for(app))
-    assert res.ok, res
-    return res.run_id
-
-
 def more(app, rid: str) -> None:
     app.orchestrator.more_candidates(rid)
-    app.orchestrator.advance(rid)
-
-
-def select(app, rid: str, aid: str) -> None:
-    app.orchestrator.select_announcement(rid, aid)
     app.orchestrator.advance(rid)
 
 
@@ -57,21 +43,6 @@ def ids(cards) -> list[str]:
 
 def by_id(cards) -> dict[str, AnnouncementCard]:
     return {c.announcement_id: c for c in cards}
-
-
-def ctx_of(app, rid: str):
-    return app.engine.open_context(app.store.load_run(rid))
-
-
-def state(app, rid: str) -> tuple[str, str]:
-    run = app.store.load_run(rid)
-    return run.state.step, run.state.progress
-
-
-def code_of(fn) -> str:
-    with pytest.raises(CommandError) as e:
-        fn()
-    return e.value.code
 
 
 def screen_values(s3) -> tuple:
@@ -159,6 +130,8 @@ def test_overlap_removed_and_first_cards_refreshed_in_place(clock):
     assert ctx.get("candidates", 1) == before                                    # 첫 조회 버전은 덮어쓰지 않는다
     assert ids(ctx.get("candidates")) == ["A15", "A03", "A11", "A10"]           # T-C2 출력도 받은 그대로 남는다
     assert isinstance(ctx.get("moreCandidates")[0], AnnouncementCard)           # 저장소에서 다시 읽어도 카드 타입
+    rec = [r for r in app.store.executions(rid) if r.task_id == "T-C2"][-1]
+    assert any(i.startswith("decision@") for i in rec.inputs)                    # 추가 조회 T-C2는 결정 참조를 입력으로 받는다
     assert code_of(lambda: app.orchestrator.select_announcement(rid, "A12")) == "INVALID_ANNOUNCEMENT"
     select(app, rid, "A15")                                                      # 추가 후보에서 고른다
     assert state(app, rid) == ("계획서작성", "사용자대기")

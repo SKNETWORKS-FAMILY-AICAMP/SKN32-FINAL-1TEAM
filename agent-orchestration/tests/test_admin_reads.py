@@ -1,17 +1,18 @@
-"""관리자 조회 (spec 4.2) — 실행 건 목록 · 점수 이력 · 운영 요약 · Agent별 Task. 메타데이터 · 점수 · 개수만."""
+"""관리자 조회 (spec 4.2) — 실행 건 목록 · 점수 이력 · 운영 요약 · Agent별 Task · 실행 기록 · 호출 기록.
+메타데이터 · 점수 · 개수만."""
 from __future__ import annotations
 
 from datetime import timedelta
 
 import pytest
-from conftest import make_app, pre_input, project_for, start_and_select, to_screen6
+from conftest import executed, make_app, pre_input, project_for, start_and_select, to_screen6
+from flow_helpers import pid, rework, run_review
 
 from sbrain.agents.stubs import StubScenario
 from sbrain.orchestrator.errors import CommandError
 from sbrain.orchestrator.settings import ScoringSettings, Settings
 from sbrain.orchestrator.tools import TokenUsage
 
-WINDOW = 3
 # 문장별 T-P2 결과: 채택 · 반려 뒤 채택 · 반려 뒤 조기 중단 · 반려만 → 시도 9건, 반려 7건
 BEHAVIOR = {
     "s-1-1-1": ["ok"],
@@ -22,24 +23,17 @@ BEHAVIOR = {
 CONTENT = ("헬스장", "문장", "(윤문)", "변형", "동일 출력", "1억원", "창업지원사업", "김서준")
 
 
-def pid(app, rid: str) -> str:
-    return app.store.load_run(rid).project_id
-
-
 def fixture(clock):
     """완료 A(화면 6 재작성 52 → 60, 총점 86) · 화면 6 대기 B(45) · 실패 C(T-S1 영구 오류) · 공고선택 대기 D."""
     app = make_app(clock, StubScenario(doc_scores=[52.0, 60.0, 45.0], tp1_targets=4, tp2_behavior=BEHAVIOR))
     app.llm.usage["T-C1"] = TokenUsage(input_tokens=100, cached_input_tokens=40, output_tokens=20,
                                        reasoning_tokens=5)
     a = to_screen6(app, "acc-1")
-    app.orchestrator.request_rework_for_project(pid(app, a), "문제인식")
-    clock.advance(seconds=WINDOW)
-    app.orchestrator.advance(a)
+    rework(app, clock, a, "문제인식")
     app.orchestrator.decide(a, 6, "진행")
     app.orchestrator.advance(a)
     app.orchestrator.decide(a, 8, "진행")
-    app.orchestrator.decide(a, 9, "진행", confirmed=True)
-    app.orchestrator.advance(a)
+    run_review(app, a)
     b = to_screen6(app, "acc-2")
     c = start_and_select(app, "acc-3")
     app.llm.plan("T-S1", ["auth"] * 50)
@@ -188,3 +182,40 @@ def test_admin_runs_and_summary_limited_to_last_twelve_months(clock):
     assert app.orchestrator.admin_score_history(pid(app, a)).doc_score                  # 점수 이력도 그대로
     app.orchestrator.select_announcement(d, "A01")                               # 다시 움직이면 범위 안으로
     assert d in [r.run_id for r in app.orchestrator.admin_runs()]
+
+
+# ── 실행 기록 · 호출 기록 조회 ─────────────────────────────
+def test_admin_executions_filters_and_order(clock):
+    app = make_app(clock)
+    rid1 = to_screen6(app, "acc-1")
+    rid2 = start_and_select(app, "acc-2")
+    p1, p2 = pid(app, rid1), pid(app, rid2)
+    rows = app.orchestrator.admin_executions(limit=100)
+    assert [(r.project_id, r.task_id) for r in rows[:3]] == [(p2, "G-01"), (p2, "T-C2"), (p2, "T-C1")]  # 최근 순
+    asc = app.orchestrator.admin_executions(project_id=p1, order="asc", limit=100)
+    assert [r.task_id for r in asc] == executed(app, rid1)
+    assert [r.project_id for r in app.orchestrator.admin_executions(task_id="T-C1")] == [p2, p1]
+    assert [r.task_id for r in app.orchestrator.admin_executions(agent="전략", order="asc")] == ["T-S1", "T-S2"]
+    assert app.orchestrator.admin_executions(status="실패") == []
+    page = app.orchestrator.admin_executions(project_id=p1, order="asc", limit=3, offset=2)
+    assert [r.task_id for r in page] == executed(app, rid1)[2:5]
+    first2 = app.store.executions(rid2)[0].started_at
+    assert {r.project_id for r in app.orchestrator.admin_executions(since=first2, limit=100)} == {p2}
+    assert {r.project_id for r in app.orchestrator.admin_executions(until=first2, limit=100)} == {p1}
+    tc1 = app.orchestrator.admin_executions(project_id=p1, task_id="T-C1")[0]
+    assert (tc1.agent, tc1.attempt, tc1.trigger, tc1.status, tc1.model, tc1.reasoning_effort) == (
+        "조율", 1, "첫실행", "성공", "gpt-6-luna", "low")
+    assert tc1.duration_sec is not None and tc1.duration_sec >= 0 and tc1.tokens.input_tokens is None
+    text = "".join(r.model_dump_json() for r in rows)
+    assert "헬스장" not in text                                                    # 산출물 · 입력 내용은 싣지 않는다
+
+
+def test_admin_calls_with_tries(clock):
+    app = make_app(clock)
+    app.llm.plan("T-S1", ["timeout", "ok"])
+    rid = to_screen6(app)
+    rec = next(r for r in app.store.executions(rid) if r.task_id == "T-S1")
+    [call] = app.orchestrator.admin_calls(rec.execution_id)
+    assert (call.call_type, call.final_outcome, call.model) == ("llm", "성공", "미정")
+    assert [(t.no, t.outcome, t.error_kind) for t in call.tries] == [(1, "응답지연", "일시"), (2, "성공", None)]
+    assert call.tokens.output_tokens is None and app.orchestrator.admin_calls("없는-실행") == []

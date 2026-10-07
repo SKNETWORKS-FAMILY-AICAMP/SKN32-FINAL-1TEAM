@@ -16,7 +16,8 @@ from datetime import date
 
 import pytest
 
-from conftest import executed, make_app, pre_input, project_for, start_and_select
+from conftest import TIMING, executed, make_app, pre_input, project_for, start_and_select
+from flow_helpers import ctx_of, tc3_requests
 
 from sbrain.agents.form_defaults import FORM_TABLE, select_form
 from sbrain.agents.stubs import FakeLLM, StubScenario, make_announcement
@@ -45,15 +46,6 @@ def real_tc3_app(clock, scenario: StubScenario | None = None):
     app.registry.bind("T-C3", tc3.run)
     app.llm.respond("T-C3", guidance_reply)
     return app
-
-
-def ctx_of(app, rid):
-    return app.engine.open_context(app.store.load_run(rid))
-
-
-def tc3_requests(app_or_llm) -> list[LLMRequest]:
-    llm = getattr(app_or_llm, "llm", app_or_llm)
-    return [r for r in llm.requests if r.metadata["task_id"] == "T-C3"]
 
 
 def body(requests: list[LLMRequest]) -> str:
@@ -446,6 +438,7 @@ def test_concurrent_result_matches_sequential_text(category):
 
 
 @pytest.mark.parametrize("category", ["웹개발", "원페이지"])
+@TIMING
 def test_calls_really_overlap(category):
     """지시 대상 수만큼 모일 때까지 기다리는 응답 — 차례로 부르면 장벽이 깨져 실패한다(멈추지 않음)."""
     n = len(plan.instructed_tasks(category))

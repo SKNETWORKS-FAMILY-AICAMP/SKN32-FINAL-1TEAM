@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from conftest import make_app, pre_input, project_for, start_and_select, to_screen6, to_screen9
+from flow_helpers import finish, pid, rework
 from sqlalchemy import select
 
 from sbrain.agents.stubs import StubScenario
@@ -23,12 +24,7 @@ from sbrain.store_sql.schema import RUNS
 
 UTC = timezone.utc
 LATER = 400   # 일 — 12개월(달력)을 넘기는 날 수
-WINDOW = 3    # 재작성 모으는 시간(잠정 2초)을 넘기는 초
 SUMMARY_KEYS = {"runs", "deletedRuns", "requests", "skipped"}
-
-
-def pid(app, rid: str) -> str:
-    return app.store.load_run(rid).project_id
 
 
 def retain(app, clock, owner: str = "w", **kw):
@@ -50,19 +46,6 @@ def sql_updated_at(app, rid: str):
             row = conn.execute(select(RUNS.c.updated_at, RUNS.c.run_json).where(RUNS.c.run_id == rid)).first()
         return row.updated_at, row.run_json["updatedAt"]
     return app.store.load_run(rid).dump()["updatedAt"]
-
-
-def rework(app, clock, rid: str, *bundles: str) -> None:
-    for b in bundles:
-        app.orchestrator.request_rework_for_project(pid(app, rid), b)
-    clock.advance(seconds=WINDOW)
-    app.orchestrator.advance(rid)
-
-
-def finish(app, rid: str) -> None:
-    app.orchestrator.decide(rid, 9, "진행", confirmed=True)
-    app.orchestrator.advance(rid)
-    assert app.store.load_run(rid).state.progress == "완료"
 
 
 # ── 기준 시각 ──────────────────────────────────────────

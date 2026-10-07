@@ -15,6 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 from conftest import executed, make_app, to_screen6, to_screen8, to_screen9
+from flow_helpers import ctx_of, cycle_steps, last_cycle_id, records_of_task, rework, usage_of
 
 from sbrain.agents.stubs import HTML_NAMES, HTML_WEIGHTS, SVG_NAMES, SVG_WEIGHTS, StubScenario, bind_stubs
 from sbrain.agents.supervisor.plan import PURPOSE_REWRITE
@@ -34,45 +35,13 @@ from sbrain.models.base import extension_fields
 from sbrain.orchestrator.errors import ERROR_CODES, ToolCallExhausted
 from sbrain.orchestrator.settings import PROVISIONAL
 
-WINDOW = 3   # 재작성 요청을 모으는 시간(잠정 2초)을 넘기는 초
 FEATURES = ["회원 등록·조회", "수업 예약"]   # 스텁 T-C1의 핵심 기능 = featureList
 IMAGE_FALLBACK = "T-B2 이미지 호출 실패 — 기본 아이콘으로 계속"
 
 
 # ── 도움 ─────────────────────────────────────────────
-def pid(app, rid):
-    return app.store.load_run(rid).project_id
-
-
-def rework(app, clock, rid, *bundles):
-    for b in bundles:
-        app.orchestrator.request_rework_for_project(pid(app, rid), b)
-    clock.advance(seconds=WINDOW)
-    app.orchestrator.advance(rid)
-
-
-def ctx_of(app, rid):
-    return app.engine.open_context(app.store.load_run(rid))
-
-
-def last_cycle_id(app, rid):
-    return [e for e in app.store.events(rid) if e.kind == "재작성시작"][-1].cycle_id
-
-
-def cycle_steps(app, rid, cycle_id):
-    return [r.task_id for r in app.store.executions(rid) if r.cycle_id == cycle_id]
-
-
-def records(app, rid, task_id):
-    return [r for r in app.store.executions(rid) if r.task_id == task_id]
-
-
 def events(app, rid, kind):
     return [e for e in app.store.events(rid) if e.kind == kind]
-
-
-def usage_of(app, rid):
-    return {u.bundle_id: (u.used_count, u.remaining) for u in app.store.load_run(rid).rework_usage}
 
 
 def code_check(kind: str, failed: dict[int, list[str]] | None = None, gate: list[str] | None = None,
@@ -149,16 +118,13 @@ def test_gate_failure_sends_only_category_target(kind, target):
 
 
 @pytest.mark.parametrize("sources,targets", [
-    (["prototype"], {"T-B1"}), (["infographic"], {"T-B2"}), (["prototype", "infographic"], {"T-B1", "T-B2"})])
+    (["prototype"], {"T-B1"}), (["infographic"], {"T-B2"}), (["prototype", "infographic"], {"T-B1", "T-B2"}),
+    ([], {"T-B2"}),                                              # 결함 출처가 없으면 T-B2로 (잠정)
+])
 def test_html_alt_text_goes_by_defect_sources(sources, targets):
     reasons = artifact_rework_reasons(score("html", failed={2: sources}), "html")
     assert set(reasons) == targets
     assert all(any("2번" in line for line in lines) for lines in reasons.values())
-
-
-def test_html_alt_text_without_defect_sources_falls_back_to_tb2():
-    reasons = artifact_rework_reasons(score("html", failed={2: []}), "html")
-    assert set(reasons) == {"T-B2"}
 
 
 def test_other_html_checks_go_to_tb1_and_g04_never_listed():
@@ -274,8 +240,8 @@ def test_error_codes_and_provisional_events():
 def test_tv2_and_tb1_receive_plan_doc(clock):
     app = make_app(clock)
     rid = to_screen8(app)
-    [tv2] = records(app, rid, "T-V2")
-    [tb1] = records(app, rid, "T-B1")
+    [tv2] = records_of_task(app, rid, "T-V2")
+    [tb1] = records_of_task(app, rid, "T-B1")
     assert any(i.startswith("planDoc@") for i in tv2.inputs)
     assert any(i.startswith("planDoc@") for i in tb1.inputs)
     assert ctx_of(app, rid).get("T-V2.diagnostics") == []
@@ -288,7 +254,7 @@ def test_withheld_match_adds_admin_event_scores_zero_and_continues(clock):
     assert (run.state.step, run.state.progress) == ("산출물확인", "사용자대기")
     [held] = events(app, rid, "대조보류")
     assert held.detail == "T-V2 대조 판정 보류 (E-V2-NOFEATURE) — 0점 합산"
-    [tv2] = records(app, rid, "T-V2")
+    [tv2] = records_of_task(app, rid, "T-V2")
     assert held.execution_id == tv2.execution_id
     assert [e.detail for e in events(app, rid, "검증2진단")] == ["진단 하나", "진단 둘"]
     ctx = ctx_of(app, rid)
@@ -330,7 +296,7 @@ def test_g04_self_check_exhausted_records_event_and_continues(clock):
     rid = to_screen8(app)
     assert executed(app, rid).count("G-04") == 3                        # 재수행 횟수 2
     [ev] = events(app, rid, "안내문서자체검사실패")
-    assert ev.execution_id == records(app, rid, "G-04")[-1].execution_id
+    assert ev.execution_id == records_of_task(app, rid, "G-04")[-1].execution_id
     run = app.store.load_run(rid)
     assert (run.state.step, run.state.progress) == ("산출물확인", "사용자대기")
     orders = ctx_of(app, rid).get("G-02b.reworkOrders")
@@ -345,7 +311,7 @@ def test_onepage_screen9_document_rework_reflects_infographic(clock):
     cyc = last_cycle_id(app, rid)
     assert cycle_steps(app, rid, cyc) == [
         "T-W1", "T-W2", "T-W3", "M-1", "T-V1", "T-B2", "M-2", "G-04", "M-3", "T-V2", "G-02b"]
-    [tb2] = [r for r in records(app, rid, "T-B2") if r.cycle_id == cyc]
+    [tb2] = [r for r in records_of_task(app, rid, "T-B2") if r.cycle_id == cyc]
     assert tb2.rework_role == "반영" and tb2.feedback_in == []
     assert not any(i.startswith("T-B2.reworkInput") for i in tb2.inputs)
     assert "T-B2.reworkInput" not in app.store.get_pointers(rid)
@@ -358,7 +324,7 @@ def test_onepage_document_and_infographic_together_runs_tb2_once_as_target(clock
     rework(app, clock, rid, "성장전략", "인포그래픽")
     cyc = last_cycle_id(app, rid)
     assert cycle_steps(app, rid, cyc).count("T-B2") == 1
-    [tb2] = [r for r in records(app, rid, "T-B2") if r.cycle_id == cyc]
+    [tb2] = [r for r in records_of_task(app, rid, "T-B2") if r.cycle_id == cyc]
     assert tb2.rework_role == "대상" and tb2.feedback_in
     assert any(i.startswith("T-B2.reworkInput@") for i in tb2.inputs)
 
@@ -450,7 +416,7 @@ def test_resume_reuses_same_rework_input(clock):
     assert app.store.load_run(rid).state.step == "산출물확인"
     redo, resumed = seen[1], seen[2]
     assert resumed == redo and resumed.previous_source_text == "<html>원문표지-0</html>"
-    assert ref in records(app, rid, "T-B1")[-1].inputs
+    assert ref in records_of_task(app, rid, "T-B1")[-1].inputs
     assert app.store.get_pointers(rid)["T-B1.reworkInput"] == int(ref.split("@")[1])
 
 
@@ -511,7 +477,7 @@ def test_tb2_image_failure_continues_with_one_event(clock):
     rid = to_screen8(app)
     run = app.store.load_run(rid)
     assert (run.state.step, run.state.progress) == ("산출물확인", "사용자대기")
-    [tb2] = records(app, rid, "T-B2")
+    [tb2] = records_of_task(app, rid, "T-B2")
     assert tb2.status == "성공"
     [ev] = events(app, rid, "이미지대체")
     assert (ev.detail, ev.execution_id, ev.refs) == (IMAGE_FALLBACK, tb2.execution_id, [])
@@ -529,7 +495,7 @@ def test_image_event_per_execution_record_across_redo(clock):
     icon_tb2(app)
     app.image.plan("T-B2", ["timeout"] * 12)                             # 두 실행 모두 이미지 실패
     rid = to_screen8(app)
-    recs = records(app, rid, "T-B2")
+    recs = records_of_task(app, rid, "T-B2")
     assert len(recs) == 2
     assert sorted(e.execution_id for e in events(app, rid, "이미지대체")) == sorted(r.execution_id for r in recs)
 
@@ -551,7 +517,7 @@ def test_alt_text_without_defect_sources_records_event_and_tb2_reason(clock):
     app = make_app(clock, StubScenario(art_scores=[(3.0, 15.0)], alt_defect_sources=[]))
     rid = to_screen8(app)
     [ev] = events(app, rid, "대체텍스트출처누락")
-    [tv2] = records(app, rid, "T-V2")
+    [tv2] = records_of_task(app, rid, "T-V2")
     assert (ev.detail, ev.execution_id) == ("HTML 2번 미충족인데 defect_sources가 비어 있음 — T-B2로 보냄", tv2.execution_id)
     orders = {o.task_id: o for o in ctx_of(app, rid).get("G-02b.reworkOrders") if o.layer == "artifact"}
     assert "코드 검증 2번 대체 텍스트" in orders["T-B2"].reason
