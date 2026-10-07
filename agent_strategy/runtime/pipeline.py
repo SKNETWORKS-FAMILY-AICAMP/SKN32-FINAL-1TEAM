@@ -228,7 +228,7 @@ def normalize_back_input(raw,kind):
         budget_rows=budgets
         members=[]
     elif kind=='pre_startup':
-        status=table.get('generalStatus',{}); summary=table.get('itemSummary',{}); agreement=table.get('implementationSchedule') or []; schedules=agreement+(table.get('fullScaleSchedule') or [])
+        status=table.get('generalStatus',{}); summary=table.get('itemSummary',{}); agreement=[{**row,'_schedule_scope':'agreement'} for row in (table.get('implementationSchedule') or [])]; roadmap=[{**row,'_schedule_scope':'roadmap'} for row in (table.get('fullScaleSchedule') or [])]; schedules=agreement+roadmap
         # 개발 기간은 협약기간 일정만으로 계산한다. fullScaleSchedule은 협약 이후 로드맵이라
         # _strategy_limits.deadline(협약 종료 기한) 비교에 넣지 않고, 표·일정 데이터에만 쓴다.
         dev_start,dev_end=_period_months(agreement)
@@ -242,9 +242,9 @@ def normalize_back_input(raw,kind):
         plan={'main_industry':status.get('지원분야'),'dev_start_month':dev_start,'dev_end_month':dev_end,'ceo_capability':ceo.get('보유역량'),'ceo_careers':[],'strategy_limits':limits,'no_partners':not bool(table.get('partnerPlan')),'partners':table.get('partnerPlan',[])}
         budget_rows=[{**row,'_phase':'1단계'} for row in table.get('budgetPlanStep1') or []]+[{**row,'_phase':'2단계'} for row in table.get('budgetPlanStep2') or []]
     elif kind=='early_startup':
-        status=table.get('일반현황',{}); summary=table.get('창업아이템개요',{}); schedules=(table.get('실현가능성_일정') or [])+(table.get('성장전략_일정') or [])
+        status=table.get('일반현황',{}); summary=table.get('창업아이템개요',{}); agreement=[{**row,'_schedule_scope':'agreement'} for row in (table.get('실현가능성_일정') or [])]; roadmap=[{**row,'_schedule_scope':'roadmap'} for row in (table.get('성장전략_일정') or [])]; schedules=agreement+roadmap
         project={'description':summary.get('아이템_개요') or status.get('창업아이템명'),'output_summary':status.get('산출물'),'tech_field':status.get('전문기술분야'),'target_customer':'확인 필요'}
-        plan={'main_industry':status.get('지원분야'),'dev_start_month':_month(schedules[0].get('추진기간')) if schedules else None,'dev_end_month':_month(schedules[-1].get('추진기간')) if schedules else None,'ceo_capability':None,'ceo_careers':[],'strategy_limits':limits,'no_partners':not bool(table.get('협력기관')),'partners':table.get('협력기관',[])}
+        plan={'main_industry':status.get('지원분야'),'dev_start_month':_month(agreement[0].get('추진기간')) if agreement else None,'dev_end_month':_month(agreement[-1].get('추진기간')) if agreement else None,'ceo_capability':None,'ceo_careers':[],'strategy_limits':limits,'no_partners':not bool(table.get('협력기관')),'partners':table.get('협력기관',[])}
         budget_rows=table.get('사업비_집행계획',[]); members=table.get('팀구성현황',[])
     else: return raw
     schedules=[{**row,
@@ -287,6 +287,13 @@ def table_arguments(raw,kind,spec,canonical):
                 rows=[r for r in rows if r.get('단계')==phase]
                 rules.update(unassignedOriginalRows=unassigned,note='단계 미지정 원본은 별도 보존. 각 단계에 중복 배정하지 않음')
             for row in rows:row.setdefault('산출근거',row.get('집행계획','확인 필요'))
+        # F17은 원본 표를 우선하지만, 저장된 back 입력에 표가 없거나
+        # 경로가 다른 경우 정규화된 전략 결과를 보조 입력으로 사용한다.
+        # 빈 표를 성공 결과로 저장하지 않도록 한다.
+        if not rows and kind=='early_startup' and suffix=='5.2':
+            rows=[{'구분':r.get('category','확인 필요'),'추진내용':r.get('task','확인 필요'),'추진기간':r.get('period','미정'),'세부내용':r.get('details','확인 필요')} for r in (canonical.get('schedule',[]) or []) if isinstance(r,dict)]
+        if not rows and kind=='early_startup' and suffix=='5.3':
+            rows=[{'비목':r.get('category',r.get('비목','확인 필요')),'산출근거':r.get('집행계획',r.get('산출근거','확인 필요')),'정부지원사업비':r.get('government_amount',r.get('정부지원사업비','확인 필요'))} for r in ((canonical.get('budget') or {}).get('items',[]) or []) if isinstance(r,dict)]
         if suffix in ('5.2','6.2'):
             rules['narrativeRequired']=True
             rules['narrativeType']='schedule'
@@ -300,6 +307,17 @@ def table_arguments(raw,kind,spec,canonical):
         else:
             rows=[{'핵심기술':r if isinstance(r,str) else r.get('technology',r.get('name','확인 필요')),'개발기능':r.get('function','확인 필요') if isinstance(r,dict) else '확인 필요'} for r in values]
     return dict(columns=spec['rules']['requiredColumns'],rows=rows,rules=rules)
+
+def _table_fallback_text(output, spec):
+    """표 재작성 후에도 실패하면 저장할 본문 대체 문구를 만든다."""
+    tables=output.get('tables',[]) if isinstance(output,dict) else []
+    table=tables[0] if tables and isinstance(tables[0],dict) else {}
+    columns=table.get('columns') or spec.get('rules',{}).get('requiredColumns',[])
+    rows=table.get('rows') or []
+    if rows:
+        lines=['; '.join(f'{col}: {row.get(col,"확인 필요")}' for col in columns) for row in rows if isinstance(row,dict)]
+        return '표 구조 검증에 실패하여 본문 설명으로 대체함.\n'+'\n'.join(f'· {line}' for line in lines)
+    return '표 구조 검증에 실패하여 본문 설명으로 대체함. 원본 행과 필수 항목을 확인한 뒤 다시 작성해야 함.'
 
 def _attach_provenance(fid, value, kwargs):
     """F02~F15의 모든 표준 결과에 상위 근거와 사실을 보존한다."""
@@ -337,7 +355,7 @@ def _reconcile_validation(spec, output, validation):
     # 일부 문서 계약은 contentType을 section으로 유지하면서 F17 표를
     # 포함한다. requiredColumns/F17 기준으로 실제 저장 표를 판정한다.
     if (spec.get('contentType')=='table' or spec.get('functionId')=='F17' or required) and valid_table:
-        issues=[i for i in issues if not ('필수 표' in i or 'tables의 columns/rows 구조' in i or '표 형식 텍스트만' in i or 'content.tables' in i)]
+        issues=[i for i in issues if not ('필수 표' in i or 'tables의 columns/rows 구조' in i or 'tables.columns' in i or 'tables.rows' in i or '표 형식 텍스트만' in i or 'content.tables' in i)]
     if spec.get('contentType')=='image' and isinstance(output.get('imageSpecs'),list):
         types={x.get('flowType') for x in output['imageSpecs'] if isinstance(x,dict)}
         if {'USER_FLOW','SERVICE_ARCHITECTURE'}.issubset(types):
@@ -349,6 +367,39 @@ def _reconcile_validation(spec, output, validation):
     validation['issues']=issues
     if validation.get('status')=='fail' and not issues:
         validation['status']='warning' if validation.get('warnings') else 'pass'
+    return validation
+
+def _remove_roadmap_deadline_warnings(validation, source, kind):
+    """초기창업의 협약 이후 성장 로드맵을 협약기간 위반으로 중복 경고하지 않는다."""
+    if kind != 'early_startup' or not isinstance(validation, dict):
+        return validation
+    facts = source.get('originalFacts', {}) if isinstance(source, dict) else {}
+    rows = facts.get('schedule', []) if isinstance(facts, dict) else []
+    roadmap = [r for r in rows if isinstance(r, dict) and r.get('_schedule_scope') == 'roadmap']
+    agreement = [r for r in rows if isinstance(r, dict) and r.get('_schedule_scope') != 'roadmap']
+    if roadmap and agreement:
+        validation['warnings'] = [w for w in validation.get('warnings', [])
+                                  if not ('협약기간' in str(w) and ('일정' in str(w) or '종료' in str(w)))]
+    return validation
+
+def _check_agreement_table_overrun(validation, spec, output, source, kind):
+    """협약기간용 개발계획 표가 원본 협약 일정의 종료월을 넘는지 검사한다."""
+    if kind != 'early_startup' or spec.get('sectionId') != '3.5.2' or not isinstance(validation, dict):
+        return validation
+    facts = source.get('originalFacts', {}) if isinstance(source, dict) else {}
+    rows = facts.get('schedule', []) if isinstance(facts, dict) else []
+    agreement = [r for r in rows if isinstance(r, dict) and r.get('_schedule_scope') != 'roadmap']
+    tables = output.get('tables', []) if isinstance(output, dict) else []
+    if not agreement or not tables:
+        return validation
+    def months(value):
+        return [f'{y}-{int(m):02d}' for y,m in re.findall(r'(20\d{2})[-./~년\s]*(\d{1,2})', str(value or ''))]
+    source_end=max((m for r in agreement for m in months(r.get('period') or r.get('추진기간') or r.get('기간'))), default=None)
+    generated_end=max((m for t in tables if isinstance(t,dict) for r in (t.get('rows') or []) if isinstance(r,dict) for m in months(r.get('추진기간') or r.get('period') or r.get('기간'))), default=None)
+    if source_end and generated_end and generated_end > source_end:
+        validation.setdefault('issues', []).append(f'개발계획 표 종료월 {generated_end}이 원본 협약 일정 종료월 {source_end} 이후임')
+        validation['status']='fail'
+        validation['warnings']=[w for w in validation.get('warnings',[]) if '기간 정합성' not in str(w)]
     return validation
 
 def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,execution_scope='full'):
@@ -437,8 +488,8 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
         # 재작성은 UI의 통합 회귀 재작성 컨트롤러가 담당한다. 전체 실행은
         # 항목을 한 번만 생성하고 검증 결과를 반환하며, 실패 항목의 추가
         # 호출은 /api/retry-latest를 통해서만 수행한다.
-        attempt_limit=0
-        for attempt in range(1):
+        attempt_limit=2 if spec['functionId']=='F17' else 1
+        for attempt in range(attempt_limit):
             if spec['functionId']=='F17':
                 image_outputs=[]
                 output=call('F17',py.generate_table,**table_arguments(raw,kind,spec,c))
@@ -467,6 +518,8 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
             validation=(call('F19',py.validate_section,section_spec=spec,content=output,source_data=source)
                         if execution_scope=='full' else {'status':'not_run','agent':'검증 1','issues':[]})
             validation=_reconcile_validation(spec,output,validation)
+            validation=_remove_roadmap_deadline_warnings(validation,source,kind)
+            validation=_check_agreement_table_overrun(validation,spec,output,source,kind)
             if (kind=='early_startup' and spec['functionId']=='F17' and sid == '3.5.3'
                     and output.get('tables') and output['tables'][0].get('rows')==[]
                     and output['tables'][0].get('rules',{}).get('unassignedOriginalRows')):
@@ -478,6 +531,12 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
                 validation['status']='warning' if not validation.get('issues') else validation.get('status','fail')
             attempts.append({'attempt':attempt+1,'generatedText':output['generatedText'],'validation':validation,'responseId':output.get('responseId')})
             if execution_scope!='full' or validation['status'] in {'pass','warning'}:break
+        if spec['functionId']=='F17' and validation.get('status')=='fail':
+            reason=' · '.join(str(x) for x in validation.get('issues',[]) if x) or '표 필수 구조 검증 실패'
+            output['generatedText']=_table_fallback_text(output,spec)
+            output['tables']=[]
+            output['tableFallbackUsed']=True
+            output['fallbackReason']=reason
         rendered=[]
         if spec['functionId']=='F18' and render_image:
             rendered=[render_image(item) for item in image_outputs];images.extend(rendered)
@@ -621,7 +680,8 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
         attempts=[]
         # 이 함수는 한 번의 회귀 재작성만 수행한다. 항목별 최대 횟수와
         # 자동 반복은 프런트의 통합 회귀 재작성 정책이 관리한다.
-        for attempt in range(1):
+        retry_attempt_limit=2 if spec['functionId']=='F17' else 1
+        for attempt in range(retry_attempt_limit):
             feedback=attempts[-1]['validation']['issues'] if attempts else []
             if spec['functionId']=='F17':
                 image_outputs=[]
@@ -645,6 +705,8 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
                 output['imageTypes']=['USER_FLOW','SERVICE_ARCHITECTURE']
             validation=call('F19',py.validate_section,section_spec=spec,content=output,source_data=source)
             validation=_reconcile_validation(spec,output,validation)
+            validation=_remove_roadmap_deadline_warnings(validation,source,kind)
+            validation=_check_agreement_table_overrun(validation,spec,output,source,kind)
             if (kind=='early_startup' and spec['functionId']=='F17' and spec['sectionId'] == '3.5.3'
                     and output.get('tables') and output['tables'][0].get('rows')==[]
                     and output['tables'][0].get('rules',{}).get('unassignedOriginalRows')):
@@ -653,6 +715,12 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
                 validation['status']='warning' if not validation.get('issues') else validation.get('status','fail')
             attempts.append({'attempt':attempt+1,'generatedText':output['generatedText'],'validation':validation,'responseId':output.get('responseId')})
             if validation['status'] in {'pass','warning'}:break
+        if spec['functionId']=='F17' and validation.get('status')=='fail':
+            reason=' · '.join(str(x) for x in validation.get('issues',[]) if x) or '표 필수 구조 검증 실패'
+            output['generatedText']=_table_fallback_text(output,spec)
+            output['tables']=[]
+            output['tableFallbackUsed']=True
+            output['fallbackReason']=reason
         images=[]
         if spec['functionId']=='F18' and validation['status'] in {'pass','warning'} and render_image:
             images=[render_image(item) for item in image_outputs]

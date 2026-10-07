@@ -151,6 +151,8 @@ def score_section(section_spec: dict, content: dict, validation: dict, document_
     return {
         'score': weighted,
         'internalQualityScore': weighted,
+        'documentLayerScore': round(weighted * 0.7, 1),
+        'officialPoints': None,
         'estimatedPoints': {
             'score': weighted,
             'isOfficial': False,
@@ -188,7 +190,13 @@ def aggregate_scores(rows: list[dict]) -> dict:
     evaluations=[row.get('evaluation',{}) for row in rows if row.get('evaluation')]
     scores=[float(item['score']) for item in evaluations if isinstance(item.get('score'),(int,float))]
     failed=[row.get('sectionId') for row in rows if row.get('validation',{}).get('status')=='fail']
+    document_scores=[float(item['documentLayerScore']) for item in evaluations if isinstance(item.get('documentLayerScore'),(int,float))]
+    estimated=[float(item.get('estimatedPoints',{}).get('score')) for item in evaluations if isinstance(item.get('estimatedPoints'),dict) and isinstance(item.get('estimatedPoints',{}).get('score'),(int,float))]
     return {'count':len(scores),'averageScore':round(sum(scores)/len(scores),1) if scores else None,
+            'internalQualityScore':round(sum(scores)/len(scores),1) if scores else None,
+            'documentLayerScore':round(sum(document_scores)/len(document_scores),1) if document_scores else None,
+            'officialPoints':None,
+            'estimatedPoints':{'score':round(sum(estimated)/len(estimated),1),'isOfficial':False,'label':'내부 예상 배점'} if estimated else None,
             'minimumScore':min(scores) if scores else None,'failedSections':failed,
             'status':'fail' if failed else ('warning' if any(item.get('status')=='warning' for item in evaluations) else 'pass')}
 
