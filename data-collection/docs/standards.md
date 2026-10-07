@@ -66,7 +66,7 @@
 
 ## 10. 검증 관문
 
-- 완료라고 보고하기 전에 `.\.venv\Scripts\python.exe -X utf8 -m unittest discover -s tests`를 돌려 실패 0을 확인한다. 2026-10-06 기준 758개 통과·16개 건너뜀.
+- 완료라고 보고하기 전에 `.\.venv\Scripts\python.exe -X utf8 -m unittest discover -s tests`를 돌려 실패 0을 확인한다. 2026-10-07 기준 884개 중 868개 통과·16개 건너뜀(`reports/unit_test_20261007T024611Z/`).
 - MySQL 통합 시험은 `MYSQL_INTEGRATION_TEST=1`일 때만 돈다. 건너뛴 시험은 "확인 안 함"으로 보고한다.
 - 저장소 CI는 data-collection 시험을 돌리지 않는다. 로컬 실행이 유일한 관문이다.
 - 실행한 명령·조건·결과를 기록하고, 실행하지 않은 것은 이유와 함께 적는다. 과거 문서의 수치나 이전 AI의 보고를 이번 실행 결과처럼 쓰지 않는다.

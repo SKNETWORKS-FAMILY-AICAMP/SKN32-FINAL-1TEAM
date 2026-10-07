@@ -8,7 +8,7 @@
 | 문서 | 무엇 | 언제 |
 |---|---|---|
 | [STATUS.md](STATUS.md) | 지금 상태. **맨 위 항목이 최신**이다 | 작업을 시작할 때 항상 |
-| [NEXT_SESSION_HANDOFF_20261006.md](NEXT_SESSION_HANDOFF_20261006.md) | 최신 인계서. 공고 서버 API(조율 창구) 01~04 마무리, 다음은 05 답변서 (10/6). 이전 인계서는 `archive/` | 새 세션을 시작할 때 |
+| [NEXT_SESSION_HANDOFF_20261007.md](NEXT_SESSION_HANDOFF_20261007.md) | 최신 인계서. 검색에서 벡터 DB 빼기, 가산점 정리(확인된 부분합·재검수 지적 처리), 단위 테스트 결과서, 시험 화면 가산점 표시 (10/7). 이전 인계서는 `archive/` | 새 세션을 시작할 때 |
 | [PLAN_ALIGNMENT_20260928.md](PLAN_ALIGNMENT_20260928.md) | 기획서·기능정의서와 대조한 결과와 **방향 결정**(업종·지역은 순위 신호, 제외 목록은 순위에 안 씀 등) | 매칭·업종 작업 전에 |
 | [FLOW.md](FLOW.md) | 코드가 실제로 어떤 순서로 도는지 | 코드를 고치기 전에 |
 | [WORKLOG.md](WORKLOG.md) | 작업 이력. **맨 위가 최신**, 과거 기록은 지우지 않는다 | 왜 이렇게 됐는지 찾을 때 |
@@ -37,10 +37,10 @@
 |---|---|---|
 | [specs/](specs/) | **기준 문서** — 프로젝트 기획서 v1.10(PDF), Agent 기능정의서 v1.9(xlsx) | 팀 문서. 고치지 않는다. 판단 기준은 기능정의서 |
 | [guides/](guides/) | 운영·구조 참고 — API 필드 대응표, 배치 SQL, 예약 실행, 팀원용 데이터 사용법, 검증 화면 사용법, 구조도(HTML·SVG), [공고 판정 테이블 설계](guides/JUDGMENT_TABLES.md), **[공고팀 함수 설명서 — 조율 에이전트용](guides/ORCHESTRATION_HANDOFF.md)**(조율 개발자에게 전달) | 내용이 바뀌면 같은 파일을 고친다 |
-| [notice_api/](notice_api/README.md) | **조율 에이전트가 부르는 공고 서버 API 작업**(2026-10-06~). 전체 계획·진행표와 작업별 폴더(`01_status_match/` · `02_detail_eligibility/` · `03_bonus/`)와 [Codex 검토 요청](notice_api/CODEX_REVIEW_REQUEST_20261006.md) → [결과](notice_api/CODEX_REVIEW_20261006.md) → [응답·재검수 요청](notice_api/CODEX_REVIEW_RESPONSE_20261006.md)(재검수 결과는 같은 폴더 `CODEX_REVIEW_RECHECK_20261006.md`). 코드는 `search/` 등 기존 자리에 있고, 각 작업 README에 바꾼 파일을 적는다 | 9/29 직접 import 설명서(`guides/ORCHESTRATION_HANDOFF.md`)를 대신하는 방식 |
+| [notice_api/](notice_api/README.md) | **조율 에이전트가 부르는 공고 서버 API 작업**(2026-10-06~). 전체 계획·진행표와 작업별 폴더(`01_status_match/` · `02_detail_eligibility/` · `03_bonus/`)와 [Codex 검토 요청](notice_api/CODEX_REVIEW_REQUEST_20261006.md) → [결과](notice_api/CODEX_REVIEW_20261006.md) → [응답·재검수 요청](notice_api/CODEX_REVIEW_RESPONSE_20261006.md)(재검수 결과는 같은 폴더 `CODEX_REVIEW_RECHECK_20261006.md`). 가산점 10/7: [재검수 요청](notice_api/CODEX_BONUS_RECHECK_REQUEST_20261007.md) → [결과](notice_api/CODEX_BONUS_RECHECK_20261007.md) → [재재검수 요청](notice_api/CODEX_BONUS_RECHECK2_REQUEST_20261007.md) · [조율 담당 알림 초안](notice_api/BONUS_NOTICE_DRAFT_20261007.md). 코드는 `search/` 등 기존 자리에 있고, 각 작업 README에 바꾼 파일을 적는다 | 9/29 직접 import 설명서(`guides/ORCHESTRATION_HANDOFF.md`)를 대신하는 방식 |
 | [reviews/](reviews/) | 작업 지시서·검수 요청서·검수 결과. 주제별 폴더 | 아래 3절 |
 | [ml/](ml/) | 머신러닝(리랭커·업력 분류기) 설계·방향과 도식 | 서비스에 연결되지 않은 제출물용 |
-| [deliverables/](deliverables/) | 제출한 보고서(docx)와 확인용 렌더링(`_qa/`) | 제출본이다. 고치지 않는다 |
+| [deliverables/](deliverables/) | 제출한 보고서(docx)와 확인용 렌더링(`_qa/`). 10/7 `[단위 테스트] 공고 데이터·매칭 단위 테스트 결과서.docx` 추가(근거 `reports/unit_test_20261007T024611Z/` — 가산점 지적 처리 뒤 다시 만든 판) | 제출본이다. 고치지 않는다 |
 | [archive/](archive/) | 지난 인계서(9/14, 9/22, 9/28) | **최신이 아니다.** 배경을 찾을 때만 읽는다 |
 
 ## 3. reviews/ — 주제별 검수 기록

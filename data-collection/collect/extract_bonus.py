@@ -593,26 +593,43 @@ def _today_kst():
     return (datetime.now(timezone.utc) + timedelta(hours=9)).date().isoformat()
 
 
-def _daily_used(day, path=None):
-    try:
-        with io.open(path or DAILY_FILE, encoding='utf-8') as f:
-            return int(json.load(f).get(day, 0))
-    except (OSError, ValueError, AttributeError):
-        return 0
+class DailyRecordError(RuntimeError):
+    """하루 호출 기록 파일이 있는데 읽지 못함 — 이미 쓴 호출 수를 모르므로 그날은 부르지 않는다(2026-10-07 R-P2-6)."""
 
 
-def _daily_add(day, n, path=None):
-    path = path or DAILY_FILE
+def _read_daily(path):
+    """기록 파일 → dict. 없으면 {}(처음). 있는데 읽지 못하거나 모양이 틀리면 DailyRecordError."""
+    if not os.path.exists(path):
+        return {}
     try:
         with io.open(path, encoding='utf-8') as f:
             data = json.load(f)
-    except (OSError, ValueError):
-        data = {}
+        if not isinstance(data, dict):
+            raise ValueError('dict 가 아니다')
+        {k: int(v) for k, v in data.items()}
+        return data
+    except (OSError, ValueError, TypeError) as exc:
+        raise DailyRecordError('하루 호출 기록 %s 를 읽지 못했다(%s: %s)' % (path, type(exc).__name__, exc))
+
+
+def _daily_used(day, path=None):
+    """오늘 이미 부른 수. 기록이 없으면 0, 있는데 깨졌으면 DailyRecordError."""
+    return int(_read_daily(path or DAILY_FILE).get(day, 0))
+
+
+def _daily_add(day, n, path=None):
+    """오늘 부른 수에 n 을 더한다. 임시 파일에 쓴 뒤 바꿔치기한다 — 쓰다 끊겨도 이전 기록이 남는다."""
+    path = path or DAILY_FILE
+    data = _read_daily(path)
     data = {k: v for k, v in data.items() if k[:7] == day[:7]}     # 이번 달 것만 남긴다
     data[day] = int(data.get(day, 0)) + n
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with io.open(path, 'w', encoding='utf-8') as f:
+    tmp = path + '.tmp'
+    with io.open(tmp, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
 
 
 def run_batch(limit=DAILY_LIMIT, say=print, daily_file=None):
@@ -626,8 +643,25 @@ def run_batch(limit=DAILY_LIMIT, say=print, daily_file=None):
     if not config.get('OPENAI_API_KEY'):
         say('OPENAI_API_KEY 가 없다. 가점 추출을 건너뛴다')
         return {'error': 'no_api_key', 'saved': 0}
+    # 잔여량 읽기 → 호출 수 예약 → 기록을 한 잠금 안에서 한다(2026-10-07 Codex 재검수 B-P2-3 — 원자적 교체만으로는 두 실행이
+    # 같은 잔여량을 읽고 둘 다 예약할 수 있었다). 이미 잡혀 있으면 부르지 않는다
+    from collect import job_lock
+    try:
+        with job_lock.acquire((daily_file or DAILY_FILE) + '.lock'):
+            return _run_batch_locked(limit, say, daily_file)
+    except job_lock.JobBusy as exc:
+        say('  다른 가점 추출이 실행 중이다 — 이번에는 부르지 않는다')
+        return {'error': 'bonus_busy: %s' % exc, 'saved': 0}
+
+
+def _run_batch_locked(limit, say, daily_file):
     day = _today_kst()
-    used = _daily_used(day, daily_file)
+    try:
+        used = _daily_used(day, daily_file)
+    except DailyRecordError as exc:
+        # 이미 쓴 호출 수를 모르면 상한을 지킬 수 없다 — 그날은 부르지 않는다(종료 코드 4 로 알린다)
+        say('  %s — 오늘은 가점 추출을 부르지 않는다' % exc)
+        return {'error': 'daily_record_unreadable: %s' % exc, 'saved': 0}
     room = max(0, limit - used)
     if used:
         say('오늘(%s) 이미 %d건 불렀다 — 이번 상한 %d건' % (day, used, room))

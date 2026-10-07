@@ -1,0 +1,1596 @@
+{
+ "summary": {
+  "made_at": "2026-10-07T00:51:23.174177+00:00",
+  "today": "2026-10-07",
+  "queries": 66,
+  "vectors": 2825,
+  "vectors_info": {
+   "count": 2825,
+   "dropped": 0,
+   "fingerprints": {
+    "0a803d170f58c36e": 2825
+   }
+  },
+  "chromadb": "1.5.9",
+  "loaded_store_at": "2026-10-07 00:00:03.678696+00:00",
+  "dense_top10_overlap": 0.9954545454545455,
+  "dense_top10_same_order": 63,
+  "dense_top1_same": 66,
+  "match_top3_same": 62,
+  "match_top10_same": 51,
+  "ms_avg": {
+   "dense_memory": 6.58,
+   "dense_chroma": 7.55,
+   "match_memory": 384.26,
+   "match_chroma": 395.07
+  },
+  "pass_rule": "match_top3_same / queries >= 0.90",
+  "passed": true
+ },
+ "queries": [
+  {
+   "qid": "q001",
+   "kind": "normal",
+   "idea": "중소 금형·사출 공장의 불량을 카메라로 자동 검출하는 비전 AI 검사 장비",
+   "filtered": 1717,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 18.787400098517537,
+    "dense_chroma": 33.370699966326356,
+    "match_memory": 439.49849996715784,
+    "match_chroma": 448.0037000030279
+   }
+  },
+  {
+   "qid": "q002",
+   "kind": "normal",
+   "idea": "자동차 부품 절삭 가공 업체로 노후 설비를 자동화 라인으로 바꾸고 싶다",
+   "filtered": 1665,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.539600038900971,
+    "dense_chroma": 8.873000042513013,
+    "match_memory": 385.0314000155777,
+    "match_chroma": 436.7327999789268
+   }
+  },
+  {
+   "qid": "q003",
+   "kind": "normal",
+   "idea": "3D 프린팅으로 소량 맞춤 생산하는 반려동물용 보조기구 제조",
+   "filtered": 1564,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.5680000223219395,
+    "dense_chroma": 8.192399982362986,
+    "match_memory": 427.3211001418531,
+    "match_chroma": 380.5203998927027
+   }
+  },
+  {
+   "qid": "q004",
+   "kind": "normal",
+   "idea": "폐플라스틱을 재활용한 고기능성 복합소재 개발 및 양산",
+   "filtered": 1665,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 6.032499950379133,
+    "dense_chroma": 6.661300081759691,
+    "match_memory": 403.1559000723064,
+    "match_chroma": 396.6691999230534
+   }
+  },
+  {
+   "qid": "q005",
+   "kind": "normal",
+   "idea": "중소기업 회계·세무 서류를 자동으로 분류하는 AI SaaS",
+   "filtered": 1721,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 7.1310000494122505,
+    "dense_chroma": 8.177299983799458,
+    "match_memory": 401.6487000044435,
+    "match_chroma": 392.8390999790281
+   }
+  },
+  {
+   "qid": "q006",
+   "kind": "normal",
+   "idea": "대학생 동아리 일정과 회비를 관리하는 모바일 앱",
+   "filtered": 1564,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 7.520899875089526,
+    "dense_chroma": 6.441999925300479,
+    "match_memory": 352.35720011405647,
+    "match_chroma": 379.08859993331134
+   }
+  },
+  {
+   "qid": "q007",
+   "kind": "normal",
+   "idea": "소상공인 매장의 예약·주문을 한 번에 관리하는 키오스크 연동 플랫폼",
+   "filtered": 1732,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 4.897400038316846,
+    "dense_chroma": 7.2604999877512455,
+    "match_memory": 389.6659000311047,
+    "match_chroma": 447.5416000932455
+   }
+  },
+  {
+   "qid": "q008",
+   "kind": "normal",
+   "idea": "공공기관용 빅데이터 분석·시각화 솔루션 해외 수출",
+   "filtered": 1717,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 6.450300104916096,
+    "dense_chroma": 6.534300046041608,
+    "match_memory": 413.91930007375777,
+    "match_chroma": 362.83839982934296
+   }
+  },
+  {
+   "qid": "q009",
+   "kind": "normal",
+   "idea": "중소 제조업체 대상 산업제어시스템(OT) 보안 관제 서비스",
+   "filtered": 1721,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 7.15019996277988,
+    "dense_chroma": 6.05809991247952,
+    "match_memory": 394.0391999203712,
+    "match_chroma": 484.3343000393361
+   }
+  },
+  {
+   "qid": "q010",
+   "kind": "normal",
+   "idea": "피부 질환을 스마트폰 사진으로 1차 판별하는 의료 AI",
+   "filtered": 1717,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 19.617200130596757,
+    "dense_chroma": 5.638800095766783,
+    "match_memory": 379.5019998215139,
+    "match_chroma": 394.3453000392765
+   }
+  },
+  {
+   "qid": "q011",
+   "kind": "normal",
+   "idea": "고령자 낙상을 감지해 보호자에게 알리는 웨어러블 기기",
+   "filtered": 1564,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 8.107200032100081,
+    "dense_chroma": 10.647699935361743,
+    "match_memory": 494.8211999144405,
+    "match_chroma": 477.9409000184387
+   }
+  },
+  {
+   "qid": "q012",
+   "kind": "normal",
+   "idea": "천연물 기반 건강기능식품 원료 개발 및 해외 수출",
+   "filtered": 1665,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 6.727400003001094,
+    "dense_chroma": 8.04329989477992,
+    "match_memory": 435.690299840644,
+    "match_chroma": 562.9863000940531
+   }
+  },
+  {
+   "qid": "q013",
+   "kind": "normal",
+   "idea": "지역 농산물로 만든 수제 잼과 가공식품 온라인 판매",
+   "filtered": 1721,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 4.666700027883053,
+    "dense_chroma": 6.407700013369322,
+    "match_memory": 360.23700004443526,
+    "match_chroma": 358.17459993995726
+   }
+  },
+  {
+   "qid": "q014",
+   "kind": "normal",
+   "idea": "컨테이너형 스마트팜으로 엽채류를 재배해 급식업체에 납품",
+   "filtered": 1717,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": false,
+   "match_only_memory": [
+    "kstartup:177970"
+   ],
+   "match_only_chroma": [
+    "bizinfo:PBLN_000000000119567"
+   ],
+   "ms": {
+    "dense_memory": 7.779299980029464,
+    "dense_chroma": 7.373100146651268,
+    "match_memory": 484.7006001509726,
+    "match_chroma": 449.2961000651121
+   }
+  },
+  {
+   "qid": "q015",
+   "kind": "normal",
+   "idea": "귀농해서 체험형 블루베리 농장과 카페를 운영하려 한다",
+   "filtered": 1564,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.778999999165535,
+    "dense_chroma": 9.948699967935681,
+    "match_memory": 306.18089996278286,
+    "match_chroma": 324.95099981315434
+   }
+  },
+  {
+   "qid": "q016",
+   "kind": "normal",
+   "idea": "10년째 운영 중인 한식당, 매출이 줄어 경영 개선과 운영자금이 필요하다",
+   "filtered": 1520,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.538400029763579,
+    "dense_chroma": 7.641599979251623,
+    "match_memory": 319.2249001003802,
+    "match_chroma": 338.12249987386167
+   }
+  },
+  {
+   "qid": "q017",
+   "kind": "normal",
+   "idea": "동네 베이커리 카페, 배달앱 입점과 온라인 홍보를 하고 싶다",
+   "filtered": 1733,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 7.16489995829761,
+    "dense_chroma": 6.623900029808283,
+    "match_memory": 351.6063999850303,
+    "match_chroma": 364.5697000902146
+   }
+  },
+  {
+   "qid": "q018",
+   "kind": "normal",
+   "idea": "전통시장 안에 청년 푸드트럭형 분식 매장 창업",
+   "filtered": 1564,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 6.029600044712424,
+    "dense_chroma": 8.78620008006692,
+    "match_memory": 671.7278000432998,
+    "match_chroma": 405.8550000190735
+   }
+  },
+  {
+   "qid": "q019",
+   "kind": "normal",
+   "idea": "국내 중소 브랜드 화장품을 동남아 라이브커머스로 판매",
+   "filtered": 1721,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 8.774399990215898,
+    "dense_chroma": 9.399999864399433,
+    "match_memory": 1094.7386999614537,
+    "match_chroma": 1511.6304999683052
+   }
+  },
+  {
+   "qid": "q020",
+   "kind": "normal",
+   "idea": "생활용품 자체 브랜드를 미국 아마존에 입점시키려 한다",
+   "filtered": 1665,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 6.866399897262454,
+    "dense_chroma": 8.682900108397007,
+    "match_memory": 628.8839001208544,
+    "match_chroma": 557.5980001594871
+   }
+  },
+  {
+   "qid": "q021",
+   "kind": "normal",
+   "idea": "산업용 밸브를 생산하며 중동 시장 수출을 확대하려 한다",
+   "filtered": 1520,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": false,
+   "match_only_memory": [
+    "bizinfo:PBLN_000000000126828"
+   ],
+   "match_only_chroma": [
+    "bizinfo:PBLN_000000000120138"
+   ],
+   "ms": {
+    "dense_memory": 5.655399989336729,
+    "dense_chroma": 7.734999991953373,
+    "match_memory": 331.04049996472895,
+    "match_chroma": 334.7298000007868
+   }
+  },
+  {
+   "qid": "q022",
+   "kind": "normal",
+   "idea": "웹툰 IP를 활용한 굿즈와 애니메이션 숏폼 제작",
+   "filtered": 1732,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 6.622999906539917,
+    "dense_chroma": 8.135499898344278,
+    "match_memory": 381.17689988575876,
+    "match_chroma": 392.60599995031953
+   }
+  },
+  {
+   "qid": "q023",
+   "kind": "normal",
+   "idea": "인디 게임 개발사, 신작 PC 게임의 글로벌 출시 준비",
+   "filtered": 1721,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 6.125499960035086,
+    "dense_chroma": 5.64350001513958,
+    "match_memory": 334.0801999438554,
+    "match_chroma": 365.08719995617867
+   }
+  },
+  {
+   "qid": "q024",
+   "kind": "normal",
+   "idea": "외국인 대상 지역 전통주 양조장 투어 여행 상품",
+   "filtered": 1564,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 6.919400067999959,
+    "dense_chroma": 7.589399814605713,
+    "match_memory": 318.90589999966323,
+    "match_chroma": 362.35599988140166
+   }
+  },
+  {
+   "qid": "q025",
+   "kind": "normal",
+   "idea": "중소기업 제품 패키지와 브랜드 아이덴티티 디자인 에이전시",
+   "filtered": 1717,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": false,
+   "match_only_memory": [
+    "bizinfo:PBLN_000000000127013"
+   ],
+   "match_only_chroma": [
+    "bizinfo:PBLN_000000000123682"
+   ],
+   "ms": {
+    "dense_memory": 6.890800083056092,
+    "dense_chroma": 6.350900046527386,
+    "match_memory": 362.2512000147253,
+    "match_chroma": 383.4999999962747
+   }
+  },
+  {
+   "qid": "q026",
+   "kind": "normal",
+   "idea": "공장 지붕 태양광과 에너지저장장치를 묶은 에너지 관리 서비스",
+   "filtered": 1717,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 0.9,
+   "dense_top10_same_order": false,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": false,
+   "match_only_memory": [
+    "bizinfo:PBLN_000000000126098"
+   ],
+   "match_only_chroma": [
+    "bizinfo:PBLN_000000000118530"
+   ],
+   "ms": {
+    "dense_memory": 7.667599944397807,
+    "dense_chroma": 8.751800050958991,
+    "match_memory": 421.1631999351084,
+    "match_chroma": 430.89879979379475
+   }
+  },
+  {
+   "qid": "q027",
+   "kind": "normal",
+   "idea": "도장 공장을 운영하는데 대기오염 방지시설 교체 비용이 부담된다",
+   "filtered": 1665,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 7.13689997792244,
+    "dense_chroma": 6.984899984672666,
+    "match_memory": 330.83519991487265,
+    "match_chroma": 603.0418002046645
+   }
+  },
+  {
+   "qid": "q028",
+   "kind": "normal",
+   "idea": "커피 찌꺼기를 수거해 친환경 연료 펠릿으로 만드는 사업",
+   "filtered": 1564,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": false,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.963899893686175,
+    "dense_chroma": 7.014499977231026,
+    "match_memory": 355.9538000263274,
+    "match_chroma": 346.43020015209913
+   }
+  },
+  {
+   "qid": "q029",
+   "kind": "normal",
+   "idea": "전기차 배터리 상태를 진단하는 장비와 데이터 서비스",
+   "filtered": 1717,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.397100001573563,
+    "dense_chroma": 7.393700070679188,
+    "match_memory": 365.8168001566082,
+    "match_chroma": 432.1633998770267
+   }
+  },
+  {
+   "qid": "q030",
+   "kind": "normal",
+   "idea": "농업용 방제 드론 제작 및 방제 대행 서비스",
+   "filtered": 1721,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": false,
+   "match_only_memory": [
+    "bizinfo:PBLN_000000000121498"
+   ],
+   "match_only_chroma": [
+    "kstartup:178990"
+   ],
+   "ms": {
+    "dense_memory": 6.441200152039528,
+    "dense_chroma": 8.055799873545766,
+    "match_memory": 364.54640002921224,
+    "match_chroma": 374.96150005608797
+   }
+  },
+  {
+   "qid": "q031",
+   "kind": "normal",
+   "idea": "발달장애인을 고용해 친환경 세제를 만드는 사회적기업",
+   "filtered": 1717,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 7.360299816355109,
+    "dense_chroma": 8.03220015950501,
+    "match_memory": 309.8380002193153,
+    "match_chroma": 327.83960015513003
+   }
+  },
+  {
+   "qid": "q032",
+   "kind": "normal",
+   "idea": "경력단절 여성을 위한 돌봄 인력 매칭 협동조합",
+   "filtered": 1564,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": false,
+   "match_only_memory": [
+    "kstartup:179358"
+   ],
+   "match_only_chroma": [
+    "bizinfo:PBLN_000000000126686"
+   ],
+   "ms": {
+    "dense_memory": 5.104500101879239,
+    "dense_chroma": 6.381999934092164,
+    "match_memory": 337.94089988805354,
+    "match_chroma": 421.5901999268681
+   }
+  },
+  {
+   "qid": "q033",
+   "kind": "normal",
+   "idea": "초등학생 대상 코딩·로봇 교육 학원을 온라인 강의로 확장",
+   "filtered": 1721,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 6.312800105661154,
+    "dense_chroma": 7.099200040102005,
+    "match_memory": 367.48010013252497,
+    "match_chroma": 587.1828999370337
+   }
+  },
+  {
+   "qid": "q034",
+   "kind": "normal",
+   "idea": "전자부품 제조사로 청년 기술인력을 채용하고 싶지만 인건비가 부담",
+   "filtered": 1520,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 6.849299883469939,
+    "dense_chroma": 9.471600176766515,
+    "match_memory": 355.1276000216603,
+    "match_chroma": 392.74969999678433
+   }
+  },
+  {
+   "qid": "q035",
+   "kind": "normal",
+   "idea": "연구소를 운영하는데 석박사 연구인력 채용과 재직자 교육이 필요",
+   "filtered": 1665,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 7.247499888762832,
+    "dense_chroma": 8.237000089138746,
+    "match_memory": 412.5991000328213,
+    "match_chroma": 476.4889001380652
+   }
+  },
+  {
+   "qid": "q036",
+   "kind": "normal",
+   "idea": "인테리어 시공업, 장비 구입과 운전자금이 필요해 저금리 대출을 찾는다",
+   "filtered": 1721,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 7.1356999687850475,
+    "dense_chroma": 11.205599876120687,
+    "match_memory": 590.6046000309289,
+    "match_chroma": 599.4507998693734
+   }
+  },
+  {
+   "qid": "q037",
+   "kind": "normal",
+   "idea": "기술력은 있으나 담보가 없는 초기 제조 스타트업, 보증을 통한 자금 조달",
+   "filtered": 1721,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 8.228200022131205,
+    "dense_chroma": 9.051700122654438,
+    "match_memory": 539.5149998366833,
+    "match_chroma": 574.1103999316692
+   }
+  },
+  {
+   "qid": "q038",
+   "kind": "normal",
+   "idea": "보유 특허를 해외에 출원하고 기술 이전으로 수익화하려 한다",
+   "filtered": 1717,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 8.225400000810623,
+    "dense_chroma": 6.743800127878785,
+    "match_memory": 352.30699996463954,
+    "match_chroma": 374.28150000050664
+   }
+  },
+  {
+   "qid": "q039",
+   "kind": "normal",
+   "idea": "유아용 원목 장난감을 만드는데 KC 인증과 해외 인증이 필요",
+   "filtered": 1732,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": false,
+   "match_only_memory": [
+    "bizinfo:PBLN_000000000126545"
+   ],
+   "match_only_chroma": [
+    "kstartup:179431"
+   ],
+   "ms": {
+    "dense_memory": 6.140700075775385,
+    "dense_chroma": 5.620599957183003,
+    "match_memory": 332.6820000074804,
+    "match_chroma": 346.6962000820786
+   }
+  },
+  {
+   "qid": "q040",
+   "kind": "normal",
+   "idea": "사무실 없이 AI 음성 비서 서비스를 준비 중이라 입주 공간이 필요",
+   "filtered": 1564,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.297400057315826,
+    "dense_chroma": 7.122599985450506,
+    "match_memory": 385.1111000403762,
+    "match_chroma": 349.83980003744364
+   }
+  },
+  {
+   "qid": "q041",
+   "kind": "normal",
+   "idea": "초기 바이오 스타트업으로 실험 장비가 있는 입주 공간을 찾는다",
+   "filtered": 1732,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 6.702800048515201,
+    "dense_chroma": 9.195500053465366,
+    "match_memory": 385.21309988573194,
+    "match_chroma": 431.0902999714017
+   }
+  },
+  {
+   "qid": "q042",
+   "kind": "normal",
+   "idea": "아이디어는 있지만 사업계획서 작성과 창업 교육을 먼저 받고 싶다",
+   "filtered": 1564,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 7.961200084537268,
+    "dense_chroma": 10.020399931818247,
+    "match_memory": 361.53750005178154,
+    "match_chroma": 325.28430013917387
+   }
+  },
+  {
+   "qid": "q043",
+   "kind": "normal",
+   "idea": "1인 창조기업으로 온라인 마케팅 대행을 하며 투자자와 네트워킹하고 싶다",
+   "filtered": 1733,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 7.89529993198812,
+    "dense_chroma": 8.53260001167655,
+    "match_memory": 618.3305999729782,
+    "match_chroma": 492.99509986303747
+   }
+  },
+  {
+   "qid": "q044",
+   "kind": "normal",
+   "idea": "시드 투자를 받은 푸드테크 스타트업, 후속 투자 유치와 액셀러레이팅 프로그램 참여",
+   "filtered": 1732,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.045899888500571,
+    "dense_chroma": 4.829799989238381,
+    "match_memory": 323.3264998998493,
+    "match_chroma": 346.08129994012415
+   }
+  },
+  {
+   "qid": "q045",
+   "kind": "normal",
+   "idea": "창업 6년차 도약기 기업으로 매출 확대를 위한 사업화 자금이 필요",
+   "filtered": 1717,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.8549998793751,
+    "dense_chroma": 6.392000010237098,
+    "match_memory": 301.3554001227021,
+    "match_chroma": 296.47339996881783
+   }
+  },
+  {
+   "qid": "q046",
+   "kind": "normal",
+   "idea": "퇴직 후 40년 제조 경력을 살려 정밀 부품 설계 컨설팅 창업",
+   "filtered": 1564,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": false,
+   "match_top10_same": false,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.585499806329608,
+    "dense_chroma": 6.482800003141165,
+    "match_memory": 302.9104999732226,
+    "match_chroma": 335.28280002065003
+   }
+  },
+  {
+   "qid": "q047",
+   "kind": "normal",
+   "idea": "여성 전용 홈트레이닝 콘텐츠와 운동용품 구독 서비스",
+   "filtered": 1564,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 4.642700077965856,
+    "dense_chroma": 5.145999835804105,
+    "match_memory": 451.23600005172193,
+    "match_chroma": 299.0138998720795
+   }
+  },
+  {
+   "qid": "q048",
+   "kind": "normal",
+   "idea": "가구 제조사로 ERP 도입과 경영 컨설팅을 통해 원가 구조를 개선하려 한다",
+   "filtered": 1520,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 4.017199855297804,
+    "dense_chroma": 5.007999949157238,
+    "match_memory": 290.46910000033677,
+    "match_chroma": 284.84489978291094
+   }
+  },
+  {
+   "qid": "q049",
+   "kind": "normal",
+   "idea": "의류 봉제 공장, 공공기관 조달 시장에 진입하고 싶다",
+   "filtered": 1665,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": false,
+   "match_only_memory": [
+    "bizinfo:PBLN_000000000121226"
+   ],
+   "match_only_chroma": [
+    "kstartup:179258"
+   ],
+   "ms": {
+    "dense_memory": 5.251999944448471,
+    "dense_chroma": 6.468900013715029,
+    "match_memory": 269.84180021099746,
+    "match_chroma": 279.5965000987053
+   }
+  },
+  {
+   "qid": "q050",
+   "kind": "normal",
+   "idea": "양식장 수질을 IoT로 모니터링하고 사료 급이를 자동화",
+   "filtered": 1717,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.562199978157878,
+    "dense_chroma": 6.029299926012754,
+    "match_memory": 297.05679998733103,
+    "match_chroma": 315.55710011161864
+   }
+  },
+  {
+   "qid": "q051",
+   "kind": "normal",
+   "idea": "건설 현장 안전사고를 CCTV AI로 예측하는 솔루션",
+   "filtered": 1717,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.243000108748674,
+    "dense_chroma": 5.90280001051724,
+    "match_memory": 297.6927000563592,
+    "match_chroma": 277.5369000155479
+   }
+  },
+  {
+   "qid": "q052",
+   "kind": "normal",
+   "idea": "전력반도체 테스트 장비 국산화 개발",
+   "filtered": 1665,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 4.980099853128195,
+    "dense_chroma": 5.2194001618772745,
+    "match_memory": 388.712199870497,
+    "match_chroma": 275.6675002165139
+   }
+  },
+  {
+   "qid": "n001",
+   "kind": "negative",
+   "idea": "오늘 날씨가 좋네요 점심 뭐 먹을까",
+   "filtered": 1741,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.615800153464079,
+    "dense_chroma": 5.75889996252954,
+    "match_memory": 295.03660020418465,
+    "match_chroma": 279.58060009405017
+   }
+  },
+  {
+   "qid": "n002",
+   "kind": "negative",
+   "idea": "주말에 친구들과 캠핑 갈 장소 추천해줘",
+   "filtered": 1564,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.558599950745702,
+    "dense_chroma": 5.198200000450015,
+    "match_memory": 225.01139994710684,
+    "match_chroma": 258.1082999240607
+   }
+  },
+  {
+   "qid": "n003",
+   "kind": "negative",
+   "idea": "고양이가 사료를 잘 안 먹는데 이유가 뭘까",
+   "filtered": 1564,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": false,
+   "match_top10_same": false,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.26120001450181,
+    "dense_chroma": 5.431500030681491,
+    "match_memory": 234.902499942109,
+    "match_chroma": 230.4684000555426
+   }
+  },
+  {
+   "qid": "n004",
+   "kind": "negative",
+   "idea": "아이폰 배터리 교체 비용이 얼마인지 궁금하다",
+   "filtered": 1741,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": false,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.552399903535843,
+    "dense_chroma": 7.017299998551607,
+    "match_memory": 270.2262999955565,
+    "match_chroma": 283.20889989845455
+   }
+  },
+  {
+   "qid": "n005",
+   "kind": "negative",
+   "idea": "asdf qwer 테스트 입력입니다",
+   "filtered": 1564,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.970800062641501,
+    "dense_chroma": 6.7384999711066484,
+    "match_memory": 290.04059988074005,
+    "match_chroma": 283.87110005132854
+   }
+  },
+  {
+   "qid": "n006",
+   "kind": "negative",
+   "idea": "다음 달 결혼식 축가로 부를 노래를 고르고 있다",
+   "filtered": 1564,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 6.90719997510314,
+    "dense_chroma": 8.900100132450461,
+    "match_memory": 476.0771000292152,
+    "match_chroma": 249.2684000171721
+   }
+  },
+  {
+   "qid": "n007",
+   "kind": "negative",
+   "idea": "프로야구 올해 우승팀 예상",
+   "filtered": 1741,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 0.9,
+   "dense_top10_same_order": false,
+   "dense_top1_same": true,
+   "match_top3_same": false,
+   "match_top10_same": false,
+   "match_only_memory": [
+    "kstartup:179427",
+    "kstartup:179305"
+   ],
+   "match_only_chroma": [
+    "bizinfo:PBLN_000000000124308",
+    "bizinfo:PBLN_000000000126846"
+   ],
+   "ms": {
+    "dense_memory": 4.496099893003702,
+    "dense_chroma": 7.383600110188127,
+    "match_memory": 344.2911000456661,
+    "match_chroma": 286.03230020962656
+   }
+  },
+  {
+   "qid": "n008",
+   "kind": "negative",
+   "idea": "반려견 산책 도우미 매칭",
+   "filtered": 1564,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.515399854630232,
+    "dense_chroma": 6.816199980676174,
+    "match_memory": 257.74040003307164,
+    "match_chroma": 285.7009000144899
+   }
+  },
+  {
+   "qid": "q053",
+   "kind": "normal",
+   "idea": "자동차 부품용 정밀 사출금형을 설계·제작하는 공장",
+   "filtered": 1721,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": false,
+   "match_only_memory": [
+    "bizinfo:PBLN_000000000125054"
+   ],
+   "match_only_chroma": [
+    "bizinfo:PBLN_000000000126849"
+   ],
+   "ms": {
+    "dense_memory": 5.58870006352663,
+    "dense_chroma": 5.392000079154968,
+    "match_memory": 382.42879998870194,
+    "match_chroma": 384.6517000347376
+   }
+  },
+  {
+   "qid": "q054",
+   "kind": "normal",
+   "idea": "전주 콩나물국밥을 파는 프랜차이즈 준비 중인 식당",
+   "filtered": 1721,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 0.9,
+   "dense_top10_same_order": false,
+   "dense_top1_same": true,
+   "match_top3_same": false,
+   "match_top10_same": false,
+   "match_only_memory": [
+    "bizinfo:PBLN_000000000125838"
+   ],
+   "match_only_chroma": [
+    "bizinfo:PBLN_000000000119107"
+   ],
+   "ms": {
+    "dense_memory": 5.514699965715408,
+    "dense_chroma": 6.1039999127388,
+    "match_memory": 349.20010017231107,
+    "match_chroma": 352.1552998572588
+   }
+  },
+  {
+   "qid": "q055",
+   "kind": "normal",
+   "idea": "매장 재고를 실시간으로 관리하는 SaaS를 만드는 스타트업",
+   "filtered": 1717,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 4.968900000676513,
+    "dense_chroma": 4.79279994033277,
+    "match_memory": 360.8039999380708,
+    "match_chroma": 336.3785999827087
+   }
+  },
+  {
+   "qid": "q056",
+   "kind": "normal",
+   "idea": "친환경 스마트팜으로 딸기를 재배하는 농장",
+   "filtered": 1717,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.517400102689862,
+    "dense_chroma": 5.355200031772256,
+    "match_memory": 322.4804000928998,
+    "match_chroma": 319.66840010136366
+   }
+  },
+  {
+   "qid": "q057",
+   "kind": "normal",
+   "idea": "노후 주택 리모델링을 전문으로 하는 시공사",
+   "filtered": 1717,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 5.564399994909763,
+    "dense_chroma": 5.453099962323904,
+    "match_memory": 310.29479997232556,
+    "match_chroma": 307.7338000293821
+   }
+  },
+  {
+   "qid": "q058",
+   "kind": "normal",
+   "idea": "수입 원두를 온라인으로 유통하는 도매업체",
+   "filtered": 1564,
+   "dense_paths": [
+    "memory",
+    "memory"
+   ],
+   "dense_top10_overlap": 1.0,
+   "dense_top10_same_order": true,
+   "dense_top1_same": true,
+   "match_top3_same": true,
+   "match_top10_same": true,
+   "match_only_memory": [],
+   "match_only_chroma": [],
+   "ms": {
+    "dense_memory": 4.6773001085966825,
+    "dense_chroma": 5.121499998494983,
+    "match_memory": 271.8694000504911,
+    "match_chroma": 308.52419999428093
+   }
+  }
+ ]
+}

@@ -25,7 +25,7 @@
 ## 이 폴더의 방식
 - 대부분 파일 경로로 실행한다: `.\.venv\Scripts\python.exe -X utf8 eval\<파일>.py`. 유료 호출이 있는 스크립트는 `--plan`이 있다.
 - `as_of_date`로 "창업 N년차"를 고정한다(서비스 코드는 고치지 않음).
-- 평가용 `NumpyCollection`은 Chroma 없이 벡터를 메모리에서 계산한다. 서비스의 `_dense_within`이 `ids` 인자를 모르는 색인을 `'vectors'` 경로로 받는 이유다.
+- 평가용 `NumpyCollection`은 Chroma 없이 벡터를 메모리에서 계산한다(`ids` 인자 없음 → 서비스의 `'vectors'` 경로). 서비스 자체도 2026-10-07부터 `search/memvec.MemoryCollection`(공용 DB 벡터)을 쓴다. 예전 방식(Chroma)과 같은 벡터로 비교하는 도구는 `vector_db_compare.py`.
 
 ## 시험
 - 관련 시험: `tests/test_filter_first_eval.py`, `test_query_ablation.py`, `test_match_variants.py`, `test_search_comparison.py`, `test_chroma_integrity.py`, `test_label_score.py`.

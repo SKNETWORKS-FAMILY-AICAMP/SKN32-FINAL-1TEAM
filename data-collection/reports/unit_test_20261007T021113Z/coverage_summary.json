@@ -1,0 +1,475 @@
+{
+ "run": {
+  "started_at": "2026-10-07T02:11:15.443962+00:00",
+  "finished_at": "2026-10-07T02:11:34.094359+00:00",
+  "python": "3.12.10",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "total": 876,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 16,
+  "successful": true
+ },
+ "scope_coverage": {
+  "statements": 7095,
+  "missed": 2324,
+  "percent": 67.2
+ },
+ "scope_tests": {
+  "pass": 597,
+  "skip": 16,
+  "fail": 0,
+  "error": 0
+ },
+ "out_of_scope_tests": {
+  "pass": 263
+ },
+ "new_tests": {
+  "pass": 98
+ },
+ "features": [
+  {
+   "feature": "①",
+   "name": "공고 수집",
+   "statements": 268,
+   "missed": 100,
+   "percent": 62.7,
+   "tests": 9,
+   "passed": 9,
+   "skipped": 0,
+   "failed": 0
+  },
+  {
+   "feature": "②",
+   "name": "정규화·공용 DB 저장",
+   "statements": 409,
+   "missed": 174,
+   "percent": 57.5,
+   "tests": 29,
+   "passed": 23,
+   "skipped": 6,
+   "failed": 0
+  },
+  {
+   "feature": "③",
+   "name": "첨부 본문 추출",
+   "statements": 693,
+   "missed": 300,
+   "percent": 56.7,
+   "tests": 78,
+   "passed": 68,
+   "skipped": 10,
+   "failed": 0
+  },
+  {
+   "feature": "④",
+   "name": "임베딩·벡터 공유",
+   "statements": 541,
+   "missed": 307,
+   "percent": 43.3,
+   "tests": 21,
+   "passed": 21,
+   "skipped": 0,
+   "failed": 0
+  },
+  {
+   "feature": "⑤",
+   "name": "AI 추출·판정 올리기",
+   "statements": 2609,
+   "missed": 784,
+   "percent": 70.0,
+   "tests": 208,
+   "passed": 208,
+   "skipped": 0,
+   "failed": 0
+  },
+  {
+   "feature": "⑥",
+   "name": "매일 배치 흐름",
+   "statements": 351,
+   "missed": 169,
+   "percent": 51.9,
+   "tests": 17,
+   "passed": 17,
+   "skipped": 0,
+   "failed": 0
+  },
+  {
+   "feature": "⑦",
+   "name": "정형 필터·자격 판정",
+   "statements": 479,
+   "missed": 16,
+   "percent": 96.7,
+   "tests": 97,
+   "passed": 97,
+   "skipped": 0,
+   "failed": 0
+  },
+  {
+   "feature": "⑧",
+   "name": "검색·순위",
+   "statements": 1037,
+   "missed": 235,
+   "percent": 77.3,
+   "tests": 83,
+   "passed": 83,
+   "skipped": 0,
+   "failed": 0
+  },
+  {
+   "feature": "⑨",
+   "name": "조율 창구",
+   "statements": 287,
+   "missed": 55,
+   "percent": 80.8,
+   "tests": 41,
+   "passed": 41,
+   "skipped": 0,
+   "failed": 0
+  },
+  {
+   "feature": "⑩",
+   "name": "가산점",
+   "statements": 192,
+   "missed": 1,
+   "percent": 99.5,
+   "tests": 21,
+   "passed": 21,
+   "skipped": 0,
+   "failed": 0
+  },
+  {
+   "feature": "⑪",
+   "name": "공통 설정",
+   "statements": 229,
+   "missed": 183,
+   "percent": 20.1,
+   "tests": 9,
+   "passed": 9,
+   "skipped": 0,
+   "failed": 0
+  }
+ ],
+ "files": [
+  {
+   "feature": "①",
+   "file": "collect/daily_job.py",
+   "statements": 160,
+   "missed": 70,
+   "covered": 90,
+   "percent": 56.2
+  },
+  {
+   "feature": "①",
+   "file": "collect/fetch.py",
+   "statements": 43,
+   "missed": 1,
+   "covered": 42,
+   "percent": 97.7
+  },
+  {
+   "feature": "①",
+   "file": "collect/fetch_bizinfo.py",
+   "statements": 39,
+   "missed": 26,
+   "covered": 13,
+   "percent": 33.3
+  },
+  {
+   "feature": "①",
+   "file": "collect/job_lock.py",
+   "statements": 26,
+   "missed": 3,
+   "covered": 23,
+   "percent": 88.5
+  },
+  {
+   "feature": "②",
+   "file": "collect/normalize.py",
+   "statements": 183,
+   "missed": 31,
+   "covered": 152,
+   "percent": 83.1
+  },
+  {
+   "feature": "②",
+   "file": "shared/store_mysql.py",
+   "statements": 226,
+   "missed": 143,
+   "covered": 83,
+   "percent": 36.7
+  },
+  {
+   "feature": "③",
+   "file": "collect/attachment_pipeline.py",
+   "statements": 221,
+   "missed": 28,
+   "covered": 193,
+   "percent": 87.3
+  },
+  {
+   "feature": "③",
+   "file": "collect/attachment_store.py",
+   "statements": 179,
+   "missed": 112,
+   "covered": 67,
+   "percent": 37.4
+  },
+  {
+   "feature": "③",
+   "file": "collect/doctext.py",
+   "statements": 180,
+   "missed": 93,
+   "covered": 87,
+   "percent": 48.3
+  },
+  {
+   "feature": "③",
+   "file": "collect/hwp5.py",
+   "statements": 113,
+   "missed": 67,
+   "covered": 46,
+   "percent": 40.7
+  },
+  {
+   "feature": "④",
+   "file": "shared/embed.py",
+   "statements": 144,
+   "missed": 89,
+   "covered": 55,
+   "percent": 38.2
+  },
+  {
+   "feature": "④",
+   "file": "collect/upload_vectors.py",
+   "statements": 81,
+   "missed": 7,
+   "covered": 74,
+   "percent": 91.4
+  },
+  {
+   "feature": "④",
+   "file": "collect/upload_attachments.py",
+   "statements": 98,
+   "missed": 31,
+   "covered": 67,
+   "percent": 68.4
+  },
+  {
+   "feature": "④",
+   "file": "search/vecstore.py",
+   "statements": 218,
+   "missed": 180,
+   "covered": 38,
+   "percent": 17.4
+  },
+  {
+   "feature": "⑤",
+   "file": "collect/extract_conditions.py",
+   "statements": 350,
+   "missed": 218,
+   "covered": 132,
+   "percent": 37.7
+  },
+  {
+   "feature": "⑤",
+   "file": "collect/applicant_type_daily.py",
+   "statements": 163,
+   "missed": 31,
+   "covered": 132,
+   "percent": 81.0
+  },
+  {
+   "feature": "⑤",
+   "file": "collect/industry_daily.py",
+   "statements": 163,
+   "missed": 36,
+   "covered": 127,
+   "percent": 77.9
+  },
+  {
+   "feature": "⑤",
+   "file": "collect/upload_judgments.py",
+   "statements": 175,
+   "missed": 16,
+   "covered": 159,
+   "percent": 90.9
+  },
+  {
+   "feature": "⑤",
+   "file": "collect/extract_bonus.py",
+   "statements": 434,
+   "missed": 168,
+   "covered": 266,
+   "percent": 61.3
+  },
+  {
+   "feature": "⑤",
+   "file": "experiments/sql_semantic/applicant_type_llm.py",
+   "statements": 249,
+   "missed": 146,
+   "covered": 103,
+   "percent": 41.4
+  },
+  {
+   "feature": "⑤",
+   "file": "experiments/sql_semantic/industry_llm_sample.py",
+   "statements": 938,
+   "missed": 167,
+   "covered": 771,
+   "percent": 82.2
+  },
+  {
+   "feature": "⑤",
+   "file": "experiments/sql_semantic/industry_groups.py",
+   "statements": 137,
+   "missed": 2,
+   "covered": 135,
+   "percent": 98.5
+  },
+  {
+   "feature": "⑥",
+   "file": "collect/daily_pipeline.py",
+   "statements": 351,
+   "missed": 169,
+   "covered": 182,
+   "percent": 51.9
+  },
+  {
+   "feature": "⑦",
+   "file": "search/gate.py",
+   "statements": 104,
+   "missed": 0,
+   "covered": 104,
+   "percent": 100.0
+  },
+  {
+   "feature": "⑦",
+   "file": "search/eligibility.py",
+   "statements": 38,
+   "missed": 0,
+   "covered": 38,
+   "percent": 100.0
+  },
+  {
+   "feature": "⑦",
+   "file": "search/applicant_types.py",
+   "statements": 252,
+   "missed": 11,
+   "covered": 241,
+   "percent": 95.6
+  },
+  {
+   "feature": "⑦",
+   "file": "search/age_evidence.py",
+   "statements": 85,
+   "missed": 5,
+   "covered": 80,
+   "percent": 94.1
+  },
+  {
+   "feature": "⑧",
+   "file": "search/app.py",
+   "statements": 678,
+   "missed": 206,
+   "covered": 472,
+   "percent": 69.6
+  },
+  {
+   "feature": "⑧",
+   "file": "search/hybrid.py",
+   "statements": 55,
+   "missed": 3,
+   "covered": 52,
+   "percent": 94.5
+  },
+  {
+   "feature": "⑧",
+   "file": "search/memvec.py",
+   "statements": 58,
+   "missed": 1,
+   "covered": 57,
+   "percent": 98.3
+  },
+  {
+   "feature": "⑧",
+   "file": "search/rank_rules.py",
+   "statements": 21,
+   "missed": 5,
+   "covered": 16,
+   "percent": 76.2
+  },
+  {
+   "feature": "⑧",
+   "file": "search/industry_rank.py",
+   "statements": 99,
+   "missed": 8,
+   "covered": 91,
+   "percent": 91.9
+  },
+  {
+   "feature": "⑧",
+   "file": "search/applicant.py",
+   "statements": 51,
+   "missed": 0,
+   "covered": 51,
+   "percent": 100.0
+  },
+  {
+   "feature": "⑧",
+   "file": "shared/region.py",
+   "statements": 75,
+   "missed": 12,
+   "covered": 63,
+   "percent": 84.0
+  },
+  {
+   "feature": "⑨",
+   "file": "search/notice_api.py",
+   "statements": 100,
+   "missed": 0,
+   "covered": 100,
+   "percent": 100.0
+  },
+  {
+   "feature": "⑨",
+   "file": "search/collection_status.py",
+   "statements": 113,
+   "missed": 28,
+   "covered": 85,
+   "percent": 75.2
+  },
+  {
+   "feature": "⑨",
+   "file": "search/content_version.py",
+   "statements": 74,
+   "missed": 27,
+   "covered": 47,
+   "percent": 63.5
+  },
+  {
+   "feature": "⑩",
+   "file": "search/bonus.py",
+   "statements": 192,
+   "missed": 1,
+   "covered": 191,
+   "percent": 99.5
+  },
+  {
+   "feature": "⑪",
+   "file": "shared/config.py",
+   "statements": 47,
+   "missed": 1,
+   "covered": 46,
+   "percent": 97.9
+  },
+  {
+   "feature": "⑪",
+   "file": "ec2/ec2_vecstore.py",
+   "statements": 182,
+   "missed": 182,
+   "covered": 0,
+   "percent": 0.0
+  }
+ ]
+}

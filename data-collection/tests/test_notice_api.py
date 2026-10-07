@@ -213,7 +213,7 @@ class MatchBonusTests(unittest.TestCase):
         # 3-4 — 세기 0 이면 순서 그대로, 세기를 주면 같은 묶음 안에서만 올라온다(다른 지역 전용은 그대로 뒤)
         female10 = {'status': 'found', 'max_total_points': None, 'bonus_info': 'x',
                     'items': [{'kind': '여성', 'points': 10, 'name': '여성 대표자', 'certs': [], 'regions': [],
-                               'detail': None, 'quote': 'x'}]}
+                               'detail': None, 'quote': '여성 대표자 10점'}]}
         rows = {'n01': notice('n01'), 'n02': notice('n02'), 'n03': notice('n03'), 'n04': notice('n04', region='부산')}
         table = {'n03': female10, 'n04': female10}
 

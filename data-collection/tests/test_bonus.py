@@ -17,13 +17,17 @@ def req(**kw):
 
 
 def it(kind, points=None, name='항목', certs=(), regions=(), detail=None, quote='', group=None, program=None,
-       extra=None):
-    return {'kind': kind, 'points': points, 'name': name, 'certs': list(certs), 'regions': list(regions),
+       extra=None, source=None):
+    # 근거 문장이 없으면 "이름 N점"으로 둔다 — 점수는 근거에 "N점"이 직접 있어야 인정된다(2026-10-07)
+    if not quote and points is not None:
+        quote = '%s %g점' % (name, points)
+    return {'kind': kind, 'points': points, 'name': name, 'points_source': source, 'certs': list(certs), 'regions': list(regions),
             'detail': detail, 'quote': quote, 'group': group, 'program': program, 'extra_conditions': extra}
 
 
-def found(*items, cap=None):
-    return {'status': 'found', 'max_total_points': cap, 'bonus_info': 'x', 'items': list(items)}
+def found(*items, cap=None, uncertain=()):
+    return {'status': 'found', 'max_total_points': cap, 'bonus_info': 'x', 'items': list(items),
+            'uncertain': list(uncertain)}
 
 
 class ItemHitTests(unittest.TestCase):
@@ -126,9 +130,10 @@ class ScoreTests(unittest.TestCase):
     def test_choice_row_counts_once(self):
         # F19: "벤처, 이노비즈, 메인비즈 기업 : 10점" 한 행 — 인증이 몇 개든 10점(2026-10-06 Codex 검수 P1-1)
         q = '벤처, 이노비즈, 메인비즈 기업 : 10점'
-        entry = found(it('인증', 10, '벤처기업', certs=['벤처기업'], quote=q),
-                      it('인증', 10, '이노비즈', certs=['이노비즈'], quote=q),
-                      it('인증', 10, '메인비즈', certs=['메인비즈'], quote=q), cap=15)
+        # 선택 관계는 추출기가 준 group 으로만 묶는다(2026-10-07 — 같은 근거 문장만으로는 묶지 않음)
+        entry = found(it('인증', 10, '벤처기업', certs=['벤처기업'], quote=q, group='g1'),
+                      it('인증', 10, '이노비즈', certs=['이노비즈'], quote=q, group='g1'),
+                      it('인증', 10, '메인비즈', certs=['메인비즈'], quote=q, group='g1'), cap=15)
         for certs in (['벤처기업'], ['벤처기업', '이노비즈'], ['벤처기업', '이노비즈', '메인비즈']):
             total, items = bonus.score(entry, req(certifications=certs))
             self.assertEqual(total, 10)
@@ -141,32 +146,154 @@ class ScoreTests(unittest.TestCase):
         # 다른 group 이 하나라도 모름이고 해당이 없으면 null, 모두 해당 아님이면 0
         self.assertEqual(bonus.score(g, req(certifications=[]))[0], 0)
 
-    def test_programs_are_scored_separately(self):
-        # 세부사업마다 가점이 다르면 더하지 않는다 — 세부사업별로 계산해 가장 큰 값, 이름에 세부사업
+    def test_programs_differ_is_null(self):
+        # 세부사업마다 결과가 다르면 신청자가 어디에 내는지 몰라 null(2026-10-07 R-P2-4). 모두 0이면 0
         entry = found(it('여성', 2, '여성기업', certs=['여성기업'], quote='A 여성기업 2점', program='A사업'),
                       it('여성', 3, '여성기업', certs=['여성기업'], quote='B 여성기업 3점', program='B사업'),
                       it('인증', 1, '벤처', certs=['벤처기업'], quote='공통 벤처 1점'))
-        total, items = bonus.score(entry, req(certifications=['여성기업', '벤처기업']))
-        self.assertEqual(total, 4)
-        self.assertEqual(items, [{'name': '여성기업 [B사업]', 'points': 3.0}, {'name': '벤처 [B사업]', 'points': 1.0}])
+        self.assertEqual(bonus.score(entry, req(certifications=['여성기업', '벤처기업'])), (None, []))
         self.assertEqual(bonus.score(entry, req(certifications=[]))[0], 0)
+        # 세부사업 결과가 모두 같고 공통 항목만으로 그 점수면 꼬리표 없이 낸다
+        self.assertEqual(bonus.score(entry, req(certifications=['벤처기업'])), (1.0, [{'name': '벤처', 'points': 1.0}]))
 
-    def test_cap_keeps_items_summing_to_total(self):
+    def test_cap_exceeded_is_null(self):
+        # 한도가 전체 한도인지 항목 한도인지 확인할 수 없어 합이 한도를 넘으면 null(2026-10-07 R-P2-5)
         entry = found(it('여성', 3, 'A 여성 대표'), it('인증', 3, 'B', certs=['벤처기업']), cap=5)
-        total, items = bonus.score(entry, req(gender='여성', certifications=['벤처기업']))
-        self.assertEqual(total, 5)
-        self.assertEqual(sum(i['points'] for i in items), total)
-        self.assertEqual(items[1], {'name': 'B (합계 한도 5점 적용)', 'points': 2.0})
-        # 점수가 큰 항목부터 남긴다 — 추출 순서가 달라도 같은 결과(Codex 검수 P3-3)
-        a = found(it('인증', 2, '작은', certs=['벤처기업'], quote='x'), it('여성', 4, '큰 여성 대표', quote='y'), cap=5)
-        b = found(it('여성', 4, '큰 여성 대표', quote='y'), it('인증', 2, '작은', certs=['벤처기업'], quote='x'), cap=5)
+        self.assertEqual(bonus.score(entry, req(gender='여성', certifications=['벤처기업'])), (None, []))
+        self.assertEqual(bonus.score(entry, req(gender='여성')), (3.0, [{'name': 'A 여성 대표', 'points': 3.0}]))
+        # 점수가 큰 항목부터 정렬 — 추출 순서가 달라도 같은 결과(Codex 검수 P3-3)
+        a = found(it('인증', 2, '작은', certs=['벤처기업']), it('여성', 4, '큰 여성 대표'), cap=10)
+        b = found(it('여성', 4, '큰 여성 대표'), it('인증', 2, '작은', certs=['벤처기업']), cap=10)
         r = req(gender='여성', certifications=['벤처기업'])
         self.assertEqual(bonus.score(a, r), bonus.score(b, r))
         self.assertEqual(bonus.score(a, r)[1][0], {'name': '큰 여성 대표', 'points': 4.0})
 
 
+
+class ConservativeTests(unittest.TestCase):
+    """확실한 것만 남기기(2026-10-07) — Codex 재검수(10/6) 재현 입력."""
+
+    def test_points_from_other_cell_or_serial_number_are_not_trusted(self):
+        # R-P1-1: "여성기업 가점 2점. 벤처기업 가점 10점." 에서 다른 항목 배점(points_source)으로 10점
+        far = it('여성', 10, '여성기업', certs=['여성기업'], quote='여성기업 가점 2점', source='벤처기업 가점 10점')
+        self.assertFalse(bonus.points_supported(far))
+        self.assertEqual(bonus.score(found(far), req(certifications=['여성기업'])), (None, []))
+        # "1 여성기업 가점 2점" — 연번 1이 점수로 읽힘
+        serial = it('여성', 1, '여성기업', certs=['여성기업'], quote='1 여성기업 가점')
+        self.assertFalse(bonus.points_supported(serial))
+        self.assertTrue(bonus.points_supported(it('여성', 2, '여성기업', quote='여성기업 가점 2점')))
+        self.assertTrue(bonus.points_supported(it('여성', 0.5, '여성기업', quote='여성기업 0.5 점')))
+        self.assertFalse(bonus.points_supported(it('여성', 2, '여성기업', quote='여성기업 12점')))
+
+    def test_independent_bonuses_in_one_sentence(self):
+        # R-P2-1: 123858 "※ (가점) 벤처·이노비즈·메인비즈 각 1점, 여성기업 3점 ※" — 10/7 오전에는 4점이었다.
+        # 10/7 오후(Codex 재검수 B-P1-1·B-P1-2): 한 근거에 1점·3점이 섞여 어느 항목 점수인지 문장만으로 확정할 수 없고,
+        # "각"인데 세 인증이 한 묶음(g1)이라 원문 배점 합(6점)과도 어긋난다 → null
+        q = '※ (가점) 벤처·이노비즈·메인비즈 각 1점, 여성기업 3점 ※'
+        entry = found(it('인증', 1, '벤처기업', certs=['벤처기업'], quote=q, group='g1'),
+                      it('인증', 1, '이노비즈', certs=['이노비즈'], quote=q, group='g1'),
+                      it('인증', 1, '메인비즈', certs=['메인비즈'], quote=q, group='g1'),
+                      it('여성', 3, '여성기업', certs=['여성기업'], quote=q, group='g2'))
+        self.assertEqual(bonus.score(entry, req(certifications=['벤처기업', '여성기업'])), (None, []))
+        self.assertEqual(bonus.score(entry, req(certifications=[]))[0], 0)          # 해당 없음은 그대로 0
+
+    def test_future_condition_is_unknown(self):
+        # R-P2-2: 117751 "과밀억제권역에서 도내로 공장을 이전하는 중소기업" — 충남 소재만으로 5점을 주지 않는다
+        move = it('지역', 5, '공장 이전 기업', regions=['충남'], quote='과밀억제권역에서 도내로 공장을 이전하는 중소기업 5점')
+        self.assertIsNone(bonus.item_hit(move, req(region='충남', district='천안시')))
+        self.assertTrue(bonus.item_hit(it('지역', 5, '도내 소재 기업', regions=['충남'], quote='도내 소재 기업 5점'),
+                                       req(region='충남')))
+
+    def test_uncertain_reading(self):
+        # R-P2-3: '가점 없음'이라고 봤지만 불확실 사항이 있으면 0 대신 null
+        self.assertEqual(bonus.score({'status': 'none', 'items': [], 'uncertain': ['구체적인 점수가 없음']}, req()),
+                         (None, []))
+        self.assertEqual(bonus.score({'status': 'none', 'items': [], 'uncertain': []}, req()), (0, []))
+        women = it('여성', 3, '여성기업', certs=['여성기업'])
+        r = req(certifications=['여성기업', '벤처기업'])
+        self.assertEqual(bonus.score(found(women, uncertain=['가점표 일부가 발췌에서 누락']), r), (None, []))
+        venture = it('인증', 1, '벤처기업', certs=['벤처기업'])
+        self.assertEqual(bonus.score(found(women, venture, uncertain=['중복 인정 여부']), r), (None, []))
+        # 10/7 오후(B-P1-3): found 인데 불확실 메모가 하나라도 있으면 묶음 수와 관계없이 null(전에는 1묶음이면 3점)
+        self.assertEqual(bonus.score(found(women, uncertain=['중복 인정 여부']), r), (None, []))
+        self.assertEqual(bonus.score(found(women), r)[0], 3)
+
+    def test_same_points_choice_by_name(self):
+        # R-P3-2: 같은 점수 선택지는 이름순 — 입력 순서와 관계없이 같은 항목
+        a = found(it('인증', 2, '이노비즈', certs=['이노비즈'], group='g'), it('인증', 2, '벤처기업', certs=['벤처기업'], group='g'))
+        b = found(it('인증', 2, '벤처기업', certs=['벤처기업'], group='g'), it('인증', 2, '이노비즈', certs=['이노비즈'], group='g'))
+        r = req(certifications=['벤처기업', '이노비즈'])
+        self.assertEqual(bonus.score(a, r), bonus.score(b, r))
+        self.assertEqual(bonus.score(a, r)[1][0]['name'], '벤처기업')
+
+
+class RecheckTests(unittest.TestCase):
+    """Codex 재검수(2026-10-07, CODEX_BONUS_RECHECK_20261007.md) 재현 입력 — 모두 양수 대신 null 이어야 한다."""
+
+    def test_b_p1_1_other_items_points_in_quote(self):
+        doc = '여성기업 가점 2점. 벤처기업 가점 10점.'
+        women = req(certifications=['여성기업'])
+        # 근거가 원문 전체 — 2점·10점이 섞여 어느 항목 점수인지 모른다
+        whole = it('여성', 10, '여성기업', certs=['여성기업'], quote=doc)
+        self.assertFalse(bonus.points_supported(whole))
+        self.assertEqual(bonus.score(found(whole), women), (None, []))
+        # 근거를 이어 붙임("2점. 벤처기업"을 건너뜀) — 원문에 그대로 없다
+        glued = dict(it('여성', 10, '여성기업', certs=['여성기업'], quote='여성기업 가점 10점'), in_document=False)
+        self.assertIsNone(bonus.item_hit(glued, women))
+        self.assertEqual(bonus.score(found(glued), women), (None, []))
+        # 같은 값이 되풀이되는 것은 괜찮다
+        self.assertTrue(bonus.points_supported(it('인증', 1, '벤처', quote='벤처 1점, 이노비즈 1점')))
+
+    def test_b_p1_2_group_split_or_each(self):
+        q = '벤처, 이노비즈, 메인비즈 기업 : 10점'
+        split = found(it('인증', 10, '벤처기업', certs=['벤처기업'], quote=q, group='g1'),
+                      it('인증', 10, '이노비즈', certs=['이노비즈'], quote=q, group='g2'))
+        # 10/7 오전에는 20점 — group 이 다른데 근거·점수가 같으면 선택 가점을 나눈 것일 수 있다
+        self.assertEqual(bonus.score(split, req(certifications=['벤처기업', '이노비즈'])), (None, []))
+        self.assertEqual(bonus.score(split, req(certifications=['벤처기업']))[0], 10)   # 하나만 해당이면 겹치지 않는다
+        # 122309 "여성, 장애인, 사회적, 녹색 기업 : 각 1점"을 한 group 으로 묶음 — 독립 가점을 묶었을 수 있다
+        each = '❍ 여성, 장애인, 사회적, 녹색 기업 : 각 1점'
+        joined = found(it('여성', 1, '여성기업', certs=['여성기업'], quote=each, group='g2'),
+                       it('장애인', 1, '장애인기업', certs=['장애인기업'], quote=each, group='g2'))
+        self.assertEqual(bonus.score(joined, req(certifications=['여성기업', '장애인기업'])), (None, []))
+        self.assertEqual(bonus.score(joined, req())[0], 0)
+        self.assertIsNone(bonus._EACH.search('각종 인증 기업 1점'))            # '각종'은 "각"이 아니다
+
+    def test_b_p1_3_uncertain_cap(self):
+        # 117356: 한도 확인 불가 메모 — 여성기업 5점 + 벤처 3점 = 8점을 확정하지 않는다
+        entry = found(it('여성', 5, '여성기업', certs=['여성기업'], quote='여성기업 및 장애인 기업(5점)', group='g8'),
+                      it('인증', 3, '벤처기업 확인기업', certs=['벤처기업'], quote='벤처기업 확인기업(3점)', group='g14'),
+                      uncertain=['평가기준의 ‘가점(5점)’이 가점 합계 한도인지 여부가 명시적으로 확인되지 않음'])
+        self.assertEqual(bonus.score(entry, req(certifications=['여성기업', '벤처기업'])), (None, []))
+        miss = found(it('인증', 3, '벤처기업', certs=['벤처기업']), uncertain=['가점표를 파악하지 못했음'])
+        self.assertEqual(bonus.score(miss, req(certifications=['벤처기업'])), (None, []))
+
+    def test_b_p2_1_hidden_conditions(self):
+        r = req(region='전북', district='전주시')
+        both = it('지역', 5, '전북 본사 및 사업장', regions=['전북'],
+                  quote='전북특별자치도 안에 본사 및 사업장(생산공장)모두를 두는 기업(5점)')
+        self.assertIsNone(bonus.item_hit(both, r))
+        recent = it('인증', 3, '벤처기업', certs=['벤처기업'], quote='최근 3년 이내 벤처기업 확인을 받은 기업은 가점 3점')
+        self.assertIsNone(bonus.item_hit(recent, req(certifications=['벤처기업'])))
+        self.assertFalse(bonus.item_hit(recent, req()))                          # 해당 아님은 그대로
+        for q in ('도내 소재 기업(5점)', '전라북도 소재 기업 5점'):
+            self.assertTrue(bonus.item_hit(it('지역', 5, '소재 기업', regions=['전북'], quote=q), r))
+        # 청년 나이 구절의 "이하"는 조건 말로 보지 않는다
+        self.assertTrue(bonus.item_hit(it('청년', 2, '청년 대표', quote='만 39세 이하 대표자 2점'), req(birth_date='1995-01-01')))
+        self.assertIsNone(bonus.item_hit(it('청년', 2, '청년 대표', quote='만 39세 이하이고 창업 3년 이내 대표자 2점'),
+                                         req(birth_date='1995-01-01')))
+
+    def test_only_moves_toward_null(self):
+        # 새 규칙은 양수를 null 로만 바꾼다 — 해당 아님(0)·해당(점수)이 바뀌지 않는 깨끗한 공고
+        clean = found(it('여성', 2, '여성기업', certs=['여성기업'], quote='여성기업 2점', group='a'),
+                      it('인증', 1, '벤처기업', certs=['벤처기업'], quote='벤처기업 1점', group='b'))
+        self.assertEqual(bonus.score(clean, req(certifications=['여성기업', '벤처기업'])),
+                         (3.0, [{'name': '여성기업', 'points': 2.0}, {'name': '벤처기업', 'points': 1.0}]))
+        self.assertEqual(bonus.score(clean, req())[0], 0)
+
+
 class LoadTests(unittest.TestCase):
-    def conn(self, rows):
+    def conn(self, rows, notices=(), files=(), fail=False):
         class Cursor:
             def __enter__(self):
                 return self
@@ -174,26 +301,60 @@ class LoadTests(unittest.TestCase):
             def __exit__(self, *a):
                 return False
 
-            def execute(self, sql):
+            def execute(self, sql, args=None):
                 self.sql = sql
+                if fail and 'FROM notice_bonus' not in sql:
+                    raise RuntimeError('db down')
 
             def fetchall(self):
-                return rows
+                if 'FROM notice_bonus' in self.sql:
+                    return rows
+                if 'attachment_texts' in self.sql:
+                    return list(files)
+                return list(notices)
 
         class Conn:
             def cursor(self):
                 return Cursor()
         return Conn()
 
+    def test_document_check(self):
+        # found 행은 근거가 지금 원문(본문·지원대상·첨부)에 공백만 다르고 그대로 있는지 확인한다(B-P1-1)
+        items = '[{"name": "여성기업", "quote": "여성기업  가점 2점"}, {"name": "벤처", "quote": "벤처기업 가점 10점"},' \
+                ' {"name": "이어붙임", "quote": "여성기업 가점 10점"}]'
+        rows = [('a', 'found', None, 'x', items, 'cv', 'v4', '[]'), ('b', 'none', None, None, '[]', 'cv', 'v4', '[]')]
+        out = bonus.load(self.conn(rows, notices=[('a', '공고 본문', None)], files=[('a', '여성기업 가점\n2점. 벤처기업 가점 10점.')]))
+        self.assertEqual(out['a']['document_check'], 'ok')
+        self.assertEqual([i['in_document'] for i in out['a']['items']], [True, True, False])
+        self.assertNotIn('document_check', out['b'])
+        # 원문 조각의 경계를 넘는 일치는 인정하지 않는다
+        out = bonus.load(self.conn([('a', 'found', None, 'x', '[{"quote": "본문끝첨부"}]', 'cv', 'v4', '[]')],
+                                   notices=[('a', '본문끝', None)], files=[('a', '첨부')]))
+        self.assertFalse(out['a']['items'][0]['in_document'])
+
+    def test_document_read_failure_makes_found_null(self):
+        rows = [('a', 'found', None, 'x', '[{"kind": "인증", "points": 1, "name": "벤처", "certs": ["벤처기업"], '
+                                          '"quote": "벤처 1점"}]', 'cv', 'v4', '[]'),
+                ('b', 'none', None, None, '[]', 'cv', 'v4', '[]')]
+        errors = []
+        out = bonus.load(self.conn(rows, fail=True), errors=errors)
+        self.assertEqual(out['a']['document_check'], 'failed')
+        self.assertEqual(len(errors), 1)
+        self.assertIn('db down', errors[0])
+        self.assertEqual(bonus.score(out['a'], req(certifications=['벤처기업'])), (None, []))
+        self.assertEqual(bonus.score(out['b'], req()), (0, []))                  # 가점 없음은 원문 확인과 관계없다
+
     def test_stale_rows_are_dropped(self):
         # 공고문이 바뀌었는데 다시 뽑지 않은 가점, 추출기 버전이 다른 가점은 쓰지 않는다(2026-10-06 Codex 검수 P2-4)
-        rows = [('a', 'found', 5, 'x', '[]', 'cv2-a', 'v4'), ('b', 'found', None, 'x', '[]', 'cv2-old', 'v4'),
-                ('c', 'none', None, None, '[]', 'cv2-c', 'v3'), ('d', 'none', None, None, '[]', None, 'v4')]
+        rows = [('a', 'found', 5, 'x', '[]', 'cv2-a', 'v4', '["중복 인정 여부"]'),
+                ('b', 'found', None, 'x', '[]', 'cv2-old', 'v4', '[]'),
+                ('c', 'none', None, None, '[]', 'cv2-c', 'v3', None), ('d', 'none', None, None, '[]', None, 'v4', '[]')]
         stale = {}
         out = bonus.load(self.conn(rows), versions={'a': 'cv2-a', 'b': 'cv2-b', 'c': 'cv2-c', 'd': 'cv2-d'},
                          extractor_version='v4', stale=stale)
         self.assertEqual(list(out), ['a'])
         self.assertEqual(stale, {'content': 2, 'version': 1})
+        self.assertEqual(out['a']['uncertain'], ['중복 인정 여부'])        # 불확실 사항도 읽는다(2026-10-07)
         self.assertEqual(len(bonus.load(self.conn(rows))), 4)                # 기준을 안 주면 모두
 
 

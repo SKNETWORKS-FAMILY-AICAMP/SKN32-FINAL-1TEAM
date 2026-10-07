@@ -1,12 +1,12 @@
 # ec2/ — 팀 EC2에서만 도는 것
 
 ## 맡는 것
-- `ec2_vecstore.py`: 공용 MySQL에 올라간 벡터로 Chroma 색인(`notices_v1`)을 만든다. 증분(기본, `embedding_updated_at`이 워터마크보다 새로운 공고만 upsert) · `--rebuild` · `--stat` · `--plan`. 팀 EC2 crontab `10 0 * * *`(UTC = 한국 09:10). 리눅스용 DB 접속 `connect()`와 Chroma 열기 `open_store()`도 여기 있다.
+- `ec2_vecstore.py`: 리눅스용 DB 접속 `connect()`(공고 서버가 팀 EC2에서 쓴다, 설정은 이 폴더의 `.env`). 그리고 공용 MySQL 벡터로 Chroma 색인(`notices_v1`)을 만드는 예전 기능 — **공고 서버는 2026-10-07부터 이 색인을 쓰지 않는다**(정리 전까지 예약은 남아 있음). 증분(기본, `embedding_updated_at`이 워터마크보다 새로운 공고만 upsert) · `--rebuild` · `--stat` · `--plan`. 팀 EC2 crontab `10 0 * * *`(UTC = 한국 09:10). Chroma 열기 `open_store()`도 여기 있다.
 - `ec2_search.py`: EC2에서 쓰는 대화형 검색. `ec2_check_model.py`: 모델 적재 확인.
 
 ## 맡지 않는 것
 - 벡터 만들기(임베딩 모델 실행)는 하지 않는다. 배치 6단계가 만들고 8단계가 올린 것을 옮기기만 한다(torch·sentence-transformers 불필요 — pymysql·numpy·chromadb만).
-- 공고 검색 로직(`search/`). 공고 서버는 리눅스에서 이 폴더의 `connect`·`open_store`를 빌려 쓸 뿐이다.
+- 공고 검색 로직(`search/`). 공고 서버는 리눅스에서 이 폴더의 `connect`만 빌려 쓴다.
 
 ## 항상 지켜야 할 것
 - 설정은 환경 변수 → `.env` 순서로 읽는다(`setting`). 빈 문자열은 "설정 안 함"과 구분해 그대로 돌려준다.

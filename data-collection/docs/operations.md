@@ -25,7 +25,7 @@ Copy-Item .env.example .env          # 아래 3절 값을 채운다
 | MySQL 통합 시험까지 | `$env:MYSQL_INTEGRATION_TEST='1'` 뒤 위 명령 | 시험용 DB 쓰기 |
 | 배치 수집·정규화만 | `.\.venv\Scripts\python.exe -X utf8 -m collect.daily_pipeline --dry-run` | API 호출만, DB 쓰기 없음 |
 | 배치 전체(손으로) | `.\.venv\Scripts\python.exe -X utf8 -m collect.daily_pipeline` | **공용 DB 쓰기·LLM 비용** — 사용자 승인. 서버 배치와 같은 날 겹치지 않게 한다 |
-| 공고 서버 | `.\.venv\Scripts\python.exe -X utf8 -m search.app` → `http://127.0.0.1:8000` (창구 시험 화면 `/docs`) | 켤 때 약 22초·메모리 약 2GB |
+| 공고 서버 | `.\.venv\Scripts\python.exe -X utf8 -m search.app` → `http://127.0.0.1:8000` (창구 시험 화면 `/docs`). 다른 포트는 `$env:PORT='8030'` | 켤 때 약 35초(PC)·메모리 약 2GB. 공용 DB 벡터를 메모리에 올린다 |
 | 검증 화면 | `.\.venv\Scripts\python.exe -X utf8 -m experiments.sql_semantic.viewer` → `http://127.0.0.1:8010` (`/flow` 전체 흐름) | 읽기만. `/compare`는 8000을 부른다 |
 | 판정 화면 | `.\.venv\Scripts\python.exe -X utf8 eval\label_app.py` → `http://127.0.0.1:8001` | 사람 판정 파일 쓰기 |
 | 첨부 대상만 세기 | `.\.venv\Scripts\python.exe -X utf8 -m collect.attachment_pipeline --plan` | 없음 |
@@ -51,7 +51,7 @@ Copy-Item .env.example .env          # 아래 3절 값을 채운다
 | `OPENAI_API_KEY` | 배치 10~14단계, LLM 실험 | 개인 결제 계정 키. 없으면 LLM 단계를 건너뛴다. `.env.example`에는 아직 없다 |
 | `TYPESAFE_API_KEY`·`JUDGE_MODEL` | `eval/jev_judge_probe` 등 평가 | 평가 전용 |
 | `PORT` | 공고 서버 | 기본 8000 |
-| `VECSTORE_PATH` | 리눅스의 공고 서버·`ec2/` | Chroma 위치. 기본 `ec2/data/vecstore/chroma` |
+| `VECSTORE_PATH` | `ec2/ec2_vecstore.py` | Chroma 위치. 기본 `ec2/data/vecstore/chroma`. 공고 서버는 2026-10-07부터 읽지 않는다 |
 | `APPLICANT_TYPES_SOURCE`·`APPLICANT_TYPES_RESULTS` | 공고 서버 | 신청자 유형 판정 출처 `auto`(기본, DB→파일)·`db`·`file`, 파일 경로 |
 | `INDUSTRY_SOURCE`·`INDUSTRY_RESULTS` | 공고 서버 | 업종 판정 출처 `file`(기본)·`auto`·`db`, 파일 경로(기본 `reports/industry_llm_full_luna_20260928_final5/results.jsonl`) |
 | `AGE_RERUN_RESULTS` | 공고 서버 | 업력 근거 파일 경로 |
@@ -75,12 +75,16 @@ Copy-Item .env.example .env          # 아래 3절 값을 채운다
 
 ## 5. 팀 EC2 (공용 DB)
 
-- 호스트 43.201.90.238(계정 `ubuntu`, SSH 키 `C:\Users\playdata2\.ssh\skn32-1team.pem`, 22번은 사용자 IP만). MySQL `s_brain`과 Chroma 색인이 같은 서버에 있다. 4GB + 스왑 2GB(스왑은 메모리 부족 때 `mysqld`가 죽는 것을 막는 안전망).
-- 색인 갱신: crontab `10 0 * * *`(한국 09:10)에 `ec2_vecstore.py`(증분). 전체 재생성은 `--rebuild`, 상태는 `--stat`, 대상 건수는 `--plan`.
+- 호스트 43.201.90.238(계정 `ubuntu`, SSH 키 `C:\Users\playdata2\.ssh\skn32-1team.pem`, 22번은 사용자 IP만). MySQL `s_brain`과 공고 시험 서버가 같은 서버에 있다. 4GB + 스왑 2GB(스왑은 메모리 부족 때 `mysqld`가 죽는 것을 막는 안전망).
+- 예전 색인 갱신: crontab `10 0 * * *`(한국 09:10)에 `ec2_vecstore.py`(증분). 공고 서버는 더 쓰지 않지만 지우지 않았다(나중에 정리). 전체 재생성은 `--rebuild`, 상태는 `--stat`.
 
 ## 6. 공고 서버 운영
 
-- 지금은 사용자 PC에서만 켠다(127.0.0.1). 배포 위치는 미정이다(조율 요청서는 AWS 내부망).
-- 배치 뒤 새 공고를 반영하려면 **다시 켠다**. 켜기 전·끄기 전에 사용자에게 확인한다.
-- 켠 뒤 확인: `http://127.0.0.1:8000/api/health`의 `boot_errors`가 비었는지, `notices`·`indexed`·`bm25_indexed` 건수, `applicant_types.active`.
+- **시험 서버**: 팀 EC2 `http://43.201.90.238:8000`(조율 담당에게 주소 전달함, 시험 기간만 전체 공개·인증 없음). 운영 서버 위치는 미정(조율 요청서는 AWS 내부망).
+  - 상시 실행: `sudo systemctl status notice-server` / `restart` / `journalctl -u notice-server -n 30`. 설정 `/etc/systemd/system/notice-server.service`(작업 폴더 `~/notice-server/data-collection`, `~/s-brain/.venv/bin/python -m search.app`, `HF_HUB_OFFLINE=1`). 켜는 데 약 8초.
+  - 매일 한국 09:20 재시작(`/etc/cron.d/notice-server-restart`). 09:00 배치 저장 뒤 09:20 재시작 전까지는 수집 상태가 `지연`일 수 있다.
+  - 코드 갱신: 이 PC `data-collection/`에서 바뀐 폴더를 `tar -czf`로 묶어 `scp` → 서버에서 `~/notice-server/data-collection/`에 덮어 풀기 → `sudo systemctl restart notice-server`. DB 설정은 서버의 `ec2/.env`(=`~/s-brain/.env` 복사본)라 덮지 않는다.
+  - 8000을 손으로 따로 켜 둔 채 상시 실행을 켜면 "포트 사용 중"으로 죽기를 반복한다(`NRestarts`가 늘어남). 손으로 켠 것을 먼저 끈다.
+- 이 PC 개발 서버: 배치 뒤 새 공고를 반영하려면 **다시 켠다**. 켜기 전·끄기 전에 사용자에게 확인한다.
+- 켠 뒤 확인: `/api/health`의 `boot_errors`가 비었는지, `notices`·`indexed`(올린 벡터 수)·`vectors.fingerprints`·`bm25_indexed`, `applicant_types.active`.
 - 조율 쪽이 부르는 창구: `/api/collection_status`·`/api/match`·`/api/notices/{id}`·`/api/notices/{id}/eligibility`.

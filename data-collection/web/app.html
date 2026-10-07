@@ -98,6 +98,15 @@
   .banner { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
     margin-top: 16px; background: #f2f7f3; }
   .banner.warn { background: #fdf9ec; }
+  /* 가산점(시험 단계, 2026-10-07) — 확인된 가산점 부분합. 순위에는 쓰지 않는다 */
+  .bonus { font-size: 12.5px; }
+  .bonus.has { color: var(--ok); font-weight: 700; }
+  .bonus.zero { color: var(--muted); }
+  .bonus.unk { color: var(--unknown); }
+  .bonus-box { border: 1px dashed var(--line); border-radius: 10px; padding: 14px 16px; margin-top: 16px;
+    background: var(--card); font-size: 14px; }
+  .bonus-box ul { margin: 6px 0 0 18px; padding: 0; }
+  .bonus-box .src { color: var(--muted); font-size: 12px; margin-top: 8px; white-space: pre-wrap; }
   a { color: var(--accent); }
   .toggle { display: flex; gap: 10px; align-items: flex-start; background: var(--card);
     border: 1px dashed var(--line); border-radius: 10px; padding: 12px 14px; margin: -8px 0 16px;
@@ -237,6 +246,7 @@
         <small>장애인·체육인·재창업자 등 대상이 정해진 공고는, 입력에 그 집단이라는 내용이 없으면 뒤로 보냅니다. 끄면 기존 방식으로 다시 검색합니다.</small></span>
     </label>
     <div class="banner warn" id="fallback" hidden style="margin:0 0 14px"></div>
+    <p class="hint" id="bonus-summary"></p>
     <div class="cards" id="cards"></div>
     <div class="list" id="list"></div>
     <button class="more" id="more" hidden>10건 더 보기</button>
@@ -257,6 +267,7 @@
       </tr></thead><tbody id="gate-body"></tbody></table>
     </div>
     <div class="banner" id="gate-banner"></div>
+    <div class="bonus-box" id="gate-bonus" hidden></div>
     <p class="hint" id="gate-link"></p>
   </section>
 </div>
@@ -537,7 +548,25 @@ function periodText(n) {
        || '접수기간 정보 없음');
 }
 
+// 가산점(시험 단계) — bonus_score 는 "확인된 가산점 부분합"(신청자 정보로 해당·배점을 확인한 항목만 더한 값,
+// 받을 수 있는 전체 합계가 아님). 0 = 해당 가점 없음이 확인됨, null = 확인된 것이 없음. 순위에는 쓰지 않는다
+const BONUS_TIP = '신청자 정보로 확인된 가점만 더한 값입니다(일부). 실제 받을 수 있는 가산점은 공고문을 확인하세요.';
+function bonusText(n) {
+  if (n.bonus_score == null) return '<span class="bonus unk" title="신청자 정보로 확인할 수 없거나 가점 정보를 읽지 못했습니다">가산점 모름</span>';
+  if (n.bonus_score === 0) return '<span class="bonus zero" title="공고의 가점 항목에 해당하지 않음이 확인됐습니다">가산점 없음</span>';
+  const items = (n.bonus_items || []).map(i => `${i.name} ${i.points}점`).join(' · ');
+  return `<span class="bonus has" title="${esc(BONUS_TIP + (items ? ' — ' + items : ''))}">확인된 가산점 +${n.bonus_score}점(일부)</span>`;
+}
+
+let bonusCount = {has: 0, zero: 0, unk: 0};
+function countBonus(results) {
+  results.forEach(n => { bonusCount[n.bonus_score == null ? 'unk' : n.bonus_score === 0 ? 'zero' : 'has'] += 1; });
+  $('#bonus-summary').innerHTML = `가산점(시험 단계 · 순위에는 쓰지 않음): 확인된 가산점 있음 <b>${bonusCount.has}</b>건 · `
+    + `없음 ${bonusCount.zero}건 · 모름 ${bonusCount.unk}건 <small>— 공고를 누르면 항목과 공고문 가점 원문을 볼 수 있습니다</small>`;
+}
+
 function addResults(results) {
+  countBonus(results);
   results.forEach((n) => {
     const b = document.createElement('button');
     if (n.display_type === 'card') {
@@ -548,6 +577,7 @@ function addResults(results) {
          <p class="meta">${esc(n.organizer || '기관 정보 없음')} · ${periodText(n)}</p>
          <p class="meta">${esc(n.target_category || '')}${n.category ? ' · ' + esc(n.category) : ''}</p>
          <p class="meta">${regionText(n)}</p>
+         <p class="meta">${bonusText(n)}</p>
          <p class="sim">${fitText(n)}${n.score == null ? '' : ' · 유사도 ' + n.score} · 출처 ${n.source}</p>`;
       $('#cards').appendChild(b);
     } else {
@@ -555,7 +585,7 @@ function addResults(results) {
       b.innerHTML =
         `<span class="no">${String(n.rank).padStart(2, '0')}</span>
          <span><span class="t">${esc(n.title)}</span><br>
-           <span class="meta">${esc(n.organizer || '기관 정보 없음')} · ${periodText(n)} · ${regionText(n)}</span></span>
+           <span class="meta">${esc(n.organizer || '기관 정보 없음')} · ${periodText(n)} · ${regionText(n)} · ${bonusText(n)}</span></span>
          <span class="fit">${fitText(n)}</span>`;
       $('#list').appendChild(b);
     }
@@ -572,6 +602,7 @@ async function runMatch() {
       '상위 3건은 카드, 나머지는 목록입니다 — 공고를 선택하면 자격요건 확인으로 넘어갑니다.';
     $('#cards').innerHTML = '';
     $('#list').innerHTML = '';
+    bonusCount = {has: 0, zero: 0, unk: 0};
     const fb = $('#fallback');
     // 대체 경로는 아니지만 검색 일부가 실패한 경우(예: 보조 벡터 조회 실패로 일부 유사도가 빈 값)도 알린다(2026-09-28 Codex 검수)
     const partial = !d.fallback_used && d.search_errors && Object.keys(d.search_errors).length > 0;
@@ -620,6 +651,7 @@ async function openGate(n) {
   $('#gate-title').textContent = `『${n.title}』 신청 자격을 확인합니다`;
   $('#gate-body').innerHTML = `<tr><td colspan="4" class="spin">확인 중…</td></tr>`;
   $('#gate-banner').textContent = '';
+  showBonus(n);
   show('step-gate');
   try {
     const d = await post('/api/eligibility', {
@@ -644,6 +676,29 @@ async function openGate(n) {
   } catch (e) {
     $('#gate-body').innerHTML =
       `<tr><td colspan="4" class="err">실패: ${esc(String(e.message).slice(0,200))}</td></tr>`;
+  }
+}
+
+// 자격 확인 화면의 가산점 칸 — 추천 결과의 bonus_score·bonus_items 와 공고 상세(/api/notices/{id})의 가점 원문
+async function showBonus(n) {
+  const box = $('#gate-bonus');
+  const items = (n.bonus_items || []);
+  const head = n.bonus_score == null
+    ? '<b>가산점: 모름</b> — 신청자 정보로 확인할 수 있는 가점이 없거나, 근거가 애매해 점수를 확정하지 않았습니다.'
+    : n.bonus_score === 0
+      ? '<b>가산점: 없음</b> — 이 공고의 가점 항목에 해당하지 않음이 확인됐습니다.'
+      : `<b>확인된 가산점: +${n.bonus_score}점</b> <small>(신청자 정보로 확인된 항목만 더한 값 — 실제 받을 수 있는 가산점은 더 클 수 있습니다)</small>`
+        + `<ul>${items.map(i => `<li>${esc(i.name)} ${i.points}점</li>`).join('')}</ul>`;
+  box.innerHTML = head + '<div class="src">공고문 가점 원문을 불러오는 중…</div>';
+  box.hidden = false;
+  try {
+    const r = await fetch('/api/notices/' + encodeURIComponent(n.notice_id));
+    const d = r.ok ? await r.json() : {};
+    box.querySelector('.src').textContent = d.bonus_info
+      ? '공고문 가점 원문: ' + d.bonus_info
+      : '공고문에서 읽은 가점 원문이 없습니다(가점이 없거나, 첨부를 읽지 못한 공고 — K-Startup 등).';
+  } catch (e) {
+    box.querySelector('.src').textContent = '가점 원문을 불러오지 못했습니다.';
   }
 }
 

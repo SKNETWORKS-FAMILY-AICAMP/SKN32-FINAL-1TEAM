@@ -23,7 +23,7 @@ S-Brain에서 "공고 데이터 · 매칭 · 자격 판정"을 맡는 부분이�
 | `collect/` 매일 배치 | 두 API 수집 → 정규화 → 공용 DB 저장 → 첨부 본문 추출 → 임베딩 → LLM 추출 → 판정·가점 올리기 (14단계) | → `shared/`, `search/vecstore`, `experiments/sql_semantic`의 LLM 추출 함수, 공용 DB(쓰기), OpenAI |
 | `shared/` | `.env` 읽기, 공용 DB 저장·접속(TLS), 임베딩 입력 정의와 BGE-M3 인코딩, 시·도/시·군·구 어휘 | 바깥 의존 없음 (다른 폴더 import 안 함) |
 | `search/` 공고 서버 | 정형 필터 → 하이브리드 검색 → 규칙 재정렬, 자격 판정, 수집 상태, 조율 창구, 가산점 계산 | → `shared/`, `ec2/`(리눅스에서), `collect.extract_bonus`·`collect.extract_conditions`(버전·검산 함수), `experiments/sql_semantic`(판정 해석 함수), 공용 DB(SELECT) |
-| `ec2/` | 팀 EC2에서 MySQL 벡터로 Chroma 색인 만들기(crontab 00:10 UTC), 리눅스용 DB 접속 | → 공용 DB(SELECT) |
+| `ec2/` | 리눅스(팀 EC2)용 DB 접속. 예전 Chroma 색인 갱신 스크립트(crontab 00:10 UTC, 공고 서버는 더 쓰지 않음) | → 공용 DB(SELECT) |
 | `experiments/` | 검증 화면(8010), 별도 로컬 실험 DB 비교, **배치·서버가 쓰는 LLM 추출·업종 그룹 함수** | → `search/`, `shared/`, `collect/`, 로컬 실험 DB(쓰기), 8000(HTTP) |
 | `eval/` | 검색 품질 평가셋(질의·판정·qrels)과 지표, 판정 화면(8001) | → `search/`(같은 match·규칙 함수), `shared/` |
 | `ml/` | 리랭커(LoRA)·업력 분류기 학습. 제출물이며 서비스 미연결 | → `search/` 일부 |
@@ -36,10 +36,10 @@ S-Brain에서 "공고 데이터 · 매칭 · 자격 판정"을 맡는 부분이�
 | 위치 | 도는 것 | 비고 |
 |---|---|---|
 | 개인 AWS EC2 `sbrain-web` (13.125.40.88, Ubuntu, Docker) | 매일 배치. crontab `0 0 * * *`(UTC 00:00 = 한국 09:00) → 저장소 루트 `deploy/run_batch.sh` → `batch` 컨테이너에서 `python -m collect.daily_pipeline` | 코드는 git 체크아웃이 아니라 `~/sbrain/data-collection`에 **복사한 폴더**다. `data/`·`.env`(배치 키 8개)도 그 폴더에 있다 |
-| 팀 EC2 (43.201.90.238) | 공용 MySQL `s_brain`, `ec2/ec2_vecstore.py`로 Chroma 색인 갱신 | 시간대 UTC |
-| 사용자 PC (Windows) | 공고 서버 8000(127.0.0.1), 검증 화면 8010, 평가·학습·실험 | PC 작업 스케줄러 `S-Brain-DailyCollection`은 **사용 안 함**(지우지 않음, 되돌리기용). PC의 `data/` 벡터 색인은 2026-10-02 이후 갱신되지 않는다 |
+| 팀 EC2 (43.201.90.238) | 공용 MySQL `s_brain`. **공고 시험 서버** `http://43.201.90.238:8000` — systemd `notice-server`로 상시 실행, 매일 00:20 UTC(한국 09:20) 재시작(`/etc/cron.d/notice-server-restart`). 코드는 `~/notice-server/data-collection/`(이 PC 작업 폴더에서 **복사**, git 아님), 파이썬 환경은 `~/s-brain/.venv`. 예전 Chroma 색인 갱신 cron(00:10 UTC)도 남아 있다 | 시간대 UTC. 8000은 시험 기간만 전체 공개 |
+| 사용자 PC (Windows) | 개발용 공고 서버 8000(127.0.0.1, 손으로 켤 때만), 검증 화면 8010, 평가·학습·실험 | PC 작업 스케줄러 `S-Brain-DailyCollection`은 **사용 안 함**(지우지 않음, 되돌리기용). PC의 `data/` 벡터 색인은 2026-10-02 이후 갱신되지 않는다 |
 
-공고 서버는 실행 환경을 운영체제로 판단한다. **리눅스면 EC2로 본다** — `ec2/ec2_vecstore`로 DB에 붙고, Chroma는 `ec2/data/vecstore/chroma`(또는 `VECSTORE_PATH`)를 열고, BGE-M3를 직접 올리고, `0.0.0.0`에 연다. 윈도우면 `shared/store_mysql`·`search/vecstore`를 쓰고 `127.0.0.1`에 연다.
+공고 서버는 실행 환경을 운영체제로 판단한다. **리눅스면 EC2로 본다** — `ec2/ec2_vecstore`로 DB에 붙고, BGE-M3를 직접 올리고, `0.0.0.0`에 연다. 윈도우면 `shared/store_mysql`·`search/vecstore`를 쓰고 `127.0.0.1`에 연다.
 
 ## 대표 흐름 1 — 매일 배치 (한 번 실행)
 
@@ -73,14 +73,14 @@ S-Brain에서 "공고 데이터 · 매칭 · 자격 판정"을 맡는 부분이�
  → build_query: 아이디어 + 수익모델 + 유형/업력 문구 + 팀 경력 + 업종·인증·채용계획을 한 문장으로
  → ① 정형 필터: 메모리의 모든 공고에 gate.prefilter(+ 예비창업자면 공고 본문 신청자 유형 판정)
  → ② 필터 통과 공고 안에서만 검색
-       의미 검색: 질의 BGE-M3 벡터 → Chroma query(ids=통과 공고)   (실패 시 벡터를 꺼내 직접 코사인)
+       의미 검색: 질의 BGE-M3 벡터 → 메모리 벡터 묶음에서 통과 공고 전부와 코사인(근사 없음)
        단어 검색: 메모리 BM25 (allowed=통과 공고)
        RRF(k=60)로 합침, 각 검색에서 최대 50건
  → ③ 규칙 재정렬: 다른 시·도 → 다른 시·군·구 → 예비창업자 불가 추정 → 업종 목록 밖(기본 꺼짐) → 대상 집단 근거 없음 순으로 뒤로
  → ④ 결과마다 내용 지문·가산점·규칙 표시를 붙여 top(기본 10)건 반환
 ```
 
-질의 인코딩·Chroma·BM25 오류는 따로 잡아 대체 경로(`임베딩단독`·`BM25단독`·`마감임박순`)로 답한다. 어떤 경로에서도 정형 필터는 생략하지 않는다.
+질의 인코딩·의미 검색·BM25 오류는 따로 잡아 대체 경로(`임베딩단독`·`BM25단독`·`마감임박순`)로 답한다. 어떤 경로에서도 정형 필터는 생략하지 않는다.
 
 ## 대표 흐름 3 — 공고 서버 켜기 (`boot`)
 
@@ -88,7 +88,7 @@ S-Brain에서 "공고 데이터 · 매칭 · 자격 판정"을 맡는 부분이�
 
 | 올리는 것 | 출처 | 실패하면 |
 |---|---|---|
-| 벡터 색인 | Chroma | 의미 검색 없이 연다(BM25 단독) |
+| 공고 벡터 | 공용 DB `notices.embedding`(1,024차원 float32만) → 메모리(`search/memvec.py`, 약 11MB). 설정 지문이 질의 인코더와 다르면 `vector_fingerprint` 경고 | DB 오류·0건이면 의미 검색 없이 연다(BM25 단독) |
 | 올린 공고의 저장 시각 | `import_runs` 최신 행 (공고보다 먼저 읽음) | null → 수집 상태가 '지연'으로 나간다 |
 | 공고 정보 | `notices` 전체 | **서버가 멈춘다** |
 | 공고 내용 지문 | `notices` + 지금 달린 첨부 파일 해시 | 지문 null, 가점도 쓰지 않음 |

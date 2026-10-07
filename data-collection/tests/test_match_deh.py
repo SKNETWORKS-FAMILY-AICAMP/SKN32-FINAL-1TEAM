@@ -187,9 +187,9 @@ class BootTests(unittest.TestCase):
                 if 'FROM notice_bonus' in self.sql:           # 공고 가점(03) — 지금 지문·버전과 같은 행만 쓴다
                     from collect.extract_bonus import EXTRACTOR_VERSION
                     cv = app.STATE['content_versions'].get('n01')
-                    return [('n01', 'none', None, None, '[]', cv, EXTRACTOR_VERSION),
-                            ('n02', 'none', None, None, '[]', 'cv2-old', EXTRACTOR_VERSION),     # 공고 없음·지문 다름
-                            ('n03', 'none', None, None, '[]', cv, 'extract_bonus/v3 old')]
+                    return [('n01', 'none', None, None, '[]', cv, EXTRACTOR_VERSION, '[]'),
+                            ('n02', 'none', None, None, '[]', 'cv2-old', EXTRACTOR_VERSION, '[]'),     # 공고 없음·지문 다름
+                            ('n03', 'none', None, None, '[]', cv, 'extract_bonus/v3 old', '[]')]
                 if self.sql.startswith('SELECT id,notice_id,'):
                     from search import content_version
                     row = dict(notice('n01'), id=1)
@@ -234,7 +234,7 @@ class BootTests(unittest.TestCase):
         self.assertEqual(list(st['content_versions']), ['n01'])
         self.assertTrue(st['content_versions']['n01'].startswith('cv2-'))
         self.assertEqual(st['amounts'], {'n01': {'won': 50000000, 'quote': '최대 5천만원 지원'}})
-        self.assertEqual(st['bonus'], {'n01': {'status': 'none', 'max_total_points': None, 'bonus_info': None, 'items': []}})
+        self.assertEqual(st['bonus'], {'n01': {'status': 'none', 'max_total_points': None, 'bonus_info': None, 'items': [], 'uncertain': []}})
 
 
 if __name__ == '__main__':

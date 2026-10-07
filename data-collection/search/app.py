@@ -8,9 +8,9 @@ data-collection 폴더에서 실행한다. 패키지라 파일을 직접 부르�
 
 브라우저에서 열면 입력 → 공고 3건 → 클릭하면 자격요건 3항목이 나온다.
 
-**검색은 반드시 벡터 DB(Chroma) 를 거친다.** MySQL 의 embedding 을 직접 읽어
-계산하는 경로는 쓰지 않는다. MySQL 은 제목·기관·기간 같은 표시용 값과
-자격 판정용 필드를 가져오는 데만 쓴다.
+**의미 검색은 벡터 DB 를 쓰지 않는다**(2026-10-07, 10/6 결정·결과서). 켤 때 공용 MySQL 의
+notices.embedding 을 메모리에 올리고(search/memvec.py) 질의와의 코사인을 전부 직접 계산한다.
+공고 2,800건 안팎이라 근사 검색(Chroma)보다 빠르고 순서도 정확하다.
 
 **기본 검색은 하이브리드다** (search='hybrid'). 의미 검색(Chroma) 결과와 단어 검색
 (BM25) 결과를 순위로 합친다(RRF, hybrid.py). BM25 색인은 서버를 켤 때 한 번 메모리에
@@ -70,15 +70,20 @@ app.include_router(notice_api.build_router(STATE, lambda: _connect()))  # 시험
 
 
 def _collection():
-    """벡터 DB. EC2 와 로컬 모두 Chroma 다."""
-    if ON_EC2:
-        from ec2 import ec2_vecstore
-        col = ec2_vecstore.open_store(create=False)
-        if col is None:
-            raise SystemExit('Chroma 색인이 없다. ec2_vecstore.py 를 먼저 돌린다.')
-        return col
-    from search import vecstore
-    return vecstore.open_chroma()
+    """의미 검색 벡터 묶음 — 공용 DB 의 공고 벡터를 메모리에 올린다(search/memvec.py). EC2·PC 같은 방식.
+
+    벡터가 하나도 없으면 예외를 낸다(boot 가 받아 의미 검색 없이 연다). 건수·지문은 STATE['vectors_info'].
+    """
+    from search import memvec
+    connection = _connect()
+    try:
+        col, info = memvec.load(connection)
+    finally:
+        connection.close()
+    STATE['vectors_info'] = info
+    if not col.count():
+        raise RuntimeError('공용 DB 에 쓸 수 있는 공고 벡터가 없다(버림 %d건)' % info.get('dropped', 0))
+    return col
 
 
 def _encode(text):
@@ -118,18 +123,32 @@ def boot():
     # 공고 정보(DB)·BM25 는 정형 필터와 대체 검색의 바탕이라 실패하면 그대로 멈춘다.
     STATE['boot_errors'] = {}
     STATE['collection'] = STATE['vector_ids'] = None
+    STATE['vectors_info'] = {}
     try:
         STATE['collection'] = _collection()
-        print('벡터 DB 색인 %d건' % STATE['collection'].count())
+        info = STATE.get('vectors_info') or {}
+        print('공고 벡터 %d건 (공용 DB%s)' % (STATE['collection'].count(),
+                                        ' · 형식이 달라 버림 %d건' % info['dropped'] if info.get('dropped') else ''))
         # 정형 필터 통과 공고 안에서만 의미 검색을 하려면 색인에 있는 ID 를 알아야 한다(_dense_within)
         STATE['vector_ids'] = set(STATE['collection'].get(include=[])['ids']) - {'__watermark__'}
-    except BaseException as exc:                  # _collection() 은 색인이 없으면 SystemExit 를 낸다
+    except BaseException as exc:                  # DB 오류·벡터 0건(RuntimeError) 모두 여기서 받는다
         if isinstance(exc, KeyboardInterrupt):
             raise
         STATE['collection'] = STATE['vector_ids'] = None
-        STATE['boot_errors']['vector_db'] = _describe(exc, '벡터 DB 연결')
-        print('경고: 벡터 DB 를 열지 못했다 — 의미 검색 없이 시작한다 (%s)' % STATE['boot_errors']['vector_db']['error'],
+        STATE['boot_errors']['vector_db'] = _describe(exc, '공고 벡터 읽기')
+        print('경고: 공고 벡터를 올리지 못했다 — 의미 검색 없이 시작한다 (%s)' % STATE['boot_errors']['vector_db']['error'],
               file=sys.stderr)
+    # 벡터의 설정 지문이 질의 인코더와 다르면 경고만 남긴다(의미 검색은 끄지 않는다). 지문을 계산하지 못하면 넘어간다
+    if STATE['collection'] is not None:
+        try:
+            from search import memvec
+            from shared import embed
+            warning = memvec.fingerprint_warning(STATE.get('vectors_info') or {}, embed.fingerprint())
+        except Exception:
+            warning = None
+        if warning:
+            STATE['boot_errors']['vector_fingerprint'] = {'where': '공고 벡터 설정 지문', 'error': warning}
+            print('경고: ' + warning, file=sys.stderr)
 
     from search import collection_status, content_version
     connection = _connect()
@@ -182,8 +201,12 @@ def boot():
         from collect.extract_bonus import EXTRACTOR_VERSION
         connection = _connect()
         try:
+            # found 행은 근거 문장이 지금 공고 원문에 그대로 있는지도 본다 — 원문을 못 읽으면 그 공고들은 null(Codex 재검수 B-P1-1)
+            document_errors = []
             STATE['bonus'] = bonus_mod.load(connection, versions=STATE['content_versions'],
-                                            extractor_version=EXTRACTOR_VERSION, stale=stale)
+                                            extractor_version=EXTRACTOR_VERSION, stale=stale, errors=document_errors)
+            if document_errors:
+                STATE['boot_errors']['bonus_documents'] = '; '.join(document_errors)
         finally:
             connection.close()
     except Exception as exc:
@@ -754,7 +777,7 @@ def match(req: MatchRequest):
 
     out = {'query': query, 'count': len(results),
            'encode_ms': round(encode_ms, 1), 'search_ms': round(search_ms, 2),
-           'source': 'chroma+bm25' if hybrid_on else 'chroma', 'search': 'hybrid' if hybrid_on else 'dense',
+           'source': 'vectors+bm25' if hybrid_on else 'vectors', 'search': 'hybrid' if hybrid_on else 'dense',
            'demote_groups': req.demote_groups,
            'demoted': demoted, 'results': results,
            'region': req.region, 'demote_region': bool(req.demote_region and req.region),
@@ -826,11 +849,11 @@ def _hybrid_depth():
 def _dense_within(col, qv, ids, n):
     """의미 검색을 ids(정형 필터 통과 공고) 안에서만 한다. ([(공고 ID, 거리)] 가까운 순, 쓴 경로, 오류 설명).
 
-    Chroma 의 query(ids=...) 로 후보를 좁힌다. 색인에 없는 ID 를 넘기면 Chroma 가 오류를 내므로
-    boot() 가 기억한 색인 ID 와 겹치는 것만 넘긴다(로컬·EC2 모두 chromadb 1.5.9, ids 지원 확인 2026-09-28).
+    벡터 묶음(search/memvec.MemoryCollection)의 query(ids=...) 로 후보를 좁힌다. boot() 가 기억한 벡터 ID 와
+    겹치는 것만 넘긴다(평가 도구가 감싼 묶음·옛 Chroma 도 같은 방식으로 받는다).
 
     경로 (Codex 검수 P2, 2026-09-28 — 호환성 문제와 색인 장애를 구분한다)
-      'chroma'   정상
+      'memory'   정상(2026-10-07 전에는 'chroma')
       'vectors'  ids 인자를 모르는 색인(평가용 NumpyCollection·옛 Chroma, TypeError)이다. 벡터를 꺼내 코사인을
                  직접 계산한다(벡터가 정규화돼 있어 결과 순서가 같다). 오류가 아니므로 설명은 None
       'vectors'  + 설명  그 밖의 Chroma 오류(타임아웃·색인 오류 등). 원인을 로그와 응답(dense_error)에 남기고
@@ -839,11 +862,11 @@ def _dense_within(col, qv, ids, n):
     known = STATE.get('vector_ids')
     ids = [nid for nid in ids if known is None or nid in known]
     if not ids:
-        return [], 'chroma', None
+        return [], 'memory', None
     error = None
     try:
         found = col.query(query_embeddings=[qv], ids=ids, n_results=min(n, len(ids)))
-        return list(zip(found['ids'][0], found['distances'][0])), 'chroma', None
+        return list(zip(found['ids'][0], found['distances'][0])), 'memory', None
     except TypeError as exc:
         if 'ids' not in str(exc):
             error = '%s: %s' % (type(exc).__name__, str(exc).splitlines()[0][:200])
@@ -1045,7 +1068,9 @@ def health():
     return {'indexed': indexed, 'boot_errors': STATE.get('boot_errors') or {},
             'notices': len(STATE['rows']),
             'bm25_indexed': len(STATE['bm25']) if STATE.get('bm25') else 0,
-            'on_ec2': ON_EC2, 'source': 'chroma+bm25', 'default_search': 'hybrid',
+            'on_ec2': ON_EC2, 'source': 'vectors+bm25', 'default_search': 'hybrid',
+            # indexed = 메모리에 올린 공고 벡터 건수(2026-10-07 전에는 Chroma 색인 건수). 지문별 건수·버린 건수
+            'vectors': {k: (STATE.get('vectors_info') or {}).get(k) for k in ('count', 'dropped', 'fingerprints')},
             # 신청자 유형 판정의 신선도(2026-09-29 — Codex 재검수: 실행 중 상태를 볼 곳이 없었다)
             'applicant_types': {'active': bool(types.get('active')), 'source': types.get('source'),
                                 'used': len(types.get('notices') or {}),

@@ -23,6 +23,73 @@
 
 ## 작업 기록
 
+### 2026-10-07 · Claude · 시험 화면(8000 `/`)에 가산점 표시
+
+- 요청·목적: 가산점을 `/docs`가 아닌 8000번 시험 화면에서도 시험할 수 있게 한다.
+- 작업 전 상태: `web/app.html`은 `bonus_score`를 받지만 보여 주지 않았다.
+- 변경 파일: `web/app.html`(카드·목록의 가산점 줄, 결과 위 집계, 자격 확인 화면의 가산점 칸 + `/api/notices/{id}` 가점 원문), `web/AGENTS.md`.
+- 전후 차이·선택 이유: 화면 표시만 늘었다. 문구는 조율 담당 알림 초안과 같은 "확인된 가산점(일부)"을 쓴다. 0은 "가산점 없음", null은 "가산점 모름"으로 구분한다. 순위·응답은 그대로다.
+- 검증: 이 PC 8030 임시 서버에서 여성기업·벤처·경기 성남시(아이디어 = 김포시 공고 제목)로 검색해 20건을 확인했다.
+  - 화면: 확인된 가산점 1(120481 +10점)·없음 7·모름 12. 120481 자격 확인 화면에 "벤처기업 10점"과 가점 원문이 나왔다. 브라우저 오류는 없었다.
+  - 시험: 884개 중 868 통과·16 건너뜀.
+  - 화면 그림(스크린샷)은 앱 창이 그려지지 않아 찍지 못했다. 글자·구조로 확인했다.
+- 미검증·남은 문제: 시험 서버 반영은 사용자 몫이다(명령은 STATUS).
+
+### 2026-10-07 · Claude · 가산점 재검수 지적 처리
+
+- 요청·목적: Codex 가산점 재검수(10/7, P1 3·P2 3·P3 1) 지적을 처리한다. 사용자 결정은 다음과 같다.
+  - `bonus_score` = 확인된 가산점 부분합(결정 0012).
+  - 짚은 틈은 모두 null로 막는다.
+  - AI 재호출·재추출 없음, 공용 DB 쓰기 없음, 순위 반영 0.
+- 작업 전 상태: 10/7 오전판(확실한 것만 남기기). "가산점 있음"은 열린 공고 1,741건 중 신청자마다 7곳이었고, 재검수가 10점 → 20점(묶음 분리), 8점(한도 불확실), 이어 붙인 근거 10점 경로를 재현했다.
+- 변경 파일: `search/bonus.py`(규칙·원문 확인·머리말), `search/app.py`(boot 오류 칸), `collect/extract_bonus.py`(하루 상한 잠금), `tests/test_bonus.py`(`RecheckTests`·`LoadTests`), `tests/test_extract_bonus.py`(동시 실행), `eval/bonus_conservative_compare.py`(`--old`·관찰 공고), 문서(contracts·business-rules 9절·결정 0008·0012·목록·`search/AGENTS.md`·`notice_api/README.md`), 새 `docs/notice_api/CODEX_BONUS_RECHECK2_REQUEST_20261007.md`·`BONUS_NOTICE_DRAFT_20261007.md`.
+- 전후 차이·선택 이유: 새 규칙은 "해당 → 모름", "점수 → 없음/null" 방향뿐이라 결과가 양수 → null 쪽으로만 움직인다. 전체 합계 대신 부분합으로 정한 이유는 다음과 같다. 오전에 점수가 나온 8곳이 모두 모르는 묶음을 함께 갖고 있어, 전체 합계로 정하면 0곳이 되기 때문이다.
+  - 기대값을 바꾼 기존 시험: `test_independent_bonuses_in_one_sentence`(123858 4점 → null), `test_uncertain_reading`("중복" 메모 1묶음 3점 → null).
+- 검증:
+  - `python -X utf8 -m unittest discover -s tests` → 884개 중 868 통과·16 건너뜀·실패 0.
+  - `python -X utf8 -m eval.bonus_conservative_compare --old <오전판>` → `reports/bonus_conservative_20261007T024147Z/`(신청자 4명: 있음 0·0·7·7 → 0·0·3·3, null로만 이동).
+  - 8030 임시 서버 계약 시험 `--all` → 16개 실패 0, 2,825건 형식 오류 0, `boot_errors` 없음(`reports/notice_api_contract_20261007T024341Z/`).
+  - 커버리지 다시 잼 → `reports/unit_test_20261007T024611Z/`(범위 621개, 67.5%). 결과서는 새 숫자로 다시 만들고 글자로 대조함(부록 621행 = 통과 605 + 건너뜀 16).
+- 미검증·남은 문제: Codex 재재검수 전. 서버 반영은 사용자 몫(명령은 STATUS). 조율 담당 알림은 사용자가 보낸다. 남은 양수 4곳(117928·120481·122147·126642)은 사람이 원문으로 확인하지 않았다. 결과서는 워드 창을 닫은 뒤 바꿔 넣었다.
+- 다음 단계: 서버 반영 → Codex 재검수 → 통과하면 "화면에 써도 됨" 알림.
+
+### 2026-10-07 · Claude · 단위 테스트 보강과 워드 결과서
+
+- 요청·목적: 맡은 역할(서비스에 쓰이는 11개 기능)을 단위 테스트로 점검하고 제출용 워드 결과서를 만든다(사용자 결정: 보강 + 결과서, 커버리지 포함, 기능별 요약 + 대표 사례).
+- 작업 전 상태: 시험 778개(통과 762·건너뜀 16). `fetch`·`attachment_pipeline`·`hwp5`·`upload_vectors`·`upload_attachments`·`config`·`eligibility`는 직접 검사하는 시험이 없었다.
+- 변경 파일: 새 시험 `tests/test_fetch.py`(9)·`test_attachment_pipeline.py`(32)·`test_hwp5.py`(11)·`test_upload_vectors.py`(13)·`test_upload_attachments.py`(8)·`test_config.py`(9)·`test_eligibility.py`(16). 새 결과서 `docs/deliverables/[단위 테스트] 공고 데이터·매칭 단위 테스트 결과서.docx`. 기록 `docs/STATUS.md`·`docs/README.md`·`docs/tracking/status.md`·`docs/standards.md`. 운영 코드·기존 시험 기대값은 바꾸지 않았다.
+- 전후 차이·선택 이유: 시험만 더했다. 가짜 응답·가짜 연결·임시 폴더로만 시험해 비용 0, 공용 데이터 무변경.
+- 검증: `python -X utf8 -m coverage run -m run_unit`(= `unittest discover -s tests`) → 876개, 통과 860·실패 0·오류 0·건너뜀 16(`MYSQL_INTEGRATION_TEST` 끔). 범위 시험 613개, 범위 줄 커버리지 67.2%(7,095줄 중 4,771줄). 결과 `reports/unit_test_20261007T021113Z/`(README·coverage_summary.json·tests.json·coverage_report.txt·run.log·측정 스크립트). 결과서는 글자로 다시 추출해 요약 숫자·부록 행 수(613, 통과 597·건너뜀 16)를 대조했다.
+- 미검증·남은 문제: MySQL 통합 시험 16개(시험용 DB 없음), 실제 외부 API·첨부 샘플·HWP 파일 시험 없음. 커버리지 낮은 곳 `ec2/ec2_vecstore.py` 0%·`search/vecstore.py` 17.4%. 시험 작성 중 기본 경로가 정의 때 묶이는 함정으로 `data/attachment_results.jsonl`에 가짜 37줄이 생겨 지움(실제 기록 없던 새 파일).
+- 다음 단계: 사용자가 결과서 검토·제출.
+
+### 2026-10-07 · Claude · 가산점 "확실한 것만 남기기"
+
+- 요청·목적: 10/6 Codex 재검수 지적(P1 1·P2 6·P3 2) 처리 방식을 사용자가 정함 — 재추출 없이 계산만 줄이기.
+- 변경 파일: `search/bonus.py`, `collect/extract_bonus.py`, `tests/test_bonus.py`·`test_extract_bonus.py`·`test_match_deh.py`·`test_notice_api.py`, 새 `eval/bonus_conservative_compare.py`, 새 `docs/notice_api/CODEX_BONUS_RECHECK_REQUEST_20261007.md`, 기준 문서(판정 9절·창구·결정 0008·현황·미해결·함정·`search`/`collect` 안내), 진행표.
+- 전후 차이·선택 이유: 틀린 점수보다 "모름"이 낫다는 사용자 원칙. 합계 한도는 범위를 확인할 수 없어 자르지 않고 null로 바꿨다 — `bonus_items.points`가 "한도 적용 뒤"에서 "원문 배점"으로 바뀐다(답변서 문구와 달라짐 → 재검수 통과 뒤 알림에 포함). 공고 합계의 "확인된 부분합" 정의는 그대로(재검수에 판단 요청).
+- 검증: 시험 778 통과·16 건너뜀(처음 5건 실패 — 근거에 N점이 없는 가짜 항목·옛 기대값·가짜 DB 칸 수 — 모두 시험 쪽을 새 규칙에 맞춤). `python -X utf8 -m eval.bonus_conservative_compare` → 열린 공고(모집 마감 아님 + 마감일 안 지남) 1,741건 전후 표, 재현 공고 값. 처음 실행은 `recruitment_status='open'`만 세어 221건(기업마당은 unknown)이라 버리고 조건을 고쳐 다시 실행. 8030 임시 서버 boot 오류 없음, 계약 시험 `--all` 16/16.
+- 미검증·남은 문제: Codex 재검수, 서버 두 곳 반영(사용자), 배치 서버의 첫 14단계 실행(내일 09:00).
+- 다음 단계: 재검수 → 조율 담당 알림.
+
+### 2026-10-07 · Claude · 공고 서버 검색에서 벡터 DB(Chroma) 빼기
+
+- 요청·목적: 10/6 결정(벡터 DB 미사용, 결과서 제출)을 코드에 반영하고, 결과가 같은지 확인.
+- 작업 전 상태: `search/app.py`가 PC는 `data/vecstore/chroma`, 리눅스는 `ec2/data/vecstore/chroma`(또는 `VECSTORE_PATH`)를 열었다. PC 색인은 10/2분(2,714건)이라 그 뒤 공고가 의미 검색에서 빠졌다.
+- 변경 파일: 새 `search/memvec.py`(MemoryCollection — Chroma와 같은 count·query(ids)·get 모양, 거리 1−내적, 같은 거리면 공고 ID 순; 공용 DB 읽기 `load`, 1,024차원·4,096바이트만, 지문 경고), `search/app.py`(`_collection`이 공용 DB 벡터를 올림·0건이면 예외, `boot` 출력·지문 경고, `dense_path` 정상 `memory`, `source` `vectors+bm25`, `/api/health` `vectors`, 머리말), 새 `tests/test_memvec.py`, `tests/test_match_rules.py`(기대값 `memory`), 새 `eval/vector_db_compare.py`, 기준 문서·폴더 안내.
+- 전후 차이·선택 이유: 벡터 출처를 공용 DB로 정해(사용자 선택) PC·팀 EC2가 같은 최신 벡터를 쓴다. 인터페이스 모양을 유지해 평가 도구(`CorpusCollection` 등)가 고치지 않고 돈다. 비교는 같은 벡터로 임시 Chroma를 새로 만들어(사용자 선택) 방식 차이만 보이게 했다.
+- 검증: `python -X utf8 -m unittest discover -s tests` → 771 통과·16 건너뜀. 처음 1건 실패(`test_boot_normal_has_no_errors` — 가짜 `_collection`이라 지문 정보가 비어 경고가 남) → 벡터 쪽 지문 정보가 없으면 판단하지 않게 고침. `python -X utf8 -m eval.vector_db_compare` → 질의 66, 벡터 2,825, chromadb 1.5.9: 의미 검색 상위 10 겹침 99.5%·순서 같음 63/66·1위 66/66, 추천 상위 3 같음 62/66(93.9%)·상위 10 같음 51/66, 의미 검색 6.58ms vs 7.55ms, `match` 384ms vs 395ms. 다른 4개 질의 중 2개는 상위 3 구성이 같고 순서만 다름. `PORT=8030 python -m search.app`(이 PC, 켤 때 34.9초) → `/api/health` 벡터 2,825·`boot_errors` 없음, 계약 시험 `--url http://127.0.0.1:8030 --all` 16/16, 2,825건 형식 오류 0, 건당 24ms. 임시 서버는 끔.
+- 미검증·남은 문제: 팀 EC2 시험 서버 반영 전(사용자 실행). 배치 7단계·EC2 09:10 예약·Chroma 정합성 도구 정리는 이번 범위 밖. `search/app.py` 머리말의 `\.venv` 표기가 SyntaxWarning을 낸다(기존, 동작 무관).
+- 다음 단계: 시험 서버 반영 → 바깥에서 `/api/health`·계약 시험.
+
+### 2026-10-07 · Claude · 공고 내용 지문 하루 비교
+
+- 요청·목적: 10/6에 정한 내용 지문(`cv2-`)이 수집 잡음 없이 내용이 바뀔 때만 바뀌는지 하루 지나 확인.
+- 변경 파일: STATUS·`docs/tracking/status.md`(현황·남은 일 갱신). 코드 변경 없음.
+- 검증: `.\.venv\Scripts\python.exe -X utf8 -m search.content_version --compare data/notice_api/content_version_20261006_cv2.json`(공용 DB 읽기만) → 이전 저장 10/6 00:00:04 UTC → 지금 10/7 00:00:03 UTC, common 2,765 · changed 14 · added 60 · removed 0, by_field `recruitment_status` 13 · `title` 1. 변화 공고를 DB에서 확인: `kstartup:176218`·`179190` 등은 `closed`(K-Startup 목록에서 빠져 모집 종료), `kstartup:179350` 제목 끝 "(수정)". 첨부·링크·접수기간 원본 같은 칸의 잡음 변화 0.
+- 결론: `cv2-` 그대로 확정. 접두어를 올리지 않는다.
+- 다음 단계: 조율 담당에게 "내용 버전 잠정 → 확정" 알림(사용자).
+
 ### 2026-10-06 · Claude · 팀 EC2 시험 서버 안내·확인과 답변서 주소 반영
 
 - 요청·목적: 조율 담당에게 줄 공고 서버 주소. "답변서 공개 시험 서버 없음에서 해당 주소로 변경".

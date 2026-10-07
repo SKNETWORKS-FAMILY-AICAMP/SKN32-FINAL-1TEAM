@@ -6,7 +6,7 @@
 - `gate.py`: 업력·접수기간·모집 상태 판정, 정형 필터 `prefilter`, 업력 계산. LLM 없음.
 - `eligibility.py`: 자격 판정 네 줄을 만드는 **유일한** 곳(화면용·조율용 공용).
 - `applicant_types.py`: 공고 본문 신청자 유형 판정 읽기(DB→파일, 지문 확인)와 해석. `industry_rank.py`: 업종 판정 읽기·허용 목록 밖 판정. `age_evidence.py`: 업력 근거(설명용).
-- `hybrid.py`: BM25와 RRF(`RRF_K=60`, `DEPTH=50`). `vecstore.py`: PC 쪽 Chroma 색인·질의 임베딩·배치 7단계 동기화. `rank_rules.py`: 대상 집단 규칙(서비스·평가 공용). `applicant.py`: 신청자 입력의 질의·규칙·받기만 갈래, 인증 목록.
+- `hybrid.py`: BM25와 RRF(`RRF_K=60`, `DEPTH=50`). `memvec.py`: 공용 DB 공고 벡터를 메모리에 올린 의미 검색 묶음(count·query·get — Chroma와 같은 모양, 전부 비교). `vecstore.py`: PC 질의 임베딩(`embed_query`)과 배치 7단계 로컬 Chroma 동기화(공고 서버 검색에는 안 씀). `rank_rules.py`: 대상 집단 규칙(서비스·평가 공용). `applicant.py`: 신청자 입력의 질의·규칙·받기만 갈래, 인증 목록.
 - `collection_status.py`: 수집 상태 판정(순수 함수 `judge`, 읽기 전용). `content_version.py`: 공고 내용 지문(`cv2-`)과 하루 비교 명령. `bonus.py`: 공고 가점 × 신청자 → 가산점.
 - `search_local.py`: 옛 시험용 명령줄 검색(서비스 경로 아님).
 
@@ -28,16 +28,18 @@
 - HTTP `/api/match`는 `_public()`으로 누적 20건(`MAX_CANDIDATES`)을 넘지 않게 자른다. 상위 3건(`CARD_COUNT`)이 `card`.
 - 점수를 0~100으로 바꾸지 않는다. `band` 기준 0.62·0.55, `fit_score`는 RRF ÷ 그 경로 이론 최대값(마감임박순 null).
 - `boot()`: 공고 정보·BM25 실패만 서버를 멈춘다. 벡터 DB·임베딩·지문·금액·가점·판정표 실패는 그 기능만 끄고 `boot_errors`에 남긴다. 저장 시각(`loaded_store_at`)은 공고보다 **먼저** 읽는다.
+- 가산점(`bonus.py`)은 **확인된 가산점 부분합**(결정 0012)이고 "확실한 것만"이다: 근거 문장에 그 "N점"이 직접 있고 다른 "N점"이 섞이지 않아야 점수 인정(`points_supported`), 근거가 지금 원문에 그대로 이어져 있어야 함(`load`가 found 행마다 `in_document` 확인 — 원문을 못 읽으면 found 는 null·`boot_errors.bonus_documents`), 묶음은 group 이름으로만·묶음 오분류 가능성(다른 묶음 같은 근거·점수, 한 묶음인데 "각")이면 null, 앞으로의 조건(`FUTURE_WORDS`)·확인할 수 없는 조건 말(`CONDITION_WORDS`)·추가 조건이면 해당을 모름으로, found 에 불확실 메모가 하나라도 있으면 null, 세부사업 결과가 다르면 null, 합이 한도를 넘으면 null. 판단 단어는 모듈 상수(조정 가능)다. 결과는 양수 → null 쪽으로만 움직여야 한다 — 바꾼 뒤 `python -m eval.bonus_conservative_compare --old <이전 bonus.py>`로 확인한다.
 - 가점은 추출 당시 내용 지문과 `EXTRACTOR_VERSION`이 지금과 같은 행만 쓴다. 내용 지문을 계산하지 못하면 가점을 하나도 쓰지 않는다. 신청자 유형 판정도 지금 공고문 지문과 같은 것만 쓰고, 지문을 모르면 기능 전체를 끈다.
 - 조율 창구 응답 모양: 공고 없음은 404 `{"code": "NOTICE_NOT_FOUND"}`, 수집 상태 DB 실패는 503 `{"code": "COLLECTION_STATUS_UNAVAILABLE"}`(상태를 지어내지 않음, DB 주소·오류 원문을 싣지 않음). 키·값을 바꾸면 조율 쪽이 깨진다.
 - 신청자 입력을 파일·DB·로그에 쓰지 않는다. 사업자번호 값은 응답에 내지 않는다.
 - 검색 오류는 `_describe`로 표준 오류 출력과 응답 `search_errors`에 남긴다. 조용히 삼키지 않는다.
 
 ## 이 폴더의 방식
-- 무거운 import(numpy·chromadb·sentence-transformers·ec2·판정 모듈)는 함수 안에서 한다. 패키지가 없어도 서버의 나머지가 뜨게 하기 위해서다.
+- 무거운 import(numpy·sentence-transformers·ec2·판정 모듈)는 함수 안에서 한다. 공고 서버는 chromadb를 import하지 않는다. 패키지가 없어도 서버의 나머지가 뜨게 하기 위해서다.
 - 판정 읽기 함수(`applicant_types.load_auto`, `industry_rank.load_auto`, `age_evidence.load`)는 예외를 내지 않고 `{'active': False, 'error': …}`를 돌려준다. 새 판정표도 같은 모양으로 만든다.
 - 응답에 "무엇이 쓰였고 무엇이 안 쓰였는지"를 함께 싣는다(`filter.excluded`, `pipeline`, `stored_only`, `why_not_used`, 규칙별 `*_demoted`).
-- 의미 검색은 `col.query(ids=통과 공고)`. 색인에 없는 ID는 미리 뺀다. `ids`를 모르는 색인·Chroma 오류는 벡터를 꺼내 직접 코사인(`'vectors'` 경로)으로 대신한다.
+- 의미 검색은 `col.query(ids=통과 공고)`(정상 경로 `dense_path='memory'`). 벡터가 없는 공고는 미리 뺀다. `ids`를 모르는 묶음(평가용 `NumpyCollection` 등)은 벡터를 꺼내 직접 코사인(`'vectors'` 경로)으로 대신한다.
+- 공고 벡터는 `_collection()`이 공용 DB에서 읽는다(1,024차원·4,096바이트만). 0건·DB 오류는 예외 → `boot()`가 의미 검색 없이 연다. 지문이 질의 인코더와 다르면 `boot_errors['vector_fingerprint']` 경고만 남긴다. `STATE['collection']`·`STATE['vector_ids']` 이름·모양은 평가 도구가 감싸 쓰므로 바꾸지 않는다.
 - 질의 벡터는 `np.asarray(…, dtype='float32').tolist()`로 넘긴다.
 
 ## 시험

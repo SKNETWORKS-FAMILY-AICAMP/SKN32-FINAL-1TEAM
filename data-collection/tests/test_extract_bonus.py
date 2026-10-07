@@ -195,6 +195,39 @@ class BonusInfoAndPlanTests(unittest.TestCase):
                 patch.object(eb, 'run_full', side_effect=AssertionError('부르면 안 된다')):
             self.assertEqual(eb.run_batch(say=lambda *_: None), {'error': 'no_api_key', 'saved': 0})
 
+    def test_daily_record_broken_skips_calls(self):
+        # 기록 파일이 깨졌으면 0으로 되돌리지 않고 그날은 부르지 않는다(2026-10-07 R-P2-6)
+        import tempfile
+        from unittest.mock import patch
+        tmp = tempfile.mkdtemp()
+        path = os.path.join(tmp, 'calls.json')
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write('{')
+        with self.assertRaises(eb.DailyRecordError):
+            eb._daily_used('2026-10-07', path)
+        with patch.object(eb.config, 'get', lambda name, default=None: 'k' if name == 'OPENAI_API_KEY' else default), \
+                patch.object(eb, 'run_full', side_effect=AssertionError('부르면 안 된다')):
+            out = eb.run_batch(limit=300, say=lambda *_: None, daily_file=path)
+        self.assertTrue(out['error'].startswith('daily_record_unreadable'))
+        # 없는 파일은 처음이라 0
+        self.assertEqual(eb._daily_used('2026-10-07', os.path.join(tmp, 'none.json')), 0)
+
+    def test_daily_add_is_atomic_and_keeps_old_record(self):
+        import tempfile
+        tmp = tempfile.mkdtemp()
+        path = os.path.join(tmp, 'calls.json')
+        eb._daily_add('2026-10-07', 5, path)
+        eb._daily_add('2026-10-07', 7, path)
+        self.assertEqual(eb._daily_used('2026-10-07', path), 12)
+        self.assertFalse(os.path.exists(path + '.tmp'))
+        # 깨진 기록 위에 더하려 하면 덮어쓰지 않고 멈춘다
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write('[1, 2')
+        with self.assertRaises(eb.DailyRecordError):
+            eb._daily_add('2026-10-07', 1, path)
+        with open(path, encoding='utf-8') as f:
+            self.assertEqual(f.read(), '[1, 2')
+
     def test_daily_limit_counts_calls_per_korean_day(self):
         # 같은 날 다시 돌려도 하루 상한을 넘지 않는다(2026-10-06 Codex 검수 P2-6). 실패한 호출도 센다
         import tempfile
@@ -213,6 +246,43 @@ class BonusInfoAndPlanTests(unittest.TestCase):
             eb.run_batch(limit=300, say=lambda *_: None, daily_file=path)
         self.assertEqual(seen, [300, 0])
         self.assertEqual(eb._daily_used('2026-10-07', path), 300)
+
+    def test_daily_limit_holds_under_concurrent_runs(self):
+        # Codex 재검수 B-P2-3 재현: 시작 250 · 상한 300. 전에는 두 실행이 같은 잔여량 50을 읽고 둘 다 예약해 350이 됐다.
+        # 이제 첫 실행이 잠금을 잡고 있는 동안 둘째 실행은 부르지 않는다(bonus_busy) — 기록은 300
+        import json
+        import tempfile
+        import threading
+        from unittest.mock import patch
+        path = os.path.join(tempfile.mkdtemp(), 'calls.json')
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump({'2026-10-07': 250}, f)
+        entered, release, results = threading.Event(), threading.Event(), {}
+
+        def fake_full(limit=None, say=None, report=None, on_calls=None):
+            on_calls(limit)
+            entered.set()
+            release.wait(timeout=10)
+            return {'called': limit, 'no_mention': 0, 'saved': 0, 'failures': [], 'cost_usd': 0, 'left': 0}
+        with patch.object(eb.config, 'get', lambda name, default=None: 'key'), \
+                patch.object(eb, 'run_full', side_effect=fake_full), patch.object(eb, '_today_kst', lambda: '2026-10-07'):
+            first = threading.Thread(target=lambda: results.setdefault(
+                'first', eb.run_batch(limit=300, say=lambda *_: None, daily_file=path)))
+            first.start()
+            self.assertTrue(entered.wait(timeout=10))
+            second = eb.run_batch(limit=300, say=lambda *_: None, daily_file=path)
+            release.set()
+            first.join(timeout=10)
+        self.assertTrue(second['error'].startswith('bonus_busy'))
+        self.assertEqual(second['saved'], 0)
+        self.assertEqual(results['first']['called'], 50)
+        self.assertEqual(eb._daily_used('2026-10-07', path), 300)
+        # 잠금이 풀리면 다음 실행은 남은 0건으로 돈다
+        with patch.object(eb.config, 'get', lambda name, default=None: 'key'), \
+                patch.object(eb, '_today_kst', lambda: '2026-10-07'), \
+                patch.object(eb, 'run_full', side_effect=lambda limit=None, **kw: {
+                    'called': limit, 'no_mention': 0, 'saved': 0, 'failures': [], 'cost_usd': 0, 'left': 0}):
+            self.assertEqual(eb.run_batch(limit=300, say=lambda *_: None, daily_file=path)['called'], 0)
 
     def test_no_mention_row_and_save_sql(self):
         row = eb.no_mention_row({'notice_id': 'q', 'title': 't'})
