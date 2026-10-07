@@ -368,7 +368,7 @@ sequenceDiagram
 |---|---|---|---|
 | 모집 형태 | `Announcement.applyPeriodType` · `AnnouncementCard.applyPeriodType` — 기간 있음 · 예산 소진 시까지 · 상시·수시 · 선착순·모집 완료 시까지 · 모름(기본) | 확장(`ext()`) | `models/domain.py`, 표기 `agents/notice/convert.py` `PERIOD_LABELS` |
 | 내용 바뀜 · 내용 버전 | `AnnouncementCard.contentChanged`(기본 거짓) · `contentVersion`(기본 `null`) | 확장(`ext()`) | `models/domain.py`, 규칙 `flow/sbrain_flow.py` `card_content_changed` |
-| 가산점 | `AnnouncementCard.bonusScore`(`null` = 계산 못 함, `0` = 해당 없음) · `bonusItems`, 새 타입 `BonusItem`(`name` · `points`) | 확장(`ext()`) | `models/domain.py` |
+| 가산점 | `AnnouncementCard.bonusScore`(`null` = 계산 못 함, `0` = 해당 없음) · `bonusItems`, 새 타입 `BonusItem`(`name` · `points`). 2026-10-07부터 가산점 스위치가 꺼져 웹 카드는 늘 `null` · `[]`(11.8) | 확장(`ext()`) | `models/domain.py` |
 | 확인 필요 조건 | `GateResult.unknownConditions`(`지원대상 유형` · `업력`) — 화면 4에만 E-G1-UNPARSED | 확장(`ext()`) | `models/domain.py`, `flow/reads.py` `screen` |
 | G-01 입출력 | `G01In.announcementId`(마지막 공고 선택 명령의 공고 ID), `G01Out.selectedAnnouncement`(선택 공고, 자격 결과 · 업력과 한 번에 저장). `G01In.eligibility` · `eligibilityParsed`는 비울 수 있고 넣지 않는다 | 확장(`ext()`) · 기준 문서와 다름 | `contracts/tasks.py`, 등록 `flow/catalog.py` |
 | G-01 등록 | 규칙 단계 → `tools`를 받는 Task(LLM 없음, `uses_llm=False`), 재개 없음, 고정 Task 14개에 세지 않음(`counted=False`) | 기준 문서와 다름 | `flow/catalog.py` |
@@ -447,6 +447,12 @@ sequenceDiagram
 
 - 알려진 한계: 옛 설정 사본으로 도는 실행 건은 T-B1 · T-B2 · T-V2가 '미정'(T-V2 온도 0.0)으로 남는다(지금은 스텁이라 문제 없음, 공유 DB 적용 전이라 운영 실행 건 없음). `partialFeatures`가 채워지기 전에는 부분 인정만으로 재작성 사유가 나오지 않는다. 웹 명령으로 바로 바뀌는 상태는 워커 운영 로그에 없다.
 
+### 11.8 공고팀 답변 반영(2026-10-07)에서 생긴 잠정
+
+| 항목 | 값 · 내용 | `PROVISIONAL` 키 | 코드 |
+|---|---|---|---|
+| 가산점 스위치 | 코드 상수 `BONUS_ENABLED = False` — 공고팀 가산점 시험 단계(2026-10-06 답변, 화면 금지). 꺼져 있으면 실제 T-C2가 가산점 키를 읽지도 검사하지도 않고, 스텁 T-C2가 만들지 않으며, 웹 조회(화면 3 · `outputs`)가 저장된 카드까지 `null` · `[]`로 낸다. 실행별 설정(`Settings`)이 아니다. 공고팀 정리 뒤 이 한 곳만 바꿔 켠다(결정 0021) | `announcement.bonusEnabled` | `orchestrator/settings.py`, `agents/notice/tc2.py` `to_card`, `agents/stubs.py`, `flow/reads.py` `_web_cards` |
+
 ## 12. 테스트 목록
 
 | 파일 | 확인 내용 |
@@ -481,7 +487,7 @@ sequenceDiagram
 | `test_retention.py` | 12개월 처리 — 기준 시각(달력 · 경계), 잠정 값 목록, 진행 중 · 점유 중 건너뛰기, 살아 있는 실행 건(기록만 옮김, 두 번째 part, 결과 그대로), 완전 삭제된 실행 건, 끝난 시작 요청, 작업 한 대 · 간격 · 종료 신호 · 점유 만료 이어받기, 실행 건 하나 실패만 되돌림, 식별자 없음 (2026-10-05) |
 | `test_retention_preserve.py` | 12개월 처리 뒤에도 같은 것 — 카테고리, 화면 10 · 지금까지 결과 · 재작성 결과, 옛 실행 건의 화면 10, 시도 번호 이어 세기 (2026-10-05) |
 | `test_account_delete.py` | 탈퇴 — 통계 줄로 옮기고 모두 삭제, 대기 요청 취소, 완전 삭제된 실행 건, 다시 부르면 0, 처리중 요청 · 단계 진행 · 점유 중이면 BUSY, 계정 잠금 시간 초과 BUSY, 삭제 중 시작 요청 못 끼어듦, 웹 조립에서 부름. MySQL 계정 잠금은 `test_mysql_integration.py` (2026-10-05) |
-| `test_notice_tasks.py` | 실제 T-C2 · G-01(가짜 전송) — 보내는 칸 · 시 · 도 바꾸기, 카드 변환 · 가산점 · 내용 버전 · 추천 이유 · 받은 순서, 약속한 키 · 유한한 수 검사, 상세 → 선택 공고, 판정 → 자격 결과 · 업력, 공고 없음 · 코드 없는 404, 재시도 소진을 받지 않음, 흐름과 함께(확인 필요는 화면 4에만, 공고 없음이면 고르기 전으로, 수집 지연이면 시작 요청 E-C2-STALE) (2026-10-03) |
+| `test_notice_tasks.py` | 실제 T-C2 · G-01(가짜 전송) — 보내는 칸 · 시 · 도 바꾸기, 카드 변환 · 가산점(스위치 켜짐 · 꺼짐 — 꺼지면 잘못된 모양도 무시, 2026-10-07) · 내용 버전 · 추천 이유 · 받은 순서, 약속한 키 · 유한한 수 검사, 상세 → 선택 공고, 판정 → 자격 결과 · 업력, 공고 없음 · 코드 없는 404, 재시도 소진을 받지 않음, 흐름과 함께(확인 필요는 화면 4에만, 공고 없음이면 고르기 전으로, 수집 지연이면 시작 요청 E-C2-STALE) (2026-10-03) |
 | `test_task_settings.py` | Task별 설정 — 키 집합(카탈로그의 task 단계 + `지시문 다시 쓰기`), Task마다 자기 모델이 실행 기록에, 온도 덮어쓰기, 다시 쓰기의 설정 키 · 제한 시간, M-4 `model_version`, 옛 설정 사본(`agents`만) 실행 건, 워커 호출처 나누기 (2026-10-06) |
 | `test_image.py` | `tools.image` — 재시도 · 제한 시간 · 오류 종류 · 재시도 소진, 편집 / 새로 그리기, 크기 · 품질 기본값, 이미지 설정 없는 Task 즉시 실패, 호출 기록 `image` · 토큰, 실행 기록 이미지 토큰(글 합계와 따로, 재개 때 이어 더함), 관리자 조회 · 통계 줄, 지시문 · 그림 미기록, OpenAI 어댑터(가짜 클라이언트), T-B2 예외와 `이미지대체` (2026-10-06) |
 | `test_artifact_layer.py` | 산출물층 검증 반영 — 재작성 사유(통과 필수 조건 · HTML 2번 결함 출처 · 누락 · 부분 · 보류 · G-04 제외), T-V2 `planDoc` 입력 · 보류 · 진단 사건, G-04 자체 검사, 원페이지 계획서 반영 경로 · 되돌리기, 스텁 T-V2 점수식, T-B1 `planDoc`, 이전 원문(채우는 경우 · 재개 · 다시 쓰기 LLM에 없음 · 기록에 없음), 계약 확장 표시 (2026-10-06) |

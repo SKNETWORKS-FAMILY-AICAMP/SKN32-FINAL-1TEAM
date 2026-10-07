@@ -20,6 +20,7 @@ from sbrain.agents.stubs import StubScenario
 from sbrain.flow.catalog import artifact_types, build_registry
 from sbrain.flow.sbrain_flow import card_content_changed
 from sbrain.models import AnnouncementCard, BonusItem
+from sbrain.orchestrator import settings
 from sbrain.orchestrator.errors import CommandError, message
 
 TC2_KEYS = ("candidates", "collectionStatus", "filteredCount", "fallbackUsed", "fallbackMode")
@@ -177,7 +178,7 @@ def test_content_changed_when_info_or_version_changed(clock):
     assert cards["A03"].content_changed is False
 
 
-def test_content_unchanged_for_fit_bonus_or_one_sided_version(clock):
+def test_content_unchanged_for_fit_bonus_or_one_sided_version(clock, bonus_on):
     sc = StubScenario(no_version_ids={"A03"}, more_ids=["A01", "A02", "A03", "A04", "A05"],
                       more_changes={"A01": {"적합도"}, "A02": {"가산점"}, "A03": {"버전"}})
     app = make_app(clock, sc)
@@ -189,6 +190,36 @@ def test_content_unchanged_for_fit_bonus_or_one_sided_version(clock):
     assert (cards["A01"].fit_score, cards["A01"].match_reason) == (0.5, "유사 (갱신)")    # 새 값은 보인다
     assert (cards["A02"].bonus_score, [b.name for b in cards["A02"].bonus_items]) == (2.0, ["가점 항목", "추가 가점"])
     assert (cards["A03"].content_version, cards["A04"].content_version) == ("A03-v2", None)
+
+
+def test_web_cards_have_no_bonus_when_off_even_for_runs_stored_with_bonus(clock, monkeypatch):
+    """가산점이 꺼져 있으면 웹으로 나가는 카드(화면 3 첫 조회 · 추가 조회, 결과 조회)는 모두 비어 있다 — 가산점 값이
+    저장된 옛 실행 건도 같다. 저장된 값은 건드리지 않는다(켜면 다시 보인다). 카드 모양(키)은 그대로다."""
+    monkeypatch.setattr(settings, "BONUS_ENABLED", True)          # 이번 변경 전처럼 가산점 값을 저장한 실행 건
+    sc = StubScenario(more_ids=["A01", "A11"], more_changes={"A01": {"가산점"}})
+    app = make_app(clock, sc)
+    rid = started(app)
+    assert screen3(app, rid).candidates[0].bonus_score == 1.0
+
+    def blank(cards) -> bool:
+        return bool(cards) and all((x.bonus_score, x.bonus_items) == (None, []) for x in cards)
+
+    monkeypatch.setattr(settings, "BONUS_ENABLED", False)
+    assert blank(screen3(app, rid).candidates)                                   # 첫 조회만 있는 실행 건
+    assert blank(app.orchestrator.outputs(pid(app, rid)).candidates)
+    monkeypatch.setattr(settings, "BONUS_ENABLED", True)
+    more(app, rid)                                                               # 첫 조회 갱신 · 추가 조회도 가산점 값으로 저장
+    on = screen3(app, rid)
+    assert by_id(on.candidates)["A01"].bonus_score == 2.0 and on.more_candidates[0].bonus_score == 1.0
+
+    monkeypatch.setattr(settings, "BONUS_ENABLED", False)
+    s3, out = screen3(app, rid), app.orchestrator.outputs(pid(app, rid))
+    for cards in (s3.candidates, s3.more_candidates, out.candidates, out.more_candidates):
+        assert blank(cards)
+    dumped = s3.dump()["candidates"][0]
+    assert (dumped["bonusScore"], dumped["bonusItems"]) == (None, [])           # 키는 그대로, 값만 비어 있다
+    monkeypatch.setattr(settings, "BONUS_ENABLED", True)
+    assert by_id(screen3(app, rid).candidates)["A01"].bonus_score == 2.0          # 저장된 값은 그대로
 
 
 def test_reappearing_unchanged_announcement_is_not_marked_whatever_its_gate_result(clock):

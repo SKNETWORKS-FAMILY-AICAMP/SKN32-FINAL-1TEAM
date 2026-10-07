@@ -283,7 +283,7 @@ def test_bad_collection_status_is_format_error(bad):
 
 
 # ── T-C2: 카드 변환 (4.1.3) ─────────────────────────────
-def test_card_conversion():
+def test_card_conversion(bonus_on):
     out = run_tc2(FakeNoticeServer())
     assert (out.collection_status, out.filtered_count, out.fallback_used, out.fallback_mode) == ("정상", 42, False, None)
     card = out.candidates[0]
@@ -376,7 +376,7 @@ def test_content_version_rules():
         card_error(content_version=bad)
 
 
-def test_bonus_rules():
+def test_bonus_rules(bonus_on):
     card = one_card(bonus_score=2.5, bonus_items=[{"name": "청년 창업자", "points": 1.5}, {"name": "여성 기업", "points": 1}])
     assert card.bonus_score == 2.5
     assert card.bonus_items == [BonusItem(name="청년 창업자", points=1.5), BonusItem(name="여성 기업", points=1.0)]
@@ -392,15 +392,59 @@ def test_bonus_rules():
     assert (card.bonus_score, card.bonus_items) == (None, [])
 
 
-@pytest.mark.parametrize("over", [
+# 잘못된 모양의 가산점 값 — 켜져 있으면 형식 오류, 꺼져 있으면 읽지 않는다
+BAD_BONUS = [
     {"bonus_score": "2"}, {"bonus_score": True}, {"bonus_score": [1]},
     {"bonus_items": {"name": "x", "points": 1}}, {"bonus_items": "x"},
     {"bonus_items": [{"points": 1}]}, {"bonus_items": [{"name": "x"}]}, {"bonus_items": [{"name": 1, "points": 1}]},
     {"bonus_items": [{"name": "x", "points": "1"}]}, {"bonus_items": [{"name": "x", "points": None}]},
     {"bonus_items": ["x"]},
-])
-def test_bad_bonus_is_format_error(over):
+]
+
+
+@pytest.mark.parametrize("over", BAD_BONUS)
+def test_bad_bonus_is_format_error(over, bonus_on):
     card_error(**over)
+
+
+# ── T-C2: 가산점 스위치 꺼짐 (기본, 공고팀 시험 단계) ──────
+def test_bonus_switch_is_off_by_default_and_provisional():
+    from sbrain.orchestrator import settings
+    assert settings.BONUS_ENABLED is False
+    assert "announcement.bonusEnabled" in PROVISIONAL
+
+
+def test_bonus_off_blanks_cards_but_keeps_keys(bonus_off):
+    out = run_tc2(FakeNoticeServer())                                            # 공고 서버는 가산점 값을 준다
+    assert [(cd.bonus_score, cd.bonus_items) for cd in out.candidates] == [(None, [])] * 3
+    dumped = out.candidates[0].dump()
+    assert (dumped["bonusScore"], dumped["bonusItems"]) == (None, [])           # 키는 그대로, 값만 비어 있다
+
+
+@pytest.mark.parametrize("over", BAD_BONUS)
+def test_bonus_off_ignores_bad_bonus(over, bonus_off):
+    card = one_card(**over)                                                      # 형식 오류 없이 카드를 만든다
+    assert (card.announcement_id, card.bonus_score, card.bonus_items) == ("kstartup:A01", None, [])
+
+
+@pytest.mark.parametrize("field", ["bonus_score", "points"])
+def test_bonus_off_ignores_non_finite_bonus(field, bonus_off):
+    """1e400은 JSON 수라 클라이언트를 지나 inf로 읽힌다 — 꺼져 있으면 가산점 칸을 보지 않으므로 실패하지 않는다."""
+    server = FakeNoticeServer(ids=())
+    over = {"bonus_items": [{"name": "청년 창업자", "points": BIG}]} if field == "points" else {field: BIG}
+    server.match["results"] = [result("k:1", 1, **over)]
+    server.raw[("POST", "/api/match")] = with_literal(server.match, "1e400")
+    card = run_tc2(server).candidates[0]
+    assert (card.bonus_score, card.bonus_items) == (None, [])
+
+
+def test_bonus_off_does_not_change_request_body(bonus_off):
+    """보내는 칸은 그대로 — 성별 · 보유 인증 · 첫 창업 여부도 계속 보낸다."""
+    server = FakeNoticeServer()
+    run_tc2(server)
+    [body] = [b for m, p, b in server.calls if p == "/api/match"]
+    assert set(body) == SPEC_KEYS
+    assert (body["gender"], body["certifications"]) == ("남성", ["벤처기업"]) and "first_startup" in body
 
 
 @pytest.mark.parametrize("over", [
@@ -438,7 +482,7 @@ def test_missing_card_key_is_format_error(key):
     assert format_detail(e.value) == f"공고 서버 응답 형식 오류: match.results[0].{key}"   # 키 경로만
 
 
-def test_card_keys_allowed_missing():
+def test_card_keys_allowed_missing(bonus_on):
     server = FakeNoticeServer(ids=())
     r = result("k:1", 1)
     for key in CARD_MAY_OMIT:
@@ -477,7 +521,7 @@ def with_literal(value: Any, literal: str) -> tuple[int, bytes]:
 
 @pytest.mark.parametrize("literal", ["1e400", "-1e400", "1" + "0" * 400])
 @pytest.mark.parametrize("field", ["bonus_score", "points", "fit_score"])
-def test_non_finite_numbers_are_format_errors(field, literal):
+def test_non_finite_numbers_are_format_errors(field, literal, bonus_on):
     server = FakeNoticeServer(ids=())
     over = {"bonus_items": [{"name": "청년 창업자", "points": BIG}]} if field == "points" else {field: BIG}
     server.match["results"] = [result("k:1", 1, **over)]
@@ -534,7 +578,7 @@ def test_format_error_detail_has_key_names_only():
     assert SECRET not in "".join(details) + str(e.value) and "12345" not in "".join(details)
 
 
-def test_order_and_rank_kept_as_received():
+def test_order_and_rank_kept_as_received(bonus_on):
     server = FakeNoticeServer(ids=())
     server.match["results"] = [
         result("k:3", 3, fit_score=0.9, bonus_score=0.0), result("k:1", 1, fit_score=0.2, bonus_score=3.0),

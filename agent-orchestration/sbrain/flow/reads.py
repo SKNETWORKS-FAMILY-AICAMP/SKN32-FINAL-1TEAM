@@ -41,6 +41,7 @@ from ..models.domain import EvalItem, FormatFinding, Infographic, ProofreadLog
 from ..models.rework import ReworkComparison
 from ..models.run import ReworkResultStatus
 from ..models.scoring import ArtifactScore, CodeCheckResult, DocScore, FeatureMatchResult, ScoreReport
+from ..orchestrator import settings
 from ..orchestrator.context import RunContext, parse_ref
 from ..orchestrator.errors import CommandError, message
 from ..orchestrator.store import ExecutionFilter, RunFilter
@@ -437,7 +438,7 @@ def screen(orch: SBrainOrchestrator, project_id: int | str, number: int) -> Scre
     if number == 3:
         first, more = candidate_lists(ctx)
         return CandidatesScreen(
-            **base, candidates=first, more_candidates=more,
+            **base, candidates=_web_cards(first), more_candidates=_web_cards(more),
             more_available=not run.more_used and len(first) + len(more) < CANDIDATE_LIMIT,
             collection_status=ctx.get("collectionStatus"), filtered_count=ctx.get("filteredCount"),
             fallback_used=ctx.get("fallbackUsed"), fallback_mode=ctx.get("fallbackMode", default=None),
@@ -533,6 +534,18 @@ def _viewable_run(orch: SBrainOrchestrator, project_id: int | str) -> Run:
     return run
 
 
+def _web_cards(cards: list[AnnouncementCard]) -> list[AnnouncementCard]:
+    """웹으로 나가는 공고 카드 — 가산점 스위치(settings.BONUS_ENABLED, 잠정 · 기본 꺼짐)가 꺼져 있으면 가산점을 비운다.
+
+    화면 3(첫 조회 · 추가 조회)과 결과 조회(outputs)가 이것을 거친다. 이번 변경 전에 가산점 값이 저장된 실행 건도
+    비어 보인다. 저장된 산출물은 건드리지 않고(사본을 고친다), 카드 모양(bonusScore · bonusItems 키)은 그대로다.
+    한도 · 공고 선택 후보 확인(service.py)은 가산점을 보지 않으므로 candidate_lists를 그대로 쓴다.
+    """
+    if settings.BONUS_ENABLED:
+        return cards
+    return [c.model_copy(update={"bonus_score": None, "bonus_items": []}) for c in cards]
+
+
 def outputs(orch: SBrainOrchestrator, project_id: int | str) -> Outputs:
     run = _viewable_run(orch, project_id)
     ctx = orch.engine.open_context(run)
@@ -544,7 +557,7 @@ def outputs(orch: SBrainOrchestrator, project_id: int | str) -> Outputs:
     category = cur("category")
     return Outputs(
         project_id=run.project_id, run_id=run.run_id, step=run.state.step, progress=run.state.progress,
-        candidates=first, more_candidates=more,
+        candidates=_web_cards(first), more_candidates=_web_cards(more),
         selected_announcement=cur("selectedAnnouncement"), gate_result=cur("gateResult"),
         business_age_years=cur("businessAgeYears"), category=category, plan_doc=cur("planDoc"),
         doc_score=cur("docScore"), document_score_report=_score(document) if document is not None else None,

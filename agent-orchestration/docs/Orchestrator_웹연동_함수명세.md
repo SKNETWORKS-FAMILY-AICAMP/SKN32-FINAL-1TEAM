@@ -360,7 +360,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | 11 결과물 | 결과물 · 완료 | `deliverable` · `userMessage` · `planDoc` · `prototype` · `infographic` |
 
 - 화면 3은 작성을 시작한 뒤(계획서작성 · 실행 이후)에는 `CommandError("INVALID_STATE")`다(공고 다시 고르기 · 추가 조회와 같은 거절). 그 밖에 맞지 않는 상태는 `SCREEN_NOT_READY`.
-- **화면 3 카드(`AnnouncementCard`, 2026-10-03 바뀜)** — `announcementId` · `title` · `agency` · `applyEnd`(`null` 가능 — 마감일 없는 공고) · `supportAmountMax`(`null` 가능 — 추천 결과에는 금액이 없어 지금은 늘 `null`) · `fitScore` · `rank` · `displayType` · `matchReason` · `sourceNotice` · `originalUrl`, 확장 `applyPeriodType`(모집 형태 표기) · `contentChanged`(내용 바뀜) · `contentVersion`(웹은 쓰지 않음) · `bonusScore`(가산점 합계, `null` = 계산 못 함, `0` = 해당 없음) · `bonusItems`(`name` · `points`). 순서는 `rank` 그대로이며 웹이 다시 정렬하지 않는다. 자세한 뜻과 표시는 `공고연동_변경사항_웹팀전달.md` 1절.
+- **화면 3 카드(`AnnouncementCard`, 2026-10-03 바뀜)** — `announcementId` · `title` · `agency` · `applyEnd`(`null` 가능 — 마감일 없는 공고) · `supportAmountMax`(`null` 가능 — 추천 결과에는 금액이 없어 지금은 늘 `null`) · `fitScore` · `rank` · `displayType` · `matchReason` · `sourceNotice` · `originalUrl`, 확장 `applyPeriodType`(모집 형태 표기) · `contentChanged`(내용 바뀜) · `contentVersion`(웹은 쓰지 않음) · `bonusScore`(가산점 합계, `null` = 계산 못 함, `0` = 해당 없음) · `bonusItems`(`name` · `points`) — **2026-10-07부터 늘 `null` · `[]`**(공고팀 가산점 시험 단계, 화면에 쓰지 않음 — 키는 그대로). `originalUrl`은 `""`일 수 있다. 순서는 `rank` 그대로이며 웹이 다시 정렬하지 않는다. 자세한 뜻과 표시는 `공고연동_변경사항_웹팀전달.md` 1절.
 - **화면 3 추가 조회 반영** — 성공한 추가 조회가 있으면 `candidates`는 첫 조회 카드 중 다시 나온 것을 새 내용으로 바꾼 목록(자리 · `rank` · `displayType` 그대로, 내용이 바뀌었으면 `contentChanged` 참)이고, `moreCandidates`는 첫 조회와 겹친 공고를 뺀 목록이다(0건일 수 있다). 실패한 추가 조회는 없던 것으로 본다 — 후보 · `collectionStatus` · `filteredCount` · `fallbackUsed` · `fallbackMode`가 조회 전 그대로다.
 - **`blockedAnnouncementIds`** — 자격 불통과(E-G1-REJECT)가 나온 공고 ID. 그 실행 건에서 고를 수 없다(`ANNOUNCEMENT_BLOCKED`, 6.1). 추가 조회에서 그 공고 카드가 `contentChanged` 참이 되면 빠진다. 공고 없음 · 오류 · 설립일 없음은 들어가지 않는다. 카드에는 자격 정보를 싣지 않는다.
 - **화면 4 확인 필요** — `gateResult.unknownConditions`(`지원대상 유형` · `업력`)가 있으면 `notices`에 E-G1-UNPARSED가 하나 붙는다. 진행을 막지 않고(`canStartWriting` 참), 실행 건 안내 목록에는 쌓지 않아 `view_project`의 `notices`에는 나오지 않는다. 화면 4를 열 때마다 지금 자격 결과로 다시 만든다.
@@ -803,3 +803,10 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | `orch_executions` 칸 | `image_input_tokens` · `image_output_tokens` (`BIGINT UNSIGNED`, NULL 허용) | 확장 |
 | Task별 모델 설정 | 모델 · 호출처 · 온도 · 추론 강도 · 이미지 설정을 Task마다 둔다(코드 기본값, 웹 표 없음). T-B2 이미지 모델 `gpt-image-2.5-flare` | 잠정 |
 | 스텁 진입 파일 | `/index.html` | 스텁 |
+
+## 17. 공고팀 답변 반영의 잠정 값 (2026-10-07)
+
+| 항목 | 값 · 내용 | 표시 |
+|---|---|---|
+| 가산점 스위치 | 공고팀 가산점이 시험 단계라 꺼 둔다. 꺼져 있으면 화면 3 · `outputs`의 모든 카드가 `bonusScore: null` · `bonusItems: []`(이전에 만든 프로젝트 포함, 키는 그대로). 공고팀이 정리를 알리면 켜고 웹팀에 알린다 (`orchestrator/settings.py` `BONUS_ENABLED`) | 잠정 |
+| 그 밖의 공고팀 답변 | 함수 · 필드는 그대로. 화면 표시에 영향 있는 값(`bonusInfo` 사용 가능, `supportAmountText` 늘 `null`, `originalUrl` `""`, 사업자 신청자의 확인 필요, 업력 상한 `null`의 뜻)은 `공고연동_변경사항_웹팀전달.md` 0.1절 | — |

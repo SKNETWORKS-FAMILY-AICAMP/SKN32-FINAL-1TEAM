@@ -121,7 +121,7 @@ def test_stub_g01_builds_announcement_and_follows_knobs():
 
 
 # ── 스텁 T-C2 ──────────────────────────────────────────
-def test_stub_cards_fill_extension_fields():
+def test_stub_cards_fill_extension_fields(bonus_on):
     out = tc2(StubScenario(null_bonus_ids={"A02"}, no_deadline_ids={"A03"}, no_version_ids={"A04"}))
     a1, a2, a3, a4 = out.candidates[:4]
     assert (a1.content_version, a1.content_changed, a1.apply_period_type) == ("A01-v1", False, "기간 있음")
@@ -131,6 +131,13 @@ def test_stub_cards_fill_extension_fields():
     assert (a3.apply_end, a3.apply_period_type) == (None, "상시·수시")
     assert a4.content_version is None
     assert [x.rank for x in out.candidates] == list(range(1, 11))
+
+
+def test_stub_cards_have_no_bonus_when_off(bonus_off):
+    """가산점이 꺼져 있으면(기본) 스텁도 가산점 값을 만들지 않는다 — 추가 조회의 '가산점' 바뀜도 비어 있다."""
+    sc = StubScenario(more_ids=["A03", "A11"], more_changes={"A03": {"가산점"}})
+    cards = tc2(sc).candidates + tc2(sc, offset=10).candidates
+    assert [(x.bonus_score, x.bonus_items) for x in cards] == [(None, [])] * 12
 
 
 def test_stub_tc2_collection_status_returns_no_candidates():
@@ -148,7 +155,7 @@ def test_stub_tc2_deadline_fallback_has_zero_fit():
     assert {x.fit_score for x in out.candidates} == {0.0}
 
 
-def test_stub_more_lookup_overlap_and_changes():
+def test_stub_more_lookup_overlap_and_changes(bonus_on):
     sc = StubScenario(more_ids=["A03", "A04", "A05", "A06", "A07", "A11"],
                       more_changes={"A03": {"정보"}, "A04": {"버전"}, "A05": {"적합도"}, "A06": {"가산점"}})
     first = {x.announcement_id: x for x in tc2(sc).candidates}

@@ -155,6 +155,13 @@ class Settings(SBModel):
         return self.model_dump(mode="json", by_alias=True, exclude=exclude)
 
 
+# 가산점 사용 스위치 (잠정, PROVISIONAL announcement.bonusEnabled) — 실행별 설정(Settings)이 아닌 코드 상수다.
+# 실제 T-C2(agents/notice/tc2.py) · 스텁 T-C2(agents/stubs.py) · 웹 조회(flow/reads.py)가 부를 때마다
+# settings.BONUS_ENABLED로 읽는다(from-import로 값을 복사하지 않는다 — 테스트가 바꾼 값이 모든 곳에 닿게).
+# 꺼져 있으면 가산점을 읽지 · 만들지 · 보이지 않는다. 공고팀이 써도 된다고 하면 이 한 곳만 True로 바꾼다.
+BONUS_ENABLED: bool = False
+
+
 # 기준 문서가 값을 정하지 않아 임시로 둔 항목 (문서 · 화면에 '잠정'으로 표시)
 PROVISIONAL: dict[str, str] = {
     "retry.retryIntervalSec": "재시도 간격 — 구현하면서 정함",
@@ -182,6 +189,10 @@ PROVISIONAL: dict[str, str] = {
     "taskTimeouts.G-01": "G-01 제한 시간 30초 — 공고 서버의 공고 상세 · 자격 판정 호출, T-C2와 같음",
     "announcement.unknownStatus": "공고 서버 모집 상태가 모름(unknown 등)이면 선택 공고 status를 '모집중'으로 둔다 — "
                                   "그래서 마감 안내(E-RUN-CLOSED)가 붙지 않는다",
+    "announcement.bonusEnabled": "가산점 사용 스위치 BONUS_ENABLED 기본 꺼짐 — 공고팀 가산점은 시험 단계(2026-10-06 답변: "
+                                 "화면에 쓰지 말 것). 꺼져 있으면 실제 T-C2는 추천 결과의 bonus_score · bonus_items를 "
+                                 "읽지도 검사하지도 않고, 스텁은 가산점을 만들지 않으며, 웹 카드(화면 3 · 결과 조회)는 저장된 "
+                                 "옛 실행 건까지 늘 bonusScore null · bonusItems []. 공고팀이 정리해 써도 된다고 하면 이 한 곳만 켠다",
     "announcement.formSpec": "선택 공고의 양식 필드(formSpec · evaluationItems)는 자리 표시 값(기본 양식 1-1 · 2-1 · 3-3) — "
                              "뒷 단계는 읽지 않고 작업 분해(T-C3)가 고른 양식 · 평가 항목 · 채점 기준표를 쓴다",
     # 작업 분해 (T-C3, agents/form_defaults.py · agents/supervisor/plan.py) — 실행 건 설정값이 아니라 코드 표다

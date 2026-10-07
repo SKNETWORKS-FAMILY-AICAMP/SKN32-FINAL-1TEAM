@@ -28,6 +28,7 @@ from ..models import (
     ScoreReport, Sentence, TableSpec, Token, TokenCheckResult,
 )
 from ..models.clock import kst_today, utc_clock, utc_now
+from ..orchestrator import settings
 from ..orchestrator.errors import FormatError, ProviderError, ResourceNotFound, ToolCallExhausted
 from ..orchestrator.registry import TaskRegistry
 from ..orchestrator.tools import ImageRequest, ImageResponse, LLMRequest, LLMResponse, TokenUsage, Tools
@@ -664,7 +665,10 @@ def _card(sc: StubScenario, aid: str, rank: int, today: date, *, more: bool, fit
     if changes - set(MORE_CHANGE_KINDS):
         raise ValueError(f"more_changes 종류는 {MORE_CHANGE_KINDS} 중에서: {sorted(changes - set(MORE_CHANGE_KINDS))}")
     no_deadline = aid in sc.no_deadline_ids
-    bonus = None if aid in sc.null_bonus_ids else (STUB_BONUS_CHANGED if "가산점" in changes else STUB_BONUS)
+    if not settings.BONUS_ENABLED or aid in sc.null_bonus_ids:   # 가산점 스위치 꺼짐(기본, 잠정)이면 만들지 않는다
+        bonus = None
+    else:
+        bonus = STUB_BONUS_CHANGED if "가산점" in changes else STUB_BONUS
     return AnnouncementCard(
         announcement_id=aid, title=f"공고 {aid}" + (" (수정)" if "정보" in changes else ""), agency="기관",
         apply_end=None if no_deadline else today + timedelta(days=30),

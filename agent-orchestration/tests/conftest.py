@@ -19,6 +19,7 @@ from sbrain.bootstrap import App, build_stub_app  # noqa: E402
 from sbrain.intake import ProjectInputRecord  # noqa: E402
 from sbrain.models import PreInput  # noqa: E402
 from sbrain.orchestrator import MemoryStore  # noqa: E402
+from sbrain.orchestrator import settings  # noqa: E402
 from sbrain.orchestrator.store import Store  # noqa: E402
 from sbrain.store_sql import SqlStore, create_orchestrator_tables, create_sqlite_engine  # noqa: E402
 
@@ -48,6 +49,20 @@ def isolate_notice_api(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(autouse=True)
 def _no_real_notice_server(monkeypatch):
     isolate_notice_api(monkeypatch)
+
+
+# ── 가산점 스위치 (orchestrator/settings.py BONUS_ENABLED, 기본 꺼짐) ─────
+# 실제 T-C2 · 스텁 T-C2 · 웹 조회가 부를 때마다 모듈 속성으로 읽으므로 여기서 바꾸면 모든 곳에 닿는다.
+@pytest.fixture
+def bonus_on(monkeypatch):
+    """가산점을 켠다 — 켜져 있을 때의 동작(읽기 · 검사 · 스텁 가산점 · 웹에 그대로)을 시험한다."""
+    monkeypatch.setattr(settings, "BONUS_ENABLED", True)
+
+
+@pytest.fixture
+def bonus_off(monkeypatch):
+    """가산점을 끈다(기본값과 같다) — 기본값이 바뀌어도 꺼짐 동작 시험이 그대로 꺼짐을 보게 한다."""
+    monkeypatch.setattr(settings, "BONUS_ENABLED", False)
 
 
 # ── 저장소 선택 ────────────────────────────────────────
