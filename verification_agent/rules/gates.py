@@ -50,7 +50,8 @@ _DATA_URI_RE = re.compile(r"data:[\w.+-]+/[\w.+-]+;base64,[A-Za-z0-9+/=]+")
 
 
 def find_secret(*texts: str | None) -> str | None:
-    """의심되는 비밀값 하나를 돌려준다. 없으면 None. 플레이스홀더는 오탐으로 거른다."""
+    """의심되는 비밀값 하나를 돌려준다. 없으면 None. 플레이스홀더는 오탐으로 거른다.
+    화면 · 진단 문구에는 앞 8자만 싣는다(값 전체가 로그로 새지 않게)."""
     # 끼워 넣은 글꼴 · 그림(data URI의 base64)은 임의 문자열이라 키 모양과 우연히 겹칠 수 있다.
     combined = _DATA_URI_RE.sub("data:,", "\n".join(t for t in texts if t))
     for pattern in _SECRET_PATTERNS:
@@ -82,12 +83,17 @@ _SANDBOX_HALTING: tuple[tuple[re.Pattern, str], ...] = (
     (re.compile(r'\bdocument\s*\.\s*cookie\b'), 'document.cookie'),
     (re.compile(r'\b(?:window\s*\.\s*)?indexedDB\b'), 'indexedDB'),
 )
+# 무시 묶음은 전역 함수 · 전역 location만 잡는다. 앞에 '.'이 붙은 남의 속성(modal.open(),
+# summary.location = …), 같은 이름의 함수 · 변수 선언(function open(, const location = …),
+# 메서드 정의(open() { … })는 sandbox와 무관하다. engineering_agent/gates.py와 함께 고친다.
+_GLOBAL = r'(?<![\w$.])(?<!function )(?<!const )(?<!let )(?<!var )(?:window\s*\.\s*)?'
+_CALL = r'\s*\((?![^()]*\)\s*\{)'
 _SANDBOX_IGNORED: tuple[tuple[re.Pattern, str], ...] = (
-    (re.compile(r'\b(?:window\s*\.\s*)?alert\s*\('), 'alert()'),
-    (re.compile(r'\b(?:window\s*\.\s*)?confirm\s*\('), 'confirm()'),
-    (re.compile(r'\b(?:window\s*\.\s*)?prompt\s*\('), 'prompt()'),
-    (re.compile(r'\b(?:window\s*\.\s*)?open\s*\('), 'window.open()'),
-    (re.compile(r'\blocation\s*(?:\.\s*href)?\s*='), '페이지 이동(location)'),
+    (re.compile(_GLOBAL + r'alert' + _CALL), 'alert()'),
+    (re.compile(_GLOBAL + r'confirm' + _CALL), 'confirm()'),
+    (re.compile(_GLOBAL + r'prompt' + _CALL), 'prompt()'),
+    (re.compile(_GLOBAL + r'open' + _CALL), 'window.open()'),
+    (re.compile(_GLOBAL + r'(?:document\s*\.\s*)?location\s*(?:\.\s*href)?\s*=(?!=)'), '페이지 이동(location)'),
     (re.compile(r'\.\s*submit\s*\(\s*\)'), 'form.submit()'),
 )
 
@@ -140,7 +146,7 @@ def html_gates(entry_file_path: str, source: str) -> list[GateFailure]:
         failures.append(("entry", entry))
     secret = find_secret(source)
     if secret:
-        failures.append(("secret", f"하드코딩된 비밀값 의심: {secret!r}"))
+        failures.append(("secret", f"하드코딩된 비밀값 의심: {secret[:8]!r}…"))
     halting = halting_apis(source)
     if halting:
         failures.append(("sandbox", f"sandbox에서 스크립트를 멈추는 API: {', '.join(halting)}"))
@@ -161,7 +167,7 @@ def svg_gates(entry_file_path: str, source: str) -> list[GateFailure]:
             failures.append(("entry", f"SVG 파싱 실패: {exc}"))
     secret = find_secret(source)
     if secret:
-        failures.append(("secret", f"하드코딩된 비밀값 의심: {secret!r}"))
+        failures.append(("secret", f"하드코딩된 비밀값 의심: {secret[:8]!r}…"))
     return failures
 
 
