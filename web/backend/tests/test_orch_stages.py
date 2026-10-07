@@ -198,8 +198,8 @@ def test_generate_rejected_gate_cannot_start_writing(authed_client, orch):
 
 
 def test_generate_unknown_conditions_still_can_start_writing(authed_client, orch):
-    """잠정: 오케스트레이터는 확인 필요 조건이 있어도 통과로 보고 작성 가능으로 준다(기능정의서 E-G1-UNPARSED와 다름 — 확인 중).
-    웹은 그 값을 그대로 전달한다."""
+    """오케스트레이터는 확인 필요 조건이 있어도 통과로 보고 작성 가능으로 준다 — 의도한 결정이고 기능정의서(E-G1-UNPARSED)를
+    이에 맞춰 개정하기로 했다(2026-10-06 회의). 웹은 그 값을 그대로 전달한다."""
     pid = _create(authed_client)
     gate = make_gate(passed=True, unknown_conditions=['업력'])
     _ready_after_select(orch, gate=gate, screen_overrides=dict(can_start_writing=True))

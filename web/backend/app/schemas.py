@@ -472,9 +472,9 @@ class EligibilityCheckOut(BaseModel):
     # [SB-274] 화면 4(자격 확인)의 업력 표시와 작성 시작 버튼. 오케스트레이터 화면 4 값 그대로다.
     # 업력은 년 단위 소수 한 자리이고 예비창업자 · 업력을 모르면 None이다.
     business_age_years: float | None = None
-    # 자격 확인을 통과해 작성 단계로 들어갈 수 있는 상태면 True(불통과면 False). 잠정 주의: 지금 오케스트레이터는 확인 필요 조건
-    # (unknown_conditions)이 있어도 통과로 보고 True를 주는데, 기능정의서 v1.9 E-G1-UNPARSED("임의 통과를 허용하지 않는다")와 다르다 —
-    # 기능정의서 개정 여부를 누리님께 확인 중이라 결정에 따라 뜻이 바뀔 수 있다.
+    # 자격 확인을 통과해 작성 단계로 들어갈 수 있는 상태면 True(불통과면 False). 확인 필요 조건(unknown_conditions)이 있어도 통과로 보고
+    # True를 준다 — 공고 데이터의 업력 · 업종 확보율이 낮아 진행을 막지 않는 것이 의도한 결정이다. 기능정의서 v1.9 E-G1-UNPARSED
+    # ("임의 통과를 허용하지 않는다")와는 달랐으나 기준 문서를 이 결정에 맞춰 개정하기로 했다(2026-10-06 회의, 개정본 업로드 예정).
     can_start_writing: bool = False
 
 
@@ -494,6 +494,11 @@ class ArtifactScoreReasonOut(BaseModel):
     max_score: float | None = None
 
 
+class GateFailureOut(BaseModel):
+    code: str = Field(description='어긴 통과 필수 조건 — entry(진입 파일) · secret(비밀값) · sandbox(격리 화면 동작)')
+    display_name: str
+
+
 class ArtifactOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     artifact_id: int | None = None  # [SB-243] 산출물은 오케스트레이터가 갖고 있어 행 번호가 없다
@@ -502,6 +507,12 @@ class ArtifactOut(BaseModel):
     executable_path: str | None = None
     artifact_score: float | None = None
     score_reasons: list[ArtifactScoreReasonOut] = Field(default_factory=list)
+    # 기획서 v1.11 4-5 · 5-4: 산출물 확인 화면은 통과 필수 조건 결과 → 코드 점검 8항목 → 대조 누락 · 부분 인정 기능을 보여 준다.
+    # 필수 조건을 하나라도 어기면 산출물층 30점이 0이 되므로(gate_failures가 비어 있지 않음) 화면이 이유를 알려 줄 수 있어야 한다.
+    gate_failures: list[GateFailureOut] = Field(default_factory=list)
+    # 계획서 대조에서 규칙 · LLM이 미충족으로 본 기능(0점) · 부분으로 본 기능(0.5점). 대조가 보류(withheld)되면 둘 다 빈 목록이다.
+    missing_features: list[str] = Field(default_factory=list)
+    partial_features: list[str] = Field(default_factory=list)
 
 
 class PlanScoreReasonOut(BaseModel):

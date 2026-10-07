@@ -69,3 +69,15 @@ def test_allowed_functions_exist_on_real_orchestrator():
 
 def test_forbidden_functions_are_not_allowed():
     assert ALLOWED.isdisjoint(WEB_FORBIDDEN)
+
+
+def test_real_artifact_check_models_have_the_fields_the_web_maps():
+    """웹이 산출물 응답으로 옮기는 필드(통과 필수 조건 · 부분 인정 기능)가 실제 계약에 있는지 — 이름이 바뀌면 여기서 알아챈다."""
+    scoring = pytest.importorskip('sbrain.models.scoring')
+    assert {'total', 'checks', 'gate_failures'} <= set(scoring.CodeCheckResult.model_fields)
+    assert {'missing_features', 'partial_features', 'withheld', 'findings'} <= set(scoring.FeatureMatchResult.model_fields)
+    # 웹 가짜가 쓰는 통과 필수 조건 코드가 실제 허용값과 같은지
+    from typing import get_args
+    allowed = set(get_args(get_args(scoring.CodeCheckResult.model_fields['gate_failures'].annotation)[0]))
+    from app.orch.mapping import GATE_NAMES
+    assert set(GATE_NAMES) == allowed

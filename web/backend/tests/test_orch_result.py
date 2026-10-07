@@ -266,3 +266,55 @@ def test_result_screen_10_errors_other_than_not_ready_are_not_hidden(authed_clie
     orch.responses['screen'] = OrchError('RUN_NOT_FOUND', 'x')
 
     assert _result(authed_client, pid).status_code == 404
+
+
+# ── 기획서 v1.11 4-5 · 5-4: 통과 필수 조건 결과 · 대조 누락 · 부분 인정 기능 ──────────────────────────────
+def test_artifact_has_empty_gate_failures_and_features_by_default(authed_client, orch):
+    pid = _create(authed_client)
+    orch.responses['outputs'] = lambda p: _full_outputs()
+    artifact = _result(authed_client, pid).json()['plan']['artifacts'][0]
+    assert artifact['gate_failures'] == [] and artifact['partial_features'] == []
+    assert artifact['missing_features'] == ['결제']  # _full_outputs의 대조 결과
+
+
+def test_gate_failures_are_named_for_the_screen(authed_client, orch):
+    """통과 필수 조건을 어기면 산출물층이 0점이 되므로 화면이 어긴 조건을 이름으로 보여 줄 수 있어야 한다."""
+    pid = _create(authed_client)
+    outputs = _full_outputs()
+    outputs.code_check.gate_failures = ['entry', 'sandbox']
+    orch.responses['outputs'] = lambda p: outputs
+    artifact = _result(authed_client, pid).json()['plan']['artifacts'][0]
+    assert artifact['gate_failures'] == [
+        {'code': 'entry', 'display_name': '진입 파일'}, {'code': 'sandbox', 'display_name': '격리 화면 동작'}]
+
+
+def test_unknown_gate_code_is_passed_through_by_code(authed_client, orch):
+    pid = _create(authed_client)
+    outputs = _full_outputs()
+    outputs.code_check.gate_failures = ['secret', 'brand-new']
+    orch.responses['outputs'] = lambda p: outputs
+    names = {g['code']: g['display_name'] for g in _result(authed_client, pid).json()['plan']['artifacts'][0]['gate_failures']}
+    assert names == {'secret': '비밀값', 'brand-new': 'brand-new'}
+
+
+def test_partial_features_are_listed_and_explained(authed_client, orch):
+    pid = _create(authed_client)
+    outputs = _full_outputs()
+    outputs.feature_match.partial_features = ['알림']
+    orch.responses['outputs'] = lambda p: outputs
+    artifact = _result(authed_client, pid).json()['plan']['artifacts'][0]
+    assert artifact['partial_features'] == ['알림'] and artifact['missing_features'] == ['결제']
+    reasons = {r['item_code']: r for r in artifact['score_reasons']}
+    assert '부분 인정 기능: 알림' in reasons['FEATURE-MATCH']['reason_text']
+    assert '누락 기능: 결제' in reasons['FEATURE-MATCH']['reason_text']
+
+
+def test_withheld_match_lists_no_features(authed_client, orch):
+    """대조가 보류되면 기능을 판정하지 않은 것이라 누락 · 부분 목록을 내지 않는다."""
+    pid = _create(authed_client)
+    outputs = _full_outputs()
+    outputs.feature_match.withheld = True
+    outputs.feature_match.partial_features = ['알림']
+    orch.responses['outputs'] = lambda p: outputs
+    artifact = _result(authed_client, pid).json()['plan']['artifacts'][0]
+    assert artifact['missing_features'] == [] and artifact['partial_features'] == []
