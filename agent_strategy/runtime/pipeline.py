@@ -28,6 +28,23 @@ def _strip_section_heading(text, spec):
         kept.append(line)
     return '\n'.join(kept).strip()
 
+def _normalize_section_output(output, spec, source, kind):
+    """F16 결과에 상위 출처를 보존하고 원본보다 강한 표현을 줄인다."""
+    if not isinstance(output, dict):
+        return output
+    refs=source.get('sourceRefs',[]) if isinstance(source,dict) else []
+    if refs and not output.get('sourceRefs'):
+        output['sourceRefs']=sorted(set(refs))
+    if isinstance(output.get('generatedText'),str):
+        text=output['generatedText']
+        original=source.get('originalFacts',{}) if isinstance(source,dict) else {}
+        item=original.get('item',{}) if isinstance(original,dict) else {}
+        description=item.get('item_input',{}).get('description','') if isinstance(item,dict) else ''
+        # 원본이 POS 데이터를 '기반'으로 산출한다고만 말할 때 학습·완료로 확대하지 않는다.
+        if kind=='early_startup' and spec.get('sectionId')=='3.3.1' and '기반' in str(description) and '학습해' in text:
+            output['generatedText']=text.replace('POS 판매 데이터를 학습해','POS 판매 데이터를 기반으로')
+    return output
+
 def _normalize_image_output(output, flow_type='USER_FLOW'):
     """F18 nodes 계약이 깨져도 이미지 생성이 중단되지 않도록 기본 흐름을 만든다."""
     if not isinstance(output,dict):
@@ -504,6 +521,7 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
             # headings must not consume maxLines or exact-item limits.
             if spec['functionId']=='F16':
                 output['generatedText']=_strip_section_heading(output.get('generatedText',''),spec)
+            output=_normalize_section_output(output,spec,source,kind)
             if spec['functionId']=='F18':
                 output=_normalize_image_output(output,'USER_FLOW')
                 image_outputs[0]=output
@@ -696,6 +714,7 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
                 image_outputs=[output]
             if spec['functionId']=='F16':
                 output['generatedText']=_strip_section_heading(output.get('generatedText',''),spec)
+            output=_normalize_section_output(output,spec,source,kind)
             if spec['functionId']=='F18':
                 output=_normalize_image_output(output,'USER_FLOW')
                 image_outputs[0]=output

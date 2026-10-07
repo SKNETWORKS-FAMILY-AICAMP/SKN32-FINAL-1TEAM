@@ -78,7 +78,7 @@ FIELDS={
  'F14':'제공된 예산만 설명한다. 금액을 계산하거나 재배분하지 않는다.',
  'F15':'제공된 일정만 설명한다. 날짜를 바꾸지 않는다.',
 'F16':'section_spec에 해당하는 항목만 작성하고 section_spec.rules를 따른다. generatedText에는 본문만 반환하며 sectionId, 항목 번호, 항목 제목, 소제목 헤더(예: "1.4.1 제품 개발계획")를 반복하거나 덧붙이지 않는다. 표는 제외하며 tables는 빈 배열이다. 원본에 없는 값이 사업계획 수립에 필요하면 합리적인 계획 제안으로 생성할 수 있지만 완료 실적이나 사용자 확정 사실처럼 쓰지 않는다. 그런 값은 facts에 {path,value,status:"proposed"}로 표시하고 generatedText에도 제안임을 드러낸다. 계획 중인 목표는 반드시 "개발 목표", "달성 목표" 또는 "계획"으로 표현하고 "미달성"처럼 이미 실패한 사실로 단정하는 표현은 사용하지 않는다.',
- 'F18':'nodes는 3~6개의 문자열이며 각 문자열은 35자 이하다. flowType을 반환하며 SVG·HTML은 만들지 않는다.',
+ 'F18':'nodes는 3~6개의 문자열이며 각 문자열은 35자 이하다. flowType과 visualStyle를 반환한다. visualStyle는 palette(색상 배열), background, accent, cardStyle, layout을 포함하며 사용자 이미지 지시문을 반영한다. SVG·HTML은 만들지 않는다.',
 'F19':'passed(불리언), issues(실패를 유발하는 구조·확정사실 오류 배열), warnings(근거 누락·제안값·사용자 확인 배열)를 반환한다. '
        '다음 순서로 판정한다: (1) 필수 항목·표·이미지·일정·예산·featureList 누락은 issues, (2) originalFacts와 다른 provided/confirmed 값은 issues, '
        '(3) 원본에 없는 계획·목표·기술·KPI·일정·효과가 본문에서 제안·계획·확인 필요로 표시되면 warnings, (4) 출처가 직접 관련되지 않거나 시험조건이 미확정이면 warnings. '
