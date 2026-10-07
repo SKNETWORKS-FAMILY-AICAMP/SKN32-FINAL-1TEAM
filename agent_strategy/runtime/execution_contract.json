@@ -8,8 +8,8 @@
       "purpose": "WEB 외부정보 수집",
       "inputs": "query, source_type, target_fields",
       "output": "web_data",
-      "modelLabel": "GPT-5.6 Luna + Web",
-      "apiModel": "gpt-5.6-luna",
+      "modelLabel": "GPT-6 Luna + Web",
+      "apiModel": "gpt-6-luna",
       "maxOutputTokens": 3200
     },
     "F02": {
@@ -26,8 +26,8 @@
       "purpose": "시장동향·시장문제·개발필요성 분석",
       "inputs": "item, market_data, analysis_type",
       "output": "market_analysis",
-      "modelLabel": "GPT-5.6 Sol + RAG",
-      "apiModel": "gpt-5.6-sol",
+      "modelLabel": "GPT-6.1 Sol + RAG",
+      "apiModel": "gpt-6.1-sol",
       "maxOutputTokens": 3200
     },
     "F04": {
@@ -44,8 +44,8 @@
       "purpose": "대표·팀원 역량 분석",
       "inputs": "team_data, item_requirements",
       "output": "team_capability",
-      "modelLabel": "GPT-5.6 Luna",
-      "apiModel": "gpt-5.6-luna",
+      "modelLabel": "GPT-6 Luna",
+      "apiModel": "gpt-6-luna",
       "maxOutputTokens": 2800
     },
     "F06": {
@@ -62,8 +62,8 @@
       "purpose": "핵심기술별 개발방법·확보방안 정의",
       "inputs": "core_technologies, constraints",
       "output": "development_method",
-      "modelLabel": "GPT-5.6 Sol",
-      "apiModel": "gpt-5.6-sol",
+      "modelLabel": "GPT-6.1 Sol",
+      "apiModel": "gpt-6.1-sol",
       "maxOutputTokens": 3200
     },
     "F08": {
@@ -71,8 +71,8 @@
       "purpose": "단계별 기술개발 계획 수립",
       "inputs": "goals, duration, phases",
       "output": "development_plan",
-      "modelLabel": "GPT-5.6 Sol",
-      "apiModel": "gpt-5.6-sol",
+      "modelLabel": "GPT-6.1 Sol",
+      "apiModel": "gpt-6.1-sol",
       "maxOutputTokens": 3000
     },
     "F09": {
@@ -89,8 +89,8 @@
       "purpose": "시장진입·마케팅 전략 수립",
       "inputs": "item, market, target_customer, stage",
       "output": "marketing_strategy",
-      "modelLabel": "GPT-5.6 Sol",
-      "apiModel": "gpt-5.6-sol",
+      "modelLabel": "GPT-6.1 Sol",
+      "apiModel": "gpt-6.1-sol",
       "maxOutputTokens": 2800
     },
     "F11": {
@@ -98,8 +98,8 @@
       "purpose": "비즈니스 모델 수립",
       "inputs": "item, market, customer, strategy",
       "output": "business_model",
-      "modelLabel": "GPT-5.6 Sol",
-      "apiModel": "gpt-5.6-sol",
+      "modelLabel": "GPT-6.1 Sol",
+      "apiModel": "gpt-6.1-sol",
       "maxOutputTokens": 2400
     },
     "F12": {
@@ -107,8 +107,8 @@
       "purpose": "경쟁·시장진입·BM·투자·사회적 가치 통합",
       "inputs": "market, competitors, bm, investment, social_value",
       "output": "growth_strategy",
-      "modelLabel": "GPT-5.6 Sol",
-      "apiModel": "gpt-5.6-sol",
+      "modelLabel": "GPT-6.1 Sol",
+      "apiModel": "gpt-6.1-sol",
       "maxOutputTokens": 3000
     },
     "F13": {
@@ -116,8 +116,8 @@
       "purpose": "장비·시설·채용·협력기관 계획",
       "inputs": "item, required_capabilities, team, resource_type",
       "output": "resource_plan",
-      "modelLabel": "GPT-5.6 Luna",
-      "apiModel": "gpt-5.6-luna",
+      "modelLabel": "GPT-6 Luna",
+      "apiModel": "gpt-6-luna",
       "maxOutputTokens": 2200
     },
     "F14": {
@@ -125,8 +125,8 @@
       "purpose": "정부지원사업비 산출 및 집행계획",
       "inputs": "items, quantity, unit_price, phase, rules",
       "output": "budget",
-      "modelLabel": "GPT-5.6 Luna + Python",
-      "apiModel": "gpt-5.6-luna",
+      "modelLabel": "GPT-6 Luna + Python",
+      "apiModel": "gpt-6-luna",
       "maxOutputTokens": 2200
     },
     "F15": {
@@ -134,8 +134,8 @@
       "purpose": "전체 사업추진 일정 수립",
       "inputs": "tasks, duration, milestones",
       "output": "schedule",
-      "modelLabel": "GPT-5.6 Luna + Python",
-      "apiModel": "gpt-5.6-luna",
+      "modelLabel": "GPT-6 Luna + Python",
+      "apiModel": "gpt-6-luna",
       "maxOutputTokens": 3500
     },
     "F16": {
@@ -152,8 +152,8 @@
       "purpose": "요구조건에 맞는 표 생성",
       "inputs": "columns, rows, rules",
       "output": "table",
-      "modelLabel": "GPT-5.6 Luna + Python",
-      "apiModel": "gpt-5.6-luna",
+      "modelLabel": "GPT-6 Luna + Python",
+      "apiModel": "gpt-6-luna",
       "maxOutputTokens": 0
     },
     "F18": {
@@ -161,8 +161,8 @@
       "purpose": "USER FLOW·서비스 구조도 생성 명세",
       "inputs": "item, architecture, flow_type",
       "output": "image_spec",
-      "modelLabel": "GPT-5.6 Luna",
-      "apiModel": "gpt-5.6-luna",
+      "modelLabel": "GPT-6 Luna",
+      "apiModel": "gpt-6-luna",
       "maxOutputTokens": 1600
     },
     "F19": {
