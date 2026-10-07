@@ -102,3 +102,6 @@ web/backend/rhwp.exe
 /agent/_strategy/
 **/output/
 /agent_strategy/res/from_back/before/
+
+# 로컬 문서 추출 임시 파일
+docx_text.txt
