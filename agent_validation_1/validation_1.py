@@ -8,7 +8,7 @@ from agent_validation_1.semantic_review import review_issues, REVIEW_PERSONA
 
 RUBRIC_PATH=Path(__file__).parent/'res'/'prompts'/'validation_rubric.json'
 RUBRIC=json.loads(RUBRIC_PATH.read_text(encoding='utf-8-sig')) if RUBRIC_PATH.exists() else {}
-VALIDATION_POLICY_VERSION=RUBRIC.get('version','2026-10-01.3')
+VALIDATION_POLICY_VERSION=RUBRIC.get('version','2026-10-07.1')
 REGISTRY_PATH=Path(__file__).parent/'res'/'reference'/'regulations'/'criteria_registry.json'
 try:
     CRITERIA_REGISTRY=json.loads(REGISTRY_PATH.read_text(encoding='utf-8-sig')) if REGISTRY_PATH.exists() else {}
@@ -17,9 +17,28 @@ except (OSError,ValueError,UnicodeError):
 
 
 def _at(data,path):
-    for key in path.split('.'):
+    parts = re.findall(r'[^.\[\]]+|\[\d+\]', str(path or ''))
+    for part in parts:
+        key = part[1:-1] if part.startswith('[') else part
         data=data[int(key)] if isinstance(data,list) else data[key]
     return data
+
+
+def _fact_at(data, path):
+    """정규화 과정에서 평탄화된 자원 경로도 동일한 원본으로 조회한다."""
+    try:
+        return _at(data, path)
+    except (KeyError, IndexError, TypeError, ValueError):
+        text = str(path or '')
+        # F13 resource_plan은 partners/equipment/hiring을 평탄화해 전달하지만
+        # validationSource.originalFacts에는 resources 아래에 보존될 수 있다.
+        if text == 'partners' or text.startswith('partners['):
+            return _at(data, 'resources.' + text)
+        if text == 'equipment' or text.startswith('equipment['):
+            return _at(data, 'resources.' + text)
+        if text == 'hiring' or text.startswith('hiring['):
+            return _at(data, 'resources.' + text)
+        raise
 
 
 def _refs(value):
@@ -269,7 +288,7 @@ def validate_section(section_spec, content, source_data):
             warnings.append('제안값: '+str(fact.get('path','알 수 없음'))+'은 사업계획 수립을 위한 생성값이며 확정 사실이 아님')
             continue
         try:
-            if _at(original,fact['path'])!=fact['value']:
+            if _fact_at(original,fact['path'])!=fact['value']:
                 planning_context=any(marker in text for marker in ('계획','목표','제안','확인 필요','미확정','활용','적용','개발'))
                 if isinstance(fact,dict) and fact.get('status') not in {'provided','confirmed'} and planning_context:
                     warnings.append('원본과 다른 생성 계획값: '+str(fact.get('path','알 수 없음'))+'은 제안값으로 확인 필요')
