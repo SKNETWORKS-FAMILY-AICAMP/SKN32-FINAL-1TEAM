@@ -438,7 +438,9 @@ def list_agent_executions(
     [SB-245] 오케스트레이터 admin_executions 값이다. status 거름 값은 웹 표기(failed · completed …)와 한글 표기(실패 ·
     성공 …)를 모두 받고, 응답의 status · rerun_type은 화면이 쓰던 웹 표기로 주면서 원래 표기를 status_ko · trigger로
     덧붙인다. error_kind/error_reason은 실패 기록에만 있고 retryable은 error_kind가 '일시'(자동 재개 대상)인지다.
-    프롬프트 · 응답 원문과 output_ref는 없다."""
+    프롬프트 · 응답 원문과 output_ref는 없다.
+
+    [SB-302] token_usage · tokens는 글 토큰만이고, 이미지 호출 토큰은 image_token_usage(합) · image_tokens(입력 · 출력)로 따로 준다."""
     rows = gateway.admin_executions(
         project_id=project_id, status=admin_mapping.exec_status_from_web(status), limit=min(limit, 500))
     return [admin_mapping.execution_dict(r) for r in rows]

@@ -203,6 +203,8 @@ class G04In(SBModel):
 
 class G04Out(SBModel):
     readme_path: str
+    # 확장 — 실행 · 열람 안내 낱말 자체 검사. 불통과면 재수행 횟수까지 다시 만들고, 끝내 불통과면 관리자 기록 후 계속(점수 밖)
+    check: CheckResult | None = ext(None, note="G-04 자체 검사 — 실행 · 열람 안내 낱말")
 
 
 class TC4In(SBModel):
@@ -354,12 +356,15 @@ class TV2In(SBModel):
     prototype: Prototype
     infographic: Infographic
     feature_list: list[str]
+    # 확장 — 기본값 None이지만 Orchestrator는 늘 채운다 (catalog T-V2 입력)
+    plan_doc: PlanDoc | None = ext(None, note="T-B2가 받은 것과 같은 값. 원페이지 대조의 근거")
 
 
 class TV2Out(SBModel):
     artifact_score: ArtifactScore
     code_check: CodeCheckResult
     feature_match: FeatureMatchResult
+    diagnostics: list[str] = ext(default_factory=list, note="관리자 진단 전용. 흐름 제어에 쓰지 않음")
 
 
 # ── 구현 ─────────────────────────────────────────────
@@ -369,6 +374,8 @@ class TB1In(SBModel):
     category: Category
     instruction: str
     rework_input: ReworkInput | None = None
+    # 확장 (구현 · 검증-2 담당 요청 8) — 계획서 전체. T-B1은 M-1 · T-V1 · G-02a 뒤에 돌아 늘 값이 있다
+    plan_doc: PlanDoc | None = ext(None, note="기능별 설명의 근거. T-B2 · T-V2와 같은 값")
 
 
 class TB1Out(SBModel):

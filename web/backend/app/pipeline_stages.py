@@ -91,11 +91,9 @@ ERROR_KIND_INPUT = '입력'        # 입력 데이터 자체의 문제 — 재�
 ERROR_KIND_OPERATIONAL = '운영'  # API 연결 끊김·키 만료·크레딧 소진 등 — 사람이 조치해야 함
 ERROR_KINDS = (ERROR_KIND_TRANSIENT, ERROR_KIND_INPUT, ERROR_KIND_OPERATIONAL)
 
-# [주의] 지금 파이프라인은 100% 더미(sleep만 함)라 실제 Agent 호출에서 나는 진짜 오류
-# 유형(예외 클래스, 응답 코드)이 아직 없다 — 그래서 이 분류는 예외 메시지의 키워드로
-# 판단하는 임시 방편이다. 실제 Agent 호출 계층이 생기면, 예외 클래스나 API 응답 코드로
-# 판단하는 훨씬 정확한 방식으로 교체해야 한다(예: 인증 실패 예외 -> 운영, 스키마 검증
-# 실패 예외 -> 입력, 나머지 -> 일시).
+# [참고] 웹은 더 이상 오류를 직접 분류하지 않는다 — 실패 원인 분류(일시 · 입력 · 운영)는 오케스트레이터가 정해 주고
+# 웹은 그 값을 보여 준다(app/orch/admin_mapping.py). 아래 키워드 분류(classify_error_kind)는 옛 더미 파이프라인용이라
+# 지금 웹 코드에서 쓰는 곳이 없다(tests/test_classify_error_kind.py만 확인한다).
 _OPERATIONAL_KEYWORDS = ('api 연결', '연결 끊', '키 만료', '크레딧', 'api key', 'credit', 'connection refused', 'unauthorized')
 _INPUT_KEYWORDS = ('입력값', '형식 오류', 'validation', 'invalid input', 'malformed')
 
@@ -135,9 +133,9 @@ NOTIFICATION_KINDS = (
 NOTIFICATION_FAILURE_SCOPE_RUN = '실행'
 NOTIFICATION_FAILURE_SCOPE_REWORK = '재작성'
 NOTIFICATION_FAILURE_SCOPES = (NOTIFICATION_FAILURE_SCOPE_RUN, NOTIFICATION_FAILURE_SCOPE_REWORK)
-# [주의] 산출물확인/표현검수는 지금 더미 파이프라인에 해당 stage(artifact_review/
-# reviewing) 전환 자체가 없어서 아직 트리거되지 않는다(GENERATION_STATUS_USER_WAITING/
-# HALTED와 같은 사정) — 실제 검증-2/검수 단계가 붙으면 그때 생성 지점을 추가하면 된다.
+# [참고] 알림 행(문서평가 · 산출물확인 · 표현검수 · 실패)은 오케스트레이터 워커가 만든다 — 웹은 읽기와 읽음 처리만 한다.
+# 아래 NOTIFICATION_KIND_TO_TARGET_STEP · STAGE_TO_NOTIFICATION_KIND 표는 옛 더미 파이프라인이 알림을 만들 때 쓰던 것이라
+# 지금 웹 코드에서는 쓰지 않는다.
 NOTIFICATION_CHANNEL_SCREEN = '화면'  # 지금은 이거 하나뿐 — 메일 알림은 향후 도입(4-2 ⑧)
 
 # kind -> 알림을 누르면 들어갈 화면 번호(기획서 4-7 기본 흐름). 문서평가는 검증-1이 끝난
@@ -150,10 +148,8 @@ NOTIFICATION_KIND_TO_TARGET_STEP = {
     NOTIFICATION_KIND_PROOFREADING: STAGE_TO_SCREEN[STAGE_REVIEWING],
 }
 
-# stage에 도달했을 때 어떤 kind의 알림을 만들지 — _simulate_generation의 성공 경로가
-# done_stage로 이 표를 찾아본다. STAGE_ARTIFACT_REVIEW/STAGE_REVIEWING은 지금 더미
-# 파이프라인의 (running_stage, done_stage) 조합에 아직 안 나오지만, 실제 검증-2/검수
-# 단계가 붙어 나오게 되면 이 표만으로 자동으로 알림이 생긴다(호출부 수정 불필요).
+# stage에 도달했을 때 어떤 kind의 알림을 만들지 — 옛 더미 파이프라인(_simulate_generation, 없어짐)이 done_stage로 이 표를
+# 찾아봤다. 지금은 오케스트레이터 워커가 알림을 만들어 이 표를 쓰는 곳이 없다.
 STAGE_TO_NOTIFICATION_KIND = {
     STAGE_PLAN_REVIEW_PENDING: NOTIFICATION_KIND_DOC_REVIEW,
     STAGE_ARTIFACT_REVIEW: NOTIFICATION_KIND_ARTIFACT_REVIEW,

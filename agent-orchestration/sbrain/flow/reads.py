@@ -276,6 +276,9 @@ class AdminExecution(SBModel):
     ended_at: datetime | None
     duration_sec: float | None
     tokens: TokenTotals
+    # 이미지 호출 토큰 (확장) — tokens(글 토큰)와 따로. 이미지 호출이 없으면 None
+    image_input_tokens: int | None = None
+    image_output_tokens: int | None = None
 
 
 class AdminTry(SBModel):
@@ -385,7 +388,8 @@ class AdminSummary(SBModel):
     score_buckets: list[ScoreBucket]
     layer_changes: list[LayerChange]
     triggers: list[TriggerStat]
-    total_tokens: int = 0                  # 모든 실행 기록의 입력 + 출력 토큰
+    total_tokens: int = 0                  # 모든 실행 기록의 입력 + 출력 토큰 (글 토큰만)
+    total_image_tokens: int = 0            # 모든 실행 기록의 이미지 입력 + 출력 토큰 (확장)
     proofread_attempts: int = 0            # T-P2 시도 수 (현재 sentenceResults의 attempts)
     proofread_rejected: int = 0            # 보호 토큰 검사를 통과하지 못한 시도
     proofread_reject_rate: float | None = None   # proofread_rejected / proofread_attempts × 100
@@ -620,7 +624,8 @@ def admin_executions(orch: SBrainOrchestrator, *, project_id: int | str | None =
             project_id=row.project_id, run_id=r.run_id, execution_id=r.execution_id, task_id=r.task_id,
             agent=r.agent, attempt=r.attempt, trigger=r.trigger, redo_count=r.redo_count, status=r.status,
             model=r.model, reasoning_effort=r.reasoning_effort, temperature=r.temperature, error_kind=r.error_kind,
-            error=r.error, started_at=r.started_at, ended_at=r.ended_at, duration_sec=duration, tokens=_tokens(r)))
+            error=r.error, started_at=r.started_at, ended_at=r.ended_at, duration_sec=duration, tokens=_tokens(r),
+            image_input_tokens=r.image_input_tokens, image_output_tokens=r.image_output_tokens))
     return out
 
 
@@ -793,6 +798,7 @@ def admin_summary(orch: SBrainOrchestrator) -> AdminSummary:
         score_buckets=[ScoreBucket(label=label, count=sum(1 for t in totals if lo <= t <= hi))
                        for label, lo, hi in SCORE_BUCKETS],
         layer_changes=changes, triggers=triggers, total_tokens=sum(tokens(r) for r in every),
+        total_image_tokens=sum((r.image_input_tokens or 0) + (r.image_output_tokens or 0) for r in every),
         proofread_attempts=attempts, proofread_rejected=rejected, proofread_reject_rate=_rate(rejected, attempts))
 
 

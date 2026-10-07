@@ -126,9 +126,10 @@ def build_registry() -> TaskRegistry:
           "rework_orders": "G-02a.reworkOrders", "next_action": "G-02a.nextAction"}, "score_report")
 
     # ── 프로토타입 ───────────────────────────────────
+    # T-B1 계획서(확장 입력) — T-B2 · T-V2와 같은 값. 계획서 반영 실행의 재작성 입력은 추적 기록용으로 그대로 붙인다
     task("T-B1", "실행 파일(HTML) 제작", "구현", 12, c.TB1In, c.TB1Out,
          {"feature_list": art("featureList"), "item_spec": art("itemSpec"), "category": art("category"),
-          "instruction": INSTR, "rework_input": REWORK},
+          "plan_doc": art("planDoc"), "instruction": INSTR, "rework_input": REWORK},
          {"prototype": "prototype", "implemented_features": "implementedFeatures",
           "entry_file_path": "entryFilePath", "check": _check_key("T-B1")}, "prototype", redo=True)
     task("T-B2", "인포그래픽 제작", "구현", 13, c.TB2In, c.TB2Out,
@@ -138,17 +139,23 @@ def build_registry() -> TaskRegistry:
     rule("M-2", "합치기② 원페이지 산출물을 Prototype으로 감쌈", "조율", None, c.M2In, c.M2Out,
          {"infographic": art("infographic"), "item_spec": art("itemSpec"), "feature_list": art("featureList")},
          {"prototype": "prototype"}, "prototype", kind="merge")
+    # G-04 — 오류면 계속(점수 밖). 자체 검사(확장 출력 check — 실행 · 열람 안내 낱말)가 불통과면 재수행 횟수까지 같은
+    # 입력으로 다시 만들고(재수행 루프가 만든 G-04.reworkInput은 입력에 연결하지 않아 쓰이지 않는다), 끝내 불통과면
+    # 흐름이 관리자 기록('안내문서자체검사실패')을 남기고 계속한다 (2026-09-30 결정 5 · 6)
     rule("G-04", "실행 안내 문서 생성", "조율", 14, c.G04In, c.G04Out,
          {"prototype": art("prototype"), "infographic": art("infographic"), "item_spec": art("itemSpec"),
           "announcement": art(SA)},
-         {"readme_path": "readmePath"}, "readme_path",
-         failure=FailurePolicy(on_step_error="continue"))  # 생성 실패 시 해당 검증 항목만 미충족, 계속
+         {"readme_path": "readmePath", "check": _check_key("G-04")}, "readme_path", redo=True,
+         failure=FailurePolicy(on_step_error="continue"))
     rule("M-3", "합치기③ readmePath를 Prototype에 기입", "조율", None, c.M3In, c.M3Out,
          {"prototype": art("prototype"), "readme_path": art("readmePath", optional=True)},
          {"prototype": "prototype"}, "prototype", kind="merge")
+    # T-V2 — 계획서(확장 입력, T-B2와 같은 값)는 원페이지 대조의 근거라 늘 채운다. 진단(확장 출력)은 관리자 기록 전용이다
     task("T-V2", "프로토타입 검증", "검증-2", 15, c.TV2In, c.TV2Out,
-         {"prototype": art("prototype"), "infographic": art("infographic"), "feature_list": art("featureList")},
-         {"artifact_score": "artifactScore", "code_check": "codeCheck", "feature_match": "featureMatch"},
+         {"prototype": art("prototype"), "infographic": art("infographic"), "feature_list": art("featureList"),
+          "plan_doc": art("planDoc")},
+         {"artifact_score": "artifactScore", "code_check": "codeCheck", "feature_match": "featureMatch",
+          "diagnostics": "T-V2.diagnostics"},
          "artifact_score", failure=FailurePolicy(fallback_in_task=True))
     rule("G-02b", "종합 평가 판정", "조율", 16, c.G02bIn, c.G02bOut,
          {"doc_score": art("docScore"), "artifact_score": art("artifactScore"),
@@ -175,7 +182,7 @@ def build_registry() -> TaskRegistry:
          temperature=TempRule(max=0.2), failure=FailurePolicy(keep_original_per_item=True), redo=True)
     rule("M-4", "합치기④ 검수 결과를 계획서에 반영 · 검수 로그 집계", "조율", None, c.M4In, c.M4Out,
          {"plan_doc": art("planDoc"), "sentence_results": art("sentenceResults"),
-          "target_sentence_ids": art("targetSentenceIds"), "model_version": setting("agents.검수.model")},
+          "target_sentence_ids": art("targetSentenceIds"), "model_version": setting("tasks.T-P2.model")},
          {"plan_doc": "planDoc", "proofread_log": "proofreadLog"}, "plan_doc", kind="merge")
     task("T-C4", "결과 통합 · 전달", "조율", 20, c.TC4In, c.TC4Out,
          {"plan_doc": art("planDoc"), "prototype": art("prototype"), "infographic": art("infographic"),

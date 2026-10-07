@@ -1,8 +1,25 @@
 """Pydantic v2 요청/응답 스키마. app_schema.sql(설계 문서 기준)과 1:1로 대응한다."""
 import datetime
 import re
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_validator, model_validator
+
+from app import pipeline_stages as ps
+
+
+def _to_utc_z(value: datetime.datetime) -> str:
+    """[SB-264] 응답 시각은 항상 UTC · 끝에 Z로 내보낸다(명세 11.1 — 서버 시각은 전부 UTC).
+
+    웹 표(DB)에서 읽은 시각은 시간대 표시가 없다(utcnow() · DB 시계로 UTC를 저장한다) — UTC로 보고 Z를 붙인다. 오케스트레이터 값처럼
+    이미 시간대가 있는 값은 UTC로 바꿔 Z를 붙인다. 프론트(time.js)는 시간대 표시가 있든 없든 UTC로 읽어 한국 시간으로 바꾸므로
+    같은 시각이다 — Z를 붙이는 것은 다른 클라이언트가 시간대를 짐작하지 않게 하려는 것이다."""
+    value = value.replace(tzinfo=datetime.UTC) if value.tzinfo is None else value.astimezone(datetime.UTC)
+    return value.isoformat().replace('+00:00', 'Z')
+
+
+# 응답에 나가는 시각 필드의 타입. 요청 바디로 받을 때는 평소처럼 파싱하고, JSON으로 내보낼 때만 위 모양으로 바꾼다.
+UtcDatetime = Annotated[datetime.datetime, PlainSerializer(_to_utc_z, return_type=str, when_used='json')]
 
 
 # ---------------------------------------------------------------------------
@@ -41,11 +58,11 @@ class UserOut(BaseModel):
     ai_training_agreed: bool
     # [2026-09-27 신규] 필수 동의 완료 시각 — NULL이면 아직 동의 전. 설정 화면에서
     # 동의 상태를 보여주거나, 나중에 재동의를 유도할 때 쓴다.
-    terms_agreed_at: datetime.datetime | None = None
-    privacy_agreed_at: datetime.datetime | None = None
+    terms_agreed_at: UtcDatetime | None = None
+    privacy_agreed_at: UtcDatetime | None = None
     # [2026-09-29 신규, 프론트 요청사항 4차 C-1] "만 16세 이상입니다" 동의 완료 시각 —
     # 위 둘과 같은 용도(NULL이면 아직 동의 전).
-    age_confirmed_at: datetime.datetime | None = None
+    age_confirmed_at: UtcDatetime | None = None
     # [2026-09-18 추가, 프론트 담당자 인계서] User 테이블 컬럼이 아니라 요청마다 계산해서 채운다
     # (app/routers/profile.py compute_has_profile) — user_profiles 슬롯 중 하나라도 필수
     # 입력 항목(신청자 유형/대표자 정보/지역/주업종/대표자 이력 1건 이상, biz 유형이면
@@ -157,8 +174,7 @@ MIN_CEO_AGE = 16
 
 
 def _check_min_age(birth_date: datetime.date) -> None:
-    """만 나이가 MIN_CEO_AGE 이상인지 확인한다(생일이 아직 안 지났으면 -1) —
-    seed_dummy_pipeline.py의 _years_since와 같은 계산 방식."""
+    """만 나이가 MIN_CEO_AGE 이상인지 확인한다(생일이 아직 안 지났으면 -1)."""
     today = datetime.date.today()
     age = today.year - birth_date.year
     if (today.month, today.day) < (birth_date.month, birth_date.day):
@@ -283,6 +299,17 @@ class ProjectCreateRequest(BaseModel):
             _check_min_age(v)
         return v
 
+    @model_validator(mode='after')
+    def _check_main_industry_of_business(self) -> 'ProjectCreateRequest':
+        """개인사업자 · 법인의 주업종은 드롭다운 9종(pipeline_stages.MAIN_INDUSTRIES)만 저장된다(DB ENUM). 다른 값이 오면 저장하다
+        DB 오류(500)가 나므로 입력 단계에서 422로 막는다. 빈 값은 '없음'으로 본다. 예비창업자의 주업종은 자유 텍스트라 그대로 둔다."""
+        if self.applicant_type in ('individual', 'corp'):
+            if self.main_industry in ('', None):
+                self.main_industry = None
+            elif self.main_industry not in ps.MAIN_INDUSTRIES:
+                raise ValueError(f"개인사업자 · 법인의 주업종은 다음 중 하나여야 합니다: {', '.join(ps.MAIN_INDUSTRIES)}")
+        return self
+
 
 class TeamMemberOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -328,7 +355,7 @@ class ProjectOut(BaseModel):
     project_id: int
     company_id: int
     description: str
-    created_at: datetime.datetime
+    created_at: UtcDatetime
     output_summary: str | None = None
     tech_field: str | None = None
     regional_priority_area: str | None = None
@@ -375,11 +402,9 @@ class ProjectDetailOut(ProjectOut):
 # ---------------------------------------------------------------------------
 # 산출물 데모 생성 (매칭 → 자격게이트 → 사업계획서 → 산출물 → 최종판정)
 # ---------------------------------------------------------------------------
-# [2026-09-15, 프론트 통합 임시 구현] 실제 오케스트레이터(Agent 파이프라인)가 아직
-# 다른 팀원 작업이라(app/agents.py 모듈 docstring 참고) 이 아래 스키마들은
-# seed_dummy_pipeline.py의 더미 로직을 POST /projects/{id}/generate 로 감싼 결과를
-# 표현하는 용도다 — 오케스트레이터가 실제로 붙으면 이 스키마들은 그대로 두고
-# projects.py의 라우터 구현부만 바꾸면 된다(agents.py의 재시도 함수들과 같은 패턴).
+# [SB-243~245] 이 아래 스키마들은 오케스트레이터 결과(app/orch/mapping.py가 만든다)를 화면에 내려주는 응답 모양이다.
+# 처음 더미 파이프라인(seed_dummy_pipeline.py · app/agents.py, 없어짐)에 맞춰 만든 모양을 프론트가 그대로 쓰고 있어서
+# 이름(Demo*)은 그대로 둔다.
 class DemoGenerateRequest(BaseModel):
     # [SB-243] 이제 필수다(후보 중 사용자가 고른 공고) — 생략하면 라우터가 422로 답한다. 임시 데모 자동 선택은 없어졌다.
     notice_id: str | None = Field(None, description='사용자가 고른 공고 notice_id(공고 후보에 있는 값).')
@@ -396,9 +421,8 @@ class BonusItemOut(BaseModel):
 
 
 class MatchCandidateOut(BaseModel):
-    """GET /projects/{id}/match-candidates 응답 항목 하나 — 아직 match_results에 저장된
-    행이 아니라, notices 테이블에서 후보로 뽑아 화면에 보여주기 위한 임시 값이다(사용자가
-    고르면 그때 POST /projects/{id}/generate 로 실제 match_results 행이 생긴다)."""
+    """GET /projects/{id}/match-candidates 응답 항목 하나 — 오케스트레이터가 공고팀 순위로 뽑은 후보 한 건(화면 3).
+    사용자가 고르면 POST /projects/{id}/generate 로 공고가 확정된다."""
 
     notice_id: str
     title: str
@@ -548,6 +572,9 @@ class VerdictOut(BaseModel):
     code_max_score: float | None = None
     plan_match_score: float | None = None
     plan_match_max_score: float | None = None
+    # [SB-301] 계획서 대조 판정이 보류됐으면 True — 이때 plan_match_score는 0점으로 합산되어 오므로(총점에도 0점이 들어 있다)
+    # 화면은 0점이 아니라 "대조 불가"로 보여 준다. 보류 사유 코드는 사용자에게 내지 않는다(관리자 기록).
+    plan_match_withheld: bool = False
     total_score: float | None = None
     pass_threshold: float | None = None
 
@@ -601,18 +628,17 @@ class ProjectStatusOut(BaseModel):
     stage: str | None = None
     progress_percent: int | None = None
     match_status: str | None = None
-    # [2026-09-23 개정] match_status가 'waiting_resume'(자동 재시도 대기 중)이거나
-    # 'failed'(재시도 5회 소진, 확정된 실패)일 때 값이 있다 — 진행 화면에 실패 사유를
-    # 보여주는 용도. 'failed'일 때만 "다시 이어가기" 버튼을 보여주면 된다.
+    # [SB-247] 사용자 응답에서는 항상 None이다 — 실패 사유 원문은 사용자에게 보이지 않고 관리자 API에만 나간다(기존 화면 호환용 필드).
+    # 실패는 match_status='failed'로 안다(확정된 실패 — 새 프로젝트로 다시 시작, 기능정의서 E-RUN-FAIL).
     failure_reason: str | None = None
-    # [2026-09-23 신규, 2026-09-27 개명] 자동 재개 소진 횟수(0~5)와 다음 자동 재개
+    # [2026-09-23 신규, 2026-09-27 개명] 자동 재개 소진 횟수(상한은 설정값)와 다음 자동 재개
     # 예정 시각 — match_status='waiting_resume'일 때만 next_retry_at에 값이 있다.
     # 화면에 "N번째 재개 중" 또는 "다음 재개까지 남은 시간" 같은 걸 보여주고 싶으면
     # 쓰면 된다. [2026-09-27] 필드명을 retry_count -> resume_count로 바로잡았다 —
     # 이 값은 스펙의 Run.resumeCount(재개 횟수)이지 Run.retryCount(호출 재시도 횟수)가
     # 아니다.
     resume_count: int = 0
-    next_retry_at: datetime.datetime | None = None
+    next_retry_at: UtcDatetime | None = None
     # [2026-09-27 신규, SB-139] 공식 기능정의서 v1.9 E-RUN-CLOSED: "이어하기로 돌아왔을
     # 때 선택 공고 마감" — 마감 사실만 알리고 계속 진행할지는 사용자가 정한다(실행을
     # 막지 않는다). 매칭 자체가 없거나(screen=NO_MATCH_SCREEN) 공고 정보를 못 찾으면
@@ -674,7 +700,7 @@ class ReworkAcceptedOut(BaseModel):
     cycle_id: str  # 같은 화면에서 모으는 시간 안에 들어온 요청은 같은 cycle_id로 합쳐진다
     screen: int
     bundles: list[str]  # 지금까지 모인 묶음(웹 이름, 요청 순서)
-    collect_until: datetime.datetime
+    collect_until: UtcDatetime
     duplicate: bool = False  # 이미 모은 묶음이라 한 번으로 쳤다(기회를 더 쓰지 않음)
 
 
@@ -694,8 +720,8 @@ class ReworkResultOut(BaseModel):
     screen: int
     bundles: list[str]
     status: str
-    started_at: datetime.datetime
-    ended_at: datetime.datetime | None = None
+    started_at: UtcDatetime
+    ended_at: UtcDatetime | None = None
     kept: str | None = None  # '전' | '후'
     basis: str | None = None  # document | artifact | total
     before_score: float | None = None
@@ -739,9 +765,8 @@ class DemoGenerateResponse(BaseModel):
     # [2026-09-22 수정, 프론트 전달사항 3번] "GET /result는 프로토타입이 아직 만들어지는
     # 중이어도 완성된 계획서는 돌려줘야 한다" — verdict는 산출물(artifact) 채점까지 끝나야
     # 나오는 값이라, 계획서만 끝나고 프로토타입/검증이 아직인 상태에선 없을 수 있다.
-    # 예전엔 verdict가 없으면(=artifact가 없으면) 통째로 404를 냈는데, 지금 더미
-    # 파이프라인(seed_dummy_pipeline)은 계획서·산출물·판정을 한 번에 만들어서 이 틈이
-    # 안 드러났을 뿐 — 생성이 단계별로 끝나는 실제 흐름에선 이 틈이 그대로 404가 된다.
+    # 예전엔 verdict가 없으면(=artifact가 없으면) 통째로 404를 냈는데, 생성이 단계별로 끝나는
+    # 흐름에선 이 틈이 그대로 404가 되므로 verdict 없이도 계획서를 돌려준다.
     verdict: VerdictOut | None = None
     # [2026-09-28 신규] 프론트 요청 2 — RERUN_CAP 프론트 상수를 없애고 관리자가 상한을
     # 바꾸면 화면도 같이 따라가도록, 상한값과 묶음별 사용/잔여 횟수를 같이 내려준다.
@@ -766,7 +791,7 @@ class ProjectListItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     project_id: int
     description: str
-    created_at: datetime.datetime
+    created_at: UtcDatetime
     notice_id: str | None = None
     notice_title: str | None = None
     match_status: str | None = None
@@ -778,8 +803,8 @@ class ProjectListItemOut(BaseModel):
     screen: int | None = None
     # [2026-09-27 개명] retry_count -> resume_count (ProjectStatusOut과 같은 이유).
     resume_count: int = 0
-    next_retry_at: datetime.datetime | None = None
-    failure_reason: str | None = None
+    next_retry_at: UtcDatetime | None = None
+    failure_reason: str | None = None  # ProjectStatusOut과 같다 — 사용자 응답에서는 항상 None
     # [SB-272] ProjectStatusOut과 같은 값(재작성 중인 화면 · 요청 모으는 중)
     rework_screen: int | None = None
     collecting: bool = False
@@ -799,8 +824,8 @@ class NotificationOut(BaseModel):
     kind: str = Field(..., description="'문서평가'/'산출물확인'/'표현검수'/'실패' 중 하나")
     failure_scope: str | None = Field(None, description="kind='실패'일 때만: '실행' 또는 '재작성'")
     target_step: int | None = Field(None, description='알림을 누르면 들어갈 화면 번호. kind=실패면 None(이어하기 목록으로 연결)')
-    created_at: datetime.datetime
-    read_at: datetime.datetime | None = None
+    created_at: UtcDatetime
+    read_at: UtcDatetime | None = None
 
 
 class NotificationReadIn(BaseModel):
@@ -861,32 +886,27 @@ class VerificationPolicyOut(BaseModel):
 class ItemOut(BaseModel):
     """GET /admin/items(관리자 대시보드 "진행 현황" 탭) 응답 — 프로젝트 1건당 한 행.
 
-    [2026-09-18 확장] agent_executions/business_plans/artifacts에서 실제로 뽑을 수 있는
-    값(현재 단계·시도 횟수·마지막 갱신 시각·점수·정체 여부·보관 여부)은 이제 채워서
-    내려준다 — 전부 이미 존재하는 실제 테이블에서 계산한 값이지 지어낸 값이 아니다.
+    [SB-245] 값(현재 단계·시도 횟수·마지막 갱신 시각·점수·정체 여부·보관 여부)은 오케스트레이터 조회(관리자 실행 건 · 실행 기록)에서
+    읽는다. 웹 projects 행은 실행 건이 없는 공고 매칭 전 프로젝트와 보관 여부에만 쓴다.
 
-    다만 admin-dashboard.html 목업에 있던 "지금 Agent가 뭘 하고 있는지 설명하는 자연어
-    텍스트", "조율(Supervisor) 진행 상태 서술", "에러 로그"는 여전히 안 내려준다 — 이건
-    실시간으로 도는 오케스트레이터(다른 팀원 작업)의 내부 상태를 그대로 옮겨야 의미가
-    있는 값이라, 지금처럼 오케스트레이터가 없는 상태에서 채우면 전부 지어낸 텍스트가
-    된다. 무작위 더미 텍스트로 채워서 마치 동작하는 것처럼 보이게 하는 것보다, 프론트가
-    "이 필드는 아직 없다"를 명확히 알 수 있는 쪽이 낫다는 원래 판단은 그대로 유지한다.
-    오케스트레이터 연동 시점에 이 스키마에 그 필드들을 추가하면 된다."""
+    admin-dashboard.html 목업에 있던 "지금 Agent가 뭘 하고 있는지 설명하는 자연어 텍스트", "조율(Supervisor) 진행 상태
+    서술", "에러 로그"는 여전히 내려주지 않는다 — 지어낸 텍스트로 채우는 것보다 프론트가 "이 필드는 없다"를 명확히 알 수 있는 쪽이
+    낫다는 원래 판단은 그대로다. 오케스트레이터 조회 결과에서 만들 수 있는 값이 생기면 이 스키마에 추가한다."""
 
     model_config = ConfigDict(from_attributes=True)
     project_id: int
     description: str
     user_name: str
-    created_at: datetime.datetime
+    created_at: UtcDatetime
     match_status: str | None = None
     failure_reason: str | None = None
     stage: str | None = None
     status_label: str = Field(..., description="'공고 매칭 전'/'진행중'/'판단 대기'/'완료'/'중단'/'실패' 중 하나")
-    step: str | None = Field(None, description='마지막으로 실행된 Agent 이름(전략/작성/구현/검증-1/검증-2/검수) — agent_executions 최신 행 기준')
-    attempts: int | None = Field(None, description='같은 단계(step)를 몇 번째 시도 중인지 — agent_executions.attempt_no 최신값')
-    last_updated: datetime.datetime | None = Field(None, description='agent_executions 최신 실행 시각, 없으면 프로젝트 등록 시각')
+    step: str | None = Field(None, description='마지막으로 실행된 Agent 이름(전략/작성/구현/검증-1/검증-2/검수) — 오케스트레이터 실행 기록 최신 행 기준')
+    attempts: int | None = Field(None, description='같은 단계(step)를 몇 번째 시도 중인지 — 오케스트레이터 실행 기록 최신값')
+    last_updated: UtcDatetime | None = Field(None, description='오케스트레이터 실행 건의 마지막 갱신 시각, 없으면 프로젝트 등록 시각')
     stalled: bool = Field(False, description='완료·보관 상태가 아니면서 마지막 갱신 후 48시간 이상 지났는지')
-    score: float | None = Field(None, description='doc_score + artifact_score 합계(둘 다 없으면 None)')
+    score: float | None = Field(None, description='현재 버전의 문서 점수 + 산출물 점수 합계(둘 다 없으면 None)')
     archived: bool = False
     # [2026-09-23 신규, 2026-09-27 개명] 생성 작업(계획서/프로토타입) 자동 재개 소진
     # 횟수(0~5)와 마지막 실패 사유 — match_status가 'waiting_resume'/'failed'일 때만
@@ -903,8 +923,8 @@ class ItemArchiveIn(BaseModel):
 
 
 class GenerationFailureAlertOut(BaseModel):
-    """GET /admin/generation-alerts 응답 — 생성 작업이 status='failed'로 확정될 때마다(자동
-    재시도 5회 소진 또는 입력·운영 같은 영구 오류로 즉시 확정) 한 행씩 쌓이는 관리자 알림
+    """GET /admin/generation-alerts 응답 — 생성 작업이 status='failed'로 확정될 때마다(재개 상한
+    소진 또는 입력·운영 같은 영구 오류로 즉시 확정) 오케스트레이터 워커가 한 행씩 쌓는 관리자 알림
     (generation_failure_alerts)."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -914,8 +934,8 @@ class GenerationFailureAlertOut(BaseModel):
     resume_count: int
     last_error_kind: str = Field(..., description="'일시'/'입력'/'운영' 중 하나 — 실패 확정 시점의 원인 분류")
     failure_reason: str | None = None
-    created_at: datetime.datetime
-    acknowledged_at: datetime.datetime | None = None
+    created_at: UtcDatetime
+    acknowledged_at: UtcDatetime | None = None
 
 
 class GenerationFailureAlertAckIn(BaseModel):
@@ -923,7 +943,7 @@ class GenerationFailureAlertAckIn(BaseModel):
 
 
 class ScoreHistoryEntryOut(BaseModel):
-    scored_at: datetime.datetime | None = None  # 채점 끝 시각을 모르면 None
+    scored_at: UtcDatetime | None = None  # 채점 끝 시각을 모르면 None
     score: float
     is_rerun: bool
 
@@ -990,7 +1010,8 @@ class AgentOpsSummaryOut(BaseModel):
     total_executions: int
     initial_executions: int
     rerun_executions: int
-    total_tokens: int
+    total_tokens: int  # 글 토큰만(이미지 토큰은 total_image_tokens)
+    total_image_tokens: int = 0  # [SB-302] 이미지 입력 + 출력 토큰 합. 이미지 호출이 없으면 0
     initial_avg_tokens: float | None = None
     rerun_avg_tokens: float | None = None
     token_violation_rate: float | None = None
@@ -1024,8 +1045,8 @@ class ImportRunOut(BaseModel):
     # ImportRun에 매핑만 해두고 응답에는 안 내려주고 있었다 — imported_at(우리 쪽에서
     # 적재한 시각)과 다른 정보라(배치 생성→우리 적재까지 걸린 시간을 보여줄 수 있음) 굳이
     # 숨길 이유가 없어 같이 내려준다.
-    generated_at: datetime.datetime
-    imported_at: datetime.datetime
+    generated_at: UtcDatetime
+    imported_at: UtcDatetime
     accepted_count: int
     input_counts: dict[str, int] = Field(default_factory=dict)
     issue_counts: dict[str, int] = Field(default_factory=dict)
@@ -1050,11 +1071,9 @@ class LayerDeviationOut(BaseModel):
 
 
 class OpsSummaryOut(BaseModel):
-    """GET /admin/ops-summary(운영 현황 탭) 응답. 전부 business_plans/artifacts/verdicts/
-    match_results/agent_executions/verification_score_history/proofread_logs 실제
-    집계값이다 — 지금 이 프로젝트들엔 아직 파이프라인이 거의 안 돌아 값 대부분이
-    0/None으로 보일 수 있는데, 그건 "연동이 안 된 것"이 아니라 "쌓인 실행이 아직
-    적다"는 뜻이다(seed_dummy_pipeline.py 등으로 몇 건 만들어보면 채워진다).
+    """GET /admin/ops-summary(운영 현황 탭) 응답. [SB-245] 오케스트레이터 admin_summary(최근 12개월 범위)
+    집계값이다 — 쌓인 실행이 적으면 값 대부분이 0/None으로 보일 수 있는데, 그건 "연동이 안 된 것"이
+    아니라 "쌓인 실행이 아직 적다"는 뜻이다.
 
     [2026-09-18] token_violation_rate 추가 — proofread_logs.passed=False(보호 토큰인
     수치·날짜·고유명사·기능명을 AI가 임의로 삭제·변조한 시도) 비율을 전체 프로젝트
@@ -1083,8 +1102,7 @@ class OpsSummaryOut(BaseModel):
 class RecoveryItemOut(BaseModel):
     """GET /admin/recovery-items(관리자 대시보드 "검수 회수 문단" 탭) 응답 — proofread_logs
     중 passed=False(보호 토큰 위반으로 반려된 시도) 1건당 한 행. model_version은 그
-    시도가 속한 plan의 최종 verdicts.model_version(있으면)을 그대로 붙인 것 — 이
-    시도 자체의 모델 버전을 남기는 컬럼은 없어서 근사치다. consent는 그 프로젝트
+    시도를 기록한 행의 model_version이다. consent는 그 프로젝트
     소유자의 "지금 시점" AI 학습 데이터 활용 동의 여부(users.ai_training_agreed)다."""
 
     log_id: int
@@ -1092,7 +1110,7 @@ class RecoveryItemOut(BaseModel):
     project_description: str | None = None
     model_version: str | None = None
     violation_type: str | None = None
-    occurred_at: datetime.datetime
+    occurred_at: UtcDatetime
     consent: bool
     original: str
     attempt: str
@@ -1122,7 +1140,8 @@ class RecoveryLabelIn(BaseModel):
 # ---------------------------------------------------------------------------
 class UserRoleStatusIn(BaseModel):
     role: str | None = Field(None, description="'user' 또는 'admin'")
-    status: str | None = Field(None, description="'active' / 'suspended' / 'dormant'")
+    status: str | None = Field(
+        None, description="'active' / 'suspended' / 'dormant' (조회에는 탈퇴 중인 계정의 'withdrawing'도 나온다 — 관리자가 정하는 값은 앞의 셋)")
 
 
 # ---------------------------------------------------------------------------
@@ -1143,8 +1162,8 @@ class FaqOut(BaseModel):
     question: str
     answer: str | None = None
     is_visible: bool
-    created_at: datetime.datetime
-    answered_at: datetime.datetime | None = None
+    created_at: UtcDatetime
+    answered_at: UtcDatetime | None = None
 
 
 # ---------------------------------------------------------------------------

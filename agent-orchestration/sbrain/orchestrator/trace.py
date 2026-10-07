@@ -10,6 +10,8 @@
 - 토큰 사용량(확장): 시도마다 응답의 사용량을 남기고(CallTry), 호출(CallLog) · 실행(ExecutionRecord)에 합계를 둔다.
   입력은 캐시 입력을 포함한 전체이고 캐시 입력은 그 일부다. 출력은 추론을 포함한 전체이고 추론은 그 일부다.
   사용량을 주지 않는 호출처면 None이다. 비용(원 · 달러)은 계산하지 않는다.
+- 이미지 호출 토큰(확장): 호출 기록(call_type 'image')에는 지금 칸에 남기고, 실행 기록에서는 글 토큰 합계에 더하지 않고
+  image_input_tokens · image_output_tokens에 따로 더한다 — 단가가 달라 합치면 토큰 수로 비용을 가늠할 수 없다.
 """
 from __future__ import annotations
 
@@ -36,6 +38,9 @@ class OutputMeta(SBModel):
 
 
 TOKEN_FIELDS = ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens")
+IMAGE_CALL = "image"   # 이미지 호출의 call_type
+# 이미지 호출 기록의 토큰 칸 → 실행 기록의 이미지 토큰 칸 (캐시 · 추론은 따로 두지 않는다)
+IMAGE_TOKEN_FIELDS = (("input_tokens", "image_input_tokens"), ("output_tokens", "image_output_tokens"))
 
 
 def _token(what: str):
@@ -69,6 +74,8 @@ class ExecutionRecord(AttemptRef):
     cached_input_tokens: int | None = _token("이 실행의 호출 합계, 캐시 입력")
     output_tokens: int | None = _token("이 실행의 호출 합계, 출력 (추론 포함)")
     reasoning_tokens: int | None = _token("이 실행의 호출 합계, 추론")
+    image_input_tokens: int | None = _token("이 실행의 이미지 호출 합계, 입력 (글 토큰 합계와 따로)")
+    image_output_tokens: int | None = _token("이 실행의 이미지 호출 합계, 출력 (글 토큰 합계와 따로)")
 
 
 class CallTry(SBModel):
@@ -92,7 +99,7 @@ class CallLog(SBModel):
     execution_id: str
     task_id: str
     agent: str
-    call_type: str                  # llm · search
+    call_type: str                  # llm · search · image
     purpose: str
     item_key: str | None = None     # T-P2 문장 ID 등
     provider: str | None = None
@@ -151,11 +158,22 @@ class TraceEvent(SBModel):
 
 
 def add_tokens(target: Any, sources: list[Any]) -> None:
-    """sources(시도 · 호출 기록)의 토큰을 target(호출 · 실행 기록)에 더한다. 기록이 하나도 없는 항목은 그대로 둔다."""
-    for f in TOKEN_FIELDS:
-        values = [v for v in (getattr(s, f, None) for s in sources) if v is not None]
+    """sources(시도 · 호출 기록)의 토큰을 target(호출 · 실행 기록)에 더한다. 기록이 하나도 없는 항목은 그대로 둔다.
+
+    이미지 호출 기록(call_type 'image')은 글 토큰 칸에 더하지 않는다. target에 이미지 토큰 칸이 있으면(실행 기록) 거기에 더한다.
+    """
+    images = [s for s in sources if getattr(s, "call_type", None) == IMAGE_CALL]
+    texts = [s for s in sources if getattr(s, "call_type", None) != IMAGE_CALL]
+    _sum_into(target, texts, [(f, f) for f in TOKEN_FIELDS])
+    if images and hasattr(target, IMAGE_TOKEN_FIELDS[0][1]):
+        _sum_into(target, images, list(IMAGE_TOKEN_FIELDS))
+
+
+def _sum_into(target: Any, sources: list[Any], pairs: list[tuple[str, str]]) -> None:
+    for src, dst in pairs:
+        values = [v for v in (getattr(s, src, None) for s in sources) if v is not None]
         if values:
-            setattr(target, f, (getattr(target, f) or 0) + sum(values))
+            setattr(target, dst, (getattr(target, dst) or 0) + sum(values))
 
 
 def output_meta_of(outputs: dict[str, Any]) -> OutputMeta:

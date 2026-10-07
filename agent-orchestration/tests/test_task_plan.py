@@ -146,6 +146,19 @@ def test_frames_branch_only_for_prototype_tasks():
     assert "applyEnd" in plan.frame_for("T-W1", "웹개발")
 
 
+@pytest.mark.parametrize("category", ["웹개발", "AI_API"])
+def test_prototype_frames_carry_plan_and_image_rules(category):
+    """T-B1은 계획서의 기능별 입력 · 표시를, T-B2는 이미지 모델(글자 없이) + 글자는 <text>를 규칙으로 갖는다(1.4판)."""
+    tb1 = plan.frame_for("T-B1", category)
+    assert "- 계획서가 기능마다 말한 입력 항목 · 표시 정보를 갖춘다." in tb1
+    for cat in (category, "원페이지"):
+        tb2 = plan.frame_for("T-B2", cat)
+        lines = [ln for ln in tb2.splitlines() if ln.startswith("- ")]
+        assert lines[:3] == ["- 이미지와 대체 텍스트를 만든다.",
+                             "- 아이콘 · 대표 도식은 이미지 모델이 글자 없이 그리고, 글자 · 숫자는 모두 `<text>`로 쓴다.",
+                             "- 도식의 수치는 계획서 원본 수치와 같아야 한다."]
+
+
 # ── 조립 (spec 3.5 · 3.7 · 3.8) ─────────────────────────────
 @pytest.mark.parametrize("category, count", [("웹개발", 14), ("AI_API", 14), ("원페이지", 13)])
 def test_assemble_tasks_order_agents_and_count(category, count):

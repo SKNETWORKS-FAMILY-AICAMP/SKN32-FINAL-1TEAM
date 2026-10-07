@@ -19,6 +19,7 @@
 - 각 단계는 [OK]/[FAIL]로 찍고, 하나라도 실패하면 마지막에 요약하고 종료 코드 1로 끝난다.
 """
 import argparse
+import datetime
 import json
 import os
 import sys
@@ -69,6 +70,28 @@ def configure_env(url_text: str) -> None:
         'MYSQL_HOST': url.host, 'MYSQL_PORT': str(url.port or 3306), 'MYSQL_DATABASE': database,
         'SBRAIN_DB_URL': url_text, 'GOOGLE_CLIENT_ID': 'e2e-client', 'JWT_SECRET': 'e2e-secret-not-for-production-use',
     })
+
+
+def command_log_lines(project_id: int, command: str) -> list[str]:
+    """웹 로그 파일(SB-303)에서 그 프로젝트 · 명령의 `cmd` 줄을 읽는다 — 파일에 쓰일 시간을 잠깐 준다. configure_env 뒤에 부른다."""
+    import glob
+
+    from app.logging_config import LOG_DIR
+    needle_project, needle_cmd = f'project_id={project_id} ', f'command={command} '
+    for _ in range(10):
+        lines: list[str] = []
+        for path in sorted(glob.glob(os.path.join(LOG_DIR, 'web-*.log'))):
+            with open(path, encoding='utf-8') as fh:
+                lines += [ln.strip() for ln in fh if ' cmd at=' in ln and needle_project in ln and needle_cmd in ln]
+        if lines:
+            return lines
+        time.sleep(0.2)
+    return []
+
+
+def has_no_account(line: str) -> bool:
+    """명령 로그 줄에 계정을 가리키는 말이 없는지 — 계정 번호 · 산출물 내용은 넣지 않는 기준이다."""
+    return 'account' not in line and 'user' not in line
 
 
 def main() -> int:
@@ -147,6 +170,23 @@ def main() -> int:
             expected = 3 + (1 if args.rework else 0)
             return (res.status_code == 200 and len(mine) == expected,
                     f"HTTP {res.status_code} 이 프로젝트 {len(mine)}건(기대 {expected}): {sorted(n['kind'] for n in mine)}")
+
+        def check_times(pid: int):
+            """[SB-264] 응답 시각이 UTC · Z이고 실제 시계와 맞는지 — 서버 로컬 시간(이 컴퓨터는 한국 시간)이나 DB 서버 시간대가 UTC가 아니면
+            9시간쯤 어긋난다. 프로젝트 · 알림은 웹 표(DB 시계 CURRENT_TIMESTAMP), 실행 진행 시각은 오케스트레이터 값이라 두 갈래를 모두 본다."""
+            now = datetime.datetime.now(datetime.UTC)
+
+            def skew(value: str | None) -> float | None:
+                if not value or not value.endswith('Z'):
+                    return None
+                return abs((now - datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))).total_seconds())
+
+            project = next((p for p in j(client.get('/projects')) if p['project_id'] == pid), {})
+            notes = [n for n in j(client.get('/projects/notifications')) if n['project_id'] == pid]
+            created, notified = skew(project.get('created_at')), [skew(n.get('created_at')) for n in notes]
+            ok = (created is not None and created < 3600 and bool(notified) and all(v is not None and v < 3600 for v in notified))
+            return ok, (f"프로젝트 created_at={project.get('created_at')} (지금과 {created}초 차이) / 알림 {len(notes)}건 "
+                        f"created_at 차이 {[round(v) if v is not None else None for v in notified]}초")
 
         def check_cleanup(pid: int):
             res = client.delete(f'/projects/{pid}/permanent')
@@ -232,10 +272,16 @@ def main() -> int:
             res = client.post(f'/projects/{pid}/final-review/start')
             step('종합 평가로 진행(8→9)', res.status_code == 200 and j(res).get('stage') == 'final_review_pending',
                  f"{res.status_code} stage={j(res).get('stage')}")
+            logged = command_log_lines(pid, 'decide_for_project')
+            step('웹 명령 로그에 화면 8 진행이 남음', bool(logged) and 'screen=8' in logged[-1] and 'result=ok' in logged[-1]
+                 and 'step=종합평가' in logged[-1] and has_no_account(logged[-1]), logged[-1][-140:] if logged else '줄 없음')
             result = j(client.get(f'/projects/{pid}/result'))
             verdict = result.get('verdict') or {}
             step('결과: 종합 판정', bool(verdict),
                  f"총점 {verdict.get('total_score')} / 기준 {verdict.get('pass_threshold')} 통과={verdict.get('overall_passed')}")
+            # [SB-301] 계획서 대조 보류 표시 — 스텁 Agent는 대조를 보류하지 않으므로 False로 와야 한다(필드가 실제로 내려오는지 본다)
+            step('결과: 계획서 대조 보류 표시(plan_match_withheld)', verdict.get('plan_match_withheld') is False,
+                 f"plan_match_withheld={verdict.get('plan_match_withheld')} 대조 점수={verdict.get('plan_match_score')}")
 
             # 8) (선택) 재작성
             if args.rework:
@@ -268,9 +314,12 @@ def main() -> int:
                     step('재작성 기회 소진 표시', usage.get('문제인식', (None,))[0] == 1, f'문제인식 (사용, 남음)={usage.get("문제인식")}')
 
             # 9) 표현 검수 (9 → 10)
+            before_review = j(client.get(f'/projects/{pid}/result')).get('plan') or {}
+            before_review_body = chr(10).join(sec.get('body', '') for sec in before_review.get('sections', []))
             res = client.post(f'/projects/{pid}/review/start')
             if res.status_code == 409 and (j(res).get('detail') or {}).get('confirmation_required'):
-                step('기준 미달 확인 요청(409)', True, f"사유={j(res)['detail'].get('reason')}")
+                step('기준 미달 확인 요청(409)', j(res).get('code') == 'CONFIRMATION_REQUIRED',
+                     f"code={j(res).get('code')} 사유={j(res)['detail'].get('reason')}")
                 res = client.post(f'/projects/{pid}/review/start', json={'confirmed': True})
             step('표현 검수 시작', res.status_code == 200, f'{res.status_code}')
             poll('표현 검수', f'/projects/{pid}/status',
@@ -280,10 +329,17 @@ def main() -> int:
             plan = result.get('plan') or {}
             step('결과: 검수 · 최종', True,
                  f"형식 지적 {len(plan.get('format_findings', []))}건, 검수 시도 {len(plan.get('proofread_logs', []))}건")
+            # [SB-297] 검수 기록의 '검수 전' 원문은 검수 시작 직전 계획서의 문장이어야 한다(검수가 끝나면 계획서 문장은 결과 문장으로 바뀐다)
+            logs = plan.get('proofread_logs', [])
+            wrong = [log for log in logs if log.get('original_text') and log['original_text'] not in before_review_body]
+            step('결과: 검수 기록의 검수 전 원문이 검수 시작 직전 계획서 문장', bool(logs) and not wrong,
+                 f'검수 시도 {len(logs)}건 중 원문이 다른 것 {len(wrong)}건'
+                 + (f" 예: 원문={wrong[0]['original_text'][:40]!r}" if wrong else ''))
 
             # 10) 목록 · 알림 — 여기서 예외가 나도 뒤 단계(정리)는 계속한다
             check('목록 표시', lambda: check_listing(pid))
             check('알림', lambda: check_notifications(pid))
+            check('응답 시각이 UTC · Z이고 실제 시계와 맞음', lambda: check_times(pid))
 
             # 11) (선택) 정리
             if args.cleanup:

@@ -2,8 +2,8 @@
 
 admin.py를 연결해보니 `verification_checklist_items`/`faqs` 두 테이블이 둘 다 비어
 있어서, 라우터를 붙여도 `GET /admin/checklist`/`GET /admin/faqs`가 빈 배열만
-돌려준다 — 이 둘은 seed_dummy_pipeline.py(프로젝트 하나짜리 파이프라인 결과)와
-성격이 달라서(프로젝트에 안 딸린 전역 설정값 / 유저 질문) 별도 스크립트로 뺐다.
+돌려준다 — 이 둘은 프로젝트 하나에 딸린 값이 아니라(전역 설정값 / 유저 질문)
+옛 더미 파이프라인(없어짐)과 성격이 달라 별도 스크립트로 뺐다.
 
 DB_BACKEND=sqlite 일 때만 동작한다 — seed_dummy_notices.py 등과 같은 이유로, 팀 공유
 AWS MySQL에 가짜 FAQ 질문 같은 걸 실수로 쌓는 사고를 막기 위해서다.

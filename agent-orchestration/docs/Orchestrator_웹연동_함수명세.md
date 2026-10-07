@@ -2,12 +2,28 @@
 
 | 항목 | 내용 |
 |---|---|
-| 작성일 | 2026-10-01 (2026-10-02 갱신 — 웹 더미 파이프라인 떼어 내기. 2026-10-03 갱신 — 공고 서버 연결. 2026-10-04 갱신 — 작업 분해(T-C3)가 고른 평가 항목. 2026-10-05 갱신 — 시각 UTC · 실행 로그 12개월 처리 · 탈퇴 함수) |
+| 작성일 | 2026-10-01 (2026-10-02 갱신 — 웹 더미 파이프라인 떼어 내기. 2026-10-03 갱신 — 공고 서버 연결. 2026-10-04 갱신 — 작업 분해(T-C3)가 고른 평가 항목. 2026-10-05 갱신 — 시각 UTC · 실행 로그 12개월 처리 · 탈퇴 함수. 2026-10-06 갱신 — 산출물층 결과 확장 필드 · 관리자 이미지 토큰 · 새 사건 종류 · Task별 모델 설정) |
 | 상태 | 함수 이름 · 인자 · 결과 필드 · 오류 코드는 **구현 완료**. 화면 조회(5.1절)의 화면별 모양은 **초안** — 웹팀과 맞춰 고친다 |
-| 근거 | 웹팀 합의(2026-09-30) 1~10번, 사용자 결정(2026-10-01 ~ 10-05), 웹팀 회신(2026-10-05), `워커_구동_방식_제안.md`(확정), `웹스키마_교체목록_웹팀전달.md`(두 문서 저장소 미포함) |
+| 근거 | 웹팀 합의(2026-09-30) 1~10번, 사용자 결정(2026-10-01 ~ 10-06), 웹팀 회신(2026-10-05), `워커_구동_방식_제안.md`(확정), `웹스키마_교체목록_웹팀전달.md`(두 문서 저장소 미포함) |
 | 코드 | `sbrain/` — 명령 창구 `flow/service.py`(`SBrainOrchestrator`), 화면 · 결과 · 관리자 조회 `flow/reads.py`, 재작성 묶음 `flow/rework_map.py`, 조립 `bootstrap.py`, 워커 `worker.py`, 웹 테이블 쓰기 `store_sql/web_tables.py`, 시각 `models/clock.py`, 실행 로그 12개월 처리 `flow/retention.py` · 통계 줄 `flow/log_stats.py` |
 | 독자 | 웹팀(백엔드) |
 | 함께 볼 문서 | `docs/웹연동_변경사항_웹팀전달.md` — 웹 엔드포인트마다 어떤 함수를 부르고 응답을 어떻게 채우는지, 값 대응표, 웹 스키마 · 프론트 변경(2026-10-05 변경과 웹이 할 일은 그 문서 11절). `docs/공고연동_변경사항_웹팀전달.md` — 공고 서버 연결로 바뀐 화면 3 · 4 · 진행 상태(2026-10-03) |
+
+### 2026-10-06 바뀐 점 (요약) — 산출물층 검증 반영 · 이미지 호출 · Task별 모델 설정
+
+**함수 이름 · 인자 · 오류 코드는 그대로다.** 결과에 확장 필드가 늘고, 관리자 조회 값이 늘었다. 웹이 할 일과 요청은 `웹연동_변경사항_웹팀전달.md` 12절.
+
+| 구분 | 내용 | 절 |
+|---|---|---|
+| 산출물층 점검 결과 | 화면 8 · 9, `outputs`, 화면 9 `score.artifactScore`의 `codeCheck`에 `gateFailures`(통과 필수 조건 중 어긴 것 — `entry` · `secret` · `sandbox`), `codeCheck.checks[]`에 `defectSources`(`prototype` · `infographic`), `featureMatch`에 `withheld` · `withheldReason` · `partialFeatures`(모두 확장) | 5.1 · 5.2 |
+| "대조 불가" | `featureMatch.withheld`가 참이면 웹이 "대조 불가"로 표시한다. 보류는 0점으로 합산된다(점수는 이미 0으로 온다) | 5.1 |
+| 관리자 실행 기록 · 호출 기록 | `AdminExecution`에 `imageInputTokens` · `imageOutputTokens`, `AdminCall.callType`에 `image`가 생긴다 | 8.1 · 8.2 |
+| 운영 요약 | `totalImageTokens`(이미지 입력 + 출력)가 늘었다. `totalTokens`는 지금처럼 글 토큰만 | 8.6 |
+| 새 추적 사건 종류 | `대조보류` · `검증2진단` · `안내문서자체검사실패` · `이미지대체` · `대체텍스트출처누락`(모두 잠정 이름). 관리자에게 어떻게 알릴지는 웹팀이 정한다 | 8.8 |
+| 모델 설정 | Agent별에서 **Task별**로 바뀌었다. 설정은 지금처럼 Orchestrator 코드에 있고 웹 표 · 화면은 없다. 관리자 실행 기록의 `model`은 그 Task 설정의 글 모델이다 | 8.1 |
+| 공유 DB | `orch_executions`에 칸 둘(`image_input_tokens` · `image_output_tokens`, NULL 허용). 웹 로컬 DB는 새 DDL로 다시 만든다 | `웹연동_변경사항_웹팀전달.md` 12.3 |
+| 스텁 값 | 스텁 T-B1의 `prototype.entryFilePath`가 `/prototype.html`에서 `/index.html`로 바뀌었다(진입 파일명 `index.html` — 구현 · 검증-2 담당 합의). 스텁 값이라 화면에는 영향이 없다 | 5.2 |
+| 웹에서 바뀌는 상태의 로그 | 워커가 운영 로그 파일을 남기기 시작했다. 웹 명령으로 바로 바뀌는 상태(대기 중 중단, 화면 8 → 9 진행 등)는 워커를 거치지 않아 그 로그에 없다 — **웹 쪽 로그로 남겨 달라는 요청** | 12 |
 
 ### 2026-10-05 바뀐 점 (요약) — 시각 UTC · 실행 로그 12개월 처리 · 탈퇴
 
@@ -357,6 +373,17 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
   - 기회 계산은 `outputs`의 `reworkUsage`(5.2)와 같은 기준이다. 재작성 요청은 이 목록이 아니라 묶음 이름으로 한다(6.3). 미달이 아닌 묶음도 요청할 수 있다.
 - 화면 10 `attempts`(`ProofreadAttempt`, 확장): 시도마다 `attemptNo`(1부터) · `text`(시도한 문장) · `adopted` · `tokenCheck`(`passed` · `missingTokens` · `alteredTokens` · `contaminatedTokens`) · `violationType`. **학습 동의와 관계없이 모든 계정에 준다**(웹 화면의 '1차 반려 → 2차 통과' 표시용).
 - 화면 5(작성 시작)와 7(프로토타입 제작 중)은 따로 조회할 내용이 없다 — `view_project`로 단계 · 진행률을 본다.
+- **산출물층 점검 결과의 확장 필드 (2026-10-06)** — 화면 8의 `codeCheck` · `featureMatch`, 화면 9 `score.artifactScore`(`codeCheck` · `featureMatch`), `outputs`의 `codeCheck` · `featureMatch`에 같은 필드가 붙는다(모두 확장, 없으면 기본값).
+
+| 필드 (JSON) | 위치 | 뜻 |
+|---|---|---|
+| `gateFailures` | `codeCheck` | 통과 필수 조건 중 어긴 것(`entry` 진입 파일 · `secret` 비밀값 · `sandbox` 스크립트 제한). 비어 있지 않으면 산출물층은 0점이다. 기본 빈 목록 |
+| `defectSources` | `codeCheck.checks[]` | 그 칸의 미충족 결함이 있는 산출물(`prototype` · `infographic`). 웹개발 · AI API의 2번(대체 텍스트)만 채운다. 기본 빈 목록 |
+| `withheld` | `featureMatch` | 계획서 대조 판정 보류. 참이면 대조 점수는 0으로 합산되어 있다(재정규화하지 않음). **웹이 "대조 불가"로 표시한다.** 기본 거짓 |
+| `withheldReason` | `featureMatch` | 보류 사유 오류코드(예: `E-V2-NOFEATURE`). 사용자 노출 문구는 기준 문서 개정 · 웹팀 결정 전이라 비어 있다. 기본 `null` |
+| `partialFeatures` | `featureMatch` | 부분 인정(0.5) 기능 이름. 미충족 기능은 지금처럼 `missingFeatures`. 기본 빈 목록 — 검증-2 담당이 채우기 전에는 비어 있을 수 있다 |
+
+- 이 필드들은 화면 표시에 쓸 수 있는 결과 값이다. 재작성 판정은 Orchestrator가 이미 이 값으로 했다(`reworkOptions`).
 
 ### 5.2 `outputs(project_id) -> Outputs` (2026-10-02 새로)
 
@@ -379,7 +406,8 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | `evaluationItems` | **확장(2026-10-04).** 작업 분해(T-C3)가 신청자 유형으로 고른 평가 항목 `EvalItem` 목록(현재 버전) — 항목마다 `itemCode` · `itemName` · `maxScore` · `description`. 작업 분해 전이면 빈 목록. 점수 항목 이름은 `docScore.items[].itemCode`를 이 목록의 `itemCode`와 맞춰 `itemName`으로 만든다. 지금 값은 잠정이다(`문제인식` 20 · `실현가능성` 20 · `성장전략` 15 · `팀구성` 15) |
 
 - 실행 건이 실패 · 중단이면 `CommandError("RUN_NOT_VIEWABLE")`(기준 문서 E-RUN-FAIL — 결과를 볼 수 없음. 공고 마감 안내 `E-RUN-CLOSED`와 다른 코드). 실행 건이 없으면 `RUN_NOT_FOUND`.
-- 프로토타입 · 인포그래픽 파일을 어디에 둘지는 구현 Agent를 연동할 때 정한다. 그 전까지 `prototype.entryFilePath` · `infographic.imagePath`는 스텁 값이다.
+- 프로토타입 · 인포그래픽 파일을 어디에 둘지는 구현 Agent를 연동할 때 정한다. 그 전까지 `prototype.entryFilePath` · `infographic.imagePath`는 스텁 값이다(2026-10-06부터 스텁 진입 파일은 `/index.html`).
+- `codeCheck` · `featureMatch`의 확장 필드(`gateFailures` · `defectSources` · `withheld` · `withheldReason` · `partialFeatures`)는 5.1 표와 같다(2026-10-06).
 
 ### 5.3 `rework_result(project_id) -> ReworkResult | None` (2026-10-02 새로)
 
@@ -570,11 +598,13 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | `limit` · `offset` | 기본 50 · 0 |
 | `order` | `"desc"`(최근 순, 기본) · `"asc"` |
 
-`AdminExecution` 필드: `projectId` · `runId` · `executionId` · `taskId` · `agent`(담당 Agent) · `attempt`(시도 번호) · `trigger`(이유: 첫실행 · 재작성 · 재수행) · `redoCount` · `status` · `model` · `reasoningEffort` · `temperature` · `errorKind` · `error`(오류 사유) · `startedAt` · `endedAt` · `durationSec`(걸린 시간) · `tokens`.
+`AdminExecution` 필드: `projectId` · `runId` · `executionId` · `taskId` · `agent`(담당 Agent) · `attempt`(시도 번호) · `trigger`(이유: 첫실행 · 재작성 · 재수행) · `redoCount` · `status` · `model` · `reasoningEffort` · `temperature` · `errorKind` · `error`(오류 사유) · `startedAt` · `endedAt` · `durationSec`(걸린 시간) · `tokens` · **`imageInputTokens` · `imageOutputTokens`**(확장, 2026-10-06 — 그 실행의 이미지 호출 토큰 합계. `tokens`(글 토큰)에 더하지 않고 따로 준다. 이미지 호출이 없으면 `null`).
+
+- `model` · `reasoningEffort` · `temperature`는 그 Task 설정의 글 모델 값이다. 2026-10-06부터 모델 설정이 Agent별에서 **Task별**로 바뀌어, 같은 Agent의 Task라도 모델이 다를 수 있다(예: 구현 T-B2는 글 모델과 이미지 모델을 함께 쓴다). 설정은 Orchestrator 코드에 있고 웹 표 · 화면은 없다.
 
 ### 8.2 `admin_calls(execution_id) -> list[AdminCall]` — 실행 상세
 
-`AdminCall` 필드: `callId` · `purpose`(목적) · `itemKey`(문장 ID 등) · `callType`(llm · search) · `provider` · `model` · `finalOutcome`(성공 · 소진) · `error` · `errorKind` · `tries`(시도별 `no` · `outcome` · `errorKind` · `detail` · 시각 · `tokens`) · `tokens`(시도 합계).
+`AdminCall` 필드: `callId` · `purpose`(목적) · `itemKey`(문장 ID 등) · `callType`(llm · search · **image** — 이미지 호출, 2026-10-06) · `provider` · `model` · `finalOutcome`(성공 · 소진) · `error` · `errorKind` · `tries`(시도별 `no` · `outcome` · `errorKind` · `detail` · 시각 · `tokens`) · `tokens`(시도 합계).
 
 ### 8.3 토큰 (`tokens`)
 
@@ -586,6 +616,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | `reasoningTokens` | 추론 — 출력의 일부 |
 
 - 시도마다 남긴다(형식 오류로 버린 응답 포함). 호출 · 실행은 그 합계다. 사용량을 주지 않는 호출(검색 등)은 비어 있다.
+- 이미지 호출(`callType=image`)의 호출 기록 `tokens`에는 그 호출의 이미지 토큰이 같은 칸(`inputTokens` · `outputTokens`)에 나온다. 실행 기록(8.1)의 `tokens`에는 더하지 않고 `imageInputTokens` · `imageOutputTokens`에 따로 더한다 — 단가가 달라 합치면 토큰 수로 비용을 가늠할 수 없기 때문이다(2026-10-06).
 - 비용(원 · 달러)은 계산하지 않는다.
 
 ### 8.4 `admin_runs(*, progress=None, step=None, limit=50, offset=0) -> list[AdminRun]` — "진행 현황" 탭 (2026-10-02 새로)
@@ -621,7 +652,8 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | `scoreBuckets` | 총점 구간 `90~100점` · `80~89점` · `70~79점` · `60~69점` · `60점 미만`별 건수(`label` · `count`). 정수 경계 양 끝 포함(lo ≤ 총점 ≤ hi) — 웹 지금 계산과 같다 |
 | `layerChanges` | 층별(`docScore` · `codeCheck` · `featureMatch`) `LayerChange`(`layer` · `firstAvg` · `afterAvg` · `delta` · `count`) — 실행 건마다 그 층의 첫 채점과 마지막 재작성 사이클 안의 마지막 채점(되돌린 사이클 포함)이 둘 다 있는 것만. `delta` = 반올림한 평균끼리의 차이 |
 | `triggers` | 시도 계기(첫실행 · 재작성 · 재수행)별 `TriggerStat`(`trigger` · `count` · `avgTokens`) — 평균 토큰 = (입력 + 출력) 합 / 그 계기의 실행 기록 수(토큰 기록이 없는 실행은 0) |
-| `totalTokens` | 모든 실행 기록의 입력 + 출력 토큰 |
+| `totalTokens` | 모든 실행 기록의 입력 + 출력 토큰(글 토큰만) |
+| `totalImageTokens` | 모든 실행 기록의 이미지 입력 + 출력 토큰(확장, 2026-10-06). `totalTokens`와 따로 센다 |
 | `proofreadAttempts` · `proofreadRejected` · `proofreadRejectRate` | 실행 건마다 현재 `sentenceResults`의 시도 수 · 보호 토큰 검사 불통과 시도 수, 반려 / 시도 × 100. 개수만 센다 |
 
 - 우리 기록으로 셀 수 없어 뺀 것: 실행 건이 없는 프로젝트(웹의 '공고 매칭 전'), 웹 상태 문구('판단 대기' 등). 완전 삭제한 실행 건은 현재 점수 · 표현 검수 시도를 셀 수 없어 그 항목에서 빠진다(채점 이력 · 실행 기록 수 · 토큰은 남는다 — 마지막 활동 12개월까지).
@@ -631,6 +663,21 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 ### 8.7 `admin_agent_tasks() -> list[AdminAgentTask]` — "Task별 보기" (2026-10-02 새로)
 
 Agent별(기준 문서 Agent 순서) 한 줄: `agent` · `taskCount`(등록된 단계 수 — 규칙 · 합치기 단계 포함, 예: 조율 13개) · `taskIds` · `executionCount`(실행 기록 수 — 남은 기록만, 12개월 처리로 옮긴 몫은 빠진다) · `recentProjectId` · `recentStatus`(가장 최근 시작 실행의 프로젝트 · 상태).
+
+### 8.8 추적 사건의 새 종류 (2026-10-06)
+
+Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `kind`)을 남긴다. 아래 다섯 종류가 새로 생겼다. **모두 잠정 이름**이다. 설명에는 산출물 내용 · 지시문이 없다.
+
+| 종류 | 언제 | 설명 예 |
+|---|---|---|
+| `대조보류` | 검증-2가 계획서 대조 판정을 보류했다(`featureMatch.withheld`) — 0점 합산 | "T-V2 대조 판정 보류 (E-V2-NOFEATURE) — 0점 합산" |
+| `검증2진단` | 검증-2의 진단 한 줄마다 하나 — 관리자 진단 전용 | 검증-2 담당이 쓴 진단 문장 |
+| `안내문서자체검사실패` | 실행 안내 문서(G-04) 자체 검사가 다시 만들기를 다 쓰고도 통과하지 못했다 — 기록만 하고 계속 | "G-04 자체 검사 불통과 n건 — 재수행 횟수를 다 써 그대로 계속" |
+| `이미지대체` | 인포그래픽 제작(T-B2)의 이미지 호출이 끝내 실패해 기본 아이콘으로 계속했다 — 사용자 화면에는 알리지 않는다 | "T-B2 이미지 호출 실패 — 기본 아이콘으로 계속" |
+| `대체텍스트출처누락` | 검증-2의 대체 텍스트 칸이 미충족인데 결함 출처(`defectSources`)가 비었다 — 대비용 | "HTML 2번 미충족인데 defect_sources가 비어 있음 — T-B2로 보냄" |
+
+- **관리자에게 어떻게 알릴지(알림 · 목록 · 표시 방식)는 웹팀이 정한다.** 지금 웹이 부르는 관리자 조회 함수(8.1 ~ 8.7)에는 추적 사건 목록이 없다. 함수로 받아야 하면 필요한 모양을 알려 주면 맞춘다.
+- 사용자용 결과(화면 · `outputs`)에는 이 사건이 실리지 않는다.
 
 ## 9. 돌려주는 모양 정리
 
@@ -699,6 +746,9 @@ Agent별(기준 문서 Agent 순서) 한 줄: `agent` · `taskCount`(등록된 �
 | 오래 걸리는 웹 요청 제한 시간 | `wait_project` 기본 60초(잠정). 웹 서버 · 프록시 제한 시간에 맞춰 `timeout_sec`를 넘긴다 |
 | 프로토타입 · 인포그래픽 파일 위치 | 구현 Agent 연동 때 정한다. 그 전까지 화면은 예시 파일 |
 | 진행 상황 알림 방식 | 폴링 전제. 서버가 밀어 주는 방식(SSE · WebSocket)은 따로 정한다 |
+| 새 추적 사건의 관리자 알림(2026-10-06) | `대조보류` · `검증2진단` · `안내문서자체검사실패` · `이미지대체` · `대체텍스트출처누락`을 관리자에게 어떻게 보일지 웹팀이 정한다. 조회 함수가 필요하면 알려 달라(8.8) |
+| "대조 불가" 문구(2026-10-06) | `featureMatch.withheld`가 참일 때의 화면 문구는 웹팀이 정한다(기준 문서 개정 전 잠정 표현 "대조 불가") |
+| 웹에서 바뀌는 실행 상태의 로그(2026-10-06 요청) | 워커 운영 로그에는 워커가 처리한 것만 있다. 웹 명령 처리로 바로 바뀌는 상태(대기 중 중단 `abort_project`, 화면 8 → 9 진행 `decide_for_project` 등)는 웹 쪽 로그로 남겨 달라 — `웹연동_변경사항_웹팀전달.md` 12.4 |
 
 ## 13. 이번 변경의 잠정 · 확장 값 (2026-10-02)
 
@@ -741,3 +791,15 @@ Agent별(기준 문서 Agent 순서) 한 줄: `agent` · `taskCount`(등록된 �
 | 관리자 조회 범위 | `admin_runs` · `admin_summary` — 마지막 활동 최근 12개월(달력 기준, 실행 로그 12개월 처리와 같은 기준 시각) (8절) | 확장 |
 | 계정 잠금 대기 | 10초 — `delete_account_data`는 넘기면 `BUSY` | 잠정(조정값) |
 | 실행 로그 12개월 처리 주기 · 묶음 | 하루 한 번(마지막으로 끝까지 마친 뒤 24시간), 워커가 10분마다 때가 됐는지 확인, 한 번에 100건, 작업 점유 120초(워커 점유와 같음) — 워커 값이라 웹에는 영향이 없다 | 잠정(조정값) |
+
+## 16. 산출물층 검증 반영 · 이미지 호출 · Task별 모델 설정의 잠정 · 확장 값 (2026-10-06)
+
+| 항목 | 값 · 내용 | 표시 |
+|---|---|---|
+| 산출물층 점검 결과 필드 | `codeCheck.gateFailures` · `codeCheck.checks[].defectSources` · `featureMatch.withheld` · `withheldReason` · `partialFeatures` (5.1) | 확장 |
+| 대조 보류 | 0점 합산, 화면 "대조 불가"(웹), 관리자 사건 `대조보류` | 사용자 결정(2026-09-30) · 문구 잠정 |
+| 관리자 실행 기록 · 운영 요약 | `imageInputTokens` · `imageOutputTokens` · `totalImageTokens`, `callType=image` (8.1 · 8.2 · 8.6) | 확장 |
+| 추적 사건 종류 | `대조보류` · `검증2진단` · `안내문서자체검사실패` · `이미지대체` · `대체텍스트출처누락` (8.8) | 잠정 |
+| `orch_executions` 칸 | `image_input_tokens` · `image_output_tokens` (`BIGINT UNSIGNED`, NULL 허용) | 확장 |
+| Task별 모델 설정 | 모델 · 호출처 · 온도 · 추론 강도 · 이미지 설정을 Task마다 둔다(코드 기본값, 웹 표 없음). T-B2 이미지 모델 `gpt-image-2.5-flare` | 잠정 |
+| 스텁 진입 파일 | `/index.html` | 스텁 |

@@ -23,6 +23,7 @@ profile 라우터(`GET`/`POST /profile`, `PUT`/`DELETE /profile/{profile_id}`, 2
 """
 import os
 
+import anyio
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -32,7 +33,7 @@ from app.models import Notice
 from app.orch.errors import register_error_handlers
 from app.orch.startup import init_orchestrator
 from app.request_logging import RequestLoggingMiddleware
-from app.routers import admin, auth, biz_check, faqs, profile, projects, uploads
+from app.routers import admin, artifact_files, auth, biz_check, faqs, profile, projects, uploads
 from app.routers.projects import UPLOAD_DIR
 
 app = FastAPI(title='S-Brain API', version='0.1.0')
@@ -55,7 +56,7 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
-# [2026-09-23, 팀 로깅 정책 "웹서비스" 담당분] 요청마다 시작/끝을 back/logs/에 파일로
+# [2026-09-23, 팀 로깅 정책 "웹서비스" 담당분] 요청마다 시작/끝을 web/backend/logs/에 파일로
 # 남긴다(DB엔 안 남김) — CORS보다 나중에 추가해서 미들웨어 스택 바깥쪽을 차지하게 했다
 # (Starlette는 add_middleware 호출 역순으로 스택을 쌓아서, 나중에 추가한 게 가장 바깥쪽 —
 # 즉 요청이 CORS를 타기도 전에 로그가 먼저 찍힌다). app/request_logging.py 참고.
@@ -68,10 +69,21 @@ app.include_router(uploads.router)
 
 app.include_router(auth.router)
 app.include_router(projects.router)
+app.include_router(artifact_files.router)
 app.include_router(admin.router)
 app.include_router(faqs.router)
 app.include_router(biz_check.router)
 app.include_router(profile.router)
+
+
+# [SB-266] 동기 엔드포인트는 서버 작업 스레드(anyio 기본 40개)에서 돈다. 워커를 기다리는 조회(후보 · 자격 확인)는 최대 25초 스레드 하나를
+# 붙잡으므로, 워커가 느릴 때 40개가 차면 DB를 안 쓰는 동기 요청까지 줄을 선다. 한도를 올려 둔다(환경변수 WEB_THREAD_LIMIT, 기본 200).
+WEB_THREAD_LIMIT = int(os.environ.get('WEB_THREAD_LIMIT', 200))
+
+
+@app.on_event('startup')
+async def _raise_worker_thread_limit() -> None:
+    anyio.to_thread.current_default_thread_limiter().total_tokens = WEB_THREAD_LIMIT
 
 
 # [SB-242] 웹이 오케스트레이터(sbrain) 함수를 부르는 통로(gateway)를 서버 시작 때 한 번 만든다.

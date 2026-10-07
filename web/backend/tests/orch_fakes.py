@@ -187,6 +187,22 @@ def make_sentence(i: int, text: str, paragraph_no: int = 1, is_title: bool = Fal
     return NS(sentence_id=f's{i}', text=text, is_title=is_title, paragraph_no=paragraph_no)
 
 
+def make_sentence_change(sentence_id: str, before: str, after: str | None = None, adopted: bool = False, **overrides: Any) -> NS:
+    """화면 10 문장 하나의 전후(SentenceChange)."""
+    base = dict(sentence_id=sentence_id, before=before, after=after, adopted=adopted, kept_reason=None, attempts=[])
+    base.update(overrides)
+    return NS(**base)
+
+
+def make_proofread_screen(sentences: list | None = None, **overrides: Any) -> NS:
+    """화면 10(ProofreadScreen)의 필드."""
+    base = dict(
+        screen=10, project_id=None, run_id='r1', step='결과물', progress='완료', notices=[], format_findings=[],
+        sentences=list(sentences or []), proofread_log=None)
+    base.update(overrides)
+    return NS(**base)
+
+
 def make_section(code: str, title: str, *texts: str) -> NS:
     """texts마다 문장 하나, 문단 번호는 인자 순서대로 1부터(문단 사이는 줄바꿈으로 이어진다)."""
     return NS(section_code=code, title=title, sentences=[make_sentence(i, t, paragraph_no=i) for i, t in enumerate(texts, 1)])
@@ -215,10 +231,18 @@ def make_gate_screen(announcement_id: str = 'N-01', gate: NS | None = None, **ov
     return NS(**base)
 
 
+def make_feature_match(**overrides: Any) -> NS:
+    """계획서 대조 결과(FeatureMatchResult) — 확장 필드(withheld · withheld_reason · partial_features) 포함."""
+    base = dict(
+        score=15.0, missing_features=[], extra_features=[], findings=[], judged_by='규칙', withheld=False,
+        withheld_reason=None, partial_features=[])
+    base.update(overrides)
+    return NS(**base)
+
+
 def make_score_view(total: float = 82.0, threshold: float = 80.0, passed: bool = True, with_artifact: bool = True) -> NS:
     artifact = NS(
-        total=30.0, code_check=NS(total=15.0, checks=[]), feature_match=NS(
-            score=15.0, missing_features=[], extra_features=[], findings=[], judged_by='규칙'),
+        total=30.0, code_check=NS(total=15.0, checks=[]), feature_match=make_feature_match(),
     ) if with_artifact else None
     return NS(
         display_score=total, total=total, threshold=threshold, passed=passed, phase='종합',
@@ -255,7 +279,8 @@ def make_admin_execution(**overrides: Any) -> NS:
     base = dict(
         project_id='1', run_id='r1', execution_id='e1', task_id='T-W1', agent='작성', attempt=1, trigger='첫실행',
         redo_count=0, status='성공', model='gpt-test', reasoning_effort=None, temperature=None, error_kind=None,
-        error=None, started_at=datetime.now(UTC), ended_at=None, duration_sec=1.5, tokens=make_tokens(100, 20))
+        error=None, started_at=datetime.now(UTC), ended_at=None, duration_sec=1.5, tokens=make_tokens(100, 20),
+        image_input_tokens=None, image_output_tokens=None)
     base.update(overrides)
     return NS(**base)
 
@@ -281,7 +306,7 @@ def make_admin_summary(**overrides: Any) -> NS:
     base = dict(
         status_counts={}, doc_avg=None, doc_count=0, total_avg=None, total_count=0, pass_count=0, pass_rate=None,
         pass_threshold=80.0, reworked_runs=0, runs_with_executions=0, rework_rate=None, score_buckets=[],
-        layer_changes=[], triggers=[], total_tokens=0, proofread_attempts=0, proofread_rejected=0,
+        layer_changes=[], triggers=[], total_tokens=0, total_image_tokens=0, proofread_attempts=0, proofread_rejected=0,
         proofread_reject_rate=None)
     base.update(overrides)
     return NS(**base)

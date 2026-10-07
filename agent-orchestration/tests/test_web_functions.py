@@ -266,7 +266,7 @@ def test_rework_result_artifact_paths_then_failure(clock):
     r = app.orchestrator.rework_result(p)
     assert (r.status, r.kept, r.screen, r.cycle_id) == ("완료", "후", 8, ok.cycle_id)
     assert [(f.artifact, f.before_path, f.after_path) for f in r.files] == [
-        ("prototype", "/prototype.html", "/prototype.html")]
+        ("prototype", "/index.html", "/index.html")]   # 진입 파일명 index.html (2026-09-30 결정 9)
     assert r.plan_before is None and r.plan_after is None
     app.orchestrator.decide(rid, 8, "진행")
     app.llm.plan("T-B2", ["auth"] * 50)                                          # 영구 오류 → 재작성 실패
@@ -414,7 +414,7 @@ def test_decide_screen8_and_9_proceed_unchanged(clock):
     v = app.orchestrator.view_project(p).run
     assert (v.step, v.progress) == ("종합평가", "사용자대기")
     need = app.orchestrator.decide_for_project(p, 9, "진행")                     # 미달 — 확인받는다
-    assert isinstance(need, ConfirmationNeeded) and need.items["현재 점수"] == 71.0
+    assert isinstance(need, ConfirmationNeeded) and need.items["현재 점수"] == 71.5   # 대조 7 → 7.5 (1.4판 몫)
     assert app.orchestrator.view_project(p).run.step == "종합평가"
     assert app.orchestrator.decide_for_project(p, 9, "진행", confirmed=True) is None
     app.orchestrator.advance(rid)

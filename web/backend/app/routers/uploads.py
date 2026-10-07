@@ -1,7 +1,8 @@
 """Private attachment delivery; preserve existing /uploads URLs.
 
-[SB-247] 산출물(프로토타입 · 인포그래픽) 파일은 오케스트레이터가 갖고 있고 위치는 구현 Agent 연동 때 정한다 — 그때까지 이 경로는
-첨부파일만 제공한다(예전 artifacts 테이블 기준 소유 확인은 테이블과 함께 없어졌다)."""
+[SB-247] 이 경로는 첨부파일만 제공한다(예전 artifacts 테이블 기준 소유 확인은 테이블과 함께 없어졌다).
+[SB-292] 산출물(프로토타입 · 인포그래픽) 파일은 구현 Agent가 정한 폴더 구조로 저장되고 별도 경로로 내려 준다 —
+app/routers/artifact_files.py (소유자만, 관리자 제외 — 이 첨부 경로와 다르다)."""
 import mimetypes
 from pathlib import Path
 

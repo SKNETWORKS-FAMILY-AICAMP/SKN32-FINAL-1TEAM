@@ -31,8 +31,9 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from pydantic import ValidationError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
+from app import artifact_store
 from app.database import get_db
 from app.models import (
     Company,
@@ -52,7 +53,7 @@ from app.models import (
     User,
     VerificationPolicy,
 )
-from app.orch import OrchError, OrchGateway, account_id_of, mapping, require_gateway
+from app.orch import CodedHTTPException, OrchError, OrchGateway, account_id_of, mapping, require_gateway
 from app.proofread_retention import clear_project_logs
 from app.routers.profile import compute_has_profile
 from app.schemas import (
@@ -70,7 +71,7 @@ from app.schemas import (
     ReworkAcceptedOut,
     ReworkResultOut,
 )
-from app.security import get_current_user
+from app.security import ACCOUNT_WITHDRAWING, get_current_user
 
 router = APIRouter(prefix='/projects', tags=['projects'])
 
@@ -216,16 +217,44 @@ ORCH_WAIT_TIMEOUT_SEC = 25.0
 _EXECUTING = ('실행', '재개대기')
 
 
+def _release_db(db: Session | None) -> None:
+    """[SB-266] 워커를 기다리기 전에 이 요청의 DB 연결을 풀에 돌려준다.
+
+    요청의 DB 세션은 쿼리를 한 번 하면 요청이 끝날 때까지 연결을 붙잡는다. 워커를 기다리는 조회는 최대 ORCH_WAIT_TIMEOUT_SEC(운영 25초)
+    걸리는데, 그동안 연결을 쥐고 있으면 웹 DB 연결 풀(기본 15개)이 대기 요청으로 차서 DB를 쓰는 다른 요청이 모두 막히고 그 이상이면
+    풀 시간 초과(500)가 난다(scripts/load_check.py로 측정). 대기 앞에서는 읽기만 했으므로 rollback으로 연결만 돌려주고, 세션은 그대로 써서
+    대기 뒤에 필요하면 새 연결로 다시 읽는다(객체는 다음 접근 때 새로 읽힌다)."""
+    if db is not None:
+        db.rollback()
+
+
+def _is_withdrawing(user: User) -> bool:
+    """[SB-298] 지금(DB 최신 값) 탈퇴 중인 계정인지 — 탈퇴가 다른 요청에서 막 시작됐을 수 있어 매번 다시 읽는다."""
+    session = object_session(user)
+    if session is not None:
+        session.refresh(user)
+    return user.status == ACCOUNT_WITHDRAWING
+
+
+WITHDRAWING_MESSAGE = '계정 탈퇴를 처리하는 중이라 새로 시작할 수 없어요. 탈퇴를 마저 진행해 주세요.'
+
+
 def _candidates_response(gateway: OrchGateway, project: Project) -> MatchCandidatesOut:
     project_id = project.project_id
+    _release_db(object_session(project))
     view = gateway.wait_project(project_id, timeout_sec=ORCH_WAIT_TIMEOUT_SEC)
     start = view.start
     if view.run is None and start is not None and start.status == '실패' and start.code in mapping.START_RETRYABLE:
         # 다시 시도할 수 있는 시작 실패(명세 3.1) — 같은 프로젝트로 시작 요청을 다시 넣고 기다린다.
+        # 탈퇴 중인 계정은 시작 요청을 넣지 않는다(SB-298).
+        if _is_withdrawing(project.company.user):
+            return MatchCandidatesOut(
+                candidates=[], rematch_used=False, status='failed', code='ACCOUNT_WITHDRAWING', message=WITHDRAWING_MESSAGE)
         check = gateway.request_start(account_id_of(project.company.user_id), project_id)
         if not check.ok:
             return MatchCandidatesOut(
                 candidates=[], rematch_used=False, status='failed', code=check.code, message=check.message)
+        _release_db(object_session(project))
         view = gateway.wait_project(project_id, timeout_sec=ORCH_WAIT_TIMEOUT_SEC)
     if view.run is None:
         return mapping.candidates_unavailable(view.start)
@@ -274,7 +303,7 @@ _BEFORE_WRITING_STEPS = {
 
 
 def _eligibility_response(
-    gateway: OrchGateway, project_id: int, notice_id: str | None, notices_before: int | None,
+    db: Session, gateway: OrchGateway, project_id: int, notice_id: str | None, notices_before: int | None,
 ) -> DemoGenerateResponse:
     """자격 확인(G-01) 결과를 기다려 화면 4 모양으로 답한다.
 
@@ -282,6 +311,7 @@ def _eligibility_response(
     notices_before: 명령 전 안내 개수. 그 뒤에 쌓인 안내(E-G1-* · X-C2-*)만 이번 결과의 안내로 쓴다(None이면 화면 4 안내만).
         GET에서 notice_id만 받은 경우는 명령 전 개수를 모르므로 실패 안내를 전체 안내에서 찾는다(가장 최근 E-G1-* 하나).
     """
+    _release_db(db)
     view = gateway.wait_project(project_id, timeout_sec=ORCH_WAIT_TIMEOUT_SEC)
     run = view.run
     if run is None:
@@ -326,11 +356,11 @@ def generate_pipeline_result(
     후보에 없는 공고는 422, 자격 불통과로 막힌 공고는 409(오류 코드는 app/orch/errors.py)."""
     _get_owned_project(db, project_id, current_user)
     if not body.notice_id:
-        raise HTTPException(status_code=422, detail='고를 공고를 알려 주세요.')
+        raise CodedHTTPException(422, 'NOTICE_REQUIRED', '고를 공고를 알려 주세요.')
     view = gateway.view_project(project_id)
     notices_before = len(view.run.notices) if view.run is not None else 0
     gateway.select_announcement_for_project(project_id, body.notice_id)
-    return _eligibility_response(gateway, project_id, body.notice_id, notices_before)
+    return _eligibility_response(db, gateway, project_id, body.notice_id, notices_before)
 
 
 @router.get('/{project_id}/eligibility', response_model=DemoGenerateResponse)
@@ -347,7 +377,7 @@ def get_eligibility(
     pending 뒤에 폴링할 때는 notice_id를 붙여야 그 이전 결과를 ready로 받지 않고 status='failed'로 받는다.
     notice_id 없이 부르면 지금 화면 4의 공고 결과를 그대로 준다(화면을 다시 열 때)."""
     _get_owned_project(db, project_id, current_user)
-    return _eligibility_response(gateway, project_id, notice_id or None, None)
+    return _eligibility_response(db, gateway, project_id, notice_id or None, None)
 
 
 def _start_stage(project_id: int, gateway: OrchGateway, command) -> ProjectStatusOut:
@@ -356,14 +386,14 @@ def _start_stage(project_id: int, gateway: OrchGateway, command) -> ProjectStatu
         command()
     except OrchError as exc:
         if exc.code == 'RUN_NOT_FOUND':
-            raise HTTPException(status_code=400, detail=_BEFORE_WRITING_STEPS['공고선택']) from exc
+            raise CodedHTTPException(400, 'STAGE_NOT_REACHED', _BEFORE_WRITING_STEPS['공고선택']) from exc
         if exc.code != 'INVALID_STATE':
             raise
     view = gateway.view_project(project_id)
     if view.run is None:
-        raise HTTPException(status_code=400, detail=_BEFORE_WRITING_STEPS['공고선택'])
+        raise CodedHTTPException(400, 'STAGE_NOT_REACHED', _BEFORE_WRITING_STEPS['공고선택'])
     if view.run.step in _BEFORE_WRITING_STEPS and view.run.progress == '사용자대기':
-        raise HTTPException(status_code=400, detail=_BEFORE_WRITING_STEPS[view.run.step])
+        raise CodedHTTPException(400, 'STAGE_NOT_REACHED', _BEFORE_WRITING_STEPS[view.run.step])
     return mapping.project_status_out(project_id, view)
 
 
@@ -401,7 +431,7 @@ def start_final_review(
     gateway: OrchGateway = Depends(require_gateway),
 ):
     """산출물 확인 → 종합 평가(화면 8 → 9, '종합 평가 확인하기'). 실행할 단계 없이 바로 stage='final_review_pending'이 된다.
-    [SB-243 신규 — 엔드포인트 이름은 임시, 프론트와 맞춘다.]"""
+    [SB-243 신규 — 엔드포인트 이름은 프론트와 합의해 확정(2026-10-06).]"""
     _get_owned_project(db, project_id, current_user)
     return _start_stage(project_id, gateway, lambda: gateway.decide_for_project(project_id, 8, '진행'))
 
@@ -416,14 +446,14 @@ def start_review(
 ):
     """종합 평가 → 표현 검수(화면 9 → 10). stage='reviewing'으로 진행되고 끝나면 stage='done'.
     기준 점수에 못 미친 채로 진행하면 검수 뒤에는 되돌릴 수 없어 409 + {confirmation_required, reason, items}로 확인을 받는다 —
-    사용자가 확인하면 body {"confirmed": true}로 다시 부른다. [SB-243 신규 — 엔드포인트 이름은 임시, 프론트와 맞춘다.]"""
+    사용자가 확인하면 body {"confirmed": true}로 다시 부른다. [SB-243 신규 — 엔드포인트 이름은 프론트와 합의해 확정(2026-10-06).]"""
     _get_owned_project(db, project_id, current_user)
     confirmed = body.confirmed if body is not None else False
 
     def command():
         needed = gateway.decide_for_project(project_id, 9, '진행', confirmed=confirmed)
         if needed is not None:
-            raise HTTPException(status_code=409, detail={
+            raise CodedHTTPException(409, 'CONFIRMATION_REQUIRED', {
                 'confirmation_required': True, 'reason': needed.reason, 'items': needed.items})
 
     return _start_stage(project_id, gateway, command)
@@ -441,12 +471,28 @@ def get_pipeline_result(
     _get_owned_project(db, project_id, current_user)
     outputs = gateway.outputs(project_id)
     if outputs.plan_doc is None:
-        raise HTTPException(
-            status_code=404,
-            detail='이 프로젝트엔 아직 계획서가 없습니다 — POST /projects/{id}/plan/start 로 먼저 만들어야 합니다',
+        raise CodedHTTPException(
+            404, 'PLAN_NOT_READY',
+            '이 프로젝트엔 아직 계획서가 없습니다 — POST /projects/{id}/plan/start 로 먼저 만들어야 합니다',
         )
     policy = db.query(VerificationPolicy).order_by(VerificationPolicy.policy_id.asc()).first()
-    return mapping.result_out(project_id, outputs, policy)
+    return mapping.result_out(project_id, outputs, policy, _proofread_originals(gateway, project_id, outputs))
+
+
+def _proofread_originals(gateway: OrchGateway, project_id: int, outputs) -> dict[str, str] | None:
+    """검수 기록이 있을 때 화면 10에서 문장별 검수 전 원문을 읽는다(sentenceId → before) — [SB-297].
+
+    표현 검수가 끝나면 현재 계획서(planDoc)의 문장이 검수 결과 문장으로 바뀌므로, 검수 전 원문은 계획서가 아니라 화면 10에서 읽는다.
+    화면 10은 결과물 · 완료에서만 열린다 — 아직 열 수 없으면(검수 중 등) 계획서가 바뀌기 전이라 None(계획서 문장을 쓴다)."""
+    if not outputs.sentence_results:
+        return None
+    try:
+        screen = gateway.screen(project_id, 10)
+    except OrchError as exc:
+        if exc.code in ('SCREEN_NOT_READY', 'INVALID_STATE'):
+            return None
+        raise
+    return {s.sentence_id: s.before for s in screen.sentences}
 
 
 def _plan_section_bodies(gateway: OrchGateway, project_id: int) -> dict[str, str]:
@@ -749,9 +795,9 @@ async def create_project(
         or current_user.privacy_agreed_at is None
         or current_user.age_confirmed_at is None
     ):
-        raise HTTPException(
-            status_code=403,
-            detail='필수 항목(이용약관, 개인정보 수집·이용, 만 16세 이상 확인)에 동의해야 이용할 수 있습니다.',
+        raise CodedHTTPException(
+            403, 'E-AUTH-CONSENT',
+            '필수 항목(이용약관, 개인정보 수집·이용, 만 16세 이상 확인)에 동의해야 이용할 수 있습니다.',
         )
 
     # [2026-09-27 신규] 마이페이지 프로필 게이트 — 공식 기능정의서 v1.9 E-AUTH-PROFILE:
@@ -760,9 +806,8 @@ async def create_project(
     # /auth/me·로그인 응답이 쓰는 것과 같은 함수(compute_has_profile)를 그대로 재사용한다
     # — 슬롯 하나라도 필수 입력을 전부 채웠는지를 본다.
     if not compute_has_profile(db, current_user.user_id):
-        raise HTTPException(
-            status_code=403,
-            detail='서비스를 이용하려면 먼저 마이페이지에서 프로필을 만들어주세요.',
+        raise CodedHTTPException(
+            403, 'E-AUTH-PROFILE', '서비스를 이용하려면 먼저 마이페이지에서 프로필을 만들어주세요.',
         )
 
     # [2026-09-29 신규, 프론트 요청사항 3차 B-5] 첨부파일 개수·용량 상한 — 아직 회사/프로젝트
@@ -781,10 +826,13 @@ async def create_project(
     # 있으면 새 프로젝트를 만들지 않고 409 blocked(이어하기 또는 중단 후 새로 시작 선택)로 답한다. "중단 후 새로
     # 시작"은 기존 DELETE /projects/{id}(abort_project 후 보관)가 맡는다. 최종 확인은 아래 request_start가 계정
     # 잠금 안에서 다시 한다(그 사이에 생긴 작업은 E-RUN-CONCURRENT).
+    # [SB-298] 탈퇴 중인 계정은 새 프로젝트를 시작할 수 없다(명세 7.3: 탈퇴 처리 중에는 request_start를 부르지 않는다).
+    if current_user.status == ACCOUNT_WITHDRAWING:
+        raise CodedHTTPException(409, 'ACCOUNT_WITHDRAWING', WITHDRAWING_MESSAGE)
     account_id = account_id_of(current_user.user_id)
     active = gateway.active_work(account_id)
     if active is not None:
-        raise HTTPException(status_code=409, detail=mapping.blocked_detail(active))
+        raise CodedHTTPException(409, 'E-RUN-CONCURRENT', mapping.blocked_detail(active))
 
     company = _create_company_for_project(db, current_user, body)
 
@@ -841,23 +889,32 @@ async def create_project(
 
     # 저장한 입력을 오케스트레이터가 읽어 사전 단계(요구사항 해석 → 공고 매칭)를 시작한다. 시작 요청이 거절되면
     # 방금 만든 프로젝트는 쓸 곳이 없으니 지운다(입력을 고쳐 다시 제출하면 새 프로젝트로 만들어진다).
+    # [SB-298] 저장하는 동안 탈퇴가 시작됐을 수 있다 — 시작 요청 직전에 다시 확인한다.
+    if _is_withdrawing(current_user):
+        _purge_unstarted_project(db, project.project_id)
+        raise CodedHTTPException(409, 'ACCOUNT_WITHDRAWING', WITHDRAWING_MESSAGE)
     check = gateway.request_start(account_id, project.project_id)
     if not check.ok:
         _purge_unstarted_project(db, project.project_id)
         raise _start_failure(check)
+    # 요청을 넣는 사이에 탈퇴가 시작됐으면 방금 넣은 요청을 거둔다(탈퇴가 끝난 뒤 남은 요청은 지워지지 않는다 — 명세 7.3)
+    if _is_withdrawing(current_user):
+        gateway.abort_project(project.project_id)
+        _purge_unstarted_project(db, project.project_id)
+        raise CodedHTTPException(409, 'ACCOUNT_WITHDRAWING', WITHDRAWING_MESSAGE)
     return ProjectDetailOut.model_validate(project)
 
 
-def _start_failure(check) -> HTTPException:
-    """request_start가 거절한 이유(StartCheck)를 웹 응답으로 바꾼다."""
+def _start_failure(check) -> CodedHTTPException:
+    """request_start가 거절한 이유(StartCheck)를 웹 응답으로 바꾼다. 오류 이름(code)은 오케스트레이터가 준 코드 그대로다."""
     if check.code == 'E-RUN-CONCURRENT' and check.active is not None:
-        return HTTPException(status_code=409, detail=mapping.blocked_detail(check.active))
+        return CodedHTTPException(409, 'E-RUN-CONCURRENT', mapping.blocked_detail(check.active))
     if check.code == 'E-AUTH-PROFILE':
-        return HTTPException(status_code=403, detail=check.message)
+        return CodedHTTPException(403, 'E-AUTH-PROFILE', check.message)
     if check.code == 'E-C1-REQUIRED':
-        return HTTPException(
-            status_code=422, detail={'message': check.message, 'code': check.code, 'missing': check.missing})
-    return HTTPException(status_code=400, detail={'message': check.message, 'code': check.code})
+        return CodedHTTPException(
+            422, 'E-C1-REQUIRED', {'message': check.message, 'code': check.code, 'missing': check.missing})
+    return CodedHTTPException(400, check.code or 'BAD_REQUEST', {'message': check.message, 'code': check.code})
 
 
 @router.get('/{project_id}', response_model=ProjectDetailOut)
@@ -923,6 +980,7 @@ def delete_project(
 
     gateway.delete_project_data(project_id)
     _purge_unstarted_project(db, project_id)
+    artifact_store.delete_project_artifacts(project_id)  # [SB-294] 웹 행을 지운 뒤 — 실패해도 고아 청소가 치운다
     return Response(status_code=204)
 
 
@@ -947,10 +1005,13 @@ def delete_project_permanently(
 
     [SB-244] 먼저 오케스트레이터의 산출물 · 입력 사본을 지운다(`delete_project_data` — 진행 중이면 먼저 중단한다).
     워커가 단계를 도는 중이면 BUSY로 409("잠시 뒤 다시")를 돌려주고 웹 행은 지우지 않는다 — 재시도는 하지 않고
-    사용자가 다시 누른다. 그 뒤 웹 행을 지운다(실행 건의 project_id는 비워지고 실행 로그는 남는다)."""
+    사용자가 다시 누른다. 그 뒤 웹 행을 지운다(실행 건의 project_id는 비워지고 실행 로그는 남는다).
+
+    [SB-294] 웹 행까지 지운 다음 그 프로젝트의 산출물 파일 폴더(모든 시도)를 지운다 — 되돌릴 수 없다. 보관(휴지통)만 한 프로젝트는 파일을 남긴다."""
     project = _get_owned_project(db, project_id, current_user)
     gateway.delete_project_data(project_id)
     _delete_project_cascade(db, project)
+    artifact_store.delete_project_artifacts(project_id)  # [SB-294] 웹 행을 지운 뒤 — 실패해도 고아 청소가 치운다
     return Response(status_code=204)
 
 
@@ -1004,7 +1065,7 @@ def retry_task(
     try:
         orch_bundle = mapping.orch_bundle_of(body.task_key, body.bundle_id)
     except mapping.NotReworkable as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise CodedHTTPException(400, 'NOT_REWORKABLE', str(exc)) from exc
     accepted = gateway.request_rework_for_project(project_id, orch_bundle)
     return mapping.rework_accepted_out(project_id, body.task_key, orch_bundle, accepted)
 
@@ -1020,5 +1081,5 @@ def get_rework_result(
     _get_owned_project(db, project_id, current_user)
     result = gateway.rework_result(project_id)
     if result is None:
-        raise HTTPException(status_code=404, detail='재작성한 적이 없어요.')
+        raise CodedHTTPException(404, 'NOT_REWORKED_YET', '재작성한 적이 없어요.')
     return mapping.rework_result_out(project_id, result)

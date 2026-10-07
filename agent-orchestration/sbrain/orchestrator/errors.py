@@ -28,12 +28,16 @@ ERROR_CODES: dict[str, ErrorCode] = {e.code: e for e in [
     ErrorCode("E-C1-REQUIRED", "T-C1", "필수 항목을 입력해주세요: {누락 항목}", "폼 단계 차단"),
     ErrorCode("E-C1-DOC", "T-C1", "{파일명}의 내용을 읽지 못해 참고 자료에서 제외했습니다. 나머지 정보로 계속 진행합니다.", "해당 문서 제외"),
     ErrorCode("E-C3-FORM", "T-C3", "", "분해 실패로 처리하고 오류 기록"),
-    ErrorCode("E-B1-ENTRY", "T-B1", "", "재수행 후 그대로 보냄, codeCheck.total=0"),
+    ErrorCode("E-B1-ENTRY", "T-B1", "", "재수행 후 그대로 보냄, 검증-2 통과 필수 조건(entry)으로 산출물층 0"),
+    # 확장(잠정) — 기준 문서 개정 전. sandbox API 위반(구현 · 검증-2 담당 개정안 1.3판)
+    ErrorCode("E-B1-SANDBOX", "T-B1", "",
+              "재수행 후 그대로 보냄. 스토리지 계열은 검증-2 통과 필수 조건(산출물층 0), 나머지는 코드 점검 7번 감점"),
     ErrorCode("E-B1-DEP", "T-B1", "", "재수행 후 그대로 보냄, 점수 반영"),
     ErrorCode("E-V1-EVIDENCE", "T-V1", "", "감점 무효 처리"),
     ErrorCode("E-V1-VARIANCE", "T-V1", "", "varianceFlag=true"),
     ErrorCode("E-V2-PARSE", "T-V2", "", "해당 항목만 미충족"),
-    ErrorCode("E-V2-NOFEATURE", "T-V2", "", "판정 보류, 오류 기록"),
+    # 사용자 노출 문구는 기준 문서 개정 · 웹팀 결정 전이라 비워 둔다 (잠정) — 화면 '대조 불가'는 웹이 withheld로 표시
+    ErrorCode("E-V2-NOFEATURE", "T-V2", "", "withheld=true, 0점 합산, 화면 '대조 불가', 관리자 알림"),
     ErrorCode("E-P2-TOKEN", "T-P2", "", "redoHint에 실어 재수행"),
     ErrorCode("E-P2-RETRY", "T-P2", "", "원문 유지, 관리자 로그"),
     ErrorCode("E-G2-LIMIT", "G-02a · G-02b · R-6", "이 항목은 다시 만들 수 있는 횟수를 모두 사용했습니다. 다시 만들기 전과 후 중 점수가 높은 결과가 반영되어 있습니다.", "선택 불가 표시"),

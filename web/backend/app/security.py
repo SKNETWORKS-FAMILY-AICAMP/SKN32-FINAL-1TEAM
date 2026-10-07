@@ -87,6 +87,13 @@ def issue_refresh_token(db: Session, user_id: int) -> tuple[str, RefreshToken]:
     return raw, row
 
 
+# [SB-298] 계정 상태. 'withdrawing'은 탈퇴를 시작한 계정 — 탈퇴는 BUSY로 멈췄다가 다시 부르는 일이 있어 로그인 · 세션은 살려 두고
+# (그래야 탈퇴를 이어서 할 수 있다) 새 실행 시작만 막는다. 정지 · 휴면 계정은 지금처럼 로그인 자체가 안 된다.
+ACCOUNT_ACTIVE = 'active'
+ACCOUNT_WITHDRAWING = 'withdrawing'
+SIGN_IN_STATUSES = (ACCOUNT_ACTIVE, ACCOUNT_WITHDRAWING)
+
+
 def rotate_refresh_token(db: Session, raw_token: str) -> tuple[User, str, str]:
     """Refresh Token으로 새 Access+Refresh 쌍을 발급한다(POST /auth/refresh). 기존 토큰은
     즉시 revoke하고 회전(rotation)한다 — 탈취된 토큰이 재사용돼도 그 다음 재발급부터는
@@ -96,7 +103,7 @@ def rotate_refresh_token(db: Session, raw_token: str) -> tuple[User, str, str]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='세션이 만료되었습니다. 다시 로그인해 주세요.')
 
     user = db.get(User, old.user_id)
-    if user is None or user.status != 'active':
+    if user is None or user.status not in SIGN_IN_STATUSES:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='계정을 사용할 수 없습니다')
 
     new_raw, new_row = issue_refresh_token(db, user.user_id)
@@ -170,7 +177,7 @@ def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='세션이 유효하지 않습니다') from exc
 
     user = db.get(User, int(payload['sub']))
-    if user is None or user.status != 'active':
+    if user is None or user.status not in SIGN_IN_STATUSES:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='계정을 사용할 수 없습니다')
     return user
 

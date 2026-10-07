@@ -36,6 +36,7 @@ class TestConcurrencyLimit:
         orch.responses['active_work'] = _active(7)
         res = authed_client.post('/projects', data=_payload())
         assert res.status_code == 409
+        assert res.json()['code'] == 'E-RUN-CONCURRENT'
         detail = res.json()['detail']
         assert detail['blocked'] is True
         assert detail['active_project_id'] == 7  # 어느 프로젝트가 막았는지 나와야 함
@@ -84,6 +85,7 @@ class TestConcurrencyLimit:
             ok=False, code='E-RUN-CONCURRENT', active=_active(7))
         res = authed_client.post('/projects', data=_payload())
         assert res.status_code == 409 and res.json()['detail']['blocked'] is True
+        assert res.json()['code'] == 'E-RUN-CONCURRENT'
         assert db_session.query(Project).count() == 0
 
     def test_missing_required_inputs_is_422_and_project_is_removed(self, authed_client, db_session, orch):

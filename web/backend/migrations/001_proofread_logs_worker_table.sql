@@ -11,7 +11,8 @@
 --   3. model_version    새 컬럼 — 그 시도를 만든 검수 모델 이름
 --   4. 기존 행 채우기    project_id ← business_plans.project_id, model_version ← 그 plan의 마지막 verdicts.model_version
 --
--- 몇 번을 실행해도 안전하다(이미 바뀐 부분은 건너뛴다). MySQL 8 기준.
+-- 몇 번을 실행해도 안전하다(이미 바뀐 부분은 건너뛴다). 002를 적용한 뒤에 다시 실행해도 안전하다(plan_id · business_plans가 없으면
+-- 1 · 4를 건너뛴다 — 마이그레이션을 모두 다시 적용하는 배포 방식에서도 오류가 나지 않는다, SB-265 리허설로 확인). MySQL 8 기준.
 --
 -- 실행: mysql -u <계정> -p <DB 이름> < migrations/001_proofread_logs_worker_table.sql
 -- 순서: 웹 스키마(app_schema.sql)가 먼저 있어야 하고, 이 스크립트는 orch_ 테이블 적용(sql/orchestrator_schema.sql)보다
@@ -24,13 +25,19 @@ CREATE PROCEDURE _sb246_migrate_proofread_logs()
 BEGIN
     DECLARE v_fk VARCHAR(64);
     DECLARE v_done INT DEFAULT 0;
+    DECLARE v_has_plan INT DEFAULT 0;
     DECLARE c_fk CURSOR FOR
         SELECT CONSTRAINT_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'proofread_logs'
           AND COLUMN_NAME = 'plan_id' AND REFERENCED_TABLE_NAME = 'business_plans';
     DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_done = 1;
 
+    -- 002 뒤에 다시 실행하는 경우 plan_id · business_plans가 이미 없다 — 그 부분(1 · 4)은 건너뛴다
+    SELECT COUNT(*) INTO v_has_plan FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'proofread_logs' AND COLUMN_NAME = 'plan_id';
+
     -- 1. plan_id: 기존 외래 키(ON DELETE CASCADE)를 지우고 NULL 허용으로 바꾼 뒤 ON DELETE SET NULL로 다시 건다
+    IF v_has_plan > 0 THEN
     IF EXISTS (
         SELECT 1 FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
         JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE k
@@ -57,6 +64,7 @@ BEGIN
         ALTER TABLE proofread_logs
             ADD CONSTRAINT fk_proofread_logs_plan FOREIGN KEY (plan_id)
             REFERENCES business_plans(plan_id) ON DELETE SET NULL;
+    END IF;
     END IF;
 
     -- 2. project_id
@@ -91,19 +99,23 @@ BEGIN
     END IF;
 
     -- 4. 기존 행 채우기 (더미 시절 행 — 이미 값이 있으면 건드리지 않는다)
-    UPDATE proofread_logs pl
-        JOIN business_plans bp ON bp.plan_id = pl.plan_id
-        SET pl.project_id = bp.project_id
-        WHERE pl.project_id IS NULL;
-
-    IF EXISTS (
-        SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'verdicts'
+    IF v_has_plan > 0 AND EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'business_plans'
     ) THEN
         UPDATE proofread_logs pl
-            SET pl.model_version = (
-                SELECT v.model_version FROM verdicts v WHERE v.plan_id = pl.plan_id ORDER BY v.verdict_id DESC LIMIT 1
-            )
-            WHERE pl.model_version IS NULL AND pl.plan_id IS NOT NULL;
+            JOIN business_plans bp ON bp.plan_id = pl.plan_id
+            SET pl.project_id = bp.project_id
+            WHERE pl.project_id IS NULL;
+
+        IF EXISTS (
+            SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'verdicts'
+        ) THEN
+            UPDATE proofread_logs pl
+                SET pl.model_version = (
+                    SELECT v.model_version FROM verdicts v WHERE v.plan_id = pl.plan_id ORDER BY v.verdict_id DESC LIMIT 1
+                )
+                WHERE pl.model_version IS NULL AND pl.plan_id IS NOT NULL;
+        END IF;
     END IF;
 
     SELECT 'proofread_logs 마이그레이션 완료' AS result;

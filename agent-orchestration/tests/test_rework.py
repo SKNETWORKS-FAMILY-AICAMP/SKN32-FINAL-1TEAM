@@ -92,12 +92,13 @@ def test_onepage_rework_path_includes_wrap_merge(clock):
     assert cycle_steps(app, rid, last_cycle_id(app, rid)) == ["T-B2", "M-2", "G-04", "M-3", "T-V2", "G-02b"]
 
 
-def test_onepage_screen9_document_path_has_no_html_reflect(clock):
+def test_onepage_screen9_document_path_reflects_infographic_not_html(clock):
+    # 원페이지 계획서 재작성은 HTML(T-B1) 대신 인포그래픽(T-B2 → M-2)에 반영한다 (2026-09-29 결정)
     app = make_app(clock, StubScenario(category="원페이지"))
     rid = to_screen9(app)
     rework(app, clock, rid, "성장전략")
     assert cycle_steps(app, rid, last_cycle_id(app, rid)) == [
-        "T-W1", "T-W2", "T-W3", "M-1", "T-V1", "G-04", "M-3", "T-V2", "G-02b"]
+        "T-W1", "T-W2", "T-W3", "M-1", "T-V1", "T-B2", "M-2", "G-04", "M-3", "T-V2", "G-02b"]
 
 
 # ── 모으기 ─────────────────────────────────────────────
@@ -412,7 +413,7 @@ def test_screen6_improvement_kept_and_demo_scores(clock):
     app.orchestrator.advance(rid)
     app.orchestrator.decide(rid, 8, "진행")
     ctx = app.engine.open_context(app.store.load_run(rid))
-    assert ctx.get("scoreReport.overall").total == 79.0
+    assert ctx.get("scoreReport.overall").total == 79.5   # 대조 손잡이 7 → 7.5 (1.4판 몫, 기능 2개 중 1 인정)
     art = [o for o in orders(app, rid, "G-02b") if o.layer == "artifact"]
     app.orchestrator.decide(rid, 9, "재작성", art)                    # 기존 경로 (산출물층)
     clock.advance(seconds=WINDOW)
@@ -421,7 +422,7 @@ def test_screen6_improvement_kept_and_demo_scores(clock):
     assert cycle_steps(app, rid, last_cycle_id(app, rid)) == ["T-B1", "G-04", "M-3", "T-V2", "G-02b"]
     ctx = app.engine.open_context(app.store.load_run(rid))
     rep = ctx.get("scoreReport.overall")
-    assert rep.total == 86.0 and rep.carried_over_layer == "document" and rep.passed
+    assert rep.total == 86.2 and rep.carried_over_layer == "document" and rep.passed   # 대조 11.25 (1.4판 몫)
     assert [d.layer for d in rep.rework_diff] == ["artifact"]
     app.orchestrator.decide(rid, 9, "진행")
     app.orchestrator.advance(rid)

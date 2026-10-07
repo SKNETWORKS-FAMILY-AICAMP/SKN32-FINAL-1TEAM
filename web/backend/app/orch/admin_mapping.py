@@ -146,6 +146,8 @@ def execution_dict(e) -> dict:
         'rerun_type': 'initial' if e.trigger == INITIAL_TRIGGER else 'rerun',
         'trigger': e.trigger,
         'token_usage': _token_total(e.tokens),
+        # [SB-302] 이미지 호출 토큰은 글 토큰(token_usage · tokens)과 따로 센다. 이미지 호출이 없으면 합 0 · 칸은 None
+        'image_token_usage': (e.image_input_tokens or 0) + (e.image_output_tokens or 0),
         'status': exec_status_to_web(e.status),
         'status_ko': e.status,
         'error_kind': e.error_kind,
@@ -162,6 +164,7 @@ def execution_dict(e) -> dict:
             'input_tokens': e.tokens.input_tokens, 'cached_input_tokens': e.tokens.cached_input_tokens,
             'output_tokens': e.tokens.output_tokens, 'reasoning_tokens': e.tokens.reasoning_tokens,
         },
+        'image_tokens': {'input_tokens': e.image_input_tokens, 'output_tokens': e.image_output_tokens},
     }
 
 
@@ -221,6 +224,7 @@ def agent_ops_summary_out(summary) -> schemas.AgentOpsSummaryOut:
         initial_executions=sum(t.count for t in initial),
         rerun_executions=sum(t.count for t in rerun),
         total_tokens=summary.total_tokens,
+        total_image_tokens=summary.total_image_tokens,
         initial_avg_tokens=_avg_tokens(initial),
         rerun_avg_tokens=_avg_tokens(rerun),
         token_violation_rate=summary.proofread_reject_rate,

@@ -312,6 +312,29 @@ def main() -> int:
                 step('7. Task별 보기: 실행 기록 합이 표 전체와 같음', tasks and sum(t['total_executions'] for t in tasks) == total_exec,
                      f"Agent {len(tasks)}개 {[t['agent_name'] for t in tasks]} 합 {sum(t['total_executions'] for t in tasks)} / SQL {total_exec}")
 
+                # [SB-302] 이미지 토큰 — 스텁 Agent는 이미지를 그리지 않으므로 한 기록에 값을 넣어 읽기 경로를 확인하고 되돌린다.
+                # 오케스트레이터는 실행 기록을 record_json에서 읽고 image_*_tokens 칸은 통계용 사본이라 둘 다 바꾼다
+                target = rows[0]['execution_id']
+                with engine.begin() as conn:
+                    original = conn.execute(text('SELECT record_json FROM orch_executions WHERE execution_id=:e'), {'e': target}).scalar()
+                    record = json.loads(original)
+                    record['imageInputTokens'], record['imageOutputTokens'] = 120, 30  # 저장된 JSON은 camelCase
+                    conn.execute(text('UPDATE orch_executions SET image_input_tokens=120, image_output_tokens=30, record_json=:j '
+                                      'WHERE execution_id=:e'), {'j': json.dumps(record, ensure_ascii=False), 'e': target})
+                try:
+                    got = {r['execution_id']: r for r in j(client.get('/admin/agent-executions', params={'project_id': ids['done'], 'limit': 500}))}
+                    row = got.get(target, {})
+                    step('7. 이미지 토큰: 실행 기록에 글 토큰과 따로 나옴',
+                         row.get('image_token_usage') == 150 and row.get('image_tokens') == {'input_tokens': 120, 'output_tokens': 30},
+                         f"합 {row.get('image_token_usage')} 칸 {row.get('image_tokens')} 글 토큰 {row.get('token_usage')}")
+                    image_sql = scalar('SELECT COALESCE(SUM(COALESCE(image_input_tokens,0) + COALESCE(image_output_tokens,0)),0) FROM orch_executions')
+                    ops_image = j(client.get('/admin/agent-ops-summary')).get('total_image_tokens')
+                    step('7. 이미지 토큰: 운영 지표 합이 표를 센 값과 같음', ops_image == int(image_sql) == 150, f'API {ops_image} / SQL {image_sql}')
+                finally:
+                    with engine.begin() as conn:
+                        conn.execute(text('UPDATE orch_executions SET image_input_tokens=NULL, image_output_tokens=NULL, record_json=:j '
+                                          'WHERE execution_id=:e'), {'j': original, 'e': target})
+
                 # 8) 운영 지표
                 summary = j(client.get('/admin/ops-summary'))
                 counts: dict[str, int] = {}

@@ -5,11 +5,14 @@ from types import SimpleNamespace as NS
 from orch_fakes import (
     Card,
     Dumpable,
+    make_feature_match,
     make_gate,
     make_outputs,
     make_plan_doc,
+    make_proofread_screen,
     make_score_view,
     make_section,
+    make_sentence_change,
 )
 
 from app.orch import OrchError
@@ -35,12 +38,14 @@ def test_result_404_while_plan_is_not_written_yet(authed_client, orch):
     orch.responses['outputs'] = lambda p: make_outputs(step='계획서작성', progress='실행', plan_doc=None)
     r = _result(authed_client, pid)
     assert r.status_code == 404 and '계획서' in r.json()['detail']
+    assert r.json()['code'] == 'PLAN_NOT_READY'
 
 
 def test_result_409_when_run_failed_or_aborted(authed_client, orch):
     pid = _create(authed_client)
     orch.responses['outputs'] = OrchError('RUN_NOT_VIEWABLE', 'x')
-    assert _result(authed_client, pid).status_code == 409
+    r = _result(authed_client, pid)
+    assert r.status_code == 409 and r.json()['code'] == 'RUN_NOT_VIEWABLE'
 
 
 def test_result_requires_ownership(login_as, orch):
@@ -100,8 +105,8 @@ def _full_outputs(category='웹개발', **overrides):
               NS(no=2, name='보안', weight=10.0, passed=False, detail='키가 노출돼요')]
     report = make_score_view(total=82.0, threshold=80.0, passed=True)
     report.artifact_score.code_check = NS(total=5.0, checks=checks)
-    report.artifact_score.feature_match = NS(
-        score=12.0, missing_features=['결제'], extra_features=[], findings=['로그인 일부 누락'], judged_by='AI')
+    report.artifact_score.feature_match = make_feature_match(
+        score=12.0, missing_features=['결제'], findings=['로그인 일부 누락'], judged_by='AI')
     base = dict(
         step='결과물', progress='완료', category=category, plan_doc=make_plan_doc(),
         doc_score=NS(total=52.0, items=[]), document_score_report=make_score_view(with_artifact=False),
@@ -128,6 +133,7 @@ def test_result_maps_verdict_artifact_and_bundle_usages(authed_client, orch):
     # 웹 정책 행이 없으면 기본 만점(문서 70 · 코드 15 · 대조 15)
     assert (verdict['doc_max_score'], verdict['code_max_score'], verdict['plan_match_max_score']) == (70.0, 15.0, 15.0)
     assert verdict['model_version'] is None and verdict['first_pass_passed'] is None
+    assert verdict['plan_match_withheld'] is False
 
     artifact = body['plan']['artifacts'][0]
     assert artifact['category'] == 'webdev'
@@ -166,6 +172,7 @@ def test_result_proofread_attempts_become_logs_grouped_by_sentence(authed_client
     plan_doc = make_plan_doc([make_section('1-1', '문제', '원문 문장')])
     plan_doc.sections[0].sentences[0].sentence_id = 's1'
     orch.responses['outputs'] = lambda p: _full_outputs(plan_doc=plan_doc, sentence_results=results)
+    orch.responses['screen'] = lambda p, n: make_proofread_screen([make_sentence_change('s1', '원문 문장')])
 
     logs = _result(authed_client, pid).json()['plan']['proofread_logs']
 
@@ -174,3 +181,88 @@ def test_result_proofread_attempts_become_logs_grouped_by_sentence(authed_client
     assert logs[0]['violation_type'] == '수치·금액'
     assert logs[0]['violation_note'] == '빠짐: 1억원 / 바뀜: A / 섞임: B'
     assert logs[1]['violation_note'] is None
+
+
+# ── [SB-301] 계획서 대조 보류 — "대조 불가" ─────────────────────────────────────────────────
+def _withheld_outputs():
+    outputs = _full_outputs()
+    withheld = make_feature_match(
+        score=0.0, findings=['기능 목록이 비어 있어요'], judged_by='규칙', withheld=True, withheld_reason='E-V2-NOFEATURE')
+    outputs.overall_score_report.artifact_score.feature_match = withheld
+    outputs.feature_match = withheld
+    return outputs
+
+
+def test_result_marks_withheld_plan_match(authed_client, orch):
+    """대조가 보류되면 점수는 0점으로 합산되어 오지만 화면은 0점이 아니라 '대조 불가'로 보여 줘야 한다."""
+    pid = _create(authed_client)
+    orch.responses['outputs'] = lambda p: _withheld_outputs()
+    body = _result(authed_client, pid).json()
+
+    verdict = body['verdict']
+    assert verdict['plan_match_withheld'] is True
+    assert verdict['plan_match_score'] == 0.0 and verdict['plan_match_max_score'] == 15.0
+    assert verdict['total_score'] == 82.0  # 총점은 오케스트레이터 값 그대로(웹이 다시 계산하지 않는다)
+    reasons = {r['item_code']: r for r in body['plan']['artifacts'][0]['score_reasons']}
+    assert '대조 불가' in reasons['FEATURE-MATCH']['reason_text']
+    assert reasons['FEATURE-MATCH']['score'] == 0.0 and reasons['FEATURE-MATCH']['max_score'] == 15.0
+    assert 'E-V2-NOFEATURE' not in str(body)  # 보류 사유 코드는 사용자에게 내지 않는다
+
+
+def test_result_without_withheld_keeps_findings_text(authed_client, orch):
+    pid = _create(authed_client)
+    orch.responses['outputs'] = lambda p: _full_outputs()
+    body = _result(authed_client, pid).json()
+    reasons = {r['item_code']: r for r in body['plan']['artifacts'][0]['score_reasons']}
+    assert '로그인 일부 누락' in reasons['FEATURE-MATCH']['reason_text']
+    assert '대조 불가' not in reasons['FEATURE-MATCH']['reason_text']
+
+
+# ── [SB-297] 검수 전 원문 ─────────────────────────────────────────────────────────────────
+def _reviewed_outputs(plan_text: str):
+    """표현 검수가 끝난 결과 — 현재 계획서(planDoc)의 문장은 채택된 검수 결과 문장이다."""
+    ok = NS(passed=True, missing_tokens=[], altered_tokens=[], contaminated_tokens=[])
+    results = [NS(sentence_id='s1', adopted=True, revised=None, kept_reason=None, final_redo_count=0, token_check=ok, attempts=[
+        NS(attempt_no=1, text='검수 결과 문장', adopted=True, token_check=ok, violation_type=None)])]
+    plan_doc = make_plan_doc([make_section('1-1', '문제', plan_text)])
+    plan_doc.sections[0].sentences[0].sentence_id = 's1'
+    return _full_outputs(plan_doc=plan_doc, sentence_results=results)
+
+
+def test_result_original_text_comes_from_screen_10_not_the_revised_plan(authed_client, orch):
+    """검수가 끝나면 계획서 문장이 검수 결과 문장으로 바뀐다 — 검수 전 원문은 화면 10의 before에서 읽어야 한다."""
+    pid = _create(authed_client)
+    orch.responses['outputs'] = lambda p: _reviewed_outputs('검수 결과 문장')
+    orch.responses['screen'] = lambda p, n: make_proofread_screen([make_sentence_change('s1', '검수 전 원문 문장', '검수 결과 문장', True)])
+
+    logs = _result(authed_client, pid).json()['plan']['proofread_logs']
+
+    assert [(log['original_text'], log['corrected_text']) for log in logs] == [('검수 전 원문 문장', '검수 결과 문장')]
+    assert [args for name, args, _ in orch.calls if name == 'screen'] == [(pid, 10)]
+
+
+def test_result_original_text_falls_back_to_plan_while_screen_10_is_closed(authed_client, orch):
+    """화면 10이 아직 열리지 않았으면(검수 중) 계획서가 바뀌기 전이라 계획서 문장이 원문이다."""
+    pid = _create(authed_client)
+    orch.responses['outputs'] = lambda p: _reviewed_outputs('아직 바뀌지 않은 원문')
+    orch.responses['screen'] = OrchError('SCREEN_NOT_READY', '화면 10')
+
+    logs = _result(authed_client, pid).json()['plan']['proofread_logs']
+
+    assert [log['original_text'] for log in logs] == ['아직 바뀌지 않은 원문']
+
+
+def test_result_does_not_open_screen_10_without_proofread_attempts(authed_client, orch):
+    pid = _create(authed_client)
+    orch.responses['outputs'] = lambda p: _full_outputs()
+
+    assert _result(authed_client, pid).status_code == 200
+    assert [name for name, _, _ in orch.calls if name == 'screen'] == []
+
+
+def test_result_screen_10_errors_other_than_not_ready_are_not_hidden(authed_client, orch):
+    pid = _create(authed_client)
+    orch.responses['outputs'] = lambda p: _reviewed_outputs('x')
+    orch.responses['screen'] = OrchError('RUN_NOT_FOUND', 'x')
+
+    assert _result(authed_client, pid).status_code == 404

@@ -5,6 +5,7 @@
 """
 from app import pipeline_stages as ps
 from app import schemas
+from app.artifact_store import artifact_url
 
 # 3.1 단계 — 기준 문서 단계 ↔ 웹 stage. 공고선택 · 자격확인은 웹 stage가 없다(NULL).
 STEP_TO_STAGE: dict[str, str | None] = {
@@ -344,6 +345,9 @@ def plan_score_reasons(outputs) -> list[schemas.PlanScoreReasonOut]:
     ]
 
 
+WITHHELD_REASON_TEXT = '계획서와 구현 기능을 대조하지 못했습니다(대조 불가). 이 항목은 0점으로 합산됩니다.'
+
+
 def artifact_score_reasons(outputs) -> list[schemas.ArtifactScoreReasonOut]:
     """산출물층 — 코드 점검은 항목마다 'CHECK-이름', 기능 대조는 하나로 'FEATURE-MATCH'(접두어가 프론트가 층을 가르는 기준)."""
     reasons: list[schemas.ArtifactScoreReasonOut] = []
@@ -355,13 +359,18 @@ def artifact_score_reasons(outputs) -> list[schemas.ArtifactScoreReasonOut]:
     if outputs.feature_match is not None:
         fm = outputs.feature_match
         notes = [*fm.findings, *[f'누락 기능: {m}' for m in fm.missing_features]]
+        if fm.withheld:  # 판정 보류 — 점수는 0점으로 합산되고 화면은 '대조 불가'로 보인다(SB-301)
+            reason_text = WITHHELD_REASON_TEXT
+        else:
+            reason_text = ' / '.join(notes) or '계획서와 구현 기능이 맞습니다.'
         reasons.append(schemas.ArtifactScoreReasonOut(
-            reason_text=' / '.join(notes) or '계획서와 구현 기능이 맞습니다.', item_code='FEATURE-MATCH',
+            reason_text=reason_text, item_code='FEATURE-MATCH',
             display_name='계획서 대조', score=fm.score, max_score=FEATURE_MATCH_MAX))
     return reasons
 
 
-def artifact_out(outputs) -> schemas.ArtifactOut | None:
+def artifact_out(project_id: int, outputs) -> schemas.ArtifactOut | None:
+    """산출물. 파일 경로는 웹 주소로 바꿔 준다(SB-293) — 원페이지는 두 경로가 같은 onepage.svg라 인포그래픽만 보여 주고 실행 경로는 숨긴다."""
     if outputs.prototype is None and outputs.infographic is None:
         return None
     category = CATEGORY_TO_WEB.get(outputs.category, outputs.category or 'webdev')
@@ -369,9 +378,10 @@ def artifact_out(outputs) -> schemas.ArtifactOut | None:
     artifact_score = report.artifact_score.total if report is not None and report.artifact_score is not None else None
     return schemas.ArtifactOut(
         category=category,
-        infographic_path=outputs.infographic.image_path if outputs.infographic is not None else '',
+        infographic_path=(artifact_url(project_id, outputs.infographic.image_path)
+                          if outputs.infographic is not None else ''),
         # 원페이지는 실행 파일이 없다
-        executable_path=(outputs.prototype.entry_file_path
+        executable_path=(artifact_url(project_id, outputs.prototype.entry_file_path)
                          if outputs.prototype is not None and category != 'onepage' else None),
         artifact_score=artifact_score,
         score_reasons=artifact_score_reasons(outputs),
@@ -393,6 +403,7 @@ def verdict_out(outputs, policy) -> schemas.VerdictOut | None:
         code_max_score=float(policy.code_weight) if policy is not None else DEFAULT_CODE_MAX,
         plan_match_score=artifact.feature_match.score if artifact is not None else None,
         plan_match_max_score=float(policy.plan_weight) if policy is not None else DEFAULT_PLAN_MAX,
+        plan_match_withheld=bool(artifact is not None and artifact.feature_match.withheld),
         total_score=report.total,
         pass_threshold=report.threshold,
     )
@@ -418,11 +429,16 @@ def _violation_note(token_check) -> str | None:
     return ' / '.join(parts) or None
 
 
-def proofread_logs_out(outputs) -> list[schemas.ProofreadLogOut]:
-    """문장별 시도 기록(모든 계정) → 시도마다 한 줄. 원문은 계획서의 같은 sentenceId 문장."""
-    originals = {}
+def proofread_logs_out(outputs, originals: dict[str, str] | None = None) -> list[schemas.ProofreadLogOut]:
+    """문장별 시도 기록(모든 계정) → 시도마다 한 줄.
+
+    검수 전 원문(originals: sentenceId → 문장)은 화면 10이 주는 값이다 — 표현 검수가 끝나면 현재 계획서(planDoc)의 문장이
+    채택된 검수 결과 문장으로 바뀌므로 계획서에서 읽으면 "검수 전"이 아니게 된다(SB-297). 화면 10을 읽을 수 없을 때(originals 없음)는
+    검수가 아직 계획서를 바꾸지 않은 때이므로 현재 계획서의 같은 sentenceId 문장을 쓴다."""
+    fallback = {}
     if outputs.plan_doc is not None:
-        originals = {s.sentence_id: s.text for sec in outputs.plan_doc.sections for s in sec.sentences}
+        fallback = {s.sentence_id: s.text for sec in outputs.plan_doc.sections for s in sec.sentences}
+    originals = {**fallback, **(originals or {})}
     logs: list[schemas.ProofreadLogOut] = []
     for result in outputs.sentence_results:
         original = originals.get(result.sentence_id, '')
@@ -442,8 +458,9 @@ def format_findings_out(outputs) -> list[schemas.FormatFindingOut]:
 
 
 # ── GET /result ───────────────────────────────────────────────────────────────────────
-def result_out(project_id: int, outputs, policy) -> schemas.DemoGenerateResponse:
-    """outputs(project_id) → 결과 응답. 계획서(planDoc)가 아직 없으면 호출한 쪽이 404로 답한다(plan_doc 확인 뒤 부른다)."""
+def result_out(project_id: int, outputs, policy, originals: dict[str, str] | None = None) -> schemas.DemoGenerateResponse:
+    """outputs(project_id) → 결과 응답. 계획서(planDoc)가 아직 없으면 호출한 쪽이 404로 답한다(plan_doc 확인 뒤 부른다).
+    originals: 검수 전 원문(화면 10의 sentences[].before) — 검수 기록이 있을 때 호출한 쪽이 읽어 넘긴다."""
     plan_doc = outputs.plan_doc
     report = outputs.document_score_report
     plan = schemas.BusinessPlanOut(
@@ -451,9 +468,9 @@ def result_out(project_id: int, outputs, policy) -> schemas.DemoGenerateResponse
         threshold=report.threshold if report is not None else None,
         sections=plan_sections_out(plan_doc),
         score_reasons=plan_score_reasons(outputs),
-        artifacts=[a for a in [artifact_out(outputs)] if a is not None],
+        artifacts=[a for a in [artifact_out(project_id, outputs)] if a is not None],
         format_findings=format_findings_out(outputs),
-        proofread_logs=proofread_logs_out(outputs),
+        proofread_logs=proofread_logs_out(outputs, originals),
         feature_list=list(plan_doc.feature_list),
         charts=[c.model_dump(mode='json') for c in plan_doc.charts],
         tables=[t.model_dump(mode='json') for t in plan_doc.tables],
@@ -489,7 +506,7 @@ def _plan_section_out(section) -> schemas.PlanSectionOut:
     return schemas.PlanSectionOut(tag=section.section_code, title=section.title, body=section_body(section))
 
 
-def rework_changed(result) -> dict:
+def rework_changed(project_id: int, result) -> dict:
     """예전 retry-task 응답의 changed 모양 — 화면이 전후 비교에 쓰던 값."""
     changed: dict = {}
     if result.plan_before is not None and result.plan_after is not None:
@@ -502,7 +519,7 @@ def rework_changed(result) -> dict:
         }
     for f in result.files:
         key = 'executable_path' if f.artifact == 'prototype' else 'infographic_path'
-        changed[key] = {'before': f.before_path, 'after': f.after_path}
+        changed[key] = {'before': artifact_url(project_id, f.before_path), 'after': artifact_url(project_id, f.after_path)}
     if result.kept is not None:
         changed['version_kept'] = 'new' if result.kept == '후' else 'previous'
         changed['version_comparison'] = {'before_score': result.before_score, 'after_score': result.after_score}
@@ -527,9 +544,10 @@ def rework_result_out(project_id: int, result) -> schemas.ReworkResultOut:
         plan_before=[_plan_section_out(s) for s in result.plan_before] if result.plan_before is not None else None,
         plan_after=[_plan_section_out(s) for s in result.plan_after] if result.plan_after is not None else None,
         files=[schemas.ReworkFileChangeOut(
-            artifact=f.artifact, before_path=f.before_path, after_path=f.after_path) for f in result.files],
+            artifact=f.artifact, before_path=artifact_url(project_id, f.before_path),
+            after_path=artifact_url(project_id, f.after_path)) for f in result.files],
         rolled_back=result.rolled_back,
         refunded_bundles=[web_bundle_id_of(b) for b in result.refunded_bundles],
         notice_code=result.notice_code,
-        changed=rework_changed(result),
+        changed=rework_changed(project_id, result),
     )

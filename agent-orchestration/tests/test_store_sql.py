@@ -78,7 +78,7 @@ def test_settings_from_verification_policies(web_engine):
     assert (s.scoring.doc_layer_max, s.scoring.artifact_layer_max, s.scoring.threshold) == (60, 40, 75)
     assert (s.redo.redo_count, s.rework.per_bundle, s.redo.proofread_redo_count) == (3, 2, 1)
     assert s.scoring.deviation_cap == 4.5
-    assert s.retry.retry_count == 5 and s.agents["조율"].model == "gpt-6-luna"      # 나머지는 코드 기본값
+    assert s.retry.retry_count == 5 and s.tasks["T-C1"].model == "gpt-6-luna"      # 나머지는 코드 기본값
     assert provider.snapshot()["scoring"]["deviationCap"] == 4.5
 
 

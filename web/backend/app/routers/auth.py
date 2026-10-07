@@ -19,6 +19,7 @@ import datetime
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
+from app import artifact_store
 from app.database import get_db
 from app.models import (
     Company,
@@ -49,7 +50,9 @@ from app.schemas import (
     UserOut,
 )
 from app.security import (
+    ACCOUNT_WITHDRAWING,
     REFRESH_COOKIE_NAME,
+    SIGN_IN_STATUSES,
     clear_auth_cookies,
     get_current_user,
     issue_access_token,
@@ -97,7 +100,7 @@ def login_with_google(body: GoogleLoginRequest, response: Response, db: Session 
         db.commit()
         db.refresh(user)
     else:
-        if user.status != 'active':
+        if user.status not in SIGN_IN_STATUSES:
             raise HTTPException(status_code=403, detail='정지되었거나 사용할 수 없는 계정입니다')
         # 기존 유저는 body의 동의값을 더 이상 반영하지 않는다(모듈 docstring 참고) —
         # 이미 저장된 값을 그대로 유지한다. 바꾸려면 PATCH /auth/consent.
@@ -248,9 +251,19 @@ def delete_account(
     쿠키는 주입받은 response에 직접 지워야 한다 — 새 Response 객체를 만들어 반환하면
     FastAPI가 그 객체를 쓰지 않고 이 쿠키 삭제가 사라진다(logout()과 같은 패턴).
 
-    [SB-244] 오케스트레이터 데이터를 먼저 지운다(_delete_orchestrator_data). BUSY면 409로 멈추고 웹 행은 그대로다."""
+    [SB-244] 오케스트레이터 데이터를 먼저 지운다(_delete_orchestrator_data). BUSY면 409로 멈추고 웹 행은 그대로다.
+
+    [SB-298] 지우기 전에 계정을 'withdrawing'으로 표시한다 — 탈퇴 처리 중에는 그 계정으로 request_start를 부르지 않는다(명세 7.3).
+    BUSY로 멈춘 뒤 다시 부르기까지의 사이에도 표시가 남아 새 프로젝트 시작이 막힌다(탈퇴를 마치면 계정 행과 함께 사라진다).
+
+    [SB-294] 웹 행까지 지운 다음 그 계정 모든 프로젝트의 산출물 파일 폴더를 지운다(보관된 프로젝트 포함)."""
+    if current_user.status != ACCOUNT_WITHDRAWING:
+        current_user.status = ACCOUNT_WITHDRAWING
+        db.commit()
+    project_ids = user_project_ids(db, current_user.user_id)
     _delete_orchestrator_data(db, gateway, current_user)
     _delete_account_cascade(db, current_user)
+    artifact_store.delete_projects_artifacts(project_ids)  # [SB-294] 계정 행까지 지운 뒤 — 실패해도 고아 청소가 치운다
     clear_auth_cookies(response)
 
 

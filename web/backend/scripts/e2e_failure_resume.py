@@ -15,6 +15,8 @@ e2e_worker_flow.py와 달리 워커를 따로 띄우지 않는다(띄워 둔 워
   3. 일시 오류 → 재개 → 성공   계획서 작성(T-W1)이 시간 초과 3번(=재시도 소진) → '재개대기'(resume_count 1 · next_retry_at) → 재개 → 화면 6
   4. 재개 상한 초과 → 실패   시간 초과가 계속 → 재개 2번 뒤 '실패' → 관리자 알림 1건 · 사용자 알림 · 결과 409 · 새 프로젝트 가능
   5. 영구 오류 → 즉시 실패   잘못된 요청(400)이 재시도를 다 쓴 뒤 → 재개 없이 '실패' → 관리자 알림(원인 분류가 '일시'가 아님)
+  6. 재작성 실패 → 되돌림   (SB-277) 화면 6에서 재작성이 영구 오류 · 재개 상한 초과로 실패 → 실행은 실패가 아님 · 계획서 그대로 ·
+                          기회 돌려줌 · 실패 알림(재작성) · E-RUN-ROLLBACK, 기회가 돌아와 다시 재작성하면 성공
 """
 import argparse
 import json
@@ -348,6 +350,100 @@ def main() -> int:
                 alerts = alerts_of(pid)
                 step('5. 관리자 알림 1건(원인이 \'일시\'가 아님)', len(alerts) == 1 and alerts[0]['last_error_kind'] != '일시', f'{alerts}')
                 step('5. 사용자 알림에 실패 1건', notification_kinds(pid).count('실패') == 1, f'알림 {notification_kinds(pid)}')
+
+                # 6) 재작성 실패 → 이전 결과로 되돌림 (SB-277 · 기능정의서 E-RUN-ROLLBACK · 기획서 4-7 E12)
+                reset_faults()
+                pid, cands = new_project_with_candidates()
+                select_eligible(pid, cands)
+                client.post(f'/projects/{pid}/plan/start')
+                body, _seen = watch_plan(pid, until=lambda b: b.get('stage') == 'plan_review_pending' and b.get('match_status') == 'user_waiting')
+                step('6. 재작성 시험용 프로젝트가 화면 6(문서 평가 확인)에 도착', body.get('screen') == 6, f"screen={body.get('screen')}")
+
+                def plan_snapshot():
+                    result = j(client.get(f'/projects/{pid}/result'))
+                    sections = {sec['tag']: sec['body'] for sec in (result.get('plan') or {}).get('sections', [])}
+                    usage = {u['bundle_id']: (u['used'], u['remaining']) for u in result.get('bundle_usages', [])}
+                    return sections, usage
+
+                def rework(bundle: str):
+                    res = client.post(f'/projects/{pid}/retry-task', json={'task_key': 'writing', 'bundle_id': bundle})
+                    return res, j(res)
+
+                def watch_rework(cycle_id: str):
+                    """재작성이 끝날 때까지 /status를 자주 읽으며 관찰한 값을 모은다(재개대기 · 재작성 화면) — 끝나면 재작성 결과를 돌려준다."""
+                    seen = {'match': [], 'rework_screens': set()}
+                    deadline = time.time() + args.wait_sec
+                    while time.time() < deadline:
+                        st = status(pid)
+                        if not seen['match'] or seen['match'][-1] != st.get('match_status'):
+                            seen['match'].append(st.get('match_status'))
+                        if st.get('rework_screen') is not None:
+                            seen['rework_screens'].add(st['rework_screen'])
+                        rr = j(client.get(f'/projects/{pid}/rework-result'))
+                        if rr.get('cycle_id') == cycle_id and rr.get('status') in ('완료', '실패'):
+                            return rr, seen
+                        time.sleep(0.3)
+                    raise Abort(f'6. 재작성 결과: 시간 안에 끝나지 않음(관찰 {seen["match"]})')
+
+                def failure_notifications():
+                    rows = j(client.get('/projects/notifications'))
+                    return [n for n in (rows if isinstance(rows, list) else []) if n['project_id'] == pid and n['kind'] == '실패']
+
+                def rolled_back_checks(tag: str, bundle: str, rr: dict, before: tuple, notifications_before: int):
+                    sections_before, usage_before = before
+                    step(f'{tag}: 재작성 결과 — 실패 · 되돌림 · 기회 돌려줌 · E-RUN-ROLLBACK',
+                         rr.get('status') == '실패' and rr.get('rolled_back') is True and bundle in (rr.get('refunded_bundles') or [])
+                         and rr.get('notice_code') == 'E-RUN-ROLLBACK',
+                         f"status={rr.get('status')} rolled_back={rr.get('rolled_back')} 환불={rr.get('refunded_bundles')} notice={rr.get('notice_code')}")
+                    st = status(pid)
+                    step(f'{tag}: 실행 전체는 실패로 보지 않음(화면 6 그대로 · 재작성 표시 없음)',
+                         st.get('match_status') == 'user_waiting' and st.get('stage') == 'plan_review_pending'
+                         and st.get('rework_screen') is None and st.get('collecting') is False and st.get('failure_reason') is None,
+                         f"match={st.get('match_status')} stage={st.get('stage')} rework_screen={st.get('rework_screen')} "
+                         f"collecting={st.get('collecting')}")
+                    sections_after, usage_after = plan_snapshot()
+                    step(f'{tag}: 결과를 볼 수 있고 계획서가 요청 전과 같음(/result 200)',
+                         bool(sections_after) and sections_after == sections_before,
+                         f'섹션 {len(sections_after)}개, 같음={sections_after == sections_before}')
+                    step(f'{tag}: {bundle} 재작성 기회가 돌아옴(사용 · 남음이 요청 전과 같음)',
+                         usage_after.get(bundle) == usage_before.get(bundle), f'전 {usage_before.get(bundle)} 후 {usage_after.get(bundle)}')
+                    notes = failure_notifications()
+                    step(f"{tag}: 사용자 알림에 '실패'(재작성) 1건 추가",
+                         len(notes) == notifications_before + 1 and bool(notes) and notes[0].get('failure_scope') == '재작성',
+                         f"실패 알림 {notifications_before}→{len(notes)}건 범위={[n.get('failure_scope') for n in notes]}")
+                    step(f'{tag}: 진행 중인 작업은 그대로(실행이 끝나지 않음)',
+                         gateway.active_work(str(me['id'])) is not None, f'active_work={gateway.active_work(str(me["id"]))}')
+
+                # 6a) 영구 오류(잘못된 요청)로 재작성 실패
+                snapshot = plan_snapshot()
+                notes_before = len(failure_notifications())
+                llm.plan('T-W1', ['bad_request'] * TRIES_PER_EXHAUST)
+                res, acc = rework(ps.BUNDLE_PSST_PROBLEM)
+                step('6a. 재작성 요청(문제인식, 잘못된 요청 오류 주입)', res.status_code == 200, f"{res.status_code} cycle={acc.get('cycle_id')}")
+                rr, seen = watch_rework(acc.get('cycle_id'))
+                rolled_back_checks('6a', ps.BUNDLE_PSST_PROBLEM, rr, snapshot, notes_before)
+                step('6a. 영구 오류라 재개 없이 끝남', ps.GENERATION_STATUS_WAITING_RESUME not in seen['match'], f"관찰 {seen['match']}")
+
+                # 6b) 기회를 돌려받았으니 같은 묶음을 다시 재작성하면 성공한다
+                reset_faults()
+                res, acc = rework(ps.BUNDLE_PSST_PROBLEM)
+                step('6b. 같은 묶음 재작성 다시 요청', res.status_code == 200, f"{res.status_code} {acc.get('code') or ''}")
+                rr, seen = watch_rework(acc.get('cycle_id'))
+                _sections, usage = plan_snapshot()
+                step('6b. 이번엔 성공 — 기회를 한 번 씀', rr.get('status') == '완료' and usage.get(ps.BUNDLE_PSST_PROBLEM, (None,))[0] == 1,
+                     f"status={rr.get('status')} 문제인식 (사용, 남음)={usage.get(ps.BUNDLE_PSST_PROBLEM)}")
+
+                # 6c) 일시 오류가 재개 상한을 넘겨 재작성 실패 — 재개대기가 화면 6의 재작성으로 보이다가 되돌린다
+                snapshot = plan_snapshot()
+                notes_before = len(failure_notifications())
+                llm.plan('T-W1', ['timeout'] * (TRIES_PER_EXHAUST * (MAX_RESUME + 1)))
+                res, acc = rework(ps.BUNDLE_PSST_SOLUTION)
+                step('6c. 재작성 요청(실현가능성, 시간 초과를 계속 주입)', res.status_code == 200, f"{res.status_code} cycle={acc.get('cycle_id')}")
+                rr, seen = watch_rework(acc.get('cycle_id'))
+                step('6c. 재개대기를 거침(재개 상한까지 기다림)', ps.GENERATION_STATUS_WAITING_RESUME in seen['match'], f"관찰 {seen['match']}")
+                step('6c. 재작성 중에는 /status가 화면 6의 재작성으로 알림', seen['rework_screens'] == {6}, f"rework_screen 관찰 {sorted(seen['rework_screens'])}")
+                rolled_back_checks('6c', ps.BUNDLE_PSST_SOLUTION, rr, snapshot, notes_before)
+                release(pid)
             except Abort as exc:
                 step('중단', False, str(exc))
             except Exception as exc:  # noqa: BLE001 - 점검 도구라 어떤 오류든 기록한다

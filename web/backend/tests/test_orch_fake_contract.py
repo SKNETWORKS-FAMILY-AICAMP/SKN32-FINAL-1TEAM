@@ -32,11 +32,19 @@ def test_fake_gate_screen_fields_match_real():
     assert set(vars(orch_fakes.make_gate_screen())) == set(reads.GateScreen.model_fields)
 
 
+def test_fake_proofread_screen_fields_match_real():
+    reads = pytest.importorskip('sbrain.flow.reads')
+    assert set(vars(orch_fakes.make_proofread_screen())) == set(reads.ProofreadScreen.model_fields)
+    assert set(vars(orch_fakes.make_sentence_change('s1', 'x'))) == set(reads.SentenceChange.model_fields)
+
+
 def test_fake_gate_and_score_view_fields_match_real():
     domain = pytest.importorskip('sbrain.models.domain')
     reads = pytest.importorskip('sbrain.flow.reads')
     assert set(vars(orch_fakes.make_gate())) == set(domain.GateResult.model_fields)
     assert set(vars(orch_fakes.make_score_view())) == set(reads.ScoreView.model_fields)
+    scoring = pytest.importorskip('sbrain.models.scoring')
+    assert set(vars(orch_fakes.make_feature_match())) == set(scoring.FeatureMatchResult.model_fields)
     assert set(vars(orch_fakes.make_plan_doc())) == set(domain.PlanDoc.model_fields)
     assert set(vars(orch_fakes.make_section('1-1', 't', 'x'))) == set(domain.PlanSection.model_fields)
     assert set(vars(orch_fakes.make_sentence(1, 'x'))) == set(domain.Sentence.model_fields)

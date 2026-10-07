@@ -2,9 +2,9 @@
 
 | 함수 | 쓰는 곳 | 저장소 · 입력 · 설정 | Agent |
 |---|---|---|---|
-| build_stub_app | 테스트 · 시연 | 메모리(또는 주어진 저장소) · 기본 설정 | 전부 스텁, 가짜 LLM, 지시문 다시 쓰기 없음(덧붙이기만) |
-| build_app | 워커 (sbrain/worker.py) | 공유 MySQL — SqlStore · SqlProjectInputSource · DbSettingsProvider | 조율 T-C1 · T-C3 실구현과 재작성 · 재수행 지시문 다시 쓰기(OpenAI), T-C2 · G-01은 SBRAIN_NOTICE_API_URL이 있으면 공고 서버 연결(실제 모드) · 없으면 스텁, 나머지 스텁 |
-| build_web | 웹 서버 | 공유 MySQL — 같음 | 단계를 돌지 않는다 (명령 · 조회만). 공고 서버를 부르지 않는다 |
+| build_stub_app | 테스트 · 시연 | 메모리(또는 주어진 저장소) · 기본 설정 | 전부 스텁, 가짜 LLM · 가짜 이미지 호출처, 지시문 다시 쓰기 없음(덧붙이기만) |
+| build_app | 워커 (sbrain/worker.py) | 공유 MySQL — SqlStore · SqlProjectInputSource · DbSettingsProvider | 조율 T-C1 · T-C3 실구현과 재작성 · 재수행 지시문 다시 쓰기(OpenAI), T-C2 · G-01은 SBRAIN_NOTICE_API_URL이 있으면 공고 서버 연결(실제 모드) · 없으면 스텁, 나머지 스텁. 이미지 호출도 구현이 들어온 Task만 실제(OpenAI) |
+| build_web | 웹 서버 | 공유 MySQL — 같음 | 단계를 돌지 않는다 (명령 · 조회만). 공고 서버 · 이미지 호출처를 부르지 않는다 |
 
 실제 Agent 구현이 나오면 registry.bind(task_id, fn)로 스텁을 교체한다.
 """
@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Callable
 
 from .agents.notice import NoticeClient, Transport, bind_notice
-from .agents.stubs import FakeLLM, StubScenario, bind_stubs, make_constants
+from .agents.stubs import FakeImage, FakeLLM, StubScenario, bind_stubs, make_constants
 from .agents.supervisor import IMPLEMENTED_TASKS, bind_supervisor
 from .agents.supervisor.plan import PURPOSE_REWRITE
 from .agents.supervisor.rewrite import rewrite_guidance
@@ -28,7 +28,7 @@ from .models.clock import utc_clock, utc_now
 from .orchestrator import ArtifactTypes, Engine, MemoryStore, Settings, SettingsProvider
 from .orchestrator.registry import TaskRegistry
 from .orchestrator.store import Store
-from .orchestrator.tools import LLMProvider, LLMRequest
+from .orchestrator.tools import ImageProvider, ImageRequest, LLMProvider, LLMRequest
 
 
 @dataclass
@@ -40,6 +40,7 @@ class App:
     llm: FakeLLM
     scenario: StubScenario
     settings: SettingsProvider
+    image: FakeImage | None = None   # 가짜 이미지 호출처 (확장) — 웹 조립은 없다
 
 
 class TaskRoutedProvider:
@@ -64,6 +65,23 @@ class TaskRoutedProvider:
 
     def complete(self, request: LLMRequest):
         return (self.real if self.is_real(request) else self.fake).complete(request)
+
+
+class TaskRoutedImageProvider:
+    """이미지 호출도 구현이 들어온 Task만 실제 호출처로, 나머지(스텁 Task)는 가짜로 보낸다 (확장, 잠정).
+
+    호출 기록의 task_id가 real_tasks에 있으면 실제. 지시문 다시 쓰기는 글 호출이라 이미지 호출에는 그 길이 없다.
+    지금 T-B2는 스텁이라 이미지 호출이 실제로 나가지 않는다 — T-B2 구현이 real_tasks에 들어오면 나간다.
+    """
+
+    def __init__(self, real: ImageProvider, fake: ImageProvider, real_tasks: frozenset[str]) -> None:
+        self.real, self.fake, self.real_tasks = real, fake, real_tasks
+
+    def is_real(self, request: ImageRequest) -> bool:
+        return request.metadata.get("task_id") in self.real_tasks
+
+    def create(self, request: ImageRequest):
+        return (self.real if self.is_real(request) else self.fake).create(request)
 
 
 class NoProvider:
@@ -102,6 +120,7 @@ def build_app(
     llm: LLMProvider | None = None,
     notice_api_url: str | None = None,
     notice_transport: Transport | None = None,
+    image: ImageProvider | None = None,
 ) -> App:
     """워커 조립 — 공유 MySQL(SqlStore · SqlProjectInputSource · DbSettingsProvider), 조율 T-C1 · T-C3 실구현, OpenAI 호출처.
 
@@ -113,10 +132,12 @@ def build_app(
       (스텁 모드 — 스텁 G-01이 스텁 공고를 만들고 판정한다, spec 3.1 · 4.6).
       주소는 notice_api_url, 주지 않으면(None) SBRAIN_NOTICE_API_URL(환경 변수 → .env). 빈 문자열이면 스텁이다.
       주소 형식이 틀리면 조립할 때 ValueError다(메시지에 주소를 싣지 않는다).
-    - project_inputs · llm · notice_transport는 시험용으로 바꿔 끼울 때만 준다. llm이 없으면 OpenAIProvider(OPENAI_API_KEY),
-      notice_transport가 없으면 표준 라이브러리 HTTP 전송.
+    - project_inputs · llm · notice_transport · image는 시험용으로 바꿔 끼울 때만 준다. llm이 없으면 OpenAIProvider(OPENAI_API_KEY),
+      notice_transport가 없으면 표준 라이브러리 HTTP 전송, image가 없으면 OpenAIImageProvider(첫 호출 때 클라이언트를 만든다).
+    - 이미지 호출(확장)도 TaskRoutedImageProvider로 나눈다 — 구현이 들어온 Task만 실제, 나머지(스텁 T-B2 등)는 가짜.
     """
     from .intake.sql_source import SqlProjectInputSource
+    from .orchestrator.openai_image import OpenAIImageProvider
     from .orchestrator.openai_provider import OpenAIProvider
     from .store_sql import DbSettingsProvider, SqlStore, create_db_engine
 
@@ -130,6 +151,8 @@ def build_app(
     if notice_url:   # 실제 모드 — 공고 서버 연결로 스텁 T-C2 · G-01을 바꾼다
         bind_notice(app.registry, NoticeClient(notice_url, transport=notice_transport))
     app.engine.providers["openai"] = TaskRoutedProvider(llm or OpenAIProvider(), app.llm, IMPLEMENTED_TASKS)
+    app.engine.image_providers["openai"] = TaskRoutedImageProvider(
+        image or OpenAIImageProvider(), app.image, IMPLEMENTED_TASKS)
     return app
 
 
@@ -175,19 +198,24 @@ def _assemble(*, store: Store, settings: SettingsProvider, scenario: StubScenari
     now = utc_clock(now)   # 모든 구성 요소가 같은 UTC 시계를 쓴다 (시간대 없는 시계는 UTC로 본다)
     registry = build_registry()
     llm = FakeLLM()
+    fake_image: FakeImage | None = None
+    image_providers: dict[str, ImageProvider] = {}   # 웹 조립은 이미지 호출처를 두지 않는다
     if stubs:
         bind_stubs(registry, scenario, now=now)
         providers: dict[str, LLMProvider] = {name: llm for name in ("openai", "gpu-server", "미정")}
+        fake_image = FakeImage()
+        image_providers = {"openai": fake_image}
     else:
         providers = {name: NoProvider() for name in ("openai", "gpu-server", "미정")}
     # 지시문 다시 쓰기는 워커 조립만 끼운다. 없으면(스텁 · 웹 조립) 재작성 · 재수행 문제를 덧붙이기만 한다
     flow = SBrainFlow(registry, constants=make_constants(), now=now, rewriter=rewriter)
     exact, suffix = artifact_types(registry)
     engine = Engine(store=store, registry=registry, flow=flow, providers=providers,
-                    types=ArtifactTypes(exact, suffix), immutable_keys=IMMUTABLE_KEYS, now=now, sleep=sleep)
+                    types=ArtifactTypes(exact, suffix), immutable_keys=IMMUTABLE_KEYS, now=now, sleep=sleep,
+                    image_providers=image_providers)
     flow.engine = engine
     # 공고 선택 명령은 고른 ID만 남긴다 — 공고 상세는 워커의 G-01이 받는다 (명령 창구에 공고 공급처가 없다)
     orch = SBrainOrchestrator(
         engine=engine, flow=flow, settings=settings,
         profile_count=profile_count, project_inputs=project_inputs, now=now, sleep=sleep)
-    return App(orch, engine, store, registry, llm, scenario, settings)
+    return App(orch, engine, store, registry, llm, scenario, settings, fake_image)
