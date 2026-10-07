@@ -146,9 +146,12 @@ export function scoresFromResult(result){
 
   // 코드 검증 8항목 — 서버가 준 CHECK-* 항목을 그대로 쓴다. 이름은 item_code에서
   // 접두어만 떼고 보여준다(사람이 읽을 이름을 서버가 따로 주지 않는다).
+  // weight(배점) · earned(얻은 점수)도 넘긴다 — 검증결과서 PDF 표가 이 둘로 칸을 채운다(없으면 undefined · NaN으로 찍혔다).
   const codeCheckItems = artifactReasons.filter((r) => !isCross(r)).map((r, i) => ({
     id: r.item_code || `CHECK-${i}`,
-    name: (r.item_code || '').replace(/^CHECK-/, '') || '검증 항목',
+    name: r.display_name || (r.item_code || '').replace(/^CHECK-/, '') || '검증 항목',
+    weight: num(r.max_score) ?? 0,
+    earned: num(r.score) ?? 0,
     passed: (num(r.score) ?? 0) >= (num(r.max_score) ?? 0),
     evidence: r.reason_text || null,
   }));

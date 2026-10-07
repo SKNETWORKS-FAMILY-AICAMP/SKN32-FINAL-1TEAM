@@ -25,10 +25,12 @@ function formatDateTime(d) {
 // "종합 판정"은 그 값을 그대로 쓴다 — 화면에서 다시 더하면 서버 판정과 숫자가 어긋날 수 있다.
 export function buildVerificationReportHtml({ projectName, announcementTitle, category, docScore, codeCheckItems, crossCheck, threshold, verdict = null, createdAt = new Date() }) {
   const copy = TYPE_COPY[category === 'onepage' ? 'onepage' : 'standard'];
-  const autoMax = codeCheckItems.reduce((s, it) => s + it.weight, 0);
-  // 진입 파일(1번)이 없으면 나머지 항목 검사가 성립하지 않으므로 자동 검증 점수 전체를 0으로 본다(5-4).
-  const entryMissing = codeCheckItems.some((it) => it.id === 1 && !it.passed);
-  const autoRaw = entryMissing ? 0 : codeCheckItems.reduce((s, it) => s + (it.passed ? it.weight : 0), 0);
+  // 항목마다 얻은 점수 — 서버 값(earned)이 있으면 그대로(부분 점수 포함), 없으면(예시 데이터) 충족이면 배점 전부.
+  // 진입 파일은 검증-2에서 8항목이 아니라 통과 필수 조건이라(어기면 서버가 8칸을 모두 0점으로 준다) 여기서 따로 0점 처리하지 않는다.
+  const earnedOf = (it) => it.earned ?? (it.passed ? it.weight : 0);
+  const round2 = (v) => Math.round(v * 100) / 100;
+  const sumMax = round2(codeCheckItems.reduce((s, it) => s + (Number(it.weight) || 0), 0));
+  const sumRaw = round2(codeCheckItems.reduce((s, it) => s + (Number(earnedOf(it)) || 0), 0));
 
   // [2026-09-23, 백엔드 전달사항 10번] VerdictOut의 점수 필드는 전부 nullable이라 한 항목씩
   // 확인하고, 없으면(목업·데모 등 아직 서버 판정이 없는 경우) 지금까지처럼 화면 값으로 센다.
@@ -36,6 +38,9 @@ export function buildVerificationReportHtml({ projectName, announcementTitle, ca
   const vDoc = num(verdict?.doc_score), vDocMax = num(verdict?.doc_max_score);
   const vCode = num(verdict?.code_score), vCodeMax = num(verdict?.code_max_score);
   const vPlan = num(verdict?.plan_match_score), vPlanMax = num(verdict?.plan_match_max_score);
+  // 자동 검증 소계는 서버 값(15점 환산 — '해당 없음' 항목을 빼고 다시 환산한 값)을 먼저 쓴다. 표 칸의 단순 합과 다를 수 있다.
+  const autoRaw = vCode ?? sumRaw;
+  const autoMax = vCodeMax ?? sumMax;
 
   const docRaw = vDoc ?? docScore.raw;
   const docMaxScore = vDocMax ?? docScore.max;
@@ -61,7 +66,7 @@ export function buildVerificationReportHtml({ projectName, announcementTitle, ca
   const docCells = docScore.items.map((it) => `
       <div class="doc-item"><span>${esc(DOC_ITEM_LABEL[it.name] || it.name)}</span><b>${it.score} / ${it.max}</b></div>`).join('');
   const checkRows = codeCheckItems.map((it) => `
-        <tr class="${it.passed ? '' : 'fail'}"><td>${esc(it.name)}</td><td class="num">${it.weight}</td><td>${it.passed ? '충족' : '미충족'}</td><td class="num">${it.passed && !entryMissing ? it.weight : 0}</td></tr>`).join('');
+        <tr class="${it.passed ? '' : 'fail'}"><td>${esc(it.name)}</td><td class="num">${it.weight}</td><td>${it.passed ? '충족' : '미충족'}</td><td class="num">${round2(earnedOf(it))}</td></tr>`).join('');
   const lines = (arr, empty) => (arr.length ? arr.map((t) => `<p>${esc(t)}</p>`).join('') : `<p class="muted">${empty}</p>`);
 
   return `<!doctype html>
@@ -121,7 +126,7 @@ export function buildVerificationReportHtml({ projectName, announcementTitle, ca
     <thead><tr><th>점검 항목</th><th class="num">배점</th><th>결과</th><th class="num">획득</th></tr></thead>
     <tbody>${checkRows}
     </tbody>
-  </table>${entryMissing ? '\n  <p class="rule">진입 파일이 없어 나머지 항목 검사가 성립하지 않으므로 자동 검증 점수는 0점으로 처리됩니다.</p>' : ''}
+  </table>
 
   <h2><em>03</em>계획서 대조 의견 및 보완 사항<small>${crossCheck.withheld ? '대조 불가 (0점 합산)' : `${crossCheck.raw} / ${crossCheck.max}점`}</small></h2>
   <dl class="notes">

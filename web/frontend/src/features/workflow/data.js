@@ -227,7 +227,7 @@ export const ARTIFACT_SCORE_BY_OUTCOME = {
     autoCheck: {
       raw: 12, max: 15,
       reasons: [
-        'html 태그에 lang 속성이 없습니다.',
+        '보이는 글자에 "샘플 텍스트" 문구가 남아 있습니다.',
         '예약 버튼의 전경/배경 명도 대비가 2.9:1로 기준(4.5:1) 미만입니다.',
       ],
     },
@@ -245,30 +245,29 @@ export const ARTIFACT_SCORE_BY_OUTCOME = {
   },
 };
 
-// 산출물층 코드 기준 자동 검증 8항목·15점 — 프로젝트 기획서 v1.8 5-4 표의 이름·배점 그대로.
-// 웹개발·AI API는 HTML 실행 파일 기준, 원페이지는 인포그래픽 SVG 지면 기준 체크리스트를 쓴다.
-// 두 쪽 모두 1번(진입 파일) 미충족이면 자동 검증 점수 전체가 0점이다(5-4).
-// (verification_agent/score.py의 원페이지 항목은 아직 v1.8 이전 목록이라 따로 맞춰야 한다.)
+// 산출물층 코드 점검 8항목·15점 — 서버 결과가 없을 때(화면 검토 · 예시)만 쓰는 목록.
+// 검증-2(SB-125) verification_agent/rules/r4.py · r4_onepage.py의 ITEM_DEFS와 같은 이름 · 배점이다.
+// 진입 파일 · 비밀값 · 저장소 API는 8항목이 아니라 통과 필수 조건이다(어기면 산출물층 0점).
 export const CODE_CHECK_ITEMS_BY_CATEGORY = {
   standard: [
-    { id: 1, name: '진입 파일 존재 여부', weight: 3 },
-    { id: 2, name: 'img · svg 대체 텍스트', weight: 2 },
+    { id: 1, name: '동작 연결', weight: 3 },
+    { id: 2, name: 'img·svg 대체 텍스트', weight: 2 },
     { id: 3, name: 'input label 연결', weight: 2 },
-    { id: 4, name: 'html lang 속성', weight: 1 },
-    { id: 5, name: '명도 대비 4.5:1', weight: 2 },
-    { id: 6, name: '제목 계층', weight: 2 },
-    { id: 7, name: '실행·열람 안내 문서', weight: 1 },
-    { id: 8, name: '하드코딩된 비밀값', weight: 2 },
+    { id: 4, name: '명도 대비 4.5:1', weight: 2 },
+    { id: 5, name: '제목 계층', weight: 1 },
+    { id: 6, name: '1440px 폭 안에 들어옴', weight: 2 },
+    { id: 7, name: '스크립트 동작 오류 없음', weight: 2 },
+    { id: 8, name: '임시 문구 없음', weight: 1 },
   ],
   onepage: [
-    { id: 1, name: '진입 파일 존재 여부', weight: 3 },
-    { id: 2, name: '대체 텍스트', weight: 2 },
-    { id: 3, name: '핵심 정보 항목 포함', weight: 2 },
-    { id: 4, name: '명도 대비 4.5:1', weight: 2 },
-    { id: 5, name: '정보 계층', weight: 2 },
-    { id: 6, name: '텍스트 실재성', weight: 2 },
-    { id: 7, name: '최소 글자 크기', weight: 1 },
-    { id: 8, name: '열람 안내 문서', weight: 1 },
+    { id: 1, name: '대체 텍스트', weight: 2 },
+    { id: 2, name: '핵심 정보 6항목', weight: 3 },
+    { id: 3, name: '명도 대비 4.5:1', weight: 2 },
+    { id: 4, name: '정보 계층', weight: 2 },
+    { id: 5, name: '잘림 없음', weight: 2 },
+    { id: 6, name: '지면 밖 넘침 없음', weight: 2 },
+    { id: 7, name: '텍스트 실재성', weight: 1 },
+    { id: 8, name: '최소 글자 크기', weight: 1 },
   ],
 };
 
@@ -277,8 +276,8 @@ export const CODE_CHECK_ITEMS_BY_CATEGORY = {
 // standard 쪽은 시연 로그 steps[9].data.codeCheck.checks를 그대로 옮겼다.
 export const CODE_CHECK_FAILS_BY_OUTCOME = {
   fail: {
-    standard: { 4: 'html 태그에 lang 속성이 없습니다.', 5: '예약 버튼의 전경/배경 명도 대비가 2.9:1로 기준(4.5:1) 미만입니다.' },
-    onepage: { 4: '본문 문구 2건의 글자색/배경 명도 대비가 3.1:1로 기준(4.5:1) 미만입니다.', 7: '각주 글자 크기가 10px로 본문 하한(12px)에 못 미칩니다.' },
+    standard: { 4: '예약 버튼의 전경/배경 명도 대비가 2.9:1로 기준(4.5:1) 미만입니다.', 8: '보이는 글자에 "샘플 텍스트" 문구가 남아 있습니다.' },
+    onepage: { 3: '본문 문구 2건의 글자색/배경 명도 대비가 3.1:1로 기준(4.5:1) 미만입니다.', 8: '각주 글자 크기가 10px로 본문 하한(12px)에 못 미칩니다.' },
   },
   pass: {
     standard: {},
