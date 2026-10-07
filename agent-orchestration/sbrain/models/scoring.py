@@ -4,11 +4,11 @@
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
-from .base import JudgedBy, Layer, Phase, SBModel
+from .base import JudgedBy, Layer, Phase, SBModel, ext
 from .rework import BundleUsage, ReworkComparison, ReworkDiff, ReworkOrder
 
 
@@ -31,11 +31,16 @@ class CodeCheck(SBModel):
     weight: float
     passed: bool
     detail: str
+    # 확장 — 이름은 구현 · 검증-2 담당 코드와 글자까지 같아야 한다 (담당자는 model_fields에 이 이름이 있을 때만 채운다)
+    defect_sources: list[Literal["prototype", "infographic"]] = ext(
+        default_factory=list, note="미충족 결함이 있는 산출물. 웹개발 · AI API 2번만 채움")
 
 
 class CodeCheckResult(SBModel):
     total: float = Field(ge=0, le=15)
     checks: list[CodeCheck] = Field(min_length=8, max_length=8)
+    gate_failures: list[Literal["entry", "secret", "sandbox"]] = ext(
+        default_factory=list, note="통과 필수 조건 중 어긴 것. 비어 있지 않으면 산출물층 0")
 
 
 class FeatureMatchResult(SBModel):
@@ -44,6 +49,10 @@ class FeatureMatchResult(SBModel):
     extra_features: list[str]
     findings: list[str]
     judged_by: JudgedBy
+    # 확장 — 흐름은 이 칸들로만 가른다. findings 문구로 가르지 않는다
+    withheld: bool = ext(False, note="대조 판정 보류. 0점 합산 · 화면 '대조 불가' · 관리자 알림")
+    withheld_reason: str | None = ext(None, note="보류 사유 오류코드 (예: E-V2-NOFEATURE)")
+    partial_features: list[str] = ext(default_factory=list, note="부분 인정 기능 이름. 1.4판 부분 0.5")
 
 
 class ArtifactScore(SBModel):

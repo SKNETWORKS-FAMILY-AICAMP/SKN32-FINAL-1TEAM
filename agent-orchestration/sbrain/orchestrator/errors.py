@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from ..models.base import CallError, ErrorKind
 
@@ -21,17 +22,22 @@ ERROR_CODES: dict[str, ErrorCode] = {e.code: e for e in [
     ErrorCode("E-C2-STALE", "T-C2", "공고 정보를 갱신하는 중입니다. 갱신 후 다시 확인해주세요.", "매칭 중단, 수집 상태 경고"),
     ErrorCode("E-C2-EMBED", "T-C2", "추천 정확도가 낮아질 수 있습니다.", "폴백 순위 표시"),
     ErrorCode("E-G1-MISSING", "G-01", "신청 가능 여부를 확인하려면 사전 정보의 필수 항목이 필요합니다. 입력한 정보를 확인해주세요.", "판정 보류"),
+    # 쓰임은 기준 문서와 다름 — 확인 필요 조건(unknownConditions)이 있으면 화면 4에만 붙는 막지 않는 안내 (spec 4.3.3)
     ErrorCode("E-G1-UNPARSED", "G-01", "이 공고는 자격요건 자동 확인이 어렵습니다. 공고문을 직접 확인해주세요.", "undecidable=true"),
     ErrorCode("E-G1-REJECT", "G-01", "이 공고는 {사유}로 신청이 어렵습니다. 다른 공고를 보여드릴까요?", "실행 차단"),
     ErrorCode("E-C1-REQUIRED", "T-C1", "필수 항목을 입력해주세요: {누락 항목}", "폼 단계 차단"),
     ErrorCode("E-C1-DOC", "T-C1", "{파일명}의 내용을 읽지 못해 참고 자료에서 제외했습니다. 나머지 정보로 계속 진행합니다.", "해당 문서 제외"),
     ErrorCode("E-C3-FORM", "T-C3", "", "분해 실패로 처리하고 오류 기록"),
-    ErrorCode("E-B1-ENTRY", "T-B1", "", "재수행 후 그대로 보냄, codeCheck.total=0"),
+    ErrorCode("E-B1-ENTRY", "T-B1", "", "재수행 후 그대로 보냄, 검증-2 통과 필수 조건(entry)으로 산출물층 0"),
+    # 확장(잠정) — 기준 문서 개정 전. sandbox API 위반(구현 · 검증-2 담당 개정안 1.3판)
+    ErrorCode("E-B1-SANDBOX", "T-B1", "",
+              "재수행 후 그대로 보냄. 스토리지 계열은 검증-2 통과 필수 조건(산출물층 0), 나머지는 코드 점검 7번 감점"),
     ErrorCode("E-B1-DEP", "T-B1", "", "재수행 후 그대로 보냄, 점수 반영"),
     ErrorCode("E-V1-EVIDENCE", "T-V1", "", "감점 무효 처리"),
     ErrorCode("E-V1-VARIANCE", "T-V1", "", "varianceFlag=true"),
     ErrorCode("E-V2-PARSE", "T-V2", "", "해당 항목만 미충족"),
-    ErrorCode("E-V2-NOFEATURE", "T-V2", "", "판정 보류, 오류 기록"),
+    # 사용자 노출 문구는 기준 문서 개정 · 웹팀 결정 전이라 비워 둔다 (잠정) — 화면 '대조 불가'는 웹이 withheld로 표시
+    ErrorCode("E-V2-NOFEATURE", "T-V2", "", "withheld=true, 0점 합산, 화면 '대조 불가', 관리자 알림"),
     ErrorCode("E-P2-TOKEN", "T-P2", "", "redoHint에 실어 재수행"),
     ErrorCode("E-P2-RETRY", "T-P2", "", "원문 유지, 관리자 로그"),
     ErrorCode("E-G2-LIMIT", "G-02a · G-02b · R-6", "이 항목은 다시 만들 수 있는 횟수를 모두 사용했습니다. 다시 만들기 전과 후 중 점수가 높은 결과가 반영되어 있습니다.", "선택 불가 표시"),
@@ -44,8 +50,39 @@ ERROR_CODES: dict[str, ErrorCode] = {e.code: e for e in [
     ErrorCode("E-RUN-CLOSED", "R-9", "선택하신 공고의 접수가 마감되었습니다. 계속 진행할지 선택해주세요.", "마감 사실만 알림"),
     ErrorCode("E-W1-REMOVED", "T-W1 · R-6", "입력하지 않은 경력이나 지원 규모를 넘는 금액이 반복해서 작성되어 해당 부분을 지웠습니다. 필요하면 직접 보완해주세요.", "notices로 알림"),
     # 확장(잠정) — 기준 문서에 T-C2 전체 실패 처리가 없다. T-C1과 같이 다시 시도 안내.
-    ErrorCode("X-C2-FAIL", "T-C2", "잠시 문제가 있었습니다. 다시 시도해주세요.", "확장(잠정): 사전 단계라 재개 없이 다시 시도 안내"),
+    ErrorCode("X-C2-FAIL", "T-C2 · G-01", "잠시 문제가 있었습니다. 다시 시도해주세요.",
+              "확장(잠정): 재개 없이 다시 시도 안내 — 사전 단계 · 추가 조회 실패, 자격 확인(G-01) 실패는 고르기 전 대기 지점으로"),
+    # 확장(잠정) — 고른 공고가 공고 서버에 없음. 고르기 전 대기 지점으로 돌아가고, 막지 않으므로 다시 고를 수 있다
+    ErrorCode("X-C2-GONE", "G-01", "선택하신 공고를 더 이상 확인할 수 없습니다. 다른 공고를 선택해주세요.",
+              "확장(잠정): 공고 없음 — 고르기 전 대기 지점으로"),
 ]}
+
+# E-C2-EMBED 덧붙임 — 대체 경로가 마감 임박순이면 문구 끝에 붙인다 (기준 문서 T-C2, spec 4.1.3)
+EMBED_DEADLINE_SUFFIX = " 마감 임박순으로 보여드립니다."
+
+
+# CommandError 코드 (확장) — 웹이 받는 명령 · 조회 거절 사유. 시트 6 결과 코드(E-…)는 위 ERROR_CODES에 있다
+# (E-G2-LIMIT는 둘 다에 쓴다). 웹은 code로 가르고, detail은 사람이 읽는 설명이다.
+COMMAND_ERROR_CODES: dict[str, str] = {
+    "PROJECT_NOT_FOUND": "프로젝트가 없거나, 보관됐거나, 다른 계정 것 (구분하지 않음)",
+    "PROJECT_ALREADY_STARTED": "끝난 실행 건이 있는 프로젝트 — 새 프로젝트로 시작",
+    "NO_PROJECT_SOURCE": "조립 오류 — 웹 DB 입력 공급처가 없음",
+    "RUN_NOT_FOUND": "실행 건이 없는 프로젝트에 명령 · 조회",
+    "RUN_NOT_VIEWABLE": "실패 · 중단된 실행 건 — 지금까지 결과 · 재작성 결과를 보여 주지 않음 (공고 마감 안내 E-RUN-CLOSED와 다름)",
+    "WEB_NOT_ALLOWED": "웹 조립(build_web)에서 부를 수 없는 함수 — 사전 단계 실행(run_start_request)은 워커가 한다",
+    "SCREEN_NOT_READY": "그 화면을 여는 대기 지점이 아님",
+    "INVALID_SCREEN": "없는 화면 번호",
+    "INVALID_STATE": "지금 단계 · 진행 상태에서 받을 수 없는 명령",
+    "BUSY": "다른 곳이 그 실행 건을 점유 중 — 잠시 뒤 다시",
+    "MORE_LIMIT": "공고 추가 조회 한도 (1회 · 합계 20건)",
+    "INVALID_ANNOUNCEMENT": "후보에 없는 공고",
+    "ANNOUNCEMENT_BLOCKED": "자격 불통과로 막힌 공고 — 그 실행 건에서 다시 고를 수 없음 (추가 조회에서 내용이 바뀌면 풀림)",
+    "NO_SELECTION": "재작성 선택 없음",
+    "INVALID_ORDER": "목록에 없는 재작성 지시 · 묶음 이름 · 화면에 맞지 않는 층",
+    "INVALID_ACTION": "잘못된 동작",
+    "E-G2-LIMIT": "재작성 기회 소진",
+    "NOT_ACTIVE": "진행 중이 아닌 실행 건을 중단 (내부 — abort_project가 받는다)",
+}
 
 
 def message(code: str, **slots: str) -> str:
@@ -60,7 +97,14 @@ class OrchestratorError(Exception):
 
 
 class FormatError(OrchestratorError):
-    """응답 형식 오류. tools가 스키마 검사에서 올리거나 Task의 parse 함수가 올린다. tools가 재시도한다."""
+    """응답 형식 오류. tools가 스키마 검사에서 올리거나 Task의 parse 함수가 올린다. tools가 재시도한다.
+
+    호출처가 응답을 받고도 쓸 수 없어 올릴 때(빈 응답 등)는 그 응답의 토큰 사용량(usage)을 실어 비용을 남긴다.
+    """
+
+    def __init__(self, message: str = "", *, usage: Any = None) -> None:
+        super().__init__(message)
+        self.usage = usage
 
 
 class ProviderError(OrchestratorError):
@@ -72,19 +116,36 @@ class ProviderError(OrchestratorError):
 
 
 class ToolCallExhausted(OrchestratorError):
-    """재시도를 다 쓴 호출. Task가 받아 대체 경로로 가거나(T-C2 · T-V2), Orchestrator가 재개한다."""
+    """재시도를 다 쓴 호출. Task가 받아 대체 경로로 가거나(T-C2 · T-V2), Orchestrator가 재개한다.
 
-    def __init__(self, *, error: CallError, error_kind: ErrorKind, tries: int, call_id: str, detail: str = "") -> None:
+    partial (확장, 선택): 재시도를 다 쓰기 전까지 Task가 받은 결과. 입력 하나를 PARTIAL로 연결한 Task가 다시 올리며
+    싣는다 — 엔진이 재개를 예약할 때만 '<taskId>.partial'로 저장하고, 재개하면 그 입력에 넣는다. 내용이라 예외
+    메시지 · str · repr에 넣지 않는다(생성 인자로 super에 넘기지 않음).
+    """
+
+    def __init__(self, *, error: CallError, error_kind: ErrorKind, tries: int, call_id: str, detail: str = "",
+                 partial: dict[str, Any] | None = None) -> None:
         super().__init__(f"{error}/{error_kind} after {tries} tries: {detail}")
         self.error = error
         self.error_kind = error_kind
         self.tries = tries
         self.call_id = call_id
         self.detail = detail
+        self.partial = partial
 
 
 class ContractError(OrchestratorError):
     """Task가 규격에 맞지 않는 출력을 돌려줌."""
+
+
+class ResourceNotFound(OrchestratorError):
+    """Task가 찾는 외부 대상(예: 고른 공고)이 호출처에 없음 (확장).
+
+    재시도할 오류가 아니라 호출 결과다. 호출 함수는 '없음'을 예외가 아닌 값으로 돌려주어 tools가 성공한 호출로 기록하고
+    재시도하지 않게 하며, 그 값을 받은 Task가 이 예외를 올린다. 실패 정책(FailurePolicy.rescue_segments)이 흐름에
+    넘기도록 정한 단계면 엔진이 '대상없음'으로 분류해 Flow.on_rescue에 넘기고, 그 밖의 단계에서는 다른 예외처럼 운영
+    오류다. 메시지에 주소 · 요청 · 응답 본문 · 입력 값(대상 ID 등)을 넣지 않는다.
+    """
 
 
 class CommandError(OrchestratorError):
@@ -98,3 +159,7 @@ class CommandError(OrchestratorError):
 
 class StoreConflict(OrchestratorError):
     """실행 점유(잠금)를 갖지 않은 쪽이 저장하려 함."""
+
+
+class ProjectRunExists(OrchestratorError):
+    """프로젝트에 이미 실행 건이 있음 (확장). 프로젝트 1건에 실행 건은 최대 1건 — 새로 시작은 새 프로젝트로 한다."""

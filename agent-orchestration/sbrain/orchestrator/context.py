@@ -12,7 +12,8 @@ from typing import Any, Callable
 
 from pydantic import TypeAdapter
 
-from ..models import AttemptRef, Notification, ReworkComparison, Run
+from ..models import AttemptRef, Notification, RejectedAttempt, ReworkComparison, Run
+from ..models.clock import utc_clock
 from .settings import Settings
 from .store import ArtifactVersion, CommitBatch, Store
 from .trace import ExecutionRecord, FeedbackLink, PointerEvent, TraceEvent
@@ -61,18 +62,29 @@ class RunContext:
         self.run = run
         self.owner = owner
         self.types = types
-        self.now = now
+        self.now = utc_clock(now)   # 시간대 없는 시계는 UTC로 본다
         self.immutable_keys = immutable_keys
         self.provisional = provisional
         rid = run.run_id
         self.pointers: dict[str, int] = {} if provisional else store.get_pointers(rid)
         self.latest: dict[str, int] = {} if provisional else store.get_latest_versions(rid)
         self._pending: dict[tuple[str, int], ArtifactVersion] = {}
+        self._after_commit: list[Callable[[], None]] = []
         self._cache: dict[tuple[str, int], Any] = {}
+        # 시도 번호 시작값 = 실행 기록 · Run.attempt_max · Run.attempts 중 가장 큰 값.
+        # 기록 보관 처리로 실행 기록이 지워져도 번호를 다시 쓰지 않는다. Run.attempts에는 성공한 시도만 있어
+        # 실패한 시도 번호는 attempt_max에만 남는다(확장 필드가 없던 옛 실행 건은 실행 기록 · Run.attempts로 센다)
         self._attempts: dict[str, int] = {}
+
+        def seen(task_id: str, attempt: int) -> None:
+            self._attempts[task_id] = max(self._attempts.get(task_id, 0), attempt)
+        for task_id, attempt in run.attempt_max.items():
+            seen(task_id, attempt)
+        for a in run.attempts:
+            seen(a.task_id, a.attempt)
         if not provisional:
             for rec in store.executions(rid):
-                self._attempts[rec.task_id] = max(self._attempts.get(rec.task_id, 0), rec.attempt)
+                seen(rec.task_id, rec.attempt)
         self._settings: Settings | None = None
         self.batch = CommitBatch()
         # 사전 단계(실행 건 생성 전)는 저장하지 않고 모아 두었다가 실행 건 생성 때 한 번에 저장한다
@@ -162,7 +174,11 @@ class RunContext:
         return None
 
     def record_execution(self, rec: ExecutionRecord) -> None:
+        """실행 기록을 저장 묶음에 넣고, 같은 저장에서 Task별 마지막 시도 번호(Run.attempt_max)를 올린다
+        (실패 · 재개대기 기록 포함 — 실행 기록이 지워진 뒤에도 다음 시도 번호를 이어 매기는 근거)."""
         self.batch.executions[rec.execution_id] = rec
+        if rec.attempt > self.run.attempt_max.get(rec.task_id, 0):
+            self.run.attempt_max[rec.task_id] = rec.attempt
 
     def record_attempt(self, rec: ExecutionRecord) -> None:
         self.run.attempts.append(AttemptRef(
@@ -185,16 +201,27 @@ class RunContext:
     def notify(self, notification: Notification) -> None:
         self.batch.notifications.append(notification)
 
+    def add_rejected_attempt(self, attempt: RejectedAttempt) -> None:
+        """반려된 시도 — 저장소가 주인 계정의 학습 동의를 확인해 같은 저장에서 쓴다 (내용 포함, 기록 · 로그와 별도)."""
+        self.batch.rejected_attempts.append(attempt)
+
     # ── 한 번에 저장 ──────────────────────────────────
+    def after_commit(self, action: Callable[[], None]) -> None:
+        """다음 저장이 끝난 뒤 한 번 할 일(운영 로그 줄 등). 저장이 실패하면 버린다."""
+        self._after_commit.append(action)
+
     def commit(self) -> None:
         self.run.updated_at = self.now()
+        actions, self._after_commit = self._after_commit, []
         if self.provisional:
             self._merge_into_provisional()
-            return
-        self.batch.run = self.run
-        self.store.commit(self.run.run_id, self.owner, self.batch)
-        self._pending.clear()
-        self.batch = CommitBatch()
+        else:
+            self.batch.run = self.run
+            self.store.commit(self.run.run_id, self.owner, self.batch)
+            self._pending.clear()
+            self.batch = CommitBatch()
+        for action in actions:
+            action()
 
     def _merge_into_provisional(self) -> None:
         pb, b = self.provisional_batch, self.batch
@@ -208,6 +235,7 @@ class RunContext:
         pb.comparisons += b.comparisons
         pb.events += b.events
         pb.notifications += b.notifications
+        pb.rejected_attempts += b.rejected_attempts
         self.batch = CommitBatch()
 
     def take_provisional(self) -> CommitBatch:
