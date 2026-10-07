@@ -34,6 +34,18 @@ LOCK = threading.Lock()
 def _content_hash(content):
     return hashlib.sha256(json.dumps(content,ensure_ascii=False,sort_keys=True,default=str).encode('utf-8')).hexdigest()
 
+def _validation_content(row):
+    """검증 입력에 functionOutput과 저장된 표·이미지를 함께 반영한다."""
+    base=dict(row.get('functionOutput') or {})
+    if row.get('generatedText') and not base.get('generatedText'):
+        base['generatedText']=row['generatedText']
+    for key in ('tables','images'):
+        if row.get(key):
+            base[key]=row[key]
+        else:
+            base.setdefault(key,[])
+    return base
+
 
 def report_html(result):
     body = '<h1>실제 함수 실행 결과</h1><p>' + html.escape(str(result.get('message','부분 실행 결과'))) + '</p>'
@@ -202,10 +214,11 @@ def run_validate_job(job_id, parent_job, section_id):
                 raise RuntimeError('사용자가 실행을 중단했습니다.')
             spec=specs[item['sectionId']]; row=rows.get(item['sectionId'])
             if not row: continue
-            content=row.get('functionOutput') or {'generatedText':row.get('generatedText',''),'tables':row.get('tables',[])}
+            content=_validation_content(row)
             content_hash=_content_hash(content)
             previous=row.get('validation',{}) or {}
             if previous.get('status') in {'pass','fail'} and previous.get('contentHash')==content_hash and previous.get('policyVersion')==VALIDATION_POLICY_VERSION:
+                previous=_reconcile_validation(spec,content,previous)
                 previous['reused']=True
                 row['validation']=previous
                 checked.append(item['sectionId'])
@@ -215,8 +228,8 @@ def run_validate_job(job_id, parent_job, section_id):
             row['validation']=result; checked.append(item['sectionId'])
         for sid in checked:
             row=rows[sid]
-            source=validation_source_for(row,row.get('functionOutput') or {'generatedText':row.get('generatedText',''),'tables':row.get('tables',[])})
-            row['evaluation']=score_section(specs[sid],row.get('functionOutput') or {'generatedText':row.get('generatedText',''),'tables':row.get('tables',[])},row['validation'],kind,source)
+            source=validation_source_for(row,content)
+            row['evaluation']=score_section(specs[sid],content,row['validation'],kind,source)
         parent_job['result']['evaluationSummary']=aggregate_scores(parent_job['result'].get('results',[]))
         parent_job['result']['validation1']=[{'sectionId':row.get('sectionId'),'status':row.get('validation',{}).get('status','not_run'),'issues':row.get('validation',{}).get('issues',[]),'warnings':row.get('validation',{}).get('warnings',[])} for row in parent_job['result'].get('results',[]) if row.get('validation')]
         parent_job['result']['status']='validation1_failed' if any(r.get('validation',{}).get('status')=='fail' for r in parent_job['result'].get('results',[])) else 'validation1_passed'
@@ -240,12 +253,13 @@ def run_validate_all_job(job_id, result, skip_passed=False):
                 raise RuntimeError('사용자가 실행을 중단했습니다.')
             spec=specs.get(row['sectionId'])
             if spec and spec.get('enabled'):
-                if skip_passed and row.get('validation',{}).get('status')=='pass':
+                if skip_passed and row.get('validation',{}).get('status') in {'pass','warning'}:
                     continue
-                content=row.get('functionOutput') or {'generatedText':row.get('generatedText',''),'tables':row.get('tables',[])}
+                content=_validation_content(row)
                 content_hash=_content_hash(content)
                 previous=row.get('validation',{}) or {}
                 if previous.get('status') in {'pass','fail'} and previous.get('contentHash')==content_hash and previous.get('policyVersion')==VALIDATION_POLICY_VERSION:
+                    previous=_reconcile_validation(spec,content,previous)
                     previous['reused']=True
                     row['validation']=previous
                 else:

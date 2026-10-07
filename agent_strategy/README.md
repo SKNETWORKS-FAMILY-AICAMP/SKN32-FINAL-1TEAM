@@ -1282,3 +1282,4 @@ F17 표가 필수 컬럼·행 구조를 충족하지 못하면 표를 임의로 
 - F19가 실제 표를 `tables.columns`·`tables.rows` 누락으로 오판하지 않도록 저장 구조를 우선해 보정한다.
 - 평가 결과에는 `internalQualityScore`, `documentLayerScore`(내부 점수의 70% 환산), `officialPoints`(공식 배점표가 없으면 `null`), `estimatedPoints`(내부 예상 배점)를 저장하고 UI에도 표시한다.
 - 회귀 테스트 19개, Python 문법 검사, JavaScript 문법 검사를 통과했다. 기존 결과는 서버 재시작 후 영향 항목을 재검증해야 갱신된다.
+- F19 검증 결과를 캐시에서 재사용할 때도 현재 저장된 본문·표 구조 보정(`_reconcile_validation`)을 다시 적용한다. 과거에 저장된 표 누락 오탐이 캐시 때문에 계속 남지 않도록 수정했다.
