@@ -126,8 +126,10 @@ class ComposerTests(TestCase):
         self.assertIn("시장 규모", a)
         self.assertNotIn("시장 규모", b)
 
-    def test_retry_asks_for_a_different_layout(self):
-        from engineering_agent.infographic.compose_guide import RETRY_HINT
+    def test_rework_keeps_the_layout_unless_the_user_asks_without_a_problem(self):
+        """기획서 5-6: 재작성은 문제가 된 곳만 고치고 잘 된 부분은 지킨다. 재수행 · 미달 사유가 있는 재작성은
+        구성을 지키고, 고칠 문제 없이 사용자가 고른 재작성(조율 기본 사유)만 새 구성(두 번째 관계)을 쓴다."""
+        from engineering_agent.infographic.compose_guide import FIX_HINT, RETRY_HINT
         from tests import fake_sbrain
 
         patcher = fake_sbrain.install()
@@ -138,40 +140,48 @@ class ComposerTests(TestCase):
 
         seen = {}
 
-        def fake_generate(category, plan_text, tools, variation=0):
+        def fake_generate(category, plan_text, tools):
             seen.setdefault("texts", []).append(plan_text)
-            seen.setdefault("variations", []).append(variation)
-            return {"item_name": "반찬온", "features": ["반찬 사전주문"], "feature_details": []}
+            return dict(DATA, layout=[{"block": "features", "title": "주문 기능"}],
+                        feature_details=[{"name": f, "detail": d}
+                                         for f, d in zip(DATA["features"], DATA["feature_details"])])
+
+        def fake_render(category, data):
+            seen.setdefault("layouts", []).append([(b["block"], b["variant"]) for b in data["layout"]])
+            seen.setdefault("titles", []).append({b["block"]: b["title"] for b in data["layout"]})
+            return {"file_path": "x", "alt_text": "a"}
 
         doc = PlanDoc(sections=[PlanSection(section_code="1", title="t", sentences=[
             Sentence(sentence_id="s", text="본문", is_title=False, paragraph_no=1)])],
-            feature_list=["반찬 사전주문"], charts=[], tables=[], protected_tokens=[])
+            feature_list=DATA["features"], charts=[], tables=[], protected_tokens=[])
         spec = ItemSpec(item_name="반찬온", one_line_summary="요약", target_customer="고객",
-                        core_features=["반찬 사전주문"], category="원페이지", keywords=[])
+                        core_features=DATA["features"], category="원페이지", keywords=[])
+        user_only = "사용자가 이 묶음의 재작성을 요청했습니다."  # 조율 sbrain_flow.REWORK_DEFAULT_REASON
+        reworks = {
+            "첫 생성": None,
+            "재수행": ReworkInput(mode="재수행", previous_result_ref="p", issues=["수익모델 단가 누락"],
+                               is_final_attempt=False),
+            "미달 사유 재작성": ReworkInput(mode="재작성", previous_result_ref="p",
+                                     issues=["핵심 정보 6항목 미달", "단가를 채워라"], is_final_attempt=False),
+            "사유 없는 재작성": ReworkInput(mode="재작성", previous_result_ref="p", issues=[user_only, user_only],
+                                     is_final_attempt=False),
+        }
         with patch.object(tasks, "generate_infographic_content", fake_generate), \
-             patch.object(tasks, "render_infographic", return_value={"file_path": "x", "alt_text": "a"}):
-            tasks.run_tb2(TB2In(plan_doc=doc, item_spec=spec, category="원페이지", instruction="만들어라",
-                                rework_input=ReworkInput(mode="재수행", previous_result_ref="p", issues=[],
-                                                         is_final_attempt=False)), tools=None)
-            tasks.run_tb2(TB2In(plan_doc=doc, item_spec=spec, category="원페이지", instruction="만들어라"),
-                          tools=None)
-        retry, first = seen["variations"]
-        self.assertIn(RETRY_HINT, seen["texts"][0])
-        self.assertNotIn(RETRY_HINT, seen["texts"][1])
-        from engineering_agent.infographic.compose_guide import SKELETONS
-        self.assertNotEqual(retry % len(SKELETONS), first % len(SKELETONS))  # 다시 만들면 다른 뼈대를 준다
-
-    def test_each_variation_hands_the_model_a_different_skeleton(self):
-        """작은 모델은 예시를 따른다. 예시가 하나면 어떤 계획서든 같은 구성이 나온다."""
-        from engineering_agent.infographic.compose_guide import SKELETONS, layout_example
-
-        examples = [layout_example("원페이지", n) for n in range(len(SKELETONS))]
-        self.assertEqual(len(set(examples)), len(SKELETONS))
-        self.assertEqual(layout_example("원페이지", 0), layout_example("원페이지", len(SKELETONS)))
-        self.assertGreaterEqual(len({e.split('"variant": "')[1].split('"')[0] for e in examples}), 2)
-        for n in range(len(SKELETONS)):
-            self.assertIn('"hero", "variant": "hub"', layout_example("AI_API", n))
-            self.assertIn('"process"', layout_example("웹개발", n))
+             patch.object(tasks, "render_infographic", fake_render):
+            for rework in reworks.values():
+                tasks.run_tb2(TB2In(plan_doc=doc, item_spec=spec, category="원페이지", instruction="만들어라",
+                                    rework_input=rework), tools=None)
+        layout = dict(zip(reworks, seen["layouts"]))
+        text = dict(zip(reworks, seen["texts"]))
+        self.assertEqual(layout["재수행"], layout["첫 생성"])
+        self.assertEqual(layout["미달 사유 재작성"], layout["첫 생성"])
+        self.assertNotEqual(layout["사유 없는 재작성"], layout["첫 생성"])
+        self.assertNotIn(RETRY_HINT, text["첫 생성"])
+        self.assertNotIn(FIX_HINT, text["첫 생성"])
+        self.assertIn(FIX_HINT, text["재수행"])
+        self.assertIn(FIX_HINT, text["미달 사유 재작성"])
+        self.assertIn(RETRY_HINT, text["사유 없는 재작성"])
+        self.assertEqual(seen["titles"][0]["features"], "주문 기능")  # 모델이 쓴 제목은 같은 구역이면 살린다
 
     def test_two_narrow_blocks_in_a_row_share_one_line(self):
         from engineering_agent.infographic.composer import normalize_layout
@@ -197,3 +207,39 @@ class ComposerTests(TestCase):
         widths = {b["block"]: b["width"] for b in layout}
         self.assertEqual((widths["market"], widths["effects"]), ("half", "half"))
         self.assertEqual(widths["features"], "full")
+
+
+class RealPlanTimelineTests(TestCase):
+    """실제 계획서(재고 자동발주 SaaS · 반려동물 피부 AI 앱)의 추진 일정은 점 꼴 기간이 4~5개다.
+    기간을 두 단계로 쪼개거나('~'만 남은 단계) 반 칸에 넣어 할 일 글이 잘리던 문제."""
+
+    TIMELINES = (
+        "2026.04~2026.06 수요예측 모델 고도화 2026.07~2026.08 발주 자동화 기능 개발 "
+        "2026.09~2026.11 POS 연동 확대 2026.12~2027.01 유료 전환 프로모션 2027.02~2027.03 매장 확장",
+        "2026.05~07 AI 고도화 2026.06~08 수의사 제휴 2026.09~11 앱 출시·사용자 확보 "
+        "2027.01~06 펫보험사 제휴·연계 2027.07~12 모델 확장",
+    )
+
+    def test_dotted_ranges_stay_one_milestone(self):
+        from engineering_agent.infographic.layout import parse_milestones
+
+        first = parse_milestones(self.TIMELINES[0])
+        self.assertEqual(first[0], ("2026.04~2026.06", "수요예측 모델 고도화"))
+        self.assertEqual(len(first), 5)
+        second = parse_milestones(self.TIMELINES[1])
+        self.assertEqual(second[0], ("2026.05~07", "AI 고도화"))
+        self.assertTrue(all(not event.startswith("~") for _, event in first + second))
+        # 원래 꼴은 그대로
+        self.assertEqual(parse_milestones("2026-04 착수 2026-09 출시"), [("2026-04", "착수"), ("2026-09", "출시")])
+
+    def test_many_milestones_take_the_full_row_and_are_not_cut(self):
+        half = [{"block": "features", "variant": "band"},
+                {"block": "roadmap", "variant": "line", "width": "half"},
+                {"block": "metrics", "variant": "cards", "width": "half"},
+                {"block": "tagline", "variant": "band"}]
+        for timeline in self.TIMELINES:
+            with self.subTest(timeline[:20]):
+                data = dict(DATA, layout=half, timeline_baseline=timeline)
+                roadmap = next(b for b in normalize_layout("웹개발", data) if b["block"] == "roadmap")
+                self.assertEqual(roadmap["width"], "full")
+                self.assertNotIn("timeline_baseline", truncated_fields("웹개발", data))

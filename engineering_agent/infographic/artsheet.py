@@ -139,6 +139,70 @@ def wire_png(cells: dict[str, tuple[int, int, int, int]], marks: tuple = ()) -> 
             + _chunk(b"IDAT", zlib.compress(b"".join(rows), 6)) + _chunk(b"IEND", b""))
 
 
+def hero_kind(category: str, data: dict) -> tuple[str, str]:
+    """맨 위 대표 그림의 구도와 그 근거. 모든 지면에 "세 칸 + 화살표"를 그렸더니 계획서가 달라도
+    첫인상이 같았다(실측: 예시 계획서 셋 모두 같은 가로 세 칸). 구도는 아이템 이름이 아니라 계획서에서
+    뽑은 재료가 보여 주는 **관계**로 고른다 — 같은 계획서면 같은 구도, 관계가 다르면 다른 구도.
+
+    그림 아래에 글이 세 구역으로 붙는 지면(AI API 처리 단계, 대표 도식 journey)은 세 구역을 지킨다
+    (composer._pipeline_captions · _journey가 그림을 3등분한 자리에 글을 놓는다).
+      steps    입력 → 처리 → 출력처럼 끊긴 단계: AI API 처리 단계, 또는 단계 재료가 있는데 단계 구역이 없을 때
+      panorama 문제 상황 → 서비스 사용 → 결과로 이어지는 이야기(journey)
+      hub      돈을 내는 쪽 · 효과를 보는 대상 등 서로 다른 주체가 셋 이상 얽힌 사업
+      scene    그 밖 — 서비스를 쓰는 대표 장면 하나
+    """
+    from engineering_agent.infographic.composer import normalize_layout
+
+    layout = {(b["block"], b["variant"]) for b in normalize_layout(category, data)}
+    if category == "AI_API":
+        return "steps", "AI API 처리 단계(입력 → 처리 → 출력)를 그림 아래에 붙인다"
+    if ("hero", "journey") in layout:
+        return "panorama", "문제 → 해결 → 효과 이야기를 그림 아래에 붙인다"
+    design = data.get("_design") if isinstance(data.get("_design"), dict) else {}
+    if design.get("hero") in ("hub", "scene"):  # 디자인 사양(design.py)이 지면 구성과 같은 관계로 골랐다
+        return design["hero"], f"디자인 사양: 관계 '{design.get('relation', '')}'"
+    flow = data.get("revenue_flow") if isinstance(data.get("revenue_flow"), dict) else {}
+    parties = {_plain(row.get("who", "")) for row in data.get("effects") or [] if isinstance(row, dict)}
+    parties |= {_plain(flow.get("payer", "")), _plain(data.get("target_users", ""))}
+    parties.discard("")
+    if len(parties) >= 3:
+        return "hub", f"주체 {len(parties)}곳이 얽힌다({', '.join(sorted(parties))})"
+    steps = data.get("solution_steps") if category == "원페이지" else data.get("flow_steps")
+    if len([s for s in steps or [] if str(s).strip()]) >= 3 and not any(b == "process" for b, _ in layout):
+        return "steps", "단계 재료가 있는데 단계 구역이 지면에 없다"
+    return "scene", "단계 · 여러 주체 관계가 두드러지지 않는다"
+
+
+def _style_lines(data: dict, color: str) -> str:
+    """그림체. 모든 사업에 같은 두 톤 선 아이콘을 쓰면 그림 표현이 같아 보인다. 디자인 사양(design.py)이
+    소비자 대상 분야는 평면 일러스트, 기업 · 산업 · 데이터 분야는 정밀한 선 아이콘으로 고른다.
+    칸 배치 · 흰 여백(find_cells가 칸을 읽는 근거)은 그림체와 상관없이 그대로다."""
+    design = data.get("_design") if isinstance(data.get("_design"), dict) else {}
+    if design.get("art_style") == "평면":
+        return (f"- 친근한 평면 일러스트. 굵은 외곽선 없이 옅은 {color}부터 진한 {color}까지 서너 단계의 면으로 형태를 "
+                "나누고, 둥근 모서리의 단순한 모양으로 그린다.\n"
+                "- 사람 · 동물 · 물건의 특징이 한눈에 보이게 하되 세부는 줄인다.\n")
+    return (f"- 고급 컨설팅 보고서 인포그래픽에 쓰는 정교한 선 아이콘. 진한 {color} 선에 옅은 {color} 채움을 곁들인 두 톤.\n"
+            "- 선 굵기를 통일하고, 대상의 특징이 한눈에 보이게 세부를 넣는다.\n")
+
+
+def _hero_instruction(data: dict, story: str, color: str, category: str) -> str:
+    summary = _plain(data.get("item_summary", ""))
+    kind, _ = hero_kind(category, data)
+    if kind == "steps":
+        return (f"{summary}의 흐름을 보여 주는 가로 도식. 작은 칸과 같은 그림체로, "
+                f"왼쪽에서 오른쪽으로 {story}를 화살표로 잇는다.")
+    if kind == "panorama":
+        return (f"{summary}의 흐름을 끊김 없는 한 장의 가로 파노라마로 그린다. 작은 칸과 같은 그림체로, "
+                f"왼쪽 3분의 1 · 가운데 3분의 1 · 오른쪽 3분의 1에 차례로 {story}를 놓고, 칸을 나누거나 "
+                "화살표를 쓰지 않고 길 · 바닥 · 배경이 자연스럽게 이어지게 한다.")
+    if kind == "hub":
+        return (f"{summary}의 구조를 허브 도식으로 그린다. 작은 칸과 같은 그림체로, 가운데에 서비스(화면 · 기기)를 "
+                "크게 두고 둘레에 이용자 · 돈을 내는 쪽 · 효과를 보는 대상을 작은 그림으로 배치해 가는 선으로 잇는다.")
+    return (f"{summary}을(를) 실제로 쓰는 대표 장면 하나를 넓게 그린다. 작은 칸과 같은 그림체로, "
+            "이용하는 사람과 장소 · 도구가 한눈에 보이게 하고, 화살표나 단계 나눔은 쓰지 않는다.")
+
+
 def sheet_prompt(data: dict, items: list[tuple[str, str]], color: str, category: str = "") -> str:
     problem, outcome = _plain(data.get("problem", "")), _plain(data.get("outcome", ""))
     story = " → ".join(filter(None, (f"'{problem}' 상황" if problem else "", "이 서비스를 쓰는 장면",
@@ -148,6 +212,7 @@ def sheet_prompt(data: dict, items: list[tuple[str, str]], color: str, category:
         # AI API 지면은 대표 도식이 곧 처리 단계 도식이다(composer._pipeline_captions가 아래에 글을 붙인다).
         story = (f"'{_plain(pipeline['input'])}' 입력 → AI가 '{_plain(pipeline['process'])}' 처리 → "
                  f"'{_plain(pipeline['output'])}' 출력")
+    hero = _hero_instruction(data, story, color, category)
     return (
         "이 그림은 아이콘 모음판의 뼈대다. 흰 바탕 위에 회색 칸이 있다. 맨 위 넓은 칸 하나와 그 아래 작은 칸 "
         f"{len(items)}개다.\n\n"
@@ -157,10 +222,9 @@ def sheet_prompt(data: dict, items: list[tuple[str, str]], color: str, category:
         "- 글자, 숫자, 글자 비슷한 무늬를 어디에도 넣지 않는다. 문서 · 화면 · 달력 · 동전 안에도 숫자나 글자를 쓰지 않고 "
         "줄이나 점으로만 나타낸다.\n\n"
         "그림체 (모든 칸 통일)\n"
-        f"- 고급 컨설팅 보고서 인포그래픽에 쓰는 정교한 선 아이콘. 진한 {color} 선에 옅은 {color} 채움을 곁들인 두 톤.\n"
-        "- 선 굵기를 통일하고, 대상의 특징이 한눈에 보이게 세부를 넣는다. 사진 같은 음영 · 그림자 · 다른 색은 쓰지 않는다.\n\n"
-        f"맨 위 넓은 칸: {_plain(data.get('item_summary', ''))}의 흐름을 보여 주는 가로 도식. 같은 {color} 선 그림체로, "
-        f"왼쪽에서 오른쪽으로 {story}를 화살표로 잇는다.\n\n"
+        + _style_lines(data, color) +
+        "- 사진 같은 음영 · 그림자 · 다른 색은 쓰지 않는다. 그림이 타일 밖 흰 여백으로 넘어가지 않게 한다.\n\n"
+        f"맨 위 넓은 칸: {hero}\n\n"
         "작은 칸에 그릴 아이콘 (왼쪽 위부터 오른쪽으로, 줄마다)\n"
         + "\n".join(f"- {n + 1}번 칸: {what}" for n, (_, what) in enumerate(items)))
 

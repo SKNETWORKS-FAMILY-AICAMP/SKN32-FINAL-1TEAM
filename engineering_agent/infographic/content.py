@@ -20,7 +20,7 @@ from engineering_agent.infographic.layout import (
     feature_tile_width,
     flow_text_width,
 )
-from engineering_agent.infographic.compose_guide import COMPOSE_GUIDE, layout_example
+from engineering_agent.infographic.compose_guide import COMPOSE_GUIDE
 from engineering_agent.infographic.style import CATEGORY_TEMPLATE_FILE
 
 
@@ -186,13 +186,12 @@ def parse_content(text) -> InfographicContent:
         raise _format_error(f"T-B2 응답 JSON을 읽을 수 없음: {type(exc).__name__}") from None
 
 
-def generate_infographic_content(category: str, plan_text: str, tools, variation: int = 0) -> dict:
+def generate_infographic_content(category: str, plan_text: str, tools) -> dict:
     """T-B2 1단계: 사업계획서 본문(작성 Agent 산출물)에서 인포그래픽 데이터를 추출한다.
 
     반환값은 render_infographic()의 data 인자로 그대로 넘길 수 있는 형태다.
     렌더러가 소비하는 사실·수치·절차만 추출한다. 없는 내용은 채우지 않는다.
     추출 결과의 누락·수치·길이는 Task의 자체 검사와 검증-2에서 따로 검사한다.
-    variation: 지면 뼈대 번호(compose_guide.SKELETONS). 아이템마다 · 다시 만들 때마다 달라진다.
     """
     if category not in CATEGORY_TEMPLATE_FILE:
         raise ValueError(
@@ -237,8 +236,8 @@ def generate_infographic_content(category: str, plan_text: str, tools, variation
         "어떤 결과가 나오는지 보여주는 구절을 우선하라. 수치는 목표·현재 실적·문제 현황을 "
         "혼동하지 않도록 label에 본문의 맥락을 보존하라."
     )
-    # 블록 구성: 모델이 이 사업에 맞는 블록 · 변형 · 순서 · 폭과 블록별 구절을 고른다(composer.py).
-    system_prompt += COMPOSE_GUIDE + layout_example(category, variation)
+    # 지면 재료와 구역 제목. 구성(순서 · 변형 · 폭)은 design.py가 재료를 보고 정한다.
+    system_prompt += COMPOSE_GUIDE
     system_prompt += ('\n출력 스키마에 다음 키를 더한다: "layout", "outcome", "before_after", "market_levels", '
                       '"comparison", "revenue_flow", "effects", "tagline" (재료가 없으면 빈 값).')
     result = tools.llm(

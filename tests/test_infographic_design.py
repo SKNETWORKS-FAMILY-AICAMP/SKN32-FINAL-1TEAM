@@ -1,0 +1,123 @@
+"""인포그래픽 디자인 사양(design.py) — 지면 구성 · 대표 그림 · 그림체를 이름이 아니라 재료의 관계로 고른다."""
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest import TestCase
+from unittest.mock import patch
+
+from engineering_agent.infographic import artsheet, design
+from engineering_agent.infographic.composer import normalize_layout
+from engineering_agent.infographic.render import render_infographic
+from tests.test_infographic_composer import DATA
+from verification_agent.score import compute_infographic_check
+
+# 관계 하나만 두드러지게 남긴 재료. DATA에서 다른 관계의 재료를 뺀다.
+BARE = dict(DATA, before_after=[], market_levels=[], comparison={}, revenue_flow={}, effects=[],
+            solution_steps=[], key_metrics=[], layout=[])
+CASES = {
+    design.COMPARE: dict(BARE, before_after=DATA["before_after"]),
+    design.NETWORK: dict(BARE, effects=[{"who": "반찬가게", "what": "비용 절감"}, {"who": "퇴근길 손님", "what": "대기 없음"},
+                                        {"who": "구청", "what": "음식물 쓰레기 감소"}]),
+    design.DEAL: dict(BARE, revenue_flow=DATA["revenue_flow"]),
+    design.STEPS: dict(BARE, solution_steps=DATA["solution_steps"]),
+    design.MARKET: dict(BARE, market_levels=DATA["market_levels"]),
+    design.STORY: BARE,
+}
+# 그 관계를 보여 주는 구역. 이야기가 아니면 문제 판이 먼저 오고 이 구역이 바로 뒤에 온다.
+LEAD = {design.COMPARE: ("problem_solution", "before_after"), design.NETWORK: ("effects", "cards"),
+        design.DEAL: ("revenue", "flow"), design.STEPS: ("process", "steps"), design.MARKET: ("market", "nested"),
+        design.STORY: ("hero", "journey")}
+
+
+def _blocks(spec):
+    return [(b["block"], b["variant"]) for b in spec["layout"]]
+
+
+class RelationTests(TestCase):
+    def test_the_standout_relation_leads_the_page(self):
+        for relation, data in CASES.items():
+            with self.subTest(relation):
+                spec = design.decide("원페이지", data)
+                self.assertEqual(spec["relation"], relation, spec["reasons"])
+                blocks = [b for b in _blocks(spec) if b != ("problem_solution", "split")]
+                self.assertEqual(blocks[0], LEAD[relation])
+
+    def test_different_relations_make_different_layouts(self):
+        layouts = {tuple(_blocks(design.decide("원페이지", data))) for data in CASES.values()}
+        self.assertEqual(len(layouts), len(CASES))
+
+    def test_the_item_name_does_not_choose_the_layout(self):
+        """예전에는 이름 해시로 뼈대를 골랐다. 내용이 같으면 이름이 달라도 같은 구성이다."""
+        for data in CASES.values():
+            a = design.decide("원페이지", dict(data, item_name="가나다"))
+            b = design.decide("원페이지", dict(data, item_name="라마바"))
+            self.assertEqual((a["relation"], a["layout"]), (b["relation"], b["layout"]))
+
+    def test_redesign_moves_to_the_next_relation(self):
+        first = design.decide("원페이지", DATA)
+        again = design.decide("원페이지", DATA, redesign=True)
+        self.assertNotEqual(first["relation"], again["relation"])
+        self.assertNotEqual(_blocks(first), _blocks(again))
+        # 관계가 하나뿐이어도 새 구성 요청이면 구성이 달라진다(구역 변형을 바꾼다)
+        self.assertNotEqual(_blocks(design.decide("원페이지", BARE)),
+                            _blocks(design.decide("원페이지", BARE, redesign=True)))
+
+    def test_no_block_without_material(self):
+        """재료가 없는 구역을 넣으면 '정보 없음'이 찍히거나 빈 도표가 된다."""
+        blocks = {b for b, _ in _blocks(design.decide("원페이지", BARE))}
+        for empty in ("market", "competition", "effects", "metrics"):
+            self.assertNotIn(empty, blocks)
+
+    def test_placeholder_target_is_not_a_party(self):
+        """목표 고객 '확인 필요'는 주체가 아니다(실제 예시 계획서 셋의 목표 고객 입력값)."""
+        self.assertNotIn("확인 필요", design.parties(dict(BARE, target_users="확인 필요")))
+
+    def test_ai_api_keeps_the_processing_diagram_on_top(self):
+        for data in CASES.values():
+            spec = design.decide("AI_API", dict(data, pipeline={"input": "사진", "process": "분석", "output": "결과"}))
+            placed = dict(data, layout=spec["layout"], _design=spec)
+            self.assertEqual(normalize_layout("AI_API", placed)[0]["block"], "hero")
+            self.assertNotIn(("hero", "journey"), _blocks(spec))
+            self.assertEqual(artsheet.hero_kind("AI_API", placed)[0], "steps")
+
+
+class HeroAndStyleTests(TestCase):
+    def _hero(self, data, category="원페이지"):
+        return artsheet.hero_kind(category, design.apply(category, data))[0]
+
+    def test_hero_tells_the_same_relation_as_the_layout(self):
+        self.assertEqual(self._hero(CASES[design.NETWORK]), "hub")
+        self.assertEqual(self._hero(CASES[design.STORY]), "panorama")
+        self.assertEqual(self._hero(CASES[design.STEPS]), "scene")  # 단계는 단계 구역이 이미 보여 준다
+
+    def test_consumer_fields_get_a_flat_style_and_industry_a_line_style(self):
+        def prompt(item_name, summary, features, target):
+            data = design.apply("원페이지", dict(DATA, item_name=item_name, item_summary=summary,
+                                                features=features, target_users=target))
+            return artsheet.sheet_prompt(data, artsheet.icon_items("원페이지", data), "초록", "원페이지")
+
+        flat = prompt("반려동물 피부 AI 앱", "반려동물 피부 사진을 AI로 분석", ["피부 사진 AI 분석"], "반려동물 보호자")
+        line = prompt("AI 비전 결함 검사", "제조 공정 카메라 영상 분석", ["결함 분류 모델"], "제조 공장")
+        self.assertIn("평면 일러스트", flat)
+        self.assertIn("선 아이콘", line)
+        for p in (flat, line):  # 그림체가 달라도 칸 · 흰 여백 지시는 그대로(find_cells의 근거)
+            self.assertIn("칸 사이와 가장자리는 흰색으로 둔다", p)
+
+
+class GradableTests(TestCase):
+    def test_every_decided_layout_renders_and_keeps_full_code_score(self):
+        """사양이 고른 어떤 구성도 원페이지 코드 점검 8항목을 깎지 않는다."""
+        for relation, data in CASES.items():
+            for redesign in (False, True):
+                with self.subTest(relation=relation, redesign=redesign), TemporaryDirectory(
+                        dir=Path(__file__).resolve().parents[1]) as directory, \
+                        patch("engineering_agent.infographic.render._OUTPUT_DIR", Path(directory)):
+                    saved = render_infographic("원페이지", design.apply("원페이지", data, redesign))
+                    checked = compute_infographic_check(saved["file_path"], saved["source_text"], "열람")
+                    self.assertEqual(checked["total"], 15, [(i["name"], i["evidence"]) for i in checked["items"]
+                                                            if not i["passed"]])
+
+    def test_prompt_no_longer_tells_the_model_to_follow_a_skeleton(self):
+        from engineering_agent.infographic.compose_guide import COMPOSE_GUIDE
+
+        self.assertNotIn("뼈대", COMPOSE_GUIDE)
+        self.assertIn("빠짐없이", COMPOSE_GUIDE)

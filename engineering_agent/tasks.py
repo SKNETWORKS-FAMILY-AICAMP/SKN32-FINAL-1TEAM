@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 import re
-import zlib
 from typing import TYPE_CHECKING
 
 from engineering_agent.builder_html import build_prototype_html
-from engineering_agent.infographic import artsheet
-from engineering_agent.infographic.compose_guide import RETRY_HINT
+from engineering_agent.infographic import artsheet, design
+from engineering_agent.infographic.compose_guide import FIX_HINT, RETRY_HINT
 from engineering_agent.infographic import (
     generate_infographic_content,
     overflow_fields,
@@ -208,14 +207,19 @@ def _plan_text(plan_doc) -> str:
     return f"{sections}\n{tables}"
 
 
-def _layout_variation(item_name: str, rework_input) -> int:
-    """지면 뼈대 번호. 같은 아이템은 같은 뼈대로 시작하고, 다시 만들면 첫 뼈대와 다른 뼈대로 넘어간다.
-    직전 재실행의 뼈대는 알 수 없으므로 연속 재실행끼리는 같은 뼈대가 나올 수 있다."""
-    base = zlib.adler32(str(item_name).encode("utf-8"))
-    if rework_input is None:
-        return base
-    ref = str(getattr(rework_input, "previous_result_ref", "") or "")
-    return base + 1 + zlib.adler32(ref.encode("utf-8")) % 2
+# 사용자가 고칠 문제 없이 재작성을 고르면 조율은 사유 · 지시 칸을 이 문구로 채운다(조율 sbrain_flow.REWORK_DEFAULT_REASON).
+# 조율이 이 문구를 바꾸면 새 구성 요청을 알아보지 못하고 '문제만 고치기'로 처리한다 — 구성이 유지될 뿐 실패하지는 않는다.
+_USER_ONLY_REASON = "사용자가 이 묶음의 재작성을 요청했습니다."
+
+
+def _wants_redesign(rework_input) -> bool:
+    """새 구성으로 다시 만들지. 기획서 5-6: 재작성은 '문제가 된 곳만 고치고 잘 된 부분은 지킨다'. 재수행(검사 미통과)과
+    미달 사유가 있는 재작성은 구성을 지키고 문제만 고친다. 고칠 문제 없이 사용자가 인포그래픽 재작성을 고른 때만
+    다르게 만들어 달라는 요청으로 보고 새 구성을 쓴다(결정 0010)."""
+    if rework_input is None or rework_input.mode != "재작성":
+        return False
+    issues = [str(i).strip() for i in rework_input.issues if str(i).strip()]
+    return all(i == _USER_ONLY_REASON for i in issues)
 
 
 def run_tb2(inp: TB2In, tools: Tools) -> TB2Out:
@@ -223,12 +227,12 @@ def run_tb2(inp: TB2In, tools: Tools) -> TB2Out:
     from sbrain.models import CheckResult, Infographic
 
     plan_text = _plan_text(inp.plan_doc)
+    redesign = _wants_redesign(inp.rework_input)
+    hint = RETRY_HINT if redesign else FIX_HINT if inp.rework_input is not None else ""
     content = generate_infographic_content(
         inp.category, f"아이템명: {inp.item_spec.item_name}\n목표 고객: {inp.item_spec.target_customer}\n"
         f"기능 목록: {', '.join(inp.plan_doc.feature_list)}\n{plan_text}\n"
-        f"작업 지시: {inp.instruction}"
-        + (f"\n{RETRY_HINT}" if inp.rework_input is not None else ""), tools,
-        variation=_layout_variation(inp.item_spec.item_name, inp.rework_input),
+        f"작업 지시: {inp.instruction}" + (f"\n{hint}" if hint else ""), tools,
     )
     content["item_name"] = inp.item_spec.item_name
     content["target_users"] = inp.item_spec.target_customer
@@ -244,6 +248,9 @@ def run_tb2(inp: TB2In, tools: Tools) -> TB2Out:
         by_name[key] = None if key in by_name and by_name[key] != detail else detail
     keys = [_norm_name(f) for f in inp.plan_doc.feature_list]
     content["feature_details"] = ["" if keys.count(k) > 1 else by_name.get(k) or "" for k in keys]
+    # 지면 구성 · 대표 그림 · 그림체를 재료가 보여 주는 관계로 정한다(design.py). 입력값을 옮겨 담은 뒤에
+    # 정해야 목표 고객 · 기능 수가 판단에 들어간다. 그림(artsheet)보다 먼저 — 그림 칸이 구성을 따른다.
+    content = design.apply(inp.category, content, redesign=redesign)
 
     # 맞춤 아이콘(선택 재료). 이미지 호출 통로(tools.image)가 없거나 실패하면 None이고 지면은 기본
     # 아이콘으로 나간다. 아이콘이 있으면 지면 모양이 달라져 글자 칸 폭도 달라지므로, 넘침 검사

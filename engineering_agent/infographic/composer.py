@@ -542,6 +542,12 @@ def normalize_layout(category: str, data: dict) -> list[dict]:
         for b in out:
             if (b["block"], b["variant"]) == ("roadmap", "orbit"):
                 b["variant"] = "line"
+    # 가로 타임라인은 단계가 넷 이상이면 반 칸에 들어가지 않는다(한 단계 폭 75px — 할 일 글이 잘린다,
+    # 실측: 실제 계획서 두 건). 한 줄 전체를 쓴다. 짝이던 블록은 아래 짝짓기에서 다시 자리를 찾는다.
+    if len(parse_milestones(str(data.get("timeline_baseline", "")))) >= 4:
+        for b in out:
+            if (b["block"], b["variant"]) == ("roadmap", "line"):
+                b["width"] = "full"
     # 문제 · 해결 요약을 전후 비교표가 떠맡으면 반 칸으로는 좁다.
     if not any((b["block"], b["variant"]) in (("hero", "journey"), ("problem_solution", "split")) for b in out):
         for b in out:

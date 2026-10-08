@@ -119,7 +119,13 @@ class ArtifactAgentTests(TestCase):
         from engineering_agent.infographic import themes
         self.assertEqual(themes.pick({"item_name": "반찬온", "item_summary": "동네 반찬가게"}), "orange")
         self.assertEqual(themes.pick({"item_name": "점검콕", "features": ["설비 점검"]}), "steel")
-        self.assertEqual(themes.pick({"item_name": "민원요약AI"}), "violet")
+        # 사업 분야가 기술(AI)보다 먼저다 — 실제 예시 계획서 셋이 모두 보라로 나왔다.
+        self.assertEqual(themes.pick({"item_name": "민원요약AI"}), "blue")
+        self.assertEqual(themes.pick({"item_name": "AI 비전 결함 검사", "item_summary": "제조 공정 카메라 영상"}), "steel")
+        self.assertEqual(themes.pick({"item_name": "반려동물 피부 AI 앱"}), "rose")
+        self.assertEqual(themes.pick({"item_name": "재고 자동발주 SaaS",
+                                      "item_summary": "POS 판매 데이터를 학습해 발주"}), "teal")
+        self.assertEqual(themes.pick({"item_name": "문서요약AI", "item_summary": "보고서를 요약"}), "violet")
         # 맞는 낱말이 없으면 아이템명으로 정해 다시 만들어도 같은 색
         self.assertEqual(themes.pick({"item_name": "무명"}), themes.pick({"item_name": "무명"}))
 

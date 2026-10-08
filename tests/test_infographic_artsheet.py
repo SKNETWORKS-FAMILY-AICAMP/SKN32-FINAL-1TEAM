@@ -46,6 +46,37 @@ class ItemTests(TestCase):
         self.assertNotRegex(prompt.split("그림체")[1], r"\d")
         self.assertIn("계약 지자체", prompt)
 
+    def test_hero_composition_follows_the_plan_relations_not_the_name(self):
+        """모든 지면 맨 위가 '세 칸 + 화살표'면 계획서가 달라도 첫인상이 같다. 구도는 계획서 재료가
+        보여 주는 관계로 고른다. 그림 아래에 세 구역 글이 붙는 지면(journey · AI API)은 세 구역을 지킨다."""
+        journey = [{"block": "hero", "variant": "journey"}, {"block": "features", "variant": "band"}]
+        free = [{"block": "problem_solution", "variant": "split"}, {"block": "features", "variant": "band"}]
+
+        def kind(category, **over):
+            return artsheet.hero_kind(category, dict(PAGE, **over))[0]
+
+        self.assertEqual(kind("AI_API", layout=free), "steps")
+        self.assertEqual(kind("원페이지", layout=journey), "panorama")
+        parties = dict(target_users="동네 매장", revenue_flow={"payer": "본사"},
+                       effects=[{"who": "손님", "what": "대기 없음"}])
+        self.assertEqual(kind("원페이지", layout=free, **parties), "hub")
+        self.assertEqual(kind("원페이지", layout=free, effects=[], revenue_flow={},
+                              solution_steps=["접수", "분석", "안내"]), "steps")
+        self.assertEqual(kind("원페이지", layout=free + [{"block": "process", "variant": "steps"}], effects=[],
+                              revenue_flow={}, solution_steps=["접수", "분석", "안내"]), "scene")
+        # 이름만 다르고 내용이 같으면 같은 구도(이름 해시로 고르지 않는다)
+        self.assertEqual(kind("원페이지", layout=free, item_name="가", **parties),
+                         kind("원페이지", layout=free, item_name="나", **parties))
+
+        def hero(category, layout, **over):
+            data = dict(PAGE, layout=layout, **over)
+            prompt = artsheet.sheet_prompt(data, artsheet.icon_items(category, data), "초록", category)
+            return prompt.split("맨 위 넓은 칸: ")[1].split("\n")[0]
+
+        self.assertIn("3분의 1", hero("원페이지", journey))
+        self.assertIn("허브", hero("원페이지", free, **parties))
+        self.assertIn("대표 장면", hero("원페이지", free, effects=[], revenue_flow={}, solution_steps=[]))
+
 
 class WireAndCellsTests(TestCase):
     def test_cells_are_read_back_from_the_wireframe(self):
