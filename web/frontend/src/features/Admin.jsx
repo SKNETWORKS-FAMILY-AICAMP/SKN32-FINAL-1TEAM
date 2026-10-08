@@ -727,7 +727,8 @@ function ProgressTab({focusProjectId=null}){
                         </div>
                         <p className="text-[11.5px] text-[var(--muted-fg)] mt-0.5">
                           {shortUpdated(r.started_at)}
-                          {r.model_used&&<span> · {r.model_used}</span>}
+                          {/* LLM을 부르지 않는 단계(T-C2 · G-01 · T-C4)는 모델이 null로 온다(조율 2026-10-08) */}
+                          <span> · {r.model_used||'모델 없음'}</span>
                           {r.token_usage!=null&&<span> · {Number(r.token_usage).toLocaleString()} tok</span>}
                           {Number(r.image_token_usage)>0&&<span> · 이미지 {Number(r.image_token_usage).toLocaleString()} tok</span>}
                         </p>

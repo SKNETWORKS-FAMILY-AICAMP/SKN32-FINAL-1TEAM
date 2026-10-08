@@ -185,6 +185,15 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
     onOpenProject?.({ id: n.project_id, matched: true, announcementTitle: row?.notice_title || undefined });
   };
 
+  // 읽음 · 안 읽음을 알림마다 바꾼다(기준 문서 새 판: 읽음은 알림마다 표시 · 해제 가능, '모두 읽음'은 두지 않음).
+  // 서버 저장이 성공한 뒤에만 화면을 바꾼다.
+  const toggleRead = (n) => {
+    const read = n.read_at == null;
+    markNotificationRead(n.notification_id, read)
+      .then(() => setHistory((rows) => rows.map((r) => (r.notification_id === n.notification_id ? { ...r, read_at: read ? new Date().toISOString() : null } : r))))
+      .catch((err) => console.error('알림 읽음 표시를 바꾸지 못했어요', err));
+  };
+
   const toggleOpen = () => {
     setOpen((v) => {
       if (!v) {
@@ -260,14 +269,20 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
                 <p className="px-4 pt-3 pb-1.5 text-[11.5px] font-bold text-[var(--muted-fg)]">지난 알림</p>
                 <div className="soft-scroll max-h-52 overflow-y-auto divide-y divide-[var(--border)]">
                   {activeHistory.map((n) => (
-                    <button type="button" key={n.notification_id} onClick={() => openHistory(n)}
-                      className="flex w-full items-center gap-2.5 px-4 py-3 text-left hover:bg-[#f9fafb] transition-colors">
-                      {n.read_at == null && <span className="w-1.5 h-1.5 rounded-full bg-[var(--primary)] flex-shrink-0" aria-label="읽지 않음" />}
-                      <span className={'flex-1 min-w-0 text-[12.5px] ' + (n.read_at == null ? 'font-semibold' : 'text-[var(--muted-fg)]')}>
-                        {NOTIFICATION_TEXT[n.kind] || n.kind}
-                      </span>
-                      <span className="flex-shrink-0 text-[11px] text-[var(--muted-fg)]">{formatNotifiedAt(n.created_at)}</span>
-                    </button>
+                    <div key={n.notification_id} className="flex items-center hover:bg-[#f9fafb] transition-colors">
+                      <button type="button" onClick={() => openHistory(n)}
+                        className="flex flex-1 min-w-0 items-center gap-2.5 pl-4 pr-2 py-3 text-left">
+                        {n.read_at == null && <span className="w-1.5 h-1.5 rounded-full bg-[var(--primary)] flex-shrink-0" aria-label="읽지 않음" />}
+                        <span className={'flex-1 min-w-0 text-[12.5px] ' + (n.read_at == null ? 'font-semibold' : 'text-[var(--muted-fg)]')}>
+                          {NOTIFICATION_TEXT[n.kind] || n.kind}
+                        </span>
+                        <span className="flex-shrink-0 text-[11px] text-[var(--muted-fg)]">{formatNotifiedAt(n.created_at)}</span>
+                      </button>
+                      <button type="button" onClick={() => toggleRead(n)}
+                        className="flex-shrink-0 mr-3 rounded-md px-1.5 py-1 text-[10.5px] text-[var(--muted-fg)] hover:bg-[var(--muted)] hover:text-[var(--fg)]">
+                        {n.read_at == null ? '읽음' : '안 읽음'}
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>
