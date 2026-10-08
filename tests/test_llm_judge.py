@@ -377,3 +377,156 @@ class ElementJudgeTests(TestCase):
         with self.assertRaises(Exception):
             parse_checks(2)('{"checks": [{"element": "사진", "reason": "x", "present": true}]}')
         self.assertEqual(parse_checks(1)('{"checks": [{"element": "사진", "reason": "x", "present": false}]}'), [False])
+
+
+class CodeOnlyWiringTests(TestCase):
+    """주석 · 문자열에 적힌 호출은 실행되지 않는다. 연결로 인정하면 안 되고, 진짜 연결은 그대로 인정한다."""
+
+    REAL = ('document.getElementById("send").addEventListener("click", go);\n'
+            'const b = document.querySelector("#b"); b.addEventListener("click", go);\n'
+            'const $ = id => document.getElementById(id);\n$("c").onclick = go;')
+
+    def test_real_wiring_still_counts(self):
+        from verification_agent.rules.wiring import wired_ids
+
+        self.assertEqual(wired_ids(self.REAL), {"send", "b", "c"})
+
+    def test_calls_inside_strings_and_comments_do_not_count(self):
+        from verification_agent.rules.wiring import id_refs, wired_ids
+
+        call = 'document.getElementById("send").addEventListener("click", go)'
+        fakes = {
+            "템플릿 문자열": f"const s = `{call}`;",
+            "작은따옴표 문자열": "const s = '" + call.replace('"', "\'") + "';",
+            "한 줄 주석": f"// {call}",
+            "블록 주석": f"/* {call} */",
+            "변수 뒤 문자열 속 연결": 'const btn = document.getElementById("send");\nconst s = "btn.addEventListener(1)";',
+            "문자열 속 도우미 정의": 'const s = "const $ = id => document.getElementById(id);";\n$("send").addEventListener("click", go);',
+        }
+        for label, script in fakes.items():
+            with self.subTest(label):
+                self.assertEqual(wired_ids(script), set())
+        self.assertEqual(id_refs(f"// {call}"), set())
+
+    def test_template_expression_is_code(self):
+        """템플릿의 ${...}는 실행식이다. 그 안의 연결은 인정한다."""
+        from verification_agent.rules.wiring import wired_ids
+
+        script = 'const s = `${document.getElementById("send").addEventListener("click", go)}`;'
+        self.assertEqual(wired_ids(script), {"send"})
+
+    def test_regex_and_division_do_not_swallow_code(self):
+        from verification_agent.rules.wiring import wired_ids
+
+        script = ('const r = /["\'`]/g; const half = total / 2;\n'
+                  'document.getElementById("send").addEventListener("click", () => x / y);')
+        self.assertEqual(wired_ids(script), {"send"})
+
+    def test_fake_wiring_fails_feature_match_rule_stage(self):
+        page = ('<html lang="ko"><body><button id="send" data-feature="접수">접수</button>'
+                '<script>const s = `document.getElementById("send").addEventListener("click", go)`;'
+                '</script></body></html>')
+        self.assertEqual(match_features(["접수"], page, "html")["missing_features"], ["접수"])
+
+
+class HtmlViewScriptTests(TestCase):
+    def test_head_script_survives(self):
+        from verification_agent.llm_judge import html_view
+
+        page = ("<html><head><meta charset='utf-8'><title>t</title><style>b{}</style><script>\n"
+                "document.addEventListener('DOMContentLoaded', () => {\n"
+                "  document.getElementById('send').addEventListener('click', go);\n"
+                "});</script></head><body><button id=\"send\">접수</button></body></html>")
+        view = html_view(page)
+        self.assertIn("getElementById('send').addEventListener", view)
+        for gone in ("<title>", "<meta", "<style"):
+            self.assertNotIn(gone, view)
+
+    def test_script_strings_are_left_alone(self):
+        from verification_agent.llm_judge import html_view
+
+        script = ("const html = '<div class=\"result\" style=\"color:red\">ok</div>';\n"
+                  "const example = \"<!--keep-->\";\n"
+                  "const css = \"<style>body {color: red}</style>\";")
+        view = html_view(f'<html><body><p class="x">글</p><!-- 메모 --><script>{script}</script></body></html>')
+        self.assertIn(script, view)
+        self.assertNotIn('class="x"', view)
+        self.assertNotIn("메모", view)
+
+    def test_commented_out_script_is_dropped(self):
+        from verification_agent.llm_judge import html_view
+
+        view = html_view("<html><body><!-- <script>old()</script> --><script>now()</script></body></html>")
+        self.assertNotIn("old()", view)
+        self.assertIn("now()", view)
+
+
+class OnepageDetailLinesTests(TestCase):
+    """한 기능의 설명이 여러 <text> 줄로 감기면 이어 붙여 본다."""
+
+    PLAN = "접수는 사진과 증상을 받는다."
+
+    def _svg(self, *lines):
+        nodes = "".join(f'<text data-field="feature_detail" data-feature="{f}">{t}</text>' for f, t in lines)
+        return f'<svg xmlns="http://www.w3.org/2000/svg">{nodes}</svg>'
+
+    def test_wrapped_detail_is_read_as_one(self):
+        result = match_features(["접수"], self._svg(("접수", "사진과 증상을"), ("접수", "접수")),
+                                "svg-onepage", self.PLAN)
+        self.assertEqual(result["missing_features"], [], result["findings"])
+
+    def test_number_on_an_earlier_line_is_caught(self):
+        result = match_features(["접수"], self._svg(("접수", "999회"), ("접수", "사진과 증상을 받는다")),
+                                "svg-onepage", self.PLAN)
+        self.assertEqual(result["missing_features"], ["접수"])
+        self.assertIn("999", " ".join(result["findings"]))
+
+    def test_other_features_lines_are_not_mixed_in(self):
+        plan = self.PLAN + "\n조회는 처리 상태를 보여준다."
+        result = match_features(["접수", "조회"],
+                                self._svg(("접수", "사진과 증상을 받는다"), ("조회", "조회")),
+                                "svg-onepage", plan)
+        self.assertEqual(result["missing_features"], ["조회"])
+
+
+class PlaceholderPhraseTests(TestCase):
+    def test_check_needed_counts_as_empty_but_sentences_do_not(self):
+        from verification_agent.rules.r4_onepage import _is_placeholder
+
+        for value in ("확인 필요", "확인필요", "추후 결정", "미입력"):
+            self.assertTrue(_is_placeholder(value), value)
+        for value in ("확인 필요 없는 간편 결제", "결정 대기 시간을 줄인다"):
+            self.assertFalse(_is_placeholder(value), value)
+
+
+class LongPlanEvidenceTests(TestCase):
+    def test_short_plan_is_passed_whole(self):
+        from verification_agent.llm_judge import field_plan
+
+        self.assertEqual(field_plan("월 29000원", "  단가는 월 29000원  "), "단가는 월 29000원")
+
+    def test_tail_evidence_survives_a_long_plan(self):
+        from verification_agent.llm_judge import _PLAN_CHARS, field_plan
+
+        filler = "\n".join(f"{i}번째 배경 설명 문장이다." for i in range(2000))
+        plan = f"{filler}\n요금표\n기본 요금 | 월 29000원\n관계없는 꼬리 문장"
+        view = field_plan("월 29000원 구독", plan)
+        self.assertIn("29000원", view)
+        self.assertNotIn("관계없는 꼬리", view)
+        self.assertLessEqual(len(view), _PLAN_CHARS + 100)
+
+    def test_long_html_keeps_scripts_at_the_end(self):
+        from verification_agent.llm_judge import _ARTIFACT_CHARS, html_view
+
+        body = "".join(f"<p>문단 {i} 내용입니다</p>\n" for i in range(5000))
+        page = (f"<html><body>{body}<button id=\"send\">접수</button><script>"
+                "document.getElementById('send').addEventListener('click', go);</script></body></html>")
+        view = html_view(page)
+        self.assertLessEqual(len(view), _ARTIFACT_CHARS)
+        self.assertIn("getElementById('send').addEventListener", view)
+
+    def test_short_html_is_unchanged_in_order(self):
+        from verification_agent.llm_judge import html_view
+
+        view = html_view(HTML)
+        self.assertLess(view.index("<button"), view.index("<script>"))

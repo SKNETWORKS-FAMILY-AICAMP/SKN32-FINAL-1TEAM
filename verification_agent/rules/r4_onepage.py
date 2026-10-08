@@ -47,7 +47,8 @@ from verification_agent.rules.items import banded, item
 # 값이 실재하지 않는데 자리만 채운 문구. 구현 Agent가 빈 값에 적는 문구
 # (engineering_agent/infographic/svg_parts.py의 EMPTY_VALUE_TEXT)를 포함하며,
 # 이 문구가 들어간 항목은 충족으로 세지 않는다 — 세면 "정보 없음" 여섯 개가 만점을 받는다.
-_PLACEHOLDER_VALUES = {"정보 없음", "미정", "해당 없음", "n/a", "na", "-", "tbd", "없음"}
+_PLACEHOLDER_VALUES = {"정보 없음", "미정", "해당 없음", "n/a", "na", "-", "tbd", "없음",
+                       "확인 필요", "확인필요", "추후 확인", "추후 결정", "미입력"}
 
 # 2번 필수 6항목. (data-field 이름, 화면 라벨)
 _REQUIRED_FIELDS: tuple[tuple[str, str], ...] = (

@@ -48,7 +48,8 @@ _NUMBER_PENALTY_CAP = 3.0
 
 # 아이템명·목표 고객·한 줄 소개는 사용자 입력(ItemSpec)을 그대로 옮긴 값이라 계획서 대조 대상이 아니다.
 _USER_INPUT_FIELDS = {"item_name", "target_users", "item_summary"}
-_PLACEHOLDER_VALUES = {"정보 없음", "미정", "해당 없음", "n/a", "na", "-", "tbd", "없음"}
+_PLACEHOLDER_VALUES = {"정보 없음", "미정", "해당 없음", "n/a", "na", "-", "tbd", "없음",
+                       "확인 필요", "확인필요", "추후 확인", "추후 결정", "미입력"}
 _NUMBER_RE = re.compile(r"\d[\d,._]*")
 _TERM_RE = re.compile(r"[가-힣A-Za-z]{2,}")
 # 낱말 끝의 조사·어미. 긴 것부터 떼어야 "으로"가 "로"보다 먼저 걸린다.
@@ -269,8 +270,13 @@ def _match_onepage(feature_list: list[str], source: str, plan_text: str | None,
     plan_compact = _norm(plan_text + " " + " ".join(feature_list))
     plan_numbers = set(_numbers(plan_text + " " + " ".join(feature_list)))
     nodes = _svg_texts(source)
-    details = {_norm(n.get("data-feature", "")): "".join(n.itertext()).strip()
-               for n in nodes if n.get("data-field") == "feature_detail"}
+    # 한 기능의 설명이 여러 줄(<text> 여러 개)로 감겨 있으면 문서 순서대로 이어 붙인다.
+    # 사전으로 바로 만들면 마지막 줄만 남아, 정상 설명을 누락으로 보거나 앞줄의 수치를 놓친다.
+    details: dict[str, str] = {}
+    for n in nodes:
+        if n.get("data-field") == "feature_detail":
+            key, line = _norm(n.get("data-feature", "")), "".join(n.itertext()).strip()
+            details[key] = f"{details[key]} {line}".strip() if key in details else line
 
     missing: list[str] = []
     findings: list[str] = []

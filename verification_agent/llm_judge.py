@@ -45,6 +45,8 @@ _TERM_RE = re.compile(r"[가-힣A-Za-z0-9]{2,}")
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.S | re.I)
 _STYLE_RE = re.compile(r"<style\b.*?</style>", re.S | re.I)
 _HEAD_RE = re.compile(r"<head\b.*?</head>", re.S | re.I)
+_SCRIPT_RE = re.compile(r"<script\b.*?</script\s*>", re.S | re.I)
+_STASHED_RE = re.compile(r"\x00(\d+)\x00")
 _COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
 # 판정에 쓰지 않는 속성. id · data-feature · aria-label · type · for는 남긴다(핸들러와 요소를 잇는 단서).
 _NOISE_ATTR_RE = re.compile(r'\s(?:class|style|role|aria-(?!label)[\w-]+)\s*=\s*("[^"]*"|\'[^\']*\')', re.I)
@@ -144,14 +146,36 @@ def plan_excerpt(feature: str, plan_text: str | None) -> str:
 
 def html_view(source: str) -> str:
     """판정에 쓸 HTML. 스타일 · 머리말 · 주석 · 꾸밈 속성과 끼워 넣은 자원은 빼고
-    구조 · 문구 · 스크립트만 남긴다."""
-    text = _STYLE_RE.sub("", source)
-    text = _HEAD_RE.sub("", text)
+    구조 · 문구 · 스크립트만 남긴다.
+
+    정리 정규식은 마크업에만 건다. 스크립트 블록은 먼저 떼어 두었다가 그대로 되돌린다 —
+    그러지 않으면 JS 문자열 속 `<style>` · `<!-- -->` · `class=`까지 지워져 LLM이 실제와 다른
+    코드를 본다. head는 통째로 지우지 않고 안의 스크립트를 남긴다(DOM 준비 후 연결하는 코드가
+    흔히 head에 있다). 주석 처리된 스크립트는 실행되지 않으므로 주석과 함께 빠진다."""
+    scripts: list[str] = []
+
+    def stash(match: re.Match) -> str:
+        scripts.append(_DATA_URI_RE.sub("data:,", match.group(0)))
+        return f"\x00{len(scripts) - 1}\x00"
+
+    text = _SCRIPT_RE.sub(stash, source)
+    text = _STYLE_RE.sub("", text)
+    text = _HEAD_RE.sub(lambda m: "\n".join(s.group(0) for s in _STASHED_RE.finditer(m.group(0))), text)
     text = _COMMENT_RE.sub("", text)
     text = _NOISE_ATTR_RE.sub("", text)
     text = _DATA_URI_RE.sub("data:,", text)
     text = _BLANK_LINES_RE.sub("\n", _SPACE_RE.sub(" ", text))
-    return text[:_ARTIFACT_CHARS]
+    whole = _STASHED_RE.sub(lambda m: scripts[int(m.group(1))], text)
+    if len(whole) <= _ARTIFACT_CHARS:
+        return whole
+    # 넘치면 마크업을 먼저 줄이고 스크립트(처리 코드)를 지킨다. 앞에서 자르기만 하면
+    # 문서 끝의 스크립트가 통째로 빠져 LLM이 "처리 코드 없음"으로 판정한다.
+    kept = [scripts[int(m.group(1))] for m in _STASHED_RE.finditer(text)]
+    markup = _STASHED_RE.sub("", text)
+    # 스크립트 몫은 절반 이상, 마크업이 짧으면 남는 만큼 더.
+    code = "\n".join(kept)[:max(_ARTIFACT_CHARS // 2, _ARTIFACT_CHARS - len(markup) - 40)]
+    markup = markup[:_ARTIFACT_CHARS - len(code) - 40]
+    return f"{markup}\n<!-- 앞부분만 실음. 스크립트는 아래 -->\n{code}" if code else markup
 
 
 def onepage_view(source: str) -> str:
@@ -405,6 +429,7 @@ FIELD_MEANING = {
     "추진 일정": "언제 무엇을 하는지",
 }
 _PLAN_CHARS = 12000
+_PLAN_TAIL_CHARS = 3000  # 상한을 넘는 계획서에서 뒷부분 관련 줄에 남기는 몫
 
 # 보는 것은 "틀린 내용이 들어갔는가"다. 빠진 것은 감점하지 않는다. 원페이지는 원래 줄여 쓰는 글이라,
 # 빠진 것을 감점하게 했더니 정상 지면이 "대기 시간 내용이 없다", "누구에게 받는지 없다"로 깎였고
@@ -423,9 +448,31 @@ _FIELD_PRINCIPLES = """너는 정부지원사업 사업계획서와 원페이지
 {"reason": "계획서의 어느 내용과 비교해 판단했는지 1~3문장", "verdict": "충족" 또는 "부분" 또는 "미충족"}"""
 
 
+def field_plan(shown: str, plan_text: str) -> str:
+    """핵심 칸 판정에 실을 계획서. 상한을 넘으면 앞부분에, 뒷부분에서 칸 내용과 낱말 · 숫자가
+    겹치는 줄을 덧붙인다. 앞에서 자르기만 하면 표처럼 뒤에 붙은 단가 · 일정의 근거가 빠져
+    "계획서에 없음"으로 판정된다."""
+    text = plan_text.strip()
+    if len(text) <= _PLAN_CHARS:
+        return text
+    head = text[:_PLAN_CHARS - _PLAN_TAIL_CHARS]
+    terms = {t.casefold() for t in _TERM_RE.findall(shown)}
+    picked: list[str] = []
+    budget = _PLAN_TAIL_CHARS
+    for line in text[len(head):].splitlines():
+        line = line.strip()
+        compact = line.replace(" ", "").casefold()
+        if line and any(t in compact for t in terms) and len(line) + 3 <= budget:
+            picked.append(f"- {line}")
+            budget -= len(line) + 3
+    if not picked:
+        return head
+    return f"{head}\n\n[계획서 뒷부분 중 이 칸과 관련된 줄]\n" + "\n".join(picked)
+
+
 def field_messages(label: str, shown: str, plan_text: str) -> list[dict]:
     """계획서를 앞에, 칸을 뒤에 둔다(같은 계획서의 호출끼리 앞부분이 같다)."""
-    user = (f"[사업계획서]\n{plan_text.strip()[:_PLAN_CHARS]}\n\n"
+    user = (f"[사업계획서]\n{field_plan(shown, plan_text)}\n\n"
             f"[판정할 칸]\n{label} — 이 칸이 말해야 하는 것: {FIELD_MEANING.get(label, label)}\n\n"
             f"[지면에 적힌 내용]\n{shown}")
     return [{"role": "system", "content": _FIELD_PRINCIPLES}, {"role": "user", "content": user}]
