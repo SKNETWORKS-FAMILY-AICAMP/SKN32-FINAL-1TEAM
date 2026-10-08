@@ -230,3 +230,28 @@ class StepsIsTheDefaultTests(TestCase):
         pipe = {"pipeline": {"input": "사진", "process": "분석", "output": "결과"}}
         self.assertEqual(design.decide("AI_API", dict(CASES[design.DEAL], **pipe))["relation"], design.DEAL)
         self.assertNotEqual(design.decide("AI_API", dict(BARE, **pipe))["relation"], design.STEPS)
+
+
+class PosterFrameTests(TestCase):
+    """그림이 없을 때(이미지 호출 실패)의 포스터 모양도 구역 틀을 따른다 — 시연 중 실패해도 지면마다 다르게 나온다."""
+
+    def test_poster_in_every_frame_and_theme_keeps_full_code_score(self):
+        from engineering_agent.infographic import themes
+        from engineering_agent.infographic.design_kit import FRAME_STYLES
+        from tests.test_infographic_composer import EVERY_BLOCK
+
+        pages = set()
+        for frame in FRAME_STYLES:
+            for theme in themes.THEMES:
+                data = dict(DATA, layout=EVERY_BLOCK, style="poster", _design={"frame": frame})
+                with self.subTest(frame=frame, theme=theme), TemporaryDirectory(
+                        dir=Path(__file__).resolve().parents[1]) as directory, \
+                        patch("engineering_agent.infographic.render._OUTPUT_DIR", Path(directory)), \
+                        patch.object(themes, "pick", return_value=theme):
+                    saved = render_infographic("원페이지", data)
+                    checked = compute_infographic_check(saved["file_path"], saved["source_text"], "열람")
+                    self.assertEqual(checked["total"], 15, [(i["name"], i["evidence"]) for i in checked["items"]
+                                                            if not i["passed"]])
+                    if theme == "teal":
+                        pages.add(saved["source_text"].split("<desc>")[1][200:])
+        self.assertEqual(len(pages), 3)

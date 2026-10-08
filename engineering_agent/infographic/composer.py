@@ -836,7 +836,23 @@ def _poster_body(category, data, features, b, x, y, w):
 def compose_poster(category: str, data: dict, features: list[str]) -> tuple[str, int]:
     from engineering_agent.infographic import poster as P
     head, y, lead_shown = P.header(category, data)
+    # 그림이 없을 때(이미지 호출 실패 · 도구 없음)도 구역 틀 설정을 따른다. 따르지 않으면 시연 중 이미지 호출이
+    # 실패했을 때 모든 지면이 예전처럼 같은 포스터 모양으로 나온다.
+    frame = FRAME_STYLE.get()
+    if frame == "card":
+        head = f'<rect x="0" y="0" width="{PAGE_WIDTH}" height="{y + 14}" fill="{C["tint"]}"/>' + head
+    elif frame == "panel":
+        head = f'<rect x="20" y="16" width="{PAGE_WIDTH - 40}" height="{y - 6}" rx="22" fill="{C["tint"]}"/>' + head
     parts = [head]
+
+    def section(x, top, w, h):
+        """구역 바탕. top은 구역 제목 줄의 위, h는 제목 + 본문 높이."""
+        if frame == "card":
+            return (f'<rect x="{x - 14}" y="{top}" width="{w + 28}" height="{h}" rx="14" fill="#FFFFFF" '
+                    f'stroke="{C["line"]}"/>')
+        if frame == "panel":
+            return f'<rect x="{x - 14}" y="{top}" width="{w + 28}" height="{h}" rx="18" fill="{C["tint"]}"/>'
+        return ""
     layout = [dict(b) for b in normalize_layout(category, data)]
     # 지표+수익 한 칸 변형은 포스터에서 지표와 수익 두 블록으로 나눠 그린다.
     for i, b in enumerate(list(layout)):
@@ -871,7 +887,7 @@ def compose_poster(category: str, data: dict, features: list[str]) -> tuple[str,
                 b["width"] = layout[i + 1]["width"] = "full"
                 continue
             for bb, bx, svg, h in bodies:
-                parts.append(P.heading(bx, y + 28, half, bb["title"]) + svg)
+                parts.append(section(bx, y + 4, half, 58 + max(hs) + 14) + P.heading(bx, y + 28, half, bb["title"]) + svg)
             y += 58 + max(hs) + 36
             i += 2
             continue
@@ -879,7 +895,7 @@ def compose_poster(category: str, data: dict, features: list[str]) -> tuple[str,
         svg, h = _poster_body(category, data, features, b, x0, top, full)
         if svg:
             if framed:
-                parts.append(P.heading(x0, y + 28, full, b["title"]))
+                parts.append(section(x0, y + 4, full, 58 + h + 14) + P.heading(x0, y + 28, full, b["title"]))
             parts.append(svg)
             y = top + h + 36
         i += 1
