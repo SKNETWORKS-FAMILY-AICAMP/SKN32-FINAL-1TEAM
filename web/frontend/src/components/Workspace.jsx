@@ -124,7 +124,7 @@ export function Dashboard({onNewProject,onOpenProject}){
          누르는지가 누르기 전에 보인다. */
       <div className="project-row-confirm">
        <span>{permanentId===p.id
-        ?'계획서·프로토타입·첨부까지 모두 지워요. 되돌릴 수 없어요.'
+        ?'입력한 정보·계획서·프로토타입까지 모두 지워요. 되돌릴 수 없어요.'
         :'이 프로젝트를 지울까요?'}</span>
        {/* 생성이 도는 중에 자료를 지우면 서버 백그라운드 작업이 없는 행을 계속 쓴다
            (app/routers/projects.py _simulate_generation) — 끝난 뒤에 지우게 막는다. */}

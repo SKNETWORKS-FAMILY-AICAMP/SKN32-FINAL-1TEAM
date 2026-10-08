@@ -39,16 +39,15 @@ try{
   const {default:App}=await server.ssrLoadModule('/src/App.jsx');
   const {PlanForm}=await server.ssrLoadModule('/src/features/workflow/PlanForm.jsx');
   const {useWorkflowStore:store}=await server.ssrLoadModule('/src/store/useWorkflowStore.js');
-  const file=new Blob(['attachment']);
   const draft={applicantType:'individual',ceoName:'대표',birthDate:'1990-01-01',gender:'남성',foundedAt:'2024-01-01',companyName:'테스트상사',
-    item:'아이디어 상세 설명',files:[file],team:[],noTeam:true,pricing:[{item:'서비스',price:'1000'}],region:{sido:'서울특별시',sigungu:'강남구'},
+    item:'아이디어 상세 설명',team:[],noTeam:true,pricing:[{item:'서비스',price:'1000'}],region:{sido:'서울특별시',sigungu:'강남구'},
     industry:'정보·통신',careers:[{type:'경력',title:'개발',period:'2020-2024',hasProof:true}],skills:'개발 역량',certs:['벤처기업'],
     devPeriod:{start:'2026-10',end:'2026-12'},selfFunding:{available:true,cashLimit:'1000000',inKindResources:'보유 장비'},
     noHires:true,hires:[],noEquipment:true,equipment:[],noPartners:true,partners:[]};
   let submitted;
   let ui=mount(IntakeForm,{initialValues:draft,onSubmit:info=>{submitted=info}});await ui.flush();
   ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});
-  assert.equal(submitted.item,draft.item);assert.equal(submitted.files[0],file);assert.deepEqual(submitted.selfFunding,draft.selfFunding);
+  assert.equal(submitted.item,draft.item);assert.equal(submitted.files,undefined);assert.deepEqual(submitted.selfFunding,draft.selfFunding);
   assert.equal(submitted.noTeam,true);assert.equal(submitted.region.sigungu,'강남구');
   ui.component('Segmented').props.onChange('preliminary');await ui.flush();
   ui.component('Segmented').props.onChange('individual');await ui.flush();
@@ -102,7 +101,7 @@ try{
   let saving=ui.component('IntakeForm').props.onSubmit(draft);await ui.flush();
   assert.equal(ui.component('MatchProgress').props.ready,false);
   createRequest.resolve(response({detail:'simulated failure'},500));await saving;await ui.flush();
-  assert.equal(ui.component('IntakeForm').props.initialValues.files[0],file);
+  assert.equal(ui.component('IntakeForm').props.initialValues.item,draft.item);
   saving=ui.component('IntakeForm').props.onSubmit(draft);await ui.flush();
   ui.component('WorkspaceShell').props.onLogout();await ui.flush();
   createRequest.resolve(response({project_id:99}));await saving;await ui.flush();

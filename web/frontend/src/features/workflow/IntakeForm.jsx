@@ -10,7 +10,7 @@ import {
 import {
   ChipSelect, Check, IndustryField, ListEditor, RegionInput, Section, Segmented, Select, TextInput, errorFor, focusSection, textareaCls,
 } from '../mypage/ui.jsx';
-import { BackButton, FileAttach } from './shared.jsx';
+import { BackButton } from './shared.jsx';
 import {
   BudgetScaleField, DevPeriodField, EMPTY_FUNDING, ListOrNone, SelfFundingField, fundingFilled, periodFilled, rowsFilled,
 } from './ProjectPlanFields.jsx';
@@ -74,7 +74,6 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
   // 화면에 입력칸은 없고 "내 정보 불러오기"로만 채워지는 값 — 사업계획서 일반현황에 쓴다.
   const [bizNo, setBizNo] = useState(draft.bizNo || '');
   const [item, setItem] = useState(draft.item || '');
-  const [files, setFiles] = useState(draft.files || []);
   const [team, setTeam] = useState(draft.team || [{ ...EMPTY_TEAM_ROW }]);
   const [noTeam, setNoTeam] = useState(draft.noTeam ?? draft.team?.length === 0);
   const [pricing, setPricing] = useState(draft.pricing || [{ ...EMPTY_PRICING_ROW }]);
@@ -162,7 +161,7 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
       return;
     }
     onSubmit({
-      applicantType, item, files,
+      applicantType, item,
       ceoName, birthDate, gender,
       foundedAt: isPreliminary ? '' : foundedAt,
       companyName: isPreliminary ? '' : companyName,
@@ -287,8 +286,6 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
           <textarea value={item} onChange={(e) => setItem(e.target.value)} rows={5}
             placeholder="예) 반려견 산책 도우미를 구해주는 매칭 플랫폼을 만들고 있어요"
             className={textareaCls} />
-          <FileAttach files={files} onAdd={(added) => setFiles((prev) => [...prev, ...added])}
-            onRemove={(i) => setFiles((prev) => prev.filter((_, idx) => idx !== i))} />
         </Section>
 
         <div className="pt-6 border-t border-[var(--border)]">

@@ -291,60 +291,6 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
   );
 }
 
-// 클릭하면 OS 네이티브 파일 탐색창이 뜨는 첨부 위젯 — 실제 <input type="file">을
-// 숨겨두고 버튼으로 그 클릭을 대신 트리거한다.
-// 첨부 상한: 파일당 10MB, 최대 5개(팀 확정 2026-09-29). 서버도 같은 값으로 거절한다
-// (백엔드_요청사항_3차.md B-5) — 여기 검사는 올리기 전에 바로 알려주기 위한 것이다.
-export const ATTACH_MAX_FILES = 5;
-export const ATTACH_MAX_MB = 10;
-export function FileAttach({ files, onAdd, onRemove }){
-  const inputRef = useRef(null);
-  const [notice, setNotice] = useState('');
-  const full = files.length >= ATTACH_MAX_FILES;
-  const add = (picked) => {
-    const tooBig = picked.filter(f => f.size > ATTACH_MAX_MB * 1024 * 1024);
-    const fits = picked.filter(f => f.size <= ATTACH_MAX_MB * 1024 * 1024);
-    const room = Math.max(ATTACH_MAX_FILES - files.length, 0);
-    const accepted = fits.slice(0, room);
-    const messages = [];
-    if (tooBig.length) messages.push(`${tooBig.map(f => f.name).join(', ')} — 파일당 ${ATTACH_MAX_MB}MB까지 올릴 수 있어요.`);
-    if (fits.length > room) messages.push(`파일은 최대 ${ATTACH_MAX_FILES}개까지 첨부할 수 있어요.`);
-    setNotice(messages.join(' '));
-    if (accepted.length) onAdd(accepted);
-  };
-  return (
-    <div className="mt-4">
-      <input ref={inputRef} type="file" multiple className="hidden"
-        onChange={(e) => { add(Array.from(e.target.files)); e.target.value = ''; }} />
-      <button type="button" disabled={full} onClick={() => inputRef.current.click()}
-        className="disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-white px-3.5 py-2 text-[13px] font-semibold text-[var(--muted-fg)] hover:border-[var(--muted-fg)] hover:text-[var(--fg)] transition-[border-color,color,scale] duration-150 ease-out active:scale-[0.96]">
-        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a1.5 1.5 0 0 1-2.12-2.12l8.49-8.48"/>
-        </svg>
-        파일 첨부
-      </button>
-
-      {files.length > 0 && (
-        <ul className="mt-3 flex flex-col gap-2">
-          {files.map((f, i) => (
-            <li key={i} className="flex items-center justify-between gap-3 rounded-lg bg-[var(--muted)] px-3.5 py-2 text-[13px]">
-              <span className="truncate">{f.name}</span>
-              <button type="button" onClick={() => { setNotice(''); onRemove(i); }} aria-label={`${f.name} 삭제`}
-                className="flex-shrink-0 text-[var(--muted-fg)] hover:text-[var(--danger)] transition-[color,scale] duration-150 ease-out active:scale-[0.9]">
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                  <path d="M6 6l12 12M18 6L6 18"/>
-                </svg>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {notice && <p role="alert" className="mt-2 text-[12px] text-[var(--danger)]">{notice}</p>}
-      <p className="mt-2 text-[11.5px] text-[var(--muted-fg)]">사업자등록증·포트폴리오 등 참고자료를 첨부하면 계획서 작성 시 참고합니다 — 선택사항입니다 · 파일당 {ATTACH_MAX_MB}MB, 최대 {ATTACH_MAX_FILES}개 ({files.length}/{ATTACH_MAX_FILES})</p>
-    </div>
-  );
-}
-
 // 기획서 4-1/4-2①: 입력은 대화가 아니라 폼으로, 그것도 한 화면에서 한 번에 받는다 —
 // 자격 판정·계획서 작성에 필요한 항목(신청자 유형·대표자·설립일자·팀·단가·아이디어)을
 // 처음에 모두 모아두면 신청 자격 확인 이후로는 사용자에게 되묻지 않고 끝까지

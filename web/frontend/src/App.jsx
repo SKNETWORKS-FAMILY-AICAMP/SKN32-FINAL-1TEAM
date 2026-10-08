@@ -189,7 +189,7 @@ export default function App(){
     pricing_items:(info.pricing||[]).map(p=>({service_name:p.item,unit_price:parsePrice(p.price)})),
     ...intakeDetailPayload(info),
    };
-   const project=await createProject(payload,info.files||[]);
+   const project=await createProject(payload);
    if(request!==projectRequest.current)return;
    setProjectId(project.project_id);
   }catch(err){
@@ -257,7 +257,6 @@ export default function App(){
     ceoName:detail.company?.ceo_name||'', foundedAt:detail.company?.founded_at||'',
     team:(detail.team_members||[]).map(t=>({name:t.name,role:t.role||'',career:t.experience||''})),
     pricing:(detail.pricing_items||[]).map(p=>({item:p.service_name,price:p.unit_price==null?'':String(p.unit_price)})),
-    files:[], attachments:detail.attachments||[],
    });
   }catch(err){
    if(request!==projectRequest.current)return;
