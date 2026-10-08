@@ -30,14 +30,14 @@ SUMMARY_LINES = 2
 SUMMARY_LINE_HEIGHT = 22
 
 
-def summary_text(summary: str, y: float) -> tuple[str, float]:
+def summary_text(summary: str, y: float, x: float = 450, anchor: str = "middle") -> tuple[str, float]:
     """머리말의 한 줄 소개. (SVG, 한 줄일 때보다 늘어난 높이).
 
     한 줄 소개는 조율이 준 입력값이라 재수행으로 짧아지지 않는다. 한 줄에 다 들어가지
     않으면 두 줄로 감고, 아래 내용은 늘어난 높이만큼 내린다."""
-    svg, n = wrapped_text(450, y, summary, size=16, max_width=780, max_lines=SUMMARY_LINES,
+    svg, n = wrapped_text(x, y, summary, size=16, max_width=780, max_lines=SUMMARY_LINES,
                           line_height=SUMMARY_LINE_HEIGHT, fill=C["ink"],
-                          attrs='font-weight="600" data-field="item_summary"', anchor="middle")
+                          attrs='font-weight="600" data-field="item_summary"', anchor=anchor)
     return svg, (n - 1) * SUMMARY_LINE_HEIGHT
 
 

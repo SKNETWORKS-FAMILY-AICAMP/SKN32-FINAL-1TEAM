@@ -189,3 +189,27 @@ class RequiredMaterialPromptTests(TestCase):
         self.assertIn("flow_steps는 반드시 채운다", self._prompt("웹개발"))
         self.assertIn("pipeline의 input · process · output은 반드시 모두 채운다", self._prompt("AI_API"))
         self.assertNotIn("flow_steps는 반드시", self._prompt("원페이지"))
+
+
+class HeaderStyleTests(TestCase):
+    """맨 윗부분(제목 · 한 줄 소개 · 목표 고객)도 구역 틀과 짝을 맞춰 바꾼다. 모든 지면이 가운데 정렬 제목 +
+    알약 모양 대상이라 색 · 그림 · 구성이 달라도 첫인상이 같았다."""
+
+    def test_header_follows_the_frame_and_keeps_markers(self):
+        import re
+
+        from engineering_agent.infographic.composer import compose
+
+        heads = {}
+        for frame in ("card", "panel", "open"):
+            svg = compose("원페이지", dict(DATA, layout=[{"block": "features", "variant": "band"}], style="framed",
+                                         _design={"frame": frame}), DATA["features"])[0]
+            head = svg.split('data-field="target_users"')[0]
+            heads[frame] = head
+            for field in ('data-field="item_name" data-role="title"', 'data-field="item_summary"',
+                          'data-field="target_users" data-role="value"'):
+                self.assertIn(field, svg, frame)
+        self.assertEqual(len(set(heads.values())), 3)
+        self.assertRegex(heads["open"], r'data-field="item_name"[^>]*|text-anchor="start"')
+        self.assertIn('width="900"', heads["card"])  # 머리 띠
+        self.assertNotIn('width="900"', heads["panel"])

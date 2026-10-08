@@ -653,6 +653,49 @@ def _framed(b, x, y, w, body, h):
     return section_frame(x, y, w, h, b["title"], C) + body
 
 
+# 맨 윗부분(제목 · 한 줄 소개 · 목표 고객) 모양. 구역 틀과 짝을 맞춰 지면 한 장이 한 분위기로 보이게 한다.
+# 모든 지면이 '가운데 정렬 제목 + 알약 모양 대상'이라 색 · 그림 · 구성이 달라도 첫인상이 같았다(실측).
+HEADER_FOR_FRAME = {"card": "band", "panel": "center", "open": "left"}
+
+
+def _header(data: dict) -> tuple[str, float]:
+    """(SVG, 맨 윗부분이 끝나는 y). 표식(data-field · data-role)은 모양과 상관없이 같다."""
+    style = HEADER_FOR_FRAME.get(FRAME_STYLE.get(), "center")
+    name = fit(str(data.get("item_name", "")), TITLE_SIZE, TITLE_WIDTH)
+    summary = str(data.get("item_summary", ""))
+    target = fit(str(data.get("target_users", "")) or EMPTY_VALUE_TEXT, 15, 520)
+    title_attrs = 'data-field="item_name" data-role="title"'
+    target_attrs = 'data-field="target_users" data-role="value"'
+    if style == "left":
+        x = M + 4
+        parts = [f'<rect x="{x}" y="22" width="44" height="5" rx="2.5" fill="{C["accent"]}"/>',
+                 text(x, 70, name, TITLE_SIZE, C["ink"], 800, "start", title_attrs)]
+        dy = 0
+        if summary:
+            svg, dy = summary_text(summary, 104, x, "start")
+            parts.append(svg)
+        ty = 140 + dy
+        parts.append(icons.icon("users", x + 9, ty - 5, 18, C["accent_deep"], 1.8)
+                     + text(x + 28, ty, target, 15, C["ink"], 600, "start", target_attrs)
+                     + f'<line x1="{x}" y1="{ty + 12}" x2="{x + estimate_text_width(target, 15) + 28}" '
+                       f'y2="{ty + 12}" stroke="{C["accent"]}" stroke-width="2"/>')
+        return "".join(parts), 172 + dy
+    dy = 0
+    summary_svg = ""
+    if summary:
+        summary_svg, dy = summary_text(summary, 98)
+    tw = estimate_text_width(target, 15) + 60
+    pill = "#FFFFFF" if style == "band" else C["tint"]
+    parts = []
+    if style == "band":  # 옅은 색 머리 띠. 글자는 띠 위에 놓인다(검증-2 명도 대비는 감싸는 가장 작은 rect가 배경).
+        parts.append(f'<rect x="0" y="0" width="{PAGE_WIDTH}" height="{156 + dy}" fill="{C["tint"]}"/>')
+    parts += [text(450, 62, name, TITLE_SIZE, C["ink"], 800, "middle", title_attrs), summary_svg,
+              f'<rect x="{450 - tw / 2}" y="{110 + dy}" width="{tw}" height="32" rx="16" fill="{pill}"/>'
+              + icons.icon("users", 450 - tw / 2 + 22, 126 + dy, 18, C["accent_deep"], 1.8)
+              + text(450 + 12, 131 + dy, target, 15, C["ink"], 400, "middle", target_attrs)]
+    return "".join(parts), 168 + dy + (8 if style == "band" else 0)
+
+
 def compose(category: str, data: dict, features: list[str]) -> tuple[str, int]:
     """구역 틀 모양(card · panel · open)은 디자인 사양이 고른 것을 조립하는 동안만 쓴다."""
     design = data.get("_design") if isinstance(data.get("_design"), dict) else {}
@@ -672,20 +715,8 @@ def _compose(category: str, data: dict, features: list[str]) -> tuple[str, int]:
         body, h = compose_poster(category, data, features)
         return showcase_defs(C) + body, h
     parts = [showcase_defs(C), artsheet.defs(data)]
-    parts.append(text(450, 62, fit(str(data.get("item_name", "")), TITLE_SIZE, TITLE_WIDTH),
-                      TITLE_SIZE, C["ink"], 800, "middle", 'data-field="item_name" data-role="title"'))
-    summary = str(data.get("item_summary", ""))
-    dy = 0
-    if summary:
-        svg, dy = summary_text(summary, 98)
-        parts.append(svg)
-    target = fit(str(data.get("target_users", "")) or EMPTY_VALUE_TEXT, 15, 520)
-    tw = estimate_text_width(target, 15) + 60
-    parts.append(f'<rect x="{450 - tw / 2}" y="{110 + dy}" width="{tw}" height="32" rx="16" fill="{C["tint"]}"/>'
-                 + icons.icon("users", 450 - tw / 2 + 22, 126 + dy, 18, C["accent_deep"], 1.8)
-                 + text(450 + 12, 131 + dy, target, 15, C["ink"], 400, "middle",
-                        'data-field="target_users" data-role="value"'))
-    y = 168 + dy
+    head, y = _header(data)
+    parts.append(head)
     banner = artsheet.slot(data, artsheet.HERO, M, y, INNER, 216, 18)
     if banner:
         parts.append(banner)
