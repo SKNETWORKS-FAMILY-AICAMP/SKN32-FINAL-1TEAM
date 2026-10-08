@@ -84,10 +84,24 @@ class MaterialTests(TestCase):
 
         view = html_view(HTML.replace('<button id="order"', '<!-- 메모 --><button class="btn big" '
                                       'style="color:red" aria-pressed="false" aria-label="주문" id="order"'))
-        for gone in ("<style", "<head", "메모", "class=", "aria-pressed", "color:red"):
+        for gone in ("<style", "<head", "메모", "aria-pressed", "color:red"):
             self.assertNotIn(gone, view)
-        for kept in ('id="order"', 'data-feature="반찬 사전주문"', 'aria-label="주문"', "addEventListener"):
+        # class는 화면을 숨기고 여는 근거라 남긴다.
+        for kept in ('id="order"', 'data-feature="반찬 사전주문"', 'aria-label="주문"', "addEventListener",
+                     'class="btn big"'):
             self.assertIn(kept, view)
+
+    def test_html_view_keeps_what_hides_a_screen(self):
+        """숨겨진 화면을 LLM이 보이는 화면으로 읽지 않게, 숨김 근거(class · display:none)를 남긴다."""
+        from verification_agent.llm_judge import html_view
+
+        view = html_view('<html><body><section id="r" class="screen hidden"><table></table></section>'
+                         '<div id="m" style="color:red; display: none; padding:4px">모달</div>'
+                         '<p style="color:blue">글</p></body></html>')
+        self.assertIn('class="screen hidden"', view)
+        self.assertIn('style="display: none"', view)
+        self.assertNotIn("color:blue", view)
+        self.assertNotIn("padding", view)
 
 
 class TwoStageMatchTests(TestCase):
@@ -448,9 +462,9 @@ class HtmlViewScriptTests(TestCase):
         script = ("const html = '<div class=\"result\" style=\"color:red\">ok</div>';\n"
                   "const example = \"<!--keep-->\";\n"
                   "const css = \"<style>body {color: red}</style>\";")
-        view = html_view(f'<html><body><p class="x">글</p><!-- 메모 --><script>{script}</script></body></html>')
+        view = html_view(f'<html><body><p style="color:blue">글</p><!-- 메모 --><script>{script}</script></body></html>')
         self.assertIn(script, view)
-        self.assertNotIn('class="x"', view)
+        self.assertNotIn("color:blue", view)   # 마크업의 꾸밈 속성은 지운다
         self.assertNotIn("메모", view)
 
     def test_commented_out_script_is_dropped(self):

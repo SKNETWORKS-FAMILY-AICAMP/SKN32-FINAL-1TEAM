@@ -49,7 +49,12 @@ _SCRIPT_RE = re.compile(r"<script\b.*?</script\s*>", re.S | re.I)
 _STASHED_RE = re.compile(r"\x00(\d+)\x00")
 _COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
 # 판정에 쓰지 않는 속성. id · data-feature · aria-label · type · for는 남긴다(핸들러와 요소를 잇는 단서).
-_NOISE_ATTR_RE = re.compile(r'\s(?:class|style|role|aria-(?!label)[\w-]+)\s*=\s*("[^"]*"|\'[^\']*\')', re.I)
+# class도 남긴다 — 화면을 숨기고 여는 근거다(`class="screen hidden"` + `classList.remove("hidden")`).
+# 지웠더니 어떤 버튼으로도 열리지 않는 화면의 표를 LLM이 보이는 표로 읽고 "충족"을 줬다(실측).
+_NOISE_ATTR_RE = re.compile(r'\s(?:role|aria-(?!label)[\w-]+)\s*=\s*("[^"]*"|\'[^\']*\')', re.I)
+# style 속성은 꾸밈이라 지우되, 보이고 숨김을 정하는 선언만 남긴다.
+_STYLE_ATTR_RE = re.compile(r'\sstyle\s*=\s*("[^"]*"|\'[^\']*\')', re.I)
+_VISIBILITY_RE = re.compile(r"\b(?:display\s*:\s*none|visibility\s*:\s*hidden)\b", re.I)
 _DATA_URI_RE = re.compile(r"data:[\w.+-]+/[\w.+-]+;base64,[A-Za-z0-9+/=]+")
 _SPACE_RE = re.compile(r"[ \t]+")
 _BLANK_LINES_RE = re.compile(r"\n\s*\n+")
@@ -163,6 +168,9 @@ def html_view(source: str) -> str:
     text = _HEAD_RE.sub(lambda m: "\n".join(s.group(0) for s in _STASHED_RE.finditer(m.group(0))), text)
     text = _COMMENT_RE.sub("", text)
     text = _NOISE_ATTR_RE.sub("", text)
+    text = _STYLE_ATTR_RE.sub(
+        lambda m: f' style="{"; ".join(_VISIBILITY_RE.findall(m.group(1)))}"'
+        if _VISIBILITY_RE.search(m.group(1)) else "", text)
     text = _DATA_URI_RE.sub("data:,", text)
     text = _BLANK_LINES_RE.sub("\n", _SPACE_RE.sub(" ", text))
     whole = _STASHED_RE.sub(lambda m: scripts[int(m.group(1))], text)
