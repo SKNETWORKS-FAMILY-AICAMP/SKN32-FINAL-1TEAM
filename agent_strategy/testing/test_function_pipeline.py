@@ -126,9 +126,9 @@ class PipelineTests(unittest.TestCase):
 
     def test_model_routing_ignores_global_override(self):
         with patch.dict('os.environ',{'OPENAI_MODEL':'gpt-4.1'}):
-            self.assertEqual(runtime.model_config('F03')['apiModel'],'gpt-5.6-sol')
+            self.assertEqual(runtime.model_config('F03')['apiModel'],'gpt-6.1-sol')
             self.assertEqual(runtime.model_config('F02')['apiModel'],'gpt-5.6-terra')
-            self.assertEqual(runtime.model_config('F05')['apiModel'],'gpt-5.6-luna')
+            self.assertEqual(runtime.model_config('F05')['apiModel'],'gpt-6-luna')
             self.assertIsNone(runtime.model_config('F20')['apiModel'])
 
     def test_structural_failure_skips_semantic_call(self):
