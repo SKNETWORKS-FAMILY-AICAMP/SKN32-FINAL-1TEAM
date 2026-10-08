@@ -9,6 +9,7 @@ MySQL 구현(sbrain/store_sql/store.py SqlStore)과 같은 동작이다. 흐름 
 from __future__ import annotations
 
 import threading
+import uuid
 from collections import defaultdict
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
@@ -20,11 +21,12 @@ from typing import Any
 from ..models import Notice, Notification, RejectedAttempt, ReworkComparison, Run
 from ..models.clock import UTC_MIN, as_utc, utc_clock, utc_now
 from ..models.run import ACTIVE_PROGRESS
-from .errors import ProjectRunExists, StoreConflict
+from .errors import FileDeletionNotFound, FileDeletionNotGivenUp, ProjectRunExists, StoreConflict
+from .file_deletion import FIRST_DELAY_SEC
 from .store import (
     ACCOUNT_LOCK_TIMEOUT_SEC, BUSY_PROGRESS, FINISHED_REQUEST, PENDING_REQUEST, ArtifactVersion, CancelOutcome,
-    CommitBatch, CreateOutcome, ExecutionFilter, ExecutionRow, JobState, LogStatsRow, RunFilter, StartRequest,
-    StartRequestStatus, check_summary,
+    CommitBatch, CreateOutcome, ExecutionFilter, ExecutionRow, FileDeletion, JobState, LogStatsRow, RunFilter,
+    StartRequest, StartRequestStatus, check_summary, file_key_prefix,
 )
 from .trace import CallLog, ExecutionRecord, FeedbackLink, PointerEvent, TraceEvent
 
@@ -70,6 +72,9 @@ class MemoryStore:
         self._account_locks: dict[str, threading.RLock] = {}     # 계정 잠금 (SQL의 GET_LOCK · 프로세스 잠금과 같은 뜻)
         self._account_guard = threading.Lock()
         self.account_lock_timeout: float = ACCOUNT_LOCK_TIMEOUT_SEC
+        # 파일 삭제 대기열 (확장, 결정 0023) — deletion_id → 줄. 실행 건이 지워져도 남는다(기록 표가 아니다)
+        self._file_deletions: dict[str, FileDeletion] = {}
+        self.file_deletion_delay_sec: float = FIRST_DELAY_SEC   # 넣은 뒤 첫 시도까지 (잠정)
 
     # ── 실행 건 ───────────────────────────────────────
     def create_run(self, run: Run, batch: CommitBatch, *, max_active: int = 1) -> bool:
@@ -375,6 +380,7 @@ class MemoryStore:
                 del self._artifacts[k]
             self._pointers.pop(run_id, None)
             self._latest.pop(run_id, None)
+            self._enqueue_file_deletion(run_id)
 
     # ── 추적 기록 조회 ────────────────────────────────
     def executions(self, run_id: str) -> list[ExecutionRecord]:
@@ -489,6 +495,7 @@ class MemoryStore:
                 del self._runs[run_id]
                 self._leases.pop(run_id, None)
                 self._aborts.discard(run_id)
+                self._enqueue_file_deletion(run_id)
             elif bump_parts:
                 # 실행 건 JSON의 옮긴 횟수만 바꾼다 — updatedAt 등 다른 값은 그대로
                 stored = self._runs[run_id]
@@ -581,3 +588,89 @@ class MemoryStore:
             if job is None or job.last_summary is None:
                 return job
             return replace(job, last_summary=dict(job.last_summary))
+
+    # ── 파일 삭제 대기열 (확장, 결정 0023) ──────────────
+    def _enqueue_file_deletion(self, run_id: str) -> None:
+        """산출물을 지우는 같은 잠금 안에서 부른다 — 줄이 없으면 넣고, '포기'면 '대기'로 되돌리고, '대기'면 그대로."""
+        now = self._now()
+        next_at = now + timedelta(seconds=self.file_deletion_delay_sec)
+        row = self._deletion_of_run(run_id)
+        if row is None:
+            did = uuid.uuid4().hex
+            self._file_deletions[did] = FileDeletion(
+                deletion_id=did, run_id=run_id, key_prefix=file_key_prefix(run_id), status="대기", attempts=0,
+                last_error_kind=None, created_at=now, next_at=next_at)
+        elif row.status == "포기":
+            self._file_deletions[row.deletion_id] = replace(row, status="대기", attempts=0, next_at=next_at,
+                                                            gave_up_at=None)
+
+    def _deletion_of_run(self, run_id: str) -> FileDeletion | None:
+        return next((r for r in self._file_deletions.values() if r.run_id == run_id), None)
+
+    def claim_file_deletions(self, limit: int, hold_sec: float) -> list[FileDeletion]:
+        with self._lock:
+            now = self._now()
+            due = sorted((r for r in self._file_deletions.values() if r.status == "대기" and r.next_at <= now),
+                         key=lambda r: (r.next_at, r.deletion_id))[:limit]
+            claimed = []
+            for r in due:
+                held = replace(r, next_at=now + timedelta(seconds=hold_sec))
+                self._file_deletions[r.deletion_id] = held
+                claimed.append(held)
+            return claimed
+
+    def _held_deletion(self, deletion_id: str, claimed_next_at: datetime) -> FileDeletion | None:
+        r = self._file_deletions.get(deletion_id)
+        return r if r is not None and r.status == "대기" and r.next_at == as_utc(claimed_next_at) else None
+
+    def finish_file_deletion(self, deletion_id: str, claimed_next_at: datetime) -> bool:
+        with self._lock:
+            if self._held_deletion(deletion_id, claimed_next_at) is None:
+                return False
+            del self._file_deletions[deletion_id]
+            return True
+
+    def fail_file_deletion(self, deletion_id: str, claimed_next_at: datetime, error_kind: str, *, retry_sec: float,
+                           max_attempts: int) -> FileDeletion | None:
+        with self._lock:
+            r = self._held_deletion(deletion_id, claimed_next_at)
+            if r is None:
+                return None
+            now = self._now()
+            attempts = r.attempts + 1
+            if attempts >= max_attempts:
+                r = replace(r, status="포기", attempts=attempts, last_error_kind=error_kind, last_tried_at=now,
+                            gave_up_at=now)
+            else:
+                r = replace(r, attempts=attempts, last_error_kind=error_kind, last_tried_at=now,
+                            next_at=now + timedelta(seconds=retry_sec))
+            self._file_deletions[deletion_id] = r
+            return r
+
+    def get_file_deletion(self, deletion_id: str) -> FileDeletion | None:
+        with self._lock:
+            return self._file_deletions.get(deletion_id)
+
+    def file_deletion_for_run(self, run_id: str) -> FileDeletion | None:
+        with self._lock:
+            return self._deletion_of_run(run_id)
+
+    def list_file_deletions(self, status: str | None = None, limit: int | None = 50,
+                            offset: int = 0) -> list[FileDeletion]:
+        with self._lock:
+            rows = [r for r in self._file_deletions.values() if status is None or r.status == status]
+            rows.sort(key=lambda r: (r.created_at, r.deletion_id), reverse=True)
+            return _page(rows, limit, offset)
+
+    def retry_file_deletion(self, deletion_id: str, admin_id: str) -> FileDeletion:
+        with self._lock:
+            r = self._file_deletions.get(deletion_id)
+            if r is None:
+                raise FileDeletionNotFound("없는 파일 삭제 대기열 줄")
+            if r.status != "포기":
+                raise FileDeletionNotGivenUp("포기가 아닌 줄은 다시 시도하지 않는다")
+            now = self._now()
+            r = replace(r, status="대기", attempts=0, next_at=now, gave_up_at=None, retried_by=str(admin_id),
+                        retried_at=now, retry_count=r.retry_count + 1)
+            self._file_deletions[deletion_id] = r
+            return r

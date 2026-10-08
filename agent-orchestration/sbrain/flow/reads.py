@@ -18,11 +18,15 @@
 - 지금까지 결과(outputs) · 재작성 결과(rework_result)는 실패 · 중단 실행 건이면 CommandError("RUN_NOT_VIEWABLE").
   사용자용 결과에는 관리자용 실패 사유를 싣지 않는다 — 실패는 진행 상태와 안내(E-RUN-FAIL)로만 보인다.
 - 관리자 조회는 메타데이터 · 점수 · 개수만 돌려준다. 산출물 · 입력 · 문장 내용을 싣지 않는다(기획서 4-7 · 6-7).
+- 산출물 파일 읽기(read_artifact_file, 확장 — 결정 0023)는 파일 내용을 ArtifactFile(파이썬 dataclass, JSON으로 바꾸지
+  않음)로 준다. 형식 · 이름은 저장소에 넣을 때 기록한 값이다. 거절 사유(CommandError detail)에 키 · 이름을 넣지 않는다.
+- 파일 삭제 대기열 관리자 조회(admin_file_deletions · admin_retry_file_deletion, 확장)는 줄의 메타데이터만 준다(키 접두어 없음).
 """
 from __future__ import annotations
 
 import typing
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -37,14 +41,16 @@ from ..models.base import (
     AgentName, CollectionStatus, FallbackMode, KeptReason, KeptSide, NextAction, RunProgress, SBModel, ext,
 )
 from ..models.clock import UTC_MIN
-from ..models.domain import EvalItem, FormatFinding, Infographic, ProofreadLog
+from ..models.domain import FILE_NOTE, EvalItem, FormatFinding, Infographic, ProofreadLog
+from ..models.files import FileRef, file_key_problem
 from ..models.rework import ReworkComparison
 from ..models.run import ReworkResultStatus
 from ..models.scoring import ArtifactScore, CodeCheckResult, DocScore, FeatureMatchResult, ScoreReport
 from ..orchestrator import settings
 from ..orchestrator.context import RunContext, parse_ref
-from ..orchestrator.errors import CommandError, message
-from ..orchestrator.store import ExecutionFilter, RunFilter
+from ..orchestrator.errors import CommandError, FileDeletionNotFound, FileDeletionNotGivenUp, message
+from ..orchestrator.files import FileMissing, sha256_hex
+from ..orchestrator.store import FILE_DELETION_STATUSES, ExecutionFilter, FileDeletion, RunFilter
 from ..orchestrator.trace import ExecutionRecord
 # 층별 채점 출처 · 현재 점수는 기록 통계 줄(finalScores · scores)과 같은 정의 하나 — log_stats.py에 있다
 from .log_stats import SCORE_LAYERS
@@ -211,17 +217,18 @@ class Outputs(SBModel):
 
 
 class ReworkFileChange(SBModel):
-    """재작성으로 바뀐 산출물 파일의 전후 경로 (prototype: 진입 파일, infographic: 이미지)."""
+    """재작성으로 바뀐 산출물 파일의 전후 참조 (prototype: 진입 파일, infographic: 이미지). 파일 내용은 들어 있지 않다 —
+    웹은 참조의 키로 파일을 따로 읽는다 (결정 0023)."""
     artifact: str
-    before_path: str | None = None
-    after_path: str | None = None
+    before_file: FileRef | None = ext(None, note=FILE_NOTE)
+    after_file: FileRef | None = ext(None, note=FILE_NOTE)
 
 
 class ReworkResult(SBModel):
     """rework_result 결과 — 마지막 재작성 한 건 (Run.lastRework를 화면에 맞게 편 것).
 
     공통: 모은 묶음 · 화면 · 상태(진행중 · 완료 · 실패). 완료면 남긴 쪽 · 전후 점수 · 바뀐 산출물 전후 참조,
-    계획서가 바뀌었으면 전후 섹션 본문, 산출물이 바뀌었으면 전후 파일 경로. 실패면 되돌렸다는 사실 · 돌려준 묶음 ·
+    계획서가 바뀌었으면 전후 섹션 본문, 산출물이 바뀌었으면 전후 파일 참조(내용 없음). 실패면 되돌렸다는 사실 · 돌려준 묶음 ·
     안내 코드만(전후 내용 없음). 실패 원인(관리자용)은 싣지 않는다.
     """
     project_id: str | None
@@ -406,6 +413,43 @@ class AdminAgentTask(SBModel):
     recent_status: str | None = None
 
 
+class AdminFileDeletion(SBModel):
+    """확장 — 파일 삭제 대기열 한 줄 (결정 0023, orch_file_deletions). 메타데이터만 — 키 접두어 · 파일 이름 · 오류 메시지 ·
+    계정 · 프로젝트 ID는 싣지 않는다. 사람을 가리키는 값은 retried_by(다시 시도를 누른 관리자 ID)뿐이다.
+
+    status: 대기 · 포기, attempts: 이번 대기 이후 실패한 시도 수, last_error_kind: 일시 · 입력 · 운영.
+    """
+    deletion_id: str
+    run_id: str
+    status: str
+    attempts: int
+    last_error_kind: str | None = None
+    created_at: datetime
+    next_at: datetime
+    last_tried_at: datetime | None = None
+    gave_up_at: datetime | None = None
+    retried_by: str | None = None
+    retried_at: datetime | None = None
+    retry_count: int = 0
+
+
+@dataclass(frozen=True, repr=False)
+class ArtifactFile:
+    """확장 — 산출물 파일 읽기 결과 (결정 0023). SBModel이 아니다 — JSON으로 바꾸지 않는다.
+
+    웹은 data를 그대로 응답 본문으로, media_type을 응답 형식으로 쓴다. name · media_type은 저장소에 넣을 때 기록한 값이다
+    (웹이 넘긴 값으로 정하지 않는다). repr에 내용을 싣지 않는다.
+    """
+    name: str
+    media_type: str
+    size: int
+    sha256: str
+    data: bytes
+
+    def __repr__(self) -> str:   # 내용 · 이름이 로그 · 예외에 섞이지 않게
+        return f"ArtifactFile(media_type={self.media_type!r}, size={self.size})"
+
+
 # ── 화면 조회 ──────────────────────────────────────────
 SCREEN_STATES: dict[int, set[tuple[str, str]]] = {
     3: {("공고선택", "사용자대기"), ("계획서작성", "사용자대기")},   # 자격 통과 뒤 다시 고르기 (3.3)
@@ -522,7 +566,7 @@ def _sentence_changes(orch: SBrainOrchestrator, ctx: RunContext) -> list[Sentenc
 
 # ── 지금까지 결과 · 재작성 결과 ─────────────────────────────
 NOT_VIEWABLE = ("실패", "중단")
-FILE_PATHS = {"prototype": "entry_file_path", "infographic": "image_path"}   # 재작성 결과에 보일 파일 경로
+FILE_PATHS = {"prototype": "entry_file", "infographic": "image_file"}   # 재작성 결과에 보일 파일 참조 칸
 
 
 def _viewable_run(orch: SBrainOrchestrator, project_id: int | str) -> Run:
@@ -608,17 +652,46 @@ def rework_result(orch: SBrainOrchestrator, project_id: int | str) -> ReworkResu
         plan = value("planDoc", version)
         return list(plan.sections) if plan is not None else None
 
-    def path(key: str, version: int | None) -> str | None:
+    def file_ref(key: str, version: int | None) -> FileRef | None:
         obj = value(key, version)
         return getattr(obj, FILE_PATHS[key]) if obj is not None else None
     changed_plan = "planDoc" in before or "planDoc" in after
-    files = [ReworkFileChange(artifact=k, before_path=path(k, before.get(k)), after_path=path(k, after.get(k)))
+    files = [ReworkFileChange(artifact=k, before_file=file_ref(k, before.get(k)), after_file=file_ref(k, after.get(k)))
              for k in FILE_PATHS if k in before or k in after]
     return ReworkResult(
         **base, kept=s.kept, basis=s.basis, before_score=s.before_score, after_score=s.after_score,
         before_refs=list(s.before_refs), after_refs=list(s.after_refs),
         plan_before=sections(before.get("planDoc")) if changed_plan else None,
         plan_after=sections(after.get("planDoc")) if changed_plan else None, files=files)
+
+
+# ── 산출물 파일 읽기 (확장, 결정 0023) ─────────────────────────
+def read_artifact_file(orch: SBrainOrchestrator, project_id: int | str, key: str) -> ArtifactFile:
+    """프로젝트 실행 건의 파일 하나 — 웹이 주인 확인을 한 뒤 부른다. 읽기만 한다(점유 없음, 쓰기 · 지우기 없음).
+
+    1. 실행 건 없음 → RUN_NOT_FOUND, 실패 · 중단 → RUN_NOT_VIEWABLE (outputs와 같은 규칙)
+    2. 파일 저장소 설정 없음(웹 조립에 SBRAIN_ARTIFACT_ROOT 없음 · 상대 경로) → FILE_STORE_UNAVAILABLE
+    3. 키 규칙 위반 · 첫 마디가 그 실행 건 ID가 아님 → FILE_NOT_FOUND
+    4. 저장소에 없음 → FILE_NOT_FOUND
+    5. 읽은 내용의 sha256 · 크기가 저장된 값과 다름 → FILE_NOT_FOUND (관리자용 사유는 남기지 않는다, 잠정)
+    거절 사유(detail)에 키 · 이름을 넣지 않는다. 디스크 오류(OSError)는 다른 조회의 저장소 오류처럼 그대로 올라간다.
+    """
+    run = _viewable_run(orch, project_id)
+    files = orch.files
+    if files is None:
+        raise CommandError("FILE_STORE_UNAVAILABLE", "파일 저장소 설정 없음")
+    if file_key_problem(key) is not None or key.split("/", 1)[0] != run.run_id:
+        raise CommandError("FILE_NOT_FOUND", "파일 없음")
+    meta = files.meta(key)
+    if meta is None:
+        raise CommandError("FILE_NOT_FOUND", "파일 없음")
+    try:
+        data = files.read(key)
+    except FileMissing:
+        raise CommandError("FILE_NOT_FOUND", "파일 없음") from None
+    if len(data) != meta.size or sha256_hex(data) != meta.sha256:
+        raise CommandError("FILE_NOT_FOUND", "파일 없음")
+    return ArtifactFile(name=meta.name, media_type=meta.media_type, size=meta.size, sha256=meta.sha256, data=data)
 
 
 # ── 관리자 조회 ────────────────────────────────────────
@@ -832,10 +905,43 @@ def admin_agent_tasks(orch: SBrainOrchestrator) -> list[AdminAgentTask]:
     return out
 
 
+def _deletion_row(row: FileDeletion) -> AdminFileDeletion:
+    """대기열 줄 → 관리자 줄. 키 접두어(key_prefix)는 싣지 않는다."""
+    return AdminFileDeletion(
+        deletion_id=row.deletion_id, run_id=row.run_id, status=row.status, attempts=row.attempts,
+        last_error_kind=row.last_error_kind, created_at=row.created_at, next_at=row.next_at,
+        last_tried_at=row.last_tried_at, gave_up_at=row.gave_up_at, retried_by=row.retried_by,
+        retried_at=row.retried_at, retry_count=row.retry_count)
+
+
+def admin_file_deletions(orch: SBrainOrchestrator, *, status: str | None = None, limit: int = 50,
+                         offset: int = 0) -> list[AdminFileDeletion]:
+    """파일 삭제 대기열 목록 — 넣은 시각(created_at) 최근 순. status로 '대기' · '포기'를 거르고 limit · offset으로 나눈다.
+
+    다른 status 값은 ValueError(값은 메시지에 싣지 않는다)."""
+    if status is not None and status not in FILE_DELETION_STATUSES:
+        raise ValueError("status는 '대기' · '포기' 중 하나")
+    return [_deletion_row(r) for r in orch.store.list_file_deletions(status=status, limit=limit, offset=offset)]
+
+
+def admin_retry_file_deletion(orch: SBrainOrchestrator, deletion_id: str, admin_id: str) -> AdminFileDeletion:
+    """'포기'한 줄을 '대기'로 되돌린다 — attempts=0 · next_at=지금 · retried_by=admin_id · retried_at=지금 · retry_count+1을 한
+    트랜잭션으로(저장소 retry_file_deletion). 없는 줄 FILE_DELETION_NOT_FOUND, '대기' 줄 INVALID_STATE (detail에 ID 없음).
+    처리 결과는 워커 운영 로그(파일삭제 · 파일삭제실패 · 파일삭제포기)에 남는다."""
+    try:
+        row = orch.store.retry_file_deletion(deletion_id, str(admin_id))
+    except FileDeletionNotFound:
+        raise CommandError("FILE_DELETION_NOT_FOUND", "없는 줄") from None
+    except FileDeletionNotGivenUp:
+        raise CommandError("INVALID_STATE", "포기한 줄만 다시 시도한다") from None
+    return _deletion_row(row)
+
+
 __all__ = [
-    "AdminAgentTask", "AdminCall", "AdminExecution", "AdminRun", "AdminScoreHistory", "AdminSummary", "AdminTry",
-    "ArtifactScreen", "CandidatesScreen", "DocumentScreen", "GateScreen", "LayerChange", "Outputs", "OverallScreen",
-    "ProofreadScreen", "ResultScreen", "ReworkFileChange", "ReworkOption", "ReworkResult", "Screen", "ScoreBucket",
-    "ScoreEntry", "ScoreView", "SentenceChange", "TokenTotals", "TriggerStat", "admin_agent_tasks", "admin_calls",
-    "admin_executions", "admin_runs", "admin_score_history", "admin_summary", "outputs", "rework_result", "screen",
+    "AdminAgentTask", "AdminCall", "AdminExecution", "AdminFileDeletion", "AdminRun", "AdminScoreHistory",
+    "AdminSummary", "AdminTry", "ArtifactFile", "ArtifactScreen", "CandidatesScreen", "DocumentScreen", "GateScreen",
+    "LayerChange", "Outputs", "OverallScreen", "ProofreadScreen", "ResultScreen", "ReworkFileChange", "ReworkOption",
+    "ReworkResult", "Screen", "ScoreBucket", "ScoreEntry", "ScoreView", "SentenceChange", "TokenTotals", "TriggerStat",
+    "admin_agent_tasks", "admin_calls", "admin_executions", "admin_file_deletions", "admin_retry_file_deletion",
+    "admin_runs", "admin_score_history", "admin_summary", "outputs", "read_artifact_file", "rework_result", "screen",
 ]

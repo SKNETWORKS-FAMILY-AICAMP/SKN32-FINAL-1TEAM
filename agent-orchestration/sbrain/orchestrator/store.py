@@ -156,6 +156,37 @@ def check_summary(summary: dict[str, int]) -> dict[str, int]:
     return dict(summary)
 
 
+FileDeletionStatus = Literal["대기", "포기"]
+FILE_DELETION_STATUSES: tuple[str, ...] = ("대기", "포기")
+
+
+@dataclass(frozen=True)
+class FileDeletion:
+    """파일 삭제 대기열 한 줄 (확장, 결정 0023 — orch_file_deletions). 실행 건 하나의 파일 전체 삭제 요청.
+
+    계정 · 프로젝트 ID, 파일 이름 · 키, 오류 메시지는 없다. 사람을 가리키는 값은 retried_by(관리자 ID)뿐이다.
+    시각은 시간대 있는 UTC다. next_at은 워커가 가져가면 미뤄지고, 그 값이 가져간 표시(성공 · 실패 기록의 확인 값)다.
+    """
+    deletion_id: str
+    run_id: str
+    key_prefix: str                 # '<runId>/'
+    status: FileDeletionStatus
+    attempts: int                   # 이번 대기 이후 실패한 시도 수
+    last_error_kind: str | None     # 일시 · 입력 · 운영
+    created_at: datetime
+    next_at: datetime
+    last_tried_at: datetime | None = None
+    gave_up_at: datetime | None = None
+    retried_by: str | None = None
+    retried_at: datetime | None = None
+    retry_count: int = 0
+
+
+def file_key_prefix(run_id: str) -> str:
+    """실행 건의 파일 키 접두어 — 파일 키의 첫 마디가 실행 건 ID다(models.files 키 규칙)."""
+    return f"{run_id}/"
+
+
 @dataclass(frozen=True)
 class ExecutionRow:
     """여러 실행 건을 거르는 조회의 한 줄 — 실행 기록과 그 실행 건의 프로젝트."""
@@ -297,7 +328,11 @@ class Store(Protocol):
     def get_artifact(self, run_id: str, key: str, version: int) -> ArtifactVersion: ...
 
     def delete_artifacts(self, run_id: str) -> None:
-        """실행 건 삭제 때 산출물(버전 · 현재 버전 포인터)을 함께 지운다. 추적 기록은 참조만 있어 남는다(6-7)."""
+        """실행 건 삭제 때 산출물(버전 · 현재 버전 포인터)을 함께 지운다. 추적 기록은 참조만 있어 남는다(6-7).
+
+        같은 트랜잭션에서 그 실행 건의 파일 삭제 대기열 줄을 넣는다(enqueue 규칙은 아래 '파일 삭제 대기열'). 산출물이
+        없어도 넣는다.
+        """
 
     # ── 추적 기록 조회 ────────────────────────────────
     def executions(self, run_id: str) -> list[ExecutionRecord]: ...
@@ -346,7 +381,8 @@ class Store(Protocol):
 
         stats가 있으면 통계 줄 하나를 쓰고, 여섯 기록 표(실행 기록 · 호출 기록 · 추적 사건 · 피드백 연결 ·
         재작성 전후 비교 · 포인터 이동)에서 그 실행 건의 줄을 지운다.
-        delete_run이면 산출물 버전 · 포인터와 실행 건 줄도 지운다(웹 테이블은 건드리지 않는다).
+        delete_run이면 산출물 버전 · 포인터와 실행 건 줄도 지우고(웹 테이블은 건드리지 않는다), 같은 트랜잭션에서 파일 삭제
+        대기열 줄을 넣는다.
         아니면 실행 건 줄 · 산출물은 남기고, bump_parts면 Run.stats_parts만 1 올린다 — 마지막 활동 시각
         (updated_at 컬럼 · run_json의 updatedAt)과 점유는 바꾸지 않는다. 점유는 부른 쪽이 푼다.
         """
@@ -393,3 +429,35 @@ class Store(Protocol):
         """종료 신호 — 점유자일 때만 점유를 푼다. last_finished_at · last_summary는 그대로."""
 
     def get_job(self, job_name: str) -> JobState | None: ...
+
+    # ── 파일 삭제 대기열 (확장, 결정 0023) ──────────────
+    # 넣기는 delete_artifacts · retire_run(delete_run=True)가 같은 트랜잭션에서 한다(따로 부르는 메서드 없음).
+    #   줄이 없으면 '대기' 줄(next_at = 지금 + file_deletion_delay_sec), '대기' 줄이 있으면 그대로, '포기' 줄이면 '대기'로
+    #   되돌린다(attempts=0, next_at = 지금 + 지연, gave_up_at 비움 — retried_by · retried_at · retry_count는 그대로).
+    #   동시에 두 곳이 넣어 고유 제약(run_id)에 걸려도 오류가 아니다(있는 줄에 같은 규칙).
+    # 저장소는 file_deletion_delay_sec(첫 시도 지연, 기본 600초 잠정) 속성을 갖는다.
+    def claim_file_deletions(self, limit: int, hold_sec: float) -> list[FileDeletion]:
+        """next_at이 지난 '대기' 줄을 최대 limit개 가져간다(next_at 순). 줄마다 조건부 갱신으로 next_at을 지금 + hold_sec로
+        미뤄 한 워커만 가져간다. 돌려주는 줄의 next_at은 미룬 값이다(성공 · 실패 기록의 확인 값)."""
+
+    def finish_file_deletion(self, deletion_id: str, claimed_next_at: datetime) -> bool:
+        """파일을 지웠다 — 가져간 그대로인 줄(대기 · next_at 같음)이면 줄을 지운다. 아니면 False(다른 워커가 이어받음)."""
+
+    def fail_file_deletion(self, deletion_id: str, claimed_next_at: datetime, error_kind: str, *, retry_sec: float,
+                           max_attempts: int) -> FileDeletion | None:
+        """파일 지우기 실패 — attempts +1, last_error_kind · last_tried_at을 적고 next_at = 지금 + retry_sec.
+        attempts가 max_attempts에 이르면 status='포기' · gave_up_at = 지금. 가져간 그대로인 줄이 아니면 None."""
+
+    def get_file_deletion(self, deletion_id: str) -> FileDeletion | None: ...
+
+    def file_deletion_for_run(self, run_id: str) -> FileDeletion | None:
+        """실행 건의 대기열 줄 (실행 건 하나에 많아야 하나)."""
+
+    def list_file_deletions(self, status: str | None = None, limit: int | None = 50,
+                            offset: int = 0) -> list[FileDeletion]:
+        """대기열 줄 목록 — created_at 최근 순(같으면 deletion_id 역순). status로 '대기' · '포기'를 거른다. limit이 None이면 모두."""
+
+    def retry_file_deletion(self, deletion_id: str, admin_id: str) -> FileDeletion:
+        """'포기' 줄을 다시 시도 — 한 트랜잭션으로 status='대기', attempts=0, next_at = 지금, gave_up_at 비움,
+        retried_by = admin_id, retried_at = 지금, retry_count +1. 바뀐 줄을 돌려준다.
+        없는 줄이면 FileDeletionNotFound, '포기'가 아니면 FileDeletionNotGivenUp (아무것도 바꾸지 않음)."""

@@ -84,6 +84,10 @@ COMMAND_ERROR_CODES: dict[str, str] = {
     "INVALID_ACTION": "잘못된 동작",
     "E-G2-LIMIT": "재작성 기회 소진",
     "NOT_ACTIVE": "진행 중이 아닌 실행 건을 중단 (내부 — abort_project가 받는다)",
+    # 산출물 파일 (확장, 결정 0023) — 메시지(detail)에 키 · 파일 이름 · 계정을 넣지 않는다
+    "FILE_NOT_FOUND": "그 실행 건의 파일이 아님 · 키 규칙 위반 · 저장소에 없음 · 내용이 저장 값(sha256)과 다름 (구분하지 않음)",
+    "FILE_STORE_UNAVAILABLE": "파일 저장소 설정 없음 — 웹 조립에 SBRAIN_ARTIFACT_ROOT(절대 경로)가 없음",
+    "FILE_DELETION_NOT_FOUND": "없는 파일 삭제 대기열 줄",
 }
 
 
@@ -150,6 +154,16 @@ class ResourceNotFound(OrchestratorError):
     """
 
 
+class FileRejected(OrchestratorError):
+    """파일 창구(tools.files)가 받지 않는 요청 (확장, 입력 오류 — 재시도하지 않는다).
+
+    이름 · 형식 · 크기 규칙 위반(저장소를 부르지 않음), 실행 건이 '실행'이 아닐 때의 넣기, 다른 실행 건 파일 읽기.
+    메시지에는 어긴 규칙 종류 · 크기 숫자만 싣는다 — 파일 이름 · 키 · 내용을 넣지 않는다.
+    """
+
+    error_kind = "입력"
+
+
 class CommandError(OrchestratorError):
     """사용자 명령을 받을 수 없음 (상태 불일치 · 선택 불가 등)."""
 
@@ -165,3 +179,11 @@ class StoreConflict(OrchestratorError):
 
 class ProjectRunExists(OrchestratorError):
     """프로젝트에 이미 실행 건이 있음 (확장). 프로젝트 1건에 실행 건은 최대 1건 — 새로 시작은 새 프로젝트로 한다."""
+
+
+class FileDeletionNotFound(OrchestratorError):
+    """없는 파일 삭제 대기열 줄 (확장, 결정 0023). 메시지에 ID를 넣지 않는다."""
+
+
+class FileDeletionNotGivenUp(OrchestratorError):
+    """'포기'가 아닌 파일 삭제 대기열 줄을 다시 시도하려 함 (확장, 결정 0023). 메시지에 ID를 넣지 않는다."""

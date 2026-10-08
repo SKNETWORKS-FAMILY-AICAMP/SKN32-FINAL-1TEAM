@@ -4,7 +4,7 @@
 - 산출물층 미달 → 다시 돌릴 Task (artifact_rework_reasons — 통과 필수 조건 · 결함 출처 · 누락 · 부분 인정 · 보류)
 - 스텁 T-V2의 1.4판 점수식(부분 0.5) · 보류 · 진단 · 통과 필수 조건
 - 원페이지 계획서 재작성의 T-B2 → M-2 반영
-- T-B1 계획서 입력 · 재실행 때 이전 원문(previous_source_text)
+- T-B1 계획서 입력 · 재실행 때 이전 원문 참조(previous_source_file — 이전 진입 파일의 FileRef, 결정 0023)
 - T-B2 이미지 호출 실패 예외와 '이미지대체' 사건
 흐름 테스트는 메모리 · SQLite 두 저장소에서 돈다 (clock 픽스처).
 """
@@ -28,8 +28,8 @@ from sbrain.flow.rework_map import (
     artifact_rework_reasons,
 )
 from sbrain.models import (
-    ArtifactScore, CodeCheck, CodeCheckResult, FeatureMatchResult, Infographic, ItemSpec, PlanDoc, Prototype,
-    ReworkInput,
+    ArtifactScore, CodeCheck, CodeCheckResult, FeatureMatchResult, FileRef, Infographic, ItemSpec, PlanDoc,
+    Prototype, ReworkInput,
 )
 from sbrain.models.base import extension_fields
 from sbrain.orchestrator.errors import ERROR_CODES, ToolCallExhausted
@@ -40,6 +40,16 @@ IMAGE_FALLBACK = "T-B2 이미지 호출 실패 — 기본 아이콘으로 계속
 
 
 # ── 도움 ─────────────────────────────────────────────
+def fref(name: str, media_type: str, run_id: str = "run-x") -> FileRef:
+    """모델 검사용 파일 참조 — 저장소에 없는 값이라 흐름 출력에는 쓰지 않는다."""
+    return FileRef(key=f"{run_id}/e/u/{name}", name=name, media_type=media_type, size=1, sha256="0" * 64)
+
+
+def file_text(app, ref: FileRef) -> str:
+    """앱의 파일 저장소에서 참조의 내용을 읽는다 (테스트 확인용)."""
+    return app.engine.files.read(ref.key).decode()
+
+
 def events(app, rid, kind):
     return [e for e in app.store.events(rid) if e.kind == kind]
 
@@ -75,7 +85,7 @@ def test_new_contract_fields_marking():
     assert "planDoc" not in extension_fields(c.TV2In)
     assert "diagnostics" not in extension_fields(c.TV2Out)
     assert "planDoc" not in extension_fields(c.TB1In)
-    assert "previousSourceText" not in extension_fields(ReworkInput)
+    assert "previousSourceFile" in extension_fields(ReworkInput)              # 참조형 — 기준 문서와 다름(결정 0023)
     # 기준 문서에 아직 없다 — 확장
     assert "check" in extension_fields(c.G04Out)
     # 기준 문서는 필수지만 옛 실행 건 호환으로 선택 선언을 지킨다
@@ -83,10 +93,10 @@ def test_new_contract_fields_marking():
     # 기본값 — 담당자 코드가 채우기 전에도 검증을 통과한다
     fm = FeatureMatchResult(score=0, missing_features=[], extra_features=[], findings=[], judged_by="htmlParse")
     assert (fm.withheld, fm.withheld_reason, fm.partial_features) == (False, None, [])
-    assert c.G04Out(readme_path="/README.md").check is None
+    assert c.G04Out(readme_file=fref("README.md", "text/markdown")).check is None
     assert c.G04Out.model_fields["check"].annotation == CheckResult | None
     assert ReworkInput(mode="재수행", previous_result_ref="x@1", issues=[], is_final_attempt=False
-                       ).previous_source_text is None
+                       ).previous_source_file is None
     # 스키마에 x-extension 표시 없음 (기준 문서 v1.10 필드) · 남은 확장에는 있음
     schema = FeatureMatchResult.model_json_schema(by_alias=True)
     assert "x-extension" not in schema["properties"]["partialFeatures"]
@@ -165,9 +175,10 @@ def stub_fn(task_id: str, sc: StubScenario):
 
 
 def tv2_in(features: list[str], kind: str = "html") -> c.TV2In:
-    proto = Prototype(entry_file_path="/index.html", kind=kind, source_text="<html></html>", asset_paths=[],
+    proto = Prototype(entry_file=fref("index.html", "text/html"), kind=kind, asset_files=[],
                       implemented_features=features)
-    return c.TV2In(prototype=proto, infographic=Infographic(image_path="/i.png", format="png", alt_text="i"),
+    infographic = Infographic(image_file=fref("i.png", "image/png"), format="png", alt_text="i")
+    return c.TV2In(prototype=proto, infographic=infographic,
                    feature_list=features, plan_doc=PlanDoc(sections=[], feature_list=features, charts=[], tables=[],
                                                            protected_tokens=[]))
 
@@ -222,12 +233,26 @@ def test_stub_code_check_names_weights_and_defect_sources():
     assert out.code_check.checks[1].defect_sources == ["prototype"]
 
 
+class PutOnly:
+    """tools.files 대신 — 넣은 것을 모으고 가짜 참조를 돌려준다 (스텁 단위 테스트용)."""
+    def __init__(self) -> None:
+        self.put_calls: list[tuple[str, bytes, str]] = []
+
+    def put(self, name: str, data: bytes, media_type: str) -> FileRef:
+        self.put_calls.append((name, data, media_type))
+        return fref(name, media_type)
+
+
 def test_stub_tb1_entry_is_index_html():
     tb1 = stub_fn("T-B1", StubScenario())
+    files = PutOnly()
+    tools = SimpleNamespace(llm=lambda *a, **k: None, files=files)
     out = tb1(c.TB1In(feature_list=F4, item_spec=ItemSpec(item_name="i", one_line_summary="s", target_customer="t",
                                                           core_features=F4, category="웹개발", keywords=[]),
-                      category="웹개발", instruction="지시"), TOOLS)
-    assert out.entry_file_path == "/index.html" and out.prototype.entry_file_path == "/index.html"
+                      category="웹개발", instruction="지시"), tools)
+    assert out.entry_file.name == "index.html" and out.prototype.entry_file == out.entry_file
+    assert out.entry_file.media_type == "text/html" and out.prototype.asset_files == []
+    assert [(n, t) for n, _, t in files.put_calls] == [("index.html", "text/html")]
 
 
 # ── C9 · 잠정 표시 ─────────────────────────────────────────
@@ -346,17 +371,23 @@ def test_onepage_document_rework_drop_reverts_plan_infographic_and_prototype(clo
         assert app.store.get_latest_versions(rid)[key] > before[key]      # 새로 만들었다가 되돌렸다
 
 
-# ── spec 4.3: 재실행 때 이전 원문 ───────────────────────────────
+# ── spec 4.3: 재실행 때 이전 원문 (참조 — 결정 0023) ───────────────────
 def numbered_html(app) -> None:
-    """T-B1이 실행마다 다른 원문을 만든다 — '<html>원문표지-n</html>'."""
+    """T-B1이 실행마다 다른 진입 파일을 넣는다 — 내용 '<html>원문표지-n</html>'."""
     base, n = app.registry.get("T-B1").fn, [0]
 
     def fn(inp, tools):
         out = base(inp, tools)
-        text = f"<html>원문표지-{n[0]}</html>"
+        entry = tools.files.put("index.html", f"<html>원문표지-{n[0]}</html>".encode(), "text/html")
         n[0] += 1
-        return out.model_copy(update={"prototype": out.prototype.model_copy(update={"source_text": text})})
+        return out.model_copy(update={"entry_file": entry,
+                                      "prototype": out.prototype.model_copy(update={"entry_file": entry})})
     app.registry.bind("T-B1", fn)
+
+
+def source_of(app, ri) -> str | None:
+    """재작성 입력의 이전 원문 참조가 가리키는 내용 (비면 None)."""
+    return None if ri.previous_source_file is None else file_text(app, ri.previous_source_file)
 
 
 def capture(app, task_id: str) -> list:
@@ -369,7 +400,7 @@ def capture(app, task_id: str) -> list:
     return seen
 
 
-def test_previous_source_text_on_target_rework(clock):
+def test_previous_source_file_on_target_rework(clock):
     app = make_app(clock, StubScenario(art_scores=[(12.0, 7.0)]))
     numbered_html(app)
     seen = capture(app, "T-B1")
@@ -377,32 +408,33 @@ def test_previous_source_text_on_target_rework(clock):
     assert seen == [None]                                                  # 첫 실행은 재작성 입력이 없다
     rework(app, clock, rid, "실행 파일")
     ri = seen[-1]
-    assert ri.mode == "재작성" and ri.previous_source_text == "<html>원문표지-0</html>"
+    assert ri.mode == "재작성" and source_of(app, ri) == "<html>원문표지-0</html>"
+    assert ri.previous_source_file.name == "index.html" and ri.previous_source_file.run_id == rid
 
 
-def test_previous_source_text_on_redo_including_reflect_run(clock):
+def test_previous_source_file_on_redo_including_reflect_run(clock):
     app = make_app(clock, StubScenario(check_fail_times={"T-B1": 1}))
     numbered_html(app)
     seen = capture(app, "T-B1")
     rid = to_screen9(app)
     first, redo = seen
-    assert first is None and redo.mode == "재수행" and redo.previous_source_text == "<html>원문표지-0</html>"
+    assert first is None and redo.mode == "재수행" and source_of(app, redo) == "<html>원문표지-0</html>"
     app.scenario.check_fail_times["T-B1"] = 3                             # 반영 실행 불통과 → 재수행
     rework(app, clock, rid, "문제인식")
     reflect, reflect_redo = seen[2:]
-    assert reflect.mode == "재작성" and reflect.previous_source_text is None   # 반영은 채우지 않는다
-    assert reflect_redo.mode == "재수행" and reflect_redo.previous_source_text == "<html>원문표지-2</html>"
+    assert reflect.mode == "재작성" and reflect.previous_source_file is None   # 반영은 채우지 않는다
+    assert reflect_redo.mode == "재수행" and source_of(app, reflect_redo) == "<html>원문표지-2</html>"
 
 
-def test_previous_source_text_not_filled_for_other_tasks(clock):
+def test_previous_source_file_not_filled_for_other_tasks(clock):
     app = make_app(clock, StubScenario(category="원페이지", art_scores=[(12.0, 7.0)],
                                        check_fail_times={"T-S1": 1, "T-B2": 1}))
     s1, b2 = capture(app, "T-S1"), capture(app, "T-B2")
     rid = to_screen8(app)
     rework(app, clock, rid, "인포그래픽")
-    assert s1[1].mode == "재수행" and s1[1].previous_source_text is None
-    assert b2[1].mode == "재수행" and b2[1].previous_source_text is None
-    assert b2[-1].mode == "재작성" and b2[-1].previous_source_text is None
+    assert s1[1].mode == "재수행" and s1[1].previous_source_file is None
+    assert b2[1].mode == "재수행" and b2[1].previous_source_file is None
+    assert b2[-1].mode == "재작성" and b2[-1].previous_source_file is None
 
 
 def test_resume_reuses_same_rework_input(clock):
@@ -420,12 +452,12 @@ def test_resume_reuses_same_rework_input(clock):
     assert app.orchestrator.tick(clock.t) == [rid]
     assert app.store.load_run(rid).state.step == "산출물확인"
     redo, resumed = seen[1], seen[2]
-    assert resumed == redo and resumed.previous_source_text == "<html>원문표지-0</html>"
+    assert resumed == redo and source_of(app, resumed) == "<html>원문표지-0</html>"
     assert ref in records_of_task(app, rid, "T-B1")[-1].inputs
     assert app.store.get_pointers(rid)["T-B1.reworkInput"] == int(ref.split("@")[1])
 
 
-def test_previous_source_text_not_sent_to_rewrite_llm(clock):
+def test_previous_source_file_not_sent_to_rewrite_llm(clock):
     app = make_app(clock, StubScenario(art_scores=[(12.0, 7.0)], check_fail_times={"T-B1": 1}))
     app.engine.flow.rewriter = rewrite_guidance
 
@@ -438,27 +470,31 @@ def test_previous_source_text_not_sent_to_rewrite_llm(clock):
     seen = capture(app, "T-B1")
     rid = to_screen8(app)
     rework(app, clock, rid, "실행 파일")
-    assert [ri.previous_source_text for ri in seen if ri is not None] == [
-        "<html>원문표지-0</html>", "<html>원문표지-1</html>"]
+    given = [ri.previous_source_file for ri in seen if ri is not None]
+    assert [file_text(app, ref) for ref in given] == ["<html>원문표지-0</html>", "<html>원문표지-1</html>"]
     asked = [r for r in app.llm.requests if r.metadata["purpose"] == PURPOSE_REWRITE]
     assert len(asked) == 2                                                # 재수행 · 재작성 대상
-    for r in asked:
-        assert "원문표지" not in "\n".join(m["content"] for m in r.messages)
+    for r in asked:                                                       # 내용도 참조(키 · 해시)도 보내지 않는다
+        sent = "\n".join(m["content"] for m in r.messages)
+        assert "원문표지" not in sent
+        assert all(ref.key not in sent and ref.sha256 not in sent for ref in given)
 
 
-def test_previous_source_text_not_in_records_or_admin_views(clock):
+def test_previous_source_file_not_in_records_or_admin_views(clock):
     app = make_app(clock, StubScenario(art_scores=[(12.0, 7.0)], check_fail_times={"T-B1": 1}))
     numbered_html(app)
     rid = to_screen8(app)
     rework(app, clock, rid, "실행 파일")
     o, s = app.orchestrator, app.store
-    assert ctx_of(app, rid).get("T-B1.reworkInput").previous_source_text   # 산출물에만 있다
+    ref = ctx_of(app, rid).get("T-B1.reworkInput").previous_source_file   # 산출물에만 있다
+    assert ref is not None
     parts = [r.dump() for r in s.executions(rid)] + [x.dump() for x in s.call_logs(rid)]
     parts += [e.dump() for e in s.events(rid)] + [f.dump() for f in s.feedback(rid)]
     parts += [r.dump() for r in o.admin_executions(limit=500)] + [o.admin_summary().dump()]
     parts += [x.dump() for r in s.executions(rid) for x in o.admin_calls(r.execution_id)]
     parts += [x.dump() for x in o.admin_runs(limit=500)]
-    assert "원문표지" not in json.dumps(parts, ensure_ascii=False, default=str)
+    dumped = json.dumps(parts, ensure_ascii=False, default=str)
+    assert "원문표지" not in dumped and ref.key not in dumped and ref.sha256 not in dumped
 
 
 # ── spec 3.3: T-B2 이미지 호출 실패 예외 ─────────────────────────

@@ -6,10 +6,12 @@ import pytest
 
 from sbrain.contracts import tasks as c
 from sbrain.models import (
-    Announcement, AnnouncementCard, CodeCheck, CodeCheckResult, CompanyInfo, FeatureMatchResult, GateResult,
-    Notification, PreInput, ReworkComparison, ReworkInput, Run, TaskInstruction, extension_fields,
+    Announcement, AnnouncementCard, ChartSpec, CodeCheck, CodeCheckResult, CompanyInfo, Deliverable,
+    FeatureMatchResult, GateResult, Infographic, Notification, PreInput, Prototype, ReworkComparison, ReworkInput,
+    Run, TaskInstruction, extension_fields,
 )
 from sbrain.orchestrator.settings import TaskModelSetting
+from sbrain.flow.reads import ReworkFileChange
 from sbrain.orchestrator.trace import ExecutionRecord
 
 FORM_FIELDS = {"revenueItems", "companyName", "bizType", "representativeType", "outputSummary", "techField",
@@ -35,7 +37,6 @@ IN_BASEDOC = [
     (CodeCheck, {"defectSources"}),
     (FeatureMatchResult, {"withheld", "withheldReason", "partialFeatures"}),
     (c.TB1In, {"planDoc"}),
-    (ReworkInput, {"previousSourceText"}),
 ]
 
 # 새 판에서 빠졌지만 남긴 필드 — 확장
@@ -58,6 +59,20 @@ STILL_EXTENSION = [
     (c.TC3In, {"priorGuidance"}),
     (c.G02aIn, {"cycleInfo"}),
     (Notification, {"notificationId"}),
+]
+
+# 파일 칸(참조형) — 기준 문서의 경로 · 원문 칸을 파일 참조(FileRef)로 바꿨다. 모두 확장 (결정 0023)
+FILE_REF_NOTE = "참조형 — 기준 문서와 다름(결정 0023)"
+FILE_REF_FIELDS = [
+    (Prototype, {"entryFile", "assetFiles", "readmeFile"}),
+    (Infographic, {"imageFile"}),
+    (ChartSpec, {"imageFile"}),
+    (c.TB1Out, {"entryFile"}),
+    (c.G04Out, {"readmeFile"}),
+    (c.M3In, {"readmeFile"}),
+    (Deliverable, {"planDocFile", "prototypeFiles", "infographicFile"}),
+    (ReworkInput, {"previousSourceFile"}),
+    (ReworkFileChange, {"beforeFile", "afterFile"}),
 ]
 
 
@@ -84,6 +99,13 @@ def test_dropped_but_kept_fields_are_extensions(model, names):
 @pytest.mark.parametrize(("model", "names"), STILL_EXTENSION, ids=_ids(STILL_EXTENSION))
 def test_other_extensions_stay(model, names):
     assert names <= set(extension_fields(model))
+
+
+@pytest.mark.parametrize(("model", "names"), FILE_REF_FIELDS, ids=_ids(FILE_REF_FIELDS))
+def test_file_ref_fields_are_extensions_with_note(model, names):
+    assert names <= set(extension_fields(model))
+    props = model.model_json_schema(by_alias=True)["properties"]
+    assert all(props[n]["x-note"] == FILE_REF_NOTE for n in names)
 
 
 def test_required_ness_unchanged():

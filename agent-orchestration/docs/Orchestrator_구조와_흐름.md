@@ -2,10 +2,10 @@
 
 | 항목 | 내용 |
 |---|---|
-| 작성일 | 2026-09-26 (2026-10-01 갱신: MySQL 저장소 · 워커 · 웹 연동 함수 · 토큰 기록. 2026-10-02 갱신: 웹 `projects` 쓰기 제거 · 재작성 묶음 요청과 모으기 · T-P2 시도 기록과 `proofread_logs` · 웹 조회 함수 — 바뀐 곳은 4 · 8.1 · 10 · 11 · 12절. 2026-10-03 갱신: 공고 서버 연결(T-C2 · G-01) — 바뀐 곳은 2 · 3 · 5 · 11 · 12절. 2026-10-04 갱신: 조율 T-C3 작업 분해 · 지시문 다시 쓰기 — 바뀐 곳은 2 · 11절. 2026-10-05 갱신: 시각 UTC · 실행 로그 12개월 처리 · 탈퇴 함수 · 시작 요청 입력 사본 비우기 — 바뀐 곳은 2 · 8 · 10 · 11 · 12절. **2026-10-06 갱신: Task별 호출 설정 · 이미지 호출 · 산출물층 검증 반영(원페이지 계획서 반영 · G-04 자체 검사 · 대조 보류 · 부분 인정) · 워커 운영 로그 파일 — 바뀐 곳은 2 · 4 · 5 · 8.2 · 9 · 11절**. 2026-10-08 갱신: 기준 문서 v1.10 반영(표시 정리 · 새 판에서 빠졌지만 남긴 필드) · 웹 함수 `missing_projects` — 바뀐 곳은 10 · 11 · 12절) |
+| 작성일 | 2026-09-26 (2026-10-01 갱신: MySQL 저장소 · 워커 · 웹 연동 함수 · 토큰 기록. 2026-10-02 갱신: 웹 `projects` 쓰기 제거 · 재작성 묶음 요청과 모으기 · T-P2 시도 기록과 `proofread_logs` · 웹 조회 함수 — 바뀐 곳은 4 · 8.1 · 10 · 11 · 12절. 2026-10-03 갱신: 공고 서버 연결(T-C2 · G-01) — 바뀐 곳은 2 · 3 · 5 · 11 · 12절. 2026-10-04 갱신: 조율 T-C3 작업 분해 · 지시문 다시 쓰기 — 바뀐 곳은 2 · 11절. 2026-10-05 갱신: 시각 UTC · 실행 로그 12개월 처리 · 탈퇴 함수 · 시작 요청 입력 사본 비우기 — 바뀐 곳은 2 · 8 · 10 · 11 · 12절. **2026-10-06 갱신: Task별 호출 설정 · 이미지 호출 · 산출물층 검증 반영(원페이지 계획서 반영 · G-04 자체 검사 · 대조 보류 · 부분 인정) · 워커 운영 로그 파일 — 바뀐 곳은 2 · 4 · 5 · 8.2 · 9 · 11절**. 2026-10-08 갱신: 기준 문서 v1.10 반영(표시 정리 · 새 판에서 빠졌지만 남긴 필드) · 웹 함수 `missing_projects` — 바뀐 곳은 10 · 11 · 12절. 2026-10-08 갱신(2): 산출물 파일 참조형(파일 창구 · 파일 저장소 · 출력 참조 확인 · 파일 삭제 대기열 · 파일 읽기 · 관리자 함수 · `SBRAIN_ARTIFACT_ROOT`) — 바뀐 곳은 2 · 7 · 8 · 9 · 10 · 11절(11.10 새로).) |
 | 기준 문서 | S-Brain Agent 기능정의서 v1.10 (참고: 프로젝트 기획서 v1.11) |
 | 코드 | `sbrain/` |
-| 테스트 | `tests/` — 1320건 (MySQL 테스트 DB 없이 1271건 통과 · 49건 건너뜀(MySQL 전용), MySQL 8.0 테스트 DB를 켜면 1320건 모두 통과 — 2026-10-08. 흐름 테스트는 메모리 · SQLite 두 저장소로, 저장소 계약 · 통합은 MySQL 8.0으로도. 조율 T-C1 · T-C3(작업 분해)와 재작성 · 재수행 지시문 다시 쓰기, 공고 서버 연결 T-C2 · G-01만 실제 구현, 나머지 Agent는 스텁. 공고 서버는 가짜 전송 · 127.0.0.1 임시 서버로만, 이미지 호출은 가짜 이미지 호출처로만 시험) |
+| 테스트 | `tests/` — 1531건 (MySQL 테스트 DB 없이 1472건 통과 · 59건 건너뜀(MySQL 전용), MySQL 8.0 테스트 DB를 켜면 1531건 모두 통과 — 2026-10-08 산출물 파일 참조형 작업 뒤. 흐름 테스트는 메모리 · SQLite 두 저장소로, 저장소 계약 · 통합은 MySQL 8.0으로도. 조율 T-C1 · T-C3(작업 분해)와 재작성 · 재수행 지시문 다시 쓰기, 공고 서버 연결 T-C2 · G-01만 실제 구현, 나머지 Agent는 스텁. 공고 서버는 가짜 전송 · 127.0.0.1 임시 서버로만, 이미지 호출은 가짜 이미지 호출처로만 시험) |
 | 독자 | Orchestrator · 조율 Agent 구현 담당, 웹팀(명령 창구 연동) |
 
 이 문서는 코드에서 도출했다. Task 표는 코드의 Task 등록부에서 뽑았다. Agent 연동 규격은 [Agent_연동_규격_초안.md](Agent_연동_규격_초안.md)에 따로 있다.
@@ -34,7 +34,10 @@ Orchestrator는 조율을 포함한 7개 Agent를 같은 방식으로 등록하�
 | `sbrain/models/clock.py` | 시각 — 프로세스 안의 "지금"은 `utc_now()` 하나(시간대 있는 UTC). 시간대 없는 값은 UTC로 봄(`as_utc`), DB 칸 값(`naive_utc`), 한국 날짜(`kst_today` · `kst_month`, UTC+9 고정) (2026-10-05) |
 | `sbrain/contracts/tasks.py` | 시트 3 Task 입출력 규격 (합치기 · R-8 포함) |
 | `sbrain/orchestrator/registry.py` | Agent 등록부 · Task 등록부 (`TaskSpec`: 담당 Agent, 입출력, 실행 함수, 온도 덮어쓰기, 실패 정책, 재수행 · 확정 동작 예외, LLM 사용 여부, 입력 연결) |
-| `sbrain/orchestrator/tools.py` | 호출 도구 (잠정 규격): 호출 단위 재시도 · 제한 시간 · 오류 분류 · 스키마 검사 · 호출 로그. 글(`llm`) · 검색(`search`) · 이미지(`image`, 2026-10-06 확장) 호출 |
+| `sbrain/orchestrator/tools.py` | 호출 도구 (잠정 규격): 호출 단위 재시도 · 제한 시간 · 오류 분류 · 스키마 검사 · 호출 로그. 글(`llm`) · 검색(`search`) · 이미지(`image`, 2026-10-06 확장) 호출, 파일 창구(`files` — `FileTool`의 넣기 · 읽기, 2026-10-08 확장) |
+| `sbrain/models/files.py` | 파일 참조 `FileRef`(확장 타입), 허용 형식 8종 · 파일 하나 30MB, 이름 · 키 규칙 (2026-10-08) |
+| `sbrain/orchestrator/files.py` | 파일 저장소 창구(`FileStore` — 쓰기 · 읽기 · 메타데이터 · 접두어째 지우기)와 구현 둘: 메모리(`MemoryFileStore`, 테스트 · 시연) · 로컬 폴더(`LocalFolderFileStore`, 워커 · 웹 읽기 전용) (2026-10-08) |
+| `sbrain/orchestrator/file_deletion.py` | 파일 삭제 대기열 처리 — 워커가 작업 확인 주기마다 부른다(`process_file_deletions`) (2026-10-08) |
 | `sbrain/orchestrator/settings.py` | 시트 1 설정값 · 층별 배점 · Threshold · Task별 호출 설정(`Settings.tasks` — 키는 Task ID와 `지시문 다시 쓰기`, 2026-10-06 Agent별에서 바꿈). 잠정 항목 목록(`PROVISIONAL`) |
 | `sbrain/orchestrator/context.py` | 산출물 버전 · 현재 버전 포인터 · 한 번에 저장할 기록 모음 |
 | `sbrain/orchestrator/engine.py` | 대기열 실행, 재수행 루프, 재개 · 실패, 재작성 사이클 장치 |
@@ -169,7 +172,7 @@ sequenceDiagram
 3. 예외 여섯 곳에서 마지막 시도가 불통과인데 `finalAction`이 비어 있으면 규격 위반을 기록한다.
 4. 재수행 하나하나는 새 실행 기록 · 새 산출물 버전이다. 피드백 전달(check@n → 다음 실행)로 연결한다.
 5. 매 시도가 끝날 때마다 저장하므로, 중간에 멈춰도 몇 번째 재수행이었는지를 잃지 않는다.
-6. **T-B1 재수행이면 재작성 입력에 방금 만든 HTML 원문(`previousSourceText`, 확장)을 싣는다**(2026-10-06). 엔진은 Task 이름을 모르므로 재작성 입력을 만든 직후 흐름의 선택 확장 지점 `Flow.redo_rework_input`이 채운다(기본은 그대로 돌려줌). 사용자 재작성 대상 T-B1은 `initial_redo_state`가 재작성 직전 원문을 채운다. 반영 실행 · 첫 실행 · 다른 Task는 비운다. 이 원문은 재작성 입력 산출물에만 있고 지시문 다시 쓰기 LLM · 기록 · 관리자 조회에는 싣지 않는다.
+6. **T-B1 재수행이면 재작성 입력에 방금 만든 진입 파일의 참조(`previousSourceFile`, 확장)를 싣는다**(2026-10-06 — 2026-10-08부터 원문 글자 칸 `previousSourceText`를 지우고 참조로 바꿈, 결정 0023). 엔진은 Task 이름을 모르므로 재작성 입력을 만든 직후 흐름의 선택 확장 지점 `Flow.redo_rework_input`이 채운다(기본은 그대로 돌려줌). 사용자 재작성 대상 T-B1은 `initial_redo_state`가 재작성 직전 `prototype.entryFile`을 채운다. 반영 실행 · 첫 실행 · 다른 Task는 비우고, 진입 파일이 비어 있어도 비운다. 이 참조는 재작성 입력 산출물에만 있고 지시문 다시 쓰기 LLM에는 보내지 않는다. 파일 내용은 기록 · 관리자 조회에 싣지 않는다.
 7. **G-04 자체 검사 (2026-10-06):** G-04는 규칙 단계지만 재수행 대상이다. 출력 `check`가 불통과면 같은 루프로 재수행 횟수까지 다시 만들고, 끝내 불통과면 추적 사건 `안내문서자체검사실패`(잠정)를 남기고 계속한다(점수 밖, T-C4 전달을 막지 않음).
 
 ## 8. 저장
@@ -181,12 +184,14 @@ sequenceDiagram
 | 제한 시간 | tools가 호출처의 HTTP timeout으로 건다 |
 | 사용자 중단 | 점유 중이면 중단 요청만 남기고, 엔진이 Task 사이에서 확인한다 |
 | 구현 | `MemoryStore`(테스트 · 시연)와 `SqlStore`(공유 MySQL 8 · SQLite). 같은 동작이며, 흐름 테스트 전체를 두 저장소로 돌려 확인한다 |
+| 산출물 파일 (2026-10-08) | 파일은 DB가 아니라 파일 저장소에 두고, 산출물 값에는 파일 참조(`FileRef`)만 싣는다. Task는 `tools.files`로만 넣고 읽는다. 저장 전에 엔진이 출력 안의 모든 `FileRef`를 저장소와 대조한다(이 실행 건 · 있음 · 이름 · 형식 · 크기 · `sha256`) — 어기면 출력 규격 위반(`ContractError`). 파일 저장소는 조립이 엔진에 넘긴다: 스텁 앱 메모리, 워커 로컬 폴더(`SBRAIN_ARTIFACT_ROOT`, 필수), 웹은 엔진에 넘기지 않고 파일 읽기에만 읽기 전용으로 쓴다. 지금은 웹 · 워커가 함께 보는 폴더, 운영은 S3 예정 |
+| 파일 삭제 (2026-10-08) | DB를 먼저 지우고(산출물을 지우는 같은 트랜잭션에 대기열 줄 `orch_file_deletions`를 넣음 — 완전 삭제 · 12개월 처리의 완전 삭제된 실행 건 정리 · 탈퇴) 파일은 워커가 나중에 지운다(8.2 ⑥). 실행 건 하나에 줄은 하나(`run_id` 고유). 웹은 파일을 지우지 않는다 |
 
 ### 8.1 MySQL 구현 (`store_sql/`)
 
 | 항목 | 구현 |
 |---|---|
-| 테이블 | `orch_` 12개 — 실행 건 · 시작 요청 · 산출물 버전 · 현재 버전 포인터 · 포인터 이동 · 실행 기록 · 호출 기록 · 피드백 연결 · 재작성 전후 비교 · 추적 사건, 그리고 2026-10-05에 늘어난 실행 로그 통계 줄(`orch_log_stats`) · 주기 작업 상태(`orch_jobs`). 같은 날 기존 표에 인덱스 `ix_orch_runs_updated (updated_at)` · `ix_orch_start_requests_status_updated (status, updated_at)`가 늘었다(이미 만든 표에는 `CREATE INDEX`로 따로 더한다). 정의는 `schema.py` 하나, DDL 파일은 `python -m sbrain.store_sql.ddl`로 만든다(`CREATE TABLE IF NOT EXISTS`만, 인덱스는 `KEY`로 표 안에) |
+| 테이블 | `orch_` 13개 — 실행 건 · 시작 요청 · 산출물 버전 · 현재 버전 포인터 · 포인터 이동 · 실행 기록 · 호출 기록 · 피드백 연결 · 재작성 전후 비교 · 추적 사건, 그리고 2026-10-05에 늘어난 실행 로그 통계 줄(`orch_log_stats`) · 주기 작업 상태(`orch_jobs`), 2026-10-08에 늘어난 파일 삭제 대기열(`orch_file_deletions` — `run_id` 고유, 색인 `(status, next_at)`, `orch_runs` 외래 키 없음, 기록 표 목록 `RECORD_TABLES` 밖이라 12개월 처리 · 탈퇴가 지우지 않는다). 같은 날 기존 표에 인덱스 `ix_orch_runs_updated (updated_at)` · `ix_orch_start_requests_status_updated (status, updated_at)`가 늘었다(이미 만든 표에는 `CREATE INDEX`로 따로 더한다). 정의는 `schema.py` 하나, DDL 파일은 `python -m sbrain.store_sql.ddl`로 만든다(`CREATE TABLE IF NOT EXISTS`만, 인덱스는 `KEY`로 표 안에) |
 | 컬럼 | 조회 · 정렬에 쓰는 값은 컬럼, 나머지는 모델 전체를 JSON 문자열(`run_json` · `record_json` · `value`)로. **MySQL JSON 형식 대신 `LONGTEXT`** — MySQL JSON은 객체 키 순서를 바꿔 저장해 순서가 뜻을 갖는 값(`checkRefs` · `ordersByTask`)이 달라지기 때문이다. 기록 테이블은 자동 증가 `seq`로 기록 순서를 지킨다 |
 | `commit` 트랜잭션 | 점유 확인(`SELECT … FOR UPDATE`) → 실행 건 행 갱신 + 점유 연장 → 산출물 버전 · 포인터 → 실행 기록(같은 ID는 덮어씀) → 호출 기록 · 피드백 · 비교 · 포인터 이동 · 추적 사건 → 웹 `notifications` → (학습 동의 계정의 반려된 T-P2 시도) 웹 `proofread_logs` → 실패로 바뀌었으면 `generation_failure_alerts`. 웹 `projects`는 쓰지 않는다 |
 | `create_run` 트랜잭션 | 계정 잠금(`GET_LOCK`) 안에서 진행 중 실행 건을 세고, 실행 건 · 사전 단계 기록(+ 시작 요청 '완료')을 함께 저장 |
@@ -206,6 +211,8 @@ sequenceDiagram
 
 **⑤ 운영 로그 파일 (2026-10-06):** 워커는 화면에 쓰던 줄과 함께 단계(Task · 규칙 단계 · 합치기) 실행마다 시작 · 끝 한 줄, 실행 건 사건(대기 · 실행 끝 · 재개 예약) 한 줄을 남긴다. 환경 변수 `SBRAIN_WORKER_LOG_DIR`가 있으면 같은 줄을 그 폴더의 UTC 날짜 파일(`YYYY-MM-DD.log`, 20MB를 넘게 되면 `.1.log` …)에도 쓴다. 자동 삭제는 기본 꺼짐이고 `SBRAIN_WORKER_LOG_KEEP_DAYS`로 켠다. 폴더 하나에 워커 하나(`worker.lock`). 식별자는 실행 건 · 프로젝트 · 실행 기록 번호까지이고 산출물 내용 · 지시문 · 계정 번호는 넣지 않는다. 웹 명령으로 바로 바뀌는 상태(대기 중 중단, 화면 8 → 9 진행 등)는 워커를 거치지 않아 이 로그에 줄이 없다. 파일 로그는 실행 로그 12개월 규칙의 예외다(자동 삭제를 켜지 않으면 기한 없이 남는다).
 
+**⑥ 파일 삭제 대기열 (2026-10-08):** 작업 확인 주기(10분, 잠정)마다 12개월 처리보다 먼저 `next_at`이 지난 `대기` 줄을 묶음(20줄, 잠정)으로 가져간다. 줄마다 조건부 갱신으로 `next_at`을 미뤄 한 워커만 가져간다. 첫 시도는 넣은 뒤 10분(잠정) — 워커 점유 시간(120초)보다 길게 두어 삭제 직전 단계의 늦은 쓰기가 끝난 뒤에 지운다. 그 실행 건 키 접두어(`<runId>/`) 아래를 통째로 지우고(이미 없으면 성공) 성공하면 줄을 지운다. 실패하면 `attempts`를 올리고 10분(잠정) 뒤 다시, 3번(사용자 결정 — 잠정 아님)이면 `포기`. 운영 로그 줄 `파일삭제` · `파일삭제실패`(오류 종류 · 예외 클래스 이름 · 시도 수) · `파일삭제포기` — 식별자는 실행 건 · 대기열 줄 ID까지. 엔진에 파일 저장소가 없으면 건너뛴다.
+
 **④ 실행 로그 12개월 처리 (2026-10-05):** 한 바퀴 끝에 작업 확인 주기(10분, 잠정)가 됐으면 그 프로세스의 한 스레드만 작업 상태 표(`orch_jobs`, 작업 이름 `log_retention`)를 확인한다. 점유가 비었거나 만료됐고 마지막으로 끝까지 마친 지 24시간(잠정)이 지났으면 확인과 점유를 한 트랜잭션으로 잡아 `run_retention`을 돈다 — 여러 워커 중 한 대만, 하루 한 번. 대상은 마지막 활동(`updated_at`)이 기준 시각(지금에서 달력 기준 12개월 전, `retention_cutoff`)보다 오래된 실행 건(실행 · 재개대기 · 점유 중인 것 제외) · 끝난 시작 요청이다. 실행 건마다 점유(작업 점유자 + `/retention`)를 잡고 다시 확인한 뒤 한 트랜잭션으로 옮기고, 못 잡거나 조건이 바뀌었거나 오류면 건너뛴다. 하트비트가 작업 점유를 연장하고(종류 `작업`), 묶음마다 작업 점유를 확인해 잃었으면 멈춘다. 종료 신호면 실행 건 사이에서 멈추고 점유를 푼다(다음에 남은 것부터). 로그는 "보관 작업 시작" · "보관 작업 끝|멈춤 — 개수"와 오류 클래스 이름뿐이다. `--once`도 때가 됐으면 이 작업을 돈다. 웹 조립은 돌리지 않는다. 워커 로그 줄 앞 시각은 UTC다(끝에 `Z`).
 
 ## 9. 추적 기록
@@ -215,7 +222,7 @@ sequenceDiagram
 | 기록 | 담는 것 |
 |---|---|
 | ExecutionRecord (AttemptRef 확장) | Task, 담당 Agent, 실제 모델 · 호출처 · 온도 · 추론 강도(그 Task 설정의 글 모델 값), 시도 번호, 계기(첫실행 · 재작성 · 재수행), **입력 산출물명@버전**, **출력 산출물명@버전**, 요약 메타(check 통과 · 실패 건수 · 점수), 재작성 사이클 · 역할, 재수행 · 재개 횟수, 들어온 피드백, 토큰 합계(그 실행의 글 호출 합), 이미지 토큰 합계 `imageInputTokens` · `imageOutputTokens`(2026-10-06 확장 — 글 토큰 합계와 따로) |
-| CallLog | 호출 한 건과 시도별 결과(재시도) · 시도별 토큰 사용량과 합계. T-P2는 문장별(itemKey). 호출 종류 `llm` · `search` · `image`(2026-10-06) — 이미지 호출은 이미지 모델 · 토큰이 남고 지시문 · 그림은 남지 않는다 |
+| CallLog | 호출 한 건과 시도별 결과(재시도) · 시도별 토큰 사용량과 합계. T-P2는 문장별(itemKey). 호출 종류 `llm` · `search` · `image`(2026-10-06) · `file`(2026-10-08) — 이미지 호출은 이미지 모델 · 토큰이 남고 지시문 · 그림은 남지 않는다. 파일 호출은 목적 `put` · `get`과 시도별 결과만 남고 파일 내용 · 이름 · 키는 남지 않는다 |
 | FeedbackLink | 재수행(check → 같은 Task), 재작성(reworkOrders + 사용자 선택 → 대상 Task), 재작성반영(계획서 → T-B1). 출처 실행 · 출처 산출물 · 전달 대상 실행 · 전달 수단(reworkInput@버전) |
 | ReworkComparison (확장) | 전후 산출물 참조 · 점수 · 남긴 쪽, 사이클 · 화면 · 비교 기준 |
 | PointerEvent | 현재 버전 포인터 이동(되돌리기) |
@@ -253,6 +260,8 @@ sequenceDiagram
 | `request_rework_for_project(project_id, bundle)` | 6 · 8 · 9 | 재작성 묶음 요청 — 접수만 하고 돌아온다. 같은 화면의 요청은 2초(잠정) 모아 한 번에 (2026-10-02) |
 | `active_work` · `project_views` · `wait_project` · `outputs` · `rework_result` | — | 진행 중 작업 확인 · 여러 건 진행 상태 · 진행이 멈출 때까지 기다리기 · 지금까지 결과 · 마지막 재작성 결과 (2026-10-02) |
 | `admin_runs` · `admin_score_history` · `admin_summary` · `admin_agent_tasks` | 관리자 | 실행 건 목록 · 층별 점수 이력 · 운영 요약 · Agent별 Task (메타데이터 · 점수 · 개수만, 2026-10-02). 실행 건 목록 · 운영 요약은 마지막 활동 최근 12개월 안 실행 건만(`reads._admin_since`, 2026-10-05) |
+| `read_artifact_file(project_id, key)` | — | 산출물 파일 하나 읽기 (2026-10-08) — 실행 건 없음 `RUN_NOT_FOUND` · 실패 · 중단 `RUN_NOT_VIEWABLE` → 파일 저장소 설정 없음 `FILE_STORE_UNAVAILABLE` → 키 규칙 위반 · 다른 실행 건 · 없음 · 내용 불일치 `FILE_NOT_FOUND`. 결과 `ArtifactFile`(dataclass — 이름 · 형식은 넣을 때 기록한 값). 읽기만, 점유 없음 |
+| `admin_file_deletions(status, limit, offset)` · `admin_retry_file_deletion(deletion_id, admin_id)` | 관리자 | 파일 삭제 대기열 목록(`created_at` 최근 순) · 포기한 줄을 `대기`로 되돌림(누른 관리자 · 시각 · 횟수를 남김, 없는 줄 `FILE_DELETION_NOT_FOUND`, 대기 줄 `INVALID_STATE`) (2026-10-08) |
 
 **워커 · 내부 · 테스트용**
 
@@ -439,11 +448,11 @@ sequenceDiagram
 | 이미지 호출 | `Tools.image`, `ImageRequest` · `ImageResponse` · `ImageProvider`, OpenAI 어댑터, 가짜 이미지 호출처 `FakeImage`, 워커의 `TaskRoutedImageProvider`. 이미지 설정 없는 Task는 즉시 실패(호출실패 · 운영, 상세 "이미지 모델 설정 없음") | 확장 | `orchestrator/tools.py` · `orchestrator/openai_image.py` · `agents/stubs.py` · `bootstrap.py` |
 | 이미지 토큰 | 실행 기록 `imageInputTokens` · `imageOutputTokens`, 표 칸 `orch_executions.image_input_tokens` · `image_output_tokens`(NULL 허용), 관리자 실행 기록 같은 이름 · 운영 요약 `totalImageTokens`, 통계 줄 `data_json`의 `imageTokens`(입력 · 출력). 글 토큰 합계(`totalTokens` · `tokens`)에는 더하지 않는다 | 확장(`ext()` · 칸) | `orchestrator/trace.py` · `store_sql/schema.py` · `flow/reads.py` · `flow/log_stats.py` |
 | T-B2 이미지 예외 | 이미지 호출의 재시도 소진만 Task가 받아 기본 아이콘으로 계속 — 필수 규칙 2(재시도 소진은 받지 않음)의 예외 | 사용자 결정 | 판별 `orchestrator/trace.py` `IMAGE_CALL` |
-| 산출물층 계약 칸 | `TV2In.planDoc` · `TV2Out.diagnostics` · `CodeCheckResult.gateFailures` · `CodeCheck.defectSources` · `FeatureMatchResult.withheld` · `withheldReason` · `partialFeatures` · `G04Out.check` · `TB1In.planDoc` · `ReworkInput.previousSourceText` | `G04Out.check`만 확장(`ext()`). 나머지는 기준 문서 v1.10(시트 3 · 4)에 들어가 `ext()`를 뗐다(2026-10-08). `TB1In.planDoc` · `TV2In.planDoc`은 기준 문서에서 필수지만 옛 실행 건 호환으로 비울 수 있게 선언한 채 둔다(흐름은 늘 채움, 사용자 결정 2026-10-08) | `models/scoring.py` · `contracts/tasks.py` · `models/rework.py` |
+| 산출물층 계약 칸 | `TV2In.planDoc` · `TV2Out.diagnostics` · `CodeCheckResult.gateFailures` · `CodeCheck.defectSources` · `FeatureMatchResult.withheld` · `withheldReason` · `partialFeatures` · `G04Out.check` · `TB1In.planDoc` · `ReworkInput.previousSourceText`(2026-10-08 산출물 파일 참조형으로 바꾸며 지움 — 확장 `previousSourceFile`, 11.10) | `G04Out.check`만 확장(`ext()`). 나머지는 기준 문서 v1.10(시트 3 · 4)에 들어가 `ext()`를 뗐다(2026-10-08). `TB1In.planDoc` · `TV2In.planDoc`은 기준 문서에서 필수지만 옛 실행 건 호환으로 비울 수 있게 선언한 채 둔다(흐름은 늘 채움, 사용자 결정 2026-10-08) | `models/scoring.py` · `contracts/tasks.py` · `models/rework.py` |
 | 흐름 선택 확장 지점 | `Flow.redo_rework_input`(재수행 재작성 입력을 만든 직후 — T-B1 이전 원문), `Flow.after_execution`(실행 기록이 성공으로 저장되는 같은 묶음 — `이미지대체`). 메서드가 없는 흐름도 깨지지 않는다 | 확장(엔진) | `orchestrator/engine.py`, `flow/sbrain_flow.py` |
 | 산출물층 재작성 사유 | `artifact_rework_reasons` — 통과 필수 조건 → 칸(2번은 결함 출처) → 대조(누락 · 부분, 보류 제외), G-04 제외. 묶음 표에서 G-04 제거 | 구현 규칙(작업지시 C4) | `flow/rework_map.py` |
 | 오류 코드 | `E-B1-SANDBOX` 추가, `E-B1-ENTRY` · `E-V2-NOFEATURE` 처리 문구 바꿈 | 기준 문서 v1.10(시트 6) — 확장 · 잠정 아님. `E-V2-NOFEATURE`의 사용자 문구는 비워 둠(잠정 — v1.10도 '대조 보류의 화면 문구' 미확정) | `orchestrator/errors.py` |
-| 스텁 | T-B1 진입 파일 `/index.html`, T-V2 1.4판 모양(부분 0.5 · `findings` 첫 줄), 시나리오 칸 `partial_features` · `withhold_feature_match` · `gate_failures` · `alt_defect_sources` · `diagnostics` | 스텁 | `agents/stubs.py` |
+| 스텁 | T-B1 진입 파일 `/index.html`(2026-10-08부터 파일 참조 — 11.10), T-V2 1.4판 모양(부분 0.5 · `findings` 첫 줄), 시나리오 칸 `partial_features` · `withhold_feature_match` · `gate_failures` · `alt_defect_sources` · `diagnostics` | 스텁 | `agents/stubs.py` |
 | 워커 운영 로그 | 로거 `sbrain.run`, 환경 변수 `SBRAIN_WORKER_LOG_DIR` · `SBRAIN_WORKER_LOG_KEEP_DAYS`(기본 꺼짐). 파일 로그는 실행 로그 12개월 규칙의 예외 | 확장(운영) | `orchestrator/runlog.py` · `sbrain/worker_log.py` · `sbrain/worker.py` |
 
 - 알려진 한계: 옛 설정 사본으로 도는 실행 건은 T-B1 · T-B2 · T-V2가 '미정'(T-V2 온도 0.0)으로 남는다(지금은 스텁이라 문제 없음, 공유 DB 적용 전이라 운영 실행 건 없음). `partialFeatures`가 채워지기 전에는 부분 인정만으로 재작성 사유가 나오지 않는다. 웹 명령으로 바로 바뀌는 상태는 워커 운영 로그에 없다.
@@ -467,6 +476,43 @@ sequenceDiagram
 | T-C3 업력 | 시트 2 T-C3 입력의 `businessAgeYears` 뒤 '(향후 도입…)'는 오기로 보고 G-01 결과로 계속 채운다(사용자 결정 2026-10-08) | 해석 | `flow/catalog.py` |
 | 실행 건이 없는 프로젝트 | `missing_projects(project_ids) -> list` — 웹 일괄 작업이 알림 등 웹 행을 정리할 때 쓴다(알림은 v1.10대로 실행 건과 함께 보관 · 함께 지움). 저장소 `existing_projects`(시작 요청을 먼저 · 실행 건을 나중에, 잠금 없이) | 확장 | `flow/service.py` · `orchestrator/store.py` · `orchestrator/memory_store.py` · `store_sql/store.py` |
 | 한 번에 묻는 프로젝트 수 | 500 — SQL 저장소가 IN 하나에 싣는 수 | 잠정(조정값) | `store_sql/store.py` `PROJECT_CHUNK` |
+
+### 11.10 산출물 파일 참조형(2026-10-08)에서 생긴 잠정 · 확장
+
+사용자 결정(2026-10-08) "DB = 메타데이터 · 파일 위치, 실제 파일 = 객체 저장소". 방침은 결정 0023(`docs/tracking/decisions/`)이다. 기준 문서와 다르게 구현한 것은 [기준문서_개정필요사항_산출물파일참조.md](기준문서_개정필요사항_산출물파일참조.md)에, Agent 팀 약속은 [Agent_연동_규격_초안.md](Agent_연동_규격_초안.md) 4.7 · 8.5에, 웹 약속은 [Orchestrator_웹연동_함수명세.md](Orchestrator_웹연동_함수명세.md) 5.4 · 5.5 · 8.9에 있다.
+
+**잠정** (`orchestrator/settings.py` `PROVISIONAL`)
+
+| 항목 | 값 · 내용 | `PROVISIONAL` 키 | 코드 |
+|---|---|---|---|
+| 파일 삭제 첫 시도 지연 | 600초(10분) — 넣은 뒤 이만큼 지나야 지운다. 워커 점유 시간(120초)보다 길게 두어 삭제 직전 단계의 늦은 쓰기가 끝난 뒤에 지운다 | `fileDeletion.firstDelaySec` | `orchestrator/file_deletion.py` `FIRST_DELAY_SEC` |
+| 파일 삭제 다시 시도 간격 | 600초(10분) — 실패 뒤 다시 시도 간격이자 가져간 줄을 미루는 시간 | `fileDeletion.retrySec` | `RETRY_SEC` |
+| 파일 삭제 묶음 크기 | 작업 확인 주기(10분)마다 가져가는 대기열 줄 수 20 | `fileDeletion.batchSize` | `BATCH_SIZE` |
+| 파일 읽기 내용 불일치 | 읽은 내용의 `sha256` · 크기가 저장된 값과 다르면 `FILE_NOT_FOUND`로 보고 관리자용 사유는 남기지 않는다 | `fileRead.hashMismatch` | `flow/reads.py` `read_artifact_file` |
+| 워커 폴더 설정 필수 | `SBRAIN_ARTIFACT_ROOT`가 없거나 절대 경로가 아니면 워커가 시작하지 않는다(`SBRAIN_DB_URL` · `OPENAI_API_KEY` 없을 때와 같은 방식, 종료 코드 2) | `artifactRoot.workerRequired` | `bootstrap.py` `artifact_root_problem` · `build_app`, `sbrain/worker.py` `main` |
+| 워커 운영 로그 새 줄 | `파일삭제`(run · deletion) · `파일삭제실패`(run · deletion · errorKind · error · attempts) · `파일삭제포기`(run · deletion · attempts) — 기존 키에 더함 | `workerLog.actions` | `orchestrator/runlog.py` |
+
+- **잠정이 아닌 값(사용자 결정):** 허용 형식 8종(`text/html` · `image/svg+xml` · `image/png` · `text/markdown` · 워드 · `application/x-hwp` · `application/hwp+zip` · `application/json`), 파일 하나 30MB(31,457,280바이트), 포기 전 실패 횟수 3, MySQL 교착으로 되돌려진 `delete_artifacts` · `retire_run`을 다시 하는 횟수 3(처음 포함 — 마지막에도 교착이면 원래 오류를 올림). 코드 상수 하나씩이며 `PROVISIONAL`에 올리지 않는다(`models/files.py` `ALLOWED_MEDIA_TYPES` · `MAX_FILE_BYTES`, `orchestrator/file_deletion.py` `MAX_ATTEMPTS`, `store_sql/store.py` `DEADLOCK_TRIES`).
+
+**확장 · 구현자 해석**
+
+| 항목 | 값 · 내용 | 표시 | 코드 |
+|---|---|---|---|
+| 파일 참조 타입 | `FileRef`(`key` · `name` · `mediaType` · `size` · `sha256`). 키 `<runId>/<executionId>/<고유값>/<name>`, 넣을 때마다 새 키(불변). 이름 1 ~ 100자 · 영문 · 숫자 · `.` · `-` · `_` · 점으로 시작 · 끝 안 됨 · Windows 예약 이름 안 됨. 기준 문서 타입에 담을 곳이 없어 새 타입 — `docs/standards.md` 7절 예외 | 확장(새 타입, 결정 0023) | `models/files.py` |
+| 계약 칸 교체 | `Prototype.entryFile` · `assetFiles` · `readmeFile`, `Infographic.imageFile`, `ChartSpec.imageFile`, `TB1Out.entryFile`, `G04Out.readmeFile`, `M3In.readmeFile`, `Deliverable.planDocFile` · `prototypeFiles` · `infographicFile`, `ReworkInput.previousSourceFile`, 웹 재작성 결과 `ReworkFileChange.beforeFile` · `afterFile`. 옛 경로 · 원문 칸은 지웠다(저장된 실행 건이 없어 호환 칸을 남기지 않음 — `docs/standards.md` 7절 "필드를 지우지 않는다"의 예외) | 확장(`ext()`, note "참조형 — 기준 문서와 다름(결정 0023)") | `models/domain.py` `FILE_NOTE` · `models/rework.py` · `contracts/tasks.py` · `flow/reads.py` |
+| 파일 창구 | `tools.files.put(name, data, media_type) -> FileRef` · `get(ref) -> bytes`. 넣기 전 이름 · 형식 · 크기와 실행 건 진행 상태('실행'만) 확인, 읽기는 이 실행 건 파일만 · `sha256` 대조. 거절은 `FileRejected`(입력 오류), 호출 기록 `call_type='file'` · 목적 `put` · `get`(내용 · 이름 · 키 없음). 사전 단계 · 실행 기록 밖은 `RuntimeError` | 확장 | `orchestrator/tools.py` `FileTool`, `orchestrator/errors.py` |
+| 규칙 단계의 파일 창구 | 등록부 `TaskSpec.writes_files`가 참인 규칙 단계(지금 G-04)만 `run(inp, files)`로 부른다. 재시도 · 제한 시간은 LLM을 부르지 않는 Task와 같게(`task_timeouts`, 없으면 120초) — `docs/standards.md` 4절 예외 | 확장(엔진) | `orchestrator/registry.py` · `orchestrator/engine.py` `_plain_tools_config`, `flow/catalog.py` |
+| 출력 참조 확인 | 출력 저장 전에 출력 안의 모든 `FileRef`(모델 · 목록 · 사전 재귀)를 대조 — 이 실행 건 · 있음 · 이름 · 형식 · 크기 · `sha256`. 어기면 `ContractError`(어긴 수 · 규칙 종류만). 앞선 실행 기록의 참조를 넘기는 것은 된다 | 확장(엔진) | `orchestrator/engine.py` `check_file_refs` |
+| 이전 원문 참조 | T-B1 재작성 대상 · 재수행만 `prototype.entryFile`로 채우고, 진입 파일이 없으면 비운다(지금 규칙 그대로, 값만 참조) | 확장 | `flow/sbrain_flow.py` `SOURCE_FILE_TASK` · `SOURCE_FILE_KEY` |
+| 스텁 파일 | T-B1 `index.html`, T-B2 원페이지 `onepage.svg` · 그 밖 `infographic.png`, G-04 `README.md`, T-C4 `plan.docx`(자리채움 바이트 · 워드 형식), M-2 감싸기(`assetFiles=[]`), 차트 그림 없음. 스텁 T-V2는 파일을 읽지 않는다(채점 방식 그대로) | 스텁 | `agents/stubs.py` |
+| 파일 저장소 | 메모리(`MemoryFileStore`) · 로컬 폴더(`LocalFolderFileStore` — 절대 경로만, 메타데이터는 옆 파일, 임시 파일 → 이름 바꾸기 원자 쓰기, 같은 키 같은 내용이면 성공, 접두어째 지우기는 여러 번 안전). S3는 같은 창구에 나중에 끼운다 | 확장 | `orchestrator/files.py` |
+| 조립 · 환경 변수 | `SBRAIN_ARTIFACT_ROOT` — 절대 경로만, 기본값 없음. 워커(`build_app`) 필수 · 폴더가 없으면 만듦, 웹(`build_web`) 선택 · 읽기 전용(엔진에 넘기지 않음), 스텁 앱 메모리. 웹과 모든 워커가 같은 폴더 | 확장(조립) | `bootstrap.py` `ARTIFACT_ROOT_ENV` · `artifact_root_problem` |
+| 파일 삭제 대기열 표 | `orch_file_deletions`(`deletion_id` · `run_id` 고유 · `key_prefix` · `status` 대기/포기 · `attempts` · `last_error_kind` · 시각 칸 · `retried_by` · `retried_at` · `retry_count`). 계정 · 프로젝트 ID · 파일 이름 · 오류 메시지 없음. `RECORD_TABLES` 밖 · 외래 키 없음 | 확장(표) | `store_sql/schema.py` `FILE_DELETIONS`, `orchestrator/store.py` `FileDeletion` |
+| 대기열 넣기 | 완전 삭제(`delete_artifacts`) · 12개월 처리의 완전 삭제된 실행 건 정리(`retire_run(delete_run=True)`) · 탈퇴가 산출물을 지우는 같은 트랜잭션에서. 줄이 없으면 `대기`로 넣고, `대기`면 그대로, `포기`면 `대기`로 되돌림(누른 관리자 기록은 그대로). 동시 넣기의 고유 제약 충돌은 오류로 올리지 않는다 | 확장(동작) | `orchestrator/store.py` · `memory_store.py` · `store_sql/store.py` |
+| 웹 · 관리자 함수 | `read_artifact_file` · `admin_file_deletions` · `admin_retry_file_deletion`, 오류 코드 `FILE_NOT_FOUND` · `FILE_STORE_UNAVAILABLE` · `FILE_DELETION_NOT_FOUND`. 관리자 다시 시도는 `gave_up_at`도 비운다 | 확장 | `flow/service.py` · `flow/reads.py` · `orchestrator/errors.py` `COMMAND_ERROR_CODES` |
+| 포기의 보안 예외 | 포기한 파일은 탈퇴 뒤에도 남을 수 있고 대기열 줄에 실행 건 ID와 다시 시도를 누른 관리자 ID가 남는다(사용자가 인정) | 사용자 결정 | `docs/security.md` |
+
+- 알려진 한계: 프로젝트 없는 실행 건(테스트 · 시연용 직접 시작)의 파일은 완전 삭제를 부르지 않으면 남는다. 저장 뒤 커밋이 실패하거나 재개 · 재시도로 버려진 파일은 따로 정리하지 않고, 실행 건 접두어째 지울 때 함께 지워진다. T-P2 전용 실행은 출력 참조 확인을 거치지 않는다(지금은 파일 칸이 없어 문제 없음).
 
 ## 12. 테스트 목록
 

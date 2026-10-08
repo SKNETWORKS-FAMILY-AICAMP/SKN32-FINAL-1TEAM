@@ -15,6 +15,10 @@ from .base import (
     FileFormat, ImageFormat, JudgedBy, KeptReason, PrototypeKind, SBModel,
     StyleType, TokenType, ViolationType, ext,
 )
+from .files import FileRef
+
+# 파일 칸(참조형)의 확장 표시 note — 기준 문서의 경로 · 원문 칸을 파일 참조로 바꿨다 (결정 0023)
+FILE_NOTE = "참조형 — 기준 문서와 다름(결정 0023)"
 
 
 # ── 입력 ─────────────────────────────────────────────
@@ -307,7 +311,8 @@ class ChartSpec(SBModel):
     axis_labels: list[str] = Field(min_length=2, max_length=2)
     series: list[dict[str, Any]]
     source_ref: str
-    image_path: str | None = None
+    # 확장 — 차트 그림 파일 참조. 비면 그림 없음
+    image_file: FileRef | None = ext(None, note=FILE_NOTE)
 
 
 class TableSpec(SBModel):
@@ -328,16 +333,21 @@ class PlanDoc(SBModel):
 
 # ── 구현 산출물 ───────────────────────────────────────
 class Prototype(SBModel):
-    entry_file_path: str
+    """구현 산출물. 파일은 내용 대신 파일 참조(FileRef)로 싣는다 (결정 0023).
+
+    entryFile   진입 파일(실행 HTML · 원페이지 SVG). 비면 진입 파일 없음. 파일 하나로 열린다(다른 파일을 상대 경로로 부르지 않음)
+    assetFiles  따로 내려받을 파일만 (빈 목록 가능)
+    readmeFile  실행 · 열람 안내 문서 (M-3이 채움)
+    """
+    entry_file: FileRef | None = ext(None, note=FILE_NOTE)
     kind: PrototypeKind
-    source_text: str
-    asset_paths: list[str]
-    readme_path: str | None = None
+    asset_files: list[FileRef] = ext(note=FILE_NOTE)
+    readme_file: FileRef | None = ext(None, note=FILE_NOTE)
     implemented_features: list[str]
 
 
 class Infographic(SBModel):
-    image_path: str
+    image_file: FileRef = ext(note=FILE_NOTE)
     format: ImageFormat
     alt_text: str
 
@@ -389,9 +399,10 @@ class RejectedAttempt(SBModel):
 
 # ── 결과물 ───────────────────────────────────────────
 class Deliverable(SBModel):
-    plan_doc_path: str
-    prototype_path: str
-    infographic_path: str
+    plan_doc_file: FileRef = ext(note=FILE_NOTE)
+    # 프로토타입 파일 목록 — 진입 파일(있으면) · 안내 문서 · 자산. 내려받기용 압축은 웹이 만든다
+    prototype_files: list[FileRef] = ext(note=FILE_NOTE)
+    infographic_file: FileRef = ext(note=FILE_NOTE)
     score_report: "ScoreReport"
     proofread_log: ProofreadLog
     disclaimer: str

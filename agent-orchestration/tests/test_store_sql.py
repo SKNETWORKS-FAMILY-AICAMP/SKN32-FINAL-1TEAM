@@ -17,7 +17,7 @@ from sbrain.store_sql import (
     DbSettingsProvider, SqlStore, create_orchestrator_tables, create_sqlite_engine,
 )
 from sbrain.store_sql.ddl import DDL_PATH, render
-from sbrain.store_sql.schema import ORCH_TABLES
+from sbrain.store_sql.schema import ORCH_TABLES, RECORD_TABLES
 from sbrain.store_sql.web_tables import ProofreadWriteError
 
 
@@ -38,7 +38,7 @@ def test_ddl_is_create_if_not_exists_only():
 def test_stats_and_job_tables_have_no_identifier_columns():
     """통계 줄 · 작업 상태 표에는 계정 · 프로젝트 · 실행 건 · 실행 · 공고 ID나 자유 글 컬럼이 없다 (spec 4.1 · 5.4)."""
     tables = {t.name: t for t in ORCH_TABLES}
-    assert len(ORCH_TABLES) == 12
+    assert len(ORCH_TABLES) == 13
     stats, jobs = tables["orch_log_stats"], tables["orch_jobs"]
     assert [c.name for c in stats.columns] == [
         "seq", "kind", "reason", "month", "category", "status", "result_code", "part", "count", "data_json",
@@ -56,6 +56,35 @@ def test_stats_and_job_tables_have_no_identifier_columns():
     ddl = render()
     assert "part INTEGER NOT NULL COMMENT" in ddl and "DEFAULT 1, \n\tcount INTEGER NOT NULL" in ddl
     assert "month CHAR(7) NOT NULL" in ddl
+
+
+def test_file_deletion_table_is_minimal_and_outside_records():
+    """파일 삭제 대기열 표 (spec 4.6) — 칸 · 타입 · 고유 제약 · 색인 하나, orch_runs 외래 키 없음, RECORD_TABLES 밖.
+
+    run_id를 갖는 표 중 RECORD_TABLES에 넣지 않는 것은 이 표 하나다(넣으면 12개월 처리 · 탈퇴가 줄을 지워 파일이 남는다).
+    """
+    tables = {t.name: t for t in ORCH_TABLES}
+    t = tables["orch_file_deletions"]
+    assert [c.name for c in t.columns] == [
+        "deletion_id", "run_id", "key_prefix", "status", "attempts", "last_error_kind", "created_at", "next_at",
+        "last_tried_at", "gave_up_at", "retried_by", "retried_at", "retry_count"]
+    assert [c.name for c in t.primary_key] == ["deletion_id"]
+    assert not t.foreign_keys                                                     # 실행 건 줄이 지워져도 남는다
+    lengths = {c.name: getattr(c.type, "length", None) for c in t.columns}
+    assert lengths["deletion_id"] == lengths["run_id"] == lengths["retried_by"] == 64
+    assert lengths["key_prefix"] == 80 and lengths["status"] == lengths["last_error_kind"] == 10
+    nullable = {c.name: c.nullable for c in t.columns}
+    assert all(nullable[c] for c in ("last_error_kind", "last_tried_at", "gave_up_at", "retried_by", "retried_at"))
+    assert not any(nullable[c] for c in ("run_id", "key_prefix", "status", "attempts", "created_at", "next_at",
+                                         "retry_count"))
+    assert {i.name: [c.name for c in i.columns] for i in t.indexes} == {
+        "ix_orch_file_deletions_status_next": ["status", "next_at"]}
+    assert "CONSTRAINT uq_orch_file_deletions_run UNIQUE (run_id)" in render()
+    assert t not in RECORD_TABLES
+    with_run_id = {x.name for x in ORCH_TABLES if "run_id" in x.c} - {x.name for x in RECORD_TABLES}
+    # 실행 건 · 산출물 · 시작 요청(만든 실행 건)은 원래 기록 표가 아니다. 새로 생긴 예외는 대기열 하나
+    assert with_run_id == {"orch_runs", "orch_start_requests", "orch_artifact_versions", "orch_artifact_pointers",
+                           "orch_file_deletions"}
 
 
 @pytest.fixture

@@ -16,6 +16,9 @@
 - 선택 확장 지점(흐름에 없으면 기본 동작): Flow.redo_rework_input — 재수행 입력을 저장하기 전에 흐름이 칸을 채운다(기본: 그대로),
   Flow.after_execution — 실행 기록이 성공으로 저장되는 같은 묶음에서 그 실행의 호출 기록을 본다(기본: 아무것도 안 함).
 - 시각은 시간대 있는 UTC다. 주입한 시계 · tick(now)의 시간대 없는 값은 UTC로 본다.
+- 파일(확장, 결정 0023): 엔진은 파일 저장소를 받아(선택) Task의 tools.files와 파일을 쓰는 규칙 단계(writes_files)의 파일 창구에
+  넘긴다. 출력을 저장하기 전에 출력 안의 모든 FileRef(중첩 모델 · 목록 · 사전 포함)를 저장소와 대조한다 — 키 첫 마디가 이 실행
+  건, 저장소에 있음, 형식 · 크기 · sha256 · 이름이 같음. 어기면 규격 위반(ContractError)이고 메시지에는 수와 규칙 종류만 적는다.
 - 운영 로그 줄(runlog, 로거 sbrain.run): 실행 기록마다 단계시작 · 단계끝, 실행 건의 대기 · 실행끝 · 재개예약. 단계 ID와 실행 건 ·
   실행 기록 값만 쓴다. 처리기는 워커만 단다 — 그 밖에서는 아무것도 나가지 않는다.
 """
@@ -27,14 +30,15 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any, Callable, Literal, Protocol
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from ..models import BundleUsage, CycleState, ReworkComparison, ReworkInput, Run, TaskInstruction
+from ..models import BundleUsage, CycleState, FileRef, ReworkComparison, ReworkInput, Run, TaskInstruction
 from ..models.base import ErrorKind
 from ..models.clock import as_utc, utc_clock, utc_now
 from ..models.run import FAILURE_REASON_MAX, RedoState, ReworkSummary, collecting, make_state
 from .context import ArtifactTypes, ImmutableArtifactError, RunContext
 from .errors import ContractError, ResourceNotFound, ToolCallExhausted
+from .files import FileStore
 from . import runlog
 from .registry import PARTIAL_SUFFIX, AgentRegistry, TaskRegistry, TaskSpec, keeps_partial
 from .settings import TaskModelSetting
@@ -127,6 +131,21 @@ def _no_tools(agent_name: str, key: str) -> Tools:
     raise RuntimeError("호출 도구 없음 — 실행 기록 밖에서 지시문 입력을 만들었다")
 
 
+def _collect_file_refs(obj: Any, found: list[FileRef]) -> None:
+    """값 안의 FileRef를 모두 모은다 — 모델 필드 · 목록 · 튜플 · 집합 · 사전 값을 재귀로 훑는다(등록부 칸 이름을 보지 않는다)."""
+    if isinstance(obj, FileRef):
+        found.append(obj)
+    elif isinstance(obj, BaseModel):
+        for name in type(obj).model_fields:
+            _collect_file_refs(getattr(obj, name), found)
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            _collect_file_refs(v, found)
+    elif isinstance(obj, (list, tuple, set, frozenset)):
+        for v in obj:
+            _collect_file_refs(v, found)
+
+
 def _dig(obj: Any, path: str) -> Any:
     for part in path.split("."):
         obj = obj[part] if isinstance(obj, dict) else getattr(obj, part)
@@ -150,6 +169,7 @@ class Engine:
         owner: str = "worker",
         lease_sec: float = 3600,
         image_providers: dict[str, ImageProvider] | None = None,
+        files: FileStore | None = None,
     ) -> None:
         self.store = store
         self.registry = registry
@@ -157,6 +177,8 @@ class Engine:
         self.providers = providers
         # 이미지 호출처 (확장) — 이름은 Task 설정의 image_provider. 없으면 이미지 호출은 '운영' 실패다
         self.image_providers: dict[str, ImageProvider] = image_providers if image_providers is not None else {}
+        # 파일 저장소 (확장) — 없으면 파일 창구를 부르는 순간 오류, 출력에 FileRef가 있으면 규격 위반
+        self.files = files
         self.types = types
         self.agents = agents or AgentRegistry()
         self.immutable_keys = immutable_keys
@@ -375,6 +397,9 @@ class Engine:
                 rec.model, rec.provider, rec.temperature = cfg.model, cfg.provider, cfg.temperature
                 rec.reasoning_effort = cfg.reasoning_effort
                 out = spec.fn(model_in, self.make_tools(ctx, spec, rec, cfg, sink))
+            elif spec.writes_files:
+                # 파일을 쓰는 규칙 단계 — 파일 창구만 넘긴다. 설정은 LLM을 부르지 않는 Task와 같다(제한 시간 · 재시도만)
+                out = spec.fn(model_in, self.make_tools(ctx, spec, rec, self._plain_tools_config(ctx, spec), sink).files)
             else:
                 out = spec.fn(model_in)
         finally:
@@ -391,6 +416,7 @@ class Engine:
                 out = spec.output_model.model_validate(out)
             except ValidationError as e:
                 raise ContractError(f"{spec.task_id} 출력 규격 불일치: {e.error_count()}건") from None
+        self.check_file_refs(ctx, spec, out)
         outputs = {name: getattr(out, name) for name in spec.output_model.model_fields}
         out_refs = []
         for fname, key in spec.outputs.items():
@@ -408,6 +434,30 @@ class Engine:
         ctx.record_execution(rec)
         ctx.record_attempt(rec)
         return outputs
+
+    def check_file_refs(self, ctx: RunContext, spec: TaskSpec, out: Any) -> None:
+        """출력 안의 모든 FileRef를 저장소와 대조한다(spec 4.4). 하나라도 어기면 ContractError — 메시지에는 어긴 참조 수와
+        규칙 종류만 적는다(키 · 이름 없음). 같은 실행 건의 앞 실행 기록이 만든 참조를 그대로 넘기는 것은 된다."""
+        refs: list[FileRef] = []
+        _collect_file_refs(out, refs)
+        if not refs:
+            return
+        problems: list[str] = []
+        for ref in refs:
+            if ref.run_id != ctx.run.run_id:
+                problems.append("다른 실행 건")
+                continue
+            if self.files is None:
+                problems.append("파일 저장소 없음")
+                continue
+            meta = self.files.meta(ref.key)
+            if meta is None:
+                problems.append("없는 파일")
+            elif (meta.name, meta.media_type, meta.size, meta.sha256) != (ref.name, ref.media_type, ref.size, ref.sha256):
+                problems.append("저장 값과 다름")
+        if problems:
+            kinds = sorted(set(problems))
+            raise ContractError(f"{spec.task_id} 출력 파일 참조 위반: {len(problems)}건 ({', '.join(kinds)})")
 
     def resolve_inputs(self, ctx: RunContext, spec: TaskSpec, rs: RedoState | None,
                        tools_for: ToolsFactory | None = None) -> tuple[dict[str, Any], list[str]]:
@@ -482,14 +532,20 @@ class Engine:
         LLM을 부르지 않는 Task(uses_llm=False — T-C2 · G-01 · T-C4)는 Task 설정 표를 보지 않고 모델 없이 제한 시간 ·
         재시도만 입힌다. 그래서 실행 기록의 모델 · 호출처 · 온도도 비고, 옛 설정 사본에 그 Task 항목이 있어도 쓰지 않는다."""
         if not spec.uses_llm:
-            s = ctx.settings
-            return ToolsConfig(agent=spec.agent, provider=None, model=None, temperature=None,
-                               timeout_sec=s.task_timeouts.get(spec.task_id, 120.0),
-                               retry_count=s.retry.retry_count, retry_interval_sec=s.retry.retry_interval_sec)
+            return self._plain_tools_config(ctx, spec)
         cfg = self.agent_tools_config(ctx, spec.agent, spec.task_id)
         if spec.temperature:
             cfg = replace(cfg, temperature=spec.temperature.apply(cfg.temperature))
         return cfg
+
+    @staticmethod
+    def _plain_tools_config(ctx: RunContext, spec: TaskSpec) -> ToolsConfig:
+        """Task 설정 표를 보지 않는 호출 설정 — 모델 없이 제한 시간(task_timeouts[단계 ID], 없으면 120초) · 재시도만.
+        LLM을 부르지 않는 Task와 파일을 쓰는 규칙 단계의 파일 창구가 쓴다."""
+        s = ctx.settings
+        return ToolsConfig(agent=spec.agent, provider=None, model=None, temperature=None,
+                           timeout_sec=s.task_timeouts.get(spec.task_id, 120.0),
+                           retry_count=s.retry.retry_count, retry_interval_sec=s.retry.retry_interval_sec)
 
     def agent_tools_config(self, ctx: RunContext, agent_name: str, key: str) -> ToolsConfig:
         """설정 키(key)의 설정(호출처 · 모델 · 기본 온도 · 추론 강도 · 이미지 설정)과 제한 시간을 입힌 호출 설정 (Task 온도 규칙
@@ -527,10 +583,21 @@ class Engine:
 
     def make_tools(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord,
                    cfg: ToolsConfig, sink: CallSink) -> Tools:
+        run_id = ctx.run.run_id
+        # 사전 단계(임시 Context)에는 파일 창구가 없다 — 부르는 순간 RuntimeError (저장된 실행 건이 아니다)
+        files = None if ctx.provisional else self.files
         return Tools(cfg, ToolsContext(
-            run_id=ctx.run.run_id, execution_id=rec.execution_id, task_id=spec.task_id,
+            run_id=run_id, execution_id=rec.execution_id, task_id=spec.task_id,
             providers=self.providers, sink=sink, now=self.now, sleep=self.sleep, new_id=self.new_id,
-            image_providers=self.image_providers))
+            image_providers=self.image_providers, files=files,
+            run_progress=lambda: self._stored_progress(run_id)))
+
+    def _stored_progress(self, run_id: str) -> str | None:
+        """저장소에서 다시 읽은 실행 건의 진행 상태 (파일 넣기 전 확인). 실행 건이 없으면(완전 삭제 등) None."""
+        try:
+            return self.store.load_run(run_id).state.progress
+        except KeyError:
+            return None
 
     # ── 재수행 ────────────────────────────────────────
     def _schedule_redo(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord,

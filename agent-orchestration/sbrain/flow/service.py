@@ -14,6 +14,8 @@
 - 탈퇴(delete_account_data, 확장): 계정 잠금 안에서 중단 · 취소한 뒤 그 계정의 실행 건 · 시작 요청을 통계 줄로 옮기고 지운다.
 - 웹이 쓰는 조회(spec 4): view_project · project_views · missing_projects · wait_project · outputs · rework_result · active_work,
   관리자 admin_runs · admin_score_history · admin_summary · admin_agent_tasks (모양은 flow/reads.py).
+- 산출물 파일(확장, 결정 0023): 웹 read_artifact_file(파일 내용 · 형식), 관리자 admin_file_deletions(삭제 대기열 목록) ·
+  admin_retry_file_deletion(포기한 줄 다시 시도). 웹 조립에서 부를 수 있다. 웹은 파일을 쓰지도 지우지도 않는다.
 """
 from __future__ import annotations
 
@@ -32,6 +34,7 @@ from ..models.run import ACTIVE_PROGRESS, collecting, make_state, progress_perce
 from ..orchestrator.context import RunContext
 from ..orchestrator.engine import Engine
 from ..orchestrator.errors import CommandError, StoreConflict, message
+from ..orchestrator.files import FileStore
 from ..orchestrator.settings import SettingsProvider
 from ..orchestrator.store import FINISHED_REQUEST, PENDING_REQUEST, RunFilter, StartRequest
 from . import reads
@@ -214,8 +217,12 @@ class SBrainOrchestrator:
         new_id: Callable[[], str] | None = None,
         sleep: Callable[[float], None] = time.sleep,
         allow_pre_stage: bool = True,
+        files: FileStore | None = None,
     ) -> None:
         self.engine = engine
+        # 파일 읽기(read_artifact_file)가 쓰는 저장소 (확장, 결정 0023) — 주지 않으면 엔진의 것. 웹 조립은 읽기 전용 저장소이거나
+        # 없음(SBRAIN_ARTIFACT_ROOT 없음 → FILE_STORE_UNAVAILABLE)
+        self.files = files if files is not None else engine.files
         self.flow = flow
         self.store = engine.store
         self.settings = settings
@@ -888,6 +895,24 @@ class SBrainOrchestrator:
     def rework_result(self, project_id: int | str) -> reads.ReworkResult | None:
         """마지막 재작성 한 건 (확장, flow/reads.py). 재작성한 적 없으면 None. 실패 · 중단 RUN_NOT_VIEWABLE, 없으면 RUN_NOT_FOUND."""
         return reads.rework_result(self, project_id)
+
+    def read_artifact_file(self, project_id: int | str, key: str) -> reads.ArtifactFile:
+        """산출물 파일 하나의 내용 · 형식 (확장, 결정 0023, flow/reads.py). 웹이 주인 확인을 한 뒤 부른다.
+
+        실행 건 없으면 RUN_NOT_FOUND, 실패 · 중단이면 RUN_NOT_VIEWABLE, 파일 저장소 설정이 없으면 FILE_STORE_UNAVAILABLE,
+        그 실행 건의 파일이 아니거나 · 키 규칙 위반 · 없음 · 내용이 저장 값과 다르면 FILE_NOT_FOUND. 읽기만 한다(점유 없음)."""
+        return reads.read_artifact_file(self, project_id, key)
+
+    def admin_file_deletions(self, status: str | None = None, limit: int = 50,
+                             offset: int = 0) -> list[reads.AdminFileDeletion]:
+        """관리자 — 파일 삭제 대기열 목록 (확장, 결정 0023). 넣은 시각 최근 순, status로 '대기' · '포기'를 거른다."""
+        return reads.admin_file_deletions(self, status=status, limit=limit, offset=offset)
+
+    def admin_retry_file_deletion(self, deletion_id: str, admin_id: str) -> reads.AdminFileDeletion:
+        """관리자 — '포기'한 파일 삭제 대기열 줄을 다시 시도 (확장, 결정 0023). 누른 관리자 · 시각을 줄에 남긴다.
+
+        없는 줄이면 FILE_DELETION_NOT_FOUND, '대기' 줄이면 INVALID_STATE. 결과는 바뀐 줄."""
+        return reads.admin_retry_file_deletion(self, deletion_id, admin_id)
 
     def admin_executions(self, **filters: Any) -> list[reads.AdminExecution]:
         """관리자 '에이전트 테스크' — 여러 프로젝트의 실행 기록 (메타데이터만). 조건은 reads.admin_executions."""

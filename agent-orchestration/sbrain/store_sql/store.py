@@ -22,6 +22,9 @@
 | retire_start_requests | 한 트랜잭션: 넘긴 요청이 모두 끝났는지 잠가서 확인(FOR UPDATE, 아니면 StoreConflict) → 통계 줄 → 요청 삭제 (확장) |
 | retention_run_targets · retention_request_targets | 12개월 처리 대상 (잠금 없이 읽기만 — 부르는 쪽이 실행 건 점유를 잡고 다시 본다, 확장) |
 | try_start_job · renew_job · finish_job · release_job | orch_jobs 점유 — 작업 줄이 없으면 만들고(INSERT … ON DUPLICATE KEY/ON CONFLICT) 같은 트랜잭션에서 조건부 UPDATE (확장) |
+| delete_artifacts · retire_run(delete_run) | 같은 트랜잭션에서 orch_file_deletions에 실행 건 줄을 넣는다 — INSERT … ON DUPLICATE KEY UPDATE(MySQL) · ON CONFLICT(run_id) DO UPDATE(SQLite) 한 문장: 줄이 없으면 '대기', '포기'면 '대기'로 되돌림, '대기'면 그대로. 동시에 넣어도 고유 제약 오류가 나지 않는다 (확장, 결정 0023) |
+| claim_file_deletions | next_at이 지난 '대기' 줄을 SELECT … FOR UPDATE SKIP LOCKED로 고르고 줄마다 조건부 UPDATE로 next_at을 미룬다. 미룬 값이 가져간 표시 — finish · fail은 그 값이 그대로일 때만 바꾼다 (확장) |
+| retry_file_deletion | SELECT … FOR UPDATE로 '포기'인지 보고 같은 트랜잭션에서 '대기'로 · 누른 관리자 · 시각 · 횟수를 적는다 (확장) |
 
 - 알림은 웹 notifications에 쓴다. 기준 문서 Notification의 runId 자리에 project_id를 쓰고, project_id가 없는
   실행 건(테스트 · 시연용 직접 시작)은 웹 테이블에 쓰지 않는다. 웹 테이블에 쓸 project_id는 실행 건 행의
@@ -41,36 +44,42 @@ from __future__ import annotations
 
 import hashlib
 import threading
+import uuid
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
 from sqlalchemy import (
-    Connection, Engine, Row, Select, Table, and_, case, delete, exists, func, insert, or_, select, text, update,
+    Connection, Engine, Row, Select, Table, and_, case, delete, exists, func, insert, literal, null, or_, select, text,
+    update,
 )
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import OperationalError
 
 from ..models import Notice, Notification, RejectedAttempt, ReworkComparison, Run
 from ..models.clock import as_utc, utc_clock, utc_now
 from ..models.run import ACTIVE_PROGRESS
-from ..orchestrator.errors import ProjectRunExists, StoreConflict
+from ..orchestrator.errors import FileDeletionNotFound, FileDeletionNotGivenUp, ProjectRunExists, StoreConflict
+from ..orchestrator.file_deletion import FIRST_DELAY_SEC
 from ..orchestrator.store import (
     ACCOUNT_LOCK_TIMEOUT_SEC, BUSY_PROGRESS, FINISHED_REQUEST, PENDING_REQUEST, ArtifactVersion, CancelOutcome,
-    CommitBatch, CreateOutcome, ExecutionFilter, ExecutionRow, JobState, LogStatsRow, RunFilter, StartRequest,
-    StartRequestStatus, check_summary,
+    CommitBatch, CreateOutcome, ExecutionFilter, ExecutionRow, FileDeletion, JobState, LogStatsRow, RunFilter,
+    StartRequest, StartRequestStatus, check_summary, file_key_prefix,
 )
 from ..orchestrator.trace import (
     IMAGE_TOKEN_FIELDS, TOKEN_FIELDS, CallLog, ExecutionRecord, FeedbackLink, PointerEvent, TraceEvent,
 )
 from .schema import (
-    ARTIFACT_POINTERS, ARTIFACT_VERSIONS, CALL_LOGS, EXECUTIONS, FEEDBACK_LINKS, JOBS, LOG_STATS, POINTER_EVENTS,
-    RECORD_TABLES, REWORK_COMPARISONS, RUNS, START_REQUESTS, TRACE_EVENTS,
+    ARTIFACT_POINTERS, ARTIFACT_VERSIONS, CALL_LOGS, EXECUTIONS, FEEDBACK_LINKS, FILE_DELETIONS, JOBS, LOG_STATS,
+    POINTER_EVENTS, RECORD_TABLES, REWORK_COMPARISONS, RUNS, START_REQUESTS, TRACE_EVENTS, TS,
 )
 from .web_tables import WebTables
 
 PROJECT_CHUNK = 500   # existing_projects가 IN 하나에 싣는 프로젝트 수 (잠정)
+DEADLOCK_TRIES = 3    # MySQL 교착으로 되돌려진 delete_artifacts · retire_run을 다시 하는 횟수 (처음 포함, 사용자 결정 2026-10-08 — 잠정 아님)
+MYSQL_DEADLOCK = 1213
 PROOFREAD_SKIPPED = "검수회수기록생략"   # 웹 proofread_logs 구조가 맞지 않아 반려된 시도를 쓰지 않음 (실행 건마다 한 번)
 
 
@@ -95,6 +104,7 @@ class SqlStore:
         self._local_guard = threading.Lock()
         self._lease_sec: dict[tuple[str, str], float] = {}   # 이 프로세스가 잡은 점유의 길이 (저장 때 연장)
         self.account_lock_timeout: float = ACCOUNT_LOCK_TIMEOUT_SEC   # 계정 잠금 대기 (잠정)
+        self.file_deletion_delay_sec: float = FIRST_DELAY_SEC         # 파일 삭제 대기열 — 넣은 뒤 첫 시도까지 (잠정)
 
     # ── 실행 건 ───────────────────────────────────────
     def create_run(self, run: Run, batch: CommitBatch, *, max_active: int = 1) -> bool:
@@ -557,9 +567,26 @@ class SqlStore:
         return ArtifactVersion(run_id, key, version, row.value, row.producer, row.created_at)
 
     def delete_artifacts(self, run_id: str) -> None:
-        with self.engine.begin() as conn:
-            conn.execute(delete(ARTIFACT_VERSIONS).where(ARTIFACT_VERSIONS.c.run_id == run_id))
-            conn.execute(delete(ARTIFACT_POINTERS).where(ARTIFACT_POINTERS.c.run_id == run_id))
+        def once() -> None:
+            with self.engine.begin() as conn:
+                conn.execute(delete(ARTIFACT_VERSIONS).where(ARTIFACT_VERSIONS.c.run_id == run_id))
+                conn.execute(delete(ARTIFACT_POINTERS).where(ARTIFACT_POINTERS.c.run_id == run_id))
+                self._enqueue_file_deletion(conn, run_id, self._now())
+        self._retry_deadlock(once)
+
+    def _retry_deadlock(self, once: Callable[[], Any]) -> Any:
+        """MySQL 교착(1213)으로 트랜잭션 전체가 되돌려지면 같은 트랜잭션을 처음부터 다시 한다 (최대 DEADLOCK_TRIES번 — 사용자 결정). 마지막에도 교착이면 원래 오류를 올린다.
+
+        파일 삭제 대기열 넣기(INSERT … ON DUPLICATE KEY UPDATE)는 고유 키가 둘(deletion_id · run_id)인 표라 동시에 같은
+        실행 건을 넣으면 교착이 날 수 있다. 되돌려진 트랜잭션을 다시 하는 것은 안전하다(넣기 규칙이 여러 번 해도 같다).
+        """
+        for i in range(DEADLOCK_TRIES):
+            try:
+                return once()
+            except OperationalError as e:
+                code = e.orig.args[0] if e.orig is not None and e.orig.args else None
+                if not self._mysql or code != MYSQL_DEADLOCK or i == DEADLOCK_TRIES - 1:
+                    raise
 
     # ── 추적 기록 조회 ────────────────────────────────
     def executions(self, run_id: str) -> list[ExecutionRecord]:
@@ -638,24 +665,28 @@ class SqlStore:
     def retire_run(self, run_id: str, owner: str, *, stats: LogStatsRow | None = None, delete_run: bool = False,
                    bump_parts: bool = False) -> None:
         now = self._now()
-        with self.engine.begin() as conn:
-            row = conn.execute(select(RUNS.c.lease_owner, RUNS.c.run_json)
-                               .where(RUNS.c.run_id == run_id).with_for_update()).first()
-            if row is None or row.lease_owner != owner:
-                raise StoreConflict("점유하지 않은 실행 건의 기록을 옮기려 함")   # 실행 건 ID는 싣지 않는다
-            if stats is not None:
-                conn.execute(insert(LOG_STATS).values(**_stats_values(stats, now)))
-            for table in RECORD_TABLES:
-                conn.execute(delete(table).where(table.c.run_id == run_id))
-            if delete_run:
-                conn.execute(delete(ARTIFACT_VERSIONS).where(ARTIFACT_VERSIONS.c.run_id == run_id))
-                conn.execute(delete(ARTIFACT_POINTERS).where(ARTIFACT_POINTERS.c.run_id == run_id))
-                conn.execute(delete(RUNS).where(RUNS.c.run_id == run_id))
-            elif bump_parts:
-                # run_json의 옮긴 횟수만 바꾼다 — updated_at 컬럼 · run_json의 updatedAt · 점유는 그대로
-                stored = dict(row.run_json)
-                stored["statsParts"] = int(stored.get("statsParts") or 0) + 1
-                conn.execute(update(RUNS).where(RUNS.c.run_id == run_id).values(run_json=stored))
+
+        def once() -> None:
+            with self.engine.begin() as conn:
+                row = conn.execute(select(RUNS.c.lease_owner, RUNS.c.run_json)
+                                   .where(RUNS.c.run_id == run_id).with_for_update()).first()
+                if row is None or row.lease_owner != owner:
+                    raise StoreConflict("점유하지 않은 실행 건의 기록을 옮기려 함")   # 실행 건 ID는 싣지 않는다
+                if stats is not None:
+                    conn.execute(insert(LOG_STATS).values(**_stats_values(stats, now)))
+                for table in RECORD_TABLES:
+                    conn.execute(delete(table).where(table.c.run_id == run_id))
+                if delete_run:
+                    conn.execute(delete(ARTIFACT_VERSIONS).where(ARTIFACT_VERSIONS.c.run_id == run_id))
+                    conn.execute(delete(ARTIFACT_POINTERS).where(ARTIFACT_POINTERS.c.run_id == run_id))
+                    conn.execute(delete(RUNS).where(RUNS.c.run_id == run_id))
+                    self._enqueue_file_deletion(conn, run_id, now)   # 파일 삭제 대기열 (결정 0023)
+                elif bump_parts:
+                    # run_json의 옮긴 횟수만 바꾼다 — updated_at 컬럼 · run_json의 updatedAt · 점유는 그대로
+                    stored = dict(row.run_json)
+                    stored["statsParts"] = int(stored.get("statsParts") or 0) + 1
+                    conn.execute(update(RUNS).where(RUNS.c.run_id == run_id).values(run_json=stored))
+        self._retry_deadlock(once)
 
     def retire_start_requests(self, request_ids: list[str], stats: list[LogStatsRow]) -> int:
         if len(set(request_ids)) != len(request_ids):
@@ -750,6 +781,104 @@ class SqlStore:
         return JobState(r.job_name, r.lease_owner, r.lease_until, r.last_started_at, r.last_finished_at,
                         r.last_summary)
 
+    # ── 파일 삭제 대기열 (확장, 결정 0023) ──────────────
+    def _enqueue_file_deletion(self, conn: Connection, run_id: str, now: datetime) -> None:
+        """산출물을 지우는 트랜잭션 안에서 부른다 — 한 문장으로 넣거나(없을 때) '포기'를 '대기'로 되돌린다('대기'면 그대로).
+
+        동시에 두 곳이 넣어도 고유 제약(run_id) 충돌이 같은 문장의 갱신으로 바뀌어 오류가 나지 않는다.
+        """
+        t = FILE_DELETIONS
+        next_at = literal(now + timedelta(seconds=self.file_deletion_delay_sec), TS)
+        given_up = t.c.status == "포기"
+        # 'status'를 마지막에 — MySQL은 ON DUPLICATE KEY UPDATE의 SET을 왼쪽부터 적용해 뒤의 식이 바뀐 상태를 본다
+        reset = [("attempts", case((given_up, 0), else_=t.c.attempts)),
+                 ("next_at", case((given_up, next_at), else_=t.c.next_at)),
+                 ("gave_up_at", case((given_up, null()), else_=t.c.gave_up_at)),
+                 ("status", case((given_up, "대기"), else_=t.c.status))]
+        values = dict(deletion_id=uuid.uuid4().hex, run_id=run_id, key_prefix=file_key_prefix(run_id), status="대기",
+                      attempts=0, created_at=now, next_at=now + timedelta(seconds=self.file_deletion_delay_sec),
+                      retry_count=0)
+        if self._mysql:
+            stmt = mysql_insert(t).values(**values).on_duplicate_key_update(reset)
+        else:
+            stmt = sqlite_insert(t).values(**values).on_conflict_do_update(index_elements=["run_id"],
+                                                                            set_=dict(reset))
+        conn.execute(stmt)
+
+    def claim_file_deletions(self, limit: int, hold_sec: float) -> list[FileDeletion]:
+        t, now = FILE_DELETIONS, self._now()
+        held_until = now + timedelta(seconds=hold_sec)
+        due = and_(t.c.status == "대기", t.c.next_at <= now)
+        claimed: list[FileDeletion] = []
+        with self.engine.begin() as conn:
+            rows = conn.execute(select(t).where(due).order_by(t.c.next_at, t.c.deletion_id).limit(limit)
+                                .with_for_update(skip_locked=True)).all()
+            for r in rows:
+                n = conn.execute(update(t).where(t.c.deletion_id == r.deletion_id, due)
+                                 .values(next_at=held_until)).rowcount
+                if n == 1:
+                    claimed.append(_deletion_of(r, next_at=held_until))
+        return claimed
+
+    def _held_deletion(self, deletion_id: str, claimed_next_at: datetime):
+        t = FILE_DELETIONS
+        return and_(t.c.deletion_id == deletion_id, t.c.status == "대기", t.c.next_at == claimed_next_at)
+
+    def finish_file_deletion(self, deletion_id: str, claimed_next_at: datetime) -> bool:
+        with self.engine.begin() as conn:
+            n = conn.execute(delete(FILE_DELETIONS).where(self._held_deletion(deletion_id, claimed_next_at))).rowcount
+        return n == 1
+
+    def fail_file_deletion(self, deletion_id: str, claimed_next_at: datetime, error_kind: str, *, retry_sec: float,
+                           max_attempts: int) -> FileDeletion | None:
+        t, now = FILE_DELETIONS, self._now()
+        with self.engine.begin() as conn:
+            r = conn.execute(select(t).where(self._held_deletion(deletion_id, claimed_next_at))
+                             .with_for_update()).first()
+            if r is None:
+                return None
+            attempts = r.attempts + 1
+            values: dict[str, Any] = dict(attempts=attempts, last_error_kind=error_kind, last_tried_at=now)
+            if attempts >= max_attempts:
+                values.update(status="포기", gave_up_at=now)
+            else:
+                values.update(next_at=now + timedelta(seconds=retry_sec))
+            conn.execute(update(t).where(t.c.deletion_id == deletion_id).values(**values))
+            return _deletion_of(r, **values)
+
+    def get_file_deletion(self, deletion_id: str) -> FileDeletion | None:
+        return self._one_deletion(FILE_DELETIONS.c.deletion_id == deletion_id)
+
+    def file_deletion_for_run(self, run_id: str) -> FileDeletion | None:
+        return self._one_deletion(FILE_DELETIONS.c.run_id == run_id)
+
+    def _one_deletion(self, cond: Any) -> FileDeletion | None:
+        with self.engine.connect() as conn:
+            r = conn.execute(select(FILE_DELETIONS).where(cond)).first()
+        return _deletion_of(r) if r is not None else None
+
+    def list_file_deletions(self, status: str | None = None, limit: int | None = 50,
+                            offset: int = 0) -> list[FileDeletion]:
+        t = FILE_DELETIONS
+        stmt = select(t).order_by(t.c.created_at.desc(), t.c.deletion_id.desc())
+        if status is not None:
+            stmt = stmt.where(t.c.status == status)
+        with self.engine.connect() as conn:
+            return [_deletion_of(r) for r in conn.execute(_paged(stmt, limit, offset))]
+
+    def retry_file_deletion(self, deletion_id: str, admin_id: str) -> FileDeletion:
+        t, now = FILE_DELETIONS, self._now()
+        with self.engine.begin() as conn:
+            r = conn.execute(select(t).where(t.c.deletion_id == deletion_id).with_for_update()).first()
+            if r is None:
+                raise FileDeletionNotFound("없는 파일 삭제 대기열 줄")   # ID는 싣지 않는다
+            if r.status != "포기":
+                raise FileDeletionNotGivenUp("포기가 아닌 줄은 다시 시도하지 않는다")
+            values = dict(status="대기", attempts=0, next_at=now, gave_up_at=None, retried_by=str(admin_id),
+                          retried_at=now, retry_count=r.retry_count + 1)
+            conn.execute(update(t).where(t.c.deletion_id == deletion_id).values(**values))
+            return _deletion_of(r, **values)
+
     def _records(self, table: Table, run_id: str) -> list[Any]:
         with self.engine.connect() as conn:
             rows = conn.execute(select(table.c.record_json).where(table.c.run_id == run_id).order_by(table.c.seq))
@@ -836,6 +965,15 @@ def _request_of(row: Row) -> StartRequest:
         run_id=row.run_id, cancel_requested=bool(row.cancel_requested), claim_count=row.claim_count,
         lease_owner=row.lease_owner, lease_until=row.lease_until, created_at=row.created_at,
         updated_at=row.updated_at, finished_at=row.finished_at)
+
+
+def _deletion_of(row: Row, **override: Any) -> FileDeletion:
+    """orch_file_deletions 행 → FileDeletion. override는 같은 트랜잭션에서 방금 바꾼 칸 (시각은 UTC로 맞춘다)."""
+    d = dict(row._mapping)
+    d.update(override)
+    for k in ("created_at", "next_at", "last_tried_at", "gave_up_at", "retried_at"):
+        d[k] = as_utc(d[k])
+    return FileDeletion(**d)
 
 
 def _execution_row(rec: ExecutionRecord, run_id: str, project_id: int | None) -> dict[str, Any]:

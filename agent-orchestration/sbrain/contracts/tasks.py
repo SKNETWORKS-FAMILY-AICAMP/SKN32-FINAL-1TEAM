@@ -16,7 +16,7 @@ from pydantic import Field
 from ..models import (
     AnnouncementCard, Announcement, ArtifactScore, ChartSpec, CheckResult,
     CodeCheckResult, CompanyInfo, Deliverable, DocScore, DocScoreItem,
-    EligibilityRule, EvalItem, FeatureMatchResult, File, FormatFinding,
+    EligibilityRule, EvalItem, FeatureMatchResult, File, FileRef, FormatFinding,
     FormatSpec, FormSpec, GateResult, Infographic, ItemSpec, MarketAnalysis,
     PlanDoc, PlanSection, PreInput, ProofreadLog, ProofreadViolationType, Prototype, ReferenceDoc,
     ReferenceSummary, RequirementAnalysis, ReworkComparison, ReworkDiff,
@@ -27,6 +27,7 @@ from ..models.base import (
     Category, CollectionStatus, FallbackMode, KeptReason, Layer, NextAction,
     SBModel, UserAction, ext,
 )
+from ..models.domain import FILE_NOTE
 
 
 # ── 확장 입력 · 출력 타입 ─────────────────────────────
@@ -203,7 +204,7 @@ class G04In(SBModel):
 
 
 class G04Out(SBModel):
-    readme_path: str
+    readme_file: FileRef = ext(note=FILE_NOTE)
     # 확장 — 실행 · 열람 안내 낱말 자체 검사. 불통과면 재수행 횟수까지 다시 만들고, 끝내 불통과면 관리자 기록 후 계속(점수 밖)
     check: CheckResult | None = ext(None, note="G-04 자체 검사 — 실행 · 열람 안내 낱말")
 
@@ -247,9 +248,9 @@ class M2Out(SBModel):
 
 
 class M3In(SBModel):
-    """합치기③ — G-04가 만든 readmePath를 Prototype에 기입한다."""
+    """합치기③ — G-04가 만든 안내 문서 참조(readmeFile)를 Prototype에 기입한다."""
     prototype: Prototype
-    readme_path: str | None = None
+    readme_file: FileRef | None = ext(None, note=FILE_NOTE)
 
 
 class M3Out(SBModel):
@@ -384,7 +385,8 @@ class TB1In(SBModel):
 class TB1Out(SBModel):
     prototype: Prototype
     implemented_features: list[str]
-    entry_file_path: str
+    # prototype.entryFile과 같은 값. 비면 진입 파일 없음
+    entry_file: FileRef | None = ext(None, note=FILE_NOTE)
     check: CheckResult
 
 

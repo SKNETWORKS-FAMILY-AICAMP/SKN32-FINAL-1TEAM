@@ -16,6 +16,9 @@ tools는 호출마다 재시도 · 제한 시간 · 오류 종류 분류를 맡�
   제한 시간은 Task 설정의 이미지 제한 시간(image_timeout_sec), 호출 기록은 call_type 'image' · 이미지 호출처 · 이미지 모델.
   이미지 모델 설정이 없는 Task가 부르면 호출처를 부르지 않고 바로 실패한 호출 하나를 기록하고 ToolCallExhausted를 올린다.
   지시문 · 입력 그림 · 결과 그림은 어떤 기록 · 예외 메시지에도 남기지 않는다(repr에서도 뺀다).
+- 파일 창구(확장, 결정 0023): files.put(이름, 내용, 형식) -> FileRef, files.get(FileRef) -> 내용. 저장소 호출은 같은 재시도 ·
+  오류 분류(_call)를 거치고 호출 기록은 call_type 'file' · 목적 put · get이다. 이름 · 형식 · 크기 위반, 실행 건이 '실행'이 아닌
+  넣기, 다른 실행 건 파일 읽기는 저장소를 부르지 않고 FileRejected다. 파일 내용 · 이름 · 키는 기록 · 예외 메시지에 넣지 않는다.
 """
 from __future__ import annotations
 
@@ -29,8 +32,10 @@ from typing import Any, Callable, Protocol, TypeVar
 from pydantic import BaseModel, ValidationError
 
 from ..models.base import CallError, ErrorKind
-from .errors import FormatError, ProviderError, ToolCallExhausted
-from .trace import CallLog, CallTry, add_tokens
+from ..models.files import FileRef, file_name_problem, media_type_problem, size_problem
+from .errors import FileRejected, FormatError, ProviderError, ToolCallExhausted
+from .files import FileConflict, FileMeta, FileMissing, FileStore, sha256_hex
+from .trace import FILE_CALL, CallLog, CallTry, add_tokens
 
 T = TypeVar("T")
 
@@ -158,6 +163,16 @@ class ToolsContext:
     sleep: Callable[[float], None] = time.sleep
     new_id: Callable[[], str] = field(default=lambda: uuid.uuid4().hex[:12])
     image_providers: dict[str, ImageProvider] = field(default_factory=dict)   # 확장 — 이미지 호출처 (없으면 이미지 호출 실패)
+    # 확장 — 파일 저장소와 '이 실행 건의 지금 진행 상태 읽기'(저장소에서 다시 읽음, 실행 건이 없으면 None).
+    # 둘 중 하나라도 없으면(사전 단계 · 실행 기록 밖) 파일 창구를 부르는 순간 RuntimeError다
+    files: FileStore | None = None
+    run_progress: Callable[[], str | None] | None = None
+
+
+# 파일 창구의 시도 실패 설명 (내용 · 이름 · 키 없음)
+FILE_MISSING = "없는 파일"
+FILE_CONFLICT = "같은 키에 다른 내용"
+FILE_HASH_MISMATCH = "sha256 불일치"
 
 
 # 이미지 모델 설정이 없는 Task의 이미지 호출 — 기록의 설명 칸에 남기는 이유 (CallError 값은 늘리지 않는다)
@@ -173,8 +188,69 @@ class _Immediate(Exception):
         self.error, self.kind, self.detail = error, kind, detail
 
 
+class FileTool:
+    """파일 창구 (확장, 결정 0023) — tools.files. 파일을 쓰는 규칙 단계(G-04)는 이것을 두 번째 인자로 받는다.
+
+    Task 함수(스텁 · 실구현)는 파일을 저장소 · 디스크에 직접 쓰거나 읽지 않고 이것으로만 한다.
+    """
+
+    def __init__(self, tools: "Tools") -> None:
+        self._tools = tools
+
+    def _store(self) -> tuple[FileStore, Callable[[], str | None]]:
+        ctx = self._tools._ctx
+        if ctx.files is None or ctx.run_progress is None:
+            raise RuntimeError("파일 저장소 없음 — 실행 건의 실행 기록 밖(사전 단계 등)에서 파일 창구를 불렀다")
+        return ctx.files, ctx.run_progress
+
+    def put(self, name: str, data: bytes, media_type: str) -> FileRef:
+        """파일을 넣고 참조를 돌려준다. 이름 · 형식 · 크기 위반이나 실행 건이 '실행'이 아니면 FileRejected(저장소를 부르지 않음).
+        넣을 때마다 새 키다. 저장소 쓰기는 같은 키로 재시도한다(같은 내용이면 성공)."""
+        store, progress = self._store()
+        if not isinstance(data, (bytes, bytearray)):
+            raise FileRejected("내용이 바이트가 아님")
+        problem = file_name_problem(name) or media_type_problem(media_type) or size_problem(len(data))
+        if problem is not None:
+            raise FileRejected(f"파일 규칙 위반 — {problem}")
+        if progress() != "실행":
+            raise FileRejected("실행 건이 '실행'이 아님 — 파일을 넣지 않는다")
+        ctx = self._tools._ctx
+        data = bytes(data)
+        meta = FileMeta(name=name, media_type=media_type, size=len(data), sha256=sha256_hex(data))
+        key = f"{ctx.run_id}/{ctx.execution_id}/{uuid.uuid4().hex}/{name}"
+
+        def once() -> None:
+            try:
+                store.write(key, data, meta)
+            except FileConflict:   # 넣기마다 새 키라 일어나면 안 된다 — 재시도하지 않는다
+                raise _Immediate("호출실패", "운영", FILE_CONFLICT) from None
+
+        self._tools._call(FILE_CALL, "put", once)
+        return FileRef(key=key, name=name, media_type=media_type, size=meta.size, sha256=meta.sha256)
+
+    def get(self, ref: FileRef) -> bytes:
+        """참조의 내용을 읽는다. 이 실행 건의 파일이 아니면 FileRejected(저장소를 부르지 않음). 없는 키는 입력 오류(재시도하지
+        않음), 읽은 내용의 sha256이 참조와 다르면 형식 오류(재시도)다."""
+        store, _ = self._store()
+        if not isinstance(ref, FileRef):
+            raise FileRejected("파일 참조가 아님")
+        if ref.run_id != self._tools._ctx.run_id:
+            raise FileRejected("다른 실행 건의 파일 — 읽지 않는다")
+
+        def once() -> bytes:
+            try:
+                data = store.read(ref.key)
+            except FileMissing:
+                raise _Immediate("호출실패", "입력", FILE_MISSING) from None
+            if sha256_hex(data) != ref.sha256:
+                raise FormatError(FILE_HASH_MISMATCH)
+            return data
+
+        return self._tools._call(FILE_CALL, "get", once)
+
+
 class Tools:
-    """Task 함수에 넘기는 호출 도구 (잠정 규격: llm · search, 확장 image)."""
+    """Task 함수에 넘기는 호출 도구 (잠정 규격: llm · search, 확장 image · files)."""
 
     def __init__(self, config: ToolsConfig, ctx: ToolsContext, item_key: str | None = None) -> None:
         self._config = config
@@ -188,6 +264,11 @@ class Tools:
     def for_item(self, item_key: str) -> "Tools":
         """같은 설정 · 같은 로그로 항목(문장 등)별 호출 도구를 만든다."""
         return Tools(self._config, self._ctx, item_key)
+
+    @property
+    def files(self) -> FileTool:
+        """파일 창구 (확장) — put · get. 호출 기록은 이 tools의 실행 기록에 모인다."""
+        return FileTool(self)
 
     # ── 공개 규격 ─────────────────────────────────────
     def llm(

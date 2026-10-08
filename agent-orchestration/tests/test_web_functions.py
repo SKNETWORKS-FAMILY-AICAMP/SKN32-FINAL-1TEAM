@@ -319,8 +319,13 @@ def test_rework_result_artifact_paths_then_failure(clock):
     ok = rework(app, clock, rid, "실행 파일")[0]
     r = app.orchestrator.rework_result(p)
     assert (r.status, r.kept, r.screen, r.cycle_id) == ("완료", "후", 8, ok.cycle_id)
-    assert [(f.artifact, f.before_path, f.after_path) for f in r.files] == [
-        ("prototype", "/index.html", "/index.html")]   # 진입 파일명 index.html (2026-09-30 결정 9)
+    [f] = r.files                                                               # 진입 파일 참조의 전후 (결정 0023)
+    assert f.artifact == "prototype"
+    assert (f.before_file.name, f.after_file.name) == ("index.html", "index.html")   # 진입 파일명 (2026-09-30 결정 9)
+    assert f.before_file.key != f.after_file.key                                 # 넣을 때마다 새 키
+    ctx = app.engine.open_context(app.store.load_run(rid))
+    assert f.after_file == ctx.get("prototype").entry_file
+    assert set(f.dump()) == {"artifact", "beforeFile", "afterFile"}               # 내용 없이 참조만
     assert r.plan_before is None and r.plan_after is None
     app.orchestrator.decide(rid, 8, "진행")
     app.llm.plan("T-B2", ["auth"] * 50)                                          # 영구 오류 → 재작성 실패

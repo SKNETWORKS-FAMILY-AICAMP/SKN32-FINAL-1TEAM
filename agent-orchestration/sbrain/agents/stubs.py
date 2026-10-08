@@ -4,6 +4,8 @@
 - StubScenario로 점수 · 검사 결과 · 오류를 조절해 흐름 테스트를 만든다.
 - 공고 서버 연결이 없을 때의 T-C2 · G-01(스텁 모드, spec 4.6): 스텁 G-01은 스텁 공고를 직접 만들고 공고 서버 판정과 같은
   원칙(확실히 안 되는 경우만 불통과, 읽지 못한 조건은 확인 필요)으로 판정한다. 스텁 공고에는 업력 상한이 없다.
+- 파일(진입 파일 · 인포그래픽 그림 · 안내 문서 · 계획서 파일)은 작은 자리채움 내용을 tools.files(G-04는 파일 창구 인자)로
+  넣고 받은 참조(FileRef)를 출력에 싣는다 (결정 0023). 차트 그림은 비운다. 스텁 T-V2는 파일을 읽지 않는다(채점 방식 그대로).
 - 실제 구현이 나오면 registry.bind(task_id, fn)로 바꿔 끼운다.
 """
 from __future__ import annotations
@@ -31,7 +33,7 @@ from ..models.clock import kst_today, utc_clock, utc_now
 from ..orchestrator import settings
 from ..orchestrator.errors import FormatError, ProviderError, ResourceNotFound, ToolCallExhausted
 from ..orchestrator.registry import TaskRegistry
-from ..orchestrator.tools import ImageRequest, ImageResponse, LLMRequest, LLMResponse, TokenUsage, Tools
+from ..orchestrator.tools import FileTool, ImageRequest, ImageResponse, LLMRequest, LLMResponse, TokenUsage, Tools
 from ..flow.rework_map import TASK_BUNDLE, artifact_rework_reasons, order_bundles
 from .form_defaults import EVAL_ITEMS, default_evaluation_items, default_form_spec, stub_rubric
 from .notice.g01 import PRE_STARTUP, business_age_years   # 업력(년) 반올림은 실제 G-01과 한 곳에서 (스텁 테스트도 이 이름을 쓴다)
@@ -46,7 +48,20 @@ HTML_NAMES = ["동작 연결", "대체 텍스트", "label 연결", "명도 대�
               "임시 문구 없음"]
 SVG_NAMES = ["대체 텍스트", "핵심 정보 6항목", "명도 대비", "정보 계층", "잘림 없음", "지면 밖 넘침 없음", "텍스트 실재성",
              "최소 글자 크기"]
-ENTRY_FILE = "/index.html"   # 웹개발 · AI API 진입 파일명 (2026-09-30 결정 9)
+# 파일 이름 · 형식 (이름 규칙 — 결정 0023). 웹개발 · AI API 진입 파일명은 index.html (2026-09-30 결정 9),
+# 원페이지는 T-B2가 지면을 onepage.svg로 넣고 M-2가 그 참조를 진입 파일로 감싼다
+ENTRY_FILE = "index.html"
+ONEPAGE_FILE = "onepage.svg"
+INFOGRAPHIC_FILE = "infographic.png"
+README_FILE = "README.md"
+PLAN_DOC_FILE = "plan.docx"
+HTML_TYPE, SVG_TYPE, PNG_TYPE, MARKDOWN_TYPE = "text/html", "image/svg+xml", "image/png", "text/markdown"
+DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+# 자리채움 내용 — 스텁 파일은 작다. 계획서 파일은 진짜 워드 파일이 아니다(형식만 워드)
+STUB_HTML = "<!doctype html><html lang='ko'><body>스텁 프로토타입</body></html>".encode()
+STUB_SVG = "<svg xmlns='http://www.w3.org/2000/svg'><text>원페이지</text></svg>".encode()
+STUB_README = "# 실행 · 열람 안내\n\n스텁 안내 문서 — 열람 · 인쇄 · 실행 방법 자리.\n".encode()
+STUB_PLAN_DOC = b"stub plan docx placeholder"
 EVAL = list(EVAL_ITEMS)
 # 스텁 공고 · 카드 값 — 모집 형태 표기(spec 4.4), 가산점
 PERIOD_FIXED = "기간 있음"
@@ -520,33 +535,37 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
 
     def tb1(inp: c.TB1In, tools: Tools) -> c.TB1Out:
         _ask(tools, "실행 파일 제작")
-        proto = Prototype(entry_file_path=ENTRY_FILE, kind="html", source_text="<html lang='ko'></html>",
-                          asset_paths=[], implemented_features=list(inp.feature_list))
+        entry = tools.files.put(ENTRY_FILE, STUB_HTML, HTML_TYPE)
+        proto = Prototype(entry_file=entry, kind="html", asset_files=[], implemented_features=list(inp.feature_list))
         return c.TB1Out(prototype=proto, implemented_features=list(inp.feature_list),
-                        entry_file_path=ENTRY_FILE, check=_check(sc, "T-B1", inp.rework_input, ""))
+                        entry_file=entry, check=_check(sc, "T-B1", inp.rework_input, ""))
 
     def tb2(inp: c.TB2In, tools: Tools) -> c.TB2Out:
         _ask(tools, "인포그래픽 제작")
-        fmt = "svg" if inp.category == "원페이지" else "png"
-        return c.TB2Out(infographic=Infographic(image_path=f"/infographic.{fmt}", format=fmt, alt_text="인포그래픽"),
+        if inp.category == "원페이지":   # 원페이지 지면 — M-2가 이 참조를 프로토타입 진입 파일로 감싼다
+            fmt, image = "svg", tools.files.put(ONEPAGE_FILE, STUB_SVG, SVG_TYPE)
+        else:
+            fmt, image = "png", tools.files.put(INFOGRAPHIC_FILE, FakeImage.PNG, PNG_TYPE)
+        return c.TB2Out(infographic=Infographic(image_file=image, format=fmt, alt_text="인포그래픽"),
                         check=_check(sc, "T-B2", inp.rework_input, ""))
 
     def m2(inp: c.M2In) -> c.M2Out:
-        return c.M2Out(prototype=Prototype(entry_file_path="onepage.svg", kind="svg-onepage",
-                                           source_text="<svg><text>원페이지</text></svg>",
-                                           asset_paths=[inp.infographic.image_path],
-                                           implemented_features=list(inp.feature_list)))
+        # 파일을 열지 않고 인포그래픽 그림 참조를 그대로 진입 파일로 감싼다 (같은 실행 건의 참조 — 결정 0023)
+        return c.M2Out(prototype=Prototype(entry_file=inp.infographic.image_file, kind="svg-onepage",
+                                           asset_files=[], implemented_features=list(inp.feature_list)))
 
-    def g04(inp: c.G04In) -> c.G04Out:
+    def g04(inp: c.G04In, files: FileTool) -> c.G04Out:
         # 자체 검사는 check_fail_times['G-04']로 불통과를 흉내 낸다. 실구현(템플릿 · 낱말 검사)이 지킬 것 — 웹개발 · AI API
         # README에는 '실행' 또는 '열람', 원페이지 README에는 '열람'과 '인쇄'가 들어가야 한다(구현 · 검증-2 담당 요청, 검증-2
         # 진단 기준과 같음). 끝내 실패해 AI 생성 고지(기획서 6-8)가 빠져도 T-C4 전달은 막지 않는다 (잠정 — 사용자 미답)
+        # 파일을 쓰는 규칙 단계 — 엔진이 파일 창구를 두 번째 인자로 넘긴다 (결정 0023)
         _maybe_raise(sc, "G-04")
-        return c.G04Out(readme_path="/README.md", check=_check(sc, "G-04", None, ""))
+        readme = files.put(README_FILE, STUB_README, MARKDOWN_TYPE)
+        return c.G04Out(readme_file=readme, check=_check(sc, "G-04", None, ""))
 
     def m3(inp: c.M3In) -> c.M3Out:
         _maybe_raise(sc, "M-3")
-        return c.M3Out(prototype=inp.prototype.model_copy(update={"readme_path": inp.readme_path}))
+        return c.M3Out(prototype=inp.prototype.model_copy(update={"readme_file": inp.readme_file}))
 
     def tv2(inp: c.TV2In, tools: Tools) -> c.TV2Out:
         try:
@@ -636,8 +655,13 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
         return c.M4Out(plan_doc=inp.plan_doc.model_copy(update={"sections": sections}), proofread_log=log)
 
     def tc4(inp: c.TC4In, tools: Tools) -> c.TC4Out:
-        d = Deliverable(plan_doc_path="/plan.docx", prototype_path=inp.prototype.entry_file_path,
-                        infographic_path=inp.infographic.image_path, score_report=inp.score_report,
+        # 계획서 파일은 자리채움(형식만 워드). 프로토타입은 참조 목록 — 진입 파일(있으면) · 안내 문서(있으면) · 자산.
+        # 내려받기용 압축은 웹이 만든다 (결정 0023)
+        plan_file = tools.files.put(PLAN_DOC_FILE, STUB_PLAN_DOC, DOCX_TYPE)
+        proto = inp.prototype
+        proto_files = [f for f in (proto.entry_file, proto.readme_file) if f is not None] + list(proto.asset_files)
+        d = Deliverable(plan_doc_file=plan_file, prototype_files=proto_files,
+                        infographic_file=inp.infographic.image_file, score_report=inp.score_report,
                         proofread_log=inp.proofread_log, disclaimer=DISCLAIMER, prototype_notice=PROTOTYPE_NOTICE,
                         score_notice=SCORE_NOTICE, submission_notice=SUBMISSION_NOTICE)
         return c.TC4Out(deliverable=d, user_message="계획서 · 프로토타입 · 검증 결과를 내려받을 수 있습니다.")

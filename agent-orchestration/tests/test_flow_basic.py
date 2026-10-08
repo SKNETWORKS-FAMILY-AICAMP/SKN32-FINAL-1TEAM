@@ -36,8 +36,11 @@ def test_onepage_skips_tb1_and_wraps_infographic(clock):
     counted = {s.task_id for s in build_registry().specs() if s.counted}
     assert len(counted & set(ex)) == 13
     ctx = app.engine.open_context(app.store.load_run(rid))
-    assert ctx.get("prototype").kind == "svg-onepage"
-    assert ctx.get("prototype").readme_path == "/README.md"
+    proto = ctx.get("prototype")
+    assert proto.kind == "svg-onepage"
+    assert proto.entry_file == ctx.get("infographic").image_file and proto.entry_file.name == "onepage.svg"
+    assert proto.asset_files == [] and proto.readme_file == ctx.get("readmeFile")
+    assert proto.readme_file.name == "README.md" and proto.readme_file.media_type == "text/markdown"
 
 
 def test_states_at_wait_points(clock):

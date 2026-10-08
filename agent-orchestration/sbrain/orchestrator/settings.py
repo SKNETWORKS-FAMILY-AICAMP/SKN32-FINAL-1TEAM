@@ -219,7 +219,9 @@ PROVISIONAL: dict[str, str] = {
     "workerLog.actions": "운영 로그 동작 · 키 이름 — 단계시작(run · project · step · exec · trigger · resumed · attempt) · "
                          "단계끝(run · project · step · exec · status · sec · model · tokens · imageTokens · errorKind · "
                          "error) · 대기(run · project · point) · 실행끝(run · project · status) · 재개예약(run · project · "
-                         "at · errorKind). 운영하면서 바꿀 수 있다 (orchestrator/runlog.py)",
+                         "at · errorKind) · 파일삭제(run · deletion) · 파일삭제실패(run · deletion · errorKind · "
+                         "error · attempts) · 파일삭제포기(run · deletion · attempts). 운영하면서 바꿀 수 있다 "
+                         "(orchestrator/runlog.py)",
     "workerLog.errorMax": "단계끝 error 값 길이 상한 200자 (orchestrator/runlog.py ERROR_MAX)",
     "workerLog.maxBytes": "로그 파일 하나의 상한 20MB — 넘게 되면 다음 순번 파일 (sbrain/worker_log.py MAX_BYTES)",
     "workerLog.lockFile": "폴더 하나에 워커 하나 — 폴더 안 worker.lock OS 배타 잠금, 못 잡으면 화면에만 "
@@ -232,6 +234,13 @@ PROVISIONAL: dict[str, str] = {
     "retention.checkSec": "워커가 보관 기간 작업을 돌 때인지 확인하는 주기 10분 (sbrain/worker.py JOB_CHECK_SEC)",
     "retention.leaseSec": "보관 기간 작업 점유 시간 = 워커 점유 시간(120초), 하트비트(30초)가 연장한다 — 워커가 멈추면 "
                           "이만큼 뒤에 다른 워커가 이어받는다",
+    # 파일 삭제 대기열 (orchestrator/file_deletion.py, 결정 0023) — 워커 프로세스 값이다. 포기 횟수 3은 사용자 결정이라 여기 없다
+    "fileDeletion.firstDelaySec": "넣은 뒤 첫 삭제 시도까지 600초(10분) — 워커 점유 시간(120초)보다 길게 두어 삭제 직전 단계의 "
+                                  "늦은 쓰기가 끝난 뒤에 지운다 (orchestrator/file_deletion.py FIRST_DELAY_SEC)",
+    "fileDeletion.retrySec": "삭제 실패 뒤 다시 시도 간격 · 가져간 줄을 미루는 시간 600초(10분) "
+                             "(orchestrator/file_deletion.py RETRY_SEC)",
+    "fileDeletion.batchSize": "작업 확인 주기(10분)마다 한 번에 가져가는 대기열 줄 수 20 (orchestrator/file_deletion.py "
+                              "BATCH_SIZE)",
     # 저장소 (orchestrator/store.py) — 메모리 · SQL 저장소가 함께 쓴다
     "store.accountLockTimeoutSec": "계정 잠금 대기 10초 — 넘기면 StoreConflict (orchestrator/store.py "
                                    "ACCOUNT_LOCK_TIMEOUT_SEC)",
@@ -242,6 +251,11 @@ PROVISIONAL: dict[str, str] = {
     # 진행 기다리기 (flow/service.py wait_project) — 명령 창구 값이다
     "waitProject.timeoutSec": "wait_project 기본 제한 시간 60초 — 넘기면 그때의 진행 상태를 그대로 준다",
     "waitProject.pollSec": "wait_project가 DB를 다시 읽는 간격 0.5초",
+    # 산출물 파일 읽기 (flow/reads.py read_artifact_file, 결정 0023)
+    "fileRead.hashMismatch": "읽은 내용의 sha256 · 크기가 저장된 값과 다르면 FILE_NOT_FOUND로 보고 관리자용 사유는 남기지 않는다",
+    # 조립 (bootstrap.py · worker.py, 결정 0023)
+    "artifactRoot.workerRequired": "SBRAIN_ARTIFACT_ROOT가 없거나 절대 경로가 아니면 워커가 시작하지 않는다 "
+                                   "(SBRAIN_DB_URL · OPENAI_API_KEY 없을 때와 같은 방식)",
 }
 
 

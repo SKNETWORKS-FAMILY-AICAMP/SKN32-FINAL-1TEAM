@@ -22,8 +22,9 @@ G-02b는 T-V2 직후 계산하고(시트 2 "T-V2 종료 직후"), 화면 8을 �
   (같은 입력으로 재개하면 다시 쓰지 않고 저장한 것을 쓴다). 반영 실행(T-B1)과 다시 쓰기 함수가 없는 조립(스텁)은
   덧붙이기만 한다. 재작성 중 재수행이면 어느 경로든 그 사이클의 재작성 지시도 함께 남긴다(5.4).
 
-산출물층 검증 반영: 재실행 때 T-B1에 이전 원문(previous_source_text)을 준다 — 재작성 대상(initial_redo_state)과 검사
-  불통과 재수행(redo_rework_input)만. 반영 실행 · 다른 Task는 채우지 않는다. T-B2 실행 기록에 최종 실패인 이미지 호출이
+산출물층 검증 반영: 재실행 때 T-B1에 이전 원문 — 이전 프로토타입 진입 파일의 참조(previous_source_file, 결정 0023)를
+  준다 — 재작성 대상(initial_redo_state)과 검사 불통과 재수행(redo_rework_input)만. 반영 실행 · 다른 Task는 채우지
+  않고, 진입 파일이 없으면 비운다. T-B2 실행 기록에 최종 실패인 이미지 호출이
   있으면 '이미지대체' 사건을 그 실행 기록과 같은 묶음에 남긴다(after_execution — 사용자 화면에는 알리지 않는다).
 
 T-P2 시도 기록: 문장마다 T-P2 함수가 결과를 돌려준 호출 하나가 시도다(호출 실패는 시도가 아니다). 시도는 문장 결과
@@ -72,8 +73,8 @@ EVENT_IMAGE_FALLBACK = "이미지대체"
 EVENT_ALT_SOURCE_MISSING = "대체텍스트출처누락"
 ALT_SOURCE_MISSING_DETAIL = "HTML 2번 미충족인데 defect_sources가 비어 있음 — T-B2로 보냄"
 IMAGE_FALLBACK_DETAIL = "T-B2 이미지 호출 실패 — 기본 아이콘으로 계속"
-# 이전 원문(previous_source_text)을 채우는 Task와 그 원문이 든 산출물 (spec 4.3 — T-B1만)
-SOURCE_TEXT_TASK, SOURCE_TEXT_KEY = "T-B1", "prototype"
+# 이전 원문 참조(previous_source_file)를 채우는 Task와 그 진입 파일 참조가 든 산출물 (spec 4.3 — T-B1만, 결정 0023)
+SOURCE_FILE_TASK, SOURCE_FILE_KEY = "T-B1", "prototype"
 # 공고를 고를 수 있는 대기 지점 — 공고 선택 명령이 decision의 beforeStep에 남기고, G-01이 실패하면 그리로 돌아간다 (4.3.4)
 SELECTION_STEPS = ("공고선택", "계획서작성")
 
@@ -402,12 +403,13 @@ class SBrainFlow:
             source_refs = list(decision.get("sourceRefs", [])) + [cyc.selected_orders_ref]
             prev = ctx.ref(spec.outputs[spec.primary_output]) if ctx.has(spec.outputs[spec.primary_output]) else ""
             issues = [order.reason] + ([order.instruction_delta] if order.instruction_delta else [])
-            # T-B1이면 재작성 직전 prototype 포인터의 원문을 함께 준다 (spec 4.3 — 고쳐 달라는 경우만)
-            source = (ctx.get(SOURCE_TEXT_KEY).source_text
-                      if tid == SOURCE_TEXT_TASK and ctx.has(SOURCE_TEXT_KEY) else None)
+            # T-B1이면 재작성 직전 prototype 포인터의 진입 파일 참조를 함께 준다 (spec 4.3 — 고쳐 달라는 경우만).
+            # 진입 파일이 없으면 비운다 (결정 0023)
+            source = (ctx.get(SOURCE_FILE_KEY).entry_file
+                      if tid == SOURCE_FILE_TASK and ctx.has(SOURCE_FILE_KEY) else None)
             self._attach_rework(ctx, rs, spec, kind="재작성", source_refs=source_refs,
                                 ri=dict(mode="재작성", previous_result_ref=prev, issues=issues, order=order,
-                                        previous_source_text=source),
+                                        previous_source_file=source),
                                 bundle_id=",".join(order.targets))
         elif role == REFLECT_ROLE and tid == "T-B1":
             # 계획서 반영 실행 — T-B1 입력에 계획서(plan_doc)가 있지만, 추적 기록(FeedbackLink)을 위해 계획서 버전을
@@ -529,12 +531,13 @@ class SBrainFlow:
 
     def redo_rework_input(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord,
                           rework_input: ReworkInput) -> ReworkInput:
-        """검사 불통과 재수행의 재작성 입력 (엔진 선택 확장 지점). T-B1이면 방금 실행이 만든 prototype의 원문을 채운다 —
-        그 실행이 대상 · 반영 · 첫 실행 중 무엇이었든 (spec 4.3). 다른 Task는 그대로다."""
-        if spec.task_id != SOURCE_TEXT_TASK or not rec.result_ref.startswith(f"{SOURCE_TEXT_KEY}@"):
+        """검사 불통과 재수행의 재작성 입력 (엔진 선택 확장 지점). T-B1이면 방금 실행이 만든 prototype의 진입 파일 참조를
+        채운다 — 그 실행이 대상 · 반영 · 첫 실행 중 무엇이었든 (spec 4.3). 진입 파일이 없으면 비운다(결정 0023).
+        다른 Task는 그대로다."""
+        if spec.task_id != SOURCE_FILE_TASK or not rec.result_ref.startswith(f"{SOURCE_FILE_KEY}@"):
             return rework_input
-        source = ctx.get_ref(rec.result_ref).source_text
-        return rework_input.model_copy(update={"previous_source_text": source})
+        source = ctx.get_ref(rec.result_ref).entry_file
+        return rework_input.model_copy(update={"previous_source_file": source})
 
     def after_execution(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, calls: list[CallLog]) -> None:
         """실행 기록 하나가 성공으로 저장되는 같은 묶음 (엔진 선택 확장 지점). T-B2 실행에 최종 실패인 이미지 호출이 하나라도

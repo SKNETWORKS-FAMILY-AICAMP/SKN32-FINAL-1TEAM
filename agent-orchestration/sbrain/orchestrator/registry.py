@@ -5,7 +5,8 @@
 - Task 등록부: 담당 Agent, 입출력 규격, 실행 함수, 제한 시간, 온도 덮어쓰기,
   실패 정책, 재수행 여부 · 확정 동작 예외 여부, LLM 사용 여부, 입력 연결.
 - Orchestrator는 Task를 부를 때 그 Task 설정(호출 기록의 Agent 이름은 담당 Agent)을 입힌 tools를 Task 함수에 넘긴다.
-  규칙 단계 · 합치기는 tools를 받지 않으며 담당 Agent는 기록용이다.
+  규칙 단계 · 합치기는 tools를 받지 않으며 담당 Agent는 기록용이다. 예외: 파일을 쓴다고 표시한 규칙 단계(writes_files)는
+  파일 창구만 받는다(run(inp, files)).
 """
 from __future__ import annotations
 
@@ -137,6 +138,10 @@ class TaskSpec:
     redo: bool = False                           # 검사 미통과 재수행 대상
     final_action_exception: bool = False         # 확정 동작 예외 여섯 곳
     fn: Callable[..., Any] | None = None         # 실행 함수 (bind로 교체)
+    writes_files: bool = False
+    # 파일을 쓰는 규칙 단계 · 합치기 (확장, 결정 0023 — 지금 G-04). 참이면 엔진이 파일 창구(tools.files와 같은 객체 · 규칙)를
+    # 두 번째 인자로 넘긴다: run(inp, files). 재시도 · 제한 시간은 LLM을 부르지 않는 Task(uses_llm=False)와 같다 —
+    # Task 설정 표를 보지 않고 task_timeouts(없으면 120초) · 재시도만 입힌다. Task(kind 'task')는 tools.files가 있어 쓰지 않는다
 
     @property
     def receives_tools(self) -> bool:

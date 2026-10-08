@@ -2,12 +2,28 @@
 
 | 항목 | 내용 |
 |---|---|
-| 작성일 | 2026-10-01 (2026-10-02 갱신 — 웹 더미 파이프라인 떼어 내기. 2026-10-03 갱신 — 공고 서버 연결. 2026-10-04 갱신 — 작업 분해(T-C3)가 고른 평가 항목. 2026-10-05 갱신 — 시각 UTC · 실행 로그 12개월 처리 · 탈퇴 함수. 2026-10-06 갱신 — 산출물층 결과 확장 필드 · 관리자 이미지 토큰 · 새 사건 종류 · Task별 모델 설정. 2026-10-08 갱신 — 기준 문서 v1.10 반영 · 새 함수 `missing_projects`) |
+| 작성일 | 2026-10-01 (2026-10-02 갱신 — 웹 더미 파이프라인 떼어 내기. 2026-10-03 갱신 — 공고 서버 연결. 2026-10-04 갱신 — 작업 분해(T-C3)가 고른 평가 항목. 2026-10-05 갱신 — 시각 UTC · 실행 로그 12개월 처리 · 탈퇴 함수. 2026-10-06 갱신 — 산출물층 결과 확장 필드 · 관리자 이미지 토큰 · 새 사건 종류 · Task별 모델 설정. 2026-10-08 갱신 — 기준 문서 v1.10 반영 · 새 함수 `missing_projects`. 2026-10-08 갱신(2) — 산출물 파일 참조형 · 새 함수 3개 · 새 오류 코드 · `SBRAIN_ARTIFACT_ROOT`) |
 | 상태 | 함수 이름 · 인자 · 결과 필드 · 오류 코드는 **구현 완료**. 화면 조회(5.1절)의 화면별 모양은 **초안** — 웹팀과 맞춰 고친다 |
 | 근거 | 기능정의서 v1.10, 웹팀 합의(2026-09-30) 1~10번, 사용자 결정(2026-10-01 ~ 10-08), 웹팀 회신(2026-10-05), `워커_구동_방식_제안.md`(확정), `웹스키마_교체목록_웹팀전달.md`(두 문서 저장소 미포함) |
-| 코드 | `sbrain/` — 명령 창구 `flow/service.py`(`SBrainOrchestrator`), 화면 · 결과 · 관리자 조회 `flow/reads.py`, 재작성 묶음 `flow/rework_map.py`, 조립 `bootstrap.py`, 워커 `worker.py`, 웹 테이블 쓰기 `store_sql/web_tables.py`, 시각 `models/clock.py`, 실행 로그 12개월 처리 `flow/retention.py` · 통계 줄 `flow/log_stats.py` |
+| 코드 | `sbrain/` — 명령 창구 `flow/service.py`(`SBrainOrchestrator`), 화면 · 결과 · 관리자 조회 · 파일 읽기 `flow/reads.py`, 파일 참조 `models/files.py`, 파일 저장소 `orchestrator/files.py`, 파일 삭제 대기열 처리 `orchestrator/file_deletion.py`, 재작성 묶음 `flow/rework_map.py`, 조립 `bootstrap.py`, 워커 `worker.py`, 웹 테이블 쓰기 `store_sql/web_tables.py`, 시각 `models/clock.py`, 실행 로그 12개월 처리 `flow/retention.py` · 통계 줄 `flow/log_stats.py` |
 | 독자 | 웹팀(백엔드) |
 | 함께 볼 문서 | `docs/웹연동_변경사항_웹팀전달.md` — 웹 엔드포인트마다 어떤 함수를 부르고 응답을 어떻게 채우는지, 값 대응표, 웹 스키마 · 프론트 변경(2026-10-05 변경과 웹이 할 일은 그 문서 11절). `docs/공고연동_변경사항_웹팀전달.md` — 공고 서버 연결로 바뀐 화면 3 · 4 · 진행 상태(2026-10-03) |
+
+### 2026-10-08 바뀐 점 (2) (요약) — 산출물 파일 참조형 · 파일 읽기 · 파일 삭제 대기열 관리자 함수
+
+사용자 결정(2026-10-08)으로 **산출물 파일(실행 HTML · 원페이지 SVG · 인포그래픽 그림 · 실행 안내 문서 · 계획서 파일 · 차트 그림)을 DB 글자 칸에 담지 않고 파일 저장소에 두며, 결과에는 파일 참조만 싣는다.** 지금은 웹 · 워커가 함께 보는 폴더에 두고, 운영은 S3로 옮길 예정이다. 웹은 파일 위치(폴더 · 경로)를 알 필요가 없다 — 파일은 참조의 키로 `read_artifact_file`을 불러 받는다. **기존 함수의 이름 · 인자는 그대로이고, 결과의 파일 칸 모양이 바뀌었다.** 결정 0023.
+
+| 구분 | 내용 | 절 |
+|---|---|---|
+| 결과 모양 | 파일 칸이 파일 참조(`FileRef` — `key` · `name` · `mediaType` · `size` · `sha256`)로 바뀌었다. 옛 칸(`prototype.entryFilePath` · `sourceText` · `assetPaths` · `readmePath`, `infographic.imagePath`, 차트 `imagePath`, 결과물 `planDocPath` · `prototypePath` · `infographicPath`, 재작성 결과 `beforePath` · `afterPath`)은 지웠다. 결과에 파일 내용은 들어 있지 않다 | 5.4 |
+| 새 함수 (웹) | `read_artifact_file(project_id, key) -> ArtifactFile` — 파일 하나의 내용 · 형식 · 이름. 웹이 주인 확인을 한 뒤 부른다 | 5.5 |
+| 새 함수 (관리자) | `admin_file_deletions(status=None, limit=50, offset=0)` — 파일 삭제 대기열 목록, `admin_retry_file_deletion(deletion_id, admin_id)` — 포기한 줄 다시 시도. 화면은 웹팀 몫 | 8.9 |
+| 새 오류 코드 | `FILE_NOT_FOUND` · `FILE_STORE_UNAVAILABLE` · `FILE_DELETION_NOT_FOUND` | 10.2 |
+| 관리자 호출 기록 | `AdminCall.callType`에 `file`(파일 넣기 · 읽기, 목적 `put` · `get`)이 생긴다. 호출처 · 모델 · 토큰은 비어 있다 | 8.2 |
+| 환경 변수 | `SBRAIN_ARTIFACT_ROOT` — 파일 저장소 폴더의 **절대 경로**(기본값 없음). 워커는 필수, 웹은 선택(없으면 `read_artifact_file`만 `FILE_STORE_UNAVAILABLE`). **웹과 모든 워커가 같은 폴더를 봐야 한다** | 2.2 · 2.3 |
+| 웹은 읽기만 | 웹 조립은 폴더를 읽기만 한다. 파일을 쓰지도 지우지도 않는다. 완전 삭제 · 탈퇴 뒤 파일은 워커가 지운다(삭제 대기열) — 웹 함수의 동작 · 결과 모양은 그대로다 | 7.2 · 7.3 |
+| 공유 DB | `orch_` 표 12개 → 13개(파일 삭제 대기열 `orch_file_deletions`). 웹은 이 표를 직접 읽거나 쓰지 않고 관리자 함수로 본다 | 2.4 |
+| 웹팀 몫 | 관리자 화면(삭제 포기 목록 · 다시 시도), 내려받기용 압축 만들기, LLM이 만든 HTML · SVG를 웹에서 보여 줄 때의 격리(별도 도메인 · sandbox iframe 권장) | 5.5 · 11 · 12 |
 
 ### 2026-10-08 바뀐 점 (요약) — 기준 문서 v1.10 반영 · 알림 보관 · 새 함수 `missing_projects`
 
@@ -35,7 +51,7 @@
 | 새 추적 사건 종류 | `대조보류` · `검증2진단` · `안내문서자체검사실패` · `이미지대체` · `대체텍스트출처누락`(모두 잠정 이름). 관리자에게 어떻게 알릴지는 웹팀이 정한다 | 8.8 |
 | 모델 설정 | Agent별에서 **Task별**로 바뀌었다. 설정은 지금처럼 Orchestrator 코드에 있고 웹 표 · 화면은 없다. 관리자 실행 기록의 `model`은 그 Task 설정의 글 모델이다 | 8.1 |
 | 공유 DB | `orch_executions`에 칸 둘(`image_input_tokens` · `image_output_tokens`, NULL 허용). 웹 로컬 DB는 새 DDL로 다시 만든다 | `웹연동_변경사항_웹팀전달.md` 12.3 |
-| 스텁 값 | 스텁 T-B1의 `prototype.entryFilePath`가 `/prototype.html`에서 `/index.html`로 바뀌었다(진입 파일명 `index.html` — 구현 · 검증-2 담당 합의). 스텁 값이라 화면에는 영향이 없다 | 5.2 |
+| 스텁 값 | 스텁 T-B1의 `prototype.entryFilePath`가 `/prototype.html`에서 `/index.html`로 바뀌었다(진입 파일명 `index.html` — 구현 · 검증-2 담당 합의). 스텁 값이라 화면에는 영향이 없다. **이 칸은 2026-10-08 지웠다 — 진입 파일은 파일 참조 `prototype.entryFile`(5.4)** | 5.2 |
 | 웹에서 바뀌는 상태의 로그 | 워커가 운영 로그 파일을 남기기 시작했다. 웹 명령으로 바로 바뀌는 상태(대기 중 중단, 화면 8 → 9 진행 등)는 워커를 거치지 않아 그 로그에 없다 — **웹 쪽 로그로 남겨 달라는 요청** | 12 |
 
 ### 2026-10-05 바뀐 점 (요약) — 시각 UTC · 실행 로그 12개월 처리 · 탈퇴
@@ -130,6 +146,7 @@ sequenceDiagram
 | `screen(project_id, n)` | 화면 3 · 4 · 6 · 8 · 9 · 10 · 11 | 화면별 모델 (초안) | 5.1 |
 | `outputs(project_id)` | 이어하기 · 계획서 미리보기 · 내려받기 · 결과 화면 | `Outputs` | 5.2 |
 | `rework_result(project_id)` | 재작성이 끝난 뒤 변경 내역 · 전후 비교 · 실패 안내 | `ReworkResult` 또는 `None` | 5.3 |
+| `read_artifact_file(project_id, key)` | 산출물 파일 보기 · 내려받기 — 결과의 파일 참조 `key`로 (2026-10-08 새로) | `ArtifactFile` | 5.5 |
 | `more_candidates_for_project(project_id)` | 화면 3 공고 추가 조회 | 없음 | 6.1 |
 | `select_announcement_for_project(project_id, announcement_id)` | 화면 3 공고 선택 | 없음 | 6.1 |
 | `start_writing_for_project(project_id)` | 화면 5 작성 시작 | 없음 | 6.1 |
@@ -145,6 +162,8 @@ sequenceDiagram
 | `admin_score_history(project_id)` | 관리자 "이력보기" | `AdminScoreHistory` | 8.5 |
 | `admin_summary()` | 관리자 "운영 현황" · "운영 지표 요약" | `AdminSummary` | 8.6 |
 | `admin_agent_tasks()` | 관리자 "Task별 보기" | `list[AdminAgentTask]` | 8.7 |
+| `admin_file_deletions(status=None, limit=50, offset=0)` | 관리자 — 파일 삭제 대기열(포기한 줄 알림) (2026-10-08 새로) | `list[AdminFileDeletion]` | 8.9 |
+| `admin_retry_file_deletion(deletion_id, admin_id)` | 관리자 — 포기한 파일 삭제 다시 시도 (2026-10-08 새로) | `AdminFileDeletion` | 8.9 |
 
 - 웹은 **project_id로** 부른다. 함수가 안에서 실행 건을 찾는다(프로젝트 1건에 실행 건은 최대 1건).
 - 웹은 모든 함수를 부르기 전에 **주인 확인**을 한다(관리자 함수는 관리자 확인). Orchestrator는 `request_start`만 주인을 다시 확인한다. 예외: `missing_projects`는 사용자 요청이 아니라 웹 일괄 작업에서 부르는 함수라 주인 확인 없이 부른다(실행 건이 있는지만 알려 준다, 7.4).
@@ -179,7 +198,10 @@ orch = sbrain.orchestrator          # 서버 시작 때 한 번 만들어 모든
 |---|---|
 | `db_url` | 웹과 같은 공유 MySQL 접속 URL(`mysql+pymysql://…?charset=utf8mb4`). 비우면 환경 변수 · `.env`의 `SBRAIN_DB_URL` |
 | `profile_count` | **필수.** 계정의 필수 항목을 채운 프로필 수(0이면 E-AUTH-PROFILE). 웹의 `compute_has_profile`을 감싸 넘긴다(참 = 1) |
+| `artifact_root` | 선택(2026-10-08 새로). 파일 저장소 폴더의 **절대 경로**. 비우면 환경 변수 · `.env`의 `SBRAIN_ARTIFACT_ROOT` |
 
+- **파일 저장소 (2026-10-08):** `SBRAIN_ARTIFACT_ROOT`(또는 `artifact_root`)가 절대 경로면 그 폴더를 **읽기 전용**으로 열어 `read_artifact_file`(5.5)에만 쓴다. 웹 조립은 폴더를 만들지 않고, 파일을 쓰지도 지우지도 않는다(파일 삭제는 모두 워커가 한다). 값이 없거나 상대 경로면 조립은 되고 `read_artifact_file`만 `FILE_STORE_UNAVAILABLE`이다. 상대 경로는 프로세스를 띄운 폴더 기준으로 풀려 웹과 워커가 서로 다른 폴더를 볼 수 있어 받지 않는다.
+- **웹과 모든 워커는 같은 폴더를 봐야 한다**(같은 서버, 또는 같은 공유 폴더를 같은 절대 경로로). 지금은 웹 · 워커가 함께 보는 폴더이고, 운영은 S3로 옮길 예정이다. S3로 바뀌어도 웹이 부르는 함수 모양은 같게 둔다(서명 URL은 S3를 붙일 때 더한다).
 - `build_web`은 LLM 호출처가 없고 단계를 돌지 않는다. 여러 스레드에서 함께 써도 된다(상태는 DB에만 있다).
 - **사전 단계 차단:** 웹 조립에서 `run_start_request`(와 동기 경로 `start_run` · `start_run_for_project`)를 부르면 시작 요청을 점유하거나 바꾸지 않고 바로 `CommandError("WEB_NOT_ALLOWED")`를 올린다. 사전 단계는 워커가 돈다.
 - 웹 조립은 공고 서버를 부르지 않는다. 공고 후보 · 공고 상세 · 자격 판정은 워커가 공고 서버에서 받는다(2.3). 공고 선택 명령은 고른 공고 ID만 남긴다(6.1). (2026-10-03 바뀜)
@@ -190,18 +212,21 @@ orch = sbrain.orchestrator          # 서버 시작 때 한 번 만들어 모든
 python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로 멈춤 (하던 단계는 끝낸다)
 ```
 
-환경 변수(또는 `agent-orchestration/.env`): `SBRAIN_DB_URL`(필수), `OPENAI_API_KEY`(필수), `SBRAIN_WORKER_POLL_SEC` · `SBRAIN_WORKER_THREADS` · `SBRAIN_WORKER_LEASE_SEC`(선택, 잠정 기본값 1초 · 4 · 120초), `SBRAIN_NOTICE_API_URL`(선택 — 공고 서버 주소. 있으면 공고 매칭 · 자격 확인이 공고 서버에 연결되고, 없으면 Orchestrator 안의 스텁 공고 · 스텁 판정을 쓴다. 공고팀 API가 준비된 뒤 Orchestrator 담당이 설정한다. 어느 쪽이든 웹이 보는 동작은 같다). 여러 대를 띄워도 같은 일을 두 번 하지 않는다(`SKIP LOCKED` + 점유). 재작성 요청을 모으는 중인 실행 건(`orch_runs.collect_until`이 지금보다 뒤)은 그 시각이 지날 때까지 가져가지 않는다.
+환경 변수(또는 `agent-orchestration/.env`): `SBRAIN_DB_URL`(필수), `OPENAI_API_KEY`(필수), `SBRAIN_ARTIFACT_ROOT`(필수, 2026-10-08 — 파일 저장소 폴더의 절대 경로, 웹과 같은 폴더. 없거나 상대 경로면 워커가 시작하지 않는다. 폴더가 없으면 만든다), `SBRAIN_WORKER_POLL_SEC` · `SBRAIN_WORKER_THREADS` · `SBRAIN_WORKER_LEASE_SEC`(선택, 잠정 기본값 1초 · 4 · 120초), `SBRAIN_NOTICE_API_URL`(선택 — 공고 서버 주소. 있으면 공고 매칭 · 자격 확인이 공고 서버에 연결되고, 없으면 Orchestrator 안의 스텁 공고 · 스텁 판정을 쓴다. 공고팀 API가 준비된 뒤 Orchestrator 담당이 설정한다. 어느 쪽이든 웹이 보는 동작은 같다). 여러 대를 띄워도 같은 일을 두 번 하지 않는다(`SKIP LOCKED` + 점유). 재작성 요청을 모으는 중인 실행 건(`orch_runs.collect_until`이 지금보다 뒤)은 그 시각이 지날 때까지 가져가지 않는다.
 
 2026-10-05부터 워커는 실행 로그 12개월 처리도 한다 — 여러 워커 중 한 대만 하루 한 번(잠정) 돌며, 마지막 활동이 12개월보다 오래된 실행 건 · 끝난 시작 요청의 기록을 식별자 없는 통계 줄로 옮기고 지운다(웹 테이블은 건드리지 않는다). 웹 조립(`build_web`)은 이 일을 하지 않는다. 워커 로그 줄 앞의 시각은 UTC다(끝에 `Z`, 예: `2026-09-26 09:00:05Z`).
+
+2026-10-08부터 워커는 파일 삭제 대기열도 처리한다 — 작업 확인 주기(10분, 잠정)마다 지울 때가 된 대기열 줄을 가져가 그 실행 건의 파일을 지운다. 완전 삭제 · 탈퇴 · 12개월 처리가 산출물을 지울 때 같은 트랜잭션에서 대기열 줄을 넣고, 첫 시도는 넣은 뒤 10분(잠정) 뒤다. 실패하면 10분(잠정)마다 다시 하고 3번 실패하면 포기로 표시한다(관리자 함수 8.9). 결과는 워커 운영 로그에 `파일삭제` · `파일삭제실패` · `파일삭제포기` 줄로 남는다(실행 건 · 대기열 줄 ID까지, 계정 · 파일 이름 · 키 없음).
 
 ### 2.4 공유 DB 준비
 
 1. 웹 스키마(`app_schema.sql`)가 있어야 한다.
-2. `sql/orchestrator_schema.sql`을 적용한다 — `orch_` 테이블 12개(2026-10-05 바뀜 — 10개에 통계 표 `orch_log_stats` · 작업 상태 표 `orch_jobs`가 늘었다), `CREATE TABLE IF NOT EXISTS`만 있다. `orch_runs.project_id`가 `projects(project_id)`를 참조한다(`ON DELETE SET NULL`). **공유 DB 적용은 사용자(Orchestrator 담당)가 한다.**
+2. `sql/orchestrator_schema.sql`을 적용한다 — `orch_` 테이블 13개(2026-10-05 10개에 통계 표 `orch_log_stats` · 작업 상태 표 `orch_jobs`, 2026-10-08 파일 삭제 대기열 `orch_file_deletions`가 늘었다), `CREATE TABLE IF NOT EXISTS`만 있다. `orch_runs.project_id`가 `projects(project_id)`를 참조한다(`ON DELETE SET NULL`). **공유 DB 적용은 사용자(Orchestrator 담당)가 한다.**
 3. 2026-10-02: `orch_runs`에 `collect_until DATETIME(6) NULL` 컬럼이 늘었다(재작성 요청을 모으는 시간이 끝나는 시각). 이미 테이블을 만든 DB에는 Orchestrator 담당이 컬럼을 더한다. 웹은 `orch_` 테이블을 쓰지 않으므로 할 일이 없다.
 4. 검수 회수 문단(`proofread_logs`)을 쓰려면 웹 스키마 변경이 필요하다(4.4절, `웹연동_변경사항_웹팀전달.md` 4절). 바뀌기 전에는 쓰기만 건너뛴다.
 5. 2026-10-05: 새 표 두 개와 기존 표 인덱스 두 개(`ix_orch_runs_updated` ON `orch_runs (updated_at)`, `ix_orch_start_requests_status_updated` ON `orch_start_requests (status, updated_at)`)가 늘었다. `CREATE TABLE IF NOT EXISTS`는 이미 있는 표에 인덱스를 더하지 않으므로, 표를 다시 만들지 않는 DB에는 `CREATE INDEX` 문을 따로 넣는다(문장은 `웹연동_변경사항_웹팀전달.md` 11.5). **웹은 두 새 표를 읽지도 쓰지도 않는다** — 통계가 필요하면 `orch_log_stats`를 DB에서 직접 조회한다(계정 · 프로젝트 · 실행 건 ID 없음). 웹 로컬 DB의 `orch_` 데이터는 시간대가 섞여 있으니 지우고 새 DDL로 다시 만든다.
-6. 공유 DB 서버 시간대(2026-10-05 확인): `@@global.time_zone`=SYSTEM, `@@session.time_zone`=SYSTEM, `@@system_time_zone`=UTC — DB 기본값으로 채워지는 시각도 UTC다. 바꾸지 않는다.
+6. 2026-10-08: 새 표 `orch_file_deletions`(파일 삭제 대기열)가 늘어 `orch_` 표는 13개다. `CREATE TABLE IF NOT EXISTS`라 같은 DDL을 다시 적용하면 새 표만 생긴다. 다른 표 · 웹 표의 칸은 바뀌지 않는다(바뀌는 것은 `orch_artifact_versions.value` 안 산출물 JSON의 모양과 `orch_call_logs.call_type`의 새 값 `file`뿐이다). **웹은 이 표를 읽지도 쓰지도 않는다** — 관리자 함수(8.9)로 본다.
+7. 공유 DB 서버 시간대(2026-10-05 확인): `@@global.time_zone`=SYSTEM, `@@session.time_zone`=SYSTEM, `@@system_time_zone`=UTC — DB 기본값으로 채워지는 시각도 UTC다. 바꾸지 않는다.
 
 ### 2.5 식별자
 
@@ -420,7 +445,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | `evaluationItems` | **확장(2026-10-04).** 작업 분해(T-C3)가 신청자 유형으로 고른 평가 항목 `EvalItem` 목록(현재 버전) — 항목마다 `itemCode` · `itemName` · `maxScore` · `description`. 작업 분해 전이면 빈 목록. 점수 항목 이름은 `docScore.items[].itemCode`를 이 목록의 `itemCode`와 맞춰 `itemName`으로 만든다. 지금 값은 잠정이다(`문제인식` 20 · `실현가능성` 20 · `성장전략` 15 · `팀구성` 15) |
 
 - 실행 건이 실패 · 중단이면 `CommandError("RUN_NOT_VIEWABLE")`(기준 문서 E-RUN-FAIL — 결과를 볼 수 없음. 공고 마감 안내 `E-RUN-CLOSED`와 다른 코드). 실행 건이 없으면 `RUN_NOT_FOUND`.
-- 프로토타입 · 인포그래픽 파일을 어디에 둘지는 구현 Agent를 연동할 때 정한다. 그 전까지 `prototype.entryFilePath` · `infographic.imagePath`는 스텁 값이다(2026-10-06부터 스텁 진입 파일은 `/index.html`).
+- **산출물 파일 (2026-10-08 바뀜):** `prototype` · `infographic` · `planDoc.charts[]` · `deliverable`의 파일 칸은 파일 참조(`FileRef`)다(5.4). 결과에는 파일 내용이 없고, 파일은 참조의 `key`로 `read_artifact_file`(5.5)을 불러 받는다. 지금 워커의 구현 Agent는 스텁이라 파일 내용은 작은 자리채움 파일이다(진입 파일 `index.html` · 원페이지 `onepage.svg` · 그 밖 인포그래픽 `infographic.png` · 안내 문서 `README.md` · 계획서 파일 `plan.docx`, 차트 그림은 없음).
 - `codeCheck` · `featureMatch`의 확장 필드(`gateFailures` · `defectSources` · `withheld` · `withheldReason` · `partialFeatures`)는 5.1 표와 같다(2026-10-06).
 
 ### 5.3 `rework_result(project_id) -> ReworkResult | None` (2026-10-02 새로)
@@ -433,11 +458,81 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | `kept` · `basis` · `beforeScore` · `afterScore` | 완료 | 남긴 쪽(`전` · `후`), 비교 기준(document · artifact · total), 전후 점수 |
 | `beforeRefs` · `afterRefs` | 완료 | 바뀐 산출물의 재작성 전 · 후 '이름@버전' |
 | `planBefore` · `planAfter` | 완료, 계획서가 바뀌었을 때 | 전후 섹션 본문(`PlanSection` 목록) |
-| `files` | 완료, 산출물이 바뀌었을 때 | `ReworkFileChange(artifact, beforePath, afterPath)` — `prototype`(진입 파일) · `infographic`(이미지) |
+| `files` | 완료, 산출물이 바뀌었을 때 | `ReworkFileChange` — `artifact`(`prototype` 진입 파일 · `infographic` 이미지) · `beforeFile` · `afterFile`(재작성 전 · 후 파일 참조 `FileRef`, 없으면 `null`). 2026-10-08 바뀜: 옛 `beforePath` · `afterPath`를 지우고 참조로 바꿨다. 파일 내용은 `read_artifact_file`(5.5)로 따로 읽는다 |
 | `rolledBack` · `refundedBundles` · `noticeCode` | 실패 | 되돌렸다는 사실, 돌려준 묶음, 안내 코드(`E-RUN-ROLLBACK`). 전후 내용은 주지 않는다(산출물이 요청 전 그대로이기 때문) |
 
 - 이전에 성공한 재작성의 결과를 마지막 결과처럼 돌려주지 않는다. 실패한 재작성도 '마지막 재작성'이다. 진행 중이면 `status="진행중"`과 공통 필드만 있다.
 - 실패 원인(관리자용)은 싣지 않는다.
+- 되돌린 재작성의 '전' 파일 참조도 그대로 열린다. 넣을 때마다 새 키이고 되돌리기는 포인터만 옮기므로, 옛 키의 파일이 남아 있다(완전 삭제 전까지).
+
+### 5.4 산출물 파일 칸 — 파일 참조 `FileRef` (2026-10-08 바뀜)
+
+산출물 파일은 DB가 아니라 파일 저장소에 있고, 결과(`screen` · `outputs` · `rework_result`)에는 **파일 참조만** 실린다. 결과 JSON에 파일 내용은 들어 있지 않다. 새 칸은 모두 확장이다(기준 문서와 다름 — 결정 0023).
+
+**`FileRef` 모양** (pydantic, `.dump()`는 camelCase)
+
+| 필드 (JSON) | 내용 |
+|---|---|
+| `key` | 저장소 안 위치. Orchestrator가 짓는다(`<runId>/<executionId>/<고유값>/<name>`). **웹은 이 값을 그대로 `read_artifact_file`에 넘기기만 한다** — 뜻을 풀거나 경로로 쓰지 않는다 |
+| `name` | 파일 이름(예: `index.html` · `onepage.svg` · `README.md`). 내려받기 파일 이름으로 쓸 수 있다 |
+| `mediaType` | 형식 — 8종 중 하나(`text/html` · `image/svg+xml` · `image/png` · `text/markdown` · 워드 `application/vnd.openxmlformats-officedocument.wordprocessingml.document` · 한글 `application/x-hwp` · `application/hwp+zip` · `application/json`) |
+| `size` | 바이트 수(파일 하나 30MB까지) |
+| `sha256` | 내용의 SHA-256(소문자 16진수 64자) |
+
+**바뀐 칸** — 옛 칸은 지웠다(아직 공유 DB에 저장된 실행 건이 없어 남기지 않았다).
+
+| 위치 | 지운 칸 | 새 칸 (JSON) |
+|---|---|---|
+| `prototype` (화면 8 · 11, `outputs`) | `entryFilePath` · `sourceText` | `entryFile` — `FileRef` 또는 `null`(**`null`이면 진입 파일 없음**) |
+| `prototype` | `assetPaths` | `assetFiles` — `FileRef` 목록(빈 목록 가능, 따로 내려받을 파일만) |
+| `prototype` | `readmePath` | `readmeFile` — 실행 안내 문서, `FileRef` 또는 `null` |
+| `infographic` (화면 8 · 11, `outputs`) | `imagePath` | `imageFile` — `FileRef`(원페이지는 지면 `onepage.svg`) |
+| `planDoc.charts[]` (화면 6 · 11, `outputs`) | `imagePath` | `imageFile` — `FileRef` 또는 `null`(그림 없음) |
+| `deliverable` (화면 11, `outputs`) | `planDocPath` | `planDocFile` — 계획서 파일 `FileRef` |
+| `deliverable` | `prototypePath` | `prototypeFiles` — `FileRef` 목록: 진입 파일(있으면) · 안내 문서(있으면) · 자산 순 |
+| `deliverable` | `infographicPath` | `infographicFile` — `FileRef` |
+| `rework_result().files[]` | `beforePath` · `afterPath` | `beforeFile` · `afterFile`(5.3) |
+
+- `prototype.kind` · `implementedFeatures`, `infographic.format` · `altText`, 계획서 본문(`planDoc`의 섹션 · 문장 · 표)은 그대로다.
+- 원페이지는 `prototype.entryFile`이 `infographic.imageFile`과 같은 참조다(같은 파일).
+- 진입 파일 · 원페이지 지면은 **파일 하나로 열린다**(그림 등을 안에 넣고, 다른 파일을 상대 경로로 부르지 않는다 — Agent 팀 약속). 그래서 웹은 진입 파일 하나만 받아 보여 주면 된다.
+- **내려받기용 압축(zip)은 웹이 만든다.** `deliverable.prototypeFiles` 등의 참조마다 `read_artifact_file`로 받아 묶는다. Orchestrator는 압축을 만들지 않는다.
+
+### 5.5 `read_artifact_file(project_id, key) -> ArtifactFile` (2026-10-08 새로)
+
+프로젝트 실행 건의 산출물 파일 하나를 읽는다(확장). **웹이 주인 확인을 한 뒤 부른다**(다른 함수와 같음). 읽기만 하고 점유를 잡지 않는다. 웹 조립(`build_web`)에서 부른다.
+
+| 순서 | 확인 | 결과 |
+|---|---|---|
+| 1 | 프로젝트의 실행 건이 없음 | `RUN_NOT_FOUND` |
+| 2 | 실행 건이 실패 · 중단 | `RUN_NOT_VIEWABLE` (`outputs`와 같은 규칙) |
+| 3 | 웹 조립에 파일 저장소 설정이 없음(`SBRAIN_ARTIFACT_ROOT` 없음 · 상대 경로) | `FILE_STORE_UNAVAILABLE` |
+| 4 | `key`가 키 규칙을 어기거나, 첫 마디가 그 프로젝트 실행 건 ID가 아님(다른 프로젝트의 파일) | `FILE_NOT_FOUND` |
+| 5 | 저장소에 없음(완전 삭제 뒤 등) | `FILE_NOT_FOUND` |
+| 6 | 읽은 내용의 `sha256` · 크기가 저장된 값과 다름 | `FILE_NOT_FOUND` (관리자용 사유는 남기지 않는다, 잠정) |
+
+`ArtifactFile` (파이썬 dataclass — pydantic이 아니며 JSON으로 바꾸지 않는다)
+
+| 필드 | 내용 |
+|---|---|
+| `name` | 파일 이름 |
+| `media_type` | 형식 |
+| `size` | 바이트 수 |
+| `sha256` | 내용의 SHA-256 |
+| `data` | 파일 내용(`bytes`) |
+
+- **웹은 `data`를 그대로 응답 본문으로, `media_type`을 응답 형식(Content-Type)으로 쓴다.** `name` · `media_type`은 Orchestrator가 파일을 넣을 때 기록한 값이다 — 웹이 넘긴 값이나 키의 확장자로 정하지 않는다.
+- `repr()`에는 형식 · 크기만 나온다(내용 · 이름이 로그에 섞이지 않게).
+- 오류 메시지(`detail`)에는 키 · 파일 이름 · 계정을 넣지 않는다. 디스크 오류는 다른 조회 함수의 DB 오류처럼 그대로 올라간다.
+- 예:
+
+```python
+f = orch.read_artifact_file(project_id, outputs.prototype.entry_file.key)
+return Response(content=f.data, media_type=f.media_type)   # 웹 프레임워크에 맞춰 쓴다
+```
+
+- **LLM이 만든 HTML · SVG를 웹에서 보여 줄 때는 격리를 권한다(웹팀 몫).** 진입 파일은 LLM이 만든 코드라 스크립트가 들어 있다. 서비스와 다른 도메인에서 내려 주거나, `sandbox` 속성을 단 `iframe`으로 보여 주어 서비스 화면 · 로그인 정보에 닿지 못하게 한다.
+- 서명 URL(브라우저가 저장소에서 바로 받는 방식)은 S3를 붙일 때 더한다. 지금은 이 함수로만 받는다.
 
 ## 6. 명령 — 화면 3 · 5 · 6 · 8 · 9
 
@@ -557,6 +652,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 
 - **워커가 그 실행 건의 단계를 도는 중이면** 중단 요청만 남기고 지우지 않은 채 `CommandError("BUSY")`를 올린다. 그 단계가 끝나며 저장하는 산출물이 지운 뒤에 남지 않게 하기 위해서다. 단계가 끝나면 워커가 곧 중단하므로 **잠시 뒤 다시 부르면 지워진다**(웹은 몇 초 간격으로 다시 부르거나 사용자에게 잠시 뒤 다시 시도하라고 안내).
 - `DeleteResult` (dataclass): `project_id` · `abort`(AbortResult) · `run_id` · `deleted_artifacts` · `cleared_forms`(입력 사본을 지운 시작 요청 수).
+- **산출물 파일 (2026-10-08):** 이 함수는 지금처럼 DB만 다룬다. 산출물을 지우는 같은 트랜잭션에서 그 실행 건의 파일 삭제 대기열 줄을 넣고, 실제 파일은 워커가 나중에 지운다(2.3). 그래서 함수가 끝난 직후에도 잠시 파일이 남아 있을 수 있지만, 실행 건의 산출물이 지워졌으므로 웹이 받을 참조가 없다. 결과 모양은 그대로다. 웹은 파일을 지우지 않는다.
 - **`cleared_forms` (2026-10-05 바뀜):** 시작 요청의 입력 사본(`form_json`)은 이제 요청이 끝나면(완료 · 실패 · 취소) 그 상태를 바꾸는 같은 저장에서 비운다. 그래서 `cleared_forms`는 아직 남은 사본, 곧 끝나지 않은 요청의 사본만 센다. 대기 요청은 이 함수가 먼저 하는 중단(7.1)에서 취소되며 그때 비워지므로 실제로는 처리중 요청만 세는 일이 많고, 0이어도 정상이다. 결과 모양 · 이름은 그대로다.
 - 웹이 `projects` 행을 지우면 `orch_runs.project_id`는 NULL이 되고(외래 키 `ON DELETE SET NULL`) 실행 로그는 남는다. 관리자 실행 기록의 `project_id`는 옛 번호로 남는다. ~~실행 로그 식별자 분리는 12개월 보관 정책과 함께 정할 일~~ → 2026-10-05 정함: 마지막 활동 12개월 뒤 워커가 실행 로그를 식별자 없는 통계 줄로 옮기고 남은 실행 건 줄까지 지운다. 탈퇴하면 바로 지운다(7.3).
 - 웹 `proofread_logs`의 행은 웹 테이블이라 이 함수가 지우지 않는다. ~~완전 삭제 때 어떻게 할지는 웹팀 확인 사항이다~~ → 2026-10-05 정함: 학습에 반영된 `trained` 행만 남기고 나머지는 웹이 프로젝트 행을 지우기 전에 지운다(4.4, `웹연동_변경사항_웹팀전달.md` 11.7).
@@ -585,6 +681,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 - 오류는 `BUSY` 하나다(기존 코드, 10.2). 계정 잠금을 제한 시간(잠정 10초) 안에 못 잡아도 `BUSY`. 메시지에 식별자를 싣지 않는다.
 - 주인 확인은 하지 않는다 — 웹이 로그인 계정을 확인한 뒤 부른다. 웹 테이블은 건드리지 않고, 단계를 돌지 않는다. 웹 조립(`build_web`)에서 부른다.
 - 같은 사람이 다시 가입해도 이전 기록과 연결되지 않는다.
+- **산출물 파일 (2026-10-08):** ④에서 실행 건을 지울 때 같은 트랜잭션에서 파일 삭제 대기열 줄을 넣고, 파일은 워커가 나중에 지운다(2.3). 결과 모양은 그대로다. 워커가 3번 실패해 포기한 파일은 탈퇴 뒤에도 남을 수 있고, 대기열 줄(실행 건 ID만 — 계정 · 프로젝트 ID 없음)은 관리자가 다시 시도해 성공할 때까지 남는다(사용자가 인정한 예외, 8.9).
 
 `AccountDeleteResult` (dataclass, 확장)
 
@@ -655,7 +752,9 @@ orch.missing_projects(["abc"])                    # ValueError
 
 ### 8.2 `admin_calls(execution_id) -> list[AdminCall]` — 실행 상세
 
-`AdminCall` 필드: `callId` · `purpose`(목적) · `itemKey`(문장 ID 등) · `callType`(llm · search · **image** — 이미지 호출, 2026-10-06) · `provider` · `model` · `finalOutcome`(성공 · 소진) · `error` · `errorKind` · `tries`(시도별 `no` · `outcome` · `errorKind` · `detail` · 시각 · `tokens`) · `tokens`(시도 합계).
+`AdminCall` 필드: `callId` · `purpose`(목적) · `itemKey`(문장 ID 등) · `callType`(llm · search · **image** — 이미지 호출, 2026-10-06 · **file** — 파일 넣기 · 읽기, 2026-10-08) · `provider` · `model` · `finalOutcome`(성공 · 소진) · `error` · `errorKind` · `tries`(시도별 `no` · `outcome` · `errorKind` · `detail` · 시각 · `tokens`) · `tokens`(시도 합계).
+
+- **`callType=file` (2026-10-08):** Agent가 산출물 파일을 넣거나(`purpose`=`put`) 읽은(`get`) 호출이다. `provider` · `model` · `tokens`는 비어 있다. 시도별 결과 · 오류 종류 · 시각만 있고, **파일 내용 · 이름 · 키는 실리지 않는다.**
 
 ### 8.3 토큰 (`tokens`)
 
@@ -730,13 +829,50 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 - **관리자에게 어떻게 알릴지(알림 · 목록 · 표시 방식)는 웹팀이 정한다.** 지금 웹이 부르는 관리자 조회 함수(8.1 ~ 8.7)에는 추적 사건 목록이 없다. 함수로 받아야 하면 필요한 모양을 알려 주면 맞춘다.
 - 사용자용 결과(화면 · `outputs`)에는 이 사건이 실리지 않는다.
 
+### 8.9 파일 삭제 대기열 — `admin_file_deletions` · `admin_retry_file_deletion` (2026-10-08 새로)
+
+산출물 파일은 DB를 먼저 지우고(대기열 줄을 같은 트랜잭션에 넣음) 워커가 나중에 지운다(2.3). 워커가 **3번** 실패하면 그 줄을 `포기`로 표시한다(3은 사용자가 정한 값). 포기한 줄을 관리자에게 보여 주고 다시 시도하게 하는 함수 둘이다(확장). **관리자 화면(목록 · 알림 · 다시 시도 버튼)은 웹팀 몫이다.** 웹은 관리자 확인을 한 뒤 부른다.
+
+**`admin_file_deletions(status=None, limit=50, offset=0) -> list[AdminFileDeletion]`**
+
+- 대기열 줄 목록. 넣은 시각(`createdAt`) 최근 순. `status`로 `대기` · `포기`를 거르고 `limit` · `offset`으로 나눈다. 그 밖의 `status` 값은 `ValueError`(값은 메시지에 싣지 않는다).
+- 실행 건 하나에 줄은 많아야 하나다.
+
+`AdminFileDeletion` (pydantic, `.dump()`는 camelCase, 시각은 끝에 `Z`인 UTC)
+
+| 필드 (JSON) | 내용 |
+|---|---|
+| `deletionId` | 줄 ID |
+| `runId` | 실행 건 ID |
+| `status` | `대기` · `포기` |
+| `attempts` | 이번 대기 이후 실패한 시도 수 |
+| `lastErrorKind` | 마지막 실패의 오류 종류(`일시` · `입력` · `운영`) 또는 `null`. 오류 메시지는 없다 |
+| `createdAt` | 넣은 시각 |
+| `nextAt` | 다음 시도 가능 시각 |
+| `lastTriedAt` | 마지막 시도 시각 또는 `null` |
+| `gaveUpAt` | 포기한 시각 또는 `null` |
+| `retriedBy` | 마지막으로 다시 시도를 누른 **관리자** ID 또는 `null` |
+| `retriedAt` | 그 시각 또는 `null` |
+| `retryCount` | 다시 시도를 누른 횟수 |
+
+- 사용자 계정 · 프로젝트 ID, 파일 이름 · 키, 오류 메시지는 싣지 않는다. 사람을 가리키는 값은 `retriedBy`(관리자 ID)뿐이다 — 사용자가 "누가 눌렀는지까지" 남기기로 정했다.
+
+**`admin_retry_file_deletion(deletion_id, admin_id) -> AdminFileDeletion`**
+
+- `포기` 줄만 받는다. 같은 줄을 `대기`로 바꾸고 `attempts=0` · `nextAt=지금` · `retriedBy=admin_id` · `retriedAt=지금` · `retryCount+1`을 한 트랜잭션으로 저장한다(`gaveUpAt`도 비운다). 결과는 바뀐 줄이다.
+- 없는 줄이면 `FILE_DELETION_NOT_FOUND`, `대기` 줄이면 `INVALID_STATE`.
+- `admin_id`는 문자열로 저장한다(숫자를 넘기면 `str()`로 바꾼다). 어느 ID를 넘길지(관리자 계정의 `user_id` 등)는 웹이 정한다.
+- 실제 삭제는 워커가 다음 작업 확인 때(최대 10분, 잠정) 한다. 처리 결과는 워커 운영 로그에 남고, 다시 실패가 이어지면 3번 뒤 다시 `포기`가 된다. 성공하면 줄이 없어진다.
+- 포기한 파일은 탈퇴 뒤에도 남을 수 있다. 사용자가 이 예외를 알고 인정했다.
+
 ## 9. 돌려주는 모양 정리
 
 | 종류 | 타입 | JSON으로 |
 |---|---|---|
 | `StartCheck` · `ActiveWork` · `StartStatus` · `ProjectView` · `RunView` · `ConfirmationNeeded` · `ReworkAccepted` · `AbortResult` · `DeleteResult` · `AccountDeleteResult` | dataclass (파이썬 이름 snake_case) | `dataclasses.asdict()` — 안의 `Notice` · `Notification`은 pydantic이라 `model_dump(mode="json")`이 필요하면 웹 직렬화에서 처리. `datetime`은 시간대 있는 UTC(2.6) |
 | `missing_projects` 결과 | `list` | 받은 값 그대로(정수 · 문자열) — 그대로 JSON에 실을 수 있다 |
-| 화면 모델(5.1) · `Outputs` · `ReworkResult` · `AdminExecution` · `AdminCall` · `AdminRun` · `AdminScoreHistory` · `AdminSummary` · `AdminAgentTask` | pydantic | `.dump()` — 기준 문서 이름(camelCase), 시각은 시간대 표시가 붙은 ISO 문자열(끝에 `Z`, 2026-10-05 바뀜 — 2.6) |
+| `read_artifact_file` 결과 `ArtifactFile` (2026-10-08) | dataclass (파이썬 이름 snake_case) | JSON으로 바꾸지 않는다 — `data`를 응답 본문으로, `media_type`을 응답 형식으로 쓴다(5.5) |
+| 화면 모델(5.1) · `Outputs` · `ReworkResult` · `AdminExecution` · `AdminCall` · `AdminRun` · `AdminScoreHistory` · `AdminSummary` · `AdminAgentTask` · `AdminFileDeletion`(2026-10-08) · 결과 안의 `FileRef`(2026-10-08) | pydantic | `.dump()` — 기준 문서 이름(camelCase), 시각은 시간대 표시가 붙은 ISO 문자열(끝에 `Z`, 2026-10-05 바뀜 — 2.6) |
 
 ## 10. 오류 · 안내 코드
 
@@ -766,12 +902,15 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | RUN_NOT_VIEWABLE | 실패 · 중단된 실행 건 — `outputs` · `rework_result`가 결과를 보여 주지 않음. 공고 마감 안내 E-RUN-CLOSED와 다르다 (확장, **2026-10-02 새로**) |
 | WEB_NOT_ALLOWED | 웹 조립(`build_web`)에서 부를 수 없는 함수 — 사전 단계 실행(`run_start_request` · `start_run` · `start_run_for_project`)은 워커가 한다. 시작 요청은 그대로 (확장, **2026-10-02 새로**) |
 | SCREEN_NOT_READY · INVALID_SCREEN | 대기 지점이 아님 · 없는 화면 번호 (확장) |
-| INVALID_STATE | 지금 단계 · 진행 상태에서 받을 수 없는 명령 — 점유를 기다리지 않는다 (재작성: 대기 지점이 아님 · 모으는 시간 끝남 · 진행 중, 공고 다시 고르기 · 추가 조회 · 화면 3: 작성 시작 뒤, 작성 시작 · 진행: 워커가 단계를 도는 중 · 재작성을 모으는 중) |
+| INVALID_STATE | 지금 단계 · 진행 상태에서 받을 수 없는 명령 — 점유를 기다리지 않는다 (재작성: 대기 지점이 아님 · 모으는 시간 끝남 · 진행 중, 공고 다시 고르기 · 추가 조회 · 화면 3: 작성 시작 뒤, 작성 시작 · 진행: 워커가 단계를 도는 중 · 재작성을 모으는 중). 2026-10-08부터 `admin_retry_file_deletion`에 `대기` 줄을 넘겼을 때도(포기한 줄만 다시 시도) |
 | BUSY | 받을 수 있는 상태에서 다른 명령과 점유가 겹침(재작성 요청은 5초 다시 시도한 뒤), 완전 삭제는 워커가 단계를 도는 중(7.2), 탈퇴(`delete_account_data`)는 단계를 도는 실행 건 · 처리중 시작 요청이 있거나 계정 잠금 · 점유를 못 잡음(7.3, 2026-10-05) — 잠시 뒤 다시. 탈퇴에서 `BUSY`면 웹 행을 지우지 않는다 |
 | MORE_LIMIT · INVALID_ANNOUNCEMENT | 추가 조회 한도(1회 · 합계 20건) · 후보에 없는 공고 |
 | ANNOUNCEMENT_BLOCKED | 자격 불통과로 막힌 공고 — 그 실행 건에서 다시 고를 수 없음(추가 조회에서 내용이 바뀌면 풀림). `INVALID_ANNOUNCEMENT` 확인 뒤에 본다. 문구는 웹이 정한다(예: "신청 자격에 맞지 않는 공고예요. 다른 공고를 선택해 주세요.") (확장, **2026-10-03 새로**) |
 | NO_SELECTION · INVALID_ORDER · INVALID_ACTION · E-G2-LIMIT | 재작성 선택 없음 · 목록에 없는 지시 · 묶음 이름이 아님 · 화면에 맞지 않는 층 · 원페이지 실행 파일 · 잘못된 동작 · 기회 소진 |
 | NO_PROJECT_SOURCE | 조립 오류 (웹 DB 입력 공급처 없음) — `build_web`으로 조립하면 생기지 않는다 |
+| FILE_NOT_FOUND | `read_artifact_file` — 그 프로젝트 실행 건의 파일이 아님 · 키 규칙 위반 · 저장소에 없음 · 내용이 저장 값(`sha256` · 크기)과 다름. 넷을 구분하지 않는다 (확장, **2026-10-08 새로**) |
+| FILE_STORE_UNAVAILABLE | `read_artifact_file` — 웹 조립에 파일 저장소 설정이 없음(`SBRAIN_ARTIFACT_ROOT`가 없거나 절대 경로가 아님) (확장, **2026-10-08 새로**) |
+| FILE_DELETION_NOT_FOUND | `admin_retry_file_deletion` — 없는 파일 삭제 대기열 줄 (확장, **2026-10-08 새로**) |
 
 ## 11. 웹이 하지 않는 것
 
@@ -780,6 +919,7 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 - `notifications.read_at` · `generation_failure_alerts.acknowledged_at` · `proofread_logs` 라벨링(`recovery_status` · `recovery_label`) 갱신만 웹이 한다. 2026-10-05부터 `proofread_logs`의 `trained` 표시와 반영 전 행 지우기(완전 삭제 · 탈퇴 · 동의 철회)도 웹이 한다(`웹연동_변경사항_웹팀전달.md` 11.7). 알림(`notifications`)은 기준 문서 v1.10대로 실행 건과 함께 보관하고 실행 건을 지울 때 함께 지운다(2026-10-08). 살아 있는 실행 건은 12개월 처리 뒤에도 실행 건 줄이 남으므로 그 알림은 남긴다. 웹은 프로젝트를 지울 때 알림을 지우고(지금처럼 — 완전 삭제 · 탈퇴), 일괄 작업으로 `notifications.project_id`를 `missing_projects`(7.4)에 넘겨 돌아온 프로젝트의 알림을 지울 수 있다. `generation_failure_alerts`는 기준 문서가 정하지 않아 웹팀이 정하며, 같은 방식을 쓸 수 있다.
 - 실행 로그 12개월 처리(통계 줄로 옮기고 지우기)는 하지 않는다 — 워커가 한다. 통계 표 `orch_log_stats` · 작업 상태 표 `orch_jobs`는 읽지도 쓰지도 않는다(통계가 필요하면 DB에서 직접 조회).
 - 탈퇴 처리 중에는 그 계정으로 `request_start`를 부르지 않는다(7.3).
+- 산출물 파일을 쓰거나 지우지 않는다(2026-10-08). 파일 저장소 폴더는 `read_artifact_file`로만 읽는다 — 폴더를 직접 열거나 키를 경로로 바꿔 읽지 않는다(운영에서 S3로 옮기면 경로가 없어진다). 파일 삭제는 워커가 대기열로 한다. 파일 삭제 대기열 표 `orch_file_deletions`는 읽지도 쓰지도 않는다(관리자 함수 8.9).
 - 옛 가짜 파이프라인 · 클레임 · 복구 루프, "처음부터 다시 생성", 단계 사이 거꾸로 가기(8→6, 9→8)는 없앤다(`웹연동_변경사항_웹팀전달.md` 5 · 6절).
 - 오래 걸리는 재작성 · 검수를 웹 요청 안에서 끝날 때까지 붙잡고 기다리지 않는다. 접수 뒤 프론트가 진행 상태를 주기적으로 확인한다.
 
@@ -796,7 +936,9 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | `notifications` · `generation_failure_alerts`의 보관 | 알림은 **정함(2026-10-08)** — 기준 문서 v1.10대로 실행 건과 함께 보관 · 함께 지움. 웹이 프로젝트를 지울 때 지우고, 남은 것은 `missing_projects`(7.4)로 찾아 지운다(11절). 실패 알림은 웹팀이 정한다(2026-10-05 — `웹연동_변경사항_웹팀전달.md` 11.8) |
 | 완전 삭제 중 `BUSY` | 웹이 다시 부르는 방식. 기다리게 하는 쪽이 낫다면 알려 달라 |
 | 오래 걸리는 웹 요청 제한 시간 | `wait_project` 기본 60초(잠정). 웹 서버 · 프록시 제한 시간에 맞춰 `timeout_sec`를 넘긴다 |
-| 프로토타입 · 인포그래픽 파일 위치 | 구현 Agent 연동 때 정한다. 그 전까지 화면은 예시 파일 |
+| 프로토타입 · 인포그래픽 파일 위치 | **정함(2026-10-08).** 파일 저장소에 두고 결과에는 참조만 싣는다(5.4). 지금은 웹 · 워커가 함께 보는 폴더(`SBRAIN_ARTIFACT_ROOT`, 같은 절대 경로), 운영은 S3 예정. 웹은 `read_artifact_file`로 받는다(5.5) |
+| 산출물 파일 화면 · 내려받기 (2026-10-08) | 진입 파일 보여 주기, 내려받기용 압축 만들기는 웹팀 몫이다. LLM이 만든 HTML · SVG는 별도 도메인이나 `sandbox` `iframe`으로 격리해 보여 주기를 권한다(5.5) |
+| 파일 삭제 포기 관리자 화면 (2026-10-08) | `admin_file_deletions` · `admin_retry_file_deletion`(8.9)을 어떻게 보일지(목록 · 알림 · 버튼)는 웹팀이 정한다 |
 | 진행 상황 알림 방식 | 폴링 전제. 서버가 밀어 주는 방식(SSE · WebSocket)은 따로 정한다 |
 | 새 추적 사건의 관리자 알림(2026-10-06) | `대조보류` · `검증2진단` · `안내문서자체검사실패` · `이미지대체` · `대체텍스트출처누락`을 관리자에게 어떻게 보일지 웹팀이 정한다. 조회 함수가 필요하면 알려 달라(8.8) |
 | "대조 불가" 문구(2026-10-06) | `featureMatch.withheld`가 참일 때의 화면 문구는 웹팀이 정한다(잠정 표현 "대조 불가" — 기준 문서 v1.10도 화면 문구를 미확정으로 둔다) |
@@ -870,3 +1012,19 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | 새 함수 | `missing_projects(project_ids) -> list` (7.4) | 확장 |
 | 한 번에 묻는 프로젝트 수 | SQL 저장소가 500개씩 나눠 묻는다(`store_sql/store.py` `PROJECT_CHUNK`) — 넘기는 개수에는 제한이 없고 웹에는 영향이 없다 | 잠정(조정값) |
 | 새 판에서 빠졌지만 남긴 필드 | 사전 정보 · 회사 정보의 `revenueUnitPrice`(첫 수익모델 항목 단가) · `isFirstStartup`(늘 비어 있음), G-01 입력의 `eligibility` · `eligibilityParsed`(Orchestrator가 넣지 않음). 웹 입력 · 결과 모양은 그대로라 웹이 할 일은 없다 | 확장 |
+
+## 19. 산출물 파일 참조형의 잠정 · 확장 값 (2026-10-08)
+
+| 항목 | 값 · 내용 | 표시 |
+|---|---|---|
+| 파일 참조 · 파일 칸 | `FileRef`, 결과의 파일 칸(5.4), `ReworkFileChange.beforeFile` · `afterFile` | 확장(기준 문서와 다름 — 결정 0023) |
+| 새 함수 | `read_artifact_file` · `admin_file_deletions` · `admin_retry_file_deletion` (5.5 · 8.9) | 확장 |
+| 새 오류 코드 | `FILE_NOT_FOUND` · `FILE_STORE_UNAVAILABLE` · `FILE_DELETION_NOT_FOUND` | 확장 |
+| 호출 종류 | `AdminCall.callType`의 `file` (목적 `put` · `get`) | 확장 |
+| 환경 변수 | `SBRAIN_ARTIFACT_ROOT` — 절대 경로만, 기본값 없음. 웹 선택 · 워커 필수 | 확장(조립) |
+| 워커가 폴더 설정 없이 시작하지 않음 | `SBRAIN_ARTIFACT_ROOT`가 없거나 상대 경로면 워커가 시작하지 않는다(`SBRAIN_DB_URL` · `OPENAI_API_KEY` 없을 때와 같은 방식) | 잠정 |
+| 내용 대조 실패 | 읽은 내용의 `sha256` · 크기가 저장 값과 다르면 `FILE_NOT_FOUND`로 보고 관리자용 사유는 남기지 않는다 | 잠정 |
+| 파일 삭제 첫 시도 지연 · 다시 시도 간격 · 한 번에 가져가는 줄 수 | 10분 · 10분 · 20줄 — 워커 값이라 웹에는 영향이 없다 | 잠정(조정값) |
+| MySQL 교착 때 다시 하기 | 완전 삭제 · 12개월 처리 · 탈퇴의 실행 건 정리를 교착(1213)으로 되돌려지면 처음부터 3번까지(처음 포함) 다시 한다 — 웹 함수 결과 모양은 같다 | 잠정(조정값) |
+| 허용 형식 8종 · 파일 하나 30MB · 포기 전 실패 횟수 3 | 5.4 · 8.9 | **사용자 결정 — 잠정 아님** |
+| 대기열 표 | `orch_file_deletions` — 웹은 읽지도 쓰지도 않는다 | 확장(표) |

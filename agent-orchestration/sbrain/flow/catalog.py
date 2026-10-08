@@ -131,7 +131,7 @@ def build_registry() -> TaskRegistry:
          {"feature_list": art("featureList"), "item_spec": art("itemSpec"), "category": art("category"),
           "plan_doc": art("planDoc"), "instruction": INSTR, "rework_input": REWORK},
          {"prototype": "prototype", "implemented_features": "implementedFeatures",
-          "entry_file_path": "entryFilePath", "check": _check_key("T-B1")}, "prototype", redo=True)
+          "entry_file": "entryFile", "check": _check_key("T-B1")}, "prototype", redo=True)
     task("T-B2", "인포그래픽 제작", "구현", 13, c.TB2In, c.TB2Out,
          {"plan_doc": art("planDoc"), "item_spec": art("itemSpec"), "category": art("category"),
           "instruction": INSTR, "rework_input": REWORK},
@@ -141,14 +141,15 @@ def build_registry() -> TaskRegistry:
          {"prototype": "prototype"}, "prototype", kind="merge")
     # G-04 — 오류면 계속(점수 밖). 자체 검사(확장 출력 check — 실행 · 열람 안내 낱말)가 불통과면 재수행 횟수까지 같은
     # 입력으로 다시 만들고(재수행 루프가 만든 G-04.reworkInput은 입력에 연결하지 않아 쓰이지 않는다), 끝내 불통과면
-    # 흐름이 관리자 기록('안내문서자체검사실패')을 남기고 계속한다 (2026-09-30 결정 5 · 6)
+    # 흐름이 관리자 기록('안내문서자체검사실패')을 남기고 계속한다 (2026-09-30 결정 5 · 6).
+    # 안내 문서는 파일이라 파일을 쓰는 규칙 단계로 표시한다 — 엔진이 run(inp, files)로 파일 창구를 넘긴다 (결정 0023)
     rule("G-04", "실행 안내 문서 생성", "조율", 14, c.G04In, c.G04Out,
          {"prototype": art("prototype"), "infographic": art("infographic"), "item_spec": art("itemSpec"),
           "announcement": art(SA)},
-         {"readme_path": "readmePath", "check": _check_key("G-04")}, "readme_path", redo=True,
-         failure=FailurePolicy(on_step_error="continue"))
-    rule("M-3", "합치기③ readmePath를 Prototype에 기입", "조율", None, c.M3In, c.M3Out,
-         {"prototype": art("prototype"), "readme_path": art("readmePath", optional=True)},
+         {"readme_file": "readmeFile", "check": _check_key("G-04")}, "readme_file", redo=True,
+         failure=FailurePolicy(on_step_error="continue"), writes_files=True)
+    rule("M-3", "합치기③ readmeFile을 Prototype에 기입", "조율", None, c.M3In, c.M3Out,
+         {"prototype": art("prototype"), "readme_file": art("readmeFile", optional=True)},
          {"prototype": "prototype"}, "prototype", kind="merge")
     # T-V2 — 계획서(확장 입력, T-B2와 같은 값)는 원페이지 대조의 근거라 늘 채운다. 진단(확장 출력)은 관리자 기록 전용이다
     task("T-V2", "프로토타입 검증", "검증-2", 15, c.TV2In, c.TV2Out,
