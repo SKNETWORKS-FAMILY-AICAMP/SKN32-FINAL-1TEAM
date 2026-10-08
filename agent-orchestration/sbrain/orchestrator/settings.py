@@ -102,7 +102,8 @@ def _default_tasks() -> dict[str, TaskModelSetting]:
     def luna() -> TaskModelSetting:
         return TaskModelSetting(provider="openai", model="gpt-6-luna", temperature=None)
 
-    tasks: dict[str, TaskModelSetting] = {k: supervisor() for k in ("T-C1", "T-C2", "G-01", "T-C3")}
+    # LLM을 부르지 않는 Task(T-C2 · G-01 · T-C4, 등록부 uses_llm=False)는 항목을 두지 않는다 — 엔진이 표를 보지 않는다
+    tasks: dict[str, TaskModelSetting] = {k: supervisor() for k in ("T-C1", "T-C3")}
     tasks.update({k: undecided(0.7) for k in ("T-S1", "T-S2", "T-W1", "T-W2", "T-W3")})
     tasks["T-V1"] = undecided(0.0)
     tasks["T-B1"] = luna()
@@ -111,7 +112,6 @@ def _default_tasks() -> dict[str, TaskModelSetting]:
         "image_quality": "medium", "image_size": "1024x1536"})
     tasks["T-V2"] = luna()
     tasks.update({k: TaskModelSetting(provider="gpu-server", model="미정", temperature=0.2) for k in ("T-P1", "T-P2")})
-    tasks["T-C4"] = supervisor()
     tasks[REWRITE_SETTING_KEY] = supervisor()
     return tasks
 
@@ -169,8 +169,10 @@ PROVISIONAL: dict[str, str] = {
     "proofread.concurrency": "검수 동시 처리 수 — 구현하면서 정함",
     "proofread.failureRatioThreshold": "검수 실패 비율 기준 — 구현하면서 정함",
     "proofread.judgeTiming": "검수 실패 비율 판단 시점 — 구현하면서 정함",
-    "tasks": "Task별 모델 · 호출처 · 기본 온도 · 추론 강도 · 이미지 설정, 실행 시작 시점 고정 — 기준 문서에 없음 "
-             "(조율 Task · 지시문 다시 쓰기 gpt-6-luna · low는 사용자 지정, T-B1 · T-B2 · T-V2 gpt-6-luna(추론 강도 · "
+    "tasks": "Task별 모델 · 호출처 · 기본 온도 · 추론 강도 · 이미지 설정, 실행 시작 시점 고정 — Task별로 두는 것은 기준 문서 "
+             "v1.10(시트 1 · Run.settingsSnapshot)에 있고, 값은 기준 문서에 없음 "
+             "(LLM을 부르는 조율 Task · 지시문 다시 쓰기 gpt-6-luna · low는 사용자 지정, LLM을 부르지 않는 T-C2 · G-01 · T-C4는 "
+             "항목 없음(사용자 결정 2026-10-08), T-B1 · T-B2 · T-V2 gpt-6-luna(추론 강도 · "
              "온도 보내지 않음)와 T-B2 이미지 openai · gpt-image-2.5-flare · medium · 1024x1536은 구현 · 검증-2 담당 요청, "
              "나머지는 미정). 옛 설정 사본(agents만)은 그 Agent 값 그대로 쓴다",
     f"taskTimeouts.{REWRITE_SETTING_KEY}": "지시문 다시 쓰기 호출 한 번의 제한 시간 120초 — T-C3 값을 빌려 쓰던 것을 따로 둠",
@@ -187,8 +189,6 @@ PROVISIONAL: dict[str, str] = {
                        "사용자 화면에는 알리지 않는다",
     # 공고 연결 (공고 선택 · 자격 확인 G-01) — 기준 문서에 없음
     "taskTimeouts.G-01": "G-01 제한 시간 30초 — 공고 서버의 공고 상세 · 자격 판정 호출, T-C2와 같음",
-    "announcement.unknownStatus": "공고 서버 모집 상태가 모름(unknown 등)이면 선택 공고 status를 '모집중'으로 둔다 — "
-                                  "그래서 마감 안내(E-RUN-CLOSED)가 붙지 않는다",
     "announcement.bonusEnabled": "가산점 사용 스위치 BONUS_ENABLED 기본 꺼짐 — 공고팀 가산점은 시험 단계(2026-10-06 답변: "
                                  "화면에 쓰지 말 것). 꺼져 있으면 실제 T-C2는 추천 결과의 bonus_score · bonus_items를 "
                                  "읽지도 검사하지도 않고, 스텁은 가산점을 만들지 않으며, 웹 카드(화면 3 · 결과 조회)는 저장된 "
@@ -202,7 +202,6 @@ PROVISIONAL: dict[str, str] = {
     "taskPlan.referenceSlots": "참조 조각 대응표(Task → 받는 슬롯) — T-S1 문제 · 필요성 · 목표 고객 · 핵심 기능, T-S2 시장 규모 · "
                                "목표 고객 · 경쟁 · 차별성, T-W1 7개 전부, T-W2 시장 규모 · 수익 모델, T-W3 수익 모델 · 추진 계획, "
                                "T-B1 핵심 기능, T-B2 문제 · 필요성 · 핵심 기능 · 시장 규모 · 수익 모델 · 추진 계획",
-    "notice.X-C2-GONE": "공고 없음 안내(확장) 문구 '선택하신 공고를 더 이상 확인할 수 없습니다. 다른 공고를 선택해주세요.'",
     # 공고 서버 연결 (agents/notice) — 실행 건 설정값이 아니라 워커 프로세스 값 · 고정 문장이다
     "announcement.matchReason": "추천 이유 문장 틀 (spec 4.1.4) — 공고 서버의 band(매우 적합 · 적합 · 참고, 없으면 대체 경로 "
                                 "'마감임박순'일 때 '마감이 가까운 신청 가능 공고입니다')와 지역(전국 · 희망 지역 일치 · 불일치)으로 "

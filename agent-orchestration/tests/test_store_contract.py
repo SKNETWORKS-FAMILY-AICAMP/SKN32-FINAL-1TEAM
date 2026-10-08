@@ -5,6 +5,7 @@ MySQL은 SBRAIN_TEST_MYSQL_URL(환경 변수 또는 .env)이 있을 때만 돈�
 """
 from __future__ import annotations
 
+import itertools
 import threading
 from datetime import datetime, timedelta
 
@@ -22,6 +23,7 @@ from sbrain.orchestrator.store import (
 )
 from sbrain.orchestrator.trace import CallLog, CallTry, ExecutionRecord, FeedbackLink, PointerEvent, TraceEvent
 from sbrain.store_sql import SqlStore
+from sbrain.store_sql import store as store_sql_store
 from sbrain.store_sql.schema import RUNS
 
 
@@ -431,6 +433,45 @@ def test_latest_start_requests_by_project(env):
     assert {k: v.request_id for k, v in got.items()} == {p1: second.request_id, p2: other.request_id}
     assert got[p1] == store.latest_start_request(p1) and got[p2] == store.latest_start_request(p2)
     assert store.latest_start_requests([]) == {}
+
+
+_numeric_projects = itertools.count(900001)
+
+
+def numeric_project(store: Store) -> int:
+    """정수 프로젝트 ID (existing_projects는 정수를 받는다). SqlStore면 웹 projects 행을 만든다."""
+    if isinstance(store, SqlStore):
+        return new_project(store.engine)
+    return next(_numeric_projects)
+
+
+def test_existing_projects_counts_runs_and_unfinished_requests(env, monkeypatch):
+    store, clock = env
+    monkeypatch.setattr(store_sql_store, "PROJECT_CHUNK", 2)                 # 묻는 개수가 나누는 크기보다 많다
+    ran, waiting, processing, failed, cancelled, never = (numeric_project(store) for _ in range(6))
+    acc = uid()
+    created(store, clock, project_id=str(ran), progress="완료")              # 워커가 가져가지 않는 상태
+    w = start_request(clock, acc, str(waiting))
+    assert store.add_start_request(w, max_active=9) is None
+    pr = start_request(clock, acc, str(processing))
+    assert store.add_start_request(pr, max_active=9) is None
+    assert store.acquire_start_request(pr.request_id, "A", 60)               # 처리중
+    f = start_request(clock, acc, str(failed))
+    assert store.add_start_request(f, max_active=9) is None
+    assert store.acquire_start_request(f.request_id, "A", 60)
+    assert store.finish_start_request(f.request_id, "A", status="실패", code="E-C1-TIMEOUT")
+    c = start_request(clock, acc, str(cancelled))
+    assert store.add_start_request(c, max_active=9) is None
+    assert store.cancel_start_request(c.request_id) == "취소"
+    every = [ran, waiting, processing, failed, cancelled, never]
+    assert store.existing_projects(every) == {ran, waiting, processing}
+    assert store.existing_projects(reversed(every)) == {ran, waiting, processing}
+    assert store.existing_projects([never, failed, cancelled]) == set()
+    assert store.existing_projects([ran]) == {ran} and store.existing_projects([]) == set()
+    # MySQL은 다른 테스트와 DB를 함께 쓴다 — 워커가 가져갈 요청을 남기지 않는다
+    assert store.cancel_start_request(w.request_id) == "취소"
+    assert store.finish_start_request(pr.request_id, "A", status="실패", code="E-C1-TIMEOUT")
+    assert store.existing_projects(every) == {ran}
 
 
 def test_find_active_work_counts_like_add_start_request(env):

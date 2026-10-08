@@ -33,7 +33,7 @@ from .convert import (
 
 PRE_STARTUP = "예비창업자"
 CONDITION_NAMES = frozenset({"지원대상 유형", "업력"})   # 판정 조건 이름 (spec 3.2.2)
-# 모집 상태 (spec 4.4) — open → '모집중', closed → '마감', 그 밖(unknown 등) → '모집중' (잠정, PROVISIONAL announcement.unknownStatus)
+# 모집 상태 (spec 4.4) — open → '모집중', closed → '마감', 그 밖(unknown 등) → '모집중' (기준 문서 v1.10 시트 4 Announcement.status)
 STATUS_OPEN, STATUS_CLOSED = "모집중", "마감"
 
 

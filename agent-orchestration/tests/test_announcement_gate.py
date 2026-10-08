@@ -102,8 +102,10 @@ def test_g01_registered_as_task_with_tools():
     exact, _ = artifact_types(build_registry())
     assert exact["selectedAnnouncement"] is Announcement                          # 등록부 출력에서 온다 (겹침 없음)
     assert Settings().task_timeouts["G-01"] == 30.0
-    for key in ("taskTimeouts.G-01", "announcement.unknownStatus", "announcement.formSpec", "notice.X-C2-GONE"):
+    for key in ("taskTimeouts.G-01", "announcement.formSpec"):
         assert key in PROVISIONAL
+    for key in ("announcement.unknownStatus", "notice.X-C2-GONE"):       # 기준 문서 v1.10이 정해 잠정이 아니다
+        assert key not in PROVISIONAL
     fields = c.G01In.model_fields
     assert fields["announcement_id"].is_required() and not fields["eligibility"].is_required()
     assert not fields["eligibility_parsed"].is_required()

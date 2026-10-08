@@ -15,6 +15,7 @@
 | claim_* | 후보 한 건을 SELECT … FOR UPDATE SKIP LOCKED로 고르고 같은 트랜잭션에서 조건부 UPDATE로 점유. SQLite는 BEGIN IMMEDIATE로 직렬화되어 조건부 UPDATE만으로 같은 결과. claim_ready_run은 재작성 요청을 모으는 중(collect_until > now)인 실행 건을 건너뛴다 |
 | renew · renew_start_request | 하트비트 — 지금 점유자일 때만 점유 연장 |
 | query_runs · latest_start_requests · find_active_work · count_executions | 여러 실행 건 · 여러 프로젝트 · 동시 실행 확인 · 실행 기록 수 조회 (잠금 없이 읽기만, 확장) |
+| existing_projects | 실행 건 줄 또는 대기 · 처리중 시작 요청이 있는 프로젝트 — PROJECT_CHUNK개씩 IN으로 나눠 묻고, 한 연결에서 요청을 먼저 · 실행 건을 나중에 본다 (잠금 없이 읽기만, 확장) |
 | finish_start_request · create_run_for_request · cancel_start_request | 요청을 끝내는(완료 · 실패 · 취소) 같은 UPDATE에서 입력 사본 form_json을 NULL로 비운다 |
 | account_guard | 계정 잠금(add_start_request와 같은 잠금)을 잡은 채로 있는 구간 — 탈퇴용 (확장) |
 | retire_run | 한 트랜잭션: 점유 확인(SELECT … FOR UPDATE, 아니면 StoreConflict) → 통계 줄 → 여섯 기록 표 삭제 → (delete_run) 산출물 · 실행 건 줄 삭제 / (bump_parts) run_json의 statsParts만 +1 — updated_at은 그대로 (확장) |
@@ -69,6 +70,7 @@ from .schema import (
 )
 from .web_tables import WebTables
 
+PROJECT_CHUNK = 500   # existing_projects가 IN 하나에 싣는 프로젝트 수 (잠정)
 PROOFREAD_SKIPPED = "검수회수기록생략"   # 웹 proofread_logs 구조가 맞지 않아 반려된 시도를 쓰지 않음 (실행 건마다 한 번)
 
 
@@ -224,6 +226,19 @@ class SqlStore:
         for row in rows:   # 최근 순 — 프로젝트마다 처음 나온 것이 마지막 요청
             latest.setdefault(str(row.project_id), _request_of(row))
         return latest
+
+    def existing_projects(self, project_ids: Iterable[int]) -> set[int]:
+        t = START_REQUESTS
+        pids = sorted({project_key(p) for p in project_ids})
+        found: set[int] = set()
+        with self.engine.connect() as conn:
+            for i in range(0, len(pids), PROJECT_CHUNK):
+                part = pids[i:i + PROJECT_CHUNK]
+                # 요청을 먼저 · 실행 건을 나중에 — 그 사이에 요청이 실행 건이 되어도 둘 중 하나에서 보인다
+                found.update(conn.execute(select(t.c.project_id).where(
+                    t.c.project_id.in_(part), t.c.status.in_(PENDING_REQUEST))).scalars())
+                found.update(conn.execute(select(RUNS.c.project_id).where(RUNS.c.project_id.in_(part))).scalars())
+        return found
 
     def acquire_start_request(self, request_id: str, owner: str, lease_sec: float) -> bool:
         t, now = START_REQUESTS, self._now()

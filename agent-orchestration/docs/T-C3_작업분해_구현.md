@@ -2,9 +2,9 @@
 
 | 항목 | 내용 |
 |---|---|
-| 작성일 | 2026-10-04 |
-| 기준 문서 | S-Brain Agent 기능정의서 v1.9 — 시트 2 T-C3(R4), 시트 3 R20 ~ R27, 시트 4 TaskPlan · TaskInstruction · FormSpec · EvalItem · Rubric, 시트 6 E-C3-FORM |
-| 참고 | 기획서 v1.10 4-4 · 4-6 · 6-4 |
+| 작성일 | 2026-10-04 (2026-10-08 갱신: 기준 문서 v1.10 반영 — 입출력 확장 표시 정리, 시트 2 T-C3 입력의 업력 표시 해석 — 3 · 7.2 · 8 · 14 · 15절) |
+| 기준 문서 | S-Brain Agent 기능정의서 v1.10 — 시트 2 T-C3 행, 시트 3 T-C3 입출력 행, 시트 4 TaskPlan · TaskInstruction · FormSpec · EvalItem · Rubric, 시트 6 E-C3-FORM |
+| 참고 | 기획서 v1.11 4-4 · 4-6 · 6-4 |
 | 코드 | `sbrain/agents/supervisor/tc3.py` (실제 T-C3), `agents/supervisor/plan.py` (작업 계획 부품 — 스텁 · 실제 T-C3가 함께 씀), `agents/supervisor/rewrite.py` (재작성 · 재수행 안내 다시 쓰기), `agents/form_defaults.py` (신청자 유형별 양식 표), `flow/instruction.py` (지시문 세 부분 · 덧붙임), `flow/sbrain_flow.py` `SBrainFlow.build_instruction` (언제 다시 쓰는지 · 저장 · 재개), `bootstrap.py` (워커 조립 · 호출처 나누기) |
 | 테스트 | `tests/test_task_plan.py` 48건, `test_tc3.py` 55건, `test_partial_resume.py` 15건, `test_instruction.py` 18건, `test_rewrite.py` 39건, `test_worker.py` 28건(그중 T-C3 · 다시 쓰기 조립 5건) — 전체 985건 중 951건 통과 · 34건 건너뜀(MySQL 전용) |
 | 관련 문서 | `기준문서_개정필요사항_T-C3_작업분해.md`(저장소 미포함) (기준 문서와 다르게 구현한 것), `docs/Agent_연동_규격_초안.md` 5.4절 (Agent 팀에 알리는 지시문 모양), `docs/T-C1_요구사항해석_구현.md` (같은 짜임의 앞선 구현 문서) |
@@ -29,7 +29,7 @@ flowchart TD
   P --> L["지시 대상마다 LLM 한 번, 한꺼번에 동시에<br/>tools.for_item(taskId).llm(purpose='지시문 작성')<br/>웹개발 · AI_API 7번, 원페이지 6번"]
   L -- 재시도 소진 --> X2["ToolCallExhausted → 엔진이 T-C3 재개<br/>(받은 안내는 두고 빠진 Task만)"]
   L --> A["plan.assemble<br/>틀 · 안내 · 참조 자료, 맥락 다섯 키"]
-  A --> O["산출물 taskPlan · taskCount · instructionSet<br/>formSpec · evaluationItems · rubric (확장)"]
+  A --> O["산출물 taskPlan · taskCount · instructionSet<br/>formSpec · evaluationItems · rubric"]
   O --> N["T-S1 → T-S2 → T-W1 → … 지시문 = taskPlan의 그 Task 지시문"]
   N -- "검사 불통과 재수행 · 사용자 재작성" --> R["SBrainFlow.build_instruction<br/>조율 다시 쓰기(안내 부분만) + 문제 내용 원문 덧붙임<br/>→ 산출물 'T-S1.instruction' 등"]
 ```
@@ -48,8 +48,8 @@ flowchart TD
 | ③ | 카테고리가 비어 있음 | 해당 없음 — `itemSpec.category`는 허용값 셋만 받는 타입이라 비어 있을 수 없다 | — |
 | ④ | 양식을 고를 수 없음 (4절 불변식) | 실행 실패 (E-C3-FORM) | `E-C3-FORM: <사유 이름>` |
 
-- ①은 정상 흐름에서 생기지 않는다. 작성 시작은 자격 통과일 때만 열린다. 그래서 기준 문서의 "게이트 결과 화면으로 회귀"는 구현하지 않고 버그 대비 확인만 둔다(사용자 확인).
-- ②: 팀 구성원(`team_careers`) 빈 목록은 허용한다('팀원 없음', 사용자 결정 2026-09-30). 수익모델 단가는 타입상 늘 있다.
+- ①은 정상 흐름에서 생기지 않는다. 작성 시작은 자격 통과일 때만 열린다. 그래서 v1.9의 "게이트 결과 화면으로 회귀"는 구현하지 않고 버그 대비 확인만 둔다(사용자 확인). v1.10 시트 2 T-C3 ①은 "분해를 거부하고 실행을 실패로 끝낸다"로 바뀌어 지금 처리와 같다.
+- ②: 팀 구성원(`team_careers`) 빈 목록은 허용한다('팀원 없음', 사용자 결정 2026-09-30). 수익모델 단가(`revenueUnitPrice` — v1.10에서 빠졌지만 확장으로 남김)는 타입상 늘 있다.
 - ④의 웹 안내는 없다(시트 6 E-C3-FORM "노출 없음").
 
 ## 4. 양식 · 평가항목 · 채점 기준표 고르기 (`agents/form_defaults.py`)
@@ -208,7 +208,7 @@ flowchart TD
 | `[선택 공고]` → `<공고>` | `title` · `agency` · `supportField` · `applyStart` · `applyEnd` · `applyPeriodType` · `supportAmountMax` · `supportAmountText` · `bonusInfo` (빈 값은 `null`) |
 | `[신청자]` → `<신청자>` | `applicantType`, `businessAgeYears`(있을 때만 — 예비창업자는 싣지 않음), `industryCode`(그대로 — 웹 자유 입력일 수 있다), `regionProvince`(`companyInfo.region`의 첫 공백 앞 — 시 · 도만, 비면 빈 값) |
 
-- 업력은 `companyInfo.businessAgeYears`가 아니라 확장 입력 `business_age_years`(G-01 출력)에서 온다. T-C1이 `companyInfo.businessAgeYears`를 비워 두기 때문이다.
+- 업력은 `companyInfo.businessAgeYears`가 아니라 입력 `business_age_years`(G-01 출력 — v1.10 시트 2 · 3 T-C3 입력)에서 온다. T-C1이 `companyInfo.businessAgeYears`를 비워 두기 때문이다. v1.10 시트 2 T-C3 입력에서 '(향후 도입. 도입 전에는 비어 있다)'가 `businessAgeYears` 뒤에 붙어 있는데, 참조 자료 줄의 표시가 잘못 붙은 기준 문서 오기로 보고 업력을 계속 G-01 결과로 채운다(사용자 결정 2026-10-08).
 
 **보내지 않는 것**
 - 대표자 이름 · 기업명 · 생년월일 · 성별 · 사업자등록번호
@@ -255,11 +255,11 @@ flowchart TD
 | `task_plan` | `taskPlan` | 기준 문서 |
 | `task_count` | `taskCount` | 기준 문서 |
 | `instruction_set` | `instructionSet` | 기준 문서 |
-| `form_spec` | `formSpec` | **확장** — 고른 양식 |
-| `evaluation_items` | `evaluationItems` | **확장** — 고른 평가항목 |
-| `rubric` | `rubric` | **확장** — 고른 채점 기준표 |
+| `form_spec` | `formSpec` | 기준 문서 v1.10(v1.9에서는 확장) — 고른 양식 |
+| `evaluation_items` | `evaluationItems` | 기준 문서 v1.10(v1.9에서는 확장) — 고른 평가항목 |
+| `rubric` | `rubric` | 기준 문서 v1.10(v1.9에서는 확장) — 고른 채점 기준표 |
 
-- `TaskInstruction`에 확장 `guidance: str`(기본 `""`)을 더했다. 정리한 안내로, 지시문의 안내 부분과 같은 글자다. 지시 대상이 아니면 빈 문자열이다. 재작성 · 재수행 다시 쓰기의 출발점이며, 기본값이 있어 전에 저장된 `TaskInstruction`도 읽힌다.
+- `TaskInstruction`에 `guidance: str`(기본 `""` — v1.9에서는 확장, v1.10 시트 4에 들어감)을 더했다. 정리한 안내로, 지시문의 안내 부분과 같은 글자다. 지시 대상이 아니면 빈 문자열이다. 재작성 · 재수행 다시 쓰기의 출발점이며, 기본값이 있어 전에 저장된 `TaskInstruction`도 읽힌다.
 - 새 산출물 세 키는 등록부 출력에서 타입이 오므로 읽으면 해당 모델로 복원된다.
 
 ## 9. 뒷 단계 연결
@@ -520,11 +520,10 @@ app.orchestrator.advance(rid)                      # T-C3(실제 7번) → T-S1 
 
 **확장** (기준 문서에 없는 필드 · 산출물)
 
+2026-10-08: `TC3In.businessAgeYears`, `TC3Out.formSpec` · `evaluationItems` · `rubric`, `TaskInstruction.guidance`는 기준 문서 v1.10에 들어가 이 표에서 뺐다(코드도 `ext()`를 뗐다).
+
 | 대상 | 확장 | 용도 |
 |---|---|---|
-| TC3In | `businessAgeYears` | 업력(년) — G-01 출력. 예비창업자는 `null` |
-| TC3Out | `formSpec` · `evaluationItems` · `rubric` | 신청자 유형으로 고른 양식 · 평가항목 · 채점 기준표 → 같은 이름의 산출물 |
-| TaskInstruction | `guidance` | 정리한 안내 — 지시문의 안내 부분과 같은 글자. 다시 쓰기의 출발점 |
 | RedoState | `instruction_ref` | 다시 쓴 지시문 산출물 참조 — 재개 때 다시 쓰지 않으려고 |
 | TC3In | `prior_guidance` | 재개 때 받아 둔 안내(Task ID → 정리된 안내). 엔진 연결 `PARTIAL`로 들어온다. 처음 실행이면 빈 사전 |
 | RedoState | `partial_ref` | 재개 때 이어 쓸 받은 결과 산출물 참조(엔진 일반 장치, 지금은 T-C3만) |
@@ -541,4 +540,4 @@ app.orchestrator.advance(rid)                      # T-C3(실제 7번) → T-S1 
    - 일부 유형만 값이 오면 나머지 유형을 어떻게 할지 정해야 한다.
 2. ~~동시 호출 뒤 실제 OpenAI 재측정~~ — 완료(2026-10-04, 13절). 429 없음. 여러 실행 건이 겹쳐 429가 자주 생기면 `GUIDANCE_CONCURRENCY`(잠정)를 줄인다.
 3. **공고별 양식** — 공고 서버가 공고별 양식 · 평가항목을 주게 되면 유형별 표와 무엇이 우선인지 그때 정한다(`docs/공고서버_API요청_공고팀전달.md` 6 ③).
-4. **기준 문서 개정** — 자격 불통과 시 실행 실패, 양식을 T-C3 출력에 둔 것, 입출력 확장, 다시 쓰기 방식 등은 `기준문서_개정필요사항_T-C3_작업분해.md`(저장소 미포함)에 따로 정리했다.
+4. **기준 문서 개정** — 자격 불통과 시 실행 실패, 양식을 T-C3 출력에 둔 것, 입출력 확장, 다시 쓰기 방식 등은 `기준문서_개정필요사항_T-C3_작업분해.md`(저장소 미포함)에 따로 정리했고, 기능정의서 v1.10에 반영됐다(2026-10-07판, 시트 8 변경 이력 7번). 신청자 유형별 양식 · 평가항목 · 채점 기준표의 실제 값은 v1.10도 미확정이다.

@@ -62,7 +62,7 @@ CYCLE_END = "CYCLE-END"
 SCREEN_STEP = {6: "문서평가", 8: "산출물확인", 9: "종합평가"}
 STEP_SCREEN = {step: screen for screen, step in SCREEN_STEP.items()}
 STEP_LABEL = {CYCLE_END: "재작성 전후 비교"}
-# 판정 지시가 없는 묶음의 재작성 지시 문구 (잠정)
+# 판정 지시가 없는 묶음의 재작성 지시 문구 (기준 문서 v1.10 시트 4 ReworkOrder.reason)
 REWORK_DEFAULT_REASON = "사용자가 이 묶음의 재작성을 요청했습니다."
 # 관리자 사건 종류 · 문구 (잠정 — orchestrator/settings.py PROVISIONAL event.*). 내용 · 지시문은 싣지 않는다
 EVENT_MATCH_WITHHELD = "대조보류"
@@ -410,7 +410,7 @@ class SBrainFlow:
                                         previous_source_text=source),
                                 bundle_id=",".join(order.targets))
         elif role == REFLECT_ROLE and tid == "T-B1":
-            # 계획서 반영 실행 — T-B1 입력에 계획서(plan_doc, 확장)가 있지만, 추적 기록(FeedbackLink)을 위해 계획서 버전을
+            # 계획서 반영 실행 — T-B1 입력에 계획서(plan_doc)가 있지만, 추적 기록(FeedbackLink)을 위해 계획서 버전을
             # 알리는 재작성 입력(issues)을 그대로 붙인다. 이전 원문은 채우지 않는다(새 계획서로 새로 만든다, spec 4.3).
             # 원페이지 T-B2 반영에는 아무것도 붙이지 않는다 — T-B2는 planDoc을 직접 받아 첫 제작과 같은 경로다(결정 7)
             plan_ref = ctx.ref("planDoc")
@@ -593,7 +593,7 @@ class SBrainFlow:
     def on_rescue(self, ctx: RunContext, step_id: str, failure: StepFailure) -> None:
         """실패 정책이 흐름에 넘긴 실패 (등록부 rescue_segments). 실행을 실패시키지 않는다."""
         if step_id == "T-C2" and ctx.run.segment == "MORE":
-            # 추가 조회 실패 (spec 4.2.3) — 재시도 소진 · 코드 오류 · 규격 위반 등 어떤 오류든 X-C2-FAIL(잠정).
+            # 추가 조회 실패 (spec 4.2.3) — 재시도 소진 · 코드 오류 · 규격 위반 등 어떤 오류든 X-C2-FAIL(기준 문서 v1.10 시트 2 T-C2 ④).
             # 실패한 T-C2는 산출물을 남기지 않았다
             self._more_failed(ctx, "X-C2-FAIL")
             return

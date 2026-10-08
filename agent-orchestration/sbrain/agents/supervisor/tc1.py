@@ -138,7 +138,7 @@ def run(inp: TC1In, tools: Tools) -> TC1Out:
 def company_info_from(form: PreInput) -> CompanyInfo:
     """폼 값을 그대로 옮긴다. 업력(businessAgeYears)은 기준일자가 필요해 T-C2 · G-01이 계산한다.
 
-    기준 문서에 자리가 없는 웹 입력값(확장, FormExtension)도 그대로 옮겨 계획서 작성까지 전달한다.
+    두 타입이 함께 쓰는 웹 입력값(FormExtension — 수익모델 항목 · 기업명 등)도 그대로 옮겨 계획서 작성까지 전달한다.
     """
     extension = {k: getattr(form, k) for k in FormExtension.model_fields}
     extension["revenue_items"] = [i.model_copy() for i in form.revenue_items]

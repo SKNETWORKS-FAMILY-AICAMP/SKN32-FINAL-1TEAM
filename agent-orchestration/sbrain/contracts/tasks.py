@@ -48,7 +48,7 @@ class ReworkCycleInfo(SBModel):
 
 
 class ProofreadAttempt(SBModel):
-    """확장 — T-P2 시도 하나의 기록 (SentenceResult.attempts).
+    """시트 4 시도 기록 — T-P2 시도 하나의 기록 (SentenceResult.attempts).
 
     시도 = T-P2 함수가 결과를 돌려준 호출 하나. 호출 실패(재시도 소진)는 시도가 아니다.
     보호 토큰 검사를 통과하지 못한 시도가 '반려된 시도'다(채택하지 않았어도 통과했으면 반려가 아니다).
@@ -68,9 +68,8 @@ class SentenceResult(SBModel):
     kept_reason: KeptReason | None = None
     final_redo_count: int
     token_check: TokenCheckResult | None = None
-    attempts: list[ProofreadAttempt] = ext(
-        default_factory=list,
-        note="시도별 기록 (시도 순서). 반려된 시도는 학습 동의 계정이면 웹 proofread_logs에도 한 행씩 쓴다")
+    # 시도별 기록 (시도 순서). 반려된 시도는 학습 동의 계정이면 웹 proofread_logs에도 한 행씩 쓴다
+    attempts: list[ProofreadAttempt] = Field(default_factory=list)
 
 
 # ── 조율 ─────────────────────────────────────────────
@@ -114,20 +113,23 @@ class TC2Out(SBModel):
 
 
 class G01In(SBModel):
-    """G-01 입력. 기준 문서와 다름: 판정은 공고 서버가 공고 ID로 하므로 eligibility · eligibilityParsed는 비울 수 있고
-    Orchestrator가 넣지 않는다. 대신 고른 공고 ID(announcementId, 확장)를 받는다 (spec 5)."""
+    """G-01 입력. 판정은 공고 서버가 고른 공고 ID(announcementId)로 한다 (spec 5).
+    eligibility · eligibilityParsed는 새 판(v1.10) G-01 입력에서 빠졌지만 옛 실행 건 호환을 위해 확장으로 남긴다.
+    비울 수 있고 Orchestrator가 넣지 않는다 (Announcement에는 두 칸이 남아 있다)."""
     company_info: CompanyInfo
-    eligibility: EligibilityRule | None = None
-    eligibility_parsed: bool | None = None
+    eligibility: EligibilityRule | None = ext(
+        None, note="새 판(v1.10)에서 빠졌지만 남김 — 새 판 G-01 입력에서 빠짐, Announcement에는 남아 있음")
+    eligibility_parsed: bool | None = ext(
+        None, note="새 판(v1.10)에서 빠졌지만 남김 — 새 판 G-01 입력에서 빠짐, Announcement에는 남아 있음")
     today: date
-    announcement_id: str = ext(note="고른 공고 ID — 마지막 공고 선택 명령(decision)의 announcementId")
+    announcement_id: str  # 고른 공고 ID — 마지막 공고 선택 명령(decision)의 announcementId
 
 
 class G01Out(SBModel):
     gate_result: GateResult
     business_age_years: float | None = None
-    selected_announcement: Announcement = ext(
-        note="자격 확인한 공고의 상세 → 산출물 selectedAnnouncement. 자격 결과 · 업력과 한 번에 저장한다 (spec 4.3.2)")
+    # 자격 확인한 공고의 상세 → 산출물 selectedAnnouncement. 자격 결과 · 업력과 한 번에 저장한다 (spec 4.3.2)
+    selected_announcement: Announcement
 
 
 class TC3In(SBModel):
@@ -136,9 +138,8 @@ class TC3In(SBModel):
     gate_result: GateResult
     company_info: CompanyInfo
     reference_summary: ReferenceSummary | None = None
-    business_age_years: float | None = ext(
-        None, note="업력(년) — G-01 출력 businessAgeYears. 예비창업자는 null. companyInfo.businessAgeYears는 T-C1이 "
-                   "비워 두므로 이 값을 쓴다")
+    # 업력(년) — G-01 출력 businessAgeYears. 예비창업자는 null. companyInfo.businessAgeYears는 T-C1이 비워 두므로 이 값을 쓴다
+    business_age_years: float | None = None
     prior_guidance: dict[str, str] = ext(
         default_factory=dict,
         note="재개 때 이어 쓰는 받은 안내(Task ID → 정리된 안내) — 앞 실행이 재시도 소진 전에 받은 것(T-C3.partial). "
@@ -149,9 +150,9 @@ class TC3Out(SBModel):
     task_plan: TaskPlan
     task_count: int
     instruction_set: list[TaskInstruction]
-    form_spec: FormSpec = ext(note="신청자 유형으로 고른 양식 → 산출물 formSpec. 선택 공고의 formSpec 대신 뒷 단계가 읽는다")
-    evaluation_items: list[EvalItem] = ext(note="고른 평가 항목 → 산출물 evaluationItems (T-V1 · 웹 outputs)")
-    rubric: Rubric = ext(note="고른 채점 기준표 → 산출물 rubric (T-V1, G-02a · G-02b의 rubricVersion)")
+    form_spec: FormSpec               # 신청자 유형으로 고른 양식 → 산출물 formSpec. 선택 공고의 formSpec 대신 뒷 단계가 읽는다
+    evaluation_items: list[EvalItem]  # 고른 평가 항목 → 산출물 evaluationItems (T-V1 · 웹 outputs)
+    rubric: Rubric                    # 고른 채점 기준표 → 산출물 rubric (T-V1, G-02a · G-02b의 rubricVersion)
 
 
 class G02aIn(SBModel):
@@ -356,15 +357,16 @@ class TV2In(SBModel):
     prototype: Prototype
     infographic: Infographic
     feature_list: list[str]
-    # 확장 — 기본값 None이지만 Orchestrator는 늘 채운다 (catalog T-V2 입력)
-    plan_doc: PlanDoc | None = ext(None, note="T-B2가 받은 것과 같은 값. 원페이지 대조의 근거")
+    # T-B2가 받은 것과 같은 값. 원페이지 대조의 근거 (catalog T-V2 입력).
+    # 기준 문서는 필수이고 흐름이 늘 채운다. 기본값 None은 옛 실행 건 호환용 선언
+    plan_doc: PlanDoc | None = None
 
 
 class TV2Out(SBModel):
     artifact_score: ArtifactScore
     code_check: CodeCheckResult
     feature_match: FeatureMatchResult
-    diagnostics: list[str] = ext(default_factory=list, note="관리자 진단 전용. 흐름 제어에 쓰지 않음")
+    diagnostics: list[str] = Field(default_factory=list)  # 관리자 진단 전용. 흐름 제어에 쓰지 않음
 
 
 # ── 구현 ─────────────────────────────────────────────
@@ -374,8 +376,9 @@ class TB1In(SBModel):
     category: Category
     instruction: str
     rework_input: ReworkInput | None = None
-    # 확장 (구현 · 검증-2 담당 요청 8) — 계획서 전체. T-B1은 M-1 · T-V1 · G-02a 뒤에 돌아 늘 값이 있다
-    plan_doc: PlanDoc | None = ext(None, note="기능별 설명의 근거. T-B2 · T-V2와 같은 값")
+    # 계획서 전체 — 기능별 설명의 근거. T-B2 · T-V2와 같은 값 (구현 · 검증-2 담당 요청 8).
+    # 기준 문서는 필수이고 흐름이 늘 채운다(T-B1은 M-1 · T-V1 · G-02a 뒤에 돈다). 기본값 None은 옛 실행 건 호환용 선언
+    plan_doc: PlanDoc | None = None
 
 
 class TB1Out(SBModel):

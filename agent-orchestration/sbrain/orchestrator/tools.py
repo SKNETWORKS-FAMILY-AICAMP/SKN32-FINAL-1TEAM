@@ -108,8 +108,8 @@ class ToolsConfig:
     image_timeout_sec은 이미지 호출 한 번의 제한 시간이다.
     """
     agent: str
-    provider: str
-    model: str
+    provider: str | None   # None = LLM을 부르지 않는 단계(Task 설정 표를 보지 않는다) — llm 호출은 바로 실패한다
+    model: str | None
     temperature: float | None
     timeout_sec: float
     retry_count: int
@@ -162,6 +162,7 @@ class ToolsContext:
 
 # 이미지 모델 설정이 없는 Task의 이미지 호출 — 기록의 설명 칸에 남기는 이유 (CallError 값은 늘리지 않는다)
 NO_IMAGE_SETTING = "이미지 모델 설정 없음"
+NO_LLM_SETTING = "LLM 설정 없음(LLM을 부르지 않는 단계)"
 
 
 class _Immediate(Exception):
@@ -200,6 +201,10 @@ class Tools:
         """LLM을 호출한다. schema가 있으면 JSON을 그 모델로 검사해 돌려주고,
         parse가 있으면 (검사한) 결과를 parse에 넘긴다. parse가 FormatError를 올리면 재시도한다."""
         cfg = self._config
+        if cfg.model is None or cfg.provider is None:
+            def refuse() -> Any:   # 호출처를 부르지 않는다 — 실패한 시도 하나만 남긴다
+                raise _Immediate("호출실패", "운영", NO_LLM_SETTING)
+            return self._call("llm", purpose, refuse)
         provider = self._ctx.providers.get(cfg.provider)
         request = LLMRequest(
             provider=cfg.provider,

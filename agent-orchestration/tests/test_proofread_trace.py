@@ -161,7 +161,7 @@ def test_tp2_records_every_attempt(clock):
     assert (rejected.text, rejected.token_check.missing_tokens, rejected.violation_type) == ("변형 0", ["1억원"], "수치·금액")
     assert adopted.text.endswith("(윤문)") and adopted.violation_type is None
     assert [a.text for a in res["s-2-1-1"].attempts] == ["변형 0", "동일 출력", "동일 출력"]
-    assert "attempts" in extension_fields(SentenceResult)
+    assert "attempts" not in extension_fields(SentenceResult)       # 기준 문서 v1.10 T-P2 출력 attempts
     assert app.store.rejected_attempts(rid) == []                     # 학습 미동의 — 시도 기록은 산출물에만
 
 

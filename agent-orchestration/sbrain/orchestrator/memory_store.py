@@ -174,6 +174,13 @@ class MemoryStore:
                     latest[r.project_id] = r
             return {pid: r.model_copy(deep=True) for pid, r in latest.items()}
 
+    def existing_projects(self, project_ids: Iterable[int]) -> set[int]:
+        with self._lock:
+            wanted = {str(p): p for p in project_ids}
+            found = {r.project_id for r in self._requests.values() if r.status in PENDING_REQUEST}
+            found |= {r.get("projectId") for r in self._runs.values()}
+            return {p for key, p in wanted.items() if key in found}
+
     def acquire_start_request(self, request_id: str, owner: str, lease_sec: float) -> bool:
         with self._lock:
             now = self._now()

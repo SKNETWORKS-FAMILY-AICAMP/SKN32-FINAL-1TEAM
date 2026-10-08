@@ -64,7 +64,7 @@ def build_registry() -> TaskRegistry:
          uses_llm=False, failure=FailurePolicy(resumable=False, fallback_in_task=True,
                                                rescue_segments=frozenset({"MORE"})))
     # G-01 — 고른 공고(마지막 decision의 공고 ID)의 상세 받기와 자격 판정을 한 단계에서 한다. 공고 서버를 tools로 부르는
-    # Task(LLM 없음)이고 기준 문서와 다르다(외부 호출). 선택 공고 · 자격 결과 · 업력을 한 번에 저장한다(spec 4.3.2).
+    # Task(LLM 없음)이다 — 기준 문서 v1.10 시트 2도 공고 서버 호출에 재시도 · 제한 시간을 둔다. 선택 공고 · 자격 결과 · 업력을 한 번에 저장한다(spec 4.3.2).
     # 재개하지 않고, 자격 확인 구간(GATE)에서는 어떤 오류든 흐름이 받아 고르기 전 대기 지점으로 돌린다(4.3.4).
     # 고정 Task 14개에 세지 않는다(기획서 4-4).
     task("G-01", "자격요건 게이트", "조율", 3, c.G01In, c.G01Out,
@@ -74,9 +74,9 @@ def build_registry() -> TaskRegistry:
          failure=FailurePolicy(resumable=False, rescue_segments=frozenset({"GATE"})))
 
     # ── 계획서 작성 ───────────────────────────────────
-    # T-C3 — 신청자 유형으로 양식 · 평가 항목 · 채점 기준표를 고르고(확장 출력 formSpec · evaluationItems · rubric),
+    # T-C3 — 신청자 유형으로 양식 · 평가 항목 · 채점 기준표를 고르고(출력 formSpec · evaluationItems · rubric),
     # 뒷 단계(T-W1 · T-V1 · T-P1 · T-P2 · G-02a · G-02b)는 선택 공고의 같은 이름 필드 대신 이 출력을 읽는다 (T-C3 spec 4).
-    # 선택 공고의 formSpec · evaluationItems는 자리 표시 값으로 남는다. 업력은 G-01 출력에서 받는다(확장 입력)
+    # 선택 공고의 formSpec · evaluationItems는 자리 표시 값으로 남는다. 업력은 G-01 출력에서 받는다(입력 businessAgeYears)
     # 재개 때는 앞 실행이 받은 안내(T-C3.partial)를 prior_guidance로 받아 빠진 Task만 부른다(엔진 일반 장치 PARTIAL)
     task("T-C3", "작업 분해", "조율", 4, c.TC3In, c.TC3Out,
          {"selected_announcement": art(SA), "item_spec": art("itemSpec"), "gate_result": art("gateResult"),

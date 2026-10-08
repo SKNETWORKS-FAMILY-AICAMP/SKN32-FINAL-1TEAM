@@ -194,12 +194,14 @@ def test_permanently_deleted_run_row_removed_with_category_in_row(clock):
     project = pid(app, rid)
     app.orchestrator.delete_project_data(project)
     assert not app.store.get_pointers(rid) and any(record_counts(app, rid)[:1])  # 산출물만 지워졌다
+    assert app.orchestrator.missing_projects([project]) == []                    # 실행 건 줄이 남아 있음
     clock.advance(days=LATER)
     out = retain(app, clock)
     assert (out.summary.runs, out.summary.deleted_runs, out.summary.skipped) == (1, 1, 0)
     with pytest.raises(KeyError):
         app.store.load_run(rid)                                                  # 실행 건 줄도 지웠다
     assert app.store.find_run_by_project(project) is None
+    assert app.orchestrator.missing_projects([project, int(project)]) == [project]   # 이제 없음
     assert record_counts(app, rid) == [0] * 6
     [row] = app.store.log_stats("실행")
     assert (row.category, row.part, row.data["finalScores"]) == (

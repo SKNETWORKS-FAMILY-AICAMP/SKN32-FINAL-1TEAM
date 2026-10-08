@@ -478,7 +478,14 @@ class Engine:
         return values, refs
 
     def tools_config(self, ctx: RunContext, spec: TaskSpec) -> ToolsConfig:
-        """Task의 호출 설정 — 설정 키는 Task ID, Agent 이름은 담당 Agent. Task 온도 규칙(TempRule)을 위에 씌운다."""
+        """Task의 호출 설정 — 설정 키는 Task ID, Agent 이름은 담당 Agent. Task 온도 규칙(TempRule)을 위에 씌운다.
+        LLM을 부르지 않는 Task(uses_llm=False — T-C2 · G-01 · T-C4)는 Task 설정 표를 보지 않고 모델 없이 제한 시간 ·
+        재시도만 입힌다. 그래서 실행 기록의 모델 · 호출처 · 온도도 비고, 옛 설정 사본에 그 Task 항목이 있어도 쓰지 않는다."""
+        if not spec.uses_llm:
+            s = ctx.settings
+            return ToolsConfig(agent=spec.agent, provider=None, model=None, temperature=None,
+                               timeout_sec=s.task_timeouts.get(spec.task_id, 120.0),
+                               retry_count=s.retry.retry_count, retry_interval_sec=s.retry.retry_interval_sec)
         cfg = self.agent_tools_config(ctx, spec.agent, spec.task_id)
         if spec.temperature:
             cfg = replace(cfg, temperature=spec.temperature.apply(cfg.temperature))

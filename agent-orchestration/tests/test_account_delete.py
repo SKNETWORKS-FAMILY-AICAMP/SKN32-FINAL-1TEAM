@@ -65,6 +65,8 @@ def test_delete_account_moves_to_stats_and_deletes_all(clock):
     reqs = [r.request_id for r in app.store.list_start_requests(ACCT)]
     ids = [rid1, rid2, *reqs, *execution_ids(app, rid1), *execution_ids(app, rid2)]
     assert len(reqs) == 2 and app.store.get_pointers(rid1)
+    projects = [app.store.load_run(r).project_id for r in (rid1, rid2, other)]
+    assert app.orchestrator.missing_projects(projects) == []
 
     res = app.orchestrator.delete_account_data(ACCT)
 
@@ -73,6 +75,7 @@ def test_delete_account_moves_to_stats_and_deletes_all(clock):
     assert (res.deleted_runs, res.deleted_requests, res.stats_rows) == (2, 2, 3)
     assert gone(app, rid1) and gone(app, rid2)
     assert app.store.list_runs(ACCT) == [] and app.store.list_start_requests(ACCT) == []
+    assert app.orchestrator.missing_projects(projects) == projects[:2]          # 탈퇴한 계정의 프로젝트만 없음
     run_rows, req_rows = app.store.log_stats("실행"), app.store.log_stats("시작요청")
     assert [(r.reason, r.status) for r in run_rows] == [("탈퇴", "중단"), ("탈퇴", "중단")]
     assert [(r.reason, r.status, r.count) for r in req_rows] == [("탈퇴", "완료", 2)]

@@ -18,7 +18,7 @@ from pydantic import ValidationError
 
 from ...orchestrator.errors import FormatError
 
-# 모집 형태 표기 (확장, spec 4.4) — 그 밖의 값 · 없음은 '모름'
+# 모집 형태 표기 (applyPeriodType, spec 4.4) — 그 밖의 값 · 없음은 '모름'
 PERIOD_LABELS: dict[str, str] = {
     "fixed": "기간 있음",
     "budget_exhaustion": "예산 소진 시까지",

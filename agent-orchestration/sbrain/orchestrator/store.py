@@ -228,6 +228,13 @@ class Store(Protocol):
     def latest_start_requests(self, project_ids: Iterable[int | str]) -> dict[str, StartRequest]:
         """여러 프로젝트의 마지막 시작 요청 (확장). 키는 project_id 문자열, 요청이 없는 프로젝트는 빠진다."""
 
+    def existing_projects(self, project_ids: Iterable[int]) -> set[int]:
+        """넘긴 프로젝트 중 실행 건이 있거나 끝나지 않은(대기 · 처리중) 시작 요청이 있는 것 (확장 — missing_projects용).
+
+        실행 건은 find_run_by_project와 같은 기준(실행 건 줄의 project_id)으로 찾는다. 시작 요청을 먼저 보고 실행 건을
+        나중에 본다 — 그 사이에 요청이 실행 건이 되어도 빠뜨리지 않는다. 잠금 없이 읽기만 한다. 개수 제한은 없다.
+        """
+
     def acquire_start_request(self, request_id: str, owner: str, lease_sec: float) -> bool:
         """'대기' 요청, 또는 점유가 만료됐거나 같은 점유자인 '처리중' 요청을 '처리중'으로 점유한다."""
 

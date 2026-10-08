@@ -1,4 +1,4 @@
-"""웹이 쓰는 함수 (spec 4) — 진행 상태(view_project) · 여러 프로젝트 보기 · 기다리기 · 지금까지 결과 · 재작성 결과,
+"""웹이 쓰는 함수 (spec 4) — 진행 상태(view_project) · 여러 프로젝트 보기 · 실행 건이 없는 프로젝트(missing_projects) · 기다리기 · 지금까지 결과 · 재작성 결과,
 project_id로 부르는 명령, 자격 통과 뒤 공고 다시 고르기 (3.3), 화면 10 시도별 기록, 화면 8 · 9 '진행'."""
 from __future__ import annotations
 
@@ -10,13 +10,16 @@ from conftest import (
     executed, make_app, project_record, start_and_select, to_screen6, to_screen8, to_screen9,
 )
 from flow_helpers import WINDOW, code_of, pid, rework, run_review, started_with_pid
+from webdb import new_project
 
 from sbrain.agents.stubs import StubScenario
+from sbrain.bootstrap import build_web
 from sbrain.flow import ConfirmationNeeded
 from sbrain.flow.reads import CandidatesScreen, Outputs, ReworkResult
 from sbrain.flow.rework_map import ARTIFACT_BUNDLES, DOCUMENT_BUNDLES
 from sbrain.intake import MemoryProjectInputSource
 from sbrain.orchestrator.errors import COMMAND_ERROR_CODES, CommandError
+from sbrain.orchestrator.store import StartRequest
 
 BUNDLES = list(DOCUMENT_BUNDLES) + list(ARTIFACT_BUNDLES)
 
@@ -95,6 +98,72 @@ def test_project_views_several_projects_at_once(clock):
     assert (views[2].run, views[2].start) == (None, None)
     assert views == [app.orchestrator.view_project(p) for p in (101, 102, 103)]   # view_project와 같은 내용
     assert app.orchestrator.project_views([]) == []
+
+
+# ── missing_projects ───────────────────────────────────
+def two_projects_app(clock):
+    source = MemoryProjectInputSource([project_record(project={"project_id": 101}, company={"user_id": 7}),
+                                       project_record(project={"project_id": 102}, company={"user_id": 8})])
+    return make_app(clock, project_inputs=source)
+
+
+def test_missing_projects_mixed_returns_values_as_given(clock):
+    app = two_projects_app(clock)
+    app.orchestrator.run_start_request(app.orchestrator.request_start("7", 101).request_id)   # 실행 건
+    app.orchestrator.request_start("8", 102)                                     # 대기 요청만 — 있음
+    assert app.orchestrator.missing_projects([101, "102", 103, "104"]) == [103, "104"]
+    assert app.orchestrator.missing_projects(["104", 101, 103]) == ["104", 103]   # 넘긴 순서 · 받은 타입 그대로
+    assert app.orchestrator.missing_projects([101, "102"]) == []
+    assert app.orchestrator.missing_projects([]) == []
+    assert app.orchestrator.missing_projects(iter([103])) == [103]
+
+
+def test_missing_projects_dedupes_by_number_keeping_first_value(clock):
+    app = two_projects_app(clock)
+    app.orchestrator.request_start("7", 101)
+    assert app.orchestrator.missing_projects(["07", 7, "7", 103, "0103", " 7"]) == ["07", 103]
+    assert app.orchestrator.missing_projects(["0101", 101, "101"]) == []        # 같은 프로젝트 — 있음
+
+
+def test_missing_projects_unfinished_request_exists_finished_is_missing(clock):
+    app = two_projects_app(clock)
+    check = app.orchestrator.request_start("7", 101)
+    assert app.orchestrator.missing_projects([101]) == []                       # 대기
+    assert app.store.acquire_start_request(check.request_id, "worker-1", 60)
+    assert app.orchestrator.missing_projects([101]) == []                       # 처리중
+    app.orchestrator.abort_project(101)                                          # 취소 요청 → 워커가 '취소'로 끝냄
+    assert app.orchestrator.run_start_request(check.request_id, owner="worker-1").status == "취소"
+    assert app.orchestrator.missing_projects([101]) == [101]                    # 끝난 요청만 — 없음
+    again = app.orchestrator.request_start("8", 102)
+    app.orchestrator.abort_project(102)
+    assert app.orchestrator.start_status(102).status == "취소" == app.store.get_start_request(again.request_id).status
+    assert app.orchestrator.missing_projects(["102", 101]) == ["102", 101]
+
+
+def test_missing_projects_rejects_non_numeric_before_reading(clock):
+    app = two_projects_app(clock)
+    calls: list = []
+    original = app.store.existing_projects
+    app.store.existing_projects = lambda ids: calls.append(ids) or original(ids)
+    for bad in (["abc"], [101, "x-SECRET"], [None], ["1.5"], [""]):
+        with pytest.raises(ValueError) as e:
+            app.orchestrator.missing_projects(bad)
+        assert "SECRET" not in str(e.value) and "abc" not in str(e.value)        # 값은 메시지에 싣지 않는다
+    assert calls == []                                                           # 저장소를 읽기 전에 막는다
+    assert app.orchestrator.missing_projects(["101"]) == ["101"] and calls == [[101]]   # 저장소에는 정수로
+
+
+def test_missing_projects_through_web_assembly(tmp_path, db):
+    """웹 조립(build_web)에서 부른다 — 실행 건도 요청도 없는 웹 프로젝트는 없음, 대기 요청이 있으면 있음."""
+    web = build_web(f"sqlite:///{(tmp_path / 'worker.db').as_posix()}", profile_count=lambda a: 1)
+    p, q = new_project(db), new_project(db)
+    now = web.orchestrator.now()
+    req = StartRequest(request_id="req-MISSING", project_id=str(q), account_id="acct-1", status="대기",
+                       form={}, created_at=now, updated_at=now)
+    assert web.store.add_start_request(req) is None
+    assert web.orchestrator.missing_projects([str(p), q, p]) == [str(p)]
+    assert web.store.cancel_start_request(req.request_id) == "취소"
+    assert web.orchestrator.missing_projects([q]) == [q]
 
 
 # ── wait_project ───────────────────────────────────────

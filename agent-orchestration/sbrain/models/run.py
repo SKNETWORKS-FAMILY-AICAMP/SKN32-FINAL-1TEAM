@@ -174,9 +174,9 @@ class Run(SBModel):
     next_resume_at: datetime | None = None
     last_error_kind: ErrorKind | None = None
     updated_at: datetime
-    # 확장
+    # 확장 (project_id 하나는 기준 문서 v1.10 Run에 들어갔다 — 저장 순서를 지키려 자리를 옮기지 않는다)
     created_at: datetime = ext()
-    project_id: str | None = ext(None, note="사전 정보 입력의 출처 — 웹 DB projects 행 (create_project가 저장)")
+    project_id: str | None = None  # 사전 정보 입력의 출처 — 웹 DB projects 행 (create_project가 저장)
     segment: str | None = ext(None, note="현재 구간(WRITE · PROTO · REWORK6 …)")
     queue: list[str] = ext(default_factory=list, note="남은 단계 ID. 재개 지점")
     segment_total: int = ext(0, note="진행률 계산용 구간 단계 수")

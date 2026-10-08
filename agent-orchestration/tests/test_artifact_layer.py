@@ -65,17 +65,21 @@ def score(kind: str, *, failed=None, gate=None, missing=(), partial=(), withheld
     return ArtifactScore(total=cc.total + fm.score, code_check=cc, feature_match=fm)
 
 
-# ── C1 · C7 · spec 4.1 ~ 4.3: 계약 확장 필드 ─────────────────────
-def test_new_contract_fields_are_extensions():
+# ── C1 · C7 · spec 4.1 ~ 4.3: 계약 필드 (기준 문서 v1.10에 들어간 것 · 남은 확장) ─────────
+def test_new_contract_fields_marking():
     from sbrain.models import CheckResult
-    assert "defectSources" in extension_fields(CodeCheck)
-    assert "gateFailures" in extension_fields(CodeCheckResult)
-    assert {"withheld", "withheldReason", "partialFeatures"} <= set(extension_fields(FeatureMatchResult))
-    assert "planDoc" in extension_fields(c.TV2In)
-    assert "diagnostics" in extension_fields(c.TV2Out)
+    # 기준 문서 v1.10에 들어갔다 — 확장 표시 없음
+    assert "defectSources" not in extension_fields(CodeCheck)
+    assert "gateFailures" not in extension_fields(CodeCheckResult)
+    assert not {"withheld", "withheldReason", "partialFeatures"} & set(extension_fields(FeatureMatchResult))
+    assert "planDoc" not in extension_fields(c.TV2In)
+    assert "diagnostics" not in extension_fields(c.TV2Out)
+    assert "planDoc" not in extension_fields(c.TB1In)
+    assert "previousSourceText" not in extension_fields(ReworkInput)
+    # 기준 문서에 아직 없다 — 확장
     assert "check" in extension_fields(c.G04Out)
-    assert "planDoc" in extension_fields(c.TB1In)
-    assert "previousSourceText" in extension_fields(ReworkInput)
+    # 기준 문서는 필수지만 옛 실행 건 호환으로 선택 선언을 지킨다
+    assert c.TV2In.model_fields["plan_doc"].default is None and c.TB1In.model_fields["plan_doc"].default is None
     # 기본값 — 담당자 코드가 채우기 전에도 검증을 통과한다
     fm = FeatureMatchResult(score=0, missing_features=[], extra_features=[], findings=[], judged_by="htmlParse")
     assert (fm.withheld, fm.withheld_reason, fm.partial_features) == (False, None, [])
@@ -83,9 +87,10 @@ def test_new_contract_fields_are_extensions():
     assert c.G04Out.model_fields["check"].annotation == CheckResult | None
     assert ReworkInput(mode="재수행", previous_result_ref="x@1", issues=[], is_final_attempt=False
                        ).previous_source_text is None
-    # 스키마에 x-extension 표시
+    # 스키마에 x-extension 표시 없음 (기준 문서 v1.10 필드) · 남은 확장에는 있음
     schema = FeatureMatchResult.model_json_schema(by_alias=True)
-    assert schema["properties"]["partialFeatures"]["x-extension"] is True
+    assert "x-extension" not in schema["properties"]["partialFeatures"]
+    assert c.G04Out.model_json_schema(by_alias=True)["properties"]["check"]["x-extension"] is True
 
 
 def test_catalog_wires_plan_doc_diagnostics_and_g04_check():

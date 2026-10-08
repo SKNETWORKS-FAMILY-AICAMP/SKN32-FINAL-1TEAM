@@ -134,6 +134,20 @@ def test_project_delete_keeps_run_log():
     assert app.store.notifications(rid) == []          # 웹 알림은 프로젝트와 함께 지워졌다
 
 
+def test_missing_projects_after_full_deletion_on_mysql():
+    """완전 삭제 두 단계 — delete_project_data 뒤에는 '있음', 웹이 projects 행을 지워 외래 키가 project_id를 비운 뒤 '없음'."""
+    app = mysql_app()
+    rid = start_and_select(app, uuid.uuid4().hex[:12])                     # 사용자대기 — 완전 삭제가 중단한다
+    pid = int(app.store.load_run(rid).project_id)
+    app.orchestrator.delete_project_data(pid)
+    assert app.store.load_run(rid).state.progress == "중단"
+    assert app.orchestrator.missing_projects([pid, str(pid)]) == []
+    with app.store.engine.begin() as conn:
+        conn.execute(text("DELETE FROM projects WHERE project_id = :p"), {"p": pid})
+    assert app.orchestrator.missing_projects([str(pid), pid]) == [str(pid)]
+    assert app.store.load_run(rid).project_id == str(pid)                  # run_json은 그대로 — 실행 건 줄 칸만 비었다
+
+
 def test_account_delete_holds_account_lock_on_mysql():
     """탈퇴(delete_account_data) — 함수가 끝날 때까지 같은 계정의 add_start_request는 GET_LOCK을 기다린다(다른 연결).
 

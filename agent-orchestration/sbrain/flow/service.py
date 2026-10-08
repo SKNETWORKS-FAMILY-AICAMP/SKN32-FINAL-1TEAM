@@ -12,7 +12,7 @@
 - 웹 조립(build_web)은 allow_pre_stage가 거짓이라 사전 단계를 돌지 않는다 — run_start_request(와 동기 경로)를 부르면
   시작 요청을 건드리지 않고 바로 CommandError("WEB_NOT_ALLOWED") (spec 3.4).
 - 탈퇴(delete_account_data, 확장): 계정 잠금 안에서 중단 · 취소한 뒤 그 계정의 실행 건 · 시작 요청을 통계 줄로 옮기고 지운다.
-- 웹이 쓰는 조회(spec 4): view_project · project_views · wait_project · outputs · rework_result · active_work,
+- 웹이 쓰는 조회(spec 4): view_project · project_views · missing_projects · wait_project · outputs · rework_result · active_work,
   관리자 admin_runs · admin_score_history · admin_summary · admin_agent_tasks (모양은 flow/reads.py).
 """
 from __future__ import annotations
@@ -828,6 +828,32 @@ class SBrainOrchestrator:
         reqs = self.store.latest_start_requests(missing) if missing else {}
         return [ProjectView(p, run=self._view(runs[p])) if p in runs else
                 ProjectView(p, start=self._start_status(reqs[p]) if p in reqs else None) for p in ids]
+
+    def missing_projects(self, project_ids: Iterable[int | str]) -> list[int | str]:
+        """넘긴 프로젝트 중 실행 건이 없는 것 (확장) — 웹이 목록에서 실행 건이 없어진 프로젝트를 알아내는 데 쓴다.
+
+        '없음' = 실행 건 줄을 project_id로 찾지 못하고(find_run_by_project와 같은 기준) 끝나지 않은(대기 · 처리중) 시작
+        요청도 없음. 시작한 적 없는 프로젝트, 끝난(실패 · 취소) 요청만 있는 프로젝트도 없음이다. 완전 삭제
+        (delete_project_data)만으로는 실행 건 줄과 project_id가 남아 '있음'이고, 웹이 projects 행을 지워 공유 DB 외래 키가
+        project_id를 비운 뒤부터 '없음'이다. 12개월 처리가 실행 건 줄을 지운 뒤 · 탈퇴(delete_account_data) 뒤에도 '없음'.
+
+        각 값은 정수 또는 숫자 문자열이다 — int()로 한 번 바꾸고, 하나라도 숫자가 아니면 저장소를 읽기 전에 ValueError.
+        같은 정수는 한 프로젝트로 보고(7 · "7" · "07") 처음 나온 값을 받은 그대로(int는 int, 문자열은 문자열) 넘긴 순서로
+        돌려준다. 빈 목록이면 []. 개수 제한은 없다. 잠금 · 점유 없이 읽기만 하고, 주인 확인을 하지 않으며(계정 ID를 받지
+        않는 웹 일괄 함수) 있는지만 알린다. 저장소 오류는 다른 조회처럼 그대로 올라간다.
+        """
+        wanted: dict[int, int | str] = {}
+        for no, value in enumerate(project_ids, 1):
+            try:
+                key = int(value)
+            except (TypeError, ValueError):
+                # 값은 메시지에 싣지 않는다 — 몇 번째 값인지만
+                raise ValueError(f"project_ids의 {no}번째 값이 정수 또는 숫자 문자열이 아님") from None
+            wanted.setdefault(key, value)
+        if not wanted:
+            return []
+        existing = self.store.existing_projects(list(wanted))
+        return [value for key, value in wanted.items() if key not in existing]
 
     def wait_project(self, project_id: int | str, timeout_sec: float = WAIT_TIMEOUT_SEC) -> ProjectView:
         """진행이 멈출 때까지 기다린 뒤 view_project (확장).
