@@ -41,6 +41,43 @@ def feature_notes(feature_list: list[str], plan_text: str) -> dict[str, str]:
     return notes
 
 
+def palette(feature_list: list[str], item_spec: dict) -> dict[str, str]:
+    """이 사업의 색. 인포그래픽(T-B2)과 같은 테마 함수 · 같은 입력으로 고른다 — 프로토타입과 인포그래픽 색이 맞는다.
+    테마 색은 흰 바탕 · 옅은 바탕 · 진한 버튼 위 흰 글자 모두 대비 4.5:1 이상이다(themes 모듈 · 테스트)."""
+    from engineering_agent.infographic import themes
+
+    theme = themes.pick({"item_name": item_spec.get("itemName", ""),
+                         "item_summary": item_spec.get("oneLineSummary", ""),
+                         "target_users": item_spec.get("targetCustomer", ""), "features": feature_list})
+    return dict(themes.THEMES[theme], name=theme)
+
+
+def _design_direction(feature_list: list[str], item_spec: dict) -> str:
+    """화면 디자인 방향. 규칙 8의 예시 색(#0F172A · #1D4ED8)만 주었더니 모든 사업이 남색 · 파랑 대시보드로 나왔고,
+    화면 틀 지시가 없어 늘 '사이드바 + 목표 수치 카드 한 줄'로 시작했다(실측: 실제 예시 계획서 셋)."""
+    p = palette(feature_list, item_spec)
+    first = feature_list[0] if feature_list else "첫 번째 기능"
+    return f"""
+## 디자인 방향
+색 (이 사업의 색. 아래 색을 쓰고, 남색 · 파랑 기본 대시보드 색을 쓰지 마라)
+- 본문 글자 {p["ink"]}, 보조 글자 {p["muted"]}, 페이지 배경 {p["bg"]}, 카드 배경 #FFFFFF
+- 주요 버튼 · 강조 띠: 배경 {p["accent"]}(누르면 {p["accent_deep"]}) 위에 흰 글자 #FFFFFF
+- 옅은 강조 면(선택된 탭 · 배지 · 안내 상자): 배경 {p["tint"]} 위에 글자 {p["accent_deep"]}
+- 구분선 · 테두리 {p["line"]}. 이 짝들은 모두 대비 4.5:1 이상이다. 규칙 8대로 같은 셀렉터에 color와 background-color를 함께 적어라.
+화면 틀 (사업마다 다르게)
+- 첫 화면은 주 사용자가 '{first}'을(를) 바로 해 볼 수 있는 작업 화면으로 시작하라. 계획서의 목표 수치를 모은
+  지표 카드 줄을 첫 화면 맨 위에 늘어놓지 마라. 사업 소개는 제목 아래 한두 줄이면 된다.
+- 주 사용자가 누구인지 계획서에서 찾아 틀을 골라라.
+  · 일반 이용자(손님 · 보호자 · 환자 · 학생 등)가 쓰는 서비스: 가운데에 폭 420~520px의 앱 화면 하나를 두고,
+    위에서 아래로 단계를 밟는 흐름(입력 → 확인 → 결과)과 아래쪽 탭 버튼으로 화면을 바꾼다.
+  · 매장 · 현장 담당자가 업무를 처리하는 서비스: 상단 메뉴 + 처리할 일 목록(표 또는 카드)과 각 항목의 상태 변경.
+  · 여러 거래처 · 데이터를 관리 · 분석하는 서비스: 왼쪽 메뉴 + 표 · 그래프 중심의 관리 화면.
+  · 비교 · 선택이 핵심인 서비스: 후보를 나란히 놓고 고르는 비교 화면.
+- 계획서의 목표 · 성과 수치는 필요하면 아래쪽이나 별도 화면에 두어라.
+- 화면(탭 · 단계)을 여러 개로 나눠도 `<h1>`은 문서 전체에 하나(서비스 이름)뿐이다. 화면마다의 제목은 `<h2>`,
+  그 안의 구역 제목은 `<h3>`로 써라(규칙 3)."""
+
+
 def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str,
                          plan_text: str = "") -> str:
     """카테고리별로 요구되는 흐름(화면 전환 vs 입력→처리→출력)을 갈라 지시한다.
@@ -108,12 +145,12 @@ def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str
    나란히 선언하라(`background` 단축 속성이나 CSS 변수로 흘리지 마라). 배경색은 `transparent`가 아닌
    실제 색으로 적어라. 그 짝의 명도 대비는
    4.5:1 이상이어야 한다. 최소한 `body`와 버튼·카드 등 글자가 놓이는 주요 셀렉터에 적용하라.
-   예: `body {{ color:#0F172A; background-color:#FFFFFF; }}`
+   예: `body {{ color:(디자인 방향의 본문 글자); background-color:(페이지 배경); }}`
    이 기준은 `color`와 `background-color`를 함께 적은 **모든** 셀렉터에 적용된다. 자주 틀리는 곳:
    - 보조 글자 · 안내 문구 · 날짜 · 배지: 흐리게 보이려고 옅은 회색 글자를 쓰지 마라.
      흰색 · 옅은 배경 위 글자는 `#475569`보다 어둡게 쓰고, 덜 중요한 글은 색 대신 글자 크기 · 굵기로 구분하라.
    - 비활성(`:disabled`) · 선택 안 됨 · 지난 날짜 같은 상태: 이때도 글자가 읽혀야 한다. 대비 4.5:1을 지켜라.
-   - 색 배경(버튼 · 배지 · 띠) 위 흰 글자: 배경을 충분히 진하게 써라(예: `#1D4ED8`, `#15803D`, `#B91C1C`).
+   - 색 배경(버튼 · 배지 · 띠) 위 흰 글자: 배경을 충분히 진하게 써라(디자인 방향의 주요 버튼 색, 경고는 `#B91C1C`).
      밝은 주황 · 노랑 · 하늘색 배경에는 흰 글자 대신 진한 글자를 써라.
    - 점 · 막대 · 구분선처럼 글자가 없는 장식 요소: `background-color`만 적고 `color`는 적지 마라.
    - 색 값에 `!important`를 붙이지 마라.
@@ -147,6 +184,7 @@ def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str
 
 ## 카테고리 지시
 {flow_instruction}
+{_design_direction(feature_list, item_spec)}
 
 ## 반드시 구현해야 하는 기능 목록 (전부 실제로 동작하게 구현할 것)
 {feature_lines}

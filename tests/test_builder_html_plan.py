@@ -137,3 +137,37 @@ class PreviousHtmlTests(TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIsNone(result["entryFilePath"])
         self.assertEqual(result["sourceText"].strip(), html)
+
+
+class DesignDirectionTests(TestCase):
+    """규칙 8의 고정 예시 색만 주었더니 모든 사업이 남색 · 파랑 대시보드로 나왔다(실측: 실제 예시 계획서 셋)."""
+
+    SPECS = {
+        "반려동물 피부 AI 앱": ({"itemName": "반려동물 피부 AI 앱", "oneLineSummary": "보호자가 찍은 피부 사진을 AI로 분석",
+                             "targetCustomer": "확인 필요"}, ["피부 사진 AI 분석", "위험도 안내"]),
+        "재고 자동발주 SaaS": ({"itemName": "재고 자동발주 SaaS", "oneLineSummary": "POS 판매 데이터를 학습해 발주",
+                             "targetCustomer": "확인 필요"}, ["수요예측 모델 고도화", "발주 자동화 기능"]),
+    }
+
+    def test_prototype_uses_the_same_theme_as_the_infographic(self):
+        from engineering_agent.builder_html import palette
+        from engineering_agent.infographic import themes
+
+        for spec, features in self.SPECS.values():
+            infographic = themes.pick({"item_name": spec["itemName"], "item_summary": spec["oneLineSummary"],
+                                       "target_users": spec["targetCustomer"], "features": features})
+            self.assertEqual(palette(features, spec)["name"], infographic)
+        self.assertNotEqual(*[palette(f, s)["name"] for s, f in self.SPECS.values()])
+
+    def test_prompt_carries_the_palette_and_a_task_first_screen(self):
+        spec, features = self.SPECS["반려동물 피부 AI 앱"]
+        prompt = _build_system_prompt(features, spec, "AI_API")
+        from engineering_agent.builder_html import palette
+
+        p = palette(features, spec)
+        for role in ("ink", "accent", "tint", "bg"):
+            self.assertIn(p[role], prompt)
+        self.assertIn("'피부 사진 AI 분석'을(를) 바로 해 볼 수 있는 작업 화면", prompt)
+        self.assertNotIn("#1D4ED8", prompt)  # 예전 고정 예시 버튼 색
+        self.assertIn("`<h1>`은 문서 전체에 하나", prompt)  # 화면을 나눠도 h1 하나(실측: 화면마다 h1 → 제목 계층 0점)
+        self.assertNotIn("color:#0F172A; background-color:#FFFFFF", prompt)
