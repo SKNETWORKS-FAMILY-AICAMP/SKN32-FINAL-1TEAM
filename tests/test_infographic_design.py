@@ -121,3 +121,71 @@ class GradableTests(TestCase):
 
         self.assertNotIn("뼈대", COMPOSE_GUIDE)
         self.assertIn("빠짐없이", COMPOSE_GUIDE)
+
+
+class FrameStyleTests(TestCase):
+    """구역 틀(card · panel · open). 모든 구역을 같은 흰 카드에 담으면 색 · 그림 · 구성이 달라도 같은 양식으로 보인다."""
+
+    def test_every_block_in_every_frame_and_theme_keeps_full_code_score(self):
+        from engineering_agent.infographic import themes
+        from engineering_agent.infographic.design_kit import FRAME_STYLES
+        from tests.test_infographic_composer import EVERY_BLOCK
+
+        for frame in FRAME_STYLES:
+            for theme in themes.THEMES:
+                data = dict(DATA, layout=EVERY_BLOCK, style="framed",
+                            _design={"frame": frame, "hero": "scene", "art_style": "선화"})
+                with self.subTest(frame=frame, theme=theme), TemporaryDirectory(
+                        dir=Path(__file__).resolve().parents[1]) as directory, \
+                        patch("engineering_agent.infographic.render._OUTPUT_DIR", Path(directory)), \
+                        patch.object(themes, "pick", return_value=theme):
+                    saved = render_infographic("원페이지", data)
+                    checked = compute_infographic_check(saved["file_path"], saved["source_text"], "열람")
+                    self.assertEqual(checked["total"], 15, [(i["name"], i["evidence"]) for i in checked["items"]
+                                                            if not i["passed"]])
+
+    def test_frames_look_different(self):
+        from engineering_agent.infographic.composer import compose
+        from tests.test_infographic_composer import EVERY_BLOCK
+
+        pages = {frame: compose("원페이지", dict(DATA, layout=EVERY_BLOCK, style="framed", _design={"frame": frame}),
+                                DATA["features"])[0]
+                 for frame in ("card", "panel", "open")}
+        self.assertEqual(len(set(pages.values())), 3)
+        self.assertIn('stroke="#D5E5E1"/><rect', pages["card"])  # 흰 카드 + 탭
+        # 지면 한 장을 다 그리면 틀 설정이 원래대로 돌아간다(다른 스레드 · 다음 지면에 새지 않는다)
+        from engineering_agent.infographic.design_kit import FRAME_STYLE
+        self.assertEqual(FRAME_STYLE.get(), "card")
+
+    def test_frame_follows_the_field_and_moves_on_redesign(self):
+        def frame(item_name, summary, features, target, redesign=False):
+            return design.decide("원페이지", dict(DATA, item_name=item_name, item_summary=summary, features=features,
+                                                target_users=target), redesign)["frame"]
+
+        self.assertEqual(frame("반려동물 피부 AI 앱", "반려동물 사진 분석", ["피부 사진 분석"], "보호자"), "panel")
+        self.assertEqual(frame("AI 비전 결함 검사", "제조 공정 카메라", ["결함 분류"], "제조 공장"), "open")
+        self.assertEqual(frame("재고 자동발주 SaaS", "POS 판매 데이터로 발주", ["발주 자동화"], "매장"), "card")
+        self.assertNotEqual(frame("재고 자동발주 SaaS", "POS 판매 데이터로 발주", ["발주 자동화"], "매장", True), "card")
+
+
+class RequiredMaterialPromptTests(TestCase):
+    """구성을 코드가 정하면서 프롬프트에 단계 구역이 보이지 않게 됐다. 카테고리 필수 재료는 따로 적어야 한다
+    (실측: 웹개발에서 flow_steps를 비워 '사용자 화면 흐름 누락')."""
+
+    def _prompt(self, category):
+        from engineering_agent.infographic.content import generate_infographic_content
+
+        seen = {}
+
+        class Tools:
+            def llm(self, messages, *, schema=None, parse=None, purpose=""):
+                seen["system"] = messages[0]["content"]
+                return parse('{"item_name": "x", "features": ["a"]}')
+
+        generate_infographic_content(category, "본문", Tools())
+        return seen["system"]
+
+    def test_each_category_names_its_required_material(self):
+        self.assertIn("flow_steps는 반드시 채운다", self._prompt("웹개발"))
+        self.assertIn("pipeline의 input · process · output은 반드시 모두 채운다", self._prompt("AI_API"))
+        self.assertNotIn("flow_steps는 반드시", self._prompt("원페이지"))

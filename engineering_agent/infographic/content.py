@@ -230,6 +230,18 @@ def generate_infographic_content(category: str, plan_text: str, tools) -> dict:
             f"{_max_chars(flow_text_width(4), 15) * FLOW_LINES}자 이내로 적어라. "
             "순서가 명시되지 않으면 빈 리스트로 남겨라. 기능 목록을 임의로 절차로 바꾸지 마라."
         )
+    # 지면 구성은 코드가 정하므로(design.py) 프롬프트에 단계 구역이 보이지 않는다. 예전에는 웹개발 뼈대에 단계 구역을
+    # 늘 넣어 모델이 flow_steps를 채웠는데, 빼고 나니 비워 '사용자 화면 흐름 누락'이 났다(실측). 필수 값임을 적는다.
+    if category == "웹개발":
+        system_prompt += (
+            "\n8. flow_steps는 반드시 채운다(웹개발 지면의 필수 정보). 사용자가 이 서비스 화면에서 하는 행동을 "
+            "순서대로 3~5개, 본문의 기능 · 이용 과정 낱말로 적어라."
+        )
+    if category == "AI_API":
+        system_prompt += (
+            "\n8. pipeline의 input · process · output은 반드시 모두 채운다(AI API 지면의 필수 정보). "
+            "본문에서 AI가 받는 것 · 하는 일 · 내놓는 것을 찾아 적어라."
+        )
     system_prompt += (
         "\n편집 원칙: '혁신적인', '최적의', '차별화된', '스마트한 솔루션'처럼 "
         "구체적 정보를 전달하지 않는 수식어를 덧붙이지 마라. 누가 무엇을 하는지와 "

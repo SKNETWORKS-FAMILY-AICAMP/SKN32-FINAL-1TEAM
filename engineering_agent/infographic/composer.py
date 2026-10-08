@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 
 from engineering_agent.infographic import artsheet, icons
-from engineering_agent.infographic.design_kit import arrow, section_frame, showcase_defs
+from engineering_agent.infographic.design_kit import FRAME_STYLE, FRAME_STYLES, arrow, section_frame, showcase_defs
 from engineering_agent.infographic.layout import (
     PAGE_WIDTH, TITLE_SIZE, TITLE_WIDTH, estimate_text_width, fit, fit_size, parse_milestones, wrap,
 )
@@ -465,9 +465,17 @@ def _tagline(data, x, y, w):
     line = str(data.get("tagline", "")).strip()
     if not line:
         return "", 0
-    return (f'<rect x="{x}" y="{y}" width="{w}" height="72" rx="16" fill="{C["accent_deep"]}"/>'
-            + icons.icon("target", x + 44, y + 36, 30, "#FFFFFF", 2)
-            + text(x + w / 2 + 16, y + 44, fit(line, 20, w - 140), 20, "#FFFFFF", 800, "middle",
+    style = FRAME_STYLE.get()
+    if style == "card":  # 진한 띠 — 흰 카드 지면의 마무리
+        box, ink = f'<rect x="{x}" y="{y}" width="{w}" height="72" rx="16" fill="{C["accent_deep"]}"/>', "#FFFFFF"
+    elif style == "panel":  # 옅은 판 지면은 같은 옅은 판에 진한 글자
+        box, ink = f'<rect x="{x}" y="{y}" width="{w}" height="72" rx="36" fill="{C["tint"]}"/>', C["accent_deep"]
+    else:  # 열린 지면은 흰 바탕에 강조색 테두리
+        box = (f'<rect x="{x}" y="{y}" width="{w}" height="72" rx="10" fill="#FFFFFF" '
+               f'stroke="{C["accent"]}" stroke-width="2"/>')
+        ink = C["accent_deep"]
+    return (box + icons.icon("target", x + 44, y + 36, 30, ink, 2)
+            + text(x + w / 2 + 16, y + 44, fit(line, 20, w - 140), 20, ink, 800, "middle",
                    'data-field="tagline"')), 72
 
 
@@ -646,6 +654,17 @@ def _framed(b, x, y, w, body, h):
 
 
 def compose(category: str, data: dict, features: list[str]) -> tuple[str, int]:
+    """구역 틀 모양(card · panel · open)은 디자인 사양이 고른 것을 조립하는 동안만 쓴다."""
+    design = data.get("_design") if isinstance(data.get("_design"), dict) else {}
+    frame = design.get("frame") if design.get("frame") in FRAME_STYLES else "card"
+    token = FRAME_STYLE.set(frame)
+    try:
+        return _compose(category, data, features)
+    finally:
+        FRAME_STYLE.reset(token)
+
+
+def _compose(category: str, data: dict, features: list[str]) -> tuple[str, int]:
     # 맞춤 아이콘(artsheet)이 있으면 탭 달린 구역 틀로 그린다. 아이콘이 구역마다 들어가는 모양이라
     # 아이콘이 볼거리가 된다. 없으면 아이콘에 기대지 않는 포스터 모양으로 그린다.
     style = data.get("style") or ("framed" if data.get("_art") else "poster")

@@ -24,6 +24,8 @@ _NUMBER_RE = re.compile(r"\d")
 
 # 소비자를 직접 상대하는 분야(색 테마 기준)는 평면 일러스트, 기업 · 산업 · 데이터 분야는 정밀한 선 아이콘.
 _FLAT_THEMES = {"orange", "rose", "green"}
+# 구역 틀 순서(design_kit.FRAME_STYLES와 같은 이름). 새 구성 요청이면 다음 것으로 넘긴다.
+FRAME_ORDER = ("card", "panel", "open")
 
 
 def _text(value) -> str:
@@ -167,7 +169,14 @@ def decide(category: str, data: dict, redesign: bool = False) -> dict:
         hero = "panorama"
     else:
         hero = {NETWORK: "hub"}.get(relation, "scene")
-    return {"relation": relation, "layout": layout, "hero": hero, "art_style": art_style, "reasons": reasons}
+    # 구역 틀. 소비자 대상 분야는 부드러운 옅은 색 판, 제조 · 산업은 도면처럼 틀 없이 선과 여백, 그 밖(데이터 ·
+    # 유통 · 공공 등)은 칸이 분명한 흰 카드. 새 구성 요청이면 다음 틀로 넘긴다.
+    frame = "panel" if art_style == "평면" else "open" if theme == "steel" else "card"
+    if redesign:
+        frame = FRAME_ORDER[(FRAME_ORDER.index(frame) + 1) % len(FRAME_ORDER)]
+    reasons.append(f"구역 틀 '{frame}'" + (" — 새 구성 요청이라 다음 틀" if redesign else f" — 색 테마 {theme}"))
+    return {"relation": relation, "layout": layout, "hero": hero, "art_style": art_style, "frame": frame,
+            "reasons": reasons}
 
 
 def apply(category: str, data: dict, redesign: bool = False) -> dict:
