@@ -91,7 +91,8 @@ def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str
    (<link rel="stylesheet" href="https://...">), 외부 이미지(<img src="https://...">),
    외부 @import, CSS 안의 외부 url(...)(배경 그림 · 웹 글꼴 포함), npm/webpack 등 어떤 빌드 도구도 쓰지 마라. CSS는 <style> 태그 안에,
    JS는 <script> 태그 안에 전부 인라인으로 작성하라. 이미지가 필요하면 data: URI나
-   SVG/CSS로 대체하라.
+   SVG/CSS로 대체하라. 저장되는 파일은 이 하나뿐이므로 app.js · style.css · ./logo.png 같은
+   다른 파일을 가리키지도 마라.
    API 키 · 토큰 · 비밀번호 값을 코드에 적지 마라(`apiKey: "…"`, `password: "…"`, `sk-…` 같은 줄 금지).
    외부 서비스 호출은 더미 함수로 흉내 내고, 로그인 시연은 비밀번호를 코드에 두고 비교하지 말고
    빈칸이 아니면 무엇이든 받아들이게 하라.
@@ -123,7 +124,9 @@ def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str
    document 하나에 리스너를 달고 대상을 가려내는 이벤트 위임, querySelectorAll 반복문으로
    한꺼번에 다는 방식은 쓰지 마라. id를 배열에 담아 for · forEach 반복문으로 연결하는 것도
    쓰지 마라 — 메뉴 · 탭 버튼도 버튼마다 `getElementById('그 id')`로 한 줄씩 연결하라.
-   화면의 모든 버튼은 실제로 무언가를 하게 연결하라. 기능명은 화면에도 글자로 표시하라.
+   화면의 모든 버튼은 실제로 무언가를 하게 연결하라. `data-feature`를 붙인 입력칸은 버튼 처리
+   코드에서 `getElementById('그 id').value`(체크박스는 `.checked`, 파일은 `.files`)로 값을 읽어
+   결과에 써라 — 읽지 않는 입력칸은 동작하지 않는 칸이다. 기능명은 화면에도 글자로 표시하라.
    파일 · 사진 · 녹음처럼 보는 사람이 따로 준비해야 하는 입력이 있으면, 그 옆에 '예시로 실행'
    버튼을 두고 파일 안에 넣어 둔 예시 데이터로 처리부터 결과까지 바로 돌게 하라.
    파일을 올리지 않아도 모든 기능을 끝까지 시연할 수 있어야 한다.
@@ -263,7 +266,7 @@ def build_prototype_html(
             # 저장하지는 않지만 원문은 돌려준다 — 조율이 재수행 때 previous_source_text로 돌려줘 고쳐 만든다.
             "sourceText": entry_content,
             "gate_failures": {"entry": None, "dependency": violations, "sandbox": [], "secret": None},
-            "summary": f"E-B1-DEP 게이트 실패: 외부 의존성 {len(violations)}건 발견",
+            "summary": f"E-B1-DEP 게이트 실패: 외부 · 별도 파일 의존성 {len(violations)}건 발견",
         }
 
     sandbox_ok, sandbox_violations = gates.check_sandbox_api_gate(entry_content)

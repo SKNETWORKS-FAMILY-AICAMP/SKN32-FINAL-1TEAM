@@ -398,7 +398,7 @@ class ArtifactAgentTests(TestCase):
         self.assertIn("E-B1-DEP", result["summary"])
 
     def test_dependency_gate_sees_css_urls_and_quoted_imports(self):
-        """CSS 안에서 외부 파일을 불러오는 꼴도 막는다. data: 주소 · 상대 경로 · 본문 글은 걸리지 않는다."""
+        """CSS 안에서 외부 파일을 불러오는 꼴도 막는다. data: 주소 · #조각 · 본문 글은 걸리지 않는다."""
         for html in ('<style>@import "https://fonts.example.com/a.css";</style>',
                      "<style>@import url('//cdn.example.com/b.css');</style>",
                      "<style>.hero{background:url(https://img.example.com/c.png) no-repeat}</style>",
@@ -409,10 +409,26 @@ class ArtifactAgentTests(TestCase):
                 self.assertFalse(ok)
                 self.assertEqual(len(violations), 1, violations)
         for html in ("<style>.a{background:url(data:image/png;base64,AAAA)}</style>",
-                     "<style>.a{background:url('./bg.png')}</style>",
+                     "<style>.a{filter:url(#blur)}</style>",
                      '<div style="color:#111">url(https://example.com)는 본문 글이다</div>',
                      "<p>@import \"https://x.example.com/a.css\"</p>"):
             with self.subTest(html=html[:40]):
+                self.assertEqual(gates.check_external_dependency_gate(html), (True, []))
+
+    def test_dependency_gate_rejects_files_that_are_not_saved(self):
+        """T-B1은 index.html 하나만 저장한다. 상대 경로로 가리킨 파일은 열면 없다(단일 HTML 조건)."""
+        for html in ('<script src="app.js"></script>',
+                     '<link rel="stylesheet" href="./style.css">',
+                     '<img src="images/logo.png" alt="로고">',
+                     "<style>.a{background:url('./bg.png')}</style>"):
+            with self.subTest(html=html):
+                ok, violations = gates.check_external_dependency_gate(html)
+                self.assertFalse(ok)
+                self.assertEqual(len(violations), 1, violations)
+        for html in ('<img src="data:image/png;base64,AAAA" alt="점">',
+                     '<a href="guide.html">안내</a>',          # 링크는 불러오는 자원이 아니다
+                     '<script>const s = "app.js";</script>'):   # 스크립트 안 글자
+            with self.subTest(html=html):
                 self.assertEqual(gates.check_external_dependency_gate(html), (True, []))
 
     def test_sandbox_gate_blocks_apis_that_die_in_iframe(self):

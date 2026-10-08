@@ -8,9 +8,9 @@ verification_agent는 여기서 절대 import하지 않는다.
 """
 import re
 
-# 외부 스킴 판정: http:, https:, 프로토콜 상대(//)로 시작하면 외부.
-# data: URI와 상대경로(./foo.png, foo.js 등)는 허용 대상이라 이 정규식에 안 걸려야 한다.
-_EXTERNAL_SCHEME_RE = re.compile(r'^(?:https?:)?//|^https?:', re.IGNORECASE)
+# 파일 안에서 끝나는 주소. 이 밖의 주소는 외부(http: · https: · //)이거나, 함께 저장되지 않는
+# 상대 경로 파일(./foo.png, foo.js)이다.
+_SELF_CONTAINED = ('data:', 'blob:', '#')
 
 # 인라인 <style> 블록만 골라내 그 안에서 @import를 찾는다 — @import url(...)은
 # CSS 문법상 <style> 태그 안에서만 등장하므로, 블록 밖 텍스트(예: 주석·본문)에
@@ -124,11 +124,11 @@ def check_secret_gate(html_content: str) -> tuple[bool, str]:
 
 
 def _is_external(url: str) -> bool:
-    """data: URI와 상대경로는 허용, http(s):// 및 // 는 위반."""
+    """파일 하나로 동작하지 않게 만드는 주소인지. data: · blob: · #조각만 허용한다.
+    http(s) · // 는 외부 주소이고, 상대 경로(app.js, ./logo.png)는 T-B1이 index.html 하나만
+    저장하므로 열면 없는 파일이다 — 기획서의 "단일 HTML 실행 파일" 조건을 깬다."""
     url = url.strip().strip('\'"')
-    if url.lower().startswith('data:'):
-        return False
-    return bool(_EXTERNAL_SCHEME_RE.match(url))
+    return bool(url) and not url.lower().startswith(_SELF_CONTAINED)
 
 
 def check_entry_file_gate(files: dict[str, str], entry_filename: str) -> tuple[bool, str]:
@@ -145,7 +145,8 @@ def check_entry_file_gate(files: dict[str, str], entry_filename: str) -> tuple[b
 def check_external_dependency_gate(html_content: str) -> tuple[bool, list[str]]:
     """E-B1-DEP: "외부 빌드 도구 없이 동작하는 단일 HTML"이라는 산출물 제약을
     코드로 강제한다. script src / link stylesheet href / img src / <style> 안의 @import ·
-    url(...) / style 속성 안의 url(...) 중 외부 스킴(http:, https:, //)이 하나라도 있으면 위반.
+    url(...) / style 속성 안의 url(...) 중 외부 주소(http:, https:, //)나 함께 저장되지 않는
+    상대 경로 파일이 하나라도 있으면 위반.
     첫 위반에서 멈추지 않고 전부 모아서 반환한다 — 상위 Supervisor가 한 번에 재시도
     지시를 만들 수 있어야 하기 때문.
     """
