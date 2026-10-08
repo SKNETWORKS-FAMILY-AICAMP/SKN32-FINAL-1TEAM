@@ -126,9 +126,10 @@ class ComposerTests(TestCase):
         self.assertIn("시장 규모", a)
         self.assertNotIn("시장 규모", b)
 
-    def test_rework_keeps_the_layout_unless_the_user_asks_without_a_problem(self):
-        """기획서 5-6: 재작성은 문제가 된 곳만 고치고 잘 된 부분은 지킨다. 재수행 · 미달 사유가 있는 재작성은
-        구성을 지키고, 고칠 문제 없이 사용자가 고른 재작성(조율 기본 사유)만 새 구성(두 번째 관계)을 쓴다."""
+    def test_rework_layout_follows_the_spec(self):
+        """재수행은 새 구성(기능정의서 v1.10 T-B2 '재수행 때는 지면 구성 뼈대와 아이콘이 달라진다'). 미달 사유가 있는
+        재작성은 구성을 지키고(기획서 5-6), 고칠 문제 없이 사용자가 고른 재작성(기능정의서 고정 문구)은 새 구성.
+        모델 지시는 재수행 · 미달 재작성이면 '문제를 고쳐라', 사유 없는 재작성만 '다시 만들기를 눌렀다'."""
         from engineering_agent.infographic.compose_guide import FIX_HINT, RETRY_HINT
         from tests import fake_sbrain
 
@@ -173,7 +174,7 @@ class ComposerTests(TestCase):
                                     rework_input=rework), tools=None)
         layout = dict(zip(reworks, seen["layouts"]))
         text = dict(zip(reworks, seen["texts"]))
-        self.assertEqual(layout["재수행"], layout["첫 생성"])
+        self.assertNotEqual(layout["재수행"], layout["첫 생성"])
         self.assertEqual(layout["미달 사유 재작성"], layout["첫 생성"])
         self.assertNotEqual(layout["사유 없는 재작성"], layout["첫 생성"])
         self.assertNotIn(RETRY_HINT, text["첫 생성"])

@@ -234,11 +234,14 @@ _USER_ONLY_REASON = "사용자가 이 묶음의 재작성을 요청했습니다.
 
 
 def _wants_redesign(rework_input) -> bool:
-    """새 구성으로 다시 만들지. 기획서 5-6: 재작성은 '문제가 된 곳만 고치고 잘 된 부분은 지킨다'. 재수행(검사 미통과)과
-    미달 사유가 있는 재작성은 구성을 지키고 문제만 고친다. 고칠 문제 없이 사용자가 인포그래픽 재작성을 고른 때만
-    다르게 만들어 달라는 요청으로 보고 새 구성을 쓴다(결정 0010)."""
-    if rework_input is None or rework_input.mode != "재작성":
+    """새 구성으로 다시 만들지(결정 0010).
+    - 재수행(검사 미통과): 새 구성. 기능정의서 v1.10 T-B2 "재수행 때는 지면 구성 뼈대와 아이콘이 달라진다".
+    - 미달 사유가 있는 재작성: 구성을 지키고 문제만 고친다(기획서 5-6 '문제가 된 곳만 고치고 잘 된 부분은 지킨다').
+    - 고칠 문제 없이 사용자가 고른 재작성(사유가 기능정의서 고정 문구뿐): 다르게 만들어 달라는 요청으로 보고 새 구성."""
+    if rework_input is None:
         return False
+    if rework_input.mode == "재수행":
+        return True
     issues = [str(i).strip() for i in rework_input.issues if str(i).strip()]
     return all(i == _USER_ONLY_REASON for i in issues)
 
@@ -249,7 +252,9 @@ def run_tb2(inp: TB2In, tools: Tools) -> TB2Out:
 
     plan_text = _plan_text(inp.plan_doc)
     redesign = _wants_redesign(inp.rework_input)
-    hint = RETRY_HINT if redesign else FIX_HINT if inp.rework_input is not None else ""
+    # 재수행은 구성이 바뀌어도 문제(검사 사유)를 고치는 실행이다. '다시 만들기를 눌렀다'는 사유 없는 재작성만.
+    rework = inp.rework_input
+    hint = ("" if rework is None else RETRY_HINT if redesign and rework.mode == "재작성" else FIX_HINT)
     content = generate_infographic_content(
         inp.category, f"아이템명: {inp.item_spec.item_name}\n목표 고객: {inp.item_spec.target_customer}\n"
         f"기능 목록: {', '.join(inp.plan_doc.feature_list)}\n{plan_text}\n"
