@@ -35,7 +35,8 @@ from verification_agent.rules.html_parser import (
     parse_page,
 )
 from verification_agent.rules.items import banded, item
-from verification_agent.rules.wiring import control_label, id_refs, is_used, wired_ids
+from verification_agent.rules.wiring import (control_label, id_refs, is_used, read_ids,
+                                             reads_form_data, wired_ids)
 
 def check_action_wiring(parser: PageParser) -> dict:
     """1. 동작 연결: 조작 요소 중 화면 동작에 쓰이는 비율로 구간 점수(items.banded).
@@ -44,8 +45,8 @@ def check_action_wiring(parser: PageParser) -> dict:
     if not controls:
         return item(1, "동작 연결", 3, False, "조작 요소(button 등) 0개 — 동작하는 화면이 없음")
     script = "\n".join(parser.script_chunks)
-    wired, refs = wired_ids(script), id_refs(script)
-    dead = [control_label(c) for c in controls if not is_used(c, wired, refs)]
+    wired, reads, form_data = wired_ids(script), read_ids(script), reads_form_data(script)
+    dead = [control_label(c) for c in controls if not is_used(c, wired, reads, form_data)]
     ok = len(controls) - len(dead)
     evidence = f"조작 요소 {ok}/{len(controls)}개 연결"
     if dead:

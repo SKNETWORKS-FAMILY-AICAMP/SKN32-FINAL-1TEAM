@@ -530,3 +530,64 @@ class LongPlanEvidenceTests(TestCase):
 
         view = html_view(HTML)
         self.assertLess(view.index("<button"), view.index("<script>"))
+
+
+class FieldValueReadTests(TestCase):
+    """입력칸은 스크립트가 그 id로 **값을 읽어야** 쓰이는 것이다(기획서 v1.11 동작 연결 정의).
+    조작 요소로 세는 입력칸은 data-feature가 붙은 것이다(html_parser)."""
+
+    def _wiring(self, body, script):
+        from verification_agent.rules.r4 import check_html
+
+        page = (f'<html lang="ko"><body><h1>x</h1>{body}'
+                f'<button id="go">등록</button><script>'
+                f'document.getElementById("go").addEventListener("click", run);{script}</script></body></html>')
+        return next(i for i in check_html(page) if i["id"] == 1)
+
+    def test_value_reads_count(self):
+        field = '<label for="t">제목</label><input id="t" data-feature="제목 입력">'
+        for script in ('function run(){ return document.getElementById("t").value; }',
+                       'const t = document.getElementById("t"); function run(){ return t.value; }',
+                       'const $ = id => document.getElementById(id); function run(){ return $("t").value; }',
+                       'function run(){ return document.querySelector("#t")?.value; }'):
+            with self.subTest(script=script):
+                self.assertTrue(self._wiring(field, script)["passed"])
+        box = '<label for="c">동의</label><input id="c" type="checkbox" data-feature="동의">'
+        self.assertTrue(self._wiring(box, 'function run(){ return document.getElementById("c").checked; }')["passed"])
+
+    def test_lookup_without_reading_does_not_count(self):
+        field = '<label for="t">제목</label><input id="t" data-feature="제목 입력">'
+        for script in ('function run(){ document.getElementById("t").focus(); }',
+                       'const t = document.getElementById("t"); t.style.border = "1px";',
+                       '// document.getElementById("t").value'):
+            with self.subTest(script=script):
+                self.assertFalse(self._wiring(field, script)["passed"])
+
+    def test_form_data_reads_fields_of_a_handled_form(self):
+        body = ('<form id="f"><label for="t">제목</label><input id="t" data-feature="제목 입력">'
+                '<button type="submit">보내기</button></form>')
+        script = ('document.getElementById("f").addEventListener("submit", e => {'
+                  ' e.preventDefault(); const d = new FormData(e.target); });')
+        self.assertTrue(self._wiring(body, script)["passed"])
+        # 제출 처리가 없는 폼의 입력칸은 FormData가 있어도 읽히지 않는다.
+        self.assertFalse(self._wiring(body.replace('id="f"', 'id="g"'), script)["passed"])
+
+    def test_value_read_through_a_function_parameter_counts(self):
+        """id를 인자로 넘겨 함수 안에서 그 id로 값을 읽는 모양(실측 반찬온 재고 화면)."""
+        field = '<label for="r">추가 수량</label><input id="r" type="number" data-feature="재고 알림">'
+        for reader in ('function add(item, inputId) { return Number(document.getElementById(inputId).value); }',
+                       'const add = (item, inputId) => { const el = document.getElementById(inputId); return el.value; };',
+                       'const $ = id => document.getElementById(id);\nfunction add(item, inputId) { return $(inputId).value; }'):
+            with self.subTest(reader=reader):
+                self.assertTrue(self._wiring(field, reader + '\nfunction run(){ add("beef", "r"); }')["passed"])
+
+    def test_function_parameter_without_reading_does_not_count(self):
+        field = '<label for="r">추가 수량</label><input id="r" type="number" data-feature="재고 알림">'
+        for script in ('function mark(inputId) { document.getElementById(inputId).focus(); }\nfunction run(){ mark("r"); }',
+                       # 값을 읽는 매개변수 자리(두 번째)에 id가 아니라 다른 값이 들어간다
+                       'function add(item, inputId) { return document.getElementById(inputId).value; }\n'
+                       'function run(){ add("r", someVar); }',
+                       'function add(item, inputId) { return document.getElementById(inputId).value; }\n'
+                       '// add("beef", "r");'):
+            with self.subTest(script=script):
+                self.assertFalse(self._wiring(field, script)["passed"])

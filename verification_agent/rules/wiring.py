@@ -183,6 +183,109 @@ def wired_ids(script: str) -> set[str]:
     return found
 
 
+# 입력칸의 값을 읽는 속성. 이것을 읽어야 "값을 읽어 간다"로 본다(focus() · 스타일 변경만으로는 아니다).
+_READ = r"\s*(?:\?\.|\.)\s*(?:value|valueAsNumber|valueAsDate|checked|files|selectedIndex|selectedOptions|options)\b"
+_FORM_DATA_RE = re.compile(r"\bnew\s+FormData\s*\(")
+
+
+def read_ids(script: str) -> set[str]:
+    """스크립트가 **값을 읽어 가는** 입력칸 id. 기획서 · 업무 규칙의 "입력칸은 스크립트가 그 id로
+    값을 읽으면 쓰이는 것으로 본다"를 그대로 옮긴다. id로 찾기만 하고 값을 읽지 않으면 넣지 않는다.
+      document.getElementById('x').value
+      const t = document.getElementById('x'); ... t.value
+    선택자 자리에는 wired_ids와 같은 것(querySelector('#x'), 도우미 $('x'))이 올 수 있다."""
+    script = code_only(script)
+    found: set[str] = set()
+    for selector in _selectors(script):
+        found.update(re.findall(selector + _READ, script))
+        for name, target in re.findall(rf"\b(?:const|let|var)\s+({_NAME})\s*=\s*{selector}", script):
+            if re.search(r"(?<![\w$.])" + re.escape(name) + _READ, script):
+                found.add(target)
+    found |= _ids_read_through_functions(script)
+    return found
+
+
+# 이름 있는 함수 정의. 매개변수 목록과 본문의 여는 중괄호까지 잡는다.
+_FUNC_RES = (
+    re.compile(rf"\bfunction\s+({_NAME})\s*\(([^()]*)\)\s*\{{"),
+    re.compile(rf"\b(?:const|let|var)\s+({_NAME})\s*=\s*(?:async\s+)?function\s*\(([^()]*)\)\s*\{{"),
+    re.compile(rf"\b(?:const|let|var)\s+({_NAME})\s*=\s*(?:async\s+)?\(([^()]*)\)\s*=>\s*\{{"),
+)
+_ID_ARG_RE = re.compile(r"""['"]([\w-]+)['"]""")
+
+
+def _block_end(code: str, open_at: int) -> int:
+    """code[open_at]의 여는 괄호와 짝인 닫는 괄호 다음 자리(code_only를 거친 글이라 문자열 속 괄호는 없다)."""
+    pair = {"{": "}", "(": ")"}[code[open_at]]
+    depth = 0
+    for k in range(open_at, len(code)):
+        if code[k] == code[open_at]:
+            depth += 1
+        elif code[k] == pair:
+            depth -= 1
+            if depth == 0:
+                return k + 1
+    return len(code)
+
+
+def _top_level_args(text: str) -> list[str]:
+    args, depth, start = [], 0, 0
+    for k, ch in enumerate(text):
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            args.append(text[start:k])
+            start = k + 1
+    args.append(text[start:])
+    return [a.strip() for a in args]
+
+
+def _ids_read_through_functions(code: str) -> set[str]:
+    """id를 인자로 받아 그 id로 값을 읽는 함수에, id 문자열을 넘긴 호출.
+
+      function addStock(product, inputId) { const n = document.getElementById(inputId).value; }
+      ... addStock("beef", "beefRestock");          → beefRestock은 값을 읽힌다
+
+    "그 id로 값을 읽는다"는 같다 — 읽는 줄에 id가 글자로 적혀 있지 않을 뿐이다(실측: 동작하는 수량 입력칸
+    3개가 연결 없음으로 채점됨). 한 단계만 따라간다(그 함수가 id를 또 다른 함수에 넘기는 경우는 보지 않는다).
+    """
+    helpers = sorted({m.group(1) for regex in _HELPER_RES for m in regex.finditer(code)})
+    readers: dict[str, set[int]] = {}  # 함수 이름 → 값을 읽는 데 쓰는 매개변수 자리
+    for regex in _FUNC_RES:
+        for m in regex.finditer(code):
+            body = code[m.end() - 1:_block_end(code, m.end() - 1)]
+            params = [p.split("=")[0].strip() for p in m.group(2).split(",")]
+            for index, param in enumerate(params):
+                if not re.fullmatch(_NAME, param):
+                    continue
+                p = re.escape(param)
+                picks = [rf"document\s*\.\s*getElementById\(\s*{p}\s*\)"] + [
+                    rf"(?<![\w$.]){re.escape(h)}\(\s*{p}\s*\)" for h in helpers]
+                for pick in picks:
+                    holders = re.findall(rf"\b(?:const|let|var)\s+({_NAME})\s*=\s*{pick}", body)
+                    if re.search(pick + _READ, body) or any(
+                            re.search(r"(?<![\w$.])" + re.escape(v) + _READ, body) for v in holders):
+                        readers.setdefault(m.group(1), set()).add(index)
+                        break
+    found: set[str] = set()
+    for name, indexes in readers.items():
+        for call in re.finditer(rf"(?<![\w$.]){re.escape(name)}\s*\(", code):
+            args = _top_level_args(code[call.end():_block_end(code, call.end() - 1) - 1])
+            for index in indexes:
+                if index < len(args):
+                    arg = _ID_ARG_RE.fullmatch(args[index])
+                    if arg:
+                        found.add(arg.group(1))
+    return found
+
+
+def reads_form_data(script: str) -> bool:
+    """폼 전체를 FormData로 읽는가. 그러면 제출 처리가 붙은 폼 안의 입력칸은 값을 읽힌다."""
+    return bool(_FORM_DATA_RE.search(code_only(script)))
+
+
 def is_wired(control: dict, wired: set[str]) -> bool:
     if control["inline"] or (control["id"] and control["id"] in wired):
         return True
@@ -195,17 +298,24 @@ def is_wired(control: dict, wired: set[str]) -> bool:
 _FIELD_TAGS = {"input", "select", "textarea"}
 
 
-def is_used(control: dict, wired: set[str], refs: set[str]) -> bool:
+def is_used(control: dict, wired: set[str], reads: set[str], form_data: bool = False) -> bool:
     """조작 요소가 화면 동작에 쓰이는지. 버튼은 이벤트가 직접 붙어야 하고(is_wired),
-    입력칸(input · select · textarea)은 스크립트가 그 id로 값을 읽어 가면 쓰이는 것으로 본다.
+    입력칸(input · select · textarea)은 스크립트가 그 id로 값을 읽어 가면 쓰이는 것으로 본다
+    (reads = read_ids). 제출 처리가 붙은 폼을 FormData로 읽으면(form_data) 그 폼 안의 입력칸도 쓰인다.
 
     입력칸은 보통 자기 이벤트가 없다. "등록" 버튼의 핸들러가 getElementById('title').value로
     값을 읽는다. 이것을 연결 없음으로 치면 입력 화면이 많은 프로토타입일수록 점수가 깎인다
-    (실측: 버튼 12개가 모두 동작하는 화면이 12/23으로 채점됨).
+    (실측: 버튼 12개가 모두 동작하는 화면이 12/23으로 채점됨). 다만 id로 찾기만 하고
+    값을 읽지 않으면(focus() 등) 쓰이는 것이 아니다.
     """
     if is_wired(control, wired):
         return True
-    return control["tag"] in _FIELD_TAGS and bool(control["id"]) and control["id"] in refs
+    if control["tag"] not in _FIELD_TAGS:
+        return False
+    if control["id"] and control["id"] in reads:
+        return True
+    form = control["form"]
+    return bool(form_data and form and (form["handler"] or (form["id"] and form["id"] in wired)))
 
 
 def control_label(control: dict) -> str:
