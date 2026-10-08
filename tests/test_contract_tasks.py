@@ -332,6 +332,22 @@ class ContractTaskTests(TestCase):
         self.assertIn("기능 설명(주문 조회) 누락", clash.check.failures)
         self.assertIn("기능 설명(주문조회) 누락", clash.check.failures)
 
+    def test_run_tb2_does_not_rework_for_blank_inputs(self):
+        """목표 고객 · 아이템명은 조율이 준 입력값이라 재수행해도 채워지지 않는다(실측: 실제 예시 계획서 셋의 목표 고객이
+        모두 '확인 필요'). 자체 검사 사유로 올리면 이미지 호출이 든 재수행만 쓸모없이 돈다."""
+        from engineering_agent.tasks import _check_content
+
+        base = {"item_name": "동네 주문", "features": ["주문 조회"], "problem": "주문 대기", "solution": "빠른 주문",
+                "revenue_unit_price": "월 10000원", "timeline_baseline": "2026-12-01",
+                "feature_details": ["매장별 주문 상태를 보여준다"]}
+        plan = "주문 대기가 길다. 빠른 주문. 월 10000원. 2026-12-01 착수. 매장별 주문 상태를 보여준다"
+        for target in ("확인 필요", "", "정보 없음"):
+            with self.subTest(target=target):
+                self.assertNotIn("목표 고객 누락", _check_content("원페이지", dict(base, target_users=target), plan))
+        self.assertNotIn("아이템명 누락", _check_content("원페이지", dict(base, item_name="", target_users="매장"), plan))
+        # 계획서에서 뽑는 값의 빈칸은 그대로 사유다
+        self.assertIn("수익모델 단가 누락", _check_content("원페이지", dict(base, revenue_unit_price="확인 필요"), plan))
+
     def test_run_tb2_flags_placeholder_phrases(self):
         out = self._run_tb2("원페이지", {"item_name": "동네 주문", "features": ["주문 조회"], "problem": "확인 필요",
                                        "solution": "빠른 주문", "revenue_unit_price": "추후 결정",

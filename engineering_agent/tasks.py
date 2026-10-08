@@ -128,14 +128,12 @@ def _check_content(category: str, content: dict, plan_text: str) -> list[str]:
     if not content.get("features"):
         failures.append("계획서 기능 목록이 비어 있음")
 
-    # ItemSpec에서 그대로 옮겨 담은 값 — 사용자 입력이라 LLM이 지어낼 수 없다.
-    # 비었는지만 본다. 수치 대조를 걸면 사용자가 적은 숫자를 지어낸 값으로 몰게 된다.
-    given: list[tuple[str, str]] = [("아이템명", content.get("item_name", ""))]
+    # ItemSpec에서 그대로 옮겨 담은 값(아이템명 · 목표 고객)은 보지 않는다 — 사용자 입력이라 LLM이 지어낼 수 없고,
+    # 비어 있어도 재수행으로 채워지지 않는다(아래). 수치 대조를 걸면 사용자가 적은 숫자를 지어낸 값으로 몬다.
     # LLM이 계획서에서 뽑아 채운 값 — 여기가 수치를 지어낼 수 있는 자리다.
     extracted: list[tuple[str, str]] = []
 
     if category == "원페이지":
-        given.append(("목표 고객", content.get("target_users", "")))
         extracted += [
             ("문제 정의", content.get("problem", "")),
             ("해결 방안", content.get("solution", "")),
@@ -156,7 +154,10 @@ def _check_content(category: str, content: dict, plan_text: str) -> list[str]:
         for key, label in (("input", "입력"), ("process", "처리"), ("output", "출력")):
             extracted.append((f"{label} 단계", pipeline.get(key, "")))
 
-    for label, value in given + extracted:
+    # 아이템명 · 목표 고객은 조율이 준 입력값이라 재수행해도 채워지지 않는다(실측: 실제 예시 계획서 셋의 목표 고객이
+    # 모두 '확인 필요'). 실패로 올리면 이미지 호출이 든 재수행만 쓸모없이 돈다 — 넘침(_INPUT_FIELDS)과 같은 이유로
+    # 사유에서 뺀다. 빈 값은 검증-2 원페이지 핵심 정보 6항목에서 그대로 깎인다.
+    for label, value in extracted:
         if _is_blank(value):
             failures.append(f"{label} 누락")
 
