@@ -314,6 +314,33 @@ class ContractTaskTests(TestCase):
         self.assertIn("기능 설명(주문 조회) 누락", tb2.check.failures)
         self.assertEqual(out.feature_match.missing_features, ["주문 조회"])
 
+    def test_run_tb2_matches_feature_details_ignoring_spacing_and_case(self):
+        """LLM이 기능 이름을 띄어쓰기 · 대소문자만 다르게 적어도 그 설명을 쓴다(검증-2와 같은 기준)."""
+        base = {"item_name": "동네 주문", "problem": "주문 대기", "solution": "빠른 주문",
+                "revenue_unit_price": "월 10000원", "timeline_baseline": "2026-12-01"}
+        sentences = ["주문 대기가 길다", "빠른 주문으로 줄인다", "단가는 월 10000원", "2026-12-01 착수",
+                     "주문 조회는 매장별 주문 상태를 보여준다", "API 연동은 POS와 잇는다"]
+        out = self._run_tb2("원페이지", {**base, "features": ["주문 조회", "API 연동"], "feature_details": [
+            {"name": "주문조회", "detail": "매장별 주문 상태를 보여준다"},
+            {"name": "api 연동", "detail": "POS와 잇는다"}]}, sentences, ("주문 조회", "API 연동"))
+        self.assertNotIn("기능 설명(주문 조회) 누락", out.check.failures)
+        self.assertNotIn("기능 설명(API 연동) 누락", out.check.failures)
+
+        # 정규화하면 같아지는 기능이 둘이면 어느 설명인지 모르므로 합치지 않는다.
+        clash = self._run_tb2("원페이지", {**base, "features": ["주문 조회", "주문조회"], "feature_details": [
+            {"name": "주문 조회", "detail": "매장별 주문 상태를 보여준다"}]}, sentences, ("주문 조회", "주문조회"))
+        self.assertIn("기능 설명(주문 조회) 누락", clash.check.failures)
+        self.assertIn("기능 설명(주문조회) 누락", clash.check.failures)
+
+    def test_run_tb2_flags_placeholder_phrases(self):
+        out = self._run_tb2("원페이지", {"item_name": "동네 주문", "features": ["주문 조회"], "problem": "확인 필요",
+                                       "solution": "빠른 주문", "revenue_unit_price": "추후 결정",
+                                       "timeline_baseline": "2026-12-01"},
+                            ["빠른 주문으로 줄인다", "2026-12-01 착수"])
+        self.assertIn("문제 정의 누락", out.check.failures)
+        self.assertIn("수익모델 단가 누락", out.check.failures)
+        self.assertNotIn("해결 방안 누락", out.check.failures)
+
     def test_run_tv2_fills_flow_fields(self):
         """조율이 흐름을 가르는 두 값(확장 필드)이 계약 결과에 문자열 밖으로 실린다."""
         from sbrain.contracts.tasks import TV2In

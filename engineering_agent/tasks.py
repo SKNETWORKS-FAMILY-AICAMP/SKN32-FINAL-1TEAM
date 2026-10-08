@@ -55,10 +55,15 @@ _NUMBER_RE = re.compile(r"\d[\d,._]*")
 
 # 값 자리에만 들어앉은 문구. 지면에 글자는 있어도 사실이 없는 상태이므로 미충족으로 본다
 # (verification_agent/rules/r4_onepage.py의 _PLACEHOLDER_VALUES와 같은 목록).
-_PLACEHOLDER_VALUES = {"정보 없음", "미정", "해당 없음", "n/a", "na", "-", "tbd", "없음"}
+_PLACEHOLDER_VALUES = {"정보 없음", "미정", "해당 없음", "n/a", "na", "-", "tbd", "없음",
+                       "확인 필요", "확인필요", "추후 확인", "추후 결정", "미입력"}
 
 # run_tb2가 item_spec에서 그대로 옮겨 넣는 지면 값. LLM이 고쳐 쓰지 않는다.
 _INPUT_FIELDS = {"item_name", "item_summary", "target_users"}
+
+
+def _norm_name(value) -> str:
+    return re.sub(r"\s+", "", str(value)).casefold()
 
 
 def _is_blank(value: str) -> bool:
@@ -204,7 +209,8 @@ def _plan_text(plan_doc) -> str:
 
 
 def _layout_variation(item_name: str, rework_input) -> int:
-    """지면 뼈대 번호. 같은 아이템은 같은 뼈대로 시작하고, 다시 만들 때마다 다른 뼈대로 넘어간다."""
+    """지면 뼈대 번호. 같은 아이템은 같은 뼈대로 시작하고, 다시 만들면 첫 뼈대와 다른 뼈대로 넘어간다.
+    직전 재실행의 뼈대는 알 수 없으므로 연속 재실행끼리는 같은 뼈대가 나올 수 있다."""
     base = zlib.adler32(str(item_name).encode("utf-8"))
     if rework_input is None:
         return base
@@ -230,9 +236,14 @@ def run_tb2(inp: TB2In, tools: Tools) -> TB2Out:
     content["features"] = inp.plan_doc.feature_list
     # LLM이 준 설명을 기능 목록 순서에 맞춰 문자열로 편다. 이름이 목록과 다른 항목은
     # 버린다 — 검증-2가 기능명으로 설명을 찾으므로 어긋난 이름은 없는 설명과 같다.
-    by_name = {str(d.get("name", "")).strip(): str(d.get("detail", "")).strip()
-               for d in content.get("feature_details") or []}
-    content["feature_details"] = [by_name.get(f, "") for f in inp.plan_doc.feature_list]
+    # 이름은 공백 · 대소문자를 무시하고 맞춘다(검증-2 feature_match._norm과 같은 기준).
+    # 정규화하면 같아지는 이름이 둘 이상이면 어느 설명인지 알 수 없으므로 합치지 않고 버린다.
+    by_name: dict[str, str | None] = {}
+    for d in content.get("feature_details") or []:
+        key, detail = _norm_name(d.get("name", "")), str(d.get("detail", "")).strip()
+        by_name[key] = None if key in by_name and by_name[key] != detail else detail
+    keys = [_norm_name(f) for f in inp.plan_doc.feature_list]
+    content["feature_details"] = ["" if keys.count(k) > 1 else by_name.get(k) or "" for k in keys]
 
     # 맞춤 아이콘(선택 재료). 이미지 호출 통로(tools.image)가 없거나 실패하면 None이고 지면은 기본
     # 아이콘으로 나간다. 아이콘이 있으면 지면 모양이 달라져 글자 칸 폭도 달라지므로, 넘침 검사
