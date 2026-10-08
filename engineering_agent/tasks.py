@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from engineering_agent.builder_html import build_prototype_html
+from engineering_agent.builder_html import build_prototype_html, feature_notes
 from engineering_agent.infographic import artsheet, design
 from engineering_agent.infographic.compose_guide import FIX_HINT, RETRY_HINT
 from engineering_agent.infographic import (
@@ -259,6 +259,7 @@ def run_tb2(inp: TB2In, tools: Tools) -> TB2Out:
         inp.category, f"아이템명: {inp.item_spec.item_name}\n목표 고객: {inp.item_spec.target_customer}\n"
         f"기능 목록: {', '.join(inp.plan_doc.feature_list)}\n{plan_text}\n"
         f"작업 지시: {inp.instruction}" + (f"\n{hint}" if hint else ""), tools,
+        feature_notes=feature_notes(inp.plan_doc.feature_list, plan_text),
     )
     content["item_name"] = inp.item_spec.item_name
     content["target_users"] = inp.item_spec.target_customer

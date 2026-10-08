@@ -71,9 +71,10 @@ _LENGTH_HINTS: dict[str, str] = {
 }
 
 
-def _detail_chars(category: str) -> int:
-    """기능 설명 글자 수 한도. 한 줄 4칸 타일(가장 좁은 경우) 기준 — 세 카테고리 공용."""
-    return _max_chars(feature_tile_width(4) - 24, OP_DETAIL_SIZE) * OP_DETAIL_LINES
+def _detail_chars(category: str, feature_count: int = 4) -> int:
+    """기능 설명 글자 수 한도. 실제 기능 수의 타일 폭 기준(모르면 가장 좁은 4칸) — 세 카테고리 공용.
+    가장 좁은 칸(44자)을 모든 계획서에 주었더니, 기능이 적어 칸이 넓은데도 설명을 짧게 줄여 계획서의 요소가 빠졌다."""
+    return _max_chars(feature_tile_width(max(1, feature_count)) - 24, OP_DETAIL_SIZE) * OP_DETAIL_LINES
 
 
 class FeatureDetail(BaseModel):
@@ -186,12 +187,15 @@ def parse_content(text) -> InfographicContent:
         raise _format_error(f"T-B2 응답 JSON을 읽을 수 없음: {type(exc).__name__}") from None
 
 
-def generate_infographic_content(category: str, plan_text: str, tools) -> dict:
+def generate_infographic_content(category: str, plan_text: str, tools,
+                                 feature_notes: dict[str, str] | None = None) -> dict:
     """T-B2 1단계: 사업계획서 본문(작성 Agent 산출물)에서 인포그래픽 데이터를 추출한다.
 
     반환값은 render_infographic()의 data 인자로 그대로 넘길 수 있는 형태다.
     렌더러가 소비하는 사실·수치·절차만 추출한다. 없는 내용은 채우지 않는다.
     추출 결과의 누락·수치·길이는 Task의 자체 검사와 검증-2에서 따로 검사한다.
+    feature_notes: 기능마다 계획서가 그 기능을 설명한 줄(builder_html.feature_notes). 있으면 기능 설명을 이 줄에서
+    줄여 쓰게 한다 — 검증-2가 원페이지 기능 설명을 이 줄의 요소로 대조한다.
     """
     if category not in CATEGORY_TEMPLATE_FILE:
         raise ValueError(
@@ -208,12 +212,21 @@ def generate_infographic_content(category: str, plan_text: str, tools) -> dict:
         f"4. 길이: {_LENGTH_HINTS[category]}. 문장을 통째로 옮기거나 여러 문장을 이어 붙이지 "
         "말고 핵심만 줄여라. 줄바꿈을 넣지 마라. 줄일 때도 원문에 없는 낱말·숫자를 보태지 마라."
     )
+    notes = {f: n for f, n in (feature_notes or {}).items() if n.strip()}
+    limit = _detail_chars(category, len(feature_notes) if feature_notes else 4)
     system_prompt += (
         "\n5. feature_details에는 '기능 목록'의 기능마다 하나씩, name에 기능명을 그대로 "
-        "쓰고 detail에 그 기능이 무엇을 하는지 본문에서 찾은 한 문장을 원문 낱말 그대로 "
-        f"적어라. {_detail_chars(category)}자를 넘기지 마라. "
+        "쓰고 detail에 그 기능이 무엇을 하는지 적어라. "
+        + ("아래 '기능별 계획서 설명'이 있는 기능은 그 설명을 줄여 쓴다: 무엇을 받거나 다루는지 · 무엇으로 하는지 · "
+           "어떤 결과를 내는지 같은 핵심 요소와 원문 낱말은 빼지 말고, 꾸밈말 · 배경 설명 · 되풀이부터 뺀다. "
+           if notes else "본문에서 찾은 한 문장을 원문 낱말 그대로 적는다. ")
+        + f"{limit}자를 넘기지 마라. "
         "기능명을 되풀이하지 말고, 본문이 그 기능을 설명하지 않으면 detail을 빈 문자열로 남겨라."
     )
+    if notes:
+        # 검증-2는 원페이지 기능 설명을 이 줄의 요소(최대 5개)가 있는지로 대조한다. 본문 전체에서 모델이 스스로
+        # 고르게 하면 실행마다 다른 줄 · 다른 요소를 골라 같은 계획서의 대조 점수가 7.03 ~ 10.78로 흔들렸다(실측).
+        system_prompt += "\n[기능별 계획서 설명]\n" + "\n".join(f"- {f}: {n}" for f, n in notes.items())
     system_prompt += (
             "\n6. key_metrics에는 본문에서 사업을 가장 잘 보여주는 숫자를 최대 3개 골라라. "
             "value는 본문에 적힌 숫자와 단위를 그대로(예: '18%', '12분', '29,000원'), "

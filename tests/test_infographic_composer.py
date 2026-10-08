@@ -141,7 +141,7 @@ class ComposerTests(TestCase):
 
         seen = {}
 
-        def fake_generate(category, plan_text, tools):
+        def fake_generate(category, plan_text, tools, feature_notes=None):
             seen.setdefault("texts", []).append(plan_text)
             return dict(DATA, layout=[{"block": "features", "title": "주문 기능"}],
                         feature_details=[{"name": f, "detail": d}

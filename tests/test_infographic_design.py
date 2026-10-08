@@ -255,3 +255,39 @@ class PosterFrameTests(TestCase):
                     if theme == "teal":
                         pages.add(saved["source_text"].split("<desc>")[1][200:])
         self.assertEqual(len(pages), 3)
+
+
+class FeatureDetailPromptTests(TestCase):
+    """원페이지 기능 설명을 모델이 본문에서 스스로 골라 줄이면 실행마다 다른 요소가 빠져 대조 점수가 흔들렸다
+    (실측: 같은 계획서 7.03 ~ 10.78). 검증-2가 요소를 뽑는 바로 그 줄을 주고, 기능 수에 맞는 글자 수를 준다."""
+
+    def _prompt(self, notes):
+        from engineering_agent.infographic.content import generate_infographic_content
+
+        seen = {}
+
+        class Tools:
+            def llm(self, messages, *, schema=None, parse=None, purpose=""):
+                seen["system"] = messages[0]["content"]
+                return parse('{"item_name": "x", "features": ["a"]}')
+
+        generate_infographic_content("원페이지", "본문", Tools(), feature_notes=notes)
+        return seen["system"]
+
+    def test_definition_lines_and_element_rule_are_in_the_prompt(self):
+        line = "조명 강건 전처리 모듈은 조명 변화와 반사에 따른 영상 품질 저하를 완화한다"
+        prompt = self._prompt({"조명 강건 전처리 모듈": line, "결함 분류": ""})
+        self.assertIn("[기능별 계획서 설명]", prompt)
+        self.assertIn(f"- 조명 강건 전처리 모듈: {line}", prompt)
+        self.assertNotIn("- 결함 분류:", prompt)  # 설명 줄이 없는 기능은 싣지 않는다
+        self.assertIn("핵심 요소와 원문 낱말은 빼지 말고", prompt)
+
+    def test_detail_limit_follows_the_feature_count(self):
+        import re
+
+        def limit(n):
+            return int(re.search(r"(\d+)자를 넘기지 마라", self._prompt({f"기능{i}": "설명" for i in range(n)})).group(1))
+
+        self.assertGreater(limit(2), limit(3))
+        self.assertGreater(limit(3), limit(4))
+        self.assertEqual(limit(4), int(re.search(r"(\d+)자를 넘기지 마라", self._prompt(None)).group(1)))
