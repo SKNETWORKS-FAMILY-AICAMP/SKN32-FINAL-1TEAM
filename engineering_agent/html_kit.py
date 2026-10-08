@@ -36,7 +36,9 @@ WARN_TINT, WARN_INK = "#FEF3C7", "#92400E"
 
 # 화면 틀 클래스. 프롬프트의 '화면 틀' 지시와 짝이다.
 FRAMES = {
-    "frame-app": "일반 이용자 서비스 — 가운데 폭 480px 앱 화면, 위에서 아래로 단계, 아래 탭",
+    "frame-app": ("일반 이용자 서비스(앱) — 바깥 `app-layout` 안에 왼쪽은 폭 480px 앱 화면(`frame-app`: 위에서 아래로 단계, "
+                  "아래 탭), 오른쪽은 `app-side` 패널(지금 단계에서 일어나는 일, 결과 상세, 이 화면이 보여 주는 계획서 기능). "
+                  "데스크톱 폭을 비워 두지 않는다"),
     "frame-board": "매장 · 현장 담당자 업무 — 위 메뉴 + 처리할 일 목록(카드 · 표)과 상태 변경",
     "frame-admin": "데이터 · 거래처 관리 — 왼쪽 메뉴 + 표 · 그래프 중심 본문",
     "frame-compare": "비교 · 선택 — 후보를 나란히 놓는 비교 격자",
@@ -89,7 +91,11 @@ td {{ color: {body}; background-color: #FFFFFF; padding: 10px 12px; border-botto
 .toast.error {{ color: #FFFFFF; background-color: {DANGER}; }}
 .hidden {{ display: none; }}
 /* 화면 틀 — 하나만 고른다 */
-.frame-app {{ max-width: 480px; margin: 24px auto; color: {ink}; background-color: #FFFFFF; border-radius: 24px; padding: 20px; box-shadow: 0 10px 30px rgba(0, 0, 0, .08); }}
+.app-layout {{ display: grid; grid-template-columns: 480px 1fr; gap: 24px; align-items: start; max-width: 1200px; margin: 24px auto; padding: 0 24px; }}
+.frame-app {{ max-width: 480px; margin: 0; color: {ink}; background-color: #FFFFFF; border: 8px solid {ink}; border-radius: 32px; padding: 20px; box-shadow: 0 10px 30px rgba(0, 0, 0, .12); }}
+.app-side {{ position: sticky; top: 24px; color: {ink}; background-color: #FFFFFF; border: 1px solid {line}; border-radius: 14px; padding: 20px; }}
+.app-side h2 {{ font-size: 18px; }}
+.app-side .muted {{ color: {muted}; background-color: #FFFFFF; }}
 .app-tabs {{ display: flex; gap: 6px; margin-top: 16px; border-top: 1px solid {line}; padding-top: 10px; }}
 .app-tabs button {{ flex: 1; color: {muted}; background-color: #FFFFFF; border: 0; padding: 10px 4px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }}
 .app-tabs button.active {{ color: {deep}; background-color: {tint}; border-radius: 10px; }}

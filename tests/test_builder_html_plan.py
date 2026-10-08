@@ -197,6 +197,7 @@ class BaseCssTests(TestCase):
         spec, features = DesignDirectionTests.SPECS["재고 자동발주 SaaS"]
         prompt = _build_system_prompt(features, spec, "웹개발")
         self.assertIn(base_css(palette(features, spec)), prompt)
+        self.assertIn("`app-side`", prompt)  # 앱 틀은 오른쪽 설명 패널과 함께(데스크톱 폭을 비우지 않는다)
         for cls in FRAMES:
             self.assertIn(f"`{cls}`", prompt)
         for part in ('class="loading"', "`toast`", "`empty`", "`field-error`", "`steps`", "innerHTML)로"):
