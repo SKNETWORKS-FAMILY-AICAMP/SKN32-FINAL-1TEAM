@@ -191,7 +191,15 @@
         "2.3.6": {
           "title": "이미지·서비스 구조도",
           "inputPaths": [],
-          "writeTarget": "imageSpec"
+          "writeTarget": "imageSpec",
+          "validation": {
+            "imageTypes": [
+              "USER_FLOW",
+              "SERVICE_ARCHITECTURE"
+            ],
+            "minNodes": 3,
+            "maxNodes": 6
+          }
         },
         "2.4.1": {
           "title": "문제인식 세부 3가지",
