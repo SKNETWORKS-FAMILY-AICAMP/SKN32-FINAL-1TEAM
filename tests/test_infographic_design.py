@@ -213,3 +213,20 @@ class HeaderStyleTests(TestCase):
         self.assertRegex(heads["open"], r'data-field="item_name"[^>]*|text-anchor="start"')
         self.assertIn('width="900"', heads["card"])  # 머리 띠
         self.assertNotIn('width="900"', heads["panel"])
+
+
+class StepsIsTheDefaultTests(TestCase):
+    """단계 흐름에 2점을 주었더니 실제 예시 계획서 셋이 모두 '단계 흐름'으로 골라졌다. 단계는 다른 관계 재료가 없을 때의 기본값이다."""
+
+    def test_other_relations_lead_over_steps(self):
+        steps = {"flow_steps": ["주문", "확인", "픽업"], "solution_steps": ["주문", "확인", "픽업"]}
+        for relation in (design.COMPARE, design.NETWORK, design.DEAL, design.MARKET):
+            with self.subTest(relation):
+                for category in ("웹개발", "원페이지"):
+                    self.assertEqual(design.decide(category, dict(CASES[relation], **steps))["relation"], relation)
+        self.assertEqual(design.decide("웹개발", dict(BARE, **steps))["relation"], design.STEPS)
+
+    def test_ai_api_lets_another_relation_follow_the_processing_diagram(self):
+        pipe = {"pipeline": {"input": "사진", "process": "분석", "output": "결과"}}
+        self.assertEqual(design.decide("AI_API", dict(CASES[design.DEAL], **pipe))["relation"], design.DEAL)
+        self.assertNotEqual(design.decide("AI_API", dict(BARE, **pipe))["relation"], design.STEPS)

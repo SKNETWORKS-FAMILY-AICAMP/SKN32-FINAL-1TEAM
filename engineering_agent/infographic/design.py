@@ -18,8 +18,8 @@ from engineering_agent.infographic.layout import parse_milestones
 
 # 관계 이름 → 그 관계를 맨 앞에서 보여 주는 구역.
 STEPS, COMPARE, NETWORK, DEAL, MARKET, STORY = "단계 흐름", "전후 비교", "주체 연결", "거래 흐름", "시장 규모", "문제 해결 이야기"
-# 점수가 같으면 이 순서로 고른다. 이야기는 늘 가능한 마지막 후보다.
-_ORDER = (STEPS, COMPARE, NETWORK, DEAL, MARKET, STORY)
+# 점수가 같으면 이 순서로 고른다. 단계 · 이야기는 다른 관계 재료가 없을 때의 기본값이라 뒤에 둔다.
+_ORDER = (COMPARE, NETWORK, DEAL, MARKET, STEPS, STORY)
 _NUMBER_RE = re.compile(r"\d")
 
 # 소비자를 직접 상대하는 분야(색 테마 기준)는 평면 일러스트, 기업 · 산업 · 데이터 분야는 정밀한 선 아이콘.
@@ -51,15 +51,16 @@ def parties(data: dict) -> set[str]:
 
 def relation_scores(category: str, data: dict) -> dict[str, int]:
     """관계마다 재료가 얼마나 뚜렷한지. 0이면 그 관계를 보여 줄 재료가 없다."""
-    pipeline = data.get("pipeline") if isinstance(data.get("pipeline"), dict) else {}
     steps = _steps(category, data)
     flow = data.get("revenue_flow") if isinstance(data.get("revenue_flow"), dict) else {}
     comparison = data.get("comparison") if isinstance(data.get("comparison"), dict) else {}
     before_after = [r for r in _rows(data, "before_after", "label")
                     if _text(r.get("before")) and _text(r.get("after"))]
     scores = {
-        STEPS: (3 if category == "AI_API" and all(_text(pipeline.get(k)) for k in ("input", "process", "output"))
-                else 2 if len(steps) >= 3 else 1 if len(steps) == 2 else 0),
+        # 단계는 기본값이다. 웹개발은 화면 흐름이 필수 재료라 늘 있고 원페이지도 절차를 자주 뽑아, 2점을 주었더니
+        # 실제 예시 계획서 셋이 모두 '단계 흐름'으로 골라졌다. AI API는 맨 위 처리 단계 도식(hub)이 이미 단계를
+        # 보여 주므로 0점 — 그다음 자리는 다른 관계가 앞세운다.
+        STEPS: (0 if category == "AI_API" else 1 if len(steps) >= 2 else 0),
         COMPARE: (2 if len(before_after) >= 2 else 0) + (1 if len(_rows(comparison, "rows", "criterion")) >= 2 else 0),
         NETWORK: 0 if len(parties(data)) < 3 else 2 if len(parties(data)) == 3 else 3,
         DEAL: (1 if _text(flow.get("payer")) and _text(flow.get("payment")) else 0)
