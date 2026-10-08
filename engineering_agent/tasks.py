@@ -116,6 +116,25 @@ def _block_texts(content: dict) -> list[tuple[str, str]]:
     return out
 
 
+# 계획서 원문에 금액 · 날짜 표현이 있는지. 하나도 없으면 그 칸은 계획서에 원래 없는 정보다.
+_MONEY_RE = re.compile(r"\d[\d,.]*\s*(?:천|만|억|조)?\s*원")
+_DATE_IN_PLAN_RE = re.compile(r"\d{4}\s*년|\d{4}\s*[./-]\s*\d{1,2}|\d+\s*(?:개월|분기|주차)|[1-4]\s*분기")
+
+
+def _absent_in_plan(plan_text: str) -> set[str]:
+    """계획서 원문에 아예 없는 정보의 칸 이름. 재수행해도 채워지지 않으므로 '누락'을 재수행 사유로 쓰지 않는다.
+
+    실측: 일반 기술개발 양식 계획서(general)는 금액 · 날짜 표현이 0개라 수익모델 단가 · 추진 일정이 늘 비고,
+    그때마다 이미지 호출이 든 재수행이 쓸모없이 돌았다. 원문에 하나라도 있는데 못 뽑은 경우는 그대로 사유다
+    (다시 뽑으면 채워질 수 있다). 빈 칸은 검증-2 원페이지 핵심 정보 6항목에서 그대로 깎인다."""
+    absent = set()
+    if not _MONEY_RE.search(plan_text):
+        absent.add("수익모델 단가")
+    if not _DATE_IN_PLAN_RE.search(plan_text):
+        absent.add("추진 일정 기준선")
+    return absent
+
+
 def _check_content(category: str, content: dict, plan_text: str) -> list[str]:
     """T-B2 자체 검사. 기능정의서 T-B2 Failure ①(이미지 미생성 · altText 공백 ·
     도식 수치 불일치)에 대응하는 실패 목록을 만든다.
@@ -157,8 +176,9 @@ def _check_content(category: str, content: dict, plan_text: str) -> list[str]:
     # 아이템명 · 목표 고객은 조율이 준 입력값이라 재수행해도 채워지지 않는다(실측: 실제 예시 계획서 셋의 목표 고객이
     # 모두 '확인 필요'). 실패로 올리면 이미지 호출이 든 재수행만 쓸모없이 돈다 — 넘침(_INPUT_FIELDS)과 같은 이유로
     # 사유에서 뺀다. 빈 값은 검증-2 원페이지 핵심 정보 6항목에서 그대로 깎인다.
+    absent = _absent_in_plan(plan_text)
     for label, value in extracted:
-        if _is_blank(value):
+        if _is_blank(value) and label not in absent:
             failures.append(f"{label} 누락")
 
     # 블록 구성 재료 — 선택 항목이라 비어도 누락이 아니다. 숫자 대조만 한다.

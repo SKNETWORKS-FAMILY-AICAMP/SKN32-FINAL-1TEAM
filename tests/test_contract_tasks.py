@@ -178,7 +178,7 @@ class ContractTaskTests(TestCase):
             "원페이지",
             {"item_name": "동네 주문", "features": ["주문 조회"], "problem": "주문 대기",
              "solution": "빠른 주문", "revenue_unit_price": "", "timeline_baseline": ""},
-            ["주문 대기가 길다", "빠른 주문으로 줄인다"],
+            ["주문 대기가 길다", "빠른 주문으로 줄인다", "가게당 월 10000원", "2026년 12월 착수"],
         )
         self.assertFalse(out.check.passed)
         self.assertIn("수익모델 단가 누락", out.check.failures)
@@ -348,11 +348,26 @@ class ContractTaskTests(TestCase):
         # 계획서에서 뽑는 값의 빈칸은 그대로 사유다
         self.assertIn("수익모델 단가 누락", _check_content("원페이지", dict(base, revenue_unit_price="확인 필요"), plan))
 
+    def test_run_tb2_does_not_rework_for_what_the_plan_never_had(self):
+        """계획서 원문에 금액 · 날짜가 아예 없으면 단가 · 일정 빈칸은 재수행 사유가 아니다(실측: 일반 기술개발 양식은
+        금액 · 날짜 표현이 0개라 재수행해도 채워지지 않았다). 원문에 있는데 못 뽑았으면 그대로 사유다."""
+        from engineering_agent.tasks import _check_content
+
+        blank = {"item_name": "결함 검사", "features": ["결함 분류"], "problem": "검사 누락", "solution": "영상 분석",
+                 "revenue_unit_price": "", "timeline_baseline": "", "feature_details": ["표면 결함을 분류한다"]}
+        no_money_no_date = "검사 누락이 잦다. 영상 분석으로 줄인다. 결함 분류는 표면 결함을 분류한다"
+        failures = _check_content("원페이지", blank, no_money_no_date)
+        self.assertNotIn("수익모델 단가 누락", failures)
+        self.assertNotIn("추진 일정 기준선 누락", failures)
+        failures = _check_content("원페이지", blank, no_money_no_date + ". 라이선스 월 50만 원. 2027년 3월 출시")
+        self.assertIn("수익모델 단가 누락", failures)
+        self.assertIn("추진 일정 기준선 누락", failures)
+
     def test_run_tb2_flags_placeholder_phrases(self):
         out = self._run_tb2("원페이지", {"item_name": "동네 주문", "features": ["주문 조회"], "problem": "확인 필요",
                                        "solution": "빠른 주문", "revenue_unit_price": "추후 결정",
                                        "timeline_baseline": "2026-12-01"},
-                            ["빠른 주문으로 줄인다", "2026-12-01 착수"])
+                            ["빠른 주문으로 줄인다", "2026-12-01 착수", "가게당 월 10000원"])
         self.assertIn("문제 정의 누락", out.check.failures)
         self.assertIn("수익모델 단가 누락", out.check.failures)
         self.assertNotIn("해결 방안 누락", out.check.failures)
