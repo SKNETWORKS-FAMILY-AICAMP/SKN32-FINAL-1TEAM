@@ -86,6 +86,7 @@ web/backend/rhwp.exe
 # 이름이 변경된 back 결과 저장소도 실행 산출물만 제외한다.
 /agent_strategy/res/back_output/runs/
 /agent_strategy/res/back_output/tmp/
+/agent_strategy/res/back_output/archives/
 /agent_strategy/testing/*.log
 /agent_strategy/testing/__pycache__/
 /agent_strategy/runtime/__pycache__/
