@@ -201,3 +201,54 @@ class BaseCssTests(TestCase):
             self.assertIn(f"`{cls}`", prompt)
         for part in ('class="loading"', "`toast`", "`empty`", "`field-error`", "`steps`", "innerHTML)로"):
             self.assertIn(part, prompt)
+
+
+class FontAndIconKitTests(TestCase):
+    """글꼴(Pretendard) · 아이콘 묶음은 모델이 옮겨 쓸 수 없어 저장 직전에 코드가 넣는다."""
+
+    PAGE = ('<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>{css}</style></head><body>'
+            '<h1>재고</h1><button id="b" class="btn"><svg class="icon"><use href="#i-cart"/></svg>주문</button>'
+            '<svg class="icon icon-lg" aria-label="알림"><use href="#i-bell"/></svg>'
+            '<script>document.getElementById("b").addEventListener("click", () => {});</script></body></html>')
+
+    def _page(self):
+        from engineering_agent.builder_html import palette
+        from engineering_agent.html_kit import base_css
+
+        spec, features = DesignDirectionTests.SPECS["재고 자동발주 SaaS"]
+        return self.PAGE.replace("{css}", base_css(palette(features, spec)))
+
+    def test_decorated_page_keeps_full_code_score_and_passes_self_checks(self):
+        from engineering_agent import gates
+        from engineering_agent.html_kit import decorate
+        from verification_agent.rules.gates import find_secret
+        from verification_agent.rules.r4 import check_html
+
+        page = decorate(self._page())
+        self.assertIn('<style data-kit="font">', page)
+        self.assertIn('<symbol id="i-cart"', page)
+        self.assertIn('aria-label="주문"', page)          # 대체 텍스트가 없던 아이콘에 뜻을 붙임
+        self.assertIn('aria-label="알림"', page)          # 있던 것은 그대로
+        failed = [(i["id"], i["evidence"]) for i in check_html(page) if not i["passed"] and i["id"] in (2, 4, 6, 7)]
+        self.assertEqual(failed, [])
+        self.assertEqual(gates.check_external_dependency_gate(page), (True, []))  # data: 글꼴은 외부가 아님
+        self.assertIsNone(find_secret(page))  # 글꼴 base64가 비밀값으로 잡히지 않음
+
+    def test_strip_removes_the_kit_for_rework_prompts_and_decorate_is_idempotent(self):
+        from engineering_agent.builder_html import user_message
+        from engineering_agent.html_kit import decorate, strip
+
+        page = self._page()
+        once = decorate(page)
+        self.assertEqual(decorate(once), once)
+        self.assertNotIn("data-kit", strip(once))
+        message = user_message("고쳐라", once)
+        self.assertNotIn("base64", message)
+        self.assertLess(len(message), len(once) // 10)  # 글꼴 약 580KB가 프롬프트에 실리지 않음
+
+    def test_prompt_lists_icons_without_asking_the_model_to_draw_them(self):
+        spec, features = DesignDirectionTests.SPECS["반려동물 피부 AI 앱"]
+        prompt = _build_system_prompt(features, spec, "AI_API")
+        self.assertIn('<use href="#i-이름"/>', prompt)
+        self.assertIn("cart(주문 · 장바구니)", prompt)
+        self.assertNotIn("base64", prompt)

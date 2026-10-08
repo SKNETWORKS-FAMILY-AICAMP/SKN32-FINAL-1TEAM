@@ -10,7 +10,7 @@ import uuid
 
 from engineering_agent import gates
 from engineering_agent.file_writer import parse_code_blocks, save_files
-from engineering_agent.html_kit import FRAMES, base_css
+from engineering_agent.html_kit import FRAMES, ICON_NAMES, base_css, decorate, strip
 
 # 진입 파일명. 프론트가 사용자에게 이 이름으로 보여주고(verificationReport.js의
 # 검증 대상 target, 산출물 ZIP 설명), 압축을 풀어 열 때의 관례적 진입점이기도 하다.
@@ -59,6 +59,7 @@ def _design_direction(feature_list: list[str], item_spec: dict) -> str:
     p = palette(feature_list, item_spec)
     first = feature_list[0] if feature_list else "첫 번째 기능"
     frames = "\n".join(f"  · `{cls}`: {desc}" for cls, desc in FRAMES.items())
+    icon_list = " · ".join(f"{name}({meaning})" for name, meaning in ICON_NAMES.items())
     return f"""
 ## 디자인 방향
 기본 디자인 CSS (이 사업의 색으로 미리 맞춰 둔 것. 명도 대비 · 폭 기준을 이미 지킨다)
@@ -68,6 +69,11 @@ def _design_direction(feature_list: list[str], item_spec: dict) -> str:
 - 새 색을 만들지 마라. 덧붙이는 스타일도 이 CSS에 나온 색만 쓰고, 글자가 놓이면 규칙 8대로 color와 background-color를 함께 적어라.
 ```css
 {base_css(p)}```
+아이콘 · 글꼴 (파일을 저장할 때 프로그램이 넣는다 — 너는 쓰기만 한다)
+- 아이콘은 `<svg class="icon" aria-label="뜻"><use href="#i-이름"/></svg>`로 메뉴 · 버튼 · 단계 · 빈 상태 · 결과 제목 앞에 쓴다.
+  크게는 `class="icon icon-lg"`. 아이콘 그림(path)을 직접 그리지 말고, 아이콘 묶음 · @font-face를 직접 넣지 마라.
+  쓸 수 있는 이름: {icon_list}
+- 글꼴은 기본 CSS의 font-family 그대로 둔다(Pretendard).
 화면 틀 (사업마다 다르게 — 아래 클래스 중 하나를 바깥 틀로 쓴다)
 - 첫 화면은 주 사용자가 '{first}'을(를) 바로 해 볼 수 있는 작업 화면으로 시작하라. 계획서의 목표 수치를 모은
   지표 카드 줄을 첫 화면 맨 위에 늘어놓지 마라. 사업 소개는 제목 아래 한두 줄이면 된다.
@@ -259,6 +265,7 @@ def user_message(instruction: str, previous_html: str = "") -> str:
 
     처음부터 다시 만들면 버튼 하나만 고치면 될 때도 화면 전체가 바뀌어, 잘 되던 부분이 달라지고
     재작성 전후 비교에서 점수가 떨어질 수 있다. 문제 내용은 조율이 지시문 끝에 이미 붙여 보낸다."""
+    previous_html = strip(previous_html)  # 끼워 넣은 글꼴 · 아이콘 묶음은 빼고 싣는다(저장 때 다시 넣는다)
     if not previous_html.strip():
         return instruction
     # 이전 HTML은 코드블록이 아니라 표시 태그로 감싼다. 출력 형식은 ```html:index.html인데, 여기서
@@ -344,6 +351,9 @@ def build_prototype_html(
                         "값을 지우고 더미 함수 · 빈칸 아니면 통과하는 로그인으로 바꿀 것"),
         }
 
+    # 자체 검사를 통과한 뒤에 글꼴 · 아이콘 묶음을 넣는다(모델이 옮겨 쓸 수 없는 데이터). 비밀값 검사는 넣기 전에 끝났고,
+    # 검증-2는 비밀값 검사 전에 data: base64를 지운다.
+    entry_content = decorate(entry_content)
     saved_paths = save_files({_ENTRY_FILENAME: entry_content}, run_id)
     implemented = _extract_implemented_features(entry_content)
 
