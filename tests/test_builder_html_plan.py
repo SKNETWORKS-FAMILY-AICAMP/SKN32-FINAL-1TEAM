@@ -171,3 +171,33 @@ class DesignDirectionTests(TestCase):
         self.assertNotIn("#1D4ED8", prompt)  # 예전 고정 예시 버튼 색
         self.assertIn("`<h1>`은 문서 전체에 하나", prompt)  # 화면을 나눠도 h1 하나(실측: 화면마다 h1 → 제목 계층 0점)
         self.assertNotIn("color:#0F172A; background-color:#FFFFFF", prompt)
+
+
+class BaseCssTests(TestCase):
+    """말로만 디자인을 지시하면 버튼 · 카드 · 글꼴이 매번 평범한 기본 모양이고, 모델이 색을 새로 만들다 대비를 어겼다.
+    검증된 기본 CSS를 그대로 넣게 한다. 이 CSS는 모든 색 테마에서 검증-2 4번(대비) · 6번(폭)을 통과해야 한다."""
+
+    def test_base_css_passes_contrast_and_width_in_every_theme(self):
+        from engineering_agent.html_kit import base_css
+        from engineering_agent.infographic.themes import THEMES
+        from verification_agent.rules.r4 import check_html
+
+        for name, colors in THEMES.items():
+            with self.subTest(name):
+                page = f'<!doctype html><html lang="ko"><head><style>{base_css(colors)}</style></head><body><h1>x</h1></body></html>'
+                items = {i["id"]: i for i in check_html(page)}
+                self.assertTrue(items[4]["passed"], items[4]["evidence"])
+                self.assertTrue(items[6]["passed"], items[6]["evidence"])
+                self.assertNotIn("var(--", base_css(colors))  # 규칙 8: CSS 변수로 흘리지 않는다
+
+    def test_prompt_carries_the_base_css_frames_and_state_rules(self):
+        from engineering_agent.builder_html import palette
+        from engineering_agent.html_kit import FRAMES, base_css
+
+        spec, features = DesignDirectionTests.SPECS["재고 자동발주 SaaS"]
+        prompt = _build_system_prompt(features, spec, "웹개발")
+        self.assertIn(base_css(palette(features, spec)), prompt)
+        for cls in FRAMES:
+            self.assertIn(f"`{cls}`", prompt)
+        for part in ('class="loading"', "`toast`", "`empty`", "`field-error`", "`steps`", "innerHTML)로"):
+            self.assertIn(part, prompt)

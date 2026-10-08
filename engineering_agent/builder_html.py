@@ -10,6 +10,7 @@ import uuid
 
 from engineering_agent import gates
 from engineering_agent.file_writer import parse_code_blocks, save_files
+from engineering_agent.html_kit import FRAMES, base_css
 
 # 진입 파일명. 프론트가 사용자에게 이 이름으로 보여주고(verificationReport.js의
 # 검증 대상 target, 산출물 ZIP 설명), 압축을 풀어 열 때의 관례적 진입점이기도 하다.
@@ -57,25 +58,34 @@ def _design_direction(feature_list: list[str], item_spec: dict) -> str:
     화면 틀 지시가 없어 늘 '사이드바 + 목표 수치 카드 한 줄'로 시작했다(실측: 실제 예시 계획서 셋)."""
     p = palette(feature_list, item_spec)
     first = feature_list[0] if feature_list else "첫 번째 기능"
+    frames = "\n".join(f"  · `{cls}`: {desc}" for cls, desc in FRAMES.items())
     return f"""
 ## 디자인 방향
-색 (이 사업의 색. 아래 색을 쓰고, 남색 · 파랑 기본 대시보드 색을 쓰지 마라)
-- 본문 글자 {p["ink"]}, 보조 글자 {p["muted"]}, 페이지 배경 {p["bg"]}, 카드 배경 #FFFFFF
-- 주요 버튼 · 강조 띠: 배경 {p["accent"]}(누르면 {p["accent_deep"]}) 위에 흰 글자 #FFFFFF
-- 옅은 강조 면(선택된 탭 · 배지 · 안내 상자): 배경 {p["tint"]} 위에 글자 {p["accent_deep"]}
-- 구분선 · 테두리 {p["line"]}. 이 짝들은 모두 대비 4.5:1 이상이다. 규칙 8대로 같은 셀렉터에 color와 background-color를 함께 적어라.
-화면 틀 (사업마다 다르게)
+기본 디자인 CSS (이 사업의 색으로 미리 맞춰 둔 것. 명도 대비 · 폭 기준을 이미 지킨다)
+- `<style>` 맨 위에 아래 CSS를 **글자 하나 바꾸지 말고 그대로** 넣어라. 그 아래에 이 화면에만 필요한 스타일을 덧붙여라.
+- 버튼 · 카드 · 입력칸 · 표 · 배지 · 단계 표시는 이 CSS의 클래스(`btn` · `btn-secondary` · `btn-ghost` · `btn-danger` ·
+  `card` · `badge` · `steps`/`step` · `result` 등)를 써라. 같은 부품을 새 스타일로 다시 만들지 마라.
+- 새 색을 만들지 마라. 덧붙이는 스타일도 이 CSS에 나온 색만 쓰고, 글자가 놓이면 규칙 8대로 color와 background-color를 함께 적어라.
+```css
+{base_css(p)}```
+화면 틀 (사업마다 다르게 — 아래 클래스 중 하나를 바깥 틀로 쓴다)
 - 첫 화면은 주 사용자가 '{first}'을(를) 바로 해 볼 수 있는 작업 화면으로 시작하라. 계획서의 목표 수치를 모은
   지표 카드 줄을 첫 화면 맨 위에 늘어놓지 마라. 사업 소개는 제목 아래 한두 줄이면 된다.
 - 주 사용자가 누구인지 계획서에서 찾아 틀을 골라라.
-  · 일반 이용자(손님 · 보호자 · 환자 · 학생 등)가 쓰는 서비스: 가운데에 폭 420~520px의 앱 화면 하나를 두고,
-    위에서 아래로 단계를 밟는 흐름(입력 → 확인 → 결과)과 아래쪽 탭 버튼으로 화면을 바꾼다.
-  · 매장 · 현장 담당자가 업무를 처리하는 서비스: 상단 메뉴 + 처리할 일 목록(표 또는 카드)과 각 항목의 상태 변경.
-  · 여러 거래처 · 데이터를 관리 · 분석하는 서비스: 왼쪽 메뉴 + 표 · 그래프 중심의 관리 화면.
-  · 비교 · 선택이 핵심인 서비스: 후보를 나란히 놓고 고르는 비교 화면.
+{frames}
 - 계획서의 목표 · 성과 수치는 필요하면 아래쪽이나 별도 화면에 두어라.
 - 화면(탭 · 단계)을 여러 개로 나눠도 `<h1>`은 문서 전체에 하나(서비스 이름)뿐이다. 화면마다의 제목은 `<h2>`,
-  그 안의 구역 제목은 `<h3>`로 써라(규칙 3)."""
+  그 안의 구역 제목은 `<h3>`로 써라(규칙 3).
+동작 상태 (시연할 때 '동작한다'가 보이게)
+- 처리하는 버튼을 누르면 결과 자리에 먼저 처리 중 표시(`<div class="loading"><span class="spinner"></span>분석 중…</div>`)를
+  0.6~1.2초 보여 준 뒤(setTimeout) 결과를 `result` 상자에 그린다. 결과 안에 들어갈 버튼 · 입력칸은 문자열(innerHTML)로
+  새로 만들지 말고 처음부터 HTML에 두고 `hidden` 클래스로 숨겼다가 결과가 나오면 보여라 — 스크립트가 찾는 id는
+  처음 문서에 있어야 한다(규칙 12). 결과 글자 · 표 행처럼 id가 없는 내용만 문자열로 그린다.
+- 완료 · 저장 · 전송처럼 화면 밖 일은 `toast`로 알린다(2~3초 뒤 `hidden` 클래스로 숨김). 실패는 `toast error`.
+  alert()는 쓰지 마라(규칙 10).
+- 아직 결과 · 항목이 없는 자리에는 `empty` 상자에 무엇을 하면 채워지는지 한 줄로 적는다.
+- 필수 입력칸이 비었거나 형식이 틀리면 처리하지 말고 그 입력칸 바로 아래 `field-error`로 이유를 적는다.
+- 단계로 나뉜 흐름은 `steps`로 지금 단계(`step active`)와 끝난 단계(`step done`)를 보여 준다."""
 
 
 def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str,
