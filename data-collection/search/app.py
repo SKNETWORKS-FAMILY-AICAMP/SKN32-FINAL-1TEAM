@@ -213,6 +213,13 @@ def boot():
         STATE['boot_errors']['bonus'] = _describe(exc, '공고 가점 읽기')
     print('공고 가점 %d건 (내용이 바뀌어 뺌 %d · 추출기 버전이 달라 뺌 %d)'
           % (len(STATE['bonus']), stale.get('content', 0), stale.get('version', 0)))
+    # 원문 대조를 마친 공고 목록(결정 0017). 없거나 깨지면 목록 전체를 쓰지 않는다 — 순위 반영 0건, 가산점 표시는 그대로
+    STATE['bonus_reviewed'] = {}
+    try:
+        STATE['bonus_reviewed'] = bonus_mod.load_reviewed()
+    except Exception as exc:
+        STATE['boot_errors']['bonus_reviewed'] = _describe(exc, '원문 대조 공고 목록 읽기')
+    print('원문 대조를 마친 공고 목록 %d건' % len(STATE['bonus_reviewed']))
 
     # 단어 검색 색인. 공고 문장은 임베딩과 **같은 입력**(embed.build_input)을 쓴다.
     # 평가(eval/build_pool.py corpus)와도 같다. 매일 배치 뒤에는 서버를 다시 켜야 반영된다.
@@ -371,10 +378,11 @@ class Weights(BaseModel):
     penalty_pre_implied: float = 0.5  # score 방식에서 예비창업자인데 대상이 기존 사업자로 보이는 공고(추정)
     # 가산점 반영 세기(03_bonus 3-4). 검색 점수 × (1 + bonus × min(가산점, 10)/10). 0 이면 가산점 전과 순서가 같다.
     # order 방식에서는 규칙 묶음(다른 지역 등)을 넘지 않고 같은 묶음 안에서만 순서를 바꾼다.
-    # 기본 0(2026-10-06 Codex 검수 P3-1): 0.1~0.3 모두 관련도 지표 변화 0 이었지만(eval/bonus_rank_eval.py,
-    # reports/bonus_rank_eval_20261006T015155Z/) 정답이 가산점을 몰라 "좋은 순위"인지 재지 못했고 가점 추출 정확도도
-    # 사람 정답으로 확인하지 않았다. 확인될 때까지 순위에는 반영하지 않는다(결과의 bonus_score 는 그대로 나간다)
-    bonus: float = 0.0
+    # 기본 0.2(2026-10-08 사용자 결정, 결정 0017 — 멘토 의견 "가산점도 중요"). 단 **원문 대조를 마친 공고 목록**
+    # (search/bonus_reviewed.json)에 있고 대조 당시와 공고·가점 행이 같은 공고만 얹는다(bonus.reviewed_ok). 평가 정답이
+    # 가산점을 몰라 "좋은 순위"인지 잴 수 없다는 한계(결정 0008)는 그대로라, 확인된 공고만 올리는 것으로 위험을 막는다.
+    # 0 이면 예전처럼 순서가 바뀌지 않는다(시험 화면의 "0 (예전 방식)").
+    bonus: float = 0.2
 
 
 class MatchRequest(BaseModel):
@@ -473,22 +481,40 @@ def eligible_with_types(nid, row, age_months, today, check_deadline=True, types_
 BONUS_SCALE = 10.0     # 가산점 10점을 "가득"으로 본다(공고 가점 한도는 대개 3~10점, 2026-10-06 표본)
 
 
-def bonus_boost(candidates, ranks, hybrid_on, req):
-    """{공고 ID: 가산점을 얹은 검색 점수} — order 방식의 같은 규칙 묶음 안 정렬에 쓴다(03_bonus 3-4).
+def bonus_verified(nid, entry, points, items):
+    """이 공고의 지금 가산점이 원문 대조를 마친 공고 목록과 맞나(결정 0017·0018) — 세기·검색 경로와 상관없다.
+    목록 판단에서 예외가 나면(목록 값이 이상함) 대조 안 된 것으로 본다 — 검색 전체를 멈추지 않는다(Codex 4차 R4-P2-2)."""
+    if not points:
+        return False
+    try:
+        return bonus_mod.reviewed_ok(STATE.get('bonus_reviewed') or {}, nid, entry,
+                                     STATE.get('content_versions', {}).get(nid), items)
+    except Exception as exc:
+        _describe(exc, '원문 대조 목록 판단(%s)' % nid)
+        return False
 
-    검색 점수는 scored 방식과 같은 척도: 하이브리드면 RRF, 의미 검색만이면 유사도. 점수가 없는 경로(마감임박순)는 빈 사전 —
-    순서를 바꾸지 않는다. 가산점이 null(계산하지 못함)·0 이면 얹지 않는다.
+
+def bonus_boost(candidates, ranks, hybrid_on, req):
+    """({공고 ID: 가산점을 얹은 검색 점수}, {가산점을 실제로 얹은 공고 ID}) — order 방식의 같은 규칙 묶음 안 정렬에 쓴다(03_bonus 3-4).
+
+    검색 점수는 scored 방식과 같은 척도: 하이브리드면 RRF, 의미 검색만이면 유사도. 점수가 없는 경로(마감임박순)는 빈 결과 —
+    순서를 바꾸지 않는다. 가산점이 null(계산하지 못함)·0 이면 얹지 않는다. 원문 대조를 마친 공고 목록에 없거나 대조 당시와
+    공고·가점 행이 다르면 얹지 않는다(결정 0017 — 표시용 bonus_score 는 그대로).
     """
-    out, any_bonus = {}, False
+    out, applied = {}, set()
     for nid, dist, _row in candidates:
         base = ranks.get(nid, {}).get('rrf_score') if (hybrid_on or dist is None) else 1.0 - dist
         if base is None:
-            return {}
-        points = bonus_mod.score(STATE.get('bonus', {}).get(nid), req)[0] or 0.0
-        any_bonus = any_bonus or points > 0
+            return {}, set()
+        entry = STATE.get('bonus', {}).get(nid)
+        points, items = bonus_mod.score(entry, req)
+        if not bonus_verified(nid, entry, points, items):
+            points = 0.0
+        if points > 0:
+            applied.add(nid)
         out[nid] = base * (1.0 + req.weights.bonus * min(points, BONUS_SCALE) / BONUS_SCALE)
-    # 가산점이 있는 후보가 하나도 없으면 다시 정렬하지 않는다 — 가산점 전과 순서가 정확히 같다
-    return out if any_bonus else {}
+    # 가산점을 얹은 후보가 하나도 없으면 다시 정렬하지 않는다 — 가산점 전과 순서가 정확히 같다
+    return (out, applied) if applied else ({}, set())
 
 
 def match(req: MatchRequest):
@@ -693,9 +719,10 @@ def match(req: MatchRequest):
     #   6) 같은 조건이면 검색 순서를 그대로 둔다
     #   6') 가산점(03_bonus 3-4, weights.bonus > 0 일 때만) — 같은 묶음 안에서 검색 점수 × (1 + 세기 × 가산점/10)
     demoted, region_demoted, district_demoted, industry_demoted = [], [], [], []
+    bonus_applied = set()                     # 가산점을 순위에 실제로 얹은 공고(결정 0017) — score 방식·세기 0 이면 비어 있다
     if not scored_mode:
         order_of = {nid: i for i, (nid, _d, _r) in enumerate(candidates)}
-        boosted = bonus_boost(candidates, ranks, hybrid_on, req) if req.weights.bonus > 0 else {}
+        boosted, bonus_applied = bonus_boost(candidates, ranks, hybrid_on, req) if req.weights.bonus > 0 else ({}, set())
         candidates.sort(key=lambda c: (flags[c[0]]['region'],
                                        flags[c[0]]['district'],
                                        flags[c[0]]['pre_implied'],
@@ -759,7 +786,12 @@ def match(req: MatchRequest):
             'content_version': STATE.get('content_versions', {}).get(nid),
         })
         # 신청자별 가산점(search/bonus.py, 03_bonus 3-3). 0 = 해당 가점 없음, null = 계산하지 못함
-        results[-1]['bonus_score'], results[-1]['bonus_items'] = bonus_mod.score(STATE.get('bonus', {}).get(nid), req)
+        entry = STATE.get('bonus', {}).get(nid)
+        results[-1]['bonus_score'], results[-1]['bonus_items'] = bonus_mod.score(entry, req)
+        # 원문 대조를 마친 공고 목록과 맞나(결정 0018) — 세기·경로와 상관없이. 조율 쪽 화면은 이것이 참인 가산점만 보여 준다
+        results[-1]['bonus_verified'] = bonus_verified(nid, entry, results[-1]['bonus_score'], results[-1]['bonus_items'])
+        # 이 공고의 가산점이 이번 순위에 실제로 쓰였나(결정 0017) — 원문 대조를 마친 공고 목록 안 + 세기 > 0 + 가산점 > 0
+        results[-1]['bonus_rank_applied'] = nid in bonus_applied
         hit = flags.get(nid, {})
         results[-1]['rules'] = {'groups': hit.get('groups') or [],
                                 'off_region': bool(hit.get('region')),

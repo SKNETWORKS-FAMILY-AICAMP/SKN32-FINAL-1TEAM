@@ -43,7 +43,7 @@
 | [notice_api/](notice_api/README.md) | **조율 에이전트가 부르는 공고 서버 API 작업**(2026-10-06~). 전체 계획·진행표와 작업별 폴더(`01_status_match/` · `02_detail_eligibility/` · `03_bonus/`)와 [Codex 검토 요청](notice_api/CODEX_REVIEW_REQUEST_20261006.md) → [결과](notice_api/CODEX_REVIEW_20261006.md) → [응답·재검수 요청](notice_api/CODEX_REVIEW_RESPONSE_20261006.md)(재검수 결과는 같은 폴더 `CODEX_REVIEW_RECHECK_20261006.md`). 가산점 10/7: [재검수 요청](notice_api/CODEX_BONUS_RECHECK_REQUEST_20261007.md) → [결과](notice_api/CODEX_BONUS_RECHECK_20261007.md) → [재재검수 요청](notice_api/CODEX_BONUS_RECHECK2_REQUEST_20261007.md) · [조율 담당 알림 초안](notice_api/BONUS_NOTICE_DRAFT_20261007.md). 코드는 `search/` 등 기존 자리에 있고, 각 작업 README에 바꾼 파일을 적는다 | **지금 연결 방식.** 9/29 직접 import 설명서(`archive/ORCHESTRATION_HANDOFF.md`)를 대신한다. 연결 지도 HTML·API 사용법 엑셀도 여기 있다 |
 | [reviews/](reviews/) | 작업 지시서·검수 요청서·검수 결과. 주제별 폴더 | 아래 3절 |
 | [ml/](ml/) | 머신러닝(리랭커·업력 분류기) 설계·방향과 도식 | 서비스에 연결되지 않은 제출물용 |
-| [deliverables/](deliverables/) | 제출한 보고서(docx)와 확인용 렌더링(`_qa/`). 10/7 `[단위 테스트] 공고 데이터·매칭 단위 테스트 결과서.docx` 추가(근거 `reports/unit_test_20261007T024611Z/` — 가산점 지적 처리 뒤 다시 만든 판) | 제출본이다. 고치지 않는다 |
+| [deliverables/](deliverables/) | 제출한 보고서(docx)와 확인용 렌더링(`_qa/`). 10/7 `[단위 테스트] 공고 데이터·매칭 단위 테스트 결과서.docx` — 10/7 저녁 정리 뒤 다시 잰 **개정판**(근거 `reports/unit_test_20261007T062019Z/`). 제출본은 처음 판(오전 측정, 근거 `reports/unit_test_20261007T024611Z/`, Git 기록에 있음) | 제출본이다. 고치지 않는다. 예외: 단위 테스트 결과서는 사용자 결정으로 개정판으로 덮어씀(처음 제출본은 Git 기록) |
 | [archive/](archive/) | 지난 인계서(9/14·9/22·9/28·9/29·10/6), 9/29 하루 정리, **지난 방식 문서**(직접 import 설명서 `ORCHESTRATION_HANDOFF.md`, PC 작업 스케줄러 `SCHEDULER.md`, Chroma 시절 구조도 `architecture.html`·`ARCHITECTURE.svg`·`hybrid_flow.html`·`pipeline_flow.html`) | **최신이 아니다.** 배경을 찾을 때만 읽는다 |
 
 ## 3. reviews/ — 주제별 검수 기록

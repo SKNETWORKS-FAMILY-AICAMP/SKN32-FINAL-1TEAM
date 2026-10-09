@@ -61,6 +61,23 @@ class DailyTests(unittest.TestCase):
         self.assertEqual([t['notice_id'] for t in todo], ['b', 'c'])
         self.assertEqual((skipped, deferred), (1, 0))
 
+    def test_other_engine_is_called_again(self):
+        # 엔진이 없는 옛 행(gpt-5.6-luna@medium)은 문서가 같아도 새 엔진으로 다시 뽑는다(결정 0013)
+        old = item('a')
+        existing = {'a': {'notice_id': 'a', 'document_sha256': old['document_sha256'],
+                          'llm': {'pre_founder': {'status': 'allowed'}}}}
+        new_engine = '%s@%s' % (atl.MODEL, atl.EFFORT)
+        self.assertEqual([t['notice_id'] for t in daily.plan([old], existing, 300, engine=new_engine)[0]], ['a'])
+        self.assertEqual(daily.plan([old], existing, 300)[0], [])                 # 엔진을 안 주면 예전처럼
+        existing['a']['engine'] = new_engine
+        self.assertEqual(daily.plan([old], existing, 300, engine=new_engine)[0], [])
+        self.assertEqual(daily.engine_of({}), 'gpt-5.6-luna@medium')
+
+    def test_rows_record_engine(self):
+        self.run_batch([item('x')])
+        rows = daily.read_jsonl(os.path.join(self.tmp, 'results.jsonl'))
+        self.assertEqual(rows[0]['engine'], '%s@%s' % (atl.MODEL, atl.EFFORT))
+
     def test_run_writes_results_and_verifies(self):
         out = self.run_batch([item('x'), item('y')])
         self.assertEqual(out['extracted'], 2)

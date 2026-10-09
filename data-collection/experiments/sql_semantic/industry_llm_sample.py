@@ -84,11 +84,12 @@ MODEL = 'gpt-4o-mini'                     # 기본값. 기존 업력 추출기�
 # 1M 토큰당 USD (입력, 출력). 추정용 — 청구액이 아니다.
 # 2026-09-22 https://developers.openai.com/api/docs/pricing 표준 단가를 옮겼다(v1~v3 실행의 gpt-4o-mini 기록 단가와 같다).
 PRICES = {'gpt-4o-mini': (0.15, 0.60), 'gpt-4.1-mini': (0.40, 1.60),
-          'gpt-5.6-luna': (0.20, 1.20), 'gpt-5.6-terra': (2.00, 12.00), 'gpt-5.6-sol': (4.00, 20.00)}
+          'gpt-5.6-luna': (0.20, 1.20), 'gpt-5.6-terra': (2.00, 12.00), 'gpt-5.6-sol': (4.00, 20.00),
+          'gpt-6-luna': (0.10, 0.50)}   # gpt-6-luna: 2026-09-30 OpenAI 요금 페이지(docs/archive/WORKLOG_202609.md 9/30)
 PRICE_IN, PRICE_OUT = PRICES[MODEL]
 PRICE_BASIS = '2026-09-22 OpenAI 요금 페이지 표준 단가'
 # 추론 모델은 temperature 를 보내지 않고 reasoning_effort 를 고를 수 있다. 추론 토큰은 출력 요금으로 청구된다.
-REASONING_PREFIXES = ('gpt-5', 'o1', 'o3', 'o4')
+REASONING_PREFIXES = ('gpt-5', 'gpt-6', 'o1', 'o3', 'o4')
 REASONING_EFFORTS = ('none', 'low', 'medium', 'high')
 # 비용 **추정**에만 쓰는 호출당 추론 토큰 가정. 실제 값은 응답 usage 로 기록한다
 REASONING_TOKENS_GUESS = {None: 1500, 'none': 0, 'low': 600, 'medium': 1500, 'high': 4000}
@@ -967,7 +968,8 @@ def only_new(items, base_folder, reports_dir=None):
             kept.append(it)
             continue
         sha = it['document_sha256']
-        cap = cap_of(row.get('source_run'))
+        # 행에 적힌 발췌 상한이 먼저다 — 길게 다시 읽은 공고를 새 엔진으로 다시 뽑으면 source_run 이 매일 실행 이름이 된다
+        cap = (row.get('llm') or {}).get('excerpt_cap') or cap_of(row.get('source_run'))
         if cap != ec.MAX_CHARS and row.get('document_sha256') != sha:
             sha = prepare(dict(it), cap)['document_sha256']
         if row.get('document_sha256') != sha:

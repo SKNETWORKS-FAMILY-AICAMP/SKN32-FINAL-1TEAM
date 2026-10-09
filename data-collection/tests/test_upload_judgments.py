@@ -122,6 +122,19 @@ class UploadTests(unittest.TestCase):
         self.assertEqual(rows['n1']['extractor_version'], 'applicant_type_llm gpt-5.6-luna@medium')
         self.assertEqual(rows['n1']['prompt_tokens'], 100)
 
+    def test_versions_follow_each_row_engine(self):
+        # 행마다 뽑은 엔진으로 추출기 버전을 적는다. 엔진이 없는 옛 행은 gpt-5.6-luna@medium (결정 0013)
+        types = self.write('mixed_types', [dict(TYPE_ROWS[0], engine='gpt-6-luna@medium'), TYPE_ROWS[1]],
+                           {'engine': 'gpt-6-luna@medium', 'prompt_sha256': 'p' * 64})
+        rows = {r['notice_id']: r for r in up.type_rows(types, self.documents)}
+        self.assertEqual(rows[TYPE_ROWS[0]['notice_id']]['extractor_version'], 'applicant_type_llm gpt-6-luna@medium')
+        self.assertEqual(rows[TYPE_ROWS[1]['notice_id']]['extractor_version'], 'applicant_type_llm gpt-5.6-luna@medium')
+        inds = self.write('mixed_inds', [dict(INDUSTRY_ROWS[0], engine='gpt-6-luna@medium'), INDUSTRY_ROWS[1]],
+                          {'engine': 'gpt-6-luna@medium', 'prompt': 'v3', 'prompt_sha256': 'q' * 64})
+        rows = {r['notice_id']: r for r in up.industry_rows(inds)}
+        self.assertEqual(rows[INDUSTRY_ROWS[0]['notice_id']]['extractor_version'], 'industry_llm v3 gpt-6-luna@medium')
+        self.assertEqual(rows[INDUSTRY_ROWS[1]['notice_id']]['extractor_version'], 'industry_llm v3 gpt-5.6-luna@medium')
+
     def test_industry_rows_compute_sections_and_rank_flag(self):
         rows = {r['notice_id']: r for r in up.industry_rows(self.inds)}
         self.assertEqual(rows['n1']['allowed_sections'], ['C'])

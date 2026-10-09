@@ -53,6 +53,7 @@ def legacy_bonus(path=None):
                              capture_output=True, check=True).stdout.decode('utf-8')
     spec = importlib.util.spec_from_loader('bonus_legacy', loader=None)
     mod = importlib.util.module_from_spec(spec)
+    mod.__file__ = os.path.join(ROOT, 'search', 'bonus_legacy.py')   # 예전 파일이 자기 위치를 쓰는 경우(목록 경로 등)
     exec(compile(src, 'bonus_legacy.py', 'exec'), mod.__dict__)
     return mod
 

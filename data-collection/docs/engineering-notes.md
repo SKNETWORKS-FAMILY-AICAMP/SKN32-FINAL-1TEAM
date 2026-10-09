@@ -74,7 +74,7 @@
 ## 시험 작성
 
 - 배치 모듈의 기본 경로는 **함수를 정의할 때 묶인다**(`attachment_pipeline.done_already(path=RESULTS)`·`append`, `upload_vectors.load_local(path=NPZ)`, `upload_attachments.local_files(root=ATTACH)`). 시험에서 모듈 상수만 바꾸면 실제 `data/`를 읽고 쓴다(10/7 `data/attachment_results.jsonl`에 가짜 기록이 생긴 적 있음). 시험은 함수 자체를 임시 경로로 감싸서 바꾼다(`tests/test_attachment_pipeline.py`·`test_upload_vectors.py`·`test_upload_attachments.py`).
-- 커버리지는 `.venv`에 `coverage`를 설치해 잰다(의존성 목록에는 없음). 범위·측정 스크립트는 `reports/unit_test_20261007T021113Z/`의 `run_unit.py`·`cov_summary.py`.
+- 커버리지는 `.venv`에 `coverage`를 설치해 잰다(의존성 목록에는 없음). 범위·측정 스크립트는 `reports/unit_test_20261007T062019Z/`의 `run_unit.py`·`cov_summary.py`.
 
 ## 확인 순서 (반복 작업)
 

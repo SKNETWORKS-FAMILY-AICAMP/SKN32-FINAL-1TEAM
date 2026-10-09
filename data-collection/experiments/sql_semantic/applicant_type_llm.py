@@ -56,7 +56,7 @@ from experiments.sql_semantic import industry_llm_sample as ils  # noqa: E402  (
 from search import gate  # noqa: E402
 from shared import config as pipeline_config  # noqa: E402
 
-MODEL = 'gpt-5.6-luna'
+MODEL = 'gpt-6-luna'                      # 2026-10-07 결정 0013 (전에는 gpt-5.6-luna)
 EFFORT = 'medium'
 SEED = 20260928
 N_BIZINFO, N_KSTARTUP = 40, 20

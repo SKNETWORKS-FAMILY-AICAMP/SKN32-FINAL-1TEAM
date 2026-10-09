@@ -137,6 +137,12 @@
       <button type="button" id="clear-form">비우기</button>
       <span class="saved" id="saved-note" hidden>직전 입력을 불러왔습니다</span>
     </div>
+    <div class="samples">
+      <span>가산점 확인용 (누르면 바로 매칭):</span>
+      <button type="button" data-sample="3" data-run title="김포시 중소기업 육성자금 공고 — 벤처기업 가점">벤처기업 · 경기 김포</button>
+      <button type="button" data-sample="4" data-run title="전북 중소기업 육성자금 공고 — 장애인기업·이노비즈 가점">장애인기업 · 전북</button>
+      <button type="button" data-sample="5" data-run title="수원메가쇼 참가·중소기업제품 전용판매장 공고 — 여성기업 가점">여성기업 · 충남</button>
+    </div>
 
     <div class="panel">
       <label class="h">신청자 유형</label>
@@ -245,8 +251,19 @@
       <span><b>특정 대상 집단 공고 뒤로 보내기</b> <small>(시험 · 개선안 B)</small><br>
         <small>장애인·체육인·재창업자 등 대상이 정해진 공고는, 입력에 그 집단이라는 내용이 없으면 뒤로 보냅니다. 끄면 기존 방식으로 다시 검색합니다.</small></span>
     </label>
+    <label class="toggle">
+      <select id="bonus-weight">
+        <option value="0">0 (예전 방식)</option>
+        <option value="0.2" selected>0.2 (지금 서비스)</option>
+        <option value="0.5">0.5</option>
+        <option value="1">1.0</option>
+      </select>
+      <span><b>가산점 순위 반영 세기</b> <small>(서비스 기본값 0.2 · 2026-10-08부터)</small><br>
+        <small><b>원문 대조를 마친 공고 목록</b>에 있는 공고만, 같은 묶음 안에서 검색 점수 × (1 + 세기 × 가산점/10)으로 올립니다. 목록 밖 공고는 가산점이 보여도 순위에는 쓰지 않습니다. 바꾸면 같은 입력으로 다시 검색하고, 세기 0일 때와 자리가 바뀐 공고를 아래에 적습니다.</small></span>
+    </label>
     <div class="banner warn" id="fallback" hidden style="margin:0 0 14px"></div>
     <p class="hint" id="bonus-summary"></p>
+    <p class="hint" id="bonus-moved" hidden></p>
     <div class="cards" id="cards"></div>
     <div class="list" id="list"></div>
     <button class="more" id="more" hidden>10건 더 보기</button>
@@ -352,6 +369,34 @@ const SAMPLES = [
     certs: ['여성기업'], hiring: true,
     team: [['최사장', '대표', '제과 경력 8년']],
     rev: [['온라인 주문 1건', '18000']] },
+
+  // 아래 셋은 가산점 확인용: 가점 항목이 확인된 공고가 결과 위쪽에 오도록 맞춘 가짜 신청자다
+  { name: '가산점 · 벤처기업 · 경기 김포', type: '법인',
+    fields: { owner: '정벤처', birth: '1983-02-14', gender: '여성', region: '경기',
+              district: '김포시', industry: '제조업', bizno: '1112233333',
+              founded: '2021-05-01', selffund: 'yes', fundbudget: '5000',
+              idea: '김포시 중소기업 육성자금 융자 지원으로 운전자금과 시설자금을 확보하려는 제조 중소기업이다' },
+    certs: ['여성기업', '벤처기업'], hiring: true,
+    team: [['정벤처', '대표', '자동화 설비 제조 12년']],
+    rev: [['설비 납품', '8000']] },
+
+  { name: '가산점 · 장애인기업 · 전북', type: '법인',
+    fields: { owner: '한대표', birth: '1979-07-03', gender: '남성', region: '전북',
+              industry: '제조업', bizno: '4445566666',
+              founded: '2019-01-01', selffund: 'yes',
+              idea: '전북 중소기업 육성자금 융자 지원을 받아 운전자금을 확보하려는 장애인기업이다' },
+    certs: ['장애인기업', '이노비즈'], hiring: true,
+    team: [['한대표', '대표', '부품 가공 15년']],
+    rev: [['가공 부품 납품', '1200']] },
+
+  { name: '가산점 · 여성기업 · 충남', type: '개인사업자',
+    fields: { owner: '윤사장', birth: '1988-09-21', gender: '여성', region: '충남',
+              industry: '식품제조', bizno: '7778899999',
+              founded: '2023-03-01', selffund: 'no',
+              idea: '수원메가쇼 같은 박람회에 참가하는 경영체로 판로를 넓히고 중소기업제품 전용판매장에도 입점하려는 식품 소상공인이다' },
+    certs: ['여성기업'], hiring: false,
+    team: [['윤사장', '대표', '전통 장류 제조 6년']],
+    rev: [['장류 세트', '35000']] },
 ];
 
 const TEXT_IDS = ['owner', 'birth', 'gender', 'region', 'district', 'industry', 'idea',
@@ -395,7 +440,12 @@ function whenFormReady(run) {
 }
 
 document.querySelectorAll('[data-sample]').forEach(b => {
-  b.onclick = () => whenFormReady(() => { fill(SAMPLES[Number(b.dataset.sample)]); save(); });
+  b.onclick = () => whenFormReady(() => {
+    fill(SAMPLES[Number(b.dataset.sample)]);
+    save();
+    // 가산점 확인용 예시는 입력 확인 없이 바로 매칭까지 한다
+    if (b.hasAttribute('data-run') && !$('#go').disabled) $('#go').click();
+  });
 });
 $('#clear-form').onclick = () => {
   fill({ type: '개인사업자', fields: {}, certs: [], hiring: false, team: [], rev: [] });
@@ -520,14 +570,40 @@ $('#go').onclick = async () => {
   } finally { validate(); }
 };
 
-// 개선안 B 켜고 끄기 — 같은 입력으로 다시 검색해 결과를 바로 비교한다
-$('#demote').addEventListener('change', async () => {
+// 개선안 B 켜고 끄기·가산점 세기 바꾸기 — 같은 입력으로 다시 검색해 결과를 바로 비교한다
+['#demote', '#bonus-weight'].forEach(s => $(s).addEventListener('change', async () => {
   if (!last) return;
   $('#cards').style.opacity = .4;
   try { await runMatch(); }
   catch (e) { $('#list-foot').innerHTML = `<span class="err">실패: ${esc(String(e.message).slice(0,200))}</span>`; }
   finally { $('#cards').style.opacity = 1; }
-});
+}));
+
+// 매칭 요청 본문. 가산점 세기는 화면에서 고른 값만 보내고 나머지 가중치는 서버 기본값을 쓴다
+function matchBody(offset, bonus = Number($('#bonus-weight').value)) {
+  return {...last, offset, demote_groups: $('#demote').checked, weights: {bonus}};
+}
+
+// 세기 > 0 이면 세기 0(지금 서비스)으로 한 번 더 불러 자리가 바뀐 공고를 적는다. 순위는 서버가 정한 그대로 비교만 한다
+async function showBonusMoves(results) {
+  const box = $('#bonus-moved');
+  const w = Number($('#bonus-weight').value);
+  box.hidden = true;
+  if (!w) return;
+  const base = {};
+  for (const off of [0, 10]) {
+    const d = await post('/api/match', matchBody(off, 0));
+    d.results.forEach(x => { base[x.notice_id] = x.rank; });
+    if (!d.has_more) break;
+  }
+  const moved = results.filter(x => base[x.notice_id] !== x.rank);
+  box.innerHTML = moved.length
+    ? `<b>세기 ${w}로 자리가 바뀐 공고 ${moved.length}건</b> (세기 0일 때 → 지금)<br>`
+      + moved.map(x => `${esc(x.title)} — ${base[x.notice_id] ? base[x.notice_id] + '위' : '20위 밖'} → ${x.rank}위`
+        + (x.bonus_score ? ` <small>(확인된 가산점 +${x.bonus_score}점)</small>` : '')).join('<br>')
+    : `<b>세기 ${w}로 바뀐 순위 없음</b> — 상위 10건 안에서는 세기 0일 때와 순서가 같습니다`;
+  box.hidden = false;
+}
 
 // 적합도(fit_score, 잠정): RRF 점수 ÷ 이론 최대값. 대체 경로(마감임박순)에서는 없다.
 // 확률이 아니라 "이번 검색에서 얼마나 위에 걸렸나" 의 상대값이라 %로 쓰지 않는다(2026-09-28 Codex 통합 검수 P3).
@@ -549,19 +625,33 @@ function periodText(n) {
 }
 
 // 가산점(시험 단계) — bonus_score 는 "확인된 가산점 부분합"(신청자 정보로 해당·배점을 확인한 항목만 더한 값,
-// 받을 수 있는 전체 합계가 아님). 0 = 해당 가점 없음이 확인됨, null = 확인된 것이 없음. 순위에는 쓰지 않는다
+// 받을 수 있는 전체 합계가 아님). 0 = 해당 가점 없음이 확인됨, null = 확인된 것이 없음. 순위에는 원문 대조를 마친 공고만 쓴다(결정 0017)
 const BONUS_TIP = '신청자 정보로 확인된 가점만 더한 값입니다(일부). 실제 받을 수 있는 가산점은 공고문을 확인하세요.';
 function bonusText(n) {
   if (n.bonus_score == null) return '<span class="bonus unk" title="신청자 정보로 확인할 수 없거나 가점 정보를 읽지 못했습니다">가산점 모름</span>';
   if (n.bonus_score === 0) return '<span class="bonus zero" title="공고의 가점 항목에 해당하지 않음이 확인됐습니다">가산점 없음</span>';
   const items = (n.bonus_items || []).map(i => `${i.name} ${i.points}점`).join(' · ');
-  return `<span class="bonus has" title="${esc(BONUS_TIP + (items ? ' — ' + items : ''))}">확인된 가산점 +${n.bonus_score}점(일부)</span>`;
+  // 원문 대조 여부(bonus_verified)·순위 반영 여부(bonus_rank_applied)는 서버 응답 그대로(결정 0017·0018).
+  // 조율 쪽 화면은 원문 대조된 가산점만 보여 준다 — 이 시험 화면은 내부용이라 대조 전 값도 "원문 대조 전"으로 보인다
+  let rank;
+  if (!n.bonus_verified) {
+    rank = ' <span class="bonus zero" title="원문 대조를 마친 공고 목록에 없거나, 대조한 뒤 공고·가점이 바뀌었습니다. 조율 쪽 화면에는 보이지 않습니다">· 원문 대조 전</span>';
+  } else {
+    const done = ' <span class="bonus has" title="원문 대조를 마친 공고 목록과 맞습니다">· 원문 대조됨</span>';
+    rank = done + (n.bonus_rank_applied
+      ? ' <span class="bonus has" title="이 가산점을 순위 계산에 썼습니다">· 순위 반영됨</span>'
+      : Number($('#bonus-weight').value) === 0
+        ? ' <span class="bonus zero" title="세기 0(예전 방식)이라 가산점을 순위에 쓰지 않았습니다">· 세기 0이라 순위 미반영</span>'
+        : ' <span class="bonus zero" title="이번 검색 경로에서는 가산점을 순위에 쓰지 않았습니다">· 이번 검색에서는 순위 미반영</span>');
+  }
+  return `<span class="bonus has" title="${esc(BONUS_TIP + (items ? ' — ' + items : ''))}">확인된 가산점 +${n.bonus_score}점(일부)</span>${rank}`;
 }
 
 let bonusCount = {has: 0, zero: 0, unk: 0};
 function countBonus(results) {
   results.forEach(n => { bonusCount[n.bonus_score == null ? 'unk' : n.bonus_score === 0 ? 'zero' : 'has'] += 1; });
-  $('#bonus-summary').innerHTML = `가산점(시험 단계 · 순위에는 쓰지 않음): 확인된 가산점 있음 <b>${bonusCount.has}</b>건 · `
+  const bw = Number($('#bonus-weight').value);
+  $('#bonus-summary').innerHTML = `가산점(조율 쪽 화면에는 원문 대조된 것만 · ${bw ? `원문 대조를 마친 공고만 세기 ${bw}로 순위에 반영` : '세기 0 — 순위에는 쓰지 않음'}): 확인된 가산점 있음 <b>${bonusCount.has}</b>건 · `
     + `없음 ${bonusCount.zero}건 · 모름 ${bonusCount.unk}건 <small>— 공고를 누르면 항목과 공고문 가점 원문을 볼 수 있습니다</small>`;
 }
 
@@ -595,7 +685,7 @@ function addResults(results) {
 
 let shown = 0;
 async function runMatch() {
-    const d = await post('/api/match', {...last, offset: 0, demote_groups: $('#demote').checked});
+    const d = await post('/api/match', matchBody(0));
     $('#list-title').textContent =
       `지금 신청 가능한 공고 ${d.filtered_count}건 중 가장 맞는 ${d.count}건입니다`;
     $('#list-lede').textContent =
@@ -613,6 +703,8 @@ async function runMatch() {
     shown = d.results.length;
     $('#more').hidden = !d.has_more;
     $('#more').disabled = false;
+    try { await showBonusMoves(d.results); }
+    catch (e) { $('#bonus-moved').innerHTML = `<span class="err">세기 0 비교 실패: ${esc(String(e.message).slice(0,200))}</span>`; $('#bonus-moved').hidden = false; }
     const box = $('#demoted');
     const parts = [];
     if (d.demote_region && d.region_demoted.length) {
@@ -706,7 +798,7 @@ async function showBonus(n) {
 $('#more').onclick = async () => {
   $('#more').disabled = true;
   try {
-    const d = await post('/api/match', {...last, offset: shown, demote_groups: $('#demote').checked});
+    const d = await post('/api/match', matchBody(shown));
     addResults(d.results);
     shown += d.results.length;
     $('#more').hidden = !d.has_more;

@@ -237,5 +237,19 @@ class BootTests(unittest.TestCase):
         self.assertEqual(st['bonus'], {'n01': {'status': 'none', 'max_total_points': None, 'bonus_info': None, 'items': [], 'uncertain': []}})
 
 
+    def test_boot_broken_reviewed_list_turns_off_rank_bonus_only(self):
+        # 결정 0017: 원문 대조 목록이 깨지면 목록 전체를 쓰지 않는다(순위 반영 0건). 서버는 그대로 뜬다
+        from search import bonus as bonus_mod
+
+        def broken(path=None):
+            raise ValueError('bonus_reviewed.json 항목 형식이 틀렸다: n01')
+        with patch.object(bonus_mod, 'load_reviewed', broken):
+            st = self.boot(lambda: FakeCollection(['n01']), lambda text: [0.0] * 4)
+        self.assertEqual(set(st['boot_errors']), {'bonus_reviewed'})
+        self.assertEqual(st['bonus_reviewed'], {})
+        self.assertEqual(len(st['rows']), 1)
+        normal = self.boot(lambda: FakeCollection(['n01']), lambda text: [0.0] * 4)
+        self.assertGreater(len(normal['bonus_reviewed']), 0)                      # 저장소 목록 파일을 읽는다
+
 if __name__ == '__main__':
     unittest.main()

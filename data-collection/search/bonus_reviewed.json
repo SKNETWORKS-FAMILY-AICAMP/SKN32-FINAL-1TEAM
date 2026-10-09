@@ -1,0 +1,551 @@
+{
+ "version": 1,
+ "notices": {
+  "bizinfo:PBLN_000000000117162": {
+   "content_version": "cv2-c8831cf37fdbd1a6aebb3f425e3b684f",
+   "row_fingerprint": "bf1-8eb864acfe548d91",
+   "evidence_fingerprint": "ev1-0ad5e20480de2845",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "벤처기업",
+     "points": 3.0
+    },
+    {
+     "name": "사회적기업",
+     "points": 3.0
+    },
+    {
+     "name": "여성기업",
+     "points": 3.0
+    },
+    {
+     "name": "장애인기업",
+     "points": 3.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 결정 0020 계산 완화 뒤 새 후보 — Claude 원문 대조(AI 참고). 근거 reports/bonus_boostable_20261008T084903Z/README.md"
+  },
+  "bizinfo:PBLN_000000000117356": {
+   "content_version": "cv2-7136dbfabc669e5936b527352f3853da",
+   "row_fingerprint": "bf1-f25fe76963ed326a",
+   "evidence_fingerprint": "ev1-9a150224b59d7f98",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "가족친화 인증기업",
+     "points": 3.0
+    },
+    {
+     "name": "벤처기업 확인기업",
+     "points": 3.0
+    },
+    {
+     "name": "여성기업",
+     "points": 5.0
+    },
+    {
+     "name": "장애인기업",
+     "points": 5.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 원문 지문을 더해 다시 씀(결정 0018) — 처음 목록(결정 0017)과 같은 공고·같은 승인 항목. 근거: reports/bonus_boostable_20261008T034650Z README(Claude 원문 대조), Codex 4차 검수 6절도 31개 항목 배점 오류 미발견(승인 목록은 아님)"
+  },
+  "bizinfo:PBLN_000000000117554": {
+   "content_version": "cv2-6a86cee32162884299dc39fafcebd3e2",
+   "row_fingerprint": "bf1-a35b50a8db85ddaf",
+   "evidence_fingerprint": "ev1-b965f423e446f60e",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "여성기업",
+     "points": 10.0
+    },
+    {
+     "name": "장애인기업",
+     "points": 10.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 결정 0019 표 배점 칸 인정 뒤 새 후보 — Claude 원문 대조(AI 참고): 표 머리 배점, 행 이름, 배점 숫자가 그 자격의 것. 근거 reports/bonus_boostable_20261008T073942Z/README.md"
+  },
+  "bizinfo:PBLN_000000000117928": {
+   "content_version": "cv2-5fd3d78738926f3fe6078d9dbee9cc00",
+   "row_fingerprint": "bf1-14b177a40b65b351",
+   "evidence_fingerprint": "ev1-f1d8049acd8c302d",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "여성기업",
+     "points": 1.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 원문 지문을 더해 다시 씀(결정 0018) — 처음 목록(결정 0017)과 같은 공고·같은 승인 항목. 근거: reports/bonus_boostable_20261008T034650Z README(Claude 원문 대조), Codex 4차 검수 6절도 31개 항목 배점 오류 미발견(승인 목록은 아님)"
+  },
+  "bizinfo:PBLN_000000000119636": {
+   "content_version": "cv2-f083dcddb57abccacc277d8f3fe53b35",
+   "row_fingerprint": "bf1-a515633e1bba84cd",
+   "evidence_fingerprint": "ev1-7d82e9e60ffe6120",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "여성기업",
+     "points": 5.0
+    },
+    {
+     "name": "장애인기업",
+     "points": 5.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 결정 0020 계산 완화 뒤 새 후보 — Claude 원문 대조(AI 참고). 근거 reports/bonus_boostable_20261008T084903Z/README.md"
+  },
+  "bizinfo:PBLN_000000000119733": {
+   "content_version": "cv2-27fd9bdc4ae1acfd033c2da0f4cd9f87",
+   "row_fingerprint": "bf1-bcef3abec9c76644",
+   "evidence_fingerprint": "ev1-324c107ee38487a8",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "여성기업",
+     "points": 1.0
+    },
+    {
+     "name": "장애인기업",
+     "points": 1.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 결정 0019 표 배점 칸 인정 뒤 새 후보 — Claude 원문 대조(AI 참고): 표 머리 배점, 행 이름, 배점 숫자가 그 자격의 것. 근거 reports/bonus_boostable_20261008T073942Z/README.md"
+  },
+  "bizinfo:PBLN_000000000119891": {
+   "content_version": "cv2-f4d29e63c44a4e4987a2728789b18d18",
+   "row_fingerprint": "bf1-918751b2e2ec537b",
+   "evidence_fingerprint": "ev1-958049d01d804bcf",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "사회적기업",
+     "points": 10.0
+    },
+    {
+     "name": "여성기업",
+     "points": 10.0
+    },
+    {
+     "name": "장애인기업",
+     "points": 10.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 결정 0019 표 배점 칸 인정 뒤 새 후보 — Claude 원문 대조(AI 참고): 표 머리 배점, 행 이름, 배점 숫자가 그 자격의 것. 근거 reports/bonus_boostable_20261008T073942Z/README.md"
+  },
+  "bizinfo:PBLN_000000000120238": {
+   "content_version": "cv2-56d6510ec203a066f732b31fe568d74d",
+   "row_fingerprint": "bf1-5fab643ffc0f9ed7",
+   "evidence_fingerprint": "ev1-e1452cd6e70bb5fd",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "사회적기업",
+     "points": 5.0
+    },
+    {
+     "name": "소셜벤처",
+     "points": 5.0
+    },
+    {
+     "name": "예비사회적기업",
+     "points": 5.0
+    },
+    {
+     "name": "협동조합",
+     "points": 5.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 원문 지문을 더해 다시 씀(결정 0018) — 처음 목록(결정 0017)과 같은 공고·같은 승인 항목. 근거: reports/bonus_boostable_20261008T034650Z README(Claude 원문 대조), Codex 4차 검수 6절도 31개 항목 배점 오류 미발견(승인 목록은 아님)"
+  },
+  "bizinfo:PBLN_000000000120481": {
+   "content_version": "cv2-1b5afb991ed79f17033257dbbf3b43f4",
+   "row_fingerprint": "bf1-f21d0293d67ad1fb",
+   "evidence_fingerprint": "ev1-4688c7e5785e1dcf",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "메인비즈 기업",
+     "points": 10.0
+    },
+    {
+     "name": "벤처기업",
+     "points": 10.0
+    },
+    {
+     "name": "이노비즈 기업",
+     "points": 10.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 원문 지문을 더해 다시 씀(결정 0018) — 처음 목록(결정 0017)과 같은 공고·같은 승인 항목. 근거: reports/bonus_boostable_20261008T034650Z README(Claude 원문 대조), Codex 4차 검수 6절도 31개 항목 배점 오류 미발견(승인 목록은 아님)"
+  },
+  "bizinfo:PBLN_000000000121411": {
+   "content_version": "cv2-f2af7fca8a80a311450059a639474f0f",
+   "row_fingerprint": "bf1-a6b328951ca2f1db",
+   "evidence_fingerprint": "ev1-5612a2e262bf1a59",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "여성기업",
+     "points": 1.0
+    },
+    {
+     "name": "장애인기업",
+     "points": 1.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 결정 0019 표 배점 칸 인정 뒤 새 후보 — Claude 원문 대조(AI 참고): 표 머리 배점, 행 이름, 배점 숫자가 그 자격의 것. 근거 reports/bonus_boostable_20261008T073942Z/README.md"
+  },
+  "bizinfo:PBLN_000000000122057": {
+   "content_version": "cv2-97cfe36ea45d03f7d74cfb3978aafc1c",
+   "row_fingerprint": "bf1-df4b087a8a8fa4d5",
+   "evidence_fingerprint": "ev1-b0f536b247db135d",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "메인비즈 기업",
+     "points": 10.0
+    },
+    {
+     "name": "벤처기업",
+     "points": 10.0
+    },
+    {
+     "name": "이노비즈 기업",
+     "points": 10.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 원문 지문을 더해 다시 씀(결정 0018) — 처음 목록(결정 0017)과 같은 공고·같은 승인 항목. 근거: reports/bonus_boostable_20261008T034650Z README(Claude 원문 대조), Codex 4차 검수 6절도 31개 항목 배점 오류 미발견(승인 목록은 아님)"
+  },
+  "bizinfo:PBLN_000000000122147": {
+   "content_version": "cv2-f2615fe650c8f517a26a5386b352990d",
+   "row_fingerprint": "bf1-4d8594e65a305284",
+   "evidence_fingerprint": "ev1-aee6ab3bc429260f",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "기술혁신형 중소기업(Inno-Biz)",
+     "points": 1.0
+    },
+    {
+     "name": "벤처기업",
+     "points": 1.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 결정 0019 표 배점 칸 인정 뒤 새 후보 — Claude 원문 대조(AI 참고): 표 머리 배점, 행 이름, 배점 숫자가 그 자격의 것. 근거 reports/bonus_boostable_20261008T073942Z/README.md"
+  },
+  "bizinfo:PBLN_000000000122309": {
+   "content_version": "cv2-3824e752304b0313c5ffb85ab1c272a3",
+   "row_fingerprint": "bf1-9e9b870b11a9dc05",
+   "evidence_fingerprint": "ev1-2e881c503bc5183e",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "벤처기업",
+     "points": 3.0
+    },
+    {
+     "name": "사회적 기업",
+     "points": 1.0
+    },
+    {
+     "name": "여성기업",
+     "points": 1.0
+    },
+    {
+     "name": "장애인기업",
+     "points": 1.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 원문 지문을 더해 다시 씀(결정 0018) — 처음 목록(결정 0017)과 같은 공고·같은 승인 항목. 근거: reports/bonus_boostable_20261008T034650Z README(Claude 원문 대조), Codex 4차 검수 6절도 31개 항목 배점 오류 미발견(승인 목록은 아님)"
+  },
+  "bizinfo:PBLN_000000000123858": {
+   "content_version": "cv2-191b40cde4a04e9debe40998866804d4",
+   "row_fingerprint": "bf1-85e678bf26956b69",
+   "evidence_fingerprint": "ev1-f243a8670959a3f3",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "여성기업",
+     "points": 3.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 결정 0020 계산 완화 뒤 새 후보 — Claude 원문 대조(AI 참고). 근거 reports/bonus_boostable_20261008T084903Z/README.md"
+  },
+  "bizinfo:PBLN_000000000124915": {
+   "content_version": "cv2-223ca89c7ffbb4490cdfee2bbaae8363",
+   "row_fingerprint": "bf1-36c4c94e28dab1f5",
+   "evidence_fingerprint": "ev1-a9d7c7cabf5fa116",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "여성기업",
+     "points": 5.0
+    },
+    {
+     "name": "장애인기업",
+     "points": 5.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 결정 0020 계산 완화 뒤 새 후보 — Claude 원문 대조(AI 참고). 근거 reports/bonus_boostable_20261008T084903Z/README.md"
+  },
+  "bizinfo:PBLN_000000000124978": {
+   "content_version": "cv2-6ec2895c6eb367791fa104156f8ce638",
+   "row_fingerprint": "bf1-23a641d06694dd24",
+   "evidence_fingerprint": "ev1-b14422b80793145e",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "여성기업",
+     "points": 1.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 결정 0019 표 배점 칸 인정 뒤 새 후보 — Claude 원문 대조(AI 참고): 표 머리 배점, 행 이름, 배점 숫자가 그 자격의 것. 근거 reports/bonus_boostable_20261008T073942Z/README.md"
+  },
+  "bizinfo:PBLN_000000000125856": {
+   "content_version": "cv2-222dc45921cd69270e368ee3e4caf1ad",
+   "row_fingerprint": "bf1-b15eeaacd24f0cf7",
+   "evidence_fingerprint": "ev1-c3ddfbd4a8f6c06a",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "여성기업",
+     "points": 5.0
+    },
+    {
+     "name": "장애인기업",
+     "points": 5.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 결정 0020 계산 완화 뒤 새 후보 — Claude 원문 대조(AI 참고). 근거 reports/bonus_boostable_20261008T084903Z/README.md"
+  },
+  "bizinfo:PBLN_000000000125997": {
+   "content_version": "cv2-8207bae578b6427376019291162f443c",
+   "row_fingerprint": "bf1-2dd70390a18f5771",
+   "evidence_fingerprint": "ev1-bce13ca94ac459d7",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "여성기업",
+     "points": 1.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 원문 지문을 더해 다시 씀(결정 0018) — 처음 목록(결정 0017)과 같은 공고·같은 승인 항목. 근거: reports/bonus_boostable_20261008T034650Z README(Claude 원문 대조), Codex 4차 검수 6절도 31개 항목 배점 오류 미발견(승인 목록은 아님)"
+  },
+  "bizinfo:PBLN_000000000126046": {
+   "content_version": "cv2-fd4e35c805895b5782f8d84006f10f51",
+   "row_fingerprint": "bf1-affd6265102d221b",
+   "evidence_fingerprint": "ev1-99a701050697685a",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "여성기업",
+     "points": 1.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 결정 0020 계산 완화 뒤 새 후보 — Claude 원문 대조(AI 참고). 근거 reports/bonus_boostable_20261008T084903Z/README.md"
+  },
+  "bizinfo:PBLN_000000000126085": {
+   "content_version": "cv2-fcd237d144d4ffd1ec6a592b216e312c",
+   "row_fingerprint": "bf1-3c04d3c765e95e4b",
+   "evidence_fingerprint": "ev1-7f20b8a87c68f8ae",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "여성기업인",
+     "points": 5.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 결정 0019 표 배점 칸 인정 뒤 새 후보 — Claude 원문 대조(AI 참고): 표 머리 배점, 행 이름, 배점 숫자가 그 자격의 것. 근거 reports/bonus_boostable_20261008T073942Z/README.md"
+  },
+  "bizinfo:PBLN_000000000126506": {
+   "content_version": "cv2-e6119678efa49a66d34e11831e257085",
+   "row_fingerprint": "bf1-f1fa1d1f0bca025f",
+   "evidence_fingerprint": "ev1-42afe10afa99530e",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "여성기업",
+     "points": 2.0
+    },
+    {
+     "name": "장애인기업",
+     "points": 2.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 결정 0019 표 배점 칸 인정 뒤 새 후보 — Claude 원문 대조(AI 참고): 표 머리 배점, 행 이름, 배점 숫자가 그 자격의 것. 근거 reports/bonus_boostable_20261008T073942Z/README.md"
+  },
+  "bizinfo:PBLN_000000000126531": {
+   "content_version": "cv2-72ef628e5a474e9bfc1e0cdbec4706e7",
+   "row_fingerprint": "bf1-b326c984dab3dbb9",
+   "evidence_fingerprint": "ev1-b97e6df63851245d",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "여성기업",
+     "points": 3.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 결정 0019 표 배점 칸 인정 뒤 새 후보 — Claude 원문 대조(AI 참고): 표 머리 배점, 행 이름, 배점 숫자가 그 자격의 것. 근거 reports/bonus_boostable_20261008T073942Z/README.md"
+  },
+  "bizinfo:PBLN_000000000126642": {
+   "content_version": "cv2-d8121053d5e415b192753d45dfcd6bee",
+   "row_fingerprint": "bf1-6c57cbc30eea713c",
+   "evidence_fingerprint": "ev1-05d948842a0ae734",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "가족친화 인증기업",
+     "points": 3.0
+    },
+    {
+     "name": "벤처기업 확인기업",
+     "points": 3.0
+    },
+    {
+     "name": "여성기업",
+     "points": 5.0
+    },
+    {
+     "name": "장애인 기업",
+     "points": 5.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 원문 지문을 더해 다시 씀(결정 0018) — 처음 목록(결정 0017)과 같은 공고·같은 승인 항목. 근거: reports/bonus_boostable_20261008T034650Z README(Claude 원문 대조), Codex 4차 검수 6절도 31개 항목 배점 오류 미발견(승인 목록은 아님)"
+  },
+  "bizinfo:PBLN_000000000126667": {
+   "content_version": "cv2-ab090fbf0e366c9806e8cd4c1c6a087e",
+   "row_fingerprint": "bf1-0f9e337b79f03ba2",
+   "evidence_fingerprint": "ev1-c4412202a01562cb",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "창원특례시 소재기업",
+     "points": 5.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 결정 0019 표 배점 칸 인정 뒤 새 후보 — Claude 원문 대조(AI 참고): 표 머리 배점, 행 이름, 배점 숫자가 그 자격의 것. 근거 reports/bonus_boostable_20261008T073942Z/README.md"
+  },
+  "bizinfo:PBLN_000000000126830": {
+   "content_version": "cv2-4918f4e33f16c87c0644052d4a2f3a07",
+   "row_fingerprint": "bf1-00857d622a2e1fc9",
+   "evidence_fingerprint": "ev1-6aea32a35a7590a1",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "여성기업",
+     "points": 5.0
+    },
+    {
+     "name": "장애인기업",
+     "points": 5.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 원문 지문을 더해 다시 씀(결정 0018) — 처음 목록(결정 0017)과 같은 공고·같은 승인 항목. 근거: reports/bonus_boostable_20261008T034650Z README(Claude 원문 대조), Codex 4차 검수 6절도 31개 항목 배점 오류 미발견(승인 목록은 아님)"
+  },
+  "bizinfo:PBLN_000000000126935": {
+   "content_version": "cv2-5e49c2fab7dc767235de69c54ea74b4c",
+   "row_fingerprint": "bf1-63b7a1f681f61964",
+   "evidence_fingerprint": "ev1-a628701a4e3efeb6",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "사회적기업",
+     "points": 2.0
+    },
+    {
+     "name": "장애인기업",
+     "points": 2.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 결정 0019 표 배점 칸 인정 뒤 새 후보 — Claude 원문 대조(AI 참고): 표 머리 배점, 행 이름, 배점 숫자가 그 자격의 것. 근거 reports/bonus_boostable_20261008T073942Z/README.md"
+  },
+  "bizinfo:PBLN_000000000127009": {
+   "content_version": "cv2-91481cf1da41e6e94118a2258868236c",
+   "row_fingerprint": "bf1-621a94155dd1c2b3",
+   "evidence_fingerprint": "ev1-88152ca9de8ad809",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "메인비즈",
+     "points": 1.0
+    },
+    {
+     "name": "벤처기업",
+     "points": 1.0
+    },
+    {
+     "name": "여성기업",
+     "points": 1.0
+    },
+    {
+     "name": "이노비즈",
+     "points": 1.0
+    },
+    {
+     "name": "장애인기업",
+     "points": 1.0
+    }
+   ],
+   "reviewed_at": "2026-10-08",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-08 원문 지문을 더해 다시 씀(결정 0018) — 처음 목록(결정 0017)과 같은 공고·같은 승인 항목. 근거: reports/bonus_boostable_20261008T034650Z README(Claude 원문 대조), Codex 4차 검수 6절도 31개 항목 배점 오류 미발견(승인 목록은 아님)"
+  }
+ },
+ "updated_at": "2026-10-08"
+}

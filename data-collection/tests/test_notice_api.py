@@ -217,12 +217,47 @@ class MatchBonusTests(unittest.TestCase):
         rows = {'n01': notice('n01'), 'n02': notice('n02'), 'n03': notice('n03'), 'n04': notice('n04', region='부산')}
         table = {'n03': female10, 'n04': female10}
 
-        def order(weight):
-            out = match_with_versions(rows, {}, table, gender='여성', region='서울',
+        # 2026-10-08 결정 0017: 원문 대조를 마친 공고 목록에 있어야 순위에 얹는다 — 이 시험의 뜻(같은 묶음 안에서만 오른다)을
+        # 지키도록 가짜 목록을 넣었다(spec 6절의 단 하나 예외). 목록이 없으면 세기를 줘도 그대로다(아래)
+        versions = {n: 'cv-' + n for n in rows}
+        for n in table:
+            table[n] = dict(table[n], row_fingerprint='bf1-' + n, evidence_fingerprint='ev1-' + n)
+        reviewed = {n: {'content_version': 'cv-' + n, 'row_fingerprint': 'bf1-' + n, 'evidence_fingerprint': 'ev1-' + n,
+                        'approved_items': [{'name': '여성 대표자', 'points': 10}]} for n in table}
+
+        def order(weight, listed=reviewed):
+            out = match_with_versions(rows, versions, table, reviewed=listed, gender='여성', region='서울',
                                       weights=server.Weights(bonus=weight))
             return [r['notice_id'] for r in out['results']]
         self.assertEqual(order(0.0), ['n01', 'n02', 'n03', 'n04'])
         self.assertEqual(order(0.2), ['n03', 'n01', 'n02', 'n04'])         # n04 는 다른 시·도 전용이라 맨 뒤 그대로
+        self.assertEqual(order(0.2, listed={}), ['n01', 'n02', 'n03', 'n04'])   # 목록 밖이면 세기를 줘도 그대로
+        # bonus_rank_applied — 실제로 얹은 공고만 참
+        out = match_with_versions(rows, versions, table, reviewed=reviewed, gender='여성', region='서울',
+                                  weights=server.Weights(bonus=0.2))
+        applied = {r['notice_id']: r['bonus_rank_applied'] for r in out['results']}
+        self.assertEqual(applied, {'n01': False, 'n02': False, 'n03': True, 'n04': True})
+        out0 = match_with_versions(rows, versions, table, reviewed=reviewed, gender='여성', region='서울',
+                                   weights=server.Weights(bonus=0.0))
+        self.assertFalse(any(r['bonus_rank_applied'] for r in out0['results']))      # 세기 0 이면 모두 거짓
+        # 지문이 바뀌면(공고 내용 또는 가점 행) 목록에 있어도 얹지 않는다
+        changed = dict(versions, n03='cv-new')
+        out = match_with_versions(rows, changed, table, reviewed=reviewed, gender='여성', region='서울',
+                                  weights=server.Weights(bonus=0.2))
+        self.assertEqual([r['notice_id'] for r in out['results']][:2], ['n01', 'n02'])
+        self.assertFalse(next(r for r in out['results'] if r['notice_id'] == 'n03')['bonus_rank_applied'])
+        # bonus_verified(결정 0018) — 세기·경로와 상관없이 목록과 맞으면 참. 세기 0 에서도 참, 순위 반영은 거짓
+        verified0 = {r['notice_id']: r['bonus_verified'] for r in out0['results']}
+        self.assertEqual(verified0, {'n01': False, 'n02': False, 'n03': True, 'n04': True})
+        out_none = match_with_versions(rows, versions, table, reviewed={}, gender='여성', region='서울',
+                                       weights=server.Weights(bonus=0.2))
+        self.assertFalse(any(r['bonus_verified'] or r['bonus_rank_applied'] for r in out_none['results']))
+        # 목록 값이 이상해(점수가 글자) 판단에서 예외가 나도 검색은 멈추지 않는다 — 대조 안 된 것으로(Codex 4차 R4-P2-2)
+        broken = {n: dict(e, approved_items=[{'name': '여성 대표자', 'points': '오점'}]) for n, e in reviewed.items()}
+        out_bad = match_with_versions(rows, versions, table, reviewed=broken, gender='여성', region='서울',
+                                      weights=server.Weights(bonus=0.2))
+        self.assertEqual([r['notice_id'] for r in out_bad['results']], ['n01', 'n02', 'n03', 'n04'])
+        self.assertFalse(any(r['bonus_verified'] or r['bonus_rank_applied'] for r in out_bad['results']))
         # 가산점이 아무 데도 없으면 세기를 줘도 순서가 같다
         self.assertEqual([r['notice_id'] for r in match_with_versions(rows, {}, {}, gender='여성', region='서울',
                                                                       weights=server.Weights(bonus=0.2))['results']],
@@ -239,11 +274,12 @@ class MatchBonusTests(unittest.TestCase):
         self.assertIsNone(c.get('/api/notices/b%3A2').json()['bonus_info'])
 
 
-def match_with_versions(rows, versions, bonus_table=None, **kw):
-    """test_match_rules.match 와 같지만 STATE 에 공고 내용 지문·가점을 함께 넣는다."""
+def match_with_versions(rows, versions, bonus_table=None, reviewed=None, **kw):
+    """test_match_rules.match 와 같지만 STATE 에 공고 내용 지문·가점·원문 대조 목록(결정 0017)을 함께 넣는다."""
     st = state(rows)
     st['content_versions'] = versions
     st['bonus'] = bonus_table or {}
+    st['bonus_reviewed'] = reviewed or {}
     req = server.MatchRequest(applicant_type='법인사업자', founded_at='2025-01-01', idea='창업 지원', search='dense', **kw)
     with patch.dict(server.STATE, st, clear=True), patch.object(server, '_encode', lambda text: [0.0] * 4):
         return server.match(req)

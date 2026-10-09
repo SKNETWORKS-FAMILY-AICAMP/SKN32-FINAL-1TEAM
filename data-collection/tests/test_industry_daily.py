@@ -58,7 +58,7 @@ class DailyTests(unittest.TestCase):
     def test_starts_from_seed_and_calls_only_new(self):
         old = item('a')
         self.write_seed([{'notice_id': 'a', 'document_sha256': old['document_sha256'], 'source_run': 'final6',
-                          'llm': {'status': 'unknown'}}])
+                          'llm': {'status': 'unknown'}, 'engine': ils.engine_id(daily.MODEL, daily.EFFORT)}])
         out = self.run_batch([old, item('b')])
         self.assertEqual(self.calls, ['b'])
         self.assertEqual((out['extracted'], out['total']), (1, 2))
@@ -69,11 +69,44 @@ class DailyTests(unittest.TestCase):
         self.assertEqual(rows['a']['source_run'], 'final6')                   # 씨앗 행은 그대로
         with io.open(os.path.join(self.out, 'meta.json'), encoding='utf-8') as f:
             meta = json.load(f)
-        self.assertEqual((meta['prompt'], meta['engine'], meta['profile']), ('v3', 'gpt-5.6-luna@medium', 'rough'))
+        self.assertEqual((meta['prompt'], meta['engine'], meta['profile']), ('v3', ils.engine_id(daily.MODEL, daily.EFFORT), 'rough'))
+        self.assertEqual(rows['b']['engine'], ils.engine_id(daily.MODEL, daily.EFFORT))   # 행마다 엔진
         # 다시 돌리면 부르지 않는다
         self.calls.clear()
         again = self.run_batch([old, item('b')])
         self.assertEqual((again['extracted'], self.calls), (0, []))
+
+    def test_other_engine_is_called_again_with_same_length(self):
+        # 엔진이 없는 옛 행(gpt-5.6-luna@medium)과 엔진이 다른 행은 문서가 같아도 다시 뽑는다(결정 0013).
+        # 9/28 에 18,000자로 다시 읽은 행은 18,000자로 다시 읽는다
+        short = item('a')
+        longer = ils.prepare({'notice_id': 'b', 'title': 'b', 'body': '', 'target_text': DOC, 'target_category': '',
+                              'category': '', 'subcategory': '', 'regex': None,
+                              'attachments': ['지원대상 제조업 업종 ' * 3000]})
+        long_doc = ils.prepare(dict(longer), 18000)
+        os.makedirs(os.path.join(self.reports, 'final6'))
+        with io.open(os.path.join(self.reports, 'final6', 'meta.json'), 'w', encoding='utf-8') as f:
+            json.dump({'max_chars': 18000}, f)                                # 길게 다시 읽은 실행
+        self.write_seed([
+            {'notice_id': 'a', 'document_sha256': short['document_sha256'], 'llm': {'status': 'unknown'}},
+            {'notice_id': 'b', 'document_sha256': long_doc['document_sha256'], 'source_run': 'final6',
+             'llm': {'status': 'unknown', 'excerpt_cap': 18000}, 'engine': 'gpt-5.6-luna@medium'},
+        ])
+        seen = {}
+
+        def call(it):
+            seen[it['notice_id']] = len(it['document'])
+            return self.call(it)
+        out = self.run_batch([short, longer], call=call, limit=10)
+        self.assertEqual(sorted(self.calls), ['a', 'b'])
+        self.assertGreater(seen['b'], 6000)                                    # 기존 결과와 같은 길이
+        rows = {r['notice_id']: r for r in daily.read_jsonl(os.path.join(self.out, 'results.jsonl'))}
+        self.assertEqual(rows['b']['llm']['excerpt_cap'], 18000)
+        self.assertEqual({rows['a']['engine'], rows['b']['engine']}, {ils.engine_id(daily.MODEL, daily.EFFORT)})
+        self.assertEqual(out['extracted'], 2)
+        self.calls.clear()
+        self.run_batch([short, longer], call=call, limit=10, today='2026-09-30')
+        self.assertEqual(self.calls, [])                                        # 새 엔진이면 다시 부르지 않는다
 
     def test_changed_document_is_called_again(self):
         self.write_seed([])

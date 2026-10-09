@@ -76,6 +76,8 @@ Copy-Item .env.example .env          # 아래 3절 값을 채운다
 ## 5. 팀 EC2 (공용 DB)
 
 - 호스트 43.201.90.238(계정 `ubuntu`, SSH 키 `C:\Users\playdata2\.ssh\skn32-1team.pem`, 22번은 사용자 IP만). MySQL `s_brain`과 공고 시험 서버가 같은 서버에 있다. 4GB + 스왑 2GB(스왑은 메모리 부족 때 `mysqld`가 죽는 것을 막는 안전망).
+- **백업(이 PC에서, 손으로):** `.\.venv\Scripts\python.exe -X utf8 -m collect.backup_db --include-files` → `data/backup_<시각>.sql`(Git 제외). 공용 DB를 읽기만 하고(한 시점 스냅샷), 우리 테이블 9개(공고 4 + AI 판정 4 + 첨부 원본)만 담는다. 다른 팀 테이블(회원·토큰 등)은 넣지 않는다. 2026-10-07 기준 약 1.7GB(첨부 원본이 16진 글자라 커짐), 1분 남짓. 첨부 원본을 빼면(`--include-files` 없이) 훨씬 작다. 마지막 백업: `data/backup_20261007T165318.sql`(10/7, gpt-6-luna로 다시 뽑기 직전, 첨부 원본 제외) · `data/backup_20261007T153141.sql`(10/7, 첨부 원본 포함). 9/14 백업은 휴지통으로 보냄. 복원은 `DROP TABLE` 뒤 다시 만드는 SQL이라 **공용 DB에 바로 넣지 않는다** — 먼저 사용자와 정한다.
+- **AI 모델 바꾸기(결정 0013 방식):** ① `-m eval.model_switch_compare --plan` → 실제 실행으로 단계별 40건 비교(공용 DB 쓰기 없음) ② 승인 뒤 각 모듈의 `MODEL` 상수만 바꾼다(11·12단계는 엔진이 다르면 저절로 다시 뽑는다, 14단계는 추출기 버전이 바뀌어 다시 뽑는다) ③ PC에서 `-m collect.backup_db` + 배치 서버 `data/applicant_types`·`data/industries` 압축 ④ 배치 서버에 코드 복사 → `applicant_type_daily --limit 3500`·`industry_daily --limit 3500`(오늘 부른 수 포함 상한)·`upload_judgments`·`extract_bonus --all` ⑤ 시험 서버에 코드 복사·재시작(가점은 서버가 새 추출기 버전만 읽는다) ⑥ 계약 시험. **되돌리기:** 서버 코드·판정 파일은 `_old/` 압축으로, 공용 DB AI 표만 `-m collect.backup_db --restore <백업> --tables notice_bonus,…`(계획만) → `--apply`(사용자 승인 뒤). `--apply`는 표를 지우고 다시 만들어서 백업 뒤에 들어온 새 공고의 판정 행도 사라진다(다음 매일 배치가 다시 채운다). 중간에 끊기면 일부 표만 되살아나니 같은 명령을 다시 실행한다.
 - 예전 색인 갱신: crontab `10 0 * * *`(한국 09:10)에 `ec2_vecstore.py`(증분). 공고 서버는 더 쓰지 않지만 지우지 않았다(나중에 정리). 전체 재생성은 `--rebuild`, 상태는 `--stat`.
 
 ## 6. 공고 서버 운영
@@ -88,3 +90,8 @@ Copy-Item .env.example .env          # 아래 3절 값을 채운다
 - 이 PC 개발 서버: 배치 뒤 새 공고를 반영하려면 **다시 켠다**. 켜기 전·끄기 전에 사용자에게 확인한다.
 - 켠 뒤 확인: `/api/health`의 `boot_errors`가 비었는지, `notices`·`indexed`(올린 벡터 수)·`vectors.fingerprints`·`bm25_indexed`, `applicant_types.active`.
 - 조율 쪽이 부르는 창구: `/api/collection_status`·`/api/match`·`/api/notices/{id}`·`/api/notices/{id}/eligibility`.
+- **가산점 순위 반영 목록(결정 0017)** — `search/bonus_reviewed.json`(원문 대조를 마친 공고만 순위에 얹음, 기본 세기 0.2). 켠 뒤 확인: `/api/health` `boot_errors`에 `bonus_reviewed`가 없어야 한다(있으면 목록 전체 미사용, 순위 반영 0건).
+  - 목록 추가(사용자가 요청할 때, 발표 전 주 1~2회 권장): PC에서 `.\.venv\Scripts\python.exe -X utf8 -m eval.bonus_boostable` → 결과의 "새 후보"·"다시 대조 필요"를 Claude가 원문과 대조 → "맞음"만 `... -m eval.bonus_boostable --write-reviewed <공고ID …> --note "<근거>"`(지문·승인 항목은 도구가 채운다 — 손으로 쓰지 않는다) → 시험 서버에 `search/bonus_reviewed.json`만 올리고 `notice-server` 재시작. 목록 추가 때마다 조율 담당에게 알리지는 않는다.
+  - 공고문이 바뀌거나, 가점을 다시 뽑거나, 첨부 글을 다시 뽑으면(원문 지문 — 결정 0018) 그 공고는 지문이 달라져 자동으로 순위 반영·"원문 대조됨"이 멈춘다("다시 대조 필요"로 보임). 화면 표시도 같이 빠진다.
+  - 목록 파일 값이 이상하면(지문 빠짐, 점수가 글자·음수 등) 공고 서버가 목록 전체를 쓰지 않는다 — `boot_errors.bonus_reviewed` 확인.
+  - 되돌리기: 빠르게 — 목록 파일을 `{"version": 1, "notices": {}}`로 올리고 재시작(순위 반영 0건, 표시는 그대로). 완전히 — `~/_old/`의 묶음으로 `search/bonus.py`·`search/app.py`·`search/bonus_reviewed.json`·`web/app.html`을 되돌리고 재시작.

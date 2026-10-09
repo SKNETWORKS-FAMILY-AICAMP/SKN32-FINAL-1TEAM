@@ -1,0 +1,787 @@
+{
+ "label": "신청자 유형",
+ "old_model": "gpt-5.6-luna",
+ "population": 2825,
+ "comparable": 2825,
+ "sample": 40,
+ "ok": 40,
+ "failed": [],
+ "seconds": 29.6,
+ "tokens": {
+  "in": 91517,
+  "out": 13309,
+  "reasoning": 7025,
+  "per_call_in": 2288,
+  "per_call_out": 333
+ },
+ "sample_cost_usd": 0.0158,
+ "old_rows": 2825,
+ "old_per_call": {
+  "in": 2317,
+  "out": 298
+ },
+ "old_full_cost_usd": 2.321,
+ "new_full_estimate_usd": 1.116,
+ "rows": [
+  {
+   "notice_id": "kstartup:178844",
+   "title": "[한국투자액셀러레이터] 바른동행 3차 모집｜선발 시 최대 5억원 투자",
+   "pre_founder": {
+    "old": "allowed",
+    "new": "allowed",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000127020",
+   "title": "[충남] 2026년 4차 예비수소전문기업지원사업 수소산업분야 기술사업화(비R&D) 수혜기업 모집 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126280",
+   "title": "[부산] 연제구 2026년 노후간판 교체(지원) 사업 신청자 모집 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000122254",
+   "title": "[대전] 2026년 전통시장 등 공동배송시스템 지원사업 라이더 배달비 지원사업 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126823",
+   "title": "[전남광주] 에이지테크 제품 실증 및 상용화 역량강화 사업 수혜기업 모집 공고(지역성장 인재양성체계(앵커) R&D기반 혁신 실증스튜디오 운영)",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125205",
+   "title": "[경기] 성남시 찾아가는 스마트 경영 컨설팅 참가기업 모집 공고(성남 섬유제조 소공인특화지원센터)",
+   "pre_founder": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126304",
+   "title": "[전남광주] 2026년 3차 무탄소 전력활용 수소산업육성을 위한 기업지원 사업 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126927",
+   "title": "2026년 중소기업 정책자금 융자계획 변경 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126784",
+   "title": "[전북] 2026년 3차 사회적기업 일자리창출 지원사업 참여기업 모집 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126801",
+   "title": "[경북] 2026년 소담스퀘어 경북 인프라 활용 상세페이지 제작 지원사업 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125749",
+   "title": "[전북] 2026년 3차 기술혁신 기업 육성 지원사업(이노비즈인증 컨설팅 지원 프로그램) 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "kstartup:178786",
+   "title": "「2026년 강소특구 이노테크 발굴 및 창업지원사업」예비 창업자 사업화 지원 모집 공고",
+   "pre_founder": {
+    "old": "allowed",
+    "new": "allowed",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "kstartup:176938",
+   "title": "2026년 스타트업 법률지원사업 참여기업 모집공고(수정)",
+   "pre_founder": {
+    "old": "allowed",
+    "new": "allowed",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125795",
+   "title": "2026년 ATF 한국공동관 애니메이션 참가기업 모집 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126956",
+   "title": "[전북] 2026년 3분기 소기업 혁신역량 강화사업 시험분석 및 품질인증획득지원 참여기업 모집 공고",
+   "pre_founder": {
+    "old": "not_mentioned",
+    "new": "implied_no",
+    "same": false
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "kstartup:179119",
+   "title": "[창업 교육] 투자자가 보는 기업 가치와 IR 전략",
+   "pre_founder": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126010",
+   "title": "[울산] 2026년 글로벌 공공조달 수출상담회(GPPM) 참가기업 모집 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "kstartup:179019",
+   "title": "2026년 구미시 스타트업 필드 4차 입주기업 모집 공고",
+   "pre_founder": {
+    "old": "allowed",
+    "new": "allowed",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "kstartup:179080",
+   "title": "2026년 2차 CNU Startup to TIPS 기업 모집",
+   "pre_founder": {
+    "old": "allowed",
+    "new": "allowed",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126141",
+   "title": "[경기] 수원시 2027년 기업환경 개선사업 모집 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126776",
+   "title": "[전북] 인공지능 분야 기술지도 희망기업 모집 상시 공고(AI융합 지능형 농업 생태계 구축 사업)",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126523",
+   "title": "2026년 베트남 해양에너지 파트너링 사업 참가기업 모집공고(조선ㆍ해양 분야)",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126300",
+   "title": "[강원] 2026년 강원BRIDGE 글로벌 진출 태국 온라인 수출상담회 참여기업 모집 공고(강원연구개발특구육성사업)",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000121765",
+   "title": "2026년 중소기업 특성화고 인력양성사업 참여기업 모집 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000118204",
+   "title": "2026년 여성기업 육성사업 공고",
+   "pre_founder": {
+    "old": "allowed",
+    "new": "allowed",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "allowed",
+    "new": "allowed",
+    "same": true
+   },
+   "corporation": {
+    "old": "allowed",
+    "new": "not_mentioned",
+    "same": false
+   }
+  },
+  {
+   "notice_id": "kstartup:178924",
+   "title": "2026년 CAU Tech-Connecting Day [중앙대학교 기술세미나 및 기술상담회]",
+   "pre_founder": {
+    "old": "allowed",
+    "new": "allowed",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000119481",
+   "title": "[경남] 진주시 2026년 중소기업 개별 수출보험료 지원사업 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "kstartup:179144",
+   "title": "2026년 스타 IR 데모데이 참여기업 모집공고(5차)",
+   "pre_founder": {
+    "old": "allowed",
+    "new": "allowed",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000123661",
+   "title": "2026년 중소사업장 유해화학물질 취급시설 안전관리 지원 사업 참여 사업장 모집 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000118891",
+   "title": "[경기] 2026년 식품진흥기금 식품위생업소 융자사업 수정 공고",
+   "pre_founder": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000119261",
+   "title": "[경북] 칠곡군 2026년 해외지사화(해외마케팅) 및 공동물류센터 지원사업 참여기업 모집 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125365",
+   "title": "2026년 하반기 온라인 K-SEAFOOD 판매 전용관 운영 사업 입점 제품 모집 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000119764",
+   "title": "2026년 중소기업 기술혁신 지원사업(KOSBIR) 통합 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000117149",
+   "title": "[전남] 2026년 중소기업 육성자금(사회적경제 (특별)경영안정자금) 지원계획 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000121976",
+   "title": "[경기] 포천시 2026년 지역소공인육성사업 소공인특화지원센터 지원사업 공고",
+   "pre_founder": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000118345",
+   "title": "[경기] 광명시 2026년 소규모 유통업 육성자금 지원 공고",
+   "pre_founder": {
+    "old": "not_allowed",
+    "new": "not_allowed",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "allowed",
+    "new": "not_mentioned",
+    "same": false
+   },
+   "corporation": {
+    "old": "allowed",
+    "new": "not_mentioned",
+    "same": false
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125940",
+   "title": "[인천] 2026년 어르신일자리 창출 우수기업ㆍ기관 인증 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125225",
+   "title": "[울산] 2026년 5차 사회연대경제 청년 일경험 시범사업 참여기업 추가 모집 공고",
+   "pre_founder": {
+    "old": "implied_no",
+    "new": "implied_no",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "allowed",
+    "new": "allowed",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126225",
+   "title": "[부산] 2026년 전통시장 매니저 지원사업 추가 공고",
+   "pre_founder": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000122174",
+   "title": "2026년 인천 블록체인 바우처 지원사업 수요기업 모집 공고",
+   "pre_founder": {
+    "old": "allowed",
+    "new": "allowed",
+    "same": true
+   },
+   "sole_proprietor": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   },
+   "corporation": {
+    "old": "not_mentioned",
+    "new": "not_mentioned",
+    "same": true
+   }
+  }
+ ]
+}

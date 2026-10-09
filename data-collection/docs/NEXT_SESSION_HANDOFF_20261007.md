@@ -28,13 +28,21 @@
 | ① | 내용 지문 하루 비교 | 공통 2,765건 중 바뀜 14건. 모두 실제 변화(모집 종료 13, 제목 수정 1)라 **`cv2-` 확정**. 05 답변서는 사용자가 조율 담당에게 전달함 | STATUS 10/7 "내용 지문" |
 | ② | 공고 서버 검색에서 Chroma 빼기 | 새 `search/memvec.py`. 같은 벡터로 만든 Chroma와 비교: 추천 상위 3 같음 62/66(93.9%), 의미 검색 상위 10 겹침 99.5%. 팀 EC2 시험 서버 반영(사용자), 계약 시험 16/16 | 결정 [0010](tracking/decisions/0010-drop-vector-db.md), `reports/vector_db_compare_20261007T005123Z/` |
 | ③ | 가산점 "확실한 것만 남기기"(1차) | 근거 문장의 "N점"만 인정, group으로만 묶기, 앞으로의 조건 모름, 세부사업 다르면 null, 한도 넘으면 null, 하루 호출 기록 보호. "가산점 있음" 26 → 7 | `reports/bonus_conservative_20261007T013412Z/` |
-| ④ | 단위 테스트 보강 + 워드 결과서 | 새 시험 파일 7개(98개). 커버리지 측정 도구는 이 PC `.venv`에만 설치. 결과서는 ⑤ 뒤 새 숫자로 다시 만듦 | `docs/deliverables/[단위 테스트] 공고 데이터·매칭 단위 테스트 결과서.docx`, `reports/unit_test_20261007T024611Z/` |
+| ④ | 단위 테스트 보강 + 워드 결과서 | 새 시험 파일 7개(98개). 커버리지 측정 도구는 이 PC `.venv`에만 설치. 결과서는 ⑤ 뒤 새 숫자로 다시 만듦(오전 판 제출함). 저녁 정리 뒤 다시 재서 개정판으로 덮음 | `docs/deliverables/[단위 테스트] 공고 데이터·매칭 단위 테스트 결과서.docx`, `reports/unit_test_20261007T062019Z/`(처음 판 `reports/unit_test_20261007T024611Z/`) |
 | ⑤ | Codex 재검수 → 지적 처리(2차) | 재검수 결과 "추가 수정 후 재검수 필요"(P1 3·P2 3·P3 1). 사용자 결정에 따라 처리했다(아래 목록). "가산점 있음" 신청자마다 7 → 3, 바뀐 방향은 null 쪽뿐 | [결과](notice_api/CODEX_BONUS_RECHECK_20261007.md) · [재재검수 요청](notice_api/CODEX_BONUS_RECHECK2_REQUEST_20261007.md) · 결정 [0012](tracking/decisions/0012-bonus-confirmed-partial-sum.md) · `reports/bonus_conservative_20261007T024147Z/` |
 | ⑥ | 서버 반영(사용자 실행) | 팀 EC2 시험 서버: 바깥에서 확인 완료. `/api/match`로 공고 4곳 대조(123858 null·117356 null·117928 1점·120481 10점), 계약 시험 16/16. 배치 서버 `sbrain-web`: 사용자가 반영했다고 함, **아직 확인 못 함** | `reports/notice_api_contract_20261007T030725Z/` |
 | ⑦ | 시험 화면 가산점 표시 | `web/app.html`만 고침. 카드·목록에 "확인된 가산점 +N점(일부)·가산점 없음·가산점 모름", 결과 위 집계, 자격 확인 화면에 항목과 가점 원문. 이 PC 8030에서 확인. **시험 서버 반영은 미확인**(명령은 STATUS 맨 위) | STATUS 10/7 "시험 화면" |
 | ⑧ | 가산점 산정 규칙 공유 페이지 | 비공개 페이지(사용자 계정): https://claude.ai/artifact/2Usj5hDmdyGjzF8fuVSB5c — 팀원에게 보여 주려면 공유 메뉴에서 열어야 함 | — |
 | ⑨ | 가산점이 적은 이유 분석 | 아래 5-2. 사용자는 "일단 그대로 두기"로 함 | — |
 | ⑩ | 설명 자료와 폴더 정리(저녁) | 연결 지도 HTML·API 사용법 엑셀(`notice_api/`). 안 쓰는 파일 정리: 캐시·실험 잔재·안 쓰는 코드·`reports/` 지움, 지난 방식 문서 `archive/`로, `README.md` 새로 씀, STATUS·WORKLOG 9월분 `archive/`로. 시험 884개 그대로 통과. Codex 재재검수는 "나중에"(사용자) | STATUS 맨 위 · WORKLOG "data-collection 정리" |
+| ⑪ | 배치 AI 3단계를 gpt-6-luna로(10/7 저녁~10/8 아침) | 표본 비교 → 승인 → 전환 → 전량 다시 뽑기(약 $3.9, 실패 0) → 시험 서버 반영·계약 시험 16/16. 자격요건은 gpt-4o-mini 유지. 10/8 09:00 배치 새 코드로 `exit=0` | 결정 [0013](tracking/decisions/0013-batch-llm-gpt6-luna.md), STATUS 맨 위 |
+| ⑫ | 가산점 추가 조건 완화(10/8) | 증빙 서류·유효기간·"중소기업" 같은 뜻이 안 바뀌는 추가 조건은 모름으로 내리지 않음. 점수 나오는 공고 6→8, 7→8곳 | 결정 [0014](tracking/decisions/0014-bonus-benign-extra-conditions.md) |
+| ⑬ | 가산점 순위 반영 0.2 준비(10/8) | 시험 화면에 예시 버튼·세기 선택, 순위 설명 페이지. 사용자가 0.2로 정함 → 오늘은 확인만: 가산점이 붙을 수 있는 열린 공고 11건 원문 대조(틀림 0), 검색 성적 변화 0(잴 수 없음). **켜는 것은 Codex 재재검수 뒤** — 절차는 결정 문서에 | 결정 [0015](tracking/decisions/0015-bonus-rank-weight-0-2.md) |
+| ⑭ | Codex 재재검수 처리(10/8) | 재재검수 "보류"(P1 5·P2 2) → A 방향: 결합 조건·표 밖 기간·같은 인증 서류만·점수 주인·택1·나이 구절, 새 규칙은 null을 풀지 않음. 가산점 관측 공고 11 → 10건(126819 빠짐), 원문 대조 틀림 0. 순위 비교 측정(제목 핵심어 문장에서 2위 → 1위 2건). **다음: 사용자가 3차 검수 요청서를 Codex에 넣음** | 결정 [0016](tracking/decisions/0016-bonus-recheck2-fixes.md), `docs/notice_api/CODEX_BONUS_RECHECK3_REQUEST_20261008.md` |
+| ⑮ | 가산점 순위 반영 0.2 켬(10/8) | Codex 3차도 "보류"(구성 입력만) → **원문 대조를 마친 공고 목록(`search/bonus_reviewed.json`, 10건)에 있는 공고만** 순위에 얹고 기본 세기 0.2. 새 칸 `bonus_rank_applied`. 3차 지적 4건 처리. **목록 추가는 사용자 요청 시 Claude 대조 후(발표 전 주 1~2회)** — 절차 `operations.md` 6절. 다음: 시험 서버 반영 → 조율 알림(사용자) → Codex 4차 | 결정 [0017](tracking/decisions/0017-bonus-rank-reviewed-only.md), `docs/notice_api/CODEX_BONUS_RECHECK4_REQUEST_20261008.md` |
+| ⑯ | 가산점 화면 사용 허용(10/8) | Codex 4차(P1 0, 목록 10건 오류 없음) 지적 4건 처리 + **원문 대조된 공고(`bonus_verified` 참)만 조율 쪽 화면에 가산점 표시, 0·null은 표시 없음**. 원문 지문으로 첨부 글 변경도 감지. 다음: 시험 서버 반영 → 사용자 알림 → (원하면) Codex 5차 | 결정 [0018](tracking/decisions/0018-bonus-display-verified-only.md), `docs/notice_api/CODEX_BONUS_RECHECK5_REQUEST_20261008.md` |
+| ⑰ | 가산점 표 "배점" 칸 인정(10/8) | 괴산군 "여성기업 및 / 장애인 기업 \| 10"처럼 **표 머리 "배점" 아래 숫자만 있는 칸도 점수로 인정**(숫자 하나·행 이름 짝 확인). 처음 푸는 변경(모름→양수만, 그 밖 0). 새 후보 12건 원문 대조 맞음 11 → **목록 21건**. 다음: 시험 서버 반영(사용자 명령) → (원하면) Codex 6차 | 결정 [0019](tracking/decisions/0019-bonus-table-score-cell.md), `docs/notice_api/CODEX_BONUS_RECHECK6_REQUEST_20261008.md` |
+| ⑱ | 가산점 계산 완화·조이기(10/8) | 사용자 "너무 빡빡하게 안 해도 됨" → 계산은 풀고(부분 메모·"경우"·같은 숫자 반복·한 문장 여러 점수·"각 N점") 목록 관문은 그대로, Codex 6차 P2 두 곳은 조임. 조합 모름→양수 43·그 밖 0, 새 후보 맞음 6 → **목록 27건**. 다음: 시험 서버 반영(0019+0020 한 번에, 사용자 명령) → (원하면) Codex 7차 | 결정 [0020](tracking/decisions/0020-bonus-relax-and-tighten.md), `docs/notice_api/CODEX_BONUS_RECHECK7_REQUEST_20261008.md` |
 
 ⑤의 처리 내용:
 - `bonus_score` = **확인된 가산점 부분합**(결정 0012)
@@ -59,7 +67,7 @@
 ## 5. 지금 상태
 
 ### 5-1. 숫자와 서버
-- 시험: **884개 중 868 통과·16 건너뜀**(MySQL 통합 시험), 실패 0. 맡은 범위 시험 621개, 줄 커버리지 67.5%.
+- 시험: **884개 중 868 통과·16 건너뜀**(MySQL 통합 시험), 실패 0. 맡은 범위 시험 621개, 줄 커버리지 67.6%(10/7 저녁 정리 뒤 다시 잼, 처음 판 67.5% — 쓰이지 않던 코드를 지워서). 근거 `reports/unit_test_20261007T062019Z/`.
 - 팀 EC2 시험 서버 `http://43.201.90.238:8000`: 오후 가산점 코드 반영·확인 완료. 화면 파일(`web/app.html`)은 반영 여부 미확인.
 - 배치 서버 `sbrain-web`: 오전에 코드 전체를 복사했다(가점 14단계 포함, 이전 코드 `~/sbrain/_old/code_before_20261007.tgz`). 오후 파일 3개(`search/bonus.py`·`search/app.py`·`collect/extract_bonus.py`)는 사용자가 반영했다고 했지만 확인은 못 했다.
 - 이 PC에서 켜 둔 서버 없음. 임시 8030은 매번 껐다. 저장소 루트 `.claude/launch.json`에 `search-service-8030` 설정을 더했다(이 PC 확인용).

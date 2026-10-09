@@ -23,6 +23,123 @@
 
 ## 작업 기록
 
+### 2026-10-08 · Claude · 가산점 계산 완화·Codex 6차 조이기·목록 27건(결정 0020)
+
+- 요청·목적: 사용자 "가점 너무 빡빡하게 안 해도 될 것 같다" — A 4가지(메모 범위·"경우"·같은 숫자 반복·한 문장 속 여러 점수) + "각 N점"을 풀고, Codex 6차 P2 두 곳을 조인다. 늘어난 공고는 원문 대조 뒤 목록 추가. 서버 반영은 0019와 함께 한 번에.
+- 작업 전 상태: 결정 0019 코드(시험 서버 미반영). 고치기 전 사본 `bonus.py`·`bonus_reviewed.json`을 세션 임시 폴더 `pre0020/`에.
+- 변경 파일: `search/bonus.py`(상수 `MEMO_GLOBAL_WORDS`·`_MEMO_TARGET`·`_CLAUSE_VERBS`·`_CLAUSE_BOUNDARY`·`_NO_ZERO_BEFORE`·`_SERIAL_BEFORE`·`_LABEL_FILLER`·`_LABEL_JOIN`·`_HEADER_PARTICLE`, 함수 `memo_is_global`·`condition_words_hit`·`_qualification_clause`·`qualification_words`·`bare_numbers`·`quote_mates`, `score_header`·`table_mates`·`points_owned`·`points_supported`·`_table_cell`·`item_hit`·`_joined_hits`·`_score_scope`·`_score` 수정, 머리 설명), `search/bonus_reviewed.json`(6건 추가), `tests/test_bonus.py`(`Relax0020Tests` 7개, 기존 기대값 그대로), 문서: 결정 0020·목록·0019 한 줄, `business-rules.md` 9절, `search/AGENTS.md`, Codex 7차 요청서, 인계서 ⑱, `tracking/status.md`, AGENTS=CLAUDE(0020까지), R6-P3-1 정정(`reports/bonus_boostable_20261008T073942Z/README.md`).
+- 검증: 시험 965개 중 949 통과·16 건너뜀·실패 0(마지막 점검(10/8) 보완 — 메모 대상 판정을 좁힘(일반 말만 가리키는 "가점 항목 일부 누락"·"'우대' 조건"·"⑱ 근거가 끊김"은 전체 메모, "⑮·⑯ 항목"처럼 번호로 집은 항목은 대상), R4 조각에 자격 말 밖의 말("법인")이 남으면 인정 안 함, "배점⏎다음 줄" 조사 오판 수정 — 다시 잰 값 같음(`reports/bonus_boostable_20261008T090430Z/`·`reports/bonus_conservative_20261008T090548Z/`), 124300 계산은 8 → 5(여전히 아님)). `-m eval.bonus_boostable --old <pre0020>`: 같음 757·모름→양수 43·그 밖 0, 목록 21건 그대로, 양수 공고 29(`reports/bonus_boostable_20261008T084903Z/`). `-m eval.bonus_conservative_compare --old`: 모름→양수만 +4·+4(`reports/bonus_conservative_20261008T085037Z/`). 구현 중 "소재 기업"이 "재기"로 읽히던 문제(119727 양수→모름)를 찾아 `qualification_words`로 고침. 원문 대조(AI 참고) 맞음 6·아님 2 → `--write-reviewed` 6건, 목록 27·기존 21건 그대로(`reports/bonus_boostable_20261008T085000Z/`).
+- 남은 일: 시험 서버 반영(0019+0020, 사용자 명령)과 확인. Codex 7차는 사용자 판단. 남는 한계는 결정 0020.
+
+### 2026-10-08 · Claude · 가산점 표 "배점" 칸 인정·원문 대조 목록 21건(결정 0019)
+
+- 요청·목적: 괴산군 117554 표 "배점" 칸의 "10"이 걸러진 것을 살린다(사용자). 새로 점수가 나는 공고는 원문 대조 뒤 목록 추가, Codex 6차 요청서만, 서버 반영은 사용자 명령.
+- 작업 전 상태: 결정 0018 코드(시험 서버 반영됨). 고치기 전 사본(`bonus.py`·`bonus_reviewed.json`)을 세션 임시 폴더에. 흉내 계산(`.dryforge/sim/`)으로 기준값 754·46·12를 다시 확인.
+- 변경 파일: `search/bonus.py`(`SCORE_HEADER_WORDS`·`SCORE_HEADER_WINDOW`·`_BARE_NUMBER`, `score_header`·`table_mates`, `_check_documents`가 두 표시를 닮, `row_fingerprint` 제외 목록, `points_supported`·`points_owned` 표 경로, 머리 설명), `eval/bonus_boostable.py`(`movement_detail`), `search/bonus_reviewed.json`(11건 추가), 시험(`test_bonus.py` `TableScoreCellTests` 7개, `test_bonus_boostable.py` 1개 — 추가만), 문서: 결정 0019·목록·0016 한 줄, `business-rules.md` 9절, `search/AGENTS.md`, Codex 6차 요청서, 인계서 ⑰, `tracking/status.md`, AGENTS=CLAUDE(0019까지).
+- 검증: 시험 958개 중 942 통과·16 건너뜀·실패 0(마지막 점검 지적으로 띄운 단위 "10 일자리"·연번 "1 여성기업 가점" 보완과 시험 2개 추가 — 다시 잰 값 같음, `reports/bonus_boostable_20261008T080203Z/`·`reports/bonus_conservative_20261008T080221Z/`). `-m eval.bonus_boostable --old <사본>`: 같음 754·모름→양수 46·그 밖 0, 양수 공고 22, 목록 안 10·새 후보 12(`reports/bonus_boostable_20261008T073942Z/`). `-m eval.bonus_conservative_compare --old <사본>`: 모름→양수만(+9·+7, `reports/bonus_conservative_20261008T074003Z/`). 원문 대조(AI 참고) 맞음 11·아님 1(119727 — "고도화 컨설팅" 표에만 가점) → `--write-reviewed` 11건, 목록 21·기존 10건 그대로(`reports/bonus_boostable_20261008T074204Z/`).
+- 남은 일: 시험 서버 반영(사용자 명령)과 확인. Codex 6차는 사용자 판단.
+
+### 2026-10-08 · Claude · 가산점 화면 사용 허용(원문 대조된 공고만)·Codex 4차 처리(결정 0018)
+
+- 요청·목적: Codex 4차 지적 4건 수정. 사용자: 이번에 화면 사용도 허용(원문 대조된 공고만, 0·null은 표시 없음), 5차는 요청서만, 서버 반영은 바로.
+- 작업 전 상태: 결정 0017 코드(시험 서버 미반영). 고치기 전 사본 4개(`bonus.py`·`app.py`·`app.html`·`bonus_reviewed.json`)를 세션 임시 폴더에.
+- 변경 파일: `search/bonus.py`(`evidence_fingerprint`·`_has_qualification`·`_QUALIFICATION_WORDS`, `load_reviewed` 값 검사, `reviewed_ok` 원문 지문 비교), `search/app.py`(`bonus_verified` 함수·결과 칸, `bonus_boost`가 그것을 씀), `search/bonus_reviewed.json`(원문 지문), `web/app.html`, `eval/bonus_boostable.py`(목록 쓰기에 원문 지문), `eval/bonus_conservative_compare.py`(예전 파일에 `__file__`), 시험(`test_bonus.py` `Recheck4Tests`, `test_notice_api.py` 추가, 가짜 목록·가짜 가점 행에 원문 지문 — spec 허용), 문서: 결정 0018·0017·0008·목록, `contracts.md`, `business-rules.md` 9절, `operations.md`, `search/`·`web/AGENTS.md`, 알림 초안(화면 허용·새 칸 두 개, 보내지 않음), Codex 5차 요청서, 인계서 ⑯, `tracking/status.md`, AGENTS=CLAUDE(0018까지).
+- 전후 차이·선택 이유: 화면 위험을 대조 품질로 한정하려고 순위용 칸과 별도로 `bonus_verified`(세기·경로와 무관)를 둠. 원문 지문은 줄 경계를 판단에 쓰므로 공백을 지우지 않고 줄바꿈 표기만 통일, 첨부 읽는 순서 영향을 없애려 정렬.
+- 검증: `python -X utf8 -m unittest discover -s tests` → 948개 중 932 통과·16 건너뜀·실패 0. `-m eval.bonus_conservative_compare --old <0018 전 사본>` → `reports/bonus_conservative_20261008T064030Z/` 변화 없음. `-m eval.bonus_boostable --old <사본> --write-reviewed <10건>` → `reports/bonus_boostable_20261008T064049Z/` 같음 800·목록 안 10, 목록의 승인 항목·가점 행 지문은 전과 같음. 내 PC 임시 서버 8030: `boot_errors` 없음, 전북 예시 기본 3·6위 `bonus_verified`·`bonus_rank_applied` 참, 세기 0이면 6·7위 `bonus_verified` 참·`bonus_rank_applied` 거짓, 화면 "원문 대조됨 · 순위 반영됨", 콘솔 오류 없음(임시 서버는 끔).
+- 최종 점검 보완: 가점 행에 원문 지문이 없으면(원문을 못 읽음 등) 대조 안 됨으로 봄(`reviewed_ok`), 시험의 가짜 가점 행·목록에 원문 지문 더함. 다시 돌린 결과 목록 안 10 그대로, 시험 948개 중 932 통과.
+- 미검증·남은 문제: 시험 서버 반영·계약 시험은 사용자 명령 뒤. 표시 계산의 쉼표 경우 등은 막지 못함(조율 화면에는 대조된 공고만).
+- 시험 서버 반영(10/8, 사용자 실행, 이전 파일 `~/_old/bonus_before_0018_20261008.tgz`): 해시 4개 일치, `boot_errors` 없음, 전북 예시 기본 117356·126642 3·6위 `bonus_verified`·`bonus_rank_applied` 참(세기 0이면 6·7위, 대조됨 참·순위 반영 거짓), 조율 쪽 계약 시험 16/16(`reports/notice_api_contract_20261008T065442Z/`).
+- 다음 단계: 사용자 알림 발송 → (원하면) Codex 5차.
+
+### 2026-10-08 · Claude · 가산점 순위 반영 0.2 켬 — 원문 대조를 마친 공고만(결정 0017)
+
+- 요청·목적: Codex 3차 "보류"(P1 3·P2 1) → 사용자 A 방향. 3차 지적 처리 + 0.2를 지금 켜되 원문 대조를 마친 공고만, 목록 추가는 요청 시 Claude 대조 후, 순위 반영 표시(새 칸), 처음 한 번만 조율 알림, 4차 지적은 그때 정함.
+- 작업 전 상태: 결정 0016 `search/bonus.py`(시험 서버 미반영). 고치기 전 사본 3개(`bonus.py`·`app.py`·`app.html`)를 세션 임시 폴더에.
+- 변경 파일: `search/bonus.py`(`cert_words`, "및" 짝 누락 → 모름, `quote_lines`·`_SCORE_CELL`, 각주 이어진 줄, `row_fingerprint`, `load_reviewed`·`reviewed_ok`), `search/app.py`(`Weights.bonus` 0.2, `bonus_boost` → (점수, 얹은 공고), `bonus_rank_applied`, `boot` 목록), 새 `search/bonus_reviewed.json`, `eval/bonus_boostable.py`(`approved_items`·`review_status`·`write_reviewed`·`--write-reviewed`), `web/app.html`, 시험 4개 파일(추가, 예외 1건), 문서: 결정 0017·0015·0008·목록, `business-rules.md` 5·9절, `contracts.md`, `operations.md`, `search/`·`eval/`·`web/AGENTS.md`, 알림 초안, Codex 4차 요청서, 인계서 ⑮, `tracking/status.md`, AGENTS=CLAUDE(0017까지).
+- 전후 차이·선택 이유: 줄 경계로만 나누면 표의 배점 칸이 따로 줄이라 117928·126830·127009의 맞는 점수까지 빠져(첫 시도 8건) 배점 칸·"*" 설명 줄은 앞줄에 붙이도록 다듬음. 기존 시험 `test_bonus_weight_reorders_only_within_rule_tier`만 목록 없이 오른다고 기대해 가짜 STATE에 목록을 넣음(spec 6절 예외).
+- 검증: `python -X utf8 -m unittest discover -s tests` → 945개 중 929 통과·16 건너뜀·실패 0. `-m eval.bonus_conservative_compare --old <0017 전 사본>` → `reports/bonus_conservative_20261008T053625Z/` 변화 없음. `-m eval.bonus_boostable --old <사본>` → `reports/bonus_boostable_20261008T053633Z/` 같음 800·관측 10건, `--write-reviewed` 10건 → `reports/bonus_boostable_20261008T053841Z/`(목록 안 10·다시 대조 0·새 후보 0). 내 PC 임시 서버 8030(새 코드): `boot_errors` 없음, 전북 예시 기본 117356·126642 3·6위 참, 세기 0이면 6·7위 거짓, 화면 "순위 반영됨" 표시·콘솔 오류 없음(임시 서버는 끔). `-m eval.bonus_rank_cases` → `reports/bonus_rank_cases_20261008T054344Z/`(3차 측정과 같음).
+- 최종 점검 보완(같은 날): 기준 문서 9절의 옛 "세기 0·대기" 문장 정리, 배점이 든 "*" 줄은 앞줄에 붙이지 않음(시험 추가 단언), 화면 문구 "세기 0이라 / 원문 대조 목록 밖이라 순위 미반영", 약속 문서에 "계산에 쓰였다" 뜻 보충. 다시 돌린 결과 같음(`reports/bonus_boostable_20261008T055224Z/` 같음 800·목록 안 10), 시험 945개 중 929 통과.
+- 미검증·남은 문제: 시험 서버 반영·계약 시험은 사용자 명령 뒤. 쉼표로만 이어진 문장, 다른 행 이름 뒤 배점 칸만 있는 줄은 표시에서 못 막음(순위는 목록이 막음). 목록 근거는 AI 참고.
+- 다음 단계: 시험 서버 반영·확인 → 사용자 조율 알림 → Codex 4차.
+
+### 2026-10-08 · Claude · Codex 재재검수 지적 처리(결정 0016)
+
+- 요청·목적: Codex 재재검수 "추가 수정 후 재검수 필요, 0.2 보류"(P1 5·P2 2) → 사용자 A 방향(실제 2건 + 쉬운 것 고치고 ④⑤는 보수적 null, 다시 검수). ① "및·&" 짝을 확인 못 하면 모름·짝을 안 가진 것이 확실하면 "둘 중 하나", ② "가점·인정 줄만", 시험 서버 반영, 순위 비교 측정 포함.
+- 작업 전 상태: 고치기 전 `search/bonus.py` 사본을 세션 임시 폴더에 둠(비교·서버 해시 확인용). `search/app.py`·`web/app.html`은 바꾸지 않음(해시 315071ab…·a836977d… 그대로).
+- 변경 파일: `search/bonus.py`(①~⑥, 공통 규칙 `score` = 이전·새 계산, `document_parts`·`period_lines`, `load`가 `period_lines`·`selection` 표시), `tests/test_bonus.py`(`Recheck2Tests` 8개, 기존 33개 기대값 그대로), `eval/bonus_boostable.py`("전부" 표현 → 탐색 관측, `trial_inputs`·`movement`·`compare_old`, `--old`), `tests/test_bonus_boostable.py`(+2), 새 `eval/bonus_rank_cases.py`·`tests/test_bonus_rank_cases.py`. 문서: 결정 0016·0014·0015 정정·목록, `business-rules.md` 9절, `search/AGENTS.md`, `eval/AGENTS.md`, 알림 초안 숫자, 3차 요청서 `docs/notice_api/CODEX_BONUS_RECHECK3_REQUEST_20261008.md`, 인계서 ⑭, `tracking/status.md`, AGENTS=CLAUDE(0016까지).
+- 전후 차이·선택 이유: 모두 더 엄격하게만. 항목을 내리면 한도 초과 검사가 풀려 null → 양수가 되는 길(120238 5+5+1)을 점검 중 찾아 공통 규칙으로 막음. ①의 "또는·쉼표·등" 나열은 뜻이 분명해 제외(126830·122309, Codex도 원문과 맞다고 봄).
+- 검증: `python -X utf8 -m unittest discover -s tests` → 936개 중 920 통과·16 건너뜀·실패 0(최종 점검 보완 뒤). `-m eval.bonus_conservative_compare --old <사본>` → `reports/bonus_conservative_20261008T034533Z/`: 여성기업·벤처·성남 8→7, 장애인기업·이노비즈·전남광주 8→7(둘 다 126819 5→null). `-m eval.bonus_boostable --old <사본>` → `reports/bonus_boostable_20261008T034650Z/`: 조합 800개 같음 783·양수→null 9·양수→더 작은 양수 8·그 밖 0, 관측 공고 10건, README 원문 대조 맞음 10·틀림 0. 꼭 바뀌어야 할 것(120238 청년친화·가족친화 → null, 사회적 5 유지, 126819 → null, 117356·126642 여성 5 유지) 직접 확인. `-m eval.bonus_rank_cases` → `reports/bonus_rank_cases_20261008T035007Z/`: 제목 그대로 10건 모두 1위, 분야 문장 모두 20위 밖, 제목 핵심어 4건 2위 중 120238·125997이 0.2에서 1위(앞질린 공고는 가산점 "모름").
+- 최종 점검 보완(같은 날): ③을 근거 문장에도 적용(추가 조건 칸이 비어도 다른 자격 서류면 모름), ① 짝 찾기에서 이름·종류가 모두 같은 중복만 제외, ⑤ 고르기 말 보강(1개 항목만·중복 수혜 불가·높은 점수 1개), 청년 대상 말 '세' → '세 이하·세 미만'. 다시 돌린 결과는 같다 (`reports/bonus_conservative_20261008T035945Z/`, `reports/bonus_boostable_20261008T035949Z/` — 조합 800개 같음 783·양수→null 9·양수→더 작은 양수 8·그 밖 0, 관측 10건).
+- 미검증·남은 문제: ④⑤는 보수적 규칙(원문 관계 해석 아님 — ④는 쉼표로만 이어진 문장을 못 나눔). 탐색은 800개 조합 관측. 원문 대조는 AI 참고. 시험 서버 반영은 사용자 명령 뒤 확인.
+- 다음 단계: 시험 서버 반영·확인 → Codex 3차 검수(사용자) → 결정 0015 켤지 결정.
+
+### 2026-10-08 · Claude · 가산점 순위 반영 0.2 준비(결정 0015, 대기)
+
+- 요청·목적: 멘토 의견으로 가산점을 순위에 반영(세기 0.2). 사용자: Codex 재재검수 뒤 켜고, 오늘은 확인·준비만. 원문 대조는 "가능한 조합 전부", 검색 성적 비교는 참고만(한계 명시), 문제가 나오면 멈추고 보고, 조율 알림은 켜고 나서.
+- 작업 전 상태: `Weights.bonus = 0`(결정 0008). 시험 화면에 세기 선택(0·0.2·0.5·1.0)이 있음. `search/app.py`·`web/app.html`·`search/bonus.py`·`search/AGENTS.md`에 커밋 안 된 변경이 있어 작업 전후 해시로 "안 바뀜"을 확인.
+- 변경 파일: 새 도구 `eval/bonus_boostable.py`(열린 공고 중 어떤 입력 조합으로든 가산점이 양수가 되는 공고 전부 + 예시 조합·항목·근거 주변 원문) · 시험 `tests/test_bonus_boostable.py`(8개) · `eval/AGENTS.md` 한 줄. 결정 `0015-bonus-rank-weight-0-2.md`·목록, `business-rules.md` 9절 한 줄, 재재검수 요청서 7번, 알림 초안 "순위 반영" 줄(보내지 않음), `tracking/status.md`, 인계서 ⑬, AGENTS=CLAUDE(0015까지).
+- 전후 차이·선택 이유: 서비스 동작은 그대로(기본값 0). 켜는 절차를 결정 문서에 적어 두어 재재검수 뒤 그대로 따라 한다. 원문 대조를 가상 신청자가 아니라 조합 전부로 넓힌 것은 실제 신청자 조합을 모르기 때문(사용자 선택).
+- 검증: `-m eval.bonus_boostable` → `reports/bonus_boostable_20261008T025339Z/`: 열린 공고 1,748건·가점 찾음 317건 중 양수 가능 11건(기업마당 11, 조합 800개 시도), 빠뜨림 확인(가상 신청자 4+5명의 양수 공고 10건) 통과, README에 Claude 원문 대조 표(맞음 11·틀림 0·애매 1항목 — 120238 가족친화 1점). `-m eval.bonus_rank_eval` → `reports/bonus_rank_eval_20261008T025137Z/`: 기준일 9/15·말뭉치 2,084건·질의 58·상위 10, 세 속성 모두 세기 0.1~0.3 자리 바뀐 수 0·지표 변화 +0.000(구간 0~0) — 멈춤 기준 안 걸림, 다만 잴 수 없음. `python -X utf8 -m unittest discover -s tests` → 920개 중 904 통과·16 건너뜀·실패 0. 네 파일 해시 작업 전후 같음.
+- 미검증·남은 문제: 원문 대조는 AI 참고(사람 정답 아님). 세 개 이상을 동시에 맞혀야만 양수가 되는 공고는 도구가 놓칠 수 있음(한계 기록).
+- 다음 단계: Codex 재재검수(사용자) → 결과를 보고 켤지 결정 → 결정 0015 "켜는 절차" 1~9.
+
+### 2026-10-08 · Claude · 시험 화면에 가산점 순위 반영 세기 선택
+
+- 요청·목적: 멘토가 가산점도 중요하다고 함 → 가중치를 줘서 순위를 바꿔야 하나 고민. 먼저 사용자가 직접 비교해 보고 싶다.
+- 사전 측정(시험 서버 `/api/match`에 `weights.bonus` 0·0.2·0.5·1.0, 가상 신청자 5명, 상위 20위, 읽기만): 순위가 바뀐 것은 전북 장애인기업 예시뿐(+5점 공고 6·7위 → 0.2: 3·6위, 0.5: 2·4위, 1.0: 1·2위). 김포·충남은 이미 위쪽이라 그대로, 평범한 아이디어 문장 2명은 20위 안에 가산점 공고가 없어 변화 0. 막히는 곳은 세기보다 "가산점이 확인된 공고 수"(열린 공고 1,748건 중 신청자당 0~8건).
+- 변경: `web/app.html` 결과 화면에 "가산점 순위 반영 세기"(0 지금 서비스·0.2·0.5·1.0). 바꾸면 같은 입력으로 다시 검색(`weights: {bonus}`만 보내고 나머지는 서버 기본값), 세기 > 0이면 세기 0으로 한 번 더 불러 자리가 바뀐 공고를 "n위 → m위"로 적음. 가산점 요약 문구도 세기에 맞게. 서비스 기본값(`Weights.bonus = 0`)은 그대로.
+- 검증: 임시 서버 8031(고친 화면 + 시험 서버 API)에서 전북 예시 — 세기 0.5: 전북 육성자금 7위 → 3위, 1.0: 7위 → 1위. 콘솔 오류 없음. 시험 132개 통과. 임시 서버는 끔.
+- 다음: 사용자가 시험 서버에서 직접 비교한 뒤 세기를 기본값으로 켤지 결정(켜면 결정 기록·조율 담당 알림·올라가는 공고 원문 확인).
+
+### 2026-10-08 · Claude · 시험 화면에 가산점 확인용 예시 버튼
+
+- 요청·목적: 8000 시험 화면에서 버튼 하나로 예시 입력을 채워 가산점을 바로 확인하고 싶다.
+- 변경: `web/app.html` — "가산점 확인용 (누르면 바로 매칭)" 줄에 버튼 3개(벤처기업·경기 김포 / 장애인기업·전북 / 여성기업·충남). 가짜 신청자 3명을 `SAMPLES`에 더하고, `data-run` 버튼은 채운 뒤 바로 매칭을 누른다. 점수는 화면에서 계산하지 않고 응답 그대로 보여 준다. `web/AGENTS.md` 표 한 줄.
+- 검증: 고친 화면을 내 PC 임시 서버(8031, `/api/*`는 시험 서버로 넘김)에서 눌러 봄 — 김포: 1·2위 김포 육성자금 공고 +10점 / 전북: 7위 전북 육성자금 +5점 / 충남: 5위 중소기업 마케팅지원사업 +1점, 1위 수원메가쇼·4위 전용판매장은 "모름"(결정 0014 `search/bonus.py`가 시험 서버에 아직 안 올라감 — 올리면 +5·+1 예상). 임시 서버는 끔. 시험 `test_notice_api`·`test_bonus`·`test_verify_ui` 132개 통과.
+- 남은 것: 시험 서버에 `web/app.html`·`search/bonus.py`를 올리는 것은 사용자 명령. 공고가 마감되면 예시가 가리키는 공고가 결과에서 빠질 수 있다(그때 예시 아이디어 문장을 바꾼다).
+
+### 2026-10-08 · Claude · 가산점 추가 조건 완화(A, 결정 0014)
+
+- 요청·목적: 가산점이 너무 엄격하다 → 관문 넷 가운데 "뜻이 안 바뀌는 추가 조건 허용"만 반영(사용자 선택). 시뮬레이션에서 +1~2곳임을 알고 고름.
+- 변경: `search/bonus.py` — 추가 조건을 `;`·`/`로 나눈 조각이 모두 증빙 서류(`BENIGN_PAPER`)·유효기간(`BENIGN_VALID`)이고 위험 말(`RISKY_WORDS`)이 없거나 "중소기업" 단독이면 모름으로 내리지 않음(`benign_extra`). 조건 말 검사 전에 위험 말 없는 증빙·유효기간 구절을 뺌(`_drop_benign_phrases`). 머리말에 예외. 시험 `tests/test_bonus.py` `BenignExtraTests` 5개(허용·불허·해당 아님 유지·구절 빼기·점수 계산). 기준 문서 `business-rules.md` 9절(예외 한 줄·원칙 문장·10/8 수치), `search/AGENTS.md`, `tracking/status.md`, 결정 0014·목록, AGENTS=CLAUDE(0014까지), 알림 초안(숫자·설명, 보내지 않음), 재재검수 요청서 6번.
+- 검증: 시험 912개 중 896 통과·16 건너뜀. `-m eval.bonus_conservative_compare`(예전 = git HEAD) → `reports/bonus_conservative_20261008T013308Z/`: null → 점수만(여성기업·벤처·성남 647·1095·6 → 645·1095·8, 장애인기업·이노비즈·전남광주 646·1095·7 → 645·1095·8). 시뮬레이션과 같음.
+- 시험 서버 반영(사용자 실행, 이전 파일 `~/_old/app_bonus_before_20261008.tgz`): `/api/health` `boot_errors` 없음, `/api/match` 충남 여성기업 예시 126819 +5·125997 +1(전에는 null), 계약 시험 16/16 → `reports/notice_api_contract_20261008T022607Z/`.
+
+### 2026-10-08 · Claude · gpt-6-luna 전환 (2부, 결정 0013)
+
+- 사용자 결정(10/7): 3단계(신청자 유형·업종·가점)만 전환, 자격요건 유지, 배치 서버 키, 오늘 바로.
+- 변경: `experiments/sql_semantic/applicant_type_llm.py`·`collect/industry_daily.py`·`collect/extract_bonus.py`의 `MODEL` → `gpt-6-luna`. `collect/applicant_type_daily.py`·`industry_daily.py` — 결과 행마다 `engine`, `LEGACY_ENGINE`(`gpt-5.6-luna@medium`), 엔진이 다르면 다시 뽑기(`plan(engine=)`, `other_engine()` — 업종은 기존 결과와 같은 발췌 길이), 체크포인트 재사용도 엔진 확인, 미리 보기(`--plan`)도 같은 기준. `experiments/sql_semantic/industry_llm_sample.only_new`는 행의 `excerpt_cap`을 먼저 본다(길게 읽은 공고를 새 엔진으로 다시 뽑아도 매일 다시 부르지 않게). `collect/upload_judgments.py` — 행마다의 엔진으로 추출기 버전. `collect/backup_db.py` — `--restore FILE --tables … [--apply]`(AI 판정 4개 표만, 먼저 전체를 훑어 없으면 아무것도 안 함). 시험: `test_industry_daily`(엔진·같은 길이·다음 날 다시 안 부름), `test_applicant_type_daily`, `test_upload_judgments`, `test_backup_db`(되살리기 4개). 기준 문서(`collect/AGENTS.md`, `architecture.md`, `FLOW.md`, `guides/JUDGMENT_TABLES.md`, `notice_api/03_bonus/README.md`, `operations.md` 전환·되돌리기 방법, AGENTS=CLAUDE 결정 0013까지).
+- 실행(사용자, 배치 서버): 코드 묶음 복사 → 백업(`~/sbrain/_old/*6luna*`) → `applicant_type_daily --limit 3500`(2,825·실패 0·$1.20) → `industry_daily --limit 3500`(2,825·실패 0) → 10/8 09:00 매일 배치가 판정 올리기 2,861·2,861과 가점 300건 → `extract_bonus --all`(707·실패 0·$0.73). 처음 `--plan`이 엔진 기준을 안 써서 0건으로 보였다 → 고쳐 다시 올림. 시험 서버: 코드 백업 → 반영 → 재시작(처음 백업 명령은 시험 서버에 `db/`가 없어 멈춤, 있는 폴더만으로 다시).
+- 검증: 공용 DB 버전별 행 수(위 STATUS), 시험 서버 `/api/health` `boot_errors` 없음, `/api/match` 가산점 나옴(120481·122057 +10), 계약 시험 16/16(`reports/notice_api_contract_20261008T010543Z/`), 시험 907개 중 891 통과·16 건너뜀. 작업 사본 CRLF 정리(내용 변화 없는 파일은 `git checkout`으로 원상태).
+- 남은 것: 10/9 매일 배치 확인. 가산점 있는 공고가 늘어난 원인 확인은 하지 않았다.
+
+### 2026-10-07 · Claude · gpt-6-luna 전환 전 표본 비교 (1부)
+
+- 요청·목적: 배치 AI 4단계를 gpt-6-luna(medium)로 바꾸고 싶다. 비용·문제점을 먼저 본다. 사용자 결정: 표본 비교 → 보고 → 승인 뒤 전환, 4단계 모두, 전량 한 번에, 업종 순위 파일 유지, 배치 서버에서 사용자가 실행, 직전 백업 두 가지, 팀원 알림 없음.
+- 변경: `experiments/sql_semantic/industry_llm_sample.py`(`PRICES`에 gpt-6-luna, `REASONING_PREFIXES`에 `gpt-6`), `collect/extract_conditions.py`(`ask`에 모델·생각 강도 인자, `request_options` — gpt-4o-mini는 지금처럼 `temperature=0`), `collect/extract_bonus.py`(`ask`·`run_one`에 모델 인자, `extractor_version()`, 단가). 기본 모델은 그대로. 새 시험 `tests/test_model_options.py`(9개). 비교 도구 `eval/model_switch_compare.py`(같은 문서만 비교, 업종은 기존 결과와 같은 길이로 읽음, 가점은 서버 규칙으로 최종 점수 비교).
+- 실행: `--plan`(예상 $0.24) → 실제 `--workers 6`. 첫 실행은 업종 비교 코드 오류(`allowed_sections`가 None)로 중간에 멈춰 고친 뒤 다시 돌렸다(미완성 폴더는 지움). 결과 `reports/model_switch_6luna_20261007T073852Z/` — 160건 성공·실패 0, $0.11.
+- 결과 요지: 가점 상태·최종 가산점 40/40 같음. 신청자 유형 117/120칸. 업종 대분류 39/40(상태 차이 15건은 대부분 순위에 안 쓰는 "언급 없음 ↔ 알 수 없음"). 자격요건 업력 40/40, 지원 금액 34/40, 사업자 유형·예비창업자 26/40 — 새 모델이 빈 값을 많이 내고 근거 검사에서 버려지는 값이 9건. 전량 추정 $5.37(자격요건 1.51·신청자 유형 1.12·업종 1.75·가점 1.00). 자격요건은 출력 토큰이 5배라 비용이 지금과 비슷.
+- 검증: 시험 899개 중 883 통과·16 건너뜀·실패 0. 공용 DB 쓰기 0(비교 도구는 SELECT만).
+- 다음: 사용자 승인 대기(단계별 전환 여부·키·날짜). 승인 전에는 기본 모델·DB·서버를 바꾸지 않는다.
+
+### 2026-10-07 · Claude · 공용 DB 백업 도구 보강과 새 백업
+
+- 요청·목적: 지금 프로젝트에서 백업이 필요한 곳 점검 → DB가 가장 중요. 마지막 전체 백업이 9/14였고, 그 뒤 생긴 AI 판정 표(자격요건·신청자 유형·업종·가점)는 백업 도구 기본 범위에도 없었다. 사용자 결정: 우리 표 전부 + 첨부 원본, 도구도 고침, 끝나면 9/14 백업 삭제.
+- 변경: `collect/backup_db.py` 기본 테이블에 `notice_conditions`·`notice_applicant_types`·`notice_industries`·`notice_bonus` 추가, 읽기 전용 한 시점 스냅샷(`START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY`, 끝나면 rollback), 다른 팀 테이블은 넣지 않음을 머리말에 적음, `utcnow` 경고 제거. 새 시험 `tests/test_backup_db.py`(6개: 범위·다른 팀 표 제외·값 변환·SELECT/SHOW만·스냅샷·첨부 옵션). `collect/AGENTS.md`, `docs/operations.md` 5절.
+- 실행: 접속 확인(information_schema SELECT, 공용 DB 약 890MB, 우리 표 외 다른 팀 표 33개 1MB 미만) → `-m collect.backup_db --include-files` 종료 코드 0. `data/backup_20261007T153141.sql` 1,747MB, 9개 표(행 수: import_runs 28·notices 2,825·notice_attachments 3,985·attachment_texts 2,294·notice_conditions 2,096·notice_applicant_types 2,825·notice_industries 2,825·notice_bonus 2,078·attachment_files 2,234), 파일 끝 `SET UNIQUE_CHECKS = 1;`까지 확인, Git 무시 확인.
+- 9/14 백업(`data/backup_20260914T160825.sql`, 47MB)은 사용자 요청으로 **휴지통으로 보냄**(영구 삭제 아님).
+- 검증: 전체 시험 890개 중 874 통과·16 건너뜀·실패 0(백업 시험 6개 늘어 884 → 890).
+- 남은 것: 다른 팀 표·팀 EC2 전체 백업(AWS 스냅샷)은 팀에 확인할 일. 배치 서버 `data/`는 서버에만 있음.
+
+### 2026-10-07 · Claude · 단위 테스트 다시 재기(정리 뒤 개정판)
+
+- 요청·목적: 단위 테스트를 다시 진행. 오전 결과서(제출함) 뒤 폴더 정리로 코드가 바뀌어 숫자를 지금 코드로 맞춘다. 사용자 결정: 시험 추가 없음, MySQL 통합 시험 건너뜀, 같은 파일 덮기 + 개정판 표시, 처음 판 → 이번 비교와 이유.
+- 실행: 새 폴더 `reports/unit_test_20261007T062019Z/`에 오전 판 스크립트(`run_unit.py`·`cov_summary.py`, 범위 목록 그대로)를 복사해 `coverage run -m run_unit`(PYTHONPATH=새 폴더, COVERAGE_FILE=새 폴더/.coverage) → `cov_summary.py`. 옛 폴더 두 개는 읽기만.
+- 결과: 884개 중 868 통과·16 건너뜀·실패 0·오류 0(종료 코드 0). 범위 67.5% → 67.6%(7,153 → 7,140줄, 실행 4,827 → 4,824줄). 기능 ① 공고 수집 62.7% → 64.7%, 나머지 기능 같음. 바뀐 파일은 `collect/daily_job.py`(160 → 147줄, 실행 90 → 87줄)뿐 — `git diff e170642..HEAD`로 확인한 정리 변경(쓰이지 않던 임베딩 코드·`skip_embed` 삭제).
+- 결과서: `build_report.js`를 새 폴더로 복사해 고침 — 셋째 인자로 처음 판 폴더를 받아 비교 표를 만들고, 바뀐 파일마다 확인한 이유가 없으면 멈추게 함. 표지 개정판 표시, 결과 요약 처음 판/이번 표, "처음 제출한 판과 달라진 점", 기능별 표 "처음 → 이번", "10/7 오전에 더한 시험 7개 파일", 원칙 문장 사실대로, 범위 밖 설명에서 지운 파일 뺌, 5.5에 재측정 사실. node `docx` 9.9.0은 저장소 밖(세션 임시 폴더)에 설치.
+- 검증: 워드를 글자로 다시 읽어 개정판 표시·67.5%/67.6%·7,140/4,824·① 비교·지운 파일 문구 없음·옛 원칙 문장 없음 확인.
+- 기록: `standards.md` 10절, `tracking/status.md`, `docs/README.md` deliverables 줄, 인계서 ④·5-1을 새 숫자·새 폴더로.
+
 ### 2026-10-07 · Claude · data-collection 정리 ("다른 사람이 봐도 헷갈리지 않게")
 
 - 요청·목적: 폴더가 복잡해 처음 보는 사람이 헷갈린다. 안 쓰는 파일·문서를 정리한다. 사용자 결정: 1~5단계 모두 진행, Chroma 코드 제거는 나중(문서에 "안 씀"만 표시).

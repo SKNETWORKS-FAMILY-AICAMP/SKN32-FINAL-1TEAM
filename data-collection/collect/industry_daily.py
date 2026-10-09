@@ -34,12 +34,14 @@ if ROOT not in sys.path:
 OUT_DIR = os.path.join(ROOT, 'data', 'industries')
 REPORTS = os.path.join(ROOT, 'reports')
 SEED_RUN = os.path.join(REPORTS, 'industry_llm_full_luna_20260928_final6', 'results.jsonl')
-MODEL, EFFORT, PROMPT, PROFILE = 'gpt-5.6-luna', 'medium', 'v3', 'rough'
+MODEL, EFFORT, PROMPT, PROFILE = 'gpt-6-luna', 'medium', 'v3', 'rough'   # 2026-10-07 결정 0013 (전에는 gpt-5.6-luna)
+# 엔진을 적지 않은 옛 결과 행은 이 엔진으로 뽑은 것이다(2026-10-07 전 결과 전부)
+LEGACY_ENGINE = 'gpt-5.6-luna@medium'
 DAILY_LIMIT = 300
 MAX_FAILURES = 3
 KST = timezone(timedelta(hours=9))
 KEEP = ('notice_id', 'title', 'category', 'target_category', 'regex', 'llm', 'usage', 'doc_chars',
-        'attachments_count', 'document_sha256', 'attachment_sha256', 'source_run', 'run_at')
+        'attachments_count', 'document_sha256', 'attachment_sha256', 'source_run', 'run_at', 'engine')
 
 
 def read_jsonl(path):
@@ -135,6 +137,9 @@ def _run_batch(limit, say, workers, connection, call, out_dir, today, reports_di
     todo_all, skipped = ils.only_new(items, out_dir, reports_dir or REPORTS) if existing else (items, 0)
     todo_all = [it for it in todo_all if not (it['notice_id'] in existing and
                                               existing[it['notice_id']].get('document_sha256') == it['document_sha256'])]
+    # 엔진(모델@생각 강도)이 다른 결과도 다시 뽑는다(2026-10-07 결정 0013). 문서 길이는 그 결과와 같게 —
+    # 9/28 에 18,000자로 다시 읽은 공고는 18,000자로 읽는다
+    todo_all += other_engine(items, existing, {it['notice_id'] for it in todo_all}, engine, ils)
     stuck = {it['notice_id'] for it in todo_all
              if (state['failures'].get(it['notice_id']) or {}).get('sha') == it['document_sha256']
              and state['failures'][it['notice_id']].get('count', 0) >= MAX_FAILURES}
@@ -206,10 +211,30 @@ def _run_batch(limit, say, workers, connection, call, out_dir, today, reports_di
     return out
 
 
+def engine_of(row):
+    return (row or {}).get('engine') or LEGACY_ENGINE
+
+
+def other_engine(items, existing, queued, engine, ils):
+    """문서는 같은데 다른 엔진으로 뽑은 결과 → 다시 뽑을 항목. 그 결과와 같은 발췌 길이로 읽는다."""
+    out = []
+    for it in items:
+        row = existing.get(it['notice_id'])
+        if row is None or it['notice_id'] in queued or engine_of(row) == engine:
+            continue
+        cap = (row.get('llm') or {}).get('excerpt_cap') or ils.ec.MAX_CHARS
+        again = it if cap == ils.ec.MAX_CHARS else ils.prepare(dict(it), cap)
+        again['excerpt_cap'] = cap
+        out.append(again)
+    return out
+
+
 def _result_row(item, data, usage, ils, run_name):
     row = {k: item.get(k) for k in KEEP}
-    # 발췌 상한을 꼭 넘긴다 — None 이면 잘림(truncated) 판정이 꺼진다
-    row.update({'llm': ils.verify_for(PROMPT, data, item['document'], PROFILE, ils.ec.MAX_CHARS, item.get('title') or ''),
+    # 발췌 상한을 꼭 넘긴다 — None 이면 잘림(truncated) 판정이 꺼진다. 길게 다시 읽은 공고는 그 상한으로
+    cap = item.get('excerpt_cap') or ils.ec.MAX_CHARS
+    row.update({'llm': ils.verify_for(PROMPT, data, item['document'], PROFILE, cap, item.get('title') or ''),
+                'engine': ils.engine_id(MODEL, EFFORT),
                 'usage': usage, 'doc_chars': len(item['document']), 'attachments_count': len(item['attachments']),
                 'source_run': run_name, 'run_at': datetime.now(timezone.utc).isoformat(timespec='seconds')})
     return row
@@ -231,10 +256,15 @@ def main(argv=None):
         results = os.path.join(OUT_DIR, 'results.jsonl')
         base = OUT_DIR if os.path.exists(results) else os.path.dirname(SEED_RUN)
         todo, skipped = ils.only_new(items, base, REPORTS)
+        # 실제 실행과 같은 기준 — 엔진이 다른 결과도 다시 뽑는다
+        engine = ils.engine_id(MODEL, EFFORT)
+        existing = {r['notice_id']: r for r in read_jsonl(os.path.join(base, 'results.jsonl'))}
+        redo = other_engine(items, existing, {it['notice_id'] for it in todo}, engine, ils)
+        todo, skipped = todo + redo, skipped - len(redo)
         state = load_state(os.path.join(OUT_DIR, 'daily_state.json'), datetime.now(KST).date().isoformat())
         n = min(len(todo), max(0, args.limit - state['attempted']))
-        print('대상 %d건 · 이미 있음 %d건 · 부를 것 %d건 · 미룸 %d건 · 오늘 이미 %d건 · 예상 약 $%.3f (건당 약 $0.0012)'
-              % (len(items), skipped, n, len(todo) - n, state['attempted'], n * 0.0012))
+        print('대상 %d건 · 이미 있음 %d건 · 부를 것 %d건 · 미룸 %d건 · 오늘 이미 %d건 · 예상 약 $%.3f (건당 약 $0.0006, %s)'
+              % (len(items), skipped, n, len(todo) - n, state['attempted'], n * 0.0006, engine))
         return 0
     out = run_batch(limit=args.limit)
     return 1 if out.get('error') else 0

@@ -59,6 +59,7 @@ S-Brain에서 "공고 데이터 · 매칭 · 자격 판정"을 맡는 부분이�
 12 업종 추출 (LLM)                        → data/industries/ (파일만)
 13 판정 올리기                            11·12 결과 중 바뀐 행 → notice_applicant_types·notice_industries
 14 가점 추출 (LLM)                        가점·우대 말이 있는 열린 공고 → notice_bonus
+   모델: 10단계 gpt-4o-mini · 11·12·14단계 gpt-6-luna(medium, 2026-10-07 결정 0013)
 ```
 
 - 4단계가 끝나야 5~14단계가 돈다(`stored`). 5단계 이후 실패는 앞 단계 결과를 되돌리지 않는다.

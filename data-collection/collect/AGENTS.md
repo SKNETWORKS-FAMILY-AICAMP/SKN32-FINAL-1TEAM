@@ -6,8 +6,8 @@
 - 정규화: `normalize.py` — 두 출처 → `schema_version=1` 공통 형식, 날짜·주소·URL 정리, `issues`에 경고.
 - 첨부: `attachment_pipeline.py`(기업마당 공고문 첨부만 받기 → 본문 추출, 끊겨도 이어서), `doctext.py`·`hwp5.py`(PDF·HWP·HWPX·DOCX), `attachment_store.py`(`attachment_texts`).
 - 공용 DB로 올리기: `upload_vectors.py`(8단계), `upload_attachments.py`(9단계), `upload_judgments.py`(13단계).
-- LLM 추출: `extract_conditions.py`(10단계, `gpt-4o-mini`), `applicant_type_daily.py`(11단계), `industry_daily.py`(12단계), `extract_bonus.py`(14단계, `gpt-5.6-luna`·medium, `EXTRACTOR_VERSION`).
-- `backup_db.py`: 팀 DB를 파이썬으로 덤프(기본 4개 테이블, `--include-files`면 첨부 파일까지).
+- LLM 추출: `extract_conditions.py`(10단계, `gpt-4o-mini`), `applicant_type_daily.py`(11단계), `industry_daily.py`(12단계), `extract_bonus.py`(14단계) — 11·12·14단계는 `gpt-6-luna`·medium(2026-10-07 결정 0013, 전에는 `gpt-5.6-luna`). 11·12단계 결과는 행마다 `engine`을 적고, 엔진이 다르면 공고문이 같아도 다시 뽑는다(엔진 없는 옛 행 = `gpt-5.6-luna@medium`). 14단계는 모델이 `EXTRACTOR_VERSION`에 들어 있어 모델을 바꾸면 버전이 달라진 행을 다시 뽑는다.
+- `backup_db.py`: 팀 DB에서 우리 테이블만 파이썬으로 덤프(기본: 공고 4개 + AI 판정 4개, `--include-files`면 첨부 원본까지). 읽기 전용 한 시점 스냅샷으로 읽고, 다른 팀 테이블(회원·토큰 등)은 넣지 않는다. 출력은 `data/backup_<시각>.sql`(Git 제외).
 
 ## 맡지 않는 것
 - 공고 검색·순위·자격 판정(`search/`). 이 폴더는 판정을 **만들어 저장**할 뿐 쓰지 않는다.

@@ -530,15 +530,23 @@ def already_done(connection, version=EXTRACTOR_VERSION):
         return dict(cursor.fetchall())
 
 
-def ask(client, title, body):
+def request_options(model, effort=None):
+    """생각하는 모델(gpt-5·gpt-6 계열)은 temperature 를 받지 않고 생각 강도를 받는다.
+    gpt-4o-mini 같은 일반 모델은 지금처럼 temperature=0 이다."""
+    from experiments.sql_semantic import industry_llm_sample as ils
+    return ils.request_options(model, effort)
+
+
+def ask(client, title, body, model=MODEL, effort=None):
+    """모델은 기본값(MODEL)을 쓴다. 표본 비교에서만 다른 모델·생각 강도를 넘긴다."""
     started = time.time()
     response = client.chat.completions.create(
-        model=MODEL,
+        model=model,
         messages=[{'role': 'system', 'content': SYSTEM},
                   {'role': 'user',
                    'content': '공고 제목: %s\n\n공고문 발췌:\n%s' % (title, body)}],
         response_format={'type': 'json_schema', 'json_schema': SCHEMA},
-        temperature=0)
+        **request_options(model, effort))
     data = json.loads(response.choices[0].message.content)
     usage = response.usage
     return data, {'in': usage.prompt_tokens, 'out': usage.completion_tokens,

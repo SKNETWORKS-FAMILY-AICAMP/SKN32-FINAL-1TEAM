@@ -1,0 +1,1427 @@
+{
+ "label": "가점",
+ "old_model": "gpt-5.6-luna",
+ "population": 990,
+ "comparable": 968,
+ "sample": 40,
+ "ok": 40,
+ "failed": [],
+ "seconds": 78.2,
+ "tokens": {
+  "in": 181309,
+  "out": 44765,
+  "reasoning": 0,
+  "per_call_in": 4533,
+  "per_call_out": 1119
+ },
+ "sample_cost_usd": 0.0405,
+ "old_rows": 2078,
+ "old_per_call": {
+  "in": 2137,
+  "out": 361
+ },
+ "old_full_cost_usd": 1.789,
+ "new_full_estimate_usd": 1.003,
+ "rows": [
+  {
+   "notice_id": "bizinfo:PBLN_000000000119727",
+   "title": "[부산] 2026년 중소기업 빅데이터 분석 활용 지원사업 참가기업 모집 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 1,
+    "new": 1
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126106",
+   "title": "[전남광주] 해남군 제조환경 개선 청년친화형 일자리 증대사업 모집 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 2,
+    "new": 2
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000123098",
+   "title": "[전북] 2026년 중소기업 디자인개발 지원사업 디자인 공모전 출품 지원사업 과제 모집 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 1,
+    "new": 1
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126506",
+   "title": "2026년 한수원 우문현답 현장 클리닉센터 지원사업 원전ㆍ에너지 분야 선택형 과제 참여기업 모집 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 5,
+    "new": 5
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126387",
+   "title": "[강원] 철원군 2026년 소규모 사물인터넷(IoT) 측정기기 설치 지원사업 재공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 3,
+    "new": 2
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126083",
+   "title": "[경북] 구미시 2026년 4차 지식재산 긴급지원(중소기업 IP바로지원) 사업 모집 공고(국내출원지원)",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 1,
+    "new": 1
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126268",
+   "title": "[전북] SEOUL FOOD in Bangkok 2026 B2B 전시회 참가기업 모집 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 1,
+    "new": 1
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126581",
+   "title": "[경기] 양주시 2026년 4차 해외전시회 참가기업 지원사업 모집 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 2,
+    "new": 1
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126643",
+   "title": "[부산] 2026년 10차 중소기업ㆍ소상공인 자금지원계획 변경 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 20,
+    "new": 21
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126606",
+   "title": "[경기] 용인시 2026년 4차 소공인특화지원센터 지원사업 연장 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 5,
+    "new": 5
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126456",
+   "title": "[제주] 서귀포시 2026년 4분기 서귀포in정 입점업체 공개모집 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 1,
+    "new": 1
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126355",
+   "title": "2026년 협업기업 상용화연계 지원사업 추가 모집 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 1,
+    "new": 1
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126115",
+   "title": "2026년 7차 수출 도전기업 IP위험 대응역량 강화사업 모집 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 2,
+    "new": 2
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126950",
+   "title": "[강원] 평창군 2026년 관내기업 국내외 박람회 참가 지원사업 참여기업 추가모집 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 6,
+    "new": 6
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126362",
+   "title": "[충북] 2026년 2차 미취업청년 취업연계 일경험 지원사업 참여기업 모집 연장 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 7,
+    "new": 7
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125094",
+   "title": "[울산] 2026년 하반기 중소기업 밀집지역 위기대응 체계 구축사업 Stand-up 맞춤지원 모집 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 1,
+    "new": 1
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000121208",
+   "title": "2026년 해외지사화사업 참여기업 모집 재수정 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 15,
+    "new": 15
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126020",
+   "title": "2026년 하반기 방송통신정책연구 신규지원 대상과제 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 2,
+    "new": 2
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126080",
+   "title": "[경북] 울릉군 2026년 착한가격업소 신규 모집 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 3,
+    "new": 3
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125864",
+   "title": "2026년 3차 영월군 청년 창업육성 지원사업 수정 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 2,
+    "new": 2
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000119988",
+   "title": "[충남] 2026년 비즈콜센터 컨설팅 지원사업 참여기업 모집 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 5,
+    "new": 5
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126458",
+   "title": "2026년 공예 온라인 유통 및 AI 활용 역량 강화 교육프로그램 교육생 모집 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 4,
+    "new": 4
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126108",
+   "title": "2026년 하반기 방산전시회 참가 지원사업 국내 방산전시회 참여기업 모집 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 7,
+    "new": 9
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125911",
+   "title": "2026년 K-Lifestyle 국내ㆍ외 바이어 초청 구매상담회 참가업체 모집 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 7,
+    "new": 7
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126624",
+   "title": "2026년 안전관리 우수판매사업체 인증신청 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 1,
+    "new": 2
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000121771",
+   "title": "2026년 3차 특허분쟁 대응전략 지원사업 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 2,
+    "new": 2
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126890",
+   "title": "2026년 2차 웹소설 IP 저작화 지원 사업 추가모집 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 1,
+    "new": 1
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000124159",
+   "title": "[인천] 산업재해 예방 및 노동안전보건 증진을 위한 방호장치 및 휴게시설 개선 지원사업 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 4,
+    "new": 4
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125986",
+   "title": "[전남광주] 고흥군 2026년 영세 소상공인 임대료 지원사업 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 1,
+    "new": 1
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000119193",
+   "title": "[광주] 2026년 직장문화 개선 컨설팅 참여 기업ㆍ기관 신청 안내 공고",
+   "status": {
+    "old": "found",
+    "new": "found",
+    "same": true
+   },
+   "items": {
+    "old": 1,
+    "new": 1
+   },
+   "scores": {
+    "속성 없음": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": null,
+     "new": null,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": null,
+     "new": null,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000117276",
+   "title": "[경남] 김해시 2026년 사회적경제기업 금융지원 사업 계획 공고",
+   "status": {
+    "old": "none",
+    "new": "none",
+    "same": true
+   },
+   "items": {
+    "old": 0,
+    "new": 0
+   },
+   "scores": {
+    "속성 없음": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126945",
+   "title": "[경남] 거창군 2026년 3차 승강기 핵심부품 연구개발 지원사업 대상기업 모집 공고(4차년도)",
+   "status": {
+    "old": "none",
+    "new": "none",
+    "same": true
+   },
+   "items": {
+    "old": 0,
+    "new": 0
+   },
+   "scores": {
+    "속성 없음": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125898",
+   "title": "[경기] 2026년 기술보호 전문교육 및 산업보안 컨설팅 지원 참여기업(기관) 모집 공고",
+   "status": {
+    "old": "none",
+    "new": "none",
+    "same": true
+   },
+   "items": {
+    "old": 0,
+    "new": 0
+   },
+   "scores": {
+    "속성 없음": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000120385",
+   "title": "[울산] 2026년 자동차 부품업종 근로자 지역정착 지원사업 참여기업 모집 공고(지역ㆍ산업맞춤형 일자리지원 사업(자율계정))",
+   "status": {
+    "old": "none",
+    "new": "none",
+    "same": true
+   },
+   "items": {
+    "old": 0,
+    "new": 0
+   },
+   "scores": {
+    "속성 없음": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000117992",
+   "title": "2026년 나눔장비 이전지원사업 모집 공고",
+   "status": {
+    "old": "none",
+    "new": "none",
+    "same": true
+   },
+   "items": {
+    "old": 0,
+    "new": 0
+   },
+   "scores": {
+    "속성 없음": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126676",
+   "title": "[경남] 김해시 2026년 2차 공공판로 컨설팅 지원사업 참가기업 추가모집 공고",
+   "status": {
+    "old": "none",
+    "new": "none",
+    "same": true
+   },
+   "items": {
+    "old": 0,
+    "new": 0
+   },
+   "scores": {
+    "속성 없음": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126503",
+   "title": "[경기] 화성시 2026년 2차 미래 모빌리티 테스트베드 실증지원 사업 참여기업 추가모집 공고",
+   "status": {
+    "old": "none",
+    "new": "none",
+    "same": true
+   },
+   "items": {
+    "old": 0,
+    "new": 0
+   },
+   "scores": {
+    "속성 없음": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000120102",
+   "title": "[전북] 2026년 중동분쟁 대응 수출입기업 긴급 경영안정자금 지원계획 변경 공고",
+   "status": {
+    "old": "none",
+    "new": "none",
+    "same": true
+   },
+   "items": {
+    "old": 0,
+    "new": 0
+   },
+   "scores": {
+    "속성 없음": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126840",
+   "title": "[강원] 춘천시 2026년 하반기 착한가격업소 신규모집 공고",
+   "status": {
+    "old": "none",
+    "new": "none",
+    "same": true
+   },
+   "items": {
+    "old": 0,
+    "new": 0
+   },
+   "scores": {
+    "속성 없음": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    }
+   }
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000117096",
+   "title": "[대전] 서구 2026년 소상공인 경영안정자금 지원사업 공고",
+   "status": {
+    "old": "none",
+    "new": "none",
+    "same": true
+   },
+   "items": {
+    "old": 0,
+    "new": 0
+   },
+   "scores": {
+    "속성 없음": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성 · 서울": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "여성기업 · 벤처기업 · 경기 성남시": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    },
+    "남성 · 장애인기업 · 이노비즈 · 전남광주": {
+     "old": 0,
+     "new": 0,
+     "same": true
+    }
+   }
+  }
+ ]
+}

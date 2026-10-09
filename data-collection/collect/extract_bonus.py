@@ -35,13 +35,14 @@ from shared import store_mysql
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-MODEL, EFFORT = 'gpt-5.6-luna', 'medium'
+MODEL, EFFORT = 'gpt-6-luna', 'medium'      # 2026-10-07 결정 0013 (전에는 gpt-5.6-luna)
 # v2(2026-10-06): 선정 뒤 혜택 제외 규칙, 점수 검사 완화, 지역 상한, status · v3: 청년(대표자 나이) ↔ 청년 고용 구분
 # v4(2026-10-06 Codex 검수 반영): group(한 점수를 나눠 가지는 선택 조건)·program(세부사업)·extra_conditions(추가 조건)
 #   ·points_source(떨어진 배점 칸), 대상을 '우대·우선 선정'까지, 발췌 12,000자·가점 구간 먼저, 근거 위치 검사 강화
 PROMPT_VERSION = 'v4'
 EXTRACTOR_VERSION = 'extract_bonus/%s %s %s' % (PROMPT_VERSION, MODEL, EFFORT)
-PRICES = {'gpt-5.6-luna': (0.20, 1.20)}        # 2026-09-22 OpenAI 요금 페이지 표준 단가($/100만 토큰) — 추정용
+# OpenAI 요금 페이지 표준 단가($/100만 토큰) — 추정용. 5.6-luna 2026-09-22, 6-luna 2026-09-30 확인
+PRICES = {'gpt-5.6-luna': (0.20, 1.20), 'gpt-6-luna': (0.10, 0.50)}
 SEED = 20261006
 
 # 가점 구간을 찾는 말. 자르기는 '가점·가산점' 주변을 먼저(PRIMARY_RE) 담고 남은 자리에 '우대·우선 선정' 주변을 담는다.
@@ -276,10 +277,15 @@ def pick_targets(connection, notice_ids=None, open_only=True, with_no_mention=Fa
 
 
 # ── 부르기 · 검사 ────────────────────────────────────────────
-def ask(client, title, document):
+def extractor_version(model=MODEL, effort=EFFORT):
+    return 'extract_bonus/%s %s %s' % (PROMPT_VERSION, model, effort)
+
+
+def ask(client, title, document, model=MODEL, effort=EFFORT):
+    """모델·생각 강도는 기본값(MODEL·EFFORT)을 쓴다. 표본 비교에서만 다른 모델을 넘긴다."""
     started = time.time()
     response = client.chat.completions.create(
-        model=MODEL, reasoning_effort=EFFORT,
+        model=model, reasoning_effort=effort,
         messages=[{'role': 'system', 'content': SYSTEM},
                   {'role': 'user', 'content': '공고 제목: %s\n\n공고문 발췌:\n%s' % (title, document)}],
         response_format={'type': 'json_schema', 'json_schema': SCHEMA})
@@ -471,14 +477,14 @@ def estimate(items):
     return tok_in / 1e6 * price_in + len(items) * 2000 / 1e6 * price_out
 
 
-def run_one(client, item):
+def run_one(client, item, model=MODEL, effort=EFFORT):
     document, complete = build(item)
-    data, usage = ask(client, item['title'], document)
+    data, usage = ask(client, item['title'], document, model, effort)
     fixed, problems = verify(data, document, complete)
-    price_in, price_out = PRICES[MODEL]
+    price_in, price_out = PRICES[model]
     return {'notice_id': item['notice_id'], 'title': item['title'], 'document_sha256': doc_hash(document),
             'content_version': item.get('content_version'), 'document_complete': complete,
-            'document_chars': len(document), 'extractor_version': EXTRACTOR_VERSION, 'llm_raw': data,
+            'document_chars': len(document), 'extractor_version': extractor_version(model, effort), 'llm_raw': data,
             'result': fixed, 'problems': problems, 'usage': usage,
             'cost_usd': round(usage['in'] / 1e6 * price_in + usage['out'] / 1e6 * price_out, 6)}
 

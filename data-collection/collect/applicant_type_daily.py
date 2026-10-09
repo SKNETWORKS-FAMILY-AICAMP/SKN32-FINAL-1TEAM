@@ -44,7 +44,13 @@ DAILY_LIMIT = 300
 MAX_FAILURES = 3
 KST = timezone(timedelta(hours=9))
 KEEP = ('notice_id', 'source', 'title', 'target_category', 'age_condition_raw', 'legacy', 'llm', 'raw', 'usage',
-        'document_sha256')
+        'document_sha256', 'engine')
+# 엔진을 적지 않은 옛 결과 행은 이 엔진으로 뽑은 것이다(2026-10-07 전 결과 전부)
+LEGACY_ENGINE = 'gpt-5.6-luna@medium'
+
+
+def engine_of(row):
+    return (row or {}).get('engine') or LEGACY_ENGINE
 
 
 def read_jsonl(path):
@@ -60,10 +66,18 @@ def load_existing(results=RESULTS, seed=None):
     return {r['notice_id']: r for r in rows if r.get('llm')}
 
 
-def plan(population, existing, limit=DAILY_LIMIT):
-    """(할 일, 건너뛴 수, 상한 때문에 미룬 수). 해시가 같으면 건너뛴다. 오래된 공고 ID 순으로 고른다."""
-    todo = [it for it in population
-            if (existing.get(it['notice_id']) or {}).get('document_sha256') != it['document_sha256']]
+def plan(population, existing, limit=DAILY_LIMIT, engine=None):
+    """(할 일, 건너뛴 수, 상한 때문에 미룬 수). 해시가 같으면 건너뛴다. 오래된 공고 ID 순으로 고른다.
+
+    engine 을 주면 그 엔진(모델@생각 강도)으로 뽑지 않은 결과도 다시 뽑는다 — 모델을 바꾼 뒤 옛·새 결과가 섞이지 않게
+    (2026-10-07 결정 0013). 엔진이 없는 옛 행은 LEGACY_ENGINE 으로 본다.
+    """
+    def stale(it):
+        row = existing.get(it['notice_id']) or {}
+        if row.get('document_sha256') != it['document_sha256']:
+            return True
+        return engine is not None and engine_of(row) != engine
+    todo = [it for it in population if stale(it)]
     todo.sort(key=lambda it: it['notice_id'])
     deferred = max(0, len(todo) - limit)
     return todo[:limit], len(population) - len(todo), deferred
@@ -153,13 +167,16 @@ def _run_batch(limit, say, workers, connection, call, out_dir, today):
     existing = load_existing(results_path)
     # 이전 실행이 끊겼으면 체크포인트의 결과를 먼저 반영한다(같은 해시일 때만)
     by_id = {it['notice_id']: it for it in population}
+    engine = '%s@%s' % (atl.MODEL, atl.EFFORT)
     for row in read_jsonl(checkpoint_path):
         it = by_id.get(row.get('notice_id'))
-        if it and row.get('document_sha256') == it['document_sha256'] and row.get('prompt_sha256') == atl.prompt_sha():
+        if (it and row.get('document_sha256') == it['document_sha256'] and row.get('prompt_sha256') == atl.prompt_sha()
+                and engine_of(row) == engine):
             existing[row['notice_id']] = _result_row(it, row['data'], row['usage'], atl)
     stuck = gave_up(population, state['failures'])
     remaining = max(0, limit - state['attempted'])
-    todo, skipped, deferred = plan([it for it in population if it['notice_id'] not in stuck], existing, remaining)
+    todo, skipped, deferred = plan([it for it in population if it['notice_id'] not in stuck], existing, remaining,
+                                   engine=engine)
     say('대상 %d건 · 이미 있음 %d건 · 이번에 부를 것 %d건 (오늘 이미 %d/%d건)%s%s' % (
         len(population), skipped, len(todo), state['attempted'], limit,
         (' · 상한으로 미룸 %d건' % deferred) if deferred else '',
@@ -196,7 +213,8 @@ def _run_batch(limit, say, workers, connection, call, out_dir, today):
                     continue
                 state['failures'].pop(it['notice_id'], None)
                 ils.append_jsonl(checkpoint_path, {'notice_id': it['notice_id'], 'document_sha256': it['document_sha256'],
-                                                   'prompt_sha256': atl.prompt_sha(), 'data': data, 'usage': usage})
+                                                   'prompt_sha256': atl.prompt_sha(), 'engine': engine,
+                                                   'data': data, 'usage': usage})
                 existing[it['notice_id']] = _result_row(it, data, usage, atl)
                 extracted += 1
                 t_in += usage.get('in') or 0
@@ -224,7 +242,7 @@ def _run_batch(limit, say, workers, connection, call, out_dir, today):
 def _result_row(item, data, usage, atl):
     row = {k: item.get(k) for k in KEEP}
     row.update({'raw': data, 'usage': usage, 'llm': atl.verify(data, item['document']),
-                'document_sha256': item['document_sha256']})
+                'document_sha256': item['document_sha256'], 'engine': '%s@%s' % (atl.MODEL, atl.EFFORT)})
     return row
 
 
@@ -243,10 +261,13 @@ def main(argv=None):
             conn.close()
         state = load_state(os.path.join(OUT_DIR, STATE_FILE), datetime.now(KST).date().isoformat())
         stuck = gave_up(population, state['failures'])
+        # 실제 실행과 같은 기준(문서가 바뀌었거나 엔진이 다르면 다시 뽑기)으로 센다
         todo, skipped, deferred = plan([it for it in population if it['notice_id'] not in stuck], load_existing(),
-                                       max(0, args.limit - state['attempted']))
-        print('대상 %d건 · 이미 있음 %d건 · 부를 것 %d건 · 미룸 %d건 · 멈춤 %d건 · 오늘 이미 %d건 · 예상 약 $%.3f (건당 약 $0.0008)'
-              % (len(population), skipped, len(todo), deferred, len(stuck), state['attempted'], len(todo) * 0.0008))
+                                       max(0, args.limit - state['attempted']),
+                                       engine='%s@%s' % (atl.MODEL, atl.EFFORT))
+        print('대상 %d건 · 이미 있음 %d건 · 부를 것 %d건 · 미룸 %d건 · 멈춤 %d건 · 오늘 이미 %d건 · 예상 약 $%.3f (건당 약 $0.0004, %s)'
+              % (len(population), skipped, len(todo), deferred, len(stuck), state['attempted'], len(todo) * 0.0004,
+                 '%s@%s' % (atl.MODEL, atl.EFFORT)))
         return 0
     out = run_batch(limit=args.limit)
     return 1 if out.get('error') else 0

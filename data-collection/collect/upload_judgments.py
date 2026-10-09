@@ -82,8 +82,8 @@ def type_rows(path, documents=None):
     """
     from search import applicant_types as at
     from experiments.sql_semantic import applicant_type_llm as atl
+    from collect import applicant_type_daily as atd
     meta = read_meta(path)
-    engine = meta.get('engine') or '%s@%s' % (atl.MODEL, atl.EFFORT)
     table = at.load(path)
     table['notices'] = at.mark_unread(table['notices'], documents)
     out = []
@@ -109,7 +109,8 @@ def type_rows(path, documents=None):
             'corporation_status': corp[0], 'corporation_strength': corp[1], 'corporation_evidence': corp[2],
             'reason': llm.get('reason') or None,
             'document_sha256': row['document_sha256'], 'prompt_sha256': meta.get('prompt_sha256'),
-            'extractor_version': ('applicant_type_llm ' + engine)[:64],
+            # 행마다 뽑은 엔진(2026-10-07 결정 0013). 엔진이 없는 옛 행은 gpt-5.6-luna@medium
+            'extractor_version': ('applicant_type_llm ' + atd.engine_of(row))[:64],
             'prompt_tokens': usage.get('in'), 'completion_tokens': usage.get('out')})
     return out
 
@@ -118,9 +119,8 @@ def industry_rows(path):
     """업종 결과 파일 → 테이블 행 목록."""
     from search import industry_rank
     from experiments.sql_semantic import industry_groups
+    from collect import industry_daily as ind
     meta = read_meta(path)
-    engine = meta.get('engine') or meta.get('model') or 'unknown'
-    version = ('industry_llm %s %s' % (meta.get('prompt') or '', engine)).replace('  ', ' ')[:64]
     out = []
     for row in read_jsonl(path):
         llm = row.get('llm')
@@ -143,7 +143,9 @@ def industry_rows(path):
             'scope_unresolved': bool(llm.get('scope_unresolved')), 'excerpt_chars': llm.get('excerpt_cap'),
             'verify_profile': llm.get('profile') or meta.get('profile'),
             'document_sha256': row['document_sha256'], 'prompt_sha256': meta.get('prompt_sha256'),
-            'extractor_version': version, 'source_run': (row.get('source_run') or '')[:80] or None,
+            # 행마다 뽑은 엔진(2026-10-07 결정 0013). 엔진이 없는 옛 행은 gpt-5.6-luna@medium
+            'extractor_version': ('industry_llm %s %s' % (meta.get('prompt') or '', ind.engine_of(row))).replace('  ', ' ')[:64],
+            'source_run': (row.get('source_run') or '')[:80] or None,
             'prompt_tokens': usage.get('in'), 'completion_tokens': usage.get('out')})
     return out
 
