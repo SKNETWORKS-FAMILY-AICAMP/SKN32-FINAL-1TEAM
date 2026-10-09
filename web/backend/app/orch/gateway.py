@@ -27,6 +27,8 @@ ALLOWED = frozenset({
     'decide_for_project', 'request_rework_for_project',
     'abort_project', 'delete_project_data', 'delete_account_data',
     'admin_executions', 'admin_calls', 'admin_runs', 'admin_score_history', 'admin_summary', 'admin_agent_tasks',
+    # 산출물 파일(SB-311): 파일 내용 읽기와 파일 삭제 대기열 관리자 조회 · 재시도
+    'read_artifact_file', 'admin_file_deletions', 'admin_retry_file_deletion',
 })
 
 
@@ -94,7 +96,9 @@ def _default_db_url() -> str:
 def build_gateway(*, profile_count: Callable[[str], int], db_url: str | None = None) -> OrchGateway:
     """서버 시작 때 한 번 만든다. 여러 스레드에서 함께 써도 된다(상태는 DB에만 있다)."""
     from sbrain.bootstrap import build_web
-    app = build_web(db_url or _default_db_url(), profile_count=profile_count)
+    # 파일 저장소(SB-311): 워커와 같은 폴더의 절대 경로를 읽기 전용으로 연다. 없거나 상대 경로면 조립은 되고 read_artifact_file만
+    # FILE_STORE_UNAVAILABLE이다. 웹은 파일을 쓰지도 지우지도 않는다(삭제는 워커가 한다).
+    app = build_web(db_url or _default_db_url(), profile_count=profile_count, artifact_root=os.environ.get('SBRAIN_ARTIFACT_ROOT'))
     return OrchGateway(app.orchestrator, log_state=True)
 
 

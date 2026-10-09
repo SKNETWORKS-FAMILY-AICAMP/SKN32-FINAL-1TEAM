@@ -63,6 +63,10 @@ _RULES: dict[str, tuple[int, str]] = {
     'INVALID_ACTION': (422, '알 수 없는 요청이에요.'),
     'INVALID_ORDER': (422, '이 화면에서 다시 만들 수 없는 항목이에요.'),
     'NO_SELECTION': (422, '다시 만들 항목을 선택해 주세요.'),
+    # 산출물 파일(SB-311): 남의 프로젝트의 파일 · 없는 파일 · 내용 불일치는 구분하지 않고 모두 FILE_NOT_FOUND다
+    'FILE_NOT_FOUND': (404, '파일을 찾을 수 없어요.'),
+    'FILE_DELETION_NOT_FOUND': (404, '삭제 대기 항목을 찾을 수 없어요.'),
+    'FILE_STORE_UNAVAILABLE': (503, '파일을 지금 불러올 수 없어요. 잠시 뒤 다시 시도해 주세요.'),
     'WEB_NOT_ALLOWED': (500, _GENERIC),
     'NO_PROJECT_SOURCE': (500, _GENERIC),
 }
