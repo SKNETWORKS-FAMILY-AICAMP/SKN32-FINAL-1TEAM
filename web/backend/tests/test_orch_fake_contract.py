@@ -81,3 +81,14 @@ def test_real_artifact_check_models_have_the_fields_the_web_maps():
     allowed = set(get_args(get_args(scoring.CodeCheckResult.model_fields['gate_failures'].annotation)[0]))
     from app.orch.mapping import GATE_NAMES
     assert set(GATE_NAMES) == allowed
+
+
+def test_real_file_reference_models_have_the_fields_the_web_maps():
+    """웹이 산출물 주소로 바꾸는 파일 참조 칸(SB-314)이 실제 계약에 있는지 — 이름이 바뀌면 여기서 알아챈다."""
+    domain = pytest.importorskip('sbrain.models.domain')
+    files = pytest.importorskip('sbrain.models.files')
+    reads = pytest.importorskip('sbrain.flow.reads')
+    assert 'entry_file' in domain.Prototype.model_fields
+    assert 'image_file' in domain.Infographic.model_fields
+    assert {'before_file', 'after_file'} <= set(reads.ReworkFileChange.model_fields)
+    assert {'key', 'name', 'media_type', 'size', 'sha256'} <= set(files.FileRef.model_fields)

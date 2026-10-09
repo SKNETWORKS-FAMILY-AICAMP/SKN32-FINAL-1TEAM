@@ -111,7 +111,7 @@ def _full_outputs(category='웹개발', **overrides):
         step='결과물', progress='완료', category=category, plan_doc=make_plan_doc(),
         doc_score=NS(total=52.0, items=[]), document_score_report=make_score_view(with_artifact=False),
         overall_score_report=report,
-        prototype=NS(entry_file_path='/uploads/p/index.html'), infographic=NS(image_path='/uploads/p/info.png'),
+        prototype=NS(entry_file=NS(key='rrrrrrrrrrrr/eeeeeeeeeeee/uuuuuuuu/index.html')), infographic=NS(image_file=NS(key='rrrrrrrrrrrr/eeeeeeeeeeee/uuuuuuuu/infographic.svg')),
         code_check=report.artifact_score.code_check, feature_match=report.artifact_score.feature_match,
         format_findings=[NS(sentence_id='s1', violation_type='띄어쓰기', detail='붙여 쓴 곳이 있어요')],
         rework_usage=[NS(bundle_id='문제인식', layer='document', used_count=1, remaining=0),
@@ -137,8 +137,8 @@ def test_result_maps_verdict_artifact_and_bundle_usages(authed_client, orch):
 
     artifact = body['plan']['artifacts'][0]
     assert artifact['category'] == 'webdev'
-    assert artifact['executable_path'] == '/uploads/p/index.html'
-    assert artifact['infographic_path'] == '/uploads/p/info.png'
+    assert artifact['executable_path'] == f'/projects/{pid}/artifact-files/rrrrrrrrrrrr/eeeeeeeeeeee/uuuuuuuu/index.html'
+    assert artifact['infographic_path'] == f'/projects/{pid}/artifact-files/rrrrrrrrrrrr/eeeeeeeeeeee/uuuuuuuu/infographic.svg'
     assert artifact['artifact_score'] == 30.0
     reasons = {r['item_code']: r for r in artifact['score_reasons']}
     assert reasons['CHECK-실행']['score'] == 5.0 and reasons['CHECK-실행']['max_score'] == 5.0

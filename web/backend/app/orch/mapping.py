@@ -5,7 +5,6 @@
 """
 from app import pipeline_stages as ps
 from app import schemas
-from app.artifact_store import artifact_url
 
 # 3.1 단계 — 기준 문서 단계 ↔ 웹 stage. 공고선택 · 자격확인은 웹 stage가 없다(NULL).
 STEP_TO_STAGE: dict[str, str | None] = {
@@ -390,19 +389,29 @@ def _matched(outputs, field: str) -> list[str]:
     return list(getattr(fm, field, None) or [])
 
 
+def file_url(project_id: int, ref) -> str | None:
+    """오케스트레이터의 파일 참조(FileRef) → 웹 주소 `/projects/{project_id}/artifact-files/{key}` (SB-314).
+
+    key는 저장소 안의 위치이고 웹은 뜻을 풀지 않는다 — 주소에 그대로 붙이고, 파일은 이 주소를 받는 라우터가 key로
+    read_artifact_file을 불러 읽는다. 참조가 없으면(None) 주소도 없다."""
+    if ref is None:
+        return None
+    return f'/projects/{int(project_id)}/artifact-files/{ref.key}'
+
+
 def _infographic_path(project_id: int, outputs, category: str) -> str:
-    """인포그래픽 경로. 원페이지는 onepage.svg가 프로토타입 본체이자 인포그래픽이라, 오케스트레이터가 인포그래픽을 비워 두고
-    prototype.entryFilePath만 채워 보내도 같은 파일을 인포그래픽으로 보여 준다."""
+    """인포그래픽 주소. 원페이지는 onepage.svg가 프로토타입 본체이자 인포그래픽이라, 오케스트레이터가 인포그래픽을 비워 두고
+    prototype.entryFile만 채워 보내도 같은 파일을 인포그래픽으로 보여 준다."""
     infographic = outputs.infographic
-    if infographic is not None and infographic.image_path:
-        return artifact_url(project_id, infographic.image_path)
-    if category == 'onepage' and outputs.prototype is not None and outputs.prototype.entry_file_path:
-        return artifact_url(project_id, outputs.prototype.entry_file_path)
+    if infographic is not None and infographic.image_file is not None:
+        return file_url(project_id, infographic.image_file)
+    if category == 'onepage' and outputs.prototype is not None and outputs.prototype.entry_file is not None:
+        return file_url(project_id, outputs.prototype.entry_file)
     return ''
 
 
 def artifact_out(project_id: int, outputs) -> schemas.ArtifactOut | None:
-    """산출물. 파일 경로는 웹 주소로 바꿔 준다(SB-293) — 원페이지는 두 경로가 같은 onepage.svg라 인포그래픽만 보여 주고 실행 경로는 숨긴다."""
+    """산출물. 파일 참조는 웹 주소로 바꿔 준다(SB-293 · SB-314) — 원페이지는 두 참조가 같은 onepage.svg라 인포그래픽만 보여 주고 실행 경로는 숨긴다."""
     if outputs.prototype is None and outputs.infographic is None:
         return None
     category = CATEGORY_TO_WEB.get(outputs.category, outputs.category or 'webdev')
@@ -412,7 +421,7 @@ def artifact_out(project_id: int, outputs) -> schemas.ArtifactOut | None:
         category=category,
         infographic_path=_infographic_path(project_id, outputs, category),
         # 원페이지는 실행 파일이 없다
-        executable_path=(artifact_url(project_id, outputs.prototype.entry_file_path)
+        executable_path=(file_url(project_id, outputs.prototype.entry_file)
                          if outputs.prototype is not None and category != 'onepage' else None),
         artifact_score=artifact_score,
         score_reasons=artifact_score_reasons(outputs),
@@ -553,7 +562,7 @@ def rework_changed(project_id: int, result) -> dict:
         }
     for f in result.files:
         key = 'executable_path' if f.artifact == 'prototype' else 'infographic_path'
-        changed[key] = {'before': artifact_url(project_id, f.before_path), 'after': artifact_url(project_id, f.after_path)}
+        changed[key] = {'before': file_url(project_id, f.before_file), 'after': file_url(project_id, f.after_file)}
     if result.kept is not None:
         changed['version_kept'] = 'new' if result.kept == '후' else 'previous'
         changed['version_comparison'] = {'before_score': result.before_score, 'after_score': result.after_score}
@@ -578,8 +587,8 @@ def rework_result_out(project_id: int, result) -> schemas.ReworkResultOut:
         plan_before=[_plan_section_out(s) for s in result.plan_before] if result.plan_before is not None else None,
         plan_after=[_plan_section_out(s) for s in result.plan_after] if result.plan_after is not None else None,
         files=[schemas.ReworkFileChangeOut(
-            artifact=f.artifact, before_path=artifact_url(project_id, f.before_path),
-            after_path=artifact_url(project_id, f.after_path)) for f in result.files],
+            artifact=f.artifact, before_path=file_url(project_id, f.before_file),
+            after_path=file_url(project_id, f.after_file)) for f in result.files],
         rolled_back=result.rolled_back,
         refunded_bundles=[web_bundle_id_of(b) for b in result.refunded_bundles],
         notice_code=result.notice_code,

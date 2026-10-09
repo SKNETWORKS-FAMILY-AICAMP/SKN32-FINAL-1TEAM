@@ -117,7 +117,7 @@ def test_rework_result_completed_with_changed_sections_and_files(authed_client, 
         bundles=['문제인식', '실행 파일'],
         plan_before=[make_section('1-1', '문제', '이전 본문'), make_section('2-1', '실현', '그대로')],
         plan_after=[make_section('1-1', '문제', '새 본문'), make_section('2-1', '실현', '그대로')],
-        files=[NS(artifact='prototype', before_path='/u/a.html', after_path='/u/b.html')])
+        files=[NS(artifact='prototype', before_file=NS(key='rrrrrrrrrrrr/aaaaaaaaaaaa/uuuuuuuu/index.html'), after_file=NS(key='rrrrrrrrrrrr/bbbbbbbbbbbb/uuuuuuuu/index.html'))])
 
     r = authed_client.get(f'/projects/{pid}/rework-result')
 
@@ -128,7 +128,9 @@ def test_rework_result_completed_with_changed_sections_and_files(authed_client, 
     assert body['before_score'] == 50.0 and body['after_score'] == 58.0
     assert [s['body'] for s in body['plan_after']] == ['새 본문', '그대로']
     assert body['changed']['sections'] == {'1-1': {'before': '이전 본문', 'after': '새 본문'}}  # 같은 섹션은 뺀다
-    assert body['changed']['executable_path'] == {'before': '/u/a.html', 'after': '/u/b.html'}
+    assert body['changed']['executable_path'] == {
+        'before': f'/projects/{pid}/artifact-files/rrrrrrrrrrrr/aaaaaaaaaaaa/uuuuuuuu/index.html',
+        'after': f'/projects/{pid}/artifact-files/rrrrrrrrrrrr/bbbbbbbbbbbb/uuuuuuuu/index.html'}
     assert body['changed']['version_kept'] == 'new'
     assert body['changed']['version_comparison'] == {'before_score': 50.0, 'after_score': 58.0}
 
