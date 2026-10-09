@@ -7,7 +7,8 @@
   1. 로컬 MySQL(Docker) + scripts/prepare_local_mysql.py 로 스키마 준비
   2. 워커를 따로 띄운다 — 이 스크립트는 단계를 직접 돌지 않고 워커가 처리하길 기다린다
        cd agent-orchestration
-       $env:SBRAIN_DB_URL = '<같은 URL>'; python -m sbrain.worker      (OPENAI_API_KEY는 agent-orchestration/.env)
+       $env:SBRAIN_DB_URL = '<같은 URL>'; $env:SBRAIN_ARTIFACT_ROOT = '<절대 경로 폴더>'; python -m sbrain.worker
+       (OPENAI_API_KEY는 agent-orchestration/.env. SBRAIN_ARTIFACT_ROOT는 워커 필수이고, 파일 내려받기를 보려면 이 스크립트에도 같은 값을 준다)
   3. 이 스크립트 실행
 
 흐름: 로그인 → 프로젝트 생성 → 공고 후보 → 공고 선택(자격 확인) → 계획서 작성 → 문서 평가 → 프로토타입 → 산출물 확인 →
@@ -23,6 +24,7 @@ import datetime
 import json
 import os
 import sys
+import tempfile
 import time
 
 DEFAULT_URL = 'mysql+pymysql://root:sbrain-test@127.0.0.1:3307/sbrain_e2e?charset=utf8mb4'
@@ -70,6 +72,10 @@ def configure_env(url_text: str) -> None:
         'MYSQL_HOST': url.host, 'MYSQL_PORT': str(url.port or 3306), 'MYSQL_DATABASE': database,
         'SBRAIN_DB_URL': url_text, 'GOOGLE_CLIENT_ID': 'e2e-client', 'JWT_SECRET': 'e2e-secret-not-for-production-use',
     })
+    # 파일 저장소(SB-311): 워커 조립(build_app)은 SBRAIN_ARTIFACT_ROOT(절대 경로)가 없으면 시작하지 않는다. 값이 없으면 임시 폴더를 쓴다.
+    # (이 프로세스 안의 워커와 웹이 같은 값을 본다. 따로 띄운 워커와 파일을 주고받으려면 같은 값을 직접 넣는다)
+    if not os.environ.get('SBRAIN_ARTIFACT_ROOT'):
+        os.environ['SBRAIN_ARTIFACT_ROOT'] = tempfile.mkdtemp(prefix='e2e_artifacts_')
 
 
 def command_log_lines(project_id: int, command: str) -> list[str]:
