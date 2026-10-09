@@ -10,8 +10,9 @@
 이 필드를 그대로 다룬다.
 """
 import datetime
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -36,6 +37,7 @@ from app.schemas import (
     CollectionStatusOut,
     FaqAnswerIn,
     FaqOut,
+    FileDeletionOut,
     GenerationFailureAlertAckIn,
     GenerationFailureAlertOut,
     ImportRunOut,
@@ -566,3 +568,29 @@ def mark_recovery_items_trained(
         row.recovery_status = TRAINED
     db.commit()
     return [_recovery_item_out(r, db) for r in rows]
+
+
+# ── 산출물 파일 삭제 대기열 (SB-318) ──────────────────────────────────────────────────────
+# 프로젝트 완전 삭제 · 탈퇴 · 12개월 정리 때 오케스트레이터가 같은 트랜잭션에서 대기열에 넣고, 워커가 10분 뒤부터 지운다.
+# 3번 실패하면 '포기'가 되고, 관리자가 다시 시도를 누르면 '대기'로 돌아간다. 웹은 파일을 직접 지우지 않는다.
+@router.get('/file-deletions', response_model=list[FileDeletionOut])
+def list_file_deletions(
+    status: Literal['대기', '포기'] | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    _admin: User = Depends(require_admin),
+    gateway: OrchGateway = Depends(require_gateway),
+):
+    """파일 삭제 대기열 목록 — 넣은 시각 최근 순. status로 '대기' · '포기'만 거를 수 있다. 메타데이터만 돌려준다(파일 이름 · 키 · 사용자 없음)."""
+    return [admin_mapping.file_deletion_out(r) for r in gateway.admin_file_deletions(status=status, limit=limit, offset=offset)]
+
+
+@router.post('/file-deletions/{deletion_id}/retry', response_model=FileDeletionOut)
+def retry_file_deletion(
+    deletion_id: str,
+    admin: User = Depends(require_admin),
+    gateway: OrchGateway = Depends(require_gateway),
+):
+    """'포기'한 줄을 다시 시도하게 되돌린다. 누른 관리자 ID와 시각 · 횟수가 오케스트레이터에 남는다.
+    없는 줄이면 404(FILE_DELETION_NOT_FOUND), 이미 '대기'인 줄이면 409(INVALID_STATE)."""
+    return admin_mapping.file_deletion_out(gateway.admin_retry_file_deletion(deletion_id, str(admin.user_id)))

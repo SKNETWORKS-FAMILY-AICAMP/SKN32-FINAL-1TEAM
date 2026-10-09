@@ -231,3 +231,12 @@ def agent_ops_summary_out(summary) -> schemas.AgentOpsSummaryOut:
         token_violation_count=summary.proofread_rejected,
         token_check_count=summary.proofread_attempts,
     )
+
+
+def file_deletion_out(row) -> schemas.FileDeletionOut:
+    """파일 삭제 대기열 한 줄(AdminFileDeletion) → 응답 (SB-318). 시각은 시간대 있는 UTC로 맞춘다."""
+    return schemas.FileDeletionOut(
+        deletion_id=row.deletion_id, run_id=row.run_id, status=row.status, attempts=row.attempts,
+        last_error_kind=row.last_error_kind, created_at=utc(row.created_at), next_at=utc(row.next_at),
+        last_tried_at=utc(row.last_tried_at), gave_up_at=utc(row.gave_up_at), retried_by=row.retried_by,
+        retried_at=utc(row.retried_at), retry_count=row.retry_count)

@@ -1323,3 +1323,23 @@ PROFILE_DEFAULT_BASIC: dict = {
 PROFILE_DEFAULT_CAPABILITY: dict = {
     'careers': [], 'skills': '', 'soloFounder': False, 'team': [], 'hires': [], 'equipment': [], 'partners': [],
 }
+
+
+class FileDeletionOut(BaseModel):
+    """GET /admin/file-deletions · POST /admin/file-deletions/{id}/retry — 산출물 파일 삭제 대기열 한 줄 (SB-318).
+
+    메타데이터만 있다 — 키 · 파일 이름 · 오류 메시지 · 계정 · 프로젝트 ID는 오케스트레이터가 싣지 않는다. 사람을 가리키는 값은
+    retried_by(다시 시도를 누른 관리자 ID)뿐이다. status: '대기'(워커가 곧 지움) · '포기'(3번 실패 — 관리자가 다시 시도할 수 있음),
+    last_error_kind: '일시' · '입력' · '운영' 또는 None."""
+    deletion_id: str
+    run_id: str
+    status: str
+    attempts: int
+    last_error_kind: str | None = None
+    created_at: UtcDatetime
+    next_at: UtcDatetime
+    last_tried_at: UtcDatetime | None = None
+    gave_up_at: UtcDatetime | None = None
+    retried_by: str | None = None
+    retried_at: UtcDatetime | None = None
+    retry_count: int = 0

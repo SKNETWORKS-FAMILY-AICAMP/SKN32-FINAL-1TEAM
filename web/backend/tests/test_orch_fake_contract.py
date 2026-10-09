@@ -56,7 +56,7 @@ def test_fake_admin_results_match_real():
         (orch_fakes.make_admin_run(), reads.AdminRun), (orch_fakes.make_admin_execution(), reads.AdminExecution),
         (orch_fakes.make_admin_agent_task(), reads.AdminAgentTask), (orch_fakes.make_score_entry(1.0), reads.ScoreEntry),
         (orch_fakes.make_admin_score_history(), reads.AdminScoreHistory), (orch_fakes.make_admin_summary(), reads.AdminSummary),
-        (orch_fakes.make_tokens(), reads.TokenTotals),
+        (orch_fakes.make_tokens(), reads.TokenTotals), (orch_fakes.make_file_deletion(), reads.AdminFileDeletion),
     ]
     for fake, real in pairs:
         assert set(vars(fake)) == set(real.model_fields), real.__name__

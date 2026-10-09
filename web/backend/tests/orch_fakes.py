@@ -302,6 +302,16 @@ def make_admin_score_history(**overrides: Any) -> NS:
     return NS(**base)
 
 
+def make_file_deletion(**overrides: Any) -> NS:
+    """admin_file_deletions 한 줄(AdminFileDeletion) — 시각은 시간대 있는 UTC."""
+    now = datetime.now(UTC)
+    base = dict(
+        deletion_id='d1', run_id='r1', status='포기', attempts=3, last_error_kind='운영', created_at=now, next_at=now,
+        last_tried_at=now, gave_up_at=now, retried_by=None, retried_at=None, retry_count=0)
+    base.update(overrides)
+    return NS(**base)
+
+
 def make_admin_summary(**overrides: Any) -> NS:
     base = dict(
         status_counts={}, doc_avg=None, doc_count=0, total_avg=None, total_count=0, pass_count=0, pass_rate=None,
