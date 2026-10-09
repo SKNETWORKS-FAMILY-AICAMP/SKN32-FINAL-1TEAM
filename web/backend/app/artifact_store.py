@@ -11,7 +11,6 @@
 """
 import logging
 import os
-import re
 import shutil
 import time
 from pathlib import Path
@@ -20,16 +19,6 @@ logger = logging.getLogger(__name__)
 
 # projects.py의 UPLOAD_DIR과 같은 계산(app/ 의 위 폴더/uploads) — projects를 가져오면 mapping과 순환하므로 여기서 직접 잡는다.
 _BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-# 파일 이름 → 응답 Content-Type. 이 밖의 이름은 열지 않는다.
-ARTIFACT_MEDIA_TYPES = {
-    'index.html': 'text/html; charset=utf-8',
-    'infographic.svg': 'image/svg+xml',
-    'onepage.svg': 'image/svg+xml',
-}
-
-# 시도 ID — 구현 Agent는 32자리 16진수를 쓰지만 형식에 기대지 않고 안전한 글자만 받는다(경로 구분자 · 점 불가).
-ATTEMPT_ID_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
 
 # 저장 폴더. 테스트와 배포에서 바꿀 수 있게 호출할 때마다 읽는다(모듈 값 · 환경변수 순).
 ARTIFACT_DIR = os.environ.get('ARTIFACT_DIR') or os.path.join(_BACKEND_ROOT, 'uploads', 'artifacts')
@@ -42,19 +31,6 @@ def artifact_root() -> Path:
 def project_dir(project_id: int) -> Path:
     """그 프로젝트의 산출물 폴더(없을 수 있다). 삭제 · 청소도 이 경로를 쓴다."""
     return artifact_root() / str(int(project_id))
-
-
-def artifact_file(project_id: int, attempt_id: str, filename: str) -> Path | None:
-    """내려 줄 수 있는 파일의 실제 경로, 아니면 None.
-
-    None이 되는 경우: 허용 이름이 아님 · 시도 ID 모양이 아님 · 파일이 없음 · 프로젝트 폴더 밖을 가리킴(심볼릭 링크 포함) · 일반 파일이 아님."""
-    if filename not in ARTIFACT_MEDIA_TYPES or not ATTEMPT_ID_RE.match(attempt_id):
-        return None
-    base = project_dir(project_id)
-    path = (base / attempt_id / filename).resolve()
-    if not path.is_relative_to(base) or not path.is_file():
-        return None
-    return path
 
 
 # ── 삭제 (SB-294) ─────────────────────────────────────────────────────────────────────
