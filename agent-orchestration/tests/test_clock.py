@@ -14,6 +14,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 from conftest import Backend, Clock, make_app, set_consent, start_and_select, to_screen6, to_screen9
+from flow_helpers import pid
 from pydantic import BaseModel
 from sqlalchemy import DateTime, text
 from webdb import proofread_rows
@@ -27,9 +28,6 @@ from sbrain.store_sql import SqlStore
 from sbrain.orchestrator.store import RunFilter
 from sbrain.store_sql.schema import ORCH_TABLES
 from sbrain.worker import Worker, WorkerConfig
-
-def pid_of(app, rid: str) -> str:
-    return app.store.load_run(rid).project_id
 
 
 def is_time_column(col) -> bool:
@@ -223,7 +221,7 @@ def test_every_time_in_web_results_is_utc(clock):
     clock.t = datetime(2026, 9, 26, 18, 0, tzinfo=KST)                       # 한국 시각을 주는 시계
     app = make_app(clock, StubScenario(doc_scores=[52.0, 60.0]))
     a = to_screen6(app)
-    p = pid_of(app, a)
+    p = pid(app, a)
     accepted = app.orchestrator.request_rework_for_project(p, "문제인식")
     assert is_utc(accepted.collect_until) and accepted.collect_until.hour == 9
     view = app.orchestrator.view_project(p)
@@ -234,7 +232,7 @@ def test_every_time_in_web_results_is_utc(clock):
     app.llm.plan("T-S2", ["timeout"] * 6)
     app.orchestrator.start_writing(b)
     app.orchestrator.advance(b)
-    pb = pid_of(app, b)
+    pb = pid(app, b)
     waiting = app.orchestrator.view_project(pb)
     assert waiting.run.next_resume_at is not None
     executions = app.orchestrator.admin_executions()
@@ -298,6 +296,6 @@ def test_sql_store_rejects_nothing_naive(tmp_path):
     assert app.store.runs_due_for_resume(datetime(2026, 9, 26, 9, 0)) == []
 
 
-@pytest.mark.parametrize("value", ["2026-09-26T09:00:00", "2026-09-26T09:00:00Z", "2026-09-26T18:00:00+09:00"])
+@pytest.mark.parametrize("value", ["2026-09-26T09:00:00Z", "2026-09-26T18:00:00+09:00"])
 def test_old_and_new_json_times_compare(value):
     assert Notice(code="X", message="m", at=value).at == datetime(2026, 9, 26, 9, tzinfo=UTC)

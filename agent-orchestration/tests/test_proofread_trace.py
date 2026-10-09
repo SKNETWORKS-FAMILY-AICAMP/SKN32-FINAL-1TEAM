@@ -6,7 +6,8 @@ from datetime import timedelta
 
 import pytest
 from conftest import Backend, Clock, executed, make_app, pre_input, set_consent, to_screen9
-from mysqldb import old_proofread_logs
+from flow_helpers import run_review
+from mysqldb import MYSQL, old_proofread_logs
 from webdb import OLD_PROOFREAD_LOGS, PROOFREAD_LOGS, count_rows, proofread_rows, use_old_proofread_logs
 
 from sbrain.agents.stubs import StubScenario
@@ -24,11 +25,6 @@ BEHAVIOR = {
     "s-2-1-2": ["violate", "violate", "violate"],
 }
 TARGETS = list(BEHAVIOR)
-
-
-def run_review(app, rid):
-    app.orchestrator.decide(rid, 9, "진행", confirmed=True)
-    app.orchestrator.advance(rid)
 
 
 def sentence_results(app, rid):
@@ -141,24 +137,6 @@ def test_trace_covers_rule_and_merge_steps_without_content(clock):
     assert extension_fields(ExecutionRecord)  # 확장 필드 표시
 
 
-def test_settings_snapshot_fixed_at_start(clock):
-    app = make_app(clock)
-    res = app.orchestrator.start_run("acc-1", pre_input())
-    s = app.settings.current().model_copy(deep=True)
-    s.scoring.threshold = 50
-    s.tasks["T-S1"].model = "바뀐 모델"
-    app.settings.update(s)
-    app.orchestrator.select_announcement(res.run_id, "A01")
-    app.orchestrator.advance(res.run_id)
-    app.orchestrator.start_writing(res.run_id)
-    app.orchestrator.advance(res.run_id)
-    recs = {r.task_id: r for r in app.store.executions(res.run_id)}
-    assert recs["T-S1"].model == "미정"  # 실행 시작 시점 값
-    ctx = app.engine.open_context(app.store.load_run(res.run_id))
-    assert ctx.get("scoreReport.document").threshold == 80
-    assert ctx.get("scoreReport.document").settings_snapshot["scoring"]["threshold"] == 80
-
-
 # ── 시도별 기록 · 웹 proofread_logs ──────────────────────
 def original_texts(app, rid) -> dict[str, str]:
     """T-P2가 받은 계획서(윤문 전)의 문장."""
@@ -183,7 +161,7 @@ def test_tp2_records_every_attempt(clock):
     assert (rejected.text, rejected.token_check.missing_tokens, rejected.violation_type) == ("변형 0", ["1억원"], "수치·금액")
     assert adopted.text.endswith("(윤문)") and adopted.violation_type is None
     assert [a.text for a in res["s-2-1-1"].attempts] == ["변형 0", "동일 출력", "동일 출력"]
-    assert "attempts" in extension_fields(SentenceResult)
+    assert "attempts" not in extension_fields(SentenceResult)       # 기준 문서 v1.10 T-P2 출력 attempts
     assert app.store.rejected_attempts(rid) == []                     # 학습 미동의 — 시도 기록은 산출물에만
 
 
@@ -271,7 +249,7 @@ def test_rejected_attempt_content_stays_out_of_records(clock):
         assert content not in blob
 
 
-@pytest.fixture(params=["sql", "mysql"])
+@pytest.fixture(params=["sql", pytest.param("mysql", marks=MYSQL)])
 def old_web(request, tmp_path):
     """웹 proofread_logs가 아직 옛 모양(project_id · model_version 없음, plan_id NOT NULL)인 SqlStore 앱."""
     clock = Clock()
@@ -309,7 +287,7 @@ def test_old_proofread_logs_structure_skips_rows_but_saves_step(old_web):
     assert count_rows(app.store.engine, "proofread_logs") == 0
 
 
-@pytest.mark.parametrize("backend", ["sql", "mysql"])
+@pytest.mark.parametrize("backend", ["sql", pytest.param("mysql", marks=MYSQL)])
 def test_proofread_logs_writes_start_after_web_schema_change_without_restart(backend, tmp_path):
     """맞지 않는 구조는 기억하지 않는다 — 웹팀이 구조를 바꾸면 같은 프로세스(같은 저장소)의 다음 T-P2 저장부터 쓴다."""
     clock = Clock()

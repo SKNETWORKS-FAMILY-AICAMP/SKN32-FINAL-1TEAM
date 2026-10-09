@@ -102,7 +102,8 @@ def _default_tasks() -> dict[str, TaskModelSetting]:
     def luna() -> TaskModelSetting:
         return TaskModelSetting(provider="openai", model="gpt-6-luna", temperature=None)
 
-    tasks: dict[str, TaskModelSetting] = {k: supervisor() for k in ("T-C1", "T-C2", "G-01", "T-C3")}
+    # LLM을 부르지 않는 Task(T-C2 · G-01 · T-C4, 등록부 uses_llm=False)는 항목을 두지 않는다 — 엔진이 표를 보지 않는다
+    tasks: dict[str, TaskModelSetting] = {k: supervisor() for k in ("T-C1", "T-C3")}
     tasks.update({k: undecided(0.7) for k in ("T-S1", "T-S2", "T-W1", "T-W2", "T-W3")})
     tasks["T-V1"] = undecided(0.0)
     tasks["T-B1"] = luna()
@@ -111,7 +112,6 @@ def _default_tasks() -> dict[str, TaskModelSetting]:
         "image_quality": "medium", "image_size": "1024x1536"})
     tasks["T-V2"] = luna()
     tasks.update({k: TaskModelSetting(provider="gpu-server", model="미정", temperature=0.2) for k in ("T-P1", "T-P2")})
-    tasks["T-C4"] = supervisor()
     tasks[REWRITE_SETTING_KEY] = supervisor()
     return tasks
 
@@ -155,6 +155,13 @@ class Settings(SBModel):
         return self.model_dump(mode="json", by_alias=True, exclude=exclude)
 
 
+# 가산점 사용 스위치 (잠정, PROVISIONAL announcement.bonusEnabled) — 실행별 설정(Settings)이 아닌 코드 상수다.
+# 실제 T-C2(agents/notice/tc2.py) · 스텁 T-C2(agents/stubs.py) · 웹 조회(flow/reads.py)가 부를 때마다
+# settings.BONUS_ENABLED로 읽는다(from-import로 값을 복사하지 않는다 — 테스트가 바꾼 값이 모든 곳에 닿게).
+# 꺼져 있으면 가산점을 읽지 · 만들지 · 보이지 않는다. 공고팀이 써도 된다고 하면 이 한 곳만 True로 바꾼다.
+BONUS_ENABLED: bool = False
+
+
 # 기준 문서가 값을 정하지 않아 임시로 둔 항목 (문서 · 화면에 '잠정'으로 표시)
 PROVISIONAL: dict[str, str] = {
     "retry.retryIntervalSec": "재시도 간격 — 구현하면서 정함",
@@ -162,8 +169,10 @@ PROVISIONAL: dict[str, str] = {
     "proofread.concurrency": "검수 동시 처리 수 — 구현하면서 정함",
     "proofread.failureRatioThreshold": "검수 실패 비율 기준 — 구현하면서 정함",
     "proofread.judgeTiming": "검수 실패 비율 판단 시점 — 구현하면서 정함",
-    "tasks": "Task별 모델 · 호출처 · 기본 온도 · 추론 강도 · 이미지 설정, 실행 시작 시점 고정 — 기준 문서에 없음 "
-             "(조율 Task · 지시문 다시 쓰기 gpt-6-luna · low는 사용자 지정, T-B1 · T-B2 · T-V2 gpt-6-luna(추론 강도 · "
+    "tasks": "Task별 모델 · 호출처 · 기본 온도 · 추론 강도 · 이미지 설정, 실행 시작 시점 고정 — Task별로 두는 것은 기준 문서 "
+             "v1.10(시트 1 · Run.settingsSnapshot)에 있고, 값은 기준 문서에 없음 "
+             "(LLM을 부르는 조율 Task · 지시문 다시 쓰기 gpt-6-luna · low는 사용자 지정, LLM을 부르지 않는 T-C2 · G-01 · T-C4는 "
+             "항목 없음(사용자 결정 2026-10-08), T-B1 · T-B2 · T-V2 gpt-6-luna(추론 강도 · "
              "온도 보내지 않음)와 T-B2 이미지 openai · gpt-image-2.5-flare · medium · 1024x1536은 구현 · 검증-2 담당 요청, "
              "나머지는 미정). 옛 설정 사본(agents만)은 그 Agent 값 그대로 쓴다",
     f"taskTimeouts.{REWRITE_SETTING_KEY}": "지시문 다시 쓰기 호출 한 번의 제한 시간 120초 — T-C3 값을 빌려 쓰던 것을 따로 둠",
@@ -180,8 +189,10 @@ PROVISIONAL: dict[str, str] = {
                        "사용자 화면에는 알리지 않는다",
     # 공고 연결 (공고 선택 · 자격 확인 G-01) — 기준 문서에 없음
     "taskTimeouts.G-01": "G-01 제한 시간 30초 — 공고 서버의 공고 상세 · 자격 판정 호출, T-C2와 같음",
-    "announcement.unknownStatus": "공고 서버 모집 상태가 모름(unknown 등)이면 선택 공고 status를 '모집중'으로 둔다 — "
-                                  "그래서 마감 안내(E-RUN-CLOSED)가 붙지 않는다",
+    "announcement.bonusEnabled": "가산점 사용 스위치 BONUS_ENABLED 기본 꺼짐 — 공고팀 가산점은 시험 단계(2026-10-06 답변: "
+                                 "화면에 쓰지 말 것). 꺼져 있으면 실제 T-C2는 추천 결과의 bonus_score · bonus_items를 "
+                                 "읽지도 검사하지도 않고, 스텁은 가산점을 만들지 않으며, 웹 카드(화면 3 · 결과 조회)는 저장된 "
+                                 "옛 실행 건까지 늘 bonusScore null · bonusItems []. 공고팀이 정리해 써도 된다고 하면 이 한 곳만 켠다",
     "announcement.formSpec": "선택 공고의 양식 필드(formSpec · evaluationItems)는 자리 표시 값(기본 양식 1-1 · 2-1 · 3-3) — "
                              "뒷 단계는 읽지 않고 작업 분해(T-C3)가 고른 양식 · 평가 항목 · 채점 기준표를 쓴다",
     # 작업 분해 (T-C3, agents/form_defaults.py · agents/supervisor/plan.py) — 실행 건 설정값이 아니라 코드 표다
@@ -191,7 +202,6 @@ PROVISIONAL: dict[str, str] = {
     "taskPlan.referenceSlots": "참조 조각 대응표(Task → 받는 슬롯) — T-S1 문제 · 필요성 · 목표 고객 · 핵심 기능, T-S2 시장 규모 · "
                                "목표 고객 · 경쟁 · 차별성, T-W1 7개 전부, T-W2 시장 규모 · 수익 모델, T-W3 수익 모델 · 추진 계획, "
                                "T-B1 핵심 기능, T-B2 문제 · 필요성 · 핵심 기능 · 시장 규모 · 수익 모델 · 추진 계획",
-    "notice.X-C2-GONE": "공고 없음 안내(확장) 문구 '선택하신 공고를 더 이상 확인할 수 없습니다. 다른 공고를 선택해주세요.'",
     # 공고 서버 연결 (agents/notice) — 실행 건 설정값이 아니라 워커 프로세스 값 · 고정 문장이다
     "announcement.matchReason": "추천 이유 문장 틀 (spec 4.1.4) — 공고 서버의 band(매우 적합 · 적합 · 참고, 없으면 대체 경로 "
                                 "'마감임박순'일 때 '마감이 가까운 신청 가능 공고입니다')와 지역(전국 · 희망 지역 일치 · 불일치)으로 "
@@ -209,7 +219,9 @@ PROVISIONAL: dict[str, str] = {
     "workerLog.actions": "운영 로그 동작 · 키 이름 — 단계시작(run · project · step · exec · trigger · resumed · attempt) · "
                          "단계끝(run · project · step · exec · status · sec · model · tokens · imageTokens · errorKind · "
                          "error) · 대기(run · project · point) · 실행끝(run · project · status) · 재개예약(run · project · "
-                         "at · errorKind). 운영하면서 바꿀 수 있다 (orchestrator/runlog.py)",
+                         "at · errorKind) · 파일삭제(run · deletion) · 파일삭제실패(run · deletion · errorKind · "
+                         "error · attempts) · 파일삭제포기(run · deletion · attempts). 운영하면서 바꿀 수 있다 "
+                         "(orchestrator/runlog.py)",
     "workerLog.errorMax": "단계끝 error 값 길이 상한 200자 (orchestrator/runlog.py ERROR_MAX)",
     "workerLog.maxBytes": "로그 파일 하나의 상한 20MB — 넘게 되면 다음 순번 파일 (sbrain/worker_log.py MAX_BYTES)",
     "workerLog.lockFile": "폴더 하나에 워커 하나 — 폴더 안 worker.lock OS 배타 잠금, 못 잡으면 화면에만 "
@@ -222,6 +234,13 @@ PROVISIONAL: dict[str, str] = {
     "retention.checkSec": "워커가 보관 기간 작업을 돌 때인지 확인하는 주기 10분 (sbrain/worker.py JOB_CHECK_SEC)",
     "retention.leaseSec": "보관 기간 작업 점유 시간 = 워커 점유 시간(120초), 하트비트(30초)가 연장한다 — 워커가 멈추면 "
                           "이만큼 뒤에 다른 워커가 이어받는다",
+    # 파일 삭제 대기열 (orchestrator/file_deletion.py, 결정 0023) — 워커 프로세스 값이다. 포기 횟수 3은 사용자 결정이라 여기 없다
+    "fileDeletion.firstDelaySec": "넣은 뒤 첫 삭제 시도까지 600초(10분) — 워커 점유 시간(120초)보다 길게 두어 삭제 직전 단계의 "
+                                  "늦은 쓰기가 끝난 뒤에 지운다 (orchestrator/file_deletion.py FIRST_DELAY_SEC)",
+    "fileDeletion.retrySec": "삭제 실패 뒤 다시 시도 간격 · 가져간 줄을 미루는 시간 600초(10분) "
+                             "(orchestrator/file_deletion.py RETRY_SEC)",
+    "fileDeletion.batchSize": "작업 확인 주기(10분)마다 한 번에 가져가는 대기열 줄 수 20 (orchestrator/file_deletion.py "
+                              "BATCH_SIZE)",
     # 저장소 (orchestrator/store.py) — 메모리 · SQL 저장소가 함께 쓴다
     "store.accountLockTimeoutSec": "계정 잠금 대기 10초 — 넘기면 StoreConflict (orchestrator/store.py "
                                    "ACCOUNT_LOCK_TIMEOUT_SEC)",
@@ -232,6 +251,11 @@ PROVISIONAL: dict[str, str] = {
     # 진행 기다리기 (flow/service.py wait_project) — 명령 창구 값이다
     "waitProject.timeoutSec": "wait_project 기본 제한 시간 60초 — 넘기면 그때의 진행 상태를 그대로 준다",
     "waitProject.pollSec": "wait_project가 DB를 다시 읽는 간격 0.5초",
+    # 산출물 파일 읽기 (flow/reads.py read_artifact_file, 결정 0023)
+    "fileRead.hashMismatch": "읽은 내용의 sha256 · 크기가 저장된 값과 다르면 FILE_NOT_FOUND로 보고 관리자용 사유는 남기지 않는다",
+    # 조립 (bootstrap.py · worker.py, 결정 0023)
+    "artifactRoot.workerRequired": "SBRAIN_ARTIFACT_ROOT가 없거나 절대 경로가 아니면 워커가 시작하지 않는다 "
+                                   "(SBRAIN_DB_URL · OPENAI_API_KEY 없을 때와 같은 방식)",
 }
 
 

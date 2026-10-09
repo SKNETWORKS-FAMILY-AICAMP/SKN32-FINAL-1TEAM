@@ -10,11 +10,14 @@
   여러 워커 중 한 대만, 마지막으로 끝까지 마친 지 24시간(잠정)이 지났을 때만 돈다(작업 점유 orch_jobs).
   도는 동안 그 스레드는 다른 일을 가져가지 않고, 하트비트가 작업 점유를 연장한다. 종료 신호면 실행 건 사이에서 멈춘다.
   이 작업의 로그는 시작 · 끝과 개수만 남긴다(실행 건 ID 없음).
+  같은 때 보관 작업보다 먼저 파일 삭제 대기열(orchestrator/file_deletion.py, 결정 0023)을 한 번 처리한다 — 대기열은 작업
+  점유 없이 줄마다 가져가기를 표시하므로 모든 워커가 불러도 된다. 결과 줄은 운영 로그(파일삭제 · 파일삭제실패 · 파일삭제포기).
 - 점유자 이름은 스레드마다 다르다(호스트:프로세스:스레드). 하트비트 스레드가 처리 중인 점유를 연장한다.
 - 종료 신호(SIGINT · SIGTERM)를 받으면 새 일을 가져가지 않고, 하던 단계를 끝낸 뒤 점유를 풀고 끝난다.
   남은 단계는 '실행'으로 남아 다른 워커가 이어받는다.
 - 단계 밖 오류(DB 오류 등)는 기록하고, 그 실행 건의 점유를 다시 잡아 두어 점유 시간 뒤에 다시 시도하게 한다 (잠정).
-- 설정: SBRAIN_DB_URL(필수), OPENAI_API_KEY(필수), SBRAIN_WORKER_POLL_SEC · SBRAIN_WORKER_THREADS ·
+- 설정: SBRAIN_DB_URL(필수), OPENAI_API_KEY(필수), SBRAIN_ARTIFACT_ROOT(필수, 확장 — 파일 저장소 폴더의 절대 경로.
+  없거나 상대 경로면 시작하지 않는다. 폴더가 없으면 만든다), SBRAIN_WORKER_POLL_SEC · SBRAIN_WORKER_THREADS ·
   SBRAIN_WORKER_LEASE_SEC(선택). 모두 환경 변수 → agent-orchestration/.env 순서로 읽는다.
 - 로그는 표준 출력에 한 줄씩 — 가져간 일과 끝난 상태, 엔진 · 흐름의 단계 · 실행 건 줄(로거 sbrain.run — 단계시작 · 단계끝 ·
   대기 · 실행끝 · 재개예약). 프롬프트 · 응답 내용은 남기지 않는다. 줄 앞의 시각은 UTC다(끝의 Z — 예: 2026-09-26 09:00:05Z).
@@ -38,6 +41,7 @@ from .bootstrap import App
 from .env import get_env
 from .flow.retention import JOB_NAME, run_retention, start_retention
 from .models.clock import utc_now
+from .orchestrator.file_deletion import process_file_deletions
 from .worker_log import KEEP_DAYS_ENV, LOG_DIR_ENV, attach_run_log, detach_run_log, open_worker_output
 
 # 잠정값 (orchestrator/settings.py PROVISIONAL에도 적는다)
@@ -110,8 +114,22 @@ class Worker:
             if item is not None:
                 done.append(self._do(kind, item, owner, work))
         if not self.stopping.is_set() and self._job_check_due():
+            self._file_deletions(owner)
             self._retention(owner)
         return done
+
+    # ── ④ 파일 삭제 대기열 (확장, 결정 0023) ────────────
+    def _file_deletions(self, owner: str) -> None:
+        """next_at이 지난 파일 삭제 대기열 줄을 한 번 처리한다(orchestrator/file_deletion.py). 줄마다 가져가기를 표시하므로
+        여러 워커가 함께 불러도 같은 줄을 동시에 처리하지 않는다. 결과 줄(파일삭제 · 파일삭제실패 · 파일삭제포기)은
+        운영 로그(sbrain.run)에 남고, 여기서는 가져가기 오류의 종류만 남긴다. 파일 저장소는 엔진의 것을 쓴다."""
+        files = self.app.engine.files
+        if files is None:
+            return
+        try:
+            process_file_deletions(self.app.store, files, stop=self.stopping.is_set)
+        except Exception as e:
+            self.log(owner, f"오류 파일 삭제 {type(e).__name__}")
 
     # ── ④ 보관 기간 작업 ───────────────────────────────
     def _job_check_due(self) -> bool:
@@ -267,13 +285,25 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     sys.stdout.reconfigure(errors="replace")
     sys.stderr.reconfigure(errors="replace")
+    from .bootstrap import ARTIFACT_ROOT_ENV, artifact_root_problem, build_app
+    root_problem = artifact_root_problem(get_env(ARTIFACT_ROOT_ENV))
     missing = [k for k in ("SBRAIN_DB_URL", "OPENAI_API_KEY") if not get_env(k)]
+    if root_problem == "없음":
+        missing.append(ARTIFACT_ROOT_ENV)
     if missing:
         print(f"설정 없음: {', '.join(missing)} — 환경 변수 또는 agent-orchestration/.env에 넣는다 (.env.example 참고)",
               file=sys.stderr)
         return 2
-    from .bootstrap import build_app
-    worker = Worker(build_app(), WorkerConfig.from_env())
+    if root_problem is not None:   # 상대 경로 — 값 없음과 같게 시작하지 않는다. 경로 값은 싣지 않는다
+        print(f"설정 오류: {ARTIFACT_ROOT_ENV}가 {root_problem} — 웹과 모든 워커가 같은 폴더를 보도록 절대 경로를 넣는다",
+              file=sys.stderr)
+        return 2
+    try:
+        app = build_app()
+    except RuntimeError as e:   # 파일 저장소 폴더를 만들지 못함 등 — 메시지에 경로 값이 없다
+        print(f"설정 오류: {e}", file=sys.stderr)
+        return 2
+    worker = Worker(app, WorkerConfig.from_env())
     output = open_worker_output(worker.name, get_env(LOG_DIR_ENV), get_env(KEEP_DAYS_ENV))
     worker.set_output(output.write)
     handler = attach_run_log(worker.run_log_line)   # 로거 처리기는 워커만 단다

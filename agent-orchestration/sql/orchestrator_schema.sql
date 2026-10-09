@@ -232,3 +232,22 @@ CREATE TABLE IF NOT EXISTS orch_jobs (
 	last_summary LONGTEXT COMMENT '마지막 요약 — 개수만 (JSON)', 
 	PRIMARY KEY (job_name)
 )ENGINE=InnoDB CHARSET=utf8mb4 COMMENT='주기 작업 상태 (확장) — 여러 워커 중 하나만 돌게 하는 점유와 마지막 실행' COLLATE utf8mb4_bin;
+
+CREATE TABLE IF NOT EXISTS orch_file_deletions (
+	deletion_id VARCHAR(64) NOT NULL COMMENT '대기열 줄 ID', 
+	run_id VARCHAR(64) NOT NULL COMMENT '실행 건 ID — 외래 키 없음(실행 건 줄이 지워진 뒤에도 남는다)', 
+	key_prefix VARCHAR(80) NOT NULL COMMENT '지울 키 접두어 ''<runId>/''', 
+	status VARCHAR(10) NOT NULL COMMENT '대기 · 포기', 
+	attempts INTEGER NOT NULL COMMENT '이번 대기 이후 실패한 시도 수' DEFAULT 0, 
+	last_error_kind VARCHAR(10) COMMENT '마지막 실패의 오류 종류 — 일시 · 입력 · 운영 (메시지 없음)', 
+	created_at DATETIME(6) NOT NULL COMMENT '넣은 시각', 
+	next_at DATETIME(6) NOT NULL COMMENT '다음 시도 가능 시각 — 워커가 가져가면 미룬다', 
+	last_tried_at DATETIME(6) COMMENT '마지막 시도 시각', 
+	gave_up_at DATETIME(6) COMMENT '포기한 시각', 
+	retried_by VARCHAR(64) COMMENT '마지막으로 다시 시도를 누른 관리자 ID', 
+	retried_at DATETIME(6) COMMENT '마지막으로 다시 시도를 누른 시각', 
+	retry_count INTEGER NOT NULL COMMENT '다시 시도를 누른 횟수' DEFAULT 0, 
+	PRIMARY KEY (deletion_id), 
+	CONSTRAINT uq_orch_file_deletions_run UNIQUE (run_id), 
+	KEY ix_orch_file_deletions_status_next (status, next_at)
+)ENGINE=InnoDB CHARSET=utf8mb4 COMMENT='파일 삭제 대기열 (확장) — 실행 건 하나의 파일 전체 삭제 요청. RECORD_TABLES 밖이라 12개월 처리 · 탈퇴로 지워지지 않는다' COLLATE utf8mb4_bin;

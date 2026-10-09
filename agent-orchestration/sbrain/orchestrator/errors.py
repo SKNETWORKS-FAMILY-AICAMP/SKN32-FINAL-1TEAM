@@ -22,21 +22,23 @@ ERROR_CODES: dict[str, ErrorCode] = {e.code: e for e in [
     ErrorCode("E-C2-STALE", "T-C2", "공고 정보를 갱신하는 중입니다. 갱신 후 다시 확인해주세요.", "매칭 중단, 수집 상태 경고"),
     ErrorCode("E-C2-EMBED", "T-C2", "추천 정확도가 낮아질 수 있습니다.", "폴백 순위 표시"),
     ErrorCode("E-G1-MISSING", "G-01", "신청 가능 여부를 확인하려면 사전 정보의 필수 항목이 필요합니다. 입력한 정보를 확인해주세요.", "판정 보류"),
-    # 쓰임은 기준 문서와 다름 — 확인 필요 조건(unknownConditions)이 있으면 화면 4에만 붙는 막지 않는 안내 (spec 4.3.3)
-    ErrorCode("E-G1-UNPARSED", "G-01", "이 공고는 자격요건 자동 확인이 어렵습니다. 공고문을 직접 확인해주세요.", "undecidable=true"),
-    ErrorCode("E-G1-REJECT", "G-01", "이 공고는 {사유}로 신청이 어렵습니다. 다른 공고를 보여드릴까요?", "실행 차단"),
+    # 확인 필요 조건(unknownConditions)이 있으면 화면 4에만 붙는 막지 않는 안내 (기준 문서 v1.10 시트 6, spec 4.3.3)
+    ErrorCode("E-G1-UNPARSED", "G-01", "이 공고는 자격요건 자동 확인이 어렵습니다. 공고문을 직접 확인해주세요.",
+              "통과로 보고 화면 4에 안내, 진행을 막지 않음"),
+    ErrorCode("E-G1-REJECT", "G-01", "이 공고는 {사유}로 신청이 어렵습니다. 다른 공고를 보여드릴까요?",
+              "공고 선택으로 돌아감, 그 공고는 이 실행 건에서 막힘"),
     ErrorCode("E-C1-REQUIRED", "T-C1", "필수 항목을 입력해주세요: {누락 항목}", "폼 단계 차단"),
     ErrorCode("E-C1-DOC", "T-C1", "{파일명}의 내용을 읽지 못해 참고 자료에서 제외했습니다. 나머지 정보로 계속 진행합니다.", "해당 문서 제외"),
     ErrorCode("E-C3-FORM", "T-C3", "", "분해 실패로 처리하고 오류 기록"),
     ErrorCode("E-B1-ENTRY", "T-B1", "", "재수행 후 그대로 보냄, 검증-2 통과 필수 조건(entry)으로 산출물층 0"),
-    # 확장(잠정) — 기준 문서 개정 전. sandbox API 위반(구현 · 검증-2 담당 개정안 1.3판)
+    # sandbox API 위반 (기준 문서 v1.10 시트 6, 구현 · 검증-2 담당 개정안 1.3판)
     ErrorCode("E-B1-SANDBOX", "T-B1", "",
               "재수행 후 그대로 보냄. 스토리지 계열은 검증-2 통과 필수 조건(산출물층 0), 나머지는 코드 점검 7번 감점"),
     ErrorCode("E-B1-DEP", "T-B1", "", "재수행 후 그대로 보냄, 점수 반영"),
     ErrorCode("E-V1-EVIDENCE", "T-V1", "", "감점 무효 처리"),
     ErrorCode("E-V1-VARIANCE", "T-V1", "", "varianceFlag=true"),
     ErrorCode("E-V2-PARSE", "T-V2", "", "해당 항목만 미충족"),
-    # 사용자 노출 문구는 기준 문서 개정 · 웹팀 결정 전이라 비워 둔다 (잠정) — 화면 '대조 불가'는 웹이 withheld로 표시
+    # 사용자 노출 문구는 비워 둔다 (잠정 — 기준 문서 v1.10도 '대조 보류의 화면 문구'를 미확정으로 둠) — 화면 '대조 불가'는 웹이 withheld로 표시
     ErrorCode("E-V2-NOFEATURE", "T-V2", "", "withheld=true, 0점 합산, 화면 '대조 불가', 관리자 알림"),
     ErrorCode("E-P2-TOKEN", "T-P2", "", "redoHint에 실어 재수행"),
     ErrorCode("E-P2-RETRY", "T-P2", "", "원문 유지, 관리자 로그"),
@@ -49,12 +51,12 @@ ERROR_CODES: dict[str, ErrorCode] = {e.code: e for e in [
     ErrorCode("E-RUN-ROLLBACK", "R-6 · R-11", "일시적인 문제로 다시 만들지 못해 이전 결과로 되돌렸습니다. 다시 만들 기회는 그대로 남아 있습니다.", "되돌림 · 기회 반환"),
     ErrorCode("E-RUN-CLOSED", "R-9", "선택하신 공고의 접수가 마감되었습니다. 계속 진행할지 선택해주세요.", "마감 사실만 알림"),
     ErrorCode("E-W1-REMOVED", "T-W1 · R-6", "입력하지 않은 경력이나 지원 규모를 넘는 금액이 반복해서 작성되어 해당 부분을 지웠습니다. 필요하면 직접 보완해주세요.", "notices로 알림"),
-    # 확장(잠정) — 기준 문서에 T-C2 전체 실패 처리가 없다. T-C1과 같이 다시 시도 안내.
+    # 공고 서버 호출 실패 — T-C1과 같이 다시 시도 안내 (기준 문서 v1.10 시트 6)
     ErrorCode("X-C2-FAIL", "T-C2 · G-01", "잠시 문제가 있었습니다. 다시 시도해주세요.",
-              "확장(잠정): 재개 없이 다시 시도 안내 — 사전 단계 · 추가 조회 실패, 자격 확인(G-01) 실패는 고르기 전 대기 지점으로"),
-    # 확장(잠정) — 고른 공고가 공고 서버에 없음. 고르기 전 대기 지점으로 돌아가고, 막지 않으므로 다시 고를 수 있다
+              "재개 없이 다시 시도 안내 — 사전 단계 · 추가 조회 실패, 자격 확인(G-01) 실패는 고르기 전 대기 지점으로"),
+    # 고른 공고가 공고 서버에 없음. 고르기 전 대기 지점으로 돌아가고, 막지 않으므로 다시 고를 수 있다 (기준 문서 v1.10 시트 6)
     ErrorCode("X-C2-GONE", "G-01", "선택하신 공고를 더 이상 확인할 수 없습니다. 다른 공고를 선택해주세요.",
-              "확장(잠정): 공고 없음 — 고르기 전 대기 지점으로"),
+              "공고 없음 — 고르기 전 대기 지점으로"),
 ]}
 
 # E-C2-EMBED 덧붙임 — 대체 경로가 마감 임박순이면 문구 끝에 붙인다 (기준 문서 T-C2, spec 4.1.3)
@@ -82,6 +84,10 @@ COMMAND_ERROR_CODES: dict[str, str] = {
     "INVALID_ACTION": "잘못된 동작",
     "E-G2-LIMIT": "재작성 기회 소진",
     "NOT_ACTIVE": "진행 중이 아닌 실행 건을 중단 (내부 — abort_project가 받는다)",
+    # 산출물 파일 (확장, 결정 0023) — 메시지(detail)에 키 · 파일 이름 · 계정을 넣지 않는다
+    "FILE_NOT_FOUND": "그 실행 건의 파일이 아님 · 키 규칙 위반 · 저장소에 없음 · 내용이 저장 값(sha256)과 다름 (구분하지 않음)",
+    "FILE_STORE_UNAVAILABLE": "파일 저장소 설정 없음 — 웹 조립에 SBRAIN_ARTIFACT_ROOT(절대 경로)가 없음",
+    "FILE_DELETION_NOT_FOUND": "없는 파일 삭제 대기열 줄",
 }
 
 
@@ -148,6 +154,16 @@ class ResourceNotFound(OrchestratorError):
     """
 
 
+class FileRejected(OrchestratorError):
+    """파일 창구(tools.files)가 받지 않는 요청 (확장, 입력 오류 — 재시도하지 않는다).
+
+    이름 · 형식 · 크기 규칙 위반(저장소를 부르지 않음), 실행 건이 '실행'이 아닐 때의 넣기, 다른 실행 건 파일 읽기.
+    메시지에는 어긴 규칙 종류 · 크기 숫자만 싣는다 — 파일 이름 · 키 · 내용을 넣지 않는다.
+    """
+
+    error_kind = "입력"
+
+
 class CommandError(OrchestratorError):
     """사용자 명령을 받을 수 없음 (상태 불일치 · 선택 불가 등)."""
 
@@ -163,3 +179,11 @@ class StoreConflict(OrchestratorError):
 
 class ProjectRunExists(OrchestratorError):
     """프로젝트에 이미 실행 건이 있음 (확장). 프로젝트 1건에 실행 건은 최대 1건 — 새로 시작은 새 프로젝트로 한다."""
+
+
+class FileDeletionNotFound(OrchestratorError):
+    """없는 파일 삭제 대기열 줄 (확장, 결정 0023). 메시지에 ID를 넣지 않는다."""
+
+
+class FileDeletionNotGivenUp(OrchestratorError):
+    """'포기'가 아닌 파일 삭제 대기열 줄을 다시 시도하려 함 (확장, 결정 0023). 메시지에 ID를 넣지 않는다."""

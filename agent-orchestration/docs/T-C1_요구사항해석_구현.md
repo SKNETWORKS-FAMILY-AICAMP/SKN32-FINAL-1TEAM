@@ -2,8 +2,8 @@
 
 | 항목 | 내용 |
 |---|---|
-| 작성일 | 2026-09-29 (2026-09-30 갱신: 웹 스키마 반영, 확장 필드 · 수익모델 여러 건 · 팀원 없음 · 조율 모델 결정 반영, 웹팀 확인 결과 반영. 2026-10-01 갱신: 목록 입력 키 이름 변환, API 키 `.env` 읽기) |
-| 기준 문서 | S-Brain Agent 기능정의서 v1.9 — 시트 2 T-C1, 시트 3 R2~R9, 시트 4 PreInput · CompanyInfo · ItemSpec · ReferenceSummary, 시트 6 E-C1-* |
+| 작성일 | 2026-09-29 (2026-09-30 갱신: 웹 스키마 반영, 확장 필드 · 수익모델 여러 건 · 팀원 없음 · 조율 모델 결정 반영, 웹팀 확인 결과 반영. 2026-10-01 갱신: 목록 입력 키 이름 변환, API 키 `.env` 읽기. 2026-10-08 갱신: 기준 문서 v1.10 반영 — 새 판이 정한 형식의 잠정 표시를 떼고, 웹 입력값 10종 · `RevenueItem`은 확장 아님, 새 판에서 빠진 `revenueUnitPrice` · `isFirstStartup`은 확장으로 — 4 · 5 · 8 · 9절) |
+| 기준 문서 | S-Brain Agent 기능정의서 v1.10 — 시트 2 T-C1, 시트 3 T-C1 입출력 행, 시트 4 PreInput · CompanyInfo · RevenueItem · ItemSpec · ReferenceSummary, 시트 6 E-C1-* |
 | 참고 | `user-input-example.py` (웹 `create_project`, 저장소 미포함), `web/backend/app_schema.sql` (웹 DB 스키마, 같은 저장소) |
 | 코드 | `sbrain/intake/` (웹 DB → PreInput), `sbrain/agents/supervisor/tc1.py` (T-C1), `sbrain/orchestrator/openai_provider.py` (OpenAI 호출처) |
 | 테스트 | `tests/test_intake.py` 22건, `test_tc1.py` 20건(메모리 · SQLite 저장소로 한 번씩), `test_openai_provider.py` 7건, `test_env.py` 6건 — 전체 286건 통과 |
@@ -26,7 +26,7 @@
 
 1. 시트 3에서 T-C1 입력 `formInput`은 `PreInput`이다. 마이페이지 프로필 값과 프로젝트 작성란 입력을 합친 값이다. 웹의 `create_project`는 '내 정보 불러오기'로 채운 프로필 값과 작성란 값을 한 요청으로 받아 `companies` · `projects` · `team_members` · `pricing_items` · `project_plan_inputs`에 저장한다. `companies` 행은 프로젝트마다 새로 생기는 스냅샷이다(app_schema.sql 주석). T-C1에 필요한 값이 DB 한 곳에 모인다.
 2. 연동 규격 3절에 따라 Task는 DB에 직접 접근하지 않는다. 명령 창구(`start_run_for_project`)가 DB에서 읽어 `formInput` 산출물로 넣고, T-C1은 그 산출물만 받는다.
-3. 요청 본문을 그대로 넘기지 않고 저장된 값을 읽으면, 웹이 실제로 저장한 값과 T-C1 입력이 어긋나지 않는다. 실행 건(Run)에 `projectId`(확장)를 남겨 입력의 출처를 추적한다.
+3. 요청 본문을 그대로 넘기지 않고 저장된 값을 읽으면, 웹이 실제로 저장한 값과 T-C1 입력이 어긋나지 않는다. 실행 건(Run)에 `projectId`(v1.9에서는 확장, v1.10 시트 4 `Run`에 들어감)를 남겨 입력의 출처를 추적한다.
 
 ## 3. 흐름
 
@@ -54,39 +54,41 @@ flowchart TD
 
 ### 4.1 기준 문서 필드
 
+'구분' 열의 '잠정'은 기준 문서가 형식을 정하지 않은 것이다. 2026-10-08부터 기준 문서 v1.10 시트 4가 형식을 정한 행은 '새 판 형식'으로 적었다.
+
 | PreInput 필드 | 필수 | 웹 DB 값 | 변환 규칙 | 구분 |
 |---|---|---|---|---|
 | ideaText | 필수 | `projects.description` | 앞뒤 공백 제거 | |
 | applicantType | 필수 | `companies.applicant_type` | `preliminary` → 예비창업자, `individual` → 개인사업자, `corp` → 법인 | |
 | representativeName | 필수 | `companies.ceo_name` | 그대로 | |
-| representativeCareer | 필수 | `project_plan_inputs.ceo_careers` (`type` · `title` · `period` · `has_proof` = 구분 · 내용 · 기간 · 증빙여부) | 항목마다 `구분: 내용 (기간, 증빙 있음)` 한 줄. 구분이 없으면 `내용 (기간)`, 기간 · 증빙이 없으면 괄호 생략. **증빙은 참일 때만 `증빙 있음`**(사용자 결정 2026-09-30). 증빙 말고는 값이 없는 항목은 뺀다 | 잠정 |
+| representativeCareer | 필수 | `project_plan_inputs.ceo_careers` (`type` · `title` · `period` · `has_proof` = 구분 · 내용 · 기간 · 증빙여부) | 항목마다 `구분: 내용 (기간, 증빙 있음)` 한 줄. 구분이 없으면 `내용 (기간)`, 기간 · 증빙이 없으면 괄호 생략. **증빙은 참일 때만 `증빙 있음`**(사용자 결정 2026-09-30). 증빙 말고는 값이 없는 항목은 뺀다 | 새 판 형식(시트 4 `representativeCareer`) |
 | foundedAt | 개인사업자 · 법인 필수 | `companies.founded_at` | 예비창업자는 비움 | |
-| revenueUnitPrice | 필수 | `pricing_items.unit_price` | **호환용** — 첫 항목 단가. 전체는 확장 필드 `revenueItems`(4.2) | 잠정 |
-| developmentPeriod | 필수 | `dev_start_month` · `dev_end_month` | `YYYY-MM ~ YYYY-MM`. 둘 다 있어야 한다 | 잠정 |
-| teamCareers | 입력 또는 '팀원 없음' | `team_members.name` · `role` · `experience` | 한 명당 `이름(역할): 경력`. **0행이면 팀원 없음 → 빈 목록** (웹이 입력 또는 선택을 강제) | 형식은 잠정 |
+| revenueUnitPrice | 필수(코드) | `pricing_items.unit_price` | **호환용** — 첫 항목 단가. 전체는 `revenueItems`(4.2) | 새 판(v1.10)에서 빠졌지만 남김 — 확장 |
+| developmentPeriod | 필수 | `dev_start_month` · `dev_end_month` | `YYYY-MM ~ YYYY-MM`. 둘 다 있어야 한다 | 새 판 형식(시트 4 `developmentPeriod`) |
+| teamCareers | 입력 또는 '팀원 없음' | `team_members.name` · `role` · `experience` | 한 명당 `이름(역할): 경력`. **0행이면 팀원 없음 → 빈 목록** (웹이 입력 또는 선택을 강제) | 새 판 형식(시트 4 `teamCareers`) |
 | birthDate | 필수 | `ceo_birth_date` | 그대로 | |
 | gender | 필수 | `ceo_gender` | 그대로 | |
 | region | 필수 | `region_sido` · `region_sigungu` (사업장 소재지 · 창업 예정 지역) | `시도 시군구`. 시도가 있어야 한다 | 잠정 |
 | industryCode | 필수 | `main_industry`(개인 · 법인, 9종), 없으면 `main_industry_free`(예비창업자) | 그대로 | |
 | certifications | 선택 | `certifications` (문자열 배열) | 그대로 | |
-| hiringPlan | 필수 | `no_hires` · `hires` (`job` · `headcount` · `required_skill` · `hire_month` = 직무 · 인원 · 요구역량 · 채용 시기) | '없음'을 골랐으면 `없음`, 아니면 항목마다 `직무 인원 · 요구역량: … · 채용 시기: …`(빈 값 생략)를 `; `로 이은 한 줄. 인원(문자열)이 숫자만이면 `명`을 붙인다. 예: `개발자 2명 · 요구역량: React · 채용 시기: 2026-06` | 잠정 |
-| facilities | 필수 | `no_equipment` · `equipment` (`name` · `status` = 이름 · 상태) | '없음'을 골랐으면 `없음`, 아니면 항목마다 `이름 (상태)`를 `; `로 이은 한 줄. 상태가 없으면 괄호 생략. 예: `태블릿 (보유)` | 잠정 |
-| partners | 필수 | `no_partners` · `partners` (`name` · `status` = 기관명 · 상태) | 위와 같음. 예: `OO대학교 (협의 중)` | 잠정 |
-| isFirstStartup | (기준 문서: 예비창업자 필수) | 없음 | 비움. **받지 않는다** (웹팀 확인) | 개정 필요 |
-| desiredScale | 예비창업자 필수 | `budget_scale_manwon` (만원, 웹팀 확인) | `{값}만원` | 표기는 잠정 |
+| hiringPlan | 필수 | `no_hires` · `hires` (`job` · `headcount` · `required_skill` · `hire_month` = 직무 · 인원 · 요구역량 · 채용 시기) | '없음'을 골랐으면 `없음`, 아니면 항목마다 `직무 인원 · 요구역량: … · 채용 시기: …`(빈 값 생략)를 `; `로 이은 한 줄. 인원(문자열)이 숫자만이면 `명`을 붙인다. 예: `개발자 2명 · 요구역량: React · 채용 시기: 2026-06` | 새 판 형식(시트 4 `hiringPlan`) |
+| facilities | 필수 | `no_equipment` · `equipment` (`name` · `status` = 이름 · 상태) | '없음'을 골랐으면 `없음`, 아니면 항목마다 `이름 (상태)`를 `; `로 이은 한 줄. 상태가 없으면 괄호 생략. 예: `태블릿 (보유)` | `이름 (상태)`는 새 판 형식(시트 4 `facilities`). 괄호 생략 · `; ` 이음은 잠정 |
+| partners | 필수 | `no_partners` · `partners` (`name` · `status` = 기관명 · 상태) | 위와 같음. 예: `OO대학교 (협의 중)` | 위와 같음(시트 4 `partners`) |
+| isFirstStartup | (v1.9: 예비창업자 필수, v1.10: 없음) | 없음 | 비움. **받지 않는다** (웹팀 확인) | 새 판(v1.10)에서 빠졌지만 남김 — 확장 |
+| desiredScale | 예비창업자 필수 | `budget_scale_manwon` (만원, 웹팀 확인) | `{값}만원` | 새 판 형식(시트 4 `desiredScale`) |
 | businessRegNo | 개인사업자 · 법인 선택 | `companies.business_reg_no` | 예비창업자는 비움 | |
-| selfFundAmount | 개인사업자 · 법인 필수 | `self_funding_allowed` · `self_cash_limit` (원, 웹팀 확인) | 자기부담을 하지 않으면 0, 아니면 `self_cash_limit` | 0 처리는 잠정 |
-| attachments | 선택 | (`project_attachments`) | 지금은 읽지 않음 | R-8과 함께 |
+| selfFundAmount | 개인사업자 · 법인 필수 | `self_funding_allowed` · `self_cash_limit` (원, 웹팀 확인) | 자기부담을 하지 않으면 0, 아니면 `self_cash_limit` | 새 판 형식(시트 4 `selfFundAmount`) |
+| attachments | 선택 | (`project_attachments`) | 지금은 읽지 않음 | R-8과 함께(v1.10에서 향후 도입) |
 
 - JSON 컬럼은 스키마에 키 이름이 없어 웹 코드(`user-input-example.py`의 PlanCareerIn · PlanHireIn · PlanEquipmentIn · PlanPartnerIn)에서 확인한 키 이름으로 옮긴다. 아는 키가 하나도 없는 항목은 값만 순서대로 ` · `로 잇는다(참 · 거짓 값은 뺀다). 아는 키와 모르는 키가 섞여 있으면 모르는 키의 값을 뒤에 ` · `로 이어, 웹이 키를 더해도 입력이 버려지지 않게 한다. 드라이버가 문자열로 돌려줘도 풀어서 쓴다.
 - 단가는 `DECIMAL(12,2)`이다. 원 단위 정수로 바꾸고, 소수 부분이 있으면 반올림하지 않고 오류로 본다.
 - 값을 옮기기만 하고 요약 · 보완 · 추정하지 않는다. 수익모델 단가와 경력은 사용자 입력만 쓴다(기획서 4-6).
 
-### 4.2 확장 필드 (사용자 결정 2026-09-30)
+### 4.2 웹 입력값 10종 (사용자 결정 2026-09-30, 기준 문서 v1.10에 들어감)
 
-PreInput에 자리가 없는 웹 입력값을 확장 필드로 싣는다. `PreInput`과 `CompanyInfo`가 같은 확장(`FormExtension`)을 쓰고, T-C1이 폼 값 그대로 `companyInfo`에 옮겨 계획서 작성까지 전달한다.
+2026-09-30에는 PreInput에 자리가 없어 확장 필드로 실었다. 기준 문서 v1.10이 PreInput · CompanyInfo에 넣어 2026-10-08부터 확장이 아니다(`RevenueItem` 타입도 시트 4에 있다). `PreInput`과 `CompanyInfo`가 같은 확장(`FormExtension`)을 쓰고, T-C1이 폼 값 그대로 `companyInfo`에 옮겨 계획서 작성까지 전달한다.
 
-| 확장 필드 (JSON) | 웹 DB 값 | 뜻 |
+| 필드 (JSON) | 웹 DB 값 | 뜻 |
 |---|---|---|
 | revenueItems | `pricing_items.service_name` · `unit_price` (전체) | 수익모델 항목 목록. 항목 = `serviceName` · `unitPrice`(원) |
 | companyName | `companies.company_name` | 기업명 · 법인명(상호) |
@@ -99,8 +101,8 @@ PreInput에 자리가 없는 웹 입력값을 확장 필드로 싣는다. `PreIn
 | representativeCapability | `project_plan_inputs.ceo_capability` | 대표자의 기술력 · 노하우 · 인적 네트워크 |
 | selfInKindResources | `project_plan_inputs.self_in_kind_resources` | 현물 자기부담 자원(보유 장비 · 공간 등) |
 
-- 수익모델은 **여러 건을 모두** `revenueItems`로 싣는다(사용자 결정). 기준 문서의 `revenueUnitPrice`(int 1개)는 다른 Agent 규격이 바뀔 때까지 첫 항목 단가로 채워 둔다(호환용).
-- 확장 필드는 코드에서 `ext()`로 선언되어 JSON 스키마에 `x-extension`이 붙는다.
+- 수익모델은 **여러 건을 모두** `revenueItems`로 싣는다(사용자 결정). `revenueUnitPrice`(int 1개)는 새 판(v1.10)에서 빠졌지만 옛 실행 건 호환으로 남겨 첫 항목 단가로 채운다(확장, 결정 0022).
+- 코드에서 `ext()`로 선언된 필드는 JSON 스키마에 `x-extension`이 붙는다. 지금 PreInput · CompanyInfo의 확장은 `revenueUnitPrice` · `isFirstStartup` 둘이다.
 
 ## 5. 필수 항목 재확인 (E-C1-REQUIRED)
 
@@ -224,9 +226,8 @@ res = app.orchestrator.start_run_for_project(account_id="7", project_id=101)
 
 | 항목 | 잠정값 | 위치 |
 |---|---|---|
-| DB → PreInput 변환 규칙 | 4.1절 표의 '잠정' 행 | `intake/mapping.py` |
+| DB → PreInput 변환 규칙 | 4.1절 표의 '잠정' 행(지역 `시도 시군구`, 장비 · 협력의 괄호 생략 · `; ` 이음). 새 판이 정한 형식은 잠정이 아니다(2026-10-08) | `intake/mapping.py` |
 | JSON 목록 항목 → 문자열 | 키 이름으로 형식을 만든다(4.1). 아는 키가 없으면 값만 ` · `로 잇고 참 · 거짓 값은 뺀다. 모르는 키의 값은 뒤에 잇는다 | `intake/mapping.py` |
-| 수익모델 단가 필수 판정 | 1건 이상, 항목마다 단가 필수 | `intake/mapping.py` |
 | 빈 문자열 · 빈 목록 | 필수 항목 결측으로 봄 (팀 구성원 제외) | `intake/mapping.py` |
 | 참조 자료 슬롯 | 7종 (6.3) | `tc1.py` `REFERENCE_SLOTS` |
 | 문서 조각 · 발췌 제한 | 조각 20,000자, 발췌 500자, 슬롯당 3개 | `tc1.py` |
@@ -236,14 +237,14 @@ res = app.orchestrator.start_run_for_project(account_id="7", project_id=101)
 | OpenAI 응답 형식 | json_schema, strict=False | `openai_provider.py` |
 | 온도 없는 Agent의 Task 온도 규칙 | 적용하지 않음 | `orchestrator/registry.py` `TempRule` |
 
+- 2026-10-08: 수익모델 단가 필수 판정(1건 이상, 항목마다 단가)은 기준 문서 v1.10 시트 4 `revenueItems`가 정해 이 목록에서 뺐다.
+
 **확장 (기준 문서에 없는 필드 · 함수)**
 
 | 대상 | 확장 | 용도 |
 |---|---|---|
-| PreInput · CompanyInfo | `revenueItems` 외 9종 (4.2) | PreInput에 자리가 없는 웹 입력값 |
-| (신규 타입) RevenueItem | `serviceName`, `unitPrice` | 수익모델 항목 하나 |
+| PreInput · CompanyInfo | `revenueUnitPrice` · `isFirstStartup` | 새 판(v1.10)에서 빠졌지만 옛 실행 건 호환으로 남김(2026-10-08). 웹 입력값 10종(4.2)과 `RevenueItem`은 v1.10에 들어가 확장이 아니다 |
 | TC1Out | `categoryDefaulted` | 카테고리 기본값 적용 여부 — 추적 기록용 |
-| Run | `projectId` | 사전 정보 입력의 출처(웹 DB `projects` 행) |
 | AgentSetting · ExecutionRecord · CallLog | `reasoningEffort` | 추론 모델의 추론 강도 설정 · 기록 |
 | 명령 창구 | `start_run_for_project(account_id, project_id)` | 웹 DB에서 읽어 시작. 프로젝트가 없거나 다른 계정 것이면 `CommandError("PROJECT_NOT_FOUND")` |
 
@@ -254,7 +255,7 @@ res = app.orchestrator.start_run_for_project(account_id="7", project_id=101)
 | 사항 | 결과 | 코드 |
 |---|---|---|
 | 단위 | 희망 사업 규모(`budget_scale_manwon`)는 만원, 자기부담 가능액(`self_cash_limit`)은 원 | 그대로 반영되어 있다. `app_schema.sql`의 `self_cash_limit` 주석 '만원'은 웹 쪽 주석 수정 대상이다 |
-| 첫 창업 여부 | 받지 않는다 | 비워 두고 필수 검사에서 뺐다. 기준 문서 개정 대상 |
+| 첫 창업 여부 | 받지 않는다 | 비워 두고 필수 검사에서 뺐다. 기준 문서 v1.10에서 빠졌다(코드는 확장으로 남김) |
 | 팀원 | 팀원을 입력하거나 '팀원 없음'을 반드시 고른다 | `team_members` 0행 = 팀원 없음으로 본다 |
 
 **남은 사항**
@@ -262,4 +263,4 @@ res = app.orchestrator.start_run_for_project(account_id="7", project_id=101)
 1. **반영 완료 (2026-10-01)** — JSON 컬럼을 웹 코드(`user-input-example.py`)의 키 이름(대표자 이력 `type` · `title` · `period` · `has_proof`, 채용 계획 `job` · `headcount` · `required_skill` · `hire_month`, 장비 · 협력 기관 `name` · `status`)으로 옮기고 증빙 표기(`증빙 있음`, 사용자 결정)를 붙인다. 형식은 4.1절 표(`작업지시_조율코드반영_워커_웹연동.md` S0, 저장소 미포함).
 2. 누가 언제 부를지는 웹팀과 합의했다 — 웹은 시작 요청만 넣고 사전 단계는 워커가 돈다(`워커_구동_방식_제안.md`, 저장소 미포함, 확정). **확인(즉시, `request_start`)과 실행(워커, `run_start_request`)으로 나눴다(2026-10-01).** `start_run_for_project`는 두 조각을 차례로 부르는 동기 경로다. 웹이 부르는 함수는 `docs/Orchestrator_웹연동_함수명세.md`.
 
-**기준 문서 개정** — 수익모델 여러 건, 확장 필드, 팀원 없음, 첫 창업 여부 미수집 등은 `기준문서_개정필요사항_T-C1_사전정보입력.md`(저장소 미포함)에 따로 정리했다.
+**기준 문서 개정** — 수익모델 여러 건, 확장 필드, 팀원 없음, 첫 창업 여부 미수집 등은 `기준문서_개정필요사항_T-C1_사전정보입력.md`(저장소 미포함)에 따로 정리했고, 기능정의서 v1.10에 반영됐다(2026-10-07판, 시트 8 변경 이력 2번).

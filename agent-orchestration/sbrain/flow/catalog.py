@@ -64,7 +64,7 @@ def build_registry() -> TaskRegistry:
          uses_llm=False, failure=FailurePolicy(resumable=False, fallback_in_task=True,
                                                rescue_segments=frozenset({"MORE"})))
     # G-01 — 고른 공고(마지막 decision의 공고 ID)의 상세 받기와 자격 판정을 한 단계에서 한다. 공고 서버를 tools로 부르는
-    # Task(LLM 없음)이고 기준 문서와 다르다(외부 호출). 선택 공고 · 자격 결과 · 업력을 한 번에 저장한다(spec 4.3.2).
+    # Task(LLM 없음)이다 — 기준 문서 v1.10 시트 2도 공고 서버 호출에 재시도 · 제한 시간을 둔다. 선택 공고 · 자격 결과 · 업력을 한 번에 저장한다(spec 4.3.2).
     # 재개하지 않고, 자격 확인 구간(GATE)에서는 어떤 오류든 흐름이 받아 고르기 전 대기 지점으로 돌린다(4.3.4).
     # 고정 Task 14개에 세지 않는다(기획서 4-4).
     task("G-01", "자격요건 게이트", "조율", 3, c.G01In, c.G01Out,
@@ -74,9 +74,9 @@ def build_registry() -> TaskRegistry:
          failure=FailurePolicy(resumable=False, rescue_segments=frozenset({"GATE"})))
 
     # ── 계획서 작성 ───────────────────────────────────
-    # T-C3 — 신청자 유형으로 양식 · 평가 항목 · 채점 기준표를 고르고(확장 출력 formSpec · evaluationItems · rubric),
+    # T-C3 — 신청자 유형으로 양식 · 평가 항목 · 채점 기준표를 고르고(출력 formSpec · evaluationItems · rubric),
     # 뒷 단계(T-W1 · T-V1 · T-P1 · T-P2 · G-02a · G-02b)는 선택 공고의 같은 이름 필드 대신 이 출력을 읽는다 (T-C3 spec 4).
-    # 선택 공고의 formSpec · evaluationItems는 자리 표시 값으로 남는다. 업력은 G-01 출력에서 받는다(확장 입력)
+    # 선택 공고의 formSpec · evaluationItems는 자리 표시 값으로 남는다. 업력은 G-01 출력에서 받는다(입력 businessAgeYears)
     # 재개 때는 앞 실행이 받은 안내(T-C3.partial)를 prior_guidance로 받아 빠진 Task만 부른다(엔진 일반 장치 PARTIAL)
     task("T-C3", "작업 분해", "조율", 4, c.TC3In, c.TC3Out,
          {"selected_announcement": art(SA), "item_spec": art("itemSpec"), "gate_result": art("gateResult"),
@@ -131,7 +131,7 @@ def build_registry() -> TaskRegistry:
          {"feature_list": art("featureList"), "item_spec": art("itemSpec"), "category": art("category"),
           "plan_doc": art("planDoc"), "instruction": INSTR, "rework_input": REWORK},
          {"prototype": "prototype", "implemented_features": "implementedFeatures",
-          "entry_file_path": "entryFilePath", "check": _check_key("T-B1")}, "prototype", redo=True)
+          "entry_file": "entryFile", "check": _check_key("T-B1")}, "prototype", redo=True)
     task("T-B2", "인포그래픽 제작", "구현", 13, c.TB2In, c.TB2Out,
          {"plan_doc": art("planDoc"), "item_spec": art("itemSpec"), "category": art("category"),
           "instruction": INSTR, "rework_input": REWORK},
@@ -141,14 +141,15 @@ def build_registry() -> TaskRegistry:
          {"prototype": "prototype"}, "prototype", kind="merge")
     # G-04 — 오류면 계속(점수 밖). 자체 검사(확장 출력 check — 실행 · 열람 안내 낱말)가 불통과면 재수행 횟수까지 같은
     # 입력으로 다시 만들고(재수행 루프가 만든 G-04.reworkInput은 입력에 연결하지 않아 쓰이지 않는다), 끝내 불통과면
-    # 흐름이 관리자 기록('안내문서자체검사실패')을 남기고 계속한다 (2026-09-30 결정 5 · 6)
+    # 흐름이 관리자 기록('안내문서자체검사실패')을 남기고 계속한다 (2026-09-30 결정 5 · 6).
+    # 안내 문서는 파일이라 파일을 쓰는 규칙 단계로 표시한다 — 엔진이 run(inp, files)로 파일 창구를 넘긴다 (결정 0023)
     rule("G-04", "실행 안내 문서 생성", "조율", 14, c.G04In, c.G04Out,
          {"prototype": art("prototype"), "infographic": art("infographic"), "item_spec": art("itemSpec"),
           "announcement": art(SA)},
-         {"readme_path": "readmePath", "check": _check_key("G-04")}, "readme_path", redo=True,
-         failure=FailurePolicy(on_step_error="continue"))
-    rule("M-3", "합치기③ readmePath를 Prototype에 기입", "조율", None, c.M3In, c.M3Out,
-         {"prototype": art("prototype"), "readme_path": art("readmePath", optional=True)},
+         {"readme_file": "readmeFile", "check": _check_key("G-04")}, "readme_file", redo=True,
+         failure=FailurePolicy(on_step_error="continue"), writes_files=True)
+    rule("M-3", "합치기③ readmeFile을 Prototype에 기입", "조율", None, c.M3In, c.M3Out,
+         {"prototype": art("prototype"), "readme_file": art("readmeFile", optional=True)},
          {"prototype": "prototype"}, "prototype", kind="merge")
     # T-V2 — 계획서(확장 입력, T-B2와 같은 값)는 원페이지 대조의 근거라 늘 채운다. 진단(확장 출력)은 관리자 기록 전용이다
     task("T-V2", "프로토타입 검증", "검증-2", 15, c.TV2In, c.TV2Out,

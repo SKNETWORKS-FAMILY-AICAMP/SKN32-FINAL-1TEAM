@@ -65,6 +65,7 @@ def test_reasoning_model_request_has_effort_and_no_temperature():
 @pytest.mark.parametrize("error, expected", [
     (openai.APITimeoutError(request=REQ), TimeoutError),
     (openai.APIConnectionError(request=REQ), ConnectionError),
+    (None, FormatError),                                         # 빈 내용 — 형식 오류
 ])
 def test_transport_errors(error, expected):
     p, _ = provider([error])
@@ -77,12 +78,6 @@ def test_status_error_keeps_status():
     with pytest.raises(ProviderError) as e:
         p.complete(request())
     assert e.value.status == 429
-
-
-def test_empty_content_is_format_error():
-    p, _ = provider([None])
-    with pytest.raises(FormatError):
-        p.complete(request())
 
 
 def test_through_tools_retry_and_classification():

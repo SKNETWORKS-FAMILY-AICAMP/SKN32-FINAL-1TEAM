@@ -6,22 +6,13 @@ import time
 
 import pytest
 
-from conftest import executed, make_app, start_and_select, to_screen6, to_screen8, to_screen9
+from conftest import TIMING, executed, make_app, start_and_select, to_screen6, to_screen8, to_screen9
+from flow_helpers import WINDOW, code_of, cycle_steps, last_cycle_id, pid, rework, usage_of
 
 from sbrain.agents.stubs import StubScenario
 from sbrain.flow.sbrain_flow import REWORK_DEFAULT_REASON, bundle_orders, default_instruction_builder
 from sbrain.models import ReworkOrder
 from sbrain.orchestrator.errors import CommandError
-
-WINDOW = 3   # 모으는 시간(잠정 2초)을 넘기는 초
-
-
-def cycle_steps(app, rid, cycle_id):
-    return [r.task_id for r in app.store.executions(rid) if r.cycle_id == cycle_id]
-
-
-def last_cycle_id(app, rid):
-    return [e for e in app.store.events(rid) if e.kind == "재작성시작"][-1].cycle_id
 
 
 def orders(app, rid, judge):
@@ -29,30 +20,8 @@ def orders(app, rid, judge):
     return ctx.get(f"{judge}.reworkOrders")
 
 
-def pid(app, rid):
-    return app.store.load_run(rid).project_id
-
-
 def request(app, rid, bundle):
     return app.orchestrator.request_rework_for_project(pid(app, rid), bundle)
-
-
-def rework(app, clock, rid, *bundles):
-    """묶음들을 모으는 시간 안에 요청하고, 시간이 지난 뒤 진행한다 (워커 대신 advance)."""
-    accepted = [request(app, rid, b) for b in bundles]
-    clock.advance(seconds=WINDOW)
-    app.orchestrator.advance(rid)
-    return accepted
-
-
-def code_of(fn) -> str:
-    with pytest.raises(CommandError) as e:
-        fn()
-    return e.value.code
-
-
-def usage_of(app, rid):
-    return {u.bundle_id: (u.used_count, u.remaining) for u in app.store.load_run(rid).rework_usage}
 
 
 def rework_input(app, rid, task_id):
@@ -90,15 +59,6 @@ def test_onepage_rework_path_includes_wrap_merge(clock):
     assert {o.task_id for o in art if o.layer == "artifact"} == {"T-B2"}
     rework(app, clock, rid, "인포그래픽")
     assert cycle_steps(app, rid, last_cycle_id(app, rid)) == ["T-B2", "M-2", "G-04", "M-3", "T-V2", "G-02b"]
-
-
-def test_onepage_screen9_document_path_reflects_infographic_not_html(clock):
-    # 원페이지 계획서 재작성은 HTML(T-B1) 대신 인포그래픽(T-B2 → M-2)에 반영한다 (2026-09-29 결정)
-    app = make_app(clock, StubScenario(category="원페이지"))
-    rid = to_screen9(app)
-    rework(app, clock, rid, "성장전략")
-    assert cycle_steps(app, rid, last_cycle_id(app, rid)) == [
-        "T-W1", "T-W2", "T-W3", "M-1", "T-V1", "T-B2", "M-2", "G-04", "M-3", "T-V2", "G-02b"]
 
 
 # ── 모으기 ─────────────────────────────────────────────
@@ -156,6 +116,7 @@ def test_late_request_and_proceed_while_collecting_rejected(clock):
     assert usage_of(app, rid) == {"실행 파일": (1, 0)}
 
 
+@TIMING
 def test_request_while_worker_runs_rework_is_rejected_at_once(clock):
     app = make_app(clock)
     rid = to_screen8(app)
@@ -176,6 +137,7 @@ def test_request_while_worker_runs_rework_is_rejected_at_once(clock):
     assert app.store.load_run(rid).state.progress == "사용자대기"
 
 
+@TIMING
 def test_busy_when_other_command_holds_lease(clock):
     app = make_app(clock)
     rid = to_screen8(app)

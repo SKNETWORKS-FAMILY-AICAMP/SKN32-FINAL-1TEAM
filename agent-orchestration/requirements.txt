@@ -7,5 +7,7 @@ PyMySQL==1.2.3
 openai==3.20.0
 # .env 파일에서 환경 변수 읽기 (OPENAI_API_KEY 등) — sbrain/env.py
 python-dotenv==1.2.3
-# 테스트
+# 테스트 (pytest-xdist: 기본 동시 실행 · pytest-cov: 줄 단위 확인 범위 측정)
 pytest==9.1.1
+pytest-xdist==3.8.0
+pytest-cov==7.1.0

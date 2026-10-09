@@ -2,8 +2,9 @@
 
 - 엔진이 부른다. 범용이다 — 단계 ID와 실행 건 · 실행 기록의 값만 쓰고 S-Brain 이름을 넣지 않는다.
 - 줄 모양: '<동작> 키=값 …'. 앞부분(시각 · 워커:스레드)은 처리기를 단 쪽(워커)이 붙인다. 값에 빈칸이 있으면 큰따옴표로 감싼다.
-- 넣는 식별자는 실행 건 번호(run) · 웹 프로젝트 번호(project) · 실행 기록 번호(exec)까지다. 계정 번호 · 산출물 내용 · 입력 ·
-  지시문 · 프롬프트 · 응답 · 사건 설명은 넣지 않는다. 자유 문장은 실패한 실행 기록의 error 값(최대 200자)뿐이다.
+- 넣는 식별자는 실행 건 번호(run) · 웹 프로젝트 번호(project) · 실행 기록 번호(exec), 파일 삭제 줄의 대기열 줄 번호
+  (deletion, 결정 0023)까지다. 계정 번호 · 산출물 내용 · 입력 · 지시문 · 프롬프트 · 응답 · 사건 설명 · 파일 이름 · 키는 넣지
+  않는다. 자유 문장은 실패한 실행 기록의 error 값(최대 200자)뿐이다.
 - 처리기는 워커(python -m sbrain.worker)만 단다(sbrain/worker_log.py). 웹 조립 · 테스트에서는 처리기가 없어 아무것도
   나가지 않는다(로거 수준도 기본 WARNING이라 줄을 만들지 않는다).
 - 로그 쓰기 오류는 실행을 멈추지 않는다 — 여기서 난 예외는 삼킨다.
@@ -26,6 +27,9 @@ STEP_END = "단계끝"
 WAIT = "대기"
 RUN_END = "실행끝"
 RESUME_SCHEDULED = "재개예약"
+FILE_DELETED = "파일삭제"              # 파일 삭제 대기열 (확장, 결정 0023)
+FILE_DELETE_FAILED = "파일삭제실패"
+FILE_DELETE_GAVE_UP = "파일삭제포기"
 
 logger = logging.getLogger(RUN_LOGGER)
 # 웹 쪽이 루트 로거를 INFO로 열어도 이 줄이 웹 로그로 새지 않게 — 위로 올려 보내지 않는다. 처리기는 워커가 단 것뿐이다
@@ -101,3 +105,20 @@ def run_end(run: Any) -> None:
 def resume_scheduled(run: Any, kind: str | None) -> None:
     _emit(RESUME_SCHEDULED, [("run", run.run_id), ("project", run.project_id), ("at", fmt_utc(run.next_resume_at)),
                              ("errorKind", kind)])
+
+
+# ── 파일 삭제 대기열 (확장, 결정 0023) — 식별자는 실행 건 · 대기열 줄 번호까지. 키 · 파일 이름 · 오류 메시지는 넣지 않는다
+def file_deleted(row: Any) -> None:
+    """실행 건 하나의 파일을 지웠다(대기열 줄을 지움)."""
+    _emit(FILE_DELETED, [("run", row.run_id), ("deletion", row.deletion_id)])
+
+
+def file_delete_failed(row: Any, error_type: str) -> None:
+    """지우기 실패 — row는 실패를 적은 뒤의 줄. error는 예외 종류 이름(메시지 아님), attempts는 이번 대기 이후 실패 수."""
+    _emit(FILE_DELETE_FAILED, [("run", row.run_id), ("deletion", row.deletion_id), ("errorKind", row.last_error_kind),
+                               ("error", error_type), ("attempts", row.attempts)])
+
+
+def file_delete_gave_up(row: Any) -> None:
+    """실패가 포기 횟수에 이르러 '포기'로 바꿨다 — 관리자가 다시 시도할 때까지 워커는 가져가지 않는다."""
+    _emit(FILE_DELETE_GAVE_UP, [("run", row.run_id), ("deletion", row.deletion_id), ("attempts", row.attempts)])

@@ -3,8 +3,12 @@
 1. 수집 상태를 받는다. '정상'이 아니면 매칭하지 않고 후보 0건 · 그 상태 · filtered_count 0 · 대체 경로 없음을 돌려준다.
 2. 정상이면 공고 추천을 top = min(topK, 10) · offset(입력 그대로)으로 부르고 결과를 카드로 바꾼다.
 
-- 보내는 값은 순위에 쓰이는 칸뿐이다(4.1.2). 대표자 이름 · 생년월일 · 사업자등록번호 · 자기부담금 · 희망 사업 규모 ·
-  보유 시설 · 그 밖의 확장 필드는 보내지 않는다.
+- 보내는 값은 순위와 가산점 계산에 쓰이는 칸뿐이다(4.1.2 — 성별 · 보유 인증 · 첫 창업 여부는 공고팀 답변상 가산점
+  계산에만 쓰인다). 대표자 이름 · 생년월일 · 사업자등록번호 · 자기부담금 · 희망 사업 규모 · 보유 시설 · 그 밖의 확장
+  필드는 보내지 않는다. 가산점 스위치가 꺼져 있어도 보내는 칸은 같다.
+- 가산점(bonus_score · bonus_items)은 가산점 스위치(orchestrator/settings.py BONUS_ENABLED, 잠정 · 기본 꺼짐)가
+  켜져 있을 때만 읽고 검사한다. 꺼져 있으면 키를 읽지 않고 카드는 bonus_score=None · bonus_items=[]다 — 공고팀
+  시험 단계의 값이 잘못된 모양이어도 공고 매칭이 실패하지 않는다.
 - 결과 순서와 rank는 받은 그대로 둔다. 적합도 · 가산점으로 다시 정렬하지 않는다(사용자 결정).
 - 대체 경로는 공고 서버가 안에서 한다 — 우리 쪽 대체 경로는 없고 ToolCallExhausted를 받지 않고 올려 보낸다.
   대체 경로 안내(E-C2-EMBED)는 흐름이 fallback_used를 보고 붙인다.
@@ -21,6 +25,7 @@ from pydantic import ValidationError
 from ...contracts.tasks import TC2In, TC2Out
 from ...models import AnnouncementCard, BonusItem, CompanyInfo, ItemSpec
 from ...models.base import CollectionStatus, FallbackMode
+from ...orchestrator import settings
 from ...orchestrator.tools import Tools
 from .client import NoticeClient
 from .convert import (
@@ -100,7 +105,7 @@ def _has_value(text: str | None) -> bool:
 
 
 def match_request(item: ItemSpec, company: CompanyInfo, *, top: int, offset: int) -> dict[str, Any]:
-    """공고 추천 요청 본문 — 순위에 쓰이는 칸만 (spec 4.1.2)."""
+    """공고 추천 요청 본문 — 순위와 가산점 계산에 쓰이는 칸만 (spec 4.1.2). 가산점 스위치와 상관없이 같다."""
     region, district = region_fields(company.region)
     partners = company.partners if _has_value(company.partners) else ""
     return {
@@ -172,7 +177,10 @@ def _bonus_items(r: dict[str, Any], where: str) -> list[BonusItem]:
 
 
 def to_card(r: Any, where: str, fallback_mode: str | None) -> AnnouncementCard:
-    """추천 결과 한 건 → 카드. 키가 없어도 되는 것은 content_version · bonus_score · bonus_items · apply_period_type뿐."""
+    """추천 결과 한 건 → 카드. 키가 없어도 되는 것은 content_version · bonus_score · bonus_items · apply_period_type뿐.
+
+    가산점 키는 가산점 스위치가 켜져 있을 때만 읽고 검사한다(꺼져 있으면 None · 빈 목록).
+    """
     r = obj(r, where)
     notice_id = req_str(r, "notice_id", where, nonempty=True)
     title = req_str(r, "title", where)
@@ -186,6 +194,10 @@ def to_card(r: Any, where: str, fallback_mode: str | None) -> AnnouncementCard:
     region = opt_str(r, "region", where)
     region_match = opt_bool(r, "region_match", where)
     fit = opt_number(r, "fit_score", where)
+    if settings.BONUS_ENABLED:                               # 부를 때마다 읽는다 (잠정, 기본 꺼짐)
+        bonus_score, bonus_items = opt_number(r, "bonus_score", where, missing_ok=True), _bonus_items(r, where)
+    else:                                                    # 공고팀 시험 단계 — 키를 읽지도 검사하지도 않는다
+        bonus_score, bonus_items = None, []
     try:
         return AnnouncementCard(
             announcement_id=notice_id,
@@ -202,8 +214,8 @@ def to_card(r: Any, where: str, fallback_mode: str | None) -> AnnouncementCard:
             apply_period_type=period_label(r.get("apply_period_type")),
             content_changed=False,                           # 추가 조회 겹침에서만 흐름이 참으로 바꾼다 (4.2.2)
             content_version=opt_str(r, "content_version", where, missing_ok=True),
-            bonus_score=opt_number(r, "bonus_score", where, missing_ok=True),
-            bonus_items=_bonus_items(r, where),
+            bonus_score=bonus_score,
+            bonus_items=bonus_items,
         )
     except ValidationError as e:                             # 적합도 0~1 · 순위 1~20 밖 등
         raise from_validation(where, e) from None

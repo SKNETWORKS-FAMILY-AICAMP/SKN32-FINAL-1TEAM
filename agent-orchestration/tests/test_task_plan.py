@@ -7,6 +7,7 @@ from datetime import date
 import pytest
 
 from conftest import executed, make_app, pre_input, project_for, start_and_select, to_screen6, to_screen9
+from flow_helpers import ctx_of, tc3_requests
 
 from sbrain.agents import form_defaults
 from sbrain.agents.form_defaults import FORM_PROBLEMS, FORM_TABLE, FormBundle, form_problem, select_form
@@ -31,14 +32,6 @@ AGENTS = {"T-C1": "조율", "T-C2": "조율", "T-C3": "조율", "T-S1": "전략"
 INSTRUCTED = ["T-S1", "T-S2", "T-W1", "T-W2", "T-W3", "T-B1", "T-B2"]
 CONTEXT_KEYS = {"formVersion", "applyEnd", "supportAmountMax", "evaluationItems", "formatSpec"}
 WEB_SECTIONS = ["1-1", "2-1", "3-1", "4-1"]
-
-
-def ctx_of(app, rid):
-    return app.engine.open_context(app.store.load_run(rid))
-
-
-def tc3_requests(app):
-    return [r for r in app.llm.requests if r.metadata["task_id"] == "T-C3"]
 
 
 def tc3_in(*, category="웹개발", applicant_type="법인", summary=None, passed=True, **company) -> c.TC3In:

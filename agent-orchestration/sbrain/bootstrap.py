@@ -6,6 +6,14 @@
 | build_app | 워커 (sbrain/worker.py) | 공유 MySQL — SqlStore · SqlProjectInputSource · DbSettingsProvider | 조율 T-C1 · T-C3 실구현과 재작성 · 재수행 지시문 다시 쓰기(OpenAI), T-C2 · G-01은 SBRAIN_NOTICE_API_URL이 있으면 공고 서버 연결(실제 모드) · 없으면 스텁, 나머지 스텁. 이미지 호출도 구현이 들어온 Task만 실제(OpenAI) |
 | build_web | 웹 서버 | 공유 MySQL — 같음 | 단계를 돌지 않는다 (명령 · 조회만). 공고 서버 · 이미지 호출처를 부르지 않는다 |
 
+파일 저장소 (확장, 결정 0023 — SBRAIN_ARTIFACT_ROOT, 절대 경로만, 기본값 없음):
+| 조립 | 파일 저장소 |
+|---|---|
+| build_stub_app | 메모리(MemoryFileStore) |
+| build_app | 로컬 폴더 — 필수. 없거나 상대 경로면 조립하지 않는다(RuntimeError, 값은 메시지에 싣지 않음). 폴더가 없으면 만든다 |
+| build_web | 로컬 폴더 읽기 전용 — 선택. 엔진에 넘기지 않고 파일 읽기(read_artifact_file)에만 쓴다. 없거나 상대 경로면 그 함수만 FILE_STORE_UNAVAILABLE. 쓰지도 지우지도 않는다 |
+웹과 모든 워커는 같은 폴더를 봐야 한다(같은 서버 또는 공유 폴더).
+
 실제 Agent 구현이 나오면 registry.bind(task_id, fn)로 스텁을 교체한다.
 """
 from __future__ import annotations
@@ -13,6 +21,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Callable
 
 from .agents.notice import NoticeClient, Transport, bind_notice
@@ -26,9 +35,23 @@ from .flow.sbrain_flow import REWRITE_AGENT, GuidanceRewriter
 from .intake import ProjectInputSource
 from .models.clock import utc_clock, utc_now
 from .orchestrator import ArtifactTypes, Engine, MemoryStore, Settings, SettingsProvider
+from .orchestrator.files import FileStore, LocalFolderFileStore, MemoryFileStore
 from .orchestrator.registry import TaskRegistry
 from .orchestrator.store import Store
 from .orchestrator.tools import ImageProvider, ImageRequest, LLMProvider, LLMRequest
+
+ARTIFACT_ROOT_ENV = "SBRAIN_ARTIFACT_ROOT"   # 로컬 파일 저장소 폴더 (확장, 결정 0023) — 절대 경로만, 기본값 없음
+
+
+def artifact_root_problem(value: str | None) -> str | None:
+    """SBRAIN_ARTIFACT_ROOT 값의 문제 — '없음' · '절대 경로가 아님', 맞으면 None. 문구에 값을 넣지 않는다.
+
+    상대 경로는 프로세스를 띄운 폴더 기준으로 풀려 웹과 워커가 서로 다른 폴더를 볼 수 있어 '값 없음'과 같게 다룬다."""
+    if not value:
+        return "없음"
+    if not Path(value).is_absolute():
+        return "절대 경로가 아님"
+    return None
 
 
 @dataclass
@@ -108,7 +131,7 @@ def build_stub_app(
     return _assemble(
         store=store if store is not None else MemoryStore(now=now), settings=SettingsProvider(settings),
         scenario=scenario or StubScenario(), now=now, sleep=lambda s: None, profile_count=profile_count,
-        project_inputs=project_inputs, stubs=True)
+        project_inputs=project_inputs, stubs=True, files=MemoryFileStore())
 
 
 def build_app(
@@ -121,10 +144,13 @@ def build_app(
     notice_api_url: str | None = None,
     notice_transport: Transport | None = None,
     image: ImageProvider | None = None,
+    artifact_root: str | None = None,
 ) -> App:
     """워커 조립 — 공유 MySQL(SqlStore · SqlProjectInputSource · DbSettingsProvider), 조율 T-C1 · T-C3 실구현, OpenAI 호출처.
 
     - db_url이 없으면 SBRAIN_DB_URL(환경 변수 → .env)을 쓴다.
+    - 파일 저장소(확장, 결정 0023): 로컬 폴더 artifact_root, 주지 않으면(None) SBRAIN_ARTIFACT_ROOT(환경 변수 → .env). 필수다 —
+      없거나 절대 경로가 아니면 DB에 닿기 전에 RuntimeError(값은 메시지에 싣지 않는다). 폴더가 없으면 만든다.
     - 흐름의 지시문 만들기에 조율 다시 쓰기(rewrite_guidance)를 끼운다 — 재작성 · 재수행 대상의 안내를 다시 쓴다.
     - 나머지 Agent는 스텁이다. 스텁 Task는 실제 호출처를 부르지 않는다(TaskRoutedProvider). 다시 쓰기 호출은 대상이
       스텁 Task여도 실제 호출처로 간다.
@@ -141,11 +167,21 @@ def build_app(
     from .orchestrator.openai_provider import OpenAIProvider
     from .store_sql import DbSettingsProvider, SqlStore, create_db_engine
 
+    root = get_env(ARTIFACT_ROOT_ENV) if artifact_root is None else artifact_root
+    problem = artifact_root_problem(root)
+    if problem is not None:
+        raise RuntimeError(f"{ARTIFACT_ROOT_ENV}가 {problem} — 환경 변수 또는 agent-orchestration/.env에 파일 저장소 폴더의 절대 경로를 "
+                           "넣는다 (웹과 모든 워커가 같은 폴더)")
+    try:
+        files = LocalFolderFileStore(root, create=True)   # type: ignore[arg-type]  # 위에서 값이 있음을 확인했다
+    except OSError as e:   # 경로가 든 디스크 오류 메시지를 싣지 않는다 — 종류만
+        raise RuntimeError(f"{ARTIFACT_ROOT_ENV} 폴더를 만들지 못함 — {type(e).__name__}") from None
     db = create_db_engine(_db_url(db_url))
     app = _assemble(
         store=SqlStore(db, now=now), settings=DbSettingsProvider(db, settings), scenario=StubScenario(), now=now,
         sleep=time.sleep, profile_count=lambda account_id: 1,   # 워커는 시작 확인(request_start)을 하지 않는다
-        project_inputs=project_inputs or SqlProjectInputSource(db), stubs=True, rewriter=rewrite_guidance)
+        project_inputs=project_inputs or SqlProjectInputSource(db), stubs=True, rewriter=rewrite_guidance,
+        files=files)
     bind_supervisor(app.registry)
     notice_url = get_env("SBRAIN_NOTICE_API_URL") if notice_api_url is None else notice_api_url
     if notice_url:   # 실제 모드 — 공고 서버 연결로 스텁 T-C2 · G-01을 바꾼다
@@ -163,8 +199,13 @@ def build_web(
     settings: Settings | None = None,
     now: Callable[[], datetime] = utc_now,
     project_inputs: ProjectInputSource | None = None,
+    artifact_root: str | None = None,
 ) -> App:
     """웹 서버 조립 — 명령 · 조회 함수만 쓰는 SBrainOrchestrator. LLM 호출처가 없고 단계를 돌지 않는다.
+
+    파일 저장소(확장, 결정 0023): artifact_root, 주지 않으면(None) SBRAIN_ARTIFACT_ROOT. 선택이다 — 절대 경로면 읽기 전용으로
+    열어 파일 읽기(read_artifact_file)에만 쓴다(엔진에는 넘기지 않는다, 폴더를 만들지 않는다). 없거나 상대 경로면 조립은 되고
+    read_artifact_file만 FILE_STORE_UNAVAILABLE이다. 웹은 파일을 쓰지도 지우지도 않는다 — 삭제는 모두 워커가 한다.
 
     profile_count: 계정의 필수 항목을 채운 프로필 수 (0이면 E-AUTH-PROFILE). 웹은 compute_has_profile을 넘긴다(참 = 1).
     웹은 request_start · start_status · 명령 · 조회 · 중단만 부른다. run_start_request · advance · tick은 워커가 부른다.
@@ -174,11 +215,14 @@ def build_web(
     from .intake.sql_source import SqlProjectInputSource
     from .store_sql import DbSettingsProvider, SqlStore, create_db_engine
 
+    root = get_env(ARTIFACT_ROOT_ENV) if artifact_root is None else artifact_root
+    reader = (LocalFolderFileStore(root, read_only=True)   # type: ignore[arg-type]
+              if artifact_root_problem(root) is None else None)
     db = create_db_engine(_db_url(db_url))
     app = _assemble(
         store=SqlStore(db, now=now), settings=DbSettingsProvider(db, settings), scenario=StubScenario(), now=now,
         sleep=time.sleep, profile_count=profile_count, project_inputs=project_inputs or SqlProjectInputSource(db),
-        stubs=False)
+        stubs=False, files=None, file_reader=reader)
     app.engine.stop_requested = lambda: True   # 실수로 advance를 불러도 단계를 돌지 않는다
     app.orchestrator.allow_pre_stage = False   # 사전 단계(run_start_request)는 WEB_NOT_ALLOWED — 워커가 돈다
     return app
@@ -194,7 +238,10 @@ def _db_url(db_url: str | None) -> str:
 def _assemble(*, store: Store, settings: SettingsProvider, scenario: StubScenario, now: Callable[[], datetime],
               sleep: Callable[[float], None], profile_count: Callable[[str], int],
               project_inputs: ProjectInputSource | None, stubs: bool,
+              files: FileStore | None, file_reader: FileStore | None = None,
               rewriter: GuidanceRewriter | None = None) -> App:
+    """files: 엔진의 파일 저장소(tools.files · 출력 참조 확인 · 워커 파일 삭제). file_reader: 파일 읽기 함수가 쓰는 저장소 —
+    주지 않으면 files를 쓴다(웹 조립은 files 없이 읽기 전용 저장소만 준다)."""
     now = utc_clock(now)   # 모든 구성 요소가 같은 UTC 시계를 쓴다 (시간대 없는 시계는 UTC로 본다)
     registry = build_registry()
     llm = FakeLLM()
@@ -210,12 +257,14 @@ def _assemble(*, store: Store, settings: SettingsProvider, scenario: StubScenari
     # 지시문 다시 쓰기는 워커 조립만 끼운다. 없으면(스텁 · 웹 조립) 재작성 · 재수행 문제를 덧붙이기만 한다
     flow = SBrainFlow(registry, constants=make_constants(), now=now, rewriter=rewriter)
     exact, suffix = artifact_types(registry)
+    # 파일 저장소 (확장, 결정 0023) — 스텁 조립은 메모리, 워커 조립은 로컬 폴더, 웹 조립은 엔진에 없음(읽기 전용은 file_reader)
     engine = Engine(store=store, registry=registry, flow=flow, providers=providers,
                     types=ArtifactTypes(exact, suffix), immutable_keys=IMMUTABLE_KEYS, now=now, sleep=sleep,
-                    image_providers=image_providers)
+                    image_providers=image_providers, files=files)
     flow.engine = engine
     # 공고 선택 명령은 고른 ID만 남긴다 — 공고 상세는 워커의 G-01이 받는다 (명령 창구에 공고 공급처가 없다)
     orch = SBrainOrchestrator(
         engine=engine, flow=flow, settings=settings,
-        profile_count=profile_count, project_inputs=project_inputs, now=now, sleep=sleep)
+        profile_count=profile_count, project_inputs=project_inputs, now=now, sleep=sleep,
+        files=file_reader if file_reader is not None else files)
     return App(orch, engine, store, registry, llm, scenario, settings, fake_image)

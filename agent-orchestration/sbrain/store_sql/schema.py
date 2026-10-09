@@ -339,14 +339,42 @@ JOBS = Table(
     **TABLE_ARGS,
 )
 
-# 실행 건 하나에 딸린 기록 표 — 12개월 처리 · 탈퇴 때 통계 줄로 옮기고 지운다
+# 파일 삭제 대기열 (확장, 결정 0023) — 한 줄 = 실행 건 하나의 파일 전체 삭제 요청. 실행 건 하나에 줄은 많아야 하나다.
+# - 산출물을 지우는 같은 트랜잭션에서 저장소가 넣는다(delete_artifacts · retire_run(delete_run=True)). 파일은 워커가 지운다.
+# - orch_runs에 외래 키를 걸지 않는다: 실행 건 줄이 지워진 뒤(탈퇴 · 12개월 정리)에도 이 줄이 남아 파일을 지워야 한다.
+# - RECORD_TABLES에 넣지 않는다: 넣으면 12개월 처리 · 탈퇴가 이 줄을 지워 파일이 지워지지 않는다. 관리자가 탈퇴해도
+#   retried_by는 남는다(사용자 인정 예외).
+# - 계정 · 프로젝트 ID, 파일 이름 · 키, 오류 메시지는 싣지 않는다. 사람을 가리키는 값은 retried_by(관리자 ID)뿐이다.
+FILE_DELETIONS = Table(
+    "orch_file_deletions", METADATA,
+    _id("deletion_id", "대기열 줄 ID", primary_key=True),
+    _id("run_id", "실행 건 ID — 외래 키 없음(실행 건 줄이 지워진 뒤에도 남는다)", nullable=False),
+    Column("key_prefix", String(80), nullable=False, comment="지울 키 접두어 '<runId>/'"),
+    Column("status", String(10), nullable=False, comment="대기 · 포기"),
+    Column("attempts", Integer, nullable=False, server_default=ZERO, comment="이번 대기 이후 실패한 시도 수"),
+    Column("last_error_kind", String(10), comment="마지막 실패의 오류 종류 — 일시 · 입력 · 운영 (메시지 없음)"),
+    Column("created_at", TS, nullable=False, comment="넣은 시각"),
+    Column("next_at", TS, nullable=False, comment="다음 시도 가능 시각 — 워커가 가져가면 미룬다"),
+    Column("last_tried_at", TS, comment="마지막 시도 시각"),
+    Column("gave_up_at", TS, comment="포기한 시각"),
+    _id("retried_by", "마지막으로 다시 시도를 누른 관리자 ID"),
+    Column("retried_at", TS, comment="마지막으로 다시 시도를 누른 시각"),
+    Column("retry_count", Integer, nullable=False, server_default=ZERO, comment="다시 시도를 누른 횟수"),
+    UniqueConstraint("run_id", name="uq_orch_file_deletions_run"),
+    Index("ix_orch_file_deletions_status_next", "status", "next_at"),
+    comment="파일 삭제 대기열 (확장) — 실행 건 하나의 파일 전체 삭제 요청. RECORD_TABLES 밖이라 12개월 처리 · 탈퇴로 지워지지 않는다",
+    **TABLE_ARGS,
+)
+
+# 실행 건 하나에 딸린 기록 표 — 12개월 처리 · 탈퇴 때 통계 줄로 옮기고 지운다.
+# 파일 삭제 대기열(FILE_DELETIONS)도 run_id를 갖지만 일부러 넣지 않는다(위 주석).
 RECORD_TABLES: tuple[Table, ...] = (
     EXECUTIONS, CALL_LOGS, TRACE_EVENTS, FEEDBACK_LINKS, REWORK_COMPARISONS, POINTER_EVENTS,
 )
 
 ORCH_TABLES: list[Table] = [
     RUNS, START_REQUESTS, ARTIFACT_VERSIONS, ARTIFACT_POINTERS, POINTER_EVENTS,
-    EXECUTIONS, CALL_LOGS, FEEDBACK_LINKS, REWORK_COMPARISONS, TRACE_EVENTS, LOG_STATS, JOBS,
+    EXECUTIONS, CALL_LOGS, FEEDBACK_LINKS, REWORK_COMPARISONS, TRACE_EVENTS, LOG_STATS, JOBS, FILE_DELETIONS,
 ]
 
 

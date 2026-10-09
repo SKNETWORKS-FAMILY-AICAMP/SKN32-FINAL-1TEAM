@@ -4,7 +4,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from conftest import make_app, pre_input, to_screen9
+from conftest import make_app, pre_input, to_screen9, tok
 from pydantic import BaseModel
 from sqlalchemy import text
 
@@ -45,10 +45,6 @@ def tools(provider, retry: int = 2) -> tuple[Tools, CallSink]:
     ctx = ToolsContext(run_id="r", execution_id="e", task_id="T-C1", providers={"p": provider}, sink=sink,
                        now=utc_now, sleep=lambda s: None)
     return Tools(cfg, ctx), sink
-
-
-def tok(obj) -> tuple:
-    return (obj.input_tokens, obj.cached_input_tokens, obj.output_tokens, obj.reasoning_tokens)
 
 
 # ── tools: 시도별 · 호출 합계 ────────────────────────────
