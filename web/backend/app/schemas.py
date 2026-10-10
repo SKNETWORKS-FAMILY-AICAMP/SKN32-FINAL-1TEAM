@@ -1,7 +1,7 @@
 """Pydantic v2 요청/응답 스키마. app_schema.sql(설계 문서 기준)과 1:1로 대응한다."""
 import datetime
 import re
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_validator, model_validator
 
@@ -163,6 +163,35 @@ class PlanPartnerIn(BaseModel):
     status: str | None = None
 
 
+# [SB-329] 사전 정보 입력의 사업비 집행계획 · 추진 일정 행 — 오케스트레이터가 request_start 때 project_budget_items ·
+# project_schedule_items를 읽어 전략 · 작성 Agent 입력으로 옮긴다. 이름은 DB 컬럼과 같다(변환은 오케스트레이터 몫). 금액은 원 단위
+# 정수다. 항목 순서는 보낸 배열 순서 그대로 저장한다(item_order는 서버가 매긴다). 값 검사(필수 · 음수 · 합계)는 SB-330.
+BudgetPhase = Literal['1단계', '2단계']
+# feasibility = 협약기간 내 일정, growth = 협약 이후 전체 일정(오케스트레이터가 agreement / roadmap으로 바꾼다)
+ScheduleSection = Literal['feasibility', 'growth']
+# 한 프로젝트가 보낼 수 있는 행 수 상한 — item_order 컬럼이 TINYINT(최대 255)이고 화면이 한 표에 쓸 만한 수를 넘는 값은 오입력이다
+MAX_BUDGET_ITEMS = 50
+MAX_SCHEDULE_ITEMS = 50
+
+
+class BudgetItemIn(BaseModel):
+    phase: BudgetPhase | None = Field(None, description="예비창업만 '1단계' · '2단계', 그 밖의 유형은 생략")
+    category: str | None = Field(None, max_length=100, description='비목(인건비 · 재료비 · 외주용역비 등)')
+    execution_plan: str | None = Field(None, max_length=2000, description='집행계획')
+    total_amount: int | None = Field(None, description='총사업비(원)')
+    government_amount: int | None = Field(None, description='정부지원사업비(원)')
+    self_cash_amount: int | None = Field(None, description='자기부담금 현금(원)')
+    self_in_kind_amount: int | None = Field(None, description='자기부담금 현물(원)')
+
+
+class ScheduleItemIn(BaseModel):
+    section: ScheduleSection = Field(..., description='feasibility = 협약기간 내, growth = 협약 이후 전체')
+    category: str | None = Field(None, max_length=100, description='구분')
+    content: str | None = Field(None, max_length=2000, description='추진내용')
+    period: str | None = Field(None, max_length=50, description='추진기간(예: 2026.05~2026.07)')
+    detail: str | None = Field(None, max_length=2000, description='세부내용')
+
+
 _MONTH_RE = re.compile(r'^\d{4}-\d{2}$')
 
 # [2026-09-29 신규, 프론트 요청사항 4차 C-2] 대표자 생년월일이 실제로 받는 최소 나이 —
@@ -274,6 +303,10 @@ class ProjectCreateRequest(BaseModel):
     no_partners: bool = False
     partners: list[PlanPartnerIn] = Field(default_factory=list)
 
+    # [SB-329] 사업비 집행계획 · 추진 일정 — 배열 순서대로 저장한다(BudgetItemIn · ScheduleItemIn 참고)
+    budget_items: list[BudgetItemIn] = Field(default_factory=list, max_length=MAX_BUDGET_ITEMS)
+    schedule_items: list[ScheduleItemIn] = Field(default_factory=list, max_length=MAX_SCHEDULE_ITEMS)
+
     @field_validator('applicant_type')
     @classmethod
     def _check_applicant_type(cls, v: str | None) -> str | None:
@@ -324,6 +357,28 @@ class PricingItemOut(BaseModel):
     pricing_id: int
     service_name: str
     unit_price: float | None = None
+
+
+class BudgetItemOut(BaseModel):
+    """[SB-329] 사업비 집행계획 한 줄 — BudgetItemIn과 같은 이름 · 모양(item_order 순)."""
+    model_config = ConfigDict(from_attributes=True)
+    phase: BudgetPhase | None = None
+    category: str | None = None
+    execution_plan: str | None = None
+    total_amount: int | None = None
+    government_amount: int | None = None
+    self_cash_amount: int | None = None
+    self_in_kind_amount: int | None = None
+
+
+class ScheduleItemOut(BaseModel):
+    """[SB-329] 추진 일정 한 줄 — ScheduleItemIn과 같은 이름 · 모양(item_order 순)."""
+    model_config = ConfigDict(from_attributes=True)
+    section: ScheduleSection
+    category: str | None = None
+    content: str | None = None
+    period: str | None = None
+    detail: str | None = None
 
 
 class ProjectAttachmentOut(BaseModel):
@@ -394,6 +449,9 @@ class ProjectPlanInputOut(BaseModel):
 class ProjectDetailOut(ProjectOut):
     team_members: list[TeamMemberOut] = Field(default_factory=list)
     pricing_items: list[PricingItemOut] = Field(default_factory=list)
+    # [SB-329] 사업비 집행계획 · 추진 일정(item_order 순)
+    budget_items: list[BudgetItemOut] = Field(default_factory=list)
+    schedule_items: list[ScheduleItemOut] = Field(default_factory=list)
     attachments: list[ProjectAttachmentOut] = Field(default_factory=list)
     company: CompanyOut | None = None
     plan_input: ProjectPlanInputOut | None = None

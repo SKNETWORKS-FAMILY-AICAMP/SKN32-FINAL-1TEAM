@@ -345,8 +345,11 @@ class Project(Base):
     attachments: Mapped[list['ProjectAttachment']] = relationship(back_populates='project')
     team_members: Mapped[list['TeamMember']] = relationship(back_populates='project')
     pricing_items: Mapped[list['PricingItem']] = relationship(back_populates='project')
-    budget_items: Mapped[list['ProjectBudgetItem']] = relationship(back_populates='project')
-    schedule_items: Mapped[list['ProjectScheduleItem']] = relationship(back_populates='project')
+    # [SB-329] 응답은 item_order 순(같은 값이면 입력한 순서)
+    budget_items: Mapped[list['ProjectBudgetItem']] = relationship(
+        back_populates='project', order_by='(ProjectBudgetItem.item_order, ProjectBudgetItem.budget_item_id)')
+    schedule_items: Mapped[list['ProjectScheduleItem']] = relationship(
+        back_populates='project', order_by='(ProjectScheduleItem.item_order, ProjectScheduleItem.schedule_id)')
     partners: Mapped[list['ProjectPartner']] = relationship(back_populates='project')
     # [2026-09-22 신규] ProjectPlanInput 참고 — project당 1행(1:1).
     plan_input: Mapped['ProjectPlanInput | None'] = relationship(back_populates='project', uselist=False)
