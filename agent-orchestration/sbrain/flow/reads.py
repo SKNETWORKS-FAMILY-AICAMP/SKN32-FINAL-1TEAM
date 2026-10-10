@@ -18,7 +18,7 @@
 - 지금까지 결과(outputs) · 재작성 결과(rework_result)는 실패 · 중단 실행 건이면 CommandError("RUN_NOT_VIEWABLE").
   사용자용 결과에는 관리자용 실패 사유를 싣지 않는다 — 실패는 진행 상태와 안내(E-RUN-FAIL)로만 보인다.
 - 관리자 조회는 메타데이터 · 점수 · 개수만 돌려준다. 산출물 · 입력 · 문장 내용을 싣지 않는다(기획서 4-7 · 6-7).
-- 산출물 파일 읽기(read_artifact_file, 확장 — 결정 0023)는 파일 내용을 ArtifactFile(파이썬 dataclass, JSON으로 바꾸지
+- 산출물 파일 읽기(read_artifact_file, 확장)는 파일 내용을 ArtifactFile(파이썬 dataclass, JSON으로 바꾸지
   않음)로 준다. 형식 · 이름은 저장소에 넣을 때 기록한 값이다. 거절 사유(CommandError detail)에 키 · 이름을 넣지 않는다.
 - 파일 삭제 대기열 관리자 조회(admin_file_deletions · admin_retry_file_deletion, 확장)는 줄의 메타데이터만 준다(키 접두어 없음).
 """
@@ -218,7 +218,7 @@ class Outputs(SBModel):
 
 class ReworkFileChange(SBModel):
     """재작성으로 바뀐 산출물 파일의 전후 참조 (prototype: 진입 파일, infographic: 이미지). 파일 내용은 들어 있지 않다 —
-    웹은 참조의 키로 파일을 따로 읽는다 (결정 0023)."""
+    웹은 참조의 키로 파일을 따로 읽는다."""
     artifact: str
     before_file: FileRef | None = ext(None, note=FILE_NOTE)
     after_file: FileRef | None = ext(None, note=FILE_NOTE)
@@ -414,7 +414,7 @@ class AdminAgentTask(SBModel):
 
 
 class AdminFileDeletion(SBModel):
-    """확장 — 파일 삭제 대기열 한 줄 (결정 0023, orch_file_deletions). 메타데이터만 — 키 접두어 · 파일 이름 · 오류 메시지 ·
+    """확장 — 파일 삭제 대기열 한 줄 (orch_file_deletions). 메타데이터만 — 키 접두어 · 파일 이름 · 오류 메시지 ·
     계정 · 프로젝트 ID는 싣지 않는다. 사람을 가리키는 값은 retried_by(다시 시도를 누른 관리자 ID)뿐이다.
 
     status: 대기 · 포기, attempts: 이번 대기 이후 실패한 시도 수, last_error_kind: 일시 · 입력 · 운영.
@@ -435,7 +435,7 @@ class AdminFileDeletion(SBModel):
 
 @dataclass(frozen=True, repr=False)
 class ArtifactFile:
-    """확장 — 산출물 파일 읽기 결과 (결정 0023). SBModel이 아니다 — JSON으로 바꾸지 않는다.
+    """확장 — 산출물 파일 읽기 결과. SBModel이 아니다 — JSON으로 바꾸지 않는다.
 
     웹은 data를 그대로 응답 본문으로, media_type을 응답 형식으로 쓴다. name · media_type은 저장소에 넣을 때 기록한 값이다
     (웹이 넘긴 값으로 정하지 않는다). repr에 내용을 싣지 않는다.
@@ -666,7 +666,7 @@ def rework_result(orch: SBrainOrchestrator, project_id: int | str) -> ReworkResu
         plan_after=sections(after.get("planDoc")) if changed_plan else None, files=files)
 
 
-# ── 산출물 파일 읽기 (확장, 결정 0023) ─────────────────────────
+# ── 산출물 파일 읽기 (확장) ─────────────────────────
 def read_artifact_file(orch: SBrainOrchestrator, project_id: int | str, key: str) -> ArtifactFile:
     """프로젝트 실행 건의 파일 하나 — 웹이 주인 확인을 한 뒤 부른다. 읽기만 한다(점유 없음, 쓰기 · 지우기 없음).
 

@@ -78,7 +78,7 @@ def test_json_columns_given_as_strings():
     assert f.certifications == ["벤처기업"] and f.representative_career == ["가 · 나"]
 
 
-# ── 목록 입력 키 이름 변환 (웹 코드 user-input-example.py의 PlanCareerIn 등) ──
+# ── 목록 입력 키 이름 변환 (웹 코드의 PlanCareerIn 등) ──
 def careers(*items: dict) -> list[str]:
     return to_pre_input(project_record(plan={"ceo_careers": list(items)})).representative_career
 

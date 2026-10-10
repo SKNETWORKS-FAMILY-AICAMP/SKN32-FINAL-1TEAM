@@ -22,7 +22,7 @@
 | retire_start_requests | 한 트랜잭션: 넘긴 요청이 모두 끝났는지 잠가서 확인(FOR UPDATE, 아니면 StoreConflict) → 통계 줄 → 요청 삭제 (확장) |
 | retention_run_targets · retention_request_targets | 12개월 처리 대상 (잠금 없이 읽기만 — 부르는 쪽이 실행 건 점유를 잡고 다시 본다, 확장) |
 | try_start_job · renew_job · finish_job · release_job | orch_jobs 점유 — 작업 줄이 없으면 만들고(INSERT … ON DUPLICATE KEY/ON CONFLICT) 같은 트랜잭션에서 조건부 UPDATE (확장) |
-| delete_artifacts · retire_run(delete_run) | 같은 트랜잭션에서 orch_file_deletions에 실행 건 줄을 넣는다 — INSERT … ON DUPLICATE KEY UPDATE(MySQL) · ON CONFLICT(run_id) DO UPDATE(SQLite) 한 문장: 줄이 없으면 '대기', '포기'면 '대기'로 되돌림, '대기'면 그대로. 동시에 넣어도 고유 제약 오류가 나지 않는다 (확장, 결정 0023) |
+| delete_artifacts · retire_run(delete_run) | 같은 트랜잭션에서 orch_file_deletions에 실행 건 줄을 넣는다 — INSERT … ON DUPLICATE KEY UPDATE(MySQL) · ON CONFLICT(run_id) DO UPDATE(SQLite) 한 문장: 줄이 없으면 '대기', '포기'면 '대기'로 되돌림, '대기'면 그대로. 동시에 넣어도 고유 제약 오류가 나지 않는다 (확장) |
 | claim_file_deletions | next_at이 지난 '대기' 줄을 SELECT … FOR UPDATE SKIP LOCKED로 고르고 줄마다 조건부 UPDATE로 next_at을 미룬다. 미룬 값이 가져간 표시 — finish · fail은 그 값이 그대로일 때만 바꾼다 (확장) |
 | retry_file_deletion | SELECT … FOR UPDATE로 '포기'인지 보고 같은 트랜잭션에서 '대기'로 · 누른 관리자 · 시각 · 횟수를 적는다 (확장) |
 
@@ -78,7 +78,7 @@ from .schema import (
 from .web_tables import WebTables
 
 PROJECT_CHUNK = 500   # existing_projects가 IN 하나에 싣는 프로젝트 수 (잠정)
-DEADLOCK_TRIES = 3    # MySQL 교착으로 되돌려진 delete_artifacts · retire_run을 다시 하는 횟수 (처음 포함, 사용자 결정 2026-10-08 — 잠정 아님)
+DEADLOCK_TRIES = 3    # MySQL 교착으로 되돌려진 delete_artifacts · retire_run을 다시 하는 횟수 (처음 포함 — 잠정 아님)
 MYSQL_DEADLOCK = 1213
 PROOFREAD_SKIPPED = "검수회수기록생략"   # 웹 proofread_logs 구조가 맞지 않아 반려된 시도를 쓰지 않음 (실행 건마다 한 번)
 
@@ -575,7 +575,7 @@ class SqlStore:
         self._retry_deadlock(once)
 
     def _retry_deadlock(self, once: Callable[[], Any]) -> Any:
-        """MySQL 교착(1213)으로 트랜잭션 전체가 되돌려지면 같은 트랜잭션을 처음부터 다시 한다 (최대 DEADLOCK_TRIES번 — 사용자 결정). 마지막에도 교착이면 원래 오류를 올린다.
+        """MySQL 교착(1213)으로 트랜잭션 전체가 되돌려지면 같은 트랜잭션을 처음부터 다시 한다 (최대 DEADLOCK_TRIES번). 마지막에도 교착이면 원래 오류를 올린다.
 
         파일 삭제 대기열 넣기(INSERT … ON DUPLICATE KEY UPDATE)는 고유 키가 둘(deletion_id · run_id)인 표라 동시에 같은
         실행 건을 넣으면 교착이 날 수 있다. 되돌려진 트랜잭션을 다시 하는 것은 안전하다(넣기 규칙이 여러 번 해도 같다).
@@ -680,7 +680,7 @@ class SqlStore:
                     conn.execute(delete(ARTIFACT_VERSIONS).where(ARTIFACT_VERSIONS.c.run_id == run_id))
                     conn.execute(delete(ARTIFACT_POINTERS).where(ARTIFACT_POINTERS.c.run_id == run_id))
                     conn.execute(delete(RUNS).where(RUNS.c.run_id == run_id))
-                    self._enqueue_file_deletion(conn, run_id, now)   # 파일 삭제 대기열 (결정 0023)
+                    self._enqueue_file_deletion(conn, run_id, now)   # 파일 삭제 대기열
                 elif bump_parts:
                     # run_json의 옮긴 횟수만 바꾼다 — updated_at 컬럼 · run_json의 updatedAt · 점유는 그대로
                     stored = dict(row.run_json)
@@ -781,7 +781,7 @@ class SqlStore:
         return JobState(r.job_name, r.lease_owner, r.lease_until, r.last_started_at, r.last_finished_at,
                         r.last_summary)
 
-    # ── 파일 삭제 대기열 (확장, 결정 0023) ──────────────
+    # ── 파일 삭제 대기열 (확장) ──────────────
     def _enqueue_file_deletion(self, conn: Connection, run_id: str, now: datetime) -> None:
         """산출물을 지우는 트랜잭션 안에서 부른다 — 한 문장으로 넣거나(없을 때) '포기'를 '대기'로 되돌린다('대기'면 그대로).
 

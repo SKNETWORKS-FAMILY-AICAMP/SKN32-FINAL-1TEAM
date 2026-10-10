@@ -162,7 +162,7 @@ FILE_DELETION_STATUSES: tuple[str, ...] = ("대기", "포기")
 
 @dataclass(frozen=True)
 class FileDeletion:
-    """파일 삭제 대기열 한 줄 (확장, 결정 0023 — orch_file_deletions). 실행 건 하나의 파일 전체 삭제 요청.
+    """파일 삭제 대기열 한 줄 (확장 — orch_file_deletions). 실행 건 하나의 파일 전체 삭제 요청.
 
     계정 · 프로젝트 ID, 파일 이름 · 키, 오류 메시지는 없다. 사람을 가리키는 값은 retried_by(관리자 ID)뿐이다.
     시각은 시간대 있는 UTC다. next_at은 워커가 가져가면 미뤄지고, 그 값이 가져간 표시(성공 · 실패 기록의 확인 값)다.
@@ -430,7 +430,7 @@ class Store(Protocol):
 
     def get_job(self, job_name: str) -> JobState | None: ...
 
-    # ── 파일 삭제 대기열 (확장, 결정 0023) ──────────────
+    # ── 파일 삭제 대기열 (확장) ──────────────
     # 넣기는 delete_artifacts · retire_run(delete_run=True)가 같은 트랜잭션에서 한다(따로 부르는 메서드 없음).
     #   줄이 없으면 '대기' 줄(next_at = 지금 + file_deletion_delay_sec), '대기' 줄이 있으면 그대로, '포기' 줄이면 '대기'로
     #   되돌린다(attempts=0, next_at = 지금 + 지연, gave_up_at 비움 — retried_by · retried_at · retry_count는 그대로).

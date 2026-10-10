@@ -1,4 +1,4 @@
-"""산출물 파일 읽기 · 파일 삭제 대기열 관리자 함수 · 파일 저장소 조립 (결정 0023 · spec 4.7 · 4.8).
+"""산출물 파일 읽기 · 파일 삭제 대기열 관리자 함수 · 파일 저장소 조립 (spec 4.7 · 4.8).
 
 - read_artifact_file: 저장된 내용 · 형식(넣을 때 기록한 값), 다른 실행 건 키 · 키 규칙 위반 · 없는 파일 · sha256 불일치는
   FILE_NOT_FOUND, 실패 · 중단 실행 건 RUN_NOT_VIEWABLE, 실행 건 없음 RUN_NOT_FOUND, 저장소 설정 없음 FILE_STORE_UNAVAILABLE.

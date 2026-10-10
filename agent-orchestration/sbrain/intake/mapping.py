@@ -7,7 +7,7 @@
   희망 사업화 자금 규모 · 자기부담 0)은 그대로 따른다. 그 밖에 DB 구조와 PreInput 필드가 1:1이 아닌 곳의
   변환 규칙은 기준 문서에 없어 잠정이다. 목록은 docs/T-C1_요구사항해석_구현.md 4절에 있다.
 - 기준 문서 v1.10에서 PreInput에 들어간 웹 입력값(FormExtension — 수익모델 항목 · 기업명 등)도 그대로 싣는다.
-- 목록 입력(대표자 이력 · 채용 계획 · 장비 · 협력 기관)은 웹 코드(user-input-example.py의
+- 목록 입력(대표자 이력 · 채용 계획 · 장비 · 협력 기관)은 웹 코드(
   PlanCareerIn · PlanHireIn · PlanEquipmentIn · PlanPartnerIn)의 키 이름으로 한 줄을 만든다.
   모르는 키만 있는 항목은 값만 순서대로 잇는다.
 - 사업비 · 일정 · 팀원 역할(budgetItems · scheduleItems · teamRoleCareers — 확장, spec 4.3)도 시작 요청에서 함께 옮긴다.
@@ -66,9 +66,9 @@ PHASES = ("1단계", "2단계")      # project_budget_items.phase 값 (예비창
 SCHEDULE_SCOPE: dict[str, str] = {"feasibility": "agreement", "growth": "roadmap"}
 
 NONE_TEXT = "없음"  # '해당 없음'을 고른 항목 (시트 4 hiringPlan · facilities · partners)
-PROOF_TEXT = "증빙 있음"  # 대표자 이력에 증빙이 있을 때 붙인다 (사용자 결정 2026-09-30)
+PROOF_TEXT = "증빙 있음"  # 대표자 이력에 증빙이 있을 때 붙인다
 
-# 목록 입력 항목의 키 (웹 코드 user-input-example.py)
+# 목록 입력 항목의 키 (웹 코드)
 CAREER_KEYS = ("type", "title", "period", "has_proof")           # PlanCareerIn — 구분 · 내용 · 기간 · 증빙여부
 HIRE_KEYS = ("job", "headcount", "required_skill", "hire_month")  # PlanHireIn — 직무 · 인원 · 요구역량 · 채용 시기
 NAMED_KEYS = ("name", "status")                                   # PlanEquipmentIn · PlanPartnerIn — 이름 · 상태
@@ -130,7 +130,7 @@ def to_pre_input(record: ProjectInputRecord) -> PreInput:
         "schedule_items": [s for s in (_schedule_item(r) for r in record.schedule_items) if s],
         "team_role_careers": [s for s in (_role_career(m) for m in record.team_members) if s],
     }
-    # 팀 구성원은 '팀원 없음'을 고를 수 있어 필수에서 뺀다 (사용자 결정 · 웹팀 확인 2026-09-30)
+    # 팀 구성원은 '팀원 없음'을 고를 수 있어 필수에서 뺀다 (웹팀 확인 2026-09-30)
     required = [
         "idea_text", "applicant_type", "representative_name", "representative_career", "revenue_unit_price",
         "development_period", "birth_date", "gender", "region", "industry_code",
@@ -214,7 +214,7 @@ def _career(c: dict[str, Any]) -> str | None:
     """대표자 이력 — '구분: 내용 (기간, 증빙 있음)' (기준 문서 v1.10 시트 4 CompanyInfo.representativeCareer).
 
     구분이 없으면 '내용 (기간)', 기간 · 증빙이 없으면 괄호를 생략한다. 증빙은 참일 때만 붙인다
-    (사용자 결정 2026-09-30). 증빙 말고는 값이 없는 항목은 뜻이 없어 뺀다.
+   . 증빙 말고는 값이 없는 항목은 뜻이 없어 뺀다.
     """
     kind, title, period = _describe(c.get("type")), _describe(c.get("title")), _describe(c.get("period"))
     if not (kind or title or period):

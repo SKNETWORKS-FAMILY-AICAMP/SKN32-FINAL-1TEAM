@@ -25,7 +25,7 @@ G-02b는 T-V2 직후 계산하고(시트 2 "T-V2 종료 직후"), 화면 8을 �
   (같은 입력으로 재개하면 다시 쓰지 않고 저장한 것을 쓴다). 반영 실행(T-B1)과 다시 쓰기 함수가 없는 조립(스텁)은
   덧붙이기만 한다. 재작성 중 재수행이면 어느 경로든 그 사이클의 재작성 지시도 함께 남긴다(5.4).
 
-산출물층 검증 반영: 재실행 때 T-B1에 이전 원문 — 이전 프로토타입 진입 파일의 참조(previous_source_file, 결정 0023)를
+산출물층 검증 반영: 재실행 때 T-B1에 이전 원문 — 이전 프로토타입 진입 파일의 참조(previous_source_file)를
   준다 — 재작성 대상(initial_redo_state)과 검사 불통과 재수행(redo_rework_input)만. 반영 실행 · 다른 Task는 채우지
   않고, 진입 파일이 없으면 비운다. T-B2 실행 기록에 최종 실패인 이미지 호출이
   있으면 '이미지대체' 사건을 그 실행 기록과 같은 묶음에 남긴다(after_execution — 사용자 화면에는 알리지 않는다).
@@ -73,7 +73,7 @@ STEP_SCREEN = {step: screen for screen, step in SCREEN_STEP.items()}
 STEP_LABEL = {CYCLE_END: "재작성 전후 비교"}
 # REWORK_DEFAULT_REASON(판정 지시가 없는 묶음의 재작성 지시 문구)은 rework_map에 있다 — 판정의 '묶음 모두' 후보와 같이 쓴다
 
-# ── 검증-1 fail 재수행 · 항목 단위 재수행 (spec 4.8 · 4.10 · 4.11, 결정 0024) ─────────
+# ── 검증-1 fail 재수행 · 항목 단위 재수행 (spec 4.8 · 4.10 · 4.11) ─────────
 FIRST_CYCLE_KEY = "첫작성"            # Verify1State.cycleKey — 첫 작성 사이클 (재작성 사이클은 그 사이클 ID)
 VERIFY1_ROLE = "검증-1 재수행"         # 검증-1 fail 재수행으로 다시 도는 T-W1 · T-W2 · M-1 · T-V1의 역할
 FALLBACK_ROLE = "표 대체"              # 끝내 fail인 표를 본문 서술로 바꾸는 T-W3 · M-1의 역할
@@ -92,7 +92,7 @@ EVENT_IMAGE_FALLBACK = "이미지대체"
 EVENT_ALT_SOURCE_MISSING = "대체텍스트출처누락"
 ALT_SOURCE_MISSING_DETAIL = "HTML 2번 미충족인데 defect_sources가 비어 있음 — T-B2로 보냄"
 IMAGE_FALLBACK_DETAIL = "T-B2 이미지 호출 실패 — 기본 아이콘으로 계속"
-# 이전 원문 참조(previous_source_file)를 채우는 Task와 그 진입 파일 참조가 든 산출물 (spec 4.3 — T-B1만, 결정 0023)
+# 이전 원문 참조(previous_source_file)를 채우는 Task와 그 진입 파일 참조가 든 산출물 (spec 4.3 — T-B1만)
 SOURCE_FILE_TASK, SOURCE_FILE_KEY = "T-B1", "prototype"
 # 공고를 고를 수 있는 대기 지점 — 공고 선택 명령이 decision의 beforeStep에 남기고, G-01이 실패하면 그리로 돌아간다 (4.3.4)
 SELECTION_STEPS = ("공고선택", "계획서작성")
@@ -434,7 +434,7 @@ class SBrainFlow:
             prev = ctx.ref(spec.outputs[spec.primary_output]) if ctx.has(spec.outputs[spec.primary_output]) else ""
             issues = [order.reason] + ([order.instruction_delta] if order.instruction_delta else [])
             # T-B1이면 재작성 직전 prototype 포인터의 진입 파일 참조를 함께 준다 (spec 4.3 — 고쳐 달라는 경우만).
-            # 진입 파일이 없으면 비운다 (결정 0023)
+            # 진입 파일이 없으면 비운다
             source = (ctx.get(SOURCE_FILE_KEY).entry_file
                       if tid == SOURCE_FILE_TASK and ctx.has(SOURCE_FILE_KEY) else None)
             # 문서층 Task면 고른 묶음의 그 종류 항목만 목표 항목으로 준다 (spec 4.11 — 문제 목록 = 직전 issues + warnings)
@@ -705,7 +705,7 @@ class SBrainFlow:
           걸린 항목만 다시 만든다. failedItems가 비었으면 방금 실행이 받은 목표 항목을 그대로 잇는다(재작성 · 검증-1 재수행
           중이면 그 항목, 첫 실행이면 빈 사전 = 모든 항목 — T-S1처럼 항목이 없는 Task). 흐름은 문구가 아니라 이 칸으로 가른다.
         - T-B1이면 방금 실행이 만든 prototype의 진입 파일 참조를 채운다 — 그 실행이 대상 · 반영 · 첫 실행 중 무엇이었든
-          (spec 4.3). 진입 파일이 없으면 비운다(결정 0023)."""
+          (spec 4.3). 진입 파일이 없으면 비운다."""
         update: dict[str, Any] = {"redo_source": "검사"}
         check = ctx.get_ref(rework_input.source_refs[0]) if rework_input.source_refs else None
         failed = dict(check.failed_items) if check is not None else {}

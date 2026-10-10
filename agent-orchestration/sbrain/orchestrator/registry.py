@@ -139,7 +139,7 @@ class TaskSpec:
     final_action_exception: bool = False         # 확정 동작 예외 여섯 곳
     fn: Callable[..., Any] | None = None         # 실행 함수 (bind로 교체)
     writes_files: bool = False
-    # 파일을 쓰는 규칙 단계 · 합치기 (확장, 결정 0023 — 지금 G-04). 참이면 엔진이 파일 창구(tools.files와 같은 객체 · 규칙)를
+    # 파일을 쓰는 규칙 단계 · 합치기 (확장 — 지금 G-04). 참이면 엔진이 파일 창구(tools.files와 같은 객체 · 규칙)를
     # 두 번째 인자로 넘긴다: run(inp, files). 재시도 · 제한 시간은 LLM을 부르지 않는 Task(uses_llm=False)와 같다 —
     # Task 설정 표를 보지 않고 task_timeouts(없으면 120초) · 재시도만 입힌다. Task(kind 'task')는 tools.files가 있어 쓰지 않는다
 

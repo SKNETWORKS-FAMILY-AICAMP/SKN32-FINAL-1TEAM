@@ -21,7 +21,7 @@ INSTRUCTION_SUFFIX = ".instruction"
 # 남긴다. 실패한 추가 조회가 남긴 T-C2 출력(candidates 버전)은 화면 · 결과 · 한도 · 공고 선택 어디서도 읽지 않는다.
 FIRST_CANDIDATES = "firstCandidates"   # 첫 조회 목록 — 추가 조회에 다시 나온 카드를 새 내용으로 바꾼 것 (자리 · 순위 그대로)
 MORE_CANDIDATES = "moreCandidates"     # 추가 조회 목록 — 첫 조회와 겹친 공고를 뺀 것 (받은 순서 그대로)
-# 전략 · 작성 · 검증-1 확장 출력 (spec 4.7, 결정 0024) — 기준 문서 타입이 없는 확장 출력이라 이 이름을 쓴다
+# 전략 · 작성 · 검증-1 확장 출력 (spec 4.7) — 기준 문서 타입이 없는 확장 출력이라 이 이름을 쓴다
 STRATEGY_DATA = "strategyData"               # T-S1 — 담당자 전략 함수 결과
 MARKET_STRATEGY_DATA = "marketStrategyData"  # T-S2 — 담당자 시장 함수 결과
 SECTION_OUTPUTS = "sectionOutputs"           # T-W1 — 본문 항목 번호 → F16 결과
@@ -93,7 +93,7 @@ def build_registry() -> TaskRegistry:
           "business_age_years": art("businessAgeYears", optional=True), "prior_guidance": PARTIAL},
          {"task_plan": "taskPlan", "task_count": "taskCount", "instruction_set": "instructionSet",
           "form_spec": FORM_SPEC, "evaluation_items": EVAL_ITEMS, "rubric": RUBRIC}, "task_plan")
-    # T-S1 ~ T-V1 확장 입력 · 출력(spec 4.7, 결정 0024) — 전략 · 작성 · 검증-1 담당자 함수(F01 ~ F19)를 끼우며 더했다.
+    # T-S1 ~ T-V1 확장 입력 · 출력(spec 4.7) — 전략 · 작성 · 검증-1 담당자 함수(F01 ~ F19)를 끼우며 더했다.
     # 직전 결과(base…)는 같은 키의 지금 값(없으면 None)이고, 재개 때 받은 결과는 PARTIAL로 잇는다(T-W3는 규칙 코드라 없음)
     task("T-S1", "요구사항 분석", "전략", 5, c.TS1In, c.TS1Out,
          {"item_spec": art("itemSpec"), "selected_announcement": art(SA), "instruction": INSTR,
@@ -178,7 +178,7 @@ def build_registry() -> TaskRegistry:
     # G-04 — 오류면 계속(점수 밖). 자체 검사(확장 출력 check — 실행 · 열람 안내 낱말)가 불통과면 재수행 횟수까지 같은
     # 입력으로 다시 만들고(재수행 루프가 만든 G-04.reworkInput은 입력에 연결하지 않아 쓰이지 않는다), 끝내 불통과면
     # 흐름이 관리자 기록('안내문서자체검사실패')을 남기고 계속한다 (2026-09-30 결정 5 · 6).
-    # 안내 문서는 파일이라 파일을 쓰는 규칙 단계로 표시한다 — 엔진이 run(inp, files)로 파일 창구를 넘긴다 (결정 0023)
+    # 안내 문서는 파일이라 파일을 쓰는 규칙 단계로 표시한다 — 엔진이 run(inp, files)로 파일 창구를 넘긴다
     rule("G-04", "실행 안내 문서 생성", "조율", 14, c.G04In, c.G04Out,
          {"prototype": art("prototype"), "infographic": art("infographic"), "item_spec": art("itemSpec"),
           "announcement": art(SA)},

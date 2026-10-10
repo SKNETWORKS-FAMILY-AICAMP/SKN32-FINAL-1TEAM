@@ -4,14 +4,13 @@
 |---|---|
 | 작성일 | 2026-10-01 (2026-10-02 갱신 — 웹 더미 파이프라인 떼어 내기. 2026-10-03 갱신 — 공고 서버 연결. 2026-10-04 갱신 — 작업 분해(T-C3)가 고른 평가 항목. 2026-10-05 갱신 — 시각 UTC · 실행 로그 12개월 처리 · 탈퇴 함수. 2026-10-06 갱신 — 산출물층 결과 확장 필드 · 관리자 이미지 토큰 · 새 사건 종류 · Task별 모델 설정. 2026-10-08 갱신 — 기준 문서 v1.10 반영 · 새 함수 `missing_projects`. 2026-10-08 갱신(2) — 산출물 파일 참조형 · 새 함수 3개 · 새 오류 코드 · `SBRAIN_ARTIFACT_ROOT`. 2026-10-10 갱신 — 전략 · 작성 · 검증-1 실구현: 계획서 항목 구조 · 평가항목 = 계획서 항목 · 태그 묶음 재작성 · 사전 정보 사업비 · 일정 테이블) |
 | 상태 | 함수 이름 · 인자 · 결과 필드 · 오류 코드는 **구현 완료**. 화면 조회(5.1절)의 화면별 모양은 **초안** — 웹팀과 맞춰 고친다 |
-| 근거 | 기능정의서 v1.10, 웹팀 합의(2026-09-30) 1~10번, 사용자 결정(2026-10-01 ~ 10-08), 웹팀 회신(2026-10-05), `워커_구동_방식_제안.md`(확정), `웹스키마_교체목록_웹팀전달.md`(두 문서 저장소 미포함) |
+| 근거 | 기능정의서 v1.10, 웹팀 합의(2026-09-30) 1~10번, 웹팀 회신(2026-10-05) |
 | 코드 | `sbrain/` — 명령 창구 `flow/service.py`(`SBrainOrchestrator`), 화면 · 결과 · 관리자 조회 · 파일 읽기 `flow/reads.py`, 파일 참조 `models/files.py`, 파일 저장소 `orchestrator/files.py`, 파일 삭제 대기열 처리 `orchestrator/file_deletion.py`, 재작성 묶음 `flow/rework_map.py`, 조립 `bootstrap.py`, 워커 `worker.py`, 웹 테이블 쓰기 `store_sql/web_tables.py`, 시각 `models/clock.py`, 실행 로그 12개월 처리 `flow/retention.py` · 통계 줄 `flow/log_stats.py` |
 | 독자 | 웹팀(백엔드) |
-| 함께 볼 문서 | `docs/웹연동_변경사항_웹팀전달.md` — 웹 엔드포인트마다 어떤 함수를 부르고 응답을 어떻게 채우는지, 값 대응표, 웹 스키마 · 프론트 변경(2026-10-05 변경과 웹이 할 일은 그 문서 11절). `docs/공고연동_변경사항_웹팀전달.md` — 공고 서버 연결로 바뀐 화면 3 · 4 · 진행 상태(2026-10-03) |
 
 ### 2026-10-10 바뀐 점 (요약) — 전략 · 작성 · 검증-1 실구현 · 계획서 항목 구조 · 사업비 · 일정 입력
 
-전략 · 작성 · 검증-1 담당자 코드를 Orchestrator에 끼웠다(결정 0024). **함수 이름 · 인자 · 오류 코드는 그대로다.** 결과 안의 계획서 · 점수 · 재작성 목록의 **값과 개수**가 바뀌고, 계획서에 확장 칸이 늘었다. 사전 정보로 웹 테이블 두 개를 더 읽는다.
+전략 · 작성 · 검증-1 담당자 코드를 Orchestrator에 끼웠다. **함수 이름 · 인자 · 오류 코드는 그대로다.** 결과 안의 계획서 · 점수 · 재작성 목록의 **값과 개수**가 바뀌고, 계획서에 확장 칸이 늘었다. 사전 정보로 웹 테이블 두 개를 더 읽는다.
 
 | 구분 | 내용 | 절 |
 |---|---|---|
@@ -27,7 +26,7 @@
 
 ### 2026-10-08 바뀐 점 (2) (요약) — 산출물 파일 참조형 · 파일 읽기 · 파일 삭제 대기열 관리자 함수
 
-사용자 결정(2026-10-08)으로 **산출물 파일(실행 HTML · 원페이지 SVG · 인포그래픽 그림 · 실행 안내 문서 · 계획서 파일 · 차트 그림)을 DB 글자 칸에 담지 않고 파일 저장소에 두며, 결과에는 파일 참조만 싣는다.** 지금은 웹 · 워커가 함께 보는 폴더에 두고, 운영은 S3로 옮길 예정이다. 웹은 파일 위치(폴더 · 경로)를 알 필요가 없다 — 파일은 참조의 키로 `read_artifact_file`을 불러 받는다. **기존 함수의 이름 · 인자는 그대로이고, 결과의 파일 칸 모양이 바뀌었다.** 결정 0023.
+2026-10-08부터 **산출물 파일(실행 HTML · 원페이지 SVG · 인포그래픽 그림 · 실행 안내 문서 · 계획서 파일 · 차트 그림)을 DB 글자 칸에 담지 않고 파일 저장소에 두며, 결과에는 파일 참조만 싣는다.** 지금은 웹 · 워커가 함께 보는 폴더에 두고, 운영은 S3로 옮길 예정이다. 웹은 파일 위치(폴더 · 경로)를 알 필요가 없다 — 파일은 참조의 키로 `read_artifact_file`을 불러 받는다. **기존 함수의 이름 · 인자는 그대로이고, 결과의 파일 칸 모양이 바뀌었다.**
 
 | 구분 | 내용 | 절 |
 |---|---|---|
@@ -56,7 +55,7 @@
 
 ### 2026-10-06 바뀐 점 (요약) — 산출물층 검증 반영 · 이미지 호출 · Task별 모델 설정
 
-**함수 이름 · 인자 · 오류 코드는 그대로다.** 결과에 확장 필드가 늘고, 관리자 조회 값이 늘었다. 웹이 할 일과 요청은 `웹연동_변경사항_웹팀전달.md` 12절.
+**함수 이름 · 인자 · 오류 코드는 그대로다.** 결과에 확장 필드가 늘고, 관리자 조회 값이 늘었다.
 
 | 구분 | 내용 | 절 |
 |---|---|---|
@@ -66,13 +65,13 @@
 | 운영 요약 | `totalImageTokens`(이미지 입력 + 출력)가 늘었다. `totalTokens`는 지금처럼 글 토큰만 | 8.6 |
 | 새 추적 사건 종류 | `대조보류` · `검증2진단` · `안내문서자체검사실패` · `이미지대체` · `대체텍스트출처누락`(모두 잠정 이름). 관리자에게 어떻게 알릴지는 웹팀이 정한다 | 8.8 |
 | 모델 설정 | Agent별에서 **Task별**로 바뀌었다. 설정은 지금처럼 Orchestrator 코드에 있고 웹 표 · 화면은 없다. 관리자 실행 기록의 `model`은 그 Task 설정의 글 모델이다 | 8.1 |
-| 공유 DB | `orch_executions`에 칸 둘(`image_input_tokens` · `image_output_tokens`, NULL 허용). 웹 로컬 DB는 새 DDL로 다시 만든다 | `웹연동_변경사항_웹팀전달.md` 12.3 |
+| 공유 DB | `orch_executions`에 칸 둘(`image_input_tokens` · `image_output_tokens`, NULL 허용). 웹 로컬 DB는 새 DDL로 다시 만든다 | — |
 | 스텁 값 | 스텁 T-B1의 `prototype.entryFilePath`가 `/prototype.html`에서 `/index.html`로 바뀌었다(진입 파일명 `index.html` — 구현 · 검증-2 담당 합의). 스텁 값이라 화면에는 영향이 없다. **이 칸은 2026-10-08 지웠다 — 진입 파일은 파일 참조 `prototype.entryFile`(5.4)** | 5.2 |
 | 웹에서 바뀌는 상태의 로그 | 워커가 운영 로그 파일을 남기기 시작했다. 웹 명령으로 바로 바뀌는 상태(대기 중 중단, 화면 8 → 9 진행 등)는 워커를 거치지 않아 그 로그에 없다 — **웹 쪽 로그로 남겨 달라는 요청** | 12 |
 
 ### 2026-10-05 바뀐 점 (요약) — 시각 UTC · 실행 로그 12개월 처리 · 탈퇴
 
-**함수 이름 · 인자 · 결과 필드 이름은 그대로이고, 새 함수 `delete_account_data` 하나가 늘었다.** 다만 **결과의 모든 시각에 시간대(UTC) 표시가 붙는다** — 앞선 안내("기존 함수 결과 모양은 바뀌지 않음")와 다른 점이다. 웹이 할 일은 `웹연동_변경사항_웹팀전달.md` 11절.
+**함수 이름 · 인자 · 결과 필드 이름은 그대로이고, 새 함수 `delete_account_data` 하나가 늘었다.** 다만 **결과의 모든 시각에 시간대(UTC) 표시가 붙는다** — 앞선 안내("기존 함수 결과 모양은 바뀌지 않음")와 다른 점이다.
 
 | 구분 | 내용 | 절 |
 |---|---|---|
@@ -98,7 +97,7 @@
 
 ### 2026-10-03 바뀐 점 (요약) — 공고 서버 연결
 
-공고 매칭(T-C2)과 자격 확인(G-01)을 공고팀 공고 서버에 연결했다. 웹이 할 일은 `docs/공고연동_변경사항_웹팀전달.md`에 화면별로 있다.
+공고 매칭(T-C2)과 자격 확인(G-01)을 공고팀 공고 서버에 연결했다.
 
 | 구분 | 내용 | 절 |
 |---|---|---|
@@ -185,7 +184,7 @@ sequenceDiagram
 - 웹은 모든 함수를 부르기 전에 **주인 확인**을 한다(관리자 함수는 관리자 확인). Orchestrator는 `request_start`만 주인을 다시 확인한다. 예외: `missing_projects`는 사용자 요청이 아니라 웹 일괄 작업에서 부르는 함수라 주인 확인 없이 부른다(실행 건이 있는지만 알려 준다, 7.4).
 - 모든 함수는 금방 끝난다(`wait_project`는 정한 시간까지 기다린다). 오래 걸리는 일(사전 단계, 계획서 작성 · 프로토타입 제작 · 재작성 · 검수 구간, 재개)은 워커만 한다.
 - 받을 수 없는 요청이면 `CommandError`(`.code` · `.detail`)를 올린다(10.2절).
-- 결과는 기준 문서 모양이다. 웹 응답 모양으로 바꾸는 일은 웹이 한다(대응표는 `웹연동_변경사항_웹팀전달.md` 3절).
+- 결과는 기준 문서 모양이다. 웹 응답 모양으로 바꾸는 일은 웹이 한다.
 - 사용자용 결과(`view_project` · `project_views` · `wait_project` · `outputs` · `rework_result` · 화면 조회)에는 관리자용 실패 사유를 싣지 않는다. 실패는 진행 상태와 안내(E-RUN-FAIL 문구)로만 알린다.
 
 ## 2. 웹 프로세스 준비
@@ -239,8 +238,8 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 1. 웹 스키마(`app_schema.sql`)가 있어야 한다.
 2. `sql/orchestrator_schema.sql`을 적용한다 — `orch_` 테이블 13개(2026-10-05 10개에 통계 표 `orch_log_stats` · 작업 상태 표 `orch_jobs`, 2026-10-08 파일 삭제 대기열 `orch_file_deletions`가 늘었다), `CREATE TABLE IF NOT EXISTS`만 있다. `orch_runs.project_id`가 `projects(project_id)`를 참조한다(`ON DELETE SET NULL`). **공유 DB 적용은 사용자(Orchestrator 담당)가 한다.**
 3. 2026-10-02: `orch_runs`에 `collect_until DATETIME(6) NULL` 컬럼이 늘었다(재작성 요청을 모으는 시간이 끝나는 시각). 이미 테이블을 만든 DB에는 Orchestrator 담당이 컬럼을 더한다. 웹은 `orch_` 테이블을 쓰지 않으므로 할 일이 없다.
-4. 검수 회수 문단(`proofread_logs`)을 쓰려면 웹 스키마 변경이 필요하다(4.4절, `웹연동_변경사항_웹팀전달.md` 4절). 바뀌기 전에는 쓰기만 건너뛴다.
-5. 2026-10-05: 새 표 두 개와 기존 표 인덱스 두 개(`ix_orch_runs_updated` ON `orch_runs (updated_at)`, `ix_orch_start_requests_status_updated` ON `orch_start_requests (status, updated_at)`)가 늘었다. `CREATE TABLE IF NOT EXISTS`는 이미 있는 표에 인덱스를 더하지 않으므로, 표를 다시 만들지 않는 DB에는 `CREATE INDEX` 문을 따로 넣는다(문장은 `웹연동_변경사항_웹팀전달.md` 11.5). **웹은 두 새 표를 읽지도 쓰지도 않는다** — 통계가 필요하면 `orch_log_stats`를 DB에서 직접 조회한다(계정 · 프로젝트 · 실행 건 ID 없음). 웹 로컬 DB의 `orch_` 데이터는 시간대가 섞여 있으니 지우고 새 DDL로 다시 만든다.
+4. 검수 회수 문단(`proofread_logs`)을 쓰려면 웹 스키마 변경이 필요하다(4.4절). 바뀌기 전에는 쓰기만 건너뛴다.
+5. 2026-10-05: 새 표 두 개와 기존 표 인덱스 두 개(`ix_orch_runs_updated` ON `orch_runs (updated_at)`, `ix_orch_start_requests_status_updated` ON `orch_start_requests (status, updated_at)`)가 늘었다. `CREATE TABLE IF NOT EXISTS`는 이미 있는 표에 인덱스를 더하지 않으므로, 표를 다시 만들지 않는 DB에는 `CREATE INDEX` 문을 따로 넣는다. **웹은 두 새 표를 읽지도 쓰지도 않는다** — 통계가 필요하면 `orch_log_stats`를 DB에서 직접 조회한다(계정 · 프로젝트 · 실행 건 ID 없음). 웹 로컬 DB의 `orch_` 데이터는 시간대가 섞여 있으니 지우고 새 DDL로 다시 만든다.
 6. 2026-10-08: 새 표 `orch_file_deletions`(파일 삭제 대기열)가 늘어 `orch_` 표는 13개다. `CREATE TABLE IF NOT EXISTS`라 같은 DDL을 다시 적용하면 새 표만 생긴다. 다른 표 · 웹 표의 칸은 바뀌지 않는다(바뀌는 것은 `orch_artifact_versions.value` 안 산출물 JSON의 모양과 `orch_call_logs.call_type`의 새 값 `file`뿐이다). **웹은 이 표를 읽지도 쓰지도 않는다** — 관리자 함수(8.9)로 본다.
 7. 공유 DB 서버 시간대(2026-10-05 확인): `@@global.time_zone`=SYSTEM, `@@session.time_zone`=SYSTEM, `@@system_time_zone`=UTC — DB 기본값으로 채워지는 시각도 UTC다. 바꾸지 않는다.
 
@@ -264,7 +263,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | DB 칸 | `orch_` 표와 워커가 INSERT하는 웹 표 셋의 `DATETIME` 칸에는 시간대 없는 UTC를 넣는다 — 웹 `utcnow()`와 같은 기준. 웹 표에서 읽은 시각(예: 알림 `read_at`)에는 UTC를 붙여 돌려준다 |
 | "오늘" | 자격 확인 기준일 · 마감 안내(E-RUN-CLOSED)의 "오늘"은 한국 날짜(UTC+9) |
 
-- 시간대 있는 값과 시간대 없는 값(`datetime.datetime.utcnow()`)은 파이썬에서 빼거나 비교할 수 없다(`TypeError`). 웹이 우리 결과와 자기 값을 함께 계산하는 곳은 한쪽으로 맞춘다. 웹 코드에서 확인할 곳은 `웹연동_변경사항_웹팀전달.md` 11.1.
+- 시간대 있는 값과 시간대 없는 값(`datetime.datetime.utcnow()`)은 파이썬에서 빼거나 비교할 수 없다(`TypeError`). 웹이 우리 결과와 자기 값을 함께 계산하는 곳은 한쪽으로 맞춘다.
 
 ## 3. 시작 — 사전 정보 제출 → 공고 후보
 
@@ -383,7 +382,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 
 ### 4.4 웹 테이블 — Orchestrator가 쓰는 것과 쓰지 않는 것 (2026-10-02 바뀜)
 
-**Orchestrator는 웹 `projects`의 어떤 컬럼에도 쓰지 않는다.** 2026-10-01판의 "목록 화면은 `projects` 요약 컬럼(`status` · `stage` · `progress_percent` · `notice_id` · `failure_reason`)을 읽어도 된다"는 없어졌다. 목록은 `project_views`, 상세는 `view_project`로 읽는다. 이 컬럼들과 옛 진행 컬럼은 웹 정리 대상이다(`웹연동_변경사항_웹팀전달.md` 4절).
+**Orchestrator는 웹 `projects`의 어떤 컬럼에도 쓰지 않는다.** 2026-10-01판의 "목록 화면은 `projects` 요약 컬럼(`status` · `stage` · `progress_percent` · `notice_id` · `failure_reason`)을 읽어도 된다"는 없어졌다. 목록은 `project_views`, 상세는 `view_project`로 읽는다. 이 컬럼들과 옛 진행 컬럼은 웹 정리 대상이다.
 
 웹 테이블 쓰기는 정확히 아래 세 가지 INSERT뿐이고, 모두 단계 저장과 **같은 트랜잭션**이다. 실행 건에 `project_id`가 있을 때만 쓴다.
 
@@ -415,7 +414,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | 시도 | T-P2 함수가 결과를 돌려준 호출 하나. 호출 실패(재시도를 다 써서 원문 유지)는 시도가 아니다. 재개되어 같은 문장을 다시 처리해도 시도 번호를 이어서 센다 |
 | 조건 | 저장하는 순간 그 프로젝트 주인의 `users.ai_training_agreed`가 참일 때만. 미동의 계정은 쓰지 않는다(시도별 기록은 산출물에는 남는다) |
 | 채우는 컬럼 | `project_id` · `original_text`(원문 문장) · `corrected_text`(반려된 시도 문장) · `reason`(위반 요약, 예: "보호 토큰 검사 불통과 (빠짐 1건)") · `attempt_no` · `passed`(FALSE) · `violation_type` · `violation_note`(위반 토큰 목록 전체, 예: "빠짐: 1억원 / 섞임: A, B") · `recovery_status`('pending') · `model_version`(그 시도를 만든 T-P2 실행의 모델) · `created_at`(단계 저장 시각, 시간대 없는 UTC — 2026-10-05부터 DB 기본값 대신 직접 넣는다). 나머지 컬럼은 웹 기본값. `reason` · `violation_note` 표기는 잠정 |
-| 남기는 행 (2026-10-05) | 학습에 반영된 행(`recovery_status='trained'`, 웹이 학습 데이터로 내보낼 때 표시)만 완전 삭제 · 탈퇴 뒤에도 남고 `project_id`가 끊긴다(웹 스키마 `project_id` NULL 허용 + `ON DELETE SET NULL`). `pending` · `labeled` · `excluded` 행은 웹이 프로젝트 행을 지우기 전에 지운다. 워커는 `pending`으로만 쓴다 — `웹연동_변경사항_웹팀전달.md` 11.7 |
+| 남기는 행 (2026-10-05) | 학습에 반영된 행(`recovery_status='trained'`, 웹이 학습 데이터로 내보낼 때 표시)만 완전 삭제 · 탈퇴 뒤에도 남고 `project_id`가 끊긴다(웹 스키마 `project_id` NULL 허용 + `ON DELETE SET NULL`). `pending` · `labeled` · `excluded` 행은 웹이 프로젝트 행을 지우기 전에 지운다. 워커는 `pending`으로만 쓴다 |
 | `violation_type` | 웹 표기 `날짜` · `수치·금액` · `고유명사` · `기능명` 중 하나. 위반 토큰을 보호 토큰 목록과 값으로 맞춰 정하고, 여러 종류면 빠진 → 바뀐 → 섞인 순서로 처음 맞는 것. 못 맞추면 비운다 |
 | 중복 | 같은 시도를 두 번 쓰지 않는다. T-P2가 재개되면 다시 처리한 문장의 새 시도만 쓴다 |
 | 웹 스키마가 아직 안 바뀌었을 때 | 위 컬럼이 없거나, 우리가 채우지 않는 NOT NULL · 기본값 없는 컬럼(예: 지금의 `plan_id`)이 남아 있으면 **쓰기만 건너뛴다**. 실행 건마다 한 번 추적 사건 '검수회수기록생략'(이유만)을 남기고 T-P2 단계 저장과 검수는 정상으로 끝낸다. 맞지 않는 구조는 기억하지 않아 웹 스키마가 바뀌면 다음 저장부터 쓴다. 지난 시도를 나중에 채우지는 않는다 |
@@ -439,7 +438,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | 11 결과물 | 결과물 · 완료 | `deliverable` · `userMessage` · `planDoc` · `prototype` · `infographic` |
 
 - 화면 3은 작성을 시작한 뒤(계획서작성 · 실행 이후)에는 `CommandError("INVALID_STATE")`다(공고 다시 고르기 · 추가 조회와 같은 거절). 그 밖에 맞지 않는 상태는 `SCREEN_NOT_READY`.
-- **화면 3 카드(`AnnouncementCard`, 2026-10-03 바뀜)** — `announcementId` · `title` · `agency` · `applyEnd`(`null` 가능 — 마감일 없는 공고) · `supportAmountMax`(`null` 가능 — 추천 결과에는 금액이 없어 지금은 늘 `null`) · `fitScore` · `rank` · `displayType` · `matchReason` · `sourceNotice` · `originalUrl`, 확장 `applyPeriodType`(모집 형태 표기) · `contentChanged`(내용 바뀜) · `contentVersion`(웹은 쓰지 않음) · `bonusScore`(가산점 합계, `null` = 계산 못 함, `0` = 해당 없음) · `bonusItems`(`name` · `points`) — **2026-10-07부터 늘 `null` · `[]`**(공고팀 가산점 시험 단계, 화면에 쓰지 않음 — 키는 그대로). `originalUrl`은 `""`일 수 있다. 순서는 `rank` 그대로이며 웹이 다시 정렬하지 않는다. 자세한 뜻과 표시는 `공고연동_변경사항_웹팀전달.md` 1절.
+- **화면 3 카드(`AnnouncementCard`, 2026-10-03 바뀜)** — `announcementId` · `title` · `agency` · `applyEnd`(`null` 가능 — 마감일 없는 공고) · `supportAmountMax`(`null` 가능 — 추천 결과에는 금액이 없어 지금은 늘 `null`) · `fitScore` · `rank` · `displayType` · `matchReason` · `sourceNotice` · `originalUrl`, 확장 `applyPeriodType`(모집 형태 표기) · `contentChanged`(내용 바뀜) · `contentVersion`(웹은 쓰지 않음) · `bonusScore`(가산점 합계, `null` = 계산 못 함, `0` = 해당 없음) · `bonusItems`(`name` · `points`) — **2026-10-07부터 늘 `null` · `[]`**(공고팀 가산점 시험 단계, 화면에 쓰지 않음 — 키는 그대로). `originalUrl`은 `""`일 수 있다. 순서는 `rank` 그대로이며 웹이 다시 정렬하지 않는다.
 - **화면 3 추가 조회 반영** — 성공한 추가 조회가 있으면 `candidates`는 첫 조회 카드 중 다시 나온 것을 새 내용으로 바꾼 목록(자리 · `rank` · `displayType` 그대로, 내용이 바뀌었으면 `contentChanged` 참)이고, `moreCandidates`는 첫 조회와 겹친 공고를 뺀 목록이다(0건일 수 있다). 실패한 추가 조회는 없던 것으로 본다 — 후보 · `collectionStatus` · `filteredCount` · `fallbackUsed` · `fallbackMode`가 조회 전 그대로다.
 - **`blockedAnnouncementIds`** — 자격 불통과(E-G1-REJECT)가 나온 공고 ID. 그 실행 건에서 고를 수 없다(`ANNOUNCEMENT_BLOCKED`, 6.1). 추가 조회에서 그 공고 카드가 `contentChanged` 참이 되면 빠진다. 공고 없음 · 오류 · 설립일 없음은 들어가지 않는다. 카드에는 자격 정보를 싣지 않는다.
 - **화면 4 확인 필요** — `gateResult.unknownConditions`(`지원대상 유형` · `업력`)가 있으면 `notices`에 E-G1-UNPARSED가 하나 붙는다. 진행을 막지 않고(`canStartWriting` 참), 실행 건 안내 목록에는 쌓지 않아 `view_project`의 `notices`에는 나오지 않는다. 화면 4를 열 때마다 지금 자격 결과로 다시 만든다.
@@ -447,7 +446,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 - `score`(`ScoreView`): `displayScore`(환산 점수) · `total` · `threshold` · `passed` · `phase` · `docScore` · `artifactScore` · `carriedOverLayer` · `comparisons` · `notices`. 판정에 쓴 실행 설정 스냅샷은 싣지 않는다.
 - `reworkOptions`(`ReworkOption`): `order`(판정 G-02a · G-02b의 재작성 지시를 그대로) · `bundles`(그 지시의 기회를 세는 **묶음 이름**, 6.3) · `remaining`(남은 기회) · `selectable`(고를 수 있음).
   - 산출물층 지시 → 그 Task의 묶음(`실행 파일` · `인포그래픽`).
-  - ~~문서층 지시 → 문서층 묶음 4개 전부, `remaining`은 4개 중 가장 많이 남은 값~~ **2026-10-10 바뀜:** 문서층 지시는 **묶음마다 하나**다(`order.targets` = [묶음 이름], `bundles`도 그 묶음 하나). `remaining`은 그 묶음의 남은 기회, `selectable`은 그 값이 0보다 클 때.
+  - 문서층 지시는 **묶음마다 하나**다(`order.targets` = [묶음 이름], `bundles`도 그 묶음 하나). `remaining`은 그 묶음의 남은 기회, `selectable`은 그 값이 0보다 클 때.
   - 문서층 후보(판정 G-02a · G-02b, 2026-10-10): 그 묶음의 항목 중 검증-1 판정이 fail 또는 warning인 항목이 있으면 후보다(입력 없음 warning은 빼고, 사유에 '<항목 번호> <문제>' 줄을 잇는다). 문서층 점수가 기준(80) 미만인데 후보가 하나도 없으면 4개 묶음 모두 후보다(사유는 고정 문구). 기회를 다 쓴 묶음도 목록에 남는다(`selectable` 거짓). 다음 동작의 '상한도달'은 후보 묶음의 기회가 모두 끝났을 때다.
   - 입력 없음 항목이 있으면 점수 보고서 `notices`에 '입력 확인 필요 — 사업비 집행계획 · 추진 일정을 입력하면 해당 표가 채워집니다.'(잠정 문구)가 붙는다.
   - 원페이지의 `실행 파일`은 고를 수 없다.
@@ -484,7 +483,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | `deliverable` · `userMessage` | 결과물 · 안내 문구 |
 | `reworkUsage` | 묶음 이름 6개(문서층 4 · 산출물층 2, 원페이지는 `실행 파일` 제외)마다 `BundleUsage`(`bundleId` · `layer` · `usedCount` · `remaining`). 쓴 적 없는 묶음은 상한 그대로 |
 | `reworkLimit` | 실행 시작 때 고정한 묶음마다의 재작성 상한(`rework.perBundle`) |
-| `evaluationItems` | **확장(2026-10-04).** 작업 분해(T-C3)가 신청자 유형으로 고른 평가 항목 `EvalItem` 목록(현재 버전) — 항목마다 `itemCode` · `itemName` · `maxScore` · `description`. 작업 분해 전이면 빈 목록. 점수 항목 이름은 `docScore.items[].itemCode`를 이 목록의 `itemCode`와 맞춰 `itemName`으로 만든다. ~~지금 값은 잠정이다(`문제인식` 20 · …)~~ **2026-10-10부터 평가항목 = 계획서 항목**이다 — 항목마다 `itemCode` = 항목 번호(예: `2.4.1`), `itemName` = 항목 제목 앞 40자(잠정), `maxScore` = 70 ÷ 항목 수(기본 배점 기준), `description` = 항목 제목 전체 |
+| `evaluationItems` | **확장(2026-10-04).** 작업 분해(T-C3)가 신청자 유형으로 고른 평가 항목 `EvalItem` 목록(현재 버전) — 항목마다 `itemCode` · `itemName` · `maxScore` · `description`. 작업 분해 전이면 빈 목록. 점수 항목 이름은 `docScore.items[].itemCode`를 이 목록의 `itemCode`와 맞춰 `itemName`으로 만든다. **평가항목 = 계획서 항목**이다(2026-10-10) — 항목마다 `itemCode` = 항목 번호(예: `2.4.1`), `itemName` = 항목 제목 앞 40자(잠정), `maxScore` = 70 ÷ 항목 수(기본 배점 기준), `description` = 항목 제목 전체 |
 
 - 실행 건이 실패 · 중단이면 `CommandError("RUN_NOT_VIEWABLE")`(기준 문서 E-RUN-FAIL — 결과를 볼 수 없음. 공고 마감 안내 `E-RUN-CLOSED`와 다른 코드). 실행 건이 없으면 `RUN_NOT_FOUND`.
 - **산출물 파일 (2026-10-08 바뀜):** `prototype` · `infographic` · `planDoc.charts[]` · `deliverable`의 파일 칸은 파일 참조(`FileRef`)다(5.4). 결과에는 파일 내용이 없고, 파일은 참조의 `key`로 `read_artifact_file`(5.5)을 불러 받는다. 지금 워커의 구현 Agent는 스텁이라 파일 내용은 작은 자리채움 파일이다(진입 파일 `index.html` · 원페이지 `onepage.svg` · 그 밖 인포그래픽 `infographic.png` · 안내 문서 `README.md` · 계획서 파일 `plan.docx`, 차트 그림은 없음).
@@ -531,7 +530,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 
 ### 5.4 산출물 파일 칸 — 파일 참조 `FileRef` (2026-10-08 바뀜)
 
-산출물 파일은 DB가 아니라 파일 저장소에 있고, 결과(`screen` · `outputs` · `rework_result`)에는 **파일 참조만** 실린다. 결과 JSON에 파일 내용은 들어 있지 않다. 새 칸은 모두 확장이다(기준 문서와 다름 — 결정 0023).
+산출물 파일은 DB가 아니라 파일 저장소에 있고, 결과(`screen` · `outputs` · `rework_result`)에는 **파일 참조만** 실린다. 결과 JSON에 파일 내용은 들어 있지 않다. 새 칸은 모두 확장이다(기준 문서와 다름).
 
 **`FileRef` 모양** (pydantic, `.dump()`는 camelCase)
 
@@ -730,8 +729,8 @@ return Response(content=f.data, media_type=f.media_type)   # 웹 프레임워크
 - `DeleteResult` (dataclass): `project_id` · `abort`(AbortResult) · `run_id` · `deleted_artifacts` · `cleared_forms`(입력 사본을 지운 시작 요청 수).
 - **산출물 파일 (2026-10-08):** 이 함수는 지금처럼 DB만 다룬다. 산출물을 지우는 같은 트랜잭션에서 그 실행 건의 파일 삭제 대기열 줄을 넣고, 실제 파일은 워커가 나중에 지운다(2.3). 그래서 함수가 끝난 직후에도 잠시 파일이 남아 있을 수 있지만, 실행 건의 산출물이 지워졌으므로 웹이 받을 참조가 없다. 결과 모양은 그대로다. 웹은 파일을 지우지 않는다.
 - **`cleared_forms` (2026-10-05 바뀜):** 시작 요청의 입력 사본(`form_json`)은 이제 요청이 끝나면(완료 · 실패 · 취소) 그 상태를 바꾸는 같은 저장에서 비운다. 그래서 `cleared_forms`는 아직 남은 사본, 곧 끝나지 않은 요청의 사본만 센다. 대기 요청은 이 함수가 먼저 하는 중단(7.1)에서 취소되며 그때 비워지므로 실제로는 처리중 요청만 세는 일이 많고, 0이어도 정상이다. 결과 모양 · 이름은 그대로다.
-- 웹이 `projects` 행을 지우면 `orch_runs.project_id`는 NULL이 되고(외래 키 `ON DELETE SET NULL`) 실행 로그는 남는다. 관리자 실행 기록의 `project_id`는 옛 번호로 남는다. ~~실행 로그 식별자 분리는 12개월 보관 정책과 함께 정할 일~~ → 2026-10-05 정함: 마지막 활동 12개월 뒤 워커가 실행 로그를 식별자 없는 통계 줄로 옮기고 남은 실행 건 줄까지 지운다. 탈퇴하면 바로 지운다(7.3).
-- 웹 `proofread_logs`의 행은 웹 테이블이라 이 함수가 지우지 않는다. ~~완전 삭제 때 어떻게 할지는 웹팀 확인 사항이다~~ → 2026-10-05 정함: 학습에 반영된 `trained` 행만 남기고 나머지는 웹이 프로젝트 행을 지우기 전에 지운다(4.4, `웹연동_변경사항_웹팀전달.md` 11.7).
+- 웹이 `projects` 행을 지우면 `orch_runs.project_id`는 NULL이 되고(외래 키 `ON DELETE SET NULL`) 실행 로그는 남는다. 관리자 실행 기록의 `project_id`는 옛 번호로 남는다. 마지막 활동 12개월 뒤 워커가 실행 로그를 식별자 없는 통계 줄로 옮기고 남은 실행 건 줄까지 지운다. 탈퇴하면 바로 지운다(7.3).
+- 웹 `proofread_logs`의 행은 웹 테이블이라 이 함수가 지우지 않는다. 학습에 반영된 `trained` 행만 남기고 나머지는 웹이 프로젝트 행을 지우기 전에 지운다(4.4).
 
 ### 7.3 계정 삭제(탈퇴) — `delete_account_data(account_id) -> AccountDeleteResult` (2026-10-05 바뀜)
 
@@ -757,7 +756,7 @@ return Response(content=f.data, media_type=f.media_type)   # 웹 프레임워크
 - 오류는 `BUSY` 하나다(기존 코드, 10.2). 계정 잠금을 제한 시간(잠정 10초) 안에 못 잡아도 `BUSY`. 메시지에 식별자를 싣지 않는다.
 - 주인 확인은 하지 않는다 — 웹이 로그인 계정을 확인한 뒤 부른다. 웹 테이블은 건드리지 않고, 단계를 돌지 않는다. 웹 조립(`build_web`)에서 부른다.
 - 같은 사람이 다시 가입해도 이전 기록과 연결되지 않는다.
-- **산출물 파일 (2026-10-08):** ④에서 실행 건을 지울 때 같은 트랜잭션에서 파일 삭제 대기열 줄을 넣고, 파일은 워커가 나중에 지운다(2.3). 결과 모양은 그대로다. 워커가 3번 실패해 포기한 파일은 탈퇴 뒤에도 남을 수 있고, 대기열 줄(실행 건 ID만 — 계정 · 프로젝트 ID 없음)은 관리자가 다시 시도해 성공할 때까지 남는다(사용자가 인정한 예외, 8.9).
+- **산출물 파일 (2026-10-08):** ④에서 실행 건을 지울 때 같은 트랜잭션에서 파일 삭제 대기열 줄을 넣고, 파일은 워커가 나중에 지운다(2.3). 결과 모양은 그대로다. 워커가 3번 실패해 포기한 파일은 탈퇴 뒤에도 남을 수 있고, 대기열 줄(실행 건 ID만 — 계정 · 프로젝트 ID 없음)은 관리자가 다시 시도해 성공할 때까지 남는다(정한 예외, 8.9).
 
 `AccountDeleteResult` (dataclass, 확장)
 
@@ -866,7 +865,7 @@ orch.missing_projects(["abc"])                    # ValueError
 
 ### 8.6 `admin_summary() -> AdminSummary` — "운영 현황" · "운영 지표 요약" (2026-10-02 새로)
 
-~~모든 실행 건 · 실행 기록에서 센다~~ → 2026-10-05 바뀜: **마지막 갱신이 최근 12개월 안인 실행 건과 그 실행 건들의 실행 기록에서 센다**(8절 범위). 아래 모든 필드가 같은 범위다. 비율은 분모가 0이면 `None`, 백분율 소수 1자리. 평균은 소수 1자리.
+**마지막 갱신이 최근 12개월 안인 실행 건과 그 실행 건들의 실행 기록에서 센다**(8절 범위). 아래 모든 필드가 같은 범위다. 비율은 분모가 0이면 `None`, 백분율 소수 1자리. 평균은 소수 1자리.
 
 | 필드 (JSON) | 정의 |
 |---|---|
@@ -883,7 +882,7 @@ orch.missing_projects(["abc"])                    # ValueError
 | `proofreadAttempts` · `proofreadRejected` · `proofreadRejectRate` | 실행 건마다 현재 `sentenceResults`의 시도 수 · 보호 토큰 검사 불통과 시도 수, 반려 / 시도 × 100. 개수만 센다 |
 
 - 우리 기록으로 셀 수 없어 뺀 것: 실행 건이 없는 프로젝트(웹의 '공고 매칭 전'), 웹 상태 문구('판단 대기' 등). 완전 삭제한 실행 건은 현재 점수 · 표현 검수 시도를 셀 수 없어 그 항목에서 빠진다(채점 이력 · 실행 기록 수 · 토큰은 남는다 — 마지막 활동 12개월까지).
-- 웹 지금 계산과 다른 점은 `웹연동_변경사항_웹팀전달.md` 3.9절 표에 있다. 웹의 옛 익명화 스크립트(줄은 남기고 식별자만 비움)와 달리 12개월이 지난 실행은 이 숫자에서 빠진다.
+- 웹의 옛 익명화 스크립트(줄은 남기고 식별자만 비움)와 달리 12개월이 지난 실행은 이 숫자에서 빠진다.
 - 실행 기록 전체를 읽고 범위 안 실행 건의 것만 센다. 규모가 커지면 다시 본다.
 
 ### 8.7 `admin_agent_tasks() -> list[AdminAgentTask]` — "Task별 보기" (2026-10-02 새로)
@@ -992,11 +991,11 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 
 - `run_start_request` · `advance` · `tick` · `resume`을 부르지 않는다(워커 몫). `build_web` 조립은 단계를 돌지 않고, `run_start_request`는 `WEB_NOT_ALLOWED`로 거절한다.
 - `orch_` 테이블을 직접 쓰지 않는다(합의 2). 웹 `projects`의 진행 컬럼은 이제 누구도 쓰지 않으므로 읽지 않고 함수 결과를 쓴다(정리 대상).
-- `notifications.read_at` · `generation_failure_alerts.acknowledged_at` · `proofread_logs` 라벨링(`recovery_status` · `recovery_label`) 갱신만 웹이 한다. 2026-10-05부터 `proofread_logs`의 `trained` 표시와 반영 전 행 지우기(완전 삭제 · 탈퇴 · 동의 철회)도 웹이 한다(`웹연동_변경사항_웹팀전달.md` 11.7). 알림(`notifications`)은 기준 문서 v1.10대로 실행 건과 함께 보관하고 실행 건을 지울 때 함께 지운다(2026-10-08). 살아 있는 실행 건은 12개월 처리 뒤에도 실행 건 줄이 남으므로 그 알림은 남긴다. 웹은 프로젝트를 지울 때 알림을 지우고(지금처럼 — 완전 삭제 · 탈퇴), 일괄 작업으로 `notifications.project_id`를 `missing_projects`(7.4)에 넘겨 돌아온 프로젝트의 알림을 지울 수 있다. `generation_failure_alerts`는 기준 문서가 정하지 않아 웹팀이 정하며, 같은 방식을 쓸 수 있다.
+- `notifications.read_at` · `generation_failure_alerts.acknowledged_at` · `proofread_logs` 라벨링(`recovery_status` · `recovery_label`) 갱신만 웹이 한다. 2026-10-05부터 `proofread_logs`의 `trained` 표시와 반영 전 행 지우기(완전 삭제 · 탈퇴 · 동의 철회)도 웹이 한다. 알림(`notifications`)은 기준 문서 v1.10대로 실행 건과 함께 보관하고 실행 건을 지울 때 함께 지운다(2026-10-08). 살아 있는 실행 건은 12개월 처리 뒤에도 실행 건 줄이 남으므로 그 알림은 남긴다. 웹은 프로젝트를 지울 때 알림을 지우고(지금처럼 — 완전 삭제 · 탈퇴), 일괄 작업으로 `notifications.project_id`를 `missing_projects`(7.4)에 넘겨 돌아온 프로젝트의 알림을 지울 수 있다. `generation_failure_alerts`는 기준 문서가 정하지 않아 웹팀이 정하며, 같은 방식을 쓸 수 있다.
 - 실행 로그 12개월 처리(통계 줄로 옮기고 지우기)는 하지 않는다 — 워커가 한다. 통계 표 `orch_log_stats` · 작업 상태 표 `orch_jobs`는 읽지도 쓰지도 않는다(통계가 필요하면 DB에서 직접 조회).
 - 탈퇴 처리 중에는 그 계정으로 `request_start`를 부르지 않는다(7.3).
 - 산출물 파일을 쓰거나 지우지 않는다(2026-10-08). 파일 저장소 폴더는 `read_artifact_file`로만 읽는다 — 폴더를 직접 열거나 키를 경로로 바꿔 읽지 않는다(운영에서 S3로 옮기면 경로가 없어진다). 파일 삭제는 워커가 대기열로 한다. 파일 삭제 대기열 표 `orch_file_deletions`는 읽지도 쓰지도 않는다(관리자 함수 8.9).
-- 옛 가짜 파이프라인 · 클레임 · 복구 루프, "처음부터 다시 생성", 단계 사이 거꾸로 가기(8→6, 9→8)는 없앤다(`웹연동_변경사항_웹팀전달.md` 5 · 6절).
+- 옛 가짜 파이프라인 · 클레임 · 복구 루프, "처음부터 다시 생성", 단계 사이 거꾸로 가기(8→6, 9→8)는 없앤다.
 - 오래 걸리는 재작성 · 검수를 웹 요청 안에서 끝날 때까지 붙잡고 기다리지 않는다. 접수 뒤 프론트가 진행 상태를 주기적으로 확인한다.
 
 ## 12. 함께 맞출 것
@@ -1006,10 +1005,10 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | 화면별 모양(5.1) | 초안. 필요한 필드 · 이름을 알려 주면 맞춘다 |
 | `RunView.percent` | 대기 · 실패 · 중단은 0. 웹 응답(`progress_percent`)에서 해당 없는 단계를 NULL로 둘지는 웹이 정한다 |
 | 공고 ID = `notices.notice_id` | **확인 끝남(2026-10-03).** 같은 값이다 — 공고팀 추천이 공고 표를 읽는다 |
-| 공고 화면 표시 | "내용 바뀜" 문구, 가산점 `null` 표시, 화면 4 확인 필요 표시 — `공고연동_변경사항_웹팀전달.md` 9절 |
+| 공고 화면 표시 | "내용 바뀜" 문구, 가산점 `null` 표시, 화면 4 확인 필요 표시 |
 | `generation_failure_alerts` | 모든 실패를 쌓고 `last_error_kind`로 구분 (잠정) |
-| 완전 삭제 때 `proofread_logs` | **정함(2026-10-05).** 학습에 반영된 `trained` 행만 남기고 `project_id`를 끊는다(NULL 허용 + `ON DELETE SET NULL`), 반영 전 행은 웹이 지운다 — 4.4, `웹연동_변경사항_웹팀전달.md` 11.7 |
-| `notifications` · `generation_failure_alerts`의 보관 | 알림은 **정함(2026-10-08)** — 기준 문서 v1.10대로 실행 건과 함께 보관 · 함께 지움. 웹이 프로젝트를 지울 때 지우고, 남은 것은 `missing_projects`(7.4)로 찾아 지운다(11절). 실패 알림은 웹팀이 정한다(2026-10-05 — `웹연동_변경사항_웹팀전달.md` 11.8) |
+| 완전 삭제 때 `proofread_logs` | **정함(2026-10-05).** 학습에 반영된 `trained` 행만 남기고 `project_id`를 끊는다(NULL 허용 + `ON DELETE SET NULL`), 반영 전 행은 웹이 지운다 — 4.4 |
+| `notifications` · `generation_failure_alerts`의 보관 | 알림은 **정함(2026-10-08)** — 기준 문서 v1.10대로 실행 건과 함께 보관 · 함께 지움. 웹이 프로젝트를 지울 때 지우고, 남은 것은 `missing_projects`(7.4)로 찾아 지운다(11절). 실패 알림은 웹팀이 정한다(2026-10-05) |
 | 완전 삭제 중 `BUSY` | 웹이 다시 부르는 방식. 기다리게 하는 쪽이 낫다면 알려 달라 |
 | 오래 걸리는 웹 요청 제한 시간 | `wait_project` 기본 60초(잠정). 웹 서버 · 프록시 제한 시간에 맞춰 `timeout_sec`를 넘긴다 |
 | 프로토타입 · 인포그래픽 파일 위치 | **정함(2026-10-08).** 파일 저장소에 두고 결과에는 참조만 싣는다(5.4). 지금은 웹 · 워커가 함께 보는 폴더(`SBRAIN_ARTIFACT_ROOT`, 같은 절대 경로), 운영은 S3 예정. 웹은 `read_artifact_file`로 받는다(5.5) |
@@ -1022,7 +1021,7 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | 계획서 내려받기 (2026-10-10) | 웹이 `planDoc`으로 만든다(5.2). F20 · T-C4 계획서 파일 조립은 범위 밖 |
 | 사업비 · 일정 필수 확인 (2026-10-10) | 웹 입력 화면 배포를 알려 주면 Orchestrator 필수 확인을 켠다(3.1). `phase` 컬럼 추가와 음수 · 합계 불일치 막기는 웹 몫(합의, 4.4). 금액 칸이 비는 row도 입력 때 막아 줄 수 있는지 확인 요청. 협약 이후 일정 필수 여부 · 일반형은 담당자 답 대기 |
 | "대조 불가" 문구(2026-10-06) | `featureMatch.withheld`가 참일 때의 화면 문구는 웹팀이 정한다(잠정 표현 "대조 불가" — 기준 문서 v1.10도 화면 문구를 미확정으로 둔다) |
-| 웹에서 바뀌는 실행 상태의 로그(2026-10-06 요청) | 워커 운영 로그에는 워커가 처리한 것만 있다. 웹 명령 처리로 바로 바뀌는 상태(대기 중 중단 `abort_project`, 화면 8 → 9 진행 `decide_for_project` 등)는 웹 쪽 로그로 남겨 달라 — `웹연동_변경사항_웹팀전달.md` 12.4 |
+| 웹에서 바뀌는 실행 상태의 로그(2026-10-06 요청) | 워커 운영 로그에는 워커가 처리한 것만 있다. 웹 명령 처리로 바로 바뀌는 상태(대기 중 중단 `abort_project`, 화면 8 → 9 진행 `decide_for_project` 등)는 웹 쪽 로그로 남겨 달라 |
 
 ## 13. 이번 변경의 잠정 · 확장 값 (2026-10-02)
 
@@ -1047,7 +1046,7 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | X-C2-GONE 문구 | "선택하신 공고를 더 이상 확인할 수 없습니다. 다른 공고를 선택해주세요." | 기준 문서 v1.10(시트 6) — 확장 · 잠정 아님 |
 | 자격 확인(G-01) 제한 시간 | 30초 (공고 상세 · 자격 판정 호출, 공고 매칭과 같음) | 잠정 |
 | 모집 상태 모름 | 선택 공고 `status`를 '모집중'으로 둔다 — 마감 안내가 붙지 않는다 | 기준 문서 v1.10(시트 4 `Announcement.status`) — 잠정 아님 |
-| 선택 공고의 양식 · 평가 항목 | 기본 양식(`formSpec` · `evaluationItems`) — **2026-10-04부터 자리 표시 값이며 쓰지 않는다.** 양식 · 평가 항목은 작업 분해가 신청자 유형으로 고르고(값 잠정 — 예비창업자 `예비창업패키지(잠정)`, 개인사업자 · 법인 `초기창업패키지-일반형(잠정)`, 섹션 `1-1` · `2-1` · `3-1` · `4-1`), 평가 항목은 `outputs.evaluationItems`(확장)로 준다. ~~실제 값은 담당자 회신 뒤 정한다~~ 2026-10-10 담당자 양식으로 바뀌었다(20절) | 잠정 |
+| 선택 공고의 양식 · 평가 항목 | 기본 양식(`formSpec` · `evaluationItems`) — **2026-10-04부터 자리 표시 값이며 쓰지 않는다.** 양식 · 평가 항목은 작업 분해가 신청자 유형으로 고르고(값 잠정 — 예비창업자 `예비창업패키지(잠정)`, 개인사업자 · 법인 `초기창업패키지-일반형(잠정)`, 섹션 `1-1` · `2-1` · `3-1` · `4-1`), 평가 항목은 `outputs.evaluationItems`(확장)로 준다. 2026-10-10 담당자 양식으로 바뀌었다(20절) | 잠정 |
 | 추천 이유(`matchReason`) | 공고 서버의 적합 구간 · 지역 일치로 정한 문장(AI 없음) | 잠정 |
 | 공고 서버 호출 | 워커 프로세스 안에서 한 번에 하나씩, 운영 워커 1대(공고팀이 동시 호출 안전성을 확인하기 전까지) | 잠정 |
 | 카드 필드 | `applyPeriodType` · `contentChanged` · `contentVersion` · `bonusScore` · `bonusItems`(`BonusItem`) | 기준 문서 v1.10(시트 4 `AnnouncementCard`) — 확장 아님 |
@@ -1071,7 +1070,7 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | 항목 | 값 · 내용 | 표시 |
 |---|---|---|
 | 산출물층 점검 결과 필드 | `codeCheck.gateFailures` · `codeCheck.checks[].defectSources` · `featureMatch.withheld` · `withheldReason` · `partialFeatures` (5.1) | 기준 문서 v1.10(시트 4) — 확장 아님 |
-| 대조 보류 | 0점 합산, 화면 "대조 불가"(웹), 관리자 사건 `대조보류` | 사용자 결정(2026-09-30) · 문구 잠정 |
+| 대조 보류 | 0점 합산, 화면 "대조 불가"(웹), 관리자 사건 `대조보류` | 문구 잠정 |
 | 관리자 실행 기록 · 운영 요약 | `imageInputTokens` · `imageOutputTokens` · `totalImageTokens`, `callType=image` (8.1 · 8.2 · 8.6) | 확장 |
 | 추적 사건 종류 | `대조보류` · `검증2진단` · `안내문서자체검사실패` · `이미지대체` · `대체텍스트출처누락` (8.8) | 잠정 |
 | `orch_executions` 칸 | `image_input_tokens` · `image_output_tokens` (`BIGINT UNSIGNED`, NULL 허용) | 확장 |
@@ -1083,7 +1082,7 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | 항목 | 값 · 내용 | 표시 |
 |---|---|---|
 | 가산점 스위치 | 공고팀 가산점이 시험 단계라 꺼 둔다. 꺼져 있으면 화면 3 · `outputs`의 모든 카드가 `bonusScore: null` · `bonusItems: []`(이전에 만든 프로젝트 포함, 키는 그대로). 공고팀이 정리를 알리면 켜고 웹팀에 알린다 (`orchestrator/settings.py` `BONUS_ENABLED`) | 잠정 |
-| 그 밖의 공고팀 답변 | 함수 · 필드는 그대로. 화면 표시에 영향 있는 값(`bonusInfo` 사용 가능, `supportAmountText` 늘 `null`, `originalUrl` `""`, 사업자 신청자의 확인 필요, 업력 상한 `null`의 뜻)은 `공고연동_변경사항_웹팀전달.md` 0.1절 | — |
+| 그 밖의 공고팀 답변 | 함수 · 필드는 그대로. 화면 표시에 영향 있는 값(`bonusInfo` 사용 가능, `supportAmountText` 늘 `null`, `originalUrl` `""`, 사업자 신청자의 확인 필요, 업력 상한 `null`의 뜻)은 그대로 쓴다 | — |
 
 ## 18. 기준 문서 v1.10 반영 · `missing_projects`의 잠정 · 확장 값 (2026-10-08)
 
@@ -1097,7 +1096,7 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 
 | 항목 | 값 · 내용 | 표시 |
 |---|---|---|
-| 파일 참조 · 파일 칸 | `FileRef`, 결과의 파일 칸(5.4), `ReworkFileChange.beforeFile` · `afterFile` | 확장(기준 문서와 다름 — 결정 0023) |
+| 파일 참조 · 파일 칸 | `FileRef`, 결과의 파일 칸(5.4), `ReworkFileChange.beforeFile` · `afterFile` | 확장(기준 문서와 다름) |
 | 새 함수 | `read_artifact_file` · `admin_file_deletions` · `admin_retry_file_deletion` (5.5 · 8.9) | 확장 |
 | 새 오류 코드 | `FILE_NOT_FOUND` · `FILE_STORE_UNAVAILABLE` · `FILE_DELETION_NOT_FOUND` | 확장 |
 | 호출 종류 | `AdminCall.callType`의 `file` (목적 `put` · `get`) | 확장 |
@@ -1106,12 +1105,10 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | 내용 대조 실패 | 읽은 내용의 `sha256` · 크기가 저장 값과 다르면 `FILE_NOT_FOUND`로 보고 관리자용 사유는 남기지 않는다 | 잠정 |
 | 파일 삭제 첫 시도 지연 · 다시 시도 간격 · 한 번에 가져가는 줄 수 | 10분 · 10분 · 20줄 — 워커 값이라 웹에는 영향이 없다 | 잠정(조정값) |
 | MySQL 교착 때 다시 하기 | 완전 삭제 · 12개월 처리 · 탈퇴의 실행 건 정리를 교착(1213)으로 되돌려지면 처음부터 3번까지(처음 포함) 다시 한다 — 웹 함수 결과 모양은 같다 | 잠정(조정값) |
-| 허용 형식 8종 · 파일 하나 30MB · 포기 전 실패 횟수 3 | 5.4 · 8.9 | **사용자 결정 — 잠정 아님** |
+| 허용 형식 8종 · 파일 하나 30MB · 포기 전 실패 횟수 3 | 5.4 · 8.9 | **확정값 — 잠정 아님** |
 | 대기열 표 | `orch_file_deletions` — 웹은 읽지도 쓰지도 않는다 | 확장(표) |
 
 ## 20. 전략 · 작성 · 검증-1 실구현의 잠정 · 확장 값 (2026-10-10)
-
-기준 문서와 다르게 구현한 것은 `기준문서_개정필요사항_전략작성검증1.md`(저장소 미포함)에 모았다(결정 0024).
 
 | 항목 | 값 · 내용 | 표시 |
 |---|---|---|

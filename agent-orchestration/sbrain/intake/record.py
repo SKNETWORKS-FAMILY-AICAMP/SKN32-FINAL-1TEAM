@@ -1,10 +1,10 @@
 """웹 DB에 저장된 사전 정보 입력 — 웹 스키마(web/backend/app_schema.sql) 기준.
 
-웹 백엔드의 create_project(user-input-example.py, 저장소 미포함)가 폼을 받아 저장한 행을
+웹 백엔드의 create_project가 폼을 받아 저장한 행을
 T-C1 입력으로 옮기기 전에 그대로 담는 그릇이다. 필드 이름은 테이블 컬럼 이름과 같다.
 
 - JSON 컬럼(ceo_careers · hires · equipment · partners)은 스키마에 키 이름이 없다(프론트 항목 모양
-  그대로 저장). 키 이름은 웹 코드(user-input-example.py의 PlanCareerIn 등)에서 확인했고, 여기서는
+  그대로 저장). 키 이름은 웹 코드(PlanCareerIn 등)에서 확인했고, 여기서는
   안쪽 구조를 검사하지 않고 그대로 담는다. 키 이름으로 옮기는 일은 mapping.py가 한다.
 - 첨부(project_attachments)는 R-8과 함께 다룬다. 지금은 읽지 않는다.
 - 사업비 · 일정(project_budget_items · project_schedule_items)은 계획서 표의 원본 row다(spec 4.3, 읽기만).

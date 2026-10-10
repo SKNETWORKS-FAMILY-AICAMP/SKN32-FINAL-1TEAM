@@ -12,7 +12,7 @@
 - 공고 서버 연결이 없을 때의 T-C2 · G-01(스텁 모드, spec 4.6): 스텁 G-01은 스텁 공고를 직접 만들고 공고 서버 판정과 같은
   원칙(확실히 안 되는 경우만 불통과, 읽지 못한 조건은 확인 필요)으로 판정한다. 스텁 공고에는 업력 상한이 없다.
 - 파일(진입 파일 · 인포그래픽 그림 · 안내 문서 · 계획서 파일)은 작은 자리채움 내용을 tools.files(G-04는 파일 창구 인자)로
-  넣고 받은 참조(FileRef)를 출력에 싣는다 (결정 0023). 차트 그림은 비운다. 스텁 T-V2는 파일을 읽지 않는다(채점 방식 그대로).
+  넣고 받은 참조(FileRef)를 출력에 싣는다. 차트 그림은 비운다. 스텁 T-V2는 파일을 읽지 않는다(채점 방식 그대로).
 - 실제 구현이 나오면 registry.bind(task_id, fn)로 바꿔 끼운다.
 """
 from __future__ import annotations
@@ -63,7 +63,7 @@ HTML_NAMES = ["동작 연결", "대체 텍스트", "label 연결", "명도 대�
               "임시 문구 없음"]
 SVG_NAMES = ["대체 텍스트", "핵심 정보 6항목", "명도 대비", "정보 계층", "잘림 없음", "지면 밖 넘침 없음", "텍스트 실재성",
              "최소 글자 크기"]
-# 파일 이름 · 형식 (이름 규칙 — 결정 0023). 웹개발 · AI API 진입 파일명은 index.html (2026-09-30 결정 9),
+# 파일 이름 · 형식 (이름 규칙). 웹개발 · AI API 진입 파일명은 index.html (2026-09-30 결정 9),
 # 원페이지는 T-B2가 지면을 onepage.svg로 넣고 M-2가 그 참조를 진입 파일로 감싼다
 ENTRY_FILE = "index.html"
 ONEPAGE_FILE = "onepage.svg"
@@ -260,7 +260,7 @@ class StubScenario:
 
 # ── 데이터 공급 (공고 DB · 상수) ──────────────────────────
 def make_announcement(announcement_id: str, today: date, *, eligible: bool = True) -> Announcement:
-    """스텁 공고 — 업력 상한 없음(사용자 결정), 모집 형태 '기간 있음', 양식 · 평가 항목은 기본 양식 (spec 4.6)."""
+    """스텁 공고 — 업력 상한 없음, 모집 형태 '기간 있음', 양식 · 평가 항목은 기본 양식 (spec 4.6)."""
     return Announcement(
         announcement_id=announcement_id, title=f"창업지원사업 {announcement_id}", agency="중소벤처기업부",
         support_field="창업(06)", apply_start=today - timedelta(days=10), apply_end=today + timedelta(days=30),
@@ -778,7 +778,7 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
                         check=_check(sc, "T-B2", inp.rework_input, ""))
 
     def m2(inp: c.M2In) -> c.M2Out:
-        # 파일을 열지 않고 인포그래픽 그림 참조를 그대로 진입 파일로 감싼다 (같은 실행 건의 참조 — 결정 0023)
+        # 파일을 열지 않고 인포그래픽 그림 참조를 그대로 진입 파일로 감싼다 (같은 실행 건의 참조)
         return c.M2Out(prototype=Prototype(entry_file=inp.infographic.image_file, kind="svg-onepage",
                                            asset_files=[], implemented_features=list(inp.feature_list)))
 
@@ -786,7 +786,7 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
         # 자체 검사는 check_fail_times['G-04']로 불통과를 흉내 낸다. 실구현(템플릿 · 낱말 검사)이 지킬 것 — 웹개발 · AI API
         # README에는 '실행' 또는 '열람', 원페이지 README에는 '열람'과 '인쇄'가 들어가야 한다(구현 · 검증-2 담당 요청, 검증-2
         # 진단 기준과 같음). 끝내 실패해 AI 생성 고지(기획서 6-8)가 빠져도 T-C4 전달은 막지 않는다 (잠정 — 사용자 미답)
-        # 파일을 쓰는 규칙 단계 — 엔진이 파일 창구를 두 번째 인자로 넘긴다 (결정 0023)
+        # 파일을 쓰는 규칙 단계 — 엔진이 파일 창구를 두 번째 인자로 넘긴다
         _maybe_raise(sc, "G-04")
         readme = files.put(README_FILE, STUB_README, MARKDOWN_TYPE)
         return c.G04Out(readme_file=readme, check=_check(sc, "G-04", None, ""))
@@ -889,7 +889,7 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
 
     def tc4(inp: c.TC4In, tools: Tools) -> c.TC4Out:
         # 계획서 파일은 자리채움(형식만 워드). 프로토타입은 참조 목록 — 진입 파일(있으면) · 안내 문서(있으면) · 자산.
-        # 내려받기용 압축은 웹이 만든다 (결정 0023)
+        # 내려받기용 압축은 웹이 만든다
         plan_file = tools.files.put(PLAN_DOC_FILE, STUB_PLAN_DOC, DOCX_TYPE)
         proto = inp.prototype
         proto_files = [f for f in (proto.entry_file, proto.readme_file) if f is not None] + list(proto.asset_files)

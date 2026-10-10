@@ -53,7 +53,7 @@ def _no_real_notice_server(monkeypatch):
     isolate_notice_api(monkeypatch)
 
 
-# ── 파일 저장소 폴더 (SBRAIN_ARTIFACT_ROOT, 결정 0023) ─────────────
+# ── 파일 저장소 폴더 (SBRAIN_ARTIFACT_ROOT) ─────────────
 # 워커 조립(build_app · worker main)은 이 값이 필수다. 모든 테스트에서 pytest 임시 폴더 아래의 절대 경로로 둔다 — 개발 PC의
 # 환경 변수 · .env 값을 쓰지 않는다(환경 변수가 .env를 이긴다). 폴더는 build_app이 부를 때 만든다. 같은 테스트의 워커 조립 ·
 # 웹 조립은 같은 폴더를 본다. 없거나 상대 경로일 때를 시험하려면 그 테스트 안에서 monkeypatch로 바꾼다.

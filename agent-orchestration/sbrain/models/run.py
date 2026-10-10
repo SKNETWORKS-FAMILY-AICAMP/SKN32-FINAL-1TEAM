@@ -122,7 +122,7 @@ class CycleState(SBModel):
 
 
 class Verify1State(SBModel):
-    """새 타입(결정 0024) — 검증-1 fail 재수행의 흐름 상태 (Run.verify1, 실행 건 줄에 저장, spec 4.10).
+    """새 타입 — 검증-1 fail 재수행의 흐름 상태 (Run.verify1, 실행 건 줄에 저장, spec 4.10).
 
     사이클(첫 작성 · 재작성 사이클)이 바뀌면 cycleKey를 바꾸고 나머지를 새로 시작한다. 실행 기록에 기대지 않는다.
     """

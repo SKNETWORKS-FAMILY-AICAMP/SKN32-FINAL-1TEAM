@@ -171,7 +171,7 @@ def form_fields(bundle: FormBundle) -> dict[str, Any]:
 
 
 def applicant_fields(inp: TC3In) -> dict[str, Any]:
-    """신청자 칸은 유형 · 업력(있을 때만 — 예비창업자는 없음) · 주 업종(그대로) · 시 · 도뿐이다 (사용자 결정)."""
+    """신청자 칸은 유형 · 업력(있을 때만 — 예비창업자는 없음) · 주 업종(그대로) · 시 · 도뿐이다."""
     company = inp.company_info
     out: dict[str, Any] = {"applicantType": company.applicant_type}
     if inp.business_age_years is not None:

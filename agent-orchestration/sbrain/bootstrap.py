@@ -6,7 +6,7 @@
 | build_app | 워커 (sbrain/worker.py) | 공유 MySQL — SqlStore · SqlProjectInputSource · DbSettingsProvider | 조율 T-C1 · T-C3 실구현과 재작성 · 재수행 지시문 다시 쓰기(OpenAI), 전략 · 작성 · 검증-1 T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1 실구현(담당자 코드 — OpenAI, T-W3는 LLM 없음), T-C2 · G-01은 SBRAIN_NOTICE_API_URL이 있으면 공고 서버 연결(실제 모드) · 없으면 스텁, 나머지 스텁. 이미지 호출도 구현이 들어온 Task만 실제(OpenAI) |
 | build_web | 웹 서버 | 공유 MySQL — 같음 | 단계를 돌지 않는다 (명령 · 조회만). 공고 서버 · 이미지 호출처를 부르지 않는다 |
 
-파일 저장소 (확장, 결정 0023 — SBRAIN_ARTIFACT_ROOT, 절대 경로만, 기본값 없음):
+파일 저장소 (확장 — SBRAIN_ARTIFACT_ROOT, 절대 경로만, 기본값 없음):
 | 조립 | 파일 저장소 |
 |---|---|
 | build_stub_app | 메모리(MemoryFileStore) |
@@ -42,7 +42,7 @@ from .orchestrator.registry import TaskRegistry
 from .orchestrator.store import Store
 from .orchestrator.tools import ImageProvider, ImageRequest, LLMProvider, LLMRequest
 
-ARTIFACT_ROOT_ENV = "SBRAIN_ARTIFACT_ROOT"   # 로컬 파일 저장소 폴더 (확장, 결정 0023) — 절대 경로만, 기본값 없음
+ARTIFACT_ROOT_ENV = "SBRAIN_ARTIFACT_ROOT"   # 로컬 파일 저장소 폴더 (확장) — 절대 경로만, 기본값 없음
 
 
 def artifact_root_problem(value: str | None) -> str | None:
@@ -151,7 +151,7 @@ def build_app(
     """워커 조립 — 공유 MySQL(SqlStore · SqlProjectInputSource · DbSettingsProvider), 조율 T-C1 · T-C3 실구현, OpenAI 호출처.
 
     - db_url이 없으면 SBRAIN_DB_URL(환경 변수 → .env)을 쓴다.
-    - 파일 저장소(확장, 결정 0023): 로컬 폴더 artifact_root, 주지 않으면(None) SBRAIN_ARTIFACT_ROOT(환경 변수 → .env). 필수다 —
+    - 파일 저장소(확장): 로컬 폴더 artifact_root, 주지 않으면(None) SBRAIN_ARTIFACT_ROOT(환경 변수 → .env). 필수다 —
       없거나 절대 경로가 아니면 DB에 닿기 전에 RuntimeError(값은 메시지에 싣지 않는다). 폴더가 없으면 만든다.
     - 흐름의 지시문 만들기에 조율 다시 쓰기(rewrite_guidance)를 끼운다 — 재작성 · 재수행 대상의 안내를 다시 쓴다.
     - 전략 · 작성 · 검증-1(T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1)은 담당자 코드 실구현(agents/partner_sw, bind_partner_sw)이고
@@ -209,7 +209,7 @@ def build_web(
 ) -> App:
     """웹 서버 조립 — 명령 · 조회 함수만 쓰는 SBrainOrchestrator. LLM 호출처가 없고 단계를 돌지 않는다.
 
-    파일 저장소(확장, 결정 0023): artifact_root, 주지 않으면(None) SBRAIN_ARTIFACT_ROOT. 선택이다 — 절대 경로면 읽기 전용으로
+    파일 저장소(확장): artifact_root, 주지 않으면(None) SBRAIN_ARTIFACT_ROOT. 선택이다 — 절대 경로면 읽기 전용으로
     열어 파일 읽기(read_artifact_file)에만 쓴다(엔진에는 넘기지 않는다, 폴더를 만들지 않는다). 없거나 상대 경로면 조립은 되고
     read_artifact_file만 FILE_STORE_UNAVAILABLE이다. 웹은 파일을 쓰지도 지우지도 않는다 — 삭제는 모두 워커가 한다.
 
@@ -263,7 +263,7 @@ def _assemble(*, store: Store, settings: SettingsProvider, scenario: StubScenari
     # 지시문 다시 쓰기는 워커 조립만 끼운다. 없으면(스텁 · 웹 조립) 재작성 · 재수행 문제를 덧붙이기만 한다
     flow = SBrainFlow(registry, constants=make_constants(), now=now, rewriter=rewriter)
     exact, suffix = artifact_types(registry)
-    # 파일 저장소 (확장, 결정 0023) — 스텁 조립은 메모리, 워커 조립은 로컬 폴더, 웹 조립은 엔진에 없음(읽기 전용은 file_reader)
+    # 파일 저장소 (확장) — 스텁 조립은 메모리, 워커 조립은 로컬 폴더, 웹 조립은 엔진에 없음(읽기 전용은 file_reader)
     engine = Engine(store=store, registry=registry, flow=flow, providers=providers,
                     types=ArtifactTypes(exact, suffix), immutable_keys=IMMUTABLE_KEYS, now=now, sleep=sleep,
                     image_providers=image_providers, files=files)

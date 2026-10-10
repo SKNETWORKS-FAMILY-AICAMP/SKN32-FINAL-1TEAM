@@ -17,18 +17,18 @@ from .base import (
 )
 from .files import FileRef
 
-# 파일 칸(참조형)의 확장 표시 note — 기준 문서의 경로 · 원문 칸을 파일 참조로 바꿨다 (결정 0023)
+# 파일 칸(참조형)의 확장 표시 note — 기준 문서의 경로 · 원문 칸을 파일 참조로 바꿨다
 FILE_NOTE = "참조형 — 기준 문서와 다름(결정 0023)"
 # 전략 · 작성 · 검증-1 연동에서 더한 새 타입(BudgetItem · ScheduleItem · DiagramSpec · SectionResult · Verify1State)의
-# 표시 — 기존 타입에 담을 곳이 없어 새 타입으로 둔다(docs/standards.md 7절 예외). 이 타입을 담는 칸의 note도 이것으로 시작한다
+# 표시 — 기존 타입에 담을 곳이 없어 새 타입으로 둔다. 이 타입을 담는 칸의 note도 이것으로 시작한다
 NEW_TYPE_NOTE = "새 타입(결정 0024)"
 # 계획서 항목 종류 — 본문 · 표 · 그림 (담당자 execution_contract의 kind)
 SectionKind = Literal["section", "table", "image"]
 
 
-# ── 사전 정보 확장 — 사업비 · 일정 row (새 타입, 결정 0024) ──────────────
+# ── 사전 정보 확장 — 사업비 · 일정 row (새 타입) ──────────────
 class BudgetItem(SBModel):
-    """새 타입(결정 0024) — 사업비 집행계획 한 row (웹 project_budget_items, item_order 순). 금액은 원, NULL이면 None."""
+    """새 타입 — 사업비 집행계획 한 row (웹 project_budget_items, item_order 순). 금액은 원, NULL이면 None."""
     category: str = ext(note="비목 (category)")
     execution_plan: str = ext(note="집행계획 (execution_plan)")
     total_amount: int | None = ext(note="총사업비(원)")
@@ -40,7 +40,7 @@ class BudgetItem(SBModel):
 
 
 class ScheduleItem(SBModel):
-    """새 타입(결정 0024) — 추진 일정 한 row (웹 project_schedule_items, item_order 순)."""
+    """새 타입 — 추진 일정 한 row (웹 project_schedule_items, item_order 순)."""
     scope: Literal["agreement", "roadmap"] = ext(
         note="section — feasibility → agreement(협약기간 내), growth → roadmap(협약 이후)")
     category: str = ext(note="구분")
@@ -374,7 +374,7 @@ DiagramNode = Annotated[str, StringConstraints(min_length=1, max_length=35)]
 
 
 class DiagramSpec(SBModel):
-    """새 타입(결정 0024) — 계획서 그림 하나(T-W2 · 담당자 F18). SVG 파일은 tools.files로 넣은 참조다 (spec 4.6)."""
+    """새 타입 — 계획서 그림 하나(T-W2 · 담당자 F18). SVG 파일은 tools.files로 넣은 참조다 (spec 4.6)."""
     diagram_id: str = ext(note="그림 ID — 예: '2.3.6-USER_FLOW'")
     flow_type: Literal["USER_FLOW", "SERVICE_ARCHITECTURE"] = ext(note="서비스 흐름도 · 서비스 구조도")
     nodes: list[DiagramNode] = ext(min_length=3, max_length=6, note="노드 3 ~ 6개, 각 1 ~ 35자 (담당자 F18 계약)")
@@ -395,7 +395,7 @@ class PlanDoc(SBModel):
 
 # ── 검증-1 항목 결과 ─────────────────────────────────
 class SectionResult(SBModel):
-    """새 타입(결정 0024) — 계획서 항목 하나의 검증-1 판정 (T-V1 출력 sectionResults, spec 4.7 · 4.9)."""
+    """새 타입 — 계획서 항목 하나의 검증-1 판정 (T-V1 출력 sectionResults, spec 4.7 · 4.9)."""
     section_code: str = ext(note="항목 번호")
     tag: str | None = ext(None, note="웹 태그 — 없으면 None")
     content_type: SectionKind = ext(note="항목 종류")
@@ -411,7 +411,7 @@ class SectionResult(SBModel):
 
 # ── 구현 산출물 ───────────────────────────────────────
 class Prototype(SBModel):
-    """구현 산출물. 파일은 내용 대신 파일 참조(FileRef)로 싣는다 (결정 0023).
+    """구현 산출물. 파일은 내용 대신 파일 참조(FileRef)로 싣는다.
 
     entryFile   진입 파일(실행 HTML · 원페이지 SVG). 비면 진입 파일 없음. 파일 하나로 열린다(다른 파일을 상대 경로로 부르지 않음)
     assetFiles  따로 내려받을 파일만 (빈 목록 가능)

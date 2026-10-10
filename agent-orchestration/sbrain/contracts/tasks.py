@@ -29,7 +29,7 @@ from ..models.base import (
 )
 from ..models.domain import FILE_NOTE, NEW_TYPE_NOTE
 
-# 전략 · 작성 · 검증-1 연동(결정 0024)에서 더한 확장 입력 · 출력의 note (spec 4.7)
+# 전략 · 작성 · 검증-1 연동에서 더한 확장 입력 · 출력의 note (spec 4.7)
 SW_NOTE = "전략 · 작성 · 검증-1 연동(결정 0024)"
 # 재개 때 이어 쓰는 받은 결과 — 엔진 일반 장치 PARTIAL. 키는 T-S1 · T-S2 = F번호, T-W1 · T-V1 = 항목 번호, T-W2 = 그림 ID (spec 4.13)
 PRIOR_NOTE = (f"{SW_NOTE} — 재개 때 이어 쓰는 받은 결과(키 → 받은 값 JSON 문자열, <taskId>.partial). 엔진이 재개 때만 "
@@ -294,7 +294,7 @@ class M4Out(SBModel):
 
 
 # ── 전략 ─────────────────────────────────────────────
-# 확장 입력 · 출력(spec 4.7)은 전략 · 작성 · 검증-1 담당자 함수(F01 ~ F19)를 끼우며 더한 것이다(결정 0024).
+# 확장 입력 · 출력(spec 4.7)은 전략 · 작성 · 검증-1 담당자 함수(F01 ~ F19)를 끼우며 더한 것이다.
 # 사전 값(strategyData 등)의 키는 담당자 canonical 키 그대로다. 산출물 내용이라 기록 · 로그 · 예외 메시지에 넣지 않는다.
 class TS1In(SBModel):
     item_spec: ItemSpec
