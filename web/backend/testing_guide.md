@@ -63,6 +63,7 @@ SQLite 개발 모드에서는 오케스트레이터를 쓸 수 없어 프로젝�
 
 - **관리자 화면 (SB-263)** — 1~4 준비 뒤(워커는 띄우지 않는다) `python scripts/e2e_admin.py` : 워커를 같은 프로세스에서 돌리며 상태가 다른 프로젝트 네 개(매칭 전 · 실패 · 완료(재작성 포함) · 진행중)를 만들고, 진행 현황 · 정체 · 이력보기 · 보관/복원 · 에이전트 실행 기록 · Task별 보기 · 운영 지표 · 알림 · 사용자 정지 · 체크리스트를 부른다. 숫자는 오케스트레이터 표를 직접 센 값과 맞추고, 관리자 설정(합격선 · 재작성 횟수)이 새 실행에 반영되는지와 일반 사용자의 접근 거부(403)도 본다. 바꾼 설정은 끝에 원래대로 돌린다. 2분쯤 걸리고 다시 돌려도 된다.
 
+- **사업비 · 추진 일정 (SB-333)** — 1~4 준비 뒤 `python scripts/e2e_budget_schedule.py` : 예비창업 · 법인 입력으로 사업비 · 일정이 두 표에 보낸 순서(`item_order`) · 단계(`phase`) · 구분(`section`)과 함께 저장되고, 실제 오케스트레이터가 `request_start`에서 읽어 시작 요청(`orch_start_requests.form_json`)에 같은 사업비 · 일정을 단계 · 범위(`agreement` · `roadmap`)와 함께 담는지 본다. 이어서 오케스트레이터 스위치(`PLAN_TABLES_REQUIRED`)와 웹 스위치(`REQUIRE_BUDGET_SCHEDULE`)를 프로세스 안에서 켜고 끄며 필수 확인이 두 곳에서 같은 `missing` 이름으로 거절하는지(웹이 먼저, 오케스트레이터는 부르지 않음), 협약 이후 일정이 없어도 통과하는지, 예비창업 2단계만 빠지면 `사업비 집행계획(2단계)`로 거절하는지 확인한다(19단계). **워커는 필요 없다**(시작 요청까지만 보고, 대기 요청은 케이스마다 휴지통 삭제로 취소). 오케스트레이터가 이 두 표를 읽는 코드는 SB-310에 있어 **최신 SB-304를 합친 트리**에서 돌려야 한다. 시작 요청 뒤 T-C1 · 전략 · 작성 Agent가 이 값을 쓰는지는 워커와 LLM이 있어야 보이므로 실제 Agent를 연결한 뒤 다시 본다.
 - **스크립트를 반복해서 돌릴 때** — E2E 스크립트는 대부분 같은 로컬 계정(`e2e@example.com`)을 쓰고 실행마다 프로필 슬롯을 하나씩 만든다(`e2e_delete_withdraw.py`는 탈퇴로 계정이 지워져 제외). 계정당 프로필은 3개까지라 같은 DB에서 3번 넘게 돌리면 `POST /profile`이 409로 답하고 스크립트가 첫 단계에서 멈춘다. 이때는 2번(`prepare_local_mysql.py`)을 다시 실행해 DB를 초기화한다. 워커를 따로 띄워 둔 채 초기화하면 남은 요청을 워커가 가져가 시험이 틀어지므로 워커를 끄고 → 초기화 → 워커를 다시 띄운다.
 
 ### 브라우저(프론트)로 돌려 보기
@@ -96,7 +97,7 @@ uvicorn app.main:app --port 8000
 
 ### 사업비 · 추진 일정 입력 (SB-327)
 
-사전 정보 입력의 사업비 집행계획 · 추진 일정을 `POST /projects`(payload)로 받아 `project_budget_items` · `project_schedule_items`에 저장한다. 오케스트레이터가 `request_start` 때 이 두 표를 직접 읽는다(웹이 `formInput`으로 보내지 않는다). 자동 테스트만으로 확인한다 — 로컬 MySQL · 워커가 필요한 E2E는 SB-333.
+사전 정보 입력의 사업비 집행계획 · 추진 일정을 `POST /projects`(payload)로 받아 `project_budget_items` · `project_schedule_items`에 저장한다. 오케스트레이터가 `request_start` 때 이 두 표를 직접 읽는다(웹이 `formInput`으로 보내지 않는다). 단위 테스트는 가짜 오케스트레이터로 확인하고, 실제 오케스트레이터가 저장한 행을 읽는지는 `scripts/e2e_budget_schedule.py`(SB-333)가 확인한다 — 아래 "그 밖의 검증 스크립트".
 
 - **모양** — 요청 payload와 `GET /projects/{id}` 응답에 같은 이름으로 `budget_items[]`(`phase` · `category` · `execution_plan` · `total_amount` · `government_amount` · `self_cash_amount` · `self_in_kind_amount`)와 `schedule_items[]`(`section` · `category` · `content` · `period` · `detail`)가 있다. 순서는 보낸 배열 순서(`item_order` 1부터)이고, 한 목록은 50줄까지다. `section`은 `feasibility`(협약기간 내) · `growth`(협약 이후 전체), `phase`는 `'1단계'` · `'2단계'`다. 금액은 원 단위 정수다.
 - **입력 검사(422 `VALIDATION_ERROR`)** — 금액 네 칸 필수(0 허용, 총사업비만 1 이상, 음수 · 999,999,999,999원 초과 거부), `총사업비 = 정부지원 + 자기부담 현금 + 현물`, 비목 · 집행계획 필수, 일정은 구분 · 추진내용 · 추진기간 필수(세부내용은 비우면 `''`)에 추진기간에 연도 필수. 예비창업자는 줄마다 `phase`가 필요하고 자기부담은 현금 하나(현물 0), 개인사업자 · 법인은 `phase`가 없다. **오류 위치** `detail[].loc`는 표 이름 · 줄 번호(0부터) · 칸이다(예: `["budget_items", 2, "total_amount"]`) — `POST /projects`는 payload 폼 필드를 직접 검증해 `body`가 앞에 붙지 않는다.
