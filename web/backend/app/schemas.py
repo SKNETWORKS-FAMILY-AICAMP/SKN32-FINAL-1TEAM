@@ -3,7 +3,8 @@ import datetime
 import re
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, ValidationError, field_validator, model_validator
+from pydantic_core import InitErrorDetails, PydanticCustomError
 
 from app import pipeline_stages as ps
 
@@ -163,33 +164,68 @@ class PlanPartnerIn(BaseModel):
     status: str | None = None
 
 
-# [SB-329] 사전 정보 입력의 사업비 집행계획 · 추진 일정 행 — 오케스트레이터가 request_start 때 project_budget_items ·
+# [SB-329 · SB-330] 사전 정보 입력의 사업비 집행계획 · 추진 일정 행 — 오케스트레이터가 request_start 때 project_budget_items ·
 # project_schedule_items를 읽어 전략 · 작성 Agent 입력으로 옮긴다. 이름은 DB 컬럼과 같다(변환은 오케스트레이터 몫). 금액은 원 단위
-# 정수다. 항목 순서는 보낸 배열 순서 그대로 저장한다(item_order는 서버가 매긴다). 값 검사(필수 · 음수 · 합계)는 SB-330.
+# 정수다. 항목 순서는 보낸 배열 순서 그대로 저장한다(item_order는 서버가 매긴다).
+# 오류 위치(loc)는 표 이름 · 줄 번호(0부터) · 칸이다 — 예: ("budget_items", 2, "total_amount"). POST /projects는 payload 폼 필드를 직접
+# 검증해 422를 주므로 앞에 "body"가 붙지 않는다. 화면은 이 위치로 해당 칸을 표시한다.
 BudgetPhase = Literal['1단계', '2단계']
 # feasibility = 협약기간 내 일정, growth = 협약 이후 전체 일정(오케스트레이터가 agreement / roadmap으로 바꾼다)
 ScheduleSection = Literal['feasibility', 'growth']
 # 한 프로젝트가 보낼 수 있는 행 수 상한 — item_order 컬럼이 TINYINT(최대 255)이고 화면이 한 표에 쓸 만한 수를 넘는 값은 오입력이다
 MAX_BUDGET_ITEMS = 50
 MAX_SCHEDULE_ITEMS = 50
+# 금액 상한 — DB 컬럼이 DECIMAL(14,2)라 정수부 12자리(원)까지 들어간다. 넘으면 저장하다 DB 오류(500)가 나므로 입력 단계에서 막는다
+MAX_AMOUNT_WON = 999_999_999_999
+_PERIOD_YEAR_RE = re.compile(r'20\d{2}')
+
+
+def _error_detail(loc: tuple, message: str, error_type: str = 'value_error') -> InitErrorDetails:
+    return InitErrorDetails(type=PydanticCustomError(error_type, message), loc=loc, input=None)
 
 
 class BudgetItemIn(BaseModel):
+    """사업비 집행계획 한 줄. 금액 네 칸은 모두 필수이고 0은 허용한다(총사업비만 0보다 커야 한다)."""
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     phase: BudgetPhase | None = Field(None, description="예비창업만 '1단계' · '2단계', 그 밖의 유형은 생략")
-    category: str | None = Field(None, max_length=100, description='비목(인건비 · 재료비 · 외주용역비 등)')
-    execution_plan: str | None = Field(None, max_length=2000, description='집행계획')
-    total_amount: int | None = Field(None, description='총사업비(원)')
-    government_amount: int | None = Field(None, description='정부지원사업비(원)')
-    self_cash_amount: int | None = Field(None, description='자기부담금 현금(원)')
-    self_in_kind_amount: int | None = Field(None, description='자기부담금 현물(원)')
+    category: str = Field(..., min_length=1, max_length=100, description='비목(인건비 · 재료비 · 외주용역비 등)')
+    execution_plan: str = Field(..., min_length=1, max_length=2000, description='집행계획')
+    total_amount: int = Field(..., ge=1, le=MAX_AMOUNT_WON, description='총사업비(원)')
+    government_amount: int = Field(..., ge=0, le=MAX_AMOUNT_WON, description='정부지원사업비(원)')
+    self_cash_amount: int = Field(..., ge=0, le=MAX_AMOUNT_WON, description='자기부담금 현금(원)')
+    self_in_kind_amount: int = Field(..., ge=0, le=MAX_AMOUNT_WON, description='자기부담금 현물(원)')
+
+    @model_validator(mode='after')
+    def _total_equals_parts(self) -> 'BudgetItemIn':
+        parts = self.government_amount + self.self_cash_amount + self.self_in_kind_amount
+        if self.total_amount != parts:
+            raise ValidationError.from_exception_data(type(self).__name__, [_error_detail(
+                ('total_amount',), '총사업비는 정부지원사업비 + 자기부담금(현금) + 자기부담금(현물)과 같아야 해요')])
+        return self
 
 
 class ScheduleItemIn(BaseModel):
+    """추진 일정 한 줄. 구분 · 추진내용 · 추진기간은 필수이고 세부내용은 비워도 된다(빈 값은 ''로 저장한다)."""
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     section: ScheduleSection = Field(..., description='feasibility = 협약기간 내, growth = 협약 이후 전체')
-    category: str | None = Field(None, max_length=100, description='구분')
-    content: str | None = Field(None, max_length=2000, description='추진내용')
-    period: str | None = Field(None, max_length=50, description='추진기간(예: 2026.05~2026.07)')
-    detail: str | None = Field(None, max_length=2000, description='세부내용')
+    category: str = Field(..., min_length=1, max_length=100, description='구분')
+    content: str = Field(..., min_length=1, max_length=2000, description='추진내용')
+    period: str = Field(..., min_length=1, max_length=50, description='추진기간(예: 2026.05~2026.07)')
+    detail: str = Field('', max_length=2000, description='세부내용')
+
+    @field_validator('detail', mode='before')
+    @classmethod
+    def _detail_none_is_empty(cls, v):
+        return '' if v is None else v
+
+    @field_validator('period')
+    @classmethod
+    def _period_has_year(cls, v: str) -> str:
+        if not _PERIOD_YEAR_RE.search(v):
+            raise ValueError('추진기간에 연도가 있어야 해요(예: 2026.05~2026.07)')
+        return v
 
 
 _MONTH_RE = re.compile(r'^\d{4}-\d{2}$')
@@ -306,6 +342,24 @@ class ProjectCreateRequest(BaseModel):
     # [SB-329] 사업비 집행계획 · 추진 일정 — 배열 순서대로 저장한다(BudgetItemIn · ScheduleItemIn 참고)
     budget_items: list[BudgetItemIn] = Field(default_factory=list, max_length=MAX_BUDGET_ITEMS)
     schedule_items: list[ScheduleItemIn] = Field(default_factory=list, max_length=MAX_SCHEDULE_ITEMS)
+
+    @model_validator(mode='after')
+    def _check_budget_phase_by_applicant_type(self) -> 'ProjectCreateRequest':
+        """[SB-330] 사업비 단계는 예비창업자만 쓴다 — 예비창업자는 줄마다 1단계 · 2단계가 있어야 1 · 2단계 표에 들어가고(자기부담은
+        현금 하나로만 받아 현물은 0), 개인사업자 · 법인은 단계가 없다. 오류는 줄 번호와 칸을 위치로 담는다."""
+        errors: list[InitErrorDetails] = []
+        for i, item in enumerate(self.budget_items):
+            if self.applicant_type == 'preliminary':
+                if item.phase is None:
+                    errors.append(_error_detail(('budget_items', i, 'phase'), '예비창업자는 사업비 줄마다 1단계 · 2단계를 골라야 해요'))
+                if item.self_in_kind_amount != 0:
+                    errors.append(_error_detail(
+                        ('budget_items', i, 'self_in_kind_amount'), '예비창업자는 자기부담금을 현금 하나로만 입력해요(현물은 0)'))
+            elif self.applicant_type in ('individual', 'corp') and item.phase is not None:
+                errors.append(_error_detail(('budget_items', i, 'phase'), '개인사업자 · 법인은 사업비 단계를 쓰지 않아요'))
+        if errors:
+            raise ValidationError.from_exception_data(type(self).__name__, errors)
+        return self
 
     @field_validator('applicant_type')
     @classmethod
