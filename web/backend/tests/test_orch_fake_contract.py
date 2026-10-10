@@ -48,6 +48,22 @@ def test_fake_gate_and_score_view_fields_match_real():
     assert set(vars(orch_fakes.make_plan_doc())) == set(domain.PlanDoc.model_fields)
     assert set(vars(orch_fakes.make_section('1-1', 't', 'x'))) == set(domain.PlanSection.model_fields)
     assert set(vars(orch_fakes.make_sentence(1, 'x'))) == set(domain.Sentence.model_fields)
+    assert set(vars(orch_fakes.make_diagram())) == set(domain.DiagramSpec.model_fields)
+    files = pytest.importorskip('sbrain.models.files')
+    assert set(vars(orch_fakes.make_file_ref('a.svg'))) == set(files.FileRef.model_fields)
+
+
+def test_real_plan_models_have_the_fields_the_web_will_map():
+    """[SB-310] 계획서가 양식의 모든 항목(24 ~ 25개)을 담게 되면서 늘어난 칸 — 웹이 태그 · 종류 · 그림으로 계획서 응답과 내려받기를 만든다.
+    이름이 바뀌면 여기서 알린다."""
+    from typing import get_args
+    domain = pytest.importorskip('sbrain.models.domain')
+    assert {'tag', 'content_type'} <= set(domain.PlanSection.model_fields)
+    assert set(get_args(domain.PlanSection.model_fields['content_type'].annotation)) == {'section', 'table', 'image'}
+    assert {'tables', 'charts', 'diagrams'} <= set(domain.PlanDoc.model_fields)
+    assert {'table_id', 'headers', 'rows', 'source_ref'} <= set(domain.TableSpec.model_fields)
+    assert {'flow_type', 'source_ref', 'image_file'} <= set(domain.DiagramSpec.model_fields)
+    assert set(get_args(domain.DiagramSpec.model_fields['flow_type'].annotation)) == {'USER_FLOW', 'SERVICE_ARCHITECTURE'}
 
 
 def test_fake_admin_results_match_real():

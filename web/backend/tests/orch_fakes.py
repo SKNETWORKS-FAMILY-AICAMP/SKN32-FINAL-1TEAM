@@ -203,15 +203,33 @@ def make_proofread_screen(sentences: list | None = None, **overrides: Any) -> NS
     return NS(**base)
 
 
-def make_section(code: str, title: str, *texts: str) -> NS:
-    """texts마다 문장 하나, 문단 번호는 인자 순서대로 1부터(문단 사이는 줄바꿈으로 이어진다)."""
-    return NS(section_code=code, title=title, sentences=[make_sentence(i, t, paragraph_no=i) for i, t in enumerate(texts, 1)])
+def make_section(code: str, title: str, *texts: str, tag: str | None = None, content_type: str = 'section') -> NS:
+    """texts마다 문장 하나, 문단 번호는 인자 순서대로 1부터(문단 사이는 줄바꿈으로 이어진다).
+
+    tag(웹 태그 1-1 ~ 4-1 또는 None) · content_type(section · table · image)은 SB-310에서 늘었다 — 기본은 태그 없음 · 본문이고,
+    image 항목은 문장이 0개다(texts를 비운다)."""
+    return NS(section_code=code, title=title, sentences=[make_sentence(i, t, paragraph_no=i) for i, t in enumerate(texts, 1)],
+              tag=tag, content_type=content_type)
+
+
+def make_file_ref(name: str, key: str | None = None, media_type: str = 'image/svg+xml', size: int = 1, sha256: str = '0' * 64) -> NS:
+    """산출물 파일 참조(FileRef)의 필드."""
+    return NS(key=key or f'r1/e1/uniq/{name}', name=name, media_type=media_type, size=size, sha256=sha256)
+
+
+def make_diagram(source_ref: str = '2.3.6', flow_type: str = 'USER_FLOW', nodes: list | None = None, **overrides: Any) -> NS:
+    """계획서 그림 하나(DiagramSpec) — 그림 항목(2.3.6 · 3.3.6)마다 서비스 흐름도 · 서비스 구조도 두 개가 온다."""
+    base = dict(
+        diagram_id=f'{source_ref}-{flow_type}', flow_type=flow_type, nodes=list(nodes or ['시작', '처리', '완료']),
+        visual_style={'palette': ['#1F2937']}, source_ref=source_ref, image_file=make_file_ref(f'{source_ref}_{flow_type}.svg'))
+    base.update(overrides)
+    return NS(**base)
 
 
 def make_plan_doc(sections: list | None = None, **overrides: Any) -> NS:
     base = dict(
         sections=sections if sections is not None else [make_section('1-1', '문제 인식', '문제를 설명한다.', '근거를 든다.')],
-        feature_list=['예약', '결제'], charts=[], tables=[], protected_tokens=[])
+        feature_list=['예약', '결제'], charts=[], tables=[], protected_tokens=[], diagrams=[])
     base.update(overrides)
     return NS(**base)
 
