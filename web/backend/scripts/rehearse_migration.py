@@ -1,4 +1,4 @@
-"""마이그레이션 리허설 (SB-265) — 옛 웹 스키마에 migrations/001 · 002를 적용해 새 스키마(app_schema.sql)와 같아지는지 본다.
+"""마이그레이션 리허설 (SB-265) — 옛 웹 스키마에 migrations/001 · 002 · 004를 적용해 새 스키마(app_schema.sql)와 같아지는지 본다.
 
     python scripts/rehearse_migration.py                       # 옛 스키마 = git origin/main 의 app_schema.sql
     python scripts/rehearse_migration.py --old-ref <git ref>   # 다른 옛 스키마 기준
@@ -6,14 +6,16 @@
 
 ★ 공유 DB 사본이 없어서 옛 스키마를 git(main)으로 대신한다 — 공유 DB가 실제로 main 스키마와 같은지는 이 스크립트가 알 수 없다. 사본이 생기면
   `--old-schema-file`(mysqldump --no-data 결과)로 같은 리허설을 다시 돌린다. 로컬 호스트의 MySQL만 받고 DB는 아래 두 개를 새로 만든다(있으면 지운다).
-    sbrain_test_mig_old   옛 스키마 + 시드 데이터 → 001 → 002 → orch_ 표 적용 (리허설 대상)
+    sbrain_test_mig_old   옛 스키마 + 시드 데이터 → 001 → 002 → 004 → orch_ 표 적용 (리허설 대상)
     sbrain_test_mig_new   새 스키마(app_schema.sql) + orch_ 표 (비교 기준)
 
 차례대로:
   1. 옛 DB 만들기(공고 스키마 + 옛 웹 스키마)와 시드 데이터(사용자 · 프로젝트 · 계획서 · 검수 기록 · 알림 · 실패 알림)
   2. 001 적용 → proofread_logs의 plan_id NULL 허용 · project_id · model_version, 기존 행의 project_id가 채워졌는지, 데이터가 그대로인지
   3. 002 적용 → 더미 테이블 13개 · 컬럼이 사라졌는지, 입력 · 알림 · 검수 기록 데이터가 남았는지
-  4. orch_ 표 적용(projects를 참조) → 이어서 001 · 002를 다시 적용해도 오류가 없고 스키마가 그대로인지(멱등)
+     004 적용(SB-328) → project_budget_items.phase(NULL 허용)가 생겼는지, 기존 사업비 행이 NULL로 남았는지
+     ※ 003(feature/sb-269-web-final의 checklist_items)은 이 브랜치에 없어 건너뛴다 — 병합 뒤 003 단계를 002와 004 사이에 넣는다
+  4. orch_ 표 적용(projects를 참조) → 이어서 001 · 002 · 004를 다시 적용해도 오류가 없고 스키마가 그대로인지(멱등)
   5. 새 DB와 스키마 비교(표 · 열 형식 · NULL 허용 · 기본값 · 인덱스 · 외래 키 규칙) — 다르면 마이그레이션에 빠진 것이 있다는 뜻
 
 마이그레이션 SQL은 DELIMITER · 저장 프로시저를 써서 mysql 클라이언트가 필요하다 — 로컬 MySQL 컨테이너(--container)의 mysql을 `docker exec`로 부른다.
@@ -142,11 +144,14 @@ SEED = [
     "INSERT INTO plan_sections (plan_id, tag, title, body) VALUES (1, '1-1', '문제인식', '본문')",
     "INSERT INTO proofread_logs (plan_id, section_id, original_text, corrected_text, attempt_no, passed, recovery_status) "
     "VALUES (1, 1, '원문1', '시도1', 1, 0, 'pending'), (1, 1, '원문2', '시도2', 1, 0, 'labeled'), (2, NULL, '원문3', '시도3', 1, 1, NULL)",
+    "INSERT INTO project_budget_items (project_id, item_order, category, execution_plan, total_amount, government_amount, self_cash_amount, self_in_kind_amount) "
+    "VALUES (1, 1, '외주용역비', '앱 개발 외주', 1000000, 1000000, 0, 0)",
     "INSERT INTO notifications (project_id, kind, target_step) VALUES (1, '문서평가', 6), (2, '실패', NULL)",
     "INSERT INTO generation_failure_alerts (project_id, stage, resume_count, last_error_kind, failure_reason, regenerate_exhausted) "
     "VALUES (2, '계획서작성', 5, '일시', '재개 상한 초과', 0)",
 ]
-KEEP_COUNTS = {'users': 2, 'companies': 2, 'projects': 2, 'notifications': 2, 'generation_failure_alerts': 1, 'proofread_logs': 3}
+KEEP_COUNTS = {'users': 2, 'companies': 2, 'projects': 2, 'notifications': 2, 'generation_failure_alerts': 1, 'proofread_logs': 3,
+               'project_budget_items': 1}
 
 
 def counts(args, database: str) -> dict[str, int]:
@@ -213,12 +218,21 @@ def main() -> int:
     rows = query(args, OLD_DB, 'SELECT original_text, project_id FROM proofread_logs ORDER BY log_id')
     step('3. 검수 기록의 project_id가 002 뒤에도 남음(plan_id를 떼어도 연결이 유지)', list(rows) == [('원문1', 1), ('원문2', 1), ('원문3', 2)], f'{rows}')
 
+    # 3b) 004 (SB-328)
+    ok, out = run_migration(args, OLD_DB, MIGRATIONS / '004_budget_phase.sql')
+    step('3. 004 적용', ok, out if not ok else '')
+    phase_cols = query(args, OLD_DB, "SELECT column_type, is_nullable FROM information_schema.columns "
+                       "WHERE table_schema=%s AND table_name='project_budget_items' AND column_name='phase'", (OLD_DB,))
+    step('3. project_budget_items.phase(VARCHAR(10), NULL 허용) 추가', list(phase_cols) == [('varchar(10)', 'YES')], f'{phase_cols}')
+    phases = query(args, OLD_DB, 'SELECT phase FROM project_budget_items')
+    step('3. 기존 사업비 행의 phase는 NULL로 남고 데이터가 그대로', list(phases) == [(None,)] and counts(args, OLD_DB) == before, f'{phases}')
+
     # 4) orch_ 표 + 멱등
     run_statements(args, OLD_DB, ORCH_SCHEMA.read_text(encoding='utf-8'))
     orch_ok = query(args, OLD_DB, "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=%s AND table_name LIKE 'orch\\_%%'", (OLD_DB,))[0][0]
     step('4. orch_ 표 적용(projects를 참조)', orch_ok > 0, f'orch_ 표 {orch_ok}개')
     first = schema_snapshot(args, OLD_DB)
-    for name in ('001_proofread_logs_worker_table.sql', '002_drop_dummy_pipeline.sql'):
+    for name in ('001_proofread_logs_worker_table.sql', '002_drop_dummy_pipeline.sql', '004_budget_phase.sql'):
         ok, out = run_migration(args, OLD_DB, MIGRATIONS / name)
         step(f'4. {name[:3]} 다시 적용해도 오류 없음(멱등)', ok, out if not ok else '')
     second = schema_snapshot(args, OLD_DB)
