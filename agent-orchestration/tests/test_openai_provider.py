@@ -7,7 +7,7 @@ import httpx2
 import openai
 import pytest
 
-from sbrain.agents.supervisor.tc1 import ItemDraft
+from sbrain.agents.supervisor.tc1 import SpecDraft
 from sbrain.models.clock import utc_now
 from sbrain.orchestrator.errors import FormatError, ProviderError, ToolCallExhausted
 from sbrain.orchestrator.openai_provider import OpenAIProvider
@@ -43,14 +43,14 @@ def request(schema: dict | None = None, **over) -> LLMRequest:
 
 def test_request_shape_with_json_schema():
     p, comp = provider(['{"a": 1}'])
-    schema = ItemDraft.model_json_schema()
+    schema = SpecDraft.model_json_schema()
     assert p.complete(request(schema)).text == '{"a": 1}'
     call = comp.calls[0]
     assert (call["model"], call["temperature"], call["timeout"]) == ("gpt-test", 0.3, 12.0)
     assert "reasoning_effort" not in call
     assert call["messages"] == [{"role": "user", "content": "안녕"}]
     rf = call["response_format"]
-    assert rf["type"] == "json_schema" and rf["json_schema"]["name"] == "ItemDraft"
+    assert rf["type"] == "json_schema" and rf["json_schema"]["name"] == "SpecDraft"
     assert rf["json_schema"]["schema"] == schema and rf["json_schema"]["strict"] is False
 
 

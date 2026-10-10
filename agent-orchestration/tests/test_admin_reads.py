@@ -204,7 +204,7 @@ def test_admin_executions_filters_and_order(clock):
     assert {r.project_id for r in app.orchestrator.admin_executions(until=first2, limit=100)} == {p1}
     tc1 = app.orchestrator.admin_executions(project_id=p1, task_id="T-C1")[0]
     assert (tc1.agent, tc1.attempt, tc1.trigger, tc1.status, tc1.model, tc1.reasoning_effort) == (
-        "조율", 1, "첫실행", "성공", "gpt-6-luna", "low")
+        "조율", 1, "첫실행", "성공", "gpt-6-luna", "medium")
     assert tc1.duration_sec is not None and tc1.duration_sec >= 0 and tc1.tokens.input_tokens is None
     text = "".join(r.model_dump_json() for r in rows)
     assert "헬스장" not in text                                                    # 산출물 · 입력 내용은 싣지 않는다

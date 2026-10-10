@@ -59,7 +59,7 @@ def task_ids() -> set[str]:
     return {s.task_id for s in build_registry().specs() if s.kind == "task" and s.uses_llm}
 
 
-# LLM을 부르지 않는 Task — 모델 항목이 없다 (사용자 결정 2026-10-08, T-W3는 담당자 F17 규칙 코드 — spec 4.2)
+# LLM을 부르지 않는 Task — 모델 항목이 없다 (T-W3는 담당자 F17 규칙 코드 — spec 4.2)
 NO_LLM_TASKS = {"T-C2", "G-01", "T-W3", "T-C4"}
 # 전략 · 작성 · 검증-1 담당자 함수별 모델 (Task 모델, purposeModels) — spec 4.2
 PARTNER_MODELS = {
@@ -88,7 +88,9 @@ def test_task_keys_match_catalog_task_steps():
 def test_default_values():
     t = Settings().tasks
     row = lambda k: (t[k].provider, t[k].model, t[k].temperature, t[k].reasoning_effort)  # noqa: E731
-    for k in ("T-C1", "T-C3", REWRITE_KEY):
+    assert row("T-C1") == ("openai", "gpt-6-luna", None, "medium")          # T-C1만 medium
+    assert (t["T-C1"].image_provider, t["T-C1"].image_model) == (None, None)
+    for k in ("T-C3", REWRITE_KEY):
         assert row(k) == ("openai", "gpt-6-luna", None, "low"), k
     for k, (model, purposes) in PARTNER_MODELS.items():
         assert row(k) == ("openai", model, None, None) and t[k].purpose_models == purposes, k
