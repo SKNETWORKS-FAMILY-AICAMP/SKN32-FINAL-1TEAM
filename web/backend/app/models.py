@@ -401,6 +401,8 @@ class ProjectBudgetItem(Base):
     budget_item_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
     item_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # [SB-328] 예비창업만 '1단계' / '2단계', 그 밖은 NULL — 오케스트레이터가 request_start 때 읽는다
+    phase: Mapped[str | None] = mapped_column(String(10), nullable=True)
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)  # 비목
     execution_plan: Mapped[str | None] = mapped_column(Text, nullable=True)
     total_amount: Mapped[decimal.Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)

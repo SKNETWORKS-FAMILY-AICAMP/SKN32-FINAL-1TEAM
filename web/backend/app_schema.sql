@@ -179,6 +179,7 @@ CREATE TABLE IF NOT EXISTS project_budget_items (
     budget_item_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '사업비 집행계획 항목 고유 식별자',
     project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
     item_order TINYINT UNSIGNED NULL COMMENT '표시 순서',
+    phase VARCHAR(10) NULL COMMENT '사업비 단계(예비창업: 1단계/2단계, 그 밖은 NULL)',
     category VARCHAR(100) NULL COMMENT '비목(인건비/재료비/외주용역비 등)',
     execution_plan TEXT NULL COMMENT '집행계획 서술',
     total_amount DECIMAL(14,2) NULL COMMENT '총사업비(원)',
