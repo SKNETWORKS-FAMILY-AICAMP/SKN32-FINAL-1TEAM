@@ -89,6 +89,15 @@ ATTACH_MAX_FILES = int(os.getenv('ATTACH_MAX_FILES', '5'))
 ATTACH_MAX_MB = int(os.getenv('ATTACH_MAX_MB', '10'))
 ATTACH_MAX_BYTES = ATTACH_MAX_MB * 1024 * 1024
 
+# [SB-332] 사업비 · 추진 일정 필수 입력 스위치. 켜면 아래 조건을 어긴 생성 요청을 E-C1-REQUIRED(422)로 막는다. 입력 화면이 배포되기 전에
+# 켜면 모든 계획서 작성이 막히므로 꺼 둔 채로 두고, 화면이 배포된 뒤 켠다 — 오케스트레이터의 필수 확인 스위치도 같은 시점에 켠다(누리 님 답).
+# 환경 변수 REQUIRE_BUDGET_SCHEDULE=1(또는 true · yes · on)이면 켜진다.
+REQUIRE_BUDGET_SCHEDULE = os.getenv('REQUIRE_BUDGET_SCHEDULE', '').strip().lower() in ('1', 'true', 'yes', 'on')
+# missing 이름은 오케스트레이터의 필수 확인과 같다(화면이 두 곳의 E-C1-REQUIRED를 같은 방식으로 보여 준다)
+MISSING_BUDGET = '사업비 집행계획'
+MISSING_BUDGET_PHASE = {'1단계': '사업비 집행계획(1단계)', '2단계': '사업비 집행계획(2단계)'}
+MISSING_FEASIBILITY_SCHEDULE = '추진 일정(협약기간 내)'
+
 def _save_attachment(file: UploadFile) -> tuple[str, str]:
     """첨부파일을 저장하고 (원본 파일명, 접근 가능한 URL)을 반환한다.
     지금은 로컬 디스크에 저장 — 나중에 S3 등으로 바꿀 때 이 함수 내부만 교체하면 된다.
@@ -770,6 +779,21 @@ def download_plan_document_hwp(
     )
 
 
+def missing_budget_schedule(body: ProjectCreateRequest) -> list[str]:
+    """[SB-332] 사업비 · 추진 일정 필수 조건을 어긴 항목 이름(없으면 빈 목록). 사업비 1건 이상, 예비창업은 1단계 · 2단계 각 1건 이상,
+    협약기간 내(feasibility) 일정 1건 이상. 협약 이후(growth) 일정은 선택이다."""
+    missing = []
+    if not body.budget_items:
+        missing.append(MISSING_BUDGET)
+    if body.applicant_type == 'preliminary':
+        for phase, name in MISSING_BUDGET_PHASE.items():
+            if not any(b.phase == phase for b in body.budget_items):
+                missing.append(name)
+    if not any(s.section == 'feasibility' for s in body.schedule_items):
+        missing.append(MISSING_FEASIBILITY_SCHEDULE)
+    return missing
+
+
 @router.post('', response_model=ProjectDetailOut, status_code=201)
 async def create_project(
     payload: str = Form(..., description='ProjectCreateRequest 스키마와 동일한 필드를 담은 JSON 문자열'),
@@ -833,6 +857,13 @@ async def create_project(
     active = gateway.active_work(account_id)
     if active is not None:
         raise CodedHTTPException(409, 'E-RUN-CONCURRENT', mapping.blocked_detail(active))
+
+    # [SB-332] 사업비 · 추진 일정 필수 확인 — 스위치가 켜져 있을 때만. 아직 아무것도 저장하지 않은 시점이라 막아도 남는 행이 없다.
+    if REQUIRE_BUDGET_SCHEDULE:
+        missing = missing_budget_schedule(body)
+        if missing:
+            raise CodedHTTPException(
+                422, 'E-C1-REQUIRED', {'message': '필수 항목이 비어 있어요', 'code': 'E-C1-REQUIRED', 'missing': missing})
 
     company = _create_company_for_project(db, current_user, body)
 
