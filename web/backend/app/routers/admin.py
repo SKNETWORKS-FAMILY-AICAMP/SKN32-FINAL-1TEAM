@@ -101,8 +101,8 @@ def save_policy_thresholds(body: PolicyThresholdsIn, db: Session = Depends(get_d
     policy.token_retry_cap = body.token_retry_cap
     db.commit()
     db.refresh(policy)
-    # TODO: notifyRecheckCapViolations() 에 해당하는 재채점 편차 점검을
-    #       verification_score_history 에 대해 서버에서 돌리고 위반 목록을 함께 응답하도록 확장
+    # [SB-338] deviation_cap(재채점 편차 상한)은 저장만 한다 — 오케스트레이터가 편차 검사를 하지 않아(SB-310, 검증-1의
+    # varianceFlag는 늘 거짓) 쓰는 곳이 없다. 편차 점검 · 위반 목록 응답은 하지 않기로 했다(팀 상의 2026-10-10).
     return VerificationPolicyOut.model_validate(policy)
 
 

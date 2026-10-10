@@ -856,7 +856,7 @@ class PolicyThresholdsIn(BaseModel):
     pass_threshold: float = Field(ge=0, le=100, allow_inf_nan=False)
     rerun_cap: int = Field(ge=0)
     rework_cap: int = Field(ge=0)
-    deviation_cap: float = Field(ge=0, le=100, allow_inf_nan=False)
+    deviation_cap: float = Field(ge=0, le=100, allow_inf_nan=False, description='재채점 편차 상한. 현재 쓰이지 않는다 — 오케스트레이터가 편차 검사를 하지 않아(SB-310, varianceFlag는 늘 거짓) 값은 저장만 한다')
     token_retry_cap: int = Field(ge=0)
 
 
@@ -890,7 +890,7 @@ class VerificationPolicyOut(BaseModel):
     pass_threshold: float
     rerun_cap: int
     rework_cap: int
-    deviation_cap: float
+    deviation_cap: float = Field(description='재채점 편차 상한. 현재 쓰이지 않는다 — 오케스트레이터가 편차 검사를 하지 않아(SB-310, varianceFlag는 늘 거짓) 값은 저장만 한다')
     token_retry_cap: int
 
 
