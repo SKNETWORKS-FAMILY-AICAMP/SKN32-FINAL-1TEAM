@@ -121,6 +121,19 @@ class CycleState(SBModel):
     collect_until: datetime | None = None   # 재작성 요청을 모으는 시간이 끝나는 시각 (첫 요청 + 잠정 2초)
 
 
+class Verify1State(SBModel):
+    """새 타입(결정 0024) — 검증-1 fail 재수행의 흐름 상태 (Run.verify1, 실행 건 줄에 저장, spec 4.10).
+
+    사이클(첫 작성 · 재작성 사이클)이 바뀌면 cycleKey를 바꾸고 나머지를 새로 시작한다. 실행 기록에 기대지 않는다.
+    """
+    cycle_key: str = ext(note="'첫작성' 또는 재작성 사이클 ID")
+    made_items: list[str] = ext(default_factory=list, note="이번 사이클에 만든(다시 만든) 항목 번호")
+    redo_counts: dict[str, int] = ext(default_factory=dict, note="항목 → 이번 사이클에 쓴 검증-1 재수행 횟수")
+    phase: Literal["없음", "재수행중", "대체중"] = ext("없음", note="재수행 진행 단계")
+    pending_items: dict[str, list[str]] = ext(
+        default_factory=dict, note="지금 다시 도는 대상 → 문제 목록 (재수행중 · 대체중일 때만)")
+
+
 ReworkResultStatus = Literal["진행중", "완료", "실패"]
 
 
@@ -202,6 +215,8 @@ class Run(SBModel):
                 "마지막 활동 시각(updatedAt)을 바꾸지 않는다")
     proofread_base_ref: str | None = ext(None, note="표현 검수(화면 10) 전 계획서 산출물 '이름@버전'")
     attempt_max: dict[str, int] = ext(default_factory=dict, note="Task별 마지막 시도 번호 (Task ID → 시도 번호)")
+    verify1: Verify1State | None = ext(
+        None, note="새 타입(결정 0024) — 검증-1 fail 재수행 상태. 사이클 끝 · 재작성 실패 되돌리기 · 중단 · 완전 삭제 때 비운다")
 
 
 def progress_percent(run: Run) -> int:

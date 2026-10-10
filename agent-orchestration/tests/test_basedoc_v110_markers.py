@@ -6,9 +6,10 @@ import pytest
 
 from sbrain.contracts import tasks as c
 from sbrain.models import (
-    Announcement, AnnouncementCard, ChartSpec, CodeCheck, CodeCheckResult, CompanyInfo, Deliverable,
-    FeatureMatchResult, GateResult, Infographic, Notification, PreInput, Prototype, ReworkComparison, ReworkInput,
-    Run, TaskInstruction, extension_fields,
+    Announcement, AnnouncementCard, BudgetItem, ChartSpec, CheckResult, CodeCheck, CodeCheckResult, CompanyInfo,
+    Deliverable, DiagramSpec, FeatureMatchResult, FormSpec, GateResult, Infographic, Notification, PlanDoc,
+    PlanSection, PreInput, Prototype, ReworkComparison, ReworkInput, Run, ScheduleItem, SectionResult,
+    TaskInstruction, Verify1State, extension_fields,
 )
 from sbrain.orchestrator.settings import TaskModelSetting
 from sbrain.flow.reads import ReworkFileChange
@@ -59,6 +60,29 @@ STILL_EXTENSION = [
     (c.TC3In, {"priorGuidance"}),
     (c.G02aIn, {"cycleInfo"}),
     (Notification, {"notificationId"}),
+    # 전략 · 작성 · 검증-1 연동 (결정 0024, spec 4.2 · 4.3 · 4.6 · 4.7 · 4.8 · 4.10 · 4.12)
+    (TaskModelSetting, {"purposeModels"}),
+    (CompanyInfo, {"budgetItems", "scheduleItems", "teamRoleCareers"}),
+    (PreInput, {"budgetItems", "scheduleItems", "teamRoleCareers"}),
+    (FormSpec, {"sectionTags", "sectionKinds"}),
+    (PlanSection, {"tag", "contentType"}),
+    (PlanDoc, {"diagrams"}),
+    (CheckResult, {"failedItems"}),
+    (ReworkInput, {"targetItems", "redoSource", "unit", "fallbackItems"}),
+    (Run, {"verify1"}),
+    (c.TS1Out, {"strategyData"}),
+    (c.TV1Out, {"sectionResults", "scorePolicyVersion"}),
+    (c.G02aIn, {"sectionResults"}),
+    (c.G02bIn, {"sectionResults"}),
+]
+
+# 새 타입(결정 0024) — 기존 타입에 담을 곳이 없어 새로 둔 타입. 칸은 모두 확장이고, 이 타입을 담는 칸의 note에 결정 번호가 있다
+NEW_TYPES_0024 = [BudgetItem, ScheduleItem, DiagramSpec, SectionResult, Verify1State]
+NEW_TYPE_HOLDERS = [
+    (PreInput, {"budgetItems", "scheduleItems"}),
+    (PlanDoc, {"diagrams"}),
+    (Run, {"verify1"}),
+    (c.TV1Out, {"sectionResults"}),
 ]
 
 # 파일 칸(참조형) — 기준 문서의 경로 · 원문 칸을 파일 참조(FileRef)로 바꿨다. 모두 확장 (결정 0023)
@@ -106,6 +130,17 @@ def test_file_ref_fields_are_extensions_with_note(model, names):
     assert names <= set(extension_fields(model))
     props = model.model_json_schema(by_alias=True)["properties"]
     assert all(props[n]["x-note"] == FILE_REF_NOTE for n in names)
+
+
+@pytest.mark.parametrize("model", NEW_TYPES_0024, ids=[m.__name__ for m in NEW_TYPES_0024])
+def test_new_types_0024_fields_are_extensions(model):
+    assert set(extension_fields(model)) == {info.alias or n for n, info in model.model_fields.items()}
+
+
+@pytest.mark.parametrize(("model", "names"), NEW_TYPE_HOLDERS, ids=_ids(NEW_TYPE_HOLDERS))
+def test_new_type_holders_note_decision_0024(model, names):
+    props = model.model_json_schema(by_alias=True)["properties"]
+    assert all("결정 0024" in props[n]["x-note"] for n in names)
 
 
 def test_required_ness_unchanged():

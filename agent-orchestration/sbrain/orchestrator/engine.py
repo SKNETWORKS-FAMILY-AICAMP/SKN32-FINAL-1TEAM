@@ -14,7 +14,8 @@
   모인다(성공 · 재시도 소진 모두). 어느 Agent 설정으로 무엇을 부를지는 Flow가 정한다.
 - S-Brain 고유 규칙(구간 · 대기 지점 · 재작성 경로 · 알림)은 Flow가 맡는다.
 - 선택 확장 지점(흐름에 없으면 기본 동작): Flow.redo_rework_input — 재수행 입력을 저장하기 전에 흐름이 칸을 채운다(기본: 그대로),
-  Flow.after_execution — 실행 기록이 성공으로 저장되는 같은 묶음에서 그 실행의 호출 기록을 본다(기본: 아무것도 안 함).
+  Flow.after_execution — 실행 기록이 성공으로 저장되는 같은 묶음에서 그 실행의 호출 기록을 본다(기본: 아무것도 안 함),
+  Flow.allows_redo — 검사 불통과일 때 재수행을 걸지 정한다(기본: 건다).
 - 시각은 시간대 있는 UTC다. 주입한 시계 · tick(now)의 시간대 없는 값은 UTC로 본다.
 - 파일(확장, 결정 0023): 엔진은 파일 저장소를 받아(선택) Task의 tools.files와 파일을 쓰는 규칙 단계(writes_files)의 파일 창구에
   넘긴다. 출력을 저장하기 전에 출력 안의 모든 FileRef(중첩 모델 · 목록 · 사전 포함)를 저장소와 대조한다 — 키 첫 마디가 이 실행
@@ -114,6 +115,10 @@ class Flow(Protocol):
         """실행 기록 하나가 성공으로 저장된 직후, 같은 저장 묶음에서 그 실행의 이번 호출 기록(calls — 재개면 재개 뒤 호출만)을
         흐름에 보여 준다(선택). 재수행은 실행 기록마다 저장 묶음을 비우므로 실행 기록마다 따질 일은 여기서 한다.
         흐름에 없으면 아무것도 하지 않는다. 사건은 ctx.add_event로 같은 묶음에 넣는다."""
+        ...
+    def allows_redo(self, ctx: RunContext, spec: TaskSpec, check: Any) -> bool:
+        """검사(check)가 불통과이고 재수행 횟수가 남았을 때 재수행을 걸지(선택). 거짓이면 그 결과로 단계를 끝낸다.
+        흐름에 없으면 늘 건다."""
         ...
     def after_step(self, ctx: RunContext, step_id: str, outcome: Outcome) -> None: ...
     def on_queue_empty(self, ctx: RunContext) -> None: ...
@@ -339,7 +344,8 @@ class Engine:
             check = outputs.get("check")
             if check is not None:
                 ctx.run.check_refs[spec.task_id] = ctx.ref(spec.outputs["check"])
-            if spec.redo and check is not None and not check.passed and rs.redo_count < limit:
+            if (spec.redo and check is not None and not check.passed and rs.redo_count < limit
+                    and self._redo_allowed(ctx, spec, check)):
                 rs = self._schedule_redo(ctx, spec, rec, rs, limit)
                 ctx.run.redo_state = rs
                 ctx.commit()
@@ -529,7 +535,7 @@ class Engine:
 
     def tools_config(self, ctx: RunContext, spec: TaskSpec) -> ToolsConfig:
         """Task의 호출 설정 — 설정 키는 Task ID, Agent 이름은 담당 Agent. Task 온도 규칙(TempRule)을 위에 씌운다.
-        LLM을 부르지 않는 Task(uses_llm=False — T-C2 · G-01 · T-C4)는 Task 설정 표를 보지 않고 모델 없이 제한 시간 ·
+        LLM을 부르지 않는 Task(uses_llm=False — T-C2 · G-01 · T-C4 · T-W3)는 Task 설정 표를 보지 않고 모델 없이 제한 시간 ·
         재시도만 입힌다. 그래서 실행 기록의 모델 · 호출처 · 온도도 비고, 옛 설정 사본에 그 Task 항목이 있어도 쓰지 않는다."""
         if not spec.uses_llm:
             return self._plain_tools_config(ctx, spec)
@@ -550,7 +556,8 @@ class Engine:
     def agent_tools_config(self, ctx: RunContext, agent_name: str, key: str) -> ToolsConfig:
         """설정 키(key)의 설정(호출처 · 모델 · 기본 온도 · 추론 강도 · 이미지 설정)과 제한 시간을 입힌 호출 설정 (Task 온도 규칙
         없음). 호출 기록의 Agent 이름은 agent_name이다. 옛 설정 사본(tasks 없음)이면 agent_name의 Agent별 설정을 쓴다.
-        제한 시간은 task_timeouts[key](없으면 120초), 이미지 호출 한 번의 제한 시간은 task_timeouts['<key>.image']다."""
+        제한 시간은 task_timeouts[key](없으면 120초), 이미지 호출 한 번의 제한 시간은 task_timeouts['<key>.image']다.
+        목적별 모델(Task 설정의 purpose_models, 확장)은 목적 이름을 보지 않고 그대로 옮긴다 — 옛 Agent별 설정에는 없다(빈 사전)."""
         s = ctx.settings
         conf = self.agents.lookup(s, agent_name, key)
         image = conf if isinstance(conf, TaskModelSetting) else None
@@ -564,6 +571,7 @@ class Engine:
             image_quality=image.image_quality if image else None,
             image_size=image.image_size if image else None,
             image_timeout_sec=s.task_timeouts.get(f"{key}{IMAGE_TIMEOUT_SUFFIX}", 120.0),
+            purpose_models=dict(image.purpose_models) if image else {},
         )
 
     def _tools_factory(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, sink: CallSink) -> ToolsFactory:
@@ -600,6 +608,11 @@ class Engine:
             return None
 
     # ── 재수행 ────────────────────────────────────────
+    def _redo_allowed(self, ctx: RunContext, spec: TaskSpec, check: Any) -> bool:
+        """검사 불통과일 때 재수행을 걸지 — 흐름의 선택 확장 지점 allows_redo가 정한다(없으면 늘 건다)."""
+        hook = getattr(self.flow, "allows_redo", None)
+        return True if hook is None else bool(hook(ctx, spec, check))
+
     def _schedule_redo(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord,
                        rs: RedoState, limit: int) -> RedoState:
         check_ref = ctx.ref(spec.outputs["check"])

@@ -339,8 +339,9 @@ def test_onepage_screen9_document_rework_reflects_infographic(clock):
     rid = to_screen9(app)
     rework(app, clock, rid, "성장전략")
     cyc = last_cycle_id(app, rid)
+    # 성장전략 묶음 항목(본문 · 표)만 다시 만든다 — 그림 항목이 없어 T-W2는 돌지 않는다 (spec 4.11)
     assert cycle_steps(app, rid, cyc) == [
-        "T-W1", "T-W2", "T-W3", "M-1", "T-V1", "T-B2", "M-2", "G-04", "M-3", "T-V2", "G-02b"]
+        "T-W1", "T-W3", "M-1", "T-V1", "T-B2", "M-2", "G-04", "M-3", "T-V2", "G-02b"]
     [tb2] = [r for r in records_of_task(app, rid, "T-B2") if r.cycle_id == cyc]
     assert tb2.rework_role == "반영" and tb2.feedback_in == []
     assert not any(i.startswith("T-B2.reworkInput") for i in tb2.inputs)

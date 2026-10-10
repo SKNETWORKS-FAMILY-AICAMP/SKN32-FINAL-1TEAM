@@ -1,6 +1,13 @@
 """스텁 Agent — 뼈대 검증용. 7개 Agent(조율 포함)의 Task와 합치기를 타입에 맞는 더미 결과로 구현한다.
 
-- LLM Task 스텁은 tools.llm을 한 번 이상 불러 tools 경로를 거치게 한다.
+- LLM Task 스텁은 tools.llm을 한 번 이상 불러 tools 경로를 거치게 한다. T-W3는 LLM을 부르지 않는 Task(uses_llm=False)라
+  부르지 않는다(부르면 'LLM 설정 없음'으로 바로 실패한다).
+- 전략 · 작성 · 검증-1 확장 출력(strategyData · sectionOutputs · diagrams · tableSections · sectionResults 등, spec 4.7)은
+  규격에 맞는 더미로 채운다. 계획서 항목은 formSpec의 항목 · 태그 · 종류를 따른다(태그 · 종류 칸이 비면 태그 없음 · 본문).
+  T-W1 · T-W2 · T-W3 · T-V1은 목표 항목(reworkInput.targetItems)만 다시 만들고(판정하고) 나머지는 base… 입력을 그대로 잇는다.
+  T-W3는 fallbackItems의 표를 본문 서술로 대체하고, 자체 검사 불통과면 그 시도에서 바로 대체한다 (spec 4.8 · 4.10).
+- 스텁 T-V1은 StubScenario의 항목 판정(fail · warning · 입력 없음)을 따르고, 스텁 G-02a · G-02b는 계획서 묶음 후보 ·
+  다음 동작 · '입력 확인 필요' 안내를 spec 4.12 규칙으로 낸다(문서층 배점은 설정 사본 scoring.docLayerMax).
 - StubScenario로 점수 · 검사 결과 · 오류를 조절해 흐름 테스트를 만든다.
 - 공고 서버 연결이 없을 때의 T-C2 · G-01(스텁 모드, spec 4.6): 스텁 G-01은 스텁 공고를 직접 만들고 공고 서버 판정과 같은
   원칙(확실히 안 되는 경우만 불통과, 읽지 못한 조건은 확인 필요)으로 판정한다. 스텁 공고에는 업력 상한이 없다.
@@ -23,23 +30,31 @@ from pydantic import BaseModel
 from ..contracts import tasks as c
 from ..models import (
     Announcement, AnnouncementCard, ArtifactScore, BonusItem, ChartSpec, CheckResult, CodeCheck,
-    CodeCheckResult, CompanyInfo, Deliverable, DocScore, DocScoreItem, EligibilityRule,
-    FeatureMatchResult, FormatFinding, GateResult,
+    CodeCheckResult, CompanyInfo, Deliverable, DiagramSpec, DocScore, DocScoreItem, EligibilityRule,
+    FeatureMatchResult, FormatFinding, FormSpec, GateResult,
     Infographic, ItemSpec, MarketAnalysis, MarketSizeItem, PlanDoc, PlanSection,
     ProofreadLog, Prototype, ReferenceDoc, RequirementAnalysis, ReworkDiff, ReworkOrder,
-    ScoreReport, Sentence, TableSpec, Token, TokenCheckResult,
+    ScoreReport, SectionResult, Sentence, TableSpec, Token, TokenCheckResult,
 )
 from ..models.clock import kst_today, utc_clock, utc_now
 from ..orchestrator import settings
 from ..orchestrator.errors import FormatError, ProviderError, ResourceNotFound, ToolCallExhausted
 from ..orchestrator.registry import TaskRegistry
 from ..orchestrator.tools import FileTool, ImageRequest, ImageResponse, LLMRequest, LLMResponse, TokenUsage, Tools
-from ..flow.rework_map import TASK_BUNDLE, artifact_rework_reasons, order_bundles
-from .form_defaults import EVAL_ITEMS, default_evaluation_items, default_form_spec, stub_rubric
+from ..flow.rework_map import (
+    KIND_TASK, REWORK_DEFAULT_REASON, TASK_BUNDLE, artifact_rework_reasons, document_bundles, order_bundles,
+    section_bundle,
+)
+from .form_defaults import default_evaluation_items, default_form_spec, stub_rubric
 from .notice.g01 import PRE_STARTUP, business_age_years   # 업력(년) 반올림은 실제 G-01과 한 곳에서 (스텁 테스트도 이 이름을 쓴다)
 from .supervisor import plan as task_plan   # 작업 분해 부품 — 실제 T-C3와 같은 확인 · 양식 고르기 · 목록 · 틀 · 맥락
 
+# 문서층 배점 기본값 — 판정(G-02a · G-02b)은 설정 사본의 scoring.docLayerMax를 쓰고, 사본에 없을 때만 이 값이다 (spec 4.12)
 DOC_LAYER_MAX = 70.0
+# 입력 없음 항목이 있을 때 점수 보고서 notices에 더하는 안내 (잠정 문구, spec 4.12)
+INPUT_MISSING_NOTICE = "입력 확인 필요 — 사업비 집행계획 · 추진 일정을 입력하면 해당 표가 채워집니다."
+# 스텁 T-V1의 입력 없음 warning (실구현은 '입력 확인 필요 — <사업비 집행계획 | 추진 일정>', spec 4.9)
+STUB_INPUT_MISSING_WARNING = "입력 확인 필요 — 사업비 집행계획 · 추진 일정"
 # 코드 점검 8칸 — 구현 · 검증-2 담당 개정안(1.3판)의 배점 · 이름. 진입 파일 · 비밀값 · sandbox는 통과 필수 조건으로 옮겨
 # 칸에 없다(gate_failures)
 HTML_WEIGHTS = [3, 2, 2, 2, 1, 2, 2, 1]
@@ -62,7 +77,6 @@ STUB_HTML = "<!doctype html><html lang='ko'><body>스텁 프로토타입</body><
 STUB_SVG = "<svg xmlns='http://www.w3.org/2000/svg'><text>원페이지</text></svg>".encode()
 STUB_README = "# 실행 · 열람 안내\n\n스텁 안내 문서 — 열람 · 인쇄 · 실행 방법 자리.\n".encode()
 STUB_PLAN_DOC = b"stub plan docx placeholder"
-EVAL = list(EVAL_ITEMS)
 # 스텁 공고 · 카드 값 — 모집 형태 표기(spec 4.4), 가산점
 PERIOD_FIXED = "기간 있음"
 PERIOD_OPEN = "상시·수시"            # 마감일 없는 공고 (no_deadline_ids)
@@ -72,6 +86,15 @@ STUB_BONUS_CHANGED = [BonusItem(name="가점 항목", points=1.0), BonusItem(nam
 MORE_CHANGE_KINDS = ("정보", "버전", "적합도", "가산점")
 # 스텁 T-C3의 안내 — LLM 대신 쓰는 고정 더미 문장
 STUB_GUIDANCE = "{task_id} 스텁 안내 — 이 아이템 · 공고에 맞춘 안내 자리입니다."
+# 전략 · 작성 · 검증-1 확장 출력의 더미 키 (담당자 canonical 키, spec 4.7)
+STRATEGY_KEYS = ("web_data", "item_spec", "team_capability", "development_goal", "development_method", "architecture",
+                 "development_plan", "production_plan", "resource_plan", "budget", "schedule", "feasibility_plan",
+                 "research", "original_facts")
+MARKET_KEYS = ("market_analysis", "competitor_analysis", "marketing_strategy", "business_model", "growth_strategy")
+# 스텁 그림 — 담당자 F18의 두 그림(서비스 흐름도 · 서비스 구조도)과 파일 이름 (spec 4.6)
+STUB_DIAGRAMS = (("USER_FLOW", "userflow.svg"), ("SERVICE_ARCHITECTURE", "architecture.svg"))
+STUB_DIAGRAM_SVG = "<svg xmlns='http://www.w3.org/2000/svg'><text>스텁 그림</text></svg>".encode()
+STUB_SCORE_POLICY = "stub-policy-1"   # 스텁 채점 정책 버전 — 채점 기준표 버전이 없을 때
 
 # 기획서 6-8 고정 문구
 DISCLAIMER = "본 문서는 S-Brain이 생성한 초안입니다. 제출 전 작성자 본인의 확인과 수정이 필요합니다."
@@ -214,6 +237,13 @@ class StubScenario:
     more_changes: dict[str, set[str]] = field(default_factory=dict)   # 공고 ID → 바꿀 내용: MORE_CHANGE_KINDS
     more_error: str | None = None                           # '코드오류' · '재시도소진'
     more_collection_status: str | None = None               # 추가 조회의 수집 상태 ('정상'이 아니면 후보 0건)
+    # ── 검증-1 항목별 판정 (스텁 T-V1 sectionResults, spec 4.15) — 판정할 때마다 읽는다 ──
+    fail_items: set[str] = field(default_factory=set)            # 판정할 때마다 status fail로 둘 항목 번호
+    warning_items: set[str] = field(default_factory=set)         # status warning으로 둘 항목 번호
+    input_missing_items: set[str] = field(default_factory=set)   # 입력 없음(warning · inputMissing)으로 둘 항목 번호
+    fail_item_times: dict[str, int] = field(default_factory=dict)  # 항목 → 처음 몇 번의 판정을 fail로 둘지 (그 뒤 pass)
+    # ── 자체 검사 항목 (check.failedItems, spec 4.8) — Task → 불통과로 둘 항목 번호. 비면 항목 없이 불통과 ──
+    check_fail_items: dict[str, list[str]] = field(default_factory=dict)
     _counters: dict[str, int] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -311,14 +341,37 @@ def _ask(tools: Tools, purpose: str) -> None:
     tools.llm([{"role": "user", "content": purpose}], schema=Ack, purpose=purpose)
 
 
-def _check(sc: StubScenario, task_id: str, rework_input, final_action: str) -> CheckResult:
+def _check(sc: StubScenario, task_id: str, rework_input, final_action: str, *, immediate: bool = False) -> CheckResult:
+    """자체 검사 — check_fail_times[task_id]번까지 불통과. 불통과 항목은 check_fail_items[task_id](failedItems).
+    확정 동작은 마지막 재수행 시도에서 채운다 — immediate면(재수행 없이 바로 확정하는 T-W3, spec 4.8) 그 시도에서."""
     fail_times = sc.check_fail_times.get(task_id, 0)
     n = sc.tick(f"check:{task_id}")
     if n < fail_times:
-        final = rework_input is not None and rework_input.is_final_attempt and task_id not in sc.omit_final_action
-        return CheckResult(passed=False, failures=[f"{task_id} 검사 불통과 {n + 1}"],
-                           final_action=final_action if final else None)
+        failure = f"{task_id} 검사 불통과 {n + 1}"
+        last = immediate or (rework_input is not None and rework_input.is_final_attempt)
+        final = last and task_id not in sc.omit_final_action
+        return CheckResult(passed=False, failures=[failure], final_action=final_action if final else None,
+                           failed_items={code: [failure] for code in sc.check_fail_items.get(task_id, [])})
     return CheckResult(passed=True, failures=[])
+
+
+def _targets(rework_input) -> set[str] | None:
+    """재수행 · 재작성 입력의 목표 항목 — 없거나 비었으면 None(첫 실행 · 모든 항목, spec 4.7)."""
+    return set(rework_input.target_items) if rework_input is not None and rework_input.target_items else None
+
+
+def _form_items(form: FormSpec) -> list[tuple[str, str, str | None, str]]:
+    """양식의 계획서 항목 (번호, 제목, 태그, 종류) — 양식 순서. 태그 · 종류 칸이 항목 수와 맞지 않으면(비어 있음 등)
+    태그 없음 · 본문으로 본다."""
+    codes, titles = form.section_codes, form.section_titles
+    tags = form.section_tags if len(form.section_tags) == len(codes) else [None] * len(codes)
+    kinds = form.section_kinds if len(form.section_kinds) == len(codes) else ["section"] * len(codes)
+    return list(zip(codes, titles, tags, kinds))
+
+
+def _stub_sentences(code: str, title: str) -> list[Sentence]:
+    return [Sentence(sentence_id=f"s-{code}-{i}", text=f"{title} 문장 {i} (1억원)", is_title=False, paragraph_no=1)
+            for i in range(1, 3)]
 
 
 def _maybe_raise(sc: StubScenario, step: str) -> None:
@@ -326,13 +379,60 @@ def _maybe_raise(sc: StubScenario, step: str) -> None:
         raise RuntimeError(f"{step} 스텁 오류")
 
 
-def _doc_score(total: float) -> DocScore:
+def _doc_score(total: float, maxes: list[tuple[str, float]]) -> DocScore:
+    """문서층 점수 — 평가항목 = 계획서 항목(spec 4.9). 총점(시나리오 doc_scores)을 항목 배점 비율로 나누고(소수 둘째 자리,
+    마지막 항목이 나머지) 항목 점수 합 = 총점이 되게 한다. 항목이 없으면 항목 없이 총점만."""
     items, acc = [], 0.0
-    for i, (code, m) in enumerate(EVAL):
-        s = round(m * total / DOC_LAYER_MAX, 1) if i < len(EVAL) - 1 else round(total - acc, 1)
+    whole = sum(m for _, m in maxes) or 1.0
+    for i, (code, m) in enumerate(maxes):
+        s = round(m * total / whole, 2) if i < len(maxes) - 1 else round(total - acc, 2)
         acc += s
-        items.append(DocScoreItem(item_code=code, score=s, max_score=m, evidence_locator=f"{code}-근거", comment=""))
+        items.append(DocScoreItem(item_code=code, score=s, max_score=m, evidence_locator=code, comment="감점 없음"))
     return DocScore(total=total, items=items)
+
+
+def _doc_layer_max(snapshot: dict[str, Any] | None) -> float:
+    """설정 사본의 문서층 배점(scoring.docLayerMax) — 없으면 기본 70 (spec 4.12)."""
+    value = ((snapshot or {}).get("scoring") or {}).get("docLayerMax")
+    return float(value) if value else DOC_LAYER_MAX
+
+
+def _doc_candidates(results: list[SectionResult] | None, doc_display: float, threshold: float) -> list[ReworkOrder]:
+    """계획서 묶음 재작성 지시 (spec 4.12) — 묶음 · 항목은 짝짓기 표(rework_map)로 가른다.
+
+    1. 묶음마다 그 묶음 항목 중 fail · warning이고 입력 없음이 아닌 항목이 있으면 후보 — Task는 그 묶음 첫 항목 종류의 Task,
+       사유 · 보완 지시는 '<항목 번호> <issues · warnings>' 줄을 이은 것.
+    2. 문서층 표시 점수가 기준 미만인데 1의 후보가 없으면 묶음 모두가 후보(판정 지시가 없는 묶음의 고정 문구).
+    3. 기회를 다 쓴 묶음도 그대로 넣는다(웹이 고를 수 없게 표시하고 Orchestrator도 거절한다).
+    판정(results)이 없으면(None) 1의 후보는 없는 것으로 본다."""
+    results = list(results or [])
+    first_kind: dict[str, str] = {}
+    flagged: dict[str, list[SectionResult]] = {}
+    for r in results:
+        bundle = section_bundle(r.section_code)
+        if bundle is None:
+            continue
+        first_kind.setdefault(bundle, r.content_type)
+        if r.status in ("fail", "warning") and not r.input_missing:
+            flagged.setdefault(bundle, []).append(r)
+
+    def order(bundle: str, reason: str) -> ReworkOrder:
+        task_id = KIND_TASK.get(first_kind.get(bundle, "section"), "T-W1")
+        return ReworkOrder(task_id=task_id, unit="묶음", targets=[bundle], reason=reason, instruction_delta=reason,
+                           layer="document")
+    orders = []
+    for bundle in document_bundles():
+        if bundle in flagged:
+            lines = [f"{r.section_code} {' · '.join([*r.issues, *r.warnings]) or r.status}" for r in flagged[bundle]]
+            orders.append(order(bundle, "\n".join(lines)))
+    if not orders and doc_display < threshold:
+        orders = [order(bundle, REWORK_DEFAULT_REASON) for bundle in document_bundles()]
+    return orders
+
+
+def _input_notices(results: list[SectionResult] | None) -> list[str]:
+    """입력 없음 항목이 하나라도 있으면 '입력 확인 필요' 안내 (spec 4.12)."""
+    return [INPUT_MISSING_NOTICE] if any(r.input_missing for r in results or []) else []
 
 
 def _code_check(sc: StubScenario, kind: str, code_total: float) -> CodeCheckResult:
@@ -471,7 +571,10 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
         feats = list(inp.item_spec.core_features)
         ra = RequirementAnalysis(problem_statement="문제", target_customer="고객", feature_list=feats,
                                  differentiator="차별점", use_cases=["사례"])
-        return c.TS1Out(requirement_analysis=ra, feature_list=feats,
+        document_type = "pre_startup" if inp.company_info.applicant_type == PRE_STARTUP else "early_startup"
+        strategy = {k: {} for k in STRATEGY_KEYS}
+        strategy.update(strategy_limits={"featureList": list(inp.item_spec.core_features)}, document_type=document_type)
+        return c.TS1Out(requirement_analysis=ra, feature_list=feats, strategy_data=strategy,
                         check=_check(sc, "T-S1", inp.rework_input, "itemSpec.coreFeatures 승계"))
 
     def ts2(inp: c.TS2In, tools: Tools) -> c.TS2Out:
@@ -480,47 +583,171 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
                             market_size=[MarketSizeItem(label="국내 시장", value=1200, unit="억원",
                                                         source_name="통계청", basis="추정")])
         return c.TS2Out(market_analysis=ma, numeric_tokens=[Token(type="수치금액", value="1200억원", count=1)],
+                        market_strategy_data={k: {} for k in MARKET_KEYS},
                         check=_check(sc, "T-S2", inp.rework_input, "출처 없는 수치 제거"))
 
     def tw1(inp: c.TW1In, tools: Tools) -> c.TW1Out:
+        """양식의 모든 항목을 양식 순서로 담는다. 본문 항목만 문장을 쓰고(호출 하나씩 — 목적 '섹션 <항목> 작성'), 표 · 그림
+        항목은 문장 0개다(표 서술은 T-W3가 만들고 M-1이 바꾼다). 목표 항목(reworkInput.targetItems)이 있으면 그 항목만 다시
+        쓰고 나머지는 직전 계획서 · 항목 결과(base…)를 그대로 싣는다 (spec 4.7)."""
         feats = list(inp.requirement_analysis.feature_list)
         if sc.tw1_change_features:
             feats = feats + ["임의 기능"]
-        sections = []
-        for code, title in zip(inp.form_spec.section_codes, inp.form_spec.section_titles):
-            _ask(tools, f"섹션 {code} 작성")
-            sections.append(PlanSection(section_code=code, title=title, sentences=[
-                Sentence(sentence_id=f"s-{code}-{i}", text=f"{title} 문장 {i} (1억원)", is_title=False, paragraph_no=1)
-                for i in range(1, 3)]))
+        targets = _targets(inp.rework_input)
+        base = {s.section_code: s for s in inp.base_plan_doc.sections} if inp.base_plan_doc else {}
+        base_out = dict(inp.base_section_outputs or {})
+        sections, outputs = [], {}
+        for code, title, tag, kind in _form_items(inp.form_spec):
+            if targets is not None and code not in targets and code in base:
+                sections.append(base[code])
+                if code in base_out:
+                    outputs[code] = base_out[code]
+                continue
+            sentences: list[Sentence] = []
+            if kind == "section":
+                _ask(tools, f"섹션 {code} 작성")
+                sentences = _stub_sentences(code, title)
+                outputs[code] = {"generatedText": "\n".join(s.text for s in sentences), "facts": [], "sourceRefs": [],
+                                 "needsUserConfirmation": [], "issues": []}
+            sections.append(PlanSection(section_code=code, title=title, sentences=sentences, tag=tag,
+                                        content_type=kind))
         plan = PlanDoc(sections=sections, feature_list=feats, charts=[], tables=[], protected_tokens=[])
-        return c.TW1Out(plan_doc=plan, sections=sections, feature_list=feats,
+        return c.TW1Out(plan_doc=plan, sections=sections, feature_list=feats, section_outputs=outputs,
                         check=_check(sc, "T-W1", inp.rework_input, "입력에 없는 경력 서술 삭제"))
 
     def tw2(inp: c.TW2In, tools: Tools) -> c.TW2Out:
-        _ask(tools, "그래프")
+        """그림 항목(계획서의 contentType image)마다 두 그림을 SVG 파일로 넣는다(항목마다 호출 하나 — 목적 '그림 <항목> 작성').
+        그림 항목이 없으면 빈 목록이다(호출은 '그래프' 하나). 목표 항목이 있으면 그 항목만 다시 그리고 나머지는 직전 그림 ·
+        항목 결과(base…)를 그대로 싣는다 (spec 4.7)."""
         chart = ChartSpec(chart_id="chart-1", type="bar", title="시장 규모", axis_labels=["연도", "억원"],
                           series=[{"x": 2026, "y": 1200}], source_ref="1-1")
-        return c.TW2Out(charts=[chart], check=_check(sc, "T-W2", inp.rework_input, "차트 폐기 · 참조 문구 제거"))
+        targets = _targets(inp.rework_input)
+        base_diagrams = list(inp.base_diagrams or [])
+        base_out = dict(inp.base_diagram_outputs or {})
+        diagrams, outputs, asked = [], {}, False
+        for sec in inp.plan_doc.sections:
+            if sec.content_type != "image":
+                continue
+            code = sec.section_code
+            if targets is not None and code not in targets and code in base_out:
+                diagrams += [d for d in base_diagrams if d.source_ref == code]
+                outputs[code] = base_out[code]
+                continue
+            _ask(tools, f"그림 {code} 작성")
+            asked = True
+            specs = []
+            for flow_type, name in STUB_DIAGRAMS:
+                ref = tools.files.put(name, STUB_DIAGRAM_SVG, SVG_TYPE)
+                nodes = ["사용자", "서비스", "결과"]
+                diagrams.append(DiagramSpec(diagram_id=f"{sec.section_code}-{flow_type}", flow_type=flow_type,
+                                            nodes=nodes, visual_style={}, source_ref=sec.section_code, image_file=ref))
+                specs.append({"flowType": flow_type, "nodes": nodes, "visualStyle": {}})
+            outputs[sec.section_code] = {"imageSpecs": specs, "imageTypes": [f for f, _ in STUB_DIAGRAMS],
+                                         "nodes": specs[0]["nodes"], "flowType": STUB_DIAGRAMS[0][0],
+                                         "visualStyle": {}, "generatedText": "", "facts": [], "sourceRefs": [],
+                                         "issues": []}
+        if not asked and targets is None:
+            _ask(tools, "그래프")   # 그림 항목이 없는 양식 — LLM Task 스텁은 호출 경로를 한 번 거친다
+        return c.TW2Out(charts=[chart], diagrams=diagrams, diagram_outputs=outputs,
+                        check=_check(sc, "T-W2", inp.rework_input, "차트 폐기 · 참조 문구 제거"))
 
     def tw3(inp: c.TW3In, tools: Tools) -> c.TW3Out:
-        _ask(tools, "표")
-        table = TableSpec(table_id="table-1", title="자금운용", headers=["항목", "금액"], rows=[["개발", "5천만원"]],
-                          source_ref="3-3")
-        return c.TW3Out(tables=[table], check=_check(sc, "T-W3", inp.rework_input, "표 제거 · 본문 서술 대체"))
+        """규칙 코드 Task — LLM을 부르지 않는다(uses_llm=False). 표 항목마다 표(tables, sourceRef = 항목 번호) · 서술 문장
+        (tableSections) · 결과(tableOutputs)를 낸다.
+
+        - 목표 항목이 있으면 그 표만 다시 만들고 나머지는 직전 표 · 서술 · 결과(base…)를 그대로 싣는다 (spec 4.7).
+        - 표 대체(fallbackItems — 검증-1 재수행 뒤에도 fail인 표, spec 4.10): 그 표를 tables에서 빼고 서술을 대체 본문으로
+          바꾸며 tableOutputs에 tableFallbackUsed · fallbackReason(그 항목 문제를 ' · '로 이은 것)을 남긴다.
+        - 자체 검사 불통과면 재수행 없이 그 시도에서 바로 확정 동작(걸린 표 → 본문 서술 대체, spec 4.8)."""
+        ri = inp.rework_input
+        targets = _targets(ri)
+        check = _check(sc, "T-W3", ri, "표 제거 · 본문 서술 대체", immediate=True)
+        fallback = dict.fromkeys(ri.fallback_items if ri is not None else [])
+        if not check.passed and check.final_action:
+            fallback.update(dict.fromkeys(check.failed_items))
+        reasons = {**check.failed_items, **(ri.target_items if ri is not None else {})}
+        base_sections = {s.section_code: s for s in inp.base_table_sections or []}
+        base_out = dict(inp.base_table_outputs or {})
+        base_tables = {t.source_ref: t for t in inp.base_tables or []}
+        tables, sections, outputs = [], [], {}
+        for code, title, tag, kind in _form_items(inp.form_spec):
+            if kind != "table":
+                continue
+            if code in fallback:
+                sentences = [Sentence(sentence_id=f"s-{code}-1", text=f"{title} 표 대신 본문 서술 (대체)",
+                                      is_title=False, paragraph_no=1)]
+                sections.append(PlanSection(section_code=code, title=title, sentences=sentences, tag=tag,
+                                            content_type="table"))
+                outputs[code] = {"generatedText": sentences[0].text, "tables": [], "issues": [],
+                                 "tableFallbackUsed": True, "fallbackReason": " · ".join(reasons.get(code, []))}
+                continue
+            if targets is not None and code not in targets and code in base_sections:
+                sections.append(base_sections[code])
+                if code in base_out:
+                    outputs[code] = base_out[code]
+                if code in base_tables:
+                    tables.append(base_tables[code])
+                continue
+            sentences = _stub_sentences(code, title)
+            tables.append(TableSpec(table_id=f"table-{code}", title=title[:20], headers=["항목", "금액"],
+                                    rows=[["개발", "5천만원"]], source_ref=code))
+            sections.append(PlanSection(section_code=code, title=title, sentences=sentences, tag=tag,
+                                        content_type="table"))
+            outputs[code] = {"generatedText": "\n".join(s.text for s in sentences),
+                             "tables": [{"columns": ["항목", "금액"], "rows": [{"항목": "개발", "금액": "5천만원"}],
+                                         "rules": {}}],
+                             "issues": [], "tableFallbackUsed": False, "fallbackReason": ""}
+        return c.TW3Out(tables=tables, table_sections=sections, table_outputs=outputs, check=check)
 
     def m1(inp: c.M1In) -> c.M1Out:
+        """차트 · 표를 싣고, 표 항목 문장은 tableSections의 같은 항목으로 바꾸며, 그림 목록은 통째로 바꾼다 (spec 4.7)."""
         _maybe_raise(sc, "M-1")
-        return c.M1Out(plan_doc=inp.plan_doc.model_copy(update={"charts": inp.charts, "tables": inp.tables}))
+        by_code = {s.section_code: s for s in inp.table_sections}
+        sections = [by_code.get(s.section_code, s) for s in inp.plan_doc.sections]
+        return c.M1Out(plan_doc=inp.plan_doc.model_copy(update={
+            "charts": inp.charts, "tables": inp.tables, "sections": sections, "diagrams": list(inp.diagrams)}))
 
     def tv1(inp: c.TV1In, tools: Tools) -> c.TV1Out:
+        """문서층 점수와 항목별 판정 (spec 4.9 모양).
+
+        - 평가항목 = 계획서 항목: 총점(시나리오 doc_scores 차례)을 항목 배점(평가항목 maxScore — 없으면 70 ÷ 항목 수)으로
+          나눈다(_doc_score). 항목 판정 점수 = 항목 점수 ÷ 배점 × 100.
+        - 판정은 시나리오대로: 입력 없음(input_missing_items) → warning · inputMissing, fail(fail_items · fail_item_times)
+          → fail, warning_items → warning, 나머지 pass. verifiedRef = 입력 plan_doc_ref(없으면 'planDoc').
+        - 목표 항목(reworkInput.targetItems)이 있으면 그 항목만 판정하고 나머지는 직전 판정(baseSectionResults)을 그대로 잇는다."""
         _ask(tools, "문서층 채점")
-        ds = _doc_score(sc.pick("T-V1", sc.doc_scores))
-        return c.TV1Out(doc_score=ds, items=ds.items, variance_flag=False)
+        items = _form_items(inp.form_spec)
+        evals = {e.item_code: e.max_score for e in inp.evaluation_items}
+        maxes = [(code, evals.get(code, DOC_LAYER_MAX / max(len(items), 1))) for code, _, _, _ in items]
+        ds = _doc_score(sc.pick("T-V1", sc.doc_scores), maxes)
+        scored = {it.item_code: (it.score / it.max_score * 100 if it.max_score else 0.0) for it in ds.items}
+        targets = _targets(inp.rework_input)
+        base = {r.section_code: r for r in inp.base_section_results or []}
+        ref = inp.plan_doc_ref or "planDoc"
+
+        def judge(code: str, tag: str | None, kind: str) -> SectionResult:
+            score = round(scored.get(code, 0.0), 2)
+            common = dict(section_code=code, tag=tag, content_type=kind, score=score, verified_ref=ref)
+            if code in sc.input_missing_items:
+                return SectionResult(status="warning", warnings=[STUB_INPUT_MISSING_WARNING], input_missing=True,
+                                     **common)
+            times = sc.fail_item_times.get(code, 0)
+            if code in sc.fail_items or (times and sc.tick(f"judge:{code}") < times):
+                return SectionResult(status="fail", issues=[f"{code} 결함 (스텁)"], deductions=["결함"], **common)
+            if code in sc.warning_items:
+                return SectionResult(status="warning", warnings=[f"{code} 보완 권장 (스텁)"], **common)
+            return SectionResult(status="pass", **common)
+        results = [base[code] if targets is not None and code not in targets and code in base else judge(code, tag, kind)
+                   for code, _, tag, kind in items]
+        return c.TV1Out(doc_score=ds, items=ds.items, variance_flag=False, section_results=results,
+                        score_policy_version=inp.rubric.version or STUB_SCORE_POLICY)
 
     def g02a(inp: c.G02aIn) -> c.G02aOut:
+        """문서 평가 판정 — 표시 점수(문서층 → 100점 환산, 배점은 설정 사본 scoring.docLayerMax)로 다음 동작을 정하고,
+        계획서 묶음 후보는 항목 판정(sectionResults)으로 낸다 (spec 4.12)."""
         _maybe_raise(sc, "G-02a")
-        display = round(inp.doc_score.total / DOC_LAYER_MAX * 100, 1)
-        orders = _doc_orders(inp.doc_score, inp.threshold)
+        display = round(inp.doc_score.total / _doc_layer_max(inp.settings_snapshot) * 100, 1)
+        orders = _doc_candidates(inp.section_results, display, inp.threshold)
         na = _next_action(display >= inp.threshold, orders, inp.rework_usage)
         report = ScoreReport(
             doc_score=inp.doc_score, artifact_score=None, total=inp.doc_score.total, threshold=inp.threshold,
@@ -528,7 +755,8 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
             rework_orders=orders, rework_usage=inp.rework_usage, phase="document", display_score=display,
             carried_over_layer=None, rework_diff=[],
             comparisons=inp.cycle_info.comparisons if inp.cycle_info else [],
-            notices=[ch.final_action for ch in (inp.checks or []) if ch.final_action],
+            notices=[ch.final_action for ch in (inp.checks or []) if ch.final_action]
+            + _input_notices(inp.section_results),
             settings_snapshot=inp.settings_snapshot, rubric_version=inp.rubric_version)
         return c.G02aOut(score_report=report, failed_task_ids=report.failed_task_ids, rework_orders=orders,
                          next_action=na)
@@ -581,16 +809,21 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
                         code_check=cc, feature_match=fm, diagnostics=list(sc.diagnostics))
 
     def g02b(inp: c.G02bIn) -> c.G02bOut:
+        """종합 평가 판정 — 다음 동작은 두 층 합산 점수, 계획서 묶음 후보는 G-02a와 같은 규칙(문서층 표시 점수 기준),
+        산출물 묶음 후보는 지금 규칙 그대로 (spec 4.12)."""
+        dmax = _doc_layer_max(inp.settings_snapshot)
         total = round(inp.doc_score.total + inp.artifact_score.total, 1)
-        orders = _doc_orders(inp.doc_score, inp.threshold) + _art_orders(inp.artifact_score, sc.category)
+        doc_display = round(inp.doc_score.total / dmax * 100, 1)
+        orders = (_doc_candidates(inp.section_results, doc_display, inp.threshold)
+                  + _art_orders(inp.artifact_score, sc.category))
         na = _next_action(total >= inp.threshold, orders, inp.rework_usage)
         ci = inp.cycle_info
         diff: list[ReworkDiff] = []
         if ci is not None:
             if ci.previous_doc_score is not None:
                 diff.append(ReworkDiff(task_id="T-W1", layer="document", label="문서층",
-                                       before_summary=f"{ci.previous_doc_score.total}/70",
-                                       after_summary=f"{inp.doc_score.total}/70"))
+                                       before_summary=f"{ci.previous_doc_score.total}/{dmax:g}",
+                                       after_summary=f"{inp.doc_score.total}/{dmax:g}"))
             if ci.previous_artifact_score is not None:
                 diff.append(ReworkDiff(task_id="T-V2", layer="artifact", label="산출물층",
                                        before_summary=f"{ci.previous_artifact_score.total}/30",
@@ -600,8 +833,8 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
             passed=total >= inp.threshold, failed_task_ids=sorted({o.task_id for o in orders}),
             rework_orders=orders, rework_usage=inp.rework_usage, phase="overall", display_score=total,
             carried_over_layer=ci.carried_over_layer if ci else None, rework_diff=diff,
-            comparisons=ci.comparisons if ci else [], notices=[], settings_snapshot=inp.settings_snapshot,
-            rubric_version=inp.rubric_version)
+            comparisons=ci.comparisons if ci else [], notices=_input_notices(inp.section_results),
+            settings_snapshot=inp.settings_snapshot, rubric_version=inp.rubric_version)
         return c.G02bOut(score_report=report, failed_task_ids=report.failed_task_ids, rework_orders=orders,
                          next_action=na, rework_diff=diff)
 
@@ -706,14 +939,6 @@ def _card(sc: StubScenario, aid: str, rank: int, today: date, *, more: bool, fit
         content_version=None if aid in sc.no_version_ids else f"{aid}-v{2 if '버전' in changes else 1}",
         bonus_score=None if bonus is None else sum(b.points for b in bonus),
         bonus_items=[] if bonus is None else [b.model_copy() for b in bonus])
-
-
-def _doc_orders(ds: DocScore, threshold: float) -> list[ReworkOrder]:
-    # 계획서 항목 묶음 구성은 미확정 — 스텁은 평가 항목 하나를 묶음 하나로 둔다
-    return [ReworkOrder(task_id="T-W1", unit="묶음", targets=[f"묶음-{it.item_code}"],
-                        reason=f"{it.item_code} {it.score}/{it.max_score}", instruction_delta=f"{it.item_code} 보완",
-                        layer="document")
-            for it in ds.items if it.score / it.max_score * 100 < threshold]
 
 
 def _art_orders(score: ArtifactScore, category: str) -> list[ReworkOrder]:

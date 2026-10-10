@@ -175,7 +175,8 @@ def test_pre_startup_request_has_no_business_age(clock):
     text = body(reqs)
     assert "businessAgeYears" not in text                                  # 업력은 싣지 않는다 (spec 11)
     assert "예비창업자" in text and "부산광역시" in text
-    assert ctx_of(app, rid).get("formSpec").form_version == "예비창업패키지(잠정)"
+    assert ctx_of(app, rid).get("formSpec").form_version == select_form("예비창업자").form_spec.form_version \
+        == "pre_startup@2"                                                  # 담당자 예비창업 양식 (spec 4.6)
 
 
 # ── Task 함수 단위 (격리 · 참조 조각 · 빈 값) ────────────────────

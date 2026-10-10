@@ -3,7 +3,7 @@
 | 함수 | 쓰는 곳 | 저장소 · 입력 · 설정 | Agent |
 |---|---|---|---|
 | build_stub_app | 테스트 · 시연 | 메모리(또는 주어진 저장소) · 기본 설정 | 전부 스텁, 가짜 LLM · 가짜 이미지 호출처, 지시문 다시 쓰기 없음(덧붙이기만) |
-| build_app | 워커 (sbrain/worker.py) | 공유 MySQL — SqlStore · SqlProjectInputSource · DbSettingsProvider | 조율 T-C1 · T-C3 실구현과 재작성 · 재수행 지시문 다시 쓰기(OpenAI), T-C2 · G-01은 SBRAIN_NOTICE_API_URL이 있으면 공고 서버 연결(실제 모드) · 없으면 스텁, 나머지 스텁. 이미지 호출도 구현이 들어온 Task만 실제(OpenAI) |
+| build_app | 워커 (sbrain/worker.py) | 공유 MySQL — SqlStore · SqlProjectInputSource · DbSettingsProvider | 조율 T-C1 · T-C3 실구현과 재작성 · 재수행 지시문 다시 쓰기(OpenAI), 전략 · 작성 · 검증-1 T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1 실구현(담당자 코드 — OpenAI, T-W3는 LLM 없음), T-C2 · G-01은 SBRAIN_NOTICE_API_URL이 있으면 공고 서버 연결(실제 모드) · 없으면 스텁, 나머지 스텁. 이미지 호출도 구현이 들어온 Task만 실제(OpenAI) |
 | build_web | 웹 서버 | 공유 MySQL — 같음 | 단계를 돌지 않는다 (명령 · 조회만). 공고 서버 · 이미지 호출처를 부르지 않는다 |
 
 파일 저장소 (확장, 결정 0023 — SBRAIN_ARTIFACT_ROOT, 절대 경로만, 기본값 없음):
@@ -25,6 +25,8 @@ from pathlib import Path
 from typing import Callable
 
 from .agents.notice import NoticeClient, Transport, bind_notice
+from .agents.partner_sw.tasks import IMPLEMENTED_TASKS as PARTNER_TASKS
+from .agents.partner_sw.tasks import bind_partner_sw
 from .agents.stubs import FakeImage, FakeLLM, StubScenario, bind_stubs, make_constants
 from .agents.supervisor import IMPLEMENTED_TASKS, bind_supervisor
 from .agents.supervisor.plan import PURPOSE_REWRITE
@@ -70,7 +72,7 @@ class TaskRoutedProvider:
     """구현이 들어온 호출만 실제 호출처로, 나머지(스텁 Task)는 가짜 호출처로 보낸다 (잠정, T-C3 spec 6.1).
 
     호출처는 Agent마다 정해지므로, 그대로 두면 스텁 Task도 실제 OpenAI를 부른다. 실제 호출처로 보내는 규칙:
-    - 호출 기록의 task_id가 real_tasks(조율 구현 Task — T-C1 · T-C3)에 있으면 실제.
+    - 호출 기록의 task_id가 real_tasks(구현 Task — 조율 T-C1 · T-C3, 전략 · 작성 · 검증-1 T-S1 ~ T-V1)에 있으면 실제.
     - 조율 Agent의 지시문 다시 쓰기(agent = 조율, purpose = PURPOSE_REWRITE)면 실제. 다시 쓰기는 대상 Task의 실행 기록
       안에서 불려 task_id가 대상 Task(스텁 T-W1 등)이므로, Task ID만으로는 나눌 수 없어 agent · purpose로 본다.
     - 그 밖(스텁 Task 자신의 호출)은 가짜.
@@ -152,6 +154,8 @@ def build_app(
     - 파일 저장소(확장, 결정 0023): 로컬 폴더 artifact_root, 주지 않으면(None) SBRAIN_ARTIFACT_ROOT(환경 변수 → .env). 필수다 —
       없거나 절대 경로가 아니면 DB에 닿기 전에 RuntimeError(값은 메시지에 싣지 않는다). 폴더가 없으면 만든다.
     - 흐름의 지시문 만들기에 조율 다시 쓰기(rewrite_guidance)를 끼운다 — 재작성 · 재수행 대상의 안내를 다시 쓴다.
+    - 전략 · 작성 · 검증-1(T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1)은 담당자 코드 실구현(agents/partner_sw, bind_partner_sw)이고
+      그 LLM 호출도 실제 호출처로 간다(spec 4.15).
     - 나머지 Agent는 스텁이다. 스텁 Task는 실제 호출처를 부르지 않는다(TaskRoutedProvider). 다시 쓰기 호출은 대상이
       스텁 Task여도 실제 호출처로 간다.
     - 공고 매칭(T-C2) · 자격 확인(G-01): 공고 서버 주소가 있으면 공고 서버 연결(agents/notice, 실제 모드), 없으면 스텁
@@ -183,10 +187,12 @@ def build_app(
         project_inputs=project_inputs or SqlProjectInputSource(db), stubs=True, rewriter=rewrite_guidance,
         files=files)
     bind_supervisor(app.registry)
+    bind_partner_sw(app.registry)   # 전략 · 작성 · 검증-1 실구현 (spec 4.15)
     notice_url = get_env("SBRAIN_NOTICE_API_URL") if notice_api_url is None else notice_api_url
     if notice_url:   # 실제 모드 — 공고 서버 연결로 스텁 T-C2 · G-01을 바꾼다
         bind_notice(app.registry, NoticeClient(notice_url, transport=notice_transport))
-    app.engine.providers["openai"] = TaskRoutedProvider(llm or OpenAIProvider(), app.llm, IMPLEMENTED_TASKS)
+    app.engine.providers["openai"] = TaskRoutedProvider(llm or OpenAIProvider(), app.llm,
+                                                        IMPLEMENTED_TASKS | PARTNER_TASKS)
     app.engine.image_providers["openai"] = TaskRoutedImageProvider(
         image or OpenAIImageProvider(), app.image, IMPLEMENTED_TASKS)
     return app

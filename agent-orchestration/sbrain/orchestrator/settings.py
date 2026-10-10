@@ -27,6 +27,9 @@ class ResumeSettings(SBModel):
 class RedoSettings(SBModel):
     redo_count: int = 2                  # 재수행 횟수
     proofread_redo_count: int | None = None  # 검수 재수행 횟수. None이면 재수행 횟수와 같음
+    # 검증-1 재수행 횟수 — 기준 문서 시트 1 '항목마다 1회'. 항목마다 · 사이클마다 센다. 웹 관리자 칸이 없어 코드 기본값으로만
+    # 둔다 (잠정, PROVISIONAL redo.verify1RedoCount). 이 칸이 없는 옛 설정 사본은 1로 읽는다
+    verify1_redo_count: int = 1
 
     @property
     def proofread_limit(self) -> int:
@@ -80,6 +83,10 @@ class TaskModelSetting(SBModel):
     image_model: str | None = ext(None, note="이미지 모델 — None이면 이 Task는 이미지 호출을 쓸 수 없다")
     image_quality: str | None = ext(None, note="이미지 품질 기본값")
     image_size: str | None = ext(None, note="이미지 크기 기본값")
+    # 호출 목적별 모델 (확장, 결정 0024) — tools.llm(purpose=p)는 p가 여기 있으면 그 모델로, 없으면 model로 부른다.
+    # 호출처 · 온도 · 추론 강도 · 제한 시간 · 재시도는 이 항목 그대로다. 엔진은 목적 이름을 모르고 사전을 그대로 옮긴다
+    purpose_models: dict[str, str] = ext(
+        default_factory=dict, note="호출 목적 → 모델 이름 — 없는 목적은 Task 모델. 이 칸이 없는 옛 사본은 빈 사전")
 
 
 # 재작성 · 재수행 때 조율이 대상 Task의 지시문 안내 부분을 다시 쓰는 호출의 설정 키 (Task가 아니다, 결정 0013).
@@ -93,19 +100,26 @@ def _default_tasks() -> dict[str, TaskModelSetting]:
     # 조율 모델은 사용자 지정(2026-09-30): gpt-6-luna, 추론 강도 low. 추론 모델이라 온도를 보내지 않는다.
     # T-B1 · T-B2 · T-V2는 구현 · 검증-2 담당 요청: gpt-6-luna, 추론 강도 기본값(보내지 않음), 온도 보내지 않음.
     # T-B2 이미지: openai · gpt-image-2.5-flare · medium · 1024x1536 (담당 요청).
+    # T-S1 · T-S2 · T-W1 · T-W2 · T-V1은 전략 · 작성 · 검증-1 담당자 execution_contract.json의 apiModel(함수별 모델 —
+    # Task 모델 + 목적(F번호)별 모델 purposeModels), 호출처 openai, 온도 · 추론 강도 보내지 않음 (spec 4.2, 결정 0024).
     def supervisor() -> TaskModelSetting:
         return TaskModelSetting(provider="openai", model="gpt-6-luna", temperature=None, reasoning_effort="low")
 
-    def undecided(temperature: float) -> TaskModelSetting:
-        return TaskModelSetting(provider="미정", model="미정", temperature=temperature)
+    def openai(model: str, purposes: dict[str, str] | None = None) -> TaskModelSetting:
+        return TaskModelSetting(provider="openai", model=model, temperature=None, purpose_models=dict(purposes or {}))
 
     def luna() -> TaskModelSetting:
-        return TaskModelSetting(provider="openai", model="gpt-6-luna", temperature=None)
+        return openai("gpt-6-luna")
 
-    # LLM을 부르지 않는 Task(T-C2 · G-01 · T-C4, 등록부 uses_llm=False)는 항목을 두지 않는다 — 엔진이 표를 보지 않는다
+    # LLM을 부르지 않는 Task(T-C2 · G-01 · T-W3 · T-C4, 등록부 uses_llm=False)는 항목을 두지 않는다 — 엔진이 표를 보지 않는다
     tasks: dict[str, TaskModelSetting] = {k: supervisor() for k in ("T-C1", "T-C3")}
-    tasks.update({k: undecided(0.7) for k in ("T-S1", "T-S2", "T-W1", "T-W2", "T-W3")})
-    tasks["T-V1"] = undecided(0.0)
+    tasks["T-S1"] = openai("gpt-5.6-terra", {   # Task 모델 = F02
+        "F01": "gpt-6-luna", "F05": "gpt-6-luna", "F06": "gpt-5.6-sol", "F07": "gpt-6.1-sol", "F08": "gpt-6.1-sol",
+        "F09": "gpt-5.6-terra", "F13": "gpt-6-luna", "F14": "gpt-6-luna", "F15": "gpt-6-luna"})
+    tasks["T-S2"] = openai("gpt-6.1-sol", {"F04": "gpt-5.6-terra"})   # Task 모델 = F03 · F10 · F11 · F12
+    tasks["T-W1"] = openai("gpt-5.6-sol")      # F16
+    tasks["T-W2"] = openai("gpt-6-luna")       # F18
+    tasks["T-V1"] = openai("gpt-5.6-terra")    # F19
     tasks["T-B1"] = luna()
     tasks["T-B2"] = luna().model_copy(update={
         "image_provider": "openai", "image_model": "gpt-image-2.5-flare",
@@ -161,6 +175,11 @@ class Settings(SBModel):
 # 꺼져 있으면 가산점을 읽지 · 만들지 · 보이지 않는다. 공고팀이 써도 된다고 하면 이 한 곳만 True로 바꾼다.
 BONUS_ENABLED: bool = False
 
+# 계획서 표 입력(사업비 · 일정) 필수 확인 스위치 (잠정, PROVISIONAL planTables.required) — 실행별 설정이 아닌 코드 상수다.
+# 시작 요청의 필수 확인이 부를 때마다 settings.PLAN_TABLES_REQUIRED로 읽는다(from-import로 값을 복사하지 않는다 —
+# BONUS_ENABLED와 같은 방식). 꺼져 있으면 사업비 · 일정이 비어도 통과한다. 웹이 입력 화면을 배포한 뒤 켠다 (spec 4.3)
+PLAN_TABLES_REQUIRED: bool = False
+
 
 # 기준 문서가 값을 정하지 않아 임시로 둔 항목 (문서 · 화면에 '잠정'으로 표시)
 PROVISIONAL: dict[str, str] = {
@@ -174,11 +193,24 @@ PROVISIONAL: dict[str, str] = {
              "(LLM을 부르는 조율 Task · 지시문 다시 쓰기 gpt-6-luna · low는 사용자 지정, LLM을 부르지 않는 T-C2 · G-01 · T-C4는 "
              "항목 없음(사용자 결정 2026-10-08), T-B1 · T-B2 · T-V2 gpt-6-luna(추론 강도 · "
              "온도 보내지 않음)와 T-B2 이미지 openai · gpt-image-2.5-flare · medium · 1024x1536은 구현 · 검증-2 담당 요청, "
-             "나머지는 미정). 옛 설정 사본(agents만)은 그 Agent 값 그대로 쓴다",
+             "T-S1 · T-S2 · T-W1 · T-W2 · T-V1의 Task 모델과 함수별 모델(purposeModels — 호출 목적 F번호 → 모델, 확장)은 "
+             "전략 · 작성 · 검증-1 담당자 execution_contract.json의 apiModel(T-S1 gpt-5.6-terra + F01 · F05 · F13 · F14 · "
+             "F15 gpt-6-luna · F06 gpt-5.6-sol · F07 · F08 gpt-6.1-sol · F09 gpt-5.6-terra, T-S2 gpt-6.1-sol + F04 "
+             "gpt-5.6-terra, T-W1 gpt-5.6-sol, T-W2 gpt-6-luna, T-V1 gpt-5.6-terra — 호출처 openai, 온도 · 추론 강도 "
+             "보내지 않음, 결정 0024), T-W3는 LLM을 부르지 않아 항목 없음, T-P1 · T-P2는 미정). purposeModels가 없는 사본 · "
+             "옛 설정 사본(agents만)은 빈 사전 · 그 Agent 값 그대로 쓴다",
+    "redo.verify1RedoCount": "검증-1 재수행 횟수 1(항목마다 · 사이클마다, 기준 문서 시트 1) — 웹 관리자 칸이 없어 코드 "
+                             "기본값으로만 둔다",
+    "planTables.required": "계획서 표 입력(사업비 집행계획 · 추진 일정) 필수 확인 스위치 PLAN_TABLES_REQUIRED 기본 꺼짐 — "
+                           "웹 입력 화면 배포 전이라 비어도 돈다. 배포 뒤 이 한 곳만 켠다(웹팀이 배포를 알려 주기로 함)",
+    "planTables.unknownSection": "추진 일정 row의 section이 feasibility · growth 밖이면 그 row를 버린다. 사업비 row의 "
+                                 "phase가 '1단계' · '2단계' 밖이면 None(단계 미지정)으로 본다 (intake/mapping.py)",
+    "planTables.missingLabels": "필수 스위치가 켜졌을 때의 결측 이름 글자 '사업비 집행계획' · '사업비 집행계획(1단계)' · "
+                                "'사업비 집행계획(2단계)' · '추진 일정(협약기간 내)' (intake/mapping.py LABELS)",
     f"taskTimeouts.{REWRITE_SETTING_KEY}": "지시문 다시 쓰기 호출 한 번의 제한 시간 120초 — T-C3 값을 빌려 쓰던 것을 따로 둠",
     "taskTimeouts.T-B2.image": "T-B2 이미지 호출 한 번의 제한 시간 120초 — 조정 가능(실측 13 ~ 16초)",
     "scoring.deviationCap": "문서층 재채점 편차 상한 (확장) — 웹 verification_policies.deviation_cap을 담아만 둔다. "
-                            "검증-1 연동 전이라 쓰는 곳 없음",
+                            "편차 검사를 하지 않아(varianceFlag 늘 거짓 — 팀 상의 2026-10-10, 결정 0024) 쓰는 곳 없음",
     # 산출물층 검증 · 이미지 관리자 사건 종류 (flow/sbrain_flow.py) — 기준 문서에 없음. 추적 사건으로 남는다(관리자에게 보일 방식 · 조회 함수는 웹팀 결정)
     "event.대조보류": "T-V2 대조 판정 보류(withheld) — 'T-V2 대조 판정 보류 (<보류 사유>) — 0점 합산'. 관리자 알림 표시 방식은 웹팀 몫",
     "event.검증2진단": "T-V2 진단(diagnostics) 한 줄마다 하나 — 관리자 진단 전용, 흐름 제어에 쓰지 않음",
@@ -196,9 +228,27 @@ PROVISIONAL: dict[str, str] = {
     "announcement.formSpec": "선택 공고의 양식 필드(formSpec · evaluationItems)는 자리 표시 값(기본 양식 1-1 · 2-1 · 3-3) — "
                              "뒷 단계는 읽지 않고 작업 분해(T-C3)가 고른 양식 · 평가 항목 · 채점 기준표를 쓴다",
     # 작업 분해 (T-C3, agents/form_defaults.py · agents/supervisor/plan.py) — 실행 건 설정값이 아니라 코드 표다
-    "taskPlan.formTable": "신청자 유형별 양식 · 평가 항목 · 채점 기준표 — 예비창업자 '예비창업패키지(잠정)', 개인사업자 · 법인 "
-                          "'초기창업패키지-일반형(잠정)'. 섹션은 웹 계획서 태그와 같은 1-1 · 2-1 · 3-1 · 4-1, 평가 항목 · "
-                          "채점 기준표는 기본값(문서층 70점 · rubric-stub@stub-1). 담당자 회신 뒤 이 표만 바꾼다",
+    "taskPlan.formTable": "신청자 유형별 양식 · 평가 항목 · 채점 기준표 — 담당자 execution_contract.json에서 만든다(예비창업자 "
+                          "pre_startup 2.1.1 ~ 2.7.4 25개, 개인사업자 · 법인 early_startup 3.1.1 ~ 3.7.4 24개). 평가항목 = 계획서 "
+                          "항목(배점 70 ÷ 항목 수), 평가항목 이름은 항목 제목 앞 40자, 채점 기준표 partner-sw@담당자 채점 정책 버전 "
+                          "(agents/form_defaults.py, spec 4.6)",
+    "reworkMap.sectionBundles": "담당자 항목 → 재작성 묶음 짝짓기(2.4 · 3.4 문제인식, 2.5 · 3.5 실현가능성, 2.6 · 3.6 성장전략, "
+                                "2.7 · 3.7 팀 구성, 2.1 ~ 2.3 · 3.1 ~ 3.3 묶음 없음) — 웹 묶음 4개와 담당자 양식 항목을 기준으로 "
+                                "오케스트레이터 쪽에서 정함, 담당자 · 웹팀 확인 대기. 답이 오면 flow/rework_map.py 표만 바꾼다",
+    "partnerSw.unassignedPhase": "예비창업 사업비 row의 phase가 없으면 1 · 2단계 표 어디에도 넣지 않고 2.5.3 표의 '단계 미지정' "
+                                 "줄로 보존, 2.5.3 · 2.5.4를 입력 없음으로 둔다 — 웹 phase 컬럼이 생기면 풀린다 "
+                                 "(agents/partner_sw/inputs.py, spec 4.4)",
+    "partnerSw.inputMissing": "표 입력 없음 판정(그 표의 원본 row가 비면)과 문구 '입력 확인 필요 — <사업비 집행계획 | 추진 일정>', "
+                              "점수 보고서 안내 '입력 확인 필요 — 사업비 집행계획 · 추진 일정을 입력하면 해당 표가 채워집니다.' "
+                              "(agents/partner_sw/verify.py · inputs.py, agents/stubs.py, spec 4.9 · 4.12)",
+    "partnerSw.outputMapping": "담당자 결과 → RequirementAnalysis · MarketAnalysis 매핑, numericTokens(숫자 + 단위 규칙 추출), "
+                               "문장 나누기(줄 · 문장 끝, sentenceId s-<항목>-<순번>) (agents/partner_sw/outputs.py, spec 4.7)",
+    "partnerSw.scoreDigits": "항목 점수 소수 둘째 자리 반올림, 문서층 총점 = 반올림한 항목 점수의 합 "
+                             "(agents/partner_sw/verify.py SCORE_DIGITS, spec 4.9)",
+    "partnerSw.applicantLines": "teamRoleCareers에서 '역할: 경력' 꼴이 아닌 줄은 역할로 보고, 채용 · 장비 · 협력 계획은 한 줄 "
+                                "목록으로 담당자 입력에 싣는다 (agents/partner_sw/inputs.py, spec 4.4)",
+    "verify1.redoDetails": "검증-1 재수행 T-V1의 unit은 종류가 섞이면 '섹션', 판정 후보의 사유와 보완 지시는 같은 글, "
+                           "재작성 사이클 T-V1 피드백 종류 '재채점' (flow/sbrain_flow.py · agents/stubs.py, spec 4.10 · 4.12)",
     "taskPlan.referenceSlots": "참조 조각 대응표(Task → 받는 슬롯) — T-S1 문제 · 필요성 · 목표 고객 · 핵심 기능, T-S2 시장 규모 · "
                                "목표 고객 · 경쟁 · 차별성, T-W1 7개 전부, T-W2 시장 규모 · 수익 모델, T-W3 수익 모델 · 추진 계획, "
                                "T-B1 핵심 기능, T-B2 문제 · 필요성 · 핵심 기능 · 시장 규모 · 수익 모델 · 추진 계획",

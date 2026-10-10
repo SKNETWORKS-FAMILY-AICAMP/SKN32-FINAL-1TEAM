@@ -19,10 +19,10 @@ from sbrain.store_sql import SqlStore
 
 # 문장별 T-P2 결과 (재수행 횟수 순서): 채택 · 반려 뒤 채택 · 반려 뒤 조기 중단 · 반려만 (검수 재수행 2회)
 BEHAVIOR = {
-    "s-1-1-1": ["ok"],
-    "s-1-1-2": ["violate", "ok"],
-    "s-2-1-1": ["violate", "same", "same"],
-    "s-2-1-2": ["violate", "violate", "violate"],
+    "s-3.1.1-1": ["ok"],
+    "s-3.1.1-2": ["violate", "ok"],
+    "s-3.1.2-1": ["violate", "same", "same"],
+    "s-3.1.2-2": ["violate", "violate", "violate"],
 }
 TARGETS = list(BEHAVIOR)
 
@@ -34,37 +34,37 @@ def sentence_results(app, rid):
 
 def test_tp2_redo_early_stop_and_keep_original(clock):
     sc = StubScenario(tp1_targets=4, tp2_behavior={
-        "s-1-1-1": ["ok"],
-        "s-1-1-2": ["violate", "ok"],             # 1회 재수행 후 채택
-        "s-2-1-1": ["violate", "same", "same"],   # 지시를 바꿔도 같은 출력 → 조기 중단
-        "s-2-1-2": ["violate", "violate", "violate"],  # 검수 재수행 횟수 초과 → 원문 유지
+        "s-3.1.1-1": ["ok"],
+        "s-3.1.1-2": ["violate", "ok"],             # 1회 재수행 후 채택
+        "s-3.1.2-1": ["violate", "same", "same"],   # 지시를 바꿔도 같은 출력 → 조기 중단
+        "s-3.1.2-2": ["violate", "violate", "violate"],  # 검수 재수행 횟수 초과 → 원문 유지
     })
     app = make_app(clock, sc)
     rid = to_screen9(app)
     run_review(app, rid)
     res, ctx = sentence_results(app, rid)
-    assert res["s-1-1-1"].adopted and res["s-1-1-1"].final_redo_count == 0
-    assert res["s-1-1-2"].adopted and res["s-1-1-2"].final_redo_count == 1
-    assert res["s-2-1-1"].kept_reason == "조기중단"
-    assert (res["s-2-1-2"].kept_reason, res["s-2-1-2"].final_redo_count) == ("검증실패", 2)
+    assert res["s-3.1.1-1"].adopted and res["s-3.1.1-1"].final_redo_count == 0
+    assert res["s-3.1.1-2"].adopted and res["s-3.1.1-2"].final_redo_count == 1
+    assert res["s-3.1.2-1"].kept_reason == "조기중단"
+    assert (res["s-3.1.2-2"].kept_reason, res["s-3.1.2-2"].final_redo_count) == ("검증실패", 2)
     log = ctx.get("proofreadLog")
-    assert log.adopted_count == 2 and log.early_stopped_sentence_ids == ["s-2-1-1"]
-    assert log.retained_by_check_ids == ["s-2-1-2"] and log.token_preservation_rate == 0.25
+    assert log.adopted_count == 2 and log.early_stopped_sentence_ids == ["s-3.1.2-1"]
+    assert log.retained_by_check_ids == ["s-3.1.2-2"] and log.token_preservation_rate == 0.25
     # 채택 문장만 계획서에 반영
     plan = ctx.get("planDoc")
     texts = {s.sentence_id: s.text for sec in plan.sections for s in sec.sentences}
-    assert texts["s-1-1-1"].endswith("(윤문)") and not texts["s-2-1-2"].endswith("(윤문)")
+    assert texts["s-3.1.1-1"].endswith("(윤문)") and not texts["s-3.1.2-2"].endswith("(윤문)")
     # 호출 로그는 문장별, 입력 · 출력 이력은 Task 단위
     tp2 = [r for r in app.store.executions(rid) if r.task_id == "T-P2"]
     assert len(tp2) == 1 and tp2[0].outputs == ["sentenceResults@1"]
     assert tp2[0].temperature <= 0.2
     calls = [c for c in app.store.call_logs(rid) if c.task_id == "T-P2"]
     assert {c.item_key for c in calls} == set(res)
-    assert sum(1 for c in calls if c.item_key == "s-2-1-2") == 3  # 첫 호출 + 재수행 2회
+    assert sum(1 for c in calls if c.item_key == "s-3.1.2-2") == 3  # 첫 호출 + 재수행 2회
 
 
 def test_tp2_redo_hint_accumulates(clock):
-    sc = StubScenario(tp1_targets=1, tp2_behavior={"s-1-1-1": ["violate", "violate", "ok"]})
+    sc = StubScenario(tp1_targets=1, tp2_behavior={"s-3.1.1-1": ["violate", "violate", "ok"]})
     app = make_app(clock, sc)
     seen = []
     base = app.registry.get("T-P2").fn
@@ -81,15 +81,15 @@ def test_tp2_redo_hint_accumulates(clock):
 def test_tp2_call_failures_keep_original_or_resume_by_ratio(clock):
     sc = StubScenario(tp1_targets=4)
     app = make_app(clock, sc)
-    app.llm.plan("T-P2", ["timeout"] * 6, item_key="s-1-1-1")  # 1/4 = 25% ≤ 30% → 원문 유지하고 완료
+    app.llm.plan("T-P2", ["timeout"] * 6, item_key="s-3.1.1-1")  # 1/4 = 25% ≤ 30% → 원문 유지하고 완료
     rid = to_screen9(app)
     run_review(app, rid)
     res, _ = sentence_results(app, rid)
-    assert res["s-1-1-1"].kept_reason == "호출실패"
+    assert res["s-3.1.1-1"].kept_reason == "호출실패"
     assert app.store.load_run(rid).state.progress == "완료"
 
     app = make_app(clock, StubScenario(tp1_targets=4))
-    for sid in ("s-1-1-1", "s-1-1-2"):
+    for sid in ("s-3.1.1-1", "s-3.1.1-2"):
         app.llm.plan("T-P2", ["timeout"] * 6, item_key=sid)  # 2/4 = 50% > 30% → 재개
     rid = to_screen9(app, account="acc-2")
     run_review(app, rid)
@@ -130,7 +130,7 @@ def test_trace_covers_rule_and_merge_steps_without_content(clock):
     assert recs["G-01"].inputs and recs["G-01"].outputs
     # 첫 실행도 입력 산출물명@버전을 남긴다
     assert "planDoc@2" in recs["T-V1"].inputs and "planDoc@1" in recs["M-1"].inputs
-    assert recs["T-S1"].model == "미정" and recs["T-S1"].agent == "전략"
+    assert recs["T-S1"].model == "gpt-5.6-terra" and recs["T-S1"].agent == "전략"
     # 기록에는 산출물 내용이 없다 (참조와 메타만)
     dump = "".join(r.model_dump_json() for r in app.store.executions(rid))
     assert "헬스장" not in dump and "김서준" not in dump
@@ -152,15 +152,15 @@ def test_tp2_records_every_attempt(clock):
     run_review(app, rid)
     res, _ = sentence_results(app, rid)
     assert {sid: [(a.attempt_no, a.adopted, a.token_check.passed) for a in r.attempts] for sid, r in res.items()} == {
-        "s-1-1-1": [(1, True, True)],
-        "s-1-1-2": [(1, False, False), (2, True, True)],
-        "s-2-1-1": [(1, False, False), (2, False, False), (3, False, False)],   # 조기 중단한 시도도 시도
-        "s-2-1-2": [(1, False, False), (2, False, False), (3, False, False)],
+        "s-3.1.1-1": [(1, True, True)],
+        "s-3.1.1-2": [(1, False, False), (2, True, True)],
+        "s-3.1.2-1": [(1, False, False), (2, False, False), (3, False, False)],   # 조기 중단한 시도도 시도
+        "s-3.1.2-2": [(1, False, False), (2, False, False), (3, False, False)],
     }
-    rejected, adopted = res["s-1-1-2"].attempts
+    rejected, adopted = res["s-3.1.1-2"].attempts
     assert (rejected.text, rejected.token_check.missing_tokens, rejected.violation_type) == ("변형 0", ["1억원"], "수치·금액")
     assert adopted.text.endswith("(윤문)") and adopted.violation_type is None
-    assert [a.text for a in res["s-2-1-1"].attempts] == ["변형 0", "동일 출력", "동일 출력"]
+    assert [a.text for a in res["s-3.1.2-1"].attempts] == ["변형 0", "동일 출력", "동일 출력"]
     assert "attempts" not in extension_fields(SentenceResult)       # 기준 문서 v1.10 T-P2 출력 attempts
     assert app.store.rejected_attempts(rid) == []                     # 학습 미동의 — 시도 기록은 산출물에만
 
@@ -177,7 +177,7 @@ def test_rejected_attempts_go_to_proofread_logs_when_owner_agreed(clock):
         (original[sid], a.text, a.attempt_no) for sid in TARGETS for a in res[sid].attempts if not a.token_check.passed]
     assert len(rows) == 7                                             # 반려된 시도마다 한 행
     first = rows[0]
-    assert (first.original_text, first.corrected_text) == (original["s-1-1-2"], "변형 0")
+    assert (first.original_text, first.corrected_text) == (original["s-3.1.1-2"], "변형 0")
     assert (first.reason, first.violation_type, first.violation_note) == (
         "보호 토큰 검사 불통과 (빠짐 1건)", "수치·금액", "빠짐: 1억원")
     tp2 = next(r for r in app.store.executions(rid) if r.task_id == "T-P2")
@@ -191,23 +191,23 @@ def test_rejected_attempts_go_to_proofread_logs_when_owner_agreed(clock):
 
 
 def test_tp2_resume_continues_attempt_numbers_without_duplicate_rows(clock):
-    app = make_app(clock, StubScenario(tp1_targets=4, tp2_behavior={"s-1-1-1": ["violate", "ok"]}))
-    app.llm.plan("T-P2", ["ok"] + ["timeout"] * 6, item_key="s-1-1-1")   # 시도 1 반려 → 재수행 호출 실패
-    app.llm.plan("T-P2", ["timeout"] * 6, item_key="s-1-1-2")            # 첫 호출부터 실패 — 시도가 아니다
+    app = make_app(clock, StubScenario(tp1_targets=4, tp2_behavior={"s-3.1.1-1": ["violate", "ok"]}))
+    app.llm.plan("T-P2", ["ok"] + ["timeout"] * 6, item_key="s-3.1.1-1")   # 시도 1 반려 → 재수행 호출 실패
+    app.llm.plan("T-P2", ["timeout"] * 6, item_key="s-3.1.1-2")            # 첫 호출부터 실패 — 시도가 아니다
     rid = to_screen9(app)
     set_consent(app, rid)
     run_review(app, rid)
     run = app.store.load_run(rid)
     assert run.state.progress == "재개대기"                                # 2/4 = 50% > 30% → 재개
     res, _ = sentence_results(app, rid)
-    assert res["s-1-1-1"].kept_reason == "호출실패" and [a.attempt_no for a in res["s-1-1-1"].attempts] == [1]
-    assert res["s-1-1-2"].kept_reason == "호출실패" and res["s-1-1-2"].attempts == []
+    assert res["s-3.1.1-1"].kept_reason == "호출실패" and [a.attempt_no for a in res["s-3.1.1-1"].attempts] == [1]
+    assert res["s-3.1.1-2"].kept_reason == "호출실패" and res["s-3.1.1-2"].attempts == []
     assert [r.attempt_no for r in app.store.rejected_attempts(rid)] == [1]  # 재개 예약 저장과 같은 트랜잭션
     clock.t = run.next_resume_at + timedelta(seconds=1)
     app.engine.resume(rid)
     res, _ = sentence_results(app, rid)
-    assert [(a.attempt_no, a.adopted) for a in res["s-1-1-1"].attempts] == [(1, False), (2, False), (3, True)]
-    assert [(a.attempt_no, a.adopted) for a in res["s-1-1-2"].attempts] == [(1, True)]
+    assert [(a.attempt_no, a.adopted) for a in res["s-3.1.1-1"].attempts] == [(1, False), (2, False), (3, True)]
+    assert [(a.attempt_no, a.adopted) for a in res["s-3.1.1-2"].attempts] == [(1, True)]
     assert [r.attempt_no for r in app.store.rejected_attempts(rid)] == [1, 2]   # 같은 시도를 두 번 쓰지 않는다
     assert app.store.load_run(rid).state.progress == "완료"
 
@@ -267,9 +267,9 @@ def old_web(request, tmp_path):
 
 def test_old_proofread_logs_structure_skips_rows_but_saves_step(old_web):
     make, clock = old_web
-    app = make(StubScenario(tp1_targets=4, tp2_behavior={"s-1-1-1": ["violate", "ok"]}))
-    app.llm.plan("T-P2", ["ok"] + ["timeout"] * 6, item_key="s-1-1-1")
-    app.llm.plan("T-P2", ["timeout"] * 6, item_key="s-1-1-2")
+    app = make(StubScenario(tp1_targets=4, tp2_behavior={"s-3.1.1-1": ["violate", "ok"]}))
+    app.llm.plan("T-P2", ["ok"] + ["timeout"] * 6, item_key="s-3.1.1-1")
+    app.llm.plan("T-P2", ["timeout"] * 6, item_key="s-3.1.1-2")
     rid = to_screen9(app, account=uuid.uuid4().hex[:12])
     set_consent(app, rid)
     run_review(app, rid)                                              # 반려 시도가 있는 T-P2 저장 1 (재개 예약)
@@ -279,7 +279,7 @@ def test_old_proofread_logs_structure_skips_rows_but_saves_step(old_web):
     app.engine.resume(rid)                                            # 반려 시도가 있는 T-P2 저장 2
     assert app.store.load_run(rid).state.progress == "완료"            # 단계 저장 · 검수는 정상
     res, _ = sentence_results(app, rid)
-    assert [a.attempt_no for a in res["s-1-1-1"].attempts] == [1, 2, 3]
+    assert [a.attempt_no for a in res["s-3.1.1-1"].attempts] == [1, 2, 3]
     skipped = [e for e in app.store.events(rid) if e.kind == "검수회수기록생략"]
     assert len(skipped) == 1                                          # 실행 건마다 한 번
     assert "변형" not in skipped[0].detail and "1억원" not in skipped[0].detail   # 내용 없이 이유만
@@ -292,7 +292,7 @@ def test_proofread_logs_writes_start_after_web_schema_change_without_restart(bac
     """맞지 않는 구조는 기억하지 않는다 — 웹팀이 구조를 바꾸면 같은 프로세스(같은 저장소)의 다음 T-P2 저장부터 쓴다."""
     clock = Clock()
     store = Backend(backend, tmp_path).make_store(clock)
-    scenario = StubScenario(tp1_targets=1, tp2_behavior={"s-1-1-1": ["violate", "ok"]})
+    scenario = StubScenario(tp1_targets=1, tp2_behavior={"s-3.1.1-1": ["violate", "ok"]})
 
     def review_once() -> str:
         app = make_app(clock, scenario, store=store)

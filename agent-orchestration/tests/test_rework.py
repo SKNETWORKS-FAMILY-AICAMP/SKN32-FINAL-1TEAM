@@ -35,8 +35,8 @@ def test_merges_on_first_run_and_every_rework_path(clock):
     rid = to_screen6(app)
     assert "M-1" in executed(app, rid)  # 첫 실행
 
-    rework(app, clock, rid, "문제인식")  # 화면 6 — 문서층 임시 처리: 계획서 전체를 다시 만든다
-    assert cycle_steps(app, rid, last_cycle_id(app, rid)) == ["T-W1", "T-W2", "T-W3", "M-1", "T-V1", "G-02a"]
+    rework(app, clock, rid, "문제인식")  # 화면 6 — 문제인식 묶음 항목(본문뿐)만 다시 만든다 (spec 4.11)
+    assert cycle_steps(app, rid, last_cycle_id(app, rid)) == ["T-W1", "M-1", "T-V1", "G-02a"]
 
     app.orchestrator.decide(rid, 6, "진행")
     app.orchestrator.advance(rid)
@@ -47,9 +47,9 @@ def test_merges_on_first_run_and_every_rework_path(clock):
     assert cycle_steps(app, rid, last_cycle_id(app, rid)) == ["T-B1", "G-04", "M-3", "T-V2", "G-02b"]
 
     app.orchestrator.decide(rid, 8, "진행")
-    rework(app, clock, rid, "실현가능성")  # 화면 9 계획서 — HTML 반영 · 두 층 재채점
+    rework(app, clock, rid, "실현가능성")  # 화면 9 계획서 — 본문 · 표 항목, HTML 반영 · 두 층 재채점
     assert cycle_steps(app, rid, last_cycle_id(app, rid)) == [
-        "T-W1", "T-W2", "T-W3", "M-1", "T-V1", "T-B1", "G-04", "M-3", "T-V2", "G-02b"]
+        "T-W1", "T-W3", "M-1", "T-V1", "T-B1", "G-04", "M-3", "T-V2", "G-02b"]
 
 
 def test_onepage_rework_path_includes_wrap_merge(clock):
@@ -83,9 +83,9 @@ def test_requests_within_window_merge_into_one_rework(clock):
     clock.advance(seconds=WINDOW)
     app.orchestrator.advance(rid)
     assert len([e for e in app.store.events(rid) if e.kind == "재작성시작"]) == 1   # 재작성 한 번
-    # 합집합 · 기준 문서 순서
+    # 합집합 · 기준 문서 순서 (문제인식 묶음은 본문 항목뿐 — T-W1)
     assert cycle_steps(app, rid, a.cycle_id) == [
-        "T-W1", "T-W2", "T-W3", "M-1", "T-V1", "T-B1", "T-B2", "G-04", "M-3", "T-V2", "G-02b"]
+        "T-W1", "M-1", "T-V1", "T-B1", "T-B2", "G-04", "M-3", "T-V2", "G-02b"]
     comps = [x for x in app.store.comparisons(rid) if x.cycle_id == a.cycle_id]
     assert sorted(x.bundle_id for x in comps) == sorted(["인포그래픽", "문제인식", "실행 파일"])
     assert len({(x.before_score, x.after_score, x.kept, x.basis) for x in comps}) == 1  # 요청 전체를 한 번 비교
@@ -172,8 +172,10 @@ def test_bundle_name_layer_and_state_rules(clock):
     app.orchestrator.advance(rid)                                    # 화면 6
     assert code_of(lambda: request(app, rid, "실행 파일")) == "INVALID_ORDER"       # 화면 6 산출물층
     assert code_of(lambda: request(app, rid, "없는 묶음")) == "INVALID_ORDER"
-    target = orders(app, rid, "G-02a")[0].targets[0]                 # 판정 지시의 대상 이름(묶음-<항목>)으로는 받지 않는다
-    assert code_of(lambda: request(app, rid, target)) == "INVALID_ORDER"
+    assert code_of(lambda: request(app, rid, "2.4")) == "INVALID_ORDER"         # 항목 번호 · 태그로는 받지 않는다
+    assert code_of(lambda: request(app, rid, "1-1")) == "INVALID_ORDER"
+    # 문서층 판정 지시의 대상은 묶음 이름 하나다 (spec 4.12)
+    assert [o.targets for o in orders(app, rid, "G-02a")] == [["문제인식"], ["실현가능성"], ["성장전략"], ["팀 구성"]]
     app.orchestrator.decide(rid, 6, "진행")
     app.orchestrator.advance(rid)                                    # 화면 8
     assert code_of(lambda: request(app, rid, "문제인식")) == "INVALID_ORDER"         # 화면 8 문서층
@@ -237,7 +239,7 @@ def test_non_failing_bundle_and_pass_state_accepted_and_rescored(clock):
     ctx = app.engine.open_context(app.store.load_run(rid))
     assert ctx.get("G-02a.nextAction") == "진행가능" and ctx.get("G-02a.reworkOrders") == []
     [acc] = rework(app, clock, rid, "팀 구성")
-    assert cycle_steps(app, rid, acc.cycle_id) == ["T-W1", "T-W2", "T-W3", "M-1", "T-V1", "G-02a"]  # 다시 만들고 채점
+    assert cycle_steps(app, rid, acc.cycle_id) == ["T-W1", "M-1", "T-V1", "G-02a"]  # 그 묶음 항목만 다시 만들고 채점
     ri = rework_input(app, rid, "T-W1")
     assert (ri.order.reason, ri.order.targets) == (REWORK_DEFAULT_REASON, ["팀 구성"])   # 판정 지시가 없으면 고정 문구
     assert ri.order.instruction_delta == REWORK_DEFAULT_REASON                         # 시트 4: 보완 지시는 비워 둘 수 없다
@@ -331,7 +333,9 @@ def test_final_scores_trace_to_scored_versions(clock):
     m1 = next(r for r in recs if plan_in[0] in r.outputs)
     m3 = next(r for r in recs if proto_in[0] in r.outputs)
     assert (m1.task_id, m3.task_id) == ("M-1", "M-3")
-    assert tv1.model is not None and tv1.temperature == 0.0  # T-V1 온도 덮어쓰기
+    # T-V1 기본 설정(gpt-5.6-terra, spec 4.2)은 온도를 보내지 않아 온도 덮어쓰기(fixed 0.0)가 걸리지 않는다 — 기본 온도가
+    # 있을 때의 덮어쓰기는 test_task_settings.py의 test_each_task_records_its_own_entry가 본다
+    assert tv1.model == "gpt-5.6-terra" and tv1.temperature is None
 
 
 def test_rework_feedback_links_orders_to_target_execution(clock):
@@ -339,25 +343,32 @@ def test_rework_feedback_links_orders_to_target_execution(clock):
     rid = to_screen6(app)
     g02a_exec = next(r for r in app.store.executions(rid) if r.task_id == "G-02a")
     judge_doc = [o for o in orders(app, rid, "G-02a") if o.layer == "document"]
-    assert len(judge_doc) == 4
-    rework(app, clock, rid, "문제인식")
+    assert len(judge_doc) == 4                                        # 80 미만 · 후보 없음 → 묶음 모두 (spec 4.12 ②)
+    rework(app, clock, rid, "실현가능성")
     tws = [r for r in app.store.executions(rid) if r.trigger == "재작성" and r.task_id in ("T-W1", "T-W2", "T-W3")]
-    assert [r.task_id for r in tws] == ["T-W1", "T-W2", "T-W3"]
+    assert [r.task_id for r in tws] == ["T-W1", "T-W3"]               # 실현가능성 = 본문 · 표 항목
     fbs = [f for f in app.store.feedback(rid) if f.kind == "재작성"]
     assert [f.target_execution_id for f in fbs] == [r.execution_id for r in tws]
     fb, tw1 = fbs[0], tws[0]
     assert fb.source_execution_id == g02a_exec.execution_id
     assert fb.source_refs[0] == "G-02a.reworkOrders@1" and fb.source_refs[1].startswith("decision@")
-    assert tw1.rework_role == "대상" and tw1.bundle_id == "문제인식"
+    assert tw1.rework_role == "대상" and tw1.bundle_id == "실현가능성"
     ctx = app.engine.open_context(app.store.load_run(rid))
     ri = ctx.get_ref(fb.via_ref)
-    assert ri.mode == "재작성" and ri.order.targets == ["문제인식"]
-    # 문서층 임시 처리 — 판정이 낸 문서층 지시를 모두 합쳐 쓴다
-    assert all(o.reason in ri.order.reason and o.instruction_delta in ri.order.instruction_delta for o in judge_doc)
+    assert ri.mode == "재작성" and ri.order.targets == ["실현가능성"]
+    # 고른 묶음을 대상으로 한 판정 지시만 쓴다 (spec 4.11)
+    [mine] = [o for o in judge_doc if o.targets == ["실현가능성"]]
+    assert (ri.order.reason, ri.order.instruction_delta) == (mine.reason, mine.instruction_delta)
+    # 목표 항목 = 그 묶음의 그 Task 종류 항목 (본문은 T-W1, 표는 T-W3)
+    form = ctx.get("formSpec")
+    kinds = dict(zip(form.section_codes, form.section_kinds))
+    assert list(ri.target_items) == [c for c in form.section_codes if c.startswith("3.5.") and kinds[c] == "section"]
+    tw3_ri = ctx.get_ref(fbs[1].via_ref)
+    assert list(tw3_ri.target_items) == [c for c in form.section_codes if c.startswith("3.5.") and kinds[c] == "table"]
     # 판정에는 모은 지시 전체가 사용자 선택으로 넘어간다
     decision = ctx.get_ref(fb.source_refs[1])
-    assert decision["userAction"] == "재작성" and decision["bundles"] == ["문제인식"]
-    assert [o["taskId"] for o in decision["selectedOrders"]] == ["T-W1", "T-W2", "T-W3"]
+    assert decision["userAction"] == "재작성" and decision["bundles"] == ["실현가능성"]
+    assert [o["taskId"] for o in decision["selectedOrders"]] == ["T-W1", "T-W3"]
 
 
 def test_screen6_improvement_kept_and_demo_scores(clock):

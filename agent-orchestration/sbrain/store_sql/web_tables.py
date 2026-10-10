@@ -7,6 +7,7 @@
 | proofread_logs | 반려된 T-P2 시도 INSERT('검수 회수 문단'), 실행 건 행 조회 — 웹 스키마 변경(project_id 기준) 전제 |
 | projects · companies · users | 학습 동의 확인 — projects.company_id → companies.user_id → users.ai_training_agreed 읽기만 |
 | verification_policies | 첫 행(policy_id 최솟값)을 설정 입력으로 읽기 |
+| project_budget_items · project_schedule_items | 사전 정보(사업비 · 일정, spec 4.3) 읽기만 — 읽는 일은 intake/sql_source.py가 한다. 여기에는 컬럼 목록만 둔다 |
 
 - 이 테이블들의 아래 컬럼만 읽고 쓴다. 웹 테이블 쓰기는 notifications · generation_failure_alerts ·
   proofread_logs INSERT 세 가지뿐이다(projects 진행 컬럼은 쓰지 않는다). 그 밖의 웹 테이블 · 컬럼은 건드리지 않는다.
@@ -28,6 +29,8 @@ from typing import Any
 from sqlalchemy import Connection, MetaData, Table, false, insert, select
 from sqlalchemy.exc import DBAPIError, NoSuchTableError
 
+from ..intake.sql_source import COLUMNS as INTAKE_COLUMNS
+from ..intake.sql_source import OPTIONAL_COLUMNS as INTAKE_OPTIONAL_COLUMNS
 from ..intake.sql_source import SchemaMismatch
 from ..models import Notification, RejectedAttempt, Run
 from ..models.clock import naive_utc
@@ -52,6 +55,14 @@ WEB_COLUMNS: dict[str, list[str]] = {
     "proofread_logs": PROOFREAD_WRITE,
     "verification_policies": ["policy_id", "doc_weight", "code_weight", "plan_weight", "pass_threshold",
                               "rerun_cap", "rework_cap", "deviation_cap", "token_retry_cap"],
+    # 사업비 · 일정 (spec 4.3) — 읽기만. 목록의 원본은 intake/sql_source.py COLUMNS (없으면 SchemaMismatch)
+    "project_budget_items": INTAKE_COLUMNS["budget_items"],
+    "project_schedule_items": INTAKE_COLUMNS["schedule_items"],
+}
+
+# 있으면 읽고 없으면 None으로 보는 웹 컬럼 (없어도 SchemaMismatch가 아님) — phase는 웹이 더하기로 한 컬럼 (spec 4.3)
+WEB_OPTIONAL_COLUMNS: dict[str, list[str]] = {
+    "project_budget_items": INTAKE_OPTIONAL_COLUMNS["budget_items"],
 }
 
 RECOVERY_PENDING = "pending"   # '검수 회수 문단' 탭 라벨링 전

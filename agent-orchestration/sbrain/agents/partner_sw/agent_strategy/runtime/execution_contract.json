@@ -1,0 +1,934 @@
+{
+  "version": 2,
+  "sourceWorkbook": "전략_작성_검증1.xlsx",
+  "tableGenerationEnabled": true,
+  "functions": {
+    "F01": {
+      "name": "collect_web_data",
+      "purpose": "WEB 외부정보 수집",
+      "inputs": "query, source_type, target_fields",
+      "output": "web_data",
+      "modelLabel": "GPT-6 Luna + Web",
+      "apiModel": "gpt-6-luna",
+      "maxOutputTokens": 3200
+    },
+    "F02": {
+      "name": "analyze_item",
+      "purpose": "창업/개발 아이템 구조화",
+      "inputs": "item_input, research_data",
+      "output": "item_spec",
+      "modelLabel": "GPT-5.6 Terra",
+      "apiModel": "gpt-5.6-terra",
+      "maxOutputTokens": 3000
+    },
+    "F03": {
+      "name": "analyze_market",
+      "purpose": "시장동향·시장문제·개발필요성 분석",
+      "inputs": "item, market_data, analysis_type",
+      "output": "market_analysis",
+      "modelLabel": "GPT-6.1 Sol + RAG",
+      "apiModel": "gpt-6.1-sol",
+      "maxOutputTokens": 3200
+    },
+    "F04": {
+      "name": "analyze_competitors",
+      "purpose": "경쟁사 및 경쟁제품 분석",
+      "inputs": "item, market_data, competitor_data",
+      "output": "competitor_analysis",
+      "modelLabel": "GPT-5.6 Terra + Web",
+      "apiModel": "gpt-5.6-terra",
+      "maxOutputTokens": 2800
+    },
+    "F05": {
+      "name": "analyze_team_capability",
+      "purpose": "대표·팀원 역량 분석",
+      "inputs": "team_data, item_requirements",
+      "output": "team_capability",
+      "modelLabel": "GPT-6 Luna",
+      "apiModel": "gpt-6-luna",
+      "maxOutputTokens": 2800
+    },
+    "F06": {
+      "name": "define_development_goal",
+      "purpose": "개발목표·핵심기술·KPI 정의",
+      "inputs": "item_spec, duration, target_field",
+      "output": "development_goal",
+      "modelLabel": "GPT-5.6 Sol",
+      "apiModel": "gpt-5.6-sol",
+      "maxOutputTokens": 3200
+    },
+    "F07": {
+      "name": "define_development_method",
+      "purpose": "핵심기술별 개발방법·확보방안 정의",
+      "inputs": "core_technologies, constraints",
+      "output": "development_method",
+      "modelLabel": "GPT-6.1 Sol",
+      "apiModel": "gpt-6.1-sol",
+      "maxOutputTokens": 3200
+    },
+    "F08": {
+      "name": "create_development_plan",
+      "purpose": "단계별 기술개발 계획 수립",
+      "inputs": "goals, duration, phases",
+      "output": "development_plan",
+      "modelLabel": "GPT-6.1 Sol",
+      "apiModel": "gpt-6.1-sol",
+      "maxOutputTokens": 3000
+    },
+    "F09": {
+      "name": "create_production_plan",
+      "purpose": "제품화·양산 계획 수립",
+      "inputs": "product, development_plan, phases",
+      "output": "production_plan",
+      "modelLabel": "GPT-5.6 Terra",
+      "apiModel": "gpt-5.6-terra",
+      "maxOutputTokens": 2800
+    },
+    "F10": {
+      "name": "create_marketing_strategy",
+      "purpose": "시장진입·마케팅 전략 수립",
+      "inputs": "item, market, target_customer, stage",
+      "output": "marketing_strategy",
+      "modelLabel": "GPT-6.1 Sol",
+      "apiModel": "gpt-6.1-sol",
+      "maxOutputTokens": 2800
+    },
+    "F11": {
+      "name": "create_business_model",
+      "purpose": "비즈니스 모델 수립",
+      "inputs": "item, market, customer, strategy",
+      "output": "business_model",
+      "modelLabel": "GPT-6.1 Sol",
+      "apiModel": "gpt-6.1-sol",
+      "maxOutputTokens": 2400
+    },
+    "F12": {
+      "name": "create_growth_strategy",
+      "purpose": "경쟁·시장진입·BM·투자·사회적 가치 통합",
+      "inputs": "market, competitors, bm, investment, social_value",
+      "output": "growth_strategy",
+      "modelLabel": "GPT-6.1 Sol",
+      "apiModel": "gpt-6.1-sol",
+      "maxOutputTokens": 3000
+    },
+    "F13": {
+      "name": "create_resource_plan",
+      "purpose": "장비·시설·채용·협력기관 계획",
+      "inputs": "item, required_capabilities, team, resource_type",
+      "output": "resource_plan",
+      "modelLabel": "GPT-6 Luna",
+      "apiModel": "gpt-6-luna",
+      "maxOutputTokens": 2200
+    },
+    "F14": {
+      "name": "calculate_budget",
+      "purpose": "정부지원사업비 산출 및 집행계획",
+      "inputs": "items, quantity, unit_price, phase, rules",
+      "output": "budget",
+      "modelLabel": "GPT-6 Luna + Python",
+      "apiModel": "gpt-6-luna",
+      "maxOutputTokens": 2200
+    },
+    "F15": {
+      "name": "create_schedule",
+      "purpose": "전체 사업추진 일정 수립",
+      "inputs": "tasks, duration, milestones",
+      "output": "schedule",
+      "modelLabel": "GPT-6 Luna + Python",
+      "apiModel": "gpt-6-luna",
+      "maxOutputTokens": 3500
+    },
+    "F16": {
+      "name": "generate_section",
+      "purpose": "목차 요구조건에 맞는 본문 생성",
+      "inputs": "section_spec, source_data, writing_rules",
+      "output": "section_content",
+      "modelLabel": "GPT-5.6 Sol",
+      "apiModel": "gpt-5.6-sol",
+      "maxOutputTokens": 4000
+    },
+    "F17": {
+      "name": "generate_table",
+      "purpose": "요구조건에 맞는 표 생성",
+      "inputs": "columns, rows, rules",
+      "output": "table",
+      "modelLabel": "GPT-6 Luna + Python",
+      "apiModel": "gpt-6-luna",
+      "maxOutputTokens": 0
+    },
+    "F18": {
+      "name": "generate_image_spec",
+      "purpose": "USER FLOW·서비스 구조도 생성 명세",
+      "inputs": "item, architecture, flow_type",
+      "output": "image_spec",
+      "modelLabel": "GPT-6 Luna",
+      "apiModel": "gpt-6-luna",
+      "maxOutputTokens": 1600
+    },
+    "F19": {
+      "name": "validate_section",
+      "purpose": "섹션별 작성 결과 검증",
+      "inputs": "section_spec, content, source_data",
+      "output": "validation_result",
+      "modelLabel": "Python + GPT-5.6 Terra",
+      "apiModel": "gpt-5.6-terra",
+      "maxOutputTokens": 5000
+    },
+    "F20": {
+      "name": "assemble_document",
+      "purpose": "섹션·표·이미지 최종 조립",
+      "inputs": "sections, tables, images",
+      "output": "document",
+      "modelLabel": "Python",
+      "apiModel": null,
+      "maxOutputTokens": 0
+    }
+  },
+  "documents": {
+    "general": [
+      {
+        "sectionId": "1.1.1",
+        "title": "3줄 내외의 간략한 서비스의 개요",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "item_spec"
+        ],
+        "rules": {
+          "maxLines": 3
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "1.1.2",
+        "title": "기존기술의 문제점 1 2 3 서술",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "market_analysis"
+        ],
+        "rules": {
+          "exactItems": 3
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "1.1.3",
+        "title": "관련 시장동향과 이 기술이 시장에 나왔을때 효과 서술",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "market_analysis"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "1.2.1",
+        "title": "개발 결과물에 최종목표를 적용할 분야, 사용할 기술언어, 주요성능을 넣어 1문장으로 작성.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "development_goal"
+        ],
+        "rules": {
+          "maxSentences": 1
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "1.2.2",
+        "title": "핵심기술 위주 개발될 기능 서술, 이때 표 형태 제시가능.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "development_goal.core_technologies"
+        ],
+        "rules": {
+          "minItems": 0
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "1.2.3",
+        "title": "검증에 필요한 성능지표 5개 이상. 정량적 지표로 작성하되 그렇지못할경우 측정환경을 함께 작성",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "development_goal.kpi"
+        ],
+        "rules": {
+          "minItems": 0
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "1.3.1",
+        "title": "1.2.2에서의 핵심기술에 따른 기술개발방법 2줄~4줄과 핵심기술 확보방안 1줄로 작성, 이때 표 형태 제시 가능.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "development_method"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "1.4.1",
+        "title": "제품 개발계획을 수요조사, 기획, 개발, 테스트로 나눠 간략히 리스트화.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "development_plan"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "1.4.2",
+        "title": "양산 1단계, 양산 2단계, 양산 3단계 각 기능 1줄, 상세계획을 3~5 문장으로 작성.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "production_plan"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "1.4.3",
+        "title": "마케팅 전략을 초기시장 접근전략, 사업성숙 단계 접근전략으로 나눠 3줄내외 작성.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "marketing_strategy"
+        ],
+        "rules": {
+          "maxLines": 3
+        },
+        "enabled": true
+      }
+    ],
+    "pre_startup": [
+      {
+        "sectionId": "2.1.1",
+        "title": "일반현황 - 수령한 창업아이템에 완료될 산출물 목록 (창업아이템명과 팀구성현황은 web에서 수령됨)",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "item_spec",
+          "web_data"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "2.1.2",
+        "title": "개요 - 수령한 창업아이템에 1줄 소개, 시장동향 1줄, 개발계획 1줄",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "item_spec",
+          "market_analysis",
+          "development_plan"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "2.1.3",
+        "title": "문제인식 - 현재 시장동향과 그에따른 문제점과 그에 따른 개발 필요성 3가지 작성.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "market_analysis"
+        ],
+        "rules": {
+          "exactItems": 3
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "2.1.4",
+        "title": "실현 가능성 - 개발계획, 차별성, 정부지원사업비 계획 3가지 작성.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "development_plan",
+          "item_spec",
+          "budget"
+        ],
+        "rules": {
+          "exactItems": 3
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "2.1.5",
+        "title": "성장전략 - 경쟁사 분석, 목표 시장 진입 전략, 비즈니스 모델, 투자유치 전략, 중장기 사회적 가치 서술.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "growth_strategy"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "2.1.6",
+        "title": "수령한 대표자 및 팀원구성에 따라 대표자의 보유역량, 팀원 보유역량을 서술.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "team_capability"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "2.2.1",
+        "title": "창업아이템명 - 2.1.2에 작성한 창업아이템 1줄 소개.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "item_spec"
+        ],
+        "rules": {
+          "maxLines": 1
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "2.2.2",
+        "title": "산출물 - 2.1.2에 작성한 산출물 목록",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "item_spec"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "2.3.1",
+        "title": "아이템 개요 - 2.1.2에 작성한 창업아이템 1줄 소개.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "item_spec"
+        ],
+        "rules": {
+          "maxLines": 1
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "2.3.2",
+        "title": "문제인식 - 2.1.3에 작성한 시장동향과 그에 따른 문제점.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "market_analysis"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "2.3.3",
+        "title": "실현가능성 - 2.1.4에 작성한 실현 가능성.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "feasibility_plan"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "2.3.4",
+        "title": "성장전략 - 2.1.5에 작성한 내용.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "growth_strategy"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "2.3.5",
+        "title": "2.1.6에 작성한 대표자의 보유역량, 팀원 보유역량을 서술내용과 그에 따른 역량 활용계획 한줄씩.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "team_capability"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "2.3.6",
+        "title": "이미지(선택) - USERFLOW, 서비스 구조도",
+        "functionId": "F18",
+        "contentType": "image",
+        "sourceKeys": [
+          "item_spec",
+          "architecture"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "2.4.1",
+        "title": "2.3.2 내용을 3가지로 나눠 상세 서술",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "market_analysis"
+        ],
+        "rules": {
+          "exactItems": 3
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "2.5.1",
+        "title": "2.3.3 내용을 명시",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "feasibility_plan"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "2.5.2",
+        "title": "개발계획 - 기간을 명시하되 표 형태로 제안 가능. 구분/추진내용/추진기간/세부내용",
+        "functionId": "F17",
+        "contentType": "table",
+        "sourceKeys": [
+          "development_plan"
+        ],
+        "rules": {
+          "requiredColumns": [
+            "구분",
+            "추진내용",
+            "추진기간",
+            "세부내용"
+          ]
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "2.5.3",
+        "title": "1단계 정부지원사업비 집행계획 - 근거와 갯수, 단가를 명시한 표 형태로 제안 가능. 비목/산출근거/정부지원사업비",
+        "functionId": "F17",
+        "contentType": "table",
+        "sourceKeys": [
+          "budget.phase_1"
+        ],
+        "rules": {
+          "requiredColumns": [
+            "비목",
+            "산출근거",
+            "정부지원사업비"
+          ]
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "2.5.4",
+        "title": "2단계 정부지원사업비 집행계획 - 근거와 갯수, 단가를 명시한 표 형태로 제안 가능. 비목/산출근거/정부지원사업비",
+        "functionId": "F17",
+        "contentType": "table",
+        "sourceKeys": [
+          "budget.phase_2"
+        ],
+        "rules": {
+          "requiredColumns": [
+            "비목",
+            "산출근거",
+            "정부지원사업비"
+          ]
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "2.6.1",
+        "title": "2.1.5 내용을 명시",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "growth_strategy"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "2.6.2",
+        "title": "전체 사업추진 일정을 상반기, 하반기 등의 기간을 명시하되 표 형태로 제안 가능. 구분/추진내용/추진기간/세부내용",
+        "functionId": "F17",
+        "contentType": "table",
+        "sourceKeys": [
+          "schedule"
+        ],
+        "rules": {
+          "requiredColumns": [
+            "구분",
+            "추진내용",
+            "추진기간",
+            "세부내용"
+          ]
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "2.7.1",
+        "title": "2.3.5 내용을 명시.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "team_capability"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "2.7.2",
+        "title": "구매 후 보유 예정인 장비 시설 서술.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "resource_plan"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "2.7.3",
+        "title": "추가채용시 보유할 예정인 역량 서술.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "resource_plan"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "2.7.4",
+        "title": "협력기관 협업시 보유할 예정인 기술/역량 서술.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "resource_plan"
+        ],
+        "rules": {},
+        "enabled": true
+      }
+    ],
+    "early_startup": [
+      {
+        "sectionId": "3.1.1",
+        "title": "일반현황 - 수령한 창업아이템에 완료될 산출물 목록 (창업아이템명과 팀구성현황은 web에서 수령됨)",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "item_spec",
+          "web_data"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "3.1.2",
+        "title": "개요 - 수령한 창업아이템에 1줄 소개, 시장동향 1줄, 개발계획 1줄",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "item_spec",
+          "market_analysis",
+          "development_plan"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "3.1.3",
+        "title": "문제인식 - 현재 시장동향과 그에따른 문제점과 그에 따른 개발 필요성 3가지 작성.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "market_analysis"
+        ],
+        "rules": {
+          "exactItems": 3
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "3.1.4",
+        "title": "실현 가능성 - 개발계획, 차별성, 정부지원사업비 계획 3가지 작성.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "development_plan",
+          "item_spec",
+          "budget"
+        ],
+        "rules": {
+          "exactItems": 3
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "3.1.5",
+        "title": "성장전략 - 경쟁사 분석, 목표 시장 진입 전략, 비즈니스 모델, 투자유치 전략, 중장기 사회적 가치 서술.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "growth_strategy"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "3.1.6",
+        "title": "수령한 대표자 및 팀원구성에 따라 대표자의 보유역량, 팀원 보유역량을 서술.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "team_capability"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "3.2.1",
+        "title": "창업아이템명 - 3.1.2에 작성한 창업아이템 1줄 소개.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "item_spec"
+        ],
+        "rules": {
+          "maxLines": 1
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "3.2.2",
+        "title": "산출물 - 3.1.2에 작성한 산출물 목록",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "item_spec"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "3.3.1",
+        "title": "아이템 개요 - 3.1.2에 작성한 창업아이템 1줄 소개.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "item_spec"
+        ],
+        "rules": {
+          "maxLines": 1
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "3.3.2",
+        "title": "문제인식 - 3.1.3에 작성한 시장동향과 그에 따른 문제점.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "market_analysis"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "3.3.3",
+        "title": "실현가능성 - 3.1.4에 작성한 실현 가능성.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "feasibility_plan"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "3.3.4",
+        "title": "성장전략 - 3.1.5에 작성한 내용.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "growth_strategy"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "3.3.5",
+        "title": "3.1.6에 작성한 대표자의 보유역량, 팀원 보유역량을 서술내용과 그에 따른 역량 활용계획 한줄씩.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "team_capability"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "3.3.6",
+        "title": "이미지(선택) - USERFLOW, 서비스 구조도",
+        "functionId": "F18",
+        "contentType": "image",
+        "sourceKeys": [
+          "item_spec",
+          "architecture"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "3.4.1",
+        "title": "3.3.2 내용을 3가지로 나눠 상세 서술",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "market_analysis"
+        ],
+        "rules": {
+          "exactItems": 3
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "3.5.1",
+        "title": "3.3.3 내용을 명시",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "feasibility_plan"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "3.5.2",
+        "title": "개발계획 - 기간을 명시하되 표 형태로 제안 가능. 구분/추진내용/추진기간/세부내용",
+        "functionId": "F17",
+        "contentType": "table",
+        "sourceKeys": [
+          "development_plan"
+        ],
+        "rules": {
+          "requiredColumns": [
+            "구분",
+            "추진내용",
+            "추진기간",
+            "세부내용"
+          ]
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "3.5.3",
+        "title": "정부지원사업비 집행계획 - 근거와 금액을 명시한 표 형태로 제안 가능. 비목/산출근거/정부지원사업비",
+        "functionId": "F17",
+        "contentType": "table",
+        "sourceKeys": [
+          "budget.phase_1"
+        ],
+        "rules": {
+          "requiredColumns": [
+            "비목",
+            "산출근거",
+            "정부지원사업비"
+          ]
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "3.6.1",
+        "title": "3.1.5 내용을 명시",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "growth_strategy"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "3.6.2",
+        "title": "전체 사업추진 일정을 상반기, 하반기 등의 기간을 명시하되 표 형태로 제안 가능. 구분/추진내용/추진기간/세부내용",
+        "functionId": "F17",
+        "contentType": "table",
+        "sourceKeys": [
+          "schedule"
+        ],
+        "rules": {
+          "requiredColumns": [
+            "구분",
+            "추진내용",
+            "추진기간",
+            "세부내용"
+          ]
+        },
+        "enabled": true
+      },
+      {
+        "sectionId": "3.7.1",
+        "title": "3.3.5 내용을 명시.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "team_capability"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "3.7.2",
+        "title": "구매 후 보유 예정인 장비 시설 서술.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "resource_plan"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "3.7.3",
+        "title": "추가채용시 보유할 예정인 역량 서술.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "resource_plan"
+        ],
+        "rules": {},
+        "enabled": true
+      },
+      {
+        "sectionId": "3.7.4",
+        "title": "협력기관 협업시 보유할 예정인 기술/역량 서술.",
+        "functionId": "F16",
+        "contentType": "section",
+        "sourceKeys": [
+          "resource_plan"
+        ],
+        "rules": {},
+        "enabled": true
+      }
+    ]
+  }
+}

@@ -1,10 +1,14 @@
-"""OpenAI 호출처 어댑터 — LLMProvider 구현 (조율 Agent가 쓴다, 기획서 5-2).
+"""OpenAI 호출처 어댑터 — LLMProvider 구현 (조율 Agent와 전략 · 작성 · 검증-1 Task가 쓴다, 기획서 5-2).
 
 - 재시도는 tools가 한다. SDK 자체 재시도는 끈다(max_retries=0).
 - request.timeout_sec를 요청 timeout으로 건다.
 - 시간 초과 → TimeoutError, 연결 오류 → ConnectionError, 응답 코드 오류 → ProviderError(status).
   빈 응답(거부 포함)은 형식 오류로 보고 tools가 재시도한다.
-- response_schema가 있으면 JSON 스키마 응답 형식(strict=False)으로 요청한다. 검사는 tools가 다시 한다.
+- 응답 형식: response_schema가 있으면 JSON 스키마 응답 형식(strict=False)으로 요청한다(json_mode보다 우선). 검사는 tools가
+  다시 한다. 스키마가 없고 json_mode(확장)가 참이면 JSON 객체 응답 형식(response_format={"type": "json_object"})으로
+  요청한다 — 전략 · 작성 · 검증-1 담당자 llm_runtime.request_json과 같다(spec 4.1). 둘 다 없으면 응답 형식을 싣지 않는다.
+- 길이 한도로 잘린 응답(finish_reason == 'length')은 json_mode와 상관없이 늘 성공으로 보지 않는다 — FormatError(내용 없는
+  메시지, 사용량 실음)로 올려 tools가 재시도한다(담당자 request_json과 같게, T-C1 · T-C3 · 다시 쓰기 호출에도 적용).
 - 온도(temperature)와 추론 강도(reasoning_effort)는 요청에 값이 있을 때만 싣는다.
   추론 모델(gpt-5-mini · gpt-5.6-luna · gpt-6-luna 등)은 Agent 설정에서 온도를 비우고 추론 강도를 준다.
 - API 키는 환경 변수 OPENAI_API_KEY에서, 없으면 .env 파일에서 읽는다(sbrain/env.py). 코드에 넣지 않는다.
@@ -48,6 +52,8 @@ class OpenAIProvider:
                 "schema": request.response_schema,
                 "strict": False,
             }}
+        elif request.json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
         try:
             response = self._client.chat.completions.create(**kwargs)
         except openai.APITimeoutError:  # APIConnectionError의 하위라 먼저 받는다
@@ -58,6 +64,8 @@ class OpenAIProvider:
             raise ProviderError(f"OpenAI 오류 {e.status_code}", status=e.status_code) from None
         usage = _usage(getattr(response, "usage", None))
         choice = response.choices[0] if response.choices else None
+        if choice is not None and getattr(choice, "finish_reason", None) == "length":
+            raise FormatError("길이 한도로 잘린 응답", usage=usage)   # 응답 내용 · 길이는 싣지 않는다
         content = choice.message.content if choice is not None else None
         if not content:
             raise FormatError("빈 응답", usage=usage)

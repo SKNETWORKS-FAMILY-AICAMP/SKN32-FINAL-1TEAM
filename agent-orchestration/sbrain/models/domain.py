@@ -6,9 +6,9 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import Field
+from pydantic import Field, StringConstraints
 
 from .base import (
     AgentName, ApplicantType, Category, ChartType, EndingRule, ExtractStatus,
@@ -19,6 +19,34 @@ from .files import FileRef
 
 # 파일 칸(참조형)의 확장 표시 note — 기준 문서의 경로 · 원문 칸을 파일 참조로 바꿨다 (결정 0023)
 FILE_NOTE = "참조형 — 기준 문서와 다름(결정 0023)"
+# 전략 · 작성 · 검증-1 연동에서 더한 새 타입(BudgetItem · ScheduleItem · DiagramSpec · SectionResult · Verify1State)의
+# 표시 — 기존 타입에 담을 곳이 없어 새 타입으로 둔다(docs/standards.md 7절 예외). 이 타입을 담는 칸의 note도 이것으로 시작한다
+NEW_TYPE_NOTE = "새 타입(결정 0024)"
+# 계획서 항목 종류 — 본문 · 표 · 그림 (담당자 execution_contract의 kind)
+SectionKind = Literal["section", "table", "image"]
+
+
+# ── 사전 정보 확장 — 사업비 · 일정 row (새 타입, 결정 0024) ──────────────
+class BudgetItem(SBModel):
+    """새 타입(결정 0024) — 사업비 집행계획 한 row (웹 project_budget_items, item_order 순). 금액은 원, NULL이면 None."""
+    category: str = ext(note="비목 (category)")
+    execution_plan: str = ext(note="집행계획 (execution_plan)")
+    total_amount: int | None = ext(note="총사업비(원)")
+    government_amount: int | None = ext(note="정부지원사업비(원)")
+    self_cash_amount: int | None = ext(note="자기부담 현금(원)")
+    self_in_kind_amount: int | None = ext(note="자기부담 현물(원)")
+    phase: Literal["1단계", "2단계"] | None = ext(
+        None, note="예비창업만 — 컬럼이 없거나 NULL이면 None (웹 phase 컬럼 추가 대기)")
+
+
+class ScheduleItem(SBModel):
+    """새 타입(결정 0024) — 추진 일정 한 row (웹 project_schedule_items, item_order 순)."""
+    scope: Literal["agreement", "roadmap"] = ext(
+        note="section — feasibility → agreement(협약기간 내), growth → roadmap(협약 이후)")
+    category: str = ext(note="구분")
+    content: str = ext(note="추진내용")
+    period: str = ext(note="추진기간")
+    detail: str = ext(note="세부내용")
 
 
 # ── 입력 ─────────────────────────────────────────────
@@ -51,6 +79,14 @@ class FormExtension(SBModel):
     occupation: str | None = None                   # 예비창업자 직업(직장명 제외)
     representative_capability: str | None = None    # 대표자의 기술력 · 노하우 · 인적 네트워크
     self_in_kind_resources: str | None = None       # 현물 자기부담 자원(보유 장비 · 공간 등)
+    # 확장 — 계획서 표(사업비 · 일정)와 팀원 역할 (전략 · 작성 · 검증-1 연동, spec 4.3). 시작 요청에서 웹 DB를 읽어 싣고
+    # T-C1이 회사 정보로 그대로 옮긴다. 기본값 빈 목록은 이 칸이 없던 실행 건 호환용
+    budget_items: list[BudgetItem] = ext(
+        default_factory=list, note=f"{NEW_TYPE_NOTE} — 사업비 집행계획 row (project_budget_items, item_order 순)")
+    schedule_items: list[ScheduleItem] = ext(
+        default_factory=list, note=f"{NEW_TYPE_NOTE} — 추진 일정 row (project_schedule_items, item_order 순)")
+    team_role_careers: list[str] = ext(
+        default_factory=list, note="팀원마다 '역할: 경력' 한 줄 — 이름 없음 (LLM 전송용, spec 4.4)")
 
 
 class PreInput(FormExtension):
@@ -162,6 +198,12 @@ class FormSpec(SBModel):
     max_chars_per_section: int | None = None
     format_spec: FormatSpec
     attachment_required: bool
+    # 확장 — 항목마다 웹 태그(1-1 ~ 4-1 또는 None)와 종류. sectionCodes와 같은 길이로 채운다 (spec 4.6).
+    # 비어 있으면(이 칸이 없던 양식) 모든 항목이 태그 없음 · 본문이다
+    section_tags: list[str | None] = ext(
+        default_factory=list, note="항목별 웹 태그(sectionCodes와 같은 길이) — 비면 모두 태그 없음")
+    section_kinds: list[SectionKind] = ext(
+        default_factory=list, note="항목별 종류 section · table · image(sectionCodes와 같은 길이) — 비면 모두 본문")
 
 
 class EvalItem(SBModel):
@@ -302,6 +344,10 @@ class PlanSection(SBModel):
     section_code: str
     title: str
     sentences: list[Sentence]
+    # 확장 — 계획서 항목의 웹 태그와 종류 (spec 4.6). 기본값은 이 칸이 없던 계획서 호환용
+    tag: str | None = ext(None, note="웹 태그(1-1 ~ 4-1) — 재작성 묶음이 없는 항목은 None")
+    content_type: SectionKind = ext(
+        "section", note="항목 종류 — section(본문) · table(표 서술 · 대체 본문) · image(그림, 문장 0개)")
 
 
 class ChartSpec(SBModel):
@@ -323,12 +369,44 @@ class TableSpec(SBModel):
     source_ref: str
 
 
+# 그림 노드 이름 — 1 ~ 35자 (담당자 F18 계약)
+DiagramNode = Annotated[str, StringConstraints(min_length=1, max_length=35)]
+
+
+class DiagramSpec(SBModel):
+    """새 타입(결정 0024) — 계획서 그림 하나(T-W2 · 담당자 F18). SVG 파일은 tools.files로 넣은 참조다 (spec 4.6)."""
+    diagram_id: str = ext(note="그림 ID — 예: '2.3.6-USER_FLOW'")
+    flow_type: Literal["USER_FLOW", "SERVICE_ARCHITECTURE"] = ext(note="서비스 흐름도 · 서비스 구조도")
+    nodes: list[DiagramNode] = ext(min_length=3, max_length=6, note="노드 3 ~ 6개, 각 1 ~ 35자 (담당자 F18 계약)")
+    visual_style: dict[str, Any] = ext(note="palette · background · accent · cardStyle · layout (F18 출력 그대로)")
+    source_ref: str = ext(note="항목 번호 (2.3.6 · 3.3.6)")
+    image_file: FileRef = ext(note=FILE_NOTE)
+
+
 class PlanDoc(SBModel):
     sections: list[PlanSection]
     feature_list: list[str]
     charts: list[ChartSpec]
     tables: list[TableSpec]
     protected_tokens: list[Token]
+    # 확장 — 그림 목록 (T-W2가 만들고 M-1이 통째로 싣는다). 차트 목록은 따로 비운다 (spec 4.6)
+    diagrams: list[DiagramSpec] = ext(default_factory=list, note=f"{NEW_TYPE_NOTE} — 계획서 그림 목록")
+
+
+# ── 검증-1 항목 결과 ─────────────────────────────────
+class SectionResult(SBModel):
+    """새 타입(결정 0024) — 계획서 항목 하나의 검증-1 판정 (T-V1 출력 sectionResults, spec 4.7 · 4.9)."""
+    section_code: str = ext(note="항목 번호")
+    tag: str | None = ext(None, note="웹 태그 — 없으면 None")
+    content_type: SectionKind = ext(note="항목 종류")
+    status: Literal["pass", "warning", "fail"] = ext(note="담당자 F19 status — fail은 결함 판정(점수가 아니다)")
+    issues: list[str] = ext(default_factory=list, note="문제 목록")
+    warnings: list[str] = ext(default_factory=list, note="경고 목록")
+    needs_user_confirmation: list[str] = ext(default_factory=list, note="사용자 확인 필요")
+    input_missing: bool = ext(False, note="사업비 · 일정 입력이 비어 생긴 결과인지 (spec 4.9)")
+    score: float = ext(note="담당자 내부 점수 0 ~ 100")
+    deductions: list[str] = ext(default_factory=list, note="감점 사유 (담당자 deductions의 reason)")
+    verified_ref: str = ext(note="검증한 산출물 버전 '이름@버전' — 이어받은 결과도 원래 값 그대로")
 
 
 # ── 구현 산출물 ───────────────────────────────────────
