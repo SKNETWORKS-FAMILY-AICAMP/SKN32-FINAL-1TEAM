@@ -325,6 +325,19 @@ _BODY_INSERTS_BY_TEMPLATE: dict[str, list[tuple[str, int]]] = {
     ],
 }
 
+# [SB-339] 표 항목의 서술 문장은 양식에 따로 칸이 없어, 그 표가 속한 절의 본문 뒤에 이어 붙인다 — docx는 표 아래 문단으로 쓴다.
+_BODY_NARRATIVES: dict[str, tuple[str, ...]] = {
+    '실현가능성_본문': ('실현가능성_일정_서술', '사업비_서술'),
+    '성장전략_본문': ('성장전략_일정_서술',),
+}
+
+
+def _body_text(data: PlanDocumentData, field_name: str) -> str:
+    """절 본문 + 그 절의 표 서술(줄바꿈 → ' / '로 한 줄). 본문이 안내 문구뿐이어도 서술이 있으면 서술은 붙는다."""
+    parts = [getattr(data, field_name, '')] + [getattr(data, extra, '') for extra in _BODY_NARRATIVES.get(field_name, ())]
+    return _one_line('\n'.join(part for part in parts if part))
+
+
 # 팀 구성 제목 표 다음에 오는, 표가 아닌 개인정보 마스킹 안내문구(파란 글씨) 문단 —
 # (구역=0 고정 문단 번호, 글자 수). 모듈 docstring "표 밖 파란 안내문구" 참고.
 _PERSONAL_INFO_NOTICE_BY_TEMPLATE: dict[str, tuple[int, int]] = {
@@ -391,7 +404,7 @@ def render_plan_hwp(data: PlanDocumentData, template: str) -> bytes:
         # delete-table처럼 이전 산출물을 체이닝한다. 빈 문자열은 insert-text가
         # 거부하므로(그리고 채울 내용이 없으면 빈 칸 유지가 원칙이므로) 건너뛴다.
         for field_name, para in body_inserts:
-            text = _one_line(getattr(data, field_name, ''))
+            text = _body_text(data, field_name)
             if not text:
                 continue
             next_output = _new_tmp()

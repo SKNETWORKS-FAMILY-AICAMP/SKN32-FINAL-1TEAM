@@ -53,6 +53,7 @@ from app.models import (
     VerificationPolicy,
 )
 from app.orch import CodedHTTPException, OrchError, OrchGateway, account_id_of, mapping, require_gateway
+from app.plan_texts import PlanTexts, plan_texts
 from app.proofread_retention import clear_project_logs
 from app.routers.profile import compute_has_profile
 from app.schemas import (
@@ -494,16 +495,16 @@ def _proofread_originals(gateway: OrchGateway, project_id: int, outputs) -> dict
     return {s.sentence_id: s.before for s in screen.sentences}
 
 
-def _plan_section_bodies(gateway: OrchGateway, project_id: int) -> dict[str, str]:
-    """계획서 본문(섹션 코드 → 본문)을 오케스트레이터의 지금 결과에서 읽는다. 실행 건이 없거나 계획서가 아직 없거나
-    실패 · 중단이면 비운다 — 그러면 문서는 입력값과 자리표시로 채운 미리보기가 된다(실패 · 중단은 본문을 싣지 않는다)."""
+def _plan_texts(gateway: OrchGateway, project_id: int) -> PlanTexts:
+    """양식 글 칸에 들어갈 계획서 문장을 오케스트레이터의 지금 결과에서 읽는다(항목 번호별 매핑은 app/plan_texts.py). 실행 건이 없거나
+    계획서가 아직 없거나 실패 · 중단이면 비운다 — 그러면 문서는 입력값과 자리표시로 채운 미리보기가 된다(실패 · 중단은 본문을 싣지 않는다)."""
     try:
         outputs = gateway.outputs(project_id)
     except OrchError as exc:
         if exc.code in ('RUN_NOT_FOUND', 'RUN_NOT_VIEWABLE'):
-            return {}
+            return PlanTexts()
         raise
-    return mapping.section_bodies(outputs.plan_doc) if outputs.plan_doc is not None else {}
+    return plan_texts(outputs.plan_doc)
 
 
 # companies.applicant_type -> 양식의 "사업자 구분" 표기. 사용자가 직접 고른 값이라
@@ -512,7 +513,7 @@ def _plan_section_bodies(gateway: OrchGateway, project_id: int) -> dict[str, str
 _APPLICANT_TYPE_LABEL = {'corp': '법인사업자', 'individual': '개인사업자', 'preliminary': '예비창업자'}
 
 
-def _build_plan_document_data(db: Session, project: Project, section_bodies: dict[str, str]):
+def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts):
     """project(+company/team_members/pricing_items/budget_items/schedule_items/partners)와
     생성된 계획서(BusinessPlan.sections)를 공식 양식(별첨1) 구조(app/plan_document_export.py의
     PlanDocumentData)로 옮긴다. 반환값은 (data, template) 튜플 — template은 company.
@@ -549,8 +550,8 @@ def _build_plan_document_data(db: Session, project: Project, section_bodies: dic
         if plan_input.dev_start_month and plan_input.dev_end_month:
             dev_period_text = f'{plan_input.dev_start_month} ~ {plan_input.dev_end_month}'
 
-    def _section_body(tag: str) -> str:
-        return section_bodies.get(tag) or '※ 아직 생성된 계획서 문단이 없습니다.'
+    def _plan_text(value: str | None) -> str:
+        return value or '※ 아직 생성된 계획서 문단이 없습니다.'
 
     def _or_placeholder(value, placeholder):
         return value if value else placeholder
@@ -644,7 +645,8 @@ def _build_plan_document_data(db: Session, project: Project, section_bodies: dic
         사업자등록번호=_or_placeholder(company.business_reg_no if company else None, '○○○-○○-○○○○○'),
         사업자_소재지=_or_placeholder(region_text, '○○도 ○○시·군'),
         창업아이템명=item_desc[:60] or '○○기술이 적용된 ○○제품·서비스',
-        산출물=_or_placeholder(project.output_summary, '○○ (협약기간 내 목표 — 산출물 형태·수량 입력 필요)'),
+        # [SB-339] 산출물은 담당자가 짓는 값(항목 x.2.2)이다 — 없으면(옛 계획서 · 계획서 없음) 웹 입력으로 돌아간다. 창업아이템명 · 팀구성현황은 웹 값이다.
+        산출물=_or_placeholder(texts.산출물 or project.output_summary, '○○ (협약기간 내 목표 — 산출물 형태·수량 입력 필요)'),
         지원분야='○○',
         # 전문기술분야 입력칸은 아직 없다 — 그 전까진 IntakeForm에서 받는 주업종으로 채운다.
         전문기술분야=_or_placeholder(
@@ -661,24 +663,27 @@ def _build_plan_document_data(db: Session, project: Project, section_bodies: dic
         # [2026-09-22, 재희님 확인] Agent가 아이디어 설명을 보고 직접 짓는 항목 —
         # 전략/작성 시트(2.3/3.3) 참고, 사용자 입력을 받지 않는다.
         아이템_범주='○○',
-        아이템_개요=item_desc,
-        요약_문제인식=_section_body('1-1'),
-        요약_실현가능성=_section_body('2-1'),
-        요약_성장전략=_section_body('3-1'),
-        요약_팀구성=team_text,
-        문제인식_본문=_section_body('1-1'),
-        실현가능성_본문=_section_body('2-1'),
+        아이템_개요=texts.아이템_개요 or item_desc,
+        요약_문제인식=_plan_text(texts.요약_문제인식),
+        요약_실현가능성=_plan_text(texts.요약_실현가능성),
+        요약_성장전략=_plan_text(texts.요약_성장전략),
+        요약_팀구성=texts.요약_팀구성 or team_text,
+        문제인식_본문=_plan_text(texts.문제인식_본문),
+        실현가능성_본문=_plan_text(texts.실현가능성_본문),
         실현가능성_일정=_schedule_rows(feasibility_schedule),
         사업비_집행계획=budget_rows,
-        성장전략_본문=_section_body('3-1'),
+        성장전략_본문=_plan_text(texts.성장전략_본문),
         성장전략_일정=_schedule_rows(growth_schedule),
-        팀구성_본문=team_text,
+        팀구성_본문=texts.팀구성_본문 or team_text,
         팀구성_안=team_rows,
         협력기관=partner_rows,
         # 예비창업패키지 전용(early_general 렌더링에서는 안 쓰임) — 기업(예정)명은
         # company_name을 그대로 재사용한다(예비창업자도 창업 예정 상호를 입력할 수 있음).
         직업=_or_placeholder(project.plan_input.occupation if project.plan_input else None, '○○○'),
         기업예정명=_or_placeholder(company.company_name if company else None, '○○○'),
+        실현가능성_일정_서술=texts.실현가능성_일정_서술,
+        사업비_서술=texts.사업비_서술,
+        성장전략_일정_서술=texts.성장전략_일정_서술,
     )
     return data, template
 
@@ -699,7 +704,7 @@ def download_plan_document(
     from app.plan_document_export import render_plan_docx
 
     project = _get_owned_project(db, project_id, current_user)
-    data, template = _build_plan_document_data(db, project, _plan_section_bodies(gateway, project_id))
+    data, template = _build_plan_document_data(db, project, _plan_texts(gateway, project_id))
     docx_bytes = render_plan_docx(data, template=template)
     filename = quote('사업계획서.docx')
     return Response(
@@ -724,7 +729,7 @@ def download_plan_document_pdf(
     from app.plan_document_export import render_plan_docx
 
     project = _get_owned_project(db, project_id, current_user)
-    data, template = _build_plan_document_data(db, project, _plan_section_bodies(gateway, project_id))
+    data, template = _build_plan_document_data(db, project, _plan_texts(gateway, project_id))
     try:
         pdf_bytes = docx_to_pdf(render_plan_docx(data, template=template))
     except PdfConversionError as exc:
@@ -753,7 +758,7 @@ def download_plan_document_hwp(
     from app.hwp_export import render_plan_hwp
 
     project = _get_owned_project(db, project_id, current_user)
-    data, template = _build_plan_document_data(db, project, _plan_section_bodies(gateway, project_id))
+    data, template = _build_plan_document_data(db, project, _plan_texts(gateway, project_id))
     try:
         hwp_bytes = render_plan_hwp(data, template=template)
     except FileNotFoundError as exc:

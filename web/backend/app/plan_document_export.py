@@ -131,6 +131,12 @@ class PlanDocumentData:
     직업: str = '○○○'
     기업예정명: str = '○○○'
 
+    # [SB-339] 표 항목(개발계획 · 사업비 집행계획 · 전체 일정)의 서술 문장 — 표는 위 행 목록으로 그리고, 서술은 계획서(planDoc)에서 온다
+    # (app/plan_texts.py). docx는 표 아래 문단으로, hwp는 양식에 따로 칸이 없어 그 절의 본문 뒤에 이어 붙는다.
+    실현가능성_일정_서술: str = ''
+    사업비_서술: str = ''
+    성장전략_일정_서술: str = ''
+
 
 def _set_cell_text(cell, text: str, bold: bool = False, shade: str | None = None) -> None:
     cell.text = ''
@@ -232,6 +238,13 @@ def _add_general_status_preliminary(doc: Document, data: PlanDocumentData) -> No
     ])
 
 
+def _narrative(doc: Document, text: str) -> None:
+    """표 아래 서술 문장(줄마다 한 문단). 서술이 없으면 아무것도 쓰지 않는다."""
+    for line in (text or '').splitlines():
+        if line.strip():
+            doc.add_paragraph(line.strip())
+
+
 def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') -> bytes:
     """template: 'early_general'(초기창업패키지 일반형, 기본값) | 'preliminary'(예비창업패키지).
     두 원본 양식(별첨1)을 비교해 실제로 다른 부분(일반현황 항목, 사업비 집행계획 표 구성,
@@ -288,6 +301,7 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
         [[s.구분, s.추진내용, s.추진기간, s.세부내용] for s in data.실현가능성_일정],
         caption='< 사업추진 일정(협약기간 내) >',
     )
+    _narrative(doc, data.실현가능성_일정_서술)
     if template == 'preliminary':
         # 예비창업패키지는 자기부담금 개념이 없어 정부지원사업비 단일 열만 쓴다. 원본
         # 양식은 이 표를 1단계/2단계로 나누는데, DB(project_budget_items)에 "단계"
@@ -308,6 +322,8 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
             caption='< 사업비 집행 계획 >',
         )
 
+    _narrative(doc, data.사업비_서술)
+
     _heading(doc, '3. 성장전략(Scale-up)_사업화 추진 전략', level=1)
     doc.add_paragraph(data.성장전략_본문)
     _grid_table(
@@ -316,6 +332,7 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
         [[s.구분, s.추진내용, s.추진기간, s.세부내용] for s in data.성장전략_일정],
         caption='< 사업추진 일정(전체 사업단계) >',
     )
+    _narrative(doc, data.성장전략_일정_서술)
 
     _heading(doc, '4. 팀 구성(Team)_대표자 및 팀원 구성 계획', level=1)
     doc.add_paragraph(data.팀구성_본문)
