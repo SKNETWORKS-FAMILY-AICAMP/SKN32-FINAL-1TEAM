@@ -12,7 +12,7 @@ README.md · plan.docx)을 만든다 — 이 스크립트는 "웹 ↔ 파일 저
   1. 웹개발     프로젝트 → 화면 8. 결과의 두 경로가 key 기반 웹 주소이고 받으면 저장소 파일과 바이트가 같다 · 헤더
   2. 접근 제한  비로그인 401 · 다른 계정 404 · 관리자 404 · 바꾼 key · 경로 이동 시도 404
   3. 재작성     실행 파일 재작성 → 전후 주소가 서로 다름 · 이전 파일도 계속 받을 수 있음
-  4. 묶음 zip   표현 검수까지 마친 뒤 결과물 zip: 계획서 · 프로토타입 · 인포그래픽이 들어 있음
+  4. 묶음 zip   표현 검수까지 마친 뒤 결과물 zip: 프로토타입 · 인포그래픽 파일과, 계획서(planDoc)로 웹이 만든 진짜 .docx가 들어 있음(SB-341)
   5. 영구 삭제  삭제 대기열에 줄이 생기고(관리자 목록) 주소가 404 · 워커가 처리하면 파일이 지워짐
   6. 원페이지   두 참조가 같은 onepage.svg — 인포그래픽 주소만 보이고 실행 경로는 없음
   7. 탈퇴       탈퇴 뒤 주소가 404 · 삭제 대기열에 줄이 더 생김
@@ -28,6 +28,8 @@ import threading
 import time
 import zipfile
 from pathlib import Path
+
+from docx import Document
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_worker_flow import DEFAULT_URL, FULL_INPUT, PROFILE, configure_env  # noqa: E402
@@ -266,14 +268,17 @@ def main() -> int:
                     archive = zipfile.ZipFile(io.BytesIO(res.content))
                     names = archive.namelist()
                     intact = archive.testzip() is None
-                    docx_ok = len(archive.read('plan/plan.docx')) > 0 if 'plan/plan.docx' in names else False  # 스텁 파일은 자리채움이라 진짜 docx가 아니다
+                    # 계획서는 파일 참조(스텁은 자리채움 파일)가 아니라 planDoc으로 웹이 만든 진짜 .docx다(SB-341)
+                    plan_bytes = archive.read('plan/business-plan.docx') if 'plan/business-plan.docx' in names else b''
+                    docx_ok = plan_bytes[:2] == b'PK' and len(Document(io.BytesIO(plan_bytes)).paragraphs) > 0
                 except zipfile.BadZipFile:
                     intact = docx_ok = False
                 step('4. 결과물 zip 내려받기(SB-316)', res.status_code == 200 and res.headers.get('content-type') == 'application/zip' and intact,
                      f"{res.status_code} 파일 {names}")
                 step('4. zip에 계획서 · 프로토타입 · 인포그래픽이 들어 있음',
-                     'plan/plan.docx' in names and 'prototype/index.html' in names and 'infographic/infographic.png' in names and docx_ok,
-                     f'plan.docx 내용이 비어 있지 않음={docx_ok}')
+                     'plan/business-plan.docx' in names and 'plan/plan.docx' not in names and 'prototype/index.html' in names
+                     and 'infographic/infographic.png' in names and docx_ok,
+                     f'business-plan.docx가 열리는 진짜 docx={docx_ok} 파일={sorted(names)}')
                 step('4. 비로그인 · 다른 계정은 zip도 받지 못함',
                      anon.get(f'/projects/{pid}/deliverable.zip').status_code == 401
                      and other.get(f'/projects/{pid}/deliverable.zip').status_code == 404)

@@ -11,7 +11,8 @@ GET /projects/{project_id}/deliverable.zip   (SB-316 — 최종 결과물 묶음
 - 프론트는 이 주소로 받은 파일을 샌드박스 iframe(sandbox="allow-scripts", allow-same-origin 없음)에 넣어 연다. 응답 헤더는
   주소를 직접 열 때를 위한 안전장치다: 생성된 HTML이 이 서버의 로그인 정보로 실행되지 않게 샌드박스를 걸고, 외부 주소로 나가지 못하게 한다
   (프로토타입은 외부 파일 · CDN 없는 단일 파일이어야 한다 — 기능정의서 E-B1-DEP).
-- 압축(zip)은 웹이 만든다(오케스트레이터는 만들지 않는다 — 명세 5.4절): 결과물(deliverable)의 계획서 · 프로토타입 · 인포그래픽 파일을
+- 압축(zip)은 웹이 만든다(오케스트레이터는 만들지 않는다 — 명세 5.4절). 계획서는 파일을 받지 않고 계획서(planDoc)로 웹이 직접 만든 .docx를 넣는다
+  (SB-341 — `deliverable.planDocFile`은 자리채움 파일이라 쓰지 않는다, 오케스트레이터 안내). 프로토타입 · 인포그래픽은 결과물(deliverable)의 파일을
   참조마다 read_artifact_file로 받아 묶는다. 한 파일이라도 못 받으면 일부만 든 압축을 주지 않고 그 오류로 답한다.
 """
 import io
@@ -25,6 +26,7 @@ from app.database import get_db
 from app.models import Company, Project, User
 from app.orch import OrchGateway, require_gateway
 from app.orch.errors import CodedHTTPException, user_message_for
+from app.routers.projects import render_plan_docx_for
 from app.security import get_current_user
 
 router = APIRouter(prefix='/projects', tags=['artifact-files'])
@@ -60,13 +62,15 @@ def download_artifact_file(
 
 # ── 결과물 묶음 내려받기 (SB-316) ──────────────────────────────────────────────────────────
 # 압축 안의 폴더 이름(영문 — 압축 프로그램마다 한글 이름 처리가 달라 피한다)
-_ZIP_FOLDERS = (('plan_doc_file', 'plan'), ('prototype_files', 'prototype'), ('infographic_file', 'infographic'))
+# 계획서(plan/)는 파일 참조가 아니라 planDoc으로 만들어 넣는다(SB-341) — 여기에는 파일 참조로 받는 폴더만 둔다
+_ZIP_FOLDERS = (('prototype_files', 'prototype'), ('infographic_file', 'infographic'))
+PLAN_DOCX_NAME = 'plan/business-plan.docx'
 # 파일 하나는 30MB까지(오케스트레이터 규칙)라 계획서 · 프로토타입 · 인포그래픽이 모두 커도 이 안에 든다. 넘으면 메모리를 지키려고 만들지 않는다.
 MAX_ZIP_SOURCE_BYTES = 100 * 1024 * 1024
 
 
 def _deliverable_refs(deliverable) -> list[tuple[str, object]]:
-    """(압축 안 폴더, 파일 참조) 목록 — 계획서 · 프로토타입(진입 파일 · 안내 문서 · 자산 순) · 인포그래픽 순."""
+    """(압축 안 폴더, 파일 참조) 목록 — 프로토타입(진입 파일 · 안내 문서 · 자산 순) · 인포그래픽 순. 계획서는 참조가 아니라 직접 만든다."""
     refs: list[tuple[str, object]] = []
     for field, folder in _ZIP_FOLDERS:
         value = getattr(deliverable, field, None)
@@ -100,14 +104,18 @@ def download_deliverable_zip(
              .first())
     if owned is None:
         raise CodedHTTPException(404, NOT_FOUND_CODE, user_message_for(NOT_FOUND_CODE))
-    deliverable = gateway.outputs(project_id).deliverable
-    if deliverable is None:
+    outputs = gateway.outputs(project_id)
+    deliverable = outputs.deliverable
+    if deliverable is None or outputs.plan_doc is None:
         raise CodedHTTPException(404, 'DELIVERABLE_NOT_READY', '아직 내려받을 수 있는 결과물이 없어요.')
     refs = _deliverable_refs(deliverable)
     if sum(int(getattr(ref, 'size', 0) or 0) for _folder, ref in refs) > MAX_ZIP_SOURCE_BYTES:
         raise CodedHTTPException(413, 'DELIVERABLE_TOO_LARGE', '결과물이 너무 커서 한 번에 묶을 수 없어요. 파일을 하나씩 내려받아 주세요.')
     buffer, taken = io.BytesIO(), set()
+    plan_docx = render_plan_docx_for(db, db.get(Project, project_id), outputs.plan_doc)  # 파일 참조가 아니라 planDoc으로 만든다(SB-341)
     with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(PLAN_DOCX_NAME, plan_docx)
+        taken.add(PLAN_DOCX_NAME)
         for folder, ref in refs:
             file = gateway.read_artifact_file(project_id, ref.key)
             archive.writestr(_unique_name(taken, folder, file.name), file.data)

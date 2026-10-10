@@ -688,6 +688,14 @@ def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts):
     return data, template
 
 
+def render_plan_docx_for(db: Session, project: Project, plan_doc) -> bytes:
+    """계획서(planDoc)와 웹 입력으로 공식 양식 .docx를 만든다 — plan-document.docx와 결과물 압축(artifact_files)이 같은 파일을 쓴다."""
+    from app.plan_document_export import render_plan_docx
+
+    data, template = _build_plan_document_data(db, project, plan_texts(plan_doc))
+    return render_plan_docx(data, template=template)
+
+
 @router.get('/{project_id}/plan-document.docx')
 def download_plan_document(
     project_id: int,
