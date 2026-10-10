@@ -1,4 +1,4 @@
-# S-Brain 웹 백엔드 테스트 방법 (2026-10-06 개정, SB-247)
+# S-Brain 웹 백엔드 테스트 방법 (2026-10-11 개정, SB-334)
 
 `web/backend/`에서 실행하는 걸 기준으로 정리했다. 웹은 이제 오케스트레이터(`agent-orchestration`의 `sbrain`)를 통해서만 실행 건을 만들고 읽는다 —
 예전의 더미 파이프라인(`seed_dummy_pipeline.py`, `app/agents.py`)과 이를 쓰던 `verify_*.py` 스크립트는 없어졌다.
@@ -28,6 +28,8 @@ pytest -q
 - `tests/conftest.py`가 `DB_BACKEND=sqlite`로 자동 전환하고 `test.db`(개발용 `dev.db`와 별도)를 매 세션 새로 만든다. 팀 공유 AWS MySQL에는 절대 접속하지 않는다.
 - 모든 테스트에는 가짜 오케스트레이터(`tests/orch_fakes.py`의 `FakeOrch`)가 gateway로 끼워진다. 테스트가 `orch.responses['함수 이름']`으로 원하는 상태를 만들고 `orch.calls`로 어떤 함수를 어떻게 불렀는지 확인한다.
 - `tests/test_orch_fake_contract.py`는 가짜 결과의 필드가 실제 `sbrain`과 같은지, gateway 허용 목록의 함수가 실제로 있는지 확인한다(`sbrain`이 설치돼 있어야 실행).
+- 사업비 · 추진 일정 입력(SB-327)은 `test_budget_phase_column.py`(phase 컬럼), `test_budget_schedule_schema.py`(요청 · 응답 모양), `test_budget_schedule_validation.py`(입력 검사 · 오류 위치), `test_budget_schedule_saving.py`(저장 순서 · 커밋 시점 · 정리), `test_budget_schedule_required.py`(필수 확인 · 스위치)가 본다. 아래 "사업비 · 추진 일정 입력"을 보라.
+- 테스트 파일별로 무엇을 확인하는지는 [`unit_test_doc.md`](unit_test_doc.md)에 정리돼 있다(테스트를 추가하면 그 표도 같이 고친다).
 - 관리자(`tests/test_admin.py`), 재작성(`test_orch_rework.py`), 단계 시작(`test_orch_stages.py`), 결과(`test_orch_result.py`), 삭제 · 보관 규칙(`test_project_permanent_delete.py`, `test_account_deletion.py`, `test_proofread_retention.py`) 등이 있다.
 
 ---
@@ -53,7 +55,7 @@ SQLite 개발 모드에서는 오케스트레이터를 쓸 수 없어 프로젝�
 - **산출물 파일 (SB-295)** — 1~4 준비 뒤(워커는 띄우지 않는다) `python scripts/e2e_artifact_files.py [--samples <산출물샘플_반찬온.zip>]` : 워커를 같은 프로세스에서 돌리며 스텁 T-B1 · T-B2 · M-2를 감싸 구현 Agent가 합의한 대로 임시 저장 폴더에 `<project_id>/<시도 ID>/<파일>`로 샘플(index.html · 웹개발 SVG · 원페이지 SVG)을 쓴다. 결과의 경로가 웹 주소로 바뀌는지(SB-293), 받은 파일이 샘플과 바이트가 같은지 · 헤더(SB-292), 비로그인 401 · 다른 계정 · 관리자 404 · 경로 이동 시도 404, 실행 파일 재작성이 새 시도 폴더를 만들고 이전 시도 파일도 남는지, 영구 삭제 · 탈퇴 뒤 폴더가 지워지고 고아 청소가 행이 없는 숫자 폴더만 지우는지(SB-294), 원페이지의 두 경로(같은 onepage.svg)를 본다. 조율 T-C1이 실제 LLM이라 카테고리를 스스로 고르므로(샘플 설명은 aiapi로 나온다) 스크립트가 웹개발 · 원페이지를 강제한다. 샘플 기본 경로는 `C:\Users\hjwon\Downloads\산출물샘플_반찬온.zip`. 계정은 매번 새로 만들어져(탈퇴로 지워짐) 다시 돌려도 된다. 2분쯤 걸린다.
 - **학습 동의 · 검수 회수 문단 (SB-262)** — 1~4 준비 뒤(워커는 띄우지 않는다) `python scripts/e2e_training_consent.py` : 워커를 같은 프로세스에서 돌리며 검수 스텁이 일부 문장을 반려하게 만들고, 동의한 계정에서 `proofread_logs`에 행이 쓰이는지, 관리자 라벨링 · 학습 반영(trained) 표시, 동의 철회 · 영구 삭제 · 탈퇴 때 반영 전 행만 지워지고 trained 행은 연결만 끊겨 남는지, 검수 시작 전에 동의를 철회하면 행이 안 쓰이는지를 본다. 프로젝트를 끝까지 세 번 돌려 2분쯤 걸린다. 다시 돌려도 된다(trained 행은 연결이 끊긴 채 남는다).
 
-- **마이그레이션 리허설 (SB-265)** — 로컬 MySQL만 있으면 된다(워커 불필요) `python scripts/rehearse_migration.py` : 옛 웹 스키마(기본 git `origin/main`의 `app_schema.sql`)로 DB를 만들고 시드 데이터를 넣은 뒤 `migrations/001` → `002`를 적용해 더미 표 13개가 사라지고 데이터(사용자 · 프로젝트 · 알림 · 실패 알림 · 검수 기록)가 그대로인지, `proofread_logs`의 `project_id`가 채워졌는지, 두 마이그레이션을 다시 적용해도 오류가 없는지(멱등), 결과 스키마가 새 `app_schema.sql`과 같은지(표 · 열 형식 · NULL · 기본값 · 인덱스 · 외래 키)를 본다. **공유 DB 사본이 없어 옛 스키마를 git(main)으로 대신한 것**이라, 사본이 생기면 `mysqldump --no-data`로 뜬 스키마를 `--old-schema-file`로 넣어 같은 리허설을 다시 돈다. `--keep`으로 두 DB(`sbrain_test_mig_old` · `_new`)를 남겨 그 위에서 워커 E2E를 돌릴 수도 있다.
+- **마이그레이션 리허설 (SB-265)** — 로컬 MySQL만 있으면 된다(워커 불필요) `python scripts/rehearse_migration.py` : 옛 웹 스키마(기본 git `origin/main`의 `app_schema.sql`)로 DB를 만들고 시드 데이터를 넣은 뒤 `migrations/001` → `002` → `004`(SB-328, `project_budget_items.phase` 추가 — 003은 `feature/sb-269-web-final`에만 있어 병합 뒤 002와 004 사이에 넣는다)를 적용해 더미 표 13개가 사라지고 사업비 행의 `phase`가 NULL로 남고 데이터(사용자 · 프로젝트 · 알림 · 실패 알림 · 검수 기록)가 그대로인지, `proofread_logs`의 `project_id`가 채워졌는지, 마이그레이션을 다시 적용해도 오류가 없는지(멱등), 결과 스키마가 새 `app_schema.sql`과 같은지(표 · 열 형식 · NULL · 기본값 · 인덱스 · 외래 키)를 본다. **공유 DB 사본이 없어 옛 스키마를 git(main)으로 대신한 것**이라, 사본이 생기면 `mysqldump --no-data`로 뜬 스키마를 `--old-schema-file`로 넣어 같은 리허설을 다시 돈다. `--keep`으로 두 DB(`sbrain_test_mig_old` · `_new`)를 남겨 그 위에서 워커 E2E를 돌릴 수도 있다.
 
 - **부하 · 타임아웃 (SB-266)** — 1~4 준비 뒤 **워커를 띄우지 않고** `python scripts/load_check.py` : 워커가 응답하지 않을 때 후보 · 자격 확인 조회가 쌓이면 다른 요청이 막히는지를 서버를 실제로 띄워 HTTP로 잰다(단계별 동시 대기 5 · 15 · 30 · 60개, 그동안 DB를 쓰는 `/auth/me`와 안 쓰는 `/docs`의 지연). 느려지면 종료 코드 1이다. 아래 "부하 · 타임아웃" 참고.
 
@@ -85,12 +87,21 @@ uvicorn app.main:app --port 8000
 | 오케스트레이터 코드 그대로(`BUSY` · `ANNOUNCEMENT_BLOCKED` · `E-G2-LIMIT` · `RUN_NOT_VIEWABLE` · `INVALID_STATE` …) | 오케스트레이터가 거절한 요청 | 404 · 409 · 422 |
 | `E-RUN-CONCURRENT` | 진행 중인 작업이 있을 때 새 프로젝트(`detail`에 `active_project_id` · 단계 · 화면) | 409 |
 | `CONFIRMATION_REQUIRED` | `review/start`에서 기준 점수 미달 확인(`detail.confirmation_required` · `reason` · `items`) | 409 |
-| `E-AUTH-CONSENT` · `E-AUTH-PROFILE` · `E-C1-REQUIRED` | 필수 동의 · 프로필 · 필수 입력 누락 | 403 · 403 · 422 |
+| `E-AUTH-CONSENT` · `E-AUTH-PROFILE` · `E-C1-REQUIRED` | 필수 동의 · 프로필 · 필수 입력 누락. `E-C1-REQUIRED`는 오케스트레이터의 필수 확인과 웹의 사업비 · 일정 필수 확인(SB-332, `REQUIRE_BUDGET_SCHEDULE`을 켰을 때)이 같은 모양(`detail.missing`)으로 낸다 | 403 · 403 · 422 |
 | `ACCOUNT_WITHDRAWING` | 탈퇴 중인 계정이 새 프로젝트를 시작하려 할 때(`POST /projects`) · 시작 실패 뒤 후보를 다시 읽을 때(`GET …/match-candidates`는 `status='failed'`로 같은 code) (SB-298) | 409 |
 | `NOTICE_REQUIRED` · `STAGE_NOT_REACHED` · `PLAN_NOT_READY` · `NOT_REWORKABLE` · `NOT_REWORKED_YET` | 웹이 직접 내는 단계 · 입력 오류 | 400 · 404 · 422 |
 | `UNAUTHORIZED` · `FORBIDDEN` · `NOT_FOUND` · `VALIDATION_ERROR` · `INTERNAL_ERROR` 등 | 그 밖의 오류(상태 코드별 기본 이름) | 401 · 403 · 404 · 422 · 500 |
 
 `WEB_NOT_ALLOWED` · 모르는 오케스트레이터 코드 같은 내부 오류는 내부 이름을 내지 않고 `INTERNAL_ERROR`(500)로 답한다.
+
+### 사업비 · 추진 일정 입력 (SB-327)
+
+사전 정보 입력의 사업비 집행계획 · 추진 일정을 `POST /projects`(payload)로 받아 `project_budget_items` · `project_schedule_items`에 저장한다. 오케스트레이터가 `request_start` 때 이 두 표를 직접 읽는다(웹이 `formInput`으로 보내지 않는다). 자동 테스트만으로 확인한다 — 로컬 MySQL · 워커가 필요한 E2E는 SB-333.
+
+- **모양** — 요청 payload와 `GET /projects/{id}` 응답에 같은 이름으로 `budget_items[]`(`phase` · `category` · `execution_plan` · `total_amount` · `government_amount` · `self_cash_amount` · `self_in_kind_amount`)와 `schedule_items[]`(`section` · `category` · `content` · `period` · `detail`)가 있다. 순서는 보낸 배열 순서(`item_order` 1부터)이고, 한 목록은 50줄까지다. `section`은 `feasibility`(협약기간 내) · `growth`(협약 이후 전체), `phase`는 `'1단계'` · `'2단계'`다. 금액은 원 단위 정수다.
+- **입력 검사(422 `VALIDATION_ERROR`)** — 금액 네 칸 필수(0 허용, 총사업비만 1 이상, 음수 · 999,999,999,999원 초과 거부), `총사업비 = 정부지원 + 자기부담 현금 + 현물`, 비목 · 집행계획 필수, 일정은 구분 · 추진내용 · 추진기간 필수(세부내용은 비우면 `''`)에 추진기간에 연도 필수. 예비창업자는 줄마다 `phase`가 필요하고 자기부담은 현금 하나(현물 0), 개인사업자 · 법인은 `phase`가 없다. **오류 위치** `detail[].loc`는 표 이름 · 줄 번호(0부터) · 칸이다(예: `["budget_items", 2, "total_amount"]`) — `POST /projects`는 payload 폼 필드를 직접 검증해 `body`가 앞에 붙지 않는다.
+- **저장 시점** — 행은 `request_start`를 부르기 전에 같은 트랜잭션으로 커밋된다(`test_budget_schedule_saving.py`가 별도 연결로 확인). 시작 요청이 거절되거나 탈퇴가 시작되면 프로젝트와 함께 지워진다.
+- **필수 확인(SB-332)** — 환경 변수 `REQUIRE_BUDGET_SCHEDULE=1`일 때만 켜진다(기본 꺼짐). 입력 화면이 배포되기 전에 켜면 모든 계획서 작성이 막히므로 화면 배포 뒤 오케스트레이터의 필수 확인과 같은 시점에 켠다. 켜면 사업비 1건 이상, 예비창업은 1단계 · 2단계 각 1건 이상, 협약기간 내(`feasibility`) 일정 1건 이상이 없을 때 `E-C1-REQUIRED`(422)로 막고 `detail.missing`에 `사업비 집행계획` · `사업비 집행계획(1단계)` · `사업비 집행계획(2단계)` · `추진 일정(협약기간 내)`를 담는다. 협약 이후(`growth`) 일정은 선택이다.
 
 ### 부하 · 타임아웃 (SB-266)
 

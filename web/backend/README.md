@@ -30,6 +30,7 @@ cp .env.example .env
 | `MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` | MySQL 접속 정보 |
 | `GOOGLE_CLIENT_ID` / `JWT_SECRET` | 구글 로그인 / 세션 쿠키(JWT) 서명 |
 | `NTS_SERVICE_KEY` | 공공데이터포털 국세청 사업자등록정보 조회 API 키 (디코딩 키) |
+| `REQUIRE_BUDGET_SCHEDULE` | 사업비 · 추진 일정 필수 입력 스위치(SB-332). `1`이면 사업비 1건 이상, 예비창업은 1 · 2단계 각 1건 이상, 협약기간 내 일정 1건 이상이 없는 프로젝트 생성을 `E-C1-REQUIRED`로 막는다. 비우면 꺼짐 — 입력 화면 배포 뒤에 켠다 |
 | `RHWP_BIN` | 사업계획서 `.hwp` 다운로드용 rhwp 실행 파일 경로. `rhwp.exe`는 용량 문제로 git엔 안 올라가 있어 각자 [공식 릴리즈](https://github.com/edwardkim/rhwp/releases/tag/v0.8.6)에서 받아 이 디렉터리에 `rhwp.exe`로 저장한 뒤 `RHWP_BIN=./rhwp.exe`를 넣어야 함 — 안 받아도 서버는 정상 동작하고 `.hwp` 다운로드만 500 에러가 남. 자세한 다운로드·확인 절차는 `scripts/README.md` 참고 |
 
 `.env.example`엔 없지만 로컬 개발 시 자주 쓰는 변수:
