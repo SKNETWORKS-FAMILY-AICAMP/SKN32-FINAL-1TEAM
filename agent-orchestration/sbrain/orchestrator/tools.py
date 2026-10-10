@@ -19,6 +19,10 @@ tools는 호출마다 재시도 · 제한 시간 · 오류 종류 분류를 맡�
 - 파일 창구(확장, 결정 0023): files.put(이름, 내용, 형식) -> FileRef, files.get(FileRef) -> 내용. 저장소 호출은 같은 재시도 ·
   오류 분류(_call)를 거치고 호출 기록은 call_type 'file' · 목적 put · get이다. 이름 · 형식 · 크기 위반, 실행 건이 '실행'이 아닌
   넣기, 다른 실행 건 파일 읽기는 저장소를 부르지 않고 FileRejected다. 파일 내용 · 이름 · 키는 기록 · 예외 메시지에 넣지 않는다.
+- 목적별 모델(확장, 결정 0024): llm(purpose=p)는 ToolsConfig.purpose_models에 p가 있으면 그 모델로 부르고 호출 기록의
+  model에도 그 모델을 남긴다. 호출처 · 온도 · 추론 강도 · 제한 시간 · 재시도는 Task 설정 그대로다. 목적 이름은 Task가 정하고
+  tools · 엔진은 사전을 그대로 쓴다.
+- JSON 객체 응답(확장, spec 4.1): llm(json_mode=True)는 요청(LLMRequest.json_mode)에 실어 보낸다. 호출 기록 칸은 늘리지 않는다.
 """
 from __future__ import annotations
 
@@ -27,7 +31,7 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Protocol, TypeVar
+from typing import Any, Callable, Mapping, Protocol, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -50,6 +54,9 @@ class LLMRequest:
     response_schema: dict[str, Any] | None
     metadata: dict[str, Any]
     reasoning_effort: str | None = None  # 추론 모델의 추론 강도
+    # 확장 — JSON 객체 응답 요청(스키마 없이). 호출처가 response_schema가 없을 때만 JSON 객체 응답 형식으로 요청한다.
+    # 호출 기록에는 칸을 더하지 않는다 (spec 4.1)
+    json_mode: bool = False
 
 
 @dataclass(frozen=True)
@@ -125,6 +132,12 @@ class ToolsConfig:
     image_quality: str | None = None
     image_size: str | None = None
     image_timeout_sec: float = 120.0
+    # 확장 — 호출 목적 → 모델 (Task 설정의 purposeModels를 엔진이 그대로 옮긴다). 없는 목적은 model로 부른다
+    purpose_models: Mapping[str, str] = field(default_factory=dict)
+
+    def model_for(self, purpose: str) -> str | None:
+        """이 목적의 LLM 모델 — 목적별 모델이 있으면 그 값, 없으면 Task 모델."""
+        return self.purpose_models.get(purpose, self.model)
 
 
 def classify_status(status: int | None) -> ErrorKind:
@@ -278,23 +291,29 @@ class Tools:
         schema: type[BaseModel] | None = None,
         parse: Callable[[Any], Any] | None = None,
         purpose: str = "",
+        json_mode: bool = False,
     ) -> Any:
         """LLM을 호출한다. schema가 있으면 JSON을 그 모델로 검사해 돌려주고,
-        parse가 있으면 (검사한) 결과를 parse에 넘긴다. parse가 FormatError를 올리면 재시도한다."""
+        parse가 있으면 (검사한) 결과를 parse에 넘긴다. parse가 FormatError를 올리면 재시도한다.
+
+        모델은 목적별 모델(purpose_models[purpose])이 있으면 그 값, 없으면 Task 모델이다 — 호출 기록의 model도 같다.
+        json_mode(확장)가 참이면 요청에 실어 호출처가 스키마 없이 JSON 객체 응답 형식으로 요청하게 한다(schema가 있으면 schema 우선)."""
         cfg = self._config
         if cfg.model is None or cfg.provider is None:
             def refuse() -> Any:   # 호출처를 부르지 않는다 — 실패한 시도 하나만 남긴다
                 raise _Immediate("호출실패", "운영", NO_LLM_SETTING)
             return self._call("llm", purpose, refuse)
         provider = self._ctx.providers.get(cfg.provider)
+        model = cfg.model_for(purpose)
         request = LLMRequest(
             provider=cfg.provider,
-            model=cfg.model,
+            model=model,
             temperature=cfg.temperature,
             messages=messages,
             timeout_sec=cfg.timeout_sec,
             response_schema=schema.model_json_schema() if schema else None,
             reasoning_effort=cfg.reasoning_effort,
+            json_mode=json_mode,
             metadata={
                 "run_id": self._ctx.run_id,
                 "task_id": self._ctx.task_id,
@@ -326,7 +345,7 @@ class Tools:
                 value = parse(value)
             return value
 
-        return self._call("llm", purpose, once, usage=lambda: box["usage"])
+        return self._call("llm", purpose, once, usage=lambda: box["usage"], model=model)
 
     def search(self, purpose: str, fn: Callable[[float], T]) -> T:
         """LLM이 아닌 호출(임베딩 검색 · BM25 등)을 감싼다. fn은 timeout_sec를 받는다."""
@@ -387,7 +406,8 @@ class Tools:
 
     # ── 재시도 ────────────────────────────────────────
     def _call(self, call_type: str, purpose: str, once: Callable[[], T],
-              usage: Callable[[], TokenUsage | None] = lambda: None) -> T:
+              usage: Callable[[], TokenUsage | None] = lambda: None, model: str | None = None) -> T:
+        """model은 LLM 호출이 실제로 쓴 모델(목적별 모델) — 없으면 Task 모델을 기록한다."""
         cfg, ctx = self._config, self._ctx
         llm, image = call_type == "llm", call_type == "image"
         log = CallLog(
@@ -400,7 +420,7 @@ class Tools:
             purpose=purpose,
             item_key=self._item_key,
             provider=cfg.provider if llm else cfg.image_provider if image else None,
-            model=cfg.model if llm else cfg.image_model if image else None,
+            model=(model or cfg.model) if llm else cfg.image_model if image else None,
             temperature=cfg.temperature if llm else None,
             reasoning_effort=cfg.reasoning_effort if llm else None,
             timeout_sec=cfg.image_timeout_sec if image else cfg.timeout_sec,

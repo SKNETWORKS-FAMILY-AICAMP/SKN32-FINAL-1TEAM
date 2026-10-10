@@ -7,16 +7,25 @@
 
 신청자 유형별 묶음(FORM_TABLE) — 시트 2 T-C3 "양식 · 평가항목 · rubric을 신청자 유형에 따라 미리 정해 둔 것 중에서 고른다"
   묶음 = 양식 FormSpec + 평가 항목 list[EvalItem] + 채점 기준표 Rubric. T-C3가 신청자 유형으로 고른다(코드, LLM 아님).
-  값은 잠정이다(사용자 결정 2026-10-04): 웹이 쓰는 두 계획서 양식(예비창업자 '예비창업패키지', 개인사업자 · 법인
-  '초기창업패키지(일반형)')의 섹션 구조(PSST 4개, 웹 섹션 태그와 같은 코드)에 맞추고, 평가 항목 · 채점 기준표는 기본값이다.
-  담당자 회신이 오면 이 표만 바꾼다 (settings PROVISIONAL taskPlan.formTable). 섹션 코드가 바뀌면 웹 계획서 내려받기가
-  고정 태그로 본문을 찾으므로 웹팀에도 알린다. 문서층 70점 · 스텁 배점 · 문서층 재작성 묶음 이름과 어긋나는지도 본다.
+  전략 · 작성 · 검증-1 담당자 양식으로 만든다(spec 4.6, 결정 0024): 예비창업자 → 담당자 문서 유형 pre_startup
+  (2.1.1 ~ 2.7.4, 25개), 개인사업자 · 법인 → early_startup(3.1.1 ~ 3.7.4, 24개). 항목 · 제목 · 종류는 담당자
+  execution_contract.json에서 읽는다(손으로 옮겨 적지 않음 — 담당자 새 판을 받으면 저절로 따라간다).
+  - 항목마다 웹 태그(sectionTags)는 flow/rework_map.py의 짝짓기 표에서 끌어낸다(잠정 — 담당자 · 웹 확인 대기).
+  - 평가항목 = 계획서 항목 하나하나: itemCode = 항목 번호, itemName = 제목 앞 40자(잠정), maxScore = 기본 문서층 배점
+    (70) ÷ 항목 수, description = 제목 전체. 실행 때 쓰는 문서층 배점은 실행 설정(scoring.docLayerMax)이다.
+  - 채점 기준표 = 평가항목과 1:1: rubricId 'partner-sw', version = 담당자 채점 정책 버전(evaluation_rubric.json),
+    criteria = 담당자 항목 기준(criteria_registry, 없으면 제목), scoreBands = [{min 0, max maxScore}], evidenceRequired 참.
+  - formVersion = '<담당자 문서 유형>@<계약 버전>'. 일반형(general) 계약은 데이터로 남지만 고르지 않는다.
+  settings PROVISIONAL taskPlan.formTable. 항목 번호가 바뀌면 웹 계획서 내려받기 · 문서층 재작성 묶음과 어긋나는지 본다.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ..flow.rework_map import section_tags
 from ..models import EvalItem, FormatSpec, FormSpec, Rubric, RubricItem
+from ..orchestrator.settings import ScoringSettings
+from .partner_sw import contract as partner
 
 # 평가 항목 (코드, 배점) — 문서층 70점 (잠정)
 EVAL_ITEMS: tuple[tuple[str, float], ...] = (("문제인식", 20.0), ("실현가능성", 20.0), ("성장전략", 15.0), ("팀구성", 15.0))
@@ -59,21 +68,33 @@ class FormBundle:
                           self.rubric.model_copy(deep=True))
 
 
-# 웹 계획서 양식의 본문 섹션 (PSST) — 섹션 코드는 웹 섹션 태그(PLAN_SECTION_TAG_*)와 같다 (잠정)
-PLAN_SECTIONS: tuple[tuple[str, str], ...] = (("1-1", "문제인식"), ("2-1", "실현가능성"), ("3-1", "성장전략"),
-                                              ("4-1", "팀 구성"))
+# 평가항목 배점 기준 — 기본 문서층 배점(실행 설정 scoring.docLayerMax의 기본값 70). 항목 배점 = 이 값 ÷ 항목 수
+DOC_LAYER_BASE: float = ScoringSettings().doc_layer_max
+ITEM_NAME_CHARS = 40          # 평가항목 이름 = 항목 제목 앞 40자 (잠정)
+PARTNER_RUBRIC_ID = "partner-sw"
 
 
-def _plan_bundle(form_version: str, applicant_types: list[str]) -> FormBundle:
-    form = FormSpec(form_version=form_version, applicant_types=applicant_types,
-                    section_codes=[code for code, _ in PLAN_SECTIONS],
-                    section_titles=[title for _, title in PLAN_SECTIONS],
-                    max_chars_per_section=None, format_spec=_default_format(), attachment_required=False)
-    return FormBundle(form, default_evaluation_items(), stub_rubric())
+def _partner_bundle(document_type: str, applicant_types: list[str]) -> FormBundle:
+    """담당자 문서 유형의 계약 항목으로 묶음을 만든다 (spec 4.6)."""
+    specs = partner.document_specs(document_type)
+    codes = [str(s["sectionId"]) for s in specs]
+    titles = [str(s["title"]) for s in specs]
+    form = FormSpec(form_version=f"{document_type}@{partner.CONTRACT_VERSION}", applicant_types=applicant_types,
+                    section_codes=codes, section_titles=titles,
+                    max_chars_per_section=None, format_spec=_default_format(), attachment_required=False,
+                    section_tags=section_tags(codes), section_kinds=[s["contentType"] for s in specs])
+    max_score = DOC_LAYER_BASE / len(codes)
+    items = [EvalItem(item_code=code, item_name=title[:ITEM_NAME_CHARS], max_score=max_score, description=title)
+             for code, title in zip(codes, titles)]
+    rubric = Rubric(rubric_id=PARTNER_RUBRIC_ID, version=partner.SCORE_POLICY_VERSION, items=[
+        RubricItem(item_code=code, criteria=partner.section_criteria(document_type, code) or [title],
+                   score_bands=[{"min": 0, "max": max_score}], evidence_required=True)
+        for code, title in zip(codes, titles)])
+    return FormBundle(form, items, rubric)
 
 
-_PRE_STARTUP = _plan_bundle("예비창업패키지(잠정)", ["예비창업자"])               # 예비창업패키지 (잠정)
-_EARLY_STARTUP = _plan_bundle("초기창업패키지-일반형(잠정)", ["개인사업자", "법인"])  # 초기창업패키지(일반형) (잠정)
+_PRE_STARTUP = _partner_bundle(partner.PRE_STARTUP, ["예비창업자"])                 # 예비창업패키지 양식
+_EARLY_STARTUP = _partner_bundle(partner.EARLY_STARTUP, ["개인사업자", "법인"])      # 초기창업패키지 양식
 
 # 신청자 유형 → 묶음 (잠정). 고르는 함수가 부를 때마다 이 표를 읽는다(테스트는 표를 바꿔 끼워 E-C3-FORM을 만든다)
 FORM_TABLE: dict[str, FormBundle] = {"예비창업자": _PRE_STARTUP, "개인사업자": _EARLY_STARTUP, "법인": _EARLY_STARTUP}
@@ -105,5 +126,9 @@ def form_problem(applicant_type: str) -> str | None:
 
 
 def select_form(applicant_type: str) -> FormBundle:
-    """그 신청자 유형의 묶음(사본). 불변식 확인은 form_problem으로 먼저 한다 — 표에 없으면 KeyError."""
-    return FORM_TABLE[applicant_type].copy()
+    """그 신청자 유형의 묶음(사본). 불변식 확인은 form_problem으로 먼저 한다 — 표에 없으면 KeyError.
+
+    웹 태그(sectionTags)는 고를 때마다 짝짓기 표(flow/rework_map.py)에서 다시 끌어낸다 — 표만 바꾸면 따라간다."""
+    bundle = FORM_TABLE[applicant_type].copy()
+    bundle.form_spec.section_tags = section_tags(bundle.form_spec.section_codes)
+    return bundle

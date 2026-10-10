@@ -31,7 +31,6 @@ AGENTS = {"T-C1": "조율", "T-C2": "조율", "T-C3": "조율", "T-S1": "전략"
           "T-P1": "검수", "T-P2": "검수"}
 INSTRUCTED = ["T-S1", "T-S2", "T-W1", "T-W2", "T-W3", "T-B1", "T-B2"]
 CONTEXT_KEYS = {"formVersion", "applyEnd", "supportAmountMax", "evaluationItems", "formatSpec"}
-WEB_SECTIONS = ["1-1", "2-1", "3-1", "4-1"]
 
 
 def tc3_in(*, category="웹개발", applicant_type="법인", summary=None, passed=True, **company) -> c.TC3In:
@@ -49,31 +48,32 @@ def guidance_for(category) -> dict[str, str]:
 
 
 # ── 신청자 유형별 양식 표 (spec 3.3) ─────────────────────────
-@pytest.mark.parametrize("applicant", ["예비창업자", "개인사업자", "법인"])
-def test_form_table_keeps_invariants_and_document_layer_70(applicant):
+@pytest.mark.parametrize("applicant,count", [("예비창업자", 25), ("개인사업자", 24), ("법인", 24)])
+def test_form_table_keeps_invariants_and_document_layer_70(applicant, count):
+    # 양식 = 전략 · 작성 · 검증-1 담당자 항목 (spec 4.6 — 계약과 같은지는 test_partner_sw_forms.py가 본다)
     assert form_problem(applicant) is None
     b = select_form(applicant)
     assert applicant in b.form_spec.applicant_types
-    assert b.form_spec.section_codes == WEB_SECTIONS                       # 웹 계획서 섹션 태그와 같다
-    assert b.form_spec.section_titles == ["문제인식", "실현가능성", "성장전략", "팀 구성"]
-    assert sum(e.max_score for e in b.evaluation_items) == 70              # 문서층
-    assert {r.item_code for r in b.rubric.items} == {e.item_code for e in b.evaluation_items}
+    assert len(b.form_spec.section_codes) == len(b.form_spec.section_titles) == count
+    assert sum(e.max_score for e in b.evaluation_items) == pytest.approx(70)   # 문서층 (70 ÷ 항목 수 — 소수 오차)
+    assert [r.item_code for r in b.rubric.items] == [e.item_code for e in b.evaluation_items] == b.form_spec.section_codes
     assert (b.form_spec.max_chars_per_section, b.form_spec.attachment_required) == (None, False)
 
 
 def test_form_table_versions_per_applicant_type():
-    assert select_form("예비창업자").form_spec.form_version == "예비창업패키지(잠정)"
+    assert select_form("예비창업자").form_spec.form_version == "pre_startup@2"
     assert select_form("개인사업자").form_spec.form_version == select_form("법인").form_spec.form_version \
-        == "초기창업패키지-일반형(잠정)"
+        == "early_startup@2"
     assert select_form("예비창업자").form_spec.applicant_types == ["예비창업자"]
     assert select_form("법인").form_spec.applicant_types == ["개인사업자", "법인"]
-    assert (select_form("법인").rubric.rubric_id, select_form("법인").rubric.version) == ("rubric-stub", "stub-1")
+    assert (select_form("법인").rubric.rubric_id, select_form("법인").rubric.version) == ("partner-sw", "2026-10-02.1")
 
 
 def test_selected_bundle_is_a_copy():
     b = select_form("법인")
+    codes = list(b.form_spec.section_codes)
     b.form_spec.section_codes.append("9-9")
-    assert select_form("법인").form_spec.section_codes == WEB_SECTIONS
+    assert select_form("법인").form_spec.section_codes == codes
 
 
 def test_announcement_default_form_is_unchanged():
@@ -209,7 +209,7 @@ def test_context_has_five_keys_and_null_values():
 def test_assemble_extension_outputs():
     inp = tc3_in(applicant_type="예비창업자", founded_at=None)
     out = plan.assemble(inp, plan.prepare(inp), guidance_for("웹개발"))
-    assert out.form_spec.form_version == "예비창업패키지(잠정)"
+    assert out.form_spec.form_version == "pre_startup@2"
     assert out.evaluation_items == select_form("예비창업자").evaluation_items
     assert out.rubric == select_form("예비창업자").rubric
     assert set(c.TC3Out.model_fields) >= {"form_spec", "evaluation_items", "rubric"}
@@ -342,7 +342,7 @@ def test_stub_tc3_receives_business_age_and_pre_startup_form(clock):
     app2.orchestrator.advance(res.run_id)
     app2.orchestrator.start_writing(res.run_id)
     app2.orchestrator.advance(res.run_id)
-    assert ctx_of(app2, res.run_id).get("formSpec").form_version == "예비창업패키지(잠정)"
+    assert ctx_of(app2, res.run_id).get("formSpec").form_version == "pre_startup@2"
 
 
 def _expect_tc3_failure(app, rid, text):
@@ -448,4 +448,4 @@ def test_outputs_evaluation_items_before_and_after_tc3(clock):
     app.orchestrator.advance(rid)
     out = app.orchestrator.outputs(p)
     assert out.evaluation_items == select_form("법인").evaluation_items
-    assert [set(e) for e in out.dump()["evaluationItems"]] == [{"itemCode", "itemName", "maxScore", "description"}] * 4
+    assert [set(e) for e in out.dump()["evaluationItems"]] == [{"itemCode", "itemName", "maxScore", "description"}] * 24

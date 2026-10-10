@@ -227,7 +227,7 @@ def test_wait_project_waits_while_rework_collecting(clock):
 
 # ── outputs ────────────────────────────────────────────
 def test_outputs_accumulate_current_results(clock):
-    app = make_app(clock, StubScenario(tp1_targets=4, tp2_behavior={"s-1-1-2": ["violate", "ok"]}))
+    app = make_app(clock, StubScenario(tp1_targets=4, tp2_behavior={"s-3.1.1-2": ["violate", "ok"]}))
     assert code_of(lambda: app.orchestrator.outputs(424242)) == "RUN_NOT_FOUND"
     rid, p = started_with_pid(app)
     out = app.orchestrator.outputs(p)
@@ -267,7 +267,7 @@ def test_outputs_accumulate_current_results(clock):
     assert out.progress == "완료" and out.deliverable and out.user_message and out.proofread_log
     assert len(out.format_findings) == 4 and len(out.sentence_results) == 4
     tried = {r.sentence_id: [(a.attempt_no, a.adopted) for a in r.attempts] for r in out.sentence_results}
-    assert tried["s-1-1-2"] == [(1, False), (2, True)]                           # 시도별 기록
+    assert tried["s-3.1.1-2"] == [(1, False), (2, True)]                           # 시도별 기록
     assert "failureReason" not in out.model_dump_json(by_alias=True)
 
 
@@ -472,17 +472,17 @@ def test_command_rechecks_state_when_lease_is_taken_in_between(clock, monkeypatc
 
 # ── 화면 10 시도별 기록 · 화면 8 · 9 '진행' ────────────────
 def test_screen10_includes_attempts(clock):
-    app = make_app(clock, StubScenario(tp1_targets=4, tp2_behavior={"s-1-1-2": ["violate", "ok"]}))
+    app = make_app(clock, StubScenario(tp1_targets=4, tp2_behavior={"s-3.1.1-2": ["violate", "ok"]}))
     rid = to_screen9(app)
     run_review(app, rid)
     s10 = app.orchestrator.screen(pid(app, rid), 10)
     ctx = app.engine.open_context(app.store.load_run(rid))
     results = {r.sentence_id: r.attempts for r in ctx.get("sentenceResults")}
     assert {c.sentence_id: c.attempts for c in s10.sentences} == results       # 학습 동의와 관계없이
-    change = next(c for c in s10.sentences if c.sentence_id == "s-1-1-2")
+    change = next(c for c in s10.sentences if c.sentence_id == "s-3.1.1-2")
     assert [(a.attempt_no, a.adopted, a.token_check.passed) for a in change.attempts] == [
         (1, False, False), (2, True, True)]
-    dumped = next(s for s in s10.dump()["sentences"] if s["sentenceId"] == "s-1-1-2")
+    dumped = next(s for s in s10.dump()["sentences"] if s["sentenceId"] == "s-3.1.1-2")
     assert dumped["attempts"][0]["attemptNo"] == 1 and dumped["attempts"][0]["tokenCheck"]["passed"] is False
 
 

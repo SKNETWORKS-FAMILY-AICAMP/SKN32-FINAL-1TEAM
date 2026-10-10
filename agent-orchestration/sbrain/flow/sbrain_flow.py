@@ -7,7 +7,10 @@
            어떤 오류든 · 수집 상태 비정상이면 조회 전 후보로 두고 기회를 돌려준다 (on_rescue · after_step, spec 4.2.3)
   GATE     G-01                                       → 5 작성 시작 대기 / 3 공고 선택 대기
            G-01이 어떤 오류로 끝나도 실행을 살리고 고르기 전 대기 지점(3 또는 5)으로 돌아간다 (on_rescue)
-  WRITE    T-C3 → T-S1 → T-S2 → T-W1 → T-W2 → T-W3 → M-1 → T-V1 → G-02a   → 6 문서 평가 대기
+  WRITE    T-C3 → T-S1 → T-S2 → T-W1 → T-W2 → T-W3 → M-1 → T-V1 → [검증-1 재수행] → G-02a   → 6 문서 평가 대기
+           [검증-1 재수행](spec 4.10): T-V1 바로 뒤에 fail 항목만 T-W1(본문) · T-W2(그림) → M-1 → T-V1(대상만), 끝내 fail인
+           표는 T-W3(대체) → M-1. 재작성 사이클(화면 6 · 9)에서도 T-V1 바로 뒤(전후 비교 · T-B1 앞)에 같은 것이 끼워진다.
+           상태는 Run.verify1(Verify1State), 횟수는 redo.verify1RedoCount(항목마다 · 사이클마다)
   PROTO    T-B1* → T-B2 → M-2** → G-04 → M-3 → T-V2 → G-02b              → 8 산출물 확인 대기
            G-04 자체 검사가 끝내 불통과면 관리자 기록 후 계속, T-V2 대조 보류 · 진단은 관리자 기록 (after_step)
   REVIEW   G-03 → T-P1 → T-P2 → M-4 → T-C4                               → 11 완료
@@ -45,7 +48,7 @@ from ..models import (
     TaskInstruction, Token, TokenCheckResult,
 )
 from ..models.clock import kst_today, utc_clock, utc_now
-from ..models.run import RedoState, make_state
+from ..models.run import RedoState, Verify1State, make_state
 from ..orchestrator.context import RunContext
 from ..orchestrator.engine import Engine, Outcome, StepFailure, ToolsFactory
 from ..orchestrator.errors import EMBED_DEADLINE_SUFFIX, ContractError, ToolCallExhausted, message
@@ -53,9 +56,14 @@ from ..orchestrator.registry import TaskRegistry, TaskSpec
 from ..orchestrator.settings import REWRITE_SETTING_KEY
 from ..orchestrator.tools import CallSink, Tools
 from ..orchestrator.trace import IMAGE_CALL, CallLog, ExecutionRecord, FeedbackLink
-from .catalog import FIRST_CANDIDATES, FORM_SPEC, INSTRUCTION_SUFFIX, MORE_CANDIDATES, RUBRIC
+from .catalog import (
+    FIRST_CANDIDATES, FORM_SPEC, INSTRUCTION_SUFFIX, MORE_CANDIDATES, RUBRIC, SECTION_RESULTS, TABLE_OUTPUTS,
+)
 from .instruction import append_problems, extract_frame, replace_guidance
-from .rework_map import ARTIFACT_BUNDLES, BUNDLE_LAYER, BUNDLE_TASK, DOCUMENT_TASKS, alt_text_source_missing
+from .rework_map import (
+    ARTIFACT_BUNDLES, BUNDLE_LAYER, BUNDLE_TASK, DOCUMENT_TASKS, KIND_TASK, REWORK_DEFAULT_REASON,
+    alt_text_source_missing, bundle_items, bundle_tasks, form_kinds,
+)
 
 WRITE = ["T-C3", "T-S1", "T-S2", "T-W1", "T-W2", "T-W3", "M-1", "T-V1", "G-02a"]
 REVIEW = ["G-03", "T-P1", "T-P2", "M-4", "T-C4"]
@@ -63,8 +71,19 @@ CYCLE_END = "CYCLE-END"
 SCREEN_STEP = {6: "문서평가", 8: "산출물확인", 9: "종합평가"}
 STEP_SCREEN = {step: screen for screen, step in SCREEN_STEP.items()}
 STEP_LABEL = {CYCLE_END: "재작성 전후 비교"}
-# 판정 지시가 없는 묶음의 재작성 지시 문구 (기준 문서 v1.10 시트 4 ReworkOrder.reason)
-REWORK_DEFAULT_REASON = "사용자가 이 묶음의 재작성을 요청했습니다."
+# REWORK_DEFAULT_REASON(판정 지시가 없는 묶음의 재작성 지시 문구)은 rework_map에 있다 — 판정의 '묶음 모두' 후보와 같이 쓴다
+
+# ── 검증-1 fail 재수행 · 항목 단위 재수행 (spec 4.8 · 4.10 · 4.11, 결정 0024) ─────────
+FIRST_CYCLE_KEY = "첫작성"            # Verify1State.cycleKey — 첫 작성 사이클 (재작성 사이클은 그 사이클 ID)
+VERIFY1_ROLE = "검증-1 재수행"         # 검증-1 fail 재수행으로 다시 도는 T-W1 · T-W2 · M-1 · T-V1의 역할
+FALLBACK_ROLE = "표 대체"              # 끝내 fail인 표를 본문 서술로 바꾸는 T-W3 · M-1의 역할
+RESCORE_FEEDBACK = "재채점"            # 재작성 사이클 T-V1에 다시 만든 항목을 알리는 피드백 종류
+# 재수행 단위 표시 (ReworkInput.unit — 섹션 · 차트 1건(그림) · 표 1건)
+KIND_UNIT = {"section": "섹션", "image": "차트 1건", "table": "표 1건"}
+TASK_UNIT = {task: KIND_UNIT[kind] for kind, task in KIND_TASK.items()}
+# 자체 검사 재수행을 걸지 않는 Task — 규칙 코드라 같은 입력이면 같은 결과다. 검사에 걸리면 그 시도에서 바로 확정 동작
+# (표 → 본문 서술 대체)을 한다 (spec 4.8). 등록부의 redo 표시는 그대로 둔다
+NO_SELF_REDO = frozenset({"T-W3"})
 # 관리자 사건 종류 · 문구 (잠정 — orchestrator/settings.py PROVISIONAL event.*). 내용 · 지시문은 싣지 않는다
 EVENT_MATCH_WITHHELD = "대조보류"
 EVENT_V2_DIAGNOSTIC = "검증2진단"
@@ -202,21 +221,24 @@ def rework_queue(screen: int, orders: list[ReworkOrder], category: str) -> list[
     return q
 
 
-def bundle_orders(bundles: list[str], offered: list[ReworkOrder]) -> dict[str, ReworkOrder]:
+def bundle_orders(bundles: list[str], offered: list[ReworkOrder], form: Any = None) -> dict[str, ReworkOrder]:
     """모은 묶음 → Task별 재작성 지시 (기준 문서 순서: T-W1 · T-W2 · T-W3 · T-B1 · T-B2).
 
     - 대상(targets)은 그 층에서 모은 묶음 이름이다(기회를 세는 이름과 같다).
     - 산출물층: 그 Task에 대한 판정 지시(사유 · 보완 지시)를 쓴다. 같은 Task 지시가 여럿이면 합친다.
-    - 문서층 (임시 처리, 잠정): 어느 묶음이든 계획서 전체(T-W1 · T-W2 · T-W3)를 다시 만든다. 판정이 낸 문서층 지시를
-      모두 합쳐 세 Task에 같은 지시로 준다.
+    - 문서층 (spec 4.11): 고른 묶음들의 항목(짝짓기 표 — rework_map.bundle_items)을 종류별 Task(본문 T-W1 · 그림 T-W2 ·
+      표 T-W3)가 다시 만든다. 그 종류 항목이 없는 Task는 지시가 없다(부르지 않는다). 지시는 고른 묶음을 대상으로 한
+      판정 지시를 모두 합친 것이고, Task마다 같다. 양식(form)이 없으면(작업 분해 전 · 단위 시험) 세 Task 모두다.
     - 해당 판정 지시가 없으면(미달이 아닌 묶음, 확장) 사유 · 보완 지시 모두 고정 문구 REWORK_DEFAULT_REASON을 쓴다.
       판정 지시의 보완 지시가 비어 있어도 같다(시트 4 ReworkOrder.instructionDelta는 비워 둘 수 없다).
     """
     out: dict[str, ReworkOrder] = {}
     docs = [b for b in bundles if BUNDLE_LAYER.get(b) == "document"]
     if docs:
-        doc_orders = [o for o in offered if o.layer == "document"]
-        for task_id in DOCUMENT_TASKS:
+        chosen = set(docs)
+        doc_orders = [o for o in offered if o.layer == "document" and chosen & set(o.targets)]
+        tasks = bundle_tasks(docs, form) if form is not None else list(DOCUMENT_TASKS)
+        for task_id in tasks:
             out[task_id] = _merge_orders(task_id, "document", docs, doc_orders)
     for b in ARTIFACT_BUNDLES:
         if b in bundles:
@@ -320,7 +342,9 @@ class SBrainFlow:
         reflecting = rs.rework_role == REFLECT_ROLE and spec.task_id == "T-B1"   # 반영 실행은 T-B1뿐 (_role)
         cycle_order = self._cycle_order(ctx, spec.task_id, rework_input, rs)
         carried = reflect_issues(ctx) if reflecting and rework_input.mode == "재수행" else None
-        if self.rewriter is None or reflecting:
+        # LLM을 부르지 않는 Task(등록부 uses_llm=False — T-W3 규칙 코드)는 지시문을 읽지 않으므로 다시 쓰지 않는다 — 다시 쓰기
+        # LLM 호출이 생기지 않게 덧붙이기만 한다 (spec 4.10 · 4.11)
+        if self.rewriter is None or reflecting or not spec.uses_llm:
             return append_problems(base, rework_input, cycle_order=cycle_order, reflect_issues=carried), []
         producer = f"orchestrator:{rs.rework_input_ref}"   # 이 지시문을 만든 재작성 · 재수행 입력
         if rs.instruction_ref is not None and ctx.producer_of(rs.instruction_ref) == producer:
@@ -375,6 +399,8 @@ class SBrainFlow:
     def value(self, ctx: RunContext, name: str, spec: TaskSpec) -> Any:
         if name == "rubricVersion":   # 채점에 쓴 채점 기준표 — T-C3가 고른 것 (T-C3 spec 4)
             return ctx.get(RUBRIC).version
+        if name == "planDocRef":      # T-V1이 검증하는 계획서 버전 '이름@버전' — SectionResult.verifiedRef (spec 4.7)
+            return ctx.ref("planDoc") if ctx.has("planDoc") else None
         if name == "cycleInfo":
             cyc = ctx.run.cycle
             if cyc is None:
@@ -391,6 +417,10 @@ class SBrainFlow:
         raise KeyError(name)
 
     def initial_redo_state(self, ctx: RunContext, spec: TaskSpec) -> RedoState:
+        """단계의 첫 진행 위치. 검증-1 재수행 · 표 대체(Run.verify1.phase)를 먼저 보고, 그다음 사용자 재작성 역할이다 (spec 4.10)."""
+        redo = self._verify1_redo_state(ctx, spec)
+        if redo is not None:
+            return redo
         cyc = ctx.run.cycle
         if cyc is None:
             return RedoState(task_id=spec.task_id, trigger="첫실행")
@@ -407,10 +437,22 @@ class SBrainFlow:
             # 진입 파일이 없으면 비운다 (결정 0023)
             source = (ctx.get(SOURCE_FILE_KEY).entry_file
                       if tid == SOURCE_FILE_TASK and ctx.has(SOURCE_FILE_KEY) else None)
+            # 문서층 Task면 고른 묶음의 그 종류 항목만 목표 항목으로 준다 (spec 4.11 — 문제 목록 = 직전 issues + warnings)
+            targets = self._cycle_targets(ctx, cyc, tid) if order.layer == "document" else {}
             self._attach_rework(ctx, rs, spec, kind="재작성", source_refs=source_refs,
                                 ri=dict(mode="재작성", previous_result_ref=prev, issues=issues, order=order,
-                                        previous_source_file=source),
+                                        previous_source_file=source, target_items=targets),
                                 bundle_id=",".join(order.targets))
+        elif role == "재채점" and tid == "T-V1":
+            # 재작성 사이클의 검증-1 — 이 사이클에 다시 만든 항목만 다시 검증하고 나머지는 이어받는다 (spec 4.7 · 4.11).
+            # 다시 만든 항목을 흐름 상태(madeItems)에 적는다 — 검증-1 재수행 대상이 이 항목으로 좁혀진다
+            made = self._cycle_targets(ctx, cyc, None)
+            self._verify1(ctx).made_items = list(made)
+            prev = ctx.ref(spec.outputs[spec.primary_output]) if ctx.has(spec.outputs[spec.primary_output]) else ""
+            self._attach_rework(ctx, rs, spec, kind=RESCORE_FEEDBACK, source_refs=[ctx.ref("planDoc")],
+                                ri=dict(mode="재작성", previous_result_ref=prev, issues=[], order=None,
+                                        target_items=made),
+                                bundle_id=None)
         elif role == REFLECT_ROLE and tid == "T-B1":
             # 계획서 반영 실행 — T-B1 입력에 계획서(plan_doc)가 있지만, 추적 기록(FeedbackLink)을 위해 계획서 버전을
             # 알리는 재작성 입력(issues)을 그대로 붙인다. 이전 원문은 채우지 않는다(새 계획서로 새로 만든다, spec 4.3).
@@ -454,6 +496,125 @@ class SBrainFlow:
             return "판정"
         return REFLECT_ROLE  # T-B1(계획서 반영) · T-B2(원페이지 계획서 반영) · G-04
 
+    # ── 검증-1 fail 재수행 · 재작성 목표 항목 (spec 4.10 · 4.11) ─────────
+    @staticmethod
+    def _cycle_key(ctx: RunContext) -> str:
+        return ctx.run.cycle.cycle_id if ctx.run.cycle is not None else FIRST_CYCLE_KEY
+
+    def _verify1(self, ctx: RunContext) -> Verify1State:
+        """지금 사이클(첫 작성 · 재작성 사이클)의 흐름 상태. 사이클이 바뀌었으면 새로 시작한다 — 실행 건 줄에 남는다."""
+        key = self._cycle_key(ctx)
+        state = ctx.run.verify1
+        if state is None or state.cycle_key != key:
+            state = Verify1State(cycle_key=key)
+            ctx.run.verify1 = state
+        return state
+
+    @staticmethod
+    def clear_verify1(run: Run) -> None:
+        """검증-1 재수행 진행 표시를 비운다 — 사이클 끝 · 재작성 실패 되돌리기 · 중단 · 실행 실패 (spec 4.10)."""
+        if run.verify1 is not None:
+            run.verify1.phase = "없음"
+            run.verify1.pending_items = {}
+
+    @staticmethod
+    def _item_issues(ctx: RunContext) -> dict[str, list[str]]:
+        """항목 → 직전 검증-1 issues + warnings (재작성 목표 항목의 문제 목록, spec 4.11). 판정이 없으면 빈 사전."""
+        results = ctx.get(SECTION_RESULTS, default=None) or []
+        return {r.section_code: list(r.issues) + list(r.warnings) for r in results}
+
+    def _cycle_targets(self, ctx: RunContext, cyc, task_id: str | None) -> dict[str, list[str]]:
+        """재작성 사이클에서 고른 문서층 묶음의 항목 → 문제 목록 (양식 순서). task_id를 주면 그 Task가 만드는 종류만.
+
+        묶음 → 항목은 짝짓기 표(rework_map.bundle_items) 하나로 가른다. 묶음 없는 항목(일반현황 · 개요)은 들지 않는다."""
+        docs = list(dict.fromkeys(b for o in cyc.orders_by_task.values() if o.get("layer") == "document"
+                                  for b in o.get("targets", [])))
+        if not docs or not ctx.has(FORM_SPEC):
+            return {}
+        issues = self._item_issues(ctx)
+        return {code: issues.get(code, []) for code, kind in bundle_items(docs, ctx.get(FORM_SPEC))
+                if task_id is None or KIND_TASK[kind] == task_id}
+
+    def _verify1_redo_state(self, ctx: RunContext, spec: TaskSpec) -> RedoState | None:
+        """검증-1 재수행 · 표 대체 중이면 그 단계의 진행 위치 (재작성 '대상' 역할보다 먼저, spec 4.10). 아니면 None.
+
+        - 재수행중: T-W1(본문 대상) · T-W2(그림 대상) · T-V1(대상 전체 — 표 항목은 다시 검증만)은 재수행 입력(mode 재수행 ·
+          redoSource 검증-1 · targetItems = 대상 → 직전 issues)을 받고, M-1은 역할만 붙는다.
+        - 대체중: T-W3가 fallbackItems(대상 표)를 받고, M-1은 역할만 붙는다.
+        새 실행 기록 · 새 산출물 버전이고, 피드백 연결은 직전 T-V1 판정(sectionResults)에서 온다."""
+        state = ctx.run.verify1
+        if (state is None or state.phase == "없음" or not state.pending_items
+                or state.cycle_key != self._cycle_key(ctx)):
+            return None
+        tid = spec.task_id
+        role = VERIFY1_ROLE if state.phase == "재수행중" else FALLBACK_ROLE
+        if tid == "M-1":
+            return RedoState(task_id=tid, trigger="재수행", rework_role=role)
+        kinds = dict(form_kinds(ctx.get(FORM_SPEC))) if ctx.has(FORM_SPEC) else {}
+        pending = state.pending_items
+        fallback: list[str] = []
+        if state.phase == "재수행중" and tid == "T-V1":
+            items = dict(pending)
+            item_kinds = {kinds.get(code, "section") for code in items}
+            # 단위 표시 (잠정) — 한 종류뿐이면 그 종류, 섞였으면 섹션
+            unit = KIND_UNIT[item_kinds.pop()] if len(item_kinds) == 1 else KIND_UNIT["section"]
+        elif state.phase == "재수행중" and tid in ("T-W1", "T-W2"):
+            items = {code: v for code, v in pending.items() if KIND_TASK[kinds.get(code, "section")] == tid}
+            unit = TASK_UNIT[tid]
+        elif state.phase == "대체중" and tid == "T-W3":
+            items, fallback, unit = dict(pending), list(pending), TASK_UNIT[tid]
+        else:
+            return None
+        if not items:
+            return None
+        rs = RedoState(task_id=tid, trigger="재수행", rework_role=role)
+        prev = ctx.ref(spec.outputs[spec.primary_output]) if ctx.has(spec.outputs[spec.primary_output]) else ""
+        source = [ctx.ref(SECTION_RESULTS)] if ctx.has(SECTION_RESULTS) else []
+        flat = list(dict.fromkeys(f"{code} {issue}" for code, lines in items.items() for issue in lines))
+        self._attach_rework(ctx, rs, spec, kind="재수행", source_refs=source,
+                            ri=dict(mode="재수행", previous_result_ref=prev, issues=flat, order=None,
+                                    target_items=items, redo_source="검증-1", unit=unit, fallback_items=fallback),
+                            bundle_id=None)
+        return rs
+
+    def _after_tv1(self, ctx: RunContext, out: dict[str, Any]) -> None:
+        """T-V1 바로 뒤 — 검증-1 fail 재수행 · 표 대체를 그 대기열 맨 앞에 끼운다 (spec 4.10).
+
+        대상 = 판정 fail · 입력 없음 아님 · 이번 사이클에 만든 항목(첫 작성은 모든 항목) · 이미 대체한 표가 아님.
+        - 횟수(redo.verify1RedoCount, 항목마다 · 사이클마다)가 남은 대상이 있으면: 본문 → T-W1, 그림 → T-W2(표는 다시 만들지
+          않음) → M-1(다시 쓴 것이 있을 때) → T-V1(대상만).
+        - 없고 끝내 fail인 표가 있으면: T-W3(대체) → M-1 (T-V1 다시 안 함 — 판정은 fail 그대로).
+        - 둘 다 없으면 재수행 표시를 비운다. 재작성 기회를 쓰지 않는다. 구간 단계 수(진행률)를 끼운 만큼 늘린다.
+        흐름은 판정의 필드(status · inputMissing)와 양식 종류로만 가른다."""
+        state = self._verify1(ctx)
+        results = list(out.get("section_results") or [])
+        if not state.made_items and ctx.run.cycle is None:
+            state.made_items = [r.section_code for r in results]   # 첫 작성 — 모든 항목을 만들었다
+        made = set(state.made_items)
+        kinds = dict(form_kinds(ctx.get(FORM_SPEC))) if ctx.has(FORM_SPEC) else {}
+        replaced = {code for code, o in (ctx.get(TABLE_OUTPUTS, default=None) or {}).items()
+                    if isinstance(o, dict) and o.get("tableFallbackUsed")}
+        fails = [r for r in results if r.status == "fail" and not r.input_missing
+                 and r.section_code in made and r.section_code not in replaced]
+        limit = ctx.settings.redo.verify1_redo_count
+        redo = [r for r in fails if state.redo_counts.get(r.section_code, 0) < limit]
+        if redo:
+            for r in redo:
+                state.redo_counts[r.section_code] = state.redo_counts.get(r.section_code, 0) + 1
+            state.phase, state.pending_items = "재수행중", {r.section_code: list(r.issues) for r in redo}
+            writers = [t for t in ("T-W1", "T-W2")
+                       if any(KIND_TASK[kinds.get(r.section_code, "section")] == t for r in redo)]
+            steps = writers + (["M-1"] if writers else []) + ["T-V1"]
+        else:
+            tables = [r for r in fails if kinds.get(r.section_code) == "table"]
+            if not tables:
+                self.clear_verify1(ctx.run)
+                return
+            state.phase, state.pending_items = "대체중", {r.section_code: list(r.issues) for r in tables}
+            steps = ["T-W3", "M-1"]
+        ctx.run.queue[:0] = steps
+        ctx.run.segment_total += len(steps)
+
     def after_step(self, ctx: RunContext, step_id: str, outcome: Outcome) -> None:
         out = outcome.outputs
         if step_id == "R-8":
@@ -489,6 +650,13 @@ class SBrainFlow:
                 self._notice(ctx, "E-C2-EMBED", suffix=suffix)
             if more:
                 self._keep_more(ctx, out["candidates"], outcome)
+        elif step_id == "T-V1":
+            self._after_tv1(ctx, out)   # 검증-1 fail 재수행 · 표 대체를 끼운다 (같은 저장)
+        elif step_id == "M-1":
+            # 표 대체(T-W3 → M-1)가 끝났다 — 판정은 fail 그대로 두고 다시 검증하지 않는다 (spec 4.10)
+            state = ctx.run.verify1
+            if state is not None and state.phase == "대체중":
+                self.clear_verify1(ctx.run)
         elif step_id == "T-V2":
             self._after_tv2(ctx, out, outcome)
         elif step_id == "G-04":
@@ -531,13 +699,33 @@ class SBrainFlow:
 
     def redo_rework_input(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord,
                           rework_input: ReworkInput) -> ReworkInput:
-        """검사 불통과 재수행의 재작성 입력 (엔진 선택 확장 지점). T-B1이면 방금 실행이 만든 prototype의 진입 파일 참조를
-        채운다 — 그 실행이 대상 · 반영 · 첫 실행 중 무엇이었든 (spec 4.3). 진입 파일이 없으면 비운다(결정 0023).
-        다른 Task는 그대로다."""
-        if spec.task_id != SOURCE_FILE_TASK or not rec.result_ref.startswith(f"{SOURCE_FILE_KEY}@"):
-            return rework_input
-        source = ctx.get_ref(rec.result_ref).entry_file
-        return rework_input.model_copy(update={"previous_source_file": source})
+        """검사 불통과 재수행의 재작성 입력 (엔진 선택 확장 지점).
+
+        - 항목 단위(spec 4.8): 방금 실행의 check.failedItems를 목표 항목(targetItems)으로 옮기고 redoSource '검사'를 적는다 —
+          걸린 항목만 다시 만든다. failedItems가 비었으면 방금 실행이 받은 목표 항목을 그대로 잇는다(재작성 · 검증-1 재수행
+          중이면 그 항목, 첫 실행이면 빈 사전 = 모든 항목 — T-S1처럼 항목이 없는 Task). 흐름은 문구가 아니라 이 칸으로 가른다.
+        - T-B1이면 방금 실행이 만든 prototype의 진입 파일 참조를 채운다 — 그 실행이 대상 · 반영 · 첫 실행 중 무엇이었든
+          (spec 4.3). 진입 파일이 없으면 비운다(결정 0023)."""
+        update: dict[str, Any] = {"redo_source": "검사"}
+        check = ctx.get_ref(rework_input.source_refs[0]) if rework_input.source_refs else None
+        failed = dict(check.failed_items) if check is not None else {}
+        if failed:
+            update["target_items"] = failed
+            if spec.task_id in TASK_UNIT:
+                update["unit"] = TASK_UNIT[spec.task_id]
+        else:
+            before = next((ref for ref in rec.inputs if ref.startswith(f"{spec.task_id}.reworkInput@")), None)
+            prior = ctx.get_ref(before) if before is not None else None
+            if prior is not None and prior.target_items:
+                update.update(target_items=dict(prior.target_items), unit=prior.unit)
+        if spec.task_id == SOURCE_FILE_TASK and rec.result_ref.startswith(f"{SOURCE_FILE_KEY}@"):
+            update["previous_source_file"] = ctx.get_ref(rec.result_ref).entry_file
+        return rework_input.model_copy(update=update)
+
+    def allows_redo(self, ctx: RunContext, spec: TaskSpec, check: Any) -> bool:
+        """검사 불통과일 때 자체 검사 재수행을 걸지 (엔진 선택 확장 지점 — 없으면 늘 건다). T-W3(규칙 코드)는 같은 입력이면
+        같은 표가 나오므로 걸지 않는다 — Task가 그 시도에서 바로 확정 동작(표 → 본문 서술 대체)을 한다 (spec 4.8)."""
+        return spec.task_id not in NO_SELF_REDO
 
     def after_execution(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, calls: list[CallLog]) -> None:
         """실행 기록 하나가 성공으로 저장되는 같은 묶음 (엔진 선택 확장 지점). T-B2 실행에 최종 실패인 이미지 호출이 하나라도
@@ -564,6 +752,7 @@ class SBrainFlow:
                     self._notice(ctx, "E-G1-REJECT", 사유=", ".join(gate.failed_conditions))
                 self._wait(ctx, "공고선택", "setup")
         elif seg == "WRITE":
+            self.clear_verify1(run)   # 첫 작성 사이클 끝 (spec 4.10)
             self._wait(ctx, "문서평가", "document")
             self._notify(ctx, "문서평가", 6)
         elif seg == "PROTO":
@@ -573,6 +762,7 @@ class SBrainFlow:
             screen = run.cycle.screen
             rescored = list(run.cycle.rescored_layers)
             assert self.engine is not None
+            self.clear_verify1(run)   # 재작성 사이클 끝 (spec 4.10)
             self.engine.end_cycle(ctx)
             self._wait(ctx, SCREEN_STEP[screen], "document" if screen == 6 else "artifact")
             # 재작성으로 검증을 다시 실행한 경우에도 알림. 대상 화면은 요청한 화면 (잠정)
@@ -659,17 +849,20 @@ class SBrainFlow:
     def on_abort(self, ctx: RunContext) -> None:
         run = ctx.run
         run.queue, run.redo_state, run.cycle, run.rework_screen = [], None, None, None
+        self.clear_verify1(run)   # 중단 — 검증-1 재수행 표시를 비운다 (spec 4.10)
         run.state = make_state(run.state.step, "중단")
         run.ended_at = self.now()
         ctx.add_event("중단", "사용자 중단 (Task 사이에서 반영)")
 
     def on_run_failed(self, ctx: RunContext, reason: str) -> None:
+        self.clear_verify1(ctx.run)
         self._notice(ctx, "E-RUN-FAIL")
         self._notify(ctx, "실패", None, scope="실행")
 
     def on_cycle_failed(self, ctx: RunContext, reason: str) -> None:
         screen = ctx.run.cycle.screen
         assert self.engine is not None
+        self.clear_verify1(ctx.run)   # 재작성 실패 되돌리기 (8.6) — 검증-1 재수행 표시를 비운다 (spec 4.10)
         self.engine.end_cycle(ctx)
         self._wait(ctx, SCREEN_STEP[screen], "document" if screen == 6 else "artifact")
         self._notice(ctx, "E-RUN-ROLLBACK")

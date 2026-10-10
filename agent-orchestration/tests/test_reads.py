@@ -75,17 +75,20 @@ def test_screen6_plan_score_and_rework_options(clock):
     assert s6.plan_doc.sections and s6.score.phase == "document" and s6.score.threshold == 80
     assert s6.next_action == "재작성권유" and s6.failed_task_ids
     assert s6.rework_options and all(o.remaining == 1 and o.selectable for o in s6.rework_options)
-    # 문서층 지시의 묶음은 문서층 묶음 4개 전부 (판정 지시의 대상 이름이 아니라 기회를 세는 이름)
-    assert all(o.bundles == DOC_BUNDLES for o in s6.rework_options)
+    # 80 미만인데 fail · warning 항목이 없다 → 계획서 묶음 모두가 후보, 지시마다 그 묶음 하나 (spec 4.12 ②)
+    assert [o.bundles for o in s6.rework_options] == [[b] for b in DOC_BUNDLES]
     assert "settingsSnapshot" not in s6.dump()["score"]                          # 내부 값은 싣지 않는다
     rework(app, clock, rid, "문제인식", "실현가능성", "성장전략")
     usage = {u.bundle_id: u.remaining for u in app.store.load_run(rid).rework_usage}
     assert usage == {"문제인식": 0, "실현가능성": 0, "성장전략": 0}
-    s6 = app.orchestrator.screen(p, 6)                                           # 4개 중 가장 많이 남은 값 (잠정)
-    assert s6.rework_options and all(o.remaining == 1 and o.selectable for o in s6.rework_options)
+    s6 = app.orchestrator.screen(p, 6)                                           # 남은 기회는 그 묶음의 것 (spec 4.11)
+    assert [(o.bundles, o.remaining, o.selectable) for o in s6.rework_options] == [
+        (["문제인식"], 0, False), (["실현가능성"], 0, False), (["성장전략"], 0, False), (["팀 구성"], 1, True)]
+    assert s6.next_action == "재작성권유"                                         # 남은 후보 묶음이 있다
     rework(app, clock, rid, "팀 구성")
-    s6 = app.orchestrator.screen(p, 6)
+    s6 = app.orchestrator.screen(p, 6)                                           # 다 쓴 묶음도 후보 목록에 남는다
     assert s6.rework_options and all(o.remaining == 0 and not o.selectable for o in s6.rework_options)
+    assert s6.next_action == "상한도달"
 
 
 def test_screen9_rework_options_follow_bundle_counts(clock):

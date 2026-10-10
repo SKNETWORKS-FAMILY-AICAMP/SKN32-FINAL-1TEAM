@@ -10,6 +10,8 @@
 - 목록 입력(대표자 이력 · 채용 계획 · 장비 · 협력 기관)은 웹 코드(user-input-example.py의
   PlanCareerIn · PlanHireIn · PlanEquipmentIn · PlanPartnerIn)의 키 이름으로 한 줄을 만든다.
   모르는 키만 있는 항목은 값만 순서대로 잇는다.
+- 사업비 · 일정 · 팀원 역할(budgetItems · scheduleItems · teamRoleCareers — 확장, spec 4.3)도 시작 요청에서 함께 옮긴다.
+  필수 확인은 스위치 settings.PLAN_TABLES_REQUIRED(잠정, 기본 꺼짐)가 켜졌을 때만 한다.
 """
 from __future__ import annotations
 
@@ -17,9 +19,12 @@ import re
 from decimal import Decimal
 from typing import Any, Callable
 
-from ..models import PreInput, RevenueItem
+from ..models import BudgetItem, PreInput, RevenueItem, ScheduleItem
 from ..models.base import ApplicantType
-from .record import PlanInputRow, PricingItemRow, ProjectInputRecord, TeamMemberRow
+from ..orchestrator import settings
+from .record import (
+    BudgetItemRow, PlanInputRow, PricingItemRow, ProjectInputRecord, ScheduleItemRow, TeamMemberRow,
+)
 
 # 웹 폼의 신청자 유형 코드 → 시트 4 표기
 APPLICANT_TYPE: dict[str, ApplicantType] = {
@@ -47,7 +52,18 @@ LABELS: dict[str, str] = {
     "partners": "협력 파트너 · 기관",
     "desired_scale": "희망 사업 규모",
     "self_fund_amount": "자기부담금",
+    # 사업비 · 일정 필수 스위치(settings.PLAN_TABLES_REQUIRED)가 켜졌을 때의 결측 이름 (spec 4.3 — 이름 글자는 잠정)
+    "budget_items": "사업비 집행계획",
+    "budget_items_phase1": "사업비 집행계획(1단계)",
+    "budget_items_phase2": "사업비 집행계획(2단계)",
+    "schedule_items_agreement": "추진 일정(협약기간 내)",
 }
+
+# 필수 스위치의 결측 항목 (LABELS 키, 이 순서로 올린다). 단계 둘은 예비창업자만 본다 (spec 4.3 표)
+PLAN_TABLE_FIELDS = ("budget_items", "budget_items_phase1", "budget_items_phase2", "schedule_items_agreement")
+PHASES = ("1단계", "2단계")      # project_budget_items.phase 값 (예비창업만). 그 밖의 값은 None으로 본다 (잠정)
+# project_schedule_items.section → ScheduleItem.scope. 그 밖의 section row는 버린다 (잠정)
+SCHEDULE_SCOPE: dict[str, str] = {"feasibility": "agreement", "growth": "roadmap"}
 
 NONE_TEXT = "없음"  # '해당 없음'을 고른 항목 (시트 4 hiringPlan · facilities · partners)
 PROOF_TEXT = "증빙 있음"  # 대표자 이력에 증빙이 있을 때 붙인다 (사용자 결정 2026-09-30)
@@ -109,6 +125,10 @@ def to_pre_input(record: ProjectInputRecord) -> PreInput:
         "occupation": _text(plan.occupation),
         "representative_capability": _text(plan.ceo_capability),
         "self_in_kind_resources": _text(plan.self_in_kind_resources),
+        # 확장 — 계획서 표(사업비 · 일정)와 팀원 역할 (spec 4.3). T-C1이 회사 정보로 그대로 옮긴다
+        "budget_items": [_budget_item(r) for r in record.budget_items],
+        "schedule_items": [s for s in (_schedule_item(r) for r in record.schedule_items) if s],
+        "team_role_careers": [s for s in (_role_career(m) for m in record.team_members) if s],
     }
     # 팀 구성원은 '팀원 없음'을 고를 수 있어 필수에서 뺀다 (사용자 결정 · 웹팀 확인 2026-09-30)
     required = [
@@ -121,9 +141,23 @@ def to_pre_input(record: ProjectInputRecord) -> PreInput:
     elif applicant == "예비창업자":
         required += ["desired_scale"]
     missing = [f for f in required if values[f] in (None, "", [])]
+    if settings.PLAN_TABLES_REQUIRED:   # 부를 때마다 모듈 속성으로 읽는다 (잠정, 기본 꺼짐 — 꺼져 있으면 비어도 통과)
+        missing += _plan_tables_missing(applicant, values["budget_items"], values["schedule_items"])
     if missing:
         raise MissingRequired(missing)
     return PreInput(**values)
+
+
+def _plan_tables_missing(applicant: ApplicantType | None, budgets: list[BudgetItem],
+                         schedules: list[ScheduleItem]) -> list[str]:
+    """사업비 · 일정 최소 기준 (웹팀 답 2026-10-10, spec 4.3 표). 협약 이후 일정 · 일반형은 담당자 답을 기다린다."""
+    ok = {
+        "budget_items": bool(budgets),
+        "budget_items_phase1": applicant != "예비창업자" or any(b.phase == "1단계" for b in budgets),
+        "budget_items_phase2": applicant != "예비창업자" or any(b.phase == "2단계" for b in budgets),
+        "schedule_items_agreement": any(s.scope == "agreement" for s in schedules),
+    }
+    return [f for f in PLAN_TABLE_FIELDS if not ok[f]]
 
 
 # ── 변환 규칙 (기준 문서 v1.10이 정한 형식 말고는 잠정) ──────────────────────────────────
@@ -242,11 +276,58 @@ def _revenue_items(rows: list[PricingItemRow]) -> list[RevenueItem] | None:
     return [RevenueItem(service_name=_text(r.service_name) or "", unit_price=_won(r.unit_price)) for r in rows]
 
 
-def _won(v: Decimal) -> int:
-    """DECIMAL(12,2) 원 → 정수 원. 소수 부분이 있으면 반올림하지 않고 오류로 본다."""
+def _won(v: Decimal, what: str = "수익모델 단가") -> int:
+    """DECIMAL 원 → 정수 원. 소수 부분이 있으면 반올림하지 않고 오류로 본다.
+
+    메시지에는 항목 이름만 싣는다 — 신청자 입력값은 예외 메시지에 넣지 않는다.
+    """
     if v != v.to_integral_value():
-        raise ValueError(f"수익모델 단가가 원 단위 정수가 아님: {v}")
+        raise ValueError(f"{what}: 원 단위 정수가 아님")
     return int(v)
+
+
+def _won_or_none(v: Decimal | None) -> int | None:
+    """사업비 금액 — NULL은 0으로 보지 않고 None으로 싣는다 (표에서는 뒤 단계가 '확인 필요'로 쓴다, spec 4.3)."""
+    return None if v is None else _won(v, "사업비 집행계획 금액")
+
+
+def _budget_item(r: BudgetItemRow) -> BudgetItem:
+    """사업비 집행계획 한 row (spec 4.3). 값을 옮기기만 하고, 금액이 맞지 않으면 총사업비만 다시 낸다.
+
+    총사업비 ≠ 정부지원 + 자기부담 현금 + 현물이면 총사업비를 세 금액의 합으로 다시 낸다. 단 총사업비와 세 금액이
+    모두 있을 때만 비교한다 — 하나라도 None이면 불일치를 판단할 수 없어 총사업비를 그대로 둔다(None이면 None).
+    담당자 코드(pipeline.normalize_back_input)와 다른 점: 담당자는 빈 금액을 0으로 더하고 총사업비 0은 건드리지 않지만,
+    여기서는 'NULL 금액은 0으로 보지 않는다'(spec 4.3)를 따라 빈 금액이 있으면 다시 내지 않는다(사용자 확인 2026-10-10 — spec 4.3의 두 규칙이 부딪치는 경우).
+    세 금액 칸은 None 그대로 싣는다. 음수는 웹이 막기로 했다 — 여기서는 그대로 싣는다.
+    빈 글자 칸은 빈 글자로 싣는다('확인 필요' · '미정' 표기는 표를 만드는 쪽 몫).
+    """
+    total, gov, cash, kind = (_won_or_none(v) for v in (
+        r.total_amount, r.government_amount, r.self_cash_amount, r.self_in_kind_amount))
+    if total is not None and gov is not None and cash is not None and kind is not None and total != gov + cash + kind:
+        total = gov + cash + kind
+    phase = _text(r.phase)
+    return BudgetItem(
+        category=_text(r.category) or "", execution_plan=_text(r.execution_plan) or "",
+        total_amount=total, government_amount=gov, self_cash_amount=cash, self_in_kind_amount=kind,
+        phase=phase if phase in PHASES else None,
+    )
+
+
+def _schedule_item(r: ScheduleItemRow) -> ScheduleItem | None:
+    """추진 일정 한 row (spec 4.3). section이 feasibility · growth 밖이면 버린다 (잠정)."""
+    scope = SCHEDULE_SCOPE.get(_text(r.section) or "")
+    if scope is None:
+        return None
+    return ScheduleItem(scope=scope, category=_text(r.category) or "", content=_text(r.content) or "",
+                        period=_text(r.period) or "", detail=_text(r.detail) or "")
+
+
+def _role_career(m: TeamMemberRow) -> str | None:
+    """팀원 한 명 → '역할: 경력' (spec 4.3 — LLM 전송용). 하나만 있으면 그것만, 둘 다 없으면 뺀다. 이름은 넣지 않는다."""
+    role, exp = _text(m.role), _text(m.experience)
+    if role and exp:
+        return f"{role}: {exp}"
+    return role or exp
 
 
 def _period(start: str | None, end: str | None) -> str | None:

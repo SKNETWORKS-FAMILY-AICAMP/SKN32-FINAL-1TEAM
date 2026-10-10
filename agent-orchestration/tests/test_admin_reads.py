@@ -15,10 +15,10 @@ from sbrain.orchestrator.tools import TokenUsage
 
 # 문장별 T-P2 결과: 채택 · 반려 뒤 채택 · 반려 뒤 조기 중단 · 반려만 → 시도 9건, 반려 7건
 BEHAVIOR = {
-    "s-1-1-1": ["ok"],
-    "s-1-1-2": ["violate", "ok"],
-    "s-2-1-1": ["violate", "same", "same"],
-    "s-2-1-2": ["violate", "violate", "violate"],
+    "s-3.1.1-1": ["ok"],
+    "s-3.1.1-2": ["violate", "ok"],
+    "s-3.1.2-1": ["violate", "same", "same"],
+    "s-3.1.2-2": ["violate", "violate", "violate"],
 }
 CONTENT = ("헬스장", "문장", "(윤문)", "변형", "동일 출력", "1억원", "창업지원사업", "김서준")
 
@@ -216,6 +216,6 @@ def test_admin_calls_with_tries(clock):
     rid = to_screen6(app)
     rec = next(r for r in app.store.executions(rid) if r.task_id == "T-S1")
     [call] = app.orchestrator.admin_calls(rec.execution_id)
-    assert (call.call_type, call.final_outcome, call.model) == ("llm", "성공", "미정")
+    assert (call.call_type, call.final_outcome, call.model) == ("llm", "성공", "gpt-5.6-terra")   # T-S1 기본 모델
     assert [(t.no, t.outcome, t.error_kind) for t in call.tries] == [(1, "응답지연", "일시"), (2, "성공", None)]
     assert call.tokens.output_tokens is None and app.orchestrator.admin_calls("없는-실행") == []

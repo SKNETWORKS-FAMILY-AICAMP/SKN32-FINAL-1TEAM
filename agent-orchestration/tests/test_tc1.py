@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from decimal import Decimal
 
 import pytest
 
@@ -11,9 +12,10 @@ from fakes import item_json
 from sbrain.agents.stubs import FakeLLM
 from sbrain.agents.supervisor import bind_supervisor, tc1
 from sbrain.contracts import TC1In
-from sbrain.intake import MemoryProjectInputSource
+from sbrain.intake import MemoryProjectInputSource, to_pre_input
 from sbrain.models import ReferenceDoc
 from sbrain.models.clock import utc_now
+from sbrain.orchestrator import settings
 from sbrain.orchestrator.errors import CommandError, ToolCallExhausted
 from sbrain.orchestrator.tools import CallSink, LLMRequest, Tools, ToolsConfig, ToolsContext
 
@@ -119,6 +121,56 @@ def test_start_run_for_project_blocks_missing_required(clock):
     assert not res.ok and res.code == "E-C1-REQUIRED"
     assert res.message == "필수 항목을 입력해주세요: 수익모델 단가, 성별"
     assert app.store.list_runs("7") == [] and app.llm.requests == []   # T-C1을 실행하지 않는다
+
+
+PLAN_BUDGET = [dict(category="인건비", execution_plan="개발자 1명 채용", total_amount=Decimal("15000000.00"),
+                    government_amount=Decimal("10000000.00"), self_cash_amount=Decimal("3000000.00"),
+                    self_in_kind_amount=None)]
+PLAN_SCHEDULE = [dict(section="feasibility", category="개발", content="예약 화면 개발", period="2026-03 ~ 2026-06",
+                      detail="수업 예약 기능"),
+                 dict(section="growth", category="확장", content="지점 확대", period="2027", detail="프랜차이즈 영업")]
+
+
+def test_plan_tables_are_copied_to_company_info_but_not_sent_to_llm(clock):
+    """사업비 · 일정 · 팀원 역할(확장)은 시작 요청에서 읽어 formInput에 싣고 T-C1이 회사 정보로 그대로 옮긴다.
+    T-C1의 LLM 요청에는 싣지 않는다(아이디어 설명만 — 지금 규칙)."""
+    source = MemoryProjectInputSource([project_record(budget_items=PLAN_BUDGET, schedule_items=PLAN_SCHEDULE)])
+    app = real_tc1_app(clock, project_inputs=source)
+    app.llm.respond("T-C1", lambda req: item_json())
+    res = app.orchestrator.start_run_for_project("7", 101)
+    assert res.ok, res
+    form = artifact(app, res.run_id, "formInput")
+    company = artifact(app, res.run_id, "companyInfo")
+    assert [b.total_amount for b in form.budget_items] == [15_000_000]          # 현물 NULL — 다시 내지 않고 그대로
+    assert company.budget_items == form.budget_items
+    assert company.schedule_items == form.schedule_items
+    assert [s.scope for s in company.schedule_items] == ["agreement", "roadmap"]
+    assert company.team_role_careers == form.team_role_careers == ["개발: 웹 개발 3년"]
+    llm_text = json.dumps([r.messages for r in app.llm.requests if r.metadata["task_id"] == "T-C1"],
+                          ensure_ascii=False)
+    for secret in ("인건비", "개발자 1명 채용", "15000000", "15,000,000", "예약 화면 개발", "지점 확대",
+                   "웹 개발 3년", "이하늘"):
+        assert secret not in llm_text
+
+
+def test_company_info_copies_plan_tables_without_sharing_objects():
+    form = to_pre_input(project_record(budget_items=PLAN_BUDGET, schedule_items=PLAN_SCHEDULE))
+    company = tc1.company_info_from(form)
+    assert (company.budget_items, company.schedule_items, company.team_role_careers) == (
+        form.budget_items, form.schedule_items, form.team_role_careers)
+    assert company.budget_items[0] is not form.budget_items[0]
+    assert company.schedule_items[0] is not form.schedule_items[0]
+    assert company.team_role_careers is not form.team_role_careers
+
+
+def test_start_run_for_project_blocks_missing_plan_tables_when_required(clock, monkeypatch):
+    monkeypatch.setattr(settings, "PLAN_TABLES_REQUIRED", True)
+    source = MemoryProjectInputSource([project_record()])
+    app = real_tc1_app(clock, project_inputs=source)
+    res = app.orchestrator.start_run_for_project("7", 101)
+    assert not res.ok and res.code == "E-C1-REQUIRED"
+    assert res.message == "필수 항목을 입력해주세요: 사업비 집행계획, 추진 일정(협약기간 내)"
+    assert app.store.list_runs("7") == [] and app.llm.requests == []
 
 
 def test_start_run_for_project_checks_owner(clock):

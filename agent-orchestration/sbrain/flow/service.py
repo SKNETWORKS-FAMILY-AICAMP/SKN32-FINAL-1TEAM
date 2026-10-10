@@ -38,6 +38,7 @@ from ..orchestrator.files import FileStore
 from ..orchestrator.settings import SettingsProvider
 from ..orchestrator.store import FINISHED_REQUEST, PENDING_REQUEST, RunFilter, StartRequest
 from . import reads
+from .catalog import FORM_SPEC
 from .log_stats import start_request_rows
 from .retention import gather_run_stats
 from .rework_map import BUNDLE_EXECUTABLE, BUNDLE_LAYER, LAYER_SCREENS, TASK_BUNDLE
@@ -564,7 +565,8 @@ class SBrainOrchestrator:
         merged = collected + new
         judge = "G-02a" if screen == 6 else "G-02b"
         offered = ctx.get(f"{judge}.reworkOrders", default=[])
-        orders = bundle_orders(merged, offered)
+        # 문서층 묶음은 그 묶음 항목의 종류별 Task만 다시 만든다 — 양식(T-C3 formSpec)과 짝짓기 표로 가른다 (spec 4.11)
+        orders = bundle_orders(merged, offered, ctx.get(FORM_SPEC, default=None))
         dref = self._decide(ctx, {
             "command": "rework", "screen": screen, "action": "재작성", "userAction": "재작성",
             "requested": new, "bundles": merged, "selectedOrders": [o.dump() for o in orders.values()],

@@ -178,20 +178,28 @@ def test_redo_rewrites_guidance_keeps_frame_and_reference_bytes(clock):
 
 
 def test_document_rework_rewrites_each_writer_once(clock):
+    """계획서 묶음 재작성은 그 묶음 항목의 종류별 Task만 돈다(실현가능성 = 본문 · 표 → T-W1 · T-W3, 그림 없음 → T-W2 안 돎).
+    LLM을 부르는 T-W1만 한 번 다시 쓰고, T-W3(규칙 코드, uses_llm=False)는 덧붙이기만 한다 — 다시 쓰기 LLM 호출이 없다
+    (spec 4.11)."""
     app = rewrite_app(clock)
     seen = {t: capture(app, t) for t in ("T-W1", "T-W2", "T-W3")}
     rid = to_screen6(app)
-    rework(app, clock, rid, "문제인식")
+    rework(app, clock, rid, "실현가능성")
     assert {t: len(rewrites(app, t)) for t in INSTRUCTED} == {
-        "T-S1": 0, "T-S2": 0, "T-W1": 1, "T-W2": 1, "T-W3": 1, "T-B1": 0, "T-B2": 0}
+        "T-S1": 0, "T-S2": 0, "T-W1": 1, "T-W2": 0, "T-W3": 0, "T-B1": 0, "T-B2": 0}
+    assert len(seen["T-W2"]) == 1                                         # 첫 작성뿐
     order = ctx_of(app, rid).get("T-W1.reworkInput").order
-    for task_id, calls in seen.items():
-        (_, _), (text, ri) = calls
-        assert ri.mode == "재작성" and ri.order is not None
-        assert text == rewritten(plan_task(app, rid, task_id).instruction, task_id) + order_block(ri.order)
-    assert order.targets == ["문제인식"]
+    (_, _), (text, ri) = seen["T-W1"]
+    assert ri.mode == "재작성" and ri.order is not None
+    assert text == rewritten(plan_task(app, rid, "T-W1").instruction, "T-W1") + order_block(ri.order)
+    (_, _), (text3, ri3) = seen["T-W3"]
+    assert ri3.mode == "재작성" and (ri3.order.task_id, ri3.order.targets, ri3.order.reason) == (
+        "T-W3", order.targets, order.reason)
+    assert text3 == plan_task(app, rid, "T-W3").instruction + order_block(ri3.order)   # 덧붙이기만
+    assert "T-W3.instruction" not in app.store.get_pointers(rid)
+    assert order.targets == ["실현가능성"]
     req = request_text(rewrites(app, "T-W1")[0])
-    assert "문제인식" in req and order.reason in req                      # 재작성 지시(묶음 이름 · 사유)를 보낸다
+    assert "실현가능성" in req and order.reason in req                    # 재작성 지시(묶음 이름 · 사유)를 보낸다
 
 
 def test_artifact_rework_rewrites_target_once(clock):
@@ -213,7 +221,7 @@ def test_reflection_run_and_its_redo_append_only(clock, with_rewrite):
     app.scenario.check_fail_times["T-B1"] = 2          # 첫 실행은 통과(0), 반영 실행 불통과(1), 재수행 통과(2)
     rework(app, clock, rid, "문제인식")
     assert rewrites(app, "T-B1") == []
-    assert len(rewrites(app)) == (3 if with_rewrite else 0)               # T-W1 · T-W2 · T-W3만
+    assert len(rewrites(app)) == (1 if with_rewrite else 0)               # T-W1만 (문제인식 = 본문 항목뿐)
     base = plan_task(app, rid, "T-B1").instruction
     reflect = [f"계획서 재작성 반영 ({ctx_of(app, rid).ref('planDoc')})"]
     (_, _), (reflect_text, reflect_ri), (redo_text, redo_ri) = seen
@@ -449,7 +457,8 @@ def test_instruction_not_compared_or_reverted_when_score_drops(clock):
     assert comp.kept == "전"
     assert not [r for r in comp.before_refs + comp.after_refs if ".instruction@" in r]
     ptr = app.store.get_pointers(rid)
-    assert (ptr["T-W1.instruction"], ptr["T-W2.instruction"], ptr["T-W3.instruction"]) == (1, 1, 1)
+    # 문제인식 묶음은 본문 항목뿐 — T-W1만 다시 썼다 (T-W2 · T-W3는 돌지 않았다, spec 4.11)
+    assert ptr["T-W1.instruction"] == 1 and "T-W2.instruction" not in ptr and "T-W3.instruction" not in ptr
     assert not [e for e in app.store.pointer_events(rid) if e.key.endswith(".instruction")]
 
 

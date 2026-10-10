@@ -29,6 +29,13 @@ sbrain-worker = "sbrain.worker:main"
 [tool.setuptools.packages.find]
 include = ["sbrain*"]
 
+# 전략 · 작성 · 검증-1 담당자 자료(JSON · MD)를 설치본에 넣는다 — 담당자 코드가 불러올 때 읽는 코드의 일부다
+# (spec 4.1 · sbrain/agents/partner_sw/VENDORED.md). 새 의존성은 없다.
+[tool.setuptools.package-data]
+"sbrain.agents.partner_sw.agent_strategy" = ["res/**/*.json", "res/**/*.md"]
+"sbrain.agents.partner_sw.agent_strategy.runtime" = ["*.json"]
+"sbrain.agents.partner_sw.agent_validation_1" = ["res/**/*.json", "res/**/*.md"]
+
 # 줄 단위 확인 범위 측정 (pytest-cov) — 측정할 때만 쓴다: python -m pytest -n 0 --cov=sbrain --cov-report=json:<파일>
 # 파일 경로는 이 폴더 기준 상대 경로, 워커 스레드 안에서 실행된 줄도 센다.
 [tool.coverage.run]

@@ -5,15 +5,22 @@ ReworkInput · ReworkComparison은 추적 기록을 위해 확장 필드를 더�
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from .base import KeptSide, Layer, ReworkMode, ReworkUnit, SBModel, ext
 from .files import FileRef
+
+# 재수행이 어느 쪽에서 왔는지 — 자체 검사(check) · 검증-1 판정 (확장, spec 4.7)
+RedoSource = Literal["검사", "검증-1"]
 
 
 class CheckResult(SBModel):
     passed: bool
     failures: list[str]
     final_action: str | None = None
+    # 확장 — 불통과 항목 번호 → 그 항목의 문제 목록. 재수행 때 흐름이 ReworkInput.targetItems로 옮긴다 (spec 4.8)
+    failed_items: dict[str, list[str]] = ext(
+        default_factory=dict, note="불통과 항목 번호 → 문제 목록 — 재수행 대상 항목 (흐름은 이 칸으로 가른다)")
 
 
 class ReworkOrder(SBModel):
@@ -39,6 +46,12 @@ class ReworkInput(SBModel):
     # 채우는 것은 흐름이 정한다(T-B1 재작성 대상 · 재수행만, 진입 파일이 없으면 비움). 이 산출물(재작성 입력 JSON)에만 있고
     # 기록 · 로그 · 사건 · 관리자 조회 · 예외 메시지 · 다시 쓰기 LLM 요청에는 싣지 않는다
     previous_source_file: FileRef | None = ext(None, note="참조형 — 기준 문서와 다름(결정 0023)")
+    # 확장 — 목표 항목 (전략 · 작성 · 검증-1 연동, spec 4.7). 비어 있으면 첫 실행(모든 항목)이다
+    target_items: dict[str, list[str]] = ext(
+        default_factory=dict, note="다시 만들 항목 번호 → 그 항목의 문제 목록. 비면 모든 항목")
+    redo_source: RedoSource | None = ext(None, note="재수행이 온 곳 — 검사 · 검증-1 (재작성 · 첫 실행은 None)")
+    unit: ReworkUnit | None = ext(None, note="재수행 단위 표시 — 섹션 · 표 1건 · 차트 1건(그림)")
+    fallback_items: list[str] = ext(default_factory=list, note="T-W3 표 대체 대상 항목 번호 (spec 4.10)")
 
 
 class BundleUsage(SBModel):

@@ -16,7 +16,7 @@ import pytest
 
 from conftest import make_app, pre_input, to_screen6, to_screen9
 from flow_helpers import run_review
-from worker_helpers import by_purpose, real_worker_app, worker, worker_to_screen6
+from worker_helpers import by_purpose, empty_features_once, real_worker_app, worker, worker_to_screen6
 
 from sbrain.agents.stubs import StubScenario
 from sbrain.agents.supervisor.plan import PURPOSE_REWRITE
@@ -59,7 +59,18 @@ def task_ids() -> set[str]:
     return {s.task_id for s in build_registry().specs() if s.kind == "task" and s.uses_llm}
 
 
-NO_LLM_TASKS = {"T-C2", "G-01", "T-C4"}   # LLM을 부르지 않는 Task — 모델 항목이 없다 (사용자 결정 2026-10-08)
+# LLM을 부르지 않는 Task — 모델 항목이 없다 (사용자 결정 2026-10-08, T-W3는 담당자 F17 규칙 코드 — spec 4.2)
+NO_LLM_TASKS = {"T-C2", "G-01", "T-W3", "T-C4"}
+# 전략 · 작성 · 검증-1 담당자 함수별 모델 (Task 모델, purposeModels) — spec 4.2
+PARTNER_MODELS = {
+    "T-S1": ("gpt-5.6-terra", {"F01": "gpt-6-luna", "F05": "gpt-6-luna", "F06": "gpt-5.6-sol", "F07": "gpt-6.1-sol",
+                               "F08": "gpt-6.1-sol", "F09": "gpt-5.6-terra", "F13": "gpt-6-luna",
+                               "F14": "gpt-6-luna", "F15": "gpt-6-luna"}),
+    "T-S2": ("gpt-6.1-sol", {"F04": "gpt-5.6-terra"}),
+    "T-W1": ("gpt-5.6-sol", {}),
+    "T-W2": ("gpt-6-luna", {}),
+    "T-V1": ("gpt-5.6-terra", {}),
+}
 
 
 # ── 모양 · 기본값 ──────────────────────────────────────
@@ -79,9 +90,10 @@ def test_default_values():
     row = lambda k: (t[k].provider, t[k].model, t[k].temperature, t[k].reasoning_effort)  # noqa: E731
     for k in ("T-C1", "T-C3", REWRITE_KEY):
         assert row(k) == ("openai", "gpt-6-luna", None, "low"), k
-    for k in ("T-S1", "T-S2", "T-W1", "T-W2", "T-W3"):
-        assert row(k) == ("미정", "미정", 0.7, None), k
-    assert row("T-V1") == ("미정", "미정", 0.0, None)
+    for k, (model, purposes) in PARTNER_MODELS.items():
+        assert row(k) == ("openai", model, None, None) and t[k].purpose_models == purposes, k
+    assert "T-W3" not in t                                                  # LLM을 부르지 않는다 — 항목 없음
+    assert all(v.purpose_models == {} for k, v in t.items() if k not in PARTNER_MODELS)
     for k in ("T-B1", "T-B2", "T-V2"):
         assert row(k) == ("openai", "gpt-6-luna", None, None), k
     for k in ("T-P1", "T-P2"):
@@ -105,7 +117,8 @@ def test_new_snapshot_has_tasks_and_no_agents():
     assert "tasks" in snap and "agents" not in snap
     assert snap["tasks"]["T-B2"]["imageModel"] == "gpt-image-2.5-flare"
     back = Settings.model_validate(snap)
-    assert back.agents is None and back.tasks["T-S1"].model == "미정"
+    assert back.agents is None and back.tasks["T-S1"].model == "gpt-5.6-terra"
+    assert back.tasks["T-S1"].purpose_models == PARTNER_MODELS["T-S1"][1]
 
 
 # ── 설정 사본: 실행 시작 때 고정 ───────────────────────────
@@ -121,7 +134,7 @@ def test_settings_snapshot_fixed_at_start(clock):
     app.orchestrator.start_writing(res.run_id)
     app.orchestrator.advance(res.run_id)
     recs = {r.task_id: r for r in app.store.executions(res.run_id)}
-    assert recs["T-S1"].model == "미정"  # 실행 시작 시점 값
+    assert recs["T-S1"].model == "gpt-5.6-terra"  # 실행 시작 시점 값
     ctx = app.engine.open_context(app.store.load_run(res.run_id))
     assert ctx.get("scoreReport.document").threshold == 80
     assert ctx.get("scoreReport.document").settings_snapshot["scoring"]["threshold"] == 80
@@ -202,7 +215,7 @@ def test_rewrite_uses_its_own_entry(clock):
 # ── 워커 호출처 나누기 ────────────────────────────────
 def test_worker_routes_rewrite_real_and_stub_tasks_fake(tmp_path, db):
     app, web, real, source = real_worker_app(tmp_path)
-    app.scenario.check_fail_times["T-S1"] = 1
+    empty_features_once(real)                                               # 실구현 T-S1 첫 시도 불통과 → 재수행
     rid = worker_to_screen6(app, web, source)
     web.orchestrator.decide(rid, 6, "진행")
     worker(app, lease_sec=60).run_once("w")
@@ -210,7 +223,7 @@ def test_worker_routes_rewrite_real_and_stub_tasks_fake(tmp_path, db):
     [rw] = by_purpose(real, PURPOSE_REWRITE)
     assert (rw.metadata["task_id"], rw.metadata["agent"]) == ("T-S1", "조율")
     real_tasks = {q.metadata["task_id"] for q in real.requests if q.metadata["purpose"] != PURPOSE_REWRITE}
-    assert real_tasks == {"T-C1", "T-C3"}
+    assert real_tasks == {"T-C1", "T-C3", "T-S1", "T-S2", "T-W1", "T-W2", "T-V1"}   # 구현 Task만 (spec 4.15)
     fake_tasks = {q.metadata["task_id"] for q in app.llm.requests}
     assert {"T-B1", "T-B2", "T-V2"} <= fake_tasks                           # 호출처가 openai여도 스텁이면 가짜로
     recs = records(web, rid)

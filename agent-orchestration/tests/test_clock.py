@@ -170,7 +170,7 @@ def test_notifications_read_from_web_table_carry_utc(tmp_path):
 
 def test_proofread_logs_created_at_is_save_time_in_utc(tmp_path):
     app, clock = sql_app(tmp_path, datetime(2026, 9, 26, 18, 0, tzinfo=KST),
-                         StubScenario(tp1_targets=1, tp2_behavior={"s-1-1-1": ["violate", "ok"]}))
+                         StubScenario(tp1_targets=1, tp2_behavior={"s-3.1.1-1": ["violate", "ok"]}))
     rid = to_screen9(app)
     set_consent(app, rid)
     before = as_utc(clock.t)

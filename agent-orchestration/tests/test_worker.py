@@ -245,7 +245,7 @@ def test_worker_waits_for_rework_collecting_window(db):
     assert (run.state.step, run.last_rework.status, run.last_rework.bundles) == (
         "문서평가", "완료", ["문제인식", "팀 구성"])
     assert [r.task_id for r in app.store.executions(rid) if r.cycle_id == acc.cycle_id] == [
-        "T-W1", "T-W2", "T-W3", "M-1", "T-V1", "G-02a"]
+        "T-W1", "M-1", "T-V1", "G-02a"]                                          # 두 묶음 모두 본문 항목뿐 (spec 4.11)
 
 
 def test_error_outside_steps_backs_off(db):

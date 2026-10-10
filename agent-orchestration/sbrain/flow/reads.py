@@ -529,9 +529,9 @@ def _score(report: ScoreReport) -> ScoreView:
 def _options(ctx: RunContext, orders: list[ReworkOrder]) -> list[ReworkOption]:
     """판정 지시를 그대로 보여 주고, 묶음 · 남은 기회는 묶음 요청(request_rework_for_project)과 같은 이름으로 센다.
 
-    산출물층 지시 → 그 Task의 묶음(실행 파일 · 인포그래픽). 문서층 지시 → 문서층 묶음 4개 전부, 남은 기회는 4개 중
-    가장 많이 남은 값(잠정 — 임시 처리에서는 어느 이름으로 요청해도 계획서 전체를 다시 만든다). 고를 수 있음 = 그 값 > 0
-    (원페이지 실행 파일 · 요청할 수 없는 묶음은 고를 수 없음).
+    산출물층 지시 → 그 Task의 묶음(실행 파일 · 인포그래픽). 문서층 지시 → 그 지시의 묶음(targets — 판정은 묶음마다 지시
+    하나를 낸다), 남은 기회는 그 묶음의 남은 기회다(spec 4.11). 고를 수 있음 = 그 값 > 0 (원페이지 실행 파일 · 요청할 수
+    없는 묶음 · 묶음 이름이 없는 지시는 고를 수 없음). 기회를 다 쓴 묶음도 목록에 남는다(고를 수 없게 표시, spec 4.12 ③).
     """
     usage = {u.bundle_id: u.remaining for u in ctx.run.rework_usage}
     per_bundle = ctx.settings.rework.per_bundle
@@ -540,7 +540,8 @@ def _options(ctx: RunContext, orders: list[ReworkOrder]) -> list[ReworkOption]:
     for o in orders:
         bundles = order_bundles(o)
         remaining = max((usage.get(b, per_bundle) for b in bundles), default=per_bundle)
-        blocked = any(b not in BUNDLE_LAYER for b in bundles) or (onepage and BUNDLE_EXECUTABLE in bundles)
+        blocked = (not bundles or any(b not in BUNDLE_LAYER for b in bundles)
+                   or (onepage and BUNDLE_EXECUTABLE in bundles))
         out.append(ReworkOption(order=o, bundles=bundles, remaining=remaining,
                                 selectable=remaining > 0 and not blocked))
     return out
