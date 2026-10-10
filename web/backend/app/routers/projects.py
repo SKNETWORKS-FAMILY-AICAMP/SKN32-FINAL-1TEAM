@@ -851,6 +851,17 @@ async def create_project(
         db.add(TeamMember(project_id=project.project_id, name=m.name, role=m.role, experience=m.experience))
     for p in body.pricing_items:
         db.add(PricingItem(project_id=project.project_id, service_name=p.service_name, unit_price=p.unit_price))
+    # [SB-331] 사업비 집행계획 · 추진 일정 — 오케스트레이터가 request_start 때 이 두 표를 읽으므로 아래 commit으로 먼저 저장해 둔다.
+    # item_order는 보낸 배열 순서(1부터)다.
+    for order, item in enumerate(body.budget_items, start=1):
+        db.add(ProjectBudgetItem(
+            project_id=project.project_id, item_order=order, phase=item.phase, category=item.category,
+            execution_plan=item.execution_plan, total_amount=item.total_amount, government_amount=item.government_amount,
+            self_cash_amount=item.self_cash_amount, self_in_kind_amount=item.self_in_kind_amount))
+    for order, item in enumerate(body.schedule_items, start=1):
+        db.add(ProjectScheduleItem(
+            project_id=project.project_id, item_order=order, section=item.section, category=item.category,
+            content=item.content, period=item.period, detail=item.detail))
     # [2026-09-22 배선] IntakeForm.jsx "사업 계획" 섹션 — project당 1행(ProjectPlanInput 참고).
     db.add(ProjectPlanInput(
         project_id=project.project_id,
