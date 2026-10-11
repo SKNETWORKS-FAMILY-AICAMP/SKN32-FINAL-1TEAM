@@ -127,7 +127,8 @@ def test_rework_result_completed_with_changed_sections_and_files(authed_client, 
     assert body['bundles'] == ['문제인식', '실행 파일 제작']
     assert body['before_score'] == 50.0 and body['after_score'] == 58.0
     assert [s['body'] for s in body['plan_after']] == ['새 본문', '그대로']
-    assert body['changed']['sections'] == {'1-1': {'before': '이전 본문', 'after': '새 본문'}}  # 같은 섹션은 뺀다
+    assert body['changed']['sections'] == {  # 같은 섹션은 뺀다. 옛 4항목 계획서는 항목 번호가 곧 태그
+        '1-1': {'before': '이전 본문', 'after': '새 본문', 'tag': '1-1', 'title': '문제'}}
     assert body['changed']['executable_path'] == {
         'before': f'/projects/{pid}/artifact-files/rrrrrrrrrrrr/aaaaaaaaaaaa/uuuuuuuu/index.html',
         'after': f'/projects/{pid}/artifact-files/rrrrrrrrrrrr/bbbbbbbbbbbb/uuuuuuuu/index.html'}
@@ -194,3 +195,31 @@ def test_status_and_list_have_no_rework_when_not_reworking(authed_client, orch):
     assert (status['rework_screen'], status['collecting']) == (None, False)
     row = next(p for p in authed_client.get('/projects').json() if p['project_id'] == pid)
     assert (row['rework_screen'], row['collecting']) == (None, False)
+
+
+def test_changed_sections_are_keyed_by_item_number_and_carry_tag_and_title(authed_client, orch):
+    """재작성 전후 비교(changed.sections)의 키는 항목 번호이고, 화면이 묶음 이름을 보일 수 있게 항목마다 웹 태그 · 제목을 덧붙인다."""
+    pid = _create(authed_client)
+    orch.responses['rework_result'] = lambda p: _result(
+        plan_before=[make_section('2.4.1', '문제 정의', '이전 문제', tag='1-1'), make_section('2.4.2', '시장', '그대로', tag='1-1'),
+                     make_section('2.5.1', '실현', '이전 실현', tag='2-1')],
+        plan_after=[make_section('2.4.1', '문제 정의', '새 문제', tag='1-1'), make_section('2.4.2', '시장', '그대로', tag='1-1'),
+                    make_section('2.5.1', '실현', '새 실현', tag='2-1'), make_section('2.5.2', '추가 항목', '새로 생김', tag='2-1')])
+
+    sections = authed_client.get(f'/projects/{pid}/rework-result').json()['changed']['sections']
+
+    assert list(sections) == ['2.4.1', '2.5.1', '2.5.2']  # 안 바뀐 2.4.2는 뺀다 · 새로 생긴 항목은 before가 None
+    assert sections['2.4.1'] == {'before': '이전 문제', 'after': '새 문제', 'tag': '1-1', 'title': '문제 정의'}
+    assert sections['2.5.2'] == {'before': None, 'after': '새로 생김', 'tag': '2-1', 'title': '추가 항목'}
+    # 기존 화면이 읽는 before · after 칸은 그대로다
+    assert all({'before', 'after'} <= set(v) for v in sections.values())
+
+
+def test_changed_sections_tag_is_none_for_items_without_a_bundle(authed_client, orch):
+    pid = _create(authed_client)
+    orch.responses['rework_result'] = lambda p: _result(
+        plan_before=[make_section('2.1.1', '일반현황', '이전')], plan_after=[make_section('2.1.1', '일반현황', '이후')])
+
+    sections = authed_client.get(f'/projects/{pid}/rework-result').json()['changed']['sections']
+
+    assert sections == {'2.1.1': {'before': '이전', 'after': '이후', 'tag': None, 'title': '일반현황'}}

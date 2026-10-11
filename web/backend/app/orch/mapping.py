@@ -620,10 +620,13 @@ def rework_changed(project_id: int, result) -> dict:
     if result.plan_before is not None and result.plan_after is not None:
         before = {s.section_code: section_body(s) for s in result.plan_before}
         after = {s.section_code: section_body(s) for s in result.plan_after}
+        # 키는 항목 번호(section_code)다 — SB-310부터 항목 번호가 '2.4.1'처럼 오고, 예전에는 키가 곧 웹 태그('1-1')였다.
+        # 화면이 묶음 이름을 보이려면 쓸 수 있게 항목마다 웹 태그(tag, 없으면 None)와 제목(title)을 덧붙인다(before · after는 그대로).
+        sections = {s.section_code: s for s in [*result.plan_before, *result.plan_after]}
         changed['sections'] = {
-            tag: {'before': before.get(tag), 'after': after.get(tag)}
-            for tag in [*before, *[t for t in after if t not in before]]
-            if before.get(tag) != after.get(tag)
+            code: {'before': before.get(code), 'after': after.get(code), 'tag': _web_tag(sections[code]), 'title': sections[code].title}
+            for code in [*before, *[c for c in after if c not in before]]
+            if before.get(code) != after.get(code)
         }
     for f in result.files:
         key = 'executable_path' if f.artifact == 'prototype' else 'infographic_path'
