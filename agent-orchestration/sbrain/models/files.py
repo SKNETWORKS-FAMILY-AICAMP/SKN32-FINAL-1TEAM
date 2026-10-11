@@ -1,6 +1,6 @@
 """파일 참조 FileRef (확장 타입) — 산출물 파일을 DB 글자 칸에 담지 않고 파일 저장소에 두며, 계약 칸에는 참조만 싣는다.
 
-- 기준 문서 타입에 담을 곳이 없는 참조 타입이라 새 타입으로 둔다(결정 0023 — docs/standards.md 7절 예외).
+- 기준 문서 타입에 담을 곳이 없는 참조 타입이라 새 타입으로 둔다.
 - FileRef는 Orchestrator가 파일을 넣을 때(tools.files.put) 만들어 돌려준다. Agent는 받은 값을 그대로 출력에 싣는다.
   엔진이 저장 전에 출력 안의 FileRef를 저장소와 대조한다(실행 건 · 있음 · 형식 · 크기 · sha256).
 - 허용 형식 8종 · 파일 하나 30MB는 사용자가 정한 값이다(잠정이 아님).
@@ -88,7 +88,7 @@ def size_problem(size: int) -> str | None:
 
 
 class FileRef(SBModel):
-    """확장 타입 — 파일 참조 (결정 0023). JSON 이름: key · name · mediaType · size · sha256.
+    """확장 타입 — 파일 참조. JSON 이름: key · name · mediaType · size · sha256.
 
     key       저장소 안 위치. Orchestrator가 짓는다: '<runId>/<executionId>/<고유값>/<name>'
     name      파일 이름 (예: index.html · onepage.svg · README.md)

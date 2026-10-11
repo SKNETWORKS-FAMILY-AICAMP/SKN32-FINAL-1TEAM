@@ -2,8 +2,10 @@
 
 | verification_policies | Settings |
 |---|---|
-| doc_weight | 문서층 배점 (scoring.docLayerMax) |
-| code_weight + plan_weight | 산출물층 배점 (scoring.artifactLayerMax) |
+| doc_weight | 문서층 배점 D (scoring.docLayerMax) |
+| code_weight | 코드 점검 배점 C (scoring.codeCheckMax, 확장 — spec 4.6) |
+| plan_weight | 계획서 대조 배점 P (scoring.featureMatchMax, 확장 — spec 4.6) |
+| code_weight + plan_weight | 산출물층 배점 C + P (scoring.artifactLayerMax) |
 | pass_threshold | Threshold (scoring.threshold) |
 | rerun_cap | 재수행 횟수 (redo.redoCount) |
 | rework_cap | 재작성 횟수 — 묶음마다 (rework.perBundle) |
@@ -35,7 +37,9 @@ class DbSettingsProvider(SettingsProvider):
         if row is None:
             return s
         s.scoring.doc_layer_max = float(row["doc_weight"])
-        s.scoring.artifact_layer_max = float(row["code_weight"]) + float(row["plan_weight"])
+        s.scoring.code_check_max = float(row["code_weight"])
+        s.scoring.feature_match_max = float(row["plan_weight"])
+        s.scoring.artifact_layer_max = s.scoring.code_check_max + s.scoring.feature_match_max
         s.scoring.threshold = float(row["pass_threshold"])
         s.scoring.deviation_cap = float(row["deviation_cap"])
         s.redo.redo_count = int(row["rerun_cap"])

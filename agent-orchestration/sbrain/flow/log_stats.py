@@ -8,6 +8,8 @@
   (메시지에 그 값을 넣지 않는다).
 - 층별 채점 출처(SCORE_LAYERS)와 현재 점수(current_scores)는 관리자 조회(reads.py)와 같은 정의 하나를 쓴다.
   산출물을 읽지 않고 실행 기록의 출력 요약 메타만 본다 — 완전 삭제 뒤에도 셀 수 있다.
+- 코드 점검 · 계획서 대조 · 산출물층 점수는 검증-2 원점수(출력 요약)를 그 실행 건 설정 사본 배점으로 환산해 싣는다
+  (score_scale.py — spec 4.6 D11). 실행 줄 data.maxScores에 그 실행 건 만점(D · C · P)을 함께 싣는다.
 """
 from __future__ import annotations
 
@@ -22,9 +24,11 @@ from ..models.base import Category, ErrorKind, KeptSide, Trigger
 from ..models.clock import UTC_MIN, kst_month
 from ..orchestrator.errors import COMMAND_ERROR_CODES, ERROR_CODES
 from ..orchestrator.store import FINISHED_REQUEST, LogStatsRow, StartRequest
-from ..orchestrator.trace import CallLog, ExecutionRecord, FeedbackLink, PointerEvent, TraceEvent
+from ..orchestrator.trace import CallLog, ExecutionRecord, FeedbackLink, OutputMeta, PointerEvent, TraceEvent
+from .score_scale import ScoreMaxes, scale_artifact_scores, score_maxes
 
 # 층별 채점 출처 — (층 이름, 채점 Task, 실행 기록 출력 요약 필드). 산출물을 읽지 않고 실행 기록만 본다.
+# 코드 점검 · 계획서 대조는 원점수(0 ~ 15)라 읽을 때 layer_score가 그 실행 건 배점으로 환산한다
 SCORE_LAYERS = (("docScore", "T-V1", "score"), ("codeCheck", "T-V2", "code_check_score"),
                 ("featureMatch", "T-V2", "feature_match_score"))
 # 산출물로 가르는 층 — (층 이름, 산출물 키). 그 산출물을 낸 성공 실행의 출력 요약 score(산출물 · 점수 보고서 total)
@@ -50,14 +54,38 @@ IMAGE_TOKEN_KEYS = (("image_input_tokens", "input"), ("image_output_tokens", "ou
 REWORK_FAILED_EVENT = "재작성실패"   # 엔진 rollback_cycle이 남기는 추적 사건 종류
 
 
-def current_scores(pointers: dict[str, int], records: list[ExecutionRecord]) -> dict[str, float | None]:
-    """현재 버전(되돌리기 반영) 점수 — 포인터가 가리키는 버전을 만든 실행 기록의 출력 요약에서 읽는다."""
+def layer_score(layer: str, meta: OutputMeta, maxes: ScoreMaxes) -> float | None:
+    """SCORE_LAYERS 층 하나의 점수 — 문서층(docScore)은 출력 요약 그대로, 코드 점검 · 계획서 대조는 그 실행 건 배점
+    (maxes — 설정 사본)으로 환산한 값. 부르는 쪽이 그 층의 채점 Task 기록인지 확인한다."""
+    if layer == "docScore":
+        return meta.score
+    scaled = scale_artifact_scores(meta.code_check_score, meta.feature_match_score, maxes)
+    return scaled.code_check_score if layer == "codeCheck" else scaled.feature_match_score
+
+
+def artifact_layer_score(meta: OutputMeta, maxes: ScoreMaxes) -> float | None:
+    """산출물층 점수 — 출력 요약의 코드 점검 · 대조 원점수를 그 실행 건 배점으로 환산한 합. 두 원점수가 없는 기록이면
+    출력 요약 score(산출물층 원점수 합) 그대로. 통과 필수 조건 실패는 생산자가 두 원점수를 0으로 내는 것에 기댄다."""
+    scaled = scale_artifact_scores(meta.code_check_score, meta.feature_match_score, maxes)
+    return scaled.artifact_layer_score if scaled.artifact_layer_score is not None else meta.score
+
+
+def current_scores(pointers: dict[str, int], records: list[ExecutionRecord], *,
+                   maxes: ScoreMaxes | None = None) -> dict[str, float | None]:
+    """현재 버전(되돌리기 반영) 점수 — 포인터가 가리키는 버전을 만든 실행 기록의 출력 요약에서 읽는다.
+
+    산출물층(artifact)은 그 실행 건 배점(maxes — score_maxes(run.settings_snapshot), 없으면 기본 배점)으로 환산한다.
+    문서층 · 총점(scoreReport.overall)은 출력 요약 그대로다.
+    """
+    maxes = maxes or ScoreMaxes()
     meta = {ref: r.output_meta for r in records if r.status == "성공" for ref in r.outputs}
 
     def score(key: str) -> float | None:
         version = pointers.get(key)
         m = meta.get(f"{key}@{version}") if version is not None else None
-        return m.score if m is not None else None
+        if m is None:
+            return None
+        return artifact_layer_score(m, maxes) if key == "artifactScore" else m.score
     return {name: score(key) for name, key in CURRENT_SCORE_KEYS}
 
 
@@ -94,8 +122,9 @@ def _counts(values: Iterable[str | None], keys: tuple[str, ...], extra: tuple[st
     return out
 
 
-def _scores(executions: list[ExecutionRecord]) -> dict[str, list[dict[str, Any]]]:
-    """층별 채점 — 성공한 실행 기록의 출력 요약에서, 끝 시각 순(되돌린 채점 포함). 재작성 뒤 = 계기 '재작성'."""
+def _scores(executions: list[ExecutionRecord], maxes: ScoreMaxes) -> dict[str, list[dict[str, Any]]]:
+    """층별 채점 — 성공한 실행 기록의 출력 요약에서, 끝 시각 순(되돌린 채점 포함). 재작성 뒤 = 계기 '재작성'.
+    코드 점검 · 계획서 대조 · 산출물층은 그 실행 건 배점(maxes)으로 환산한 값이다."""
     events: dict[str, list[tuple[Any, float, bool]]] = {
         layer: [] for layer in [*(lay for lay, _, _ in SCORE_LAYERS), *(lay for lay, _ in OUTPUT_SCORE_LAYERS)]}
     for r in executions:
@@ -103,14 +132,15 @@ def _scores(executions: list[ExecutionRecord]) -> dict[str, list[dict[str, Any]]
             continue
         after = r.trigger == "재작성"
         when = r.ended_at or UTC_MIN
-        for layer, task, attr in SCORE_LAYERS:
-            score = getattr(r.output_meta, attr) if r.task_id == task else None
+        for layer, task, _attr in SCORE_LAYERS:
+            score = layer_score(layer, r.output_meta, maxes) if r.task_id == task else None
             if score is not None:
                 events[layer].append((when, float(score), after))
         keys = {ref.rsplit("@", 1)[0] for ref in r.outputs}
         for layer, key in OUTPUT_SCORE_LAYERS:
-            if key in keys and r.output_meta.score is not None:
-                events[layer].append((when, float(r.output_meta.score), after))
+            score = artifact_layer_score(r.output_meta, maxes) if key == "artifactScore" else r.output_meta.score
+            if key in keys and score is not None:
+                events[layer].append((when, float(score), after))
     return {layer: [{"score": s, "afterRework": a} for _, s, a in sorted(entries, key=lambda e: e[0])]
             for layer, entries in events.items()}
 
@@ -156,10 +186,12 @@ def run_stats_row(run: Run, records: RunRecords, *, pointers: dict[str, int], re
     if records.is_empty():
         return None
     category = run.category or (category_fallback if category_fallback in CATEGORIES else None)
+    maxes = score_maxes(run.settings_snapshot)   # 그 실행 건 설정 사본 배점 (옛 사본은 기본 70 · 15 · 15)
     data: dict[str, Any] = {
         "step": run.state.step,
-        "scores": _scores(records.executions),
-        "finalScores": current_scores(pointers, records.executions),
+        "scores": _scores(records.executions, maxes),
+        "finalScores": current_scores(pointers, records.executions, maxes=maxes),
+        "maxScores": maxes.as_stats(),
         "tasks": _tasks(records.executions, records.calls),
         "rework": {
             "cycles": len({c.cycle_id for c in records.comparisons}),
@@ -196,5 +228,5 @@ def start_request_rows(requests: list[StartRequest], reason: str) -> list[LogSta
 
 __all__ = [
     "CURRENT_SCORE_KEYS", "KIND_REQUEST", "KIND_RUN", "OUTPUT_SCORE_LAYERS", "REASONS", "SCORE_LAYERS", "RunRecords",
-    "current_scores", "run_stats_row", "start_request_rows",
+    "artifact_layer_score", "current_scores", "layer_score", "run_stats_row", "start_request_rows",
 ]

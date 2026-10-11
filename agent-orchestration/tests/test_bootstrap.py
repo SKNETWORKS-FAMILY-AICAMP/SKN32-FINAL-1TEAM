@@ -306,7 +306,7 @@ def test_router_sends_only_implemented_tasks_to_real():
     router = TaskRoutedImageProvider(real, fake, IMPLEMENTED_TASKS)
     implemented = sorted(IMPLEMENTED_TASKS)[0]
     router.create(image_request(implemented))
-    router.create(image_request("T-B2"))                                  # T-B2는 아직 스텁 — 가짜로
+    router.create(image_request("T-B2"))                                  # real_tasks에 없는 Task — 가짜로
     assert len(real.requests) == 1 and len(fake.requests) == 1
     assert fake.requests[0].metadata["task_id"] == "T-B2" and "T-B2" not in IMPLEMENTED_TASKS
 

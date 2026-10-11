@@ -19,7 +19,7 @@ from ...orchestrator.errors import ToolCallExhausted
 from . import contract
 from .inputs import EARLY_STARTUP, PRE_STARTUP, document_type
 
-# 동시 호출 수 (사용자 결정 2026-10-10 — 잠정 아님, spec 4.14)
+# 동시 호출 수 (잠정 아님, spec 4.14)
 TW1_CONCURRENCY = 4    # 본문 항목
 TV1_CONCURRENCY = 4    # 항목 검증
 TW2_CONCURRENCY = 2    # 그림 두 개

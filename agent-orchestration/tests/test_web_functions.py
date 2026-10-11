@@ -319,7 +319,7 @@ def test_rework_result_artifact_paths_then_failure(clock):
     ok = rework(app, clock, rid, "실행 파일")[0]
     r = app.orchestrator.rework_result(p)
     assert (r.status, r.kept, r.screen, r.cycle_id) == ("완료", "후", 8, ok.cycle_id)
-    [f] = r.files                                                               # 진입 파일 참조의 전후 (결정 0023)
+    [f] = r.files                                                               # 진입 파일 참조의 전후
     assert f.artifact == "prototype"
     assert (f.before_file.name, f.after_file.name) == ("index.html", "index.html")   # 진입 파일명 (2026-09-30 결정 9)
     assert f.before_file.key != f.after_file.key                                 # 넣을 때마다 새 키

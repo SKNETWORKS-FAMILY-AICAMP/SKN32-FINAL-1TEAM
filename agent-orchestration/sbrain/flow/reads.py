@@ -18,7 +18,7 @@
 - 지금까지 결과(outputs) · 재작성 결과(rework_result)는 실패 · 중단 실행 건이면 CommandError("RUN_NOT_VIEWABLE").
   사용자용 결과에는 관리자용 실패 사유를 싣지 않는다 — 실패는 진행 상태와 안내(E-RUN-FAIL)로만 보인다.
 - 관리자 조회는 메타데이터 · 점수 · 개수만 돌려준다. 산출물 · 입력 · 문장 내용을 싣지 않는다(기획서 4-7 · 6-7).
-- 산출물 파일 읽기(read_artifact_file, 확장 — 결정 0023)는 파일 내용을 ArtifactFile(파이썬 dataclass, JSON으로 바꾸지
+- 산출물 파일 읽기(read_artifact_file, 확장)는 파일 내용을 ArtifactFile(파이썬 dataclass, JSON으로 바꾸지
   않음)로 준다. 형식 · 이름은 저장소에 넣을 때 기록한 값이다. 거절 사유(CommandError detail)에 키 · 이름을 넣지 않는다.
 - 파일 삭제 대기열 관리자 조회(admin_file_deletions · admin_retry_file_deletion, 확장)는 줄의 메타데이터만 준다(키 접두어 없음).
 """
@@ -45,7 +45,9 @@ from ..models.domain import FILE_NOTE, EvalItem, FormatFinding, Infographic, Pro
 from ..models.files import FileRef, file_key_problem
 from ..models.rework import ReworkComparison
 from ..models.run import ReworkResultStatus
-from ..models.scoring import ArtifactScore, CodeCheckResult, DocScore, FeatureMatchResult, ScoreReport
+from ..models.scoring import (
+    SCALE_NOTE, ArtifactScore, CodeCheck, CodeCheckResult, DocScore, FeatureMatchResult, ScoreReport,
+)
 from ..orchestrator import settings
 from ..orchestrator.context import RunContext, parse_ref
 from ..orchestrator.errors import CommandError, FileDeletionNotFound, FileDeletionNotGivenUp, message
@@ -53,11 +55,13 @@ from ..orchestrator.files import FileMissing, sha256_hex
 from ..orchestrator.store import FILE_DELETION_STATUSES, ExecutionFilter, FileDeletion, RunFilter
 from ..orchestrator.trace import ExecutionRecord
 # 층별 채점 출처 · 현재 점수는 기록 통계 줄(finalScores · scores)과 같은 정의 하나 — log_stats.py에 있다
-from .log_stats import SCORE_LAYERS
+from .log_stats import SCORE_LAYERS, layer_score
 from .log_stats import current_scores as _current_scores
 from .retention import retention_cutoff
 from .rework_map import ARTIFACT_BUNDLES, BUNDLE_EXECUTABLE, BUNDLE_LAYER, DOCUMENT_BUNDLES, order_bundles
 from .sbrain_flow import CANDIDATE_LIMIT, candidate_lists
+# 산출물층 환산 (spec 4.6 D11) — 관리자 조회의 코드 점검 · 계획서 대조 · 산출물층 점수는 그 실행 건 설정 사본 배점으로 환산한다
+from .score_scale import ScoreMaxes, score_maxes
 
 if TYPE_CHECKING:
     from .service import SBrainOrchestrator
@@ -94,6 +98,21 @@ class ScoreView(SBModel):
     carried_over_layer: str | None = None
     comparisons: list[ReworkComparison] = Field(default_factory=list)
     notices: list[str] = Field(default_factory=list)
+    # 환산 칸 (확장, spec 4.6 · 4.13) — 점수 보고서의 같은 이름 칸을 그대로 옮긴다. 웹은 층 점수 · 만점 · 코드 점검 항목 줄을
+    # 지금 정책 값이 아니라 이 칸으로 그린다. G-02a 보고서는 docLayerMax만 있다
+    doc_layer_max: float | None = ext(None, note=f"{SCALE_NOTE} — 문서층 만점 D")
+    code_check_score: float | None = ext(None, note=f"{SCALE_NOTE} — 코드 점검 환산 점수")
+    code_check_max: float | None = ext(None, note=f"{SCALE_NOTE} — 코드 점검 만점 C")
+    feature_match_score: float | None = ext(None, note=f"{SCALE_NOTE} — 계획서 대조 환산 점수")
+    feature_match_max: float | None = ext(None, note=f"{SCALE_NOTE} — 계획서 대조 만점 P")
+    artifact_layer_score: float | None = ext(None, note=f"{SCALE_NOTE} — 산출물층 환산 점수")
+    artifact_layer_max: float | None = ext(None, note=f"{SCALE_NOTE} — 산출물층 만점 C + P")
+    code_check_items: list[CodeCheck] = ext(default_factory=list, note=f"{SCALE_NOTE} — 코드 점검 항목 줄(환산)")
+
+
+# 점수 보고서 → ScoreView로 그대로 옮기는 환산 칸 (파이썬 이름)
+SCALED_SCORE_FIELDS = ("doc_layer_max", "code_check_score", "code_check_max", "feature_match_score",
+                       "feature_match_max", "artifact_layer_score", "artifact_layer_max", "code_check_items")
 
 
 class CandidatesScreen(Screen):
@@ -218,7 +237,7 @@ class Outputs(SBModel):
 
 class ReworkFileChange(SBModel):
     """재작성으로 바뀐 산출물 파일의 전후 참조 (prototype: 진입 파일, infographic: 이미지). 파일 내용은 들어 있지 않다 —
-    웹은 참조의 키로 파일을 따로 읽는다 (결정 0023)."""
+    웹은 참조의 키로 파일을 따로 읽는다."""
     artifact: str
     before_file: FileRef | None = ext(None, note=FILE_NOTE)
     after_file: FileRef | None = ext(None, note=FILE_NOTE)
@@ -319,7 +338,9 @@ class AdminRun(SBModel):
 
     current_task: 지금 단계(대기열 맨 앞, 비었으면 마지막으로 돈 단계), agent: 그 담당 Agent(내부 단계 CYCLE-END는 None),
     attempt: 가장 나중에 기록된 실행의 시도 번호.
-    점수는 현재 버전(되돌리기 반영) — 문서층 docScore.total, 산출물층 artifactScore.total, 총점 scoreReport.overall.total.
+    점수는 현재 버전(되돌리기 반영) — 문서층 docScore.total, 산출물층 = 그 버전을 만든 T-V2 출력 요약의 코드 점검 · 대조
+    원점수를 그 실행 건 설정 사본 배점으로 환산한 합, 총점 scoreReport.overall.total.
+    doc_max · artifact_max: 그 실행 건 설정 사본의 문서층 만점 D · 산출물층 만점 C + P.
     failure_reason: 관리자용 실패 사유 (사용자용 결과에는 없다).
     """
     project_id: str | None
@@ -336,6 +357,9 @@ class AdminRun(SBModel):
     resume_count: int
     last_error_kind: str | None = None
     failure_reason: str | None = None
+    # 그 실행 건 설정 사본의 만점 (확장, spec 4.6 · 4.13)
+    doc_max: float | None = ext(None, note=f"{SCALE_NOTE} — 문서층 만점 D (그 실행 건 설정 사본)")
+    artifact_max: float | None = ext(None, note=f"{SCALE_NOTE} — 산출물층 만점 C + P (그 실행 건 설정 사본)")
 
 
 class ScoreEntry(SBModel):
@@ -349,14 +373,18 @@ class ScoreEntry(SBModel):
 class AdminScoreHistory(SBModel):
     """admin_score_history 결과 — 층별 채점 이력, 최근 순 (웹 이력보기와 같은 순서).
 
-    doc_score: 문서층(T-V1 docScore.total), code_check: 코드 점검(T-V2 codeCheck.total),
-    feature_match: 계획서 대조(T-V2 featureMatch.score). 되돌린 채점도 남는다(채점 기록이다).
+    doc_score: 문서층(T-V1 docScore.total), code_check: 코드 점검(T-V2 codeCheck.total을 그 실행 건 배점 C로 환산),
+    feature_match: 계획서 대조(T-V2 featureMatch.score를 그 실행 건 배점 P로 환산). 되돌린 채점도 남는다(채점 기록이다).
     """
     project_id: str | None
     run_id: str
     doc_score: list[ScoreEntry]
     code_check: list[ScoreEntry]
     feature_match: list[ScoreEntry]
+    # 그 실행 건 설정 사본의 만점 (확장, spec 4.6 · 4.13)
+    doc_max: float | None = ext(None, note=f"{SCALE_NOTE} — 문서층 만점 D (그 실행 건 설정 사본)")
+    code_check_max: float | None = ext(None, note=f"{SCALE_NOTE} — 코드 점검 만점 C (그 실행 건 설정 사본)")
+    feature_match_max: float | None = ext(None, note=f"{SCALE_NOTE} — 계획서 대조 만점 P (그 실행 건 설정 사본)")
 
 
 class ScoreBucket(SBModel):
@@ -414,7 +442,7 @@ class AdminAgentTask(SBModel):
 
 
 class AdminFileDeletion(SBModel):
-    """확장 — 파일 삭제 대기열 한 줄 (결정 0023, orch_file_deletions). 메타데이터만 — 키 접두어 · 파일 이름 · 오류 메시지 ·
+    """확장 — 파일 삭제 대기열 한 줄 (orch_file_deletions). 메타데이터만 — 키 접두어 · 파일 이름 · 오류 메시지 ·
     계정 · 프로젝트 ID는 싣지 않는다. 사람을 가리키는 값은 retried_by(다시 시도를 누른 관리자 ID)뿐이다.
 
     status: 대기 · 포기, attempts: 이번 대기 이후 실패한 시도 수, last_error_kind: 일시 · 입력 · 운영.
@@ -435,7 +463,7 @@ class AdminFileDeletion(SBModel):
 
 @dataclass(frozen=True, repr=False)
 class ArtifactFile:
-    """확장 — 산출물 파일 읽기 결과 (결정 0023). SBModel이 아니다 — JSON으로 바꾸지 않는다.
+    """확장 — 산출물 파일 읽기 결과. SBModel이 아니다 — JSON으로 바꾸지 않는다.
 
     웹은 data를 그대로 응답 본문으로, media_type을 응답 형식으로 쓴다. name · media_type은 저장소에 넣을 때 기록한 값이다
     (웹이 넘긴 값으로 정하지 않는다). repr에 내용을 싣지 않는다.
@@ -523,7 +551,8 @@ def _score(report: ScoreReport) -> ScoreView:
     return ScoreView(display_score=report.display_score, total=report.total, threshold=report.threshold,
                      passed=report.passed, phase=report.phase, doc_score=report.doc_score,
                      artifact_score=report.artifact_score, carried_over_layer=report.carried_over_layer,
-                     comparisons=list(report.comparisons), notices=list(report.notices))
+                     comparisons=list(report.comparisons), notices=list(report.notices),
+                     **{name: getattr(report, name) for name in SCALED_SCORE_FIELDS})
 
 
 def _options(ctx: RunContext, orders: list[ReworkOrder]) -> list[ReworkOption]:
@@ -666,7 +695,7 @@ def rework_result(orch: SBrainOrchestrator, project_id: int | str) -> ReworkResu
         plan_after=sections(after.get("planDoc")) if changed_plan else None, files=files)
 
 
-# ── 산출물 파일 읽기 (확장, 결정 0023) ─────────────────────────
+# ── 산출물 파일 읽기 (확장) ─────────────────────────
 def read_artifact_file(orch: SBrainOrchestrator, project_id: int | str, key: str) -> ArtifactFile:
     """프로젝트 실행 건의 파일 하나 — 웹이 주인 확인을 한 뒤 부른다. 읽기만 한다(점유 없음, 쓰기 · 지우기 없음).
 
@@ -736,14 +765,15 @@ SCORE_BUCKETS = (("90~100점", 90, 100), ("80~89점", 80, 89), ("70~79점", 70, 
 TRIGGERS = ("첫실행", "재작성", "재수행")
 
 
-def _score_events(records: list[ExecutionRecord]) -> dict[str, list[ScoreEntry]]:
-    """층별 채점 기록 (오래된 순). 채점 = 성공한 T-V1 · T-V2 실행, 재작성 뒤 = 재작성 사이클 안의 실행(trigger 재작성)."""
+def _score_events(records: list[ExecutionRecord], maxes: ScoreMaxes) -> dict[str, list[ScoreEntry]]:
+    """층별 채점 기록 (오래된 순). 채점 = 성공한 T-V1 · T-V2 실행, 재작성 뒤 = 재작성 사이클 안의 실행(trigger 재작성).
+    코드 점검 · 계획서 대조는 그 실행 건 배점(maxes)으로 환산한 값이다 (통계 줄 scores와 같은 계산 — log_stats.layer_score)."""
     events: dict[str, list[ScoreEntry]] = {layer: [] for layer, _, _ in SCORE_LAYERS}
     for r in records:
         if r.status != "성공":
             continue
-        for layer, task, field in SCORE_LAYERS:
-            score = getattr(r.output_meta, field) if r.task_id == task else None
+        for layer, task, _field in SCORE_LAYERS:
+            score = layer_score(layer, r.output_meta, maxes) if r.task_id == task else None
             if score is not None:
                 events[layer].append(ScoreEntry(scored_at=r.ended_at, score=score, after_rework=r.trigger == "재작성",
                                                 execution_id=r.execution_id))
@@ -775,7 +805,8 @@ def admin_runs(orch: SBrainOrchestrator, *, progress: str | None = None, step: s
     for run in orch.store.query_runs(RunFilter(progress=progress, step=step, limit=limit, offset=offset,
                                                updated_since=_admin_since(orch))):
         records = orch.store.executions(run.run_id)
-        scores = _current_scores(orch.store.get_pointers(run.run_id), records)
+        maxes = score_maxes(run.settings_snapshot)   # 그 실행 건 배점 — 지금 설정이 아니다
+        scores = _current_scores(orch.store.get_pointers(run.run_id), records, maxes=maxes)
         # 지금 Task — 대기열 맨 앞(도는 중 · 다음에 돌 단계, 재개대기면 재개할 단계), 대기열이 비었으면 마지막으로 돈 단계
         task = run.queue[0] if run.queue else run.current_task
         agent = orch.engine.registry.get(task).agent if task and orch.engine.registry.has(task) else None
@@ -784,7 +815,7 @@ def admin_runs(orch: SBrainOrchestrator, *, progress: str | None = None, step: s
             current_task=task, agent=agent, attempt=records[-1].attempt if records else None,
             updated_at=run.updated_at, doc_score=scores["doc"], artifact_score=scores["artifact"],
             total_score=scores["total"], resume_count=run.resume_count, last_error_kind=run.last_error_kind,
-            failure_reason=run.failure_reason))
+            failure_reason=run.failure_reason, doc_max=maxes.doc, artifact_max=maxes.artifact))
     return out
 
 
@@ -792,8 +823,11 @@ def admin_score_history(orch: SBrainOrchestrator, project_id: int | str) -> Admi
     run = orch.store.find_run_by_project(project_id)
     if run is None:
         raise CommandError("RUN_NOT_FOUND", str(project_id))
-    events = _score_events(orch.store.executions(run.run_id))
+    maxes = score_maxes(run.settings_snapshot)   # 그 실행 건 배점 — 지금 설정이 아니다
+    events = _score_events(orch.store.executions(run.run_id), maxes)
     return AdminScoreHistory(project_id=run.project_id, run_id=run.run_id,
+                             doc_max=maxes.doc, code_check_max=maxes.code_check,
+                             feature_match_max=maxes.feature_match,
                              **{field: list(reversed(events[layer])) for layer, field in (
                                  ("docScore", "doc_score"), ("codeCheck", "code_check"),
                                  ("featureMatch", "feature_match"))})
@@ -810,6 +844,7 @@ def admin_summary(orch: SBrainOrchestrator) -> AdminSummary:
     - 재작성 비율 = 재작성 실행 기록이 있는 실행 건 / 실행 기록이 하나라도 있는 실행 건 × 100.
     - 층별 변화: 실행 건마다 그 층의 첫 채점과 마지막 재작성 뒤 채점(재작성 사이클 안의 마지막 채점)이 둘 다 있는 것만
       센다. 첫 평균 · 재작성 뒤 평균은 소수 1자리, 차이 = 재작성 뒤 평균 - 첫 평균(반올림한 평균끼리, 웹과 같다).
+      코드 점검 · 계획서 대조 점수는 실행 건마다 그 실행 건 설정 사본 배점으로 환산한 값이다(spec 4.6).
     - 시도 계기별: 실행 기록 수, 평균 토큰 = (입력 + 출력) 합 / 그 계기의 실행 기록 수(토큰 기록이 없는 실행은 0).
     - 표현 검수: 실행 건마다 현재 sentenceResults의 시도(attempts) 수 · 보호 토큰 검사 불통과 시도 수,
       반려 비율 = 반려 / 시도 × 100.
@@ -838,14 +873,15 @@ def admin_summary(orch: SBrainOrchestrator) -> AdminSummary:
         status[run.state.progress] += 1
         records = by_run.get(run.run_id, [])
         pointers = orch.store.get_pointers(run.run_id)
-        scores = _current_scores(pointers, records)
+        maxes = score_maxes(run.settings_snapshot)   # 실행 건마다 그 실행 건 배점으로 환산
+        scores = _current_scores(pointers, records, maxes=maxes)
         if scores["doc"] is not None:
             docs.append(scores["doc"])
         if scores["total"] is not None:
             totals.append(scores["total"])
         if any(r.trigger == "재작성" for r in records):
             reworked += 1
-        for layer, entries in _score_events(records).items():
+        for layer, entries in _score_events(records, maxes).items():
             after = [e for e in entries if e.after_rework]
             if entries and after and after[-1].execution_id != entries[0].execution_id:
                 firsts[layer].append(entries[0].score)

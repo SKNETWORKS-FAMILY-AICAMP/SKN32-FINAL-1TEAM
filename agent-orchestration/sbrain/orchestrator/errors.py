@@ -46,7 +46,8 @@ ERROR_CODES: dict[str, ErrorCode] = {e.code: e for e in [
     ErrorCode("E-AUTH-CONSENT", "로그인", "필수 항목에 동의해야 계정과 작업 결과를 보관할 수 있습니다.", "진입 중단"),
     ErrorCode("E-AUTH-PROFILE", "로그인 · R-9", "서비스를 이용하려면 먼저 마이페이지에서 프로필을 만들어주세요.", "새 실행 불가"),
     ErrorCode("E-RUN-CONCURRENT", "R-9", "진행 중인 작업이 있습니다. 이어서 진행하거나, 중단하고 새로 시작할 수 있습니다. 중단하면 지금까지의 결과를 다시 볼 수 없습니다.", "blocked=true"),
-    ErrorCode("E-G2-UNREACHABLE", "G-02b", "프로토타입만 다시 만들어서는 기준 점수에 이르지 못합니다. 계획서 항목을 함께 선택해주세요.", "버튼을 막지 않음"),
+    ErrorCode("E-G2-UNREACHABLE", "G-02b", "프로토타입만 다시 만들어서는 기준 점수에 이르지 못합니다. 계획서 항목을 함께 선택해주세요.",
+              "버튼을 막지 않음. 계획서 묶음의 기회가 남지 않았으면 둘째 문구(UNREACHABLE_NO_DOC_CHANCE)"),
     ErrorCode("E-RUN-FAIL", "R-9 · R-11", "일시적인 문제로 작업을 완료하지 못했습니다. 새 작업으로 다시 시작해주세요.", "progress='실패'"),
     ErrorCode("E-RUN-ROLLBACK", "R-6 · R-11", "일시적인 문제로 다시 만들지 못해 이전 결과로 되돌렸습니다. 다시 만들 기회는 그대로 남아 있습니다.", "되돌림 · 기회 반환"),
     ErrorCode("E-RUN-CLOSED", "R-9", "선택하신 공고의 접수가 마감되었습니다. 계속 진행할지 선택해주세요.", "마감 사실만 알림"),
@@ -61,6 +62,8 @@ ERROR_CODES: dict[str, ErrorCode] = {e.code: e for e in [
 
 # E-C2-EMBED 덧붙임 — 대체 경로가 마감 임박순이면 문구 끝에 붙인다 (기준 문서 T-C2, spec 4.1.3)
 EMBED_DEADLINE_SUFFIX = " 마감 임박순으로 보여드립니다."
+# E-G2-UNREACHABLE 둘째 문구 — 계획서 묶음의 재작성 기회가 남지 않은 경우 (기준 문서 v1.10 시트 6 r27)
+UNREACHABLE_NO_DOC_CHANCE = "남은 항목을 다시 만들어도 기준 점수에 이르지 못합니다. 이대로 진행할 수 있습니다."
 
 
 # CommandError 코드 (확장) — 웹이 받는 명령 · 조회 거절 사유. 시트 6 결과 코드(E-…)는 위 ERROR_CODES에 있다
@@ -84,7 +87,7 @@ COMMAND_ERROR_CODES: dict[str, str] = {
     "INVALID_ACTION": "잘못된 동작",
     "E-G2-LIMIT": "재작성 기회 소진",
     "NOT_ACTIVE": "진행 중이 아닌 실행 건을 중단 (내부 — abort_project가 받는다)",
-    # 산출물 파일 (확장, 결정 0023) — 메시지(detail)에 키 · 파일 이름 · 계정을 넣지 않는다
+    # 산출물 파일 (확장) — 메시지(detail)에 키 · 파일 이름 · 계정을 넣지 않는다
     "FILE_NOT_FOUND": "그 실행 건의 파일이 아님 · 키 규칙 위반 · 저장소에 없음 · 내용이 저장 값(sha256)과 다름 (구분하지 않음)",
     "FILE_STORE_UNAVAILABLE": "파일 저장소 설정 없음 — 웹 조립에 SBRAIN_ARTIFACT_ROOT(절대 경로)가 없음",
     "FILE_DELETION_NOT_FOUND": "없는 파일 삭제 대기열 줄",
@@ -182,8 +185,8 @@ class ProjectRunExists(OrchestratorError):
 
 
 class FileDeletionNotFound(OrchestratorError):
-    """없는 파일 삭제 대기열 줄 (확장, 결정 0023). 메시지에 ID를 넣지 않는다."""
+    """없는 파일 삭제 대기열 줄 (확장). 메시지에 ID를 넣지 않는다."""
 
 
 class FileDeletionNotGivenUp(OrchestratorError):
-    """'포기'가 아닌 파일 삭제 대기열 줄을 다시 시도하려 함 (확장, 결정 0023). 메시지에 ID를 넣지 않는다."""
+    """'포기'가 아닌 파일 삭제 대기열 줄을 다시 시도하려 함 (확장). 메시지에 ID를 넣지 않는다."""

@@ -1,4 +1,4 @@
-"""계약 파일 칸의 참조형 교체 (결정 0023 · spec 4.5).
+"""계약 파일 칸의 참조형 교체 (spec 4.5).
 
 - 스텁이 파일을 tools.files(G-04는 파일 창구 인자)로 넣고 참조를 싣는다 — 진입 파일 · 인포그래픽 · 안내 문서 · 계획서 파일
 - M-2 감싸기(인포그래픽 그림 참조 → 진입 파일, 자산 없음), M-3 안내 문서 기입, T-C4 최종 묶음 참조 목록
@@ -59,7 +59,8 @@ def capture(app, task_id: str) -> list:
 # ── 계약 · 등록부 ────────────────────────────────────────
 def test_old_fields_are_gone_and_new_fields_shape():
     assert set(Prototype.model_fields) == {"entry_file", "kind", "asset_files", "readme_file", "implemented_features"}
-    assert set(Infographic.model_fields) == {"image_file", "format", "alt_text"}
+    # icon_fallback — 기본 아이콘 대체 표시 (확장, spec 4.13 — 파일 칸이 아니다)
+    assert set(Infographic.model_fields) == {"image_file", "format", "alt_text", "icon_fallback"}
     assert Prototype.model_fields["entry_file"].default is None                 # 비면 진입 파일 없음
     assert Prototype.model_fields["asset_files"].is_required()
     assert c.G04Out.model_fields["readme_file"].is_required()
@@ -115,7 +116,8 @@ def test_web_flow_puts_stub_files_and_carries_refs(clock):
     proto, info = ctx.get("prototype"), ctx.get("infographic")
     assert (proto.entry_file.name, proto.entry_file.media_type) == ("index.html", "text/html")
     assert proto.entry_file == ctx.get("entryFile") and proto.asset_files == []
-    assert (info.image_file.name, info.image_file.media_type) == ("infographic.png", "image/png")
+    # 인포그래픽은 모든 카테고리 SVG (spec 4.3)
+    assert (info.image_file.name, info.image_file.media_type) == ("infographic.svg", "image/svg+xml")
     assert proto.readme_file == ctx.get("readmeFile") and proto.readme_file.name == "README.md"
     assert all(ch.image_file is None for ch in ctx.get("planDoc").charts)         # 차트 그림은 비운다
     for ref in (proto.entry_file, info.image_file, proto.readme_file):
@@ -204,7 +206,7 @@ def test_outputs_carry_refs_without_file_content(clock):
     assert set(proto) == {"entryFile", "kind", "assetFiles", "readmeFile", "implementedFeatures"}
     assert set(proto["entryFile"]) == REF_KEYS and set(proto["readmeFile"]) == REF_KEYS
     assert proto["entryFile"]["name"] == "index.html" and proto["assetFiles"] == []
-    assert set(info) == {"imageFile", "format", "altText"} and set(info["imageFile"]) == REF_KEYS
+    assert set(info) == {"imageFile", "format", "altText", "iconFallback"} and set(info["imageFile"]) == REF_KEYS
     assert set(d) == {"planDocFile", "prototypeFiles", "infographicFile", "scoreReport", "proofreadLog",
                       "disclaimer", "prototypeNotice", "scoreNotice", "submissionNotice"}
     assert [f["name"] for f in d["prototypeFiles"]] == ["index.html", "README.md"]

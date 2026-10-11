@@ -9,7 +9,7 @@
 - 가산점(bonus_score · bonus_items)은 가산점 스위치(orchestrator/settings.py BONUS_ENABLED, 잠정 · 기본 꺼짐)가
   켜져 있을 때만 읽고 검사한다. 꺼져 있으면 키를 읽지 않고 카드는 bonus_score=None · bonus_items=[]다 — 공고팀
   시험 단계의 값이 잘못된 모양이어도 공고 매칭이 실패하지 않는다.
-- 결과 순서와 rank는 받은 그대로 둔다. 적합도 · 가산점으로 다시 정렬하지 않는다(사용자 결정).
+- 결과 순서와 rank는 받은 그대로 둔다. 적합도 · 가산점으로 다시 정렬하지 않는다.
 - 대체 경로는 공고 서버가 안에서 한다 — 우리 쪽 대체 경로는 없고 ToolCallExhausted를 받지 않고 올려 보낸다.
   대체 경로 안내(E-C2-EMBED)는 흐름이 fallback_used를 보고 붙인다.
 - 첫 조회와 겹치는 후보 · 내용 바뀜(contentChanged)은 흐름 규칙이다(4.2.2) — 여기서는 늘 False로 둔다.

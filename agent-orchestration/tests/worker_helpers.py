@@ -13,7 +13,7 @@ from partner_fake import partner_reply
 from webdb import new_project
 
 from sbrain.agents.partner_sw.purposes import PURPOSES
-from sbrain.agents.stubs import FakeLLM, StubScenario
+from sbrain.agents.stubs import FakeImage, FakeLLM, StubScenario
 from sbrain.bootstrap import App, build_app, build_stub_app, build_web
 from sbrain.intake import MemoryProjectInputSource
 from sbrain.models.clock import utc_now
@@ -73,7 +73,8 @@ def real_worker_app(tmp_path, clock=utc_now) -> tuple[App, App, FakeLLM, MemoryP
     real.respond("T-C3", _guidance_reply)
     for task_id in (*REWRITE_TARGETS, "T-V1"):                                   # 다시 쓰기 호출의 task_id는 대상 Task
         real.respond(task_id, _guidance_reply)
-    app = build_app(url, project_inputs=source, llm=real, now=clock)
+    # 실제 이미지 호출처도 가짜로 둔다 — 화면 6 뒤까지 돌리는 테스트가 respond_bv_worker를 빠뜨려도 OpenAI로 나가지 않게
+    app = build_app(url, project_inputs=source, llm=real, now=clock, image=FakeImage())
     web = build_web(url, profile_count=lambda a: 1, project_inputs=source, now=clock)
     return app, web, real, source
 
@@ -108,6 +109,25 @@ def worker_to_screen6(app: App, web: App, source: MemoryProjectInputSource) -> s
 
 def by_purpose(llm: FakeLLM, purpose: str) -> list[LLMRequest]:
     return [q for q in llm.requests if q.metadata["purpose"] == purpose]
+
+
+def respond_bv_worker(app: App, real: FakeLLM) -> FakeImage:
+    """워커 조립(real_worker_app)을 화면 6 뒤(프로토타입 구간)까지 돌릴 때 — 실제 호출처(가짜 LLM)가 구현 · 검증-2 실구현
+    (T-B1 · T-B2 · T-V2)의 목적별 호출에도 답하게 하고(그 Task를 대상으로 한 지시문 다시 쓰기는 지금처럼 안내로), 워커의
+    실제 이미지 호출처(T-B2 아이콘판 — 기본은 OpenAI)를 가짜 이미지로 바꾼다(네트워크 없음). 바꾼 가짜 이미지를 돌려준다."""
+    from bv_fake import BV_TASKS, bv_reply
+
+    from sbrain.agents.supervisor.plan import PURPOSE_REWRITE
+
+    def reply(request: LLMRequest) -> str:
+        if request.metadata.get("purpose") == PURPOSE_REWRITE:
+            return _guidance_reply(request)
+        return bv_reply(request)
+    for task_id in BV_TASKS:
+        real.respond(task_id, reply)
+    image = FakeImage()
+    app.engine.image_providers["openai"].real = image
+    return image
 
 
 # ── 공고 Task 묶임 ────────────────────────────────────

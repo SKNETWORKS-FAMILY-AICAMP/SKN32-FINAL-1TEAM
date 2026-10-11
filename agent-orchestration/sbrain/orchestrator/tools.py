@@ -16,13 +16,15 @@ tools는 호출마다 재시도 · 제한 시간 · 오류 종류 분류를 맡�
   제한 시간은 Task 설정의 이미지 제한 시간(image_timeout_sec), 호출 기록은 call_type 'image' · 이미지 호출처 · 이미지 모델.
   이미지 모델 설정이 없는 Task가 부르면 호출처를 부르지 않고 바로 실패한 호출 하나를 기록하고 ToolCallExhausted를 올린다.
   지시문 · 입력 그림 · 결과 그림은 어떤 기록 · 예외 메시지에도 남기지 않는다(repr에서도 뺀다).
-- 파일 창구(확장, 결정 0023): files.put(이름, 내용, 형식) -> FileRef, files.get(FileRef) -> 내용. 저장소 호출은 같은 재시도 ·
+- 파일 창구(확장): files.put(이름, 내용, 형식) -> FileRef, files.get(FileRef) -> 내용. 저장소 호출은 같은 재시도 ·
   오류 분류(_call)를 거치고 호출 기록은 call_type 'file' · 목적 put · get이다. 이름 · 형식 · 크기 위반, 실행 건이 '실행'이 아닌
   넣기, 다른 실행 건 파일 읽기는 저장소를 부르지 않고 FileRejected다. 파일 내용 · 이름 · 키는 기록 · 예외 메시지에 넣지 않는다.
-- 목적별 모델(확장, 결정 0024): llm(purpose=p)는 ToolsConfig.purpose_models에 p가 있으면 그 모델로 부르고 호출 기록의
+- 목적별 모델(확장): llm(purpose=p)는 ToolsConfig.purpose_models에 p가 있으면 그 모델로 부르고 호출 기록의
   model에도 그 모델을 남긴다. 호출처 · 온도 · 추론 강도 · 제한 시간 · 재시도는 Task 설정 그대로다. 목적 이름은 Task가 정하고
   tools · 엔진은 사전을 그대로 쓴다.
 - JSON 객체 응답(확장, spec 4.1): llm(json_mode=True)는 요청(LLMRequest.json_mode)에 실어 보낸다. 호출 기록 칸은 늘리지 않는다.
+- 목적 · 항목 칸 길이: 호출 기록(CallLog)의 purpose · item_key는 만들 때 trace.CALL_LOG_TEXT_MAX(DB 칸 길이)로 뒤를 자른다.
+  목적별 모델 찾기와 요청 메타데이터는 자르기 전 값이다. 모든 Task · 호출 종류에 같은 규칙(_call 한 곳).
 """
 from __future__ import annotations
 
@@ -39,7 +41,7 @@ from ..models.base import CallError, ErrorKind
 from ..models.files import FileRef, file_name_problem, media_type_problem, size_problem
 from .errors import FileRejected, FormatError, ProviderError, ToolCallExhausted
 from .files import FileConflict, FileMeta, FileMissing, FileStore, sha256_hex
-from .trace import FILE_CALL, CallLog, CallTry, add_tokens
+from .trace import FILE_CALL, CallLog, CallTry, add_tokens, clip_call_text
 
 T = TypeVar("T")
 
@@ -202,7 +204,7 @@ class _Immediate(Exception):
 
 
 class FileTool:
-    """파일 창구 (확장, 결정 0023) — tools.files. 파일을 쓰는 규칙 단계(G-04)는 이것을 두 번째 인자로 받는다.
+    """파일 창구 (확장) — tools.files. 파일을 쓰는 규칙 단계(G-04)는 이것을 두 번째 인자로 받는다.
 
     Task 함수(스텁 · 실구현)는 파일을 저장소 · 디스크에 직접 쓰거나 읽지 않고 이것으로만 한다.
     """
@@ -417,8 +419,9 @@ class Tools:
             task_id=ctx.task_id,
             agent=cfg.agent,
             call_type=call_type,
-            purpose=purpose,
-            item_key=self._item_key,
+            # 기록 칸만 DB 칸 길이로 자른다 — 모델 찾기 · 요청 메타데이터는 원래 목적 그대로 (spec 4.12)
+            purpose=clip_call_text(purpose),
+            item_key=clip_call_text(self._item_key),
             provider=cfg.provider if llm else cfg.image_provider if image else None,
             model=(model or cfg.model) if llm else cfg.image_model if image else None,
             temperature=cfg.temperature if llm else None,

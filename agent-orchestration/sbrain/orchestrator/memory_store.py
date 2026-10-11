@@ -72,7 +72,7 @@ class MemoryStore:
         self._account_locks: dict[str, threading.RLock] = {}     # 계정 잠금 (SQL의 GET_LOCK · 프로세스 잠금과 같은 뜻)
         self._account_guard = threading.Lock()
         self.account_lock_timeout: float = ACCOUNT_LOCK_TIMEOUT_SEC
-        # 파일 삭제 대기열 (확장, 결정 0023) — deletion_id → 줄. 실행 건이 지워져도 남는다(기록 표가 아니다)
+        # 파일 삭제 대기열 (확장) — deletion_id → 줄. 실행 건이 지워져도 남는다(기록 표가 아니다)
         self._file_deletions: dict[str, FileDeletion] = {}
         self.file_deletion_delay_sec: float = FIRST_DELAY_SEC   # 넣은 뒤 첫 시도까지 (잠정)
 
@@ -589,7 +589,7 @@ class MemoryStore:
                 return job
             return replace(job, last_summary=dict(job.last_summary))
 
-    # ── 파일 삭제 대기열 (확장, 결정 0023) ──────────────
+    # ── 파일 삭제 대기열 (확장) ──────────────
     def _enqueue_file_deletion(self, run_id: str) -> None:
         """산출물을 지우는 같은 잠금 안에서 부른다 — 줄이 없으면 넣고, '포기'면 '대기'로 되돌리고, '대기'면 그대로."""
         now = self._now()

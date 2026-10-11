@@ -1,4 +1,4 @@
-"""산출물 파일 읽기 · 파일 삭제 대기열 관리자 함수 · 파일 저장소 조립 (결정 0023 · spec 4.7 · 4.8).
+"""산출물 파일 읽기 · 파일 삭제 대기열 관리자 함수 · 파일 저장소 조립 (spec 4.7 · 4.8).
 
 - read_artifact_file: 저장된 내용 · 형식(넣을 때 기록한 값), 다른 실행 건 키 · 키 규칙 위반 · 없는 파일 · sha256 불일치는
   FILE_NOT_FOUND, 실패 · 중단 실행 건 RUN_NOT_VIEWABLE, 실행 건 없음 RUN_NOT_FOUND, 저장소 설정 없음 FILE_STORE_UNAVAILABLE.
@@ -17,7 +17,7 @@ import pytest
 from conftest import ARTIFACT_ROOT_KEY, Clock, make_app, start_and_select, to_screen8
 from flow_helpers import pid
 from store_helpers import uid
-from worker_helpers import real_worker_app, worker, worker_to_screen6
+from worker_helpers import real_worker_app, respond_bv_worker, worker, worker_to_screen6
 
 from sbrain import env
 from sbrain.agents.stubs import FakeLLM
@@ -142,7 +142,8 @@ def test_store_unavailable(clock):
 
 # ── 워커 조립 + 웹 조립: 같은 폴더 ─────────────────────────────
 def test_web_reads_files_written_by_worker(tmp_path, db):
-    app, web, _, source = real_worker_app(tmp_path)
+    app, web, real, source = real_worker_app(tmp_path)
+    respond_bv_worker(app, real)                                                  # 워커의 T-B1 · T-B2 · T-V2는 실구현
     assert isinstance(app.engine.files, LocalFolderFileStore) and not app.engine.files.read_only
     assert app.engine.files.root == (tmp_path / "artifacts").resolve()
     rid = worker_to_screen6(app, web, source)

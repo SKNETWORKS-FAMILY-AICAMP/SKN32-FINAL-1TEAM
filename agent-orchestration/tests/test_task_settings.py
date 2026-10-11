@@ -16,7 +16,9 @@ import pytest
 
 from conftest import make_app, pre_input, to_screen6, to_screen9
 from flow_helpers import run_review
-from worker_helpers import by_purpose, empty_features_once, real_worker_app, worker, worker_to_screen6
+from worker_helpers import (
+    by_purpose, empty_features_once, real_worker_app, respond_bv_worker, worker, worker_to_screen6,
+)
 
 from sbrain.agents.stubs import StubScenario
 from sbrain.agents.supervisor.plan import PURPOSE_REWRITE
@@ -59,7 +61,7 @@ def task_ids() -> set[str]:
     return {s.task_id for s in build_registry().specs() if s.kind == "task" and s.uses_llm}
 
 
-# LLM을 부르지 않는 Task — 모델 항목이 없다 (사용자 결정 2026-10-08, T-W3는 담당자 F17 규칙 코드 — spec 4.2)
+# LLM을 부르지 않는 Task — 모델 항목이 없다 (T-W3는 담당자 F17 규칙 코드 — spec 4.2)
 NO_LLM_TASKS = {"T-C2", "G-01", "T-W3", "T-C4"}
 # 전략 · 작성 · 검증-1 담당자 함수별 모델 (Task 모델, purposeModels) — spec 4.2
 PARTNER_MODELS = {
@@ -88,7 +90,9 @@ def test_task_keys_match_catalog_task_steps():
 def test_default_values():
     t = Settings().tasks
     row = lambda k: (t[k].provider, t[k].model, t[k].temperature, t[k].reasoning_effort)  # noqa: E731
-    for k in ("T-C1", "T-C3", REWRITE_KEY):
+    assert row("T-C1") == ("openai", "gpt-6-luna", None, "medium")          # T-C1만 medium
+    assert (t["T-C1"].image_provider, t["T-C1"].image_model) == (None, None)
+    for k in ("T-C3", REWRITE_KEY):
         assert row(k) == ("openai", "gpt-6-luna", None, "low"), k
     for k, (model, purposes) in PARTNER_MODELS.items():
         assert row(k) == ("openai", model, None, None) and t[k].purpose_models == purposes, k
@@ -215,6 +219,7 @@ def test_rewrite_uses_its_own_entry(clock):
 # ── 워커 호출처 나누기 ────────────────────────────────
 def test_worker_routes_rewrite_real_and_stub_tasks_fake(tmp_path, db):
     app, web, real, source = real_worker_app(tmp_path)
+    real_image = respond_bv_worker(app, real)                               # 구현 · 검증-2 실구현의 목적별 응답
     empty_features_once(real)                                               # 실구현 T-S1 첫 시도 불통과 → 재수행
     rid = worker_to_screen6(app, web, source)
     web.orchestrator.decide(rid, 6, "진행")
@@ -223,8 +228,11 @@ def test_worker_routes_rewrite_real_and_stub_tasks_fake(tmp_path, db):
     [rw] = by_purpose(real, PURPOSE_REWRITE)
     assert (rw.metadata["task_id"], rw.metadata["agent"]) == ("T-S1", "조율")
     real_tasks = {q.metadata["task_id"] for q in real.requests if q.metadata["purpose"] != PURPOSE_REWRITE}
-    assert real_tasks == {"T-C1", "T-C3", "T-S1", "T-S2", "T-W1", "T-W2", "T-V1"}   # 구현 Task만 (spec 4.15)
+    assert real_tasks == {"T-C1", "T-C3", "T-S1", "T-S2", "T-W1", "T-W2", "T-V1",
+                          "T-B1", "T-B2", "T-V2"}                           # 구현 Task만 (spec 4.15 · impl-verify2 4.10)
     fake_tasks = {q.metadata["task_id"] for q in app.llm.requests}
-    assert {"T-B1", "T-B2", "T-V2"} <= fake_tasks                           # 호출처가 openai여도 스텁이면 가짜로
+    assert not fake_tasks & {"T-B1", "T-B2", "T-V2"}                        # 실구현 호출은 가짜로 가지 않는다
+    assert {q.metadata["task_id"] for q in real_image.requests} == {"T-B2"}  # T-B2 아이콘판은 실제 이미지 호출처로
+    assert app.image.requests == []
     recs = records(web, rid)
     assert {recs[t].provider for t in ("T-B1", "T-B2", "T-V2")} == {"openai"}

@@ -4,7 +4,7 @@
 - 산출물층 미달 → 다시 돌릴 Task (artifact_rework_reasons — 통과 필수 조건 · 결함 출처 · 누락 · 부분 인정 · 보류)
 - 스텁 T-V2의 1.4판 점수식(부분 0.5) · 보류 · 진단 · 통과 필수 조건
 - 원페이지 계획서 재작성의 T-B2 → M-2 반영
-- T-B1 계획서 입력 · 재실행 때 이전 원문 참조(previous_source_file — 이전 진입 파일의 FileRef, 결정 0023)
+- T-B1 계획서 입력 · 재실행 때 이전 원문 참조(previous_source_file — 이전 진입 파일의 FileRef)
 - T-B2 이미지 호출 실패 예외와 '이미지대체' 사건
 흐름 테스트는 메모리 · SQLite 두 저장소에서 돈다 (clock 픽스처).
 """
@@ -85,7 +85,7 @@ def test_new_contract_fields_marking():
     assert "planDoc" not in extension_fields(c.TV2In)
     assert "diagnostics" not in extension_fields(c.TV2Out)
     assert "planDoc" not in extension_fields(c.TB1In)
-    assert "previousSourceFile" in extension_fields(ReworkInput)              # 참조형 — 기준 문서와 다름(결정 0023)
+    assert "previousSourceFile" in extension_fields(ReworkInput)              # 참조형 — 기준 문서와 다름
     # 기준 문서에 아직 없다 — 확장
     assert "check" in extension_fields(c.G04Out)
     # 기준 문서는 필수지만 옛 실행 건 호환으로 선택 선언을 지킨다
@@ -372,7 +372,7 @@ def test_onepage_document_rework_drop_reverts_plan_infographic_and_prototype(clo
         assert app.store.get_latest_versions(rid)[key] > before[key]      # 새로 만들었다가 되돌렸다
 
 
-# ── spec 4.3: 재실행 때 이전 원문 (참조 — 결정 0023) ───────────────────
+# ── spec 4.3: 재실행 때 이전 원문 (참조) ───────────────────
 def numbered_html(app) -> None:
     """T-B1이 실행마다 다른 진입 파일을 넣는다 — 내용 '<html>원문표지-n</html>'."""
     base, n = app.registry.get("T-B1").fn, [0]

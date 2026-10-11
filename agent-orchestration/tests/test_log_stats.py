@@ -12,6 +12,7 @@ from sbrain.flow.log_stats import RunRecords, run_stats_row, start_request_rows
 from sbrain.flow.reads import admin_runs
 from sbrain.models import Notice, ReworkComparison, Run
 from sbrain.models.run import make_state
+from sbrain.orchestrator.settings import ScoringSettings, Settings
 from sbrain.orchestrator.store import LogStatsRow, StartRequest
 from sbrain.orchestrator.trace import (
     CallLog, CallTry, ExecutionRecord, FeedbackLink, OutputMeta, PointerEvent, TraceEvent,
@@ -21,7 +22,7 @@ UTC = timezone.utc
 T0 = datetime(2026, 1, 31, 16, 0, tzinfo=UTC)   # 한국 2026-02-01 01:00
 M = "MARKER"                                     # 식별자 · 자유 글 표시 — 통계 줄 어디에도 나오면 안 된다
 
-TOP_KEYS = {"step", "scores", "finalScores", "tasks", "rework", "run"}
+TOP_KEYS = {"step", "scores", "finalScores", "maxScores", "tasks", "rework", "run"}   # maxScores — 산출물층 환산(spec 4.6)
 SCORE_KEYS = {"docScore", "codeCheck", "featureMatch", "artifactScore", "overall"}
 # 2026-10-05에 고정한 키 목록 + imageTokens (이미지 호출 토큰 — 글 토큰과 따로 센다, 2026-10-06)
 TASK_KEYS = {"runs", "status", "resumes", "retries", "errorKinds", "callErrorKinds", "tokens", "imageTokens"}
@@ -213,6 +214,23 @@ def test_final_scores_follow_pointers():
     assert row_of().data["finalScores"] == {"doc": 52.0, "artifact": 55.0, "total": 81.0}   # docScore는 되돌림
     assert row_of(pointers={"docScore": 2}).data["finalScores"] == {"doc": 60.0, "artifact": None, "total": None}
     assert row_of(pointers={}).data["finalScores"] == {"doc": None, "artifact": None, "total": None}   # 완전 삭제 뒤
+
+
+def test_max_scores_and_scaled_layers_use_run_snapshot():
+    # 옛 사본(배점 칸 없음 — settings_snapshot {})은 기본 배점이라 원점수 그대로
+    assert row_of().data["maxScores"] == {"docScore": 70.0, "codeCheck": 15.0, "featureMatch": 15.0}
+    snapshot = Settings(scoring=ScoringSettings(doc_layer_max=60, code_check_max=25, feature_match_max=5)).dump()
+    data = row_of(run=make_run(settings_snapshot=snapshot)).data
+    assert data["maxScores"] == {"docScore": 60.0, "codeCheck": 25.0, "featureMatch": 5.0}
+    assert data["scores"]["codeCheck"] == [{"score": 50.0, "afterRework": False}]          # 30 × 25 ÷ 15
+    assert data["scores"]["featureMatch"] == [{"score": 8.33, "afterRework": False}]       # 25 × 5 ÷ 15
+    assert data["scores"]["artifactScore"] == [{"score": 58.33, "afterRework": False}]
+    assert data["scores"]["docScore"][0] == {"score": 52.0, "afterRework": False}          # 문서층은 그대로
+    assert data["finalScores"] == {"doc": 52.0, "artifact": 58.33, "total": 81.0}
+    zero = Settings(scoring=ScoringSettings(code_check_max=0, feature_match_max=0)).dump()
+    data = row_of(run=make_run(settings_snapshot=zero)).data
+    assert data["maxScores"]["codeCheck"] == 0 and data["finalScores"]["artifact"] == 0
+    json.dumps(data)
 
 
 def test_task_counts():

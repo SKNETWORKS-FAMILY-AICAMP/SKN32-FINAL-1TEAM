@@ -51,6 +51,12 @@ class ScoringSettings(SBModel):
     doc_layer_max: float = 70
     artifact_layer_max: float = 30
     deviation_cap: float | None = ext(None, note="문서층 재채점 편차 상한 — 웹 verification_policies 값을 담아만 둔다 (검증-1 연동 전)")
+    # 산출물층 두 항목의 배점 (spec 4.6) — 검증-2 원점수(코드 점검 0 ~ 15 · 계획서 대조 0 ~ 15)를 이 배점으로 환산한다.
+    # 웹 verification_policies.code_weight · plan_weight. 산출물층 배점(artifact_layer_max)은 둘의 합으로 읽는다.
+    # 이 칸이 없는 옛 설정 사본은 15 · 15로 읽는다. 환산 · 판정은 artifact_layer_max를 읽지 않고 C + P를 쓴다
+    # (flow/score_scale.py) — artifact_layer_max는 웹 설정을 읽을 때(DbSettingsProvider) C + P로 맞춰 두는 표시용 칸이다
+    code_check_max: float = ext(15, note="코드 점검 배점 C — 웹 verification_policies.code_weight")
+    feature_match_max: float = ext(15, note="계획서 대조 배점 P — 웹 verification_policies.plan_weight")
 
 
 # 추론 강도 — OpenAI 추론 모델의 reasoning_effort 값 (모델마다 받는 값이 다르다)
@@ -83,13 +89,13 @@ class TaskModelSetting(SBModel):
     image_model: str | None = ext(None, note="이미지 모델 — None이면 이 Task는 이미지 호출을 쓸 수 없다")
     image_quality: str | None = ext(None, note="이미지 품질 기본값")
     image_size: str | None = ext(None, note="이미지 크기 기본값")
-    # 호출 목적별 모델 (확장, 결정 0024) — tools.llm(purpose=p)는 p가 여기 있으면 그 모델로, 없으면 model로 부른다.
+    # 호출 목적별 모델 (확장) — tools.llm(purpose=p)는 p가 여기 있으면 그 모델로, 없으면 model로 부른다.
     # 호출처 · 온도 · 추론 강도 · 제한 시간 · 재시도는 이 항목 그대로다. 엔진은 목적 이름을 모르고 사전을 그대로 옮긴다
     purpose_models: dict[str, str] = ext(
         default_factory=dict, note="호출 목적 → 모델 이름 — 없는 목적은 Task 모델. 이 칸이 없는 옛 사본은 빈 사전")
 
 
-# 재작성 · 재수행 때 조율이 대상 Task의 지시문 안내 부분을 다시 쓰는 호출의 설정 키 (Task가 아니다, 결정 0013).
+# 재작성 · 재수행 때 조율이 대상 Task의 지시문 안내 부분을 다시 쓰는 호출의 설정 키 (Task가 아니다).
 # 흐름이 tools_for(Agent 이름, 이 키)로 넘긴다. 엔진은 이 이름을 모른다
 REWRITE_SETTING_KEY = "지시문 다시 쓰기"
 
@@ -97,13 +103,15 @@ REWRITE_SETTING_KEY = "지시문 다시 쓰기"
 def _default_tasks() -> dict[str, TaskModelSetting]:
     # 모델명 · 호출처 · 기본 온도 · 추론 강도는 기준 문서가 정하지 않았다 (잠정).
     # 옛 Agent별 값을 그 Agent의 Task에 옮겼다. 조율은 OpenAI, 검수는 자체 GPU 서버의 파인튜닝 모델(기획서 5-2 · 5-7).
-    # 조율 모델은 사용자 지정(2026-09-30): gpt-6-luna, 추론 강도 low. 추론 모델이라 온도를 보내지 않는다.
+    # 조율 모델(2026-09-30): gpt-6-luna, 추론 강도 low. 추론 모델이라 온도를 보내지 않는다.
+    # T-C1만 추론 강도 medium. T-C1 안의 모든 호출
+    # (분류 · 사양 · 참조 자료 정리)이 이 항목을 쓴다. T-C3 · 지시문 다시 쓰기는 low 그대로.
     # T-B1 · T-B2 · T-V2는 구현 · 검증-2 담당 요청: gpt-6-luna, 추론 강도 기본값(보내지 않음), 온도 보내지 않음.
     # T-B2 이미지: openai · gpt-image-2.5-flare · medium · 1024x1536 (담당 요청).
     # T-S1 · T-S2 · T-W1 · T-W2 · T-V1은 전략 · 작성 · 검증-1 담당자 execution_contract.json의 apiModel(함수별 모델 —
-    # Task 모델 + 목적(F번호)별 모델 purposeModels), 호출처 openai, 온도 · 추론 강도 보내지 않음 (spec 4.2, 결정 0024).
-    def supervisor() -> TaskModelSetting:
-        return TaskModelSetting(provider="openai", model="gpt-6-luna", temperature=None, reasoning_effort="low")
+    # Task 모델 + 목적(F번호)별 모델 purposeModels), 호출처 openai, 온도 · 추론 강도 보내지 않음 (spec 4.2).
+    def supervisor(effort: ReasoningEffort = "low") -> TaskModelSetting:
+        return TaskModelSetting(provider="openai", model="gpt-6-luna", temperature=None, reasoning_effort=effort)
 
     def openai(model: str, purposes: dict[str, str] | None = None) -> TaskModelSetting:
         return TaskModelSetting(provider="openai", model=model, temperature=None, purpose_models=dict(purposes or {}))
@@ -112,7 +120,7 @@ def _default_tasks() -> dict[str, TaskModelSetting]:
         return openai("gpt-6-luna")
 
     # LLM을 부르지 않는 Task(T-C2 · G-01 · T-W3 · T-C4, 등록부 uses_llm=False)는 항목을 두지 않는다 — 엔진이 표를 보지 않는다
-    tasks: dict[str, TaskModelSetting] = {k: supervisor() for k in ("T-C1", "T-C3")}
+    tasks: dict[str, TaskModelSetting] = {"T-C1": supervisor("medium"), "T-C3": supervisor()}
     tasks["T-S1"] = openai("gpt-5.6-terra", {   # Task 모델 = F02
         "F01": "gpt-6-luna", "F05": "gpt-6-luna", "F06": "gpt-5.6-sol", "F07": "gpt-6.1-sol", "F08": "gpt-6.1-sol",
         "F09": "gpt-5.6-terra", "F13": "gpt-6-luna", "F14": "gpt-6-luna", "F15": "gpt-6-luna"})
@@ -190,7 +198,8 @@ PROVISIONAL: dict[str, str] = {
     "proofread.judgeTiming": "검수 실패 비율 판단 시점 — 구현하면서 정함",
     "tasks": "Task별 모델 · 호출처 · 기본 온도 · 추론 강도 · 이미지 설정, 실행 시작 시점 고정 — Task별로 두는 것은 기준 문서 "
              "v1.10(시트 1 · Run.settingsSnapshot)에 있고, 값은 기준 문서에 없음 "
-             "(LLM을 부르는 조율 Task · 지시문 다시 쓰기 gpt-6-luna · low는 사용자 지정, LLM을 부르지 않는 T-C2 · G-01 · T-C4는 "
+             "(LLM을 부르는 조율 Task · 지시문 다시 쓰기 gpt-6-luna는 사용자 지정 — 추론 강도는 T-C1 medium(사용자 결정 "
+             "2026-10-10, 모델 비교 테스트 — 결정 0025) · T-C3 · 지시문 다시 쓰기 low, LLM을 부르지 않는 T-C2 · G-01 · T-C4는 "
              "항목 없음(사용자 결정 2026-10-08), T-B1 · T-B2 · T-V2 gpt-6-luna(추론 강도 · "
              "온도 보내지 않음)와 T-B2 이미지 openai · gpt-image-2.5-flare · medium · 1024x1536은 구현 · 검증-2 담당 요청, "
              "T-S1 · T-S2 · T-W1 · T-W2 · T-V1의 Task 모델과 함수별 모델(purposeModels — 호출 목적 F번호 → 모델, 확장)은 "
@@ -217,8 +226,19 @@ PROVISIONAL: dict[str, str] = {
     "event.안내문서자체검사실패": "G-04 자체 검사가 재수행 횟수를 다 쓰고도 불통과 — 기록만 하고 계속 (점수 밖, T-C4 전달을 막지 않음)",
     "event.대체텍스트출처누락": "T-V2 HTML 2번(대체 텍스트) 미충족인데 defect_sources가 비어 있음 — 재작성 사유는 v1.9 매핑대로 "
                                "T-B2로 보내고 기록한다 (담당자는 늘 채운다고 함, 대비용)",
-    "event.이미지대체": "T-B2 실행 기록에 최종 실패인 이미지 호출이 있음 — 'T-B2 이미지 호출 실패 — 기본 아이콘으로 계속'. "
-                       "사용자 화면에는 알리지 않는다",
+    "event.이미지대체": "T-B2가 맞춤 아이콘판을 쓰지 못하고 기본 아이콘으로 대신한 세 경우(이미지 호출 실패 · 칸 수 불일치 · "
+                       "그림 해석 오류) — T-B2 실행 기록마다 하나(최종 실패인 이미지 호출이 있거나 출력 iconFallback이 "
+                       "참). 설명은 이미지 호출 실패면 'T-B2 이미지 호출 실패 — 기본 아이콘으로 계속', 그 밖(칸 수 불일치 · "
+                       "그림 해석 오류)이면 둘째 문구 'T-B2 맞춤 아이콘 사용 불가 — 기본 아이콘으로 계속'. 사용자 화면에는 "
+                       "알리지 않는다 (spec 4.3)",
+    # 구현 · 검증-2 끼우기 · 산출물층 환산 (spec 6) — 기준 문서에 없음
+    "g04.templateText": "G-04 안내 문서(README.md) 템플릿 문구와 빈 슬롯 기본 문구(아이템명 · 공고명이 비었을 때, 진입 파일이 "
+                        "없을 때 등) (agents/supervisor/, spec 4.8)",
+    "scoring.scaledRounding": "산출물층 환산 값은 소수 둘째 자리 반올림(0.5 올림 — Decimal ROUND_HALF_UP). 코드 점검 항목 줄의 환산 배점 합 = C, 환산 점수 합 = 층 "
+                              "값이 되도록 반올림 차이를 해당 항목 하나에 몰아준다 — 환산 점수 차이는 환산 점수가 환산 배점을 "
+                              "넘지 않는 항목에 (flow/ 환산 규칙 모듈, spec 4.6)",
+    "tv2.fileDecode": "T-V2가 진입 파일 · 안내 문서 · 인포그래픽을 UTF-8로 풀 때 풀 수 없는 바이트는 대체 문자로 바꾼다 "
+                      "(spec 4.4)",
     # 공고 연결 (공고 선택 · 자격 확인 G-01) — 기준 문서에 없음
     "taskTimeouts.G-01": "G-01 제한 시간 30초 — 공고 서버의 공고 상세 · 자격 판정 호출, T-C2와 같음",
     "announcement.bonusEnabled": "가산점 사용 스위치 BONUS_ENABLED 기본 꺼짐 — 공고팀 가산점은 시험 단계(2026-10-06 답변: "
@@ -284,7 +304,7 @@ PROVISIONAL: dict[str, str] = {
     "retention.checkSec": "워커가 보관 기간 작업을 돌 때인지 확인하는 주기 10분 (sbrain/worker.py JOB_CHECK_SEC)",
     "retention.leaseSec": "보관 기간 작업 점유 시간 = 워커 점유 시간(120초), 하트비트(30초)가 연장한다 — 워커가 멈추면 "
                           "이만큼 뒤에 다른 워커가 이어받는다",
-    # 파일 삭제 대기열 (orchestrator/file_deletion.py, 결정 0023) — 워커 프로세스 값이다. 포기 횟수 3은 사용자 결정이라 여기 없다
+    # 파일 삭제 대기열 (orchestrator/file_deletion.py) — 워커 프로세스 값이다. 포기 횟수 3은 확정값이라 여기 없다
     "fileDeletion.firstDelaySec": "넣은 뒤 첫 삭제 시도까지 600초(10분) — 워커 점유 시간(120초)보다 길게 두어 삭제 직전 단계의 "
                                   "늦은 쓰기가 끝난 뒤에 지운다 (orchestrator/file_deletion.py FIRST_DELAY_SEC)",
     "fileDeletion.retrySec": "삭제 실패 뒤 다시 시도 간격 · 가져간 줄을 미루는 시간 600초(10분) "
@@ -301,9 +321,9 @@ PROVISIONAL: dict[str, str] = {
     # 진행 기다리기 (flow/service.py wait_project) — 명령 창구 값이다
     "waitProject.timeoutSec": "wait_project 기본 제한 시간 60초 — 넘기면 그때의 진행 상태를 그대로 준다",
     "waitProject.pollSec": "wait_project가 DB를 다시 읽는 간격 0.5초",
-    # 산출물 파일 읽기 (flow/reads.py read_artifact_file, 결정 0023)
+    # 산출물 파일 읽기 (flow/reads.py read_artifact_file)
     "fileRead.hashMismatch": "읽은 내용의 sha256 · 크기가 저장된 값과 다르면 FILE_NOT_FOUND로 보고 관리자용 사유는 남기지 않는다",
-    # 조립 (bootstrap.py · worker.py, 결정 0023)
+    # 조립 (bootstrap.py · worker.py)
     "artifactRoot.workerRequired": "SBRAIN_ARTIFACT_ROOT가 없거나 절대 경로가 아니면 워커가 시작하지 않는다 "
                                    "(SBRAIN_DB_URL · OPENAI_API_KEY 없을 때와 같은 방식)",
 }

@@ -1,4 +1,4 @@
-"""파일 삭제 대기열 (spec 4.6, 결정 0023) — 저장소 계약(메모리 · SQLite · MySQL 8), 흐름의 넣기, 워커 처리.
+"""파일 삭제 대기열 (spec 4.6) — 저장소 계약(메모리 · SQLite · MySQL 8), 흐름의 넣기, 워커 처리.
 
 - 넣기: 완전 삭제(delete_artifacts) · 12개월 정리(retire_run(delete_run=True)) · 탈퇴가 같은 트랜잭션에서 넣는다.
   실행 건 하나에 줄 하나 — '대기'면 그대로, '포기'면 '대기'로 되돌린다. 동시에 넣어도 오류가 아니다.
@@ -420,7 +420,7 @@ def test_local_folder_prefix_deleted(tmp_path):
 def test_error_kinds_and_constants():
     assert error_kind_of(PermissionError()) == "일시" and error_kind_of(TimeoutError()) == "일시"
     assert error_kind_of(ValueError()) == "입력" and error_kind_of(RuntimeError()) == "운영"
-    assert MAX_ATTEMPTS == 3                                                      # 사용자 결정 — 잠정 목록에 없다
+    assert MAX_ATTEMPTS == 3                                                      # 잠정 목록에 없다
     assert {"fileDeletion.firstDelaySec", "fileDeletion.retrySec", "fileDeletion.batchSize"} <= set(PROVISIONAL)
     assert not any("maxAttempts" in k or "giveUp" in k for k in PROVISIONAL)
     assert FIRST_DELAY_SEC > 120 and BATCH_SIZE >= 1                              # 워커 점유 시간보다 길게

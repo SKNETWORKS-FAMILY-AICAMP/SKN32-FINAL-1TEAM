@@ -247,6 +247,8 @@ def test_web_and_worker_on_real_web_schema():
     assert (form.facilities, form.partners, form.revenue_unit_price) == ("태블릿 (보유)", "없음", 35000)
     scoring = run.settings_snapshot["scoring"]                                           # verification_policies 첫 행
     assert (scoring["threshold"], scoring["docLayerMax"], scoring["deviationCap"]) == (80.0, 70.0, 5.0)
+    # code_weight → 코드 점검 배점 C, plan_weight → 계획서 대조 배점 P, 산출물층 배점 = C + P (spec 4.6, 웹 기본값 15 · 15)
+    assert (scoring["codeCheckMax"], scoring["featureMatchMax"], scoring["artifactLayerMax"]) == (15.0, 15.0, 30.0)
 
 
 def test_plan_tables_on_real_web_schema():

@@ -1,14 +1,14 @@
 # 옮겨 온 담당자 코드 — 전략 · 작성 · 검증-1 (F01 ~ F19)
 
-담당자 코드를 파일 구조 그대로 옮기고 **연결부만** 우리 규칙으로 바꿨다(spec 4.1, 결정 0024). 담당자 새 판을 받으면 이 문서의 목록으로 비교해 다시 가져온다.
+담당자 코드를 파일 구조 그대로 옮기고 **연결부만** 우리 규칙으로 바꿨다(spec 4.1). 담당자 새 판을 받으면 이 문서의 목록으로 비교해 다시 가져온다.
 
 ## 1. 받은 판
 
 | 항목 | 값 |
 |---|---|
 | 받은 날짜 | 2026-10-08 |
-| 원본 사본(읽기 전용) | 담당자 브랜치의 `agent_strategy/` · `agent_validation_1/` (작업 공간에 받아 둠, 저장소 미포함) |
-| 시장 자료 출처 | 작업 공간에서 만든 `raw_kiet_results.json` — 저장소 미포함 (사용자가 2026-10-10 담당자 크롤러 `market_crawler.py all`을 별도 가상환경으로 돌려 만듦 — 키워드 12개 · 요약 114건) |
+| 원본 사본(읽기 전용) | 담당자 브랜치의 `agent_strategy/` · `agent_validation_1/` (작업 공간에 받아 둠) |
+| 시장 자료 출처 | 작업 공간에서 만든 `raw_kiet_results.json` (사용자가 2026-10-10 담당자 크롤러 `market_crawler.py all`을 별도 가상환경으로 돌려 만듦 — 키워드 12개 · 요약 114건) |
 | 실행 계약 버전 | `agent_strategy/runtime/execution_contract.json`의 `version` = 2 |
 | 채점 정책 버전 | `agent_validation_1/res/prompts/evaluation_rubric.json`의 `version` = 2026-10-02.1 |
 
@@ -58,7 +58,7 @@
 | `runtime/pipeline.py` `_writing_criteria` | 기준 폴더(`Path(__file__).resolve()`)를 모듈 상수 `_ROOT`로, 파일 읽기 `resources.read` | Task 실행 중 디스크 안 보기 |
 | `agent_validation_1/validation_1.py` `_regulation_evidence` | `path.exists()` · `path.read_text()` → `resources` | 같음 |
 | `agent_validation_1/scoring.py` `_source_evidence` · `score_section`(basis 확인) | `path.exists()` · `path.read_text()` → `resources` | 같음 |
-| 자료 `agent_validation_1/res/reference/regulations/예비창업패키지 세부관리기준(2025년).hwp.json` · `초기창업패키지 세부관리기준(2025년).hwp.json` | `error` 칸(변환 도구 hwp5의 경고 문구 — 담당자 PC 설치 경로가 들어 있음)을 `null`로 | 저장소에 담당자 PC 경로를 남기지 않는다(사용자 결정 2026-10-10). 이 칸은 어느 코드도 읽지 않아 동작이 같다. 다음 판을 받을 때 같은 칸이 다시 채워져 있으면 다시 지운다 |
+| 자료 `agent_validation_1/res/reference/regulations/예비창업패키지 세부관리기준(2025년).hwp.json` · `초기창업패키지 세부관리기준(2025년).hwp.json` | `error` 칸(변환 도구 hwp5의 경고 문구 — 담당자 PC 설치 경로가 들어 있음)을 `null`로 | 저장소에 담당자 PC 경로를 남기지 않는다. 이 칸은 어느 코드도 읽지 않아 동작이 같다. 다음 판을 받을 때 같은 칸이 다시 채워져 있으면 다시 지운다 |
 
 **바꾸지 않은 것(알려 둘 것)**
 - 응답 정리의 코드 울타리 처리(담당자 원본 버그 — 담당자 통보 거리): 원본 `llm_runtime.py` 182 ~ 186줄은 울타리를 떼고 `{…}`를 꺼내 읽는 데 성공해도 빠져나오지 않고 186줄의 '닫히지 않음' 예외를 늘 올린다(울타리 응답은 늘 실패). spec 4.1대로 그대로 두었다 — 우리 쪽에서는 `FormatError`라 `tools`가 다시 보낸다(`json_object` 요청이라 드물다). 담당자가 고치면 새 판을 받을 때 함께 따라온다.
@@ -116,5 +116,5 @@ def run_one(code):                                                  # 또는 스
 
 ## 6. 저장소 사본에서 뺀 경로
 
-- `sbrain/agents/partner_sw/agent_strategy/res/crawling/industry_research/output/` — 시장 자료(외부로 내보내지 않음 — 사용자 결정). 사본에 없으면 `research_context`가 빈 자료로 돈다('근거 없음 — 수치 · 경쟁사 추정 금지').
+- `sbrain/agents/partner_sw/agent_strategy/res/crawling/industry_research/output/` — 시장 자료(외부로 내보내지 않음). 사본에 없으면 `research_context`가 빈 자료로 돈다('근거 없음 — 수치 · 경쟁사 추정 금지').
 - 나머지 담당자 자료 파일(작성 규칙 · 검증 기준 · 공고 규정 JSON 등)은 코드의 일부라 사본에 들어간다.
