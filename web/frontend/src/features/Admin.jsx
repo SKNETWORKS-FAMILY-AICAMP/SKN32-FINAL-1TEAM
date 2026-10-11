@@ -193,8 +193,14 @@ const GEN_STAGE_LABEL={plan_writing:'사업계획서',prototype_building:'프로
 // 생성 완전 실패는 서버가 확정 실패 때마다 쌓는 generation_failure_alerts(GET /admin/generation-alerts)를
 // 쓴다 — "확인" 처리가 서버에 남아서 다른 PC·다른 관리자에게도 같이 사라진다. 알림 행이 없는
 // 예전 실패만 진행 현황(match_status)으로 보충한다.
-function adminAlertsFrom(items,executions,genAlerts=[]){
+function adminAlertsFrom(items,executions,genAlerts=[],fileDeletions=null){
   const alerts=[];
+  // 파일 삭제 포기(조율 8.9) — 워커가 3번 실패한 실행 건 파일. 사용자가 탈퇴한 뒤에도 남을 수 있어 관리자가 다시 걸어야 한다.
+  // 건수나 가장 최근 줄이 바뀌면 키가 달라져 다시 안 읽음 표시가 된다.
+  if(fileDeletions?.total>0){
+    const latest=fileDeletions.items?.[0];
+    alerts.push({key:`file-deletions:${fileDeletions.total}:${latest?.deletion_id??''}`,kind:'실패',title:`파일 삭제 포기 ${fileDeletions.total}건`,detail:'워커가 3번 실패해 지우지 못한 산출물 파일이 있어요. 운영 현황의 파일 삭제 대기열에서 다시 시도해 주세요.',project:'파일 삭제 대기열',tab:'ops',time:latest?.gave_up_at||latest?.created_at});
+  }
   const byProject=new Map(items.filter(i=>i.project_id!=null).map(i=>[i.project_id,i]));
   const alertedProjects=new Set(genAlerts.map(a=>a.project_id));
   for(const g of genAlerts){
@@ -237,8 +243,10 @@ function AdminNotificationBell({onNavigate}){
   const [error,setError]=useState('');
   useEffect(()=>{
     let cancelled=false,timer;
-    const load=()=>Promise.all([api.get('/admin/items'),api.get('/admin/agent-executions?limit=500'),api.get('/admin/generation-alerts?include_acknowledged=true')])
-      .then(([items,executions,genAlerts])=>{if(!cancelled){setAlerts(adminAlertsFrom(items,executions,genAlerts));setError('')}})
+    // 파일 삭제 대기열은 따로 실패를 삼킨다 — 그 API가 없거나 실패해도 다른 알림은 떠야 한다.
+    const load=()=>Promise.all([api.get('/admin/items'),api.get('/admin/agent-executions?limit=500'),api.get('/admin/generation-alerts?include_acknowledged=true'),
+      api.get(`/admin/file-deletions?status=${encodeURIComponent('포기')}&limit=1`).catch(()=>null)])
+      .then(([items,executions,genAlerts,fileDeletions])=>{if(!cancelled){setAlerts(adminAlertsFrom(items,executions,genAlerts,fileDeletions));setError('')}})
       .catch(()=>{if(!cancelled)setError('알림을 불러오지 못했어요.')})
       .finally(()=>{if(!cancelled)timer=setTimeout(load,15000)});
     load();
@@ -317,7 +325,7 @@ export default function AdminDashboard({user,onExit}){
 
       <main className="w-[min(1180px,calc(100%-48px))] mx-auto py-12">
         {tab==='ann'&&<AnnouncementTab/>}
-        {tab==='ops'&&<OpsTab/>}
+        {tab==='ops'&&<OpsTab key={selectedAlert?.tab==='ops'?selectedAlert.key:'ops'} pushToast={pushToast} focusFileDeletions={selectedAlert?.tab==='ops'}/>}
         {tab==='progress'&&<ProgressTab key={selectedAlert?.tab==='progress'?selectedAlert.key:'progress'} focusProjectId={selectedAlert?.tab==='progress'?selectedAlert.projectId:null}/>}
         {tab==='agents'&&<AgentsTab key={selectedAlert?.tab==='agents'?selectedAlert.key:'agents'} focusProjectId={selectedAlert?.tab==='agents'?selectedAlert.projectId:null}/>}
         {tab==='policy'&&<PolicyTab pushToast={pushToast}/>}
@@ -468,7 +476,11 @@ const formatStatusCounts=counts=>{
 };
 const DEVIATION_LAYER_LABEL={doc:'문서층 검증',code:'코드 기준 검증',plan:'계획서 대조'};
 
-function OpsTab(){
+function OpsTab({pushToast,focusFileDeletions=false}){
+  return <div><OpsSummary/><FileDeletionsPanel pushToast={pushToast} focus={focusFileDeletions}/></div>;
+}
+
+function OpsSummary(){
   const [summary,setSummary]=useState(null);
   const [error,setError]=useState('');
   useEffect(()=>{
@@ -521,6 +533,103 @@ function OpsTab(){
         )}
       </div>
     </div>
+  );
+}
+
+// 파일 삭제 대기열(조율 admin_file_deletions · admin_retry_file_deletion, 함수명세 8.9) — 완전 삭제 · 탈퇴 · 12개월
+// 정리 때 DB를 먼저 지우고 워커가 10분 뒤부터 파일을 지운다. 3번 실패하면 '포기'가 되고 관리자가 다시 건다.
+// 웹 API 모양은 웹 프론트가 백엔드에 제안한 것(GET 목록 → {items,total}, POST 다시 시도 → 바뀐 줄)이다.
+// 줄에는 계정 · 프로젝트 · 파일 이름이 없다 — 실행 건 ID와 다시 시도를 누른 관리자 ID뿐이다.
+const FILE_DELETION_PAGE=50;
+const FILE_DELETION_FILTERS=[['포기','포기'],['대기','대기'],['','전체']];
+const FILE_DELETION_RETRY_ERROR={
+  INVALID_STATE:'이미 다시 지우는 중인 줄이에요. 목록을 새로 읽었어요.',
+  FILE_DELETION_NOT_FOUND:'이미 지워져 없는 줄이에요. 목록을 새로 읽었어요.',
+};
+const FILE_DELETION_COLS='grid grid-cols-[1.5fr_.6fr_.6fr_.7fr_1fr_1fr_1.5fr_104px]';
+
+export function FileDeletionsPanel({pushToast,focus=false}){
+  const [status,setStatus]=useState('포기');
+  const [page,setPage]=useState(0);
+  const [data,setData]=useState(null);
+  const [error,setError]=useState('');
+  const [retrying,setRetrying]=useState(null);
+  const panelRef=useRef(null);
+  const load=()=>{
+    const query=new URLSearchParams({limit:String(FILE_DELETION_PAGE),offset:String(page*FILE_DELETION_PAGE)});
+    if(status)query.set('status',status);
+    setError('');
+    return api.get(`/admin/file-deletions?${query}`).then(setData)
+      .catch(e=>setError(e instanceof ApiError&&e.status===404?'서버에 아직 파일 삭제 대기열 API가 없어요.':'파일 삭제 대기열을 불러오지 못했어요.'));
+  };
+  useEffect(()=>{setData(null);load()},[status,page]);
+  // 알림 종에서 넘어오면 이 표로 내려간다.
+  useEffect(()=>{if(focus)panelRef.current?.scrollIntoView({behavior:'smooth',block:'start'})},[focus]);
+  const changeStatus=next=>{setStatus(next);setPage(0)};
+  const retry=row=>{
+    setRetrying(row.deletion_id);
+    api.post(`/admin/file-deletions/${row.deletion_id}/retry`)
+      .then(updated=>{
+        // 다시 시도한 줄은 바로 '대기'로 바뀐다 — 지우는 데 성공하면 다음에 읽을 때 목록에서 빠진다.
+        setData(d=>d&&{...d,items:d.items.map(r=>r.deletion_id===row.deletion_id?{...r,...updated}:r)});
+        pushToast('다시 시도를 걸었어요','최대 10분 안에 워커가 파일을 다시 지워요. 성공하면 이 줄이 목록에서 빠져요.');
+      })
+      .catch(e=>{
+        const known=FILE_DELETION_RETRY_ERROR[e?.code];
+        pushToast('다시 시도하지 못했어요',known||'잠시 뒤 다시 시도해 주세요.','danger');
+        if(known)load();
+      })
+      .finally(()=>setRetrying(null));
+  };
+  const items=data?.items||[];
+  const total=data?.total??items.length;
+  const lastPage=Math.max(0,Math.ceil(total/FILE_DELETION_PAGE)-1);
+  return (
+    <section ref={panelRef} className="mt-12 scroll-mt-24">
+      <div className="flex items-end justify-between gap-3 flex-wrap mb-1">
+        <h2 className="text-[20px] font-bold">파일 삭제 대기열</h2>
+        <div className="flex rounded-lg border border-[var(--border)] overflow-hidden text-[12.5px]" role="group" aria-label="상태로 거르기">
+          {FILE_DELETION_FILTERS.map(([value,label])=>(
+            <button key={label} type="button" aria-pressed={status===value} onClick={()=>changeStatus(value)}
+              className={'px-3 py-1.5 font-semibold '+(status===value?'bg-[var(--fg)] text-white':'bg-white text-[var(--muted-fg)] hover:bg-[var(--muted)]')}>{label}</button>
+          ))}
+        </div>
+      </div>
+      <p className="text-[12px] text-[var(--muted-fg)] mb-4">완전 삭제 · 탈퇴 · 12개월 정리로 지운 실행 건의 산출물 파일이에요. 워커가 10분 뒤부터 지우고, 3번 실패하면 '포기'가 돼요. 포기한 파일은 사용자가 탈퇴한 뒤에도 서버에 남으니 다시 시도해 주세요.</p>
+      <Panel>
+        <div className="overflow-x-auto"><div className="min-w-[880px]">
+          <div className={FILE_DELETION_COLS+' text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]'}>
+            <div className="p-4">실행 건 ID</div><div className="p-4 text-center">상태</div><div className="p-4 text-center">실패 횟수</div><div className="p-4 text-center">마지막 오류</div>
+            <div className="p-4">넣은 시각</div><div className="p-4">포기 시각</div><div className="p-4">다시 시도 기록</div><div className="p-4"/>
+          </div>
+          {error?<p className="p-6 text-[13px] text-[var(--danger)] border-t border-[var(--border)]">{error}</p>
+          :data===null?<p className="p-6 text-[13px] text-[var(--muted-fg)] border-t border-[var(--border)]">불러오는 중…</p>
+          :items.length===0?<p className="p-6 text-center text-[13px] text-[var(--muted-fg)] border-t border-[var(--border)]">{status==='포기'?'포기한 파일 삭제가 없어요.':status==='대기'?'지울 차례를 기다리는 파일이 없어요.':'대기열이 비어 있어요.'}</p>
+          :items.map(r=>(
+            <div key={r.deletion_id} className={FILE_DELETION_COLS+' text-[13px] border-t border-[var(--border)] items-center'}>
+              <div className="p-4 font-mono text-[12px] break-all">{r.run_id}</div>
+              <div className={'p-4 text-center font-semibold '+(r.status==='포기'?'text-[var(--danger)]':'text-[var(--muted-fg)]')}>{r.status}</div>
+              <div className="p-4 text-center">{r.attempts}회</div>
+              <div className="p-4 text-center text-[var(--muted-fg)]">{r.last_error_kind?`${r.last_error_kind} 오류`:'-'}</div>
+              <div className="p-4 text-[var(--muted-fg)]">{formatKstDateTime(r.created_at)||'-'}</div>
+              <div className="p-4 text-[var(--muted-fg)]">{formatKstDateTime(r.gave_up_at)||'-'}</div>
+              <div className="p-4 text-[12px] text-[var(--muted-fg)]">{r.retry_count>0?`${r.retry_count}회 · 관리자 #${r.retried_by} · ${formatKstShort(r.retried_at)}`:'-'}</div>
+              <div className="p-4 text-right">
+                {r.status==='포기'&&<button type="button" disabled={retrying===r.deletion_id} onClick={()=>retry(r)}
+                  className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-[12px] font-semibold hover:bg-[var(--muted)] disabled:opacity-50">{retrying===r.deletion_id?'거는 중':'다시 시도'}</button>}
+              </div>
+            </div>
+          ))}
+        </div></div>
+      </Panel>
+      {data&&lastPage>0&&(
+        <div className="flex items-center justify-end gap-3 mt-3 text-[12.5px] text-[var(--muted-fg)]">
+          <button type="button" disabled={page===0} onClick={()=>setPage(p=>p-1)} className="rounded-lg border border-[var(--border)] px-3 py-1.5 font-semibold disabled:opacity-40">이전</button>
+          <span>{page+1} / {lastPage+1}</span>
+          <button type="button" disabled={page>=lastPage} onClick={()=>setPage(p=>p+1)} className="rounded-lg border border-[var(--border)] px-3 py-1.5 font-semibold disabled:opacity-40">다음</button>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -975,7 +1084,7 @@ function PolicyTab({pushToast}){
     }
     try{
       await api.put('/admin/policy/thresholds',{pass_threshold:Number(limits.threshold),rerun_cap:Number(limits.rerun),rework_cap:Number(limits.rework),deviation_cap:Number(limits.recheck),token_retry_cap:Number(limits.tokenRetry)});
-      pushToast('판정 기준이 저장되었습니다','통과 Threshold '+limits.threshold+'점 · 재수행 상한 '+limits.rerun+'회 · 재작성 상한 '+limits.rework+'회 · 검수 재시도 상한 '+limits.tokenRetry+'회 · 재채점 편차 상한 '+limits.recheck+'점으로 반영됩니다.','info');
+      pushToast('판정 기준이 저장되었습니다','통과 Threshold '+limits.threshold+'점 · 재수행 상한 '+limits.rerun+'회 · 재작성 상한 '+limits.rework+'회 · 검수 재시도 상한 '+limits.tokenRetry+'회로 반영됩니다.','info');
     }catch(e){pushToast('판정 기준을 저장하지 못했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
   };
   const saveItems=async()=>{
@@ -1029,13 +1138,14 @@ function PolicyTab({pushToast}){
           ['rerun','재수행 횟수 상한','미달 항목이 발생한 Task만 선별 재수행할 때의 최대 횟수입니다.','회'],
           ['rework','재작성 상한','사용자가 결과물 항목(묶음)마다 직접 재작성을 요청할 수 있는 횟수입니다.','회'],
           ['tokenRetry','검수 문단 재시도 상한','검수(표현) Task 내부에서 보호 토큰 위반 문단을 재시도하는 최대 횟수입니다.','회'],
-          ['recheck','문서층 재채점 편차 상한','동일 입력을 다시 채점했을 때 총점 편차가 이 값을 넘으면 알림을 띄웁니다.','점']].map(([key,label,desc,unit])=>(
+          // 편차 검사는 하지 않기로 했다(팀 상의 10-10, 조율 varianceFlag 늘 거짓) — 값은 저장 요청에 그대로 싣되 고치지 못하게 둔다.
+          ['recheck','문서층 재채점 편차 상한','같은 계획서를 다시 채점해 비교하는 검사는 비용 때문에 하지 않기로 해서, 이 값은 지금 어디에도 쓰이지 않아요.','점',true]].map(([key,label,desc,unit,unused])=>(
           <div key={key} className="grid grid-cols-[1.6fr_2.4fr_1fr] text-[13px] border-t border-[var(--border)] items-center">
-            <div className="p-4 font-medium">{label}</div>
+            <div className={'p-4 font-medium'+(unused?' text-[var(--muted-fg)]':'')}>{label}{unused&&<span className="ml-2 align-middle rounded-full bg-[var(--muted)] px-2 py-0.5 text-[11px] font-semibold text-[var(--muted-fg)]">현재 적용되지 않음</span>}</div>
             <div className="p-4 text-[var(--muted-fg)]">{desc}</div>
             <div className="p-4 flex items-center justify-center gap-1.5">
-              <input type="number" value={limits[key]} onChange={e=>setLimits(l=>({...l,[key]:e.target.value}))}
-                className="w-14 border border-[var(--border)] rounded-lg px-2 py-1 text-center text-[13px] outline-none focus:border-[var(--primary)]"/>
+              <input type="number" value={limits[key]} disabled={unused} onChange={e=>setLimits(l=>({...l,[key]:e.target.value}))}
+                className="w-14 border border-[var(--border)] rounded-lg px-2 py-1 text-center text-[13px] outline-none focus:border-[var(--primary)] disabled:bg-[var(--muted)] disabled:text-[var(--muted-fg)]"/>
               <span className="text-[12.5px] text-[var(--muted-fg)]">{unit}</span>
             </div>
           </div>

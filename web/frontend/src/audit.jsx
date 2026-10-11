@@ -3,10 +3,23 @@ import {createRoot} from 'react-dom/client';
 import Landing from './components/Landing.jsx';
 import {WorkspaceShell,Dashboard} from './components/Workspace.jsx';
 import * as W from './features/Workflow.jsx';
+import {FileDeletionsPanel} from './features/Admin.jsx';
+import {api} from './api.js';
 import './styles.css';
-const names=['landing','dashboard','empty','intake','match-progress','match-results','eligibility-gate','eligibility-fail','plan-progress','plan-form','artifact-progress','plan-failed','artifact-failed','artifact-result','artifact-gate-fail','artifact-partial','final-verdict','final-pass','review'];
+const names=['landing','dashboard','empty','intake','match-progress','match-results','eligibility-gate','eligibility-fail','plan-progress','plan-form','artifact-progress','plan-failed','artifact-failed','artifact-result','artifact-gate-fail','artifact-partial','final-verdict','final-pass','review','admin-file-deletions'];
 const page=new URLSearchParams(location.search).get('page')||'landing';
 const noop=()=>{};
+// 관리자 파일 삭제 대기열 견본 — 웹 API(SB-311 반영분)가 아직 sb-269에 없어 가짜 응답으로 본다.
+// 모양은 백엔드 답(2026-10-10): GET 목록 → {items,total}(status를 안 거르면 파라미터 없음), POST 다시 시도 → 바뀐 줄.
+if(page==='admin-file-deletions'){
+ const rows=[
+  {deletion_id:12,run_id:'run-7f3a9c21',status:'포기',attempts:3,last_error_kind:'일시',created_at:'2026-10-09T01:10:00Z',gave_up_at:'2026-10-09T01:50:00Z',retried_by:null,retried_at:null,retry_count:0},
+  {deletion_id:9,run_id:'run-41be0d77',status:'포기',attempts:3,last_error_kind:'운영',created_at:'2026-10-08T05:00:00Z',gave_up_at:'2026-10-08T05:40:00Z',retried_by:'1',retried_at:'2026-10-08T06:00:00Z',retry_count:1},
+  {deletion_id:13,run_id:'run-c09e5512',status:'대기',attempts:1,last_error_kind:'일시',created_at:'2026-10-10T02:00:00Z',gave_up_at:null,retried_by:null,retried_at:null,retry_count:0},
+ ];
+ api.get=async url=>{const status=new URL(url,location.origin).searchParams.get('status');const items=rows.filter(r=>!status||r.status===status);return {items,total:items.length}};
+ api.post=async url=>{const row=rows.find(r=>url.includes(`/${r.deletion_id}/`));Object.assign(row,{status:'대기',attempts:0,gave_up_at:null,retried_by:'1',retried_at:new Date().toISOString(),retry_count:row.retry_count+1});return {...row}};
+}
 const info={item:'동네 헬스장 예약 서비스',ceoName:'김창업',foundedAt:page==='eligibility-fail'?'2010-01-10':'2025-01-10',applicantType:'individual',files:[],team:[],pricing:[]};
 // 공고 후보 견본 — 오케스트레이터 응답 모양(MatchCandidatesOut). 가산점 null · 0 · 값, 마감일 없음, 내용 바뀜, 막힌 공고를 한 화면에 담았다.
 const SAMPLE_CANDIDATES={status:'ready',rematch_used:false,blocked_notice_ids:['N-3'],
@@ -25,4 +38,4 @@ const components={'intake':W.IntakeForm,'match-progress':W.MatchProgress,'match-
 // 완전 실패 카드 — 실제 흐름에선 서버가 status='failed'를 줘야 떠서 로컬 더미로는 재현이 어렵다.
 Object.assign(components,{'plan-failed':p=><W.GenerationFailed onLeave={noop}/>,'artifact-failed':p=><W.GenerationFailed onLeave={noop}/>});
 const C=components[page];
-createRoot(document.getElementById('root')).render(<><nav aria-label="화면 검토" style={{padding:10,background:'#fff',display:'flex',flexWrap:'wrap',gap:12,position:'relative',zIndex:100,fontSize:12}}>{names.map(n=><a key={n} href={'?page='+n}>{n}</a>)}</nav>{page==='landing'?<Landing onStart={noop}/>:<WorkspaceShell view={page==='empty'?'dashboard':page} notifyEnabled onToggleNotify={noop} onHome={noop} onDashboard={noop} onNewProject={noop} onLogout={noop}>{C?<C {...props}/>:<Dashboard onNewProject={noop} onOpenProject={noop} isNewUser={page==='empty'} onToggleNewUser={noop}/>}</WorkspaceShell>}</>);
+createRoot(document.getElementById('root')).render(<><nav aria-label="화면 검토" style={{padding:10,background:'#fff',display:'flex',flexWrap:'wrap',gap:12,position:'relative',zIndex:100,fontSize:12}}>{names.map(n=><a key={n} href={'?page='+n}>{n}</a>)}</nav>{page==='landing'?<Landing onStart={noop}/>:page==='admin-file-deletions'?<main className="w-[min(1180px,calc(100%-48px))] mx-auto py-12"><FileDeletionsPanel pushToast={(title,message)=>console.info(title,message)}/></main>:<WorkspaceShell view={page==='empty'?'dashboard':page} notifyEnabled onToggleNotify={noop} onHome={noop} onDashboard={noop} onNewProject={noop} onLogout={noop}>{C?<C {...props}/>:<Dashboard onNewProject={noop} onOpenProject={noop} isNewUser={page==='empty'} onToggleNewUser={noop}/>}</WorkspaceShell>}</>);

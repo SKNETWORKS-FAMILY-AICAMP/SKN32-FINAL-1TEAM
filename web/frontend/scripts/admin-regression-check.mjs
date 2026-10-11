@@ -5,7 +5,7 @@ import {createServer} from 'vite';
 
 const server=await createServer({configFile:false,resolve:{preserveSymlinks:true},server:{middlewareMode:true},appType:'custom',plugins:[{
   name:'admin-test-exports',enforce:'pre',
-  transform(code,id){if(id.replaceAll('\\','/').endsWith('/features/Admin.jsx'))return code+'\nexport {AnnouncementTab,ProgressTab,AgentsTab,UsersTab,PolicyTab,executionRowFromServer};';},
+  transform(code,id){if(id.replaceAll('\\','/').endsWith('/features/Admin.jsx'))return code+'\nexport {AnnouncementTab,ProgressTab,AgentsTab,UsersTab,PolicyTab,executionRowFromServer,adminAlertsFrom};';},
 }]});
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return {promise,resolve,reject}};
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -58,7 +58,27 @@ try{
   ui=mount(admin.AgentsTab);await ui.flush();assert.ok(ui.text().includes('Task 현황을 불러오지 못했어요'));
   ui.button('Execution별 보기').props.onClick();await ui.flush();assert.ok(ui.text().includes('실행 세션을 불러오지 못했어요'));
   ui.button('Task별 보기').props.onClick();await ui.flush();assert.ok(!ui.text().includes('Task 현황을 불러오지 못했어요'));
-  ui.button('Execution별 보기').props.onClick();await ui.flush();assert.ok(ui.text().includes('실행 로그가 아직 없어요'));ui.unmount();
+  ui.button('Execution별 보기').props.onClick();await ui.flush();assert.ok(ui.text().includes('실행 로그가 없어요'));ui.unmount();
+
+  // 파일 삭제 포기 — 알림 종에 건수로 뜨고, 대기열 API가 없으면(null) 다른 알림만 뜬다.
+  const fileAlerts=admin.adminAlertsFrom([],[],[],{items:[{deletion_id:7,gave_up_at:'2026-10-09T01:00:00Z'}],total:2});
+  assert.equal(fileAlerts.length,1);assert.equal(fileAlerts[0].title,'파일 삭제 포기 2건');assert.equal(fileAlerts[0].tab,'ops');
+  assert.equal(admin.adminAlertsFrom([],[],[],null).length,0);
+  const gaveUp={deletion_id:7,run_id:'run-abc',status:'포기',attempts:3,last_error_kind:'일시',created_at:'2026-10-09T00:00:00Z',gave_up_at:'2026-10-09T01:00:00Z',retried_by:null,retried_at:null,retry_count:0};
+  const deletionGets=[],toasts=[];let retryResult;
+  api.get=url=>{deletionGets.push(url);return Promise.resolve({items:[gaveUp],total:1})};
+  api.post=url=>{assert.equal(url,'/admin/file-deletions/7/retry');return retryResult()};
+  ui=mount(admin.FileDeletionsPanel,{pushToast:(title,message,tone)=>toasts.push({title,tone})});await ui.flush();
+  assert.ok(deletionGets[0].includes('status=%ED%8F%AC%EA%B8%B0'));assert.ok(ui.text().includes('run-abc'));
+  retryResult=()=>Promise.resolve({...gaveUp,status:'대기',attempts:0,gave_up_at:null,retried_by:'5',retried_at:'2026-10-09T02:00:00Z',retry_count:1});
+  await ui.button('다시 시도').props.onClick();await ui.flush();
+  assert.equal(toasts.at(-1).title,'다시 시도를 걸었어요');assert.ok(ui.text().includes('관리자 #5'));
+  assert.ok(!ui.nodes().some(n=>n.type==='button'&&n.props.children==='다시 시도'));ui.unmount();
+  ui=mount(admin.FileDeletionsPanel,{pushToast:(title,message,tone)=>toasts.push({title,tone})});await ui.flush();
+  const before=deletionGets.length;
+  retryResult=()=>Promise.reject(Object.assign(new Error('state'),{code:'INVALID_STATE'}));
+  await ui.button('다시 시도').props.onClick();await ui.flush();
+  assert.equal(toasts.at(-1).tone,'danger');assert.equal(deletionGets.length,before+1);ui.unmount();
 
   let updates=[];
   api.get=url=>Promise.resolve(url==='/admin/users'?[]:[{faq_id:1,question:'Q',answer:'old',is_visible:false}]);
@@ -77,5 +97,5 @@ try{
   ui=mount(admin.PolicyTab,{pushToast:()=>{}});await ui.flush();
   ui.nodes().filter(n=>n.type==='input'&&n.props.type==='number')[3].props.onChange({target:{value:''}});await ui.flush();
   await ui.button('판정 기준 저장').props.onClick();assert.equal(writes,0);ui.unmount();
-  console.log('PASS: success status, search/history races, history errors, agent retry recovery, FAQ write serialization, blank policy rejection');
+  console.log('PASS: success status, search/history races, history errors, agent retry recovery, file deletion alerts · retry, FAQ write serialization, blank policy rejection');
 }finally{await server.close()}
