@@ -959,9 +959,11 @@ class NotificationReadIn(BaseModel):
 # 관리자 - 검증 정책 (admin-dashboard.html 대응)
 # ---------------------------------------------------------------------------
 class PolicyScoresIn(BaseModel):
-    doc_weight: float = Field(ge=0, le=100, allow_inf_nan=False)
-    code_weight: float = Field(ge=0, le=100, allow_inf_nan=False)
-    plan_weight: float = Field(ge=0, le=100, allow_inf_nan=False)
+    """층별 배점 — 세 값 모두 0보다 커야 하고 합이 100이다. 오케스트레이터는 0을 기본값으로 바꾸지 않고 0 그대로 써서, 배점 0인 층은
+    환산 점수가 늘 0이고 문서층이 0이면 문서 평가 표시 점수도 0이 된다(오케스트레이터 요청, 2026-10-11)."""
+    doc_weight: float = Field(gt=0, le=100, allow_inf_nan=False)
+    code_weight: float = Field(gt=0, le=100, allow_inf_nan=False)
+    plan_weight: float = Field(gt=0, le=100, allow_inf_nan=False)
 
 
 class PolicyThresholdsIn(BaseModel):

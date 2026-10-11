@@ -177,6 +177,21 @@ def test_negative_scores_with_valid_total_are_rejected(admin_client):
     assert admin_client.get('/admin/policy').json() == before
 
 
+@pytest.mark.parametrize('weights', [(0, 50, 50), (50, 0, 50), (50, 50, 0), (0, 0, 100)])
+def test_zero_score_weight_is_rejected_even_when_the_total_is_100(admin_client, weights):
+    """배점 0인 층은 오케스트레이터가 0 그대로 써서 환산 점수가 늘 0이 된다 — 저장 자체를 막는다."""
+    before = admin_client.get('/admin/policy').json()
+    doc, code, plan = weights
+    response = admin_client.put('/admin/policy/scores', json={'doc_weight': doc, 'code_weight': code, 'plan_weight': plan})
+    assert response.status_code == 422
+    assert admin_client.get('/admin/policy').json() == before
+
+
+def test_small_positive_score_weights_are_accepted(admin_client):
+    response = admin_client.put('/admin/policy/scores', json={'doc_weight': 0.5, 'code_weight': 0.5, 'plan_weight': 99})
+    assert response.status_code == 200, response.text
+
+
 def test_negative_checklist_weight_is_rejected(admin_client):
     before = admin_client.get('/admin/checklist').json()
     payload = [dict(check_item_id=item['check_item_id'], weight=0, enabled=True)
