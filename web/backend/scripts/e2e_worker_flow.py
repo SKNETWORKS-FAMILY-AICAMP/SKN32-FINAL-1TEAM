@@ -292,6 +292,21 @@ def main() -> int:
             artifacts = (result.get('plan') or {}).get('artifacts') or []
             step('산출물 확인 대기(화면 8)', bool(artifacts),
                  f"산출물 {len(artifacts)}건, 카테고리 {artifacts[0]['category'] if artifacts else None}")
+            # 계획서 응답 모양: 항목 번호 · 웹 태그 · 종류가 따로 오고, 점수 항목의 item_code가 계획서 항목 번호와 맞아 같은 태그가 붙는다
+            plan = result.get('plan') or {}
+            sections = {s['section_code']: s for s in plan.get('sections') or []}
+            reasons = plan.get('score_reasons') or []
+            step('결과: 계획서 항목이 항목 번호 · 태그 · 종류를 따로 줌', bool(sections) and all(
+                {'section_code', 'tag', 'content_type'} <= set(s) for s in sections.values()),
+                f"항목 {len(sections)}개 태그={sorted({str(s['tag']) for s in sections.values()})} 종류={sorted({s['content_type'] for s in sections.values()})}")
+            matched = [r for r in reasons if r.get('item_code') in sections]
+            step('결과: 점수 항목의 item_code가 계획서 항목 번호와 맞고 같은 태그를 줌', bool(reasons) and len(matched) == len(reasons)
+                 and all(r.get('tag') == sections[r['item_code']]['tag'] for r in matched),
+                 f"점수 항목 {len(reasons)}개 중 번호가 맞는 것 {len(matched)}개, 예시 {[(r.get('item_code'), r.get('tag')) for r in reasons[:3]]}")
+            step('결과: 그림 목록(diagrams)이 주소와 함께 오고 받을 수 있음',
+                 all(d.get('image_url', '').startswith(f'/projects/{pid}/artifact-files/') and client.get(d['image_url']).status_code == 200
+                     for d in plan.get('diagrams') or []),
+                 f"그림 {len(plan.get('diagrams') or [])}개 {[d.get('flow_type') for d in plan.get('diagrams') or []]}")
 
             # 7) 종합 평가 (8 → 9)
             res = client.post(f'/projects/{pid}/final-review/start')
