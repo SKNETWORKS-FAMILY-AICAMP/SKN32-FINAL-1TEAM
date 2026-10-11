@@ -356,6 +356,24 @@ def main() -> int:
                     step('재작성 결과', rr.get('status') in ('완료', '실패'),
                          f"status={rr.get('status')} kept={rr.get('kept')} 점수 {rr.get('before_score')}→{rr.get('after_score')} "
                          f"변경 섹션 {list((rr.get('changed') or {}).get('sections', {}))}")
+                    # 계획서 항목 구조(SB-342): 문제인식 묶음(태그 1-1)을 다시 쓰면 그 태그의 항목만 바뀌고, 항목 구성(번호 · 태그 · 종류)은 그대로다.
+                    before_sections, after_sections = rr.get('plan_before') or [], rr.get('plan_after') or []
+                    structure = lambda secs: [(s['section_code'], s['tag'], s['content_type']) for s in secs]  # noqa: E731
+                    step('재작성 전후 계획서의 항목 구성(번호 · 태그 · 종류)이 같음',
+                         bool(before_sections) and structure(before_sections) == structure(after_sections),
+                         f'전 {len(before_sections)}개 후 {len(after_sections)}개')
+                    changed_sections = (rr.get('changed') or {}).get('sections') or {}
+                    if changed_sections:
+                        step('재작성으로 바뀐 항목은 모두 문제인식 묶음(태그 1-1)이고 태그 · 제목이 붙음',
+                             all(v.get('tag') == '1-1' and v.get('title') for v in changed_sections.values()),
+                             f"바뀐 항목 {len(changed_sections)}개 키={list(changed_sections)[:4]} 태그={sorted({str(v.get('tag')) for v in changed_sections.values()})}")
+                        outside = [b['section_code'] for b, a in zip(before_sections, after_sections, strict=False)
+                                   if b['tag'] != '1-1' and b.get('body') != a.get('body')]
+                        step('재작성이 다른 묶음 · 태그 없는 항목(일반현황 · 개요 · 그림)을 건드리지 않음', not outside, f'바뀐 다른 항목 {outside[:5]}')
+                    else:
+                        # 스텁 작성 Agent는 다시 써도 문장이 같아 바뀐 항목이 없다 — 묶음 범위 · 태그 · 제목은 이 시험으로 볼 수 없다(단위 테스트가 모양을 본다).
+                        # 실제 Agent로 돌릴 때 이 두 확인이 실행된다. 통과로 세지 않는다.
+                        print('[건너뜀] 재작성으로 바뀐 항목이 없어(스텁 Agent는 문장을 안 바꿈) 묶음 범위 · 태그 · 제목 확인을 하지 않았다 — 실제 Agent로 돌릴 때 확인', flush=True)
                     st = j(client.get(f'/projects/{pid}/status'))
                     step('재작성이 끝나면 재작성 표시가 사라짐', st.get('rework_screen') is None and st.get('collecting') is False,
                          f"rework_screen={st.get('rework_screen')} collecting={st.get('collecting')}")
@@ -365,6 +383,7 @@ def main() -> int:
 
             # 9) 표현 검수 (9 → 10)
             before_review = j(client.get(f'/projects/{pid}/result')).get('plan') or {}
+            structure_before_review = [(s['section_code'], s['tag'], s['content_type']) for s in before_review.get('sections', [])]
             before_review_body = chr(10).join(sec.get('body', '') for sec in before_review.get('sections', []))
             res = client.post(f'/projects/{pid}/review/start')
             if res.status_code == 409 and (j(res).get('detail') or {}).get('confirmation_required'):
@@ -379,6 +398,13 @@ def main() -> int:
             plan = result.get('plan') or {}
             step('결과: 검수 · 최종', True,
                  f"형식 지적 {len(plan.get('format_findings', []))}건, 검수 시도 {len(plan.get('proofread_logs', []))}건")
+            # 계획서 항목 구조(SB-342): 표현 검수는 문장만 바꾸므로 항목 구성(번호 · 태그 · 종류)과 그림은 그대로여야 한다
+            structure_after_review = [(s['section_code'], s['tag'], s['content_type']) for s in plan.get('sections', [])]
+            step('결과: 표현 검수 뒤에도 항목 구성(번호 · 태그 · 종류)이 같음', bool(structure_after_review) and structure_after_review == structure_before_review,
+                 f'검수 전 {len(structure_before_review)}개 후 {len(structure_after_review)}개')
+            empty_items = [s['section_code'] for s in plan.get('sections', []) if s['content_type'] == 'image' and (s.get('body') or '').strip()]
+            step('결과: 그림 항목은 검수 뒤에도 문장이 없고 그림 목록은 그대로', not empty_items and len(plan.get('diagrams') or []) == len(before_review.get('diagrams') or []),
+                 f"문장이 생긴 그림 항목 {empty_items} 그림 {len(plan.get('diagrams') or [])}개")
             # [SB-297] 검수 기록의 '검수 전' 원문은 검수 시작 직전 계획서의 문장이어야 한다(검수가 끝나면 계획서 문장은 결과 문장으로 바뀐다)
             logs = plan.get('proofread_logs', [])
             wrong = [log for log in logs if log.get('original_text') and log['original_text'] not in before_review_body]
