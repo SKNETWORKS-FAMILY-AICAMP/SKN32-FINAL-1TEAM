@@ -8,8 +8,8 @@
     항목 자체가 없다 — 대신 "직업(직장명 기재 불가)"/"기업(예정)명" 두 항목만 쓴다.
   - 사업비 집행계획: 초기창업패키지는 정부지원사업비+자기부담사업비(현금/현물) 3분할
     표를 쓰지만, 예비창업패키지는 자기부담금 개념이 없어 정부지원사업비 단일 열 표를
-    쓴다(원본은 1단계/2단계로 표를 나누는데, DB에 "단계" 개념이 없어 여기선 한 표로
-    합쳐 렌더한다 — 없는 구분을 지어내지 않는다는 원칙).
+    쓴다. 원본처럼 1단계/2단계 두 표로 나눈다(사업비 줄의 단계 — project_budget_items.phase,
+    SB-327. 단계가 없는 줄은 1단계 표).
   - 제목: "초기창업패키지 창업기업 사업계획서" vs "예비창업패키지 사업계획서".
 그 외(창업 아이템 개요 요약, PSST 4개 섹션 본문, 사업추진일정, 팀 구성(안), 협력기관)는
 두 양식이 표 구조까지 동일해서 공통으로 쓴다.
@@ -62,6 +62,17 @@ class BudgetLineItem:
     정부지원사업비: str
     자기부담_현금: str = ''
     자기부담_현물: str = ''
+    단계: str = ''  # 예비창업자만 '1단계' · '2단계'(SB-327). 비어 있으면 1단계 표에 들어간다
+
+
+PHASE_SECOND = '2단계'
+
+
+def split_budget_by_phase(rows: list[BudgetLineItem]) -> tuple[list[BudgetLineItem], list[BudgetLineItem]]:
+    """예비창업 사업비 행 → (1단계 표 행, 2단계 표 행). 단계가 없는 행은 1단계 쪽이다."""
+    second = [r for r in rows if r.단계 == PHASE_SECOND]
+    first = [r for r in rows if r.단계 != PHASE_SECOND]
+    return first, second
 
 
 @dataclass
@@ -134,8 +145,12 @@ class PlanDocumentData:
     # [SB-339] 표 항목(개발계획 · 사업비 집행계획 · 전체 일정)의 서술 문장 — 표는 위 행 목록으로 그리고, 서술은 계획서(planDoc)에서 온다
     # (app/plan_texts.py). docx는 표 아래 문단으로, hwp는 양식에 따로 칸이 없어 그 절의 본문 뒤에 이어 붙는다.
     실현가능성_일정_서술: str = ''
-    사업비_서술: str = ''
+    사업비_서술: str = ''          # 예비창업자는 1단계 표의 서술(x.5.3), 그 밖은 사업비 표 하나의 서술
+    사업비_2단계_서술: str = ''    # 예비창업자 2단계 표의 서술(x.5.4)
     성장전략_일정_서술: str = ''
+    # 예비창업자 단계별 정부지원사업비 합계(표 아래 합계 칸). 단계 입력이 없으면 비어 있다
+    정부지원사업비_1단계: str = ''
+    정부지원사업비_2단계: str = ''
 
 
 def _set_cell_text(cell, text: str, bold: bool = False, shade: str | None = None) -> None:
@@ -303,16 +318,23 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
     )
     _narrative(doc, data.실현가능성_일정_서술)
     if template == 'preliminary':
-        # 예비창업패키지는 자기부담금 개념이 없어 정부지원사업비 단일 열만 쓴다. 원본
-        # 양식은 이 표를 1단계/2단계로 나누는데, DB(project_budget_items)에 "단계"
-        # 구분이 없어 여기선 한 표로 합쳐 렌더한다(모듈 docstring 참고).
+        # 예비창업패키지는 자기부담금 개념이 없어 정부지원사업비 단일 열만 쓴다. 원본 양식처럼
+        # 1단계 · 2단계 두 표로 나눈다(project_budget_items.phase, SB-327) — 단계가 없는 행은 1단계 표.
+        first, second = split_budget_by_phase(data.사업비_집행계획)
         _guide_note(doc, '※ 정부지원사업비는 최대 1억원 한도 이내로 작성')
-        _grid_table(
-            doc,
-            ['비목', '산출 근거', '정부지원사업비(원)'],
-            [[b.비목, b.집행계획, b.정부지원사업비] for b in data.사업비_집행계획],
-            caption='< 정부지원사업비 집행계획 >',
-        )
+        for label, rows, total, narrative in (
+            ('1단계', first, data.정부지원사업비_1단계, data.사업비_서술),
+            ('2단계', second, data.정부지원사업비_2단계, data.사업비_2단계_서술),
+        ):
+            _grid_table(
+                doc,
+                ['비목', '산출 근거', '정부지원사업비(원)'],
+                [[b.비목, b.집행계획, b.정부지원사업비] for b in rows] or [['○○', '○○', '○○']],
+                caption=f'< 정부지원사업비 집행계획({label}) >',
+            )
+            if total:
+                doc.add_paragraph(f'{label} 합계: {total}')
+            _narrative(doc, narrative)
     else:
         _guide_note(doc, '※ 정부지원사업비는 최대 1억원 한도 이내로 작성 · 자기부담사업비는 지방우대 지역 여부에 따라 비율이 다름')
         _grid_table(
@@ -321,8 +343,7 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
             [[b.비목, b.집행계획, b.총사업비, b.정부지원사업비, b.자기부담_현금, b.자기부담_현물] for b in data.사업비_집행계획],
             caption='< 사업비 집행 계획 >',
         )
-
-    _narrative(doc, data.사업비_서술)
+        _narrative(doc, data.사업비_서술)
 
     _heading(doc, '3. 성장전략(Scale-up)_사업화 추진 전략', level=1)
     doc.add_paragraph(data.성장전략_본문)

@@ -48,9 +48,10 @@ _PERSONAL_INFO_NOTICE_BY_TEMPLATE 참고.
     시 병합이 깨질 위험이 있어 일부러 손대지 않았다. 원본 양식 자체도 "행 추가
     가능, 해당 없으면 공란 유지"라고 안내하므로, 넘치는 항목은 잘리고 남는 행은
     공란 처리하는 지금 방식이 최소한 "지어내지 않는다"는 원칙은 지킨다.
-  - 사업비 집행계획은 원본이 1단계/2단계 두 표로 나뉘는데 DB엔 "단계" 개념이 없다
-    (plan_document_export.py와 같은 이유) — 전부 1단계 표에 몰아넣고 2단계 표는
-    예시 숫자가 진짜처럼 보이지 않도록 공란으로 지운다.
+  - 사업비 집행계획은 원본이 1단계/2단계 두 표로 나뉜다. 예비창업은 사업비 줄의 단계
+    (project_budget_items.phase, SB-327)로 표12(1단계) · 표14(2단계)에 나눠 채우고,
+    단계가 없는 줄은 1단계 표에 넣는다. 한 단계에 줄이 없으면 그 표는 예시 숫자가
+    진짜처럼 보이지 않도록 공란으로 지운다.
   - 초기창업패키지(early_general) 표5의 "지원 분야"/"전문기술분야"는 실제 체크박스가
     아니라 빈 칸에 표시를 채워 넣는 방식이라(뒤한글 실제 체크박스 컨트롤이 아님),
     project.tech_field 값이 9개 보기 문구와 정확히 같을 때만 그 칸에 'V'를 쓴다 —
@@ -64,7 +65,14 @@ import os
 import subprocess
 import tempfile
 
-from app.plan_document_export import BudgetLineItem, PartnerRow, PlanDocumentData, ScheduleRow, TeamRow
+from app.plan_document_export import (
+    BudgetLineItem,
+    PartnerRow,
+    PlanDocumentData,
+    ScheduleRow,
+    TeamRow,
+    split_budget_by_phase,
+)
 
 RHWP_BIN = os.environ.get('RHWP_BIN') or 'rhwp'
 
@@ -275,9 +283,10 @@ def _preliminary_steps(data: PlanDocumentData) -> list[dict]:
     # docstring "아직 안 된 것" 참고). set_cell을 안 부른다.
     # 표10: 실현가능성 일정
     _fill_rows(steps, 10, 1, [0, 1, 2, 3], _schedule_rows_tuples(data.실현가능성_일정), slot_count=5)
-    # 표12/14: 사업비 집행계획(1단계에 전부, 2단계는 공란 — 모듈 docstring 참고)
-    _budget_steps(steps, 12, data.사업비_집행계획, data.정부지원사업비)
-    _budget_steps(steps, 14, [], '')
+    # 표12/14: 사업비 집행계획 1단계 · 2단계(단계 없는 행은 1단계 — 모듈 docstring 참고)
+    first, second = split_budget_by_phase(data.사업비_집행계획)
+    _budget_steps(steps, 12, first, data.정부지원사업비_1단계)
+    _budget_steps(steps, 14, second, data.정부지원사업비_2단계)
 
     # 표17: 성장전략 일정
     _fill_rows(steps, 17, 1, [0, 1, 2, 3], _schedule_rows_tuples(data.성장전략_일정), slot_count=5)
@@ -327,14 +336,23 @@ _BODY_INSERTS_BY_TEMPLATE: dict[str, list[tuple[str, int]]] = {
 
 # [SB-339] 표 항목의 서술 문장은 양식에 따로 칸이 없어, 그 표가 속한 절의 본문 뒤에 이어 붙인다 — docx는 표 아래 문단으로 쓴다.
 _BODY_NARRATIVES: dict[str, tuple[str, ...]] = {
-    '실현가능성_본문': ('실현가능성_일정_서술', '사업비_서술'),
+    '실현가능성_본문': ('실현가능성_일정_서술', '사업비_서술', '사업비_2단계_서술'),
     '성장전략_본문': ('성장전략_일정_서술',),
 }
 
 
+_PHASE_LABELS = {'사업비_서술': '1단계', '사업비_2단계_서술': '2단계'}
+
+
 def _body_text(data: PlanDocumentData, field_name: str) -> str:
     """절 본문 + 그 절의 표 서술(줄바꿈 → ' / '로 한 줄). 본문이 안내 문구뿐이어도 서술이 있으면 서술은 붙는다."""
-    parts = [getattr(data, field_name, '')] + [getattr(data, extra, '') for extra in _BODY_NARRATIVES.get(field_name, ())]
+    parts = [getattr(data, field_name, '')]
+    for extra in _BODY_NARRATIVES.get(field_name, ()):
+        text = getattr(data, extra, '')
+        # 예비창업자는 사업비 서술이 1단계 · 2단계 두 개라 어느 단계 서술인지 머리말을 단다(본문엔 한 덩어리로 이어 붙으므로)
+        if text and extra in _PHASE_LABELS and getattr(data, '사업비_2단계_서술', ''):
+            text = f'[{_PHASE_LABELS[extra]}] {text}'
+        parts.append(text)
     return _one_line('\n'.join(part for part in parts if part))
 
 

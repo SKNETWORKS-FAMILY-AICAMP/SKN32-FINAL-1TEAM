@@ -53,7 +53,8 @@ class PlanTexts:
     팀구성_본문: str | None = None
     # 표 항목(개발계획 · 사업비 집행계획 · 전체 일정)의 서술 문장 — 표는 웹 행으로 그리고 서술만 여기서 온다
     실현가능성_일정_서술: str = ''
-    사업비_서술: str = ''
+    사업비_서술: str = ''          # 예비창업자는 1단계 표의 서술(x.5.3), 그 밖은 사업비 표 하나의 서술
+    사업비_2단계_서술: str = ''    # 예비창업자 2단계 표의 서술(x.5.4)
     성장전략_일정_서술: str = ''
 
 
@@ -75,10 +76,6 @@ def table_narrative(text: str) -> str:
     if non_empty and all(' | ' in line for line in non_empty):
         return ''
     return (text or '').strip()
-
-
-def _join(*parts: str) -> str:
-    return '\n'.join(p for p in parts if p)
 
 
 def _by_item_number(plan_doc) -> dict[str, str]:
@@ -107,13 +104,11 @@ def plan_texts(plan_doc) -> PlanTexts:
 
     team = [f'[{label}]\n{by_number[number]}' for number, label in TEAM_LABELS.items() if by_number.get(number)]
     budget = table_narrative(by_number.get('5.3', ''))
-    second = table_narrative(by_number.get('5.4', ''))
-    if second:  # 예비창업자만 2단계 사업비 항목(x.5.4)이 있다
-        budget = _join('[1단계]', budget, '[2단계]', second) if budget else _join('[2단계]', second)
+    second = table_narrative(by_number.get('5.4', ''))  # 예비창업자만 2단계 사업비 항목(x.5.4)이 있다
     return PlanTexts(
         by_item_number=True, 산출물=get('2.2'), 아이템_개요=get('3.1'),
         요약_문제인식=get('3.2'), 요약_실현가능성=get('3.3'), 요약_성장전략=get('3.4'), 요약_팀구성=get('3.5'),
         문제인식_본문=get('4.1'), 실현가능성_본문=get('5.1'), 성장전략_본문=get('6.1'),
         팀구성_본문='\n'.join(team) or None,
-        실현가능성_일정_서술=table_narrative(by_number.get('5.2', '')), 사업비_서술=budget,
+        실현가능성_일정_서술=table_narrative(by_number.get('5.2', '')), 사업비_서술=budget, 사업비_2단계_서술=second,
         성장전략_일정_서술=table_narrative(by_number.get('6.2', '')))

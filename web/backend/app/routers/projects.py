@@ -540,7 +540,14 @@ def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts):
     적이 없는 경우) 기존처럼 원본 양식 안내 표기로 채운다 — 지어내지 않는다는 원칙은
     유지. 정부지원사업비/자기부담금/총사업비는 project_budget_items 행이 있으면 그 금액을
     합산해서 채운다(각 행이 없으면 합계도 낼 수 없으니 placeholder 유지)."""
-    from app.plan_document_export import BudgetLineItem, PartnerRow, PlanDocumentData, ScheduleRow, TeamRow
+    from app.plan_document_export import (
+        PHASE_SECOND,
+        BudgetLineItem,
+        PartnerRow,
+        PlanDocumentData,
+        ScheduleRow,
+        TeamRow,
+    )
 
     company = db.get(Company, project.company_id)
 
@@ -586,9 +593,17 @@ def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts):
             BudgetLineItem(
                 b.category or '○○', b.execution_plan or '○○', _won(b.total_amount),
                 _won(b.government_amount), _won(b.self_cash_amount), _won(b.self_in_kind_amount),
+                단계=b.phase or '',
             )
             for b in budget_items
         ]
+        # 예비창업 단계별 정부지원사업비 합계(표 아래 합계 칸) — 단계 입력이 하나도 없으면 비워 둔다
+        if any(b.phase for b in budget_items):
+            government_1st = sum((b.government_amount or 0) for b in budget_items if b.phase != PHASE_SECOND)
+            government_2nd = sum((b.government_amount or 0) for b in budget_items if b.phase == PHASE_SECOND)
+            government_1st_text, government_2nd_text = _won(government_1st), _won(government_2nd)
+        else:
+            government_1st_text = government_2nd_text = ''
         total_amount = sum((b.total_amount or 0) for b in budget_items)
         government_amount = sum((b.government_amount or 0) for b in budget_items)
         self_cash = sum((b.self_cash_amount or 0) for b in budget_items)
@@ -601,6 +616,7 @@ def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts):
             for p in project.pricing_items
         ] or [BudgetLineItem('○○', '○○', '○○', '○○', '○○', '○○')]
         total_amount_text = government_amount_text = self_cash_text = self_in_kind_text = '○○,○○○천원'
+        government_1st_text = government_2nd_text = ''
 
     feasibility_schedule = sorted(
         (s for s in project.schedule_items if s.section == 'feasibility'), key=lambda s: s.item_order or 0
@@ -692,6 +708,9 @@ def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts):
         기업예정명=_or_placeholder(company.company_name if company else None, '○○○'),
         실현가능성_일정_서술=texts.실현가능성_일정_서술,
         사업비_서술=texts.사업비_서술,
+        사업비_2단계_서술=texts.사업비_2단계_서술,
+        정부지원사업비_1단계=government_1st_text,
+        정부지원사업비_2단계=government_2nd_text,
         성장전략_일정_서술=texts.성장전략_일정_서술,
     )
     return data, template

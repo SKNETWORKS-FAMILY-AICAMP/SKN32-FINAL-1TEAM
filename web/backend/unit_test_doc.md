@@ -39,6 +39,7 @@ ruff check .                                # 정적 검사
 | `test_orch_stages.py` | 공고 선택 → 자격 확인 → 계획서 · 프로토타입 · 종합 평가 · 검수 시작 |
 | `test_orch_result.py` | `GET /projects/{id}/result` — 계획서 · 판정 · 산출물 · 재작성 기회를 응답으로 변환 |
 | `test_orch_rework.py` | 재작성 접수(`POST /retry-task`)와 전후 비교(`GET /rework-result`) |
+| `test_plan_score_items.py` | 평가 항목이 24 ~ 25개로 늘어도 문서층 점수 응답이 순서 · 이름 · 소수 점수 그대로 나오는지, 편차 상한은 저장만 함 (SB-338) |
 | `test_match_candidates.py` | 공고 후보 조회 · 다시 찾기 · 선택 |
 | `test_pipeline_stages.py` · `test_classify_error_kind.py` | 상태 표시 변환과 오류 종류 분류(순수 함수) |
 
@@ -48,7 +49,7 @@ ruff check .                                # 정적 검사
 |---|---|
 | `test_artifact_files.py` | 산출물 파일 내려 주기 — 소유자만(관리자 제외), 형식 · 보안 헤더 |
 | `test_artifact_urls.py` | 산출물 경로 → 웹 주소 변환 |
-| `test_artifact_cleanup.py` | 산출물 폴더 삭제와 고아 청소 |
+| `test_deliverable_zip.py` | 최종 결과물 zip — 계획서(planDoc으로 만든 .docx) · 프로토타입 · 인포그래픽 묶음, 계획서 없으면 404, 크기 상한, 소유자만 (SB-316 · SB-341) |
 
 ### 프로젝트 생성 · 사전 정보 입력
 
@@ -58,6 +59,8 @@ ruff check .                                # 정적 검사
 | `test_attachment_limits.py` | 첨부파일 개수 · 용량 상한 |
 | `test_company_per_project_fix.py` | 회사 프로필 계정당 1건 제한 해제, 동시 실행 1건 제한 분리 |
 | `test_plan_document_endpoint.py` | 계획서 내려받기(`.docx`)가 공식 양식 구조로 나오고 본문이 채워짐 |
+| `test_plan_texts.py` | 계획서 항목 번호 → 양식 글 칸 대응, 표 항목 서술 걸러 내기, docx · hwp 본문 채우기 (SB-339) |
+| `test_budget_phase_export.py` | 예비창업 사업비를 1단계 · 2단계 표(docx 표 둘, hwp 표12 · 표14)로 나눠 채움, 단계 없는 줄은 1단계, 다른 유형은 표 하나 (SB-339) |
 | `test_budget_phase_column.py` | `project_budget_items.phase` 컬럼(VARCHAR(10), NULL 허용, '1단계' · '2단계') (SB-328) |
 | `test_budget_schedule_schema.py` | 사업비 · 일정의 요청 · 응답 모양, 허용값, 행 수 상한, 응답 순서 (SB-329) |
 | `test_budget_schedule_validation.py` | 필수 · 금액 · 합계 · 유형별 단계 · 일정 필수 칸과 연도 검사, 오류 위치(표 · 줄 번호 · 칸) (SB-330) |

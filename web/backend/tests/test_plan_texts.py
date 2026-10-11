@@ -104,9 +104,9 @@ def test_budget_narrative_is_split_by_phase_for_preliminary():
     budget1 = ['비목 | 산출근거 | 정부지원사업비', '재료비 | 라벨링 | 5,000,000원', '', '사업비 집행계획 서술:', '1. 1단계 문장.']
     budget2 = ['비목 | 산출근거 | 정부지원사업비', '광고 | SNS | 1,000원', '', '사업비 집행계획 서술:', '1. 2단계 문장.']
     texts = plan_texts(_plan('2', **{'5.3': budget1, '5.4': budget2}))
-    assert texts.사업비_서술 == '[1단계]\n1. 1단계 문장.\n[2단계]\n1. 2단계 문장.'
+    assert texts.사업비_서술 == '1. 1단계 문장.' and texts.사업비_2단계_서술 == '1. 2단계 문장.'
     early = plan_texts(_plan('3', **{'5.3': budget1}))
-    assert early.사업비_서술 == '1. 1단계 문장.'
+    assert early.사업비_서술 == '1. 1단계 문장.' and early.사업비_2단계_서술 == ''
 
 
 def test_schedule_narratives_come_from_the_two_schedule_tables():
