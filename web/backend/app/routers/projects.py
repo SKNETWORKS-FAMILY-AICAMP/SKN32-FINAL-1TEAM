@@ -34,6 +34,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session, object_session
 
 from app.database import get_db
+from app.diagram_images import diagram_pictures
 from app.models import (
     Company,
     GenerationFailureAlert,
@@ -504,16 +505,17 @@ def _proofread_originals(gateway: OrchGateway, project_id: int, outputs) -> dict
     return {s.sentence_id: s.before for s in screen.sentences}
 
 
-def _plan_texts(gateway: OrchGateway, project_id: int) -> PlanTexts:
-    """양식 글 칸에 들어갈 계획서 문장을 오케스트레이터의 지금 결과에서 읽는다(항목 번호별 매핑은 app/plan_texts.py). 실행 건이 없거나
-    계획서가 아직 없거나 실패 · 중단이면 비운다 — 그러면 문서는 입력값과 자리표시로 채운 미리보기가 된다(실패 · 중단은 본문을 싣지 않는다)."""
+def _plan_texts(gateway: OrchGateway, project_id: int) -> tuple[PlanTexts, list]:
+    """양식 글 칸에 들어갈 계획서 문장과 그림을 오케스트레이터의 지금 결과에서 읽는다(항목 번호별 매핑은 app/plan_texts.py, 그림은
+    app/diagram_images.py). 실행 건이 없거나 계획서가 아직 없거나 실패 · 중단이면 비운다 — 그러면 문서는 입력값과 자리표시로 채운
+    미리보기가 된다(실패 · 중단은 본문을 싣지 않는다)."""
     try:
         outputs = gateway.outputs(project_id)
     except OrchError as exc:
         if exc.code in ('RUN_NOT_FOUND', 'RUN_NOT_VIEWABLE'):
-            return PlanTexts()
+            return PlanTexts(), []
         raise
-    return plan_texts(outputs.plan_doc)
+    return plan_texts(outputs.plan_doc), diagram_pictures(gateway, project_id, outputs.plan_doc)
 
 
 # companies.applicant_type -> 양식의 "사업자 구분" 표기. 사용자가 직접 고른 값이라
@@ -522,7 +524,7 @@ def _plan_texts(gateway: OrchGateway, project_id: int) -> PlanTexts:
 _APPLICANT_TYPE_LABEL = {'corp': '법인사업자', 'individual': '개인사업자', 'preliminary': '예비창업자'}
 
 
-def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts):
+def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts, pictures: list | None = None):
     """project(+company/team_members/pricing_items/budget_items/schedule_items/partners)와
     생성된 계획서(BusinessPlan.sections)를 공식 양식(별첨1) 구조(app/plan_document_export.py의
     PlanDocumentData)로 옮긴다. 반환값은 (data, template) 튜플 — template은 company.
@@ -709,6 +711,7 @@ def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts):
         실현가능성_일정_서술=texts.실현가능성_일정_서술,
         사업비_서술=texts.사업비_서술,
         사업비_2단계_서술=texts.사업비_2단계_서술,
+        그림=list(pictures or []),
         정부지원사업비_1단계=government_1st_text,
         정부지원사업비_2단계=government_2nd_text,
         성장전략_일정_서술=texts.성장전략_일정_서술,
@@ -716,11 +719,11 @@ def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts):
     return data, template
 
 
-def render_plan_docx_for(db: Session, project: Project, plan_doc) -> bytes:
-    """계획서(planDoc)와 웹 입력으로 공식 양식 .docx를 만든다 — plan-document.docx와 결과물 압축(artifact_files)이 같은 파일을 쓴다."""
+def render_plan_docx_for(db: Session, project: Project, plan_doc, pictures: list | None = None) -> bytes:
+    """계획서(planDoc) · 그림과 웹 입력으로 공식 양식 .docx를 만든다 — plan-document.docx와 결과물 압축(artifact_files)이 같은 파일을 쓴다."""
     from app.plan_document_export import render_plan_docx
 
-    data, template = _build_plan_document_data(db, project, plan_texts(plan_doc))
+    data, template = _build_plan_document_data(db, project, plan_texts(plan_doc), pictures)
     return render_plan_docx(data, template=template)
 
 
@@ -740,7 +743,8 @@ def download_plan_document(
     from app.plan_document_export import render_plan_docx
 
     project = _get_owned_project(db, project_id, current_user)
-    data, template = _build_plan_document_data(db, project, _plan_texts(gateway, project_id))
+    texts, pictures = _plan_texts(gateway, project_id)
+    data, template = _build_plan_document_data(db, project, texts, pictures)
     docx_bytes = render_plan_docx(data, template=template)
     filename = quote('사업계획서.docx')
     return Response(
@@ -765,7 +769,8 @@ def download_plan_document_pdf(
     from app.plan_document_export import render_plan_docx
 
     project = _get_owned_project(db, project_id, current_user)
-    data, template = _build_plan_document_data(db, project, _plan_texts(gateway, project_id))
+    texts, pictures = _plan_texts(gateway, project_id)
+    data, template = _build_plan_document_data(db, project, texts, pictures)
     try:
         pdf_bytes = docx_to_pdf(render_plan_docx(data, template=template))
     except PdfConversionError as exc:
@@ -794,7 +799,8 @@ def download_plan_document_hwp(
     from app.hwp_export import render_plan_hwp
 
     project = _get_owned_project(db, project_id, current_user)
-    data, template = _build_plan_document_data(db, project, _plan_texts(gateway, project_id))
+    texts, pictures = _plan_texts(gateway, project_id)
+    data, template = _build_plan_document_data(db, project, texts, pictures)
     try:
         hwp_bytes = render_plan_hwp(data, template=template)
     except FileNotFoundError as exc:

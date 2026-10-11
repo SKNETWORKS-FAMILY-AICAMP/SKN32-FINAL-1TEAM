@@ -35,12 +35,16 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from docx import Document
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
+
+if TYPE_CHECKING:
+    from app.diagram_images import DiagramPicture
 
 _GUIDE_COLOR = RGBColor(0x1F, 0x4E, 0x79)  # 원본 양식의 '파란색 안내 문구'와 같은 취지 — 작성자 안내용, 제출 전 삭제 대상
 _HEADER_FILL = 'E8ECF1'
@@ -151,6 +155,9 @@ class PlanDocumentData:
     # 예비창업자 단계별 정부지원사업비 합계(표 아래 합계 칸). 단계 입력이 없으면 비어 있다
     정부지원사업비_1단계: str = ''
     정부지원사업비_2단계: str = ''
+    # [SB-340] 그림 항목(2.3.6 · 3.3.6)의 서비스 흐름도 · 서비스 구조도(PNG로 바꾼 것, app/diagram_images.py). docx는 개요(요약) 표 아래,
+    # hwp는 맨 뒤에 새로 만든 쪽에 넣는다. 그림이 없으면 문서에 아무것도 더하지 않는다.
+    그림: list[DiagramPicture] = field(default_factory=list)
 
 
 def _set_cell_text(cell, text: str, bold: bool = False, shade: str | None = None) -> None:
@@ -253,6 +260,19 @@ def _add_general_status_preliminary(doc: Document, data: PlanDocumentData) -> No
     ])
 
 
+def _picture(doc: Document, picture: DiagramPicture) -> None:
+    """그림 하나 — 위에 '< 서비스 흐름도 >' 같은 제목을 달고 본문 폭에 맞춰 넣는다(PNG, 가운데)."""
+    caption = doc.add_paragraph()
+    run = caption.add_run(f'< {picture.title} >')
+    run.bold = True
+    run.font.size = Pt(10.5)
+    doc.add_picture(io.BytesIO(picture.png), width=Cm(_PICTURE_WIDTH_CM))
+    doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+
+_PICTURE_WIDTH_CM = 16
+
+
 def _narrative(doc: Document, text: str) -> None:
     """표 아래 서술 문장(줄마다 한 문단). 서술이 없으면 아무것도 쓰지 않는다."""
     for line in (text or '').splitlines():
@@ -304,6 +324,8 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
         ('성장전략(Scale-up)', data.요약_성장전략),
         ('팀 구성(Team)', data.요약_팀구성),
     ])
+    for picture in data.그림:
+        _picture(doc, picture)
 
     _heading(doc, '1. 문제 인식(Problem)_창업 아이템의 필요성', level=1)
     doc.add_paragraph(data.문제인식_본문)

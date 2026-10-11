@@ -13,7 +13,8 @@ GET /projects/{project_id}/deliverable.zip   (SB-316 — 최종 결과물 묶음
   (프로토타입은 외부 파일 · CDN 없는 단일 파일이어야 한다 — 기능정의서 E-B1-DEP).
 - 압축(zip)은 웹이 만든다(오케스트레이터는 만들지 않는다 — 명세 5.4절). 계획서는 파일을 받지 않고 계획서(planDoc)로 웹이 직접 만든 .docx를 넣는다
   (SB-341 — `deliverable.planDocFile`은 자리채움 파일이라 쓰지 않는다, 오케스트레이터 안내). 프로토타입 · 인포그래픽은 결과물(deliverable)의 파일을
-  참조마다 read_artifact_file로 받아 묶는다. 한 파일이라도 못 받으면 일부만 든 압축을 주지 않고 그 오류로 답한다.
+  참조마다 read_artifact_file로 받아 묶는다. 계획서 그림(planDoc.diagrams의 SVG)은 docx 안에 PNG로 들어가고 원본 SVG는 plan/diagrams/에도
+  넣는다(SB-340 — 그림 하나를 못 받으면 그 그림만 뺀다). 프로토타입 · 인포그래픽 파일을 한 파일이라도 못 받으면 일부만 든 압축을 주지 않고 그 오류로 답한다.
 """
 import io
 import zipfile
@@ -23,6 +24,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.diagram_images import diagram_pictures
 from app.models import Company, Project, User
 from app.orch import OrchGateway, require_gateway
 from app.orch.errors import CodedHTTPException, user_message_for
@@ -65,6 +67,7 @@ def download_artifact_file(
 # 계획서(plan/)는 파일 참조가 아니라 planDoc으로 만들어 넣는다(SB-341) — 여기에는 파일 참조로 받는 폴더만 둔다
 _ZIP_FOLDERS = (('prototype_files', 'prototype'), ('infographic_file', 'infographic'))
 PLAN_DOCX_NAME = 'plan/business-plan.docx'
+DIAGRAM_FOLDER = 'plan/diagrams'  # 계획서 그림(서비스 흐름도 · 서비스 구조도)의 원본 SVG — docx 안의 PNG와 같은 그림
 # 파일 하나는 30MB까지(오케스트레이터 규칙)라 계획서 · 프로토타입 · 인포그래픽이 모두 커도 이 안에 든다. 넘으면 메모리를 지키려고 만들지 않는다.
 MAX_ZIP_SOURCE_BYTES = 100 * 1024 * 1024
 
@@ -112,10 +115,13 @@ def download_deliverable_zip(
     if sum(int(getattr(ref, 'size', 0) or 0) for _folder, ref in refs) > MAX_ZIP_SOURCE_BYTES:
         raise CodedHTTPException(413, 'DELIVERABLE_TOO_LARGE', '결과물이 너무 커서 한 번에 묶을 수 없어요. 파일을 하나씩 내려받아 주세요.')
     buffer, taken = io.BytesIO(), set()
-    plan_docx = render_plan_docx_for(db, db.get(Project, project_id), outputs.plan_doc)  # 파일 참조가 아니라 planDoc으로 만든다(SB-341)
+    pictures = diagram_pictures(gateway, project_id, outputs.plan_doc)  # 그림(SVG → PNG) — 계획서 docx에 넣고 원본 SVG는 따로 넣는다(SB-340)
+    plan_docx = render_plan_docx_for(db, db.get(Project, project_id), outputs.plan_doc, pictures)  # 파일 참조가 아니라 planDoc으로 만든다(SB-341)
     with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(PLAN_DOCX_NAME, plan_docx)
         taken.add(PLAN_DOCX_NAME)
+        for picture in pictures:
+            archive.writestr(_unique_name(taken, DIAGRAM_FOLDER, picture.svg_name), picture.svg)
         for folder, ref in refs:
             file = gateway.read_artifact_file(project_id, ref.key)
             archive.writestr(_unique_name(taken, folder, file.name), file.data)

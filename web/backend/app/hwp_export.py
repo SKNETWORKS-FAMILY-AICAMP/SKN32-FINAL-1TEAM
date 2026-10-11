@@ -52,6 +52,8 @@ _PERSONAL_INFO_NOTICE_BY_TEMPLATE 참고.
     (project_budget_items.phase, SB-327)로 표12(1단계) · 표14(2단계)에 나눠 채우고,
     단계가 없는 줄은 1단계 표에 넣는다. 한 단계에 줄이 없으면 그 표는 예시 숫자가
     진짜처럼 보이지 않도록 공란으로 지운다.
+  - 계획서 그림(서비스 흐름도 · 서비스 구조도, SB-340)은 맨 뒤에 쪽을 하나 더 만들어 그 쪽에 붙인다(_append_diagram_page) — rhwp의 그림 삽입은
+    쪽 좌표에 떠 있는 그림이라 본문 쪽에 붙이면 글자 위에 겹친다. 캡션은 없다(그림 안에 제목이 있다).
   - 초기창업패키지(early_general) 표5의 "지원 분야"/"전문기술분야"는 실제 체크박스가
     아니라 빈 칸에 표시를 채워 넣는 방식이라(뒤한글 실제 체크박스 컨트롤이 아님),
     project.tech_field 값이 9개 보기 문구와 정확히 같을 때만 그 칸에 'V'를 쓴다 —
@@ -364,9 +366,9 @@ _PERSONAL_INFO_NOTICE_BY_TEMPLATE: dict[str, tuple[int, int]] = {
 }
 
 
-def _run_rhwp(args: list[str]) -> None:
+def _run_rhwp(args: list[str]) -> str:
     """rhwp CLI를 실행하고 실패를 일관된 예외로 바꾼다 — render_plan_hwp의 run/edit
-    delete-table 호출이 공유한다."""
+    delete-table 호출이 공유한다. 표준 출력(--json 응답 등)을 돌려준다."""
     try:
         result = subprocess.run(
             [RHWP_BIN, *args], capture_output=True, text=True, encoding='utf-8', errors='replace',
@@ -378,6 +380,41 @@ def _run_rhwp(args: list[str]) -> None:
     if result.returncode != 0:
         error_msg = (result.stderr or result.stdout or '알 수 없는 rhwp 오류').strip()
         raise RuntimeError(f'rhwp 처리 중 오류 발생: {error_msg}')
+    return result.stdout
+
+
+# [SB-340] 그림(서비스 흐름도 · 서비스 구조도)은 hwp 맨 뒤에 쪽을 하나 더 만들어 그 쪽에 붙인다 — rhwp의 그림 삽입은 쪽 좌표에 떠 있는
+# 그림이라, 본문 쪽에 붙이면 글자 위에 겹친다. 길이 단위는 HWPUNIT(1/7200 inch, A4 세로 59528 × 84188).
+_A4_WIDTH = 59528
+_PICTURE_WIDTH = 46000                           # 본문 폭(48188)보다 조금 좁게
+_PICTURE_X = (_A4_WIDTH - _PICTURE_WIDTH) // 2   # 가운데
+_PICTURE_TOP = 8504                              # 위 여백(3cm)
+_PICTURE_GAP = 2000
+
+
+def _append_diagram_page(current_output: str, pictures: list, new_tmp) -> str:
+    """hwp 맨 끝 문단에서 쪽을 나눠 새 마지막 쪽을 만들고, 그림을 위에서 아래로 붙인다. 새 파일 경로를 돌려준다."""
+    info = json.loads(_run_rhwp(['explain', current_output, '--json']))
+    paged = new_tmp()
+    _run_rhwp(['edit', 'insert-page-break', current_output, '--section', '0', '--para', str(info['paragraphCount'] - 1),
+               '--offset', '0', '-o', paged])
+    last_page = json.loads(_run_rhwp(['explain', paged, '--json']))['pageCount'] - 1
+    current_output, y = paged, _PICTURE_TOP
+    for picture in pictures:
+        width_px, height_px = picture.size_px
+        height = round(_PICTURE_WIDTH * height_px / width_px)
+        image_fd, image_path = tempfile.mkstemp(suffix='.png')
+        try:
+            with os.fdopen(image_fd, 'wb') as f:
+                f.write(picture.png)
+            next_output = new_tmp()
+            _run_rhwp(['edit', 'insert-image', current_output, '--image', image_path, '--page', str(last_page),
+                       '--x', str(_PICTURE_X), '--y', str(y), '--width', str(_PICTURE_WIDTH), '--height', str(height),
+                       '-o', next_output])
+        finally:
+            os.remove(image_path)
+        current_output, y = next_output, y + height + _PICTURE_GAP
+    return current_output
 
 
 def render_plan_hwp(data: PlanDocumentData, template: str) -> bytes:
@@ -451,6 +488,9 @@ def render_plan_hwp(data: PlanDocumentData, template: str) -> bytes:
             next_output = _new_tmp()
             _run_rhwp(['edit', 'delete-table', current_output, '--table', str(table_index), '-o', next_output])
             current_output = next_output
+
+        if data.그림:
+            current_output = _append_diagram_page(current_output, data.그림, _new_tmp)
 
         with open(current_output, 'rb') as f:
             return f.read()

@@ -60,6 +60,7 @@ ruff check .                                # 정적 검사
 | `test_company_per_project_fix.py` | 회사 프로필 계정당 1건 제한 해제, 동시 실행 1건 제한 분리 |
 | `test_plan_document_endpoint.py` | 계획서 내려받기(`.docx`)가 공식 양식 구조로 나오고 본문이 채워짐 |
 | `test_plan_texts.py` | 계획서 항목 번호 → 양식 글 칸 대응, 표 항목 서술 걸러 내기, docx · hwp 본문 채우기 (SB-339) |
+| `test_diagram_images.py` | 계획서 그림(SVG → PNG) — 순서 · 제목, 못 받거나 깨진 그림은 빼고 문서 생성, docx 개요 표 아래 · zip의 원본 SVG, hwp 맨 뒤 새 쪽(rhwp 있을 때 실제 확인) (SB-340) |
 | `test_budget_phase_export.py` | 예비창업 사업비를 1단계 · 2단계 표(docx 표 둘, hwp 표12 · 표14)로 나눠 채움, 단계 없는 줄은 1단계, 다른 유형은 표 하나 (SB-339) |
 | `test_budget_phase_column.py` | `project_budget_items.phase` 컬럼(VARCHAR(10), NULL 허용, '1단계' · '2단계') (SB-328) |
 | `test_budget_schedule_schema.py` | 사업비 · 일정의 요청 · 응답 모양, 허용값, 행 수 상한, 응답 순서 (SB-329) |
