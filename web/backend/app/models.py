@@ -345,8 +345,11 @@ class Project(Base):
     attachments: Mapped[list['ProjectAttachment']] = relationship(back_populates='project')
     team_members: Mapped[list['TeamMember']] = relationship(back_populates='project')
     pricing_items: Mapped[list['PricingItem']] = relationship(back_populates='project')
-    budget_items: Mapped[list['ProjectBudgetItem']] = relationship(back_populates='project')
-    schedule_items: Mapped[list['ProjectScheduleItem']] = relationship(back_populates='project')
+    # [SB-329] 응답은 item_order 순(같은 값이면 입력한 순서)
+    budget_items: Mapped[list['ProjectBudgetItem']] = relationship(
+        back_populates='project', order_by='(ProjectBudgetItem.item_order, ProjectBudgetItem.budget_item_id)')
+    schedule_items: Mapped[list['ProjectScheduleItem']] = relationship(
+        back_populates='project', order_by='(ProjectScheduleItem.item_order, ProjectScheduleItem.schedule_id)')
     partners: Mapped[list['ProjectPartner']] = relationship(back_populates='project')
     # [2026-09-22 신규] ProjectPlanInput 참고 — project당 1행(1:1).
     plan_input: Mapped['ProjectPlanInput | None'] = relationship(back_populates='project', uselist=False)
@@ -401,6 +404,8 @@ class ProjectBudgetItem(Base):
     budget_item_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('projects.project_id'))
     item_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # [SB-328] 예비창업만 '1단계' / '2단계', 그 밖은 NULL — 오케스트레이터가 request_start 때 읽는다
+    phase: Mapped[str | None] = mapped_column(String(10), nullable=True)
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)  # 비목
     execution_plan: Mapped[str | None] = mapped_column(Text, nullable=True)
     total_amount: Mapped[decimal.Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
