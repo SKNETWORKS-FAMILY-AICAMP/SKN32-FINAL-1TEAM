@@ -16,7 +16,9 @@ import pytest
 
 from conftest import make_app, pre_input, to_screen6, to_screen9
 from flow_helpers import run_review
-from worker_helpers import by_purpose, empty_features_once, real_worker_app, worker, worker_to_screen6
+from worker_helpers import (
+    by_purpose, empty_features_once, real_worker_app, respond_bv_worker, worker, worker_to_screen6,
+)
 
 from sbrain.agents.stubs import StubScenario
 from sbrain.agents.supervisor.plan import PURPOSE_REWRITE
@@ -217,6 +219,7 @@ def test_rewrite_uses_its_own_entry(clock):
 # ── 워커 호출처 나누기 ────────────────────────────────
 def test_worker_routes_rewrite_real_and_stub_tasks_fake(tmp_path, db):
     app, web, real, source = real_worker_app(tmp_path)
+    real_image = respond_bv_worker(app, real)                               # 구현 · 검증-2 실구현의 목적별 응답
     empty_features_once(real)                                               # 실구현 T-S1 첫 시도 불통과 → 재수행
     rid = worker_to_screen6(app, web, source)
     web.orchestrator.decide(rid, 6, "진행")
@@ -225,8 +228,11 @@ def test_worker_routes_rewrite_real_and_stub_tasks_fake(tmp_path, db):
     [rw] = by_purpose(real, PURPOSE_REWRITE)
     assert (rw.metadata["task_id"], rw.metadata["agent"]) == ("T-S1", "조율")
     real_tasks = {q.metadata["task_id"] for q in real.requests if q.metadata["purpose"] != PURPOSE_REWRITE}
-    assert real_tasks == {"T-C1", "T-C3", "T-S1", "T-S2", "T-W1", "T-W2", "T-V1"}   # 구현 Task만 (spec 4.15)
+    assert real_tasks == {"T-C1", "T-C3", "T-S1", "T-S2", "T-W1", "T-W2", "T-V1",
+                          "T-B1", "T-B2", "T-V2"}                           # 구현 Task만 (spec 4.15 · impl-verify2 4.10)
     fake_tasks = {q.metadata["task_id"] for q in app.llm.requests}
-    assert {"T-B1", "T-B2", "T-V2"} <= fake_tasks                           # 호출처가 openai여도 스텁이면 가짜로
+    assert not fake_tasks & {"T-B1", "T-B2", "T-V2"}                        # 실구현 호출은 가짜로 가지 않는다
+    assert {q.metadata["task_id"] for q in real_image.requests} == {"T-B2"}  # T-B2 아이콘판은 실제 이미지 호출처로
+    assert app.image.requests == []
     recs = records(web, rid)
     assert {recs[t].provider for t in ("T-B1", "T-B2", "T-V2")} == {"openai"}

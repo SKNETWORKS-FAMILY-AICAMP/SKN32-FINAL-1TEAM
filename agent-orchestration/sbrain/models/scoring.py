@@ -8,8 +8,11 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from .base import JudgedBy, Layer, Phase, SBModel
+from .base import JudgedBy, Layer, Phase, SBModel, ext
 from .rework import BundleUsage, ReworkComparison, ReworkDiff, ReworkOrder
+
+# 구현 · 검증-2 끼우기 · 산출물층 환산(spec 4.5 · 4.6 · 4.13)에서 더한 확장 칸의 note
+SCALE_NOTE = "산출물층 환산(spec 4.6) — 기준 문서에 없음"
 
 
 class DocScoreItem(SBModel):
@@ -34,6 +37,11 @@ class CodeCheck(SBModel):
     # 미충족 결함이 있는 산출물. 웹개발 · AI API 2번만 채움.
     # 이름은 구현 · 검증-2 담당 코드와 글자까지 같아야 한다 (담당자는 model_fields에 이 이름이 있을 때만 채운다)
     defect_sources: list[Literal["prototype", "infographic"]] = Field(default_factory=list)
+    # 얻은 점수 · 해당 여부 (spec 4.5). 이름은 구현 · 검증-2 담당 코드와 글자까지 같다. 옛 산출물 호환으로 범위 검사는
+    # 음수 금지만 둔다(0 이상 weight 이하는 생산자 규칙). 해당 없음(applicable 거짓) 항목은 passed 참 · earned 0
+    earned: float | None = ext(None, ge=0, note="얻은 점수 — 검사 배점(weight) 기준, 0 이상 weight 이하. "
+                                                "비면 옛 산출물(값 없음)")
+    applicable: bool = ext(True, note="검사할 대상이 있는가 — 거짓이면 해당 없음(배점에서 빼고 다시 환산한 항목)")
 
 
 class CodeCheckResult(SBModel):
@@ -78,3 +86,17 @@ class ScoreReport(SBModel):
     notices: list[str]
     settings_snapshot: dict[str, Any]
     rubric_version: str
+    # 환산 칸 (spec 4.6 · 4.13) — 그 실행 건 설정 사본 배점으로 환산한 층 점수 · 만점과 코드 점검 항목 줄.
+    # G-02a 보고서는 doc_layer_max만 채우고 나머지는 비운다. artifact_score(검증-2 원점수)는 그대로 싣는다
+    doc_layer_max: float | None = ext(None, note=f"{SCALE_NOTE} — 문서층 만점 D (설정 사본 scoring.docLayerMax)")
+    code_check_score: float | None = ext(None, note=f"{SCALE_NOTE} — 코드 점검 환산 점수")
+    code_check_max: float | None = ext(None, note=f"{SCALE_NOTE} — 코드 점검 만점 C (설정 사본 scoring.codeCheckMax)")
+    feature_match_score: float | None = ext(None, note=f"{SCALE_NOTE} — 계획서 대조 환산 점수")
+    feature_match_max: float | None = ext(
+        None, note=f"{SCALE_NOTE} — 계획서 대조 만점 P (설정 사본 scoring.featureMatchMax)")
+    artifact_layer_score: float | None = ext(None, note=f"{SCALE_NOTE} — 산출물층 환산 점수 (코드 점검 + 계획서 대조)")
+    artifact_layer_max: float | None = ext(None, note=f"{SCALE_NOTE} — 산출물층 만점 C + P")
+    code_check_items: list[CodeCheck] = ext(
+        default_factory=list,
+        note=f"{SCALE_NOTE} — 코드 점검 항목 줄(CodeCheck 모양: weight = 환산 배점, earned = 환산 점수, detail 앞 숫자 = "
+             "환산 점수/환산 배점). G-02a 보고서는 빈 목록")

@@ -99,12 +99,16 @@ def test_settings_from_verification_policies(web_engine):
     provider = DbSettingsProvider(web_engine)
     assert provider.current() == provider._settings          # 행이 없으면 코드 기본값
     with web_engine.begin() as conn:
-        conn.execute(insert(POLICIES).values(policy_id=1, doc_weight=60, code_weight=20, plan_weight=20,
+        conn.execute(insert(POLICIES).values(policy_id=1, doc_weight=60, code_weight=12, plan_weight=28,
                                              pass_threshold=75, rerun_cap=3, rework_cap=2, deviation_cap=4.5,
                                              token_retry_cap=1))
         conn.execute(insert(POLICIES).values(policy_id=2, pass_threshold=10))   # 첫 행만 쓴다
     s = provider.current()
     assert (s.scoring.doc_layer_max, s.scoring.artifact_layer_max, s.scoring.threshold) == (60, 40, 75)
+    # 코드 점검 배점 C = code_weight, 계획서 대조 배점 P = plan_weight, 산출물층 배점 = C + P (spec 4.6)
+    assert (s.scoring.code_check_max, s.scoring.feature_match_max) == (12, 28)
+    assert {"codeCheckMax": 12, "featureMatchMax": 28, "artifactLayerMax": 40}.items() <= \
+        provider.snapshot()["scoring"].items()
     assert (s.redo.redo_count, s.rework.per_bundle, s.redo.proofread_redo_count) == (3, 2, 1)
     assert s.scoring.deviation_cap == 4.5
     assert s.retry.retry_count == 5 and s.tasks["T-C1"].model == "gpt-6-luna"      # 나머지는 코드 기본값

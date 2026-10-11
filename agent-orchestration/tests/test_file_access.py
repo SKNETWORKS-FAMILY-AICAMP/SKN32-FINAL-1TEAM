@@ -17,7 +17,7 @@ import pytest
 from conftest import ARTIFACT_ROOT_KEY, Clock, make_app, start_and_select, to_screen8
 from flow_helpers import pid
 from store_helpers import uid
-from worker_helpers import real_worker_app, worker, worker_to_screen6
+from worker_helpers import real_worker_app, respond_bv_worker, worker, worker_to_screen6
 
 from sbrain import env
 from sbrain.agents.stubs import FakeLLM
@@ -142,7 +142,8 @@ def test_store_unavailable(clock):
 
 # ── 워커 조립 + 웹 조립: 같은 폴더 ─────────────────────────────
 def test_web_reads_files_written_by_worker(tmp_path, db):
-    app, web, _, source = real_worker_app(tmp_path)
+    app, web, real, source = real_worker_app(tmp_path)
+    respond_bv_worker(app, real)                                                  # 워커의 T-B1 · T-B2 · T-V2는 실구현
     assert isinstance(app.engine.files, LocalFolderFileStore) and not app.engine.files.read_only
     assert app.engine.files.root == (tmp_path / "artifacts").resolve()
     rid = worker_to_screen6(app, web, source)

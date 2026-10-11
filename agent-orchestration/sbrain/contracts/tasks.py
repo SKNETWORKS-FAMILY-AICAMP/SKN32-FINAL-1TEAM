@@ -31,6 +31,8 @@ from ..models.domain import FILE_NOTE, NEW_TYPE_NOTE
 
 # 전략 · 작성 · 검증-1 연동에서 더한 확장 입력 · 출력의 note (spec 4.7)
 SW_NOTE = "전략 · 작성 · 검증-1 연동(결정 0024)"
+# 구현 · 검증-2 끼우기 · 산출물층 환산(spec 4.13)에서 더한 확장 입력 · 출력의 note
+BV_NOTE = "구현 · 검증-2 연동(spec 4.13)"
 # 재개 때 이어 쓰는 받은 결과 — 엔진 일반 장치 PARTIAL. 키는 T-S1 · T-S2 = F번호, T-W1 · T-V1 = 항목 번호, T-W2 = 그림 ID (spec 4.13)
 PRIOR_NOTE = (f"{SW_NOTE} — 재개 때 이어 쓰는 받은 결과(키 → 받은 값 JSON 문자열, <taskId>.partial). 엔진이 재개 때만 "
               "채운다. 빠진 호출만 다시 한다")
@@ -205,6 +207,9 @@ class G02bIn(SBModel):
     rubric_version: str = ext("", note="scoreReport.rubricVersion 기록용 (채점에 쓴 Rubric.version)")
     section_results: list[SectionResult] | None = ext(
         None, note=f"{NEW_TYPE_NOTE} — T-V1 항목 판정(계획서 묶음 후보 규칙, spec 4.12). None이면 그 후보 규칙을 쓰지 않는다")
+    category: Category | None = ext(
+        None, note=f"{BV_NOTE} — 실행 건 카테고리(산출물 category, 흐름이 늘 채움). 산출물 종류(원페이지 → svg-onepage, "
+                   "그 밖 → html)를 정한다")
 
 
 class G02bOut(SBModel):
@@ -447,6 +452,8 @@ class TV2In(SBModel):
     # T-B2가 받은 것과 같은 값. 원페이지 대조의 근거 (catalog T-V2 입력).
     # 기준 문서는 필수이고 흐름이 늘 채운다. 기본값 None은 옛 실행 건 호환용 선언
     plan_doc: PlanDoc | None = None
+    feature_elements: dict[str, list[str]] | None = ext(
+        None, note=f"{BV_NOTE} — 직전 T-V2가 낸 확인 요소 목록(산출물 featureElements). None(첫 T-V2)은 빈 사전으로 본다")
 
 
 class TV2Out(SBModel):
@@ -454,6 +461,10 @@ class TV2Out(SBModel):
     code_check: CodeCheckResult
     feature_match: FeatureMatchResult
     diagnostics: list[str] = Field(default_factory=list)  # 관리자 진단 전용. 흐름 제어에 쓰지 않음
+    feature_elements: dict[str, list[str]] = ext(
+        default_factory=dict,
+        note=f"{BV_NOTE} — 확인 요소 목록(열쇠 → 요소 글자 1 ~ 5개) = 입력 ∪ 새로 뽑은 것. 흐름이 다음 T-V2 입력으로 "
+             "연결한다. 산출물 내용이라 기록 · 로그 · 예외 메시지에 넣지 않는다")
 
 
 # ── 구현 ─────────────────────────────────────────────

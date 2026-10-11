@@ -2,11 +2,30 @@
 
 | 항목 | 내용 |
 |---|---|
-| 작성일 | 2026-10-01 (2026-10-02 갱신 — 웹 더미 파이프라인 떼어 내기. 2026-10-03 갱신 — 공고 서버 연결. 2026-10-04 갱신 — 작업 분해(T-C3)가 고른 평가 항목. 2026-10-05 갱신 — 시각 UTC · 실행 로그 12개월 처리 · 탈퇴 함수. 2026-10-06 갱신 — 산출물층 결과 확장 필드 · 관리자 이미지 토큰 · 새 사건 종류 · Task별 모델 설정. 2026-10-08 갱신 — 기준 문서 v1.10 반영 · 새 함수 `missing_projects`. 2026-10-08 갱신(2) — 산출물 파일 참조형 · 새 함수 3개 · 새 오류 코드 · `SBRAIN_ARTIFACT_ROOT`. 2026-10-10 갱신 — 전략 · 작성 · 검증-1 실구현: 계획서 항목 구조 · 평가항목 = 계획서 항목 · 태그 묶음 재작성 · 사전 정보 사업비 · 일정 테이블) |
+| 작성일 | 2026-10-01 (2026-10-02 갱신 — 웹 더미 파이프라인 떼어 내기. 2026-10-03 갱신 — 공고 서버 연결. 2026-10-04 갱신 — 작업 분해(T-C3)가 고른 평가 항목. 2026-10-05 갱신 — 시각 UTC · 실행 로그 12개월 처리 · 탈퇴 함수. 2026-10-06 갱신 — 산출물층 결과 확장 필드 · 관리자 이미지 토큰 · 새 사건 종류 · Task별 모델 설정. 2026-10-08 갱신 — 기준 문서 v1.10 반영 · 새 함수 `missing_projects`. 2026-10-08 갱신(2) — 산출물 파일 참조형 · 새 함수 3개 · 새 오류 코드 · `SBRAIN_ARTIFACT_ROOT`. 2026-10-10 갱신 — 전략 · 작성 · 검증-1 실구현: 계획서 항목 구조 · 평가항목 = 계획서 항목 · 태그 묶음 재작성 · 사전 정보 사업비 · 일정 테이블. 2026-10-11 갱신 — 구현 · 검증-2 실구현: 점수 보고서 환산 칸 · `codeCheck` 항목의 `earned` · `applicable` · 관리자 조회 만점 칸 · 인포그래픽은 모든 카테고리 SVG) |
 | 상태 | 함수 이름 · 인자 · 결과 필드 · 오류 코드는 **구현 완료**. 화면 조회(5.1절)의 화면별 모양은 **초안** — 웹팀과 맞춰 고친다 |
 | 근거 | 기능정의서 v1.10, 웹팀 합의(2026-09-30) 1~10번, 웹팀 회신(2026-10-05) |
-| 코드 | `sbrain/` — 명령 창구 `flow/service.py`(`SBrainOrchestrator`), 화면 · 결과 · 관리자 조회 · 파일 읽기 `flow/reads.py`, 파일 참조 `models/files.py`, 파일 저장소 `orchestrator/files.py`, 파일 삭제 대기열 처리 `orchestrator/file_deletion.py`, 재작성 묶음 `flow/rework_map.py`, 조립 `bootstrap.py`, 워커 `worker.py`, 웹 테이블 쓰기 `store_sql/web_tables.py`, 시각 `models/clock.py`, 실행 로그 12개월 처리 `flow/retention.py` · 통계 줄 `flow/log_stats.py` |
+| 코드 | `sbrain/` — 명령 창구 `flow/service.py`(`SBrainOrchestrator`), 화면 · 결과 · 관리자 조회 · 파일 읽기 `flow/reads.py`, 파일 참조 `models/files.py`, 파일 저장소 `orchestrator/files.py`, 파일 삭제 대기열 처리 `orchestrator/file_deletion.py`, 재작성 묶음 `flow/rework_map.py`, 산출물층 환산 `flow/score_scale.py`, 조립 `bootstrap.py`, 워커 `worker.py`, 웹 테이블 쓰기 `store_sql/web_tables.py`, 시각 `models/clock.py`, 실행 로그 12개월 처리 `flow/retention.py` · 통계 줄 `flow/log_stats.py` |
 | 독자 | 웹팀(백엔드) |
+
+### 2026-10-11 바뀐 점 (요약) — 구현 · 검증-2 실구현 · 산출물층 환산 · 관리자 만점 칸
+
+구현 · 검증-2 담당자 코드(T-B1 실행 파일 · T-B2 인포그래픽 · T-V2 산출물층 검증)를 Orchestrator에 끼웠고, 판정 G-02a · G-02b · 안내 문서 G-04 · 합치기 M-1 ~ M-4를 실구현으로 바꿨다. **함수 이름 · 인자 · 오류 코드는 그대로다.** 결과 안의 점수 보고서 · `codeCheck` 항목 · 관리자 조회에 확장 칸이 늘었다. 산출물층 점수는 이제 **그 실행 건의 배점**(실행 시작 때 고정한 `verification_policies` 값)으로 환산한다.
+
+| 구분 | 내용 | 절 |
+|---|---|---|
+| 점수 보고서 환산 칸 | `ScoreView`(화면 6 · 9의 `score`, `outputs`의 `documentScoreReport` · `overallScoreReport`)에 확장 칸 여덟 개 — `docLayerMax` · `codeCheckScore` · `codeCheckMax` · `featureMatchScore` · `featureMatchMax` · `artifactLayerScore` · `artifactLayerMax` · `codeCheckItems`. **층 점수 · 만점 · 코드 점검 항목 줄은 지금 정책 값이 아니라 이 칸으로 그린다.** 문서 점수 보고서(G-02a)는 `docLayerMax`만 있다 | 5.1 |
+| 화면 8 | 화면 8 모양에는 점수 보고서를 더하지 않았다. 화면 8의 층 점수 · 항목 줄은 `outputs`의 `overallScoreReport`에서 읽는다(종합 판정 G-02b는 T-V2 바로 뒤에 계산되어 화면 8 대기 전에 있다) | 5.1 · 5.2 |
+| `codeCheck` 항목 | `codeCheck.checks[]`에 확장 `earned`(그 항목에서 얻은 점수, 검사 배점 기준) · `applicable`(해당 여부 — 거짓이면 해당 없음). 검증-2 원점수(15점 기준) 그대로다 | 5.1 |
+| 관리자 만점 칸 | 실행 건 목록(`admin_runs`)에 `docMax` · `artifactMax`, 점수 이력(`admin_score_history`)에 `docMax` · `codeCheckMax` · `featureMatchMax`. 산출물층 · 코드 점검 · 계획서 대조 점수는 그 실행 건 배점으로 환산한 값이다. **관리자 화면의 만점은 지금 정책 값 대신 이 칸을 쓴다** | 8.4 · 8.5 |
+| 운영 요약 | `admin_summary`의 층별 변화(`layerChanges`)의 코드 점검 · 계획서 대조 점수도 실행 건마다 그 실행 건 배점으로 환산한 값이다. 모양은 그대로 | 8.6 |
+| 전후 비교 | 산출물층이 바뀐 재작성의 비교 값(화면 9 `comparisons`, `rework_result`의 `beforeScore` · `afterScore`)은 산출물층 환산 값이다. 기본 배점(15 · 15)이면 전과 같다 | 5.3 |
+| 인포그래픽 파일 | **모든 카테고리에서 SVG**다 — 원페이지 `onepage.svg`, 웹개발 · AI API `infographic.svg`(`image/svg+xml`). 전에는 스텁이 `infographic.png`를 넣었다. `infographic`에 확장 `iconFallback`(기본 아이콘으로 대신했는지 — 웹은 쓰지 않아도 된다) | 5.2 · 5.4 |
+| 생성된 HTML | 실제 LLM이 만든 HTML이 진입 파일로 온다. 자체 검사(외부 의존 · 샌드박스 금지 기능 · 비밀값)에 걸린 HTML도 진입 파일로 오고 검증-2가 채점한다. **지금처럼 격리(sandbox `iframe` · 외부 요청 차단)해서 보여 준다** | 5.5 |
+| 관리자 호출 기록 · 사건 | 검증-2 대조 호출의 `purpose` · `itemKey`에 기능 이름이 들어간다(`계획서 대조: <기능 이름>` 등, 200자까지 자름). `검증2진단` 사건에 기능 이름 · 비밀값 앞 8자가 들어갈 수 있다. `이미지대체` 사건의 설명이 둘이 되었다 | 8.2 · 8.8 |
+| 통계 줄 | 웹 함수는 통계 줄을 읽지 않는다(지금처럼). DB에서 `orch_log_stats`를 직접 조회할 때, 실행 줄의 코드 점검 · 계획서 대조 · 산출물층 점수는 환산 값이고 `data_json`에 최상위 키 `maxScores`(`docScore` · `codeCheck` · `featureMatch` 만점)가 붙는다 | 8 |
+| 웹팀 요청 | ① 각 층 배점을 **0보다 크게** 막아 달라(지금 웹은 합이 100이면 0을 받는다) ② 점수 표시는 환산 칸 · 만점 칸으로. 계획서 파일 조립(T-C4)은 여전히 범위 밖이다 | 12 |
+| 잠정 · 확장 값 | 21절 | 21 |
 
 ### 2026-10-10 바뀐 점 (요약) — 전략 · 작성 · 검증-1 실구현 · 계획서 항목 구조 · 사업비 · 일정 입력
 
@@ -443,7 +462,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 - **`blockedAnnouncementIds`** — 자격 불통과(E-G1-REJECT)가 나온 공고 ID. 그 실행 건에서 고를 수 없다(`ANNOUNCEMENT_BLOCKED`, 6.1). 추가 조회에서 그 공고 카드가 `contentChanged` 참이 되면 빠진다. 공고 없음 · 오류 · 설립일 없음은 들어가지 않는다. 카드에는 자격 정보를 싣지 않는다.
 - **화면 4 확인 필요** — `gateResult.unknownConditions`(`지원대상 유형` · `업력`)가 있으면 `notices`에 E-G1-UNPARSED가 하나 붙는다. 진행을 막지 않고(`canStartWriting` 참), 실행 건 안내 목록에는 쌓지 않아 `view_project`의 `notices`에는 나오지 않는다. 화면 4를 열 때마다 지금 자격 결과로 다시 만든다.
 - 없는 화면 번호는 `INVALID_SCREEN`, 실행 건이 없으면 `RUN_NOT_FOUND`.
-- `score`(`ScoreView`): `displayScore`(환산 점수) · `total` · `threshold` · `passed` · `phase` · `docScore` · `artifactScore` · `carriedOverLayer` · `comparisons` · `notices`. 판정에 쓴 실행 설정 스냅샷은 싣지 않는다.
+- `score`(`ScoreView`): `displayScore`(환산 점수) · `total` · `threshold` · `passed` · `phase` · `docScore` · `artifactScore` · `carriedOverLayer` · `comparisons` · `notices`, 확장 환산 칸 여덟 개(아래 '점수 보고서 환산 칸', 2026-10-11). 판정에 쓴 실행 설정 스냅샷은 싣지 않는다.
 - `reworkOptions`(`ReworkOption`): `order`(판정 G-02a · G-02b의 재작성 지시를 그대로) · `bundles`(그 지시의 기회를 세는 **묶음 이름**, 6.3) · `remaining`(남은 기회) · `selectable`(고를 수 있음).
   - 산출물층 지시 → 그 Task의 묶음(`실행 파일` · `인포그래픽`).
   - 문서층 지시는 **묶음마다 하나**다(`order.targets` = [묶음 이름], `bundles`도 그 묶음 하나). `remaining`은 그 묶음의 남은 기회, `selectable`은 그 값이 0보다 클 때.
@@ -461,9 +480,29 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | `defectSources` | `codeCheck.checks[]` | 그 칸의 미충족 결함이 있는 산출물(`prototype` · `infographic`). 웹개발 · AI API의 2번(대체 텍스트)만 채운다. 기본 빈 목록 |
 | `withheld` | `featureMatch` | 계획서 대조 판정 보류. 참이면 대조 점수는 0으로 합산되어 있다(재정규화하지 않음). **웹이 "대조 불가"로 표시한다.** 기본 거짓 |
 | `withheldReason` | `featureMatch` | 보류 사유 오류코드(예: `E-V2-NOFEATURE`). 사용자 노출 문구는 기준 문서 개정 · 웹팀 결정 전이라 비어 있다. 기본 `null` |
-| `partialFeatures` | `featureMatch` | 부분 인정(0.5) 기능 이름. 미충족 기능은 지금처럼 `missingFeatures`. 기본 빈 목록 — 검증-2 담당이 채우기 전에는 비어 있을 수 있다 |
+| `partialFeatures` | `featureMatch` | 일부만 인정된 기능 이름(인정 몫이 0과 1 사이). 미충족 기능은 지금처럼 `missingFeatures`. 기본 빈 목록. 2026-10-11부터 실구현 검증-2가 채운다 |
+| `earned` | `codeCheck.checks[]` | **확장(2026-10-11).** 그 항목에서 얻은 점수 — 검사 배점(`weight`) 기준, 0 이상 `weight` 이하. 부분 점수가 있는 항목(예: 3점 중 2점)도 이 값으로 보인다(`passed`는 만점인지만 뜻한다). 비어 있으면(`null`) 옛 결과다 |
+| `applicable` | `codeCheck.checks[]` | **확장(2026-10-11).** 검사할 대상이 있는가. 거짓이면 해당 없음 — 그 항목은 배점에서 빠지고, 검증-2가 남은 항목으로 15점을 다시 환산한다. 해당 없음 항목은 `passed` 참 · `earned` 0이고 `detail`은 '해당 없음 — 이유'. 기본 참 |
 
 - 이 필드들은 화면 표시에 쓸 수 있는 결과 값이다. 재작성 판정은 Orchestrator가 이미 이 값으로 했다(`reworkOptions`).
+- **`codeCheck`는 검증-2 원점수(15점 기준)다.** `codeCheck.total`, `checks[].weight` · `earned`는 그 실행 건 배점과 상관없이 15점 기준이다. 화면에 층 점수 · 항목 줄을 그릴 때는 아래 점수 보고서 환산 칸을 쓴다.
+
+**점수 보고서 환산 칸 (확장, 2026-10-11)** — `ScoreView`(화면 6 · 9의 `score`, `outputs`의 `documentScoreReport` · `overallScoreReport`)에 붙는다. 검증-2는 코드 점검 15점 + 계획서 대조 15점으로 채점하고, Orchestrator가 그 실행 건의 배점(코드 점검 C = `verification_policies.code_weight`, 계획서 대조 P = `plan_weight`, 문서층 D = `doc_weight` — 실행 시작 때 고정)으로 환산해 싣는다.
+
+| 칸 (JSON) | 값 | 문서 보고서(G-02a) | 종합 보고서(G-02b) |
+|---|---|---|---|
+| `docLayerMax` | 문서층 만점 D | 있음 | 있음 |
+| `codeCheckScore` · `codeCheckMax` | 코드 점검 환산 점수(원점수 × C ÷ 15) · 만점 C | `null` | 있음 |
+| `featureMatchScore` · `featureMatchMax` | 계획서 대조 환산 점수(원점수 × P ÷ 15) · 만점 P | `null` | 있음 |
+| `artifactLayerScore` · `artifactLayerMax` | 산출물층 환산 점수(앞 둘의 합) · 만점 C + P | `null` | 있음 |
+| `codeCheckItems` | 코드 점검 항목 줄 8칸 — `codeCheck.checks[]`와 같은 모양(`no` · `name` · `weight` · `passed` · `detail` · `defectSources` · `earned` · `applicable`) | 빈 목록 | 있음 |
+
+- **`codeCheckItems`는 그 실행 건 배점 기준으로 다시 계산한 줄이다.** `weight` = 환산 배점, `earned` = 환산 점수, `detail`은 앞 숫자('얻은 점수/배점점')만 '환산 점수/환산 배점점'으로 바꾼 글(근거 글은 그대로). 해당 없음 항목은 `weight` · `earned` 0이고 `detail`은 '해당 없음 — 이유' 그대로이며, 나머지 항목이 C를 나눠 갖는다. 항목 줄 `earned`의 합 = `codeCheckScore`, `weight`의 합 = C다. `no` · `name` · `passed` · `applicable` · `defectSources`는 원본과 같다.
+- 통과 필수 조건 실패(`codeCheck.gateFailures`가 비어 있지 않음)면 `codeCheckScore` · `featureMatchScore` · `artifactLayerScore`와 항목 줄 `earned`가 모두 0이다.
+- 환산 값은 소수 둘째 자리(잠정), 총점(`total` · `displayScore`)은 지금처럼 소수 첫째 자리다. 종합 총점 `total` = 문서층 `docScore.total` + `artifactLayerScore`.
+- 배점이 0이면 그 층의 환산 값은 0이다(문서층 D가 0이면 문서 보고서의 `displayScore`도 0). 0을 기본값으로 바꾸지 않는다 — 웹에서 0을 막아 달라는 요청은 12절.
+- 원점수 `artifactScore`(`codeCheck` · `featureMatch`)도 그대로 실린다. 사용자 화면에는 환산 칸을 쓰고, 원점수는 근거 · 관리자 진단용으로 쓴다.
+- 예: 관리자가 코드 점검 10 · 계획서 대조 20으로 바꾼 뒤 시작한 실행 건에서 검증-2 원점수가 코드 점검 12 · 계획서 대조 15면, `codeCheckScore` 8(`codeCheckMax` 10) · `featureMatchScore` 20(`featureMatchMax` 20) · `artifactLayerScore` 28(`artifactLayerMax` 30)이다. 바꾸기 전에 시작한 실행 건은 그 실행 건의 배점(15 · 15) 그대로다.
 
 ### 5.2 `outputs(project_id) -> Outputs` (2026-10-02 새로)
 
@@ -477,7 +516,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | `gateResult` · `businessAgeYears` | 자격 확인 결과 · 업력 |
 | `category` | 원페이지 · 웹개발 · AI_API |
 | `planDoc` · `docScore` | 계획서(섹션 · 문장 · 차트 · 표 · 보호 토큰, 확장 그림 `diagrams`) · 문서층 점수. 2026-10-10부터 섹션 = 담당자 양식의 모든 항목, 점수 항목 = 계획서 항목마다 하나(아래 '계획서 모양') |
-| `documentScoreReport` · `overallScoreReport` | 문서 · 종합 점수 보고서(`ScoreView`, 설정 스냅샷 없음) |
+| `documentScoreReport` · `overallScoreReport` | 문서 · 종합 점수 보고서(`ScoreView`, 설정 스냅샷 없음). 2026-10-11부터 환산 칸(5.1 '점수 보고서 환산 칸')이 붙는다. **화면 8의 층 점수 · 코드 점검 항목 줄은 `overallScoreReport`에서 읽는다**(화면 8 모양에는 점수 보고서가 없다) |
 | `prototype` · `infographic` · `codeCheck` · `featureMatch` | 산출물과 산출물층 점검 결과 |
 | `formatFindings` · `sentenceResults` · `proofreadLog` | 형식 지적 · 문장별 결과(시도별 기록 `attempts` 포함) · 검수 기록 |
 | `deliverable` · `userMessage` | 결과물 · 안내 문구 |
@@ -486,8 +525,8 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | `evaluationItems` | **확장(2026-10-04).** 작업 분해(T-C3)가 신청자 유형으로 고른 평가 항목 `EvalItem` 목록(현재 버전) — 항목마다 `itemCode` · `itemName` · `maxScore` · `description`. 작업 분해 전이면 빈 목록. 점수 항목 이름은 `docScore.items[].itemCode`를 이 목록의 `itemCode`와 맞춰 `itemName`으로 만든다. **평가항목 = 계획서 항목**이다(2026-10-10) — 항목마다 `itemCode` = 항목 번호(예: `2.4.1`), `itemName` = 항목 제목 앞 40자(잠정), `maxScore` = 70 ÷ 항목 수(기본 배점 기준), `description` = 항목 제목 전체 |
 
 - 실행 건이 실패 · 중단이면 `CommandError("RUN_NOT_VIEWABLE")`(기준 문서 E-RUN-FAIL — 결과를 볼 수 없음. 공고 마감 안내 `E-RUN-CLOSED`와 다른 코드). 실행 건이 없으면 `RUN_NOT_FOUND`.
-- **산출물 파일 (2026-10-08 바뀜):** `prototype` · `infographic` · `planDoc.charts[]` · `deliverable`의 파일 칸은 파일 참조(`FileRef`)다(5.4). 결과에는 파일 내용이 없고, 파일은 참조의 `key`로 `read_artifact_file`(5.5)을 불러 받는다. 지금 워커의 구현 Agent는 스텁이라 파일 내용은 작은 자리채움 파일이다(진입 파일 `index.html` · 원페이지 `onepage.svg` · 그 밖 인포그래픽 `infographic.png` · 안내 문서 `README.md` · 계획서 파일 `plan.docx`, 차트 그림은 없음).
-- `codeCheck` · `featureMatch`의 확장 필드(`gateFailures` · `defectSources` · `withheld` · `withheldReason` · `partialFeatures`)는 5.1 표와 같다(2026-10-06).
+- **산출물 파일 (2026-10-08 바뀜):** `prototype` · `infographic` · `planDoc.charts[]` · `deliverable`의 파일 칸은 파일 참조(`FileRef`)다(5.4). 결과에는 파일 내용이 없고, 파일은 참조의 `key`로 `read_artifact_file`(5.5)을 불러 받는다. 2026-10-11부터 워커의 구현 · 검증-2(T-B1 · T-B2 · T-V2)와 안내 문서(G-04)는 실구현이다 — 진입 파일 `index.html`(LLM이 만든 HTML), 인포그래픽 원페이지 `onepage.svg` · 웹개발 · AI API `infographic.svg`(모든 카테고리 SVG), 안내 문서 `README.md`(템플릿). 계획서 파일 `plan.docx`는 지금도 스텁 T-C4의 자리채움 파일이고, 차트 그림은 없다.
+- `codeCheck` · `featureMatch`의 확장 필드(`gateFailures` · `defectSources` · `withheld` · `withheldReason` · `partialFeatures`, 2026-10-11 `earned` · `applicable`)는 5.1 표와 같다.
 
 **계획서 모양 (2026-10-10)** — 화면 6 · 11과 `outputs`의 `planDoc`, `rework_result`의 `planBefore` · `planAfter`가 같은 모양이다. 계약 칸은 확장만 늘었다.
 
@@ -518,7 +557,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | 필드 (JSON) | 언제 | 내용 |
 |---|---|---|
 | `projectId` · `runId` · `cycleId` · `screen` · `bundles` · `status` · `startedAt` · `endedAt` | 항상 | 모은 묶음(요청 순서), 요청한 화면, 결과 상태(`진행중` · `완료` · `실패`) |
-| `kept` · `basis` · `beforeScore` · `afterScore` | 완료 | 남긴 쪽(`전` · `후`), 비교 기준(document · artifact · total), 전후 점수 |
+| `kept` · `basis` · `beforeScore` · `afterScore` | 완료 | 남긴 쪽(`전` · `후`), 비교 기준(document · artifact · total), 전후 점수. 2026-10-11부터 산출물층 점수는 그 실행 건 배점으로 환산한 값이다(artifact = 산출물층 환산, total = 문서층 + 산출물층 환산 — 5.1 '점수 보고서 환산 칸') |
 | `beforeRefs` · `afterRefs` | 완료 | 바뀐 산출물의 재작성 전 · 후 '이름@버전' |
 | `planBefore` · `planAfter` | 완료, 계획서가 바뀌었을 때 | 전후 섹션 본문(`PlanSection` 목록) |
 | `files` | 완료, 산출물이 바뀌었을 때 | `ReworkFileChange` — `artifact`(`prototype` 진입 파일 · `infographic` 이미지) · `beforeFile` · `afterFile`(재작성 전 · 후 파일 참조 `FileRef`, 없으면 `null`). 2026-10-08 바뀜: 옛 `beforePath` · `afterPath`를 지우고 참조로 바꿨다. 파일 내용은 `read_artifact_file`(5.5)로 따로 읽는다 |
@@ -549,14 +588,15 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | `prototype` (화면 8 · 11, `outputs`) | `entryFilePath` · `sourceText` | `entryFile` — `FileRef` 또는 `null`(**`null`이면 진입 파일 없음**) |
 | `prototype` | `assetPaths` | `assetFiles` — `FileRef` 목록(빈 목록 가능, 따로 내려받을 파일만) |
 | `prototype` | `readmePath` | `readmeFile` — 실행 안내 문서, `FileRef` 또는 `null` |
-| `infographic` (화면 8 · 11, `outputs`) | `imagePath` | `imageFile` — `FileRef`(원페이지는 지면 `onepage.svg`) |
+| `infographic` (화면 8 · 11, `outputs`) | `imagePath` | `imageFile` — `FileRef`. 2026-10-11부터 모든 카테고리 SVG(`image/svg+xml`) — 원페이지는 지면 `onepage.svg`, 웹개발 · AI API는 `infographic.svg` |
 | `planDoc.charts[]` (화면 6 · 11, `outputs`) | `imagePath` | `imageFile` — `FileRef` 또는 `null`(그림 없음) |
 | `deliverable` (화면 11, `outputs`) | `planDocPath` | `planDocFile` — 계획서 파일 `FileRef` |
 | `deliverable` | `prototypePath` | `prototypeFiles` — `FileRef` 목록: 진입 파일(있으면) · 안내 문서(있으면) · 자산 순 |
 | `deliverable` | `infographicPath` | `infographicFile` — `FileRef` |
 | `rework_result().files[]` | `beforePath` · `afterPath` | `beforeFile` · `afterFile`(5.3) |
 
-- `prototype.kind` · `implementedFeatures`, `infographic.format` · `altText`, 계획서 본문(`planDoc`의 섹션 · 문장 · 표)은 그대로다.
+- `prototype.kind` · `implementedFeatures`, `infographic.format` · `altText`, 계획서 본문(`planDoc`의 섹션 · 문장 · 표)은 그대로다. 2026-10-11부터 `infographic.format`은 늘 `svg`다.
+- **`infographic.iconFallback` (확장, 2026-10-11)** — 인포그래픽에 넣을 맞춤 아이콘을 만들지 못해 기본 아이콘으로 대신했으면 참(아이콘이 들어갈 항목이 없으면 거짓). 사용자 화면에는 알리지 않기로 했으므로 웹은 쓰지 않아도 된다. 관리자에게는 사건 `이미지대체`가 따로 남는다(8.8).
 - 원페이지는 `prototype.entryFile`이 `infographic.imageFile`과 같은 참조다(같은 파일).
 - 진입 파일 · 원페이지 지면은 **파일 하나로 열린다**(그림 등을 안에 넣고, 다른 파일을 상대 경로로 부르지 않는다 — Agent 팀 약속). 그래서 웹은 진입 파일 하나만 받아 보여 주면 된다.
 - **내려받기용 압축(zip)은 웹이 만든다.** `deliverable.prototypeFiles` 등의 참조마다 `read_artifact_file`로 받아 묶는다. Orchestrator는 압축을 만들지 않는다.
@@ -595,6 +635,7 @@ return Response(content=f.data, media_type=f.media_type)   # 웹 프레임워크
 ```
 
 - **LLM이 만든 HTML · SVG를 웹에서 보여 줄 때는 격리를 권한다(웹팀 몫).** 진입 파일은 LLM이 만든 코드라 스크립트가 들어 있다. 서비스와 다른 도메인에서 내려 주거나, `sandbox` 속성을 단 `iframe`으로 보여 주어 서비스 화면 · 로그인 정보에 닿지 못하게 한다.
+  - **2026-10-11부터 진입 파일이 실제 LLM 결과다.** T-B1 자체 검사(외부 의존 · 샌드박스 금지 기능 · 비밀값)에 걸린 HTML도 다시 만들기를 다 쓰면 그대로 진입 파일로 오고, 검증-2가 채점한다(기준 문서 T-B1). 이때 외부 의존(CDN 등 외부 주소를 부르는 것)은 검증-2에 검사가 없어 감점되지 않는다(알려진 한계 — 담당자에게 묻는 중). 그래서 **지금처럼 격리하고 외부 요청을 막아(예: `sandbox` 속성 · 콘텐츠 보안 정책) 보여 주기를 다시 부탁한다.** 비밀값에 걸린 HTML 안의 값은 LLM이 지어낸 가짜 값이다.
 - 서명 URL(브라우저가 저장소에서 바로 받는 방식)은 S3를 붙일 때 더한다. 지금은 이 함수로만 받는다.
 
 ## 6. 명령 — 화면 3 · 5 · 6 · 8 · 9
@@ -812,6 +853,8 @@ orch.missing_projects(["abc"])                    # ValueError
 
 **범위 (2026-10-05 새로):** `admin_runs`(8.4) · `admin_summary`(8.6)는 **최근 12개월 기준** — 마지막 활동(실행 건의 마지막 갱신 시각)이 지금에서 12개월 전 이후인 실행 건만 본다. **그보다 오래된 것은 통계 표(`orch_log_stats`)를 DB에서 직접 조회한다**(조회 함수는 두지 않는다. 계정 · 프로젝트 · 실행 건 ID 없음). 나머지 관리자 조회(8.1 · 8.2 · 8.5 · 8.7)는 범위를 두지 않고 남은 기록을 보여 준다 — 워커가 마지막 활동 12개월이 지난 실행 건의 실행 로그를 통계 줄로 옮기고 지우므로, 그 몫은 어느 관리자 조회에도 없다. 12개월 처리 뒤 다시 움직인 실행 건은 8.4 · 8.6 범위에 다시 들어오지만 옮긴 기록 몫의 점수 이력 · 시도 수는 없다.
 
+**산출물층 점수 · 만점 (2026-10-11):** 관리자 조회(8.4 · 8.5 · 8.6)의 산출물층 · 코드 점검 · 계획서 대조 점수는 실행 건마다 **그 실행 건의 배점**(실행 시작 때 고정)으로 환산한 값이다. 실행 기록 안의 원점수(15점 기준)는 바꾸지 않고, 읽을 때 환산한다. 통계 테이블 `orch_log_stats`의 실행 row도 같다 — `data_json`의 점수(채점 이력 `scores` · 마지막 점수 `finalScores`)는 환산 값이고, 최상위 키 `maxScores`(`{"docScore": D, "codeCheck": C, "featureMatch": P}`)가 붙는다. 웹 함수는 통계 테이블을 읽지 않는다(DB에서 직접 조회할 때만 해당).
+
 ### 8.1 `admin_executions(...) -> list[AdminExecution]` — "에이전트 테스크" 탭
 
 | 조건 (모두 선택) | 내용 |
@@ -824,12 +867,15 @@ orch.missing_projects(["abc"])                    # ValueError
 `AdminExecution` 필드: `projectId` · `runId` · `executionId` · `taskId` · `agent`(담당 Agent) · `attempt`(시도 번호) · `trigger`(이유: 첫실행 · 재작성 · 재수행) · `redoCount` · `status` · `model` · `reasoningEffort` · `temperature` · `errorKind` · `error`(오류 사유) · `startedAt` · `endedAt` · `durationSec`(걸린 시간) · `tokens` · **`imageInputTokens` · `imageOutputTokens`**(확장, 2026-10-06 — 그 실행의 이미지 호출 토큰 합계. `tokens`(글 토큰)에 더하지 않고 따로 준다. 이미지 호출이 없으면 `null`).
 
 - `model` · `reasoningEffort` · `temperature`는 그 Task 설정의 글 모델 값이다. LLM을 부르지 않는 Task(T-C2 · G-01 · T-C4)는 설정이 없어 `null`이다(2026-10-08). 2026-10-06부터 모델 설정이 Agent별에서 **Task별**로 바뀌어, 같은 Agent의 Task라도 모델이 다를 수 있다(예: 구현 T-B2는 글 모델과 이미지 모델을 함께 쓴다). 설정은 Orchestrator 코드에 있고 웹 표 · 화면은 없다.
+- 2026-10-11부터 워커의 T-B1 · T-B2 · T-V2가 실제 OpenAI를 부른다. T-B2는 이미지 호출도 실제로 나가므로 T-B2 실행 기록의 `imageInputTokens` · `imageOutputTokens`가 채워진다.
 
 ### 8.2 `admin_calls(execution_id) -> list[AdminCall]` — 실행 상세
 
 `AdminCall` 필드: `callId` · `purpose`(목적) · `itemKey`(문장 ID 등) · `callType`(llm · search · **image** — 이미지 호출, 2026-10-06 · **file** — 파일 넣기 · 읽기, 2026-10-08) · `provider` · `model` · `finalOutcome`(성공 · 소진) · `error` · `errorKind` · `tries`(시도별 `no` · `outcome` · `errorKind` · `detail` · 시각 · `tokens`) · `tokens`(시도 합계).
 
 - **`callType=file` (2026-10-08):** Agent가 산출물 파일을 넣거나(`purpose`=`put`) 읽은(`get`) 호출이다. `provider` · `model` · `tokens`는 비어 있다. 시도별 결과 · 오류 종류 · 시각만 있고, **파일 내용 · 이름 · 키는 실리지 않는다.**
+- **기능 이름 (2026-10-11):** 검증-2(T-V2) 계획서 대조 호출의 `purpose` · `itemKey`에는 담당자 문구 그대로 기능 이름이 들어간다 — `purpose` 예: `계획서 대조 요소: <기능 이름>` · `계획서 대조: <기능 이름 또는 칸 이름>`, `itemKey` 예: `<기능 이름>#요소` · `<기능 이름>#0`(판정 3번 중 몇 번째인지 0 ~ 2). 사용자가 정한 예외다. 그 밖의 호출 목적은 그대로 짧은 이름이다(예: `T-B1 HTML 생성` · `T-B2 인포그래픽 정보 추출` · `인포그래픽 아이콘`).
+- **길이 (2026-10-11):** `purpose` · `itemKey`는 DB 칸 길이(200자)를 넘지 않게 뒤를 잘라 저장한다. 모든 Task에 같은 규칙이다.
 
 ### 8.3 토큰 (`tokens`)
 
@@ -855,13 +901,14 @@ orch.missing_projects(["abc"])                    # ValueError
 | `agent` | 그 Task의 담당 Agent (내부 단계는 `None`) |
 | `attempt` | 가장 나중에 기록된 실행의 시도 번호 |
 | `updatedAt` | 실행 건의 마지막 갱신 시각 |
-| `docScore` · `artifactScore` · `totalScore` | 현재 버전(되돌리기 반영) 점수 — 문서층 `docScore.total`, 산출물층 `artifactScore.total`, 총점 `scoreReport.overall.total`. 없으면 `None` |
+| `docScore` · `artifactScore` · `totalScore` | 현재 버전(되돌리기 반영) 점수 — 문서층 `docScore.total`, 산출물층 = 그 버전을 만든 검증-2 결과의 코드 점검 · 계획서 대조 원점수를 **그 실행 건 배점으로 환산한 합**(2026-10-11 바뀜 — 전에는 원점수 `artifactScore.total`), 총점 `scoreReport.overall.total`. 없으면 `None` |
+| `docMax` · `artifactMax` | **확장(2026-10-11).** 그 실행 건의 문서층 만점 D · 산출물층 만점 C + P(실행 시작 때 고정한 배점). **화면의 만점은 지금 정책 값(`verification_policies`) 대신 이 칸을 쓴다** — 배점을 바꾼 뒤에도 그 전에 시작한 실행 건은 옛 배점으로 채점되기 때문이다 |
 | `resumeCount` · `lastErrorKind` | 재개 횟수 · 마지막 오류 종류 |
 | `failureReason` | 관리자용 실패 사유 `"<Task>: <재개상한초과 · 영구오류> — <오류 요약>"`. **관리자 화면에만** 보인다 |
 
 ### 8.5 `admin_score_history(project_id) -> AdminScoreHistory` — "이력보기" (2026-10-02 새로)
 
-층별 채점 이력(최근 순): `projectId` · `runId` · `docScore`(문서층 T-V1 `docScore.total`) · `codeCheck`(코드 점검 T-V2 `codeCheck.total`) · `featureMatch`(계획서 대조 T-V2 `featureMatch.score`). 각 항목은 `ScoreEntry`(`scoredAt` · `score` · `afterRework`(재작성 사이클 안의 채점) · `executionId`). 되돌린 채점도 남는다(채점 기록이다). 실행 건이 없으면 `RUN_NOT_FOUND`(웹은 지금 빈 목록을 돌려준다 — 웹이 받아 빈 목록으로 바꾼다). 12개월 처리로 실행 로그를 옮긴 실행 건은 채점 이력이 빈 목록이다(2026-10-05).
+층별 채점 이력(최근 순): `projectId` · `runId` · `docScore`(문서층 T-V1 `docScore.total`) · `codeCheck`(코드 점검 T-V2 `codeCheck.total`) · `featureMatch`(계획서 대조 T-V2 `featureMatch.score`). **2026-10-11부터 `codeCheck` · `featureMatch` 점수는 그 실행 건 배점(C · P)으로 환산한 값이고, 확장 칸 `docMax` · `codeCheckMax` · `featureMatchMax`(그 실행 건의 D · C · P 만점)가 붙는다** — 화면의 만점은 지금 정책 값 대신 이 칸을 쓴다. 각 항목은 `ScoreEntry`(`scoredAt` · `score` · `afterRework`(재작성 사이클 안의 채점) · `executionId`). 되돌린 채점도 남는다(채점 기록이다). 실행 건이 없으면 `RUN_NOT_FOUND`(웹은 지금 빈 목록을 돌려준다 — 웹이 받아 빈 목록으로 바꾼다). 12개월 처리로 실행 로그를 옮긴 실행 건은 채점 이력이 빈 목록이다(2026-10-05).
 
 ### 8.6 `admin_summary() -> AdminSummary` — "운영 현황" · "운영 지표 요약" (2026-10-02 새로)
 
@@ -875,7 +922,7 @@ orch.missing_projects(["abc"])                    # ValueError
 | `passCount` · `passRate` · `passThreshold` | 총점 ≥ 기준 점수(지금 설정) 건수, 통과 수 / 총점이 있는 실행 건 수 × 100, 지금 기준 점수 |
 | `reworkedRuns` · `runsWithExecutions` · `reworkRate` | 재작성 실행 기록이 있는 실행 건 수, 실행 기록이 하나라도 있는 실행 건 수, 앞 / 뒤 × 100 |
 | `scoreBuckets` | 총점 구간 `90~100점` · `80~89점` · `70~79점` · `60~69점` · `60점 미만`별 건수(`label` · `count`). 정수 경계 양 끝 포함(lo ≤ 총점 ≤ hi) — 웹 지금 계산과 같다 |
-| `layerChanges` | 층별(`docScore` · `codeCheck` · `featureMatch`) `LayerChange`(`layer` · `firstAvg` · `afterAvg` · `delta` · `count`) — 실행 건마다 그 층의 첫 채점과 마지막 재작성 사이클 안의 마지막 채점(되돌린 사이클 포함)이 둘 다 있는 것만. `delta` = 반올림한 평균끼리의 차이 |
+| `layerChanges` | 층별(`docScore` · `codeCheck` · `featureMatch`) `LayerChange`(`layer` · `firstAvg` · `afterAvg` · `delta` · `count`) — 실행 건마다 그 층의 첫 채점과 마지막 재작성 사이클 안의 마지막 채점(되돌린 사이클 포함)이 둘 다 있는 것만. `delta` = 반올림한 평균끼리의 차이. 2026-10-11부터 코드 점검 · 계획서 대조 점수는 실행 건마다 그 실행 건 배점으로 환산한 값이다 |
 | `triggers` | 시도 계기(첫실행 · 재작성 · 재수행)별 `TriggerStat`(`trigger` · `count` · `avgTokens`) — 평균 토큰 = (입력 + 출력) 합 / 그 계기의 실행 기록 수(토큰 기록이 없는 실행은 0) |
 | `totalTokens` | 모든 실행 기록의 입력 + 출력 토큰(글 토큰만) |
 | `totalImageTokens` | 모든 실행 기록의 이미지 입력 + 출력 토큰(확장, 2026-10-06). `totalTokens`와 따로 센다 |
@@ -896,9 +943,9 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | 종류 | 언제 | 설명 예 |
 |---|---|---|
 | `대조보류` | 검증-2가 계획서 대조 판정을 보류했다(`featureMatch.withheld`) — 0점 합산 | "T-V2 대조 판정 보류 (E-V2-NOFEATURE) — 0점 합산" |
-| `검증2진단` | 검증-2의 진단 한 줄마다 하나 — 관리자 진단 전용 | 검증-2 담당이 쓴 진단 문장 |
+| `검증2진단` | 검증-2의 진단 한 줄마다 하나 — 관리자 진단 전용 | 검증-2 담당이 쓴 진단 문장. 2026-10-11부터 기능 이름과 비밀값 앞 8자가 들어갈 수 있다(사용자가 정한 예외). 파일 이름 · 경로는 들어가지 않는다 |
 | `안내문서자체검사실패` | 실행 안내 문서(G-04) 자체 검사가 다시 만들기를 다 쓰고도 통과하지 못했다 — 기록만 하고 계속 | "G-04 자체 검사 불통과 n건 — 재수행 횟수를 다 써 그대로 계속" |
-| `이미지대체` | 인포그래픽 제작(T-B2)의 이미지 호출이 끝내 실패해 기본 아이콘으로 계속했다 — 사용자 화면에는 알리지 않는다 | "T-B2 이미지 호출 실패 — 기본 아이콘으로 계속" |
+| `이미지대체` | 인포그래픽 제작(T-B2)이 맞춤 아이콘을 쓰지 못해 기본 아이콘으로 계속했다 — 사용자 화면에는 알리지 않는다. 2026-10-11부터 세 경우(이미지 호출이 끝내 실패 · 그림의 아이콘 칸 수가 맞지 않음 · 그림을 읽지 못함) 모두, T-B2 실행 기록마다 하나 | 이미지 호출 실패면 "T-B2 이미지 호출 실패 — 기본 아이콘으로 계속", 그 밖이면 "T-B2 맞춤 아이콘 사용 불가 — 기본 아이콘으로 계속"(2026-10-11, 잠정) |
 | `대체텍스트출처누락` | 검증-2의 대체 텍스트 칸이 미충족인데 결함 출처(`defectSources`)가 비었다 — 대비용 | "HTML 2번 미충족인데 defect_sources가 비어 있음 — T-B2로 보냄" |
 
 - **관리자에게 어떻게 알릴지(알림 · 목록 · 표시 방식)는 웹팀이 정한다.** 지금 웹이 부르는 관리자 조회 함수(8.1 ~ 8.7)에는 추적 사건 목록이 없다. 함수로 받아야 하면 필요한 모양을 알려 주면 맞춘다.
@@ -1022,6 +1069,9 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | 사업비 · 일정 필수 확인 (2026-10-10) | 웹 입력 화면 배포를 알려 주면 Orchestrator 필수 확인을 켠다(3.1). `phase` 컬럼 추가와 음수 · 합계 불일치 막기는 웹 몫(합의, 4.4). 금액 칸이 비는 row도 입력 때 막아 줄 수 있는지 확인 요청. 협약 이후 일정 필수 여부 · 일반형은 담당자 답 대기 |
 | "대조 불가" 문구(2026-10-06) | `featureMatch.withheld`가 참일 때의 화면 문구는 웹팀이 정한다(잠정 표현 "대조 불가" — 기준 문서 v1.10도 화면 문구를 미확정으로 둔다) |
 | 웹에서 바뀌는 실행 상태의 로그(2026-10-06 요청) | 워커 운영 로그에는 워커가 처리한 것만 있다. 웹 명령 처리로 바로 바뀌는 상태(대기 중 중단 `abort_project`, 화면 8 → 9 진행 `decide_for_project` 등)는 웹 쪽 로그로 남겨 달라 |
+| 층 배점 0 (2026-10-11 요청) | 웹 관리자 배점 저장(`verification_policies`의 `doc_weight` · `code_weight` · `plan_weight`)이 지금 합이 100이면 0을 받는다. **각 층 배점을 0보다 크게 막아 달라.** Orchestrator는 0을 기본값으로 바꾸지 않고 0 그대로 쓴다(그 층 환산 값 0, 나눗셈 오류만 막음 — 5.1) |
+| 점수 · 만점 표시 (2026-10-11) | 사용자 화면의 층 점수 · 만점 · 코드 점검 항목 줄은 점수 보고서 환산 칸(5.1), 관리자 화면의 만점은 실행 건 목록 · 점수 이력의 만점 칸(8.4 · 8.5)으로 그린다. 지금 정책 값을 만점으로 붙이면 배점을 바꾼 뒤 '13/10'처럼 어긋난다 |
+| 생성된 HTML 격리 (2026-10-11) | 진입 파일이 실제 LLM 결과이고 외부 의존이 검증-2에서 감점되지 않으므로, 지금처럼 격리 · 외부 요청 차단으로 보여 달라(5.5) |
 
 ## 13. 이번 변경의 잠정 · 확장 값 (2026-10-02)
 
@@ -1124,3 +1174,18 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | 사업비 · 일정 읽기 | `section` 밖 row 버림, `phase` 밖 값은 비움, `phase` 컬럼 없으면 비움 (4.4) | 잠정 |
 | 예비창업 단계 미지정 사업비 row | 1 · 2단계 표 어디에도 넣지 않고 "단계 미지정" 줄로 보존, 두 사업비 표 항목을 입력 없음(warning)으로 (5.2) | 잠정 — 웹 `phase` 컬럼이 생기면 풀림 |
 | 사전 정보 확장 칸 | `PreInput` · `CompanyInfo`의 `budgetItems` · `scheduleItems` · `teamRoleCareers`(새 타입 `BudgetItem` · `ScheduleItem`) — 웹 결과 모양과는 무관 | 확장 |
+
+## 21. 구현 · 검증-2 실구현 · 산출물층 환산의 잠정 · 확장 값 (2026-10-11)
+
+| 항목 | 값 · 내용 | 표시 |
+|---|---|---|
+| 점수 보고서 환산 칸 | `ScoreView`의 `docLayerMax` · `codeCheckScore` · `codeCheckMax` · `featureMatchScore` · `featureMatchMax` · `artifactLayerScore` · `artifactLayerMax` · `codeCheckItems` (5.1) | 확장 |
+| 코드 점검 항목 칸 | `codeCheck.checks[].earned` · `applicable` (5.1) — 이름은 구현 · 검증-2 담당자 코드와 같다 | 확장 |
+| 관리자 만점 칸 | `AdminRun.docMax` · `artifactMax`, `AdminScoreHistory.docMax` · `codeCheckMax` · `featureMatchMax` (8.4 · 8.5) | 확장 |
+| 통계 줄 | 실행 줄 `data_json`의 `maxScores` (8절) — 웹은 읽지 않는다 | 확장 |
+| 인포그래픽 | 모든 카테고리 SVG(`onepage.svg` · `infographic.svg`), `infographic.iconFallback` (5.4) | 파일 이름은 담당자 약속, `iconFallback`은 확장 |
+| 환산 값 반올림 | 소수 둘째 자리(0.5 올림). 항목 줄 환산 배점 합 = C, 환산 점수 합 = 층 값이 되도록 반올림 차이를 해당 항목 하나에 몰아준다(환산 점수가 환산 배점을 넘지 않는 항목에). 총점 · 표시 점수는 소수 첫째 자리 그대로 | 잠정 |
+| 층 배점 0 | 0 그대로 — 그 층 환산 값 0, 분모가 0인 표시 점수 0. 웹에서 막아 달라는 요청(12절) | 정한 값 — 잠정 아님 |
+| 산출물층 환산 | 그 실행 건 배점으로 환산(점수 보고서 · 전후 비교 · 관리자 조회 · 통계 줄) | 정한 값 — 잠정 아님 |
+| `이미지대체` 둘째 설명 | "T-B2 맞춤 아이콘 사용 불가 — 기본 아이콘으로 계속" (8.8) | 잠정 |
+| 호출 기록 `purpose` · `itemKey` | 기능 이름을 담당자 문구 그대로, 200자에서 자름 (8.2) | 정한 값 — 잠정 아님 |

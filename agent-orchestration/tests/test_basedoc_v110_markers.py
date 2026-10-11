@@ -8,10 +8,10 @@ from sbrain.contracts import tasks as c
 from sbrain.models import (
     Announcement, AnnouncementCard, BudgetItem, ChartSpec, CheckResult, CodeCheck, CodeCheckResult, CompanyInfo,
     Deliverable, DiagramSpec, FeatureMatchResult, FormSpec, GateResult, Infographic, Notification, PlanDoc,
-    PlanSection, PreInput, Prototype, ReworkComparison, ReworkInput, Run, ScheduleItem, SectionResult,
+    PlanSection, PreInput, Prototype, ReworkComparison, ReworkInput, Run, ScheduleItem, ScoreReport, SectionResult,
     TaskInstruction, Verify1State, extension_fields,
 )
-from sbrain.orchestrator.settings import TaskModelSetting
+from sbrain.orchestrator.settings import ScoringSettings, TaskModelSetting
 from sbrain.flow.reads import ReworkFileChange
 from sbrain.orchestrator.trace import ExecutionRecord
 
@@ -74,6 +74,15 @@ STILL_EXTENSION = [
     (c.TV1Out, {"sectionResults", "scorePolicyVersion"}),
     (c.G02aIn, {"sectionResults"}),
     (c.G02bIn, {"sectionResults"}),
+    # 구현 · 검증-2 끼우기 · 산출물층 환산 (spec 4.13)
+    (CodeCheck, {"earned", "applicable"}),
+    (Infographic, {"iconFallback"}),
+    (c.TV2In, {"featureElements"}),
+    (c.TV2Out, {"featureElements"}),
+    (c.G02bIn, {"category"}),
+    (ScoreReport, {"docLayerMax", "codeCheckScore", "codeCheckMax", "featureMatchScore", "featureMatchMax",
+                   "artifactLayerScore", "artifactLayerMax", "codeCheckItems"}),
+    (ScoringSettings, {"codeCheckMax", "featureMatchMax"}),
 ]
 
 # 새 타입 — 기존 타입에 담을 곳이 없어 새로 둔 타입. 칸은 모두 확장이고, 이 타입을 담는 칸의 note에 결정 번호가 있다

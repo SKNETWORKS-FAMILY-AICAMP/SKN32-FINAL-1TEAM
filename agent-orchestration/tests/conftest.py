@@ -53,6 +53,21 @@ def _no_real_notice_server(monkeypatch):
     isolate_notice_api(monkeypatch)
 
 
+# ── 실제 OpenAI 이미지 호출 막기 ─────────────────────────────
+# build_app(image=None)은 실제 이미지 호출처(OpenAIImageProvider)를 끼운다. 화면 6 뒤(T-B2 아이콘판)까지 도는 워커 테스트가
+# 가짜 이미지를 빠뜨려도 네트워크로 나가지 않게, 클라이언트를 주입하지 않은 실제 호출처는 클라이언트를 만들지 않고 실패한다.
+# 클라이언트를 주입한 호출처(test_image.py의 가짜 클라이언트)는 그대로 쓴다.
+@pytest.fixture(autouse=True)
+def _no_real_openai_image(monkeypatch):
+    from sbrain.orchestrator.openai_image import OpenAIImageProvider
+
+    def get_client(self):
+        if self._client is None:
+            raise RuntimeError("테스트에서 실제 OpenAI 이미지 클라이언트를 만들지 않는다 — 가짜 이미지(FakeImage)를 끼운다")
+        return self._client
+    monkeypatch.setattr(OpenAIImageProvider, "_get_client", get_client)
+
+
 # ── 파일 저장소 폴더 (SBRAIN_ARTIFACT_ROOT) ─────────────
 # 워커 조립(build_app · worker main)은 이 값이 필수다. 모든 테스트에서 pytest 임시 폴더 아래의 절대 경로로 둔다 — 개발 PC의
 # 환경 변수 · .env 값을 쓰지 않는다(환경 변수가 .env를 이긴다). 폴더는 build_app이 부를 때 만든다. 같은 테스트의 워커 조립 ·

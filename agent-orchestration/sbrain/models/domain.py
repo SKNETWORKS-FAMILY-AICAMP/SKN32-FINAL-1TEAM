@@ -428,6 +428,8 @@ class Infographic(SBModel):
     image_file: FileRef = ext(note=FILE_NOTE)
     format: ImageFormat
     alt_text: str
+    # 기본 아이콘 대체 (spec 4.3) — 아이콘 항목이 있는데 맞춤 아이콘판을 쓰지 못했으면 참. 흐름이 '이미지대체' 사건에 쓴다
+    icon_fallback: bool = ext(False, note="맞춤 아이콘판을 쓰지 못해 기본 아이콘으로 대신했는지 (아이콘 항목이 없으면 거짓)")
 
 
 # ── 검수 ─────────────────────────────────────────────

@@ -6,17 +6,21 @@
   규격에 맞는 더미로 채운다. 계획서 항목은 formSpec의 항목 · 태그 · 종류를 따른다(태그 · 종류 칸이 비면 태그 없음 · 본문).
   T-W1 · T-W2 · T-W3 · T-V1은 목표 항목(reworkInput.targetItems)만 다시 만들고(판정하고) 나머지는 base… 입력을 그대로 잇는다.
   T-W3는 fallbackItems의 표를 본문 서술로 대체하고, 자체 검사 불통과면 그 시도에서 바로 대체한다 (spec 4.8 · 4.10).
-- 스텁 T-V1은 StubScenario의 항목 판정(fail · warning · 입력 없음)을 따르고, 스텁 G-02a · G-02b는 계획서 묶음 후보 ·
-  다음 동작 · '입력 확인 필요' 안내를 spec 4.12 규칙으로 낸다(문서층 배점은 설정 사본 scoring.docLayerMax).
+- 스텁 T-V1은 StubScenario의 항목 판정(fail · warning · 입력 없음)을 따른다.
+- 규칙 단계(판정 G-02a · G-02b, 안내 문서 G-04, 합치기 M-1 ~ M-4)는 스텁이 없다 — 조율 실구현(agents/supervisor RULES) 한 벌을
+  쓰고 테스트용 실패 흉내만 감싼다( D14): raise_in(코드 오류), G-04 check_fail_times(자체 검사 불통과).
+  흐름 테스트가 워커와 같은 규칙(환산 · E-G2-UNREACHABLE 포함)을 검사한다. 규칙 사본을 여기 두지 않는다.
 - StubScenario로 점수 · 검사 결과 · 오류를 조절해 흐름 테스트를 만든다.
 - 공고 서버 연결이 없을 때의 T-C2 · G-01(스텁 모드, spec 4.6): 스텁 G-01은 스텁 공고를 직접 만들고 공고 서버 판정과 같은
   원칙(확실히 안 되는 경우만 불통과, 읽지 못한 조건은 확인 필요)으로 판정한다. 스텁 공고에는 업력 상한이 없다.
-- 파일(진입 파일 · 인포그래픽 그림 · 안내 문서 · 계획서 파일)은 작은 자리채움 내용을 tools.files(G-04는 파일 창구 인자)로
-  넣고 받은 참조(FileRef)를 출력에 싣는다. 차트 그림은 비운다. 스텁 T-V2는 파일을 읽지 않는다(채점 방식 그대로).
+- 파일(진입 파일 · 인포그래픽 그림 · 그림 · 계획서 파일)은 작은 자리채움 내용을 tools.files로 넣고 받은 참조(FileRef)를
+  출력에 싣는다. 안내 문서는 실구현 G-04가 파일 창구 인자로 넣는다. 차트 그림은 비운다. 스텁 T-V2는 파일을
+  읽지 않는다(채점 방식 그대로).
 - 실제 구현이 나오면 registry.bind(task_id, fn)로 바꿔 끼운다.
 """
 from __future__ import annotations
 
+import functools
 import math
 import struct
 import threading
@@ -33,26 +37,22 @@ from ..models import (
     CodeCheckResult, CompanyInfo, Deliverable, DiagramSpec, DocScore, DocScoreItem, EligibilityRule,
     FeatureMatchResult, FormatFinding, FormSpec, GateResult,
     Infographic, ItemSpec, MarketAnalysis, MarketSizeItem, PlanDoc, PlanSection,
-    ProofreadLog, Prototype, ReferenceDoc, RequirementAnalysis, ReworkDiff, ReworkOrder,
-    ScoreReport, SectionResult, Sentence, TableSpec, Token, TokenCheckResult,
+    Prototype, ReferenceDoc, RequirementAnalysis, SectionResult, Sentence, TableSpec, Token, TokenCheckResult,
 )
 from ..models.clock import kst_today, utc_clock, utc_now
 from ..orchestrator import settings
 from ..orchestrator.errors import FormatError, ProviderError, ResourceNotFound, ToolCallExhausted
 from ..orchestrator.registry import TaskRegistry
 from ..orchestrator.tools import FileTool, ImageRequest, ImageResponse, LLMRequest, LLMResponse, TokenUsage, Tools
-from ..flow.rework_map import (
-    KIND_TASK, REWORK_DEFAULT_REASON, TASK_BUNDLE, artifact_rework_reasons, document_bundles, order_bundles,
-    section_bundle,
-)
 from .form_defaults import default_evaluation_items, default_form_spec, stub_rubric
 from .notice.g01 import PRE_STARTUP, business_age_years   # 업력(년) 반올림은 실제 G-01과 한 곳에서 (스텁 테스트도 이 이름을 쓴다)
+from .supervisor import RULES
 from .supervisor import plan as task_plan   # 작업 분해 부품 — 실제 T-C3와 같은 확인 · 양식 고르기 · 목록 · 틀 · 맥락
+from .supervisor.judge import INPUT_MISSING_NOTICE  # noqa: F401 — 판정 안내 문구는 실구현 한 곳 (테스트가 이 이름으로 가져간다)
+from .supervisor.readme import MARKDOWN_TYPE, PROTOTYPE_NOTICE, README_FILE  # noqa: F401 — 안내 문서 상수는 실구현 한 곳
 
-# 문서층 배점 기본값 — 판정(G-02a · G-02b)은 설정 사본의 scoring.docLayerMax를 쓰고, 사본에 없을 때만 이 값이다 (spec 4.12)
+# 스텁 T-V1 평가항목 배점이 없을 때 쓰는 문서층 배점 기본값 (70 ÷ 항목 수)
 DOC_LAYER_MAX = 70.0
-# 입력 없음 항목이 있을 때 점수 보고서 notices에 더하는 안내 (잠정 문구, spec 4.12)
-INPUT_MISSING_NOTICE = "입력 확인 필요 — 사업비 집행계획 · 추진 일정을 입력하면 해당 표가 채워집니다."
 # 스텁 T-V1의 입력 없음 warning (실구현은 '입력 확인 필요 — <사업비 집행계획 | 추진 일정>', spec 4.9)
 STUB_INPUT_MISSING_WARNING = "입력 확인 필요 — 사업비 집행계획 · 추진 일정"
 # 코드 점검 8칸 — 구현 · 검증-2 담당 개정안(1.3판)의 배점 · 이름. 진입 파일 · 비밀값 · sandbox는 통과 필수 조건으로 옮겨
@@ -67,15 +67,13 @@ SVG_NAMES = ["대체 텍스트", "핵심 정보 6항목", "명도 대비", "정�
 # 원페이지는 T-B2가 지면을 onepage.svg로 넣고 M-2가 그 참조를 진입 파일로 감싼다
 ENTRY_FILE = "index.html"
 ONEPAGE_FILE = "onepage.svg"
-INFOGRAPHIC_FILE = "infographic.png"
-README_FILE = "README.md"
+INFOGRAPHIC_FILE = "infographic.svg"   # 웹개발 · AI API 인포그래픽 (모든 카테고리 SVG, spec 4.3)
 PLAN_DOC_FILE = "plan.docx"
-HTML_TYPE, SVG_TYPE, PNG_TYPE, MARKDOWN_TYPE = "text/html", "image/svg+xml", "image/png", "text/markdown"
+HTML_TYPE, SVG_TYPE, PNG_TYPE = "text/html", "image/svg+xml", "image/png"
 DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 # 자리채움 내용 — 스텁 파일은 작다. 계획서 파일은 진짜 워드 파일이 아니다(형식만 워드)
 STUB_HTML = "<!doctype html><html lang='ko'><body>스텁 프로토타입</body></html>".encode()
 STUB_SVG = "<svg xmlns='http://www.w3.org/2000/svg'><text>원페이지</text></svg>".encode()
-STUB_README = "# 실행 · 열람 안내\n\n스텁 안내 문서 — 열람 · 인쇄 · 실행 방법 자리.\n".encode()
 STUB_PLAN_DOC = b"stub plan docx placeholder"
 # 스텁 공고 · 카드 값 — 모집 형태 표기(spec 4.4), 가산점
 PERIOD_FIXED = "기간 있음"
@@ -96,10 +94,9 @@ STUB_DIAGRAMS = (("USER_FLOW", "userflow.svg"), ("SERVICE_ARCHITECTURE", "archit
 STUB_DIAGRAM_SVG = "<svg xmlns='http://www.w3.org/2000/svg'><text>스텁 그림</text></svg>".encode()
 STUB_SCORE_POLICY = "stub-policy-1"   # 스텁 채점 정책 버전 — 채점 기준표 버전이 없을 때
 
-# 기획서 6-8 고정 문구
+# 기획서 6-8 고정 문구 (AI 생성 고지 PROTOTYPE_NOTICE는 안내 문서 실구현 쪽 상수를 쓴다)
 DISCLAIMER = "본 문서는 S-Brain이 생성한 초안입니다. 제출 전 작성자 본인의 확인과 수정이 필요합니다."
 SCORE_NOTICE = "검증 점수는 서비스 내부 기준(rubric 상수)에 따른 값이며 실제 심사 점수가 아닙니다."
-PROTOTYPE_NOTICE = "이 프로토타입은 AI가 생성했습니다."
 SUBMISSION_NOTICE = "공고에 따라 AI 작성 문서의 제출을 제한하거나 명시를 요구할 수 있습니다. 제출 요건을 확인해주세요."
 
 
@@ -391,57 +388,15 @@ def _doc_score(total: float, maxes: list[tuple[str, float]]) -> DocScore:
     return DocScore(total=total, items=items)
 
 
-def _doc_layer_max(snapshot: dict[str, Any] | None) -> float:
-    """설정 사본의 문서층 배점(scoring.docLayerMax) — 없으면 기본 70 (spec 4.12)."""
-    value = ((snapshot or {}).get("scoring") or {}).get("docLayerMax")
-    return float(value) if value else DOC_LAYER_MAX
-
-
-def _doc_candidates(results: list[SectionResult] | None, doc_display: float, threshold: float) -> list[ReworkOrder]:
-    """계획서 묶음 재작성 지시 (spec 4.12) — 묶음 · 항목은 짝짓기 표(rework_map)로 가른다.
-
-    1. 묶음마다 그 묶음 항목 중 fail · warning이고 입력 없음이 아닌 항목이 있으면 후보 — Task는 그 묶음 첫 항목 종류의 Task,
-       사유 · 보완 지시는 '<항목 번호> <issues · warnings>' 줄을 이은 것.
-    2. 문서층 표시 점수가 기준 미만인데 1의 후보가 없으면 묶음 모두가 후보(판정 지시가 없는 묶음의 고정 문구).
-    3. 기회를 다 쓴 묶음도 그대로 넣는다(웹이 고를 수 없게 표시하고 Orchestrator도 거절한다).
-    판정(results)이 없으면(None) 1의 후보는 없는 것으로 본다."""
-    results = list(results or [])
-    first_kind: dict[str, str] = {}
-    flagged: dict[str, list[SectionResult]] = {}
-    for r in results:
-        bundle = section_bundle(r.section_code)
-        if bundle is None:
-            continue
-        first_kind.setdefault(bundle, r.content_type)
-        if r.status in ("fail", "warning") and not r.input_missing:
-            flagged.setdefault(bundle, []).append(r)
-
-    def order(bundle: str, reason: str) -> ReworkOrder:
-        task_id = KIND_TASK.get(first_kind.get(bundle, "section"), "T-W1")
-        return ReworkOrder(task_id=task_id, unit="묶음", targets=[bundle], reason=reason, instruction_delta=reason,
-                           layer="document")
-    orders = []
-    for bundle in document_bundles():
-        if bundle in flagged:
-            lines = [f"{r.section_code} {' · '.join([*r.issues, *r.warnings]) or r.status}" for r in flagged[bundle]]
-            orders.append(order(bundle, "\n".join(lines)))
-    if not orders and doc_display < threshold:
-        orders = [order(bundle, REWORK_DEFAULT_REASON) for bundle in document_bundles()]
-    return orders
-
-
-def _input_notices(results: list[SectionResult] | None) -> list[str]:
-    """입력 없음 항목이 하나라도 있으면 '입력 확인 필요' 안내 (spec 4.12)."""
-    return [INPUT_MISSING_NOTICE] if any(r.input_missing for r in results or []) else []
-
-
 def _code_check(sc: StubScenario, kind: str, code_total: float) -> CodeCheckResult:
     """결손 점수를 칸에 나눠 불통과로 표시한다. HTML 2번 불통과면 결함 출처를 채운다(시나리오 alt_defect_sources).
     통과 필수 조건 실패(시나리오 gate_failures)면 칸 검사를 생략한 것으로 보고 모두 불통과 · 합계 0이다."""
     weights, names = (HTML_WEIGHTS, HTML_NAMES) if kind == "html" else (SVG_WEIGHTS, SVG_NAMES)
+    # earned(얻은 점수) = 통과면 배점 · 아니면 0, applicable(해당 여부) = 참 — 스텁은 해당 없음 항목을 만들지 않는다 (spec 4.4)
     if sc.gate_failures:
         detail = f"통과 필수 조건 실패로 검사 생략: {', '.join(sc.gate_failures)}"
-        checks = [CodeCheck(no=i + 1, name=names[i], weight=weights[i], passed=False, detail=detail) for i in range(8)]
+        checks = [CodeCheck(no=i + 1, name=names[i], weight=weights[i], passed=False, detail=detail, earned=0,
+                            applicable=True) for i in range(8)]
         return CodeCheckResult(total=0, checks=checks, gate_failures=list(sc.gate_failures))
     deficit, failed = 15 - code_total, set()
     for no in (4, 5, 3, 6, 8, 2, 7):
@@ -450,7 +405,8 @@ def _code_check(sc: StubScenario, kind: str, code_total: float) -> CodeCheckResu
             failed.add(no)
             deficit -= w
     checks = [CodeCheck(no=i + 1, name=names[i], weight=weights[i], passed=(i + 1) not in failed, detail="",
-                        defect_sources=list(sc.alt_defect_sources) if kind == "html" and i == 1 and 2 in failed else [])
+                        defect_sources=list(sc.alt_defect_sources) if kind == "html" and i == 1 and 2 in failed else [],
+                        earned=0 if (i + 1) in failed else weights[i], applicable=True)
               for i in range(8)]
     return CodeCheckResult(total=code_total, checks=checks)
 
@@ -699,14 +655,6 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
                              "issues": [], "tableFallbackUsed": False, "fallbackReason": ""}
         return c.TW3Out(tables=tables, table_sections=sections, table_outputs=outputs, check=check)
 
-    def m1(inp: c.M1In) -> c.M1Out:
-        """차트 · 표를 싣고, 표 항목 문장은 tableSections의 같은 항목으로 바꾸며, 그림 목록은 통째로 바꾼다 (spec 4.7)."""
-        _maybe_raise(sc, "M-1")
-        by_code = {s.section_code: s for s in inp.table_sections}
-        sections = [by_code.get(s.section_code, s) for s in inp.plan_doc.sections]
-        return c.M1Out(plan_doc=inp.plan_doc.model_copy(update={
-            "charts": inp.charts, "tables": inp.tables, "sections": sections, "diagrams": list(inp.diagrams)}))
-
     def tv1(inp: c.TV1In, tools: Tools) -> c.TV1Out:
         """문서층 점수와 항목별 판정 (spec 4.9 모양).
 
@@ -742,25 +690,6 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
         return c.TV1Out(doc_score=ds, items=ds.items, variance_flag=False, section_results=results,
                         score_policy_version=inp.rubric.version or STUB_SCORE_POLICY)
 
-    def g02a(inp: c.G02aIn) -> c.G02aOut:
-        """문서 평가 판정 — 표시 점수(문서층 → 100점 환산, 배점은 설정 사본 scoring.docLayerMax)로 다음 동작을 정하고,
-        계획서 묶음 후보는 항목 판정(sectionResults)으로 낸다 (spec 4.12)."""
-        _maybe_raise(sc, "G-02a")
-        display = round(inp.doc_score.total / _doc_layer_max(inp.settings_snapshot) * 100, 1)
-        orders = _doc_candidates(inp.section_results, display, inp.threshold)
-        na = _next_action(display >= inp.threshold, orders, inp.rework_usage)
-        report = ScoreReport(
-            doc_score=inp.doc_score, artifact_score=None, total=inp.doc_score.total, threshold=inp.threshold,
-            passed=display >= inp.threshold, failed_task_ids=sorted({o.task_id for o in orders}),
-            rework_orders=orders, rework_usage=inp.rework_usage, phase="document", display_score=display,
-            carried_over_layer=None, rework_diff=[],
-            comparisons=inp.cycle_info.comparisons if inp.cycle_info else [],
-            notices=[ch.final_action for ch in (inp.checks or []) if ch.final_action]
-            + _input_notices(inp.section_results),
-            settings_snapshot=inp.settings_snapshot, rubric_version=inp.rubric_version)
-        return c.G02aOut(score_report=report, failed_task_ids=report.failed_task_ids, rework_orders=orders,
-                         next_action=na)
-
     def tb1(inp: c.TB1In, tools: Tools) -> c.TB1Out:
         _ask(tools, "실행 파일 제작")
         entry = tools.files.put(ENTRY_FILE, STUB_HTML, HTML_TYPE)
@@ -770,30 +699,13 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
 
     def tb2(inp: c.TB2In, tools: Tools) -> c.TB2Out:
         _ask(tools, "인포그래픽 제작")
-        if inp.category == "원페이지":   # 원페이지 지면 — M-2가 이 참조를 프로토타입 진입 파일로 감싼다
-            fmt, image = "svg", tools.files.put(ONEPAGE_FILE, STUB_SVG, SVG_TYPE)
-        else:
-            fmt, image = "png", tools.files.put(INFOGRAPHIC_FILE, FakeImage.PNG, PNG_TYPE)
-        return c.TB2Out(infographic=Infographic(image_file=image, format=fmt, alt_text="인포그래픽"),
+        # 모든 카테고리에서 SVG (spec 4.3). 원페이지 지면은 M-2가 이 참조를 프로토타입 진입 파일로 감싼다.
+        # 스텁은 아이콘을 그리지 않으므로 기본 아이콘 대체(icon_fallback)는 늘 거짓이다
+        name = ONEPAGE_FILE if inp.category == "원페이지" else INFOGRAPHIC_FILE
+        image = tools.files.put(name, STUB_SVG, SVG_TYPE)
+        return c.TB2Out(infographic=Infographic(image_file=image, format="svg", alt_text="인포그래픽",
+                                                icon_fallback=False),
                         check=_check(sc, "T-B2", inp.rework_input, ""))
-
-    def m2(inp: c.M2In) -> c.M2Out:
-        # 파일을 열지 않고 인포그래픽 그림 참조를 그대로 진입 파일로 감싼다 (같은 실행 건의 참조)
-        return c.M2Out(prototype=Prototype(entry_file=inp.infographic.image_file, kind="svg-onepage",
-                                           asset_files=[], implemented_features=list(inp.feature_list)))
-
-    def g04(inp: c.G04In, files: FileTool) -> c.G04Out:
-        # 자체 검사는 check_fail_times['G-04']로 불통과를 흉내 낸다. 실구현(템플릿 · 낱말 검사)이 지킬 것 — 웹개발 · AI API
-        # README에는 '실행' 또는 '열람', 원페이지 README에는 '열람'과 '인쇄'가 들어가야 한다(구현 · 검증-2 담당 요청, 검증-2
-        # 진단 기준과 같음). 끝내 실패해 AI 생성 고지(기획서 6-8)가 빠져도 T-C4 전달은 막지 않는다 (잠정 — 사용자 미답)
-        # 파일을 쓰는 규칙 단계 — 엔진이 파일 창구를 두 번째 인자로 넘긴다
-        _maybe_raise(sc, "G-04")
-        readme = files.put(README_FILE, STUB_README, MARKDOWN_TYPE)
-        return c.G04Out(readme_file=readme, check=_check(sc, "G-04", None, ""))
-
-    def m3(inp: c.M3In) -> c.M3Out:
-        _maybe_raise(sc, "M-3")
-        return c.M3Out(prototype=inp.prototype.model_copy(update={"readme_file": inp.readme_file}))
 
     def tv2(inp: c.TV2In, tools: Tools) -> c.TV2Out:
         try:
@@ -802,41 +714,20 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
         except ToolCallExhausted:
             judged = "htmlParse" if inp.prototype.kind == "html" else "svgTextParse"  # 문자열 대조만으로 산출
         code_total, feat = sc.pick("T-V2", sc.art_scores)
-        fm = _feature_match(sc, list(inp.feature_list), feat, judged)
         cc = _code_check(sc, inp.prototype.kind, code_total)
+        if cc.gate_failures:
+            # 통과 필수 조건 실패면 코드 점검 · 대조 모두 0 — 모든 기능을 누락으로 둔다 (기준 문서 T-V2 ①
+            # "codeCheck.total=0, featureMatch.score=0", 담당자 코드와 같음, spec 4.4)
+            fm = FeatureMatchResult(score=0, missing_features=list(inp.feature_list), extra_features=[],
+                                    findings=[f"통과 필수 조건 실패로 대조 생략: {', '.join(cc.gate_failures)}"],
+                                    judged_by=judged)
+        else:
+            fm = _feature_match(sc, list(inp.feature_list), feat, judged)
         total = 0.0 if cc.gate_failures else cc.total + fm.score   # 통과 필수 조건 실패면 산출물층 0
+        # 확인 요소 목록 = 입력 그대로 (첫 T-V2는 None → 빈 사전). 스텁은 요소를 새로 뽑지 않는다
         return c.TV2Out(artifact_score=ArtifactScore(total=total, code_check=cc, feature_match=fm),
-                        code_check=cc, feature_match=fm, diagnostics=list(sc.diagnostics))
-
-    def g02b(inp: c.G02bIn) -> c.G02bOut:
-        """종합 평가 판정 — 다음 동작은 두 층 합산 점수, 계획서 묶음 후보는 G-02a와 같은 규칙(문서층 표시 점수 기준),
-        산출물 묶음 후보는 지금 규칙 그대로 (spec 4.12)."""
-        dmax = _doc_layer_max(inp.settings_snapshot)
-        total = round(inp.doc_score.total + inp.artifact_score.total, 1)
-        doc_display = round(inp.doc_score.total / dmax * 100, 1)
-        orders = (_doc_candidates(inp.section_results, doc_display, inp.threshold)
-                  + _art_orders(inp.artifact_score, sc.category))
-        na = _next_action(total >= inp.threshold, orders, inp.rework_usage)
-        ci = inp.cycle_info
-        diff: list[ReworkDiff] = []
-        if ci is not None:
-            if ci.previous_doc_score is not None:
-                diff.append(ReworkDiff(task_id="T-W1", layer="document", label="문서층",
-                                       before_summary=f"{ci.previous_doc_score.total}/{dmax:g}",
-                                       after_summary=f"{inp.doc_score.total}/{dmax:g}"))
-            if ci.previous_artifact_score is not None:
-                diff.append(ReworkDiff(task_id="T-V2", layer="artifact", label="산출물층",
-                                       before_summary=f"{ci.previous_artifact_score.total}/30",
-                                       after_summary=f"{inp.artifact_score.total}/30"))
-        report = ScoreReport(
-            doc_score=inp.doc_score, artifact_score=inp.artifact_score, total=total, threshold=inp.threshold,
-            passed=total >= inp.threshold, failed_task_ids=sorted({o.task_id for o in orders}),
-            rework_orders=orders, rework_usage=inp.rework_usage, phase="overall", display_score=total,
-            carried_over_layer=ci.carried_over_layer if ci else None, rework_diff=diff,
-            comparisons=ci.comparisons if ci else [], notices=_input_notices(inp.section_results),
-            settings_snapshot=inp.settings_snapshot, rubric_version=inp.rubric_version)
-        return c.G02bOut(score_report=report, failed_task_ids=report.failed_task_ids, rework_orders=orders,
-                         next_action=na, rework_diff=diff)
+                        code_check=cc, feature_match=fm, diagnostics=list(sc.diagnostics),
+                        feature_elements=dict(inp.feature_elements or {}))
 
     def g03(inp: c.G03In) -> c.G03Out:
         if sc.no_tokens:
@@ -872,21 +763,6 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
                                                      contaminated_tokens=[]),
                         next_redo_hint=["'1억원' 유지"])
 
-    def m4(inp: c.M4In) -> c.M4Out:
-        by_id = {r.sentence_id: r for r in inp.sentence_results}
-        sections = [sec.model_copy(update={"sentences": [
-            by_id[s.sentence_id].revised if s.sentence_id in by_id and by_id[s.sentence_id].adopted else s
-            for s in sec.sentences]}) for sec in inp.plan_doc.sections]
-        n = len(inp.target_sentence_ids)
-        first_pass = sum(1 for r in inp.sentence_results if r.adopted and r.final_redo_count == 0)
-        log = ProofreadLog(
-            total_sentences=n, adopted_count=sum(1 for r in inp.sentence_results if r.adopted),
-            retained_by_check_ids=[r.sentence_id for r in inp.sentence_results if r.kept_reason == "검증실패"],
-            retained_by_call_failure_ids=[r.sentence_id for r in inp.sentence_results if r.kept_reason == "호출실패"],
-            early_stopped_sentence_ids=[r.sentence_id for r in inp.sentence_results if r.kept_reason == "조기중단"],
-            token_preservation_rate=(first_pass / n) if n else 1.0, model_version=inp.model_version)
-        return c.M4Out(plan_doc=inp.plan_doc.model_copy(update={"sections": sections}), proofread_log=log)
-
     def tc4(inp: c.TC4In, tools: Tools) -> c.TC4Out:
         # 계획서 파일은 자리채움(형식만 워드). 프로토타입은 참조 목록 — 진입 파일(있으면) · 안내 문서(있으면) · 자산.
         # 내려받기용 압축은 웹이 만든다
@@ -901,11 +777,13 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
 
     for tid, fn in {
         "R-8": r8, "T-C1": tc1, "T-C2": tc2, "G-01": g01, "T-C3": tc3, "T-S1": ts1, "T-S2": ts2,
-        "T-W1": tw1, "T-W2": tw2, "T-W3": tw3, "M-1": m1, "T-V1": tv1, "G-02a": g02a, "T-B1": tb1,
-        "T-B2": tb2, "M-2": m2, "G-04": g04, "M-3": m3, "T-V2": tv2, "G-02b": g02b, "G-03": g03,
-        "T-P1": tp1, "T-P2": tp2, "M-4": m4, "T-C4": tc4,
+        "T-W1": tw1, "T-W2": tw2, "T-W3": tw3, "T-V1": tv1, "T-B1": tb1, "T-B2": tb2, "T-V2": tv2, "G-03": g03,
+        "T-P1": tp1, "T-P2": tp2, "T-C4": tc4,
     }.items():
         registry.bind(tid, fn)
+    # 규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4)는 실구현 한 벌 + 테스트용 실패 흉내 ( D14)
+    for tid, fn in RULES.items():
+        registry.bind(tid, _with_faults(sc, tid, fn))
 
 
 def _search_or_fail(fail: bool) -> list:
@@ -941,21 +819,21 @@ def _card(sc: StubScenario, aid: str, rank: int, today: date, *, more: bool, fit
         bonus_items=[] if bonus is None else [b.model_copy() for b in bonus])
 
 
-def _art_orders(score: ArtifactScore, category: str) -> list[ReworkOrder]:
-    """산출물층 재작성 지시 — 다시 돌릴 Task · 사유는 공용 규칙(artifact_rework_reasons)을 쓴다. 보류된 대조는 이미 0점이라
-    재정규화하지 않는다(2026-09-30 결정 8)."""
-    kind = "svg-onepage" if category == "원페이지" else "html"
-    return [ReworkOrder(task_id=task_id, unit="묶음", targets=[TASK_BUNDLE[task_id]], reason="; ".join(rs),
-                        instruction_delta="; ".join(rs), layer="artifact")
-            for task_id, rs in artifact_rework_reasons(score, kind).items()]
+def _with_faults(sc: StubScenario, task_id: str, fn: Callable) -> Callable:
+    """규칙 단계 실구현을 감싸는 테스트용 실패 흉내 — raise_in에 있으면 코드 오류. G-04는 check_fail_times['G-04']번까지
+    자체 검사 불통과로 바꾼다(실구현이 넣은 안내 문서 참조는 그대로). 규칙은 실구현 그대로다 ( D14)."""
+    if task_id == "G-04":
+        @functools.wraps(fn)
+        def g04(inp: c.G04In, files: FileTool) -> c.G04Out:
+            _maybe_raise(sc, task_id)
+            out = fn(inp, files)
+            check = _check(sc, task_id, None, "")
+            return out if check.passed else out.model_copy(update={"check": check})
+        return g04
 
-
-def _next_action(passed: bool, orders: list[ReworkOrder], usage) -> str:
-    if passed:
-        return "진행가능"
-    remaining = {u.bundle_id: u.remaining for u in usage}
-    names = [b for o in orders for b in order_bundles(o)]   # 기회를 세는 묶음 이름 (spec 3.2)
-    if names and all(remaining.get(b, 1) <= 0 for b in names):
-        return "상한도달"
-    return "재작성권유"
+    @functools.wraps(fn)
+    def run(inp):
+        _maybe_raise(sc, task_id)
+        return fn(inp)
+    return run
 

@@ -30,6 +30,8 @@ DIAGRAM_OUTPUTS = "diagramOutputs"           # T-W2 — 그림 항목 번호 →
 TABLE_SECTIONS = "tableSections"             # T-W3 — 표 항목 서술 · 대체 본문 (PlanSection)
 TABLE_OUTPUTS = "tableOutputs"               # T-W3 — 표 항목 번호 → F17 결과
 SECTION_RESULTS = "sectionResults"           # T-V1 — 항목별 검증-1 판정 (SectionResult)
+# 구현 · 검증-2 확장 출력 (spec 4.4 · 4.13) — T-V2 확인 요소 목록. 다음 T-V2의 입력으로 이어진다
+FEATURE_ELEMENTS = "featureElements"
 
 # 산출물 키 중 첫 버전 이후 바뀌면 안 되는 것 (시트 2 T-S1 · T-W1: 확정 후 변경 불가)
 IMMUTABLE_KEYS = frozenset({"featureList"})
@@ -187,19 +189,23 @@ def build_registry() -> TaskRegistry:
     rule("M-3", "합치기③ readmeFile을 Prototype에 기입", "조율", None, c.M3In, c.M3Out,
          {"prototype": art("prototype"), "readme_file": art("readmeFile", optional=True)},
          {"prototype": "prototype"}, "prototype", kind="merge")
-    # T-V2 — 계획서(확장 입력, T-B2와 같은 값)는 원페이지 대조의 근거라 늘 채운다. 진단(확장 출력)은 관리자 기록 전용이다
+    # T-V2 — 계획서(확장 입력, T-B2와 같은 값)는 원페이지 대조의 근거라 늘 채운다. 진단(확장 출력)은 관리자 기록 전용이다.
+    # 확인 요소 목록(확장 입출력 featureElements, spec 4.4 · 4.13)은 직전 T-V2 출력을 다음 T-V2 입력으로 잇는다 —
+    # 첫 T-V2는 산출물이 없어 None이 들어간다(선택 입력)
     task("T-V2", "프로토타입 검증", "검증-2", 15, c.TV2In, c.TV2Out,
          {"prototype": art("prototype"), "infographic": art("infographic"), "feature_list": art("featureList"),
-          "plan_doc": art("planDoc")},
+          "plan_doc": art("planDoc"), "feature_elements": art(FEATURE_ELEMENTS, optional=True)},
          {"artifact_score": "artifactScore", "code_check": "codeCheck", "feature_match": "featureMatch",
-          "diagnostics": "T-V2.diagnostics"},
+          "diagnostics": "T-V2.diagnostics", "feature_elements": FEATURE_ELEMENTS},
          "artifact_score", failure=FailurePolicy(fallback_in_task=True))
+    # G-02b — 실행 건 카테고리(확장 입력, T-C1 산출물 category)로 산출물 종류를 정한다 (spec 4.7)
     rule("G-02b", "종합 평가 판정", "조율", 16, c.G02bIn, c.G02bOut,
          {"doc_score": art("docScore"), "artifact_score": art("artifactScore"),
           "threshold": setting("scoring.threshold"), "rework_usage": run_field("rework_usage"),
           "selected_orders": cmd("selectedOrders"), "checks": CHECKS, "user_action": cmd("userAction"),
           "cycle_info": flow_value("cycleInfo"), "settings_snapshot": run_field("settings_snapshot"),
-          "rubric_version": flow_value("rubricVersion"), "section_results": art(SECTION_RESULTS, optional=True)},
+          "rubric_version": flow_value("rubricVersion"), "section_results": art(SECTION_RESULTS, optional=True),
+          "category": art("category")},
          {"score_report": "scoreReport.overall", "failed_task_ids": "G-02b.failedTaskIds",
           "rework_orders": "G-02b.reworkOrders", "next_action": "G-02b.nextAction",
           "rework_diff": "reworkDiff"}, "score_report")
@@ -234,7 +240,7 @@ def artifact_types(registry: TaskRegistry) -> tuple[dict, dict]:
 
     선택 공고(selectedAnnouncement)는 G-01 출력이라 등록부에서 온다 — 여기 따로 적지 않는다. 전략 · 작성 · 검증-1 확장 출력
     (strategyData · marketStrategyData · sectionOutputs · diagrams · diagramOutputs · tableSections · tableOutputs ·
-    sectionResults · scorePolicyVersion)도 Task 출력이라 등록부에서 타입이 온다.
+    sectionResults · scorePolicyVersion)과 T-V2 확인 요소 목록(featureElements)도 Task 출력이라 등록부에서 타입이 온다.
     """
     from ..models import AnnouncementCard, PreInput, ReworkInput
     exact = registry.artifact_types()

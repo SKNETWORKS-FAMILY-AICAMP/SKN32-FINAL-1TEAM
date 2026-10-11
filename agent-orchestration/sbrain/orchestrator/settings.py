@@ -51,6 +51,12 @@ class ScoringSettings(SBModel):
     doc_layer_max: float = 70
     artifact_layer_max: float = 30
     deviation_cap: float | None = ext(None, note="문서층 재채점 편차 상한 — 웹 verification_policies 값을 담아만 둔다 (검증-1 연동 전)")
+    # 산출물층 두 항목의 배점 (spec 4.6) — 검증-2 원점수(코드 점검 0 ~ 15 · 계획서 대조 0 ~ 15)를 이 배점으로 환산한다.
+    # 웹 verification_policies.code_weight · plan_weight. 산출물층 배점(artifact_layer_max)은 둘의 합으로 읽는다.
+    # 이 칸이 없는 옛 설정 사본은 15 · 15로 읽는다. 환산 · 판정은 artifact_layer_max를 읽지 않고 C + P를 쓴다
+    # (flow/score_scale.py) — artifact_layer_max는 웹 설정을 읽을 때(DbSettingsProvider) C + P로 맞춰 두는 표시용 칸이다
+    code_check_max: float = ext(15, note="코드 점검 배점 C — 웹 verification_policies.code_weight")
+    feature_match_max: float = ext(15, note="계획서 대조 배점 P — 웹 verification_policies.plan_weight")
 
 
 # 추론 강도 — OpenAI 추론 모델의 reasoning_effort 값 (모델마다 받는 값이 다르다)
@@ -220,8 +226,19 @@ PROVISIONAL: dict[str, str] = {
     "event.안내문서자체검사실패": "G-04 자체 검사가 재수행 횟수를 다 쓰고도 불통과 — 기록만 하고 계속 (점수 밖, T-C4 전달을 막지 않음)",
     "event.대체텍스트출처누락": "T-V2 HTML 2번(대체 텍스트) 미충족인데 defect_sources가 비어 있음 — 재작성 사유는 v1.9 매핑대로 "
                                "T-B2로 보내고 기록한다 (담당자는 늘 채운다고 함, 대비용)",
-    "event.이미지대체": "T-B2 실행 기록에 최종 실패인 이미지 호출이 있음 — 'T-B2 이미지 호출 실패 — 기본 아이콘으로 계속'. "
-                       "사용자 화면에는 알리지 않는다",
+    "event.이미지대체": "T-B2가 맞춤 아이콘판을 쓰지 못하고 기본 아이콘으로 대신한 세 경우(이미지 호출 실패 · 칸 수 불일치 · "
+                       "그림 해석 오류) — T-B2 실행 기록마다 하나(최종 실패인 이미지 호출이 있거나 출력 iconFallback이 "
+                       "참). 설명은 이미지 호출 실패면 'T-B2 이미지 호출 실패 — 기본 아이콘으로 계속', 그 밖(칸 수 불일치 · "
+                       "그림 해석 오류)이면 둘째 문구 'T-B2 맞춤 아이콘 사용 불가 — 기본 아이콘으로 계속'. 사용자 화면에는 "
+                       "알리지 않는다 (spec 4.3)",
+    # 구현 · 검증-2 끼우기 · 산출물층 환산 (spec 6) — 기준 문서에 없음
+    "g04.templateText": "G-04 안내 문서(README.md) 템플릿 문구와 빈 슬롯 기본 문구(아이템명 · 공고명이 비었을 때, 진입 파일이 "
+                        "없을 때 등) (agents/supervisor/, spec 4.8)",
+    "scoring.scaledRounding": "산출물층 환산 값은 소수 둘째 자리 반올림(0.5 올림 — Decimal ROUND_HALF_UP). 코드 점검 항목 줄의 환산 배점 합 = C, 환산 점수 합 = 층 "
+                              "값이 되도록 반올림 차이를 해당 항목 하나에 몰아준다 — 환산 점수 차이는 환산 점수가 환산 배점을 "
+                              "넘지 않는 항목에 (flow/ 환산 규칙 모듈, spec 4.6)",
+    "tv2.fileDecode": "T-V2가 진입 파일 · 안내 문서 · 인포그래픽을 UTF-8로 풀 때 풀 수 없는 바이트는 대체 문자로 바꾼다 "
+                      "(spec 4.4)",
     # 공고 연결 (공고 선택 · 자격 확인 G-01) — 기준 문서에 없음
     "taskTimeouts.G-01": "G-01 제한 시간 30초 — 공고 서버의 공고 상세 · 자격 판정 호출, T-C2와 같음",
     "announcement.bonusEnabled": "가산점 사용 스위치 BONUS_ENABLED 기본 꺼짐 — 공고팀 가산점은 시험 단계(2026-10-06 답변: "
