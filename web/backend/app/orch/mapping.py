@@ -327,7 +327,45 @@ def section_bodies(plan_doc) -> dict[str, str]:
 
 
 def plan_sections_out(plan_doc) -> list[schemas.PlanSectionOut]:
-    return [schemas.PlanSectionOut(tag=s.section_code, title=s.title, body=section_body(s)) for s in plan_doc.sections]
+    """항목 번호(section_code) · 웹 태그(tag, 없으면 None) · 종류(content_type)를 각각 다른 칸으로 싣는다(SB-337)."""
+    return [_section_out(s) for s in plan_doc.sections]
+
+
+def _section_out(section) -> schemas.PlanSectionOut:
+    return schemas.PlanSectionOut(
+        section_code=section.section_code, tag=_web_tag(section), content_type=getattr(section, 'content_type', None) or 'section',
+        title=section.title, body=section_body(section))
+
+
+_LEGACY_TAGS = ('1-1', '2-1', '3-1', '4-1')
+
+
+def _web_tag(section) -> str | None:
+    """항목의 웹 태그 — 옛 계획서(SB-310 이전, 항목 번호가 곧 1-1 ~ 4-1인 4개 항목)는 태그 칸이 비어 있어 그 번호를 태그로 본다. 그 밖에 비어 있으면 None."""
+    tag = getattr(section, 'tag', None)
+    if tag:
+        return tag
+    return section.section_code if section.section_code in _LEGACY_TAGS else None
+
+
+# 계획서 그림(서비스 흐름도 · 서비스 구조도)의 이름과 문서에 들어가는 순서 — 응답 · 내려받기 문서가 같이 쓴다
+FLOW_TITLES = {'USER_FLOW': '서비스 흐름도', 'SERVICE_ARCHITECTURE': '서비스 구조도'}
+_FLOW_ORDER = list(FLOW_TITLES)
+
+
+def sorted_diagrams(plan_doc) -> list:
+    """계획서의 그림 — 서비스 흐름도 다음에 서비스 구조도 순서. 그림이 없거나 계획서가 없으면 빈 목록."""
+    diagrams = getattr(plan_doc, 'diagrams', None) or []
+    return sorted(diagrams, key=lambda d: _FLOW_ORDER.index(d.flow_type) if d.flow_type in _FLOW_ORDER else len(_FLOW_ORDER))
+
+
+def plan_diagrams_out(project_id: int, plan_doc) -> list[schemas.PlanDiagramOut]:
+    return [
+        schemas.PlanDiagramOut(
+            diagram_id=d.diagram_id, flow_type=d.flow_type, title=FLOW_TITLES.get(d.flow_type, d.flow_type),
+            source_ref=d.source_ref, nodes=list(d.nodes), image_url=file_url(project_id, d.image_file))
+        for d in sorted_diagrams(plan_doc)
+    ]
 
 
 # ── 점수 ──────────────────────────────────────────────────────────────────────────────
@@ -336,10 +374,12 @@ def plan_score_reasons(outputs) -> list[schemas.PlanScoreReasonOut]:
     if outputs.doc_score is None:
         return []
     names = {e.item_code: e.item_name for e in outputs.evaluation_items}
+    # 점수 항목의 item_code는 계획서 항목 번호라 같은 번호의 계획서 항목 태그를 붙인다(묶음별 합계 · 미달 사유용)
+    tags = {s.section_code: _web_tag(s) for s in outputs.plan_doc.sections} if outputs.plan_doc is not None else {}
     return [
         schemas.PlanScoreReasonOut(
             reason_text=i.comment, item_code=i.item_code, display_name=names.get(i.item_code),
-            score=i.score, max_score=i.max_score)
+            score=i.score, max_score=i.max_score, tag=tags.get(i.item_code))
         for i in outputs.doc_score.items
     ]
 
@@ -510,6 +550,7 @@ def result_out(project_id: int, outputs, policy, originals: dict[str, str] | Non
         doc_score=outputs.doc_score.total if outputs.doc_score is not None else None,
         threshold=report.threshold if report is not None else None,
         sections=plan_sections_out(plan_doc),
+        diagrams=plan_diagrams_out(project_id, plan_doc),
         score_reasons=plan_score_reasons(outputs),
         artifacts=[a for a in [artifact_out(project_id, outputs)] if a is not None],
         format_findings=format_findings_out(outputs),
@@ -546,7 +587,7 @@ def rework_accepted_out(project_id: int, task_key: str, orch_bundle: str, accept
 
 
 def _plan_section_out(section) -> schemas.PlanSectionOut:
-    return schemas.PlanSectionOut(tag=section.section_code, title=section.title, body=section_body(section))
+    return _section_out(section)
 
 
 def rework_changed(project_id: int, result) -> dict:

@@ -14,6 +14,7 @@ import re
 from dataclasses import dataclass
 
 from app.orch import OrchError
+from app.orch.mapping import FLOW_TITLES, sorted_diagrams
 
 logger = logging.getLogger('sbrain.web')
 
@@ -23,9 +24,6 @@ _SANS_FAMILY = 'NanumSquareRound'
 
 PNG_WIDTH_PX = 1710          # 그림 viewBox 1140 폭의 1.5배 — 문서 폭(약 16cm)에서 270dpi 안팎
 MAX_SVG_BYTES = 2 * 1024 * 1024
-# 문서에 들어가는 순서와 제목 — 서비스 흐름도 다음에 서비스 구조도
-FLOW_TITLES = {'USER_FLOW': '서비스 흐름도', 'SERVICE_ARCHITECTURE': '서비스 구조도'}
-_FLOW_ORDER = list(FLOW_TITLES)
 
 # 담당자 그리기 코드는 외부 참조를 쓰지 않는다(그림은 파일 하나로 열린다). 그래도 파일 · 주소를 부르는 요소가 있으면 그리지 않는다.
 _EXTERNAL_REFERENCE = re.compile(rb'<image|<use|<foreignObject|href\s*=|@import|url\(\s*[\'"]?(?!#)', re.IGNORECASE)
@@ -58,10 +56,8 @@ def diagram_pictures(gateway, project_id: int, plan_doc) -> list[DiagramPicture]
     """계획서의 그림 목록 → 문서에 넣을 그림(서비스 흐름도, 서비스 구조도 순). 못 받거나 못 바꾼 그림은 뺀다."""
     if plan_doc is None:
         return []
-    diagrams = sorted(getattr(plan_doc, 'diagrams', None) or [],
-                      key=lambda d: _FLOW_ORDER.index(d.flow_type) if d.flow_type in _FLOW_ORDER else len(_FLOW_ORDER))
     pictures: list[DiagramPicture] = []
-    for diagram in diagrams:
+    for diagram in sorted_diagrams(plan_doc):
         ref = diagram.image_file
         if int(getattr(ref, 'size', 0) or 0) > MAX_SVG_BYTES:
             logger.warning('그림 %s: SVG가 너무 커서 문서에 넣지 않았다(%s바이트)', diagram.diagram_id, ref.size)

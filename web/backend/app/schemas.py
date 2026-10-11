@@ -591,10 +591,23 @@ class EligibilityCheckOut(BaseModel):
 
 
 class PlanSectionOut(BaseModel):
+    """계획서 항목 하나. 항목 번호 · 웹 태그 · 종류를 각각 다른 칸으로 준다(SB-337 — 예전에는 `tag` 칸에 항목 번호가 들어갔다)."""
     model_config = ConfigDict(from_attributes=True)
-    tag: str
+    section_code: str = Field(description="항목 번호 — 예비창업자 2.1.1 ~ 2.7.4, 개인사업자 · 법인 3.1.1 ~ 3.7.4. 점수 항목(score_reasons[].item_code)과 이 번호로 맞춘다")
+    tag: str | None = Field(None, description="웹 태그 '1-1'(문제인식) · '2-1'(실현가능성) · '3-1'(성장전략) · '4-1'(팀 구성). 일반현황 · 개요처럼 묶음이 없으면 null")
+    content_type: str = Field('section', description="'section'(본문) · 'table'(표) · 'image'(그림 — 문장이 없고 plan.diagrams가 그림을 준다)")
     title: str
     body: str | None = None
+
+
+class PlanDiagramOut(BaseModel):
+    """계획서 그림 하나(서비스 흐름도 · 서비스 구조도, SVG) — 주소는 산출물 파일과 같은 방식이다(SB-340 · SB-337)."""
+    diagram_id: str = Field(description="예: '2.3.6-USER_FLOW'")
+    flow_type: str = Field(description="'USER_FLOW'(서비스 흐름도) · 'SERVICE_ARCHITECTURE'(서비스 구조도)")
+    title: str
+    source_ref: str = Field(description="그림이 속한 항목 번호(2.3.6 · 3.3.6) — plan.sections[].section_code와 맞는다")
+    nodes: list[str] = Field(default_factory=list)
+    image_url: str = Field(description="SVG 주소 `/projects/{id}/artifact-files/{key}` — 받은 주소를 그대로 쓴다(소유자만 받는다)")
 
 
 class ArtifactScoreReasonOut(BaseModel):
@@ -634,6 +647,7 @@ class PlanScoreReasonOut(BaseModel):
     display_name: str | None = None
     score: float | None = None
     max_score: float | None = None
+    tag: str | None = Field(None, description="이 점수 항목(item_code = 계획서 항목 번호)이 속한 웹 태그 '1-1' ~ '4-1', 묶음이 없으면 null — 묶음별 합계 · 미달 사유를 낼 때 쓴다")
 
 
 class FormatFindingOut(BaseModel):
@@ -666,6 +680,7 @@ class BusinessPlanOut(BaseModel):
     doc_score: float | None = None
     threshold: float | None = None
     sections: list[PlanSectionOut] = Field(default_factory=list)
+    diagrams: list[PlanDiagramOut] = Field(default_factory=list)
     score_reasons: list[PlanScoreReasonOut] = Field(default_factory=list)
     artifacts: list[ArtifactOut] = Field(default_factory=list)
     format_findings: list[FormatFindingOut] = Field(default_factory=list)
