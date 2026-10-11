@@ -4,7 +4,7 @@
 
 e2e_failure_resume.py처럼 워커를 이 프로세스 안에서 돌린다(따로 띄운 워커가 있으면 끈다). 산출물 파일은 오케스트레이터의 파일 저장소
 (`SBRAIN_ARTIFACT_ROOT`, 이 스크립트가 임시 폴더로 잡는다 — 웹과 워커가 같은 폴더를 본다)에 있고, 웹은 결과의 파일 참조 key로
-read_artifact_file을 불러 내려 준다(SB-311). 워커의 스텁 구현 Agent는 작은 자리채움 파일(index.html · onepage.svg · infographic.png ·
+read_artifact_file을 불러 내려 준다(SB-311). 워커의 스텁 구현 Agent는 작은 자리채움 파일(index.html · onepage.svg · infographic.svg(웹개발 · AI API도 SVG — 오케스트레이터 2026-10-11) ·
 README.md · plan.docx)을 만든다 — 이 스크립트는 "웹 ↔ 파일 저장소 배관"을 확인하며 파일 내용의 품질은 보지 않는다.
 조율 T-C1 · T-C3는 평소처럼 실제 LLM이라 OPENAI_API_KEY(agent-orchestration/.env)가 필요하다.
 `E2E_STUB_PARTNER=1`을 주면 전략 · 작성 · 검증-1도 스텁이라 실제 OpenAI는 T-C1 · T-C3 몇 번만 부른다(e2e_worker_flow.use_stub_partner_agents).
@@ -192,7 +192,7 @@ def main() -> int:
                 exec_url, info_url = art.get('executable_path'), art.get('infographic_path')
                 exec_key, info_key = key_of(pid, exec_url), key_of(pid, info_url)
                 step('1. 결과의 두 경로가 key 기반 웹 주소(SB-314)',
-                     exec_key.endswith('/index.html') and info_key.endswith('/infographic.png'), f'실행={exec_url} 인포그래픽={info_url}')
+                     exec_key.endswith('/index.html') and info_key.endswith('/infographic.svg'), f'실행={exec_url} 인포그래픽={info_url}')
 
                 html = owner.get(exec_url)
                 stored = (root / exec_key)
@@ -208,7 +208,7 @@ def main() -> int:
                      f"{html.headers.get('content-type')} / {csp[:60]}")
                 img = owner.get(info_url)
                 step('1. 인포그래픽 내려받기 — 저장소 파일과 바이트가 같고 형식은 오케스트레이터가 기록한 값',
-                     img.status_code == 200 and img.headers.get('content-type') == 'image/png'
+                     img.status_code == 200 and img.headers.get('content-type') == 'image/svg+xml'
                      and (root / info_key).is_file() and img.content == (root / info_key).read_bytes(),
                      f"{img.status_code} {img.headers.get('content-type')} {len(img.content)}바이트")
 
@@ -281,7 +281,7 @@ def main() -> int:
                      f"{res.status_code} 파일 {names}")
                 step('4. zip에 계획서 · 프로토타입 · 인포그래픽이 들어 있음',
                      'plan/business-plan.docx' in names and 'plan/plan.docx' not in names and 'prototype/index.html' in names
-                     and 'infographic/infographic.png' in names and docx_ok,
+                     and 'infographic/infographic.svg' in names and docx_ok,
                      f'business-plan.docx가 열리는 진짜 docx={docx_ok} 파일={sorted(names)}')
                 # 계획서 그림(SB-340): 계획서(planDoc)의 그림 SVG 원본이 plan/diagrams/에 들고, docx 안에 같은 수의 그림(PNG)이 들어 있다
                 step('4. 계획서 그림 — 원본 SVG가 plan/diagrams/에 있고 docx 안에 같은 수의 그림이 있음',

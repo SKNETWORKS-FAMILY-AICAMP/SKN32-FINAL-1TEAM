@@ -64,13 +64,17 @@ STUB_PARTNER_ENV = 'E2E_STUB_PARTNER'
 
 
 def use_stub_partner_agents() -> None:
-    """전략 · 작성 · 검증-1(T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1)을 실구현 대신 스텁으로 둔다 — 실구현은 한 건에 OpenAI를 약 76번 불러
-    약 8분 30초가 걸리고 비용이 든다. 워커 조립(build_app)이 실구현을 끼우는 두 곳(bind_partner_sw · 실제 호출처로 보낼 Task 목록)을 비운다.
-    조율 T-C1 · T-C3는 그대로 실제 LLM이다(OPENAI_API_KEY 필요, 호출 몇 번). 스텁 계획서는 모양만 같고 내용은 자리채움이다."""
+    """담당자 실구현 두 묶음 — 전략 · 작성 · 검증-1(T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1)과 구현 · 검증-2(T-B1 · T-B2 · T-V2) — 을 스텁으로
+    둔다. 실구현은 OpenAI(LLM · 이미지)를 많이 불러(전략 · 작성 · 검증-1만 한 건에 약 76번 · 약 8분 30초) 시간 · 비용이 든다. 워커 조립(build_app)이
+    실구현을 끼우는 곳(bind_partner_* · 실제 호출처로 보낼 Task 목록)을 비운다. 조율 T-C1 · T-C3는 그대로 실제 LLM이다(OPENAI_API_KEY 필요,
+    호출 몇 번). 스텁 계획서 · 산출물은 모양만 같고 내용은 자리채움이다."""
     import sbrain.bootstrap as bootstrap
 
     bootstrap.bind_partner_sw = lambda registry: None
+    bootstrap.bind_partner_bv = lambda registry: None
     bootstrap.PARTNER_TASKS = frozenset()
+    bootstrap.BV_TASKS = frozenset()
+    bootstrap.BV_IMAGE_TASKS = frozenset()
 
 
 def configure_env(url_text: str) -> None:

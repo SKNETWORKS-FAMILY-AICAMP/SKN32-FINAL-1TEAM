@@ -258,13 +258,18 @@ def make_feature_match(**overrides: Any) -> NS:
     return NS(**base)
 
 
-def make_score_view(total: float = 82.0, threshold: float = 80.0, passed: bool = True, with_artifact: bool = True) -> NS:
+def make_score_view(total: float = 82.0, threshold: float = 80.0, passed: bool = True, with_artifact: bool = True, **overrides: Any) -> NS:
+    """화면 점수 보고서(ScoreView). 환산 칸(그 실행 건 배점으로 환산한 점수 · 만점, SB-345)은 모두 None · 빈 목록이 기본이다 — 옛 실행 건은 비어 온다."""
     artifact = NS(
         total=30.0, code_check=NS(total=15.0, checks=[]), feature_match=make_feature_match(),
     ) if with_artifact else None
-    return NS(
+    base = dict(
         display_score=total, total=total, threshold=threshold, passed=passed, phase='종합',
-        doc_score=NS(total=52.0, items=[]), artifact_score=artifact, carried_over_layer=None, comparisons=[], notices=[])
+        doc_score=NS(total=52.0, items=[]), artifact_score=artifact, carried_over_layer=None, comparisons=[], notices=[],
+        doc_layer_max=None, code_check_score=None, code_check_max=None, feature_match_score=None, feature_match_max=None,
+        artifact_layer_score=None, artifact_layer_max=None, code_check_items=[])
+    base.update(overrides)
+    return NS(**base)
 
 
 def make_outputs(**overrides: Any) -> NS:
@@ -288,7 +293,7 @@ def make_admin_run(project_id: int | str = 1, **overrides: Any) -> NS:
     base = dict(
         project_id=str(project_id), run_id='r1', step='계획서작성', progress='실행', current_task='작성-1', agent='작성',
         attempt=1, updated_at=datetime.now(UTC), doc_score=None, artifact_score=None, total_score=None,
-        resume_count=0, last_error_kind=None, failure_reason=None)
+        resume_count=0, last_error_kind=None, failure_reason=None, doc_max=None, artifact_max=None)
     base.update(overrides)
     return NS(**base)
 
@@ -315,7 +320,8 @@ def make_score_entry(score: float, after_rework: bool = False, scored_at: dateti
 
 
 def make_admin_score_history(**overrides: Any) -> NS:
-    base = dict(project_id='1', run_id='r1', doc_score=[], code_check=[], feature_match=[])
+    base = dict(project_id='1', run_id='r1', doc_score=[], code_check=[], feature_match=[],
+                doc_max=None, code_check_max=None, feature_match_max=None)
     base.update(overrides)
     return NS(**base)
 
