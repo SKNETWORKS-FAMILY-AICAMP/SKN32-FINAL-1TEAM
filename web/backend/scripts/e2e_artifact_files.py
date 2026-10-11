@@ -7,12 +7,13 @@ e2e_failure_resume.py처럼 워커를 이 프로세스 안에서 돌린다(따�
 read_artifact_file을 불러 내려 준다(SB-311). 워커의 스텁 구현 Agent는 작은 자리채움 파일(index.html · onepage.svg · infographic.png ·
 README.md · plan.docx)을 만든다 — 이 스크립트는 "웹 ↔ 파일 저장소 배관"을 확인하며 파일 내용의 품질은 보지 않는다.
 조율 T-C1 · T-C3는 평소처럼 실제 LLM이라 OPENAI_API_KEY(agent-orchestration/.env)가 필요하다.
+`E2E_STUB_PARTNER=1`을 주면 전략 · 작성 · 검증-1도 스텁이라 실제 OpenAI는 T-C1 · T-C3 몇 번만 부른다(e2e_worker_flow.use_stub_partner_agents).
 
 차례대로:
   1. 웹개발     프로젝트 → 화면 8. 결과의 두 경로가 key 기반 웹 주소이고 받으면 저장소 파일과 바이트가 같다 · 헤더
   2. 접근 제한  비로그인 401 · 다른 계정 404 · 관리자 404 · 바꾼 key · 경로 이동 시도 404
   3. 재작성     실행 파일 재작성 → 전후 주소가 서로 다름 · 이전 파일도 계속 받을 수 있음
-  4. 묶음 zip   표현 검수까지 마친 뒤 결과물 zip: 프로토타입 · 인포그래픽 파일과, 계획서(planDoc)로 웹이 만든 진짜 .docx가 들어 있음(SB-341)
+  4. 묶음 zip   표현 검수까지 마친 뒤 결과물 zip: 프로토타입 · 인포그래픽 파일과, 계획서(planDoc)로 웹이 만든 진짜 .docx(SB-341), 계획서 그림의 원본 SVG와 docx 안의 그림(SB-340)이 들어 있음
   5. 영구 삭제  삭제 대기열에 줄이 생기고(관리자 목록) 주소가 404 · 워커가 처리하면 파일이 지워짐
   6. 원페이지   두 참조가 같은 onepage.svg — 인포그래픽 주소만 보이고 실행 경로는 없음
   7. 탈퇴       탈퇴 뒤 주소가 404 · 삭제 대기열에 줄이 더 생김
@@ -271,14 +272,21 @@ def main() -> int:
                     # 계획서는 파일 참조(스텁은 자리채움 파일)가 아니라 planDoc으로 웹이 만든 진짜 .docx다(SB-341)
                     plan_bytes = archive.read('plan/business-plan.docx') if 'plan/business-plan.docx' in names else b''
                     docx_ok = plan_bytes[:2] == b'PK' and len(Document(io.BytesIO(plan_bytes)).paragraphs) > 0
+                    diagram_svgs = sorted(n for n in names if n.startswith('plan/diagrams/'))
+                    diagram_pictures = len(Document(io.BytesIO(plan_bytes)).inline_shapes) if plan_bytes else 0
                 except zipfile.BadZipFile:
                     intact = docx_ok = False
+                    diagram_svgs, diagram_pictures = [], 0
                 step('4. 결과물 zip 내려받기(SB-316)', res.status_code == 200 and res.headers.get('content-type') == 'application/zip' and intact,
                      f"{res.status_code} 파일 {names}")
                 step('4. zip에 계획서 · 프로토타입 · 인포그래픽이 들어 있음',
                      'plan/business-plan.docx' in names and 'plan/plan.docx' not in names and 'prototype/index.html' in names
                      and 'infographic/infographic.png' in names and docx_ok,
                      f'business-plan.docx가 열리는 진짜 docx={docx_ok} 파일={sorted(names)}')
+                # 계획서 그림(SB-340): 계획서(planDoc)의 그림 SVG 원본이 plan/diagrams/에 들고, docx 안에 같은 수의 그림(PNG)이 들어 있다
+                step('4. 계획서 그림 — 원본 SVG가 plan/diagrams/에 있고 docx 안에 같은 수의 그림이 있음',
+                     len(diagram_svgs) >= 1 and diagram_pictures == len(diagram_svgs),
+                     f'SVG={diagram_svgs} docx 그림={diagram_pictures}')
                 step('4. 비로그인 · 다른 계정은 zip도 받지 못함',
                      anon.get(f'/projects/{pid}/deliverable.zip').status_code == 401
                      and other.get(f'/projects/{pid}/deliverable.zip').status_code == 404)

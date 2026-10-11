@@ -60,6 +60,19 @@ class Abort(Exception):
     """이어갈 수 없는 실패."""
 
 
+STUB_PARTNER_ENV = 'E2E_STUB_PARTNER'
+
+
+def use_stub_partner_agents() -> None:
+    """전략 · 작성 · 검증-1(T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1)을 실구현 대신 스텁으로 둔다 — 실구현은 한 건에 OpenAI를 약 76번 불러
+    약 8분 30초가 걸리고 비용이 든다. 워커 조립(build_app)이 실구현을 끼우는 두 곳(bind_partner_sw · 실제 호출처로 보낼 Task 목록)을 비운다.
+    조율 T-C1 · T-C3는 그대로 실제 LLM이다(OPENAI_API_KEY 필요, 호출 몇 번). 스텁 계획서는 모양만 같고 내용은 자리채움이다."""
+    import sbrain.bootstrap as bootstrap
+
+    bootstrap.bind_partner_sw = lambda registry: None
+    bootstrap.PARTNER_TASKS = frozenset()
+
+
 def configure_env(url_text: str) -> None:
     from sqlalchemy import make_url
 
@@ -76,6 +89,8 @@ def configure_env(url_text: str) -> None:
     # (이 프로세스 안의 워커와 웹이 같은 값을 본다. 따로 띄운 워커와 파일을 주고받으려면 같은 값을 직접 넣는다)
     if not os.environ.get('SBRAIN_ARTIFACT_ROOT'):
         os.environ['SBRAIN_ARTIFACT_ROOT'] = tempfile.mkdtemp(prefix='e2e_artifacts_')
+    if os.environ.get(STUB_PARTNER_ENV) == '1':  # 실제 OpenAI 호출(전략 · 작성 · 검증-1) 없이 흐름만 확인할 때 — 모든 E2E 스크립트가 이 함수를 먼저 부른다
+        use_stub_partner_agents()
 
 
 def command_log_lines(project_id: int, command: str) -> list[str]:
