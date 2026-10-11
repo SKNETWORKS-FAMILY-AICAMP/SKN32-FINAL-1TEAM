@@ -615,8 +615,9 @@ class ArtifactScoreReasonOut(BaseModel):
     reason_text: str
     item_code: str | None = None
     display_name: str | None = None
-    score: float | None = None
-    max_score: float | None = None
+    score: float | None = Field(None, description="그 항목에서 얻은 점수 — 그 실행 건 배점으로 환산한 값(부분 점수 포함). 합이 코드 점검 환산 점수와 같다")
+    max_score: float | None = Field(None, description="그 항목의 만점(환산 배점). 합이 코드 점검 만점과 같다")
+    applicable: bool = Field(True, description="검사할 대상이 있는가. false면 해당 없음 — score 0 · max_score 0이고 reason_text가 이유를 설명한다(만점으로 그리지 않는다)")
 
 
 class GateFailureOut(BaseModel):
@@ -630,7 +631,8 @@ class ArtifactOut(BaseModel):
     category: str
     infographic_path: str
     executable_path: str | None = None
-    artifact_score: float | None = None
+    artifact_score: float | None = Field(None, description="산출물층 점수 — 그 실행 건 배점으로 환산한 값(옛 실행 건은 원점수 15점 기준)")
+    artifact_max_score: float | None = Field(None, description="산출물층 만점(코드 점검 만점 + 계획서 대조 만점). 옛 실행 건은 None")
     score_reasons: list[ArtifactScoreReasonOut] = Field(default_factory=list)
     # 기획서 v1.11 4-5 · 5-4: 산출물 확인 화면은 통과 필수 조건 결과 → 코드 점검 8항목 → 대조 누락 · 부분 인정 기능을 보여 준다.
     # 필수 조건을 하나라도 어기면 산출물층 30점이 0이 되므로(gate_failures가 비어 있지 않음) 화면이 이유를 알려 줄 수 있어야 한다.
@@ -678,6 +680,7 @@ class BusinessPlanOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     plan_id: int | None = None  # [SB-243] 계획서는 오케스트레이터가 갖고 있어 행 번호가 없다
     doc_score: float | None = None
+    doc_max_score: float | None = Field(None, description="문서층 만점 — 그 실행 건 배점. 옛 실행 건은 None(화면은 verdict.doc_max_score를 쓴다)")
     threshold: float | None = None
     sections: list[PlanSectionOut] = Field(default_factory=list)
     diagrams: list[PlanDiagramOut] = Field(default_factory=list)
@@ -713,6 +716,9 @@ class VerdictOut(BaseModel):
     # [SB-301] 계획서 대조 판정이 보류됐으면 True — 이때 plan_match_score는 0점으로 합산되어 오므로(총점에도 0점이 들어 있다)
     # 화면은 0점이 아니라 "대조 불가"로 보여 준다. 보류 사유 코드는 사용자에게 내지 않는다(관리자 기록).
     plan_match_withheld: bool = False
+    # 산출물층(코드 점검 + 계획서 대조) 환산 점수 · 만점 — 옛 실행 건은 None
+    artifact_score: float | None = None
+    artifact_max_score: float | None = None
     total_score: float | None = None
     pass_threshold: float | None = None
 
@@ -1047,6 +1053,10 @@ class ItemOut(BaseModel):
     last_updated: UtcDatetime | None = Field(None, description='오케스트레이터 실행 건의 마지막 갱신 시각, 없으면 프로젝트 등록 시각')
     stalled: bool = Field(False, description='완료·보관 상태가 아니면서 마지막 갱신 후 48시간 이상 지났는지')
     score: float | None = Field(None, description='현재 버전의 문서 점수 + 산출물 점수 합계(둘 다 없으면 None)')
+    doc_score: float | None = Field(None, description='문서층 점수(그 실행 건 배점 기준)')
+    doc_max_score: float | None = Field(None, description="문서층 만점 — 그 실행 건 배점. 관리자가 배점을 바꿔도 이 실행 건의 만점은 그대로다(지금 정책 값을 만점으로 쓰지 말 것)")
+    artifact_score: float | None = Field(None, description='산출물층 점수 — 그 실행 건 배점으로 환산한 값')
+    artifact_max_score: float | None = Field(None, description='산출물층 만점(코드 점검 + 계획서 대조) — 그 실행 건 배점')
     archived: bool = False
     # [2026-09-23 신규, 2026-09-27 개명] 생성 작업(계획서/프로토타입) 자동 재개 소진
     # 횟수(0~5)와 마지막 실패 사유 — match_status가 'waiting_resume'/'failed'일 때만
@@ -1096,6 +1106,10 @@ class ItemScoreHistoryOut(BaseModel):
     doc: list[ScoreHistoryEntryOut] = Field(default_factory=list)
     code: list[ScoreHistoryEntryOut] = Field(default_factory=list)
     plan: list[ScoreHistoryEntryOut] = Field(default_factory=list)
+    # 그 실행 건 배점 기준 층별 만점 — 점수 이력은 이 배점으로 환산된 값이라 지금 정책 값 대신 이 만점을 쓴다. 없으면 None
+    doc_max: float | None = None
+    code_max: float | None = None
+    plan_max: float | None = None
 
 
 class NoticeAdminOut(BaseModel):

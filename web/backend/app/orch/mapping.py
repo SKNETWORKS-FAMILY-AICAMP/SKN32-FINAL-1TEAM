@@ -390,11 +390,19 @@ WITHHELD_REASON_TEXT = '계획서와 구현 기능을 대조하지 못했습니�
 def artifact_score_reasons(outputs) -> list[schemas.ArtifactScoreReasonOut]:
     """산출물층 — 코드 점검은 항목마다 'CHECK-이름', 기능 대조는 하나로 'FEATURE-MATCH'(접두어가 프론트가 층을 가르는 기준)."""
     reasons: list[schemas.ArtifactScoreReasonOut] = []
-    if outputs.code_check is not None:
-        for c in outputs.code_check.checks:
-            reasons.append(schemas.ArtifactScoreReasonOut(
-                reason_text=c.detail, item_code=f'CHECK-{c.name}', display_name=c.name,
-                score=c.weight if c.passed else 0, max_score=c.weight))
+    report = outputs.overall_score_report
+    # 종합 점수 보고서의 코드 점검 항목 줄은 그 실행 건 배점으로 환산한 값이다(없으면 옛 실행 건 — 검증-2 원점수 줄을 쓴다)
+    checks = list(getattr(report, 'code_check_items', None) or [])
+    if not checks and outputs.code_check is not None:
+        checks = list(outputs.code_check.checks)
+    for c in checks:
+        earned = getattr(c, 'earned', None)
+        applicable = getattr(c, 'applicable', None)
+        reasons.append(schemas.ArtifactScoreReasonOut(
+            reason_text=c.detail, item_code=f'CHECK-{c.name}', display_name=c.name,
+            # 부분 점수는 earned로, 해당 없음은 0점 · applicable=false로(passed는 만점인지만 뜻한다). earned가 없는 옛 줄만 passed로 본다
+            score=earned if earned is not None else (c.weight if c.passed else 0), max_score=c.weight,
+            applicable=True if applicable is None else bool(applicable)))
     if outputs.feature_match is not None:
         fm = outputs.feature_match
         notes = [*fm.findings, *[f'누락 기능: {m}' for m in fm.missing_features],
@@ -405,8 +413,15 @@ def artifact_score_reasons(outputs) -> list[schemas.ArtifactScoreReasonOut]:
             reason_text = ' / '.join(notes) or '계획서와 구현 기능이 맞습니다.'
         reasons.append(schemas.ArtifactScoreReasonOut(
             reason_text=reason_text, item_code='FEATURE-MATCH',
-            display_name='계획서 대조', score=fm.score, max_score=FEATURE_MATCH_MAX))
+            display_name='계획서 대조', score=_scaled(report, 'feature_match_score', fm.score),
+            max_score=_scaled(report, 'feature_match_max', FEATURE_MATCH_MAX)))
     return reasons
+
+
+def _scaled(report, field: str, fallback):
+    """종합 점수 보고서의 환산 칸(그 실행 건 배점 기준). 칸이 비어 있으면(옛 실행 건) fallback."""
+    value = getattr(report, field, None) if report is not None else None
+    return fallback if value is None else value
 
 
 # 통과 필수 조건 코드(구현 Agent · 검증-2 계약의 gate_failures 값) → 화면 이름
@@ -456,7 +471,8 @@ def artifact_out(project_id: int, outputs) -> schemas.ArtifactOut | None:
         return None
     category = CATEGORY_TO_WEB.get(outputs.category, outputs.category or 'webdev')
     report = outputs.overall_score_report
-    artifact_score = report.artifact_score.total if report is not None and report.artifact_score is not None else None
+    raw_total = report.artifact_score.total if report is not None and report.artifact_score is not None else None
+    artifact_score = _scaled(report, 'artifact_layer_score', raw_total)  # 원점수(15점 기준)가 아니라 환산 값 — 옛 실행 건은 원점수
     return schemas.ArtifactOut(
         category=category,
         infographic_path=_infographic_path(project_id, outputs, category),
@@ -464,6 +480,7 @@ def artifact_out(project_id: int, outputs) -> schemas.ArtifactOut | None:
         executable_path=(file_url(project_id, outputs.prototype.entry_file)
                          if outputs.prototype is not None and category != 'onepage' else None),
         artifact_score=artifact_score,
+        artifact_max_score=_scaled(report, 'artifact_layer_max', None),
         score_reasons=artifact_score_reasons(outputs),
         gate_failures=gate_failures_out(outputs),
         missing_features=_matched(outputs, 'missing_features'),
@@ -472,8 +489,11 @@ def artifact_out(project_id: int, outputs) -> schemas.ArtifactOut | None:
 
 
 def verdict_out(outputs, policy) -> schemas.VerdictOut | None:
-    """종합 판정. 총점 · 통과는 오케스트레이터 값 그대로(웹이 다시 계산하지 않는다). 만점은 웹 정책(없으면 기본값)의
-    지금 값 — 실행 시작 뒤 관리자가 바꿨으면 어긋날 수 있다(명세 3.5)."""
+    """종합 판정. 총점 · 통과는 오케스트레이터 값 그대로(웹이 다시 계산하지 않는다).
+
+    층 점수 · 만점은 점수 보고서의 환산 칸(그 실행 건 배점 기준)을 쓴다 — 지금 정책 값을 만점으로 붙이면 관리자가 배점을 바꾼 뒤
+    '13/10'처럼 어긋난다(배점을 바꾸기 전에 시작한 실행 건은 옛 배점으로 채점되므로). 환산 칸이 비어 있는 옛 실행 건만 예전처럼
+    원점수와 웹 정책(없으면 기본값)의 지금 값을 쓴다(명세 3.5)."""
     report = outputs.overall_score_report
     if report is None:
         return None
@@ -481,12 +501,15 @@ def verdict_out(outputs, policy) -> schemas.VerdictOut | None:
     return schemas.VerdictOut(
         overall_passed=report.passed,
         doc_score=report.doc_score.total,
-        doc_max_score=float(policy.doc_weight) if policy is not None else DEFAULT_DOC_MAX,
-        code_score=artifact.code_check.total if artifact is not None else None,
-        code_max_score=float(policy.code_weight) if policy is not None else DEFAULT_CODE_MAX,
-        plan_match_score=artifact.feature_match.score if artifact is not None else None,
-        plan_match_max_score=float(policy.plan_weight) if policy is not None else DEFAULT_PLAN_MAX,
+        doc_max_score=_scaled(report, 'doc_layer_max', float(policy.doc_weight) if policy is not None else DEFAULT_DOC_MAX),
+        code_score=_scaled(report, 'code_check_score', artifact.code_check.total if artifact is not None else None),
+        code_max_score=_scaled(report, 'code_check_max', float(policy.code_weight) if policy is not None else DEFAULT_CODE_MAX),
+        plan_match_score=_scaled(report, 'feature_match_score', artifact.feature_match.score if artifact is not None else None),
+        plan_match_max_score=_scaled(
+            report, 'feature_match_max', float(policy.plan_weight) if policy is not None else DEFAULT_PLAN_MAX),
         plan_match_withheld=bool(artifact is not None and artifact.feature_match.withheld),
+        artifact_score=_scaled(report, 'artifact_layer_score', None),
+        artifact_max_score=_scaled(report, 'artifact_layer_max', None),
         total_score=report.total,
         pass_threshold=report.threshold,
     )
@@ -548,6 +571,7 @@ def result_out(project_id: int, outputs, policy, originals: dict[str, str] | Non
     report = outputs.document_score_report
     plan = schemas.BusinessPlanOut(
         doc_score=outputs.doc_score.total if outputs.doc_score is not None else None,
+        doc_max_score=_scaled(report, 'doc_layer_max', None),
         threshold=report.threshold if report is not None else None,
         sections=plan_sections_out(plan_doc),
         diagrams=plan_diagrams_out(project_id, plan_doc),

@@ -93,6 +93,10 @@ def item_from_run(project, run, now: datetime.datetime | None = None) -> schemas
         last_updated=utc(run.updated_at),
         stalled=_stalled(label, archived, run.updated_at, now),
         score=run.total_score,
+        doc_score=run.doc_score,
+        doc_max_score=run.doc_max,
+        artifact_score=run.artifact_score,
+        artifact_max_score=run.artifact_max,
         archived=archived,
         generation_resume_count=run.resume_count,
         generation_failure_reason=run.failure_reason,
@@ -125,7 +129,8 @@ def _entries(entries) -> list[schemas.ScoreHistoryEntryOut]:
 
 def score_history_out(history) -> schemas.ItemScoreHistoryOut:
     return schemas.ItemScoreHistoryOut(
-        doc=_entries(history.doc_score), code=_entries(history.code_check), plan=_entries(history.feature_match))
+        doc=_entries(history.doc_score), code=_entries(history.code_check), plan=_entries(history.feature_match),
+        doc_max=history.doc_max, code_max=history.code_check_max, plan_max=history.feature_match_max)
 
 
 # ── 에이전트 테스크 (admin_executions · admin_agent_tasks) ──────────────────────────────

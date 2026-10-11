@@ -39,6 +39,7 @@ ruff check .                                # 정적 검사
 | `test_orch_stages.py` | 공고 선택 → 자격 확인 → 계획서 · 프로토타입 · 종합 평가 · 검수 시작 |
 | `test_orch_result.py` | `GET /projects/{id}/result` — 계획서 · 판정 · 산출물 · 재작성 기회를 응답으로 변환 |
 | `test_plan_result_shape.py` | 결과의 계획서 응답 모양 — 항목 번호 · 웹 태그 · 종류를 따로, 옛 4항목 계획서의 태그, 점수 항목의 태그, 그림 주소 · 순서 (SB-337) |
+| `test_score_scaling.py` | 점수 보고서 환산 칸 — 층 점수 · 만점은 그 실행 건 배점 기준(지금 정책 값 아님), 코드 점검 줄의 부분 점수 · 해당 없음, 항목 합 = 층 점수, 옛 실행 건 대체 값 (오케스트레이터 2026-10-11) |
 | `test_orch_rework.py` | 재작성 접수(`POST /retry-task`)와 전후 비교(`GET /rework-result`) |
 | `test_plan_score_items.py` | 평가 항목이 24 ~ 25개로 늘어도 문서층 점수 응답이 순서 · 이름 · 소수 점수 그대로 나오는지, 편차 상한은 저장만 함 (SB-338) |
 | `test_match_candidates.py` | 공고 후보 조회 · 다시 찾기 · 선택 |

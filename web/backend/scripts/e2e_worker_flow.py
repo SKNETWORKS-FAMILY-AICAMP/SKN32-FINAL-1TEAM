@@ -307,6 +307,16 @@ def main() -> int:
             # [SB-301] 계획서 대조 보류 표시 — 스텁 Agent는 대조를 보류하지 않으므로 False로 와야 한다(필드가 실제로 내려오는지 본다)
             step('결과: 계획서 대조 보류 표시(plan_match_withheld)', verdict.get('plan_match_withheld') is False,
                  f"plan_match_withheld={verdict.get('plan_match_withheld')} 대조 점수={verdict.get('plan_match_score')}")
+            # 점수 환산 칸(오케스트레이터 2026-10-11): 층 만점이 그 실행 건 배점(이 시험은 기본 70 · 15 · 15)으로 오고, 코드 점검 줄의 합이 층 점수 · 만점과 같다
+            artifact = ((result.get('plan') or {}).get('artifacts') or [{}])[0]
+            rows = [r for r in artifact.get('score_reasons') or [] if str(r.get('item_code', '')).startswith('CHECK-')]
+            maxima = (verdict.get('doc_max_score'), verdict.get('code_max_score'), verdict.get('plan_match_max_score'))
+            step('결과: 층 만점이 그 실행 건 배점으로 옴(환산 칸)', maxima == (70.0, 15.0, 15.0) and verdict.get('artifact_max_score') == 30.0,
+                 f'doc/code/plan 만점={maxima} 산출물층 만점={verdict.get("artifact_max_score")}')
+            step('결과: 코드 점검 줄의 합이 환산 점수 · 만점과 같음', bool(rows)
+                 and abs(sum(r['score'] for r in rows) - verdict['code_score']) < 1e-6
+                 and abs(sum(r['max_score'] for r in rows) - verdict['code_max_score']) < 1e-6,
+                 f"줄 {len(rows)}개 합={sum(r['score'] for r in rows)}/{sum(r['max_score'] for r in rows)} 층={verdict.get('code_score')}/{verdict.get('code_max_score')}")
 
             # 8) (선택) 재작성
             if args.rework:

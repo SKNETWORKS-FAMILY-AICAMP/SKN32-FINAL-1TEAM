@@ -188,6 +188,11 @@ def main() -> int:
                     'deviation_cap': policy['deviation_cap'], 'token_retry_cap': policy['token_retry_cap']})
                 step('2. 합격선 88 · 재작성 횟수 2로 변경', res.status_code == 200 and j(res)['pass_threshold'] == 88 and j(res)['rework_cap'] == 2,
                      f'{res.status_code}')
+                zero = client.put('/admin/policy/scores', json={'doc_weight': 0, 'code_weight': 50, 'plan_weight': 50})
+                step('2. 배점이 0인 층이 있으면 합이 100이어도 422 · 값 그대로', zero.status_code == 422 and j(client.get('/admin/policy')) == {
+                    **policy, 'pass_threshold': 88, 'rework_cap': 2}, f'{zero.status_code}')
+                res = client.put('/admin/policy/scores', json={'doc_weight': 60, 'code_weight': 10, 'plan_weight': 30})
+                step('2. 배점 60 · 10 · 30으로 변경(이 뒤에 시작하는 실행 건의 배점 — 스텁 문서 점수 52가 문서층 만점 안에 들게 60)', res.status_code == 200, f'{res.status_code}')
 
                 # 3) 데이터 만들기 — nomatch / fail / done
                 scenario.candidate_count = 0
@@ -224,6 +229,27 @@ def main() -> int:
                 step('3. 관리자 설정이 새 실행에 반영됨(합격선 88 · 재작성 횟수 2)',
                      verdict.get('pass_threshold') == 88 and usage.get('문제인식') == (1, 1),
                      f"합격선 {verdict.get('pass_threshold')} 문제인식 (사용, 남음)={usage.get('문제인식')}")
+                # 점수 환산 칸(오케스트레이터 2026-10-11): 층 만점이 그 실행 건 배점(60 · 10 · 30)으로 오고, 실행 시작 뒤 관리자가 배점을 바꿔도 그대로다
+                def scaled_maxima():
+                    v = j(client.get(f'/projects/{pid}/result')).get('verdict') or {}
+                    return (v.get('doc_max_score'), v.get('code_max_score'), v.get('plan_match_max_score'), v.get('artifact_max_score'))
+                step('3. 층 만점이 그 실행 건 배점으로 옴(60 · 10 · 30, 산출물층 40)', scaled_maxima() == (60.0, 10.0, 30.0, 40.0), f'{scaled_maxima()}')
+                rows = [r for r in (((result.get('plan') or {}).get('artifacts') or [{}])[0].get('score_reasons') or [])
+                        if str(r.get('item_code', '')).startswith('CHECK-')]
+                step('3. 코드 점검 줄의 합이 환산 점수 · 만점과 같음',
+                     bool(rows) and abs(sum(r['score'] for r in rows) - verdict['code_score']) < 1e-6
+                     and abs(sum(r['max_score'] for r in rows) - verdict['code_max_score']) < 1e-6,
+                     f"줄 {len(rows)}개 합={sum(r['score'] for r in rows)}/{sum(r['max_score'] for r in rows)} 층={verdict.get('code_score')}/{verdict.get('code_max_score')}")
+                client.put('/admin/policy/scores', json={'doc_weight': 80, 'code_weight': 10, 'plan_weight': 10})
+                step('3. 시작 뒤 배점을 80 · 10 · 10으로 바꿔도 이 실행 건의 만점은 그대로', scaled_maxima() == (60.0, 10.0, 30.0, 40.0), f'{scaled_maxima()}')
+                row = next((i for i in j(client.get('/admin/items')) if i['project_id'] == pid), {})
+                step('3. 관리자 진행 현황이 그 실행 건 만점(60 · 40)을 줌',
+                     (row.get('doc_max_score'), row.get('artifact_max_score')) == (60.0, 40.0),
+                     f"doc_max={row.get('doc_max_score')} artifact_max={row.get('artifact_max_score')} doc={row.get('doc_score')} artifact={row.get('artifact_score')}")
+                hist = j(client.get(f'/admin/items/{pid}/score-history'))
+                step('3. 관리자 점수 이력이 그 실행 건 만점(60 · 10 · 30)을 줌',
+                     (hist.get('doc_max'), hist.get('code_max'), hist.get('plan_max')) == (60.0, 10.0, 30.0),
+                     f"{hist.get('doc_max')}/{hist.get('code_max')}/{hist.get('plan_max')}")
 
                 # wait: 계획서 작성 단계를 붙잡는다
                 ids['wait'] = create_selected()
@@ -291,7 +317,7 @@ def main() -> int:
                      len(doc) >= 2 and any(e['is_rerun'] for e in doc) and any(not e['is_rerun'] for e in doc),
                      f"문서 {len(doc)}건 코드 {len(hist.get('code') or [])} 대조 {len(hist.get('plan') or [])} 재작성표시 {[e['is_rerun'] for e in doc]}")
                 empty = j(client.get(f'/admin/items/{ids["nomatch"]}/score-history'))
-                step('6. 실행 건이 없으면 빈 이력(오류 아님)', empty == {'doc': [], 'code': [], 'plan': []}, f'{empty}')
+                step('6. 실행 건이 없으면 빈 이력(오류 아님)', empty == {'doc': [], 'code': [], 'plan': [], 'doc_max': None, 'code_max': None, 'plan_max': None}, f'{empty}')
                 step('6. 없는 프로젝트는 404', client.get('/admin/items/99999999/score-history').status_code == 404)
 
                 # 7) 에이전트 실행 기록 · Task별 보기
@@ -343,7 +369,8 @@ def main() -> int:
                 step('8. 운영 현황: 상태별 건수가 진행 현황과 같음', summary.get('status_counts') == counts, f"{summary.get('status_counts')}")
                 step('8. 운영 현황: 합격선이 바꾼 값(88)', summary.get('pass_threshold') == 88, f"{summary.get('pass_threshold')}")
                 pc, tc, pr = summary.get('pass_count'), summary.get('total_count'), summary.get('pass_rate')
-                step('8. 운영 현황: 통과율 = 통과 수 / 점수 수', (tc == 0 and pr in (None, 0)) or (tc and pr is not None and abs(pr - pc / tc) < 0.01),
+                # 통과율은 퍼센트(통과 수 / 점수 수 × 100)
+                step('8. 운영 현황: 통과율 = 통과 수 / 점수 수', (tc == 0 and pr in (None, 0)) or (tc and pr is not None and abs(pr - pc / tc * 100) < 0.01),
                      f'통과 {pc} / 점수 {tc} = {pr}')
                 ops = j(client.get('/admin/agent-ops-summary'))
                 initial_sql = scalar("SELECT COUNT(*) FROM orch_executions WHERE `trigger`='첫실행'")
