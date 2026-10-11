@@ -10,6 +10,7 @@ import {createProject,deleteProject,getEligibility,getProject,getProjectResult,g
 import {NoticeClosedBanner,RunBlockedDialog} from './components/RunDialogs.jsx';
 import {useWorkflowStore} from './store/useWorkflowStore.js';
 import {scoresFromResult,reworkBudgetFrom} from './features/workflow/utils.js';
+import {budgetRowTotal} from './features/workflow/ProjectPlanFields.jsx';
 
 // [2026-09-15, 프론트 통합 임시 구현] "단가" 입력칸은 자유 텍스트("500원" 등)라서 서버가
 // 기대하는 숫자(unit_price)를 뽑아내려면 이 정도 파싱이 필요하다 — 숫자를 못 찾으면 null(미정)로 보낸다.
@@ -63,7 +64,37 @@ function intakeDetailPayload(info){
   equipment:(info.equipment||[]).map(e=>({name:text(e.name),status:e.status||null})),
   no_partners:!!info.noPartners,
   partners:(info.partners||[]).map(p=>({name:text(p.name),status:p.status||null})),
+  // 사업비 집행 계획 · 추진 일정 — 모양은 백엔드 답(2026-10-10)대로다. 백엔드 저장이 sb-269에 들어오기 전에는
+  // ProjectCreateRequest가 모르는 필드라 버려진다. 금액은 원 단위 숫자(빈 칸 0), 총사업비는 화면이 계산한 값,
+  // 단계(phase)는 예비창업자만 '1단계' · '2단계'(그 밖은 null), 일정 section은 feasibility · growth.
+  budget_items:(info.budget||[]).map(b=>({phase:b.phase||null,category:text(b.category),execution_plan:text(b.plan),
+   total_amount:budgetRowTotal(b),government_amount:Number(b.gov)||0,self_cash_amount:Number(b.cash)||0,self_in_kind_amount:Number(b.inKind)||0})),
+  schedule_items:Object.entries(info.schedule||{}).flatMap(([section,rows])=>rows.map(r=>({section,category:text(r.category),content:text(r.content),period:text(r.period),detail:text(r.detail)}))),
  };
+}
+
+// 입력 검증 실패(422 VALIDATION_ERROR) — detail은 [{loc,msg,type}] 목록이고 여러 곳이 한 번에 온다. loc에는 표 이름 ·
+// 줄 번호(0부터) · 칸이 온다(예: ['budget_items',2,'total_amount'] — 생성 요청은 앞에 'body'가 없다, 백엔드 정정 2026-10-10).
+// → "사업비 3번째 줄의 '총사업비' 칸을 확인해 주세요". 원문 JSON을 그대로 띄우지 않는다. 백엔드가 쓴 한국어 사유가 있으면 붙인다.
+const INTAKE_TABLES={
+ budget_items:['사업비',{phase:'단계',category:'비목',execution_plan:'집행 계획',total_amount:'총사업비',government_amount:'정부지원사업비',self_cash_amount:'자기부담 현금',self_in_kind_amount:'자기부담 현물'}],
+ schedule_items:['추진 일정',{section:'일정 표',category:'구분',content:'추진 내용',period:'추진 기간',detail:'세부 내용'}],
+};
+function intakeValidationMessage(detail){
+ const errors=(Array.isArray(detail)?detail:[]).filter(e=>Array.isArray(e?.loc)&&e.loc.some(p=>INTAKE_TABLES[p]));
+ if(!errors.length)return Array.isArray(detail)?'입력한 내용 중 확인이 필요한 칸이 있어요. 다시 확인해 주세요.':null;
+ const {loc,msg}=errors[0];
+ const at=loc.findIndex(p=>INTAKE_TABLES[p]);
+ const [table,fields]=INTAKE_TABLES[loc[at]];
+ const row=loc[at+1],field=fields[loc[at+2]];
+ const where=Number.isInteger(row)?`${table} ${row+1}번째 줄${field?`의 '${field}' 칸`:''}을`:`${table} 표를`;
+ const reason=/[가-힣]/.test(msg||'')?` (${String(msg).replace(/^Value error,\s*/,'')})`:'';
+ return `${where} 확인해 주세요.${reason}${errors.length>1?` 그 밖에 ${errors.length-1}곳도 확인이 필요해요.`:''}`;
+}
+// 필수 입력 누락(422 E-C1-REQUIRED) — 웹 백엔드와 오케스트레이터가 같은 모양({message, missing})으로 준다.
+function requiredMissingMessage(detail){
+ const missing=Array.isArray(detail?.missing)?detail.missing:[];
+ return missing.length?`필수 항목이 비어 있어요: ${missing.join(', ')}`:null;
 }
 
 export default function App(){
@@ -210,7 +241,8 @@ export default function App(){
     return;
    }
    console.error('프로젝트를 만들지 못했어요',err);
-   window.alert(err.message||'프로젝트를 만들지 못했어요. 다시 시도해 주세요.');
+   window.alert((err.code==='VALIDATION_ERROR'&&intakeValidationMessage(err.detail))||(err.code==='E-C1-REQUIRED'&&requiredMissingMessage(err.detail))
+    ||err.message||'프로젝트를 만들지 못했어요. 다시 시도해 주세요.');
    setView('intake');
   }
  };

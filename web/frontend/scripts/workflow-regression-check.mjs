@@ -43,18 +43,44 @@ try{
     item:'아이디어 상세 설명',team:[],noTeam:true,pricing:[{item:'서비스',price:'1000'}],region:{sido:'서울특별시',sigungu:'강남구'},
     industry:'정보·통신',careers:[{type:'경력',title:'개발',period:'2020-2024',hasProof:true}],skills:'개발 역량',certs:['벤처기업'],
     devPeriod:{start:'2026-10',end:'2026-12'},selfFunding:{available:true,cashLimit:'1000000',inKindResources:'보유 장비'},
-    noHires:true,hires:[],noEquipment:true,equipment:[],noPartners:true,partners:[]};
+    noHires:true,hires:[],noEquipment:true,equipment:[],noPartners:true,partners:[],
+    budget:[{phase:'',category:'재료비',plan:'부품 구입',gov:'1000000',cash:'200000',inKind:'0'}],
+    schedule:{feasibility:[{category:'개발',content:'시제품',period:'2026.10 ~ 2026.12',detail:'첫 버전'}],growth:[]}};
   let submitted;
   let ui=mount(IntakeForm,{initialValues:draft,onSubmit:info=>{submitted=info}});await ui.flush();
   ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});
   assert.equal(submitted.item,draft.item);assert.equal(submitted.files,undefined);assert.deepEqual(submitted.selfFunding,draft.selfFunding);
   assert.equal(submitted.noTeam,true);assert.equal(submitted.region.sigungu,'강남구');
+  assert.deepEqual(submitted.budget,draft.budget);assert.deepEqual(Object.keys(submitted.schedule),['feasibility','growth']);
   ui.component('Segmented').props.onChange('preliminary');await ui.flush();
   ui.component('Segmented').props.onChange('individual');await ui.flush();
   assert.equal(ui.find(n=>n.props.label==='설립일').props.value,'2024-01-01');
   ui.find(n=>n.props.label==='설립일').props.onChange('');await ui.flush();submitted=null;
   ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await ui.flush();assert.equal(submitted,null);
   assert.ok(ui.find(n=>n.props.id==='intake-founded').props.error);ui.unmount();
+  // 예비창업자는 사업비 1 · 2단계가 각 1줄 이상, 일정은 협약기간 내 표가 1줄 이상이어야 넘어간다.
+  const preDraft={...draft,applicantType:'preliminary',budgetScale:'1500',budget:[{...draft.budget[0],phase:'1단계'}]};
+  submitted=null;ui=mount(IntakeForm,{initialValues:preDraft,onSubmit:info=>{submitted=info}});await ui.flush();
+  ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await ui.flush();assert.equal(submitted,null);
+  assert.ok(ui.find(n=>n.props.id==='intake-budget').props.error);ui.unmount();
+  const preRow={category:'출시',content:'베타 운영',period:'2027.01',detail:'첫 고객 10명'};
+  ui=mount(IntakeForm,{initialValues:{...preDraft,budget:[...preDraft.budget,{...draft.budget[0],phase:'2단계'}],schedule:{feasibility:[preRow]}},onSubmit:info=>{submitted=info}});await ui.flush();
+  ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await ui.flush();
+  assert.deepEqual(submitted.budget.map(b=>b.phase),['1단계','2단계']);assert.deepEqual(submitted.schedule,{feasibility:[preRow],growth:[]});ui.unmount();
+  // 예비창업자는 현물 칸이 없어 앞서 적은 현물이 있어도 0으로 보낸다. 세부 내용은 비워도 된다.
+  submitted=null;ui=mount(IntakeForm,{initialValues:{...preDraft,budget:[{...preDraft.budget[0],inKind:'500'},{...draft.budget[0],phase:'2단계'}],schedule:{feasibility:[{...preRow,detail:''}]}},onSubmit:info=>{submitted=info}});await ui.flush();
+  ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await ui.flush();
+  assert.deepEqual(submitted.budget.map(b=>b.inKind),['0','0']);
+  ui.unmount();
+  const {budgetAmountFields}=await server.ssrLoadModule('/src/features/workflow/ProjectPlanFields.jsx');
+  assert.deepEqual(budgetAmountFields(true).map(f=>f[1]),['정부지원사업비','자기부담금']);
+  assert.deepEqual(budgetAmountFields(false).map(f=>f[1]),['정부지원사업비','자기부담 현금','자기부담 현물']);
+  // 금액 칸이 비어 있거나(0은 된다) 추진 기간에 연도가 없으면 넘어가지 않는다.
+  for(const [bad,anchor] of [[{budget:[{...draft.budget[0],cash:''}]},'intake-budget'],[{schedule:{feasibility:[{...draft.schedule.feasibility[0],period:'11월 ~ 1월'}]}},'intake-schedule']]){
+    submitted=null;ui=mount(IntakeForm,{initialValues:{...draft,...bad},onSubmit:info=>{submitted=info}});await ui.flush();
+    ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await ui.flush();assert.equal(submitted,null);
+    assert.ok(ui.find(n=>n.props.id===anchor).props.error);ui.unmount();
+  }
 
   let completed=0;
   const confirmation=deferred();
@@ -83,13 +109,13 @@ try{
   ui.find(n=>n.type==='button'&&n.props.children==='다시 시도').props.onClick();await ui.flush();
   assert.equal(ui.component('Preparation').props.progress,100);ui.unmount();
 
-  let createRequest;
+  let createRequest,createBody;
   globalThis.fetch=async(url,options={})=>{
     const path=new URL(url).pathname;
     if(path==='/auth/me')return response({user_id:1,name:'Tester',role:'user',has_profile:true,notify_enabled:true});
     if(path==='/profile')return response([]);
     if(path==='/auth/logout')return response({});
-    if(path==='/projects'&&options.method==='POST'){createRequest=deferred();return createRequest.promise;}
+    if(path==='/projects'&&options.method==='POST'){createBody=JSON.parse(options.body.get('payload'));createRequest=deferred();return createRequest.promise;}
     if(path==='/projects/2')return response({description:'B project',company:{},team_members:[],pricing_items:[]});
     if(path==='/projects/2/result')return response({match:{fit_score:0},verdict:{overall_passed:true}});
     if(path==='/projects/2/status')return response({screen:11,stage:'done',match_status:'completed'});
@@ -100,8 +126,23 @@ try{
   ui.component('Dashboard').props.onNewProject();await ui.flush();
   let saving=ui.component('IntakeForm').props.onSubmit(draft);await ui.flush();
   assert.equal(ui.component('MatchProgress').props.ready,false);
+  assert.deepEqual(createBody.budget_items,[{phase:null,category:'재료비',execution_plan:'부품 구입',total_amount:1200000,government_amount:1000000,self_cash_amount:200000,self_in_kind_amount:0}]);
+  assert.deepEqual(createBody.schedule_items,[{section:'feasibility',category:'개발',content:'시제품',period:'2026.10 ~ 2026.12',detail:'첫 버전'}]);
   createRequest.resolve(response({detail:'simulated failure'},500));await saving;await ui.flush();
   assert.equal(ui.component('IntakeForm').props.initialValues.item,draft.item);
+  // 사업비 · 일정 검증 실패(422)는 원문 JSON 대신 몇째 줄 어느 칸인지 알려 준다.
+  const intakeAlerts=[];window.alert=m=>intakeAlerts.push(m);
+  saving=ui.component('IntakeForm').props.onSubmit(draft);await ui.flush();
+  createRequest.resolve(response({detail:[{loc:['budget_items',2,'total_amount'],msg:'bad',type:'value_error'}],code:'VALIDATION_ERROR'},422));await saving;await ui.flush();
+  assert.equal(intakeAlerts.at(-1),"사업비 3번째 줄의 '총사업비' 칸을 확인해 주세요.");
+  // 여러 곳이 한 번에 오면 첫 곳과 나머지 수를, 백엔드의 한국어 사유가 있으면 함께 보인다.
+  saving=ui.component('IntakeForm').props.onSubmit(draft);await ui.flush();
+  createRequest.resolve(response({detail:[{loc:['schedule_items',0,'period'],msg:'Value error, 추진기간에 연도가 있어야 해요(예: 2026.05~2026.07)',type:'value_error'},{loc:['budget_items',1,'phase'],msg:'x',type:'value_error'}],code:'VALIDATION_ERROR'},422));await saving;await ui.flush();
+  assert.equal(intakeAlerts.at(-1),"추진 일정 1번째 줄의 '추진 기간' 칸을 확인해 주세요. (추진기간에 연도가 있어야 해요(예: 2026.05~2026.07)) 그 밖에 1곳도 확인이 필요해요.");
+  // 필수 입력 누락(E-C1-REQUIRED)은 빠진 항목 이름을 보인다.
+  saving=ui.component('IntakeForm').props.onSubmit(draft);await ui.flush();
+  createRequest.resolve(response({detail:{message:'필수 항목이 비어 있어요',code:'E-C1-REQUIRED',missing:['사업비 집행계획(2단계)']},code:'E-C1-REQUIRED'},422));await saving;await ui.flush();
+  assert.equal(intakeAlerts.at(-1),'필수 항목이 비어 있어요: 사업비 집행계획(2단계)');window.alert=()=>{};
   saving=ui.component('IntakeForm').props.onSubmit(draft);await ui.flush();
   ui.component('WorkspaceShell').props.onLogout();await ui.flush();
   createRequest.resolve(response({project_id:99}));await saving;await ui.flush();

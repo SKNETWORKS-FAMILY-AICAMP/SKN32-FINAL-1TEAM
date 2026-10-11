@@ -253,7 +253,8 @@ export function ChipSelect({ options, values, onChange }) {
 // 행 추가/삭제형 목록. fields: [{key,label,type:'text'|'date'|'month'|'select'|'check',options,placeholder}]
 const COLS = { 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3', 4: 'sm:grid-cols-2 md:grid-cols-4' };
 
-export function ListEditor({ items, onChange, fields, cols = 3, addLabel, emptyText, extra }) {
+// max를 주면 그 줄 수에 닿았을 때 추가 버튼을 숨긴다.
+export function ListEditor({ items, onChange, fields, cols = 3, addLabel, emptyText, extra, max }) {
   const blank = Object.fromEntries(fields.map((f) => [f.key, f.type === 'check' ? false : '']));
   const update = (i, key, value) => onChange(items.map((row, idx) => (idx === i ? { ...row, [key]: value } : row)));
   return (
@@ -278,10 +279,12 @@ export function ListEditor({ items, onChange, fields, cols = 3, addLabel, emptyT
           </button>
         </div>
       ))}
-      <button type="button" onClick={() => onChange([...items, blank])}
-        className="h-11 rounded-xl border border-dashed border-[#d1d6db] text-[14px] font-semibold text-[var(--primary)] hover:bg-[#f5f9ff] transition-colors">
-        + {addLabel}
-      </button>
+      {(max == null || items.length < max) && (
+        <button type="button" onClick={() => onChange([...items, blank])}
+          className="h-11 rounded-xl border border-dashed border-[#d1d6db] text-[14px] font-semibold text-[var(--primary)] hover:bg-[#f5f9ff] transition-colors">
+          + {addLabel}
+        </button>
+      )}
     </div>
   );
 }

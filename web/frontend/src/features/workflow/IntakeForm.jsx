@@ -12,7 +12,8 @@ import {
 } from '../mypage/ui.jsx';
 import { BackButton } from './shared.jsx';
 import {
-  BudgetScaleField, DevPeriodField, EMPTY_FUNDING, ListOrNone, SelfFundingField, fundingFilled, periodFilled, rowsFilled,
+  BudgetEditor, BudgetScaleField, DevPeriodField, EMPTY_BUDGET_ROW, EMPTY_FUNDING, ListOrNone, ScheduleEditor, SelfFundingField,
+  budgetFilled, emptySchedule, fundingFilled, periodFilled, rowsFilled, scheduleFilled, scheduleSectionsFor,
 } from './ProjectPlanFields.jsx';
 
 const APPLICANT_TYPES = [['preliminary', '예비창업자'], ['individual', '개인사업자'], ['corp', '법인']];
@@ -87,6 +88,9 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
   const [noEquipment, setNoEquipment] = useState(draft.noEquipment || false);
   const [partners, setPartners] = useState(draft.partners || []);
   const [noPartners, setNoPartners] = useState(draft.noPartners || false);
+  // 사업비 집행 계획 · 추진 일정 — 계획서 사업비 표 · 일정 표의 원본(2026-10-09, 조율 · 백엔드 요청).
+  const [budget, setBudget] = useState(draft.budget || [{ ...EMPTY_BUDGET_ROW }]);
+  const [schedule, setSchedule] = useState(() => ({ ...emptySchedule(), ...draft.schedule }));
   const [errorAnchor, setErrorAnchor] = useState(null);
   // 대표자 역량·지역·주업종·보유 인증 — "내 정보 불러오기"로 채워지고 여기서 고칠 수 있다.
   const [extra, setExtra] = useState(() => ({
@@ -145,6 +149,8 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
     [!noEquipment && !rowsFilled(equipment, EQUIPMENT_FIELDS), '장비 · 시설', 'intake-equipment'],
     [!noPartners && !rowsFilled(partners, PARTNER_FIELDS), '협력 기관', 'intake-partners'],
     [applicantType && (isPreliminary ? !budgetScale : !fundingFilled(funding)), isPreliminary ? '예비창업자 정보' : '자기부담금', 'intake-funding'],
+    [applicantType && !budgetFilled(budget, isPreliminary), '사업비 집행 계획', 'intake-budget'],
+    [applicantType && !scheduleFilled(schedule, isPreliminary), '추진 일정', 'intake-schedule'],
     [!pricingValid, '수익모델 단가', 'intake-pricing'],
     [!ideaValid, '아이디어 설명', 'intake-idea'],
   ].filter(([bad]) => bad).map(([, label, anchor]) => ({ label, anchor }));
@@ -179,6 +185,9 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
       hires: noHires ? [] : hires,
       equipment: noEquipment ? [] : equipment,
       partners: noPartners ? [] : partners,
+      // 단계는 예비창업자만 쓴다. 예비창업자는 현물 칸이 없어 0으로 보낸다(백엔드 규칙). 일정은 지금 유형의 표 두 개만 보낸다.
+      budget: budget.map((r) => (isPreliminary ? { ...r, inKind: '0' } : { ...r, phase: '' })),
+      schedule: Object.fromEntries(scheduleSectionsFor(isPreliminary).map(({ key }) => [key, schedule[key] || []])),
       noTeam, noHires, noEquipment, noPartners,
     });
   };
@@ -271,6 +280,20 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
             {isPreliminary
               ? <BudgetScaleField value={budgetScale} onChange={setBudgetScale} />
               : <SelfFundingField value={funding} onChange={setFunding} />}
+          </Section>
+        )}
+
+        {applicantType && (
+          <Section id="intake-budget" title="사업비 집행 계획" required error={errorFor(error, 'intake-budget')}
+            desc={`${isPreliminary ? '1단계 · 2단계로 나눠 비목마다 한 줄씩 적어 주세요. 단계마다 한 줄 이상 필요해요.' : '비목마다 한 줄씩 적어 주세요.'} 금액 칸은 비워 둘 수 없어요(없으면 0). 총사업비는 정부지원사업비와 자기부담금을 더해 자동으로 계산돼요.`}>
+            <BudgetEditor rows={budget} onChange={setBudget} isPreliminary={isPreliminary} />
+          </Section>
+        )}
+
+        {applicantType && (
+          <Section id="intake-schedule" title="추진 일정" required error={errorFor(error, 'intake-schedule')}
+            desc="계획서의 추진 일정 표에 쓰여요. 구분 · 추진 내용 · 추진 기간(연도 포함)은 꼭 채워 주세요.">
+            <ScheduleEditor value={schedule} onChange={setSchedule} isPreliminary={isPreliminary} />
           </Section>
         )}
 
