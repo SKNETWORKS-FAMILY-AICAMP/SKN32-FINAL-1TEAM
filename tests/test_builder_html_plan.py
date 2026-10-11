@@ -253,3 +253,37 @@ class FontAndIconKitTests(TestCase):
         self.assertIn('<use href="#i-이름"/>', prompt)
         self.assertIn("cart(주문 · 장바구니)", prompt)
         self.assertNotIn("base64", prompt)
+
+
+class PlanLengthTests(TestCase):
+    """양식 전 항목이 오는 계획서(약 13,000자, 끝에 사업비 · 일정 표)가 T-B1 프롬프트에서 잘리지 않는가."""
+
+    def test_full_form_plan_keeps_tables_at_the_end(self):
+        plan = "본문 문장입니다.\n" * 1400 + "추진 일정\n1단계 | 시제품 개발 | 2026.05 ~ 2026.07"
+        self.assertGreater(len(plan), 12000)
+        prompt = _build_system_prompt(["재고 예측"], {}, "웹개발", plan)
+        self.assertIn("1단계 | 시제품 개발 | 2026.05 ~ 2026.07", prompt)
+
+    def test_very_long_plan_keeps_head_and_tail(self):
+        from engineering_agent.builder_html import _PLAN_CHARS, _plan_for_prompt
+
+        plan = "앞부분 시작\n" + "가" * 30000 + "\n사업비 표 끝"
+        short = _plan_for_prompt(plan)
+        self.assertLessEqual(len(short), _PLAN_CHARS + 20)
+        self.assertTrue(short.startswith("앞부분 시작"))
+        self.assertTrue(short.endswith("사업비 표 끝"))
+        self.assertIn("…(중략)…", short)
+
+    def test_image_section_without_sentences_is_fine(self):
+        from engineering_agent.tasks import _plan_text
+        from tests.fake_sbrain import PlanDoc, PlanSection, Sentence
+
+        doc = PlanDoc(sections=[
+            PlanSection(section_code="2.3.6", title="서비스 흐름도", sentences=[]),
+            PlanSection(section_code="2.4.1", title="개발 방안", sentences=[
+                Sentence(sentence_id="s-2.4.1-1", text="재고 예측: 판매량으로 발주량을 계산한다.",
+                         is_title=False, paragraph_no=1)])],
+            tables=[], charts=[], feature_list=["재고 예측"], protected_tokens=[])
+        text = _plan_text(doc)
+        self.assertIn("서비스 흐름도", text)
+        self.assertIn("재고 예측: 판매량으로", text)

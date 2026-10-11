@@ -21,8 +21,18 @@ _ENTRY_FILENAME = "index.html"
 _IMPLEMENTED_FEATURES_RE = re.compile(r'<!--\s*IMPLEMENTED_FEATURES:\s*(.*?)-->', re.DOTALL)
 
 
-# 프롬프트에 싣는 계획서 본문 길이 상한.
-_PLAN_CHARS = 12000
+# 프롬프트에 싣는 계획서 본문 길이 상한. 양식 전 항목(24 ~ 25개)이 오는 계획서가 약 13,000자라 여유를 둔다.
+_PLAN_CHARS = 20000
+# 상한을 넘으면 뒤쪽(사업비 · 일정 표가 붙는 곳)을 이만큼 남기고 가운데를 줄인다.
+_PLAN_TAIL_CHARS = 4000
+
+
+def _plan_for_prompt(plan_text: str) -> str:
+    text = plan_text.strip()
+    if len(text) <= _PLAN_CHARS:
+        return text
+    head = _PLAN_CHARS - _PLAN_TAIL_CHARS
+    return f"{text[:head]}\n…(중략)…\n{text[-_PLAN_TAIL_CHARS:]}"
 
 
 def feature_notes(feature_list: list[str], plan_text: str) -> dict[str, str]:
@@ -132,7 +142,7 @@ def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str
         )
         plan_section = ("\n\n## 사업계획서 본문 (기능 설명의 근거. 여기에 없는 기능을 지어내지 마라. "
                         "계획서의 수치는 그대로 쓰고, 계획서에 없는 값은 규칙 14대로 '시연용 예시 값'으로 표시해 넣어라)\n"
-                        + plan_text.strip()[:_PLAN_CHARS])
+                        + _plan_for_prompt(plan_text))
 
     return f"""너는 정부지원사업 신청용 프로토타입을 만드는 엔지니어다.
 사업계획서의 "준비 정도"를 뒷받침할, 동작을 확인할 수 있는 수준의 실행 파일을 만든다.
