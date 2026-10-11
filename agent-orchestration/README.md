@@ -7,7 +7,7 @@ S-Brain의 AI Agent 7개를 정해진 순서대로 부르고, 실패하거나 �
 | 언어 · 버전 | Python 3.12 |
 | 의존성 | `pydantic` (타입 검증 · JSON 변환), `SQLAlchemy` · `PyMySQL` (공유 MySQL — 저장소 · 웹 DB), `openai` (조율 Agent 호출처), `python-dotenv` (`.env` 읽기), `pytest` · `pytest-xdist` · `pytest-cov` (테스트 · 동시 실행 · 범위 측정) |
 | 구현 근거 | S-Brain Agent 기능정의서 v1.10 (기준 문서). 보조 참고: 프로젝트 기획서 v1.11 |
-| 현재 상태 | 뼈대 완성. 조율 **T-C1 · T-C3와 재작성 · 재수행 지시문 다시 쓰기는 실제 구현**(2026-10-04 실제 OpenAI로 확인 — T-C3 지시문 작성을 동시 호출로 바꾼 뒤 작성 시작 → 화면 6이 52초 → 11초), 공고 매칭 **T-C2 · 자격 확인 G-01은 공고 서버(공고팀 HTTP API) 연결 코드 완료** — `SBRAIN_NOTICE_API_URL`을 넣어야 켜지며, 공고팀 운영 서버가 정해지기 전이라 지금은 스텁. 전략 · 작성 · 검증-1(2026-10-10)과 구현 · 검증-2(2026-10-11)는 **담당자 코드 실구현**, 조율 규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4)도 **실구현**(2026-10-11, 산출물층 점수는 그 실행 건 배점으로 환산). 나머지 Agent(검수)와 T-C4는 **스텁(가짜 구현)**. 저장소는 **메모리 · 공유 MySQL** 두 가지, **워커 프로세스**(실행 로그 12개월 처리 포함)와 **웹 연동 함수**(시작 요청 · 명령 · 재작성 묶음 요청 · 진행 상태 · 화면 · 결과 조회 · 관리자 조회 · 중단 · 완전 삭제 · 탈퇴)까지 구현. 웹 `projects`에는 쓰지 않는다(2026-10-02). 시각은 모두 UTC, '오늘'은 한국 날짜(2026-10-05). 2026-10-06: 모델 설정을 Task별로, 이미지 호출 `tools.image`, 산출물층 검증 반영(구현 · 검증-2 담당 합의), 워커 운영 로그 파일(선택). 2026-10-07: 공고팀 시험 서버로 연결 확인(가짜 신청 정보), 가산점 꺼 둠, 테스트 정리(동시 실행 기본 · 겹침 · 옛 호환 정리 · 파일 나누기). 2026-10-08: 기준 문서 새 판(기능정의서 v1.10 · 기획서 v1.11) 반영 — 확장 · 잠정 표시 정리(새 판에서 빠진 필드는 확장으로 남김), 웹 함수 `missing_projects`. 같은 날 산출물 파일 참조형(파일 저장소 · `tools.files` · 파일 삭제 대기열 · 파일 읽기 웹 함수 · `SBRAIN_ARTIFACT_ROOT`). 테스트 1969건 — 2026-10-11 기준(구현 · 검증-2 연동 · 규칙 단계 실구현 · 산출물층 환산 뒤) MySQL 8.0 테스트 DB까지 켜고 1969 통과 · 건너뜀 0, MySQL 없이 1909 통과 · 60 건너뜀 |
+| 현재 상태 | 뼈대 완성. 조율 **T-C1 · T-C3와 재작성 · 재수행 지시문 다시 쓰기는 실제 구현**(2026-10-04 실제 OpenAI로 확인 — T-C3 지시문 작성을 동시 호출로 바꾼 뒤 작성 시작 → 화면 6이 52초 → 11초), 공고 매칭 **T-C2 · 자격 확인 G-01은 공고 서버(공고팀 HTTP API) 연결 코드 완료** — `SBRAIN_NOTICE_API_URL`을 넣어야 켜지며, 공고팀 운영 서버가 정해지기 전이라 지금은 스텁. 전략 · 작성 · 검증-1(2026-10-10)과 구현 · 검증-2(2026-10-11)는 **담당자 코드 실구현**, 조율 규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4)도 **실구현**(2026-10-11, 산출물층 점수는 그 실행 건 배점으로 환산). 나머지 Agent(검수)와 T-C4는 **스텁(가짜 구현)**. 저장소는 **메모리 · 공유 MySQL** 두 가지, **워커 프로세스**(실행 로그 12개월 처리 포함)와 **웹 연동 함수**(시작 요청 · 명령 · 재작성 묶음 요청 · 진행 상태 · 화면 · 결과 조회 · 관리자 조회 · 중단 · 완전 삭제 · 탈퇴)까지 구현. 웹 `projects`에는 쓰지 않는다(2026-10-02). 시각은 모두 UTC, '오늘'은 한국 날짜(2026-10-05). 2026-10-06: 모델 설정을 Task별로, 이미지 호출 `tools.image`, 산출물층 검증 반영(구현 · 검증-2 담당 합의), 워커 운영 로그 파일(선택). 2026-10-07: 공고팀 시험 서버로 연결 확인(가짜 신청 정보), 가산점 꺼 둠, 테스트 정리(동시 실행 기본 · 겹침 · 옛 호환 정리 · 파일 나누기). 2026-10-08: 기준 문서 새 판(기능정의서 v1.10 · 기획서 v1.11) 반영 — 확장 · 잠정 표시 정리(새 판에서 빠진 필드는 확장으로 남김), 웹 함수 `missing_projects`. 같은 날 산출물 파일 참조형(파일 저장소 · `tools.files` · 파일 삭제 대기열 · 파일 읽기 웹 함수 · `SBRAIN_ARTIFACT_ROOT`). 테스트 1970건 — 2026-10-11 기준(구현 · 검증-2 연동 · 규칙 단계 실구현 · 산출물층 환산 뒤) MySQL 8.0 테스트 DB까지 켜고 1970 통과 · 건너뜀 0, MySQL 없이 1910 통과 · 60 건너뜀 |
 
 > 이 문서의 파일 경로는 저장소 폴더(`agent-orchestration`) 기준입니다. 기능정의서 · 기획서는 저장소에 포함되지 않습니다.
 
@@ -195,7 +195,7 @@ copy .env.example .env     # macOS / Linux: cp .env.example .env
 ```powershell
 docker compose -f docker/mysql-test.yml up -d --wait     # mysql:8.0(공유 DB와 같은 8.0 계열), 127.0.0.1:3307, 데이터는 메모리에만
 # .env:  SBRAIN_TEST_MYSQL_URL=mysql+pymysql://root:sbrain-test@127.0.0.1:3307/sbrain_test?charset=utf8mb4
-python -m pytest                                          # 건너뜀 없이 전체 (2026-10-11 구현 · 검증-2 연동 뒤 1969건)
+python -m pytest                                          # 건너뜀 없이 전체 (2026-10-11 구현 · 검증-2 연동 뒤 1970건)
 docker compose -f docker/mysql-test.yml down              # 끄기
 ```
 
@@ -451,7 +451,7 @@ agent-orchestration/
 │       │   └── tasks.py       #   등록 IMPLEMENTED · IMAGE_TASKS · bind_partner_bv
 │       ├── form_defaults.py   # 신청자 유형별 양식 · 평가항목 · 채점 기준표 묶음(FORM_TABLE — 담당자 계약의 계획서 항목), 선택 공고 자리 표시 양식 (모두 잠정)
 │       └── stubs.py           # 스텁 Agent(스텁 T-C2 · G-01 포함 — 규칙 단계는 실구현에 실패 흉내만), 가짜 LLM(FakeLLM), 가짜 이미지(FakeImage), 시나리오(StubScenario)
-└── tests/                     # pytest 테스트 (2026-10-11 1969건) — conftest.py(저장소 선택 · 공고 서버 주소 격리 · 파일 저장소 폴더 tmp_path · 묶음) · webdb.py · mysqldb.py(MySQL 묶음 확인) · flow_helpers.py · worker_helpers.py · store_helpers.py · notice_fake.py · partner_fake.py(담당자 함수 목적별 가짜 응답) · bv_fake.py(구현 · 검증-2 가짜 응답) · fakes.py 도움 모듈
+└── tests/                     # pytest 테스트 (2026-10-11 1970건) — conftest.py(저장소 선택 · 공고 서버 주소 격리 · 파일 저장소 폴더 tmp_path · 묶음) · webdb.py · mysqldb.py(MySQL 묶음 확인) · flow_helpers.py · worker_helpers.py · store_helpers.py · notice_fake.py · partner_fake.py(담당자 함수 목적별 가짜 응답) · bv_fake.py(구현 · 검증-2 가짜 응답) · fakes.py 도움 모듈
 ```
 
 **설계 원칙:** `orchestrator/`에는 어떤 서비스에도 쓸 수 있는 범용 장치만 두고, 화면 번호 · 알림 대상 · 재작성 경로 같은 S-Brain 고유 규칙은 `flow/`에만 둡니다. 엔진은 `Flow` 인터페이스(`engine.py`)를 통해서만 S-Brain 규칙을 부릅니다.
@@ -829,11 +829,11 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 | `test_partner_sw_forms.py` | 18 | 양식 묶음 = 담당자 계약(25 · 24항목 · 태그 · 종류), 평가항목 · 채점 기준표 1:1, 짝짓기 표 바꿔 끼우기 |
 | `test_partner_sw_tasks.py` | 28 | 여섯 Task 실구현(예비창업 · 초기창업) — 계약에 맞는 출력, 목적별 모델 호출 기록, `json_mode`, T-W3 LLM 없음, 보내지 않는 칸 · `targetCustomerHint`, 울타리, 표 원본 행, 점수, 재개, 동시 수 |
 | `test_partner_sw_flow.py` | 4 | 실구현을 끼운 앱으로 작성 구간 끝까지 |
-| `test_partner_bv_vendored.py` · `test_partner_bv_tasks.py` · `test_partner_bv_flow.py` | 28 · 36 · 23 | 구현 · 검증-2 (2026-10-11) — 옮긴 코드 소스 검사 · 실행 중 디스크 차단 · 두 패키지 분리, 세 Task 결과별 동작 · 파일 · `iconFallback` · 요소 목록 · `earned` · `applicable` · 동시 3, 앱 흐름(검사 실패 HTML 재수행 · '이미지대체' · 다음 T-V2 요소 목록 · 신청자 정보 없음 · 긴 기능 이름 자르기 · 워커 호출처) |
+| `test_partner_bv_vendored.py` · `test_partner_bv_tasks.py` · `test_partner_bv_flow.py` | 28 · 37 · 23 | 구현 · 검증-2 (2026-10-11) — 옮긴 코드 소스 검사 · 실행 중 디스크 차단 · 두 패키지 분리, 세 Task 결과별 동작 · 파일 · `iconFallback` · 요소 목록 · `earned` · `applicable` · 동시 3, 앱 흐름(검사 실패 HTML 재수행 · '이미지대체' · 다음 T-V2 요소 목록 · 신청자 정보 없음 · 긴 기능 이름 자르기 · 워커 호출처) |
 | `test_scaling_contract_fields.py` · `test_score_scale.py` · `test_supervisor_rules.py` | 25 · 28 · 43 | 계약 확장 칸 · 환산 함수 · 전후 비교 · 관리자 · 통계 줄 환산, 규칙 단계 실구현(판정 · E-G2-UNREACHABLE · G-04 템플릿 · 합치기 · 스텁 실패 흉내) (2026-10-11) |
 | `test_verify1_flow.py` | 32 | 검증-1 fail 재수행(끼우는 자리 · fail 항목만 · 횟수 · 입력 없음 · 표 대체), `Verify1State`, 항목 단위 자체 검사 재수행 · T-W3 재수행 없음, 태그 묶음 재작성, 판정 후보, 짝짓기 표 바꿔 끼우기 |
 
-흐름 테스트(`clock` 고정 장치를 쓰는 테스트)는 **메모리 저장소와 `SqlStore`(SQLite 임시 파일 DB)로 한 번씩** 돕니다(`conftest.py`의 `store_backend`). 위 건수는 이렇게 늘어난 수입니다. 건수는 2026-10-11 구현 · 검증-2 · 규칙 단계 · 환산 작업 뒤 기준이다(전체 1969건 — MySQL 테스트 DB를 켜고 1969 통과, 켜지 않으면 1909 통과 · 60 건너뜀). 담당자 함수의 가짜 응답은 `tests/partner_fake.py`(목적 = F번호별)로 줍니다. 구현 · 검증-2 실구현의 가짜 응답은 `tests/bv_fake.py`(목적별)로 줍니다.
+흐름 테스트(`clock` 고정 장치를 쓰는 테스트)는 **메모리 저장소와 `SqlStore`(SQLite 임시 파일 DB)로 한 번씩** 돕니다(`conftest.py`의 `store_backend`). 위 건수는 이렇게 늘어난 수입니다. 건수는 2026-10-11 구현 · 검증-2 · 규칙 단계 · 환산 작업 뒤 기준이다(전체 1970건 — MySQL 테스트 DB를 켜고 1970 통과, 켜지 않으면 1910 통과 · 60 건너뜀). 담당자 함수의 가짜 응답은 `tests/partner_fake.py`(목적 = F번호별)로 줍니다. 구현 · 검증-2 실구현의 가짜 응답은 `tests/bv_fake.py`(목적별)로 줍니다.
 
 ### 상황을 흉내 내는 법
 

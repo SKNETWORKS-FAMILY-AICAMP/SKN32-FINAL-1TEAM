@@ -293,6 +293,23 @@ def test_tv2_reads_files_and_fills_contract():
     assert {f"{f}#요소" for f in FEATURES} | {f"{f}#{n}" for f in FEATURES for n in range(3)} == items
 
 
+def test_tv2_artifact_total_is_rounded_to_two_places(monkeypatch):
+    """15.0 + 14.06 같은 합이 소수 계산 오차(29.060000000000002)로 웹에 나가지 않게 둘째 자리로 맞춘다(실제 호출 확인 뒤)."""
+    from sbrain.agents.partner_bv.verification_agent import tasks as v_tasks
+    real = v_tasks.match_features
+
+    def scored(*a, **k):
+        result = real(*a, **k)
+        result["score"] = 14.06
+        return result
+    monkeypatch.setattr(v_tasks, "match_features", scored)
+    inp, tools, _, _, _ = tv2_case()
+    out = IMPLEMENTED["T-V2"](inp, tools)
+    assert out.code_check.total == 15.0 and out.feature_match.score == 14.06
+    assert 15.0 + 14.06 != 29.06                                                       # 그냥 더하면 오차가 난다
+    assert out.artifact_score.total == 29.06
+
+
 def test_tv2_partial_feature():
     p = BvProvider()
     half = json.dumps({"checks": [{"element": "a", "reason": "r", "present": True},
