@@ -19,6 +19,7 @@ from partner_fake import BODY_MARK, PartnerProvider, partner_tools, payload
 
 from sbrain.agents.form_defaults import select_form
 from sbrain.agents.partner_sw import common, inputs, verify, writing
+from sbrain.agents.partner_sw import strategy as strategy_module
 from sbrain.agents.partner_sw.agent_validation_1 import validation_1
 from sbrain.agents.partner_sw.agent_strategy.functions import python_functions as partner_py
 from sbrain.agents.partner_sw.agent_strategy.runtime import pipeline as legacy_pipeline, research_context
@@ -33,11 +34,20 @@ from sbrain.models import (
     BudgetItem, CompanyInfo, ItemSpec, PreInput, ReworkInput, ReworkOrder, RevenueItem, ScheduleItem,
 )
 from sbrain.orchestrator.errors import ToolCallExhausted
+from sbrain.orchestrator import market_research
 
 INSTRUCTION = "이번 Task 지시문"
 IDEA = "AI 헬스장 회원 관리 시장 서비스"
 ITEM = ItemSpec(item_name="헬스온", one_line_summary="헬스장 회원 관리 요약", target_customer="동네헬스장운영자힌트",
                 core_features=["회원 등록·조회", "수업 예약"], category="웹개발", keywords=["헬스장"])
+
+
+@pytest.fixture(autouse=True)
+def disable_live_kiet_in_task_tests(monkeypatch):
+    """Task 회귀 테스트는 외부 KIET 상태에 의존하지 않도록 빈 실행별 결과를 사용한다."""
+    monkeypatch.setattr(strategy_module, "search_keyword", lambda keyword, timeout: {
+        "status": "no_relevant_source_found", "keyword": keyword, "sources": [], "resultCount": 0,
+    })
 
 # LLM 요청에 실리면 안 되는 값 (spec 4.4 '보내지 않는다')
 SECRETS = {
@@ -199,10 +209,70 @@ def test_purpose_models_are_logged_per_function():
 def test_retrieve_goes_through_tools_search():
     r = run_chain()
     searches = [log for log in r.sinks["T-S1"].drain() if log.call_type == "search"]
-    assert len(searches) == 4 and {log.purpose for log in searches} == {"자료 검색"}     # F01 안 1회 + 3회
+    assert len(searches) == 5 and {log.purpose for log in searches} == {"자료 검색", "KIET 시장 조사"}
     assert all(log.final_outcome == "성공" and log.model is None for log in searches)
     with pytest.raises(RuntimeError, match="호출 수단 없음"):
         research_context.retrieve(IDEA)
+
+
+@pytest.mark.parametrize("tech_field,expected_keyword", [("정보통신", "정보통신"), ("", IDEA[:120])])
+def test_ts1_uses_ephemeral_kiet_evidence_and_falls_back_to_local(monkeypatch, tech_field, expected_keyword):
+    captured = []
+    fresh = {"status": "collected", "keyword": expected_keyword, "resultCount": 1, "errorType": None,
+             "sources": [{"domain": "market", "sourceRef": "kiet:run:test", "title": "KIET 시장 동향",
+                          "url": "https://example.test/kiet", "publishedAt": None,
+                          "text": "실행 중에만 사용하는 시장 근거", "matchedTerms": ["정보통신"]}]}
+
+    def fake_search(keyword, timeout):
+        captured.append((keyword, timeout))
+        return fresh
+
+    monkeypatch.setattr(strategy_module, "search_keyword", fake_search)
+    co = company().model_copy(update={"tech_field": tech_field})
+    p = PartnerProvider()
+    t, sink, _ = partner_tools(p, "T-S1")
+    out = run_ts1(c.TS1In(item_spec=ITEM, selected_announcement=announcement(), instruction=INSTRUCTION,
+                           company_info=co, form_input=form_input()), t)
+
+    market = out.strategy_data["research"]["market"]
+    assert captured and captured[0][0] == expected_keyword
+    assert market["kietSearch"]["status"] == "collected"
+    assert market["sources"][0]["sourceRef"] == "kiet:run:test"
+    assert any(row["sourceRef"] == "kiet:run:test" for row in out.strategy_data["research"]["sources"])
+    assert [log.purpose for log in sink.drain() if log.call_type == "search"].count("KIET 시장 조사") == 1
+
+    monkeypatch.setattr(strategy_module, "search_keyword", lambda keyword, timeout: {
+        "status": "failed", "keyword": keyword, "sources": [], "resultCount": 0, "errorType": "Timeout",
+    })
+    out = run_ts1(c.TS1In(item_spec=ITEM, selected_announcement=announcement(), instruction=INSTRUCTION,
+                           company_info=co, form_input=form_input()), t)
+    assert out.strategy_data["research"]["market"]["kietSearch"]["status"] == "failed"
+    assert out.strategy_data["research"]["market"]["status"] in {"retrieved", "no_relevant_evidence"}
+
+
+def test_kiet_adapter_uses_read_only_crawler_and_normalizes_ephemeral_sources(monkeypatch):
+    observed = {}
+
+    def crawl(keyword, session, limit, is_user_keyword):
+        observed.update(keyword=keyword, session=session, limit=limit, is_user_keyword=is_user_keyword)
+        return {"status": "collected", "results": [{
+            "url": "https://www.kiet.re.kr/summary?id=1", "title": "원문 제목", "summaryTitleText": "요약 제목",
+            "summaryText": "시장 근거 본문", "publishedAt": "2026-10-01", "matchedTerms": ["정보통신"],
+        }]}
+
+    monkeypatch.setattr(market_research.market_crawler, "crawl_keyword", crawl)
+    monkeypatch.setattr(market_research.market_crawler, "add_keyword",
+                        lambda *_args, **_kwargs: pytest.fail("공유 JSON을 갱신하는 함수는 호출하면 안 됨"))
+
+    result = market_research.search_keyword("  정보통신   산업  ", timeout_sec=90)
+
+    assert observed["keyword"] == "정보통신 산업"
+    assert observed["is_user_keyword"] is True and observed["limit"] == market_research.MAX_RESULTS
+    assert observed["session"]._deadline - time.monotonic() <= market_research.MAX_SEARCH_SECONDS
+    assert result["status"] == "collected" and result["resultCount"] == 1
+    assert result["sources"][0]["domain"] == "market"
+    assert result["sources"][0]["text"] == "요약 제목 — 시장 근거 본문"
+    assert result["sources"][0]["url"] == "https://www.kiet.re.kr/summary?id=1"
 
 
 # ── 보내는 칸 (spec 4.4) ───────────────────────────────────

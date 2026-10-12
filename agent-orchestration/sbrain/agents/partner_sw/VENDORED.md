@@ -53,7 +53,8 @@
 | `runtime/research_context.py` `retrieve` | 원래 본문을 `_retrieve`로 옮기고 `retrieve`는 호출 수단의 `tools.search`(목적 '자료 검색', `calls.search`)로 감싸 부른다 | 로컬 자료 검색도 Task 안의 호출로 기록 · 재시도 · 제한 시간을 거친다(spec 4.1). F01(`collect_web_data`) 안의 호출도 여기를 지난다 — F01 함수 본문은 바꾸지 않았다. 검색 호출 안에서 LLM을 부르지 않는다. 호출 수단(`partner_call` 블록) 밖이면 `RuntimeError` |
 | `runtime/llm_runtime.py` `writing_prompt` | `writing_rules.json` 글자 읽기 `utf-8` → `utf-8-sig`(`resources.read`) | 위와 같음 |
 | `runtime/pipeline.py` | `import os` · `time` · `timezone` 삭제, 실행 시각 · 경과 시간 칸(`startedAt` · `createdAt` · `completedAt` · `elapsedSeconds` · `durationMs` · `retryHistory[].timestamp`) 삭제 | 시각은 쓰지 않는다(spec 4.1, standards 10절) |
-| `runtime/pipeline.py` `refresh_user_industry_research` | `SBRAIN_AUTO_RESEARCH=1`일 때만 KIET 사용자 키워드를 검색하고 `raw_kiet_results.json` · `results.json` · `keyword_history.json`을 갱신. 기본값은 건너뜀. 담당자 `run_pipeline`만 부르고 우리 Task 함수(T-S1 · T-S2)는 부르지 않는다 | 검색 결과는 다음 로컬 근거 검색에 바로 반영하고, 사용자 조사 결과는 실행 중 다시 수집하지 않도록 이력에 남김 |
+| `runtime/pipeline.py` `refresh_user_industry_research` | 담당자 `run_pipeline`에서 F01 전에 실행. `SBRAIN_AUTO_RESEARCH=1`일 때만 KIET 사용자 키워드를 검색하고 `raw_kiet_results.json` · `results.json` · `keyword_history.json`을 갱신. 기본값은 건너뜀 | 이 파일 갱신 방식은 담당자 경로에만 해당 |
+| 오케스트레이터 `sbrain/orchestrator/market_research.py` | T-S1에서 F01 전에 기술 분야(없으면 아이디어 설명 앞 120자)로 `crawl_keyword`를 호출하고, 결과를 해당 실행의 시장 근거에만 합침. `add_keyword` · JSON 파일 저장은 호출하지 않으며 검색 전체 시간은 최대 25초(호출 도구의 더 짧은 제한 우선) | KIET 결과는 실행 결과의 근거로만 보존하고 공용 자료 파일·이력에 쓰지 않는다. 검색 실패·무결과면 기존 로컬 자료로 계속한다 |
 | `runtime/market_crawler.py` `add_keyword` | 현재 사용자 키워드만 KIET 연구·동향에서 검색하고 세 결과 파일에 upsert | 기존 기준 키워드 결과를 다시 수집하거나 덮어쓰지 않음 |
 | `resources.py` `refresh` · `runtime/research_context.py` `refresh_market_sources` | 명시적 KIET 갱신 뒤 로컬 자료 캐시와 검색 색인을 새로고침 | 일반 Task는 파일을 다시 읽지 않고, 갱신한 실행에서 새 자료를 곧바로 사용 |
 | `runtime/pipeline.py` `_normalize_image_output` | 노드 계약이 깨지면 기본 흐름 대신 `FormatError`, 딕셔너리가 아니면 `FormatError` | 쓸 수 없는 응답은 재시도(spec 4.1) |
