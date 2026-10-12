@@ -273,7 +273,8 @@ def test_table_fallbacks_are_extensions_with_decision_note():
         assert "tableFallbacks" in extension_fields(model), model.__name__
         assert DECISION_0028 in _note(model, "tableFallbacks"), model.__name__
         assert model.model_fields["table_fallbacks"].default_factory is list
-    assert set(extension_fields(TableFallback)) == {"sectionCode", "reason"}
+    assert set(extension_fields(TableFallback)) == {"sectionCode", "reason", "displayReason"}
+    assert DECISION_0028 in _note(TableFallback, "displayReason")
 
 
 def test_provisional_keys_for_partner_1012():

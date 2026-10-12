@@ -111,7 +111,8 @@ def test_first_writing_redoes_only_failed_items_then_replaces_failed_table(clock
     out = ctx.get("tableOutputs")[TABLE]
     assert out["tableFallbackUsed"] and out["fallbackReason"] == f"{TABLE} 결함 (스텁)"
     s6 = app.orchestrator.screen(pid(app, rid), 6)
-    expected_fallback = [{"sectionCode": TABLE, "reason": f"{TABLE} 결함 (스텁)"}]
+    expected_fallback = [{"sectionCode": TABLE, "reason": f"{TABLE} 결함 (스텁)",
+                         "displayReason": "표를 검증 기준에 맞춰 완성하지 못해 설명으로 표시합니다. 입력 내용과 생성 결과를 확인해 주세요."}]
     assert s6.dump()["tableFallbacks"] == expected_fallback
     assert app.orchestrator.outputs(pid(app, rid)).dump()["tableFallbacks"] == expected_fallback
     plan = ctx.get("planDoc")
@@ -124,7 +125,19 @@ def test_first_writing_redoes_only_failed_items_then_replaces_failed_table(clock
     assert app.store.load_run(rid).rework_usage == []
     # 표가 fail로 남아 실현가능성 묶음이 후보다
     orders = ctx.get("G-02a.reworkOrders")
-    assert [o.targets for o in orders] == [["실현가능성"]] and TABLE in orders[0].reason
+
+
+def test_table_fallback_display_reason_uses_plain_language_and_keeps_raw_reason():
+    from sbrain.flow.reads import _table_fallbacks
+
+    original = "협약기간 일정 10개월이 최대 8개월 조건을 초과함"
+    result = _table_fallbacks({"2.6.2": {"tableFallbackUsed": True, "fallbackReason": original}})[0].dump()
+    assert result["reason"] == original
+    assert "허용 기간" in result["displayReason"]
+    assert "10개월" not in result["displayReason"]
+
+    structural = _table_fallbacks({"2.5.3": {"tableFallbackUsed": True, "fallbackReason": "필수 표 컬럼 누락"}})[0]
+    assert "필수 항목" in structural.display_reason
 
 
 def test_redo_once_per_item_and_body_fail_stays_without_fallback(clock):

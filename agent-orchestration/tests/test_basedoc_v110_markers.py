@@ -88,7 +88,7 @@ STILL_EXTENSION = [
     (DocumentScreen, {"tableFallbacks"}),
     (ResultScreen, {"tableFallbacks"}),
     (Outputs, {"tableFallbacks"}),
-    (TableFallback, {"sectionCode", "reason"}),
+    (TableFallback, {"sectionCode", "reason", "displayReason"}),
 ]
 
 # 새 타입 — 기존 타입에 담을 곳이 없어 새로 둔 타입. 칸은 모두 확장이고, 이 타입을 담는 칸의 note에 결정 번호가 있다

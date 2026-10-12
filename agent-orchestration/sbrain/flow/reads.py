@@ -111,8 +111,8 @@ class ScoreView(SBModel):
 
 
 # 표 대체 사유 칸 (확장) — 담당자 10-12 새 판이 더한 화면 칸. 화면 6 · 11 · 결과 조회에 같은 모양으로 싣는다
-TABLE_FALLBACK_NOTE = ("표 대체 사유(결정 0028) — 표를 본문 서술로 바꾼 항목마다 하나(tableOutputs의 tableFallbackUsed 참 · "
-                       "fallbackReason이 빈 글이 아님). 계획서 본문 글에는 섞지 않는다")
+TABLE_FALLBACK_NOTE = ("표 대체 안내(결정 0028) — 표를 본문 서술로 바꾼 항목마다 하나(tableOutputs의 tableFallbackUsed 참 · "
+                       "fallbackReason이 빈 글이 아님). 사용자 표시에는 displayReason을 쓰고, 계획서 본문 글에는 섞지 않는다")
 
 
 # 점수 보고서 → ScoreView로 그대로 옮기는 환산 칸 (파이썬 이름)
@@ -149,7 +149,8 @@ class GateScreen(Screen):
 class TableFallback(SBModel):
     """새 타입(확장) — F17 표를 본문으로 대체했을 때 화면에 별도 표시할 항목별 사유."""
     section_code: str = ext(note="표를 본문 서술로 바꾼 항목 번호")
-    reason: str = ext(note="담당자 fallbackReason 원문 (사용자용 문구로 다듬는 것은 담당자에게 요청함)")
+    reason: str = ext(note="담당자 fallbackReason 원문 — 내부 진단용, 사용자 화면에는 표시하지 않음")
+    display_reason: str = ext(note="표 대체 안내(결정 0028) — fallbackReason 유형을 쉽게 풀어 쓴 사용자 표시용 안내 문구")
 
 
 class DocumentScreen(Screen):
@@ -564,13 +565,32 @@ def screen(orch: SBrainOrchestrator, project_id: int | str, number: int) -> Scre
 
 
 def _table_fallbacks(outputs: dict[str, Any]) -> list[TableFallback]:
-    """화면 표시용 목록을 만든다. 본문 generatedText에는 진단 사유를 섞지 않는다."""
+    """화면 표시용 목록을 만든다. reason은 진단 원문, display_reason은 사용자 안내다."""
     if not isinstance(outputs, dict):
         return []
-    return [TableFallback(section_code=str(code), reason=str(output.get("fallbackReason", "")).strip())
-            for code, output in outputs.items()
-            if isinstance(output, dict) and output.get("tableFallbackUsed")
-            and str(output.get("fallbackReason", "")).strip()]
+    fallbacks = []
+    for code, output in outputs.items():
+        if not isinstance(output, dict) or not output.get("tableFallbackUsed"):
+            continue
+        reason = str(output.get("fallbackReason", "")).strip()
+        if reason:
+            fallbacks.append(TableFallback(section_code=str(code), reason=reason,
+                                           display_reason=_table_fallback_display_reason(reason)))
+    return fallbacks
+
+
+def _table_fallback_display_reason(reason: str) -> str:
+    """내부 진단 문구를 분류해 사용자에게 다음 조치를 안내한다."""
+    text = reason.casefold()
+    if "지원규모 상한" in reason or "정부지원사업비" in reason and "초과" in reason:
+        return "입력한 정부지원사업비가 지원 상한을 초과해 표 대신 설명으로 표시합니다. 사업비를 확인해 주세요."
+    if "개발계획 표 종료월" in reason or "원본 협약 일정" in reason:
+        return "작성된 표 일정이 원본 협약 일정과 맞지 않아 설명으로 표시합니다. 일정 입력과 표 내용을 확인해 주세요."
+    if "협약기간 일정" in reason and ("초과" in reason or "이후" in reason):
+        return "입력한 협약 일정이 허용 기간을 벗어나 표 대신 설명으로 표시합니다. 일정 입력을 확인해 주세요."
+    if any(marker in text for marker in ("필수 표", "표 구조", "컬럼", "열 누락", "행 누락")):
+        return "표의 필수 항목을 검증 기준에 맞추지 못해 설명으로 표시합니다. 표 내용을 확인해 주세요."
+    return "표를 검증 기준에 맞춰 완성하지 못해 설명으로 표시합니다. 입력 내용과 생성 결과를 확인해 주세요."
 
 
 def _score(report: ScoreReport) -> ScoreView:
