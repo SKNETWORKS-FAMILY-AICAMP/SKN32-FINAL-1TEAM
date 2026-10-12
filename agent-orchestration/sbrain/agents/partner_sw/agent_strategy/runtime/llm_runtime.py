@@ -155,7 +155,8 @@ def _parse_response(fid, config, content):
         if start>=0 and end>start:
             try: result=json.loads(cleaned[start:end+1])
             except json.JSONDecodeError: raise FormatError(f'{fid} 모델 JSON 파싱 실패') from None
-        raise FormatError(f'{fid} 모델 JSON 파싱 실패: JSON 객체가 닫히지 않았습니다.') from None
+        else:
+            raise FormatError(f'{fid} 모델 JSON 파싱 실패: JSON 객체가 닫히지 않았습니다.') from None
     if not isinstance(result,dict): raise FormatError(fid+' 응답 JSON 객체 형식 오류')
     if fid=='F16' and (not isinstance(result.get('generatedText'),str) or result['generatedText'].strip() in ('','{}','null')):
         raise FormatError('F16 유효한 generatedText 없음: 생성 실패')

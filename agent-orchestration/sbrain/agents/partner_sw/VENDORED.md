@@ -61,7 +61,7 @@
 | 자료 `agent_validation_1/res/reference/regulations/예비창업패키지 세부관리기준(2025년).hwp.json` · `초기창업패키지 세부관리기준(2025년).hwp.json` | `error` 칸(변환 도구 hwp5의 경고 문구 — 담당자 PC 설치 경로가 들어 있음)을 `null`로 | 저장소에 담당자 PC 경로를 남기지 않는다. 이 칸은 어느 코드도 읽지 않아 동작이 같다. 다음 판을 받을 때 같은 칸이 다시 채워져 있으면 다시 지운다 |
 
 **바꾸지 않은 것(알려 둘 것)**
-- 응답 정리의 코드 울타리 처리(담당자 원본 버그 — 담당자 통보 거리): 원본 `llm_runtime.py` 182 ~ 186줄은 울타리를 떼고 `{…}`를 꺼내 읽는 데 성공해도 빠져나오지 않고 186줄의 '닫히지 않음' 예외를 늘 올린다(울타리 응답은 늘 실패). spec 4.1대로 그대로 두었다 — 우리 쪽에서는 `FormatError`라 `tools`가 다시 보낸다(`json_object` 요청이라 드물다). 담당자가 고치면 새 판을 받을 때 함께 따라온다.
+- 응답 정리: 코드 울타리를 제거한 뒤 JSON 객체 추출에 성공하면 파싱 결과를 정상 반환한다. 추출할 JSON 객체가 없으면 `FormatError`를 내어 `tools`가 재시도한다.
 - `agent_validation_1/validation_1.py` `validate_section` 결과의 기록용 키(`model` · `responseId` · `usage`)는 그대로 둔다. 연결 코드(`verify.py`)가 판정 · 점수만 `SectionResult`로 옮기고 이 키는 버린다(spec 4.17).
 - `scoring.py`의 `documentLayerScore`(`× 0.7`)는 그대로다. 우리 점수는 연결 코드가 실행 설정 `scoring.docLayerMax`로 낸다(spec 4.9).
 - 모듈을 불러올 때 읽는 파일(`CONTRACT` · `RUBRIC` · `CRITERIA_REGISTRY` · `SECTION_CRITERIA` · `semantic_review`의 지시문)은 원래도 불러올 때 한 번이라 그대로 두었다.

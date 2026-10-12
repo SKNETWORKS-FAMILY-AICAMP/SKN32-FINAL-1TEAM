@@ -197,13 +197,11 @@ def test_parse_plain_json_and_defaults():
     assert parse("F02", '{"coreFeatures":[]}')["generatedText"] == '{"coreFeatures": []}'   # 담당자: 본문 없으면 JSON 글자
 
 
-def test_parse_fenced_response_follows_partner_code():
-    # 담당자 정리 코드(울타리 떼고 {…} 꺼내기)는 꺼낸 뒤에도 '닫히지 않음'으로 올린다(원본 동작 그대로 — VENDORED.md).
-    # 우리 쪽에서는 FormatError라 tools가 다시 보낸다
-    with pytest.raises(FormatError, match="F02 모델 JSON 파싱 실패"):
-        parse("F02", f'```json\n{{"generatedText":"{SECRET}"}}\n```')
-    with pytest.raises(FormatError, match="F02 모델 JSON 파싱 실패$"):
-        parse("F02", f'앞말 {{"generatedText": {SECRET}}} 뒷말')
+def test_parse_fenced_response_and_json_inside_prose():
+    fenced = parse("F02", f'```json\n{{"generatedText":"{SECRET}"}}\n```')
+    embedded = parse("F02", f'앞말 {{"generatedText":"{SECRET}"}} 뒷말')
+    assert fenced["generatedText"] == SECRET
+    assert embedded["generatedText"] == SECRET
 
 
 @pytest.mark.parametrize("fid,content,field", [
