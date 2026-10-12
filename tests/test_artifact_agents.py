@@ -269,6 +269,19 @@ class ArtifactAgentTests(TestCase):
             self.assertIn("alert()", script_item["evidence"])
             self.assertLess(result["total"], 15.0)
 
+    def test_external_dependency_fails_item_7_but_embedded_resources_do_not(self):
+        """기능정의서 E-B1-DEP: 재수행을 넘겨 그대로 온 외부 의존은 점수에 반영한다 — 7번 미충족(통과 필수 조건 아님)."""
+        cdn = check_html('<html lang="ko"><head><script src="https://cdn.example.com/chart.js"></script>'
+                         '<link rel="stylesheet" href="app.css"></head><body><h1>t</h1></body></html>')[6]
+        self.assertFalse(cdn["passed"])
+        self.assertIn("외부 의존 2개", cdn["evidence"])
+        self.assertIn("https://cdn.example.com/chart.js", cdn["evidence"])
+
+        embedded = check_html('<html lang="ko"><head><style>@font-face{src:url(data:font/woff2;base64,AAAA)}'
+                              '.a{background:url(#g)}</style></head><body><h1>t</h1>'
+                              '<img src="data:image/png;base64,AAAA" alt="그림"></body></html>')[6]
+        self.assertTrue(embedded["passed"])
+
     def test_gate_codes_are_separate_from_messages(self):
         with TemporaryDirectory(dir=self._TEMP_ROOT) as directory:
             page = _page('<script>const apiKey = "sk-abcdefghijklmnopqrstuvwxyz123456";</script>')
@@ -530,13 +543,14 @@ class ArtifactAgentTests(TestCase):
                 self.assertEqual(gates.check_secret_gate(code), (True, ""))
                 self.assertIsNone(find_secret(code))
 
-    def test_secret_reported_as_gate_failure_without_saving(self):
+    def test_secret_reported_as_gate_failure_and_html_still_handed_over(self):
         tools = _Tools('```html:index.html\n<html lang="ko"><body>'
                        "<script>const login = { password: 'demo1234' };</script>"
                        "</body></html>\n```")
         result = build_prototype_html(["조회"], {"item_name": "t"}, "웹개발", "생성", tools)
         self.assertEqual(result["status"], "failed")
-        self.assertIsNone(result["entryFilePath"])
+        # 기능정의서 T-B1: 재수행을 넘기면 그대로 보내 검증-2가 반영한다 — 걸려도 진입 파일은 만든다.
+        self.assertTrue(result["entryFilePath"].endswith("index.html"))
         self.assertIn("E-B1-SECRET", result["summary"])
         self.assertNotIn("demo1234", result["summary"])
         self.assertIn("demo1234", result["sourceText"])   # 재수행 때 고칠 원문은 돌려준다

@@ -110,9 +110,12 @@ def run_tv2(inp: TV2In, tools: Tools) -> TV2Out:
         plan_text=plan_text_of(inp.plan_doc),
         tools=tools,
     )
+    # earned · applicable은 조율 10-11에 생긴 확장 칸이다. 옛 계약에는 없으므로 있을 때만 싣는다.
+    extended = {"earned", "applicable"} <= set(getattr(CodeCheck, "model_fields", {}))
     checks = [CodeCheck(no=item["id"], name=item["name"], weight=item["weight"],
                         passed=bool(item["passed"]), detail=_detail(item),
-                        defect_sources=item["defect_sources"])
+                        defect_sources=item["defect_sources"],
+                        **({"earned": item["earned"], "applicable": item["applicable"]} if extended else {}))
               for item in raw["items"]]
     code = CodeCheckResult(total=raw["total"], checks=checks, gate_failures=raw["gate_codes"])
     llm_failed = feature_raw.pop("llm_failed", [])

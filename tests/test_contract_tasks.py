@@ -249,6 +249,13 @@ class ContractTaskTests(TestCase):
         self.assertEqual(len(out.code_check.checks), 8)
         self.assertEqual(out.code_check.total, 15.0,
                          [(c.no, c.name, c.passed, c.detail) for c in out.code_check.checks])
+        # 조율 10-11 확장 칸: 얻은 점수 · 해당 여부. 해당 없음은 passed 참 · earned 0, 그 밖은 earned/배점이 detail 앞과 같다.
+        for c in out.code_check.checks:
+            if c.applicable:
+                self.assertTrue(c.detail.startswith(f"{c.earned:g}/{c.weight:g}점 — "), c.detail)
+            else:
+                self.assertEqual((c.passed, c.earned), (True, 0.0))
+                self.assertTrue(c.detail.startswith("해당 없음 — "), c.detail)
         self.assertEqual(out.feature_match.judged_by, "htmlParse")
         self.assertEqual(out.feature_match.missing_features, ["결제"])
         self.assertEqual(out.feature_match.score, 7.5)  # 15 × 1/2

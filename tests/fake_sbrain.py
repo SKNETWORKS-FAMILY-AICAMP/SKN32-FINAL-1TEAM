@@ -171,6 +171,9 @@ class CodeCheck(SBModel):
     detail: str
     # 확장 필드 — 실계약(조율 2026-10-06 반영)과 같다.
     defect_sources: list[Literal["prototype", "infographic"]] = Field(default_factory=list)
+    # 확장 필드 — 실계약(조율 2026-10-11 반영)과 같다. 얻은 점수(검사 배점 기준, 비면 옛 결과) · 해당 여부.
+    earned: float | None = None
+    applicable: bool = True
 
 
 class CodeCheckResult(SBModel):

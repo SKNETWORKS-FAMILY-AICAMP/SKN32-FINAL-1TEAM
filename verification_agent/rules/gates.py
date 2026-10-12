@@ -115,6 +115,44 @@ def ignored_apis(html_content: str) -> list[str]:
     return [label for pattern, label in _SANDBOX_IGNORED if pattern.search(code)]
 
 
+# ── 외부 의존(기능정의서 E-B1-DEP: 재수행을 넘겨 그대로 온 산출물은 미충족을 점수에 반영) ──
+# 파일 하나로 끝나지 않는 참조. 격리된 화면(외부 요청 차단)에서는 불러오지 못해 그 스크립트 · 스타일 · 그림이
+# 동작하지 않는다. engineering_agent/gates.py의 E-B1-DEP와 같은 기준이다 — 서로 import하지 않으므로 함께 고친다.
+_SELF_CONTAINED = ("data:", "blob:", "#")
+_STYLE_BLOCK_RE = re.compile(r"<style\b[^>]*>(.*?)</style>", re.I | re.S)
+_IMPORT_URL_RE = re.compile(r'@import\s+(?:url\(\s*["\']?([^"\')]+)["\']?\s*\)|["\']([^"\']+)["\'])', re.I)
+_CSS_URL_RE = re.compile(r'url\(\s*["\']?([^"\')\s]+)["\']?\s*\)', re.I)
+_STYLE_ATTR_RE = re.compile(r'\bstyle\s*=\s*(?:"([^"]*)"|\'([^\']*)\')', re.I)
+_SCRIPT_SRC_RE = re.compile(r'<script\b[^>]*\bsrc\s*=\s*["\']([^"\']+)["\']', re.I)
+_LINK_STYLESHEET_RE = re.compile(
+    r'<link\b(?=[^>]*\brel\s*=\s*["\']stylesheet["\'])[^>]*\bhref\s*=\s*["\']([^"\']+)["\']'
+    r'|<link\b(?=[^>]*\bhref\s*=\s*["\']([^"\']+)["\'])[^>]*\brel\s*=\s*["\']stylesheet["\']', re.I)
+_IMG_SRC_RE = re.compile(r'<img\b[^>]*\bsrc\s*=\s*["\']([^"\']+)["\']', re.I)
+
+
+def _is_external(url: str) -> bool:
+    url = (url or "").strip().strip("'\"")
+    return bool(url) and not url.lower().startswith(_SELF_CONTAINED)
+
+
+def external_refs(html_content: str) -> list[str]:
+    """외부 주소(http · https · //)나 함께 오지 않는 상대 경로 파일을 가리키는 script src · stylesheet ·
+    img src · <style>의 @import · url(...) · style 속성의 url(...)."""
+    found = [f"script {m.group(1)}" for m in _SCRIPT_SRC_RE.finditer(html_content) if _is_external(m.group(1))]
+    found += [f"stylesheet {m.group(1) or m.group(2)}" for m in _LINK_STYLESHEET_RE.finditer(html_content)
+              if _is_external(m.group(1) or m.group(2))]
+    found += [f"img {m.group(1)}" for m in _IMG_SRC_RE.finditer(html_content) if _is_external(m.group(1))]
+    for block in _STYLE_BLOCK_RE.findall(html_content):
+        found += [f"@import {m.group(1) or m.group(2)}" for m in _IMPORT_URL_RE.finditer(block)
+                  if _is_external(m.group(1) or m.group(2))]
+        found += [f"css url {m.group(1)}" for m in _CSS_URL_RE.finditer(_IMPORT_URL_RE.sub("", block))
+                  if _is_external(m.group(1))]
+    for m in _STYLE_ATTR_RE.finditer(html_content):
+        found += [f"style url {u.group(1)}" for u in _CSS_URL_RE.finditer(m.group(1) or m.group(2) or "")
+                  if _is_external(u.group(1))]
+    return found
+
+
 # ── 조건 묶음 ──────────────────────────────────────────────────
 
 _README_KEYWORDS_KO = ("실행", "열람", "사용법", "시작하기")
