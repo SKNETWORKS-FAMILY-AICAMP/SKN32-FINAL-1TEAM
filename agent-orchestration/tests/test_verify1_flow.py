@@ -18,7 +18,7 @@ import json
 from conftest import make_app, to_screen6, to_screen9
 from flow_helpers import ctx_of, cycle_steps, last_cycle_id, pid, records_of_task, rework, usage_of
 
-from sbrain.agents.stubs import INPUT_MISSING_NOTICE, StubScenario
+from sbrain.agents.stubs import INPUT_ERROR_NOTICE, INPUT_MISSING_NOTICE, StubScenario
 from sbrain.agents.supervisor.plan import PURPOSE_REWRITE
 from sbrain.agents.supervisor.rewrite import rewrite_guidance
 from sbrain.flow import rework_map
@@ -138,19 +138,53 @@ def test_redo_once_per_item_and_body_fail_stays_without_fallback(clock):
     assert orders[0].reason == f"{BODY} {BODY} 결함 (스텁)" == orders[0].instruction_delta
 
 
-def test_agreement_duration_input_fail_is_not_retried_or_table_fallback(clock):
-    issue = "협약기간 일정 10개월이 최대 8개월 조건을 초과함"
-    app = make_app(clock, StubScenario(fail_items={TABLE}, fail_item_issues={TABLE: [issue]}))
+def test_input_error_items_are_not_redone_or_replaced(clock):
+    # 입력 오류(inputError)는 판정 칸으로만 가른다: 재수행 · 표 대체 없음. issue 글은 보지 않는다
+    sc = StubScenario(input_error_items={TABLE, BODY}, fail_item_issues={TABLE: ["아무 글"]})
+    app = make_app(clock, sc)
     rid = to_screen6(app)
 
     steps = writing_steps(app, rid)
-    assert steps.count("T-V1") == 1
-    assert steps.count("T-W3") == 1
-    assert steps[-1] == "G-02a"
-    assert results(app, rid)[TABLE].status == "fail"
-    assert results(app, rid)[TABLE].issues == [issue]
-    assert ctx_of(app, rid).get("tableOutputs")[TABLE]["tableFallbackUsed"] is False
-    assert TABLE in [table.source_ref for table in ctx_of(app, rid).get("planDoc").tables]
+    assert steps.count("T-V1") == 1 and steps.count("T-W3") == 1 and steps[-1] == "G-02a"
+    assert calls(app, f"섹션 {BODY} 작성") == 1
+    res = results(app, rid)
+    assert (res[TABLE].status, res[TABLE].input_error, res[TABLE].issues) == ("fail", True, ["아무 글"])
+    assert (res[BODY].status, res[BODY].input_error) == ("fail", True)
+    ctx = ctx_of(app, rid)
+    assert ctx.get("tableOutputs")[TABLE]["tableFallbackUsed"] is False
+    assert TABLE in [table.source_ref for table in ctx.get("planDoc").tables]
+    assert app.orchestrator.screen(pid(app, rid), 6).dump()["tableFallbacks"] == []
+    assert app.store.load_run(rid).verify1.redo_counts == {}
+
+
+def test_input_error_beside_plain_fail_redoes_and_replaces_only_the_plain_one(clock):
+    app = make_app(clock, StubScenario(input_error_items={TABLE}, fail_items={TABLE2}))
+    rid = to_screen6(app)
+    assert writing_steps(app, rid)[6:] == ["T-V1", "T-V1", "T-W3", "M-1", "G-02a"]
+    tv1 = rework_inputs(app, rid, "T-V1")[-1]
+    assert set(tv1.target_items) == {TABLE2}                                      # 다시 검증은 입력 오류 아닌 표만
+    tw3 = rework_inputs(app, rid, "T-W3")[-1]
+    assert tw3.fallback_items == [TABLE2]
+    outs = ctx_of(app, rid).get("tableOutputs")
+    assert outs[TABLE]["tableFallbackUsed"] is False and outs[TABLE2]["tableFallbackUsed"] is True
+    assert app.store.load_run(rid).verify1.redo_counts == {TABLE2: 1}
+
+
+def test_input_error_only_is_not_a_candidate_and_adds_notice_once(clock):
+    app = make_app(clock, StubScenario(doc_scores=[60.0], input_error_items={TABLE, TABLE2},
+                                       input_missing_items={"3.6.2"}))
+    rid = to_screen6(app)
+    ctx = ctx_of(app, rid)
+    assert ctx.get("G-02a.reworkOrders") == []                                   # 점수 85.7 ≥ 80 · 후보 없음
+    notices = ctx.get("scoreReport.document").notices
+    assert notices.count(INPUT_ERROR_NOTICE) == 1
+    assert notices.index(INPUT_MISSING_NOTICE) < notices.index(INPUT_ERROR_NOTICE)
+    assert ctx.get("G-02a.nextAction") == "진행가능"
+    low = make_app(clock, StubScenario(doc_scores=[40.0], input_error_items={TABLE}))
+    rid2 = to_screen6(low)
+    orders = ctx_of(low, rid2).get("G-02a.reworkOrders")                         # 기준 미만 · 다른 후보 없음 → 묶음 모두
+    assert {o.targets[0] for o in orders} == set(rework_map.DOCUMENT_BUNDLES)
+    assert INPUT_ERROR_NOTICE in ctx_of(low, rid2).get("scoreReport.document").notices
 
 
 def test_input_missing_and_warning_are_not_redone_and_candidates_skip_input_missing(clock):

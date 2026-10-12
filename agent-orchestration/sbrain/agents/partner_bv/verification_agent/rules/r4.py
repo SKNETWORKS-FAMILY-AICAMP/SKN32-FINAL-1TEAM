@@ -27,7 +27,7 @@ import re
 
 from .color import (contrast_ratio, extract_paired_declarations, is_transparent,  # [S-Brain] 패키지 상대 import
                                             parse_color)
-from .gates import ignored_apis  # [S-Brain] 패키지 상대 import
+from .gates import external_refs, ignored_apis  # [S-Brain] 패키지 상대 import
 from .html_parser import (  # [S-Brain] 패키지 상대 import
     EXCLUDED_INPUT_TYPES,
     PAGE_WIDTH_PX,
@@ -177,13 +177,17 @@ def check_script_errors(parser: PageParser, html_content: str) -> dict:
     - sandbox에서 무시되는 API: alert() · confirm() · window.open() · 페이지 이동 ·
       form 전송은 iframe(allow-scripts만)에서 조용히 무시되거나 막혀 그 동작만 안 된다.
       스크립트 전체를 멈추는 스토리지 API는 여기가 아니라 통과 필수 조건이다(rules/gates.py).
-    id 참조도 무시되는 API도 없으면 해당 없음.
+    - 외부 의존: 외부 주소나 함께 오지 않는 파일을 가리키는 스크립트 · 스타일시트 · 그림은 격리된 화면에서
+      불러오지 못한다. 기능정의서 E-B1-DEP "재수행 횟수를 넘기면 그대로 보내고 미충족을 점수에 반영"을
+      sandbox의 나머지 API와 같은 자리(7번)에 반영한다.
+    셋 다 없으면 해당 없음.
     """
     script = "\n".join(parser.script_chunks)
     refs = id_refs(script)
     ignored = ignored_apis(html_content)
-    if not refs and not ignored:
-        return item(7, "스크립트 동작 오류 없음", 2, True, "스크립트의 id 참조 · 막히는 API 0개",
+    external = external_refs(html_content)
+    if not refs and not ignored and not external:
+        return item(7, "스크립트 동작 오류 없음", 2, True, "스크립트의 id 참조 · 막히는 API · 외부 의존 0개",
                     applicable=False)
     broken = sorted(refs - parser.ids)
     problems = []
@@ -191,6 +195,8 @@ def check_script_errors(parser: PageParser, html_content: str) -> dict:
         problems.append(f"문서에 없는 id {len(broken)}개: {', '.join(broken[:5])}")
     if ignored:
         problems.append(f"sandbox에서 무시되는 API: {', '.join(ignored)}")
+    if external:
+        problems.append(f"외부 의존 {len(external)}개: {', '.join(external[:3])}")
     evidence = "; ".join(problems) if problems else f"id 참조 {len(refs)}개 전부 문서에 있음"
     return item(7, "스크립트 동작 오류 없음", 2, not problems, evidence)
 

@@ -584,13 +584,14 @@ class SBrainFlow:
     def _after_tv1(self, ctx: RunContext, out: dict[str, Any]) -> None:
         """T-V1 바로 뒤 — 검증-1 fail 재수행 · 표 대체를 그 대기열 맨 앞에 끼운다 (spec 4.10).
 
-        대상 = 판정 fail · 입력 없음 아님 · 이번 사이클에 만든 항목(첫 작성은 모든 항목) · 이미 대체한 표가 아님.
-        단, 원본 협약기간 상한 초과는 입력 수정이 필요하므로 자동 재수행·표 대체를 하지 않는다.
+        대상 = 판정 fail · 입력 없음 아님 · 입력 오류 아님 · 이번 사이클에 만든 항목(첫 작성은 모든 항목) · 이미 대체한 표가 아님.
+        입력 오류(inputError)는 입력 값이 기준을 벗어나 다시 만들어도 고쳐지지 않으므로 재수행 · 표 대체를 하지 않는다
+        (표는 그대로 남는다).
         - 횟수(redo.verify1RedoCount, 항목마다 · 사이클마다)가 남은 대상이 있으면: 본문 → T-W1, 그림 → T-W2(표는 다시 만들지
           않음) → M-1(다시 쓴 것이 있을 때) → T-V1(대상만).
         - 없고 끝내 fail인 표가 있으면: T-W3(대체) → M-1 (T-V1 다시 안 함 — 판정은 fail 그대로).
         - 둘 다 없으면 재수행 표시를 비운다. 재작성 기회를 쓰지 않는다. 구간 단계 수(진행률)를 끼운 만큼 늘린다.
-        흐름은 판정의 필드(status · inputMissing)와 양식 종류로만 가른다."""
+        흐름은 판정의 필드(status · inputMissing · inputError)와 양식 종류로만 가른다 — issue 글은 읽지 않는다."""
         state = self._verify1(ctx)
         results = list(out.get("section_results") or [])
         if not state.made_items and ctx.run.cycle is None:
@@ -599,14 +600,10 @@ class SBrainFlow:
         kinds = dict(form_kinds(ctx.get(FORM_SPEC))) if ctx.has(FORM_SPEC) else {}
         replaced = {code for code, o in (ctx.get(TABLE_OUTPUTS, default=None) or {}).items()
                     if isinstance(o, dict) and o.get("tableFallbackUsed")}
-        fails = [r for r in results if r.status == "fail" and not r.input_missing
+        fails = [r for r in results if r.status == "fail" and not r.input_missing and not r.input_error
                  and r.section_code in made and r.section_code not in replaced]
-        repairable_fails = [r for r in fails if not any(
-            "협약기간 일정" in str(issue) and "개월이 최대 " in str(issue) and "개월 조건을 초과함" in str(issue)
-            for issue in r.issues
-        )]
         limit = ctx.settings.redo.verify1_redo_count
-        redo = [r for r in repairable_fails if state.redo_counts.get(r.section_code, 0) < limit]
+        redo = [r for r in fails if state.redo_counts.get(r.section_code, 0) < limit]
         if redo:
             for r in redo:
                 state.redo_counts[r.section_code] = state.redo_counts.get(r.section_code, 0) + 1
@@ -615,7 +612,7 @@ class SBrainFlow:
                        if any(KIND_TASK[kinds.get(r.section_code, "section")] == t for r in redo)]
             steps = writers + (["M-1"] if writers else []) + ["T-V1"]
         else:
-            tables = [r for r in repairable_fails if kinds.get(r.section_code) == "table"]
+            tables = [r for r in fails if kinds.get(r.section_code) == "table"]
             if not tables:
                 self.clear_verify1(ctx.run)
                 return

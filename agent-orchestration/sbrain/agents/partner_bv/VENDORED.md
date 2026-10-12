@@ -6,9 +6,14 @@
 
 | 항목 | 값 |
 |---|---|
-| 받은 날짜 | 2026-10-08 |
+| 받은 날짜 | 2026-10-08 (첫 판), 2026-10-12 (새 판 — 담당자 브랜치 `feature/SB-124-Artifact-Generation-Agent`의 `d942f00`) |
 | 원본 사본(읽기 전용) | 담당자 브랜치의 `engineering_agent/` · `verification_agent/` (작업 공간에 받아 둠) |
 | 의존 | 표준 라이브러리 + pydantic(이미 고정 목록에 있음). 새 패키지 없음 |
+
+**2026-10-12 새 판에서 담당자가 바꾼 곳(셋 — 모두 다시 가져왔다, 파일 목록 · 자료는 그대로):**
+- `verification_agent/rules/gates.py` `external_refs` 더함 · `rules/r4.py` 코드 점검 7번이 외부 의존(외부 주소나 함께 오지 않는 파일을 가리키는 script src · stylesheet · img src · `@import` · `url(...)`, `data:` · `blob:` · `#`는 제외)도 미충족으로 본다(문구 `외부 의존 N개: …`). T-B1 자체 검사 E-B1-DEP와 같은 기준이다.
+- `engineering_agent/builder_html.py` `_first_gate_failure` 더함 — 자체 검사(외부 의존 · 샌드박스 · 비밀값)에 걸려도 끼워 넣은(`decorate`) HTML과 진입 파일을 돌려주고 `status`만 `failed`다(우리가 10-11에 연결 코드로 하던 일과 같은 결과).
+- `engineering_agent/builder_html.py` 계획서 길이 12,000자 → 20,000자(`_PLAN_CHARS` · `_PLAN_TAIL_CHARS` · `_plan_for_prompt` — 넘치면 앞 16,000자 + 끝 4,000자, 사용자 허락 2026-10-12).
 
 ## 2. 옮긴 파일
 
@@ -34,8 +39,8 @@
 | 파일 | 바꾼 곳 | 이유 |
 |---|---|---|
 | 모든 코드(`tasks.py` 둘 포함, 68줄) | `from engineering_agent…` · `from verification_agent…` → 패키지 상대 import(`.` · `..`). 함수 안 늦은 import(composer의 `poster`, artsheet · layout의 `composer` · `showcase`, design_kit의 `svg_parts` · `layout`, builder_html의 `themes`)도 같다 | 우리 패키지 안에서 돈다 |
-| `engineering_agent/builder_html.py` | `uuid` · `save_files` import, 시도 ID(`run_id`) 삭제. 통과 시 `save_files` 호출 삭제. 결과의 `entryFilePath` · `readmePath` → `entryFileName`(통과면 `index.html`, 아니면 `None`). 통과 요약의 `run_id=…:` 머리말 삭제 | 저장하지 않는다. 연결 코드(T3)가 `sourceText`를 `entryFileName`으로 `tools.files.put` 한다 |
-| `engineering_agent/builder_html.py` — 끼워 넣기 | **바꾸지 않음**: 통과면 담당자가 `decorate`(글꼴 · 아이콘)한 HTML, 외부 의존 · 샌드박스 · 비밀값 실패면 끼워 넣기 전 원문을 `sourceText`로 돌려준다(담당자 동작 그대로) | spec 4.2는 두 경우 모두 끼워 넣은 HTML을 쓴다 — **실패 경우의 `decorate`는 T3 연결 코드가 한다.** `decorate`는 먼저 `strip`하므로 거듭 불러도 결과가 같다(테스트) |
+| `engineering_agent/builder_html.py` | `uuid` · `save_files` import, 시도 ID(`run_id`) 삭제. 통과 시 `save_files` 호출 삭제. 결과의 `entryFilePath` · `readmePath` → `entryFileName`(진입 파일이 있으면 `index.html` — 자체 검사 실패도, 진입 파일 실패면 `None`). 통과 요약의 `run_id=…:` 머리말 삭제 | 저장하지 않는다. 연결 코드(T3)가 `sourceText`를 `index.html`로 `tools.files.put` 한다 |
+| `engineering_agent/builder_html.py` — 끼워 넣기 | **바꾸지 않음**: 담당자가 통과 · 외부 의존 · 샌드박스 · 비밀값 실패 모두 `decorate`(글꼴 · 아이콘)한 HTML을 `sourceText`로 돌려준다(2026-10-12 판 — 그 전 판은 실패 원문을 끼워 넣지 않아 연결 코드가 했다) | 연결 코드는 받은 HTML을 그대로 넣는다 |
 | `engineering_agent/file_writer.py` | 저장 함수 `save_files`(폴더 만들기 · 파일 쓰기) · 저장 화이트리스트 `_ENTRY_FILENAME` · `pathlib` import 삭제. 코드블록 꺼내기(`parse_code_blocks`)만 남김 | 같음 |
 | `engineering_agent/infographic/render.py` | `re` · `uuid` · `Path` import, 템플릿 폴더 · 산출물 폴더 상수(`_TEMPLATE_DIR` · `_OUTPUT_DIR`) 삭제. `_load_template` → `resources.template(name)`. `render_infographic(category, data, run_id=None)` → `render_infographic(category, data)`. 시도 폴더 만들기 · 파일 쓰기 삭제. 결과 `{"file_path", "alt_text", "source_text"}` → `{"file_name", "alt_text", "source_text"}`(`file_name`은 담당자가 저장하던 이름 — 원페이지 `onepage.svg`, 그 밖 `infographic.svg`) | 저장하지 않고 SVG 글자를 돌려준다. 연결 코드가 `tools.files.put` 한다. 템플릿은 불러올 때 읽은 상수 |
 | `engineering_agent/infographic/fonts.py` `_style` | `FONT_FILE` 경로 · `Path` import 삭제, `FONT_FILE.read_bytes()` → `resources.FONT`(없으면 `b""` → 빈 값 = 기본 글꼴, 원래 `OSError`와 같음) | 자료는 불러올 때 한 번 읽은 상수(Task 실행 중 디스크 안 열기). `lru_cache`(메모리 안 계산 저장)는 그대로 |
@@ -46,8 +51,8 @@
 | `verification_agent/llm_judge.py` 요소 목록 | 파일 저장소(`ELEMENT_STORE = .cache/elements.json`) · `Path` import 삭제. `_stored(key)` → `_stored(store, key)`, `_store(key, elements)` → `_store(store, key, elements)`(사전에 더함 — 폴더 만들기 · 파일 쓰기 없음), `elements_for(…)`에 `store` 인자, `make_judge(tools, kind, source, plan_text, elements=None)` — `elements`가 요소 목록 사전(열쇠 = 담당자 열쇠 `_store_key` = 종류 · 기능 이름 · 정의 줄의 SHA-1 16진수, 값 = 요소 글자 목록 1 ~ 5개). `None`이면 빈 사전. 있는 열쇠는 LLM을 부르지 않고, 새로 뽑은 목록을 **그 사전에 제자리로 더한다**(출력 = 입력 ∪ 새 것). 요소 뽑기가 재시도 소진이면 사전에 넣지 않고 통째로 묻는 판정으로 간다(담당자 동작) | spec 4.4. 연결 코드(T3)가 입력 사전의 사본을 넘기고 그 사전을 출력으로 돌려준다. 목록은 산출물 내용이다 — 기록 · 로그 · 예외 메시지에 넣지 않는다 |
 | `verification_agent/llm_judge.py` 예외 | `except Exception` 셋(요소 뽑기 `elements_for` · 판정 `make_judge.ask` · 핵심 칸 `make_field_judge.ask`) → `except ToolCallExhausted`(`orchestrator.errors`). 그 밖의 예외는 올린다 | standards 4절 "T-V2가 받아도 되는 것은 대조 LLM 실패뿐" |
 | `verification_agent/llm_judge.py` `_MAX_WORKERS` | 6 → 3. `_VOTES = 3` 그대로. 스레드마다 `tools.for_item(<항목 키>)`, 항목 키는 담당자 문구 그대로(`{기능}#요소` · `{기능}#{n}` · `{칸}#{n}`) | spec 4.4 |
-| `engineering_agent/tasks.py` 머리 (T3) | import 둘 더함 — `builder_html._extract_implemented_features`(자기 신고 뽑기) · `html_kit.decorate`(끼워 넣기). 파일 이름 · 형식 상수 `ENTRY_FILE_NAME`(`index.html`) · `HTML_MEDIA_TYPE`(`text/html`) · `SVG_MEDIA_TYPE`(`image/svg+xml`)와 `_text(bytes)`(UTF-8, 풀 수 없는 바이트는 대체 문자 — 잠정) 더함 | 파일은 `tools.files`로 넣고 읽는다 |
-| `engineering_agent/tasks.py` `run_tb1` (T3) | 이전 원문: `rework_input.previous_source_text`(글자) → `previous_source_file`(참조)을 `tools.files.get`으로 읽어 `previous_html`로 넘김(파일 창구 실패는 받지 않음 — 끼워 넣은 것은 담당자 `user_message`가 뺀다). 결과: `entryFilePath` · `sourceText` 칸 → **원문(`sourceText`)이 있으면**(통과 · 외부 의존 · 샌드박스 · 비밀값 실패) `decorate` 한 HTML을 `index.html`로 `tools.files.put` 하고 그 참조를 `Prototype.entryFile` · `TB1Out.entryFile`에, 자기 신고는 끼워 넣은 HTML에서 `_extract_implemented_features`로(실패 경우도 통과 때와 같은 방식). 원문이 없으면(진입 파일 실패) 진입 파일 없음 · 빈 목록. `check` = 통과 여부 · 실패면 담당자 요약 문구 한 줄(그대로). `Prototype(asset_paths · readme_path · source_text)` → `Prototype(asset_files=[] · readme_file=None)` | spec 4.2 · D2 · D3 — 검사에 걸린 HTML도 진입 파일로 넘겨 검증-2가 채점한다. 담당자는 실패 원문을 끼워 넣지 않고 돌려준다(2절 표 위 줄) |
+| `engineering_agent/tasks.py` 머리 (T3) | 파일 이름 · 형식 상수 `ENTRY_FILE_NAME`(`index.html`) · `HTML_MEDIA_TYPE`(`text/html`) · `SVG_MEDIA_TYPE`(`image/svg+xml`)와 `_text(bytes)`(UTF-8, 풀 수 없는 바이트는 대체 문자 — 잠정) 더함 | 파일은 `tools.files`로 넣고 읽는다 |
+| `engineering_agent/tasks.py` `run_tb1` (T3) | 이전 원문: `rework_input.previous_source_text`(글자) → `previous_source_file`(참조)을 `tools.files.get`으로 읽어 `previous_html`로 넘김(파일 창구 실패는 받지 않음 — 끼워 넣은 것은 담당자 `user_message`가 뺀다). 결과: `entryFilePath` · `sourceText` 칸 → **진입 파일이 있으면**(`entryFileName` — 통과 · 외부 의존 · 샌드박스 · 비밀값 실패) 담당자가 끼워 넣은 `sourceText`를 `index.html`로 `tools.files.put` 하고 그 참조를 `Prototype.entryFile` · `TB1Out.entryFile`에, 자기 신고는 담당자 `implementedFeatures` 그대로. 진입 파일 실패면 진입 파일 없음 · 빈 목록. `check` = 통과 여부 · 실패면 담당자 요약 문구 한 줄(그대로). `Prototype(asset_paths · readme_path · source_text)` → `Prototype(asset_files=[] · readme_file=None)` | spec 4.2 · D2 · D3 — 검사에 걸린 HTML도 진입 파일로 넘겨 검증-2가 채점한다(담당자 10-12 회신 · 새 판도 같다) |
 | `engineering_agent/tasks.py` `run_tb2` (T3) | 아이콘판 바로 뒤에 `icon_fallback = content["_art"] is None and bool(artsheet.icon_items(category, content))` — 담당자가 아이콘 항목을 고르는 함수 그대로. 결과: `render_infographic`의 `file_path` → `file_name`으로 `tools.files.put`(SVG, UTF-8) 한 참조를 `Infographic.imageFile`에, `iconFallback` 칸 채움. 자체 검사 · 지면 구성 · 아이콘판 · 넓은 예외 받기는 그대로 | spec 4.3 · D13 — 흐름이 '이미지대체' 사건에 쓴다 |
 | `verification_agent/tasks.py` `_read` · `score_artifact` · `run_tv2` (T3) | `Path` import 삭제. `_read(경로)` → `_read(tools, 참조)` = `tools.files.get(ref).decode("utf-8", errors="replace")`(잠정 — `tv2.fileDecode`, 실패는 받지 않음). `score_artifact` 인자: 경로 칸(`entry_file_path` · `readme_path` · `infographic_path`) → 이름 · 내용(`entry_file_name` · `readme` · `svg`), `elements`(요소 목록 사전) 더함 → `make_judge(…, elements)`. 원페이지 불일치 문구 `Infographic.image_path와 Prototype.source_text 불일치` → `Infographic.imageFile과 Prototype.entryFile 내용 불일치`(필드 이름만). `run_tv2`: 진입 파일(있으면) · 안내 문서(있으면) · 인포그래픽을 읽는다 — 원페이지처럼 진입 파일과 인포그래픽이 같은 키면 한 번만. 진입 파일 없음 = `entryFile` 비어 있음, 이름 = `FileRef.name`. 요소 목록 = `dict(입력 featureElements or {})` 사본을 넘기고 그 사전을 출력 `featureElements`로. `CodeCheck`에 `earned` · `applicable`(담당자 항목 값) 채움 | spec 4.4 · 4.5 |
 | `verification_agent/tasks.py` `run_tv2` 합계 (2026-10-11, 실제 호출 확인 뒤) | `ArtifactScore.total = code.total + feature.score` → `round(…, 2)` | 실제 원페이지 채점에서 15.0 + 14.06이 `29.060000000000002`로 나왔다(소수 계산 오차). 원점수 칸은 웹으로 그대로 나가므로 소수 둘째 자리로 맞춘다. 두 원점수 · 채점 규칙은 그대로 |
@@ -67,7 +72,7 @@
 - Task 함수 모양은 우리 약속 그대로 `run_xxx(inp, tools) -> 출력`이다. Task 함수 안의 늦은 import(`sbrain.contracts.tasks` · `sbrain.models`)는 담당자 그대로다 — 조립이 먼저 불러 두므로 실행 중 디스크에 닿지 않는다.
 - 등록은 우리 연결 코드 `partner_bv/tasks.py`(5절)가 한다. 두 담당자 패키지는 서로 import하지 않는다.
 - 받는 예외: T-B2 아이콘판(`artsheet.generate` — 담당자 넓은 예외 받기)과 T-V2 대조 LLM(`llm_judge` — `ToolCallExhausted`만)뿐이다. 파일 창구 실패 · T-B1 글 호출 · T-B2 글 호출 · T-V2의 그 밖의 예외는 올린다.
-- 바뀐 동작(담당자 원본과 다름): 담당자 `run_tb1`은 실패 원문을 저장하지 않고 진입 파일을 비웠지만, 우리는 끼워 넣어 진입 파일로 넣는다(spec 4.2 D2 · D3, 검증-2가 채점). 외부 의존은 검증-2에 검사가 없어 감점 없이 채점되는 것이 알려진 한계다.
+- 검사에 걸린 HTML도 진입 파일로 넣는다(spec 4.2 D2 · D3, 검증-2가 채점). 10-08 판 담당자 `run_tb1`은 진입 파일을 비웠으나, 담당자가 10-12 회신에서 맞다고 하고 새 판도 같게 바꿨다. 외부 의존은 10-12 판부터 검증-2 코드 점검 7번에서 감점한다.
 
 ## 5. 연결 코드 (이 폴더 바로 아래 — 우리 파일)
 
@@ -89,7 +94,7 @@
 ## 6. 다음 판 받을 때 비교 방법
 
 1. 새 판을 작업 공간에 사용자가 풀어 둔다(갱신은 사용자).
-2. 2절 목록의 파일마다 **옛 원본 사본 ↔ 새 원본**을 비교해 담당자가 바꾼 곳을 찾는다(우리 사본끼리 비교하지 않는다 — 3절 변경이 섞인다). 옛 원본 사본이 덮어써졌으면 우리 사본에서 `[S-Brain]` 줄을 3절 표대로 되돌린 것과 비교한다.
+2. 2절 목록의 파일마다 **옛 원본 사본 ↔ 새 원본**을 비교해 담당자가 바꾼 곳을 찾는다(우리 사본끼리 비교하지 않는다 — 3절 변경이 섞인다). 옛 원본 사본이 덮어써졌으면 새 원본 ↔ 우리 사본을 비교해 `[S-Brain]` 줄이 없는 차이 묶음만 담당자 변경으로 본다(2026-10-12 판을 이렇게 받았다).
 3. 담당자가 바꾼 파일은 새 원본을 복사한 뒤 3절 표의 변경을 다시 적용한다(`[S-Brain]` 주석 자리). 자료 파일(woff2 · SVG · 라이선스)은 그대로 덮어쓴다. 새 자료 파일이 생기면 `resources.py`와 `pyproject.toml` 패키지 자료를 함께 본다.
 4. 새 판에 OpenAI 직접 호출 · `os.getenv` · `datetime.now` · `.env` 읽기 · `time.sleep` · 파일 쓰기 · 폴더 만들기 · 실행 중 파일 읽기 · 넓은 예외 받기(`except Exception`)가 새로 생겼는지, 함수 안 import가 새로 생겼는지(생기면 `__init__.py`에 미리 불러 두기를 더한다) 본다 — `tests/test_partner_bv_vendored.py`의 소스 검사 · 디스크 차단 테스트가 잡는다.
 5. 담당자 `_USER_ONLY_REASON`(`engineering_agent/tasks.py`)이 `flow/rework_map.REWORK_DEFAULT_REASON`과 같은지(테스트), 검증-2 `_MAX_WORKERS`가 다시 6이 되지 않았는지 본다.
