@@ -125,6 +125,7 @@ def test_first_writing_redoes_only_failed_items_then_replaces_failed_table(clock
     assert app.store.load_run(rid).rework_usage == []
     # 표가 fail로 남아 실현가능성 묶음이 후보다
     orders = ctx.get("G-02a.reworkOrders")
+    assert [o.targets for o in orders] == [["실현가능성"]] and TABLE in orders[0].reason
 
 
 def test_table_fallback_display_reason_uses_plain_language_and_keeps_raw_reason():
