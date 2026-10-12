@@ -364,29 +364,30 @@ def test_partner_functions_do_not_touch_files_while_running(monkeypatch):
 def test_scoring_applies_limit_deductions_from_f19_codes_and_excludes_roadmap_dates():
     spec = {"sectionId": "3.5.2", "title": "개발계획", "rules": {}}
     content = {"generatedText": "협약 일정은 2026년 12월까지이고, 이후 로드맵은 2027년 2월까지다. 정부지원사업비 70,000,000원."}
-    # section_source uses strategy_limits (without underscore). A later roadmap
-    # date and a textual budget amount alone must not trigger either deduction.
-    source = {"strategy_limits": {"deadline": "2026-12", "supportLimit": 50_000_000}}
-    no_violation = scoring.score_section(
-        spec, content, {"status": "warning", "issues": [], "warnings": [], "inputErrorCodes": []},
-        "early_startup", source,
-    )
-    assert not any(item["amount"] in (40, 50) for item in no_violation["deductions"])
+    # Both key spellings are supported. A later roadmap date and textual budget
+    # amount alone must not trigger either deduction without the F19 codes.
+    for limits_key in ("strategy_limits", "_strategy_limits"):
+        source = {limits_key: {"deadline": "2026-12", "supportLimit": 50_000_000}}
+        no_violation = scoring.score_section(
+            spec, content, {"status": "warning", "issues": [], "warnings": [], "inputErrorCodes": []},
+            "early_startup", source,
+        )
+        assert not any(item["amount"] in (40, 50) for item in no_violation["deductions"])
 
-    flagged = scoring.score_section(
-        spec, content,
-        {"status": "fail", "issues": [], "warnings": [], "inputErrorCodes": [
-            validation_1.INPUT_ERROR_AGREEMENT_AFTER_DEADLINE,
-            validation_1.INPUT_ERROR_SUPPORT_LIMIT_EXCEEDED,
-        ]},
-        "early_startup", source,
-    )
-    limit_deductions = [item for item in flagged["deductions"] if item["source"].startswith("inputErrorCodes.")]
-    assert [(item["amount"], item["source"]) for item in limit_deductions] == [
-        (40, "inputErrorCodes.AGREEMENT_SCHEDULE_AFTER_DEADLINE"),
-        (50, "inputErrorCodes.SUPPORT_LIMIT_EXCEEDED"),
-    ]
-    assert flagged["score"] <= 59.0  # 기존 fail 점수 상한 유지
+        flagged = scoring.score_section(
+            spec, content,
+            {"status": "fail", "issues": [], "warnings": [], "inputErrorCodes": [
+                validation_1.INPUT_ERROR_AGREEMENT_AFTER_DEADLINE,
+                validation_1.INPUT_ERROR_SUPPORT_LIMIT_EXCEEDED,
+            ]},
+            "early_startup", source,
+        )
+        limit_deductions = [item for item in flagged["deductions"] if item["source"].startswith("inputErrorCodes.")]
+        assert [(item["amount"], item["source"]) for item in limit_deductions] == [
+            (40, "inputErrorCodes.AGREEMENT_SCHEDULE_AFTER_DEADLINE"),
+            (50, "inputErrorCodes.SUPPORT_LIMIT_EXCEEDED"),
+        ]
+        assert flagged["score"] <= 59.0  # 기존 fail 점수 상한 유지
 
 
 def test_resources_are_loaded_once_and_missing_files_are_absent():
