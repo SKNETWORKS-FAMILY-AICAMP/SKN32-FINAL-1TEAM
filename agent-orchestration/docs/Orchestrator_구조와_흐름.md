@@ -339,7 +339,7 @@ sequenceDiagram
 | 재작성 요청의 점유 재시도 | 최대 5초(0.05초 간격). 못 잡으면 `BUSY` | 잠정(조정값) | `REWORK_LEASE_RETRY_SEC`, `PROVISIONAL["reworkRequest.leaseRetrySec"]` |
 | `wait_project` 기본 제한 시간 | 60초, DB를 0.5초마다 다시 읽음. 넘기면 그때 상태를 그대로 준다 | 잠정(조정값) | `WAIT_TIMEOUT_SEC` · `WAIT_POLL_SEC`, `PROVISIONAL["waitProject.*"]` |
 | 판정 지시 없는 묶음의 재작성 문구 | `reason` · `instructionDelta` 모두 '사용자가 이 묶음의 재작성을 요청했습니다.'(지시문에는 한 번만) | 기준 문서 v1.10(시트 4 `ReworkOrder.reason`) — 잠정 아님(2026-10-08) | `flow/sbrain_flow.py` `REWORK_DEFAULT_REASON` |
-| 문서층 묶음 4개 | `문제인식` · `실현가능성` · `성장전략` · `팀 구성`. 고른 묶음의 태그 항목만 다시 만든다(2026-10-10, 11.11). 기회는 이름마다 센다 | 묶음 이름 4개는 그대로, 짝짓기는 잠정(11.11) | `flow/rework_map.py` `SECTION_BUNDLE_TABLE` · `DOCUMENT_BUNDLES`, `sbrain_flow.bundle_orders` |
+| 문서층 묶음 4개 | `문제인식` · `실현가능성` · `성장전략` · `팀 구성`. 고른 묶음의 태그 항목만 다시 만든다(2026-10-10, 11.11). 기회는 이름마다 센다 | 묶음 이름 4개는 그대로, 항목별 재작성 묶음은 잠정(11.11) | `flow/rework_map.py` `SECTION_BUNDLE_TABLE` · `DOCUMENT_BUNDLES`, `sbrain_flow.bundle_orders` |
 | 문서층 지시의 `reworkOptions` 기회 표시 | 문서층 지시는 묶음마다 하나, 남은 기회는 그 묶음의 값(2026-10-10) | — | `flow/reads.py` `_options`, `rework_map.order_bundles` |
 | 미달이 아닌 묶음 재작성 | 판정 지시 · 다음 동작과 관계없이 받고 다시 만들고 다시 채점한다 | 기준 문서 v1.10(시트 5 R-6 ①) — 확장 아님 | `flow/service.py` `request_rework_for_project` |
 | 자격 통과 뒤 공고 다시 고르기 | 계획서작성 · 사용자대기(작성 시작 전)에서도 공고 선택 → G-01 다시 | 기준 문서 v1.10(시트 2 G-01) — 확장 아님 | `ANNOUNCEMENT_STEPS` |
@@ -527,7 +527,7 @@ sequenceDiagram
 | 사업비 · 일정 필수 스위치 | `PLAN_TABLES_REQUIRED = False` — 웹 입력 화면 배포 뒤 이 한 곳만 켠다 | `planTables.required` | `orchestrator/settings.py` |
 | 사업비 · 일정 읽기 | 일정 row의 `section`이 `feasibility` · `growth` 밖이면 버림, 사업비 row의 `phase`가 '1단계' · '2단계' 밖이면 단계 미지정 | `planTables.unknownSection` | `intake/mapping.py` |
 | 필수 결측 이름 | '사업비 집행계획' · '사업비 집행계획(1단계)' · '사업비 집행계획(2단계)' · '추진 일정(협약기간 내)' | `planTables.missingLabels` | `intake/mapping.py` `LABELS` || 양식 묶음 · 평가항목 | 담당자 `execution_contract.json`에서 만든 양식(예비창업자 25개 · 개인사업자 · 법인 24개), 평가항목 = 계획서 항목(배점 70 ÷ 항목 수), 평가항목 이름 = 항목 제목 앞 40자, 채점 기준표 `partner-sw@<담당자 채점 정책 버전>` | `taskPlan.formTable` | `agents/form_defaults.py` |
-| 담당자 항목 → 재작성 묶음 짝짓기 | 2.4 · 3.4 문제인식, 2.5 · 3.5 실현가능성, 2.6 · 3.6 성장전략, 2.7 · 3.7 팀 구성, 2.1 ~ 2.3 · 3.1 ~ 3.3 묶음 없음 — 웹 묶음 4개와 담당자 양식 항목으로 오케스트레이터 쪽에서 정함, 담당자 · 웹팀 확인 대기 | `reworkMap.sectionBundles` | `flow/rework_map.py` `SECTION_BUNDLE_TABLE` |
+| 담당자 항목별 재작성 묶음 | 2.4 · 3.4 문제인식, 2.5 · 3.5 실현가능성, 2.6 · 3.6 성장전략, 2.7 · 3.7 팀 구성, 2.1 ~ 2.3 · 3.1 ~ 3.3 묶음 없음 — 웹 묶음 4개와 담당자 양식 항목으로 오케스트레이터 쪽에서 정함, 담당자 · 웹팀 확인 대기 | `reworkMap.sectionBundles` | `flow/rework_map.py` `SECTION_BUNDLE_TABLE` |
 | 예비창업 단계 미지정 사업비 row | 1 · 2단계 표 어디에도 넣지 않고 2.5.3 표의 "단계 미지정" 줄로 보존, 2.5.3 · 2.5.4 두 항목을 입력 없음으로 — 웹 `phase` 컬럼이 생기면 풀린다 | `partnerSw.unassignedPhase` | `agents/partner_sw/inputs.py` |
 | 출력 변환 매핑 | `RequirementAnalysis`(`problemStatement` = `itemSpec.oneLineSummary`, `useCases` = F02 `deliverables` 등) · `MarketAnalysis`(`marketSize` 빈 목록, `positioning` = F12 요약 등) · `numericTokens`(숫자 + 단위 규칙 추출) · 문장 나누기(줄 · 문장 끝, `s-<항목>-<순번>`) | `partnerSw.outputMapping` | `agents/partner_sw/outputs.py` |
 | 항목 점수 소수 자리 | 둘째 자리 반올림, 문서층 총점 = 반올림한 항목 점수의 합 | `partnerSw.scoreDigits` | `agents/partner_sw/verify.py` `SCORE_DIGITS` |
@@ -557,7 +557,7 @@ sequenceDiagram
 | 판정 후보 (G-02a · G-02b 임시 구현) | fail · warning 항목이 있는 묶음(입력 없음 제외), 80 미만 · 후보 없음이면 4개 모두, 상한도달 = 후보 묶음 기회 모두 0, 입력 없음 안내. 그 밖의 G-02a · G-02b 동작은 임시 구현 그대로. **2026-10-11 실구현으로 옮김** — 같은 규칙, 쓰지 않은 묶음의 기회는 설정 사본 `rework.perBundle`로 셈(11.12) | 구현 규칙 | `agents/stubs.py` → `agents/supervisor/judge.py`(2026-10-11) |
 | 사전 정보 읽기 | `project_budget_items` · `project_schedule_items`를 시작 요청에서 읽음(`phase`는 선택 컬럼), 금액 DECIMAL → 정수 원, NULL은 비움, 네 금액이 모두 있고 맞지 않을 때만 총사업비를 다시 냄 | 확장(읽는 테이블) | `intake/sql_source.py` · `intake/mapping.py` · `store_sql/web_tables.py` |
 
-- 알려진 한계: 총사업비가 빈 사업비 row는 담당자 예산 계산(F14) 입력에서 빠져 그 표 항목이 검증-1 fail로 판정될 수 있다(웹이 합계 불일치를 막기로 해 드묾). 표 서술 속 금액이 보호 토큰에 들지 않아 윤문에서 바뀔 수 있다. 지금 짝짓기로는 그림 · 일반현황 · 개요 항목을 사용자 재작성으로 다시 만들 수 없다(담당자 `image-retry-latest`와 어긋남 — 확인 요청 중). KIET 사용자 키워드 자료는 `SBRAIN_AUTO_RESEARCH=1`을 설정해 갱신해야 하며, 기본 설정에서는 자료가 없어도 빈 근거로 동작한다. 갱신은 고정 KIET 주소로 직접 HTTP 요청하며 OpenAI 호출·토큰 기록에는 포함되지 않는다.
+- 알려진 한계: 총사업비가 빈 사업비 row는 담당자 예산 계산(F14) 입력에서 빠져 그 표 항목이 검증-1 fail로 판정될 수 있다(웹이 합계 불일치를 막기로 해 드묾). 표 서술 속 금액이 보호 토큰에 들지 않아 윤문에서 바뀔 수 있다. 지금 항목별 재작성 묶음으로는 그림 · 일반현황 · 개요 항목을 사용자 재작성으로 다시 만들 수 없다(담당자 `image-retry-latest`와 어긋남 — 확인 요청 중). KIET 사용자 키워드 갱신은 `SBRAIN_AUTO_RESEARCH=1`로 선택 실행하며, 기본 설정에서는 기존 자료를 검색하고 갱신은 건너뛴다. 갱신은 고정 KIET 주소로 직접 HTTP 요청하며 OpenAI 호출·토큰 기록에는 포함되지 않는다.
 
 ### 11.12 구현 · 검증-2 실구현 · 산출물층 환산 · 조율 규칙 단계(2026-10-11)에서 생긴 잠정 · 확장
 

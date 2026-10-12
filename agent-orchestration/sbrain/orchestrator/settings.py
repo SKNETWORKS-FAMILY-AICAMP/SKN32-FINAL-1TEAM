@@ -252,7 +252,7 @@ PROVISIONAL: dict[str, str] = {
                           "pre_startup 2.1.1 ~ 2.7.4 25개, 개인사업자 · 법인 early_startup 3.1.1 ~ 3.7.4 24개). 평가항목 = 계획서 "
                           "항목(배점 70 ÷ 항목 수), 평가항목 이름은 항목 제목 앞 40자, 채점 기준표 partner-sw@담당자 채점 정책 버전 "
                           "(agents/form_defaults.py, spec 4.6)",
-    "reworkMap.sectionBundles": "담당자 항목 → 재작성 묶음 짝짓기(2.4 · 3.4 문제인식, 2.5 · 3.5 실현가능성, 2.6 · 3.6 성장전략, "
+    "reworkMap.sectionBundles": "담당자 항목별 재작성 묶음(2.4 · 3.4 문제인식, 2.5 · 3.5 실현가능성, 2.6 · 3.6 성장전략, "
                                 "2.7 · 3.7 팀 구성, 2.1 ~ 2.3 · 3.1 ~ 3.3 묶음 없음) — 웹 묶음 4개와 담당자 양식 항목을 기준으로 "
                                 "오케스트레이터 쪽에서 정함, 담당자 · 웹팀 확인 대기. 답이 오면 flow/rework_map.py 표만 바꾼다",
     "partnerSw.unassignedPhase": "예비창업 사업비 row의 phase가 없으면 1 · 2단계 표 어디에도 넣지 않고 2.5.3 표의 '단계 미지정' "

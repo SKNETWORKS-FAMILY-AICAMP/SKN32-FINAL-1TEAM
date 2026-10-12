@@ -34,7 +34,7 @@ class PartnerContractError(ValueError):
 
 # ── 양식 항목 ─────────────────────────────────────────
 def form_items(form: FormSpec, kind: str) -> list[tuple[str, str, str | None, str]]:
-    """양식의 계획서 항목 (번호, 제목, 태그, 종류) — 양식 순서. 태그 칸이 항목 수와 맞지 않으면 짝짓기 표(rework_map),
+    """양식의 계획서 항목 (번호, 제목, 태그, 종류) — 양식 순서. 태그 칸이 항목 수와 맞지 않으면 항목별 재작성 묶음 표(rework_map),
     종류 칸이 맞지 않으면 담당자 계약의 contentType으로 채운다."""
     codes, titles = list(form.section_codes), list(form.section_titles)
     specs = section_specs(kind)

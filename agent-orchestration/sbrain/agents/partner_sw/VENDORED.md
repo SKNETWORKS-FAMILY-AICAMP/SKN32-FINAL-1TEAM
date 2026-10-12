@@ -114,7 +114,7 @@ def run_one(code):                                                  # 또는 스
 2. 2절 목록의 파일마다 **옛 원본 사본 ↔ 새 원본**을 비교해 담당자가 바꾼 곳을 찾는다(우리 사본끼리 비교하지 않는다 — 3절 변경이 섞인다).
 3. 담당자가 바꾼 파일은 새 원본을 복사한 뒤 3절 표의 변경을 다시 적용한다(`[S-Brain]` 주석 자리). 자료 파일(JSON · MD)은 그대로 덮어쓴다.
 4. 새 판에 OpenAI 직접 호출 · `os.getenv` · `datetime.now` · `.env` 읽기 · `time.sleep` · 실행 중 파일 읽기가 새로 생겼는지 본다(`tests/test_partner_sw_vendor.py`의 소스 검사 · 파일 접근 차단 테스트가 잡는다).
-5. `execution_contract.json`의 항목 · 함수 · `apiModel`이 바뀌었으면 양식 묶음(`tests/test_partner_sw_forms.py`) · 함수별 모델 기본값(`orchestrator/settings.py` `_default_tasks`) · 짝짓기 표(`flow/rework_map.py`)를 함께 본다.
+5. `execution_contract.json`의 항목 · 함수 · `apiModel`이 바뀌었으면 양식 묶음(`tests/test_partner_sw_forms.py`) · 함수별 모델 기본값(`orchestrator/settings.py` `_default_tasks`) · 항목별 재작성 묶음 표(`flow/rework_map.py`)를 함께 본다.
 6. 이 문서의 1절 날짜 · 버전과 2 · 3절 목록을 고친다.
 
 ## 6. 저장소 사본에서 뺀 경로
