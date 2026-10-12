@@ -291,3 +291,52 @@ class FeatureDetailPromptTests(TestCase):
         self.assertGreater(limit(2), limit(3))
         self.assertGreater(limit(3), limit(4))
         self.assertEqual(limit(4), int(re.search(r"(\d+)자를 넘기지 마라", self._prompt(None)).group(1)))
+
+
+class DomainThemeTests(TestCase):
+    """분야 낱말이 없으면 LLM에게 분야를 묻는다(실측: 여행 · 부동산이 AI 낱말에 걸려 보라, 전동킥보드는 이름 해시로 장미)."""
+
+    class _Tools:
+        def __init__(self, reply=None, fail=False):
+            self.reply, self.fail, self.calls = reply, fail, []
+
+        def llm(self, messages, *, parse=None, purpose=""):
+            self.calls.append((purpose, messages[-1]["content"]))
+            if self.fail:
+                raise RuntimeError("호출 실패")
+            return parse(self.reply)
+
+    def test_domain_word_wins_without_asking(self):
+        from engineering_agent.infographic import themes
+
+        tools = self._Tools('{"domain": "tech"}')
+        self.assertEqual(themes.decide({"item_name": "반려동물 피부 AI 앱"}, tools), "rose")
+        self.assertEqual(tools.calls, [])
+
+    def test_tech_or_unknown_item_asks_for_the_domain(self):
+        from engineering_agent.infographic import themes
+
+        tools = self._Tools('{"domain": "outdoor"}')
+        data = {"item_name": "제주 맞춤 여행 코스 추천", "item_summary": "AI가 제주 여행 코스를 추천", "features": ["코스 추천"]}
+        self.assertEqual(themes.decide(data, tools), "green")
+        purpose, asked = tools.calls[0]
+        self.assertEqual(purpose, "사업 분야 판정(색)")
+        self.assertEqual(asked, "아이템: 제주 맞춤 여행 코스 추천\n한 줄 소개: AI가 제주 여행 코스를 추천")
+
+    def test_failure_or_bad_answer_falls_back_to_word_and_name_rules(self):
+        from engineering_agent.infographic import themes
+
+        tech = {"item_name": "AI 여행 추천"}
+        self.assertEqual(themes.decide(tech, self._Tools(fail=True)), "violet")
+        self.assertEqual(themes.decide(tech, self._Tools('{"domain": "space"}')), "violet")
+        plain = {"item_name": "전동킥보드 공유 관리"}
+        self.assertEqual(themes.decide(plain, None), themes.pick(plain))
+
+    def test_pick_uses_the_decided_theme_for_the_whole_page(self):
+        from engineering_agent.infographic import design, themes
+
+        data = {"item_name": "AI 여행 추천", "_theme": "green"}
+        self.assertEqual(themes.pick(data), "green")
+        self.assertEqual(themes.pick({"item_name": "AI 여행 추천", "_theme": "없는 색"}), "violet")
+        out = design.apply("웹개발", dict(data, features=["코스 추천"], problem="p", solution="s"))
+        self.assertEqual(out["_design"]["art_style"], "평면")  # green은 소비자 대상 분야 그림체

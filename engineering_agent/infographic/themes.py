@@ -2,14 +2,16 @@
 
 본문 builder(onepage.py · bodies.py)는 기본 테마(teal) 색으로 그리고, 저장 직전에
 apply()가 기본 색을 고른 테마 색으로 바꾼다. 테마는 아이템명 · 한 줄 소개 · 목표 고객 ·
-기능명의 낱말로 정하고, 맞는 낱말이 없으면 아이템명으로 정한다 — 같은 아이템은 다시
-만들어도 같은 색이 나온다.
+기능명의 낱말로 정한다. 사업 분야 낱말이 없으면(기술 낱말만 맞거나 아무것도 안 맞으면)
+decide()가 LLM에게 분야를 묻는다 — 여행 · 부동산 · 모빌리티 같은 분야가 AI 낱말에 걸려 보라로,
+또는 이름 해시로 엉뚱한 색이 되던 것을 막는다. LLM 호출이 안 되면 낱말 · 이름 규칙으로 돌아간다.
 
 모든 테마의 글자색은 흰 패널 · 옅은 배경 위에서 명도 대비 4.5:1 이상이어야 한다
 (검증-2 원페이지 3번). tests가 테마마다 확인한다.
 """
 from __future__ import annotations
 
+import json
 import zlib
 
 # 바꿀 자리. 값은 기본 테마(teal)의 색이며 onepage.C · 템플릿 배경과 같아야 한다.
@@ -50,15 +52,82 @@ _KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-def pick(data: dict) -> str:
+def _keyword_theme(data: dict) -> str | None:
     text = " ".join([str(data.get("item_name", "")), str(data.get("item_summary", "")),
                      str(data.get("target_users", ""))]
                     + [str(f) for f in data.get("features") or []])
     for name, words in _KEYWORDS:
         if any(word in text for word in words):
             return name
+    return None
+
+
+def _name_theme(data: dict) -> str:
     names = sorted(THEMES)
     return names[zlib.crc32(str(data.get("item_name", "")).encode("utf-8")) % len(names)]
+
+
+def pick(data: dict) -> str:
+    """이 지면의 테마. decide()가 정해 data['_theme']에 넣어 두었으면 그것을 쓴다(한 지면 안의 색 · 그림 ·
+    구역 틀이 같은 테마를 보게). 없으면 낱말 → 이름 규칙."""
+    chosen = data.get("_theme")
+    if chosen in THEMES:
+        return chosen
+    return _keyword_theme(data) or _name_theme(data)
+
+
+# LLM에게 물을 때의 분야 → 테마. 시험(아이템 9개 × 5번): 8개는 5번 모두 같은 답, 애매한 1개(체형 맞춤 의류)만 4:1.
+_DOMAINS: dict[str, tuple[str, str]] = {
+    "food": ("orange", "음식 · 외식 · 식품 · 배달"),
+    "industry": ("steel", "제조 · 공장 · 설비 · 물류 · 건설 · 모빌리티"),
+    "outdoor": ("green", "농업 · 환경 · 에너지 · 여행 · 관광 · 야외"),
+    "care": ("rose", "건강 · 의료 · 뷰티 · 반려동물 · 육아 · 패션"),
+    "public": ("blue", "교육 · 행정 · 공공 · 금융 · 보험 · 법률 · 부동산"),
+    "commerce": ("teal", "유통 · 판매 · 매장 · 커머스 · 스포츠"),
+    "tech": ("violet", "AI · 데이터 · 소프트웨어 · 게임 · 콘텐츠 · 미디어(분야가 기술 그 자체일 때만)"),
+}
+_DOMAIN_SYSTEM = ("사업 아이템의 분야를 아래 목록에서 하나만 고른다. 기술(AI · 데이터)을 쓰더라도 그 기술이 쓰이는 "
+                  "사업 분야를 고른다.\n"
+                  + "\n".join(f"- {key}: {desc}" for key, (_, desc) in _DOMAINS.items())
+                  + '\n답은 JSON 객체 하나만: {"domain": "목록의 키"}')
+
+
+def _parse_domain(text) -> str:
+    raw = str(text or "")
+    start, end = raw.find("{"), raw.rfind("}")
+    try:
+        domain = json.loads(raw[start:end + 1]).get("domain") if 0 <= start < end else None
+    except (ValueError, AttributeError):
+        domain = None
+    if domain not in _DOMAINS:
+        # tools가 다시 부르게 형식 오류로 올린다(조율 FormatError가 있으면 그것, 없으면 ValueError).
+        try:
+            from sbrain.orchestrator.errors import FormatError
+        except ImportError:
+            raise ValueError("분야 판정 응답이 목록의 키가 아님") from None
+        raise FormatError("분야 판정 응답이 목록의 키가 아님")
+    return domain
+
+
+def decide(data: dict, tools=None) -> str:
+    """사업 분야 낱말이 맞으면 그 테마. 기술 낱말만 맞거나 아무것도 안 맞으면 LLM에게 분야를 묻는다.
+
+    T-B1(HTML)과 T-B2(인포그래픽)가 각자 부른다. 질문에는 아이템명 · 한 줄 소개만 넣는다. 애매한 아이템은 두 답이
+    갈려 HTML과 인포그래픽 색이 다를 수 있는데, 둘이 같을 필요는 없다(담당자, 2026-10-12).
+    색은 꾸밈이라 호출이 실패하면 예외를 내지 않고 낱말 · 이름 규칙으로 돌아간다."""
+    found = _keyword_theme(data)
+    if found and found != "violet":
+        return found
+    if tools is not None and callable(getattr(tools, "llm", None)):
+        item = f"아이템: {data.get('item_name', '')}\n한 줄 소개: {data.get('item_summary', '')}"
+        try:
+            domain = tools.llm([{"role": "system", "content": _DOMAIN_SYSTEM},
+                                {"role": "user", "content": item}],
+                               parse=_parse_domain, purpose="사업 분야 판정(색)")
+            return _DOMAINS[domain][0]
+        except Exception:  # noqa: BLE001 — 색 때문에 Task를 멈추지 않는다
+            pass
+    return found or _name_theme(data)
 
 
 def apply(svg: str, theme: str) -> str:
