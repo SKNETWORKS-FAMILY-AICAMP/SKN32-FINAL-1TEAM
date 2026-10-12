@@ -6,7 +6,7 @@
 
 | 항목 | 값 |
 |---|---|
-| 받은 날짜 | 2026-10-08 (첫 판), 2026-10-12 (새 판 — 담당자 브랜치 `feature/SB-124-Artifact-Generation-Agent`의 `d942f00`) |
+| 받은 날짜 | 2026-10-08 (첫 판), 2026-10-12 (새 판 — 담당자 브랜치 `feature/SB-124-Artifact-Generation-Agent`의 `d942f00`, 같은 날 `c4bddfb`까지) |
 | 원본 사본(읽기 전용) | 담당자 브랜치의 `engineering_agent/` · `verification_agent/` (작업 공간에 받아 둠) |
 | 의존 | 표준 라이브러리 + pydantic(이미 고정 목록에 있음). 새 패키지 없음 |
 
@@ -14,6 +14,11 @@
 - `verification_agent/rules/gates.py` `external_refs` 더함 · `rules/r4.py` 코드 점검 7번이 외부 의존(외부 주소나 함께 오지 않는 파일을 가리키는 script src · stylesheet · img src · `@import` · `url(...)`, `data:` · `blob:` · `#`는 제외)도 미충족으로 본다(문구 `외부 의존 N개: …`). T-B1 자체 검사 E-B1-DEP와 같은 기준이다.
 - `engineering_agent/builder_html.py` `_first_gate_failure` 더함 — 자체 검사(외부 의존 · 샌드박스 · 비밀값)에 걸려도 끼워 넣은(`decorate`) HTML과 진입 파일을 돌려주고 `status`만 `failed`다(우리가 10-11에 연결 코드로 하던 일과 같은 결과).
 - `engineering_agent/builder_html.py` 계획서 길이 12,000자 → 20,000자(`_PLAN_CHARS` · `_PLAN_TAIL_CHARS` · `_plan_for_prompt` — 넘치면 앞 16,000자 + 끝 4,000자, 사용자 허락 2026-10-12).
+
+**같은 날 `c4bddfb`까지(커밋 3개 — 색, 파일 셋, 모두 다시 가져왔다):**
+- `engineering_agent/infographic/themes.py` — 통째로 새 원본(우리 변경 없는 파일). `decide(data, tools)` 더함: 사업 분야 낱말이 맞으면 그 테마, 기술 낱말(보라)만 맞거나 아무것도 안 맞으면 `tools.llm`(목적 `사업 분야 판정(색)`, 보내는 것은 아이템명 · 한 줄 소개 두 줄)로 분야(7개 중 하나)를 물어 테마를 정한다. 응답이 목록 키가 아니면 `FormatError`(재시도), 재시도 소진은 받지 않고 올린다. `pick`은 미리 정한 `_theme`을 먼저 본다.
+- `engineering_agent/tasks.py` `run_tb2` — 입력값을 옮겨 담은 뒤 `content["_theme"] = themes.decide(content, tools)`(import에 `themes` 더함 — `[S-Brain]` 상대 import 줄).
+- `engineering_agent/builder_html.py` `palette` — docstring만(T-B1 색은 LLM 없이 낱말 · 이름 규칙 그대로 — 인포그래픽과 색이 다를 수 있다).
 
 ## 2. 옮긴 파일
 
@@ -58,7 +63,7 @@
 | `verification_agent/tasks.py` `run_tv2` 합계 (2026-10-11, 실제 호출 확인 뒤) | `ArtifactScore.total = code.total + feature.score` → `round(…, 2)` | 실제 원페이지 채점에서 15.0 + 14.06이 `29.060000000000002`로 나왔다(소수 계산 오차). 원점수 칸은 웹으로 그대로 나가므로 소수 둘째 자리로 맞춘다. 두 원점수 · 채점 규칙은 그대로 |
 
 **바꾸지 않은 것(알려 둘 것)**
-- 담당자 프롬프트 · 자체 검사 규칙(진입 파일 → 외부 의존 → 샌드박스 → 비밀값, 첫 실패에서 멈춤) · 코드 점검 8항목 · 대조 공식 · 지면 조립 · 아이콘판 그리기 · 호출 목적 문구(`T-B1 HTML 생성` · `T-B2 인포그래픽 정보 추출` · `인포그래픽 아이콘` · `계획서 대조 요소: {기능}` · `계획서 대조: {기능 또는 칸}`).
+- 담당자 프롬프트 · 자체 검사 규칙(진입 파일 → 외부 의존 → 샌드박스 → 비밀값, 첫 실패에서 멈춤) · 코드 점검 8항목 · 대조 공식 · 지면 조립 · 아이콘판 그리기 · 호출 목적 문구(`T-B1 HTML 생성` · `T-B2 인포그래픽 정보 추출` · `사업 분야 판정(색)` · `인포그래픽 아이콘` · `계획서 대조 요소: {기능}` · `계획서 대조: {기능 또는 칸}`).
 - `engineering_agent/gates.py`(T-B1 자체 검사)의 진입 파일 문구(`진입 파일 'index.html'이 생성된 파일 목록에 없음: [모델이 지은 이름들]`)는 그대로다 — spec 4.1 표가 경로 · 이름을 빼라고 한 것은 검증-2 진단 문구다. 이 문구는 T-B1 `check.failures`(산출물 값)로 간다.
 - `verification_agent/rules/gates.py` `svg_gates`의 `SVG 파싱 실패: {exc}`(파서 오류 위치 — 내용 없음)는 그대로다.
 - T-B2 아이콘판의 넓은 예외 받기(`artsheet.generate`의 `except Exception` → `None`, 기본 아이콘)는 그대로다(T-B2는 `tools.image` 실패를 받아도 된다).

@@ -16,7 +16,7 @@ from bv_fake import CONTENT, ELEMENTS, HTML, MARK, VARIANTS, BvProvider, EchoIma
 from conftest import TIMING
 
 from sbrain.agents.partner_bv.engineering_agent import html_kit
-from sbrain.agents.partner_bv.engineering_agent.infographic import artsheet, fonts, illustrations
+from sbrain.agents.partner_bv.engineering_agent.infographic import artsheet, fonts, illustrations, themes
 from sbrain.agents.partner_bv.tasks import IMAGE_TASKS, IMPLEMENTED, IMPLEMENTED_TASKS, bind_partner_bv
 from sbrain.agents.partner_bv.verification_agent import llm_judge
 from sbrain.agents.partner_bv.verification_agent.tasks import plan_text_of
@@ -240,6 +240,58 @@ def test_tb2_requests_carry_plan_and_item_and_icon_prompt_has_no_numbers():
     assert "회원 정보를 입력하면 목록에 보여 준다" in user                            # 계획서 본문
     [img] = image.requests
     assert "아이콘 모음판" in img.prompt and "4567" not in img.prompt                 # 아이콘판 지시문은 숫자를 지운다
+
+
+TRAVEL = ["일정 짜기", "숙소 고르기"]           # 분야 낱말(themes._KEYWORDS)이 없는 아이템
+
+
+def travel_in() -> c.TB2In:
+    spec = ItemSpec(item_name="길동무", one_line_summary="혼자 떠나는 여행 일정 도우미", target_customer="1인 여행객",
+                    core_features=TRAVEL, category="웹개발", keywords=["여행"])
+    return c.TB2In(plan_doc=plan(TRAVEL, [f"{TRAVEL[0]}: 날짜를 고르면 일정을 보여 준다.",
+                                          f"{TRAVEL[1]}: 지역을 고르면 숙소를 보여 준다."]),
+                   item_spec=spec, category="웹개발", instruction=INSTRUCTION)
+
+
+def travel_content() -> dict:
+    return dict(CONTENT, item_name="길동무", features=TRAVEL, target_users="1인 여행객",
+                feature_details=[{"name": TRAVEL[0], "detail": "날짜를 고르면 일정을 보여 준다"},
+                                 {"name": TRAVEL[1], "detail": "지역을 고르면 숙소를 보여 준다"}])
+
+
+def test_tb2_asks_business_field_only_without_field_keyword():
+    """담당자 10-12 판(c4bddfb): 분야 낱말이 없으면 T-B2가 LLM에 분야를 묻고(아이템명 · 한 줄 소개만) 그 테마 색으로 그린다.
+    분야 낱말이 있으면(헬스온 — '헬스') 묻지 않는다."""
+    p = BvProvider(content=travel_content())
+    tools, _, store = bv_tools(p, "T-B2", image=EchoImage())
+    out = IMPLEMENTED["T-B2"](travel_in(), tools)
+    [ask] = [r for r in p.requests if r.metadata["purpose"] == "사업 분야 판정(색)"]
+    user = ask.messages[-1]["content"]
+    assert user.startswith("아이템: 길동무\n한 줄 소개: ") and user.count("\n") == 1   # 두 줄뿐
+    assert MARK not in user and "날짜를 고르면" not in user                         # 계획서 · 산출물 글은 싣지 않는다
+    assert themes.THEMES["green"]["accent"] in read(store, out.infographic.image_file)   # outdoor → green
+
+    p2 = BvProvider()
+    tools2, _, _ = bv_tools(p2, "T-B2", image=EchoImage())
+    IMPLEMENTED["T-B2"](tb2_in("웹개발"), tools2)
+    assert "사업 분야 판정(색)" not in p2.purposes()
+
+
+def test_tb2_business_field_call_failure_is_raised():
+    p = BvProvider(content=travel_content())
+    p.scripts["사업 분야 판정(색)"] = ["timeout", "timeout"]
+    tools, _, _ = bv_tools(p, "T-B2", image=EchoImage())
+    with pytest.raises(ToolCallExhausted):
+        IMPLEMENTED["T-B2"](travel_in(), tools)
+
+
+def test_tb1_colors_never_ask_business_field():
+    p = BvProvider()
+    tools, _, _ = bv_tools(p, "T-B1")
+    spec = travel_in().item_spec
+    IMPLEMENTED["T-B1"](c.TB1In(feature_list=TRAVEL, item_spec=spec, category="웹개발", instruction=INSTRUCTION,
+                                plan_doc=plan(TRAVEL)), tools)
+    assert p.purposes() == ["T-B1 HTML 생성"]
 
 
 # ── T-V2 ──────────────────────────────────────────────────

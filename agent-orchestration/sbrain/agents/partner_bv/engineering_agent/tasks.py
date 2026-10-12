@@ -5,7 +5,7 @@ import re
 from typing import TYPE_CHECKING
 
 from .builder_html import build_prototype_html, feature_notes  # [S-Brain] 패키지 상대 import
-from .infographic import artsheet, design  # [S-Brain] 패키지 상대 import
+from .infographic import artsheet, design, themes  # [S-Brain] 패키지 상대 import
 from .infographic.compose_guide import FIX_HINT, RETRY_HINT  # [S-Brain] 패키지 상대 import
 from .infographic import (  # [S-Brain] 패키지 상대 import
     generate_infographic_content,
@@ -289,6 +289,9 @@ def run_tb2(inp: TB2In, tools: Tools) -> TB2Out:
         by_name[key] = None if key in by_name and by_name[key] != detail else detail
     keys = [_norm_name(f) for f in inp.plan_doc.feature_list]
     content["feature_details"] = ["" if keys.count(k) > 1 else by_name.get(k) or "" for k in keys]
+    # 색 테마를 한 번 정해 두고 그림체 · 구역 틀 · 그림 · 지면 색이 모두 이 값을 쓴다(themes.pick이 _theme을 먼저 본다).
+    # 분야 낱말이 없으면 LLM에게 분야를 묻는다(themes.decide).
+    content["_theme"] = themes.decide(content, tools)
     # 지면 구성 · 대표 그림 · 그림체를 재료가 보여 주는 관계로 정한다(design.py). 입력값을 옮겨 담은 뒤에
     # 정해야 목표 고객 · 기능 수가 판단에 들어간다. 그림(artsheet)보다 먼저 — 그림 칸이 구성을 따른다.
     content = design.apply(inp.category, content, redesign=redesign)
