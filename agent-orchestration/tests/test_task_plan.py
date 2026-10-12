@@ -136,7 +136,36 @@ def test_frames_branch_only_for_prototype_tasks():
     assert plan.frame_for("T-B1", "웹개발") != plan.frame_for("T-B1", "AI_API")
     assert "SVG" in plan.frame_for("T-B2", "원페이지") and "SVG" not in plan.frame_for("T-B2", "웹개발")
     assert "coreFeatures" in plan.frame_for("T-S1", "웹개발")
-    assert "applyEnd" in plan.frame_for("T-W1", "웹개발")
+    assert "applyEnd" not in plan.frame_for("T-W1", "웹개발") and "개발 종료월" in plan.frame_for("T-W1", "웹개발")
+
+
+# T-W1 · T-W3 일정 규칙의 네 가지 뜻 — 기준(개발 종료월) · 협약 이후 · 사용자 일정 보존(확인 필요) · 접수 마감일은 기준 아님
+SCHEDULE_RULE_WORDS = ("개발 종료월", "협약 이후", "확인 필요", "접수 마감일")
+
+
+@pytest.mark.parametrize("task_id", ["T-W1", "T-W3"])
+@pytest.mark.parametrize("category", ["웹개발", "AI_API", "원페이지"])
+def test_writing_frames_schedule_rules_follow_development_end(task_id, category):
+    """일정 기준은 공고 접수 마감일(applyEnd)이 아니라 개발 종료월이다 — 담당자 울타리와 같다.
+    지원규모 상한 규칙과 우선 규칙은 그대로다."""
+    frame = plan.frame_for(task_id, category)
+    assert "applyEnd" not in frame
+    assert all(word in frame for word in SCHEDULE_RULE_WORDS), [w for w in SCHEDULE_RULE_WORDS if w not in frame]
+    assert "넘어도" not in frame                                   # 협약 이후 일정에 늦은 날짜를 권하지 않는다
+    assert "supportAmountMax" in frame and plan.FRAME_PRIORITY_RULE in frame
+    assert '"' not in frame and "\\" not in frame                 # 요청 글자에서 json.dumps로 찾는다(test_tc3)
+
+
+def test_writing_frames_keep_other_rules():
+    """일정 규칙만 바뀌고 T-W1 · T-W3의 다른 규칙은 그대로다."""
+    w1 = plan.frame_for("T-W1", "웹개발").splitlines()
+    w3 = plan.frame_for("T-W3", "웹개발").splitlines()
+    assert "- 양식의 필수 섹션 코드와 1:1로 쓴다." in w1
+    assert "- 자금 합계는 지원규모 상한(선택 공고 supportAmountMax, 있으면)을 넘지 않는다." in w1
+    assert "- 수익모델 단가 · 경력은 회사 정보 값만 쓰고, 입력에 없는 경력을 지어내지 않는다." in w1
+    assert "- 자금운용표 합계는 지원규모 상한(선택 공고 supportAmountMax, 있으면) 이하다." in w3
+    assert "- 머리글과 행의 칸 수가 같다." in w3
+    assert all("applyEnd" not in plan.frame_for(t, "웹개발") for t in INSTRUCTED)
 
 
 @pytest.mark.parametrize("category", ["웹개발", "AI_API"])

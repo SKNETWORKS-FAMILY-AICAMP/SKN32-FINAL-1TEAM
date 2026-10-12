@@ -395,6 +395,14 @@ def test_prompt_says_company_info_reaches_agents_separately():
     assert "따로 받는다" in plan.GUIDANCE_COMMON_RULES and "마크다운" in plan.GUIDANCE_COMMON_RULES
 
 
+def test_common_rules_say_period_and_schedule_reach_agents_separately():
+    """개발 기간 · 추진 일정도 지시를 받는 Agent가 따로 받는다 — T-C3 · 다시 쓰기 프롬프트가 같은 상수를 싣는다."""
+    from sbrain.agents.supervisor import rewrite
+    first = plan.GUIDANCE_COMMON_RULES.splitlines()[0]
+    assert "개발 기간" in first and "추진 일정" in first and "따로 받는다" in first
+    assert plan.GUIDANCE_COMMON_RULES in tc3.SYSTEM and plan.GUIDANCE_COMMON_RULES in rewrite.SYSTEM_PROMPT
+
+
 # ── 동시 호출 · 실패 순서 · 받은 안내 이어 쓰기 ──────────────────────
 SECRET = "SECRET-GUIDE"
 
