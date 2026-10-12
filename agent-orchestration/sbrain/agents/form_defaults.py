@@ -11,8 +11,9 @@
   (2.1.1 ~ 2.7.4, 25개), 개인사업자 · 법인 → early_startup(3.1.1 ~ 3.7.4, 24개). 항목 · 제목 · 종류는 담당자
   execution_contract.json에서 읽는다(손으로 옮겨 적지 않음 — 담당자 새 판을 받으면 저절로 따라간다).
   - 항목마다 웹 태그(sectionTags)는 flow/rework_map.py의 짝짓기 표에서 끌어낸다(잠정 — 담당자 · 웹 확인 대기).
-  - 평가항목 = 계획서 항목 하나하나: itemCode = 항목 번호, itemName = 제목 앞 40자(잠정), maxScore = 기본 문서층 배점
-    (70) ÷ 항목 수, description = 제목 전체. 실행 때 쓰는 문서층 배점은 실행 설정(scoring.docLayerMax)이다.
+  - displayTitle이 있으면 화면 제목 · 평가항목 이름에 쓰고, 없으면 기존 title을 사용한다. 평가항목 description과 작성 지시는
+    기존 title을 유지한다. itemCode = 항목 번호, itemName은 화면 제목 앞 40자, maxScore = 기본 문서층 배점 (70) ÷ 항목 수.
+    실행 때 쓰는 문서층 배점은 실행 설정(scoring.docLayerMax)이다.
   - 채점 기준표 = 평가항목과 1:1: rubricId 'partner-sw', version = 담당자 채점 정책 버전(evaluation_rubric.json),
     criteria = 담당자 항목 기준(criteria_registry, 없으면 제목), scoreBands = [{min 0, max maxScore}], evidenceRequired 참.
   - formVersion = '<담당자 문서 유형>@<계약 버전>'. 일반형(general) 계약은 데이터로 남지만 고르지 않는다.
@@ -78,18 +79,20 @@ def _partner_bundle(document_type: str, applicant_types: list[str]) -> FormBundl
     """담당자 문서 유형의 계약 항목으로 묶음을 만든다 (spec 4.6)."""
     specs = partner.document_specs(document_type)
     codes = [str(s["sectionId"]) for s in specs]
-    titles = [str(s["title"]) for s in specs]
+    # displayTitle은 화면·항목 목록용 짧은 이름이다. 기존 title은 작성 지시와 평가 설명에 보존한다.
+    titles = [str(s.get("displayTitle") or s["title"]) for s in specs]
+    instructions = [str(s["title"]) for s in specs]
     form = FormSpec(form_version=f"{document_type}@{partner.CONTRACT_VERSION}", applicant_types=applicant_types,
                     section_codes=codes, section_titles=titles,
                     max_chars_per_section=None, format_spec=_default_format(), attachment_required=False,
                     section_tags=section_tags(codes), section_kinds=[s["contentType"] for s in specs])
     max_score = DOC_LAYER_BASE / len(codes)
-    items = [EvalItem(item_code=code, item_name=title[:ITEM_NAME_CHARS], max_score=max_score, description=title)
-             for code, title in zip(codes, titles)]
+    items = [EvalItem(item_code=code, item_name=title[:ITEM_NAME_CHARS], max_score=max_score, description=instruction)
+             for code, title, instruction in zip(codes, titles, instructions)]
     rubric = Rubric(rubric_id=PARTNER_RUBRIC_ID, version=partner.SCORE_POLICY_VERSION, items=[
-        RubricItem(item_code=code, criteria=partner.section_criteria(document_type, code) or [title],
+        RubricItem(item_code=code, criteria=partner.section_criteria(document_type, code) or [instruction],
                    score_bands=[{"min": 0, "max": max_score}], evidence_required=True)
-        for code, title in zip(codes, titles)])
+        for code, instruction in zip(codes, instructions)])
     return FormBundle(form, items, rubric)
 
 
