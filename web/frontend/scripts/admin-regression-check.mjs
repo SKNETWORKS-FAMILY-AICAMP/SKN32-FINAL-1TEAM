@@ -97,5 +97,13 @@ try{
   ui=mount(admin.PolicyTab,{pushToast:()=>{}});await ui.flush();
   ui.nodes().filter(n=>n.type==='input'&&n.props.type==='number')[3].props.onChange({target:{value:''}});await ui.flush();
   await ui.button('판정 기준 저장').props.onClick();assert.equal(writes,0);ui.unmount();
+  // 배점은 합이 100이어도 한 칸이라도 0이면 저장하지 않는다(서버도 422).
+  const weightToasts=[];
+  ui=mount(admin.PolicyTab,{pushToast:(title,message,tone)=>weightToasts.push({title,message,tone})});await ui.flush();
+  const nums=()=>ui.nodes().filter(n=>n.type==='input'&&n.props.type==='number');
+  nums().find(n=>String(n.props.value)==='70').props.onChange({target:{value:'85'}});await ui.flush();
+  nums().find(n=>String(n.props.value)==='15').props.onChange({target:{value:'0'}});await ui.flush();
+  await ui.button('배점 저장').props.onClick();assert.equal(writes,0);
+  assert.equal(weightToasts.at(-1).tone,'danger');assert.ok(weightToasts.at(-1).message.includes('0보다 커야'));ui.unmount();
   console.log('PASS: success status, search/history races, history errors, agent retry recovery, file deletion alerts · retry, FAQ write serialization, blank policy rejection');
 }finally{await server.close()}

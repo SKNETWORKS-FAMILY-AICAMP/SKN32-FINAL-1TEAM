@@ -75,6 +75,14 @@ try{
   const {budgetAmountFields}=await server.ssrLoadModule('/src/features/workflow/ProjectPlanFields.jsx');
   assert.deepEqual(budgetAmountFields(true).map(f=>f[1]),['정부지원사업비','자기부담금']);
   assert.deepEqual(budgetAmountFields(false).map(f=>f[1]),['정부지원사업비','자기부담 현금','자기부담 현물']);
+  // 생성된 HTML은 외부 요청을 막는 CSP를 head 맨 앞에 넣어 연다(head가 없으면 html 뒤, 그것도 없으면 맨 앞).
+  const {isolateHtml,SANDBOX_CSP}=await server.ssrLoadModule('/src/features/workflow/ArtifactResult.jsx');
+  const csp=`<meta http-equiv="Content-Security-Policy" content="${SANDBOX_CSP}">`;
+  assert.equal(isolateHtml('<!doctype html><html lang="ko"><head><script src="https://cdn.x/a.js"></script></head></html>'),
+    `<!doctype html><html lang="ko"><head>${csp}<script src="https://cdn.x/a.js"></script></head></html>`);
+  assert.equal(isolateHtml('<html><body>x</body></html>'),`<html>${csp}<body>x</body></html>`);
+  assert.equal(isolateHtml('<div>x</div>'),`${csp}<div>x</div>`);
+  assert.ok(SANDBOX_CSP.includes("default-src 'none'")&&SANDBOX_CSP.includes("connect-src 'none'"));
   // 금액 칸이 비어 있거나(0은 된다) 추진 기간에 연도가 없으면 넘어가지 않는다.
   for(const [bad,anchor] of [[{budget:[{...draft.budget[0],cash:''}]},'intake-budget'],[{schedule:{feasibility:[{...draft.schedule.feasibility[0],period:'11월 ~ 1월'}]}},'intake-schedule']]){
     submitted=null;ui=mount(IntakeForm,{initialValues:{...draft,...bad},onSubmit:info=>{submitted=info}});await ui.flush();

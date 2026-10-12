@@ -29,19 +29,40 @@ export function InfographicMock({ src = null }){
 // expect='image'를 주면 받아온 파일이 실제 이미지인지까지 본다. 서버의 구현 Agent가
 // 인포그래픽도 .html로 만들어 보내는 경우가 있는데(app/agents.py run_implement_agent_retry),
 // 그대로 <img>에 걸면 깨진 이미지 자리만 남고 사용자는 이유를 알 수 없다.
+// LLM이 만든 HTML에서 외부 주소 요청(CDN 스크립트 · 외부 스타일 · 이미지 · fetch 등)을 막는다. sandbox iframe은
+// 로그인 쿠키 · 웹 저장소만 막고 네트워크는 막지 않는다 — 검증-2도 외부 의존을 감점하지 않아(조율 10-11 5번) 화면이
+// 막아야 한다. 문서 맨 앞(head 안)에 CSP meta를 넣는다. 인라인 스크립트 · 스타일과 data: · blob: 자원은 허용한다
+// (구현 Agent는 글꼴 · 아이콘을 data URI로 넣는다).
+export const SANDBOX_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; "
+  + "font-src data:; media-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'";
+export function isolateHtml(html){
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${SANDBOX_CSP}">`;
+  const text = String(html || '');
+  for (const re of [/<head(\s[^>]*)?>/i, /<html(\s[^>]*)?>/i]) {
+    const m = re.exec(text);
+    if (m) return text.slice(0, m.index + m[0].length) + meta + text.slice(m.index + m[0].length);
+  }
+  return meta + text;
+}
+const isHtmlFile = (path, blob) => (blob.type || '').includes('html') || /\.html?$/i.test(String(path).split('?')[0]);
+
 export function useArtifactFile(path, { expect } = {}){
   const [state, setState] = useState({ url: null, failed: false });
   useEffect(() => {
     if (!path) { setState({ url: null, failed: false }); return; }
     let cancelled = false, objectUrl = '';
     setState({ url: null, failed: false });
-    fetchUploadBlob(path).then((blob) => {
+    fetchUploadBlob(path).then(async (fetched) => {
       if (cancelled) return;
-      if (expect === 'image' && blob.type && !blob.type.startsWith('image/')) {
-        console.error('인포그래픽 자리에 이미지가 아닌 파일이 왔어요', path, blob.type);
+      if (expect === 'image' && fetched.type && !fetched.type.startsWith('image/')) {
+        console.error('인포그래픽 자리에 이미지가 아닌 파일이 왔어요', path, fetched.type);
         setState({ url: null, failed: true });
         return;
       }
+      const blob = expect !== 'image' && isHtmlFile(path, fetched)
+        ? new Blob([isolateHtml(await fetched.text())], { type: 'text/html;charset=utf-8' })
+        : fetched;
+      if (cancelled) return;
       objectUrl = URL.createObjectURL(blob);
       setState({ url: objectUrl, failed: false });
     }).catch((err) => {
@@ -374,7 +395,7 @@ export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcom
                 <p className="font-bold text-[14.5px] mb-1">인포그래픽</p>
                 <p className="text-[12.5px] text-[var(--muted-fg)] mb-3">사업계획서에 삽입할 요약 인포그래픽입니다</p>
                 <div className="flex items-center justify-between text-[12px] font-mono text-[var(--muted-fg)]">
-                  <span>{(artifact?.infographic_path||'infographic.png').split('/').pop()}</span>
+                  <span>{(artifact?.infographic_path||'infographic.svg').split('/').pop()}</span>
                   <button onClick={()=>setPreview("info")} className="font-semibold text-[var(--primary)] hover:underline">미리보기</button>
                 </div>
               </div>

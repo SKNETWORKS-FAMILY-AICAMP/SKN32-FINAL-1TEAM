@@ -1072,6 +1072,8 @@ function PolicyTab({pushToast}){
 
   const saveScores=async()=>{
     if(!Object.values(scores).every(v=>validNumber(v,100))){pushToast('배점을 저장하지 못했습니다','각 배점에 0~100 사이의 숫자를 입력해 주세요.','danger');return}
+    // 배점이 0인 층은 환산 점수가 늘 0이 된다(조율 10-11 6번) — 서버도 세 칸 모두 0보다 커야 받는다.
+    if(!Object.values(scores).every(v=>Number(v)>0)){pushToast('배점을 저장하지 못했습니다','문서층 · 코드 기준 · 계획서 대조 배점은 모두 0보다 커야 합니다.','danger');return}
     if(Math.round(scoreSum*100)!==10000){pushToast('배점을 저장하지 못했습니다','문서층·코드 기준·계획서 대조 배점의 합이 100점이어야 합니다. (현재 '+scoreSum+'점)','danger');return}
     try{
       await api.put('/admin/policy/scores',{doc_weight:Number(scores.doc),code_weight:Number(scores.code),plan_weight:Number(scores.plan)});
