@@ -7,13 +7,14 @@ import CapabilityTeam from './CapabilityTeam.jsx';
 import { missingRequiredFields } from './derive.js';
 import { focusSection, inputCls } from './ui.jsx';
 
-const TABS = [
-  ['basic', '기본 정보', BasicInfo],
-  ['capability', '역량 · 팀', CapabilityTeam],
+// 기본 정보 · 역량 · 팀은 예전엔 탭 두 개였다. 전부 7구역이라 한 페이지로 충분하고, 탭이면 첫 탭만 채우고 저장했다가
+// 둘째 탭으로 끌려가는 일이 생겨 묶음 제목만 두고 이어 붙였다(디자인 점검 10-12). 구역 · 입력칸은 그대로다.
+const GROUPS = [
+  ['기본 정보', BasicInfo],
+  ['역량 · 팀', CapabilityTeam],
 ];
 
-// 깃허브의 "New branch" 목록 + 생성 모달과 같은 구조 — 브랜치 목록처럼 프로필을 세로
-// 목록으로 보여주고, "프로필 추가"를 누르면 이름을 먼저 정하는 모달이 뜬다.
+// "새 프로필"을 누르면 이름을 먼저 정하는 모달이 뜬다.
 function AddProfileModal({ open, onClose, onCreate }) {
   const [name, setName] = useState('');
   useEffect(() => { if (open) setName(''); }, [open]);
@@ -41,59 +42,78 @@ function AddProfileModal({ open, onClose, onCreate }) {
   );
 }
 
+// 프로필 고르기 — 위쪽 작은 탭 줄. 예전엔 세로 목록 + 파란 큰 "프로필 추가" 버튼이라 진짜 주 버튼(저장)과 겨뤘고,
+// 이름 바꾸기는 "고른 이름을 한 번 더 누르기"라 찾기 어려웠고 삭제 X가 이름마다 늘 떠 있었다. 이름 바꾸기는 연필 버튼으로,
+// 삭제는 페이지 아래 "이 프로필 삭제"로 옮겼다(디자인 점검 10-12).
 function ProfileSwitcher() {
   const profiles = useMyPageStore((s) => s.profiles);
   const activeIndex = useMyPageStore((s) => s.activeIndex);
   const selectProfile = useMyPageStore((s) => s.selectProfile);
   const addProfile = useMyPageStore((s) => s.addProfile);
-  const removeProfile = useMyPageStore((s) => s.removeProfile);
   const renameProfile = useMyPageStore((s) => s.renameProfile);
   const [editingIndex, setEditingIndex] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
 
   return (
-    <div className="mb-6">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[13px] font-semibold text-[#4e5968]">내 프로필 ({profiles.length}/{MAX_PROFILES})</span>
-        <button type="button" onClick={() => setAddOpen(true)} disabled={profiles.length >= MAX_PROFILES}
-          className="h-11 px-5 rounded-xl bg-[var(--primary)] text-white text-[14.5px] font-semibold hover:bg-[var(--primary-dim)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-          프로필 추가
-        </button>
-      </div>
-      <div className="rounded-xl border border-[var(--border)] overflow-hidden">
+    <div className="mb-10">
+      <p className="text-[13px] font-semibold text-[#4e5968] mb-2">내 프로필 <span className="font-medium text-[var(--muted-fg)]">{profiles.length}/{MAX_PROFILES}</span></p>
+      <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="내 프로필">
         {profiles.map((p, i) => {
           const active = i === activeIndex;
+          if (active && editingIndex === i) {
+            return (
+              <input key={p.localId || i} autoFocus value={p.name} aria-label="프로필 이름" onChange={(e) => renameProfile(i, e.target.value)}
+                onBlur={() => setEditingIndex(null)} onKeyDown={(e) => e.key === 'Enter' && setEditingIndex(null)}
+                className="h-10 w-56 px-4 rounded-full border border-[var(--primary)] bg-white outline-none text-[14px] font-semibold" />
+            );
+          }
           return (
-            <div key={i} className={`flex items-center gap-3 px-4 py-3 ${i > 0 ? 'border-t border-[var(--border)]' : ''} ${active ? 'bg-[#eef4fe]' : 'hover:bg-[#f9fafb]'}`}>
-              {active && editingIndex === i ? (
-                <input autoFocus value={p.name} onChange={(e) => renameProfile(i, e.target.value)}
-                  onBlur={() => setEditingIndex(null)} onKeyDown={(e) => e.key === 'Enter' && setEditingIndex(null)}
-                  className="flex-1 bg-transparent outline-none text-[14.5px] font-semibold" />
-              ) : (
-                <button type="button" onClick={() => (active ? setEditingIndex(i) : selectProfile(i))}
-                  className={`flex-1 text-left truncate text-[14.5px] font-semibold ${active ? 'text-[var(--primary-dim)]' : 'text-[var(--fg)]'}`}>
-                  {p.name}
-                </button>
-              )}
-              {profiles.length > 1 && (
-                <button type="button" aria-label={`${p.name} 삭제`}
-                  onClick={() => {
-                    if (!window.confirm(`"${p.name}"을(를) 삭제할까요?`)) return;
-                    removeProfile(i).catch((err) => {
-                      console.error('프로필을 지우지 못했어요', err);
-                      window.alert('프로필을 지우지 못했어요. 다시 시도해 주세요.');
-                    });
-                  }}
-                  className="w-7 h-7 flex-shrink-0 grid place-items-center rounded-lg text-[#b0b8c1] hover:text-[var(--danger)] hover:bg-white transition-colors">
-                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            <div key={p.localId || i}
+              className={`inline-flex items-center h-10 rounded-full border transition-colors ${active ? 'border-[var(--primary)] bg-[#eef4fe]' : 'border-[var(--border)] bg-white hover:border-[#d1d6db]'}`}>
+              <button type="button" role="tab" aria-selected={active} onClick={() => selectProfile(i)}
+                className={`max-w-[220px] truncate pl-4 ${active ? 'pr-1' : 'pr-4'} text-[14px] font-semibold ${active ? 'text-[var(--primary-dim)]' : 'text-[#4e5968]'}`}>
+                {p.name}
+              </button>
+              {active && (
+                <button type="button" aria-label={`${p.name} 이름 바꾸기`} title="이름 바꾸기" onClick={() => setEditingIndex(i)}
+                  className="w-8 h-8 mr-1 grid place-items-center rounded-full text-[var(--primary-dim)] hover:bg-white transition-colors">
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z" /><path d="M13.5 6.5l4 4" /></svg>
                 </button>
               )}
             </div>
           );
         })}
+        {profiles.length < MAX_PROFILES && (
+          <button type="button" onClick={() => setAddOpen(true)}
+            className="h-10 px-4 rounded-full border border-dashed border-[#d1d6db] text-[14px] font-semibold text-[var(--primary)] hover:bg-[#f5f9ff] transition-colors">
+            + 새 프로필
+          </button>
+        )}
       </div>
       <AddProfileModal open={addOpen} onClose={() => setAddOpen(false)} onCreate={addProfile} />
     </div>
+  );
+}
+
+// 지금 고른 프로필 지우기 — 예전엔 프로필 이름마다 X가 늘 떠 있었다. 프로필이 하나뿐이면 지울 수 없다(예전과 같은 조건).
+function DeleteProfileButton() {
+  const profiles = useMyPageStore((s) => s.profiles);
+  const activeIndex = useMyPageStore((s) => s.activeIndex);
+  const removeProfile = useMyPageStore((s) => s.removeProfile);
+  if (profiles.length <= 1) return null;
+  const name = profiles[activeIndex]?.name;
+  return (
+    <button type="button"
+      onClick={() => {
+        if (!window.confirm(`"${name}"을(를) 삭제할까요?`)) return;
+        removeProfile(activeIndex).catch((err) => {
+          console.error('프로필을 지우지 못했어요', err);
+          window.alert('프로필을 지우지 못했어요. 다시 시도해 주세요.');
+        });
+      }}
+      className="text-[13px] font-semibold text-[var(--muted-fg)] underline underline-offset-2 hover:text-[var(--danger)]">
+      이 프로필 삭제
+    </button>
   );
 }
 
@@ -157,7 +177,6 @@ function DeleteAccountSection({ email, onDeleted }) {
 }
 
 export default function MyPage({ onSaved, user, onAccountDeleted }) {
-  const [tab, setTab] = useState('basic');
   const activeIndex = useMyPageStore((s) => s.activeIndex);
   const activeProfile = useMyPageStore((s) => s.profiles[s.activeIndex]);
   const onboarded = useMyPageStore((s) => s.onboarded);
@@ -171,20 +190,14 @@ export default function MyPage({ onSaved, user, onAccountDeleted }) {
   const error = missing.find((m) => m.anchor === errorAnchor) || null;
   const [pendingFocus, setPendingFocus] = useState(null);
 
-  // 정보 슬롯을 바꾸거나 새로 추가하면 그 전에 보고 있던 탭(역량·팀 등)이 아니라
-  // 항상 기본 정보 탭부터 보여준다 — 슬롯마다 처음 보는 화면이 같아야 헷갈리지 않는다.
-  useEffect(() => { setTab('basic'); setErrorAnchor(null); setSaveError(''); }, [activeIndex]);
-  // 빈 항목이 다른 탭에 있으면 탭을 바꾼 뒤(그 섹션이 그려진 다음) 스크롤한다.
+  // 프로필을 바꾸거나 새로 추가하면 이전 프로필의 안내 · 오류는 지운다.
+  useEffect(() => { setErrorAnchor(null); setSaveError(''); }, [activeIndex]);
+  // 빈 항목 안내가 그려진 다음 그 구역으로 스크롤한다.
   useEffect(() => {
     if (!pendingFocus) return;
     focusSection(pendingFocus);
     setPendingFocus(null);
-  }, [pendingFocus, tab]);
-
-  const index = TABS.findIndex(([key]) => key === tab);
-  const [, , Current] = TABS[index];
-  const next = TABS[index + 1];
-  const goTab = (key) => { setTab(key); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  }, [pendingFocus]);
 
   // [2026-09-18] completeOnboarding()은 서버 저장 없이 로컬 onboarded만 true로
   // 바꾸던 옛 함수라 store에서 없어졌다(saveActiveProfile로 대체) — 여기서 이어서
@@ -197,7 +210,6 @@ export default function MyPage({ onSaved, user, onAccountDeleted }) {
     if (missing.length > 0) {
       const first = missing[0];
       setErrorAnchor(first.anchor);
-      setTab(first.tab);
       setPendingFocus(first.anchor);
       return;
     }
@@ -226,22 +238,15 @@ export default function MyPage({ onSaved, user, onAccountDeleted }) {
 
       <ProfileSwitcher />
 
-      <nav role="tablist" className="sticky top-0 z-10 flex gap-1 bg-white border-b border-[var(--border)] mb-8">
-        {TABS.map(([key, label]) => {
-          const active = key === tab;
-          return (
-            <button key={key} role="tab" aria-selected={active} onClick={() => goTab(key)}
-              className={`relative px-4 py-3.5 text-[15px] font-semibold transition-colors ${active ? 'text-[var(--fg)]' : 'text-[#8b95a1] hover:text-[#4e5968]'}`}>
-              {label}
-              {active && <span className="absolute left-3 right-3 -bottom-px h-0.5 rounded-full bg-[var(--fg)]" />}
-            </button>
-          );
-        })}
-      </nav>
+      {GROUPS.map(([title, Group]) => (
+        <div key={title} className="mb-12">
+          <h2 className="font-bold text-[21px] pb-3 mb-8 border-b-2 border-[var(--fg)]">{title}</h2>
+          <div><Group error={error} /></div>
+        </div>
+      ))}
 
-      <Current error={error} />
-
-      <div className="flex items-center justify-between gap-4 mt-6 pt-6 border-t border-[var(--border)]">
+      {/* 저장 줄은 화면 아래에 따라다닌다 — 한 페이지가 길어져 맨 아래까지 내려가야 저장할 수 있으면 안 된다. */}
+      <div className="sticky bottom-0 z-10 -mx-6 px-6 py-4 flex items-center justify-between gap-4 bg-white/95 backdrop-blur-sm border-t border-[var(--border)]">
         <div className="min-h-5">
           {saveError ? (
             <p className="text-[12.5px] font-semibold text-[var(--danger)]">{saveError}</p>
@@ -252,16 +257,10 @@ export default function MyPage({ onSaved, user, onAccountDeleted }) {
           ) : !onboarded ? (
             <p className="text-[12.5px] text-[var(--warn)]">아직 저장 전이에요. 저장을 눌러 주세요.</p>
           ) : (
-            <p className="text-[12.5px] text-[var(--muted-fg)]">저장 버튼을 눌러야 이 정보 슬롯이 서버에 반영돼요.</p>
+            <p className="text-[12.5px] text-[var(--muted-fg)]">저장 버튼을 눌러야 이 프로필이 서버에 반영돼요.</p>
           )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {next && (
-            <button type="button" onClick={() => goTab(next[0])}
-              className="h-11 px-6 rounded-xl bg-[var(--muted)] text-[#4e5968] text-[14.5px] font-semibold hover:bg-[#e5e8eb] transition-[background-color,scale] active:scale-[0.98]">
-              다음
-            </button>
-          )}
           <button type="button" onClick={handleSave} disabled={saving}
             className="h-11 px-6 rounded-xl bg-[var(--primary)] text-white text-[14.5px] font-semibold hover:bg-[var(--primary-dim)] disabled:opacity-40 disabled:cursor-not-allowed transition-[background-color,scale] active:scale-[0.98]">
             {saving ? '저장 중…' : '저장'}
@@ -269,6 +268,7 @@ export default function MyPage({ onSaved, user, onAccountDeleted }) {
         </div>
       </div>
 
+      <div className="mt-10"><DeleteProfileButton /></div>
       <DeleteAccountSection email={user?.email} onDeleted={onAccountDeleted} />
     </div>
   );

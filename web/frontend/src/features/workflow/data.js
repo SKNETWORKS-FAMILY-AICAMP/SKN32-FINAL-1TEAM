@@ -350,17 +350,21 @@ export const DELIVERABLE_NOTICES = [
 // 워드(.docx)와 한글(.hwp) 중 골라 받는다. 둘 다 같은 내용을 서버가 각 형식으로 렌더한 것이고
 // (app/plan_document_export.py / app/hwp_export.py), 한글은 서버에 rhwp가 있어야 한다.
 // 기본 형식(formats[0])이 '전체 다운로드'와 파일명(name)의 확장자에 쓰인다.
+// name은 내려받기 처리(ReviewScreen handleDownload)가 고르는 열쇠, title은 카드 제목, file은 받는 파일 이름이다.
+// 카드 제목이 '사업계획서' · 'prototype.zip' · '검증결과.pdf'로 한글 이름과 파일 이름이 섞여 있어 title을 따로 뒀다.
 export const DOWNLOAD_FILES = [
   {
     name: '사업계획서',
+    title: '사업계획서',
+    file: '사업계획서.docx · .hwp',
     desc: '문장 다듬기까지 마친 최종 사업계획서',
     formats: [
       { ext: 'docx', label: '워드(.docx)' },
       { ext: 'hwp', label: '한글(.hwp)' },
     ],
   },
-  { name: 'prototype.zip', desc: '실행 파일(index.html)과 인포그래픽을 담은 압축 파일' },
-  { name: '검증결과.pdf', desc: '문서층·산출물층 검증 내역과 대조 결과' },
+  { name: 'prototype.zip', title: '프로토타입', file: 'prototype.zip', desc: '실행 파일(index.html)과 인포그래픽을 담은 압축 파일' },
+  { name: '검증결과.pdf', title: '검증결과서', file: '검증결과.pdf', desc: '문서층·산출물층 검증 내역과 대조 결과' },
 ];
 
 // 사업계획서.docx·prototype.zip은 화면의 더미 데이터로 즉석 생성하고(dummyDeliverables.js),

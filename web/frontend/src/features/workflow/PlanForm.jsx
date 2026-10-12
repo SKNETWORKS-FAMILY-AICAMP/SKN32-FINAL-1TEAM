@@ -2,8 +2,7 @@
 import React, {useState, useEffect, useRef} from 'react';
 import {Icon} from '../../components/Icons.jsx';
 import Preparation from '../../components/Preparation.jsx';
-import {buildGeneralInfo,buildOverview,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
-import {RerunLeftBadge} from './shared.jsx';
+import {buildGeneralInfo,buildOverview,bundleScoreOf,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
 import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_TABLE_EXAMPLE,RERUN_CAP,SCORE_DISCLAIMER,DOC_REWORK_BUNDLES} from './data.js';
 import {ApiError,fetchPlanDocumentPdf,getProjectStatus} from '../../api.js';
 import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,relabelAfterReject,requestRework,waitRework} from './rework.js';
@@ -321,41 +320,39 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
           <p className={`text-[12.5px] font-bold mb-1 ${passed ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>
             {passed ? `［내부 기준 ${threshold}점 통과］` : `［내부 기준 ${threshold}점 미달］`}
           </p>
-          <p className="text-[11px] text-[var(--muted-fg)] leading-relaxed">{SCORE_DISCLAIMER}</p>
 
-          {!passed && (
-            <div className="mt-4 rounded-xl bg-[color-mix(in_srgb,var(--danger)_6%,white)] p-4">
-              <p className="text-[12.5px] font-bold text-[var(--danger)] mb-2">점수 미달 사유</p>
-              <ul className="flex flex-col gap-1.5">
-                {docScore.reasons.map((r) => (
-                  <li key={r} className="text-[12.5px] text-[var(--fg)] leading-relaxed">· {r}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
+          {/* 항목별 점수와 다시 만들 항목을 한 목록으로 — 예전엔 "점수 미달 사유" 상자와 "다시 준비할 항목" 목록이 같은 묶음
+              이름을 두 번 보여 줬고, 그만큼 칸이 길어져 '프로토타입 생성' 버튼이 화면 밖으로 밀렸다(디자인 점검 10-12).
+              일반현황 · 개요는 다시 만들 수 없는 항목이라 여기엔 넣지 않는다 — 점수 내역 전체는 검증결과서 PDF에 있다. */}
           <div className="mt-5 rounded-xl border border-[var(--border)] p-4">
-            <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-1">다시 준비할 항목</p>
-            <p className="text-[11px] text-[var(--muted-fg)] mb-3">항목을 고르면 그 항목의 본문·그래프·표를 함께 다시 만들어요. 항목마다 {cap}회까지.</p>
-            <div className="flex flex-col gap-2">
+            <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-1">항목별 점검</p>
+            <p className="text-[11px] text-[var(--muted-fg)] mb-3">고른 항목은 본문·그래프·표를 함께 다시 만들어요. 항목마다 {cap}회까지.</p>
+            <div className="flex flex-col gap-2.5">
               {DOC_REWORK_BUNDLES.map((label) => {
                 const isRunning = runningTasks.includes(label);
                 const isDone = !isRunning && completedTasks.includes(label);
                 const left = rerunLeftOf(reworkCounts, label, reworkBudget);
                 const capped = left <= 0;
+                const bundle = bundleScoreOf(label, docScore);
                 return (
-                  <label key={label} className={`flex items-center gap-2.5 text-[13px] ${isRunning || generating || capped ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>
+                  <label key={label} className={`flex items-start gap-2.5 text-[13px] ${isRunning || generating || capped ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>
                     {isRunning ? (
                       <span className="rewrite-indicator" aria-hidden="true"></span>
                     ) : (
                       <input type="checkbox" checked={checkedTasks.includes(label)} onChange={() => toggleTask(label)}
                         disabled={generating || capped}
-                        className="w-4 h-4 accent-[var(--primary)] disabled:cursor-not-allowed" />
+                        className="flex-shrink-0 mt-0.5 w-4 h-4 accent-[var(--primary)] disabled:cursor-not-allowed" />
                     )}
-                    <span>
-                      {isRunning ? `${label} 재작성 중…` : label}
-                      {isDone && <span className="ml-1.5 text-[11.5px] font-semibold text-[var(--ok)]">✓ 재작성 완료</span>}
-                      {!isRunning && <RerunLeftBadge left={left} />}
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-baseline gap-2">
+                        <span className="font-semibold">{isRunning ? `${label} 재작성 중…` : label}</span>
+                        {!isRunning && left > 0 && <span className="text-[11px] text-[var(--muted-fg)]">{left}회 남음</span>}
+                        {!isRunning && bundle && (
+                          <span className={`ml-auto flex-shrink-0 text-[12px] font-semibold ${bundle.passed ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>{bundle.passed ? '통과' : '미달'}</span>
+                        )}
+                      </span>
+                      {!isRunning && bundle?.summary && <span className="block mt-0.5 text-[11.5px] text-[var(--muted-fg)] leading-snug">{bundle.summary}</span>}
+                      {isDone && <span className="block mt-0.5 text-[11px] font-semibold text-[var(--ok)]">✓ 재작성 완료</span>}
                     </span>
                   </label>
                 );
@@ -398,6 +395,9 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
               </div>
             </div>
           )}
+
+          {/* 점수 안내 문구는 판정을 읽은 뒤에 보면 되는 내용이라 맨 아래로 내렸다 */}
+          <p className="mt-4 text-[11px] text-[var(--muted-fg)] leading-relaxed">{SCORE_DISCLAIMER}</p>
         </aside>
         )}
 
@@ -416,7 +416,8 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
 
           {/* 공식 양식 그대로 보여주려고 브라우저 내장 PDF 뷰어에 맡긴다 — 페이지 넘김·확대·
               인쇄가 전부 따라온다. 높이를 화면에 맞춰 잡아야 뷰어가 제 몫을 한다. */}
-          <div className="h-[calc(100vh-220px)] min-h-[520px] bg-[var(--muted)]">
+          {/* 못 불러왔을 때는 안내 한 줄뿐이라 화면 높이만 한 빈 회색 상자로 두지 않고 줄인다(불러오는 중에는 그대로 — PDF가 뜰 때 들썩이지 않게). */}
+          <div className={`${pdfUrl || pdfLoading ? 'h-[calc(100vh-220px)] min-h-[520px]' : 'h-[320px]'} bg-[var(--muted)]`}>
             {pdfUrl ? (
               <iframe src={pdfUrl} title="사업계획서 미리보기" className="w-full h-full border-0" />
             ) : (

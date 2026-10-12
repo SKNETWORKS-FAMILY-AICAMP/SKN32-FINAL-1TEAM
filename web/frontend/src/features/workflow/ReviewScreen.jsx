@@ -207,8 +207,9 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
             <div key={f.name} className="rounded-2xl border border-[var(--border)] bg-white p-5">
               <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div>
-                  <p className="font-semibold text-[14px] font-mono mb-1">{f.name}</p>
+                  <p className="font-semibold text-[15px] mb-1">{f.title || f.name}</p>
                   <p className="text-[12.5px] text-[var(--muted-fg)]">{f.desc}</p>
+                  {f.file && <p className="mt-1 text-[11.5px] font-mono text-[var(--muted-fg)]">{f.file}</p>}
                 </div>
                 {/* 형식이 여러 개인 항목(사업계획서: 워드/한글)은 버튼을 형식별로 나눠 그린다 —
                     받기 전에 어느 형식인지 보이게 하려고 드롭다운 대신 버튼을 둘 다 노출한다. */}

@@ -58,6 +58,24 @@ try{
   ui.find(n=>n.props.label==='설립일').props.onChange('');await ui.flush();submitted=null;
   ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await ui.flush();assert.equal(submitted,null);
   assert.ok(ui.find(n=>n.props.id==='intake-founded').props.error);ui.unmount();
+  // 화면 순서(① 아이디어 → ② 신청자 정보 → ③ 사업 계획, 디자인 점검 10-12) — 빈 칸 검사도 아이디어부터, 입력 현황은 묶음 셋.
+  submitted=null;ui=mount(IntakeForm,{onSubmit:info=>{submitted=info}});await ui.flush();
+  ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await ui.flush();
+  assert.equal(submitted,null);assert.ok(ui.find(n=>n.props.id==='intake-idea').props.error);
+  assert.deepEqual(ui.component('IntakeChecklist').props.groups.map(g=>g.title),['① 아이디어','② 신청자 정보','③ 사업 계획']);ui.unmount();
+  // 프로필을 불러오면 신청자 정보는 요약으로 접히고(값은 그대로 들고 간다), 빈 필수 칸이 있으면 접지 않는다.
+  const loadedProfile={name:'내 프로필',basic:{applicantType:'individual',ceoName:'대표',birthDate:'1990-01-01',gender:'남성',region:{sido:'서울특별시',sigungu:'강남구'},
+    industry:'정보·통신',certs:['벤처기업'],bizNo:'1234567890',companyName:'테스트상사',openedAt:'2024-01-01'},
+    capability:{careers:[{type:'경력',title:'개발',period:'2020-01 ~ 2024-01',hasProof:true}],skills:'개발 역량',soloFounder:true,team:[]}};
+  ui=mount(IntakeForm,{onSubmit(){}});await ui.flush();
+  ui.component('LoadProfileModal').props.onPick(loadedProfile);await ui.flush();
+  assert.ok(ui.component('ApplicantSummary'));assert.ok(!ui.nodes().some(n=>n.props?.id==='intake-ceo'));
+  assert.ok(ui.component('ApplicantSummary').props.rows.some(([label,value])=>label==='사업자'&&value.includes('1234567890')));
+  ui.component('ApplicantSummary').props.onEdit();await ui.flush();
+  assert.ok(ui.find(n=>n.props.id==='intake-ceo'));assert.ok(!ui.nodes().some(n=>n.type?.name==='ApplicantSummary'));ui.unmount();
+  ui=mount(IntakeForm,{onSubmit(){}});await ui.flush();
+  ui.component('LoadProfileModal').props.onPick({...loadedProfile,capability:{...loadedProfile.capability,careers:[]}});await ui.flush();
+  assert.ok(!ui.nodes().some(n=>n.type?.name==='ApplicantSummary'));assert.ok(ui.find(n=>n.props.id==='intake-career'));ui.unmount();
   // 예비창업자는 사업비 1 · 2단계가 각 1줄 이상, 일정은 협약기간 내 표가 1줄 이상이어야 넘어간다.
   const preDraft={...draft,applicantType:'preliminary',budgetScale:'1500',budget:[{...draft.budget[0],phase:'1단계'}]};
   submitted=null;ui=mount(IntakeForm,{initialValues:preDraft,onSubmit:info=>{submitted=info}});await ui.flush();
@@ -91,20 +109,23 @@ try{
   assert.deepEqual(scored.codeCheckItems.map(i=>[i.passed,i.applicable]),[[false,true],[true,false]]);
   assert.equal(sfr({verdict:{code_score:8,code_max_score:15},plan:{score_reasons:[],artifacts:[]}}).artifactLayer,null);
   // 점수 항목 묶음(응답모양변경 10-11 2-1) — tag로 일반현황 · 개요 + 4묶음에 모으고, 이름은 section_code로 찾는다.
-  const {taskReasons:tr,planViewFrom:pvf}=await server.ssrLoadModule('/src/features/workflow/utils.js');
+  const {taskReasons:tr,bundleScoreOf:bso,planViewFrom:pvf}=await server.ssrLoadModule('/src/features/workflow/utils.js');
   const tagged=sfr({verdict:{doc_score:20,doc_max_score:30},plan:{sections:[{section_code:'1.2',tag:null,title:'개요',content_type:'section'},{section_code:'2.4.1',tag:'1-1',title:'문제 정의',content_type:'section'},{section_code:'2.4.2',tag:'1-1',title:'시장',content_type:'section'}],
     score_reasons:[{item_code:'1.2',tag:null,score:4,max_score:5,reason_text:'짧음'},{item_code:'2.4.1',tag:'1-1',score:6,max_score:10,reason_text:'근거 부족'},{item_code:'2.4.2',tag:'1-1',score:5,max_score:5},{item_code:'3.1.1',tag:'3-1',score:5,max_score:10,reason_text:'모호'}],artifacts:[]}});
   assert.deepEqual(tagged.docScore.groups.map(g=>[g.label,g.score,g.max]),[['일반현황 · 개요',4,5],['문제인식',11,15],['성장전략',5,10]]);
   assert.equal(tagged.docScore.items[1].name,'문제 정의');
   assert.deepEqual(tagged.docScore.reasons,['일반현황 · 개요 4/5 — 개요','문제인식 11/15 — 문제 정의','성장전략 5/10 — 3.1.1']);
   const noArtifact={autoCheck:{reasons:[]},crossCheck:{reasons:[]}};
-  assert.deepEqual(tr('문제인식',tagged.docScore,noArtifact),['［문서층］ 문제인식 11/15','· 문제 정의 6/10 — 근거 부족']);
+  assert.deepEqual(tr('문제인식',tagged.docScore,noArtifact),['문제 정의 — 근거 부족']);
+  assert.deepEqual(bso('문제인식',tagged.docScore),{score:11,max:15,passed:false,lines:['문제 정의 — 근거 부족'],summary:'문제 정의'});
+  assert.equal(bso('실현가능성',tagged.docScore),null);
   assert.deepEqual(tr('실현가능성',tagged.docScore,noArtifact),[]);
   // 옛 모양(tag 칸 없음, PSST-1-1)은 묶음 없이 예전처럼 항목별.
   const legacy=sfr({verdict:{doc_score:10},plan:{sections:[{tag:'1-1',title:'문제 인식'}],score_reasons:[{item_code:'PSST-1-1',score:10,max_score:20,reason_text:'부족'}],artifacts:[]}});
   assert.equal(legacy.docScore.groups,null);
   assert.deepEqual(legacy.docScore.reasons,['문제 인식 10/20 — 부족']);
-  assert.deepEqual(tr('문제인식',legacy.docScore,noArtifact),['［문서층］ 문제 인식 10/20 — 부족']);
+  assert.deepEqual(tr('문제인식',legacy.docScore,noArtifact),['부족']);
+  assert.deepEqual(bso('문제인식',legacy.docScore),{score:10,max:20,passed:false,lines:['부족'],summary:'부족'});
   // 계획서 보기 — 새 모양은 묶음별, 그림 항목(content_type image)은 tag가 '2-1'이어도 본문에서 뺀다. 옛 모양은 legacy.
   const view=pvf({sections:[{section_code:'1.1',tag:null,title:'일반현황',content_type:'section'},{section_code:'2.3.6',tag:'2-1',title:'흐름도',content_type:'image'},{section_code:'2.2.1',tag:'2-1',title:'개발',content_type:'section'},{section_code:'2.3.7',tag:'2-1',title:'일정',content_type:'table'}],
     diagrams:[{diagram_id:'d1',image_url:'/projects/1/artifact-files/a'},{diagram_id:'d2',image_url:null}]});

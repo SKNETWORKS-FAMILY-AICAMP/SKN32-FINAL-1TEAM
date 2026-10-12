@@ -162,7 +162,8 @@ export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcom
   // 서버 채점이 끝났으면 그 값을, 아직이면 기존 고정 표를 쓴다(utils.js scoresFromResult).
   const artifactScore = scores?.artifactScore || ARTIFACT_SCORE_BY_OUTCOME[scoreOutcome];
   const codeCheckItems = scores?.codeCheckItems || buildCodeCheckItems(category, scoreOutcome);
-  // 해당 없음(applicable === false) 항목은 통과 · 미달 어느 쪽에도 세지 않고 통과 칸 아래에 따로 보인다.
+  // 해당 없음(applicable === false) 항목은 통과 · 미달 어느 쪽에도 세지 않고 통과 목록 끝에 따로 보인다.
+  const [showPassed, setShowPassed] = useState(false);
   const naItems = codeCheckItems.filter((item) => item.applicable === false);
   const passedItems = codeCheckItems.filter((item) => item.passed && item.applicable !== false);
   const failedItems = codeCheckItems.filter((item) => !item.passed && item.applicable !== false);
@@ -295,41 +296,52 @@ export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcom
             <p className="mb-4 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">필수 조건(파일 정상 · 민감한 값 없음{hasExecutable ? ' · 화면 동작 가능' : ''}) 모두 통과</p>
           )}
 
-          <div className="mb-4">
-            <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-2">코드 검증 8항목</p>
-            {/* 통과·미달이 섞여 있으면 무엇을 고쳐야 하는지 한눈에 안 들어와서 왼쪽 통과, 오른쪽 미달로 나눈다. */}
-            <div className="grid grid-cols-2 gap-x-3">
-              <div className="flex flex-col gap-2">
-                <p className="text-[11px] font-semibold text-[var(--ok)]">통과 {passedItems.length}</p>
-                {passedItems.map((item) => (
-                  <div key={item.id} className="flex items-center gap-1.5 text-[12px] leading-snug">
-                    <span className="flex-shrink-0 w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold bg-[color-mix(in_srgb,var(--ok)_16%,white)] text-[var(--ok)]" aria-hidden="true">✓</span>
-                    <span className="text-[var(--fg)]">{item.name}</span>
-                  </div>
-                ))}
-                {naItems.length > 0 && <p className="mt-1 text-[11px] font-semibold text-[var(--muted-fg)]">해당 없음 {naItems.length}</p>}
-                {naItems.map((item) => (
-                  <div key={item.id} title={item.evidence || undefined} className="flex items-center gap-1.5 text-[12px] leading-snug text-[var(--muted-fg)]">
-                    <span className="flex-shrink-0 w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold bg-[var(--muted)]" aria-hidden="true">–</span>
-                    <span>{item.name}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="flex flex-col gap-2">
-                <p className="text-[11px] font-semibold text-[var(--danger)]">미달 {failedItems.length}</p>
-                {failedItems.length === 0 ? (
-                  <p className="text-[12px] text-[var(--muted-fg)]">없음</p>
-                ) : failedItems.map((item) => (
-                  <div key={item.id} className="text-[12px] leading-snug">
-                    <div className="flex items-center gap-1.5">
-                      <span className="flex-shrink-0 w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold bg-[color-mix(in_srgb,var(--danger)_12%,white)] text-[var(--danger)]" aria-hidden="true">✕</span>
-                      <span className="text-[var(--fg)]">{item.name}</span>
-                    </div>
-                    <p className="pl-5 mt-0.5 text-[11px] text-[var(--danger)] leading-snug">{item.evidence}</p>
-                  </div>
-                ))}
-              </div>
+          <div className="mb-5">
+            <div className="flex items-baseline justify-between gap-2 mb-2">
+              <p className="text-[12px] font-bold text-[var(--muted-fg)]">코드 검증 8항목</p>
+              <p className="text-[11.5px] text-[var(--muted-fg)]">
+                <span className="font-semibold text-[var(--ok)]">통과 {passedItems.length}</span>
+                {' · '}<span className={`font-semibold ${failedItems.length ? 'text-[var(--danger)]' : ''}`}>미달 {failedItems.length}</span>
+                {naItems.length > 0 && ` · 해당 없음 ${naItems.length}`}
+              </p>
             </div>
+            {/* 미달 항목을 위에 이유와 함께 한 줄씩, 통과 · 해당 없음은 접어 둔다 — 예전엔 통과 · 미달을 좁은 두 칸으로 나눠
+                긴 이유가 여러 줄로 꺾이고 빨간 글씨 덩어리가 됐다(디자인 점검 10-12). */}
+            <div className="flex flex-col gap-2.5">
+              {failedItems.map((item) => (
+                <div key={item.id} className="flex items-start gap-2 text-[12.5px] leading-snug">
+                  <span className="flex-shrink-0 mt-px w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold bg-[color-mix(in_srgb,var(--danger)_12%,white)] text-[var(--danger)]" aria-hidden="true">✕</span>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-[var(--fg)]">{item.name}</p>
+                    {item.evidence && <p className="mt-0.5 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">{item.evidence}</p>}
+                  </div>
+                </div>
+              ))}
+              {failedItems.length === 0 && <p className="text-[12.5px] text-[var(--fg)]">모든 항목을 통과했어요.</p>}
+            </div>
+            {(passedItems.length > 0 || naItems.length > 0) && (
+              <button type="button" onClick={() => setShowPassed((v) => !v)} aria-expanded={showPassed}
+                className="mt-3 inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--muted-fg)] hover:text-[var(--fg)] transition-colors">
+                {showPassed ? '통과한 항목 접기' : `통과한 항목 ${passedItems.length}개 보기`}
+                <Icon name="chevron" size={11} style={{ transform: showPassed ? 'rotate(-90deg)' : 'rotate(90deg)' }} />
+              </button>
+            )}
+            {showPassed && (
+              <ul className="mt-2 flex flex-col gap-1.5">
+                {passedItems.map((item) => (
+                  <li key={item.id} className="flex items-center gap-2 text-[12px] text-[var(--fg)]">
+                    <span className="flex-shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold bg-[color-mix(in_srgb,var(--ok)_16%,white)] text-[var(--ok)]" aria-hidden="true">✓</span>
+                    {item.name}
+                  </li>
+                ))}
+                {naItems.map((item) => (
+                  <li key={item.id} title={item.evidence || undefined} className="flex items-center gap-2 text-[12px] text-[var(--muted-fg)]">
+                    <span className="flex-shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold bg-[var(--muted)]" aria-hidden="true">–</span>
+                    {item.name} <span className="text-[11px]">(해당 없음)</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <div className="mb-4">
@@ -341,11 +353,15 @@ export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcom
             ) : (
               <ul className="flex flex-col gap-1.5">
                 {missingFeatures.map((r) => (
-                  <li key={'m-' + r} className="text-[12.5px] text-[var(--danger)] leading-relaxed">· {r}</li>
+                  <li key={'m-' + r} className="flex items-start gap-2 text-[12.5px] text-[var(--fg)] leading-relaxed">
+                    <span className="flex-shrink-0 mt-[7px] w-1.5 h-1.5 rounded-full bg-[var(--danger)]" aria-hidden="true" />{r}
+                  </li>
                 ))}
                 {/* 부분 인정 — 일부 요소만 확인된 기능(점수 일부 인정). 누락과 겹치지 않는다. */}
                 {partialFeatures.map((r) => (
-                  <li key={'p-' + r} className="text-[12.5px] text-[var(--warn)] leading-relaxed">· {r} <span className="text-[11px] font-semibold">(부분 인정)</span></li>
+                  <li key={'p-' + r} className="flex items-start gap-2 text-[12.5px] text-[var(--fg)] leading-relaxed">
+                    <span className="flex-shrink-0 mt-[7px] w-1.5 h-1.5 rounded-full bg-[var(--warn)]" aria-hidden="true" /><span>{r} <span className="text-[11px] font-semibold text-[var(--warn)]">(부분 인정)</span></span>
+                  </li>
                 ))}
               </ul>
             )}

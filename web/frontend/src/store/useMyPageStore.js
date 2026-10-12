@@ -50,7 +50,7 @@ const profileFromServer = (p) => ({
 
 const initial = () => ({
   generation: 0,
-  profiles: [emptyProfile('정보 1')],
+  profiles: [emptyProfile('프로필 1')],
   activeIndex: 0,
   // 저장 버튼을 눌러야만 true — 계정이 자기 정보를 한 번이라도 확정 저장했는지 나타낸다.
   // App.jsx가 이 값으로 "마이페이지 먼저 채우라" 강제 모달을 계속 띄울지 판단한다.
@@ -84,7 +84,7 @@ export const useMyPageStore = create(
       selectProfile: (i) => set({ activeIndex: i }),
       addProfile: (name) => set((s) => {
         if (s.profiles.length >= MAX_PROFILES) return s;
-        return { profiles: [...s.profiles, emptyProfile(name?.trim() || `정보 ${s.profiles.length + 1}`)], activeIndex: s.profiles.length };
+        return { profiles: [...s.profiles, emptyProfile(name?.trim() || `프로필 ${s.profiles.length + 1}`)], activeIndex: s.profiles.length };
       }),
       // 서버에 저장된 적 있는 슬롯(profileId 있음)이면 DELETE부터 성공해야 로컬에서도 지운다
       // — 실패하면 그대로 throw해서 호출부(MyPage.jsx)가 사용자에게 알릴 수 있게 한다.
@@ -97,7 +97,7 @@ export const useMyPageStore = create(
           if (s2.generation !== s.generation) return s2;
           const selectedId = s2.profiles[s2.activeIndex]?.localId;
           const profiles = s2.profiles.filter(p => p.localId !== target.localId);
-          if (!profiles.length) profiles.push(emptyProfile('정보 1'));
+          if (!profiles.length) profiles.push(emptyProfile('프로필 1'));
           const selectedIndex = profiles.findIndex(p => p.localId === selectedId);
           return { profiles, activeIndex: selectedIndex < 0 ? 0 : selectedIndex };
         });
@@ -120,7 +120,7 @@ export const useMyPageStore = create(
           const rows = await listProfiles();
           if (get().generation !== generation) return;
           if (rows.length === 0) {
-            set({ profiles: [emptyProfile('정보 1')], activeIndex: 0, onboarded: false, loading: false });
+            set({ profiles: [emptyProfile('프로필 1')], activeIndex: 0, onboarded: false, loading: false });
           } else {
             set({ profiles: rows.map(profileFromServer), activeIndex: 0, onboarded: true, loading: false });
           }

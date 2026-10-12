@@ -4,10 +4,12 @@ import Landing from './components/Landing.jsx';
 import {WorkspaceShell,Dashboard} from './components/Workspace.jsx';
 import * as W from './features/Workflow.jsx';
 import {FileDeletionsPanel} from './features/Admin.jsx';
+import MyPage from './features/mypage/MyPage.jsx';
+import {useMyPageStore} from './store/useMyPageStore.js';
 import {api} from './api.js';
 import {scoresFromResult} from './features/workflow/utils.js';
 import './styles.css';
-const names=['landing','dashboard','empty','intake','match-progress','match-results','eligibility-gate','eligibility-fail','plan-progress','plan-form','artifact-progress','plan-failed','artifact-failed','artifact-result','artifact-gate-fail','artifact-partial','final-verdict','final-pass','review','admin-file-deletions','plan-form-tagged','final-verdict-tagged'];
+const names=['landing','dashboard','empty','intake','match-progress','match-results','eligibility-gate','eligibility-fail','plan-progress','plan-form','artifact-progress','plan-failed','artifact-failed','artifact-result','artifact-gate-fail','artifact-partial','final-verdict','final-pass','review','admin-file-deletions','plan-form-tagged','final-verdict-tagged','mypage','mypage-empty','intake-filled','intake-profile'];
 const page=new URLSearchParams(location.search).get('page')||'landing';
 const noop=()=>{};
 // 관리자 파일 삭제 대기열 견본 — 웹 API(SB-311 반영분)가 아직 sb-269에 없어 가짜 응답으로 본다.
@@ -61,6 +63,24 @@ const TAGGED_RESULT={
   artifacts:[{score_reasons:[{item_code:'CHECK-1',display_name:'문서 구조',score:2,max_score:2,reason_text:''},{item_code:'CHECK-5',display_name:'반응형',score:1,max_score:2,reason_text:'모바일 폭에서 표가 넘칩니다.'},{item_code:'CHECK-7',display_name:'외부 의존',score:0,max_score:0,applicable:false,reason_text:'외부 주소를 쓰지 않아 해당 없음'},{item_code:'FEATURE-1',score:0,max_score:3,reason_text:'회원권 결제'}]}]},
 };
 const TAGGED_SCORES=TAGGED?scoresFromResult(TAGGED_RESULT):null;
+// 마이페이지 견본 — 채운 프로필 하나(mypage)와 빈 프로필(mypage-empty). 서버 없이 스토어에 바로 넣는다.
+if(page==='mypage'||page==='intake-profile'){
+ const st=useMyPageStore.getState();const p=st.profiles[0];
+ useMyPageStore.setState({onboarded:true,profiles:[{...p,name:'헬스장 예약 서비스',profileId:1,
+  basic:{...p.basic,applicantType:'individual',ceoName:'김창업',birthDate:'1992-03-14',gender:'남성',region:{sido:'서울특별시',sigungu:'강남구'},industry:'정보·통신',certs:['벤처기업'],bizNo:'1234567890',companyName:'(주)에스브레인',openedAt:'2025-01-10'},
+  capability:{...p.capability,careers:[{type:'경력',title:'○○피트니스 · 운영 매니저',period:'2019-03 ~ 2024-02',hasProof:true},{type:'학력',title:'○○대학교 · 경영학',period:'2011-03 ~ 2017-02',hasProof:false}],skills:'헬스장 운영 5년, 예약 서비스 기획 경험',team:[{name:'이개발',role:'CTO · 개발',career:'백엔드 5년',status:'재직 중'}]}},
+  {...p,localId:'p2',name:'프로필 2',profileId:2}],activeIndex:0});
+}
+if(page==='mypage-empty')useMyPageStore.setState({onboarded:false,profiles:[{...useMyPageStore.getState().profiles[0],name:'프로필 1',profileId:null}],activeIndex:0});
+// 사전 정보 입력 견본 — 개인사업자로 칸을 채운 상태(유형을 골라야 보이는 사업비 · 일정 칸까지 본다).
+const SAMPLE_INTAKE={applicantType:'individual',ceoName:'김창업',birthDate:'1992-03-14',gender:'남성',companyName:'(주)에스브레인',foundedAt:'2025-01-10',
+ item:'동네 헬스장의 회원 관리와 수업 예약을 한 화면에서 처리하는 서비스',team:[{name:'이개발',role:'CTO · 개발',career:'백엔드 5년'}],
+ pricing:[{item:'월 구독료',price:'29,000원'}],region:{sido:'서울특별시',sigungu:'강남구'},industry:'정보·통신',certs:['벤처기업'],
+ careers:[{type:'경력',title:'○○피트니스 · 운영 매니저',period:'2019-03 ~ 2024-02',hasProof:true}],skills:'헬스장 운영 5년',
+ devPeriod:{start:'2026-11',end:'2027-06'},selfFunding:{available:true,cashLimit:'10000000',inKindResources:'사무실 공간'},hires:[{job:'프론트엔드 개발',count:'1명',skill:'React',when:'2027-01'}],
+ noEquipment:true,noPartners:true,
+ budget:[{phase:'',category:'외주용역비',plan:'예약 앱 개발',gov:'15000000',cash:'3000000',inKind:'0'}],
+ schedule:{feasibility:[{category:'개발',content:'예약 기능 개발',period:'2026.11 ~ 2027.02',detail:''}],growth:[]}};
 const info={item:'동네 헬스장 예약 서비스',ceoName:'김창업',foundedAt:page==='eligibility-fail'?'2010-01-10':'2025-01-10',applicantType:'individual',files:[],team:[],pricing:[]};
 // 공고 후보 견본 — 오케스트레이터 응답 모양(MatchCandidatesOut). 가산점 null · 0 · 값, 마감일 없음, 내용 바뀜, 막힌 공고를 한 화면에 담았다.
 const SAMPLE_CANDIDATES={status:'ready',rematch_used:false,blocked_notice_ids:['N-3'],
@@ -74,9 +94,9 @@ const SAMPLE_CANDIDATES={status:'ready',rematch_used:false,blocked_notice_ids:['
 // 화면 8 서버 응답 견본 — 필수 조건 미통과 · 누락 · 부분 인정(실제 서버의 대역 채점으로는 잘 나오지 않아 여기서 본다)
 const SAMPLE_ARTIFACT={'artifact-gate-fail':{category:'webdev',gate_failures:[{code:'secret',display_name:'비밀값'}],missing_features:[],partial_features:[]},
  'artifact-partial':{category:'webdev',gate_failures:[],missing_features:['회원권 결제'],partial_features:['출석 체크']}}[page]||null;
-const props={announcement:W.ANNOUNCEMENTS[0],itemInfo:info,onBack:noop,onSubmit:noop,onProceed:noop,onLeave:noop,onGenerate:noop,onFinalize:noop,onGoDashboard:noop,onCheckEligibility:noop,onComplete:noop,candidates:SAMPLE_CANDIDATES,onCandidatesLoaded:noop,docOutcome:page==='final-pass'?'pass':'fail',artifactOutcome:page==='final-pass'?'pass':'fail',setDocOutcome:noop,setArtifactOutcome:noop,artifact:SAMPLE_ARTIFACT,...(TAGGED?{scores:TAGGED_SCORES,plan:TAGGED_RESULT.plan}:{})};
-const components={'intake':W.IntakeForm,'match-progress':W.MatchProgress,'match-results':W.MatchResults,'eligibility-gate':W.EligibilityGate,'eligibility-fail':W.EligibilityGate,'plan-progress':W.PipelineProgress,'plan-form':W.PlanForm,'artifact-progress':W.ArtifactProgress,'artifact-result':W.ArtifactResult,'artifact-gate-fail':W.ArtifactResult,'artifact-partial':W.ArtifactResult,'final-verdict':W.FinalVerdict,'final-verdict-tagged':W.FinalVerdict,'plan-form-tagged':W.PlanForm,'final-pass':W.FinalVerdict,'review':W.ReviewScreen};
+const props={announcement:W.ANNOUNCEMENTS[0],itemInfo:info,onBack:noop,onSubmit:noop,onProceed:noop,onLeave:noop,onGenerate:noop,onFinalize:noop,onGoDashboard:noop,onCheckEligibility:noop,onComplete:noop,candidates:SAMPLE_CANDIDATES,onCandidatesLoaded:noop,docOutcome:page==='final-pass'?'pass':'fail',artifactOutcome:page==='final-pass'?'pass':'fail',setDocOutcome:noop,setArtifactOutcome:noop,artifact:SAMPLE_ARTIFACT,...(page==='intake-filled'?{initialValues:SAMPLE_INTAKE}:{}),...(TAGGED?{scores:TAGGED_SCORES,plan:TAGGED_RESULT.plan}:{})};
+const components={'intake':W.IntakeForm,'intake-filled':W.IntakeForm,'intake-profile':W.IntakeForm,'match-progress':W.MatchProgress,'match-results':W.MatchResults,'eligibility-gate':W.EligibilityGate,'eligibility-fail':W.EligibilityGate,'plan-progress':W.PipelineProgress,'plan-form':W.PlanForm,'artifact-progress':W.ArtifactProgress,'artifact-result':W.ArtifactResult,'artifact-gate-fail':W.ArtifactResult,'artifact-partial':W.ArtifactResult,'final-verdict':W.FinalVerdict,'final-verdict-tagged':W.FinalVerdict,'plan-form-tagged':W.PlanForm,'final-pass':W.FinalVerdict,'review':W.ReviewScreen};
 // 완전 실패 카드 — 실제 흐름에선 서버가 status='failed'를 줘야 떠서 로컬 더미로는 재현이 어렵다.
 Object.assign(components,{'plan-failed':p=><W.GenerationFailed onLeave={noop}/>,'artifact-failed':p=><W.GenerationFailed onLeave={noop}/>});
 const C=components[page];
-createRoot(document.getElementById('root')).render(<><nav aria-label="화면 검토" style={{padding:10,background:'#fff',display:'flex',flexWrap:'wrap',gap:12,position:'relative',zIndex:100,fontSize:12}}>{names.map(n=><a key={n} href={'?page='+n}>{n}</a>)}</nav>{page==='landing'?<Landing onStart={noop}/>:page==='admin-file-deletions'?<main className="w-[min(1180px,calc(100%-48px))] mx-auto py-12"><FileDeletionsPanel pushToast={(title,message)=>console.info(title,message)}/></main>:<WorkspaceShell view={page==='empty'?'dashboard':page.replace(/-tagged$/,'')} notifyEnabled onToggleNotify={noop} onHome={noop} onDashboard={noop} onNewProject={noop} onLogout={noop}>{C?<C {...props}/>:<Dashboard onNewProject={noop} onOpenProject={noop} isNewUser={page==='empty'} onToggleNewUser={noop}/>}</WorkspaceShell>}</>);
+createRoot(document.getElementById('root')).render(<><nav aria-label="화면 검토" style={{padding:10,background:'#fff',display:'flex',flexWrap:'wrap',gap:12,position:'relative',zIndex:100,fontSize:12}}>{names.map(n=><a key={n} href={'?page='+n}>{n}</a>)}</nav>{page==='landing'?<Landing onStart={noop}/>:page.startsWith('mypage')?<WorkspaceShell view="mypage" notifyEnabled onToggleNotify={noop} onHome={noop} onDashboard={noop} onNewProject={noop} onLogout={noop}><MyPage user={{email:'kim@example.com'}} onSaved={noop}/></WorkspaceShell>:page==='admin-file-deletions'?<main className="w-[min(1180px,calc(100%-48px))] mx-auto py-12"><FileDeletionsPanel pushToast={(title,message)=>console.info(title,message)}/></main>:<WorkspaceShell view={page==='empty'?'dashboard':page.replace(/-tagged$|-filled$|-profile$/,'')} notifyEnabled onToggleNotify={noop} onHome={noop} onDashboard={noop} onNewProject={noop} onLogout={noop}>{C?<C {...props}/>:<Dashboard onNewProject={noop} onOpenProject={noop} isNewUser={page==='empty'} onToggleNewUser={noop}/>}</WorkspaceShell>}</>);

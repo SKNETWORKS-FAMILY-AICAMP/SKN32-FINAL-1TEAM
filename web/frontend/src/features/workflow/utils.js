@@ -368,27 +368,39 @@ export function isRerunCapped(counts, label, budget){
 const DOC_BUNDLE_SET = new Set(PLAN_TAGS.map(bundleOfTag));
 const sameItem = (a, b) => String(a || '').replace(/\s/g, '') === String(b || '').replace(/\s/g, '');
 
-export function taskReasons(label, docScore, artifactScore){
-  // 새 모양 — 묶음 합계 한 줄 + 깎인 항목(앞의 셋). 묶음에 점수 항목이 없으면 붙일 사유도 없다.
+// 계획서 묶음 하나의 판정과 깎인 항목. 새 모양은 묶음 합계(docScore.groups), 옛 모양은 이름이 같은 항목 하나다.
+// 화면 6 · 9가 체크박스 옆에 통과 · 미달을, 그 아래에 이유를 붙인다(예전엔 묶음 이름 · 점수가 미달 사유 목록과 재작성 목록에 두 번 나왔다).
+//   passed  — 깎인 항목이 하나도 없다. 검증-1이 주의 · 미달로 본 항목은 재작성 후보라(기획서 5-6) 하나라도 있으면 미달이다.
+//             화면은 묶음 점수(12/17) 대신 이것만 보인다 — 화면 8 코드 점검처럼 통과 · 미달로(디자인 점검 10-12).
+//   lines   — 깎인 항목마다 "이름 — 이유"(앞의 셋, 나머지는 "외 N개 항목"). 옛 모양은 그 항목의 이유 한 줄.
+//             항목 점수(3/6 같은)는 붙이지 않는다 — 기획서가 요구하는 건 미달 항목이고(4-7 화면 6), 잘게 쪼갠 숫자는
+//             실제 심사 점수처럼 읽힌다(3-6). 점수는 묶음 합계까지만 보인다.
+//   summary — 좁은 칸(화면 6 왼쪽)에 쓰는 한 줄. 새 모양은 깎인 항목 이름만, 옛 모양은 이유.
+// 그 묶음 점수 항목이 없으면 null.
+export function bundleScoreOf(label, docScore){
   const group = docScore.groups?.find((g) => g.label === label);
   if (group) {
-    if (group.score >= group.max) return [];
     const missed = group.items.filter((it) => it.score < it.max);
-    return [
-      `［문서층］ ${label} ${group.score}/${group.max}`,
-      ...missed.slice(0, 3).map((it) => `· ${it.name} ${it.score}/${it.max}${it.comment ? ` — ${it.comment}` : ''}`),
-      ...(missed.length > 3 ? [`· 외 ${missed.length - 3}개 항목`] : []),
-    ];
+    const more = missed.length > 3 ? missed.length - 3 : 0;
+    return {
+      score: group.score, max: group.max, passed: missed.length === 0,
+      lines: [...missed.slice(0, 3).map((it) => `${it.name}${it.comment ? ` — ${it.comment}` : ''}`), ...(more ? [`외 ${more}개 항목`] : [])],
+      summary: missed.slice(0, 3).map((it) => it.name).join(', ') + (more ? ` 외 ${more}개` : ''),
+    };
   }
-  if (docScore.groups && DOC_BUNDLE_SET.has(label)) return [];
+  if (docScore.groups) return null;
   const item = (docScore.items || []).find((it) => sameItem(it.name, label));
-  if (item) {
-    if (item.score >= item.max) return [];
-    return [`［문서층］ ${item.name} ${item.score}/${item.max}${item.comment ? ` — ${item.comment}` : ''}`];
-  }
-  if (label === '실행 파일 제작') {
-    return [...artifactScore.autoCheck.reasons, ...artifactScore.crossCheck.reasons].map((r) => `［산출물층］ ${r}`);
-  }
+  if (!item) return null;
+  const comment = item.score < item.max ? item.comment || '' : '';
+  return { score: item.score, max: item.max, passed: item.score >= item.max, lines: comment ? [comment] : [], summary: comment };
+}
+
+// 재작성 목록의 묶음 아래에 붙이는 "왜 다시 만들어야 하는지". 계획서 묶음은 bundleScoreOf의 lines, 실행 파일은 산출물층 사유.
+export function taskReasons(label, docScore, artifactScore){
+  const bundle = bundleScoreOf(label, docScore);
+  if (bundle) return bundle.lines;
+  if (DOC_BUNDLE_SET.has(label)) return [];
+  if (label === '실행 파일 제작') return [...artifactScore.autoCheck.reasons, ...artifactScore.crossCheck.reasons];
   return [];
 }
 

@@ -46,6 +46,8 @@ function CandidateGroup({title,rows,selected,onSelect,blockedIds}){
      <span className="match-org">{r.org||'주관기관 정보 없음'}</span>
      {/* 다시 찾기에서 다시 나온 공고의 내용이 바뀜 — 자격 결과를 뜻하지 않는다(공고연동 2.2) */}
      {r.content_changed&&<span className="match-changed">내용이 바뀌었어요, 다시 확인해 보세요</span>}
+     {/* 막힌 공고는 누를 수 없어 오른쪽 안내를 볼 길이 없다 — 회색으로만 바꾸지 않고 카드 안에 이유를 적는다 */}
+     {disabled&&<span className="match-blocked">신청 자격에 맞지 않아요</span>}
      <h3>{r.title}</h3><p>{deadlineText(r)}</p>
     </div>
     <BonusBadge value={r.bonus_score}/>
@@ -198,7 +200,10 @@ export function MatchResults({projectId,candidates,onCandidatesLoaded,onBack,onC
 
  if(rematchPhase)return <Preparation kind="match" onComplete={onRematchPrepDone}/>;
 
- const selectedResult=results.find(r=>r.notice_id===selected)||null;
+ // 아직 아무것도 안 골랐으면 화면에 보이는 첫 공고(막히지 않은 것)의 근거를 미리 보인다 — 오른쪽 칸이 빈 상자로 남지 않게.
+ // 근거만 보여 주는 것이라 자격 확인은 여전히 '신청 자격 확인하기'를 눌러야 시작한다.
+ const shownId=selected??[...newRows,...oldRows].find(r=>!blockedIds.includes(r.notice_id))?.notice_id??null;
+ const selectedResult=results.find(r=>r.notice_id===shownId)||null;
  const selectedDisabled=!!selectedResult&&blockedIds.includes(selectedResult.notice_id);
  const notices=noticesToShow(candidates,ALWAYS_NOTICES);
 
@@ -206,7 +211,7 @@ export function MatchResults({projectId,candidates,onCandidatesLoaded,onBack,onC
   <p className="section-label">공고 찾기</p>
   <h1>이런 공고가 잘 맞아요</h1>
   {/* 순서는 공고팀 순위(rank) 그대로다 — 가산점 순이 아니다(공고연동 1.3). 순위 기준 문구는 공고팀 회신 뒤 정한다. */}
-  <p>아이템과 신청 조건에 맞는 공고 {oldRows.length||10}건을 골랐어요. 상위 {RESULTS_SHOWN_COUNT}건을 먼저 보여드리고, 후보를 누르면 오른쪽에서 자세한 근거를 볼 수 있어요.</p>
+  <p>아이템과 신청 조건에 맞는 공고 {oldRows.length||10}건을 골랐어요. 상위 {RESULTS_SHOWN_COUNT}건을 먼저 보여드리고, 다른 후보를 누르면 오른쪽에서 그 공고의 근거를 볼 수 있어요.</p>
   {loading&&<p className="matched-note">공고를 찾는 중이에요…</p>}
   {notices.map(m=><p key={m} className="matched-note" role="status">{m}</p>)}
   {allDisabled&&(
@@ -236,8 +241,8 @@ export function MatchResults({projectId,candidates,onCandidatesLoaded,onBack,onC
   {results.length>0&&(
    <div className="matches-layout">
     <div className="matched-list">
-     {newRows.length>0&&<CandidateGroup title={`다시 찾은 공고 ${newRows.length}건`} rows={newRows} selected={selected} onSelect={setSelected} blockedIds={blockedIds}/>}
-     <CandidateGroup title={newRows.length>0?`이전에 찾은 공고 ${oldRows.length}건`:null} rows={oldRows} selected={selected} onSelect={setSelected} blockedIds={blockedIds}/>
+     {newRows.length>0&&<CandidateGroup title={`다시 찾은 공고 ${newRows.length}건`} rows={newRows} selected={shownId} onSelect={setSelected} blockedIds={blockedIds}/>}
+     <CandidateGroup title={newRows.length>0?`이전에 찾은 공고 ${oldRows.length}건`:null} rows={oldRows} selected={shownId} onSelect={setSelected} blockedIds={blockedIds}/>
      <div className="matched-rematch">
       {rematchUsed?(
        <p>공고 다시 찾기는 한 번만 할 수 있어요. 이전 결과와 함께 비교해 보세요.</p>
