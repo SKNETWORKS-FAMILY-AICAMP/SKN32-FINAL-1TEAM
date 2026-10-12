@@ -34,6 +34,7 @@ const TABS=[['ann','공고 관리'],['ops','운영 현황'],['progress','진행 
 // (key, 표시 라벨, 배점) — verification_score_history.layer 값과 1:1 대응. ProgressTab의
 // "이력보기" 모달과 OpsTab의 "채점 편차" 카드가 공유한다.
 const DEVIATION_CATEGORIES=[['doc','문서층 검증',70],['code','코드 기준 검증',15],['plan','계획서 대조',15]];
+// 점수 이력 창의 만점은 서버가 주는 그 실행 건 만점(doc_max · code_max · plan_max, 백엔드 응답모양변경 10-11)을 먼저 쓰고, 없으면 위 기본값.
 
 // key는 실제 DB agent_executions.agent_name 값(app/models.py FIXED_TASK_SEQUENCE) — GET
 // /admin/agent-tasks 응답과 매칭하는 데 쓴다. name은 화면 표시용(괄호 설명 포함), work는
@@ -765,7 +766,7 @@ function ProgressTab({focusProjectId=null}){
         <div className="grid sm:grid-cols-3 gap-4">
           {DEVIATION_CATEGORIES.map(([key,label,max])=>(
             <div key={key}>
-              <p className="text-[12px] font-semibold text-[var(--muted-fg)] mb-2">{label} <span className="font-normal">({max}점 만점)</span></p>
+              <p className="text-[12px] font-semibold text-[var(--muted-fg)] mb-2">{label} <span className="font-normal">({scoreHistory[`${key}_max`]??max}점 만점)</span></p>
               <div className="soft-scroll rounded-xl border border-[var(--border)] divide-y divide-[var(--border)] max-h-64 overflow-y-auto">
                 {(scoreHistory[key]||[]).length===0
                   ?<div className="p-3 text-[12px] text-[var(--muted-fg)]">누적된 이력이 없습니다.</div>

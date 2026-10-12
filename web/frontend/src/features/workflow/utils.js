@@ -1,5 +1,5 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
-import {DOC_ITEMS_FAIL,DOC_ITEMS_PASS,CODE_CHECK_ITEMS_BY_CATEGORY,CODE_CHECK_FAILS_BY_OUTCOME,APPLICANT_TYPE_LABEL,PROJECT_STATUS_TONE,RERUN_CAP} from './data.js';
+import {DOC_ITEMS_FAIL,DOC_ITEMS_PASS,CODE_CHECK_ITEMS_BY_CATEGORY,CODE_CHECK_FAILS_BY_OUTCOME,APPLICANT_TYPE_LABEL,PROJECT_STATUS_TONE,RERUN_CAP,PLAN_TAGS,bundleOfTag} from './data.js';
 
 export const MOCK_TODAY = new Date('2026-09-08');
 
@@ -153,6 +153,8 @@ export function scoresFromResult(result){
     weight: num(r.max_score) ?? 0,
     earned: num(r.score) ?? 0,
     passed: (num(r.score) ?? 0) >= (num(r.max_score) ?? 0),
+    // 검사할 대상이 없는 항목(백엔드 응답모양변경 10-11 1-2) — 점수 0 · 만점 0이라 passed가 참이지만 통과로 세지 않는다.
+    applicable: r.applicable !== false,
     evidence: r.reason_text || null,
   }));
 
@@ -160,6 +162,8 @@ export function scoresFromResult(result){
     docScore,
     artifactScore,
     codeCheckItems: codeCheckItems.length ? codeCheckItems : null,
+    // 산출물층(코드 점검 + 계획서 대조)을 그 실행 건 배점으로 환산한 값 — 없으면(옛 응답) 화면이 두 칸을 더한다.
+    artifactLayer: num(verdict.artifact_max_score) != null ? { raw: num(verdict.artifact_score) ?? 0, max: num(verdict.artifact_max_score) } : null,
     total: num(verdict.total_score),
     threshold: num(verdict.pass_threshold),
   };
@@ -207,6 +211,21 @@ export function reviewParagraphsFrom(plan){
   });
 }
 
+// 재작성 결과 changed.sections를 항목 목록으로 편다. 옛 모양은 키가 웹 태그('1-1')이고, 새 모양(백엔드 재작성결과 보충
+// 10-11)은 키가 항목 번호('2.4.1')이고 값에 tag · title이 붙는다. 묶음 순서(1-1 → 4-1, 일반현황 · 개요는 맨 앞)로 정렬한다.
+export function sectionDiffEntries(sections){
+  const order = (tag) => (tag == null ? -1 : PLAN_TAGS.indexOf(tag));
+  return Object.entries(sections || {})
+    .filter(([, v]) => v && typeof v === 'object' && ('before' in v || 'after' in v))
+    .map(([key, v]) => {
+      const hasTag = 'tag' in v;
+      const tag = hasTag ? v.tag : (PLAN_TAGS.includes(key) ? key : null);
+      return { key, tag, hasTag, bundle: hasTag || PLAN_TAGS.includes(key) ? bundleOfTag(tag) : key,
+        title: v.title || key, before: v.before, after: v.after };
+    })
+    .sort((a, b) => order(a.tag) - order(b.tag) || a.key.localeCompare(b.key, undefined, { numeric: true }));
+}
+
 // 재작성 응답(POST /projects/{id}/retry-task)의 changed를 "변경 내역" 한 줄로 바꾼다.
 // changed 모양은 task_key마다 다르다(app/schemas.py RetryTaskResponse):
 //   writing            -> { sections: { '1-1': {before, after}, … } }
@@ -219,11 +238,18 @@ export function reworkDiffFromChanged(changed){
   const fileName = (p) => (typeof p === 'string' ? p.split('/').pop() : null);
 
   if (changed.sections && typeof changed.sections === 'object') {
-    const entries = Object.entries(changed.sections).map(([tag, v]) => [tag, pair(v)]).filter(([, v]) => v);
+    const entries = sectionDiffEntries(changed.sections);
     if (entries.length) {
-      const [tag, v] = entries[0];
+      const first = entries[0];
+      // 새 모양(키 = 항목 번호, 값에 tag · title)은 묶음 이름으로 "문제인식 3개 항목 변경"처럼 모아 보인다.
+      if (first.hasTag) {
+        const counts = new Map();
+        entries.forEach((e) => counts.set(e.bundle, (counts.get(e.bundle) || 0) + 1));
+        const summary = [...counts].map(([b, n]) => `${b} ${n}개 항목`).join(' · ');
+        return { before: `${first.title} ${first.before ?? '(없음)'}`, after: `${first.title} ${first.after ?? '(없음)'} — ${summary} 변경` };
+      }
       const more = entries.length > 1 ? ` 외 ${entries.length - 1}건` : '';
-      return { before: `${tag} ${v.before ?? '(없음)'}`, after: `${tag} ${v.after ?? '(없음)'}${more}` };
+      return { before: `${first.bundle} ${first.before ?? '(없음)'}`, after: `${first.bundle} ${first.after ?? '(없음)'}${more}` };
     }
   }
   for (const key of ['executable_path', 'infographic_path']) {

@@ -4,8 +4,8 @@ import {Icon} from '../../components/Icons.jsx';
 import {DiffText,RerunLeftBadge} from './shared.jsx';
 import {GeneralInfoBlock,PlanExtrasBlock} from './PlanForm.jsx';
 import {PrototypeFrame,ResultPreview,useArtifactFile,ArtifactLoadError} from './ArtifactResult.jsx';
-import {detectItemCategory,diffSentences,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
-import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,RERUN_CAP,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,DOC_REWORK_BUNDLES} from './data.js';
+import {detectItemCategory,diffSentences,sectionDiffEntries,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
+import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,PLAN_TAGS,headerOfTag,RERUN_CAP,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,DOC_REWORK_BUNDLES} from './data.js';
 import {startReview,getProjectStatus} from '../../api.js';
 import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,relabelAfterReject,requestRework,reworkDiffForLabel,waitRework} from './rework.js';
 
@@ -25,12 +25,14 @@ const TASK_KEY_BY_LABEL = {
 // sectionDiff: 재작성 응답 changed.sections = { '1-1': {before, after}, … }. 있으면 그
 // 실제 전/후를 대조하고, 없으면(서버가 안 줬거나 시연용으로 그릴 때) 기존 고정 문단을 쓴다.
 // "전" 문단은 서버 응답으로만 알 수 있다 — GET /result는 지금 상태(후)만 내려준다.
+// 새 모양(키 = 항목 번호, 값에 tag · title — 백엔드 재작성결과 보충 10-11)은 묶음 머리말 · 항목 제목으로, 옛 모양(키 = 태그)은
+// 공식 머리말로 보인다.
 export function PlanCompareColumns({ itemInfo, announcement, sectionDiff = null }){
   const rows = sectionDiff
-    ? Object.entries(sectionDiff).map(([tag, v], i) => ({
-        title: PLAN_DOCUMENT_SECTIONS[i]?.title || tag,
-        header: PSST_OFFICIAL_HEADERS[i] || tag,
-        parts: diffSentences(v?.before || '', v?.after || ''),
+    ? sectionDiffEntries(sectionDiff).map((e, i) => ({
+        title: e.key,
+        header: e.hasTag ? `${headerOfTag(e.tag)} · ${e.title}` : (PLAN_TAGS.includes(e.key) ? headerOfTag(e.key) : PSST_OFFICIAL_HEADERS[i] || e.key),
+        parts: diffSentences(e.before || '', e.after || ''),
       }))
     : PLAN_DOCUMENT_SECTIONS.map((s, i) => ({
         title: s.title,
@@ -353,7 +355,8 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
   const docScore = scores?.docScore || DOC_SCORE_BY_OUTCOME[docOutcome];
   const artifactScore = scores?.artifactScore || ARTIFACT_SCORE_BY_OUTCOME[artifactOutcome];
   const threshold = scores?.threshold ?? FINAL_THRESHOLD;
-  const artifactRawTotal = artifactScore.autoCheck.raw + artifactScore.crossCheck.raw;
+  // 산출물층 점수 · 만점은 서버가 그 실행 건 배점으로 환산한 값을 먼저 쓴다(관리자가 배점을 바꿔도 13/10처럼 어긋나지 않게).
+  const artifactRawTotal = scores?.artifactLayer?.raw ?? (artifactScore.autoCheck.raw + artifactScore.crossCheck.raw);
   // 서버가 총점을 직접 주면 그 값을 쓴다 — 층별 합이 반올림 때문에 총점과 어긋날 수 있다.
   const finalTotal = scores?.total ?? (docScore.raw + artifactRawTotal);
   const passed = finalTotal >= threshold;
@@ -363,7 +366,7 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
   // E9: 산출물층이 이미 만점이면 프로토타입만 다시 만들어선 기준에 이를 수 없다는 안내.
   // 예전엔 artifactOutcome(서버 overall_passed로 정해지는 pass/fail)만 봐서, 산출물 점수가
   // 4.22/30인데도 "이미 최선까지 재작성했다"고 뜨는 경우가 있었다 — 실제 점수로 판단한다.
-  const artifactMaxTotal = artifactScore.autoCheck.max + artifactScore.crossCheck.max;
+  const artifactMaxTotal = scores?.artifactLayer?.max ?? (artifactScore.autoCheck.max + artifactScore.crossCheck.max);
   const showE9Hint = !passed && artifactMaxTotal > 0 && artifactRawTotal >= artifactMaxTotal;
   // 되돌릴 수 없음 확인 절차(시연 로그 steps[10].data.choices[1].confirm)에 쓸 짧은
   // 항목별 미달 요약 — "실현가능성 13/20"처럼 항목명+점수로 간결하게 늘어놓는다.
@@ -602,7 +605,7 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
       <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide mb-2">종합 평가</p>
       <p className="text-[14px] text-[var(--muted-fg)] leading-snug mb-1.5">『{announcement ? announcement.title : ''}』</p>
       <h1 className="font-display font-bold text-[26px] md:text-[30px] mb-3">제출 전 점검 결과예요</h1>
-      <p className="text-[14.5px] text-[var(--muted-fg)] mb-8">사업계획서(문서층 70점)와 프로토타입(산출물층 30점)을 합친 총점입니다</p>
+      <p className="text-[14.5px] text-[var(--muted-fg)] mb-8">사업계획서(문서층 {docScore.max}점)와 프로토타입(산출물층 {artifactMaxTotal}점)을 합친 총점입니다</p>
 
       <div className={`rounded-2xl p-6 flex items-center justify-between gap-4 flex-wrap mb-6 ${passed ? 'bg-[color-mix(in_srgb,var(--ok)_8%,white)] border border-[var(--border)]' : 'bg-[color-mix(in_srgb,var(--danger)_6%,white)] border border-[var(--danger)]'}`}>
         <div>
@@ -625,7 +628,7 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
         </div>
         <div className="rounded-2xl border border-[var(--border)] bg-white p-5">
           <p className="text-[12.5px] font-semibold text-[var(--muted-fg)] mb-3">프로토타입 점검</p>
-          <p className="font-display font-bold text-[24px] leading-none mb-1">{artifactRawTotal} <span className="text-[13px] font-semibold text-[var(--muted-fg)]">/ 30점</span></p>
+          <p className="font-display font-bold text-[24px] leading-none mb-1">{artifactRawTotal} <span className="text-[13px] font-semibold text-[var(--muted-fg)]">/ {artifactMaxTotal}점</span></p>
           <p className="text-[12px] text-[var(--muted-fg)]">자동 검증 {artifactScore.autoCheck.raw}/{artifactScore.autoCheck.max} · 계획서 대조 {artifactScore.crossCheck.withheld ? '대조 불가(0점 합산)' : `${artifactScore.crossCheck.raw}/${artifactScore.crossCheck.max}`}</p>
         </div>
       </div>

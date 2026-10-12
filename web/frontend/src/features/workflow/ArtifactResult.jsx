@@ -162,8 +162,10 @@ export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcom
   // 서버 채점이 끝났으면 그 값을, 아직이면 기존 고정 표를 쓴다(utils.js scoresFromResult).
   const artifactScore = scores?.artifactScore || ARTIFACT_SCORE_BY_OUTCOME[scoreOutcome];
   const codeCheckItems = scores?.codeCheckItems || buildCodeCheckItems(category, scoreOutcome);
-  const passedItems = codeCheckItems.filter((item) => item.passed);
-  const failedItems = codeCheckItems.filter((item) => !item.passed);
+  // 해당 없음(applicable === false) 항목은 통과 · 미달 어느 쪽에도 세지 않고 통과 칸 아래에 따로 보인다.
+  const naItems = codeCheckItems.filter((item) => item.applicable === false);
+  const passedItems = codeCheckItems.filter((item) => item.passed && item.applicable !== false);
+  const failedItems = codeCheckItems.filter((item) => !item.passed && item.applicable !== false);
   // [SB-239] 서버가 기능 목록을 따로 주면(missing_features · partial_features) 그걸 쓴다 — 예전엔 대조 사유 문장 하나를 통째로 보였다.
   // 필드가 없는 예전 응답 · 예시 화면은 기존 사유 목록으로.
   const hasFeatureLists = Array.isArray(artifact?.missing_features);
@@ -303,6 +305,13 @@ export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcom
                   <div key={item.id} className="flex items-center gap-1.5 text-[12px] leading-snug">
                     <span className="flex-shrink-0 w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold bg-[color-mix(in_srgb,var(--ok)_16%,white)] text-[var(--ok)]" aria-hidden="true">✓</span>
                     <span className="text-[var(--fg)]">{item.name}</span>
+                  </div>
+                ))}
+                {naItems.length > 0 && <p className="mt-1 text-[11px] font-semibold text-[var(--muted-fg)]">해당 없음 {naItems.length}</p>}
+                {naItems.map((item) => (
+                  <div key={item.id} title={item.evidence || undefined} className="flex items-center gap-1.5 text-[12px] leading-snug text-[var(--muted-fg)]">
+                    <span className="flex-shrink-0 w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold bg-[var(--muted)]" aria-hidden="true">–</span>
+                    <span>{item.name}</span>
                   </div>
                 ))}
               </div>

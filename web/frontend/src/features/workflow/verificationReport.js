@@ -44,13 +44,14 @@ export function buildVerificationReportHtml({ projectName, announcementTitle, ca
 
   const docRaw = vDoc ?? docScore.raw;
   const docMaxScore = vDocMax ?? docScore.max;
-  // 산출물층 = 자동 검증 + 계획서 대조. 서버 값은 둘 다 있을 때만 쓴다(한쪽만 쓰면 합이 깨진다).
-  const artifactRaw = vCode != null && vPlan != null ? vCode + vPlan : autoRaw + crossCheck.raw;
-  const artifactMax = vCodeMax != null && vPlanMax != null ? vCodeMax + vPlanMax : autoMax + crossCheck.max;
+  // 산출물층 = 자동 검증 + 계획서 대조. 서버가 그 실행 건 배점으로 환산한 산출물층 값(artifact_score · artifact_max_score)을
+  // 먼저 쓰고, 없으면 두 칸의 합(둘 다 있을 때만 — 한쪽만 쓰면 합이 깨진다), 그것도 없으면 화면 값.
+  const artifactRaw = num(verdict?.artifact_score) ?? (vCode != null && vPlan != null ? vCode + vPlan : autoRaw + crossCheck.raw);
+  const artifactMax = num(verdict?.artifact_max_score) ?? (vCodeMax != null && vPlanMax != null ? vCodeMax + vPlanMax : autoMax + crossCheck.max);
   const total = num(verdict?.total_score) ?? docRaw + artifactRaw;
   const passThreshold = num(verdict?.pass_threshold) ?? threshold;
   const passed = total >= passThreshold;
-  const failedItems = codeCheckItems.filter((it) => !it.passed);
+  const failedItems = codeCheckItems.filter((it) => !it.passed && it.applicable !== false);
 
   const opinion = crossCheck.withheld
     ? '계획서와 구현 기능을 대조하지 못했습니다(대조 불가). 이 항목은 0점으로 합산됩니다.'
@@ -66,7 +67,7 @@ export function buildVerificationReportHtml({ projectName, announcementTitle, ca
   const docCells = docScore.items.map((it) => `
       <div class="doc-item"><span>${esc(DOC_ITEM_LABEL[it.name] || it.name)}</span><b>${it.score} / ${it.max}</b></div>`).join('');
   const checkRows = codeCheckItems.map((it) => `
-        <tr class="${it.passed ? '' : 'fail'}"><td>${esc(it.name)}</td><td class="num">${it.weight}</td><td>${it.passed ? '충족' : '미충족'}</td><td class="num">${round2(earnedOf(it))}</td></tr>`).join('');
+        <tr class="${it.passed ? '' : 'fail'}"><td>${esc(it.name)}</td><td class="num">${it.weight}</td><td>${it.applicable === false ? '해당 없음' : it.passed ? '충족' : '미충족'}</td><td class="num">${round2(earnedOf(it))}</td></tr>`).join('');
   const lines = (arr, empty) => (arr.length ? arr.map((t) => `<p>${esc(t)}</p>`).join('') : `<p class="muted">${empty}</p>`);
 
   return `<!doctype html>

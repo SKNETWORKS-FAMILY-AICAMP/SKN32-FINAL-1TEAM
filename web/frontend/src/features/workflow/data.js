@@ -112,6 +112,12 @@ export const WRITING_SUBTASKS = ['사업계획서 본문 작성', '그래프 생
 // 바 아래엔 지금 하는 일을 한 줄만 표시한다 — Agent별 단계를 다 나열하면 사용자가
 // 볼 필요 없는 내부 구현이 드러난다.
 export const PSST_OFFICIAL_HEADERS = ['1. 문제 인식 (Problem)', '2. 실현 가능성 (Solution)', '3. 성장전략 (Scale-up)', '4. 팀 구성 (Team)'];
+// 계획서 항목의 웹 태그 → 재작성 묶음 · 공식 머리말(순서가 DOC_REWORK_BUNDLES · PSST_OFFICIAL_HEADERS와 같다).
+// 태그가 없는 항목(null)은 일반현황 · 개요다(백엔드 응답모양변경 10-11 1-1).
+export const PLAN_TAGS = ['1-1', '2-1', '3-1', '4-1'];
+export const GENERAL_SECTION_LABEL = '일반현황 · 개요';
+export const bundleOfTag = (tag) => DOC_REWORK_BUNDLES[PLAN_TAGS.indexOf(tag)] || GENERAL_SECTION_LABEL;
+export const headerOfTag = (tag) => PSST_OFFICIAL_HEADERS[PLAN_TAGS.indexOf(tag)] || GENERAL_SECTION_LABEL;
 
 export const PLAN_DOCUMENT_SECTIONS = [
   { tag: 'P', title: '문제인식', body: '동네 헬스장은 대부분 수기 장부와 전화로 예약을 받아 운영 부담이 크고, 회원권 잔여 횟수 관리도 수작업에 의존합니다. 인근 헬스장 12개소를 조사한 결과 대부분 같은 문제를 겪고 있었습니다' },

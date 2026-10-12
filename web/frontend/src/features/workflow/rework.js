@@ -4,7 +4,7 @@
 // (웹연동_변경사항_웹팀전달.md 2.1 retry-task 행 · 3.7, 명세 5.3 · 6.3).
 import {getProjectStatus, getReworkResult, retryTask} from '../../api.js';
 import {reworkDiffFromChanged} from './utils.js';
-import {DOC_REWORK_BUNDLES} from './data.js';
+import {DOC_REWORK_BUNDLES, bundleOfTag} from './data.js';
 
 // 재작성이 실패하면 서버가 요청 전 결과로 되돌리고 기회를 돌려준다(E-RUN-ROLLBACK).
 export const REWORK_FAILED_MESSAGE = '일시적인 문제로 다시 만들지 못해 이전 결과로 되돌렸습니다. 다시 만들 기회는 그대로 남아 있습니다.';
@@ -74,10 +74,17 @@ export async function findRunningRework(projectId, screen) {
 }
 
 // 묶음 하나의 "변경 내역" 한 줄 — 재작성 결과의 changed에서 그 묶음 몫만 골라 만든다.
-// 계획서 묶음은 계획서 전체를 다시 만들어(문서층 임시 처리) sections가 같고, 산출물 묶음은 그 파일 경로를 본다.
+// 계획서 묶음은 그 묶음 항목만 다시 만든다(조율 10-10 4번) — 항목마다 tag가 오면(백엔드 재작성결과 보충 10-11) 그 묶음 항목만
+// 고르고, tag가 없는 옛 모양은 sections 전체를 쓴다. 산출물 묶음은 그 파일 경로를 본다.
 export function reworkDiffForLabel(changed, label) {
   if (!changed) return null;
-  if (DOC_REWORK_BUNDLES.includes(label)) return reworkDiffFromChanged({sections: changed.sections});
+  if (DOC_REWORK_BUNDLES.includes(label)) {
+    const sections = changed.sections || {};
+    const tagged = Object.entries(sections).filter(([, v]) => v && typeof v === 'object' && 'tag' in v);
+    if (!tagged.length) return reworkDiffFromChanged({sections});
+    const mine = Object.fromEntries(tagged.filter(([, v]) => bundleOfTag(v.tag) === label));
+    return Object.keys(mine).length ? reworkDiffFromChanged({sections: mine}) : null;
+  }
   if (label === '실행 파일 제작') return reworkDiffFromChanged({executable_path: changed.executable_path});
   if (label === '인포그래픽 제작') return reworkDiffFromChanged({infographic_path: changed.infographic_path});
   return reworkDiffFromChanged(changed);

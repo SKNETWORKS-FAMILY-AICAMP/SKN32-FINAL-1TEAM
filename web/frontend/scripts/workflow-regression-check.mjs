@@ -83,6 +83,20 @@ try{
   assert.equal(isolateHtml('<html><body>x</body></html>'),`<html>${csp}<body>x</body></html>`);
   assert.equal(isolateHtml('<div>x</div>'),`${csp}<div>x</div>`);
   assert.ok(SANDBOX_CSP.includes("default-src 'none'")&&SANDBOX_CSP.includes("connect-src 'none'"));
+  // 해당 없음 · 실행 건 환산 만점(백엔드 응답모양변경 10-11 1-2) — 새 칸이 없으면 예전처럼 두 칸을 더한다.
+  const {scoresFromResult:sfr}=await server.ssrLoadModule('/src/features/workflow/utils.js');
+  const scored=sfr({verdict:{doc_score:50,doc_max_score:60,code_score:8,code_max_score:20,plan_match_score:10,plan_match_max_score:20,artifact_score:18,artifact_max_score:40,total_score:68},
+    plan:{score_reasons:[],artifacts:[{score_reasons:[{item_code:'CHECK-HTML-WIRING',score:2,max_score:3},{item_code:'CHECK-HTML-INPUT-LABEL',score:0,max_score:0,applicable:false,reason_text:'해당 없음 — 입력칸 없음'}]}]}});
+  assert.deepEqual(scored.artifactLayer,{raw:18,max:40});
+  assert.deepEqual(scored.codeCheckItems.map(i=>[i.passed,i.applicable]),[[false,true],[true,false]]);
+  assert.equal(sfr({verdict:{code_score:8,code_max_score:15},plan:{score_reasons:[],artifacts:[]}}).artifactLayer,null);
+  // 재작성 전후 비교 — 새 모양(키 = 항목 번호, tag · title)은 묶음 이름으로, 묶음마다 그 묶음 항목만(보충 10-11).
+  const {reworkDiffForLabel}=await server.ssrLoadModule('/src/features/workflow/rework.js');
+  const changedNew={sections:{'2.5.1':{before:'b',after:'c',tag:'2-1',title:'개발 방안'},'2.4.2':{before:null,after:'n',tag:'1-1',title:'시장'},'2.4.1':{before:'x',after:'y',tag:'1-1',title:'문제 정의'}}};
+  assert.deepEqual(reworkDiffForLabel(changedNew,'문제인식'),{before:'문제 정의 x',after:'문제 정의 y — 문제인식 2개 항목 변경'});
+  assert.deepEqual(reworkDiffForLabel(changedNew,'실현가능성'),{before:'개발 방안 b',after:'개발 방안 c — 실현가능성 1개 항목 변경'});
+  assert.equal(reworkDiffForLabel(changedNew,'팀 구성'),null);
+  assert.deepEqual(reworkDiffForLabel({sections:{'1-1':{before:'a',after:'b'}}},'문제인식'),{before:'문제인식 a',after:'문제인식 b'});
   // 금액 칸이 비어 있거나(0은 된다) 추진 기간에 연도가 없으면 넘어가지 않는다.
   for(const [bad,anchor] of [[{budget:[{...draft.budget[0],cash:''}]},'intake-budget'],[{schedule:{feasibility:[{...draft.schedule.feasibility[0],period:'11월 ~ 1월'}]}},'intake-schedule']]){
     submitted=null;ui=mount(IntakeForm,{initialValues:{...draft,...bad},onSubmit:info=>{submitted=info}});await ui.flush();
