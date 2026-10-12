@@ -6,11 +6,11 @@
 |---|---|---|
 | 3 공고 후보 | 공고선택 · 사용자대기, 계획서작성 · 사용자대기(자격 통과 뒤 작성 시작 전, 3.3) | 후보는 sbrain_flow.candidate_lists(첫 조회 candidates@1, 유효한 추가 조회가 있으면 firstCandidates · moreCandidates), collectionStatus, filteredCount, fallbackUsed · fallbackMode, 막힌 공고 blockedAnnouncementIds(Run) |
 | 4 자격 확인 | 공고선택 · 계획서작성 사용자대기, gateResult가 있을 때 | gateResult(확인 필요 unknownConditions면 notices에 E-G1-UNPARSED), businessAgeYears |
-| 6 문서 평가 | 문서평가 · 사용자대기 | planDoc, scoreReport.document, G-02a.failedTaskIds · reworkOrders · nextAction |
+| 6 문서 평가 | 문서평가 · 사용자대기 | planDoc, scoreReport.document, 표 대체 사유 tableFallbacks(확장, tableOutputs에서), G-02a.failedTaskIds · reworkOrders · nextAction |
 | 8 산출물 확인 | 산출물확인 · 사용자대기 | prototype, infographic, codeCheck, featureMatch, G-02b.reworkOrders(산출물층) |
 | 9 종합 평가 | 종합평가 · 사용자대기 | scoreReport.overall, G-02b.reworkOrders · nextAction, reworkDiff |
 | 10 검수 전후 | 결과물 · 완료 | formatFindings, sentenceResults(문장별 전후 · 시도별 기록), proofreadLog |
-| 11 결과물 | 결과물 · 완료 | deliverable, userMessage, planDoc, prototype, infographic |
+| 11 결과물 | 결과물 · 완료 | deliverable, userMessage, planDoc, prototype, infographic, 표 대체 사유 tableFallbacks(확장) |
 
 - 재작성 목록은 묶음별 남은 기회를 함께 싣는다(묶음 요청 request_rework_for_project와 같은 묶음 이름으로 센다).
 - 대기 지점이 아니거나 아직 없는 화면은 CommandError("SCREEN_NOT_READY"). 화면 3은 작성을 시작한 뒤에는
@@ -110,6 +110,11 @@ class ScoreView(SBModel):
     code_check_items: list[CodeCheck] = ext(default_factory=list, note=f"{SCALE_NOTE} — 코드 점검 항목 줄(환산)")
 
 
+# 표 대체 사유 칸 (확장) — 담당자 10-12 새 판이 더한 화면 칸. 화면 6 · 11 · 결과 조회에 같은 모양으로 싣는다
+TABLE_FALLBACK_NOTE = ("표 대체 사유(결정 0028) — 표를 본문 서술로 바꾼 항목마다 하나(tableOutputs의 tableFallbackUsed 참 · "
+                       "fallbackReason이 빈 글이 아님). 계획서 본문 글에는 섞지 않는다")
+
+
 # 점수 보고서 → ScoreView로 그대로 옮기는 환산 칸 (파이썬 이름)
 SCALED_SCORE_FIELDS = ("doc_layer_max", "code_check_score", "code_check_max", "feature_match_score",
                        "feature_match_max", "artifact_layer_score", "artifact_layer_max", "code_check_items")
@@ -141,11 +146,17 @@ class GateScreen(Screen):
     can_start_writing: bool
 
 
+class TableFallback(SBModel):
+    """새 타입(확장) — F17 표를 본문으로 대체했을 때 화면에 별도 표시할 항목별 사유."""
+    section_code: str = ext(note="표를 본문 서술로 바꾼 항목 번호")
+    reason: str = ext(note="담당자 fallbackReason 원문 (사용자용 문구로 다듬는 것은 담당자에게 요청함)")
+
+
 class DocumentScreen(Screen):
     """6 문서 평가 — 계획서 · 환산 점수 · 미달 항목 · 표 대체 사유 · 재작성 목록 · 다음 동작."""
     plan_doc: PlanDoc
     score: ScoreView
-    table_fallbacks: list[TableFallback] = Field(default_factory=list)
+    table_fallbacks: list[TableFallback] = ext(default_factory=list, note=TABLE_FALLBACK_NOTE)
     failed_task_ids: list[str]
     rework_options: list[ReworkOption]
     next_action: NextAction
@@ -195,13 +206,7 @@ class ResultScreen(Screen):
     plan_doc: PlanDoc
     prototype: Prototype
     infographic: Infographic
-    table_fallbacks: list[TableFallback] = Field(default_factory=list)
-
-
-class TableFallback(SBModel):
-    """F17 표를 본문으로 대체했을 때 화면에 별도 표시할 항목별 사유."""
-    section_code: str
-    reason: str
+    table_fallbacks: list[TableFallback] = ext(default_factory=list, note=TABLE_FALLBACK_NOTE)
 
 
 # ── 지금까지 결과 · 재작성 결과 (확장) ─────────────────────
@@ -223,7 +228,7 @@ class Outputs(SBModel):
     business_age_years: float | None = None
     category: str | None = None
     plan_doc: PlanDoc | None = None
-    table_fallbacks: list[TableFallback] = Field(default_factory=list)
+    table_fallbacks: list[TableFallback] = ext(default_factory=list, note=TABLE_FALLBACK_NOTE)
     doc_score: DocScore | None = None
     document_score_report: ScoreView | None = None     # scoreReport.document (G-02a)
     overall_score_report: ScoreView | None = None      # scoreReport.overall (G-02b)

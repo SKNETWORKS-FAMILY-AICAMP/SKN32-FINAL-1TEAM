@@ -518,6 +518,8 @@ sequenceDiagram
 
 전략 · 작성 · 검증-1 담당자 코드(F01 ~ F19)를 여섯 Task로 끼웠다. Agent 팀 약속은 [Agent_연동_규격_초안.md](Agent_연동_규격_초안.md) 5.1 · 5.2 · 5.6 · 7.1 · 8.6에, 웹 약속은 [Orchestrator_웹연동_함수명세.md](Orchestrator_웹연동_함수명세.md) 3.1 · 4.4 · 5.2 · 6.3 · 20절에 있다.
 
+2026-10-12 담당자 새 판을 받으며 입력 오류(`inputError`) · 표 대체 사유 칸(`tableFallbacks`) · 화면 제목(`displayTitle`) 줄을 더하고, 시장 자료 줄을 바로잡았다(결정 0028). 웹 약속은 함수명세 5.1 · 5.2 · 22절, Agent 약속은 Agent 규격 5.6 · 8.6절에 있다.
+
 **잠정** (`orchestrator/settings.py` `PROVISIONAL` — 키가 있는 것은 키를 적었다)
 
 | 항목 | 값 · 내용 | `PROVISIONAL` 키 | 코드 |
@@ -526,13 +528,15 @@ sequenceDiagram
 | 검증-1 재수행 횟수 | 항목마다 · 사이클마다 1회(기준 문서 시트 1). 웹 관리자 칸 없이 코드 기본값으로만 둔다 | `redo.verify1RedoCount` | `RedoSettings.verify1_redo_count` |
 | 사업비 · 일정 필수 스위치 | `PLAN_TABLES_REQUIRED = False` — 웹 입력 화면 배포 뒤 이 한 곳만 켠다 | `planTables.required` | `orchestrator/settings.py` |
 | 사업비 · 일정 읽기 | 일정 row의 `section`이 `feasibility` · `growth` 밖이면 버림, 사업비 row의 `phase`가 '1단계' · '2단계' 밖이면 단계 미지정 | `planTables.unknownSection` | `intake/mapping.py` |
-| 필수 결측 이름 | '사업비 집행계획' · '사업비 집행계획(1단계)' · '사업비 집행계획(2단계)' · '추진 일정(협약기간 내)' | `planTables.missingLabels` | `intake/mapping.py` `LABELS` || 양식 묶음 · 평가항목 | 담당자 `execution_contract.json`에서 만든 양식(예비창업자 25개 · 개인사업자 · 법인 24개), 평가항목 = 계획서 항목(배점 70 ÷ 항목 수), 평가항목 이름 = 항목 제목 앞 40자, 채점 기준표 `partner-sw@<담당자 채점 정책 버전>` | `taskPlan.formTable` | `agents/form_defaults.py` |
-| 담당자 항목별 재작성 묶음 | 2.4 · 3.4 문제인식, 2.5 · 3.5 실현가능성, 2.6 · 3.6 성장전략, 2.7 · 3.7 팀 구성, 2.1 ~ 2.3 · 3.1 ~ 3.3 묶음 없음 — 웹 묶음 4개와 담당자 양식 항목으로 오케스트레이터 쪽에서 정함, 담당자 · 웹팀 확인 대기 | `reworkMap.sectionBundles` | `flow/rework_map.py` `SECTION_BUNDLE_TABLE` |
+| 필수 결측 이름 | '사업비 집행계획' · '사업비 집행계획(1단계)' · '사업비 집행계획(2단계)' · '추진 일정(협약기간 내)' | `planTables.missingLabels` | `intake/mapping.py` `LABELS` |
+| 양식 묶음 · 평가항목 | 담당자 `execution_contract.json`에서 만든 양식(예비창업자 25개 · 개인사업자 · 법인 24개), 평가항목 = 계획서 항목(배점 70 ÷ 항목 수), 평가항목 이름 = 화면 제목(담당자 계약 `displayTitle` — 양식 원래 제목, 없으면 `title`) 앞 40자, 평가 설명 · 채점 기준의 대신 값 = 담당자 `title`(작성 지시), 채점 기준표 `partner-sw@<담당자 채점 정책 버전>`. 화면 제목은 2026-10-12 담당자 새 판부터(전에는 작성 지시가 섞인 `title`을 썼다) | `taskPlan.formTable` | `agents/form_defaults.py` |
+| 담당자 항목별 재작성 묶음 | 2.4 · 3.4 문제인식, 2.5 · 3.5 실현가능성, 2.6 · 3.6 성장전략, 2.7 · 3.7 팀 구성, 2.1 ~ 2.3 · 3.1 ~ 3.3 묶음 없음 — 웹 묶음 4개와 담당자 양식 항목으로 오케스트레이터 쪽에서 정함. 담당자가 맞다고 확인했고(2026-10-12), 일반현황 · 개요 · 그림을 새 묶음으로 두자는 담당자 제안을 웹팀에 묻는 중(웹의 '그림 → 실현가능성' 제안과 함께) | `reworkMap.sectionBundles` | `flow/rework_map.py` `SECTION_BUNDLE_TABLE` |
 | 예비창업 단계 미지정 사업비 row | 1 · 2단계 표 어디에도 넣지 않고 2.5.3 표의 "단계 미지정" 줄로 보존, 2.5.3 · 2.5.4 두 항목을 입력 없음으로 — 웹 `phase` 컬럼이 생기면 풀린다 | `partnerSw.unassignedPhase` | `agents/partner_sw/inputs.py` |
 | 출력 변환 매핑 | `RequirementAnalysis`(`problemStatement` = `itemSpec.oneLineSummary`, `useCases` = F02 `deliverables` 등) · `MarketAnalysis`(`marketSize` 빈 목록, `positioning` = F12 요약 등) · `numericTokens`(숫자 + 단위 규칙 추출) · 문장 나누기(줄 · 문장 끝, `s-<항목>-<순번>`) | `partnerSw.outputMapping` | `agents/partner_sw/outputs.py` |
 | 항목 점수 소수 자리 | 둘째 자리 반올림, 문서층 총점 = 반올림한 항목 점수의 합 | `partnerSw.scoreDigits` | `agents/partner_sw/verify.py` `SCORE_DIGITS` |
 | '입력 확인 필요' 문구 | 항목 warning '입력 확인 필요 — <사업비 집행계획 \| 추진 일정>', 점수 보고서 안내 '입력 확인 필요 — 사업비 집행계획 · 추진 일정을 입력하면 해당 표가 채워집니다.' | `partnerSw.inputMissing` | `agents/partner_sw/verify.py` `INPUT_MISSING`, `agents/supervisor/judge.py` `INPUT_MISSING_NOTICE`(2026-10-11 `agents/stubs.py`에서 옮김) |
 | 입력 없음 판정 | 그 표의 원본 row가 비면 입력 없음, 예비창업 `phase` 없는 사업비 row가 있으면 2.5.3 · 2.5.4 둘 다 | `partnerSw.inputMissing` | `agents/partner_sw/inputs.py` |
+| 입력 오류 판정 · 안내 (2026-10-12, 결정 0028) | 담당자 F19 규칙 검사 issue 가운데 ① 협약기간 일정이 협약기간 최대 개월 수 초과(담당자 판별 함수 `_is_agreement_duration_failure` 그대로) ② 협약기간 일정 종료월이 개발 종료월 이후 ③ 정부지원사업비가 지원규모 상한 초과(② · ③은 연결 코드의 글 꼴 `AFTER_DEV_END` · `OVER_SUPPORT_LIMIT` — 담당자 글 전체와 같은 꼴만, 담당자 글이 바뀌면 함께 고칠 곳)가 최종 fail 판정에 있으면 `inputError` 참. 점수 보고서 안내 '입력한 협약기간 일정이나 사업비가 기준(협약기간 최대 개월 수 · 개발 기간 · 공고 지원 금액 상한)을 벗어나 일부 항목이 검증을 통과하지 못했습니다. 이 항목은 다시 만들어도 고쳐지지 않습니다. 이대로 진행하거나, 입력을 고쳐 새 프로젝트로 다시 만들 수 있습니다.' | `partnerSw.inputError` | `agents/partner_sw/verify.py` `input_error`, `agents/supervisor/judge.py` `INPUT_ERROR_NOTICE` |
 | 팀원 '역할: 경력' 꼴이 아닌 줄 · 계획 한 줄 | `teamRoleCareers`에서 '역할: 경력' 꼴이 아닌 줄은 역할로 본다. 채용 · 장비 · 협력 계획은 한 줄 목록으로 보낸다 | `partnerSw.applicantLines` | `agents/partner_sw/inputs.py` |
 | 검증-1 재수행 T-V1 단위 · 후보 사유 | 재수행 T-V1의 `unit`은 종류가 섞이면 '섹션', 판정 후보의 사유와 보완 지시는 같은 글, 재작성 사이클 T-V1 피드백 종류 '재채점' | `verify1.redoDetails` | `flow/sbrain_flow.py` · `agents/supervisor/judge.py`(2026-10-11 `agents/stubs.py`에서 옮김) |
 
@@ -544,7 +548,7 @@ sequenceDiagram
 | 항목 | 값 · 내용 | 표시 | 코드 |
 |---|---|---|---|
 | 담당자 코드 위치 | `agents/partner_sw/agent_strategy/` · `agent_validation_1/`(담당자 파일 구조 그대로, 연결부만 바꿈 — `[S-Brain]` 주석), 연결 코드는 `partner_sw/` 바로 아래. 바꾼 곳 목록 `partner_sw/VENDORED.md` | 구현 방식 | `agents/partner_sw/` |
-| 패키지 자료 파일 | 작성 규칙 · 채점 기준 · 공고 규정은 불러올 때 한 번 읽는다. 시장 자료는 로컬 전용이며 기본 설치본에는 없다. `SBRAIN_AUTO_RESEARCH=1`일 때만 KIET 검색 결과·보고서·이력을 저장하고 같은 실행의 검색 색인을 갱신한다. 시장 자료 출력은 Git과 wheel에서 제외한다 | 명시적 갱신 예외 | `agents/partner_sw/resources.py`, `agents/partner_sw/agent_strategy/runtime/market_crawler.py`, `pyproject.toml` |
+| 패키지 자료 파일 | 작성 규칙 · 채점 기준 · 공고 규정은 불러올 때 한 번 읽는다(Task 실행 중 디스크를 열지 않는다). 시장 자료는 기본 설치본(저장소 · 배포 패키지)에 없고, 없으면 '근거 없음 — 수치 · 경쟁사 추정 금지'로 돈다. 2026-10-12 담당자 새 판의 KIET 크롤러(`market_crawler.py`)와 갱신 함수(담당자 실행에서 `SBRAIN_AUTO_RESEARCH=1`일 때 로컬 JSON에 쌓음)는 **우리 실행 흐름(T-S1 · T-S2)에서는 부르지 않는다(담당자 자체 실행에서만 쓰임)**. 실행마다 자동 검색은 다음 작업이다 | 구현 방식 | `agents/partner_sw/resources.py`, `agents/partner_sw/agent_strategy/runtime/market_crawler.py`, `pyproject.toml` |
 | 함수별 모델 | `TaskModelSetting.purposeModels`(목적 → 모델), `tools.llm(purpose=…)`가 목적별 모델을 고르고 호출 기록 `model`에 실제 모델. 엔진은 목적 이름을 모름 | 확장(`ext()`) | `orchestrator/settings.py` · `orchestrator/tools.py` |
 | JSON 객체 응답 | `LLMRequest.json_mode`, `tools.llm(json_mode=True)`, OpenAI 호출처 `json_object` 요청 · `finish_reason == 'length'`면 늘 `FormatError` | 확장(엔진) | `orchestrator/tools.py` · `orchestrator/openai_provider.py` |
 | 새 타입 | `BudgetItem` · `ScheduleItem`(사전 정보 row), `DiagramSpec`(그림), `SectionResult`(검증-1 항목 판정), `Verify1State`(흐름 상태) — 기존 타입에 담을 곳이 없어 둠 | 확장(새 타입) | `models/domain.py` · `models/run.py` |
@@ -552,12 +556,15 @@ sequenceDiagram
 | 실행 건 확장 칸 | `Run.verify1`(`Verify1State` — 사이클 키 · 만든 항목 · 항목별 재수행 횟수 · 단계 · 대상). 실행 건 줄 `run_json`에 저장(DDL 변경 없음), 사이클 끝 · 재작성 실패 · 중단 · 실행 실패 때 비움 | 확장(`ext()`) | `models/run.py` · `flow/sbrain_flow.py` |
 | T-W3 LLM 없음 | 등록부 `uses_llm=False`, Task 설정 항목 없음, 흐름이 재수행을 걸지 않고 바로 확정 동작, 지시문 안내를 다시 쓰지 않음 | 기준 문서와 다름 | `flow/catalog.py` · `flow/sbrain_flow.py` |
 | 흐름 선택 확장 지점 | `Flow.allows_redo`(재수행을 걸지 여부 — T-W3 막음, 엔진은 `getattr`로 본다) | 확장(엔진) | `orchestrator/engine.py` · `flow/sbrain_flow.py` |
-| 검증-1 fail 재수행 | T-V1 바로 뒤에 끼움, fail 항목만(본문 T-W1 · 그림 T-W2 → M-1 → T-V1), 표는 다시 검증만, 끝내 fail인 표는 T-W3 대체 → M-1, 진행률 전체 단계 수를 늘림 | 기준 문서 세부 미확정을 정함 | `flow/sbrain_flow.py` |
+| 검증-1 fail 재수행 | T-V1 바로 뒤에 끼움, fail 항목만(본문 T-W1 · 그림 T-W2 → M-1 → T-V1), 표는 다시 검증만, 끝내 fail인 표는 T-W3 대체 → M-1, 진행률 전체 단계 수를 늘림. 입력 없음 · 입력 오류 항목은 재수행 · 표 대체 대상이 아니다(입력 오류는 2026-10-12 — 흐름은 판정 칸 `status` · `inputMissing` · `inputError`로만 가른다) | 기준 문서 세부 미확정을 정함 · 입력 오류 제외는 기준 문서와 다름(결정 0028) | `flow/sbrain_flow.py` |
 | 태그 묶음 재작성 | 고른 묶음 항목만 종류별 Task(`KIND_TASK`)로, 판정 지시는 그 묶음만 셈(`order_bundles`), 화면 6 · 9 남은 기회는 묶음별 | 구현 규칙 | `flow/rework_map.py` · `flow/sbrain_flow.py` · `flow/reads.py` |
-| 판정 후보 (G-02a · G-02b 임시 구현) | fail · warning 항목이 있는 묶음(입력 없음 제외), 80 미만 · 후보 없음이면 4개 모두, 상한도달 = 후보 묶음 기회 모두 0, 입력 없음 안내. 그 밖의 G-02a · G-02b 동작은 임시 구현 그대로. **2026-10-11 실구현으로 옮김** — 같은 규칙, 쓰지 않은 묶음의 기회는 설정 사본 `rework.perBundle`로 셈(11.12) | 구현 규칙 | `agents/stubs.py` → `agents/supervisor/judge.py`(2026-10-11) |
+| 판정 후보 (G-02a · G-02b 임시 구현) | fail · warning 항목이 있는 묶음(입력 없음 제외, 2026-10-12부터 입력 오류도 제외), 80 미만 · 후보 없음이면 4개 모두(입력 오류 항목만 남아 점수가 모자란 경우도 같다), 상한도달 = 후보 묶음 기회 모두 0, 입력 없음 안내 · 입력 오류 안내(2026-10-12 — 입력 없음 안내 바로 뒤, 한 번). 그 밖의 G-02a · G-02b 동작은 임시 구현 그대로. **2026-10-11 실구현으로 옮김** — 같은 규칙, 쓰지 않은 묶음의 기회는 설정 사본 `rework.perBundle`로 셈(11.12) | 구현 규칙 · 입력 오류 제외는 기준 문서와 다름(결정 0028) | `agents/stubs.py` → `agents/supervisor/judge.py`(2026-10-11) |
+| 입력 오류 칸 (2026-10-12) | `SectionResult.inputError`(파이썬 `input_error`, 기본 거짓) — 채우는 곳은 T-V1 연결 코드 한 곳. 칸이 없는 옛 판정은 거짓. 스텁 T-V1은 시나리오 칸 `input_error_items`로 흉내 낸다 | 확장(`ext()`, note 결정 0028) | `models/domain.py` · `agents/partner_sw/verify.py` · `agents/stubs.py` |
+| 표 대체 사유 칸 (2026-10-12) | 화면 6(`DocumentScreen`) · 화면 11(`ResultScreen`) · 결과 조회(`Outputs`)의 `tableFallbacks`, 새 타입 `TableFallback`(`sectionCode` · `reason`) — 표를 본문 서술로 바꾼 항목마다 하나(`tableOutputs`의 `tableFallbackUsed` 참 · `fallbackReason`이 빈 글이 아님), `reason`은 담당자 `fallbackReason` 원문. 계획서 본문 글에는 사유를 섞지 않는다. 담당자가 새 판에서 더한 칸 | 확장(`ext()` · 새 타입, note 결정 0028) | `flow/reads.py` |
+| 화면 제목 (2026-10-12) | 계획서 항목 제목(`planDoc.sections[].title` · `FormSpec.sectionTitles`)과 평가항목 이름 = 담당자 계약 `displayTitle`(없으면 `title`). 모양은 그대로, 값만 짧아짐 — 담당자가 새 판에서 바꾼 처리 그대로 | 담당자 계약 값(잠정 목록은 `taskPlan.formTable`) | `agents/form_defaults.py` |
 | 사전 정보 읽기 | `project_budget_items` · `project_schedule_items`를 시작 요청에서 읽음(`phase`는 선택 컬럼), 금액 DECIMAL → 정수 원, NULL은 비움, 네 금액이 모두 있고 맞지 않을 때만 총사업비를 다시 냄 | 확장(읽는 테이블) | `intake/sql_source.py` · `intake/mapping.py` · `store_sql/web_tables.py` |
 
-- 알려진 한계: 총사업비가 빈 사업비 row는 담당자 예산 계산(F14) 입력에서 빠져 그 표 항목이 검증-1 fail로 판정될 수 있다(웹이 합계 불일치를 막기로 해 드묾). 표 서술 속 금액이 보호 토큰에 들지 않아 윤문에서 바뀔 수 있다. 지금 항목별 재작성 묶음으로는 그림 · 일반현황 · 개요 항목을 사용자 재작성으로 다시 만들 수 없다(담당자 `image-retry-latest`와 어긋남 — 확인 요청 중). KIET 사용자 키워드 갱신은 `SBRAIN_AUTO_RESEARCH=1`로 선택 실행하며, 기본 설정에서는 기존 자료를 검색하고 갱신은 건너뛴다. 갱신은 고정 KIET 주소로 직접 HTTP 요청하며 OpenAI 호출·토큰 기록에는 포함되지 않는다.
+- 알려진 한계: 총사업비가 빈 사업비 row는 담당자 예산 계산(F14) 입력에서 빠져 그 표 항목이 검증-1 fail로 판정될 수 있다(웹이 합계 불일치를 막기로 해 드묾). 표 서술 속 금액이 보호 토큰에 들지 않아 윤문에서 바뀔 수 있다. 지금 항목별 재작성 묶음으로는 그림 · 일반현황 · 개요 항목을 사용자 재작성으로 다시 만들 수 없다(담당자 `image-retry-latest`와 어긋남 — 담당자가 새 묶음을 제안해 웹팀에 묻는 중). KIET 시장 자료 크롤러는 2026-10-12 담당자 새 판에 들어왔지만 우리 실행 흐름(T-S1 · T-S2)에서는 부르지 않는다(담당자 자체 실행에서만 쓰임) — 운영 설치본은 시장 자료가 없으면 '근거 없음'으로 돌고, 실행마다 자동 검색은 다음 작업이다(담당자에게 실행 · 보관 방식을 먼저 묻는다). 입력 오류 판별 ② · ③은 담당자 issue 글을 읽으므로 담당자가 글을 바꾸면 조용히 틀어질 수 있다(테스트가 담당자 검사 코드를 실제로 돌려 확인한다 — 담당자에게 구조 칸을 요청함). 협약기간 최대 개월 수는 담당자 계약 파일의 고정값(예비창업 8 · 초기창업 10)이라, 협약기간이 다른 공고를 골라도 이 값으로 판정한다(담당자에게 묻는 중).
 
 ### 11.12 구현 · 검증-2 실구현 · 산출물층 환산 · 조율 규칙 단계(2026-10-11)에서 생긴 잠정 · 확장
 

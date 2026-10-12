@@ -8,7 +8,7 @@
 |---|---|
 | 받은 날짜 | 2026-10-08 |
 | 원본 사본(읽기 전용) | 담당자 브랜치의 `agent_strategy/` · `agent_validation_1/` (작업 공간에 받아 둠) |
-| 시장 자료 출처 | 로컬 `agent_strategy/res/crawling/industry_research/output/`에 보관. `SBRAIN_AUTO_RESEARCH=1`이면 현재 사용자 키워드를 KIET에서 추가 검색하고 결과·보고서·이력을 갱신함 |
+| 시장 자료 출처 | 로컬 `agent_strategy/res/crawling/industry_research/output/`에 보관. `SBRAIN_AUTO_RESEARCH=1`이면 현재 사용자 키워드를 KIET에서 추가 검색하고 결과·보고서·이력을 갱신함 — **우리 실행 흐름(T-S1 · T-S2)에서는 이 갱신을 부르지 않는다(담당자 자체 실행 `run_pipeline`에서만 쓰임).** 실행마다 자동 검색은 다음 작업(`` 30번) |
 | 실행 계약 버전 | `agent_strategy/runtime/execution_contract.json`의 `version` = 2 |
 | 채점 정책 버전 | `agent_validation_1/res/prompts/evaluation_rubric.json`의 `version` = 2026-10-02.1 |
 
@@ -53,7 +53,7 @@
 | `runtime/research_context.py` `retrieve` | 원래 본문을 `_retrieve`로 옮기고 `retrieve`는 호출 수단의 `tools.search`(목적 '자료 검색', `calls.search`)로 감싸 부른다 | 로컬 자료 검색도 Task 안의 호출로 기록 · 재시도 · 제한 시간을 거친다(spec 4.1). F01(`collect_web_data`) 안의 호출도 여기를 지난다 — F01 함수 본문은 바꾸지 않았다. 검색 호출 안에서 LLM을 부르지 않는다. 호출 수단(`partner_call` 블록) 밖이면 `RuntimeError` |
 | `runtime/llm_runtime.py` `writing_prompt` | `writing_rules.json` 글자 읽기 `utf-8` → `utf-8-sig`(`resources.read`) | 위와 같음 |
 | `runtime/pipeline.py` | `import os` · `time` · `timezone` 삭제, 실행 시각 · 경과 시간 칸(`startedAt` · `createdAt` · `completedAt` · `elapsedSeconds` · `durationMs` · `retryHistory[].timestamp`) 삭제 | 시각은 쓰지 않는다(spec 4.1, standards 10절) |
-| `runtime/pipeline.py` `refresh_user_industry_research` | `SBRAIN_AUTO_RESEARCH=1`일 때만 KIET 사용자 키워드를 검색하고 `raw_kiet_results.json` · `results.json` · `keyword_history.json`을 갱신. 기본값은 건너뜀 | 검색 결과는 다음 로컬 근거 검색에 바로 반영하고, 사용자 조사 결과는 실행 중 다시 수집하지 않도록 이력에 남김 |
+| `runtime/pipeline.py` `refresh_user_industry_research` | `SBRAIN_AUTO_RESEARCH=1`일 때만 KIET 사용자 키워드를 검색하고 `raw_kiet_results.json` · `results.json` · `keyword_history.json`을 갱신. 기본값은 건너뜀. 담당자 `run_pipeline`만 부르고 우리 Task 함수(T-S1 · T-S2)는 부르지 않는다 | 검색 결과는 다음 로컬 근거 검색에 바로 반영하고, 사용자 조사 결과는 실행 중 다시 수집하지 않도록 이력에 남김 |
 | `runtime/market_crawler.py` `add_keyword` | 현재 사용자 키워드만 KIET 연구·동향에서 검색하고 세 결과 파일에 upsert | 기존 기준 키워드 결과를 다시 수집하거나 덮어쓰지 않음 |
 | `resources.py` `refresh` · `runtime/research_context.py` `refresh_market_sources` | 명시적 KIET 갱신 뒤 로컬 자료 캐시와 검색 색인을 새로고침 | 일반 Task는 파일을 다시 읽지 않고, 갱신한 실행에서 새 자료를 곧바로 사용 |
 | `runtime/pipeline.py` `_normalize_image_output` | 노드 계약이 깨지면 기본 흐름 대신 `FormatError`, 딕셔너리가 아니면 `FormatError` | 쓸 수 없는 응답은 재시도(spec 4.1) |
@@ -64,7 +64,7 @@
 
 **바꾸지 않은 것(알려 둘 것)**
 - 응답 정리: 코드 울타리를 제거한 뒤 JSON 객체 추출에 성공하면 파싱 결과를 정상 반환한다. 추출할 JSON 객체가 없으면 `FormatError`를 내어 `tools`가 재시도한다.
-- KIET 자동 갱신의 직접 HTTP 요청은 고정된 `www.kiet.re.kr` 검색·요약 주소에만 보낸다. `SBRAIN_AUTO_RESEARCH` 기본값은 꺼짐이며, KIET 조회는 OpenAI 호출이나 토큰 사용량에 포함되지 않는다.
+- KIET 자동 갱신의 직접 HTTP 요청은 고정된 `www.kiet.re.kr` 검색·요약 주소에만 보낸다. `SBRAIN_AUTO_RESEARCH` 기본값은 꺼짐이며, KIET 조회는 OpenAI 호출이나 토큰 사용량에 포함되지 않는다. 우리 실행 흐름에서는 이 갱신을 부르지 않으므로 워커에 `SBRAIN_AUTO_RESEARCH`를 넣어도 KIET로 나가지 않는다(직접 HTTP · 실행 중 디스크 쓰기가 우리 규칙과 부딪쳐 실행 · 보관 방식을 담당자에게 묻는 중).
 - `agent_validation_1/validation_1.py` `validate_section` 결과의 기록용 키(`model` · `responseId` · `usage`)는 그대로 둔다. 연결 코드(`verify.py`)가 판정 · 점수만 `SectionResult`로 옮기고 이 키는 버린다(spec 4.17).
 - `scoring.py`의 `documentLayerScore`(`× 0.7`)는 그대로다. 우리 점수는 연결 코드가 실행 설정 `scoring.docLayerMax`로 낸다(spec 4.9).
 - 모듈을 불러올 때 읽는 파일(`CONTRACT` · `RUBRIC` · `CRITERIA_REGISTRY` · `SECTION_CRITERIA` · `semantic_review`의 지시문)은 원래도 불러올 때 한 번이라 그대로 두었다.
@@ -84,6 +84,15 @@
 | `diagram_svg.py` | 그림 SVG 그리기 — 담당자 시험 서버 `app/testing/test_server.py`의 `flow_image` 그리기만 옮김(기본 흐름 대체는 뺌) |
 | `strategy.py` · `writing.py` · `verify.py` | Task 함수 `run_ts1` · `run_ts2` · `run_tw1` · `run_tw2` · `run_tw3` · `run_tv1` — 담당자 run_pipeline의 단계 함수를 Task 단위로 나눠 부른다(파이프라인을 통째로 부르지 않음) |
 | `tasks.py` | 등록 `IMPLEMENTED` · `IMPLEMENTED_TASKS` · `bind_partner_sw(registry)` — 워커 조립(`bootstrap.build_app`)만 묶는다 |
+
+### 입력 오류 판별 (`verify.py` — 2026-10-12 담당자 새 판 뒤)
+
+- T-V1 연결 코드가 담당자 판정을 `SectionResult`로 옮길 때, 입력 없음 처리 **뒤**의 최종 status가 fail이고 issue 가운데 아래 셋 중 하나라도 있으면 `input_error`(JSON `inputError`)를 참으로 둔다. status · issues · 점수는 담당자 결과 그대로다.
+  - ① 협약기간 일정 최대 개월 수 초과 — 담당자 판별 함수 `agent_strategy/runtime/pipeline.py` `_is_agreement_duration_failure`를 import해 그대로 쓴다(담당자 정의를 따라감).
+  - ② 협약기간 일정 종료월이 개발 종료월 이후 — 연결 코드의 글 꼴 `AFTER_DEV_END`(담당자 `agent_validation_1/validation_1.py` 규칙 검사 글 `협약기간 일정 {…}의 종료월 {YYYY-MM}이 개발 종료월 {YYYY-MM} 이후임` 전체와 같은 꼴).
+  - ③ 정부지원사업비가 지원규모 상한 초과 — 연결 코드의 글 꼴 `OVER_SUPPORT_LIMIT`(담당자 글 `정부지원사업비 {금액}원이 지원규모 상한 {금액}원을 초과함` 전체와 같은 꼴 — 소수점이 붙은 금액 포함).
+- **담당자 글이 바뀌면 같이 고칠 곳:** `verify.py`의 `AFTER_DEV_END` · `OVER_SUPPORT_LIMIT`(잠정 — `orchestrator/settings.py` `PROVISIONAL` `partnerSw.inputError`). `tests/test_partner_sw_tasks.py`가 담당자 검사 코드를 실제로 돌려 나온 글로 ① · ② · ③을 확인하므로 글이 바뀌면 그 테스트가 깨진다. `_check_agreement_table_overrun`의 '개발계획 표 종료월 …' 글은 입력 오류가 아니다(꼴이 겹치지 않게 둔다). 담당자에게 구조 칸(입력 오류 표시 · issue 코드)을 요청했다 — 받으면 글 판별을 그 칸으로 바꾼다.
+- **담당자가 우리 흐름에 넣은 문구 판별을 판정 칸으로 바꿨다:** 담당자 2026-10-12 판은 `flow/sbrain_flow.py`(우리 파일)에 issue 글(`"협약기간 일정" in issue …`)을 찾아 그 fail을 검증-1 재수행 · 표 대체에서 빼는 코드를 넣었다. 우리 규칙(흐름은 판정 필드로만 가른다)대로 지우고 `input_error` 칸으로 바꿨다 — ② · ③도 같이 뺀다. 흐름 · 판정(`agents/supervisor/judge.py`)에는 글 판별이 없다.
 
 ### 호출 수단 전달 방식 (Task 함수가 그대로 쓴다)
 

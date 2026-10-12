@@ -134,8 +134,8 @@ def test_new_type_shapes():
                         image_file=_ref())
     r = SectionResult(section_code="2.4.1", content_type="section", status="fail", score=40.0,
                       verified_ref="planDoc@3")
-    assert (r.tag, r.issues, r.warnings, r.needs_user_confirmation, r.input_missing, r.deductions) == (
-        None, [], [], [], False, [])
+    assert (r.tag, r.issues, r.warnings, r.needs_user_confirmation, r.input_missing, r.input_error, r.deductions) == (
+        None, [], [], [], False, False, [])
     v = Verify1State(cycle_key="첫작성")
     assert (v.made_items, v.redo_counts, v.phase, v.pending_items) == ([], {}, "없음", {})
     run_json = {"runId": "r", "accountId": "a", "state": {"step": "계획서작성", "progress": "실행", "resumeStep": 5},
@@ -252,6 +252,37 @@ def test_plan_tables_switch_and_provisional():
     assert "planTables.required" in settings_mod.PROVISIONAL
     assert "redo.verify1RedoCount" in settings_mod.PROVISIONAL
     assert "purposeModels" in settings_mod.PROVISIONAL["tasks"]
+
+
+# ── 담당자 10-12 새 판 뒷정리 ──────────────────
+DECISION_0028 = "결정 0028"
+
+
+def test_section_result_input_error_is_extension_and_old_json_reads_false():
+    assert "inputError" in extension_fields(SectionResult)
+    assert DECISION_0028 in _note(SectionResult, "inputError")
+    old = {"sectionCode": "3.5.2", "contentType": "table", "status": "fail", "score": 40.0, "verifiedRef": "planDoc@1"}
+    assert SectionResult.model_validate(old).input_error is False                # 칸이 없는 옛 판정은 거짓
+    r = SectionResult.model_validate({**old, "inputError": True})
+    assert r.input_error is True and r.dump()["inputError"] is True
+
+
+def test_table_fallbacks_are_extensions_with_decision_note():
+    from sbrain.flow.reads import DocumentScreen, Outputs, ResultScreen, TableFallback
+    for model in (DocumentScreen, ResultScreen, Outputs):
+        assert "tableFallbacks" in extension_fields(model), model.__name__
+        assert DECISION_0028 in _note(model, "tableFallbacks"), model.__name__
+        assert model.model_fields["table_fallbacks"].default_factory is list
+    assert set(extension_fields(TableFallback)) == {"sectionCode", "reason"}
+
+
+def test_provisional_keys_for_partner_1012():
+    p = settings_mod.PROVISIONAL
+    assert "partnerSw.inputError" in p
+    assert all(word in p["partnerSw.inputError"] for word in ("_is_agreement_duration_failure", "verify.py",
+                                                               "새 프로젝트"))
+    assert "displayTitle" in p["taskPlan.formTable"]
+    assert "2026-10-12" in p["reworkMap.sectionBundles"] and "웹팀" in p["reworkMap.sectionBundles"]
 
 
 # ── tools: 목적별 모델 · json_mode ──────────────────────
@@ -382,7 +413,8 @@ def test_llm_response_unchanged_without_finish_reason():
 # ── 스텁이 새 칸을 채운다 ──────────────────────────────
 def test_stub_scenario_has_item_knobs():
     sc = StubScenario()
-    assert (sc.fail_items, sc.warning_items, sc.input_missing_items) == (set(), set(), set())
+    assert (sc.fail_items, sc.warning_items, sc.input_missing_items, sc.input_error_items) == (
+        set(), set(), set(), set())
 
 
 def test_stubs_fill_new_outputs(clock):
@@ -405,7 +437,8 @@ def test_stubs_fill_new_outputs(clock):
     assert [s.section_code for s in ctx.get("tableSections")] == by_kind["table"] == list(ctx.get("tableOutputs"))
     results = ctx.get("sectionResults")
     assert [r.section_code for r in results] == form.section_codes
-    assert all(isinstance(r, SectionResult) and r.status == "pass" and not r.input_missing for r in results)
+    assert all(isinstance(r, SectionResult) and r.status == "pass" and not r.input_missing and not r.input_error
+               for r in results)
     assert ctx.get("scorePolicyVersion") == ctx.get("rubric").version
     plan = ctx.get("planDoc")
     assert [s.section_code for s in plan.sections] == form.section_codes

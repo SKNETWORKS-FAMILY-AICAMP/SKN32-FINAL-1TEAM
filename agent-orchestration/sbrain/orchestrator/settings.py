@@ -250,17 +250,26 @@ PROVISIONAL: dict[str, str] = {
     # 작업 분해 (T-C3, agents/form_defaults.py · agents/supervisor/plan.py) — 실행 건 설정값이 아니라 코드 표다
     "taskPlan.formTable": "신청자 유형별 양식 · 평가 항목 · 채점 기준표 — 담당자 execution_contract.json에서 만든다(예비창업자 "
                           "pre_startup 2.1.1 ~ 2.7.4 25개, 개인사업자 · 법인 early_startup 3.1.1 ~ 3.7.4 24개). 평가항목 = 계획서 "
-                          "항목(배점 70 ÷ 항목 수), 평가항목 이름은 항목 제목 앞 40자, 채점 기준표 partner-sw@담당자 채점 정책 버전 "
-                          "(agents/form_defaults.py, spec 4.6)",
+                          "항목(배점 70 ÷ 항목 수), 평가항목 이름은 화면 제목(담당자 계약 displayTitle — 양식 원래 제목, 없으면 "
+                          "title) 앞 40자, 평가 설명 · 채점 기준의 대신 값은 담당자 title(작성 지시), 채점 기준표 "
+                          "partner-sw@담당자 채점 정책 버전 (agents/form_defaults.py, spec 4.6, 결정 0028)",
     "reworkMap.sectionBundles": "담당자 항목별 재작성 묶음(2.4 · 3.4 문제인식, 2.5 · 3.5 실현가능성, 2.6 · 3.6 성장전략, "
                                 "2.7 · 3.7 팀 구성, 2.1 ~ 2.3 · 3.1 ~ 3.3 묶음 없음) — 웹 묶음 4개와 담당자 양식 항목을 기준으로 "
-                                "오케스트레이터 쪽에서 정함, 담당자 · 웹팀 확인 대기. 답이 오면 flow/rework_map.py 표만 바꾼다",
+                                "오케스트레이터 쪽에서 정함. 담당자가 대응이 맞다고 확인(2026-10-12)했고, 일반현황 · 개요 · 그림을 "
+                                "새 묶음으로 두자는 담당자 제안을 웹팀에 묻는 중(결정 0028). 답이 오면 flow/rework_map.py 표만 바꾼다",
     "partnerSw.unassignedPhase": "예비창업 사업비 row의 phase가 없으면 1 · 2단계 표 어디에도 넣지 않고 2.5.3 표의 '단계 미지정' "
                                  "줄로 보존, 2.5.3 · 2.5.4를 입력 없음으로 둔다 — 웹 phase 컬럼이 생기면 풀린다 "
                                  "(agents/partner_sw/inputs.py, spec 4.4)",
     "partnerSw.inputMissing": "표 입력 없음 판정(그 표의 원본 row가 비면)과 문구 '입력 확인 필요 — <사업비 집행계획 | 추진 일정>', "
                               "점수 보고서 안내 '입력 확인 필요 — 사업비 집행계획 · 추진 일정을 입력하면 해당 표가 채워집니다.' "
                               "(agents/partner_sw/verify.py · inputs.py, agents/stubs.py, spec 4.9 · 4.12)",
+    "partnerSw.inputError": "입력 오류(SectionResult.inputError, 결정 0028) 세 경우 — 담당자 F19 규칙 검사 issue 가운데 ① 협약기간 "
+                            "일정 최대 개월 수 초과(담당자 판별 함수 _is_agreement_duration_failure 그대로), ② 협약기간 일정 "
+                            "종료월이 개발 종료월 이후 · ③ 정부지원사업비가 지원규모 상한 초과(연결 코드의 글 꼴 AFTER_DEV_END · "
+                            "OVER_SUPPORT_LIMIT — 담당자 글 전체와 같은 꼴만, 담당자 글이 바뀌면 함께 고칠 곳)이 최종 fail 판정에 "
+                            "있으면 참. 점수 보고서 안내 '입력한 협약기간 일정이나 사업비가 기준(…)을 벗어나 … 이대로 "
+                            "진행하거나, 입력을 고쳐 새 프로젝트로 다시 만들 수 있습니다.' (agents/partner_sw/verify.py, "
+                            "agents/supervisor/judge.py INPUT_ERROR_NOTICE)",
     "partnerSw.outputMapping": "담당자 결과 → RequirementAnalysis · MarketAnalysis 매핑, numericTokens(숫자 + 단위 규칙 추출), "
                                "문장 나누기(줄 · 문장 끝, sentenceId s-<항목>-<순번>) (agents/partner_sw/outputs.py, spec 4.7)",
     "partnerSw.scoreDigits": "항목 점수 소수 둘째 자리 반올림, 문서층 총점 = 반올림한 항목 점수의 합 "

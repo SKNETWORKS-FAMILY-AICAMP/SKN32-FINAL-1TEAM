@@ -6,6 +6,7 @@ Task 함수를 가짜 tools(목적 = F번호별 가짜 응답, 메모리 파일 
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from datetime import date
@@ -224,20 +225,26 @@ def test_llm_requests_carry_no_forbidden_values(applicant):
     assert f02["description"] == IDEA and f02["tech_field"] == "정보통신"
 
 
-def test_revenue_items_are_sent_only_to_business_model_and_growth_sections():
-    r = run_chain()
+@pytest.mark.parametrize("applicant,kind", [("법인", "early_startup"), ("예비창업자", "pre_startup")])
+def test_revenue_items_are_sent_only_to_business_model_and_growth_sections(applicant, kind):
+    # 수익모델 서비스명 · 단가는 F11 · F12와 성장전략 근거를 쓰는 항목의 F16 · F19에만 (business-rules 19.3 · security.md 6절)
+    r = run_chain(applicant)
     expected = [{"serviceName": SECRETS["수익모델"], "unitPrice": 35000}]
     growth_section_ids = {
-        spec["sectionId"] for spec in common.contract.document_specs("early_startup")
+        spec["sectionId"] for spec in common.contract.document_specs(kind)
         if "growth_strategy" in spec["sourceKeys"]
     }
+    assert growth_section_ids
+    seen = set()
 
     for request in r.p.requests:
         body = payload(request)
         purpose = request.metadata["purpose"]
         if purpose in {"F11", "F12"}:
             assert body["revenue_items"] == expected
+            seen.add(purpose)
         elif purpose in {"F16", "F19"} and body["section_spec"]["sectionId"] in growth_section_ids:
+            seen.add(purpose)
             assert body["source_data"]["originalFacts"]["revenueItems"] == expected
             assert body["source_data"]["growth_strategy"]["providedRevenueItems"] == expected
             assert "originalFacts" not in body["source_data"]["growth_strategy"]
@@ -248,7 +255,9 @@ def test_revenue_items_are_sent_only_to_business_model_and_growth_sections():
             assert body["source_data"]["sourceRefs"]
         else:
             assert SECRETS["수익모델"] not in json.dumps(body, ensure_ascii=False)
+            assert "revenueItems" not in json.dumps((body.get("source_data") or {}).get("originalFacts") or {})
 
+    assert {"F11", "F12", "F16"} <= seen
     assert r.s2.market_strategy_data["business_model"]["providedRevenueItems"] == expected
     assert r.s2.market_strategy_data["growth_strategy"]["providedRevenueItems"] == expected
 
@@ -586,6 +595,141 @@ def test_agreement_duration_fail_is_not_treated_as_table_structure_fallback():
     assert not legacy_pipeline._is_agreement_duration_failure({
         "status": "fail", "issues": ["필수 표 컬럼 누락: 추진기간"],
     })
+
+
+# ── 입력 오류 (business-rules 19.4) ─────────────────────
+# 담당자 규칙 검사 글의 꼴 — 담당자 글이 바뀌면 이 테스트가 먼저 깨진다(연결 코드 verify.py의 꼴도 함께 고칠 곳)
+DURATION_RE = re.compile(r"협약기간 일정 \d+개월이 최대 \d+개월 조건을 초과함")
+AFTER_END_RE = re.compile(r"협약기간 일정 .+의 종료월 \d{4}-\d{2}이 개발 종료월 \d{4}-\d{2} 이후임")
+OVER_SUPPORT_RE = re.compile(r"정부지원사업비 \S+원이 지원규모 상한 \S+원을 초과함")
+LATE_SCHEDULE = [ScheduleItem(scope="agreement", category="개발", content="화면 개발", period="2026.05~2026.08",
+                              detail="웹"),
+                 ScheduleItem(scope="agreement", category="시험", content="시범 운영", period="2026.09~2027.01",
+                              detail="")]   # 9개월(초기 10개월 안) · 끝 2027-01 > 개발 종료월 2026-12
+
+
+def _partner_check(monkeypatch, document_type: str, section_id: str, *, schedule=(), limits=None, period=None,
+                   budget=None) -> dict:
+    """담당자 F19 검사(validate_section)를 가짜 의미 검증으로 실제로 돌린다 — 네트워크 없음."""
+    monkeypatch.setattr(validation_1, "request_json",
+                        lambda *args: {"passed": True, "issues": [], "warnings": []})
+    spec = common.spec_for(common.section_specs(document_type), section_id)
+    original: dict = {"schedule": [dict(row) for row in schedule]}
+    if period is not None:
+        original["period"] = period
+    if budget is not None:
+        original["budget"] = budget
+    columns = spec["rules"].get("requiredColumns") or ["구분", "추진내용", "추진기간", "세부내용"]
+    rows = [{col: row.get("period") if col == "추진기간" else row.get("task", "개발") for col in columns}
+            for row in schedule] or [{col: "개발" for col in columns}]
+    content = {"generatedText": "개발 일정을 추진함.", "tables": [{"columns": columns, "rows": rows}],
+               "sourceRefs": [], "facts": []}
+    source = {"documentType": document_type, "originalFacts": original, "strategy_limits": limits or {},
+              "sourceRefs": [], "strategyProvenance": {}}
+    return validation_1.validate_section(spec, content, source)
+
+
+def test_input_error_patterns_match_partner_check_texts(monkeypatch):
+    # ① 협약기간 최대 개월 수 초과 (예비 8개월)
+    v1 = _partner_check(monkeypatch, "pre_startup", "2.5.2",
+                        schedule=[{"task": "협약 일정", "period": "2026.03~2026.12", "_schedule_scope": "agreement"}])
+    assert v1["status"] == "fail" and [i for i in v1["issues"] if DURATION_RE.fullmatch(i)] == [
+        "협약기간 일정 10개월이 최대 8개월 조건을 초과함"]
+    assert verify.input_error(v1)
+    # ② 협약기간 일정 종료월이 개발 종료월보다 늦음
+    v2 = _partner_check(monkeypatch, "early_startup", "3.5.2", period={"end": "2026-12"},
+                        limits={"deadline": "2026-12"},
+                        schedule=[{"task": "시범 운영", "period": "2026.09~2027.01", "_schedule_scope": "agreement"}])
+    assert v2["status"] == "fail" and "협약기간 일정 시범 운영의 종료월 2027-01이 개발 종료월 2026-12 이후임" in v2["issues"]
+    assert any(AFTER_END_RE.fullmatch(i) for i in v2["issues"]) and verify.input_error(v2)
+    # ③ 정부지원사업비가 공고 지원 금액 상한을 넘음 — 숫자 · 글자 금액 모두
+    for amount, text in ((70_000_000, "정부지원사업비 70000000원이 지원규모 상한 50000000원을 초과함"),
+                         ("70,000,000원", "정부지원사업비 70000000.0원이 지원규모 상한 50000000원을 초과함")):
+        v3 = _partner_check(monkeypatch, "early_startup", "3.5.3", limits={"supportLimit": 50_000_000},
+                            budget={"government_amount": amount})
+        assert v3["status"] == "fail" and text in v3["issues"] and OVER_SUPPORT_RE.fullmatch(text)
+        assert verify.input_error(v3)
+
+
+def test_input_error_is_false_for_other_failures_warnings_and_partial_texts():
+    # 담당자 파이프라인 보정의 '만든 표' 종료월 초과는 다시 만들면 고쳐진다 — 입력 오류가 아니다
+    overrun = legacy_pipeline._check_agreement_table_overrun(
+        {"status": "pass", "issues": [], "warnings": []}, {"sectionId": "3.5.2"},
+        {"tables": [{"rows": [{"추진기간": "2026.05~2027.03"}]}]},
+        {"originalFacts": {"schedule": [{"period": "2026.05~2026.12", "_schedule_scope": "agreement"}]}},
+        "early_startup")
+    assert overrun["status"] == "fail"
+    assert overrun["issues"] == ["개발계획 표 종료월 2027-03이 원본 협약 일정 종료월 2026-12 이후임"]
+    assert not verify.input_error(overrun)
+    assert not verify.input_error({"status": "fail", "issues": ["필수 표 컬럼 누락: 추진기간"]})
+    duration = "협약기간 일정 10개월이 최대 8개월 조건을 초과함"
+    after = "협약기간 일정 개발의 종료월 2027-01이 개발 종료월 2026-12 이후임"
+    over = "정부지원사업비 9000000원이 지원규모 상한 5000000원을 초과함"
+    for status in ("warning", "pass"):                                              # fail이 아니면 거짓
+        assert not verify.input_error({"status": status, "issues": [duration, after, over], "warnings": [duration]})
+    assert not verify.input_error({"status": "warning", "issues": [], "warnings": [after, over]})
+    # 의미 검증(LLM)이 쓴 비슷한 글 — 담당자 규칙 검사 글 전체와 같은 꼴만 본다(② · ③)
+    for text in ("협약기간 일정이 개발 종료월 이후임", "일정 협약기간 일정 개발의 종료월 2027-01이 개발 종료월 2026-12 이후임",
+                 "정부지원사업비가 지원규모 상한을 초과함", f"{over} — 확인 필요"):
+        assert not verify.input_error({"status": "fail", "issues": [text]}), text
+    # 섞인 경우 — 입력 오류 issue가 하나라도 있으면 참
+    for text in (duration, after, over):
+        assert verify.input_error({"status": "fail", "issues": ["필수 표 컬럼 누락: 추진기간", text]}), text
+
+
+def test_tv1_marks_input_error_from_partner_checks():
+    pre = {x.section_code: x for x in run_chain("예비창업자").v1.section_results}   # 일정 2026.03 ~ 2026.12 = 10개월 (①)
+    for code in ("2.5.2", "2.6.2"):
+        assert pre[code].status == "fail" and pre[code].input_error, code
+        assert "협약기간 일정 10개월이 최대 8개월 조건을 초과함" in pre[code].issues
+    late = {x.section_code: x for x in run_chain("법인", schedule=LATE_SCHEDULE).v1.section_results}   # ②
+    assert late["3.5.2"].status == "fail" and late["3.5.2"].input_error
+    assert any(AFTER_END_RE.fullmatch(i) and "2027-01" in i for i in late["3.5.2"].issues)
+    over = {x.section_code: x for x in run_chain("법인", support=5_000_000).v1.section_results}         # ③
+    assert over["3.5.3"].status == "fail" and over["3.5.3"].input_error
+    assert any(OVER_SUPPORT_RE.fullmatch(i) for i in over["3.5.3"].issues)
+    # 입력 오류 칸은 fail일 때만 — 입력 오류 글이 없는 결과는 거짓
+    for results in (pre, late, over):
+        assert all(r.status == "fail" for r in results.values() if r.input_error)
+        assert all(r.input_error == any(p.fullmatch(i) for p in (DURATION_RE, AFTER_END_RE, OVER_SUPPORT_RE)
+                                        for i in r.issues) for r in results.values() if r.status == "fail")
+    plain = run_chain("법인").v1.section_results
+    assert not any(r.input_error for r in plain)
+
+
+def test_input_missing_items_are_not_input_errors():
+    unassigned = BudgetItem(category="인건비", execution_plan="개발자", total_amount=5_000_000,
+                            government_amount=5_000_000, self_cash_amount=0, self_in_kind_amount=0)
+    r = run_chain("예비창업자", budget=[*PRE_BUDGET, unassigned], support=1_000_000)
+    by = {x.section_code: x for x in r.v1.section_results}
+    for code in ("2.5.3", "2.5.4"):                                  # 입력 없음 처리 뒤의 issue로 본다 (③이 지워짐)
+        assert by[code].input_missing and by[code].status == "warning" and not by[code].input_error, code
+    assert by["2.5.2"].input_error                                   # 같은 실행의 ①은 그대로
+
+
+def test_input_error_keeps_partner_status_issues_and_score(monkeypatch):
+    r = run_chain("예비창업자", support=1_000_000)
+    assert any(x.input_error for x in r.v1.section_results)
+    monkeypatch.setattr(verify, "input_error", lambda validation: False)
+    again = run_tv1(r.v1_in, partner_tools(PartnerProvider(), "T-V1")[0])
+    assert not any(x.input_error for x in again.section_results)
+    assert [x.model_copy(update={"input_error": False}) for x in r.v1.section_results] == again.section_results
+    assert (again.doc_score, again.items) == (r.v1.doc_score, r.v1.items)
+
+
+def test_received_and_base_results_keep_stored_input_error():
+    r = run_chain("예비창업자")
+    stored = {x.section_code: x for x in r.v1.section_results}
+    assert stored["2.5.2"].input_error
+    p = PartnerProvider()
+    ri = ReworkInput(mode="재수행", previous_result_ref="planDoc@3", issues=[], is_final_attempt=True,
+                     redo_source="검증-1", unit="섹션", target_items={"2.4.1": ["문제"]})
+    out = run_tv1(r.v1_in.model_copy(update={"rework_input": ri, "base_section_results": r.v1.section_results}),
+                  partner_tools(p, "T-V1")[0])
+    assert {x.section_code: x for x in out.section_results}["2.5.2"].input_error   # 이어받은 판정 그대로
+    prior = {"2.5.2": json.dumps(stored["2.5.2"].dump(), ensure_ascii=False)}
+    resumed = run_tv1(r.v1_in.model_copy(update={"prior_results": prior}), partner_tools(PartnerProvider(), "T-V1")[0])
+    assert {x.section_code: x for x in resumed.section_results}["2.5.2"].input_error   # 재개 때 받은 판정 그대로
 
 
 def test_tw3_fallback_items_from_verify1():
