@@ -321,58 +321,41 @@ def build_prototype_html(
         }
 
     entry_content = files[_ENTRY_FILENAME]
-    dep_ok, violations = gates.check_external_dependency_gate(entry_content)
-    if not dep_ok:
-        return {
-            "status": "failed",
-            "entryFilePath": None,
-            "readmePath": None,
-            "implementedFeatures": [],
-            # 저장하지는 않지만 원문은 돌려준다 — 조율이 재수행 때 previous_source_text로 돌려줘 고쳐 만든다.
-            "sourceText": entry_content,
-            "gate_failures": {"entry": None, "dependency": violations, "sandbox": [], "secret": None},
-            "summary": f"E-B1-DEP 게이트 실패: 외부 · 별도 파일 의존성 {len(violations)}건 발견",
-        }
+    failure = _first_gate_failure(entry_content)
 
-    sandbox_ok, sandbox_violations = gates.check_sandbox_api_gate(entry_content)
-    if not sandbox_ok:
-        return {
-            "status": "failed",
-            "entryFilePath": None,
-            "readmePath": None,
-            "implementedFeatures": [],
-            "sourceText": entry_content,
-            "gate_failures": {"entry": None, "dependency": [],
-                              "sandbox": sandbox_violations, "secret": None},
-            "summary": ("E-B1-SANDBOX 게이트 실패: sandbox iframe에서 동작하지 않는 API "
-                        f"{len(sandbox_violations)}건 — {', '.join(sandbox_violations)}"),
-        }
-
-    secret_ok, secret = gates.check_secret_gate(entry_content)
-    if not secret_ok:
-        return {
-            "status": "failed",
-            "entryFilePath": None,
-            "readmePath": None,
-            "implementedFeatures": [],
-            "sourceText": entry_content,
-            "gate_failures": {"entry": None, "dependency": [], "sandbox": [], "secret": secret},
-            "summary": (f"E-B1-SECRET 게이트 실패: 코드에 API 키 · 토큰 · 비밀번호 값이 있음({secret}). "
-                        "값을 지우고 더미 함수 · 빈칸 아니면 통과하는 로그인으로 바꿀 것"),
-        }
-
-    # 자체 검사를 통과한 뒤에 글꼴 · 아이콘 묶음을 넣는다(모델이 옮겨 쓸 수 없는 데이터). 비밀값 검사는 넣기 전에 끝났고,
-    # 검증-2는 비밀값 검사 전에 data: base64를 지운다.
+    # 자체 검사에 걸려도 진입 파일은 만든다(기능정의서 T-B1 ②③ · E-B1-DEP · E-B1-SANDBOX: 재수행 횟수를 넘기면
+    # 그대로 보내고 검증-2가 점수에 반영한다). check만 불통과이고, 재수행 때는 이 파일이 이전 원문으로 돌아와 문제만 고친다.
+    # 글꼴 · 아이콘 묶음은 검사가 끝난 뒤에 넣는다(모델이 옮겨 쓸 수 없는 데이터). 검증-2는 비밀값 검사 전에 data: base64를 지운다.
     entry_content = decorate(entry_content)
     saved_paths = save_files({_ENTRY_FILENAME: entry_content}, run_id)
     implemented = _extract_implemented_features(entry_content)
 
     return {
-        "status": "success",
+        "status": "failed" if failure else "success",
         "entryFilePath": saved_paths[_ENTRY_FILENAME],
         "readmePath": None,
         "sourceText": entry_content,
         "implementedFeatures": implemented,
-        "gate_failures": {"entry": None, "dependency": [], "sandbox": [], "secret": None},
-        "summary": f"run_id={run_id}: {_ENTRY_FILENAME} 생성 및 자체 게이트 통과",
+        "gate_failures": failure[0] if failure else
+        {"entry": None, "dependency": [], "sandbox": [], "secret": None},
+        "summary": failure[1] if failure else f"run_id={run_id}: {_ENTRY_FILENAME} 생성 및 자체 게이트 통과",
     }
+
+
+def _first_gate_failure(entry_content: str) -> tuple[dict, str] | None:
+    """외부 의존 → sandbox → 비밀값 순서로 보고 첫 실패의 (gate_failures, 사유)를 돌려준다. 다 통과하면 None."""
+    dep_ok, violations = gates.check_external_dependency_gate(entry_content)
+    if not dep_ok:
+        return ({"entry": None, "dependency": violations, "sandbox": [], "secret": None},
+                f"E-B1-DEP 게이트 실패: 외부 · 별도 파일 의존성 {len(violations)}건 발견")
+    sandbox_ok, sandbox_violations = gates.check_sandbox_api_gate(entry_content)
+    if not sandbox_ok:
+        return ({"entry": None, "dependency": [], "sandbox": sandbox_violations, "secret": None},
+                "E-B1-SANDBOX 게이트 실패: sandbox iframe에서 동작하지 않는 API "
+                f"{len(sandbox_violations)}건 — {', '.join(sandbox_violations)}")
+    secret_ok, secret = gates.check_secret_gate(entry_content)
+    if not secret_ok:
+        return ({"entry": None, "dependency": [], "sandbox": [], "secret": secret},
+                f"E-B1-SECRET 게이트 실패: 코드에 API 키 · 토큰 · 비밀번호 값이 있음({secret}). "
+                "값을 지우고 더미 함수 · 빈칸 아니면 통과하는 로그인으로 바꿀 것")
+    return None

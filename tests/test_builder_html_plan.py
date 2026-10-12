@@ -120,8 +120,8 @@ class PreviousHtmlTests(TestCase):
         self.assertNotIn("```html\n", message)
 
     def test_failed_self_check_still_returns_the_html(self):
-        """자체 검사에 걸려도 원문은 돌려준다 — 조율이 재수행 때 previous_source_text로 다시 넘긴다.
-        파일은 저장하지 않는다."""
+        """자체 검사에 걸려도 HTML을 만들어 돌려준다 — check만 불통과다. 재수행 때 이전 원문으로 돌아와 문제만 고치고,
+        재수행을 다 써도 그대로 넘어가 검증-2가 점수에 반영한다(기능정의서 T-B1 ②③)."""
         from engineering_agent.builder_html import build_prototype_html
 
         class _Tools:
@@ -135,8 +135,10 @@ class PreviousHtmlTests(TestCase):
         result = build_prototype_html(["조회"], {"item_name": "t"}, "웹개발", "생성",
                                       _Tools(f"```html:index.html\n{html}\n```"))
         self.assertEqual(result["status"], "failed")
-        self.assertIsNone(result["entryFilePath"])
-        self.assertEqual(result["sourceText"].strip(), html)
+        self.assertTrue(result["entryFilePath"].endswith("index.html"))
+        self.assertIn("E-B1-DEP", result["summary"])
+        from engineering_agent.html_kit import strip
+        self.assertEqual(strip(result["sourceText"]).strip(), html)  # 끼워 넣은 글꼴 · 아이콘만 다르다
 
 
 class DesignDirectionTests(TestCase):
