@@ -153,4 +153,7 @@ def test_package_data_covers_partner_data_files():
     data = {p.resolve() for folder in ("agent_strategy/res", "agent_strategy/runtime", "agent_validation_1/res")
             for p in (PARTNER_DIR / folder).rglob("*") if p.suffix in (".json", ".md")}
     assert data and data <= covered
-    assert any(p.name == "raw_kiet_results.json" for p in data)
+    excluded = config["tool"]["setuptools"]["exclude-package-data"]
+    assert "res/crawling/industry_research/output/*.json" in excluded[
+        "sbrain.agents.partner_sw.agent_strategy"
+    ]  # 사용자별 시장 자료는 로컬 생성물이라 wheel에 포함하지 않는다
