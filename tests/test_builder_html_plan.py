@@ -126,14 +126,18 @@ class PreviousHtmlTests(TestCase):
 
         class _Tools:
             def __init__(self, reply):
-                self.reply = reply
+                self.reply, self.purposes = reply, []
 
             def llm(self, messages, *, parse=None, purpose="", **kwargs):
-                return parse('{"domain": "commerce"}' if purpose == "사업 분야 판정(색)" else self.reply)
+                self.purposes.append(purpose)
+                return parse(self.reply)
 
         html = '<html lang="ko"><head><script src="https://cdn.example.com/x.js"></script></head></html>'
-        result = build_prototype_html(["조회"], {"item_name": "t"}, "웹개발", "생성",
-                                      _Tools(f"```html:index.html\n{html}\n```"))
+        tools = _Tools(f"```html:index.html\n{html}\n```")
+        result = build_prototype_html(["조회"], {"item_name": "t"}, "웹개발", "생성", tools)
+        # 분야 낱말이 없는 아이템이어도 실행 파일 색은 규칙으로 정한다 — 분야 판정 호출 없이 생성 호출 하나뿐.
+        self.assertEqual(len(tools.purposes), 1)
+        self.assertNotIn("사업 분야 판정(색)", tools.purposes)
         self.assertEqual(result["status"], "failed")
         self.assertTrue(result["entryFilePath"].endswith("index.html"))
         self.assertIn("E-B1-DEP", result["summary"])

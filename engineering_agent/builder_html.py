@@ -52,22 +52,24 @@ def feature_notes(feature_list: list[str], plan_text: str) -> dict[str, str]:
     return notes
 
 
-def palette(feature_list: list[str], item_spec: dict, tools=None) -> dict[str, str]:
-    """이 사업의 색. 인포그래픽(T-B2)과 같은 테마 함수로 고른다. 분야 낱말이 없으면 tools로 LLM에게 분야를 묻는다
-    (themes.decide). 인포그래픽과 색이 꼭 같을 필요는 없다.
+def palette(feature_list: list[str], item_spec: dict) -> dict[str, str]:
+    """이 사업의 색. 인포그래픽(T-B2)과 같은 테마 표에서 낱말 → 이름 규칙(themes.pick)으로만 고른다.
+    LLM에게 분야를 묻지 않는다(themes.decide는 T-B2만) — 실행 파일은 동작 · 흐름을 보여 주는 것이라 색이 분야에
+    꼭 맞을 필요가 없고, 색 판정 호출이 실패해 실행 파일을 못 만드는 일을 없앤다(담당자, 2026-10-12).
+    인포그래픽과 색이 꼭 같을 필요는 없다.
     테마 색은 흰 바탕 · 옅은 바탕 · 진한 버튼 위 흰 글자 모두 대비 4.5:1 이상이다(themes 모듈 · 테스트)."""
     from engineering_agent.infographic import themes
 
-    theme = themes.decide({"item_name": item_spec.get("itemName", ""),
-                           "item_summary": item_spec.get("oneLineSummary", ""),
-                           "target_users": item_spec.get("targetCustomer", ""), "features": feature_list}, tools)
+    theme = themes.pick({"item_name": item_spec.get("itemName", ""),
+                         "item_summary": item_spec.get("oneLineSummary", ""),
+                         "target_users": item_spec.get("targetCustomer", ""), "features": feature_list})
     return dict(themes.THEMES[theme], name=theme)
 
 
-def _design_direction(feature_list: list[str], item_spec: dict, tools=None) -> str:
+def _design_direction(feature_list: list[str], item_spec: dict) -> str:
     """화면 디자인 방향. 규칙 8의 예시 색(#0F172A · #1D4ED8)만 주었더니 모든 사업이 남색 · 파랑 대시보드로 나왔고,
     화면 틀 지시가 없어 늘 '사이드바 + 목표 수치 카드 한 줄'로 시작했다(실측: 실제 예시 계획서 셋)."""
-    p = palette(feature_list, item_spec, tools)
+    p = palette(feature_list, item_spec)
     first = feature_list[0] if feature_list else "첫 번째 기능"
     frames = "\n".join(f"  · `{cls}`: {desc}" for cls, desc in FRAMES.items())
     icon_list = " · ".join(f"{name}({meaning})" for name, meaning in ICON_NAMES.items())
@@ -106,7 +108,7 @@ def _design_direction(feature_list: list[str], item_spec: dict, tools=None) -> s
 
 
 def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str,
-                         plan_text: str = "", tools=None) -> str:
+                         plan_text: str = "") -> str:
     """카테고리별로 요구되는 흐름(화면 전환 vs 입력→처리→출력)을 갈라 지시한다.
     plan_text(사업계획서 본문)가 있으면 기능마다 계획서의 설명을 붙이고 본문도 함께 싣는다."""
     if category == "웹개발":
@@ -211,7 +213,7 @@ def _build_system_prompt(feature_list: list[str], item_spec: dict, category: str
 
 ## 카테고리 지시
 {flow_instruction}
-{_design_direction(feature_list, item_spec, tools)}
+{_design_direction(feature_list, item_spec)}
 
 ## 반드시 구현해야 하는 기능 목록 (전부 실제로 동작하게 구현할 것)
 {feature_lines}
@@ -303,7 +305,7 @@ def build_prototype_html(
         raise ValueError("T-B1은 웹개발/AI_API 카테고리만 지원합니다")
     run_id = uuid.uuid4().hex
 
-    system_prompt = _build_system_prompt(feature_list, item_spec, category, plan_text, tools)
+    system_prompt = _build_system_prompt(feature_list, item_spec, category, plan_text)
     files = tools.llm(
         [{"role": "system", "content": system_prompt},
          {"role": "user", "content": user_message(instruction, previous_html)}],
