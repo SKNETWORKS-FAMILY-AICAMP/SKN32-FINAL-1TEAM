@@ -4,12 +4,17 @@ import re
 import hashlib
 from pathlib import Path
 from ..agent_strategy.runtime.llm_runtime import request_json   # [S-Brain] import 경로를 패키지 상대 경로로
+from ..common import compact_prompt_source
 from .semantic_review import review_issues, REVIEW_PERSONA
 from .. import resources as _res                               # [S-Brain] 자료 파일은 불러올 때 읽어 둔 상수 (VENDORED.md)
 
 RUBRIC_PATH=Path(__file__).parent/'res'/'prompts'/'validation_rubric.json'
 RUBRIC=json.loads(RUBRIC_PATH.read_text(encoding='utf-8-sig')) if RUBRIC_PATH.exists() else {}
 VALIDATION_POLICY_VERSION=RUBRIC.get('version','2026-10-07.1')
+# Stable machine-readable categories for deterministic input-constraint failures.
+INPUT_ERROR_AGREEMENT_MONTHS_EXCEEDED='AGREEMENT_MONTHS_EXCEEDED'
+INPUT_ERROR_AGREEMENT_AFTER_DEADLINE='AGREEMENT_SCHEDULE_AFTER_DEADLINE'
+INPUT_ERROR_SUPPORT_LIMIT_EXCEEDED='SUPPORT_LIMIT_EXCEEDED'
 REGISTRY_PATH=Path(__file__).parent/'res'/'reference'/'regulations'/'criteria_registry.json'
 try:
     CRITERIA_REGISTRY=json.loads(REGISTRY_PATH.read_text(encoding='utf-8-sig')) if REGISTRY_PATH.exists() else {}
@@ -158,6 +163,27 @@ def _month_key(value):
     m=re.search(r'(\d{4})\D?(\d{1,2})',str(value))
     return f'{m.group(1)}-{int(m.group(2)):02d}' if m else str(value).strip()
 
+
+def _agreement_duration_months(rows):
+    """협약 범위 일정의 가장 이른 시작월부터 가장 늦은 종료월까지 개월 수."""
+    bounds=[]
+    for row in rows:
+        if not isinstance(row,dict) or row.get('_schedule_scope')=='roadmap':
+            continue
+        period=str(row.get('period') or row.get('추진기간') or row.get('기간') or '')
+        months=[]
+        for year,month in re.findall(r'(20\d{2})[-./~년\s]*(\d{1,2})',period):
+            month=int(month)
+            if 1<=month<=12:
+                months.append(int(year)*12+month)
+        if months:
+            bounds.append((min(months),max(months)))
+    if not bounds:
+        return None
+    start=min(item[0] for item in bounds)
+    end=max(item[1] for item in bounds)
+    return end-start+1
+
 def validate_section(section_spec, content, source_data):
     # 이전 실행 결과에는 이 객체 중 일부가 없을 수 있다. 이를 빈 입력으로
     # 처리해 AttributeError로 중단되거나 부분 결과가 사라지지 않도록 하고,
@@ -189,11 +215,22 @@ def validate_section(section_spec, content, source_data):
     }
     content_hash=hashlib.sha256(json.dumps(content,ensure_ascii=False,sort_keys=True,default=str).encode('utf-8')).hexdigest()
     issues=[]; warnings=[str(item) for item in _as_list(content.get('issues',[]))]
+    input_error_codes=[]
     text=content.get('generatedText','')
     rules=section_spec.get('rules',{})
     if not isinstance(rules,dict):
         rules={}
-    if not isinstance(text,str) or not text.strip():issues.append('필수 generatedText 없음')
+    tables=_as_list(content.get('tables',[]))
+    def table_has_content(table):
+        if not isinstance(table,dict):
+            return False
+        table_rules=table.get('rules')
+        unassigned=table_rules.get('unassignedOriginalRows',[]) if isinstance(table_rules,dict) else []
+        return bool(_as_list(table.get('rows',[])) or _as_list(unassigned))
+    table_only=section_spec.get('contentType')=='table' and any(
+        table_has_content(table) for table in tables
+    )
+    if (not isinstance(text,str) or not text.strip()) and not table_only:issues.append('필수 generatedText 없음')
     text=text if isinstance(text,str) else ''
     lines=[line.strip() for line in text.splitlines() if line.strip()]
     bullets=[line for line in lines if re.match(r'^(?:[◦•●\-]|\d+[.)]|[①-⑩])\s*',line)]
@@ -203,7 +240,6 @@ def validate_section(section_spec, content, source_data):
     top_level_bullets=numbered_bullets or visual_top_level or bullets
     if rules.get('exactItems') and len(top_level_bullets)!=rules['exactItems']:
         issues.append(f'항목은 {rules["exactItems"]}개 최상위 항목으로 작성해야 함 (현재 {len(top_level_bullets)}개)')
-    tables=_as_list(content.get('tables',[]))
     item_count=sum(len(_as_list(t.get('rows',[]))) for t in tables if isinstance(t,dict)) if section_spec.get('contentType')=='table' else len(top_level_bullets)
     if rules.get('minItems') and item_count<rules['minItems']:
         issues.append(f'필수 항목 {rules["minItems"]}개 이상 필요')
@@ -251,16 +287,23 @@ def validate_section(section_spec, content, source_data):
         warnings.append('입력에 미확정 값이 포함되어 확인 필요로 표시했습니다.')
     if 'proposed' in statuses:
         warnings.append('제안값은 원본 확정 사실로 간주하지 않습니다.')
-    # 공고 마감일 이후로 계획된 일정과 지원규모 상한 초과를 구조 단계에서 차단한다.
+    # 입력된 개발 종료월 이후의 협약 일정과 지원규모 상한 초과를 구조 단계에서 차단한다.
     deadline=limits.get('deadline') if isinstance(limits,dict) else None
     period=original.get('period',{})
     end_month=period.get('end') if isinstance(period,dict) else None
     if deadline and end_month and _month_key(end_month) > _month_key(deadline):
-        issues.append(f'개발 종료월 {end_month}이 공고 접수 마감일 {deadline} 이후임')
-    # 협약기간에 속한 개별 일정도 마감일을 넘기면 실패로 판정한다.
+        issues.append(f'원본 개발 종료월 {end_month}이 _strategy_limits.deadline {deadline}을 초과함')
+        input_error_codes.append(INPUT_ERROR_AGREEMENT_AFTER_DEADLINE)
+    # 협약기간에 속한 개별 일정도 입력된 개발 종료월을 넘기면 실패로 판정한다.
     # 예비창업의 협약 이후 로드맵(fullScaleSchedule)은 roadmap으로 표시되어
     # 사업기간 상한 비교에서 제외하고, 협약 일정만 필수 제약으로 검사한다.
     schedule_rows=original.get('schedule',[]) if isinstance(original,dict) else []
+    max_agreement_months=rules.get('maxAgreementMonths')
+    if isinstance(max_agreement_months,int) and not isinstance(max_agreement_months,bool) and max_agreement_months>0:
+        agreement_duration=_agreement_duration_months(schedule_rows)
+        if agreement_duration is not None and agreement_duration>max_agreement_months:
+            issues.append(f'협약기간 일정 {agreement_duration}개월이 최대 {max_agreement_months}개월 조건을 초과함')
+            input_error_codes.append(INPUT_ERROR_AGREEMENT_MONTHS_EXCEEDED)
     if deadline and isinstance(schedule_rows,list):
         for row in schedule_rows:
             if not isinstance(row,dict) or row.get('_schedule_scope')=='roadmap':
@@ -271,7 +314,8 @@ def validate_section(section_spec, content, source_data):
                 row_end=max((f'{year}-{int(month):02d}' for year,month in months),default=None)
                 if row_end and _month_key(row_end)>_month_key(deadline):
                     label=row.get('task') or row.get('category') or row.get('추진내용') or '일정'
-                    issues.append(f'협약기간 일정 {label}의 종료월 {row_end}이 마감일 {deadline} 이후임')
+                    issues.append(f'협약기간 일정 {label}의 종료월 {row_end}이 개발 종료월 {deadline} 이후임')
+                    input_error_codes.append(INPUT_ERROR_AGREEMENT_AFTER_DEADLINE)
     support_limit=limits.get('supportLimit') if isinstance(limits,dict) else None
     if support_limit is not None:
         try:
@@ -279,7 +323,9 @@ def validate_section(section_spec, content, source_data):
             total=budget.get('government_amount',0) if isinstance(budget,dict) else 0
             if isinstance(total,str): total=float(re.sub(r'[^0-9.-]','',total) or 0)
             if isinstance(support_limit,str): support_limit=float(re.sub(r'[^0-9.-]','',support_limit) or 0)
-            if float(total)>float(support_limit): issues.append(f'정부지원사업비 {total}원이 지원규모 상한 {support_limit}원을 초과함')
+            if float(total)>float(support_limit):
+                issues.append(f'정부지원사업비 {total}원이 지원규모 상한 {support_limit}원을 초과함')
+                input_error_codes.append(INPUT_ERROR_SUPPORT_LIMIT_EXCEEDED)
         except (TypeError,ValueError): warnings.append('supportLimit 또는 정부지원사업비가 숫자가 아니어서 상한 비교를 건너뜀')
     feature_list=limits.get('featureList')
     # KPI/시험지표 항목은 기능 목록을 반복하는 영역이 아니므로
@@ -335,21 +381,27 @@ def validate_section(section_spec, content, source_data):
             if proposed_text or any('budget' in path or '지원' in path for path in proposed_fact_paths):warnings.append(f'사업계획 제안 금액: {amount}원')
             else:issues.append(f'원본에 없는 원 단위 금액: {amount}')
     issues=_unique_messages(issues); warnings=_unique_messages(warnings)
+    input_error_codes=list(dict.fromkeys(input_error_codes))
     if issues:
-        return {'agent':'검증 1','status':'fail','issues':issues,'warnings':warnings,'needsUserConfirmation':_confirmation_items(warnings),'semanticCalled':False,'contentHash':content_hash,'policyVersion':VALIDATION_POLICY_VERSION,'criteria':criteria_meta}
+        return {'agent':'검증 1','status':'fail','issues':issues,'warnings':warnings,'needsUserConfirmation':_confirmation_items(warnings),'inputErrorCodes':input_error_codes,'semanticCalled':False,'contentHash':content_hash,'policyVersion':VALIDATION_POLICY_VERSION,'criteria':criteria_meta}
     if source_data.get('_fallbackValidationSource'):
         warnings.append('기존 저장 결과의 provenance가 완전하지 않아 의미 검증은 생략하고 구조 검증만 통과 처리함')
         return {'agent':'검증 1','status':'pass','issues':[],'warnings':warnings,
-                'needsUserConfirmation':_confirmation_items(warnings),'semanticCalled':False,'contentHash':content_hash,'policyVersion':VALIDATION_POLICY_VERSION,'criteria':criteria_meta}
+                'needsUserConfirmation':_confirmation_items(warnings),'inputErrorCodes':[],'semanticCalled':False,'contentHash':content_hash,'policyVersion':VALIDATION_POLICY_VERSION,'criteria':criteria_meta}
 
-    semantic_source=dict(source_data) if isinstance(source_data,dict) else {}
+    # 저비용 검사는 위에서 전체 source_data로 끝냈다. LLM에는 중복된 F12
+    # 입력 원문만 제외한 사본을 보내고, 호출자 쪽의 전체 근거는 그대로 둔다.
+    semantic_source=compact_prompt_source(source_data,section_spec)
     # 의미 검증에는 항목 키워드와 실제로 연결된 근거만 전달한다.
     # 전체 evidence는 결과 JSON에 보존하되 low 관련도 자료가 판정을 오염시키지 않도록 분리한다.
     prompt_evidence=[e for e in criteria_meta['evidence'] if e.get('relevance') in {'high','medium'}]
     if section_criteria:
         semantic_source['_sectionCriteria']={**section_criteria,'evidence':prompt_evidence}
     prompt_criteria={**section_criteria,'evidence':prompt_evidence} if section_criteria else {}
-    semantic=request_json('F19',{'section_spec':section_spec,'content':{k:content.get(k) for k in ['generatedText','sourceRefs','facts','nodes'] if k in content},'source_data':semantic_source,'criteria':prompt_criteria})
+    semantic_content={k:content.get(k) for k in ['generatedText','sourceRefs','facts','nodes'] if k in content}
+    if section_spec.get('contentType')=='table':
+        semantic_content['tables']=tables
+    semantic=request_json('F19',{'section_spec':section_spec,'content':semantic_content,'source_data':semantic_source,'criteria':prompt_criteria})
     proposed_content=(source_data.get('_fallbackValidationSource',False) or not source_data.get('strategyProvenance') or
                       any(isinstance(f,dict) and f.get('status')=='proposed' for f in _as_list(content.get('facts',[]))) or
                       any(marker in text for marker in ('확인 필요','미확정','제안','계획','목표','활용','적용')))
@@ -362,7 +414,7 @@ def validate_section(section_spec, content, source_data):
             warnings.append('판정 재검토: '+issue_text)
             continue
         proposal_issue=any(word in issue_text for word in ('관련성이 부족','직접 근거','인용된 출처','인용 출처 중','직접 관련성이 낮음','직접 뒷받침하지 못함','수치 근거','근거를 연결','sourceRefs','facts','본문에 제시','원본 사실','원본에 없고','originalFacts','원문 근거','제공 근거','확정된 정량','확정 여부','확정 사실이 아님','미확정','제안 지표','확인 필요','확정 목표','목표처럼','근거 없이 확정','확정하여 기재','구현하고','확정 수행','제안사항','확정 추진내용','status:"proposed"','기술언어','기능은 원본','제안값임을 명시','구체성이 부족','정확도 95%','오탐률 5%','초당 30프레임','상세계획','기간 정합성','확정 추진계획','단계 일정','사업기간','개발함','완료 실적','측정식','FPS 산정','프레임 수를 경과시간','정의가 필요','선정 필요','검토 필요','구체화 필요','확정해야','명확하지 않음','산정 방식','확정적 문제점','서술하기 어려움','제안 상태','전략 기능 목록','기능 목록','원문 토큰','불변식'))
-        hard_issue=any(word in issue_text for word in ('원본과 불일치','확정 fact 오류','마감일 이후','지원규모 상한','필수 표','필수 항목','이미지 nodes'))
+        hard_issue=any(word in issue_text for word in ('원본과 불일치','확정 fact 오류','마감일 이후','개발 종료월','지원규모 상한','필수 표','필수 항목','이미지 nodes'))
         if proposed_content and proposal_issue and not hard_issue:
             warnings.append(str(semantic_issue))
         else:
@@ -377,4 +429,4 @@ def validate_section(section_spec, content, source_data):
         issues.append('의미 검증 미통과: 요구조건 재검토 필요')
     return {'agent':'검증 1','status':'pass' if passed else 'fail','issues':issues,'warnings':warnings,
             'needsUserConfirmation':_confirmation_items(warnings),
-            'semanticCalled':True,'model':semantic.get('model'),'responseId':semantic.get('responseId'),'usage':semantic.get('usage',{}),'contentHash':content_hash,'policyVersion':VALIDATION_POLICY_VERSION,'criteria':criteria_meta}
+            'inputErrorCodes':[],'semanticCalled':True,'model':semantic.get('model'),'responseId':semantic.get('responseId'),'usage':semantic.get('usage',{}),'contentHash':content_hash,'policyVersion':VALIDATION_POLICY_VERSION,'criteria':criteria_meta}

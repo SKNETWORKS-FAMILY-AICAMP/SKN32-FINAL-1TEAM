@@ -1,4 +1,4 @@
-"""양식 묶음 = 담당자 계약 항목 · 짝짓기 표 한 곳 · 목적 이름 상수 · 패키지 자료 (spec 4.2 · 4.6)."""
+"""양식 묶음 = 담당자 계약 항목 · 항목별 재작성 묶음 표 한 곳 · 목적 이름 상수 · 패키지 자료 (spec 4.2 · 4.6)."""
 from __future__ import annotations
 
 import pathlib
@@ -29,7 +29,8 @@ def test_form_bundle_matches_partner_contract(applicant, document_type, count):
     assert form_problem(applicant) is None
     assert len(form.section_codes) == count
     assert form.section_codes == [s["sectionId"] for s in specs]                 # 순서 그대로
-    assert form.section_titles == [s["title"] for s in specs]
+    assert all(s.get("displayTitle") for s in specs)
+    assert form.section_titles == [s.get("displayTitle") or s["title"] for s in specs]
     assert form.section_kinds == [s["contentType"] for s in specs]
     assert form.section_tags == [section_tag(c) for c in form.section_codes]
     assert len(form.section_tags) == len(form.section_kinds) == count
@@ -43,8 +44,12 @@ def test_evaluation_items_and_rubric_are_one_per_section(applicant, document_typ
     b = select_form(applicant)
     codes, titles = b.form_spec.section_codes, b.form_spec.section_titles
     assert [e.item_code for e in b.evaluation_items] == codes
-    assert [e.item_name for e in b.evaluation_items] == [t[:40] for t in titles]
-    assert [e.description for e in b.evaluation_items] == titles
+    assert [e.item_name for e in b.evaluation_items] == [
+        (s.get("displayTitle") or s["title"])[:40] for s in contract.CONTRACT["documents"][document_type]
+    ]
+    assert [e.description for e in b.evaluation_items] == [
+        s["title"] for s in contract.CONTRACT["documents"][document_type]
+    ]
     assert all(e.max_score == pytest.approx(70 / count) for e in b.evaluation_items)
     assert sum(e.max_score for e in b.evaluation_items) == pytest.approx(70)
     assert [r.item_code for r in b.rubric.items] == codes
@@ -85,7 +90,20 @@ def test_contract_documents_are_copies():
     assert contract.document_specs("pre_startup")[0]["sectionId"] == "2.1.1"
 
 
-# ── 짝짓기 표 한 곳 (spec 4.6) ──────────────────────────────
+def test_display_title_is_used_for_ui_but_full_title_is_preserved(monkeypatch):
+    spec = contract.document_specs("pre_startup")[0]
+    full_title = spec["title"]
+    spec["displayTitle"] = "기본정보"
+    monkeypatch.setattr(contract, "document_specs", lambda _kind: [spec])
+
+    bundle = form_defaults._partner_bundle("pre_startup", ["예비창업자"])
+
+    assert bundle.form_spec.section_titles == ["기본정보"]
+    assert bundle.evaluation_items[0].item_name == "기본정보"
+    assert bundle.evaluation_items[0].description == full_title
+
+
+# ── 항목별 재작성 묶음 표 한 곳 (spec 4.6) ──────────────────────────────
 def test_pairing_table_lookup():
     assert section_tag_bundle("2.4.1") == ("1-1", "문제인식")
     assert section_tag_bundle("3.5.3") == ("2-1", "실현가능성")
@@ -153,4 +171,7 @@ def test_package_data_covers_partner_data_files():
     data = {p.resolve() for folder in ("agent_strategy/res", "agent_strategy/runtime", "agent_validation_1/res")
             for p in (PARTNER_DIR / folder).rglob("*") if p.suffix in (".json", ".md")}
     assert data and data <= covered
-    assert any(p.name == "raw_kiet_results.json" for p in data)
+    excluded = config["tool"]["setuptools"]["exclude-package-data"]
+    assert "res/crawling/industry_research/output/*.json" in excluded[
+        "sbrain.agents.partner_sw.agent_strategy"
+    ]  # 사용자별 시장 자료는 로컬 생성물이라 wheel에 포함하지 않는다

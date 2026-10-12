@@ -37,7 +37,8 @@
       "label": "일정 마감일",
       "severity": "fail",
       "checks": [
-        "development_end_not_after_deadline"
+        "development_end_not_after_deadline",
+        "agreement_duration_not_over_contract_limit"
       ]
     },
     {

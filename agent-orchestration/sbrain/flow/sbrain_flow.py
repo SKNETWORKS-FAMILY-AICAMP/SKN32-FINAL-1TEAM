@@ -230,7 +230,7 @@ def bundle_orders(bundles: list[str], offered: list[ReworkOrder], form: Any = No
 
     - 대상(targets)은 그 층에서 모은 묶음 이름이다(기회를 세는 이름과 같다).
     - 산출물층: 그 Task에 대한 판정 지시(사유 · 보완 지시)를 쓴다. 같은 Task 지시가 여럿이면 합친다.
-    - 문서층 (spec 4.11): 고른 묶음들의 항목(짝짓기 표 — rework_map.bundle_items)을 종류별 Task(본문 T-W1 · 그림 T-W2 ·
+    - 문서층 (spec 4.11): 고른 묶음들의 항목(항목별 재작성 묶음 표 — rework_map.bundle_items)을 종류별 Task(본문 T-W1 · 그림 T-W2 ·
       표 T-W3)가 다시 만든다. 그 종류 항목이 없는 Task는 지시가 없다(부르지 않는다). 지시는 고른 묶음을 대상으로 한
       판정 지시를 모두 합친 것이고, Task마다 같다. 양식(form)이 없으면(작업 분해 전 · 단위 시험) 세 Task 모두다.
     - 해당 판정 지시가 없으면(미달이 아닌 묶음, 확장) 사유 · 보완 지시 모두 고정 문구 REWORK_DEFAULT_REASON을 쓴다.
@@ -530,7 +530,7 @@ class SBrainFlow:
     def _cycle_targets(self, ctx: RunContext, cyc, task_id: str | None) -> dict[str, list[str]]:
         """재작성 사이클에서 고른 문서층 묶음의 항목 → 문제 목록 (양식 순서). task_id를 주면 그 Task가 만드는 종류만.
 
-        묶음 → 항목은 짝짓기 표(rework_map.bundle_items) 하나로 가른다. 묶음 없는 항목(일반현황 · 개요)은 들지 않는다."""
+        묶음 → 항목은 항목별 재작성 묶음 표(rework_map.bundle_items) 하나로 가른다. 묶음 없는 항목(일반현황 · 개요)은 들지 않는다."""
         docs = list(dict.fromkeys(b for o in cyc.orders_by_task.values() if o.get("layer") == "document"
                                   for b in o.get("targets", [])))
         if not docs or not ctx.has(FORM_SPEC):
@@ -584,12 +584,14 @@ class SBrainFlow:
     def _after_tv1(self, ctx: RunContext, out: dict[str, Any]) -> None:
         """T-V1 바로 뒤 — 검증-1 fail 재수행 · 표 대체를 그 대기열 맨 앞에 끼운다 (spec 4.10).
 
-        대상 = 판정 fail · 입력 없음 아님 · 이번 사이클에 만든 항목(첫 작성은 모든 항목) · 이미 대체한 표가 아님.
+        대상 = 판정 fail · 입력 없음 아님 · 입력 오류 아님 · 이번 사이클에 만든 항목(첫 작성은 모든 항목) · 이미 대체한 표가 아님.
+        입력 오류(inputError)는 입력 값이 기준을 벗어나 다시 만들어도 고쳐지지 않으므로 재수행 · 표 대체를 하지 않는다
+        (표는 그대로 남는다).
         - 횟수(redo.verify1RedoCount, 항목마다 · 사이클마다)가 남은 대상이 있으면: 본문 → T-W1, 그림 → T-W2(표는 다시 만들지
           않음) → M-1(다시 쓴 것이 있을 때) → T-V1(대상만).
         - 없고 끝내 fail인 표가 있으면: T-W3(대체) → M-1 (T-V1 다시 안 함 — 판정은 fail 그대로).
         - 둘 다 없으면 재수행 표시를 비운다. 재작성 기회를 쓰지 않는다. 구간 단계 수(진행률)를 끼운 만큼 늘린다.
-        흐름은 판정의 필드(status · inputMissing)와 양식 종류로만 가른다."""
+        흐름은 판정의 필드(status · inputMissing · inputError)와 양식 종류로만 가른다 — issue 글은 읽지 않는다."""
         state = self._verify1(ctx)
         results = list(out.get("section_results") or [])
         if not state.made_items and ctx.run.cycle is None:
@@ -598,7 +600,7 @@ class SBrainFlow:
         kinds = dict(form_kinds(ctx.get(FORM_SPEC))) if ctx.has(FORM_SPEC) else {}
         replaced = {code for code, o in (ctx.get(TABLE_OUTPUTS, default=None) or {}).items()
                     if isinstance(o, dict) and o.get("tableFallbackUsed")}
-        fails = [r for r in results if r.status == "fail" and not r.input_missing
+        fails = [r for r in results if r.status == "fail" and not r.input_missing and not r.input_error
                  and r.section_code in made and r.section_code not in replaced]
         limit = ctx.settings.redo.verify1_redo_count
         redo = [r for r in fails if state.redo_counts.get(r.section_code, 0) < limit]

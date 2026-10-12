@@ -24,21 +24,17 @@ def create_schedule(tasks: list, duration: int, milestones: list) -> dict:
     rows=[{'task':task,'period':next((m.get('period','미정') for m in milestones if isinstance(m,dict) and m.get('category')==task),'미정')} for task in tasks]
     analysis=request_json('F15',{'originalFacts':{'duration':duration,'rows':rows,'milestones':milestones}})
     return {**analysis,'duration':duration,'milestones':milestones,'rows':rows}
-# F17 generate_table() — 설계만 완료, 현재 호출하지 않음
+# F17 generate_table() — 표 구조·본문 서술을 로컬 Python으로 구성하며 LLM은 호출하지 않음
 def generate_table(columns: list[str], rows: list[dict], rules: dict) -> dict:
-    import copy, json
+    import copy
     table={'columns':columns,'rows':copy.deepcopy(rows),'rules':rules,'sourcePriority':'user_input'}
-    text=' | '.join(columns)+'\n'+'\n'.join(' | '.join(str(row.get(col,'확인 필요')) for col in columns) for row in rows)
+    text=''
     if rules.get('narrativeRequired'):
-        heading='개발계획 서술' if rules.get('narrativeType')=='schedule' else '사업비 집행계획 서술'
         if rules.get('narrativeType')=='schedule':
-            lines=[f'{i+1}. {row.get("추진내용",row.get("task","확인 필요"))}을(를) {row.get("추진기간",row.get("period","미정"))} 동안 추진하며, {row.get("세부내용",row.get("details","세부내용 확인 필요"))}.' for i,row in enumerate(rows)]
+            lines=[f'{i+1}. 추진 항목은 {row.get("추진내용",row.get("task","확인 필요"))}, 기간은 {row.get("추진기간",row.get("period","미정"))}, 세부 내용은 {row.get("세부내용",row.get("details","세부내용 확인 필요"))}.' for i,row in enumerate(rows)]
         else:
             lines=[f'{i+1}. {row.get("비목","확인 필요")}: {row.get("산출근거",row.get("집행계획","산출근거 확인 필요"))}, 정부지원사업비 {row.get("정부지원사업비","확인 필요")}.' for i,row in enumerate(rows)]
-        if len(lines)<3: lines += [f'{i}. 원본 입력에 없는 세부 항목은 협약 후 확인함.' for i in range(len(lines)+1,4)]
-        text+='\n\n'+heading+':\n'+'\n'.join(lines)
-    if rules.get('unassignedOriginalRows'):
-        text+='\n단계 미지정 원본 (단계별 합계에 미포함):\n'+json.dumps(rules['unassignedOriginalRows'],ensure_ascii=False,indent=2)
+        text='\n'.join(lines)
     return {'status':'generated','model':'Python','generatedText':text,'tables':[table],
             'issues':[] if rows else ['원본 행 없음: 입력 확인 필요'],'sourceRefs':[]}
 # F19 validate_section()

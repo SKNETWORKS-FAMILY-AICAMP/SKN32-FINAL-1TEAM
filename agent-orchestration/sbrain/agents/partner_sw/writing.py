@@ -29,7 +29,7 @@ from .agent_strategy.runtime.pipeline import (
 from .calls import partner_call
 from .common import (
     TW1_CONCURRENCY, TW2_CONCURRENCY, canonical_of, form_items, gather, kind_of, made_items, original_of, pick,
-    received_from, research_of, retry_instruction, section_specs, spec_for, targets_of,
+    compact_prompt_source, received_from, research_of, retry_instruction, section_specs, spec_for, targets_of,
 )
 from .outputs import (
     DIAGRAM_OUTPUT_KEYS, IMAGE_SPEC_KEYS, SECTION_KEYS, TABLE_DEFAULTS, TABLE_KEYS, sentences,
@@ -66,6 +66,7 @@ def run_tw1(inp: TW1In, tools: Tools) -> TW1Out:
     def one(code: str) -> dict[str, Any]:
         spec = spec_for(specs, code)
         source = section_source(spec, canonical, original, research)
+        prompt_source = compact_prompt_source(source, spec)
         rules: dict[str, Any] = {"documentType": kind, "sectionCriteria": _writing_criteria(kind, code),
                                  "tableGenerationEnabled": False}
         if rework is not None:
@@ -74,7 +75,7 @@ def run_tw1(inp: TW1In, tools: Tools) -> TW1Out:
                      previousText=previous_text(code) if rework is not None else None,
                      preserveProvenance=True, statusPolicy=list(STATUS_POLICY))
         with partner_call(tools.for_item(code), inp.instruction):
-            output = gpt.generate_section(section_spec=spec, source_data=source, writing_rules=rules)
+            output = gpt.generate_section(section_spec=spec, source_data=prompt_source, writing_rules=rules)
         output["generatedText"] = _strip_section_heading(output.get("generatedText", ""), spec)
         output = _normalize_section_output(output, spec, source, kind)
         return pick(output, SECTION_KEYS)

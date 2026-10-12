@@ -3,11 +3,13 @@
 규칙 단계라 tools를 받지 않는다(LLM 없음). 함수 모양은 run(inp) -> 출력.
 
 - 전후 비교 · 되돌리기는 하지 않는다. Orchestrator가 넘긴 비교 결과(cycleInfo)를 점수 보고서에 담기만 한다(경계).
-- 흐름을 가르는 값은 필드로만 읽는다(status · inputMissing · gateFailures · missingFeatures 등) — 문구로 가르지 않는다.
-- 계획서 묶음 후보(doc_candidates, business-rules 19.7): 묶음 · 항목은 짝짓기 표(flow/rework_map)로 가른다.
-  1. 묶음마다 그 묶음 항목 중 fail · warning이고 입력 없음이 아닌 항목이 있으면 후보 — Task는 그 묶음 첫 항목 종류의 Task,
-     사유 · 보완 지시는 '<항목 번호> <issues · warnings>' 줄을 이은 것.
-  2. 문서층 표시 점수가 기준 미만인데 1의 후보가 없으면 묶음 모두가 후보(사유 = 판정 지시가 없는 묶음의 고정 문구).
+- 흐름을 가르는 값은 필드로만 읽는다(status · inputMissing · inputError · gateFailures · missingFeatures 등) — 문구로 가르지
+  않는다.
+- 계획서 묶음 후보(doc_candidates, business-rules 19.7): 묶음 · 항목은 항목별 재작성 묶음 표(flow/rework_map)로 가른다.
+  1. 묶음마다 그 묶음 항목 중 fail · warning이고 입력 없음 · 입력 오류(다시 만들어도 고쳐지지 않음)가 아닌
+     항목이 있으면 후보 — Task는 그 묶음 첫 항목 종류의 Task, 사유 · 보완 지시는 '<항목 번호> <issues · warnings>' 줄을 이은 것.
+  2. 문서층 표시 점수가 기준 미만인데 1의 후보가 없으면 묶음 모두가 후보(사유 = 판정 지시가 없는 묶음의 고정 문구). 입력 오류
+     항목만 남아 점수가 모자란 경우도 같다.
   3. 기회를 다 쓴 묶음도 그대로 넣는다(웹이 고를 수 없게 표시하고 Orchestrator도 거절한다).
 - 산출물층 재작성 지시(artifact_orders, business-rules 8.7): 다시 돌릴 Task · 사유는 공용 규칙 artifact_rework_reasons 그대로.
   산출물 종류는 G-02b 입력 확장 category(실행 건 카테고리)로 정한다 — 원페이지 → svg-onepage, 그 밖 → html.
@@ -20,8 +22,9 @@
   artifactScore(검증-2 원점수)는 그대로 싣는다. reworkDiff의 산출물층 전후 요약은 환산 값 / C + P.
   E-G2-UNREACHABLE(R-6 ②): 문서층 total + (C + P) < 기준이면 notices에 안내 — 계획서 묶음 중 남은 기회가 있는 묶음이 있으면
   첫 문구, 없으면 둘째 문구. 버튼 · 요청을 막지 않는다.
-- 안내(notices): G-02a는 확정 동작(checks의 finalAction) + '입력 확인 필요'(입력 없음 항목이 있으면), G-02b는 '입력 확인 필요' +
-  E-G2-UNREACHABLE.
+- 안내(notices): G-02a는 확정 동작(checks의 finalAction) + '입력 확인 필요'(입력 없음 항목이 있으면) + 입력 오류 안내(입력 오류
+  항목이 있으면), G-02b는 '입력 확인 필요' + 입력 오류 안내 + E-G2-UNREACHABLE. 입력 안내 둘은 항목 번호 · 입력 값을
+  넣지 않고 한 번씩만 더한다.
 """
 from __future__ import annotations
 
@@ -40,6 +43,10 @@ from ...orchestrator.settings import ReworkSettings
 
 # 입력 없음 항목이 있을 때 점수 보고서 notices에 더하는 안내 (잠정 문구, business-rules 19.7)
 INPUT_MISSING_NOTICE = "입력 확인 필요 — 사업비 집행계획 · 추진 일정을 입력하면 해당 표가 채워집니다."
+# 입력 오류 항목이 있을 때 점수 보고서 notices에 더하는 안내 (잠정 문구 — 지시가 아니라 두 길을 알려 준다)
+INPUT_ERROR_NOTICE = ("입력한 협약기간 일정이나 사업비가 기준(협약기간 최대 개월 수 · 개발 기간 · 공고 지원 금액 상한)을 벗어나 "
+                      "일부 항목이 검증을 통과하지 못했습니다. 이 항목은 다시 만들어도 고쳐지지 않습니다. 이대로 진행하거나, "
+                      "입력을 고쳐 새 프로젝트로 다시 만들 수 있습니다.")
 ONEPAGE_CATEGORY = "원페이지"
 
 
@@ -75,7 +82,7 @@ def doc_candidates(results: list[SectionResult] | None, doc_display: float, thre
         if bundle is None:
             continue
         first_kind.setdefault(bundle, r.content_type)
-        if r.status in ("fail", "warning") and not r.input_missing:
+        if r.status in ("fail", "warning") and not r.input_missing and not r.input_error:
             flagged.setdefault(bundle, []).append(r)
 
     def order(bundle: str, reason: str) -> ReworkOrder:
@@ -112,8 +119,11 @@ def next_action(passed: bool, orders: list[ReworkOrder], usage: list[BundleUsage
 
 
 def input_notices(results: list[SectionResult] | None) -> list[str]:
-    """입력 없음 항목이 하나라도 있으면 '입력 확인 필요' 안내 (business-rules 19.7)."""
-    return [INPUT_MISSING_NOTICE] if any(r.input_missing for r in results or []) else []
+    """입력 안내 (business-rules 19.7) — 입력 없음 항목이 하나라도 있으면 '입력 확인 필요', 그다음 입력 오류 항목이 하나라도
+    있으면 입력 오류 안내. 각각 한 번씩, 이 순서로."""
+    results = list(results or [])
+    return ([INPUT_MISSING_NOTICE] if any(r.input_missing for r in results) else []) + (
+        [INPUT_ERROR_NOTICE] if any(r.input_error for r in results) else [])
 
 
 def unreachable_notices(doc_total: float, maxes: ScoreMaxes, threshold: float, usage: list[BundleUsage],
@@ -184,6 +194,6 @@ def run_g02b(inp: G02bIn) -> G02bOut:
 
 
 __all__ = [
-    "INPUT_MISSING_NOTICE", "artifact_orders", "bundle_remaining", "doc_candidates", "input_notices", "next_action",
-    "per_bundle", "prototype_kind", "run_g02a", "run_g02b", "unreachable_notices",
+    "INPUT_ERROR_NOTICE", "INPUT_MISSING_NOTICE", "artifact_orders", "bundle_remaining", "doc_candidates",
+    "input_notices", "next_action", "per_bundle", "prototype_kind", "run_g02a", "run_g02b", "unreachable_notices",
 ]

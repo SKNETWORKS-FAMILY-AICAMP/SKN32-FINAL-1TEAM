@@ -7,8 +7,10 @@ from pathlib import Path
 from datetime import datetime
 from ..functions import gpt_functions as gpt, python_functions as py   # [S-Brain] import 경로를 패키지 상대 경로로
 from ...agent_validation_1.scoring import score_section, aggregate_scores
+from ...common import compact_prompt_source
 from .llm_runtime import CONTRACT,compact
 from .research_context import retrieve
+from . import research_context as _research
 from ... import resources as _res                  # [S-Brain] 자료 파일은 불러올 때 읽어 둔 상수 (VENDORED.md)
 from .....orchestrator.errors import FormatError    # [S-Brain] F18 노드 계약 위반 → 재시도
 
@@ -59,11 +61,26 @@ def _normalize_image_output(output, flow_type='USER_FLOW'):
 
 
 def refresh_user_industry_research(project):
-    """현재 사용자 산업 키워드에 대한 KIET 조사 데이터를 선택적으로 갱신한다.
-
-    [S-Brain] 늘 건너뛴다 — 크롤러(market_crawler)를 옮기지 않았고 실행 중 네트워크 · 환경 변수(SBRAIN_AUTO_RESEARCH)를
-    쓰지 않는다(spec 2절 '시장 조사 크롤러')."""
-    return {'status':'skipped','reason':'SBRAIN_AUTO_RESEARCH disabled'}
+    """설정된 경우 현재 사용자 키워드로 KIET 검색 결과·보고서·이력을 갱신한다."""
+    from . import market_crawler
+    if not market_crawler.auto_research_enabled():
+        return {'status':'skipped','reason':'SBRAIN_AUTO_RESEARCH disabled'}
+    keyword=(project.get('tech_field') or project.get('description') or '').strip()
+    if not keyword:
+        return {'status':'skipped','reason':'industry keyword missing'}
+    keyword=keyword[:120]
+    try:
+        result=market_crawler.add_keyword(keyword)
+        paths=(market_crawler.KEYWORD_LIST,market_crawler.KIET_RESULTS,
+               market_crawler.MARKET_RESEARCH,market_crawler.KEYWORD_HISTORY)
+        for path in paths:
+            _res.refresh(path)
+        available=_research.refresh_market_sources()
+        return {'status':'refreshed','keyword':keyword,'resultCount':result.get('resultCount',0),
+                'searchStatus':result.get('status'),'searchCount':result.get('searchCount'),
+                'availableFiles':available}
+    except Exception as exc:
+        return {'status':'failed','keyword':keyword,'errorType':type(exc).__name__}
 
 
 def select_path(data,path):
@@ -163,6 +180,8 @@ def section_source(spec,canonical,original,research):
     facts={}
     if roots & {'item_spec','development_goal','development_method','development_plan','production_plan','feasibility_plan','growth_strategy','market_analysis'}:
         facts.update(item=original['item'],period=original['period'])
+    if 'growth_strategy' in roots:
+        facts['revenueItems']=original.get('revenueItems',[])
     if roots & {'team_capability','resource_plan'}:facts.update(team=original['team'],resources=original['resources'])
     if roots & {'budget','feasibility_plan'}:facts['budget']=original['budget']
     if roots & {'schedule','development_plan','feasibility_plan'}:facts['schedule']=original['schedule']
@@ -320,15 +339,21 @@ def table_arguments(raw,kind,spec,canonical):
     return dict(columns=spec['rules']['requiredColumns'],rows=rows,rules=rules)
 
 def _table_fallback_text(output, spec):
-    """표 재작성 후에도 실패하면 저장할 본문 대체 문구를 만든다."""
+    """표 재작성 후에도 실패하면 원본 행을 본문 설명으로 바꾼다. 판정 사유는 fallbackReason에 별도 보존한다."""
     tables=output.get('tables',[]) if isinstance(output,dict) else []
     table=tables[0] if tables and isinstance(tables[0],dict) else {}
     columns=table.get('columns') or spec.get('rules',{}).get('requiredColumns',[])
     rows=table.get('rows') or []
     if rows:
         lines=['; '.join(f'{col}: {row.get(col,"확인 필요")}' for col in columns) for row in rows if isinstance(row,dict)]
-        return '표 구조 검증에 실패하여 본문 설명으로 대체함.\n'+'\n'.join(f'· {line}' for line in lines)
-    return '표 구조 검증에 실패하여 본문 설명으로 대체함. 원본 행과 필수 항목을 확인한 뒤 다시 작성해야 함.'
+        return '\n'.join(f'· {line}' for line in lines)
+    return '원본 표 행이 없어 항목 내용을 구성할 수 없음.'
+
+def _is_agreement_duration_failure(validation):
+    """입력 협약기간 한도 초과는 표 재작성으로 고칠 수 없는 원본 입력 오류다."""
+    issues=validation.get('issues',[]) if isinstance(validation,dict) else []
+    return any('협약기간 일정' in str(issue) and '개월이 최대 ' in str(issue) and '개월 조건을 초과함' in str(issue)
+               for issue in issues)
 
 def _attach_provenance(fid, value, kwargs):
     """F02~F15의 모든 표준 결과에 상위 근거와 사실을 보존한다."""
@@ -506,7 +531,7 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
                 output=call('F18',gpt.generate_image_spec,item=source['item_spec'],architecture={'design':source.get('architecture',{}),'validationFeedback':attempts[-1]['validation']['issues'] if attempts else []},flow_type='USER_FLOW')
                 image_outputs=[output,call('F18',gpt.generate_image_spec,item=source['item_spec'],architecture={'design':source.get('architecture',{}),'validationFeedback':attempts[-1]['validation']['issues'] if attempts else []},flow_type='SERVICE_ARCHITECTURE')]
             else:
-                output=call('F16',gpt.generate_section,section_spec=spec,source_data=source,writing_rules={'documentType':kind,'sectionCriteria':_writing_criteria(kind,sid),'tableGenerationEnabled':False,
+                output=call('F16',gpt.generate_section,section_spec=spec,source_data=compact_prompt_source(source,spec),writing_rules={'documentType':kind,'sectionCriteria':_writing_criteria(kind,sid),'tableGenerationEnabled':False,
                             'validationFeedback':attempts[-1]['validation']['issues'] if attempts else [],'previousText':attempts[-1]['generatedText'] if attempts else None,'preserveProvenance':True,'statusPolicy':['provided','proposed','needs_confirmation']})
                 image_outputs=[output]
             # Validate the same body that will be stored; repeated section
@@ -540,8 +565,12 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
                 validation.setdefault('warnings',[]).append('단계 미지정 원본 사업비가 보존되어 단계 확정이 필요함')
                 validation['status']='warning' if not validation.get('issues') else validation.get('status','fail')
             attempts.append({'attempt':attempt+1,'generatedText':output['generatedText'],'validation':validation,'responseId':output.get('responseId')})
+            # F17은 원본 일정을 복사하는 로컬 함수다. 원본 협약기간 자체가
+            # 한도를 넘으면 재실행해도 결과가 같으므로 불필요한 재시도를 하지 않는다.
+            if spec['functionId']=='F17' and _is_agreement_duration_failure(validation):break
             if execution_scope!='full' or validation['status'] in {'pass','warning'}:break
-        if spec['functionId']=='F17' and validation.get('status')=='fail':
+        if (spec['functionId']=='F17' and validation.get('status')=='fail'
+                and not _is_agreement_duration_failure(validation)):
             reason=' · '.join(str(x) for x in validation.get('issues',[]) if x) or '표 필수 구조 검증 실패'
             output['generatedText']=_table_fallback_text(output,spec)
             output['tables']=[]
@@ -699,7 +728,7 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
                 output=call('F18',gpt.generate_image_spec,item=source['item_spec'],architecture={'design':source.get('architecture',{}),'validationFeedback':feedback,'retryInstruction':retry_instruction},flow_type='USER_FLOW')
                 image_outputs=[output,call('F18',gpt.generate_image_spec,item=source['item_spec'],architecture={'design':source.get('architecture',{}),'validationFeedback':feedback,'retryInstruction':retry_instruction},flow_type='SERVICE_ARCHITECTURE')]
             else:
-                output=call('F16',gpt.generate_section,section_spec=spec,source_data=source,
+                output=call('F16',gpt.generate_section,section_spec=spec,source_data=compact_prompt_source(source,spec),
                             writing_rules={'documentType':kind,'sectionCriteria':_writing_criteria(kind,spec['sectionId']),'tableGenerationEnabled':False,'retryInstruction':retry_instruction,
                                            'validationFeedback':feedback,'previousText':previous.get('generatedText') if not attempts else attempts[-1]['generatedText'],'preserveProvenance':True,'statusPolicy':['provided','proposed','needs_confirmation']})
                 image_outputs=[output]
@@ -724,8 +753,10 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
                 validation.setdefault('warnings',[]).append('단계 미지정 원본 사업비가 보존되어 단계 확정이 필요함')
                 validation['status']='warning' if not validation.get('issues') else validation.get('status','fail')
             attempts.append({'attempt':attempt+1,'generatedText':output['generatedText'],'validation':validation,'responseId':output.get('responseId')})
+            if spec['functionId']=='F17' and _is_agreement_duration_failure(validation):break
             if validation['status'] in {'pass','warning'}:break
-        if spec['functionId']=='F17' and validation.get('status')=='fail':
+        if (spec['functionId']=='F17' and validation.get('status')=='fail'
+                and not _is_agreement_duration_failure(validation)):
             reason=' · '.join(str(x) for x in validation.get('issues',[]) if x) or '표 필수 구조 검증 실패'
             output['generatedText']=_table_fallback_text(output,spec)
             output['tables']=[]

@@ -4,10 +4,8 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from .builder_html import _extract_implemented_features  # [S-Brain] 끼워 넣은 HTML에서 자기 신고를 뽑는다(실패 경우도)
 from .builder_html import build_prototype_html, feature_notes  # [S-Brain] 패키지 상대 import
-from .html_kit import decorate  # [S-Brain] 외부 의존 · 샌드박스 · 비밀값 실패 원문도 통과 때처럼 끼워 넣는다(spec 4.2)
-from .infographic import artsheet, design  # [S-Brain] 패키지 상대 import
+from .infographic import artsheet, design, themes  # [S-Brain] 패키지 상대 import
 from .infographic.compose_guide import FIX_HINT, RETRY_HINT  # [S-Brain] 패키지 상대 import
 from .infographic import (  # [S-Brain] 패키지 상대 import
     generate_infographic_content,
@@ -50,18 +48,14 @@ def run_tb1(inp: TB1In, tools: Tools) -> TB1Out:
     )
     passed = result["status"] == "success"
     failures = [] if passed else [result["summary"]]
-    # [S-Brain] 원문이 있으면(통과 · 외부 의존 · 샌드박스 · 비밀값 실패) 통과 때와 똑같이 글꼴 · 아이콘을 끼워 넣어
-    # index.html로 넣고 그 참조를 진입 파일로 싣는다(spec 4.2 — 검증-2가 채점한다). decorate는 먼저 strip하므로 통과 때
-    # 이미 끼워 넣은 HTML에 다시 불러도 같다. 진입 파일 실패(원문 없음)만 진입 파일이 없다.
+    # [S-Brain] 진입 파일이 있으면(통과 · 외부 의존 · 샌드박스 · 비밀값 실패 — 담당자가 모두 끼워 넣어 돌려준다)
+    # index.html로 넣고 그 참조를 진입 파일로 싣는다(검증-2가 채점한다). 진입 파일 실패(원문 없음)만 진입 파일이 없다.
     source = result.get("sourceText") or ""   # [S-Brain]
-    entry, implemented = None, []             # [S-Brain]
-    if source:                                # [S-Brain]
-        html = decorate(source)
-        entry = tools.files.put(ENTRY_FILE_NAME, html.encode("utf-8"), HTML_MEDIA_TYPE)
-        implemented = _extract_implemented_features(html)
+    entry = (tools.files.put(ENTRY_FILE_NAME, source.encode("utf-8"), HTML_MEDIA_TYPE)   # [S-Brain]
+             if result["entryFileName"] and source else None)
     prototype = Prototype(   # [S-Brain] 경로 · 원문 칸 대신 진입 파일 참조
         entry_file=entry, kind="html", asset_files=[], readme_file=None,
-        implemented_features=implemented,
+        implemented_features=result["implementedFeatures"],
     )
     return TB1Out(
         prototype=prototype, implemented_features=prototype.implemented_features,
@@ -295,6 +289,9 @@ def run_tb2(inp: TB2In, tools: Tools) -> TB2Out:
         by_name[key] = None if key in by_name and by_name[key] != detail else detail
     keys = [_norm_name(f) for f in inp.plan_doc.feature_list]
     content["feature_details"] = ["" if keys.count(k) > 1 else by_name.get(k) or "" for k in keys]
+    # 색 테마를 한 번 정해 두고 그림체 · 구역 틀 · 그림 · 지면 색이 모두 이 값을 쓴다(themes.pick이 _theme을 먼저 본다).
+    # 분야 낱말이 없으면 LLM에게 분야를 묻는다(themes.decide).
+    content["_theme"] = themes.decide(content, tools)
     # 지면 구성 · 대표 그림 · 그림체를 재료가 보여 주는 관계로 정한다(design.py). 입력값을 옮겨 담은 뒤에
     # 정해야 목표 고객 · 기능 수가 판단에 들어간다. 그림(artsheet)보다 먼저 — 그림 칸이 구성을 따른다.
     content = design.apply(inp.category, content, redesign=redesign)

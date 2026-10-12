@@ -96,7 +96,7 @@
     "F11": {
       "name": "create_business_model",
       "purpose": "비즈니스 모델 수립",
-      "inputs": "item, market, customer, strategy",
+      "inputs": "item, market, customer, strategy, revenue_items",
       "output": "business_model",
       "modelLabel": "GPT-6.1 Sol",
       "apiModel": "gpt-6.1-sol",
@@ -105,7 +105,7 @@
     "F12": {
       "name": "create_growth_strategy",
       "purpose": "경쟁·시장진입·BM·투자·사회적 가치 통합",
-      "inputs": "market, competitors, bm, investment, social_value",
+      "inputs": "market, competitors, bm, investment, social_value, revenue_items",
       "output": "growth_strategy",
       "modelLabel": "GPT-6.1 Sol",
       "apiModel": "gpt-6.1-sol",
@@ -197,7 +197,8 @@
         "rules": {
           "maxLines": 3
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "기술개발 개요"
       },
       {
         "sectionId": "1.1.2",
@@ -210,7 +211,8 @@
         "rules": {
           "exactItems": 3
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "기존기술 문제점"
       },
       {
         "sectionId": "1.1.3",
@@ -221,7 +223,8 @@
           "market_analysis"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "시장동향·개발 필요성"
       },
       {
         "sectionId": "1.2.1",
@@ -234,7 +237,8 @@
         "rules": {
           "maxSentences": 1
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "최종 개발목표"
       },
       {
         "sectionId": "1.2.2",
@@ -247,7 +251,8 @@
         "rules": {
           "minItems": 0
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "핵심기술 개발내용"
       },
       {
         "sectionId": "1.2.3",
@@ -260,7 +265,8 @@
         "rules": {
           "minItems": 0
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "성능지표·측정방법"
       },
       {
         "sectionId": "1.3.1",
@@ -271,7 +277,8 @@
           "development_method"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "기술개발 방법·확보방안"
       },
       {
         "sectionId": "1.4.1",
@@ -282,7 +289,8 @@
           "development_plan"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "제품 개발계획"
       },
       {
         "sectionId": "1.4.2",
@@ -293,7 +301,8 @@
           "production_plan"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "양산 계획"
       },
       {
         "sectionId": "1.4.3",
@@ -306,7 +315,8 @@
         "rules": {
           "maxLines": 3
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "마케팅·시장진입 전략"
       }
     ],
     "pre_startup": [
@@ -320,7 +330,8 @@
           "web_data"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "일반현황·산출물"
       },
       {
         "sectionId": "2.1.2",
@@ -333,7 +344,8 @@
           "development_plan"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "개요 요약"
       },
       {
         "sectionId": "2.1.3",
@@ -346,7 +358,8 @@
         "rules": {
           "exactItems": 3
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "문제인식"
       },
       {
         "sectionId": "2.1.4",
@@ -361,7 +374,8 @@
         "rules": {
           "exactItems": 3
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "실현가능성"
       },
       {
         "sectionId": "2.1.5",
@@ -372,7 +386,8 @@
           "growth_strategy"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "성장전략"
       },
       {
         "sectionId": "2.1.6",
@@ -383,7 +398,8 @@
           "team_capability"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "팀 구성"
       },
       {
         "sectionId": "2.2.1",
@@ -396,7 +412,8 @@
         "rules": {
           "maxLines": 1
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "창업아이템명"
       },
       {
         "sectionId": "2.2.2",
@@ -407,7 +424,8 @@
           "item_spec"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "산출물"
       },
       {
         "sectionId": "2.3.1",
@@ -420,7 +438,8 @@
         "rules": {
           "maxLines": 1
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "아이템 개요"
       },
       {
         "sectionId": "2.3.2",
@@ -431,7 +450,8 @@
           "market_analysis"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "문제인식 본문"
       },
       {
         "sectionId": "2.3.3",
@@ -442,7 +462,8 @@
           "feasibility_plan"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "실현가능성 본문"
       },
       {
         "sectionId": "2.3.4",
@@ -453,7 +474,8 @@
           "growth_strategy"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "성장전략 본문"
       },
       {
         "sectionId": "2.3.5",
@@ -464,7 +486,8 @@
           "team_capability"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "역량 활용계획"
       },
       {
         "sectionId": "2.3.6",
@@ -476,7 +499,8 @@
           "architecture"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "이미지·서비스 구조도"
       },
       {
         "sectionId": "2.4.1",
@@ -489,7 +513,8 @@
         "rules": {
           "exactItems": 3
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "문제인식 세부 3가지"
       },
       {
         "sectionId": "2.5.1",
@@ -500,7 +525,8 @@
           "feasibility_plan"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "실현가능성 명시"
       },
       {
         "sectionId": "2.5.2",
@@ -516,9 +542,11 @@
             "추진내용",
             "추진기간",
             "세부내용"
-          ]
+          ],
+          "maxAgreementMonths": 8
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "개발계획 표"
       },
       {
         "sectionId": "2.5.3",
@@ -535,7 +563,8 @@
             "정부지원사업비"
           ]
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "1단계 사업비 표"
       },
       {
         "sectionId": "2.5.4",
@@ -552,7 +581,8 @@
             "정부지원사업비"
           ]
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "2단계 사업비 표"
       },
       {
         "sectionId": "2.6.1",
@@ -563,7 +593,8 @@
           "growth_strategy"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "성장전략 명시"
       },
       {
         "sectionId": "2.6.2",
@@ -579,9 +610,11 @@
             "추진내용",
             "추진기간",
             "세부내용"
-          ]
+          ],
+          "maxAgreementMonths": 8
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "전체 사업추진 일정 표"
       },
       {
         "sectionId": "2.7.1",
@@ -592,7 +625,8 @@
           "team_capability"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "팀 역량"
       },
       {
         "sectionId": "2.7.2",
@@ -603,7 +637,8 @@
           "resource_plan"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "장비·시설 계획"
       },
       {
         "sectionId": "2.7.3",
@@ -614,7 +649,8 @@
           "resource_plan"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "채용 역량 계획"
       },
       {
         "sectionId": "2.7.4",
@@ -625,7 +661,8 @@
           "resource_plan"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "협력기관 협업"
       }
     ],
     "early_startup": [
@@ -639,7 +676,8 @@
           "web_data"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "일반현황·산출물"
       },
       {
         "sectionId": "3.1.2",
@@ -652,7 +690,8 @@
           "development_plan"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "개요 요약"
       },
       {
         "sectionId": "3.1.3",
@@ -665,7 +704,8 @@
         "rules": {
           "exactItems": 3
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "문제인식"
       },
       {
         "sectionId": "3.1.4",
@@ -680,7 +720,8 @@
         "rules": {
           "exactItems": 3
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "실현가능성"
       },
       {
         "sectionId": "3.1.5",
@@ -691,7 +732,8 @@
           "growth_strategy"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "성장전략"
       },
       {
         "sectionId": "3.1.6",
@@ -702,7 +744,8 @@
           "team_capability"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "팀 구성"
       },
       {
         "sectionId": "3.2.1",
@@ -715,7 +758,8 @@
         "rules": {
           "maxLines": 1
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "창업아이템명"
       },
       {
         "sectionId": "3.2.2",
@@ -726,7 +770,8 @@
           "item_spec"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "산출물"
       },
       {
         "sectionId": "3.3.1",
@@ -739,7 +784,8 @@
         "rules": {
           "maxLines": 1
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "아이템 개요"
       },
       {
         "sectionId": "3.3.2",
@@ -750,7 +796,8 @@
           "market_analysis"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "문제인식 본문"
       },
       {
         "sectionId": "3.3.3",
@@ -761,7 +808,8 @@
           "feasibility_plan"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "실현가능성 본문"
       },
       {
         "sectionId": "3.3.4",
@@ -772,7 +820,8 @@
           "growth_strategy"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "성장전략 본문"
       },
       {
         "sectionId": "3.3.5",
@@ -783,7 +832,8 @@
           "team_capability"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "역량 활용계획"
       },
       {
         "sectionId": "3.3.6",
@@ -795,7 +845,8 @@
           "architecture"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "이미지·서비스 구조도"
       },
       {
         "sectionId": "3.4.1",
@@ -808,7 +859,8 @@
         "rules": {
           "exactItems": 3
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "문제인식 세부 3가지"
       },
       {
         "sectionId": "3.5.1",
@@ -819,7 +871,8 @@
           "feasibility_plan"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "실현가능성 명시"
       },
       {
         "sectionId": "3.5.2",
@@ -835,9 +888,11 @@
             "추진내용",
             "추진기간",
             "세부내용"
-          ]
+          ],
+          "maxAgreementMonths": 10
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "개발계획 표"
       },
       {
         "sectionId": "3.5.3",
@@ -854,7 +909,8 @@
             "정부지원사업비"
           ]
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "정부지원사업비 집행계획 표"
       },
       {
         "sectionId": "3.6.1",
@@ -865,7 +921,8 @@
           "growth_strategy"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "성장전략 명시"
       },
       {
         "sectionId": "3.6.2",
@@ -881,9 +938,11 @@
             "추진내용",
             "추진기간",
             "세부내용"
-          ]
+          ],
+          "maxAgreementMonths": 10
         },
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "전체 사업추진 일정 표"
       },
       {
         "sectionId": "3.7.1",
@@ -894,7 +953,8 @@
           "team_capability"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "팀 역량"
       },
       {
         "sectionId": "3.7.2",
@@ -905,7 +965,8 @@
           "resource_plan"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "장비·시설 계획"
       },
       {
         "sectionId": "3.7.3",
@@ -916,7 +977,8 @@
           "resource_plan"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "채용 역량 계획"
       },
       {
         "sectionId": "3.7.4",
@@ -927,7 +989,8 @@
           "resource_plan"
         ],
         "rules": {},
-        "enabled": true
+        "enabled": true,
+        "displayTitle": "협력기관 협업"
       }
     ]
   }

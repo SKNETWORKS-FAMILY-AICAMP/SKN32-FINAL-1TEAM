@@ -24,8 +24,8 @@ from sbrain.flow.catalog import build_registry
 from sbrain.flow.rework_map import DOCUMENT_BUNDLES
 from sbrain.flow.score_scale import ScoreMaxes, scale_artifact
 from sbrain.models import (
-    Announcement, ArtifactScore, BundleUsage, CodeCheck, CodeCheckResult, DocScore, FeatureMatchResult, FileRef,
-    Infographic, ItemSpec, Prototype,
+    Announcement, ArtifactScore, BundleUsage, CheckResult, CodeCheck, CodeCheckResult, DocScore, FeatureMatchResult,
+    FileRef, Infographic, ItemSpec, Prototype, SectionResult,
 )
 from sbrain.models.clock import kst_today, utc_now
 from sbrain.orchestrator.errors import UNREACHABLE_NO_DOC_CHANCE, message
@@ -218,6 +218,58 @@ def test_g02b_doc_layer_zero_does_not_divide_by_zero():
 def test_g02a_old_snapshot_without_scoring_reads_default_70():
     r = judge.run_g02a(g02a_in(56.0, {})).score_report
     assert (r.display_score, r.doc_layer_max) == (80.0, 70)
+
+
+# ── 입력 오류 (후보 제외 · 안내) ─────────────────
+INPUT_ERROR_TEXT = ("입력한 협약기간 일정이나 사업비가 기준(협약기간 최대 개월 수 · 개발 기간 · 공고 지원 금액 상한)을 벗어나 "
+                    "일부 항목이 검증을 통과하지 못했습니다. 이 항목은 다시 만들어도 고쳐지지 않습니다. 이대로 진행하거나, "
+                    "입력을 고쳐 새 프로젝트로 다시 만들 수 있습니다.")
+
+
+def sr(code: str, status: str = "fail", *, missing: bool = False, error: bool = False) -> SectionResult:
+    return SectionResult(section_code=code, content_type="section", status=status, score=0.0,
+                         verified_ref="planDoc@1", input_missing=missing, input_error=error,
+                         issues=[f"{code} 문제"] if status == "fail" else [],
+                         warnings=[f"{code} 경고"] if status == "warning" else [])
+
+
+def test_input_error_notice_text_is_fixed():
+    assert judge.INPUT_ERROR_NOTICE == INPUT_ERROR_TEXT
+    assert "INPUT_ERROR_NOTICE" in judge.__all__
+
+
+def test_input_error_items_are_not_bundle_candidates():
+    orders = judge.doc_candidates([sr("3.5.2", error=True), sr("3.4.1")], 90.0, 80)
+    assert [o.targets for o in orders] == [["문제인식"]]
+    # 같은 묶음에 입력 오류 아닌 fail · warning이 있으면 그 묶음은 후보 — 사유에는 그 항목만
+    mixed = judge.doc_candidates([sr("3.5.2", error=True), sr("3.5.1", "warning")], 90.0, 80)
+    assert [o.targets for o in mixed] == [["실현가능성"]] and "3.5.2" not in mixed[0].reason
+
+
+def test_input_error_only_keeps_every_bundle_rule_when_score_is_low():
+    only = [sr("3.5.2", error=True), sr("3.5.3", error=True)]
+    assert judge.doc_candidates(only, 90.0, 80) == []
+    low = judge.doc_candidates(only, 60.0, 80)
+    assert {o.targets[0] for o in low} == set(DOCUMENT_BUNDLES)
+
+
+def test_g02a_notices_order_final_action_missing_error_once():
+    checks = [CheckResult(passed=False, failures=["x"], final_action="표 제거 · 본문 서술 대체")]
+    inp = c.G02aIn(doc_score=doc(60.0), threshold=80, rework_usage=[], settings_snapshot=Settings().dump(),
+                   checks=checks, section_results=[sr("3.5.3", "warning", missing=True), sr("3.5.2", error=True),
+                                                   sr("3.6.2", error=True)])
+    assert judge.run_g02a(inp).score_report.notices == [
+        "표 제거 · 본문 서술 대체", judge.INPUT_MISSING_NOTICE, INPUT_ERROR_TEXT]
+    plain = inp.model_copy(update={"section_results": [sr("3.5.2")]})
+    assert judge.run_g02a(plain).score_report.notices == ["표 제거 · 본문 서술 대체"]
+
+
+def test_g02b_notices_order_missing_error_unreachable():
+    res = [sr("3.5.2", error=True), sr("3.5.3", "warning", missing=True)]
+    out = judge.run_g02b(g02b_in(40.0, artifact(15.0, 15.0), section_results=res))
+    assert out.score_report.notices == [judge.INPUT_MISSING_NOTICE, INPUT_ERROR_TEXT, FIRST]
+    only_error = judge.run_g02b(g02b_in(60.0, artifact(15.0, 15.0), section_results=[sr("3.5.2", error=True)]))
+    assert only_error.score_report.notices == [INPUT_ERROR_TEXT]
 
 
 # ── 흐름 (스텁 조립 — 실구현 판정) ───────────────────────

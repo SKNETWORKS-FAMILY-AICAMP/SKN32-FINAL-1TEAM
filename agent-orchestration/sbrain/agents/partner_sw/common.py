@@ -34,7 +34,7 @@ class PartnerContractError(ValueError):
 
 # ── 양식 항목 ─────────────────────────────────────────
 def form_items(form: FormSpec, kind: str) -> list[tuple[str, str, str | None, str]]:
-    """양식의 계획서 항목 (번호, 제목, 태그, 종류) — 양식 순서. 태그 칸이 항목 수와 맞지 않으면 짝짓기 표(rework_map),
+    """양식의 계획서 항목 (번호, 제목, 태그, 종류) — 양식 순서. 태그 칸이 항목 수와 맞지 않으면 항목별 재작성 묶음 표(rework_map),
     종류 칸이 맞지 않으면 담당자 계약의 contentType으로 채운다."""
     codes, titles = list(form.section_codes), list(form.section_titles)
     specs = section_specs(kind)
@@ -60,6 +60,32 @@ def spec_for(specs: dict[str, dict[str, Any]], code: str) -> dict[str, Any]:
     if code not in specs:
         raise PartnerContractError("양식 항목이 담당자 계약에 없음")
     return copy.deepcopy(specs[code])
+
+
+def compact_prompt_source(source: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
+    """모델 요청용 source 사본에서 성장전략 결과에 중복된 원본 묶음을 덜어낸다.
+
+    전체 원본은 호출자가 검증·저장에 계속 사용한다. F12 결과의 핵심 요약,
+    facts, sourceRefs와 최상위 originalFacts/evidence는 남기고, 별도로 보존된
+    F12 입력 원문(originalFacts)과 같은 provenance 복사본만 프롬프트에서 제외한다.
+    """
+    projected = copy.deepcopy(source)
+    roots = {str(key).split(".", 1)[0] for key in spec.get("sourceKeys", [])}
+    if "growth_strategy" not in roots:
+        return projected
+
+    growth = projected.get("growth_strategy")
+    if isinstance(growth, dict):
+        growth.pop("originalFacts", None)
+        growth.pop("evidence", None)
+
+    provenance = projected.get("strategyProvenance")
+    if isinstance(provenance, dict):
+        growth_provenance = provenance.get("growth_strategy")
+        if isinstance(growth_provenance, dict):
+            growth_provenance.pop("originalFacts", None)
+            growth_provenance.pop("evidence", None)
+    return projected
 
 
 def kind_of(strategy_data: dict[str, Any] | None, applicant_type: str | None = None) -> str:

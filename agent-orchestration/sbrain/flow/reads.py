@@ -6,11 +6,11 @@
 |---|---|---|
 | 3 공고 후보 | 공고선택 · 사용자대기, 계획서작성 · 사용자대기(자격 통과 뒤 작성 시작 전, 3.3) | 후보는 sbrain_flow.candidate_lists(첫 조회 candidates@1, 유효한 추가 조회가 있으면 firstCandidates · moreCandidates), collectionStatus, filteredCount, fallbackUsed · fallbackMode, 막힌 공고 blockedAnnouncementIds(Run) |
 | 4 자격 확인 | 공고선택 · 계획서작성 사용자대기, gateResult가 있을 때 | gateResult(확인 필요 unknownConditions면 notices에 E-G1-UNPARSED), businessAgeYears |
-| 6 문서 평가 | 문서평가 · 사용자대기 | planDoc, scoreReport.document, G-02a.failedTaskIds · reworkOrders · nextAction |
+| 6 문서 평가 | 문서평가 · 사용자대기 | planDoc, scoreReport.document, 표 대체 사유 tableFallbacks(확장, tableOutputs에서), G-02a.failedTaskIds · reworkOrders · nextAction |
 | 8 산출물 확인 | 산출물확인 · 사용자대기 | prototype, infographic, codeCheck, featureMatch, G-02b.reworkOrders(산출물층) |
 | 9 종합 평가 | 종합평가 · 사용자대기 | scoreReport.overall, G-02b.reworkOrders · nextAction, reworkDiff |
 | 10 검수 전후 | 결과물 · 완료 | formatFindings, sentenceResults(문장별 전후 · 시도별 기록), proofreadLog |
-| 11 결과물 | 결과물 · 완료 | deliverable, userMessage, planDoc, prototype, infographic |
+| 11 결과물 | 결과물 · 완료 | deliverable, userMessage, planDoc, prototype, infographic, 표 대체 사유 tableFallbacks(확장) |
 
 - 재작성 목록은 묶음별 남은 기회를 함께 싣는다(묶음 요청 request_rework_for_project와 같은 묶음 이름으로 센다).
 - 대기 지점이 아니거나 아직 없는 화면은 CommandError("SCREEN_NOT_READY"). 화면 3은 작성을 시작한 뒤에는
@@ -110,6 +110,11 @@ class ScoreView(SBModel):
     code_check_items: list[CodeCheck] = ext(default_factory=list, note=f"{SCALE_NOTE} — 코드 점검 항목 줄(환산)")
 
 
+# 표 대체 사유 칸 (확장) — 담당자 10-12 새 판이 더한 화면 칸. 화면 6 · 11 · 결과 조회에 같은 모양으로 싣는다
+TABLE_FALLBACK_NOTE = ("표 대체 안내(결정 0028) — 표를 본문 서술로 바꾼 항목마다 하나(tableOutputs의 tableFallbackUsed 참 · "
+                       "fallbackReason이 빈 글이 아님). 사용자 표시에는 displayReason을 쓰고, 계획서 본문 글에는 섞지 않는다")
+
+
 # 점수 보고서 → ScoreView로 그대로 옮기는 환산 칸 (파이썬 이름)
 SCALED_SCORE_FIELDS = ("doc_layer_max", "code_check_score", "code_check_max", "feature_match_score",
                        "feature_match_max", "artifact_layer_score", "artifact_layer_max", "code_check_items")
@@ -141,10 +146,18 @@ class GateScreen(Screen):
     can_start_writing: bool
 
 
+class TableFallback(SBModel):
+    """새 타입(확장) — F17 표를 본문으로 대체했을 때 화면에 별도 표시할 항목별 사유."""
+    section_code: str = ext(note="표를 본문 서술로 바꾼 항목 번호")
+    reason: str = ext(note="담당자 fallbackReason 원문 — 내부 진단용, 사용자 화면에는 표시하지 않음")
+    display_reason: str = ext(note="표 대체 안내(결정 0028) — fallbackReason 유형을 쉽게 풀어 쓴 사용자 표시용 안내 문구")
+
+
 class DocumentScreen(Screen):
-    """6 문서 평가 — 계획서 · 환산 점수 · 미달 항목 · 재작성 목록 · 다음 동작."""
+    """6 문서 평가 — 계획서 · 환산 점수 · 미달 항목 · 표 대체 사유 · 재작성 목록 · 다음 동작."""
     plan_doc: PlanDoc
     score: ScoreView
+    table_fallbacks: list[TableFallback] = ext(default_factory=list, note=TABLE_FALLBACK_NOTE)
     failed_task_ids: list[str]
     rework_options: list[ReworkOption]
     next_action: NextAction
@@ -188,12 +201,13 @@ class ProofreadScreen(Screen):
 
 
 class ResultScreen(Screen):
-    """11 결과물."""
+    """11 결과물 — 계획서 표 대체 사유를 별도 데이터로 제공한다."""
     deliverable: Deliverable
     user_message: str
     plan_doc: PlanDoc
     prototype: Prototype
     infographic: Infographic
+    table_fallbacks: list[TableFallback] = ext(default_factory=list, note=TABLE_FALLBACK_NOTE)
 
 
 # ── 지금까지 결과 · 재작성 결과 (확장) ─────────────────────
@@ -215,6 +229,7 @@ class Outputs(SBModel):
     business_age_years: float | None = None
     category: str | None = None
     plan_doc: PlanDoc | None = None
+    table_fallbacks: list[TableFallback] = ext(default_factory=list, note=TABLE_FALLBACK_NOTE)
     doc_score: DocScore | None = None
     document_score_report: ScoreView | None = None     # scoreReport.document (G-02a)
     overall_score_report: ScoreView | None = None      # scoreReport.overall (G-02b)
@@ -526,6 +541,7 @@ def screen(orch: SBrainOrchestrator, project_id: int | str, number: int) -> Scre
     if number == 6:
         return DocumentScreen(
             **base, plan_doc=ctx.get("planDoc"), score=_score(ctx.get("scoreReport.document")),
+            table_fallbacks=_table_fallbacks(ctx.get("tableOutputs", default={}) or {}),
             failed_task_ids=ctx.get("G-02a.failedTaskIds"),
             rework_options=_options(ctx, ctx.get("G-02a.reworkOrders")), next_action=ctx.get("G-02a.nextAction"))
     if number == 8:
@@ -544,7 +560,37 @@ def screen(orch: SBrainOrchestrator, project_id: int | str, number: int) -> Scre
                                sentences=_sentence_changes(orch, ctx), proofread_log=ctx.get("proofreadLog"))
     return ResultScreen(**base, deliverable=ctx.get("deliverable"), user_message=ctx.get("userMessage"),
                         plan_doc=ctx.get("planDoc"), prototype=ctx.get("prototype"),
-                        infographic=ctx.get("infographic"))
+                        infographic=ctx.get("infographic"),
+                        table_fallbacks=_table_fallbacks(ctx.get("tableOutputs", default={}) or {}))
+
+
+def _table_fallbacks(outputs: dict[str, Any]) -> list[TableFallback]:
+    """화면 표시용 목록을 만든다. reason은 진단 원문, display_reason은 사용자 안내다."""
+    if not isinstance(outputs, dict):
+        return []
+    fallbacks = []
+    for code, output in outputs.items():
+        if not isinstance(output, dict) or not output.get("tableFallbackUsed"):
+            continue
+        reason = str(output.get("fallbackReason", "")).strip()
+        if reason:
+            fallbacks.append(TableFallback(section_code=str(code), reason=reason,
+                                           display_reason=_table_fallback_display_reason(reason)))
+    return fallbacks
+
+
+def _table_fallback_display_reason(reason: str) -> str:
+    """내부 진단 문구를 분류해 사용자에게 다음 조치를 안내한다."""
+    text = reason.casefold()
+    if "지원규모 상한" in reason or "정부지원사업비" in reason and "초과" in reason:
+        return "입력한 정부지원사업비가 지원 상한을 초과해 표 대신 설명으로 표시합니다. 사업비를 확인해 주세요."
+    if "개발계획 표 종료월" in reason or "원본 협약 일정" in reason:
+        return "작성된 표 일정이 원본 협약 일정과 맞지 않아 설명으로 표시합니다. 일정 입력과 표 내용을 확인해 주세요."
+    if "협약기간 일정" in reason and ("초과" in reason or "이후" in reason):
+        return "입력한 협약 일정이 허용 기간을 벗어나 표 대신 설명으로 표시합니다. 일정 입력을 확인해 주세요."
+    if any(marker in text for marker in ("필수 표", "표 구조", "컬럼", "열 누락", "행 누락")):
+        return "표의 필수 항목을 검증 기준에 맞추지 못해 설명으로 표시합니다. 표 내용을 확인해 주세요."
+    return "표를 검증 기준에 맞춰 완성하지 못해 설명으로 표시합니다. 입력 내용과 생성 결과를 확인해 주세요."
 
 
 def _score(report: ScoreReport) -> ScoreView:
@@ -634,6 +680,7 @@ def outputs(orch: SBrainOrchestrator, project_id: int | str) -> Outputs:
         candidates=_web_cards(first), more_candidates=_web_cards(more),
         selected_announcement=cur("selectedAnnouncement"), gate_result=cur("gateResult"),
         business_age_years=cur("businessAgeYears"), category=category, plan_doc=cur("planDoc"),
+        table_fallbacks=_table_fallbacks(cur("tableOutputs") or {}),
         doc_score=cur("docScore"), document_score_report=_score(document) if document is not None else None,
         overall_score_report=_score(overall) if overall is not None else None,
         prototype=cur("prototype"), infographic=cur("infographic"), code_check=cur("codeCheck"),

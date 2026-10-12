@@ -6,6 +6,8 @@
 - F19에 넘기는 항목 내용: 본문 = sectionOutputs, 표 = tableOutputs, 그림 = diagramOutputs. 근거는 담당자 section_source.
 - 입력 없음: 표의 사용자 원본 행이 비었거나 예비창업 사업비에 단계 미지정 행이 있으면 inputMissing 참 · status warning,
   issue는 warning '입력 확인 필요 — <사업비 집행계획 | 추진 일정>'으로 바꾼다.
+- 입력 오류(inputError): 입력 없음 처리 뒤 최종 status가 fail이고 담당자 F19의 `inputErrorCodes`에 입력 오류 코드가 있으면 참이다.
+  issue 문구와 무관하게 구조화된 코드로 판정하며, status · issues · 점수는 담당자 결과 그대로다.
 - 점수: D = 입력 docLayerMax(설정 사본 scoring.docLayerMax, 비면 설정 기본값), N = 항목 수. 항목 점수 = 담당자 점수 × D ÷ 100 ÷ N
   (소수 둘째 자리 반올림, 잠정), 문서층 총점 = 반올림한 항목 점수의 합(더 반올림하지 않음). varianceFlag는 늘 거짓.
 - 목표 항목(ReworkInput.targetItems)이 있으면 그 항목만 다시 검증하고 나머지는 baseSectionResults를 그대로 가져온다(verifiedRef도
@@ -26,7 +28,8 @@ from ...orchestrator.tools import Tools
 from . import inputs as ins
 from .agent_strategy.functions import python_functions as py
 from .agent_strategy.runtime.pipeline import (
-    _check_agreement_table_overrun, _reconcile_validation, _remove_roadmap_deadline_warnings, section_source,
+    _check_agreement_table_overrun, _reconcile_validation,
+    _remove_roadmap_deadline_warnings, section_source,
 )
 from .agent_validation_1 import validation_1  # noqa: F401 — 불러올 때 자료를 읽어 둔다(실행 중 파일 읽기 방지)
 from .agent_validation_1.scoring import score_section
@@ -42,10 +45,23 @@ NO_DEDUCTION = "감점 없음"                  # 항목 점수 comment — 감�
 INPUT_MISSING = "입력 확인 필요 — {label}"  # 입력 없음 warning (잠정 문구, spec 4.9)
 SCORE_DIGITS = 2                           # 항목 점수 소수 자리 (잠정)
 _STATUSES = ("pass", "warning", "fail")
+_INPUT_ERROR_CODES = frozenset((validation_1.INPUT_ERROR_AGREEMENT_MONTHS_EXCEEDED,
+                                validation_1.INPUT_ERROR_AGREEMENT_AFTER_DEADLINE,
+                                validation_1.INPUT_ERROR_SUPPORT_LIMIT_EXCEEDED))
 
 
 def doc_layer_max(inp: TV1In) -> float:
     return float(inp.doc_layer_max) if inp.doc_layer_max is not None else float(ScoringSettings().doc_layer_max)
+
+
+def input_error(validation: dict[str, Any]) -> bool:
+    """입력 오류 — fail 결과의 구조화된 F19 inputErrorCodes만 사용한다."""
+    if not isinstance(validation, dict) or validation.get("status") != "fail":
+        return False
+    codes = validation.get("inputErrorCodes", [])
+    if not isinstance(codes, (list, tuple, set)):
+        return False
+    return bool(_INPUT_ERROR_CODES.intersection(str(code) for code in codes))
 
 
 def _input_missing(validation: dict[str, Any], label: str) -> dict[str, Any]:
@@ -109,12 +125,15 @@ def run_tv1(inp: TV1In, tools: Tools) -> TV1Out:
             validation = _input_missing(validation, missing[code])
         evaluation = score_section(spec, content, validation, kind, source)
         status = validation.get("status")
+        status = status if status in _STATUSES else "fail"
         return SectionResult(
-            section_code=code, tag=tag, content_type=k, status=status if status in _STATUSES else "fail",
+            section_code=code, tag=tag, content_type=k, status=status,
             issues=[str(x) for x in validation.get("issues", [])],
             warnings=[str(x) for x in validation.get("warnings", [])],
             needs_user_confirmation=[str(x) for x in validation.get("needsUserConfirmation", [])],
-            input_missing=code in missing, score=float(evaluation["score"]),
+            input_missing=code in missing,
+            input_error=status == "fail" and input_error({**validation, "status": status}),   # 입력 없음 처리 뒤 (0028)
+            score=float(evaluation["score"]),
             deductions=[str(d.get("reason", "")) for d in evaluation.get("deductions", []) if isinstance(d, dict)],
             verified_ref=ref)
 

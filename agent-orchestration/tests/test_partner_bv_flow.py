@@ -124,6 +124,17 @@ def test_tb1_gate_failure_redo_passes_previous_source_then_tv2_scores_it(clock):
     assert "abcd" not in recorded(app, rid) and MARK not in recorded(app, rid)
 
 
+def test_tb1_unfixed_external_dependency_loses_item_7(clock):
+    """외부 의존(E-B1-DEP)을 끝내 못 고친 HTML은 T-V2 코드 점검 7번에서 감점한다(담당자 10-12 회신). 통과 필수 조건은 아니다."""
+    app = bv_app(clock, html=VARIANTS["dependency"])
+    rid = to_screen8(app)
+    score = ctx_of(app, rid).get("artifactScore")
+    assert score.code_check.gate_failures == []
+    [seventh] = [ch for ch in score.code_check.checks if ch.no == 7]
+    assert not seventh.passed and seventh.applicable and seventh.earned == 0
+    assert "외부 의존 1개" in seventh.detail and score.total > 0
+
+
 @pytest.mark.parametrize("variant,code", [("halting", "sandbox"), ("secret", "secret")])
 def test_tb1_unfixed_storage_or_secret_scores_zero(clock, variant, code):
     app = bv_app(clock, html=VARIANTS[variant])

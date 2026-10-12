@@ -8,9 +8,9 @@ _REFERENCE = Path(__file__).parent / 'res' / 'prompts' / 'reference'
 _persona_text = (_REFERENCE / 'validation_persona.md').read_text(encoding='utf-8-sig') if (_REFERENCE / 'validation_persona.md').exists() else '검증 1 판정 재검토자'
 _checklist_text = (_REFERENCE / 'validation_checklist.md').read_text(encoding='utf-8-sig') if (_REFERENCE / 'validation_checklist.md').exists() else ''
 REVIEW_PERSONA = '검증 1 판정 재검토자'
-REVIEW_PROMPT = f'''{_persona_text}\n\n{_checklist_text}\n\nF19 의미 검증 결과를 재검토한다. 필수 구조·확정 사실·마감일·예산 상한 위반은 실패를 유지하고, 계획·제안·확인 필요·근거 보완·시험조건 미확정은 경고로 분류한다. 표현 차이만으로 실패시키지 않는다.'''
+REVIEW_PROMPT = f'''{_persona_text}\n\n{_checklist_text}\n\nF19 의미 검증 결과를 재검토한다. 필수 구조·확정 사실·개발 종료월·협약기간 상한·예산 상한 위반은 실패를 유지하고, 계획·제안·확인 필요·근거 보완·시험조건 미확정은 경고로 분류한다. 표현 차이만으로 실패시키지 않는다.'''
 
-HARD_MARKERS = ('원본과 불일치','확정 fact 오류','마감일 이후','지원규모 상한','필수 표','필수 항목','이미지 nodes')
+HARD_MARKERS = ('원본과 불일치','확정 fact 오류','마감일 이후','개발 종료월','지원규모 상한','필수 표','필수 항목','이미지 nodes')
 ADVISORY_MARKERS = ('근거','출처','제안','계획','확인 필요','미확정','시험','측정','표현','토큰','기능 목록','fact 경로','구체화','정합성')
 
 def review_issues(issues):

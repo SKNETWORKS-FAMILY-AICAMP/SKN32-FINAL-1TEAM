@@ -21,6 +21,7 @@ from sbrain.agents.partner_sw import calls, resources
 from sbrain.agents.partner_sw.agent_strategy.functions import gpt_functions as gpt
 from sbrain.agents.partner_sw.agent_strategy.functions import python_functions as py
 from sbrain.agents.partner_sw.agent_strategy.runtime import llm_runtime, pipeline, research_context
+from sbrain.agents.partner_sw.agent_strategy.runtime import market_crawler
 from sbrain.agents.partner_sw.agent_validation_1 import scoring, validation_1
 from sbrain.agents.partner_sw.calls import INSTRUCTION_NOTE, partner_call, submit
 from sbrain.agents.partner_sw.contract import CONTRACT
@@ -197,13 +198,11 @@ def test_parse_plain_json_and_defaults():
     assert parse("F02", '{"coreFeatures":[]}')["generatedText"] == '{"coreFeatures": []}'   # 담당자: 본문 없으면 JSON 글자
 
 
-def test_parse_fenced_response_follows_partner_code():
-    # 담당자 정리 코드(울타리 떼고 {…} 꺼내기)는 꺼낸 뒤에도 '닫히지 않음'으로 올린다(원본 동작 그대로 — VENDORED.md).
-    # 우리 쪽에서는 FormatError라 tools가 다시 보낸다
-    with pytest.raises(FormatError, match="F02 모델 JSON 파싱 실패"):
-        parse("F02", f'```json\n{{"generatedText":"{SECRET}"}}\n```')
-    with pytest.raises(FormatError, match="F02 모델 JSON 파싱 실패$"):
-        parse("F02", f'앞말 {{"generatedText": {SECRET}}} 뒷말')
+def test_parse_fenced_response_and_json_inside_prose():
+    fenced = parse("F02", f'```json\n{{"generatedText":"{SECRET}"}}\n```')
+    embedded = parse("F02", f'앞말 {{"generatedText":"{SECRET}"}} 뒷말')
+    assert fenced["generatedText"] == SECRET
+    assert embedded["generatedText"] == SECRET
 
 
 @pytest.mark.parametrize("fid,content,field", [
@@ -253,8 +252,75 @@ def test_normalize_image_output_raises_instead_of_default_flow():
         pipeline._normalize_image_output(None, "USER_FLOW")
 
 
-def test_crawler_path_is_always_skipped():
+def test_market_research_refresh_is_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("SBRAIN_AUTO_RESEARCH", raising=False)
     assert pipeline.refresh_user_industry_research({"tech_field": "AI"})["status"] == "skipped"
+
+
+def test_market_research_refresh_is_opt_in_and_updates_local_resources(monkeypatch):
+    monkeypatch.setenv("SBRAIN_AUTO_RESEARCH", "1")
+    refreshed_paths = []
+    monkeypatch.setattr(market_crawler, "add_keyword", lambda keyword: {
+        "resultCount": 2, "status": "collected", "searchCount": 3,
+    })
+    monkeypatch.setattr(resources, "refresh", lambda path: refreshed_paths.append(path))
+    monkeypatch.setattr(research_context, "refresh_market_sources", lambda: ["industry_research/output/raw_kiet_results.json"])
+
+    result = pipeline.refresh_user_industry_research({"tech_field": "AI 문서 검색"})
+
+    assert result["status"] == "refreshed" and result["resultCount"] == 2
+    assert len(refreshed_paths) == 4
+    assert result["availableFiles"] == ["industry_research/output/raw_kiet_results.json"]
+
+
+def test_explicit_market_refresh_reindexes_new_json(monkeypatch):
+    path = research_context.ROOT / "industry_research/output/raw_kiet_results.json"
+    key = resources._rel(path)
+    old_signature = research_context._SIGNATURE
+    payload = {"categories": [{"results": [{"title": "로봇 산업 동향", "summaryText": "로봇 산업 동향 자료 요약", "url": "https://example.test/robot"}]}]}
+    monkeypatch.setitem(resources.TEXTS, key, json.dumps(payload, ensure_ascii=False))
+    monkeypatch.setattr(research_context, "_SIGNATURE", old_signature)
+    research_context._index.cache_clear()
+
+    available = research_context.refresh_market_sources()
+    result = research_context._retrieve("로봇 산업 동향", domains=("market",))
+
+    assert "industry_research/output/raw_kiet_results.json" in available
+    assert result["sources"] and result["sources"][0]["url"] == "https://example.test/robot"
+    research_context._index.cache_clear()
+
+
+def test_market_crawler_add_keyword_updates_result_and_history_files(tmp_path, monkeypatch):
+    listing = tmp_path / "keyword_list.json"
+    history = tmp_path / "keyword_history.json"
+    raw = tmp_path / "raw_kiet_results.json"
+    report = tmp_path / "results.json"
+    raw.write_text(json.dumps({"categories": [{"industryName": "기존 분야", "status": "collected", "resultCount": 1, "results": []}], "summary": {}}), encoding="utf-8")
+    report.write_text(json.dumps({"reports": [{"industryName": "기존 분야"}], "summary": {}}), encoding="utf-8")
+    calls = []
+
+    def fake_crawl(keyword, session, limit, is_user_keyword):
+        calls.append((keyword, limit, is_user_keyword))
+        return {"status": "collected", "error": None, "resultCount": 1,
+                "queryVariants": [keyword], "requiredTerms": [keyword], "collections": [],
+                "results": [{"title": "AI 시장 동향", "summaryText": "AI 적용 동향 요약",
+                             "searchCategoryName": "동향", "url": "https://example.test/source"}]}
+
+    monkeypatch.setattr(market_crawler, "crawl_keyword", fake_crawl)
+    first = market_crawler.add_keyword("AI 문서 검색", listing=listing, history=history,
+                                       kiet_results=raw, output=report)
+    second = market_crawler.add_keyword("AI 문서 검색", listing=listing, history=history,
+                                        kiet_results=raw, output=report)
+
+    raw_data = json.loads(raw.read_text(encoding="utf-8"))
+    report_data = json.loads(report.read_text(encoding="utf-8"))
+    history_data = json.loads(history.read_text(encoding="utf-8"))
+    assert [row["industryName"] for row in raw_data["categories"]] == ["기존 분야", "AI 문서 검색"]
+    assert [row["industryName"] for row in report_data["reports"]] == ["기존 분야", "AI 문서 검색"]
+    assert first["wasNewKeyword"] is True and second["wasNewKeyword"] is False
+    assert history_data["searches"][0]["searchCount"] == 2
+    assert history_data["searches"][0]["resultCount"] == 1
+    assert calls == [("AI 문서 검색", 10, True), ("AI 문서 검색", 10, True)]
 
 
 # ── 자료 파일 (불러올 때 한 번) ─────────────────────────────
@@ -295,16 +361,43 @@ def test_partner_functions_do_not_touch_files_while_running(monkeypatch):
     assert "[검증 참고 기준:" in fake.requests[2].messages[0]["content"]       # 검증 기준 자료가 실렸다
 
 
+def test_scoring_applies_limit_deductions_from_f19_codes_and_excludes_roadmap_dates():
+    spec = {"sectionId": "3.5.2", "title": "개발계획", "rules": {}}
+    content = {"generatedText": "협약 일정은 2026년 12월까지이고, 이후 로드맵은 2027년 2월까지다. 정부지원사업비 70,000,000원."}
+    # Both key spellings are supported. A later roadmap date and textual budget
+    # amount alone must not trigger either deduction without the F19 codes.
+    for limits_key in ("strategy_limits", "_strategy_limits"):
+        source = {limits_key: {"deadline": "2026-12", "supportLimit": 50_000_000}}
+        no_violation = scoring.score_section(
+            spec, content, {"status": "warning", "issues": [], "warnings": [], "inputErrorCodes": []},
+            "early_startup", source,
+        )
+        assert not any(item["amount"] in (40, 50) for item in no_violation["deductions"])
+
+        flagged = scoring.score_section(
+            spec, content,
+            {"status": "fail", "issues": [], "warnings": [], "inputErrorCodes": [
+                validation_1.INPUT_ERROR_AGREEMENT_AFTER_DEADLINE,
+                validation_1.INPUT_ERROR_SUPPORT_LIMIT_EXCEEDED,
+            ]},
+            "early_startup", source,
+        )
+        limit_deductions = [item for item in flagged["deductions"] if item["source"].startswith("inputErrorCodes.")]
+        assert [(item["amount"], item["source"]) for item in limit_deductions] == [
+            (40, "inputErrorCodes.AGREEMENT_SCHEDULE_AFTER_DEADLINE"),
+            (50, "inputErrorCodes.SUPPORT_LIMIT_EXCEEDED"),
+        ]
+        assert flagged["score"] <= 59.0  # 기존 fail 점수 상한 유지
+
+
 def test_resources_are_loaded_once_and_missing_files_are_absent():
     keys = set(resources.TEXTS)
-    assert any(k.endswith("raw_kiet_results.json") for k in keys)
     assert any(k.endswith("criteria_registry.json") for k in keys)
     assert any(k.endswith("execution_contract.json") for k in keys)
     missing = research_context.ROOT / "industry_research/output/keyword_history.json"
-    assert not resources.exists(missing)
-    with pytest.raises(FileNotFoundError) as e:
+    assert not resources.exists(missing)  # 사용자 조사 자료는 기본 설치본에 포함하지 않음
+    with pytest.raises(FileNotFoundError):
         resources.read(missing)
-    assert "keyword_history" not in str(e.value)
     assert not resources.exists(pathlib.Path(PARTNER_DIR).parent / "form_defaults.py")   # 폴더 밖은 없는 파일
 
 
@@ -339,9 +432,12 @@ FORBIDDEN = {
 def test_vendored_code_has_no_forbidden_calls():
     files = sorted(PARTNER_DIR.rglob("*.py"))
     assert len(files) >= 14
+    allowed = {"market_crawler.py": {"os.getenv", "datetime.now", "직접 HTTP"}}
     found = [(f.name, name) for f in files for name, pat in FORBIDDEN.items()
-             if re.search(pat, f.read_text(encoding="utf-8"))]
+             if name not in allowed.get(f.name, set()) and re.search(pat, f.read_text(encoding="utf-8"))]
     assert found == []
+    crawler = next(f for f in files if f.name == "market_crawler.py")
+    assert 'KIET_BASE_URL = "https://www.kiet.re.kr"' in crawler.read_text(encoding="utf-8")
 
 
 def test_vendored_code_uses_package_relative_imports():

@@ -395,7 +395,9 @@ class PlanDoc(SBModel):
 
 # ── 검증-1 항목 결과 ─────────────────────────────────
 class SectionResult(SBModel):
-    """새 타입 — 계획서 항목 하나의 검증-1 판정 (T-V1 출력 sectionResults, spec 4.7 · 4.9)."""
+    """새 타입 — 계획서 항목 하나의 검증-1 판정 (T-V1 출력 sectionResults, spec 4.7 · 4.9).
+
+    흐름 · 판정은 status · input_missing · input_error 칸으로만 가른다 — issue 글을 읽지 않는다."""
     section_code: str = ext(note="항목 번호")
     tag: str | None = ext(None, note="웹 태그 — 없으면 None")
     content_type: SectionKind = ext(note="항목 종류")
@@ -404,6 +406,9 @@ class SectionResult(SBModel):
     warnings: list[str] = ext(default_factory=list, note="경고 목록")
     needs_user_confirmation: list[str] = ext(default_factory=list, note="사용자 확인 필요")
     input_missing: bool = ext(False, note="사업비 · 일정 입력이 비어 생긴 결과인지 (spec 4.9)")
+    input_error: bool = ext(False, note="입력 오류(결정 0028) — 입력 값이 공고 · 규정 기준(협약기간 최대 개월 수 · 개발 종료월 · "
+                                        "공고 지원 금액 상한)을 벗어나 생긴 fail이라 다시 만들어도 고쳐지지 않는다. "
+                                        "T-V1 연결 코드만 채운다. 칸이 없는 옛 판정은 거짓")
     score: float = ext(note="담당자 내부 점수 0 ~ 100")
     deductions: list[str] = ext(default_factory=list, note="감점 사유 (담당자 deductions의 reason)")
     verified_ref: str = ext(note="검증한 산출물 버전 '이름@버전' — 이어받은 결과도 원래 값 그대로")

@@ -9,7 +9,16 @@ from conftest import make_app, to_screen6
 from partner_fake import BODY_MARK, PARTNER_TASKS, respond_partner
 
 from sbrain.agents.partner_sw.tasks import IMPLEMENTED, bind_partner_sw
+from sbrain.agents.partner_sw import strategy as strategy_module
 from sbrain.orchestrator.settings import Settings
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def disable_live_kiet_in_flow_tests(monkeypatch):
+    monkeypatch.setattr(strategy_module, "search_keyword", lambda keyword, timeout: {
+        "status": "no_relevant_source_found", "keyword": keyword, "sources": [], "resultCount": 0,
+    })
 
 
 def partner_app(clock, **kw):
@@ -30,7 +39,11 @@ def test_partner_tasks_run_in_flow_to_screen6(clock):
     plan = ctx.get("planDoc")
     assert [s.section_code for s in plan.sections] == form.section_codes            # 모든 항목 · 양식 순서 (M-1 뒤)
     tables = [s for s in plan.sections if s.content_type == "table"]
-    assert tables and all(s.sentences for s in tables)                             # 표 항목은 T-W3 서술
+    assert tables
+    assert all("|" not in sentence.text and "서술:" not in sentence.text for section in tables
+               for sentence in section.sentences)                                   # 표 행·머리말은 중복 문자열로 보내지 않는다
+    assert all("원본 입력에 없는 세부 항목은 협약 후 확인함." not in sentence.text
+               for section in tables for sentence in section.sentences)              # 입력 없는 행을 문장으로 채우지 않는다
     assert plan.charts == [] and [t.source_ref for t in plan.tables] == [s.section_code for s in tables]
     assert len(plan.diagrams) == 2 and plan.diagrams == ctx.get("diagrams")
     for d in plan.diagrams:                                                        # SVG는 파일 저장소에 있다
@@ -44,7 +57,8 @@ def test_partner_tasks_run_in_flow_to_screen6(clock):
     assert reqs and all(q.json_mode and q.metadata["purpose"].startswith("F") for q in reqs)
     assert not [q for q in app.llm.requests if q.metadata["task_id"] == "T-W3"]
     logs = app.store.call_logs(rid)
-    assert {log.purpose for log in logs if log.task_id == "T-S1" and log.call_type == "search"} == {"자료 검색"}
+    assert {log.purpose for log in logs if log.task_id == "T-S1" and log.call_type == "search"} == {
+        "자료 검색", "KIET 시장 조사"}
     # 기록에 산출물 내용이 없다 (spec 4.17)
     recorded = " ".join([log.model_dump_json() for log in logs] +
                         [r.model_dump_json() for r in app.store.executions(rid)])
