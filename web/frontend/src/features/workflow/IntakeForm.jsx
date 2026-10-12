@@ -13,7 +13,7 @@ import {
 import { BackButton } from './shared.jsx';
 import {
   BudgetEditor, BudgetScaleField, DevPeriodField, EMPTY_BUDGET_ROW, EMPTY_FUNDING, ListOrNone, ScheduleEditor, SelfFundingField,
-  budgetFilled, emptySchedule, fundingFilled, periodFilled, rowsFilled, scheduleFilled, scheduleSectionsFor,
+  budgetFilled, emptySchedule, fundingFilled, periodFilled, rowsFilled, scheduleFilled, scheduleSectionsFor, selfFundingMismatch,
 } from './ProjectPlanFields.jsx';
 
 const APPLICANT_TYPES = [['preliminary', '예비창업자'], ['individual', '개인사업자'], ['corp', '법인']];
@@ -112,20 +112,20 @@ function IntakeChecklist({ groups, onJump }) {
   const complete = done === all.length;
   return (
     <aside className="hidden xl:block">
-      <div className="sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto rounded-2xl border border-[var(--border)] bg-white px-5 py-4">
+      <div className="sticky top-20 max-h-[calc(100vh-6.5rem)] overflow-y-auto rounded-2xl border border-[var(--border)] bg-white px-5 py-3.5">
         <div className="flex items-baseline justify-between">
           <p className="text-[13.5px] font-bold">입력 현황</p>
           <p className={`text-[12.5px] font-semibold tabular-nums ${complete ? 'text-[var(--ok)]' : 'text-[var(--muted-fg)]'}`}>{done} / {all.length}</p>
         </div>
         {complete && <p className="mt-1 text-[12px] font-semibold text-[var(--ok)]">필수 항목을 모두 채웠어요</p>}
         {groups.map((g) => (
-          <div key={g.title} className="mt-3">
+          <div key={g.title} className="mt-2.5">
             <p className="text-[11.5px] font-bold text-[var(--muted-fg)] mb-0.5">{g.title}</p>
             <ul className="flex flex-col">
               {g.items.map((c) => (
                 <li key={c.anchor}>
                   <button type="button" onClick={() => onJump(c.anchor)}
-                    className="w-full flex items-center gap-2 py-[3px] text-left text-[12.5px] hover:text-[var(--primary)] transition-colors">
+                    className="w-full flex items-center gap-2 py-[2px] text-left text-[12.5px] hover:text-[var(--primary)] transition-colors">
                     <span aria-hidden="true" className={`flex-shrink-0 w-3.5 h-3.5 rounded-full grid place-items-center text-[8px] font-bold ${c.bad ? 'border border-[#d1d6db]' : 'bg-[color-mix(in_srgb,var(--ok)_16%,white)] text-[var(--ok)]'}`}>{c.bad ? '' : '✓'}</span>
                     <span className={c.bad ? 'text-[var(--fg)]' : 'text-[var(--muted-fg)]'}>{c.label}</span>
                     <span className="sr-only">{c.bad ? '아직 비어 있음' : '채움'}</span>
@@ -245,6 +245,8 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
   const error = missing.find((m) => m.anchor === errorAnchor) || null;
   // 신청자 정보를 요약으로 접어 둘 수 있는 건 프로필을 불러왔고 그 구역에 빈 필수 칸이 없을 때뿐이다 — 빈 칸을 숨기지 않는다.
   const applicantMissing = checkGroups[1].items.some((c) => c.bad);
+  // 자기부담 한도와 사업비 집행 계획이 어긋나면 사업비 표 아래에 안내만 띄운다(막지 않음). 예비창업자는 한도 칸이 없다.
+  const fundingMismatch = applicantType && !isPreliminary ? selfFundingMismatch(funding, budget) : null;
   const applicantCollapsed = !applicantOpen && !applicantMissing;
   // 펼쳐 둔 신청자 정보를 다시 요약으로 접을 수 있을 때 — 불러온 프로필이 있고 빈 필수 칸이 없을 때만.
   const canFold = !!loadedFrom && !applicantMissing && !applicantCollapsed;
@@ -427,15 +429,18 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
 
                 {applicantType ? (
                   <>
-                    <Section id="intake-funding" title={isPreliminary ? '예비창업자 정보' : '자기부담 가능 범위'} required error={errorFor(error, 'intake-funding')}>
+                    {/* 자기부담 가능 범위는 "낼 수 있는 한도", 아래 사업비 집행 계획은 "실제로 쓸 계획"이다 — 둘 다 자기부담이 나와 헷갈려서 문구로 나눠 적는다 */}
+                    <Section id="intake-funding" title={isPreliminary ? '예비창업자 정보' : '자기부담 가능 범위'} required error={errorFor(error, 'intake-funding')}
+                      desc={isPreliminary ? undefined : '내 돈을 최대 얼마까지 낼 수 있는지(한도)예요. 실제로 어디에 얼마를 쓸지는 아래 사업비 집행 계획에 적어요.'}>
                       {isPreliminary
                         ? <BudgetScaleField value={budgetScale} onChange={setBudgetScale} />
                         : <SelfFundingField value={funding} onChange={setFunding} />}
                     </Section>
 
                     <Section id="intake-budget" title="사업비 집행 계획" required error={errorFor(error, 'intake-budget')}
-                      desc={`${isPreliminary ? '1단계 · 2단계로 나눠 비목마다 한 줄씩 적어 주세요. 단계마다 한 줄 이상 필요해요.' : '비목마다 한 줄씩 적어 주세요.'} 금액 칸은 비워 둘 수 없어요(없으면 0). 총사업비는 정부지원사업비와 자기부담금을 더해 자동으로 계산돼요.`}>
+                      desc={`실제로 어디에 얼마를 쓸지 적는 표예요. 계획서의 사업비 표에 그대로 들어가요. ${isPreliminary ? '1단계 · 2단계로 나눠 비목마다 한 줄씩 적어 주세요. 단계마다 한 줄 이상 필요해요.' : '비목마다 한 줄씩 적어 주세요.'} 금액 칸은 비워 둘 수 없어요(없으면 0). 총사업비는 정부지원사업비와 자기부담금을 더해 자동으로 계산돼요.`}>
                       <BudgetEditor rows={budget} onChange={setBudget} isPreliminary={isPreliminary} />
+                      {fundingMismatch && <p role="status" className="funding-notice mt-3">{fundingMismatch}</p>}
                     </Section>
 
                     <Section id="intake-schedule" title="추진 일정" required error={errorFor(error, 'intake-schedule')}

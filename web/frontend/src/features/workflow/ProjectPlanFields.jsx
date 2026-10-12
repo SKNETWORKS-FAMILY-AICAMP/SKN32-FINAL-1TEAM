@@ -77,7 +77,7 @@ export function SelfFundingField({ value, onChange }) {
       </div>
       {value.available === true && (
         <div className="funding-capacity">
-          <MoneyInput label="투입 가능한 현금 규모" value={value.cashLimit} placeholder="예) 10,000,000" onChange={set('cashLimit')} />
+          <MoneyInput label="투입 가능한 현금 한도" value={value.cashLimit} placeholder="예) 10,000,000" onChange={set('cashLimit')} />
           <label className="block mt-4">
             <span className="block text-[13px] font-semibold text-[#4e5968] mb-1.5">현물로 활용 가능한 자원 <small className="font-normal text-[var(--muted-fg)]">(선택)</small></span>
             <textarea value={value.inKindResources} onChange={(e) => set('inKindResources')(e.target.value)} rows={3}
@@ -146,6 +146,24 @@ export const emptySchedule = () => Object.fromEntries(SCHEDULE_SECTIONS
 
 const amountOf = (v) => (v ? Number(v) : 0);
 const won = (n) => `${n.toLocaleString('ko-KR')}원`;
+
+// 자기부담 가능 범위(낼 수 있는 한도)와 사업비 집행 계획의 자기부담 금액(실제로 쓸 계획)이 어긋나면 안내 한 줄을 돌려준다.
+// 둘은 다른 값이라 함께 받지만, 계획이 한도를 넘거나 "어려워요"인데 계획에 자기부담이 있으면 계획서가 스스로 앞뒤가 안 맞는다.
+// 막지는 않는다 — 한도는 공고 범위를 정하는 참고값이라 계획을 다시 볼지는 사용자가 정한다. 개인사업자 · 법인만 쓴다.
+export function selfFundingMismatch(funding, rows) {
+  if (!funding || funding.available == null) return null;
+  const cash = (rows || []).reduce((sum, r) => sum + amountOf(r.cash), 0);
+  const inKind = (rows || []).reduce((sum, r) => sum + amountOf(r.inKind), 0);
+  if (funding.available === false) {
+    return cash + inKind > 0
+      ? `위에서 자기부담금이 어렵다고 고르셨는데, 사업비 집행 계획에 자기부담 금액이 ${won(cash + inKind)} 있어요. 어느 쪽이 맞는지 확인해 주세요.`
+      : null;
+  }
+  const limit = amountOf(funding.cashLimit);
+  return limit > 0 && cash > limit
+    ? `자기부담 현금 합계(${won(cash)})가 위에 적은 현금 한도(${won(limit)})보다 커요. 한도나 사업비 금액을 다시 확인해 주세요.`
+    : null;
+}
 // 총사업비 = 정부지원사업비 + 자기부담 현금 + 자기부담 현물. 사용자가 고치지 않고 화면이 계산한다(백엔드도 불일치를 막는다).
 // 예비창업은 현물 칸이 없으므로 현물을 0으로 본다(유형을 바꾸기 전에 적어 둔 현물이 섞이지 않게).
 export const budgetRowTotal = (row, isPreliminary = false) => amountOf(row.gov) + amountOf(row.cash) + (isPreliminary ? 0 : amountOf(row.inKind));

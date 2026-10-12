@@ -58,6 +58,18 @@ try{
   ui.find(n=>n.props.label==='설립일').props.onChange('');await ui.flush();submitted=null;
   ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await ui.flush();assert.equal(submitted,null);
   assert.ok(ui.find(n=>n.props.id==='intake-founded').props.error);ui.unmount();
+  // 자기부담 한도(위 칸)와 사업비 집행 계획의 자기부담 금액(아래 표)이 어긋나면 안내만 — 막지 않는다.
+  const {selfFundingMismatch:sfm}=await server.ssrLoadModule('/src/features/workflow/ProjectPlanFields.jsx');
+  const rowsOf=(...cash)=>cash.map(c=>({cash:String(c),inKind:'0'}));
+  assert.equal(sfm({available:true,cashLimit:'1000000'},rowsOf(400000,600000)),null);
+  assert.ok(sfm({available:true,cashLimit:'1000000'},rowsOf(800000,600000)).includes('1,400,000원'));
+  assert.equal(sfm({available:true,cashLimit:''},rowsOf(800000)),null);
+  assert.ok(sfm({available:false},[{cash:'0',inKind:'300000'}]).includes('300,000원'));
+  assert.equal(sfm({available:false},rowsOf(0)),null);
+  assert.equal(sfm({available:null},rowsOf(5)),null);
+  submitted=null;ui=mount(IntakeForm,{initialValues:{...draft,selfFunding:{available:true,cashLimit:'100000',inKindResources:''}},onSubmit:info=>{submitted=info}});await ui.flush();
+  assert.ok(ui.nodes().some(n=>n.props?.role==='status'&&String(n.props.children).includes('현금 한도')));
+  ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await ui.flush();assert.ok(submitted);ui.unmount();
   // 화면 순서(① 아이디어 → ② 신청자 정보 → ③ 사업 계획, 디자인 점검 10-12) — 빈 칸 검사도 아이디어부터, 입력 현황은 묶음 셋.
   submitted=null;ui=mount(IntakeForm,{onSubmit:info=>{submitted=info}});await ui.flush();
   ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await ui.flush();
