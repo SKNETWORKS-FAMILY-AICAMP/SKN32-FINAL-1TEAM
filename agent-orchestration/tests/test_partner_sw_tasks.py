@@ -20,7 +20,7 @@ from sbrain.agents.form_defaults import select_form
 from sbrain.agents.partner_sw import common, inputs, verify, writing
 from sbrain.agents.partner_sw.agent_validation_1 import validation_1
 from sbrain.agents.partner_sw.agent_strategy.functions import python_functions as partner_py
-from sbrain.agents.partner_sw.agent_strategy.runtime import research_context
+from sbrain.agents.partner_sw.agent_strategy.runtime import pipeline as legacy_pipeline, research_context
 from sbrain.agents.partner_sw.contract import SCORE_POLICY_VERSION
 from sbrain.agents.partner_sw.diagram_svg import NOTICE, render as render_diagram
 from sbrain.agents.partner_sw.strategy import FINAL_TS1, run_ts1, run_ts2
@@ -372,6 +372,9 @@ def test_empty_roadmap_keeps_agreement_schedule_and_passes_local_validation(
     applicant, kind, section_code, agreement_key, roadmap_key,
 ):
     agreement_only = [row for row in SCHEDULE if row.scope == "agreement"]
+    if kind == "pre_startup":
+        # 예비창업 공고의 8개월 한도에 맞춘 입력(2026.03~2026.10).
+        agreement_only[-1] = agreement_only[-1].model_copy(update={"period": "2026.07~2026.10"})
     r = run_chain(applicant, schedule=agreement_only)
 
     table_data, _ = inputs.table_data(r.co, kind)
@@ -492,6 +495,70 @@ def test_f19_reviews_structured_table_without_duplicate_text(monkeypatch):
     assert result["semanticCalled"] is True
     assert requests[0][1]["content"]["generatedText"] == ""
     assert requests[0][1]["content"]["tables"] == [table]
+
+
+@pytest.mark.parametrize(
+    "document_type, section_id, agreement_period, exceeds_limit, expected_limit, expected_duration",
+    [
+        ("pre_startup", section_id, period, exceeds_limit, 8, duration)
+        for section_id in ("2.5.2", "2.6.2")
+        for period, exceeds_limit, duration in (("2026.05~2026.12", False, 8), ("2026.05~2027.02", True, 10))
+    ] + [
+        ("early_startup", section_id, period, exceeds_limit, 10, duration)
+        for section_id in ("3.5.2", "3.6.2")
+        for period, exceeds_limit, duration in (("2026.05~2027.02", False, 10), ("2026.05~2027.03", True, 11))
+    ],
+)
+def test_agreement_schedule_duration_is_checked_before_semantic_review(
+    monkeypatch, document_type, section_id, agreement_period, exceeds_limit, expected_limit, expected_duration,
+):
+    spec = common.spec_for(common.section_specs(document_type), section_id)
+    requests = []
+
+    def review(purpose, payload):
+        requests.append((purpose, payload))
+        return {"passed": True, "issues": [], "warnings": []}
+
+    monkeypatch.setattr(validation_1, "request_json", review)
+    source = {
+        "documentType": document_type,
+        "originalFacts": {"schedule": [
+            {"task": "협약 일정", "period": agreement_period, "_schedule_scope": "agreement"},
+            {"task": "후속 로드맵", "period": "2027.03~2028.01", "_schedule_scope": "roadmap"},
+        ]},
+        "strategy_limits": {}, "sourceRefs": [],
+        "strategyProvenance": {"schedule": {"sourceRefs": []}},
+    }
+    content = {
+        "generatedText": "전체 일정 계획",
+        "tables": [{"columns": spec["rules"]["requiredColumns"], "rows": [
+            {"구분": "개발", "추진내용": "협약 일정", "추진기간": agreement_period, "세부내용": "개발"},
+            {"구분": "사업화", "추진내용": "후속 로드맵", "추진기간": "2027.03~2028.01", "세부내용": "확장"},
+        ]}],
+        "sourceRefs": [], "facts": [],
+    }
+
+    result = validation_1.validate_section(spec, content, source)
+
+    duration_issues = [issue for issue in result["issues"] if "협약기간 일정" in issue]
+    if exceeds_limit:
+        assert result["status"] == "fail"
+        assert result["semanticCalled"] is False
+        assert duration_issues == [f"협약기간 일정 {expected_duration}개월이 최대 {expected_limit}개월 조건을 초과함"]
+        assert requests == []
+    else:
+        assert not duration_issues
+        assert result["semanticCalled"] is True
+        assert len(requests) == 1
+
+
+def test_agreement_duration_fail_is_not_treated_as_table_structure_fallback():
+    assert legacy_pipeline._is_agreement_duration_failure({
+        "status": "fail", "issues": ["협약기간 일정 11개월이 최대 10개월 조건을 초과함"],
+    })
+    assert not legacy_pipeline._is_agreement_duration_failure({
+        "status": "fail", "issues": ["필수 표 컬럼 누락: 추진기간"],
+    })
 
 
 def test_tw3_fallback_items_from_verify1():

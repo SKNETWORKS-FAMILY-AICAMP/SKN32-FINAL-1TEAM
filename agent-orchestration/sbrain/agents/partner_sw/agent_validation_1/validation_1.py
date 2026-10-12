@@ -159,6 +159,27 @@ def _month_key(value):
     m=re.search(r'(\d{4})\D?(\d{1,2})',str(value))
     return f'{m.group(1)}-{int(m.group(2)):02d}' if m else str(value).strip()
 
+
+def _agreement_duration_months(rows):
+    """협약 범위 일정의 가장 이른 시작월부터 가장 늦은 종료월까지 개월 수."""
+    bounds=[]
+    for row in rows:
+        if not isinstance(row,dict) or row.get('_schedule_scope')=='roadmap':
+            continue
+        period=str(row.get('period') or row.get('추진기간') or row.get('기간') or '')
+        months=[]
+        for year,month in re.findall(r'(20\d{2})[-./~년\s]*(\d{1,2})',period):
+            month=int(month)
+            if 1<=month<=12:
+                months.append(int(year)*12+month)
+        if months:
+            bounds.append((min(months),max(months)))
+    if not bounds:
+        return None
+    start=min(item[0] for item in bounds)
+    end=max(item[1] for item in bounds)
+    return end-start+1
+
 def validate_section(section_spec, content, source_data):
     # 이전 실행 결과에는 이 객체 중 일부가 없을 수 있다. 이를 빈 입력으로
     # 처리해 AttributeError로 중단되거나 부분 결과가 사라지지 않도록 하고,
@@ -271,6 +292,11 @@ def validate_section(section_spec, content, source_data):
     # 예비창업의 협약 이후 로드맵(fullScaleSchedule)은 roadmap으로 표시되어
     # 사업기간 상한 비교에서 제외하고, 협약 일정만 필수 제약으로 검사한다.
     schedule_rows=original.get('schedule',[]) if isinstance(original,dict) else []
+    max_agreement_months=rules.get('maxAgreementMonths')
+    if isinstance(max_agreement_months,int) and not isinstance(max_agreement_months,bool) and max_agreement_months>0:
+        agreement_duration=_agreement_duration_months(schedule_rows)
+        if agreement_duration is not None and agreement_duration>max_agreement_months:
+            issues.append(f'협약기간 일정 {agreement_duration}개월이 최대 {max_agreement_months}개월 조건을 초과함')
     if deadline and isinstance(schedule_rows,list):
         for row in schedule_rows:
             if not isinstance(row,dict) or row.get('_schedule_scope')=='roadmap':

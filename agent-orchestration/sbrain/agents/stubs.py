@@ -236,6 +236,7 @@ class StubScenario:
     more_collection_status: str | None = None               # 추가 조회의 수집 상태 ('정상'이 아니면 후보 0건)
     # ── 검증-1 항목별 판정 (스텁 T-V1 sectionResults, spec 4.15) — 판정할 때마다 읽는다 ──
     fail_items: set[str] = field(default_factory=set)            # 판정할 때마다 status fail로 둘 항목 번호
+    fail_item_issues: dict[str, list[str]] = field(default_factory=dict)  # 항목별 fail 사유 재현
     warning_items: set[str] = field(default_factory=set)         # status warning으로 둘 항목 번호
     input_missing_items: set[str] = field(default_factory=set)   # 입력 없음(warning · inputMissing)으로 둘 항목 번호
     fail_item_times: dict[str, int] = field(default_factory=dict)  # 항목 → 처음 몇 번의 판정을 fail로 둘지 (그 뒤 pass)
@@ -681,7 +682,8 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
                                      **common)
             times = sc.fail_item_times.get(code, 0)
             if code in sc.fail_items or (times and sc.tick(f"judge:{code}") < times):
-                return SectionResult(status="fail", issues=[f"{code} 결함 (스텁)"], deductions=["결함"], **common)
+                return SectionResult(status="fail", issues=sc.fail_item_issues.get(code) or [f"{code} 결함 (스텁)"],
+                                     deductions=["결함"], **common)
             if code in sc.warning_items:
                 return SectionResult(status="warning", warnings=[f"{code} 보완 권장 (스텁)"], **common)
             return SectionResult(status="pass", **common)

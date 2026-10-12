@@ -542,7 +542,8 @@
             "추진내용",
             "추진기간",
             "세부내용"
-          ]
+          ],
+          "maxAgreementMonths": 8
         },
         "enabled": true,
         "displayTitle": "개발계획 표"
@@ -609,7 +610,8 @@
             "추진내용",
             "추진기간",
             "세부내용"
-          ]
+          ],
+          "maxAgreementMonths": 8
         },
         "enabled": true,
         "displayTitle": "전체 사업추진 일정 표"
@@ -886,7 +888,8 @@
             "추진내용",
             "추진기간",
             "세부내용"
-          ]
+          ],
+          "maxAgreementMonths": 10
         },
         "enabled": true,
         "displayTitle": "개발계획 표"
@@ -935,7 +938,8 @@
             "추진내용",
             "추진기간",
             "세부내용"
-          ]
+          ],
+          "maxAgreementMonths": 10
         },
         "enabled": true,
         "displayTitle": "전체 사업추진 일정 표"

@@ -349,6 +349,12 @@ def _table_fallback_text(output, spec):
         return '\n'.join(f'· {line}' for line in lines)
     return '원본 표 행이 없어 항목 내용을 구성할 수 없음.'
 
+def _is_agreement_duration_failure(validation):
+    """입력 협약기간 한도 초과는 표 재작성으로 고칠 수 없는 원본 입력 오류다."""
+    issues=validation.get('issues',[]) if isinstance(validation,dict) else []
+    return any('협약기간 일정' in str(issue) and '개월이 최대 ' in str(issue) and '개월 조건을 초과함' in str(issue)
+               for issue in issues)
+
 def _attach_provenance(fid, value, kwargs):
     """F02~F15의 모든 표준 결과에 상위 근거와 사실을 보존한다."""
     if not isinstance(value, dict) or fid not in {f"F{i:02}" for i in range(1, 16)}:
@@ -559,8 +565,12 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
                 validation.setdefault('warnings',[]).append('단계 미지정 원본 사업비가 보존되어 단계 확정이 필요함')
                 validation['status']='warning' if not validation.get('issues') else validation.get('status','fail')
             attempts.append({'attempt':attempt+1,'generatedText':output['generatedText'],'validation':validation,'responseId':output.get('responseId')})
+            # F17은 원본 일정을 복사하는 로컬 함수다. 원본 협약기간 자체가
+            # 한도를 넘으면 재실행해도 결과가 같으므로 불필요한 재시도를 하지 않는다.
+            if spec['functionId']=='F17' and _is_agreement_duration_failure(validation):break
             if execution_scope!='full' or validation['status'] in {'pass','warning'}:break
-        if spec['functionId']=='F17' and validation.get('status')=='fail':
+        if (spec['functionId']=='F17' and validation.get('status')=='fail'
+                and not _is_agreement_duration_failure(validation)):
             reason=' · '.join(str(x) for x in validation.get('issues',[]) if x) or '표 필수 구조 검증 실패'
             output['generatedText']=_table_fallback_text(output,spec)
             output['tables']=[]
@@ -743,8 +753,10 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
                 validation.setdefault('warnings',[]).append('단계 미지정 원본 사업비가 보존되어 단계 확정이 필요함')
                 validation['status']='warning' if not validation.get('issues') else validation.get('status','fail')
             attempts.append({'attempt':attempt+1,'generatedText':output['generatedText'],'validation':validation,'responseId':output.get('responseId')})
+            if spec['functionId']=='F17' and _is_agreement_duration_failure(validation):break
             if validation['status'] in {'pass','warning'}:break
-        if spec['functionId']=='F17' and validation.get('status')=='fail':
+        if (spec['functionId']=='F17' and validation.get('status')=='fail'
+                and not _is_agreement_duration_failure(validation)):
             reason=' · '.join(str(x) for x in validation.get('issues',[]) if x) or '표 필수 구조 검증 실패'
             output['generatedText']=_table_fallback_text(output,spec)
             output['tables']=[]

@@ -138,6 +138,21 @@ def test_redo_once_per_item_and_body_fail_stays_without_fallback(clock):
     assert orders[0].reason == f"{BODY} {BODY} 결함 (스텁)" == orders[0].instruction_delta
 
 
+def test_agreement_duration_input_fail_is_not_retried_or_table_fallback(clock):
+    issue = "협약기간 일정 10개월이 최대 8개월 조건을 초과함"
+    app = make_app(clock, StubScenario(fail_items={TABLE}, fail_item_issues={TABLE: [issue]}))
+    rid = to_screen6(app)
+
+    steps = writing_steps(app, rid)
+    assert steps.count("T-V1") == 1
+    assert steps.count("T-W3") == 1
+    assert steps[-1] == "G-02a"
+    assert results(app, rid)[TABLE].status == "fail"
+    assert results(app, rid)[TABLE].issues == [issue]
+    assert ctx_of(app, rid).get("tableOutputs")[TABLE]["tableFallbackUsed"] is False
+    assert TABLE in [table.source_ref for table in ctx_of(app, rid).get("planDoc").tables]
+
+
 def test_input_missing_and_warning_are_not_redone_and_candidates_skip_input_missing(clock):
     app = make_app(clock, StubScenario(doc_scores=[60.0], input_missing_items={TABLE2}, warning_items={"3.6.1"}))
     rid = to_screen6(app)

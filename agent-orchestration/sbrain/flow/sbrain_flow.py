@@ -585,6 +585,7 @@ class SBrainFlow:
         """T-V1 바로 뒤 — 검증-1 fail 재수행 · 표 대체를 그 대기열 맨 앞에 끼운다 (spec 4.10).
 
         대상 = 판정 fail · 입력 없음 아님 · 이번 사이클에 만든 항목(첫 작성은 모든 항목) · 이미 대체한 표가 아님.
+        단, 원본 협약기간 상한 초과는 입력 수정이 필요하므로 자동 재수행·표 대체를 하지 않는다.
         - 횟수(redo.verify1RedoCount, 항목마다 · 사이클마다)가 남은 대상이 있으면: 본문 → T-W1, 그림 → T-W2(표는 다시 만들지
           않음) → M-1(다시 쓴 것이 있을 때) → T-V1(대상만).
         - 없고 끝내 fail인 표가 있으면: T-W3(대체) → M-1 (T-V1 다시 안 함 — 판정은 fail 그대로).
@@ -600,8 +601,12 @@ class SBrainFlow:
                     if isinstance(o, dict) and o.get("tableFallbackUsed")}
         fails = [r for r in results if r.status == "fail" and not r.input_missing
                  and r.section_code in made and r.section_code not in replaced]
+        repairable_fails = [r for r in fails if not any(
+            "협약기간 일정" in str(issue) and "개월이 최대 " in str(issue) and "개월 조건을 초과함" in str(issue)
+            for issue in r.issues
+        )]
         limit = ctx.settings.redo.verify1_redo_count
-        redo = [r for r in fails if state.redo_counts.get(r.section_code, 0) < limit]
+        redo = [r for r in repairable_fails if state.redo_counts.get(r.section_code, 0) < limit]
         if redo:
             for r in redo:
                 state.redo_counts[r.section_code] = state.redo_counts.get(r.section_code, 0) + 1
@@ -610,7 +615,7 @@ class SBrainFlow:
                        if any(KIND_TASK[kinds.get(r.section_code, "section")] == t for r in redo)]
             steps = writers + (["M-1"] if writers else []) + ["T-V1"]
         else:
-            tables = [r for r in fails if kinds.get(r.section_code) == "table"]
+            tables = [r for r in repairable_fails if kinds.get(r.section_code) == "table"]
             if not tables:
                 self.clear_verify1(ctx.run)
                 return
