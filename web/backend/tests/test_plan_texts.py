@@ -7,7 +7,7 @@ import json
 from types import SimpleNamespace as NS
 
 from docx import Document
-from orch_fakes import make_outputs, make_plan_doc, make_section
+from orch_fakes import make_outputs, make_plan_doc, make_section, make_table_fallback
 
 from app.hwp_export import _body_text
 from app.plan_texts import PlanTexts, plan_texts, table_narrative
@@ -192,3 +192,53 @@ def test_docx_falls_back_to_the_web_output_summary_when_the_plan_has_no_item(aut
     paragraphs, tables = _docx(authed_client, project_id)
     assert 'WEB산출물 입력값' in tables
     assert '옛 문제 본문' in paragraphs
+
+
+# ── 표를 본문 서술로 바꾼 항목 (SB-354) ───────────────────────────────
+FALLBACK_LINE = '· 구분: 개발; 추진내용: 모델 고도화; 추진기간: 2026.05~2026.07; 세부내용: 정확도 80%'
+
+
+def test_a_replaced_table_item_gives_no_narrative_because_the_table_is_drawn_from_the_input_rows():
+    plan = _plan('2', **{'5.2': [FALLBACK_LINE], '5.3': ['· 비목: 외주용역비'], '5.4': ['1단계 서술'], '6.2': ['성장 서술']})
+    texts = plan_texts(plan, [make_table_fallback('2.5.2'), make_table_fallback('2.5.3')])
+
+    assert texts.실현가능성_일정_서술 == '' and texts.사업비_서술 == ''
+    assert texts.사업비_2단계_서술 == '1단계 서술' and texts.성장전략_일정_서술 == '성장 서술'  # 바꾸지 않은 표의 서술은 그대로
+    assert texts.실현가능성_본문 == '실현가능성 본문'  # 본문 항목은 건드리지 않는다
+
+
+def test_without_replaced_tables_the_narrative_is_kept():
+    plan = _plan('2', **{'5.2': [FALLBACK_LINE]})
+    assert plan_texts(plan, []).실현가능성_일정_서술 == FALLBACK_LINE
+    assert plan_texts(plan).실현가능성_일정_서술 == FALLBACK_LINE
+
+
+def test_replacing_every_table_item_does_not_turn_the_plan_into_a_legacy_plan():
+    only_tables = make_plan_doc([make_section('2.5.2', '표', FALLBACK_LINE), make_section('2.4.1', '문제', '문제 본문')])
+    texts = plan_texts(only_tables, [make_table_fallback('2.5.2')])
+
+    assert texts.by_item_number is True and texts.문제인식_본문 == '문제 본문'
+
+
+def test_a_fallback_with_an_unreadable_item_number_is_ignored():
+    plan = _plan('2', **{'5.2': [FALLBACK_LINE]})
+    texts = plan_texts(plan, [make_table_fallback('없는번호'), make_table_fallback('')])
+
+    assert texts.실현가능성_일정_서술 == FALLBACK_LINE
+
+
+def test_the_downloaded_docx_keeps_the_input_table_and_drops_the_repeated_lines(authed_client, orch):
+    payload = {'applicant_type': 'preliminary', 'biz_type': '개인', 'ceo_name': '박', 'description': 'AI', 'team_members': [],
+               'pricing_items': [], 'budget_items': [], 'schedule_items': [
+                   {'section': 'feasibility', 'category': '개발', 'content': '모델 고도화', 'period': '2026.05~2026.07', 'detail': '정확도 80%'}]}
+    created = authed_client.post('/projects', data={'payload': json.dumps(payload)})
+    assert created.status_code == 201, created.text
+    pid = created.json()['project_id']
+    plan = _plan('2', **{'5.2': [FALLBACK_LINE], '6.2': [FALLBACK_LINE]})
+
+    orch.responses['outputs'] = lambda p: make_outputs(plan_doc=plan, table_fallbacks=[make_table_fallback('2.5.2')])
+    doc = Document(io.BytesIO(authed_client.get(f'/projects/{pid}/plan-document.docx').content))
+    lines = [p.text for p in doc.paragraphs]
+
+    assert lines.count(FALLBACK_LINE) == 1  # 바꾼 5.2의 줄은 빠지고, 바꾸지 않은 6.2의 줄만 남는다
+    assert any(c.text == '2026.05~2026.07' for table in doc.tables for row in table.rows for c in row.cells)  # 표는 입력 행 그대로

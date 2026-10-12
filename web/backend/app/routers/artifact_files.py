@@ -116,7 +116,7 @@ def download_deliverable_zip(
         raise CodedHTTPException(413, 'DELIVERABLE_TOO_LARGE', '결과물이 너무 커서 한 번에 묶을 수 없어요. 파일을 하나씩 내려받아 주세요.')
     buffer, taken = io.BytesIO(), set()
     pictures = diagram_pictures(gateway, project_id, outputs.plan_doc)  # 그림(SVG → PNG) — 계획서 docx에 넣고 원본 SVG는 따로 넣는다(SB-340)
-    plan_docx = render_plan_docx_for(db, db.get(Project, project_id), outputs.plan_doc, pictures)  # 파일 참조가 아니라 planDoc으로 만든다(SB-341)
+    plan_docx = render_plan_docx_for(db, db.get(Project, project_id), outputs.plan_doc, pictures, outputs.table_fallbacks)  # 파일 참조가 아니라 planDoc으로 만든다(SB-341)
     with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(PLAN_DOCX_NAME, plan_docx)
         taken.add(PLAN_DOCX_NAME)
