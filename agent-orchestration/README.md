@@ -873,7 +873,6 @@ app.orchestrator.tick(datetime.now(timezone.utc) + timedelta(minutes=15))   # �
 **아직 구현하지 않은 것**
 
 - 실제 Agent 구현 (조율 T-C1 · T-C3 · 규칙 단계, 전략 · 작성 · 검증-1, 구현 · 검증-2 말고는 스텁 — 검수 대기, 조율 T-C4는 계획서 파일 조립 형식 미정)
-- 구현 · 검증-2 담당자 2026-10-12 판(외부 의존 감점 · 계획서 20,000자)의 실제 OpenAI 호출 확인(사용자가 한다 — 10-11 판은 확인 끝)
 - 전략 · 작성 · 검증-1 실제 OpenAI 호출 확인(사용자가 한다), 항목별 재작성 묶음 답(담당자 · 웹팀 — 답이 오면 `flow/rework_map.py` 표만 바꿈), 사업비 · 일정 필수 스위치 켜기(웹 배포 뒤). KIET 사용자 키워드 갱신은 `SBRAIN_AUTO_RESEARCH=1`로 선택 실행한다. 계획서 파일 조립(F20 · T-C4)은 범위 밖 — 웹이 `planDoc`으로 내려받기를 만든다
 - R-8 첨부 문서 텍스트 추출과 웹 DB 첨부(`project_attachments`) 읽기
 - 자체 GPU 서버 호출처 어댑터 (OpenAI는 있음)
