@@ -284,6 +284,31 @@ def test_empty_inputs_are_input_missing_warnings():
     assert not any(x.input_missing for x in r.v1.section_results if x.content_type != "table")
 
 
+@pytest.mark.parametrize(
+    "applicant,kind,section_code,agreement_key,roadmap_key",
+    [
+        ("예비창업자", "pre_startup", "2.6.2", "implementationSchedule", "fullScaleSchedule"),
+        ("법인", "early_startup", "3.6.2", "실현가능성_일정", "성장전략_일정"),
+    ],
+)
+def test_empty_roadmap_keeps_agreement_schedule_and_passes_local_validation(
+    applicant, kind, section_code, agreement_key, roadmap_key,
+):
+    agreement_only = [row for row in SCHEDULE if row.scope == "agreement"]
+    r = run_chain(applicant, schedule=agreement_only)
+
+    table_data, _ = inputs.table_data(r.co, kind)
+    output = r.w3.table_outputs[section_code]
+    result = next(row for row in r.v1.section_results if row.section_code == section_code)
+
+    assert table_data[roadmap_key] == []
+    assert len(table_data[agreement_key]) == len(agreement_only)
+    assert output["tables"][0]["rows"] == table_data[agreement_key]
+    assert result.input_missing is False
+    assert result.status in {"pass", "warning"}
+    assert not any("필수 표" in issue for issue in result.issues)
+
+
 # ── 그림 (spec 4.6) ───────────────────────────────────────
 def test_diagrams_are_svg_files_in_tools_files():
     r = run_chain()
