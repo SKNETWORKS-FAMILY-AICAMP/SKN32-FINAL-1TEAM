@@ -22,7 +22,7 @@ from sbrain.agents.partner_sw.agent_validation_1 import validation_1
 from sbrain.agents.partner_sw.agent_strategy.functions import python_functions as partner_py
 from sbrain.agents.partner_sw.agent_strategy.runtime import research_context
 from sbrain.agents.partner_sw.contract import SCORE_POLICY_VERSION
-from sbrain.agents.partner_sw.diagram_svg import NOTICE
+from sbrain.agents.partner_sw.diagram_svg import NOTICE, render as render_diagram
 from sbrain.agents.partner_sw.strategy import FINAL_TS1, run_ts1, run_ts2
 from sbrain.agents.partner_sw.verify import run_tv1
 from sbrain.agents.partner_sw.writing import FINAL_TW3, run_tw1, run_tw2, run_tw3
@@ -281,6 +281,20 @@ def test_prompt_source_compacts_only_growth_strategy_provenance():
     assert projected["originalFacts"] == source["originalFacts"]
     assert projected["evidence"] == source["evidence"]
     assert "originalFacts" in source["growth_strategy"] and "evidence" in source["growth_strategy"]
+
+
+def test_f18_svg_uses_contrasting_text_for_bright_and_dark_cards():
+    palette = ["#E9F2F5", "#DCEAF2", "#FFFFFF", "#E5E7EB", "#1E3A8A"]
+    svg = render_diagram({
+        "nodes": ["카드 1", "카드 2", "카드 3", "카드 4", "어두운 카드"],
+        "flowType": "USER_FLOW",
+        "visualStyle": {"palette": palette},
+    }).decode("utf-8")
+
+    for color in palette[:4]:
+        assert f'fill="{color}"/><text' in svg
+    assert svg.count('font-weight="600" fill="#172033">') == 4
+    assert 'font-weight="600" fill="white">어두운 카드</text>' in svg
 
 
 # ── 울타리 (spec 4.5) ─────────────────────────────────────

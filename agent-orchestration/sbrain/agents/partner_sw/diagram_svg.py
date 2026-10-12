@@ -23,6 +23,31 @@ def _safe_color(value: Any, fallback: str) -> str:
     return fallback
 
 
+def _card_text_color(background: str) -> str:
+    """HEX 카드색과 대비가 더 큰 흰색 또는 짙은 글자색을 고른다."""
+    value = str(background or "").strip()
+    if not re.fullmatch(r"#[0-9a-fA-F]{3,8}", value):
+        return "white"  # HEX 외 색상 표기는 기존 렌더링 동작을 유지
+    digits = value[1:]
+    if len(digits) in (3, 4):
+        rgb = [int(channel * 2, 16) for channel in digits[:3]]
+    elif len(digits) in (6, 8):
+        rgb = [int(digits[index:index + 2], 16) for index in (0, 2, 4)]
+    else:
+        return "white"
+
+    def luminance(channels: list[int]) -> float:
+        linear = [channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
+                  for channel in (value / 255 for value in channels)]
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+    card_luminance = luminance(rgb)
+    dark_luminance = luminance([23, 32, 51])  # #172033
+    white_contrast = 1.05 / (card_luminance + 0.05)
+    dark_contrast = (card_luminance + 0.05) / (dark_luminance + 0.05)
+    return "#172033" if dark_contrast >= white_contrast else "white"
+
+
 def render(output: dict[str, Any]) -> bytes:
     """F18 그림 하나(nodes · flowType · visualStyle)를 SVG로 그린다 — 담당자 flow_image의 그리기 그대로."""
     nodes = [str(n) for n in output.get("nodes") or []]
@@ -61,9 +86,10 @@ def render(output: dict[str, Any]) -> bytes:
            f'fill="#172033">{title}</text>')
     for i, node in enumerate(nodes):
         x = 20 + i * width
+        text_color = _card_text_color(colors[i % len(colors)])
         svg += (f'<rect x="{x}" y="65" width="{width - 22}" height="65" rx="{radius}" fill="{colors[i % len(colors)]}"/>'
                 f'<text x="{x + (width - 22) / 2}" y="104" text-anchor="middle" font-family="sans-serif" font-size="14" '
-                f'font-weight="600" fill="white">{html.escape(node)}</text>')
+                f'font-weight="600" fill="{text_color}">{html.escape(node)}</text>')
         if i < len(nodes) - 1:
             svg += f'<text x="{x + width - 21}" y="104" fill="{accent}">→</text>'
     svg += (f'<text x="40" y="185" font-family="sans-serif" font-size="13" fill="#667085">{NOTICE}</text></svg>')
