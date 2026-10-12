@@ -56,6 +56,7 @@ def run_ts1(inp: TS1In, tools: Tools) -> TS1Out:
     resources = ins.resource_input(company)
     budgets = ins.budget_rows(company, kind)
     schedules = ins.schedule_rows(company)
+    revenue_items = ins.revenue_items(company)
     tech_field = project.get("tech_field") or ""
     steps = Steps(inp.prior_results)
 
@@ -109,6 +110,7 @@ def run_ts1(inp: TS1In, tools: Tools) -> TS1Out:
                              "budget": c["budget"]}
     original = {
         "item": item_input, "period": {"start": start, "end": end, "durationMonths": duration},
+        "revenueItems": revenue_items,
         "strategy_limits": limits, "team": team, "resources": resources,
         "budget": {k: c["budget"].get(k) for k in ("items", "total", "government_amount", "self_cash_amount",
                                                    "self_in_kind_amount", "phase")},
@@ -137,6 +139,7 @@ def run_ts2(inp: TS2In, tools: Tools) -> TS2Out:
     research = sd.get("research") if isinstance(sd.get("research"), dict) else {}
     market_ev = research.get("market") or EMPTY_EVIDENCE
     competitor_ev = research.get("competitor") or EMPTY_EVIDENCE
+    revenue_items = list((sd.get("original_facts") or {}).get("revenueItems") or [])
     target = ins.TARGET_CUSTOMER
     steps = Steps(inp.prior_results)
     with partner_call(tools, inp.instruction):
@@ -147,10 +150,15 @@ def run_ts2(inp: TS2In, tools: Tools) -> TS2Out:
         marketing = steps.run(F10, lambda: compact(_call(
             F10, gpt.create_marketing_strategy, item=item, market=market, target_customer=target, stage="초기시장")))
         bm = steps.run(F11, lambda: compact(_call(
-            F11, gpt.create_business_model, item=item, market=market, customer=target, strategy=marketing)))
+            F11, gpt.create_business_model, item=item, market=market, customer=target, strategy=marketing,
+            revenue_items=revenue_items)))
+        if revenue_items:
+            bm["providedRevenueItems"] = [dict(row) for row in revenue_items]
         growth = steps.run(F12, lambda: compact(_call(
             F12, gpt.create_growth_strategy, market=market, competitors=competitors, bm=bm, investment={},
-            social_value={})))
+            social_value={}, revenue_items=revenue_items)))
+        if revenue_items:
+            growth["providedRevenueItems"] = [dict(row) for row in revenue_items]
     data = {"market_analysis": market, "competitor_analysis": competitors, "marketing_strategy": marketing,
             "business_model": bm, "growth_strategy": growth}
     return TS2Out(market_analysis=market_analysis(market, competitors, growth),

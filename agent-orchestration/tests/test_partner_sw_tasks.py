@@ -209,6 +209,8 @@ def test_llm_requests_carry_no_forbidden_values(applicant):
     r = run_chain(applicant, support=50_000_000)
     sent = [m["content"] for q in r.p.requests for m in q.messages]
     for name, value in SECRETS.items():
+        if name == "수익모델":  # 서비스명은 F11 · F12와 성장전략 항목에 한정해 전달한다
+            continue
         assert not any(value in text for text in sent), name
     hinted = [q for q in r.p.requests if "targetCustomerHint" in q.messages[-1]["content"]]
     assert hinted and {q.metadata["purpose"] for q in hinted} == {"F02"}            # F02 요청에만
@@ -219,6 +221,29 @@ def test_llm_requests_carry_no_forbidden_values(applicant):
     assert "targetCustomerHint" not in json.dumps(r.s1.strategy_data, ensure_ascii=False)
     f02 = payload(hinted[0])["item_input"]
     assert f02["description"] == IDEA and f02["tech_field"] == "정보통신"
+
+
+def test_revenue_items_are_sent_only_to_business_model_and_growth_sections():
+    r = run_chain()
+    expected = [{"serviceName": SECRETS["수익모델"], "unitPrice": 35000}]
+    growth_section_ids = {
+        spec["sectionId"] for spec in common.contract.document_specs("early_startup")
+        if "growth_strategy" in spec["sourceKeys"]
+    }
+
+    for request in r.p.requests:
+        body = payload(request)
+        purpose = request.metadata["purpose"]
+        if purpose in {"F11", "F12"}:
+            assert body["revenue_items"] == expected
+        elif purpose in {"F16", "F19"} and body["section_spec"]["sectionId"] in growth_section_ids:
+            assert body["source_data"]["originalFacts"]["revenueItems"] == expected
+            assert body["source_data"]["growth_strategy"]["providedRevenueItems"] == expected
+        else:
+            assert SECRETS["수익모델"] not in json.dumps(body, ensure_ascii=False)
+
+    assert r.s2.market_strategy_data["business_model"]["providedRevenueItems"] == expected
+    assert r.s2.market_strategy_data["growth_strategy"]["providedRevenueItems"] == expected
 
 
 # ── 울타리 (spec 4.5) ─────────────────────────────────────

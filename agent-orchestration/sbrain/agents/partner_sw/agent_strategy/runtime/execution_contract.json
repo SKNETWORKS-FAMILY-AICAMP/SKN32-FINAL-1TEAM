@@ -96,7 +96,7 @@
     "F11": {
       "name": "create_business_model",
       "purpose": "비즈니스 모델 수립",
-      "inputs": "item, market, customer, strategy",
+      "inputs": "item, market, customer, strategy, revenue_items",
       "output": "business_model",
       "modelLabel": "GPT-6.1 Sol",
       "apiModel": "gpt-6.1-sol",
@@ -105,7 +105,7 @@
     "F12": {
       "name": "create_growth_strategy",
       "purpose": "경쟁·시장진입·BM·투자·사회적 가치 통합",
-      "inputs": "market, competitors, bm, investment, social_value",
+      "inputs": "market, competitors, bm, investment, social_value, revenue_items",
       "output": "growth_strategy",
       "modelLabel": "GPT-6.1 Sol",
       "apiModel": "gpt-6.1-sol",

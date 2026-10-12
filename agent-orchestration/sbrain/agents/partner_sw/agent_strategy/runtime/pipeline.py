@@ -179,6 +179,8 @@ def section_source(spec,canonical,original,research):
     facts={}
     if roots & {'item_spec','development_goal','development_method','development_plan','production_plan','feasibility_plan','growth_strategy','market_analysis'}:
         facts.update(item=original['item'],period=original['period'])
+    if 'growth_strategy' in roots:
+        facts['revenueItems']=original.get('revenueItems',[])
     if roots & {'team_capability','resource_plan'}:facts.update(team=original['team'],resources=original['resources'])
     if roots & {'budget','feasibility_plan'}:facts['budget']=original['budget']
     if roots & {'schedule','development_plan','feasibility_plan'}:facts['schedule']=original['schedule']
