@@ -71,6 +71,8 @@ class _Tools:
         self.kwargs = None
 
     def llm(self, messages, *, schema=None, parse=None, purpose=""):
+        if purpose == "사업 분야 판정(색)":   # 분야 낱말이 없는 아이템이면 색을 고르려고 먼저 묻는다(themes.decide)
+            return parse('{"domain": "commerce"}')
         self.messages = messages
         self.kwargs = {"schema": schema, "parse": parse, "purpose": purpose}
         value = self._response(schema) if callable(self._response) else self._response

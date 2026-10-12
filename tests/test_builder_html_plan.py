@@ -128,8 +128,8 @@ class PreviousHtmlTests(TestCase):
             def __init__(self, reply):
                 self.reply = reply
 
-            def llm(self, messages, *, parse=None, **kwargs):
-                return parse(self.reply)
+            def llm(self, messages, *, parse=None, purpose="", **kwargs):
+                return parse('{"domain": "commerce"}' if purpose == "사업 분야 판정(색)" else self.reply)
 
         html = '<html lang="ko"><head><script src="https://cdn.example.com/x.js"></script></head></html>'
         result = build_prototype_html(["조회"], {"item_name": "t"}, "웹개발", "생성",

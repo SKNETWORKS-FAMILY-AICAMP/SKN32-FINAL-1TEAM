@@ -323,12 +323,20 @@ class DomainThemeTests(TestCase):
         self.assertEqual(purpose, "사업 분야 판정(색)")
         self.assertEqual(asked, "아이템: 제주 맞춤 여행 코스 추천\n한 줄 소개: AI가 제주 여행 코스를 추천")
 
-    def test_failure_or_bad_answer_falls_back_to_word_and_name_rules(self):
+    def test_call_failure_is_raised_like_any_text_call(self):
+        """기능정의서 T-B1 · T-B2 Failure ④: 글 호출 실패는 R-11(재시도 → 재개 → 실패). 삼켜도 되는 것은 이미지 호출뿐이다."""
         from engineering_agent.infographic import themes
 
         tech = {"item_name": "AI 여행 추천"}
-        self.assertEqual(themes.decide(tech, self._Tools(fail=True)), "violet")
-        self.assertEqual(themes.decide(tech, self._Tools('{"domain": "space"}')), "violet")
+        with self.assertRaises(RuntimeError):
+            themes.decide(tech, self._Tools(fail=True))
+        with self.assertRaises(Exception):   # 목록 밖 답은 형식 오류 — tools가 다시 부른다
+            themes.decide(tech, self._Tools('{"domain": "space"}'))
+
+    def test_without_tools_the_word_and_name_rules_decide(self):
+        from engineering_agent.infographic import themes
+
+        self.assertEqual(themes.decide({"item_name": "AI 여행 추천"}, None), "violet")
         plain = {"item_name": "전동킥보드 공유 관리"}
         self.assertEqual(themes.decide(plain, None), themes.pick(plain))
 

@@ -114,20 +114,19 @@ def decide(data: dict, tools=None) -> str:
 
     T-B1(HTML)과 T-B2(인포그래픽)가 각자 부른다. 질문에는 아이템명 · 한 줄 소개만 넣는다. 애매한 아이템은 두 답이
     갈려 HTML과 인포그래픽 색이 다를 수 있는데, 둘이 같을 필요는 없다(담당자, 2026-10-12).
-    색은 꾸밈이라 호출이 실패하면 예외를 내지 않고 낱말 · 이름 규칙으로 돌아간다."""
+    호출 실패 · 응답 형식 오류는 다른 글 호출과 같이 tools가 다시 부르고, 그래도 안 되면 예외를 그대로 올린다
+    (기능정의서 T-B1 · T-B2 Failure ④ R-11 — 실패를 삼키고 넘어가도 되는 것은 이미지 호출뿐이다(T-B2 ⑤)).
+    tools가 없을 때만(시험 등) 낱말 · 이름 규칙으로 정한다."""
     found = _keyword_theme(data)
     if found and found != "violet":
         return found
-    if tools is not None and callable(getattr(tools, "llm", None)):
-        item = f"아이템: {data.get('item_name', '')}\n한 줄 소개: {data.get('item_summary', '')}"
-        try:
-            domain = tools.llm([{"role": "system", "content": _DOMAIN_SYSTEM},
-                                {"role": "user", "content": item}],
-                               parse=_parse_domain, purpose="사업 분야 판정(색)")
-            return _DOMAINS[domain][0]
-        except Exception:  # noqa: BLE001 — 색 때문에 Task를 멈추지 않는다
-            pass
-    return found or _name_theme(data)
+    if tools is None or not callable(getattr(tools, "llm", None)):
+        return found or _name_theme(data)
+    item = f"아이템: {data.get('item_name', '')}\n한 줄 소개: {data.get('item_summary', '')}"
+    domain = tools.llm([{"role": "system", "content": _DOMAIN_SYSTEM},
+                        {"role": "user", "content": item}],
+                       parse=_parse_domain, purpose="사업 분야 판정(색)")
+    return _DOMAINS[domain][0]
 
 
 def apply(svg: str, theme: str) -> str:
