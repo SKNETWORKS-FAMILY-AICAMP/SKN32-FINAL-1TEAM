@@ -56,6 +56,8 @@ class PlanTexts:
     사업비_서술: str = ''          # 예비창업자는 1단계 표의 서술(x.5.3), 그 밖은 사업비 표 하나의 서술
     사업비_2단계_서술: str = ''    # 예비창업자 2단계 표의 서술(x.5.4)
     성장전략_일정_서술: str = ''
+    # 첫 장 고지 문구(`deliverable.disclaimer`) — 결과물이 아직 없으면 비어 있고, 문서는 기본 문구를 쓴다
+    고지: str = ''
 
 
 def table_narrative(text: str) -> str:

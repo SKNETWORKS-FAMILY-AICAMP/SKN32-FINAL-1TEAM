@@ -54,6 +54,7 @@ _PERSONAL_INFO_NOTICE_BY_TEMPLATE 참고.
     진짜처럼 보이지 않도록 공란으로 지운다.
   - 계획서 그림(서비스 흐름도 · 서비스 구조도, SB-340)은 맨 뒤에 쪽을 하나 더 만들어 그 쪽에 붙인다(_append_diagram_page) — rhwp의 그림 삽입은
     쪽 좌표에 떠 있는 그림이라 본문 쪽에 붙이면 글자 위에 겹친다. 캡션은 없다(그림 안에 제목이 있다).
+  - 결과물의 인포그래픽(기준 문서 T-C4)은 그림 쪽 다음의 새 쪽에 한 장으로 붙고(쪽 높이를 넘으면 비율을 지켜 줄임), 첫 장 고지는 첫 쪽 맨 앞 문단(0)에 한 줄로 넣는다.
   - 초기창업패키지(early_general) 표5의 "지원 분야"/"전문기술분야"는 실제 체크박스가
     아니라 빈 칸에 표시를 채워 넣는 방식이라(뒤한글 실제 체크박스 컨트롤이 아님),
     project.tech_field 값이 9개 보기 문구와 정확히 같을 때만 그 칸에 'V'를 쓴다 —
@@ -68,6 +69,7 @@ import subprocess
 import tempfile
 
 from app.plan_document_export import (
+    DEFAULT_DISCLAIMER,
     BudgetLineItem,
     PartnerRow,
     PlanDocumentData,
@@ -390,31 +392,49 @@ _PICTURE_WIDTH = 46000                           # 본문 폭(48188)보다 조�
 _PICTURE_X = (_A4_WIDTH - _PICTURE_WIDTH) // 2   # 가운데
 _PICTURE_TOP = 8504                              # 위 여백(3cm)
 _PICTURE_GAP = 2000
+_A4_HEIGHT = 84186
+_INFOGRAPHIC_MAX_HEIGHT = _A4_HEIGHT - 2 * _PICTURE_TOP   # 인포그래픽은 한 쪽에 한 장 — 세로가 쪽 높이를 넘으면 비율을 지켜 줄인다
 
 
-def _append_diagram_page(current_output: str, pictures: list, new_tmp) -> str:
-    """hwp 맨 끝 문단에서 쪽을 나눠 새 마지막 쪽을 만들고, 그림을 위에서 아래로 붙인다. 새 파일 경로를 돌려준다."""
+def _append_picture_pages(current_output: str, groups: list, new_tmp) -> str:
+    """hwp 맨 끝에 묶음마다 새 쪽을 하나씩 만들고, 묶음의 그림을 그 쪽에 위에서 아래로 붙인다. 새 파일 경로를 돌려준다.
+
+    groups: [(그림 목록, 그림 하나의 세로 상한(HWPUNIT) 또는 None)]. 상한을 넘는 그림은 비율을 지켜 가로도 줄이고 가운데에 둔다(인포그래픽).
+    쪽을 먼저 모두 나눈 뒤 그림을 붙인다 — rhwp의 그림은 맨 끝 문단에 매달려 있어서, 그림을 붙인 뒤 다시 쪽을 나누면 그림이 문단과 함께 뒤 쪽으로 딸려 간다."""
     info = json.loads(_run_rhwp(['explain', current_output, '--json']))
-    paged = new_tmp()
-    _run_rhwp(['edit', 'insert-page-break', current_output, '--section', '0', '--para', str(info['paragraphCount'] - 1),
-               '--offset', '0', '-o', paged])
-    last_page = json.loads(_run_rhwp(['explain', paged, '--json']))['pageCount'] - 1
-    current_output, y = paged, _PICTURE_TOP
-    for picture in pictures:
-        width_px, height_px = picture.size_px
-        height = round(_PICTURE_WIDTH * height_px / width_px)
-        image_fd, image_path = tempfile.mkstemp(suffix='.png')
-        try:
-            with os.fdopen(image_fd, 'wb') as f:
-                f.write(picture.png)
-            next_output = new_tmp()
-            _run_rhwp(['edit', 'insert-image', current_output, '--image', image_path, '--page', str(last_page),
-                       '--x', str(_PICTURE_X), '--y', str(y), '--width', str(_PICTURE_WIDTH), '--height', str(height),
-                       '-o', next_output])
-        finally:
-            os.remove(image_path)
-        current_output, y = next_output, y + height + _PICTURE_GAP
+    para = info['paragraphCount'] - 1
+    for _group in groups:
+        paged = new_tmp()
+        _run_rhwp(['edit', 'insert-page-break', current_output, '--section', '0', '--para', str(para),
+                   '--offset', '0', '-o', paged])
+        current_output, para = paged, para + 1
+    first_page = json.loads(_run_rhwp(['explain', current_output, '--json']))['pageCount'] - len(groups)
+    for offset, (pictures, max_height) in enumerate(groups):
+        y = _PICTURE_TOP
+        for picture in pictures:
+            width_px, height_px = picture.size_px
+            width = _PICTURE_WIDTH
+            height = round(width * height_px / width_px)
+            if max_height is not None and height > max_height:
+                height = max_height
+                width = round(max_height * width_px / height_px)
+            image_fd, image_path = tempfile.mkstemp(suffix='.png')
+            try:
+                with os.fdopen(image_fd, 'wb') as f:
+                    f.write(picture.png)
+                next_output = new_tmp()
+                _run_rhwp(['edit', 'insert-image', current_output, '--image', image_path, '--page', str(first_page + offset),
+                           '--x', str((_A4_WIDTH - width) // 2), '--y', str(y), '--width', str(width), '--height', str(height),
+                           '-o', next_output])
+            finally:
+                os.remove(image_path)
+            current_output, y = next_output, y + height + _PICTURE_GAP
     return current_output
+
+
+def _append_diagram_page(current_output: str, pictures: list, new_tmp, max_height: int | None = None) -> str:
+    """새 마지막 쪽 하나에 그림을 붙인다(_append_picture_pages의 묶음 하나짜리)."""
+    return _append_picture_pages(current_output, [(pictures, max_height)], new_tmp)
 
 
 def render_plan_hwp(data: PlanDocumentData, template: str) -> bytes:
@@ -489,8 +509,16 @@ def render_plan_hwp(data: PlanDocumentData, template: str) -> bytes:
             _run_rhwp(['edit', 'delete-table', current_output, '--table', str(table_index), '-o', next_output])
             current_output = next_output
 
-        if data.그림:
-            current_output = _append_diagram_page(current_output, data.그림, _new_tmp)
+        # 첫 장 고지(기준 문서 T-C4) — 위 표 삭제로 첫 쪽의 안내 표가 사라진 맨 앞 문단(0)에 한 줄로 넣는다
+        next_output = _new_tmp()
+        _run_rhwp(['edit', 'insert-text', current_output, '--section', '0', '--para', '0', '--offset', '0',
+                   '--text', _one_line(data.고지) or DEFAULT_DISCLAIMER, '-o', next_output])
+        current_output = next_output
+
+        picture_pages = ([(data.그림, None)] if data.그림 else []) + (
+            [([data.인포그래픽], _INFOGRAPHIC_MAX_HEIGHT)] if data.인포그래픽 is not None else [])
+        if picture_pages:
+            current_output = _append_picture_pages(current_output, picture_pages, _new_tmp)
 
         with open(current_output, 'rb') as f:
             return f.read()

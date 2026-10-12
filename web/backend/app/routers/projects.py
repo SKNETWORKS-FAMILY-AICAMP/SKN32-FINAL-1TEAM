@@ -34,7 +34,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session, object_session
 
 from app.database import get_db
-from app.diagram_images import diagram_pictures
+from app.diagram_images import document_pictures
 from app.models import (
     Company,
     GenerationFailureAlert,
@@ -515,7 +515,9 @@ def _plan_texts(gateway: OrchGateway, project_id: int) -> tuple[PlanTexts, list]
         if exc.code in ('RUN_NOT_FOUND', 'RUN_NOT_VIEWABLE'):
             return PlanTexts(), []
         raise
-    return plan_texts(outputs.plan_doc, outputs.table_fallbacks), diagram_pictures(gateway, project_id, outputs.plan_doc)
+    texts = plan_texts(outputs.plan_doc, outputs.table_fallbacks)
+    texts.고지 = (getattr(outputs.deliverable, 'disclaimer', '') or '') if outputs.deliverable is not None else ''
+    return texts, document_pictures(gateway, project_id, outputs.plan_doc, outputs.deliverable)
 
 
 # companies.applicant_type -> 양식의 "사업자 구분" 표기. 사용자가 직접 고른 값이라
@@ -709,7 +711,9 @@ def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts, p
         실현가능성_일정_서술=texts.실현가능성_일정_서술,
         사업비_서술=texts.사업비_서술,
         사업비_2단계_서술=texts.사업비_2단계_서술,
-        그림=list(pictures or []),
+        그림=[p for p in pictures or [] if not p.is_infographic],
+        인포그래픽=next((p for p in pictures or [] if p.is_infographic), None),
+        고지=texts.고지,
         정부지원사업비_1단계=government_1st_text,
         정부지원사업비_2단계=government_2nd_text,
         성장전략_일정_서술=texts.성장전략_일정_서술,
@@ -717,11 +721,13 @@ def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts, p
     return data, template
 
 
-def render_plan_docx_for(db: Session, project: Project, plan_doc, pictures: list | None = None, table_fallbacks=()) -> bytes:
+def render_plan_docx_for(db: Session, project: Project, plan_doc, pictures: list | None = None, table_fallbacks=(), disclaimer: str = '') -> bytes:
     """계획서(planDoc) · 그림과 웹 입력으로 공식 양식 .docx를 만든다 — plan-document.docx와 결과물 압축(artifact_files)이 같은 파일을 쓴다."""
     from app.plan_document_export import render_plan_docx
 
-    data, template = _build_plan_document_data(db, project, plan_texts(plan_doc, table_fallbacks), pictures)
+    texts = plan_texts(plan_doc, table_fallbacks)
+    texts.고지 = disclaimer
+    data, template = _build_plan_document_data(db, project, texts, pictures)
     return render_plan_docx(data, template=template)
 
 

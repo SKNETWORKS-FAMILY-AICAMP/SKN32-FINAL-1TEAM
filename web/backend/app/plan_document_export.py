@@ -158,6 +158,10 @@ class PlanDocumentData:
     # [SB-340] 그림 항목(2.3.6 · 3.3.6)의 서비스 흐름도 · 서비스 구조도(PNG로 바꾼 것, app/diagram_images.py). docx는 개요(요약) 표 아래,
     # hwp는 맨 뒤에 새로 만든 쪽에 넣는다. 그림이 없으면 문서에 아무것도 더하지 않는다.
     그림: list[DiagramPicture] = field(default_factory=list)
+    # [SB-354 · 기준 문서 T-C4] 결과물의 인포그래픽(PNG로 바꾼 것)과 첫 장 고지 문구(`deliverable.disclaimer`). docx는 계획서 그림 다음에, hwp는 그림 쪽
+    # 다음의 새 쪽에 인포그래픽을 넣는다. 고지가 비어 있으면(결과물이 아직 없을 때) 기본 문구를 쓴다.
+    인포그래픽: DiagramPicture | None = None
+    고지: str = ''
 
 
 def _set_cell_text(cell, text: str, bold: bool = False, shade: str | None = None) -> None:
@@ -260,17 +264,24 @@ def _add_general_status_preliminary(doc: Document, data: PlanDocumentData) -> No
     ])
 
 
-def _picture(doc: Document, picture: DiagramPicture) -> None:
-    """그림 하나 — 위에 '< 서비스 흐름도 >' 같은 제목을 달고 본문 폭에 맞춰 넣는다(PNG, 가운데)."""
+def _picture(doc: Document, picture: DiagramPicture, max_height_cm: float | None = None) -> None:
+    """그림 하나 — 위에 '< 서비스 흐름도 >' 같은 제목을 달고 본문 폭에 맞춰 넣는다(PNG, 가운데). 세로가 max_height_cm를 넘으면 비율을 지켜 줄인다."""
     caption = doc.add_paragraph()
     run = caption.add_run(f'< {picture.title} >')
     run.bold = True
     run.font.size = Pt(10.5)
-    doc.add_picture(io.BytesIO(picture.png), width=Cm(_PICTURE_WIDTH_CM))
+    width_px, height_px = picture.size_px
+    width_cm = float(_PICTURE_WIDTH_CM)
+    if max_height_cm is not None and width_px and width_cm * height_px / width_px > max_height_cm:
+        width_cm = max_height_cm * width_px / height_px
+    doc.add_picture(io.BytesIO(picture.png), width=Cm(width_cm))
     doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
 
 _PICTURE_WIDTH_CM = 16
+_INFOGRAPHIC_MAX_HEIGHT_CM = 22   # 인포그래픽은 세로로 긴 한 장이라 쪽 높이(여백 뺀 약 25cm)를 넘지 않게 줄인다
+# 기준 문서(기능정의서 T-C4)의 첫 장 고지 — 결과물(deliverable.disclaimer)이 아직 없을 때의 기본 문구
+DEFAULT_DISCLAIMER = '본 문서는 S-Brain이 생성한 초안입니다. 제출 전 작성자 본인의 확인과 수정이 필요합니다.'
 
 
 def _narrative(doc: Document, text: str) -> None:
@@ -299,8 +310,12 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
     _guide_note(
         doc,
         '※ 사업계획서는 15페이지 내외로 작성(증빙서류는 제한 없음) · 양식은 변경·삭제 불가, '
-        '이미지·표 삽입은 가능 · 개인정보는 마스킹하여 작성 — 본 문서는 S-Brain이 생성한 초안입니다.',
+        '이미지·표 삽입은 가능 · 개인정보는 마스킹하여 작성',
     )
+    disclaimer = doc.add_paragraph()
+    disclaimer_run = disclaimer.add_run(data.고지.strip() or DEFAULT_DISCLAIMER)
+    disclaimer_run.bold = True
+    disclaimer_run.font.size = Pt(10.5)
 
     _heading(doc, '□ 일반현황', level=1)
     if template == 'preliminary':
@@ -326,6 +341,8 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
     ])
     for picture in data.그림:
         _picture(doc, picture)
+    if data.인포그래픽 is not None:
+        _picture(doc, data.인포그래픽, max_height_cm=_INFOGRAPHIC_MAX_HEIGHT_CM)
 
     _heading(doc, '1. 문제 인식(Problem)_창업 아이템의 필요성', level=1)
     doc.add_paragraph(data.문제인식_본문)

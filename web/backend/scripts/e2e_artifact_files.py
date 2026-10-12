@@ -283,10 +283,11 @@ def main() -> int:
                      'plan/business-plan.docx' in names and 'plan/plan.docx' not in names and 'prototype/index.html' in names
                      and 'infographic/infographic.svg' in names and docx_ok,
                      f'business-plan.docx가 열리는 진짜 docx={docx_ok} 파일={sorted(names)}')
-                # 계획서 그림(SB-340): 계획서(planDoc)의 그림 SVG 원본이 plan/diagrams/에 들고, docx 안에 같은 수의 그림(PNG)이 들어 있다
-                step('4. 계획서 그림 — 원본 SVG가 plan/diagrams/에 있고 docx 안에 같은 수의 그림이 있음',
-                     len(diagram_svgs) >= 1 and diagram_pictures == len(diagram_svgs),
-                     f'SVG={diagram_svgs} docx 그림={diagram_pictures}')
+                # 계획서 그림(SB-340): 계획서(planDoc)의 그림 SVG 원본이 plan/diagrams/에 들고, docx 안에 같은 수의 그림(PNG)이 들어 있다.
+                # 결과물의 인포그래픽(기준 문서 T-C4)도 docx에 그림으로 들어가지만 원본은 infographic/에만 있다 — 그래서 docx 그림 = 계획서 그림 + 인포그래픽 1
+                step('4. 계획서 그림 · 인포그래픽 — 원본 SVG가 plan/diagrams/ · infographic/에 있고 docx 안에 그만큼 그림이 있음',
+                     len(diagram_svgs) >= 1 and diagram_pictures == len(diagram_svgs) + 1,
+                     f'SVG={diagram_svgs} + infographic 1 docx 그림={diagram_pictures}')
                 step('4. 비로그인 · 다른 계정은 zip도 받지 못함',
                      anon.get(f'/projects/{pid}/deliverable.zip').status_code == 401
                      and other.get(f'/projects/{pid}/deliverable.zip').status_code == 404)
