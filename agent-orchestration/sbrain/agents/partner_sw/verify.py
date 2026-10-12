@@ -6,12 +6,8 @@
 - F19에 넘기는 항목 내용: 본문 = sectionOutputs, 표 = tableOutputs, 그림 = diagramOutputs. 근거는 담당자 section_source.
 - 입력 없음: 표의 사용자 원본 행이 비었거나 예비창업 사업비에 단계 미지정 행이 있으면 inputMissing 참 · status warning,
   issue는 warning '입력 확인 필요 — <사업비 집행계획 | 추진 일정>'으로 바꾼다.
-- 입력 오류(inputError): 입력 없음 처리 뒤의 최종 판정이 fail이고 issue 가운데 담당자 F19 규칙 검사의 세 글이
-  하나라도 있으면 참이다 — ① 협약기간 일정이 최대 개월 수 초과(담당자 판별 함수 _is_agreement_duration_failure 그대로),
-  ② 협약기간 일정 종료월이 개발 종료월 이후(AFTER_DEV_END), ③ 정부지원사업비가 지원규모 상한 초과(OVER_SUPPORT_LIMIT).
-  ② · ③은 담당자 판별 함수가 없어 담당자 글 전체와 같은 꼴만 맞춘다(잠정 — 담당자가 글을 바꾸면 함께 고칠 곳, 담당자에게
-  구조 칸을 요청함). 다른 issue가 섞여도 참, status · issues · 점수는 담당자 결과 그대로다. issue 글 판별은 이 파일 한 곳뿐 —
-  흐름(flow/) · 판정(agents/supervisor/)은 이 칸만 읽는다.
+- 입력 오류(inputError): 입력 없음 처리 뒤 최종 status가 fail이고 담당자 F19의 `inputErrorCodes`에 입력 오류 코드가 있으면 참이다.
+  issue 문구와 무관하게 구조화된 코드로 판정하며, status · issues · 점수는 담당자 결과 그대로다.
 - 점수: D = 입력 docLayerMax(설정 사본 scoring.docLayerMax, 비면 설정 기본값), N = 항목 수. 항목 점수 = 담당자 점수 × D ÷ 100 ÷ N
   (소수 둘째 자리 반올림, 잠정), 문서층 총점 = 반올림한 항목 점수의 합(더 반올림하지 않음). varianceFlag는 늘 거짓.
 - 목표 항목(ReworkInput.targetItems)이 있으면 그 항목만 다시 검증하고 나머지는 baseSectionResults를 그대로 가져온다(verifiedRef도
@@ -22,7 +18,6 @@ from __future__ import annotations
 
 import copy
 import json
-import re
 from decimal import Decimal
 from typing import Any
 
@@ -33,7 +28,7 @@ from ...orchestrator.tools import Tools
 from . import inputs as ins
 from .agent_strategy.functions import python_functions as py
 from .agent_strategy.runtime.pipeline import (
-    _check_agreement_table_overrun, _is_agreement_duration_failure, _reconcile_validation,
+    _check_agreement_table_overrun, _reconcile_validation,
     _remove_roadmap_deadline_warnings, section_source,
 )
 from .agent_validation_1 import validation_1  # noqa: F401 — 불러올 때 자료를 읽어 둔다(실행 중 파일 읽기 방지)
@@ -50,12 +45,9 @@ NO_DEDUCTION = "감점 없음"                  # 항목 점수 comment — 감�
 INPUT_MISSING = "입력 확인 필요 — {label}"  # 입력 없음 warning (잠정 문구, spec 4.9)
 SCORE_DIGITS = 2                           # 항목 점수 소수 자리 (잠정)
 _STATUSES = ("pass", "warning", "fail")
-
-# 입력 오류 ② · ③ — 담당자 F19 규칙 검사(agent_validation_1/validation_1.py) 글 전체와 같은 꼴 (잠정).
-# 담당자 글이 바뀌면 이 두 꼴도 함께 고친다(tests/test_partner_sw_tasks.py가 담당자 검사를 실제로 돌려 확인한다)
-_AMOUNT = r"-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?"
-AFTER_DEV_END = re.compile(r"협약기간 일정 .+의 종료월 \d{4}-\d{2}이 개발 종료월 \d{4}-\d{2} 이후임")
-OVER_SUPPORT_LIMIT = re.compile(rf"정부지원사업비 {_AMOUNT}원이 지원규모 상한 {_AMOUNT}원을 초과함")
+_INPUT_ERROR_CODES = frozenset((validation_1.INPUT_ERROR_AGREEMENT_MONTHS_EXCEEDED,
+                                validation_1.INPUT_ERROR_AGREEMENT_AFTER_DEADLINE,
+                                validation_1.INPUT_ERROR_SUPPORT_LIMIT_EXCEEDED))
 
 
 def doc_layer_max(inp: TV1In) -> float:
@@ -63,14 +55,13 @@ def doc_layer_max(inp: TV1In) -> float:
 
 
 def input_error(validation: dict[str, Any]) -> bool:
-    """입력 오류 — 최종 판정이 fail이고 issue 가운데 ① · ② · ③ 꼴이 하나라도 있으면 참.
-    ①은 담당자 판별 함수 그대로, ② · ③은 담당자 글 전체와 같은 꼴만(부분 글은 보지 않는다)."""
+    """입력 오류 — fail 결과의 구조화된 F19 inputErrorCodes만 사용한다."""
     if not isinstance(validation, dict) or validation.get("status") != "fail":
         return False
-    if _is_agreement_duration_failure(validation):
-        return True
-    return any(p.fullmatch(str(issue)) for issue in validation.get("issues", []) or []
-               for p in (AFTER_DEV_END, OVER_SUPPORT_LIMIT))
+    codes = validation.get("inputErrorCodes", [])
+    if not isinstance(codes, (list, tuple, set)):
+        return False
+    return bool(_INPUT_ERROR_CODES.intersection(str(code) for code in codes))
 
 
 def _input_missing(validation: dict[str, Any], label: str) -> dict[str, Any]:

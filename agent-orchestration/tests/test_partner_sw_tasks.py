@@ -554,9 +554,11 @@ def test_agreement_schedule_duration_is_checked_before_semantic_review(
         assert result["status"] == "fail"
         assert result["semanticCalled"] is False
         assert duration_issues == [f"협약기간 일정 {expected_duration}개월이 최대 {expected_limit}개월 조건을 초과함"]
+        assert result["inputErrorCodes"] == [validation_1.INPUT_ERROR_AGREEMENT_MONTHS_EXCEEDED]
         assert requests == []
     else:
         assert not duration_issues
+        assert result["inputErrorCodes"] == []
         assert result["semanticCalled"] is True
         assert len(requests) == 1
 
@@ -585,6 +587,7 @@ def test_agreement_schedule_after_development_end_fails_before_semantic_review(m
 
     assert result["status"] == "fail"
     assert result["issues"] == ["협약기간 일정 개발의 종료월 2027-01이 개발 종료월 2026-12 이후임"]
+    assert result["inputErrorCodes"] == [validation_1.INPUT_ERROR_AGREEMENT_AFTER_DEADLINE]
     assert result["semanticCalled"] is False and requests == []
 
 
@@ -597,8 +600,28 @@ def test_agreement_duration_fail_is_not_treated_as_table_structure_fallback():
     })
 
 
+def test_semantic_issue_text_does_not_set_input_error_codes(monkeypatch):
+    spec = common.spec_for(common.section_specs("early_startup"), "3.5.2")
+    monkeypatch.setattr(validation_1, "request_json", lambda *args: {
+        "passed": False,
+        "issues": ["협약기간 일정 개발의 종료월 2027-01이 개발 종료월 2026-12 이후임"],
+        "warnings": [],
+    })
+    source = {"documentType": "early_startup", "originalFacts": {"schedule": []},
+              "strategy_limits": {}, "sourceRefs": [], "strategyProvenance": {}}
+    content = {"generatedText": "개발 일정을 계획함.",
+               "tables": [{"columns": spec["rules"]["requiredColumns"], "rows": [{"구분": "개발"}]}],
+               "sourceRefs": [], "facts": []}
+
+    result = validation_1.validate_section(spec, content, source)
+
+    assert result["status"] == "fail"
+    assert result["semanticCalled"] is True
+    assert result["inputErrorCodes"] == []
+
+
 # ── 입력 오류 (business-rules 19.4) ─────────────────────
-# 담당자 규칙 검사 글의 꼴 — 담당자 글이 바뀌면 이 테스트가 먼저 깨진다(연결 코드 verify.py의 꼴도 함께 고칠 곳)
+# 사용자에게 보여 주는 담당자 F19 issue 문구 확인용 — 입력 오류 분기는 아래 구조 코드로 검증한다.
 DURATION_RE = re.compile(r"협약기간 일정 \d+개월이 최대 \d+개월 조건을 초과함")
 AFTER_END_RE = re.compile(r"협약기간 일정 .+의 종료월 \d{4}-\d{2}이 개발 종료월 \d{4}-\d{2} 이후임")
 OVER_SUPPORT_RE = re.compile(r"정부지원사업비 \S+원이 지원규모 상한 \S+원을 초과함")
@@ -635,12 +658,14 @@ def test_input_error_patterns_match_partner_check_texts(monkeypatch):
                         schedule=[{"task": "협약 일정", "period": "2026.03~2026.12", "_schedule_scope": "agreement"}])
     assert v1["status"] == "fail" and [i for i in v1["issues"] if DURATION_RE.fullmatch(i)] == [
         "협약기간 일정 10개월이 최대 8개월 조건을 초과함"]
+    assert v1["inputErrorCodes"] == [validation_1.INPUT_ERROR_AGREEMENT_MONTHS_EXCEEDED]
     assert verify.input_error(v1)
     # ② 협약기간 일정 종료월이 개발 종료월보다 늦음
     v2 = _partner_check(monkeypatch, "early_startup", "3.5.2", period={"end": "2026-12"},
                         limits={"deadline": "2026-12"},
                         schedule=[{"task": "시범 운영", "period": "2026.09~2027.01", "_schedule_scope": "agreement"}])
     assert v2["status"] == "fail" and "협약기간 일정 시범 운영의 종료월 2027-01이 개발 종료월 2026-12 이후임" in v2["issues"]
+    assert v2["inputErrorCodes"] == [validation_1.INPUT_ERROR_AGREEMENT_AFTER_DEADLINE]
     assert any(AFTER_END_RE.fullmatch(i) for i in v2["issues"]) and verify.input_error(v2)
     # ③ 정부지원사업비가 공고 지원 금액 상한을 넘음 — 숫자 · 글자 금액 모두
     for amount, text in ((70_000_000, "정부지원사업비 70000000원이 지원규모 상한 50000000원을 초과함"),
@@ -648,6 +673,7 @@ def test_input_error_patterns_match_partner_check_texts(monkeypatch):
         v3 = _partner_check(monkeypatch, "early_startup", "3.5.3", limits={"supportLimit": 50_000_000},
                             budget={"government_amount": amount})
         assert v3["status"] == "fail" and text in v3["issues"] and OVER_SUPPORT_RE.fullmatch(text)
+        assert v3["inputErrorCodes"] == [validation_1.INPUT_ERROR_SUPPORT_LIMIT_EXCEEDED]
         assert verify.input_error(v3)
 
 
@@ -662,19 +688,23 @@ def test_input_error_is_false_for_other_failures_warnings_and_partial_texts():
     assert overrun["issues"] == ["개발계획 표 종료월 2027-03이 원본 협약 일정 종료월 2026-12 이후임"]
     assert not verify.input_error(overrun)
     assert not verify.input_error({"status": "fail", "issues": ["필수 표 컬럼 누락: 추진기간"]})
-    duration = "협약기간 일정 10개월이 최대 8개월 조건을 초과함"
-    after = "협약기간 일정 개발의 종료월 2027-01이 개발 종료월 2026-12 이후임"
-    over = "정부지원사업비 9000000원이 지원규모 상한 5000000원을 초과함"
+    known_code = validation_1.INPUT_ERROR_AGREEMENT_MONTHS_EXCEEDED
     for status in ("warning", "pass"):                                              # fail이 아니면 거짓
-        assert not verify.input_error({"status": status, "issues": [duration, after, over], "warnings": [duration]})
-    assert not verify.input_error({"status": "warning", "issues": [], "warnings": [after, over]})
-    # 의미 검증(LLM)이 쓴 비슷한 글 — 담당자 규칙 검사 글 전체와 같은 꼴만 본다(② · ③)
+        assert not verify.input_error({"status": status, "inputErrorCodes": [known_code]})
+    assert not verify.input_error({"status": "warning", "inputErrorCodes": [known_code]})
+    # 문구가 똑같아도 구조 코드가 없으면 입력 오류로 분류하지 않는다.
     for text in ("협약기간 일정이 개발 종료월 이후임", "일정 협약기간 일정 개발의 종료월 2027-01이 개발 종료월 2026-12 이후임",
-                 "정부지원사업비가 지원규모 상한을 초과함", f"{over} — 확인 필요"):
+                 "정부지원사업비가 지원규모 상한을 초과함",
+                 "정부지원사업비 9000000원이 지원규모 상한 5000000원을 초과함 — 확인 필요"):
         assert not verify.input_error({"status": "fail", "issues": [text]}), text
-    # 섞인 경우 — 입력 오류 issue가 하나라도 있으면 참
-    for text in (duration, after, over):
-        assert verify.input_error({"status": "fail", "issues": ["필수 표 컬럼 누락: 추진기간", text]}), text
+    # 구조 코드만 분기 기준으로 사용하며, 다른 issue가 함께 있어도 입력 오류 코드는 유지된다.
+    for code in (validation_1.INPUT_ERROR_AGREEMENT_MONTHS_EXCEEDED,
+                 validation_1.INPUT_ERROR_AGREEMENT_AFTER_DEADLINE,
+                 validation_1.INPUT_ERROR_SUPPORT_LIMIT_EXCEEDED):
+        assert verify.input_error({"status": "fail", "issues": ["필수 표 컬럼 누락: 추진기간"],
+                                   "inputErrorCodes": [code]}), code
+        assert not verify.input_error({"status": "warning", "inputErrorCodes": [code]})
+    assert not verify.input_error({"status": "fail", "inputErrorCodes": ["UNKNOWN_INPUT_ERROR"]})
 
 
 def test_tv1_marks_input_error_from_partner_checks():
@@ -688,11 +718,9 @@ def test_tv1_marks_input_error_from_partner_checks():
     over = {x.section_code: x for x in run_chain("법인", support=5_000_000).v1.section_results}         # ③
     assert over["3.5.3"].status == "fail" and over["3.5.3"].input_error
     assert any(OVER_SUPPORT_RE.fullmatch(i) for i in over["3.5.3"].issues)
-    # 입력 오류 칸은 fail일 때만 — 입력 오류 글이 없는 결과는 거짓
+    # 입력 오류 칸은 fail일 때만 — F19가 구조 코드로 분류한 결과만 참
     for results in (pre, late, over):
         assert all(r.status == "fail" for r in results.values() if r.input_error)
-        assert all(r.input_error == any(p.fullmatch(i) for p in (DURATION_RE, AFTER_END_RE, OVER_SUPPORT_RE)
-                                        for i in r.issues) for r in results.values() if r.status == "fail")
     plain = run_chain("법인").v1.section_results
     assert not any(r.input_error for r in plain)
 
