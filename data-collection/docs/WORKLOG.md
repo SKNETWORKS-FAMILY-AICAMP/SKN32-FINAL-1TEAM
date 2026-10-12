@@ -23,6 +23,16 @@
 
 ## 작업 기록
 
+### 2026-10-12 · Claude · 단위 테스트 다시 재기(매칭 중심)
+
+- 요청·목적: 사용자 "매칭 관련해서 단위 테스트 다시 진행, 완료한 부분은 기록". 10/7 판 뒤 가산점 규칙(결정 0016~0020)·gpt-6-luna 전환(0013)으로 코드와 시험이 바뀌어 지금 코드로 다시 잰다.
+- 작업 전 상태: data-collection 작업 트리 깨끗함. 이 PC `.venv`에 `coverage` 없음.
+- 변경 파일: 새 폴더 `reports/unit_test_20261012T020731Z/`(10/7 판 `run_unit.py` 그대로, `cov_summary.py`는 `test_model_options` → ⑤ 추가·`NEW`를 10/7 뒤 생긴 시험 파일 4개로, 새 `compare_prev.py`, README에 조건·매칭 요약·낮은 곳 설명). 문서 `STATUS.md`·`standards.md` 10절·`tracking/status.md`·`engineering-notes.md`. 운영 코드·시험·워드 결과서는 바꾸지 않음. `.coverage` 원본은 10/7 판처럼 남기지 않음.
+- 전후 차이: 시험 884 → 965(+81: ⑩ 가산점 +39, ⑤ +13, ⑧ +1, 범위 밖 평가·백업 도구 +28), 없어진 시험 0. 범위 줄 7,140 → 7,566, 커버리지 67.6% → 69.5%. 매칭 쪽 ⑦ 96.7%(같음)·⑧ 77.3 → 78.0%·⑨ 80.8%(같음)·⑩ 99.2 → 98.0%(코드 239 → 610줄). 바뀐 파일 10개(`compare_prev.md`).
+- 검증: `PYTHONPATH=<폴더>`로 `.\.venv\Scripts\python.exe -X utf8 -m coverage run --data-file=<폴더>\.coverage -m run_unit <폴더>\tests.json` → 965개, 통과 949·실패 0·오류 0·건너뜀 16, 7.8초. `cov_summary.py`·`compare_prev.py`로 표 생성. 낮은 곳은 `coverage report -m`으로 빠진 줄을 직접 봄(`search/app.py`는 `/api/conditions`·리랭커·분류기 시연 창구·`/api/health`·`main`, `content_version`은 명령줄, `collection_status`는 `history`).
+- 미검증·남은 문제: MySQL 통합 시험 16개(②6·③10)는 돌리지 않음. 서버(팀 EC2)에서 시험은 돌리지 않음.
+- 다음 단계: 워드 결과서를 새 숫자로 바꿀지 사용자 결정.
+
 ### 2026-10-08 · Claude · 가산점 계산 완화·Codex 6차 조이기·목록 27건(결정 0020)
 
 - 요청·목적: 사용자 "가점 너무 빡빡하게 안 해도 될 것 같다" — A 4가지(메모 범위·"경우"·같은 숫자 반복·한 문장 속 여러 점수) + "각 N점"을 풀고, Codex 6차 P2 두 곳을 조인다. 늘어난 공고는 원문 대조 뒤 목록 추가. 서버 반영은 0019와 함께 한 번에.
