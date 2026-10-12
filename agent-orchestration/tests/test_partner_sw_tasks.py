@@ -591,6 +591,25 @@ def test_agreement_schedule_after_development_end_fails_before_semantic_review(m
     assert result["semanticCalled"] is False and requests == []
 
 
+def test_original_development_end_after_deadline_uses_same_input_error_code(monkeypatch):
+    spec = common.spec_for(common.section_specs("pre_startup"), "2.5.2")
+    monkeypatch.setattr(validation_1, "request_json", lambda *args: pytest.fail("의미 검증은 호출하지 않아야 함"))
+    source = {
+        "documentType": "pre_startup",
+        "originalFacts": {"period": {"end": "2027-01"}, "schedule": []},
+        "strategy_limits": {"deadline": "2026-12"}, "sourceRefs": [], "strategyProvenance": {},
+    }
+    content = {"generatedText": "개발 계획을 수립함.", "tables": [{
+        "columns": spec["rules"]["requiredColumns"], "rows": [{"구분": "개발"}],
+    }]}
+
+    result = validation_1.validate_section(spec, content, source)
+
+    assert result["status"] == "fail"
+    assert result["inputErrorCodes"] == [validation_1.INPUT_ERROR_AGREEMENT_AFTER_DEADLINE]
+    assert result["semanticCalled"] is False
+
+
 def test_agreement_duration_fail_is_not_treated_as_table_structure_fallback():
     assert legacy_pipeline._is_agreement_duration_failure({
         "status": "fail", "issues": ["협약기간 일정 11개월이 최대 10개월 조건을 초과함"],

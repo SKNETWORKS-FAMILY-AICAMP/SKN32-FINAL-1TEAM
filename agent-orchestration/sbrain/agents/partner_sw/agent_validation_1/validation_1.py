@@ -293,6 +293,7 @@ def validate_section(section_spec, content, source_data):
     end_month=period.get('end') if isinstance(period,dict) else None
     if deadline and end_month and _month_key(end_month) > _month_key(deadline):
         issues.append(f'원본 개발 종료월 {end_month}이 _strategy_limits.deadline {deadline}을 초과함')
+        input_error_codes.append(INPUT_ERROR_AGREEMENT_AFTER_DEADLINE)
     # 협약기간에 속한 개별 일정도 입력된 개발 종료월을 넘기면 실패로 판정한다.
     # 예비창업의 협약 이후 로드맵(fullScaleSchedule)은 roadmap으로 표시되어
     # 사업기간 상한 비교에서 제외하고, 협약 일정만 필수 제약으로 검사한다.

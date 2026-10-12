@@ -67,6 +67,7 @@
 - KIET 자동 갱신의 직접 HTTP 요청은 고정된 `www.kiet.re.kr` 검색·요약 주소에만 보낸다. `SBRAIN_AUTO_RESEARCH` 기본값은 꺼짐이며, KIET 조회는 OpenAI 호출이나 토큰 사용량에 포함되지 않는다. 우리 실행 흐름에서는 이 갱신을 부르지 않으므로 워커에 `SBRAIN_AUTO_RESEARCH`를 넣어도 KIET로 나가지 않는다(직접 HTTP · 실행 중 디스크 쓰기가 우리 규칙과 부딪쳐 실행 · 보관 방식을 담당자에게 묻는 중).
 - `agent_validation_1/validation_1.py` `validate_section` 결과의 기록용 키(`model` · `responseId` · `usage`)는 그대로 둔다. 연결 코드(`verify.py`)가 판정 · 점수만 `SectionResult`로 옮기고 이 키는 버린다(spec 4.17).
 - `scoring.py`의 `documentLayerScore`(`× 0.7`)는 그대로다. 우리 점수는 연결 코드가 실행 설정 `scoring.docLayerMax`로 낸다(spec 4.9).
+- `score_section`은 울타리를 `strategy_limits`와 `_strategy_limits` 모두에서 읽는다. 개발 종료월 40점 · 지원금 상한 50점 감점은 본문 문자열을 훑지 않고 F19의 `inputErrorCodes`를 기준으로 적용한다. 따라서 협약 이후 로드맵 날짜는 개발 종료월 감점에 포함되지 않으며, F19 fail 점수 상한 59점은 유지한다.
 - 모듈을 불러올 때 읽는 파일(`CONTRACT` · `RUBRIC` · `CRITERIA_REGISTRY` · `SECTION_CRITERIA` · `semantic_review`의 지시문)은 원래도 불러올 때 한 번이라 그대로 두었다.
 - `python_functions.validate_section`의 함수 안 import는 그대로다 — 연결 코드가 `agent_validation_1.validation_1`을 먼저 불러 두면 실행 중 파일을 읽지 않는다.
 
@@ -87,11 +88,11 @@
 
 ### 입력 오류 판별 (`verify.py` — 2026-10-12 담당자 새 판 뒤)
 
-- T-V1 연결 코드가 담당자 판정을 `SectionResult`로 옮길 때, 입력 없음 처리 **뒤**의 최종 status가 fail이고 issue 가운데 아래 셋 중 하나라도 있으면 `input_error`(JSON `inputError`)를 참으로 둔다. status · issues · 점수는 담당자 결과 그대로다.
-  - ① 협약기간 일정 최대 개월 수 초과 — 담당자 판별 함수 `agent_strategy/runtime/pipeline.py` `_is_agreement_duration_failure`를 import해 그대로 쓴다(담당자 정의를 따라감).
-  - ② 협약기간 일정 종료월이 개발 종료월 이후 — 연결 코드의 글 꼴 `AFTER_DEV_END`(담당자 `agent_validation_1/validation_1.py` 규칙 검사 글 `협약기간 일정 {…}의 종료월 {YYYY-MM}이 개발 종료월 {YYYY-MM} 이후임` 전체와 같은 꼴).
-  - ③ 정부지원사업비가 지원규모 상한 초과 — 연결 코드의 글 꼴 `OVER_SUPPORT_LIMIT`(담당자 글 `정부지원사업비 {금액}원이 지원규모 상한 {금액}원을 초과함` 전체와 같은 꼴 — 소수점이 붙은 금액 포함).
-- **담당자 글이 바뀌면 같이 고칠 곳:** `verify.py`의 `AFTER_DEV_END` · `OVER_SUPPORT_LIMIT`(잠정 — `orchestrator/settings.py` `PROVISIONAL` `partnerSw.inputError`). `tests/test_partner_sw_tasks.py`가 담당자 검사 코드를 실제로 돌려 나온 글로 ① · ② · ③을 확인하므로 글이 바뀌면 그 테스트가 깨진다. `_check_agreement_table_overrun`의 '개발계획 표 종료월 …' 글은 입력 오류가 아니다(꼴이 겹치지 않게 둔다). 담당자에게 구조 칸(입력 오류 표시 · issue 코드)을 요청했다 — 받으면 글 판별을 그 칸으로 바꾼다.
+- 담당자 F19는 Python 저비용 검사에서 다음 `inputErrorCodes`를 반환한다. issue 문구와 독립된 구조화 값이며, 의미 검증(LLM)이 비슷한 문구를 내더라도 이 코드는 설정되지 않는다.
+  - `AGREEMENT_MONTHS_EXCEEDED`: 협약기간 일정이 최대 개월 수 초과
+  - `AGREEMENT_SCHEDULE_AFTER_DEADLINE`: 협약 일정 종료월이 개발 종료월 이후
+  - `SUPPORT_LIMIT_EXCEEDED`: 정부지원사업비가 지원규모 상한 초과
+- T-V1은 입력 없음 처리 **뒤**의 최종 status가 fail이고 `inputErrorCodes`에 위 코드가 있을 때만 `SectionResult.input_error`(JSON `inputError`)를 참으로 둔다. issue 문구 · status · 점수는 담당자 결과 그대로다. `_check_agreement_table_overrun`의 '개발계획 표 종료월 …' issue는 입력 오류 코드가 아니다.
 - **담당자가 우리 흐름에 넣은 문구 판별을 판정 칸으로 바꿨다:** 담당자 2026-10-12 판은 `flow/sbrain_flow.py`(우리 파일)에 issue 글(`"협약기간 일정" in issue …`)을 찾아 그 fail을 검증-1 재수행 · 표 대체에서 빼는 코드를 넣었다. 우리 규칙(흐름은 판정 필드로만 가른다)대로 지우고 `input_error` 칸으로 바꿨다 — ② · ③도 같이 뺀다. 흐름 · 판정(`agents/supervisor/judge.py`)에는 글 판별이 없다.
 
 ### 호출 수단 전달 방식 (Task 함수가 그대로 쓴다)

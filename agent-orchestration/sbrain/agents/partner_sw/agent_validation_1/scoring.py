@@ -3,6 +3,10 @@ import json
 import hashlib
 from pathlib import Path
 from .. import resources as _res   # [S-Brain] 자료 파일은 불러올 때 읽어 둔 상수 (VENDORED.md)
+from .validation_1 import (
+    INPUT_ERROR_AGREEMENT_AFTER_DEADLINE,
+    INPUT_ERROR_SUPPORT_LIMIT_EXCEEDED,
+)
 
 ROOT = Path(__file__).parent
 RUBRIC_PATH = ROOT / 'res' / 'prompts' / 'evaluation_rubric.json'
@@ -90,7 +94,10 @@ def score_section(section_spec: dict, content: dict, validation: dict, document_
     confirmations = validation.get('needsUserConfirmation', []) if isinstance(validation, dict) else []
     status = validation.get('status', 'not_run') if isinstance(validation, dict) else 'not_run'
     generated = _flatten_text(content) if isinstance(content, dict) else str(content or '')
-    limits = (source_data or {}).get('_strategy_limits', {}) if isinstance(source_data, dict) else {}
+    # section_source currently exposes strategy_limits (without the leading
+    # underscore); retain the underscored spelling for older/direct callers.
+    limits = ((source_data or {}).get('_strategy_limits') or
+              (source_data or {}).get('strategy_limits') or {}) if isinstance(source_data, dict) else {}
     components = {key: 100 for key in weights}
     deductions = []
     seen_reasons = set()
@@ -128,10 +135,15 @@ def score_section(section_spec: dict, content: dict, validation: dict, document_
     if limit_text and deadline_month is None:
         components['clarity'] = max(0, components['clarity'] - 2)
         deductions.append({'reason': 'deadline 형식을 해석할 수 없음', 'amount': 2, 'source': '_strategy_limits.deadline'})
-    periods = [_month(x) for x in __import__('re').findall(r'20\d{2}\s*(?:[.\-/년]\s*)\d{1,2}\s*월?', generated)]
-    if deadline_month and periods and max(periods) > deadline_month:
+    # Apply date deductions only when F19's deterministic check identifies an
+    # agreement-schedule overrun. Scanning all body dates also catches valid
+    # post-agreement roadmaps and creates false deductions.
+    raw_input_error_codes = validation.get('inputErrorCodes', []) if isinstance(validation, dict) else []
+    input_error_codes = {code for code in raw_input_error_codes if isinstance(code, str)} \
+        if isinstance(raw_input_error_codes, (list, tuple, set)) else set()
+    if deadline_month and INPUT_ERROR_AGREEMENT_AFTER_DEADLINE in input_error_codes:
         components['requirement'] = max(0, components['requirement'] - 40)
-        deductions.append({'reason': '개발 일정이 deadline 이후일 가능성', 'amount': 40, 'source': '_strategy_limits.deadline'})
+        deductions.append({'reason': '협약기간 일정이 개발 종료월 초과', 'amount': 40, 'source': 'inputErrorCodes.AGREEMENT_SCHEDULE_AFTER_DEADLINE'})
     support_limit = limits.get('supportLimit')
     if support_limit:
         import re
@@ -139,10 +151,9 @@ def score_section(section_spec: dict, content: dict, validation: dict, document_
         if not limit_digits:
             components['clarity'] = max(0, components['clarity'] - 2)
             deductions.append({'reason': 'supportLimit 형식을 해석할 수 없음', 'amount': 2, 'source': '_strategy_limits.supportLimit'})
-        amounts = [int(x.replace(',', '')) for x in re.findall(r'(?:정부지원사업비|지원금|government_amount)[^0-9]{0,20}([0-9][0-9,]*)', generated)]
-        if amounts and limit_digits and max(amounts) > int(limit_digits):
+        if limit_digits and INPUT_ERROR_SUPPORT_LIMIT_EXCEEDED in input_error_codes:
             components['requirement'] = max(0, components['requirement'] - 50)
-            deductions.append({'reason': '지원금 상한 초과', 'amount': 50, 'source': '_strategy_limits.supportLimit'})
+            deductions.append({'reason': '정부지원사업비가 지원규모 상한 초과', 'amount': 50, 'source': 'inputErrorCodes.SUPPORT_LIMIT_EXCEEDED'})
     components={key: min(100, max(0, float(value))) for key,value in components.items()}
     weighted = round(sum(components[key] * weights[key] for key in weights) / sum(weights.values()), 1)
     weighted = min(100.0, max(0.0, weighted))
