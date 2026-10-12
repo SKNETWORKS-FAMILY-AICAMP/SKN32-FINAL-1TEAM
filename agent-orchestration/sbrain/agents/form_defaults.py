@@ -10,7 +10,7 @@
   전략 · 작성 · 검증-1 담당자 양식으로 만든다(spec 4.6): 예비창업자 → 담당자 문서 유형 pre_startup
   (2.1.1 ~ 2.7.4, 25개), 개인사업자 · 법인 → early_startup(3.1.1 ~ 3.7.4, 24개). 항목 · 제목 · 종류는 담당자
   execution_contract.json에서 읽는다(손으로 옮겨 적지 않음 — 담당자 새 판을 받으면 저절로 따라간다).
-  - 항목마다 웹 태그(sectionTags)는 flow/rework_map.py의 짝짓기 표에서 끌어낸다(잠정 — 담당자 · 웹 확인 대기).
+  - 항목마다 웹 태그(sectionTags)는 flow/rework_map.py의 항목별 재작성 묶음 표에서 끌어낸다(잠정 — 담당자 · 웹 확인 대기).
   - 평가항목 = 계획서 항목 하나하나: itemCode = 항목 번호, itemName = 제목 앞 40자(잠정), maxScore = 기본 문서층 배점
     (70) ÷ 항목 수, description = 제목 전체. 실행 때 쓰는 문서층 배점은 실행 설정(scoring.docLayerMax)이다.
   - 채점 기준표 = 평가항목과 1:1: rubricId 'partner-sw', version = 담당자 채점 정책 버전(evaluation_rubric.json),
@@ -128,7 +128,7 @@ def form_problem(applicant_type: str) -> str | None:
 def select_form(applicant_type: str) -> FormBundle:
     """그 신청자 유형의 묶음(사본). 불변식 확인은 form_problem으로 먼저 한다 — 표에 없으면 KeyError.
 
-    웹 태그(sectionTags)는 고를 때마다 짝짓기 표(flow/rework_map.py)에서 다시 끌어낸다 — 표만 바꾸면 따라간다."""
+    웹 태그(sectionTags)는 고를 때마다 항목별 재작성 묶음 표(flow/rework_map.py)에서 다시 끌어낸다 — 표만 바꾸면 따라간다."""
     bundle = FORM_TABLE[applicant_type].copy()
     bundle.form_spec.section_tags = section_tags(bundle.form_spec.section_codes)
     return bundle

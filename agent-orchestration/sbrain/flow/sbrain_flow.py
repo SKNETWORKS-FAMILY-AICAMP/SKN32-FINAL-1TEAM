@@ -230,7 +230,7 @@ def bundle_orders(bundles: list[str], offered: list[ReworkOrder], form: Any = No
 
     - 대상(targets)은 그 층에서 모은 묶음 이름이다(기회를 세는 이름과 같다).
     - 산출물층: 그 Task에 대한 판정 지시(사유 · 보완 지시)를 쓴다. 같은 Task 지시가 여럿이면 합친다.
-    - 문서층 (spec 4.11): 고른 묶음들의 항목(짝짓기 표 — rework_map.bundle_items)을 종류별 Task(본문 T-W1 · 그림 T-W2 ·
+    - 문서층 (spec 4.11): 고른 묶음들의 항목(항목별 재작성 묶음 표 — rework_map.bundle_items)을 종류별 Task(본문 T-W1 · 그림 T-W2 ·
       표 T-W3)가 다시 만든다. 그 종류 항목이 없는 Task는 지시가 없다(부르지 않는다). 지시는 고른 묶음을 대상으로 한
       판정 지시를 모두 합친 것이고, Task마다 같다. 양식(form)이 없으면(작업 분해 전 · 단위 시험) 세 Task 모두다.
     - 해당 판정 지시가 없으면(미달이 아닌 묶음, 확장) 사유 · 보완 지시 모두 고정 문구 REWORK_DEFAULT_REASON을 쓴다.
@@ -530,7 +530,7 @@ class SBrainFlow:
     def _cycle_targets(self, ctx: RunContext, cyc, task_id: str | None) -> dict[str, list[str]]:
         """재작성 사이클에서 고른 문서층 묶음의 항목 → 문제 목록 (양식 순서). task_id를 주면 그 Task가 만드는 종류만.
 
-        묶음 → 항목은 짝짓기 표(rework_map.bundle_items) 하나로 가른다. 묶음 없는 항목(일반현황 · 개요)은 들지 않는다."""
+        묶음 → 항목은 항목별 재작성 묶음 표(rework_map.bundle_items) 하나로 가른다. 묶음 없는 항목(일반현황 · 개요)은 들지 않는다."""
         docs = list(dict.fromkeys(b for o in cyc.orders_by_task.values() if o.get("layer") == "document"
                                   for b in o.get("targets", [])))
         if not docs or not ctx.has(FORM_SPEC):

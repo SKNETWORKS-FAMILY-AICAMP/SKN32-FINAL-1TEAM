@@ -1,7 +1,7 @@
 """시트 7 재작성 · 재수행 매핑 (데이터).
 
 - 사용자 재작성: 묶음 이름 → 층 · 받는 화면 · 다시 돌릴 Task. 기회는 이 묶음 이름으로만 센다(spec 3.2).
-- 계획서 항목 → (웹 태그, 문서층 묶음) 짝짓기 표 SECTION_BUNDLE_TABLE 하나와 그 읽기 함수 (잠정).
+- 계획서 항목 → (웹 태그, 문서층 묶음) 대응 표 SECTION_BUNDLE_TABLE 하나와 그 읽기 함수 (잠정).
 - 검사 미통과 재수행: 확정 동작 예외 여섯 곳
 - 산출물층 미달 → 다시 돌릴 Task: artifact_rework_reasons (규칙만 쓰고 재량이 없다 — G-02b 스텁 · 실구현이 같이 쓴다)
 판정(어느 항목이 미달인지)은 G-02a · G-02b(조율 Agent)가 하고, 이 표는 그 판정과 Orchestrator의 검증이 같이 쓴다.
@@ -19,7 +19,7 @@ BUNDLE_INFOGRAPHIC = "인포그래픽"
 
 DOCUMENT_TASKS = ("T-W1", "T-W2", "T-W3")
 
-# ── 계획서 항목 → (웹 태그, 재작성 묶음) 짝짓기 표 (spec 4.6) ─────────────
+# ── 계획서 항목 → (웹 태그, 재작성 묶음) 대응 표 (spec 4.6) ─────────────
 # (잠정) 웹의 묶음 4개와 전략 · 작성 · 검증-1 담당자 양식 항목(예비창업 2.x.x · 초기창업 3.x.x)을 기준으로 우리 쪽에서
 # 정했다 — 담당자 · 웹팀 확인 대기. 키 = 항목 번호 앞부분(점으로 나눈 마디 단위, 예: '2.4'는 2.4.1 · 2.4.2 …),
 # 값 = (웹 태그, 묶음 이름). 표에 없는 항목(일반현황 · 개요 2.1 ~ 2.3 · 3.1 ~ 3.3, 그림 2.3.6 · 3.3.6 포함)은 묶음 없음 —
@@ -35,7 +35,7 @@ SECTION_BUNDLE_TABLE: dict[str, tuple[str, str]] = {
 
 # 재작성 요청 묶음 이름 — 웹은 고른 묶음마다 이 이름으로 요청한다. 재작성 기회를 세는 이름은 이것뿐이다
 # (판정 지시의 대상 이름은 문서층이면 이 묶음 이름, 산출물층이면 TASK_BUNDLE의 이름이다).
-# 문서층 묶음은 짝짓기 표에서 끌어낸다(표에 처음 나온 순서). 묶음이 늘면 웹 화면 · 기회 세기도 바뀌므로 표만으로 끝나지 않는다.
+# 문서층 묶음은 항목별 재작성 묶음 표에서 끌어낸다(표에 처음 나온 순서). 묶음이 늘면 웹 화면 · 기회 세기도 바뀌므로 표만으로 끝나지 않는다.
 # 문서층 묶음을 고르면 그 묶음 항목만 종류별 Task(KIND_TASK)로 다시 만든다 (sbrain_flow.bundle_orders · spec 4.11).
 # 이 상수는 불러올 때의 표 값이다 — 표를 바꿔 끼우는 테스트 · 흐름 계산은 document_bundles()로 그때의 표를 읽는다.
 DOCUMENT_BUNDLES: tuple[str, ...] = tuple(dict.fromkeys(bundle for _, bundle in SECTION_BUNDLE_TABLE.values()))
@@ -70,7 +70,7 @@ TASK_BUNDLE = {"T-B1": BUNDLE_EXECUTABLE, "T-B2": BUNDLE_INFOGRAPHIC}
 FINAL_ACTION_EXCEPTIONS = frozenset({"T-S1", "T-S2", "T-W1", "T-W2", "T-W3", "T-P2"})
 
 
-# ── 짝짓기 표 읽기 (spec 4.6) ─────────────────────────────
+# ── 항목별 재작성 묶음 표 읽기 (spec 4.6) ─────────────────────────────
 def section_tag_bundle(section_code: str) -> tuple[str, str] | None:
     """계획서 항목 번호 → (웹 태그, 묶음 이름). 표에 없으면 None(묶음 없음 — 재작성 대상 아님).
 
@@ -107,7 +107,7 @@ def bundle_sections(bundle: str, section_codes: list[str]) -> list[str]:
 
 
 def document_bundles() -> tuple[str, ...]:
-    """지금 짝짓기 표의 문서층 묶음 이름(표에 처음 나온 순서) — '묶음 모두' 후보가 쓴다. 부를 때마다 표를 읽는다."""
+    """지금 항목별 재작성 묶음 표의 문서층 묶음 이름(표에 처음 나온 순서) — '묶음 모두' 후보가 쓴다. 부를 때마다 표를 읽는다."""
     return tuple(dict.fromkeys(bundle for _, bundle in SECTION_BUNDLE_TABLE.values()))
 
 
@@ -119,7 +119,7 @@ def form_kinds(form: Any) -> list[tuple[str, str]]:
 
 
 def bundle_items(bundles: list[str], form: Any) -> list[tuple[str, str]]:
-    """고른 문서층 묶음들의 항목 (항목 번호, 종류) — 양식 순서, 합집합. 짝짓기 표로 가른다(묶음 없는 항목은 들지 않는다)."""
+    """고른 문서층 묶음들의 항목 (항목 번호, 종류) — 양식 순서, 합집합. 항목별 재작성 묶음 표로 가른다(묶음 없는 항목은 들지 않는다)."""
     chosen = set(bundles)
     return [(code, kind) for code, kind in form_kinds(form) if section_bundle(code) in chosen]
 

@@ -1,4 +1,4 @@
-"""양식 묶음 = 담당자 계약 항목 · 짝짓기 표 한 곳 · 목적 이름 상수 · 패키지 자료 (spec 4.2 · 4.6)."""
+"""양식 묶음 = 담당자 계약 항목 · 항목별 재작성 묶음 표 한 곳 · 목적 이름 상수 · 패키지 자료 (spec 4.2 · 4.6)."""
 from __future__ import annotations
 
 import pathlib
@@ -85,7 +85,7 @@ def test_contract_documents_are_copies():
     assert contract.document_specs("pre_startup")[0]["sectionId"] == "2.1.1"
 
 
-# ── 짝짓기 표 한 곳 (spec 4.6) ──────────────────────────────
+# ── 항목별 재작성 묶음 표 한 곳 (spec 4.6) ──────────────────────────────
 def test_pairing_table_lookup():
     assert section_tag_bundle("2.4.1") == ("1-1", "문제인식")
     assert section_tag_bundle("3.5.3") == ("2-1", "실현가능성")

@@ -7,7 +7,7 @@
 - 자체 검사 재수행: 걸린 항목(check.failedItems)만, 검증-1 재수행과 횟수 따로, T-W3는 재수행 없이 바로 대체.
 - 재작성: 고른 묶음 항목만 종류별 Task로, 다시 만든 항목만 재검증 · 나머지 이어받음, T-W3 · T-V1 지시문 다시 쓰기 없음.
 - 판정 후보: fail · warning 묶음, 입력 없음 제외 + 안내, 80 미만 · 후보 없음 → 묶음 모두, 배점은 설정 docLayerMax.
-- 짝짓기 한 곳: rework_map 표를 바꾸면 목표 · 후보 · 그림 항목 재작성(T-W2)이 따라 바뀐다.
+- 항목별 재작성 묶음 한 곳: rework_map 표를 바꾸면 목표 · 후보 · 그림 항목 재작성(T-W2)이 따라 바뀐다.
 스텁 앱 신청자는 법인(초기창업 3.1.1 ~ 3.7.4) — 본문 3.4.1(문제인식) · 그림 3.3.6(묶음 없음) · 표 3.5.2 · 3.5.3(실현가능성).
 흐름 테스트는 clock · store_backend 장치로 메모리 · SQLite 두 저장소에서 돈다.
 """
@@ -342,10 +342,10 @@ def test_abort_during_verify1_redo_clears_state(clock):
     assert (run.verify1.phase, run.verify1.pending_items) == ("없음", {})
 
 
-# ── 짝짓기 한 곳 (spec 4.6) ─────────────────────────────────
+# ── 항목별 재작성 묶음 한 곳 (spec 4.6) ─────────────────────────────────
 def test_pairing_table_swap_drives_targets_candidates_and_image_rework(clock, monkeypatch):
     table = dict(rework_map.SECTION_BUNDLE_TABLE)
-    table["3.3"] = ("1-1", "문제인식")      # 시험용 짝짓기 — 개요 · 그림(3.3.x)을 문제인식 묶음에
+    table["3.3"] = ("1-1", "문제인식")      # 시험용 항목별 재작성 묶음 — 개요 · 그림(3.3.x)을 문제인식 묶음에
     monkeypatch.setattr(rework_map, "SECTION_BUNDLE_TABLE", table)
     assert rework_map.section_tags(["3.3.6", "3.1.1"]) == ["1-1", None]
     app = make_app(clock, StubScenario(fail_item_times={IMAGE: 2}))

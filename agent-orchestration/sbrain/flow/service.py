@@ -565,7 +565,7 @@ class SBrainOrchestrator:
         merged = collected + new
         judge = "G-02a" if screen == 6 else "G-02b"
         offered = ctx.get(f"{judge}.reworkOrders", default=[])
-        # 문서층 묶음은 그 묶음 항목의 종류별 Task만 다시 만든다 — 양식(T-C3 formSpec)과 짝짓기 표로 가른다 (spec 4.11)
+        # 문서층 묶음은 그 묶음 항목의 종류별 Task만 다시 만든다 — 양식(T-C3 formSpec)과 항목별 재작성 묶음 표로 가른다 (spec 4.11)
         orders = bundle_orders(merged, offered, ctx.get(FORM_SPEC, default=None))
         dref = self._decide(ctx, {
             "command": "rework", "screen": screen, "action": "재작성", "userAction": "재작성",

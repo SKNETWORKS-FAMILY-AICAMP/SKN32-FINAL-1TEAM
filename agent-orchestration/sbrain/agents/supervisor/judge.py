@@ -4,7 +4,7 @@
 
 - 전후 비교 · 되돌리기는 하지 않는다. Orchestrator가 넘긴 비교 결과(cycleInfo)를 점수 보고서에 담기만 한다(경계).
 - 흐름을 가르는 값은 필드로만 읽는다(status · inputMissing · gateFailures · missingFeatures 등) — 문구로 가르지 않는다.
-- 계획서 묶음 후보(doc_candidates, business-rules 19.7): 묶음 · 항목은 짝짓기 표(flow/rework_map)로 가른다.
+- 계획서 묶음 후보(doc_candidates, business-rules 19.7): 묶음 · 항목은 항목별 재작성 묶음 표(flow/rework_map)로 가른다.
   1. 묶음마다 그 묶음 항목 중 fail · warning이고 입력 없음이 아닌 항목이 있으면 후보 — Task는 그 묶음 첫 항목 종류의 Task,
      사유 · 보완 지시는 '<항목 번호> <issues · warnings>' 줄을 이은 것.
   2. 문서층 표시 점수가 기준 미만인데 1의 후보가 없으면 묶음 모두가 후보(사유 = 판정 지시가 없는 묶음의 고정 문구).
