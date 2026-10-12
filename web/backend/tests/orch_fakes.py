@@ -272,12 +272,17 @@ def make_score_view(total: float = 82.0, threshold: float = 80.0, passed: bool =
     return NS(**base)
 
 
+def make_table_fallback(section_code: str = '2.5.2', reason: str = '내부 진단 원문', display_reason: str = '쉬운 안내') -> NS:
+    """표 대체 사유 하나(TableFallback) — test_orch_fake_contract가 실제 모델과 칸을 맞춰 본다."""
+    return NS(section_code=section_code, reason=reason, display_reason=display_reason)
+
+
 def make_outputs(**overrides: Any) -> NS:
     """outputs(project_id) 결과 — sbrain.flow.reads.Outputs와 같은 필드(test_orch_fake_contract가 확인한다)."""
     base = dict(
         project_id='1', run_id='r1', step='문서평가', progress='사용자대기', candidates=[], more_candidates=[],
         selected_announcement=None, gate_result=None, business_age_years=None, category=None, plan_doc=None,
-        doc_score=None, document_score_report=None, overall_score_report=None, prototype=None, infographic=None,
+        table_fallbacks=[], doc_score=None, document_score_report=None, overall_score_report=None, prototype=None, infographic=None,
         code_check=None, feature_match=None, format_findings=[], sentence_results=[], proofread_log=None,
         deliverable=None, user_message=None, rework_usage=[], rework_limit=1, evaluation_items=[])
     base.update(overrides)

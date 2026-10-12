@@ -510,6 +510,7 @@ def verdict_out(outputs, policy) -> schemas.VerdictOut | None:
         plan_match_withheld=bool(artifact is not None and artifact.feature_match.withheld),
         artifact_score=_scaled(report, 'artifact_layer_score', None),
         artifact_max_score=_scaled(report, 'artifact_layer_max', None),
+        notices=list(report.notices),
         total_score=report.total,
         pass_threshold=report.threshold,
     )
@@ -563,6 +564,19 @@ def format_findings_out(outputs) -> list[schemas.FormatFindingOut]:
     ]
 
 
+def table_fallbacks_out(outputs) -> list[schemas.TableFallbackOut]:
+    """표를 본문으로 대체한 항목의 사유(Outputs.table_fallbacks) — 항목 번호로 계획서 항목을 찾아 태그 · 제목을 덧붙인다.
+    사용자에게는 displayReason(쉬운 안내)만 준다 — 담당자 판정 원문(reason)은 내부 진단용이라 싣지 않는다(함수명세 5.1)."""
+    sections = {s.section_code: s for s in outputs.plan_doc.sections} if outputs.plan_doc is not None else {}
+    return [
+        schemas.TableFallbackOut(
+            section_code=f.section_code, display_reason=f.display_reason,
+            tag=_web_tag(sections[f.section_code]) if f.section_code in sections else None,
+            title=sections[f.section_code].title if f.section_code in sections else None)
+        for f in outputs.table_fallbacks
+    ]
+
+
 # ── GET /result ───────────────────────────────────────────────────────────────────────
 def result_out(project_id: int, outputs, policy, originals: dict[str, str] | None = None) -> schemas.DemoGenerateResponse:
     """outputs(project_id) → 결과 응답. 계획서(planDoc)가 아직 없으면 호출한 쪽이 404로 답한다(plan_doc 확인 뒤 부른다).
@@ -575,6 +589,8 @@ def result_out(project_id: int, outputs, policy, originals: dict[str, str] | Non
         threshold=report.threshold if report is not None else None,
         sections=plan_sections_out(plan_doc),
         diagrams=plan_diagrams_out(project_id, plan_doc),
+        table_fallbacks=table_fallbacks_out(outputs),
+        notices=list(report.notices) if report is not None else [],
         score_reasons=plan_score_reasons(outputs),
         artifacts=[a for a in [artifact_out(project_id, outputs)] if a is not None],
         format_findings=format_findings_out(outputs),

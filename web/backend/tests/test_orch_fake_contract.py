@@ -27,6 +27,11 @@ def test_fake_outputs_fields_match_real():
     assert set(vars(orch_fakes.make_outputs())) == set(reads.Outputs.model_fields)
 
 
+def test_fake_table_fallback_fields_match_real():
+    reads = pytest.importorskip('sbrain.flow.reads')
+    assert set(vars(orch_fakes.make_table_fallback())) == set(reads.TableFallback.model_fields)
+
+
 def test_fake_gate_screen_fields_match_real():
     reads = pytest.importorskip('sbrain.flow.reads')
     assert set(vars(orch_fakes.make_gate_screen())) == set(reads.GateScreen.model_fields)

@@ -178,6 +178,14 @@ MAX_SCHEDULE_ITEMS = 50
 # 금액 상한 — DB 컬럼이 DECIMAL(14,2)라 정수부 12자리(원)까지 들어간다. 넘으면 저장하다 DB 오류(500)가 나므로 입력 단계에서 막는다
 MAX_AMOUNT_WON = 999_999_999_999
 _PERIOD_YEAR_RE = re.compile(r'20\d{2}')
+# 추진기간에서 연·월을 읽는 규칙 — 검증-1(agent_validation_1/validation_1.py)이 쓰는 것과 같아야 웹이 통과시킨 일정을 검증-1이 다시 막지 않는다
+_PERIOD_MONTH_RE = re.compile(r'(20\d{2})[-./~년\s]*(\d{1,2})')
+
+
+def _latest_period_month(period: str) -> tuple[int, int] | None:
+    """추진기간 글에서 읽은 가장 늦은 (연, 월). 월이 1 ~ 12가 아닌 것은 검증-1처럼 건너뛰고, 읽을 월이 없으면 None."""
+    months = [(int(y), int(m)) for y, m in _PERIOD_MONTH_RE.findall(period) if 1 <= int(m) <= 12]
+    return max(months) if months else None
 
 
 def _error_detail(loc: tuple, message: str, error_type: str = 'value_error') -> InitErrorDetails:
@@ -357,6 +365,28 @@ class ProjectCreateRequest(BaseModel):
                         ('budget_items', i, 'self_in_kind_amount'), '예비창업자는 자기부담금을 현금 하나로만 입력해요(현물은 0)'))
             elif self.applicant_type in ('individual', 'corp') and item.phase is not None:
                 errors.append(_error_detail(('budget_items', i, 'phase'), '개인사업자 · 법인은 사업비 단계를 쓰지 않아요'))
+        if errors:
+            raise ValidationError.from_exception_data(type(self).__name__, errors)
+        return self
+
+    @model_validator(mode='after')
+    def _check_schedule_within_development_period(self) -> 'ProjectCreateRequest':
+        """협약기간 내(feasibility) 일정 줄의 끝나는 달은 개발 종료월(dev_end_month)을 넘을 수 없다 — 검증-1이 같은 기준으로 그 항목을
+        '입력 오류'로 실패 처리하고 재작성으로도 고쳐지지 않는다(F19, SB-354). 협약 이후(growth) 일정은 보지 않고, 개발 종료월이 없으면
+        기준이 없어 검사하지 않는다. 협약기간 최대 개월 수는 공고마다 달라서 여기서 막지 않는다(공고를 고르기 전에 입력하므로)."""
+        if not self.dev_end_month:
+            return self
+        year, month = self.dev_end_month.split('-')
+        deadline = (int(year), int(month))
+        errors: list[InitErrorDetails] = []
+        for i, item in enumerate(self.schedule_items):
+            if item.section != 'feasibility':
+                continue
+            end = _latest_period_month(item.period)
+            if end is not None and end > deadline:
+                errors.append(_error_detail(
+                    ('schedule_items', i, 'period'),
+                    f'협약기간 내 일정의 끝나는 달({end[0]}-{end[1]:02d})이 개발 종료월({self.dev_end_month})보다 늦어요'))
         if errors:
             raise ValidationError.from_exception_data(type(self).__name__, errors)
         return self
@@ -610,6 +640,14 @@ class PlanDiagramOut(BaseModel):
     image_url: str = Field(description="SVG 주소 `/projects/{id}/artifact-files/{key}` — 받은 주소를 그대로 쓴다(소유자만 받는다)")
 
 
+class TableFallbackOut(BaseModel):
+    """표를 본문으로 대체한 항목의 사유 — 화면이 해당 항목에 따로 보여 준다(F17, SB-354). 본문(body)에는 이 사유가 섞이지 않는다."""
+    section_code: str = Field(description="항목 번호 — plan.sections[].section_code와 맞는다")
+    tag: str | None = Field(None, description="그 항목의 웹 태그(계획서에 없는 번호이거나 묶음이 없으면 null)")
+    title: str | None = Field(None, description="그 항목의 제목(계획서에 없는 번호면 null)")
+    display_reason: str = Field(description="사용자에게 보여 줄 쉬운 안내 문구. 담당자 판정 원문(내부 진단용)은 사용자 화면에 내지 않아 싣지 않는다")
+
+
 class ArtifactScoreReasonOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     reason_text: str
@@ -684,6 +722,8 @@ class BusinessPlanOut(BaseModel):
     threshold: float | None = None
     sections: list[PlanSectionOut] = Field(default_factory=list)
     diagrams: list[PlanDiagramOut] = Field(default_factory=list)
+    table_fallbacks: list[TableFallbackOut] = Field(default_factory=list, description="표를 본문으로 대체한 항목별 사유. 대체한 표가 없으면 빈 목록")
+    notices: list[str] = Field(default_factory=list, description="문서 평가 점수 보고서의 안내(화면 6) — '입력 확인 필요' · '입력 오류' 문구. 없으면 빈 목록")
     score_reasons: list[PlanScoreReasonOut] = Field(default_factory=list)
     artifacts: list[ArtifactOut] = Field(default_factory=list)
     format_findings: list[FormatFindingOut] = Field(default_factory=list)
@@ -719,6 +759,7 @@ class VerdictOut(BaseModel):
     # 산출물층(코드 점검 + 계획서 대조) 환산 점수 · 만점 — 옛 실행 건은 None
     artifact_score: float | None = None
     artifact_max_score: float | None = None
+    notices: list[str] = Field(default_factory=list, description="종합 평가 점수 보고서의 안내(화면 9) — '입력 확인 필요' · '입력 오류' 문구. 없으면 빈 목록")
     total_score: float | None = None
     pass_threshold: float | None = None
 
