@@ -282,13 +282,13 @@ def validate_section(section_spec, content, source_data):
         warnings.append('입력에 미확정 값이 포함되어 확인 필요로 표시했습니다.')
     if 'proposed' in statuses:
         warnings.append('제안값은 원본 확정 사실로 간주하지 않습니다.')
-    # 공고 마감일 이후로 계획된 일정과 지원규모 상한 초과를 구조 단계에서 차단한다.
+    # 입력된 개발 종료월 이후의 협약 일정과 지원규모 상한 초과를 구조 단계에서 차단한다.
     deadline=limits.get('deadline') if isinstance(limits,dict) else None
     period=original.get('period',{})
     end_month=period.get('end') if isinstance(period,dict) else None
     if deadline and end_month and _month_key(end_month) > _month_key(deadline):
-        issues.append(f'개발 종료월 {end_month}이 공고 접수 마감일 {deadline} 이후임')
-    # 협약기간에 속한 개별 일정도 마감일을 넘기면 실패로 판정한다.
+        issues.append(f'원본 개발 종료월 {end_month}이 _strategy_limits.deadline {deadline}을 초과함')
+    # 협약기간에 속한 개별 일정도 입력된 개발 종료월을 넘기면 실패로 판정한다.
     # 예비창업의 협약 이후 로드맵(fullScaleSchedule)은 roadmap으로 표시되어
     # 사업기간 상한 비교에서 제외하고, 협약 일정만 필수 제약으로 검사한다.
     schedule_rows=original.get('schedule',[]) if isinstance(original,dict) else []
@@ -307,7 +307,7 @@ def validate_section(section_spec, content, source_data):
                 row_end=max((f'{year}-{int(month):02d}' for year,month in months),default=None)
                 if row_end and _month_key(row_end)>_month_key(deadline):
                     label=row.get('task') or row.get('category') or row.get('추진내용') or '일정'
-                    issues.append(f'협약기간 일정 {label}의 종료월 {row_end}이 마감일 {deadline} 이후임')
+                    issues.append(f'협약기간 일정 {label}의 종료월 {row_end}이 개발 종료월 {deadline} 이후임')
     support_limit=limits.get('supportLimit') if isinstance(limits,dict) else None
     if support_limit is not None:
         try:
@@ -403,7 +403,7 @@ def validate_section(section_spec, content, source_data):
             warnings.append('판정 재검토: '+issue_text)
             continue
         proposal_issue=any(word in issue_text for word in ('관련성이 부족','직접 근거','인용된 출처','인용 출처 중','직접 관련성이 낮음','직접 뒷받침하지 못함','수치 근거','근거를 연결','sourceRefs','facts','본문에 제시','원본 사실','원본에 없고','originalFacts','원문 근거','제공 근거','확정된 정량','확정 여부','확정 사실이 아님','미확정','제안 지표','확인 필요','확정 목표','목표처럼','근거 없이 확정','확정하여 기재','구현하고','확정 수행','제안사항','확정 추진내용','status:"proposed"','기술언어','기능은 원본','제안값임을 명시','구체성이 부족','정확도 95%','오탐률 5%','초당 30프레임','상세계획','기간 정합성','확정 추진계획','단계 일정','사업기간','개발함','완료 실적','측정식','FPS 산정','프레임 수를 경과시간','정의가 필요','선정 필요','검토 필요','구체화 필요','확정해야','명확하지 않음','산정 방식','확정적 문제점','서술하기 어려움','제안 상태','전략 기능 목록','기능 목록','원문 토큰','불변식'))
-        hard_issue=any(word in issue_text for word in ('원본과 불일치','확정 fact 오류','마감일 이후','지원규모 상한','필수 표','필수 항목','이미지 nodes'))
+        hard_issue=any(word in issue_text for word in ('원본과 불일치','확정 fact 오류','마감일 이후','개발 종료월','지원규모 상한','필수 표','필수 항목','이미지 nodes'))
         if proposed_content and proposal_issue and not hard_issue:
             warnings.append(str(semantic_issue))
         else:

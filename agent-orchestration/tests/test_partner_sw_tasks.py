@@ -552,6 +552,33 @@ def test_agreement_schedule_duration_is_checked_before_semantic_review(
         assert len(requests) == 1
 
 
+def test_agreement_schedule_after_development_end_fails_before_semantic_review(monkeypatch):
+    spec = common.spec_for(common.section_specs("pre_startup"), "2.5.2")
+    requests = []
+    monkeypatch.setattr(validation_1, "request_json", lambda *args: requests.append(args))
+    source = {
+        "documentType": "pre_startup",
+        "originalFacts": {
+            "period": {"end": "2026-12"},
+            "schedule": [{"task": "개발", "period": "2026.11~2027.01", "_schedule_scope": "agreement"}],
+        },
+        "strategy_limits": {"deadline": "2026-12"}, "sourceRefs": [], "strategyProvenance": {},
+    }
+    content = {
+        "generatedText": "개발 일정을 추진함.", "tables": [{
+            "columns": spec["rules"]["requiredColumns"],
+            "rows": [{"구분": "개발", "추진내용": "개발", "추진기간": "2026.11~2027.01", "세부내용": "개발"}],
+        }],
+        "sourceRefs": [], "facts": [],
+    }
+
+    result = validation_1.validate_section(spec, content, source)
+
+    assert result["status"] == "fail"
+    assert result["issues"] == ["협약기간 일정 개발의 종료월 2027-01이 개발 종료월 2026-12 이후임"]
+    assert result["semanticCalled"] is False and requests == []
+
+
 def test_agreement_duration_fail_is_not_treated_as_table_structure_fallback():
     assert legacy_pipeline._is_agreement_duration_failure({
         "status": "fail", "issues": ["협약기간 일정 11개월이 최대 10개월 조건을 초과함"],
