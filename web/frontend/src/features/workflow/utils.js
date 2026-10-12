@@ -1,5 +1,5 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
-import {DOC_ITEMS_FAIL,DOC_ITEMS_PASS,CODE_CHECK_ITEMS_BY_CATEGORY,CODE_CHECK_FAILS_BY_OUTCOME,APPLICANT_TYPE_LABEL,PROJECT_STATUS_TONE,RERUN_CAP,PLAN_TAGS,bundleOfTag} from './data.js';
+import {DOC_ITEMS_FAIL,DOC_ITEMS_PASS,CODE_CHECK_ITEMS_BY_CATEGORY,CODE_CHECK_FAILS_BY_OUTCOME,APPLICANT_TYPE_LABEL,PROJECT_STATUS_TONE,RERUN_CAP,PLAN_TAGS,GENERAL_SECTION_LABEL,bundleOfTag,headerOfTag} from './data.js';
 
 export const MOCK_TODAY = new Date('2026-09-08');
 
@@ -93,11 +93,12 @@ export const DOC_SCORE_BY_OUTCOME = {
 // 처럼 결과 없이 컴포넌트만 그리는 경우가 있어서 fallback은 남겨둔다.
 // ---------------------------------------------------------------------------
 const num = (v) => (v == null || Number.isNaN(Number(v)) ? null : Number(v));
-// 'PSST-1-1' -> '1-1'. 그 코드가 가리키는 계획서 섹션 제목을 항목 이름으로 쓴다.
+// 점수 항목의 item_code가 가리키는 계획서 항목 제목을 항목 이름으로 쓴다. 새 모양(백엔드 응답모양변경 10-11)은
+// item_code가 항목 번호('2.4.1')라 sections[].section_code와 맞추고, 옛 모양은 'PSST-1-1' -> '1-1'로 tag와 맞춘다.
 function itemNameFrom(itemCode, sections){
   if (!itemCode) return '항목';
   const tag = itemCode.replace(/^PSST-/, '');
-  const section = (sections || []).find((s) => s.tag === tag);
+  const section = (sections || []).find((s) => (s.section_code != null && s.section_code === itemCode) || s.tag === tag);
   return section?.title || itemCode;
 }
 function reasonsToItems(reasons, sections){
@@ -106,7 +107,26 @@ function reasonsToItems(reasons, sections){
     score: num(r.score) ?? 0,
     max: num(r.max_score) ?? 0,
     comment: r.reason_text || '',
+    // 점수 항목의 웹 태그(새 모양) — 칸이 아예 없는 옛 응답과 null(일반현황 · 개요)을 구분한다.
+    ...('tag' in r ? { tag: r.tag ?? null } : {}),
   }));
+}
+
+// 문서층 점수 항목을 묶음(일반현황 · 개요 → 문제인식 → … → 팀 구성)별로 모은다. 새 모양은 항목이 24개 안팎이라
+// 하나씩 늘어놓지 않고 묶음 합계로 보인다. 항목에 tag 칸이 없는 옛 응답(4항목)은 null — 화면이 예전처럼 항목별로 보인다.
+export function docGroupsFrom(items){
+  if (!(items || []).some((it) => 'tag' in it)) return null;
+  const labels = [GENERAL_SECTION_LABEL, ...PLAN_TAGS.map(bundleOfTag)];
+  return labels.map((label) => {
+    const mine = items.filter((it) => bundleOfTag(it.tag) === label);
+    return { label, score: sumScores(mine), max: mine.reduce((s, it) => s + it.max, 0), items: mine };
+  }).filter((g) => g.items.length);
+}
+// 묶음 미달 사유 한 줄 — "문제인식 12/20 — 시장 규모, 경쟁 분석". 깎인 항목이 많으면 앞의 셋만 이름을 적는다.
+function groupReason(g){
+  const missed = g.items.filter((it) => it.score < it.max).map((it) => it.name);
+  const names = missed.slice(0, 3).join(', ') + (missed.length > 3 ? ` 외 ${missed.length - 3}개` : '');
+  return `${g.label} ${g.score}/${g.max}${names ? ` — ${names}` : ''}`;
 }
 
 export function scoresFromResult(result){
@@ -118,11 +138,13 @@ export function scoresFromResult(result){
   const isCross = (r) => (r.item_code || '').startsWith('FEATURE-');
 
   const docItems = reasonsToItems(plan?.score_reasons, plan?.sections);
+  const docGroups = docGroupsFrom(docItems);
   const docScore = {
     raw: num(verdict.doc_score) ?? sumScores(docItems),
-    max: num(verdict.doc_max_score) ?? 70,
+    max: num(verdict.doc_max_score) ?? num(plan?.doc_max_score) ?? 70,
     items: docItems,
-    reasons: reasonsFromItems(docItems),
+    groups: docGroups,
+    reasons: docGroups ? docGroups.filter((g) => g.score < g.max).map(groupReason) : reasonsFromItems(docItems),
   };
 
   const layer = (rows, score, max) => {
@@ -209,6 +231,24 @@ export function reviewParagraphsFrom(plan){
       })),
     };
   });
+}
+
+// 계획서 보기(화면 9)에 그릴 모양. 새 모양(항목에 section_code · content_type, 백엔드 응답모양변경 10-11)은 항목이
+// 24개 안팎이라 묶음별로 모은다 — 일반현황 · 개요(tag가 1-1 ~ 4-1이 아닌 항목), 그림(diagrams), 문제인식 ~ 팀 구성.
+// 그림 항목(content_type 'image')은 문장이 없어 본문으로 그리지 않는다 — tag가 '2-1'로 와도 diagrams로 보인다(10-12 답변 3).
+// 옛 모양(4항목)은 legacy — 화면이 예전처럼 항목마다 공식 머리말로 그린다. 계획서가 없으면 null.
+export function planViewFrom(plan){
+  const sections = plan?.sections || [];
+  if (!sections.length) return null;
+  if (!sections.some((s) => 'section_code' in s || 'content_type' in s)) return { legacy: true, sections };
+  const text = sections.filter((s) => s.content_type !== 'image');
+  return {
+    legacy: false,
+    general: text.filter((s) => !PLAN_TAGS.includes(s.tag)),
+    diagrams: (plan.diagrams || []).filter((d) => d && d.image_url),
+    bundles: PLAN_TAGS.map((tag) => ({ tag, header: headerOfTag(tag), sections: text.filter((s) => s.tag === tag) }))
+      .filter((b) => b.sections.length),
+  };
 }
 
 // 재작성 결과 changed.sections를 항목 목록으로 편다. 옛 모양은 키가 웹 태그('1-1')이고, 새 모양(백엔드 재작성결과 보충
@@ -325,9 +365,22 @@ export function isRerunCapped(counts, label, budget){
 // 몰아 붙여서, 어느 항목이 왜 미달인지 묶음별로 구분되지 않았다.
 // 묶음 이름은 화면 표기('문제인식')이고 서버 항목 이름은 계획서 섹션 제목('문제 인식')이라
 // 띄어쓰기가 다르다 — 공백을 떼고 맞춘다. 이걸 안 하면 미달 사유가 하나도 안 붙는다.
+const DOC_BUNDLE_SET = new Set(PLAN_TAGS.map(bundleOfTag));
 const sameItem = (a, b) => String(a || '').replace(/\s/g, '') === String(b || '').replace(/\s/g, '');
 
 export function taskReasons(label, docScore, artifactScore){
+  // 새 모양 — 묶음 합계 한 줄 + 깎인 항목(앞의 셋). 묶음에 점수 항목이 없으면 붙일 사유도 없다.
+  const group = docScore.groups?.find((g) => g.label === label);
+  if (group) {
+    if (group.score >= group.max) return [];
+    const missed = group.items.filter((it) => it.score < it.max);
+    return [
+      `［문서층］ ${label} ${group.score}/${group.max}`,
+      ...missed.slice(0, 3).map((it) => `· ${it.name} ${it.score}/${it.max}${it.comment ? ` — ${it.comment}` : ''}`),
+      ...(missed.length > 3 ? [`· 외 ${missed.length - 3}개 항목`] : []),
+    ];
+  }
+  if (docScore.groups && DOC_BUNDLE_SET.has(label)) return [];
   const item = (docScore.items || []).find((it) => sameItem(it.name, label));
   if (item) {
     if (item.score >= item.max) return [];

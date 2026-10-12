@@ -64,8 +64,10 @@ export function buildVerificationReportHtml({ projectName, announcementTitle, ca
   ];
   const evidence = failedItems.filter((it) => it.evidence).map((it) => `${it.name}: ${it.evidence}`);
 
-  const docCells = docScore.items.map((it) => `
-      <div class="doc-item"><span>${esc(DOC_ITEM_LABEL[it.name] || it.name)}</span><b>${it.score} / ${it.max}</b></div>`).join('');
+  // 새 모양은 점수 항목이 24개 안팎이라 묶음(일반현황 · 개요 + 4묶음) 합계로 칸을 채운다(utils.js docGroupsFrom).
+  const docRows = docScore.groups || docScore.items;
+  const docCells = docRows.map((it) => `
+      <div class="doc-item"><span>${esc(DOC_ITEM_LABEL[it.label || it.name] || it.label || it.name)}</span><b>${it.score} / ${it.max}</b></div>`).join('');
   const checkRows = codeCheckItems.map((it) => `
         <tr class="${it.passed ? '' : 'fail'}"><td>${esc(it.name)}</td><td class="num">${it.weight}</td><td>${it.applicable === false ? '해당 없음' : it.passed ? '충족' : '미충족'}</td><td class="num">${round2(earnedOf(it))}</td></tr>`).join('');
   const lines = (arr, empty) => (arr.length ? arr.map((t) => `<p>${esc(t)}</p>`).join('') : `<p class="muted">${empty}</p>`);
@@ -119,7 +121,7 @@ export function buildVerificationReportHtml({ projectName, announcementTitle, ca
   <p class="rule">판정 기준 ${passThreshold}점 이상${failedItems.length || crossCheck.reasons.length ? '  |  총점 판정과 별개로 미충족 항목의 보완이 필요합니다.' : ''}</p>
 
   <h2><em>01</em>사업계획서 평가<small>획득 점수 / 배점</small></h2>
-  <div class="doc">${docCells}
+  <div class="doc" style="grid-template-columns: repeat(${Math.max(docRows.length, 1)}, 1fr)">${docCells}
   </div>
 
   <h2><em>02</em>${copy.autoTitle}<small>${autoRaw} / ${autoMax}점</small></h2>

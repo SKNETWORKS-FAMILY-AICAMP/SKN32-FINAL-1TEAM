@@ -35,7 +35,8 @@ export function PipelineProgress({onComplete}){return <Preparation kind="plan" o
 // 항목 번호·영문 병기를 그대로 썼다 — 다운로드 파일(dummyDeliverables.js)뿐 아니라
 // 화면에 계획서를 보여주는 곳(작성 화면/보기 모달/재작성 비교 모달) 전부 이 표기로
 // 통일한다(사용자 지적: 다운로드 파일만 바꾸면 화면이랑 달라 보인다).
-export function GeneralInfoBlock({ itemInfo, itemTitle, sections }) {
+// overview=false면 "창업 아이템 개요(요약)"를 빼고 일반현황 표만 — 새 모양 계획서는 개요 항목이 따로 온다.
+export function GeneralInfoBlock({ itemInfo, itemTitle, sections, overview = true }) {
   const rows = buildGeneralInfo(itemInfo);
   return (
     <div className="flex flex-col gap-5">
@@ -50,10 +51,12 @@ export function GeneralInfoBlock({ itemInfo, itemTitle, sections }) {
           ))}
         </div>
       </div>
+      {overview && (
       <div>
         <p className="text-[12px] font-bold text-[var(--muted-fg)] tracking-wide mb-2">□ 창업 아이템 개요(요약)</p>
         <p className="text-[14px] leading-relaxed text-[var(--fg)]">{buildOverview(itemTitle, sections)}</p>
       </div>
+      )}
     </div>
   );
 }

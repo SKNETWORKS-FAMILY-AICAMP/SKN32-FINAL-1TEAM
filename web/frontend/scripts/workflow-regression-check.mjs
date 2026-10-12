@@ -90,6 +90,33 @@ try{
   assert.deepEqual(scored.artifactLayer,{raw:18,max:40});
   assert.deepEqual(scored.codeCheckItems.map(i=>[i.passed,i.applicable]),[[false,true],[true,false]]);
   assert.equal(sfr({verdict:{code_score:8,code_max_score:15},plan:{score_reasons:[],artifacts:[]}}).artifactLayer,null);
+  // 점수 항목 묶음(응답모양변경 10-11 2-1) — tag로 일반현황 · 개요 + 4묶음에 모으고, 이름은 section_code로 찾는다.
+  const {taskReasons:tr,planViewFrom:pvf}=await server.ssrLoadModule('/src/features/workflow/utils.js');
+  const tagged=sfr({verdict:{doc_score:20,doc_max_score:30},plan:{sections:[{section_code:'1.2',tag:null,title:'개요',content_type:'section'},{section_code:'2.4.1',tag:'1-1',title:'문제 정의',content_type:'section'},{section_code:'2.4.2',tag:'1-1',title:'시장',content_type:'section'}],
+    score_reasons:[{item_code:'1.2',tag:null,score:4,max_score:5,reason_text:'짧음'},{item_code:'2.4.1',tag:'1-1',score:6,max_score:10,reason_text:'근거 부족'},{item_code:'2.4.2',tag:'1-1',score:5,max_score:5},{item_code:'3.1.1',tag:'3-1',score:5,max_score:10,reason_text:'모호'}],artifacts:[]}});
+  assert.deepEqual(tagged.docScore.groups.map(g=>[g.label,g.score,g.max]),[['일반현황 · 개요',4,5],['문제인식',11,15],['성장전략',5,10]]);
+  assert.equal(tagged.docScore.items[1].name,'문제 정의');
+  assert.deepEqual(tagged.docScore.reasons,['일반현황 · 개요 4/5 — 개요','문제인식 11/15 — 문제 정의','성장전략 5/10 — 3.1.1']);
+  const noArtifact={autoCheck:{reasons:[]},crossCheck:{reasons:[]}};
+  assert.deepEqual(tr('문제인식',tagged.docScore,noArtifact),['［문서층］ 문제인식 11/15','· 문제 정의 6/10 — 근거 부족']);
+  assert.deepEqual(tr('실현가능성',tagged.docScore,noArtifact),[]);
+  // 옛 모양(tag 칸 없음, PSST-1-1)은 묶음 없이 예전처럼 항목별.
+  const legacy=sfr({verdict:{doc_score:10},plan:{sections:[{tag:'1-1',title:'문제 인식'}],score_reasons:[{item_code:'PSST-1-1',score:10,max_score:20,reason_text:'부족'}],artifacts:[]}});
+  assert.equal(legacy.docScore.groups,null);
+  assert.deepEqual(legacy.docScore.reasons,['문제 인식 10/20 — 부족']);
+  assert.deepEqual(tr('문제인식',legacy.docScore,noArtifact),['［문서층］ 문제 인식 10/20 — 부족']);
+  // 계획서 보기 — 새 모양은 묶음별, 그림 항목(content_type image)은 tag가 '2-1'이어도 본문에서 뺀다. 옛 모양은 legacy.
+  const view=pvf({sections:[{section_code:'1.1',tag:null,title:'일반현황',content_type:'section'},{section_code:'2.3.6',tag:'2-1',title:'흐름도',content_type:'image'},{section_code:'2.2.1',tag:'2-1',title:'개발',content_type:'section'},{section_code:'2.3.7',tag:'2-1',title:'일정',content_type:'table'}],
+    diagrams:[{diagram_id:'d1',image_url:'/projects/1/artifact-files/a'},{diagram_id:'d2',image_url:null}]});
+  assert.deepEqual([view.legacy,view.general.map(s=>s.title),view.bundles.map(b=>[b.tag,b.sections.map(s=>s.title)]),view.diagrams.map(d=>d.diagram_id)],[false,['일반현황'],[['2-1',['개발','일정']]],['d1']]);
+  assert.equal(pvf({sections:[{tag:'1-1',title:'a',body:'b'}]}).legacy,true);
+  assert.equal(pvf({sections:[]}),null);
+  // 검증결과서 PDF — 새 모양은 문서층 칸이 묶음 합계(일반현황 · 개요 + 묶음), 옛 모양은 항목별.
+  const {buildVerificationReportHtml:bvr}=await server.ssrLoadModule('/src/features/workflow/verificationReport.js');
+  const reportOf=(docScore)=>bvr({projectName:'p',announcementTitle:'a',category:'webdev',docScore,codeCheckItems:[],crossCheck:{raw:0,max:15,reasons:[]},threshold:80});
+  const taggedReport=reportOf(tagged.docScore);
+  assert.ok(taggedReport.includes('repeat(3, 1fr)')&&taggedReport.includes('<span>일반현황 · 개요</span><b>4 / 5</b>')&&taggedReport.includes('<span>문제 인식</span><b>11 / 15</b>')&&!taggedReport.includes('문제 정의'));
+  assert.ok(reportOf(legacy.docScore).includes('<span>문제 인식</span><b>10 / 20</b>'));
   // 재작성 전후 비교 — 새 모양(키 = 항목 번호, tag · title)은 묶음 이름으로, 묶음마다 그 묶음 항목만(보충 10-11).
   const {reworkDiffForLabel}=await server.ssrLoadModule('/src/features/workflow/rework.js');
   const changedNew={sections:{'2.5.1':{before:'b',after:'c',tag:'2-1',title:'개발 방안'},'2.4.2':{before:null,after:'n',tag:'1-1',title:'시장'},'2.4.1':{before:'x',after:'y',tag:'1-1',title:'문제 정의'}}};

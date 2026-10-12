@@ -4,8 +4,8 @@ import {Icon} from '../../components/Icons.jsx';
 import {DiffText,RerunLeftBadge} from './shared.jsx';
 import {GeneralInfoBlock,PlanExtrasBlock} from './PlanForm.jsx';
 import {PrototypeFrame,ResultPreview,useArtifactFile,ArtifactLoadError} from './ArtifactResult.jsx';
-import {detectItemCategory,diffSentences,sectionDiffEntries,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
-import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,PLAN_TAGS,headerOfTag,RERUN_CAP,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,DOC_REWORK_BUNDLES} from './data.js';
+import {detectItemCategory,diffSentences,planViewFrom,sectionDiffEntries,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
+import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,GENERAL_SECTION_LABEL,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,PLAN_TAGS,headerOfTag,RERUN_CAP,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,DOC_REWORK_BUNDLES} from './data.js';
 import {startReview,getProjectStatus} from '../../api.js';
 import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,relabelAfterReject,requestRework,reworkDiffForLabel,waitRework} from './rework.js';
 
@@ -347,10 +347,57 @@ export function ArtifactCarousel({ hasExecutable, infoSrc = null, siteSrc = null
   );
 }
 
+// 계획서 보기 — 새 모양(utils.js planViewFrom). 일반현황 · 개요 → 그림 → 문제인식 ~ 팀 구성 순서로 묶어 그린다.
+// 그림은 일반현황 칸과 따로 둔다 — 그림을 어느 묶음에 둘지 조율 쪽이 아직 정하는 중이라(백엔드 10-12 답변 3 · 5) 옮기기 쉽게.
+function PlanGroupedView({ view, itemInfo, itemTitle }){
+  const sectionBlock = (s, i) => (
+    <div key={s.section_code || `${s.title}-${i}`}>
+      <h3 className="font-display font-bold text-[14px] mb-1">{s.title || s.section_code}</h3>
+      <p className="text-[13px] leading-relaxed text-[var(--fg)] whitespace-pre-line">{s.body}</p>
+    </div>
+  );
+  return (
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-4">
+        <h2 className="font-display font-bold text-[15px]">{GENERAL_SECTION_LABEL}</h2>
+        {/* 개요 문장은 서버 항목에 따로 있어서 첫 항목 본문으로 만든 요약은 넣지 않는다(겹친다). */}
+        <GeneralInfoBlock itemInfo={itemInfo} itemTitle={itemTitle} overview={false} />
+        {view.general.map(sectionBlock)}
+      </div>
+      {view.diagrams.length > 0 && (
+        <div className="flex flex-col gap-4">
+          <h2 className="font-display font-bold text-[15px]">그림</h2>
+          {view.diagrams.map((d) => <PlanDiagram key={d.diagram_id || d.image_url} diagram={d} />)}
+        </div>
+      )}
+      {view.bundles.map((b) => (
+        <div key={b.tag} className="flex flex-col gap-4">
+          <h2 className="font-display font-bold text-[15px]">{b.header}</h2>
+          {b.sections.map(sectionBlock)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// 계획서 그림 하나(서비스 흐름도 · 구조도 SVG). 산출물 파일과 같은 주소라 같은 방식으로 받는다. 못 받으면 조용히 뺀다 —
+// 그림은 계획서 본문을 보는 데 꼭 필요하지 않고, 빈 자리나 오류 문구가 본문보다 눈에 띄면 안 된다.
+function PlanDiagram({ diagram }){
+  const [url, failed] = useArtifactFile(diagram.image_url, { expect: 'image' });
+  if (failed || !url) return null;
+  return (
+    <figure className="m-0">
+      <img src={url} alt={diagram.title || '계획서 그림'} className="w-full rounded-lg border border-[var(--border)] bg-white" />
+      {diagram.title && <figcaption className="mt-1.5 text-[12px] text-[var(--muted-fg)] text-center">{diagram.title}</figcaption>}
+    </figure>
+  );
+}
+
 export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, artifactOutcome, setDocOutcome, setArtifactOutcome, projectId, reworkCounts = {}, onRework, scores = null, reworkBudget = null, onScoresRefresh, artifact = null, plan = null }){
-  // 서버 계획서(GET /result의 plan.sections — tag · title · body). 있으면 '계획서 보기'가 이걸 보이고, 없을 때만 예시 계획서.
-  // 예전엔 서버 계획서와 관계없이 늘 예시 계획서(PLAN_DOCUMENT_SECTIONS)를 보였다.
-  const planSections = plan?.sections?.length ? plan.sections : null;
+  // 서버 계획서(GET /result의 plan.sections · diagrams). 있으면 '계획서 보기'가 이걸 보이고, 없을 때만 예시 계획서.
+  // 예전엔 서버 계획서와 관계없이 늘 예시 계획서(PLAN_DOCUMENT_SECTIONS)를 보였다. 새 모양은 묶음별로 모아 그린다(utils.js planViewFrom).
+  const planView = planViewFrom(plan);
+  const planSections = planView?.legacy ? planView.sections : null;
   // 서버 채점 결과가 있으면 그 값으로 판정한다(utils.js scoresFromResult) — 없으면 기존 고정 표.
   const docScore = scores?.docScore || DOC_SCORE_BY_OUTCOME[docOutcome];
   const artifactScore = scores?.artifactScore || ARTIFACT_SCORE_BY_OUTCOME[artifactOutcome];
@@ -371,7 +418,8 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
   // 되돌릴 수 없음 확인 절차(시연 로그 steps[10].data.choices[1].confirm)에 쓸 짧은
   // 항목별 미달 요약 — "실현가능성 13/20"처럼 항목명+점수로 간결하게 늘어놓는다.
   const remainingShortfalls = [
-    ...docScore.items.filter((it) => it.score < it.max).map((it) => `${it.name} ${it.score}/${it.max}`),
+    // 새 모양은 항목이 24개 안팎이라 묶음 합계로 요약한다.
+    ...(docScore.groups || docScore.items).filter((it) => it.score < it.max).map((it) => `${it.label || it.name} ${it.score}/${it.max}`),
     ...artifactScore.autoCheck.reasons,
     ...artifactScore.crossCheck.reasons,
   ];
@@ -779,6 +827,9 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
           {viewerOpen === 'plan' ? (
             <div className="soft-scroll relative bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto p-8 shadow-2xl">
               <p className="text-[11px] text-[var(--muted-fg)] mb-4 pb-4 border-b border-[var(--border)]">{PLAN_AI_NOTICE}</p>
+              {planView && !planView.legacy ? (
+                <PlanGroupedView view={planView} itemInfo={itemInfo} itemTitle={announcement ? announcement.title : ''} />
+              ) : (
               <div className="flex flex-col gap-6">
                 <GeneralInfoBlock itemInfo={itemInfo} itemTitle={announcement ? announcement.title : ''} sections={planSections || PLAN_DOCUMENT_SECTIONS} />
                 {(planSections || PLAN_DOCUMENT_SECTIONS).map((s, i) => (
@@ -790,6 +841,7 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
                 {/* 예시 그래프 · 표 — 서버 계획서가 있으면 실제 내용과 섞이지 않게 숨긴다(서버 차트 · 표 표시는 아직 없다) */}
                 {!planSections && <PlanExtrasBlock size="compact" />}
               </div>
+              )}
             </div>
           ) : (
             <div className="relative" style={{ width: 'min(92vw, 900px)' }}>
