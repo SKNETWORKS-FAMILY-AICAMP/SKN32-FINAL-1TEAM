@@ -7,6 +7,7 @@ from pathlib import Path
 from datetime import datetime
 from ..functions import gpt_functions as gpt, python_functions as py   # [S-Brain] import 경로를 패키지 상대 경로로
 from ...agent_validation_1.scoring import score_section, aggregate_scores
+from ...common import compact_prompt_source
 from .llm_runtime import CONTRACT,compact
 from .research_context import retrieve
 from . import research_context as _research
@@ -524,7 +525,7 @@ def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,executi
                 output=call('F18',gpt.generate_image_spec,item=source['item_spec'],architecture={'design':source.get('architecture',{}),'validationFeedback':attempts[-1]['validation']['issues'] if attempts else []},flow_type='USER_FLOW')
                 image_outputs=[output,call('F18',gpt.generate_image_spec,item=source['item_spec'],architecture={'design':source.get('architecture',{}),'validationFeedback':attempts[-1]['validation']['issues'] if attempts else []},flow_type='SERVICE_ARCHITECTURE')]
             else:
-                output=call('F16',gpt.generate_section,section_spec=spec,source_data=source,writing_rules={'documentType':kind,'sectionCriteria':_writing_criteria(kind,sid),'tableGenerationEnabled':False,
+                output=call('F16',gpt.generate_section,section_spec=spec,source_data=compact_prompt_source(source,spec),writing_rules={'documentType':kind,'sectionCriteria':_writing_criteria(kind,sid),'tableGenerationEnabled':False,
                             'validationFeedback':attempts[-1]['validation']['issues'] if attempts else [],'previousText':attempts[-1]['generatedText'] if attempts else None,'preserveProvenance':True,'statusPolicy':['provided','proposed','needs_confirmation']})
                 image_outputs=[output]
             # Validate the same body that will be stored; repeated section
@@ -717,7 +718,7 @@ def retry_sections(raw, prior_result, section_id, retry_instruction='', progress
                 output=call('F18',gpt.generate_image_spec,item=source['item_spec'],architecture={'design':source.get('architecture',{}),'validationFeedback':feedback,'retryInstruction':retry_instruction},flow_type='USER_FLOW')
                 image_outputs=[output,call('F18',gpt.generate_image_spec,item=source['item_spec'],architecture={'design':source.get('architecture',{}),'validationFeedback':feedback,'retryInstruction':retry_instruction},flow_type='SERVICE_ARCHITECTURE')]
             else:
-                output=call('F16',gpt.generate_section,section_spec=spec,source_data=source,
+                output=call('F16',gpt.generate_section,section_spec=spec,source_data=compact_prompt_source(source,spec),
                             writing_rules={'documentType':kind,'sectionCriteria':_writing_criteria(kind,spec['sectionId']),'tableGenerationEnabled':False,'retryInstruction':retry_instruction,
                                            'validationFeedback':feedback,'previousText':previous.get('generatedText') if not attempts else attempts[-1]['generatedText'],'preserveProvenance':True,'statusPolicy':['provided','proposed','needs_confirmation']})
                 image_outputs=[output]

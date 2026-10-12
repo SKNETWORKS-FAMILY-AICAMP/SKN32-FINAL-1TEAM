@@ -240,11 +240,47 @@ def test_revenue_items_are_sent_only_to_business_model_and_growth_sections():
         elif purpose in {"F16", "F19"} and body["section_spec"]["sectionId"] in growth_section_ids:
             assert body["source_data"]["originalFacts"]["revenueItems"] == expected
             assert body["source_data"]["growth_strategy"]["providedRevenueItems"] == expected
+            assert "originalFacts" not in body["source_data"]["growth_strategy"]
+            assert "evidence" not in body["source_data"]["growth_strategy"]
+            growth_provenance = body["source_data"]["strategyProvenance"]["growth_strategy"]
+            assert set(growth_provenance) == {"sourceRefs"}
+            assert body["source_data"]["evidence"]
+            assert body["source_data"]["sourceRefs"]
         else:
             assert SECRETS["수익모델"] not in json.dumps(body, ensure_ascii=False)
 
     assert r.s2.market_strategy_data["business_model"]["providedRevenueItems"] == expected
     assert r.s2.market_strategy_data["growth_strategy"]["providedRevenueItems"] == expected
+
+
+def test_prompt_source_compacts_only_growth_strategy_provenance():
+    source = {
+        "growth_strategy": {
+            "generatedText": "요약", "providedRevenueItems": [{"serviceName": "서비스", "unitPrice": 1000}],
+            "facts": [{"path": "businessModel", "status": "proposed"}],
+            "sourceRefs": ["market/ref"], "evidence": [{"blob": "e" * 100}],
+            "originalFacts": {"market": {"blob": "m" * 500}},
+        },
+        "originalFacts": {"revenueItems": [{"serviceName": "서비스", "unitPrice": 1000}]},
+        "evidence": [{"sourceRef": "market/ref", "excerpt": "근거"}],
+        "sourceRefs": ["market/ref"],
+        "strategyProvenance": {"growth_strategy": {
+            "sourceRefs": ["market/ref"], "evidence": [{"blob": "e" * 100}],
+            "originalFacts": {"market": {"blob": "m" * 500}},
+        }},
+    }
+    spec = {"sourceKeys": ["growth_strategy"]}
+
+    projected = common.compact_prompt_source(source, spec)
+
+    assert projected["growth_strategy"]["providedRevenueItems"] == source["growth_strategy"]["providedRevenueItems"]
+    assert projected["growth_strategy"]["facts"] == source["growth_strategy"]["facts"]
+    assert "originalFacts" not in projected["growth_strategy"]
+    assert "evidence" not in projected["growth_strategy"]
+    assert projected["strategyProvenance"]["growth_strategy"] == {"sourceRefs": ["market/ref"]}
+    assert projected["originalFacts"] == source["originalFacts"]
+    assert projected["evidence"] == source["evidence"]
+    assert "originalFacts" in source["growth_strategy"] and "evidence" in source["growth_strategy"]
 
 
 # ── 울타리 (spec 4.5) ─────────────────────────────────────

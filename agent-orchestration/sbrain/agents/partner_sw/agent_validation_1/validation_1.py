@@ -4,6 +4,7 @@ import re
 import hashlib
 from pathlib import Path
 from ..agent_strategy.runtime.llm_runtime import request_json   # [S-Brain] import 경로를 패키지 상대 경로로
+from ..common import compact_prompt_source
 from .semantic_review import review_issues, REVIEW_PERSONA
 from .. import resources as _res                               # [S-Brain] 자료 파일은 불러올 때 읽어 둔 상수 (VENDORED.md)
 
@@ -351,7 +352,9 @@ def validate_section(section_spec, content, source_data):
         return {'agent':'검증 1','status':'pass','issues':[],'warnings':warnings,
                 'needsUserConfirmation':_confirmation_items(warnings),'semanticCalled':False,'contentHash':content_hash,'policyVersion':VALIDATION_POLICY_VERSION,'criteria':criteria_meta}
 
-    semantic_source=dict(source_data) if isinstance(source_data,dict) else {}
+    # 저비용 검사는 위에서 전체 source_data로 끝냈다. LLM에는 중복된 F12
+    # 입력 원문만 제외한 사본을 보내고, 호출자 쪽의 전체 근거는 그대로 둔다.
+    semantic_source=compact_prompt_source(source_data,section_spec)
     # 의미 검증에는 항목 키워드와 실제로 연결된 근거만 전달한다.
     # 전체 evidence는 결과 JSON에 보존하되 low 관련도 자료가 판정을 오염시키지 않도록 분리한다.
     prompt_evidence=[e for e in criteria_meta['evidence'] if e.get('relevance') in {'high','medium'}]
