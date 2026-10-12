@@ -52,7 +52,10 @@ def feature_notes(feature_list: list[str], plan_text: str) -> dict[str, str]:
 
 
 def palette(feature_list: list[str], item_spec: dict) -> dict[str, str]:
-    """이 사업의 색. 인포그래픽(T-B2)과 같은 테마 함수 · 같은 입력으로 고른다 — 프로토타입과 인포그래픽 색이 맞는다.
+    """이 사업의 색. 인포그래픽(T-B2)과 같은 테마 표에서 낱말 → 이름 규칙(themes.pick)으로만 고른다.
+    LLM에게 분야를 묻지 않는다(themes.decide는 T-B2만) — 실행 파일은 동작 · 흐름을 보여 주는 것이라 색이 분야에
+    꼭 맞을 필요가 없고, 색 판정 호출이 실패해 실행 파일을 못 만드는 일을 없앤다(담당자, 2026-10-12).
+    인포그래픽과 색이 꼭 같을 필요는 없다.
     테마 색은 흰 바탕 · 옅은 바탕 · 진한 버튼 위 흰 글자 모두 대비 4.5:1 이상이다(themes 모듈 · 테스트)."""
     from .infographic import themes  # [S-Brain] 패키지 상대 import
 
