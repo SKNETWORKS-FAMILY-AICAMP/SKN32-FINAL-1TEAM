@@ -11,6 +11,7 @@
 | [Jev채점시험.html](Jev채점시험.html) | `/jev-probe` | [Jev 채점 시험](https://claude.ai/artifact/K2WJfq5XcxoZz8nrn68myc) | `reports/jev_judge_probe_20260928T110603Z` | `build_jev.py` + `jev_template.html` |
 | [신청자유형.html](신청자유형.html) | `/applicant-types` | [신청자 유형 판정](https://claude.ai/artifact/SwEHA6bDVei9PPVFe1KrUp) | `reports/applicant_type_llm_full_20260928T023916Z` | `build_applicant_types.py` + `applicant_types.template.html` |
 | [테이블구조.html](테이블구조.html) | 없음 (2026-09-30 새로 만듦) | [공고 DB 테이블 구조](https://claude.ai/artifact/5iu7oSKGHENt3hdbcgtiLL) | 공용 DB `information_schema`·행 수(9/30 SELECT), 9/30 `data/run.log` | 손으로 쓴 페이지 — 칸 목록만 9/30 DB 주석에서 뽑아 넣었다. 직접 고친다 |
+| [공고현황.html](공고현황.html) | 없음 (2026-10-12 새로 만듦) | 게시 안 함 | STATUS 10/8·인계서 10/7·05 답변서·조율 요청서, 10/12 배치 서버·시험 서버 직접 조회 | 손으로 쓴 페이지 — 질문 대응용 상황판. 직접 고친다 |
 
 ## 다시 만들기 (data-collection 에서)
 

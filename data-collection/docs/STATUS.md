@@ -4,7 +4,15 @@
 
 **10/7 하루 정리·다음 세션 진입점: [NEXT_SESSION_HANDOFF_20261007.md](NEXT_SESSION_HANDOFF_20261007.md)** (10/6 인계서는 `archive/`로 옮김)
 
-## 2026-10-08 · Claude · 가산점 계산 완화(R1~R5)·Codex 6차 조이기(K1·K2)·목록 27건(결정 0020) ← **다음 채팅은 여기부터**
+## 2026-10-12 · Claude · 상황 점검·이전 설계·전체 백업 ← **다음 채팅은 여기부터**
+
+- 확인: 매일 배치 10/8~10/12 모두 `exit=0`(10/10~12 새 공고 0 — 연휴·주말로 봄, 10/13도 0이면 원인 확인). 시험 서버에 0019·0020·화면 파일까지 반영돼 있음(파일 지문 같음), 09:22 재시작 뒤 수집 상태 "정상". 조율 쪽 작업은 `SB-304` 브랜치로 옮겨 감(가산점 스위치 `BONUS_ENABLED` 꺼짐, `SBRAIN_NOTICE_API_URL` 빈 값).
+- 동시 호출: 이 PC 임시 서버(8030)에 동시 16·32개 × 5차례(각 390건) — 혼자 부를 때와 다른 응답 0·5xx 0, 95% 4.4·6.2초. 팀 EC2는 미확인.
+- 새 공유 페이지 `share/공고현황.html`(질문 대응용 상황판).
+- 서버 이전 설계안 `deploy/MIGRATION_PLAN.md`(검토 대기): 다음 주 학원 팀 계정으로 전부 이전(DB → RDS, 나머지 EC2 한 대 Docker), 이번 주 개인 계정 `sbrain-web`에서 리허설.
+- 전체 백업(읽기만): 공용 DB 전체 `mysqldump`(표 43·프로시저 1, 908MB 압축, 78초)와 배치 서버 `data/`(881MB)·설정 파일 → 각 서버 `~/backup/`과 이 PC `C:\mok_workspace\sbrain_backup\20261012\`(저장소 밖), SHA-256 대조 OK, 표별 행 수 `counts_20261012T004817Z.tsv`.
+
+## 2026-10-08 · Claude · 가산점 계산 완화(R1~R5)·Codex 6차 조이기(K1·K2)·목록 27건(결정 0020)
 
 - 사용자: "가점 너무 빡빡하게 안 해도 될 것 같다" → 계산(첫 번째 관문)은 풀고 원문 대조 목록(두 번째 관문)은 그대로, Codex 6차(`docs/notice_api/CODEX_BONUS_RECHECK6_20261008.md` — 목록 21건 통과, P2 2·P3 1) P2 두 곳은 같이 조임. 서버 반영은 0019와 함께 한 번에(사용자 명령), Codex 7차 요청서만.
 - 바꾼 것: `search/bonus.py`(R1 부분 메모 `memo_is_global`, R2 "경우" `condition_words_hit`, R3 `bare_numbers`, R4 `points_supported` 쉼표 조각, R5 "각 N점", K1 `quote_mates`·행 이름·`qualification_words`, K2 `score_header`), `search/bonus_reviewed.json`(6건 추가 → 27건), 시험 `Relax0020Tests` 7개. R6-P3-1 정정(`reports/bonus_boostable_20261008T073942Z/README.md` 두 줄).
