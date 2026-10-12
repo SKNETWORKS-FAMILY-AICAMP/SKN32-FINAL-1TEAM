@@ -9,6 +9,7 @@ from ..functions import gpt_functions as gpt, python_functions as py   # [S-Brai
 from ...agent_validation_1.scoring import score_section, aggregate_scores
 from .llm_runtime import CONTRACT,compact
 from .research_context import retrieve
+from . import research_context as _research
 from ... import resources as _res                  # [S-Brain] 자료 파일은 불러올 때 읽어 둔 상수 (VENDORED.md)
 from .....orchestrator.errors import FormatError    # [S-Brain] F18 노드 계약 위반 → 재시도
 
@@ -59,11 +60,26 @@ def _normalize_image_output(output, flow_type='USER_FLOW'):
 
 
 def refresh_user_industry_research(project):
-    """현재 사용자 산업 키워드에 대한 KIET 조사 데이터를 선택적으로 갱신한다.
-
-    [S-Brain] 늘 건너뛴다 — 크롤러(market_crawler)를 옮기지 않았고 실행 중 네트워크 · 환경 변수(SBRAIN_AUTO_RESEARCH)를
-    쓰지 않는다(spec 2절 '시장 조사 크롤러')."""
-    return {'status':'skipped','reason':'SBRAIN_AUTO_RESEARCH disabled'}
+    """설정된 경우 현재 사용자 키워드로 KIET 검색 결과·보고서·이력을 갱신한다."""
+    from . import market_crawler
+    if not market_crawler.auto_research_enabled():
+        return {'status':'skipped','reason':'SBRAIN_AUTO_RESEARCH disabled'}
+    keyword=(project.get('tech_field') or project.get('description') or '').strip()
+    if not keyword:
+        return {'status':'skipped','reason':'industry keyword missing'}
+    keyword=keyword[:120]
+    try:
+        result=market_crawler.add_keyword(keyword)
+        paths=(market_crawler.KEYWORD_LIST,market_crawler.KIET_RESULTS,
+               market_crawler.MARKET_RESEARCH,market_crawler.KEYWORD_HISTORY)
+        for path in paths:
+            _res.refresh(path)
+        available=_research.refresh_market_sources()
+        return {'status':'refreshed','keyword':keyword,'resultCount':result.get('resultCount',0),
+                'searchStatus':result.get('status'),'searchCount':result.get('searchCount'),
+                'availableFiles':available}
+    except Exception as exc:
+        return {'status':'failed','keyword':keyword,'errorType':type(exc).__name__}
 
 
 def select_path(data,path):

@@ -1,8 +1,11 @@
 """담당자 자료 파일 — 불러올 때 한 번 읽어 둔 상수 (spec 4.1 · 2절 '자료 파일').
 
-담당자 코드는 작성 규칙 · 검증 기준 · 공고 규정 · 시장 자료 JSON · MD를 호출할 때마다 디스크에서 읽었다. 우리 규칙은
-Task 실행 중 디스크에 닿지 않는 것이라, 이 모듈이 처음 불러올 때 아래 폴더의 .json · .md를 모두 읽어 두고 담당자 코드는
+담당자 코드는 작성 규칙 · 검증 기준 · 공고 규정 · 시장 자료 JSON · MD를 호출할 때마다 디스크에서 읽었다. 이 모듈이
+처음 불러올 때 아래 폴더의 .json · .md를 읽어 두고 담당자 코드는
 `path.exists()` → `exists(path)`, `path.read_text(...)` → `read(path)`로만 바꿨다(경로 계산은 담당자 코드 그대로).
+
+예외: `SBRAIN_AUTO_RESEARCH=1`로 KIET 갱신을 명시적으로 실행할 때만 크롤러가 로컬 JSON을 쓰고 `refresh(path)`로
+갱신 자료를 캐시에 반영한다. 일반 Task 실행은 디스크를 다시 읽지 않는다.
 
 - 키는 partner_sw 폴더 기준 상대 경로다. 담당자 코드가 `Path(__file__).resolve()`로 만든 경로와 그렇지 않은 경로를
   모두 받는다(폴더 밖 경로는 없는 파일).
@@ -65,3 +68,21 @@ def read(path: str | os.PathLike[str]) -> str:
     if key is None or key not in TEXTS:
         raise FileNotFoundError("담당자 자료 파일 없음")
     return TEXTS[key]
+
+
+def refresh(path: str | os.PathLike[str]) -> str:
+    """명시적으로 갱신한 로컬 조사 자료를 캐시에 반영한다.
+
+    일반 Task 실행에서는 디스크를 다시 읽지 않는다. KIET 갱신을 명시적으로 수행한
+    직후에만 호출해 다음 로컬 검색이 갱신 파일을 사용하도록 한다.
+    """
+    key = _rel(path)
+    if key is None:
+        raise FileNotFoundError("담당자 자료 파일 없음")
+    file = _HERE / key
+    try:
+        text = file.read_text(encoding="utf-8-sig")
+    except OSError:
+        raise FileNotFoundError("담당자 자료 파일 없음") from None
+    TEXTS[key] = text
+    return text

@@ -544,7 +544,7 @@ sequenceDiagram
 | 항목 | 값 · 내용 | 표시 | 코드 |
 |---|---|---|---|
 | 담당자 코드 위치 | `agents/partner_sw/agent_strategy/` · `agent_validation_1/`(담당자 파일 구조 그대로, 연결부만 바꿈 — `[S-Brain]` 주석), 연결 코드는 `partner_sw/` 바로 아래. 바꾼 곳 목록 `partner_sw/VENDORED.md` | 구현 방식 | `agents/partner_sw/` |
-| 패키지 자료 파일 | 담당자 작성 규칙 · 채점 기준 · 공고 규정 JSON · MD를 패키지 안에 두고 불러올 때 한 번 읽는다(Task 실행 중 디스크 안 열기). 시장 자료(`raw_kiet_results.json`)는 저장소에 넣지 않는다(작업 공간에서 크롤러로 만들어 둔다) | 규칙 예외 | `agents/partner_sw/resources.py`, `pyproject.toml` package-data |
+| 패키지 자료 파일 | 작성 규칙 · 채점 기준 · 공고 규정은 불러올 때 한 번 읽는다. 시장 자료는 로컬 전용이며 기본 설치본에는 없다. `SBRAIN_AUTO_RESEARCH=1`일 때만 KIET 검색 결과·보고서·이력을 저장하고 같은 실행의 검색 색인을 갱신한다. 시장 자료 출력은 Git과 wheel에서 제외한다 | 명시적 갱신 예외 | `agents/partner_sw/resources.py`, `agents/partner_sw/agent_strategy/runtime/market_crawler.py`, `pyproject.toml` |
 | 함수별 모델 | `TaskModelSetting.purposeModels`(목적 → 모델), `tools.llm(purpose=…)`가 목적별 모델을 고르고 호출 기록 `model`에 실제 모델. 엔진은 목적 이름을 모름 | 확장(`ext()`) | `orchestrator/settings.py` · `orchestrator/tools.py` |
 | JSON 객체 응답 | `LLMRequest.json_mode`, `tools.llm(json_mode=True)`, OpenAI 호출처 `json_object` 요청 · `finish_reason == 'length'`면 늘 `FormatError` | 확장(엔진) | `orchestrator/tools.py` · `orchestrator/openai_provider.py` |
 | 새 타입 | `BudgetItem` · `ScheduleItem`(사전 정보 row), `DiagramSpec`(그림), `SectionResult`(검증-1 항목 판정), `Verify1State`(흐름 상태) — 기존 타입에 담을 곳이 없어 둠 | 확장(새 타입) | `models/domain.py` · `models/run.py` |
@@ -557,7 +557,7 @@ sequenceDiagram
 | 판정 후보 (G-02a · G-02b 임시 구현) | fail · warning 항목이 있는 묶음(입력 없음 제외), 80 미만 · 후보 없음이면 4개 모두, 상한도달 = 후보 묶음 기회 모두 0, 입력 없음 안내. 그 밖의 G-02a · G-02b 동작은 임시 구현 그대로. **2026-10-11 실구현으로 옮김** — 같은 규칙, 쓰지 않은 묶음의 기회는 설정 사본 `rework.perBundle`로 셈(11.12) | 구현 규칙 | `agents/stubs.py` → `agents/supervisor/judge.py`(2026-10-11) |
 | 사전 정보 읽기 | `project_budget_items` · `project_schedule_items`를 시작 요청에서 읽음(`phase`는 선택 컬럼), 금액 DECIMAL → 정수 원, NULL은 비움, 네 금액이 모두 있고 맞지 않을 때만 총사업비를 다시 냄 | 확장(읽는 테이블) | `intake/sql_source.py` · `intake/mapping.py` · `store_sql/web_tables.py` |
 
-- 알려진 한계: 총사업비가 빈 사업비 row는 담당자 예산 계산(F14) 입력에서 빠져 그 표 항목이 검증-1 fail로 판정될 수 있다(웹이 합계 불일치를 막기로 해 드묾). 표 서술 속 금액이 보호 토큰에 들지 않아 윤문에서 바뀔 수 있다. 지금 짝짓기로는 그림 · 일반현황 · 개요 항목을 사용자 재작성으로 다시 만들 수 없다(담당자 `image-retry-latest`와 어긋남 — 확인 요청 중). 사용자 키워드 시장 자료(`keyword_history.json`)는 늘 없다. 담당자 원본 응답 정리의 코드 울타리 처리 버그는 그대로 두었다(형식 오류 재시도로 처리, `VENDORED.md`).
+- 알려진 한계: 총사업비가 빈 사업비 row는 담당자 예산 계산(F14) 입력에서 빠져 그 표 항목이 검증-1 fail로 판정될 수 있다(웹이 합계 불일치를 막기로 해 드묾). 표 서술 속 금액이 보호 토큰에 들지 않아 윤문에서 바뀔 수 있다. 지금 짝짓기로는 그림 · 일반현황 · 개요 항목을 사용자 재작성으로 다시 만들 수 없다(담당자 `image-retry-latest`와 어긋남 — 확인 요청 중). KIET 사용자 키워드 자료는 `SBRAIN_AUTO_RESEARCH=1`을 설정해 갱신해야 하며, 기본 설정에서는 자료가 없어도 빈 근거로 동작한다. 갱신은 고정 KIET 주소로 직접 HTTP 요청하며 OpenAI 호출·토큰 기록에는 포함되지 않는다.
 
 ### 11.12 구현 · 검증-2 실구현 · 산출물층 환산 · 조율 규칙 단계(2026-10-11)에서 생긴 잠정 · 확장
 

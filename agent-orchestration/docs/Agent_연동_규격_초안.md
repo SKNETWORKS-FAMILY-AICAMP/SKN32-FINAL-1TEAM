@@ -771,7 +771,7 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 
 **출력 변환 (잠정)** — 기준 문서 칸을 담당자 결과로 채운다: `RequirementAnalysis`(`problemStatement` = 아이디어 요약 `itemSpec.oneLineSummary`, `targetCustomer` · `featureList` · `differentiator` · `useCases` = F02 결과), `featureList` = F02 `coreFeatures` 이름, `MarketAnalysis`(`marketDefinition` = F03 요약, `marketSize` = 빈 목록, `competitors` = F04 이름, `positioning` = F12 요약), `numericTokens` = F03 · F04 · F10 ~ F12 글자에서 숫자 + 단위를 규칙으로 뽑은 것(`수치금액`). 담당자 결과의 기록용 칸(모델 · 응답 ID · 사용량 · 시각 등)은 산출물에 싣지 않는다.
 
-**시장 자료** — 담당자 크롤러로 만든 시장 자료(`raw_kiet_results.json`)를 패키지 자료 자리에 두었다(사용자가 2026-10-10 크롤러를 돌려 만듦). 저장소에는 넣지 않는다(작업 공간에서 크롤러로 만들어 둔다). 없으면 빈 자료로 돈다(담당자 코드의 '근거 없음 — 수치 · 경쟁사 추정 금지'). 사용자 키워드 자료(`keyword_history.json`)는 크롤러를 옮기지 않아 늘 없다.
+**시장 자료** — 기본 설치본에는 사용자별 시장 자료를 넣지 않는다. `SBRAIN_AUTO_RESEARCH=1`이면 현재 입력의 기술 분야(없으면 아이템 설명)를 KIET 검색어로 조회해 `raw_kiet_results.json`·`results.json`·`keyword_history.json`에 저장한다. 결과와 이력은 로컬 전용이며 저장소·배포 wheel에서 제외한다. 갱신 직후 검색 색인에 반영해 같은 실행에서 근거로 쓸 수 있다. 설정이 꺼져 있거나 검색 결과가 없으면 '근거 없음 — 수치 · 경쟁사 추정 금지'로 처리한다. KIET 조회는 고정된 KIET 주소에 대한 직접 HTTP 요청이며 OpenAI 모델 호출·토큰 사용량과는 별개다.
 
 ### 8.7 구현 · 검증-2 실구현과 조율 규칙 단계 (2026-10-11)
 

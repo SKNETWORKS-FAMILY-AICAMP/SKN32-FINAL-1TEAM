@@ -825,7 +825,7 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 | `test_mysql_integration.py` | 9 | 실제 웹 스키마 위 MySQL 8 흐름 · 동시 재작성 요청 합치기 · 반려 시도 행 · 삭제 뒤 로그 보존 · 웹 → 워커 조립 · 탈퇴 중 계정 잠금 유지 · 웹이 프로젝트 행을 지운 뒤 `missing_projects` · 웹 스키마 위치 찾기(DB 없이) |
 
 | `test_sw_contract_fields.py` | 57 | 전략 · 작성 · 검증-1 계약 — 새 타입 · 확장 칸 표시 · 기본값, 등록부 입출력 · 재개 · LLM 표시, 산출물 타입, 함수별 모델 기본값 · 옛 사본, 필수 스위치 · 잠정, 목적별 모델 · `json_mode` · 응답 형식 세 경우 · 길이 한도 잘림 `FormatError`, 스텁 새 출력 · M-1 합치기 |
-| `test_partner_sw_vendor.py` | 30 | 옮긴 담당자 코드 — 파일 목록, OpenAI 직접 호출 · `os.getenv` · `datetime.now` · `.env` · `time.sleep` 없음, 실행 중 파일 읽기 차단, 자료 파일 · 시장 자료 없음 |
+| `test_partner_sw_vendor.py` | 33 | 전략 · 작성 · 검증-1 연동 — JSON 응답 정리, 호출 추적 · 재시도, 선택적 KIET 사용자 키워드 갱신과 결과 · 이력 upsert, 일반 Task의 파일 접근 제한 |
 | `test_partner_sw_forms.py` | 18 | 양식 묶음 = 담당자 계약(25 · 24항목 · 태그 · 종류), 평가항목 · 채점 기준표 1:1, 짝짓기 표 바꿔 끼우기 |
 | `test_partner_sw_tasks.py` | 28 | 여섯 Task 실구현(예비창업 · 초기창업) — 계약에 맞는 출력, 목적별 모델 호출 기록, `json_mode`, T-W3 LLM 없음, 보내지 않는 칸 · `targetCustomerHint`, 울타리, 표 원본 행, 점수, 재개, 동시 수 |
 | `test_partner_sw_flow.py` | 4 | 실구현을 끼운 앱으로 작성 구간 끝까지 |
@@ -874,7 +874,7 @@ app.orchestrator.tick(datetime.now(timezone.utc) + timedelta(minutes=15))   # �
 
 - 실제 Agent 구현 (조율 T-C1 · T-C3 · 규칙 단계, 전략 · 작성 · 검증-1, 구현 · 검증-2 말고는 스텁 — 검수 대기, 조율 T-C4는 계획서 파일 조립 형식 미정)
 - 구현 · 검증-2 실제 OpenAI(글 · 이미지) 호출 확인(사용자가 한다), 담당자 답 대기(검사 실패 HTML 처리 · 외부 의존이 검증-2에서 감점되지 않는 점), 웹팀의 배점 0 막기 · 환산 칸 화면 반영
-- 전략 · 작성 · 검증-1 실제 OpenAI 호출 확인(사용자가 한다), 항목 → 재작성 묶음 짝짓기 답(담당자 · 웹팀 — 답이 오면 `flow/rework_map.py` 표만 바꿈), 사업비 · 일정 필수 스위치 켜기(웹 배포 뒤), 시장 자료 갱신. 계획서 파일 조립(F20 · T-C4)은 범위 밖 — 웹이 `planDoc`으로 내려받기를 만든다
+- 전략 · 작성 · 검증-1 실제 OpenAI 호출 확인(사용자가 한다), 항목 → 재작성 묶음 짝짓기 답(담당자 · 웹팀 — 답이 오면 `flow/rework_map.py` 표만 바꿈), 사업비 · 일정 필수 스위치 켜기(웹 배포 뒤). KIET 사용자 키워드 갱신은 `SBRAIN_AUTO_RESEARCH=1`로 선택 실행한다. 계획서 파일 조립(F20 · T-C4)은 범위 밖 — 웹이 `planDoc`으로 내려받기를 만든다
 - R-8 첨부 문서 텍스트 추출과 웹 DB 첨부(`project_attachments`) 읽기
 - 자체 GPU 서버 호출처 어댑터 (OpenAI는 있음)
 - 공고 서버 실제 연결 켜기 — 연결 코드는 끝났고, 공고팀 시험 서버로 네 API를 확인했다(2026-10-07, 가짜 신청 정보로 23개 확인 모두 통과 — 준비 확인 2개 포함). 운영 서버 위치 · 주소 · 인증이 정해지고 워커 IP를 공고팀에 알린 뒤 켠다. 그 전까지 스텁 모드

@@ -8,7 +8,7 @@
 |---|---|
 | 받은 날짜 | 2026-10-08 |
 | 원본 사본(읽기 전용) | 담당자 브랜치의 `agent_strategy/` · `agent_validation_1/` (작업 공간에 받아 둠) |
-| 시장 자료 출처 | 작업 공간에서 만든 `raw_kiet_results.json` (사용자가 2026-10-10 담당자 크롤러 `market_crawler.py all`을 별도 가상환경으로 돌려 만듦 — 키워드 12개 · 요약 114건) |
+| 시장 자료 출처 | 로컬 `agent_strategy/res/crawling/industry_research/output/`에 보관. `SBRAIN_AUTO_RESEARCH=1`이면 현재 사용자 키워드를 KIET에서 추가 검색하고 결과·보고서·이력을 갱신함 |
 | 실행 계약 버전 | `agent_strategy/runtime/execution_contract.json`의 `version` = 2 |
 | 채점 정책 버전 | `agent_validation_1/res/prompts/evaluation_rubric.json`의 `version` = 2026-10-02.1 |
 
@@ -16,14 +16,14 @@
 
 경로는 이 폴더(`sbrain/agents/partner_sw/`) 기준이고 원본 사본의 같은 경로에서 바이트 그대로 복사한 뒤 3절만 고쳤다.
 
-**agent_strategy/** (코드 7개 + 새 파일 1개, 자료 12개)
+**agent_strategy/** (코드 7개 + 새 파일 2개, 자료 12개)
 - `functions/__init__.py` · `functions/gpt_functions.py` · `functions/python_functions.py`
-- `runtime/__init__.py` · `runtime/llm_runtime.py` · `runtime/pipeline.py` · `runtime/research_context.py`
+- `runtime/__init__.py` · `runtime/llm_runtime.py` · `runtime/pipeline.py` · `runtime/research_context.py` · `runtime/market_crawler.py`
 - `runtime/execution_contract.json`
 - `res/prompts/writing_rules.json`, `res/prompts/reference/` (`agent_persona.md` · `section_checklist.md` · `style_guide.md`), `res/prompts/templates/` (`early_startup.md` · `general.md` · `pre_startup.md`)
 - `res/crawling/development_knowledge/output/development_knowledge.json` · `source_manifest.json`
 - `res/crawling/web_trend/output/web_design_trends_2026.json`
-- `res/crawling/industry_research/output/raw_kiet_results.json` — 시장 자료(1절 출처, 원본 사본에는 없음)
+- `res/crawling/industry_research/output/` — KIET 검색 결과·보고서·키워드 이력 저장 위치. 로컬 생성 파일은 Git과 wheel에서 제외함
 - `__init__.py` — **새 파일**(원본은 이름 공간 패키지). 패키지 상대 import · 패키지 자료 배포용
 
 **agent_validation_1/** (코드 4개, 자료 19개)
@@ -31,7 +31,7 @@
 - `res/prompts/` (`evaluation_rubric.json` · `validation_rubric.json`, `reference/` 4개, `templates/` 3개)
 - `res/reference/regulations/` 10개 (공고 · 관리기준 · 양식 · 질의응답 JSON, `criteria_registry.json` · `section_scoring_criteria.json`)
 
-**옮기지 않은 것 (spec 4.1):** `app/`(시험 서버 · 화면), `testing/`, `tools/`, `docs/`, `work_log/`, `README.md`, `requirements.txt`, `.env.example`, `.gitignore`, `figma_flow_embed.html`, `res/css` · `res/js`, `res/back_input/`, `res/reference/`(agent_strategy 설명 문서), `res/전략_작성_검증1.xlsx`, 크롤러 코드(`res/crawling/**/*.py`)와 보고서(`reports/`, `output/*.md`), 담당자 문서(`agent_validation_1/docs/`, `README.md`).
+**옮기지 않은 것 (spec 4.1):** `app/`(시험 서버 · 화면), `testing/`, `tools/`, `docs/`, `work_log/`, `README.md`, `.env.example`, `figma_flow_embed.html`, `res/css` · `res/js`, `res/back_input/`, `res/reference/`(agent_strategy 설명 문서), `res/전략_작성_검증1.xlsx`, 나머지 크롤러와 보고서(`reports/`, `output/*.md`), 담당자 문서(`agent_validation_1/docs/`, `README.md`). KIET 사용자 키워드 갱신에 필요한 `market_crawler.py`만 실행 모듈로 가져왔다.
 
 ## 3. 바꾼 곳 (연결부만)
 
@@ -48,12 +48,14 @@
 | `runtime/llm_runtime.py` `_parse_response` | 결과의 기록용 칸(`model` · `requestedModel` · `fallbackUsed` · `fallbackReason` · `responseId` · `usage` · `inputChars` · `maxOutputTokens`) 삭제 — `status` · `functionId` · `functionName`만 남김 | 호출 기록이 따로 남는다, 산출물에 싣지 않는다(spec 4.17) |
 | `runtime/llm_runtime.py` `_validation_rubric_text` · `_validation_reference_text` · `writing_prompt` | `path.exists()` · `path.read_text()` → `resources.exists()` · `resources.read()` | 자료 파일은 불러올 때 한 번 읽은 상수(Task 실행 중 디스크 안 열기) |
 | `functions/python_functions.py` `collect_web_data` | 기록용 칸(`model` · `responseId` · `usage` · `inputChars`) 옮기기 한 줄 삭제 | `request_json`이 더는 싣지 않는다 |
-| `runtime/research_context.py` | 자료 읽기 `resources.read`, 있는 파일 목록(`_SIGNATURE`)을 불러올 때 한 번 정하고 색인을 미리 만든다(원래 호출마다 `stat` · 수정 시각) | Task 실행 중 디스크 안 보기. 없는 파일(`keyword_history.json` — 크롤러를 옮기지 않아 늘 없음, 시장 자료가 없는 설치본)은 빈 자료 |
+| `runtime/research_context.py` | 자료 읽기 `resources.read`, 있는 파일 목록(`_SIGNATURE`)을 불러올 때 한 번 정하고 색인을 미리 만든다. 명시적 KIET 갱신 뒤에만 시장 자료 색인을 다시 만든다 | 보통 Task 실행 중 디스크를 다시 보지 않음. 자료가 비어 있으면 근거 없음으로 처리 |
 | `runtime/research_context.py` `_index` | 자료 JSON 글자 읽기 `utf-8` → `utf-8-sig`(`resources.read`가 BOM을 뗀다) | 모든 자료 파일을 한 곳(`resources`)에서 같은 방식으로 읽는다. BOM 없는 파일은 결과가 같다 |
 | `runtime/research_context.py` `retrieve` | 원래 본문을 `_retrieve`로 옮기고 `retrieve`는 호출 수단의 `tools.search`(목적 '자료 검색', `calls.search`)로 감싸 부른다 | 로컬 자료 검색도 Task 안의 호출로 기록 · 재시도 · 제한 시간을 거친다(spec 4.1). F01(`collect_web_data`) 안의 호출도 여기를 지난다 — F01 함수 본문은 바꾸지 않았다. 검색 호출 안에서 LLM을 부르지 않는다. 호출 수단(`partner_call` 블록) 밖이면 `RuntimeError` |
 | `runtime/llm_runtime.py` `writing_prompt` | `writing_rules.json` 글자 읽기 `utf-8` → `utf-8-sig`(`resources.read`) | 위와 같음 |
 | `runtime/pipeline.py` | `import os` · `time` · `timezone` 삭제, 실행 시각 · 경과 시간 칸(`startedAt` · `createdAt` · `completedAt` · `elapsedSeconds` · `durationMs` · `retryHistory[].timestamp`) 삭제 | 시각은 쓰지 않는다(spec 4.1, standards 10절) |
-| `runtime/pipeline.py` `refresh_user_industry_research` | 늘 `{'status':'skipped', …}` — 환경 변수(`SBRAIN_AUTO_RESEARCH`) · 크롤러 import 삭제 | 크롤러를 옮기지 않음(spec 2절) |
+| `runtime/pipeline.py` `refresh_user_industry_research` | `SBRAIN_AUTO_RESEARCH=1`일 때만 KIET 사용자 키워드를 검색하고 `raw_kiet_results.json` · `results.json` · `keyword_history.json`을 갱신. 기본값은 건너뜀 | 검색 결과는 다음 로컬 근거 검색에 바로 반영하고, 사용자 조사 결과는 실행 중 다시 수집하지 않도록 이력에 남김 |
+| `runtime/market_crawler.py` `add_keyword` | 현재 사용자 키워드만 KIET 연구·동향에서 검색하고 세 결과 파일에 upsert | 기존 기준 키워드 결과를 다시 수집하거나 덮어쓰지 않음 |
+| `resources.py` `refresh` · `runtime/research_context.py` `refresh_market_sources` | 명시적 KIET 갱신 뒤 로컬 자료 캐시와 검색 색인을 새로고침 | 일반 Task는 파일을 다시 읽지 않고, 갱신한 실행에서 새 자료를 곧바로 사용 |
 | `runtime/pipeline.py` `_normalize_image_output` | 노드 계약이 깨지면 기본 흐름 대신 `FormatError`, 딕셔너리가 아니면 `FormatError` | 쓸 수 없는 응답은 재시도(spec 4.1) |
 | `runtime/pipeline.py` `_writing_criteria` | 기준 폴더(`Path(__file__).resolve()`)를 모듈 상수 `_ROOT`로, 파일 읽기 `resources.read` | Task 실행 중 디스크 안 보기 |
 | `agent_validation_1/validation_1.py` `_regulation_evidence` | `path.exists()` · `path.read_text()` → `resources` | 같음 |
@@ -62,6 +64,7 @@
 
 **바꾸지 않은 것(알려 둘 것)**
 - 응답 정리: 코드 울타리를 제거한 뒤 JSON 객체 추출에 성공하면 파싱 결과를 정상 반환한다. 추출할 JSON 객체가 없으면 `FormatError`를 내어 `tools`가 재시도한다.
+- KIET 자동 갱신의 직접 HTTP 요청은 고정된 `www.kiet.re.kr` 검색·요약 주소에만 보낸다. `SBRAIN_AUTO_RESEARCH` 기본값은 꺼짐이며, KIET 조회는 OpenAI 호출이나 토큰 사용량에 포함되지 않는다.
 - `agent_validation_1/validation_1.py` `validate_section` 결과의 기록용 키(`model` · `responseId` · `usage`)는 그대로 둔다. 연결 코드(`verify.py`)가 판정 · 점수만 `SectionResult`로 옮기고 이 키는 버린다(spec 4.17).
 - `scoring.py`의 `documentLayerScore`(`× 0.7`)는 그대로다. 우리 점수는 연결 코드가 실행 설정 `scoring.docLayerMax`로 낸다(spec 4.9).
 - 모듈을 불러올 때 읽는 파일(`CONTRACT` · `RUBRIC` · `CRITERIA_REGISTRY` · `SECTION_CRITERIA` · `semantic_review`의 지시문)은 원래도 불러올 때 한 번이라 그대로 두었다.
@@ -116,5 +119,5 @@ def run_one(code):                                                  # 또는 스
 
 ## 6. 저장소 사본에서 뺀 경로
 
-- `sbrain/agents/partner_sw/agent_strategy/res/crawling/industry_research/output/` — 시장 자료(외부로 내보내지 않음). 사본에 없으면 `research_context`가 빈 자료로 돈다('근거 없음 — 수치 · 경쟁사 추정 금지').
+- `sbrain/agents/partner_sw/agent_strategy/res/crawling/industry_research/output/` — 로컬 시장 자료. Git과 wheel에서 제외한다. 파일이 없거나 자동 갱신이 꺼져 있으면 빈 자료로 검색하고 '근거 없음 — 수치 · 경쟁사 추정 금지'를 유지한다.
 - 나머지 담당자 자료 파일(작성 규칙 · 검증 기준 · 공고 규정 JSON 등)은 코드의 일부라 사본에 들어간다.
