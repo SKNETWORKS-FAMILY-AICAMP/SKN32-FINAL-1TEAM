@@ -4,7 +4,7 @@
 // (웹연동_변경사항_웹팀전달.md 2.1 retry-task 행 · 3.7, 명세 5.3 · 6.3).
 import {getProjectStatus, getReworkResult, retryTask} from '../../api.js';
 import {reworkDiffFromChanged} from './utils.js';
-import {DOC_REWORK_BUNDLES, bundleOfTag} from './data.js';
+import {ALL_DOC_BUNDLES, bundleOfTag} from './data.js';
 
 // 재작성이 실패하면 서버가 요청 전 결과로 되돌리고 기회를 돌려준다(E-RUN-ROLLBACK).
 export const REWORK_FAILED_MESSAGE = '일시적인 문제로 다시 만들지 못해 이전 결과로 되돌렸습니다. 다시 만들 기회는 그대로 남아 있습니다.';
@@ -78,7 +78,7 @@ export async function findRunningRework(projectId, screen) {
 // 고르고, tag가 없는 옛 모양은 sections 전체를 쓴다. 산출물 묶음은 그 파일 경로를 본다.
 export function reworkDiffForLabel(changed, label) {
   if (!changed) return null;
-  if (DOC_REWORK_BUNDLES.includes(label)) {
+  if (ALL_DOC_BUNDLES.includes(label)) {
     const sections = changed.sections || {};
     const tagged = Object.entries(sections).filter(([, v]) => v && typeof v === 'object' && 'tag' in v);
     if (!tagged.length) return reworkDiffFromChanged({sections});

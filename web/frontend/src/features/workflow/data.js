@@ -116,8 +116,18 @@ export const PSST_OFFICIAL_HEADERS = ['1. 문제 인식 (Problem)', '2. 실현 �
 // 태그가 없는 항목(null)은 일반현황 · 개요다(백엔드 응답모양변경 10-11 1-1).
 export const PLAN_TAGS = ['1-1', '2-1', '3-1', '4-1'];
 export const GENERAL_SECTION_LABEL = '일반현황 · 개요';
-export const bundleOfTag = (tag) => DOC_REWORK_BUNDLES[PLAN_TAGS.indexOf(tag)] || GENERAL_SECTION_LABEL;
-export const headerOfTag = (tag) => PSST_OFFICIAL_HEADERS[PLAN_TAGS.indexOf(tag)] || GENERAL_SECTION_LABEL;
+// 새 재작성 묶음(조율 10-12 5번, 담당자 안) — 일반현황 · 개요(그림 제외)와 그림을 따로 다시 만든다. 기획서 5-6은 검증-1이 fail ·
+// warning으로 본 항목을 재작성 후보로 두는데, 지금 4묶음에는 두 곳이 없어 다시 만들 길이 없었다. 웹 태그 0-1 · 0-2는 웹 프론트
+// 제안이다(백엔드 · 조율 확정 전). 서버가 그 묶음의 기회(bundle_usages)를 줄 때만 화면에 보인다(docBundlesFor) — 그 전에는 지금처럼 4개.
+export const DIAGRAM_BUNDLE_LABEL = '그림';
+export const EXTRA_DOC_BUNDLES = [{ tag: '0-1', label: GENERAL_SECTION_LABEL }, { tag: '0-2', label: DIAGRAM_BUNDLE_LABEL }];
+export const ALL_DOC_BUNDLES = [...EXTRA_DOC_BUNDLES.map((b) => b.label), ...DOC_REWORK_BUNDLES];
+export const docBundlesFor = (budget) => [
+  ...EXTRA_DOC_BUNDLES.filter((b) => budget?.remaining?.[b.label] != null).map((b) => b.label),
+  ...DOC_REWORK_BUNDLES,
+];
+export const bundleOfTag = (tag) => (tag === '0-2' ? DIAGRAM_BUNDLE_LABEL : DOC_REWORK_BUNDLES[PLAN_TAGS.indexOf(tag)] || GENERAL_SECTION_LABEL);
+export const headerOfTag = (tag) => (tag === '0-2' ? DIAGRAM_BUNDLE_LABEL : PSST_OFFICIAL_HEADERS[PLAN_TAGS.indexOf(tag)] || GENERAL_SECTION_LABEL);
 
 export const PLAN_DOCUMENT_SECTIONS = [
   { tag: 'P', title: '문제인식', body: '동네 헬스장은 대부분 수기 장부와 전화로 예약을 받아 운영 부담이 크고, 회원권 잔여 횟수 관리도 수작업에 의존합니다. 인근 헬스장 12개소를 조사한 결과 대부분 같은 문제를 겪고 있었습니다' },

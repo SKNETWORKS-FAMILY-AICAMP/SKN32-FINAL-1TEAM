@@ -131,6 +131,22 @@ export const SCHEDULE_FIELDS = [
 ];
 // 추진 기간에는 연도가 있어야 한다(백엔드 _PERIOD_YEAR_RE와 같다).
 export const periodHasYear = (period) => /20\d{2}/.test(period || '');
+
+// 추진 기간 글의 끝나는 달('YYYY-MM') — 검증-1(agent_validation_1 validation_1.py)과 같은 규칙으로 읽는다:
+// 'YYYY(구분자)M' 꼴을 모두 찾아 가장 늦은 달. 같은 규칙이어야 화면이 통과시킨 일정을 검증-1이 입력 오류로 보지 않는다.
+const PERIOD_MONTH_RE = /(20\d{2})[-./~년\s]*(\d{1,2})/g;
+export function periodEndMonth(period) {
+  const months = [...String(period || '').matchAll(PERIOD_MONTH_RE)].map(([, y, m]) => `${y}-${String(Number(m)).padStart(2, '0')}`);
+  return months.length ? months.sort()[months.length - 1] : null;
+}
+// 개발 기간 끝(devEnd, 'YYYY-MM')보다 늦게 끝나는 협약기간 내 일정 줄. 검증-1이 입력 오류로 판정해 다시 만들어도 고쳐지지 않으므로
+// 입력 때 막는다(조율 10-12 4번). 협약 이후 일정(growth)은 개발 기간 뒤가 정상이라 보지 않는다.
+export function schedulePastDevEnd(schedule, devEnd) {
+  if (!devEnd) return [];
+  return (schedule?.feasibility || [])
+    .map((row, i) => ({ no: i + 1, category: (row.category || '').trim(), end: periodEndMonth(row.period) }))
+    .filter((row) => row.end && row.end > devEnd);
+}
 const EMPTY_SCHEDULE_ROW = Object.fromEntries(SCHEDULE_FIELDS.map((f) => [f.key, '']));
 // 일정 표 두 개. key는 저장 요청의 section 값(웹 DB project_schedule_items.section)이고 두 유형이 같다 —
 // 제목만 유형별로 다르다. 협약 이후 일정이 필수인지는 상희 님 확인 중(2026-10-10).

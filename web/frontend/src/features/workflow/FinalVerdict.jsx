@@ -1,11 +1,11 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
 import React, {useState,useRef,useEffect} from 'react';
 import {Icon} from '../../components/Icons.jsx';
-import {DiffText,RerunLeftBadge} from './shared.jsx';
+import {DiffText,RerunLeftBadge,ScoreNotices} from './shared.jsx';
 import {GeneralInfoBlock,PlanExtrasBlock} from './PlanForm.jsx';
 import {PrototypeFrame,ResultPreview,useArtifactFile,ArtifactLoadError} from './ArtifactResult.jsx';
 import {bundleScoreOf,detectItemCategory,diffSentences,planViewFrom,sectionDiffEntries,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
-import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,GENERAL_SECTION_LABEL,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,PLAN_TAGS,headerOfTag,RERUN_CAP,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,DOC_REWORK_BUNDLES} from './data.js';
+import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,GENERAL_SECTION_LABEL,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,PLAN_TAGS,headerOfTag,RERUN_CAP,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,ALL_DOC_BUNDLES,docBundlesFor} from './data.js';
 import {startReview,getProjectStatus} from '../../api.js';
 import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,relabelAfterReject,requestRework,reworkDiffForLabel,waitRework} from './rework.js';
 
@@ -18,7 +18,7 @@ const REVIEW_POLL_MS = 2000;
 // 쪽은 라벨(PSST 항목)을 그대로 bundle_id로 보내 구분한다(PlanForm.jsx의 같은 표
 // 주석 참고) — 그래서 묶음마다 따로 호출해야 한다.
 const TASK_KEY_BY_LABEL = {
-  ...Object.fromEntries(DOC_REWORK_BUNDLES.map((b) => [b, 'writing'])),
+  ...Object.fromEntries(ALL_DOC_BUNDLES.map((b) => [b, 'writing'])),
   '실행 파일 제작': 'implement_prototype', '인포그래픽 제작': 'implement_infographic',
 };
 
@@ -350,12 +350,21 @@ export function ArtifactCarousel({ hasExecutable, infoSrc = null, siteSrc = null
 // 계획서 보기 — 새 모양(utils.js planViewFrom). 일반현황 · 개요 → 그림 → 문제인식 ~ 팀 구성 순서로 묶어 그린다.
 // 그림은 일반현황 칸과 따로 둔다 — 그림을 어느 묶음에 둘지 조율 쪽이 아직 정하는 중이라(백엔드 10-12 답변 3 · 5) 옮기기 쉽게.
 function PlanGroupedView({ view, itemInfo, itemTitle }){
-  const sectionBlock = (s, i) => (
-    <div key={s.section_code || `${s.title}-${i}`}>
-      <h3 className="font-display font-bold text-[14px] mb-1">{s.title || s.section_code}</h3>
-      <p className="text-[13px] leading-relaxed text-[var(--fg)] whitespace-pre-line">{s.body}</p>
-    </div>
-  );
+  const sectionBlock = (s, i) => {
+    // 표를 만들지 못해 본문으로 대신한 항목이면 그 자리에 사유를 알린다(조율 tableFallbacks, 10-12). 사유는 담당자 원문이라 문구가 바뀔 수 있다.
+    const fallback = view.fallbacks?.[s.section_code];
+    return (
+      <div key={s.section_code || `${s.title}-${i}`}>
+        <h3 className="font-display font-bold text-[14px] mb-1">{s.title || s.section_code}</h3>
+        {fallback && (
+          <p className="mb-2 rounded-lg bg-[#fff9ec] px-3 py-2 text-[12px] leading-relaxed text-[#806334]">
+            표를 만들지 못해 내용으로 대신했어요 — 사유: {fallback}
+          </p>
+        )}
+        <p className="text-[13px] leading-relaxed text-[var(--fg)] whitespace-pre-line">{s.body}</p>
+      </div>
+    );
+  };
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-4">
@@ -415,12 +424,14 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
   // 4.22/30인데도 "이미 최선까지 재작성했다"고 뜨는 경우가 있었다 — 실제 점수로 판단한다.
   const artifactMaxTotal = scores?.artifactLayer?.max ?? (artifactScore.autoCheck.max + artifactScore.crossCheck.max);
   const showE9Hint = !passed && artifactMaxTotal > 0 && artifactRawTotal >= artifactMaxTotal;
+  // 다시 만들 수 있는 계획서 묶음 — 서버가 일반현황 · 개요 · 그림 묶음의 기회를 주면 그 둘도(data.js docBundlesFor).
+  const docBundles = docBundlesFor(reworkBudget);
   // 되돌릴 수 없음 확인 절차(시연 로그 steps[10].data.choices[1].confirm)에 쓸 짧은
   // 항목별 미달 요약 — "실현가능성 13/20"처럼 항목명+점수로 간결하게 늘어놓는다.
   const remainingShortfalls = [
     // 새 모양은 항목이 24개 안팎이라 미달 묶음 이름으로 요약한다(묶음 점수는 화면에 보이지 않는다). 다시 만들 수 없는 일반현황 · 개요는 뺀다.
     ...(docScore.groups
-      ? docScore.groups.filter((g) => DOC_REWORK_BUNDLES.includes(g.label) && g.score < g.max).map((g) => g.label)
+      ? docScore.groups.filter((g) => docBundles.includes(g.label) && g.score < g.max).map((g) => g.label)
       : docScore.items.filter((it) => it.score < it.max).map((it) => `${it.name} ${it.score}/${it.max}`)),
     ...artifactScore.autoCheck.reasons,
     ...artifactScore.crossCheck.reasons,
@@ -430,7 +441,7 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
   const category = artifact?.category || detectItemCategory(itemInfo && itemInfo.item);
   const hasExecutable = category !== 'onepage';
   const allTasks = [
-    ...DOC_REWORK_BUNDLES.map((label) => ({ label, layer: '계획서' })),
+    ...docBundles.map((label) => ({ label, layer: '계획서' })),
     ...(ARTIFACT_SUBTASKS_BY_CATEGORY[category] || ARTIFACT_SUBTASKS_BY_CATEGORY.webdev).map((label) => ({ label, layer: '프로토타입' })),
   ];
 
@@ -680,6 +691,8 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
       </div>
 
       <p className="text-[11px] text-[var(--muted-fg)] leading-relaxed mb-6">{SCORE_DISCLAIMER}</p>
+
+      <ScoreNotices notices={scores?.notices} reworkHint={!passed} className="mb-6" />
 
       {showE9Hint && (
         <div className="rounded-xl border border-[var(--border)] bg-[var(--muted)] p-4 mb-6">

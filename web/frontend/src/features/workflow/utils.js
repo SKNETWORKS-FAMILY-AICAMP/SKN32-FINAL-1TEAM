@@ -1,5 +1,5 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
-import {DOC_ITEMS_FAIL,DOC_ITEMS_PASS,CODE_CHECK_ITEMS_BY_CATEGORY,CODE_CHECK_FAILS_BY_OUTCOME,APPLICANT_TYPE_LABEL,PROJECT_STATUS_TONE,RERUN_CAP,PLAN_TAGS,GENERAL_SECTION_LABEL,bundleOfTag,headerOfTag} from './data.js';
+import {DOC_ITEMS_FAIL,DOC_ITEMS_PASS,CODE_CHECK_ITEMS_BY_CATEGORY,CODE_CHECK_FAILS_BY_OUTCOME,APPLICANT_TYPE_LABEL,PROJECT_STATUS_TONE,RERUN_CAP,PLAN_TAGS,GENERAL_SECTION_LABEL,DIAGRAM_BUNDLE_LABEL,ALL_DOC_BUNDLES,bundleOfTag,headerOfTag} from './data.js';
 
 export const MOCK_TODAY = new Date('2026-09-08');
 
@@ -116,7 +116,7 @@ function reasonsToItems(reasons, sections){
 // 하나씩 늘어놓지 않고 묶음 합계로 보인다. 항목에 tag 칸이 없는 옛 응답(4항목)은 null — 화면이 예전처럼 항목별로 보인다.
 export function docGroupsFrom(items){
   if (!(items || []).some((it) => 'tag' in it)) return null;
-  const labels = [GENERAL_SECTION_LABEL, ...PLAN_TAGS.map(bundleOfTag)];
+  const labels = [GENERAL_SECTION_LABEL, DIAGRAM_BUNDLE_LABEL, ...PLAN_TAGS.map(bundleOfTag)];
   return labels.map((label) => {
     const mine = items.filter((it) => bundleOfTag(it.tag) === label);
     return { label, score: sumScores(mine), max: mine.reduce((s, it) => s + it.max, 0), items: mine };
@@ -188,6 +188,8 @@ export function scoresFromResult(result){
     artifactLayer: num(verdict.artifact_max_score) != null ? { raw: num(verdict.artifact_score) ?? 0, max: num(verdict.artifact_max_score) } : null,
     total: num(verdict.total_score),
     threshold: num(verdict.pass_threshold),
+    // 점수 보고서 안내(조율 score.notices — 입력 확인 필요 · 입력 오류, 10-12). 글자 목록이다. 칸이 없는 응답이면 빈 목록.
+    notices: (verdict.notices || []).map((n) => (typeof n === 'string' ? n : n?.message)).filter(Boolean),
   };
 }
 
@@ -242,8 +244,12 @@ export function planViewFrom(plan){
   if (!sections.length) return null;
   if (!sections.some((s) => 'section_code' in s || 'content_type' in s)) return { legacy: true, sections };
   const text = sections.filter((s) => s.content_type !== 'image');
+  // 표를 만들지 못해 본문으로 대신한 항목 → 그 사유(조율 tableFallbacks, 10-12). 칸 이름은 백엔드 확정 전이라 두 모양을 다 읽는다.
+  const fallbacks = Object.fromEntries((plan.table_fallbacks || plan.tableFallbacks || [])
+    .map((f) => [f?.section_code ?? f?.sectionCode, f?.reason]).filter(([code, reason]) => code && reason));
   return {
     legacy: false,
+    fallbacks,
     general: text.filter((s) => !PLAN_TAGS.includes(s.tag)),
     diagrams: (plan.diagrams || []).filter((d) => d && d.image_url),
     bundles: PLAN_TAGS.map((tag) => ({ tag, header: headerOfTag(tag), sections: text.filter((s) => s.tag === tag) }))
@@ -365,7 +371,7 @@ export function isRerunCapped(counts, label, budget){
 // 몰아 붙여서, 어느 항목이 왜 미달인지 묶음별로 구분되지 않았다.
 // 묶음 이름은 화면 표기('문제인식')이고 서버 항목 이름은 계획서 섹션 제목('문제 인식')이라
 // 띄어쓰기가 다르다 — 공백을 떼고 맞춘다. 이걸 안 하면 미달 사유가 하나도 안 붙는다.
-const DOC_BUNDLE_SET = new Set(PLAN_TAGS.map(bundleOfTag));
+const DOC_BUNDLE_SET = new Set(ALL_DOC_BUNDLES);
 const sameItem = (a, b) => String(a || '').replace(/\s/g, '') === String(b || '').replace(/\s/g, '');
 
 // 계획서 묶음 하나의 판정과 깎인 항목. 새 모양은 묶음 합계(docScore.groups), 옛 모양은 이름이 같은 항목 하나다.

@@ -3,7 +3,8 @@ import React, {useState, useEffect, useRef} from 'react';
 import {Icon} from '../../components/Icons.jsx';
 import Preparation from '../../components/Preparation.jsx';
 import {buildGeneralInfo,buildOverview,bundleScoreOf,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
-import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_TABLE_EXAMPLE,RERUN_CAP,SCORE_DISCLAIMER,DOC_REWORK_BUNDLES} from './data.js';
+import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_TABLE_EXAMPLE,RERUN_CAP,SCORE_DISCLAIMER,ALL_DOC_BUNDLES,docBundlesFor} from './data.js';
+import {ScoreNotices} from './shared.jsx';
 import {ApiError,fetchPlanDocumentPdf,getProjectStatus} from '../../api.js';
 import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,relabelAfterReject,requestRework,waitRework} from './rework.js';
 
@@ -13,7 +14,7 @@ import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,relabelAft
 // 보내서 구분한다(app/pipeline_stages.py WRITING_BUNDLES와 값이 같아야 함) — 그래서
 // 묶음마다 따로 호출해야 하고(task_key로 뭉쳐서 한 번만 부르면 안 됨), 서버가
 // 묶음별 사용 횟수를 정확히 센다.
-const TASK_KEY_BY_LABEL = Object.fromEntries(DOC_REWORK_BUNDLES.map((b) => [b, 'writing']));
+const TASK_KEY_BY_LABEL = Object.fromEntries(ALL_DOC_BUNDLES.map((b) => [b, 'writing']));
 
 // 프로토타입 생성 중인지 확인하는 주기. 진행 중일 때만 돌고 끝나면 멈춘다.
 const STATUS_POLL_MS = 2000;
@@ -217,7 +218,9 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
   // 화면에 적는 상한값도 서버가 준 값을 쓴다(관리자가 바꾸면 같이 따라간다).
   const cap = reworkBudget?.cap ?? RERUN_CAP;
   const isCapped = (label) => isRerunCapped(reworkCounts, label, reworkBudget);
-  const allCapped = DOC_REWORK_BUNDLES.every(isCapped);
+  // 다시 만들 수 있는 계획서 묶음 — 서버가 일반현황 · 개요 · 그림 묶음의 기회를 주면 그 둘도(data.js docBundlesFor).
+  const docBundles = docBundlesFor(reworkBudget);
+  const allCapped = docBundles.every(isCapped);
 
   const toggleTask = (label) => {
     if (isCapped(label)) return;
@@ -248,7 +251,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
     if (!projectId) return;
     findRunningRework(projectId, 6).then((running) => {
       if (!running || !alive.current) return;
-      const picked = running.bundles.filter((b) => DOC_REWORK_BUNDLES.includes(b));
+      const picked = running.bundles.filter((b) => ALL_DOC_BUNDLES.includes(b));
       setRunningTasks(picked);
       finishRework(running.cycle_id, picked).catch((err) => console.error('재작성 결과를 불러오지 못했어요', err));
     }).catch((err) => console.error('재작성 상태를 확인하지 못했어요', err));
@@ -321,6 +324,8 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
             {passed ? `［내부 기준 ${threshold}점 통과］` : `［내부 기준 ${threshold}점 미달］`}
           </p>
 
+          <ScoreNotices notices={scores?.notices} reworkHint={!passed} className="mt-5" />
+
           {/* 항목별 점수와 다시 만들 항목을 한 목록으로 — 예전엔 "점수 미달 사유" 상자와 "다시 준비할 항목" 목록이 같은 묶음
               이름을 두 번 보여 줬고, 그만큼 칸이 길어져 '프로토타입 생성' 버튼이 화면 밖으로 밀렸다(디자인 점검 10-12).
               일반현황 · 개요는 다시 만들 수 없는 항목이라 여기엔 넣지 않는다 — 점수 내역 전체는 검증결과서 PDF에 있다. */}
@@ -328,7 +333,7 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
             <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-1">항목별 점검</p>
             <p className="text-[11px] text-[var(--muted-fg)] mb-3">고른 항목은 본문·그래프·표를 함께 다시 만들어요. 항목마다 {cap}회까지.</p>
             <div className="flex flex-col gap-2.5">
-              {DOC_REWORK_BUNDLES.map((label) => {
+              {docBundles.map((label) => {
                 const isRunning = runningTasks.includes(label);
                 const isDone = !isRunning && completedTasks.includes(label);
                 const left = rerunLeftOf(reworkCounts, label, reworkBudget);

@@ -58,6 +58,15 @@ try{
   ui.find(n=>n.props.label==='설립일').props.onChange('');await ui.flush();submitted=null;
   ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await ui.flush();assert.equal(submitted,null);
   assert.ok(ui.find(n=>n.props.id==='intake-founded').props.error);ui.unmount();
+  // 협약기간 내 일정이 개발 기간 끝을 넘으면 막는다(조율 10-12 4번) — 끝나는 달은 검증-1과 같은 규칙으로 읽는다. 협약 이후 일정은 보지 않는다.
+  const {periodEndMonth:pem,schedulePastDevEnd:spd}=await server.ssrLoadModule('/src/features/workflow/ProjectPlanFields.jsx');
+  assert.equal(pem('2026.11 ~ 2027.02'),'2027-02');assert.equal(pem('2026년 11월 ~ 2027년 2월'),'2027-02');assert.equal(pem('2027-3'),'2027-03');assert.equal(pem('11월 ~ 1월'),null);
+  assert.deepEqual(spd({feasibility:[{category:'개발',period:'2026.11 ~ 2027.02'},{category:'',period:'2027.05 ~ 2027.08'}],growth:[{period:'2028.01 ~ 2028.12'}]},'2027-06'),[{no:2,category:'',end:'2027-08'}]);
+  assert.deepEqual(spd({feasibility:[{period:'2027.05 ~ 2027.08'}]},''),[]);
+  submitted=null;ui=mount(IntakeForm,{initialValues:{...draft,devPeriod:{start:'2026-10',end:'2026-11'}},onSubmit:info=>{submitted=info}});await ui.flush();
+  assert.ok(ui.nodes().some(n=>n.type==='p'&&[].concat(n.props.children).join('').includes('개발 기간 끝')));
+  ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await ui.flush();assert.equal(submitted,null);
+  assert.ok(ui.find(n=>n.props.id==='intake-schedule').props.error);ui.unmount();
   // 자기부담 한도(위 칸)와 사업비 집행 계획의 자기부담 금액(아래 표)이 어긋나면 안내만 — 막지 않는다.
   const {selfFundingMismatch:sfm}=await server.ssrLoadModule('/src/features/workflow/ProjectPlanFields.jsx');
   const rowsOf=(...cash)=>cash.map(c=>({cash:String(c),inKind:'0'}));
@@ -93,7 +102,7 @@ try{
   submitted=null;ui=mount(IntakeForm,{initialValues:preDraft,onSubmit:info=>{submitted=info}});await ui.flush();
   ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await ui.flush();assert.equal(submitted,null);
   assert.ok(ui.find(n=>n.props.id==='intake-budget').props.error);ui.unmount();
-  const preRow={category:'출시',content:'베타 운영',period:'2027.01',detail:'첫 고객 10명'};
+  const preRow={category:'출시',content:'베타 운영',period:'2026.12',detail:'첫 고객 10명'};
   ui=mount(IntakeForm,{initialValues:{...preDraft,budget:[...preDraft.budget,{...draft.budget[0],phase:'2단계'}],schedule:{feasibility:[preRow]}},onSubmit:info=>{submitted=info}});await ui.flush();
   ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await ui.flush();
   assert.deepEqual(submitted.budget.map(b=>b.phase),['1단계','2단계']);assert.deepEqual(submitted.schedule,{feasibility:[preRow],growth:[]});ui.unmount();
@@ -150,6 +159,17 @@ try{
   const taggedReport=reportOf(tagged.docScore);
   assert.ok(taggedReport.includes('repeat(3, 1fr)')&&taggedReport.includes('<span>일반현황 · 개요</span><b>4 / 5</b>')&&taggedReport.includes('<span>문제 인식</span><b>11 / 15</b>')&&!taggedReport.includes('문제 정의'));
   assert.ok(reportOf(legacy.docScore).includes('<span>문제 인식</span><b>10 / 20</b>'));
+  // 새 재작성 묶음(조율 10-12 5번) — 일반현황 · 개요(0-1) · 그림(0-2)은 서버가 그 묶음 기회를 줄 때만 목록에 나온다.
+  const {docBundlesFor,bundleOfTag:bot}=await server.ssrLoadModule('/src/features/workflow/data.js');
+  assert.deepEqual(docBundlesFor(null),['문제인식','실현가능성','성장전략','팀 구성']);
+  assert.deepEqual(docBundlesFor({cap:1,remaining:{'일반현황 · 개요':1,'그림':0,'문제인식':1}}),['일반현황 · 개요','그림','문제인식','실현가능성','성장전략','팀 구성']);
+  assert.deepEqual([bot('0-1'),bot('0-2'),bot(null),bot('2-1')],['일반현황 · 개요','그림','일반현황 · 개요','실현가능성']);
+  const withDiagram=sfr({verdict:{doc_score:5,doc_max_score:10,notices:['입력 오류 안내']},plan:{sections:[],score_reasons:[{item_code:'2.3.6',tag:'0-2',score:2,max_score:4,reason_text:'노드 부족'},{item_code:'2.1.1',tag:'0-1',score:3,max_score:6}],artifacts:[]}});
+  assert.deepEqual(withDiagram.docScore.groups.map(g=>[g.label,g.score,g.max]),[['일반현황 · 개요',3,6],['그림',2,4]]);
+  assert.deepEqual(tr('그림',withDiagram.docScore,noArtifact),['2.3.6 — 노드 부족']);
+  assert.deepEqual(withDiagram.notices,['입력 오류 안내']);assert.deepEqual(scored.notices,[]);
+  // 표 대체 사유(조율 tableFallbacks 10-12) — 항목 번호로 찾는다.
+  assert.deepEqual(pvf({sections:[{section_code:'2.6.2',tag:'3-1',title:'일정',content_type:'table'}],table_fallbacks:[{section_code:'2.6.2',reason:'열 부족'}]}).fallbacks,{'2.6.2':'열 부족'});
   // 재작성 전후 비교 — 새 모양(키 = 항목 번호, tag · title)은 묶음 이름으로, 묶음마다 그 묶음 항목만(보충 10-11).
   const {reworkDiffForLabel}=await server.ssrLoadModule('/src/features/workflow/rework.js');
   const changedNew={sections:{'2.5.1':{before:'b',after:'c',tag:'2-1',title:'개발 방안'},'2.4.2':{before:null,after:'n',tag:'1-1',title:'시장'},'2.4.1':{before:'x',after:'y',tag:'1-1',title:'문제 정의'}}};

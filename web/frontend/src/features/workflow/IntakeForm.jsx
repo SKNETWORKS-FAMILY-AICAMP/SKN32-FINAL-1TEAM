@@ -13,7 +13,7 @@ import {
 import { BackButton } from './shared.jsx';
 import {
   BudgetEditor, BudgetScaleField, DevPeriodField, EMPTY_BUDGET_ROW, EMPTY_FUNDING, ListOrNone, ScheduleEditor, SelfFundingField,
-  budgetFilled, emptySchedule, fundingFilled, periodFilled, rowsFilled, scheduleFilled, scheduleSectionsFor, selfFundingMismatch,
+  budgetFilled, emptySchedule, fundingFilled, periodFilled, rowsFilled, scheduleFilled, scheduleSectionsFor, schedulePastDevEnd, selfFundingMismatch,
 } from './ProjectPlanFields.jsx';
 
 const APPLICANT_TYPES = [['preliminary', '예비창업자'], ['individual', '개인사업자'], ['corp', '법인']];
@@ -216,6 +216,8 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
   const teamValid = noTeam || (team.length > 0 && team.every((r) => r.name.trim() && r.role.trim() && r.career.trim()));
   const pricingValid = pricing.length > 0 && pricing.every((r) => r.item.trim() && r.price.trim());
 
+  // 개발 기간 끝보다 늦게 끝나는 협약기간 내 일정 줄 — 있으면 제출을 막는다(검증-1이 입력 오류로 봐서 다시 만들어도 안 고쳐진다).
+  const scheduleOverrun = schedulePastDevEnd(schedule, devPeriod.end);
   // 필수 구역 — 묶음마다 화면 위에서부터의 순서. 제출하면 이 중 첫 빈 항목으로 스크롤하고, 오른쪽 입력 현황도 이걸 그린다.
   // show가 거짓인 구역(유형을 고르기 전의 사업비 등)은 화면에도 없으니 검사에서도 뺀다(예전 조건과 같다).
   const checkGroups = [
@@ -233,12 +235,12 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
     ] },
     { title: '③ 사업 계획', items: [
       { anchor: 'intake-period', label: '개발 기간', bad: !periodFilled(devPeriod) },
+      { anchor: 'intake-schedule', label: '추진 일정', show: !!applicantType, bad: !scheduleFilled(schedule, isPreliminary) || scheduleOverrun.length > 0 },
       { anchor: 'intake-hires', label: '채용 계획', bad: !noHires && !rowsFilled(hires, HIRE_FIELDS) },
       { anchor: 'intake-equipment', label: '장비 · 시설', bad: !noEquipment && !rowsFilled(equipment, EQUIPMENT_FIELDS) },
       { anchor: 'intake-partners', label: '협력 기관', bad: !noPartners && !rowsFilled(partners, PARTNER_FIELDS) },
       { anchor: 'intake-funding', label: isPreliminary ? '예비창업자 정보' : '자기부담금', show: !!applicantType, bad: isPreliminary ? !budgetScale : !fundingFilled(funding) },
       { anchor: 'intake-budget', label: '사업비 집행 계획', show: !!applicantType, bad: !budgetFilled(budget, isPreliminary) },
-      { anchor: 'intake-schedule', label: '추진 일정', show: !!applicantType, bad: !scheduleFilled(schedule, isPreliminary) },
     ] },
   ].map((g) => ({ ...g, items: g.items.filter((c) => c.show !== false) }));
   const missing = checkGroups.flatMap((g) => g.items).filter((c) => c.bad).map(({ label, anchor }) => ({ label, anchor }));
@@ -407,10 +409,36 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
               </div>
 
               <GroupHeader no="③" title="사업 계획" desc="이 프로젝트의 일정과 돈, 사람 계획이에요. 프로젝트마다 새로 받아요." />
+              {/* 성격별 순서 — 언제(개발 기간 → 그 안의 추진 일정) → 누구 · 무엇으로(채용 · 장비 · 협력) → 얼마로(자기부담 → 사업비).
+                  개발 기간과 추진 일정을 붙여 두면 "큰 기간 → 세부 일정" 관계가 설명 없이 보인다(디자인 점검 10-12). */}
               <div>
                 <Section id="intake-period" title="개발 기간" required error={errorFor(error, 'intake-period')}>
                   <DevPeriodField value={devPeriod} onChange={setDevPeriod} />
                 </Section>
+
+                {applicantType ? (
+                  <Section id="intake-schedule" title="추진 일정" required error={errorFor(error, 'intake-schedule')}
+                    desc="계획서의 추진 일정 표에 쓰여요. 구분 · 추진 내용 · 추진 기간(연도 포함)은 꼭 채워 주세요.">
+                    {/* 협약기간 최대 개월 수는 공고마다 달라 막지 않고 알리기만 한다(공고를 고르기 전 입력이라). 개발 기간을 넘는 것은 아래에서 막는다. */}
+                    <p className="mb-4 text-[12.5px] leading-relaxed text-[var(--muted-fg)]">
+                      협약기간 내 일정은 위 개발 기간 안에서 끝나야 해요. 협약기간은 공고마다 다를 수 있어요(예: 예비창업패키지 8개월 · 초기창업패키지 10개월).
+                    </p>
+                    <ScheduleEditor value={schedule} onChange={setSchedule} isPreliminary={isPreliminary} />
+                    {scheduleOverrun.length > 0 && (
+                      <div role="alert" className="mt-3 rounded-xl bg-[#fff0f0] px-4 py-3 text-[12.5px] leading-relaxed text-[var(--danger)]">
+                        {scheduleOverrun.map((row) => (
+                          <p key={row.no}>협약기간 내 일정 {row.no}번째 줄{row.category ? `(${row.category})` : ''}이 {row.end.replace('-', '년 ')}월에 끝나 개발 기간 끝({devPeriod.end.replace('-', '년 ')}월)보다 늦어요.</p>
+                        ))}
+                        <p className="mt-1 font-semibold">일정을 개발 기간 안으로 맞추거나 개발 기간을 늘려 주세요.</p>
+                      </div>
+                    )}
+                  </Section>
+                ) : (
+                  // 추진 일정 · 자기부담 · 사업비는 신청자 유형마다 칸이 달라 유형을 고른 뒤에 보인다 — 추진 일정이 나타날 자리에서 알린다.
+                  <p className="py-8 border-t border-[var(--border)] text-[13.5px] text-[var(--muted-fg)]">
+                    ② 신청자 유형을 고르면 이 묶음에 추진 일정 · 자기부담금 · 사업비 집행 계획 칸이 나타나요.
+                  </p>
+                )}
 
                 <Section id="intake-hires" title="채용 계획" required desc="협약 기간 안에 뽑을 인력이 있다면 적어 주세요." error={errorFor(error, 'intake-hires')}>
                   <ListOrNone items={hires} onChange={setHires} none={noHires} onNoneChange={setNoHires}
@@ -427,7 +455,7 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
                     noneLabel="협력하는 기관이 없어요" fields={PARTNER_FIELDS} cols={2} addLabel="협력 기관 추가" />
                 </Section>
 
-                {applicantType ? (
+                {applicantType && (
                   <>
                     {/* 자기부담 가능 범위는 "낼 수 있는 한도", 아래 사업비 집행 계획은 "실제로 쓸 계획"이다 — 둘 다 자기부담이 나와 헷갈려서 문구로 나눠 적는다 */}
                     <Section id="intake-funding" title={isPreliminary ? '예비창업자 정보' : '자기부담 가능 범위'} required error={errorFor(error, 'intake-funding')}
@@ -442,17 +470,7 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
                       <BudgetEditor rows={budget} onChange={setBudget} isPreliminary={isPreliminary} />
                       {fundingMismatch && <p role="status" className="funding-notice mt-3">{fundingMismatch}</p>}
                     </Section>
-
-                    <Section id="intake-schedule" title="추진 일정" required error={errorFor(error, 'intake-schedule')}
-                      desc="계획서의 추진 일정 표에 쓰여요. 구분 · 추진 내용 · 추진 기간(연도 포함)은 꼭 채워 주세요.">
-                      <ScheduleEditor value={schedule} onChange={setSchedule} isPreliminary={isPreliminary} />
-                    </Section>
                   </>
-                ) : (
-                  // 자기부담 · 사업비 · 추진 일정은 신청자 유형마다 칸이 달라 유형을 고른 뒤에 보인다 — 빠진 게 아니라는 걸 알린다.
-                  <p className="py-8 border-t border-[var(--border)] text-[13.5px] text-[var(--muted-fg)]">
-                    자기부담금 · 사업비 집행 계획 · 추진 일정은 ② 신청자 유형을 고르면 여기에 나타나요.
-                  </p>
                 )}
               </div>
 

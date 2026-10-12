@@ -52,11 +52,12 @@ const TAGGED_SECTIONS=[
 ];
 const rsn=(item_code,tag,score,max_score,reason_text)=>({item_code,tag,score,max_score,reason_text});
 const TAGGED_RESULT={
- verdict:{doc_score:50,doc_max_score:70,code_score:11,code_max_score:15,plan_match_score:9,plan_match_max_score:15,artifact_score:20,artifact_max_score:30,total_score:70,pass_threshold:80},
- plan:{doc_max_score:70,sections:TAGGED_SECTIONS,
+ verdict:{doc_score:50,doc_max_score:70,code_score:11,code_max_score:15,plan_match_score:9,plan_match_max_score:15,artifact_score:20,artifact_max_score:30,total_score:70,pass_threshold:80,
+  notices:['입력한 협약기간 일정이나 사업비가 기준(협약기간 최대 개월 수 · 개발 기간 · 공고 지원 금액 상한)을 벗어나 일부 항목이 검증을 통과하지 못했습니다. 이 항목은 다시 만들어도 고쳐지지 않습니다. 이대로 진행하거나, 입력을 고쳐 새 프로젝트로 다시 만들 수 있습니다.']},
+ plan:{doc_max_score:70,sections:TAGGED_SECTIONS,table_fallbacks:[{section_code:'3.4.1',reason:'사업비 표의 필수 열(비목 · 산출 근거)이 비어 있음'}],
   diagrams:[{diagram_id:'2.3.6-USER_FLOW',flow_type:'USER_FLOW',title:'서비스 흐름도',source_ref:'2.3.6',nodes:['방문','예약','결제','출석'],image_url:'/projects/demo/artifact-files/flow.svg'},
    {diagram_id:'3.3.6-SERVICE_ARCHITECTURE',flow_type:'SERVICE_ARCHITECTURE',title:'서비스 구조도',source_ref:'3.3.6',nodes:['화면','예약 서버','결제'],image_url:'/projects/demo/artifact-files/arch.svg'}],
-  score_reasons:[rsn('1.2',null,4,5,'개요가 핵심 기능 하나만 설명합니다.'),rsn('2.1.1','1-1',5,5,''),rsn('2.1.2','1-1',3,6,'시장 규모 근거가 한 건뿐입니다.'),rsn('2.1.3','1-1',4,6,'문제를 수치로 보인 근거가 약합니다.'),
+  score_reasons:[rsn('1.2',null,4,5,'개요가 핵심 기능 하나만 설명합니다.'),rsn('2.3.6','0-2',3,4,'흐름도에 결제 단계가 빠졌습니다.'),rsn('2.1.1','1-1',5,5,''),rsn('2.1.2','1-1',3,6,'시장 규모 근거가 한 건뿐입니다.'),rsn('2.1.3','1-1',4,6,'문제를 수치로 보인 근거가 약합니다.'),
    rsn('2.2.1','2-1',6,8,'개발 단계별 산출물이 빠졌습니다.'),rsn('2.2.2','2-1',4,6,'경쟁 서비스와 비교가 없습니다.'),rsn('2.3.7','2-1',4,4,''),
    rsn('3.1.1','3-1',5,6,'가격 근거가 부족합니다.'),rsn('3.2.1','3-1',4,6,'진입 일정이 모호합니다.'),rsn('3.4.1','3-1',4,6,'사업비 산출 근거가 없습니다.'),
    rsn('4.1.1','4-1',5,6,'대표자 경력 증빙이 없습니다.'),rsn('4.1.2','4-1',2,6,'채용 계획이 구체적이지 않습니다.')],
@@ -94,7 +95,7 @@ const SAMPLE_CANDIDATES={status:'ready',rematch_used:false,blocked_notice_ids:['
 // 화면 8 서버 응답 견본 — 필수 조건 미통과 · 누락 · 부분 인정(실제 서버의 대역 채점으로는 잘 나오지 않아 여기서 본다)
 const SAMPLE_ARTIFACT={'artifact-gate-fail':{category:'webdev',gate_failures:[{code:'secret',display_name:'비밀값'}],missing_features:[],partial_features:[]},
  'artifact-partial':{category:'webdev',gate_failures:[],missing_features:['회원권 결제'],partial_features:['출석 체크']}}[page]||null;
-const props={announcement:W.ANNOUNCEMENTS[0],itemInfo:info,onBack:noop,onSubmit:noop,onProceed:noop,onLeave:noop,onGenerate:noop,onFinalize:noop,onGoDashboard:noop,onCheckEligibility:noop,onComplete:noop,candidates:SAMPLE_CANDIDATES,onCandidatesLoaded:noop,docOutcome:page==='final-pass'?'pass':'fail',artifactOutcome:page==='final-pass'?'pass':'fail',setDocOutcome:noop,setArtifactOutcome:noop,artifact:SAMPLE_ARTIFACT,...(page==='intake-filled'?{initialValues:SAMPLE_INTAKE}:{}),...(TAGGED?{scores:TAGGED_SCORES,plan:TAGGED_RESULT.plan}:{})};
+const props={announcement:W.ANNOUNCEMENTS[0],itemInfo:info,onBack:noop,onSubmit:noop,onProceed:noop,onLeave:noop,onGenerate:noop,onFinalize:noop,onGoDashboard:noop,onCheckEligibility:noop,onComplete:noop,candidates:SAMPLE_CANDIDATES,onCandidatesLoaded:noop,docOutcome:page==='final-pass'?'pass':'fail',artifactOutcome:page==='final-pass'?'pass':'fail',setDocOutcome:noop,setArtifactOutcome:noop,artifact:SAMPLE_ARTIFACT,...(page==='intake-filled'?{initialValues:SAMPLE_INTAKE}:{}),...(TAGGED?{scores:TAGGED_SCORES,plan:TAGGED_RESULT.plan,reworkBudget:{cap:1,remaining:{'일반현황 · 개요':1,'그림':1,'문제인식':1,'실현가능성':1,'성장전략':1,'팀 구성':1,'실행 파일 제작':1,'인포그래픽 제작':1}}}:{})};
 const components={'intake':W.IntakeForm,'intake-filled':W.IntakeForm,'intake-profile':W.IntakeForm,'match-progress':W.MatchProgress,'match-results':W.MatchResults,'eligibility-gate':W.EligibilityGate,'eligibility-fail':W.EligibilityGate,'plan-progress':W.PipelineProgress,'plan-form':W.PlanForm,'artifact-progress':W.ArtifactProgress,'artifact-result':W.ArtifactResult,'artifact-gate-fail':W.ArtifactResult,'artifact-partial':W.ArtifactResult,'final-verdict':W.FinalVerdict,'final-verdict-tagged':W.FinalVerdict,'plan-form-tagged':W.PlanForm,'final-pass':W.FinalVerdict,'review':W.ReviewScreen};
 // 완전 실패 카드 — 실제 흐름에선 서버가 status='failed'를 줘야 떠서 로컬 더미로는 재현이 어렵다.
 Object.assign(components,{'plan-failed':p=><W.GenerationFailed onLeave={noop}/>,'artifact-failed':p=><W.GenerationFailed onLeave={noop}/>});

@@ -316,6 +316,18 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
 // 종합 평가 세 화면이 같은 문구를 쓴다).
 // 상한에 닿은 뒤의 "재작성 상한 N회 도달" 문구는 뺐다 — 항목마다 빨간 글씨가 붙어
 // 화면이 지저분해진다(사용자 지적). 체크박스·버튼 비활성화만으로 막는다.
+// 점수 보고서 안내(입력 확인 필요 · 입력 오류, 조율 10-12 3번) — 화면 6 · 9. 입력 오류 항목은 다시 만들어도 고쳐지지 않는데
+// 점수가 모자라면 재작성 권유도 함께 나온다. 둘이 어긋나 보이지 않게 reworkHint를 주면 "다른 항목은 다시 만들어 올릴 수 있다"를 덧붙인다.
+export function ScoreNotices({ notices, reworkHint = false, className = '' }){
+  if (!notices?.length) return null;
+  return (
+    <div role="status" className={`rounded-xl bg-[#fff9ec] px-4 py-3 text-[12.5px] leading-relaxed text-[#806334] ${className}`}>
+      {notices.map((n) => <p key={n}>{n}</p>)}
+      {reworkHint && <p className="mt-1.5 font-semibold">안내한 항목은 다시 만들어도 바뀌지 않지만, 다른 항목은 다시 만들어 점수를 올릴 수 있어요.</p>}
+    </div>
+  );
+}
+
 export function RerunLeftBadge({ left }){
   return left > 0
     ? <span className="ml-1.5 text-[11.5px] text-[var(--muted-fg)]">· 재작성 {left}회 남음</span>
