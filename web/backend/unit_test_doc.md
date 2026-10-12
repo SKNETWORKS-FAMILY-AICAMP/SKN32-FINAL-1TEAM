@@ -64,6 +64,7 @@ ruff check .                                # 정적 검사
 | `test_plan_texts.py` | 계획서 항목 번호 → 양식 글 칸 대응, 표 항목 서술 걸러 내기, docx · hwp 본문 채우기 (SB-339), 표를 본문으로 바꾼 항목은 서술을 문서에 쓰지 않고 입력 행 표만 남김 (SB-354) |
 | `test_diagram_images.py` | 계획서 그림(SVG → PNG) — 순서 · 제목, 못 받거나 깨진 그림은 빼고 문서 생성, docx 개요 표 아래 · zip의 원본 SVG, hwp 맨 뒤 새 쪽(rhwp 있을 때 실제 확인) (SB-340) |
 | `test_budget_phase_export.py` | 예비창업 사업비를 1단계 · 2단계 표(docx 표 둘, hwp 표12 · 표14)로 나눠 채움, 단계 없는 줄은 1단계, 다른 유형은 표 하나 (SB-339) |
+| `test_schedule_table_export.py` | 내려받기 문서(docx · hwp)의 추진 일정 표 — 구분 · 추진 내용 · 추진 기간 · 세부 내용이 같은 이름의 열에 들어감, 세부 내용을 비우면 빈칸, 입력이 없으면 자리표시 한 줄 (SB-329 · SB-339) |
 | `test_budget_phase_column.py` | `project_budget_items.phase` 컬럼(VARCHAR(10), NULL 허용, '1단계' · '2단계') (SB-328) |
 | `test_budget_schedule_schema.py` | 사업비 · 일정의 요청 · 응답 모양, 허용값, 행 수 상한, 응답 순서 (SB-329) |
 | `test_budget_schedule_validation.py` | 필수 · 금액 · 합계 · 유형별 단계 · 일정 필수 칸과 연도 검사, 오류 위치(표 · 줄 번호 · 칸) (SB-330) |

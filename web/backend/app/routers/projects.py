@@ -628,13 +628,11 @@ def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts, p
     )
 
     def _schedule_rows(rows):
-        # 세부 일정(project_schedule_items)을 입력받는 화면이 아직 없어 대부분 빈 목록이다.
-        # 그때라도 IntakeForm에서 받은 개발 기간은 기간 칸에 넣어준다 — 한 줄이라도 실제
-        # 입력값이 보이는 편이 낫다.
+        # 입력한 줄은 칸 이름 그대로 옮긴다(구분 · 추진 내용 · 추진 기간 · 세부 내용, SB-329). 세부 내용은 비워도 되는 칸이라 비우면 빈칸이다.
+        # 입력한 줄이 없을 때만 IntakeForm에서 받은 개발 기간을 기간 칸에 넣은 자리표시 한 줄을 보인다 — 한 줄이라도 실제 입력값이 보이는 편이 낫다.
         return [
-            ScheduleRow(str(i + 1), s.category or '○○', s.period or dev_period_text or '○○.○○ ~ ○○.○○',
-                        s.detail or s.content or '○○')
-            for i, s in enumerate(rows)
+            ScheduleRow(s.category or '○○', s.content or '○○', s.period or dev_period_text or '○○.○○ ~ ○○.○○', s.detail or '')
+            for s in rows
         ] or [ScheduleRow('1', '○○', dev_period_text or '○○.○○ ~ ○○.○○', '○○')]
 
     # [2026-09-22 수정] 예전엔 project_partners 테이블(project.partners)에서 읽었는데,
