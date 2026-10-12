@@ -30,7 +30,11 @@ def test_partner_tasks_run_in_flow_to_screen6(clock):
     plan = ctx.get("planDoc")
     assert [s.section_code for s in plan.sections] == form.section_codes            # 모든 항목 · 양식 순서 (M-1 뒤)
     tables = [s for s in plan.sections if s.content_type == "table"]
-    assert tables and all(s.sentences for s in tables)                             # 표 항목은 T-W3 서술
+    assert tables
+    assert all("|" not in sentence.text and "서술:" not in sentence.text for section in tables
+               for sentence in section.sentences)                                   # 표 행·머리말은 중복 문자열로 보내지 않는다
+    assert all("원본 입력에 없는 세부 항목은 협약 후 확인함." not in sentence.text
+               for section in tables for sentence in section.sentences)              # 입력 없는 행을 문장으로 채우지 않는다
     assert plan.charts == [] and [t.source_ref for t in plan.tables] == [s.section_code for s in tables]
     assert len(plan.diagrams) == 2 and plan.diagrams == ctx.get("diagrams")
     for d in plan.diagrams:                                                        # SVG는 파일 저장소에 있다

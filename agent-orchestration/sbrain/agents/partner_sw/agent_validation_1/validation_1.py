@@ -193,7 +193,17 @@ def validate_section(section_spec, content, source_data):
     rules=section_spec.get('rules',{})
     if not isinstance(rules,dict):
         rules={}
-    if not isinstance(text,str) or not text.strip():issues.append('필수 generatedText 없음')
+    tables=_as_list(content.get('tables',[]))
+    def table_has_content(table):
+        if not isinstance(table,dict):
+            return False
+        table_rules=table.get('rules')
+        unassigned=table_rules.get('unassignedOriginalRows',[]) if isinstance(table_rules,dict) else []
+        return bool(_as_list(table.get('rows',[])) or _as_list(unassigned))
+    table_only=section_spec.get('contentType')=='table' and any(
+        table_has_content(table) for table in tables
+    )
+    if (not isinstance(text,str) or not text.strip()) and not table_only:issues.append('필수 generatedText 없음')
     text=text if isinstance(text,str) else ''
     lines=[line.strip() for line in text.splitlines() if line.strip()]
     bullets=[line for line in lines if re.match(r'^(?:[◦•●\-]|\d+[.)]|[①-⑩])\s*',line)]
@@ -203,7 +213,6 @@ def validate_section(section_spec, content, source_data):
     top_level_bullets=numbered_bullets or visual_top_level or bullets
     if rules.get('exactItems') and len(top_level_bullets)!=rules['exactItems']:
         issues.append(f'항목은 {rules["exactItems"]}개 최상위 항목으로 작성해야 함 (현재 {len(top_level_bullets)}개)')
-    tables=_as_list(content.get('tables',[]))
     item_count=sum(len(_as_list(t.get('rows',[]))) for t in tables if isinstance(t,dict)) if section_spec.get('contentType')=='table' else len(top_level_bullets)
     if rules.get('minItems') and item_count<rules['minItems']:
         issues.append(f'필수 항목 {rules["minItems"]}개 이상 필요')
@@ -349,7 +358,10 @@ def validate_section(section_spec, content, source_data):
     if section_criteria:
         semantic_source['_sectionCriteria']={**section_criteria,'evidence':prompt_evidence}
     prompt_criteria={**section_criteria,'evidence':prompt_evidence} if section_criteria else {}
-    semantic=request_json('F19',{'section_spec':section_spec,'content':{k:content.get(k) for k in ['generatedText','sourceRefs','facts','nodes'] if k in content},'source_data':semantic_source,'criteria':prompt_criteria})
+    semantic_content={k:content.get(k) for k in ['generatedText','sourceRefs','facts','nodes'] if k in content}
+    if section_spec.get('contentType')=='table':
+        semantic_content['tables']=tables
+    semantic=request_json('F19',{'section_spec':section_spec,'content':semantic_content,'source_data':semantic_source,'criteria':prompt_criteria})
     proposed_content=(source_data.get('_fallbackValidationSource',False) or not source_data.get('strategyProvenance') or
                       any(isinstance(f,dict) and f.get('status')=='proposed' for f in _as_list(content.get('facts',[]))) or
                       any(marker in text for marker in ('확인 필요','미확정','제안','계획','목표','활용','적용')))

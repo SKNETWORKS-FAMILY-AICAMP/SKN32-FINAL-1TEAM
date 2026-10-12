@@ -338,15 +338,15 @@ def table_arguments(raw,kind,spec,canonical):
     return dict(columns=spec['rules']['requiredColumns'],rows=rows,rules=rules)
 
 def _table_fallback_text(output, spec):
-    """표 재작성 후에도 실패하면 저장할 본문 대체 문구를 만든다."""
+    """표 재작성 후에도 실패하면 원본 행을 본문 설명으로 바꾼다. 판정 사유는 fallbackReason에 별도 보존한다."""
     tables=output.get('tables',[]) if isinstance(output,dict) else []
     table=tables[0] if tables and isinstance(tables[0],dict) else {}
     columns=table.get('columns') or spec.get('rules',{}).get('requiredColumns',[])
     rows=table.get('rows') or []
     if rows:
         lines=['; '.join(f'{col}: {row.get(col,"확인 필요")}' for col in columns) for row in rows if isinstance(row,dict)]
-        return '표 구조 검증에 실패하여 본문 설명으로 대체함.\n'+'\n'.join(f'· {line}' for line in lines)
-    return '표 구조 검증에 실패하여 본문 설명으로 대체함. 원본 행과 필수 항목을 확인한 뒤 다시 작성해야 함.'
+        return '\n'.join(f'· {line}' for line in lines)
+    return '원본 표 행이 없어 항목 내용을 구성할 수 없음.'
 
 def _attach_provenance(fid, value, kwargs):
     """F02~F15의 모든 표준 결과에 상위 근거와 사실을 보존한다."""

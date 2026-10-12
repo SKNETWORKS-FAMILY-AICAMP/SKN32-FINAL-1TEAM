@@ -18,6 +18,7 @@ from partner_fake import BODY_MARK, PartnerProvider, partner_tools, payload
 
 from sbrain.agents.form_defaults import select_form
 from sbrain.agents.partner_sw import common, inputs, verify, writing
+from sbrain.agents.partner_sw.agent_validation_1 import validation_1
 from sbrain.agents.partner_sw.agent_strategy.functions import python_functions as partner_py
 from sbrain.agents.partner_sw.agent_strategy.runtime import research_context
 from sbrain.agents.partner_sw.contract import SCORE_POLICY_VERSION
@@ -291,7 +292,8 @@ def test_pre_startup_unassigned_phase_rows():
     r = run_chain("예비창업자", budget=[*PRE_BUDGET, unassigned])
     out = r.w3.table_outputs["2.5.3"]
     assert out["tables"][0]["rules"]["unassignedOriginalRows"][0]["비목"] == "인건비"
-    assert "단계 미지정 원본 (단계별 합계에 미포함)" in out["generatedText"]
+    assert "단계 미지정 원본" not in out["generatedText"]
+    assert "인건비" not in out["generatedText"]
     assert all(row.get("비목") != "인건비" for t in r.w3.tables for row in [dict(zip(t.headers, x)) for x in t.rows])
     results = {x.section_code: x for x in r.v1.section_results}
     assert results["2.5.3"].input_missing and results["2.5.4"].input_missing             # 두 항목 입력 없음 (잠정)
@@ -400,8 +402,46 @@ def test_tw3_table_check_failure_falls_back_in_same_attempt(monkeypatch):
     fb = out.table_outputs["3.5.2"]
     assert fb["tableFallbackUsed"] is True and fb["tables"] == [] and fb["fallbackReason"] == "필수 표 컬럼 누락"
     sec = next(s for s in out.table_sections if s.section_code == "3.5.2")
-    assert sec.sentences[0].text.startswith("표 구조 검증에 실패하여 본문 설명으로 대체함")
+    assert sec.sentences[0].text.startswith("· ")
+    assert "표 구조 검증에 실패하여 본문 설명으로 대체함" not in fb["generatedText"]
     assert sink.drain() == []
+
+
+def test_f17_generated_text_is_narrative_only_and_preserves_unassigned_rows():
+    unassigned = [{"비목": "인건비", "집행계획": "단계 확인 필요"}]
+    out = partner_py.generate_table(
+        columns=["추진내용", "추진기간", "세부내용"],
+        rows=[{"추진내용": "회원 · 예약 화면 개발", "추진기간": "2026.10~2026.12", "세부내용": "예약 기능 구현"}],
+        rules={"narrativeRequired": True, "narrativeType": "schedule", "unassignedOriginalRows": unassigned},
+    )
+
+    assert out["generatedText"] == "1. 추진 항목은 회원 · 예약 화면 개발, 기간은 2026.10~2026.12, 세부 내용은 예약 기능 구현."
+    assert "|" not in out["generatedText"]
+    assert "개발계획 서술" not in out["generatedText"]
+    assert "협약 후 확인함" not in out["generatedText"]
+    assert out["tables"][0]["rules"]["unassignedOriginalRows"] == unassigned
+    assert "인건비" not in out["generatedText"]
+
+
+def test_f19_reviews_structured_table_without_duplicate_text(monkeypatch):
+    table = {"columns": ["추진내용", "추진기간"], "rows": [{"추진내용": "예약 기능", "추진기간": "2026.10~2026.12"}], "rules": {}}
+    requests = []
+
+    def review(purpose, payload):
+        requests.append((purpose, payload))
+        return {"passed": True, "issues": [], "warnings": []}
+
+    monkeypatch.setattr(validation_1, "request_json", review)
+    result = validation_1.validate_section(
+        {"sectionId": "test.table", "contentType": "table", "rules": {"requiredColumns": table["columns"], "minItems": 1}},
+        {"generatedText": "", "tables": [table], "sourceRefs": [], "facts": []},
+        {"documentType": "general", "originalFacts": {}, "strategyProvenance": {"F15": {"sourceRefs": []}}},
+    )
+
+    assert result["status"] == "pass"
+    assert result["semanticCalled"] is True
+    assert requests[0][1]["content"]["generatedText"] == ""
+    assert requests[0][1]["content"]["tables"] == [table]
 
 
 def test_tw3_fallback_items_from_verify1():

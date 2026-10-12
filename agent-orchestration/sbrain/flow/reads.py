@@ -142,9 +142,10 @@ class GateScreen(Screen):
 
 
 class DocumentScreen(Screen):
-    """6 문서 평가 — 계획서 · 환산 점수 · 미달 항목 · 재작성 목록 · 다음 동작."""
+    """6 문서 평가 — 계획서 · 환산 점수 · 미달 항목 · 표 대체 사유 · 재작성 목록 · 다음 동작."""
     plan_doc: PlanDoc
     score: ScoreView
+    table_fallbacks: list[TableFallback] = Field(default_factory=list)
     failed_task_ids: list[str]
     rework_options: list[ReworkOption]
     next_action: NextAction
@@ -188,12 +189,19 @@ class ProofreadScreen(Screen):
 
 
 class ResultScreen(Screen):
-    """11 결과물."""
+    """11 결과물 — 계획서 표 대체 사유를 별도 데이터로 제공한다."""
     deliverable: Deliverable
     user_message: str
     plan_doc: PlanDoc
     prototype: Prototype
     infographic: Infographic
+    table_fallbacks: list[TableFallback] = Field(default_factory=list)
+
+
+class TableFallback(SBModel):
+    """F17 표를 본문으로 대체했을 때 화면에 별도 표시할 항목별 사유."""
+    section_code: str
+    reason: str
 
 
 # ── 지금까지 결과 · 재작성 결과 (확장) ─────────────────────
@@ -215,6 +223,7 @@ class Outputs(SBModel):
     business_age_years: float | None = None
     category: str | None = None
     plan_doc: PlanDoc | None = None
+    table_fallbacks: list[TableFallback] = Field(default_factory=list)
     doc_score: DocScore | None = None
     document_score_report: ScoreView | None = None     # scoreReport.document (G-02a)
     overall_score_report: ScoreView | None = None      # scoreReport.overall (G-02b)
@@ -526,6 +535,7 @@ def screen(orch: SBrainOrchestrator, project_id: int | str, number: int) -> Scre
     if number == 6:
         return DocumentScreen(
             **base, plan_doc=ctx.get("planDoc"), score=_score(ctx.get("scoreReport.document")),
+            table_fallbacks=_table_fallbacks(ctx.get("tableOutputs", default={}) or {}),
             failed_task_ids=ctx.get("G-02a.failedTaskIds"),
             rework_options=_options(ctx, ctx.get("G-02a.reworkOrders")), next_action=ctx.get("G-02a.nextAction"))
     if number == 8:
@@ -544,7 +554,18 @@ def screen(orch: SBrainOrchestrator, project_id: int | str, number: int) -> Scre
                                sentences=_sentence_changes(orch, ctx), proofread_log=ctx.get("proofreadLog"))
     return ResultScreen(**base, deliverable=ctx.get("deliverable"), user_message=ctx.get("userMessage"),
                         plan_doc=ctx.get("planDoc"), prototype=ctx.get("prototype"),
-                        infographic=ctx.get("infographic"))
+                        infographic=ctx.get("infographic"),
+                        table_fallbacks=_table_fallbacks(ctx.get("tableOutputs", default={}) or {}))
+
+
+def _table_fallbacks(outputs: dict[str, Any]) -> list[TableFallback]:
+    """화면 표시용 목록을 만든다. 본문 generatedText에는 진단 사유를 섞지 않는다."""
+    if not isinstance(outputs, dict):
+        return []
+    return [TableFallback(section_code=str(code), reason=str(output.get("fallbackReason", "")).strip())
+            for code, output in outputs.items()
+            if isinstance(output, dict) and output.get("tableFallbackUsed")
+            and str(output.get("fallbackReason", "")).strip()]
 
 
 def _score(report: ScoreReport) -> ScoreView:
@@ -634,6 +655,7 @@ def outputs(orch: SBrainOrchestrator, project_id: int | str) -> Outputs:
         candidates=_web_cards(first), more_candidates=_web_cards(more),
         selected_announcement=cur("selectedAnnouncement"), gate_result=cur("gateResult"),
         business_age_years=cur("businessAgeYears"), category=category, plan_doc=cur("planDoc"),
+        table_fallbacks=_table_fallbacks(cur("tableOutputs") or {}),
         doc_score=cur("docScore"), document_score_report=_score(document) if document is not None else None,
         overall_score_report=_score(overall) if overall is not None else None,
         prototype=cur("prototype"), infographic=cur("infographic"), code_check=cur("codeCheck"),

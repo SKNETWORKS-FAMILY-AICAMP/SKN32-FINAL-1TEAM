@@ -110,6 +110,10 @@ def test_first_writing_redoes_only_failed_items_then_replaces_failed_table(clock
     ctx = ctx_of(app, rid)
     out = ctx.get("tableOutputs")[TABLE]
     assert out["tableFallbackUsed"] and out["fallbackReason"] == f"{TABLE} 결함 (스텁)"
+    s6 = app.orchestrator.screen(pid(app, rid), 6)
+    expected_fallback = [{"sectionCode": TABLE, "reason": f"{TABLE} 결함 (스텁)"}]
+    assert s6.dump()["tableFallbacks"] == expected_fallback
+    assert app.orchestrator.outputs(pid(app, rid)).dump()["tableFallbacks"] == expected_fallback
     plan = ctx.get("planDoc")
     assert TABLE not in [t.source_ref for t in plan.tables] and TABLE2 in [t.source_ref for t in plan.tables]
     assert "대체" in next(s for s in plan.sections if s.section_code == TABLE).sentences[0].text
