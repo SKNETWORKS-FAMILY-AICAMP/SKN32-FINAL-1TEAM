@@ -297,7 +297,7 @@ def test_tb1_build_check_decorate_do_not_touch_disk(monkeypatch):
     assert req.metadata["purpose"] == "T-B1 HTML 생성"
 
 
-def test_tb1_gate_failure_returns_raw_source_without_saving(monkeypatch):
+def test_tb1_gate_failure_still_returns_decorated_entry_without_saving(monkeypatch):
     bad = HTML.replace("<head>", '<head><script src="https://cdn.example.com/x.js"></script>')
 
     class Reply(FakeProvider):
@@ -306,9 +306,40 @@ def test_tb1_gate_failure_returns_raw_source_without_saving(monkeypatch):
 
     with no_disk(monkeypatch):
         result = builder_html.build_prototype_html(FEATURES, {}, "AI_API", "지시문", make_tools(Reply()))
-    assert result["status"] == "failed" and result["entryFileName"] is None
-    assert result["sourceText"] == bad                            # 검사에 걸려도 원문은 돌려준다(끼워 넣기 전)
+    # 담당자 10-12 판: 자체 검사에 걸려도 끼워 넣은 HTML을 진입 파일로 돌려주고 status만 불통과다
+    assert result["status"] == "failed" and result["entryFileName"] == "index.html"
+    assert result["sourceText"] == html_kit.decorate(bad)        # 통과 때와 똑같이 끼워 넣었다
+    assert 'data-kit="icons"' in result["sourceText"] and "cdn.example.com/x.js" in result["sourceText"]
+    assert result["implementedFeatures"] == FEATURES
     assert result["gate_failures"]["dependency"]
+    assert result["summary"].startswith("E-B1-DEP")
+
+
+def test_tb1_plan_text_keeps_head_and_tail_over_limit():
+    short = "가" * 100
+    assert builder_html._plan_for_prompt(f"  {short}  ") == short
+    long = "앞" * 15000 + "가운데" * 3000 + "끝" * 5000
+    cut = builder_html._plan_for_prompt(long)
+    assert cut.startswith("앞" * 15000) and cut.endswith("끝" * 4000) and "…(중략)…" in cut
+    assert len(cut) == builder_html._PLAN_CHARS + len("\n…(중략)…\n")
+
+
+@pytest.mark.parametrize("snippet,external", [
+    ('<script src="https://cdn.example.com/x.js"></script>', True),
+    ('<link rel="stylesheet" href="style.css">', True),
+    ('<img src="./logo.png" alt="로고">', True),
+    ("<style>@import url('https://fonts.example.com/a.css');</style>", True),
+    ('<div style="background:url(bg.png)"></div>', True),
+    ('<img src="data:image/png;base64,AAAA" alt="그림">', False),
+    ("<style>.a{background:url(#grad)}</style>", False),
+    ("<p>https://example.com 은 글자일 뿐</p>", False),
+])
+def test_verify2_external_refs_matches_tb1_dependency_gate(snippet, external):
+    """검증-2 7번 외부 의존과 T-B1 E-B1-DEP는 같은 기준이다(담당자 10-12 — 서로 import하지 않으므로 함께 고친다)."""
+    html = f"<html lang=\"ko\"><head></head><body>{snippet}</body></html>"
+    dep_ok, _ = eng_gates.check_external_dependency_gate(html)
+    assert bool(v_gates.external_refs(html)) is external
+    assert dep_ok is not external
 
 
 def test_file_writer_keeps_only_code_block_parsing():

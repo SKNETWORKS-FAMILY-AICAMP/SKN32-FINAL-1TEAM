@@ -580,7 +580,9 @@ sequenceDiagram
 |---|---|---|---|
 | 담당자 코드 위치 | `agents/partner_bv/engineering_agent/` · `verification_agent/`(담당자 파일 구조 그대로, 연결부만 바꿈 — `[S-Brain]` 주석), 연결 코드는 `partner_bv/` 바로 아래(`__init__` 미리 불러오기 · `resources` 자료 상수 · `tasks` 등록). 두 패키지는 서로 import하지 않는다. 바꾼 곳 목록 `partner_bv/VENDORED.md`. 가져다 쓰는 곳은 조립(`bootstrap.py`)뿐 | 구현 방식 | `agents/partner_bv/` |
 | 패키지 자료 | 글꼴(`pretendard-ksx1001.woff2`, SIL OFL) · 그림 SVG(CC0) · 라이선스 파일 · 템플릿 SVG를 패키지 안에 두고 불러올 때 한 번 읽는다(Task 실행 중 디스크를 열지 않는다). 저장소에도 들어간다 | 규칙 예외 | `agents/partner_bv/resources.py`, `pyproject.toml` package-data |
-| T-B1 검사 실패 HTML | 외부 의존 · 샌드박스 금지 기능 · 비밀값에 걸린 HTML도 끼워 넣어 `index.html` 진입 파일로, `check`만 불통과. 진입 파일 실패만 진입 파일 없음 | 기준 문서대로(담당자 원본과 다름) | `agents/partner_bv/engineering_agent/tasks.py` `run_tb1` |
+| T-B1 검사 실패 HTML | 외부 의존 · 샌드박스 금지 기능 · 비밀값에 걸린 HTML도 끼워 넣어 `index.html` 진입 파일로, `check`만 불통과. 진입 파일 실패만 진입 파일 없음 | 기준 문서대로(담당자 2026-10-12 판도 같음) | `engineering_agent/builder_html.py` `_first_gate_failure` · `engineering_agent/tasks.py` `run_tb1` |
+| T-B1 계획서 길이 | 20,000자까지(넘치면 앞 16,000자 + 끝 4,000자) | 담당자 값(2026-10-12, 사용자 허락) | `engineering_agent/builder_html.py` `_plan_for_prompt` |
+| 외부 의존 감점 | 외부 주소 · 함께 오지 않는 파일을 가리키는 script · stylesheet · img · `@import` · `url(...)`이 있으면 코드 점검 7번 미충족(`data:` · `blob:` · `#` 제외, T-B1 E-B1-DEP와 같은 기준) | 담당자 규칙(2026-10-12) | `verification_agent/rules/gates.py` `external_refs` · `rules/r4.py` |
 | 인포그래픽 파일 | 모든 카테고리 SVG — 원페이지 `onepage.svg`, 웹개발 · AI API `infographic.svg`. 스텁도 같다 | 담당자 약속 | `engineering_agent/infographic/render.py` · `agents/stubs.py` `INFOGRAPHIC_FILE` |
 | 계약 확장 칸 | `CodeCheck.earned` · `applicable`, `Infographic.iconFallback`, `TV2In` · `TV2Out.featureElements`(산출물 키 `featureElements`), `G02bIn.category`, `ScoreReport` · `ScoreView`의 환산 칸 여덟 개(`docLayerMax` · `codeCheckScore` · `codeCheckMax` · `featureMatchScore` · `featureMatchMax` · `artifactLayerScore` · `artifactLayerMax` · `codeCheckItems`), `ScoringSettings.codeCheckMax` · `featureMatchMax`(기본 15 · 15), 관리자 `AdminRun.docMax` · `artifactMax` · `AdminScoreHistory.docMax` · `codeCheckMax` · `featureMatchMax`, 통계 줄 실행 줄 `data.maxScores` | 확장(`ext()`) | `models/scoring.py` · `models/domain.py` · `contracts/tasks.py` · `flow/catalog.py` · `flow/reads.py` · `orchestrator/settings.py` · `flow/log_stats.py` |
 | 설정 읽기 | 웹 `verification_policies.code_weight` → C, `plan_weight` → P, 산출물층 배점 = C + P. 실행 시작 때 설정 사본에 고정, 칸이 없는 옛 사본은 15 · 15 | 확장 | `store_sql/settings_source.py` |
@@ -596,7 +598,7 @@ sequenceDiagram
 | G-04 템플릿 구성 | 파일 목록에 자산 파일 이름도 싣고, 제목을 종류별로 둔다(제목에 '실행' · '열람' · '인쇄' 낱말이 들어가 자체 검사가 늘 통과) | 구현자 해석 | `agents/supervisor/readme.py` |
 | 스텁 T-V2 통과 필수 조건 실패 | 대조 점수도 0 · 모든 기능 누락(기준 문서 T-V2 ① — 전에는 산출물층 합계만 0) | 스텁 | `agents/stubs.py` |
 
-- 알려진 한계: 외부 의존은 검증-2에 검사가 없어 감점되지 않는다(담당자에게 묻는 중). G-02b는 확정 동작(`checks`의 `finalAction`) 알림을 점수 보고서에 더하지 않는다(지금까지의 동작 — 기준 문서 G-02b 행과 다른 남은 차이). 코드 점검 항목 줄 환산 점수 합 = 층 값은 반올림 차이만 있을 때 보장된다(생산자의 항목 점수 합이 total과 맞지 않으면 차이가 남을 수 있다). 코드 점검 · 대조 원점수 두 칸이 출력 요약에 없는 옛 T-V2 실행 기록은 관리자 조회 · 통계 줄에서 산출물층 점수를 환산하지 않은 원점수 합으로 읽는다. 실제 OpenAI(글 · 이미지) 확인은 사용자가 한다.
+- 알려진 한계: G-02b는 확정 동작(`checks`의 `finalAction`) 알림을 점수 보고서에 더하지 않는다(지금까지의 동작 — 기준 문서 G-02b 행과 다른 남은 차이). 코드 점검 항목 줄 환산 점수 합 = 층 값은 반올림 차이만 있을 때 보장된다(생산자의 항목 점수 합이 total과 맞지 않으면 차이가 남을 수 있다). 코드 점검 · 대조 원점수 두 칸이 출력 요약에 없는 옛 T-V2 실행 기록은 관리자 조회 · 통계 줄에서 산출물층 점수를 환산하지 않은 원점수 합으로 읽는다. 실제 OpenAI(글 · 이미지) 확인은 사용자가 한다.
 
 ## 12. 테스트 목록
 
@@ -644,8 +646,8 @@ sequenceDiagram
 | `test_basedoc_v110_markers.py` | 기준 문서 v1.10 확장 표시(2026-10-08) — 새 판에 들어간 필드는 확장 아님, 새 판에서 빠졌지만 남긴 필드는 확장(note 머리), 아직 기준 문서에 없는 필드는 확장, 필수 · 선택 선언 그대로 |
 | `test_worker_log.py` | 워커 운영 로그 — 단계 시작 · 끝 줄과 키 순서, 대기 · 실행끝 · 재개예약, 계정 번호 · 내용 없음, 폴더 없으면 화면만, 20MB 순번 파일, 날짜 바뀜, 다시 켤 때 이어 쓰기, 자동 삭제, 잠금 실패, 쓰기 실패가 실행을 멈추지 않음, 웹 조립은 아무것도 안 나감 (2026-10-06) |
 | `test_scaling_contract_fields.py` | 구현 · 검증-2 연동의 계약 · 설정 칸 — `CodeCheck.earned` · `applicable`, `Infographic.iconFallback`, T-V2 확인 요소 입출력, `G02bIn.category`, 점수 보고서 · `ScoreView` 환산 칸, 채점 설정 C · P와 설정 읽기, 호출 기록 목적 · 항목 칸 200자 자르기 (2026-10-11) |
-| `test_partner_bv_vendored.py` | 옮긴 담당자 코드 — OpenAI 직접 호출 · 환경 변수 · 시각 · 파일 쓰기 등이 없음(소스 검사), Task 실행 중 디스크 접근 차단, 두 패키지가 서로 import하지 않음, `_USER_ONLY_REASON` = 재작성 기본 문구 (2026-10-11) |
+| `test_partner_bv_vendored.py` | 옮긴 담당자 코드 — OpenAI 직접 호출 · 환경 변수 · 시각 · 파일 쓰기 등이 없음(소스 검사), Task 실행 중 디스크 접근 차단, 두 패키지가 서로 import하지 않음, `_USER_ONLY_REASON` = 재작성 기본 문구 (2026-10-11), T-B1 검사 실패도 끼워 넣은 진입 파일 · 계획서 20,000자 줄이기 · 검증-2 외부 의존과 T-B1 E-B1-DEP가 같은 기준 (2026-10-12) |
 | `test_partner_bv_tasks.py` | T-B1(통과 · 외부 의존 · 샌드박스 · 비밀값 · 진입 파일 실패, 이전 원문) · T-B2(세 카테고리 SVG · 기본 아이콘 세 경우 · `iconFallback`) · T-V2(파일 창구 읽기 · 통과 필수 조건 · `earned` · `applicable` · 동시 3 · 다수결 · 요소 목록 · 대조 LLM 실패) (2026-10-11, 가짜 LLM — `bv_fake.py`) |
-| `test_partner_bv_flow.py` | 앱 흐름 — 세 Task로 화면 8까지, 검사 실패 HTML이 재수행 이전 원문으로 넘어가 끝내 T-V2가 채점, `이미지대체` 실행 기록마다 하나, 다음 T-V2가 직전 요소 목록을 받음, 신청자 식별 정보 없음, 긴 기능 이름 자르기, 워커 호출처(글 · 이미지 실제) (2026-10-11) |
+| `test_partner_bv_flow.py` | 앱 흐름 — 세 Task로 화면 8까지, 검사 실패 HTML이 재수행 이전 원문으로 넘어가 끝내 T-V2가 채점, 못 고친 외부 의존은 코드 점검 7번 감점(2026-10-12), `이미지대체` 실행 기록마다 하나, 다음 T-V2가 직전 요소 목록을 받음, 신청자 식별 정보 없음, 긴 기능 이름 자르기, 워커 호출처(글 · 이미지 실제) (2026-10-11) |
 | `test_score_scale.py` | 산출물층 환산 — 층 · 항목 줄 · 해당 없음 · 통과 필수 조건 실패 · 항목 줄 `detail` · 반올림 차이 · 배점 0 · `earned` 없음, 전후 비교 환산, 관리자 조회 · 통계 줄 `maxScores` (2026-10-11) |
 | `test_supervisor_rules.py` | 조율 규칙 단계 실구현 — G-02a(문서층 배점 0 등) · G-02b(총점 · 환산 칸 · E-G2-UNREACHABLE 두 문구 · 카테고리) · G-04 템플릿(낱말 · 기본 문구 · 파일 이름 · 마크다운), 스텁 조립이 실구현 규칙을 감싸고 실패 흉내가 그대로 동작, 워커 조립의 규칙 단계. M-1 ~ M-4는 기존 흐름 테스트가 본다 (2026-10-11) |
