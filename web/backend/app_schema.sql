@@ -243,6 +243,7 @@ CREATE TABLE IF NOT EXISTS project_plan_inputs (
     ceo_careers JSON NULL COMMENT '대표자 이력(구분/내용/기간/증빙여부 객체 배열)',
     ceo_capability TEXT NULL COMMENT '기술력 · 노하우 · 인적 네트워크 서술',
     occupation VARCHAR(100) NULL COMMENT '예비창업자 직업(직장명 기재 불가) — 계획서 양식 "일반현황" 항목',
+    target_customer VARCHAR(200) NULL COMMENT '목표 고객(사용자 입력, 선택) — 오케스트레이터가 작성 · 검증 AI에 넘김, 비면 AI가 "확인 필요"로 씀',
     dev_start_month VARCHAR(7) NULL COMMENT '개발 시작월(YYYY-MM)',
     dev_end_month VARCHAR(7) NULL COMMENT '개발 종료월(YYYY-MM)',
     budget_scale_manwon INT UNSIGNED NULL COMMENT '희망 사업화 자금 규모(만원, 예비창업자 전용, 0~2000)',

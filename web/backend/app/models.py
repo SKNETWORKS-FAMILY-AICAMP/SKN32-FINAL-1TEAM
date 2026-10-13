@@ -503,6 +503,10 @@ class ProjectPlanInput(Base):
     # Agent가 아이디어 설명(description)을 보고 직접 짓는 항목으로 설계된 것으로 확인됐다.
     occupation: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
+    # [SB-382] 목표 고객 — 사용자가 직접 입력한 값(선택). 오케스트레이터가 request_start 때 이 컬럼을 읽어 작성 · 검증 AI에 넘긴다.
+    # 비어 있으면(NULL) AI가 "확인 필요"로 쓴다. AI가 아이디어 설명에서 추정한 값을 계획서에 사실처럼 쓰지 않도록 사용자 입력만 쓴다.
+    target_customer: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
     # 예비창업자 전용(BudgetScaleField) — 마이페이지 budget_scale과 같은 상한(derive.js
     # PRELIMINARY_BUDGET_CAP_MANWON=2000).
     budget_scale_manwon: Mapped[int | None] = mapped_column(Integer, nullable=True)
