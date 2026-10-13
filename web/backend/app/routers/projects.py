@@ -697,7 +697,8 @@ def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts, p
         대표자_유형=_or_placeholder(company.rep_type if company else None, '단독'),
         사업자등록번호=_or_placeholder(company.business_reg_no if company else None, '○○○-○○-○○○○○'),
         사업자_소재지=_or_placeholder(region_text, '○○도 ○○시·군'),
-        창업아이템명=item_desc[:60] or '○○기술이 적용된 ○○제품·서비스',
+        # [SB-384] 개요 표 '명칭'과 같은 값(아이디어 설명의 첫 줄 · 60자까지) — 둘이 다르면 같은 계획서 안에서 이름이 두 가지로 나온다. 오케스트레이터도 같은 규칙으로 읽는다
+        창업아이템명=_item_name(item_desc) or '○○기술이 적용된 ○○제품·서비스',
         # [SB-339] 산출물은 담당자가 짓는 값(항목 x.2.2)이다 — 없으면(옛 계획서 · 계획서 없음) 웹 입력으로 돌아간다. 창업아이템명 · 팀구성현황은 웹 값이다.
         산출물=_or_placeholder(texts.산출물 or project.output_summary, '○○ (협약기간 내 목표 — 산출물 형태·수량 입력 필요)'),
         # 지원 분야(제조 · 지식서비스)와 전문기술분야 입력칸은 따로 없다 — IntakeForm이 받는 주업종 한 칸에 둘이 섞여 있어(MAIN_INDUSTRIES) 가른다.
@@ -961,6 +962,7 @@ async def create_project(
     db.add(ProjectPlanInput(
         project_id=project.project_id,
         occupation=body.occupation,
+        target_customer=body.target_customer,
         ceo_birth_date=body.ceo_birth_date,
         ceo_gender=body.ceo_gender,
         region_sido=body.region_sido,

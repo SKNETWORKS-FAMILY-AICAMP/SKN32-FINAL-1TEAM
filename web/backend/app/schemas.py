@@ -329,6 +329,8 @@ class ProjectCreateRequest(BaseModel):
     # 직업 구분만 받음). "아이템 범주"는 여기 안 넣는다 — Agent가 짓는 항목(models.py
     # ProjectPlanInput.occupation 주석 참고).
     occupation: str | None = Field(None, max_length=100, description='예비창업자 직업(직장명 기재 불가)')
+    # [SB-383] 목표 고객 — 사용자가 직접 입력하는 선택 값(예: "동네 소규모 헬스장 운영자"). 비우면 AI가 "확인 필요"로 쓴다.
+    target_customer: str | None = Field(None, max_length=200, description='목표 고객(선택, 200자 이내). 공백뿐이면 비운 것으로 본다')
 
     ceo_birth_date: datetime.date | None = None
     ceo_gender: str | None = Field(None, max_length=10)
@@ -422,6 +424,13 @@ class ProjectCreateRequest(BaseModel):
         raise ValidationError.from_exception_data(type(self).__name__, [_error_detail(
             ('schedule_items', row, 'period'),
             f'협약기간 내 일정이 {count}개월({first[0]}-{first[1]:02d} ~ {last[0]}-{last[1]:02d})이에요. {subject} 협약기간이 최대 {limit}개월이에요')])
+
+    @field_validator('target_customer', mode='before')
+    @classmethod
+    def _blank_target_customer_is_none(cls, v):
+        if isinstance(v, str):
+            v = v.strip()
+        return v or None
 
     @field_validator('applicant_type')
     @classmethod
@@ -548,6 +557,7 @@ class ProjectPlanInputOut(BaseModel):
     ceo_careers: list = Field(default_factory=list)
     ceo_capability: str | None = None
     occupation: str | None = None
+    target_customer: str | None = None
     dev_start_month: str | None = None
     dev_end_month: str | None = None
     budget_scale_manwon: int | None = None
