@@ -74,7 +74,7 @@ _ARTIFACT_BUNDLES: dict[str, tuple[str, str]] = {
     'implement_infographic': (ps.BUNDLE_ARTIFACT_INFOGRAPHIC, '인포그래픽'),
 }
 _ORCH_TO_WEB_BUNDLE: dict[str, str] = {
-    **{name: name for name in ps.WRITING_BUNDLES},
+    **{name: name for name in ps.REWORKABLE_WRITING_BUNDLES},
     **{orch: web for web, orch in _ARTIFACT_BUNDLES.values()},
 }
 
@@ -82,7 +82,7 @@ _ORCH_TO_WEB_BUNDLE: dict[str, str] = {
 def orch_bundle_of(task_key: str, bundle_id: str | None) -> str:
     """retry-task 요청 → request_rework_for_project의 bundle 이름."""
     if task_key == 'writing':
-        if bundle_id not in ps.WRITING_BUNDLES:
+        if bundle_id not in ps.REWORKABLE_WRITING_BUNDLES:
             raise NotReworkable(f'writing 재작성은 bundle_id가 필요합니다: {bundle_id!r}')
         return bundle_id
     if task_key in _ARTIFACT_BUNDLES:
@@ -94,8 +94,14 @@ def orch_bundle_of(task_key: str, bundle_id: str | None) -> str:
 
 
 def web_bundle_id_of(orch_bundle: str) -> str:
-    """reworkUsage의 묶음 이름 → 웹 bundle_id."""
+    """reworkUsage의 묶음 이름 → 웹 bundle_id. 모르는 이름이면 KeyError(요청한 묶음처럼 반드시 알아야 하는 곳에서만 쓴다)."""
     return _ORCH_TO_WEB_BUNDLE[orch_bundle]
+
+
+def known_web_bundle_ids(orch_bundles) -> list[str]:
+    """묶음 이름 목록 → 웹 bundle_id 목록. 모르는 이름은 건너뛴다 — 오케스트레이터가 묶음을 늘린 날과 웹 배포가 어긋나거나 나중에 묶음이 또 바뀌어도
+    결과 화면이 깨지지 않게 한다(누리 님 2026-10-13 부탁)."""
+    return [_ORCH_TO_WEB_BUNDLE[b] for b in orch_bundles if b in _ORCH_TO_WEB_BUNDLE]
 
 
 def project_status_out(project_id: int, view) -> schemas.ProjectStatusOut:
@@ -519,8 +525,9 @@ def verdict_out(outputs, policy) -> schemas.VerdictOut | None:
 def bundle_usages_out(outputs) -> list[schemas.BundleUsageOut]:
     return [
         schemas.BundleUsageOut(
-            bundle_id=web_bundle_id_of(u.bundle_id), layer=u.layer, used=u.used_count, remaining=u.remaining)
+            bundle_id=_ORCH_TO_WEB_BUNDLE[u.bundle_id], layer=u.layer, used=u.used_count, remaining=u.remaining)
         for u in outputs.rework_usage
+        if u.bundle_id in _ORCH_TO_WEB_BUNDLE  # 모르는 묶음은 건너뛴다(known_web_bundle_ids 참고)
     ]
 
 
@@ -632,7 +639,7 @@ def rework_accepted_out(project_id: int, task_key: str, orch_bundle: str, accept
         bundle_id=web_bundle_id_of(orch_bundle),
         cycle_id=accepted.cycle_id,
         screen=accepted.screen,
-        bundles=[web_bundle_id_of(b) for b in accepted.bundles],
+        bundles=known_web_bundle_ids(accepted.bundles),
         collect_until=accepted.collect_until,
         duplicate=accepted.duplicate,
     )
@@ -670,7 +677,7 @@ def rework_result_out(project_id: int, result) -> schemas.ReworkResultOut:
         project_id=project_id,
         cycle_id=result.cycle_id,
         screen=result.screen,
-        bundles=[web_bundle_id_of(b) for b in result.bundles],
+        bundles=known_web_bundle_ids(result.bundles),
         status=result.status,
         started_at=result.started_at,
         ended_at=result.ended_at,
@@ -686,7 +693,7 @@ def rework_result_out(project_id: int, result) -> schemas.ReworkResultOut:
             artifact=f.artifact, before_path=file_url(project_id, f.before_file),
             after_path=file_url(project_id, f.after_file)) for f in result.files],
         rolled_back=result.rolled_back,
-        refunded_bundles=[web_bundle_id_of(b) for b in result.refunded_bundles],
+        refunded_bundles=known_web_bundle_ids(result.refunded_bundles),
         notice_code=result.notice_code,
         changed=rework_changed(project_id, result),
     )

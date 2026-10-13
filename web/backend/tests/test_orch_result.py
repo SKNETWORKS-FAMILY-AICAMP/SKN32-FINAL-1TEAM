@@ -319,3 +319,19 @@ def test_withheld_match_lists_no_features(authed_client, orch):
     orch.responses['outputs'] = lambda p: outputs
     artifact = _result(authed_client, pid).json()['plan']['artifacts'][0]
     assert artifact['missing_features'] == [] and artifact['partial_features'] == []
+
+
+def test_result_skips_unknown_bundle_usages_and_maps_the_new_bundles(authed_client, orch):
+    pid = _create(authed_client)
+    orch.responses['outputs'] = lambda p: make_outputs(plan_doc=make_plan_doc(), rework_usage=[
+        NS(bundle_id='일반현황 · 개요', layer='document', used_count=0, remaining=1),
+        NS(bundle_id='그림', layer='document', used_count=1, remaining=0),
+        NS(bundle_id='앞으로 생길 묶음', layer='document', used_count=0, remaining=1),
+        NS(bundle_id='문제인식', layer='document', used_count=0, remaining=1)])
+    response = _result(authed_client, pid)
+
+    assert response.status_code == 200  # 모르는 묶음 이름 때문에 결과 화면이 깨지지 않는다
+    assert response.json()['bundle_usages'] == [
+        {'bundle_id': '일반현황 · 개요', 'layer': 'document', 'used': 0, 'remaining': 1},
+        {'bundle_id': '그림', 'layer': 'document', 'used': 1, 'remaining': 0},
+        {'bundle_id': '문제인식', 'layer': 'document', 'used': 0, 'remaining': 1}]
