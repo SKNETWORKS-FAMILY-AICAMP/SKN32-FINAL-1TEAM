@@ -230,6 +230,14 @@ export function deliverableNoticesFrom(deliverable){
   });
 }
 
+// 결과물 화면 '프로토타입' 받기에 담을 실제 파일 — 실행 파일과 인포그래픽(결과의 artifacts[0] 주소). 없는 칸은 빼고,
+// 같은 파일을 두 칸이 가리키면(원페이지형은 실행 파일 = 인포그래픽) 한 번만 담는다. 이름은 주소의 마지막 조각.
+export function prototypeFilesOf(plan){
+  const artifact = plan?.artifacts?.[0];
+  const paths = [...new Set([artifact?.executable_path, artifact?.infographic_path].filter(Boolean))];
+  return paths.map((path) => ({ path, name: decodeURIComponent(String(path).split('?')[0].split('/').pop() || '') || 'file' }));
+}
+
 export function reviewParagraphsFrom(plan){
   const logs = plan?.proofread_logs || [];
   if (!logs.length) return null; // 검수 기록이 없으면 화면이 기존 예시로 돌아간다

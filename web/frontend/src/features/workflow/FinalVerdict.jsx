@@ -656,7 +656,8 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
           '계획서 보기' · '프로토타입 열기'는 제목 위 오른쪽에 떠 있어 메뉴처럼 보였다 — 각 점수 카드 안으로 옮겼다. */}
       {(infoFailed || siteFailed) && <ArtifactLoadError />}
       <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide mb-2">종합 평가</p>
-      <p className="text-[14px] text-[var(--muted-fg)] leading-snug mb-1.5">『{announcement ? announcement.title : ''}』</p>
+      {/* 공고 제목을 모르면(알림에서 연 프로젝트 · 공고 표에서 빠진 공고) 빈 『』를 그리지 않는다 */}
+      {announcement?.title && <p className="text-[14px] text-[var(--muted-fg)] leading-snug mb-1.5">『{announcement.title}』</p>}
       <h1 className="font-display font-bold text-[26px] md:text-[30px] mb-3">제출 전 점검 결과예요</h1>
       <p className="text-[14.5px] text-[var(--muted-fg)] mb-8">사업계획서(문서층 {docScore.max}점)와 프로토타입(산출물층 {artifactMaxTotal}점)을 합친 총점입니다</p>
 

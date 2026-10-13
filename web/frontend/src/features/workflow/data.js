@@ -374,7 +374,9 @@ export const DOWNLOAD_FILES = [
     ],
   },
   { name: 'prototype.zip', title: '프로토타입', file: 'prototype.zip', desc: '실행 파일(index.html)과 인포그래픽을 담은 압축 파일' },
-  { name: '검증결과.pdf', title: '검증결과서', file: '검증결과.pdf', desc: '문서층·산출물층 검증 내역과 대조 결과' },
+  // 검증결과서는 서버 파일이 아니라 화면이 그리는 문서를 인쇄 창으로 연다 — 받는 사람이 'PDF로 저장'을 골라야 파일이 된다.
+  { name: '검증결과.pdf', title: '검증결과서', file: '검증결과.pdf', desc: '문서층·산출물층 검증 내역과 대조 결과', action: 'PDF로 저장',
+    hint: '인쇄 창이 열려요. 대상에서 "PDF로 저장"을 골라 주세요.' },
 ];
 
 // 사업계획서.docx·prototype.zip은 화면의 더미 데이터로 즉석 생성하고(dummyDeliverables.js),

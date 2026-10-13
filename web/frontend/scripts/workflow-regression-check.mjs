@@ -144,7 +144,11 @@ try{
   assert.deepEqual(scored.codeCheckItems.map(i=>[i.passed,i.applicable]),[[false,true],[true,false]]);
   assert.equal(sfr({verdict:{code_score:8,code_max_score:15},plan:{score_reasons:[],artifacts:[]}}).artifactLayer,null);
   // 점수 항목 묶음(응답모양변경 10-11 2-1) — tag로 일반현황 · 개요 + 4묶음에 모으고, 이름은 section_code로 찾는다.
-  const {taskReasons:tr,bundleScoreOf:bso,planViewFrom:pvf,deliverableNoticesFrom:dnf}=await server.ssrLoadModule('/src/features/workflow/utils.js');
+  const {taskReasons:tr,bundleScoreOf:bso,planViewFrom:pvf,deliverableNoticesFrom:dnf,prototypeFilesOf:pfo}=await server.ssrLoadModule('/src/features/workflow/utils.js');
+  // 결과물 화면 '프로토타입' 받기 — 결과의 실행 파일 · 인포그래픽 주소에서 실제 파일 이름을 뽑고, 같은 파일은 한 번만(원페이지형).
+  assert.deepEqual(pfo({artifacts:[{executable_path:'/projects/1/artifact-files/r/e/a1/index.html',infographic_path:'/projects/1/artifact-files/r/e/b2/infographic.svg'}]}).map(f=>f.name),['index.html','infographic.svg']);
+  assert.deepEqual(pfo({artifacts:[{executable_path:'/p/onepage.svg',infographic_path:'/p/onepage.svg'}]}),[{path:'/p/onepage.svg',name:'onepage.svg'}]);
+  assert.deepEqual(pfo({artifacts:[]}),[]);assert.deepEqual(pfo(null),[]);
   // 결과물 화면 고지 — 서버 deliverable(SB-371)의 제출 안내 · 계획서 고지가 있으면 그 문구, 없거나 비면 고정 문구.
   const fixedNotices=dnf(null);
   assert.deepEqual(fixedNotices.map(n=>n.label),['계획서','프로토타입','검증 결과','제출 안내']);

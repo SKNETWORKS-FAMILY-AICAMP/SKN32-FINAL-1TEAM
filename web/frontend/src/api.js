@@ -155,8 +155,13 @@ async function downloadFile(path,filename){
   const a=document.createElement('a');
   a.href=url;a.download=filename;
   document.body.appendChild(a);a.click();document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // 바로 풀면 브라우저가 저장을 시작하기 전에 주소가 사라질 수 있어 조금 뒤에 푼다.
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+
+// GET /projects/{id}/deliverable.zip (SB-316) — 서버가 묶은 최종 결과물 한 파일: 계획서 워드(plan/business-plan.docx, 그림 포함) ·
+// 계획서 그림 원본(plan/diagrams/) · 실행 파일(prototype/) · 인포그래픽(infographic/). 결과물 화면 '전체 다운로드'가 쓴다.
+export const downloadDeliverableZip=(projectId,filename='S-Brain_결과물.zip')=>downloadFile(`/projects/${projectId}/deliverable.zip`,filename);
 
 // GET /uploads/{filename} — 서버가 만든 산출물 파일(프로토타입 HTML·인포그래픽 이미지).
 // 이 경로는 로그인과 소유권 검사를 거치는데(back/app/routers/uploads.py), 세션 쿠키가

@@ -413,7 +413,8 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
               {/* 공고 제목을 제목 문장 안에 끼워 넣으면(『긴 공고명』 사업계획서) 제목이 길 때
                   줄이 어중간하게 끊기고 뒤 단어만 남아 어색해진다(사용자 지적). 공고명은
                   윗줄에 따로 두고, 제목은 길이가 고정된 짧은 문장만 남긴다. */}
-              <p className="text-[13px] font-semibold text-[var(--primary-dim)] leading-snug mb-1.5">『{announcement ? announcement.title : ''}』</p>
+              {/* 공고 제목을 모르면(알림에서 연 프로젝트 · 공고 표에서 빠진 공고) 빈 『』를 그리지 않는다 */}
+              {announcement?.title && <p className="text-[13px] font-semibold text-[var(--primary-dim)] leading-snug mb-1.5">『{announcement.title}』</p>}
               <h1 className="font-display font-bold text-[23px] mb-1.5">사업계획서</h1>
               <p className="text-[12px] text-[var(--muted-fg)]">{PLAN_AI_NOTICE}</p>
             </div>
