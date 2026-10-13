@@ -81,3 +81,10 @@ def test_it_works_together_with_the_development_end_month_check():
     with pytest.raises(ValidationError) as exc:
         _request([_schedule('2026.03~2026.12')], 'preliminary', dev_start_month='2026-03', dev_end_month='2026-08')
     assert len(exc.value.errors()) >= 1
+
+
+@pytest.mark.parametrize('applicant_type,phrase', [('preliminary', '예비창업자는 협약기간이'), ('individual', '개인사업자 · 법인은 협약기간이'), ('corp', '개인사업자 · 법인은 협약기간이')])
+def test_the_message_uses_the_right_particle_for_each_applicant_type(applicant_type, phrase):
+    with pytest.raises(ValidationError) as exc:
+        _request([_schedule('2026.01~2026.12')], applicant_type)
+    assert phrase in exc.value.errors()[0]['msg']

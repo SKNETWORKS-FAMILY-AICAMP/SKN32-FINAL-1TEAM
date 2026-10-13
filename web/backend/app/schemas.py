@@ -418,10 +418,10 @@ class ProjectCreateRequest(BaseModel):
         if count <= limit:
             return self
         row = next(i for i, found in readings if last in found)
-        label = '예비창업자' if self.applicant_type == 'preliminary' else '개인사업자 · 법인'
+        subject = '예비창업자는' if self.applicant_type == 'preliminary' else '개인사업자 · 법인은'
         raise ValidationError.from_exception_data(type(self).__name__, [_error_detail(
             ('schedule_items', row, 'period'),
-            f'협약기간 내 일정이 {count}개월({first[0]}-{first[1]:02d} ~ {last[0]}-{last[1]:02d})이에요. {label}은 협약기간이 최대 {limit}개월이에요')])
+            f'협약기간 내 일정이 {count}개월({first[0]}-{first[1]:02d} ~ {last[0]}-{last[1]:02d})이에요. {subject} 협약기간이 최대 {limit}개월이에요')])
 
     @field_validator('applicant_type')
     @classmethod
