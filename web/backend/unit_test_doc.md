@@ -64,6 +64,8 @@ ruff check .                                # 정적 검사
 | `test_plan_texts.py` | 계획서 항목 번호 → 양식 글 칸 대응, 표 항목 서술 걸러 내기, docx · hwp 본문 채우기 (SB-339), 표를 본문으로 바꾼 항목은 서술을 문서에 쓰지 않고 입력 행 표만 남김 (SB-354) |
 | `test_diagram_images.py` | 계획서 그림(SVG → PNG) — 순서 · 제목, 못 받거나 깨진 그림은 빼고 문서 생성, docx 개요 표 아래 · zip의 원본 SVG, hwp 맨 뒤 새 쪽(rhwp 있을 때 실제 확인) (SB-340) |
 | `test_infographic_in_document.py` | 계획서 파일(docx · hwp · zip 안 docx)에 인포그래픽과 첫 장 고지 넣기 — 데이터 주소 · 안쪽 참조는 허용하고 바깥 참조는 막는 변환(계획서 그림은 그대로 엄격), 못 받거나 못 바꾸면 인포그래픽만 빼고 문서는 만듦, 세로로 긴 그림 줄이기, 고지는 결과물 값(없으면 기본 문구), hwp 실제 생성(첫 쪽 고지 · 그림 쪽과 인포그래픽 쪽 분리) (기준 문서 T-C4, SB-354) |
+| `test_hwp_body_paragraphs.py` | hwp 본문을 줄마다 문단으로 쓰기(절을 큰 번호부터, 뼈대 문단을 먼저 지움), 표 서술 · 단계 머리말, 칸 안 예시 상자를 지우는 스크립트, 정리한 양식 2종이 원본과 같은 구조인지, 실제 hwp에 빈 "-" 글머리 · 예시 안내가 없는지 |
+| `test_database_time_zone.py` | 웹의 MySQL 연결이 세션 시간대를 UTC로 맞추는 설정(DB 서버가 한국 시간이어도 생성 시각이 9시간 어긋나지 않게) |
 | `test_budget_phase_export.py` | 예비창업 사업비를 1단계 · 2단계 표(docx 표 둘, hwp 표12 · 표14)로 나눠 채움, 단계 없는 줄은 1단계, 다른 유형은 표 하나 (SB-339) |
 | `test_schedule_table_export.py` | 내려받기 문서(docx · hwp)의 추진 일정 표 — 구분 · 추진 내용 · 추진 기간 · 세부 내용이 같은 이름의 열에 들어감, 세부 내용을 비우면 빈칸, 입력이 없으면 자리표시 한 줄 (SB-329 · SB-339) |
 | `test_budget_phase_column.py` | `project_budget_items.phase` 컬럼(VARCHAR(10), NULL 허용, '1단계' · '2단계') (SB-328) |
