@@ -154,7 +154,8 @@ class TableFallback(SBModel):
     """새 타입(확장) — F17 표를 본문으로 대체했을 때 화면에 별도 표시할 항목별 사유."""
     section_code: str = ext(note="표를 본문 서술로 바꾼 항목 번호")
     reason: str = ext(note="담당자 fallbackReason 원문 — 내부 진단용, 사용자 화면에는 표시하지 않음")
-    fallback_reason_codes: list[str] = ext(default_factory=list, note="표 대체 사유의 기계 판독 코드 — fallbackReasonCodes")
+    fallback_reason_codes: list[str] = ext(default_factory=list, note="표 대체 사유의 기계 판독 코드 — fallbackReasonCodes "
+                                                                  "(결정 0029 — 담당자 SB-376). 칸이 없는 옛 값은 빈 목록")
     display_reason: str = ext(note="표 대체 안내(결정 0028) — 사유 코드를 사용자 문구로 바꾼 표시용 안내")
 
 

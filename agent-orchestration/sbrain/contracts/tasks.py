@@ -411,7 +411,7 @@ class TW3Out(SBModel):
     table_sections: list[PlanSection] = ext(note=f"{SW_NOTE} — 표 항목의 서술 · 대체 본문 (M-1이 같은 항목을 바꾼다)")
     table_outputs: ItemOutputs = ext(
         note=f"{SW_NOTE} — 표 항목 번호 → F17 결과 전체(generatedText · tables · issues · tableFallbackUsed · "
-             "fallbackReason · displayReason — 표 대체 안내 문구, 결정 0028)")
+             "fallbackReason · fallbackReasonCodes · displayReason — 표 대체 사유 · 사유 코드 · 안내 문구, 결정 0028 · 0029)")
 
 
 # ── 검증 ─────────────────────────────────────────────

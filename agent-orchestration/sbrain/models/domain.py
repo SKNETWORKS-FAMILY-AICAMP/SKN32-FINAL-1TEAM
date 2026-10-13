@@ -409,7 +409,8 @@ class SectionResult(SBModel):
     input_error: bool = ext(False, note="입력 오류(결정 0028) — 입력 값이 공고 · 규정 기준(협약기간 최대 개월 수 · 개발 종료월 · "
                                         "공고 지원 금액 상한)을 벗어나 생긴 fail이라 다시 만들어도 고쳐지지 않는다. "
                                         "T-V1 연결 코드만 채운다. 칸이 없는 옛 판정은 거짓")
-    fallback_reason_codes: list[str] = ext(default_factory=list, note="표 대체 대상의 기계 판독 사유 코드 — T-V1 결정 결과")
+    fallback_reason_codes: list[str] = ext(default_factory=list, note="표 대체 대상의 기계 판독 사유 코드 — T-V1 결정 결과 "
+                                                                    "(결정 0029 — 담당자 SB-376). 칸이 없는 옛 판정은 빈 목록")
     score: float = ext(note="담당자 내부 점수 0 ~ 100")
     deductions: list[str] = ext(default_factory=list, note="감점 사유 (담당자 deductions의 reason)")
     verified_ref: str = ext(note="검증한 산출물 버전 '이름@버전' — 이어받은 결과도 원래 값 그대로")

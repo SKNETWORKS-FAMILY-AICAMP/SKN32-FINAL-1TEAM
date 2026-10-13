@@ -53,7 +53,8 @@ class ReworkInput(SBModel):
     unit: ReworkUnit | None = ext(None, note="재수행 단위 표시 — 섹션 · 표 1건 · 차트 1건(그림)")
     fallback_items: list[str] = ext(default_factory=list, note="T-W3 표 대체 대상 항목 번호 (spec 4.10)")
     fallback_reason_codes: dict[str, list[str]] = ext(
-        default_factory=dict, note="표 대체 항목 번호 → 구조화된 원인 코드 (issue 문구 판별 없이 T-W3 안내에 사용)")
+        default_factory=dict, note="표 대체 항목 번호 → 구조화된 원인 코드 (issue 문구 판별 없이 T-W3 안내에 사용, "
+                                    "결정 0029 — 담당자 SB-376). 칸이 없는 옛 입력은 빈 사전")
 
 
 class BundleUsage(SBModel):

@@ -564,7 +564,7 @@ sequenceDiagram
 | 화면 제목 (2026-10-12) | 계획서 항목 제목(`planDoc.sections[].title` · `FormSpec.sectionTitles`)과 평가항목 이름 = 담당자 계약 `displayTitle`(없으면 `title`). 모양은 그대로, 값만 짧아짐 — 담당자가 새 판에서 바꾼 처리 그대로 | 담당자 계약 값(잠정 목록은 `taskPlan.formTable`) | `agents/form_defaults.py` |
 | 사전 정보 읽기 | `project_budget_items` · `project_schedule_items`를 시작 요청에서 읽음(`phase`는 선택 컬럼), 금액 DECIMAL → 정수 원, NULL은 비움, 네 금액이 모두 있고 맞지 않을 때만 총사업비를 다시 냄 | 확장(읽는 테이블) | `intake/sql_source.py` · `intake/mapping.py` · `store_sql/web_tables.py` |
 
-- 알려진 한계: 총사업비가 빈 사업비 row는 담당자 예산 계산(F14) 입력에서 빠져 그 표 항목이 검증-1 fail로 판정될 수 있다(웹이 합계 불일치를 막기로 해 드묾). 표 서술 속 금액이 보호 토큰에 들지 않아 윤문에서 바뀔 수 있다. 새 묶음 스위치가 꺼져 있는 동안은 그림 · 일반현황 · 개요 항목을 사용자 재작성으로 다시 만들 수 없다(11.13 — 웹 배포 날 켠다). 운영 설치본은 시장 자료가 없고 KIET 검색 스위치도 꺼져 있으면 '근거 없음'으로 돈다(11.13). 표 대체 안내 문구는 담당자 사유 문장의 낱말로 고르므로 담당자가 글을 바꾸면 일반 문구로 바뀔 수 있다(담당자에게 사유 코드를 요청함). 협약기간 최대 개월 수는 담당자 계약 파일의 고정값(예비창업 8 · 초기창업 10)이다 — 2026-10-13 담당자 답으로 2026년 공고 기준 고정이 확정됐다(다른 연도 공고는 범위 밖).
+- 알려진 한계: 총사업비가 빈 사업비 row는 담당자 예산 계산(F14) 입력에서 빠져 그 표 항목이 검증-1 fail로 판정될 수 있다(웹이 합계 불일치를 막기로 해 드묾). 표 서술 속 금액이 보호 토큰에 들지 않아 윤문에서 바뀔 수 있다. 새 묶음 스위치가 꺼져 있는 동안은 그림 · 일반현황 · 개요 항목을 사용자 재작성으로 다시 만들 수 없다(11.13 — 웹 배포 날 켠다). 운영 설치본은 시장 자료가 없고 KIET 검색 스위치도 꺼져 있으면 '근거 없음'으로 돈다(11.13). 표 대체 안내 문구는 담당자 사유 코드(`fallbackReasonCodes`, 담당자 SB-376)로 고르므로, 담당자가 모르는 코드를 새로 내면 일반 문구가 된다. 협약기간 최대 개월 수는 담당자 계약 파일의 고정값(예비창업 8 · 초기창업 10)이다 — 2026-10-13 담당자 답으로 2026년 공고 기준 고정이 확정됐다(다른 연도 공고는 범위 밖).
 
 ### 11.12 구현 · 검증-2 실구현 · 산출물층 환산 · 조율 규칙 단계(2026-10-11)에서 생긴 잠정 · 확장
 
@@ -629,9 +629,9 @@ sequenceDiagram
 | KIET 검색 실패 처리 | 크롤러 값 `status == "failed"` 또는 크롤러 예외 → `KietSearchFailed`(`ConnectionError` — 다시 시도하는 호출 실패, 시도마다 '호출실패'). 메시지는 고정 문구(+ 오류 종류 이름)만 — 검색어 · 응답 · 크롤러 오류 글 없음. 결과 0건 · 일부만 실패하고 결과가 있으면 성공 | 구현 규칙 | `agents/partner_sw/market_research.py` |
 | KIET 재시도 소진 | T-S1이 `ToolCallExhausted`를 받아 있는 자료로 계속 — **필수 규칙 2의 예외(T-S1의 KIET 검색 호출만)**. 호출 기록 '소진', T-S1 성공(실행 실패 · 재개 · 실패 알림 · 사용자 표시 없음), 시장 근거 `kietSearch.status = "failed"` | 규칙 예외 | `agents/partner_sw/strategy.py` |
 | KIET 연결 코드 위치 | 담당자 코드 곁 `agents/partner_sw/market_research.py`(엔진 `orchestrator/`는 담당자 코드 · `requests`를 모름) | 구현 방식 | `agents/partner_sw/market_research.py` |
-| 표 대체 안내를 만드는 자리 | `displayReason`은 T-W3 연결 코드가 표를 바꿀 때 `table_display_reason`(다섯 가지 문구 — 글자 그대로 옮김)으로 만들어 `tableOutputs[항목].displayReason`에 저장, `flow/reads.py`는 `tableFallbacks[].displayReason`으로 옮기기만. 저장 값이 없는 옛 결과는 일반 문구 "표를 검증 기준에 맞춰 완성하지 못해 설명으로 표시합니다. 입력 내용과 생성 결과를 확인해 주세요." | 구현 방식(칸은 2026-10-12 확장 그대로) | `agents/partner_sw/writing.py` · `agents/partner_sw/outputs.py` · `flow/reads.py` `TABLE_FALLBACK_DISPLAY_DEFAULT` |
+| 표 대체 안내를 만드는 자리 | T-W3 연결 코드가 표를 바꿀 때 사유 코드(`fallbackReasonCodes` — 표 검사 불통과 `TABLE_STRUCTURE_INVALID`, 검증-1 재수행 뒤는 판정의 코드, 없으면 `F19_VALIDATION_FAILED`)를 정하고 `table_display_reason`이 코드로 여섯 문구 중 하나를 골라 `tableOutputs[항목]`에 저장, `flow/reads.py`는 `tableFallbacks[]`로 옮기기만. 저장 값이 없는 옛 결과는 코드 빈 목록 · 일반 문구 "표를 검증 기준에 맞춰 완성하지 못해 설명으로 표시합니다. 입력 내용과 생성 결과를 확인해 주세요." (담당자 SB-376, 2026-10-13) | 구현 방식(칸 `displayReason`은 2026-10-12, `fallbackReasonCodes` · `SectionResult.fallbackReasonCodes` · `ReworkInput.fallbackReasonCodes`는 2026-10-13 확장) | `agents/partner_sw/writing.py` · `outputs.py` · `verify.py`, `flow/sbrain_flow.py`, `flow/reads.py` `TABLE_FALLBACK_DISPLAY_DEFAULT` |
 
-- 알려진 한계: 새 묶음은 웹이 새 이름을 받기 전에 켜면 웹 결과 조회가 모르는 묶음 이름에서 오류를 낸다(웹팀 답장) — 그래서 웹 배포 날 켜고, 모르는 이름은 건너뛰게 해 달라고 웹팀에 부탁했다. 표 대체 안내는 사유 문장의 낱말로 고르므로 담당자에게 사유 코드를 요청했다. 테스트는 KIET 스위치를 끄고 돌아 실제 KIET 접속은 확인하지 않는다.
+- 알려진 한계: 새 묶음은 웹이 새 이름을 받기 전에 켜면 웹 결과 조회가 모르는 묶음 이름에서 오류를 낸다(웹팀 답장) — 그래서 웹 배포 날 켜고, 모르는 이름은 건너뛰게 해 달라고 웹팀에 부탁했다. 표 대체 안내는 담당자 SB-376부터 사유 코드로 고른다(낱말 분류 없음). 테스트는 KIET 스위치를 끄고 돌아 실제 KIET 접속은 확인하지 않는다.
 
 ## 12. 테스트 목록
 
