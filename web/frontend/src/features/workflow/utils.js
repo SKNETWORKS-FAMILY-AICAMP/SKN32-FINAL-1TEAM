@@ -230,6 +230,31 @@ export function deliverableNoticesFrom(deliverable){
   });
 }
 
+// 결과물 화면 "제출 전에 보완하면 좋은 항목" — /result deliverable.shortfall_items(SB-371, 오케스트레이터 결과 통합 10-13).
+// 계획서(document) · 프로토타입(artifact)으로 나누고 받은 순서 그대로. 계획서 줄은 웹 태그로 묶음 이름을 앞에 붙이고(태그 없음 = 일반현황 · 개요),
+// 점수 · 배점이 둘 다 있으면 소수 한 자리로 붙인다(반올림 몰아주기로 0.01처럼 오는 값도 0으로). 코드 점검 부분 점수 줄도 빼지 않는다 —
+// 화면 8이 만점이 아닌 코드 점검을 이미 '미달'로 보여서다. 칸이 없거나 빈 목록이면 null(화면이 칸을 그리지 않음).
+export function shortfallFrom(deliverable){
+  const rows = deliverable?.shortfall_items;
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const one = (v) => Math.round(v * 10) / 10;
+  const line = (row, i) => {
+    const score = num(row?.score), max = num(row?.max_score);
+    return {
+      key: `${row?.layer}-${row?.kind}-${row?.code ?? i}-${i}`,
+      bundle: row?.layer === 'document' ? bundleOfTag(row?.tag ?? null) : null,
+      name: row?.name || row?.code || '항목',
+      // 코드 점검 줄은 오케스트레이터가 사유 앞에 '1.25/1.88점 — '를 붙여 준다 — 점수는 points로 따로 붙이므로 떼어 낸다.
+      reason: String(row?.reason || '').replace(/^\s*\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?\s*점\s*[—-]\s*/, ''),
+      points: score != null && max != null ? `${one(score)}/${one(max)}점` : null,
+      inputError: row?.kind === 'inputError',
+    };
+  };
+  const all = rows.map(line);
+  const pick = (layer) => all.filter((_, i) => rows[i]?.layer === layer);
+  return { document: pick('document'), artifact: pick('artifact') };
+}
+
 // 결과물 화면 '프로토타입' 받기에 담을 실제 파일 — 실행 파일과 인포그래픽(결과의 artifacts[0] 주소). 없는 칸은 빼고,
 // 같은 파일을 두 칸이 가리키면(원페이지형은 실행 파일 = 인포그래픽) 한 번만 담는다. 이름은 주소의 마지막 조각.
 export function prototypeFilesOf(plan){

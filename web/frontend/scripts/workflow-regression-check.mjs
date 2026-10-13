@@ -144,7 +144,17 @@ try{
   assert.deepEqual(scored.codeCheckItems.map(i=>[i.passed,i.applicable]),[[false,true],[true,false]]);
   assert.equal(sfr({verdict:{code_score:8,code_max_score:15},plan:{score_reasons:[],artifacts:[]}}).artifactLayer,null);
   // 점수 항목 묶음(응답모양변경 10-11 2-1) — tag로 일반현황 · 개요 + 4묶음에 모으고, 이름은 section_code로 찾는다.
-  const {taskReasons:tr,bundleScoreOf:bso,planViewFrom:pvf,deliverableNoticesFrom:dnf,prototypeFilesOf:pfo}=await server.ssrLoadModule('/src/features/workflow/utils.js');
+  const {taskReasons:tr,bundleScoreOf:bso,planViewFrom:pvf,deliverableNoticesFrom:dnf,prototypeFilesOf:pfo,shortfallFrom:sff}=await server.ssrLoadModule('/src/features/workflow/utils.js');
+  // 결과물 화면 미달 항목(deliverable.shortfall_items) — 층별로 나누고 받은 순서 그대로, 계획서 줄은 태그로 묶음 이름, 점수는 소수 한 자리, 없으면 null.
+  assert.equal(sff(null),null);assert.equal(sff({shortfall_items:[]}),null);assert.equal(sff({}),null);
+  const sf=sff({shortfall_items:[
+    {layer:'document',kind:'verifyFail',code:'2.4.1',tag:'1-1',name:'문제 정의',score:1.2,max_score:2.9166666666666665,reason:'근거 부족'},
+    {layer:'artifact',kind:'gateFailure',code:'entry',tag:null,name:'진입 파일',score:null,max_score:null,reason:'실행할 진입 파일이 없어 산출물층이 0점입니다.'},
+    {layer:'document',kind:'inputError',code:'2.6.2',tag:null,name:'일정',score:0.01,max_score:2.9,reason:'협약기간 초과'},
+    {layer:'artifact',kind:'codeCheck',code:'4',tag:null,name:'버튼',score:1.25,max_score:1.875,reason:'부분 점수'}]});
+  assert.deepEqual(sf.document.map(r=>[r.bundle,r.name,r.points,r.inputError]),[['문제인식','문제 정의','1.2/2.9점',false],['일반현황 · 개요','일정','0/2.9점',true]]);
+  assert.deepEqual(sf.artifact.map(r=>[r.bundle,r.name,r.points]),[[null,'진입 파일',null],[null,'버튼','1.3/1.9점']]);
+  assert.equal(sff({shortfall_items:[{layer:'artifact',kind:'codeCheck',code:'4',name:'버튼',score:1.25,max_score:1.875,reason:'1.25/1.88점 — 연결 안 된 버튼'}]}).artifact[0].reason,'연결 안 된 버튼'); // 사유 앞 점수는 뗀다
   // 결과물 화면 '프로토타입' 받기 — 결과의 실행 파일 · 인포그래픽 주소에서 실제 파일 이름을 뽑고, 같은 파일은 한 번만(원페이지형).
   assert.deepEqual(pfo({artifacts:[{executable_path:'/projects/1/artifact-files/r/e/a1/index.html',infographic_path:'/projects/1/artifact-files/r/e/b2/infographic.svg'}]}).map(f=>f.name),['index.html','infographic.svg']);
   assert.deepEqual(pfo({artifacts:[{executable_path:'/p/onepage.svg',infographic_path:'/p/onepage.svg'}]}),[{path:'/p/onepage.svg',name:'onepage.svg'}]);

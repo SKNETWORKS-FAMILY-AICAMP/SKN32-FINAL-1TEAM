@@ -3,7 +3,7 @@ import React, {useEffect, useRef, useState} from 'react';
 import {Icon} from '../../components/Icons.jsx';
 import {buildZip,downloadPlanDocx,downloadPrototypeZip,triggerDownload} from '../../dummyDeliverables.js';
 import {downloadDeliverableZip,downloadPlanDocument,downloadPlanHwp,fetchUploadBlob} from '../../api.js';
-import {buildCodeCheckItems,buildGeneralInfo,buildOverview,deliverableNoticesFrom,detectItemCategory,DOC_SCORE_BY_OUTCOME,prototypeFilesOf,reviewParagraphsFrom} from './utils.js';
+import {buildCodeCheckItems,buildGeneralInfo,buildOverview,deliverableNoticesFrom,detectItemCategory,DOC_SCORE_BY_OUTCOME,prototypeFilesOf,reviewParagraphsFrom,shortfallFrom} from './utils.js';
 import {printVerificationReport} from './verificationReport.js';
 import {ARTIFACT_SCORE_BY_OUTCOME,DOWNLOAD_FILES,FINAL_THRESHOLD,PLAN_DOCUMENT_SECTIONS_REWORKED,REVIEW_PARAGRAPHS,REVIEW_RETRY_CAP} from './data.js';
 
@@ -22,6 +22,9 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
   const paragraphs = reviewParagraphsFrom(plan) || REVIEW_PARAGRAPHS;
   // 아래 고지 4줄. 서버가 준 제출 안내 · 계획서 고지가 있으면 그 문구로(utils.js deliverableNoticesFrom).
   const notices = deliverableNoticesFrom(deliverable);
+  // 제출 전에 보완하면 좋은 항목(deliverable.shortfall_items) — 없으면 null이라 칸을 그리지 않는다.
+  const shortfall = shortfallFrom(deliverable);
+  const [showAllShortfall, setShowAllShortfall] = useState(false);
   // 프로토타입 압축에 넣을 실제 파일(실행 파일 · 인포그래픽)을 화면이 열릴 때 미리 받아 둔다. 누른 뒤에 받으면 받는 동안
   // 브라우저가 '누른 다운로드'로 보지 않고 저장을 막는 경우가 있었다(10-13 — 파일은 받아졌는데 저장이 안 됨).
   // 미리 받아 두면 누르는 순간 바로 묶어 저장한다. 아직 받는 중이면 끝날 때까지 기다렸다가 저장한다.
@@ -257,6 +260,38 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
         {downloadErrors.all && <p role="alert" className="-mt-3 mb-5 px-5 text-[12.5px] leading-relaxed text-[var(--danger)]">{downloadErrors.all}</p>}
         {!passed && (
           <p className="text-[13px] text-[var(--fg)] mb-4">현재 {finalTotal}점으로 저장됩니다 — 검수는 표현만 다듬으므로 종합 평가에서 확인한 점수가 그대로 기록됩니다</p>
+        )}
+
+        {shortfall && (
+          <div data-testid="shortfall" className="rounded-2xl border border-[var(--border)] bg-white p-5 mb-6">
+            <p className="font-semibold text-[15px] mb-1">제출 전에 보완하면 좋은 항목</p>
+            <p className="text-[12.5px] text-[var(--muted-fg)] leading-relaxed mb-3">검증에서 기준에 못 미쳤거나 지적된 항목이에요. 총점이 통과여도 제출 전에 직접 확인해 주세요.</p>
+            {[['사업계획서', shortfall.document], ['프로토타입', shortfall.artifact]].filter(([, rows]) => rows.length).map(([title, rows]) => {
+              // 묶음마다 처음 다섯 줄만 보이고 나머지는 펼쳐 본다 — 실제 실행 건은 계획서 줄이 열 줄 넘게 올 수 있다.
+              const shown = showAllShortfall ? rows : rows.slice(0, 5);
+              return (
+                <div key={title} className="mt-3 first:mt-0">
+                  <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-1">{title}</p>
+                  <ul className="flex flex-col gap-1.5">
+                    {shown.map((row) => (
+                      <li key={row.key} className="text-[13px] leading-relaxed text-[var(--fg)]">
+                        {row.bundle && <span className="text-[var(--muted-fg)]">{row.bundle} · </span>}
+                        <span className="font-semibold">{row.name}</span>
+                        {row.points && <span className="ml-1 text-[12px] text-[var(--muted-fg)]">{row.points}</span>}
+                        {row.inputError && <span className="ml-1.5 text-[11px] font-semibold text-[var(--warn)]">입력 확인</span>}
+                        {row.reason && <span className="text-[var(--muted-fg)]"> — {row.reason}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                  {rows.length > shown.length && (
+                    <button type="button" onClick={() => setShowAllShortfall(true)} className="mt-1.5 text-[12px] font-semibold text-[var(--primary)] hover:underline">
+                      외 {rows.length - shown.length}개 더 보기
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
 
         <div className="flex flex-col gap-3 mb-6">

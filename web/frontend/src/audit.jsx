@@ -73,6 +73,15 @@ if(page==='mypage'||page==='intake-profile'){
   {...p,localId:'p2',name:'프로필 2',profileId:2}],activeIndex:0});
 }
 if(page==='mypage-empty')useMyPageStore.setState({onboarded:false,profiles:[{...useMyPageStore.getState().profiles[0],name:'프로필 1',profileId:null}],activeIndex:0});
+// 결과물 화면 견본 — /result deliverable(SB-371). 미달 항목은 오케스트레이터 결과 통합 회신(10-13)의 칸 · kind · 정해 둔 문구 그대로, 이름 · 사유는 예시.
+const SAMPLE_DELIVERABLE={submission_notice:'공고에 따라 AI 작성 문서의 제출을 제한하거나 명시를 요구할 수 있습니다. 제출 요건을 확인해주세요.',
+ disclaimer:'본 문서는 S-Brain이 생성한 초안입니다. 제출 전 작성자 본인의 확인과 수정이 필요합니다.',user_message:'계획서 · 프로토타입 · 검증 결과를 내려받을 수 있습니다.',
+ shortfall_items:[
+  {layer:'document',kind:'verifyFail',code:'3.4.1',tag:'1-1',name:'문제인식 세부 3가지',score:1.2,max_score:2.9166666666666665,reason:'시장 규모 근거가 부족함 · 경쟁 대안 비교가 없음'},
+  {layer:'document',kind:'inputError',code:'3.6.2',tag:'3-1',name:'전체 사업추진 일정 표',score:0,max_score:2.9166666666666665,reason:'협약기간 일정 11개월이 최대 10개월 조건을 초과함'},
+  {layer:'artifact',kind:'codeCheck',code:'4',tag:null,name:'버튼 · 이벤트 연결',score:1.25,max_score:1.875,reason:'1.25/1.88점 — 연결되지 않은 버튼 1개'},
+  {layer:'artifact',kind:'missingFeature',code:null,tag:null,name:'수업 예약 취소',score:null,max_score:null,reason:'프로토타입에서 이 기능을 찾지 못했습니다.'},
+ ]};
 // 사전 정보 입력 견본 — 개인사업자로 칸을 채운 상태(유형을 골라야 보이는 사업비 · 일정 칸까지 본다).
 const SAMPLE_INTAKE={applicantType:'individual',ceoName:'김창업',birthDate:'1992-03-14',gender:'남성',companyName:'(주)에스브레인',foundedAt:'2025-01-10',
  item:'동네 헬스장의 회원 관리와 수업 예약을 한 화면에서 처리하는 서비스',team:[{name:'이개발',role:'CTO · 개발',career:'백엔드 5년'}],
@@ -95,7 +104,7 @@ const SAMPLE_CANDIDATES={status:'ready',rematch_used:false,blocked_notice_ids:['
 // 화면 8 서버 응답 견본 — 필수 조건 미통과 · 누락 · 부분 인정(실제 서버의 대역 채점으로는 잘 나오지 않아 여기서 본다)
 const SAMPLE_ARTIFACT={'artifact-gate-fail':{category:'webdev',gate_failures:[{code:'secret',display_name:'비밀값'}],missing_features:[],partial_features:[]},
  'artifact-partial':{category:'webdev',gate_failures:[],missing_features:['회원권 결제'],partial_features:['출석 체크']}}[page]||null;
-const props={announcement:W.ANNOUNCEMENTS[0],itemInfo:info,onBack:noop,onSubmit:noop,onProceed:noop,onLeave:noop,onGenerate:noop,onFinalize:noop,onGoDashboard:noop,onCheckEligibility:noop,onComplete:noop,candidates:SAMPLE_CANDIDATES,onCandidatesLoaded:noop,docOutcome:page==='final-pass'?'pass':'fail',artifactOutcome:page==='final-pass'?'pass':'fail',setDocOutcome:noop,setArtifactOutcome:noop,artifact:SAMPLE_ARTIFACT,...(page==='intake-filled'?{initialValues:SAMPLE_INTAKE}:{}),...(TAGGED?{scores:TAGGED_SCORES,plan:TAGGED_RESULT.plan,reworkBudget:{cap:1,remaining:{'일반현황 · 개요':1,'그림':1,'문제인식':1,'실현가능성':1,'성장전략':1,'팀 구성':1,'실행 파일 제작':1,'인포그래픽 제작':1}}}:{})};
+const props={announcement:W.ANNOUNCEMENTS[0],itemInfo:info,onBack:noop,onSubmit:noop,onProceed:noop,onLeave:noop,onGenerate:noop,onFinalize:noop,onGoDashboard:noop,onCheckEligibility:noop,onComplete:noop,candidates:SAMPLE_CANDIDATES,onCandidatesLoaded:noop,docOutcome:page==='final-pass'?'pass':'fail',artifactOutcome:page==='final-pass'?'pass':'fail',setDocOutcome:noop,setArtifactOutcome:noop,artifact:SAMPLE_ARTIFACT,...(page==='intake-filled'?{initialValues:SAMPLE_INTAKE}:{}),...(page==='review'?{deliverable:SAMPLE_DELIVERABLE}:{}),...(TAGGED?{scores:TAGGED_SCORES,plan:TAGGED_RESULT.plan,reworkBudget:{cap:1,remaining:{'일반현황 · 개요':1,'그림':1,'문제인식':1,'실현가능성':1,'성장전략':1,'팀 구성':1,'실행 파일 제작':1,'인포그래픽 제작':1}}}:{})};
 const components={'intake':W.IntakeForm,'intake-filled':W.IntakeForm,'intake-profile':W.IntakeForm,'match-progress':W.MatchProgress,'match-results':W.MatchResults,'eligibility-gate':W.EligibilityGate,'eligibility-fail':W.EligibilityGate,'plan-progress':W.PipelineProgress,'plan-form':W.PlanForm,'artifact-progress':W.ArtifactProgress,'artifact-result':W.ArtifactResult,'artifact-gate-fail':W.ArtifactResult,'artifact-partial':W.ArtifactResult,'final-verdict':W.FinalVerdict,'final-verdict-tagged':W.FinalVerdict,'plan-form-tagged':W.PlanForm,'final-pass':W.FinalVerdict,'review':W.ReviewScreen};
 // 완전 실패 카드 — 실제 흐름에선 서버가 status='failed'를 줘야 떠서 로컬 더미로는 재현이 어렵다.
 Object.assign(components,{'plan-failed':p=><W.GenerationFailed onLeave={noop}/>,'artifact-failed':p=><W.GenerationFailed onLeave={noop}/>});
