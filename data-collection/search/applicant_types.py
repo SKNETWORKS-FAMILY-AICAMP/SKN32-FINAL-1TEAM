@@ -9,7 +9,10 @@ Codex 블라인드 판정 `docs/reviews/applicant_type/APPLICANT_TYPE_INDUSTRY_L
   예비창업자 '가능'                        → K-Startup API 업력 칸이 예비창업자 불가라도 **본문을 우선해 되살린다**. Codex 9/9
   예비창업자 '불가 추정'                    → 빼지 않고 **뒤로** 보낸다(순위 신호). 추정이라 탈락 근거로 쓰지 않는다
   예비창업자 '불가' weak                   → 쓰지 않는다(Codex 13/17)
-  개인사업자·법인                          → 매칭에 쓰지 않는다. 자격 확인 화면에 근거만 참고로 보여 준다(건수가 적고 적용 범위 주의)
+  개인사업자·법인 '불가' strong · varies 아님 → 그 유형 신청자에게서 **뺀다**(정형 필터·자격 판정·공고 상세 허용 유형, 2026-10-13
+                                            결정 0021). Codex 블라인드 개인 7/7·법인 8/8 일치. 예비창업자와 같은 발췌 밖 확인을 한다
+                                            (판정에 쓰지 않은 원문에 그 유형 말 — UNREAD_WORDS — 이 더 있으면 확인 필요로 낮춤)
+  개인사업자·법인 그 밖(가능·weak·varies)     → 매칭에 쓰지 않는다. 자격 확인 화면에 근거만 참고로 보여 준다
 
 등록 사업자 규칙(2026-09-28 사용자 승인 — docs/reviews/applicant_type/APPLICANT_TYPE_AMBIGUOUS_CHECK_20260928.md)
   LLM 이 예비창업자를 '언급 없음'이나 '불가 weak'로 둔 공고라도, 저장된 근거 문장에 **등록 사업자만 충족하는 표현**
@@ -194,15 +197,33 @@ def current_documents(connection):
 _PRE_WORD = '예비창업'
 _PRE_MENTION = re.compile(r'예\s*비\s*창\s*업')    # 글자 사이 공백·줄바꿈 허용("예비창\n업자"도 같은 말)
 _MENTION_WINDOW = 10          # 보여 줄 문장을 고를 때 언급 앞뒤 몇 글자를 발췌와 대조하나
+KEYS = ('pre_founder', 'sole_proprietor', 'corporation')
+# 발췌 밖 원문에서 세는 유형 말(공백을 지운 원문에서 센다, 2026-10-13 결정 0021). 넓게 잡는다 — 낮추는 쪽이 안전하다.
+# '법인'은 "재단법인 ○○" 같은 기관 이름에도 걸려 확인 필요가 늘지만, 틀린 불가로 빼는 것보다 낫다
+UNREAD_WORDS = {'pre_founder': (_PRE_WORD,), 'sole_proprietor': ('개인사업', '개인기업'), 'corporation': ('법인',)}
+ENTITY_LABEL = {'sole_proprietor': '개인사업자', 'corporation': '법인'}
 
 
 def _flat(text):
     return re.sub(r'\s+', '', text or '')
 
 
-def _strong_no(info):
-    c = info['pre_founder']
+def _strong_no(info, key='pre_founder'):
+    c = info[key]
     return c['status'] == 'not_allowed' and c['strength'] == 'strong' and not info['varies']
+
+
+def entity_key(applicant_type):
+    """신청자 유형 → 개인·법인 판정 칸('sole_proprietor'·'corporation'). 예비창업자·알 수 없는 유형은 None.
+    화면은 '법인'·'개인사업자'를, 예전 화면·시험은 '법인사업자'를 보낸다."""
+    t = applicant_type or ''
+    if t == PRE_FOUNDER:
+        return None
+    if '법인' in t:
+        return 'corporation'
+    if '개인' in t:
+        return 'sole_proprietor'
+    return None
 
 
 def unread_pre_founder(item):
@@ -221,14 +242,21 @@ def unread_pre_founder(item):
     나누기가 원문 한 곳을 둘로 쪼개는 경우(자격 구간을 못 찾아 원문 앞부분을 그대로 쓴 첨부)는 발췌 횟수가 줄어드는
     쪽이라 안전하다. 발췌를 만드는 함수는 바꾸지 않는다(지문이 바뀌면 전량 재판정이 된다).
     """
+    return unread_mention(item, UNREAD_WORDS['pre_founder'])
+
+
+def unread_mention(item, words):
+    """unread_pre_founder 를 말 목록으로 넓힌 것(2026-10-13 결정 0021) — 개인·법인 '불가' strong 판정에도 같은 확인을 한다.
+    words 중 하나라도 원문(공백 제거) 횟수 합이 발췌 횟수 합보다 많으면 안 읽은 언급이 있다. 말마다 글자 사이 공백을 허용한다."""
     texts = [item.get('target_text') or '', item.get('body') or ''] + list(item.get('attachments') or [])
     chunks = [_flat(c) for c in (item.get('document') or '').split('\n\n')]
     read = '|'.join(chunks)                      # 조각 사이에 글자를 넣어 문장 고르기에서도 붙지 않게
-    if sum(_flat(t).count(_PRE_WORD) for t in texts) <= sum(c.count(_PRE_WORD) for c in chunks):
+    if sum(_flat(t).count(w) for t in texts for w in words) <= sum(c.count(w) for c in chunks for w in words):
         return None
+    mention = re.compile('|'.join(r'\s*'.join(re.escape(ch) for ch in w) for w in words))
     last = None
     for text in texts:
-        for m in _PRE_MENTION.finditer(text):
+        for m in mention.finditer(text):
             snippet = ' '.join(text[max(0, m.start() - 40):m.end() + 40].split())
             if _flat(text[max(0, m.start() - _MENTION_WINDOW):m.end() + _MENTION_WINDOW]) not in read:
                 return snippet                   # 앞뒤까지 발췌에 없는 언급 — 안 읽은 곳이 분명하다
@@ -242,18 +270,23 @@ def mark_unread(notices, documents):
       unread_pre_founder   발췌 밖 원문에 '예비창업' 이 있다(보여 줄 문장)
       unverified_pre_founder  원문이 없거나(documents 없음·그 공고 없음) 판정 지문이 지금 공고문과 달라 확인하지 못했다
     둘 다 pre_founder() 가 'blocked' 대신 None(확인 필요)을 돌려준다 — 확인 못 한 불가로 빼지 않는다(Codex 재재검수 P2).
+    개인사업자·법인 '불가' strong 도 같다(2026-10-13 결정 0021) — unread_sole_proprietor·unread_corporation(UNREAD_WORDS 의 말),
+    unverified_sole_proprietor·unverified_corporation. entity() 가 'blocked' 대신 None 을 돌려준다.
     """
     out = {}
     for nid, info in notices.items():
-        if _strong_no(info):
+        marks = {}
+        for key in KEYS:
+            if not _strong_no(info, key):
+                continue
             item = (documents or {}).get(nid)
             if item is None or info.get('document_sha256') != item.get('document_sha256'):
-                info = dict(info, unverified_pre_founder=True)
+                marks['unverified_' + key] = True
             else:
-                snippet = unread_pre_founder(item)
+                snippet = unread_mention(item, UNREAD_WORDS[key])
                 if snippet:
-                    info = dict(info, unread_pre_founder=snippet)
-        out[nid] = info
+                    marks['unread_' + key] = snippet
+        out[nid] = dict(info, **marks) if marks else info
     return out
 
 
@@ -306,7 +339,8 @@ def load_auto(connection=None, path=None, expected=None, current=None, documents
     """
     mode = (os.environ.get(SOURCE_ENV) or 'auto').lower()
     off = {'active': False, 'source': 'db:' + DB_TABLE, 'rows': 0, 'notices': {}, 'refreshed_from_file': 0,
-           'stale': 0, 'bad_lines': 0, 'unread_pre_founder': 0, 'unverified_pre_founder': 0}
+           'stale': 0, 'bad_lines': 0, 'unread_pre_founder': 0, 'unverified_pre_founder': 0,
+           'unread_entity': 0, 'unverified_entity': 0}
     if mode == 'db' and connection is None:
         return dict(off, error='DB 연결 없음 — 지금 공고문의 지문을 확인할 수 없어 판정을 쓰지 않는다')
     # 1) 지금 공고문의 지문 — **모든 모드에서** 먼저 구한다. 예전 file 모드는 지문 없이 파일 판정을 그대로 써서
@@ -346,7 +380,12 @@ def load_auto(connection=None, path=None, expected=None, current=None, documents
            'no_document': stats['no_document'], 'bad_lines': (file_table or {}).get('bad_lines', 0),
            'fresh_from_db': stats['fresh'].get('db', 0),
            'unread_pre_founder': sum(1 for i in notices.values() if i.get('unread_pre_founder')),
-           'unverified_pre_founder': sum(1 for i in notices.values() if i.get('unverified_pre_founder'))}
+           'unverified_pre_founder': sum(1 for i in notices.values() if i.get('unverified_pre_founder')),
+           # 개인사업자·법인 '불가' strong 중 확인 필요로 낮춘 공고 수(결정 0021)
+           'unread_entity': sum(1 for i in notices.values()
+                                if i.get('unread_sole_proprietor') or i.get('unread_corporation')),
+           'unverified_entity': sum(1 for i in notices.values()
+                                    if i.get('unverified_sole_proprietor') or i.get('unverified_corporation'))}
     problems = [t['error'] for t in (db, file_table) if t and t.get('error')]
     if problems and not notices:
         out['error'] = '; '.join(problems)
@@ -366,6 +405,10 @@ def load_auto(connection=None, path=None, expected=None, current=None, documents
         parts.append('발췌 밖 예비창업 언급으로 불가 → 확인 필요 %d건' % out['unread_pre_founder'])
     if out['unverified_pre_founder']:
         parts.append('원문이 없어 발췌 밖을 확인 못 한 불가 → 확인 필요 %d건' % out['unverified_pre_founder'])
+    if out['unread_entity']:
+        parts.append('발췌 밖 개인·법인 언급으로 불가 → 확인 필요 %d건' % out['unread_entity'])
+    if out['unverified_entity']:
+        parts.append('원문이 없어 발췌 밖을 확인 못 한 개인·법인 불가 → 확인 필요 %d건' % out['unverified_entity'])
     if problems and notices:
         parts.append('참고: ' + '; '.join(problems))
     out['note'] = ' · '.join(parts)
@@ -386,6 +429,22 @@ def pre_founder(table, notice_id):
     if c['status'] == 'implied_no' or info.get('registered_only'):
         return 'implied_no'
     return None
+
+
+def entity(table, notice_id, applicant_type):
+    """개인사업자·법인 신청자에 대한 판정(2026-10-13 결정 0021): 'blocked' | None(모름·쓰지 않음).
+
+    그 유형이 공고 본문에 '불가' strong 이고 세부사업마다 다르지 않을 때만 'blocked'. 발췌 밖 원문에 그 유형 말이 더 있거나
+    (unread_*) 원문을 확인하지 못했으면(unverified_*) None — 예비창업자 pre_founder() 와 같은 태도다. '가능'은 쓰지 않는다
+    (통과로 두면 그만이라 True 로 올릴 이유가 없고, 블라인드에서 따로 확인하지 않았다). 예비창업자·알 수 없는 유형은 None.
+    """
+    key = entity_key(applicant_type)
+    info = ((table or {}).get('notices') or {}).get(notice_id)
+    if key is None or not info or not _strong_no(info, key):
+        return None
+    if info.get('unread_' + key) or info.get('unverified_' + key):
+        return None
+    return 'blocked'
 
 
 def varies(table, notice_id):
@@ -432,9 +491,21 @@ def type_check(table, notice_id, applicant_type):
         return None, '예비창업자 관련 문장 없음', '공고 본문에서 예비창업자 신청 가능 여부를 찾지 못했습니다.'
     key = 'corporation' if '법인' in (applicant_type or '') else 'sole_proprietor'
     c = info[key]
-    label = '법인' if key == 'corporation' else '개인사업자'
+    label = ENTITY_LABEL[key]
+    ev = c['evidence'] or ''
+    # 개인/법인은 '불가' strong(세부사업 공통)만 판정한다(2026-10-13 결정 0021 — 정형 필터와 같은 entity()).
+    # 발췌 밖 확인에 걸린 불가는 확인 필요, 그 밖(가능·weak·세부사업별)은 근거만 보여 준다
+    if _strong_no(info, key) and info.get('unread_' + key):
+        return None, '%s 불가로 읽었으나 확인 필요(공고 본문)' % label, \
+            ('판정에 쓴 발췌의 근거: "%s". 그런데 판정에 쓰지 않은 원문에도 %s 언급이 있습니다: "%s". '
+             '원문을 확인하세요.' % (ev, label, info['unread_' + key]))
+    if _strong_no(info, key) and info.get('unverified_' + key):
+        return None, '%s 불가로 읽었으나 확인 필요(공고 본문)' % label, \
+            ('판정에 쓴 발췌의 근거: "%s". 발췌 밖 원문을 확인하지 못했습니다. 원문을 확인하세요.' % ev)
+    if entity(table, notice_id, applicant_type) == 'blocked':
+        return False, '%s 신청 불가(공고 본문)' % label, '근거: "%s"' % ev
     if c['status'] == 'not_mentioned':
         return None, '%s 관련 문장 없음' % label, '개인·법인 구분을 공고 본문에서 찾지 못했습니다. 원문을 확인하세요.'
     word = {'allowed': '가능', 'not_allowed': '불가'}.get(c['status'], c['status'])
-    # 개인/법인은 자동 판정하지 않는다(적용 범위 주의 — Codex 판정 결과 3절). 근거만 보여 준다
-    return None, '공고 본문: %s %s(참고)' % (label, word), '자동 판정하지 않습니다. 근거: "%s"' % (c['evidence'] or '')
+    return None, '공고 본문: %s %s(참고)' % (label, word), \
+        '강한 근거의 불가(세부사업 공통)만 판정합니다. 근거: "%s"' % ev

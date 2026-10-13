@@ -545,7 +545,76 @@
    "reviewed_at": "2026-10-08",
    "reviewed_by": "Claude 원문 대조(AI 참고)",
    "note": "2026-10-08 원문 지문을 더해 다시 씀(결정 0018) — 처음 목록(결정 0017)과 같은 공고·같은 승인 항목. 근거: reports/bonus_boostable_20261008T034650Z README(Claude 원문 대조), Codex 4차 검수 6절도 31개 항목 배점 오류 미발견(승인 목록은 아님)"
+  },
+  "bizinfo:PBLN_000000000127067": {
+   "content_version": "cv2-69bfa55871c587d5a3abe026b6c018b9",
+   "row_fingerprint": "bf1-5a850c3e48427587",
+   "evidence_fingerprint": "ev1-ce53b6f2c81d51ef",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "메인비즈",
+     "points": 1.0
+    },
+    {
+     "name": "벤처기업",
+     "points": 1.0
+    },
+    {
+     "name": "여성기업",
+     "points": 1.0
+    },
+    {
+     "name": "이노비즈",
+     "points": 1.0
+    },
+    {
+     "name": "장애인기업",
+     "points": 1.0
+    }
+   ],
+   "reviewed_at": "2026-10-13",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-13 10/8 이후 새 공고 — Claude 원문 대조(AI 참고). 근거 reports/bonus_boostable_20261013T022602Z/README.md"
+  },
+  "bizinfo:PBLN_000000000127118": {
+   "content_version": "cv2-824c559fdc7a061f23d4767485ed99f6",
+   "row_fingerprint": "bf1-a04a146945e5461b",
+   "evidence_fingerprint": "ev1-257522f652f531c1",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "여성기업",
+     "points": 1.0
+    },
+    {
+     "name": "장애인기업",
+     "points": 1.0
+    }
+   ],
+   "reviewed_at": "2026-10-13",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-13 10/8 이후 새 공고 — Claude 원문 대조(AI 참고). 근거 reports/bonus_boostable_20261013T022602Z/README.md"
+  },
+  "bizinfo:PBLN_000000000127121": {
+   "content_version": "cv2-f46fe084bef06d6b13ba9cd2408c6dc7",
+   "row_fingerprint": "bf1-0c04e8b9b35e97b0",
+   "evidence_fingerprint": "ev1-1990f8b2462a2b9f",
+   "extractor_version": "extract_bonus/v4 gpt-6-luna medium",
+   "approved_items": [
+    {
+     "name": "여성기업",
+     "points": 1.0
+    },
+    {
+     "name": "장애인기업",
+     "points": 1.0
+    }
+   ],
+   "reviewed_at": "2026-10-13",
+   "reviewed_by": "Claude 원문 대조(AI 참고)",
+   "note": "2026-10-13 10/8 이후 새 공고 — Claude 원문 대조(AI 참고). 근거 reports/bonus_boostable_20261013T022602Z/README.md"
   }
  },
- "updated_at": "2026-10-08"
+ "updated_at": "2026-10-13"
 }

@@ -24,6 +24,7 @@
 - 증분: 입력 해시가 같으면 건너뛴다(첨부는 원본 수정 시각, 임베딩은 입력 SHA-256, LLM은 발췌·문서 해시와 추출기 버전·내용 지문).
 - LLM 단계: 하루 상한을 **부르기 전에** 센다(신청자 유형·업종·가점 300건, 가점은 한국 날짜 기준 누적). 가점 기록 파일이 깨졌으면 그날은 부르지 않고, 기록은 임시 파일 → 바꿔치기로 쓴다. 같은 문서로 3번 실패하면 그 문서를 멈춘다. 키가 없으면 `{'error': 'no_api_key'}`로 돌려 종료 코드 4가 되게 한다.
 - LLM 단계의 실패·경고는 결과 dict의 `error`·`failed`·`warning`으로만 알린다. 배치 `status`를 `partial`로 바꾸지 않는다.
+- 5~9단계(첨부·임베딩·벡터 올리기·첨부 원본 올리기)도 단계 실패는 `stage_warnings`·종료 코드 4다(2026-10-13, 결정 0009 넓힘). 이 단계들의 결과 맨 위에는 `error`만 둔다 — 파일별 실패(`counts`의 `download_fail`·`parse_error`, `hash_mismatch`, `skipped_no_notice`)는 평소 일이라 맨 위 `failed`·`warning`으로 올리지 않는다(올리면 매일 경고가 뜬다).
 - 공용 DB에 쓰는 단계(8·9·13·14)는 `--skip-upload`를 따른다. 11·12단계는 파일(`data/applicant_types/`·`data/industries/`)에만 쓴다.
 - 못 찾은 조건을 "제한 없음"으로 저장하지 않는다. 근거 문장이 원문과 맞지 않는 값은 버린다(`amount_rejected`, 가점 `unverified`).
 - 원본·정규화 스냅샷은 출처별 14개만 남긴다(`prune`). 첨부 원본은 내용 해시 이름으로 한 벌만 둔다.
@@ -36,5 +37,5 @@
 
 ## 시험
 - 관련 시험: `tests/test_pipeline.py`(단계 순서·종료 코드·stage_warnings), `test_normalize.py`, `test_doctext.py`, `test_attachment_store.py`, `test_active_attachments.py`, `test_store_mysql.py`, `test_extract_conditions_age.py`, `test_applicant_type_daily.py`, `test_industry_daily.py`, `test_upload_judgments.py`, `test_extract_bonus.py`.
-- 반드시 덮을 경우: 한 출처만 실패(다른 출처는 갱신·`partial`·종료 코드 2), 건수 급감(교체 거부), LLM 단계 예외·키 없음(`status` 그대로·종료 코드 4), 하루 상한(이미 쓴 만큼 줄어듦), 같은 해시 재실행(호출 0), K-Startup 목록 불완전(모집 종료 처리 건너뜀).
+- 반드시 덮을 경우: 한 출처만 실패(다른 출처는 갱신·`partial`·종료 코드 2), 건수 급감(교체 거부), LLM 단계 예외·키 없음(`status` 그대로·종료 코드 4), 5~9단계 예외(같음 — 평소 파일별 실패는 경고 없음), 하루 상한(이미 쓴 만큼 줄어듦), 같은 해시 재실행(호출 0), K-Startup 목록 불완전(모집 종료 처리 건너뜀).
 - 실제 API·OpenAI·공용 DB를 부르는 시험을 만들지 않는다. 가짜 응답·가짜 연결로 한다. MySQL 통합 시험은 `MYSQL_INTEGRATION_TEST=1`일 때만.

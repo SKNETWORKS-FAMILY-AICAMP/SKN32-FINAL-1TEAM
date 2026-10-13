@@ -126,7 +126,7 @@ def read_latest_batch(path=LOG):
     return {'status': last.get('status'), 'run_at': run_at.astimezone(timezone.utc),
             'degraded': last.get('degraded') or [], 'error': last.get('error'),
             'sources': last.get('sources') or {},
-            # 후처리(LLM) 경고. 매칭을 막지 않는다 — 공고 데이터 자체는 새것이다(2026-09-28)
+            # 후처리(5~14단계) 경고. 매칭을 막지 않는다 — 공고 데이터 자체는 새것이다(2026-09-28, 5~9단계는 2026-10-13부터)
             'stage_warnings': last.get('stage_warnings') or []}
 
 

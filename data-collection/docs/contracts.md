@@ -59,7 +59,7 @@
 | `bonus_rank_applied` | 참·거짓(늘 있음, 2026-10-08 결정 0017에서 추가, `bonus_verified`가 참일 때만 참이 될 수 있음) — 이 공고의 가산점이 **이번 순위 계산에 실제로 쓰였으면** 참. 원문 대조를 마친 공고 목록에 있고 세기 > 0(기본 0.2)이고 가산점 > 0일 때만 참. 목록 밖 공고는 `bonus_score`가 양수여도 거짓. 순서는 이 공고들만 같은 재정렬 묶음 안에서 조금 오른다(키·모양은 그대로). 다른 시·도 전용처럼 큰 규칙으로 뒤 묶음에 있는 공고도 그 묶음 안 정렬에 가산점을 썼으면 참이다 — "순위가 올랐다"가 아니라 "계산에 쓰였다"는 뜻 |
 | `rules` | 이 공고에 걸린 재정렬 규칙(`groups`·`off_region`·`off_district`·`off_industry`·`pre_founder_implied_no`) |
 
-출력 200 — 응답 최상위(조율 쪽이 쓰는 키): `results`, `count`, `has_more`, `offset`, `top`, `max_candidates`(20), `filtered_count`(정형 필터 통과 수), `fallback_used`(참·거짓), `fallback_mode`(null·`'임베딩단독'`·`'BM25단독'`·`'마감임박순'`), `search_errors`(오류가 난 검색별 `{where, error}`), `fit_basis`, `filter.excluded`(뺀 이유별 건수), `pipeline`.
+출력 200 — 응답 최상위(조율 쪽이 쓰는 키): `results`, `count`, `has_more`, `offset`, `top`, `max_candidates`(20), `filtered_count`(정형 필터 통과 수), `fallback_used`(참·거짓), `fallback_mode`(null·`'임베딩단독'`·`'BM25단독'`·`'마감임박순'`), `search_errors`(오류가 난 검색별 `{where, error}`), `fit_basis`, `filter.excluded`(뺀 이유별 건수 — 이유 이름: `모집 마감`·`접수 마감`·`업력·신청자 유형`·`예비창업자 불가(공고 본문)`, 2026-10-13 결정 0021부터 `개인사업자 불가(공고 본문)`·`법인 불가(공고 본문)`), `pipeline`.
 
 - 필터 통과 0건이면 `results: []`, `pipeline: ['정형 필터']`.
 - 오류: 입력 형식 422. 검색 실패는 오류가 아니라 대체 경로로 200을 준다.
@@ -76,7 +76,7 @@
 | `support_amount_text` | 늘 null(원문 금액 표기를 따로 저장하지 않음) |
 | `support_amount_evidence` | 금액 근거 문장(참고용) 또는 null |
 | `bonus_info` | 가점 원문(가점을 찾은 공고만), 없거나 못 읽으면 null. K-Startup은 늘 null |
-| `eligibility.applicant_types` | 신청 가능 유형 목록(세 유형 중 유형만으로 확실히 안 되는 것을 뺌) |
+| `eligibility.applicant_types` | 신청 가능 유형 목록(세 유형 중 유형만으로 확실히 안 되는 것을 뺌). 2026-10-13(결정 0021)부터 공고 본문이 개인사업자·법인을 강한 근거로 제외하면 그 유형도 뺀다 |
 | `eligibility.business_age_max_months` | 업력 상한(개월) 또는 null |
 | `eligibility.parsed` | 업력 칸을 읽었는지. **false면 상한 null은 "제한 없음"이 아니라 "모름"**. true인데 상한이 null이면 예비창업자 전용 공고다(`applicant_types`에 사업자가 없다) |
 
@@ -103,7 +103,8 @@
 | `details` | 참고용 `[{condition, verdict(true·false·null), need, note}]` |
 
 - 접수기간·모집 상태는 판정하지 않는다(접수 시작 전 공고도 통과할 수 있다).
-- 같은 공고·신청자면 추천의 정형 필터와 결론이 같다.
+- 같은 공고·신청자면 추천의 정형 필터와 결론이 같다(2026-10-13 실제 데이터 17,826회 대조 다름 0).
+- `지원대상 유형`: 예비창업자는 공고 본문 불가(강한 근거) → 미달, 가능 → 충족. 개인사업자·법인은 2026-10-13(결정 0021)부터 그 유형의 본문 불가(강한 근거·세부사업 공통) → 미달, 그 밖은 확인할 수 없음(전에는 늘 확인할 수 없음). 알림 초안 `docs/notice_api/ENTITY_TYPE_NOTICE_DRAFT_20261013.md`.
 - 오류: 404 `NOTICE_NOT_FOUND`, 422 형식 오류.
 
 ## 6. 공용 DB (팀원이 읽는 테이블)

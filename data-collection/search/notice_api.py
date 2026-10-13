@@ -52,7 +52,8 @@ def allowed_types(row, notice_id, types_table):
     """허용 지원대상 유형 목록 — 세 유형 중 **유형만으로 확실히 안 되는 것**을 뺀다. 자격 판정과 같은 규칙이다.
 
       예비창업자   지원대상 유형·업력 판정에 확실한 미달(False)이 있으면 뺀다(본문 '불가', 업력 칸이 사업자 전용 …)
-      개인사업자·법인  업력 칸이 '예비창업자'만이면 뺀다. 업력 상한(N년 미만)은 설립일에 달린 것이라 빼지 않는다
+      개인사업자·법인  업력 칸이 '예비창업자'만이면 뺀다. 업력 상한(N년 미만)은 설립일에 달린 것이라 빼지 않는다.
+                    2026-10-13(결정 0021)부터 그 유형의 지원대상 유형 판정이 확실한 미달(본문 '불가' strong)이어도 뺀다
     조율 쪽은 이 값을 선택 공고에 담아 두기만 한다(판정은 자격 판정 창구가 한다).
     """
     out = []
@@ -62,7 +63,10 @@ def allowed_types(row, notice_id, types_table):
     raw = row.get('age_condition_raw')
     pre_only = gate.understood(raw) and gate.parse_enyy(raw)[1] is None
     if not pre_only:
-        out.extend(APPLICANT_TYPES[1:])
+        for kind in APPLICANT_TYPES[1:]:
+            checks, _ = eligibility_mod.conditions(row, notice_id, kind, '', types_table=types_table)
+            if not any(c['판정'] is False for c in checks if c['조건'] == eligibility_mod.TYPE):
+                out.append(kind)
     return out
 
 

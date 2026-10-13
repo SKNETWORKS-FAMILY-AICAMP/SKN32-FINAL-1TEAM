@@ -81,7 +81,8 @@ def main(argv=None):
         for prof, extra in PROFILES.items():
             p = dict(q['payload'], **extra)
             age = gate.applicant_age(p.get('applicant_type'), p.get('founded_at'), as_of)
-            use_types = bool(types_table.get('active')) and p.get('applicant_type') == types_mod.PRE_FOUNDER
+            use_types = bool(types_table.get('active')) and (p.get('applicant_type') == types_mod.PRE_FOUNDER
+                                                             or bool(types_mod.entity_key(p.get('applicant_type'))))
             base_ranked = None
             for w in WEIGHTS:
                 req = app.MatchRequest(**dict(p, top=DEPTH, search='hybrid', weights={'bonus': w}))
@@ -90,7 +91,8 @@ def main(argv=None):
                 if w == 0.0:
                     base_ranked = ranked
                     with_bonus[prof].append(sum(1 for r in results[:K] if (r.get('bonus_score') or 0) > 0))
-                checks = {n: app.eligible_with_types(n, rows[n], age, as_of, True, types_table if use_types else None)[0]
+                checks = {n: app.eligible_with_types(n, rows[n], age, as_of, True, types_table if use_types else None,
+                                                  p.get('applicant_type'))[0]
                           for n in ranked}
                 per[(prof, w)][q['qid']] = ffe.query_metrics(ranked, rels, checks)
                 shift[(prof, w)].append(moved(base_ranked, ranked))

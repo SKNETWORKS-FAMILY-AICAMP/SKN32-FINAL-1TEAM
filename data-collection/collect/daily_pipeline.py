@@ -29,6 +29,7 @@
 한 소스가 실패해도 나머지는 갱신하고, 실패한 소스는 직전 데이터를 유지한다.
 
 종료 코드는 daily_job 과 맞춘다. 0 성공 / 1 실패 / 2 부분 실패 / 3 이미 실행 중
+/ 4 수집은 성공, 후처리(5~14단계) 경고
 """
 import argparse
 import hashlib
@@ -457,7 +458,12 @@ def _run(dry_run, skip_store, force, say,
     # 수집 자체는 끝났으므로 status 는 그대로 둔다. 'partial' 로 바꾸면 수집 상태 판정(search/collection_status.py)이
     # 매칭을 막는다 — 공고 데이터는 새것인데 LLM 후처리만 늦은 것이라 막을 일이 아니다.
     # 대신 로그에 stage_warnings 로 남기고 종료 코드 4 로 알린다(run_daily.bat 이 run.log 에 exit=4 를 남긴다).
-    stage_warnings = stage_warnings_of({'conditions': conditions_result, 'applicant_types': applicant_types_result,
+    # 5~9단계(첨부·임베딩·벡터 올리기·첨부 원본 올리기)도 같다(2026-10-13). 전에는 단계가 통째로 실패해도 exit=0 이라
+    # 새 공고가 의미 검색에서 빠지는 날을 아무도 몰랐다. 이 단계들의 결과에는 error 만 있다 — 파일 몇 개를 못 받거나
+    # 못 읽은 것(counts 의 download_fail·parse_error)은 평소 일이라 경고로 올리지 않는다.
+    stage_warnings = stage_warnings_of({'attachments': attach, 'embeddings': embed_result,
+                                        'vector_upload': upload_result, 'file_upload': file_result,
+                                        'conditions': conditions_result, 'applicant_types': applicant_types_result,
                                         'industries': industries_result, 'judgments_upload': judgments_result,
                                         'bonus': bonus_result})
 
@@ -622,7 +628,7 @@ def main():
         print('\n일부 소스가 갱신되지 않았다. 해당 소스는 직전 데이터를 유지한다.')
         return 2
     if r.get('stage_warnings'):
-        print('\n수집은 끝났지만 후처리(LLM)에 경고가 있다: %s'
+        print('\n수집은 끝났지만 후처리(5~14단계)에 경고가 있다: %s'
               % ', '.join(dict.fromkeys(w['stage'] for w in r['stage_warnings'])))
         return 4
     return 0

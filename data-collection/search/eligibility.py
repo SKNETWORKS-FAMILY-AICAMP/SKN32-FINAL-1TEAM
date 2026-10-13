@@ -6,7 +6,8 @@
 (app.eligible_with_types → gate.prefilter)와 같은 함수(gate._check_age·applicant_types.pre_founder)를 쓴다.
 
 조건 네 줄
-  지원대상 유형  공고 본문에서 읽은 신청자 유형(applicant_types). 예비창업자만 자동 판정, 개인사업자·법인은 근거만(None)
+  지원대상 유형  공고 본문에서 읽은 신청자 유형(applicant_types). 예비창업자는 불가·가능을 판정, 개인사업자·법인은
+                본문 '불가' strong(세부사업 공통)만 미달로 판정하고 그 밖은 근거만(None) — 2026-10-13 결정 0021
   업력          API 업력 칸(gate). 본문에 예비창업자 가능이 명시되면 본문을 따른다
   접수기간      gate — 조율 창구는 쓰지 않는다
   모집 상태     gate — 조율 창구는 쓰지 않는다
@@ -33,7 +34,8 @@ def conditions(row, notice_id, applicant_type, founded_at, types_table=None, age
 
     # '지원대상 유형'은 공고 본문에서 읽은 신청자 유형으로 판정한다(2026-09-28 G, search/applicant_types.py).
     # 예비창업자는 본문 '불가'(강한 근거)면 미달, '가능'이면 통과, 추정·모름은 확인 필요.
-    # 개인사업자·법인은 자동 판정하지 않고 근거만 보여 준다. 결과 파일에 없는 공고는 예전처럼 확인 필요다.
+    # 개인사업자·법인은 본문 '불가'(강한 근거, 세부사업 공통)면 미달, 그 밖은 근거만 보여 준다(2026-10-13 결정 0021 —
+    # 정형 필터와 같은 applicant_types.entity). 결과 파일에 없는 공고는 예전처럼 확인 필요다.
     from search import applicant_types as types_mod
     typed = types_mod.type_check(types_table, notice_id, applicant_type) if types_table is not None else None
     if typed:

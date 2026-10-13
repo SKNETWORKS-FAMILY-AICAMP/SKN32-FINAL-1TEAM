@@ -23,6 +23,60 @@
 
 ## 작업 기록
 
+### 2026-10-13 · Claude · 개인사업자·법인 "강한 불가" 걸러내기(결정 0021)
+
+- 요청·목적: 사용자 고도화 후보 선택 → 1단계 계산(효과 작음 보고) → "해 보고 결과 테스트". 개인사업자에게 "국내 법인사업자" 전용, 법인에게 "법인 제외" 공고가 추천되던 것을 막는다. OpenAI 비용 없음(배치 11단계 판정을 읽기만).
+- 작업 전 상태: 본문 신청자 유형 판정은 예비창업자에게만(정형 필터·자격 판정·공고 상세). 개인·법인 판정은 DB에 있으나 근거로만 표시.
+- 변경 파일: `search/applicant_types.py`·`app.py`·`notice_api.py`·`eligibility.py`, `eval/filter_first_eval.py`·`match_variants.py`·`bonus_rank_eval.py`·`vector_db_compare.py`, `tests/test_applicant_types.py`(EntityTests 5개, 옛 `test_business_applicants_are_untouched` 기대값을 새 동작으로)·`test_judgments_source.py`(발췌 밖 확인 4개, `db_row`에 `corp`)·`test_notice_api.py`(2개 추가·`test_same_rule_as_match_prefilter` 세 유형 판정표). 문서: 결정 0021, `business-rules.md` 3·5절, `contracts.md` 3·4·5절, `search/AGENTS.md`, `docs/notice_api/README.md`·알림 초안, AGENTS=CLAUDE, STATUS·`tracking/status.md`. 결과 `reports/entity_block_probe_20261013T030233Z/`(전)·`reports/entity_block_after_20261013T031546Z/`(후).
+- 전후 차이·선택 이유: 개인·법인 신청자에게 그 유형의 본문 `not_allowed`·`strong`·`varies` 아님이면 정형 필터에서 빼고(이유 `개인사업자 불가(공고 본문)`·`법인 불가(공고 본문)`), 자격 판정 `지원대상 유형`을 미달로, 공고 상세 허용 유형에서 뺀다. 예비창업자와 같은 발췌 밖 확인을 넣었고 법인 말은 넓게('법인') — 서식 칸에도 걸려 3건이 확인 필요로 남지만 틀린 불가보다 안전. '가능'은 True로 올리지 않음(검증 안 함). 예비창업자 경로는 그대로이며 불가 추정 뒤로 보내기가 개인·법인에 번지지 않게 `use_pre`로 분리. `unread_pre_founder`는 `unread_mention`의 감싸기로 바꿨고 기존 발췌 밖 시험이 모두 그대로 통과.
+- 검증: 관련 시험 106개 OK → 전체 979개 OK(건너뜀 16). 실제 `boot()`(공용 DB SELECT): 공고 2,971 × 신청자 6가지 정형 필터(마감 제외) ↔ `notice_api.judge` 17,826회 다름 0. 열린 1,730건에서 뺌 개인 11·법인 9, 낮춤 법인 3(117597 "관세법인", 121832·125411 "법인등록번호"). 평가 정상 질의 58개 × 개인·법인 상위 20: 개인 7 → 0, 법인 3 → 1(121832, q018 6위), 상위 3 전후 0.
+- 시험 서버 반영(사용자 실행, 12:20 재시작): 파일 4개 지문 같음·`boot_errors` 없음. 실제 요청 2쌍(127015·122952)에서 불가 유형만 빠지고 다른 유형은 1위, 공고 상세·조율용 자격 판정 일치. 조율 `SB-304`(ec41c71)를 `git archive`로 임시 폴더에 풀어 `-m experiments.notice_api_contract --url http://43.201.90.238:8000 --all` → 16/16, 2,971건 G-01 형식 오류 0(`reports/notice_api_contract_20261013T032549Z/`).
+- 미검증·남은 문제: 판정은 AI 참고(블라인드 15건). `experiments/orchestration_probe.py`(9/29 옛 방식 비교)는 고치지 않음. 계약 시험 안내의 SB-87 브랜치는 원격에 없어 SB-304로 돌림.
+- 다음 단계: 사용자가 조율 담당 알림.
+
+### 2026-10-13 · Claude · 가산점 넓히기 검토(업종·수출) → 원문 대조 목록 새 공고 3건 추가
+
+- 요청·목적: 사용자 "고도화 1번(가산점 넓히기) 해 보자" → 계산 결과를 보고 "새 공고 3건 원문 대조 진행".
+- 작업 전 상태: `_base_hit`은 kind 업종·수출을 늘 None. 원문 대조 목록 27건(10/8).
+- 1단계 계산(코드 변경 없음, `reports/bonus_industry_export_probe_20261013T022624Z/`): 열린 1,730 · found 305 · 업종 82·수출 47항목. 해당 가정 시 규칙 통과 19항목, 지금 입력(주 업종 글·인증 "수출기업")으로 판단할 수 있는 것은 사실상 1개(126845 "산업 대분류상 제조업 10점"). 나머지는 지정·참여 제도, 특정 나라·서비스 수출 실적, 세부 분야. 상한 가정도 신청자마다 null→양수 3~5건, 속성 많은 신청자는 양수→null 3건 → 채점 규칙은 만들지 않음(사용자에게 보고).
+- 목록 추가: `-m eval.bonus_boostable`(조회만) → 양수 관측 29 = 목록 안 24 · 새 후보 5. 10/8에 "아님"인 119727·124300을 빼고 새 공고 127067·127118·127121을 원문 대조(근거 주변 + 원문 전체의 가점·중복·택1·최대·합산·증빙 줄) → 모두 맞음 → `--write-reviewed` → `search/bonus_reviewed.json` 27 → 30건.
+- 변경 파일: `search/bonus_reviewed.json`(도구로만), 결과 `reports/bonus_industry_export_probe_20261013T022624Z/`(스크립트·원자료·README), `reports/bonus_boostable_20261013T022602Z/README.md`(대조 표), `reports/bonus_boostable_20261013T022836Z/`(쓰기 결과). 문서 STATUS·`business-rules.md` 9절·`tracking/status.md`.
+- 검증: 목록 전후 비교(기존 27건 값 같음, 새 3건 지문·승인 항목), `bonus.load_reviewed()` 30건 통과. 서비스 함수(`bonus.score`·`reviewed_ok`)로 3건 × 입력 5가지 — 127067 여성+장애인 1점(한 행)·혁신형+여성 2점, 127118·127121 여성+장애인 2점, 모두 대조됨 참, 인증 없음은 null·거짓. 전체 시험 969개 OK(건너뜀 16).
+- 시험 서버 반영(사용자 실행, 11:43 재시작): 서버 목록 지문이 이 PC와 같음, 백업은 이전 목록(줄끝만 다름), `boot_errors` 없음. `/api/match` 가짜 신청자 3명에서 127118·127121·127067 각각 1위, 가산점 +2·+1·+2, `bonus_verified`·`bonus_rank_applied` 참.
+- 미검증·남은 문제: 목록 근거는 AI 참고. 목록에 있는데 이번에 양수 관측 안 된 3건(126506·126531·126830)은 그대로 둠(지문으로 판단).
+
+### 2026-10-13 · Claude · 배치 5~9단계 실패도 경고(종료 코드 4)로
+
+- 요청·목적: 사용자 "첨부 원본 올리기 실패가 숨는 문제 진행". 10/12 시험 서버에서 9단계가 `ProgrammingError`(표 없음)로 실패했는데 `exit=0`이었다.
+- 작업 전 상태: `stage_warnings_of` 입력은 10~14단계뿐. 5~9단계 예외는 결과 `error`와 요약 줄에만 남고 종료 코드·수집 상태 화면 경고에는 안 나옴. 결과 모양 확인: 5~9단계 결과 맨 위에는 평소 `error`·`failed`·`warning`이 없음(파일별 실패는 `counts` 안 등).
+- 변경 파일: `collect/daily_pipeline.py`(입력에 `attachments`·`embeddings`·`vector_upload`·`file_upload`, 이유 주석, 종료 문구, 머리말), `tests/test_pipeline.py`(`run_middle` 도구 + 시험 4개 — 단계 함수 자체를 가짜로 바꿔 실제 `data/`·DB를 건드리지 않음), `web/collection_status.html`(이름표 5~9·14단계, 칸 이름 "후처리 경고(5~14단계)", 안내 문구), `search/collection_status.py`(주석). 문서: 결정 0009 "넓힘"·목록, `business-rules.md` 7절, `standards.md` 6절, `architecture.md`, `README.md`, `FLOW.md`, `collect/AGENTS.md`, STATUS.
+- 전후 차이·선택 이유: 같은 입력에서 5~9단계가 통째로 실패한 날만 `exit=0` → `exit=4`, `stage_warnings`에 그 단계가 생김. `status`는 그대로라 수집 상태·매칭은 안 바뀜(결정 0009와 같은 원칙). `stage_warnings_of`를 새로 만들지 않고 입력만 넓힌 것은 5~9단계 결과 맨 위에 `failed`·`warning`이 없어 `error`만 걸리기 때문 — 파일별 실패를 맨 위로 올리지 말라는 규칙은 `collect/AGENTS.md`에 적음.
+- 검증: `.\.venv\Scripts\python.exe -X utf8 -m unittest tests.test_pipeline tests.test_applicant_type_daily tests.test_collection_status` → 44개 OK. 전체 `-m unittest discover -s tests` → 969개 OK(건너뜀 16 — MySQL 통합, 확인 안 함). 화면: 가짜 응답 임시 서버 8031(세션 임시 폴더 스크립트, `.claude/launch.json`에 잠깐 넣었다 뺌)에서 본문 읽기 — 새 이름표 3줄·상태 "정상"·콘솔 오류 0. 임시 서버는 끔.
+- 미검증·남은 문제: 배치 서버 두 대에 반영 안 함(실제 배치에서 `exit=4`가 찍히는지는 반영 뒤). 5단계에서 연속 다운로드 실패로 멈춘 경우(`GIVE_UP`)는 `error`가 아니라 경고로 안 잡힘 — 그대로 둠. 공유 그림(`share/전체흐름.html`·`share/공고현황.html`)의 "10~13·10~14단계" 표기는 그때 기준이라 안 고침.
+- 다음 단계: 서버 반영은 사용자 결정(이전 때 함께 가능).
+
+### 2026-10-13 · Claude · 새 서버 04:00 배치가 안 돈 원인과 고침
+
+- 요청·목적: 사용자 "새벽에 배치 돌았는지 확인" → 원인 확인 뒤 "1(서버 권한)·2(버튼 코드) 진행, 수동 실행은 안 함".
+- 작업 전 상태: 새 서버 crontab `0 19 * * * /home/ubuntu/sbrain/deploy/run_daily.sh`(10/12 등록), `run.log` 마지막 기록 10/12 15:51.
+- 찾은 것: 서버 `journalctl -u cron`에 19:00:01 UTC 실행 기록과 "No MTA installed, discarding output". `deploy/*.sh` 8개 모두 `-rw-rw-r--`, 수정 시각 10/12 07:35 UTC(= 버튼 실행 16:35). 버튼 2단계가 Windows `tar.exe`로 묶은 `deploy.tgz`를 풀어 실행 권한이 빠짐. `run_daily.sh` 안의 `run_batch.sh`는 `bash`로 부르므로 영향 없음 — 막힌 곳은 cron이 파일을 직접 부르는 한 곳.
+- 변경 파일: 서버 `~/sbrain/deploy/*.sh`·`db/*.sh` 실행 권한(사용자 승인). 저장소 `deploy/new_server.ps1`(2단계 `chmod +x` 추가), `deploy/bootstrap.sh`(예약 줄을 `/bin/bash …`로, 이유 주석), `deploy/run_daily.sh`(예약 주석), `deploy/README.md`(예약 줄·함정). data-collection 코드는 바꾸지 않음.
+- 선택 이유: 권한을 붙이는 것만으로는 다음에 다른 방법으로 올렸을 때 또 빠질 수 있어, 예약 줄도 `bash`로 불러 권한과 상관없게 했다. 기존 줄 지우기(`grep -v -F "deploy/run_daily.sh"`)는 새 줄에도 그대로 맞는다.
+- 검증: 서버 `test -x` 실행 가능·`bash -n run_daily.sh run_batch.sh` OK. PC: PowerShell `Parser.ParseFile` 오류 0·BOM 유지, `bash -n bootstrap.sh run_daily.sh` OK·CR 바이트 0, 예약 줄 바꾸기 흉내(옛 줄 + 다른 예약 → 옛 줄만 빠지고 새 줄 등록 확인 통과).
+- 미검증·남은 문제: 실제 cron 실행은 10/14 04:00에 확인. 서버 crontab은 아직 옛 줄(권한을 붙여 지금은 돎). 고친 버튼으로 처음부터 세우는 시험은 안 함. 오늘 새 서버 데이터는 10/12 오후 그대로(사용자: 수동 실행 안 함).
+- 다음 단계: 10/14 아침 새 서버 `run.log` 04:00 `exit=`와 `sbrain-web` 09:00 새 공고 수 비교.
+
+### 2026-10-12 · Claude · 배치 + 공고 서버 한 서버(4GB) · RDS 이전 시험과 버튼 한 번 세우기
+
+- 요청·목적: 사용자 "배치와 매칭을 한 인스턴스로, 4GB로 비용 절감", 새 테스트 AWS 계정에서 EC2 + RDS로 먼저 시험. 이어 "AWS 세팅만 내가, 나머지는 딸깍".
+- 작업 전 상태: 공고 서버는 43.201.90.238(systemd, 코드 복사본), 배치는 sbrain-web(Docker batch). 둘 다 사용자 개인 계정. `deploy/MIGRATION_PLAN.md`는 학원 PC에만 있음(미커밋, 사용자가 본문을 붙여 줌).
+- 변경 파일(저장소 루트 `deploy/`): `docker-compose.yml`(`notice` 서비스·이미지 `sbrain-data` 공용·`DB_CA_FILE`·`NOTICE_BIND`·`env_file required: false`), `batch-requirements.txt`(fastapi·uvicorn·pydantic), 새 `run_daily.sh`·`fetch_model.sh`·`smoke_notice.sh`·`db/dump_ours.sh`·`db/load_ours.sh`·`bootstrap.sh`·`new_server.ps1`(UTF-8 BOM)·`new_server.bat`, `.env.example`·`README.md`. data-collection 코드는 바꾸지 않음.
+- 전후 차이·선택 이유: 공고 서버는 DB 읽기만·서버 상태 없음 → 이미지 하나로 두 역할, 바꿀 값은 `.env` DB 접속뿐. 4GB에서 둘이 BGE-M3를 동시에 올리지 않게 새벽 04:00에 "공고 서버 끄기 → 배치 → 다시 켜기"(배치 실패해도 켬). RDS는 8.4(8.0은 7/31 표준 지원 끝 → Extended Support 요금).
+- 검증(테스트 계정 EC2 15.165.206.62 c7i-flex.large · RDS sbrain-test-db MySQL 8.4.9): 빌드 122초(메모리 945MB) · BGE-M3 지문 같음 · 우리 표 8개 덤프 3초/옮기기 7초/붓기 13초 행 수 모두 같음 · 공고 서버 28초 1.12GB · 예전 시험 서버와 같은 요청 4개 순서·점수·가산점 같음 · `run_daily.sh` 실제 482초 exit=0(새 공고 40건, 서버 메모리 최대 1,767MB, 약 $0.09) · 이 PC에서 8000 직접 호출 OK · 버튼(new_server.bat) 사용자 실행 136초 8단계 통과, 기록에 비밀번호 0줄. 상세는 STATUS 10/12 항목.
+- 찾아 막은 함정: 이 PC Git `autocrlf`로 기존 deploy 스크립트 CRLF · RDS 보안 그룹("EC2 연결 설정") · `set -e`로 빈 crontab 등록 · Windows 콘솔 입력 인코딩 BOM(비밀번호·바이너리 앞 3바이트) · cmd 파이프 따옴표 · `docker compose exec` 표준입력 삼킴 · 원격 명령의 큰따옴표·한글.
+- 미검증·남은 문제: 버튼으로 새 EC2·RDS 처음부터(첨부 원본 800MB 포함)는 안 함. RDS `sql_mode` 느슨·TLS 필수 꺼짐 · 테스트 RDS에 `attachment_files` 없음(배치 첨부 원본 올리기 실패, 그래도 exit=0) · 8000 인증 없음(보안 그룹만) · 04:00과 09:00 새 공고 수 비교는 10/13부터 · 당분간 두 배치가 같은 배치 키로 돌아 AI 비용 두 번.
+- 다음 단계: 10/13 아침 두 서버 run.log 비교. 실전(학원 계정) 전 버튼으로 처음부터 한 번, RDS 파라미터 그룹 결정. GPU 인스턴스는 실제 세팅할 때(사용자).
+
 ### 2026-10-12 · Claude · 단위 테스트 다시 재기(매칭 중심)
 
 - 요청·목적: 사용자 "매칭 관련해서 단위 테스트 다시 진행, 완료한 부분은 기록". 10/7 판 뒤 가산점 규칙(결정 0016~0020)·gpt-6-luna 전환(0013)으로 코드와 시험이 바뀌어 지금 코드로 다시 잰다.

@@ -153,7 +153,8 @@ def main(argv=None):
     for q in queries:
         p = q['payload']
         age = gate.applicant_age(p.get('applicant_type'), p.get('founded_at'), as_of)
-        use_types = bool(types_table.get('active')) and p.get('applicant_type') == types_mod.PRE_FOUNDER
+        use_types = bool(types_table.get('active')) and (p.get('applicant_type') == types_mod.PRE_FOUNDER
+                                                         or bool(types_mod.entity_key(p.get('applicant_type'))))
         rels = qrels.get(q['qid'], {})
         for name, sw in VARIANTS.items():
             req = app.MatchRequest(**dict(p, top=DEPTH, search='hybrid', weights=sw.get('weights', {})))
@@ -165,7 +166,8 @@ def main(argv=None):
             if sw.get('collapse'):
                 ranked = collapse(ranked, title_of)
             ranked = ranked[:K]
-            checks = {n: app.eligible_with_types(n, rows[n], age, as_of, True, types_table if use_types else None)[0]
+            checks = {n: app.eligible_with_types(n, rows[n], age, as_of, True, types_table if use_types else None,
+                                              p.get('applicant_type'))[0]
                       for n in ranked}
             m = ffe.query_metrics(ranked, rels, checks)
             per[name][q['qid']] = m

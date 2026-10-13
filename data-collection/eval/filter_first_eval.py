@@ -21,7 +21,7 @@
 
 지표 (정상 질의, 상위 K=10, 두 검색 방식 hybrid·dense 각각)
   신청 불가@10   상위 10 중 확실히 신청할 수 없는 공고 비율(마감·업력·유형). 판정 불필요.
-                 서비스와 같은 기준(app.eligible_with_types = gate.prefilter + 예비창업자면 공고 본문 신청자 유형 판정)으로
+                 서비스와 같은 기준(app.eligible_with_types = gate.prefilter + 공고 본문 신청자 유형 판정 — 예비창업자, 2026-10-13부터 개인사업자·법인 '불가' strong)으로
                  세 방식을 똑같이 채점한다(2026-09-28 — API 업력 칸만 보면 본문으로 살린 공고를 불가로 잘못 셌다)
   P@3(2)         상위 3 중 topic_rel=2 비율(evaluate.py 주 지표). 미판정은 0 으로 센 하한과 2 로 센 상한을 같이 낸다
   nDCG@10        판정된 공고만으로 계산(evaluate.ndcg, condensed)
@@ -199,8 +199,9 @@ def main(argv=None):
                 else:
                     req = module.MatchRequest(**dict(q['payload'], top=K, search=mode))
                     ranked = [r['notice_id'] for r in module.match(req)['results']]
-                use_types = bool(types_table.get('active')) and q['payload'].get('applicant_type') == types_mod.PRE_FOUNDER
-                checks = {n: app.eligible_with_types(n, rows[n], age, as_of, True, types_table if use_types else None)[:2]
+                kind = q['payload'].get('applicant_type')
+                use_types = bool(types_table.get('active')) and (kind == types_mod.PRE_FOUNDER or bool(types_mod.entity_key(kind)))
+                checks = {n: app.eligible_with_types(n, rows[n], age, as_of, True, types_table if use_types else None, kind)[:2]
                           for n in ranked}
                 eligible = {n: ok for n, (ok, _why) in checks.items()}
                 m = query_metrics(ranked, rels, eligible)

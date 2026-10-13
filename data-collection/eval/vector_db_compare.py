@@ -56,11 +56,11 @@ def passed_ids(app, req, today):
     age = gate.applicant_age(req.applicant_type, req.founded_at, today)
     table = app.STATE.get('applicant_types') or {}
     use_types = bool(req.use_applicant_types and req.structured_filter and table.get('active')
-                     and req.applicant_type == types_mod.PRE_FOUNDER)
+                     and (req.applicant_type == types_mod.PRE_FOUNDER or bool(types_mod.entity_key(req.applicant_type))))
     out = []
     for nid, row in app.STATE['rows'].items():
         keep, _why, _change = app.eligible_with_types(nid, row, age, today, req.hide_expired,
-                                                      table if use_types else None)
+                                                      table if use_types else None, req.applicant_type)
         if keep:
             out.append(nid)
     return out

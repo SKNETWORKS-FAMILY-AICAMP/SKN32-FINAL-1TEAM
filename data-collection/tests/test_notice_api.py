@@ -290,9 +290,9 @@ def cell(status, strength=None, evidence=None):
     return {'status': status, 'strength': strength, 'evidence': evidence}
 
 
-def type_info(pre, varies=False):
-    return {'varies': varies, 'pre_founder': cell(*pre), 'sole_proprietor': cell('not_mentioned'),
-            'corporation': cell('not_mentioned'), 'registered_only': None}
+def type_info(pre, varies=False, sole=('not_mentioned',), corp=('not_mentioned',)):
+    return {'varies': varies, 'pre_founder': cell(*pre), 'sole_proprietor': cell(*sole),
+            'corporation': cell(*corp), 'registered_only': None}
 
 
 TYPES = {'active': True, 'source': 'test', 'notices': {
@@ -300,6 +300,9 @@ TYPES = {'active': True, 'source': 'test', 'notices': {
     'k:가능': type_info(('allowed', 'strong', '예비창업자 신청 가능')),
     'k:세부': type_info(('allowed', 'strong', '일부 과제 예비창업자'), varies=True),
     'k:추정': type_info(('implied_no', 'strong', '도내 제조기업')),
+    # 개인사업자·법인 '불가' strong(2026-10-13 결정 0021)
+    'k:법인불가': type_info(('not_mentioned',), corp=('not_allowed', 'strong', '도내 소상공인(법인 제외)')),
+    'k:개인불가': type_info(('not_mentioned',), sole=('not_allowed', 'strong', '국내 법인사업자')),
 }}
 
 
@@ -317,6 +320,8 @@ def rows_for_02():
         'k:세부': notice('k:세부', age_condition_raw='예비창업자,5년미만'),
         'k:추정': notice('k:추정', age_condition_raw=''),
         'a/b:슬래시': notice('a/b:슬래시', age_condition_raw=''),
+        'k:법인불가': notice('k:법인불가', age_condition_raw='7년미만'),
+        'k:개인불가': notice('k:개인불가', age_condition_raw=''),
     }
 
 
@@ -365,6 +370,21 @@ class NoticeRoutesTests(unittest.TestCase):
         self.assertEqual(types('k:불가'), ['개인사업자', '법인'])             # 본문 '불가'(강한 근거)
         self.assertEqual(types('k:가능'), ['예비창업자', '개인사업자', '법인'])  # 본문 '가능'이 업력 칸을 덮는다
         self.assertEqual(types('k:추정'), ['예비창업자', '개인사업자', '법인'])  # 추정은 빼지 않는다
+        # 개인·법인 본문 '불가' strong(2026-10-13 결정 0021) — 그 유형만 뺀다
+        self.assertEqual(types('k:법인불가'), ['개인사업자'])                    # 7년미만(예비 불가) + 법인 불가
+        self.assertEqual(types('k:개인불가'), ['예비창업자', '법인'])
+        # 판정표가 꺼지면 예전처럼 업력 칸만 본다
+        off = self.client(types=dict(TYPES, active=False)).get('/api/notices/k%3A%EB%B2%95%EC%9D%B8%EB%B6%88%EA%B0%80')
+        self.assertEqual(off.json()['eligibility']['applicant_types'], ['개인사업자', '법인'])
+
+    def test_business_type_from_notice_text(self):
+        no = self.ask('k:법인불가', '법인', '2020-01-01')
+        self.assertEqual((no['passed'], no['failed_conditions']), (False, ['지원대상 유형']))
+        self.assertIn('법인 제외', no['details'][0]['note'])
+        other = self.ask('k:법인불가', '개인사업자', '2020-01-01')
+        self.assertEqual((other['passed'], other['unknown_conditions']), (True, ['지원대상 유형']))
+        self.assertEqual(self.ask('k:개인불가', '개인사업자', '')['failed_conditions'], ['지원대상 유형'])
+        self.assertTrue(self.ask('k:개인불가', '법인', '')['passed'])
 
     def test_slash_in_id_and_not_found(self):
         c = self.client()
@@ -430,13 +450,14 @@ class NoticeRoutesTests(unittest.TestCase):
         rows = rows_for_02()
         c = self.client(rows=rows)
         cases = [('예비창업자', ''), ('개인사업자', '2024-03-02'), ('법인', '2016-01-01'),
-                 ('개인사업자', '2026-09-01'), ('법인', '')]
+                 ('개인사업자', '2026-09-01'), ('법인', ''), ('개인사업자', '')]
         for nid, row in rows.items():
             for applicant_type, founded in cases:
                 age = gate.applicant_age(applicant_type, founded, date(2026, 10, 6))
+                # 추천과 같게 세 유형 모두 판정표를 쓴다(개인·법인은 2026-10-13 결정 0021부터)
                 keep, _why, _ = server.eligible_with_types(
-                    nid, row, age, date(2026, 10, 6), check_deadline=False,
-                    types_table=TYPES if applicant_type == '예비창업자' else None)
+                    nid, row, age, date(2026, 10, 6), check_deadline=False, types_table=TYPES,
+                    applicant_type=applicant_type)
                 out = self.ask(nid, applicant_type, founded, client=c)
                 self.assertEqual(out['passed'], keep, (nid, applicant_type, founded))
 

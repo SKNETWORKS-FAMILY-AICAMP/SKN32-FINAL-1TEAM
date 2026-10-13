@@ -424,7 +424,8 @@ class MatchRequest(BaseModel):
     # **기본 꺼짐**(2026-09-28 사용자 결정): Codex 블라인드 판정에서 밀린 공고 34건 중 11건이 부당하게 밀렸다
     # (허가·상품·창업 예정 업종·역할 갈래를 신청자 업종 제한으로 읽음). 추출을 고친 뒤 다시 켠다. 평가는 True 로 부른다
     demote_industry: bool = False
-    # 공고 본문의 신청자 유형(G, 2026-09-28). 예비창업자 신청자에게만 쓴다(search/applicant_types.py)
+    # 공고 본문의 신청자 유형(G, 2026-09-28). 예비창업자, 그리고 2026-10-13(결정 0021)부터 개인사업자·법인의 '불가' strong 에 쓴다
+    # (search/applicant_types.py)
     use_applicant_types: bool = True
     hiring_plan: bool = False           # 질의
     partners: list[str] = []            # 규칙 (협력 기관·기업)
@@ -458,15 +459,22 @@ def api_match(req: MatchRequest):
     return match(_public(req))
 
 
-def eligible_with_types(nid, row, age_months, today, check_deadline=True, types_table=None):
+def eligible_with_types(nid, row, age_months, today, check_deadline=True, types_table=None, applicant_type=None):
     """정형 필터 한 건 — gate.prefilter 에 공고 본문 신청자 유형 판정(G)을 얹는다. (남길지, 이유, 바뀜)
 
-    types_table 은 예비창업자 신청자일 때만 넘긴다(None 이면 prefilter 그대로). 바뀜은 None | 'restored' | 'blocked'.
+    types_table 이 None 이면 prefilter 그대로. 바뀜은 None | 'restored' | 'blocked'.
+    applicant_type 이 None·예비창업자면 예비창업자 규칙(본문 '불가' strong 은 빼고 '가능'은 API 업력 칸보다 우선해 되살린다),
+    개인사업자·법인이면 그 유형의 본문 '불가' strong 을 뺀다(2026-10-13 결정 0021 — 되살리기는 없다).
     매칭(match)과 평가 채점(eval/filter_first_eval.py)이 같은 기준을 쓰도록 한곳에 둔다(2026-09-28).
     """
     from search import applicant_types as types_mod
     keep, why = gate.prefilter(row, age_months, today, check_deadline=check_deadline)
     if types_table is None:
+        return keep, why, None
+    key = types_mod.entity_key(applicant_type)
+    if key is not None:
+        if types_mod.entity(types_table, nid, applicant_type) == 'blocked' and '업력·신청자 유형' not in why:
+            return False, why + ['%s 불가(공고 본문)' % types_mod.ENTITY_LABEL[key]], 'blocked'
         return keep, why, None
     verdict = types_mod.pre_founder(types_table, nid)
     if verdict == 'allowed' and '업력·신청자 유형' in why:
@@ -529,11 +537,13 @@ def match(req: MatchRequest):
     # 기능정의서는 그 순서를 결함으로 본다(R-3 ①). 지역·업종은 여기서 쓰지 않고 순위에만 쓴다.
     today = date.today()
     age_months = gate.applicant_age(req.applicant_type, req.founded_at, today)
-    # 신청자 유형(G): 예비창업자 신청자에게만. 본문 '불가'(강한 근거)는 빼고, 본문 '가능'은 API 업력 칸보다 우선한다
+    # 신청자 유형(G): 본문 '불가'(강한 근거)는 뺀다. 예비창업자는 본문 '가능'이 API 업력 칸보다 우선하고 '불가 추정'은 뒤로 보낸다.
+    # 개인사업자·법인은 2026-10-13(결정 0021)부터 그 유형의 '불가' strong 만 뺀다(되살리기·뒤로 보내기 없음)
     from search import applicant_types as types_mod
     types_table = STATE.get('applicant_types') or {}
     use_types = bool(req.use_applicant_types and req.structured_filter and types_table.get('active')
-                     and req.applicant_type == types_mod.PRE_FOUNDER)
+                     and (req.applicant_type == types_mod.PRE_FOUNDER or types_mod.entity_key(req.applicant_type)))
+    use_pre = use_types and req.applicant_type == types_mod.PRE_FOUNDER
     passed, excluded = [], {}
     types_blocked, types_restored = [], []
     for nid, row in STATE['rows'].items():
@@ -541,7 +551,7 @@ def match(req: MatchRequest):
             keep, why = True, []
         else:
             keep, why, change = eligible_with_types(nid, row, age_months, today, req.hide_expired,
-                                                    types_table if use_types else None)
+                                                    types_table if use_types else None, req.applicant_type)
             if change == 'restored':
                 types_restored.append(nid)
             elif change == 'blocked':
@@ -671,7 +681,7 @@ def match(req: MatchRequest):
                         and region_mod.district_matches(row.get('title'), row.get('region'),
                                                         req.region, req.district) is False)
         off_industry = industry_rank.off_industry(industry_table, nid, industry_section)
-        pre_implied = use_types and types_mod.pre_founder(types_table, nid) == 'implied_no'
+        pre_implied = use_pre and types_mod.pre_founder(types_table, nid) == 'implied_no'
         flags[nid] = {'groups': groups, 'region': bool(off_region), 'district': bool(off_district),
                       'industry': off_industry, 'pre_implied': pre_implied}
 
@@ -825,7 +835,8 @@ def match(req: MatchRequest):
                         'source': industry_table.get('source'),
                         'notices_with_rule': len(industry_table.get('notices') or {})},
            'industry_demoted': industry_demoted,
-           # 신청자 유형(G). 예비창업자 신청자일 때만 active. blocked 는 정형 필터에서 뺀 수, restored 는 본문 우선으로 되살린 수
+           # 신청자 유형(G). 예비창업자·개인사업자·법인 신청자일 때 active(개인·법인은 2026-10-13 결정 0021부터).
+           # blocked 는 정형 필터에서 뺀 수, restored 는 본문 우선으로 되살린 수(예비창업자만), implied_demoted 는 예비창업자만
            'applicant_types': {'active': use_types, 'source': types_table.get('source'),
                                'blocked': len(types_blocked), 'restored': len(types_restored),
                                'restored_examples': types_restored[:5],

@@ -16,9 +16,10 @@ from search import applicant_types as at  # noqa: E402
 from search import industry_rank as ir  # noqa: E402
 
 
-def db_row(nid, sha, pre=('not_mentioned', None, None), sole=('not_mentioned', None, None), varies=0):
+def db_row(nid, sha, pre=('not_mentioned', None, None), sole=('not_mentioned', None, None), varies=0,
+           corp=('not_mentioned', None, None)):
     # 순서: notice_id, varies, document_sha256, pre(status,strength,evidence), sole(...), corp(...)
-    return (nid, varies, sha) + tuple(pre) + tuple(sole) + ('not_mentioned', None, None)
+    return (nid, varies, sha) + tuple(pre) + tuple(sole) + tuple(corp)
 
 
 TYPE_DB_ROWS = [
@@ -342,6 +343,52 @@ class UnreadPreFounderTests(unittest.TestCase):
         self.assertIn('unread_pre_founder', marked['n1'])
         self.assertNotIn('unread_pre_founder', notices['n1'])                                  # 원래 표는 그대로
 
+
+    # ── 개인사업자·법인 '불가' strong 도 같은 확인(2026-10-13 결정 0021) ──────────
+    def test_corporation_mention_beyond_excerpt_unblocks(self):
+        head = '지원대상: 도내 소상공인(법인 제외). ' + 'A' * 2100
+        before, after = self.item(head), self.item(head + ' 제출서류: 법인인 경우 법인등기부등본 1부')
+        self.assertEqual(before['document_sha256'], after['document_sha256'])
+        rows = [db_row('n1', before['document_sha256'], corp=('not_allowed', 'strong', '도내 소상공인(법인 제외)'))]
+        t = self.auto(rows, {'n1': before})
+        self.assertEqual(at.entity(t, 'n1', '법인'), 'blocked')
+        self.assertEqual(t['unread_entity'], 0)
+        t = self.auto(rows, {'n1': after})
+        self.assertIsNone(at.entity(t, 'n1', '법인'))                                         # 빼지 않는다
+        self.assertEqual((t['unread_entity'], t['unread_pre_founder']), (1, 0))
+        verdict, need, why = at.type_check(t, 'n1', '법인')
+        self.assertIsNone(verdict)
+        self.assertIn('확인 필요', need)
+        self.assertIn('법인등기부등본', why)
+
+    def test_sole_proprietor_words_ignore_privacy_forms(self):
+        head = '지원대상: 국내 법인사업자. ' + 'A' * 2100
+        rows_for = lambda it: [db_row('n1', it['document_sha256'],                          # noqa: E731
+                                      sole=('not_allowed', 'strong', '국내 법인사업자'))]
+        it = self.item(head + ' 개인정보 수집·이용 동의서')                                     # '개인정보'는 유형 말이 아니다
+        self.assertEqual(at.entity(self.auto(rows_for(it), {'n1': it}), 'n1', '개인사업자'), 'blocked')
+        it = self.item(head + ' 개인 사업자도 신청할 수 있음')                                   # 띄어 쓴 "개인 사업자"
+        self.assertIsNone(at.entity(self.auto(rows_for(it), {'n1': it}), 'n1', '개인사업자'))
+
+    def test_entity_without_documents_does_not_block(self):
+        it = self.item('지원대상: 소상공인(법인 제외)')
+        rows = [db_row('n1', it['document_sha256'], corp=('not_allowed', 'strong', '법인 제외'))]
+        with patch.dict(os.environ, {at.SOURCE_ENV: 'db'}):
+            t = at.load_auto(Conn(rows), current={'n1': it['document_sha256']})
+        self.assertIsNone(at.entity(t, 'n1', '법인'))
+        self.assertEqual((t['unverified_entity'], t['unread_entity']), (1, 0))
+
+    def test_pre_founder_and_entity_marks_are_separate(self):
+        # 같은 공고에 예비창업자·법인 둘 다 strong 불가 — 발췌 밖에 '법인'만 더 있으면 법인 쪽만 확인 필요
+        head = '지원대상: 개인사업자(예비창업자 제외, 법인 제외). ' + 'A' * 2100
+        it = self.item(head + ' 법인인 경우 법인등기부등본')
+        rows = [db_row('n1', it['document_sha256'], pre=('not_allowed', 'strong', '예비창업자 제외'),
+                       corp=('not_allowed', 'strong', '법인 제외'))]
+        t = self.auto(rows, {'n1': it})
+        self.assertEqual(at.pre_founder(t, 'n1'), 'blocked')
+        self.assertIsNone(at.entity(t, 'n1', '법인'))
+        self.assertIn('unread_corporation', t['notices']['n1'])
+        self.assertNotIn('unread_pre_founder', t['notices']['n1'])
 
     # ── Codex 재재검수(JUDGMENT_FRESHNESS_REVIEW_RECHECK_20260929) 반례 — 위치 조각 대신 횟수로 판단 ──────────
     P = '공고 자격요건 참고문구와 상황 설명: 예비창업자 신청 관련 별도 안내: '
