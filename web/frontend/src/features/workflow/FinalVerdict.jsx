@@ -4,7 +4,7 @@ import {Icon} from '../../components/Icons.jsx';
 import {DiffText,RerunLeftBadge,ScoreNotices} from './shared.jsx';
 import {GeneralInfoBlock,PlanExtrasBlock} from './PlanForm.jsx';
 import {PrototypeFrame,ResultPreview,useArtifactFile,ArtifactLoadError} from './ArtifactResult.jsx';
-import {bundleScoreOf,detectItemCategory,diffSentences,planViewFrom,sectionDiffEntries,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
+import {bundleScoreOf,detectItemCategory,maxInt,scoreInt,diffSentences,planViewFrom,sectionDiffEntries,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
 import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,GENERAL_SECTION_LABEL,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,PLAN_TAGS,headerOfTag,RERUN_CAP,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,ALL_DOC_BUNDLES,docBundlesFor} from './data.js';
 import {startReview,getProjectStatus} from '../../api.js';
 import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,relabelAfterReject,requestRework,reworkDiffForLabel,waitRework} from './rework.js';
@@ -353,6 +353,8 @@ function PlanGroupedView({ view, itemInfo, itemTitle }){
   const sectionBlock = (s, i) => {
     // 표를 만들지 못해 본문으로 대신한 항목이면 그 자리에 백엔드가 준 사용자용 안내(display_reason)를 보인다(조율 10-12, 백엔드 10-13).
     const fallback = view.fallbacks?.[s.section_code];
+    // 표 항목은 내려받는 문서처럼 표로 그리고, 담당자 서술은 그 아래에 둔다(문서와 같은 순서).
+    const table = s.content_type === 'table' ? view.tables?.[s.section_code] : null;
     return (
       <div key={s.section_code || `${s.title}-${i}`}>
         <h3 className="font-display font-bold text-[14px] mb-1">{s.title || s.section_code}</h3>
@@ -361,7 +363,21 @@ function PlanGroupedView({ view, itemInfo, itemTitle }){
             표를 만들지 못해 내용으로 대신했어요 — {fallback}
           </p>
         )}
-        <p className="text-[13px] leading-relaxed text-[var(--fg)] whitespace-pre-line">{s.body}</p>
+        {table && (
+          <div className="mb-2 overflow-x-auto">
+            <table className="w-full border-collapse text-[12.5px] leading-snug">
+              <thead>
+                <tr>{table.headers.map((h, c) => <th key={c} className="border border-[var(--border)] bg-[var(--muted)] px-2.5 py-1.5 text-left font-semibold whitespace-nowrap">{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {table.rows.map((row, r) => (
+                  <tr key={r}>{table.headers.map((_, c) => <td key={c} className="border border-[var(--border)] px-2.5 py-1.5 align-top">{row[c] ?? ''}</td>)}</tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {s.body && <p className={`leading-relaxed whitespace-pre-line ${table ? 'text-[12.5px] text-[var(--muted-fg)]' : 'text-[13px] text-[var(--fg)]'}`}>{s.body}</p>}
       </div>
     );
   };
@@ -659,7 +675,7 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
       {/* 공고 제목을 모르면(알림에서 연 프로젝트 · 공고 표에서 빠진 공고) 빈 『』를 그리지 않는다 */}
       {announcement?.title && <p className="text-[14px] text-[var(--muted-fg)] leading-snug mb-1.5">『{announcement.title}』</p>}
       <h1 className="font-display font-bold text-[26px] md:text-[30px] mb-3">제출 전 점검 결과예요</h1>
-      <p className="text-[14.5px] text-[var(--muted-fg)] mb-8">사업계획서(문서층 {docScore.max}점)와 프로토타입(산출물층 {artifactMaxTotal}점)을 합친 총점입니다</p>
+      <p className="text-[14.5px] text-[var(--muted-fg)] mb-8">사업계획서(문서층 {maxInt(docScore.max)}점)와 프로토타입(산출물층 {maxInt(artifactMaxTotal)}점)을 합친 총점입니다</p>
 
       <div className={`rounded-2xl p-6 flex items-center justify-between gap-4 flex-wrap mb-6 ${passed ? 'bg-[color-mix(in_srgb,var(--ok)_8%,white)] border border-[var(--border)]' : 'bg-[color-mix(in_srgb,var(--danger)_6%,white)] border border-[var(--danger)]'}`}>
         <div>
@@ -669,7 +685,7 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
           </p>
         </div>
         <div className="flex items-end gap-1.5">
-          <p className={`font-display font-bold text-[32px] leading-none ${passed ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>{finalTotal}</p>
+          <p className={`font-display font-bold text-[32px] leading-none ${passed ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>{scoreInt(finalTotal)}</p>
           <p className="text-[13px] text-[var(--muted-fg)] mb-0.5">/ 100점 (내부 기준 {threshold})</p>
         </div>
       </div>
@@ -677,14 +693,14 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
       <div className="grid sm:grid-cols-2 gap-4 mb-3">
         <div className="rounded-2xl border border-[var(--border)] bg-white p-5">
           <p className="text-[12.5px] font-semibold text-[var(--muted-fg)] mb-3">사업계획서 점검</p>
-          <p className="font-display font-bold text-[24px] leading-none mb-1">{docScore.raw} <span className="text-[13px] font-semibold text-[var(--muted-fg)]">/ {docScore.max}점</span></p>
+          <p className="font-display font-bold text-[24px] leading-none mb-1">{scoreInt(docScore.raw)} <span className="text-[13px] font-semibold text-[var(--muted-fg)]">/ {maxInt(docScore.max)}점</span></p>
           <p className="text-[12px] text-[var(--muted-fg)]">공고의 평가항목을 얼마나 충족하는지 확인했어요.</p>
           <button onClick={() => { setViewerCompare(false); setViewerOpen('plan'); }} className="mt-4 inline-flex items-center gap-1 text-[13px] font-semibold text-[var(--primary)] hover:underline">계획서 보기</button>
         </div>
         <div className="rounded-2xl border border-[var(--border)] bg-white p-5">
           <p className="text-[12.5px] font-semibold text-[var(--muted-fg)] mb-3">프로토타입 점검</p>
-          <p className="font-display font-bold text-[24px] leading-none mb-1">{artifactRawTotal} <span className="text-[13px] font-semibold text-[var(--muted-fg)]">/ {artifactMaxTotal}점</span></p>
-          <p className="text-[12px] text-[var(--muted-fg)]">자동 검증 {artifactScore.autoCheck.raw}/{artifactScore.autoCheck.max} · 계획서 대조 {artifactScore.crossCheck.withheld ? '대조 불가(0점 합산)' : `${artifactScore.crossCheck.raw}/${artifactScore.crossCheck.max}`}</p>
+          <p className="font-display font-bold text-[24px] leading-none mb-1">{scoreInt(artifactRawTotal)} <span className="text-[13px] font-semibold text-[var(--muted-fg)]">/ {maxInt(artifactMaxTotal)}점</span></p>
+          <p className="text-[12px] text-[var(--muted-fg)]">자동 검증 {scoreInt(artifactScore.autoCheck.raw)}/{maxInt(artifactScore.autoCheck.max)} · 계획서 대조 {artifactScore.crossCheck.withheld ? '대조 불가(0점 합산)' : `${scoreInt(artifactScore.crossCheck.raw)}/${maxInt(artifactScore.crossCheck.max)}`}</p>
           {hasExecutable && (
             <button onClick={() => { setViewerCompare(false); setViewerOpen('artifact'); }} className="mt-4 inline-flex items-center gap-1 text-[13px] font-semibold text-[var(--primary)] hover:underline">프로토타입 열기</button>
           )}
@@ -772,9 +788,9 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
       {reworkDiff && (
         <div className="rounded-2xl border border-[var(--border)] p-5 mb-6">
           <p className="text-[13px] font-semibold mb-3">
-            {finalTotal}점 · {passed ? '통과' : '미달'}
+            {scoreInt(finalTotal)}점 · {passed ? '통과' : '미달'}
             {reworkFromTotal !== null && reworkFromTotal !== finalTotal && (
-              <span className="text-[var(--muted-fg)] font-normal"> ({reworkFromTotal} → {finalTotal})</span>
+              <span className="text-[var(--muted-fg)] font-normal"> ({scoreInt(reworkFromTotal)} → {scoreInt(finalTotal)})</span>
             )}
           </p>
           <button onClick={() => setDiffExpanded((v) => !v)}
@@ -798,7 +814,7 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
         <div className="rounded-2xl border border-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_6%,white)] p-5 mb-6">
           <p className="text-[13px] font-bold text-[var(--danger)] mb-3">기준 미달 상태로 진행합니다 — 이 단계부터는 되돌릴 수 없습니다</p>
           <ul className="flex flex-col gap-1.5 mb-4">
-            <li className="text-[12.5px] text-[var(--fg)] leading-relaxed">· 현재 점수 — 총점 {confirmScore}점 · 기준 {confirmThreshold}점 미달</li>
+            <li className="text-[12.5px] text-[var(--fg)] leading-relaxed">· 현재 점수 — 총점 {scoreInt(confirmScore)}점 · 기준 {confirmThreshold}점 미달</li>
             <li className="text-[12.5px] text-[var(--fg)] leading-relaxed">· 남는 미달 항목 — {confirmShortfalls.length > 0 ? confirmShortfalls.join(', ') : '없음'}</li>
             <li className="text-[12.5px] text-[var(--fg)] leading-relaxed">· 진행 후에는 다시 만들 수 없습니다. 검수 단계로 넘어가면 이 점수가 그대로 확정됩니다.</li>
           </ul>

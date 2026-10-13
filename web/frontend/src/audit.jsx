@@ -52,9 +52,13 @@ const TAGGED_SECTIONS=[
 ];
 const rsn=(item_code,tag,score,max_score,reason_text)=>({item_code,tag,score,max_score,reason_text});
 const TAGGED_RESULT={
- verdict:{doc_score:50,doc_max_score:70,code_score:11,code_max_score:15,plan_match_score:9,plan_match_max_score:15,artifact_score:20,artifact_max_score:30,total_score:70,pass_threshold:80,
+ verdict:{doc_score:50.37,doc_max_score:70,code_score:11.25,code_max_score:15,plan_match_score:9.12,plan_match_max_score:15,artifact_score:20.37,artifact_max_score:30,total_score:70.74,pass_threshold:80,
   notices:['입력한 협약기간 일정이나 사업비가 기준(협약기간 최대 개월 수 · 개발 기간 · 공고 지원 금액 상한)을 벗어나 일부 항목이 검증을 통과하지 못했습니다. 이 항목은 다시 만들어도 고쳐지지 않습니다. 이대로 진행하거나, 입력을 고쳐 새 프로젝트로 다시 만들 수 있습니다.']},
- plan:{doc_max_score:70,sections:TAGGED_SECTIONS,table_fallbacks:[{section_code:'3.4.1',tag:'3-1',title:'사업비 집행계획',display_reason:'사업비 표를 만들지 못해 설명으로 표시합니다. 사업비 입력을 확인해 주세요.'}],
+ plan:{doc_max_score:70,sections:TAGGED_SECTIONS,
+  // 표 항목의 실제 표(plan.tables — source_ref = 항목 번호). 3.4.1은 표 대체 항목이라 표 없이 안내만.
+  tables:[{table_id:'table-2.3.7',title:'추진 일정(협약기간 내)',headers:['구분','추진내용','추진기간','세부내용'],source_ref:'2.3.7',
+   rows:[['기획','예약 · 출석 화면 설계','2026.11 ~ 2026.12','시범 매장 요구사항 정리'],['개발','예약 · 결제 기능 개발','2027.01 ~ 2027.02','외주 개발사와 첫 버전'],['출시','시범 운영 · 정식 출시','2027.03','시범 매장 20곳']]}],
+  table_fallbacks:[{section_code:'3.4.1',tag:'3-1',title:'사업비 집행계획',display_reason:'사업비 표를 만들지 못해 설명으로 표시합니다. 사업비 입력을 확인해 주세요.'}],
   diagrams:[{diagram_id:'2.3.6-USER_FLOW',flow_type:'USER_FLOW',title:'서비스 흐름도',source_ref:'2.3.6',nodes:['방문','예약','결제','출석'],image_url:'/projects/demo/artifact-files/flow.svg'},
    {diagram_id:'3.3.6-SERVICE_ARCHITECTURE',flow_type:'SERVICE_ARCHITECTURE',title:'서비스 구조도',source_ref:'3.3.6',nodes:['화면','예약 서버','결제'],image_url:'/projects/demo/artifact-files/arch.svg'}],
   score_reasons:[rsn('1.2',null,4,5,'개요가 핵심 기능 하나만 설명합니다.'),rsn('2.3.6','0-2',3,4,'흐름도에 결제 단계가 빠졌습니다.'),rsn('2.1.1','1-1',5,5,''),rsn('2.1.2','1-1',3,6,'시장 규모 근거가 한 건뿐입니다.'),rsn('2.1.3','1-1',4,6,'문제를 수치로 보인 근거가 약합니다.'),

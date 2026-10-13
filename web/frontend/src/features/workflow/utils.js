@@ -3,6 +3,12 @@ import {DOC_ITEMS_FAIL,DOC_ITEMS_PASS,CODE_CHECK_ITEMS_BY_CATEGORY,CODE_CHECK_FA
 
 export const MOCK_TODAY = new Date('2026-09-08');
 
+// 화면에 보이는 큰 점수(총점 · 층 · 소계)는 정수로 — 소수 둘째 자리(64.09 / 70점)까지 보일 필요가 없다(10-13 재희 님).
+// 얻은 점수는 내림: 반올림하면 79.6점이 '80점'인데 기준 80 '미달'로 보여 숫자와 판정이 어긋난다. 내림이면 늘 맞는다(기준은 정수).
+// 1e-6은 소수 덧셈 오차(79.99999…가 사실 80)를 바로잡는 몫. 만점은 반올림(설정 배점이라 보통 정수). 항목별 작은 점수(만점 2.9점 등)는 쓰지 않는다.
+export const scoreInt = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.floor(v + 1e-6) : v);
+export const maxInt = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : v);
+
 export function yearsSince(dateStr){
   const then = new Date(dateStr);
   let years = MOCK_TODAY.getFullYear() - then.getFullYear();
@@ -311,9 +317,15 @@ export function planViewFrom(plan){
   // 담당자 판정 원문(reason)은 내부 진단용이라 백엔드가 싣지 않는다 — 옛 모양으로 오면 그것이라도 보인다.
   const fallbacks = Object.fromEntries((plan.table_fallbacks || [])
     .map((f) => [f?.section_code, f?.display_reason || f?.reason]).filter(([code, reason]) => code && reason));
+  // 표 항목(content_type 'table')의 실제 표 — plan.tables[](headers · rows, source_ref = 항목 번호). 내려받는 워드 · 한글처럼 화면도 표로 그린다
+  // (예전엔 표 항목도 담당자 서술 문장 한 줄만 보였다). 표를 본문으로 대신한 항목(fallbacks)은 표가 없으므로 넣지 않는다.
+  const tables = Object.fromEntries((plan.tables || [])
+    .filter((t) => t?.source_ref && Array.isArray(t.headers) && t.headers.length && Array.isArray(t.rows) && t.rows.length && !fallbacks[t.source_ref])
+    .map((t) => [t.source_ref, { headers: t.headers.map(String), rows: t.rows.map((r) => (Array.isArray(r) ? r.map((c) => (c == null ? '' : String(c))) : [])) }]));
   return {
     legacy: false,
     fallbacks,
+    tables,
     general: text.filter((s) => !PLAN_TAGS.includes(s.tag)),
     diagrams: (plan.diagrams || []).filter((d) => d && d.image_url),
     bundles: PLAN_TAGS.map((tag) => ({ tag, header: headerOfTag(tag), sections: text.filter((s) => s.tag === tag) }))

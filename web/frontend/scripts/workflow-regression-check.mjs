@@ -144,7 +144,10 @@ try{
   assert.deepEqual(scored.codeCheckItems.map(i=>[i.passed,i.applicable]),[[false,true],[true,false]]);
   assert.equal(sfr({verdict:{code_score:8,code_max_score:15},plan:{score_reasons:[],artifacts:[]}}).artifactLayer,null);
   // 점수 항목 묶음(응답모양변경 10-11 2-1) — tag로 일반현황 · 개요 + 4묶음에 모으고, 이름은 section_code로 찾는다.
-  const {taskReasons:tr,bundleScoreOf:bso,planViewFrom:pvf,deliverableNoticesFrom:dnf,prototypeFilesOf:pfo,shortfallFrom:sff}=await server.ssrLoadModule('/src/features/workflow/utils.js');
+  const {taskReasons:tr,bundleScoreOf:bso,planViewFrom:pvf,deliverableNoticesFrom:dnf,prototypeFilesOf:pfo,shortfallFrom:sff,scoreInt:si,maxInt:mi}=await server.ssrLoadModule('/src/features/workflow/utils.js');
+  // 화면의 큰 점수는 정수 — 얻은 점수는 내림(79.6은 79 · 기준 80 미달과 맞음), 소수 덧셈 오차(79.9999999)는 80, 만점은 반올림.
+  assert.deepEqual([si(94.1),si(64.09),si(79.6),si(79.99999999),si(80),si(null)],[94,64,79,80,80,null]);
+  assert.deepEqual([mi(70),mi(40.83),mi(14.999999)],[70,41,15]);
   // 결과물 화면 미달 항목(deliverable.shortfall_items) — 층별로 나누고 받은 순서 그대로, 계획서 줄은 태그로 묶음 이름, 점수는 소수 한 자리, 없으면 null.
   assert.equal(sff(null),null);assert.equal(sff({shortfall_items:[]}),null);assert.equal(sff({}),null);
   const sf=sff({shortfall_items:[
@@ -192,6 +195,11 @@ try{
     diagrams:[{diagram_id:'d1',image_url:'/projects/1/artifact-files/a'},{diagram_id:'d2',image_url:null}]});
   assert.deepEqual([view.legacy,view.general.map(s=>s.title),view.bundles.map(b=>[b.tag,b.sections.map(s=>s.title)]),view.diagrams.map(d=>d.diagram_id)],[false,['일반현황'],[['2-1',['개발','일정']]],['d1']]);
   assert.equal(pvf({sections:[{tag:'1-1',title:'a',body:'b'}]}).legacy,true);
+  // 표 항목은 plan.tables로 실제 표 — 항목 번호(source_ref)로 찾고, 표 대체 항목과 빈 표는 넣지 않는다.
+  const tv=pvf({sections:[{section_code:'2.6.2',tag:'3-1',title:'일정',content_type:'table'},{section_code:'2.5.3',tag:'2-1',title:'사업비',content_type:'table'}],
+    tables:[{source_ref:'2.6.2',headers:['구분','추진내용'],rows:[['개발',null]]},{source_ref:'2.5.3',headers:['비목'],rows:[['재료비']]},{source_ref:'9.9.9',headers:['x'],rows:[]}],
+    table_fallbacks:[{section_code:'2.5.3',display_reason:'사업비 확인'}]});
+  assert.deepEqual(tv.tables,{'2.6.2':{headers:['구분','추진내용'],rows:[['개발','']]}});
   assert.equal(pvf({sections:[]}),null);
   // 검증결과서 PDF — 새 모양은 문서층 칸이 묶음 합계(일반현황 · 개요 + 묶음), 옛 모양은 항목별.
   const {buildVerificationReportHtml:bvr}=await server.ssrLoadModule('/src/features/workflow/verificationReport.js');

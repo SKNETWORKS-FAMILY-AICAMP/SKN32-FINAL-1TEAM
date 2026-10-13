@@ -3,7 +3,7 @@ import React, {useEffect, useRef, useState} from 'react';
 import {Icon} from '../../components/Icons.jsx';
 import {buildZip,downloadPlanDocx,downloadPrototypeZip,triggerDownload} from '../../dummyDeliverables.js';
 import {downloadDeliverableZip,downloadPlanDocument,downloadPlanHwp,fetchUploadBlob} from '../../api.js';
-import {buildCodeCheckItems,buildGeneralInfo,buildOverview,deliverableNoticesFrom,detectItemCategory,DOC_SCORE_BY_OUTCOME,prototypeFilesOf,reviewParagraphsFrom,shortfallFrom} from './utils.js';
+import {buildCodeCheckItems,buildGeneralInfo,buildOverview,deliverableNoticesFrom,detectItemCategory,DOC_SCORE_BY_OUTCOME,prototypeFilesOf,reviewParagraphsFrom,scoreInt,shortfallFrom} from './utils.js';
 import {printVerificationReport} from './verificationReport.js';
 import {ARTIFACT_SCORE_BY_OUTCOME,DOWNLOAD_FILES,FINAL_THRESHOLD,PLAN_DOCUMENT_SECTIONS_REWORKED,REVIEW_PARAGRAPHS,REVIEW_RETRY_CAP} from './data.js';
 
@@ -259,7 +259,7 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
         )}
         {downloadErrors.all && <p role="alert" className="-mt-3 mb-5 px-5 text-[12.5px] leading-relaxed text-[var(--danger)]">{downloadErrors.all}</p>}
         {!passed && (
-          <p className="text-[13px] text-[var(--fg)] mb-4">현재 {finalTotal}점으로 저장됩니다 — 검수는 표현만 다듬으므로 종합 평가에서 확인한 점수가 그대로 기록됩니다</p>
+          <p className="text-[13px] text-[var(--fg)] mb-4">현재 {scoreInt(finalTotal)}점으로 저장됩니다 — 검수는 표현만 다듬으므로 종합 평가에서 확인한 점수가 그대로 기록됩니다</p>
         )}
 
         {shortfall && (

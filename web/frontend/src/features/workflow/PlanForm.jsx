@@ -2,7 +2,7 @@
 import React, {useState, useEffect, useRef} from 'react';
 import {Icon} from '../../components/Icons.jsx';
 import Preparation from '../../components/Preparation.jsx';
-import {buildGeneralInfo,buildOverview,bundleScoreOf,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
+import {buildGeneralInfo,buildOverview,bundleScoreOf,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf,scoreInt} from './utils.js';
 import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_TABLE_EXAMPLE,RERUN_CAP,SCORE_DISCLAIMER,ALL_DOC_BUNDLES,docBundlesFor} from './data.js';
 import {ScoreNotices} from './shared.jsx';
 import {ApiError,fetchPlanDocumentPdf,getProjectStatus} from '../../api.js';
@@ -130,7 +130,8 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
   // 서버가 채점을 끝냈으면 그 값(scores), 아직이면 기존 고정 표 — utils.js scoresFromResult 참고.
   const docScore = scores?.docScore || DOC_SCORE_BY_OUTCOME[scoreOutcome];
   const threshold = scores?.threshold ?? FINAL_THRESHOLD;
-  const docScoreScaled = docScore.max ? Math.round((docScore.raw / docScore.max) * 100) : 0;
+  // 100점 환산은 내림(utils scoreInt) — 반올림하면 79.6이 '80점 미달'처럼 보인다.
+  const docScoreScaled = docScore.max ? scoreInt((docScore.raw / docScore.max) * 100) : 0;
   const passed = docScoreScaled >= threshold;
   const [confirmProceed, setConfirmProceed] = useState(false);
   const [checkedTasks, setCheckedTasks] = useState([]);
