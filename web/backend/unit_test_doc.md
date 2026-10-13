@@ -38,7 +38,7 @@ ruff check .                                # 정적 검사
 |---|---|
 | `test_orch_stages.py` | 공고 선택 → 자격 확인 → 계획서 · 프로토타입 · 종합 평가 · 검수 시작 |
 | `test_orch_result.py` | `GET /projects/{id}/result` — 계획서 · 판정 · 산출물 · 재작성 기회를 응답으로 변환 |
-| `test_plan_result_shape.py` | 결과의 계획서 응답 모양 — 항목 번호 · 웹 태그 · 종류를 따로, 옛 4항목 계획서의 태그, 점수 항목의 태그, 그림 주소 · 순서 (SB-337) |
+| `test_plan_result_shape.py` | 결과의 계획서 응답 모양 — 항목 번호 · 웹 태그 · 종류를 따로, 옛 4항목 계획서의 태그, 점수 항목의 태그, 그림 주소 · 순서 (SB-337), 표 대체 사유(`table_fallbacks`)의 태그 · 제목 · 사용자용 안내만 싣고 내부 원문은 싣지 않음, 점수 보고서 안내(`plan.notices` · `verdict.notices`) (SB-354) |
 | `test_score_scaling.py` | 점수 보고서 환산 칸 — 층 점수 · 만점은 그 실행 건 배점 기준(지금 정책 값 아님), 코드 점검 줄의 부분 점수 · 해당 없음, 항목 합 = 층 점수, 옛 실행 건 대체 값 (오케스트레이터 2026-10-11) |
 | `test_orch_rework.py` | 재작성 접수(`POST /retry-task`)와 전후 비교(`GET /rework-result`) — 바뀐 항목의 키(항목 번호) · 태그 · 제목 포함 |
 | `test_plan_score_items.py` | 평가 항목이 24 ~ 25개로 늘어도 문서층 점수 응답이 순서 · 이름 · 소수 점수 그대로 나오는지, 편차 상한은 저장만 함 (SB-338) |
@@ -67,6 +67,7 @@ ruff check .                                # 정적 검사
 | `test_budget_phase_column.py` | `project_budget_items.phase` 컬럼(VARCHAR(10), NULL 허용, '1단계' · '2단계') (SB-328) |
 | `test_budget_schedule_schema.py` | 사업비 · 일정의 요청 · 응답 모양, 허용값, 행 수 상한, 응답 순서 (SB-329) |
 | `test_budget_schedule_validation.py` | 필수 · 금액 · 합계 · 유형별 단계 · 일정 필수 칸과 연도 검사, 오류 위치(표 · 줄 번호 · 칸) (SB-330) |
+| `test_schedule_within_dev_period.py` | 협약기간 내 일정의 끝나는 달이 개발 종료월을 넘으면 422(`schedule_items[i].period`), 협약 이후 일정 · 개발 종료월 없음은 검사 안 함, 추진기간에서 달을 읽는 규칙(검증-1과 같음), 협약기간 최대 개월 수는 막지 않음 (SB-354) |
 | `test_budget_schedule_saving.py` | 보낸 순서대로 저장, `request_start` 전에 커밋, 시작 거절 시 함께 삭제 (SB-331) |
 | `test_budget_schedule_required.py` | 필수 조건 계산, 스위치(`REQUIRE_BUDGET_SCHEDULE`) 꺼짐 · 켜짐, `E-C1-REQUIRED`와 `missing` 이름 (SB-332) |
 
