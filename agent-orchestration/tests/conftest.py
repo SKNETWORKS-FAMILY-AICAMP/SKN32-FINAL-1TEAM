@@ -53,6 +53,39 @@ def _no_real_notice_server(monkeypatch):
     isolate_notice_api(monkeypatch)
 
 
+# ── 실행별 KIET 검색 스위치 격리 (SBRAIN_KIET_SEARCH, 기본 꺼짐) ─────────────
+# 개발 PC의 환경 변수나 agent-orchestration/.env에 켜는 값이 있어도 테스트의 워커 조립(build_app 기본 환경)이 실제 KIET를 부르지 않게,
+# 모든 테스트에서 이 키를 없는 것으로 보고(공고 서버 주소 격리와 같은 방식) 연결 코드의 켜기 상태(워커 프로세스 값)를
+# 테스트마다 꺼진 값으로 되돌린다. 켠 경우는 그 테스트 안에서 검색 함수를 가짜로 바꾼 뒤 켠다(네트워크 없음).
+KIET_SEARCH_KEY = "SBRAIN_KIET_SEARCH"
+
+
+def isolate_kiet_search(monkeypatch: pytest.MonkeyPatch) -> None:
+    """환경 변수와 .env의 SBRAIN_KIET_SEARCH를 없는 것으로 본다 (테스트가 끝나면 monkeypatch가 되돌린다)."""
+    monkeypatch.delenv(KIET_SEARCH_KEY, raising=False)
+    original = env.read_env_file
+    if getattr(original, "without_kiet_search", False):
+        return
+
+    def read_env_file(path=None) -> dict[str, str]:
+        values = original(path)
+        values.pop(KIET_SEARCH_KEY, None)
+        return values
+    read_env_file.without_kiet_search = True
+    read_env_file.without_notice_url = getattr(original, "without_notice_url", False)
+    monkeypatch.setattr(env, "read_env_file", read_env_file)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_kiet_search(monkeypatch):
+    from sbrain.agents.partner_sw import market_research
+
+    isolate_kiet_search(monkeypatch)
+    market_research.set_kiet_search(False)
+    yield
+    market_research.set_kiet_search(False)
+
+
 # ── 실제 OpenAI 이미지 호출 막기 ─────────────────────────────
 # build_app(image=None)은 실제 이미지 호출처(OpenAIImageProvider)를 끼운다. 화면 6 뒤(T-B2 아이콘판)까지 도는 워커 테스트가
 # 가짜 이미지를 빠뜨려도 네트워크로 나가지 않게, 클라이언트를 주입하지 않은 실제 호출처는 클라이언트를 만들지 않고 실패한다.

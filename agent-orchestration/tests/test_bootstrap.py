@@ -285,6 +285,51 @@ def test_bad_notice_url_fails_assembly_without_echo(tmp_path, db):
     assert "example.invalid" not in str(e.value)
 
 
+# ── 조립: 실행별 KIET 검색 스위치 (SBRAIN_KIET_SEARCH, 기본 꺼짐) ─────────────
+def test_worker_default_env_runs_ts1_without_kiet_search(tmp_path, db, monkeypatch):
+    """워커 조립(build_app, 기본 환경 — conftest가 스위치 키를 없는 것으로 본다)으로 T-S1을 돌아도 KIET 검색을 부르지 않는다.
+    T-S1은 감싸지 않은 원래 함수(run_ts1)로 등록된다."""
+    from sbrain.agents.partner_sw import market_research
+    from sbrain.agents.partner_sw import strategy as strategy_module
+
+    called = []
+    monkeypatch.setattr(market_research.market_crawler, "crawl_keyword", lambda *a, **k: called.append("crawler"))
+    monkeypatch.setattr(strategy_module, "search_keyword", lambda keyword, timeout: called.append("search"))
+    app, web, real, source = real_worker_app(tmp_path)
+    assert market_research.kiet_search_enabled() is False
+    assert app.registry.get("T-S1").fn is strategy_module.run_ts1
+    rid = worker_to_screen6(app, web, source)
+    assert called == []
+    logs = web.store.call_logs(rid)
+    assert {log.purpose for log in logs if log.task_id == "T-S1" and log.call_type == "search"} == {"자료 검색"}
+
+
+@pytest.mark.parametrize("value,on", [("1", True), ("TRUE", True), ("yes", True), ("On", True), (" true ", True),
+                                      ("0", False), ("false", False), ("no", False), ("", False), ("켜기", False)])
+def test_build_app_reads_kiet_switch_with_get_env(tmp_path, db, monkeypatch, value, on):
+    from sbrain.agents.partner_sw import market_research
+
+    url = f"sqlite:///{(tmp_path / 'worker.db').as_posix()}"
+    monkeypatch.setenv("SBRAIN_KIET_SEARCH", value)
+    build_app(url, project_inputs=projects(1), llm=FakeLLM())
+    assert market_research.kiet_search_enabled() is on
+
+
+def test_build_app_kiet_switch_argument_beats_env(tmp_path, db, monkeypatch):
+    from sbrain.agents.partner_sw import market_research
+    from sbrain.agents.partner_sw import strategy as strategy_module
+
+    url = f"sqlite:///{(tmp_path / 'worker.db').as_posix()}"
+    app = build_app(url, project_inputs=projects(1), llm=FakeLLM(), kiet_search=True)
+    assert market_research.kiet_search_enabled() is True
+    assert app.registry.get("T-S1").fn is strategy_module.run_ts1                  # 켜도 감싸지 않는다
+    monkeypatch.setenv("SBRAIN_KIET_SEARCH", "1")
+    build_app(url, project_inputs=projects(1), llm=FakeLLM(), kiet_search=False)
+    assert market_research.kiet_search_enabled() is False
+    build_app(url, project_inputs=projects(1), llm=FakeLLM())                     # None = 환경 변수
+    assert market_research.kiet_search_enabled() is True
+
+
 def test_build_web_needs_db_url(monkeypatch, tmp_path):
     monkeypatch.delenv("SBRAIN_DB_URL", raising=False)
     monkeypatch.setattr(env, "DEFAULT_ENV_FILE", tmp_path / "없음.env")

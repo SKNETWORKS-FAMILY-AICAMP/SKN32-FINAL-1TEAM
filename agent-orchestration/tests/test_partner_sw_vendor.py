@@ -432,7 +432,9 @@ FORBIDDEN = {
 def test_vendored_code_has_no_forbidden_calls():
     files = sorted(PARTNER_DIR.rglob("*.py"))
     assert len(files) >= 14
-    allowed = {"market_crawler.py": {"os.getenv", "datetime.now", "직접 HTTP"}}
+    # market_research.py는 연결 코드다 — KIET 요청(requests)과 검색 시간 한도(time)가 tools.search 안에서만 돈다
+    allowed = {"market_crawler.py": {"os.getenv", "datetime.now", "직접 HTTP"},
+               "market_research.py": {"time.sleep", "직접 HTTP"}}
     found = [(f.name, name) for f in files for name, pat in FORBIDDEN.items()
              if name not in allowed.get(f.name, set()) and re.search(pat, f.read_text(encoding="utf-8"))]
     assert found == []

@@ -7,8 +7,9 @@
 | 항목 | 값 |
 |---|---|
 | 받은 날짜 | 2026-10-08 |
+| 새 판 | 2026-10-12 SB-354(새 판), 2026-10-12 SB-360(담당자 답 반영분 — F19 `inputErrorCodes` · 채점 울타리 키 · 코드 기준 감점 · `tableFallbacks` `displayReason` · 실행별 KIET 검색, 저장소에서 가져옴) |
 | 원본 사본(읽기 전용) | 담당자 브랜치의 `agent_strategy/` · `agent_validation_1/` (작업 공간에 받아 둠) |
-| 시장 자료 출처 | 로컬 `agent_strategy/res/crawling/industry_research/output/`에 보관. `SBRAIN_AUTO_RESEARCH=1`이면 현재 사용자 키워드를 KIET에서 추가 검색하고 결과·보고서·이력을 갱신함 — **우리 실행 흐름(T-S1 · T-S2)에서는 이 갱신을 부르지 않는다(담당자 자체 실행 `run_pipeline`에서만 쓰임).** 실행마다 자동 검색은 다음 작업(`` 30번) |
+| 시장 자료 출처 | 로컬 `agent_strategy/res/crawling/industry_research/output/`에 보관(사용자가 크롤러로 미리 만듦). 담당자 `SBRAIN_AUTO_RESEARCH=1` 경로(사용자 키워드를 KIET에서 추가 검색하고 결과 · 보고서 · 이력 파일을 갱신)는 담당자 자체 실행 `run_pipeline`에서만 쓰인다 — 우리 실행 흐름은 부르지 않는다. 우리 실행 흐름의 KIET 검색은 연결 코드 `market_research.py`(스위치 `SBRAIN_KIET_SEARCH`, 기본 꺼짐 — 4절)이고 파일에 쓰지 않는다 |
 | 실행 계약 버전 | `agent_strategy/runtime/execution_contract.json`의 `version` = 2 |
 | 채점 정책 버전 | `agent_validation_1/res/prompts/evaluation_rubric.json`의 `version` = 2026-10-02.1 |
 
@@ -54,7 +55,7 @@
 | `runtime/llm_runtime.py` `writing_prompt` | `writing_rules.json` 글자 읽기 `utf-8` → `utf-8-sig`(`resources.read`) | 위와 같음 |
 | `runtime/pipeline.py` | `import os` · `time` · `timezone` 삭제, 실행 시각 · 경과 시간 칸(`startedAt` · `createdAt` · `completedAt` · `elapsedSeconds` · `durationMs` · `retryHistory[].timestamp`) 삭제 | 시각은 쓰지 않는다(spec 4.1, standards 10절) |
 | `runtime/pipeline.py` `refresh_user_industry_research` | 담당자 `run_pipeline`에서 F01 전에 실행. `SBRAIN_AUTO_RESEARCH=1`일 때만 KIET 사용자 키워드를 검색하고 `raw_kiet_results.json` · `results.json` · `keyword_history.json`을 갱신. 기본값은 건너뜀 | 이 파일 갱신 방식은 담당자 경로에만 해당 |
-| 오케스트레이터 `sbrain/orchestrator/market_research.py` | T-S1에서 F01 전에 기술 분야(없으면 아이디어 설명 앞 120자)로 `crawl_keyword`를 호출하고, 결과를 해당 실행의 시장 근거에만 합침. `add_keyword` · JSON 파일 저장은 호출하지 않으며 검색 전체 시간은 최대 25초(호출 도구의 더 짧은 제한 우선) | KIET 결과는 실행 결과의 근거로만 보존하고 공용 자료 파일·이력에 쓰지 않는다. 검색 실패·무결과면 기존 로컬 자료로 계속한다 |
+| (담당자 SB-360 판이 엔진 폴더 `sbrain/orchestrator/market_research.py`에 넣은 실행별 KIET 검색) | 우리 연결 코드 `partner_sw/market_research.py`로 옮겼다(4절 — 우리 파일이라 `[S-Brain]` 주석 대상이 아님). 스위치 · 실패 처리 · 재시도 횟수를 더했다 | 엔진은 S-Brain · 담당자 코드 · `requests`를 모르는 범용 실행기다 |
 | `runtime/market_crawler.py` `add_keyword` | 현재 사용자 키워드만 KIET 연구·동향에서 검색하고 세 결과 파일에 upsert | 기존 기준 키워드 결과를 다시 수집하거나 덮어쓰지 않음 |
 | `resources.py` `refresh` · `runtime/research_context.py` `refresh_market_sources` | 명시적 KIET 갱신 뒤 로컬 자료 캐시와 검색 색인을 새로고침 | 일반 Task는 파일을 다시 읽지 않고, 갱신한 실행에서 새 자료를 곧바로 사용 |
 | `runtime/pipeline.py` `_normalize_image_output` | 노드 계약이 깨지면 기본 흐름 대신 `FormatError`, 딕셔너리가 아니면 `FormatError` | 쓸 수 없는 응답은 재시도(spec 4.1) |
@@ -65,7 +66,7 @@
 
 **바꾸지 않은 것(알려 둘 것)**
 - 응답 정리: 코드 울타리를 제거한 뒤 JSON 객체 추출에 성공하면 파싱 결과를 정상 반환한다. 추출할 JSON 객체가 없으면 `FormatError`를 내어 `tools`가 재시도한다.
-- KIET 자동 갱신의 직접 HTTP 요청은 고정된 `www.kiet.re.kr` 검색·요약 주소에만 보낸다. `SBRAIN_AUTO_RESEARCH` 기본값은 꺼짐이며, KIET 조회는 OpenAI 호출이나 토큰 사용량에 포함되지 않는다. 우리 실행 흐름에서는 이 갱신을 부르지 않으므로 워커에 `SBRAIN_AUTO_RESEARCH`를 넣어도 KIET로 나가지 않는다(직접 HTTP · 실행 중 디스크 쓰기가 우리 규칙과 부딪쳐 실행 · 보관 방식을 담당자에게 묻는 중).
+- KIET 크롤러(`runtime/market_crawler.py`)의 직접 HTTP 요청은 고정된 `www.kiet.re.kr` 검색 · 요약 주소에만 보낸다. KIET 조회는 OpenAI 호출이나 토큰 사용량에 포함되지 않는다. 담당자 자동 갱신(`SBRAIN_AUTO_RESEARCH`, 기본 꺼짐)은 우리 실행 흐름이 부르지 않아 워커에 그 값을 넣어도 바뀌지 않는다. 우리 실행 흐름에서 KIET로 나가는 것은 연결 코드 `market_research.py`(`SBRAIN_KIET_SEARCH`를 켰을 때만 — 4절)뿐이고, 크롤러의 `crawl_keyword`만 부르며(`add_keyword` · 파일 저장은 부르지 않음) 크롤러 코드는 고치지 않았다.
 - `agent_validation_1/validation_1.py` `validate_section` 결과의 기록용 키(`model` · `responseId` · `usage`)는 그대로 둔다. 연결 코드(`verify.py`)가 판정 · 점수만 `SectionResult`로 옮기고 이 키는 버린다(spec 4.17).
 - `scoring.py`의 `documentLayerScore`(`× 0.7`)는 그대로다. 우리 점수는 연결 코드가 실행 설정 `scoring.docLayerMax`로 낸다(spec 4.9).
 - `score_section`은 울타리를 `strategy_limits`와 `_strategy_limits` 모두에서 읽는다. 개발 종료월 40점 · 지원금 상한 50점 감점은 본문 문자열을 훑지 않고 F19의 `inputErrorCodes`를 기준으로 적용한다. 따라서 협약 이후 로드맵 날짜는 개발 종료월 감점에 포함되지 않으며, F19 fail 점수 상한 59점은 유지한다.
@@ -84,10 +85,26 @@
 | `outputs.py` | 출력 변환(4.7) — 산출물에 싣는 칸, 문장 나누기, `RequirementAnalysis` · `MarketAnalysis` · 수치 토큰 매핑(잠정) |
 | `common.py` | 양식 항목 · 담당자 항목 계약 · 문맥(canonical · 원본 사실 · 근거) · 목표 항목 · 재개 이어 쓰기(`Steps` · partial) · 동시 호출(`gather`, 상수 T-W1 · T-V1 4, T-W2 2) |
 | `diagram_svg.py` | 그림 SVG 그리기 — 담당자 시험 서버 `app/testing/test_server.py`의 `flow_image` 그리기만 옮김(기본 흐름 대체는 뺌) |
-| `strategy.py` · `writing.py` · `verify.py` | Task 함수 `run_ts1` · `run_ts2` · `run_tw1` · `run_tw2` · `run_tw3` · `run_tv1` — 담당자 run_pipeline의 단계 함수를 Task 단위로 나눠 부른다(파이프라인을 통째로 부르지 않음) |
+| `strategy.py` · `writing.py` · `verify.py` | Task 함수 `run_ts1` · `run_ts2` · `run_tw1` · `run_tw2` · `run_tw3` · `run_tv1` — 담당자 run_pipeline의 단계 함수를 Task 단위로 나눠 부른다(파이프라인을 통째로 부르지 않음). `writing.py`에 표 대체 안내 고르기 `table_display_reason`(아래) |
+| `market_research.py` | 실행별 KIET 검색 연결(아래) — 스위치 `set_kiet_search` · `kiet_search_enabled`, 검색 `search_keyword`(크롤러 `crawl_keyword`를 메모리에서만), 실패 `KietSearchFailed`, 재시도 `KIET_RETRIES`, 근거 합치기 `merge_market_evidence` |
 | `tasks.py` | 등록 `IMPLEMENTED` · `IMPLEMENTED_TASKS` · `bind_partner_sw(registry)` — 워커 조립(`bootstrap.build_app`)만 묶는다 |
 
-### 입력 오류 판별 (`verify.py` — 2026-10-12 담당자 새 판 뒤)
+### 실행별 KIET 검색 (`market_research.py` · `strategy.py` — 담당자 SB-360)
+
+- **자리:** 담당자 SB-360 판은 이 연결을 엔진 폴더(`sbrain/orchestrator/market_research.py`)에 넣어 왔다. 엔진은 담당자 코드 · `requests`를 모르는 범용 실행기라 연결 코드 자리(이 폴더)로 옮겼다(`tests/test_kiet_search.py`가 엔진 폴더에 KIET 연결 · 담당자 import · `requests` import가 없음을 본다).
+- **스위치(기본 꺼짐, 잠정):** 워커 프로세스 값 하나다. 워커 조립(`bootstrap.build_app(kiet_search=None)`)이 `SBRAIN_KIET_SEARCH`(환경 변수 → `.env`)를 읽어 켜는 값(`1` · `true` · `yes` · `on`, 대소문자 · 앞뒤 공백 무시)이면 `set_kiet_search(True)`. Task 함수 · 담당자 코드는 환경 변수를 읽지 않고 `kiet_search_enabled()`만 본다. `bind_partner_sw(registry)`를 부르는 모양은 그대로다(웹 E2E · `stub_worker`가 `lambda registry: None`으로 바꿔 끼운다).
+- **꺼져 있으면:** T-S1은 KIET를 부르지 않는다 — 호출 기록도, 시장 근거 합치기도 없다(근거에 `kietSearch` 키가 없음). 지금까지와 같다.
+- **켜져 있으면:** T-S1이 F01 전에 `tools.search("KIET 시장 조사", …, retries=KIET_RETRIES)`로 한 번 부른다. 검색어는 기술 분야, 비면 아이디어 설명 앞 120자. 검색 한 번은 최대 25초(호출 도구의 제한 시간이 더 짧으면 그것), 결과 4건 · 한 건 1,200자, 메모리에서만 다룬다. 새 근거를 먼저 넣고 로컬 자료와 합쳐 4건으로 자른다(담당자 설계 그대로).
+- **실패:** 크롤러 값의 `status`가 `failed`이거나 크롤러 밖으로 예외가 나오면 `KietSearchFailed`(`ConnectionError` — 엔진이 '호출실패'로 기록하고 재시도)로 바꿔 올린다. 메시지는 고정 문구 'KIET 검색 실패'(예외면 뒤에 오류 종류 이름)뿐이고 원래 예외를 잇지 않는다(`from None` — 검색어 · 주소가 든 크롤러 `error` 글을 싣지 않음). 결과 0건(`no_relevant_source_found`)과 일부 검색만 실패하고 결과가 있는 경우는 실패가 아니다.
+- **재시도를 다 쓰면:** 이 호출 하나만 처음 포함 최대 3번(`KIET_RETRIES` = 2, 잠정) 시도한 뒤 `ToolCallExhausted`를 T-S1이 받아 시장 근거 `kietSearch.status = "failed"`로 두고 있는 자료로 계속한다 — 필수 규칙 2의 예외(T-S1의 KIET 검색 호출만). 호출 기록에 그 호출 한 줄이 '소진'으로 남고 T-S1은 성공으로 끝난다(실행 실패 · 재개 · 실패 알림 · 사용자 화면 표시 없음).
+- **담당자 SB-360 판과 다른 곳:** 담당자 판은 실패를 값으로 돌려 호출 기록에 '성공'으로 남고, 재시도는 설정값(5번)이었다. 관리자가 KIET 문제를 알아볼 수 있게 실패를 호출 실패로 올리고, 사이트가 죽어 있을 때의 지연을 줄이려고 재시도를 2번으로 했다.
+
+### 표 대체 안내 (`writing.py` — 담당자 SB-360의 `displayReason`)
+
+- 담당자 SB-360 판은 표 대체 사유 원문(`fallbackReason`)을 다섯 가지 사용자 안내 중 하나로 고르는 낱말 분류를 우리 화면 조회(`flow/reads.py`)에 넣어 왔다. 담당자 문장 해석은 연결 코드 한 곳에 두므로 T-W3 연결 코드 `writing.table_display_reason`으로 옮겼다(고르는 순서 · 낱말 · 문구는 글자 그대로). T-W3가 표를 대체할 때 `tableOutputs[항목].displayReason`에 저장하고(`outputs.py` `TABLE_KEYS`), 화면 조회는 그 값을 옮기기만 한다. 칸이 없는 옛 값은 일반 문구(다섯째 문구 — `flow/reads.py` `TABLE_FALLBACK_DISPLAY_DEFAULT`)다.
+- 담당자에게 표 대체 이유에도 코드를 달라고 요청한다 — 받으면 낱말 분류를 없앤다.
+
+### 입력 오류 판별 (`verify.py` — 담당자 SB-360부터 issue 글 대신 코드로)
 
 - 담당자 F19는 Python 저비용 검사에서 다음 `inputErrorCodes`를 반환한다. issue 문구와 독립된 구조화 값이며, 의미 검증(LLM)이 비슷한 문구를 내더라도 이 코드는 설정되지 않는다.
   - `AGREEMENT_MONTHS_EXCEEDED`: 협약기간 일정이 최대 개월 수 초과
@@ -124,7 +141,7 @@ def run_one(code):                                                  # 또는 스
 1. 새 판을 작업 공간에 사용자가 풀어 둔다(갱신은 사용자).
 2. 2절 목록의 파일마다 **옛 원본 사본 ↔ 새 원본**을 비교해 담당자가 바꾼 곳을 찾는다(우리 사본끼리 비교하지 않는다 — 3절 변경이 섞인다).
 3. 담당자가 바꾼 파일은 새 원본을 복사한 뒤 3절 표의 변경을 다시 적용한다(`[S-Brain]` 주석 자리). 자료 파일(JSON · MD)은 그대로 덮어쓴다.
-4. 새 판에 OpenAI 직접 호출 · `os.getenv` · `datetime.now` · `.env` 읽기 · `time.sleep` · 실행 중 파일 읽기가 새로 생겼는지 본다(`tests/test_partner_sw_vendor.py`의 소스 검사 · 파일 접근 차단 테스트가 잡는다).
+4. 새 판에 OpenAI 직접 호출 · `os.getenv` · `datetime.now` · `.env` 읽기 · `time.sleep` · 실행 중 파일 읽기가 새로 생겼는지 본다(`tests/test_partner_sw_vendor.py`의 소스 검사 · 파일 접근 차단 테스트가 잡는다). 담당자가 이 폴더 밖 우리 파일 — 특히 엔진 폴더(`sbrain/orchestrator/`) · 흐름(`flow/`) — 에 파일이나 코드를 넣어 왔는지도 본다. 넣어 왔으면 연결 코드(이 폴더)로 옮기고(SB-360의 KIET 연결 · 표 대체 안내가 그 예), 흐름에 들어온 글 판별은 판정 칸으로 바꾼다.
 5. `execution_contract.json`의 항목 · 함수 · `apiModel`이 바뀌었으면 양식 묶음(`tests/test_partner_sw_forms.py`) · 함수별 모델 기본값(`orchestrator/settings.py` `_default_tasks`) · 항목별 재작성 묶음 표(`flow/rework_map.py`)를 함께 본다.
 6. 이 문서의 1절 날짜 · 버전과 2 · 3절 목록을 고친다.
 

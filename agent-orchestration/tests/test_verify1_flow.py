@@ -129,16 +129,18 @@ def test_first_writing_redoes_only_failed_items_then_replaces_failed_table(clock
 
 
 def test_table_fallback_display_reason_uses_plain_language_and_keeps_raw_reason():
+    # 안내 문구는 T-W3 연결 코드가 정해 저장하고(writing.table_display_reason), 화면 조회는 옮기기만 한다
+    from sbrain.agents.partner_sw.writing import table_display_reason
     from sbrain.flow.reads import _table_fallbacks
 
     original = "협약기간 일정 10개월이 최대 8개월 조건을 초과함"
-    result = _table_fallbacks({"2.6.2": {"tableFallbackUsed": True, "fallbackReason": original}})[0].dump()
+    stored = {"tableFallbackUsed": True, "fallbackReason": original, "displayReason": table_display_reason(original)}
+    result = _table_fallbacks({"2.6.2": stored})[0].dump()
     assert result["reason"] == original
     assert "허용 기간" in result["displayReason"]
     assert "10개월" not in result["displayReason"]
 
-    structural = _table_fallbacks({"2.5.3": {"tableFallbackUsed": True, "fallbackReason": "필수 표 컬럼 누락"}})[0]
-    assert "필수 항목" in structural.display_reason
+    assert "필수 항목" in table_display_reason("필수 표 컬럼 누락")
 
 
 def test_redo_once_per_item_and_body_fail_stays_without_fallback(clock):

@@ -25,6 +25,8 @@ tools는 호출마다 재시도 · 제한 시간 · 오류 종류 분류를 맡�
 - JSON 객체 응답(확장, spec 4.1): llm(json_mode=True)는 요청(LLMRequest.json_mode)에 실어 보낸다. 호출 기록 칸은 늘리지 않는다.
 - 목적 · 항목 칸 길이: 호출 기록(CallLog)의 purpose · item_key는 만들 때 trace.CALL_LOG_TEXT_MAX(DB 칸 길이)로 뒤를 자른다.
   목적별 모델 찾기와 요청 메타데이터는 자르기 전 값이다. 모든 Task · 호출 종류에 같은 규칙(_call 한 곳).
+- 호출별 재시도 횟수(확장, 범용): search(retries=n)는 그 호출만 처음 포함 n + 1번 시도한다. 주지 않으면 설정 retry_count다.
+  엔진은 무슨 호출인지 모른다 — 값은 부르는 쪽이 정한다.
 """
 from __future__ import annotations
 
@@ -349,9 +351,12 @@ class Tools:
 
         return self._call("llm", purpose, once, usage=lambda: box["usage"], model=model)
 
-    def search(self, purpose: str, fn: Callable[[float], T]) -> T:
-        """LLM이 아닌 호출(임베딩 검색 · BM25 등)을 감싼다. fn은 timeout_sec를 받는다."""
-        return self._call("search", purpose, lambda: fn(self._config.timeout_sec))
+    def search(self, purpose: str, fn: Callable[[float], T], *, retries: int | None = None) -> T:
+        """LLM이 아닌 호출(임베딩 검색 · BM25 등)을 감싼다. fn은 timeout_sec를 받는다.
+
+        retries(확장, 범용): 이 호출 하나의 재시도 횟수(처음 포함 retries + 1번). 주지 않으면 설정 retry_count다.
+        엔진은 무슨 호출인지 모른다 — 값은 부르는 쪽(연결 코드)이 정한다."""
+        return self._call("search", purpose, lambda: fn(self._config.timeout_sec), retries=retries)
 
     def image(
         self,
@@ -408,8 +413,10 @@ class Tools:
 
     # ── 재시도 ────────────────────────────────────────
     def _call(self, call_type: str, purpose: str, once: Callable[[], T],
-              usage: Callable[[], TokenUsage | None] = lambda: None, model: str | None = None) -> T:
-        """model은 LLM 호출이 실제로 쓴 모델(목적별 모델) — 없으면 Task 모델을 기록한다."""
+              usage: Callable[[], TokenUsage | None] = lambda: None, model: str | None = None,
+              retries: int | None = None) -> T:
+        """model은 LLM 호출이 실제로 쓴 모델(목적별 모델) — 없으면 Task 모델을 기록한다.
+        retries는 이 호출만의 재시도 횟수 — None이면 설정 retry_count."""
         cfg, ctx = self._config, self._ctx
         llm, image = call_type == "llm", call_type == "image"
         log = CallLog(
@@ -431,7 +438,7 @@ class Tools:
         error: CallError = "호출실패"
         kind: ErrorKind = "일시"
         detail = ""
-        total = 1 + cfg.retry_count
+        total = 1 + (cfg.retry_count if retries is None else max(0, retries))
         for no in range(1, total + 1):
             started = ctx.now()
             try:

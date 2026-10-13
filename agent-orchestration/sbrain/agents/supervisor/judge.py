@@ -9,7 +9,8 @@
   1. 묶음마다 그 묶음 항목 중 fail · warning이고 입력 없음 · 입력 오류(다시 만들어도 고쳐지지 않음)가 아닌
      항목이 있으면 후보 — Task는 그 묶음 첫 항목 종류의 Task, 사유 · 보완 지시는 '<항목 번호> <issues · warnings>' 줄을 이은 것.
   2. 문서층 표시 점수가 기준 미만인데 1의 후보가 없으면 묶음 모두가 후보(사유 = 판정 지시가 없는 묶음의 고정 문구). 입력 오류
-     항목만 남아 점수가 모자란 경우도 같다.
+     항목만 남아 점수가 모자란 경우도 같다. '묶음 모두'는 rework_map.every_bundle_candidates() — 새 묶음 스위치를 켰을 때
+     '그림'은 빠진다(그림 항목에 fail · warning이 있을 때만 1의 후보, 그 Task는 T-W2). 묶음 이름을 여기에 적지 않는다.
   3. 기회를 다 쓴 묶음도 그대로 넣는다(웹이 고를 수 없게 표시하고 Orchestrator도 거절한다).
 - 산출물층 재작성 지시(artifact_orders, business-rules 8.7): 다시 돌릴 Task · 사유는 공용 규칙 artifact_rework_reasons 그대로.
   산출물 종류는 G-02b 입력 확장 category(실행 건 카테고리)로 정한다 — 원페이지 → svg-onepage, 그 밖 → html.
@@ -33,8 +34,8 @@ from typing import Any
 
 from ...contracts.tasks import G02aIn, G02aOut, G02bIn, G02bOut
 from ...flow.rework_map import (
-    KIND_TASK, REWORK_DEFAULT_REASON, TASK_BUNDLE, artifact_rework_reasons, document_bundles, order_bundles,
-    section_bundle,
+    KIND_TASK, REWORK_DEFAULT_REASON, TASK_BUNDLE, artifact_rework_reasons, document_bundles,
+    every_bundle_candidates, order_bundles, section_bundle,
 )
 from ...flow.score_scale import ScoreMaxes, display_score, scale_artifact, scaled_report_fields, score_maxes
 from ...models import ArtifactScore, BundleUsage, ReworkDiff, ReworkOrder, ScoreReport, SectionResult
@@ -46,7 +47,7 @@ INPUT_MISSING_NOTICE = "입력 확인 필요 — 사업비 집행계획 · 추�
 # 입력 오류 항목이 있을 때 점수 보고서 notices에 더하는 안내 (잠정 문구 — 지시가 아니라 두 길을 알려 준다)
 INPUT_ERROR_NOTICE = ("입력한 협약기간 일정이나 사업비가 기준(협약기간 최대 개월 수 · 개발 기간 · 공고 지원 금액 상한)을 벗어나 "
                       "일부 항목이 검증을 통과하지 못했습니다. 이 항목은 다시 만들어도 고쳐지지 않습니다. 이대로 진행하거나, "
-                      "입력을 고쳐 새 프로젝트로 다시 만들 수 있습니다.")
+                      "입력을 고쳐 새로 만들 수 있습니다.")
 ONEPAGE_CATEGORY = "원페이지"
 
 
@@ -94,8 +95,8 @@ def doc_candidates(results: list[SectionResult] | None, doc_display: float, thre
         if bundle in flagged:
             lines = [f"{r.section_code} {' · '.join([*r.issues, *r.warnings]) or r.status}" for r in flagged[bundle]]
             orders.append(order(bundle, "\n".join(lines)))
-    if not orders and doc_display < threshold:
-        orders = [order(bundle, REWORK_DEFAULT_REASON) for bundle in document_bundles()]
+    if not orders and doc_display < threshold:   # '묶음 모두' — 빼는 묶음(그림)은 rework_map이 정한다
+        orders = [order(bundle, REWORK_DEFAULT_REASON) for bundle in every_bundle_candidates()]
     return orders
 
 
