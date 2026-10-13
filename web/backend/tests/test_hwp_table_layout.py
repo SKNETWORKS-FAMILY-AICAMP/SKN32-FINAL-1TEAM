@@ -459,3 +459,16 @@ def test_real_hwp_long_item_name_is_not_cut_off_and_subheading_has_no_bullet(tem
     assert height > hwpx_rows.MIN_ROW  # 이름이 여러 줄로 줄바꿈될 만큼 칸이 커져 잘리지 않는다(짧은 이름이면 MIN_ROW)
     lines = [ln.strip() for page in json.loads(_rhwp(['export-text', str(path), '--json']))['pages'] for ln in page['text'].split('\n')]
     assert '[대표자 보유 역량]' in lines and '◦ [대표자 보유 역량]' not in lines
+
+
+@pytest.mark.parametrize('description,expected', [
+    ('E2E 아이템 — AI 반려동물 건강관리 앱', 'E2E 아이템 — AI 반려동물 건강관리 앱'),
+    ('반려견 산책 도우미 서비스를 진행하고싶어요', '반려견 산책 도우미 서비스를 진행하고싶어요'),
+    ('첫 줄 이름\n둘째 줄은 이름이 아니다', '첫 줄 이름'),
+    ('\n\n  앞의 빈 줄은 건너뜀  ', '앞의 빈 줄은 건너뜀'),
+    ('가' * 100, '가' * 60), ('', ''), (None, ''),
+])
+def test_item_name_is_the_first_line_up_to_sixty_characters_not_cut_at_twenty(description, expected):
+    from app.routers.projects import _item_name
+
+    assert _item_name(description) == expected

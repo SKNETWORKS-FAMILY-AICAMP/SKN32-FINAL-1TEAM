@@ -540,6 +540,16 @@ def _support_and_tech_field(project: Project, plan_input) -> tuple[str, str]:
     return support or '○○', tech or '○○·○○'
 
 
+_ITEM_NAME_MAX = 60
+
+
+def _item_name(description: str) -> str:
+    """개요 표 '명칭' 칸의 이름 — 아이디어 설명의 첫 줄(없으면 빈 글), 창업아이템명과 같은 60자까지. 예전에는 20자에서 잘라 긴 이름이 중간에서 끊겼다
+    (칸 높이는 이름 길이에 맞게 늘어나므로 이제 줄바꿈으로 보인다)."""
+    lines = [line.strip() for line in (description or '').splitlines() if line.strip()]
+    return lines[0][:_ITEM_NAME_MAX] if lines else ''
+
+
 def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts, pictures: list | None = None):
     """project(+company/team_members/pricing_items/budget_items/schedule_items/partners)와
     생성된 계획서(BusinessPlan.sections)를 공식 양식(별첨1) 구조(app/plan_document_export.py의
@@ -699,7 +709,7 @@ def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts, p
         총사업비=total_amount_text,
         지방우대_지역_해당여부=_or_placeholder(project.regional_priority_area, '해당 없음'),
         팀구성현황=team_rows,
-        아이템_명칭=item_desc[:20] or '○○',
+        아이템_명칭=_item_name(item_desc) or '○○',
         # [2026-09-22, 재희님 확인] Agent가 아이디어 설명을 보고 직접 짓는 항목 —
         # 전략/작성 시트(2.3/3.3) 참고, 사용자 입력을 받지 않는다.
         아이템_범주='○○',
