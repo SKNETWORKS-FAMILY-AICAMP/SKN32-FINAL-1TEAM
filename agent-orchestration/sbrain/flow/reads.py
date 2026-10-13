@@ -113,9 +113,9 @@ class ScoreView(SBModel):
 
 # 표 대체 사유 칸 (확장) — 담당자 10-12 새 판이 더한 화면 칸. 화면 6 · 11 · 결과 조회에 같은 모양으로 싣는다
 TABLE_FALLBACK_NOTE = ("표 대체 안내(결정 0028) — 표를 본문 서술로 바꾼 항목마다 하나(tableOutputs의 tableFallbackUsed 참 · "
-                       "fallbackReason이 빈 글이 아님). 사용자 표시에는 displayReason을 쓰고, 계획서 본문 글에는 섞지 않는다")
-# 표 대체 안내의 일반 문구 — 저장된 displayReason이 없는 옛 값에 쓴다. T-W3 연결 코드(agents/partner_sw/writing.py)의 다섯째
-# 문구(분류에 걸리지 않은 경우)도 이 값을 가져다 쓴다
+                       "fallbackReason이 빈 글이 아님). fallbackReasonCodes는 분류 코드, displayReason은 사용자 안내이며, "
+                       "계획서 본문 글에는 섞지 않는다")
+# 표 대체 안내의 일반 문구 — 저장된 displayReason이 없는 옛 값이나 알 수 없는 사유 코드에 쓴다.
 TABLE_FALLBACK_DISPLAY_DEFAULT = "표를 검증 기준에 맞춰 완성하지 못해 설명으로 표시합니다. 입력 내용과 생성 결과를 확인해 주세요."
 
 
@@ -154,8 +154,8 @@ class TableFallback(SBModel):
     """새 타입(확장) — F17 표를 본문으로 대체했을 때 화면에 별도 표시할 항목별 사유."""
     section_code: str = ext(note="표를 본문 서술로 바꾼 항목 번호")
     reason: str = ext(note="담당자 fallbackReason 원문 — 내부 진단용, 사용자 화면에는 표시하지 않음")
-    display_reason: str = ext(note="표 대체 안내(결정 0028) — fallbackReason 유형을 쉽게 풀어 쓴 사용자 표시용 안내 문구 "
-                                   "(T-W3가 tableOutputs에 저장한 값, 없는 옛 값은 일반 문구)")
+    fallback_reason_codes: list[str] = ext(default_factory=list, note="표 대체 사유의 기계 판독 코드 — fallbackReasonCodes")
+    display_reason: str = ext(note="표 대체 안내(결정 0028) — 사유 코드를 사용자 문구로 바꾼 표시용 안내")
 
 
 class DocumentScreen(Screen):
@@ -571,10 +571,10 @@ def screen(orch: SBrainOrchestrator, project_id: int | str, number: int) -> Scre
 
 
 def _table_fallbacks(outputs: dict[str, Any]) -> list[TableFallback]:
-    """화면 표시용 목록을 만든다. reason은 진단 원문, display_reason은 사용자 안내다.
+    """화면 표시용 목록을 만든다. reason은 진단 원문, fallback_reason_codes는 분류 코드다.
 
-    안내 문구는 T-W3 연결 코드(agents/partner_sw/writing.py)가 표를 바꿀 때 tableOutputs[항목].displayReason에 저장한 것을
-    옮기기만 한다 — 여기서는 담당자 문장을 판별하지 않는다. 칸이 없거나 빈 옛 값(스텁 T-W3 포함)은 일반 문구."""
+    안내 문구는 T-W3 연결 코드(agents/partner_sw/writing.py)가 사유 코드로 골라 tableOutputs[항목].displayReason에 저장한 것을
+    옮기기만 한다. 여기서는 fallbackReason 문장을 분류하지 않는다. 코드가 없는 옛 값은 일반 문구를 쓴다."""
     if not isinstance(outputs, dict):
         return []
     fallbacks = []
@@ -584,7 +584,10 @@ def _table_fallbacks(outputs: dict[str, Any]) -> list[TableFallback]:
         reason = str(output.get("fallbackReason", "")).strip()
         if reason:
             display = str(output.get("displayReason") or "").strip() or TABLE_FALLBACK_DISPLAY_DEFAULT
-            fallbacks.append(TableFallback(section_code=str(code), reason=reason, display_reason=display))
+            reason_codes = output.get("fallbackReasonCodes") or []
+            fallbacks.append(TableFallback(section_code=str(code), reason=reason,
+                                           fallback_reason_codes=[str(value) for value in reason_codes],
+                                           display_reason=display))
     return fallbacks
 
 

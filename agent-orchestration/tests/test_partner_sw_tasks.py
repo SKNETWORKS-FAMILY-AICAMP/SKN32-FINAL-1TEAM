@@ -628,6 +628,7 @@ def test_tw3_table_check_failure_falls_back_in_same_attempt(monkeypatch):
     assert "3.5.2" not in [t.source_ref for t in out.tables]
     fb = out.table_outputs["3.5.2"]
     assert fb["tableFallbackUsed"] is True and fb["tables"] == [] and fb["fallbackReason"] == "필수 표 컬럼 누락"
+    assert fb["fallbackReasonCodes"] == ["TABLE_STRUCTURE_INVALID"]
     sec = next(s for s in out.table_sections if s.section_code == "3.5.2")
     assert sec.sentences[0].text.startswith("· ")
     assert "표 구조 검증에 실패하여 본문 설명으로 대체함" not in fb["generatedText"]
@@ -901,6 +902,7 @@ def test_tv1_marks_input_error_from_partner_checks():
     assert any(AFTER_END_RE.fullmatch(i) and "2027-01" in i for i in late["3.5.2"].issues)
     over = {x.section_code: x for x in run_chain("법인", support=5_000_000).v1.section_results}         # ③
     assert over["3.5.3"].status == "fail" and over["3.5.3"].input_error
+    assert over["3.5.3"].fallback_reason_codes == [validation_1.INPUT_ERROR_SUPPORT_LIMIT_EXCEEDED]
     assert any(OVER_SUPPORT_RE.fullmatch(i) for i in over["3.5.3"].issues)
     # 입력 오류 칸은 fail일 때만 — F19가 구조 코드로 분류한 결과만 참
     for results in (pre, late, over):
@@ -949,13 +951,16 @@ def test_tw3_fallback_items_from_verify1():
     tools, _, _ = partner_tools(r.p, "T-W3")
     ri = ReworkInput(mode="재수행", previous_result_ref="tables@1", issues=["표 판정 문제"], is_final_attempt=True,
                      redo_source="검증-1", unit="표 1건", target_items={"3.5.2": ["행 누락", "기간 오류"]},
-                     fallback_items=["3.5.2"])
+                     fallback_items=["3.5.2"],
+                     fallback_reason_codes={"3.5.2": ["AGREEMENT_TABLE_SCHEDULE_MISMATCH"]})
     out = run_tw3(c.TW3In(plan_doc=r.w1.plan_doc, company_info=r.co, selected_announcement=r.ann, instruction="",
                           rework_input=ri, strategy_data=r.s1.strategy_data, form_spec=r.bundle.form_spec,
                           base_tables=r.w3.tables, base_table_sections=r.w3.table_sections,
                           base_table_outputs=r.w3.table_outputs), tools)
     assert out.check.passed                                                          # 판정은 흐름이 fail로 둔다
     assert out.table_outputs["3.5.2"]["fallbackReason"] == "행 누락 · 기간 오류"
+    assert out.table_outputs["3.5.2"]["fallbackReasonCodes"] == ["AGREEMENT_TABLE_SCHEDULE_MISMATCH"]
+    assert "원본 협약 일정" in out.table_outputs["3.5.2"]["displayReason"]
     assert [t.source_ref for t in out.tables] == [t.source_ref for t in r.w3.tables if t.source_ref != "3.5.2"]
     assert out.table_outputs["3.6.2"] == r.w3.table_outputs["3.6.2"]                   # 나머지는 직전 그대로
 

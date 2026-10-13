@@ -52,6 +52,8 @@ class ReworkInput(SBModel):
     redo_source: RedoSource | None = ext(None, note="재수행이 온 곳 — 검사 · 검증-1 (재작성 · 첫 실행은 None)")
     unit: ReworkUnit | None = ext(None, note="재수행 단위 표시 — 섹션 · 표 1건 · 차트 1건(그림)")
     fallback_items: list[str] = ext(default_factory=list, note="T-W3 표 대체 대상 항목 번호 (spec 4.10)")
+    fallback_reason_codes: dict[str, list[str]] = ext(
+        default_factory=dict, note="표 대체 항목 번호 → 구조화된 원인 코드 (issue 문구 판별 없이 T-W3 안내에 사용)")
 
 
 class BundleUsage(SBModel):

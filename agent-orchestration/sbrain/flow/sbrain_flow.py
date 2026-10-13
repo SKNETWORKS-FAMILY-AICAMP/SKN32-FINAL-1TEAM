@@ -559,6 +559,7 @@ class SBrainFlow:
         kinds = dict(form_kinds(ctx.get(FORM_SPEC))) if ctx.has(FORM_SPEC) else {}
         pending = state.pending_items
         fallback: list[str] = []
+        fallback_reason_codes: dict[str, list[str]] = {}
         if state.phase == "재수행중" and tid == "T-V1":
             items = dict(pending)
             item_kinds = {kinds.get(code, "section") for code in items}
@@ -569,6 +570,9 @@ class SBrainFlow:
             unit = TASK_UNIT[tid]
         elif state.phase == "대체중" and tid == "T-W3":
             items, fallback, unit = dict(pending), list(pending), TASK_UNIT[tid]
+            results = ctx.get(SECTION_RESULTS, default=None) or []
+            fallback_reason_codes = {r.section_code: list(r.fallback_reason_codes) for r in results
+                                     if r.section_code in fallback and r.fallback_reason_codes}
         else:
             return None
         if not items:
@@ -579,7 +583,8 @@ class SBrainFlow:
         flat = list(dict.fromkeys(f"{code} {issue}" for code, lines in items.items() for issue in lines))
         self._attach_rework(ctx, rs, spec, kind="재수행", source_refs=source,
                             ri=dict(mode="재수행", previous_result_ref=prev, issues=flat, order=None,
-                                    target_items=items, redo_source="검증-1", unit=unit, fallback_items=fallback),
+                                    target_items=items, redo_source="검증-1", unit=unit, fallback_items=fallback,
+                                    fallback_reason_codes=fallback_reason_codes),
                             bundle_id=None)
         return rs
 

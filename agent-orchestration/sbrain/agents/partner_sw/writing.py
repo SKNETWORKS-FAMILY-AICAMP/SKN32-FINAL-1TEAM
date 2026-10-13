@@ -9,8 +9,8 @@
   다시 부르지 않는다(4.13).
 - T-W3는 규칙 코드다(LLM 없음 — tools를 받지만 llm을 부르지 않는다). 표 검사(requiredColumns · 행 길이)에 걸리면 그 시도에서 바로
   표를 지우고 본문 서술로 대체하고 check 불통과 + final_action(4.8). fallbackItems(검증-1 재수행 뒤에도 fail인 표)도 같은 대체를
-  한다(4.10). 대체할 때 tableOutputs[항목]에 fallbackReason(진단 원문)과 사용자 안내 displayReason(table_display_reason —
-  담당자 문장 낱말로 다섯 가지 중 하나)을 함께 남긴다. 화면 조회는 그 칸을 옮기기만 한다.
+  한다(4.10). 대체할 때 tableOutputs[항목]에 fallbackReason(진단 원문), fallbackReasonCodes(기계 판독 코드),
+  사용자 안내 displayReason을 함께 남긴다. displayReason은 자유 형식 사유 문장이 아니라 코드로 고른다.
 - 그림 SVG는 tools.files로만 넣는다(diagram_svg — 담당자 flow_image 그리기). 출력 charts는 빈 목록이다.
 """
 from __future__ import annotations
@@ -40,8 +40,15 @@ from .outputs import (
 FLOWS = ("USER_FLOW", "SERVICE_ARCHITECTURE")   # 그림 항목 하나의 두 그림 (담당자 F18)
 FINAL_TW3 = "표 제거 · 본문 서술 대체"           # T-W3 확정 동작 (spec 4.8)
 TABLE_FAIL_DEFAULT = "표 필수 구조 검증 실패"     # 대체 사유가 없을 때 (담당자 코드와 같은 글자)
-TABLE_DISPLAY_DEFAULT = TABLE_FALLBACK_DISPLAY_DEFAULT   # 표 대체 안내의 다섯째(일반) 문구 — 화면 조회의 옛 값 문구와 같은 글
+TABLE_DISPLAY_DEFAULT = TABLE_FALLBACK_DISPLAY_DEFAULT   # 알 수 없는 코드의 일반 안내 — 화면 조회의 옛 값 문구와 같은 글
 STATUS_POLICY = ["provided", "proposed", "needs_confirmation"]
+
+FALLBACK_TABLE_STRUCTURE_INVALID = "TABLE_STRUCTURE_INVALID"
+FALLBACK_VALIDATION_FAILED = "F19_VALIDATION_FAILED"
+FALLBACK_SUPPORT_LIMIT_EXCEEDED = "SUPPORT_LIMIT_EXCEEDED"
+FALLBACK_AGREEMENT_MONTHS_EXCEEDED = "AGREEMENT_MONTHS_EXCEEDED"
+FALLBACK_AGREEMENT_AFTER_DEADLINE = "AGREEMENT_SCHEDULE_AFTER_DEADLINE"
+FALLBACK_AGREEMENT_TABLE_MISMATCH = "AGREEMENT_TABLE_SCHEDULE_MISMATCH"
 
 
 # ── T-W1 본문 (F16) ──────────────────────────────────────
@@ -190,30 +197,31 @@ def _table_problems(spec: dict[str, Any], output: dict[str, Any], table: TableSp
     return problems
 
 
-def table_display_reason(reason: str) -> str:
-    """표 대체 사유(담당자 fallbackReason 원문 · 우리 표 검사 문구)를 다섯 가지 사용자 안내 문구 중 하나로 고른다.
-
-    담당자 문장의 낱말로 고르는 규칙은 이 연결 코드 한 곳에만 둔다(flow/는 저장된 displayReason을 옮기기만 한다). 문구에 입력
-    값 · 항목 내용은 넣지 않는다. 고르는 순서 · 낱말 · 문구는 옮기기 전(flow/reads.py)과 글자 그대로다."""
-    text = reason.casefold()
-    if "지원규모 상한" in reason or "정부지원사업비" in reason and "초과" in reason:
+def table_display_reason(reason_codes: list[str]) -> str:
+    """기계 판독 코드로 사용자 안내를 고른다. 자유 형식의 fallbackReason 문장은 읽지 않는다."""
+    codes = set(reason_codes or [])
+    if FALLBACK_SUPPORT_LIMIT_EXCEEDED in codes:
         return "입력한 정부지원사업비가 지원 상한을 초과해 표 대신 설명으로 표시합니다. 사업비를 확인해 주세요."
-    if "개발계획 표 종료월" in reason or "원본 협약 일정" in reason:
+    if FALLBACK_AGREEMENT_AFTER_DEADLINE in codes:
         return "작성된 표 일정이 원본 협약 일정과 맞지 않아 설명으로 표시합니다. 일정 입력과 표 내용을 확인해 주세요."
-    if "협약기간 일정" in reason and ("초과" in reason or "이후" in reason):
+    if FALLBACK_AGREEMENT_TABLE_MISMATCH in codes:
+        return "작성된 표 일정이 원본 협약 일정과 맞지 않아 설명으로 표시합니다. 표 내용을 확인해 주세요."
+    if FALLBACK_AGREEMENT_MONTHS_EXCEEDED in codes:
         return "입력한 협약 일정이 허용 기간을 벗어나 표 대신 설명으로 표시합니다. 일정 입력을 확인해 주세요."
-    if any(marker in text for marker in ("필수 표", "표 구조", "컬럼", "열 누락", "행 누락")):
+    if FALLBACK_TABLE_STRUCTURE_INVALID in codes:
         return "표의 필수 항목을 검증 기준에 맞추지 못해 설명으로 표시합니다. 표 내용을 확인해 주세요."
     return TABLE_DISPLAY_DEFAULT
 
 
-def _fallback(output: dict[str, Any], spec: dict[str, Any], reason: str) -> dict[str, Any]:
-    """표를 지우고 본문 서술로 대체한다 — 담당자 run_pipeline의 표 대체 그대로. 사용자 안내 문구(displayReason)를 함께 남긴다."""
+def _fallback(output: dict[str, Any], spec: dict[str, Any], reason: str,
+              reason_codes: list[str]) -> dict[str, Any]:
+    """표를 서술로 대체하고 진단 사유·코드·사용자 안내를 함께 보존한다."""
     output["generatedText"] = _table_fallback_text(output, spec)
     output["tables"] = []
     output["tableFallbackUsed"] = True
     output["fallbackReason"] = reason or TABLE_FAIL_DEFAULT
-    output["displayReason"] = table_display_reason(output["fallbackReason"])
+    output["fallbackReasonCodes"] = list(dict.fromkeys(reason_codes or [FALLBACK_VALIDATION_FAILED]))
+    output["displayReason"] = table_display_reason(output["fallbackReasonCodes"])
     return output
 
 
@@ -258,12 +266,14 @@ def run_tw3(inp: TW3In, tools: Tools) -> TW3Out:
         problems = _table_problems(spec, output, table)
         if problems:   # 확정 동작 — 그 시도에서 바로 표 → 본문 서술 대체 (spec 4.8)
             failed[code] = problems
-            output = _fallback(output, spec, " · ".join(problems))
+            output = _fallback(output, spec, " · ".join(problems), [FALLBACK_TABLE_STRUCTURE_INVALID])
         elif code in fallback_items:   # 검증-1 재수행 뒤에도 fail인 표 (spec 4.10) — 판정은 fail 그대로
             reason = " · ".join(targets.get(code) or (rework.issues if rework is not None else []))
-            output = _fallback(output, spec, reason)
+            reason_codes = list((rework.fallback_reason_codes or {}).get(code, [])) if rework is not None else []
+            output = _fallback(output, spec, reason, reason_codes or [FALLBACK_VALIDATION_FAILED])
         output.setdefault("tableFallbackUsed", False)
         output.setdefault("fallbackReason", "")
+        output.setdefault("fallbackReasonCodes", [])
         output.setdefault("displayReason", "")
         outputs[code] = pick(output, TABLE_KEYS, TABLE_DEFAULTS)
         sections.append(PlanSection(section_code=code, title=title, sentences=sentences(code, output["generatedText"]),

@@ -434,6 +434,7 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | `redoSource` | `'검사'` · `'검증-1'` · `null` | 재수행이 어디서 왔는지. 재작성 · 첫 실행은 `null` |
 | `unit` | `섹션` · `표 1건` · `차트 1건`(그림) · `null` | 재수행 단위 표시 |
 | `fallbackItems` | `list[str]` | T-W3 표 대체 대상 항목 번호(아래) |
+| `fallbackReasonCodes` | `dict[str, list[str]]` | 표 대체 항목 번호 → F19가 만든 기계 판독 사유 코드. issue 문구를 해석하지 않고 T-W3 안내를 선택한다 |
 
 - 목표 항목이 있으면 그 항목만 다시 만들고, 나머지는 직전 결과(`base…` 확장 입력)를 그대로 출력에 싣는다. T-W1이 내는 `planDoc`은 늘 모든 항목을 담는다.
 - **T-V1도 이 입력을 받는다.** 첫 작성에서는 비어 있고(모든 항목 검증), 재작성 사이클에서는 그 사이클에 다시 만든 항목을(mode `재작성`), 검증-1 재수행에서는 다시 쓴 항목을(mode `재수행`, `redoSource` `검증-1`) 받는다. 목표 항목만 다시 검증하고 나머지 판정 · 점수는 직전 판정(`baseSectionResults`)을 이어받으며, 총점은 합친 결과 전체로 다시 낸다.
@@ -449,7 +450,7 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | 자리 | T-V1 바로 뒤. 첫 작성: T-V1 → [재수행] → G-02a. 화면 6 재작성: T-V1 → [재수행] → 전후 비교 → G-02a. 화면 9 계획서 재작성: T-V1 → [재수행] → T-B1(반영) … → T-V2 → 전후 비교 → G-02b |
 | 순서 | 본문 fail 항목이 있으면 T-W1(그 항목만), 그림 fail 항목이 있으면 T-W2(그 항목만) → M-1 → T-V1(다시 쓴 본문 · 그림 항목 + fail 표 항목만 다시 검증). 그래도 fail인 표 항목이 있으면 T-W3(대체) → M-1(T-V1은 다시 하지 않음) |
 | 표 항목 | 다시 만들지 않는다. T-W3는 같은 입력이면 같은 표를 내므로 T-V1만 다시 검증한다(담당자 코드의 "표를 다시 만들고 다시 검증"과 결과가 같다) |
-| 표가 끝내 fail | T-W3를 `fallbackItems`로 부른다(mode `재수행`, `redoSource` `검증-1`, `unit` `표 1건`). T-W3는 그 표를 `tables`에서 빼고 `tableSections`의 그 항목 문장을 담당자 대체 본문(`_table_fallback_text`)으로 바꾸며, `tableOutputs`에 `tableFallbackUsed = 참` · `fallbackReason`(검증-1 issues를 ` · `로 이은 것)을 남긴다. 같은 자리에서 사용자 안내 `displayReason`도 함께 남긴다(2026-10-13 — T-W3 연결 코드 `agents/partner_sw/writing.py`의 `table_display_reason`이 사유를 다섯 가지 문구 중 하나로 고른다. 문구는 그대로이고, 전에는 화면 조회 코드가 골랐다). 화면 · 결과 조회는 저장된 `displayReason`을 `tableFallbacks[].displayReason`으로 옮기기만 하고, 값이 없는 옛 결과는 일반 문구 "표를 검증 기준에 맞춰 완성하지 못해 설명으로 표시합니다. 입력 내용과 생성 결과를 확인해 주세요."를 쓴다. 판정은 fail 그대로이고 다시 검증하지 않는다(재작성 후보로 남는다) |
+| 표가 끝내 fail | T-W3를 `fallbackItems`로 부른다(mode `재수행`, `redoSource` `검증-1`, `unit` `표 1건`). T-W3는 그 표를 `tables`에서 빼고 `tableSections`의 그 항목 문장을 담당자 대체 본문(`_table_fallback_text`)으로 바꾼다. `tableOutputs`에는 `tableFallbackUsed = 참`, 진단용 `fallbackReason`, 기계 판독용 `fallbackReasonCodes`, 사용자 안내 `displayReason`을 저장한다. 안내는 코드로만 고른다: `TABLE_STRUCTURE_INVALID`(T-W3 표 구조 자체 불통과), `AGREEMENT_TABLE_SCHEDULE_MISMATCH`(개발계획 표와 원본 협약 일정 불일치), F19의 `inputErrorCodes`(예: `SUPPORT_LIMIT_EXCEEDED`), 그 밖의 검증 실패는 `F19_VALIDATION_FAILED`. 입력 오류 표는 대체 대상에서 제외한다. 화면 · 결과 조회는 `fallbackReasonCodes`와 저장된 `displayReason`을 `tableFallbacks[]`로 전달하며, 코드가 없는 옛 결과는 일반 안내 문구를 쓴다. 판정은 fail 그대로이고 다시 검증하지 않는다(재작성 후보로 남는다) (2026-10-13) |
 | 다시 도는 실행 | 각각 새 실행 기록 · 새 산출물 버전이다(계기 `재수행`). T-W1 · T-W2의 지시문 안내는 지금 재수행처럼 다시 쓴다(5.4). T-V1 · T-W3는 지시문을 다시 쓰지 않는다 |
 | 자체 검사 재수행 | 검증-1 재수행으로 다시 쓴 항목도 자체 검사 재수행(5.1)을 거친다. 두 횟수는 따로 센다(`redoSource`로 가른다) |
 | 전략 결과 | T-S1 · T-S2는 다시 만들지 않는다 |
@@ -956,9 +957,9 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | PlanSection | tag, contentType | 항목의 웹 태그 · 종류 (2026-10-10, 8.6) |
 | PlanDoc | diagrams | 그림 목록 `DiagramSpec[]` (2026-10-10, 8.6) |
 | (신규) DiagramSpec | diagramId, flowType, nodes, visualStyle, sourceRef, imageFile | 계획서 그림 하나 — SVG는 `tools.files`로 넣은 참조 (2026-10-10, 8.6) |
-| (신규) SectionResult | sectionCode, tag, contentType, status, issues, warnings, needsUserConfirmation, inputMissing, inputError, score, deductions, verifiedRef | 계획서 항목 하나의 검증-1 판정 — T-V1 출력 `sectionResults` (2026-10-10, 8.6). `inputError`는 2026-10-12에 더함(입력 오류 — 칸이 없는 옛 판정은 거짓) |
+| (신규) SectionResult | sectionCode, tag, contentType, status, issues, warnings, needsUserConfirmation, inputMissing, inputError, fallbackReasonCodes, score, deductions, verifiedRef | 계획서 항목 하나의 검증-1 판정 — T-V1 출력 `sectionResults` (2026-10-10, 8.6). `inputError`는 2026-10-12, `fallbackReasonCodes`는 2026-10-13에 더함 |
 | CheckResult | failedItems | 불통과 항목 번호 → 문제 목록 — 항목 단위 재수행 (2026-10-10, 5.1) |
-| ReworkInput | targetItems, redoSource, unit, fallbackItems | 목표 항목 · 재수행 출처 · 단위 · 표 대체 대상 (2026-10-10, 5.6) |
+| ReworkInput | targetItems, redoSource, unit, fallbackItems, fallbackReasonCodes | 목표 항목 · 재수행 출처 · 단위 · 표 대체 대상 · 기계 판독 표 대체 사유 (2026-10-10 · 2026-10-13, 5.6) |
 | T-S1 ~ T-V1 · M-1 · G-02a · G-02b 입출력 | companyInfo · formInput · strategyData · marketStrategyData · featureList · base… · priorResults · sectionOutputs · diagrams · diagramOutputs · tableSections · tableOutputs · sectionResults · scorePolicyVersion · planDocRef · docLayerMax · reworkInput(T-V1) | 담당자 함수를 끼우며 더한 입출력 — 6절 표 (2026-10-10) |
 | TaskModelSetting | purposeModels | 호출 목적 → 모델 이름 — 함수별 모델 (2026-10-10, 4.2 · 7.1) |
 | LLMRequest | json_mode | JSON 객체 응답 형식 요청 (2026-10-10, 4.5) |
@@ -1000,4 +1001,4 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | 24 | T-V2 대조 동시 3(담당자 값 6에서 줄임) · 판정 3번, 확인 요소 목록을 산출물 `featureElements`로 이어 받기, 넓은 예외 받기를 `ToolCallExhausted`로 좁힘, 진단 문구에서 파일 경로 · 이름 뺌(8.7 — `partner_bv/VENDORED.md`) | 검증-2 |
 | 25 | 산출물층 환산 — 검증-2는 15 + 15 원점수를 그대로 돌려주고, 그 실행 건 배점으로 환산은 판정 G-02b · Orchestrator가 한다(8.7) | 검증-2 |
 | 26 | 검증-1 입력 오류(`SectionResult.inputError`, 2026-10-12 — 8.6): 담당자 F19가 구조화 코드(`inputErrorCodes`)를 반환하고 T-V1은 issue 문구를 읽지 않고 코드로 판별한다. 협약기간 최대 개월 수는 **2026-10-13 담당자 답으로 정함** — 2026년 공고 기준 고정(예비창업 8개월 · 초기창업 10개월), 공고 값은 받지 않는다(다른 연도 공고는 범위 밖) | 전략 · 작성 · 검증-1 |
-| 27 | 실행별 KIET 시장 자료 검색(2026-10-13, 8.6): 스위치 `SBRAIN_KIET_SEARCH` 기본 꺼짐(운영 워커에서 켬), `tools.search` 재시도 2회, 재시도를 다 쓰면 T-S1이 있는 자료로 계속(필수 규칙 2의 예외 — T-S1의 KIET 검색 호출만). 표 대체 이유에도 입력 오류 코드처럼 구조화된 코드를 달아 달라고 요청 중이다(지금은 이유 문장의 낱말로 안내 문구를 고름, 5.6) | 전략 · 작성 · 검증-1 |
+| 27 | 실행별 KIET 시장 자료 검색(2026-10-13, 8.6): 스위치 `SBRAIN_KIET_SEARCH` 기본 꺼짐(운영 워커에서 켬), `tools.search` 재시도 2회, 재시도를 다 쓰면 T-S1이 있는 자료로 계속(필수 규칙 2의 예외 — T-S1의 KIET 검색 호출만). 표 대체 사유는 `fallbackReasonCodes`로 전달하고 사용자 문구는 코드만으로 선택(5.6) | 전략 · 작성 · 검증-1 |

@@ -101,8 +101,8 @@
 
 ### 표 대체 안내 (`writing.py` — 담당자 SB-360의 `displayReason`)
 
-- 담당자 SB-360 판은 표 대체 사유 원문(`fallbackReason`)을 다섯 가지 사용자 안내 중 하나로 고르는 낱말 분류를 우리 화면 조회(`flow/reads.py`)에 넣어 왔다. 담당자 문장 해석은 연결 코드 한 곳에 두므로 T-W3 연결 코드 `writing.table_display_reason`으로 옮겼다(고르는 순서 · 낱말 · 문구는 글자 그대로). T-W3가 표를 대체할 때 `tableOutputs[항목].displayReason`에 저장하고(`outputs.py` `TABLE_KEYS`), 화면 조회는 그 값을 옮기기만 한다. 칸이 없는 옛 값은 일반 문구(다섯째 문구 — `flow/reads.py` `TABLE_FALLBACK_DISPLAY_DEFAULT`)다.
-- 담당자에게 표 대체 이유에도 코드를 달라고 요청한다 — 받으면 낱말 분류를 없앤다.
+- 표 대체 안내는 원문 `fallbackReason`의 낱말이 아니라 `fallbackReasonCodes`로 고른다. T-W3가 `TABLE_STRUCTURE_INVALID`, `F19_VALIDATION_FAILED` 또는 F19가 전달한 구조화 원인 코드를 `tableOutputs[항목]`에 저장하고, 코드에 따른 `displayReason`도 함께 만든다. 화면 조회는 두 값을 그대로 전달하며 문장을 다시 분류하지 않는다. 코드가 없는 옛 결과는 일반 안내 문구를 사용한다.
+- 2026-10-13 요청 반영: `fallbackReasonCodes`를 T-W3 출력과 `tableFallbacks[]` 응답에 추가했다.
 
 ### 입력 오류 판별 (`verify.py` — 담당자 SB-360부터 issue 글 대신 코드로)
 
