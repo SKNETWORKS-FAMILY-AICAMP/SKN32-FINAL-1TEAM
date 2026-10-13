@@ -1,5 +1,5 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
-import {DOC_ITEMS_FAIL,DOC_ITEMS_PASS,CODE_CHECK_ITEMS_BY_CATEGORY,CODE_CHECK_FAILS_BY_OUTCOME,APPLICANT_TYPE_LABEL,PROJECT_STATUS_TONE,RERUN_CAP,PLAN_TAGS,GENERAL_SECTION_LABEL,DIAGRAM_BUNDLE_LABEL,ALL_DOC_BUNDLES,bundleOfTag,headerOfTag} from './data.js';
+import {DOC_ITEMS_FAIL,DOC_ITEMS_PASS,CODE_CHECK_ITEMS_BY_CATEGORY,CODE_CHECK_FAILS_BY_OUTCOME,APPLICANT_TYPE_LABEL,PROJECT_STATUS_TONE,RERUN_CAP,PLAN_TAGS,GENERAL_SECTION_LABEL,DIAGRAM_BUNDLE_LABEL,ALL_DOC_BUNDLES,DELIVERABLE_NOTICES,bundleOfTag,headerOfTag} from './data.js';
 
 export const MOCK_TODAY = new Date('2026-09-08');
 
@@ -216,6 +216,17 @@ export function scoresFromResult(result){
 // 더미 구현(app/routers/projects.py review_token_check)은 같은 문단을 계속 이어 고치는
 // 구조라 section_id로 묶으면 그게 한 문단의 시도 이력이 된다. 관계(BusinessPlan.
 // proofread_logs)엔 order_by가 없어 배열 순서를 못 믿으므로 attempt_no로 직접 정렬한다.
+// 결과물 화면 고지 4줄 — 백엔드 /result의 deliverable(SB-371, 10-13)에 문구가 있으면 그것으로 바꾼다.
+// submission_notice → [제출 안내](공고별 제출 요건 확인), disclaimer → [계획서](내려받는 계획서 첫 장과 같은 문구).
+// 결과물이 아직 없거나(deliverable null) 칸이 비면 고정 문구(DELIVERABLE_NOTICES) 그대로.
+export function deliverableNoticesFrom(deliverable){
+  const fromServer = { '계획서': deliverable?.disclaimer, '제출 안내': deliverable?.submission_notice };
+  return DELIVERABLE_NOTICES.map((n) => {
+    const text = typeof fromServer[n.label] === 'string' ? fromServer[n.label].trim() : '';
+    return text ? { ...n, text } : n;
+  });
+}
+
 export function reviewParagraphsFrom(plan){
   const logs = plan?.proofread_logs || [];
   if (!logs.length) return null; // 검수 기록이 없으면 화면이 기존 예시로 돌아간다

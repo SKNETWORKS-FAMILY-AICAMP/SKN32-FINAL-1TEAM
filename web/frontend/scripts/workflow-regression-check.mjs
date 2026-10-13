@@ -130,7 +130,13 @@ try{
   assert.deepEqual(scored.codeCheckItems.map(i=>[i.passed,i.applicable]),[[false,true],[true,false]]);
   assert.equal(sfr({verdict:{code_score:8,code_max_score:15},plan:{score_reasons:[],artifacts:[]}}).artifactLayer,null);
   // 점수 항목 묶음(응답모양변경 10-11 2-1) — tag로 일반현황 · 개요 + 4묶음에 모으고, 이름은 section_code로 찾는다.
-  const {taskReasons:tr,bundleScoreOf:bso,planViewFrom:pvf}=await server.ssrLoadModule('/src/features/workflow/utils.js');
+  const {taskReasons:tr,bundleScoreOf:bso,planViewFrom:pvf,deliverableNoticesFrom:dnf}=await server.ssrLoadModule('/src/features/workflow/utils.js');
+  // 결과물 화면 고지 — 서버 deliverable(SB-371)의 제출 안내 · 계획서 고지가 있으면 그 문구, 없거나 비면 고정 문구.
+  const fixedNotices=dnf(null);
+  assert.deepEqual(fixedNotices.map(n=>n.label),['계획서','프로토타입','검증 결과','제출 안내']);
+  assert.deepEqual(dnf({submission_notice:null,disclaimer:'  ',user_message:'x'}),fixedNotices);
+  const served=dnf({submission_notice:'예비창업패키지는 AI 작성 사실을 밝혀야 합니다.',disclaimer:'AI 초안입니다.',user_message:null});
+  assert.deepEqual(served.map(n=>n.text),['AI 초안입니다.',fixedNotices[1].text,fixedNotices[2].text,'예비창업패키지는 AI 작성 사실을 밝혀야 합니다.']);
   const tagged=sfr({verdict:{doc_score:20,doc_max_score:30},plan:{sections:[{section_code:'1.2',tag:null,title:'개요',content_type:'section'},{section_code:'2.4.1',tag:'1-1',title:'문제 정의',content_type:'section'},{section_code:'2.4.2',tag:'1-1',title:'시장',content_type:'section'}],
     score_reasons:[{item_code:'1.2',tag:null,score:4,max_score:5,reason_text:'짧음'},{item_code:'2.4.1',tag:'1-1',score:6,max_score:10,reason_text:'근거 부족'},{item_code:'2.4.2',tag:'1-1',score:5,max_score:5},{item_code:'3.1.1',tag:'3-1',score:5,max_score:10,reason_text:'모호'}],artifacts:[]}});
   assert.deepEqual(tagged.docScore.groups.map(g=>[g.label,g.score,g.max]),[['일반현황 · 개요',4,5],['문제인식',11,15],['성장전략',5,10]]);

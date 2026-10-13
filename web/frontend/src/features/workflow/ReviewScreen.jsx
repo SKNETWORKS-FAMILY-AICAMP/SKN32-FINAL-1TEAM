@@ -3,13 +3,14 @@ import React, {useState} from 'react';
 import {Icon} from '../../components/Icons.jsx';
 import {downloadPlanDocx,downloadPrototypeZip} from '../../dummyDeliverables.js';
 import {downloadPlanDocument,downloadPlanHwp} from '../../api.js';
-import {buildCodeCheckItems,buildGeneralInfo,buildOverview,detectItemCategory,DOC_SCORE_BY_OUTCOME,reviewParagraphsFrom} from './utils.js';
+import {buildCodeCheckItems,buildGeneralInfo,buildOverview,deliverableNoticesFrom,detectItemCategory,DOC_SCORE_BY_OUTCOME,reviewParagraphsFrom} from './utils.js';
 import {printVerificationReport} from './verificationReport.js';
-import {ARTIFACT_SCORE_BY_OUTCOME,DELIVERABLE_NOTICES,DOWNLOAD_FILES,FINAL_THRESHOLD,PLAN_DOCUMENT_SECTIONS_REWORKED,REVIEW_PARAGRAPHS,REVIEW_RETRY_CAP} from './data.js';
+import {ARTIFACT_SCORE_BY_OUTCOME,DOWNLOAD_FILES,FINAL_THRESHOLD,PLAN_DOCUMENT_SECTIONS_REWORKED,REVIEW_PARAGRAPHS,REVIEW_RETRY_CAP} from './data.js';
 
 // verdict: GET /result의 VerdictOut. 검증결과서의 "종합 판정"을 서버 점수로 찍기 위해 받는다
 // (없으면 화면 값으로 계산 — verificationReport.js 참고).
-export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', artifactOutcome = 'fail', onGoDashboard, projectId, verdict = null, scores = null, plan = null }){
+// deliverable: GET /result의 DeliverableOut — 제출 안내 · 계획서 고지 문구(없으면 고정 문구).
+export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', artifactOutcome = 'fail', onGoDashboard, projectId, verdict = null, scores = null, plan = null, deliverable = null }){
   // 화면 점수와 내려받는 검증결과서 점수가 어긋나지 않도록, 둘 다 서버 값을 본다.
   const docScore = scores?.docScore || DOC_SCORE_BY_OUTCOME[docOutcome];
   const artifactScore = scores?.artifactScore || ARTIFACT_SCORE_BY_OUTCOME[artifactOutcome];
@@ -19,6 +20,9 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
   const itemTitle = announcement ? announcement.title : '';
   // 서버 검수 기록이 있으면 그걸, 없으면 기존 예시 문단(utils.js reviewParagraphsFrom).
   const paragraphs = reviewParagraphsFrom(plan) || REVIEW_PARAGRAPHS;
+  // 아래 고지 4줄. 서버가 준 제출 안내 · 계획서 고지가 있으면 그 문구로(utils.js deliverableNoticesFrom).
+  const notices = deliverableNoticesFrom(deliverable);
+  const planNotice = notices.find((n) => n.label === '계획서')?.text;
   // 문장 다듬기 항목별 수정 내역(p-02, p-09...)은 대부분의 사용자가 신경 안 쓰는
   // 세부 정보라, 기본은 접어두고 보고 싶은 사람만 눌러서 펼친다(사용자 지적) —
   // 항목별로 따로따로 펼치는 게 아니라 토글 하나로 전부 한 번에 나온다.
@@ -54,7 +58,7 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
           downloadPlanDocx({
             title: `${itemTitle || '사업계획서'} 사업계획서`,
             sections: PLAN_DOCUMENT_SECTIONS_REWORKED,
-            footer: DELIVERABLE_NOTICES.find((n) => n.label === '계획서')?.text,
+            footer: planNotice,
           });
         });
         return;
@@ -67,7 +71,7 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
         generalInfo: buildGeneralInfo(itemInfo),
         overview: buildOverview(itemTitle, PLAN_DOCUMENT_SECTIONS_REWORKED),
         sections: PLAN_DOCUMENT_SECTIONS_REWORKED,
-        footer: DELIVERABLE_NOTICES.find((n) => n.label === '계획서')?.text,
+        footer: planNotice,
       });
       return;
     }
@@ -231,7 +235,7 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
         </div>
 
         <ul className="flex flex-col gap-1.5 mb-8">
-          {DELIVERABLE_NOTICES.map((n) => (
+          {notices.map((n) => (
             <li key={n.label} className="text-[12px] text-[var(--muted-fg)] leading-relaxed">
               <span className="font-semibold text-[var(--fg)]">［{n.label}］</span> {n.text}
             </li>
