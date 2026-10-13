@@ -182,6 +182,16 @@ _PERIOD_YEAR_RE = re.compile(r'20\d{2}')
 _PERIOD_MONTH_RE = re.compile(r'(20\d{2})[-./~년\s]*(\d{1,2})')
 
 
+# 협약기간 최대 개월 수 — 서비스는 2026년 공고 기준으로 운영하므로 신청자 유형별로 고정한다(담당자 확인, 오케스트레이터 2026-10-13 전달: 예비창업패키지 모집
+# 공고 8개월 이내 · 초기창업패키지(일반형) 모집 공고 10개월 이내). 다른 연도 공고는 범위 밖이다. 검증-1이 같은 기준으로 그 항목을 입력 오류로 막는다.
+AGREEMENT_MAX_MONTHS = {'preliminary': 8, 'individual': 10, 'corp': 10}
+
+
+def _period_months(period: str) -> list[tuple[int, int]]:
+    """추진기간 글에서 읽은 (연, 월) 전부. 월이 1 ~ 12가 아닌 것은 검증-1처럼 건너뛴다."""
+    return [(int(y), int(m)) for y, m in _PERIOD_MONTH_RE.findall(period) if 1 <= int(m) <= 12]
+
+
 def _latest_period_month(period: str) -> tuple[int, int] | None:
     """추진기간 글에서 읽은 가장 늦은 (연, 월). 월이 1 ~ 12가 아닌 것은 검증-1처럼 건너뛰고, 읽을 월이 없으면 None."""
     months = [(int(y), int(m)) for y, m in _PERIOD_MONTH_RE.findall(period) if 1 <= int(m) <= 12]
@@ -373,7 +383,7 @@ class ProjectCreateRequest(BaseModel):
     def _check_schedule_within_development_period(self) -> 'ProjectCreateRequest':
         """협약기간 내(feasibility) 일정 줄의 끝나는 달은 개발 종료월(dev_end_month)을 넘을 수 없다 — 검증-1이 같은 기준으로 그 항목을
         '입력 오류'로 실패 처리하고 재작성으로도 고쳐지지 않는다(F19, SB-354). 협약 이후(growth) 일정은 보지 않고, 개발 종료월이 없으면
-        기준이 없어 검사하지 않는다. 협약기간 최대 개월 수는 공고마다 달라서 여기서 막지 않는다(공고를 고르기 전에 입력하므로)."""
+        기준이 없어 검사하지 않는다. 협약기간 최대 개월 수는 따로 막는다(_check_schedule_within_agreement_months)."""
         if not self.dev_end_month:
             return self
         year, month = self.dev_end_month.split('-')
@@ -390,6 +400,28 @@ class ProjectCreateRequest(BaseModel):
         if errors:
             raise ValidationError.from_exception_data(type(self).__name__, errors)
         return self
+
+    @model_validator(mode='after')
+    def _check_schedule_within_agreement_months(self) -> 'ProjectCreateRequest':
+        """협약기간 내(feasibility) 일정이 협약기간 최대 개월 수(예비창업자 8개월 · 개인사업자 · 법인 10개월)를 넘으면 막는다 — 검증-1과 같은 세는 법:
+        협약기간 내 줄만 보고(growth는 제외), 추진기간에서 연 · 월을 모두 읽어 가장 이른 달부터 가장 늦은 달까지 첫 달과 끝 달을 모두 센다
+        (2026-03 ~ 2026-10 = 8개월). 달을 하나도 못 읽으면 검사하지 않는다. 오류는 가장 늦은 달이 나온 줄의 추진기간 칸에 담는다."""
+        limit = AGREEMENT_MAX_MONTHS.get(self.applicant_type or '')
+        if limit is None:
+            return self
+        readings = [(i, _period_months(item.period)) for i, item in enumerate(self.schedule_items) if item.section == 'feasibility']
+        months = [m for _, found in readings for m in found]
+        if not months:
+            return self
+        first, last = min(months), max(months)
+        count = (last[0] - first[0]) * 12 + (last[1] - first[1]) + 1
+        if count <= limit:
+            return self
+        row = next(i for i, found in readings if last in found)
+        label = '예비창업자' if self.applicant_type == 'preliminary' else '개인사업자 · 법인'
+        raise ValidationError.from_exception_data(type(self).__name__, [_error_detail(
+            ('schedule_items', row, 'period'),
+            f'협약기간 내 일정이 {count}개월({first[0]}-{first[1]:02d} ~ {last[0]}-{last[1]:02d})이에요. {label}은 협약기간이 최대 {limit}개월이에요')])
 
     @field_validator('applicant_type')
     @classmethod

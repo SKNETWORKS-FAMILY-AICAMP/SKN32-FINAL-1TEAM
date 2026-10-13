@@ -219,6 +219,15 @@ BUNDLE_PSST_SCALEUP = '성장전략'
 BUNDLE_PSST_TEAM = '팀 구성'
 WRITING_BUNDLES = (BUNDLE_PSST_PROBLEM, BUNDLE_PSST_SOLUTION, BUNDLE_PSST_SCALEUP, BUNDLE_PSST_TEAM)
 
+# [2026-10-13 신규] 오케스트레이터가 새로 두는 재작성 묶음 2개(담당자 · 재희 님 화면 이름 그대로, 계획서 항목 태그 0-1 · 0-2) — 일반현황 · 개요(예비창업 2.1.x · 2.2.x ·
+# 2.3.1 ~ 2.3.5 / 초기창업 3.1.x · 3.2.x · 3.3.1 ~ 3.3.5)와 그림(2.3.6 / 3.3.6). 오케스트레이터가 켜기 전에는 묶음 사용 기록 · 재작성 목록에 나오지 않으므로 웹은
+# 이름만 받아 두면 된다. 켜는 날 순서: 웹 배포 → 오케스트레이터 켜기 → 웹 프로세스 · 워커 다시 띄우기. 문서층 묶음 순서는 이 둘이 맨 앞이다.
+BUNDLE_GENERAL_SUMMARY = '일반현황 · 개요'
+BUNDLE_FIGURES = '그림'
+NEW_WRITING_BUNDLES = (BUNDLE_GENERAL_SUMMARY, BUNDLE_FIGURES)
+# 사용자가 재작성을 요청할 수 있는 문서층(writing) 묶음 전체
+REWORKABLE_WRITING_BUNDLES = (*NEW_WRITING_BUNDLES, *WRITING_BUNDLES)
+
 # [2026-09-29 신규] writing 재시도(app/routers/projects.py retry_task)가 bundle_id를
 # 무시하고 항상 plan_sections의 1-1/2-1만 재생성하던 버그의 수정 — 묶음마다 정확히
 # 재생성해야 할 문서 섹션 하나를 여기서 고정한다(둘 다 이 파일이 소유하는 상수라 여기

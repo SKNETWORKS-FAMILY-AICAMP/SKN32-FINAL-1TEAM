@@ -40,6 +40,7 @@ def test_category_mapping():
 @pytest.mark.parametrize('task_key, bundle_id, expected', [
     ('writing', '문제인식', '문제인식'), ('writing', '실현가능성', '실현가능성'),
     ('writing', '성장전략', '성장전략'), ('writing', '팀 구성', '팀 구성'),
+    ('writing', '일반현황 · 개요', '일반현황 · 개요'), ('writing', '그림', '그림'),  # 2026-10-13 새 묶음(태그 0-1 · 0-2)
     ('implement_prototype', '실행 파일 제작', '실행 파일'), ('implement_prototype', None, '실행 파일'),
     ('implement_infographic', '인포그래픽 제작', '인포그래픽'), ('implement_infographic', None, '인포그래픽'),
 ])
@@ -153,3 +154,15 @@ def test_eligibility_out_defaults_can_start_writing_to_passed():
     assert mapping.eligibility_out(make_gate(passed=True)).can_start_writing is True
     assert mapping.eligibility_out(make_gate(passed=False)).can_start_writing is False
     assert mapping.eligibility_out(make_gate(passed=True)).business_age_years is None
+
+
+def test_new_rework_bundles_round_trip_and_come_first_in_the_document_layer():
+    assert ps.REWORKABLE_WRITING_BUNDLES[:2] == ('일반현황 · 개요', '그림') and ps.WRITING_BUNDLES == ('문제인식', '실현가능성', '성장전략', '팀 구성')
+    assert mapping.web_bundle_id_of('일반현황 · 개요') == '일반현황 · 개요' and mapping.web_bundle_id_of('그림') == '그림'
+
+
+def test_unknown_bundle_names_are_skipped_instead_of_raising():
+    assert mapping.known_web_bundle_ids(['문제인식', '앞으로 생길 묶음', '그림', '실행 파일']) == ['문제인식', '그림', '실행 파일 제작']
+    assert mapping.known_web_bundle_ids([]) == []
+    with pytest.raises(KeyError):  # 요청한 묶음처럼 반드시 알아야 하는 곳은 그대로 엄격하다
+        mapping.web_bundle_id_of('앞으로 생길 묶음')

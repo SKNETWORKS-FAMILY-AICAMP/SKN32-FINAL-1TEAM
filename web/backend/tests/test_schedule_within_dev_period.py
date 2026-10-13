@@ -1,7 +1,7 @@
 """협약기간 내 일정의 끝나는 달 ≤ 개발 종료월 (SB-354 · F19).
 
 검증-1이 같은 기준으로 그 일정을 '입력 오류'로 실패 처리하고 재작성으로도 고쳐지지 않아서, 입력 때 422로 막는다.
-협약 이후(growth) 일정과 개발 종료월이 없는 요청은 검사하지 않고, 협약기간 최대 개월 수는 공고마다 달라 막지 않는다.
+협약 이후(growth) 일정과 개발 종료월이 없는 요청은 검사하지 않는다(협약기간 최대 개월 수는 test_schedule_agreement_months.py).
 오류 위치는 `schedule_items[i].period`라 화면이 그 줄의 '추진 기간' 칸을 표시할 수 있다.
 
 실행:
@@ -61,14 +61,9 @@ def test_after_agreement_rows_are_not_checked():
 
 
 def test_no_development_end_month_means_no_check():
-    assert len(_request([_schedule('2030.01~2030.12')], dev_end_month=None).schedule_items) == 1
+    assert len(_request([_schedule('2030.01~2030.06')], dev_end_month=None).schedule_items) == 1
 
 
 def test_a_period_with_no_readable_month_is_left_to_the_year_check():
     # 연도만 있고 월을 읽을 수 없으면 비교할 달이 없다(검증-1도 이런 줄은 건너뛴다)
     assert len(_request([_schedule('2026')]).schedule_items) == 1
-
-
-def test_the_agreement_month_limit_is_not_checked_here():
-    # 예비창업 8개월 · 초기창업 10개월은 공고마다 다르다 — 12개월 일정도 개발 종료월 안이면 받는다
-    assert len(_request([_schedule('2026.01~2026.12')], dev_end_month='2026-12').schedule_items) == 1

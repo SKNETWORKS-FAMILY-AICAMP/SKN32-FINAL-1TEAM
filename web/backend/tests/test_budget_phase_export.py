@@ -107,9 +107,10 @@ def test_preliminary_hwp_fills_table_12_with_phase_1_and_table_14_with_phase_2(a
 
     first, second = _cells(steps, 12), _cells(steps, 14)
     assert (first[(1, 0)], first[(1, 1)], first[(1, 2)]) == ('외주용역비', '앱 개발 외주', '15,000,000원')
-    assert first[(2, 1)] == '재료비: 라벨링' and first[(6, 2)] == '20,000,000원'
+    assert (first[(2, 0)], first[(2, 1)]) == ('재료비', '라벨링') and first[(6, 2)] == '20,000,000원'  # 둘째 항목도 자기 비목 칸에 쓴다(비목 칸을 먼저 나눈다)
+    assert (12, 1, 0) in steps.split_cells and (14, 1, 0) in steps.split_cells
     assert (second[(1, 0)], second[(1, 2)]) == ('광고선전비', '10,000,000원') and second[(6, 2)] == '10,000,000원'
-    assert second[(2, 1)] == ''  # 2단계 표의 남는 칸은 공란
+    assert second[(2, 1)] == '' and second[(2, 0)] == ''  # 2단계 표의 남는 칸은 공란
 
 
 def test_hwp_body_labels_the_two_phase_narratives():

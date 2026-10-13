@@ -65,13 +65,15 @@ ruff check .                                # 정적 검사
 | `test_diagram_images.py` | 계획서 그림(SVG → PNG) — 순서 · 제목, 못 받거나 깨진 그림은 빼고 문서 생성, docx 개요 표 아래 · zip의 원본 SVG, hwp 맨 뒤 새 쪽(rhwp 있을 때 실제 확인) (SB-340) |
 | `test_infographic_in_document.py` | 계획서 파일(docx · hwp · zip 안 docx)에 인포그래픽과 첫 장 고지 넣기 — 데이터 주소 · 안쪽 참조는 허용하고 바깥 참조는 막는 변환(계획서 그림은 그대로 엄격), 못 받거나 못 바꾸면 인포그래픽만 빼고 문서는 만듦, 세로로 긴 그림 줄이기, 고지는 결과물 값(없으면 기본 문구), hwp 실제 생성(첫 쪽 고지 · 그림 쪽과 인포그래픽 쪽 분리) (기준 문서 T-C4, SB-354) |
 | `test_hwp_body_paragraphs.py` | hwp 본문을 줄마다 문단으로 쓰기(절을 큰 번호부터, 뼈대 문단을 먼저 지움), 표 서술 · 단계 머리말, 칸 안 예시 상자를 지우는 스크립트, 정리한 양식 2종이 원본과 같은 구조인지, 실제 hwp에 빈 "-" 글머리 · 예시 안내가 없는지 |
+| `test_hwp_table_layout.py` | hwp 표 채우기 — 입력 줄이 고정 행보다 많으면 행 늘리기(기준 행 복제 · 합계 행 밀림), 칸 줄바꿈을 문단으로 나누기, 사업비 비목 칸 나누기, 업종 · 지방우대 칸 알아보기와 ☑ 체크(글머리 복제), 행 복제 · 높이 · 빈 문단 · 쪽 나눔(hwpx xml), 쪽 밖으로 나가는 표와 빈 쪽이 없는지(rhwp 경고), 주업종을 지원 분야 · 전문기술분야로 가르기, docx의 안내 문구 제거 · 본문 줄 문단 |
 | `test_database_time_zone.py` | 웹의 MySQL 연결이 세션 시간대를 UTC로 맞추는 설정(DB 서버가 한국 시간이어도 생성 시각이 9시간 어긋나지 않게) |
 | `test_budget_phase_export.py` | 예비창업 사업비를 1단계 · 2단계 표(docx 표 둘, hwp 표12 · 표14)로 나눠 채움, 단계 없는 줄은 1단계, 다른 유형은 표 하나 (SB-339) |
 | `test_schedule_table_export.py` | 내려받기 문서(docx · hwp)의 추진 일정 표 — 구분 · 추진 내용 · 추진 기간 · 세부 내용이 같은 이름의 열에 들어감, 세부 내용을 비우면 빈칸, 입력이 없으면 자리표시 한 줄 (SB-329 · SB-339) |
 | `test_budget_phase_column.py` | `project_budget_items.phase` 컬럼(VARCHAR(10), NULL 허용, '1단계' · '2단계') (SB-328) |
 | `test_budget_schedule_schema.py` | 사업비 · 일정의 요청 · 응답 모양, 허용값, 행 수 상한, 응답 순서 (SB-329) |
 | `test_budget_schedule_validation.py` | 필수 · 금액 · 합계 · 유형별 단계 · 일정 필수 칸과 연도 검사, 오류 위치(표 · 줄 번호 · 칸) (SB-330) |
-| `test_schedule_within_dev_period.py` | 협약기간 내 일정의 끝나는 달이 개발 종료월을 넘으면 422(`schedule_items[i].period`), 협약 이후 일정 · 개발 종료월 없음은 검사 안 함, 추진기간에서 달을 읽는 규칙(검증-1과 같음), 협약기간 최대 개월 수는 막지 않음 (SB-354) |
+| `test_schedule_within_dev_period.py` | 협약기간 내 일정의 끝나는 달이 개발 종료월을 넘으면 422(`schedule_items[i].period`), 협약 이후 일정 · 개발 종료월 없음은 검사 안 함, 추진기간에서 달을 읽는 규칙(검증-1과 같음) (SB-354) |
+| `test_schedule_agreement_months.py` | 협약기간 내 일정 개월 수가 최대(예비창업자 8 · 개인사업자 · 법인 10)를 넘으면 422(가장 늦은 달 줄의 `period`), 검증-1과 같은 세는 법(첫 달 · 끝 달 포함, 협약기간 내 줄만, 해 넘김, 읽을 수 없으면 검사 안 함) |
 | `test_budget_schedule_saving.py` | 보낸 순서대로 저장, `request_start` 전에 커밋, 시작 거절 시 함께 삭제 (SB-331) |
 | `test_budget_schedule_required.py` | 필수 조건 계산, 스위치(`REQUIRE_BUDGET_SCHEDULE`) 꺼짐 · 켜짐, `E-C1-REQUIRED`와 `missing` 이름 (SB-332) |
 
