@@ -111,7 +111,7 @@ def test_first_writing_redoes_only_failed_items_then_replaces_failed_table(clock
     out = ctx.get("tableOutputs")[TABLE]
     assert out["tableFallbackUsed"] and out["fallbackReason"] == f"{TABLE} 결함 (스텁)"
     s6 = app.orchestrator.screen(pid(app, rid), 6)
-    expected_fallback = [{"sectionCode": TABLE, "reason": f"{TABLE} 결함 (스텁)",
+    expected_fallback = [{"sectionCode": TABLE, "reason": f"{TABLE} 결함 (스텁)", "fallbackReasonCodes": [],
                          "displayReason": "표를 검증 기준에 맞춰 완성하지 못해 설명으로 표시합니다. 입력 내용과 생성 결과를 확인해 주세요."}]
     assert s6.dump()["tableFallbacks"] == expected_fallback
     assert app.orchestrator.outputs(pid(app, rid)).dump()["tableFallbacks"] == expected_fallback
@@ -128,17 +128,21 @@ def test_first_writing_redoes_only_failed_items_then_replaces_failed_table(clock
     assert [o.targets for o in orders] == [["실현가능성"]] and TABLE in orders[0].reason
 
 
-def test_table_fallback_display_reason_uses_plain_language_and_keeps_raw_reason():
+def test_table_fallback_display_reason_uses_codes_and_keeps_raw_reason():
+    # 안내 문구는 사유 코드만으로 고르고(writing.table_display_reason), 자유 형식 사유 문장은 읽지 않는다
+    from sbrain.agents.partner_sw.writing import table_display_reason
     from sbrain.flow.reads import _table_fallbacks
 
-    original = "협약기간 일정 10개월이 최대 8개월 조건을 초과함"
-    result = _table_fallbacks({"2.6.2": {"tableFallbackUsed": True, "fallbackReason": original}})[0].dump()
+    original = "문구가 바뀌어도 분류가 유지되어야 하는 내부 사유"
+    codes = ["AGREEMENT_TABLE_SCHEDULE_MISMATCH"]
+    stored = {"tableFallbackUsed": True, "fallbackReason": original, "fallbackReasonCodes": codes,
+              "displayReason": table_display_reason(codes)}
+    result = _table_fallbacks({"2.6.2": stored})[0].dump()
     assert result["reason"] == original
-    assert "허용 기간" in result["displayReason"]
-    assert "10개월" not in result["displayReason"]
+    assert result["fallbackReasonCodes"] == codes
+    assert "원본 협약 일정" in result["displayReason"]
 
-    structural = _table_fallbacks({"2.5.3": {"tableFallbackUsed": True, "fallbackReason": "필수 표 컬럼 누락"}})[0]
-    assert "필수 항목" in structural.display_reason
+    assert "필수 항목" in table_display_reason(["TABLE_STRUCTURE_INVALID"])
 
 
 def test_redo_once_per_item_and_body_fail_stays_without_fallback(clock):

@@ -409,6 +409,8 @@ class SectionResult(SBModel):
     input_error: bool = ext(False, note="입력 오류(결정 0028) — 입력 값이 공고 · 규정 기준(협약기간 최대 개월 수 · 개발 종료월 · "
                                         "공고 지원 금액 상한)을 벗어나 생긴 fail이라 다시 만들어도 고쳐지지 않는다. "
                                         "T-V1 연결 코드만 채운다. 칸이 없는 옛 판정은 거짓")
+    fallback_reason_codes: list[str] = ext(default_factory=list, note="표 대체 대상의 기계 판독 사유 코드 — T-V1 결정 결과 "
+                                                                    "(결정 0029 — 담당자 SB-376). 칸이 없는 옛 판정은 빈 목록")
     score: float = ext(note="담당자 내부 점수 0 ~ 100")
     deductions: list[str] = ext(default_factory=list, note="감점 사유 (담당자 deductions의 reason)")
     verified_ref: str = ext(note="검증한 산출물 버전 '이름@버전' — 이어받은 결과도 원래 값 그대로")
@@ -483,8 +485,37 @@ class RejectedAttempt(SBModel):
 
 
 # ── 결과물 ───────────────────────────────────────────
+# 결과 통합(T-C4)의 미달 항목 타입 · 칸 표시 — 기존 타입에 담을 곳이 없어 새 타입으로 둔다
+SHORTFALL_NOTE = "새 타입(결정 0030)"
+ShortfallLayer = Literal["document", "artifact"]
+# 미달 항목 종류 — 이 7개뿐이다
+ShortfallKind = Literal["verifyFail", "inputError", "gateFailure", "codeCheck", "featureMatchWithheld",
+                        "missingFeature", "partialFeature"]
+
+
+class ShortfallItem(SBModel):
+    """새 타입 — 결과물 묶음의 미달 항목 한 줄 (T-C4가 판정 칸으로만 만든다).
+
+    사유(reason)에는 검증-1 · 검증-2 판정 글이 그대로 옮겨질 수 있다 — 산출물 내용이라 결과 조회에만 싣고 기록 · 사건 ·
+    로그 · 관리자 조회 · 예외 메시지에 넣지 않는다."""
+    layer: ShortfallLayer = ext(note="층 — document(계획서 · 문서층) · artifact(산출물층)")
+    kind: ShortfallKind = ext(note="종류 — verifyFail · inputError · gateFailure · codeCheck · featureMatchWithheld · "
+                                   "missingFeature · partialFeature")
+    code: str | None = ext(None, note="문서층 = 계획서 항목 번호, 코드 점검 = 점검 번호 글자, 통과 필수 조건 = 어긴 조건 "
+                                      "코드(entry · secret · sandbox), 그 밖 = null")
+    tag: str | None = ext(None, note="문서층 = 검증-1 판정의 웹 태그(없으면 null), 산출물층 = null")
+    name: str = ext(note="문서층 = 계획서 항목 제목(없으면 항목 번호), 코드 점검 = 점검 이름, 기능 = 기능 이름, "
+                         "그 밖 = 고정 이름(잠정)")
+    score: float | None = ext(None, note="화면에 보이는 점수 — 문서층 = docScore 항목 점수, 코드 점검 = 환산 칸 earned, "
+                                         "대조 불가 = 계획서 대조 환산 점수. 없으면 null")
+    max_score: float | None = ext(None, note="score의 배점 — 문서층 = docScore 항목 배점, 코드 점검 = 환산 칸 weight, "
+                                             "대조 불가 = 계획서 대조 만점. 없으면 null")
+    reason: str = ext(note="사유 — 판정 글(검증-1 issues · 코드 점검 detail)을 옮기거나 고정 문구(잠정)")
+
+
 class Deliverable(SBModel):
-    plan_doc_file: FileRef = ext(note=FILE_NOTE)
+    # 계획서 파일은 웹이 planDoc으로 만든다 — T-C4는 늘 비운다. 선택 칸으로 바꿔도 값이 있는 옛 실행 건은 그대로 읽힌다
+    plan_doc_file: FileRef | None = ext(None, note=FILE_NOTE)
     # 프로토타입 파일 목록 — 진입 파일(있으면) · 안내 문서 · 자산. 내려받기용 압축은 웹이 만든다
     prototype_files: list[FileRef] = ext(note=FILE_NOTE)
     infographic_file: FileRef = ext(note=FILE_NOTE)
@@ -494,6 +525,9 @@ class Deliverable(SBModel):
     prototype_notice: str
     score_notice: str
     submission_notice: str
+    # 미달 항목 목록 — 기본 빈 목록은 이 칸이 없던 옛 실행 건 호환
+    shortfall_items: list[ShortfallItem] = ext(
+        default_factory=list, note=f"{SHORTFALL_NOTE} — 미달 항목 목록(문서층 → 산출물층 순, 순서는 잠정). 웹이 골라 보인다")
 
 
 from .scoring import ScoreReport  # noqa: E402

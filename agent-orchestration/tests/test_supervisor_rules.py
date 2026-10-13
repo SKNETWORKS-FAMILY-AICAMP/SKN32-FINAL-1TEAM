@@ -223,7 +223,7 @@ def test_g02a_old_snapshot_without_scoring_reads_default_70():
 # ── 입력 오류 (후보 제외 · 안내) ─────────────────
 INPUT_ERROR_TEXT = ("입력한 협약기간 일정이나 사업비가 기준(협약기간 최대 개월 수 · 개발 기간 · 공고 지원 금액 상한)을 벗어나 "
                     "일부 항목이 검증을 통과하지 못했습니다. 이 항목은 다시 만들어도 고쳐지지 않습니다. 이대로 진행하거나, "
-                    "입력을 고쳐 새 프로젝트로 다시 만들 수 있습니다.")
+                    "입력을 고쳐 새로 만들 수 있습니다.")
 
 
 def sr(code: str, status: str = "fail", *, missing: bool = False, error: bool = False) -> SectionResult:

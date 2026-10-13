@@ -239,6 +239,21 @@ PROVISIONAL: dict[str, str] = {
                               "넘지 않는 항목에 (flow/ 환산 규칙 모듈, spec 4.6)",
     "tv2.fileDecode": "T-V2가 진입 파일 · 안내 문서 · 인포그래픽을 UTF-8로 풀 때 풀 수 없는 바이트는 대체 문자로 바꾼다 "
                       "(spec 4.4)",
+    # 결과 통합 T-C4 실구현 (agents/supervisor/tc4.py) — 기준 문서에 없음
+    "tc4.missing": "누락이면 실행 실패 — 오류 코드 E-C4-MISSING(확장 — 사용자 노출 문구 없음, 처리 '실행 실패 · 관리자 알림', "
+                   "사용자에게는 E-RUN-FAIL). 경우 ① 계획서 · 프로토타입 · 인포그래픽 · 점수 보고서 중 없는 것 ② 계획서 항목 "
+                   "0개 ④ 점수 보고서에 검증-2 점수 없음 — 맞는 경우를 모두 모아 'E-C4-MISSING <경우 번호들>: <빠진 산출물 "
+                   "키 이름들>' 한 오류. 진입 파일 없음(③) · 안내 문서 없음은 누락이 아니다",
+    "tc4.shortfall": "미달 항목(shortfallItems) 고정 이름 · 사유와 순서 — 통과 필수 조건 이름 · 사유(entry '진입 파일' · "
+                     "secret '비밀값 노출' · sandbox 'sandbox 제한', 사유는 '… 산출물층이 0점입니다.'), 대조 불가 이름 '계획서 "
+                     "대조' · 사유 '계획서 대조를 판정하지 못해 0점으로 합산했습니다(대조 불가).', 빠진 기능 '프로토타입에서 이 "
+                     "기능을 찾지 못했습니다.', 부분 인정 기능 '프로토타입에 이 기능의 일부만 있습니다.', detail이 빈 코드 점검 "
+                     "'만점을 받지 못했습니다.', issues가 빈 검증-1 fail 'fail'. 순서는 문서층(판정 목록 순서) → 통과 필수 조건 → "
+                     "코드 점검(번호 순) → 대조 불가 → 빠진 기능 → 부분 인정 기능",
+    "tc4.userMessage": "안내 문구(userMessage) — 미달 항목이 없고 총점 통과면 '계획서 · 프로토타입 · 검증 결과를 내려받을 수 "
+                       "있습니다.'(기준 문서 예시). 아니면 그 줄 · 총점 미달이면 '총점 {표시 점수}점으로 기준 점수 {기준}점에 "
+                       "미달합니다.' · 층별 머리줄 '계획서에서 보완이 필요한 항목:' · '프로토타입에서 보완이 필요한 항목:' 아래 "
+                       "'- 이름 (점수/배점점): 사유' 줄 · 끝 줄 '제출 전 작성자 본인의 검토가 필요합니다.'",
     # 공고 연결 (공고 선택 · 자격 확인 G-01) — 기준 문서에 없음
     "taskTimeouts.G-01": "G-01 제한 시간 30초 — 공고 서버의 공고 상세 · 자격 판정 호출, T-C2와 같음",
     "announcement.bonusEnabled": "가산점 사용 스위치 BONUS_ENABLED 기본 꺼짐 — 공고팀 가산점은 시험 단계(2026-10-06 답변: "
@@ -256,20 +271,32 @@ PROVISIONAL: dict[str, str] = {
     "reworkMap.sectionBundles": "담당자 항목별 재작성 묶음(2.4 · 3.4 문제인식, 2.5 · 3.5 실현가능성, 2.6 · 3.6 성장전략, "
                                 "2.7 · 3.7 팀 구성, 2.1 ~ 2.3 · 3.1 ~ 3.3 묶음 없음) — 웹 묶음 4개와 담당자 양식 항목을 기준으로 "
                                 "오케스트레이터 쪽에서 정함. 담당자가 대응이 맞다고 확인(2026-10-12)했고, 일반현황 · 개요 · 그림을 "
-                                "새 묶음으로 두자는 담당자 제안을 웹팀에 묻는 중(결정 0028). 답이 오면 flow/rework_map.py 표만 바꾼다",
+                                "새 묶음으로 두자는 담당자 제안을 웹팀에 묻는 중(결정 0028). 답이 오면 flow/rework_map.py 표만 바꾼다. "
+                                "새 묶음 줄은 같은 모듈에 두고 스위치를 켰을 때만 표에 들어간다(reworkMap.generalBundles)",
+    "reworkMap.generalBundles": "새 재작성 묶음 스위치 GENERAL_BUNDLES_ENABLED 기본 꺼짐(flow/rework_map.py 코드 값 — 켜려면 "
+                                "웹 배포 → 코드 값 변경 → 웹 프로세스 · 워커 다시 띄움). 켜면 문서층 묶음 6개, 순서 일반현황 · 개요, "
+                                "그림, 문제인식, 실현가능성, 성장전략, 팀 구성. 이름 '일반현황 · 개요'(2.1.x · 2.2.x · 2.3.1 ~ 2.3.5 / "
+                                "3.1.x · 3.2.x · 3.3.1 ~ 3.3.5, 태그 0-1, T-W1이 다시 만듦) · '그림'(2.3.6 · 3.3.6, 태그 0-2, T-W2가 "
+                                "다시 만듦). 기회는 rework.perBundle, 받는 화면 6 · 9. 판정의 '묶음 모두' 후보에서 그림은 뺀다(그림 "
+                                "항목에 fail · warning이 있을 때만 후보). 켠 뒤 모든 실행 건에 바로 적용, 이미 만든 계획서 태그는 "
+                                "고치지 않음, 다시 끄면 목록 · 접수에서 빠지고 쓴 기록은 남김",
     "partnerSw.unassignedPhase": "예비창업 사업비 row의 phase가 없으면 1 · 2단계 표 어디에도 넣지 않고 2.5.3 표의 '단계 미지정' "
                                  "줄로 보존, 2.5.3 · 2.5.4를 입력 없음으로 둔다 — 웹 phase 컬럼이 생기면 풀린다 "
                                  "(agents/partner_sw/inputs.py, spec 4.4)",
     "partnerSw.inputMissing": "표 입력 없음 판정(그 표의 원본 row가 비면)과 문구 '입력 확인 필요 — <사업비 집행계획 | 추진 일정>', "
                               "점수 보고서 안내 '입력 확인 필요 — 사업비 집행계획 · 추진 일정을 입력하면 해당 표가 채워집니다.' "
                               "(agents/partner_sw/verify.py · inputs.py, agents/stubs.py, spec 4.9 · 4.12)",
-    "partnerSw.inputError": "입력 오류(SectionResult.inputError, 결정 0028) 세 경우 — 담당자 F19 규칙 검사 issue 가운데 ① 협약기간 "
-                            "일정 최대 개월 수 초과(담당자 판별 함수 _is_agreement_duration_failure 그대로), ② 협약기간 일정 "
-                            "종료월이 개발 종료월 이후 · ③ 정부지원사업비가 지원규모 상한 초과(연결 코드의 글 꼴 AFTER_DEV_END · "
-                            "OVER_SUPPORT_LIMIT — 담당자 글 전체와 같은 꼴만, 담당자 글이 바뀌면 함께 고칠 곳)이 최종 fail 판정에 "
-                            "있으면 참. 점수 보고서 안내 '입력한 협약기간 일정이나 사업비가 기준(…)을 벗어나 … 이대로 "
-                            "진행하거나, 입력을 고쳐 새 프로젝트로 다시 만들 수 있습니다.' (agents/partner_sw/verify.py, "
-                            "agents/supervisor/judge.py INPUT_ERROR_NOTICE)",
+    "partnerSw.inputError": "입력 오류(SectionResult.inputError, 결정 0028) — 최종 fail 판정이고 담당자 F19 inputErrorCodes에 "
+                            "입력 오류 코드(AGREEMENT_MONTHS_EXCEEDED · AGREEMENT_SCHEDULE_AFTER_DEADLINE · "
+                            "SUPPORT_LIMIT_EXCEEDED — ① 협약기간 최대 개월 수 초과 ② 협약기간 일정 종료월이 개발 종료월 이후 "
+                            "③ 정부지원사업비가 공고 지원 금액 상한 초과)가 있으면 참(담당자 SB-360 — issue 문구와 무관). 점수 보고서 안내 '입력한 협약기간 일정이나 사업비가 기준(…)을 벗어나 … 이대로 "
+                            "진행하거나, 입력을 고쳐 새로 만들 수 있습니다.'(끝 문장 갱신 2026-10-13) "
+                            "(agents/partner_sw/verify.py, agents/supervisor/judge.py INPUT_ERROR_NOTICE)",
+    "partnerSw.kietSearch": "실행별 KIET 자료 검색 스위치 SBRAIN_KIET_SEARCH 기본 꺼짐(워커 환경 변수). 켜면 T-S1이 검색어로 "
+                            "KIET를 찾는다 — 재시도 2회(KIET_RETRIES, 처음 포함 최대 3번) · 한 번 25초, 검색어는 기술 분야(비면 아이디어 "
+                            "설명 앞 120자). 검색 실패(크롤러 값 failed · 크롤러 밖 예외)는 호출 기록에 '호출실패'로 남고, 재시도를 다 "
+                            "쓰면 Task를 멈추지 않고 있는 자료로 계속한다(필수 규칙 2 예외). 결과 0건은 실패가 아니다 "
+                            "(agents/partner_sw/market_research.py, agents/partner_sw/strategy.py, bootstrap.build_app)",
     "partnerSw.outputMapping": "담당자 결과 → RequirementAnalysis · MarketAnalysis 매핑, numericTokens(숫자 + 단위 규칙 추출), "
                                "문장 나누기(줄 · 문장 끝, sentenceId s-<항목>-<순번>) (agents/partner_sw/outputs.py, spec 4.7)",
     "partnerSw.scoreDigits": "항목 점수 소수 둘째 자리 반올림, 문서층 총점 = 반올림한 항목 점수의 합 "

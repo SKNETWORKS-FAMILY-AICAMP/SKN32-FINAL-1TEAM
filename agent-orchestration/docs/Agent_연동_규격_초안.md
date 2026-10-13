@@ -3,7 +3,7 @@
 | 항목 | 내용 |
 |---|---|
 | 상태 | **잠정 규격 — 타 팀 합의 전.** 합의 결과에 따라 바뀔 수 있다 |
-| 작성일 | 2026-09-26 (2026-10-01 갱신: 호출처 응답의 토큰 사용량, 확장 필드. 2026-10-02 갱신: T-P2 시도별 기록 · 검수 회수 문단, 사용자 재작성 지시의 묶음 이름. 2026-10-03 갱신: T-C2 · G-01 공고 서버 연결, 비어 있을 수 있는 공고 값 — 2 · 3 · 4.4 · 6 · 7 · 8 · 8.2 · 8.3 · 9 · 10절. 2026-10-04 갱신: 조율 T-C3 작업 분해 실구현, 지시문 세 부분과 재작성 · 재수행 지시문 다시 쓰기, 양식 · 평가 항목 · 채점 기준표 · 서술 형식의 출처 — 2 · 5 · 6 · 8 · 8.3 · 9 · 10절. **2026-10-06 갱신: Task별 호출 설정, 이미지 호출 `tools.image`와 T-B2 예외, 산출물층 검증 반영(T-V2 `plan_doc` · `diagnostics`, 대조 보류 · 부분 인정, G-04 자체 검사, 원페이지 계획서 반영), T-B1 입력 `plan_doc`, 재실행 때 이전 원문 `previous_source_text`, T-B1 · T-B2 틀 규칙 — 4 · 5 · 6 · 7 · 8 · 9 · 10절**. 2026-10-08 갱신: 기준 문서 v1.10 반영 — 새 판에 들어간 필드 · 값의 확장 · 잠정 표시를 떼고, 새 판에서 빠졌지만 남긴 필드를 확장으로 — 2 · 5 · 6 · 8 · 9 · 10절. **2026-10-08 갱신(2): 산출물 파일 참조형 — 파일 창구 `tools.files`, 파일 참조 `FileRef`, 파일 칸 교체(옛 경로 · 원문 칸 삭제), 파일 이름 규칙, 이전 원문 참조 `previousSourceFile`, G-04 파일 창구 인자, T-V2 파일 읽기 실패 규칙 — 3 · 4 · 4.7 · 5 · 6 · 7 · 8 · 8.5 · 9 · 10절**. **2026-10-10 갱신: 전략 · 작성 · 검증-1 여섯 Task(T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1) 실구현 — 담당자 코드를 옮겨 끼움, 함수별 모델 `purposeModels`, `tools.llm(json_mode=)`와 길이 한도 잘림 재시도, Task 안 동시 호출, 목표 항목(`targetItems`)과 항목 단위 재수행, 검증-1 fail 재수행, 태그 묶음 재작성, 계획서 항목 구조(`planDoc` 확장 칸 · 그림 목록 `diagrams`) — 3 · 4.2 · 4.4 · 4.5 · 5 · 6 · 7 · 8 · 8.3 · 8.6(새) · 9 · 10절**. **2026-10-11 갱신: 구현 · 검증-2 세 Task(T-B1 · T-B2 · T-V2) 실구현 — 담당자 코드를 옮겨 끼움, 자체 검사에 걸린 HTML도 진입 파일로, 인포그래픽은 모든 카테고리 SVG · `iconFallback`, T-V2 확인 요소 목록 `featureElements` 입출력 · 대조 동시 3 · 판정 3번, `CodeCheck.earned` · `applicable`, 조율 규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4) 실구현 · G-04 안내 문서 템플릿, 산출물층 환산 — 3 · 4.4 · 4.6 · 5.5 · 6 · 8 · 8.4 · 8.5 · 8.7(새) · 9 · 10절**. **2026-10-12 갱신: 전략 · 작성 · 검증-1 담당자 새 판 반영 — 검증-1 판정 칸 `SectionResult.inputError`(입력 오류 — 재수행 · 표 대체 · 재작성 후보에서 뺌), 수익모델(서비스명 · 단가) 전달, 항목 제목 = 양식 원래 제목(`displayTitle`), 표 항목 문장은 서술만, 시장 자료 문단 바로잡음 — 5.6 · 8.6 · 9 · 10절**) |
+| 작성일 | 2026-09-26 (2026-10-01 갱신: 호출처 응답의 토큰 사용량, 확장 필드. 2026-10-02 갱신: T-P2 시도별 기록 · 검수 회수 문단, 사용자 재작성 지시의 묶음 이름. 2026-10-03 갱신: T-C2 · G-01 공고 서버 연결, 비어 있을 수 있는 공고 값 — 2 · 3 · 4.4 · 6 · 7 · 8 · 8.2 · 8.3 · 9 · 10절. 2026-10-04 갱신: 조율 T-C3 작업 분해 실구현, 지시문 세 부분과 재작성 · 재수행 지시문 다시 쓰기, 양식 · 평가 항목 · 채점 기준표 · 서술 형식의 출처 — 2 · 5 · 6 · 8 · 8.3 · 9 · 10절. **2026-10-06 갱신: Task별 호출 설정, 이미지 호출 `tools.image`와 T-B2 예외, 산출물층 검증 반영(T-V2 `plan_doc` · `diagnostics`, 대조 보류 · 부분 인정, G-04 자체 검사, 원페이지 계획서 반영), T-B1 입력 `plan_doc`, 재실행 때 이전 원문 `previous_source_text`, T-B1 · T-B2 틀 규칙 — 4 · 5 · 6 · 7 · 8 · 9 · 10절**. 2026-10-08 갱신: 기준 문서 v1.10 반영 — 새 판에 들어간 필드 · 값의 확장 · 잠정 표시를 떼고, 새 판에서 빠졌지만 남긴 필드를 확장으로 — 2 · 5 · 6 · 8 · 9 · 10절. **2026-10-08 갱신(2): 산출물 파일 참조형 — 파일 창구 `tools.files`, 파일 참조 `FileRef`, 파일 칸 교체(옛 경로 · 원문 칸 삭제), 파일 이름 규칙, 이전 원문 참조 `previousSourceFile`, G-04 파일 창구 인자, T-V2 파일 읽기 실패 규칙 — 3 · 4 · 4.7 · 5 · 6 · 7 · 8 · 8.5 · 9 · 10절**. **2026-10-10 갱신: 전략 · 작성 · 검증-1 여섯 Task(T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1) 실구현 — 담당자 코드를 옮겨 끼움, 함수별 모델 `purposeModels`, `tools.llm(json_mode=)`와 길이 한도 잘림 재시도, Task 안 동시 호출, 목표 항목(`targetItems`)과 항목 단위 재수행, 검증-1 fail 재수행, 태그 묶음 재작성, 계획서 항목 구조(`planDoc` 확장 칸 · 그림 목록 `diagrams`) — 3 · 4.2 · 4.4 · 4.5 · 5 · 6 · 7 · 8 · 8.3 · 8.6(새) · 9 · 10절**. **2026-10-11 갱신: 구현 · 검증-2 세 Task(T-B1 · T-B2 · T-V2) 실구현 — 담당자 코드를 옮겨 끼움, 자체 검사에 걸린 HTML도 진입 파일로, 인포그래픽은 모든 카테고리 SVG · `iconFallback`, T-V2 확인 요소 목록 `featureElements` 입출력 · 대조 동시 3 · 판정 3번, `CodeCheck.earned` · `applicable`, 조율 규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4) 실구현 · G-04 안내 문서 템플릿, 산출물층 환산 — 3 · 4.4 · 4.6 · 5.5 · 6 · 8 · 8.4 · 8.5 · 8.7(새) · 9 · 10절**. **2026-10-12 갱신: 전략 · 작성 · 검증-1 담당자 새 판 반영 — 검증-1 판정 칸 `SectionResult.inputError`(입력 오류 — 재수행 · 표 대체 · 재작성 후보에서 뺌), 수익모델(서비스명 · 단가) 전달, 항목 제목 = 양식 원래 제목(`displayTitle`), 표 항목 문장은 서술만, 시장 자료 문단 바로잡음 — 5.6 · 8.6 · 9 · 10절**. **2026-10-13 갱신: 실행별 KIET 시장 자료 검색(T-S1, 스위치 `SBRAIN_KIET_SEARCH` 기본 꺼짐 — 연결 코드 `agents/partner_sw/market_research.py`, 재시도를 다 쓰면 있는 자료로 계속하는 필수 규칙 2 예외), `tools.search`의 호출별 재시도 횟수 `retries`, 표 대체 안내 `displayReason`을 T-W3 연결 코드에서 만듦, 새 재작성 묶음 `일반현황 · 개요` · `그림`(스위치, 지금 꺼짐), 입력 오류 안내 끝 문장 — 4.2 · 4.3 · 4.4 · 5.2 · 5.6 · 8.6 · 10절**. **2026-10-13 갱신(2): 결과 통합 T-C4 실구현(LLM 없음, 조율 `agents/supervisor/tc4.py`) — 확장 입력 `section_results` · 선택 입력 넷, 계획서 파일을 만들지 않음(`Deliverable.planDocFile` 선택 · 늘 비움, 스텁 `plan.docx` 없앰), 미달 항목 `Deliverable.shortfallItems`(새 타입 `ShortfallItem`), 누락이면 `E-C4-MISSING`으로 실행 실패, LLM 없는 조율 Task 묶기 표 `PLAIN_TASKS` — 6 · 7 · 7.1 · 8 · 8.5 · 8.6 · 8.8(새) · 9절**) |
 | 기준 문서 | S-Brain Agent 기능정의서 v1.10 (시트 1 · 2 · 3 · 4 · 5 · 7) |
 | 코드 위치 | `sbrain/` — 입출력 규격 `contracts/tasks.py`, 공통 타입 `models/`(파일 참조 `models/files.py`), 호출 도구 `orchestrator/tools.py`(파일 창구 `FileTool` 포함), 파일 저장소 `orchestrator/files.py`, Task별 호출 설정 `orchestrator/settings.py`, OpenAI 이미지 어댑터 `orchestrator/openai_image.py`, 공고 서버 연결 `agents/notice/`, 전략 · 작성 · 검증-1 담당자 코드와 연결 코드 `agents/partner_sw/`(옮긴 파일 · 바꾼 곳은 `agents/partner_sw/VENDORED.md`), 구현 · 검증-2 담당자 코드와 연결 코드 `agents/partner_bv/`(옮긴 파일 · 바꾼 곳은 `agents/partner_bv/VENDORED.md`, 2026-10-11), 조율 규칙 단계 `agents/supervisor/`(판정 `judge.py` · 안내 문서 `readme.py` · 합치기 `merge.py`, 2026-10-11), 산출물층 환산 `flow/score_scale.py`(2026-10-11) |
 | 검증 방식 | 7개 Agent를 스텁으로 두고 Orchestrator가 20단계를 끝까지 도는 테스트로 검증했다. 2026-09-29 조율 T-C1을 실제 구현으로 바꿨고, 2026-10-03 T-C2 · G-01을 공고 서버 연결로 구현했다(공고 서버는 가짜 전송 · 로컬 임시 서버로 시험). 2026-10-04 조율 T-C3를 실제 구현으로 바꿨다(가짜 LLM으로 시험). 2026-10-06 이미지 호출 · 산출물층 검증 반영은 가짜 이미지 호출처와 스텁으로 시험했다 (`tests/`, 1531건 — 2026-10-08 MySQL 8.0 테스트 DB를 켜면 모두 통과, 없이 돌리면 1472건 통과 · 59건 건너뜀(MySQL 전용)). 2026-10-10 전략 · 작성 · 검증-1 여섯 Task를 담당자 코드로 실구현했다(가짜 LLM 응답을 호출 목적 F번호로 주어 시험 — 실제 OpenAI 확인은 사용자가 한다. 1759건 — MySQL 8.0 테스트 DB를 켜면 모두 통과, 없이 돌리면 1699건 통과 · 60건 건너뜀). 2026-10-11 구현 · 검증-2 세 Task를 담당자 코드로 실구현하고 조율 규칙 단계를 실구현으로 바꿨다(가짜 LLM · 가짜 이미지로 시험 — 실제 OpenAI 확인은 사용자가 한다. 1970건 — MySQL 8.0 테스트 DB를 켜면 모두 통과, 없이 돌리면 1910건 통과 · 60건 건너뜀). 2026-10-12 담당자 새 판 뒷정리(검증-1 입력 오류 칸 등) 뒤 2036건 — MySQL 8.0 테스트 DB를 켜고 모두 통과 |
@@ -67,7 +67,7 @@ tools를 거치지 않으면 재시도 · 제한 시간 · 오류 분류 · 호�
 | 함수 | 용도 |
 |---|---|
 | `tools.llm(messages, *, schema=None, parse=None, purpose="", json_mode=False)` | LLM 호출. `schema`(pydantic 모델)가 있으면 JSON을 그 모델로 검사해 돌려준다. `parse`가 있으면 결과를 넘겨 받은 값을 돌려준다. `json_mode`(확장, 2026-10-10)가 참이고 `schema`가 없으면 호출처가 JSON 객체 응답 형식으로 요청한다(4.5) |
-| `tools.search(purpose, fn)` | LLM이 아닌 호출(임베딩 검색 · BM25 · 공고 서버 API 등)을 감싼다. `fn(timeout_sec)` 형태로 부른다 |
+| `tools.search(purpose, fn, *, retries=None)` | LLM이 아닌 호출(임베딩 검색 · BM25 · 공고 서버 API 등)을 감싼다. `fn(timeout_sec)` 형태로 부른다. `retries`(확장, 2026-10-13 — 범용)를 주면 그 호출 하나만 재시도 횟수를 바꾼다(처음 포함 `retries + 1`번 시도). 주지 않으면(`None`) 설정 재시도 횟수(`retry.retryCount`, 기본 5)다. 지금 쓰는 곳은 T-S1의 KIET 검색(2회, 8.6)뿐이다 |
 | `tools.image(prompt, *, image=None, size=None, quality=None, purpose="")` | 이미지 호출(확장, 2026-10-06). 결과 PNG 바이트를 돌려준다. `image`가 있으면 그 그림을 바탕으로 그린다(편집). 자세한 것은 4.6 |
 | `tools.files.put(name, data, media_type) -> FileRef` | 파일 넣기(확장, 2026-10-08). 산출물 파일을 저장소에 넣고 파일 참조를 돌려준다. 자세한 것은 4.7 |
 | `tools.files.get(ref) -> bytes` | 파일 읽기(확장, 2026-10-08). 같은 실행 건의 파일 참조로 내용을 읽는다. 자세한 것은 4.7 |
@@ -80,7 +80,7 @@ tools를 거치지 않으면 재시도 · 제한 시간 · 오류 분류 · 호�
 
 | 항목 | 동작 | 값 |
 |---|---|---|
-| 재시도 | 호출 한 건마다 따로 센다. 호출 실패 · 응답 지연 · 형식 오류면 같은 호출을 다시 보낸다 | 재시도 횟수 5회, 재시도 간격 2초(잠정) |
+| 재시도 | 호출 한 건마다 따로 센다. 호출 실패 · 응답 지연 · 형식 오류면 같은 호출을 다시 보낸다 | 재시도 횟수 5회, 재시도 간격 2초(잠정). `tools.search(…, retries=n)`이면 그 호출만 n회(2026-10-13, 4.2) |
 | 제한 시간 | 호출처(HTTP 클라이언트)의 timeout으로 건다. 동기 호출은 강제로 끊을 수 없기 때문이다 | Task별 (7절 표, 잠정) |
 | 형식 오류 | ① `schema` 검사 실패 ② `parse`가 `FormatError`를 올림 — 둘 다 재시도 | — |
 | 오류 분류 | 재시도를 다 쓴 뒤 재개할지(일시) 실패로 끝낼지(입력 · 운영)를 가른다 | 아래 표 |
@@ -107,6 +107,7 @@ tools가 `ToolCallExhausted(error, error_kind, tries, call_id)`를 올린다.
 | G-01 자격 확인 | **받지 않고 올려 보낸다**(2026-10-03) | 흐름이 X-C2-FAIL 안내 후 고르기 전 대기 지점으로 돌린다(실행 실패 아님, 8.2) |
 | T-V2 프로토타입 검증 | **대조 LLM(`tools.llm`)의 예외만** Task 함수가 받는다 | 대조 LLM 실패 → 그 기능만 규칙 판정으로 대체(검증-2 담당 1.4판). Orchestrator 쪽 처리는 없다. **파일 창구(`tools.files`) 실패는 받지 않고 올려 보낸다(2026-10-08)** — 파일을 읽지 못한 것을 "진입 파일 없음"으로 보고 산출물층 0점으로 채점하면 안 된다(4.7). 2026-10-11 실구현: 받는 것은 대조 LLM의 `ToolCallExhausted`뿐이다(담당자 코드의 넓은 예외 받기를 좁힘 — 8.7). 요소 뽑기가 실패하면 그 기능은 통째로 묻는 판정으로, 판정이 실패하면 규칙 판정으로 대신하고 진단에 남긴다 |
 | T-B2 인포그래픽 제작 | **`tools.image`의 예외만** Task 함수가 받아도 된다(2026-10-06) | 이미지 호출이 재시도를 다 쓰면 기본 아이콘으로 계속한다. 재개하지 않으며 사용자 화면에는 알리지 않는다(사용자는 인포그래픽 재작성으로 다시 그릴 수 있다). Orchestrator가 관리자 기록 `이미지대체`를 남긴다(4.6). **T-B2의 `tools.llm` · `tools.files` 실패는 받지 않고 올려 보낸다**. 2026-10-11 실구현: 담당자 아이콘판(`artsheet.generate`)은 그림 칸 수 불일치 · 그림 해석 오류도 받아 기본 아이콘으로 계속하고, 출력 `infographic.iconFallback`을 참으로 낸다(4.6 · 8.7) |
+| T-S1 KIET 시장 자료 검색 (2026-10-13) | **KIET 검색 호출(`tools.search('KIET 시장 조사', …)`)의 예외만** T-S1이 받는다 | 검색이 재시도를 다 쓰면 있는 자료로 전략 작성을 계속한다. 그 호출 기록은 '소진'으로 남고 T-S1은 성공한다 — 실행 실패 · 재개 · 실패 알림 · 사용자 화면 표시가 없다. 시장 근거의 `kietSearch.status`가 `failed`가 된다. T-S1의 다른 호출(`tools.llm` · 자료 검색) 실패는 받지 않고 올려 보낸다(8.6 시장 자료) |
 | T-P2 한국어 문장 윤문 | Orchestrator | 그 문장만 원문 유지(`keptReason='호출실패'`). 실패 비율이 기준을 넘으면 재개. 이 호출은 시도 기록(8절)에 세지 않는다 |
 | 그 밖의 Task | **받지 말고 그대로 올려 보낸다** | Orchestrator가 Task 단위로 재개한다(일시 오류만). 재개 상한을 넘기거나 영구 오류면 실행 실패, 재작성 중이면 재작성 실패 |
 
@@ -319,12 +320,13 @@ class ImageProvider(Protocol):
 
 | `order` 필드 | 값 |
 |---|---|
-| `targets` | 사용자가 고른 **묶음 이름**: 산출물층 `실행 파일`(T-B1) · `인포그래픽`(T-B2), 문서층 `문제인식` · `실현가능성` · `성장전략` · `팀 구성`(임시 구성, 잠정). 판정 지시의 대상 이름이 아니다 |
+| `targets` | 사용자가 고른 **묶음 이름**: 산출물층 `실행 파일`(T-B1) · `인포그래픽`(T-B2), 문서층 `문제인식` · `실현가능성` · `성장전략` · `팀 구성`(임시 구성, 잠정 — 새 묶음 스위치를 켜면 `일반현황 · 개요` · `그림`이 더해진다, 2026-10-13 · 8.6). 판정 지시의 대상 이름이 아니다 |
 | `reason` · `instructionDelta` | 그 묶음에 해당하는 판정(G-02a · G-02b) 지시의 사유 · 보완 지시. 산출물층은 Task가 같은 지시를, 문서층은 판정이 낸 문서층 지시를 모두 합쳐 쓴다 |
 | (판정 지시가 없을 때) | 미달로 짚이지 않은 묶음도 사용자가 고를 수 있다(시트 5 R-6 ①). 이때 `reason`과 `instructionDelta`가 모두 '사용자가 이 묶음의 재작성을 요청했습니다.'이다(시트 4: `instructionDelta`는 비워 둘 수 없다) |
 
 - **태그 묶음 재작성(2026-10-10):** 계획서 항목마다 웹 태그가 붙고(8.6), 고른 묶음의 태그에 속한 항목만 목표 항목(`ReworkInput.targetItems`)이 된다. 본문 항목은 T-W1, 표 항목은 T-W3, 그림 항목은 T-W2가 다시 만들고, 그 묶음에 해당 종류 항목이 없는 Task는 부르지 않는다. M-1 · T-V1(다시 만든 항목만 다시 검증)은 늘 돈다. 목표 항목의 문제 목록은 그 항목의 직전 검증-1 issues + warnings다. Task마다 재작성 지시는 고른 묶음들의 판정 지시를 합친 것이고, `targets`는 지금처럼 모은 묶음 이름이다. 태그 없는 항목(일반현황 · 개요)은 재작성 대상이 아니다.
 - 지금 항목별 재작성 묶음(항목 → 묶음)는 오케스트레이터 쪽에서 정한 잠정 값이다 — 2.4.x · 3.4.x `문제인식`(`1-1`), 2.5.x · 3.5.x `실현가능성`(`2-1`), 2.6.x · 3.6.x `성장전략`(`3-1`), 2.7.x · 3.7.x `팀 구성`(`4-1`), 2.1 ~ 2.3 · 3.1 ~ 3.3 묶음 없음. 표는 `flow/rework_map.py` `SECTION_BUNDLE_TABLE` 한 곳에 있다. 이 항목별 재작성 묶음으로는 그림 항목(2.3.6 · 3.3.6)이 어느 묶음에도 들지 않아 지금은 사용자 재작성으로 T-W2가 불리지 않는다(검증-1 fail 재수행으로는 다시 만든다).
+- **새 재작성 묶음 (2026-10-13, 스위치 — 지금 꺼짐):** 웹팀 · 담당자와 새 묶음 둘을 정해 같은 모듈(`flow/rework_map.py`)에 넣었다 — `일반현황 · 개요`(`0-1`, 2.1.x · 2.2.x · 2.3.1 ~ 2.3.5 / 3.1.x · 3.2.x · 3.3.1 ~ 3.3.5, 본문 T-W1) · `그림`(`0-2`, 2.3.6 · 3.3.6, T-W2만 — 그림 명세만 다시 만들고 다시 검증하며 전략 · 본문 · 표는 다시 하지 않는다). 스위치(`GENERAL_BUNDLES_ENABLED`, 코드 값)는 웹 배포 날에 켠다. 켜면 그 항목이 목표 항목이 되어 T-W1 · T-W2가 재작성 입력을 받는다. 자세한 것은 8.6 표.
 
 ### 5.3 featureList는 바꾸지 않는다
 
@@ -432,6 +434,7 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | `redoSource` | `'검사'` · `'검증-1'` · `null` | 재수행이 어디서 왔는지. 재작성 · 첫 실행은 `null` |
 | `unit` | `섹션` · `표 1건` · `차트 1건`(그림) · `null` | 재수행 단위 표시 |
 | `fallbackItems` | `list[str]` | T-W3 표 대체 대상 항목 번호(아래) |
+| `fallbackReasonCodes` | `dict[str, list[str]]` | 표 대체 항목 번호 → F19가 만든 기계 판독 사유 코드. issue 문구를 해석하지 않고 T-W3 안내를 선택한다 |
 
 - 목표 항목이 있으면 그 항목만 다시 만들고, 나머지는 직전 결과(`base…` 확장 입력)를 그대로 출력에 싣는다. T-W1이 내는 `planDoc`은 늘 모든 항목을 담는다.
 - **T-V1도 이 입력을 받는다.** 첫 작성에서는 비어 있고(모든 항목 검증), 재작성 사이클에서는 그 사이클에 다시 만든 항목을(mode `재작성`), 검증-1 재수행에서는 다시 쓴 항목을(mode `재수행`, `redoSource` `검증-1`) 받는다. 목표 항목만 다시 검증하고 나머지 판정 · 점수는 직전 판정(`baseSectionResults`)을 이어받으며, 총점은 합친 결과 전체로 다시 낸다.
@@ -447,7 +450,7 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | 자리 | T-V1 바로 뒤. 첫 작성: T-V1 → [재수행] → G-02a. 화면 6 재작성: T-V1 → [재수행] → 전후 비교 → G-02a. 화면 9 계획서 재작성: T-V1 → [재수행] → T-B1(반영) … → T-V2 → 전후 비교 → G-02b |
 | 순서 | 본문 fail 항목이 있으면 T-W1(그 항목만), 그림 fail 항목이 있으면 T-W2(그 항목만) → M-1 → T-V1(다시 쓴 본문 · 그림 항목 + fail 표 항목만 다시 검증). 그래도 fail인 표 항목이 있으면 T-W3(대체) → M-1(T-V1은 다시 하지 않음) |
 | 표 항목 | 다시 만들지 않는다. T-W3는 같은 입력이면 같은 표를 내므로 T-V1만 다시 검증한다(담당자 코드의 "표를 다시 만들고 다시 검증"과 결과가 같다) |
-| 표가 끝내 fail | T-W3를 `fallbackItems`로 부른다(mode `재수행`, `redoSource` `검증-1`, `unit` `표 1건`). T-W3는 그 표를 `tables`에서 빼고 `tableSections`의 그 항목 문장을 담당자 대체 본문(`_table_fallback_text`)으로 바꾸며, `tableOutputs`에 `tableFallbackUsed = 참` · `fallbackReason`(검증-1 issues를 ` · `로 이은 것)을 남긴다. 판정은 fail 그대로이고 다시 검증하지 않는다(재작성 후보로 남는다) |
+| 표가 끝내 fail | T-W3를 `fallbackItems`로 부른다(mode `재수행`, `redoSource` `검증-1`, `unit` `표 1건`). T-W3는 그 표를 `tables`에서 빼고 `tableSections`의 그 항목 문장을 담당자 대체 본문(`_table_fallback_text`)으로 바꾼다. `tableOutputs`에는 `tableFallbackUsed = 참`, 진단용 `fallbackReason`, 기계 판독용 `fallbackReasonCodes`, 사용자 안내 `displayReason`을 저장한다. 안내는 코드로만 고른다: `TABLE_STRUCTURE_INVALID`(T-W3 표 구조 자체 불통과), `AGREEMENT_TABLE_SCHEDULE_MISMATCH`(개발계획 표와 원본 협약 일정 불일치), F19의 `inputErrorCodes`(예: `SUPPORT_LIMIT_EXCEEDED`), 그 밖의 검증 실패는 `F19_VALIDATION_FAILED`. 입력 오류 표는 대체 대상에서 제외한다. 화면 · 결과 조회는 `fallbackReasonCodes`와 저장된 `displayReason`을 `tableFallbacks[]`로 전달하며, 코드가 없는 옛 결과는 일반 안내 문구를 쓴다. 판정은 fail 그대로이고 다시 검증하지 않는다(재작성 후보로 남는다) (2026-10-13) |
 | 다시 도는 실행 | 각각 새 실행 기록 · 새 산출물 버전이다(계기 `재수행`). T-W1 · T-W2의 지시문 안내는 지금 재수행처럼 다시 쓴다(5.4). T-V1 · T-W3는 지시문을 다시 쓰지 않는다 |
 | 자체 검사 재수행 | 검증-1 재수행으로 다시 쓴 항목도 자체 검사 재수행(5.1)을 거친다. 두 횟수는 따로 센다(`redoSource`로 가른다) |
 | 전략 결과 | T-S1 · T-S2는 다시 만들지 않는다 |
@@ -483,7 +486,7 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | T-P1 | plan_doc ← planDoc<br>format_spec ← formSpec.format_spec<br>protected_tokens ← protectedTokens | format_findings → formatFindings<br>target_sentence_ids → targetSentenceIds |
 | T-P2 | 문장마다 `TP2In(sentence, protectedTokens, formatFindings(이 문장), formatSpec, redoHint, redoCount)` — `formatSpec` ← formSpec.format_spec | 문장별 출력을 모아 sentenceResults (문장마다 시도별 기록 `attempts` 포함) |
 | M-4 | plan_doc ← planDoc<br>sentence_results ← sentenceResults<br>target_sentence_ids ← targetSentenceIds<br>model_version ← setting:tasks.T-P2.model | plan_doc → planDoc<br>proofread_log → proofreadLog |
-| T-C4 | plan_doc ← planDoc<br>prototype ← prototype<br>infographic ← infographic<br>score_report ← scoreReport.overall<br>proofread_log ← proofreadLog | deliverable → deliverable<br>user_message → userMessage |
+| T-C4 | plan_doc ← planDoc (선택, 2026-10-13)<br>prototype ← prototype (선택, 2026-10-13)<br>infographic ← infographic (선택, 2026-10-13)<br>score_report ← scoreReport.overall (선택, 2026-10-13)<br>proofread_log ← proofreadLog<br>section_results ← sectionResults (확장, 선택, 2026-10-13) | deliverable → deliverable (`shortfallItems` 확장 칸 포함, `planDocFile` 늘 비움 — 2026-10-13)<br>user_message → userMessage |
 
 - **2026-10-04 바뀜:** `formSpec` · `evaluationItems` · `rubric`은 작업 분해(T-C3)가 신청자 유형으로 고른 출력이다(기준 문서 v1.10 시트 3 T-C3). T-W1 양식, T-V1 평가 항목 · 채점 기준표, T-P1 · T-P2 서술 형식, G-02a · G-02b의 `rubricVersion`(`rubric.version`)이 모두 여기서 온다. 선택 공고(`selectedAnnouncement`)의 같은 이름 필드는 더 읽지 않는다(8.3).
 - `instruction ← 지시문(taskPlan)`: 첫 실행은 taskPlan의 그 Task 지시문 그대로, 재작성 · 재수행 때는 조율이 안내 부분을 다시 쓰고 문제 내용을 덧붙인 지시문이다(5.4).
@@ -492,6 +495,7 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 - **2026-10-08 바뀜(산출물 파일 참조형):** T-B1 출력의 진입 파일 칸이 파일 참조 `entry_file`(JSON `entryFile`, 산출물 키 `entryFile`), G-04 출력 · M-3 입력의 안내 문서 칸이 `readme_file`(`readmeFile`)로 바뀌었다. 옛 경로 칸은 지웠다. 모두 확장이고, 칸 교체 전체는 8.5에 있다. `entryFile`은 `prototype.entryFile`과 같은 값이다.
 - **2026-10-10 바뀜(전략 · 작성 · 검증-1 실구현):** T-S1 ~ T-V1 · M-1 · G-02a · G-02b의 확장 입력 · 출력이 늘었다(표의 '확장'). 새 산출물 키는 `strategyData` · `marketStrategyData` · `sectionOutputs` · `diagrams` · `diagramOutputs` · `tableSections` · `tableOutputs` · `sectionResults` · `scorePolicyVersion`이다(키 상수 `flow/catalog.py`). 사전 값(`strategyData` 등)의 키는 담당자 canonical 키 그대로이고, 산출물 내용이라 기록 · 로그 · 예외 메시지에 넣지 않는다. `base…` 입력은 같은 키의 지금 값(없으면 비움)으로, 목표 항목 밖을 그대로 싣는 데 쓴다(5.6). `prior_results`는 재개 때만 채워진다(4.4). T-V1 입력에 `rework_input`이 새로 붙었다(5.6). 칸 뜻은 8.6.
 - **2026-10-11 바뀜(구현 · 검증-2 실구현):** T-V2 확장 입출력 `feature_elements`(산출물 키 `featureElements` — 확인 요소 목록, 흐름이 직전 T-V2 출력을 다음 T-V2 입력으로 잇는다. 첫 T-V2는 `null`), G-02b 확장 입력 `category`(실행 건 카테고리 — 흐름이 늘 채운다, 산출물 종류를 정하는 데 쓴다), T-B2 출력 `infographic.iconFallback`(확장)이 늘었다. `codeCheck.checks[]`에 확장 칸 `earned` · `applicable`, 점수 보고서에 환산 칸이 늘었다(8.7). 칸 뜻은 8.7.
+- **2026-10-13 바뀜(결과 통합 T-C4 실구현):** T-C4 입력 `plan_doc` · `prototype` · `infographic` · `score_report`가 **선택 입력**이 되었다(기준 문서는 필수 — 확장 표시). 빠진 것을 엔진 입력 확인이 아니라 T-C4가 한 오류 코드(`E-C4-MISSING`)로 판단하려는 것이다. 검수 로그 `proofread_log`는 지금처럼 필수(엔진이 막는다). 확장 입력 `section_results`(산출물 키 `sectionResults` — G-02b와 같은 검증-1 항목 판정, 선택)로 계획서 미달 항목을 낸다. 출력 `deliverable`에 확장 칸 `shortfallItems`가 늘고 `planDocFile`은 늘 비운다. 칸 뜻은 8.8.
 
 ## 7. Task별 실행 설정 (코드에서 생성)
 
@@ -528,7 +532,7 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 - "오류 시 실패(잠정)": 규칙 단계 · 합치기에서 오류가 나면 운영 오류로 실행 실패, 재작성 중이면 재작성 실패로 처리한다. 기준 문서에 처리 규칙이 없어 둔 기본값이다. G-04만 기준 문서대로 계속 진행한다.
 - **G-04 재수행 ○ (2026-10-06):** G-04는 자체 검사 결과(`check`)를 내고, 불통과면 재수행 횟수(`redo.redoCount`, 기본 2)까지 다시 만든다. 끝내 불통과면 관리자 기록 `안내문서자체검사실패`(잠정)를 남기고 계속한다(점수 밖, 8절).
 - 온도 칸의 "Task 설정"은 그 Task의 호출 설정(7.1) 값이다. "고정 0" · "0.2 이하"는 기준 문서 규칙이라 설정값보다 앞선다(온도를 보내지 않는 설정이면 적용하지 않는다).
-- T-C4는 LLM 사용 여부가 기준 문서에 없어 tools를 받게 두었다(미정).
+- **T-C4는 2026-10-13 실구현이고 LLM을 부르지 않는다**(등록부 `uses_llm=False`, Task 설정 항목 없음 — 7.1). 등록 종류가 task라 엔진이 tools와 함께 부르지만 T-C4는 LLM · 검색 · 이미지 · 파일 창구를 부르지 않는다. 산출물이 빠지면 `ContractError`(`E-C4-MISSING`)로 운영 오류 → 실행 실패다(8.8).
 - **T-W3는 2026-10-10부터 LLM을 부르지 않는다**(담당자 F17은 규칙 코드). 등록부 `uses_llm=False`이고 Task 설정 항목이 없다(7.1). 제한 시간 항목(120초)은 남는다. 등록부의 재수행 표시는 그대로지만, 같은 입력이면 같은 표가 나오므로 흐름이 T-W3 재수행을 걸지 않고 그 시도에서 바로 확정 동작(표 → 본문 서술 대체)을 한다(5.1).
 - **G-01은 2026-10-03부터 tools를 받는 Task다**(기준 문서는 규칙 단계 R-2). 공고 서버의 공고 상세 · 자격 판정을 `tools.search`로 부르며 LLM은 부르지 않는다. T-C2도 LLM을 부르지 않는다. 그래서 두 단계의 온도는 쓰이지 않는다. G-01은 고정 Task 14개에 세지 않는다(기획서 4-4 그대로).
 - "흐름이 받음": 그 구간에서는 어떤 오류(재시도 소진 · 코드 오류 · 출력 규격 위반 · 공고 없음)로 끝나도 실행을 실패시키지 않고 Orchestrator 흐름이 처리한다(8.2). 사전 단계(첫 조회) T-C2의 실패는 지금처럼 시작 요청 X-C2-FAIL이다.
@@ -537,7 +541,7 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 
 **설정이 Agent별에서 Task별로 바뀌었다.** 같은 Agent의 Task라도 다른 모델을 쓸 수 있다(예: T-B2는 글 모델과 이미지 모델을 함께 쓴다). 값은 코드(`orchestrator/settings.py` `Settings.tasks`, 항목 타입 `TaskModelSetting`)에 있고, 실행 건이 시작될 때 설정 사본(`settingsSnapshot`)에 복사해 끝까지 쓴다. 웹 표 · 화면은 없다.
 
-- 키: tools를 받는 Task 가운데 LLM을 부르는 12개(2026-10-10 T-W3가 빠짐)와 `지시문 다시 쓰기` 하나. LLM을 부르지 않는 Task(T-C2 · G-01 · T-W3 · T-C4, 등록부 `uses_llm=False`)에는 항목이 없다 — 엔진이 표를 보지 않고 모델 없이 제한 시간 · 재시도만 입히며, 실행 기록의 모델 · 호출처 · 온도는 빈다. 옛 설정 사본에 그 항목이 있어도 쓰지 않는다. 그 Task가 `tools.llm`을 부르면 호출처에 보내지 않고 바로 실패한다(`LLM 설정 없음`, 2026-10-08). T-C4는 LLM을 쓸지가 기준 문서에서 미정이라, 쓰기로 정해지면 등록부 표시를 바꾸고 항목을 더한다. `지시문 다시 쓰기`는 재작성 · 재수행 때 조율이 대상 Task의 지시문 안내 부분을 다시 쓰는 호출(5.4)의 설정이며, Task가 아니다 — 호출 기록은 대상 Task의 실행 기록에 남고 Agent 이름은 조율이다. 규칙 단계 · 합치기에는 항목이 없다.
+- 키: tools를 받는 Task 가운데 LLM을 부르는 12개(2026-10-10 T-W3가 빠짐)와 `지시문 다시 쓰기` 하나. LLM을 부르지 않는 Task(T-C2 · G-01 · T-W3 · T-C4, 등록부 `uses_llm=False`)에는 항목이 없다 — 엔진이 표를 보지 않고 모델 없이 제한 시간 · 재시도만 입히며, 실행 기록의 모델 · 호출처 · 온도는 빈다. 옛 설정 사본에 그 항목이 있어도 쓰지 않는다. 그 Task가 `tools.llm`을 부르면 호출처에 보내지 않고 바로 실패한다(`LLM 설정 없음`, 2026-10-08). T-C4는 2026-10-13 실구현에서 LLM을 쓰지 않기로 정했다(규칙으로 만든다 — 8.8). `지시문 다시 쓰기`는 재작성 · 재수행 때 조율이 대상 Task의 지시문 안내 부분을 다시 쓰는 호출(5.4)의 설정이며, Task가 아니다 — 호출 기록은 대상 Task의 실행 기록에 남고 Agent 이름은 조율이다. 규칙 단계 · 합치기에는 항목이 없다.
 - 항목: `provider`(호출처) · `model`(글 모델) · `temperature`(비면 호출에 싣지 않음) · `reasoningEffort`(확장, 비면 싣지 않음 — 모델 기본값) · `imageProvider` · `imageModel` · `imageQuality` · `imageSize`(확장 — 이미지 모델이 비면 그 Task는 이미지 호출을 쓸 수 없다, 4.6) · `purposeModels`(확장, 2026-10-10 — 호출 목적 → 모델 이름, 기본 빈 사전, 4.2. 이 칸이 없는 옛 설정 사본은 빈 사전).
 - 실행 기록의 `model` · `provider` · `temperature` · `reasoningEffort`에는 그 Task 항목의 글 모델 값이 남는다. 실행 기록 · 호출 기록의 Agent 이름은 그대로 Task의 담당 Agent다.
 
@@ -581,6 +585,7 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | G-02a · G-02b | 재작성 사이클이면 `cycleInfo`(확장)로 전후 비교 결과 · 재채점한 층 · 승계한 층 · 재작성 전 점수를 받는다. 전후 비교(높은 쪽 선택과 되돌리기)는 Orchestrator가 먼저 하고, G-02는 그 결과를 `scoreReport.comparisons` · `carriedOverLayer` · `reworkDiff`에 담는다. **2026-10-11 실구현**(조율 Agent `agents/supervisor/judge.py`) — 산출물층 환산 · 점수 보고서 환산 칸 · E-G2-UNREACHABLE 안내 · G-02b 입력 `category`(8.7) |
 | T-P1 | `formatSpec`은 Orchestrator가 작업 분해(T-C3)가 고른 양식(`formSpec`)에서 주입한다(2026-10-04 바뀜 — 전에는 선택 공고의 양식). T-P2의 `formatSpec`도 같다 |
 | T-P2 | 문장 하나당 한 번 호출된다. `redoHint` · `redoCount`는 Orchestrator가 채운다. 출력의 `adopted`는 R-5 보호 토큰 검사 결과로 정한다. 위반이면 `nextRedoHint`(확장)에 위반 유형별 지시를 담는다. Orchestrator가 누적해 다음 호출의 `redoHint`로 넘기고, 같은 출력이 반복되면 조기 중단한다. 결과를 돌려준 호출마다 Orchestrator가 시도 기록을 남긴다(아래 8.1) |
+| T-C4 | **2026-10-13 실구현**(조율 Agent `agents/supervisor/tc4.py`, LLM 없음). 계획서 파일은 만들지 않는다(웹이 `planDoc`으로 만든다). 누락 검사 → 미달 항목 `shortfallItems` · 안내 문구 `userMessage` · 결과물 묶음(8.8) |
 | featureList | 첫 버전 이후 바뀌지 않는다(5.3) |
 
 ### 8.1 T-P2 시도별 기록과 검수 회수 문단 (2026-10-02, 기준 문서 v1.10 시트 3 T-P2 · 시트 4 `ProofreadAttempt`)
@@ -676,7 +681,7 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | `TB1Out` | `entryFilePath` | `entryFile: FileRef \| None` (`entryFile`) | 선택. `prototype.entryFile`과 같은 값 |
 | `G04Out` | `readmePath` | `readmeFile: FileRef` (`readmeFile`) | 필수 |
 | `M3In` | `readmePath` | `readmeFile: FileRef \| None` (`readmeFile`) | 선택 |
-| `Deliverable` | `planDocPath` | `planDocFile: FileRef` (`planDocFile`) | 필수 |
+| `Deliverable` | `planDocPath` | `planDocFile: FileRef \| None` (`planDocFile`) | **2026-10-13부터 선택 · T-C4는 늘 비움**(계획서 파일은 웹이 `planDoc`으로 만든다 — 8.8). 값이 있는 옛 실행 건은 그대로 읽힌다 |
 | `Deliverable` | `prototypePath` | `prototypeFiles: list[FileRef]` (`prototypeFiles`) | 필수. 진입 파일(있으면) · 안내 문서(있으면) · 자산 순 |
 | `Deliverable` | `infographicPath` | `infographicFile: FileRef` (`infographicFile`) | 필수 |
 | `ReworkInput` | `previousSourceText` | `previousSourceFile: FileRef \| None` (`previousSourceFile`) | 선택(5.5) |
@@ -697,8 +702,9 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | 원페이지 지면 | `onepage.svg` · `image/svg+xml` | T-B2 (`infographic.imageFile`) |
 | 원페이지가 아닌 인포그래픽 | `infographic.svg` · `image/svg+xml` (2026-10-11 — 모든 카테고리 SVG, 스텁도 같음. 전에는 스텁이 `infographic.png`) | T-B2 |
 | 실행 안내 문서 | `README.md` · `text/markdown` (2026-10-11 실구현 템플릿) | G-04 |
-| 계획서 파일 | 형식에 맞는 이름(스텁은 `plan.docx` · 워드 형식 자리채움) | T-C4 |
 | 차트 그림 | 형식에 맞는 이름(`ChartSpec.imageFile`, 선택) | 작성 Agent(T-W2) |
+
+- 계획서 파일은 Orchestrator가 넣지 않는다(2026-10-13 — 웹이 `planDoc`으로 만든다, 8.8). 스텁 T-C4가 넣던 자리채움 `plan.docx`도 없앴다. 파일 창구의 허용 형식 8종(워드 · 한글 포함)은 그대로다.
 
 **M-2 감싸기** — M-2는 파일을 열지 않는다. 원페이지면 `Prototype(kind="svg-onepage", entryFile=인포그래픽.imageFile, assetFiles=[], …)`로 인포그래픽 참조를 그대로 진입 파일로 감싼다. 같은 실행 건의 참조라 엔진 확인을 통과한다.
 
@@ -721,7 +727,7 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | T-W3 | F17 | 규칙 코드 — LLM을 부르지 않는다 |
 | T-V1 | F19 + 채점 | 항목마다, 동시 4개 |
 
-- F20(문서 조립)과 T-C4 계획서 파일 조립은 이번 범위 밖이다. 웹이 `planDoc`으로 내려받기를 만든다(웹팀 통보).
+- 계획서 파일(담당자 F20 문서 조립)은 웹이 `planDoc`으로 만든다(T-C4는 만들지 않는다 — 웹팀 · 담당자 동의, 2026-10-13 확정, 8.8). 담당자 파일 안의 F20은 그대로 두고 어느 Task에도 연결하지 않는다.
 
 **호출** — 담당자 LLM 함수는 `tools.llm(messages, parse=<담당자 응답 정리 + 검사>, purpose=<F번호>, json_mode=True)`로 나간다(스키마 없음). 담당자 코드처럼 JSON 객체 응답 형식으로 요청하고, 길이 한도로 잘린 응답 · JSON이 아닌 응답 · 필수 칸 없음 · F18 노드 계약 위반은 형식 오류(내용 없는 메시지)로 재시도한다(4.5).
 
@@ -749,8 +755,11 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | 2.5.x / 3.5.x | `2-1` | `실현가능성` |
 | 2.6.x / 3.6.x | `3-1` | `성장전략` |
 | 2.7.x / 3.7.x | `4-1` | `팀 구성` |
+| (스위치를 켜면) 2.1.x · 2.2.x · 2.3.1 ~ 2.3.5 / 3.1.x · 3.2.x · 3.3.1 ~ 3.3.5 | `0-1` | `일반현황 · 개요` (본문 — T-W1) |
+| (스위치를 켜면) 2.3.6 / 3.3.6 | `0-2` | `그림` (그림 — T-W2) |
 
-- 항목별 재작성 묶음은 오케스트레이터 쪽에서 정한 잠정 값이다(담당자 · 웹팀 확인 대기, `flow/rework_map.py` 한 곳).
+- 항목별 재작성 묶음은 오케스트레이터 쪽에서 정한 잠정 값이다(`flow/rework_map.py` 한 곳).
+- **새 묶음 스위치 (2026-10-13):** 위 표의 마지막 두 줄은 웹팀 · 담당자와 정한 새 묶음이고, 스위치(`GENERAL_BUNDLES_ENABLED`, 기본 꺼짐 — 코드 값)를 켜야 들어간다. 꺼져 있으면 첫 줄 그대로(일반현황 · 개요 · 그림은 태그 · 묶음 없음)다. 켜면 문서층 묶음은 6개이고 순서는 `일반현황 · 개요` · `그림` · `문제인식` · `실현가능성` · `성장전략` · `팀 구성`이다. 기회는 묶음마다 `rework.perBundle`, 받는 화면은 6 · 9로 다른 문서층 묶음과 같다. 판정 G-02a · G-02b의 후보도 같은 규칙(그 묶음 항목에 fail · warning — 입력 없음 · 입력 오류 제외)이지만, 점수 미달인데 후보가 없을 때의 '묶음 모두' 후보에는 `그림`을 넣지 않는다. 켜면 이미 있던 실행 건에도 바로 적용되고, 이미 만든 계획서의 태그는 고치지 않는다. 켜는 날 순서는 웹 배포 → 코드 값 변경 → 웹 · 워커 다시 띄우기다.
 - `FormSpec`: `sectionCodes` = 항목 번호, `sectionTitles` = 화면 제목(담당자 계약 `displayTitle` — 양식 원래 제목, 예: '기술개발 개요'. 없으면 담당자 `title`), 확장 `sectionTags`(같은 길이, 태그 또는 `null`) · `sectionKinds`(같은 길이, `section` · `table` · `image`).
 - 평가항목 = 항목마다 하나: `itemCode` = 항목 번호, `itemName` = 화면 제목 앞 40자(잠정), `maxScore` = 70 ÷ 항목 수, `description` = 담당자 `title`(작성 지시). 채점 기준표는 평가항목과 1:1(기준이 없는 항목의 대신 값도 작성 지시), `rubricId` = `partner-sw`, `version` = 담당자 채점 정책 버전(지금 `2026-10-02.1`).
 - **화면 제목 (2026-10-12, 담당자 새 판):** 전에는 담당자 `title`(작성 지시가 섞인 긴 글)을 항목 제목 · 평가항목 이름으로 썼다. 이제 `displayTitle`을 쓰고, `title`은 작성 지시 · 평가 설명에만 남는다. 모양은 그대로이고 값만 짧아진다. 이미 만든 실행 건은 그대로다.
@@ -792,15 +801,26 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
   - T-V1은 입력 없음 처리 뒤 최종 `status`가 `fail`이고 `inputErrorCodes`에 위 코드가 하나 이상 있으면 `SectionResult.inputError = 참`으로 옮긴다. issue 글은 표시용으로 보존하며 흐름 · 판정은 구조화된 `inputError`만 사용한다.
   - 의미 검증(LLM)이 비슷한 문구를 내거나 `_check_agreement_table_overrun`이 생성 표의 오류를 찾은 경우에는 이 코드가 붙지 않는다.
   - 입력 오류가 아닌 것: 만든 표의 잘못인 `개발계획 표 종료월 … 이 원본 협약 일정 종료월 … 이후임`(다시 만들면 고쳐진다), 의미 검증(LLM)이 쓴 글, warning만 있는 항목, 입력 없음(`inputMissing`) 항목(판별은 입력 없음 처리 뒤의 issue로 한다).
-  - `status` · `issues` · 점수는 담당자 판정 그대로다. 그 항목은 검증-1 fail 재수행 · 표 대체(5.6)를 하지 않고, 판정 G-02a · G-02b의 재작성 후보에서도 빠지며, 점수 보고서에 안내 한 줄(이대로 진행하거나 입력을 고쳐 새 프로젝트로 다시 만들 수 있다는 내용, 잠정 문구)이 붙는다. 점수가 기준 미만이고 다른 후보가 없으면 지금처럼 계획서 묶음 모두가 후보다.
+  - `status` · `issues` · 점수는 담당자 판정 그대로다. 그 항목은 검증-1 fail 재수행 · 표 대체(5.6)를 하지 않고, 판정 G-02a · G-02b의 재작성 후보에서도 빠지며, 점수 보고서에 안내 한 줄(이대로 진행하거나 입력을 고쳐 새로 만들 수 있다는 내용, 잠정 문구 — 2026-10-13 끝 문장 바뀜)이 붙는다. 점수가 기준 미만이고 다른 후보가 없으면 지금처럼 계획서 묶음 모두가 후보다.
   - 이어받는 판정(`baseSectionResults`) · 재개 때 받은 판정은 저장된 칸을 그대로 쓰고, 칸이 없는 옛 판정은 거짓으로 읽는다.
 
 **출력 변환 (잠정)** — 기준 문서 칸을 담당자 결과로 채운다: `RequirementAnalysis`(`problemStatement` = 아이디어 요약 `itemSpec.oneLineSummary`, `targetCustomer` · `featureList` · `differentiator` · `useCases` = F02 결과), `featureList` = F02 `coreFeatures` 이름, `MarketAnalysis`(`marketDefinition` = F03 요약, `marketSize` = 빈 목록, `competitors` = F04 이름, `positioning` = F12 요약), `numericTokens` = F03 · F04 · F10 ~ F12 글자에서 숫자 + 단위를 규칙으로 뽑은 것(`수치금액`). 담당자 결과의 기록용 칸(모델 · 응답 ID · 사용량 · 시각 등)은 산출물에 싣지 않는다.
 
 **시장 자료** — 담당자 자료 자리의 KIET 시장 자료(`raw_kiet_results.json` 등)는 기본 설치본(저장소 · 배포 패키지)에 넣지 않는다. 자료가 없으면 빈 자료로 돌고, 담당자 코드의 '근거 없음 — 수치 · 경쟁사 추정 금지' 처리가 된다(실행은 멈추지 않는다). 운영 설치본에 시장 자료를 넣으려면 지금처럼 크롤러를 따로 돌려 자료 파일을 만든다.
 
-- 2026-10-12 담당자 새 판에 KIET 크롤러(`market_crawler.py`)와 갱신 함수(담당자 실행에서 `SBRAIN_AUTO_RESEARCH=1`이면 사용자 기술 분야로 KIET를 검색해 로컬 JSON에 쌓음)가 들어왔다. **우리 실행 흐름(T-S1 · T-S2)에서는 부르지 않는다(담당자 자체 실행에서만 쓰임).** 그 환경 변수를 켜도 Orchestrator 실행은 KIET를 조회하지 않는다.
-- 운영에서 실행마다 자동 검색으로 시장 자료를 채우는 것은 다음 작업이다 — 담당자에게 실행 · 보관 방식을 먼저 묻고 정한다.
+- 2026-10-12 담당자 새 판에 KIET 크롤러(`market_crawler.py`)와 갱신 함수(담당자 실행에서 `SBRAIN_AUTO_RESEARCH=1`이면 사용자 기술 분야로 KIET를 검색해 로컬 JSON에 쌓음)가 들어왔다. 그 갱신 함수 · 환경 변수는 담당자 자체 실행(`run_pipeline`)에만 쓰이고, Orchestrator 실행에는 영향이 없다.
+
+**실행별 KIET 시장 자료 검색 (2026-10-13, 담당자 2차 답 반영)** — 실행마다 T-S1이 KIET를 검색해 그 실행의 시장 근거에 더한다. 담당자 크롤러(`crawl_keyword`)를 쓰고, 연결 코드는 담당자 코드 곁 `agents/partner_sw/market_research.py`에 둔다(엔진 `orchestrator/`는 담당자 코드 · KIET를 모른다).
+
+| 항목 | 규칙 |
+|---|---|
+| 스위치 | `SBRAIN_KIET_SEARCH`(워커 환경 변수 → 없으면 `agent-orchestration/.env`), **기본 꺼짐**. 켜는 값은 `1` · `true` · `yes` · `on`(대소문자 무시, 잠정). 워커 조립(`bootstrap.build_app(kiet_search=None)`)이 읽어 연결 코드에 넘기고, Task 함수 · 담당자 코드는 환경 변수를 읽지 않는다. 테스트는 스위치를 늘 끈다(KIET로 나가지 않음) |
+| 꺼져 있으면 | T-S1은 KIET 검색 호출을 아예 하지 않는다(호출 기록도 없음). 지금처럼 로컬 자료만 쓴다 |
+| 켜져 있으면 | T-S1이 F01 전에 `tools.search('KIET 시장 조사', …, retries=2)`로 검색한다. 검색어는 기술 분야, 비면 아이디어 설명 앞 120자 |
+| 한도 | 검색 전체 최대 25초(호출 설정의 제한 시간이 더 짧으면 그 값), 결과 최대 4건, 결과 하나 최대 1,200자. 결과는 그 실행의 시장 근거(메모리)에만 담고 로컬 자료 · 이력 파일은 쓰지 않는다. 새 근거와 로컬 자료를 함께 쓴다 |
+| 실패 | 크롤러 값의 `status`가 `failed`이거나 크롤러에서 예외가 나오면 다시 시도하는 호출 실패(`KietSearchFailed`)로 올린다 — 시도마다 호출 기록에 '호출실패'로 남는다. 메시지는 고정 문구(+ 오류 종류 이름)뿐이고 검색어 · 응답 내용 · 크롤러 오류 글은 싣지 않는다. 결과 0건 · 일부 검색만 실패하고 결과가 있는 경우는 실패가 아니다 |
+| 재시도 | 이 호출만 2회(처음 포함 최대 3번, 잠정 `KIET_RETRIES`). 다른 호출은 설정 재시도 횟수 그대로다(4.2) |
+| 재시도를 다 쓰면 | T-S1이 `ToolCallExhausted`를 받아 있는 자료로 계속한다 — **필수 규칙 2의 예외이며 T-S1의 KIET 검색 호출에만 해당한다**(4.4). 호출 기록은 '소진', T-S1은 성공(실행 실패 · 재개 · 실패 알림 · 사용자 화면 표시 없음), 시장 근거의 `kietSearch.status` = `failed` |
 
 ### 8.7 구현 · 검증-2 실구현과 조율 규칙 단계 (2026-10-11)
 
@@ -888,6 +908,43 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 - 환산 값은 소수 둘째 자리(잠정), 반올림 차이는 해당 항목 하나에 몰아준다(잠정). 배점이 0이면 그 층 환산은 0이다(0을 기본값으로 바꾸지 않는다).
 - 점수 보고서 환산 칸의 웹 모양은 `docs/Orchestrator_웹연동_함수명세.md` 5.1. 검증-2 원점수 모델의 범위(`CodeCheckResult.total` · `FeatureMatchResult.score` 0 ~ 15)와 실행 기록의 출력 요약은 바꾸지 않았다.
 
+### 8.8 결과 통합 T-C4 실구현 (2026-10-13)
+
+마지막 조율 Task인 결과 통합(T-C4)을 스텁에서 실구현으로 바꿨다(조율 Agent `agents/supervisor/tc4.py`). **LLM을 부르지 않는다** — 규칙으로 만든다. 계획서 파일(DOCX · HWP · PDF)은 만들지 않는다 — 웹이 `planDoc`으로 내려받기 파일을 만든다(웹팀 · 전략 · 작성 · 검증-1 담당자 동의). 다른 Agent 팀이 바꿀 것은 없다.
+
+**함수 · 묶기** — `run(inp: TC4In, tools) -> TC4Out`. 등록 종류가 task라 엔진이 tools와 함께 부르지만 LLM · 검색 · 이미지 · 파일 창구를 부르지 않는다(등록부 `uses_llm=False`). 규칙 단계 표(`RULES`)가 아니라 LLM 없는 조율 Task 표 `PLAIN_TASKS = {"T-C4": tc4.run}`(`agents/supervisor/__init__.py`)에 있고, 워커 조립(`bind_supervisor`)과 시험 조립(`bind_stubs` — `build_stub_app`)이 **같은 함수**를 묶는다(시험 조립은 실패 흉내 `raise_in`만 두 인자 감싸기 `_with_task_faults`로 감싼다). 실제 호출처 나누기 대상이 아니다(LLM 없음).
+
+**입력** — 6절 표. 계획서 · 프로토타입 · 인포그래픽 · 종합 점수 보고서는 선택 입력이고, 검수 로그는 필수다. 확장 입력 `section_results`(검증-1 항목 판정 — G-02b와 같은 산출물, 없으면 계획서 미달 항목이 없다).
+
+**처리 순서**
+
+1. **누락 검사** — 아래 경우를 모두 모아 하나라도 맞으면 `ContractError` 하나를 올린다. 엔진이 운영 오류로 실행 건을 실패시킨다(관리자 알림, 사용자에게는 `E-RUN-FAIL`). 메시지는 `E-C4-MISSING <경우 번호들>: <빠진 산출물 키 이름들>`(예: `E-C4-MISSING ①④: prototype, scoreReport.overall.artifactScore`)이고 산출물 내용 · 파일 이름 · 키는 넣지 않는다.
+   - ① `planDoc` · `prototype` · `infographic` · `scoreReport.overall` 중 없는 것
+   - ② `planDoc.sections`가 0개(계획서가 있을 때만 본다)
+   - ④ `scoreReport.overall.artifactScore`가 없음(점수 보고서가 있을 때만 본다)
+   - 진입 파일 없음(`prototype.entryFile`이 비어 있음)과 실행 안내 문서 없음은 누락이 아니다. T-C4는 `entryFile`을 읽지 않는다 — 진입 파일 없음은 검증-2가 통과 필수 조건 `entry`로 판정하면 미달 항목 `gateFailure`로 보인다.
+2. **미달 항목** `Deliverable.shortfallItems` — 판정 칸(`status` · `inputError` · `passed` · `applicable` · `gateFailures` · `withheld` · 목록)으로만 가르고, 담당자 글(`issues` · `detail`)은 사유로 옮기기만 한다.
+   - 문서층: `section_results`의 `status = fail` 항목만(총점이 통과여도). `inputError` 참이면 `inputError`, 아니면 `verifyFail`. warning은 넣지 않는다.
+   - 산출물층: `codeCheck.gateFailures`가 있으면 조건마다 `gateFailure`만. 아니면 `codeCheck`(만점 아님 · 해당 있음, 번호 순 — 부분 점수 포함) → 대조 판정 보류면 `featureMatchWithheld` 하나만, 아니면 `missingFeature` → `partialFeature`.
+   - 점수는 화면 값 — 문서층 = `docScore.items[]`의 같은 항목 번호 줄, 코드 점검 = 점수 보고서 환산 칸 `codeCheckItems`의 `earned` · `weight`, 대조 불가 = `featureMatchScore` · `featureMatchMax`. 환산 칸이 빈 옛 보고서는 `flow/score_scale.py`의 함수로 한 번 계산한다(환산 공식은 그 한 곳뿐).
+3. **안내 문구** `userMessage`(잠정) — 미달 항목이 없고 총점 통과면 "계획서 · 프로토타입 · 검증 결과를 내려받을 수 있습니다." 한 줄. 아니면 그 줄 · 총점 미달 줄 · 층별 항목 줄 · "제출 전 작성자 본인의 검토가 필요합니다."
+4. **결과물 묶음** — `planDocFile`은 비우고, `prototypeFiles` = 진입 파일(있으면) · 안내 문서(있으면) · 자산 순, `infographicFile`, 점수 보고서 · 검수 로그, 고지 4칸(기획서 6-8 — 지금 문구 그대로).
+
+**`ShortfallItem` (새 타입, 확장)**
+
+| 칸 (파이썬 → JSON) | 타입 | 뜻 |
+|---|---|---|
+| `layer` | `"document"` · `"artifact"` | 층 |
+| `kind` | `verifyFail` · `inputError` · `gateFailure` · `codeCheck` · `featureMatchWithheld` · `missingFeature` · `partialFeature` | 종류 — 이 7개뿐 |
+| `code` | `str \| None` | 문서층 = 항목 번호, `codeCheck` = 점검 번호 글자, `gateFailure` = `entry` · `secret` · `sandbox`, 그 밖 `None` |
+| `tag` | `str \| None` | 문서층 = 검증-1 판정의 웹 태그, 산출물층 `None` |
+| `name` | `str` | 항목 제목(없으면 항목 번호) · 점검 이름 · 기능 이름 · 고정 이름(잠정) |
+| `score` · `max_score` → `maxScore` | `float \| None` | 화면 점수 · 배점(없으면 `None`) |
+| `reason` | `str` | 사유 — 판정 글 또는 고정 문구(잠정) |
+
+- 웹 모양 · 고정 이름 · 사유 · 안내 문구 전체는 `docs/Orchestrator_웹연동_함수명세.md` 5.2('결과물 묶음 `deliverable`').
+- 미달 항목 · 안내 문구는 산출물 값 안에만 있다(사유에 검증-1 · 검증-2 판정 글이 들어간다). 실행 기록 · 사건 · 워커 운영 로그 · 관리자 조회 · 예외 메시지에 넣지 않는다.
+
 ## 9. 확장 필드 (기준 문서에 없음)
 
 코드에서는 `ext()`로 선언되어 JSON 스키마에 `x-extension`이 붙는다.
@@ -905,7 +962,7 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | Prototype | entryFile, assetFiles, readmeFile | 진입 파일 · 자산 · 실행 안내 문서의 파일 참조 — 옛 `entryFilePath` · `sourceText` · `assetPaths` · `readmePath`를 지우고 대신함 (2026-10-08, 8.5) |
 | Infographic · ChartSpec | imageFile | 인포그래픽 그림 · 차트 그림의 파일 참조 — 옛 `imagePath`를 대신함 (2026-10-08, 8.5) |
 | TB1Out · G04Out · M3In | entryFile · readmeFile | T-B1 진입 파일, G-04 출력 · M-3 입력의 안내 문서 파일 참조 (2026-10-08, 8.5) |
-| Deliverable | planDocFile, prototypeFiles, infographicFile | 최종 묶음의 파일 참조 — 옛 `planDocPath` · `prototypePath` · `infographicPath`를 대신함. 내려받기용 압축은 웹이 만든다 (2026-10-08, 8.5) |
+| Deliverable | planDocFile, prototypeFiles, infographicFile | 최종 묶음의 파일 참조 — 옛 `planDocPath` · `prototypePath` · `infographicPath`를 대신함. 내려받기용 압축은 웹이 만든다 (2026-10-08, 8.5). `planDocFile`은 2026-10-13부터 선택 · 늘 비움(계획서 파일은 웹이 만든다, 8.8) |
 | ReworkInput | previousSourceFile | 재실행 때 T-B1 이전 진입 파일의 참조 — 옛 `previousSourceText`(원문 글자)를 대신함 (2026-10-08, 5.5) |
 | (신규) FileTool · FileRejected | — | 파일 창구 `tools.files`(넣기 · 읽기)와 그 거절 예외(입력 오류) (2026-10-08, 4.7) |
 | ReworkInput | sourceRefs, feedbackId | 피드백 출처 추적 |
@@ -940,9 +997,9 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | PlanSection | tag, contentType | 항목의 웹 태그 · 종류 (2026-10-10, 8.6) |
 | PlanDoc | diagrams | 그림 목록 `DiagramSpec[]` (2026-10-10, 8.6) |
 | (신규) DiagramSpec | diagramId, flowType, nodes, visualStyle, sourceRef, imageFile | 계획서 그림 하나 — SVG는 `tools.files`로 넣은 참조 (2026-10-10, 8.6) |
-| (신규) SectionResult | sectionCode, tag, contentType, status, issues, warnings, needsUserConfirmation, inputMissing, inputError, score, deductions, verifiedRef | 계획서 항목 하나의 검증-1 판정 — T-V1 출력 `sectionResults` (2026-10-10, 8.6). `inputError`는 2026-10-12에 더함(입력 오류 — 칸이 없는 옛 판정은 거짓) |
+| (신규) SectionResult | sectionCode, tag, contentType, status, issues, warnings, needsUserConfirmation, inputMissing, inputError, fallbackReasonCodes, score, deductions, verifiedRef | 계획서 항목 하나의 검증-1 판정 — T-V1 출력 `sectionResults` (2026-10-10, 8.6). `inputError`는 2026-10-12, `fallbackReasonCodes`는 2026-10-13에 더함 |
 | CheckResult | failedItems | 불통과 항목 번호 → 문제 목록 — 항목 단위 재수행 (2026-10-10, 5.1) |
-| ReworkInput | targetItems, redoSource, unit, fallbackItems | 목표 항목 · 재수행 출처 · 단위 · 표 대체 대상 (2026-10-10, 5.6) |
+| ReworkInput | targetItems, redoSource, unit, fallbackItems, fallbackReasonCodes | 목표 항목 · 재수행 출처 · 단위 · 표 대체 대상 · 기계 판독 표 대체 사유 (2026-10-10 · 2026-10-13, 5.6) |
 | T-S1 ~ T-V1 · M-1 · G-02a · G-02b 입출력 | companyInfo · formInput · strategyData · marketStrategyData · featureList · base… · priorResults · sectionOutputs · diagrams · diagramOutputs · tableSections · tableOutputs · sectionResults · scorePolicyVersion · planDocRef · docLayerMax · reworkInput(T-V1) | 담당자 함수를 끼우며 더한 입출력 — 6절 표 (2026-10-10) |
 | TaskModelSetting | purposeModels | 호출 목적 → 모델 이름 — 함수별 모델 (2026-10-10, 4.2 · 7.1) |
 | LLMRequest | json_mode | JSON 객체 응답 형식 요청 (2026-10-10, 4.5) |
@@ -953,6 +1010,9 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | G02bIn | category | 실행 건 카테고리 — 산출물 종류를 정한다(흐름이 늘 채움) (2026-10-11, 8.7) |
 | ScoreReport | docLayerMax, codeCheckScore, codeCheckMax, featureMatchScore, featureMatchMax, artifactLayerScore, artifactLayerMax, codeCheckItems | 그 실행 건 배점으로 환산한 층 점수 · 만점과 코드 점검 항목 줄. G-02a 보고서는 `docLayerMax`만 (2026-10-11, 8.7) |
 | Settings.scoring | codeCheckMax, featureMatchMax | 코드 점검 배점 C · 계획서 대조 배점 P(기본 15 · 15) — 웹 `verification_policies.code_weight` · `plan_weight`. 산출물층 배점은 C + P (2026-10-11, 8.7) |
+| (신규) ShortfallItem | layer, kind, code, tag, name, score, maxScore, reason | 결과물 묶음의 미달 항목 한 줄 — 기존 타입에 담을 곳이 없어 새 타입 (2026-10-13, 8.8) |
+| Deliverable | shortfallItems | 미달 항목 목록(문서층 → 산출물층, 순서 잠정, 기본 빈 목록 — 옛 실행 건 호환). 웹이 골라 보인다 (2026-10-13, 8.8) |
+| TC4In | planDoc, prototype, infographic, scoreReport (선택으로 바꿈), sectionResults | 결과 통합 선택 입력 — 기준 문서는 필수, 비면 누락(`E-C4-MISSING` ①). `sectionResults`는 검증-1 항목 판정(문서층 미달 항목) (2026-10-13, 8.8) |
 
 ## 10. 합의가 필요한 사항
 
@@ -976,11 +1036,12 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | 16 | 산출물층 검증 칸(`planDoc` · `diagnostics` · `gateFailures` · `defectSources` · `withheld` · `withheldReason` — 기준 문서 v1.10에 들어감)을 늘 채우기, 부분 인정 기능 칸 `partialFeatures` 채우기(8.4) | 검증-2 |
 | 17 | 산출물 파일 참조형(2026-10-08, 4.7 · 8.5): 파일은 `tools.files`로만 넣고 읽기, 출력 파일 칸에 받은 `FileRef` 싣기, 허용 형식 8종 · 파일 하나 30MB · 이름 규칙, 파일 하나에 모두(상대 경로 금지), 이름 약속(`index.html` · `onepage.svg`), 진입 파일 비면 진입 파일 없음, T-V2는 파일 읽기 실패를 받지 않음. 지금은 웹 · 워커가 함께 보는 폴더에 두고 운영은 S3 예정이며, Agent는 파일 위치를 알 필요가 없다 | 구현 · 작성 · 검증-2 |
 | 18 | 바뀐 계획서 모양(2026-10-10, 8.6): `planDoc.sections`가 양식의 모든 항목(24 ~ 25개, 태그 · 종류 확장 칸), 표 항목 서술 문장 · 대체 본문, 문장 0개인 그림 항목, 그림 목록 `diagrams`(SVG 참조), 차트 목록은 늘 빈 목록. 계약 칸은 확장만 늘었다 | 구현 · 검증-2 · 검수 |
-| 19 | 담당자 항목별 재작성 묶음(5.2 · 8.6) — 오케스트레이터 쪽에서 정한 잠정 값. 일반현황 · 개요 · 그림 항목(2.3.6 · 3.3.6)은 사용자 재작성 대상이 아니어서 담당자 코드의 그림 전용 재작성(`image-retry-latest`)과 어긋난다. 항목별 재작성 묶음이 맞는지, 일반현황 · 개요도 재작성해야 하는지, 그림 재작성을 어느 묶음으로 고르게 할지 확인 요청 중. **2026-10-12:** 담당자가 지금 묶음이 맞다고 답하고 새 묶음 둘('기본정보·개요' · '그림')을 제안했다. 웹의 '그림 → 실현가능성' 제안과 어느 쪽으로 할지 웹팀에 묻는 중이다 | 전략 · 작성 · 검증-1, 웹팀 |
+| 19 | 담당자 항목별 재작성 묶음(5.2 · 8.6) — 오케스트레이터 쪽에서 정한 잠정 값. 일반현황 · 개요 · 그림 항목(2.3.6 · 3.3.6)은 사용자 재작성 대상이 아니어서 담당자 코드의 그림 전용 재작성(`image-retry-latest`)과 어긋난다. 항목별 재작성 묶음이 맞는지, 일반현황 · 개요도 재작성해야 하는지, 그림 재작성을 어느 묶음으로 고르게 할지 확인 요청 중. **2026-10-12:** 담당자가 지금 묶음이 맞다고 답하고 새 묶음 둘('기본정보·개요' · '그림')을 제안했다. 웹의 '그림 → 실현가능성' 제안과 어느 쪽으로 할지 웹팀에 묻는 중이다. **2026-10-13 정함:** 담당자 제안대로 새 묶음 둘 — 이름 `일반현황 · 개요` · `그림`, 태그 `0-1` · `0-2`(웹팀과 정함). 오케스트레이터에 넣고 스위치를 꺼 두었으며 웹 배포 날에 켠다. '묶음 모두' 후보에서 `그림`은 뺀다(8.6) | 전략 · 작성 · 검증-1, 웹팀 |
 | 20 | 표 서술 속 금액이 보호 토큰에 들지 않아 윤문에서 바뀔 수 있고 `tables[].rows`와 어긋날 수 있다(8.6 — 이번에 고치지 않음) | 검수 |
 | 21 | Task 안 동시 호출(T-W1 · T-V1 4, T-W2 2 — 담당자 코드는 하나씩, 3절). 분당 호출 한도 문제가 생기면 알려 달라 | 전략 · 작성 · 검증-1 |
 | 22 | T-B1 자체 검사(외부 의존 · 샌드박스 금지 기능 · 비밀값)에 걸린 HTML도 진입 파일로 넘겨 검증-2가 채점하게 맞췄다(기준 문서 T-B1 ②③ · E-B1-DEP · E-B1-SANDBOX, 8.7). 담당자가 맞다고 답하고 담당자 T-B1도 같게 바꿨다(2026-10-12 — 확인 끝) | 구현 · 검증-2 |
 | 23 | 외부 의존 감점 — 담당자가 검증-2 코드 점검 7번에서 감점하도록 더했다(2026-10-12, 8.7 — 확인 끝, 기준 문서 개정 불필요). 같은 판에서 T-B1 계획서 길이가 20,000자로 늘었다(8.7 보내는 것 표) | 구현 · 검증-2 |
 | 24 | T-V2 대조 동시 3(담당자 값 6에서 줄임) · 판정 3번, 확인 요소 목록을 산출물 `featureElements`로 이어 받기, 넓은 예외 받기를 `ToolCallExhausted`로 좁힘, 진단 문구에서 파일 경로 · 이름 뺌(8.7 — `partner_bv/VENDORED.md`) | 검증-2 |
 | 25 | 산출물층 환산 — 검증-2는 15 + 15 원점수를 그대로 돌려주고, 그 실행 건 배점으로 환산은 판정 G-02b · Orchestrator가 한다(8.7) | 검증-2 |
-| 26 | 검증-1 입력 오류(`SectionResult.inputError`, 2026-10-12 — 8.6): 담당자 F19가 구조화 코드(`inputErrorCodes`)를 반환하고 T-V1은 issue 문구를 읽지 않고 코드로 판별한다. 협약기간 최대 개월 수를 선택 공고 값으로 받아야 하는지는 별도 확인 사항 | 전략 · 작성 · 검증-1 |
+| 26 | 검증-1 입력 오류(`SectionResult.inputError`, 2026-10-12 — 8.6): 담당자 F19가 구조화 코드(`inputErrorCodes`)를 반환하고 T-V1은 issue 문구를 읽지 않고 코드로 판별한다. 협약기간 최대 개월 수는 **2026-10-13 담당자 답으로 정함** — 2026년 공고 기준 고정(예비창업 8개월 · 초기창업 10개월), 공고 값은 받지 않는다(다른 연도 공고는 범위 밖) | 전략 · 작성 · 검증-1 |
+| 27 | 실행별 KIET 시장 자료 검색(2026-10-13, 8.6): 스위치 `SBRAIN_KIET_SEARCH` 기본 꺼짐(운영 워커에서 켬), `tools.search` 재시도 2회, 재시도를 다 쓰면 T-S1이 있는 자료로 계속(필수 규칙 2의 예외 — T-S1의 KIET 검색 호출만). 표 대체 사유는 `fallbackReasonCodes`로 전달하고 사용자 문구는 코드만으로 선택(5.6) | 전략 · 작성 · 검증-1 |

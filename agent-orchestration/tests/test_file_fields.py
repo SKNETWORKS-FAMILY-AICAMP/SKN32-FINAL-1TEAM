@@ -1,7 +1,8 @@
 """계약 파일 칸의 참조형 교체 (spec 4.5).
 
-- 스텁이 파일을 tools.files(G-04는 파일 창구 인자)로 넣고 참조를 싣는다 — 진입 파일 · 인포그래픽 · 안내 문서 · 계획서 파일
-- M-2 감싸기(인포그래픽 그림 참조 → 진입 파일, 자산 없음), M-3 안내 문서 기입, T-C4 최종 묶음 참조 목록
+- 스텁이 파일을 tools.files(G-04는 파일 창구 인자)로 넣고 참조를 싣는다 — 진입 파일 · 인포그래픽 · 안내 문서
+- M-2 감싸기(인포그래픽 그림 참조 → 진입 파일, 자산 없음), M-3 안내 문서 기입, T-C4 최종 묶음 참조 목록(계획서 파일 칸은
+  비움)
 - 진입 파일 없음(entryFile 비움)과 이전 원문 참조(previous_source_file)를 비우는 경우
 - 웹 결과 조회(outputs)의 새 칸 모양 — 참조만 나가고 파일 내용은 없다
 흐름 테스트는 메모리 · SQLite 두 저장소에서 돈다 (clock 픽스처).
@@ -106,6 +107,20 @@ def test_stub_m3_sets_readme_file():
     assert out.prototype.readme_file == readme and out.prototype.entry_file == proto.entry_file
 
 
+def test_stub_svgs_have_size_and_viewbox():
+    # 크기가 없으면 웹 내려받기(hwp)에서 얇은 띠로 깨진다(웹팀 부탁 2026-10-13) — 글자는 캔버스 가운데
+    import xml.etree.ElementTree as ET
+
+    from sbrain.agents.stubs import STUB_DIAGRAM_SVG, STUB_SVG, STUB_SVG_SIZE
+    w, h = STUB_SVG_SIZE
+    for svg, label in ((STUB_SVG, "원페이지"), (STUB_DIAGRAM_SVG, "스텁 그림")):
+        root = ET.fromstring(svg.decode())
+        assert (root.get("width"), root.get("height"), root.get("viewBox")) == (str(w), str(h), f"0 0 {w} {h}")
+        text = root.find("{http://www.w3.org/2000/svg}text")
+        assert text is not None and text.text == label
+        assert (text.get("x"), text.get("y"), text.get("text-anchor")) == (str(w // 2), str(h // 2), "middle")
+
+
 # ── 흐름 ────────────────────────────────────────────────
 def test_web_flow_puts_stub_files_and_carries_refs(clock):
     app = make_app(clock)
@@ -123,9 +138,9 @@ def test_web_flow_puts_stub_files_and_carries_refs(clock):
     for ref in (proto.entry_file, info.image_file, proto.readme_file):
         check_stored(app, rid, ref)
     d = ctx.get("deliverable")
-    assert (d.plan_doc_file.name, d.plan_doc_file.media_type) == (
-        "plan.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-    check_stored(app, rid, d.plan_doc_file)
+    # 계획서 파일은 웹이 planDoc으로 만든다 — T-C4는 칸을 비우고 파일 저장소에 넣지 않는다
+    assert d.plan_doc_file is None
+    assert not any(k.endswith(".docx") for k in app.engine.files.keys())
     assert d.prototype_files == [proto.entry_file, proto.readme_file]           # 진입 파일 · 안내 문서 · 자산
     assert d.infographic_file == info.image_file
 
@@ -208,7 +223,8 @@ def test_outputs_carry_refs_without_file_content(clock):
     assert proto["entryFile"]["name"] == "index.html" and proto["assetFiles"] == []
     assert set(info) == {"imageFile", "format", "altText", "iconFallback"} and set(info["imageFile"]) == REF_KEYS
     assert set(d) == {"planDocFile", "prototypeFiles", "infographicFile", "scoreReport", "proofreadLog",
-                      "disclaimer", "prototypeNotice", "scoreNotice", "submissionNotice"}
+                      "disclaimer", "prototypeNotice", "scoreNotice", "submissionNotice", "shortfallItems"}
+    assert d["planDocFile"] is None                                            # 계획서 파일은 웹이 만든다
     assert [f["name"] for f in d["prototypeFiles"]] == ["index.html", "README.md"]
     text = json.dumps(out, ensure_ascii=False)
     assert "스텁 프로토타입" not in text and "열람 안내" not in text           # 파일 내용은 들어 있지 않다

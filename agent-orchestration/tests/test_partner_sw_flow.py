@@ -57,8 +57,8 @@ def test_partner_tasks_run_in_flow_to_screen6(clock):
     assert reqs and all(q.json_mode and q.metadata["purpose"].startswith("F") for q in reqs)
     assert not [q for q in app.llm.requests if q.metadata["task_id"] == "T-W3"]
     logs = app.store.call_logs(rid)
-    assert {log.purpose for log in logs if log.task_id == "T-S1" and log.call_type == "search"} == {
-        "자료 검색", "KIET 시장 조사"}
+    # 실행별 KIET 검색은 스위치(SBRAIN_KIET_SEARCH)가 꺼져 있으면(기본 · 테스트) 부르지 않는다
+    assert {log.purpose for log in logs if log.task_id == "T-S1" and log.call_type == "search"} == {"자료 검색"}
     # 기록에 산출물 내용이 없다 (spec 4.17)
     recorded = " ".join([log.model_dump_json() for log in logs] +
                         [r.model_dump_json() for r in app.store.executions(rid)])

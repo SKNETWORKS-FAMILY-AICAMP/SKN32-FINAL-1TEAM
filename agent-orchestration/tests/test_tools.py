@@ -76,6 +76,29 @@ def test_search_wraps_non_llm_calls_and_passes_timeout():
     assert log.call_type == "search" and log.model is None and seen == [42, 42]
 
 
+def test_search_retries_option_applies_to_that_call_only():
+    """search(retries=n)는 그 호출만 처음 포함 n + 1번 시도한다. 주지 않으면 설정 재시도 횟수(retry_count) 그대로다."""
+    tools, sink, sleeps = make_tools(FakeLLM(), retry=5)
+    attempts = {"짧게": 0, "기본": 0}
+
+    def down(name):
+        def fn(timeout):
+            attempts[name] += 1
+            raise ConnectionError("down")
+        return fn
+    with pytest.raises(ToolCallExhausted) as e:
+        tools.search("짧게", down("짧게"), retries=2)
+    assert e.value.tries == 3 and attempts["짧게"] == 3 and sleeps == [2.0, 2.0]
+    [log] = sink.drain()
+    assert log.final_outcome == "소진" and len(log.tries) == 3
+    with pytest.raises(ToolCallExhausted) as e:
+        tools.search("기본", down("기본"))
+    assert e.value.tries == 6 and attempts["기본"] == 6 and tools.config.retry_count == 5
+    with pytest.raises(ToolCallExhausted) as e:
+        tools.search("없음", down("기본"), retries=0)
+    assert e.value.tries == 1
+
+
 def test_thread_safe_per_call_counts():
     llm = FakeLLM()
     for i in range(20):

@@ -434,6 +434,9 @@ def _check_agreement_table_overrun(validation, spec, output, source, kind):
     generated_end=max((m for t in tables if isinstance(t,dict) for r in (t.get('rows') or []) if isinstance(r,dict) for m in months(r.get('추진기간') or r.get('period') or r.get('기간'))), default=None)
     if source_end and generated_end and generated_end > source_end:
         validation.setdefault('issues', []).append(f'개발계획 표 종료월 {generated_end}이 원본 협약 일정 종료월 {source_end} 이후임')
+        codes=validation.setdefault('fallbackReasonCodes', [])
+        if 'AGREEMENT_TABLE_SCHEDULE_MISMATCH' not in codes:
+            codes.append('AGREEMENT_TABLE_SCHEDULE_MISMATCH')
         validation['status']='fail'
         validation['warnings']=[w for w in validation.get('warnings',[]) if '기간 정합성' not in str(w)]
     return validation

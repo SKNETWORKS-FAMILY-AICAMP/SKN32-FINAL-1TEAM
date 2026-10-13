@@ -3,7 +3,7 @@
 | 함수 | 쓰는 곳 | 저장소 · 입력 · 설정 | Agent |
 |---|---|---|---|
 | build_stub_app | 테스트 · 시연 | 메모리(또는 주어진 저장소) · 기본 설정 | Task는 스텁, 규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4)는 조율 실구현 + 테스트용 실패 흉내( D14), 가짜 LLM · 가짜 이미지 호출처, 지시문 다시 쓰기 없음(덧붙이기만) |
-| build_app | 워커 (sbrain/worker.py) | 공유 MySQL — SqlStore · SqlProjectInputSource · DbSettingsProvider | 조율 T-C1 · T-C3 실구현과 재작성 · 재수행 지시문 다시 쓰기(OpenAI), 조율 규칙 단계 G-02a · G-02b · G-04 · M-1 ~ M-4 실구현(LLM 없음), 전략 · 작성 · 검증-1 T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1 실구현(담당자 코드 — OpenAI, T-W3는 LLM 없음), 구현 · 검증-2 T-B1 · T-B2 · T-V2 실구현(담당자 코드 — OpenAI), T-C2 · G-01은 SBRAIN_NOTICE_API_URL이 있으면 공고 서버 연결(실제 모드) · 없으면 스텁, 나머지 스텁. 이미지 호출도 구현이 들어온 Task(T-B2 아이콘판)만 실제(OpenAI) |
+| build_app | 워커 (sbrain/worker.py) | 공유 MySQL — SqlStore · SqlProjectInputSource · DbSettingsProvider | 조율 T-C1 · T-C3 실구현과 재작성 · 재수행 지시문 다시 쓰기(OpenAI), 조율 규칙 단계 G-02a · G-02b · G-04 · M-1 ~ M-4 실구현(LLM 없음), 전략 · 작성 · 검증-1 T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1 실구현(담당자 코드 — OpenAI, T-W3는 LLM 없음, T-S1 실행별 KIET 검색은 SBRAIN_KIET_SEARCH가 켜는 값일 때만), 구현 · 검증-2 T-B1 · T-B2 · T-V2 실구현(담당자 코드 — OpenAI), T-C2 · G-01은 SBRAIN_NOTICE_API_URL이 있으면 공고 서버 연결(실제 모드) · 없으면 스텁, 나머지 스텁. 이미지 호출도 구현이 들어온 Task(T-B2 아이콘판)만 실제(OpenAI) |
 | build_web | 웹 서버 | 공유 MySQL — 같음 | 단계를 돌지 않는다 (명령 · 조회만). 공고 서버 · 이미지 호출처를 부르지 않는다 |
 
 파일 저장소 (확장 — SBRAIN_ARTIFACT_ROOT, 절대 경로만, 기본값 없음):
@@ -28,6 +28,7 @@ from .agents.notice import NoticeClient, Transport, bind_notice
 from .agents.partner_bv.tasks import IMAGE_TASKS as BV_IMAGE_TASKS
 from .agents.partner_bv.tasks import IMPLEMENTED_TASKS as BV_TASKS
 from .agents.partner_bv.tasks import bind_partner_bv
+from .agents.partner_sw.market_research import set_kiet_search
 from .agents.partner_sw.tasks import IMPLEMENTED_TASKS as PARTNER_TASKS
 from .agents.partner_sw.tasks import bind_partner_sw
 from .agents.stubs import FakeImage, FakeLLM, StubScenario, bind_stubs, make_constants
@@ -46,6 +47,13 @@ from .orchestrator.store import Store
 from .orchestrator.tools import ImageProvider, ImageRequest, LLMProvider, LLMRequest
 
 ARTIFACT_ROOT_ENV = "SBRAIN_ARTIFACT_ROOT"   # 로컬 파일 저장소 폴더 (확장) — 절대 경로만, 기본값 없음
+KIET_SEARCH_ENV = "SBRAIN_KIET_SEARCH"       # 실행별 KIET 검색 스위치 (SB-360, 잠정) — 켜는 값이 없으면 꺼짐
+KIET_SEARCH_ON = frozenset({"1", "true", "yes", "on"})   # (잠정) 켜는 값 — 대소문자 · 앞뒤 공백 무시
+
+
+def switch_on(value: str | None) -> bool:
+    """스위치 값이 켜는 값(1 · true · yes · on, 대소문자 무시)인가. 없거나 그 밖의 값은 꺼짐."""
+    return (value or "").strip().lower() in KIET_SEARCH_ON
 
 
 def artifact_root_problem(value: str | None) -> str | None:
@@ -131,8 +139,8 @@ def build_stub_app(
 ) -> App:
     """스텁 Agent와 메모리 저장소로 뼈대 전체를 조립한다 (테스트 · 시연용).
 
-    규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4)는 스텁이 없고 조율 실구현에 테스트용 실패 흉내(raise_in · G-04
-    check_fail_times)만 감싼다 — 흐름 테스트가 워커와 같은 규칙을 검사한다 (bind_stubs D14).
+    규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4)와 결과 통합 T-C4는 스텁이 없고 조율 실구현에 테스트용 실패 흉내(raise_in ·
+    G-04 check_fail_times)만 감싼다 — 흐름 테스트가 워커와 같은 규칙을 검사한다 (bind_stubs D14).
 
     project_inputs를 주면 start_run_for_project로 웹 DB에 저장된 사전 정보를 읽어 시작할 수 있다.
     store를 주면 그 저장소를 쓴다(예: SqlStore). 없으면 메모리 저장소.
@@ -154,11 +162,12 @@ def build_app(
     notice_transport: Transport | None = None,
     image: ImageProvider | None = None,
     artifact_root: str | None = None,
+    kiet_search: bool | None = None,
 ) -> App:
     """워커 조립 — 공유 MySQL(SqlStore · SqlProjectInputSource · DbSettingsProvider), 조율 T-C1 · T-C3 실구현, OpenAI 호출처.
 
-    - 조율 규칙 단계(판정 G-02a · G-02b, 안내 문서 G-04, 합치기 M-1 ~ M-4)도 실구현이다(bind_supervisor — 실패 흉내 없이 그대로).
-      LLM을 부르지 않아 호출처 나누기 대상이 아니다.
+    - 조율 규칙 단계(판정 G-02a · G-02b, 안내 문서 G-04, 합치기 M-1 ~ M-4)와 결과 통합 T-C4도 실구현이다
+      (bind_supervisor — 실패 흉내 없이 그대로). LLM을 부르지 않아 호출처 나누기 대상이 아니다.
 
     - db_url이 없으면 SBRAIN_DB_URL(환경 변수 → .env)을 쓴다.
     - 파일 저장소(확장): 로컬 폴더 artifact_root, 주지 않으면(None) SBRAIN_ARTIFACT_ROOT(환경 변수 → .env). 필수다 —
@@ -174,6 +183,9 @@ def build_app(
       (스텁 모드 — 스텁 G-01이 스텁 공고를 만들고 판정한다, spec 3.1 · 4.6).
       주소는 notice_api_url, 주지 않으면(None) SBRAIN_NOTICE_API_URL(환경 변수 → .env). 빈 문자열이면 스텁이다.
       주소 형식이 틀리면 조립할 때 ValueError다(메시지에 주소를 싣지 않는다).
+    - 실행별 KIET 검색(SB-360, 기본 꺼짐): kiet_search, 주지 않으면(None) SBRAIN_KIET_SEARCH(환경 변수 → .env)가 켜는 값
+      (1 · true · yes · on, 대소문자 무시)인지. 연결 코드의 스위치(partner_sw.market_research.set_kiet_search — 워커 프로세스
+      값)로 넘긴다. bind_partner_sw를 부르는 모양은 그대로다(웹 E2E · stub_worker가 바꿔 끼운다). 꺼져 있으면 T-S1이 KIET를 부르지 않는다.
     - project_inputs · llm · notice_transport · image는 시험용으로 바꿔 끼울 때만 준다. llm이 없으면 OpenAIProvider(OPENAI_API_KEY),
       notice_transport가 없으면 표준 라이브러리 HTTP 전송, image가 없으면 OpenAIImageProvider(첫 호출 때 클라이언트를 만든다).
     - 이미지 호출(확장)도 TaskRoutedImageProvider로 나눈다 — 구현이 들어온 Task(T-B2)만 실제, 나머지는 가짜.
@@ -201,6 +213,8 @@ def build_app(
     bind_supervisor(app.registry)
     bind_partner_sw(app.registry)   # 전략 · 작성 · 검증-1 실구현 (spec 4.15)
     bind_partner_bv(app.registry)   # 구현 · 검증-2 실구현 T-B1 · T-B2 · T-V2 (impl-verify2 spec 4.10)
+    # 실행별 KIET 검색 스위치 (SB-360) — T-S1 등록은 그대로 두고 연결 코드의 프로세스 값만 정한다
+    set_kiet_search(switch_on(get_env(KIET_SEARCH_ENV)) if kiet_search is None else kiet_search)
     notice_url = get_env("SBRAIN_NOTICE_API_URL") if notice_api_url is None else notice_api_url
     if notice_url:   # 실제 모드 — 공고 서버 연결로 스텁 T-C2 · G-01을 바꾼다
         bind_notice(app.registry, NoticeClient(notice_url, transport=notice_transport))
