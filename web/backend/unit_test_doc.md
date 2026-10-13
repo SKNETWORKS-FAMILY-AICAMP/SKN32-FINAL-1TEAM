@@ -72,7 +72,8 @@ ruff check .                                # 정적 검사
 | `test_budget_phase_column.py` | `project_budget_items.phase` 컬럼(VARCHAR(10), NULL 허용, '1단계' · '2단계') (SB-328) |
 | `test_budget_schedule_schema.py` | 사업비 · 일정의 요청 · 응답 모양, 허용값, 행 수 상한, 응답 순서 (SB-329) |
 | `test_budget_schedule_validation.py` | 필수 · 금액 · 합계 · 유형별 단계 · 일정 필수 칸과 연도 검사, 오류 위치(표 · 줄 번호 · 칸) (SB-330) |
-| `test_schedule_within_dev_period.py` | 협약기간 내 일정의 끝나는 달이 개발 종료월을 넘으면 422(`schedule_items[i].period`), 협약 이후 일정 · 개발 종료월 없음은 검사 안 함, 추진기간에서 달을 읽는 규칙(검증-1과 같음), 협약기간 최대 개월 수는 막지 않음 (SB-354) |
+| `test_schedule_within_dev_period.py` | 협약기간 내 일정의 끝나는 달이 개발 종료월을 넘으면 422(`schedule_items[i].period`), 협약 이후 일정 · 개발 종료월 없음은 검사 안 함, 추진기간에서 달을 읽는 규칙(검증-1과 같음) (SB-354) |
+| `test_schedule_agreement_months.py` | 협약기간 내 일정 개월 수가 최대(예비창업자 8 · 개인사업자 · 법인 10)를 넘으면 422(가장 늦은 달 줄의 `period`), 검증-1과 같은 세는 법(첫 달 · 끝 달 포함, 협약기간 내 줄만, 해 넘김, 읽을 수 없으면 검사 안 함) |
 | `test_budget_schedule_saving.py` | 보낸 순서대로 저장, `request_start` 전에 커밋, 시작 거절 시 함께 삭제 (SB-331) |
 | `test_budget_schedule_required.py` | 필수 조건 계산, 스위치(`REQUIRE_BUDGET_SCHEDULE`) 꺼짐 · 켜짐, `E-C1-REQUIRED`와 `missing` 이름 (SB-332) |
 
