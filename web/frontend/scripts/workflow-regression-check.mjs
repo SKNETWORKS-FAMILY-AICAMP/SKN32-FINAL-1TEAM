@@ -153,6 +153,12 @@ try{
   assert.deepEqual(legacy.docScore.reasons,['문제 인식 10/20 — 부족']);
   assert.deepEqual(tr('문제인식',legacy.docScore,noArtifact),['부족']);
   assert.deepEqual(bso('문제인식',legacy.docScore),{score:10,max:20,passed:false,lines:['부족'],summary:'부족'});
+  // 묶음 통과는 전체 통과 기준과 같은 비율 — 항목마다 조금씩 깎여도(2.4/2.8 → 86%) 기준 80이면 통과, 깎인 항목 이름은 그대로.
+  const nearFull=(threshold)=>sfr({verdict:null,plan:{doc_score:12,doc_max_score:14,threshold,sections:[],score_reasons:[1,2,3,4,5].map(i=>({item_code:`2.4.${i}`,tag:'1-1',score:2.4,max_score:2.8,reason_text:'감점'}))}});
+  const near80=bso('문제인식',nearFull(80).docScore);
+  assert.deepEqual([near80.passed,near80.summary],[true,'2.4.1, 2.4.2, 2.4.3 외 2개']);
+  assert.equal(bso('문제인식',nearFull(90).docScore).passed,false);
+  assert.equal(bso('문제인식',{groups:[{label:'문제인식',score:12,max:15,items:[{name:'a',score:12,max:15}]}]}).passed,true); // 기준이 없으면 80%, 경계는 통과
   // 계획서 보기 — 새 모양은 묶음별, 그림 항목(content_type image)은 tag가 '2-1'이어도 본문에서 뺀다. 옛 모양은 legacy.
   const view=pvf({sections:[{section_code:'1.1',tag:null,title:'일반현황',content_type:'section'},{section_code:'2.3.6',tag:'2-1',title:'흐름도',content_type:'image'},{section_code:'2.2.1',tag:'2-1',title:'개발',content_type:'section'},{section_code:'2.3.7',tag:'2-1',title:'일정',content_type:'table'}],
     diagrams:[{diagram_id:'d1',image_url:'/projects/1/artifact-files/a'},{diagram_id:'d2',image_url:null}]});

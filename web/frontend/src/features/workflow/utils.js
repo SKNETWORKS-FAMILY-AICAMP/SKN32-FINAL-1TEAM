@@ -1,5 +1,5 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
-import {DOC_ITEMS_FAIL,DOC_ITEMS_PASS,CODE_CHECK_ITEMS_BY_CATEGORY,CODE_CHECK_FAILS_BY_OUTCOME,APPLICANT_TYPE_LABEL,PROJECT_STATUS_TONE,RERUN_CAP,PLAN_TAGS,GENERAL_SECTION_LABEL,DIAGRAM_BUNDLE_LABEL,ALL_DOC_BUNDLES,DELIVERABLE_NOTICES,bundleOfTag,headerOfTag} from './data.js';
+import {DOC_ITEMS_FAIL,DOC_ITEMS_PASS,CODE_CHECK_ITEMS_BY_CATEGORY,CODE_CHECK_FAILS_BY_OUTCOME,APPLICANT_TYPE_LABEL,PROJECT_STATUS_TONE,RERUN_CAP,PLAN_TAGS,GENERAL_SECTION_LABEL,DIAGRAM_BUNDLE_LABEL,ALL_DOC_BUNDLES,DELIVERABLE_NOTICES,FINAL_THRESHOLD,bundleOfTag,headerOfTag} from './data.js';
 
 export const MOCK_TODAY = new Date('2026-09-08');
 
@@ -134,11 +134,14 @@ export function scoresFromResult(result){
   const plan = result?.plan;
   const docItems = reasonsToItems(plan?.score_reasons, plan?.sections);
   const docGroups = docGroupsFrom(docItems);
+  // 묶음 통과 비율 — 전체 통과 기준(100점 만점 기준점, 화면 9 verdict.pass_threshold · 화면 6 plan.threshold)과 같은 비율(bundleScoreOf).
+  const passRatio = (num(verdict?.pass_threshold) ?? num(plan?.threshold) ?? FINAL_THRESHOLD) / 100;
   const docScoreOf = (raw, max) => ({
     raw: num(raw) ?? sumScores(docItems),
     max: num(max) ?? num(plan?.doc_max_score) ?? 70,
     items: docItems,
     groups: docGroups,
+    passRatio,
     reasons: docGroups ? docGroups.filter((g) => g.score < g.max).map(groupReason) : reasonsFromItems(docItems),
   });
   const noticesOf = (list) => (list || []).map((n) => (typeof n === 'string' ? n : n?.message)).filter(Boolean);
@@ -412,12 +415,16 @@ const sameItem = (a, b) => String(a || '').replace(/\s/g, '') === String(b || ''
 //   summary — 좁은 칸(화면 6 왼쪽)에 쓰는 한 줄. 새 모양은 깎인 항목 이름만, 옛 모양은 이유.
 // 그 묶음 점수 항목이 없으면 null.
 export function bundleScoreOf(label, docScore){
+  // 통과 = 만점 대비 전체 통과 기준과 같은 비율(기본 80%) 이상. 예전엔 한 점이라도 깎이면 미달이라, 86점 통과인데
+  // 묶음 넷이 다 미달로 보였다(10-13 스텁 실행). 깎인 항목 이름(lines · summary)은 통과여도 그대로 보인다 — 다시 만들 근거.
+  const ratio = docScore.passRatio ?? FINAL_THRESHOLD / 100;
+  const meets = (score, max) => score + 1e-9 >= max * ratio; // 2.4 × 5 = 11.999… 같은 소수 오차
   const group = docScore.groups?.find((g) => g.label === label);
   if (group) {
     const missed = group.items.filter((it) => it.score < it.max);
     const more = missed.length > 3 ? missed.length - 3 : 0;
     return {
-      score: group.score, max: group.max, passed: missed.length === 0,
+      score: group.score, max: group.max, passed: meets(group.score, group.max),
       lines: [...missed.slice(0, 3).map((it) => `${it.name}${it.comment ? ` — ${it.comment}` : ''}`), ...(more ? [`외 ${more}개 항목`] : [])],
       summary: missed.slice(0, 3).map((it) => it.name).join(', ') + (more ? ` 외 ${more}개` : ''),
     };
@@ -426,7 +433,7 @@ export function bundleScoreOf(label, docScore){
   const item = (docScore.items || []).find((it) => sameItem(it.name, label));
   if (!item) return null;
   const comment = item.score < item.max ? item.comment || '' : '';
-  return { score: item.score, max: item.max, passed: item.score >= item.max, lines: comment ? [comment] : [], summary: comment };
+  return { score: item.score, max: item.max, passed: meets(item.score, item.max), lines: comment ? [comment] : [], summary: comment };
 }
 
 // 재작성 목록의 묶음 아래에 붙이는 "왜 다시 만들어야 하는지". 계획서 묶음은 bundleScoreOf의 lines, 실행 파일은 산출물층 사유.
