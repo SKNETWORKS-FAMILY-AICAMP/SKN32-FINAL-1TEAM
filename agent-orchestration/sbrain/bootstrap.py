@@ -139,8 +139,8 @@ def build_stub_app(
 ) -> App:
     """스텁 Agent와 메모리 저장소로 뼈대 전체를 조립한다 (테스트 · 시연용).
 
-    규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4)는 스텁이 없고 조율 실구현에 테스트용 실패 흉내(raise_in · G-04
-    check_fail_times)만 감싼다 — 흐름 테스트가 워커와 같은 규칙을 검사한다 (bind_stubs D14).
+    규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4)와 결과 통합 T-C4는 스텁이 없고 조율 실구현에 테스트용 실패 흉내(raise_in ·
+    G-04 check_fail_times)만 감싼다 — 흐름 테스트가 워커와 같은 규칙을 검사한다 (bind_stubs D14).
 
     project_inputs를 주면 start_run_for_project로 웹 DB에 저장된 사전 정보를 읽어 시작할 수 있다.
     store를 주면 그 저장소를 쓴다(예: SqlStore). 없으면 메모리 저장소.
@@ -166,8 +166,8 @@ def build_app(
 ) -> App:
     """워커 조립 — 공유 MySQL(SqlStore · SqlProjectInputSource · DbSettingsProvider), 조율 T-C1 · T-C3 실구현, OpenAI 호출처.
 
-    - 조율 규칙 단계(판정 G-02a · G-02b, 안내 문서 G-04, 합치기 M-1 ~ M-4)도 실구현이다(bind_supervisor — 실패 흉내 없이 그대로).
-      LLM을 부르지 않아 호출처 나누기 대상이 아니다.
+    - 조율 규칙 단계(판정 G-02a · G-02b, 안내 문서 G-04, 합치기 M-1 ~ M-4)와 결과 통합 T-C4도 실구현이다
+      (bind_supervisor — 실패 흉내 없이 그대로). LLM을 부르지 않아 호출처 나누기 대상이 아니다.
 
     - db_url이 없으면 SBRAIN_DB_URL(환경 변수 → .env)을 쓴다.
     - 파일 저장소(확장): 로컬 폴더 artifact_root, 주지 않으면(None) SBRAIN_ARTIFACT_ROOT(환경 변수 → .env). 필수다 —

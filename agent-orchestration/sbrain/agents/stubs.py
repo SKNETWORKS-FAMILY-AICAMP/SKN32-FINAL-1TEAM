@@ -11,10 +11,12 @@
 - 규칙 단계(판정 G-02a · G-02b, 안내 문서 G-04, 합치기 M-1 ~ M-4)는 스텁이 없다 — 조율 실구현(agents/supervisor RULES) 한 벌을
   쓰고 테스트용 실패 흉내만 감싼다( D14): raise_in(코드 오류), G-04 check_fail_times(자체 검사 불통과).
   흐름 테스트가 워커와 같은 규칙(환산 · E-G2-UNREACHABLE 포함)을 검사한다. 규칙 사본을 여기 두지 않는다.
+- 결과 통합 T-C4도 스텁이 없다 — LLM 없는 조율 Task 실구현(agents/supervisor PLAIN_TASKS) 한 벌을 쓰고 raise_in만 두 인자
+  감싸기로 감싼다. 계획서 파일은 만들지 않는다(웹이 planDoc으로 만든다).
 - StubScenario로 점수 · 검사 결과 · 오류를 조절해 흐름 테스트를 만든다.
 - 공고 서버 연결이 없을 때의 T-C2 · G-01(스텁 모드, spec 4.6): 스텁 G-01은 스텁 공고를 직접 만들고 공고 서버 판정과 같은
   원칙(확실히 안 되는 경우만 불통과, 읽지 못한 조건은 확인 필요)으로 판정한다. 스텁 공고에는 업력 상한이 없다.
-- 파일(진입 파일 · 인포그래픽 그림 · 그림 · 계획서 파일)은 작은 자리채움 내용을 tools.files로 넣고 받은 참조(FileRef)를
+- 파일(진입 파일 · 인포그래픽 그림 · 그림)은 작은 자리채움 내용을 tools.files로 넣고 받은 참조(FileRef)를
   출력에 싣는다. 안내 문서는 실구현 G-04가 파일 창구 인자로 넣는다. 차트 그림은 비운다. 스텁 T-V2는 파일을
   읽지 않는다(채점 방식 그대로).
 - 실제 구현이 나오면 registry.bind(task_id, fn)로 바꿔 끼운다.
@@ -35,7 +37,7 @@ from pydantic import BaseModel
 from ..contracts import tasks as c
 from ..models import (
     Announcement, AnnouncementCard, ArtifactScore, BonusItem, ChartSpec, CheckResult, CodeCheck,
-    CodeCheckResult, CompanyInfo, Deliverable, DiagramSpec, DocScore, DocScoreItem, EligibilityRule,
+    CodeCheckResult, CompanyInfo, DiagramSpec, DocScore, DocScoreItem, EligibilityRule,
     FeatureMatchResult, FormatFinding, FormSpec, GateResult,
     Infographic, ItemSpec, MarketAnalysis, MarketSizeItem, PlanDoc, PlanSection,
     Prototype, ReferenceDoc, RequirementAnalysis, SectionResult, Sentence, TableSpec, Token, TokenCheckResult,
@@ -47,12 +49,12 @@ from ..orchestrator.registry import TaskRegistry
 from ..orchestrator.tools import FileTool, ImageRequest, ImageResponse, LLMRequest, LLMResponse, TokenUsage, Tools
 from .form_defaults import default_evaluation_items, default_form_spec, stub_rubric
 from .notice.g01 import PRE_STARTUP, business_age_years   # 업력(년) 반올림은 실제 G-01과 한 곳에서 (스텁 테스트도 이 이름을 쓴다)
-from .supervisor import RULES
+from .supervisor import PLAIN_TASKS, RULES
 from .supervisor import plan as task_plan   # 작업 분해 부품 — 실제 T-C3와 같은 확인 · 양식 고르기 · 목록 · 틀 · 맥락
 from .supervisor.judge import (  # noqa: F401 — 판정 안내 문구는 실구현 한 곳 (테스트가 이 이름으로 가져간다)
     INPUT_ERROR_NOTICE, INPUT_MISSING_NOTICE,
 )
-from .supervisor.readme import MARKDOWN_TYPE, PROTOTYPE_NOTICE, README_FILE  # noqa: F401 — 안내 문서 상수는 실구현 한 곳
+from .supervisor.readme import MARKDOWN_TYPE, README_FILE  # noqa: F401 — 안내 문서 상수는 실구현 한 곳
 
 # 스텁 T-V1 평가항목 배점이 없을 때 쓰는 문서층 배점 기본값 (70 ÷ 항목 수)
 DOC_LAYER_MAX = 70.0
@@ -71,13 +73,10 @@ SVG_NAMES = ["대체 텍스트", "핵심 정보 6항목", "명도 대비", "정�
 ENTRY_FILE = "index.html"
 ONEPAGE_FILE = "onepage.svg"
 INFOGRAPHIC_FILE = "infographic.svg"   # 웹개발 · AI API 인포그래픽 (모든 카테고리 SVG, spec 4.3)
-PLAN_DOC_FILE = "plan.docx"
 HTML_TYPE, SVG_TYPE, PNG_TYPE = "text/html", "image/svg+xml", "image/png"
-DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-# 자리채움 내용 — 스텁 파일은 작다. 계획서 파일은 진짜 워드 파일이 아니다(형식만 워드)
+# 자리채움 내용 — 스텁 파일은 작다. 계획서 파일은 만들지 않는다(웹이 planDoc으로 만든다)
 STUB_HTML = "<!doctype html><html lang='ko'><body>스텁 프로토타입</body></html>".encode()
 STUB_SVG = "<svg xmlns='http://www.w3.org/2000/svg'><text>원페이지</text></svg>".encode()
-STUB_PLAN_DOC = b"stub plan docx placeholder"
 # 스텁 공고 · 카드 값 — 모집 형태 표기(spec 4.4), 가산점
 PERIOD_FIXED = "기간 있음"
 PERIOD_OPEN = "상시·수시"            # 마감일 없는 공고 (no_deadline_ids)
@@ -96,11 +95,7 @@ MARKET_KEYS = ("market_analysis", "competitor_analysis", "marketing_strategy", "
 STUB_DIAGRAMS = (("USER_FLOW", "userflow.svg"), ("SERVICE_ARCHITECTURE", "architecture.svg"))
 STUB_DIAGRAM_SVG = "<svg xmlns='http://www.w3.org/2000/svg'><text>스텁 그림</text></svg>".encode()
 STUB_SCORE_POLICY = "stub-policy-1"   # 스텁 채점 정책 버전 — 채점 기준표 버전이 없을 때
-
-# 기획서 6-8 고정 문구 (AI 생성 고지 PROTOTYPE_NOTICE는 안내 문서 실구현 쪽 상수를 쓴다)
-DISCLAIMER = "본 문서는 S-Brain이 생성한 초안입니다. 제출 전 작성자 본인의 확인과 수정이 필요합니다."
-SCORE_NOTICE = "검증 점수는 서비스 내부 기준(rubric 상수)에 따른 값이며 실제 심사 점수가 아닙니다."
-SUBMISSION_NOTICE = "공고에 따라 AI 작성 문서의 제출을 제한하거나 명시를 요구할 수 있습니다. 제출 요건을 확인해주세요."
+# 결과물 묶음의 기획서 6-8 고정 문구(DISCLAIMER 등)는 결과 통합 실구현(agents/supervisor/tc4.py) 한 곳에 있다
 
 
 class Ack(BaseModel):
@@ -773,27 +768,18 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
                                                      contaminated_tokens=[]),
                         next_redo_hint=["'1억원' 유지"])
 
-    def tc4(inp: c.TC4In, tools: Tools) -> c.TC4Out:
-        # 계획서 파일은 자리채움(형식만 워드). 프로토타입은 참조 목록 — 진입 파일(있으면) · 안내 문서(있으면) · 자산.
-        # 내려받기용 압축은 웹이 만든다
-        plan_file = tools.files.put(PLAN_DOC_FILE, STUB_PLAN_DOC, DOCX_TYPE)
-        proto = inp.prototype
-        proto_files = [f for f in (proto.entry_file, proto.readme_file) if f is not None] + list(proto.asset_files)
-        d = Deliverable(plan_doc_file=plan_file, prototype_files=proto_files,
-                        infographic_file=inp.infographic.image_file, score_report=inp.score_report,
-                        proofread_log=inp.proofread_log, disclaimer=DISCLAIMER, prototype_notice=PROTOTYPE_NOTICE,
-                        score_notice=SCORE_NOTICE, submission_notice=SUBMISSION_NOTICE)
-        return c.TC4Out(deliverable=d, user_message="계획서 · 프로토타입 · 검증 결과를 내려받을 수 있습니다.")
-
     for tid, fn in {
         "R-8": r8, "T-C1": tc1, "T-C2": tc2, "G-01": g01, "T-C3": tc3, "T-S1": ts1, "T-S2": ts2,
         "T-W1": tw1, "T-W2": tw2, "T-W3": tw3, "T-V1": tv1, "T-B1": tb1, "T-B2": tb2, "T-V2": tv2, "G-03": g03,
-        "T-P1": tp1, "T-P2": tp2, "T-C4": tc4,
+        "T-P1": tp1, "T-P2": tp2,
     }.items():
         registry.bind(tid, fn)
     # 규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4)는 실구현 한 벌 + 테스트용 실패 흉내 ( D14)
     for tid, fn in RULES.items():
         registry.bind(tid, _with_faults(sc, tid, fn))
+    # LLM 없는 조율 Task(T-C4)도 실구현 한 벌 + 테스트용 실패 흉내(raise_in) — 두 인자 감싸기
+    for tid, fn in PLAIN_TASKS.items():
+        registry.bind(tid, _with_task_faults(sc, tid, fn))
 
 
 def _search_or_fail(fail: bool) -> list:
@@ -845,5 +831,15 @@ def _with_faults(sc: StubScenario, task_id: str, fn: Callable) -> Callable:
     def run(inp):
         _maybe_raise(sc, task_id)
         return fn(inp)
+    return run
+
+
+def _with_task_faults(sc: StubScenario, task_id: str, fn: Callable) -> Callable:
+    """LLM 없는 조율 Task 실구현(run(inp, tools))을 감싸는 테스트용 실패 흉내 — raise_in에 있으면 코드 오류. 동작은 실구현
+    그대로다."""
+    @functools.wraps(fn)
+    def run(inp, tools: Tools):
+        _maybe_raise(sc, task_id)
+        return fn(inp, tools)
     return run
 

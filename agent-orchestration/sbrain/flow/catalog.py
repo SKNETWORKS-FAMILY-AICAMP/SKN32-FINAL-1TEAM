@@ -227,11 +227,16 @@ def build_registry() -> TaskRegistry:
          {"plan_doc": art("planDoc"), "sentence_results": art("sentenceResults"),
           "target_sentence_ids": art("targetSentenceIds"), "model_version": setting("tasks.T-P2.model")},
          {"plan_doc": "planDoc", "proofread_log": "proofreadLog"}, "plan_doc", kind="merge")
+    # T-C4 — 결과 통합 실구현은 LLM을 부르지 않는다. 계획서 · 프로토타입 · 인포그래픽 · 점수 보고서는 선택 입력이다 —
+    # 누락은 엔진 입력 확인이 아니라 T-C4가 한 오류 코드(E-C4-MISSING)로 판단해 같은 실패 기록을 남긴다. 검수 로그는 필수.
+    # 검증-1 항목 판정(확장 입력, G-02b와 같은 산출물)으로 문서층 미달 항목을 낸다
     task("T-C4", "결과 통합 · 전달", "조율", 20, c.TC4In, c.TC4Out,
-         {"plan_doc": art("planDoc"), "prototype": art("prototype"), "infographic": art("infographic"),
-          "score_report": art("scoreReport.overall"), "proofread_log": art("proofreadLog")},
+         {"plan_doc": art("planDoc", optional=True), "prototype": art("prototype", optional=True),
+          "infographic": art("infographic", optional=True),
+          "score_report": art("scoreReport.overall", optional=True), "proofread_log": art("proofreadLog"),
+          "section_results": art(SECTION_RESULTS, optional=True)},
          {"deliverable": "deliverable", "user_message": "userMessage"}, "deliverable",
-         counted=False, uses_llm=False)  # LLM 사용 여부는 기준 문서에 없음 (미정)
+         counted=False, uses_llm=False)
     return r
 
 

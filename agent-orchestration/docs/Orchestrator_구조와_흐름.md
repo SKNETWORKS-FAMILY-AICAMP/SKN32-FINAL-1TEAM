@@ -2,10 +2,10 @@
 
 | 항목 | 내용 |
 |---|---|
-| 작성일 | 2026-09-26 (2026-10-01 갱신: MySQL 저장소 · 워커 · 웹 연동 함수 · 토큰 기록. 2026-10-02 갱신: 웹 `projects` 쓰기 제거 · 재작성 묶음 요청과 모으기 · T-P2 시도 기록과 `proofread_logs` · 웹 조회 함수 — 바뀐 곳은 4 · 8.1 · 10 · 11 · 12절. 2026-10-03 갱신: 공고 서버 연결(T-C2 · G-01) — 바뀐 곳은 2 · 3 · 5 · 11 · 12절. 2026-10-04 갱신: 조율 T-C3 작업 분해 · 지시문 다시 쓰기 — 바뀐 곳은 2 · 11절. 2026-10-05 갱신: 시각 UTC · 실행 로그 12개월 처리 · 탈퇴 함수 · 시작 요청 입력 사본 비우기 — 바뀐 곳은 2 · 8 · 10 · 11 · 12절. **2026-10-06 갱신: Task별 호출 설정 · 이미지 호출 · 산출물층 검증 반영(원페이지 계획서 반영 · G-04 자체 검사 · 대조 보류 · 부분 인정) · 워커 운영 로그 파일 — 바뀐 곳은 2 · 4 · 5 · 8.2 · 9 · 11절**. 2026-10-08 갱신: 기준 문서 v1.10 반영(표시 정리 · 새 판에서 빠졌지만 남긴 필드) · 웹 함수 `missing_projects` — 바뀐 곳은 10 · 11 · 12절. 2026-10-08 갱신(2): 산출물 파일 참조형(파일 창구 · 파일 저장소 · 출력 참조 확인 · 파일 삭제 대기열 · 파일 읽기 · 관리자 함수 · `SBRAIN_ARTIFACT_ROOT`) — 바뀐 곳은 2 · 7 · 8 · 9 · 10 · 11절(11.10 새로). 2026-10-10 갱신: 전략 · 작성 · 검증-1 실구현(담당자 코드 · 함수별 모델 · 계획서 항목 구조 · 검증-1 fail 재수행 · 태그 묶음 재작성 · 사업비 · 일정 입력)의 잠정 · 확장 — 바뀐 곳은 11절(11.11 새로, 11.1 · 11.4 · 11.9의 바뀐 줄 표시). 2026-10-11 갱신: 구현 · 검증-2 실구현(담당자 코드 `partner_bv`) · `CodeCheck.earned` · `applicable` · 조율 규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4) 실구현 · 산출물층 환산 — 바뀐 곳은 2 · 6 · 11(11.12 새로, 11.1 · 11.3 · 11.7 · 11.10 · 11.11의 바뀐 줄 표시) · 12절. 2026-10-13 갱신: 실행별 KIET 검색 스위치 · `tools.search` 호출별 재시도 · 새 재작성 묶음 스위치(지금 꺼짐) · 입력 오류 안내 끝 문장 · 표 대체 안내를 만드는 자리 — 바뀐 곳은 11절(11.13 새로, 11.4 · 11.11의 바뀐 줄 표시).) |
+| 작성일 | 2026-09-26 (2026-10-01 갱신: MySQL 저장소 · 워커 · 웹 연동 함수 · 토큰 기록. 2026-10-02 갱신: 웹 `projects` 쓰기 제거 · 재작성 묶음 요청과 모으기 · T-P2 시도 기록과 `proofread_logs` · 웹 조회 함수 — 바뀐 곳은 4 · 8.1 · 10 · 11 · 12절. 2026-10-03 갱신: 공고 서버 연결(T-C2 · G-01) — 바뀐 곳은 2 · 3 · 5 · 11 · 12절. 2026-10-04 갱신: 조율 T-C3 작업 분해 · 지시문 다시 쓰기 — 바뀐 곳은 2 · 11절. 2026-10-05 갱신: 시각 UTC · 실행 로그 12개월 처리 · 탈퇴 함수 · 시작 요청 입력 사본 비우기 — 바뀐 곳은 2 · 8 · 10 · 11 · 12절. **2026-10-06 갱신: Task별 호출 설정 · 이미지 호출 · 산출물층 검증 반영(원페이지 계획서 반영 · G-04 자체 검사 · 대조 보류 · 부분 인정) · 워커 운영 로그 파일 — 바뀐 곳은 2 · 4 · 5 · 8.2 · 9 · 11절**. 2026-10-08 갱신: 기준 문서 v1.10 반영(표시 정리 · 새 판에서 빠졌지만 남긴 필드) · 웹 함수 `missing_projects` — 바뀐 곳은 10 · 11 · 12절. 2026-10-08 갱신(2): 산출물 파일 참조형(파일 창구 · 파일 저장소 · 출력 참조 확인 · 파일 삭제 대기열 · 파일 읽기 · 관리자 함수 · `SBRAIN_ARTIFACT_ROOT`) — 바뀐 곳은 2 · 7 · 8 · 9 · 10 · 11절(11.10 새로). 2026-10-10 갱신: 전략 · 작성 · 검증-1 실구현(담당자 코드 · 함수별 모델 · 계획서 항목 구조 · 검증-1 fail 재수행 · 태그 묶음 재작성 · 사업비 · 일정 입력)의 잠정 · 확장 — 바뀐 곳은 11절(11.11 새로, 11.1 · 11.4 · 11.9의 바뀐 줄 표시). 2026-10-11 갱신: 구현 · 검증-2 실구현(담당자 코드 `partner_bv`) · `CodeCheck.earned` · `applicable` · 조율 규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4) 실구현 · 산출물층 환산 — 바뀐 곳은 2 · 6 · 11(11.12 새로, 11.1 · 11.3 · 11.7 · 11.10 · 11.11의 바뀐 줄 표시) · 12절. 2026-10-13 갱신: 실행별 KIET 검색 스위치 · `tools.search` 호출별 재시도 · 새 재작성 묶음 스위치(지금 꺼짐) · 입력 오류 안내 끝 문장 · 표 대체 안내를 만드는 자리 — 바뀐 곳은 11절(11.13 새로, 11.4 · 11.11의 바뀐 줄 표시). 2026-10-13 갱신(2): 결과 통합 T-C4 실구현(LLM 없음 · 미달 항목 `shortfallItems` · 계획서 파일 칸 비움 · 누락이면 `E-C4-MISSING` 실행 실패) — 바뀐 곳은 11절(11.14 새로, 11.1 · 11.3 · 11.10의 바뀐 줄 표시).) |
 | 기준 문서 | S-Brain Agent 기능정의서 v1.10 (참고: 프로젝트 기획서 v1.11) |
 | 코드 | `sbrain/` |
-| 테스트 | `tests/` — 1970건 (MySQL 8.0 테스트 DB를 켜면 모두 통과, 없이 1910건 통과 · 60건 건너뜀(MySQL 전용) — 2026-10-11 구현 · 검증-2 연동 뒤. 2026-10-10에는 1759건, MySQL 8.0 테스트 DB를 켜면 모두 통과). 흐름 테스트는 메모리 · SQLite 두 저장소로, 저장소 계약 · 통합은 MySQL 8.0으로도. 조율 T-C1 · T-C3(작업 분해)와 재작성 · 재수행 지시문 다시 쓰기, 조율 규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4, 2026-10-11), 공고 서버 연결 T-C2 · G-01, 전략 · 작성 · 검증-1 여섯 Task(T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1 — 담당자 코드), 구현 · 검증-2 세 Task(T-B1 · T-B2 · T-V2 — 담당자 코드, 2026-10-11)가 실제 구현, 나머지 Agent(검수 · T-C4)는 스텁. 담당자 코드는 가짜 LLM으로, 공고 서버는 가짜 전송 · 127.0.0.1 임시 서버로만, 이미지 호출은 가짜 이미지 호출처로만 시험) |
+| 테스트 | `tests/` — 2136건 (MySQL 8.0 테스트 DB를 켜면 모두 통과 — 2026-10-13 결과 통합 T-C4 실구현 뒤). 그 전 기록: 1970건 (MySQL 8.0 테스트 DB를 켜면 모두 통과, 없이 1910건 통과 · 60건 건너뜀(MySQL 전용) — 2026-10-11 구현 · 검증-2 연동 뒤. 2026-10-10에는 1759건, MySQL 8.0 테스트 DB를 켜면 모두 통과). 흐름 테스트는 메모리 · SQLite 두 저장소로, 저장소 계약 · 통합은 MySQL 8.0으로도. 조율 T-C1 · T-C3(작업 분해)와 재작성 · 재수행 지시문 다시 쓰기, 조율 규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4, 2026-10-11), 공고 서버 연결 T-C2 · G-01, 전략 · 작성 · 검증-1 여섯 Task(T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1 — 담당자 코드), 구현 · 검증-2 세 Task(T-B1 · T-B2 · T-V2 — 담당자 코드, 2026-10-11), 결과 통합 T-C4(LLM 없음, 2026-10-13)가 실제 구현, 나머지 Agent(검수)는 스텁. 담당자 코드는 가짜 LLM으로, 공고 서버는 가짜 전송 · 127.0.0.1 임시 서버로만, 이미지 호출은 가짜 이미지 호출처로만 시험) |
 | 독자 | Orchestrator · 조율 Agent 구현 담당, 웹팀(명령 창구 연동) |
 
 이 문서는 코드에서 도출했다. Task 표는 코드의 Task 등록부에서 뽑았다. Agent 연동 규격은 [Agent_연동_규격_초안.md](Agent_연동_규격_초안.md)에 따로 있다.
@@ -304,7 +304,7 @@ sequenceDiagram
 | `deviation_cap` | 웹 `verification_policies` 값을 설정에 담아만 둔다. 2026-10-10 검증-1 연동 뒤에도 편차 검사를 하지 않아 쓰지 않는다(`varianceFlag` 늘 거짓, 11.11) |
 | 설정 입력 | `verification_policies` 첫 행(배점 · Threshold · 재수행 · 재작성 · 검수 재수행 횟수). 나머지(재시도 · 재개 · 제한 시간 · Task별 모델)는 코드 기본값 — 웹팀 답 대기 |
 | MySQL 접속 | 격리 수준 READ COMMITTED, 계정 잠금 대기 10초(2026-10-05부터 SQLite · 메모리 저장소도 같은 값, 11.6), 점유 시각은 서버 시계(여러 서버면 시계가 맞아야 한다) |
-| 워커의 스텁 Task 호출처 | 구현된 Task(T-C1 · T-C3, 2026-10-04 · T-S1 · T-S2 · T-W1 · T-W2 · T-V1, 2026-10-10 · T-B1 · T-B2 · T-V2, 2026-10-11)와 조율의 지시문 다시 쓰기 호출만 실제 OpenAI로, 나머지 스텁(검수 · T-C4)은 가짜 호출처로 보낸다(`TaskRoutedProvider`). 이미지 호출도 같은 방식(`TaskRoutedImageProvider`, 2026-10-06) — **2026-10-11부터 T-B2 이미지 호출이 실제 이미지 호출처로 나간다** |
+| 워커의 스텁 Task 호출처 | 구현된 Task(T-C1 · T-C3, 2026-10-04 · T-S1 · T-S2 · T-W1 · T-W2 · T-V1, 2026-10-10 · T-B1 · T-B2 · T-V2, 2026-10-11)와 조율의 지시문 다시 쓰기 호출만 실제 OpenAI로, 나머지 스텁(검수)은 가짜 호출처로 보낸다(`TaskRoutedProvider`). T-C4는 2026-10-13 실구현이지만 LLM을 부르지 않아 나누기 대상이 아니다(11.14). 이미지 호출도 같은 방식(`TaskRoutedImageProvider`, 2026-10-06) — **2026-10-11부터 T-B2 이미지 호출이 실제 이미지 호출처로 나간다** |
 | 완전 삭제 중 단계 진행 | 지우지 않고 BUSY — 웹이 다시 부른다 |
 
 ### 11.2 기준 문서에 명시가 없어 해석한 것
@@ -327,7 +327,7 @@ sequenceDiagram
 - 실행 로그 12개월 뒤 식별자 분리 · 통계 전환(기획서 6-7) — 2026-10-05 구현(8.2 ④, 11.6). 탈퇴 때 통계 전환 · 삭제도 함께(`delete_account_data`)
 - 공유 DB에 Orchestrator 테이블 적용 — DDL 파일(`sql/orchestrator_schema.sql`)로 사용자가 한다
 - 공고 서버에 실제로 연결하기 — 연결 코드(`agents/notice/`)는 2026-10-03 완성했다. 공고팀 API(수집 상태 · 공고 상세 · 자격 판정, 추천 결과 키 추가)가 준비되고 확인을 마친 뒤 사용자가 `SBRAIN_NOTICE_API_URL`을 설정해 켠다. 그 전까지 워커는 스텁 공고 · 스텁 판정을 쓴다
-- 실제 Agent 구현. 조율 T-C1은 2026-09-29 구현 — `docs/T-C1_요구사항해석_구현.md`, T-C3는 2026-10-04 구현 — `docs/T-C3_작업분해_구현.md`, 전략 · 작성 · 검증-1 여섯 Task(T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1)는 2026-10-10 담당자 코드를 옮겨 구현(11.11), 구현 · 검증-2 세 Task(T-B1 · T-B2 · T-V2)는 2026-10-11 담당자 코드를 옮겨 구현하고 조율 규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4)도 실구현으로 바꿈(11.12). 검수 Task(G-03 · T-P1 · T-P2)와 F20 · T-C4 계획서 파일 조립은 아직 스텁
+- 실제 Agent 구현. 조율 T-C1은 2026-09-29 구현 — `docs/T-C1_요구사항해석_구현.md`, T-C3는 2026-10-04 구현 — `docs/T-C3_작업분해_구현.md`, 전략 · 작성 · 검증-1 여섯 Task(T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1)는 2026-10-10 담당자 코드를 옮겨 구현(11.11), 구현 · 검증-2 세 Task(T-B1 · T-B2 · T-V2)는 2026-10-11 담당자 코드를 옮겨 구현하고 조율 규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4)도 실구현으로 바꿈(11.12). 결과 통합 T-C4는 2026-10-13 실구현(LLM 없음 — 11.14). 계획서 파일은 웹이 `planDoc`으로 만든다(T-C4는 만들지 않는다 — 담당자 F20은 연결하지 않음). 검수 Task(G-03 · T-P1 · T-P2)는 아직 스텁
 - R-8 첨부 문서 텍스트 추출 (요청 시 구현)
 
 ### 11.4 웹 연동 분리(2026-10-02)에서 생긴 잠정 · 확장
@@ -504,7 +504,7 @@ sequenceDiagram
 | 규칙 단계의 파일 창구 | 등록부 `TaskSpec.writes_files`가 참인 규칙 단계(지금 G-04)만 `run(inp, files)`로 부른다. 재시도 · 제한 시간은 LLM을 부르지 않는 Task와 같게(`task_timeouts`, 없으면 120초) | 확장(엔진) | `orchestrator/registry.py` · `orchestrator/engine.py` `_plain_tools_config`, `flow/catalog.py` |
 | 출력 참조 확인 | 출력 저장 전에 출력 안의 모든 `FileRef`(모델 · 목록 · 사전 재귀)를 대조 — 이 실행 건 · 있음 · 이름 · 형식 · 크기 · `sha256`. 어기면 `ContractError`(어긴 수 · 규칙 종류만). 앞선 실행 기록의 참조를 넘기는 것은 된다 | 확장(엔진) | `orchestrator/engine.py` `check_file_refs` |
 | 이전 원문 참조 | T-B1 재작성 대상 · 재수행만 `prototype.entryFile`로 채우고, 진입 파일이 없으면 비운다(지금 규칙 그대로, 값만 참조) | 확장 | `flow/sbrain_flow.py` `SOURCE_FILE_TASK` · `SOURCE_FILE_KEY` |
-| 스텁 파일 | T-B1 `index.html`, T-B2 원페이지 `onepage.svg` · 그 밖 `infographic.png`(2026-10-11부터 `infographic.svg` — 모든 카테고리 SVG, 11.12), G-04 `README.md`(2026-10-11부터 실구현 템플릿), T-C4 `plan.docx`(자리채움 바이트 · 워드 형식), M-2 감싸기(`assetFiles=[]`), 차트 그림 없음. 스텁 T-V2는 파일을 읽지 않는다(채점 방식 그대로) | 스텁 | `agents/stubs.py` |
+| 스텁 파일 | T-B1 `index.html`, T-B2 원페이지 `onepage.svg` · 그 밖 `infographic.png`(2026-10-11부터 `infographic.svg` — 모든 카테고리 SVG, 11.12), G-04 `README.md`(2026-10-11부터 실구현 템플릿), T-C4 `plan.docx`(자리채움 바이트 · 워드 형식 — 2026-10-13 없앰: T-C4 실구현은 계획서 파일을 넣지 않는다, 11.14), M-2 감싸기(`assetFiles=[]`), 차트 그림 없음. 스텁 T-V2는 파일을 읽지 않는다(채점 방식 그대로) | 스텁 | `agents/stubs.py` |
 | 파일 저장소 | 메모리(`MemoryFileStore`) · 로컬 폴더(`LocalFolderFileStore` — 절대 경로만, 메타데이터는 옆 파일, 임시 파일 → 이름 바꾸기 원자 쓰기, 같은 키 같은 내용이면 성공, 접두어째 지우기는 여러 번 안전). S3는 같은 창구에 나중에 끼운다 | 확장 | `orchestrator/files.py` |
 | 조립 · 환경 변수 | `SBRAIN_ARTIFACT_ROOT` — 절대 경로만, 기본값 없음. 워커(`build_app`) 필수 · 폴더가 없으면 만듦, 웹(`build_web`) 선택 · 읽기 전용(엔진에 넘기지 않음), 스텁 앱 메모리. 웹과 모든 워커가 같은 폴더 | 확장(조립) | `bootstrap.py` `ARTIFACT_ROOT_ENV` · `artifact_root_problem` |
 | 파일 삭제 대기열 표 | `orch_file_deletions`(`deletion_id` · `run_id` 고유 · `key_prefix` · `status` 대기/포기 · `attempts` · `last_error_kind` · 시각 칸 · `retried_by` · `retried_at` · `retry_count`). 계정 · 프로젝트 ID · 파일 이름 · 오류 메시지 없음. `RECORD_TABLES` 밖 · 외래 키 없음 | 확장(표) | `store_sql/schema.py` `FILE_DELETIONS`, `orchestrator/store.py` `FileDeletion` |
@@ -632,6 +632,36 @@ sequenceDiagram
 | 표 대체 안내를 만드는 자리 | T-W3 연결 코드가 표를 바꿀 때 사유 코드(`fallbackReasonCodes` — 표 검사 불통과 `TABLE_STRUCTURE_INVALID`, 검증-1 재수행 뒤는 판정의 코드, 없으면 `F19_VALIDATION_FAILED`)를 정하고 `table_display_reason`이 코드로 여섯 문구 중 하나를 골라 `tableOutputs[항목]`에 저장, `flow/reads.py`는 `tableFallbacks[]`로 옮기기만. 저장 값이 없는 옛 결과는 코드 빈 목록 · 일반 문구 "표를 검증 기준에 맞춰 완성하지 못해 설명으로 표시합니다. 입력 내용과 생성 결과를 확인해 주세요." (담당자 SB-376, 2026-10-13) | 구현 방식(칸 `displayReason`은 2026-10-12, `fallbackReasonCodes` · `SectionResult.fallbackReasonCodes` · `ReworkInput.fallbackReasonCodes`는 2026-10-13 확장) | `agents/partner_sw/writing.py` · `outputs.py` · `verify.py`, `flow/sbrain_flow.py`, `flow/reads.py` `TABLE_FALLBACK_DISPLAY_DEFAULT` |
 
 - 알려진 한계: 새 묶음은 웹이 새 이름을 받기 전에 켜면 웹 결과 조회가 모르는 묶음 이름에서 오류를 낸다(웹팀 답장) — 그래서 웹 배포 날 켜고, 모르는 이름은 건너뛰게 해 달라고 웹팀에 부탁했다. 표 대체 안내는 담당자 SB-376부터 사유 코드로 고른다(낱말 분류 없음). 테스트는 KIET 스위치를 끄고 돌아 실제 KIET 접속은 확인하지 않는다.
+
+### 11.14 결과 통합 T-C4 실구현(2026-10-13)에서 생긴 잠정 · 확장
+
+마지막 조율 Task인 결과 통합(T-C4)을 실구현(LLM 없음, `agents/supervisor/tc4.py`)으로 바꿨다. 근거는 웹팀 답장(2026-10-12) 2절 · 전략 · 작성 · 검증-1 담당자 답(SB-361) · 사용자 결정(2026-10-13)이다. 웹 약속은 [Orchestrator_웹연동_함수명세.md](Orchestrator_웹연동_함수명세.md) 5.2 · 5.4 · 12 · 24절, Agent 약속은 [Agent_연동_규격_초안.md](Agent_연동_규격_초안.md) 6 · 7 · 8.5 · 8.8 · 9절, 기준 문서와 다른 점은 `기준문서_개정필요사항_결과통합.md`에 있다.
+
+**잠정** (`orchestrator/settings.py` `PROVISIONAL`)
+
+| 항목 | 값 · 내용 | `PROVISIONAL` 키 | 코드 |
+|---|---|---|---|
+| 누락이면 실행 실패 · 오류 코드 | 경우 ① 계획서 · 프로토타입 · 인포그래픽 · 점수 보고서 중 없는 것 ② 계획서 항목 0개 ④ 점수 보고서에 검증-2 점수 없음 — 맞는 경우를 모두 모아 `ContractError` 하나 `E-C4-MISSING <경우 번호들>: <빠진 산출물 키 이름들>`(① `planDoc` · `prototype` · `infographic` · `scoreReport.overall`, ② `planDoc.sections`, ④ `scoreReport.overall.artifactScore` — 이 순서). 엔진이 운영 오류로 실패(관리자 알림, 사용자에게는 `E-RUN-FAIL`). 진입 파일 없음(③) · 안내 문서 없음은 누락이 아니다 | `tc4.missing` | `agents/supervisor/tc4.py` `missing_cases` · `missing_error`, `orchestrator/errors.py` |
+| 미달 항목 고정 이름 · 사유 | 통과 필수 조건 이름 · 사유 — `entry` '진입 파일' · '실행할 진입 파일이 없어 산출물층이 0점입니다.', `secret` '비밀값 노출' · '코드에 비밀값(API 키 등)이 들어 있어 산출물층이 0점입니다.', `sandbox` 'sandbox 제한' · '허용되지 않은 브라우저 기능(저장소 등)을 써서 산출물층이 0점입니다.' / 대조 불가 '계획서 대조' · '계획서 대조를 판정하지 못해 0점으로 합산했습니다(대조 불가).' / 빠진 기능 '프로토타입에서 이 기능을 찾지 못했습니다.' / 부분 인정 기능 '프로토타입에 이 기능의 일부만 있습니다.' / `detail`이 빈 코드 점검 '만점을 받지 못했습니다.' / `issues`가 빈 검증-1 fail 'fail' | `tc4.shortfall` | `agents/supervisor/tc4.py` `GATE_NAMES` · `GATE_REASONS` · `WITHHELD_NAME` · `WITHHELD_REASON` · `MISSING_FEATURE_REASON` · `PARTIAL_FEATURE_REASON` · `CODE_CHECK_REASON` · `VERIFY_FAIL_REASON` |
+| 미달 항목 순서 | 문서층(검증-1 판정 목록 순서 = 양식 순서) → 통과 필수 조건(`gateFailures` 순서) → 코드 점검(번호 순) → 대조 불가 → 빠진 기능(받은 순서) → 부분 인정 기능(받은 순서) | `tc4.shortfall` | `agents/supervisor/tc4.py` `shortfall_items` |
+| 안내 문구 `userMessage` | 미달 항목이 없고 총점 통과면 '계획서 · 프로토타입 · 검증 결과를 내려받을 수 있습니다.'(기준 문서 예시) 한 줄. 아니면 그 줄 → 총점 미달이면 '총점 {표시 점수}점으로 기준 점수 {기준}점에 미달합니다.'(점수 보고서 `passed` 거짓일 때, 값은 `displayScore` · `threshold`) → 머리줄 '계획서에서 보완이 필요한 항목:' · '프로토타입에서 보완이 필요한 항목:' 아래 '- 이름 (점수/배점점): 사유'(점수 · 배점이 둘 다 있을 때만 괄호) → '제출 전 작성자 본인의 검토가 필요합니다.' | `tc4.userMessage` | `agents/supervisor/tc4.py` `READY_MESSAGE` · `TOTAL_SHORT_LINE` · `LAYER_HEADINGS` · `REVIEW_LINE` · `user_message` |
+
+- **잠정이 아닌 정한 값 (목록에 올리지 않음):** 계획서 파일을 만들지 않음(웹이 `planDoc`으로 — 웹팀 · 담당자 동의), 미달 항목 넣는 규칙(문서층 = 검증-1 fail만 · 총점이 통과여도 · warning과 입력 없음 제외, 산출물층 = 통과 필수 조건 실패면 그 줄만 · 아니면 코드 점검(부분 점수 포함 · 해당 없음 제외) → 대조 불가면 그 줄만 · 아니면 빠진 · 부분 인정 기능), 점수 출처(화면에 보이는 값 — `docScore.items[]` · 환산 칸 `codeCheckItems` · `featureMatchScore` · `featureMatchMax`), 고지 4칸 문구(기획서 6-8), T-C4 LLM 없음, 워커 · 스텁 조립 한 벌. 모두 사용자 결정(2026-10-13)이다.
+
+**확장 · 구현자 해석**
+
+| 항목 | 값 · 내용 | 표시 | 코드 |
+|---|---|---|---|
+| 미달 항목 타입 · 칸 | 새 타입 `ShortfallItem`(`layer` `document` · `artifact`, `kind` 7개 `verifyFail` · `inputError` · `gateFailure` · `codeCheck` · `featureMatchWithheld` · `missingFeature` · `partialFeature`, `code` · `tag` · `name` · `score` · `maxScore` · `reason`), `Deliverable.shortfallItems`(기본 빈 목록 — 옛 실행 건 호환). 기존 타입에 담을 곳이 없어 새 타입 | 확장(새 타입, `ext()` — note 결정 0030) | `models/domain.py` `ShortfallItem` · `ShortfallKind` · `SHORTFALL_NOTE` |
+| 계획서 파일 칸 선택 | `Deliverable.planDocFile: FileRef \| None`(기본 비움), T-C4는 늘 비움. 값이 있는 옛 실행 건은 그대로 읽힌다. note는 다른 파일 칸과 같은 `FILE_NOTE` | 확장(기준 문서와 다름 — 기준 문서 `planDocPath` 필수 · 조립은 조율) | `models/domain.py` `Deliverable` |
+| T-C4 입력 | `plan_doc` · `prototype` · `infographic` · `score_report`를 선택 입력으로(엔진 입력 확인이 아니라 T-C4가 한 오류 코드로 판단 — 네 경우가 같은 실패 기록을 남기게), 확장 입력 `section_results`(산출물 키 `sectionResults`, 선택 — G-02b와 같은 검증-1 항목 판정, 없으면 문서층 미달 항목 없음). 검수 로그는 필수 그대로 | 확장(`ext()`, note `TC4_NOTE` — 기준 문서는 필수) | `contracts/tasks.py` `TC4In` · `TC4_NOTE`, `flow/catalog.py` |
+| 오류 코드 `E-C4-MISSING` | 위치 T-C4, 사용자 노출 문구 없음, 처리 '실행 실패 · 관리자 알림'. 메시지에는 경우 번호와 산출물 키 이름만(내용 · 파일 이름 · 키 없음) | 확장 · 잠정 | `orchestrator/errors.py` `ERROR_CODES` |
+| LLM 없는 조율 Task 묶기 표 | `PLAIN_TASKS = {"T-C4": tc4.run}`(+ `PLAIN_TASK_IDS` · `bind_plain_tasks`). 규칙 단계 표 `RULES` · `RULE_TASKS`(한 인자 함수)와 실제 호출처 나누기 대상 `IMPLEMENTED`에는 넣지 않는다. 워커 조립 `bind_supervisor`와 스텁 조립 `bind_stubs`가 같은 함수를 묶고, 스텁은 실패 흉내 `raise_in`만 두 인자 감싸기 `_with_task_faults`로 감싼다 | 구현 방식(한 벌) | `agents/supervisor/__init__.py`, `agents/stubs.py` |
+| 스텁 자리채움 삭제 | 스텁 T-C4 · `PLAN_DOC_FILE` · 자리채움 내용 · T-C4만 쓰던 워드 형식 상수를 없앰. 고지 문구 상수는 `tc4.py` 한 곳. 파일 창구 허용 형식 8종은 그대로 | 스텁 | `agents/stubs.py` · `agents/supervisor/tc4.py` |
+| 환산 칸이 빈 옛 보고서 | 코드 점검 줄 · 대조 불가 점수는 `flow/score_scale.py` `scaled_report_fields(score_maxes(settings_snapshot), artifactScore)`를 한 번 불러 같은 값을 쓴다(환산 공식을 다시 쓰지 않는다) | 구현 규칙 | `agents/supervisor/tc4.py` `_scaled` |
+| 기록에 싣지 않음 | 미달 항목 · 안내 문구는 산출물 값(웹 결과 조회 `deliverable` · `userMessage`)에만 있고 실행 기록 · 사건 · 워커 운영 로그 · 관리자 조회 · 예외 메시지에 넣지 않는다 | 보안 규칙 | `agents/supervisor/tc4.py` |
+
+- 알려진 한계: 코드 점검 줄의 점수는 환산 칸 값 그대로라 반올림 몰아주기(11.12) 때문에 0점 항목이 `0.01`처럼 보일 수 있다. 검증-1 fail 항목은 입력 없음 칸이 참이어도 넣는다(담당자 판정에서 입력 없음은 warning이라 실제로는 겹치지 않는다). 진입 파일 없음은 검증-2가 통과 필수 조건 `entry`를 채울 때만 미달 항목으로 보인다(그 칸을 채우지 않는 스텁 검증-2 흐름에서는 줄이 없다). 웹 화면 쪽 전달 보류 화면 · 제출 요건 안내 표시는 웹팀 답 대기다.
 
 ## 12. 테스트 목록
 

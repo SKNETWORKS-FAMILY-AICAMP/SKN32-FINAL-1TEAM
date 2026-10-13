@@ -2,11 +2,23 @@
 
 | 항목 | 내용 |
 |---|---|
-| 작성일 | 2026-10-01 (2026-10-02 갱신 — 웹 더미 파이프라인 떼어 내기. 2026-10-03 갱신 — 공고 서버 연결. 2026-10-04 갱신 — 작업 분해(T-C3)가 고른 평가 항목. 2026-10-05 갱신 — 시각 UTC · 실행 로그 12개월 처리 · 탈퇴 함수. 2026-10-06 갱신 — 산출물층 결과 확장 필드 · 관리자 이미지 토큰 · 새 사건 종류 · Task별 모델 설정. 2026-10-08 갱신 — 기준 문서 v1.10 반영 · 새 함수 `missing_projects`. 2026-10-08 갱신(2) — 산출물 파일 참조형 · 새 함수 3개 · 새 오류 코드 · `SBRAIN_ARTIFACT_ROOT`. 2026-10-10 갱신 — 전략 · 작성 · 검증-1 실구현: 계획서 항목 구조 · 평가항목 = 계획서 항목 · 태그 묶음 재작성 · 사전 정보 사업비 · 일정 테이블. 2026-10-11 갱신 — 구현 · 검증-2 실구현: 점수 보고서 환산 칸 · `codeCheck` 항목의 `earned` · `applicable` · 관리자 조회 만점 칸 · 인포그래픽은 모든 카테고리 SVG. 2026-10-12 갱신 — 전략 · 작성 · 검증-1 담당자 새 판: 표 대체 사유 칸 `tableFallbacks` · 항목 제목 · 평가항목 이름 값 변화 · 입력 오류 안내. 2026-10-13 갱신 — 입력 오류 안내 끝 문장 · 새 재작성 묶음 `일반현황 · 개요` · `그림`(스위치, 지금 꺼짐) · 표 대체 안내 `displayReason`을 만드는 자리. 2026-10-13 갱신(2) — `tableFallbacks[]`에 사유 코드 칸 `fallbackReasonCodes`) |
+| 작성일 | 2026-10-01 (2026-10-02 갱신 — 웹 더미 파이프라인 떼어 내기. 2026-10-03 갱신 — 공고 서버 연결. 2026-10-04 갱신 — 작업 분해(T-C3)가 고른 평가 항목. 2026-10-05 갱신 — 시각 UTC · 실행 로그 12개월 처리 · 탈퇴 함수. 2026-10-06 갱신 — 산출물층 결과 확장 필드 · 관리자 이미지 토큰 · 새 사건 종류 · Task별 모델 설정. 2026-10-08 갱신 — 기준 문서 v1.10 반영 · 새 함수 `missing_projects`. 2026-10-08 갱신(2) — 산출물 파일 참조형 · 새 함수 3개 · 새 오류 코드 · `SBRAIN_ARTIFACT_ROOT`. 2026-10-10 갱신 — 전략 · 작성 · 검증-1 실구현: 계획서 항목 구조 · 평가항목 = 계획서 항목 · 태그 묶음 재작성 · 사전 정보 사업비 · 일정 테이블. 2026-10-11 갱신 — 구현 · 검증-2 실구현: 점수 보고서 환산 칸 · `codeCheck` 항목의 `earned` · `applicable` · 관리자 조회 만점 칸 · 인포그래픽은 모든 카테고리 SVG. 2026-10-12 갱신 — 전략 · 작성 · 검증-1 담당자 새 판: 표 대체 사유 칸 `tableFallbacks` · 항목 제목 · 평가항목 이름 값 변화 · 입력 오류 안내. 2026-10-13 갱신 — 입력 오류 안내 끝 문장 · 새 재작성 묶음 `일반현황 · 개요` · `그림`(스위치, 지금 꺼짐) · 표 대체 안내 `displayReason`을 만드는 자리. 2026-10-13 갱신(2) — `tableFallbacks[]`에 사유 코드 칸 `fallbackReasonCodes`. 2026-10-13 갱신(3) — 결과 통합(T-C4) 실구현: `deliverable.planDocFile` 선택 칸 · 늘 `null`, 미달 항목 칸 `shortfallItems`, 안내 문구 `userMessage` 내용, 산출물이 빠지면 실행 실패) |
 | 상태 | 함수 이름 · 인자 · 결과 필드 · 오류 코드는 **구현 완료**. 화면 조회(5.1절)의 화면별 모양은 **초안** — 웹팀과 맞춰 고친다 |
 | 근거 | 기능정의서 v1.10, 웹팀 합의(2026-09-30) 1~10번, 웹팀 회신(2026-10-05) |
 | 코드 | `sbrain/` — 명령 창구 `flow/service.py`(`SBrainOrchestrator`), 화면 · 결과 · 관리자 조회 · 파일 읽기 `flow/reads.py`, 파일 참조 `models/files.py`, 파일 저장소 `orchestrator/files.py`, 파일 삭제 대기열 처리 `orchestrator/file_deletion.py`, 재작성 묶음 `flow/rework_map.py`, 산출물층 환산 `flow/score_scale.py`, 조립 `bootstrap.py`, 워커 `worker.py`, 웹 테이블 쓰기 `store_sql/web_tables.py`, 시각 `models/clock.py`, 실행 로그 12개월 처리 `flow/retention.py` · 통계 줄 `flow/log_stats.py` |
 | 독자 | 웹팀(백엔드) |
+
+### 2026-10-13 바뀐 점 (3) — 결과 통합(T-C4) 실구현 · 미달 항목 `shortfallItems` · 계획서 파일 칸 비움
+
+마지막 조율 Task인 결과 통합(T-C4)을 스텁에서 실구현(LLM 없음)으로 바꿨다. 웹팀 답장(2026-10-12) 2절과 전략 · 작성 · 검증-1 담당자 답(SB-361)을 따랐다. **함수 이름 · 인자 · 오류 코드는 그대로다.** 화면 11과 `outputs`의 `deliverable`에 확장 칸 하나가 늘고, `planDocFile`이 늘 `null`이 되며, `userMessage`의 내용이 바뀐다.
+
+| 구분 | 내용 | 절 |
+|---|---|---|
+| 계획서 파일 | **계획서 파일은 웹이 `planDoc`으로 만든다(T-C4는 만들지 않는다).** `deliverable.planDocFile`은 선택 칸(`FileRef` 또는 `null`)으로 바뀌었고 T-C4는 늘 `null`로 둔다. 스텁의 자리채움 파일 `plan.docx`도 없앴다. 이미 저장된 옛 실행 건의 값은 그대로 읽힌다. **웹 계약 테스트의 가짜 오케스트레이터도 `null`로 맞춰 달라** | 5.2 · 5.4 |
+| 미달 항목 `shortfallItems` | `deliverable`의 새 확장 칸(새 타입 `ShortfallItem` — `layer` · `kind` · `code` · `tag` · `name` · `score` · `maxScore` · `reason`). 계획서(문서층)와 프로토타입(산출물층)에서 모자란 항목을 한 줄씩 준다. `kind`는 7개 — `verifyFail` · `inputError` · `gateFailure` · `codeCheck` · `featureMatchWithheld` · `missingFeature` · `partialFeature`. 옛 실행 건 · 모자란 항목이 없으면 빈 목록. Orchestrator는 모두 주고 웹이 골라 보인다 | 5.2 |
+| 안내 문구 `userMessage` | 모자란 항목이 없고 총점이 통과면 "계획서 · 프로토타입 · 검증 결과를 내려받을 수 있습니다." 한 줄(기준 문서 예시). 아니면 총점 미달 줄 · 층별 항목 줄 · 본인 검토 안내 줄이 붙는다(문구 잠정) | 5.2 |
+| 산출물이 빠지면 | 계획서 · 프로토타입 · 인포그래픽 · 점수 보고서 중 하나가 없거나, 계획서 항목이 0개이거나, 점수 보고서에 검증-2 점수가 없으면 T-C4가 실행 건을 **실패**로 끝낸다(관리자 실패 사유 `T-C4: 운영오류 — ContractError: E-C4-MISSING …`). 사용자에게는 지금 실패 실행 건과 같이 `E-RUN-FAIL`이고 `outputs`는 `RUN_NOT_VIEWABLE`이다. 정상 흐름에서는 생기지 않는다. 진입 파일 없음 · 안내 문서 없음은 실패가 아니다(진입 파일 없음은 미달 항목 `gateFailure`로 보인다) | 5.2 |
+| 잠정 · 확장 값 | 24절 | 24 |
 
 ### 2026-10-13 바뀐 점 (2) — 표 대체 사유 코드 칸 `fallbackReasonCodes`
 
@@ -580,7 +592,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | `evaluationItems` | **확장(2026-10-04).** 작업 분해(T-C3)가 신청자 유형으로 고른 평가 항목 `EvalItem` 목록(현재 버전) — 항목마다 `itemCode` · `itemName` · `maxScore` · `description`. 작업 분해 전이면 빈 목록. 점수 항목 이름은 `docScore.items[].itemCode`를 이 목록의 `itemCode`와 맞춰 `itemName`으로 만든다. **평가항목 = 계획서 항목**이다(2026-10-10) — 항목마다 `itemCode` = 항목 번호(예: `2.4.1`), `itemName` = 항목 제목 앞 40자(잠정), `maxScore` = 70 ÷ 항목 수(기본 배점 기준), `description` = 담당자 작성 지시(전에는 '항목 제목 전체'였고 그 제목이 작성 지시였다). **2026-10-12부터 항목 제목은 양식 원래 제목(짧은 이름)이다** — `itemName`이 짧아진다(예: '기술개발 개요'). 이미 만든 실행 건은 그대로다 |
 
 - 실행 건이 실패 · 중단이면 `CommandError("RUN_NOT_VIEWABLE")`(기준 문서 E-RUN-FAIL — 결과를 볼 수 없음. 공고 마감 안내 `E-RUN-CLOSED`와 다른 코드). 실행 건이 없으면 `RUN_NOT_FOUND`.
-- **산출물 파일 (2026-10-08 바뀜):** `prototype` · `infographic` · `planDoc.charts[]` · `deliverable`의 파일 칸은 파일 참조(`FileRef`)다(5.4). 결과에는 파일 내용이 없고, 파일은 참조의 `key`로 `read_artifact_file`(5.5)을 불러 받는다. 2026-10-11부터 워커의 구현 · 검증-2(T-B1 · T-B2 · T-V2)와 안내 문서(G-04)는 실구현이다 — 진입 파일 `index.html`(LLM이 만든 HTML), 인포그래픽 원페이지 `onepage.svg` · 웹개발 · AI API `infographic.svg`(모든 카테고리 SVG), 안내 문서 `README.md`(템플릿). 계획서 파일 `plan.docx`는 지금도 스텁 T-C4의 자리채움 파일이고, 차트 그림은 없다.
+- **산출물 파일 (2026-10-08 바뀜):** `prototype` · `infographic` · `planDoc.charts[]` · `deliverable`의 파일 칸은 파일 참조(`FileRef`)다(5.4). 결과에는 파일 내용이 없고, 파일은 참조의 `key`로 `read_artifact_file`(5.5)을 불러 받는다. 2026-10-11부터 워커의 구현 · 검증-2(T-B1 · T-B2 · T-V2)와 안내 문서(G-04)는 실구현이다 — 진입 파일 `index.html`(LLM이 만든 HTML), 인포그래픽 원페이지 `onepage.svg` · 웹개발 · AI API `infographic.svg`(모든 카테고리 SVG), 안내 문서 `README.md`(템플릿). 2026-10-13부터 결과 통합(T-C4)도 실구현이고 계획서 파일은 만들지 않는다 — `deliverable.planDocFile`은 늘 `null`이다(계획서 파일은 웹이 `planDoc`으로 만든다, 아래). 차트 그림은 없다.
 - `codeCheck` · `featureMatch`의 확장 필드(`gateFailures` · `defectSources` · `withheld` · `withheldReason` · `partialFeatures`, 2026-10-11 `earned` · `applicable`)는 5.1 표와 같다.
 
 **계획서 모양 (2026-10-10)** — 화면 6 · 11과 `outputs`의 `planDoc`, `rework_result`의 `planBefore` · `planAfter`가 같은 모양이다. 계약 칸은 확장만 늘었다.
@@ -598,12 +610,105 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 - `docScore.items[]`는 계획서 항목마다 하나다 — `itemCode` · `evidenceLocator` = 항목 번호, `score` = 항목 점수(소수 둘째 자리), `maxScore` = 실행 설정 문서층 배점 ÷ 항목 수, `comment` = 감점 사유(없으면 '감점 없음'). 항목 점수를 더하면 문서층 총점(`total`)이다. 배점은 실행 시작 때 고정한 `verification_policies` 값을 쓴다(관리자가 60으로 바꾸면 그 뒤 실행은 60 기준).
 - `varianceFlag`는 늘 거짓이다. 편차 상한(`verification_policies.deviation_cap`)은 읽어 두기만 하고 쓰지 않는다.
 
-**계획서 내려받기는 웹이 만든다 (2026-10-10)** — 계획서 파일 조립(담당자 F20 · T-C4)은 이번 범위 밖이다. 웹은 `planDoc`으로 내려받기를 만든다.
+**계획서 내려받기는 웹이 만든다 (2026-10-10, 2026-10-13 확정)** — 계획서 파일은 웹이 `planDoc`으로 만든다(T-C4는 만들지 않는다 — 웹팀 · 전략 · 작성 · 검증-1 담당자 동의, 기준 문서의 "계획서 파일 조립은 조율"과 다르다). 웹은 기준 문서대로 첫 장에 `deliverable.disclaimer`를, 본문에 인포그래픽(`deliverable.infographicFile`)을 넣는다(웹팀 답장 2026-10-12).
 
 1. `sections`를 양식 순서대로 잇는다 — 항목 제목 다음에 `sentences[].text`(같은 `paragraphNo`는 한 문단). 웹 계획서 화면처럼 태그별로 모으려면 `tag`로 묶는다.
 2. `contentType = 'table'` 항목은 같은 `sourceRef`의 `tables[]`로 표를 그리고 서술 문장을 함께 둔다(표가 없으면 대체 본문만).
 3. `contentType = 'image'` 항목은 같은 `sourceRef`의 `diagrams[]`마다 `imageFile.key`로 `read_artifact_file`(5.5)을 불러 SVG를 받아 넣는다.
-4. 지금 `deliverable.planDocFile`은 스텁 T-C4의 자리채움 파일이라 쓰지 않는다.
+4. `deliverable.planDocFile`은 2026-10-13부터 늘 `null`이다(선택 칸 — T-C4는 계획서 파일을 만들지 않는다). 그 전에 만든 옛 실행 건에는 스텁의 자리채움 파일 참조가 남아 있을 수 있는데, 계획서 내용이 아니므로 읽지 않는다.
+
+**결과물 묶음 `deliverable` (2026-10-13 — 결과 통합 T-C4 실구현)** — 화면 11의 `deliverable`과 `outputs`의 `deliverable`이 같은 값이다(`Deliverable`, `.dump()`는 camelCase · `null`도 키가 있음). T-C4는 LLM을 부르지 않고 규칙으로 만든다.
+
+| 칸 (JSON) | 값 |
+|---|---|
+| `planDocFile` | **늘 `null`**(선택 칸 — 2026-10-13 전에는 필수 칸). 계획서 파일은 웹이 `planDoc`으로 만든다 |
+| `prototypeFiles` | `FileRef` 목록 — 진입 파일(있으면) · 안내 문서(있으면) · 자산 순(그대로) |
+| `infographicFile` | 인포그래픽 `FileRef`(그대로) |
+| `scoreReport` · `proofreadLog` | 종합 점수 보고서 · 검수 기록(그대로) |
+| `disclaimer` · `prototypeNotice` · `scoreNotice` · `submissionNotice` | 고지 4칸 — 문구 그대로(기획서 6-8). `disclaimer` = "본 문서는 S-Brain이 생성한 초안입니다. 제출 전 작성자 본인의 확인과 수정이 필요합니다.", `submissionNotice` = "공고에 따라 AI 작성 문서의 제출을 제한하거나 명시를 요구할 수 있습니다. 제출 요건을 확인해주세요." |
+| `shortfallItems` | **확장(2026-10-13).** 미달 항목 `ShortfallItem` 목록(아래). 모자란 항목이 없거나 이 칸이 없던 옛 실행 건이면 빈 목록 |
+
+**`ShortfallItem` 한 줄**
+
+| 칸 (JSON) | 타입 | 뜻 |
+|---|---|---|
+| `layer` | `"document"` · `"artifact"` | 층 — 계획서(문서층) · 프로토타입(산출물층) |
+| `kind` | 아래 7개 중 하나 | 종류 |
+| `code` | 글자 또는 `null` | 문서층 = 계획서 항목 번호(예: `2.5.2`), `codeCheck` = 점검 번호 글자(`"1"` ~ `"8"`), `gateFailure` = 어긴 조건 코드(`entry` · `secret` · `sandbox`), 그 밖 = `null` |
+| `tag` | 글자 또는 `null` | 문서층 = 검증-1 판정의 웹 태그(예: `1-1`, 없으면 `null`), 산출물층 = `null` |
+| `name` | 글자 | 문서층 = 계획서 항목 제목(`planDoc.sections`의 같은 번호 `title`, 없으면 항목 번호), `codeCheck` = 점검 이름, 기능 줄 = 기능 이름, 그 밖 = 고정 이름(잠정 — 아래) |
+| `score` · `maxScore` | 숫자 또는 `null` | 화면에 보이는 점수 · 배점 그대로(아래 '점수 출처'). 없으면 둘 다 `null` |
+| `reason` | 글자 | 사유 — 판정 글을 옮기거나 고정 문구(잠정) |
+
+**`kind` 값 (이 7개뿐)**
+
+| `kind` | `layer` | 언제 |
+|---|---|---|
+| `verifyFail` | `document` | 검증-1 판정이 fail이고 입력 오류가 아님 |
+| `inputError` | `document` | 검증-1 판정이 fail이고 입력 오류(`inputError` 참 — 5.1 입력 오류 안내) |
+| `gateFailure` | `artifact` | 검증-2 통과 필수 조건(`codeCheck.gateFailures`)을 어김 — 어긴 조건마다 한 줄 |
+| `codeCheck` | `artifact` | 코드 점검 항목이 만점이 아님(`passed` 거짓)이고 해당 있음(`applicable` 참) — **부분 점수 항목도 넣는다** |
+| `featureMatchWithheld` | `artifact` | 계획서 대조가 판정 보류(`featureMatch.withheld` — "대조 불가") |
+| `missingFeature` | `artifact` | 계획서 대조의 빠진 기능(`featureMatch.missingFeatures`) 하나마다 |
+| `partialFeature` | `artifact` | 계획서 대조의 부분 인정 기능(`featureMatch.partialFeatures`) 하나마다 |
+
+**넣는 규칙** — 판정 칸으로만 가른다(판정 글을 읽어 가르지 않는다).
+
+- **문서층:** 검증-1 항목 판정 가운데 fail인 항목만 넣는다. **총점이 통과여도 넣는다**(담당자 SB-361 — fail이 남아도 초안으로 주고 미달 항목을 함께 보인다). warning은 넣지 않는다 — 사업비 · 일정 입력이 비어 생긴 경고(입력 없음)도 넣지 않는다(점수 보고서의 '입력 확인 필요' 안내로 이미 보인다). 표를 본문 서술로 바꾼 항목도 fail이면 넣는다 — 그 항목은 `tableFallbacks`(5.1)에도 함께 나온다. 검증-1 판정 목록이 없는 옛 실행 건이면 문서층 줄은 없다.
+- **산출물층:**
+  - 통과 필수 조건을 어겼으면 어긴 조건마다 `gateFailure` 한 줄**만** 넣는다. 그때 코드 점검 · 대조 줄은 넣지 않는다(코드 점검 8칸이 모두 0점, 기능은 모두 빠진 기능으로 잡혀 원인이 묻히므로 원인만 보인다).
+  - 그렇지 않으면 `codeCheck` 줄들을 넣고, 이어서 계획서 대조가 판정 보류면 `featureMatchWithheld` 한 줄**만**(기능 줄 없음), 보류가 아니면 `missingFeature` · `partialFeature` 줄들을 넣는다.
+- 진입 파일이 없으면 검증-2가 통과 필수 조건 `entry`로 판정해 `gateFailure`(`code` = `entry`) 줄로 보인다(T-C4가 `prototype.entryFile`을 직접 보지는 않는다).
+- **웹이 골라 보여도 된다.** Orchestrator는 위 줄을 모두 준다 — 예를 들어 부분 점수 `codeCheck` 줄을 화면에서 빼도 된다.
+
+**순서 (잠정)** — 문서층(검증-1 판정 목록 순서 = 양식 순서) → `gateFailure`(`gateFailures` 순서) → `codeCheck`(점검 번호 순) → `featureMatchWithheld` → `missingFeature`(받은 순서) → `partialFeature`(받은 순서).
+
+**점수 출처** — 화면에 이미 보이는 값을 그대로 옮긴다.
+
+| `kind` | `score` · `maxScore` | `reason` |
+|---|---|---|
+| `verifyFail` · `inputError` | 점수 보고서 `docScore.items[]` 중 `itemCode`가 그 항목 번호인 줄의 `score` · `maxScore`(없으면 둘 다 `null`) | 검증-1 판정 문제(`issues`)를 ` · `로 이은 글(비면 `fail`) |
+| `gateFailure` | `null` · `null` | 조건별 고정 문구(잠정 — 아래) |
+| `codeCheck` | 점수 보고서 환산 칸 `codeCheckItems`(5.1)의 같은 번호 줄 `earned` · `weight` — 그 실행 건 배점 기준 | 그 줄의 `detail`(환산 칸 글 그대로, '환산 점수/환산 배점점 — 근거'). 빈 글이면 "만점을 받지 못했습니다." |
+| `featureMatchWithheld` | 점수 보고서 `featureMatchScore` · `featureMatchMax`(환산 칸) | "계획서 대조를 판정하지 못해 0점으로 합산했습니다(대조 불가)." |
+| `missingFeature` | `null` · `null` | "프로토타입에서 이 기능을 찾지 못했습니다." |
+| `partialFeature` | `null` · `null` | "프로토타입에 이 기능의 일부만 있습니다." |
+
+- 환산 칸이 빈 옛 점수 보고서는 판정 G-02b와 같은 환산 규칙으로 한 번 계산해 같은 값을 쓴다.
+- 코드 점검 줄의 `score` · `maxScore`는 반올림 몰아주기(21절) 때문에 0점 항목도 `0.01`처럼 보일 수 있다 — 환산 칸 값 그대로다.
+
+**고정 이름 · 사유 (잠정)**
+
+| `kind` · `code` | `name` | `reason` |
+|---|---|---|
+| `gateFailure` · `entry` | 진입 파일 | 실행할 진입 파일이 없어 산출물층이 0점입니다. |
+| `gateFailure` · `secret` | 비밀값 노출 | 코드에 비밀값(API 키 등)이 들어 있어 산출물층이 0점입니다. |
+| `gateFailure` · `sandbox` | sandbox 제한 | 허용되지 않은 브라우저 기능(저장소 등)을 써서 산출물층이 0점입니다. |
+| `featureMatchWithheld` | 계획서 대조 | 계획서 대조를 판정하지 못해 0점으로 합산했습니다(대조 불가). |
+
+**`userMessage` (안내 문구, 잠정)** — 줄은 `\n`으로 잇는다.
+
+- 미달 항목이 없고 총점이 통과면 이 한 줄뿐이다(기준 문서 T-C4 예시 그대로): `계획서 · 프로토타입 · 검증 결과를 내려받을 수 있습니다.`
+- 미달 항목이 있거나 총점이 미달이면 아래 순서로 줄을 잇는다.
+  1. `계획서 · 프로토타입 · 검증 결과를 내려받을 수 있습니다.`
+  2. 총점 미달이면: `총점 {score}점으로 기준 점수 {threshold}점에 미달합니다.` — 총점 미달은 점수 보고서의 `passed`가 거짓인 것, 값은 표시 값 `displayScore` · `threshold`
+  3. 문서층 줄이 있으면 머리줄 `계획서에서 보완이 필요한 항목:`, 그 아래 항목마다 한 줄
+  4. 산출물층 줄이 있으면 머리줄 `프로토타입에서 보완이 필요한 항목:`, 그 아래 항목마다 한 줄
+  5. `제출 전 작성자 본인의 검토가 필요합니다.`
+- 항목 줄은 `- {name} ({score}/{maxScore}점): {reason}`이다. `score` · `maxScore`가 둘 다 있을 때만 괄호가 붙고, 아니면 `- {name}: {reason}`. 숫자는 끝의 0을 뺀 꼴(예: `2.8`, `15`)이다. 순서는 `shortfallItems`와 같다.
+- `userMessage`는 `shortfallItems`를 글로 옮긴 것이다. 항목별로 보여 줄 때는 `shortfallItems`를 쓴다.
+
+**산출물이 빠졌을 때 (실행 실패)** — T-C4는 먼저 아래를 본다. 하나라도 맞으면 결과물 묶음을 만들지 않고 실행 건을 실패로 끝낸다.
+
+| 경우 | 내용 |
+|---|---|
+| ① | 계획서(`planDoc`) · 프로토타입(`prototype`) · 인포그래픽(`infographic`) · 종합 점수 보고서 중 하나라도 없음 |
+| ② | 계획서 항목(`planDoc.sections`)이 0개 |
+| ④ | 점수 보고서에 검증-2 점수(`artifactScore`)가 없음 |
+
+- 실행 건 진행 상태 '실패', 관리자 실패 알림 대상(`generation_failure_alerts`), 관리자 실패 사유 `T-C4: 운영오류 — ContractError: E-C4-MISSING <경우 번호들>: <빠진 산출물 키 이름들>`(예: `E-C4-MISSING ①④: prototype, scoreReport.overall.artifactScore` — 산출물 내용 · 파일 이름은 없다). 오류 코드 `E-C4-MISSING`은 사용자 노출 문구가 없는 확장 코드다.
+- 사용자에게는 지금 실패한 실행 건과 같다 — `notices`의 `E-RUN-FAIL`(10.1), `outputs` · `rework_result`는 `RUN_NOT_VIEWABLE`. 웹 함수 · 오류 코드는 그대로다.
+- 정상 흐름(앞 단계가 모두 성공한 실행 건)에서는 생기지 않는다. 진입 파일 없음(③ — 기준 문서대로 생기는 정상 경로)과 실행 안내 문서 없음은 실패가 아니다.
 
 ### 5.3 `rework_result(project_id) -> ReworkResult | None` (2026-10-02 새로)
 
@@ -645,7 +750,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 | `prototype` | `readmePath` | `readmeFile` — 실행 안내 문서, `FileRef` 또는 `null` |
 | `infographic` (화면 8 · 11, `outputs`) | `imagePath` | `imageFile` — `FileRef`. 2026-10-11부터 모든 카테고리 SVG(`image/svg+xml`) — 원페이지는 지면 `onepage.svg`, 웹개발 · AI API는 `infographic.svg` |
 | `planDoc.charts[]` (화면 6 · 11, `outputs`) | `imagePath` | `imageFile` — `FileRef` 또는 `null`(그림 없음) |
-| `deliverable` (화면 11, `outputs`) | `planDocPath` | `planDocFile` — 계획서 파일 `FileRef` |
+| `deliverable` (화면 11, `outputs`) | `planDocPath` | `planDocFile` — 계획서 파일 `FileRef`. **2026-10-13부터 선택 칸 · 늘 `null`**(계획서 파일은 웹이 `planDoc`으로 만든다 — 5.2) |
 | `deliverable` | `prototypePath` | `prototypeFiles` — `FileRef` 목록: 진입 파일(있으면) · 안내 문서(있으면) · 자산 순 |
 | `deliverable` | `infographicPath` | `infographicFile` — `FileRef` |
 | `rework_result().files[]` | `beforePath` · `afterPath` | `beforeFile` · `afterFile`(5.3) |
@@ -1136,7 +1241,9 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | 입력 오류 안내 표시 (2026-10-12) | 점수 보고서 `notices`의 입력 오류 안내(5.1)와 재작성 권유(점수 미달이면 4개 묶음 모두 후보)가 서로 어긋나 보이지 않게 보여 달라. **2026-10-13:** 웹팀 답 — 항목 번호는 필요 없음, 웹에 프로젝트 복사 기능은 없음. 그래서 안내 끝 문장을 "이대로 진행하거나, 입력을 고쳐 새로 만들 수 있습니다."로 바꿨다(5.1) |
 | 입력 화면 검사 (2026-10-12 요청, 2026-10-13 바뀜) | 협약기간 내 일정 row의 추진기간 종료월이 개발 종료월을 넘지 않는지 입력 때 막아 달라(사용자 입력끼리의 검사 — 웹팀 반영 끝, 화면과 `POST /projects` 422). **협약기간 최대 개월 수도 막아 달라(2026-10-13 바뀜):** 담당자 답으로 2026년 공고 기준 고정값(예비창업자 8개월, 개인사업자 · 법인 10개월)이 정해져, 전에 부탁한 "막지 말고 안내만"을 바꾼다. 세는 법은 검증-1과 같다 — 협약기간 내 일정 row만(협약 이후 일정 제외), 각 row 추진기간에서 `(20\d{2})[-./~년\s]*(\d{1,2})`로 찾은 달(월 1 ~ 12만) 중 가장 이른 달부터 가장 늦은 달까지, 첫 달과 끝 달을 모두 센 개월 수(예: 2026-03 ~ 2026-10 = 8개월). 달을 하나도 못 읽으면 검사하지 않는다. "공고마다 다를 수 있습니다" 안내는 이 기준으로 바꿔 달라. 공고 지원 금액 상한은 공고를 고른 뒤에야 알 수 있어 입력 화면에서는 막을 수 없다 |
 | 태그 없는 항목 표시 (2026-10-10) | `tag = null` 항목(일반현황 · 개요 · 그림)을 웹 계획서 화면 · 내려받기의 어디에 둘지 웹팀이 정한다(5.2) |
-| 계획서 내려받기 (2026-10-10) | 웹이 `planDoc`으로 만든다(5.2). F20 · T-C4 계획서 파일 조립은 범위 밖 |
+| 계획서 내려받기 (2026-10-10, 2026-10-13 확정) | 계획서 파일은 웹이 `planDoc`으로 만든다(T-C4는 만들지 않는다 — 5.2). 첫 장 고지(`deliverable.disclaimer`) · 인포그래픽은 웹이 넣는다(웹팀 답장 2026-10-12). `deliverable.planDocFile`은 늘 `null` — 웹 계약 테스트의 가짜 오케스트레이터도 맞춰 달라 |
+| 미달 항목 표시 (2026-10-13) | 웹팀 답장대로 구조 칸 `deliverable.shortfallItems`로 준다(5.2). 화면 11에 무엇을 보일지(부분 점수 코드 점검 줄을 뺄지 등)는 웹이 고른다. `userMessage`도 웹 `/result`에 실어 달라 |
+| 전달 보류 화면 · 제출 요건 안내 (2026-10-13) | 산출물이 빠지면 실행 실패로 끝나므로(5.2) Orchestrator 쪽에 '전달 보류' 상태는 따로 없다. 화면 의견(웹팀 2-5) · 내려받기 화면의 `deliverable.submissionNotice` 표시(2-6)는 웹팀 답 대기 |
 | 사업비 · 일정 필수 확인 (2026-10-10) | 웹 입력 화면 배포를 알려 주면 Orchestrator 필수 확인을 켠다(3.1). `phase` 컬럼 추가와 음수 · 합계 불일치 막기는 웹 몫(합의, 4.4). 금액 칸이 비는 row도 입력 때 막아 줄 수 있는지 확인 요청. 협약 이후 일정 필수 여부 · 일반형은 담당자 답 대기 |
 | "대조 불가" 문구(2026-10-06) | `featureMatch.withheld`가 참일 때의 화면 문구는 웹팀이 정한다(잠정 표현 "대조 불가" — 기준 문서 v1.10도 화면 문구를 미확정으로 둔다) |
 | 웹에서 바뀌는 실행 상태의 로그(2026-10-06 요청) | 워커 운영 로그에는 워커가 처리한 것만 있다. 웹 명령 처리로 바로 바뀌는 상태(대기 중 중단 `abort_project`, 화면 8 → 9 진행 `decide_for_project` 등)는 웹 쪽 로그로 남겨 달라 |
@@ -1280,3 +1387,16 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | 새 재작성 묶음 스위치 | 기본 꺼짐(Orchestrator 코드 값). 켜는 날 순서: 웹 배포 → 코드 값 변경 → 웹 · 워커 다시 띄우기 (6.3) | 잠정 |
 | 새 재작성 묶음 이름 · 태그 | `일반현황 · 개요`(`0-1`, 2.1.x · 2.2.x · 2.3.1 ~ 2.3.5 / 3.1.x · 3.2.x · 3.3.1 ~ 3.3.5, T-W1) · `그림`(`0-2`, 2.3.6 · 3.3.6, T-W2). 켜면 문서층 묶음 6개, '묶음 모두' 후보에서 `그림`은 뺌 (5.1 · 5.2 · 6.3) | 기준 문서와 다름(문서층 묶음 수 · 이름) — 웹팀 · 담당자와 정한 값 |
 | 표 대체 안내 `displayReason` | T-W3 연결 코드가 표를 바꿀 때 사유 코드(`fallbackReasonCodes`)로 여섯 가지 문구 중 하나를 골라 저장, 조회는 옮기기만. 저장 값이 없으면 일반 문구 (5.1) | 확장(칸은 2026-10-12, 코드 칸은 2026-10-13) |
+
+## 24. 결과 통합(T-C4) 실구현의 잠정 · 확장 값 (2026-10-13)
+
+| 항목 | 값 · 내용 | 표시 |
+|---|---|---|
+| 미달 항목 칸 · 타입 | `Deliverable.shortfallItems`, 새 타입 `ShortfallItem`(`layer` · `kind` · `code` · `tag` · `name` · `score` · `maxScore` · `reason`) (5.2) | 확장(새 타입) |
+| `kind` 값 집합 | `verifyFail` · `inputError` · `gateFailure` · `codeCheck` · `featureMatchWithheld` · `missingFeature` · `partialFeature` (5.2) | 확장 |
+| 계획서 파일 칸 | `Deliverable.planDocFile` 선택 칸(`FileRef` 또는 `null`), T-C4는 늘 `null` — 계획서 파일은 웹이 `planDoc`으로 만든다 (5.2 · 5.4) | 기준 문서와 다름(기준 문서는 `planDocPath` 필수 · 조립은 조율) |
+| 넣는 규칙 | 문서층 = 검증-1 fail만(총점 통과여도, warning · 입력 없음 제외), 산출물층 = 통과 필수 조건 실패면 그 줄만, 아니면 코드 점검(부분 점수 포함 · 해당 없음 제외) → 대조 불가면 그 줄만, 아니면 빠진 · 부분 인정 기능 (5.2) | 정한 값(사용자 결정) |
+| 줄 순서 | 문서층 → 통과 필수 조건 → 코드 점검(번호 순) → 대조 불가 → 빠진 기능 → 부분 인정 기능 (5.2) | 잠정 |
+| 고정 이름 · 사유 | 통과 필수 조건 이름 · 사유, `계획서 대조` · 대조 불가 사유, 빠진 · 부분 인정 기능 사유, 빈 `detail`의 "만점을 받지 못했습니다.", 빈 `issues`의 `fail` (5.2) | 잠정 |
+| `userMessage` 문구 | 첫 줄 "계획서 · 프로토타입 · 검증 결과를 내려받을 수 있습니다."(기준 문서 예시 — 잠정 아님), 총점 미달 줄 · 층별 머리줄 · 항목 줄 모양 · 끝 줄 "제출 전 작성자 본인의 검토가 필요합니다." (5.2) | 잠정 |
+| 산출물이 빠졌을 때 | 실행 실패(운영 오류) — 오류 코드 `E-C4-MISSING`(사용자 노출 문구 없음, 처리 '실행 실패 · 관리자 알림'), 사용자에게는 `E-RUN-FAIL`. 진입 파일 없음 · 안내 문서 없음은 실패가 아님 (5.2) | 확장 · 잠정(기준 문서 Failure ①은 '전달 보류 · 재수행 또는 사유 안내') |
