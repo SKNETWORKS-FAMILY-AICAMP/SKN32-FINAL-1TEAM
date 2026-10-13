@@ -56,9 +56,18 @@ def _database_url() -> str:
 _DATABASE_URL = _database_url()
 IS_SQLITE = _DATABASE_URL.startswith('sqlite')
 
+def _connect_args(is_sqlite: bool) -> dict:
+    """연결마다 DB 세션 시간대를 UTC로 맞춘다 — `server_default=func.now()` · `DEFAULT CURRENT_TIMESTAMP(6)`가 채우는 시각(프로젝트 생성 시각 등)이
+    DB 서버의 시간대를 따르기 때문이다. 응답은 시간대 없는 DB 시각을 UTC로 보고 Z를 붙이므로(schemas._to_utc_z), 서버가 한국 시간이면 9시간 앞서 보였다.
+    세션 시간대만 바꾸고 서버 설정 · 다른 프로세스(오케스트레이터 · 수집 파이프라인)에는 영향이 없다."""
+    if is_sqlite:
+        return {'check_same_thread': False}
+    return {'init_command': "SET time_zone = '+00:00'"}
+
+
 engine = create_engine(
     _DATABASE_URL,
-    connect_args={'check_same_thread': False} if IS_SQLITE else {},
+    connect_args=_connect_args(IS_SQLITE),
     pool_pre_ping=not IS_SQLITE,          # SQLite는 커넥션 풀 걱정이 없음
     pool_recycle=1800 if not IS_SQLITE else -1,
     echo=False,
