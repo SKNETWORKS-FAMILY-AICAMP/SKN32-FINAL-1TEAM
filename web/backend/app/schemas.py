@@ -965,12 +965,25 @@ class BundleUsageOut(BaseModel):
     remaining: int
 
 
+class ShortfallItemOut(BaseModel):
+    """미달 항목 한 줄 — 결과물(`deliverable.shortfallItems`)에서 그대로 옮긴다(SB-371). 화면이 묶음(tag)별로 모아 보일 수 있다."""
+    layer: str = Field(description="층 — 'document'(계획서) | 'artifact'(프로토타입 · 산출물)")
+    kind: str = Field(description="종류 — verifyFail · inputError · gateFailure · codeCheck · featureMatchWithheld · missingFeature · partialFeature")
+    code: str | None = Field(None, description="문서층 = 계획서 항목 번호, 코드 점검 = 점검 번호, 통과 필수 조건 = 어긴 조건 코드(entry · secret · sandbox), 그 밖 = null")
+    tag: str | None = Field(None, description="문서층 = 웹 태그(없으면 null), 산출물층 = null")
+    name: str = Field(description="항목 이름 — 계획서 항목 제목 · 점검 이름 · 기능 이름 · 고정 이름")
+    score: float | None = Field(None, description="화면에 보이는 점수. 없으면 null")
+    max_score: float | None = Field(None, description="score의 배점. 없으면 null")
+    reason: str = Field(description="사유 — 검증 판정 글이거나 고정 문구")
+
+
 class DeliverableOut(BaseModel):
     """결과물 화면(11)에 보일 안내 글 — 오케스트레이터 결과물(`deliverable`)과 안내 문구(`userMessage`)에서 사용자에게 보일 것만 싣는다.
     파일 참조(planDocFile · prototypeFiles · infographicFile)와 점수 보고서는 이미 따로 오므로(산출물 주소 · verdict) 여기에 싣지 않는다."""
     submission_notice: str | None = Field(None, description="내려받기 화면에 보일 공고별 제출 요건 확인 안내(`deliverable.submissionNotice`). 없으면 null")
     disclaimer: str | None = Field(None, description="계획서 첫 장 고지(`deliverable.disclaimer`) — 문서에도 같은 문구가 들어간다")
     user_message: str | None = Field(None, description="결과 안내 글(`userMessage`) — 통과 기준에 못 미친 항목 안내 등. 없으면 null")
+    shortfall_items: list[ShortfallItemOut] = Field(default_factory=list, description="통과 기준에 못 미친 항목(`deliverable.shortfallItems`) — 문서층 → 산출물층 순. 없으면 빈 목록")
 
 
 class DemoGenerateResponse(BaseModel):

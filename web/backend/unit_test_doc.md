@@ -30,7 +30,7 @@ ruff check .                                # 정적 검사
 | `test_orch_errors.py` | 오케스트레이터 오류 코드 → HTTP 상태 · `{detail, code}` 응답 변환 |
 | `test_orch_mapping.py` | 오케스트레이터 값 → 웹 응답 대응표(묶음 이름, 출력 필드 변환) |
 | `test_orch_command_log.py` | 웹이 넣은 상태 변경 명령을 웹 로그에 한 줄씩 남김 (SB-303) |
-| `test_orch_fake_contract.py` | 가짜 오케스트레이터가 실제 `sbrain` 필드와 어긋나지 않는지, gateway 허용 함수가 실제로 있는지 |
+| `test_orch_fake_contract.py` | 가짜 오케스트레이터가 실제 `sbrain` 필드와 어긋나지 않는지(표 대체 사유의 `fallback_reason_codes` · 결과물 `Deliverable` · 미달 항목 `ShortfallItem` 포함), gateway 허용 함수가 실제로 있는지 |
 
 ### 단계별 흐름 · 결과 · 재작성
 
@@ -38,7 +38,7 @@ ruff check .                                # 정적 검사
 |---|---|
 | `test_orch_stages.py` | 공고 선택 → 자격 확인 → 계획서 · 프로토타입 · 종합 평가 · 검수 시작 |
 | `test_orch_result.py` | `GET /projects/{id}/result` — 계획서 · 판정 · 산출물 · 재작성 기회를 응답으로 변환 |
-| `test_plan_result_shape.py` | 결과의 계획서 응답 모양 — 항목 번호 · 웹 태그 · 종류를 따로, 옛 4항목 계획서의 태그, 점수 항목의 태그, 그림 주소 · 순서 (SB-337), 표 대체 사유(`table_fallbacks`)의 태그 · 제목 · 사용자용 안내만 싣고 내부 원문은 싣지 않음, 점수 보고서 안내(`plan.notices` · `verdict.notices`) (SB-354), 결과물 안내 글(`deliverable` — 제출 요건 안내 · 고지 · 결과 안내, 없으면 null) |
+| `test_plan_result_shape.py` | 결과의 계획서 응답 모양 — 항목 번호 · 웹 태그 · 종류를 따로, 옛 4항목 계획서의 태그, 점수 항목의 태그, 그림 주소 · 순서 (SB-337), 표 대체 사유(`table_fallbacks`)의 태그 · 제목 · 사용자용 안내만 싣고 내부 원문은 싣지 않음, 점수 보고서 안내(`plan.notices` · `verdict.notices`) (SB-354), 결과물 안내 글(`deliverable` — 제출 요건 안내 · 고지 · 결과 안내, 없으면 null), 미달 항목(`shortfall_items`)을 순서대로 그대로 · 칸이 없던 옛 실행 건은 빈 목록 · 실제 `ShortfallItem`이 오류 없이 옮겨지는지 (SB-371) |
 | `test_score_scaling.py` | 점수 보고서 환산 칸 — 층 점수 · 만점은 그 실행 건 배점 기준(지금 정책 값 아님), 코드 점검 줄의 부분 점수 · 해당 없음, 항목 합 = 층 점수, 옛 실행 건 대체 값 (오케스트레이터 2026-10-11) |
 | `test_orch_rework.py` | 재작성 접수(`POST /retry-task`)와 전후 비교(`GET /rework-result`) — 바뀐 항목의 키(항목 번호) · 태그 · 제목 포함 |
 | `test_plan_score_items.py` | 평가 항목이 24 ~ 25개로 늘어도 문서층 점수 응답이 순서 · 이름 · 소수 점수 그대로 나오는지, 편차 상한은 저장만 함 (SB-338) |
@@ -66,6 +66,7 @@ ruff check .                                # 정적 검사
 | `test_infographic_in_document.py` | 계획서 파일(docx · hwp · zip 안 docx)에 인포그래픽과 첫 장 고지 넣기 — 데이터 주소 · 안쪽 참조는 허용하고 바깥 참조는 막는 변환(계획서 그림은 그대로 엄격), 못 받거나 못 바꾸면 인포그래픽만 빼고 문서는 만듦, 세로로 긴 그림 줄이기, 고지는 결과물 값(없으면 기본 문구), hwp 실제 생성(첫 쪽 고지 · 그림 쪽과 인포그래픽 쪽 분리) (기준 문서 T-C4, SB-354) |
 | `test_hwp_body_paragraphs.py` | hwp 본문을 줄마다 문단으로 쓰기(절을 큰 번호부터, 뼈대 문단을 먼저 지움), 표 서술 · 단계 머리말, 칸 안 예시 상자를 지우는 스크립트, 정리한 양식 2종이 원본과 같은 구조인지, 실제 hwp에 빈 "-" 글머리 · 예시 안내가 없는지 |
 | `test_hwp_table_layout.py` | hwp 표 채우기 — 입력 줄이 고정 행보다 많으면 행 늘리기(기준 행 복제 · 합계 행 밀림), 칸 줄바꿈을 문단으로 나누기, 사업비 비목 칸 나누기, 업종 · 지방우대 칸 알아보기와 ☑ 체크(글머리 복제), 행 복제 · 높이 · 빈 문단 · 쪽 나눔(hwpx xml), 쪽 밖으로 나가는 표와 빈 쪽이 없는지(rhwp 경고), 주업종을 지원 분야 · 전문기술분야로 가르기, 개요 표 명칭(아이디어 설명의 첫 줄 · 60자까지), docx의 안내 문구 제거 · 본문 줄 문단 |
+| `test_document_layout.py` | 내려받는 문서의 배치 — docx A4 · 표 열 폭 고정(합 본문 폭) · 긴 칸이 넓은 열 · 행 쪽 넘김 방지 · 표 머리 반복 · 제목이 표와 같은 쪽 · 한글 숫자 틈 끄기, hwp 일정 표 '구분' · 사업비 금액 칸 폭(열 폭 xml 변경, rhwp 실제 파일 확인) |
 | `test_database_time_zone.py` | 웹의 MySQL 연결이 세션 시간대를 UTC로 맞추는 설정(DB 서버가 한국 시간이어도 생성 시각이 9시간 어긋나지 않게) |
 | `test_budget_phase_export.py` | 예비창업 사업비를 1단계 · 2단계 표(docx 표 둘, hwp 표12 · 표14)로 나눠 채움, 단계 없는 줄은 1단계, 다른 유형은 표 하나 (SB-339) |
 | `test_schedule_table_export.py` | 내려받기 문서(docx · hwp)의 추진 일정 표 — 구분 · 추진 내용 · 추진 기간 · 세부 내용이 같은 이름의 열에 들어감, 세부 내용을 비우면 빈칸, 입력이 없으면 자리표시 한 줄 (SB-329 · SB-339) |

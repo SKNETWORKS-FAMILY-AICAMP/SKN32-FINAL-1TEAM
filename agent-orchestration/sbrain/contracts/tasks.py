@@ -33,6 +33,8 @@ from ..models.domain import FILE_NOTE, NEW_TYPE_NOTE
 SW_NOTE = "전략 · 작성 · 검증-1 연동(결정 0024)"
 # 구현 · 검증-2 끼우기 · 산출물층 환산(spec 4.13)에서 더한 확장 입력 · 출력의 note
 BV_NOTE = "구현 · 검증-2 연동(spec 4.13)"
+# 결과 통합(T-C4) 실구현에서 선택으로 바꾼 입력의 note — 기준 문서는 필수 입력
+TC4_NOTE = "결과 통합 선택 입력(결정 0030) — 기준 문서는 필수"
 # 재개 때 이어 쓰는 받은 결과 — 엔진 일반 장치 PARTIAL. 키는 T-S1 · T-S2 = F번호, T-W1 · T-V1 = 항목 번호, T-W2 = 그림 ID (spec 4.13)
 PRIOR_NOTE = (f"{SW_NOTE} — 재개 때 이어 쓰는 받은 결과(키 → 받은 값 JSON 문자열, <taskId>.partial). 엔진이 재개 때만 "
               "채운다. 빠진 호출만 다시 한다")
@@ -234,11 +236,15 @@ class G04Out(SBModel):
 
 
 class TC4In(SBModel):
-    plan_doc: PlanDoc
-    prototype: Prototype
-    infographic: Infographic
-    score_report: ScoreReport
+    """결과 통합 입력. 계획서 · 프로토타입 · 인포그래픽 · 점수 보고서는 비어 올 수 있다 — 누락은 엔진 입력 확인이
+    아니라 T-C4가 한 오류 코드(E-C4-MISSING)로 판단한다. 검수 로그는 지금처럼 필수(엔진이 막는다)."""
+    plan_doc: PlanDoc | None = ext(None, note=f"{TC4_NOTE} — 비면 누락(E-C4-MISSING ①)")
+    prototype: Prototype | None = ext(None, note=f"{TC4_NOTE} — 비면 누락(E-C4-MISSING ①)")
+    infographic: Infographic | None = ext(None, note=f"{TC4_NOTE} — 비면 누락(E-C4-MISSING ①)")
+    score_report: ScoreReport | None = ext(None, note=f"{TC4_NOTE} — 비면 누락(E-C4-MISSING ①)")
     proofread_log: ProofreadLog
+    section_results: list[SectionResult] | None = ext(
+        None, note=f"{NEW_TYPE_NOTE} — T-V1 항목 판정(미달 항목 문서층, 결정 0030). None이면 문서층 미달 항목이 없다")
 
 
 class TC4Out(SBModel):
@@ -411,7 +417,7 @@ class TW3Out(SBModel):
     table_sections: list[PlanSection] = ext(note=f"{SW_NOTE} — 표 항목의 서술 · 대체 본문 (M-1이 같은 항목을 바꾼다)")
     table_outputs: ItemOutputs = ext(
         note=f"{SW_NOTE} — 표 항목 번호 → F17 결과 전체(generatedText · tables · issues · tableFallbackUsed · "
-             "fallbackReason)")
+             "fallbackReason · fallbackReasonCodes · displayReason — 표 대체 사유 · 사유 코드 · 안내 문구, 결정 0028 · 0029)")
 
 
 # ── 검증 ─────────────────────────────────────────────

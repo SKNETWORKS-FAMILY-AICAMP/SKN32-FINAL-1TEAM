@@ -273,17 +273,38 @@ def test_table_fallbacks_are_extensions_with_decision_note():
         assert "tableFallbacks" in extension_fields(model), model.__name__
         assert DECISION_0028 in _note(model, "tableFallbacks"), model.__name__
         assert model.model_fields["table_fallbacks"].default_factory is list
-    assert set(extension_fields(TableFallback)) == {"sectionCode", "reason", "displayReason"}
+    assert set(extension_fields(TableFallback)) == {"sectionCode", "reason", "fallbackReasonCodes", "displayReason"}
     assert DECISION_0028 in _note(TableFallback, "displayReason")
+
+
+def test_fallback_reason_codes_are_extensions_and_old_json_reads_empty():
+    # 담당자 SB-376 — 표 대체 사유 코드. 판정 · 재수행 입력 · 화면 칸 모두 확장, 옛 값은 빈 값
+    from sbrain.flow.reads import TableFallback
+    for model, alias in ((SectionResult, "fallbackReasonCodes"), (ReworkInput, "fallbackReasonCodes"),
+                         (TableFallback, "fallbackReasonCodes")):
+        assert alias in extension_fields(model), model.__name__
+        assert "결정 0029" in _note(model, alias), model.__name__
+    old = {"sectionCode": "3.5.2", "contentType": "table", "status": "fail", "score": 40.0, "verifiedRef": "planDoc@1"}
+    assert SectionResult.model_validate(old).fallback_reason_codes == []
+    old_ri = {"mode": "재수행", "previousResultRef": "tables@1", "issues": [], "isFinalAttempt": False}
+    assert ReworkInput.model_validate(old_ri).fallback_reason_codes == {}
+    assert TableFallback.model_validate({"sectionCode": "2.5.2", "reason": "r", "displayReason": "d"}).fallback_reason_codes == []
 
 
 def test_provisional_keys_for_partner_1012():
     p = settings_mod.PROVISIONAL
     assert "partnerSw.inputError" in p
-    assert all(word in p["partnerSw.inputError"] for word in ("_is_agreement_duration_failure", "verify.py",
-                                                               "새 프로젝트"))
+    assert all(word in p["partnerSw.inputError"] for word in ("inputErrorCodes", "verify.py",
+                                                               "입력을 고쳐 새로 만들 수 있습니다"))
+    assert "새 프로젝트" not in p["partnerSw.inputError"]                        # 끝 문장 갱신 (잠정 문구)
     assert "displayTitle" in p["taskPlan.formTable"]
     assert "2026-10-12" in p["reworkMap.sectionBundles"] and "웹팀" in p["reworkMap.sectionBundles"]
+    assert "스위치" in p["reworkMap.sectionBundles"]
+    general = p["reworkMap.generalBundles"]
+    assert all(word in general for word in ("GENERAL_BUNDLES_ENABLED", "기본 꺼짐", "일반현황 · 개요", "그림", "0-1",
+                                            "0-2", "묶음 모두"))
+    kiet = p["partnerSw.kietSearch"]
+    assert all(word in kiet for word in ("SBRAIN_KIET_SEARCH", "기본 꺼짐", "25초", "120자"))
 
 
 # ── tools: 목적별 모델 · json_mode ──────────────────────

@@ -32,6 +32,14 @@ def test_fake_table_fallback_fields_match_real():
     assert set(vars(orch_fakes.make_table_fallback())) == set(reads.TableFallback.model_fields)
 
 
+def test_fake_deliverable_and_shortfall_item_fields_match_real():
+    domain = pytest.importorskip('sbrain.models.domain')
+    if not hasattr(domain, 'ShortfallItem'):
+        pytest.skip('오케스트레이터에 미달 항목 칸(SB-373)이 아직 없다')
+    assert set(vars(orch_fakes.make_deliverable())) == set(domain.Deliverable.model_fields)
+    assert set(vars(orch_fakes.make_shortfall_item())) == set(domain.ShortfallItem.model_fields)
+
+
 def test_fake_gate_screen_fields_match_real():
     reads = pytest.importorskip('sbrain.flow.reads')
     assert set(vars(orch_fakes.make_gate_screen())) == set(reads.GateScreen.model_fields)

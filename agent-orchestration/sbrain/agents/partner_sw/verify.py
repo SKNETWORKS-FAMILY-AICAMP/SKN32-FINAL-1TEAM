@@ -120,6 +120,12 @@ def run_tv1(inp: TV1In, tools: Tools) -> TV1Out:
         validation = _reconcile_validation(spec, content, validation)
         validation = _remove_roadmap_deadline_warnings(validation, source, kind)
         validation = _check_agreement_table_overrun(validation, spec, content, source, kind)
+        reason_codes = validation.get("fallbackReasonCodes", [])
+        input_codes = validation.get("inputErrorCodes", [])
+        reason_codes = reason_codes if isinstance(reason_codes, (list, tuple, set)) else []
+        input_codes = input_codes if isinstance(input_codes, (list, tuple, set)) else []
+        validation["fallbackReasonCodes"] = list(dict.fromkeys(
+            str(value) for value in [*reason_codes, *input_codes] if value))
         validation = _early_unassigned_budget(validation, kind, spec, content)
         if code in missing:
             validation = _input_missing(validation, missing[code])
@@ -133,6 +139,7 @@ def run_tv1(inp: TV1In, tools: Tools) -> TV1Out:
             needs_user_confirmation=[str(x) for x in validation.get("needsUserConfirmation", [])],
             input_missing=code in missing,
             input_error=status == "fail" and input_error({**validation, "status": status}),   # 입력 없음 처리 뒤 (0028)
+            fallback_reason_codes=[str(x) for x in validation.get("fallbackReasonCodes", [])],
             score=float(evaluation["score"]),
             deductions=[str(d.get("reason", "")) for d in evaluation.get("deductions", []) if isinstance(d, dict)],
             verified_ref=ref)

@@ -175,6 +175,42 @@ def _set_cell_text(cell, text: str, bold: bool = False, shade: str | None = None
         tc_pr.append(shd)
 
 
+TEXT_WIDTH_CM = 17.0   # A4 · 좌우 여백 2cm — 표는 모두 이 폭에 맞춘다
+
+
+def _layout_table(table, widths_cm: list[float], repeat_header: bool = True) -> None:
+    """표 폭 · 행 배치를 정한다 — 열 폭 고정(합은 본문 폭), 행이 쪽 끝에서 갈라지지 않게(cantSplit), 첫 행은 쪽마다 반복(tblHeader).
+
+    열 폭을 안 주면 Word가 열을 모두 같은 폭으로 나눠 '집행 계획' 같은 긴 칸의 글이 한 글자씩 세로로 끊긴다."""
+    table.autofit = False
+    tbl_pr = table._tbl.tblPr
+    layout = tbl_pr.makeelement(qn('w:tblLayout'), {qn('w:type'): 'fixed'})
+    look = tbl_pr.find(qn('w:tblLook'))   # 스키마 순서: tblLayout은 tblLook 앞
+    if look is not None:
+        look.addprevious(layout)
+    else:
+        tbl_pr.append(layout)
+    for column, width in zip(table.columns, widths_cm, strict=True):
+        column.width = Cm(width)
+    for row_index, row in enumerate(table.rows):
+        for cell, width in zip(row.cells, widths_cm, strict=True):
+            cell.width = Cm(width)
+        tr_pr = row._tr.get_or_add_trPr()
+        tr_pr.append(tr_pr.makeelement(qn('w:cantSplit'), {}))
+        if repeat_header and row_index == 0:
+            tr_pr.append(tr_pr.makeelement(qn('w:tblHeader'), {}))
+
+
+def _caption(doc: Document, text: str) -> None:
+    """표 · 그림 위의 제목 — 표(그림)와 같은 쪽에 붙고 앞 표와 간격을 둔다."""
+    p = doc.add_paragraph()
+    p.paragraph_format.space_before = Pt(8)
+    p.paragraph_format.keep_with_next = True
+    run = p.add_run(text)
+    run.bold = True
+    run.font.size = Pt(10.5)
+
+
 def _kv_table(doc: Document, rows: list[tuple[str, str]]) -> None:
     """'항목 | 값' 2열 표 — 일반현황/창업 아이템 개요(요약) 같은 key-value 블록에 쓴다."""
     table = doc.add_table(rows=0, cols=2)
@@ -186,14 +222,12 @@ def _kv_table(doc: Document, rows: list[tuple[str, str]]) -> None:
         row = table.add_row()
         _set_cell_text(row.cells[0], label, bold=True, shade=_HEADER_FILL)
         _set_cell_text(row.cells[1], value)
+    _layout_table(table, [4.2, TEXT_WIDTH_CM - 4.2], repeat_header=False)
 
 
-def _grid_table(doc: Document, headers: list[str], rows: list[list[str]], caption: str | None = None) -> None:
+def _grid_table(doc: Document, headers: list[str], rows: list[list[str]], caption: str | None = None, widths: list[float] | None = None) -> None:
     if caption:
-        p = doc.add_paragraph()
-        run = p.add_run(caption)
-        run.bold = True
-        run.font.size = Pt(10.5)
+        _caption(doc, caption)
     table = doc.add_table(rows=1, cols=len(headers))
     table.style = 'Table Grid'
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -203,6 +237,7 @@ def _grid_table(doc: Document, headers: list[str], rows: list[list[str]], captio
         cells = table.add_row().cells
         for i, v in enumerate(r):
             _set_cell_text(cells[i], v)
+    _layout_table(table, widths or [TEXT_WIDTH_CM / len(headers)] * len(headers))
 
 
 def _heading(doc: Document, text: str, level: int = 1) -> None:
@@ -210,6 +245,9 @@ def _heading(doc: Document, text: str, level: int = 1) -> None:
     for run in h.runs:
         run.font.color.rgb = RGBColor(0, 0, 0)
 
+
+_TEAM_WIDTHS = [1.2, 2.8, 3.6, 6.6, 2.8]       # 순번 · 직위 · 담당 업무 · 보유 역량 · 구성 상태
+_SCHEDULE_WIDTHS = [2.6, 5.4, 4.0, 5.0]        # 구분 · 추진 내용 · 추진 기간 · 세부 내용
 
 _TEMPLATE_TITLES = {
     'early_general': '초기창업패키지 창업기업 사업계획서',
@@ -238,6 +276,7 @@ def _add_general_status_early(doc: Document, data: PlanDocumentData) -> None:
         ['정부지원사업비(A)', '자기부담사업비(B) 현금', '자기부담사업비(B) 현물', '총 사업비(C=A+B)'],
         [[data.정부지원사업비, data.자기부담_현금, data.자기부담_현물, data.총사업비]],
         caption='총 사업비 구성 계획',
+        widths=[4.25, 4.25, 4.25, 4.25],
     )
 
 
@@ -255,10 +294,7 @@ def _add_general_status_preliminary(doc: Document, data: PlanDocumentData) -> No
 
 def _picture(doc: Document, picture: DiagramPicture, max_height_cm: float | None = None) -> None:
     """그림 하나 — 위에 '< 서비스 흐름도 >' 같은 제목을 달고 본문 폭에 맞춰 넣는다(PNG, 가운데). 세로가 max_height_cm를 넘으면 비율을 지켜 줄인다."""
-    caption = doc.add_paragraph()
-    run = caption.add_run(f'< {picture.title} >')
-    run.bold = True
-    run.font.size = Pt(10.5)
+    _caption(doc, f'< {picture.title} >')
     width_px, height_px = picture.size_px
     width_cm = float(_PICTURE_WIDTH_CM)
     if max_height_cm is not None and width_px and width_cm * height_px / width_px > max_height_cm:
@@ -296,12 +332,23 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
         raise ValueError(f"template은 {tuple(_TEMPLATE_TITLES)} 중 하나여야 합니다: {template!r}")
 
     doc = Document()
+    section = doc.sections[0]
+    section.page_width, section.page_height = Cm(21.0), Cm(29.7)
+    section.left_margin = section.right_margin = Cm(2.0)
+    section.top_margin = section.bottom_margin = Cm(2.0)
     style = doc.styles['Normal']
     style.font.name = '맑은 고딕'
     style.font.size = Pt(10.5)
+    style.element.get_or_add_rPr().get_or_add_rFonts().set(qn('w:eastAsia'), '맑은 고딕')
+    # Word는 한글과 숫자 · 영문 사이에 자동으로 틈을 둬서 "5 건 수행" "1,000,000 원"처럼 벌어져 보인다 — 끈다
+    p_pr = style.element.get_or_add_pPr()
+    for name in ('w:autoSpaceDE', 'w:autoSpaceDN'):
+        p_pr.append(p_pr.makeelement(qn(name), {qn('w:val'): '0'}))
 
     title = doc.add_heading(_TEMPLATE_TITLES[template], level=0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    for run in title.runs:
+        run.font.size = Pt(20)
 
     disclaimer = doc.add_paragraph()
     disclaimer_run = disclaimer.add_run(data.고지.strip() or DEFAULT_DISCLAIMER)
@@ -318,6 +365,7 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
         ['순번', '직위', '담당 업무', '보유 역량(경력 및 학력 등)', '구성 상태'],
         [[t.순번, t.직위, t.담당업무, t.보유역량, t.구성상태] for t in data.팀구성현황],
         caption='팀 구성 현황(대표자 본인 제외)',
+        widths=_TEAM_WIDTHS,
     )
 
     _heading(doc, '□ 창업 아이템 개요(요약)', level=1)
@@ -345,6 +393,7 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
         ['구분', '추진 내용', '추진 기간', '세부 내용'],
         [[s.구분, s.추진내용, s.추진기간, s.세부내용] for s in data.실현가능성_일정],
         caption='< 사업추진 일정(협약기간 내) >',
+        widths=_SCHEDULE_WIDTHS,
     )
     _narrative(doc, data.실현가능성_일정_서술)
     if template == 'preliminary':
@@ -360,6 +409,7 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
                 ['비목', '산출 근거', '정부지원사업비(원)'],
                 [[b.비목, b.집행계획, b.정부지원사업비] for b in rows] or [['○○', '○○', '○○']],
                 caption=f'< 정부지원사업비 집행계획({label}) >',
+                widths=[2.8, 10.2, 4.0],
             )
             if total:
                 doc.add_paragraph(f'{label} 합계: {total}')
@@ -370,6 +420,7 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
             ['비목', '집행 계획', '총사업비(ⓐ+ⓑ)', '정부지원사업비(ⓐ)', '자기부담사업비(ⓑ) 현금', '자기부담사업비(ⓑ) 현물'],
             [[b.비목, b.집행계획, b.총사업비, b.정부지원사업비, b.자기부담_현금, b.자기부담_현물] for b in data.사업비_집행계획],
             caption='< 사업비 집행 계획 >',
+            widths=[2.4, 4.6, 2.5, 2.5, 2.5, 2.5],
         )
         _narrative(doc, data.사업비_서술)
 
@@ -380,6 +431,7 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
         ['구분', '추진 내용', '추진 기간', '세부 내용'],
         [[s.구분, s.추진내용, s.추진기간, s.세부내용] for s in data.성장전략_일정],
         caption='< 사업추진 일정(전체 사업단계) >',
+        widths=_SCHEDULE_WIDTHS,
     )
     _narrative(doc, data.성장전략_일정_서술)
 
@@ -390,6 +442,7 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
         ['순번', '직위', '담당 업무', '보유 역량(경력 및 학력 등)', '구성 상태'],
         [[t.순번, t.직위, t.담당업무, t.보유역량, t.구성상태] for t in data.팀구성_안],
         caption='< 팀 구성(안) >',
+        widths=_TEAM_WIDTHS,
     )
     if data.협력기관:
         _grid_table(
@@ -397,6 +450,7 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
             ['순번', '파트너명', '보유 역량', '협업 방안', '협력 시기'],
             [[p.순번, p.파트너명, p.보유역량, p.협업방안, p.협력시기] for p in data.협력기관],
             caption='< 협력 기관 현황 및 협업 방안 >',
+            widths=[1.2, 3.6, 4.4, 5.0, 2.8],
         )
 
     buf = io.BytesIO()

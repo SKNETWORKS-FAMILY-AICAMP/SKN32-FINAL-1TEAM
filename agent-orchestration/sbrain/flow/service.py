@@ -41,7 +41,8 @@ from . import reads
 from .catalog import FORM_SPEC
 from .log_stats import start_request_rows
 from .retention import gather_run_stats
-from .rework_map import BUNDLE_EXECUTABLE, BUNDLE_LAYER, LAYER_SCREENS, TASK_BUNDLE
+# 묶음 이름 → 층은 부를 때마다 그때의 표 · 스위치로 읽는다(bundle_layer — 새 묶음 스위치를 켜거나 끄면 접수가 바로 따라간다)
+from .rework_map import BUNDLE_EXECUTABLE, LAYER_SCREENS, TASK_BUNDLE, bundle_layer
 from .sbrain_flow import (
     CANDIDATE_LIMIT, MORE_BEFORE_POINTERS, REVIEW, SCREEN_STEP, SELECTION_STEPS, STEP_LABEL, STEP_SCREEN, WRITE,
     SBrainFlow, bundle_orders, candidate_lists, proto_queue, rework_queue,
@@ -537,7 +538,7 @@ class SBrainOrchestrator:
         if expect_screen is not None and screen != expect_screen:
             raise CommandError("INVALID_STATE", f"화면 {expect_screen} — 지금 {run.state.step}/{run.state.progress}")
         for b in bundles:
-            layer = BUNDLE_LAYER.get(b)
+            layer = bundle_layer(b)
             if layer is None:
                 raise CommandError("INVALID_ORDER", f"묶음 이름이 아님: {b}")
             if screen not in LAYER_SCREENS[layer]:
@@ -573,8 +574,9 @@ class SBrainOrchestrator:
             "sourceRefs": [ctx.ref(f"{judge}.reworkOrders")] if ctx.has(f"{judge}.reworkOrders") else [],
         })
         by_task = {t: o.dump() for t, o in orders.items()}
-        counted = [(b, BUNDLE_LAYER[b]) for b in new]
-        layers = sorted({BUNDLE_LAYER[b] for b in merged})
+        counted = [(b, bundle_layer(b)) for b in new]   # 새로 받은 묶음은 _rework_screen이 표에 있는지 확인했다
+        # 이미 모은 묶음이 그사이 표에서 빠졌으면(새 묶음 스위치를 끄고 다시 띄움 — 새 묶음은 모두 문서층) 문서층으로 센다
+        layers = sorted({bundle_layer(b) or "document" for b in merged})
         if cycle is None:
             cycle = self.engine.start_cycle(
                 ctx, screen=screen, selected_orders_ref=dref, orders_by_task=by_task, counted_bundles=counted,

@@ -9,7 +9,18 @@
 import json
 from types import SimpleNamespace as NS
 
-from orch_fakes import make_diagram, make_file_ref, make_outputs, make_plan_doc, make_score_view, make_section, make_table_fallback
+import pytest
+from orch_fakes import (
+    make_deliverable,
+    make_diagram,
+    make_file_ref,
+    make_outputs,
+    make_plan_doc,
+    make_score_view,
+    make_section,
+    make_shortfall_item,
+    make_table_fallback,
+)
 
 
 def _create(client) -> int:
@@ -141,7 +152,7 @@ def test_deliverable_notes_come_from_the_deliverable_and_the_user_message(authed
     body = authed_client.get(f'/projects/{pid}/result').json()
 
     assert body['deliverable'] == {'submission_notice': '공고별 제출 요건을 확인하세요.', 'disclaimer': '제출 전 본인 확인이 필요합니다.',
-                                   'user_message': '미달 항목: 2.4.1 문제 정의'}
+                                   'user_message': '미달 항목: 2.4.1 문제 정의', 'shortfall_items': []}
     assert 'plan_doc_file' not in str(body['deliverable'])  # 파일 참조는 싣지 않는다
 
 
@@ -154,4 +165,45 @@ def test_deliverable_is_null_before_the_deliverable_exists_and_empty_fields_are_
     outputs.deliverable = NS(submission_notice='', disclaimer='', plan_doc_file=None, prototype_files=[], infographic_file=None)
     orch.responses['outputs'] = lambda p: outputs
     assert authed_client.get(f'/projects/{pid}/result').json()['deliverable'] == {
-        'submission_notice': None, 'disclaimer': None, 'user_message': None}
+        'submission_notice': None, 'disclaimer': None, 'user_message': None, 'shortfall_items': []}
+
+
+def test_shortfall_items_are_passed_through_as_they_are_in_order(authed_client, orch):
+    pid = _create(authed_client)
+    outputs = _outputs()
+    outputs.deliverable = make_deliverable(shortfall_items=[
+        make_shortfall_item(),
+        make_shortfall_item(kind='gateFailure', layer='artifact', code='entry', tag=None, name='실행 진입 파일', score=None, max_score=None,
+                            reason='진입 파일이 없습니다'),
+    ])
+    orch.responses['outputs'] = lambda p: outputs
+    items = authed_client.get(f'/projects/{pid}/result').json()['deliverable']['shortfall_items']
+
+    assert items == [
+        {'layer': 'document', 'kind': 'verifyFail', 'code': '2.4.1', 'tag': '2-1', 'name': '문제 정의', 'score': 3.0, 'max_score': 5.0,
+         'reason': '근거가 부족합니다'},
+        {'layer': 'artifact', 'kind': 'gateFailure', 'code': 'entry', 'tag': None, 'name': '실행 진입 파일', 'score': None, 'max_score': None,
+         'reason': '진입 파일이 없습니다'},
+    ]
+
+
+def test_old_runs_without_shortfall_items_give_an_empty_list(authed_client, orch):
+    pid = _create(authed_client)
+    outputs = _outputs()
+    outputs.deliverable = NS(submission_notice='', disclaimer='', plan_doc_file=None, prototype_files=[], infographic_file=None)  # 칸이 없던 값
+    orch.responses['outputs'] = lambda p: outputs
+    assert authed_client.get(f'/projects/{pid}/result').json()['deliverable']['shortfall_items'] == []
+
+
+def test_real_orchestrator_shortfall_items_map_without_error(authed_client, orch):
+    domain = pytest.importorskip('sbrain.models.domain')
+    if not hasattr(domain, 'ShortfallItem'):
+        pytest.skip('오케스트레이터에 미달 항목 칸(SB-373)이 아직 없다')
+    pid = _create(authed_client)
+    real = domain.ShortfallItem(layer='document', kind='verifyFail', code='2.4.1', tag='2-1', name='문제 정의', score=3.0, max_score=5.0,
+                                reason='근거가 부족합니다')
+    outputs = _outputs()
+    outputs.deliverable = make_deliverable(shortfall_items=[real])
+    orch.responses['outputs'] = lambda p: outputs
+    items = authed_client.get(f'/projects/{pid}/result').json()['deliverable']['shortfall_items']
+    assert items == [real.model_dump()]

@@ -16,8 +16,9 @@ SECTION_KEYS = ("generatedText", "facts", "sourceRefs", "needsUserConfirmation",
 IMAGE_SPEC_KEYS = ("nodes", "flowType", "visualStyle", "generatedText", "facts", "sourceRefs", "issues")  # F18 그림 하나
 DIAGRAM_OUTPUT_KEYS = ("imageSpecs", "imageTypes", "nodes", "flowType", "visualStyle", "generatedText", "facts",
                        "sourceRefs", "issues")                                                           # 그림 항목
-TABLE_KEYS = ("generatedText", "tables", "issues", "tableFallbackUsed", "fallbackReason")                 # F17
-TABLE_DEFAULTS = {"tables": [], "tableFallbackUsed": False, "fallbackReason": ""}
+# F17 + 표 대체 사유·안내 (연결 코드가 더하는 칸). 여기에 없는 칸은 pick이 버린다
+TABLE_KEYS = ("generatedText", "tables", "issues", "tableFallbackUsed", "fallbackReason", "fallbackReasonCodes", "displayReason")
+TABLE_DEFAULTS = {"tables": [], "tableFallbackUsed": False, "fallbackReason": "", "fallbackReasonCodes": [], "displayReason": ""}
 
 # 글자로 요약할 때 건너뛰는 칸 — 출처 · 상태 표시 (잠정)
 _SKIP_KEYS = frozenset({"sourceRef", "sourceRefs", "evidenceRefs", "evidence", "status", "confidence", "url",

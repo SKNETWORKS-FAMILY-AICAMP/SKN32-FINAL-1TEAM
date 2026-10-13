@@ -34,7 +34,7 @@ from sbrain.models import (
     BudgetItem, CompanyInfo, ItemSpec, PreInput, ReworkInput, ReworkOrder, RevenueItem, ScheduleItem,
 )
 from sbrain.orchestrator.errors import ToolCallExhausted
-from sbrain.orchestrator import market_research
+from sbrain.agents.partner_sw import market_research
 
 INSTRUCTION = "이번 Task 지시문"
 IDEA = "AI 헬스장 회원 관리 시장 서비스"
@@ -44,7 +44,8 @@ ITEM = ItemSpec(item_name="헬스온", one_line_summary="헬스장 회원 관리
 
 @pytest.fixture(autouse=True)
 def disable_live_kiet_in_task_tests(monkeypatch):
-    """Task 회귀 테스트는 외부 KIET 상태에 의존하지 않도록 빈 실행별 결과를 사용한다."""
+    """Task 회귀 테스트는 외부 KIET 상태에 의존하지 않도록 빈 실행별 결과를 사용한다.
+    스위치는 conftest 자동 장치가 끈다 — 켠 경우를 보는 테스트만 market_research.set_kiet_search(True)로 켠다."""
     monkeypatch.setattr(strategy_module, "search_keyword", lambda keyword, timeout: {
         "status": "no_relevant_source_found", "keyword": keyword, "sources": [], "resultCount": 0,
     })
@@ -207,16 +208,110 @@ def test_purpose_models_are_logged_per_function():
 
 
 def test_retrieve_goes_through_tools_search():
+    """KIET 스위치가 꺼져 있으면(기본) 로컬 자료 검색 네 번뿐이다. 켜면 KIET 검색 한 번이 더해진다."""
+    r = run_chain()
+    searches = [log for log in r.sinks["T-S1"].drain() if log.call_type == "search"]
+    assert len(searches) == 4 and {log.purpose for log in searches} == {"자료 검색"}
+    assert all(log.final_outcome == "성공" and log.model is None for log in searches)
+    market_research.set_kiet_search(True)
     r = run_chain()
     searches = [log for log in r.sinks["T-S1"].drain() if log.call_type == "search"]
     assert len(searches) == 5 and {log.purpose for log in searches} == {"자료 검색", "KIET 시장 조사"}
-    assert all(log.final_outcome == "성공" and log.model is None for log in searches)
     with pytest.raises(RuntimeError, match="호출 수단 없음"):
         research_context.retrieve(IDEA)
 
 
+# ── 실행별 KIET 검색 (스위치 SBRAIN_KIET_SEARCH — 기본 꺼짐) ─────────────
+KIET_KEYWORD = "비밀검색어키워드"   # 기록 · 예외 메시지에 실리면 안 되는 검색어
+
+
+def ts1_with_keyword(retry: int = 5):
+    """기술 분야 = KIET_KEYWORD로 T-S1을 부른다. 설정 재시도 횟수는 retry(KIET 검색만 2번)."""
+    co = company().model_copy(update={"tech_field": KIET_KEYWORD})
+    t, sink, _ = partner_tools(PartnerProvider(), "T-S1", retry=retry)
+    out = run_ts1(c.TS1In(item_spec=ITEM, selected_announcement=announcement(), instruction=INSTRUCTION,
+                          company_info=co, form_input=form_input()), t)
+    return out, sink.drain()
+
+
+def test_ts1_skips_kiet_search_when_switch_is_off(monkeypatch):
+    called = []
+    monkeypatch.setattr(strategy_module, "search_keyword", lambda keyword, timeout: called.append(keyword))
+    monkeypatch.setattr(market_research.market_crawler, "crawl_keyword",
+                        lambda *a, **k: called.append("crawler"))
+    assert market_research.kiet_search_enabled() is False                         # conftest 자동 장치
+    out, logs = ts1_with_keyword()
+    assert called == []
+    assert "KIET 시장 조사" not in {log.purpose for log in logs}                    # 호출 기록도 없다
+    assert "kietSearch" not in out.strategy_data["research"]["market"]             # 로컬 자료만 (SB-360 이전과 같음)
+
+
+def fake_crawler(monkeypatch, behave):
+    """연결 코드(search_keyword)는 그대로 두고 담당자 크롤러만 가짜로 — 네트워크 없음. 부른 횟수를 돌려준다."""
+    calls = []
+
+    def crawl(keyword, session, limit, is_user_keyword):
+        calls.append(keyword)
+        return behave(keyword)
+    monkeypatch.setattr(strategy_module, "search_keyword", market_research.search_keyword)
+    monkeypatch.setattr(market_research.market_crawler, "crawl_keyword", crawl)
+    market_research.set_kiet_search(True)
+    return calls
+
+
+def _raise(exc):
+    raise exc
+
+
+@pytest.mark.parametrize("behave,detail", [
+    (lambda kw: {"status": "failed", "error": f"https://www.kiet.re.kr?q={kw}", "results": []}, "값 failed"),
+    (lambda kw: _raise(market_research.requests.ConnectionError(f"https://www.kiet.re.kr?q={kw}")), "요청 오류"),
+    (lambda kw: _raise(market_research.requests.Timeout(f"timeout {kw}")), "시간 초과"),
+    (lambda kw: _raise(KeyError(kw)), "예상 못 한 오류"),
+])
+def test_kiet_failure_is_retried_twice_then_ts1_continues(monkeypatch, behave, detail):
+    calls = fake_crawler(monkeypatch, behave)
+    out, logs = ts1_with_keyword(retry=5)
+    [kiet] = [log for log in logs if log.purpose == "KIET 시장 조사"]
+    assert len(calls) == 3 and market_research.KIET_RETRIES == 2, detail          # 처음 포함 3번 (설정은 5번)
+    assert kiet.final_outcome == "소진" and len(kiet.tries) == 3
+    assert all(t.outcome == "호출실패" for t in kiet.tries)
+    others = [log for log in logs if log.purpose != "KIET 시장 조사"]
+    assert others and all(log.final_outcome == "성공" for log in others)           # T-S1은 성공으로 끝난다
+    market = out.strategy_data["research"]["market"]
+    assert market["kietSearch"]["status"] == "failed"
+    assert KIET_KEYWORD not in " ".join(log.model_dump_json() for log in logs)     # 기록에 검색어가 없다
+
+
+def test_kiet_connector_failure_message_has_no_keyword_or_crawler_error(monkeypatch):
+    fake_crawler(monkeypatch, lambda kw: {"status": "failed", "error": f"https://www.kiet.re.kr?q={kw}"})
+    with pytest.raises(ConnectionError) as e:
+        market_research.search_keyword(KIET_KEYWORD, 5)
+    assert KIET_KEYWORD not in str(e.value) and "kiet.re.kr" not in str(e.value)
+    assert e.value.__cause__ is None and e.value.__suppress_context__
+    fake_crawler(monkeypatch, lambda kw: _raise(ValueError(f"사이트 모양 {kw}")))
+    with pytest.raises(ConnectionError) as e:
+        market_research.search_keyword(KIET_KEYWORD, 5)
+    assert KIET_KEYWORD not in str(e.value) and "ValueError" in str(e.value)
+
+
+def test_kiet_no_result_and_partial_failure_are_success(monkeypatch):
+    calls = fake_crawler(monkeypatch, lambda kw: {"status": "no_relevant_source_found", "results": []})
+    out, logs = ts1_with_keyword()
+    [kiet] = [log for log in logs if log.purpose == "KIET 시장 조사"]
+    assert len(calls) == 1 and kiet.final_outcome == "성공" and len(kiet.tries) == 1
+    assert out.strategy_data["research"]["market"]["kietSearch"]["status"] == "no_relevant_source_found"
+    # 일부 검색만 실패하고 결과가 있으면 크롤러 값은 'collected' — 받은 결과를 쓴다
+    calls = fake_crawler(monkeypatch, lambda kw: {"status": "collected", "error": "일부 실패", "results": [
+        {"url": "https://www.kiet.re.kr/x", "title": "제목", "summaryText": "본문"}]})
+    out, logs = ts1_with_keyword()
+    assert len(calls) == 1
+    assert out.strategy_data["research"]["market"]["kietSearch"]["status"] == "collected"
+
+
 @pytest.mark.parametrize("tech_field,expected_keyword", [("정보통신", "정보통신"), ("", IDEA[:120])])
 def test_ts1_uses_ephemeral_kiet_evidence_and_falls_back_to_local(monkeypatch, tech_field, expected_keyword):
+    market_research.set_kiet_search(True)
     captured = []
     fresh = {"status": "collected", "keyword": expected_keyword, "resultCount": 1, "errorType": None,
              "sources": [{"domain": "market", "sourceRef": "kiet:run:test", "title": "KIET 시장 동향",
@@ -533,6 +628,7 @@ def test_tw3_table_check_failure_falls_back_in_same_attempt(monkeypatch):
     assert "3.5.2" not in [t.source_ref for t in out.tables]
     fb = out.table_outputs["3.5.2"]
     assert fb["tableFallbackUsed"] is True and fb["tables"] == [] and fb["fallbackReason"] == "필수 표 컬럼 누락"
+    assert fb["fallbackReasonCodes"] == ["TABLE_STRUCTURE_INVALID"]
     sec = next(s for s in out.table_sections if s.section_code == "3.5.2")
     assert sec.sentences[0].text.startswith("· ")
     assert "표 구조 검증에 실패하여 본문 설명으로 대체함" not in fb["generatedText"]
@@ -806,6 +902,7 @@ def test_tv1_marks_input_error_from_partner_checks():
     assert any(AFTER_END_RE.fullmatch(i) and "2027-01" in i for i in late["3.5.2"].issues)
     over = {x.section_code: x for x in run_chain("법인", support=5_000_000).v1.section_results}         # ③
     assert over["3.5.3"].status == "fail" and over["3.5.3"].input_error
+    assert over["3.5.3"].fallback_reason_codes == [validation_1.INPUT_ERROR_SUPPORT_LIMIT_EXCEEDED]
     assert any(OVER_SUPPORT_RE.fullmatch(i) for i in over["3.5.3"].issues)
     # 입력 오류 칸은 fail일 때만 — F19가 구조 코드로 분류한 결과만 참
     for results in (pre, late, over):
@@ -854,13 +951,16 @@ def test_tw3_fallback_items_from_verify1():
     tools, _, _ = partner_tools(r.p, "T-W3")
     ri = ReworkInput(mode="재수행", previous_result_ref="tables@1", issues=["표 판정 문제"], is_final_attempt=True,
                      redo_source="검증-1", unit="표 1건", target_items={"3.5.2": ["행 누락", "기간 오류"]},
-                     fallback_items=["3.5.2"])
+                     fallback_items=["3.5.2"],
+                     fallback_reason_codes={"3.5.2": ["AGREEMENT_TABLE_SCHEDULE_MISMATCH"]})
     out = run_tw3(c.TW3In(plan_doc=r.w1.plan_doc, company_info=r.co, selected_announcement=r.ann, instruction="",
                           rework_input=ri, strategy_data=r.s1.strategy_data, form_spec=r.bundle.form_spec,
                           base_tables=r.w3.tables, base_table_sections=r.w3.table_sections,
                           base_table_outputs=r.w3.table_outputs), tools)
     assert out.check.passed                                                          # 판정은 흐름이 fail로 둔다
     assert out.table_outputs["3.5.2"]["fallbackReason"] == "행 누락 · 기간 오류"
+    assert out.table_outputs["3.5.2"]["fallbackReasonCodes"] == ["AGREEMENT_TABLE_SCHEDULE_MISMATCH"]
+    assert "원본 협약 일정" in out.table_outputs["3.5.2"]["displayReason"]
     assert [t.source_ref for t in out.tables] == [t.source_ref for t in r.w3.tables if t.source_ref != "3.5.2"]
     assert out.table_outputs["3.6.2"] == r.w3.table_outputs["3.6.2"]                   # 나머지는 직전 그대로
 
