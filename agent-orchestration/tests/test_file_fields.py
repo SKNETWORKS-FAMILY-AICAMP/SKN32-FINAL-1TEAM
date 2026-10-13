@@ -107,6 +107,20 @@ def test_stub_m3_sets_readme_file():
     assert out.prototype.readme_file == readme and out.prototype.entry_file == proto.entry_file
 
 
+def test_stub_svgs_have_size_and_viewbox():
+    # 크기가 없으면 웹 내려받기(hwp)에서 얇은 띠로 깨진다(웹팀 부탁 2026-10-13) — 글자는 캔버스 가운데
+    import xml.etree.ElementTree as ET
+
+    from sbrain.agents.stubs import STUB_DIAGRAM_SVG, STUB_SVG, STUB_SVG_SIZE
+    w, h = STUB_SVG_SIZE
+    for svg, label in ((STUB_SVG, "원페이지"), (STUB_DIAGRAM_SVG, "스텁 그림")):
+        root = ET.fromstring(svg.decode())
+        assert (root.get("width"), root.get("height"), root.get("viewBox")) == (str(w), str(h), f"0 0 {w} {h}")
+        text = root.find("{http://www.w3.org/2000/svg}text")
+        assert text is not None and text.text == label
+        assert (text.get("x"), text.get("y"), text.get("text-anchor")) == (str(w // 2), str(h // 2), "middle")
+
+
 # ── 흐름 ────────────────────────────────────────────────
 def test_web_flow_puts_stub_files_and_carries_refs(clock):
     app = make_app(clock)

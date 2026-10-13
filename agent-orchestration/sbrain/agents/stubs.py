@@ -76,7 +76,12 @@ INFOGRAPHIC_FILE = "infographic.svg"   # 웹개발 · AI API 인포그래픽 (�
 HTML_TYPE, SVG_TYPE, PNG_TYPE = "text/html", "image/svg+xml", "image/png"
 # 자리채움 내용 — 스텁 파일은 작다. 계획서 파일은 만들지 않는다(웹이 planDoc으로 만든다)
 STUB_HTML = "<!doctype html><html lang='ko'><body>스텁 프로토타입</body></html>".encode()
-STUB_SVG = "<svg xmlns='http://www.w3.org/2000/svg'><text>원페이지</text></svg>".encode()
+# 스텁 SVG는 크기(width · height · viewBox)를 둔다 — 없으면 웹 내려받기(hwp)에서 얇은 띠로 깨진다(웹팀 부탁 2026-10-13, 크기는 웹 예시 값)
+STUB_SVG_SIZE = (1200, 520)
+_SVG_HEAD = ("<svg xmlns='http://www.w3.org/2000/svg' width='{w}' height='{h}' viewBox='0 0 {w} {h}'>"
+             .format(w=STUB_SVG_SIZE[0], h=STUB_SVG_SIZE[1]))
+_SVG_TEXT = "<text x='{x}' y='{y}' text-anchor='middle'>".format(x=STUB_SVG_SIZE[0] // 2, y=STUB_SVG_SIZE[1] // 2)
+STUB_SVG = f"{_SVG_HEAD}{_SVG_TEXT}원페이지</text></svg>".encode()
 # 스텁 공고 · 카드 값 — 모집 형태 표기(spec 4.4), 가산점
 PERIOD_FIXED = "기간 있음"
 PERIOD_OPEN = "상시·수시"            # 마감일 없는 공고 (no_deadline_ids)
@@ -93,7 +98,7 @@ STRATEGY_KEYS = ("web_data", "item_spec", "team_capability", "development_goal",
 MARKET_KEYS = ("market_analysis", "competitor_analysis", "marketing_strategy", "business_model", "growth_strategy")
 # 스텁 그림 — 담당자 F18의 두 그림(서비스 흐름도 · 서비스 구조도)과 파일 이름 (spec 4.6)
 STUB_DIAGRAMS = (("USER_FLOW", "userflow.svg"), ("SERVICE_ARCHITECTURE", "architecture.svg"))
-STUB_DIAGRAM_SVG = "<svg xmlns='http://www.w3.org/2000/svg'><text>스텁 그림</text></svg>".encode()
+STUB_DIAGRAM_SVG = f"{_SVG_HEAD}{_SVG_TEXT}스텁 그림</text></svg>".encode()
 STUB_SCORE_POLICY = "stub-policy-1"   # 스텁 채점 정책 버전 — 채점 기준표 버전이 없을 때
 # 결과물 묶음의 기획서 6-8 고정 문구(DISCLAIMER 등)는 결과 통합 실구현(agents/supervisor/tc4.py) 한 곳에 있다
 
