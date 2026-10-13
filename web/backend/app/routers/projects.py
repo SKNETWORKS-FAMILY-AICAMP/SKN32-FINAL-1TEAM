@@ -526,6 +526,20 @@ def _plan_texts(gateway: OrchGateway, project_id: int) -> tuple[PlanTexts, list]
 _APPLICANT_TYPE_LABEL = {'corp': '법인사업자', 'individual': '개인사업자', 'preliminary': '예비창업자'}
 
 
+_SUPPORT_FIELD_NAMES = {'제조': '제조', '제조업': '제조', '지식서비스': '지식서비스', '지식서비스업': '지식서비스'}
+
+
+def _support_and_tech_field(project: Project, plan_input) -> tuple[str, str]:
+    """계획서의 (지원 분야, 전문기술분야) — 주업종(`main_industry` · `main_industry_free`) · `tech_field` 한 칸에 '제조 · 지식서비스'(지원 분야)와
+    기술분야 7종(전문기술분야)이 섞여 들어오므로, 제조 · 지식서비스면 지원 분야로, 그 밖이면 전문기술분야로 가른다. 비면 자리표시('○○' · '○○·○○')."""
+    values = [v.strip() for v in (project.tech_field,
+                                  plan_input.main_industry if plan_input else None,
+                                  plan_input.main_industry_free if plan_input else None) if v and v.strip()]
+    support = next((_SUPPORT_FIELD_NAMES[v] for v in values if v in _SUPPORT_FIELD_NAMES), None)
+    tech = next((v for v in values if v not in _SUPPORT_FIELD_NAMES), None)
+    return support or '○○', tech or '○○·○○'
+
+
 def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts, pictures: list | None = None):
     """project(+company/team_members/pricing_items/budget_items/schedule_items/partners)와
     생성된 계획서(BusinessPlan.sections)를 공식 양식(별첨1) 구조(app/plan_document_export.py의
@@ -661,6 +675,8 @@ def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts, p
             for i, p in enumerate(sorted(project.partners, key=lambda p: p.item_order or 0))
         ]
 
+    support_field, tech_field = _support_and_tech_field(project, plan_input)
+
     item_desc = project.description or ''
     template = 'preliminary' if company and company.applicant_type == 'preliminary' else 'early_general'
 
@@ -674,12 +690,9 @@ def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts, p
         창업아이템명=item_desc[:60] or '○○기술이 적용된 ○○제품·서비스',
         # [SB-339] 산출물은 담당자가 짓는 값(항목 x.2.2)이다 — 없으면(옛 계획서 · 계획서 없음) 웹 입력으로 돌아간다. 창업아이템명 · 팀구성현황은 웹 값이다.
         산출물=_or_placeholder(texts.산출물 or project.output_summary, '○○ (협약기간 내 목표 — 산출물 형태·수량 입력 필요)'),
-        지원분야='○○',
-        # 전문기술분야 입력칸은 아직 없다 — 그 전까진 IntakeForm에서 받는 주업종으로 채운다.
-        전문기술분야=_or_placeholder(
-            project.tech_field or (plan_input.main_industry or plan_input.main_industry_free if plan_input else None),
-            '○○·○○',
-        ),
+        # 지원 분야(제조 · 지식서비스)와 전문기술분야 입력칸은 따로 없다 — IntakeForm이 받는 주업종 한 칸에 둘이 섞여 있어(MAIN_INDUSTRIES) 가른다.
+        지원분야=support_field,
+        전문기술분야=tech_field,
         정부지원사업비=government_amount_text,
         자기부담_현금=self_cash_text,
         자기부담_현물=self_in_kind_text,
