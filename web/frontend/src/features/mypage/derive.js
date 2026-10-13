@@ -92,7 +92,8 @@ export function formatWon(v) {
 export const EMPTY_TEAM_ROW = { name: '', role: '', career: '' };
 export const CAREER_FIELDS = [
   { key: 'type', label: '구분', type: 'select', options: CAREER_TYPES },
-  { key: 'title', label: '내용', placeholder: '○○전자 · 백엔드 개발' },
+  // 내용은 길게 쓰는 칸이라 넓은 화면에서 구분 옆 세 칸을 차지한다(한 칸이면 155px 남짓이라 잘려 보였다). 기간 · 증빙은 아랫줄.
+  { key: 'title', label: '내용', placeholder: '○○전자 · 백엔드 개발', wide: true },
   // 달력(월 선택) 두 칸으로 받고 'YYYY-MM ~ YYYY-MM' 문자열로 저장한다(ui.jsx MonthRangeInput).
   { key: 'period', label: '기간', type: 'monthrange' },
   { key: 'hasProof', label: '증빙 있음', type: 'check' },
