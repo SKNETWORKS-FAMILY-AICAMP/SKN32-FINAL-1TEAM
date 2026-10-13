@@ -2,7 +2,8 @@
 
 - HTML · 변형(외부 의존 · 샌드박스 멈춤 · 샌드박스 무시 · 비밀값): T-B1 응답 코드블록 안의 HTML. 모두 MARK를 담는다(기록에
   새지 않는지 볼 때).
-- bv_reply(request): 목적에 맞는 응답 — 'T-B1 HTML 생성' 코드블록, 'T-B2 인포그래픽 정보 추출' JSON, '계획서 대조 요소: …'
+- bv_reply(request): 목적에 맞는 응답 — 'T-B1 HTML 생성' 코드블록, 'T-B2 인포그래픽 정보 추출' JSON, '사업 분야 판정(색)'
+  분야 JSON(outdoor → green), '계획서 대조 요소: …'
   요소 JSON, '계획서 대조: …' 요소 판정 · 세 단계 판정 JSON.
 - BvProvider: 목적(또는 목적 머리말)별 스크립트('timeout' · 'rate_limit' · 'bad_request' · 'boom' · 글자)와 받은 요청 · 최대 동시 수.
 - EchoImage: 가짜 이미지 호출처 — 'echo'(받은 뼈대 그림을 그대로 → 칸 수가 맞다) · 'tiny'(1×1 → 칸 수 불일치) ·
@@ -68,6 +69,8 @@ def bv_reply(request: LLMRequest, html: str = HTML, content: dict | None = None,
         return f"```html:index.html\n{html}\n```"
     if purpose == "T-B2 인포그래픽 정보 추출":
         return json.dumps(content or CONTENT, ensure_ascii=False)
+    if purpose == "사업 분야 판정(색)":                      # T-B2 색 — 분야 낱말이 없을 때만 불린다
+        return json.dumps({"domain": "outdoor"})
     if purpose.startswith("계획서 대조 요소: "):
         return json.dumps({"elements": elements or ELEMENTS}, ensure_ascii=False)
     if "[확인할 요소]" in user:

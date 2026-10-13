@@ -1,9 +1,9 @@
 """담당자 입력 만들기 — LLM으로 보내는 칸(spec 4.4) · 표 원본 행(tableData) · 울타리(4.5) · 입력 없음(4.9).
 
 담당자 normalize_back_input은 쓰지 않고 담당자 입력 모양(2_지금_입력받는값)을 우리 값으로 직접 만든다. 보내는 칸은 spec 4.4
-표뿐이다 — 대표자 이름 · 생년월일 · 성별 · 사업자등록번호 · 기업명 · 지역 · 인증 · 수익모델 · 희망 사업 규모 · 자기부담금 ·
-직업 · 지방우대 지역 · 업종(biz_type) · 대표자 유형 · 팀원 이름 · 공고 제목 · 공고 ID는 여기서 꺼내지 않는다. 칸을 늘리려면
-사용자에게 먼저 묻는다.
+표뿐이다 — 대표자 이름 · 생년월일 · 성별 · 사업자등록번호 · 기업명 · 지역 · 인증 · 희망 사업 규모 · 자기부담금 · 직업 ·
+지방우대 지역 · 업종(biz_type) · 대표자 유형 · 팀원 이름 · 공고 제목 · 공고 ID는 꺼내지 않는다. 수익모델은 이미 받은 서비스명 ·
+단가만 성장전략 함수에 한정해 전달한다.
 """
 from __future__ import annotations
 
@@ -67,6 +67,11 @@ def project_body(description: str, company: CompanyInfo) -> dict[str, Any]:
     """POST_projects_body — 아이디어 설명 · 산출물 · 전문기술분야(없으면 주 업종) · 목표 고객('확인 필요')."""
     return {"description": description, "output_summary": company.output_summary,
             "tech_field": company.tech_field or company.industry_code, "target_customer": TARGET_CUSTOMER}
+
+
+def revenue_items(company: CompanyInfo) -> list[dict[str, Any]]:
+    """사용자가 입력한 서비스명 · 단가만 전달한다. 회사·대표자 식별정보는 포함하지 않는다."""
+    return [{"serviceName": item.service_name, "unitPrice": item.unit_price} for item in company.revenue_items]
 
 
 def team_input(company: CompanyInfo) -> dict[str, Any]:

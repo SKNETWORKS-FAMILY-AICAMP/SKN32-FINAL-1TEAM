@@ -7,7 +7,7 @@
 - 자체 검사 재수행: 걸린 항목(check.failedItems)만, 검증-1 재수행과 횟수 따로, T-W3는 재수행 없이 바로 대체.
 - 재작성: 고른 묶음 항목만 종류별 Task로, 다시 만든 항목만 재검증 · 나머지 이어받음, T-W3 · T-V1 지시문 다시 쓰기 없음.
 - 판정 후보: fail · warning 묶음, 입력 없음 제외 + 안내, 80 미만 · 후보 없음 → 묶음 모두, 배점은 설정 docLayerMax.
-- 짝짓기 한 곳: rework_map 표를 바꾸면 목표 · 후보 · 그림 항목 재작성(T-W2)이 따라 바뀐다.
+- 항목별 재작성 묶음 한 곳: rework_map 표를 바꾸면 목표 · 후보 · 그림 항목 재작성(T-W2)이 따라 바뀐다.
 스텁 앱 신청자는 법인(초기창업 3.1.1 ~ 3.7.4) — 본문 3.4.1(문제인식) · 그림 3.3.6(묶음 없음) · 표 3.5.2 · 3.5.3(실현가능성).
 흐름 테스트는 clock · store_backend 장치로 메모리 · SQLite 두 저장소에서 돈다.
 """
@@ -18,7 +18,7 @@ import json
 from conftest import make_app, to_screen6, to_screen9
 from flow_helpers import ctx_of, cycle_steps, last_cycle_id, pid, records_of_task, rework, usage_of
 
-from sbrain.agents.stubs import INPUT_MISSING_NOTICE, StubScenario
+from sbrain.agents.stubs import INPUT_ERROR_NOTICE, INPUT_MISSING_NOTICE, StubScenario
 from sbrain.agents.supervisor.plan import PURPOSE_REWRITE
 from sbrain.agents.supervisor.rewrite import rewrite_guidance
 from sbrain.flow import rework_map
@@ -110,6 +110,11 @@ def test_first_writing_redoes_only_failed_items_then_replaces_failed_table(clock
     ctx = ctx_of(app, rid)
     out = ctx.get("tableOutputs")[TABLE]
     assert out["tableFallbackUsed"] and out["fallbackReason"] == f"{TABLE} 결함 (스텁)"
+    s6 = app.orchestrator.screen(pid(app, rid), 6)
+    expected_fallback = [{"sectionCode": TABLE, "reason": f"{TABLE} 결함 (스텁)",
+                         "displayReason": "표를 검증 기준에 맞춰 완성하지 못해 설명으로 표시합니다. 입력 내용과 생성 결과를 확인해 주세요."}]
+    assert s6.dump()["tableFallbacks"] == expected_fallback
+    assert app.orchestrator.outputs(pid(app, rid)).dump()["tableFallbacks"] == expected_fallback
     plan = ctx.get("planDoc")
     assert TABLE not in [t.source_ref for t in plan.tables] and TABLE2 in [t.source_ref for t in plan.tables]
     assert "대체" in next(s for s in plan.sections if s.section_code == TABLE).sentences[0].text
@@ -123,6 +128,19 @@ def test_first_writing_redoes_only_failed_items_then_replaces_failed_table(clock
     assert [o.targets for o in orders] == [["실현가능성"]] and TABLE in orders[0].reason
 
 
+def test_table_fallback_display_reason_uses_plain_language_and_keeps_raw_reason():
+    from sbrain.flow.reads import _table_fallbacks
+
+    original = "협약기간 일정 10개월이 최대 8개월 조건을 초과함"
+    result = _table_fallbacks({"2.6.2": {"tableFallbackUsed": True, "fallbackReason": original}})[0].dump()
+    assert result["reason"] == original
+    assert "허용 기간" in result["displayReason"]
+    assert "10개월" not in result["displayReason"]
+
+    structural = _table_fallbacks({"2.5.3": {"tableFallbackUsed": True, "fallbackReason": "필수 표 컬럼 누락"}})[0]
+    assert "필수 항목" in structural.display_reason
+
+
 def test_redo_once_per_item_and_body_fail_stays_without_fallback(clock):
     app = make_app(clock, StubScenario(fail_items={BODY}))
     rid = to_screen6(app)
@@ -132,6 +150,55 @@ def test_redo_once_per_item_and_body_fail_stays_without_fallback(clock):
     orders = ctx_of(app, rid).get("G-02a.reworkOrders")
     assert [(o.task_id, o.targets) for o in orders] == [("T-W1", ["문제인식"])]
     assert orders[0].reason == f"{BODY} {BODY} 결함 (스텁)" == orders[0].instruction_delta
+
+
+def test_input_error_items_are_not_redone_or_replaced(clock):
+    # 입력 오류(inputError)는 판정 칸으로만 가른다: 재수행 · 표 대체 없음. issue 글은 보지 않는다
+    sc = StubScenario(input_error_items={TABLE, BODY}, fail_item_issues={TABLE: ["아무 글"]})
+    app = make_app(clock, sc)
+    rid = to_screen6(app)
+
+    steps = writing_steps(app, rid)
+    assert steps.count("T-V1") == 1 and steps.count("T-W3") == 1 and steps[-1] == "G-02a"
+    assert calls(app, f"섹션 {BODY} 작성") == 1
+    res = results(app, rid)
+    assert (res[TABLE].status, res[TABLE].input_error, res[TABLE].issues) == ("fail", True, ["아무 글"])
+    assert (res[BODY].status, res[BODY].input_error) == ("fail", True)
+    ctx = ctx_of(app, rid)
+    assert ctx.get("tableOutputs")[TABLE]["tableFallbackUsed"] is False
+    assert TABLE in [table.source_ref for table in ctx.get("planDoc").tables]
+    assert app.orchestrator.screen(pid(app, rid), 6).dump()["tableFallbacks"] == []
+    assert app.store.load_run(rid).verify1.redo_counts == {}
+
+
+def test_input_error_beside_plain_fail_redoes_and_replaces_only_the_plain_one(clock):
+    app = make_app(clock, StubScenario(input_error_items={TABLE}, fail_items={TABLE2}))
+    rid = to_screen6(app)
+    assert writing_steps(app, rid)[6:] == ["T-V1", "T-V1", "T-W3", "M-1", "G-02a"]
+    tv1 = rework_inputs(app, rid, "T-V1")[-1]
+    assert set(tv1.target_items) == {TABLE2}                                      # 다시 검증은 입력 오류 아닌 표만
+    tw3 = rework_inputs(app, rid, "T-W3")[-1]
+    assert tw3.fallback_items == [TABLE2]
+    outs = ctx_of(app, rid).get("tableOutputs")
+    assert outs[TABLE]["tableFallbackUsed"] is False and outs[TABLE2]["tableFallbackUsed"] is True
+    assert app.store.load_run(rid).verify1.redo_counts == {TABLE2: 1}
+
+
+def test_input_error_only_is_not_a_candidate_and_adds_notice_once(clock):
+    app = make_app(clock, StubScenario(doc_scores=[60.0], input_error_items={TABLE, TABLE2},
+                                       input_missing_items={"3.6.2"}))
+    rid = to_screen6(app)
+    ctx = ctx_of(app, rid)
+    assert ctx.get("G-02a.reworkOrders") == []                                   # 점수 85.7 ≥ 80 · 후보 없음
+    notices = ctx.get("scoreReport.document").notices
+    assert notices.count(INPUT_ERROR_NOTICE) == 1
+    assert notices.index(INPUT_MISSING_NOTICE) < notices.index(INPUT_ERROR_NOTICE)
+    assert ctx.get("G-02a.nextAction") == "진행가능"
+    low = make_app(clock, StubScenario(doc_scores=[40.0], input_error_items={TABLE}))
+    rid2 = to_screen6(low)
+    orders = ctx_of(low, rid2).get("G-02a.reworkOrders")                         # 기준 미만 · 다른 후보 없음 → 묶음 모두
+    assert {o.targets[0] for o in orders} == set(rework_map.DOCUMENT_BUNDLES)
+    assert INPUT_ERROR_NOTICE in ctx_of(low, rid2).get("scoreReport.document").notices
 
 
 def test_input_missing_and_warning_are_not_redone_and_candidates_skip_input_missing(clock):
@@ -342,10 +409,10 @@ def test_abort_during_verify1_redo_clears_state(clock):
     assert (run.verify1.phase, run.verify1.pending_items) == ("없음", {})
 
 
-# ── 짝짓기 한 곳 (spec 4.6) ─────────────────────────────────
+# ── 항목별 재작성 묶음 한 곳 (spec 4.6) ─────────────────────────────────
 def test_pairing_table_swap_drives_targets_candidates_and_image_rework(clock, monkeypatch):
     table = dict(rework_map.SECTION_BUNDLE_TABLE)
-    table["3.3"] = ("1-1", "문제인식")      # 시험용 짝짓기 — 개요 · 그림(3.3.x)을 문제인식 묶음에
+    table["3.3"] = ("1-1", "문제인식")      # 시험용 항목별 재작성 묶음 — 개요 · 그림(3.3.x)을 문제인식 묶음에
     monkeypatch.setattr(rework_map, "SECTION_BUNDLE_TABLE", table)
     assert rework_map.section_tags(["3.3.6", "3.1.1"]) == ["1-1", None]
     app = make_app(clock, StubScenario(fail_item_times={IMAGE: 2}))

@@ -16,6 +16,7 @@ from typing import Any, Callable
 
 from ...contracts.tasks import TS1In, TS1Out, TS2In, TS2Out
 from ...models import CheckResult
+from ...orchestrator.errors import ToolCallExhausted
 from ...orchestrator.tools import Tools
 from . import inputs as ins
 from .agent_strategy.functions import gpt_functions as gpt
@@ -25,6 +26,7 @@ from .agent_strategy.runtime.pipeline import _annotate_status, _attach_provenanc
 from .agent_strategy.runtime.research_context import retrieve
 from .calls import partner_call
 from .common import Steps
+from ...orchestrator.market_research import merge_market_evidence, search_keyword
 from .outputs import market_analysis, names, numeric_tokens, requirement_analysis
 from .purposes import F01, F02, F03, F04, F05, F06, F07, F08, F09, F10, F11, F12, F13, F14, F15
 
@@ -56,14 +58,25 @@ def run_ts1(inp: TS1In, tools: Tools) -> TS1Out:
     resources = ins.resource_input(company)
     budgets = ins.budget_rows(company, kind)
     schedules = ins.schedule_rows(company)
+    revenue_items = ins.revenue_items(company)
     tech_field = project.get("tech_field") or ""
     steps = Steps(inp.prior_results)
 
     with partner_call(tools, inp.instruction):
         query = project["description"] + " " + tech_field
+        # 실행별 KIET 검색은 파일에 저장하지 않는다. 검색 실패는 로컬 자료로 계속한다.
+        search_keyword_text = (str(company.tech_field or "").strip() or description[:120].strip())[:120]
+        try:
+            fresh_market = tools.search(
+                "KIET 시장 조사", lambda timeout: search_keyword(search_keyword_text, timeout))
+        except ToolCallExhausted:
+            # 외부 조사 실패는 전략 작성을 막지 않는다.
+            fresh_market = {"status": "failed", "keyword": search_keyword_text,
+                            "sources": [], "resultCount": 0, "errorType": "ToolCallExhausted"}
         web = steps.run(F01, lambda: _call(F01, py.collect_web_data, query=query, source_type="attached_crawling",
                                            target_fields=["market", "development", "design"]))
         market_ev = steps.run(None, lambda: retrieve(query, domains=("market",), limit=4, char_budget=5500))
+        market_ev = merge_market_evidence(market_ev, fresh_market)
         competitor_ev = steps.run(None, lambda: retrieve(query + " 경쟁사 경쟁 비교", domains=("market",), limit=4,
                                                          char_budget=4500))
         dev_ev = steps.run(None, lambda: retrieve(query, domains=("development",), limit=3, char_budget=3000))
@@ -109,6 +122,7 @@ def run_ts1(inp: TS1In, tools: Tools) -> TS1Out:
                              "budget": c["budget"]}
     original = {
         "item": item_input, "period": {"start": start, "end": end, "durationMonths": duration},
+        "revenueItems": revenue_items,
         "strategy_limits": limits, "team": team, "resources": resources,
         "budget": {k: c["budget"].get(k) for k in ("items", "total", "government_amount", "self_cash_amount",
                                                    "self_in_kind_amount", "phase")},
@@ -137,6 +151,7 @@ def run_ts2(inp: TS2In, tools: Tools) -> TS2Out:
     research = sd.get("research") if isinstance(sd.get("research"), dict) else {}
     market_ev = research.get("market") or EMPTY_EVIDENCE
     competitor_ev = research.get("competitor") or EMPTY_EVIDENCE
+    revenue_items = list((sd.get("original_facts") or {}).get("revenueItems") or [])
     target = ins.TARGET_CUSTOMER
     steps = Steps(inp.prior_results)
     with partner_call(tools, inp.instruction):
@@ -147,10 +162,15 @@ def run_ts2(inp: TS2In, tools: Tools) -> TS2Out:
         marketing = steps.run(F10, lambda: compact(_call(
             F10, gpt.create_marketing_strategy, item=item, market=market, target_customer=target, stage="초기시장")))
         bm = steps.run(F11, lambda: compact(_call(
-            F11, gpt.create_business_model, item=item, market=market, customer=target, strategy=marketing)))
+            F11, gpt.create_business_model, item=item, market=market, customer=target, strategy=marketing,
+            revenue_items=revenue_items)))
+        if revenue_items:
+            bm["providedRevenueItems"] = [dict(row) for row in revenue_items]
         growth = steps.run(F12, lambda: compact(_call(
             F12, gpt.create_growth_strategy, market=market, competitors=competitors, bm=bm, investment={},
-            social_value={})))
+            social_value={}, revenue_items=revenue_items)))
+        if revenue_items:
+            growth["providedRevenueItems"] = [dict(row) for row in revenue_items]
     data = {"market_analysis": market, "competitor_analysis": competitors, "marketing_strategy": marketing,
             "business_model": bm, "growth_strategy": growth}
     return TS2Out(market_analysis=market_analysis(market, competitors, growth),

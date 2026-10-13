@@ -65,12 +65,12 @@ FIELDS={
  'F08':'phases(배열), deliverables(배열)를 반환하고 제공된 기간을 유지한다.',
  'F09':'stages(stage/features/plan 배열)를 반환한다.',
  'F10':'earlyAccess(배열), matureStage(배열)를 반환한다.',
- 'F11':'customer, revenue, channels(배열)를 반환한다.',
- 'F12':'competition, entry, businessModel, investment, socialValue를 반환한다.',
+ 'F11':'customer, revenue, channels(배열)를 반환한다. revenue_items가 있으면 서비스명과 단가를 그대로 사용하며, 이름·단가를 바꾸거나 새 확정값을 만들지 않는다. 목록이 비어 있으면 가격을 확정하지 않는다.',
+ 'F12':'competition, entry, businessModel, investment, socialValue를 반환한다. revenue_items와 bm.providedRevenueItems가 있으면 서비스명·단가를 성장전략에 그대로 반영하고, 값을 바꾸거나 누락하지 않는다. 목록이 비어 있으면 가격을 확정하지 않는다.',
  'F13':'equipment, hiring, partners를 배열로 반환하고 no_hires/no_equipment/no_partners 값을 보존한다.',
  'F14':'제공된 예산만 설명한다. 금액을 계산하거나 재배분하지 않는다.',
  'F15':'제공된 일정만 설명한다. 날짜를 바꾸지 않는다.',
-'F16':'section_spec에 해당하는 항목만 작성하고 section_spec.rules를 따른다. generatedText에는 본문만 반환하며 sectionId, 항목 번호, 항목 제목, 소제목 헤더(예: "1.4.1 제품 개발계획")를 반복하거나 덧붙이지 않는다. 표는 제외하며 tables는 빈 배열이다. 원본에 없는 값이 사업계획 수립에 필요하면 합리적인 계획 제안으로 생성할 수 있지만 완료 실적이나 사용자 확정 사실처럼 쓰지 않는다. 그런 값은 facts에 {path,value,status:"proposed"}로 표시하고 generatedText에도 제안임을 드러낸다. 계획 중인 목표는 반드시 "개발 목표", "달성 목표" 또는 "계획"으로 표현하고 "미달성"처럼 이미 실패한 사실로 단정하는 표현은 사용하지 않는다.',
+'F16':'section_spec에 해당하는 항목만 작성하고 section_spec.rules를 따른다. generatedText에는 본문만 반환하며 sectionId, 항목 번호, 항목 제목, 소제목 헤더(예: "1.4.1 제품 개발계획")를 반복하거나 덧붙이지 않는다. 표는 제외하며 tables는 빈 배열이다. source_data.originalFacts.revenueItems가 있으면 해당 서비스명·단가를 그대로 반영하고 임의로 바꾸지 않는다. 원본에 없는 값이 사업계획 수립에 필요하면 합리적인 계획 제안으로 생성할 수 있지만 완료 실적이나 사용자 확정 사실처럼 쓰지 않는다. 그런 값은 facts에 {path,value,status:"proposed"}로 표시하고 generatedText에도 제안임을 드러낸다. 계획 중인 목표는 반드시 "개발 목표", "달성 목표" 또는 "계획"으로 표현하고 "미달성"처럼 이미 실패한 사실로 단정하는 표현은 사용하지 않는다.',
  'F18':'nodes는 3~6개의 문자열이며 각 문자열은 35자 이하다. flowType과 visualStyle를 반환한다. visualStyle는 palette(색상 배열), background, accent, cardStyle, layout을 포함하며 사용자 이미지 지시문을 반영한다. SVG·HTML은 만들지 않는다.',
 'F19':'passed(불리언), issues(실패를 유발하는 구조·확정사실 오류 배열), warnings(근거 누락·제안값·사용자 확인 배열)를 반환한다. '
        '다음 순서로 판정한다: (1) 필수 항목·표·이미지·일정·예산·featureList 누락은 issues, (2) originalFacts와 다른 provided/confirmed 값은 issues, '
@@ -82,6 +82,7 @@ FIELDS={
        '날짜는 YYYY-MM, YYYY.MM, YYYY/MM을 같은 월로 비교하고 기간 구분자(~, -, to)의 차이를 오류로 보지 않는다. 금액은 원·원화·₩·콤마 표기를 숫자로 정규화한다. '
        'provided·confirmed는 확정값, proposed·needs_confirmation은 제안·확인값으로 구분하며 같은 원인과 경로의 중복 issues/warnings는 한 번만 기록한다. '
        '%, FPS, 건, 시간, 원 등의 단위와 콤마·소수 표기 차이는 정규화하고, 기능·단계·표 행의 순서 변경은 누락으로 보지 않는다. null·빈 문자열·빈 배열은 미입력으로, 숫자 0은 실제 입력값으로 구분한다. '
+       '표 항목은 content.tables의 columns·rows·rules를 기준으로 검토한다. 구조화된 표가 제공되면 generatedText에 표를 다시 문자열로 옮기지 않아도 되며, 표 행의 원본 사실·일정·예산 의미를 표 데이터에서 대조한다. '
        'Python 구조 검증이 정규화된 기능 목록·표·이미지·일정 조건을 통과한 경우, 의미 검증은 표현 차이를 이유로 issues를 추가하지 않는다. '
        '동일한 입력에 대해 동일한 판정을 유지하고, issues가 없으면 passed=true로 반환한다.',
 }
@@ -155,7 +156,8 @@ def _parse_response(fid, config, content):
         if start>=0 and end>start:
             try: result=json.loads(cleaned[start:end+1])
             except json.JSONDecodeError: raise FormatError(f'{fid} 모델 JSON 파싱 실패') from None
-        raise FormatError(f'{fid} 모델 JSON 파싱 실패: JSON 객체가 닫히지 않았습니다.') from None
+        else:
+            raise FormatError(f'{fid} 모델 JSON 파싱 실패: JSON 객체가 닫히지 않았습니다.') from None
     if not isinstance(result,dict): raise FormatError(fid+' 응답 JSON 객체 형식 오류')
     if fid=='F16' and (not isinstance(result.get('generatedText'),str) or result['generatedText'].strip() in ('','{}','null')):
         raise FormatError('F16 유효한 generatedText 없음: 생성 실패')

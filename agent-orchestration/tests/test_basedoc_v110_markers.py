@@ -12,7 +12,7 @@ from sbrain.models import (
     TaskInstruction, Verify1State, extension_fields,
 )
 from sbrain.orchestrator.settings import ScoringSettings, TaskModelSetting
-from sbrain.flow.reads import ReworkFileChange
+from sbrain.flow.reads import DocumentScreen, Outputs, ResultScreen, ReworkFileChange, TableFallback
 from sbrain.orchestrator.trace import ExecutionRecord
 
 FORM_FIELDS = {"revenueItems", "companyName", "bizType", "representativeType", "outputSummary", "techField",
@@ -83,6 +83,12 @@ STILL_EXTENSION = [
     (ScoreReport, {"docLayerMax", "codeCheckScore", "codeCheckMax", "featureMatchScore", "featureMatchMax",
                    "artifactLayerScore", "artifactLayerMax", "codeCheckItems"}),
     (ScoringSettings, {"codeCheckMax", "featureMatchMax"}),
+    # 담당자 10-12 새 판 뒷정리 — 입력 오류 · 표 대체 사유 화면 칸
+    (SectionResult, {"inputError"}),
+    (DocumentScreen, {"tableFallbacks"}),
+    (ResultScreen, {"tableFallbacks"}),
+    (Outputs, {"tableFallbacks"}),
+    (TableFallback, {"sectionCode", "reason", "displayReason"}),
 ]
 
 # 새 타입 — 기존 타입에 담을 곳이 없어 새로 둔 타입. 칸은 모두 확장이고, 이 타입을 담는 칸의 note에 결정 번호가 있다

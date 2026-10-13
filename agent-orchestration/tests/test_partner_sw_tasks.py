@@ -6,6 +6,7 @@ Task 함수를 가짜 tools(목적 = F번호별 가짜 응답, 메모리 파일 
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from datetime import date
@@ -18,10 +19,12 @@ from partner_fake import BODY_MARK, PartnerProvider, partner_tools, payload
 
 from sbrain.agents.form_defaults import select_form
 from sbrain.agents.partner_sw import common, inputs, verify, writing
+from sbrain.agents.partner_sw import strategy as strategy_module
+from sbrain.agents.partner_sw.agent_validation_1 import validation_1
 from sbrain.agents.partner_sw.agent_strategy.functions import python_functions as partner_py
-from sbrain.agents.partner_sw.agent_strategy.runtime import research_context
+from sbrain.agents.partner_sw.agent_strategy.runtime import pipeline as legacy_pipeline, research_context
 from sbrain.agents.partner_sw.contract import SCORE_POLICY_VERSION
-from sbrain.agents.partner_sw.diagram_svg import NOTICE
+from sbrain.agents.partner_sw.diagram_svg import NOTICE, render as render_diagram
 from sbrain.agents.partner_sw.strategy import FINAL_TS1, run_ts1, run_ts2
 from sbrain.agents.partner_sw.verify import run_tv1
 from sbrain.agents.partner_sw.writing import FINAL_TW3, run_tw1, run_tw2, run_tw3
@@ -31,11 +34,20 @@ from sbrain.models import (
     BudgetItem, CompanyInfo, ItemSpec, PreInput, ReworkInput, ReworkOrder, RevenueItem, ScheduleItem,
 )
 from sbrain.orchestrator.errors import ToolCallExhausted
+from sbrain.orchestrator import market_research
 
 INSTRUCTION = "이번 Task 지시문"
 IDEA = "AI 헬스장 회원 관리 시장 서비스"
 ITEM = ItemSpec(item_name="헬스온", one_line_summary="헬스장 회원 관리 요약", target_customer="동네헬스장운영자힌트",
                 core_features=["회원 등록·조회", "수업 예약"], category="웹개발", keywords=["헬스장"])
+
+
+@pytest.fixture(autouse=True)
+def disable_live_kiet_in_task_tests(monkeypatch):
+    """Task 회귀 테스트는 외부 KIET 상태에 의존하지 않도록 빈 실행별 결과를 사용한다."""
+    monkeypatch.setattr(strategy_module, "search_keyword", lambda keyword, timeout: {
+        "status": "no_relevant_source_found", "keyword": keyword, "sources": [], "resultCount": 0,
+    })
 
 # LLM 요청에 실리면 안 되는 값 (spec 4.4 '보내지 않는다')
 SECRETS = {
@@ -197,10 +209,70 @@ def test_purpose_models_are_logged_per_function():
 def test_retrieve_goes_through_tools_search():
     r = run_chain()
     searches = [log for log in r.sinks["T-S1"].drain() if log.call_type == "search"]
-    assert len(searches) == 4 and {log.purpose for log in searches} == {"자료 검색"}     # F01 안 1회 + 3회
+    assert len(searches) == 5 and {log.purpose for log in searches} == {"자료 검색", "KIET 시장 조사"}
     assert all(log.final_outcome == "성공" and log.model is None for log in searches)
     with pytest.raises(RuntimeError, match="호출 수단 없음"):
         research_context.retrieve(IDEA)
+
+
+@pytest.mark.parametrize("tech_field,expected_keyword", [("정보통신", "정보통신"), ("", IDEA[:120])])
+def test_ts1_uses_ephemeral_kiet_evidence_and_falls_back_to_local(monkeypatch, tech_field, expected_keyword):
+    captured = []
+    fresh = {"status": "collected", "keyword": expected_keyword, "resultCount": 1, "errorType": None,
+             "sources": [{"domain": "market", "sourceRef": "kiet:run:test", "title": "KIET 시장 동향",
+                          "url": "https://example.test/kiet", "publishedAt": None,
+                          "text": "실행 중에만 사용하는 시장 근거", "matchedTerms": ["정보통신"]}]}
+
+    def fake_search(keyword, timeout):
+        captured.append((keyword, timeout))
+        return fresh
+
+    monkeypatch.setattr(strategy_module, "search_keyword", fake_search)
+    co = company().model_copy(update={"tech_field": tech_field})
+    p = PartnerProvider()
+    t, sink, _ = partner_tools(p, "T-S1")
+    out = run_ts1(c.TS1In(item_spec=ITEM, selected_announcement=announcement(), instruction=INSTRUCTION,
+                           company_info=co, form_input=form_input()), t)
+
+    market = out.strategy_data["research"]["market"]
+    assert captured and captured[0][0] == expected_keyword
+    assert market["kietSearch"]["status"] == "collected"
+    assert market["sources"][0]["sourceRef"] == "kiet:run:test"
+    assert any(row["sourceRef"] == "kiet:run:test" for row in out.strategy_data["research"]["sources"])
+    assert [log.purpose for log in sink.drain() if log.call_type == "search"].count("KIET 시장 조사") == 1
+
+    monkeypatch.setattr(strategy_module, "search_keyword", lambda keyword, timeout: {
+        "status": "failed", "keyword": keyword, "sources": [], "resultCount": 0, "errorType": "Timeout",
+    })
+    out = run_ts1(c.TS1In(item_spec=ITEM, selected_announcement=announcement(), instruction=INSTRUCTION,
+                           company_info=co, form_input=form_input()), t)
+    assert out.strategy_data["research"]["market"]["kietSearch"]["status"] == "failed"
+    assert out.strategy_data["research"]["market"]["status"] in {"retrieved", "no_relevant_evidence"}
+
+
+def test_kiet_adapter_uses_read_only_crawler_and_normalizes_ephemeral_sources(monkeypatch):
+    observed = {}
+
+    def crawl(keyword, session, limit, is_user_keyword):
+        observed.update(keyword=keyword, session=session, limit=limit, is_user_keyword=is_user_keyword)
+        return {"status": "collected", "results": [{
+            "url": "https://www.kiet.re.kr/summary?id=1", "title": "원문 제목", "summaryTitleText": "요약 제목",
+            "summaryText": "시장 근거 본문", "publishedAt": "2026-10-01", "matchedTerms": ["정보통신"],
+        }]}
+
+    monkeypatch.setattr(market_research.market_crawler, "crawl_keyword", crawl)
+    monkeypatch.setattr(market_research.market_crawler, "add_keyword",
+                        lambda *_args, **_kwargs: pytest.fail("공유 JSON을 갱신하는 함수는 호출하면 안 됨"))
+
+    result = market_research.search_keyword("  정보통신   산업  ", timeout_sec=90)
+
+    assert observed["keyword"] == "정보통신 산업"
+    assert observed["is_user_keyword"] is True and observed["limit"] == market_research.MAX_RESULTS
+    assert observed["session"]._deadline - time.monotonic() <= market_research.MAX_SEARCH_SECONDS
+    assert result["status"] == "collected" and result["resultCount"] == 1
+    assert result["sources"][0]["domain"] == "market"
+    assert result["sources"][0]["text"] == "요약 제목 — 시장 근거 본문"
+    assert result["sources"][0]["url"] == "https://www.kiet.re.kr/summary?id=1"
 
 
 # ── 보내는 칸 (spec 4.4) ───────────────────────────────────
@@ -209,6 +281,8 @@ def test_llm_requests_carry_no_forbidden_values(applicant):
     r = run_chain(applicant, support=50_000_000)
     sent = [m["content"] for q in r.p.requests for m in q.messages]
     for name, value in SECRETS.items():
+        if name == "수익모델":  # 서비스명은 F11 · F12와 성장전략 항목에 한정해 전달한다
+            continue
         assert not any(value in text for text in sent), name
     hinted = [q for q in r.p.requests if "targetCustomerHint" in q.messages[-1]["content"]]
     assert hinted and {q.metadata["purpose"] for q in hinted} == {"F02"}            # F02 요청에만
@@ -219,6 +293,87 @@ def test_llm_requests_carry_no_forbidden_values(applicant):
     assert "targetCustomerHint" not in json.dumps(r.s1.strategy_data, ensure_ascii=False)
     f02 = payload(hinted[0])["item_input"]
     assert f02["description"] == IDEA and f02["tech_field"] == "정보통신"
+
+
+@pytest.mark.parametrize("applicant,kind", [("법인", "early_startup"), ("예비창업자", "pre_startup")])
+def test_revenue_items_are_sent_only_to_business_model_and_growth_sections(applicant, kind):
+    # 수익모델 서비스명 · 단가는 F11 · F12와 성장전략 근거를 쓰는 항목의 F16 · F19에만 (business-rules 19.3 · security.md 6절)
+    r = run_chain(applicant)
+    expected = [{"serviceName": SECRETS["수익모델"], "unitPrice": 35000}]
+    growth_section_ids = {
+        spec["sectionId"] for spec in common.contract.document_specs(kind)
+        if "growth_strategy" in spec["sourceKeys"]
+    }
+    assert growth_section_ids
+    seen = set()
+
+    for request in r.p.requests:
+        body = payload(request)
+        purpose = request.metadata["purpose"]
+        if purpose in {"F11", "F12"}:
+            assert body["revenue_items"] == expected
+            seen.add(purpose)
+        elif purpose in {"F16", "F19"} and body["section_spec"]["sectionId"] in growth_section_ids:
+            seen.add(purpose)
+            assert body["source_data"]["originalFacts"]["revenueItems"] == expected
+            assert body["source_data"]["growth_strategy"]["providedRevenueItems"] == expected
+            assert "originalFacts" not in body["source_data"]["growth_strategy"]
+            assert "evidence" not in body["source_data"]["growth_strategy"]
+            growth_provenance = body["source_data"]["strategyProvenance"]["growth_strategy"]
+            assert set(growth_provenance) == {"sourceRefs"}
+            assert body["source_data"]["evidence"]
+            assert body["source_data"]["sourceRefs"]
+        else:
+            assert SECRETS["수익모델"] not in json.dumps(body, ensure_ascii=False)
+            assert "revenueItems" not in json.dumps((body.get("source_data") or {}).get("originalFacts") or {})
+
+    assert {"F11", "F12", "F16"} <= seen
+    assert r.s2.market_strategy_data["business_model"]["providedRevenueItems"] == expected
+    assert r.s2.market_strategy_data["growth_strategy"]["providedRevenueItems"] == expected
+
+
+def test_prompt_source_compacts_only_growth_strategy_provenance():
+    source = {
+        "growth_strategy": {
+            "generatedText": "요약", "providedRevenueItems": [{"serviceName": "서비스", "unitPrice": 1000}],
+            "facts": [{"path": "businessModel", "status": "proposed"}],
+            "sourceRefs": ["market/ref"], "evidence": [{"blob": "e" * 100}],
+            "originalFacts": {"market": {"blob": "m" * 500}},
+        },
+        "originalFacts": {"revenueItems": [{"serviceName": "서비스", "unitPrice": 1000}]},
+        "evidence": [{"sourceRef": "market/ref", "excerpt": "근거"}],
+        "sourceRefs": ["market/ref"],
+        "strategyProvenance": {"growth_strategy": {
+            "sourceRefs": ["market/ref"], "evidence": [{"blob": "e" * 100}],
+            "originalFacts": {"market": {"blob": "m" * 500}},
+        }},
+    }
+    spec = {"sourceKeys": ["growth_strategy"]}
+
+    projected = common.compact_prompt_source(source, spec)
+
+    assert projected["growth_strategy"]["providedRevenueItems"] == source["growth_strategy"]["providedRevenueItems"]
+    assert projected["growth_strategy"]["facts"] == source["growth_strategy"]["facts"]
+    assert "originalFacts" not in projected["growth_strategy"]
+    assert "evidence" not in projected["growth_strategy"]
+    assert projected["strategyProvenance"]["growth_strategy"] == {"sourceRefs": ["market/ref"]}
+    assert projected["originalFacts"] == source["originalFacts"]
+    assert projected["evidence"] == source["evidence"]
+    assert "originalFacts" in source["growth_strategy"] and "evidence" in source["growth_strategy"]
+
+
+def test_f18_svg_uses_contrasting_text_for_bright_and_dark_cards():
+    palette = ["#E9F2F5", "#DCEAF2", "#FFFFFF", "#E5E7EB", "#1E3A8A"]
+    svg = render_diagram({
+        "nodes": ["카드 1", "카드 2", "카드 3", "카드 4", "어두운 카드"],
+        "flowType": "USER_FLOW",
+        "visualStyle": {"palette": palette},
+    }).decode("utf-8")
+
+    for color in palette[:4]:
+        assert f'fill="{color}"/><text' in svg
+    assert svg.count('font-weight="600" fill="#172033">') == 4
+    assert 'font-weight="600" fill="white">어두운 카드</text>' in svg
 
 
 # ── 울타리 (spec 4.5) ─────────────────────────────────────
@@ -266,7 +421,8 @@ def test_pre_startup_unassigned_phase_rows():
     r = run_chain("예비창업자", budget=[*PRE_BUDGET, unassigned])
     out = r.w3.table_outputs["2.5.3"]
     assert out["tables"][0]["rules"]["unassignedOriginalRows"][0]["비목"] == "인건비"
-    assert "단계 미지정 원본 (단계별 합계에 미포함)" in out["generatedText"]
+    assert "단계 미지정 원본" not in out["generatedText"]
+    assert "인건비" not in out["generatedText"]
     assert all(row.get("비목") != "인건비" for t in r.w3.tables for row in [dict(zip(t.headers, x)) for x in t.rows])
     results = {x.section_code: x for x in r.v1.section_results}
     assert results["2.5.3"].input_missing and results["2.5.4"].input_missing             # 두 항목 입력 없음 (잠정)
@@ -282,6 +438,34 @@ def test_empty_inputs_are_input_missing_warnings():
         assert results[code].input_missing and results[code].status == "warning", code
         assert results[code].warnings[0] == f"입력 확인 필요 — {label}" and results[code].issues == []
     assert not any(x.input_missing for x in r.v1.section_results if x.content_type != "table")
+
+
+@pytest.mark.parametrize(
+    "applicant,kind,section_code,agreement_key,roadmap_key",
+    [
+        ("예비창업자", "pre_startup", "2.6.2", "implementationSchedule", "fullScaleSchedule"),
+        ("법인", "early_startup", "3.6.2", "실현가능성_일정", "성장전략_일정"),
+    ],
+)
+def test_empty_roadmap_keeps_agreement_schedule_and_passes_local_validation(
+    applicant, kind, section_code, agreement_key, roadmap_key,
+):
+    agreement_only = [row for row in SCHEDULE if row.scope == "agreement"]
+    if kind == "pre_startup":
+        # 예비창업 공고의 8개월 한도에 맞춘 입력(2026.03~2026.10).
+        agreement_only[-1] = agreement_only[-1].model_copy(update={"period": "2026.07~2026.10"})
+    r = run_chain(applicant, schedule=agreement_only)
+
+    table_data, _ = inputs.table_data(r.co, kind)
+    output = r.w3.table_outputs[section_code]
+    result = next(row for row in r.v1.section_results if row.section_code == section_code)
+
+    assert table_data[roadmap_key] == []
+    assert len(table_data[agreement_key]) == len(agreement_only)
+    assert output["tables"][0]["rows"] == table_data[agreement_key]
+    assert result.input_missing is False
+    assert result.status in {"pass", "warning"}
+    assert not any("필수 표" in issue for issue in result.issues)
 
 
 # ── 그림 (spec 4.6) ───────────────────────────────────────
@@ -350,8 +534,319 @@ def test_tw3_table_check_failure_falls_back_in_same_attempt(monkeypatch):
     fb = out.table_outputs["3.5.2"]
     assert fb["tableFallbackUsed"] is True and fb["tables"] == [] and fb["fallbackReason"] == "필수 표 컬럼 누락"
     sec = next(s for s in out.table_sections if s.section_code == "3.5.2")
-    assert sec.sentences[0].text.startswith("표 구조 검증에 실패하여 본문 설명으로 대체함")
+    assert sec.sentences[0].text.startswith("· ")
+    assert "표 구조 검증에 실패하여 본문 설명으로 대체함" not in fb["generatedText"]
     assert sink.drain() == []
+
+
+def test_f17_generated_text_is_narrative_only_and_preserves_unassigned_rows():
+    unassigned = [{"비목": "인건비", "집행계획": "단계 확인 필요"}]
+    out = partner_py.generate_table(
+        columns=["추진내용", "추진기간", "세부내용"],
+        rows=[{"추진내용": "회원 · 예약 화면 개발", "추진기간": "2026.10~2026.12", "세부내용": "예약 기능 구현"}],
+        rules={"narrativeRequired": True, "narrativeType": "schedule", "unassignedOriginalRows": unassigned},
+    )
+
+    assert out["generatedText"] == "1. 추진 항목은 회원 · 예약 화면 개발, 기간은 2026.10~2026.12, 세부 내용은 예약 기능 구현."
+    assert "|" not in out["generatedText"]
+    assert "개발계획 서술" not in out["generatedText"]
+    assert "협약 후 확인함" not in out["generatedText"]
+    assert out["tables"][0]["rules"]["unassignedOriginalRows"] == unassigned
+    assert "인건비" not in out["generatedText"]
+
+
+def test_f19_reviews_structured_table_without_duplicate_text(monkeypatch):
+    table = {"columns": ["추진내용", "추진기간"], "rows": [{"추진내용": "예약 기능", "추진기간": "2026.10~2026.12"}], "rules": {}}
+    requests = []
+
+    def review(purpose, payload):
+        requests.append((purpose, payload))
+        return {"passed": True, "issues": [], "warnings": []}
+
+    monkeypatch.setattr(validation_1, "request_json", review)
+    result = validation_1.validate_section(
+        {"sectionId": "test.table", "contentType": "table", "rules": {"requiredColumns": table["columns"], "minItems": 1}},
+        {"generatedText": "", "tables": [table], "sourceRefs": [], "facts": []},
+        {"documentType": "general", "originalFacts": {}, "strategyProvenance": {"F15": {"sourceRefs": []}}},
+    )
+
+    assert result["status"] == "pass"
+    assert result["semanticCalled"] is True
+    assert requests[0][1]["content"]["generatedText"] == ""
+    assert requests[0][1]["content"]["tables"] == [table]
+
+
+@pytest.mark.parametrize(
+    "document_type, section_id, agreement_period, exceeds_limit, expected_limit, expected_duration",
+    [
+        ("pre_startup", section_id, period, exceeds_limit, 8, duration)
+        for section_id in ("2.5.2", "2.6.2")
+        for period, exceeds_limit, duration in (("2026.05~2026.12", False, 8), ("2026.05~2027.02", True, 10))
+    ] + [
+        ("early_startup", section_id, period, exceeds_limit, 10, duration)
+        for section_id in ("3.5.2", "3.6.2")
+        for period, exceeds_limit, duration in (("2026.05~2027.02", False, 10), ("2026.05~2027.03", True, 11))
+    ],
+)
+def test_agreement_schedule_duration_is_checked_before_semantic_review(
+    monkeypatch, document_type, section_id, agreement_period, exceeds_limit, expected_limit, expected_duration,
+):
+    spec = common.spec_for(common.section_specs(document_type), section_id)
+    requests = []
+
+    def review(purpose, payload):
+        requests.append((purpose, payload))
+        return {"passed": True, "issues": [], "warnings": []}
+
+    monkeypatch.setattr(validation_1, "request_json", review)
+    source = {
+        "documentType": document_type,
+        "originalFacts": {"schedule": [
+            {"task": "협약 일정", "period": agreement_period, "_schedule_scope": "agreement"},
+            {"task": "후속 로드맵", "period": "2027.03~2028.01", "_schedule_scope": "roadmap"},
+        ]},
+        "strategy_limits": {}, "sourceRefs": [],
+        "strategyProvenance": {"schedule": {"sourceRefs": []}},
+    }
+    content = {
+        "generatedText": "전체 일정 계획",
+        "tables": [{"columns": spec["rules"]["requiredColumns"], "rows": [
+            {"구분": "개발", "추진내용": "협약 일정", "추진기간": agreement_period, "세부내용": "개발"},
+            {"구분": "사업화", "추진내용": "후속 로드맵", "추진기간": "2027.03~2028.01", "세부내용": "확장"},
+        ]}],
+        "sourceRefs": [], "facts": [],
+    }
+
+    result = validation_1.validate_section(spec, content, source)
+
+    duration_issues = [issue for issue in result["issues"] if "협약기간 일정" in issue]
+    if exceeds_limit:
+        assert result["status"] == "fail"
+        assert result["semanticCalled"] is False
+        assert duration_issues == [f"협약기간 일정 {expected_duration}개월이 최대 {expected_limit}개월 조건을 초과함"]
+        assert result["inputErrorCodes"] == [validation_1.INPUT_ERROR_AGREEMENT_MONTHS_EXCEEDED]
+        assert requests == []
+    else:
+        assert not duration_issues
+        assert result["inputErrorCodes"] == []
+        assert result["semanticCalled"] is True
+        assert len(requests) == 1
+
+
+def test_agreement_schedule_after_development_end_fails_before_semantic_review(monkeypatch):
+    spec = common.spec_for(common.section_specs("pre_startup"), "2.5.2")
+    requests = []
+    monkeypatch.setattr(validation_1, "request_json", lambda *args: requests.append(args))
+    source = {
+        "documentType": "pre_startup",
+        "originalFacts": {
+            "period": {"end": "2026-12"},
+            "schedule": [{"task": "개발", "period": "2026.11~2027.01", "_schedule_scope": "agreement"}],
+        },
+        "strategy_limits": {"deadline": "2026-12"}, "sourceRefs": [], "strategyProvenance": {},
+    }
+    content = {
+        "generatedText": "개발 일정을 추진함.", "tables": [{
+            "columns": spec["rules"]["requiredColumns"],
+            "rows": [{"구분": "개발", "추진내용": "개발", "추진기간": "2026.11~2027.01", "세부내용": "개발"}],
+        }],
+        "sourceRefs": [], "facts": [],
+    }
+
+    result = validation_1.validate_section(spec, content, source)
+
+    assert result["status"] == "fail"
+    assert result["issues"] == ["협약기간 일정 개발의 종료월 2027-01이 개발 종료월 2026-12 이후임"]
+    assert result["inputErrorCodes"] == [validation_1.INPUT_ERROR_AGREEMENT_AFTER_DEADLINE]
+    assert result["semanticCalled"] is False and requests == []
+
+
+def test_original_development_end_after_deadline_uses_same_input_error_code(monkeypatch):
+    spec = common.spec_for(common.section_specs("pre_startup"), "2.5.2")
+    monkeypatch.setattr(validation_1, "request_json", lambda *args: pytest.fail("의미 검증은 호출하지 않아야 함"))
+    source = {
+        "documentType": "pre_startup",
+        "originalFacts": {"period": {"end": "2027-01"}, "schedule": []},
+        "strategy_limits": {"deadline": "2026-12"}, "sourceRefs": [], "strategyProvenance": {},
+    }
+    content = {"generatedText": "개발 계획을 수립함.", "tables": [{
+        "columns": spec["rules"]["requiredColumns"], "rows": [{"구분": "개발"}],
+    }]}
+
+    result = validation_1.validate_section(spec, content, source)
+
+    assert result["status"] == "fail"
+    assert result["inputErrorCodes"] == [validation_1.INPUT_ERROR_AGREEMENT_AFTER_DEADLINE]
+    assert result["semanticCalled"] is False
+
+
+def test_agreement_duration_fail_is_not_treated_as_table_structure_fallback():
+    assert legacy_pipeline._is_agreement_duration_failure({
+        "status": "fail", "issues": ["협약기간 일정 11개월이 최대 10개월 조건을 초과함"],
+    })
+    assert not legacy_pipeline._is_agreement_duration_failure({
+        "status": "fail", "issues": ["필수 표 컬럼 누락: 추진기간"],
+    })
+
+
+def test_semantic_issue_text_does_not_set_input_error_codes(monkeypatch):
+    spec = common.spec_for(common.section_specs("early_startup"), "3.5.2")
+    monkeypatch.setattr(validation_1, "request_json", lambda *args: {
+        "passed": False,
+        "issues": ["협약기간 일정 개발의 종료월 2027-01이 개발 종료월 2026-12 이후임"],
+        "warnings": [],
+    })
+    source = {"documentType": "early_startup", "originalFacts": {"schedule": []},
+              "strategy_limits": {}, "sourceRefs": [], "strategyProvenance": {}}
+    content = {"generatedText": "개발 일정을 계획함.",
+               "tables": [{"columns": spec["rules"]["requiredColumns"], "rows": [{"구분": "개발"}]}],
+               "sourceRefs": [], "facts": []}
+
+    result = validation_1.validate_section(spec, content, source)
+
+    assert result["status"] == "fail"
+    assert result["semanticCalled"] is True
+    assert result["inputErrorCodes"] == []
+
+
+# ── 입력 오류 (business-rules 19.4) ─────────────────────
+# 사용자에게 보여 주는 담당자 F19 issue 문구 확인용 — 입력 오류 분기는 아래 구조 코드로 검증한다.
+DURATION_RE = re.compile(r"협약기간 일정 \d+개월이 최대 \d+개월 조건을 초과함")
+AFTER_END_RE = re.compile(r"협약기간 일정 .+의 종료월 \d{4}-\d{2}이 개발 종료월 \d{4}-\d{2} 이후임")
+OVER_SUPPORT_RE = re.compile(r"정부지원사업비 \S+원이 지원규모 상한 \S+원을 초과함")
+LATE_SCHEDULE = [ScheduleItem(scope="agreement", category="개발", content="화면 개발", period="2026.05~2026.08",
+                              detail="웹"),
+                 ScheduleItem(scope="agreement", category="시험", content="시범 운영", period="2026.09~2027.01",
+                              detail="")]   # 9개월(초기 10개월 안) · 끝 2027-01 > 개발 종료월 2026-12
+
+
+def _partner_check(monkeypatch, document_type: str, section_id: str, *, schedule=(), limits=None, period=None,
+                   budget=None) -> dict:
+    """담당자 F19 검사(validate_section)를 가짜 의미 검증으로 실제로 돌린다 — 네트워크 없음."""
+    monkeypatch.setattr(validation_1, "request_json",
+                        lambda *args: {"passed": True, "issues": [], "warnings": []})
+    spec = common.spec_for(common.section_specs(document_type), section_id)
+    original: dict = {"schedule": [dict(row) for row in schedule]}
+    if period is not None:
+        original["period"] = period
+    if budget is not None:
+        original["budget"] = budget
+    columns = spec["rules"].get("requiredColumns") or ["구분", "추진내용", "추진기간", "세부내용"]
+    rows = [{col: row.get("period") if col == "추진기간" else row.get("task", "개발") for col in columns}
+            for row in schedule] or [{col: "개발" for col in columns}]
+    content = {"generatedText": "개발 일정을 추진함.", "tables": [{"columns": columns, "rows": rows}],
+               "sourceRefs": [], "facts": []}
+    source = {"documentType": document_type, "originalFacts": original, "strategy_limits": limits or {},
+              "sourceRefs": [], "strategyProvenance": {}}
+    return validation_1.validate_section(spec, content, source)
+
+
+def test_input_error_patterns_match_partner_check_texts(monkeypatch):
+    # ① 협약기간 최대 개월 수 초과 (예비 8개월)
+    v1 = _partner_check(monkeypatch, "pre_startup", "2.5.2",
+                        schedule=[{"task": "협약 일정", "period": "2026.03~2026.12", "_schedule_scope": "agreement"}])
+    assert v1["status"] == "fail" and [i for i in v1["issues"] if DURATION_RE.fullmatch(i)] == [
+        "협약기간 일정 10개월이 최대 8개월 조건을 초과함"]
+    assert v1["inputErrorCodes"] == [validation_1.INPUT_ERROR_AGREEMENT_MONTHS_EXCEEDED]
+    assert verify.input_error(v1)
+    # ② 협약기간 일정 종료월이 개발 종료월보다 늦음
+    v2 = _partner_check(monkeypatch, "early_startup", "3.5.2", period={"end": "2026-12"},
+                        limits={"deadline": "2026-12"},
+                        schedule=[{"task": "시범 운영", "period": "2026.09~2027.01", "_schedule_scope": "agreement"}])
+    assert v2["status"] == "fail" and "협약기간 일정 시범 운영의 종료월 2027-01이 개발 종료월 2026-12 이후임" in v2["issues"]
+    assert v2["inputErrorCodes"] == [validation_1.INPUT_ERROR_AGREEMENT_AFTER_DEADLINE]
+    assert any(AFTER_END_RE.fullmatch(i) for i in v2["issues"]) and verify.input_error(v2)
+    # ③ 정부지원사업비가 공고 지원 금액 상한을 넘음 — 숫자 · 글자 금액 모두
+    for amount, text in ((70_000_000, "정부지원사업비 70000000원이 지원규모 상한 50000000원을 초과함"),
+                         ("70,000,000원", "정부지원사업비 70000000.0원이 지원규모 상한 50000000원을 초과함")):
+        v3 = _partner_check(monkeypatch, "early_startup", "3.5.3", limits={"supportLimit": 50_000_000},
+                            budget={"government_amount": amount})
+        assert v3["status"] == "fail" and text in v3["issues"] and OVER_SUPPORT_RE.fullmatch(text)
+        assert v3["inputErrorCodes"] == [validation_1.INPUT_ERROR_SUPPORT_LIMIT_EXCEEDED]
+        assert verify.input_error(v3)
+
+
+def test_input_error_is_false_for_other_failures_warnings_and_partial_texts():
+    # 담당자 파이프라인 보정의 '만든 표' 종료월 초과는 다시 만들면 고쳐진다 — 입력 오류가 아니다
+    overrun = legacy_pipeline._check_agreement_table_overrun(
+        {"status": "pass", "issues": [], "warnings": []}, {"sectionId": "3.5.2"},
+        {"tables": [{"rows": [{"추진기간": "2026.05~2027.03"}]}]},
+        {"originalFacts": {"schedule": [{"period": "2026.05~2026.12", "_schedule_scope": "agreement"}]}},
+        "early_startup")
+    assert overrun["status"] == "fail"
+    assert overrun["issues"] == ["개발계획 표 종료월 2027-03이 원본 협약 일정 종료월 2026-12 이후임"]
+    assert not verify.input_error(overrun)
+    assert not verify.input_error({"status": "fail", "issues": ["필수 표 컬럼 누락: 추진기간"]})
+    known_code = validation_1.INPUT_ERROR_AGREEMENT_MONTHS_EXCEEDED
+    for status in ("warning", "pass"):                                              # fail이 아니면 거짓
+        assert not verify.input_error({"status": status, "inputErrorCodes": [known_code]})
+    assert not verify.input_error({"status": "warning", "inputErrorCodes": [known_code]})
+    # 문구가 똑같아도 구조 코드가 없으면 입력 오류로 분류하지 않는다.
+    for text in ("협약기간 일정이 개발 종료월 이후임", "일정 협약기간 일정 개발의 종료월 2027-01이 개발 종료월 2026-12 이후임",
+                 "정부지원사업비가 지원규모 상한을 초과함",
+                 "정부지원사업비 9000000원이 지원규모 상한 5000000원을 초과함 — 확인 필요"):
+        assert not verify.input_error({"status": "fail", "issues": [text]}), text
+    # 구조 코드만 분기 기준으로 사용하며, 다른 issue가 함께 있어도 입력 오류 코드는 유지된다.
+    for code in (validation_1.INPUT_ERROR_AGREEMENT_MONTHS_EXCEEDED,
+                 validation_1.INPUT_ERROR_AGREEMENT_AFTER_DEADLINE,
+                 validation_1.INPUT_ERROR_SUPPORT_LIMIT_EXCEEDED):
+        assert verify.input_error({"status": "fail", "issues": ["필수 표 컬럼 누락: 추진기간"],
+                                   "inputErrorCodes": [code]}), code
+        assert not verify.input_error({"status": "warning", "inputErrorCodes": [code]})
+    assert not verify.input_error({"status": "fail", "inputErrorCodes": ["UNKNOWN_INPUT_ERROR"]})
+
+
+def test_tv1_marks_input_error_from_partner_checks():
+    pre = {x.section_code: x for x in run_chain("예비창업자").v1.section_results}   # 일정 2026.03 ~ 2026.12 = 10개월 (①)
+    for code in ("2.5.2", "2.6.2"):
+        assert pre[code].status == "fail" and pre[code].input_error, code
+        assert "협약기간 일정 10개월이 최대 8개월 조건을 초과함" in pre[code].issues
+    late = {x.section_code: x for x in run_chain("법인", schedule=LATE_SCHEDULE).v1.section_results}   # ②
+    assert late["3.5.2"].status == "fail" and late["3.5.2"].input_error
+    assert any(AFTER_END_RE.fullmatch(i) and "2027-01" in i for i in late["3.5.2"].issues)
+    over = {x.section_code: x for x in run_chain("법인", support=5_000_000).v1.section_results}         # ③
+    assert over["3.5.3"].status == "fail" and over["3.5.3"].input_error
+    assert any(OVER_SUPPORT_RE.fullmatch(i) for i in over["3.5.3"].issues)
+    # 입력 오류 칸은 fail일 때만 — F19가 구조 코드로 분류한 결과만 참
+    for results in (pre, late, over):
+        assert all(r.status == "fail" for r in results.values() if r.input_error)
+    plain = run_chain("법인").v1.section_results
+    assert not any(r.input_error for r in plain)
+
+
+def test_input_missing_items_are_not_input_errors():
+    unassigned = BudgetItem(category="인건비", execution_plan="개발자", total_amount=5_000_000,
+                            government_amount=5_000_000, self_cash_amount=0, self_in_kind_amount=0)
+    r = run_chain("예비창업자", budget=[*PRE_BUDGET, unassigned], support=1_000_000)
+    by = {x.section_code: x for x in r.v1.section_results}
+    for code in ("2.5.3", "2.5.4"):                                  # 입력 없음 처리 뒤의 issue로 본다 (③이 지워짐)
+        assert by[code].input_missing and by[code].status == "warning" and not by[code].input_error, code
+    assert by["2.5.2"].input_error                                   # 같은 실행의 ①은 그대로
+
+
+def test_input_error_keeps_partner_status_issues_and_score(monkeypatch):
+    r = run_chain("예비창업자", support=1_000_000)
+    assert any(x.input_error for x in r.v1.section_results)
+    monkeypatch.setattr(verify, "input_error", lambda validation: False)
+    again = run_tv1(r.v1_in, partner_tools(PartnerProvider(), "T-V1")[0])
+    assert not any(x.input_error for x in again.section_results)
+    assert [x.model_copy(update={"input_error": False}) for x in r.v1.section_results] == again.section_results
+    assert (again.doc_score, again.items) == (r.v1.doc_score, r.v1.items)
+
+
+def test_received_and_base_results_keep_stored_input_error():
+    r = run_chain("예비창업자")
+    stored = {x.section_code: x for x in r.v1.section_results}
+    assert stored["2.5.2"].input_error
+    p = PartnerProvider()
+    ri = ReworkInput(mode="재수행", previous_result_ref="planDoc@3", issues=[], is_final_attempt=True,
+                     redo_source="검증-1", unit="섹션", target_items={"2.4.1": ["문제"]})
+    out = run_tv1(r.v1_in.model_copy(update={"rework_input": ri, "base_section_results": r.v1.section_results}),
+                  partner_tools(p, "T-V1")[0])
+    assert {x.section_code: x for x in out.section_results}["2.5.2"].input_error   # 이어받은 판정 그대로
+    prior = {"2.5.2": json.dumps(stored["2.5.2"].dump(), ensure_ascii=False)}
+    resumed = run_tv1(r.v1_in.model_copy(update={"prior_results": prior}), partner_tools(PartnerProvider(), "T-V1")[0])
+    assert {x.section_code: x for x in resumed.section_results}["2.5.2"].input_error   # 재개 때 받은 판정 그대로
 
 
 def test_tw3_fallback_items_from_verify1():

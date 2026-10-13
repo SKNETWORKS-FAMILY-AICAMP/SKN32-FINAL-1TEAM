@@ -56,10 +56,19 @@ def _index(signature):
     return rows
 
 
-# [S-Brain] 있는 자료 파일 목록은 불러올 때 한 번 정한다(원래는 호출마다 stat · 수정 시각). 없는 파일(시장 자료
-# keyword_history.json — 크롤러를 옮기지 않아 늘 없음, raw_kiet_results.json이 없는 설치본)은 빈 자료로 본다
+# [S-Brain] 있는 자료 파일 목록은 불러올 때 한 번 정한다(원래는 호출마다 stat · 수정 시각). 기본 설치본에 없는
+# keyword_history.json · raw_kiet_results.json은 빈 자료로 본다. 명시적 KIET 갱신 뒤 refresh_market_sources가 재색인한다.
 _SIGNATURE=tuple((domain,name,0) for domain,name in FILES if _res.exists(ROOT/name))
 _index(_SIGNATURE)
+
+
+def refresh_market_sources():
+    """명시적 KIET 갱신으로 저장된 시장 JSON을 다음 로컬 검색 색인에 반영한다."""
+    global _SIGNATURE
+    _SIGNATURE=tuple((domain,name,0) for domain,name in FILES if _res.exists(ROOT/name))
+    _index.cache_clear()
+    _index(_SIGNATURE)
+    return [name for _,name,_ in _SIGNATURE]
 
 
 def retrieve(query, domains=('market','development','design'), limit=6, char_budget=6500):

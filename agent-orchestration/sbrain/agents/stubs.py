@@ -6,7 +6,8 @@
   규격에 맞는 더미로 채운다. 계획서 항목은 formSpec의 항목 · 태그 · 종류를 따른다(태그 · 종류 칸이 비면 태그 없음 · 본문).
   T-W1 · T-W2 · T-W3 · T-V1은 목표 항목(reworkInput.targetItems)만 다시 만들고(판정하고) 나머지는 base… 입력을 그대로 잇는다.
   T-W3는 fallbackItems의 표를 본문 서술로 대체하고, 자체 검사 불통과면 그 시도에서 바로 대체한다 (spec 4.8 · 4.10).
-- 스텁 T-V1은 StubScenario의 항목 판정(fail · warning · 입력 없음)을 따른다.
+- 스텁 T-V1은 StubScenario의 항목 판정(fail · warning · 입력 없음 · 입력 오류)을 따른다. 입력 오류(input_error_items, 결정
+  0028)는 fail · inputError 참으로 둔다 — 흐름 테스트는 issue 글이 아니라 이 칸으로 입력 오류를 만든다.
 - 규칙 단계(판정 G-02a · G-02b, 안내 문서 G-04, 합치기 M-1 ~ M-4)는 스텁이 없다 — 조율 실구현(agents/supervisor RULES) 한 벌을
   쓰고 테스트용 실패 흉내만 감싼다( D14): raise_in(코드 오류), G-04 check_fail_times(자체 검사 불통과).
   흐름 테스트가 워커와 같은 규칙(환산 · E-G2-UNREACHABLE 포함)을 검사한다. 규칙 사본을 여기 두지 않는다.
@@ -48,7 +49,9 @@ from .form_defaults import default_evaluation_items, default_form_spec, stub_rub
 from .notice.g01 import PRE_STARTUP, business_age_years   # 업력(년) 반올림은 실제 G-01과 한 곳에서 (스텁 테스트도 이 이름을 쓴다)
 from .supervisor import RULES
 from .supervisor import plan as task_plan   # 작업 분해 부품 — 실제 T-C3와 같은 확인 · 양식 고르기 · 목록 · 틀 · 맥락
-from .supervisor.judge import INPUT_MISSING_NOTICE  # noqa: F401 — 판정 안내 문구는 실구현 한 곳 (테스트가 이 이름으로 가져간다)
+from .supervisor.judge import (  # noqa: F401 — 판정 안내 문구는 실구현 한 곳 (테스트가 이 이름으로 가져간다)
+    INPUT_ERROR_NOTICE, INPUT_MISSING_NOTICE,
+)
 from .supervisor.readme import MARKDOWN_TYPE, PROTOTYPE_NOTICE, README_FILE  # noqa: F401 — 안내 문서 상수는 실구현 한 곳
 
 # 스텁 T-V1 평가항목 배점이 없을 때 쓰는 문서층 배점 기본값 (70 ÷ 항목 수)
@@ -236,8 +239,10 @@ class StubScenario:
     more_collection_status: str | None = None               # 추가 조회의 수집 상태 ('정상'이 아니면 후보 0건)
     # ── 검증-1 항목별 판정 (스텁 T-V1 sectionResults, spec 4.15) — 판정할 때마다 읽는다 ──
     fail_items: set[str] = field(default_factory=set)            # 판정할 때마다 status fail로 둘 항목 번호
+    fail_item_issues: dict[str, list[str]] = field(default_factory=dict)  # 항목별 fail 사유 재현
     warning_items: set[str] = field(default_factory=set)         # status warning으로 둘 항목 번호
     input_missing_items: set[str] = field(default_factory=set)   # 입력 없음(warning · inputMissing)으로 둘 항목 번호
+    input_error_items: set[str] = field(default_factory=set)     # 입력 오류(fail · inputError)로 둘 항목 번호
     fail_item_times: dict[str, int] = field(default_factory=dict)  # 항목 → 처음 몇 번의 판정을 fail로 둘지 (그 뒤 pass)
     # ── 자체 검사 항목 (check.failedItems, spec 4.8) — Task → 불통과로 둘 항목 번호. 비면 항목 없이 불통과 ──
     check_fail_items: dict[str, list[str]] = field(default_factory=dict)
@@ -660,8 +665,9 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
 
         - 평가항목 = 계획서 항목: 총점(시나리오 doc_scores 차례)을 항목 배점(평가항목 maxScore — 없으면 70 ÷ 항목 수)으로
           나눈다(_doc_score). 항목 판정 점수 = 항목 점수 ÷ 배점 × 100.
-        - 판정은 시나리오대로: 입력 없음(input_missing_items) → warning · inputMissing, fail(fail_items · fail_item_times)
-          → fail, warning_items → warning, 나머지 pass. verifiedRef = 입력 plan_doc_ref(없으면 'planDoc').
+        - 판정은 시나리오대로: 입력 없음(input_missing_items) → warning · inputMissing, 입력 오류(input_error_items) →
+          fail · inputError, fail(fail_items · fail_item_times) → fail, warning_items → warning, 나머지 pass.
+          fail 사유는 fail_item_issues에 있으면 그 글. verifiedRef = 입력 plan_doc_ref(없으면 'planDoc').
         - 목표 항목(reworkInput.targetItems)이 있으면 그 항목만 판정하고 나머지는 직전 판정(baseSectionResults)을 그대로 잇는다."""
         _ask(tools, "문서층 채점")
         items = _form_items(inp.form_spec)
@@ -679,9 +685,13 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
             if code in sc.input_missing_items:
                 return SectionResult(status="warning", warnings=[STUB_INPUT_MISSING_WARNING], input_missing=True,
                                      **common)
+            if code in sc.input_error_items:
+                return SectionResult(status="fail", issues=sc.fail_item_issues.get(code) or [f"{code} 입력 오류 (스텁)"],
+                                     input_error=True, deductions=["결함"], **common)
             times = sc.fail_item_times.get(code, 0)
             if code in sc.fail_items or (times and sc.tick(f"judge:{code}") < times):
-                return SectionResult(status="fail", issues=[f"{code} 결함 (스텁)"], deductions=["결함"], **common)
+                return SectionResult(status="fail", issues=sc.fail_item_issues.get(code) or [f"{code} 결함 (스텁)"],
+                                     deductions=["결함"], **common)
             if code in sc.warning_items:
                 return SectionResult(status="warning", warnings=[f"{code} 보완 권장 (스텁)"], **common)
             return SectionResult(status="pass", **common)

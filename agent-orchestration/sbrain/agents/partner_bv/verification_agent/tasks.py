@@ -127,7 +127,8 @@ def run_tv2(inp: TV2In, tools: Tools) -> TV2Out:
     code = CodeCheckResult(total=raw["total"], checks=checks, gate_failures=raw["gate_codes"])
     llm_failed = feature_raw.pop("llm_failed", [])
     feature = FeatureMatchResult(**feature_raw)
-    artifact = ArtifactScore(total=code.total + feature.score,
+    # [S-Brain] 합계를 소수 둘째 자리로 맞춘다 — 15.0 + 14.06이 29.060000000000002가 되어 웹에 그대로 나가지 않게
+    artifact = ArtifactScore(total=round(code.total + feature.score, 2),
                              code_check=code, feature_match=feature)
     diagnostics = diagnostics_of(raw, feature_raw, llm_failed, prototype.implemented_features)
     return TV2Out(artifact_score=artifact, code_check=code, feature_match=feature, diagnostics=diagnostics,
