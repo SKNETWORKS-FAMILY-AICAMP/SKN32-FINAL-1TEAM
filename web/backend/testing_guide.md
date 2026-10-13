@@ -170,6 +170,8 @@ uvicorn app.main:app --port 8000
 
 기존 DB에 스키마 변경을 적용하는 SQL은 `migrations/`에 있다(멱등, MySQL 8). 공유 DB 적용은 팀 합의 뒤에 한다.
 
+- **목표 고객 입력 칸(SB-381)** — 사용자가 직접 입력하는 선택 값(200자 이내)을 `project_plan_inputs.target_customer`에 저장하고 `GET /projects/{id}`의 `plan_input.target_customer`로 돌려준다. 앞뒤 공백은 지우고 비면 NULL로 저장한다. 오케스트레이터가 `request_start` 때 이 컬럼을 읽어 작성 · 검증 AI에 넘기고, 비어 있으면 AI가 "확인 필요"로 쓴다(컬럼이 없어도 오케스트레이터는 오류 없이 돈다). 기존 DB에는 `migrations/005_target_customer.sql`(멱등)을 적용한다 — 마이그레이션 리허설로 확인했고, 입력 화면(SB-385)은 프론트가 만든다. 단위 테스트(`test_project_plan_input.py`)로 저장 · 조회 · 공백 · 길이 제한을 확인했고 오케스트레이터가 값을 실제로 읽는지는 확인하지 못했다.
+
 ---
 
 ## 3. 그 밖의 검증 스크립트

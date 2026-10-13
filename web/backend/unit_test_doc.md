@@ -57,7 +57,7 @@ ruff check .                                # 정적 검사
 
 | 테스트 파일 | 확인하는 것 |
 |---|---|
-| `test_project_plan_input.py` | `POST /projects`가 사업 계획 입력을 저장하고 조회로 그대로 돌려줌 |
+| `test_project_plan_input.py` | `POST /projects`가 사업 계획 입력을 저장하고 조회로 그대로 돌려줌, 목표 고객(`target_customer`)은 선택 입력 · 앞뒤 공백을 지우고 비면 NULL · 200자까지(201자는 422) (SB-383) |
 | `test_attachment_limits.py` | 첨부파일 개수 · 용량 상한 |
 | `test_company_per_project_fix.py` | 회사 프로필 계정당 1건 제한 해제, 동시 실행 1건 제한 분리 |
 | `test_plan_document_endpoint.py` | 계획서 내려받기(`.docx`)가 공식 양식 구조로 나오고 본문이 채워짐 |

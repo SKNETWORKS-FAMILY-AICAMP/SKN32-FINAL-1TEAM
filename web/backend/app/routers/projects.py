@@ -961,6 +961,7 @@ async def create_project(
     db.add(ProjectPlanInput(
         project_id=project.project_id,
         occupation=body.occupation,
+        target_customer=body.target_customer,
         ceo_birth_date=body.ceo_birth_date,
         ceo_gender=body.ceo_gender,
         region_sido=body.region_sido,
