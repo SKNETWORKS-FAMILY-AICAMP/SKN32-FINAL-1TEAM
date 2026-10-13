@@ -40,7 +40,8 @@ export function Dashboard({onNewProject,onOpenProject}){
    setProjects(rows.map(r=>({
     id:r.project_id,
     name:r.description,
-    announcementTitle:r.notice_title||'아직 매칭된 공고가 없어요',
+    // 공고를 골랐는데 제목을 못 찾으면(공고 표에서 빠진 공고 · 로컬 스텁 공고) '매칭된 공고가 없다'고 하지 않는다.
+    announcementTitle:r.notice_title||(r.notice_id?'선택한 공고':'아직 매칭된 공고가 없어요'),
     matched:!!r.notice_title,
     progress:r.stage==='done'?100:0,
     failed:r.match_status==='failed',failedStage:r.stage,
