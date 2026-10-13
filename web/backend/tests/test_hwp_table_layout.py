@@ -472,3 +472,36 @@ def test_item_name_is_the_first_line_up_to_sixty_characters_not_cut_at_twenty(de
     from app.routers.projects import _item_name
 
     assert _item_name(description) == expected
+
+
+def _data_for_description(authed_client, db_session, description):
+    import json
+
+    from app.models import Project
+    from app.plan_texts import PlanTexts
+    from app.routers.projects import _build_plan_document_data
+
+    payload = {'applicant_type': 'individual', 'biz_type': '개인', 'ceo_name': '박테스트', 'founded_at': '2024-01-01',
+               'description': description, 'team_members': [], 'pricing_items': []}
+    r = authed_client.post('/projects', data={'payload': json.dumps(payload)})
+    assert r.status_code == 201, r.text
+    return _build_plan_document_data(db_session, db_session.get(Project, r.json()['project_id']), PlanTexts())[0]
+
+
+def test_general_status_item_name_and_overview_name_are_the_same_value(authed_client, db_session):
+    """창업아이템명(일반현황)과 개요 표 명칭은 아이디어 설명의 첫 줄(60자까지)로 같다 — 여러 줄 설명에서도 두 이름이 갈라지지 않는다."""
+    data = _data_for_description(authed_client, db_session, '동네 헬스장 회원 관리 서비스\n수업 예약과 출석을 한 화면에서 처리합니다')
+
+    assert data.창업아이템명 == data.아이템_명칭 == '동네 헬스장 회원 관리 서비스'
+
+
+def test_general_status_item_name_is_cut_at_sixty_characters_like_the_overview_name(authed_client, db_session):
+    data = _data_for_description(authed_client, db_session, '가' * 100)
+
+    assert data.창업아이템명 == data.아이템_명칭 == '가' * 60
+
+
+def test_general_status_item_name_keeps_the_placeholder_when_the_description_is_blank(authed_client, db_session):
+    data = _data_for_description(authed_client, db_session, ' \n ')
+
+    assert data.창업아이템명 == '○○기술이 적용된 ○○제품·서비스' and data.아이템_명칭 == '○○'
