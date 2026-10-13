@@ -129,3 +129,29 @@ def test_no_score_notices_gives_empty_lists(authed_client, orch):
     body = authed_client.get(f'/projects/{pid}/result').json()
 
     assert body['plan']['notices'] == []
+
+
+def test_deliverable_notes_come_from_the_deliverable_and_the_user_message(authed_client, orch):
+    pid = _create(authed_client)
+    outputs = _outputs()
+    outputs.deliverable = NS(submission_notice='공고별 제출 요건을 확인하세요.', disclaimer='제출 전 본인 확인이 필요합니다.',
+                             plan_doc_file=None, prototype_files=[], infographic_file=None)
+    outputs.user_message = '미달 항목: 2.4.1 문제 정의'
+    orch.responses['outputs'] = lambda p: outputs
+    body = authed_client.get(f'/projects/{pid}/result').json()
+
+    assert body['deliverable'] == {'submission_notice': '공고별 제출 요건을 확인하세요.', 'disclaimer': '제출 전 본인 확인이 필요합니다.',
+                                   'user_message': '미달 항목: 2.4.1 문제 정의'}
+    assert 'plan_doc_file' not in str(body['deliverable'])  # 파일 참조는 싣지 않는다
+
+
+def test_deliverable_is_null_before_the_deliverable_exists_and_empty_fields_are_null(authed_client, orch):
+    pid = _create(authed_client)
+    orch.responses['outputs'] = lambda p: _outputs()
+    assert authed_client.get(f'/projects/{pid}/result').json()['deliverable'] is None
+
+    outputs = _outputs()
+    outputs.deliverable = NS(submission_notice='', disclaimer='', plan_doc_file=None, prototype_files=[], infographic_file=None)
+    orch.responses['outputs'] = lambda p: outputs
+    assert authed_client.get(f'/projects/{pid}/result').json()['deliverable'] == {
+        'submission_notice': None, 'disclaimer': None, 'user_message': None}

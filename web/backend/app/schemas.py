@@ -933,6 +933,14 @@ class BundleUsageOut(BaseModel):
     remaining: int
 
 
+class DeliverableOut(BaseModel):
+    """결과물 화면(11)에 보일 안내 글 — 오케스트레이터 결과물(`deliverable`)과 안내 문구(`userMessage`)에서 사용자에게 보일 것만 싣는다.
+    파일 참조(planDocFile · prototypeFiles · infographicFile)와 점수 보고서는 이미 따로 오므로(산출물 주소 · verdict) 여기에 싣지 않는다."""
+    submission_notice: str | None = Field(None, description="내려받기 화면에 보일 공고별 제출 요건 확인 안내(`deliverable.submissionNotice`). 없으면 null")
+    disclaimer: str | None = Field(None, description="계획서 첫 장 고지(`deliverable.disclaimer`) — 문서에도 같은 문구가 들어간다")
+    user_message: str | None = Field(None, description="결과 안내 글(`userMessage`) — 통과 기준에 못 미친 항목 안내 등. 없으면 null")
+
+
 class DemoGenerateResponse(BaseModel):
     """POST /generate(공고 선택 → 자격 확인)와 GET /result(지금까지 결과)가 함께 쓴다.
 
@@ -961,6 +969,8 @@ class DemoGenerateResponse(BaseModel):
     # 버튼이 없는 task_key는 애초에 묶음 개념이 아니라서 이 목록에 안 나온다.
     rework_cap: int = 0
     bundle_usages: list[BundleUsageOut] = Field(default_factory=list)
+    # 결과물 화면 안내 글(결과 통합 T-C4). 결과물(deliverable)이 아직 없으면 null
+    deliverable: DeliverableOut | None = None
 
 
 # ---------------------------------------------------------------------------

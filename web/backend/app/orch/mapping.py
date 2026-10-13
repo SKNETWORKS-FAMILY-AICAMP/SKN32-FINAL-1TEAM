@@ -577,6 +577,17 @@ def table_fallbacks_out(outputs) -> list[schemas.TableFallbackOut]:
     ]
 
 
+def deliverable_out(outputs) -> schemas.DeliverableOut | None:
+    """결과물(deliverable)이 있으면 사용자에게 보일 안내 글만 꺼낸다. 칸이 비어 있으면 null — 화면이 자기 고정 문구로 대신한다."""
+    deliverable = outputs.deliverable
+    if deliverable is None:
+        return None
+    return schemas.DeliverableOut(
+        submission_notice=getattr(deliverable, 'submission_notice', None) or None,
+        disclaimer=getattr(deliverable, 'disclaimer', None) or None,
+        user_message=getattr(outputs, 'user_message', None) or None)
+
+
 # ── GET /result ───────────────────────────────────────────────────────────────────────
 def result_out(project_id: int, outputs, policy, originals: dict[str, str] | None = None) -> schemas.DemoGenerateResponse:
     """outputs(project_id) → 결과 응답. 계획서(planDoc)가 아직 없으면 호출한 쪽이 404로 답한다(plan_doc 확인 뒤 부른다).
@@ -608,6 +619,7 @@ def result_out(project_id: int, outputs, policy, originals: dict[str, str] | Non
         verdict=verdict_out(outputs, policy),
         rework_cap=outputs.rework_limit,
         bundle_usages=bundle_usages_out(outputs),
+        deliverable=deliverable_out(outputs),
     )
 
 
