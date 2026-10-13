@@ -17,6 +17,22 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt   # 테스트(pytest)/린트(ruff) 실행할 때만 필요
 ```
 
+### 1-1) 오케스트레이터(sbrain) 설치 · DB · 워커
+
+웹 서버는 오케스트레이터(`agent-orchestration`의 `sbrain` 패키지)를 **같은 프로세스에서 불러** 씁니다. 그래서 위 `requirements.txt`만으로는 서버가 계획서 · 점수 · 산출물 기능을 쓰지 못합니다(MySQL 모드가 아니거나 sbrain이 없으면 해당 API는 503). 아래는 로컬 E2E에서 쓰는 방식이고, 배포 서버의 설치 절차는 확인하지 못했습니다.
+
+```bash
+# 같은 가상환경에서 — sbrain과 그 의존성(pydantic · SQLAlchemy · PyMySQL · openai · python-dotenv · requests · beautifulsoup4)이 함께 깔린다
+pip install -e ../../agent-orchestration
+```
+
+- `agent-orchestration/requirements.txt`만 설치하면 `sbrain` 자체가 빠집니다. `pyproject.toml`로 설치(위 명령)하면 의존성이 같이 옵니다.
+- `beautifulsoup4`(`bs4`)는 담당자의 시장 자료 크롤러가 불러서 필요합니다. 실행 흐름에서는 쓰지 않아도 가져오기만 하면 되기 때문에 **없으면 서버가 뜨지 않습니다**(`ModuleNotFoundError: No module named 'bs4'`).
+- **DB**: 웹 테이블(`app_schema.sql` · `migrations/`)과 오케스트레이터 테이블(`agent-orchestration/sql/orchestrator_schema.sql`, `orch_` 접두어 14개)이 같은 MySQL에 있어야 합니다. 오케스트레이터 스키마는 `CREATE TABLE IF NOT EXISTS`만 있어 몇 번 실행해도 안전하고, 새 표가 생기면(예: SB-311의 `orch_file_deletions`) 다시 실행해야 합니다. 표가 없으면 `GET /admin/file-deletions` 같은 API가 500입니다.
+- **워커**: 단계를 실제로 진행하는 것은 별도 프로세스(`python -m sbrain.worker`, 같은 DB · 같은 `SBRAIN_ARTIFACT_ROOT`)입니다. 웹만 띄우면 시작 요청이 쌓이기만 합니다.
+- 옛 버전 오케스트레이터로 만든 실행 건은 새 버전이 읽지 못할 수 있습니다(`GET /result`가 500 — 저장된 계획서의 칸 구성이 달라진 경우). 시연용으로 남겨 둔 옛 실행 건이 있으면 새로 만드는 편이 안전합니다.
+- 로컬에서 실제 Agent 호출 없이 흐름만 보려면(조율 T-C1 · T-C3만 실제 OpenAI, 나머지는 스텁): `scripts/prepare_local_mysql.py`로 로컬 DB를 만들고, 워커 대신 `scripts/stub_worker.py`를 띄웁니다(`testing_guide.md`).
+
 ### 2) 환경변수(.env)
 
 ```bash
