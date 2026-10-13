@@ -27,7 +27,7 @@ https://github.com/kyunghwan-AITeam/rhwp)를 제안해서 이 판단을 뒤집�
 읽고 +2), 그 자리(offset=3, "◦ " 뒤)에 `edit insert-text`로 본문 전체를 한 줄로
 이어붙인다 — 아래 세부 항목 "- "/"- " 두 줄은 원본이 예시 구조 없이 비워둔 곳이라
 채우지 않고 공란으로 남긴다(표 여분 슬롯과 같은 원칙, "지어내지 않는다"). 좌표는 실제
-템플릿 파일 2종 모두 `export-markdown`으로 렌더 확인까지 마쳤다(_BODY_INSERTS_BY_TEMPLATE
+템플릿 파일 2종 모두 `export-markdown`으로 렌더 확인까지 마쳤다(_BODY_SECTIONS_BY_TEMPLATE
 참고).
 
 [2026-09-22 발견 — 표 밖 파란 안내문구 하나 추가 삭제] 팀 구성 섹션 제목 표 바로
@@ -54,6 +54,8 @@ _PERSONAL_INFO_NOTICE_BY_TEMPLATE 참고.
     진짜처럼 보이지 않도록 공란으로 지운다.
   - 계획서 그림(서비스 흐름도 · 서비스 구조도, SB-340)은 맨 뒤에 쪽을 하나 더 만들어 그 쪽에 붙인다(_append_diagram_page) — rhwp의 그림 삽입은
     쪽 좌표에 떠 있는 그림이라 본문 쪽에 붙이면 글자 위에 겹친다. 캡션은 없다(그림 안에 제목이 있다).
+  - 템플릿은 칸 안의 파란 예시 상자(안쪽 1x1 표)를 지운 정리본(`*_양식_정리.hwp`, `scripts/clean_hwp_template.py`)을 쓴다 — 원본 양식 파일은 그대로 두고, 쪽 · 문단 · 표 번호는 원본과 같다.
+  - 1 ~ 4번 절 본문은 줄마다 " ◦ " 문단으로 쓰고 양식의 빈 "-" · "◦" 뼈대 문단은 지운다(_write_body_sections). 문단을 지우거나 넣으면 뒤 문단 번호가 바뀌어 번호가 큰 절부터, 문단 번호를 쓰는 다른 편집 뒤에 한다.
   - 결과물의 인포그래픽(기준 문서 T-C4)은 그림 쪽 다음의 새 쪽에 한 장으로 붙고(쪽 높이를 넘으면 비율을 지켜 줄임), 첫 장 고지는 첫 쪽 맨 앞 문단(0)에 한 줄로 넣는다.
   - 초기창업패키지(early_general) 표5의 "지원 분야"/"전문기술분야"는 실제 체크박스가
     아니라 빈 칸에 표시를 채워 넣는 방식이라(뒤한글 실제 체크박스 컨트롤이 아님),
@@ -82,8 +84,8 @@ RHWP_BIN = os.environ.get('RHWP_BIN') or 'rhwp'
 
 _HWP_TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), 'assets', 'hwp_templates')
 _HWP_TEMPLATE_FILES = {
-    'preliminary': '예비창업패키지_사업계획서_양식.hwp',
-    'early_general': '초기창업패키지_사업계획서_양식.hwp',
+    'preliminary': '예비창업패키지_사업계획서_양식_정리.hwp',
+    'early_general': '초기창업패키지_사업계획서_양식_정리.hwp',
 }
 
 
@@ -319,22 +321,24 @@ _DELETE_TABLES_BY_TEMPLATE = {
     'early_general': [18, 15, 12, 10, 8, 3, 1, 0],
 }
 
-# 1~4번 섹션 본문 — `rhwp dump`로 실측한 (구역=0 고정) 문단 번호. 각 문단은 이미
-# " ◦ "(길이 3)로 시작하는 빈 칸이라 offset=3(◦ 뒤)에 이어붙인다. 모듈 docstring
-# "2026-09-22 문제인식_본문 등 4개 본문 채우기 완료" 참고.
-_BODY_INSERT_OFFSET = 3
-_BODY_INSERTS_BY_TEMPLATE: dict[str, list[tuple[str, int]]] = {
+# 1~4번 섹션 본문 — `rhwp dump`로 실측한 (구역=0 고정) 문단 번호. (필드, 첫 불릿 문단, 지울 뼈대 문단 범위(처음, 끝)).
+# 첫 불릿 문단은 " ◦ "(길이 3)로 시작하는 빈 칸이라 offset=3(◦ 뒤)에 첫 줄을 이어 붙이고, 둘째 줄부터는 그 뒤에 " ◦ " 문단을 새로 넣는다.
+# 지울 범위는 그 뒤에 이어진 "   - " · " ◦ " · 빈 문단(양식의 작성 요령 뼈대)이다 — 지우지 않으면 빈 글머리가 그대로 남는다.
+# (범위는 표 · 쪽 나눔 같은 컨트롤이 있는 문단이나 표 제목 문단 직전까지다.)
+_BODY_OFFSET = 3
+_BODY_BULLET = ' ◦ '
+_BODY_SECTIONS_BY_TEMPLATE: dict[str, list[tuple[str, int, tuple[int, int]]]] = {
     'preliminary': [
-        ('문제인식_본문', 11),
-        ('실현가능성_본문', 26),
-        ('성장전략_본문', 49),
-        ('팀구성_본문', 75),
+        ('문제인식_본문', 11, (12, 22)),
+        ('실현가능성_본문', 26, (27, 35)),
+        ('성장전략_본문', 49, (50, 68)),
+        ('팀구성_본문', 75, (76, 84)),
     ],
     'early_general': [
-        ('문제인식_본문', 13),
-        ('실현가능성_본문', 28),
-        ('성장전략_본문', 44),
-        ('팀구성_본문', 70),
+        ('문제인식_본문', 13, (14, 24)),
+        ('실현가능성_본문', 28, (29, 33)),
+        ('성장전략_본문', 44, (45, 63)),
+        ('팀구성_본문', 70, (71, 79)),
     ],
 }
 
@@ -348,16 +352,46 @@ _BODY_NARRATIVES: dict[str, tuple[str, ...]] = {
 _PHASE_LABELS = {'사업비_서술': '1단계', '사업비_2단계_서술': '2단계'}
 
 
-def _body_text(data: PlanDocumentData, field_name: str) -> str:
-    """절 본문 + 그 절의 표 서술(줄바꿈 → ' / '로 한 줄). 본문이 안내 문구뿐이어도 서술이 있으면 서술은 붙는다."""
+def _body_lines(data: PlanDocumentData, field_name: str) -> list[str]:
+    """절 본문 + 그 절의 표 서술을 줄(문단) 목록으로. 본문이 안내 문구뿐이어도 서술이 있으면 서술은 붙는다."""
     parts = [getattr(data, field_name, '')]
     for extra in _BODY_NARRATIVES.get(field_name, ()):
         text = getattr(data, extra, '')
-        # 예비창업자는 사업비 서술이 1단계 · 2단계 두 개라 어느 단계 서술인지 머리말을 단다(본문엔 한 덩어리로 이어 붙으므로)
+        # 예비창업자는 사업비 서술이 1단계 · 2단계 두 개라 어느 단계 서술인지 머리말을 단다
         if text and extra in _PHASE_LABELS and getattr(data, '사업비_2단계_서술', ''):
             text = f'[{_PHASE_LABELS[extra]}] {text}'
         parts.append(text)
-    return _one_line('\n'.join(part for part in parts if part))
+    lines = [line.strip() for part in parts for line in (part or '').replace('\r', '').split('\n')]
+    return [line for line in lines if line]
+
+
+def _body_text(data: PlanDocumentData, field_name: str) -> str:
+    """절 본문 + 표 서술을 ' / '로 이은 한 줄(요약 · 비교용). hwp 문서에는 줄마다 문단으로 쓴다(_write_body_sections)."""
+    return ' / '.join(_body_lines(data, field_name))
+
+
+def _write_body_sections(current_output: str, template: str, data: PlanDocumentData, new_tmp) -> str:
+    """1 ~ 4번 절 본문을 줄마다 문단으로 쓰고 양식의 빈 작성 요령 뼈대를 지운다. 새 파일 경로를 돌려준다.
+
+    문단을 지우거나 넣으면 뒤 문단 번호가 바뀌므로 번호가 큰 절부터 처리한다. 절마다 ① 뼈대 문단을 지우고(큰 번호부터)
+    ② 둘째 줄부터 첫 불릿 문단 뒤에 " ◦ " 문단으로 넣고(마지막 줄부터 넣어 순서가 맞게) ③ 첫 줄을 첫 불릿 문단에 쓴다.
+    insert-paragraph는 지정한 문단 앞에 빈 문단을 넣고 앞 문단의 서식을 따르므로, 첫 불릿 문단 바로 뒤는 번호 + 1이다."""
+    def edit(*args: str) -> None:
+        nonlocal current_output
+        next_output = new_tmp()
+        _run_rhwp(['edit', args[0], current_output, *args[1:], '-o', next_output])
+        current_output = next_output
+
+    for field_name, first, (skeleton_from, skeleton_to) in reversed(_BODY_SECTIONS_BY_TEMPLATE.get(template, [])):
+        for para in range(skeleton_to, skeleton_from - 1, -1):
+            edit('delete-paragraph', '--section', '0', '--para', str(para))
+        lines = [_one_line(line) for line in _body_lines(data, field_name)]
+        for line in reversed(lines[1:]):
+            edit('insert-paragraph', '--section', '0', '--para', str(first + 1))
+            edit('insert-text', '--section', '0', '--para', str(first + 1), '--offset', '0', '--text', _BODY_BULLET + line)
+        if lines:
+            edit('insert-text', '--section', '0', '--para', str(first), '--offset', str(_BODY_OFFSET), '--text', lines[0])
+    return current_output
 
 
 # 팀 구성 제목 표 다음에 오는, 표가 아닌 개인정보 마스킹 안내문구(파란 글씨) 문단 —
@@ -450,7 +484,6 @@ def render_plan_hwp(data: PlanDocumentData, template: str) -> bytes:
         raise FileNotFoundError(f'hwp 템플릿 파일을 찾을 수 없습니다: {template_path}')
 
     steps = steps_fn(data)
-    body_inserts = _BODY_INSERTS_BY_TEMPLATE.get(template, [])
     notice = _PERSONAL_INFO_NOTICE_BY_TEMPLATE.get(template)
     delete_tables = _DELETE_TABLES_BY_TEMPLATE.get(template, [])
 
@@ -473,22 +506,6 @@ def render_plan_hwp(data: PlanDocumentData, template: str) -> bytes:
                 'steps': steps,
             }, f, ensure_ascii=False)
         _run_rhwp(['run', plan_path])
-
-        # 1~4번 섹션 본문 삽입 — set_cell처럼 run 계획에 못 묶는 별도 edit
-        # 하위명령이라(export-plan-schema에 insert_text step이 없음) 여기서도
-        # delete-table처럼 이전 산출물을 체이닝한다. 빈 문자열은 insert-text가
-        # 거부하므로(그리고 채울 내용이 없으면 빈 칸 유지가 원칙이므로) 건너뛴다.
-        for field_name, para in body_inserts:
-            text = _body_text(data, field_name)
-            if not text:
-                continue
-            next_output = _new_tmp()
-            _run_rhwp([
-                'edit', 'insert-text', current_output,
-                '--section', '0', '--para', str(para), '--offset', str(_BODY_INSERT_OFFSET),
-                '--text', text, '-o', next_output,
-            ])
-            current_output = next_output
 
         # 표 밖 개인정보 마스킹 안내문구(파란 글씨) 삭제 — 문단 자체를 지우면 뒤
         # 문단 번호가 당겨지므로 delete-text로 글자만 비운다.
@@ -514,6 +531,9 @@ def render_plan_hwp(data: PlanDocumentData, template: str) -> bytes:
         _run_rhwp(['edit', 'insert-text', current_output, '--section', '0', '--para', '0', '--offset', '0',
                    '--text', _one_line(data.고지) or DEFAULT_DISCLAIMER, '-o', next_output])
         current_output = next_output
+
+        # 1~4번 절 본문 — 문단을 지우고 넣어 문단 번호가 바뀌므로, 문단 번호를 쓰는 다른 편집(위 안내문구 삭제 · 맨 앞 고지)을 마친 뒤에 한다
+        current_output = _write_body_sections(current_output, template, data, _new_tmp)
 
         picture_pages = ([(data.그림, None)] if data.그림 else []) + (
             [([data.인포그래픽], _INFOGRAPHIC_MAX_HEIGHT)] if data.인포그래픽 is not None else [])
