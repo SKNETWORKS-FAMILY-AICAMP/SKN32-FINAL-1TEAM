@@ -592,7 +592,12 @@ def deliverable_out(outputs) -> schemas.DeliverableOut | None:
     return schemas.DeliverableOut(
         submission_notice=getattr(deliverable, 'submission_notice', None) or None,
         disclaimer=getattr(deliverable, 'disclaimer', None) or None,
-        user_message=getattr(outputs, 'user_message', None) or None)
+        user_message=getattr(outputs, 'user_message', None) or None,
+        shortfall_items=[
+            schemas.ShortfallItemOut(
+                layer=item.layer, kind=item.kind, code=item.code, tag=item.tag, name=item.name,
+                score=item.score, max_score=item.max_score, reason=item.reason)
+            for item in getattr(deliverable, 'shortfall_items', None) or []])
 
 
 # ── GET /result ───────────────────────────────────────────────────────────────────────

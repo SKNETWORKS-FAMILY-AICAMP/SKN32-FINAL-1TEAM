@@ -274,7 +274,23 @@ def make_score_view(total: float = 82.0, threshold: float = 80.0, passed: bool =
 
 def make_table_fallback(section_code: str = '2.5.2', reason: str = '내부 진단 원문', display_reason: str = '쉬운 안내') -> NS:
     """표 대체 사유 하나(TableFallback) — test_orch_fake_contract가 실제 모델과 칸을 맞춰 본다."""
-    return NS(section_code=section_code, reason=reason, display_reason=display_reason)
+    return NS(section_code=section_code, reason=reason, fallback_reason_codes=[], display_reason=display_reason)
+
+
+def make_shortfall_item(kind: str = 'verifyFail', layer: str = 'document', code: str | None = '2.4.1', tag: str | None = '2-1',
+                        name: str = '문제 정의', score: float | None = 3.0, max_score: float | None = 5.0, reason: str = '근거가 부족합니다') -> NS:
+    """미달 항목 한 줄(ShortfallItem) — test_orch_fake_contract가 실제 모델과 칸을 맞춰 본다."""
+    return NS(layer=layer, kind=kind, code=code, tag=tag, name=name, score=score, max_score=max_score, reason=reason)
+
+
+def make_deliverable(**overrides: Any) -> NS:
+    """결과물 묶음(Deliverable) — test_orch_fake_contract가 실제 모델과 칸을 맞춰 본다. 계획서 파일은 웹이 만들어서 plan_doc_file은 늘 None."""
+    base = dict(
+        plan_doc_file=None, prototype_files=[], infographic_file=None, score_report=None, proofread_log=None,
+        disclaimer='제출 전 본인 확인이 필요합니다.', prototype_notice='', score_notice='',
+        submission_notice='공고별 제출 요건을 확인하세요.', shortfall_items=[])
+    base.update(overrides)
+    return NS(**base)
 
 
 def make_outputs(**overrides: Any) -> NS:
