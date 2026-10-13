@@ -24,7 +24,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.diagram_images import diagram_pictures
+from app.diagram_images import document_pictures
 from app.models import Company, Project, User
 from app.orch import OrchGateway, require_gateway
 from app.orch.errors import CodedHTTPException, user_message_for
@@ -115,13 +115,14 @@ def download_deliverable_zip(
     if sum(int(getattr(ref, 'size', 0) or 0) for _folder, ref in refs) > MAX_ZIP_SOURCE_BYTES:
         raise CodedHTTPException(413, 'DELIVERABLE_TOO_LARGE', '결과물이 너무 커서 한 번에 묶을 수 없어요. 파일을 하나씩 내려받아 주세요.')
     buffer, taken = io.BytesIO(), set()
-    pictures = diagram_pictures(gateway, project_id, outputs.plan_doc)  # 그림(SVG → PNG) — 계획서 docx에 넣고 원본 SVG는 따로 넣는다(SB-340)
-    plan_docx = render_plan_docx_for(db, db.get(Project, project_id), outputs.plan_doc, pictures, outputs.table_fallbacks)  # 파일 참조가 아니라 planDoc으로 만든다(SB-341)
+    pictures = document_pictures(gateway, project_id, outputs.plan_doc, deliverable)  # 그림(SVG → PNG) — 계획서 docx에 넣고 원본 SVG는 따로 넣는다(SB-340)
+    plan_docx = render_plan_docx_for(db, db.get(Project, project_id), outputs.plan_doc, pictures, outputs.table_fallbacks, getattr(deliverable, 'disclaimer', '') or '')  # 파일 참조가 아니라 planDoc으로 만든다(SB-341)
     with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(PLAN_DOCX_NAME, plan_docx)
         taken.add(PLAN_DOCX_NAME)
         for picture in pictures:
-            archive.writestr(_unique_name(taken, DIAGRAM_FOLDER, picture.svg_name), picture.svg)
+            if not picture.is_infographic:  # 인포그래픽 원본은 아래에서 결과물의 infographic/ 폴더로 들어간다
+                archive.writestr(_unique_name(taken, DIAGRAM_FOLDER, picture.svg_name), picture.svg)
         for folder, ref in refs:
             file = gateway.read_artifact_file(project_id, ref.key)
             archive.writestr(_unique_name(taken, folder, file.name), file.data)

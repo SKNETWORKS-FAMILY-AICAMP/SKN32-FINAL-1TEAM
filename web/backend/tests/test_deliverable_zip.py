@@ -119,8 +119,9 @@ def test_each_file_is_read_by_its_reference_key(authed_client, orch):
     authed_client.get(f'/projects/{pid}/deliverable.zip')
 
     reads = [c for c in orch.calls if c[0] == 'read_artifact_file']
+    # 인포그래픽은 계획서 파일에 넣으려고 먼저 한 번 받고(이 시험의 파일은 SVG가 아니라 그림으로는 못 바꿔 문서에서는 빠진다), 압축에 넣으려고 다시 받는다
     assert [c[1] for c in reads] == [
-        (pid, _ref('index.html').key), (pid, _ref('README.md').key), (pid, _ref('infographic.png').key)]
+        (pid, _ref('infographic.png').key), (pid, _ref('index.html').key), (pid, _ref('README.md').key), (pid, _ref('infographic.png').key)]
 
 
 def test_missing_optional_files_are_left_out(authed_client, orch):
