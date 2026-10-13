@@ -88,8 +88,11 @@ def _by_item_number(plan_doc) -> dict[str, str]:
     return texts
 
 
-def plan_texts(plan_doc) -> PlanTexts:
-    """계획서(없으면 None) → 양식 글 칸. 항목 번호 모양이 아니면 옛 태그(1-1 ~ 3-1)로 읽는다."""
+def plan_texts(plan_doc, table_fallbacks=()) -> PlanTexts:
+    """계획서(없으면 None) → 양식 글 칸. 항목 번호 모양이 아니면 옛 태그(1-1 ~ 3-1)로 읽는다.
+
+    table_fallbacks: 표를 본문 서술로 바꾼 항목들(오케스트레이터 `Outputs.table_fallbacks`, 항목 번호 `section_code`). 웹은 표를 늘 사용자가
+    입력한 행으로 그려서, 바꾼 항목의 서술('· 열: 값; …' 줄)은 그 표와 같은 내용이 되풀이될 뿐이라 문서에 쓰지 않는다."""
     if plan_doc is None:
         return PlanTexts()
     by_number = _by_item_number(plan_doc)
@@ -98,6 +101,11 @@ def plan_texts(plan_doc) -> PlanTexts:
         return PlanTexts(
             요약_문제인식=legacy.get('1-1') or None, 요약_실현가능성=legacy.get('2-1') or None, 요약_성장전략=legacy.get('3-1') or None,
             문제인식_본문=legacy.get('1-1') or None, 실현가능성_본문=legacy.get('2-1') or None, 성장전략_본문=legacy.get('3-1') or None)
+
+    for fallback in table_fallbacks:  # 옛 계획서인지는 위에서 바꾸기 전 항목으로 이미 가렸다
+        match = _ITEM_CODE_RE.match(getattr(fallback, 'section_code', '') or '')
+        if match:
+            by_number.pop(f'{match.group(1)}.{match.group(2)}', None)
 
     def get(number: str) -> str | None:
         return by_number.get(number) or None

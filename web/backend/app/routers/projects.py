@@ -515,7 +515,7 @@ def _plan_texts(gateway: OrchGateway, project_id: int) -> tuple[PlanTexts, list]
         if exc.code in ('RUN_NOT_FOUND', 'RUN_NOT_VIEWABLE'):
             return PlanTexts(), []
         raise
-    return plan_texts(outputs.plan_doc), diagram_pictures(gateway, project_id, outputs.plan_doc)
+    return plan_texts(outputs.plan_doc, outputs.table_fallbacks), diagram_pictures(gateway, project_id, outputs.plan_doc)
 
 
 # companies.applicant_type -> 양식의 "사업자 구분" 표기. 사용자가 직접 고른 값이라
@@ -719,11 +719,11 @@ def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts, p
     return data, template
 
 
-def render_plan_docx_for(db: Session, project: Project, plan_doc, pictures: list | None = None) -> bytes:
+def render_plan_docx_for(db: Session, project: Project, plan_doc, pictures: list | None = None, table_fallbacks=()) -> bytes:
     """계획서(planDoc) · 그림과 웹 입력으로 공식 양식 .docx를 만든다 — plan-document.docx와 결과물 압축(artifact_files)이 같은 파일을 쓴다."""
     from app.plan_document_export import render_plan_docx
 
-    data, template = _build_plan_document_data(db, project, plan_texts(plan_doc), pictures)
+    data, template = _build_plan_document_data(db, project, plan_texts(plan_doc, table_fallbacks), pictures)
     return render_plan_docx(data, template=template)
 
 
