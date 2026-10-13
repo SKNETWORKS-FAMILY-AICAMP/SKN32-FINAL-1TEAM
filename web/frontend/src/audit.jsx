@@ -13,15 +13,15 @@ const names=['landing','dashboard','empty','intake','match-progress','match-resu
 const page=new URLSearchParams(location.search).get('page')||'landing';
 const noop=()=>{};
 // 관리자 파일 삭제 대기열 견본 — 웹 API(SB-311 반영분)가 아직 sb-269에 없어 가짜 응답으로 본다.
-// 모양은 백엔드 답(2026-10-10): GET 목록 → {items,total}(status를 안 거르면 파라미터 없음), POST 다시 시도 → 바뀐 줄.
+// 모양은 실제 API(SB-318, 10-13 병합): GET 목록 → 줄 목록(전체 개수 없음, status를 안 거르면 파라미터 없음), POST 다시 시도 → 바뀐 줄.
 if(page==='admin-file-deletions'){
  const rows=[
-  {deletion_id:12,run_id:'run-7f3a9c21',status:'포기',attempts:3,last_error_kind:'일시',created_at:'2026-10-09T01:10:00Z',gave_up_at:'2026-10-09T01:50:00Z',retried_by:null,retried_at:null,retry_count:0},
-  {deletion_id:9,run_id:'run-41be0d77',status:'포기',attempts:3,last_error_kind:'운영',created_at:'2026-10-08T05:00:00Z',gave_up_at:'2026-10-08T05:40:00Z',retried_by:'1',retried_at:'2026-10-08T06:00:00Z',retry_count:1},
-  {deletion_id:13,run_id:'run-c09e5512',status:'대기',attempts:1,last_error_kind:'일시',created_at:'2026-10-10T02:00:00Z',gave_up_at:null,retried_by:null,retried_at:null,retry_count:0},
+  {deletion_id:'12',run_id:'run-7f3a9c21',status:'포기',attempts:3,last_error_kind:'일시',created_at:'2026-10-09T01:10:00Z',next_at:'2026-10-09T01:50:00Z',last_tried_at:'2026-10-09T01:50:00Z',gave_up_at:'2026-10-09T01:50:00Z',retried_by:null,retried_at:null},
+  {deletion_id:'9',run_id:'run-41be0d77',status:'포기',attempts:3,last_error_kind:'운영',created_at:'2026-10-08T05:00:00Z',next_at:'2026-10-08T06:40:00Z',last_tried_at:'2026-10-08T06:40:00Z',gave_up_at:'2026-10-08T06:40:00Z',retried_by:'1',retried_at:'2026-10-08T06:00:00Z'},
+  {deletion_id:'13',run_id:'run-c09e5512',status:'대기',attempts:1,last_error_kind:'일시',created_at:'2026-10-10T02:00:00Z',next_at:'2026-10-10T02:20:00Z',last_tried_at:'2026-10-10T02:10:00Z',gave_up_at:null,retried_by:null,retried_at:null},
  ];
- api.get=async url=>{const status=new URL(url,location.origin).searchParams.get('status');const items=rows.filter(r=>!status||r.status===status);return {items,total:items.length}};
- api.post=async url=>{const row=rows.find(r=>url.includes(`/${r.deletion_id}/`));Object.assign(row,{status:'대기',attempts:0,gave_up_at:null,retried_by:'1',retried_at:new Date().toISOString(),retry_count:row.retry_count+1});return {...row}};
+ api.get=async url=>{const status=new URL(url,location.origin).searchParams.get('status');return rows.filter(r=>!status||r.status===status)};
+ api.post=async url=>{const row=rows.find(r=>url.includes(`/${r.deletion_id}/`));Object.assign(row,{status:'대기',attempts:0,gave_up_at:null,next_at:new Date(Date.now()+600000).toISOString(),retried_by:'1',retried_at:new Date().toISOString()});return {...row}};
 }
 // 새 응답 모양 견본(백엔드 응답모양변경 10-11) — 계획서 항목마다 section_code · tag · content_type, 점수 항목마다 tag,
 // 그림 두 장(diagrams). 백엔드가 아직 올리지 않아 가짜 결과로 묶음별 화면(화면 6 점수 · 화면 9 계획서 보기)을 본다.
@@ -54,7 +54,7 @@ const rsn=(item_code,tag,score,max_score,reason_text)=>({item_code,tag,score,max
 const TAGGED_RESULT={
  verdict:{doc_score:50,doc_max_score:70,code_score:11,code_max_score:15,plan_match_score:9,plan_match_max_score:15,artifact_score:20,artifact_max_score:30,total_score:70,pass_threshold:80,
   notices:['입력한 협약기간 일정이나 사업비가 기준(협약기간 최대 개월 수 · 개발 기간 · 공고 지원 금액 상한)을 벗어나 일부 항목이 검증을 통과하지 못했습니다. 이 항목은 다시 만들어도 고쳐지지 않습니다. 이대로 진행하거나, 입력을 고쳐 새 프로젝트로 다시 만들 수 있습니다.']},
- plan:{doc_max_score:70,sections:TAGGED_SECTIONS,table_fallbacks:[{section_code:'3.4.1',reason:'사업비 표의 필수 열(비목 · 산출 근거)이 비어 있음'}],
+ plan:{doc_max_score:70,sections:TAGGED_SECTIONS,table_fallbacks:[{section_code:'3.4.1',tag:'3-1',title:'사업비 집행계획',display_reason:'사업비 표를 만들지 못해 설명으로 표시합니다. 사업비 입력을 확인해 주세요.'}],
   diagrams:[{diagram_id:'2.3.6-USER_FLOW',flow_type:'USER_FLOW',title:'서비스 흐름도',source_ref:'2.3.6',nodes:['방문','예약','결제','출석'],image_url:'/projects/demo/artifact-files/flow.svg'},
    {diagram_id:'3.3.6-SERVICE_ARCHITECTURE',flow_type:'SERVICE_ARCHITECTURE',title:'서비스 구조도',source_ref:'3.3.6',nodes:['화면','예약 서버','결제'],image_url:'/projects/demo/artifact-files/arch.svg'}],
   score_reasons:[rsn('1.2',null,4,5,'개요가 핵심 기능 하나만 설명합니다.'),rsn('2.3.6','0-2',3,4,'흐름도에 결제 단계가 빠졌습니다.'),rsn('2.1.1','1-1',5,5,''),rsn('2.1.2','1-1',3,6,'시장 규모 근거가 한 건뿐입니다.'),rsn('2.1.3','1-1',4,6,'문제를 수치로 보인 근거가 약합니다.'),

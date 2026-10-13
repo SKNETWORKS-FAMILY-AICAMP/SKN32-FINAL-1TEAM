@@ -194,13 +194,21 @@ const GEN_STAGE_LABEL={plan_writing:'사업계획서',prototype_building:'프로
 // 생성 완전 실패는 서버가 확정 실패 때마다 쌓는 generation_failure_alerts(GET /admin/generation-alerts)를
 // 쓴다 — "확인" 처리가 서버에 남아서 다른 PC·다른 관리자에게도 같이 사라진다. 알림 행이 없는
 // 예전 실패만 진행 현황(match_status)으로 보충한다.
+// 파일 삭제 대기열 응답 → 줄 목록. 실제 API(SB-318, 10-13 병합)는 목록만 준다(전체 개수 total 없음). 제안했던 {items,total}도 읽는다.
+const fileDeletionRows=res=>Array.isArray(res)?res:res?.items||[];
+// 알림 종이 '포기' 줄을 세려고 한 번에 받는 최대 수(API 상한 200). 다 차면 "200건 이상"으로 적는다.
+const FILE_DELETION_ALERT_LIMIT=200;
+
 function adminAlertsFrom(items,executions,genAlerts=[],fileDeletions=null){
   const alerts=[];
   // 파일 삭제 포기(조율 8.9) — 워커가 3번 실패한 실행 건 파일. 사용자가 탈퇴한 뒤에도 남을 수 있어 관리자가 다시 걸어야 한다.
   // 건수나 가장 최근 줄이 바뀌면 키가 달라져 다시 안 읽음 표시가 된다.
-  if(fileDeletions?.total>0){
-    const latest=fileDeletions.items?.[0];
-    alerts.push({key:`file-deletions:${fileDeletions.total}:${latest?.deletion_id??''}`,kind:'실패',title:`파일 삭제 포기 ${fileDeletions.total}건`,detail:'워커가 3번 실패해 지우지 못한 산출물 파일이 있어요. 운영 현황의 파일 삭제 대기열에서 다시 시도해 주세요.',project:'파일 삭제 대기열',tab:'ops',time:latest?.gave_up_at||latest?.created_at});
+  const gaveUp=fileDeletionRows(fileDeletions);
+  if(gaveUp.length>0){
+    const latest=gaveUp[0];
+    const count=fileDeletions?.total??gaveUp.length;
+    const countText=fileDeletions?.total==null&&gaveUp.length>=FILE_DELETION_ALERT_LIMIT?`${count}건 이상`:`${count}건`;
+    alerts.push({key:`file-deletions:${count}:${latest?.deletion_id??''}`,kind:'실패',title:`파일 삭제 포기 ${countText}`,detail:'워커가 3번 실패해 지우지 못한 산출물 파일이 있어요. 운영 현황의 파일 삭제 대기열에서 다시 시도해 주세요.',project:'파일 삭제 대기열',tab:'ops',time:latest?.gave_up_at||latest?.created_at});
   }
   const byProject=new Map(items.filter(i=>i.project_id!=null).map(i=>[i.project_id,i]));
   const alertedProjects=new Set(genAlerts.map(a=>a.project_id));
@@ -246,7 +254,7 @@ function AdminNotificationBell({onNavigate}){
     let cancelled=false,timer;
     // 파일 삭제 대기열은 따로 실패를 삼킨다 — 그 API가 없거나 실패해도 다른 알림은 떠야 한다.
     const load=()=>Promise.all([api.get('/admin/items'),api.get('/admin/agent-executions?limit=500'),api.get('/admin/generation-alerts?include_acknowledged=true'),
-      api.get(`/admin/file-deletions?status=${encodeURIComponent('포기')}&limit=1`).catch(()=>null)])
+      api.get(`/admin/file-deletions?status=${encodeURIComponent('포기')}&limit=${FILE_DELETION_ALERT_LIMIT}`).catch(()=>null)])
       .then(([items,executions,genAlerts,fileDeletions])=>{if(!cancelled){setAlerts(adminAlertsFrom(items,executions,genAlerts,fileDeletions));setError('')}})
       .catch(()=>{if(!cancelled)setError('알림을 불러오지 못했어요.')})
       .finally(()=>{if(!cancelled)timer=setTimeout(load,15000)});
@@ -539,7 +547,7 @@ function OpsSummary(){
 
 // 파일 삭제 대기열(조율 admin_file_deletions · admin_retry_file_deletion, 함수명세 8.9) — 완전 삭제 · 탈퇴 · 12개월
 // 정리 때 DB를 먼저 지우고 워커가 10분 뒤부터 파일을 지운다. 3번 실패하면 '포기'가 되고 관리자가 다시 건다.
-// 웹 API 모양은 웹 프론트가 백엔드에 제안한 것(GET 목록 → {items,total}, POST 다시 시도 → 바뀐 줄)이다.
+// 웹 API(SB-318): GET 목록 → 줄 목록(전체 개수 없음 — 한 쪽이 꽉 차면 다음 쪽이 있다고 본다), POST 다시 시도 → 바뀐 줄.
 // 줄에는 계정 · 프로젝트 · 파일 이름이 없다 — 실행 건 ID와 다시 시도를 누른 관리자 ID뿐이다.
 const FILE_DELETION_PAGE=50;
 const FILE_DELETION_FILTERS=[['포기','포기'],['대기','대기'],['','전체']];
@@ -572,7 +580,7 @@ export function FileDeletionsPanel({pushToast,focus=false}){
     api.post(`/admin/file-deletions/${row.deletion_id}/retry`)
       .then(updated=>{
         // 다시 시도한 줄은 바로 '대기'로 바뀐다 — 지우는 데 성공하면 다음에 읽을 때 목록에서 빠진다.
-        setData(d=>d&&{...d,items:d.items.map(r=>r.deletion_id===row.deletion_id?{...r,...updated}:r)});
+        setData(d=>d&&fileDeletionRows(d).map(r=>r.deletion_id===row.deletion_id?{...r,...updated}:r));
         pushToast('다시 시도를 걸었어요','최대 10분 안에 워커가 파일을 다시 지워요. 성공하면 이 줄이 목록에서 빠져요.');
       })
       .catch(e=>{
@@ -582,9 +590,9 @@ export function FileDeletionsPanel({pushToast,focus=false}){
       })
       .finally(()=>setRetrying(null));
   };
-  const items=data?.items||[];
-  const total=data?.total??items.length;
-  const lastPage=Math.max(0,Math.ceil(total/FILE_DELETION_PAGE)-1);
+  const items=fileDeletionRows(data);
+  // 전체 개수를 주면(옛 제안 모양) 마지막 쪽을 알고, 아니면 이번 쪽이 꽉 찼을 때만 다음 쪽이 있다고 본다.
+  const hasNext=data?.total!=null?(page+1)*FILE_DELETION_PAGE<data.total:items.length>=FILE_DELETION_PAGE;
   return (
     <section ref={panelRef} className="mt-12 scroll-mt-24">
       <div className="flex items-end justify-between gap-3 flex-wrap mb-1">
@@ -601,7 +609,7 @@ export function FileDeletionsPanel({pushToast,focus=false}){
         <div className="overflow-x-auto"><div className="min-w-[880px]">
           <div className={FILE_DELETION_COLS+' text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]'}>
             <div className="p-4">실행 건 ID</div><div className="p-4 text-center">상태</div><div className="p-4 text-center">실패 횟수</div><div className="p-4 text-center">마지막 오류</div>
-            <div className="p-4">넣은 시각</div><div className="p-4">포기 시각</div><div className="p-4">다시 시도 기록</div><div className="p-4"/>
+            <div className="p-4">넣은 시각</div><div className="p-4">포기 · 다음 시도</div><div className="p-4">다시 시도 기록</div><div className="p-4"/>
           </div>
           {error?<p className="p-6 text-[13px] text-[var(--danger)] border-t border-[var(--border)]">{error}</p>
           :data===null?<p className="p-6 text-[13px] text-[var(--muted-fg)] border-t border-[var(--border)]">불러오는 중…</p>
@@ -613,8 +621,9 @@ export function FileDeletionsPanel({pushToast,focus=false}){
               <div className="p-4 text-center">{r.attempts}회</div>
               <div className="p-4 text-center text-[var(--muted-fg)]">{r.last_error_kind?`${r.last_error_kind} 오류`:'-'}</div>
               <div className="p-4 text-[var(--muted-fg)]">{formatKstDateTime(r.created_at)||'-'}</div>
-              <div className="p-4 text-[var(--muted-fg)]">{formatKstDateTime(r.gave_up_at)||'-'}</div>
-              <div className="p-4 text-[12px] text-[var(--muted-fg)]">{r.retry_count>0?`${r.retry_count}회 · 관리자 #${r.retried_by} · ${formatKstShort(r.retried_at)}`:'-'}</div>
+              {/* 포기한 줄은 포기 시각, 대기 줄은 워커가 다시 지울 시각(next_at) */}
+              <div className="p-4 text-[var(--muted-fg)]">{r.status==='포기'?formatKstDateTime(r.gave_up_at)||'-':r.next_at?`다음 ${formatKstShort(r.next_at)}`:'-'}</div>
+              <div className="p-4 text-[12px] text-[var(--muted-fg)]">{r.retried_at?`${r.retry_count>0?`${r.retry_count}회 · `:''}관리자 #${r.retried_by} · ${formatKstShort(r.retried_at)}`:'-'}</div>
               <div className="p-4 text-right">
                 {r.status==='포기'&&<button type="button" disabled={retrying===r.deletion_id} onClick={()=>retry(r)}
                   className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-[12px] font-semibold hover:bg-[var(--muted)] disabled:opacity-50">{retrying===r.deletion_id?'거는 중':'다시 시도'}</button>}
@@ -623,11 +632,11 @@ export function FileDeletionsPanel({pushToast,focus=false}){
           ))}
         </div></div>
       </Panel>
-      {data&&lastPage>0&&(
+      {data&&(page>0||hasNext)&&(
         <div className="flex items-center justify-end gap-3 mt-3 text-[12.5px] text-[var(--muted-fg)]">
           <button type="button" disabled={page===0} onClick={()=>setPage(p=>p-1)} className="rounded-lg border border-[var(--border)] px-3 py-1.5 font-semibold disabled:opacity-40">이전</button>
-          <span>{page+1} / {lastPage+1}</span>
-          <button type="button" disabled={page>=lastPage} onClick={()=>setPage(p=>p+1)} className="rounded-lg border border-[var(--border)] px-3 py-1.5 font-semibold disabled:opacity-40">다음</button>
+          <span>{page+1}쪽</span>
+          <button type="button" disabled={!hasNext} onClick={()=>setPage(p=>p+1)} className="rounded-lg border border-[var(--border)] px-3 py-1.5 font-semibold disabled:opacity-40">다음</button>
         </div>
       )}
     </section>

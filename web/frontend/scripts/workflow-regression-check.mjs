@@ -169,7 +169,12 @@ try{
   assert.deepEqual(tr('그림',withDiagram.docScore,noArtifact),['2.3.6 — 노드 부족']);
   assert.deepEqual(withDiagram.notices,['입력 오류 안내']);assert.deepEqual(scored.notices,[]);
   // 표 대체 사유(조율 tableFallbacks 10-12) — 항목 번호로 찾는다.
-  assert.deepEqual(pvf({sections:[{section_code:'2.6.2',tag:'3-1',title:'일정',content_type:'table'}],table_fallbacks:[{section_code:'2.6.2',reason:'열 부족'}]}).fallbacks,{'2.6.2':'열 부족'});
+  assert.deepEqual(pvf({sections:[{section_code:'2.6.2',tag:'3-1',title:'일정',content_type:'table'}],table_fallbacks:[{section_code:'2.6.2',tag:'3-1',title:'일정',display_reason:'일정 입력을 확인해 주세요.'}]}).fallbacks,{'2.6.2':'일정 입력을 확인해 주세요.'});
+  // 화면 6 — 종합 판정(verdict) 전에는 plan의 문서 점수 · 기준 · 안내로 점수를 만든다(백엔드 BusinessPlanOut). 예전엔 null이라 예시 점수가 보였다.
+  const doc6=sfr({verdict:null,plan:{doc_score:42,doc_max_score:60,threshold:75,notices:['입력 확인 필요'],sections:[],score_reasons:[{item_code:'2.4.1',tag:'1-1',score:6,max_score:10,reason_text:'근거 부족'}]}});
+  assert.deepEqual([doc6.docScore.raw,doc6.docScore.max,doc6.threshold,doc6.notices,doc6.artifactScore,doc6.total],[42,60,75,['입력 확인 필요'],null,null]);
+  assert.deepEqual(doc6.docScore.groups.map(g=>g.label),['문제인식']);
+  assert.equal(sfr({verdict:null,plan:{doc_score:null,score_reasons:[]}}),null);assert.equal(sfr(null),null);
   // 재작성 전후 비교 — 새 모양(키 = 항목 번호, tag · title)은 묶음 이름으로, 묶음마다 그 묶음 항목만(보충 10-11).
   const {reworkDiffForLabel}=await server.ssrLoadModule('/src/features/workflow/rework.js');
   const changedNew={sections:{'2.5.1':{before:'b',after:'c',tag:'2-1',title:'개발 방안'},'2.4.2':{before:null,after:'n',tag:'1-1',title:'시장'},'2.4.1':{before:'x',after:'y',tag:'1-1',title:'문제 정의'}}};

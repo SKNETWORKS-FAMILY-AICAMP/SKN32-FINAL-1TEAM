@@ -351,14 +351,14 @@ export function ArtifactCarousel({ hasExecutable, infoSrc = null, siteSrc = null
 // 그림은 일반현황 칸과 따로 둔다 — 그림을 어느 묶음에 둘지 조율 쪽이 아직 정하는 중이라(백엔드 10-12 답변 3 · 5) 옮기기 쉽게.
 function PlanGroupedView({ view, itemInfo, itemTitle }){
   const sectionBlock = (s, i) => {
-    // 표를 만들지 못해 본문으로 대신한 항목이면 그 자리에 사유를 알린다(조율 tableFallbacks, 10-12). 사유는 담당자 원문이라 문구가 바뀔 수 있다.
+    // 표를 만들지 못해 본문으로 대신한 항목이면 그 자리에 백엔드가 준 사용자용 안내(display_reason)를 보인다(조율 10-12, 백엔드 10-13).
     const fallback = view.fallbacks?.[s.section_code];
     return (
       <div key={s.section_code || `${s.title}-${i}`}>
         <h3 className="font-display font-bold text-[14px] mb-1">{s.title || s.section_code}</h3>
         {fallback && (
           <p className="mb-2 rounded-lg bg-[#fff9ec] px-3 py-2 text-[12px] leading-relaxed text-[#806334]">
-            표를 만들지 못해 내용으로 대신했어요 — 사유: {fallback}
+            표를 만들지 못해 내용으로 대신했어요 — {fallback}
           </p>
         )}
         <p className="text-[13px] leading-relaxed text-[var(--fg)] whitespace-pre-line">{s.body}</p>

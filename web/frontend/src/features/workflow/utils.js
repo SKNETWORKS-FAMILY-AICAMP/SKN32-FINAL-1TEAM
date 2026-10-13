@@ -131,21 +131,37 @@ function groupReason(g){
 
 export function scoresFromResult(result){
   const verdict = result?.verdict;
-  if (!verdict) return null; // 아직 채점 전 — 화면은 기존 고정 표로 돌아간다
   const plan = result?.plan;
-  const artifact = plan?.artifacts?.[0];
-  const artifactReasons = artifact?.score_reasons || [];
-  const isCross = (r) => (r.item_code || '').startsWith('FEATURE-');
-
   const docItems = reasonsToItems(plan?.score_reasons, plan?.sections);
   const docGroups = docGroupsFrom(docItems);
-  const docScore = {
-    raw: num(verdict.doc_score) ?? sumScores(docItems),
-    max: num(verdict.doc_max_score) ?? num(plan?.doc_max_score) ?? 70,
+  const docScoreOf = (raw, max) => ({
+    raw: num(raw) ?? sumScores(docItems),
+    max: num(max) ?? num(plan?.doc_max_score) ?? 70,
     items: docItems,
     groups: docGroups,
     reasons: docGroups ? docGroups.filter((g) => g.score < g.max).map(groupReason) : reasonsFromItems(docItems),
-  };
+  });
+  const noticesOf = (list) => (list || []).map((n) => (typeof n === 'string' ? n : n?.message)).filter(Boolean);
+
+  // 화면 6(문서 평가) — 종합 판정 전이라 verdict가 없다(조율 종합 점수 보고서가 아직 없음). 문서층 점수 · 기준 · 안내는 plan에 있다
+  // (백엔드 BusinessPlanOut doc_score · doc_max_score · threshold · notices). 예전엔 verdict가 없으면 null을 돌려 화면 6이 서버 점수 대신
+  // 예시 점수(DOC_SCORE_BY_OUTCOME)를 보였다. 문서 점수도 아직 없으면(채점 전) null — 화면은 기존 고정 표로 돌아간다.
+  if (!verdict) {
+    if (num(plan?.doc_score) == null) return null;
+    return {
+      docScore: docScoreOf(plan.doc_score, plan.doc_max_score),
+      artifactScore: null,
+      codeCheckItems: null,
+      artifactLayer: null,
+      total: null,
+      threshold: num(plan.threshold),
+      notices: noticesOf(plan.notices),
+    };
+  }
+  const artifact = plan?.artifacts?.[0];
+  const artifactReasons = artifact?.score_reasons || [];
+  const isCross = (r) => (r.item_code || '').startsWith('FEATURE-');
+  const docScore = docScoreOf(verdict.doc_score, verdict.doc_max_score);
 
   const layer = (rows, score, max) => {
     const items = reasonsToItems(rows);
@@ -188,8 +204,8 @@ export function scoresFromResult(result){
     artifactLayer: num(verdict.artifact_max_score) != null ? { raw: num(verdict.artifact_score) ?? 0, max: num(verdict.artifact_max_score) } : null,
     total: num(verdict.total_score),
     threshold: num(verdict.pass_threshold),
-    // 점수 보고서 안내(조율 score.notices — 입력 확인 필요 · 입력 오류, 10-12). 글자 목록이다. 칸이 없는 응답이면 빈 목록.
-    notices: (verdict.notices || []).map((n) => (typeof n === 'string' ? n : n?.message)).filter(Boolean),
+    // 종합 평가 점수 보고서의 안내(화면 9 — 입력 확인 필요 · 입력 오류, 조율 10-12). 화면 6의 안내는 plan.notices(위). 칸이 없으면 빈 목록.
+    notices: noticesOf(verdict.notices),
   };
 }
 
@@ -244,9 +260,10 @@ export function planViewFrom(plan){
   if (!sections.length) return null;
   if (!sections.some((s) => 'section_code' in s || 'content_type' in s)) return { legacy: true, sections };
   const text = sections.filter((s) => s.content_type !== 'image');
-  // 표를 만들지 못해 본문으로 대신한 항목 → 그 사유(조율 tableFallbacks, 10-12). 칸 이름은 백엔드 확정 전이라 두 모양을 다 읽는다.
-  const fallbacks = Object.fromEntries((plan.table_fallbacks || plan.tableFallbacks || [])
-    .map((f) => [f?.section_code ?? f?.sectionCode, f?.reason]).filter(([code, reason]) => code && reason));
+  // 표를 만들지 못해 본문으로 대신한 항목 → 사용자용 안내(백엔드 plan.table_fallbacks[].display_reason, 10-13).
+  // 담당자 판정 원문(reason)은 내부 진단용이라 백엔드가 싣지 않는다 — 옛 모양으로 오면 그것이라도 보인다.
+  const fallbacks = Object.fromEntries((plan.table_fallbacks || [])
+    .map((f) => [f?.section_code, f?.display_reason || f?.reason]).filter(([code, reason]) => code && reason));
   return {
     legacy: false,
     fallbacks,
