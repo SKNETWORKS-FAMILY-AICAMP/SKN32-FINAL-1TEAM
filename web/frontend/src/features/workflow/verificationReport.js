@@ -29,6 +29,8 @@ export function buildVerificationReportHtml({ projectName, announcementTitle, ca
   // 진입 파일은 검증-2에서 8항목이 아니라 통과 필수 조건이라(어기면 서버가 8칸을 모두 0점으로 준다) 여기서 따로 0점 처리하지 않는다.
   const earnedOf = (it) => it.earned ?? (it.passed ? it.weight : 0);
   const round2 = (v) => Math.round(v * 100) / 100;
+  // 보이는 점수는 소수 한 자리까지(묶음 합계처럼 소수를 더한 값이 37.0099999… · 40.8333…로 찍혔다, 10-13). 항목 배점 · 획득은 두 자리.
+  const score1 = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 10) / 10 : v);
   const sumMax = round2(codeCheckItems.reduce((s, it) => s + (Number(it.weight) || 0), 0));
   const sumRaw = round2(codeCheckItems.reduce((s, it) => s + (Number(earnedOf(it)) || 0), 0));
 
@@ -67,9 +69,9 @@ export function buildVerificationReportHtml({ projectName, announcementTitle, ca
   // 새 모양은 점수 항목이 24개 안팎이라 묶음(일반현황 · 개요 + 4묶음) 합계로 칸을 채운다(utils.js docGroupsFrom).
   const docRows = docScore.groups || docScore.items;
   const docCells = docRows.map((it) => `
-      <div class="doc-item"><span>${esc(DOC_ITEM_LABEL[it.label || it.name] || it.label || it.name)}</span><b>${it.score} / ${it.max}</b></div>`).join('');
+      <div class="doc-item"><span>${esc(DOC_ITEM_LABEL[it.label || it.name] || it.label || it.name)}</span><b>${score1(it.score)} / ${score1(it.max)}</b></div>`).join('');
   const checkRows = codeCheckItems.map((it) => `
-        <tr class="${it.passed ? '' : 'fail'}"><td>${esc(it.name)}</td><td class="num">${it.weight}</td><td>${it.applicable === false ? '해당 없음' : it.passed ? '충족' : '미충족'}</td><td class="num">${round2(earnedOf(it))}</td></tr>`).join('');
+        <tr class="${it.passed ? '' : 'fail'}"><td>${esc(it.name)}</td><td class="num">${round2(Number(it.weight) || 0)}</td><td>${it.applicable === false ? '해당 없음' : it.passed ? '충족' : '미충족'}</td><td class="num">${round2(earnedOf(it))}</td></tr>`).join('');
   const lines = (arr, empty) => (arr.length ? arr.map((t) => `<p>${esc(t)}</p>`).join('') : `<p class="muted">${empty}</p>`);
 
   return `<!doctype html>
@@ -115,8 +117,8 @@ export function buildVerificationReportHtml({ projectName, announcementTitle, ca
   </dl>
   <div class="verdict">
     <div><small>종합 판정</small><div class="result">${passed ? '통과' : '기준 미달'}</div></div>
-    <div class="score">${total}<span>/ 100점</span></div>
-    <div class="parts"><div><span>문서층 (사업계획서)</span><b>${docRaw} / ${docMaxScore}</b></div><div><span>산출물층 (자동 검증 + 계획서 대조)</span><b>${artifactRaw} / ${artifactMax}</b></div></div>
+    <div class="score">${score1(total)}<span>/ 100점</span></div>
+    <div class="parts"><div><span>문서층 (사업계획서)</span><b>${score1(docRaw)} / ${score1(docMaxScore)}</b></div><div><span>산출물층 (자동 검증 + 계획서 대조)</span><b>${score1(artifactRaw)} / ${score1(artifactMax)}</b></div></div>
   </div>
   <p class="rule">판정 기준 ${passThreshold}점 이상${failedItems.length || crossCheck.reasons.length ? '  |  총점 판정과 별개로 미충족 항목의 보완이 필요합니다.' : ''}</p>
 
@@ -124,14 +126,14 @@ export function buildVerificationReportHtml({ projectName, announcementTitle, ca
   <div class="doc" style="grid-template-columns: repeat(${Math.max(docRows.length, 1)}, 1fr)">${docCells}
   </div>
 
-  <h2><em>02</em>${copy.autoTitle}<small>${autoRaw} / ${autoMax}점</small></h2>
+  <h2><em>02</em>${copy.autoTitle}<small>${score1(autoRaw)} / ${score1(autoMax)}점</small></h2>
   <table>
     <thead><tr><th>점검 항목</th><th class="num">배점</th><th>결과</th><th class="num">획득</th></tr></thead>
     <tbody>${checkRows}
     </tbody>
   </table>
 
-  <h2><em>03</em>계획서 대조 의견 및 보완 사항<small>${crossCheck.withheld ? '대조 불가 (0점 합산)' : `${crossCheck.raw} / ${crossCheck.max}점`}</small></h2>
+  <h2><em>03</em>계획서 대조 의견 및 보완 사항<small>${crossCheck.withheld ? '대조 불가 (0점 합산)' : `${score1(crossCheck.raw)} / ${score1(crossCheck.max)}점`}</small></h2>
   <dl class="notes">
     <dt>검증 의견</dt><dd>${lines([opinion], '')}</dd>
     <dt>보완 사항</dt><dd>${lines(fixes, '보완이 필요한 항목이 없습니다.')}</dd>
