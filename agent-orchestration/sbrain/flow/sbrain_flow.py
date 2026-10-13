@@ -64,8 +64,8 @@ from .catalog import (
 )
 from .instruction import append_problems, extract_frame, replace_guidance
 from .rework_map import (
-    ARTIFACT_BUNDLES, BUNDLE_LAYER, BUNDLE_TASK, DOCUMENT_TASKS, KIND_TASK, REWORK_DEFAULT_REASON,
-    alt_text_source_missing, bundle_items, bundle_tasks, form_kinds,
+    ARTIFACT_BUNDLES, BUNDLE_TASK, DOCUMENT_TASKS, KIND_TASK, REWORK_DEFAULT_REASON,
+    alt_text_source_missing, bundle_items, bundle_layer, bundle_tasks, form_kinds,
 )
 
 WRITE = ["T-C3", "T-S1", "T-S2", "T-W1", "T-W2", "T-W3", "M-1", "T-V1", "G-02a"]
@@ -231,13 +231,14 @@ def bundle_orders(bundles: list[str], offered: list[ReworkOrder], form: Any = No
     - 대상(targets)은 그 층에서 모은 묶음 이름이다(기회를 세는 이름과 같다).
     - 산출물층: 그 Task에 대한 판정 지시(사유 · 보완 지시)를 쓴다. 같은 Task 지시가 여럿이면 합친다.
     - 문서층 (spec 4.11): 고른 묶음들의 항목(항목별 재작성 묶음 표 — rework_map.bundle_items)을 종류별 Task(본문 T-W1 · 그림 T-W2 ·
-      표 T-W3)가 다시 만든다. 그 종류 항목이 없는 Task는 지시가 없다(부르지 않는다). 지시는 고른 묶음을 대상으로 한
+      표 T-W3)가 다시 만든다. 그 종류 항목이 없는 Task는 지시가 없다(부르지 않는다) — 새 묶음 스위치를 켜면 '그림'은 T-W2만,
+      '일반현황 · 개요'는 T-W1만이다. 지시는 고른 묶음을 대상으로 한
       판정 지시를 모두 합친 것이고, Task마다 같다. 양식(form)이 없으면(작업 분해 전 · 단위 시험) 세 Task 모두다.
     - 해당 판정 지시가 없으면(미달이 아닌 묶음, 확장) 사유 · 보완 지시 모두 고정 문구 REWORK_DEFAULT_REASON을 쓴다.
       판정 지시의 보완 지시가 비어 있어도 같다(시트 4 ReworkOrder.instructionDelta는 비워 둘 수 없다).
     """
     out: dict[str, ReworkOrder] = {}
-    docs = [b for b in bundles if BUNDLE_LAYER.get(b) == "document"]
+    docs = [b for b in bundles if bundle_layer(b) == "document"]   # 그때의 표 · 스위치 (새 묶음 포함)
     if docs:
         chosen = set(docs)
         doc_orders = [o for o in offered if o.layer == "document" and chosen & set(o.targets)]
@@ -530,7 +531,8 @@ class SBrainFlow:
     def _cycle_targets(self, ctx: RunContext, cyc, task_id: str | None) -> dict[str, list[str]]:
         """재작성 사이클에서 고른 문서층 묶음의 항목 → 문제 목록 (양식 순서). task_id를 주면 그 Task가 만드는 종류만.
 
-        묶음 → 항목은 항목별 재작성 묶음 표(rework_map.bundle_items) 하나로 가른다. 묶음 없는 항목(일반현황 · 개요)은 들지 않는다."""
+        묶음 → 항목은 항목별 재작성 묶음 표(rework_map.bundle_items) 하나로 가른다. 묶음 없는 항목(새 묶음 스위치가 꺼져 있을 때의
+        일반현황 · 개요 · 그림)은 들지 않는다."""
         docs = list(dict.fromkeys(b for o in cyc.orders_by_task.values() if o.get("layer") == "document"
                                   for b in o.get("targets", [])))
         if not docs or not ctx.has(FORM_SPEC):

@@ -280,10 +280,17 @@ def test_table_fallbacks_are_extensions_with_decision_note():
 def test_provisional_keys_for_partner_1012():
     p = settings_mod.PROVISIONAL
     assert "partnerSw.inputError" in p
-    assert all(word in p["partnerSw.inputError"] for word in ("_is_agreement_duration_failure", "verify.py",
-                                                               "새 프로젝트"))
+    assert all(word in p["partnerSw.inputError"] for word in ("inputErrorCodes", "verify.py",
+                                                               "입력을 고쳐 새로 만들 수 있습니다"))
+    assert "새 프로젝트" not in p["partnerSw.inputError"]                        # 끝 문장 갱신 (잠정 문구)
     assert "displayTitle" in p["taskPlan.formTable"]
     assert "2026-10-12" in p["reworkMap.sectionBundles"] and "웹팀" in p["reworkMap.sectionBundles"]
+    assert "스위치" in p["reworkMap.sectionBundles"]
+    general = p["reworkMap.generalBundles"]
+    assert all(word in general for word in ("GENERAL_BUNDLES_ENABLED", "기본 꺼짐", "일반현황 · 개요", "그림", "0-1",
+                                            "0-2", "묶음 모두"))
+    kiet = p["partnerSw.kietSearch"]
+    assert all(word in kiet for word in ("SBRAIN_KIET_SEARCH", "기본 꺼짐", "25초", "120자"))
 
 
 # ── tools: 목적별 모델 · json_mode ──────────────────────

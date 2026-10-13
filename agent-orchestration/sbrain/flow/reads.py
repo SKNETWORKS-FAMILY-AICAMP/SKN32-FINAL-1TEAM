@@ -58,7 +58,8 @@ from ..orchestrator.trace import ExecutionRecord
 from .log_stats import SCORE_LAYERS, layer_score
 from .log_stats import current_scores as _current_scores
 from .retention import retention_cutoff
-from .rework_map import ARTIFACT_BUNDLES, BUNDLE_EXECUTABLE, BUNDLE_LAYER, DOCUMENT_BUNDLES, order_bundles
+# 묶음 목록 · 층은 부를 때마다 그때의 표 · 스위치로 읽는다(document_bundles · bundle_layer — 불러올 때 굳는 상수를 쓰지 않음)
+from .rework_map import ARTIFACT_BUNDLES, BUNDLE_EXECUTABLE, bundle_layer, document_bundles, order_bundles
 from .sbrain_flow import CANDIDATE_LIMIT, candidate_lists
 # 산출물층 환산 (spec 4.6 D11) — 관리자 조회의 코드 점검 · 계획서 대조 · 산출물층 점수는 그 실행 건 설정 사본 배점으로 환산한다
 from .score_scale import ScoreMaxes, score_maxes
@@ -81,7 +82,7 @@ class Screen(SBModel):
 class ReworkOption(SBModel):
     """재작성 목록 한 줄 (초안) — 미달 항목의 재작성 지시와 묶음별 남은 기회."""
     order: ReworkOrder
-    bundles: list[str]          # 기회를 세는 묶음 이름 (문서층: 문서층 묶음 4개, 산출물층: Task 묶음)
+    bundles: list[str]          # 기회를 세는 묶음 이름 (문서층: 지시 대상 문서층 묶음, 산출물층: Task 묶음)
     remaining: int              # 남은 기회 (문서층: 4개 중 가장 많이 남은 값, 잠정)
     selectable: bool            # 고를 수 있는지 (기회가 없으면 E-G2-LIMIT, 원페이지는 T-B1 없음)
 
@@ -113,6 +114,9 @@ class ScoreView(SBModel):
 # 표 대체 사유 칸 (확장) — 담당자 10-12 새 판이 더한 화면 칸. 화면 6 · 11 · 결과 조회에 같은 모양으로 싣는다
 TABLE_FALLBACK_NOTE = ("표 대체 안내(결정 0028) — 표를 본문 서술로 바꾼 항목마다 하나(tableOutputs의 tableFallbackUsed 참 · "
                        "fallbackReason이 빈 글이 아님). 사용자 표시에는 displayReason을 쓰고, 계획서 본문 글에는 섞지 않는다")
+# 표 대체 안내의 일반 문구 — 저장된 displayReason이 없는 옛 값에 쓴다. T-W3 연결 코드(agents/partner_sw/writing.py)의 다섯째
+# 문구(분류에 걸리지 않은 경우)도 이 값을 가져다 쓴다
+TABLE_FALLBACK_DISPLAY_DEFAULT = "표를 검증 기준에 맞춰 완성하지 못해 설명으로 표시합니다. 입력 내용과 생성 결과를 확인해 주세요."
 
 
 # 점수 보고서 → ScoreView로 그대로 옮기는 환산 칸 (파이썬 이름)
@@ -150,7 +154,8 @@ class TableFallback(SBModel):
     """새 타입(확장) — F17 표를 본문으로 대체했을 때 화면에 별도 표시할 항목별 사유."""
     section_code: str = ext(note="표를 본문 서술로 바꾼 항목 번호")
     reason: str = ext(note="담당자 fallbackReason 원문 — 내부 진단용, 사용자 화면에는 표시하지 않음")
-    display_reason: str = ext(note="표 대체 안내(결정 0028) — fallbackReason 유형을 쉽게 풀어 쓴 사용자 표시용 안내 문구")
+    display_reason: str = ext(note="표 대체 안내(결정 0028) — fallbackReason 유형을 쉽게 풀어 쓴 사용자 표시용 안내 문구 "
+                                   "(T-W3가 tableOutputs에 저장한 값, 없는 옛 값은 일반 문구)")
 
 
 class DocumentScreen(Screen):
@@ -215,7 +220,8 @@ class Outputs(SBModel):
     """outputs 결과 — 진행 중 · 대기 중 · 재개대기 · 완료 실행 건이 지금까지 만든 결과(현재 버전).
 
     없는 것은 None · 빈 목록. 점수 보고서는 화면과 같은 ScoreView(실행 설정 스냅샷 없음)다.
-    rework_usage: 묶음 이름 6개(문서층 4 · 산출물층 2, 원페이지는 실행 파일 제외)별 사용 수 · 남은 기회.
+    rework_usage: 묶음 이름 6개(문서층 4 · 산출물층 2, 원페이지는 실행 파일 제외 — 새 묶음 스위치를 켜면 문서층 6)별 사용 수 ·
+    남은 기회.
     rework_limit: 실행 시작 때 고정한 묶음마다의 재작성 상한.
     """
     project_id: str | None
@@ -565,7 +571,10 @@ def screen(orch: SBrainOrchestrator, project_id: int | str, number: int) -> Scre
 
 
 def _table_fallbacks(outputs: dict[str, Any]) -> list[TableFallback]:
-    """화면 표시용 목록을 만든다. reason은 진단 원문, display_reason은 사용자 안내다."""
+    """화면 표시용 목록을 만든다. reason은 진단 원문, display_reason은 사용자 안내다.
+
+    안내 문구는 T-W3 연결 코드(agents/partner_sw/writing.py)가 표를 바꿀 때 tableOutputs[항목].displayReason에 저장한 것을
+    옮기기만 한다 — 여기서는 담당자 문장을 판별하지 않는다. 칸이 없거나 빈 옛 값(스텁 T-W3 포함)은 일반 문구."""
     if not isinstance(outputs, dict):
         return []
     fallbacks = []
@@ -574,23 +583,9 @@ def _table_fallbacks(outputs: dict[str, Any]) -> list[TableFallback]:
             continue
         reason = str(output.get("fallbackReason", "")).strip()
         if reason:
-            fallbacks.append(TableFallback(section_code=str(code), reason=reason,
-                                           display_reason=_table_fallback_display_reason(reason)))
+            display = str(output.get("displayReason") or "").strip() or TABLE_FALLBACK_DISPLAY_DEFAULT
+            fallbacks.append(TableFallback(section_code=str(code), reason=reason, display_reason=display))
     return fallbacks
-
-
-def _table_fallback_display_reason(reason: str) -> str:
-    """내부 진단 문구를 분류해 사용자에게 다음 조치를 안내한다."""
-    text = reason.casefold()
-    if "지원규모 상한" in reason or "정부지원사업비" in reason and "초과" in reason:
-        return "입력한 정부지원사업비가 지원 상한을 초과해 표 대신 설명으로 표시합니다. 사업비를 확인해 주세요."
-    if "개발계획 표 종료월" in reason or "원본 협약 일정" in reason:
-        return "작성된 표 일정이 원본 협약 일정과 맞지 않아 설명으로 표시합니다. 일정 입력과 표 내용을 확인해 주세요."
-    if "협약기간 일정" in reason and ("초과" in reason or "이후" in reason):
-        return "입력한 협약 일정이 허용 기간을 벗어나 표 대신 설명으로 표시합니다. 일정 입력을 확인해 주세요."
-    if any(marker in text for marker in ("필수 표", "표 구조", "컬럼", "열 누락", "행 누락")):
-        return "표의 필수 항목을 검증 기준에 맞추지 못해 설명으로 표시합니다. 표 내용을 확인해 주세요."
-    return "표를 검증 기준에 맞춰 완성하지 못해 설명으로 표시합니다. 입력 내용과 생성 결과를 확인해 주세요."
 
 
 def _score(report: ScoreReport) -> ScoreView:
@@ -615,7 +610,7 @@ def _options(ctx: RunContext, orders: list[ReworkOrder]) -> list[ReworkOption]:
     for o in orders:
         bundles = order_bundles(o)
         remaining = max((usage.get(b, per_bundle) for b in bundles), default=per_bundle)
-        blocked = (not bundles or any(b not in BUNDLE_LAYER for b in bundles)
+        blocked = (not bundles or any(bundle_layer(b) is None for b in bundles)
                    or (onepage and BUNDLE_EXECUTABLE in bundles))
         out.append(ReworkOption(order=o, bundles=bundles, remaining=remaining,
                                 selectable=remaining > 0 and not blocked))
@@ -692,13 +687,15 @@ def outputs(orch: SBrainOrchestrator, project_id: int | str) -> Outputs:
 
 
 def _bundle_usage(ctx: RunContext, category: str | None) -> list[BundleUsage]:
-    """묶음 이름 6개의 사용 수 · 남은 기회 (쓴 적 없는 묶음은 상한 그대로). 원페이지는 실행 파일이 없다."""
+    """묶음 이름(지금 표의 문서층 묶음 · 산출물층 2)의 사용 수 · 남은 기회 (쓴 적 없는 묶음은 상한 그대로). 원페이지는 실행
+    파일이 없다. 묶음 목록은 부를 때마다 그때의 표 · 스위치로 정한다 — 새 묶음 스위치를 끄면 그 묶음은 목록에서 빠지고
+    사용 기록(Run.reworkUsage)은 지우지 않는다."""
     used = {u.bundle_id: u for u in ctx.run.rework_usage}
     per_bundle = ctx.settings.rework.per_bundle
-    names = [b for b in (*DOCUMENT_BUNDLES, *ARTIFACT_BUNDLES)
+    names = [b for b in (*document_bundles(), *ARTIFACT_BUNDLES)
              if not (category == "원페이지" and b == BUNDLE_EXECUTABLE)]
     return [used[b].model_copy() if b in used else
-            BundleUsage(bundle_id=b, layer=BUNDLE_LAYER[b], used_count=0, remaining=per_bundle) for b in names]
+            BundleUsage(bundle_id=b, layer=bundle_layer(b), used_count=0, remaining=per_bundle) for b in names]
 
 
 def rework_result(orch: SBrainOrchestrator, project_id: int | str) -> ReworkResult | None:

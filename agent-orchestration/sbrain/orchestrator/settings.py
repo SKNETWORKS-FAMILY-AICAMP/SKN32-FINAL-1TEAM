@@ -256,20 +256,32 @@ PROVISIONAL: dict[str, str] = {
     "reworkMap.sectionBundles": "담당자 항목별 재작성 묶음(2.4 · 3.4 문제인식, 2.5 · 3.5 실현가능성, 2.6 · 3.6 성장전략, "
                                 "2.7 · 3.7 팀 구성, 2.1 ~ 2.3 · 3.1 ~ 3.3 묶음 없음) — 웹 묶음 4개와 담당자 양식 항목을 기준으로 "
                                 "오케스트레이터 쪽에서 정함. 담당자가 대응이 맞다고 확인(2026-10-12)했고, 일반현황 · 개요 · 그림을 "
-                                "새 묶음으로 두자는 담당자 제안을 웹팀에 묻는 중(결정 0028). 답이 오면 flow/rework_map.py 표만 바꾼다",
+                                "새 묶음으로 두자는 담당자 제안을 웹팀에 묻는 중(결정 0028). 답이 오면 flow/rework_map.py 표만 바꾼다. "
+                                "새 묶음 줄은 같은 모듈에 두고 스위치를 켰을 때만 표에 들어간다(reworkMap.generalBundles)",
+    "reworkMap.generalBundles": "새 재작성 묶음 스위치 GENERAL_BUNDLES_ENABLED 기본 꺼짐(flow/rework_map.py 코드 값 — 켜려면 "
+                                "웹 배포 → 코드 값 변경 → 웹 프로세스 · 워커 다시 띄움). 켜면 문서층 묶음 6개, 순서 일반현황 · 개요, "
+                                "그림, 문제인식, 실현가능성, 성장전략, 팀 구성. 이름 '일반현황 · 개요'(2.1.x · 2.2.x · 2.3.1 ~ 2.3.5 / "
+                                "3.1.x · 3.2.x · 3.3.1 ~ 3.3.5, 태그 0-1, T-W1이 다시 만듦) · '그림'(2.3.6 · 3.3.6, 태그 0-2, T-W2가 "
+                                "다시 만듦). 기회는 rework.perBundle, 받는 화면 6 · 9. 판정의 '묶음 모두' 후보에서 그림은 뺀다(그림 "
+                                "항목에 fail · warning이 있을 때만 후보). 켠 뒤 모든 실행 건에 바로 적용, 이미 만든 계획서 태그는 "
+                                "고치지 않음, 다시 끄면 목록 · 접수에서 빠지고 쓴 기록은 남김",
     "partnerSw.unassignedPhase": "예비창업 사업비 row의 phase가 없으면 1 · 2단계 표 어디에도 넣지 않고 2.5.3 표의 '단계 미지정' "
                                  "줄로 보존, 2.5.3 · 2.5.4를 입력 없음으로 둔다 — 웹 phase 컬럼이 생기면 풀린다 "
                                  "(agents/partner_sw/inputs.py, spec 4.4)",
     "partnerSw.inputMissing": "표 입력 없음 판정(그 표의 원본 row가 비면)과 문구 '입력 확인 필요 — <사업비 집행계획 | 추진 일정>', "
                               "점수 보고서 안내 '입력 확인 필요 — 사업비 집행계획 · 추진 일정을 입력하면 해당 표가 채워집니다.' "
                               "(agents/partner_sw/verify.py · inputs.py, agents/stubs.py, spec 4.9 · 4.12)",
-    "partnerSw.inputError": "입력 오류(SectionResult.inputError, 결정 0028) 세 경우 — 담당자 F19 규칙 검사 issue 가운데 ① 협약기간 "
-                            "일정 최대 개월 수 초과(담당자 판별 함수 _is_agreement_duration_failure 그대로), ② 협약기간 일정 "
-                            "종료월이 개발 종료월 이후 · ③ 정부지원사업비가 지원규모 상한 초과(연결 코드의 글 꼴 AFTER_DEV_END · "
-                            "OVER_SUPPORT_LIMIT — 담당자 글 전체와 같은 꼴만, 담당자 글이 바뀌면 함께 고칠 곳)이 최종 fail 판정에 "
-                            "있으면 참. 점수 보고서 안내 '입력한 협약기간 일정이나 사업비가 기준(…)을 벗어나 … 이대로 "
-                            "진행하거나, 입력을 고쳐 새 프로젝트로 다시 만들 수 있습니다.' (agents/partner_sw/verify.py, "
-                            "agents/supervisor/judge.py INPUT_ERROR_NOTICE)",
+    "partnerSw.inputError": "입력 오류(SectionResult.inputError, 결정 0028) — 최종 fail 판정이고 담당자 F19 inputErrorCodes에 "
+                            "입력 오류 코드(AGREEMENT_MONTHS_EXCEEDED · AGREEMENT_SCHEDULE_AFTER_DEADLINE · "
+                            "SUPPORT_LIMIT_EXCEEDED — ① 협약기간 최대 개월 수 초과 ② 협약기간 일정 종료월이 개발 종료월 이후 "
+                            "③ 정부지원사업비가 공고 지원 금액 상한 초과)가 있으면 참(담당자 SB-360 — issue 문구와 무관). 점수 보고서 안내 '입력한 협약기간 일정이나 사업비가 기준(…)을 벗어나 … 이대로 "
+                            "진행하거나, 입력을 고쳐 새로 만들 수 있습니다.'(끝 문장 갱신 2026-10-13) "
+                            "(agents/partner_sw/verify.py, agents/supervisor/judge.py INPUT_ERROR_NOTICE)",
+    "partnerSw.kietSearch": "실행별 KIET 자료 검색 스위치 SBRAIN_KIET_SEARCH 기본 꺼짐(워커 환경 변수). 켜면 T-S1이 검색어로 "
+                            "KIET를 찾는다 — 재시도 2회(KIET_RETRIES, 처음 포함 최대 3번) · 한 번 25초, 검색어는 기술 분야(비면 아이디어 "
+                            "설명 앞 120자). 검색 실패(크롤러 값 failed · 크롤러 밖 예외)는 호출 기록에 '호출실패'로 남고, 재시도를 다 "
+                            "쓰면 Task를 멈추지 않고 있는 자료로 계속한다(필수 규칙 2 예외). 결과 0건은 실패가 아니다 "
+                            "(agents/partner_sw/market_research.py, agents/partner_sw/strategy.py, bootstrap.build_app)",
     "partnerSw.outputMapping": "담당자 결과 → RequirementAnalysis · MarketAnalysis 매핑, numericTokens(숫자 + 단위 규칙 추출), "
                                "문장 나누기(줄 · 문장 끝, sentenceId s-<항목>-<순번>) (agents/partner_sw/outputs.py, spec 4.7)",
     "partnerSw.scoreDigits": "항목 점수 소수 둘째 자리 반올림, 문서층 총점 = 반올림한 항목 점수의 합 "

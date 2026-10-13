@@ -4,6 +4,7 @@
   앞 함수 결과를 쓰므로 차례로 부른다(spec 4.14). 담당자 run_pipeline의 단계 함수 호출 · 결과 정리(compact ·
   _annotate_status · _attach_provenance · 예비창업 단계별 예산)를 그대로 쓰고, 파이프라인을 통째로 부르지 않는다.
 - 호출은 모두 partner_call 블록 안 — LLM은 tools.llm(purpose=F번호, json_mode=True), 자료 검색은 tools.search('자료 검색').
+  실행별 KIET 검색(SB-360)은 스위치가 켜져 있을 때만 F01 전에 tools.search('KIET 시장 조사', retries=2)로 한다(market_research).
   지시문(T-C3 instruction)은 그 Task의 모든 LLM 호출에 같은 것을 싣는다.
 - 재개(4.13): 받은 결과 키는 F번호다. 재개 때 받은 F번호는 다시 부르지 않고 다음부터 이어 간다. 자료 검색은 값이 정해져
   있어 받은 결과로 남기지 않고 다시 한다.
@@ -26,7 +27,7 @@ from .agent_strategy.runtime.pipeline import _annotate_status, _attach_provenanc
 from .agent_strategy.runtime.research_context import retrieve
 from .calls import partner_call
 from .common import Steps
-from ...orchestrator.market_research import merge_market_evidence, search_keyword
+from .market_research import KIET_RETRIES, kiet_search_enabled, merge_market_evidence, search_keyword
 from .outputs import market_analysis, names, numeric_tokens, requirement_analysis
 from .purposes import F01, F02, F03, F04, F05, F06, F07, F08, F09, F10, F11, F12, F13, F14, F15
 
@@ -64,19 +65,24 @@ def run_ts1(inp: TS1In, tools: Tools) -> TS1Out:
 
     with partner_call(tools, inp.instruction):
         query = project["description"] + " " + tech_field
-        # 실행별 KIET 검색은 파일에 저장하지 않는다. 검색 실패는 로컬 자료로 계속한다.
-        search_keyword_text = (str(company.tech_field or "").strip() or description[:120].strip())[:120]
-        try:
-            fresh_market = tools.search(
-                "KIET 시장 조사", lambda timeout: search_keyword(search_keyword_text, timeout))
-        except ToolCallExhausted:
-            # 외부 조사 실패는 전략 작성을 막지 않는다.
-            fresh_market = {"status": "failed", "keyword": search_keyword_text,
-                            "sources": [], "resultCount": 0, "errorType": "ToolCallExhausted"}
+        # 실행별 KIET 검색(SB-360) — 스위치(SBRAIN_KIET_SEARCH, 워커 조립이 넘김)가 켜져 있을 때만. 꺼져 있으면 호출하지 않고
+        # 로컬 자료만 쓴다. 검색 결과는 파일에 저장하지 않는다. KIET 검색만 재시도 KIET_RETRIES번.
+        fresh_market: dict[str, Any] | None = None
+        if kiet_search_enabled():
+            search_keyword_text = (str(company.tech_field or "").strip() or description[:120].strip())[:120]
+            try:
+                fresh_market = tools.search(
+                    "KIET 시장 조사", lambda timeout: search_keyword(search_keyword_text, timeout),
+                    retries=KIET_RETRIES)
+            except ToolCallExhausted:
+                # 필수 규칙 2의 예외(T-S1의 KIET 검색 호출만) — 외부 조사 실패는 전략 작성을 막지 않고 있는 자료로 계속한다
+                fresh_market = {"status": "failed", "keyword": search_keyword_text,
+                                "sources": [], "resultCount": 0, "errorType": "ToolCallExhausted"}
         web = steps.run(F01, lambda: _call(F01, py.collect_web_data, query=query, source_type="attached_crawling",
                                            target_fields=["market", "development", "design"]))
         market_ev = steps.run(None, lambda: retrieve(query, domains=("market",), limit=4, char_budget=5500))
-        market_ev = merge_market_evidence(market_ev, fresh_market)
+        if fresh_market is not None:
+            market_ev = merge_market_evidence(market_ev, fresh_market)
         competitor_ev = steps.run(None, lambda: retrieve(query + " 경쟁사 경쟁 비교", domains=("market",), limit=4,
                                                          char_budget=4500))
         dev_ev = steps.run(None, lambda: retrieve(query, domains=("development",), limit=3, char_budget=3000))
