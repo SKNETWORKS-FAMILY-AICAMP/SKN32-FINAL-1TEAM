@@ -55,6 +55,7 @@ from .supervisor.judge import (  # noqa: F401 — 판정 안내 문구는 실구
     INPUT_ERROR_NOTICE, INPUT_MISSING_NOTICE,
 )
 from .supervisor.readme import MARKDOWN_TYPE, README_FILE  # noqa: F401 — 안내 문서 상수는 실구현 한 곳
+from .supervisor.tc1 import with_user_target_customer   # 목표 고객 덮기는 실구현 한 곳
 
 # 스텁 T-V1 평가항목 배점이 없을 때 쓰는 문서층 배점 기본값 (70 ÷ 항목 수)
 DOC_LAYER_MAX = 70.0
@@ -467,7 +468,8 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
         f = inp.form_input
         item = ItemSpec(item_name=f.idea_text[:20], one_line_summary=f.idea_text, target_customer="소상공인",
                         core_features=["회원 등록·조회", "수업 예약"], category=sc.category, keywords=["헬스장"])
-        # companyInfo는 폼 값을 코드로 그대로 옮긴다 (LLM에 맡기지 않음)
+        item = with_user_target_customer(item, f)   # 사용자 목표 고객이 있으면 그 값 (실구현과 같은 함수)
+        # companyInfo는 폼 값을 코드로 그대로 옮긴다 (LLM에 맡기지 않음) — 목표 고객 · 창업아이템명 · 팀원 표 행 포함
         company = CompanyInfo(**{k: getattr(f, k) for k in CompanyInfo.model_fields if hasattr(f, k)})
         return c.TC1Out(item_spec=item, category=sc.category, company_info=company,
                         category_reason="화면 중심 서비스", confidence=0.8)

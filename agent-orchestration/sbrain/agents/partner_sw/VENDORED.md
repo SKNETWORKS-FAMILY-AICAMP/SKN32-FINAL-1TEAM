@@ -62,6 +62,7 @@
 | `runtime/pipeline.py` `_writing_criteria` | 기준 폴더(`Path(__file__).resolve()`)를 모듈 상수 `_ROOT`로, 파일 읽기 `resources.read` | Task 실행 중 디스크 안 보기 |
 | `agent_validation_1/validation_1.py` `_regulation_evidence` | `path.exists()` · `path.read_text()` → `resources` | 같음 |
 | `agent_validation_1/scoring.py` `_source_evidence` · `score_section`(basis 확인) | `path.exists()` · `path.read_text()` → `resources` | 같음 |
+| (담당자 시험 서버 `app/testing/test_server.py`의 `flow_image`를 옮긴 연결 코드 `diagram_svg.py`) | 흐름도(`USER_FLOW`) 그림 제목 `"USERFLOW"` → `"서비스 흐름도"`(상수 `TITLES`). 구조도 `"서비스 구조도"`는 그대로. 우리 파일이라 `[S-Brain]` 주석 대상이 아님 | 웹 계획서에 영문 제목이 그대로 보였다. 담당자 원본에도 반영을 부탁한다 |
 | 자료 `agent_validation_1/res/reference/regulations/예비창업패키지 세부관리기준(2025년).hwp.json` · `초기창업패키지 세부관리기준(2025년).hwp.json` | `error` 칸(변환 도구 hwp5의 경고 문구 — 담당자 PC 설치 경로가 들어 있음)을 `null`로 | 저장소에 담당자 PC 경로를 남기지 않는다. 이 칸은 어느 코드도 읽지 않아 동작이 같다. 다음 판을 받을 때 같은 칸이 다시 채워져 있으면 다시 지운다 |
 
 **바꾸지 않은 것(알려 둘 것)**
@@ -81,10 +82,10 @@
 | `calls.py` | 호출 수단 전달(`partner_call(tools, instruction)` · `current_call()` · 스레드용 `submit(executor, fn, …)`), 메시지 모양(`build_messages`), 보내기(`send_json` — LLM, `search` — 자료 검색) |
 | `resources.py` | 자료 파일(JSON · MD) 상수 `TEXTS`, `exists(path)` · `read(path)` |
 | `contract.py` | 실행 계약 · 채점 정책 · 항목 기준 상수(양식 묶음 `agents/form_defaults.py`가 읽는다) |
-| `inputs.py` | 담당자 입력 만들기 — LLM으로 보내는 칸(spec 4.4), 표 원본 행 `tableData`(한글 키 · 열), F14 정규화 행, 울타리(4.5), 입력 없음 표 항목(4.9) |
+| `inputs.py` | 담당자 입력 만들기 — LLM으로 보내는 칸(spec 4.4), 표 원본 행 `tableData`(한글 키 · 열), F14 정규화 행, 울타리(4.5), 입력 없음 표 항목(4.9), 사용자 목표 고객 · 일반현황 근거 덧붙임(아래) |
 | `outputs.py` | 출력 변환(4.7) — 산출물에 싣는 칸, 문장 나누기, `RequirementAnalysis` · `MarketAnalysis` · 수치 토큰 매핑(잠정) |
 | `common.py` | 양식 항목 · 담당자 항목 계약 · 문맥(canonical · 원본 사실 · 근거) · 목표 항목 · 재개 이어 쓰기(`Steps` · partial) · 동시 호출(`gather`, 상수 T-W1 · T-V1 4, T-W2 2) |
-| `diagram_svg.py` | 그림 SVG 그리기 — 담당자 시험 서버 `app/testing/test_server.py`의 `flow_image` 그리기만 옮김(기본 흐름 대체는 뺌) |
+| `diagram_svg.py` | 그림 SVG 그리기 — 담당자 시험 서버 `app/testing/test_server.py`의 `flow_image` 그리기만 옮김(기본 흐름 대체는 뺌, 흐름도 제목 '서비스 흐름도') |
 | `strategy.py` · `writing.py` · `verify.py` | Task 함수 `run_ts1` · `run_ts2` · `run_tw1` · `run_tw2` · `run_tw3` · `run_tv1` — 담당자 run_pipeline의 단계 함수를 Task 단위로 나눠 부른다(파이프라인을 통째로 부르지 않음). `writing.py`에 표 대체 안내 고르기 `table_display_reason`(아래) |
 | `market_research.py` | 실행별 KIET 검색 연결(아래) — 스위치 `set_kiet_search` · `kiet_search_enabled`, 검색 `search_keyword`(크롤러 `crawl_keyword`를 메모리에서만), 실패 `KietSearchFailed`, 재시도 `KIET_RETRIES`, 근거 합치기 `merge_market_evidence` |
 | `tasks.py` | 등록 `IMPLEMENTED` · `IMPLEMENTED_TASKS` · `bind_partner_sw(registry)` — 워커 조립(`bootstrap.build_app`)만 묶는다 |
@@ -98,6 +99,18 @@
 - **실패:** 크롤러 값의 `status`가 `failed`이거나 크롤러 밖으로 예외가 나오면 `KietSearchFailed`(`ConnectionError` — 엔진이 '호출실패'로 기록하고 재시도)로 바꿔 올린다. 메시지는 고정 문구 'KIET 검색 실패'(예외면 뒤에 오류 종류 이름)뿐이고 원래 예외를 잇지 않는다(`from None` — 검색어 · 주소가 든 크롤러 `error` 글을 싣지 않음). 결과 0건(`no_relevant_source_found`)과 일부 검색만 실패하고 결과가 있는 경우는 실패가 아니다.
 - **재시도를 다 쓰면:** 이 호출 하나만 처음 포함 최대 3번(`KIET_RETRIES` = 2, 잠정) 시도한 뒤 `ToolCallExhausted`를 T-S1이 받아 시장 근거 `kietSearch.status = "failed"`로 두고 있는 자료로 계속한다 — 필수 규칙 2의 예외(T-S1의 KIET 검색 호출만). 호출 기록에 그 호출 한 줄이 '소진'으로 남고 T-S1은 성공으로 끝난다(실행 실패 · 재개 · 실패 알림 · 사용자 화면 표시 없음).
 - **담당자 SB-360 판과 다른 곳:** 담당자 판은 실패를 값으로 돌려 호출 기록에 '성공'으로 남고, 재시도는 설정값(5번)이었다. 관리자가 KIET 문제를 알아볼 수 있게 실패를 호출 실패로 올리고, 사이트가 죽어 있을 때의 지연을 줄이려고 재시도를 2번으로 했다.
+
+### 담당자 입력 바로잡기 (`inputs.py` · `strategy.py` · `writing.py` · `verify.py` · `diagram_svg.py`)
+
+담당자 함수 · 담당자 근거 만들기(`pipeline.section_source`)는 한 글자도 바꾸지 않았다. 연결 코드가 입력을 만들거나 담당자 결과에 덧붙인다.
+
+- **원본 사실의 목표 고객:** `inputs.project_body`의 `target_customer`(= 원본 사실 `item.target_customer`)는 회사 정보의 사용자 목표 고객(`CompanyInfo.target_customer`, 확장)이 있으면 그 값, 없으면 지금처럼 `확인 필요`(`TARGET_CUSTOMER`). 담당자 원본의 `target_customer: '확인 필요'` 고정은 우리 경로에서 쓰지 않는다.
+- **F02 결과의 목표 고객:** 사용자 값이 있으면 T-S1이 F02 결과의 `targetCustomer`를 그 값으로 바꾼다 — `steps.run(F02, …)` 바로 다음(그 결과를 읽는 F05 · F06 · F09 · F13보다 앞), 람다 밖이라 재개해 이어 쓴 F02 결과에도 같다. 그래서 뒤 함수 · 항목 근거 · `requirementAnalysis.targetCustomer`가 사용자 값을 본다. 없으면 담당자 결과 그대로. 참고값 `targetCustomerHint`는 지금처럼 `itemSpec.targetCustomer`(사용자 값이 있으면 T-C1이 이미 그 값으로 바꿔 둠).
+- **T-S2(F10 · F11)의 목표 고객:** 담당자 run_pipeline처럼 고정 값을 넘기던 곳은 원본 사실(`original_facts.item.target_customer`)을 읽는다 — 사용자 값, 없으면 `확인 필요`.
+- **일반현황 항목 근거:** 예비창업 `2.1.1` · 초기창업 `3.1.1`(담당자 양식 제목 "일반현황 - … (창업아이템명과 팀구성현황은 web에서 수령됨)" — `inputs.GENERAL_STATUS_SECTIONS`, 문서 유형별 정확한 번호)의 F16(T-W1) · F19(T-V1) 근거에만 `inputs.with_general_status_facts`가 `section_source` 결과의 `originalFacts`에 두 칸을 덧붙인다. 다른 항목에는 더하지 않는다.
+  - `창업아이템명`: 회사 정보의 창업아이템명(아이디어 설명 첫 줄 60자). 없으면 칸을 넣지 않는다.
+  - `팀구성현황`: 팀원마다 `{"직위": 역할 또는 "팀원", "담당업무": 역할 또는 "-", "보유역량": 경력 또는 "-"}`(저장 순서, 이름 없음 — 웹 표 모양). 팀원 표 행이 빈 목록이면 `"팀원 없음(대표자 단독)"`, `None`(옛 실행 건)이면 칸을 넣지 않는다.
+- **흐름도 제목:** `diagram_svg.TITLES` — 3절 표.
 
 ### 표 대체 안내 (`writing.py` — 담당자 SB-360의 `displayReason`)
 

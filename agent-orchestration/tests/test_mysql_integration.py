@@ -277,6 +277,48 @@ def test_plan_tables_on_real_web_schema():
     assert f.team_role_careers == ["개발: 웹 개발 3년"]
 
 
+def _has_target_customer(engine) -> bool:
+    with engine.connect() as conn:
+        return bool(conn.execute(text(
+            "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+            "AND table_name = 'project_plan_inputs' AND column_name = 'target_customer'")).scalar())
+
+
+def test_target_customer_column_on_real_web_schema():
+    """목표 고객 선택 컬럼 — 웹 005_target_customer.sql과 같은 모양
+    (project_plan_inputs.target_customer VARCHAR(200) NULL)을 테스트가 직접 더하면 값이 사전 정보 · 회사 정보까지 오고,
+    더하지 않은 지금 웹 스키마 파일에서는 None으로 돈다. 더한 컬럼은 테스트 끝에 지운다(MySQL 묶음은 한 프로세스에서 하나씩)."""
+    from sbrain.agents.supervisor.tc1 import company_info_from
+    engine = require_mysql()
+    already = _has_target_customer(engine)            # 웹 스키마 파일이 이미 005를 담았으면 컬럼 없는 경우는 볼 수 없다
+    _, pid = insert_web_project(engine)
+    if not already:
+        rec = SqlProjectInputSource(engine).load(pid)  # 컬럼 없음 — SchemaMismatch 없이 None
+        assert rec.plan_input.target_customer is None
+        f = to_pre_input(rec)
+        assert f.target_customer is None and company_info_from(f).target_customer is None
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE project_plan_inputs ADD COLUMN target_customer VARCHAR(200) NULL"))
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE project_plan_inputs SET target_customer = :t WHERE project_id = :p"),
+                         {"t": "  동네 소규모 헬스장 운영자 ", "p": pid})
+        rec = SqlProjectInputSource(engine).load(pid)   # 구조를 새로 읽는 공급처
+        assert rec.plan_input.target_customer == "  동네 소규모 헬스장 운영자 "
+        f = to_pre_input(rec)
+        assert f.target_customer == "동네 소규모 헬스장 운영자"
+        assert company_info_from(f).target_customer == "동네 소규모 헬스장 운영자"
+        assert f.startup_item_name == "동네 헬스장 회원 관리 서비스"
+        assert [(r.role, r.experience) for r in f.team_member_rows] == [("개발", "웹 개발 3년")]
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE project_plan_inputs SET target_customer = NULL WHERE project_id = :p"), {"p": pid})
+        assert to_pre_input(SqlProjectInputSource(engine).load(pid)).target_customer is None
+    finally:
+        if not already:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE project_plan_inputs DROP COLUMN target_customer"))
+
+
 def test_web_schema_lookup(tmp_path, monkeypatch):
     """웹 스키마 위치 (DB 없이) — 환경 변수가 먼저, 없으면 웹과 같은 저장소 배치 → 작업 공간 배치 순서."""
     repo, workspace = tmp_path / "web.sql", tmp_path / "workspace.sql"

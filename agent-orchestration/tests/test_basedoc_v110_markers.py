@@ -9,7 +9,7 @@ from sbrain.models import (
     Announcement, AnnouncementCard, BudgetItem, ChartSpec, CheckResult, CodeCheck, CodeCheckResult, CompanyInfo,
     Deliverable, DiagramSpec, FeatureMatchResult, FormSpec, GateResult, Infographic, Notification, PlanDoc,
     PlanSection, PreInput, Prototype, ReworkComparison, ReworkInput, Run, ScheduleItem, ScoreReport, SectionResult,
-    ShortfallItem, TaskInstruction, Verify1State, extension_fields,
+    ShortfallItem, TaskInstruction, TeamMemberEntry, Verify1State, extension_fields,
 )
 from sbrain.orchestrator.settings import ScoringSettings, TaskModelSetting
 from sbrain.flow.reads import DocumentScreen, Outputs, ResultScreen, ReworkFileChange, TableFallback
@@ -92,7 +92,14 @@ STILL_EXTENSION = [
     # 결과 통합 T-C4 실구현 — 미달 항목 · 선택 입력 · 검증-1 판정 입력
     (Deliverable, {"shortfallItems"}),
     (c.TC4In, {"planDoc", "prototype", "infographic", "scoreReport", "sectionResults"}),
+    # 담당자 입력 바로잡기 — 목표 고객 · 창업아이템명 · 팀원 표 행
+    (CompanyInfo, {"targetCustomer", "startupItemName", "teamMemberRows"}),
+    (PreInput, {"targetCustomer", "startupItemName", "teamMemberRows"}),
 ]
+
+# 새 타입 — 팀원 표 행. 칸은 모두 확장이고, 이 타입을 담는 칸의 note에 결정 번호가 있다
+NEW_TYPES_0031 = [TeamMemberEntry]
+NEW_TYPE_HOLDERS_0031 = [(PreInput, {"teamMemberRows"}), (CompanyInfo, {"teamMemberRows"})]
 
 # 새 타입 — 결과 통합 미달 항목. 칸은 모두 확장이고, 이 타입을 담는 칸의 note에 결정 번호가 있다
 NEW_TYPES_0030 = [ShortfallItem]
@@ -163,6 +170,24 @@ def test_new_types_0030_fields_are_extensions(model):
     assert set(extension_fields(model)) == {info.alias or n for n, info in model.model_fields.items()}
     props = Deliverable.model_json_schema(by_alias=True)["properties"]
     assert "결정 0030" in props["shortfallItems"]["x-note"]
+
+
+@pytest.mark.parametrize("model", NEW_TYPES_0031, ids=[m.__name__ for m in NEW_TYPES_0031])
+def test_new_types_0031_fields_are_extensions(model):
+    assert set(extension_fields(model)) == {info.alias or n for n, info in model.model_fields.items()}
+
+
+@pytest.mark.parametrize(("model", "names"), NEW_TYPE_HOLDERS_0031, ids=_ids(NEW_TYPE_HOLDERS_0031))
+def test_new_type_holders_note_decision_0031(model, names):
+    props = model.model_json_schema(by_alias=True)["properties"]
+    assert all("결정 0031" in props[n]["x-note"] for n in names)
+
+
+@pytest.mark.parametrize("model", [PreInput, CompanyInfo], ids=["PreInput", "CompanyInfo"])
+def test_input_fix_fields_default_none_for_old_json(model):
+    """칸이 없던 옛 JSON은 None — 팀원 표 행 None(모름)은 빈 목록(팀원 없음)과 다르다."""
+    for name in ("target_customer", "startup_item_name", "team_member_rows"):
+        assert model.model_fields[name].default is None and not model.model_fields[name].is_required()
 
 
 @pytest.mark.parametrize(("model", "names"), NEW_TYPE_HOLDERS, ids=_ids(NEW_TYPE_HOLDERS))

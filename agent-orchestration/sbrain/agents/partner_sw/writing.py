@@ -5,6 +5,7 @@
 - 목표 항목(ReworkInput.targetItems)이 있으면 그 항목만 다시 만들고 나머지는 직전 결과(base…)를 그대로 싣는다. 직전 결과가
   없는 항목은 목표 밖이어도 만든다. 다시 만들 때 담당자 함수에 validationFeedback = 그 항목의 문제 목록, retryInstruction =
   재작성 보완 지시(재수행이면 빈 문자열), previousText = 직전 본문(T-W1)을 넘긴다.
+- 일반현황 항목(2.1.1 · 3.1.1)의 근거 원본 사실에는 창업아이템명 · 팀구성현황을 덧붙인다(inputs.with_general_status_facts — 담당자 양식이 '웹에서 수령'이라고 적은 항목만).
 - T-W1 · T-W2는 동시에 부른다(4개 · 2개, spec 4.14). 결과는 양식 순서로 모은다. 재개 때 받은 결과(키 = 항목 번호 · 그림 ID)는
   다시 부르지 않는다(4.13).
 - T-W3는 규칙 코드다(LLM 없음 — tools를 받지만 llm을 부르지 않는다). 표 검사(requiredColumns · 행 길이)에 걸리면 그 시도에서 바로
@@ -76,6 +77,8 @@ def run_tw1(inp: TW1In, tools: Tools) -> TW1Out:
     def one(code: str) -> dict[str, Any]:
         spec = spec_for(specs, code)
         source = section_source(spec, canonical, original, research)
+        # 일반현황 항목만 — 창업아이템명 · 팀구성현황을 원본 사실에 덧붙인다 (담당자 section_source는 그대로)
+        source = ins.with_general_status_facts(source, kind, code, inp.company_info)
         prompt_source = compact_prompt_source(source, spec)
         rules: dict[str, Any] = {"documentType": kind, "sectionCriteria": _writing_criteria(kind, code),
                                  "tableGenerationEnabled": False}

@@ -49,6 +49,17 @@ class ScheduleItem(SBModel):
     detail: str = ext(note="세부내용")
 
 
+# ── 사전 정보 확장 — 팀원 표 행 (새 타입) ──────────────
+# 담당자 입력 바로잡기(창업아이템명 · 팀 구성현황 · 목표 고객)에서 더한 새 타입의 표시 — 이 타입을 담는 칸의 note도 이것으로 시작한다
+INPUT_FIX_NOTE = "새 타입(결정 0031)"
+
+
+class TeamMemberEntry(SBModel):
+    """새 타입 — 팀원 표 한 행(웹 team_members, 저장 순서). 이름은 담지 않는다. 비면 None."""
+    role: str | None = ext(None, note="역할 (role) — 앞뒤 공백 제거, 비면 None")
+    experience: str | None = ext(None, note="경력 (experience) — 앞뒤 공백 제거, 비면 None")
+
+
 # ── 입력 ─────────────────────────────────────────────
 class File(SBModel):
     file_name: str
@@ -87,6 +98,16 @@ class FormExtension(SBModel):
         default_factory=list, note=f"{NEW_TYPE_NOTE} — 추진 일정 row (project_schedule_items, item_order 순)")
     team_role_careers: list[str] = ext(
         default_factory=list, note="팀원마다 '역할: 경력' 한 줄 — 이름 없음 (LLM 전송용, spec 4.4)")
+    # 확장 — 담당자 입력 바로잡기. 시작 요청에서 웹 DB를 읽어 싣고 T-C1이 회사 정보로 그대로 옮긴다.
+    # 기본값 None은 이 칸이 없던 실행 건 호환용 — 팀원 표 행 None(모름)과 빈 목록(팀원 없음)은 다르다
+    target_customer: str | None = ext(
+        None, note="사용자 목표 고객 — project_plan_inputs.target_customer(선택 컬럼), 앞뒤 공백 제거, 비면 None "
+                   "(결정 0031). 있으면 T-C1 itemSpec.targetCustomer를 이 값으로 바꾼다")
+    startup_item_name: str | None = ext(
+        None, note="창업아이템명 — 아이디어 설명(projects.description)의 첫 줄 60자까지(잠정), 비면 None (결정 0031)")
+    team_member_rows: list[TeamMemberEntry] | None = ext(
+        None, note=f"{INPUT_FIX_NOTE} — 팀원 표 행(team_members 저장 순서, 역할 · 경력, 이름 없음). "
+                   "None = 모름(옛 실행 건), 빈 목록 = 팀원 없음")
 
 
 class PreInput(FormExtension):

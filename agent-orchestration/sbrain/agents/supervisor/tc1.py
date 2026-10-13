@@ -12,6 +12,8 @@
   추론 강도 등 모델 설정은 tools가 T-C1 설정(Settings.tasks['T-C1'])으로 입힌다.
 - 응답 검사는 호출마다 따로 한다. 실패하면 FormatError로 그 호출만 tools가 재시도한다.
   사양: 다섯 칸 가운데 빈 칸이 있으면 형식 오류. 분류: 허용 카테고리인데 사유가 비면 형식 오류.
+- 사전 정보에 사용자 목표 고객(targetCustomer, 확장)이 있으면 itemSpec.targetCustomer를 그 값으로 바꾼다
+  (with_user_target_customer — 스텁 T-C1도 같은 함수). LLM 요청에는 싣지 않는다(아이디어 설명만).
 - 카테고리 판정 실패(값 없음 · 허용값 밖) → '웹개발'로 기본 처리하고 categoryDefaulted(확장)로 남긴다.
   Orchestrator가 추적 기록에 남긴다. 판정 실패로 파이프라인을 멈추지 않는다 (시트 2 T-C1 ③).
 - 첨부 문서(referenceDocs)가 있으면 두 호출이 끝난 뒤 추출 실패 문서를 빼고 슬롯별 원문 발췌만 골라 referenceSummary를
@@ -146,11 +148,11 @@ def run(inp: TC1In, tools: Tools) -> TC1Out:
     form = inp.form_input
     classified, spec = _interpret(form.idea_text, tools)
     category, reason, defaulted = _resolve_category(classified)
-    item = ItemSpec(
+    item = with_user_target_customer(ItemSpec(
         item_name=spec.item_name, one_line_summary=spec.one_line_summary,
         target_customer=spec.target_customer, core_features=spec.core_features,
         category=category, keywords=spec.keywords,
-    )
+    ), form)
     return TC1Out(
         item_spec=item, category=category, company_info=company_info_from(form),
         category_reason=reason, confidence=_confidence(classified.confidence),
@@ -200,12 +202,16 @@ def company_info_from(form: PreInput) -> CompanyInfo:
 
     두 타입이 함께 쓰는 웹 입력값(FormExtension — 수익모델 항목 · 기업명 등)도 그대로 옮겨 계획서 작성까지 전달한다.
     사업비 · 일정 · 팀원 역할(확장, spec 4.3)도 값 그대로 옮긴다 — T-C1의 LLM 요청에는 싣지 않는다.
+    목표 고객 · 창업아이템명 · 팀원 표 행(확장)도 같다.
     """
     extension = {k: getattr(form, k) for k in FormExtension.model_fields}
     extension["revenue_items"] = [i.model_copy() for i in form.revenue_items]
     extension["budget_items"] = [i.model_copy() for i in form.budget_items]
     extension["schedule_items"] = [i.model_copy() for i in form.schedule_items]
     extension["team_role_careers"] = list(form.team_role_careers)
+    # 팀원 표 행 — None(모름 · 옛 실행 건)은 None 그대로, 목록이면 행마다 복사
+    extension["team_member_rows"] = (None if form.team_member_rows is None
+                                     else [r.model_copy() for r in form.team_member_rows])
     return CompanyInfo(
         **extension,
         representative_name=form.representative_name,
@@ -231,6 +237,18 @@ def company_info_from(form: PreInput) -> CompanyInfo:
 
 
 # ── 아이템 사양 · 카테고리 ─────────────────────────────
+def with_user_target_customer(item: ItemSpec, form: PreInput | CompanyInfo) -> ItemSpec:
+    """사전 정보에 사용자 목표 고객이 있으면 itemSpec.targetCustomer를 그 값으로 바꾼다(LLM이 낸 값은 버린다).
+
+    itemSpec을 읽는 모든 단계(T-C2 · T-C3 · 전략 · 작성 · 검증-1 · T-B1 · T-B2 등)가 같은 고객을 쓰게 하려는 것이다.
+    없으면 그대로(LLM 추정 값). 실구현 · 스텁 T-C1이 이 함수 하나를 쓴다. T-C1 LLM 요청에는 이 값을 싣지 않는다.
+    """
+    user = (form.target_customer or "").strip()
+    if not user:
+        return item
+    return item.model_copy(update={"target_customer": user})
+
+
 def _clean_spec(d: SpecDraft) -> SpecDraft:
     """사양 호출 검사 — 비어 있으면 형식 오류로 보고 tools가 이 호출만 재시도한다."""
     d.item_name, d.one_line_summary, d.target_customer = (

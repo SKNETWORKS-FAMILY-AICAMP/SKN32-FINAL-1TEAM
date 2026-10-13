@@ -301,6 +301,15 @@ PROVISIONAL: dict[str, str] = {
                                "문장 나누기(줄 · 문장 끝, sentenceId s-<항목>-<순번>) (agents/partner_sw/outputs.py, spec 4.7)",
     "partnerSw.scoreDigits": "항목 점수 소수 둘째 자리 반올림, 문서층 총점 = 반올림한 항목 점수의 합 "
                              "(agents/partner_sw/verify.py SCORE_DIGITS, spec 4.9)",
+    "intake.startupItemName": "창업아이템명(startupItemName, 결정 0031) = 아이디어 설명(projects.description) 전체의 앞뒤 공백을 "
+                              "지운 뒤 첫 줄(줄바꿈 앞까지)을 다시 앞뒤 공백을 지우고 60자까지 자른 값, 비면 None — 웹이 일반현황 · "
+                              "개요 표에 넣는 값(첫 줄 60자)과 맞추려는 규칙. 설명이 빈 줄로 시작하면 첫 글자 있는 줄을 쓴다(웹 규칙 "
+                              "확인 전) (intake/mapping.py startup_item_name)",
+    "partnerSw.generalStatusFacts": "일반현황 항목(예비창업 2.1.1 · 초기창업 3.1.1)의 F16 · F19 근거 원본 사실에만 '창업아이템명' "
+                                    "(없으면 칸 없음) · '팀구성현황'(팀원마다 직위 = 역할 또는 '팀원', 담당업무 = 역할 또는 '-', "
+                                    "보유역량 = 경력 또는 '-' — 웹 표 모양, 이름 없음. 팀원이 없으면 '팀원 없음(대표자 단독)', 옛 "
+                                    "실행 건(팀원 표 행 None)이면 칸 없음)을 덧붙인다. 사용자 목표 고객이 없으면 원본 사실 · T-S2의 "
+                                    "목표 고객은 '확인 필요' (agents/partner_sw/inputs.py, 결정 0031)",
     "partnerSw.applicantLines": "teamRoleCareers에서 '역할: 경력' 꼴이 아닌 줄은 역할로 보고, 채용 · 장비 · 협력 계획은 한 줄 "
                                 "목록으로 담당자 입력에 싣는다 (agents/partner_sw/inputs.py, spec 4.4)",
     "verify1.redoDetails": "검증-1 재수행 T-V1의 unit은 종류가 섞이면 '섹션', 판정 후보의 사유와 보완 지시는 같은 글, "

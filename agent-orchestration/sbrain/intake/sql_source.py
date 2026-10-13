@@ -8,6 +8,7 @@
   pricing_items.pricing_id · project_plan_inputs.input_id이다.
 - 사업비 · 일정(project_budget_items · project_schedule_items, spec 4.3)은 item_order 순으로 읽는다.
   project_budget_items.phase는 아직 웹 스키마에 없는 선택 컬럼이라 있으면 읽고 없으면 None이다(OPTIONAL_COLUMNS).
+  project_plan_inputs.target_customer(목표 고객)도 같은 선택 컬럼이다.
 - 웹 테이블은 읽기만 한다.
 - 접속 예: create_engine("mysql+pymysql://user:pw@host:3306/db") — 접속 정보는 코드에 넣지 않는다.
 """
@@ -39,9 +40,17 @@ class WebDbTables:
 
 # 있으면 읽고 없으면 None으로 보는 컬럼 — 없어도 SchemaMismatch가 아니다.
 # project_budget_items.phase는 웹이 더하기로 한 컬럼이라 아직 웹 스키마에 없다 (spec 4.3)
+# project_plan_inputs.target_customer는 웹 005_target_customer.sql이 더하는 컬럼 — 웹 배포 · 공유 DB 적용 전에는 없다
 OPTIONAL_COLUMNS: dict[str, list[str]] = {
     "budget_items": ["phase"],
+    "plan_inputs": ["target_customer"],
 }
+
+
+def _required(key: str, fields) -> list[str]:
+    """행 모델 필드에서 선택 컬럼을 뺀 것."""
+    return [f for f in fields if f not in OPTIONAL_COLUMNS.get(key, [])]
+
 
 # item_order 순으로 읽는 테이블 — 빈 순서(NULL)는 뒤, 같은 순서 안은 기본키 순
 ITEM_ORDERED = ("budget_items", "schedule_items")
@@ -52,9 +61,8 @@ COLUMNS: dict[str, list[str]] = {
     "projects": list(ProjectRow.model_fields),
     "team_members": ["project_id", *TeamMemberRow.model_fields],
     "pricing_items": ["project_id", *PricingItemRow.model_fields],
-    "plan_inputs": ["project_id", *PlanInputRow.model_fields],
-    "budget_items": ["project_id", "item_order",
-                     *(f for f in BudgetItemRow.model_fields if f not in OPTIONAL_COLUMNS["budget_items"])],
+    "plan_inputs": ["project_id", *_required("plan_inputs", PlanInputRow.model_fields)],
+    "budget_items": ["project_id", "item_order", *_required("budget_items", BudgetItemRow.model_fields)],
     "schedule_items": ["project_id", "item_order", *ScheduleItemRow.model_fields],
 }
 
