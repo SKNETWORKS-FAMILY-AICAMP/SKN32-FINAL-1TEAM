@@ -10,6 +10,8 @@
 - 공고 없음(상세 · 판정 어느 쪽이든)은 tools 안에서 값으로 받아(성공한 호출, 재시도 없음) 공용 예외 ResourceNotFound를
   올린다. 흐름이 X-C2-GONE으로 처리한다(4.3.4). 메시지에 공고 ID를 넣지 않는다.
 - ToolCallExhausted는 받지 않고 올려 보낸다. 저장소 · DB · RunContext에 접근하지 않는다.
+- 공고 서버 호출은 모두 tools.search(…, backoff=False)다 — 재시도 간격 2초 고정(늘리는 간격 · 무작위 지연 없음).
+  사용자가 화면 앞에서 기다리는 단계이고, 공고팀에 2초 간격 최대 6번으로 약속했다.
 """
 from __future__ import annotations
 
@@ -132,7 +134,8 @@ def make_g01(client: NoticeClient) -> Callable[[G01In, Tools], G01Out]:
         def detail(timeout: float) -> Announcement | Any:
             data = client.notice(aid, timeout)
             return data if data is NOT_FOUND else to_announcement(data, aid)
-        ann = tools.search("공고 상세", detail)
+        # backoff=False — 2초 고정 간격 (사용자가 화면에서 기다리고, 공고팀에 2초 간격 최대 6번으로 약속)
+        ann = tools.search("공고 상세", detail, backoff=False)
         if ann is NOT_FOUND:
             raise ResourceNotFound("공고 없음 — 공고 상세")
         company = inp.company_info
@@ -145,7 +148,7 @@ def make_g01(client: NoticeClient) -> Callable[[G01In, Tools], G01Out]:
         def judge(timeout: float) -> tuple[GateResult, float | None] | Any:
             data = client.eligibility(aid, body, timeout)
             return data if data is NOT_FOUND else to_gate(data, business=business)
-        judged = tools.search("자격 판정", judge)
+        judged = tools.search("자격 판정", judge, backoff=False)
         if judged is NOT_FOUND:
             raise ResourceNotFound("공고 없음 — 자격 판정")
         gate, age = judged

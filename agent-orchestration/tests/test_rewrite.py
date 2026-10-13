@@ -467,7 +467,7 @@ def test_instruction_not_rolled_back_on_rework_failure(clock):
     rid = to_screen6(app)
     rework(app, clock, rid, "문제인식")                                    # 성공 — T-W1.instruction@1
     assert app.store.get_pointers(rid)["T-W1.instruction"] == 1
-    app.llm.plan("T-W1", ["ok"] + ["auth"] * 6)                           # 다시 쓰기는 성공, T-W1이 영구 오류
+    app.llm.plan("T-W1", ["ok", "auth"])                                  # 다시 쓰기는 성공, T-W1이 영구 오류(재시도 없음)
     rework(app, clock, rid, "실현가능성")
     run = app.store.load_run(rid)
     assert run.last_rework.status == "실패" and run.state.progress == "사용자대기"

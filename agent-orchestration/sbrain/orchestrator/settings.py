@@ -12,9 +12,24 @@ from pydantic import Field, model_validator
 from ..models.base import SBModel, ext
 
 
+def _default_wait_caps() -> dict[str, float]:
+    # 설정 키별 한 호출의 재시도 대기 합 상한 (잠정) — T-C1은 사용자가 화면 앞에서 기다리고 재개하지 않는 단계라 45초.
+    # 엔진은 설정 키로 찾기만 한다(제한 시간 task_timeouts와 같은 방식) — Task ID는 여기에만 둔다
+    return {"T-C1": 45.0}
+
+
 class RetrySettings(SBModel):
     retry_count: int = 5                 # 재시도 횟수
     retry_interval_sec: float = 2.0      # 재시도 간격 (잠정)
+    # 일시 오류의 늘리는 간격 · 무작위 지연 · Retry-After · 대기 합 상한 (확장 · 잠정). 이 칸이 없는 옛 설정 사본은 기본값으로 읽는다.
+    # n번째 재시도 전 대기 = retry_interval_sec × backoff_multiplier^(n−1) × (1 + 무작위[0, jitter_ratio]) —
+    # 형식 오류 · 파일 창구 · 늘리지 않게 표시한 검색 호출은 retry_interval_sec 고정
+    backoff_multiplier: float = ext(2.0, note="늘리는 간격의 배수 (잠정)")
+    jitter_ratio: float = ext(0.25, note="무작위 지연 비율 — 계산 값 × [0, 비율]을 더함 (잠정)")
+    retry_after_cap_sec: float = ext(60.0, note="Retry-After를 따를 때의 대기 상한 (잠정)")
+    wait_cap_sec: float = ext(90.0, note="한 호출의 재시도 대기 합 기본 상한 — 넘게 되면 남은 재시도 없이 소진 (잠정)")
+    wait_cap_by_key: dict[str, float] = ext(
+        default_factory=_default_wait_caps, note="설정 키별 대기 합 상한 — 없는 키는 waitCapSec (잠정)")
 
 
 class ResumeSettings(SBModel):
@@ -192,6 +207,16 @@ PLAN_TABLES_REQUIRED: bool = False
 # 기준 문서가 값을 정하지 않아 임시로 둔 항목 (문서 · 화면에 '잠정'으로 표시)
 PROVISIONAL: dict[str, str] = {
     "retry.retryIntervalSec": "재시도 간격 — 구현하면서 정함",
+    # 호출 실패 처리 (orchestrator/tools.py) — 기준 문서는 '오류 종류와 관계없이 재시도 횟수까지 같은 간격'. 숫자는 잠정
+    "retry.backoffMultiplier": "늘리는 간격의 배수 2 (잠정) — 일시 오류(응답 코드 일시 · 시간 초과 · 연결 오류)의 n번째 재시도 "
+                               "전 대기 = 재시도 간격 × 배수^(n−1) → 2 · 4 · 8 · 16 · 32초. 형식 오류 · 파일 창구 실패 · "
+                               "늘리지 않게 표시한 검색 호출(search(backoff=False))은 재시도 간격 고정",
+    "retry.jitterRatio": "무작위 지연 비율 0.25 (잠정) — 늘리는 간격에 계산 값 × [0, 0.25]를 더한다",
+    "retry.retryAfterCapSec": "Retry-After 대기 상한 60초 (잠정) — 응답이 알려 준 대기와 계산 간격 중 큰 쪽, 최대 60초",
+    "retry.waitCapSec": "한 호출의 재시도 대기 합 상한 90초 (잠정) — 다음 대기를 더하면 넘게 되면 남은 재시도 없이 소진",
+    "retry.waitCapByKey": "설정 키별 대기 합 상한 (잠정) — T-C1 45초(화면 앞에서 기다리고 재개하지 않는 단계), 없는 키는 "
+                          "waitCapSec. 결제 · 한도 코드(errors.BILLING_LIMIT_CODES)와 입력 · 운영 응답 코드 오류는 재시도하지 "
+                          "않는다(한도는 오류 종류 '일시' — 재개 대기)",
     "taskTimeouts": "제한 시간(Task별) — 구현하면서 정함",
     "proofread.concurrency": "검수 동시 처리 수 — 구현하면서 정함",
     "proofread.failureRatioThreshold": "검수 실패 비율 기준 — 구현하면서 정함",
@@ -229,8 +254,10 @@ PROVISIONAL: dict[str, str] = {
     "event.이미지대체": "T-B2가 맞춤 아이콘판을 쓰지 못하고 기본 아이콘으로 대신한 세 경우(이미지 호출 실패 · 칸 수 불일치 · "
                        "그림 해석 오류) — T-B2 실행 기록마다 하나(최종 실패인 이미지 호출이 있거나 출력 iconFallback이 "
                        "참). 설명은 이미지 호출 실패면 'T-B2 이미지 호출 실패 — 기본 아이콘으로 계속', 그 밖(칸 수 불일치 · "
-                       "그림 해석 오류)이면 둘째 문구 'T-B2 맞춤 아이콘 사용 불가 — 기본 아이콘으로 계속'. 사용자 화면에는 "
-                       "알리지 않는다 (spec 4.3)",
+                       "그림 해석 오류)이면 둘째 문구 'T-B2 맞춤 아이콘 사용 불가 — 기본 아이콘으로 계속'. 이미지 호출 실패의 "
+                       "마지막 시도에 오류 코드가 있으면 첫째 문구 끝에 ' (code=<코드>)'를 붙인다. 결제 · 한도 코드로 끝난 "
+                       "이미지 호출은 기본 아이콘으로 대신하지 않고 다시 올려 재개 대기로 가므로 이 사건이 없다(결정 0032). "
+                       "사용자 화면에는 알리지 않는다 (spec 4.3)",
     # 구현 · 검증-2 끼우기 · 산출물층 환산 (spec 6) — 기준 문서에 없음
     "g04.templateText": "G-04 안내 문서(README.md) 템플릿 문구와 빈 슬롯 기본 문구(아이템명 · 공고명이 비었을 때, 진입 파일이 "
                         "없을 때 등) (agents/supervisor/, spec 4.8)",
@@ -333,8 +360,9 @@ PROVISIONAL: dict[str, str] = {
     # 워커 운영 로그 (orchestrator/runlog.py · sbrain/worker_log.py) — 워커 프로세스 값이다
     "workerLog.actions": "운영 로그 동작 · 키 이름 — 단계시작(run · project · step · exec · trigger · resumed · attempt) · "
                          "단계끝(run · project · step · exec · status · sec · model · tokens · imageTokens · errorKind · "
-                         "error) · 대기(run · project · point) · 실행끝(run · project · status) · 재개예약(run · project · "
-                         "at · errorKind) · 파일삭제(run · deletion) · 파일삭제실패(run · deletion · errorKind · "
+                         "errorCode · error) · 대기(run · project · point) · 실행끝(run · project · status) · "
+                         "재개예약(run · project · at · errorKind · errorCode — errorCode는 엔진이 받은 재시도 소진의 오류 "
+                         "코드, 없으면 '-') · 파일삭제(run · deletion) · 파일삭제실패(run · deletion · errorKind · "
                          "error · attempts) · 파일삭제포기(run · deletion · attempts). 운영하면서 바꿀 수 있다 "
                          "(orchestrator/runlog.py)",
     "workerLog.errorMax": "단계끝 error 값 길이 상한 200자 (orchestrator/runlog.py ERROR_MAX)",

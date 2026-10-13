@@ -95,7 +95,7 @@ def test_permanent_failure_sets_reason_and_one_alert(sql_app):
     app, _ = sql_app
     rid = start_and_select(app, account())
     watch = ProjectWatch(app, rid)
-    app.llm.plan("T-C3", ["auth"] * 6)                                            # 401 → 운영 (영구 오류)
+    app.llm.plan("T-C3", ["auth"])                                                # 401 → 운영 (영구 오류, 재시도 없음)
     app.orchestrator.start_writing(rid)
     app.orchestrator.advance(rid)
     run = app.store.load_run(rid)
@@ -138,7 +138,7 @@ def test_failure_reason_on_run(clock):
     """두 저장소 모두 — 실패 사유는 실행 건에 남는다 (웹 projects에는 쓰지 않는다)."""
     app = make_app(clock)
     rid = start_and_select(app)
-    app.llm.plan("T-C3", ["bad_request"] * 6)                                     # 400 → 입력 (영구 오류)
+    app.llm.plan("T-C3", ["bad_request"])                                         # 400 → 입력 (영구 오류, 재시도 없음)
     app.orchestrator.start_writing(rid)
     app.orchestrator.advance(rid)
     run = app.store.load_run(rid)

@@ -51,7 +51,7 @@ def make_tools(fake: FakeImage | None = None, *, retry: int = 5, model: str | No
                       image_provider="openai" if model else None, image_model=model, image_quality=quality,
                       image_size=size, image_timeout_sec=77.0)
     ctx = ToolsContext(run_id="r", execution_id="e", task_id="T-B2", providers={}, sink=sink, now=utc_now,
-                       sleep=sleeps.append,
+                       sleep=sleeps.append, rand=lambda: 0.0,                 # 무작위 지연 없이 — 간격을 정확히 본다
                        image_providers={"openai": fake} if providers is None else providers)
     return Tools(cfg, ctx), sink, sleeps, fake
 
@@ -66,7 +66,7 @@ def test_retry_then_success_returns_png_and_logs_image_call():
     [log] = sink.drain()
     assert [x.outcome for x in log.tries] == ["응답지연", "호출실패", "성공"]
     assert [x.error_kind for x in log.tries] == ["일시", "일시", None]
-    assert sleeps == [2.0, 2.0]
+    assert sleeps == [2.0, 4.0]                                            # 일시 오류는 늘리는 간격 (무작위 0)
     assert (log.call_type, log.provider, log.model, log.temperature, log.reasoning_effort) == (
         "image", "openai", "img-model", None, None)
     assert log.timeout_sec == 77.0 and log.final_outcome == "성공" and log.purpose == "아이콘"
@@ -75,19 +75,22 @@ def test_retry_then_success_returns_png_and_logs_image_call():
     assert fake.requests[0].metadata["task_id"] == "T-B2" and fake.requests[0].metadata["purpose"] == "아이콘"
 
 
-@pytest.mark.parametrize("outcome, error, kind", [
-    ("bad_request", "호출실패", "입력"), ("auth", "호출실패", "운영"), ("timeout", "응답지연", "일시"),
-    ("rate_limit", "호출실패", "일시"), ("empty", "형식오류", "일시"),
+@pytest.mark.parametrize("outcome, error, kind, tries", [
+    ("bad_request", "호출실패", "입력", 1), ("auth", "호출실패", "운영", 1),     # 입력 · 운영은 재시도하지 않는다
+    ("quota", "호출실패", "일시", 1),                                        # 결제 · 한도도 재시도 없이 '일시'
+    ("timeout", "응답지연", "일시", 3), ("rate_limit", "호출실패", "일시", 3), ("empty", "형식오류", "일시", 3),
 ])
-def test_exhausted_raises_with_kind(outcome, error, kind):
+def test_exhausted_raises_with_kind(outcome, error, kind, tries):
     fake = FakeImage()
-    fake.plan("T-B2", [outcome] * 3)
+    fake.plan("T-B2", [outcome] * tries)
     t, sink, _, _ = make_tools(fake, retry=2)
     with pytest.raises(ToolCallExhausted) as e:
         t.image(PROMPT)
-    assert (e.value.error, e.value.error_kind, e.value.tries) == (error, kind, 3)
+    assert (e.value.error, e.value.error_kind, e.value.tries) == (error, kind, tries)
+    assert e.value.billing_limit is (outcome == "quota")
     [log] = sink.drain()
-    assert log.final_outcome == "소진" and (log.error, log.error_kind) == (error, kind) and len(fake.requests) == 3
+    assert log.final_outcome == "소진" and (log.error, log.error_kind) == (error, kind)
+    assert len(fake.requests) == tries
 
 
 def test_missing_image_provider_is_operation_failure():
@@ -159,7 +162,7 @@ def test_thread_safe_for_item_calls():
 
 def test_no_prompt_or_image_in_log_or_exception():
     fake = FakeImage()
-    fake.plan("T-B2", ["ok", "bad_request", "bad_request"])
+    fake.plan("T-B2", ["ok", "bad_request"])                              # 400은 재시도하지 않는다 — 한 번
     t, sink, _, _ = make_tools(fake, retry=1)
     png = t.image(PROMPT, image=INPUT)
     with pytest.raises(ToolCallExhausted) as e:

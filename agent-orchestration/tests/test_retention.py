@@ -228,7 +228,7 @@ def test_finished_start_requests_counted_and_deleted(clock):
     app = make_app(clock)
     for acc in ("acc-1", "acc-2"):
         assert app.orchestrator.start_run(acc, pre_input(), project_id=project_for(app)).ok
-    app.llm.plan("T-C1", ["auth"] * 20)
+    app.llm.plan("T-C1", ["auth"])                                               # 401 — 재시도 없이 E-C1-TIMEOUT
     failed = app.orchestrator.start_run("acc-3", pre_input(), project_id=project_for(app))
     assert not failed.ok
     app.llm.plan("T-C1", [])

@@ -245,12 +245,14 @@ def test_not_found_from_gate_raises_resource_not_found():
         ("공고 상세", "성공", 1), ("자격 판정", "성공", 1)]
 
 
-def test_404_without_code_is_retried_then_exhausted():
+def test_404_without_code_is_exhausted_without_retry():
+    """본문 코드가 없는 404는 공고 없음이 아니라 일반 HTTP 오류(운영) — 운영 오류는 재시도하지 않는다."""
     server = FakeNoticeServer()
     server.raw[("GET", "/api/notices/kstartup%3AA01")] = (404, b'{"detail": "Not Found"}')
     with pytest.raises(ToolCallExhausted) as e:
         run_g01(server)
-    assert (e.value.error, e.value.error_kind, e.value.tries) == ("호출실패", "운영", 2)
+    assert (e.value.error, e.value.error_kind, e.value.tries) == ("호출실패", "운영", 1)
+    assert server.paths().count(("GET", "/api/notices/kstartup%3AA01")) == 1
 
 
 def test_g01_connection_failure_is_retried_then_exhausted():

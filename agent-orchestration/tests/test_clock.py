@@ -127,7 +127,7 @@ def test_db_datetime_columns_hold_naive_utc(tmp_path):
     app, clock = sql_app(tmp_path, datetime(2026, 9, 26, 18, 0, tzinfo=KST))
     rid = to_screen6(app)                                                    # 알림(화면 6) 생김
     failed = start_and_select(app, "acc-2")
-    app.llm.plan("T-S1", ["auth"] * 50)
+    app.llm.plan("T-S1", ["auth"])                                           # 401 — 재시도 없이 영구 오류
     app.orchestrator.start_writing(failed)
     app.orchestrator.advance(failed)                                         # 실패 → generation_failure_alerts
     assert app.store.load_run(failed).state.progress == "실패"

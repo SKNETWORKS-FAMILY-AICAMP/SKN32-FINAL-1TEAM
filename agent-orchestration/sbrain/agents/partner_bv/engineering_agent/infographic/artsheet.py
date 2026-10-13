@@ -20,6 +20,7 @@
 돌려주고 지면은 기본 아이콘으로 나간다. 이미지 실패를 받아 계속하는 것은 조율이 T-B2에만 허용한 예외다 —
 T-B2의 글 호출(tools.llm) 실패는 받지 않고 올려 보낸다(content.py는 예외를 잡지 않는다).
 PNG 읽기 · 쓰기는 표준 라이브러리(zlib)만 쓴다.
+[S-Brain] 다만 결제 · 한도 코드로 끝난 소진(ToolCallExhausted.billing_limit)은 None 대신 그대로 올린다 — 재개 대기로 간다.
 """
 from __future__ import annotations
 
@@ -29,6 +30,7 @@ import struct
 import zlib
 
 from . import themes  # [S-Brain] 패키지 상대 import
+from .....orchestrator.errors import ToolCallExhausted  # [S-Brain] 결제 · 한도 소진은 받지 않고 올린다(generate)
 
 SHEET_W, SHEET_H = 1024, 1536
 SIZE, QUALITY = "1024x1536", "medium"
@@ -344,7 +346,9 @@ def generate(category: str, data: dict, tools) -> dict | None:
                 # 빈 타일은 싣지 않는다 — 그 자리는 기본 아이콘으로 나간다.
                 found = {name: cell for name, cell in zip(names, cells) if not is_blank(rows, cell)}
                 return {"png": base64.b64encode(png).decode("ascii"), "cells": found}
-    except Exception:  # noqa: BLE001 — 그림은 선택 재료다. 실패해도 지면은 나가야 한다.
+    except Exception as e:  # noqa: BLE001 — 그림은 선택 재료다. 실패해도 지면은 나가야 한다.
+        if isinstance(e, ToolCallExhausted) and e.billing_limit:   # [S-Brain] 결제 · 한도 소진은 기본 아이콘 대신 올린다(재개 대기)
+            raise
         return None
     return None
 

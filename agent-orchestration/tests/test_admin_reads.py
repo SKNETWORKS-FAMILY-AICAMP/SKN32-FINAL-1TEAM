@@ -36,7 +36,7 @@ def fixture(clock):
     run_review(app, a)
     b = to_screen6(app, "acc-2")
     c = start_and_select(app, "acc-3")
-    app.llm.plan("T-S1", ["auth"] * 50)
+    app.llm.plan("T-S1", ["auth"])                                       # 401 — 재시도 없이 영구 오류
     app.orchestrator.start_writing(c)
     app.orchestrator.advance(c)
     d = app.orchestrator.start_run("acc-4", pre_input(), project_id=project_for(app)).run_id

@@ -80,7 +80,7 @@ def test_started_project_cannot_start_again(clock):
 
 def test_pre_stage_failure_fails_request_and_allows_retry(clock):
     app = app_with(clock)
-    app.llm.plan("T-C1", ["timeout"] * 6)
+    app.llm.plan("T-C1", ["timeout"] * 5)                                   # T-C1 대기 합 상한 45초 — 다섯 번에 소진
     st = app.orchestrator.run_start_request(app.orchestrator.request_start("7", 101).request_id)
     assert (st.status, st.code, st.message) == ("실패", "E-C1-TIMEOUT", message("E-C1-TIMEOUT"))
     assert app.store.list_runs("7") == []
@@ -167,7 +167,7 @@ def test_form_copy_is_cleared_when_request_ends(clock):
     assert st.status == "완료" and form(done.request_id) is None             # 실행 건 생성과 함께 완료
     app.orchestrator.abort(st.run_id, confirmed=True)
 
-    app.llm.plan("T-C1", ["timeout"] * 6)
+    app.llm.plan("T-C1", ["timeout"] * 5)                                   # T-C1 대기 합 상한 45초 — 다섯 번에 소진
     failed = app.orchestrator.request_start("7", 102)
     assert app.orchestrator.run_start_request(failed.request_id).status == "실패"
     assert form(failed.request_id) is None                                   # 처리 중 실패

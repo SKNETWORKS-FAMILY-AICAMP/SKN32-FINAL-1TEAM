@@ -2,8 +2,11 @@
 
 - 재시도는 tools가 한다. SDK 자체 재시도는 끈다(max_retries=0).
 - request.timeout_sec를 요청 timeout으로 건다.
-- 시간 초과 → TimeoutError, 연결 오류 → ConnectionError, 응답 코드 오류 → ProviderError(status).
+- 시간 초과 → TimeoutError, 연결 오류 → ConnectionError, 응답 코드 오류 → ProviderError(status, code, retry_after_sec).
   빈 응답(거부 포함)은 형식 오류로 보고 tools가 재시도한다.
+- 응답 코드 오류(확장, spec 2.3 · 3절 — status_error, 이미지 어댑터와 같은 함수): 본문의 오류 코드(error.code — 모양에 맞는
+  것만, 아니면 None)와 응답 헤더 retry-after-ms(밀리초 → 초, 우선) · retry-after(초 숫자, 날짜 형식 · 잘못된 값은 None)를
+  읽어 싣는다. 결제 · 한도 · 재시도 간격 판단은 tools가 한다. 메시지는 상태 코드만이다(본문 · 메시지 · 헤더 값 없음).
 - 응답 형식: response_schema가 있으면 JSON 스키마 응답 형식(strict=False)으로 요청한다(json_mode보다 우선). 검사는 tools가
   다시 한다. 스키마가 없고 json_mode(확장)가 참이면 JSON 객체 응답 형식(response_format={"type": "json_object"})으로
   요청한다 — 전략 · 작성 · 검증-1 담당자 llm_runtime.request_json과 같다(spec 4.1). 둘 다 없으면 응답 형식을 싣지 않는다.
@@ -18,6 +21,7 @@
 """
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
@@ -61,7 +65,7 @@ class OpenAIProvider:
         except openai.APIConnectionError as e:
             raise ConnectionError(f"OpenAI 연결 실패: {type(e).__name__}") from None
         except openai.APIStatusError as e:
-            raise ProviderError(f"OpenAI 오류 {e.status_code}", status=e.status_code) from None
+            raise status_error(e, "OpenAI 오류") from None
         usage = _usage(getattr(response, "usage", None))
         choice = response.choices[0] if response.choices else None
         if choice is not None and getattr(choice, "finish_reason", None) == "length":
@@ -70,6 +74,57 @@ class OpenAIProvider:
         if not content:
             raise FormatError("빈 응답", usage=usage)
         return LLMResponse(content, usage)
+
+
+def status_error(e: openai.APIStatusError, label: str) -> ProviderError:
+    """응답 코드 오류 → ProviderError. 글 · 이미지 어댑터가 함께 쓴다(한 곳).
+
+    메시지는 '<label> <상태 코드>'뿐이다 — SDK 메시지 · 본문 · 헤더 값을 싣지 않는다(SDK 메시지에는 본문 내용이 들어 있다).
+    오류 코드 · Retry-After는 읽다가 무슨 오류가 나도 None으로 둔다(어댑터가 다른 예외를 내지 않게)."""
+    status = getattr(e, "status_code", None)
+    return ProviderError(f"{label} {status}", status=status if isinstance(status, int) else None,
+                         code=_safe(_error_code, e), retry_after_sec=_safe(_retry_after_sec, e))
+
+
+def _safe(read: Any, e: Any) -> Any:
+    try:
+        return read(e)
+    except Exception:   # 읽기 실패는 '없음' — 응답 내용은 어디에도 옮기지 않는다
+        return None
+
+
+def _error_code(e: Any) -> str | None:
+    """본문의 오류 코드. SDK가 본문(error 객체)에서 꺼낸 e.code를 먼저 보고, 없으면 본문을 직접 본다 —
+    {"code": …} · {"error": {"code": …}} 두 꼴. 모양 검사(영문 소문자 · 숫자 · 밑줄, 64자 이하)는 ProviderError가 한다."""
+    code = getattr(e, "code", None)
+    if isinstance(code, str):
+        return code
+    body = getattr(e, "body", None)
+    if isinstance(body, dict):
+        inner = body.get("error")
+        found = inner.get("code") if isinstance(inner, dict) else body.get("code")
+        return found if isinstance(found, str) else None
+    return None
+
+
+def _retry_after_sec(e: Any) -> float | None:
+    """응답 헤더의 다시 보낼 때까지의 초. retry-after-ms(밀리초)가 쓸 수 있는 값이면 그것, 아니면 retry-after(초 숫자).
+    날짜 형식 · 숫자가 아닌 값 · 음수 · NaN · 무한은 없는 것으로 본다. 헤더 이름은 대소문자를 가리지 않는다(httpx Headers)."""
+    headers = e.response.headers
+    ms = _seconds(headers.get("retry-after-ms"))
+    if ms is not None:
+        return ms / 1000
+    return _seconds(headers.get("retry-after"))
+
+
+def _seconds(value: Any) -> float | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        number = float(value.strip())
+    except ValueError:
+        return None
+    return number if math.isfinite(number) and number >= 0 else None
 
 
 def _usage(u: Any) -> TokenUsage | None:

@@ -474,7 +474,7 @@ def test_non_transient_exhaustion_wins_over_transient():
     llm = FakeLLM()
     llm.respond("T-C1", split_reply())
     llm.plan("T-C1", ["timeout", "timeout"], item_key=CLASSIFY)   # 일시
-    llm.plan("T-C1", ["auth", "auth"], item_key=SPEC)              # 운영
+    llm.plan("T-C1", ["auth"], item_key=SPEC)                      # 운영 — 재시도 없이 한 번
     with pytest.raises(ToolCallExhausted) as info:
         run_tc1(llm)
     assert (info.value.error_kind, info.value.detail) == ("운영", "status=401")
@@ -495,8 +495,8 @@ def test_same_kind_exhaustion_raises_classify_first():
 def test_two_non_transient_exhaustions_raise_classify_first():
     llm = FakeLLM()
     llm.respond("T-C1", split_reply())
-    llm.plan("T-C1", ["bad_request", "bad_request"], item_key=CLASSIFY)
-    llm.plan("T-C1", ["auth", "auth"], item_key=SPEC)
+    llm.plan("T-C1", ["bad_request"], item_key=CLASSIFY)           # 입력 · 운영 — 재시도 없이 한 번씩
+    llm.plan("T-C1", ["auth"], item_key=SPEC)
     with pytest.raises(ToolCallExhausted) as info:
         run_tc1(llm)
     assert info.value.detail == "status=400" and info.value.partial is None

@@ -71,7 +71,7 @@ def test_user_results_have_no_failure_reason(clock):
     app = make_app(clock)
     rid = start_and_select(app)
     p = pid(app, rid)
-    app.llm.plan("T-S1", ["auth"] * 50)                                          # 영구 오류 → 실패
+    app.llm.plan("T-S1", ["auth"])                                               # 영구 오류(재시도 없음) → 실패
     app.orchestrator.start_writing(rid)
     app.orchestrator.advance(rid)
     reason = app.store.load_run(rid).failure_reason
@@ -328,7 +328,7 @@ def test_rework_result_artifact_paths_then_failure(clock):
     assert set(f.dump()) == {"artifact", "beforeFile", "afterFile"}               # 내용 없이 참조만
     assert r.plan_before is None and r.plan_after is None
     app.orchestrator.decide(rid, 8, "진행")
-    app.llm.plan("T-B2", ["auth"] * 50)                                          # 영구 오류 → 재작성 실패
+    app.llm.plan("T-B2", ["auth"])                                               # 영구 오류(재시도 없음) → 재작성 실패
     failed = rework(app, clock, rid, "인포그래픽")[0]
     r = app.orchestrator.rework_result(p)
     assert r.cycle_id == failed.cycle_id != ok.cycle_id                          # 이전 성공을 마지막처럼 주지 않는다

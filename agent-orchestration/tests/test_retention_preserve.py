@@ -81,7 +81,7 @@ def test_rework_results_and_screens_same_after_records_retired(clock):
 def test_attempt_numbers_continue_after_failed_rework_and_retire(clock):
     app = make_app(clock, StubScenario(doc_scores=[52.0]))
     rid = to_screen6(app)
-    app.llm.plan("T-W1", ["auth"] * 6)                                   # 영구 오류 → 재작성 실패 · 되돌림
+    app.llm.plan("T-W1", ["auth"])                                       # 영구 오류(재시도 없음) → 재작성 실패 · 되돌림
     rework(app, clock, rid, "문제인식")
     run = app.store.load_run(rid)
     assert run.last_rework.status == "실패"

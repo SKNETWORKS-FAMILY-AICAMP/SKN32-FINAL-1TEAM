@@ -2,7 +2,8 @@
 
 - partner_reply(request): 요청 목적(F번호)에 맞는 JSON. F16은 항목 규칙(exactItems · maxLines)과 울타리 featureList를 지켜
   구조 검사를 통과하는 본문을, F18은 요청한 flowType을 돌려준다.
-- PartnerProvider: 목적별 스크립트('timeout' · 'rate_limit' · 'bad_request' · JSON 글자)와 받은 요청을 모으는 가짜 호출처.
+- PartnerProvider: 목적별 스크립트('timeout' · 'rate_limit' · 'bad_request' · 'quota' · 'overloaded' · JSON 글자)와 받은
+  요청을 모으는 가짜 호출처. 실패 값은 스텁 가짜 호출처와 같은 raise_fake_failure.
 - partner_tools: 가짜 호출처 · 메모리 파일 저장소로 만든 tools(실행 건 '실행').
 """
 from __future__ import annotations
@@ -12,8 +13,8 @@ import threading
 from typing import Any, Callable
 
 from sbrain.agents.partner_sw.purposes import PURPOSES
+from sbrain.agents.stubs import raise_fake_failure
 from sbrain.models.clock import utc_now
-from sbrain.orchestrator.errors import ProviderError
 from sbrain.orchestrator.files import MemoryFileStore
 from sbrain.orchestrator.settings import Settings
 from sbrain.orchestrator.tools import CallSink, LLMRequest, Tools, ToolsConfig, ToolsContext
@@ -85,7 +86,8 @@ def partner_reply(request: LLMRequest, overrides: dict[str, Any] | None = None) 
 
 class PartnerProvider:
     """목적별로 답하는 가짜 호출처. scripts[목적] 또는 scripts[(목적, 항목 키)]의 결과를 차례로 쓴다:
-    'timeout' · 'rate_limit'(429, 일시) · 'bad_request'(400, 입력) · 그 밖의 글자는 응답 본문. 받은 요청을 모은다."""
+    'timeout' · 'rate_limit'(429, 일시) · 'bad_request'(400, 입력) · 'quota'(429 + insufficient_quota — 결제 · 한도) ·
+    'overloaded'(503 + 코드) · 그 밖의 글자는 응답 본문. 받은 요청을 모은다."""
 
     def __init__(self, overrides: dict[str, Any] | None = None) -> None:
         self.lock = threading.Lock()
@@ -102,13 +104,8 @@ class PartnerProvider:
             outcome = queue.pop(0) if queue else None
         if self.hook is not None:
             self.hook(request)
-        if outcome == "timeout":
-            raise TimeoutError()
-        if outcome == "rate_limit":
-            raise ProviderError("429", status=429)
-        if outcome == "bad_request":
-            raise ProviderError("400", status=400)
         if outcome is not None:
+            raise_fake_failure(outcome)   # timeout · rate_limit · bad_request · quota · overloaded 등
             return outcome
         return partner_reply(request, self.overrides)
 

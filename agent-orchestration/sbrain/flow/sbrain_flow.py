@@ -36,6 +36,8 @@ G-02b는 T-V2 직후 계산하고(시트 2 "T-V2 종료 직후"), 화면 8을 �
 T-P2 시도 기록: 문장마다 T-P2 함수가 결과를 돌려준 호출 하나가 시도다(호출 실패는 시도가 아니다). 시도는 문장 결과
 (sentenceResults)의 attempts에 쌓고, 보호 토큰 검사를 통과하지 못한 시도(반려)는 같은 저장에서 웹 proofread_logs
 후보(RejectedAttempt)로 넘긴다 — 학습 동의 확인과 쓰기는 저장소가 한다. 재개해도 이번에 새로 만든 시도만 넘긴다.
+T-P2 실패 비율: 호출실패 문장 비율이 기준을 넘으면 재개(일시)하고, 재개 상한을 넘었으면 원문 유지한 채 완료한다. 다만
+이번 실행에서 받은 소진 중 오류 종류 '운영'이 하나라도 있으면 재개 상한 확인보다 먼저 실행 실패(영구 오류)로 간다.
 """
 from __future__ import annotations
 
@@ -57,7 +59,7 @@ from ..orchestrator.engine import Engine, Outcome, StepFailure, ToolsFactory
 from ..orchestrator.errors import EMBED_DEADLINE_SUFFIX, ContractError, ToolCallExhausted, message
 from ..orchestrator.registry import TaskRegistry, TaskSpec
 from ..orchestrator.settings import REWRITE_SETTING_KEY
-from ..orchestrator.tools import CallSink, Tools
+from ..orchestrator.tools import CallSink, Tools, detail_code
 from ..orchestrator.trace import IMAGE_CALL, CallLog, ExecutionRecord, FeedbackLink
 from .catalog import (
     FIRST_CANDIDATES, FORM_SPEC, INSTRUCTION_SUFFIX, MORE_CANDIDATES, RUBRIC, SECTION_RESULTS, TABLE_OUTPUTS,
@@ -96,6 +98,12 @@ EVENT_ALT_SOURCE_MISSING = "대체텍스트출처누락"
 ALT_SOURCE_MISSING_DETAIL = "HTML 2번 미충족인데 defect_sources가 비어 있음 — T-B2로 보냄"
 IMAGE_FALLBACK_DETAIL = "T-B2 이미지 호출 실패 — 기본 아이콘으로 계속"
 ICON_FALLBACK_DETAIL = "T-B2 맞춤 아이콘 사용 불가 — 기본 아이콘으로 계속"   # (잠정) 칸 수 불일치 · 그림 해석 오류 (spec 4.3)
+def image_fallback_detail(log: CallLog) -> str:
+    """'이미지대체' 첫째 설명 — 최종 실패한 이미지 호출의 마지막 시도 설명에 오류 코드가 있으면 끝에 ' (code=…)'를 붙인다
+    (호출 실패 처리 spec 4절). 코드가 없으면 IMAGE_FALLBACK_DETAIL 그대로. 코드는 정해진 어휘의 이름이라 기록해도 된다.
+    시도 설명의 꼴은 tools(status_detail · detail_code)만 안다."""
+    code = detail_code(log.tries[-1].detail) if log.tries else None
+    return f"{IMAGE_FALLBACK_DETAIL} (code={code})" if code else IMAGE_FALLBACK_DETAIL
 # 이전 원문 참조(previous_source_file)를 채우는 Task와 그 진입 파일 참조가 든 산출물 (spec 4.3 — T-B1만)
 SOURCE_FILE_TASK, SOURCE_FILE_KEY = "T-B1", "prototype"
 # 공고를 고를 수 있는 대기 지점 — 공고 선택 명령이 decision의 beforeStep에 남기고, G-01이 실패하면 그리로 돌아간다 (4.3.4)
@@ -744,12 +752,13 @@ class SBrainFlow:
         """실행 기록 하나가 성공으로 저장되는 같은 묶음 (엔진 선택 확장 지점). T-B2 실행에 최종 실패인 이미지 호출이 하나라도
         있거나 출력 인포그래픽의 기본 아이콘 대체(iconFallback)가 참이면 '이미지대체' 사건을 하나 남긴다 — 실행 기록마다
         (재수행으로 다시 돈 앞선 실행 포함, spec 3.3 · impl-verify2 spec 4.3). 둘 다여도 하나다. 설명은 이미지 호출 실패면
-        IMAGE_FALLBACK_DETAIL, 그 밖(칸 수 불일치 · 그림 해석 오류 — 대체 칸만 참)이면 ICON_FALLBACK_DETAIL. 필드(호출 기록의
+        IMAGE_FALLBACK_DETAIL(그 호출의 마지막 시도에 오류 코드가 있으면 끝에 ' (code=…)' — image_fallback_detail), 그 밖(칸 수 불일치 · 그림 해석 오류 — 대체 칸만 참)이면 ICON_FALLBACK_DETAIL. 필드(호출 기록의
         최종 결과 · icon_fallback)로만 가른다. 내용 · 지시문 · 그림은 없다."""
         if spec.task_id != "T-B2":
             return
-        if any(log.call_type == IMAGE_CALL and log.final_outcome != "성공" for log in calls):
-            ctx.add_event(EVENT_IMAGE_FALLBACK, IMAGE_FALLBACK_DETAIL, execution_id=rec.execution_id)
+        failed = next((log for log in calls if log.call_type == IMAGE_CALL and log.final_outcome != "성공"), None)
+        if failed is not None:
+            ctx.add_event(EVENT_IMAGE_FALLBACK, image_fallback_detail(failed), execution_id=rec.execution_id)
             return
         infographic = ctx.get_ref(rec.result_ref) if rec.result_ref.startswith("infographic@") else None
         if infographic is not None and infographic.icon_fallback:
@@ -965,7 +974,8 @@ class SBrainFlow:
             todo = [sid for sid in targets if sid not in prior or prior[sid].kept_reason == "호출실패"]
             limit = s.redo.proofread_limit
 
-            def one(sid: str) -> c.SentenceResult:
+            def one(sid: str) -> tuple[c.SentenceResult, ToolCallExhausted | None]:
+                """문장 하나의 결과와, 호출 실패로 끝났으면 받은 소진(오류 종류는 이번 실행 안에서만 든다 — 모델 칸 없음)."""
                 original = sentences[sid]
                 item_tools = tools.for_item(sid)
                 hint: list[str] = []
@@ -979,8 +989,8 @@ class SBrainFlow:
                     try:
                         out = spec.fn(c.TP2In(sentence=original, protected_tokens=tokens, format_findings=mine,
                                               format_spec=fspec, redo_hint=list(hint), redo_count=redo), item_tools)
-                    except ToolCallExhausted:   # 호출 실패는 시도가 아니다
-                        return result(adopted=False, kept_reason="호출실패")
+                    except ToolCallExhausted as e:   # 호출 실패는 시도가 아니다
+                        return result(adopted=False, kept_reason="호출실패"), e
                     out = out if isinstance(out, c.TP2Out) else c.TP2Out.model_validate(out)
                     adopted = out.adopted and out.token_check.passed
                     attempts.append(c.ProofreadAttempt(
@@ -988,17 +998,20 @@ class SBrainFlow:
                         token_check=out.token_check,
                         violation_type=None if out.token_check.passed else violation_type(out.token_check, tokens)))
                     if adopted:
-                        return result(adopted=True, revised=out.revised, token_check=out.token_check)
+                        return result(adopted=True, revised=out.revised, token_check=out.token_check), None
                     h = hashlib.sha256(out.revised.text.encode("utf-8")).hexdigest()
                     if prev_hash is not None and h == prev_hash:
-                        return result(adopted=False, kept_reason="조기중단", token_check=out.token_check)
+                        return result(adopted=False, kept_reason="조기중단", token_check=out.token_check), None
                     if redo >= limit:
-                        return result(adopted=False, kept_reason="검증실패", token_check=out.token_check)
+                        return result(adopted=False, kept_reason="검증실패", token_check=out.token_check), None
                     hint.extend(x for x in out.next_redo_hint if x not in hint)  # 교체하지 않고 누적
                     prev_hash, redo = h, redo + 1
 
+            # 문장마다 (결과, 소진)을 돌려받아 모은다 — 스레드끼리 같은 값을 고치지 않는다. 순서는 대상 문장 순서
             with ThreadPoolExecutor(max_workers=max(1, s.proofread.concurrency)) as pool:
-                done = dict(zip(todo, pool.map(one, todo)))
+                pairs = dict(zip(todo, pool.map(one, todo)))
+            done = {sid: res for sid, (res, _) in pairs.items()}
+            exhausted = [e for _, e in pairs.values() if e is not None]   # 이번 실행에서 받은 소진 (재개면 다시 돈 문장만)
             engine.collect_calls(ctx, rec, sink)   # 문장별 호출 토큰을 T-P2 실행 기록에 합산
         except Exception as e:  # Agent 코드 오류 등
             engine.collect_calls(ctx, rec, sink)
@@ -1010,6 +1023,17 @@ class SBrainFlow:
         results = [merged[sid] for sid in targets if sid in merged]
         failed = [r for r in results if r.kept_reason == "호출실패"]
         if failed and len(failed) / len(targets) > s.proofread.failure_ratio_threshold:
+            # 운영 오류(API 키 · 권한 · 없는 모델 등)는 기다려도 풀리지 않는다 — 재개 상한 확인보다 먼저 보고, 하나라도
+            # 있으면 재개 대신 실행 실패(영구 오류 — 재작성 중이면 되돌림). 실행 기록 · 실행 건 칸은 엔진의 다른 소진
+            # 실패(_on_exhausted)와 같게 채운다. 한도 · 일시 · 입력만이면 아래 지금 규칙 그대로 (호출 실패 처리 spec 5)
+            operational = next((e for e in exhausted if e.error_kind == "운영"), None)
+            if operational is not None:
+                rec.status, rec.error, rec.error_kind, rec.ended_at = (
+                    "실패", operational.error, operational.error_kind, self.now())
+                ctx.record_execution(rec)
+                ctx.run.retry_count = max(operational.tries - 1, 0)
+                ctx.run.last_error_kind = operational.error_kind
+                return engine.schedule_resume(ctx, rec, rs, operational.error_kind)
             if engine.can_resume(ctx) is not None:
                 ref = ctx.put("sentenceResults", results, producer=rec.execution_id)
                 rec.outputs, rec.result_ref = [ref], ref

@@ -989,7 +989,7 @@ def test_ts1_resume_continues_after_received_functions():
 
 def test_ts1_non_transient_exhaustion_has_no_partial():
     p = PartnerProvider()
-    p.scripts["F05"] = ["bad_request"] * 3
+    p.scripts["F05"] = ["bad_request"]                                  # 400 — 재시도 없이 한 번
     with pytest.raises(ToolCallExhausted) as e:
         run_ts1(c.TS1In(item_spec=ITEM, selected_announcement=announcement(), instruction=INSTRUCTION,
                         company_info=company(), form_input=form_input()), partner_tools(p, "T-S1")[0])
@@ -1028,7 +1028,7 @@ def test_concurrent_failure_order_prefers_non_exhausted_error():
     r = run_chain()
     p = PartnerProvider()
     p.scripts[("F16", "3.1.1")] = ["timeout"] * 3
-    p.scripts[("F16", "3.4.1")] = ["bad_request"] * 3
+    p.scripts[("F16", "3.4.1")] = ["bad_request"]                      # 400 — 재시도 없이 한 번
     with pytest.raises(ToolCallExhausted) as e:
         run_tw1(r.w1_in, partner_tools(p, "T-W1")[0])
     assert e.value.error_kind == "입력" and e.value.partial is None                    # ② 일시가 아닌 재시도 소진

@@ -500,13 +500,14 @@ def test_non_transient_exhaustion_wins_and_drops_partial():
     llm = FakeLLM()
     llm.respond("T-C3", guidance_reply)
     llm.plan("T-C3", ["timeout", "timeout"], item_key="T-S1")
-    llm.plan("T-C3", ["auth", "auth"], item_key="T-W3")
-    llm.plan("T-C3", ["bad_request", "bad_request"], item_key="T-B2")
+    llm.plan("T-C3", ["auth"], item_key="T-W3")
+    llm.plan("T-C3", ["bad_request"], item_key="T-B2")
     with pytest.raises(ToolCallExhausted) as info:
         tc3.run(tc3_in(), make_tools(llm))
     assert info.value.error_kind == "운영" and info.value.detail == "status=401"   # 일시 아닌 것 중 순서상 앞
     assert info.value.partial is None
-    assert Counter(r.metadata["item_key"] for r in llm.requests) == Counter(INSTRUCTED + ["T-S1", "T-W3", "T-B2"])
+    # 일시(T-S1)만 재시도한다 — 운영(401) · 입력(400)은 한 번
+    assert Counter(r.metadata["item_key"] for r in llm.requests) == Counter(INSTRUCTED + ["T-S1"])
 
 
 def test_code_error_wins_over_exhaustion():
@@ -576,7 +577,7 @@ def test_transient_and_operational_mix_fails_without_partial(clock):
     app.llm.respond("T-C3", counting_reply())
     rid = start_and_select(app)
     app.llm.plan("T-C3", ["timeout"] * 6, item_key="T-S1")
-    app.llm.plan("T-C3", ["auth"] * 6, item_key="T-W2")
+    app.llm.plan("T-C3", ["auth"], item_key="T-W2")                      # 운영 — 재시도 없이 한 번
     write_from(app, rid)
     run = app.store.load_run(rid)
     assert run.state.progress == "실패"

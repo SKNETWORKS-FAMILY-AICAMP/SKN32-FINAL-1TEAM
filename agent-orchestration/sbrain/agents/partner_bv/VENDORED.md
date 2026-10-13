@@ -55,6 +55,8 @@
 | `verification_agent/score.py` `compute_code_check` · `compute_infographic_check` | 첫 인자 이름 `entry_file_path` → `entry_file_name`(값도 이름) | 위와 같음 |
 | `verification_agent/llm_judge.py` 요소 목록 | 파일 저장소(`ELEMENT_STORE = .cache/elements.json`) · `Path` import 삭제. `_stored(key)` → `_stored(store, key)`, `_store(key, elements)` → `_store(store, key, elements)`(사전에 더함 — 폴더 만들기 · 파일 쓰기 없음), `elements_for(…)`에 `store` 인자, `make_judge(tools, kind, source, plan_text, elements=None)` — `elements`가 요소 목록 사전(열쇠 = 담당자 열쇠 `_store_key` = 종류 · 기능 이름 · 정의 줄의 SHA-1 16진수, 값 = 요소 글자 목록 1 ~ 5개). `None`이면 빈 사전. 있는 열쇠는 LLM을 부르지 않고, 새로 뽑은 목록을 **그 사전에 제자리로 더한다**(출력 = 입력 ∪ 새 것). 요소 뽑기가 재시도 소진이면 사전에 넣지 않고 통째로 묻는 판정으로 간다(담당자 동작) | spec 4.4. 연결 코드(T3)가 입력 사전의 사본을 넘기고 그 사전을 출력으로 돌려준다. 목록은 산출물 내용이다 — 기록 · 로그 · 예외 메시지에 넣지 않는다 |
 | `verification_agent/llm_judge.py` 예외 | `except Exception` 셋(요소 뽑기 `elements_for` · 판정 `make_judge.ask` · 핵심 칸 `make_field_judge.ask`) → `except ToolCallExhausted`(`orchestrator.errors`). 그 밖의 예외는 올린다 | standards 4절 "T-V2가 받아도 되는 것은 대조 LLM 실패뿐" |
+| `verification_agent/llm_judge.py` 결제 · 한도 소진 (2026-10-13, 호출 실패 처리) | 위 `except ToolCallExhausted` 셋(요소 뽑기 · 판정 · 핵심 칸) → `except ToolCallExhausted as exc` + 받은 소진의 `billing_limit`이 참이면 `raise`(그대로 다시 올림). 한도가 아닌 소진은 지금처럼 대체(요소 뽑기 → 통째로 묻는 판정, 판정 → 규칙 판정, 핵심 칸 → 감점 없음) | 크레딧 · 지출 한도가 떨어졌는데 대체로 넘어가면 점수가 깎인 채 '완료'된다. 올리면 엔진이 재개 대기('일시')로 보내고, 재개 상한을 넘으면 다른 단계와 같이 실행 실패 · 재작성 되돌림(대체로 가지 않음) |
+| `engineering_agent/infographic/artsheet.py` `generate` (2026-10-13, 호출 실패 처리) | `ToolCallExhausted` import(`orchestrator.errors` — 허용된 방향), 넓은 예외 받기 `except Exception` → `except Exception as e` + `isinstance(e, ToolCallExhausted) and e.billing_limit`이면 `raise`. 그 밖은 지금처럼 `None`(기본 아이콘). 모듈 docstring에 한 줄 | 위와 같음 — 한도 소진이면 기본 아이콘(`iconFallback`) · '이미지대체' 사건 없이 재개 대기 |
 | `verification_agent/llm_judge.py` `_MAX_WORKERS` | 6 → 3. `_VOTES = 3` 그대로. 스레드마다 `tools.for_item(<항목 키>)`, 항목 키는 담당자 문구 그대로(`{기능}#요소` · `{기능}#{n}` · `{칸}#{n}`) | spec 4.4 |
 | `engineering_agent/tasks.py` 머리 (T3) | 파일 이름 · 형식 상수 `ENTRY_FILE_NAME`(`index.html`) · `HTML_MEDIA_TYPE`(`text/html`) · `SVG_MEDIA_TYPE`(`image/svg+xml`)와 `_text(bytes)`(UTF-8, 풀 수 없는 바이트는 대체 문자 — 잠정) 더함 | 파일은 `tools.files`로 넣고 읽는다 |
 | `engineering_agent/tasks.py` `run_tb1` (T3) | 이전 원문: `rework_input.previous_source_text`(글자) → `previous_source_file`(참조)을 `tools.files.get`으로 읽어 `previous_html`로 넘김(파일 창구 실패는 받지 않음 — 끼워 넣은 것은 담당자 `user_message`가 뺀다). 결과: `entryFilePath` · `sourceText` 칸 → **진입 파일이 있으면**(`entryFileName` — 통과 · 외부 의존 · 샌드박스 · 비밀값 실패) 담당자가 끼워 넣은 `sourceText`를 `index.html`로 `tools.files.put` 하고 그 참조를 `Prototype.entryFile` · `TB1Out.entryFile`에, 자기 신고는 담당자 `implementedFeatures` 그대로. 진입 파일 실패면 진입 파일 없음 · 빈 목록. `check` = 통과 여부 · 실패면 담당자 요약 문구 한 줄(그대로). `Prototype(asset_paths · readme_path · source_text)` → `Prototype(asset_files=[] · readme_file=None)` | spec 4.2 · D2 · D3 — 검사에 걸린 HTML도 진입 파일로 넘겨 검증-2가 채점한다(담당자 10-12 회신 · 새 판도 같다) |
@@ -66,7 +68,7 @@
 - 담당자 프롬프트 · 자체 검사 규칙(진입 파일 → 외부 의존 → 샌드박스 → 비밀값, 첫 실패에서 멈춤) · 코드 점검 8항목 · 대조 공식 · 지면 조립 · 아이콘판 그리기 · 호출 목적 문구(`T-B1 HTML 생성` · `T-B2 인포그래픽 정보 추출` · `사업 분야 판정(색)` · `인포그래픽 아이콘` · `계획서 대조 요소: {기능}` · `계획서 대조: {기능 또는 칸}`).
 - `engineering_agent/gates.py`(T-B1 자체 검사)의 진입 파일 문구(`진입 파일 'index.html'이 생성된 파일 목록에 없음: [모델이 지은 이름들]`)는 그대로다 — spec 4.1 표가 경로 · 이름을 빼라고 한 것은 검증-2 진단 문구다. 이 문구는 T-B1 `check.failures`(산출물 값)로 간다.
 - `verification_agent/rules/gates.py` `svg_gates`의 `SVG 파싱 실패: {exc}`(파서 오류 위치 — 내용 없음)는 그대로다.
-- T-B2 아이콘판의 넓은 예외 받기(`artsheet.generate`의 `except Exception` → `None`, 기본 아이콘)는 그대로다(T-B2는 `tools.image` 실패를 받아도 된다).
+- T-B2 아이콘판의 넓은 예외 받기(`artsheet.generate`의 `except Exception` → `None`, 기본 아이콘)는 그대로다(T-B2는 `tools.image` 실패를 받아도 된다). 예외는 결제 · 한도 소진 하나뿐이다(3절 표 — 다시 올린다).
 - `content.py` · `builder_html.py` · `llm_judge.py`의 `_format_error`(함수 안 `from sbrain.orchestrator.errors import FormatError`)는 그대로다 — `partner_bv/__init__.py`가 그 모듈을 미리 불러 둔다.
 - `fonts._style` · `html_kit.font_style` · `html_kit.icon_sprite` · `illustrations._uri`의 `lru_cache`는 그대로다(디스크가 아니라 상수에서 만든 글자를 메모리에 둔다).
 - 모듈 docstring · 주석 중 저장 · 경로를 말하는 담당자 문장(예: `infographic/__init__.py`의 "render 템플릿 채우기 · 파일 저장")은 그대로 두었다.
@@ -76,7 +78,7 @@
 - `engineering_agent/tasks.py`(`run_tb1` · `run_tb2` · T-B2 자체 검사 `_check_content` · `_plan_text` · `_wants_redesign` · `_USER_ONLY_REASON`)와 `verification_agent/tasks.py`(`run_tv2` · `score_artifact` · `plan_text_of` · `_check_infographic_alt` · `_detail` · `diagnostics_of`)는 담당자 구조를 그대로 두고 **계약 칸 · 파일 창구 연결부만** 고쳤다(3절 표의 T3 줄, `[S-Brain]` 주석). 자체 검사 · 계획서 글 만들기(`_plan_text` · `plan_text_of`) · 재구성 판단 · 대체 텍스트 확인 · 진단 문구는 바꾸지 않았다.
 - Task 함수 모양은 우리 약속 그대로 `run_xxx(inp, tools) -> 출력`이다. Task 함수 안의 늦은 import(`sbrain.contracts.tasks` · `sbrain.models`)는 담당자 그대로다 — 조립이 먼저 불러 두므로 실행 중 디스크에 닿지 않는다.
 - 등록은 우리 연결 코드 `partner_bv/tasks.py`(5절)가 한다. 두 담당자 패키지는 서로 import하지 않는다.
-- 받는 예외: T-B2 아이콘판(`artsheet.generate` — 담당자 넓은 예외 받기)과 T-V2 대조 LLM(`llm_judge` — `ToolCallExhausted`만)뿐이다. 파일 창구 실패 · T-B1 글 호출 · T-B2 글 호출 · T-V2의 그 밖의 예외는 올린다.
+- 받는 예외: T-B2 아이콘판(`artsheet.generate` — 담당자 넓은 예외 받기)과 T-V2 대조 LLM(`llm_judge` — `ToolCallExhausted`만)뿐이다. 둘 다 결제 · 한도 소진(`billing_limit`)은 받지 않고 다시 올린다(3절 표). 파일 창구 실패 · T-B1 글 호출 · T-B2 글 호출 · T-V2의 그 밖의 예외는 올린다.
 - 검사에 걸린 HTML도 진입 파일로 넣는다(spec 4.2 D2 · D3, 검증-2가 채점). 10-08 판 담당자 `run_tb1`은 진입 파일을 비웠으나, 담당자가 10-12 회신에서 맞다고 하고 새 판도 같게 바꿨다. 외부 의존은 10-12 판부터 검증-2 코드 점검 7번에서 감점한다.
 
 ## 5. 연결 코드 (이 폴더 바로 아래 — 우리 파일)
@@ -89,7 +91,7 @@
 
 `partner_bv`를 가져다 쓰는 곳은 조립(`bootstrap.py`)뿐이다. `flow/` · `orchestrator/`는 import하지 않는다. `partner_bv`가 우리 쪽에서 가져다 쓰는 것은 `orchestrator.errors` · `orchestrator.registry`(등록 타입) · `contracts` · `models` · `orchestrator.tools`(타입)뿐이다(담당자 고정 문구 `_USER_ONLY_REASON`은 `flow`를 import하지 않고 글자 그대로 두고, 테스트가 `flow/rework_map.REWORK_DEFAULT_REASON`과 같은지 본다).
 
-**'이미지대체' 사건(흐름 쪽, T3):** `flow/sbrain_flow.py` `after_execution`이 T-B2 실행 기록마다 한 번 — 최종 실패인 이미지 호출이 있으면 `IMAGE_FALLBACK_DETAIL`, 그 밖에 출력 `iconFallback`이 참이면 `ICON_FALLBACK_DETAIL`(잠정)로 남긴다. 필드로만 가른다.
+**'이미지대체' 사건(흐름 쪽, T3):** `flow/sbrain_flow.py` `after_execution`이 T-B2 실행 기록마다 한 번 — 최종 실패인 이미지 호출이 있으면 `IMAGE_FALLBACK_DETAIL`(그 호출의 마지막 시도 설명에 오류 코드가 있으면 끝에 ` (code=…)`), 그 밖에 출력 `iconFallback`이 참이면 `ICON_FALLBACK_DETAIL`(잠정)로 남긴다. 필드로만 가른다.
 
 ### 끼워 넣은 글꼴 · 아이콘 빼기 (T3가 쓴다)
 
