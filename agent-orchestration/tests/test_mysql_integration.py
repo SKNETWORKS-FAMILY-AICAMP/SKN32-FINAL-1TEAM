@@ -16,16 +16,20 @@ from decimal import Decimal
 
 import pytest
 from conftest import Clock, executed, make_app, pre_input, set_consent, start_and_select, to_screen6, to_screen9
-from mysqldb import WEB_SCHEMA_ENV, require_mysql, web_schema
+from fakes import item_json
+from mysqldb import MYSQL, WEB_SCHEMA_ENV, require_mysql, web_schema
 from sqlalchemy import text
-from test_tc1 import item_json
 from webdb import project_row, proofread_rows
 
 from sbrain.agents.stubs import FakeLLM, StubScenario
 from sbrain.bootstrap import build_app, build_web
+from sbrain.intake import to_pre_input
+from sbrain.intake.sql_source import SqlProjectInputSource
 from sbrain.orchestrator.store import StartRequest
 from sbrain.store_sql import SqlStore
 from sbrain.worker import Worker
+
+pytestmark = MYSQL   # 이 파일 전체가 MySQL 묶음 (mysqldb.py)
 
 
 def mysql_app(scenario: StubScenario | None = None):
@@ -104,7 +108,7 @@ def test_concurrent_rework_requests_merge_on_mysql():
 
 def test_rejected_attempt_row_on_mysql():
     """학습 동의 계정의 반려된 시도 → 웹 proofread_logs 한 행 (project_id 외래 키 · 웹 기본값 포함)."""
-    app = mysql_app(StubScenario(tp1_targets=2, tp2_behavior={"s-1-1-2": ["violate", "ok"]}))
+    app = mysql_app(StubScenario(tp1_targets=2, tp2_behavior={"s-3.1.1-2": ["violate", "ok"]}))
     rid = to_screen9(app, account=uuid.uuid4().hex[:12])
     set_consent(app, rid)
     app.orchestrator.decide(rid, 9, "진행", confirmed=True)
@@ -130,6 +134,20 @@ def test_project_delete_keeps_run_log():
     assert app.store.load_run(rid).state.step == "종합평가"
     assert len(app.store.executions(rid)) == 18
     assert app.store.notifications(rid) == []          # 웹 알림은 프로젝트와 함께 지워졌다
+
+
+def test_missing_projects_after_full_deletion_on_mysql():
+    """완전 삭제 두 단계 — delete_project_data 뒤에는 '있음', 웹이 projects 행을 지워 외래 키가 project_id를 비운 뒤 '없음'."""
+    app = mysql_app()
+    rid = start_and_select(app, uuid.uuid4().hex[:12])                     # 사용자대기 — 완전 삭제가 중단한다
+    pid = int(app.store.load_run(rid).project_id)
+    app.orchestrator.delete_project_data(pid)
+    assert app.store.load_run(rid).state.progress == "중단"
+    assert app.orchestrator.missing_projects([pid, str(pid)]) == []
+    with app.store.engine.begin() as conn:
+        conn.execute(text("DELETE FROM projects WHERE project_id = :p"), {"p": pid})
+    assert app.orchestrator.missing_projects([str(pid), pid]) == [str(pid)]
+    assert app.store.load_run(rid).project_id == str(pid)                  # run_json은 그대로 — 실행 건 줄 칸만 비었다
 
 
 def test_account_delete_holds_account_lock_on_mysql():
@@ -229,6 +247,34 @@ def test_web_and_worker_on_real_web_schema():
     assert (form.facilities, form.partners, form.revenue_unit_price) == ("태블릿 (보유)", "없음", 35000)
     scoring = run.settings_snapshot["scoring"]                                           # verification_policies 첫 행
     assert (scoring["threshold"], scoring["docLayerMax"], scoring["deviationCap"]) == (80.0, 70.0, 5.0)
+    # code_weight → 코드 점검 배점 C, plan_weight → 계획서 대조 배점 P, 산출물층 배점 = C + P (spec 4.6, 웹 기본값 15 · 15)
+    assert (scoring["codeCheckMax"], scoring["featureMatchMax"], scoring["artifactLayerMax"]) == (15.0, 15.0, 30.0)
+
+
+def test_plan_tables_on_real_web_schema():
+    """사업비 · 일정(spec 4.3) — 실제 웹 스키마의 project_budget_items · project_schedule_items를 item_order 순으로 읽는다.
+    웹 스키마에 아직 phase 컬럼이 없어도 SchemaMismatch가 아니고 None이다. 웹 테이블은 읽기만 한다."""
+    engine = require_mysql()
+    _, pid = insert_web_project(engine)
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO project_budget_items (project_id, item_order, category, execution_plan, total_amount, "
+            "government_amount, self_cash_amount, self_in_kind_amount) VALUES "
+            "(:p, 2, '재료비', '부품 구입', 1000000.00, 1000000.00, NULL, NULL), "
+            "(:p, 1, '인건비', '개발자 1명', 20000000.00, 10000000.00, 3000000.00, 2000000.00)"), {"p": pid})
+        conn.execute(text(
+            "INSERT INTO project_schedule_items (project_id, section, item_order, category, content, period, detail) "
+            "VALUES (:p, 'growth', 1, '확장', '지점 확대', '2027', NULL), "
+            "(:p, 'feasibility', 2, '개발', '예약 화면 개발', '2026-03 ~ 2026-06', '수업 예약'), "
+            "(:p, 'other', 3, '섹션 밖', '버림', NULL, NULL)"), {"p": pid})
+    rec = SqlProjectInputSource(engine).load(pid)
+    assert [b.category for b in rec.budget_items] == ["인건비", "재료비"]
+    f = to_pre_input(rec)
+    assert [(b.category, b.total_amount, b.government_amount, b.self_cash_amount, b.phase) for b in f.budget_items] == [
+        ("인건비", 15_000_000, 10_000_000, 3_000_000, None), ("재료비", 1_000_000, 1_000_000, None, None)]
+    assert [(s.scope, s.category, s.detail) for s in f.schedule_items] == [
+        ("roadmap", "확장", ""), ("agreement", "개발", "수업 예약")]
+    assert f.team_role_careers == ["개발: 웹 개발 3년"]
 
 
 def test_web_schema_lookup(tmp_path, monkeypatch):

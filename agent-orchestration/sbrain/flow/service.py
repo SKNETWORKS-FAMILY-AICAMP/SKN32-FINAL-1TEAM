@@ -12,8 +12,10 @@
 - 웹 조립(build_web)은 allow_pre_stage가 거짓이라 사전 단계를 돌지 않는다 — run_start_request(와 동기 경로)를 부르면
   시작 요청을 건드리지 않고 바로 CommandError("WEB_NOT_ALLOWED") (spec 3.4).
 - 탈퇴(delete_account_data, 확장): 계정 잠금 안에서 중단 · 취소한 뒤 그 계정의 실행 건 · 시작 요청을 통계 줄로 옮기고 지운다.
-- 웹이 쓰는 조회(spec 4): view_project · project_views · wait_project · outputs · rework_result · active_work,
+- 웹이 쓰는 조회(spec 4): view_project · project_views · missing_projects · wait_project · outputs · rework_result · active_work,
   관리자 admin_runs · admin_score_history · admin_summary · admin_agent_tasks (모양은 flow/reads.py).
+- 산출물 파일(확장): 웹 read_artifact_file(파일 내용 · 형식), 관리자 admin_file_deletions(삭제 대기열 목록) ·
+  admin_retry_file_deletion(포기한 줄 다시 시도). 웹 조립에서 부를 수 있다. 웹은 파일을 쓰지도 지우지도 않는다.
 """
 from __future__ import annotations
 
@@ -32,9 +34,11 @@ from ..models.run import ACTIVE_PROGRESS, collecting, make_state, progress_perce
 from ..orchestrator.context import RunContext
 from ..orchestrator.engine import Engine
 from ..orchestrator.errors import CommandError, StoreConflict, message
+from ..orchestrator.files import FileStore
 from ..orchestrator.settings import SettingsProvider
 from ..orchestrator.store import FINISHED_REQUEST, PENDING_REQUEST, RunFilter, StartRequest
 from . import reads
+from .catalog import FORM_SPEC
 from .log_stats import start_request_rows
 from .retention import gather_run_stats
 from .rework_map import BUNDLE_EXECUTABLE, BUNDLE_LAYER, LAYER_SCREENS, TASK_BUNDLE
@@ -214,8 +218,12 @@ class SBrainOrchestrator:
         new_id: Callable[[], str] | None = None,
         sleep: Callable[[float], None] = time.sleep,
         allow_pre_stage: bool = True,
+        files: FileStore | None = None,
     ) -> None:
         self.engine = engine
+        # 파일 읽기(read_artifact_file)가 쓰는 저장소 (확장) — 주지 않으면 엔진의 것. 웹 조립은 읽기 전용 저장소이거나
+        # 없음(SBRAIN_ARTIFACT_ROOT 없음 → FILE_STORE_UNAVAILABLE)
+        self.files = files if files is not None else engine.files
         self.flow = flow
         self.store = engine.store
         self.settings = settings
@@ -557,7 +565,8 @@ class SBrainOrchestrator:
         merged = collected + new
         judge = "G-02a" if screen == 6 else "G-02b"
         offered = ctx.get(f"{judge}.reworkOrders", default=[])
-        orders = bundle_orders(merged, offered)
+        # 문서층 묶음은 그 묶음 항목의 종류별 Task만 다시 만든다 — 양식(T-C3 formSpec)과 항목별 재작성 묶음 표로 가른다 (spec 4.11)
+        orders = bundle_orders(merged, offered, ctx.get(FORM_SPEC, default=None))
         dref = self._decide(ctx, {
             "command": "rework", "screen": screen, "action": "재작성", "userAction": "재작성",
             "requested": new, "bundles": merged, "selectedOrders": [o.dump() for o in orders.values()],
@@ -829,6 +838,32 @@ class SBrainOrchestrator:
         return [ProjectView(p, run=self._view(runs[p])) if p in runs else
                 ProjectView(p, start=self._start_status(reqs[p]) if p in reqs else None) for p in ids]
 
+    def missing_projects(self, project_ids: Iterable[int | str]) -> list[int | str]:
+        """넘긴 프로젝트 중 실행 건이 없는 것 (확장) — 웹이 목록에서 실행 건이 없어진 프로젝트를 알아내는 데 쓴다.
+
+        '없음' = 실행 건 줄을 project_id로 찾지 못하고(find_run_by_project와 같은 기준) 끝나지 않은(대기 · 처리중) 시작
+        요청도 없음. 시작한 적 없는 프로젝트, 끝난(실패 · 취소) 요청만 있는 프로젝트도 없음이다. 완전 삭제
+        (delete_project_data)만으로는 실행 건 줄과 project_id가 남아 '있음'이고, 웹이 projects 행을 지워 공유 DB 외래 키가
+        project_id를 비운 뒤부터 '없음'이다. 12개월 처리가 실행 건 줄을 지운 뒤 · 탈퇴(delete_account_data) 뒤에도 '없음'.
+
+        각 값은 정수 또는 숫자 문자열이다 — int()로 한 번 바꾸고, 하나라도 숫자가 아니면 저장소를 읽기 전에 ValueError.
+        같은 정수는 한 프로젝트로 보고(7 · "7" · "07") 처음 나온 값을 받은 그대로(int는 int, 문자열은 문자열) 넘긴 순서로
+        돌려준다. 빈 목록이면 []. 개수 제한은 없다. 잠금 · 점유 없이 읽기만 하고, 주인 확인을 하지 않으며(계정 ID를 받지
+        않는 웹 일괄 함수) 있는지만 알린다. 저장소 오류는 다른 조회처럼 그대로 올라간다.
+        """
+        wanted: dict[int, int | str] = {}
+        for no, value in enumerate(project_ids, 1):
+            try:
+                key = int(value)
+            except (TypeError, ValueError):
+                # 값은 메시지에 싣지 않는다 — 몇 번째 값인지만
+                raise ValueError(f"project_ids의 {no}번째 값이 정수 또는 숫자 문자열이 아님") from None
+            wanted.setdefault(key, value)
+        if not wanted:
+            return []
+        existing = self.store.existing_projects(list(wanted))
+        return [value for key, value in wanted.items() if key not in existing]
+
     def wait_project(self, project_id: int | str, timeout_sec: float = WAIT_TIMEOUT_SEC) -> ProjectView:
         """진행이 멈출 때까지 기다린 뒤 view_project (확장).
 
@@ -862,6 +897,24 @@ class SBrainOrchestrator:
     def rework_result(self, project_id: int | str) -> reads.ReworkResult | None:
         """마지막 재작성 한 건 (확장, flow/reads.py). 재작성한 적 없으면 None. 실패 · 중단 RUN_NOT_VIEWABLE, 없으면 RUN_NOT_FOUND."""
         return reads.rework_result(self, project_id)
+
+    def read_artifact_file(self, project_id: int | str, key: str) -> reads.ArtifactFile:
+        """산출물 파일 하나의 내용 · 형식 (확장, flow/reads.py). 웹이 주인 확인을 한 뒤 부른다.
+
+        실행 건 없으면 RUN_NOT_FOUND, 실패 · 중단이면 RUN_NOT_VIEWABLE, 파일 저장소 설정이 없으면 FILE_STORE_UNAVAILABLE,
+        그 실행 건의 파일이 아니거나 · 키 규칙 위반 · 없음 · 내용이 저장 값과 다르면 FILE_NOT_FOUND. 읽기만 한다(점유 없음)."""
+        return reads.read_artifact_file(self, project_id, key)
+
+    def admin_file_deletions(self, status: str | None = None, limit: int = 50,
+                             offset: int = 0) -> list[reads.AdminFileDeletion]:
+        """관리자 — 파일 삭제 대기열 목록 (확장). 넣은 시각 최근 순, status로 '대기' · '포기'를 거른다."""
+        return reads.admin_file_deletions(self, status=status, limit=limit, offset=offset)
+
+    def admin_retry_file_deletion(self, deletion_id: str, admin_id: str) -> reads.AdminFileDeletion:
+        """관리자 — '포기'한 파일 삭제 대기열 줄을 다시 시도 (확장). 누른 관리자 · 시각을 줄에 남긴다.
+
+        없는 줄이면 FILE_DELETION_NOT_FOUND, '대기' 줄이면 INVALID_STATE. 결과는 바뀐 줄."""
+        return reads.admin_retry_file_deletion(self, deletion_id, admin_id)
 
     def admin_executions(self, **filters: Any) -> list[reads.AdminExecution]:
         """관리자 '에이전트 테스크' — 여러 프로젝트의 실행 기록 (메타데이터만). 조건은 reads.admin_executions."""

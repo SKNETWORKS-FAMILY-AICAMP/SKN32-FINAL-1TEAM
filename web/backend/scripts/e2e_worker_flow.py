@@ -7,7 +7,8 @@
   1. 로컬 MySQL(Docker) + scripts/prepare_local_mysql.py 로 스키마 준비
   2. 워커를 따로 띄운다 — 이 스크립트는 단계를 직접 돌지 않고 워커가 처리하길 기다린다
        cd agent-orchestration
-       $env:SBRAIN_DB_URL = '<같은 URL>'; python -m sbrain.worker      (OPENAI_API_KEY는 agent-orchestration/.env)
+       $env:SBRAIN_DB_URL = '<같은 URL>'; $env:SBRAIN_ARTIFACT_ROOT = '<절대 경로 폴더>'; python -m sbrain.worker
+       (OPENAI_API_KEY는 agent-orchestration/.env. SBRAIN_ARTIFACT_ROOT는 워커 필수이고, 파일 내려받기를 보려면 이 스크립트에도 같은 값을 준다)
   3. 이 스크립트 실행
 
 흐름: 로그인 → 프로젝트 생성 → 공고 후보 → 공고 선택(자격 확인) → 계획서 작성 → 문서 평가 → 프로토타입 → 산출물 확인 →
@@ -23,6 +24,7 @@ import datetime
 import json
 import os
 import sys
+import tempfile
 import time
 
 DEFAULT_URL = 'mysql+pymysql://root:sbrain-test@127.0.0.1:3307/sbrain_e2e?charset=utf8mb4'
@@ -58,6 +60,23 @@ class Abort(Exception):
     """이어갈 수 없는 실패."""
 
 
+STUB_PARTNER_ENV = 'E2E_STUB_PARTNER'
+
+
+def use_stub_partner_agents() -> None:
+    """담당자 실구현 두 묶음 — 전략 · 작성 · 검증-1(T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1)과 구현 · 검증-2(T-B1 · T-B2 · T-V2) — 을 스텁으로
+    둔다. 실구현은 OpenAI(LLM · 이미지)를 많이 불러(전략 · 작성 · 검증-1만 한 건에 약 76번 · 약 8분 30초) 시간 · 비용이 든다. 워커 조립(build_app)이
+    실구현을 끼우는 곳(bind_partner_* · 실제 호출처로 보낼 Task 목록)을 비운다. 조율 T-C1 · T-C3는 그대로 실제 LLM이다(OPENAI_API_KEY 필요,
+    호출 몇 번). 스텁 계획서 · 산출물은 모양만 같고 내용은 자리채움이다."""
+    import sbrain.bootstrap as bootstrap
+
+    bootstrap.bind_partner_sw = lambda registry: None
+    bootstrap.bind_partner_bv = lambda registry: None
+    bootstrap.PARTNER_TASKS = frozenset()
+    bootstrap.BV_TASKS = frozenset()
+    bootstrap.BV_IMAGE_TASKS = frozenset()
+
+
 def configure_env(url_text: str) -> None:
     from sqlalchemy import make_url
 
@@ -70,6 +89,12 @@ def configure_env(url_text: str) -> None:
         'MYSQL_HOST': url.host, 'MYSQL_PORT': str(url.port or 3306), 'MYSQL_DATABASE': database,
         'SBRAIN_DB_URL': url_text, 'GOOGLE_CLIENT_ID': 'e2e-client', 'JWT_SECRET': 'e2e-secret-not-for-production-use',
     })
+    # 파일 저장소(SB-311): 워커 조립(build_app)은 SBRAIN_ARTIFACT_ROOT(절대 경로)가 없으면 시작하지 않는다. 값이 없으면 임시 폴더를 쓴다.
+    # (이 프로세스 안의 워커와 웹이 같은 값을 본다. 따로 띄운 워커와 파일을 주고받으려면 같은 값을 직접 넣는다)
+    if not os.environ.get('SBRAIN_ARTIFACT_ROOT'):
+        os.environ['SBRAIN_ARTIFACT_ROOT'] = tempfile.mkdtemp(prefix='e2e_artifacts_')
+    if os.environ.get(STUB_PARTNER_ENV) == '1':  # 실제 OpenAI 호출(전략 · 작성 · 검증-1) 없이 흐름만 확인할 때 — 모든 E2E 스크립트가 이 함수를 먼저 부른다
+        use_stub_partner_agents()
 
 
 def command_log_lines(project_id: int, command: str) -> list[str]:
@@ -267,6 +292,21 @@ def main() -> int:
             artifacts = (result.get('plan') or {}).get('artifacts') or []
             step('산출물 확인 대기(화면 8)', bool(artifacts),
                  f"산출물 {len(artifacts)}건, 카테고리 {artifacts[0]['category'] if artifacts else None}")
+            # 계획서 응답 모양: 항목 번호 · 웹 태그 · 종류가 따로 오고, 점수 항목의 item_code가 계획서 항목 번호와 맞아 같은 태그가 붙는다
+            plan = result.get('plan') or {}
+            sections = {s['section_code']: s for s in plan.get('sections') or []}
+            reasons = plan.get('score_reasons') or []
+            step('결과: 계획서 항목이 항목 번호 · 태그 · 종류를 따로 줌', bool(sections) and all(
+                {'section_code', 'tag', 'content_type'} <= set(s) for s in sections.values()),
+                f"항목 {len(sections)}개 태그={sorted({str(s['tag']) for s in sections.values()})} 종류={sorted({s['content_type'] for s in sections.values()})}")
+            matched = [r for r in reasons if r.get('item_code') in sections]
+            step('결과: 점수 항목의 item_code가 계획서 항목 번호와 맞고 같은 태그를 줌', bool(reasons) and len(matched) == len(reasons)
+                 and all(r.get('tag') == sections[r['item_code']]['tag'] for r in matched),
+                 f"점수 항목 {len(reasons)}개 중 번호가 맞는 것 {len(matched)}개, 예시 {[(r.get('item_code'), r.get('tag')) for r in reasons[:3]]}")
+            step('결과: 그림 목록(diagrams)이 주소와 함께 오고 받을 수 있음',
+                 all(d.get('image_url', '').startswith(f'/projects/{pid}/artifact-files/') and client.get(d['image_url']).status_code == 200
+                     for d in plan.get('diagrams') or []),
+                 f"그림 {len(plan.get('diagrams') or [])}개 {[d.get('flow_type') for d in plan.get('diagrams') or []]}")
 
             # 7) 종합 평가 (8 → 9)
             res = client.post(f'/projects/{pid}/final-review/start')
@@ -282,6 +322,16 @@ def main() -> int:
             # [SB-301] 계획서 대조 보류 표시 — 스텁 Agent는 대조를 보류하지 않으므로 False로 와야 한다(필드가 실제로 내려오는지 본다)
             step('결과: 계획서 대조 보류 표시(plan_match_withheld)', verdict.get('plan_match_withheld') is False,
                  f"plan_match_withheld={verdict.get('plan_match_withheld')} 대조 점수={verdict.get('plan_match_score')}")
+            # 점수 환산 칸(오케스트레이터 2026-10-11): 층 만점이 그 실행 건 배점(이 시험은 기본 70 · 15 · 15)으로 오고, 코드 점검 줄의 합이 층 점수 · 만점과 같다
+            artifact = ((result.get('plan') or {}).get('artifacts') or [{}])[0]
+            rows = [r for r in artifact.get('score_reasons') or [] if str(r.get('item_code', '')).startswith('CHECK-')]
+            maxima = (verdict.get('doc_max_score'), verdict.get('code_max_score'), verdict.get('plan_match_max_score'))
+            step('결과: 층 만점이 그 실행 건 배점으로 옴(환산 칸)', maxima == (70.0, 15.0, 15.0) and verdict.get('artifact_max_score') == 30.0,
+                 f'doc/code/plan 만점={maxima} 산출물층 만점={verdict.get("artifact_max_score")}')
+            step('결과: 코드 점검 줄의 합이 환산 점수 · 만점과 같음', bool(rows)
+                 and abs(sum(r['score'] for r in rows) - verdict['code_score']) < 1e-6
+                 and abs(sum(r['max_score'] for r in rows) - verdict['code_max_score']) < 1e-6,
+                 f"줄 {len(rows)}개 합={sum(r['score'] for r in rows)}/{sum(r['max_score'] for r in rows)} 층={verdict.get('code_score')}/{verdict.get('code_max_score')}")
 
             # 8) (선택) 재작성
             if args.rework:
@@ -306,6 +356,24 @@ def main() -> int:
                     step('재작성 결과', rr.get('status') in ('완료', '실패'),
                          f"status={rr.get('status')} kept={rr.get('kept')} 점수 {rr.get('before_score')}→{rr.get('after_score')} "
                          f"변경 섹션 {list((rr.get('changed') or {}).get('sections', {}))}")
+                    # 계획서 항목 구조(SB-342): 문제인식 묶음(태그 1-1)을 다시 쓰면 그 태그의 항목만 바뀌고, 항목 구성(번호 · 태그 · 종류)은 그대로다.
+                    before_sections, after_sections = rr.get('plan_before') or [], rr.get('plan_after') or []
+                    structure = lambda secs: [(s['section_code'], s['tag'], s['content_type']) for s in secs]  # noqa: E731
+                    step('재작성 전후 계획서의 항목 구성(번호 · 태그 · 종류)이 같음',
+                         bool(before_sections) and structure(before_sections) == structure(after_sections),
+                         f'전 {len(before_sections)}개 후 {len(after_sections)}개')
+                    changed_sections = (rr.get('changed') or {}).get('sections') or {}
+                    if changed_sections:
+                        step('재작성으로 바뀐 항목은 모두 문제인식 묶음(태그 1-1)이고 태그 · 제목이 붙음',
+                             all(v.get('tag') == '1-1' and v.get('title') for v in changed_sections.values()),
+                             f"바뀐 항목 {len(changed_sections)}개 키={list(changed_sections)[:4]} 태그={sorted({str(v.get('tag')) for v in changed_sections.values()})}")
+                        outside = [b['section_code'] for b, a in zip(before_sections, after_sections, strict=False)
+                                   if b['tag'] != '1-1' and b.get('body') != a.get('body')]
+                        step('재작성이 다른 묶음 · 태그 없는 항목(일반현황 · 개요 · 그림)을 건드리지 않음', not outside, f'바뀐 다른 항목 {outside[:5]}')
+                    else:
+                        # 스텁 작성 Agent는 다시 써도 문장이 같아 바뀐 항목이 없다 — 묶음 범위 · 태그 · 제목은 이 시험으로 볼 수 없다(단위 테스트가 모양을 본다).
+                        # 실제 Agent로 돌릴 때 이 두 확인이 실행된다. 통과로 세지 않는다.
+                        print('[건너뜀] 재작성으로 바뀐 항목이 없어(스텁 Agent는 문장을 안 바꿈) 묶음 범위 · 태그 · 제목 확인을 하지 않았다 — 실제 Agent로 돌릴 때 확인', flush=True)
                     st = j(client.get(f'/projects/{pid}/status'))
                     step('재작성이 끝나면 재작성 표시가 사라짐', st.get('rework_screen') is None and st.get('collecting') is False,
                          f"rework_screen={st.get('rework_screen')} collecting={st.get('collecting')}")
@@ -315,6 +383,7 @@ def main() -> int:
 
             # 9) 표현 검수 (9 → 10)
             before_review = j(client.get(f'/projects/{pid}/result')).get('plan') or {}
+            structure_before_review = [(s['section_code'], s['tag'], s['content_type']) for s in before_review.get('sections', [])]
             before_review_body = chr(10).join(sec.get('body', '') for sec in before_review.get('sections', []))
             res = client.post(f'/projects/{pid}/review/start')
             if res.status_code == 409 and (j(res).get('detail') or {}).get('confirmation_required'):
@@ -329,6 +398,13 @@ def main() -> int:
             plan = result.get('plan') or {}
             step('결과: 검수 · 최종', True,
                  f"형식 지적 {len(plan.get('format_findings', []))}건, 검수 시도 {len(plan.get('proofread_logs', []))}건")
+            # 계획서 항목 구조(SB-342): 표현 검수는 문장만 바꾸므로 항목 구성(번호 · 태그 · 종류)과 그림은 그대로여야 한다
+            structure_after_review = [(s['section_code'], s['tag'], s['content_type']) for s in plan.get('sections', [])]
+            step('결과: 표현 검수 뒤에도 항목 구성(번호 · 태그 · 종류)이 같음', bool(structure_after_review) and structure_after_review == structure_before_review,
+                 f'검수 전 {len(structure_before_review)}개 후 {len(structure_after_review)}개')
+            empty_items = [s['section_code'] for s in plan.get('sections', []) if s['content_type'] == 'image' and (s.get('body') or '').strip()]
+            step('결과: 그림 항목은 검수 뒤에도 문장이 없고 그림 목록은 그대로', not empty_items and len(plan.get('diagrams') or []) == len(before_review.get('diagrams') or []),
+                 f"문장이 생긴 그림 항목 {empty_items} 그림 {len(plan.get('diagrams') or [])}개")
             # [SB-297] 검수 기록의 '검수 전' 원문은 검수 시작 직전 계획서의 문장이어야 한다(검수가 끝나면 계획서 문장은 결과 문장으로 바뀐다)
             logs = plan.get('proofread_logs', [])
             wrong = [log for log in logs if log.get('original_text') and log['original_text'] not in before_review_body]

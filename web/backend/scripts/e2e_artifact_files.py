@@ -1,39 +1,40 @@
-"""샘플 산출물(반찬온)로 산출물 파일 흐름을 실제 서버 · 워커 · MySQL로 끝까지 확인한다 (SB-295).
+"""산출물 파일 흐름을 실제 서버 · 워커 · MySQL로 끝까지 확인한다 (SB-295 · SB-320).
 
     python scripts/e2e_artifact_files.py --url mysql+pymysql://root:sbrain-test@127.0.0.1:3307/sbrain_e2e?charset=utf8mb4
-    python scripts/e2e_artifact_files.py --samples C:\\path\\산출물샘플_반찬온.zip
 
-e2e_failure_resume.py처럼 워커를 이 프로세스 안에서 돌린다(따로 띄운 워커가 있으면 끈다). 스텁 Agent는 파일을 만들지 않으므로
-스텁 T-B1 · T-B2 · M-2를 감싸서 **구현 Agent가 하기로 합의한 대로** 저장 폴더(`ARTIFACT_DIR`, 이 스크립트가 임시 폴더로 잡는다)에
-`<project_id>/<시도 ID>/<파일>`로 샘플 파일을 쓰고 상대 경로를 돌려준다(시도 ID는 호출마다 새 무작위 값).
-샘플: 산출물샘플_반찬온.zip — index.html · 웹개발 SVG(infographic.svg) · 원페이지 SVG(onepage.svg). 파일 이름은 끝 글자로 가린다.
+e2e_failure_resume.py처럼 워커를 이 프로세스 안에서 돌린다(따로 띄운 워커가 있으면 끈다). 산출물 파일은 오케스트레이터의 파일 저장소
+(`SBRAIN_ARTIFACT_ROOT`, 이 스크립트가 임시 폴더로 잡는다 — 웹과 워커가 같은 폴더를 본다)에 있고, 웹은 결과의 파일 참조 key로
+read_artifact_file을 불러 내려 준다(SB-311). 워커의 스텁 구현 Agent는 작은 자리채움 파일(index.html · onepage.svg · infographic.svg(웹개발 · AI API도 SVG — 오케스트레이터 2026-10-11) ·
+README.md · plan.docx)을 만든다 — 이 스크립트는 "웹 ↔ 파일 저장소 배관"을 확인하며 파일 내용의 품질은 보지 않는다.
 조율 T-C1 · T-C3는 평소처럼 실제 LLM이라 OPENAI_API_KEY(agent-orchestration/.env)가 필요하다.
+`E2E_STUB_PARTNER=1`을 주면 전략 · 작성 · 검증-1도 스텁이라 실제 OpenAI는 T-C1 · T-C3 몇 번만 부른다(e2e_worker_flow.use_stub_partner_agents).
 
 차례대로:
-  1. 웹개발     프로젝트 → 화면 8. 결과의 두 경로가 웹 주소로 바뀌어 있고(SB-293) 받으면 샘플과 바이트가 같다(SB-292) · 헤더
-  2. 접근 제한  비로그인 401 · 다른 계정 404 · 관리자 404 · 이름 · 경로 이동 시도 404
-  3. 재작성     실행 파일 재작성 → 새 시도 폴더 · 재작성 결과의 전후 주소가 주소로 바뀜 · 이전 시도 파일도 계속 받을 수 있음
-  4. 영구 삭제  프로젝트 폴더가 지워지고 주소가 404 (SB-294)
-  5. 원페이지   두 경로가 같은 onepage.svg — 인포그래픽 주소만 보이고 실행 경로는 없음 · 샘플과 바이트가 같음
-  6. 탈퇴       계정의 모든 프로젝트 폴더가 지워짐 · 고아 청소는 프로젝트 행이 없는 숫자 폴더만 지움
+  1. 웹개발     프로젝트 → 화면 8. 결과의 두 경로가 key 기반 웹 주소이고 받으면 저장소 파일과 바이트가 같다 · 헤더
+  2. 접근 제한  비로그인 401 · 다른 계정 404 · 관리자 404 · 바꾼 key · 경로 이동 시도 404
+  3. 재작성     실행 파일 재작성 → 전후 주소가 서로 다름 · 이전 파일도 계속 받을 수 있음
+  4. 묶음 zip   표현 검수까지 마친 뒤 결과물 zip: 프로토타입 · 인포그래픽 파일과, 계획서(planDoc)로 웹이 만든 진짜 .docx(SB-341), 계획서 그림의 원본 SVG와 docx 안의 그림(SB-340)이 들어 있음
+  5. 영구 삭제  삭제 대기열에 줄이 생기고(관리자 목록) 주소가 404 · 워커가 처리하면 파일이 지워짐
+  6. 원페이지   두 참조가 같은 onepage.svg — 인포그래픽 주소만 보이고 실행 경로는 없음
+  7. 탈퇴       탈퇴 뒤 주소가 404 · 삭제 대기열에 줄이 더 생김
 """
 import argparse
+import io
 import json
 import os
-import re
 import shutil
 import sys
 import tempfile
 import threading
 import time
-import uuid
 import zipfile
 from pathlib import Path
+
+from docx import Document
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_worker_flow import DEFAULT_URL, FULL_INPUT, PROFILE, configure_env  # noqa: E402
 
-DEFAULT_SAMPLES = r'C:\Users\hjwon\Downloads\산출물샘플_반찬온.zip'
 results: list[tuple[str, bool, str]] = []
 if hasattr(sys.stdout, 'reconfigure'):  # 콘솔 인코딩(cp949 등)에 없는 문자(— 등)가 있어도 출력이 죽지 않게
     sys.stdout.reconfigure(errors='replace')
@@ -49,52 +50,31 @@ class Abort(Exception):
     """이어갈 수 없는 실패."""
 
 
-def load_samples(path: str) -> dict[str, bytes]:
-    """zip(또는 폴더)에서 세 샘플을 읽는다. 이름이 index.html · 웹개발.svg · 원페이지.svg로 끝나는 파일."""
-    wanted = {'index.html': 'index.html', '웹개발.svg': 'infographic.svg', '원페이지.svg': 'onepage.svg'}
-    found: dict[str, bytes] = {}
-    if os.path.isdir(path):
-        entries = [(p.name, p.read_bytes()) for p in Path(path).iterdir() if p.is_file()]
-    else:
-        with zipfile.ZipFile(path) as z:
-            entries = [(i.filename, z.read(i)) for i in z.infolist() if not i.is_dir()]
-    for name, data in entries:
-        for suffix, target in wanted.items():
-            if name.endswith(suffix):
-                found[target] = data
-    missing = set(wanted.values()) - set(found)
-    if missing:
-        raise SystemExit(f'샘플에서 {sorted(missing)} 를 찾지 못했습니다: {path}')
-    return found
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--url', default=DEFAULT_URL)
-    parser.add_argument('--samples', default=DEFAULT_SAMPLES, help='샘플 zip 또는 폴더')
     parser.add_argument('--wait-sec', type=float, default=240, help='상태가 바뀌길 기다리는 최대 시간(초, 기본 240)')
     args = parser.parse_args()
 
-    samples = load_samples(args.samples)
     configure_env(args.url)
     artifact_dir = tempfile.mkdtemp(prefix='e2e_artifacts_')
-    os.environ['ARTIFACT_DIR'] = artifact_dir  # 앱을 가져오기 전에 — artifact_store가 읽는다
+    os.environ['SBRAIN_ARTIFACT_ROOT'] = artifact_dir  # 웹 조립과 워커 조립이 모두 읽는다 — 앱을 가져오기 전에 잡는다
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    print(f'저장 폴더(임시): {artifact_dir}', flush=True)
+    print(f'파일 저장소(임시): {artifact_dir}', flush=True)
 
     from fastapi.testclient import TestClient
     from sbrain.bootstrap import build_app
+    from sbrain.orchestrator.file_deletion import process_file_deletions
     from sbrain.worker import Worker, WorkerConfig
 
     import app.routers.auth as auth_router
     import app.routers.projects as projects
     import app.security as security
-    from app import artifact_store
     from app.database import SessionLocal
     from app.main import app
-    from app.models import Project, User
+    from app.models import User
+    from app.orch import get_gateway
 
-    assert os.path.realpath(artifact_store.ARTIFACT_DIR) == os.path.realpath(artifact_dir), '저장 폴더가 바뀌지 않았다'
     projects.ORCH_WAIT_TIMEOUT_SEC = 5.0
     root = Path(artifact_dir)
 
@@ -103,45 +83,18 @@ def main() -> int:
     worker_thread = threading.Thread(target=worker.run, name='e2e-worker', daemon=True)
     worker_thread.start()
 
-    # ── 스텁 Agent를 감싸 구현 Agent처럼 파일을 쓴다 ─────────────────────────────────────
-    state = {'pid': None, 'category': None, 'written': []}
+    category = {'value': None}
+    spec = worker_app.registry.get('T-C1')
+    original_tc1 = spec.fn
 
-    def write_artifact(filename: str) -> str:
-        attempt = uuid.uuid4().hex
-        folder = root / str(state['pid']) / attempt
-        folder.mkdir(parents=True)
-        (folder / filename).write_bytes(samples[filename])
-        state['written'].append((state['pid'], attempt, filename))
-        return f"{state['pid']}/{attempt}/{filename}"
-
-    def wrap(task_id: str, after):
-        spec = worker_app.registry.get(task_id)
-        original = spec.fn
-        spec.fn = lambda *a, **kw: after(original(*a, **kw), *a)
-
-    def after_tc1(out, *_):
-        if not state['category']:
+    def forced_tc1(*a, **kw):  # 시험이 카테고리를 고르도록 조율 T-C1의 결과 카테고리만 바꾼다(LLM 호출은 그대로)
+        out = original_tc1(*a, **kw)
+        if not category['value']:
             return out
-        return out.model_copy(update={'category': state['category'],
-                                      'item_spec': out.item_spec.model_copy(update={'category': state['category']})})
+        return out.model_copy(update={'category': category['value'],
+                                      'item_spec': out.item_spec.model_copy(update={'category': category['value']})})
 
-    def after_tb1(out, *_):
-        path = write_artifact('index.html')
-        return out.model_copy(update={'entry_file_path': path,
-                                      'prototype': out.prototype.model_copy(update={'entry_file_path': path})})
-
-    def after_tb2(out, inp, *_):
-        path = write_artifact('onepage.svg' if inp.category == '원페이지' else 'infographic.svg')
-        return out.model_copy(update={'infographic': out.infographic.model_copy(update={'image_path': path, 'format': 'svg'})})
-
-    def after_m2(out, inp, *_):  # 원페이지는 인포그래픽과 프로토타입이 같은 onepage.svg
-        path = inp.infographic.image_path
-        return out.model_copy(update={'prototype': out.prototype.model_copy(update={'entry_file_path': path, 'asset_paths': [path]})})
-
-    wrap('T-C1', after_tc1)
-    wrap('T-B1', after_tb1)
-    wrap('T-B2', after_tb2)
-    wrap('M-2', after_m2)
+    spec.fn = forced_tc1
 
     def j(res):
         try:
@@ -175,14 +128,13 @@ def main() -> int:
 
     try:
         with TestClient(app) as owner:
-            def drive_to_artifact_review(category: str | None) -> int:
+            def drive_to_artifact_review(cat: str | None) -> int:
                 """프로젝트 생성 → 공고 선택 → 계획서 → 프로토타입 → 화면 8(산출물 확인) 대기."""
-                state['category'] = category
+                category['value'] = cat
                 res = owner.post('/projects', data={'payload': json.dumps(FULL_INPUT)})
                 if res.status_code != 201:
                     raise Abort(f'프로젝트 생성 실패 {res.status_code} {j(res)}')
                 pid = j(res)['project_id']
-                state['pid'] = pid
                 cands = wait_for('공고 후보', lambda: (lambda b: b if b.get('status') != 'pending' else None)(
                     j(owner.get(f'/projects/{pid}/match-candidates'))))
                 if cands.get('status') != 'ready' or not cands.get('candidates'):
@@ -197,6 +149,7 @@ def main() -> int:
                         break
                 else:
                     raise Abort('자격을 통과한 공고를 고르지 못함')
+
                 def reach(label: str, stage: str) -> None:
                     def cond():
                         body = j(owner.get(f'/projects/{pid}/status'))
@@ -215,40 +168,49 @@ def main() -> int:
                 arts = (j(owner.get(f'/projects/{pid}/result')).get('plan') or {}).get('artifacts') or []
                 return arts[0] if arts else {}
 
-            def url_pattern(pid: int, filename: str) -> re.Pattern:
-                return re.compile(rf'^/projects/{pid}/artifact-files/[0-9a-f]{{32}}/{re.escape(filename)}$')
+            def key_of(pid: int, url: str | None) -> str:
+                """결과의 파일 주소에서 key(저장소 안 위치)를 읽는다 — 이 스크립트만 저장소 파일과 비교하려고 쓴다. 웹은 key를 풀지 않는다."""
+                prefix = f'/projects/{pid}/artifact-files/'
+                return url[len(prefix):] if url and url.startswith(prefix) else ''
+
+            def deletions(admin_client: TestClient) -> list[dict]:
+                return j(admin_client.get('/admin/file-deletions?limit=200'))
 
             try:
                 sign_in(owner, 'owner@example.com')
                 step('로그인 · 프로필', True)
+                admin = TestClient(app)
+                sign_in(admin, 'admin@example.com', with_profile=False)
+                with SessionLocal() as db:
+                    db.query(User).filter(User.email == 'admin@example.com').update({'role': 'admin'})
+                    db.commit()
 
-                # 1) 웹개발 — 결과의 경로와 내려받기
+                # 1) 웹개발 — 결과의 주소와 내려받기
                 pid = drive_to_artifact_review('웹개발')
                 art = artifact_of(pid)
                 step('1. 화면 8: 웹개발 산출물', art.get('category') == 'webdev', f"category={art.get('category')}")
                 exec_url, info_url = art.get('executable_path'), art.get('infographic_path')
-                step('1. 결과의 두 경로가 웹 주소(SB-293)',
-                     bool(url_pattern(pid, 'index.html').match(exec_url or '')) and bool(url_pattern(pid, 'infographic.svg').match(info_url or '')),
-                     f'실행={exec_url} 인포그래픽={info_url}')
-                step('1. 파일이 합의된 구조로 저장됨(project_id/시도 ID/파일)',
-                     sorted(p.name for p in root.glob(f'{pid}/*/*')) == ['index.html', 'infographic.svg'],
-                     str(sorted(str(p.relative_to(root)) for p in root.glob(f'{pid}/*/*'))))
+                exec_key, info_key = key_of(pid, exec_url), key_of(pid, info_url)
+                step('1. 결과의 두 경로가 key 기반 웹 주소(SB-314)',
+                     exec_key.endswith('/index.html') and info_key.endswith('/infographic.svg'), f'실행={exec_url} 인포그래픽={info_url}')
 
                 html = owner.get(exec_url)
-                step('1. index.html 내려받기 — 샘플과 바이트가 같음',
-                     html.status_code == 200 and html.content == samples['index.html'],
-                     f"{html.status_code} {len(html.content)}바이트(샘플 {len(samples['index.html'])})")
+                stored = (root / exec_key)
+                step('1. index.html 내려받기 — 저장소 파일과 바이트가 같음',
+                     html.status_code == 200 and stored.is_file() and html.content == stored.read_bytes() and len(html.content) > 0,
+                     f"{html.status_code} {len(html.content)}바이트 저장소 파일 있음={stored.is_file()}")
+                csp = html.headers.get('content-security-policy', '')
                 step('1. index.html 헤더(타입 · nosniff · no-store · 샌드박스 CSP)',
-                     html.headers.get('content-type') == 'text/html; charset=utf-8'
+                     html.headers.get('content-type', '').startswith('text/html')
                      and html.headers.get('x-content-type-options') == 'nosniff'
                      and html.headers.get('cache-control') == 'private, no-store'
-                     and 'sandbox allow-scripts' in html.headers.get('content-security-policy', '')
-                     and 'allow-same-origin' not in html.headers.get('content-security-policy', ''),
-                     f"{html.headers.get('content-type')} / {html.headers.get('content-security-policy', '')[:60]}")
-                svg = owner.get(info_url)
-                step('1. 웹개발 SVG 내려받기 — 샘플과 바이트가 같음(2.4MB대)',
-                     svg.status_code == 200 and svg.content == samples['infographic.svg'] and svg.headers.get('content-type') == 'image/svg+xml',
-                     f"{svg.status_code} {len(svg.content)}바이트(샘플 {len(samples['infographic.svg'])}) {svg.headers.get('content-type')}")
+                     and 'sandbox allow-scripts' in csp and 'allow-same-origin' not in csp,
+                     f"{html.headers.get('content-type')} / {csp[:60]}")
+                img = owner.get(info_url)
+                step('1. 인포그래픽 내려받기 — 저장소 파일과 바이트가 같고 형식은 오케스트레이터가 기록한 값',
+                     img.status_code == 200 and img.headers.get('content-type') == 'image/svg+xml'
+                     and (root / info_key).is_file() and img.content == (root / info_key).read_bytes(),
+                     f"{img.status_code} {img.headers.get('content-type')} {len(img.content)}바이트")
 
                 # 2) 접근 제한
                 anon = TestClient(app)
@@ -257,24 +219,20 @@ def main() -> int:
                 other = TestClient(app)
                 sign_in(other, 'other@example.com', with_profile=False)
                 res = other.get(exec_url)
-                step('2. 다른 계정은 404(파일이 있는지 알 수 없음)', res.status_code == 404, f'{res.status_code} {j(res).get("detail")}')
-                admin = TestClient(app)
-                sign_in(admin, 'admin@example.com', with_profile=False)
-                with SessionLocal() as db:
-                    db.query(User).filter(User.email == 'admin@example.com').update({'role': 'admin'})
-                    db.commit()
+                step('2. 다른 계정은 404(파일이 있는지 알 수 없음)', res.status_code == 404, f'{res.status_code} {j(res).get("code")}')
                 res = admin.get(exec_url)
                 step('2. 관리자도 404(기획서 6-7: 산출물 내용은 소유자만)', res.status_code == 404, f'{res.status_code}')
-                attempt = exec_url.split('/')[4]
-                bad = [f'/projects/{pid}/artifact-files/{attempt}/secret.txt',
-                       f'/projects/{pid}/artifact-files/{attempt}/index.HTML',
-                       f'/projects/{pid}/artifact-files/{attempt}/..%2f..%2f..%2fapp%2fmain.py',
-                       f'/projects/{pid}/artifact-files/..%2f{pid}%2f{attempt}/index.html',
-                       f'/projects/{pid}/artifact-files/{"0" * 32}/index.html']
+                run_id, execution_id, unique, name = exec_key.split('/')
+                bad = [f'/projects/{pid}/artifact-files/{run_id}/{"0" * 12}/{unique}/{name}',
+                       f'/projects/{pid}/artifact-files/{run_id}/{execution_id}/{unique}/secret.txt',
+                       f'/projects/{pid}/artifact-files/{run_id}/{execution_id}/{unique}/..%2f..%2f..%2fapp%2fmain.py',
+                       f'/projects/{pid}/artifact-files/..%2f{run_id}/{execution_id}/{unique}/{name}',
+                       f'/projects/{pid}/artifact-files/{run_id}/{execution_id}/{unique}']
                 codes = [owner.get(u).status_code for u in bad]
-                step('2. 허용 이름이 아니거나 경로를 벗어나는 요청은 404', all(c == 404 for c in codes), f'{codes}')
+                step('2. 없는 key · 경로를 벗어나는 요청은 404', all(c == 404 for c in codes), f'{codes}')
+                step('2. 다른 프로젝트 번호로 같은 key를 요청해도 404', owner.get(f'/projects/{pid + 9999}/artifact-files/{exec_key}').status_code == 404)
 
-                # 3) 실행 파일 재작성 → 새 시도 폴더
+                # 3) 실행 파일 재작성 → 새 파일
                 res = owner.post(f'/projects/{pid}/retry-task', json={'task_key': 'implement_prototype'})
                 acc = j(res)
                 step('3. 실행 파일 재작성 요청', res.status_code == 200, f"{res.status_code} cycle={acc.get('cycle_id')} screen={acc.get('screen')} {acc.get('detail') or ''}")
@@ -282,71 +240,97 @@ def main() -> int:
                     rr = wait_for('재작성', lambda: (lambda b: b if b.get('status') in ('완료', '실패') else None)(
                         j(owner.get(f'/projects/{pid}/rework-result'))), interval=1.0)
                     step('3. 재작성 완료', rr.get('status') == '완료', f"status={rr.get('status')} kept={rr.get('kept')}")
-                    files = rr.get('files') or []
-                    proto = next((f for f in files if f.get('artifact') == 'prototype'), {})
+                    proto = next((f for f in (rr.get('files') or []) if f.get('artifact') == 'prototype'), {})
                     before, after = proto.get('before_path') or '', proto.get('after_path') or ''
-                    pattern = url_pattern(pid, 'index.html')
-                    step('3. 재작성 결과의 전후 경로가 주소이고 시도 폴더가 서로 다름(SB-293)',
-                         bool(pattern.match(before)) and bool(pattern.match(after)) and before != after,
-                         f'전={before} 후={after}')
+                    step('3. 재작성 결과의 전후 경로가 서로 다른 key 기반 주소',
+                         key_of(pid, before).endswith('/index.html') and key_of(pid, after).endswith('/index.html') and before != after,
+                         f'전={before[-48:]} 후={after[-48:]}')
                     step('3. changed.executable_path도 같은 주소',
                          (rr.get('changed') or {}).get('executable_path') == {'before': before, 'after': after})
                     old_res, new_res = owner.get(before), owner.get(after)
-                    step('3. 이전 시도 · 새 시도 파일을 둘 다 받을 수 있음(이전 파일은 남는다)',
-                         old_res.status_code == 200 and new_res.status_code == 200
-                         and old_res.content == new_res.content == samples['index.html'],
-                         f'{old_res.status_code} / {new_res.status_code}')
-                    now_art = artifact_of(pid)
+                    step('3. 이전 · 새 파일을 둘 다 받을 수 있음(이전 파일은 남는다)',
+                         old_res.status_code == 200 and new_res.status_code == 200, f'{old_res.status_code} / {new_res.status_code}')
                     step('3. 결과의 실행 경로는 유지된 쪽(kept)을 가리킴',
-                         now_art.get('executable_path') == (after if rr.get('kept') == '후' else before),
-                         f"kept={rr.get('kept')} 결과 실행 경로={now_art.get('executable_path')}")
-                    step('3. 시도 폴더가 늘어남(첫 시도 + 재작성)', len(list((root / str(pid)).iterdir())) >= 3,
-                         f"{sorted(p.name[:8] for p in (root / str(pid)).iterdir())}")
+                         artifact_of(pid).get('executable_path') == (after if rr.get('kept') == '후' else before),
+                         f"kept={rr.get('kept')}")
 
-                # 4) 영구 삭제 → 폴더 삭제
-                folder = root / str(pid)
-                step('4. 삭제 전: 프로젝트 폴더가 있음', folder.is_dir())
+                # 4) 종합 평가 · 표현 검수를 마친 뒤 결과물 zip
+                res = owner.post(f'/projects/{pid}/final-review/start')
+                step('4. 종합 평가로 진행(8→9)', res.status_code == 200, f'{res.status_code}')
+                res = owner.post(f'/projects/{pid}/review/start')
+                if res.status_code == 409 and (j(res).get('detail') or {}).get('confirmation_required'):
+                    res = owner.post(f'/projects/{pid}/review/start', json={'confirmed': True})
+                step('4. 표현 검수 시작', res.status_code == 200, f'{res.status_code}')
+                wait_for('표현 검수', lambda: (lambda b: b.get('stage') == 'done' and b.get('match_status') == 'completed')(
+                    j(owner.get(f'/projects/{pid}/status'))))
+                res = owner.get(f'/projects/{pid}/deliverable.zip')
+                names = []
+                try:
+                    archive = zipfile.ZipFile(io.BytesIO(res.content))
+                    names = archive.namelist()
+                    intact = archive.testzip() is None
+                    # 계획서는 파일 참조(스텁은 자리채움 파일)가 아니라 planDoc으로 웹이 만든 진짜 .docx다(SB-341)
+                    plan_bytes = archive.read('plan/business-plan.docx') if 'plan/business-plan.docx' in names else b''
+                    docx_ok = plan_bytes[:2] == b'PK' and len(Document(io.BytesIO(plan_bytes)).paragraphs) > 0
+                    diagram_svgs = sorted(n for n in names if n.startswith('plan/diagrams/'))
+                    diagram_pictures = len(Document(io.BytesIO(plan_bytes)).inline_shapes) if plan_bytes else 0
+                except zipfile.BadZipFile:
+                    intact = docx_ok = False
+                    diagram_svgs, diagram_pictures = [], 0
+                step('4. 결과물 zip 내려받기(SB-316)', res.status_code == 200 and res.headers.get('content-type') == 'application/zip' and intact,
+                     f"{res.status_code} 파일 {names}")
+                step('4. zip에 계획서 · 프로토타입 · 인포그래픽이 들어 있음',
+                     'plan/business-plan.docx' in names and 'plan/plan.docx' not in names and 'prototype/index.html' in names
+                     and 'infographic/infographic.svg' in names and docx_ok,
+                     f'business-plan.docx가 열리는 진짜 docx={docx_ok} 파일={sorted(names)}')
+                # 계획서 그림(SB-340): 계획서(planDoc)의 그림 SVG 원본이 plan/diagrams/에 들고, docx 안에 같은 수의 그림(PNG)이 들어 있다.
+                # 결과물의 인포그래픽(기준 문서 T-C4)도 docx에 그림으로 들어가지만 원본은 infographic/에만 있다 — 그래서 docx 그림 = 계획서 그림 + 인포그래픽 1
+                step('4. 계획서 그림 · 인포그래픽 — 원본 SVG가 plan/diagrams/ · infographic/에 있고 docx 안에 그만큼 그림이 있음',
+                     len(diagram_svgs) >= 1 and diagram_pictures == len(diagram_svgs) + 1,
+                     f'SVG={diagram_svgs} + infographic 1 docx 그림={diagram_pictures}')
+                step('4. 비로그인 · 다른 계정은 zip도 받지 못함',
+                     anon.get(f'/projects/{pid}/deliverable.zip').status_code == 401
+                     and other.get(f'/projects/{pid}/deliverable.zip').status_code == 404)
+
+                # 5) 영구 삭제 → 삭제 대기열 → 워커가 지움
+                get_gateway()._orch.store.file_deletion_delay_sec = 0  # 웹 조립의 대기열 지연(10분)을 이 시험에서만 없앤다
+                queued_before = len(deletions(admin))
+                step('5. 삭제 전: 대기열이 비어 있음', queued_before == 0, f'{queued_before}줄')
                 res = owner.delete(f'/projects/{pid}/permanent')
-                step('4. 영구 삭제 204', res.status_code == 204, f'{res.status_code} {j(res) if res.status_code != 204 else ""}')
-                step('4. 프로젝트 폴더가 지워짐(SB-294)', not folder.exists(), f'남은 항목 {list(folder.rglob("*")) if folder.exists() else "없음"}')
-                res = owner.get(exec_url)
-                step('4. 지운 뒤 주소는 404', res.status_code == 404, f'{res.status_code}')
+                step('5. 영구 삭제 204', res.status_code == 204, f'{res.status_code} {j(res) if res.status_code != 204 else ""}')
+                rows = deletions(admin)
+                step('5. 관리자 대기열에 줄이 생김(상태 대기, 이름 · 키는 없음)',
+                     len(rows) >= 1 and all(r['status'] == '대기' for r in rows)
+                     and all(not ({'key', 'key_prefix', 'name'} & set(r)) for r in rows), f'{len(rows)}줄 {[r["status"] for r in rows]}')
+                step('5. 지운 뒤 주소는 404', owner.get(exec_url).status_code == 404)
+                summary = process_file_deletions(worker_app.store, worker_app.engine.files)
+                step('5. 워커가 대기열을 처리하면 저장소의 그 실행 건 파일이 지워짐',
+                     not (root / run_id).exists() and not deletions(admin),
+                     f'처리 결과={summary} 남은 폴더={sorted(p.name for p in root.iterdir())} 남은 줄={len(deletions(admin))}')
 
-                # 5) 원페이지 — 두 경로가 같은 onepage.svg
+                # 6) 원페이지 — 두 참조가 같은 onepage.svg
                 pid2 = drive_to_artifact_review('원페이지')
                 art2 = artifact_of(pid2)
                 one_url = art2.get('infographic_path')
-                step('5. 화면 8: 원페이지 산출물', art2.get('category') == 'onepage', f"category={art2.get('category')}")
-                step('5. 인포그래픽 경로가 onepage.svg 주소이고 실행 경로는 없음',
-                     bool(url_pattern(pid2, 'onepage.svg').match(one_url or '')) and art2.get('executable_path') is None,
+                one_key = key_of(pid2, one_url)
+                step('6. 화면 8: 원페이지 산출물', art2.get('category') == 'onepage', f"category={art2.get('category')}")
+                step('6. 인포그래픽 경로가 onepage.svg 주소이고 실행 경로는 없음',
+                     one_key.endswith('/onepage.svg') and art2.get('executable_path') is None,
                      f"인포그래픽={one_url} 실행={art2.get('executable_path')}")
-                step('5. 저장된 파일은 onepage.svg 하나', sorted(p.name for p in root.glob(f'{pid2}/*/*')) == ['onepage.svg'],
-                     str(sorted(str(p.relative_to(root)) for p in root.glob(f'{pid2}/*/*'))))
                 one = owner.get(one_url)
-                step('5. onepage.svg 내려받기 — 샘플과 바이트가 같음',
-                     one.status_code == 200 and one.content == samples['onepage.svg'] and one.headers.get('content-type') == 'image/svg+xml',
-                     f"{one.status_code} {len(one.content)}바이트(샘플 {len(samples['onepage.svg'])})")
+                step('6. onepage.svg 내려받기 — 저장소 파일과 바이트가 같음',
+                     one.status_code == 200 and one.headers.get('content-type') == 'image/svg+xml'
+                     and (root / one_key).is_file() and one.content == (root / one_key).read_bytes(),
+                     f"{one.status_code} {one.headers.get('content-type')} {len(one.content)}바이트")
 
-                # 6) 탈퇴 + 고아 청소
-                orphan = root / '987654' / ('c' * 32)
-                orphan.mkdir(parents=True)
-                (orphan / 'index.html').write_text('<html/>', encoding='utf-8')
-                keep_other_name = root / 'notes'
-                keep_other_name.mkdir()
-                old = time.time() - 7200
-                for p in (root / '987654', orphan, orphan / 'index.html'):
-                    os.utime(p, (old, old))
-                folder2 = root / str(pid2)
+                # 7) 탈퇴
                 res = owner.delete('/auth/me')
-                step('6. 탈퇴 204', res.status_code == 204, f'{res.status_code} {j(res) if res.status_code != 204 else ""}')
-                step('6. 탈퇴한 계정의 프로젝트 폴더가 지워짐(SB-294)', not folder2.exists())
-                with SessionLocal() as db:
-                    live = {pid_ for (pid_,) in db.query(Project.project_id)}
-                swept = artifact_store.sweep_orphans(live)
-                step('6. 고아 청소: 행이 없는 숫자 폴더만 지움', swept == [987654] and not (root / '987654').exists()
-                     and keep_other_name.is_dir(), f'지운 번호={swept}, notes 폴더 남음={keep_other_name.is_dir()}')
-                left = sorted(p.name for p in root.iterdir())
-                step('6. 마지막에 저장 폴더에는 우리 것이 남지 않음', left == ['notes'], f'{left}')
+                step('7. 탈퇴 204', res.status_code == 204, f'{res.status_code} {j(res) if res.status_code != 204 else ""}')
+                rows = deletions(admin)
+                step('7. 탈퇴 뒤 삭제 대기열에 줄이 생김', len(rows) >= 1, f'{len(rows)}줄')
+                process_file_deletions(worker_app.store, worker_app.engine.files)
+                left = [p.name for p in root.iterdir()]
+                step('7. 워커가 처리하면 저장소에 우리 파일이 남지 않음', not left and not deletions(admin), f'남은 항목={left}')
             except Abort as exc:
                 step('중단', False, str(exc))
             except Exception as exc:  # noqa: BLE001 - 점검 도구라 어떤 오류든 기록한다
@@ -362,4 +346,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    raise SystemExit(main())

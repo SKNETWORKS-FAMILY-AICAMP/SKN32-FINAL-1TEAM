@@ -1,74 +1,37 @@
-"""산출물 경로 → 웹 주소 변환 (SB-293).
+"""산출물 파일 참조(FileRef) → 웹 주소 변환 (SB-293 · SB-314).
 
-오케스트레이터는 저장 폴더 기준 상대 경로 `<project_id>/<시도 ID>/<파일>`을 주고, 웹은 `/projects/{id}/artifact-files/{시도 ID}/{파일}`로 바꿔 준다.
+오케스트레이터는 결과에 파일 참조(`key` 포함)만 싣고, 웹은 `/projects/{id}/artifact-files/{key}`로 바꿔 준다. key의 뜻은 풀지 않는다.
 
 실행:
     pytest tests/test_artifact_urls.py -v
 """
 import json
-import os
 from datetime import UTC, datetime
 from types import SimpleNamespace as NS
 
-import pytest
 from orch_fakes import make_outputs, make_plan_doc, make_score_view
 
-from app import artifact_store
-from app.artifact_store import artifact_url
+from app.orch.mapping import file_url
 
-ATTEMPT = '3f2a9c4d5e6f7a8b9c0d1e2f3a4b5c6d'
-
-
-@pytest.fixture()
-def store(tmp_path, monkeypatch):
-    monkeypatch.setattr(artifact_store, 'ARTIFACT_DIR', str(tmp_path))
-    return tmp_path
+RUN, EXEC1, EXEC2, UNIQ = 'r' * 12, 'e' * 12, 'f' * 12, 'u' * 8
 
 
-def _url(pid, filename, attempt=ATTEMPT):
-    return f'/projects/{pid}/artifact-files/{attempt}/{filename}'
+def _ref(name: str, execution: str = EXEC1):
+    """오케스트레이터가 짓는 key 모양(<runId>/<executionId>/<고유값>/<name>)의 가짜 파일 참조."""
+    return NS(key=f'{RUN}/{execution}/{UNIQ}/{name}', name=name)
+
+
+def _url(pid, name, execution=EXEC1):
+    return f'/projects/{pid}/artifact-files/{RUN}/{execution}/{UNIQ}/{name}'
 
 
 # ── 변환 규칙 ─────────────────────────────────────────────────────────────────────────
-@pytest.mark.parametrize('filename', ['index.html', 'infographic.svg', 'onepage.svg'])
-def test_relative_path_becomes_download_url(store, filename):
-    assert artifact_url(7, f'7/{ATTEMPT}/{filename}') == _url(7, filename)
+def test_reference_becomes_download_url():
+    assert file_url(7, _ref('index.html')) == _url(7, 'index.html')
 
 
-def test_windows_separators_and_dot_prefix_are_accepted(store):
-    assert artifact_url(7, f'.\\7\\{ATTEMPT}\\index.html') == _url(7, 'index.html')
-    assert artifact_url(7, f'./7/{ATTEMPT}/index.html') == _url(7, 'index.html')
-
-
-def test_absolute_path_inside_the_artifact_folder_becomes_url(store):
-    """조율이 저장 폴더를 넘기기 전에 구현 Agent가 공유 폴더 안에 절대 경로로 쓰는 경우."""
-    absolute = os.path.join(str(store), '7', ATTEMPT, 'infographic.svg')
-    assert artifact_url(7, absolute) == _url(7, 'infographic.svg')
-
-
-@pytest.mark.parametrize('path', [
-    None, '',                                                  # 비어 있으면 그대로
-    '/uploads/p/index.html', '/u/a.html',                      # 옛 값
-    'C:/somewhere/else/7/' + ATTEMPT + '/index.html',          # 저장 폴더 밖 절대 경로
-    f'8/{ATTEMPT}/index.html',                                 # 다른 프로젝트 번호
-    f'7/{ATTEMPT}/secret.txt',                                 # 허용 이름이 아님
-    f'7/{ATTEMPT}/index.HTML',
-    f'7/../{ATTEMPT}/index.html',                              # 상위 폴더
-    f'7/{ATTEMPT}/../index.html',
-    '7/a b/index.html',                                        # 시도 ID 모양이 아님
-    f'7/{ATTEMPT}/sub/index.html',                             # 단계가 많음
-    f'{ATTEMPT}/index.html',                                   # 단계가 적음
-    'index.html',
-    f'https://cdn.example.com/7/{ATTEMPT}/index.html',         # 이미 주소
-    _url(7, 'index.html'),
-])
-def test_other_shapes_are_returned_unchanged(store, path):
-    assert artifact_url(7, path) == path
-
-
-def test_absolute_path_cannot_climb_out_of_the_folder(store):
-    escaping = os.path.join(str(store), '7', '..', '..', '7', ATTEMPT, 'index.html')
-    assert artifact_url(7, escaping) == escaping
+def test_missing_reference_has_no_url():
+    assert file_url(7, None) is None
 
 
 # ── GET /result · GET /rework-result 응답에 적용 ──────────────────────────────────────
@@ -78,7 +41,7 @@ def _create(client) -> int:
     return r.json()['project_id']
 
 
-def _outputs(pid, category, prototype, infographic):
+def _outputs(category, prototype, infographic):
     report = make_score_view(total=82.0, threshold=80.0, passed=True)
     return make_outputs(
         step='결과물', progress='완료', category=category, plan_doc=make_plan_doc(),
@@ -86,10 +49,10 @@ def _outputs(pid, category, prototype, infographic):
         overall_score_report=report, prototype=prototype, infographic=infographic)
 
 
-def test_webdev_result_paths_are_urls(authed_client, orch):
+def test_webdev_result_references_are_urls(authed_client, orch):
     pid = _create(authed_client)
     orch.responses['outputs'] = lambda p: _outputs(
-        pid, '웹개발', NS(entry_file_path=f'{pid}/{ATTEMPT}/index.html'), NS(image_path=f'{pid}/{ATTEMPT}/infographic.svg'))
+        '웹개발', NS(entry_file=_ref('index.html')), NS(image_file=_ref('infographic.svg')))
 
     artifact = authed_client.get(f'/projects/{pid}/result').json()['plan']['artifacts'][0]
 
@@ -98,10 +61,10 @@ def test_webdev_result_paths_are_urls(authed_client, orch):
 
 
 def test_onepage_result_shows_the_svg_as_infographic_and_hides_executable(authed_client, orch):
-    """원페이지는 두 경로가 같은 onepage.svg — 인포그래픽만 보이고 실행 경로는 없다."""
+    """원페이지는 두 참조가 같은 onepage.svg — 인포그래픽만 보이고 실행 경로는 없다."""
     pid = _create(authed_client)
-    same = f'{pid}/{ATTEMPT}/onepage.svg'
-    orch.responses['outputs'] = lambda p: _outputs(pid, '원페이지', NS(entry_file_path=same), NS(image_path=same))
+    same = _ref('onepage.svg')
+    orch.responses['outputs'] = lambda p: _outputs('원페이지', NS(entry_file=same), NS(image_file=same))
 
     artifact = authed_client.get(f'/projects/{pid}/result').json()['plan']['artifacts'][0]
 
@@ -110,58 +73,38 @@ def test_onepage_result_shows_the_svg_as_infographic_and_hides_executable(authed
     assert artifact['executable_path'] is None
 
 
-def test_legacy_paths_in_result_are_left_alone(authed_client, orch):
+def test_webdev_without_entry_file_has_no_executable_path(authed_client, orch):
+    """진입 파일이 없으면(entryFile = null) 실행 경로도 없다."""
     pid = _create(authed_client)
-    orch.responses['outputs'] = lambda p: _outputs(
-        pid, '웹개발', NS(entry_file_path='/uploads/p/index.html'), NS(image_path='/uploads/p/info.png'))
+    orch.responses['outputs'] = lambda p: _outputs('웹개발', NS(entry_file=None), NS(image_file=_ref('infographic.svg')))
 
     artifact = authed_client.get(f'/projects/{pid}/result').json()['plan']['artifacts'][0]
 
-    assert artifact['executable_path'] == '/uploads/p/index.html'
-    assert artifact['infographic_path'] == '/uploads/p/info.png'
+    assert artifact['executable_path'] is None
+    assert artifact['infographic_path'] == _url(pid, 'infographic.svg')
 
 
-def test_converted_url_is_downloadable_by_the_owner(authed_client, orch, store):
-    """결과가 알려 준 주소를 그대로 요청하면 파일이 내려온다(SB-292와 이어진다)."""
+def test_rework_result_file_references_are_urls(authed_client, orch):
     pid = _create(authed_client)
-    folder = store / str(pid) / ATTEMPT
-    folder.mkdir(parents=True)
-    (folder / 'index.html').write_text('<html>ok</html>', encoding='utf-8')
-    (folder / 'infographic.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg"/>', encoding='utf-8')
-    orch.responses['outputs'] = lambda p: _outputs(
-        pid, '웹개발', NS(entry_file_path=f'{pid}/{ATTEMPT}/index.html'), NS(image_path=f'{pid}/{ATTEMPT}/infographic.svg'))
-    artifact = authed_client.get(f'/projects/{pid}/result').json()['plan']['artifacts'][0]
-
-    html = authed_client.get(artifact['executable_path'])
-    svg = authed_client.get(artifact['infographic_path'])
-
-    assert html.status_code == 200 and html.text == '<html>ok</html>'
-    assert svg.status_code == 200 and svg.headers['content-type'] == 'image/svg+xml'
-
-
-def test_rework_result_file_paths_are_urls(authed_client, orch):
-    pid = _create(authed_client)
-    other = 'b' * 32
     orch.responses['rework_result'] = lambda p: NS(
         project_id=str(pid), run_id='r1', cycle_id='cyc-1', screen=6, bundles=['실행 파일'], status='완료',
         started_at=datetime(2026, 10, 6, 1, 0, tzinfo=UTC), ended_at=datetime(2026, 10, 6, 1, 5, tzinfo=UTC),
         kept='후', basis='artifact', before_score=50.0, after_score=58.0, before_refs=[], after_refs=[],
         plan_before=None, plan_after=None, rolled_back=False, refunded_bundles=[], notice_code=None,
-        files=[NS(artifact='prototype', before_path=f'{pid}/{ATTEMPT}/index.html', after_path=f'{pid}/{other}/index.html')])
+        files=[NS(artifact='prototype', before_file=_ref('index.html'), after_file=_ref('index.html', EXEC2))])
 
     body = authed_client.get(f'/projects/{pid}/rework-result').json()
 
     assert body['files'] == [{
-        'artifact': 'prototype', 'before_path': _url(pid, 'index.html'), 'after_path': _url(pid, 'index.html', other)}]
+        'artifact': 'prototype', 'before_path': _url(pid, 'index.html'), 'after_path': _url(pid, 'index.html', EXEC2)}]
     assert body['changed']['executable_path'] == {
-        'before': _url(pid, 'index.html'), 'after': _url(pid, 'index.html', other)}
+        'before': _url(pid, 'index.html'), 'after': _url(pid, 'index.html', EXEC2)}
 
 
 def test_onepage_without_infographic_shows_the_prototype_svg_as_infographic(authed_client, orch):
-    """오케스트레이터가 원페이지의 인포그래픽을 비우고 prototype.entryFilePath만 보내도 같은 onepage.svg를 인포그래픽으로 보여 준다."""
+    """오케스트레이터가 원페이지의 인포그래픽을 비우고 prototype.entryFile만 보내도 같은 onepage.svg를 인포그래픽으로 보여 준다."""
     pid = _create(authed_client)
-    path = f'{pid}/{ATTEMPT}/onepage.svg'
-    orch.responses['outputs'] = lambda p: _outputs(pid, '원페이지', NS(entry_file_path=path), None)
+    orch.responses['outputs'] = lambda p: _outputs('원페이지', NS(entry_file=_ref('onepage.svg')), None)
 
     artifact = authed_client.get(f'/projects/{pid}/result').json()['plan']['artifacts'][0]
 
@@ -172,7 +115,7 @@ def test_onepage_without_infographic_shows_the_prototype_svg_as_infographic(auth
 def test_webdev_without_infographic_keeps_an_empty_infographic_path(authed_client, orch):
     """웹개발은 인포그래픽이 따로 있어야 하므로 비어 있으면 실행 파일을 대신 쓰지 않는다."""
     pid = _create(authed_client)
-    orch.responses['outputs'] = lambda p: _outputs(pid, '웹개발', NS(entry_file_path=f'{pid}/{ATTEMPT}/index.html'), None)
+    orch.responses['outputs'] = lambda p: _outputs('웹개발', NS(entry_file=_ref('index.html')), None)
 
     artifact = authed_client.get(f'/projects/{pid}/result').json()['plan']['artifacts'][0]
 

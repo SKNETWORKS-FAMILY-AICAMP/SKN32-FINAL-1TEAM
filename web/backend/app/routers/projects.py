@@ -33,8 +33,8 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Respon
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, object_session
 
-from app import artifact_store
 from app.database import get_db
+from app.diagram_images import document_pictures
 from app.models import (
     Company,
     GenerationFailureAlert,
@@ -54,6 +54,7 @@ from app.models import (
     VerificationPolicy,
 )
 from app.orch import CodedHTTPException, OrchError, OrchGateway, account_id_of, mapping, require_gateway
+from app.plan_texts import PlanTexts, plan_texts
 from app.proofread_retention import clear_project_logs
 from app.routers.profile import compute_has_profile
 from app.schemas import (
@@ -504,16 +505,19 @@ def _proofread_originals(gateway: OrchGateway, project_id: int, outputs) -> dict
     return {s.sentence_id: s.before for s in screen.sentences}
 
 
-def _plan_section_bodies(gateway: OrchGateway, project_id: int) -> dict[str, str]:
-    """계획서 본문(섹션 코드 → 본문)을 오케스트레이터의 지금 결과에서 읽는다. 실행 건이 없거나 계획서가 아직 없거나
-    실패 · 중단이면 비운다 — 그러면 문서는 입력값과 자리표시로 채운 미리보기가 된다(실패 · 중단은 본문을 싣지 않는다)."""
+def _plan_texts(gateway: OrchGateway, project_id: int) -> tuple[PlanTexts, list]:
+    """양식 글 칸에 들어갈 계획서 문장과 그림을 오케스트레이터의 지금 결과에서 읽는다(항목 번호별 매핑은 app/plan_texts.py, 그림은
+    app/diagram_images.py). 실행 건이 없거나 계획서가 아직 없거나 실패 · 중단이면 비운다 — 그러면 문서는 입력값과 자리표시로 채운
+    미리보기가 된다(실패 · 중단은 본문을 싣지 않는다)."""
     try:
         outputs = gateway.outputs(project_id)
     except OrchError as exc:
         if exc.code in ('RUN_NOT_FOUND', 'RUN_NOT_VIEWABLE'):
-            return {}
+            return PlanTexts(), []
         raise
-    return mapping.section_bodies(outputs.plan_doc) if outputs.plan_doc is not None else {}
+    texts = plan_texts(outputs.plan_doc, outputs.table_fallbacks)
+    texts.고지 = (getattr(outputs.deliverable, 'disclaimer', '') or '') if outputs.deliverable is not None else ''
+    return texts, document_pictures(gateway, project_id, outputs.plan_doc, outputs.deliverable)
 
 
 # companies.applicant_type -> 양식의 "사업자 구분" 표기. 사용자가 직접 고른 값이라
@@ -522,7 +526,7 @@ def _plan_section_bodies(gateway: OrchGateway, project_id: int) -> dict[str, str
 _APPLICANT_TYPE_LABEL = {'corp': '법인사업자', 'individual': '개인사업자', 'preliminary': '예비창업자'}
 
 
-def _build_plan_document_data(db: Session, project: Project, section_bodies: dict[str, str]):
+def _build_plan_document_data(db: Session, project: Project, texts: PlanTexts, pictures: list | None = None):
     """project(+company/team_members/pricing_items/budget_items/schedule_items/partners)와
     생성된 계획서(BusinessPlan.sections)를 공식 양식(별첨1) 구조(app/plan_document_export.py의
     PlanDocumentData)로 옮긴다. 반환값은 (data, template) 튜플 — template은 company.
@@ -540,7 +544,14 @@ def _build_plan_document_data(db: Session, project: Project, section_bodies: dic
     적이 없는 경우) 기존처럼 원본 양식 안내 표기로 채운다 — 지어내지 않는다는 원칙은
     유지. 정부지원사업비/자기부담금/총사업비는 project_budget_items 행이 있으면 그 금액을
     합산해서 채운다(각 행이 없으면 합계도 낼 수 없으니 placeholder 유지)."""
-    from app.plan_document_export import BudgetLineItem, PartnerRow, PlanDocumentData, ScheduleRow, TeamRow
+    from app.plan_document_export import (
+        PHASE_SECOND,
+        BudgetLineItem,
+        PartnerRow,
+        PlanDocumentData,
+        ScheduleRow,
+        TeamRow,
+    )
 
     company = db.get(Company, project.company_id)
 
@@ -559,8 +570,8 @@ def _build_plan_document_data(db: Session, project: Project, section_bodies: dic
         if plan_input.dev_start_month and plan_input.dev_end_month:
             dev_period_text = f'{plan_input.dev_start_month} ~ {plan_input.dev_end_month}'
 
-    def _section_body(tag: str) -> str:
-        return section_bodies.get(tag) or '※ 아직 생성된 계획서 문단이 없습니다.'
+    def _plan_text(value: str | None) -> str:
+        return value or '※ 아직 생성된 계획서 문단이 없습니다.'
 
     def _or_placeholder(value, placeholder):
         return value if value else placeholder
@@ -586,9 +597,17 @@ def _build_plan_document_data(db: Session, project: Project, section_bodies: dic
             BudgetLineItem(
                 b.category or '○○', b.execution_plan or '○○', _won(b.total_amount),
                 _won(b.government_amount), _won(b.self_cash_amount), _won(b.self_in_kind_amount),
+                단계=b.phase or '',
             )
             for b in budget_items
         ]
+        # 예비창업 단계별 정부지원사업비 합계(표 아래 합계 칸) — 단계 입력이 하나도 없으면 비워 둔다
+        if any(b.phase for b in budget_items):
+            government_1st = sum((b.government_amount or 0) for b in budget_items if b.phase != PHASE_SECOND)
+            government_2nd = sum((b.government_amount or 0) for b in budget_items if b.phase == PHASE_SECOND)
+            government_1st_text, government_2nd_text = _won(government_1st), _won(government_2nd)
+        else:
+            government_1st_text = government_2nd_text = ''
         total_amount = sum((b.total_amount or 0) for b in budget_items)
         government_amount = sum((b.government_amount or 0) for b in budget_items)
         self_cash = sum((b.self_cash_amount or 0) for b in budget_items)
@@ -601,6 +620,7 @@ def _build_plan_document_data(db: Session, project: Project, section_bodies: dic
             for p in project.pricing_items
         ] or [BudgetLineItem('○○', '○○', '○○', '○○', '○○', '○○')]
         total_amount_text = government_amount_text = self_cash_text = self_in_kind_text = '○○,○○○천원'
+        government_1st_text = government_2nd_text = ''
 
     feasibility_schedule = sorted(
         (s for s in project.schedule_items if s.section == 'feasibility'), key=lambda s: s.item_order or 0
@@ -610,13 +630,11 @@ def _build_plan_document_data(db: Session, project: Project, section_bodies: dic
     )
 
     def _schedule_rows(rows):
-        # 세부 일정(project_schedule_items)을 입력받는 화면이 아직 없어 대부분 빈 목록이다.
-        # 그때라도 IntakeForm에서 받은 개발 기간은 기간 칸에 넣어준다 — 한 줄이라도 실제
-        # 입력값이 보이는 편이 낫다.
+        # 입력한 줄은 칸 이름 그대로 옮긴다(구분 · 추진 내용 · 추진 기간 · 세부 내용, SB-329). 세부 내용은 비워도 되는 칸이라 비우면 빈칸이다.
+        # 입력한 줄이 없을 때만 IntakeForm에서 받은 개발 기간을 기간 칸에 넣은 자리표시 한 줄을 보인다 — 한 줄이라도 실제 입력값이 보이는 편이 낫다.
         return [
-            ScheduleRow(str(i + 1), s.category or '○○', s.period or dev_period_text or '○○.○○ ~ ○○.○○',
-                        s.detail or s.content or '○○')
-            for i, s in enumerate(rows)
+            ScheduleRow(s.category or '○○', s.content or '○○', s.period or dev_period_text or '○○.○○ ~ ○○.○○', s.detail or '')
+            for s in rows
         ] or [ScheduleRow('1', '○○', dev_period_text or '○○.○○ ~ ○○.○○', '○○')]
 
     # [2026-09-22 수정] 예전엔 project_partners 테이블(project.partners)에서 읽었는데,
@@ -654,7 +672,8 @@ def _build_plan_document_data(db: Session, project: Project, section_bodies: dic
         사업자등록번호=_or_placeholder(company.business_reg_no if company else None, '○○○-○○-○○○○○'),
         사업자_소재지=_or_placeholder(region_text, '○○도 ○○시·군'),
         창업아이템명=item_desc[:60] or '○○기술이 적용된 ○○제품·서비스',
-        산출물=_or_placeholder(project.output_summary, '○○ (협약기간 내 목표 — 산출물 형태·수량 입력 필요)'),
+        # [SB-339] 산출물은 담당자가 짓는 값(항목 x.2.2)이다 — 없으면(옛 계획서 · 계획서 없음) 웹 입력으로 돌아간다. 창업아이템명 · 팀구성현황은 웹 값이다.
+        산출물=_or_placeholder(texts.산출물 or project.output_summary, '○○ (협약기간 내 목표 — 산출물 형태·수량 입력 필요)'),
         지원분야='○○',
         # 전문기술분야 입력칸은 아직 없다 — 그 전까진 IntakeForm에서 받는 주업종으로 채운다.
         전문기술분야=_or_placeholder(
@@ -671,26 +690,45 @@ def _build_plan_document_data(db: Session, project: Project, section_bodies: dic
         # [2026-09-22, 재희님 확인] Agent가 아이디어 설명을 보고 직접 짓는 항목 —
         # 전략/작성 시트(2.3/3.3) 참고, 사용자 입력을 받지 않는다.
         아이템_범주='○○',
-        아이템_개요=item_desc,
-        요약_문제인식=_section_body('1-1'),
-        요약_실현가능성=_section_body('2-1'),
-        요약_성장전략=_section_body('3-1'),
-        요약_팀구성=team_text,
-        문제인식_본문=_section_body('1-1'),
-        실현가능성_본문=_section_body('2-1'),
+        아이템_개요=texts.아이템_개요 or item_desc,
+        요약_문제인식=_plan_text(texts.요약_문제인식),
+        요약_실현가능성=_plan_text(texts.요약_실현가능성),
+        요약_성장전략=_plan_text(texts.요약_성장전략),
+        요약_팀구성=texts.요약_팀구성 or team_text,
+        문제인식_본문=_plan_text(texts.문제인식_본문),
+        실현가능성_본문=_plan_text(texts.실현가능성_본문),
         실현가능성_일정=_schedule_rows(feasibility_schedule),
         사업비_집행계획=budget_rows,
-        성장전략_본문=_section_body('3-1'),
+        성장전략_본문=_plan_text(texts.성장전략_본문),
         성장전략_일정=_schedule_rows(growth_schedule),
-        팀구성_본문=team_text,
+        팀구성_본문=texts.팀구성_본문 or team_text,
         팀구성_안=team_rows,
         협력기관=partner_rows,
         # 예비창업패키지 전용(early_general 렌더링에서는 안 쓰임) — 기업(예정)명은
         # company_name을 그대로 재사용한다(예비창업자도 창업 예정 상호를 입력할 수 있음).
         직업=_or_placeholder(project.plan_input.occupation if project.plan_input else None, '○○○'),
         기업예정명=_or_placeholder(company.company_name if company else None, '○○○'),
+        실현가능성_일정_서술=texts.실현가능성_일정_서술,
+        사업비_서술=texts.사업비_서술,
+        사업비_2단계_서술=texts.사업비_2단계_서술,
+        그림=[p for p in pictures or [] if not p.is_infographic],
+        인포그래픽=next((p for p in pictures or [] if p.is_infographic), None),
+        고지=texts.고지,
+        정부지원사업비_1단계=government_1st_text,
+        정부지원사업비_2단계=government_2nd_text,
+        성장전략_일정_서술=texts.성장전략_일정_서술,
     )
     return data, template
+
+
+def render_plan_docx_for(db: Session, project: Project, plan_doc, pictures: list | None = None, table_fallbacks=(), disclaimer: str = '') -> bytes:
+    """계획서(planDoc) · 그림과 웹 입력으로 공식 양식 .docx를 만든다 — plan-document.docx와 결과물 압축(artifact_files)이 같은 파일을 쓴다."""
+    from app.plan_document_export import render_plan_docx
+
+    texts = plan_texts(plan_doc, table_fallbacks)
+    texts.고지 = disclaimer
+    data, template = _build_plan_document_data(db, project, texts, pictures)
+    return render_plan_docx(data, template=template)
 
 
 @router.get('/{project_id}/plan-document.docx')
@@ -709,7 +747,8 @@ def download_plan_document(
     from app.plan_document_export import render_plan_docx
 
     project = _get_owned_project(db, project_id, current_user)
-    data, template = _build_plan_document_data(db, project, _plan_section_bodies(gateway, project_id))
+    texts, pictures = _plan_texts(gateway, project_id)
+    data, template = _build_plan_document_data(db, project, texts, pictures)
     docx_bytes = render_plan_docx(data, template=template)
     filename = quote('사업계획서.docx')
     return Response(
@@ -734,7 +773,8 @@ def download_plan_document_pdf(
     from app.plan_document_export import render_plan_docx
 
     project = _get_owned_project(db, project_id, current_user)
-    data, template = _build_plan_document_data(db, project, _plan_section_bodies(gateway, project_id))
+    texts, pictures = _plan_texts(gateway, project_id)
+    data, template = _build_plan_document_data(db, project, texts, pictures)
     try:
         pdf_bytes = docx_to_pdf(render_plan_docx(data, template=template))
     except PdfConversionError as exc:
@@ -763,7 +803,8 @@ def download_plan_document_hwp(
     from app.hwp_export import render_plan_hwp
 
     project = _get_owned_project(db, project_id, current_user)
-    data, template = _build_plan_document_data(db, project, _plan_section_bodies(gateway, project_id))
+    texts, pictures = _plan_texts(gateway, project_id)
+    data, template = _build_plan_document_data(db, project, texts, pictures)
     try:
         hwp_bytes = render_plan_hwp(data, template=template)
     except FileNotFoundError as exc:
@@ -1022,7 +1063,6 @@ def delete_project(
 
     gateway.delete_project_data(project_id)
     _purge_unstarted_project(db, project_id)
-    artifact_store.delete_project_artifacts(project_id)  # [SB-294] 웹 행을 지운 뒤 — 실패해도 고아 청소가 치운다
     return Response(status_code=204)
 
 
@@ -1049,11 +1089,10 @@ def delete_project_permanently(
     워커가 단계를 도는 중이면 BUSY로 409("잠시 뒤 다시")를 돌려주고 웹 행은 지우지 않는다 — 재시도는 하지 않고
     사용자가 다시 누른다. 그 뒤 웹 행을 지운다(실행 건의 project_id는 비워지고 실행 로그는 남는다).
 
-    [SB-294] 웹 행까지 지운 다음 그 프로젝트의 산출물 파일 폴더(모든 시도)를 지운다 — 되돌릴 수 없다. 보관(휴지통)만 한 프로젝트는 파일을 남긴다."""
+    [SB-317] 산출물 파일은 웹이 지우지 않는다 — 오케스트레이터가 삭제 대기열에 넣고 워커가 지운다(SB-311). 보관(휴지통)만 한 프로젝트는 파일이 남는다."""
     project = _get_owned_project(db, project_id, current_user)
     gateway.delete_project_data(project_id)
     _delete_project_cascade(db, project)
-    artifact_store.delete_project_artifacts(project_id)  # [SB-294] 웹 행을 지운 뒤 — 실패해도 고아 청소가 치운다
     return Response(status_code=204)
 
 

@@ -38,7 +38,10 @@ ruff check .                                # 정적 검사
 |---|---|
 | `test_orch_stages.py` | 공고 선택 → 자격 확인 → 계획서 · 프로토타입 · 종합 평가 · 검수 시작 |
 | `test_orch_result.py` | `GET /projects/{id}/result` — 계획서 · 판정 · 산출물 · 재작성 기회를 응답으로 변환 |
-| `test_orch_rework.py` | 재작성 접수(`POST /retry-task`)와 전후 비교(`GET /rework-result`) |
+| `test_plan_result_shape.py` | 결과의 계획서 응답 모양 — 항목 번호 · 웹 태그 · 종류를 따로, 옛 4항목 계획서의 태그, 점수 항목의 태그, 그림 주소 · 순서 (SB-337), 표 대체 사유(`table_fallbacks`)의 태그 · 제목 · 사용자용 안내만 싣고 내부 원문은 싣지 않음, 점수 보고서 안내(`plan.notices` · `verdict.notices`) (SB-354) |
+| `test_score_scaling.py` | 점수 보고서 환산 칸 — 층 점수 · 만점은 그 실행 건 배점 기준(지금 정책 값 아님), 코드 점검 줄의 부분 점수 · 해당 없음, 항목 합 = 층 점수, 옛 실행 건 대체 값 (오케스트레이터 2026-10-11) |
+| `test_orch_rework.py` | 재작성 접수(`POST /retry-task`)와 전후 비교(`GET /rework-result`) — 바뀐 항목의 키(항목 번호) · 태그 · 제목 포함 |
+| `test_plan_score_items.py` | 평가 항목이 24 ~ 25개로 늘어도 문서층 점수 응답이 순서 · 이름 · 소수 점수 그대로 나오는지, 편차 상한은 저장만 함 (SB-338) |
 | `test_match_candidates.py` | 공고 후보 조회 · 다시 찾기 · 선택 |
 | `test_pipeline_stages.py` · `test_classify_error_kind.py` | 상태 표시 변환과 오류 종류 분류(순수 함수) |
 
@@ -48,7 +51,7 @@ ruff check .                                # 정적 검사
 |---|---|
 | `test_artifact_files.py` | 산출물 파일 내려 주기 — 소유자만(관리자 제외), 형식 · 보안 헤더 |
 | `test_artifact_urls.py` | 산출물 경로 → 웹 주소 변환 |
-| `test_artifact_cleanup.py` | 산출물 폴더 삭제와 고아 청소 |
+| `test_deliverable_zip.py` | 최종 결과물 zip — 계획서(planDoc으로 만든 .docx) · 프로토타입 · 인포그래픽 묶음, 계획서 없으면 404, 크기 상한, 소유자만 (SB-316 · SB-341) |
 
 ### 프로젝트 생성 · 사전 정보 입력
 
@@ -58,9 +61,15 @@ ruff check .                                # 정적 검사
 | `test_attachment_limits.py` | 첨부파일 개수 · 용량 상한 |
 | `test_company_per_project_fix.py` | 회사 프로필 계정당 1건 제한 해제, 동시 실행 1건 제한 분리 |
 | `test_plan_document_endpoint.py` | 계획서 내려받기(`.docx`)가 공식 양식 구조로 나오고 본문이 채워짐 |
+| `test_plan_texts.py` | 계획서 항목 번호 → 양식 글 칸 대응, 표 항목 서술 걸러 내기, docx · hwp 본문 채우기 (SB-339), 표를 본문으로 바꾼 항목은 서술을 문서에 쓰지 않고 입력 행 표만 남김 (SB-354) |
+| `test_diagram_images.py` | 계획서 그림(SVG → PNG) — 순서 · 제목, 못 받거나 깨진 그림은 빼고 문서 생성, docx 개요 표 아래 · zip의 원본 SVG, hwp 맨 뒤 새 쪽(rhwp 있을 때 실제 확인) (SB-340) |
+| `test_infographic_in_document.py` | 계획서 파일(docx · hwp · zip 안 docx)에 인포그래픽과 첫 장 고지 넣기 — 데이터 주소 · 안쪽 참조는 허용하고 바깥 참조는 막는 변환(계획서 그림은 그대로 엄격), 못 받거나 못 바꾸면 인포그래픽만 빼고 문서는 만듦, 세로로 긴 그림 줄이기, 고지는 결과물 값(없으면 기본 문구), hwp 실제 생성(첫 쪽 고지 · 그림 쪽과 인포그래픽 쪽 분리) (기준 문서 T-C4, SB-354) |
+| `test_budget_phase_export.py` | 예비창업 사업비를 1단계 · 2단계 표(docx 표 둘, hwp 표12 · 표14)로 나눠 채움, 단계 없는 줄은 1단계, 다른 유형은 표 하나 (SB-339) |
+| `test_schedule_table_export.py` | 내려받기 문서(docx · hwp)의 추진 일정 표 — 구분 · 추진 내용 · 추진 기간 · 세부 내용이 같은 이름의 열에 들어감, 세부 내용을 비우면 빈칸, 입력이 없으면 자리표시 한 줄 (SB-329 · SB-339) |
 | `test_budget_phase_column.py` | `project_budget_items.phase` 컬럼(VARCHAR(10), NULL 허용, '1단계' · '2단계') (SB-328) |
 | `test_budget_schedule_schema.py` | 사업비 · 일정의 요청 · 응답 모양, 허용값, 행 수 상한, 응답 순서 (SB-329) |
 | `test_budget_schedule_validation.py` | 필수 · 금액 · 합계 · 유형별 단계 · 일정 필수 칸과 연도 검사, 오류 위치(표 · 줄 번호 · 칸) (SB-330) |
+| `test_schedule_within_dev_period.py` | 협약기간 내 일정의 끝나는 달이 개발 종료월을 넘으면 422(`schedule_items[i].period`), 협약 이후 일정 · 개발 종료월 없음은 검사 안 함, 추진기간에서 달을 읽는 규칙(검증-1과 같음), 협약기간 최대 개월 수는 막지 않음 (SB-354) |
 | `test_budget_schedule_saving.py` | 보낸 순서대로 저장, `request_start` 전에 커밋, 시작 거절 시 함께 삭제 (SB-331) |
 | `test_budget_schedule_required.py` | 필수 조건 계산, 스위치(`REQUIRE_BUDGET_SCHEDULE`) 꺼짐 · 켜짐, `E-C1-REQUIRED`와 `missing` 이름 (SB-332) |
 

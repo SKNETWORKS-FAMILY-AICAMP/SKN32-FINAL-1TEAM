@@ -15,18 +15,36 @@ from pydantic import Field
 
 from ..models import (
     AnnouncementCard, Announcement, ArtifactScore, ChartSpec, CheckResult,
-    CodeCheckResult, CompanyInfo, Deliverable, DocScore, DocScoreItem,
-    EligibilityRule, EvalItem, FeatureMatchResult, File, FormatFinding,
+    CodeCheckResult, CompanyInfo, Deliverable, DiagramSpec, DocScore, DocScoreItem,
+    EligibilityRule, EvalItem, FeatureMatchResult, File, FileRef, FormatFinding,
     FormatSpec, FormSpec, GateResult, Infographic, ItemSpec, MarketAnalysis,
     PlanDoc, PlanSection, PreInput, ProofreadLog, ProofreadViolationType, Prototype, ReferenceDoc,
     ReferenceSummary, RequirementAnalysis, ReworkComparison, ReworkDiff,
-    ReworkInput, ReworkOrder, Rubric, ScoreReport, Sentence, TableSpec,
+    ReworkInput, ReworkOrder, Rubric, ScoreReport, SectionResult, Sentence, TableSpec,
     TaskInstruction, TaskPlan, Token, TokenCheckResult, BundleUsage,
 )
 from ..models.base import (
     Category, CollectionStatus, FallbackMode, KeptReason, Layer, NextAction,
     SBModel, UserAction, ext,
 )
+from ..models.domain import FILE_NOTE, NEW_TYPE_NOTE
+
+# 전략 · 작성 · 검증-1 연동에서 더한 확장 입력 · 출력의 note (spec 4.7)
+SW_NOTE = "전략 · 작성 · 검증-1 연동(결정 0024)"
+# 구현 · 검증-2 끼우기 · 산출물층 환산(spec 4.13)에서 더한 확장 입력 · 출력의 note
+BV_NOTE = "구현 · 검증-2 연동(spec 4.13)"
+# 재개 때 이어 쓰는 받은 결과 — 엔진 일반 장치 PARTIAL. 키는 T-S1 · T-S2 = F번호, T-W1 · T-V1 = 항목 번호, T-W2 = 그림 ID (spec 4.13)
+PRIOR_NOTE = (f"{SW_NOTE} — 재개 때 이어 쓰는 받은 결과(키 → 받은 값 JSON 문자열, <taskId>.partial). 엔진이 재개 때만 "
+              "채운다. 빠진 호출만 다시 한다")
+
+
+def _prior() -> Any:
+    """재개용 받은 결과 입력 칸 (dict[str, str], 기본 빈 사전)."""
+    return ext(default_factory=dict, note=PRIOR_NOTE)
+
+
+# 항목 결과 사전의 값 — 담당자 함수 결과(기록 칸을 뺀 것) 그대로
+ItemOutputs = dict[str, dict[str, Any]]
 
 
 # ── 확장 입력 · 출력 타입 ─────────────────────────────
@@ -48,7 +66,7 @@ class ReworkCycleInfo(SBModel):
 
 
 class ProofreadAttempt(SBModel):
-    """확장 — T-P2 시도 하나의 기록 (SentenceResult.attempts).
+    """시트 4 시도 기록 — T-P2 시도 하나의 기록 (SentenceResult.attempts).
 
     시도 = T-P2 함수가 결과를 돌려준 호출 하나. 호출 실패(재시도 소진)는 시도가 아니다.
     보호 토큰 검사를 통과하지 못한 시도가 '반려된 시도'다(채택하지 않았어도 통과했으면 반려가 아니다).
@@ -68,9 +86,8 @@ class SentenceResult(SBModel):
     kept_reason: KeptReason | None = None
     final_redo_count: int
     token_check: TokenCheckResult | None = None
-    attempts: list[ProofreadAttempt] = ext(
-        default_factory=list,
-        note="시도별 기록 (시도 순서). 반려된 시도는 학습 동의 계정이면 웹 proofread_logs에도 한 행씩 쓴다")
+    # 시도별 기록 (시도 순서). 반려된 시도는 학습 동의 계정이면 웹 proofread_logs에도 한 행씩 쓴다
+    attempts: list[ProofreadAttempt] = Field(default_factory=list)
 
 
 # ── 조율 ─────────────────────────────────────────────
@@ -114,20 +131,23 @@ class TC2Out(SBModel):
 
 
 class G01In(SBModel):
-    """G-01 입력. 기준 문서와 다름: 판정은 공고 서버가 공고 ID로 하므로 eligibility · eligibilityParsed는 비울 수 있고
-    Orchestrator가 넣지 않는다. 대신 고른 공고 ID(announcementId, 확장)를 받는다 (spec 5)."""
+    """G-01 입력. 판정은 공고 서버가 고른 공고 ID(announcementId)로 한다 (spec 5).
+    eligibility · eligibilityParsed는 새 판(v1.10) G-01 입력에서 빠졌지만 옛 실행 건 호환을 위해 확장으로 남긴다.
+    비울 수 있고 Orchestrator가 넣지 않는다 (Announcement에는 두 칸이 남아 있다)."""
     company_info: CompanyInfo
-    eligibility: EligibilityRule | None = None
-    eligibility_parsed: bool | None = None
+    eligibility: EligibilityRule | None = ext(
+        None, note="새 판(v1.10)에서 빠졌지만 남김 — 새 판 G-01 입력에서 빠짐, Announcement에는 남아 있음")
+    eligibility_parsed: bool | None = ext(
+        None, note="새 판(v1.10)에서 빠졌지만 남김 — 새 판 G-01 입력에서 빠짐, Announcement에는 남아 있음")
     today: date
-    announcement_id: str = ext(note="고른 공고 ID — 마지막 공고 선택 명령(decision)의 announcementId")
+    announcement_id: str  # 고른 공고 ID — 마지막 공고 선택 명령(decision)의 announcementId
 
 
 class G01Out(SBModel):
     gate_result: GateResult
     business_age_years: float | None = None
-    selected_announcement: Announcement = ext(
-        note="자격 확인한 공고의 상세 → 산출물 selectedAnnouncement. 자격 결과 · 업력과 한 번에 저장한다 (spec 4.3.2)")
+    # 자격 확인한 공고의 상세 → 산출물 selectedAnnouncement. 자격 결과 · 업력과 한 번에 저장한다 (spec 4.3.2)
+    selected_announcement: Announcement
 
 
 class TC3In(SBModel):
@@ -136,9 +156,8 @@ class TC3In(SBModel):
     gate_result: GateResult
     company_info: CompanyInfo
     reference_summary: ReferenceSummary | None = None
-    business_age_years: float | None = ext(
-        None, note="업력(년) — G-01 출력 businessAgeYears. 예비창업자는 null. companyInfo.businessAgeYears는 T-C1이 "
-                   "비워 두므로 이 값을 쓴다")
+    # 업력(년) — G-01 출력 businessAgeYears. 예비창업자는 null. companyInfo.businessAgeYears는 T-C1이 비워 두므로 이 값을 쓴다
+    business_age_years: float | None = None
     prior_guidance: dict[str, str] = ext(
         default_factory=dict,
         note="재개 때 이어 쓰는 받은 안내(Task ID → 정리된 안내) — 앞 실행이 재시도 소진 전에 받은 것(T-C3.partial). "
@@ -149,9 +168,9 @@ class TC3Out(SBModel):
     task_plan: TaskPlan
     task_count: int
     instruction_set: list[TaskInstruction]
-    form_spec: FormSpec = ext(note="신청자 유형으로 고른 양식 → 산출물 formSpec. 선택 공고의 formSpec 대신 뒷 단계가 읽는다")
-    evaluation_items: list[EvalItem] = ext(note="고른 평가 항목 → 산출물 evaluationItems (T-V1 · 웹 outputs)")
-    rubric: Rubric = ext(note="고른 채점 기준표 → 산출물 rubric (T-V1, G-02a · G-02b의 rubricVersion)")
+    form_spec: FormSpec               # 신청자 유형으로 고른 양식 → 산출물 formSpec. 선택 공고의 formSpec 대신 뒷 단계가 읽는다
+    evaluation_items: list[EvalItem]  # 고른 평가 항목 → 산출물 evaluationItems (T-V1 · 웹 outputs)
+    rubric: Rubric                    # 고른 채점 기준표 → 산출물 rubric (T-V1, G-02a · G-02b의 rubricVersion)
 
 
 class G02aIn(SBModel):
@@ -164,6 +183,8 @@ class G02aIn(SBModel):
     cycle_info: ReworkCycleInfo | None = ext(None, note="재작성 사이클 정보")
     settings_snapshot: dict[str, Any] = ext(default_factory=dict, note="판정에 쓴 설정값을 scoreReport에 기록하기 위한 입력 (Run.settingsSnapshot)")
     rubric_version: str = ext("", note="scoreReport.rubricVersion 기록용 (채점에 쓴 Rubric.version)")
+    section_results: list[SectionResult] | None = ext(
+        None, note=f"{NEW_TYPE_NOTE} — T-V1 항목 판정(계획서 묶음 후보 규칙, spec 4.12). None이면 그 후보 규칙을 쓰지 않는다")
 
 
 class G02aOut(SBModel):
@@ -184,6 +205,11 @@ class G02bIn(SBModel):
     cycle_info: ReworkCycleInfo | None = ext(None, note="재작성 사이클 정보")
     settings_snapshot: dict[str, Any] = ext(default_factory=dict, note="판정에 쓴 설정값을 scoreReport에 기록하기 위한 입력 (Run.settingsSnapshot)")
     rubric_version: str = ext("", note="scoreReport.rubricVersion 기록용 (채점에 쓴 Rubric.version)")
+    section_results: list[SectionResult] | None = ext(
+        None, note=f"{NEW_TYPE_NOTE} — T-V1 항목 판정(계획서 묶음 후보 규칙, spec 4.12). None이면 그 후보 규칙을 쓰지 않는다")
+    category: Category | None = ext(
+        None, note=f"{BV_NOTE} — 실행 건 카테고리(산출물 category, 흐름이 늘 채움). 산출물 종류(원페이지 → svg-onepage, "
+                   "그 밖 → html)를 정한다")
 
 
 class G02bOut(SBModel):
@@ -202,7 +228,7 @@ class G04In(SBModel):
 
 
 class G04Out(SBModel):
-    readme_path: str
+    readme_file: FileRef = ext(note=FILE_NOTE)
     # 확장 — 실행 · 열람 안내 낱말 자체 검사. 불통과면 재수행 횟수까지 다시 만들고, 끝내 불통과면 관리자 기록 후 계속(점수 밖)
     check: CheckResult | None = ext(None, note="G-04 자체 검사 — 실행 · 열람 안내 낱말")
 
@@ -222,12 +248,16 @@ class TC4Out(SBModel):
 
 # ── 합치기 (조율 소속 규칙 단계, 구현용 ID) ─────────────────
 class M1In(SBModel):
-    """합치기① — T-W2 · T-W3 결과를 계획서에 합친다. 확정 동작(차트 폐기 등)도 checks로 받는다."""
+    """합치기① — T-W2 · T-W3 결과를 계획서에 합친다. 확정 동작(차트 폐기 등)도 checks로 받는다.
+
+    확장(spec 4.7): 표 항목 PlanSection은 tableSections의 같은 항목 번호로 바꾸고, 그림 목록은 diagrams로 통째로 바꾼다."""
     plan_doc: PlanDoc
     charts: list[ChartSpec]
     tables: list[TableSpec]
     chart_check: CheckResult | None = None
     table_check: CheckResult | None = None
+    diagrams: list[DiagramSpec] = ext(note=f"{NEW_TYPE_NOTE} — T-W2 그림 목록 (계획서 diagrams를 통째로 바꾼다)")
+    table_sections: list[PlanSection] = ext(note=f"{SW_NOTE} — T-W3 표 항목 서술 · 대체 본문 (같은 항목 번호를 바꾼다)")
 
 
 class M1Out(SBModel):
@@ -246,9 +276,9 @@ class M2Out(SBModel):
 
 
 class M3In(SBModel):
-    """합치기③ — G-04가 만든 readmePath를 Prototype에 기입한다."""
+    """합치기③ — G-04가 만든 안내 문서 참조(readmeFile)를 Prototype에 기입한다."""
     prototype: Prototype
-    readme_path: str | None = None
+    readme_file: FileRef | None = ext(None, note=FILE_NOTE)
 
 
 class M3Out(SBModel):
@@ -269,17 +299,30 @@ class M4Out(SBModel):
 
 
 # ── 전략 ─────────────────────────────────────────────
+# 확장 입력 · 출력(spec 4.7)은 전략 · 작성 · 검증-1 담당자 함수(F01 ~ F19)를 끼우며 더한 것이다.
+# 사전 값(strategyData 등)의 키는 담당자 canonical 키 그대로다. 산출물 내용이라 기록 · 로그 · 예외 메시지에 넣지 않는다.
 class TS1In(SBModel):
     item_spec: ItemSpec
     selected_announcement: Announcement
     instruction: str
     rework_input: ReworkInput | None = None
+    company_info: CompanyInfo = ext(note=f"{SW_NOTE} — 담당자 입력을 만드는 회사 정보")
+    prior_results: dict[str, str] = _prior()
+    # 회사 정보에 없는 아이디어 설명(ideaText) · 개발 기간(developmentPeriod)을 읽는 사전 정보 (spec 4.4 · 4.5).
+    # 비어 있으면(연결 전 · 옛 실행 건) 아이디어 요약(itemSpec.oneLineSummary)을 쓰고 개발 기간은 없는 것으로 본다
+    form_input: PreInput | None = ext(
+        None, note=f"{SW_NOTE} — 아이디어 설명 · 개발 기간을 읽는 사전 정보(formInput). LLM에는 spec 4.4 칸만 보낸다")
 
 
 class TS1Out(SBModel):
     requirement_analysis: RequirementAnalysis
     feature_list: list[str]
     check: CheckResult
+    strategy_data: dict[str, Any] = ext(
+        note=f"{SW_NOTE} — F01 · F02 · F05 ~ F09 · F13 ~ F15 결과(web_data · item_spec · team_capability · "
+             "development_goal · development_method · architecture · development_plan · production_plan · "
+             "resource_plan · budget · schedule · feasibility_plan), research · original_facts · strategy_limits · "
+             "document_type")
 
 
 class TS2In(SBModel):
@@ -288,12 +331,17 @@ class TS2In(SBModel):
     selected_announcement: Announcement
     instruction: str
     rework_input: ReworkInput | None = None
+    strategy_data: dict[str, Any] = ext(note=f"{SW_NOTE} — T-S1 strategyData")
+    prior_results: dict[str, str] = _prior()
 
 
 class TS2Out(SBModel):
     market_analysis: MarketAnalysis
     numeric_tokens: list[Token]
     check: CheckResult
+    market_strategy_data: dict[str, Any] = ext(
+        note=f"{SW_NOTE} — F03 · F04 · F10 · F11 · F12 결과(market_analysis · competitor_analysis · "
+             "marketing_strategy · business_model · growth_strategy)")
 
 
 # ── 작성 ─────────────────────────────────────────────
@@ -305,6 +353,12 @@ class TW1In(SBModel):
     form_spec: FormSpec
     instruction: str
     rework_input: ReworkInput | None = None
+    strategy_data: dict[str, Any] = ext(note=f"{SW_NOTE} — T-S1 strategyData")
+    market_strategy_data: dict[str, Any] = ext(note=f"{SW_NOTE} — T-S2 marketStrategyData")
+    feature_list: list[str] = ext(note=f"{SW_NOTE} — T-S1이 확정한 featureList (울타리)")
+    base_plan_doc: PlanDoc | None = ext(None, note=f"{SW_NOTE} — 직전 계획서(목표 항목 밖은 그대로 싣는다)")
+    base_section_outputs: ItemOutputs | None = ext(None, note=f"{SW_NOTE} — 직전 본문 항목 결과(sectionOutputs)")
+    prior_results: dict[str, str] = _prior()
 
 
 class TW1Out(SBModel):
@@ -312,6 +366,9 @@ class TW1Out(SBModel):
     sections: list[PlanSection]
     feature_list: list[str]
     check: CheckResult
+    section_outputs: ItemOutputs = ext(
+        note=f"{SW_NOTE} — 본문 항목 번호 → F16 결과(generatedText · facts · sourceRefs · needsUserConfirmation · "
+             "issues, 기록 칸 뺌)")
 
 
 class TW2In(SBModel):
@@ -319,11 +376,20 @@ class TW2In(SBModel):
     market_analysis: MarketAnalysis
     instruction: str
     rework_input: ReworkInput | None = None
+    strategy_data: dict[str, Any] = ext(note=f"{SW_NOTE} — T-S1 strategyData")
+    feature_list: list[str] = ext(note=f"{SW_NOTE} — T-S1이 확정한 featureList (울타리)")
+    base_diagrams: list[DiagramSpec] | None = ext(None, note=f"{NEW_TYPE_NOTE} — 직전 그림 목록")
+    base_diagram_outputs: ItemOutputs | None = ext(None, note=f"{SW_NOTE} — 직전 그림 항목 결과(diagramOutputs)")
+    prior_results: dict[str, str] = _prior()
 
 
 class TW2Out(SBModel):
     charts: list[ChartSpec]
     check: CheckResult
+    diagrams: list[DiagramSpec] = ext(note=f"{NEW_TYPE_NOTE} — 계획서 그림 목록(SVG는 tools.files로 넣은 참조)")
+    diagram_outputs: ItemOutputs = ext(
+        note=f"{SW_NOTE} — 그림 항목 번호 → F18 결과(imageSpecs · imageTypes · nodes · flowType · visualStyle · "
+             "generatedText · facts · sourceRefs · issues, 기록 칸 뺌)")
 
 
 class TW3In(SBModel):
@@ -332,11 +398,20 @@ class TW3In(SBModel):
     selected_announcement: Announcement
     instruction: str
     rework_input: ReworkInput | None = None
+    strategy_data: dict[str, Any] = ext(note=f"{SW_NOTE} — T-S1 strategyData")
+    form_spec: FormSpec = ext(note=f"{SW_NOTE} — 표 항목 목록 · 종류 (T-C3 formSpec)")
+    base_tables: list[TableSpec] | None = ext(None, note=f"{SW_NOTE} — 직전 표 목록")
+    base_table_sections: list[PlanSection] | None = ext(None, note=f"{SW_NOTE} — 직전 표 항목 서술(tableSections)")
+    base_table_outputs: ItemOutputs | None = ext(None, note=f"{SW_NOTE} — 직전 표 항목 결과(tableOutputs)")
 
 
 class TW3Out(SBModel):
     tables: list[TableSpec]
     check: CheckResult
+    table_sections: list[PlanSection] = ext(note=f"{SW_NOTE} — 표 항목의 서술 · 대체 본문 (M-1이 같은 항목을 바꾼다)")
+    table_outputs: ItemOutputs = ext(
+        note=f"{SW_NOTE} — 표 항목 번호 → F17 결과 전체(generatedText · tables · issues · tableFallbackUsed · "
+             "fallbackReason)")
 
 
 # ── 검증 ─────────────────────────────────────────────
@@ -344,27 +419,52 @@ class TV1In(SBModel):
     plan_doc: PlanDoc
     evaluation_items: list[EvalItem]
     rubric: Rubric
+    strategy_data: dict[str, Any] = ext(note=f"{SW_NOTE} — T-S1 strategyData (근거 자료)")
+    market_strategy_data: dict[str, Any] = ext(note=f"{SW_NOTE} — T-S2 marketStrategyData (근거 자료)")
+    feature_list: list[str] = ext(note=f"{SW_NOTE} — T-S1이 확정한 featureList (울타리)")
+    form_spec: FormSpec = ext(note=f"{SW_NOTE} — 항목 목록 · 태그 · 종류 (T-C3 formSpec)")
+    section_outputs: ItemOutputs = ext(note=f"{SW_NOTE} — 본문 항목 결과 (T-W1)")
+    table_outputs: ItemOutputs = ext(note=f"{SW_NOTE} — 표 항목 결과 (T-W3)")
+    diagram_outputs: ItemOutputs = ext(note=f"{SW_NOTE} — 그림 항목 결과 (T-W2)")
+    company_info: CompanyInfo = ext(note=f"{SW_NOTE} — 담당자 입력을 만드는 회사 정보")
+    selected_announcement: Announcement = ext(note=f"{SW_NOTE} — 선택 공고 (지원 금액 상한 울타리)")
+    base_section_results: list[SectionResult] | None = ext(
+        None, note=f"{NEW_TYPE_NOTE} — 직전 항목 판정(목표 항목 밖은 이어받는다)")
+    rework_input: ReworkInput | None = ext(
+        None, note=f"{SW_NOTE} — 재작성 · 검증-1 재수행 때 다시 검증할 목표 항목(targetItems). 첫 작성은 비어 있다")
+    prior_results: dict[str, str] = _prior()
+    plan_doc_ref: str | None = ext(None, note="검증한 계획서 버전 '이름@버전' — SectionResult.verifiedRef (spec 4.7)")
+    doc_layer_max: float | None = ext(None, note="문서층 배점 D — 실행 설정 사본 scoring.docLayerMax (spec 4.9)")
 
 
 class TV1Out(SBModel):
     doc_score: DocScore
     items: list[DocScoreItem]
     variance_flag: bool
+    section_results: list[SectionResult] = ext(note=f"{NEW_TYPE_NOTE} — 항목별 검증-1 판정 (양식 순서)")
+    score_policy_version: str = ext(note=f"{SW_NOTE} — 담당자 채점 정책 버전")
 
 
 class TV2In(SBModel):
     prototype: Prototype
     infographic: Infographic
     feature_list: list[str]
-    # 확장 — 기본값 None이지만 Orchestrator는 늘 채운다 (catalog T-V2 입력)
-    plan_doc: PlanDoc | None = ext(None, note="T-B2가 받은 것과 같은 값. 원페이지 대조의 근거")
+    # T-B2가 받은 것과 같은 값. 원페이지 대조의 근거 (catalog T-V2 입력).
+    # 기준 문서는 필수이고 흐름이 늘 채운다. 기본값 None은 옛 실행 건 호환용 선언
+    plan_doc: PlanDoc | None = None
+    feature_elements: dict[str, list[str]] | None = ext(
+        None, note=f"{BV_NOTE} — 직전 T-V2가 낸 확인 요소 목록(산출물 featureElements). None(첫 T-V2)은 빈 사전으로 본다")
 
 
 class TV2Out(SBModel):
     artifact_score: ArtifactScore
     code_check: CodeCheckResult
     feature_match: FeatureMatchResult
-    diagnostics: list[str] = ext(default_factory=list, note="관리자 진단 전용. 흐름 제어에 쓰지 않음")
+    diagnostics: list[str] = Field(default_factory=list)  # 관리자 진단 전용. 흐름 제어에 쓰지 않음
+    feature_elements: dict[str, list[str]] = ext(
+        default_factory=dict,
+        note=f"{BV_NOTE} — 확인 요소 목록(열쇠 → 요소 글자 1 ~ 5개) = 입력 ∪ 새로 뽑은 것. 흐름이 다음 T-V2 입력으로 "
+             "연결한다. 산출물 내용이라 기록 · 로그 · 예외 메시지에 넣지 않는다")
 
 
 # ── 구현 ─────────────────────────────────────────────
@@ -374,14 +474,16 @@ class TB1In(SBModel):
     category: Category
     instruction: str
     rework_input: ReworkInput | None = None
-    # 확장 (구현 · 검증-2 담당 요청 8) — 계획서 전체. T-B1은 M-1 · T-V1 · G-02a 뒤에 돌아 늘 값이 있다
-    plan_doc: PlanDoc | None = ext(None, note="기능별 설명의 근거. T-B2 · T-V2와 같은 값")
+    # 계획서 전체 — 기능별 설명의 근거. T-B2 · T-V2와 같은 값 (구현 · 검증-2 담당 요청 8).
+    # 기준 문서는 필수이고 흐름이 늘 채운다(T-B1은 M-1 · T-V1 · G-02a 뒤에 돈다). 기본값 None은 옛 실행 건 호환용 선언
+    plan_doc: PlanDoc | None = None
 
 
 class TB1Out(SBModel):
     prototype: Prototype
     implemented_features: list[str]
-    entry_file_path: str
+    # prototype.entryFile과 같은 값. 비면 진입 파일 없음
+    entry_file: FileRef | None = ext(None, note=FILE_NOTE)
     check: CheckResult
 
 

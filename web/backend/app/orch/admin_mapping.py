@@ -93,6 +93,10 @@ def item_from_run(project, run, now: datetime.datetime | None = None) -> schemas
         last_updated=utc(run.updated_at),
         stalled=_stalled(label, archived, run.updated_at, now),
         score=run.total_score,
+        doc_score=run.doc_score,
+        doc_max_score=run.doc_max,
+        artifact_score=run.artifact_score,
+        artifact_max_score=run.artifact_max,
         archived=archived,
         generation_resume_count=run.resume_count,
         generation_failure_reason=run.failure_reason,
@@ -125,7 +129,8 @@ def _entries(entries) -> list[schemas.ScoreHistoryEntryOut]:
 
 def score_history_out(history) -> schemas.ItemScoreHistoryOut:
     return schemas.ItemScoreHistoryOut(
-        doc=_entries(history.doc_score), code=_entries(history.code_check), plan=_entries(history.feature_match))
+        doc=_entries(history.doc_score), code=_entries(history.code_check), plan=_entries(history.feature_match),
+        doc_max=history.doc_max, code_max=history.code_check_max, plan_max=history.feature_match_max)
 
 
 # ── 에이전트 테스크 (admin_executions · admin_agent_tasks) ──────────────────────────────
@@ -231,3 +236,12 @@ def agent_ops_summary_out(summary) -> schemas.AgentOpsSummaryOut:
         token_violation_count=summary.proofread_rejected,
         token_check_count=summary.proofread_attempts,
     )
+
+
+def file_deletion_out(row) -> schemas.FileDeletionOut:
+    """파일 삭제 대기열 한 줄(AdminFileDeletion) → 응답 (SB-318). 시각은 시간대 있는 UTC로 맞춘다."""
+    return schemas.FileDeletionOut(
+        deletion_id=row.deletion_id, run_id=row.run_id, status=row.status, attempts=row.attempts,
+        last_error_kind=row.last_error_kind, created_at=utc(row.created_at), next_at=utc(row.next_at),
+        last_tried_at=utc(row.last_tried_at), gave_up_at=utc(row.gave_up_at), retried_by=row.retried_by,
+        retried_at=utc(row.retried_at), retry_count=row.retry_count)

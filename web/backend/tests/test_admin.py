@@ -177,6 +177,21 @@ def test_negative_scores_with_valid_total_are_rejected(admin_client):
     assert admin_client.get('/admin/policy').json() == before
 
 
+@pytest.mark.parametrize('weights', [(0, 50, 50), (50, 0, 50), (50, 50, 0), (0, 0, 100)])
+def test_zero_score_weight_is_rejected_even_when_the_total_is_100(admin_client, weights):
+    """배점 0인 층은 오케스트레이터가 0 그대로 써서 환산 점수가 늘 0이 된다 — 저장 자체를 막는다."""
+    before = admin_client.get('/admin/policy').json()
+    doc, code, plan = weights
+    response = admin_client.put('/admin/policy/scores', json={'doc_weight': doc, 'code_weight': code, 'plan_weight': plan})
+    assert response.status_code == 422
+    assert admin_client.get('/admin/policy').json() == before
+
+
+def test_small_positive_score_weights_are_accepted(admin_client):
+    response = admin_client.put('/admin/policy/scores', json={'doc_weight': 0.5, 'code_weight': 0.5, 'plan_weight': 99})
+    assert response.status_code == 200, response.text
+
+
 def test_negative_checklist_weight_is_rejected(admin_client):
     before = admin_client.get('/admin/checklist').json()
     payload = [dict(check_item_id=item['check_item_id'], weight=0, enabled=True)
@@ -729,7 +744,8 @@ def test_score_history_empty_without_run_and_404_without_project(admin_client, u
     project_id = _create_project(user_client)
     orch.responses['admin_score_history'] = OrchError('RUN_NOT_FOUND', 'x')
     res = admin_client.get(f'/admin/items/{project_id}/score-history')
-    assert res.status_code == 200 and res.json() == {'doc': [], 'code': [], 'plan': []}
+    assert res.status_code == 200 and res.json() == {
+        'doc': [], 'code': [], 'plan': [], 'doc_max': None, 'code_max': None, 'plan_max': None}
     assert admin_client.get('/admin/items/999999/score-history').status_code == 404
 
 
@@ -867,3 +883,33 @@ def test_agent_ops_summary_shows_total_image_tokens_apart_from_text_tokens(admin
     body = admin_client.get('/admin/agent-ops-summary').json()
 
     assert body['total_tokens'] == 1800 and body['total_image_tokens'] == 4200
+
+
+# ── 환산 칸(점수 보고서 · 관리자 만점) — 오케스트레이터 2026-10-11 ─────────────────────────────────────────────
+def _admin_item(admin_client, user_client, orch, **run):
+    pid = _create_project(user_client)
+    orch.responses['admin_runs'] = lambda **kw: [make_admin_run(pid, **run)]
+    rows = {i['project_id']: i for i in admin_client.get('/admin/items').json()}
+    return rows[pid], pid
+
+
+def test_admin_items_carry_layer_scores_and_the_run_s_maxima(admin_client, user_client, orch):
+    row, _ = _admin_item(admin_client, user_client, orch, doc_score=40.0, artifact_score=35.0, total_score=75.0, doc_max=50.0, artifact_max=50.0)
+
+    assert (row['doc_score'], row['doc_max_score'], row['artifact_score'], row['artifact_max_score']) == (40.0, 50.0, 35.0, 50.0)
+    assert row['score'] == pytest.approx(75.0)
+
+
+def test_admin_items_maxima_are_empty_for_old_runs(admin_client, user_client, orch):
+    row, _ = _admin_item(admin_client, user_client, orch)
+
+    assert row['doc_max_score'] is None and row['artifact_max_score'] is None
+
+
+def test_admin_score_history_carries_the_run_s_maxima(admin_client, user_client, orch):
+    pid = _create_project(user_client)
+    orch.responses['admin_score_history'] = lambda p: make_admin_score_history(doc_max=50.0, code_check_max=20.0, feature_match_max=30.0)
+
+    body = admin_client.get(f'/admin/items/{pid}/score-history').json()
+
+    assert (body['doc_max'], body['code_max'], body['plan_max']) == (50.0, 20.0, 30.0)

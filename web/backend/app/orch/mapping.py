@@ -5,7 +5,6 @@
 """
 from app import pipeline_stages as ps
 from app import schemas
-from app.artifact_store import artifact_url
 
 # 3.1 단계 — 기준 문서 단계 ↔ 웹 stage. 공고선택 · 자격확인은 웹 stage가 없다(NULL).
 STEP_TO_STAGE: dict[str, str | None] = {
@@ -328,7 +327,45 @@ def section_bodies(plan_doc) -> dict[str, str]:
 
 
 def plan_sections_out(plan_doc) -> list[schemas.PlanSectionOut]:
-    return [schemas.PlanSectionOut(tag=s.section_code, title=s.title, body=section_body(s)) for s in plan_doc.sections]
+    """항목 번호(section_code) · 웹 태그(tag, 없으면 None) · 종류(content_type)를 각각 다른 칸으로 싣는다(SB-337)."""
+    return [_section_out(s) for s in plan_doc.sections]
+
+
+def _section_out(section) -> schemas.PlanSectionOut:
+    return schemas.PlanSectionOut(
+        section_code=section.section_code, tag=_web_tag(section), content_type=getattr(section, 'content_type', None) or 'section',
+        title=section.title, body=section_body(section))
+
+
+_LEGACY_TAGS = ('1-1', '2-1', '3-1', '4-1')
+
+
+def _web_tag(section) -> str | None:
+    """항목의 웹 태그 — 옛 계획서(SB-310 이전, 항목 번호가 곧 1-1 ~ 4-1인 4개 항목)는 태그 칸이 비어 있어 그 번호를 태그로 본다. 그 밖에 비어 있으면 None."""
+    tag = getattr(section, 'tag', None)
+    if tag:
+        return tag
+    return section.section_code if section.section_code in _LEGACY_TAGS else None
+
+
+# 계획서 그림(서비스 흐름도 · 서비스 구조도)의 이름과 문서에 들어가는 순서 — 응답 · 내려받기 문서가 같이 쓴다
+FLOW_TITLES = {'USER_FLOW': '서비스 흐름도', 'SERVICE_ARCHITECTURE': '서비스 구조도'}
+_FLOW_ORDER = list(FLOW_TITLES)
+
+
+def sorted_diagrams(plan_doc) -> list:
+    """계획서의 그림 — 서비스 흐름도 다음에 서비스 구조도 순서. 그림이 없거나 계획서가 없으면 빈 목록."""
+    diagrams = getattr(plan_doc, 'diagrams', None) or []
+    return sorted(diagrams, key=lambda d: _FLOW_ORDER.index(d.flow_type) if d.flow_type in _FLOW_ORDER else len(_FLOW_ORDER))
+
+
+def plan_diagrams_out(project_id: int, plan_doc) -> list[schemas.PlanDiagramOut]:
+    return [
+        schemas.PlanDiagramOut(
+            diagram_id=d.diagram_id, flow_type=d.flow_type, title=FLOW_TITLES.get(d.flow_type, d.flow_type),
+            source_ref=d.source_ref, nodes=list(d.nodes), image_url=file_url(project_id, d.image_file))
+        for d in sorted_diagrams(plan_doc)
+    ]
 
 
 # ── 점수 ──────────────────────────────────────────────────────────────────────────────
@@ -337,10 +374,12 @@ def plan_score_reasons(outputs) -> list[schemas.PlanScoreReasonOut]:
     if outputs.doc_score is None:
         return []
     names = {e.item_code: e.item_name for e in outputs.evaluation_items}
+    # 점수 항목의 item_code는 계획서 항목 번호라 같은 번호의 계획서 항목 태그를 붙인다(묶음별 합계 · 미달 사유용)
+    tags = {s.section_code: _web_tag(s) for s in outputs.plan_doc.sections} if outputs.plan_doc is not None else {}
     return [
         schemas.PlanScoreReasonOut(
             reason_text=i.comment, item_code=i.item_code, display_name=names.get(i.item_code),
-            score=i.score, max_score=i.max_score)
+            score=i.score, max_score=i.max_score, tag=tags.get(i.item_code))
         for i in outputs.doc_score.items
     ]
 
@@ -351,11 +390,19 @@ WITHHELD_REASON_TEXT = '계획서와 구현 기능을 대조하지 못했습니�
 def artifact_score_reasons(outputs) -> list[schemas.ArtifactScoreReasonOut]:
     """산출물층 — 코드 점검은 항목마다 'CHECK-이름', 기능 대조는 하나로 'FEATURE-MATCH'(접두어가 프론트가 층을 가르는 기준)."""
     reasons: list[schemas.ArtifactScoreReasonOut] = []
-    if outputs.code_check is not None:
-        for c in outputs.code_check.checks:
-            reasons.append(schemas.ArtifactScoreReasonOut(
-                reason_text=c.detail, item_code=f'CHECK-{c.name}', display_name=c.name,
-                score=c.weight if c.passed else 0, max_score=c.weight))
+    report = outputs.overall_score_report
+    # 종합 점수 보고서의 코드 점검 항목 줄은 그 실행 건 배점으로 환산한 값이다(없으면 옛 실행 건 — 검증-2 원점수 줄을 쓴다)
+    checks = list(getattr(report, 'code_check_items', None) or [])
+    if not checks and outputs.code_check is not None:
+        checks = list(outputs.code_check.checks)
+    for c in checks:
+        earned = getattr(c, 'earned', None)
+        applicable = getattr(c, 'applicable', None)
+        reasons.append(schemas.ArtifactScoreReasonOut(
+            reason_text=c.detail, item_code=f'CHECK-{c.name}', display_name=c.name,
+            # 부분 점수는 earned로, 해당 없음은 0점 · applicable=false로(passed는 만점인지만 뜻한다). earned가 없는 옛 줄만 passed로 본다
+            score=earned if earned is not None else (c.weight if c.passed else 0), max_score=c.weight,
+            applicable=True if applicable is None else bool(applicable)))
     if outputs.feature_match is not None:
         fm = outputs.feature_match
         notes = [*fm.findings, *[f'누락 기능: {m}' for m in fm.missing_features],
@@ -366,8 +413,15 @@ def artifact_score_reasons(outputs) -> list[schemas.ArtifactScoreReasonOut]:
             reason_text = ' / '.join(notes) or '계획서와 구현 기능이 맞습니다.'
         reasons.append(schemas.ArtifactScoreReasonOut(
             reason_text=reason_text, item_code='FEATURE-MATCH',
-            display_name='계획서 대조', score=fm.score, max_score=FEATURE_MATCH_MAX))
+            display_name='계획서 대조', score=_scaled(report, 'feature_match_score', fm.score),
+            max_score=_scaled(report, 'feature_match_max', FEATURE_MATCH_MAX)))
     return reasons
+
+
+def _scaled(report, field: str, fallback):
+    """종합 점수 보고서의 환산 칸(그 실행 건 배점 기준). 칸이 비어 있으면(옛 실행 건) fallback."""
+    value = getattr(report, field, None) if report is not None else None
+    return fallback if value is None else value
 
 
 # 통과 필수 조건 코드(구현 Agent · 검증-2 계약의 gate_failures 값) → 화면 이름
@@ -390,31 +444,43 @@ def _matched(outputs, field: str) -> list[str]:
     return list(getattr(fm, field, None) or [])
 
 
+def file_url(project_id: int, ref) -> str | None:
+    """오케스트레이터의 파일 참조(FileRef) → 웹 주소 `/projects/{project_id}/artifact-files/{key}` (SB-314).
+
+    key는 저장소 안의 위치이고 웹은 뜻을 풀지 않는다 — 주소에 그대로 붙이고, 파일은 이 주소를 받는 라우터가 key로
+    read_artifact_file을 불러 읽는다. 참조가 없으면(None) 주소도 없다."""
+    if ref is None:
+        return None
+    return f'/projects/{int(project_id)}/artifact-files/{ref.key}'
+
+
 def _infographic_path(project_id: int, outputs, category: str) -> str:
-    """인포그래픽 경로. 원페이지는 onepage.svg가 프로토타입 본체이자 인포그래픽이라, 오케스트레이터가 인포그래픽을 비워 두고
-    prototype.entryFilePath만 채워 보내도 같은 파일을 인포그래픽으로 보여 준다."""
+    """인포그래픽 주소. 원페이지는 onepage.svg가 프로토타입 본체이자 인포그래픽이라, 오케스트레이터가 인포그래픽을 비워 두고
+    prototype.entryFile만 채워 보내도 같은 파일을 인포그래픽으로 보여 준다."""
     infographic = outputs.infographic
-    if infographic is not None and infographic.image_path:
-        return artifact_url(project_id, infographic.image_path)
-    if category == 'onepage' and outputs.prototype is not None and outputs.prototype.entry_file_path:
-        return artifact_url(project_id, outputs.prototype.entry_file_path)
+    if infographic is not None and infographic.image_file is not None:
+        return file_url(project_id, infographic.image_file)
+    if category == 'onepage' and outputs.prototype is not None and outputs.prototype.entry_file is not None:
+        return file_url(project_id, outputs.prototype.entry_file)
     return ''
 
 
 def artifact_out(project_id: int, outputs) -> schemas.ArtifactOut | None:
-    """산출물. 파일 경로는 웹 주소로 바꿔 준다(SB-293) — 원페이지는 두 경로가 같은 onepage.svg라 인포그래픽만 보여 주고 실행 경로는 숨긴다."""
+    """산출물. 파일 참조는 웹 주소로 바꿔 준다(SB-293 · SB-314) — 원페이지는 두 참조가 같은 onepage.svg라 인포그래픽만 보여 주고 실행 경로는 숨긴다."""
     if outputs.prototype is None and outputs.infographic is None:
         return None
     category = CATEGORY_TO_WEB.get(outputs.category, outputs.category or 'webdev')
     report = outputs.overall_score_report
-    artifact_score = report.artifact_score.total if report is not None and report.artifact_score is not None else None
+    raw_total = report.artifact_score.total if report is not None and report.artifact_score is not None else None
+    artifact_score = _scaled(report, 'artifact_layer_score', raw_total)  # 원점수(15점 기준)가 아니라 환산 값 — 옛 실행 건은 원점수
     return schemas.ArtifactOut(
         category=category,
         infographic_path=_infographic_path(project_id, outputs, category),
         # 원페이지는 실행 파일이 없다
-        executable_path=(artifact_url(project_id, outputs.prototype.entry_file_path)
+        executable_path=(file_url(project_id, outputs.prototype.entry_file)
                          if outputs.prototype is not None and category != 'onepage' else None),
         artifact_score=artifact_score,
+        artifact_max_score=_scaled(report, 'artifact_layer_max', None),
         score_reasons=artifact_score_reasons(outputs),
         gate_failures=gate_failures_out(outputs),
         missing_features=_matched(outputs, 'missing_features'),
@@ -423,8 +489,11 @@ def artifact_out(project_id: int, outputs) -> schemas.ArtifactOut | None:
 
 
 def verdict_out(outputs, policy) -> schemas.VerdictOut | None:
-    """종합 판정. 총점 · 통과는 오케스트레이터 값 그대로(웹이 다시 계산하지 않는다). 만점은 웹 정책(없으면 기본값)의
-    지금 값 — 실행 시작 뒤 관리자가 바꿨으면 어긋날 수 있다(명세 3.5)."""
+    """종합 판정. 총점 · 통과는 오케스트레이터 값 그대로(웹이 다시 계산하지 않는다).
+
+    층 점수 · 만점은 점수 보고서의 환산 칸(그 실행 건 배점 기준)을 쓴다 — 지금 정책 값을 만점으로 붙이면 관리자가 배점을 바꾼 뒤
+    '13/10'처럼 어긋난다(배점을 바꾸기 전에 시작한 실행 건은 옛 배점으로 채점되므로). 환산 칸이 비어 있는 옛 실행 건만 예전처럼
+    원점수와 웹 정책(없으면 기본값)의 지금 값을 쓴다(명세 3.5)."""
     report = outputs.overall_score_report
     if report is None:
         return None
@@ -432,12 +501,16 @@ def verdict_out(outputs, policy) -> schemas.VerdictOut | None:
     return schemas.VerdictOut(
         overall_passed=report.passed,
         doc_score=report.doc_score.total,
-        doc_max_score=float(policy.doc_weight) if policy is not None else DEFAULT_DOC_MAX,
-        code_score=artifact.code_check.total if artifact is not None else None,
-        code_max_score=float(policy.code_weight) if policy is not None else DEFAULT_CODE_MAX,
-        plan_match_score=artifact.feature_match.score if artifact is not None else None,
-        plan_match_max_score=float(policy.plan_weight) if policy is not None else DEFAULT_PLAN_MAX,
+        doc_max_score=_scaled(report, 'doc_layer_max', float(policy.doc_weight) if policy is not None else DEFAULT_DOC_MAX),
+        code_score=_scaled(report, 'code_check_score', artifact.code_check.total if artifact is not None else None),
+        code_max_score=_scaled(report, 'code_check_max', float(policy.code_weight) if policy is not None else DEFAULT_CODE_MAX),
+        plan_match_score=_scaled(report, 'feature_match_score', artifact.feature_match.score if artifact is not None else None),
+        plan_match_max_score=_scaled(
+            report, 'feature_match_max', float(policy.plan_weight) if policy is not None else DEFAULT_PLAN_MAX),
         plan_match_withheld=bool(artifact is not None and artifact.feature_match.withheld),
+        artifact_score=_scaled(report, 'artifact_layer_score', None),
+        artifact_max_score=_scaled(report, 'artifact_layer_max', None),
+        notices=list(report.notices),
         total_score=report.total,
         pass_threshold=report.threshold,
     )
@@ -491,6 +564,19 @@ def format_findings_out(outputs) -> list[schemas.FormatFindingOut]:
     ]
 
 
+def table_fallbacks_out(outputs) -> list[schemas.TableFallbackOut]:
+    """표를 본문으로 대체한 항목의 사유(Outputs.table_fallbacks) — 항목 번호로 계획서 항목을 찾아 태그 · 제목을 덧붙인다.
+    사용자에게는 displayReason(쉬운 안내)만 준다 — 담당자 판정 원문(reason)은 내부 진단용이라 싣지 않는다(함수명세 5.1)."""
+    sections = {s.section_code: s for s in outputs.plan_doc.sections} if outputs.plan_doc is not None else {}
+    return [
+        schemas.TableFallbackOut(
+            section_code=f.section_code, display_reason=f.display_reason,
+            tag=_web_tag(sections[f.section_code]) if f.section_code in sections else None,
+            title=sections[f.section_code].title if f.section_code in sections else None)
+        for f in outputs.table_fallbacks
+    ]
+
+
 # ── GET /result ───────────────────────────────────────────────────────────────────────
 def result_out(project_id: int, outputs, policy, originals: dict[str, str] | None = None) -> schemas.DemoGenerateResponse:
     """outputs(project_id) → 결과 응답. 계획서(planDoc)가 아직 없으면 호출한 쪽이 404로 답한다(plan_doc 확인 뒤 부른다).
@@ -499,8 +585,12 @@ def result_out(project_id: int, outputs, policy, originals: dict[str, str] | Non
     report = outputs.document_score_report
     plan = schemas.BusinessPlanOut(
         doc_score=outputs.doc_score.total if outputs.doc_score is not None else None,
+        doc_max_score=_scaled(report, 'doc_layer_max', None),
         threshold=report.threshold if report is not None else None,
         sections=plan_sections_out(plan_doc),
+        diagrams=plan_diagrams_out(project_id, plan_doc),
+        table_fallbacks=table_fallbacks_out(outputs),
+        notices=list(report.notices) if report is not None else [],
         score_reasons=plan_score_reasons(outputs),
         artifacts=[a for a in [artifact_out(project_id, outputs)] if a is not None],
         format_findings=format_findings_out(outputs),
@@ -537,7 +627,7 @@ def rework_accepted_out(project_id: int, task_key: str, orch_bundle: str, accept
 
 
 def _plan_section_out(section) -> schemas.PlanSectionOut:
-    return schemas.PlanSectionOut(tag=section.section_code, title=section.title, body=section_body(section))
+    return _section_out(section)
 
 
 def rework_changed(project_id: int, result) -> dict:
@@ -546,14 +636,17 @@ def rework_changed(project_id: int, result) -> dict:
     if result.plan_before is not None and result.plan_after is not None:
         before = {s.section_code: section_body(s) for s in result.plan_before}
         after = {s.section_code: section_body(s) for s in result.plan_after}
+        # 키는 항목 번호(section_code)다 — SB-310부터 항목 번호가 '2.4.1'처럼 오고, 예전에는 키가 곧 웹 태그('1-1')였다.
+        # 화면이 묶음 이름을 보이려면 쓸 수 있게 항목마다 웹 태그(tag, 없으면 None)와 제목(title)을 덧붙인다(before · after는 그대로).
+        sections = {s.section_code: s for s in [*result.plan_before, *result.plan_after]}
         changed['sections'] = {
-            tag: {'before': before.get(tag), 'after': after.get(tag)}
-            for tag in [*before, *[t for t in after if t not in before]]
-            if before.get(tag) != after.get(tag)
+            code: {'before': before.get(code), 'after': after.get(code), 'tag': _web_tag(sections[code]), 'title': sections[code].title}
+            for code in [*before, *[c for c in after if c not in before]]
+            if before.get(code) != after.get(code)
         }
     for f in result.files:
         key = 'executable_path' if f.artifact == 'prototype' else 'infographic_path'
-        changed[key] = {'before': artifact_url(project_id, f.before_path), 'after': artifact_url(project_id, f.after_path)}
+        changed[key] = {'before': file_url(project_id, f.before_file), 'after': file_url(project_id, f.after_file)}
     if result.kept is not None:
         changed['version_kept'] = 'new' if result.kept == '후' else 'previous'
         changed['version_comparison'] = {'before_score': result.before_score, 'after_score': result.after_score}
@@ -578,8 +671,8 @@ def rework_result_out(project_id: int, result) -> schemas.ReworkResultOut:
         plan_before=[_plan_section_out(s) for s in result.plan_before] if result.plan_before is not None else None,
         plan_after=[_plan_section_out(s) for s in result.plan_after] if result.plan_after is not None else None,
         files=[schemas.ReworkFileChangeOut(
-            artifact=f.artifact, before_path=artifact_url(project_id, f.before_path),
-            after_path=artifact_url(project_id, f.after_path)) for f in result.files],
+            artifact=f.artifact, before_path=file_url(project_id, f.before_file),
+            after_path=file_url(project_id, f.after_file)) for f in result.files],
         rolled_back=result.rolled_back,
         refunded_bundles=[web_bundle_id_of(b) for b in result.refunded_bundles],
         notice_code=result.notice_code,

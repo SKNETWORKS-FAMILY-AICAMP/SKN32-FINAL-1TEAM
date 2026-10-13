@@ -48,9 +48,13 @@ _PERSONAL_INFO_NOTICE_BY_TEMPLATE 참고.
     시 병합이 깨질 위험이 있어 일부러 손대지 않았다. 원본 양식 자체도 "행 추가
     가능, 해당 없으면 공란 유지"라고 안내하므로, 넘치는 항목은 잘리고 남는 행은
     공란 처리하는 지금 방식이 최소한 "지어내지 않는다"는 원칙은 지킨다.
-  - 사업비 집행계획은 원본이 1단계/2단계 두 표로 나뉘는데 DB엔 "단계" 개념이 없다
-    (plan_document_export.py와 같은 이유) — 전부 1단계 표에 몰아넣고 2단계 표는
-    예시 숫자가 진짜처럼 보이지 않도록 공란으로 지운다.
+  - 사업비 집행계획은 원본이 1단계/2단계 두 표로 나뉜다. 예비창업은 사업비 줄의 단계
+    (project_budget_items.phase, SB-327)로 표12(1단계) · 표14(2단계)에 나눠 채우고,
+    단계가 없는 줄은 1단계 표에 넣는다. 한 단계에 줄이 없으면 그 표는 예시 숫자가
+    진짜처럼 보이지 않도록 공란으로 지운다.
+  - 계획서 그림(서비스 흐름도 · 서비스 구조도, SB-340)은 맨 뒤에 쪽을 하나 더 만들어 그 쪽에 붙인다(_append_diagram_page) — rhwp의 그림 삽입은
+    쪽 좌표에 떠 있는 그림이라 본문 쪽에 붙이면 글자 위에 겹친다. 캡션은 없다(그림 안에 제목이 있다).
+  - 결과물의 인포그래픽(기준 문서 T-C4)은 그림 쪽 다음의 새 쪽에 한 장으로 붙고(쪽 높이를 넘으면 비율을 지켜 줄임), 첫 장 고지는 첫 쪽 맨 앞 문단(0)에 한 줄로 넣는다.
   - 초기창업패키지(early_general) 표5의 "지원 분야"/"전문기술분야"는 실제 체크박스가
     아니라 빈 칸에 표시를 채워 넣는 방식이라(뒤한글 실제 체크박스 컨트롤이 아님),
     project.tech_field 값이 9개 보기 문구와 정확히 같을 때만 그 칸에 'V'를 쓴다 —
@@ -64,7 +68,15 @@ import os
 import subprocess
 import tempfile
 
-from app.plan_document_export import BudgetLineItem, PartnerRow, PlanDocumentData, ScheduleRow, TeamRow
+from app.plan_document_export import (
+    DEFAULT_DISCLAIMER,
+    BudgetLineItem,
+    PartnerRow,
+    PlanDocumentData,
+    ScheduleRow,
+    TeamRow,
+    split_budget_by_phase,
+)
 
 RHWP_BIN = os.environ.get('RHWP_BIN') or 'rhwp'
 
@@ -275,9 +287,10 @@ def _preliminary_steps(data: PlanDocumentData) -> list[dict]:
     # docstring "아직 안 된 것" 참고). set_cell을 안 부른다.
     # 표10: 실현가능성 일정
     _fill_rows(steps, 10, 1, [0, 1, 2, 3], _schedule_rows_tuples(data.실현가능성_일정), slot_count=5)
-    # 표12/14: 사업비 집행계획(1단계에 전부, 2단계는 공란 — 모듈 docstring 참고)
-    _budget_steps(steps, 12, data.사업비_집행계획, data.정부지원사업비)
-    _budget_steps(steps, 14, [], '')
+    # 표12/14: 사업비 집행계획 1단계 · 2단계(단계 없는 행은 1단계 — 모듈 docstring 참고)
+    first, second = split_budget_by_phase(data.사업비_집행계획)
+    _budget_steps(steps, 12, first, data.정부지원사업비_1단계)
+    _budget_steps(steps, 14, second, data.정부지원사업비_2단계)
 
     # 표17: 성장전략 일정
     _fill_rows(steps, 17, 1, [0, 1, 2, 3], _schedule_rows_tuples(data.성장전략_일정), slot_count=5)
@@ -325,6 +338,28 @@ _BODY_INSERTS_BY_TEMPLATE: dict[str, list[tuple[str, int]]] = {
     ],
 }
 
+# [SB-339] 표 항목의 서술 문장은 양식에 따로 칸이 없어, 그 표가 속한 절의 본문 뒤에 이어 붙인다 — docx는 표 아래 문단으로 쓴다.
+_BODY_NARRATIVES: dict[str, tuple[str, ...]] = {
+    '실현가능성_본문': ('실현가능성_일정_서술', '사업비_서술', '사업비_2단계_서술'),
+    '성장전략_본문': ('성장전략_일정_서술',),
+}
+
+
+_PHASE_LABELS = {'사업비_서술': '1단계', '사업비_2단계_서술': '2단계'}
+
+
+def _body_text(data: PlanDocumentData, field_name: str) -> str:
+    """절 본문 + 그 절의 표 서술(줄바꿈 → ' / '로 한 줄). 본문이 안내 문구뿐이어도 서술이 있으면 서술은 붙는다."""
+    parts = [getattr(data, field_name, '')]
+    for extra in _BODY_NARRATIVES.get(field_name, ()):
+        text = getattr(data, extra, '')
+        # 예비창업자는 사업비 서술이 1단계 · 2단계 두 개라 어느 단계 서술인지 머리말을 단다(본문엔 한 덩어리로 이어 붙으므로)
+        if text and extra in _PHASE_LABELS and getattr(data, '사업비_2단계_서술', ''):
+            text = f'[{_PHASE_LABELS[extra]}] {text}'
+        parts.append(text)
+    return _one_line('\n'.join(part for part in parts if part))
+
+
 # 팀 구성 제목 표 다음에 오는, 표가 아닌 개인정보 마스킹 안내문구(파란 글씨) 문단 —
 # (구역=0 고정 문단 번호, 글자 수). 모듈 docstring "표 밖 파란 안내문구" 참고.
 _PERSONAL_INFO_NOTICE_BY_TEMPLATE: dict[str, tuple[int, int]] = {
@@ -333,9 +368,9 @@ _PERSONAL_INFO_NOTICE_BY_TEMPLATE: dict[str, tuple[int, int]] = {
 }
 
 
-def _run_rhwp(args: list[str]) -> None:
+def _run_rhwp(args: list[str]) -> str:
     """rhwp CLI를 실행하고 실패를 일관된 예외로 바꾼다 — render_plan_hwp의 run/edit
-    delete-table 호출이 공유한다."""
+    delete-table 호출이 공유한다. 표준 출력(--json 응답 등)을 돌려준다."""
     try:
         result = subprocess.run(
             [RHWP_BIN, *args], capture_output=True, text=True, encoding='utf-8', errors='replace',
@@ -347,6 +382,59 @@ def _run_rhwp(args: list[str]) -> None:
     if result.returncode != 0:
         error_msg = (result.stderr or result.stdout or '알 수 없는 rhwp 오류').strip()
         raise RuntimeError(f'rhwp 처리 중 오류 발생: {error_msg}')
+    return result.stdout
+
+
+# [SB-340] 그림(서비스 흐름도 · 서비스 구조도)은 hwp 맨 뒤에 쪽을 하나 더 만들어 그 쪽에 붙인다 — rhwp의 그림 삽입은 쪽 좌표에 떠 있는
+# 그림이라, 본문 쪽에 붙이면 글자 위에 겹친다. 길이 단위는 HWPUNIT(1/7200 inch, A4 세로 59528 × 84188).
+_A4_WIDTH = 59528
+_PICTURE_WIDTH = 46000                           # 본문 폭(48188)보다 조금 좁게
+_PICTURE_X = (_A4_WIDTH - _PICTURE_WIDTH) // 2   # 가운데
+_PICTURE_TOP = 8504                              # 위 여백(3cm)
+_PICTURE_GAP = 2000
+_A4_HEIGHT = 84186
+_INFOGRAPHIC_MAX_HEIGHT = _A4_HEIGHT - 2 * _PICTURE_TOP   # 인포그래픽은 한 쪽에 한 장 — 세로가 쪽 높이를 넘으면 비율을 지켜 줄인다
+
+
+def _append_picture_pages(current_output: str, groups: list, new_tmp) -> str:
+    """hwp 맨 끝에 묶음마다 새 쪽을 하나씩 만들고, 묶음의 그림을 그 쪽에 위에서 아래로 붙인다. 새 파일 경로를 돌려준다.
+
+    groups: [(그림 목록, 그림 하나의 세로 상한(HWPUNIT) 또는 None)]. 상한을 넘는 그림은 비율을 지켜 가로도 줄이고 가운데에 둔다(인포그래픽).
+    쪽을 먼저 모두 나눈 뒤 그림을 붙인다 — rhwp의 그림은 맨 끝 문단에 매달려 있어서, 그림을 붙인 뒤 다시 쪽을 나누면 그림이 문단과 함께 뒤 쪽으로 딸려 간다."""
+    info = json.loads(_run_rhwp(['explain', current_output, '--json']))
+    para = info['paragraphCount'] - 1
+    for _group in groups:
+        paged = new_tmp()
+        _run_rhwp(['edit', 'insert-page-break', current_output, '--section', '0', '--para', str(para),
+                   '--offset', '0', '-o', paged])
+        current_output, para = paged, para + 1
+    first_page = json.loads(_run_rhwp(['explain', current_output, '--json']))['pageCount'] - len(groups)
+    for offset, (pictures, max_height) in enumerate(groups):
+        y = _PICTURE_TOP
+        for picture in pictures:
+            width_px, height_px = picture.size_px
+            width = _PICTURE_WIDTH
+            height = round(width * height_px / width_px)
+            if max_height is not None and height > max_height:
+                height = max_height
+                width = round(max_height * width_px / height_px)
+            image_fd, image_path = tempfile.mkstemp(suffix='.png')
+            try:
+                with os.fdopen(image_fd, 'wb') as f:
+                    f.write(picture.png)
+                next_output = new_tmp()
+                _run_rhwp(['edit', 'insert-image', current_output, '--image', image_path, '--page', str(first_page + offset),
+                           '--x', str((_A4_WIDTH - width) // 2), '--y', str(y), '--width', str(width), '--height', str(height),
+                           '-o', next_output])
+            finally:
+                os.remove(image_path)
+            current_output, y = next_output, y + height + _PICTURE_GAP
+    return current_output
+
+
+def _append_diagram_page(current_output: str, pictures: list, new_tmp, max_height: int | None = None) -> str:
+    """새 마지막 쪽 하나에 그림을 붙인다(_append_picture_pages의 묶음 하나짜리)."""
+    return _append_picture_pages(current_output, [(pictures, max_height)], new_tmp)
 
 
 def render_plan_hwp(data: PlanDocumentData, template: str) -> bytes:
@@ -391,7 +479,7 @@ def render_plan_hwp(data: PlanDocumentData, template: str) -> bytes:
         # delete-table처럼 이전 산출물을 체이닝한다. 빈 문자열은 insert-text가
         # 거부하므로(그리고 채울 내용이 없으면 빈 칸 유지가 원칙이므로) 건너뛴다.
         for field_name, para in body_inserts:
-            text = _one_line(getattr(data, field_name, ''))
+            text = _body_text(data, field_name)
             if not text:
                 continue
             next_output = _new_tmp()
@@ -420,6 +508,17 @@ def render_plan_hwp(data: PlanDocumentData, template: str) -> bytes:
             next_output = _new_tmp()
             _run_rhwp(['edit', 'delete-table', current_output, '--table', str(table_index), '-o', next_output])
             current_output = next_output
+
+        # 첫 장 고지(기준 문서 T-C4) — 위 표 삭제로 첫 쪽의 안내 표가 사라진 맨 앞 문단(0)에 한 줄로 넣는다
+        next_output = _new_tmp()
+        _run_rhwp(['edit', 'insert-text', current_output, '--section', '0', '--para', '0', '--offset', '0',
+                   '--text', _one_line(data.고지) or DEFAULT_DISCLAIMER, '-o', next_output])
+        current_output = next_output
+
+        picture_pages = ([(data.그림, None)] if data.그림 else []) + (
+            [([data.인포그래픽], _INFOGRAPHIC_MAX_HEIGHT)] if data.인포그래픽 is not None else [])
+        if picture_pages:
+            current_output = _append_picture_pages(current_output, picture_pages, _new_tmp)
 
         with open(current_output, 'rb') as f:
             return f.read()

@@ -7,6 +7,7 @@ from datetime import date
 import pytest
 
 from conftest import executed, make_app, pre_input, project_for, start_and_select, to_screen6, to_screen9
+from flow_helpers import ctx_of, tc3_requests
 
 from sbrain.agents import form_defaults
 from sbrain.agents.form_defaults import FORM_PROBLEMS, FORM_TABLE, FormBundle, form_problem, select_form
@@ -30,15 +31,6 @@ AGENTS = {"T-C1": "조율", "T-C2": "조율", "T-C3": "조율", "T-S1": "전략"
           "T-P1": "검수", "T-P2": "검수"}
 INSTRUCTED = ["T-S1", "T-S2", "T-W1", "T-W2", "T-W3", "T-B1", "T-B2"]
 CONTEXT_KEYS = {"formVersion", "applyEnd", "supportAmountMax", "evaluationItems", "formatSpec"}
-WEB_SECTIONS = ["1-1", "2-1", "3-1", "4-1"]
-
-
-def ctx_of(app, rid):
-    return app.engine.open_context(app.store.load_run(rid))
-
-
-def tc3_requests(app):
-    return [r for r in app.llm.requests if r.metadata["task_id"] == "T-C3"]
 
 
 def tc3_in(*, category="웹개발", applicant_type="법인", summary=None, passed=True, **company) -> c.TC3In:
@@ -56,31 +48,32 @@ def guidance_for(category) -> dict[str, str]:
 
 
 # ── 신청자 유형별 양식 표 (spec 3.3) ─────────────────────────
-@pytest.mark.parametrize("applicant", ["예비창업자", "개인사업자", "법인"])
-def test_form_table_keeps_invariants_and_document_layer_70(applicant):
+@pytest.mark.parametrize("applicant,count", [("예비창업자", 25), ("개인사업자", 24), ("법인", 24)])
+def test_form_table_keeps_invariants_and_document_layer_70(applicant, count):
+    # 양식 = 전략 · 작성 · 검증-1 담당자 항목 (spec 4.6 — 계약과 같은지는 test_partner_sw_forms.py가 본다)
     assert form_problem(applicant) is None
     b = select_form(applicant)
     assert applicant in b.form_spec.applicant_types
-    assert b.form_spec.section_codes == WEB_SECTIONS                       # 웹 계획서 섹션 태그와 같다
-    assert b.form_spec.section_titles == ["문제인식", "실현가능성", "성장전략", "팀 구성"]
-    assert sum(e.max_score for e in b.evaluation_items) == 70              # 문서층
-    assert {r.item_code for r in b.rubric.items} == {e.item_code for e in b.evaluation_items}
+    assert len(b.form_spec.section_codes) == len(b.form_spec.section_titles) == count
+    assert sum(e.max_score for e in b.evaluation_items) == pytest.approx(70)   # 문서층 (70 ÷ 항목 수 — 소수 오차)
+    assert [r.item_code for r in b.rubric.items] == [e.item_code for e in b.evaluation_items] == b.form_spec.section_codes
     assert (b.form_spec.max_chars_per_section, b.form_spec.attachment_required) == (None, False)
 
 
 def test_form_table_versions_per_applicant_type():
-    assert select_form("예비창업자").form_spec.form_version == "예비창업패키지(잠정)"
+    assert select_form("예비창업자").form_spec.form_version == "pre_startup@2"
     assert select_form("개인사업자").form_spec.form_version == select_form("법인").form_spec.form_version \
-        == "초기창업패키지-일반형(잠정)"
+        == "early_startup@2"
     assert select_form("예비창업자").form_spec.applicant_types == ["예비창업자"]
     assert select_form("법인").form_spec.applicant_types == ["개인사업자", "법인"]
-    assert (select_form("법인").rubric.rubric_id, select_form("법인").rubric.version) == ("rubric-stub", "stub-1")
+    assert (select_form("법인").rubric.rubric_id, select_form("법인").rubric.version) == ("partner-sw", "2026-10-02.1")
 
 
 def test_selected_bundle_is_a_copy():
     b = select_form("법인")
+    codes = list(b.form_spec.section_codes)
     b.form_spec.section_codes.append("9-9")
-    assert select_form("법인").form_spec.section_codes == WEB_SECTIONS
+    assert select_form("법인").form_spec.section_codes == codes
 
 
 def test_announcement_default_form_is_unchanged():
@@ -143,7 +136,36 @@ def test_frames_branch_only_for_prototype_tasks():
     assert plan.frame_for("T-B1", "웹개발") != plan.frame_for("T-B1", "AI_API")
     assert "SVG" in plan.frame_for("T-B2", "원페이지") and "SVG" not in plan.frame_for("T-B2", "웹개발")
     assert "coreFeatures" in plan.frame_for("T-S1", "웹개발")
-    assert "applyEnd" in plan.frame_for("T-W1", "웹개발")
+    assert "applyEnd" not in plan.frame_for("T-W1", "웹개발") and "개발 종료월" in plan.frame_for("T-W1", "웹개발")
+
+
+# T-W1 · T-W3 일정 규칙의 네 가지 뜻 — 기준(개발 종료월) · 협약 이후 · 사용자 일정 보존(확인 필요) · 접수 마감일은 기준 아님
+SCHEDULE_RULE_WORDS = ("개발 종료월", "협약 이후", "확인 필요", "접수 마감일")
+
+
+@pytest.mark.parametrize("task_id", ["T-W1", "T-W3"])
+@pytest.mark.parametrize("category", ["웹개발", "AI_API", "원페이지"])
+def test_writing_frames_schedule_rules_follow_development_end(task_id, category):
+    """일정 기준은 공고 접수 마감일(applyEnd)이 아니라 개발 종료월이다 — 담당자 울타리와 같다.
+    지원규모 상한 규칙과 우선 규칙은 그대로다."""
+    frame = plan.frame_for(task_id, category)
+    assert "applyEnd" not in frame
+    assert all(word in frame for word in SCHEDULE_RULE_WORDS), [w for w in SCHEDULE_RULE_WORDS if w not in frame]
+    assert "넘어도" not in frame                                   # 협약 이후 일정에 늦은 날짜를 권하지 않는다
+    assert "supportAmountMax" in frame and plan.FRAME_PRIORITY_RULE in frame
+    assert '"' not in frame and "\\" not in frame                 # 요청 글자에서 json.dumps로 찾는다(test_tc3)
+
+
+def test_writing_frames_keep_other_rules():
+    """일정 규칙만 바뀌고 T-W1 · T-W3의 다른 규칙은 그대로다."""
+    w1 = plan.frame_for("T-W1", "웹개발").splitlines()
+    w3 = plan.frame_for("T-W3", "웹개발").splitlines()
+    assert "- 양식의 필수 섹션 코드와 1:1로 쓴다." in w1
+    assert "- 자금 합계는 지원규모 상한(선택 공고 supportAmountMax, 있으면)을 넘지 않는다." in w1
+    assert "- 수익모델 단가 · 경력은 회사 정보 값만 쓰고, 입력에 없는 경력을 지어내지 않는다." in w1
+    assert "- 자금운용표 합계는 지원규모 상한(선택 공고 supportAmountMax, 있으면) 이하다." in w3
+    assert "- 머리글과 행의 칸 수가 같다." in w3
+    assert all("applyEnd" not in plan.frame_for(t, "웹개발") for t in INSTRUCTED)
 
 
 @pytest.mark.parametrize("category", ["웹개발", "AI_API"])
@@ -216,7 +238,7 @@ def test_context_has_five_keys_and_null_values():
 def test_assemble_extension_outputs():
     inp = tc3_in(applicant_type="예비창업자", founded_at=None)
     out = plan.assemble(inp, plan.prepare(inp), guidance_for("웹개발"))
-    assert out.form_spec.form_version == "예비창업패키지(잠정)"
+    assert out.form_spec.form_version == "pre_startup@2"
     assert out.evaluation_items == select_form("예비창업자").evaluation_items
     assert out.rubric == select_form("예비창업자").rubric
     assert set(c.TC3Out.model_fields) >= {"form_spec", "evaluation_items", "rubric"}
@@ -349,7 +371,7 @@ def test_stub_tc3_receives_business_age_and_pre_startup_form(clock):
     app2.orchestrator.advance(res.run_id)
     app2.orchestrator.start_writing(res.run_id)
     app2.orchestrator.advance(res.run_id)
-    assert ctx_of(app2, res.run_id).get("formSpec").form_version == "예비창업패키지(잠정)"
+    assert ctx_of(app2, res.run_id).get("formSpec").form_version == "pre_startup@2"
 
 
 def _expect_tc3_failure(app, rid, text):
@@ -455,4 +477,4 @@ def test_outputs_evaluation_items_before_and_after_tc3(clock):
     app.orchestrator.advance(rid)
     out = app.orchestrator.outputs(p)
     assert out.evaluation_items == select_form("법인").evaluation_items
-    assert [set(e) for e in out.dump()["evaluationItems"]] == [{"itemCode", "itemName", "maxScore", "description"}] * 4
+    assert [set(e) for e in out.dump()["evaluationItems"]] == [{"itemCode", "itemName", "maxScore", "description"}] * 24

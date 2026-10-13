@@ -203,15 +203,33 @@ def make_proofread_screen(sentences: list | None = None, **overrides: Any) -> NS
     return NS(**base)
 
 
-def make_section(code: str, title: str, *texts: str) -> NS:
-    """texts마다 문장 하나, 문단 번호는 인자 순서대로 1부터(문단 사이는 줄바꿈으로 이어진다)."""
-    return NS(section_code=code, title=title, sentences=[make_sentence(i, t, paragraph_no=i) for i, t in enumerate(texts, 1)])
+def make_section(code: str, title: str, *texts: str, tag: str | None = None, content_type: str = 'section') -> NS:
+    """texts마다 문장 하나, 문단 번호는 인자 순서대로 1부터(문단 사이는 줄바꿈으로 이어진다).
+
+    tag(웹 태그 1-1 ~ 4-1 또는 None) · content_type(section · table · image)은 SB-310에서 늘었다 — 기본은 태그 없음 · 본문이고,
+    image 항목은 문장이 0개다(texts를 비운다)."""
+    return NS(section_code=code, title=title, sentences=[make_sentence(i, t, paragraph_no=i) for i, t in enumerate(texts, 1)],
+              tag=tag, content_type=content_type)
+
+
+def make_file_ref(name: str, key: str | None = None, media_type: str = 'image/svg+xml', size: int = 1, sha256: str = '0' * 64) -> NS:
+    """산출물 파일 참조(FileRef)의 필드."""
+    return NS(key=key or f'r1/e1/uniq/{name}', name=name, media_type=media_type, size=size, sha256=sha256)
+
+
+def make_diagram(source_ref: str = '2.3.6', flow_type: str = 'USER_FLOW', nodes: list | None = None, **overrides: Any) -> NS:
+    """계획서 그림 하나(DiagramSpec) — 그림 항목(2.3.6 · 3.3.6)마다 서비스 흐름도 · 서비스 구조도 두 개가 온다."""
+    base = dict(
+        diagram_id=f'{source_ref}-{flow_type}', flow_type=flow_type, nodes=list(nodes or ['시작', '처리', '완료']),
+        visual_style={'palette': ['#1F2937']}, source_ref=source_ref, image_file=make_file_ref(f'{source_ref}_{flow_type}.svg'))
+    base.update(overrides)
+    return NS(**base)
 
 
 def make_plan_doc(sections: list | None = None, **overrides: Any) -> NS:
     base = dict(
         sections=sections if sections is not None else [make_section('1-1', '문제 인식', '문제를 설명한다.', '근거를 든다.')],
-        feature_list=['예약', '결제'], charts=[], tables=[], protected_tokens=[])
+        feature_list=['예약', '결제'], charts=[], tables=[], protected_tokens=[], diagrams=[])
     base.update(overrides)
     return NS(**base)
 
@@ -240,13 +258,23 @@ def make_feature_match(**overrides: Any) -> NS:
     return NS(**base)
 
 
-def make_score_view(total: float = 82.0, threshold: float = 80.0, passed: bool = True, with_artifact: bool = True) -> NS:
+def make_score_view(total: float = 82.0, threshold: float = 80.0, passed: bool = True, with_artifact: bool = True, **overrides: Any) -> NS:
+    """화면 점수 보고서(ScoreView). 환산 칸(그 실행 건 배점으로 환산한 점수 · 만점, SB-345)은 모두 None · 빈 목록이 기본이다 — 옛 실행 건은 비어 온다."""
     artifact = NS(
         total=30.0, code_check=NS(total=15.0, checks=[]), feature_match=make_feature_match(),
     ) if with_artifact else None
-    return NS(
+    base = dict(
         display_score=total, total=total, threshold=threshold, passed=passed, phase='종합',
-        doc_score=NS(total=52.0, items=[]), artifact_score=artifact, carried_over_layer=None, comparisons=[], notices=[])
+        doc_score=NS(total=52.0, items=[]), artifact_score=artifact, carried_over_layer=None, comparisons=[], notices=[],
+        doc_layer_max=None, code_check_score=None, code_check_max=None, feature_match_score=None, feature_match_max=None,
+        artifact_layer_score=None, artifact_layer_max=None, code_check_items=[])
+    base.update(overrides)
+    return NS(**base)
+
+
+def make_table_fallback(section_code: str = '2.5.2', reason: str = '내부 진단 원문', display_reason: str = '쉬운 안내') -> NS:
+    """표 대체 사유 하나(TableFallback) — test_orch_fake_contract가 실제 모델과 칸을 맞춰 본다."""
+    return NS(section_code=section_code, reason=reason, display_reason=display_reason)
 
 
 def make_outputs(**overrides: Any) -> NS:
@@ -254,7 +282,7 @@ def make_outputs(**overrides: Any) -> NS:
     base = dict(
         project_id='1', run_id='r1', step='문서평가', progress='사용자대기', candidates=[], more_candidates=[],
         selected_announcement=None, gate_result=None, business_age_years=None, category=None, plan_doc=None,
-        doc_score=None, document_score_report=None, overall_score_report=None, prototype=None, infographic=None,
+        table_fallbacks=[], doc_score=None, document_score_report=None, overall_score_report=None, prototype=None, infographic=None,
         code_check=None, feature_match=None, format_findings=[], sentence_results=[], proofread_log=None,
         deliverable=None, user_message=None, rework_usage=[], rework_limit=1, evaluation_items=[])
     base.update(overrides)
@@ -270,7 +298,7 @@ def make_admin_run(project_id: int | str = 1, **overrides: Any) -> NS:
     base = dict(
         project_id=str(project_id), run_id='r1', step='계획서작성', progress='실행', current_task='작성-1', agent='작성',
         attempt=1, updated_at=datetime.now(UTC), doc_score=None, artifact_score=None, total_score=None,
-        resume_count=0, last_error_kind=None, failure_reason=None)
+        resume_count=0, last_error_kind=None, failure_reason=None, doc_max=None, artifact_max=None)
     base.update(overrides)
     return NS(**base)
 
@@ -297,7 +325,18 @@ def make_score_entry(score: float, after_rework: bool = False, scored_at: dateti
 
 
 def make_admin_score_history(**overrides: Any) -> NS:
-    base = dict(project_id='1', run_id='r1', doc_score=[], code_check=[], feature_match=[])
+    base = dict(project_id='1', run_id='r1', doc_score=[], code_check=[], feature_match=[],
+                doc_max=None, code_check_max=None, feature_match_max=None)
+    base.update(overrides)
+    return NS(**base)
+
+
+def make_file_deletion(**overrides: Any) -> NS:
+    """admin_file_deletions 한 줄(AdminFileDeletion) — 시각은 시간대 있는 UTC."""
+    now = datetime.now(UTC)
+    base = dict(
+        deletion_id='d1', run_id='r1', status='포기', attempts=3, last_error_kind='운영', created_at=now, next_at=now,
+        last_tried_at=now, gave_up_at=now, retried_by=None, retried_at=None, retry_count=0)
     base.update(overrides)
     return NS(**base)
 

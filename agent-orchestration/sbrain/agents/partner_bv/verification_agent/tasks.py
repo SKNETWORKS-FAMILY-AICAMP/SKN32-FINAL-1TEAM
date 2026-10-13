@@ -1,0 +1,164 @@
+"""Orchestration의 T-V2 계약에 맞춘 산출물층 검증 Task."""
+from __future__ import annotations
+
+from typing import TYPE_CHECKING   # [S-Brain] Path import 삭제 — 파일은 tools.files로 읽는다(결정 0023)
+
+from .feature_match import match_features  # [S-Brain] 패키지 상대 import
+from .llm_judge import make_field_judge, make_judge  # [S-Brain] 패키지 상대 import
+from .rules import items as item_rules  # [S-Brain] 패키지 상대 import
+from .score import compute_code_check, compute_infographic_check  # [S-Brain] 패키지 상대 import
+
+if TYPE_CHECKING:
+    from sbrain.contracts.tasks import TV2In, TV2Out
+    from sbrain.orchestrator.tools import Tools
+
+# 대체 텍스트 칸 번호. HTML은 2번, 원페이지는 1번이다(rules/r4.py, rules/r4_onepage.py).
+_ALT_ITEM = {"html": 2, "svg-onepage": 1}
+
+
+def _read(tools, ref) -> str:   # [S-Brain] 경로 대신 파일 참조(FileRef)를 tools.files로 읽는다. 실패는 받지 않는다
+    """[S-Brain] 풀 수 없는 바이트는 대체 문자로 바꾼다(잠정 — settings PROVISIONAL tv2.fileDecode)."""
+    return tools.files.get(ref).decode("utf-8", errors="replace")
+
+
+def plan_text_of(plan_doc) -> str | None:
+    """계획서 본문과 표를 대조용 평문으로 편다. PlanDoc 모델과 같은 모양의 dict 둘 다
+    받는다. engineering_agent에도 같은 일을 하는 함수가 있지만 import하지 않는다."""
+    if plan_doc is None:
+        return None
+    get = (lambda o, k: o.get(k)) if isinstance(plan_doc, dict) else getattr
+
+    def sentence_text(s) -> str:
+        return s if isinstance(s, str) else get(s, "text")
+
+    sections = "\n".join(
+        f"{get(section, 'title')}\n"
+        + "\n".join(sentence_text(s) for s in (get(section, "sentences") or []))
+        for section in (get(plan_doc, "sections") or [])
+    )
+    tables = "\n".join(
+        f"{get(table, 'title')}\n" + "\n".join(" | ".join(row) for row in (get(table, "rows") or []))
+        for table in (get(plan_doc, "tables") or [])
+    )
+    return f"{sections}\n{tables}"
+
+
+def _check_infographic_alt(raw: dict, kind: str, svg: str, alt_text: str) -> None:
+    """Infographic.alt_text가 실제 SVG에 들어 있는지. 파일 바깥(계약 필드)과 파일
+    안이 어긋나면 화면에 보이는 대체 텍스트와 채점한 파일이 서로 다른 것이다."""
+    if not raw["passed"]:
+        return
+    if not svg or "<svg" not in svg or not alt_text or alt_text not in svg:
+        # 결함은 인포그래픽(T-B2) 쪽이다. 원페이지는 칸 전체가 T-B2 몫이라 표시하지 않는다.
+        sources = ["infographic"] if kind == "html" else []
+        item_rules.fail(raw["items"], _ALT_ITEM[kind], "Infographic.alt_text와 SVG 원문 불일치",
+                        sources)
+        raw["total"] = item_rules.total(raw["items"])
+
+
+def score_artifact(*, kind: str, entry_file_name: str | None, source_text: str,
+                   readme: str | None, svg: str, infographic_alt_text: str,
+                   feature_list: list[str], plan_text: str | None,
+                   tools=None, elements: dict[str, list[str]] | None = None) -> tuple[dict, dict]:
+    """산출물층 채점 본체. (코드 점검 결과, 계획서 대조 결과)를 dict로 돌려준다.
+
+    계약 모델에 의존하지 않으므로 sbrain 없이도 돈다. tools가 있으면 계획서 대조에서 규칙을
+    넘긴 기능을 LLM이 하나씩 다시 판정한다(llm_judge.py). 코드 점검은 규칙만 쓴다.
+
+    [S-Brain] 경로 대신 읽은 내용(진입 파일 · 안내 문서 · 인포그래픽)과 진입 파일 이름(없으면 None)을 받는다 — 파일은
+    run_tv2가 tools.files로 읽는다. elements는 확인 요소 목록 사전(llm_judge.make_judge에 넘기고 새로 뽑은 것이 더해진다).
+    """
+    # [S-Brain] readme · svg는 인자로 받는다(_read(경로) 삭제)
+
+    if kind == "svg-onepage":
+        raw = compute_infographic_check(entry_file_name, source_text, readme)   # [S-Brain]
+        if raw["passed"] and svg != source_text:
+            reason = "Infographic.imageFile과 Prototype.entryFile 내용 불일치"   # [S-Brain] 필드 이름만(경로 칸 없음)
+            raw.update(total=0.0, passed=False, gate_failures=[reason], gate_codes=["entry"],
+                       items=item_rules.skipped(
+                           tuple((i["id"], i["name"], i["weight"]) for i in raw["items"]),
+                           f"통과 필수 조건 실패로 검사 생략: {reason}"))
+    else:
+        raw = compute_code_check(entry_file_name, source_text, readme, svg)   # [S-Brain]
+    _check_infographic_alt(raw, kind, svg, infographic_alt_text)
+
+    source = source_text if raw["passed"] else ""
+    judge = make_judge(tools, kind, source, plan_text, elements) if source else None   # [S-Brain] 요소 목록 사전
+    field_judge = make_field_judge(tools, plan_text) if source and kind == "svg-onepage" else None
+    feature = match_features(feature_list, source, kind, plan_text, judge, field_judge)
+    return raw, feature
+
+
+def _detail(item: dict) -> str:
+    """계약의 CodeCheck에는 얻은 점수 칸이 없고 passed는 "만점인가"다. 부분 점수(3점 중 2점)가
+    화면에 "미통과"로만 보이지 않도록 근거 문구 앞에 얻은 점수를 적는다. 해당 없음 항목은 그대로."""
+    if not item.get("applicable", True):
+        return item["evidence"]
+    return f'{item["earned"]:g}/{item["weight"]:g}점 — {item["evidence"]}'
+
+
+def run_tv2(inp: TV2In, tools: Tools) -> TV2Out:
+    from sbrain.contracts.tasks import TV2Out
+    from sbrain.models import ArtifactScore, CodeCheck, CodeCheckResult, FeatureMatchResult
+
+    prototype = inp.prototype
+    # [S-Brain] 파일은 참조(FileRef)로 온다 — tools.files로 읽는다(결정 0023). 진입 파일 없음 = entryFile이 비어 있음.
+    # 파일 창구 실패는 받지 않는다("진입 파일 없음 → 0점"으로 채점하지 않는다). 원페이지는 진입 파일이 인포그래픽 참조와
+    # 같으므로(M-2) 같은 키면 한 번만 읽는다.
+    entry_ref, image_ref = prototype.entry_file, inp.infographic.image_file                    # [S-Brain]
+    source = _read(tools, entry_ref) if entry_ref is not None else ""                          # [S-Brain]
+    readme = _read(tools, prototype.readme_file) if prototype.readme_file is not None else None  # [S-Brain]
+    svg = source if entry_ref is not None and entry_ref.key == image_ref.key else _read(tools, image_ref)  # [S-Brain]
+    # [S-Brain] 확인 요소 목록(확장 featureElements, spec 4.4) — 입력 사본에 새로 뽑은 것을 더해 출력으로 돌려준다
+    elements = dict(inp.feature_elements or {})                                                 # [S-Brain]
+    raw, feature_raw = score_artifact(
+        kind=prototype.kind, entry_file_name=entry_ref.name if entry_ref is not None else None,   # [S-Brain]
+        source_text=source, readme=readme, svg=svg,                                             # [S-Brain]
+        infographic_alt_text=inp.infographic.alt_text, feature_list=inp.feature_list,
+        # plan_doc은 확장 필드다. 조율은 T-V2를 부를 때 늘 채우지만 타입은 None을 허용한다.
+        plan_text=plan_text_of(inp.plan_doc),
+        tools=tools, elements=elements,   # [S-Brain]
+    )
+    checks = [CodeCheck(no=item["id"], name=item["name"], weight=item["weight"],
+                        passed=bool(item["passed"]), detail=_detail(item),
+                        defect_sources=item["defect_sources"],
+                        earned=item["earned"], applicable=item["applicable"])   # [S-Brain] 계약 칸이 생겼다(spec 4.5)
+              for item in raw["items"]]
+    code = CodeCheckResult(total=raw["total"], checks=checks, gate_failures=raw["gate_codes"])
+    llm_failed = feature_raw.pop("llm_failed", [])
+    feature = FeatureMatchResult(**feature_raw)
+    # [S-Brain] 합계를 소수 둘째 자리로 맞춘다 — 15.0 + 14.06이 29.060000000000002가 되어 웹에 그대로 나가지 않게
+    artifact = ArtifactScore(total=round(code.total + feature.score, 2),
+                             code_check=code, feature_match=feature)
+    diagnostics = diagnostics_of(raw, feature_raw, llm_failed, prototype.implemented_features)
+    return TV2Out(artifact_score=artifact, code_check=code, feature_match=feature, diagnostics=diagnostics,
+                  feature_elements=elements)   # [S-Brain] 입력 ∪ 새로 뽑은 것
+
+
+def _norm_name(name: str) -> str:
+    return "".join(name.split()).casefold()
+
+
+def diagnostics_of(raw: dict, feature: dict, llm_failed: list[str],
+                   implemented_features: list[str]) -> list[str]:
+    """관리자 진단 기록(TV2Out.diagnostics, 기능정의서 T-V2 출력). 점수 · 흐름에는 쓰지 않는다.
+
+    통과 필수 조건 실패 사유, README 확인 결과, 대조 LLM 실패, 자기 신고와 파싱 결과의 차이를 담는다.
+    implemented_features는 여기서 차이를 적는 데만 쓴다 — 인정 근거가 아니다.
+    """
+    out = [f"통과 필수 조건 실패: {message}" for message in raw["gate_failures"]]
+    out += [f"README: {warning}" for warning in raw["warnings"]]
+    features = [name for name in llm_failed if not name.startswith("핵심 칸 ")]
+    fields = [name[len("핵심 칸 "):] for name in llm_failed if name.startswith("핵심 칸 ")]
+    if features:
+        out.append(f"대조 LLM 판정 실패 {len(features)}건 — 규칙 판정으로 대체: {', '.join(features)}")
+    if fields:
+        out.append(f"원페이지 핵심 칸 LLM 판정 실패 {len(fields)}건 — 감점하지 않음: {', '.join(fields)}")
+    # 산출물을 대조하지 못했으면(통과 필수 조건 실패 · 대조 보류) 파싱 결과가 없어 비교하지 않는다.
+    if raw["passed"] and not feature["withheld"]:
+        missing = {_norm_name(name) for name in feature["missing_features"]}
+        claimed_missing = [name for name in implemented_features if _norm_name(name) in missing]
+        if claimed_missing:
+            out.append(f"자기 신고 {len(implemented_features)}건 중 {len(claimed_missing)}건이 파싱 결과와 불일치: "
+                       f"{', '.join(claimed_missing)}")
+    return out

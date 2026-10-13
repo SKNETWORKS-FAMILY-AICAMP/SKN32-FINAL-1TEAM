@@ -178,6 +178,14 @@ MAX_SCHEDULE_ITEMS = 50
 # 금액 상한 — DB 컬럼이 DECIMAL(14,2)라 정수부 12자리(원)까지 들어간다. 넘으면 저장하다 DB 오류(500)가 나므로 입력 단계에서 막는다
 MAX_AMOUNT_WON = 999_999_999_999
 _PERIOD_YEAR_RE = re.compile(r'20\d{2}')
+# 추진기간에서 연·월을 읽는 규칙 — 검증-1(agent_validation_1/validation_1.py)이 쓰는 것과 같아야 웹이 통과시킨 일정을 검증-1이 다시 막지 않는다
+_PERIOD_MONTH_RE = re.compile(r'(20\d{2})[-./~년\s]*(\d{1,2})')
+
+
+def _latest_period_month(period: str) -> tuple[int, int] | None:
+    """추진기간 글에서 읽은 가장 늦은 (연, 월). 월이 1 ~ 12가 아닌 것은 검증-1처럼 건너뛰고, 읽을 월이 없으면 None."""
+    months = [(int(y), int(m)) for y, m in _PERIOD_MONTH_RE.findall(period) if 1 <= int(m) <= 12]
+    return max(months) if months else None
 
 
 def _error_detail(loc: tuple, message: str, error_type: str = 'value_error') -> InitErrorDetails:
@@ -357,6 +365,28 @@ class ProjectCreateRequest(BaseModel):
                         ('budget_items', i, 'self_in_kind_amount'), '예비창업자는 자기부담금을 현금 하나로만 입력해요(현물은 0)'))
             elif self.applicant_type in ('individual', 'corp') and item.phase is not None:
                 errors.append(_error_detail(('budget_items', i, 'phase'), '개인사업자 · 법인은 사업비 단계를 쓰지 않아요'))
+        if errors:
+            raise ValidationError.from_exception_data(type(self).__name__, errors)
+        return self
+
+    @model_validator(mode='after')
+    def _check_schedule_within_development_period(self) -> 'ProjectCreateRequest':
+        """협약기간 내(feasibility) 일정 줄의 끝나는 달은 개발 종료월(dev_end_month)을 넘을 수 없다 — 검증-1이 같은 기준으로 그 항목을
+        '입력 오류'로 실패 처리하고 재작성으로도 고쳐지지 않는다(F19, SB-354). 협약 이후(growth) 일정은 보지 않고, 개발 종료월이 없으면
+        기준이 없어 검사하지 않는다. 협약기간 최대 개월 수는 공고마다 달라서 여기서 막지 않는다(공고를 고르기 전에 입력하므로)."""
+        if not self.dev_end_month:
+            return self
+        year, month = self.dev_end_month.split('-')
+        deadline = (int(year), int(month))
+        errors: list[InitErrorDetails] = []
+        for i, item in enumerate(self.schedule_items):
+            if item.section != 'feasibility':
+                continue
+            end = _latest_period_month(item.period)
+            if end is not None and end > deadline:
+                errors.append(_error_detail(
+                    ('schedule_items', i, 'period'),
+                    f'협약기간 내 일정의 끝나는 달({end[0]}-{end[1]:02d})이 개발 종료월({self.dev_end_month})보다 늦어요'))
         if errors:
             raise ValidationError.from_exception_data(type(self).__name__, errors)
         return self
@@ -591,10 +621,31 @@ class EligibilityCheckOut(BaseModel):
 
 
 class PlanSectionOut(BaseModel):
+    """계획서 항목 하나. 항목 번호 · 웹 태그 · 종류를 각각 다른 칸으로 준다(SB-337 — 예전에는 `tag` 칸에 항목 번호가 들어갔다)."""
     model_config = ConfigDict(from_attributes=True)
-    tag: str
+    section_code: str = Field(description="항목 번호 — 예비창업자 2.1.1 ~ 2.7.4, 개인사업자 · 법인 3.1.1 ~ 3.7.4. 점수 항목(score_reasons[].item_code)과 이 번호로 맞춘다")
+    tag: str | None = Field(None, description="웹 태그 '1-1'(문제인식) · '2-1'(실현가능성) · '3-1'(성장전략) · '4-1'(팀 구성). 일반현황 · 개요처럼 묶음이 없으면 null")
+    content_type: str = Field('section', description="'section'(본문) · 'table'(표) · 'image'(그림 — 문장이 없고 plan.diagrams가 그림을 준다)")
     title: str
     body: str | None = None
+
+
+class PlanDiagramOut(BaseModel):
+    """계획서 그림 하나(서비스 흐름도 · 서비스 구조도, SVG) — 주소는 산출물 파일과 같은 방식이다(SB-340 · SB-337)."""
+    diagram_id: str = Field(description="예: '2.3.6-USER_FLOW'")
+    flow_type: str = Field(description="'USER_FLOW'(서비스 흐름도) · 'SERVICE_ARCHITECTURE'(서비스 구조도)")
+    title: str
+    source_ref: str = Field(description="그림이 속한 항목 번호(2.3.6 · 3.3.6) — plan.sections[].section_code와 맞는다")
+    nodes: list[str] = Field(default_factory=list)
+    image_url: str = Field(description="SVG 주소 `/projects/{id}/artifact-files/{key}` — 받은 주소를 그대로 쓴다(소유자만 받는다)")
+
+
+class TableFallbackOut(BaseModel):
+    """표를 본문으로 대체한 항목의 사유 — 화면이 해당 항목에 따로 보여 준다(F17, SB-354). 본문(body)에는 이 사유가 섞이지 않는다."""
+    section_code: str = Field(description="항목 번호 — plan.sections[].section_code와 맞는다")
+    tag: str | None = Field(None, description="그 항목의 웹 태그(계획서에 없는 번호이거나 묶음이 없으면 null)")
+    title: str | None = Field(None, description="그 항목의 제목(계획서에 없는 번호면 null)")
+    display_reason: str = Field(description="사용자에게 보여 줄 쉬운 안내 문구. 담당자 판정 원문(내부 진단용)은 사용자 화면에 내지 않아 싣지 않는다")
 
 
 class ArtifactScoreReasonOut(BaseModel):
@@ -602,8 +653,9 @@ class ArtifactScoreReasonOut(BaseModel):
     reason_text: str
     item_code: str | None = None
     display_name: str | None = None
-    score: float | None = None
-    max_score: float | None = None
+    score: float | None = Field(None, description="그 항목에서 얻은 점수 — 그 실행 건 배점으로 환산한 값(부분 점수 포함). 합이 코드 점검 환산 점수와 같다")
+    max_score: float | None = Field(None, description="그 항목의 만점(환산 배점). 합이 코드 점검 만점과 같다")
+    applicable: bool = Field(True, description="검사할 대상이 있는가. false면 해당 없음 — score 0 · max_score 0이고 reason_text가 이유를 설명한다(만점으로 그리지 않는다)")
 
 
 class GateFailureOut(BaseModel):
@@ -617,7 +669,8 @@ class ArtifactOut(BaseModel):
     category: str
     infographic_path: str
     executable_path: str | None = None
-    artifact_score: float | None = None
+    artifact_score: float | None = Field(None, description="산출물층 점수 — 그 실행 건 배점으로 환산한 값(옛 실행 건은 원점수 15점 기준)")
+    artifact_max_score: float | None = Field(None, description="산출물층 만점(코드 점검 만점 + 계획서 대조 만점). 옛 실행 건은 None")
     score_reasons: list[ArtifactScoreReasonOut] = Field(default_factory=list)
     # 기획서 v1.11 4-5 · 5-4: 산출물 확인 화면은 통과 필수 조건 결과 → 코드 점검 8항목 → 대조 누락 · 부분 인정 기능을 보여 준다.
     # 필수 조건을 하나라도 어기면 산출물층 30점이 0이 되므로(gate_failures가 비어 있지 않음) 화면이 이유를 알려 줄 수 있어야 한다.
@@ -634,6 +687,7 @@ class PlanScoreReasonOut(BaseModel):
     display_name: str | None = None
     score: float | None = None
     max_score: float | None = None
+    tag: str | None = Field(None, description="이 점수 항목(item_code = 계획서 항목 번호)이 속한 웹 태그 '1-1' ~ '4-1', 묶음이 없으면 null — 묶음별 합계 · 미달 사유를 낼 때 쓴다")
 
 
 class FormatFindingOut(BaseModel):
@@ -664,8 +718,12 @@ class BusinessPlanOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     plan_id: int | None = None  # [SB-243] 계획서는 오케스트레이터가 갖고 있어 행 번호가 없다
     doc_score: float | None = None
+    doc_max_score: float | None = Field(None, description="문서층 만점 — 그 실행 건 배점. 옛 실행 건은 None(화면은 verdict.doc_max_score를 쓴다)")
     threshold: float | None = None
     sections: list[PlanSectionOut] = Field(default_factory=list)
+    diagrams: list[PlanDiagramOut] = Field(default_factory=list)
+    table_fallbacks: list[TableFallbackOut] = Field(default_factory=list, description="표를 본문으로 대체한 항목별 사유. 대체한 표가 없으면 빈 목록")
+    notices: list[str] = Field(default_factory=list, description="문서 평가 점수 보고서의 안내(화면 6) — '입력 확인 필요' · '입력 오류' 문구. 없으면 빈 목록")
     score_reasons: list[PlanScoreReasonOut] = Field(default_factory=list)
     artifacts: list[ArtifactOut] = Field(default_factory=list)
     format_findings: list[FormatFindingOut] = Field(default_factory=list)
@@ -698,6 +756,10 @@ class VerdictOut(BaseModel):
     # [SB-301] 계획서 대조 판정이 보류됐으면 True — 이때 plan_match_score는 0점으로 합산되어 오므로(총점에도 0점이 들어 있다)
     # 화면은 0점이 아니라 "대조 불가"로 보여 준다. 보류 사유 코드는 사용자에게 내지 않는다(관리자 기록).
     plan_match_withheld: bool = False
+    # 산출물층(코드 점검 + 계획서 대조) 환산 점수 · 만점 — 옛 실행 건은 None
+    artifact_score: float | None = None
+    artifact_max_score: float | None = None
+    notices: list[str] = Field(default_factory=list, description="종합 평가 점수 보고서의 안내(화면 9) — '입력 확인 필요' · '입력 오류' 문구. 없으면 빈 목록")
     total_score: float | None = None
     pass_threshold: float | None = None
 
@@ -959,16 +1021,18 @@ class NotificationReadIn(BaseModel):
 # 관리자 - 검증 정책 (admin-dashboard.html 대응)
 # ---------------------------------------------------------------------------
 class PolicyScoresIn(BaseModel):
-    doc_weight: float = Field(ge=0, le=100, allow_inf_nan=False)
-    code_weight: float = Field(ge=0, le=100, allow_inf_nan=False)
-    plan_weight: float = Field(ge=0, le=100, allow_inf_nan=False)
+    """층별 배점 — 세 값 모두 0보다 커야 하고 합이 100이다. 오케스트레이터는 0을 기본값으로 바꾸지 않고 0 그대로 써서, 배점 0인 층은
+    환산 점수가 늘 0이고 문서층이 0이면 문서 평가 표시 점수도 0이 된다(오케스트레이터 요청, 2026-10-11)."""
+    doc_weight: float = Field(gt=0, le=100, allow_inf_nan=False)
+    code_weight: float = Field(gt=0, le=100, allow_inf_nan=False)
+    plan_weight: float = Field(gt=0, le=100, allow_inf_nan=False)
 
 
 class PolicyThresholdsIn(BaseModel):
     pass_threshold: float = Field(ge=0, le=100, allow_inf_nan=False)
     rerun_cap: int = Field(ge=0)
     rework_cap: int = Field(ge=0)
-    deviation_cap: float = Field(ge=0, le=100, allow_inf_nan=False)
+    deviation_cap: float = Field(ge=0, le=100, allow_inf_nan=False, description='재채점 편차 상한. 현재 쓰이지 않는다 — 오케스트레이터가 편차 검사를 하지 않아(SB-310, varianceFlag는 늘 거짓) 값은 저장만 한다')
     token_retry_cap: int = Field(ge=0)
 
 
@@ -1002,7 +1066,7 @@ class VerificationPolicyOut(BaseModel):
     pass_threshold: float
     rerun_cap: int
     rework_cap: int
-    deviation_cap: float
+    deviation_cap: float = Field(description='재채점 편차 상한. 현재 쓰이지 않는다 — 오케스트레이터가 편차 검사를 하지 않아(SB-310, varianceFlag는 늘 거짓) 값은 저장만 한다')
     token_retry_cap: int
 
 
@@ -1030,6 +1094,10 @@ class ItemOut(BaseModel):
     last_updated: UtcDatetime | None = Field(None, description='오케스트레이터 실행 건의 마지막 갱신 시각, 없으면 프로젝트 등록 시각')
     stalled: bool = Field(False, description='완료·보관 상태가 아니면서 마지막 갱신 후 48시간 이상 지났는지')
     score: float | None = Field(None, description='현재 버전의 문서 점수 + 산출물 점수 합계(둘 다 없으면 None)')
+    doc_score: float | None = Field(None, description='문서층 점수(그 실행 건 배점 기준)')
+    doc_max_score: float | None = Field(None, description="문서층 만점 — 그 실행 건 배점. 관리자가 배점을 바꿔도 이 실행 건의 만점은 그대로다(지금 정책 값을 만점으로 쓰지 말 것)")
+    artifact_score: float | None = Field(None, description='산출물층 점수 — 그 실행 건 배점으로 환산한 값')
+    artifact_max_score: float | None = Field(None, description='산출물층 만점(코드 점검 + 계획서 대조) — 그 실행 건 배점')
     archived: bool = False
     # [2026-09-23 신규, 2026-09-27 개명] 생성 작업(계획서/프로토타입) 자동 재개 소진
     # 횟수(0~5)와 마지막 실패 사유 — match_status가 'waiting_resume'/'failed'일 때만
@@ -1079,6 +1147,10 @@ class ItemScoreHistoryOut(BaseModel):
     doc: list[ScoreHistoryEntryOut] = Field(default_factory=list)
     code: list[ScoreHistoryEntryOut] = Field(default_factory=list)
     plan: list[ScoreHistoryEntryOut] = Field(default_factory=list)
+    # 그 실행 건 배점 기준 층별 만점 — 점수 이력은 이 배점으로 환산된 값이라 지금 정책 값 대신 이 만점을 쓴다. 없으면 None
+    doc_max: float | None = None
+    code_max: float | None = None
+    plan_max: float | None = None
 
 
 class NoticeAdminOut(BaseModel):
@@ -1435,3 +1507,23 @@ PROFILE_DEFAULT_BASIC: dict = {
 PROFILE_DEFAULT_CAPABILITY: dict = {
     'careers': [], 'skills': '', 'soloFounder': False, 'team': [], 'hires': [], 'equipment': [], 'partners': [],
 }
+
+
+class FileDeletionOut(BaseModel):
+    """GET /admin/file-deletions · POST /admin/file-deletions/{id}/retry — 산출물 파일 삭제 대기열 한 줄 (SB-318).
+
+    메타데이터만 있다 — 키 · 파일 이름 · 오류 메시지 · 계정 · 프로젝트 ID는 오케스트레이터가 싣지 않는다. 사람을 가리키는 값은
+    retried_by(다시 시도를 누른 관리자 ID)뿐이다. status: '대기'(워커가 곧 지움) · '포기'(3번 실패 — 관리자가 다시 시도할 수 있음),
+    last_error_kind: '일시' · '입력' · '운영' 또는 None."""
+    deletion_id: str
+    run_id: str
+    status: str
+    attempts: int
+    last_error_kind: str | None = None
+    created_at: UtcDatetime
+    next_at: UtcDatetime
+    last_tried_at: UtcDatetime | None = None
+    gave_up_at: UtcDatetime | None = None
+    retried_by: str | None = None
+    retried_at: UtcDatetime | None = None
+    retry_count: int = 0

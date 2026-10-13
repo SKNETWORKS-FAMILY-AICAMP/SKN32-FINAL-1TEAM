@@ -8,8 +8,8 @@
     항목 자체가 없다 — 대신 "직업(직장명 기재 불가)"/"기업(예정)명" 두 항목만 쓴다.
   - 사업비 집행계획: 초기창업패키지는 정부지원사업비+자기부담사업비(현금/현물) 3분할
     표를 쓰지만, 예비창업패키지는 자기부담금 개념이 없어 정부지원사업비 단일 열 표를
-    쓴다(원본은 1단계/2단계로 표를 나누는데, DB에 "단계" 개념이 없어 여기선 한 표로
-    합쳐 렌더한다 — 없는 구분을 지어내지 않는다는 원칙).
+    쓴다. 원본처럼 1단계/2단계 두 표로 나눈다(사업비 줄의 단계 — project_budget_items.phase,
+    SB-327. 단계가 없는 줄은 1단계 표).
   - 제목: "초기창업패키지 창업기업 사업계획서" vs "예비창업패키지 사업계획서".
 그 외(창업 아이템 개요 요약, PSST 4개 섹션 본문, 사업추진일정, 팀 구성(안), 협력기관)는
 두 양식이 표 구조까지 동일해서 공통으로 쓴다.
@@ -35,12 +35,16 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from docx import Document
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
+
+if TYPE_CHECKING:
+    from app.diagram_images import DiagramPicture
 
 _GUIDE_COLOR = RGBColor(0x1F, 0x4E, 0x79)  # 원본 양식의 '파란색 안내 문구'와 같은 취지 — 작성자 안내용, 제출 전 삭제 대상
 _HEADER_FILL = 'E8ECF1'
@@ -62,6 +66,17 @@ class BudgetLineItem:
     정부지원사업비: str
     자기부담_현금: str = ''
     자기부담_현물: str = ''
+    단계: str = ''  # 예비창업자만 '1단계' · '2단계'(SB-327). 비어 있으면 1단계 표에 들어간다
+
+
+PHASE_SECOND = '2단계'
+
+
+def split_budget_by_phase(rows: list[BudgetLineItem]) -> tuple[list[BudgetLineItem], list[BudgetLineItem]]:
+    """예비창업 사업비 행 → (1단계 표 행, 2단계 표 행). 단계가 없는 행은 1단계 쪽이다."""
+    second = [r for r in rows if r.단계 == PHASE_SECOND]
+    first = [r for r in rows if r.단계 != PHASE_SECOND]
+    return first, second
 
 
 @dataclass
@@ -130,6 +145,23 @@ class PlanDocumentData:
     # 등록번호 대신 이 두 항목을 쓴다. 초기창업패키지(일반형) 렌더링에서는 안 쓰인다.
     직업: str = '○○○'
     기업예정명: str = '○○○'
+
+    # [SB-339] 표 항목(개발계획 · 사업비 집행계획 · 전체 일정)의 서술 문장 — 표는 위 행 목록으로 그리고, 서술은 계획서(planDoc)에서 온다
+    # (app/plan_texts.py). docx는 표 아래 문단으로, hwp는 양식에 따로 칸이 없어 그 절의 본문 뒤에 이어 붙는다.
+    실현가능성_일정_서술: str = ''
+    사업비_서술: str = ''          # 예비창업자는 1단계 표의 서술(x.5.3), 그 밖은 사업비 표 하나의 서술
+    사업비_2단계_서술: str = ''    # 예비창업자 2단계 표의 서술(x.5.4)
+    성장전략_일정_서술: str = ''
+    # 예비창업자 단계별 정부지원사업비 합계(표 아래 합계 칸). 단계 입력이 없으면 비어 있다
+    정부지원사업비_1단계: str = ''
+    정부지원사업비_2단계: str = ''
+    # [SB-340] 그림 항목(2.3.6 · 3.3.6)의 서비스 흐름도 · 서비스 구조도(PNG로 바꾼 것, app/diagram_images.py). docx는 개요(요약) 표 아래,
+    # hwp는 맨 뒤에 새로 만든 쪽에 넣는다. 그림이 없으면 문서에 아무것도 더하지 않는다.
+    그림: list[DiagramPicture] = field(default_factory=list)
+    # [SB-354 · 기준 문서 T-C4] 결과물의 인포그래픽(PNG로 바꾼 것)과 첫 장 고지 문구(`deliverable.disclaimer`). docx는 계획서 그림 다음에, hwp는 그림 쪽
+    # 다음의 새 쪽에 인포그래픽을 넣는다. 고지가 비어 있으면(결과물이 아직 없을 때) 기본 문구를 쓴다.
+    인포그래픽: DiagramPicture | None = None
+    고지: str = ''
 
 
 def _set_cell_text(cell, text: str, bold: bool = False, shade: str | None = None) -> None:
@@ -232,6 +264,33 @@ def _add_general_status_preliminary(doc: Document, data: PlanDocumentData) -> No
     ])
 
 
+def _picture(doc: Document, picture: DiagramPicture, max_height_cm: float | None = None) -> None:
+    """그림 하나 — 위에 '< 서비스 흐름도 >' 같은 제목을 달고 본문 폭에 맞춰 넣는다(PNG, 가운데). 세로가 max_height_cm를 넘으면 비율을 지켜 줄인다."""
+    caption = doc.add_paragraph()
+    run = caption.add_run(f'< {picture.title} >')
+    run.bold = True
+    run.font.size = Pt(10.5)
+    width_px, height_px = picture.size_px
+    width_cm = float(_PICTURE_WIDTH_CM)
+    if max_height_cm is not None and width_px and width_cm * height_px / width_px > max_height_cm:
+        width_cm = max_height_cm * width_px / height_px
+    doc.add_picture(io.BytesIO(picture.png), width=Cm(width_cm))
+    doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+
+_PICTURE_WIDTH_CM = 16
+_INFOGRAPHIC_MAX_HEIGHT_CM = 22   # 인포그래픽은 세로로 긴 한 장이라 쪽 높이(여백 뺀 약 25cm)를 넘지 않게 줄인다
+# 기준 문서(기능정의서 T-C4)의 첫 장 고지 — 결과물(deliverable.disclaimer)이 아직 없을 때의 기본 문구
+DEFAULT_DISCLAIMER = '본 문서는 S-Brain이 생성한 초안입니다. 제출 전 작성자 본인의 확인과 수정이 필요합니다.'
+
+
+def _narrative(doc: Document, text: str) -> None:
+    """표 아래 서술 문장(줄마다 한 문단). 서술이 없으면 아무것도 쓰지 않는다."""
+    for line in (text or '').splitlines():
+        if line.strip():
+            doc.add_paragraph(line.strip())
+
+
 def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') -> bytes:
     """template: 'early_general'(초기창업패키지 일반형, 기본값) | 'preliminary'(예비창업패키지).
     두 원본 양식(별첨1)을 비교해 실제로 다른 부분(일반현황 항목, 사업비 집행계획 표 구성,
@@ -251,8 +310,12 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
     _guide_note(
         doc,
         '※ 사업계획서는 15페이지 내외로 작성(증빙서류는 제한 없음) · 양식은 변경·삭제 불가, '
-        '이미지·표 삽입은 가능 · 개인정보는 마스킹하여 작성 — 본 문서는 S-Brain이 생성한 초안입니다.',
+        '이미지·표 삽입은 가능 · 개인정보는 마스킹하여 작성',
     )
+    disclaimer = doc.add_paragraph()
+    disclaimer_run = disclaimer.add_run(data.고지.strip() or DEFAULT_DISCLAIMER)
+    disclaimer_run.bold = True
+    disclaimer_run.font.size = Pt(10.5)
 
     _heading(doc, '□ 일반현황', level=1)
     if template == 'preliminary':
@@ -276,6 +339,10 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
         ('성장전략(Scale-up)', data.요약_성장전략),
         ('팀 구성(Team)', data.요약_팀구성),
     ])
+    for picture in data.그림:
+        _picture(doc, picture)
+    if data.인포그래픽 is not None:
+        _picture(doc, data.인포그래픽, max_height_cm=_INFOGRAPHIC_MAX_HEIGHT_CM)
 
     _heading(doc, '1. 문제 인식(Problem)_창업 아이템의 필요성', level=1)
     doc.add_paragraph(data.문제인식_본문)
@@ -288,17 +355,25 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
         [[s.구분, s.추진내용, s.추진기간, s.세부내용] for s in data.실현가능성_일정],
         caption='< 사업추진 일정(협약기간 내) >',
     )
+    _narrative(doc, data.실현가능성_일정_서술)
     if template == 'preliminary':
-        # 예비창업패키지는 자기부담금 개념이 없어 정부지원사업비 단일 열만 쓴다. 원본
-        # 양식은 이 표를 1단계/2단계로 나누는데, DB(project_budget_items)에 "단계"
-        # 구분이 없어 여기선 한 표로 합쳐 렌더한다(모듈 docstring 참고).
+        # 예비창업패키지는 자기부담금 개념이 없어 정부지원사업비 단일 열만 쓴다. 원본 양식처럼
+        # 1단계 · 2단계 두 표로 나눈다(project_budget_items.phase, SB-327) — 단계가 없는 행은 1단계 표.
+        first, second = split_budget_by_phase(data.사업비_집행계획)
         _guide_note(doc, '※ 정부지원사업비는 최대 1억원 한도 이내로 작성')
-        _grid_table(
-            doc,
-            ['비목', '산출 근거', '정부지원사업비(원)'],
-            [[b.비목, b.집행계획, b.정부지원사업비] for b in data.사업비_집행계획],
-            caption='< 정부지원사업비 집행계획 >',
-        )
+        for label, rows, total, narrative in (
+            ('1단계', first, data.정부지원사업비_1단계, data.사업비_서술),
+            ('2단계', second, data.정부지원사업비_2단계, data.사업비_2단계_서술),
+        ):
+            _grid_table(
+                doc,
+                ['비목', '산출 근거', '정부지원사업비(원)'],
+                [[b.비목, b.집행계획, b.정부지원사업비] for b in rows] or [['○○', '○○', '○○']],
+                caption=f'< 정부지원사업비 집행계획({label}) >',
+            )
+            if total:
+                doc.add_paragraph(f'{label} 합계: {total}')
+            _narrative(doc, narrative)
     else:
         _guide_note(doc, '※ 정부지원사업비는 최대 1억원 한도 이내로 작성 · 자기부담사업비는 지방우대 지역 여부에 따라 비율이 다름')
         _grid_table(
@@ -307,6 +382,7 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
             [[b.비목, b.집행계획, b.총사업비, b.정부지원사업비, b.자기부담_현금, b.자기부담_현물] for b in data.사업비_집행계획],
             caption='< 사업비 집행 계획 >',
         )
+        _narrative(doc, data.사업비_서술)
 
     _heading(doc, '3. 성장전략(Scale-up)_사업화 추진 전략', level=1)
     doc.add_paragraph(data.성장전략_본문)
@@ -316,6 +392,7 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
         [[s.구분, s.추진내용, s.추진기간, s.세부내용] for s in data.성장전략_일정],
         caption='< 사업추진 일정(전체 사업단계) >',
     )
+    _narrative(doc, data.성장전략_일정_서술)
 
     _heading(doc, '4. 팀 구성(Team)_대표자 및 팀원 구성 계획', level=1)
     doc.add_paragraph(data.팀구성_본문)

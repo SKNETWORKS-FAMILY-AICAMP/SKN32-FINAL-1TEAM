@@ -16,7 +16,8 @@ from datetime import date
 
 import pytest
 
-from conftest import executed, make_app, pre_input, project_for, start_and_select
+from conftest import TIMING, executed, make_app, pre_input, project_for, start_and_select
+from flow_helpers import ctx_of, tc3_requests
 
 from sbrain.agents.form_defaults import FORM_TABLE, select_form
 from sbrain.agents.stubs import FakeLLM, StubScenario, make_announcement
@@ -45,15 +46,6 @@ def real_tc3_app(clock, scenario: StubScenario | None = None):
     app.registry.bind("T-C3", tc3.run)
     app.llm.respond("T-C3", guidance_reply)
     return app
-
-
-def ctx_of(app, rid):
-    return app.engine.open_context(app.store.load_run(rid))
-
-
-def tc3_requests(app_or_llm) -> list[LLMRequest]:
-    llm = getattr(app_or_llm, "llm", app_or_llm)
-    return [r for r in llm.requests if r.metadata["task_id"] == "T-C3"]
 
 
 def body(requests: list[LLMRequest]) -> str:
@@ -183,7 +175,8 @@ def test_pre_startup_request_has_no_business_age(clock):
     text = body(reqs)
     assert "businessAgeYears" not in text                                  # 업력은 싣지 않는다 (spec 11)
     assert "예비창업자" in text and "부산광역시" in text
-    assert ctx_of(app, rid).get("formSpec").form_version == "예비창업패키지(잠정)"
+    assert ctx_of(app, rid).get("formSpec").form_version == select_form("예비창업자").form_spec.form_version \
+        == "pre_startup@2"                                                  # 담당자 예비창업 양식 (spec 4.6)
 
 
 # ── Task 함수 단위 (격리 · 참조 조각 · 빈 값) ────────────────────
@@ -402,6 +395,14 @@ def test_prompt_says_company_info_reaches_agents_separately():
     assert "따로 받는다" in plan.GUIDANCE_COMMON_RULES and "마크다운" in plan.GUIDANCE_COMMON_RULES
 
 
+def test_common_rules_say_period_and_schedule_reach_agents_separately():
+    """개발 기간 · 추진 일정도 지시를 받는 Agent가 따로 받는다 — T-C3 · 다시 쓰기 프롬프트가 같은 상수를 싣는다."""
+    from sbrain.agents.supervisor import rewrite
+    first = plan.GUIDANCE_COMMON_RULES.splitlines()[0]
+    assert "개발 기간" in first and "추진 일정" in first and "따로 받는다" in first
+    assert plan.GUIDANCE_COMMON_RULES in tc3.SYSTEM and plan.GUIDANCE_COMMON_RULES in rewrite.SYSTEM_PROMPT
+
+
 # ── 동시 호출 · 실패 순서 · 받은 안내 이어 쓰기 ──────────────────────
 SECRET = "SECRET-GUIDE"
 
@@ -446,6 +447,7 @@ def test_concurrent_result_matches_sequential_text(category):
 
 
 @pytest.mark.parametrize("category", ["웹개발", "원페이지"])
+@TIMING
 def test_calls_really_overlap(category):
     """지시 대상 수만큼 모일 때까지 기다리는 응답 — 차례로 부르면 장벽이 깨져 실패한다(멈추지 않음)."""
     n = len(plan.instructed_tasks(category))

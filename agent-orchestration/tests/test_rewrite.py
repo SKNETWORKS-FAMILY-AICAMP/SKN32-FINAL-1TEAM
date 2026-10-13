@@ -17,6 +17,7 @@ from datetime import date, timedelta
 
 import pytest
 from conftest import make_app, pre_input, project_for, to_screen6, to_screen9
+from flow_helpers import ctx_of, records_of_task, rework
 
 from sbrain.agents.stubs import FakeLLM
 from sbrain.agents.supervisor.plan import GUIDANCE_MAX_CHARS, PURPOSE_REWRITE
@@ -26,14 +27,16 @@ from sbrain.flow.instruction import (
     split_instruction,
 )
 from sbrain.flow.sbrain_flow import SBrainFlow, default_instruction_builder, rewrite_mask_values
-from sbrain.models import CheckResult, CompanyInfo, Excerpt, ReferenceSummary, RevenueItem, ReworkOrder
+from sbrain.models import (
+    CheckResult, CompanyInfo, Excerpt, ReferenceSummary, RevenueItem, ReworkOrder, extension_fields,
+)
 from sbrain.models.clock import utc_now
+from sbrain.models.run import RedoState
 from sbrain.orchestrator import Settings
 from sbrain.orchestrator.engine import is_internal_key
 from sbrain.orchestrator.errors import ToolCallExhausted
 from sbrain.orchestrator.tools import CallSink, LLMResponse, TokenUsage, Tools, ToolsConfig, ToolsContext
 
-WINDOW = 3   # 재작성 요청을 모으는 시간(잠정 2초)을 넘기는 초
 INSTRUCTED = ("T-S1", "T-S2", "T-W1", "T-W2", "T-W3", "T-B1", "T-B2")
 
 
@@ -112,24 +115,8 @@ def with_reference(app) -> None:
     app.registry.bind("T-C3", fn)
 
 
-def ctx_of(app, rid):
-    return app.engine.open_context(app.store.load_run(rid))
-
-
 def plan_task(app, rid, task_id):
     return next(t for t in ctx_of(app, rid).get("taskPlan").tasks if t.task_id == task_id)
-
-
-def records(app, rid, task_id):
-    return [r for r in app.store.executions(rid) if r.task_id == task_id]
-
-
-def rework(app, clock, rid, *bundles) -> None:
-    pid = app.store.load_run(rid).project_id
-    for b in bundles:
-        app.orchestrator.request_rework_for_project(pid, b)
-    clock.advance(seconds=WINDOW)
-    app.orchestrator.advance(rid)
 
 
 def rewritten(original: str, task_id: str) -> str:
@@ -181,9 +168,9 @@ def test_redo_rewrites_guidance_keeps_frame_and_reference_bytes(clock):
     # 저장 — <task>.instruction, 실행 기록 입력 참조에 들어간다
     ctx = ctx_of(app, rid)
     assert ctx.get("T-S1.instruction") == text and ctx.ref("T-S1.instruction") == "T-S1.instruction@1"
-    redo = records(app, rid, "T-S1")[-1]
+    redo = records_of_task(app, rid, "T-S1")[-1]
     assert redo.redo_count == 1 and "T-S1.instruction@1" in redo.inputs
-    assert "T-S1.instruction@1" not in records(app, rid, "T-S1")[0].inputs
+    assert "T-S1.instruction@1" not in records_of_task(app, rid, "T-S1")[0].inputs
     # 다시 쓰기 요청: 원래 안내(taskPlan의 guidance)에서 시작하고 틀은 바꾸지 말라는 규칙으로 싣는다
     req = request_text(rewrites(app, "T-S1")[0])
     assert plan_task(app, rid, "T-S1").guidance in req and parts.frame in req
@@ -191,20 +178,28 @@ def test_redo_rewrites_guidance_keeps_frame_and_reference_bytes(clock):
 
 
 def test_document_rework_rewrites_each_writer_once(clock):
+    """계획서 묶음 재작성은 그 묶음 항목의 종류별 Task만 돈다(실현가능성 = 본문 · 표 → T-W1 · T-W3, 그림 없음 → T-W2 안 돎).
+    LLM을 부르는 T-W1만 한 번 다시 쓰고, T-W3(규칙 코드, uses_llm=False)는 덧붙이기만 한다 — 다시 쓰기 LLM 호출이 없다
+    (spec 4.11)."""
     app = rewrite_app(clock)
     seen = {t: capture(app, t) for t in ("T-W1", "T-W2", "T-W3")}
     rid = to_screen6(app)
-    rework(app, clock, rid, "문제인식")
+    rework(app, clock, rid, "실현가능성")
     assert {t: len(rewrites(app, t)) for t in INSTRUCTED} == {
-        "T-S1": 0, "T-S2": 0, "T-W1": 1, "T-W2": 1, "T-W3": 1, "T-B1": 0, "T-B2": 0}
+        "T-S1": 0, "T-S2": 0, "T-W1": 1, "T-W2": 0, "T-W3": 0, "T-B1": 0, "T-B2": 0}
+    assert len(seen["T-W2"]) == 1                                         # 첫 작성뿐
     order = ctx_of(app, rid).get("T-W1.reworkInput").order
-    for task_id, calls in seen.items():
-        (_, _), (text, ri) = calls
-        assert ri.mode == "재작성" and ri.order is not None
-        assert text == rewritten(plan_task(app, rid, task_id).instruction, task_id) + order_block(ri.order)
-    assert order.targets == ["문제인식"]
+    (_, _), (text, ri) = seen["T-W1"]
+    assert ri.mode == "재작성" and ri.order is not None
+    assert text == rewritten(plan_task(app, rid, "T-W1").instruction, "T-W1") + order_block(ri.order)
+    (_, _), (text3, ri3) = seen["T-W3"]
+    assert ri3.mode == "재작성" and (ri3.order.task_id, ri3.order.targets, ri3.order.reason) == (
+        "T-W3", order.targets, order.reason)
+    assert text3 == plan_task(app, rid, "T-W3").instruction + order_block(ri3.order)   # 덧붙이기만
+    assert "T-W3.instruction" not in app.store.get_pointers(rid)
+    assert order.targets == ["실현가능성"]
     req = request_text(rewrites(app, "T-W1")[0])
-    assert "문제인식" in req and order.reason in req                      # 재작성 지시(묶음 이름 · 사유)를 보낸다
+    assert "실현가능성" in req and order.reason in req                    # 재작성 지시(묶음 이름 · 사유)를 보낸다
 
 
 def test_artifact_rework_rewrites_target_once(clock):
@@ -226,7 +221,7 @@ def test_reflection_run_and_its_redo_append_only(clock, with_rewrite):
     app.scenario.check_fail_times["T-B1"] = 2          # 첫 실행은 통과(0), 반영 실행 불통과(1), 재수행 통과(2)
     rework(app, clock, rid, "문제인식")
     assert rewrites(app, "T-B1") == []
-    assert len(rewrites(app)) == (3 if with_rewrite else 0)               # T-W1 · T-W2 · T-W3만
+    assert len(rewrites(app)) == (1 if with_rewrite else 0)               # T-W1만 (문제인식 = 본문 항목뿐)
     base = plan_task(app, rid, "T-B1").instruction
     reflect = [f"계획서 재작성 반영 ({ctx_of(app, rid).ref('planDoc')})"]
     (_, _), (reflect_text, reflect_ri), (redo_text, redo_ri) = seen
@@ -382,7 +377,7 @@ def test_rewrite_exhaustion_waits_and_rewrites_again_after_resume(clock):
     assert (run.state.progress, run.current_task) == ("재개대기", "T-S1")
     assert run.redo_state.instruction_ref is None and "T-S1.instruction" not in app.store.get_pointers(rid)
     assert len(seen) == 1                                   # 대상 Task 함수는 아직 부르지 않았다
-    redo = records(app, rid, "T-S1")[-1]
+    redo = records_of_task(app, rid, "T-S1")[-1]
     assert redo.status == "재개대기" and redo.redo_count == 1
     [log] = [c for c in app.store.call_logs(rid) if c.purpose == PURPOSE_REWRITE]
     assert (log.execution_id, log.final_outcome, len(log.tries)) == (redo.execution_id, "소진", 6)
@@ -394,7 +389,7 @@ def test_rewrite_exhaustion_waits_and_rewrites_again_after_resume(clock):
     logs = [c for c in app.store.call_logs(rid) if c.purpose == PURPOSE_REWRITE]
     assert [(c.execution_id, c.final_outcome) for c in logs] == [(redo.execution_id, "소진"),
                                                                   (redo.execution_id, "성공")]
-    [_, after] = records(app, rid, "T-S1")                   # 재개는 같은 실행 기록을 이어 쓴다
+    [_, after] = records_of_task(app, rid, "T-S1")                   # 재개는 같은 실행 기록을 이어 쓴다
     assert after.execution_id == redo.execution_id and after.resume_count == 1 and after.status == "성공"
     assert "T-S1.instruction@1" in after.inputs
     assert seen[-1][0] == ctx_of(app, rid).get("T-S1.instruction")
@@ -408,6 +403,7 @@ def test_resume_reuses_stored_instruction(clock):
     run = app.store.load_run(rid)
     assert run.state.progress == "재개대기"
     assert run.redo_state.instruction_ref == "T-S1.instruction@1"          # 재개 위치와 같은 저장에 남는다
+    assert "instructionRef" in extension_fields(RedoState)                  # 기준 문서 타입에 없는 확장 필드
     stored = ctx_of(app, rid).get("T-S1.instruction")
     assert len(rewrites(app, "T-S1")) == 1
 
@@ -417,7 +413,7 @@ def test_resume_reuses_stored_instruction(clock):
     assert len(rewrites(app, "T-S1")) == 1                                  # 다시 부르지 않는다
     assert app.store.get_pointers(rid)["T-S1.instruction"] == 1
     assert [text for text, _ in seen[1:]] == [stored, stored]
-    assert "T-S1.instruction@1" in records(app, rid, "T-S1")[-1].inputs
+    assert "T-S1.instruction@1" in records_of_task(app, rid, "T-S1")[-1].inputs
 
 
 # ── 기록 ──────────────────────────────────────────────
@@ -425,7 +421,7 @@ def test_rewrite_call_is_logged_in_target_execution(clock):
     app = rewrite_app(clock, _scenario(check_fail_times={"T-W1": 1}))
     app.llm.usage["T-W1"] = TokenUsage(input_tokens=100, output_tokens=10)
     rid = to_screen6(app)
-    first, redo = records(app, rid, "T-W1")
+    first, redo = records_of_task(app, rid, "T-W1")
     logs = [c for c in app.store.call_logs(rid) if c.execution_id == redo.execution_id]
     [rw] = [c for c in logs if c.purpose == PURPOSE_REWRITE]
     s = Settings()
@@ -438,7 +434,7 @@ def test_rewrite_call_is_logged_in_target_execution(clock):
     assert redo.output_tokens == 10 * len(logs)
     assert (redo.agent, redo.redo_count) == ("작성", 1)
     # 별도 실행 기록을 만들지 않고 T-C3 기록 · 시도 번호도 늘리지 않는다
-    assert len(records(app, rid, "T-C3")) == 1
+    assert len(records_of_task(app, rid, "T-C3")) == 1
     assert [a.attempt for a in app.store.load_run(rid).attempts if a.task_id == "T-C3"] == [1]
     # 안내 · 지시문 · 문제 내용은 기록 · 추적 사건에 없다
     dumped = json.dumps([c.dump() for c in app.store.call_logs(rid)]
@@ -461,7 +457,8 @@ def test_instruction_not_compared_or_reverted_when_score_drops(clock):
     assert comp.kept == "전"
     assert not [r for r in comp.before_refs + comp.after_refs if ".instruction@" in r]
     ptr = app.store.get_pointers(rid)
-    assert (ptr["T-W1.instruction"], ptr["T-W2.instruction"], ptr["T-W3.instruction"]) == (1, 1, 1)
+    # 문제인식 묶음은 본문 항목뿐 — T-W1만 다시 썼다 (T-W2 · T-W3는 돌지 않았다, spec 4.11)
+    assert ptr["T-W1.instruction"] == 1 and "T-W2.instruction" not in ptr and "T-W3.instruction" not in ptr
     assert not [e for e in app.store.pointer_events(rid) if e.key.endswith(".instruction")]
 
 
@@ -481,16 +478,6 @@ def test_instruction_not_rolled_back_on_rework_failure(clock):
 def _scenario(**kw):
     from sbrain.agents.stubs import StubScenario
     return StubScenario(**kw)
-
-
-def test_old_redo_state_json_loads_without_instruction_ref():
-    """예전에 저장한 진행 위치(지시문 참조 없음)도 읽힌다 — 확장 필드, 기본 None."""
-    from sbrain.models import extension_fields
-    from sbrain.models.run import RedoState
-    rs = RedoState.model_validate({"taskId": "T-W1", "redoCount": 1, "trigger": "재수행",
-                                   "reworkInputRef": "T-W1.reworkInput@2", "pendingExecutionId": "e1"})
-    assert rs.instruction_ref is None and rs.dump()["instructionRef"] is None
-    assert "instructionRef" in extension_fields(RedoState)
 
 
 def test_rewrite_prompt_says_company_info_reaches_agents_separately():

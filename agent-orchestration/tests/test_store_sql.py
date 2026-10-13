@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import pytest
-from conftest import Clock, make_app, pre_input
-from mysqldb import split_sql
+from conftest import TIMING, Clock, make_app, pre_input
+from mysqldb import MYSQL, require_mysql, split_sql, xdist_groups
 from sqlalchemy import Column, Integer, MetaData, Table, UniqueConstraint, insert, update
-from test_store_contract import new_run, rejected
+from store_helpers import new_run, rejected
 from webdb import (
     POLICIES, PROOFREAD_LOGS, create_web_tables, new_project, proofread_columns, set_training_consent,
     use_old_proofread_logs,
@@ -17,7 +17,7 @@ from sbrain.store_sql import (
     DbSettingsProvider, SqlStore, create_orchestrator_tables, create_sqlite_engine,
 )
 from sbrain.store_sql.ddl import DDL_PATH, render
-from sbrain.store_sql.schema import ORCH_TABLES
+from sbrain.store_sql.schema import ORCH_TABLES, RECORD_TABLES
 from sbrain.store_sql.web_tables import ProofreadWriteError
 
 
@@ -38,7 +38,7 @@ def test_ddl_is_create_if_not_exists_only():
 def test_stats_and_job_tables_have_no_identifier_columns():
     """통계 줄 · 작업 상태 표에는 계정 · 프로젝트 · 실행 건 · 실행 · 공고 ID나 자유 글 컬럼이 없다 (spec 4.1 · 5.4)."""
     tables = {t.name: t for t in ORCH_TABLES}
-    assert len(ORCH_TABLES) == 12
+    assert len(ORCH_TABLES) == 13
     stats, jobs = tables["orch_log_stats"], tables["orch_jobs"]
     assert [c.name for c in stats.columns] == [
         "seq", "kind", "reason", "month", "category", "status", "result_code", "part", "count", "data_json",
@@ -58,6 +58,35 @@ def test_stats_and_job_tables_have_no_identifier_columns():
     assert "month CHAR(7) NOT NULL" in ddl
 
 
+def test_file_deletion_table_is_minimal_and_outside_records():
+    """파일 삭제 대기열 표 (spec 4.6) — 칸 · 타입 · 고유 제약 · 색인 하나, orch_runs 외래 키 없음, RECORD_TABLES 밖.
+
+    run_id를 갖는 표 중 RECORD_TABLES에 넣지 않는 것은 이 표 하나다(넣으면 12개월 처리 · 탈퇴가 줄을 지워 파일이 남는다).
+    """
+    tables = {t.name: t for t in ORCH_TABLES}
+    t = tables["orch_file_deletions"]
+    assert [c.name for c in t.columns] == [
+        "deletion_id", "run_id", "key_prefix", "status", "attempts", "last_error_kind", "created_at", "next_at",
+        "last_tried_at", "gave_up_at", "retried_by", "retried_at", "retry_count"]
+    assert [c.name for c in t.primary_key] == ["deletion_id"]
+    assert not t.foreign_keys                                                     # 실행 건 줄이 지워져도 남는다
+    lengths = {c.name: getattr(c.type, "length", None) for c in t.columns}
+    assert lengths["deletion_id"] == lengths["run_id"] == lengths["retried_by"] == 64
+    assert lengths["key_prefix"] == 80 and lengths["status"] == lengths["last_error_kind"] == 10
+    nullable = {c.name: c.nullable for c in t.columns}
+    assert all(nullable[c] for c in ("last_error_kind", "last_tried_at", "gave_up_at", "retried_by", "retried_at"))
+    assert not any(nullable[c] for c in ("run_id", "key_prefix", "status", "attempts", "created_at", "next_at",
+                                         "retry_count"))
+    assert {i.name: [c.name for c in i.columns] for i in t.indexes} == {
+        "ix_orch_file_deletions_status_next": ["status", "next_at"]}
+    assert "CONSTRAINT uq_orch_file_deletions_run UNIQUE (run_id)" in render()
+    assert t not in RECORD_TABLES
+    with_run_id = {x.name for x in ORCH_TABLES if "run_id" in x.c} - {x.name for x in RECORD_TABLES}
+    # 실행 건 · 산출물 · 시작 요청(만든 실행 건)은 원래 기록 표가 아니다. 새로 생긴 예외는 대기열 하나
+    assert with_run_id == {"orch_runs", "orch_start_requests", "orch_artifact_versions", "orch_artifact_pointers",
+                           "orch_file_deletions"}
+
+
 @pytest.fixture
 def web_engine(tmp_path):
     engine = create_sqlite_engine(tmp_path / "web.db", fast=True)
@@ -70,12 +99,16 @@ def test_settings_from_verification_policies(web_engine):
     provider = DbSettingsProvider(web_engine)
     assert provider.current() == provider._settings          # 행이 없으면 코드 기본값
     with web_engine.begin() as conn:
-        conn.execute(insert(POLICIES).values(policy_id=1, doc_weight=60, code_weight=20, plan_weight=20,
+        conn.execute(insert(POLICIES).values(policy_id=1, doc_weight=60, code_weight=12, plan_weight=28,
                                              pass_threshold=75, rerun_cap=3, rework_cap=2, deviation_cap=4.5,
                                              token_retry_cap=1))
         conn.execute(insert(POLICIES).values(policy_id=2, pass_threshold=10))   # 첫 행만 쓴다
     s = provider.current()
     assert (s.scoring.doc_layer_max, s.scoring.artifact_layer_max, s.scoring.threshold) == (60, 40, 75)
+    # 코드 점검 배점 C = code_weight, 계획서 대조 배점 P = plan_weight, 산출물층 배점 = C + P (spec 4.6)
+    assert (s.scoring.code_check_max, s.scoring.feature_match_max) == (12, 28)
+    assert {"codeCheckMax": 12, "featureMatchMax": 28, "artifactLayerMax": 40}.items() <= \
+        provider.snapshot()["scoring"].items()
     assert (s.redo.redo_count, s.rework.per_bundle, s.redo.proofread_redo_count) == (3, 2, 1)
     assert s.scoring.deviation_cap == 4.5
     assert s.retry.retry_count == 5 and s.tasks["T-C1"].model == "gpt-6-luna"      # 나머지는 코드 기본값
@@ -178,3 +211,36 @@ def test_training_agreed_follows_owner_account(web_engine):
     set_training_consent(web_engine, refused, True)
     with web_engine.connect() as conn:
         assert web.training_agreed(conn, refused)
+
+
+# ── MySQL 묶음 확인 (DB 없이) ──────────────────────────
+def no_db_url(monkeypatch) -> None:
+    monkeypatch.setattr("mysqldb.get_env", lambda name, default=None: None)
+
+
+def test_require_mysql_outside_any_group_fails_even_without_db(monkeypatch):
+    """묶음 없는 테스트가 MySQL에 닿으면 건너뜀이 아니라 실패다 — DB 주소가 없어도 묶음을 먼저 본다."""
+    no_db_url(monkeypatch)
+    with pytest.raises(pytest.fail.Exception, match="MySQL 묶음"):
+        require_mysql()
+
+
+@TIMING
+def test_require_mysql_in_other_group_fails(monkeypatch):
+    no_db_url(monkeypatch)
+    with pytest.raises(pytest.fail.Exception, match="timing"):
+        require_mysql()
+
+
+@MYSQL
+def test_require_mysql_in_mysql_group_skips_without_db(monkeypatch):
+    no_db_url(monkeypatch)
+    with pytest.raises(pytest.skip.Exception):
+        require_mysql()
+
+
+@TIMING
+@pytest.mark.parametrize("kind", [pytest.param("mysql", marks=MYSQL)])
+def test_mysql_group_wins_over_timing(request, kind):
+    """MySQL 매개변수가 붙은 시간 테스트는 MySQL 묶음 하나에만 든다 (conftest.py)."""
+    assert xdist_groups(request.node) == {"mysql"}

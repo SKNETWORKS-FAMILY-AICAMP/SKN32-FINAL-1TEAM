@@ -27,6 +27,11 @@ def test_fake_outputs_fields_match_real():
     assert set(vars(orch_fakes.make_outputs())) == set(reads.Outputs.model_fields)
 
 
+def test_fake_table_fallback_fields_match_real():
+    reads = pytest.importorskip('sbrain.flow.reads')
+    assert set(vars(orch_fakes.make_table_fallback())) == set(reads.TableFallback.model_fields)
+
+
 def test_fake_gate_screen_fields_match_real():
     reads = pytest.importorskip('sbrain.flow.reads')
     assert set(vars(orch_fakes.make_gate_screen())) == set(reads.GateScreen.model_fields)
@@ -48,6 +53,22 @@ def test_fake_gate_and_score_view_fields_match_real():
     assert set(vars(orch_fakes.make_plan_doc())) == set(domain.PlanDoc.model_fields)
     assert set(vars(orch_fakes.make_section('1-1', 't', 'x'))) == set(domain.PlanSection.model_fields)
     assert set(vars(orch_fakes.make_sentence(1, 'x'))) == set(domain.Sentence.model_fields)
+    assert set(vars(orch_fakes.make_diagram())) == set(domain.DiagramSpec.model_fields)
+    files = pytest.importorskip('sbrain.models.files')
+    assert set(vars(orch_fakes.make_file_ref('a.svg'))) == set(files.FileRef.model_fields)
+
+
+def test_real_plan_models_have_the_fields_the_web_will_map():
+    """[SB-310] 계획서가 양식의 모든 항목(24 ~ 25개)을 담게 되면서 늘어난 칸 — 웹이 태그 · 종류 · 그림으로 계획서 응답과 내려받기를 만든다.
+    이름이 바뀌면 여기서 알린다."""
+    from typing import get_args
+    domain = pytest.importorskip('sbrain.models.domain')
+    assert {'tag', 'content_type'} <= set(domain.PlanSection.model_fields)
+    assert set(get_args(domain.PlanSection.model_fields['content_type'].annotation)) == {'section', 'table', 'image'}
+    assert {'tables', 'charts', 'diagrams'} <= set(domain.PlanDoc.model_fields)
+    assert {'table_id', 'headers', 'rows', 'source_ref'} <= set(domain.TableSpec.model_fields)
+    assert {'flow_type', 'source_ref', 'image_file'} <= set(domain.DiagramSpec.model_fields)
+    assert set(get_args(domain.DiagramSpec.model_fields['flow_type'].annotation)) == {'USER_FLOW', 'SERVICE_ARCHITECTURE'}
 
 
 def test_fake_admin_results_match_real():
@@ -56,7 +77,7 @@ def test_fake_admin_results_match_real():
         (orch_fakes.make_admin_run(), reads.AdminRun), (orch_fakes.make_admin_execution(), reads.AdminExecution),
         (orch_fakes.make_admin_agent_task(), reads.AdminAgentTask), (orch_fakes.make_score_entry(1.0), reads.ScoreEntry),
         (orch_fakes.make_admin_score_history(), reads.AdminScoreHistory), (orch_fakes.make_admin_summary(), reads.AdminSummary),
-        (orch_fakes.make_tokens(), reads.TokenTotals),
+        (orch_fakes.make_tokens(), reads.TokenTotals), (orch_fakes.make_file_deletion(), reads.AdminFileDeletion),
     ]
     for fake, real in pairs:
         assert set(vars(fake)) == set(real.model_fields), real.__name__
@@ -81,3 +102,14 @@ def test_real_artifact_check_models_have_the_fields_the_web_maps():
     allowed = set(get_args(get_args(scoring.CodeCheckResult.model_fields['gate_failures'].annotation)[0]))
     from app.orch.mapping import GATE_NAMES
     assert set(GATE_NAMES) == allowed
+
+
+def test_real_file_reference_models_have_the_fields_the_web_maps():
+    """웹이 산출물 주소로 바꾸는 파일 참조 칸(SB-314)이 실제 계약에 있는지 — 이름이 바뀌면 여기서 알아챈다."""
+    domain = pytest.importorskip('sbrain.models.domain')
+    files = pytest.importorskip('sbrain.models.files')
+    reads = pytest.importorskip('sbrain.flow.reads')
+    assert 'entry_file' in domain.Prototype.model_fields
+    assert 'image_file' in domain.Infographic.model_fields
+    assert {'before_file', 'after_file'} <= set(reads.ReworkFileChange.model_fields)
+    assert {'key', 'name', 'media_type', 'size', 'sha256'} <= set(files.FileRef.model_fields)
