@@ -52,6 +52,8 @@ function intakeDetailPayload(info){
   certifications:info.certs||[],
   ceo_careers:(info.careers||[]).map(c=>({type:c.type||null,title:text(c.title),period:text(c.period),has_proof:!!c.hasProof})),
   ceo_capability:text(info.skills),
+  // 목표 고객(선택, 200자 이내) — 웹 백엔드 project_plan_inputs.target_customer(10-13). 받기 전 서버는 모르는 칸을 버린다(extra 무시).
+  target_customer:text(info.targetCustomer),
   dev_start_month:info.devPeriod?.start||null,
   dev_end_month:info.devPeriod?.end||null,
   budget_scale_manwon:info.budgetScale?Number(info.budgetScale):null,

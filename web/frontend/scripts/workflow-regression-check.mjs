@@ -40,7 +40,7 @@ try{
   const {PlanForm}=await server.ssrLoadModule('/src/features/workflow/PlanForm.jsx');
   const {useWorkflowStore:store}=await server.ssrLoadModule('/src/store/useWorkflowStore.js');
   const draft={applicantType:'individual',ceoName:'대표',birthDate:'1990-01-01',gender:'남성',foundedAt:'2024-01-01',companyName:'테스트상사',
-    item:'아이디어 상세 설명',team:[],noTeam:true,pricing:[{item:'서비스',price:'1000'}],region:{sido:'서울특별시',sigungu:'강남구'},
+    item:'아이디어 상세 설명',targetCustomer:'  동네 헬스장 운영자  ',team:[],noTeam:true,pricing:[{item:'서비스',price:'1000'}],region:{sido:'서울특별시',sigungu:'강남구'},
     industry:'정보·통신',careers:[{type:'경력',title:'개발',period:'2020-2024',hasProof:true}],skills:'개발 역량',certs:['벤처기업'],
     devPeriod:{start:'2026-10',end:'2026-12'},selfFunding:{available:true,cashLimit:'1000000',inKindResources:'보유 장비'},
     noHires:true,hires:[],noEquipment:true,equipment:[],noPartners:true,partners:[],
@@ -49,7 +49,7 @@ try{
   let submitted;
   let ui=mount(IntakeForm,{initialValues:draft,onSubmit:info=>{submitted=info}});await ui.flush();
   ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});
-  assert.equal(submitted.item,draft.item);assert.equal(submitted.files,undefined);assert.deepEqual(submitted.selfFunding,draft.selfFunding);
+  assert.equal(submitted.item,draft.item);assert.equal(submitted.targetCustomer,'동네 헬스장 운영자');assert.equal(submitted.files,undefined);assert.deepEqual(submitted.selfFunding,draft.selfFunding);
   assert.equal(submitted.noTeam,true);assert.equal(submitted.region.sigungu,'강남구');
   assert.deepEqual(submitted.budget,draft.budget);assert.deepEqual(Object.keys(submitted.schedule),['feasibility','growth']);
   ui.component('Segmented').props.onChange('preliminary');await ui.flush();
@@ -275,6 +275,7 @@ try{
   assert.equal(ui.component('MatchProgress').props.ready,false);
   assert.deepEqual(createBody.budget_items,[{phase:null,category:'재료비',execution_plan:'부품 구입',total_amount:1200000,government_amount:1000000,self_cash_amount:200000,self_in_kind_amount:0}]);
   assert.deepEqual(createBody.schedule_items,[{section:'feasibility',category:'개발',content:'시제품',period:'2026.10 ~ 2026.12',detail:'첫 버전'}]);
+  assert.equal(createBody.target_customer,'동네 헬스장 운영자'); // 목표 고객 — 앞뒤 공백은 떼고, 비우면 null
   createRequest.resolve(response({detail:'simulated failure'},500));await saving;await ui.flush();
   assert.equal(ui.component('IntakeForm').props.initialValues.item,draft.item);
   // 사업비 · 일정 검증 실패(422)는 원문 JSON 대신 몇째 줄 어느 칸인지 알려 준다.

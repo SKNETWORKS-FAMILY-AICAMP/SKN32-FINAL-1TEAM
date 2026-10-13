@@ -154,6 +154,9 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
   // 화면에 입력칸은 없고 "내 정보 불러오기"로만 채워지는 값 — 사업계획서 일반현황에 쓴다.
   const [bizNo, setBizNo] = useState(draft.bizNo || '');
   const [item, setItem] = useState(draft.item || '');
+  // 목표 고객(선택, 200자 이내) — 오케스트레이터가 늘 '확인 필요'로 보내던 값을 사용자가 채울 수 있게(웹 백엔드 project_plan_inputs.target_customer,
+  // 10-13 누리 님 제안 · 정원 님 답). 비우면 보내지 않는다(서버가 NULL로 저장).
+  const [targetCustomer, setTargetCustomer] = useState(draft.targetCustomer || '');
   const [team, setTeam] = useState(draft.team || [{ ...EMPTY_TEAM_ROW }]);
   const [noTeam, setNoTeam] = useState(draft.noTeam ?? draft.team?.length === 0);
   const [pricing, setPricing] = useState(draft.pricing || [{ ...EMPTY_PRICING_ROW }]);
@@ -287,7 +290,7 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
       return;
     }
     onSubmit({
-      applicantType, item,
+      applicantType, item, targetCustomer: targetCustomer.trim(),
       ceoName, birthDate, gender,
       foundedAt: isPreliminary ? '' : foundedAt,
       companyName: isPreliminary ? '' : companyName,
@@ -340,6 +343,14 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
                   <textarea value={item} onChange={(e) => setItem(e.target.value)} rows={5}
                     placeholder="예) 반려견 산책 도우미를 구해주는 매칭 플랫폼을 만들고 있어요"
                     className={textareaCls} />
+                </Section>
+
+                <Section id="intake-target" title="목표 고객" optional
+                  desc="누구를 위한 서비스인지 적어 주세요. 계획서의 목표 고객 · 시장 설명에 쓰여요. 비워 두면 계획서에 '확인 필요'로 남을 수 있어요.">
+                  <textarea value={targetCustomer} onChange={(e) => setTargetCustomer(e.target.value)} rows={2} maxLength={200}
+                    placeholder="예) 회원 50 ~ 300명 규모의 동네 헬스장 운영자"
+                    className={textareaCls} />
+                  <p className="mt-1.5 text-right text-[12px] text-[var(--muted-fg)]">{targetCustomer.length} / 200</p>
                 </Section>
 
                 <Section id="intake-pricing" title="수익모델 단가" required error={errorFor(error, 'intake-pricing')} desc="매출을 예상하는 데 사용할 상품과 가격을 알려주세요.">
