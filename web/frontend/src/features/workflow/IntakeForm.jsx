@@ -13,7 +13,8 @@ import {
 import { BackButton } from './shared.jsx';
 import {
   BudgetEditor, BudgetScaleField, DevPeriodField, EMPTY_BUDGET_ROW, EMPTY_FUNDING, ListOrNone, ScheduleEditor, SelfFundingField,
-  budgetFilled, emptySchedule, fundingFilled, periodFilled, rowsFilled, scheduleFilled, scheduleSectionsFor, schedulePastDevEnd, selfFundingMismatch,
+  budgetFilled, emptySchedule, fundingFilled, periodFilled, rowsFilled, scheduleFilled, scheduleSectionsFor, schedulePastDevEnd, scheduleSpan, selfFundingMismatch,
+  agreementMaxMonths,
 } from './ProjectPlanFields.jsx';
 
 const APPLICANT_TYPES = [['preliminary', '예비창업자'], ['individual', '개인사업자'], ['corp', '법인']];
@@ -128,7 +129,8 @@ function IntakeChecklist({ groups, onJump }) {
                     className="w-full flex items-center gap-2 py-[2px] text-left text-[12.5px] hover:text-[var(--primary)] transition-colors">
                     <span aria-hidden="true" className={`flex-shrink-0 w-3.5 h-3.5 rounded-full grid place-items-center text-[8px] font-bold ${c.bad ? 'border border-[#d1d6db]' : 'bg-[color-mix(in_srgb,var(--ok)_16%,white)] text-[var(--ok)]'}`}>{c.bad ? '' : '✓'}</span>
                     <span className={c.bad ? 'text-[var(--fg)]' : 'text-[var(--muted-fg)]'}>{c.label}</span>
-                    <span className="sr-only">{c.bad ? '아직 비어 있음' : '채움'}</span>
+                    {c.bad && c.hint && <span className="text-[11px] font-semibold text-[var(--danger)]">{c.hint}</span>}
+                    <span className="sr-only">{c.bad ? c.hint || '아직 비어 있음' : '채움'}</span>
                   </button>
                 </li>
               ))}
@@ -218,6 +220,10 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
 
   // 개발 기간 끝보다 늦게 끝나는 협약기간 내 일정 줄 — 있으면 제출을 막는다(검증-1이 입력 오류로 봐서 다시 만들어도 안 고쳐진다).
   const scheduleOverrun = schedulePastDevEnd(schedule, devPeriod.end);
+  // 협약기간 내 일정 전체가 최대 개월 수(예비창업자 8 · 사업자 10)를 넘으면 막는다 — 검증-1이 같은 셈으로 입력 오류를 낸다(조율 10-13 3번).
+  const maxAgreementMonths = agreementMaxMonths(isPreliminary);
+  const span = scheduleSpan(schedule);
+  const scheduleTooLong = span && span.months > maxAgreementMonths ? span : null;
   // 필수 구역 — 묶음마다 화면 위에서부터의 순서. 제출하면 이 중 첫 빈 항목으로 스크롤하고, 오른쪽 입력 현황도 이걸 그린다.
   // show가 거짓인 구역(유형을 고르기 전의 사업비 등)은 화면에도 없으니 검사에서도 뺀다(예전 조건과 같다).
   const checkGroups = [
@@ -235,7 +241,9 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
     ] },
     { title: '③ 사업 계획', items: [
       { anchor: 'intake-period', label: '개발 기간', bad: !periodFilled(devPeriod) },
-      { anchor: 'intake-schedule', label: '추진 일정', show: !!applicantType, bad: !scheduleFilled(schedule, isPreliminary) || scheduleOverrun.length > 0 },
+      { anchor: 'intake-schedule', label: '추진 일정', show: !!applicantType, bad: !scheduleFilled(schedule, isPreliminary) || scheduleOverrun.length > 0 || !!scheduleTooLong,
+        // 다 채웠는데 기간이 기준을 벗어난 경우 — 입력 현황에 '비어 있음'이 아니라 '기간 확인'으로 알린다.
+        hint: scheduleFilled(schedule, isPreliminary) && (scheduleOverrun.length > 0 || !!scheduleTooLong) ? '기간 확인' : undefined },
       { anchor: 'intake-hires', label: '채용 계획', bad: !noHires && !rowsFilled(hires, HIRE_FIELDS) },
       { anchor: 'intake-equipment', label: '장비 · 시설', bad: !noEquipment && !rowsFilled(equipment, EQUIPMENT_FIELDS) },
       { anchor: 'intake-partners', label: '협력 기관', bad: !noPartners && !rowsFilled(partners, PARTNER_FIELDS) },
@@ -419,11 +427,17 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
                 {applicantType ? (
                   <Section id="intake-schedule" title="추진 일정" required error={errorFor(error, 'intake-schedule')}
                     desc="계획서의 추진 일정 표에 쓰여요. 구분 · 추진 내용 · 추진 기간(연도 포함)은 꼭 채워 주세요.">
-                    {/* 협약기간 최대 개월 수는 공고마다 달라 막지 않고 알리기만 한다(공고를 고르기 전 입력이라). 개발 기간을 넘는 것은 아래에서 막는다. */}
+                    {/* 협약기간 최대 개월 수는 2026년 공고 기준으로 고정이라(조율 10-13) 넘으면 막는다. 개발 기간을 넘는 것도 아래에서 막는다. */}
                     <p className="mb-4 text-[12.5px] leading-relaxed text-[var(--muted-fg)]">
-                      협약기간 내 일정은 위 개발 기간 안에서 끝나야 해요. 협약기간은 공고마다 다를 수 있어요(예: 예비창업패키지 8개월 · 초기창업패키지 10개월).
+                      협약기간 내 일정은 위 개발 기간 안에서 끝나야 하고, 첫 달부터 끝 달까지 {maxAgreementMonths}개월을 넘을 수 없어요(2026년 {isPreliminary ? '예비창업패키지' : '초기창업패키지'} 공고 기준).
                     </p>
                     <ScheduleEditor value={schedule} onChange={setSchedule} isPreliminary={isPreliminary} />
+                    {scheduleTooLong && (
+                      <div role="alert" className="mt-3 rounded-xl bg-[#fff0f0] px-4 py-3 text-[12.5px] leading-relaxed text-[var(--danger)]">
+                        <p>협약기간 내 일정이 {scheduleTooLong.start.replace('-', '년 ')}월부터 {scheduleTooLong.end.replace('-', '년 ')}월까지 {scheduleTooLong.months}개월이에요. {isPreliminary ? '예비창업자는' : '개인사업자 · 법인은'} {maxAgreementMonths}개월까지 쓸 수 있어요.</p>
+                        <p className="mt-1 font-semibold">협약기간 내 일정을 {maxAgreementMonths}개월 안으로 줄여 주세요.</p>
+                      </div>
+                    )}
                     {scheduleOverrun.length > 0 && (
                       <div role="alert" className="mt-3 rounded-xl bg-[#fff0f0] px-4 py-3 text-[12.5px] leading-relaxed text-[var(--danger)]">
                         {scheduleOverrun.map((row) => (

@@ -67,6 +67,20 @@ try{
   assert.ok(ui.nodes().some(n=>n.type==='p'&&[].concat(n.props.children).join('').includes('개발 기간 끝')));
   ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await ui.flush();assert.equal(submitted,null);
   assert.ok(ui.find(n=>n.props.id==='intake-schedule').props.error);ui.unmount();
+  // 협약기간 최대 개월 수(예비창업자 8 · 사업자 10, 조율 10-13) — 검증-1과 같은 셈: 협약기간 내 일정만, 월 1 ~ 12만, 첫 달 · 끝 달 모두 센다.
+  const {scheduleSpan:ssp,agreementMaxMonths:amm}=await server.ssrLoadModule('/src/features/workflow/ProjectPlanFields.jsx');
+  assert.deepEqual(ssp({feasibility:[{period:'2026.03 ~ 2026.05'},{period:'2026년 9월 ~ 2026년 10월'}],growth:[{period:'2028.01 ~ 2028.12'}]}),{start:'2026-03',end:'2026-10',months:8});
+  assert.deepEqual(ssp({feasibility:[{period:'2026.11 ~ 2027.02'}]}),{start:'2026-11',end:'2027-02',months:4});
+  assert.deepEqual(ssp({feasibility:[{period:'2026.13 ~ 2026.05'}]}),{start:'2026-05',end:'2026-05',months:1}); // 13월은 버린다
+  assert.equal(ssp({feasibility:[{period:'11월 ~ 1월'}]}),null);assert.equal(ssp({feasibility:[]}),null);
+  assert.deepEqual([amm(true),amm(false)],[8,10]);
+  const longPlan={...draft,devPeriod:{start:'2026-01',end:'2026-12'},schedule:{feasibility:[{category:'개발',content:'시제품',period:'2026.01 ~ 2026.11',detail:''}],growth:[]}};
+  submitted=null;ui=mount(IntakeForm,{initialValues:longPlan,onSubmit:info=>{submitted=info}});await ui.flush();
+  assert.ok(ui.nodes().some(n=>n.type==='p'&&[].concat(n.props.children).join('').includes('11개월이에요')));
+  ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await ui.flush();assert.equal(submitted,null);
+  assert.ok(ui.find(n=>n.props.id==='intake-schedule').props.error);ui.unmount();
+  submitted=null;ui=mount(IntakeForm,{initialValues:{...longPlan,schedule:{feasibility:[{category:'개발',content:'시제품',period:'2026.01 ~ 2026.10',detail:''}],growth:[]}},onSubmit:info=>{submitted=info}});await ui.flush();
+  ui.find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await ui.flush();assert.ok(submitted);ui.unmount(); // 사업자 10개월은 통과
   // 자기부담 한도(위 칸)와 사업비 집행 계획의 자기부담 금액(아래 표)이 어긋나면 안내만 — 막지 않는다.
   const {selfFundingMismatch:sfm}=await server.ssrLoadModule('/src/features/workflow/ProjectPlanFields.jsx');
   const rowsOf=(...cash)=>cash.map(c=>({cash:String(c),inKind:'0'}));

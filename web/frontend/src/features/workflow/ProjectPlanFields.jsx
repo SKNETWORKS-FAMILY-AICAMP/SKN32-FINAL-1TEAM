@@ -147,6 +147,23 @@ export function schedulePastDevEnd(schedule, devEnd) {
     .map((row, i) => ({ no: i + 1, category: (row.category || '').trim(), end: periodEndMonth(row.period) }))
     .filter((row) => row.end && row.end > devEnd);
 }
+
+// 협약기간 최대 개월 수 — 2026년 공고 기준으로 고정(조율 10-13 3번, 담당자 답): 예비창업패키지 8개월 · 초기창업패키지(일반형) 10개월.
+export const agreementMaxMonths = (isPreliminary) => (isPreliminary ? 8 : 10);
+// 협약기간 내 일정 전체가 걸친 개월 수 — 검증-1(validation_1.py _agreement_duration_months)과 같은 셈: 협약기간 내 일정 줄만,
+// 줄마다 위 규칙으로 달을 모두 찾되 월이 1 ~ 12가 아니면 버리고, 가장 이른 달부터 가장 늦은 달까지 첫 달 · 끝 달을 모두 센다
+// (예: 2026-03 ~ 2026-10 = 8개월). 달을 하나도 못 읽으면 null — 검사하지 않는다.
+// (월 1 ~ 12 거르기는 이 셈에만 있다 — 검증-1의 끝달 검사는 거르지 않아서 periodEndMonth도 거르지 않는다.)
+export function scheduleSpan(schedule) {
+  const months = (schedule?.feasibility || []).flatMap((row) => [...String(row.period || '').matchAll(PERIOD_MONTH_RE)])
+    .filter(([, , m]) => Number(m) >= 1 && Number(m) <= 12)
+    .map(([, y, m]) => Number(y) * 12 + Number(m) - 1);
+  if (!months.length) return null;
+  const first = Math.min(...months);
+  const last = Math.max(...months);
+  const ym = (v) => `${Math.floor(v / 12)}-${String((v % 12) + 1).padStart(2, '0')}`;
+  return { start: ym(first), end: ym(last), months: last - first + 1 };
+}
 const EMPTY_SCHEDULE_ROW = Object.fromEntries(SCHEDULE_FIELDS.map((f) => [f.key, '']));
 // 일정 표 두 개. key는 저장 요청의 section 값(웹 DB project_schedule_items.section)이고 두 유형이 같다 —
 // 제목만 유형별로 다르다. 협약 이후 일정이 필수인지는 상희 님 확인 중(2026-10-10).
