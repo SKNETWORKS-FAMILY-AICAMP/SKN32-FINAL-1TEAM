@@ -511,7 +511,16 @@ def _append_picture_pages(current_output: str, groups: list, new_tmp) -> str:
     return current_output
 
 
-def _prepare_tables(current_output: str, steps: _Steps, new_tmp) -> str:
+# 열 폭 조정(HWPUNIT, 표 전체 폭은 그대로) — 일정 표 '구분' 칸을 넓히고(3238 → 7000, "시제품 개발"이 한두 글자씩 끊기던 것) 초기창업 사업비 표 금액 칸을 넓힌다
+# (5946 → 7300, "28,000,000원"의 '원'이 다음 줄로 넘어가던 것). 표 번호는 양식 정리본 기준이다.
+_SCHEDULE_COLUMNS = [7000, 11646, 11795, 17521]
+_COLUMN_WIDTHS_BY_TEMPLATE: dict[str, dict[int, list[int]]] = {
+    'preliminary': {10: _SCHEDULE_COLUMNS, 17: _SCHEDULE_COLUMNS},
+    'early_general': {11: _SCHEDULE_COLUMNS, 16: _SCHEDULE_COLUMNS, 13: [6509, 12215, 7300, 7300, 7300, 7300]},
+}
+
+
+def _prepare_tables(current_output: str, steps: _Steps, new_tmp, template: str = '') -> str:
     """표 레이아웃을 입력에 맞춘다 — ① 입력 줄이 양식의 고정 행보다 많은 표는 기준 행을 복제해 행을 늘리고(steps.add_rows)
     ② 칸에 들어갈 글(여러 줄 · 줄바꿈)에 맞게 행 높이를 늘린다(steps.cell_texts). 바꿀 것이 없으면 그대로 돌려주고, 새 파일 경로를 돌려준다.
 
@@ -529,6 +538,8 @@ def _prepare_tables(current_output: str, steps: _Steps, new_tmp) -> str:
         names = z.namelist()
         data = {name: z.read(name) for name in names}
     xml = data['Contents/section0.xml'].decode('utf-8')
+    for table, widths in _COLUMN_WIDTHS_BY_TEMPLATE.get(template, {}).items():
+        xml = hwpx_rows.resize_columns(xml, table, widths)
     for table, row, count in steps.add_rows:
         xml = hwpx_rows.clone_rows(xml, table, row, count)
     styles = hwpx_rows.Styles(data['Contents/header.xml'].decode('utf-8'))
@@ -605,7 +616,7 @@ def render_plan_hwp(data: PlanDocumentData, template: str) -> bytes:
     plan_fd, plan_path = tempfile.mkstemp(suffix='.plan.json')
     try:
         # 입력 줄이 양식의 고정 행보다 많은 표는 행을 먼저 늘리고, 글이 많이 들어가는 행은 높이를 미리 맞춘다(표 번호 · 행 번호는 그대로이고 늘린 행 아래의 행만 밀린다)
-        plan_input = _prepare_tables(template_path, steps, _new_tmp)
+        plan_input = _prepare_tables(template_path, steps, _new_tmp, template)
         current_output = _new_tmp()
         with os.fdopen(plan_fd, 'w', encoding='utf-8') as f:
             json.dump({

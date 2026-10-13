@@ -266,3 +266,29 @@ def remove_first_page_break(xml: str) -> str:
     양식은 첫 쪽이 작성 목차 쪽이고 그 다음 문단(제목 표)부터 새 쪽이다. 목차 표를 지우면 첫 쪽에는 맨 앞 문단(고지)만 남아 빈 쪽이 되므로,
     제목 표가 앞 쪽에 이어지도록 그 쪽 나눔을 끈다. 쪽 나눔이 있는 문단이 없으면 그대로 돌려준다."""
     return _PAGE_BREAK_PARA.sub(lambda m: f'{m.group(1)}0{m.group(2)}', xml, count=1)
+
+
+# ── 열 폭 ───────────────────────────────────────────────────────────────────────
+_COL_SPAN = re.compile(r'<hp:cellSpan colSpan="(\d+)" rowSpan="\d+"/>')
+_COL_CNT = re.compile(r'colCnt="(\d+)"')
+
+
+def resize_columns(xml: str, table_index: int, widths: list[int]) -> str:
+    """표 `table_index`의 열 폭을 `widths`(열 격자마다 HWPUNIT)로 바꾼다 — 칸이 걸친 열의 폭을 더한 값이 그 칸의 폭이 된다.
+
+    양식의 일정 표 '구분' 칸(3238)은 순번용이라 "시제품 개발" 같은 글이 끊기고, 초기창업 사업비 표 금액 칸(5946)은 "28,000,000원"의 '원'이 다음 줄로 넘어간다.
+    표 전체 폭은 그대로 두는 것이 좋으므로 `widths`의 합은 원래 폭과 같게 준다. 열 수가 다르면 ValueError."""
+    start, end = top_level_tables(xml)[table_index]
+    table = xml[start:end]
+    columns = int(_COL_CNT.search(table).group(1))
+    if len(widths) != columns:
+        raise ValueError(f'표 {table_index}은 {columns}열인데 폭을 {len(widths)}개 받았습니다')
+
+    def resize(match: re.Match) -> str:
+        cell = match.group(0)
+        col = int(_CELL_ADDR.search(cell).group(1))
+        span = int(_COL_SPAN.search(cell).group(1))
+        width = sum(widths[col:col + span])
+        return _CELL_SZ.sub(lambda m: f'<hp:cellSz width="{width}" height="{m.group(2)}"/>', cell, count=1)
+
+    return xml[:start] + _TC.sub(resize, table) + xml[end:]
