@@ -29,11 +29,11 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Callable
 from xml.etree import ElementTree as ET
 
-from ....orchestrator.errors import ToolCallExhausted   # [S-Brain] 받는 예외는 재시도 소진뿐(standards 4절). Path import 삭제
+from ....orchestrator.errors import ToolCallExhausted   # [S-Brain] 받는 예외는 재시도 소진뿐(T-V2는 대조 LLM 실패만 받는다). Path import 삭제
 
 # 한 번에 여는 호출 수 상한. 호출 하나가 HTML 전체(약 5~7천 토큰)를 싣는다. 너무 많이 열면
 # 분당 토큰 한도(개발 키 20만)에 걸려 429가 난다(실측: 12개 동시에서 38건). 429는 tools가 재시도한다.
-_MAX_WORKERS = 3   # [S-Brain] 6 → 3 (spec 4.4)
+_MAX_WORKERS = 3   # [S-Brain] 6 → 3 (운영 키 분당 토큰 한도)
 # 기능 하나를 몇 번 묻는가. 검증-2 모델(gpt-6-luna)은 온도 설정을 받지 않아 같은 질문에도
 # 부분/미충족 경계에서 답이 갈렸다(실측). 세 번 묻고 가운데 값(중앙값)을 쓴다. 병렬이라 시간은 그대로다.
 _VOTES = 3
@@ -320,7 +320,7 @@ def elements_for(tools, kind: str, feature: str, plan_text: str | None,
         elements = tools.llm(element_messages(feature, text, kind), parse=parse_elements,
                              purpose=f"계획서 대조 요소: {feature}")
     except ToolCallExhausted as exc:   # [S-Brain] except Exception → 재시도 소진만 받는다. 그 밖의 예외는 올린다
-        if exc.billing_limit:   # [S-Brain] 결제 · 한도 소진은 대체하지 않고 올린다(재개 대기)
+        if getattr(exc, "billing_limit", False):   # 결제 · 한도 소진은 대체하지 않고 올린다(조율이 재개 대기로 보냄)
             raise
         return None
     _store(store, key, elements)   # [S-Brain]
@@ -408,7 +408,7 @@ def make_judge(tools, kind: str, source: str, plan_text: str | None,
                 return caller(f"{feature}#{vote}").llm(messages, parse=parse_verdict,
                                                       purpose=f"계획서 대조: {feature}")
             except ToolCallExhausted as exc:  # [S-Brain] except Exception → 재시도 소진만 규칙 판정으로 대체한다. 그 밖의 예외는 올린다
-                if exc.billing_limit:   # [S-Brain] 결제 · 한도 소진은 대체하지 않고 올린다(재개 대기)
+                if getattr(exc, "billing_limit", False):   # 결제 · 한도 소진만은 대체하지 않고 올린다(재개 대기)
                     raise
                 return None
 
@@ -499,7 +499,7 @@ def make_field_judge(tools, plan_text: str | None
             return caller.llm(field_messages(label, shown, plan_text), parse=parse_verdict,
                               purpose=f"계획서 대조: {label}")
         except ToolCallExhausted as exc:  # [S-Brain] except Exception → 재시도 소진만. 실패한 칸은 감점하지 않는다
-            if exc.billing_limit:   # [S-Brain] 결제 · 한도 소진은 대체하지 않고 올린다(재개 대기)
+            if getattr(exc, "billing_limit", False):   # 결제 · 한도 소진은 대체하지 않고 올린다(재개 대기)
                 raise
             return None
 
