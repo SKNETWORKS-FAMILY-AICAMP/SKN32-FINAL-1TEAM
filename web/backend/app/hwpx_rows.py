@@ -9,6 +9,7 @@ rhwp의 `edit insert-row`는 열 격자대로 칸이 나뉜 평범한 행을 만
 """
 from __future__ import annotations
 
+import html
 import re
 
 _TBL_TAG = re.compile(r'<(/?)hp:tbl\b[^>]*?(/?)>')
@@ -266,6 +267,131 @@ def remove_first_page_break(xml: str) -> str:
     양식은 첫 쪽이 작성 목차 쪽이고 그 다음 문단(제목 표)부터 새 쪽이다. 목차 표를 지우면 첫 쪽에는 맨 앞 문단(고지)만 남아 빈 쪽이 되므로,
     제목 표가 앞 쪽에 이어지도록 그 쪽 나눔을 끈다. 쪽 나눔이 있는 문단이 없으면 그대로 돌려준다."""
     return _PAGE_BREAK_PARA.sub(lambda m: f'{m.group(1)}0{m.group(2)}', xml, count=1)
+
+
+# ── 문단 모양(정렬 · 내어쓰기) ─────────────────────────────────────────────────────
+# 본문 글머리 줄(" ◦ 글" · "   - 글")은 줄이 넘어가면 둘째 줄이 글 첫 글자에 맞아야 한다. 양식의 본문 문단 모양은 내어쓰기가 두 가지(약 1.2cm · 2.1cm)이고
+# 새로 넣은 문단은 앞뒤 문단 모양을 물려받아 줄마다 달랐다. 표 칸의 여러 줄 목록은 양식 칸이 가운데 정렬이라 줄마다 가운데로 몰렸다. 그래서 문단마다
+# 원래 문단 모양의 복사본에 정렬 · 왼쪽 여백 · 내어쓰기만 바꿔 붙인다. 내어쓰기는 한글 기준 음수(첫 줄은 그대로, 둘째 줄부터 들여 씀)이고,
+# 값은 글자 크기의 배수(em)로 받아 그 문단 첫 글자의 크기로 HWPUNIT을 셈한다(글머리 폭이 글자 크기에 비례하므로).
+# 문단 모양의 여백은 두 벌이다 — `<hp:case …HwpUnitChar>` 안의 값은 `<hp:default>` 값의 절반으로 적혀 있다(양식 실측: -1667 / -3334, -3007 / -6014).
+_P_TAG = re.compile(r'<(/?)hp:p\b[^>]*?(/?)>')
+_HP_T = re.compile(r'<hp:t>(.*?)</hp:t>', re.S)
+_ALIGN = re.compile(r'(<hh:align horizontal=")[A-Z_]+(")')
+_MARGIN_VALUE = {'intent': re.compile(r'(<hc:intent value=")-?\d+(")'), 'left': re.compile(r'(<hc:left value=")-?\d+(")')}
+
+
+def top_level_paragraphs(xml: str) -> list[tuple[int, int]]:
+    """본문 최상위 문단(`<hp:p>` — 표 칸 안의 문단 제외)의 (시작, 끝) 위치를 문서 순서대로. rhwp `--section 0 --para N`의 N과 같은 순서다."""
+    spans: list[tuple[int, int]] = []
+    depth, start = 0, 0
+    for match in _P_TAG.finditer(xml):
+        if match.group(2):
+            continue
+        if not match.group(1):
+            if depth == 0:
+                start = match.start()
+            depth += 1
+        else:
+            depth -= 1
+            if depth == 0:
+                spans.append((start, match.end()))
+    return spans
+
+
+def paragraph_text(paragraph_xml: str) -> str:
+    """문단의 글(`<hp:t>`를 이은 것, xml 이스케이프는 푼다)."""
+    return html.unescape(''.join(_HP_T.findall(paragraph_xml)))
+
+
+# (정렬 — None이면 그대로, 왼쪽 여백 em, 내어쓰기 em(양수로 받아 음수로 적는다))
+Shape = tuple[str | None, float, float]
+
+
+class _ShapeBook:
+    """문단 모양 복사본을 만들고 header에 더한다 — 같은 (원래 모양, 바꿀 값)은 한 번만 만든다."""
+
+    def __init__(self, header_xml: str) -> None:
+        self.header = header_xml
+        self.blocks = {m.group(1): m.group(0) for m in _PARA_PR.finditer(header_xml)}
+        self.char_height = {m.group(1): int(m.group(2)) for m in _CHAR_HEIGHT.finditer(header_xml)}
+        self.next_id = max(int(i) for i in self.blocks) + 1
+        self.made: dict[tuple, str] = {}
+        self.new_blocks: list[str] = []
+
+    def shaped(self, paragraph_xml: str, shape: Shape) -> str:
+        source = _P_PARA_PR.search(paragraph_xml).group(2)
+        run = _RUN_CHAR.search(paragraph_xml)
+        font = self.char_height.get(run.group(1), 1000) if run else 1000
+        align, left_em, hang_em = shape
+        left, intent = round(left_em * font), -round(hang_em * font)
+        key = (source, align, left, intent)
+        if key not in self.made:
+            new_id = str(self.next_id)
+            self.next_id += 1
+            block = self.blocks[source].replace(f'<hh:paraPr id="{source}"', f'<hh:paraPr id="{new_id}"', 1)
+            if align:
+                block = _ALIGN.sub(rf'\g<1>{align}\g<2>', block, count=1)
+            case_part, sep, default_part = block.partition('<hp:default>')
+            values = {'intent': intent, 'left': left}
+            for name, pattern in _MARGIN_VALUE.items():
+                if sep:   # <hp:case> 쪽은 절반 값
+                    case_part = pattern.sub(rf'\g<1>{round(values[name] / 2)}\g<2>', case_part)
+                    default_part = pattern.sub(rf'\g<1>{values[name]}\g<2>', default_part)
+                else:
+                    case_part = pattern.sub(rf'\g<1>{values[name]}\g<2>', case_part)
+            self.new_blocks.append(case_part + sep + default_part)
+            self.made[key] = new_id
+        return _P_PARA_PR.sub(rf'\g<1>{self.made[key]}\g<3>', paragraph_xml, count=1)
+
+    def finished_header(self) -> str:
+        if not self.new_blocks:
+            return self.header
+        header = self.header.replace('</hh:paraProperties>', ''.join(self.new_blocks) + '</hh:paraProperties>', 1)
+        return re.sub(r'<hh:paraProperties itemCnt="(\d+)"', lambda m: f'<hh:paraProperties itemCnt="{int(m.group(1)) + len(self.new_blocks)}"',
+                      header, count=1)
+
+
+def shape_paragraphs(section_xml: str, header_xml: str, paragraphs: dict[int, tuple[str, Shape]],
+                     cells: dict[tuple[int, int, int], list[Shape]]) -> tuple[str, str]:
+    """문단 모양을 바꾼 (section xml, header xml)을 돌려준다.
+
+    paragraphs: {최상위 문단 번호: (그 문단에 있어야 할 글, 모양)} — 글이 다르면(문단 번호가 어긋난 것) 그 문단은 건드리지 않는다.
+    cells: {(표, 행, 열): [칸 문단마다 모양]} — 칸의 문단 수가 모양 수와 다르면 그 칸은 건드리지 않는다."""
+    book = _ShapeBook(header_xml)
+    spans = top_level_paragraphs(section_xml)
+    for index in sorted(paragraphs, reverse=True):   # 뒤 문단부터 — 앞 문단의 길이가 바뀌어도 위치가 어긋나지 않게
+        if index >= len(spans):
+            continue
+        expected, shape = paragraphs[index]
+        start, end = spans[index]
+        paragraph = section_xml[start:end]
+        if paragraph_text(paragraph).strip() != expected.strip():
+            continue
+        section_xml = section_xml[:start] + book.shaped(paragraph, shape) + section_xml[end:]
+    for (table_index, row, col), shapes in cells.items():
+        tables = top_level_tables(section_xml)
+        if table_index >= len(tables):
+            continue
+        start, end = tables[table_index]
+        table = section_xml[start:end]
+        rows = list(_ROW.finditer(table))
+        if row >= len(rows):
+            continue
+        row_match = rows[row]
+        for cell in _TC.finditer(row_match.group(0)):
+            if int(_CELL_ADDR.search(cell.group(0)).group(1)) != col:
+                continue
+            found = list(_PARAGRAPH.finditer(cell.group(0)))
+            if len(found) != len(shapes):
+                break
+            cell_xml = cell.group(0)
+            for paragraph, shape in reversed(list(zip(found, shapes))):
+                cell_xml = cell_xml[:paragraph.start()] + book.shaped(paragraph.group(0), shape) + cell_xml[paragraph.end():]
+            new_row = row_match.group(0)[:cell.start()] + cell_xml + row_match.group(0)[cell.end():]
+            section_xml = section_xml[:start] + table[:row_match.start()] + new_row + table[row_match.end():] + section_xml[end:]
+            break
+    return section_xml, book.finished_header()
 
 
 # ── 열 폭 ───────────────────────────────────────────────────────────────────────

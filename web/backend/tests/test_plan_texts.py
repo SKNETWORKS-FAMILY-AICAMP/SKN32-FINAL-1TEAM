@@ -179,8 +179,9 @@ def test_docx_puts_the_table_narratives_after_the_tables_without_the_table_text_
         '5.3': ['비목 | 산출근거 | 정부지원사업비', '재료비 | 라벨링 | 5,000,000원', '', '사업비 집행계획 서술:', '1. 재료비는 라벨링에 쓴다.']}))
     paragraphs, _tables = _docx(authed_client, project_id)
 
-    assert '1. 모델 고도화를 추진한다.' in paragraphs and '1. 사업화를 추진한다.' in paragraphs
-    assert '1. 재료비는 라벨링에 쓴다.' in paragraphs
+    # 번호 줄은 번호 뒤 탭 · 내어쓰기(test_plan_body_lines)
+    assert '1.\t모델 고도화를 추진한다.' in paragraphs and '1.\t사업화를 추진한다.' in paragraphs
+    assert '1.\t재료비는 라벨링에 쓴다.' in paragraphs
     assert ' | ' not in paragraphs  # 표를 글자로 옮긴 줄은 문서에 나오지 않는다
     assert '개발계획 서술:' not in paragraphs and '사업비 집행계획 서술:' not in paragraphs
 
@@ -240,5 +241,5 @@ def test_the_downloaded_docx_keeps_the_input_table_and_drops_the_repeated_lines(
     doc = Document(io.BytesIO(authed_client.get(f'/projects/{pid}/plan-document.docx').content))
     lines = [p.text for p in doc.paragraphs]
 
-    assert lines.count(FALLBACK_LINE) == 1  # 바꾼 5.2의 줄은 빠지고, 바꾸지 않은 6.2의 줄만 남는다
+    assert lines.count(FALLBACK_LINE.replace('· ', '·\t', 1)) == 1  # 바꾼 5.2의 줄은 빠지고, 바꾸지 않은 6.2의 줄만 남는다(글머리 뒤 탭 — test_plan_body_lines)
     assert any(c.text == '2026.05~2026.07' for table in doc.tables for row in table.rows for c in row.cells)  # 표는 입력 행 그대로

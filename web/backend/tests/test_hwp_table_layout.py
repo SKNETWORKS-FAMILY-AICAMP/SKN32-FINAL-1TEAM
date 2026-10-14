@@ -240,7 +240,7 @@ def test_docx_has_no_blue_guide_notes_and_writes_the_body_one_bullet_per_line(te
     texts = [p.text for p in Document(str(path)).paragraphs]
 
     assert not any(t.startswith('※') for t in texts)  # hwp는 양식의 파란 안내를 모두 지운다
-    assert ' ◦ 문제 첫째' in texts and ' ◦ 문제 둘째' in texts
+    assert '◦\t문제 첫째' in texts and '◦\t문제 둘째' in texts   # 글머리 뒤 탭 · 내어쓰기(test_plan_body_lines)
     assert '문제 첫째\n문제 둘째' not in texts
 
 

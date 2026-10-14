@@ -70,10 +70,32 @@ def test_rows_do_not_split_across_pages_and_grid_tables_repeat_their_header(temp
     grids = [t for t in doc.tables if t.rows[0]._tr.find('.//' + qn('w:tblHeader')) is not None]
 
     assert len(grids) >= 4  # 팀 구성 현황 · 일정 두 표 · 사업비 · 팀 구성(안) · 협력기관 등
-    for table in doc.tables:
+    for table in doc.tables:   # 이 자료는 칸 글이 짧아 모든 행이 나뉘지 않는다(긴 칸은 아래 테스트)
         assert all(row._tr.find('.//' + qn('w:cantSplit')) is not None for row in table.rows)
     for table in grids:
         assert [row._tr.find('.//' + qn('w:tblHeader')) is not None for row in table.rows][:2] == [True, False]
+
+
+@pytest.mark.parametrize('template', ['preliminary', 'early_general'])
+def test_grid_table_header_row_stays_on_the_page_of_the_first_content_row(template):
+    """쪽 맨 아래에 표 제목과 머리 줄만 남고 내용이 다음 쪽에서 시작하지 않게 — 머리 줄 문단은 다음(첫 내용 줄)과 붙는다."""
+    doc = _docx(template)
+    grids = [t for t in doc.tables if t.rows[0]._tr.find('.//' + qn('w:tblHeader')) is not None]
+
+    for table in grids:
+        assert all(p.paragraph_format.keep_with_next for cell in table.rows[0].cells for p in cell.paragraphs)
+        assert not any(p.paragraph_format.keep_with_next for row in table.rows[1:] for cell in row.cells for p in cell.paragraphs)
+
+
+def test_long_rows_may_split_across_pages_so_the_page_above_is_not_left_half_empty():
+    """개요(요약) 표 '문제 인식' 같은 20줄 넘는 칸을 통째로 다음 쪽으로 넘기면 앞 쪽 아래 절반이 비었다(실제 실행 건 10-13) — 긴 행만 나뉠 수 있다."""
+    long_text = '\n'.join(f'◦ 둘째 줄까지 넘어가는 긴 문장 {i} — 회원 관리와 수업 예약을 한 화면에서 처리하는 서비스를 개발할 계획임.' for i in range(8))
+    doc = _docx('early_general', _data(요약_문제인식=long_text, 요약_실현가능성='짧은 요약'))
+    summary = next(t for t in doc.tables if t.rows[0].cells[0].text == '명 칭')
+    rows = {row.cells[0].text: row._tr.find('.//' + qn('w:cantSplit')) is not None for row in summary.rows}
+
+    assert rows['문제 인식(Problem)'] is False   # 긴 행은 쪽 끝에서 나뉜다
+    assert rows['실현 가능성(Solution)'] is True and rows['명 칭'] is True   # 짧은 행은 예전처럼 나뉘지 않는다
 
 
 def test_captions_stay_with_their_table_or_picture():

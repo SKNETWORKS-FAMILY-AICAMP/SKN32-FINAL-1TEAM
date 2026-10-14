@@ -34,6 +34,7 @@ render_plan_docx() · render_plan_hwp()가 받는 PlanDocumentData는 계획서 
 from __future__ import annotations
 
 import io
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -163,12 +164,78 @@ class PlanDocumentData:
     고지: str = ''
 
 
+# 계획서 글의 줄 머리 — 담당자 글은 줄마다 "◦ " · "• " · "- " · "① " 같은 글머리를 이미 달고 오고, 마크다운("* ", "**굵게**")이 섞일 때도 있다.
+# 예전에는 그 위에 " ◦ "를 또 붙여 " ◦ ◦ …" · " ◦ - …"가 됐다. 줄의 글머리를 떼고 단계(본문 · 하위)를 가려 문서가 한 번만 단다(docx · hwp 공통).
+_SUBHEADING_RE = re.compile(r'\[[^\[\]]+\]')
+_ITEM_MARK_RE = re.compile(r'^[◦○•●▪■◆◇▶►∙ㅇ*]\s+')
+_SUB_MARK_RE = re.compile(r'^([-–—·])\s+')
+_NUMBER_MARK_RE = re.compile(r'^([①-⑳])\s*|^(\(\d{1,2}\)|\d{1,2}[.)]|[가-하][.)])\s+')
+_BOLD_RE = re.compile(r'\*\*(.+?)\*\*')
+ITEM_MARK, SUB_MARK = '◦', '-'
+
+
+def body_line(line: str, plain_mark: str = ITEM_MARK) -> tuple[str, str, str]:
+    """줄 하나 → (종류, 글머리, 글). 종류는 'heading'("[대표자 보유 역량]"처럼 대괄호 하나로 된 소제목) · 'item'(본문 줄) · 'sub'(하위 줄 "- ") ·
+    'plain'(글머리 없는 줄 — plain_mark가 빈 글일 때만). 글머리 "◦" · "•" · "*"는 본문 줄 "◦"로 모으고, 하위 줄은 "-" · "·"를 그대로
+    ("–" · "—"는 "-"로), "①" · "1." · "가."는 번호를 그대로 글머리로 쓴다. 글머리가 없는 줄은 plain_mark(본문은 "◦")를 단다. "**굵게**"는 글만 남긴다."""
+    text = _BOLD_RE.sub(r'\1', line.strip())
+    if _SUBHEADING_RE.fullmatch(text):
+        return 'heading', '', text
+    kind, mark = '', ''
+    while True:   # "◦ ◦ 글"처럼 겹친 글머리도 모두 뗀다 — 단계 · 글머리는 맨 앞 것
+        if m := _ITEM_MARK_RE.match(text):
+            kind, mark = kind or 'item', mark or ITEM_MARK
+        elif m := _SUB_MARK_RE.match(text):
+            kind, mark = kind or 'sub', mark or ('·' if m.group(1) == '·' else SUB_MARK)
+        else:
+            break
+        text = text[m.end():]
+    if kind:
+        return kind, mark, text.strip()
+    if m := _NUMBER_MARK_RE.match(text):
+        return 'item', m.group(1) or m.group(2), text[m.end():].strip()
+    return ('item', plain_mark, text) if plain_mark else ('plain', '', text)
+
+
+_INDENT_CM = {'item': 0.7, 'sub': 1.3}
+_HANG_CM = 0.5
+
+
+def _write_line(paragraph, line: str, plain_mark: str, size: Pt | None = None) -> None:
+    """줄 하나를 문단에 쓴다. 글머리 줄은 내어쓰기(글머리 뒤 탭 위치 = 왼쪽 들여쓰기)라 줄이 넘어가도 둘째 줄이 글 첫 글자에 맞는다 —
+    예전에는 " ◦ 글"을 그대로 써서 넘어간 줄이 글머리 앞(여백)부터 시작했다. 소제목은 굵게, 글머리 없이 쓴다."""
+    kind, mark, text = body_line(line, plain_mark)
+    if kind in _INDENT_CM:
+        fmt = paragraph.paragraph_format
+        indent = Cm(_INDENT_CM[kind])
+        fmt.left_indent = indent
+        fmt.first_line_indent = -Cm(_HANG_CM)
+        fmt.tab_stops.add_tab_stop(indent)
+        text = f'{mark}\t{text}'
+    run = paragraph.add_run(text)
+    run.bold = kind == 'heading'
+    if size is not None:
+        run.font.size = size
+
+
+def _lines(text: str) -> list[str]:
+    return [line for line in (text or '').replace('\r', '').split('\n') if line.strip()]
+
+
 def _set_cell_text(cell, text: str, bold: bool = False, shade: str | None = None) -> None:
     cell.text = ''
     p = cell.paragraphs[0]
-    run = p.add_run(text)
-    run.bold = bold
-    run.font.size = Pt(10)
+    lines = _lines(text)
+    marked = any(body_line(line, '')[0] != 'plain' for line in lines)
+    if bold or (len(lines) <= 1 and not marked):
+        # 제목 칸 · 글머리 없는 한 줄 값은 그대로(제목 칸의 "사업자 구분\n(모집마감일 기준)"은 칸 안 줄바꿈)
+        run = p.add_run(text)
+        run.bold = bold
+        run.font.size = Pt(10)
+    else:
+        # 여러 줄 값(산출물 · 개요 요약 등)은 줄마다 문단 — 글머리는 한 가지로 모으고 내어쓰기한다. 글머리 없는 줄은 글머리를 달지 않는다
+        for index, line in enumerate(lines):
+            _write_line(p if index == 0 else cell.add_paragraph(), line, plain_mark='', size=Pt(10))
     if shade:
         tc_pr = cell._tc.get_or_add_tcPr()
         shd = tc_pr.makeelement(qn('w:shd'), {qn('w:val'): 'clear', qn('w:color'): 'auto', qn('w:fill'): shade})
@@ -178,8 +245,25 @@ def _set_cell_text(cell, text: str, bold: bool = False, shade: str | None = None
 TEXT_WIDTH_CM = 17.0   # A4 · 좌우 여백 2cm — 표는 모두 이 폭에 맞춘다
 
 
+# 행을 쪽에서 나누지 않는(cantSplit) 줄 수 상한 — 이보다 긴 칸이 있는 행은 쪽 끝에서 나뉠 수 있다. 개요(요약) 표의 '문제 인식' 같은 칸은 20줄이 넘어,
+# 통째로 다음 쪽으로 넘기면 앞 쪽 아래 절반이 비었다(실제 실행 건 10-13). 짧은 행은 예전처럼 나누지 않는다.
+_KEEP_ROW_MAX_LINES = 6
+_CHAR_CM = 0.37   # 10pt 한글 한 글자 폭(어림) — 영문 · 숫자 · 빈칸은 절반으로 센다
+
+
+def _estimated_lines(text: str, width_cm: float) -> int:
+    """칸 글이 폭 width_cm(칸 안 여백 0.4cm를 뺀다)에서 차지할 줄 수(어림)."""
+    per_line = max(1.0, (width_cm - 0.4) / _CHAR_CM)
+    total = 0
+    for line in (text or '').split('\n'):
+        chars = sum(1.0 if ord(ch) > 0xFF else 0.5 for ch in line)
+        total += max(1, -(-int(chars) // int(per_line)))
+    return total
+
+
 def _layout_table(table, widths_cm: list[float], repeat_header: bool = True) -> None:
-    """표 폭 · 행 배치를 정한다 — 열 폭 고정(합은 본문 폭), 행이 쪽 끝에서 갈라지지 않게(cantSplit), 첫 행은 쪽마다 반복(tblHeader).
+    """표 폭 · 행 배치를 정한다 — 열 폭 고정(합은 본문 폭), 행이 쪽 끝에서 갈라지지 않게(cantSplit — 칸 글이 _KEEP_ROW_MAX_LINES줄보다 긴 행은 나뉠 수 있다),
+    첫 행은 쪽마다 반복(tblHeader).
 
     열 폭을 안 주면 Word가 열을 모두 같은 폭으로 나눠 '집행 계획' 같은 긴 칸의 글이 한 글자씩 세로로 끊긴다."""
     table.autofit = False
@@ -196,9 +280,14 @@ def _layout_table(table, widths_cm: list[float], repeat_header: bool = True) -> 
         for cell, width in zip(row.cells, widths_cm, strict=True):
             cell.width = Cm(width)
         tr_pr = row._tr.get_or_add_trPr()
-        tr_pr.append(tr_pr.makeelement(qn('w:cantSplit'), {}))
+        if max(_estimated_lines(cell.text, width) for cell, width in zip(row.cells, widths_cm)) <= _KEEP_ROW_MAX_LINES:
+            tr_pr.append(tr_pr.makeelement(qn('w:cantSplit'), {}))
         if repeat_header and row_index == 0:
             tr_pr.append(tr_pr.makeelement(qn('w:tblHeader'), {}))
+            # 머리 줄을 첫 내용 줄과 같은 쪽에 둔다 — 예전에는 쪽 맨 아래에 표 제목과 머리 줄만 남고 내용은 다음 쪽(머리 줄 반복)에서 시작했다
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    paragraph.paragraph_format.keep_with_next = True
 
 
 def _caption(doc: Document, text: str) -> None:
@@ -310,17 +399,19 @@ DEFAULT_DISCLAIMER = '본 문서는 S-Brain이 생성한 초안입니다. 제출
 
 
 def _bullets(doc: Document, text: str) -> None:
-    """절 본문 — 줄(계획서의 문단)마다 " ◦ " 문단 하나(hwp 본문과 같은 모양)."""
-    for line in (text or '').replace('\r', '').split('\n'):
-        if line.strip():
-            doc.add_paragraph(f' ◦ {line.strip()}')
+    """절 본문 — 줄(계획서의 문단)마다 글머리 문단 하나(hwp 본문과 같은 모양). 글머리는 줄에 붙어 온 것을 떼고 한 번만 단다(body_line)."""
+    for line in _lines(text):
+        _write_line(doc.add_paragraph(), line, plain_mark=ITEM_MARK)
 
 
 def _narrative(doc: Document, text: str) -> None:
-    """표 아래 서술 문장(줄마다 한 문단). 서술이 없으면 아무것도 쓰지 않는다."""
-    for line in (text or '').splitlines():
-        if line.strip():
-            doc.add_paragraph(line.strip())
+    """표 아래 서술 문장(줄마다 한 문단). 번호 · 글머리가 있는 줄만 내어쓰기하고, 없는 줄은 그대로. 서술이 없으면 아무것도 쓰지 않는다.
+    첫 문단은 표와 조금 띄운다(예전에는 표 아래 선에 글이 붙었다)."""
+    for index, line in enumerate(_lines(text)):
+        paragraph = doc.add_paragraph()
+        if index == 0:
+            paragraph.paragraph_format.space_before = Pt(6)
+        _write_line(paragraph, line, plain_mark='')
 
 
 def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') -> bytes:

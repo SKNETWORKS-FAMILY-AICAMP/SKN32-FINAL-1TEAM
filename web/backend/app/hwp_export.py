@@ -82,6 +82,7 @@ from app.plan_document_export import (
     PlanDocumentData,
     ScheduleRow,
     TeamRow,
+    body_line,
     split_budget_by_phase,
 )
 
@@ -124,8 +125,20 @@ class _Steps(list):
         self.cell_texts: dict[tuple[int, int], dict[int, list[str]]] = {}   # (표, 행) → {열: 글 줄 목록} — 행 높이를 맞출 때 쓴다
 
 
-def _set_cell(steps: _Steps, table: int, row: int, col: int, text: str) -> None:
+def _cell_lines_marked(text: str) -> list[str]:
+    """칸 값의 줄 — 글머리가 있는 줄이 하나라도 있으면 글머리를 한 가지로 모은다("• 글" → "◦ 글", "–  글" → "- 글"). 글머리 없는 줄은 그대로."""
     lines = _lines(text)
+    if all(body_line(line, '')[0] == 'plain' for line in lines):
+        return lines
+    marked = []
+    for line in lines:
+        kind, mark, rest = body_line(line, '')
+        marked.append(rest if kind in ('plain', 'heading') else f'{mark} {rest}')
+    return marked
+
+
+def _set_cell(steps: _Steps, table: int, row: int, col: int, text: str) -> None:
+    lines = _cell_lines_marked(text)
     steps.append({'action': 'set_cell', 'table': table, 'row': row, 'col': col, 'text': lines[0] if lines else ''})
     if lines:
         steps.cell_texts.setdefault((table, row), {})[col] = lines
@@ -411,6 +424,18 @@ def _is_subheading(line: str) -> bool:
     return _SUBHEADING_RE.fullmatch(line.strip()) is not None
 
 
+def _body_paragraph(line: str) -> str:
+    """본문 줄 → hwp 문단 글. 줄에 붙어 온 글머리("◦ " · "• " · "- " · "* " 등)를 떼고 한 번만 단다(plan_document_export.body_line) —
+    예전에는 " ◦ "를 그 위에 또 붙여 " ◦ ◦ …" · " ◦ - …"가 됐다. 소제목은 그대로, 본문 줄은 " ◦ 글", 하위 줄은 양식 뼈대와 같은 "   - 글"
+    ("·"이면 "   · 글"), 번호 줄은 " ① 글"."""
+    kind, mark, text = body_line(line)
+    if kind == 'heading':
+        return text
+    if kind == 'sub':
+        return f'   {mark} {text}'
+    return f' {mark} {text}'
+
+
 def _write_body_sections(current_output: str, template: str, data: PlanDocumentData, new_tmp) -> str:
     """1 ~ 4번 절 본문을 줄마다 문단으로 쓰고 양식의 빈 작성 요령 뼈대를 지운다. 새 파일 경로를 돌려준다.
 
@@ -426,16 +451,16 @@ def _write_body_sections(current_output: str, template: str, data: PlanDocumentD
     for field_name, first, (skeleton_from, skeleton_to) in reversed(_BODY_SECTIONS_BY_TEMPLATE.get(template, [])):
         for para in range(skeleton_to, skeleton_from - 1, -1):
             edit('delete-paragraph', '--section', '0', '--para', str(para))
-        lines = [_one_line(line) for line in _body_lines(data, field_name)]
+        lines = [_body_paragraph(_one_line(line)) for line in _body_lines(data, field_name)]
         for line in reversed(lines[1:]):
             edit('insert-paragraph', '--section', '0', '--para', str(first + 1))
-            edit('insert-text', '--section', '0', '--para', str(first + 1), '--offset', '0', '--text', line if _is_subheading(line) else _BODY_BULLET + line)
-        if lines and _is_subheading(lines[0]):
-            # 소제목이 첫 줄이면 첫 불릿 문단의 " ◦ "를 지우고 소제목만 쓴다
+            edit('insert-text', '--section', '0', '--para', str(first + 1), '--offset', '0', '--text', line)
+        if lines and not lines[0].startswith(_BODY_BULLET):
+            # 첫 줄이 소제목 · 하위 줄 · 번호 줄이면 첫 불릿 문단의 " ◦ "를 지우고 그 줄을 통째로 쓴다
             edit('delete-text', '--section', '0', '--para', str(first), '--offset', '0', '--count', str(len(_BODY_BULLET)))
             edit('insert-text', '--section', '0', '--para', str(first), '--offset', '0', '--text', lines[0])
         elif lines:
-            edit('insert-text', '--section', '0', '--para', str(first), '--offset', str(_BODY_OFFSET), '--text', lines[0])
+            edit('insert-text', '--section', '0', '--para', str(first), '--offset', str(_BODY_OFFSET), '--text', lines[0][len(_BODY_BULLET):])
     return current_output
 
 
@@ -445,6 +470,74 @@ _PERSONAL_INFO_NOTICE_BY_TEMPLATE: dict[str, tuple[int, int]] = {
     'preliminary': (72, 107),
     'early_general': (67, 107),
 }
+
+
+# 문단 모양(hwpx_rows.shape_paragraphs) — (정렬, 왼쪽 여백 em, 내어쓰기 em). em은 그 문단 글자 크기 배수다.
+# 글머리 폭은 rhwp로 그린 쪽에서 잰 값이다(본문 휴먼명조 14pt: " ◦ " · " ① " 약 1.9글자, "   - " 약 2.75글자 / 칸 맑은 고딕 10pt: "◦ " 약 1.5글자, "- " 약 0.95글자).
+# 본문은 양쪽 정렬이라 줄마다 빈칸이 조금씩 늘어 글 첫 글자가 한두 점 어긋날 수 있다. 본문 정렬은 양식 그대로 두고, 칸 목록은 왼쪽 정렬로 바꾼다.
+_BODY_SHAPES: dict[str, hwpx_rows.Shape] = {'heading': (None, 0, 0), 'item': (None, 0, 1.9), 'sub': (None, 0, 2.75)}
+_CELL_SHAPES: dict[str, hwpx_rows.Shape] = {'plain': ('LEFT', 0, 0), 'heading': ('LEFT', 0, 0), 'item': ('LEFT', 0, 1.5), 'sub': ('LEFT', 1.5, 0.95)}
+
+
+def _body_paragraph_shapes(template: str, data: PlanDocumentData) -> dict[int, tuple[str, hwpx_rows.Shape]]:
+    """_write_body_sections가 쓴 본문 문단의 {최종 문단 번호: (글, 모양)}. 절마다 뼈대 문단을 지우고 줄 수만큼 문단을 넣었으므로
+    앞 절에서 늘거나 준 문단 수만큼 뒤 절의 번호가 밀린다(본문이 비면 양식의 첫 불릿 문단 하나가 남는다)."""
+    shapes: dict[int, tuple[str, hwpx_rows.Shape]] = {}
+    shift = 0
+    for field_name, first, (skeleton_from, skeleton_to) in _BODY_SECTIONS_BY_TEMPLATE.get(template, []):
+        texts = [_body_paragraph(_one_line(line)) for line in _body_lines(data, field_name)]
+        for k, text in enumerate(texts):
+            shapes[first + shift + k] = (text, _BODY_SHAPES[body_line(text)[0]])
+        shift += max(len(texts), 1) - 1 - (skeleton_to - skeleton_from + 1)
+    return shapes
+
+
+def _cell_paragraph_shapes(template: str, steps: _Steps) -> dict[tuple[int, int, int], list[hwpx_rows.Shape]]:
+    """글머리 줄이 있는 칸의 {(최종 표 번호, 행, 열): [칸 문단마다 모양]}. 목차 · 안내 표를 지웠으므로 그보다 뒤 표는 지운 수만큼 번호가 당겨진다."""
+    deleted = _DELETE_TABLES_BY_TEMPLATE.get(template, [])
+    cells: dict[tuple[int, int, int], list[hwpx_rows.Shape]] = {}
+    for (table, row), columns in steps.cell_texts.items():
+        for col, lines in columns.items():
+            kinds = [body_line(line, '')[0] for line in lines]
+            if all(kind == 'plain' for kind in kinds):
+                continue
+            cells[(table - sum(1 for d in deleted if d < table), row, col)] = [_CELL_SHAPES[kind] for kind in kinds]
+    return cells
+
+
+def _shape_paragraphs(current_output: str, template: str, data: PlanDocumentData, steps: _Steps, new_tmp) -> str:
+    """본문 글머리 줄 · 칸 목록의 문단 모양을 맞춘다 — 넘어간 줄이 글 첫 글자에 맞게 내어쓰기를 정하고, 칸 목록은 왼쪽 정렬로(hwpx_rows.shape_paragraphs).
+    rhwp에는 문단 모양을 바꾸는 편집이 없어 .hwpx로 내보내 고친 뒤 다시 .hwp로 바꾼다. 바꿀 것이 없으면 그대로 돌려준다."""
+    paragraphs = _body_paragraph_shapes(template, data)
+    cells = _cell_paragraph_shapes(template, steps)
+    if not paragraphs and not cells:
+        return current_output
+    hwpx_path = new_tmp('.hwpx')
+    _run_rhwp(['export-hwpx', current_output, hwpx_path])
+    with zipfile.ZipFile(hwpx_path) as z:
+        names = z.namelist()
+        data_files = {name: z.read(name) for name in names}
+    section, header = hwpx_rows.shape_paragraphs(data_files['Contents/section0.xml'].decode('utf-8'),
+                                                 data_files['Contents/header.xml'].decode('utf-8'), paragraphs, cells)
+    data_files['Contents/section0.xml'] = section.encode('utf-8')
+    data_files['Contents/header.xml'] = header.encode('utf-8')
+    return _convert_hwpx(data_files, names, new_tmp)
+
+
+def _convert_hwpx(data_files: dict[str, bytes], names: list[str], new_tmp) -> str:
+    """고친 .hwpx 내용을 파일로 쓰고 .hwp로 바꿔 그 경로를 돌려준다."""
+    edited_path, converted = new_tmp('.hwpx'), new_tmp()
+    with zipfile.ZipFile(edited_path, 'w') as z:
+        for name in names:  # mimetype을 맨 앞에 두고 압축하지 않는다(HWPX 규칙)
+            stored = name == 'mimetype'
+            z.writestr(zipfile.ZipInfo(name) if stored else name, data_files[name],
+                       compress_type=zipfile.ZIP_STORED if stored else zipfile.ZIP_DEFLATED)
+    try:
+        _run_rhwp(['convert', edited_path, converted, '--verify-pages'])
+    except RuntimeError:
+        # 쪽 수 검증은 변환 전후 조판이 다르면(표가 아주 길어 쪽이 많이 늘 때) 실패한다 — 문서 내려받기를 막지 않도록 검증 없이 변환한다
+        _run_rhwp(['convert', edited_path, converted])
+    return converted
 
 
 def _run_rhwp(args: list[str]) -> str:
@@ -532,7 +625,7 @@ def _prepare_tables(current_output: str, steps: _Steps, new_tmp, template: str =
         current_output = next_output
     if not steps.add_rows and not steps.cell_texts and not steps.check_cells:
         return current_output
-    hwpx_path, edited_path, converted = new_tmp('.hwpx'), new_tmp('.hwpx'), new_tmp()
+    hwpx_path = new_tmp('.hwpx')
     _run_rhwp(['export-hwpx', current_output, hwpx_path])
     with zipfile.ZipFile(hwpx_path) as z:
         names = z.namelist()
@@ -554,17 +647,7 @@ def _prepare_tables(current_output: str, steps: _Steps, new_tmp, template: str =
         xml, header = hwpx_rows.check_cells(xml, data['Contents/header.xml'].decode('utf-8'), steps.check_cells)
         data['Contents/header.xml'] = header.encode('utf-8')
     data['Contents/section0.xml'] = xml.encode('utf-8')
-    with zipfile.ZipFile(edited_path, 'w') as z:
-        for name in names:  # mimetype을 맨 앞에 두고 압축하지 않는다(HWPX 규칙)
-            stored = name == 'mimetype'
-            z.writestr(zipfile.ZipInfo(name) if stored else name, data[name],
-                       compress_type=zipfile.ZIP_STORED if stored else zipfile.ZIP_DEFLATED)
-    try:
-        _run_rhwp(['convert', edited_path, converted, '--verify-pages'])
-    except RuntimeError:
-        # 쪽 수 검증은 변환 전후 조판이 다르면(표가 아주 길어 쪽이 많이 늘 때) 실패한다 — 문서 내려받기를 막지 않도록 검증 없이 변환한다
-        _run_rhwp(['convert', edited_path, converted])
-    return converted
+    return _convert_hwpx(data, names, new_tmp)
 
 
 def _write_cell_lines(current_output: str, cell_lines: list[tuple[int, int, int, list[str]]], new_tmp) -> str:
@@ -657,6 +740,8 @@ def render_plan_hwp(data: PlanDocumentData, template: str) -> bytes:
 
         # 1~4번 절 본문 — 문단을 지우고 넣어 문단 번호가 바뀌므로, 문단 번호를 쓰는 다른 편집(위 안내문구 삭제 · 맨 앞 고지)을 마친 뒤에 한다
         current_output = _write_body_sections(current_output, template, data, _new_tmp)
+        # 본문 글머리 줄의 내어쓰기 · 칸 목록의 왼쪽 정렬 — 문단 번호 · 칸 문단 수가 모두 정해진 뒤(그림 쪽을 붙이기 전)에 한다
+        current_output = _shape_paragraphs(current_output, template, data, steps, _new_tmp)
 
         picture_pages = ([(data.그림, None)] if data.그림 else []) + (
             [([data.인포그래픽], _INFOGRAPHIC_MAX_HEIGHT)] if data.인포그래픽 is not None else [])
