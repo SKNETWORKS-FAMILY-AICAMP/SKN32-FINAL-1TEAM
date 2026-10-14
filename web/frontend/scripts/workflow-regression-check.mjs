@@ -143,6 +143,14 @@ try{
   assert.deepEqual(scored.artifactLayer,{raw:18,max:40});
   assert.deepEqual(scored.codeCheckItems.map(i=>[i.passed,i.applicable]),[[false,true],[true,false]]);
   assert.equal(sfr({verdict:{code_score:8,code_max_score:15},plan:{score_reasons:[],artifacts:[]}}).artifactLayer,null);
+  // 화면 일반현황의 창업아이템명 — 백엔드 _item_name(SB-384) · 조율(10-13 입력반영알림)과 같이 글자가 있는 첫 줄, 앞뒤 공백 떼고 60자.
+  const {buildGeneralInfo:bgi,itemNameOf:ino}=await server.ssrLoadModule('/src/features/workflow/utils.js');
+  const itemRow=(item)=>bgi({item}).find(([k])=>k==='창업아이템명')[1];
+  assert.equal(itemRow('동네 헬스장 회원 관리 서비스\n수업 예약과 출석을 한 화면에서 처리합니다'),'동네 헬스장 회원 관리 서비스');
+  assert.equal(itemRow('\n\n  동네 헬스장 회원 관리  \r\n둘째 줄'),'동네 헬스장 회원 관리'); // 빈 줄로 시작하면 글자가 있는 줄
+  assert.equal(itemRow('가'.repeat(100)),'가'.repeat(60));
+  assert.equal(itemRow(' \n '),'OO기술이 적용된 OO제품·서비스');
+  assert.equal(ino(null),'');
   // 점수 항목 묶음(응답모양변경 10-11 2-1) — tag로 일반현황 · 개요 + 4묶음에 모으고, 이름은 section_code로 찾는다.
   const {taskReasons:tr,bundleScoreOf:bso,planViewFrom:pvf,deliverableNoticesFrom:dnf,prototypeFilesOf:pfo,shortfallFrom:sff,scoreInt:si,maxInt:mi}=await server.ssrLoadModule('/src/features/workflow/utils.js');
   // 화면의 큰 점수는 정수 — 얻은 점수는 내림(79.6은 79 · 기준 80 미달과 맞음), 소수 덧셈 오차(79.9999999)는 80, 만점은 반올림.

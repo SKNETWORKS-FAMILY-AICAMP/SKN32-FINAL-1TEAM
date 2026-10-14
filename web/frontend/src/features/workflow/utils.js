@@ -60,12 +60,20 @@ export function evaluateEligibility(rule, company){
 // candidates[].sourceNotice)와 동일하게 모든 공고에 같은 문구를 쓰고, originalUrl은
 // 공고별로 다르다(초기창업패키지·예비창업패키지·창업도약패키지 3건은 시연 로그의
 // 실제 K-Startup 공고 ID를 그대로 썼다).
+// 창업아이템명 — 아이디어 설명에서 글자가 있는 첫 줄, 앞뒤 공백을 떼고 60자까지. 웹 백엔드 hwp · docx(projects.py _item_name,
+// SB-384)와 오케스트레이터(조율 10-13 입력반영알림)가 같은 규칙이라 화면 일반현황도 맞춘다. 예전에는 설명 전체를 그대로 보여
+// 여러 줄 설명이면 화면과 내려받은 계획서의 이름이 달랐다. 줄 나눔은 파이썬 splitlines, 글자 수는 코드 포인트로 센다.
+const ITEM_NAME_MAX = 60;
+export function itemNameOf(description) {
+  const line = String(description || '').split(/\r\n|[\n\r\v\f\x1c-\x1e\x85]|\p{Zl}|\p{Zp}/u).map((s) => s.trim()).find(Boolean);
+  return line ? Array.from(line).slice(0, ITEM_NAME_MAX).join('') : '';
+}
 export function buildGeneralInfo(itemInfo) {
   return [
     ['기업명', 'OOOOO'],
     ['개업연월일', itemInfo?.foundedAt || 'OO.OO.OO'],
     ['사업자 구분', APPLICANT_TYPE_LABEL[itemInfo?.applicantType] || '개인사업자 / 법인사업자'],
-    ['창업아이템명', itemInfo?.item || 'OO기술이 적용된 OO제품·서비스'],
+    ['창업아이템명', itemNameOf(itemInfo?.item) || 'OO기술이 적용된 OO제품·서비스'],
     ['지원 분야', '제조 / 지식서비스 중 택 1'],
   ];
 }

@@ -155,7 +155,8 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
   const [bizNo, setBizNo] = useState(draft.bizNo || '');
   const [item, setItem] = useState(draft.item || '');
   // 목표 고객(선택, 200자 이내) — 오케스트레이터가 늘 '확인 필요'로 보내던 값을 사용자가 채울 수 있게(웹 백엔드 project_plan_inputs.target_customer,
-  // 10-13 누리 님 제안 · 정원 님 답). 비우면 보내지 않는다(서버가 NULL로 저장).
+  // 10-13 누리 님 제안 · 정원 님 답). 비우면 보내지 않는다(서버가 NULL로 저장). 조율은 이 값을 요구사항 해석 결과의 목표 고객으로
+  // 바꿔 공고 추천 · 계획서 · 프로토타입 · 인포그래픽 모두에 쓴다(조율 10-13 입력반영알림 2번).
   const [targetCustomer, setTargetCustomer] = useState(draft.targetCustomer || '');
   const [team, setTeam] = useState(draft.team || [{ ...EMPTY_TEAM_ROW }]);
   const [noTeam, setNoTeam] = useState(draft.noTeam ?? draft.team?.length === 0);
@@ -346,7 +347,7 @@ export function IntakeForm({ onSubmit, onBack, initialValues, backLabel = '처�
                 </Section>
 
                 <Section id="intake-target" title="목표 고객" optional
-                  desc="누구를 위한 서비스인지 적어 주세요. 계획서의 목표 고객 · 시장 설명에 쓰여요. 비워 두면 계획서에 '확인 필요'로 남을 수 있어요.">
+                  desc="누구를 위한 서비스인지 적어 주세요. 공고 추천과 사업계획서 · 프로토타입 · 인포그래픽 모두 이 고객을 기준으로 만들어요. 비워 두면 아이디어 설명에서 짐작하고, 계획서에 '확인 필요'로 남을 수 있어요.">
                   <textarea value={targetCustomer} onChange={(e) => setTargetCustomer(e.target.value)} rows={2} maxLength={200}
                     placeholder="예) 회원 50 ~ 300명 규모의 동네 헬스장 운영자"
                     className={textareaCls} />
