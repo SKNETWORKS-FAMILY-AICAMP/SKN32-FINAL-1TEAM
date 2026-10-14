@@ -48,9 +48,11 @@ ReworkUnit = Literal["묶음", "Task", "섹션", "차트 1건", "표 1건", "부
 
 class ToolCallExhausted(Exception):
     def __init__(self, error: str = "호출실패", error_kind: str = "일시", tries: int = 3,
-                 call_id: str = "", detail: str = "") -> None:
+                 call_id: str = "", detail: str = "", code: str | None = None,
+                 billing_limit: bool = False) -> None:
         super().__init__(f"{error}/{error_kind} tries={tries} {detail}")
         self.error, self.error_kind, self.tries = error, error_kind, tries
+        self.code, self.billing_limit = code, billing_limit   # 조율 2026-10-13 확장 칸
 
 
 class FormatError(Exception):

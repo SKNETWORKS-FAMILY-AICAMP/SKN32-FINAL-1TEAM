@@ -157,6 +157,15 @@ class ContractTaskTests(TestCase):
 
         self.assertIsNone(artsheet.generate("원페이지", {"features": ["주문 조회"]}, ImageFails()))
 
+        # 결제 · 한도 소진은 기본 아이콘으로 넘기지 않고 올린다 — 조율이 재개 대기로 보낸다(2026-10-13).
+        class ImageBillingLimit:
+            def image(self, prompt, **kwargs):
+                raise ToolCallExhausted(error="호출실패", error_kind="일시", tries=1,
+                                        code="insufficient_quota", billing_limit=True)
+
+        with self.assertRaises(ToolCallExhausted):
+            artsheet.generate("원페이지", {"features": ["주문 조회"]}, ImageBillingLimit())
+
     def _run_tb2(self, category, extracted, sentences, feature_list=("주문 조회",)):
         from engineering_agent.infographic import render as infographic_render
         from engineering_agent.tasks import run_tb2

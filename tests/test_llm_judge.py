@@ -23,6 +23,11 @@ PLAN = ("반찬 사전주문은 손님이 전날 밤까지 다음 날 반찬을 
         "가게당 월 이용료는 29000원이다.")
 
 
+class _BillingLimit(Exception):
+    """조율 ToolCallExhausted가 결제 · 한도 코드로 끝났을 때와 같은 표식(billing_limit, 2026-10-13)."""
+    billing_limit = True
+
+
 class _Tools:
     """기능마다 정해 둔 답을 돌려준다. 호출된 기능과 스레드를 기록한다."""
 
@@ -126,6 +131,13 @@ class TwoStageMatchTests(TestCase):
         result = match_features(FEATURES, HTML, "html", PLAN, make_judge(tools, "html", HTML, PLAN))
         self.assertEqual(result["missing_features"], ["재고 알림"])
         self.assertIn("LLM 판정 실패 1건은 규칙 결과로 대체", result["findings"][0])
+
+    def test_billing_limit_is_raised_instead_of_falling_back_to_rules(self):
+        """결제 · 한도 소진은 규칙 판정으로 대체하지 않고 올린다 — 조율이 재개 대기로 보낸다."""
+        tools = _Tools({"반찬 사전주문": _BillingLimit("한도"),
+                        "픽업 시간 예약": '{"reason": "예약 동작", "verdict": "충족"}'})
+        with self.assertRaises(_BillingLimit):
+            match_features(FEATURES, HTML, "html", PLAN, make_judge(tools, "html", HTML, PLAN))
 
     def test_partial_counts_half_and_is_not_a_missing_feature(self):
         tools = _Tools({"반찬 사전주문": '{"reason": "결제 단계 없음", "verdict": "부분"}',
@@ -292,6 +304,11 @@ class OnepageKeyFieldTests(TestCase):
         self.assertEqual(result["score"], 15.0)
         self.assertIn("LLM 판정 실패 1건은 감점하지 않음", result["findings"][0])
 
+    def test_billing_limit_is_raised_instead_of_skipping_the_field(self):
+        with self.assertRaises(_BillingLimit):
+            self._match({"문제 정의": self.OK, "수익모델 단가": self.OK, "추진 일정": self.OK,
+                         "해결 방안": _BillingLimit("한도")})
+
     def test_missing_field_on_the_page_gets_no_credit(self):
         svg = self.SVG.replace('<text data-field="solution">드론으로 반찬을 배달한다</text>', "")
         tools, result = self._match({"문제 정의": self.OK, "수익모델 단가": self.OK, "추진 일정": self.OK}, svg)
@@ -351,6 +368,21 @@ class ElementJudgeTests(TestCase):
 
     ELEMENTS = {"반찬 사전주문": ["다음 날 반찬 선택", "주문"], "픽업 시간 예약": ["30분 단위", "방문 시간"]}
     PRESENT = {"다음 날 반찬 선택": True, "주문": True, "30분 단위": False, "방문 시간": True}
+
+    def test_element_extraction_raises_only_on_billing_limit(self):
+        """요소 뽑기 실패는 통째로 묻는 판정으로 넘어가지만(None), 결제 · 한도 소진은 올린다."""
+        from verification_agent.llm_judge import elements_for
+
+        class Fails:
+            def __init__(self, exc):
+                self.exc = exc
+
+            def llm(self, *args, **kwargs):
+                raise self.exc
+
+        self.assertIsNone(elements_for(Fails(RuntimeError("소진")), "html", "반찬 사전주문", PLAN))
+        with self.assertRaises(_BillingLimit):
+            elements_for(Fails(_BillingLimit("한도")), "html", "반찬 사전주문", PLAN)
 
     def test_definition_is_only_the_lines_naming_the_feature(self):
         from verification_agent.llm_judge import definition

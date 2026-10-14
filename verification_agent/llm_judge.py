@@ -328,7 +328,9 @@ def elements_for(tools, kind: str, feature: str, plan_text: str | None) -> list[
     try:
         elements = tools.llm(element_messages(feature, text, kind), parse=parse_elements,
                              purpose=f"계획서 대조 요소: {feature}")
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        if getattr(exc, "billing_limit", False):   # 결제 · 한도 소진은 대체하지 않고 올린다(조율이 재개 대기로 보냄)
+            raise
         return None
     _store(key, elements)
     return elements
@@ -409,7 +411,9 @@ def make_judge(tools, kind: str, source: str, plan_text: str | None
                 messages = build_messages(feature, plan_excerpt(feature, plan_text), artifact, kind)
                 return caller(f"{feature}#{vote}").llm(messages, parse=parse_verdict,
                                                       purpose=f"계획서 대조: {feature}")
-            except Exception:  # noqa: BLE001 — 재시도 소진 · 호출처 오류 모두 규칙 판정으로 대체한다
+            except Exception as exc:  # noqa: BLE001 — 재시도 소진 · 호출처 오류 모두 규칙 판정으로 대체한다
+                if getattr(exc, "billing_limit", False):   # 결제 · 한도 소진만은 대체하지 않고 올린다(재개 대기)
+                    raise
                 return None
 
         jobs = [(feature, vote) for feature in features for vote in range(_VOTES)]
@@ -498,7 +502,9 @@ def make_field_judge(tools, plan_text: str | None
         try:
             return caller.llm(field_messages(label, shown, plan_text), parse=parse_verdict,
                               purpose=f"계획서 대조: {label}")
-        except Exception:  # noqa: BLE001 — 실패한 칸은 감점하지 않는다
+        except Exception as exc:  # noqa: BLE001 — 실패한 칸은 감점하지 않는다
+            if getattr(exc, "billing_limit", False):   # 결제 · 한도 소진은 대체하지 않고 올린다(재개 대기)
+                raise
             return None
 
     def judge(fields: dict[str, str]) -> dict[str, Verdict | None]:
