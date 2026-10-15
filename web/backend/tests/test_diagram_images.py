@@ -17,7 +17,6 @@ from types import SimpleNamespace as NS
 import pytest
 from docx import Document
 from orch_fakes import make_diagram, make_file_ref, make_outputs, make_plan_doc, make_section
-from sbrain.agents.partner_sw import diagram_svg
 
 from app import diagram_images, hwp_export
 from app.diagram_images import MAX_SVG_BYTES, PNG_WIDTH_PX, diagram_pictures, svg_to_png
@@ -25,6 +24,9 @@ from app.models import Project
 from app.orch import OrchError
 from app.plan_texts import PlanTexts
 from app.routers.projects import _build_plan_document_data
+
+# 실제 그림 SVG는 오케스트레이터(sbrain)가 만든다 — 웹 CI는 sbrain 없이 돌므로(app/orch/gateway.py) 없으면 이 파일을 건너뛴다.
+diagram_svg = pytest.importorskip('sbrain.agents.partner_sw.diagram_svg', reason='오케스트레이터(sbrain)가 설치돼 있지 않다')
 
 NODES = ['사용자 가입', '공고 선택', '계획서 생성']
 USER_FLOW_SVG = diagram_svg.render({'flowType': 'USER_FLOW', 'nodes': NODES})
