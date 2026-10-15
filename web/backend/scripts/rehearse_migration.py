@@ -1,4 +1,4 @@
-"""마이그레이션 리허설 (SB-265) — 옛 웹 스키마에 migrations/001 · 002 · 004 · 005를 적용해 새 스키마(app_schema.sql)와 같아지는지 본다.
+"""마이그레이션 리허설 (SB-265) — 옛 웹 스키마에 migrations/001 · 002 · 004 · 005 · 006을 적용해 새 스키마(app_schema.sql)와 같아지는지 본다.
 
     python scripts/rehearse_migration.py                       # 옛 스키마 = git origin/main 의 app_schema.sql
     python scripts/rehearse_migration.py --old-ref <git ref>   # 다른 옛 스키마 기준
@@ -6,7 +6,7 @@
 
 ★ 공유 DB 사본이 없어서 옛 스키마를 git(main)으로 대신한다 — 공유 DB가 실제로 main 스키마와 같은지는 이 스크립트가 알 수 없다. 사본이 생기면
   `--old-schema-file`(mysqldump --no-data 결과)로 같은 리허설을 다시 돌린다. 로컬 호스트의 MySQL만 받고 DB는 아래 두 개를 새로 만든다(있으면 지운다).
-    sbrain_test_mig_old   옛 스키마 + 시드 데이터 → 001 → 002 → 004 → 005 → orch_ 표 적용 (리허설 대상)
+    sbrain_test_mig_old   옛 스키마 + 시드 데이터 → 001 → 002 → 004 → 005 → 006 → orch_ 표 적용 (리허설 대상)
     sbrain_test_mig_new   새 스키마(app_schema.sql) + orch_ 표 (비교 기준)
 
 차례대로:
@@ -15,8 +15,9 @@
   3. 002 적용 → 더미 테이블 13개 · 컬럼이 사라졌는지, 입력 · 알림 · 검수 기록 데이터가 남았는지
      004 적용(SB-328) → project_budget_items.phase(NULL 허용)가 생겼는지, 기존 사업비 행이 NULL로 남았는지
      005 적용(SB-382) → project_plan_inputs.target_customer(VARCHAR(200), NULL 허용)가 생겼는지, 기존 행이 NULL로 남았는지
+     006 적용(SB-396) → notifications.kind ENUM에 '결과물'이 더해지고 '표현검수'가 남는지, 기존 알림 행이 그대로인지
      ※ 003(feature/sb-269-web-final의 checklist_items)은 이 브랜치에 없어 건너뛴다 — 병합 뒤 003 단계를 002와 004 사이에 넣는다
-  4. orch_ 표 적용(projects를 참조) → 이어서 001 · 002 · 004 · 005를 다시 적용해도 오류가 없고 스키마가 그대로인지(멱등)
+  4. orch_ 표 적용(projects를 참조) → 이어서 001 · 002 · 004 · 005 · 006을 다시 적용해도 오류가 없고 스키마가 그대로인지(멱등)
   5. 새 DB와 스키마 비교(표 · 열 형식 · NULL 허용 · 기본값 · 인덱스 · 외래 키 규칙) — 다르면 마이그레이션에 빠진 것이 있다는 뜻
 
 마이그레이션 SQL은 DELIMITER · 저장 프로시저를 써서 mysql 클라이언트가 필요하다 — 로컬 MySQL 컨테이너(--container)의 mysql을 `docker exec`로 부른다.
@@ -239,12 +240,22 @@ def main() -> int:
     step('3. 기존 사업 계획 입력 행의 target_customer는 NULL로 남고 데이터가 그대로',
          list(customers) == [('대학생', None)] and counts(args, OLD_DB) == before, f'{customers}')
 
+    # 3d) 006 (SB-396)
+    ok, out = run_migration(args, OLD_DB, MIGRATIONS / '006_notification_kind_result.sql')
+    step('3. 006 적용', ok, out if not ok else '')
+    kind_type = query(args, OLD_DB, "SELECT column_type FROM information_schema.columns "
+                      "WHERE table_schema=%s AND table_name='notifications' AND column_name='kind'", (OLD_DB,))
+    step("3. notifications.kind ENUM에 '결과물'이 더해지고 '표현검수'도 그대로 남음",
+         list(kind_type) == [("enum('문서평가','산출물확인','표현검수','결과물','실패')",)], f'{kind_type}')
+    kinds = query(args, OLD_DB, 'SELECT kind FROM notifications ORDER BY notification_id')
+    step('3. 기존 알림 행은 종류가 그대로이고 데이터가 그대로', list(kinds) == [('문서평가',), ('실패',)] and counts(args, OLD_DB) == before, f'{kinds}')
+
     # 4) orch_ 표 + 멱등
     run_statements(args, OLD_DB, ORCH_SCHEMA.read_text(encoding='utf-8'))
     orch_ok = query(args, OLD_DB, "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=%s AND table_name LIKE 'orch\\_%%'", (OLD_DB,))[0][0]
     step('4. orch_ 표 적용(projects를 참조)', orch_ok > 0, f'orch_ 표 {orch_ok}개')
     first = schema_snapshot(args, OLD_DB)
-    for name in ('001_proofread_logs_worker_table.sql', '002_drop_dummy_pipeline.sql', '004_budget_phase.sql', '005_target_customer.sql'):
+    for name in ('001_proofread_logs_worker_table.sql', '002_drop_dummy_pipeline.sql', '004_budget_phase.sql', '005_target_customer.sql', '006_notification_kind_result.sql'):
         ok, out = run_migration(args, OLD_DB, MIGRATIONS / name)
         step(f'4. {name[:3]} 다시 적용해도 오류 없음(멱등)', ok, out if not ok else '')
     second = schema_snapshot(args, OLD_DB)

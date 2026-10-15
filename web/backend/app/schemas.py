@@ -1071,7 +1071,7 @@ class NotificationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     notification_id: int
     project_id: int
-    kind: str = Field(..., description="'문서평가'/'산출물확인'/'표현검수'/'실패' 중 하나")
+    kind: str = Field(..., description="'문서평가'/'산출물확인'/'결과물'/'실패' 중 하나('표현검수'는 검수 제거(2026-10-15) 전에 쌓인 옛 알림에만 있음)")
     failure_scope: str | None = Field(None, description="kind='실패'일 때만: '실행' 또는 '재작성'")
     target_step: int | None = Field(None, description='알림을 누르면 들어갈 화면 번호. kind=실패면 None(이어하기 목록으로 연결)')
     created_at: UtcDatetime
