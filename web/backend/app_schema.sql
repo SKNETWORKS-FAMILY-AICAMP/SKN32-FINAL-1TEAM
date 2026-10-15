@@ -308,7 +308,7 @@ CREATE TABLE IF NOT EXISTS generation_failure_alerts (
 CREATE TABLE IF NOT EXISTS notifications (
     notification_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '알림 고유 식별자',
     project_id BIGINT UNSIGNED NOT NULL COMMENT 'REFERENCES projects(project_id)',
-    kind ENUM('문서평가','산출물확인','표현검수','실패') NOT NULL COMMENT '완료된 단계 또는 실패',
+    kind ENUM('문서평가','산출물확인','표현검수','결과물','실패') NOT NULL COMMENT '완료된 단계 또는 실패(표현검수는 검수 제거 전 옛 알림, 결과물은 결과 통합 완료)',
     failure_scope ENUM('실행','재작성') NULL COMMENT "kind='실패'일 때만: 실행 실패 또는 재작성 실패",
     target_step TINYINT UNSIGNED NULL COMMENT '알림을 누르면 들어갈 화면 번호(실패는 NULL — 이어하기 목록으로 연결)',
     channel VARCHAR(10) NOT NULL DEFAULT '화면' COMMENT '알림 경로. 지금은 화면 하나뿐(메일은 향후 도입)',

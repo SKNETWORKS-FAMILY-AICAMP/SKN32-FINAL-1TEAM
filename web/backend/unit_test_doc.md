@@ -87,7 +87,7 @@ ruff check .                                # 정적 검사
 | `test_profile.py` | 마이페이지 프로필(슬롯형) 저장 · 조회 |
 | `test_biz_check.py` | 사업자등록번호 검증 |
 | `test_faqs.py` | FAQ · AI 학습 동의 저장 |
-| `test_notifications.py` | 알림 목록 · 읽음 표시 |
+| `test_notifications.py` | 알림 목록 · 읽음 표시, 결과물 알림(화면 11)과 검수 제거 전의 옛 표현검수 알림이 함께 읽히는지, 알림 종류에 '결과물'이 더해졌는지 (SB-396) |
 
 ### 삭제 · 탈퇴 · 보관
 

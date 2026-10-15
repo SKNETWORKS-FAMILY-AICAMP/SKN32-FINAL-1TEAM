@@ -84,3 +84,31 @@ def test_notifications_route_not_shadowed_by_project_id_route(authed_client, db_
     res = authed_client.get('/projects/notifications')
     assert res.status_code == 200, res.text
     assert res.json() == []
+
+
+# ── [SB-396] 검수 제거 — '결과물' 알림 ──────────────────────────────────────────────────────────────────────────────
+def test_result_notification_written_by_the_worker_is_listed_with_screen_11(authed_client, db_session):
+    project_id = _project_id(authed_client)
+    _add_notification(db_session, project_id, kind='결과물', target_step=11)
+
+    notif = authed_client.get('/projects/notifications').json()[0]
+
+    assert notif['kind'] == '결과물' and notif['target_step'] == 11
+    assert notif['failure_scope'] is None and notif['read_at'] is None
+
+
+def test_old_proofreading_notifications_still_read_after_the_proofreading_step_was_removed(authed_client, db_session):
+    project_id = _project_id(authed_client)
+    _add_notification(db_session, project_id, kind='표현검수', target_step=10)
+    _add_notification(db_session, project_id, kind='결과물', target_step=11)
+
+    kinds = sorted(n['kind'] for n in authed_client.get('/projects/notifications').json())
+
+    assert kinds == ['결과물', '표현검수']
+
+
+def test_notification_kinds_keep_the_old_value_and_add_the_result_kind():
+    from app import pipeline_stages as ps
+
+    assert ps.NOTIFICATION_KINDS == ('문서평가', '산출물확인', '표현검수', '결과물', '실패')
+    assert ps.NOTIFICATION_KIND_TO_TARGET_STEP['결과물'] == 11
