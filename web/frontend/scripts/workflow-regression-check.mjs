@@ -374,7 +374,8 @@ try{
 
   // 이어하기 — 서버 복귀 화면 번호(GET /status의 screen) → 화면
   const appSource=(await import('node:fs')).readFileSync(new URL('../src/App.jsx',import.meta.url),'utf8');
-  const resumeViewOf=new Function(appSource.slice(appSource.indexOf('const VIEW_BY_SCREEN'),appSource.indexOf('\n}\n',appSource.indexOf('function resumeViewOf'))+3)+';return resumeViewOf;')();
+  const {RESULT_STAGES}=await server.ssrLoadModule('/src/features/workflow/utils.js');
+  const resumeViewOf=new Function('RESULT_STAGES',appSource.slice(appSource.indexOf('const VIEW_BY_SCREEN'),appSource.indexOf('\n}\n',appSource.indexOf('function resumeViewOf'))+3)+';return resumeViewOf;')(RESULT_STAGES);
   for(const [status,view] of [
     [{screen:3},'match-results'],
     [{screen:3,stage:null,match_status:'user_waiting'},'match-results'],
@@ -385,6 +386,10 @@ try{
     [{screen:9,stage:'final_review_pending',match_status:'user_waiting'},'final-verdict'],
     [{screen:10,stage:'reviewing',match_status:'in_progress'},'review-progress'],
     [{screen:10,stage:'reviewing',match_status:'failed'},'review-progress'],
+    // 조율 2026-10-15 — 결과 통합이 도는 동안은 결과물(stage 'done') · 진행 중이고 화면 번호도 11이다. 완료일 때만 결과물을 연다.
+    [{screen:11,stage:'done',match_status:'in_progress'},'review-progress'],
+    [{screen:11,stage:'done',match_status:'waiting_resume'},'review-progress'],
+    [{screen:11,stage:'done',match_status:'failed'},'review-progress'],
     [{screen:11,stage:'done',match_status:'completed'},'review'],
   ])assert.equal(resumeViewOf(status),view,JSON.stringify(status));
 
@@ -443,21 +448,22 @@ try{
     assert.equal(finalized,expected,matchStatus);ui.unmount();
   }
 
-  // 화면 9 → 10 — review/start, 미달이면 서버 409 확인 내용 → confirmed=true, 끝날 때까지 상태 확인
+  // 화면 9 → 11 — review/start, 미달이면 서버 409 확인 내용 → confirmed=true, 끝날 때까지 상태 확인.
+  // 결과 통합이 도는 동안은 stage가 이미 'done'(상태만 진행 중)이라 완료가 될 때까지 넘어가지 않는다(조율 2026-10-15).
   const {FinalVerdict}=await server.ssrLoadModule('/src/features/workflow/FinalVerdict.jsx');
   const verdictBase={announcement:{title:'공고'},itemInfo:{item:'웹 서비스'},projectId:7,docOutcome:'fail',artifactOutcome:'fail',setDocOutcome(){},setArtifactOutcome(){},onRework(){},onScoresRefresh:async()=>{}};
   let reviewBodies=[],proceeded=0,statusPolls=0;
   globalThis.fetch=route([
     ['POST /projects/7/review/start',opt=>{reviewBodies.push(opt.body);return reviewBodies.length===1
-      ?response({detail:{confirmation_required:true,reason:'검수 진입 확인',items:{'현재 점수':72,'기준':80,'남는 미달 항목':['문제 근거 부족']}},code:'CONFIRMATION_REQUIRED'},409)
-      :response({stage:'reviewing',match_status:'in_progress',progress_percent:10})}],
-    ['GET /projects/7/status',()=>response(++statusPolls<2?{stage:'reviewing',match_status:'in_progress'}:{stage:'done',match_status:'completed'})],
+      ?response({detail:{confirmation_required:true,reason:'결과 통합 진입 확인',items:{'현재 점수':72,'기준':80,'남는 미달 항목':['문제 근거 부족']}},code:'CONFIRMATION_REQUIRED'},409)
+      :response({stage:'done',match_status:'in_progress',progress_percent:null})}],
+    ['GET /projects/7/status',()=>response(++statusPolls<2?{stage:'done',match_status:'in_progress'}:{stage:'done',match_status:'completed'})],
   ]);
   ui=mount(FinalVerdict,{...verdictBase,scores:{total:72,threshold:80},onProceed:async()=>{proceeded++}});await ui.flush();
   await ui.find(n=>n.type==='button'&&n.props.children==='이대로 진행하기').props.onClick();await ui.flush();
   assert.ok(flat(ui.nodes()[0]).includes('문제 근거 부족'));
   await ui.find(n=>n.type==='button'&&n.props.children==='그래도 진행하기').props.onClick();
-  assert.deepEqual(reviewBodies,['{"confirmed":false}','{"confirmed":true}']);assert.equal(proceeded,1);ui.unmount();
+  assert.deepEqual(reviewBodies,['{"confirmed":false}','{"confirmed":true}']);assert.equal(proceeded,1);assert.equal(statusPolls,2);ui.unmount();
 
   // 원페이지 화면 9 — 계획서만 재작성해도 인포그래픽이 함께 다시 만들어지면 변경 내역 · 비교에 넣는다
   window.addEventListener=()=>{};window.removeEventListener=()=>{};
@@ -494,12 +500,14 @@ try{
   reworked=null;ui=mount(PlanForm,{projectId:2,onRework:p=>{reworked=p}});await ui.flush();await wait(2200);await ui.flush();
   assert.deepEqual(reworked,['성장전략']);ui.unmount();
 
-  // 검수 진행 화면 — 시작 API 없이 상태만, 재개 대기면 다음 시도 시각(한국 시간), 끝나면 100%
+  // 최종 결과물 진행 화면 — 시작 API 없이 상태만, 재개 대기면 다음 시도 시각(한국 시간), 끝나면 100%.
+  // 결과 통합 중(stage 'done' · 재개 대기)은 아직 100%가 아니다(조율 2026-10-15).
   let reviewCalls=[],reviewPolls=0;
   globalThis.fetch=async(url,opt={})=>{reviewCalls.push(opt.method||'GET');
-    return response(++reviewPolls<2?{stage:'reviewing',match_status:'waiting_resume',resume_count:1,next_retry_at:'2026-10-06T06:15:00Z'}:{stage:'done',match_status:'completed'})};
+    return response(++reviewPolls<2?{stage:'done',match_status:'waiting_resume',resume_count:1,next_retry_at:'2026-10-06T06:15:00Z'}:{stage:'done',match_status:'completed'})};
   ui=mount(GenerationProgress,{kind:'review',projectId:3});await ui.flush();
   assert.ok(flat(ui.nodes().find(n=>n.props.role==='status')).includes('오후 3:15에 자동으로 다시 시도해요 (1/5)'));
+  assert.ok(ui.component('Preparation').props.progress<100);
   await wait(1600);await ui.flush();assert.equal(ui.component('Preparation').props.progress,100);
   assert.ok(reviewCalls.every(m=>m==='GET'));ui.unmount();
 
@@ -515,15 +523,15 @@ try{
   await ui.find(n=>n.type==='button'&&String(n.props.children).includes('종합 평가 확인하기')).props.onClick();await ui.flush();
   assert.equal(finalizedAgain,0);ui.unmount();
 
-  // 화면 9: 검수가 시작되지 않은 응답이면 기다리지 않고 안내(예전엔 끝나지 않는 '검수 진행 중')
+  // 화면 9: 최종 결과물 만들기가 시작되지 않은 응답이면 기다리지 않고 안내(예전엔 끝나지 않는 '검수 진행 중')
   let proceededAgain=0,reviewStatusCalls=0;
   globalThis.fetch=route([
     ['POST /projects/7/review/start',()=>response({stage:'plan_writing',match_status:'in_progress'})],
     ['GET /projects/7/status',()=>{reviewStatusCalls++;return response({stage:'final_review_pending',rework_screen:null})}],
   ]);
   ui=mount(FinalVerdict,{...verdictBase,scores:{total:90,threshold:80},onProceed:async()=>{proceededAgain++}});await ui.flush();
-  await ui.find(n=>n.type==='button'&&String(n.props.children).includes('검수하기')).props.onClick();await ui.flush();
-  assert.equal(proceededAgain,0);assert.ok(flat(ui.nodes()[0]).includes('지금은 검수를 시작할 수 없어요'));
+  await ui.find(n=>n.type==='button'&&String(n.props.children).includes('최종 결과물 만들기')).props.onClick();await ui.flush();
+  assert.equal(proceededAgain,0);assert.ok(flat(ui.nodes()[0]).includes('지금은 최종 결과물을 만들 수 없어요'));
   const statusCallsAfter=reviewStatusCalls;await wait(2200);assert.equal(reviewStatusCalls,statusCallsAfter);ui.unmount();
 
   // 화면 6: 묶음 일부만 거절되면 접수된 묶음은 끝까지 추적하고, 끝나면 계획서 미리보기(PDF)를 다시 받는다

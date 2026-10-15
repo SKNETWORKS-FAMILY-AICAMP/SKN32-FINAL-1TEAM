@@ -2,13 +2,13 @@ import React, {useEffect, useState} from 'react';
 import Preparation from '../../components/Preparation.jsx';
 import {Icon} from '../../components/Icons.jsx';
 import {getProjectStatus, startPlanGeneration, startPrototypeGeneration} from '../../api.js';
-import {detectItemCategory} from './utils.js';
+import {detectItemCategory, isResultRunning} from './utils.js';
 import {formatKstClock} from '../../time.js';
 
 // match_results.stage 순서(back/app/pipeline_stages.py).
 const STAGES = ['plan_writing', 'plan_review_pending', 'prototype_building', 'artifact_review', 'final_review_pending', 'reviewing', 'done'];
-// review: 표현 검수(화면 9 → 10). 시작은 종합 평가 화면이 review/start로 하고, 이 화면은 검수 중에 이어하기로
-// 돌아왔을 때 진행만 보여 준다(시작 API 없음).
+// review: 최종 결과물(화면 9 → 11) — 결과 통합(옛 실행 건은 표현 검수). 시작은 종합 평가 화면이 review/start로 하고,
+// 이 화면은 도는 중에 이어하기로 돌아왔을 때 진행만 보여 준다(시작 API 없음).
 const KINDS = {
   plan: {start: startPlanGeneration, running: 'plan_writing', doneFrom: 1},
   artifact: {start: startPrototypeGeneration, running: 'prototype_building', doneFrom: 3},
@@ -18,6 +18,8 @@ const POLL_MS = 1500;
 
 function progressFor(kind, status) {
   const {running, doneFrom} = KINDS[kind];
+  // 결과 통합은 stage 'done'인 채 도는 중이다(조율 2026-10-15) — 'done'이어도 상태가 진행 중이면 아직 끝나지 않았다.
+  if (kind === 'review' && isResultRunning(status)) return Math.min(99, status.progress_percent ?? 0);
   if (STAGES.indexOf(status?.stage) >= doneFrom) return 100;
   if (status?.stage === running) return Math.min(99, status.progress_percent ?? 0);
   return 0;

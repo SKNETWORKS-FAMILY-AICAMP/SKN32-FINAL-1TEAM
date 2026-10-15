@@ -226,13 +226,14 @@ export function scoresFromResult(result){
   };
 }
 
-// 표현 검수 화면의 문단 전/후 — GET /result의 plan.proofread_logs(실제 검수 기록)를 쓴다.
-// 예전엔 시연 로그에서 베낀 고정 문단(REVIEW_PARAGRAPHS)만 보여줬다.
-// [2026-09-29 수정] ProofreadLogOut이 attempt_no/passed/violation_note까지 내려주게
-// 되면서(app/schemas.py) "1차 반려 → 2차 통과" 재시도 과정도 그릴 수 있게 됐다 — 지금
-// 더미 구현(app/routers/projects.py review_token_check)은 같은 문단을 계속 이어 고치는
-// 구조라 section_id로 묶으면 그게 한 문단의 시도 이력이 된다. 관계(BusinessPlan.
-// proofread_logs)엔 order_by가 없어 배열 순서를 못 믿으므로 attempt_no로 직접 정렬한다.
+// 화면 9 '진행' 뒤 구간 — 조율 2026-10-15부터 결과 통합(T-C4) 하나만 돌고, 도는 동안 단계가 '결과물'(stage 'done')인 채
+// 상태만 진행 중 · 재개 대기다. 그래서 stage 'done'만 보고 끝났다고 하면 결과가 채워지기 전에 결과 화면으로 넘어간다 —
+// 끝남은 상태 '완료'까지 본다. 옛 실행 건은 표현 검수(stage 'reviewing')가 이 구간이었다.
+export const RESULT_STAGES = ['reviewing', 'done'];
+const RESULT_RUNNING_STATUSES = ['in_progress', 'waiting_resume'];
+export const isResultRunning = (status) => RESULT_STAGES.includes(status?.stage) && RESULT_RUNNING_STATUSES.includes(status?.match_status);
+export const isResultReady = (status) => status?.stage === 'done' && status?.match_status === 'completed';
+
 // 결과물 화면 고지 4줄 — 백엔드 /result의 deliverable(SB-371, 10-13)에 문구가 있으면 그것으로 바꾼다.
 // submission_notice → [제출 안내](공고별 제출 요건 확인), disclaimer → [계획서](내려받는 계획서 첫 장과 같은 문구).
 // 결과물이 아직 없거나(deliverable null) 칸이 비면 고정 문구(DELIVERABLE_NOTICES) 그대로.
@@ -275,41 +276,6 @@ export function prototypeFilesOf(plan){
   const artifact = plan?.artifacts?.[0];
   const paths = [...new Set([artifact?.executable_path, artifact?.infographic_path].filter(Boolean))];
   return paths.map((path) => ({ path, name: decodeURIComponent(String(path).split('?')[0].split('/').pop() || '') || 'file' }));
-}
-
-export function reviewParagraphsFrom(plan){
-  const logs = plan?.proofread_logs || [];
-  if (!logs.length) return null; // 검수 기록이 없으면 화면이 기존 예시로 돌아간다
-
-  const groups = new Map(); // section_id(없으면 'null') -> log[]
-  for (const log of logs) {
-    const key = log.section_id ?? 'null';
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(log);
-  }
-
-  return Array.from(groups.values()).map((groupLogs, i) => {
-    const sorted = [...groupLogs].sort((a, b) => (a.attempt_no ?? 0) - (b.attempt_no ?? 0));
-    const id = `p-${String(i + 1).padStart(2, '0')}`;
-    const first = sorted[0];
-
-    // 시도가 하나뿐이고 통과했으면(재작업 과정을 보여줄 게 없으면) 기존 평평한 모양 그대로.
-    if (sorted.length === 1 && first.passed !== false) {
-      return { id, before: first.original_text || '', after: first.corrected_text || '', reason: first.reason || null };
-    }
-
-    return {
-      id,
-      spotlight: true,
-      before: first.original_text || '',
-      attempts: sorted.map((log) => ({
-        try: log.attempt_no,
-        passed: log.passed !== false,
-        after: log.corrected_text || '',
-        issue: log.passed === false ? (log.violation_note || log.reason || null) : null,
-      })),
-    };
-  });
 }
 
 // 계획서 보기(화면 9)에 그릴 모양. 새 모양(항목에 section_code · content_type, 백엔드 응답모양변경 10-11)은 항목이

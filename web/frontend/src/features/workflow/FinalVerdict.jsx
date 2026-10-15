@@ -4,12 +4,12 @@ import {Icon} from '../../components/Icons.jsx';
 import {DiffText,RerunLeftBadge,ScoreNotices} from './shared.jsx';
 import {GeneralInfoBlock,PlanExtrasBlock} from './PlanForm.jsx';
 import {PrototypeFrame,ResultPreview,useArtifactFile,ArtifactLoadError} from './ArtifactResult.jsx';
-import {bundleScoreOf,detectItemCategory,maxInt,scoreInt,diffSentences,planViewFrom,sectionDiffEntries,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
+import {bundleScoreOf,detectItemCategory,maxInt,scoreInt,diffSentences,planViewFrom,sectionDiffEntries,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf,RESULT_STAGES,isResultReady,isResultRunning} from './utils.js';
 import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,GENERAL_SECTION_LABEL,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,PLAN_TAGS,headerOfTag,RERUN_CAP,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,ALL_DOC_BUNDLES,docBundlesFor} from './data.js';
 import {startReview,getProjectStatus} from '../../api.js';
 import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,relabelAfterReject,requestRework,reworkDiffForLabel,waitRework} from './rework.js';
 
-// 검수 진행 중 진행 상태를 다시 읽는 간격
+// 최종 결과물을 만드는 동안 진행 상태를 다시 읽는 간격
 const REVIEW_POLL_MS = 2000;
 
 // 계획서 라벨(WRITING_SUBTASKS)은 전부 '작성' Agent 하나(writing)로, 산출물 라벨은
@@ -230,12 +230,12 @@ function BookCompare({ pages }){
 }
 
 // 기획서 4-7 유스케이스 표: 종합 평가(9)는 80점 이상이면 바로, 미만이면 확인 절차를
-// 거쳐 항상 문장 다듬기(10)로 이어진다 — "제출 파일 내려받기"가 아니다. 다운로드는
-// 검수 화면에 함께 있다(목업 수정 요청서 v3 §3 — 화면을 쪼갤 이유가 없다).
+// 거쳐 항상 최종 결과물(11)로 이어진다. 조율 2026-10-15부터 검수(문장 다듬기, 화면 10)는
+// 흐름에서 빠졌고 '진행' 뒤에는 결과 통합 하나만 돈다. 다운로드는 결과물 화면에 있다.
 // 목업 수정 요청서 v3 §2: "선택한 층에 따라 뒤에서 도는 게 다르다... 고르지 않은
 // 층의 점수는 그대로 승계된다. 화면에서는 갱신된 총점만 보이면 된다." docOutcome·
 // artifactOutcome은 App 레벨 상태다 — FinalVerdict 안에 지역 상태로 두면 재작성한
-// 뒤 문장 다듬기 화면으로 넘어갈 때(App이 그 상태를 모르니) 갱신된 값이 사라진다.
+// 뒤 결과물 화면으로 넘어갈 때(App이 그 상태를 모르니) 갱신된 값이 사라진다.
 // ARTIFACT_SCORE_BY_OUTCOME.pass가 시연 로그의 실제 재작성 후 값(26/30)과 같아서,
 // 이 방식이 곧 시연 로그의 진행(71→79→86)을 그대로 재현한다(문서층만 재작성:
 // 52+19=71→60+19=79, 둘 다 재작성: →60+26=86).
@@ -471,7 +471,7 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
   const [confirmProceed, setConfirmProceed] = useState(false);
   // 서버가 돌려준 미달 확인 내용(409 detail.items — 현재 점수 · 기준 · 남는 미달 항목 · 되돌릴 수 없음). 없으면 화면 값으로 보인다.
   const [serverConfirm, setServerConfirm] = useState(null);
-  // 검수 진행 — null | {percent} (진행 중) / 오류 문구
+  // 최종 결과물 만들기(결과 통합) 진행 — null | {percent} (진행 중) / 오류 문구
   const [reviewing, setReviewing] = useState(null);
   const [reviewError, setReviewError] = useState('');
   const alive = useRef(true);
@@ -610,22 +610,23 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  // 검수 진행(화면 9 → 10). 미달인지는 서버(판정 G-02b)가 정한다 — 미달이면 409로 확인 내용을 주므로
-  // 되돌릴 수 없음을 확인받은 뒤 confirmed=true로 다시 부른다(E4, 명세 6.2). 검수는 워커가 돌려 시간이 걸리므로
-  // 진행 상태를 주기적으로 읽다가 stage='done'(결과물 · 완료)이 되면 결과 화면으로 간다.
+  // 최종 결과물로 진행(화면 9 → 11). 미달인지는 서버(판정 G-02b)가 정한다 — 미달이면 409로 확인 내용을 주므로
+  // 되돌릴 수 없음을 확인받은 뒤 confirmed=true로 다시 부른다(E4, 명세 6.2). 결과 통합(옛 실행 건은 표현 검수)은 워커가
+  // 돌려 시간이 걸리므로 진행 상태를 주기적으로 읽다가 결과물 · 완료가 되면 결과 화면으로 간다 — 결과 통합이 도는 동안에도
+  // stage는 'done'이라 상태가 '완료'인지까지 본다(조율 2026-10-15, utils.js isResultReady).
   const proceedToReview = async (confirmed) => {
     if (!projectId) { onProceed(); return; }
     setReviewError(''); setReviewing({ percent: null });
-    // 받을 수 없는 상태(재작성이 도는 중 등)여도 서버는 200으로 지금 상태만 준다 — 검수(reviewing)나 완료(done)가
-    // 아니면 검수가 시작되지 않은 것이라 기다리지 않는다(예전엔 끝나지 않는 '검수 진행 중'에 갇혔다).
-    const notStarted = (s) => s?.stage !== 'reviewing' && s?.stage !== 'done';
+    // 받을 수 없는 상태(재작성이 도는 중 등)여도 서버는 200으로 지금 상태만 준다 — 결과 통합(done) · 옛 표현 검수(reviewing)가
+    // 아니면 시작되지 않은 것이라 기다리지 않는다(예전엔 끝나지 않는 '진행 중'에 갇혔다).
+    const notStarted = (s) => !RESULT_STAGES.includes(s?.stage);
     try {
       let status = await startReview(projectId, confirmed);
       setConfirmProceed(false);
-      if (notStarted(status) && status?.match_status !== 'failed') throw new Error('지금은 검수를 시작할 수 없어요. 진행 중인 작업이 끝난 뒤 다시 시도해 주세요.');
-      while (status?.stage !== 'done') {
+      if (notStarted(status) && status?.match_status !== 'failed') throw new Error('지금은 최종 결과물을 만들 수 없어요. 진행 중인 작업이 끝난 뒤 다시 시도해 주세요.');
+      while (!isResultReady(status)) {
         if (status?.match_status === 'failed') throw new Error('일시적인 문제로 작업을 완료하지 못했습니다. 새 작업으로 다시 시작해주세요.');
-        if (notStarted(status)) throw new Error('검수가 멈췄어요. 잠시 뒤 다시 시도해 주세요.');
+        if (!isResultRunning(status)) throw new Error('최종 결과물 만들기가 멈췄어요. 잠시 뒤 다시 시도해 주세요.');
         if (!alive.current) return;
         setReviewing({ percent: status?.progress_percent ?? null });
         await new Promise((resolve) => setTimeout(resolve, REVIEW_POLL_MS));
@@ -642,8 +643,8 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
         setConfirmProceed(true);
         return;
       }
-      console.error('검수를 진행하지 못했어요', err);
-      setReviewError(err.message || '검수를 진행하지 못했어요. 다시 시도해 주세요.');
+      console.error('최종 결과물로 넘어가지 못했어요', err);
+      setReviewError(err.message || '최종 결과물로 넘어가지 못했어요. 다시 시도해 주세요.');
     }
   };
   const handleProceedClick = () => proceedToReview(false);
@@ -816,7 +817,7 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
           <ul className="flex flex-col gap-1.5 mb-4">
             <li className="text-[12.5px] text-[var(--fg)] leading-relaxed">· 현재 점수 — 총점 {scoreInt(confirmScore)}점 · 기준 {confirmThreshold}점 미달</li>
             <li className="text-[12.5px] text-[var(--fg)] leading-relaxed">· 남는 미달 항목 — {confirmShortfalls.length > 0 ? confirmShortfalls.join(', ') : '없음'}</li>
-            <li className="text-[12.5px] text-[var(--fg)] leading-relaxed">· 진행 후에는 다시 만들 수 없습니다. 검수 단계로 넘어가면 이 점수가 그대로 확정됩니다.</li>
+            <li className="text-[12.5px] text-[var(--fg)] leading-relaxed">· 진행 후에는 다시 만들 수 없습니다. 최종 결과물로 넘어가면 이 점수가 그대로 확정됩니다.</li>
           </ul>
           <div className="flex items-center gap-4">
             <button onClick={() => setConfirmProceed(false)}
@@ -833,14 +834,14 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
 
       {reviewing && (
         <p role="status" className="mb-4 text-[13.5px] text-[var(--muted-fg)]">
-          표현 검수를 진행하고 있어요{reviewing.percent != null ? ` (${reviewing.percent}%)` : ''} — 끝나면 최종 결과물로 넘어가요.
+          최종 결과물을 모으고 있어요{reviewing.percent != null ? ` (${reviewing.percent}%)` : ''} — 끝나면 결과물 화면으로 넘어가요.
         </p>
       )}
       {reviewError && <p role="alert" className="mb-4 text-[13.5px] text-[var(--danger)]">{reviewError}</p>}
       {passed && (
         <button onClick={handleProceedClick} disabled={!!reviewing || runningTasks.length > 0}
           className="w-full rounded-xl bg-[var(--primary)] text-white py-3.5 text-[15px] font-semibold hover:bg-[var(--primary-dim)] disabled:opacity-60 transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-          {reviewing ? '검수 중…' : '검수하기'}
+          {reviewing ? '최종 결과물 만드는 중…' : '최종 결과물 만들기'}
         </button>
       )}
 
@@ -925,9 +926,3 @@ export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, ar
     </section>
   );
 }
-
-// 기획서 4-4/4-7 + 목업 수정 요청서 v3 §3: 검수는 채점 이후 단계라 문단별 전/후
-// 대비만 보여주고 점수는 바꾸지 않는다. 문단 내용은 시연 로그(sbrain_demo_run.json
-// steps[12].data.paragraphs)를 그대로 옮겼다 — p-09가 "강조" 대상으로, 1차 시도가
-// 중요 정보가 변경되었어요(접수 마감일 누락·지원금액 표기 변경)으로 반려되고 2차에서 두 값을
-// 그대로 보존한 채 통과하는 과정을 보여준다.

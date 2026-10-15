@@ -9,7 +9,7 @@ import {IntakeForm,MatchProgress,MatchResults,EligibilityGate,PlanForm,ArtifactR
 import {createProject,deleteProject,getEligibility,getProject,getProjectResult,getProjectStatus} from './api.js';
 import {NoticeClosedBanner,RunBlockedDialog} from './components/RunDialogs.jsx';
 import {useWorkflowStore} from './store/useWorkflowStore.js';
-import {scoresFromResult,reworkBudgetFrom} from './features/workflow/utils.js';
+import {scoresFromResult,reworkBudgetFrom,RESULT_STAGES} from './features/workflow/utils.js';
 import {budgetRowTotal} from './features/workflow/ProjectPlanFields.jsx';
 
 // [2026-09-15, 프론트 통합 임시 구현] "단가" 입력칸은 자유 텍스트("500원" 등)라서 서버가
@@ -18,11 +18,13 @@ import {budgetRowTotal} from './features/workflow/ProjectPlanFields.jsx';
 // stage로 다시 계산하지 않는다: 공고선택 · 자격확인은 stage가 둘 다 null이라 화면 3과 4를 가를 수 없고, 재작성 중에는
 // 요청한 화면이 들어 있다(웹연동_변경사항_웹팀전달.md 3.1).
 const VIEW_BY_SCREEN={3:'match-results',4:'eligibility-gate',5:'plan-progress',6:'plan-form',7:'artifact-progress',8:'artifact-result',9:'final-verdict',10:'review',11:'review'};
-// 표현 검수(reviewing)가 아직 도는 중 · 재개 대기 · 실패면 결과물 대신 검수 진행 화면을 연다 — 결과물은 검수가 끝나야 채워진다.
+// 화면 9 '진행' 뒤 구간(결과 통합 — stage 'done', 옛 실행 건은 표현 검수 — reviewing)이 아직 도는 중 · 재개 대기 · 실패면
+// 결과물 대신 진행 화면을 연다 — 결과물은 그 구간이 끝나야 채워진다. 결과 통합 중에도 stage가 'done'이라(조율 2026-10-15)
+// stage만 보지 않고 상태로 가른다 — 결과물 · 완료일 때만 아래 화면 번호(11)로 결과물을 연다.
 const REVIEW_RUNNING=['in_progress','waiting_resume','failed'];
 function resumeViewOf(status){
  // 실패한 실행 건은 결과를 볼 수 없어(/result 409) 진행 화면의 실패 안내로 보낸다 — 계획서 단계면 계획서, 그 뒤면 프로토타입.
- if(status.stage==='reviewing'&&REVIEW_RUNNING.includes(status.match_status))return 'review-progress';
+ if(RESULT_STAGES.includes(status.stage)&&REVIEW_RUNNING.includes(status.match_status))return 'review-progress';
  if(status.match_status==='failed')return ['plan_writing','plan_review_pending'].includes(status.stage)?'plan-progress':'artifact-progress';
  // 화면 5에서 사용자대기 = 자격 통과 뒤 작성 시작 전. 작성 시작 버튼은 자격 확인 화면에 있다 —
  // 진행 화면(plan-progress)으로 보내면 열자마자 작성이 시작돼 버린다.
@@ -396,7 +398,7 @@ export default function App(){
   {/* onSaved: 저장 성공 시 /auth/me를 다시 불러 user.has_profile을 최신값으로 갱신한다 —
       안 하면 로그인 시점에 false였던 값이 이번 세션 내내 그대로 남아 "시작하기"가 계속
       막힌다(방금 막 저장했는데도). */}
-  {/* 마감 안내는 계획서~검수 사이 어느 화면으로 복귀하든 보여야 해서 화면 분기 위에 둔다. */}
+  {/* 마감 안내는 계획서~최종 결과물 사이 어느 화면으로 복귀하든 보여야 해서 화면 분기 위에 둔다. */}
   {noticeClosed&&view!=='mypage'&&view!=='dashboard'&&<NoticeClosedBanner onClose={()=>setNoticeClosed(false)}/>}
   {view==='mypage'&&<MyPage onSaved={handleProfileSaved} user={user} onAccountDeleted={handleAccountDeleted}/>}
   {view==='dashboard'&&<Dashboard onNewProject={startNewProject} onOpenProject={handleOpenProject}/>}

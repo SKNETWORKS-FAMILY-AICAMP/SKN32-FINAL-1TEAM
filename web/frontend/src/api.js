@@ -74,7 +74,7 @@ export const deleteProject=(projectId)=>api.delete(`/projects/${projectId}`);
 export const deleteProjectPermanently=(projectId)=>api.delete(`/projects/${projectId}/permanent`);
 
 // [2026-09-28] 헤더 종모양이 쓰는 알림 이력(GET /projects의 진행 상태 요약과는 별개 —
-// "그동안 무슨 일이 있었는지"의 개별 기록). kind: 문서평가/산출물확인/표현검수/실패.
+// "그동안 무슨 일이 있었는지"의 개별 기록). kind: 문서평가/산출물확인/결과물/실패(옛 행은 표현검수도 — 조율 2026-10-15에 검수가 빠졌다).
 export const listNotifications=(unreadOnly=false)=>api.get(`/projects/notifications${unreadOnly?'?unread_only=true':''}`);
 export const markNotificationRead=(notificationId,read=true)=>api.patch(`/projects/notifications/${notificationId}/read`,{read});
 
@@ -109,7 +109,8 @@ export const generatePipeline=(projectId,noticeId)=>api.post(`/projects/${projec
 // 화면 8 → 9 ('종합 평가 확인하기'). 실행할 단계 없이 바로 stage='final_review_pending'이 된다. 응답은 ProjectStatusOut.
 // [SB-243 — 이름 확정(백엔드 회신 2026-10-06)]
 export const startFinalReview=(projectId)=>api.post(`/projects/${projectId}/final-review/start`);
-// 화면 9 → 10 (검수 진행). stage='reviewing'으로 진행되고 끝나면 'done'. 기준 점수에 못 미치면 409 +
+// 화면 9 → 11 (최종 결과물). 결과 통합이 도는 동안 stage='done' · 진행 중, 끝나면 'done' · 'completed'(조율 2026-10-15 — 전에는
+// 표현 검수 stage='reviewing'). 기준 점수에 못 미치면 409 +
 // detail {confirmation_required, reason, items}로 확인을 받는다 — 사용자가 확인하면 confirmed=true로 다시 부른다.
 export const startReview=(projectId,confirmed=false)=>api.post(`/projects/${projectId}/review/start`,{confirmed});
 

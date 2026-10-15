@@ -22,9 +22,10 @@ import {formatKstDate,formatKstDateTime,formatKstShort} from '../time.js';
 //   실행시킬 방법이 없어 만들지 않았다. "수집 실패 이력"도 "최근 수집 실행 이력"으로
 //   바꿨다 — 실제 배치 기록엔 "실패"가 아니라 데이터 품질 이슈만 있어서다(ImportRunOut
 //   주석 참고).
-// - "운영 현황"의 채점 편차(1회→2회)·"보호 토큰 위반율"은 이제 실제 값이다 —
-//   retry_task가 verification_score_history/proofread_logs에 이력을 남기도록
-//   고쳤다(app/routers/projects.py retry_task, OpsSummaryOut 주석 참고).
+// - "운영 현황"의 채점 편차(1회→2회)는 이제 실제 값이다 — retry_task가
+//   verification_score_history에 이력을 남기도록 고쳤다(OpsSummaryOut 주석 참고).
+// - 검수(표현 검수 · 윤문)는 조율 2026-10-15에 서비스 흐름에서 빠졌다 — 운영 현황 · 운영 지표 요약의
+//   "보호 토큰 위반율", 에이전트 테스크의 '검수' 줄, 판정 기준의 "검수 문단 재시도 상한"을 뺐다.
 // - "검수 회수 문단"은 proofread_logs.passed=False(보호 토큰 위반 반려 시도)를 그대로
 //   라벨링 대기열로 쓴다 — model_version은 그 plan의 최종 verdicts.model_version을
 //   붙인 근사치다(RecoveryItemOut 주석 참고).
@@ -51,7 +52,6 @@ const AGENT_ROWS=[
   {key:'구현',name:'구현',work:'프로토타입 제작 — HTML 실행 파일, 인포그래픽'},
   {key:'검증-1',name:'검증-1 (문서)',work:'문서층 검증. 공개된 평가항목 기준으로 계획서 서술 충족 여부 판정'},
   {key:'검증-2',name:'검증-2 (산출물)',work:'산출물층 검증. 코드 기준 자동 검증과 계획서 대조'},
-  {key:'검수',name:'검수 (표현)',work:'사업계획서 문장 형식 적합성 검수 및 한국어 윤문. 자체 파인튜닝 모델을 사용'},
 ];
 
 // GET /admin/agent-executions 응답(dict 목록, AgentExecutionOut 고정 스키마가 아니라 유연한 형태)을
@@ -506,16 +506,13 @@ function OpsSummary(){
   return (
     <div>
       <h1 className="text-[28px] font-bold mb-2">운영 현황</h1>
-      <p className="text-[13px] text-[var(--muted-fg)] mb-8">business_plans·artifacts·verdicts·agent_executions·proofread_logs 실제 집계입니다. 실행 건 하나하나의 현재 진행 상태는 "진행 현황" 탭에서 확인하세요.</p>
+      <p className="text-[13px] text-[var(--muted-fg)] mb-8">business_plans·artifacts·verdicts·agent_executions 실제 집계입니다. 실행 건 하나하나의 현재 진행 상태는 "진행 현황" 탭에서 확인하세요.</p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
         <Card label="전체 프로젝트" value={totalProjects+'건'} sub={formatStatusCounts(summary.status_counts)}/>
         <Card label="문서평가 평균점수" value={summary.doc_avg!=null?summary.doc_avg+'점':'-'} sub={'만점 70점 · '+summary.doc_count+'건 기준'}/>
         <Card label="종합평가 평균점수" value={summary.total_avg!=null?summary.total_avg+'점':'-'} sub={'만점 100점 · 평가가 모두 끝난 '+summary.total_count+'건 기준'}/>
         <Card label="통과율" value={summary.pass_rate!=null?summary.pass_rate+'%':'-'} sub={'통과 '+summary.pass_count+' / '+summary.total_count+'건 (기준 '+summary.pass_threshold+'점)'}/>
         <Card label="재수행 발생률" value={summary.rerun_rate!=null?summary.rerun_rate+'%':'-'} sub={'재수행 발생 '+summary.rerun_matches+' / '+summary.matches_with_execution+'건'}/>
-        <Card label="보호 토큰 위반율" value={summary.token_violation_rate!=null?summary.token_violation_rate+'%':'-'}
-          tone={summary.token_violation_rate>0?'warn':undefined}
-          sub={'위반 '+summary.token_violation_count+' / 검수 시도 '+summary.token_check_count+'건 (전체 프로젝트 평균)'}/>
       </div>
 
       <Panel className="p-5 mb-8">
@@ -936,7 +933,7 @@ function AgentsTab({focusProjectId=null}){
           기본적으로 접어두고 필요할 때만 펼쳐보게 한다. */}
       <details className="admin-accordion mb-8 rounded-2xl border border-[var(--border)] bg-white overflow-hidden">
         <summary className="flex items-center justify-between gap-3 px-5 py-4 text-[13px] font-semibold text-[var(--muted-fg)] cursor-pointer select-none">
-          <span>운영 지표 요약 (실행 세션·토큰 사용량·보호 토큰 위반율)</span>
+          <span>운영 지표 요약 (실행 세션·토큰 사용량)</span>
           <Icon name="chevron" size={16}/>
         </summary>
         <div className="px-5 pb-5 pt-1 border-t border-[var(--border)]">
@@ -950,20 +947,6 @@ function AgentsTab({focusProjectId=null}){
             <Card label="재시도 평균 토큰" value={opsSummary.rerun_avg_tokens!=null?Math.round(opsSummary.rerun_avg_tokens).toLocaleString():'-'} sub="token_usage 평균"/>
             <Card label="이미지 토큰 합" value={Number(opsSummary.total_image_tokens||0).toLocaleString()} sub="이미지 입력 + 출력"/>
           </div>
-          {/* "선별/전체 재실행" 구분은 여전히 예시가 아니라 "만들지 않음"이다(그 값을
-              남기는 컬럼이 없음, AgentOpsSummaryOut 주석 참고) — 보호 토큰 위반율은
-              2026-09-18부터 proofread_logs.passed 기준 실제 값이다. 모델 버전별
-              비교(v1/v2/v3)는 그 시도를 만든 모델 버전을 남기는 컬럼이 없어서 못 하고,
-              "운영 현황" 탭과 같은 전체 프로젝트 평균 하나만 보여준다. */}
-          <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1">보호 토큰 위반율</p>
-          <p className="text-[11px] text-[var(--muted-fg)] mb-4">검수 시도 중 수치·날짜·고유명사·기능명 등 보호 토큰이 훼손된 채 반려된 비율입니다(전체 프로젝트 평균). 반려된 시도는 "검수 회수 문단" 탭에서 라벨링합니다.</p>
-          <Bar label="전체 평균" pct={opsSummary.token_violation_rate||0}
-            tone={opsSummary.token_violation_rate>0?'warn':'ok'}
-            right={opsSummary.token_violation_rate!=null?opsSummary.token_violation_rate+'%':'-'}
-            sub={opsSummary.token_violation_count+' / '+opsSummary.token_check_count+'건'}/>
-          <p className="mt-3 pt-3 border-t border-[var(--border)] text-[11px] text-[var(--muted-fg)]">
-            <span className="text-[var(--warn)]">⚠</span> 위반 문단은 지시를 보강해 재시도하며, 상한을 넘어서도 남으면 해당 문단만 원문을 유지하고 "검수 회수 문단" 탭에 기록합니다.
-          </p>
           </>}
         </div>
       </details>
@@ -1091,12 +1074,12 @@ function PolicyTab({pushToast}){
     }catch(e){pushToast('배점을 저장하지 못했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
   };
   const saveLimits=async()=>{
-    if(!validNumber(limits.threshold,100)||!validNumber(limits.recheck,100)||!validNumber(limits.rerun,Infinity,true)||!validNumber(limits.rework,Infinity,true)||!validNumber(limits.tokenRetry,Infinity,true)){
+    if(!validNumber(limits.threshold,100)||!validNumber(limits.recheck,100)||!validNumber(limits.rerun,Infinity,true)||!validNumber(limits.rework,Infinity,true)){
       pushToast('판정 기준을 저장하지 못했습니다','점수는 0~100, 횟수는 0 이상의 정수로 입력해 주세요. 빈칸은 저장할 수 없습니다.','danger');return;
     }
     try{
-      await api.put('/admin/policy/thresholds',{pass_threshold:Number(limits.threshold),rerun_cap:Number(limits.rerun),rework_cap:Number(limits.rework),deviation_cap:Number(limits.recheck),token_retry_cap:Number(limits.tokenRetry)});
-      pushToast('판정 기준이 저장되었습니다','통과 Threshold '+limits.threshold+'점 · 재수행 상한 '+limits.rerun+'회 · 재작성 상한 '+limits.rework+'회 · 검수 재시도 상한 '+limits.tokenRetry+'회로 반영됩니다.','info');
+      await api.put('/admin/policy/thresholds',{pass_threshold:Number(limits.threshold),rerun_cap:Number(limits.rerun),rework_cap:Number(limits.rework),deviation_cap:Number(limits.recheck),token_retry_cap:Number(limits.tokenRetry)}); // 검수 재시도 상한 — 화면에서 뺐지만 서버가 아직 받으므로 불러온 값 그대로
+      pushToast('판정 기준이 저장되었습니다','통과 Threshold '+limits.threshold+'점 · 재수행 상한 '+limits.rerun+'회 · 재작성 상한 '+limits.rework+'회로 반영됩니다.','info');
     }catch(e){pushToast('판정 기준을 저장하지 못했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
   };
   const saveItems=async()=>{
@@ -1149,7 +1132,6 @@ function PolicyTab({pushToast}){
         {[['threshold','통과 Threshold','100점 만점 중 이 점수 이상이면 통과로 판정합니다.','점'],
           ['rerun','재수행 횟수 상한','미달 항목이 발생한 Task만 선별 재수행할 때의 최대 횟수입니다.','회'],
           ['rework','재작성 상한','사용자가 결과물 항목(묶음)마다 직접 재작성을 요청할 수 있는 횟수입니다.','회'],
-          ['tokenRetry','검수 문단 재시도 상한','검수(표현) Task 내부에서 보호 토큰 위반 문단을 재시도하는 최대 횟수입니다.','회'],
           // 편차 검사는 하지 않기로 했다(팀 상의 10-10, 조율 varianceFlag 늘 거짓) — 값은 저장 요청에 그대로 싣되 고치지 못하게 둔다.
           ['recheck','문서층 재채점 편차 상한','같은 계획서를 다시 채점해 비교하는 검사는 비용 때문에 하지 않기로 해서, 이 값은 지금 어디에도 쓰이지 않아요.','점',true]].map(([key,label,desc,unit,unused])=>(
           <div key={key} className="grid grid-cols-[1.6fr_2.4fr_1fr] text-[13px] border-t border-[var(--border)] items-center">

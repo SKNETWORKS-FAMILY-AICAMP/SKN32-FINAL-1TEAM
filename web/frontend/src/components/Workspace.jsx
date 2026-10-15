@@ -3,6 +3,7 @@ import {Brand,Icon} from './Icons.jsx';
 import {NotificationBell} from '../features/Workflow.jsx';
 import {listProjects,deleteProject,deleteProjectPermanently} from '../api.js';
 import {formatKstDate} from '../time.js';
+import {isResultReady,isResultRunning} from '../features/workflow/utils.js';
 export const steps=[['intake','아이템 입력'],['match-results','공고 찾기'],['plan-form','사업계획서'],['artifact-result','프로토타입'],['final-verdict','제출 전 점검'],['review','최종 결과물']];
 export function WorkspaceShell({view,user,onHome,onDashboard,onMyPage,onNewProject,onLogout,notifyEnabled,onToggleNotify,onOpenProject,children}){
  const index=['match-progress','eligibility-gate','eligibility-fail'].includes(view)?1:view==='plan-progress'?2:view==='artifact-progress'?3:view==='final-pass'?4:view==='review-progress'?5:steps.findIndex(x=>x[0]===view);
@@ -16,7 +17,8 @@ export function WorkspaceShell({view,user,onHome,onDashboard,onMyPage,onNewProje
 // 받아온다. "신규 사용자 보기" 체크박스(사람이 데모용으로 직접 토글하던 것)는 없앴다 —
 // 로딩이 끝났는데 목록이 비어있으면 그게 곧 신규 사용자라는 뜻이라, isNewUser는 실제
 // 데이터에서 그대로 계산한다.
-// 완료(준비 완료)는 서버 stage='done'(오케스트레이터 결과물 · 완료 — 표현 검수까지 끝남)으로 본다. 예전 더미 파이프라인은
+// 완료(준비 완료)는 서버 결과물 · 완료(stage 'done' + 상태 '완료')로 본다. 조율 2026-10-15부터 화면 9 '진행' 뒤 결과 통합이
+// 도는 동안에도 stage가 'done'이라(상태만 진행 중) stage만 보면 다 만들기 전에 '준비 완료'가 뜬다. 예전 더미 파이프라인은
 // 공고를 고르는 순간 stage가 곧장 'done'이 돼서 브라우저에 남긴 마지막 화면(localStorage)으로 다시 걸렀는데,
 // 오케스트레이터는 단계를 실제로 밟아 그 우회가 필요 없다.
 const GENERATING_LABEL={plan_writing:'계획서 작성 중',prototype_building:'프로토타입 제작 중'};
@@ -43,13 +45,13 @@ export function Dashboard({onNewProject,onOpenProject}){
     // 공고를 골랐는데 제목을 못 찾으면(공고 표에서 빠진 공고 · 로컬 스텁 공고) '매칭된 공고가 없다'고 하지 않는다.
     announcementTitle:r.notice_title||(r.notice_id?'선택한 공고':'아직 매칭된 공고가 없어요'),
     matched:!!r.notice_title,
-    progress:r.stage==='done'?100:0,
+    progress:isResultReady(r)?100:0,
     failed:r.match_status==='failed',failedStage:r.stage,
-    generating:r.match_status!=='failed'&&GENERATING_LABEL[r.stage]?`${GENERATING_LABEL[r.stage]} ${r.progress_percent??0}%`:null,
+    generating:r.match_status!=='failed'&&GENERATING_LABEL[r.stage]?`${GENERATING_LABEL[r.stage]} ${r.progress_percent??0}%`:isResultRunning(r)?'최종 결과물 만드는 중':null,
     updatedAt:formatKstDate(r.created_at),
    })));
    setLoading(false);
-   if(rows.some(r=>r.match_status!=='failed'&&GENERATING_LABEL[r.stage]))timer=setTimeout(load,5000);
+   if(rows.some(r=>(r.match_status!=='failed'&&GENERATING_LABEL[r.stage])||isResultRunning(r)))timer=setTimeout(load,5000);
   }).catch(err=>{
    console.error('내 프로젝트 목록을 불러오지 못했어요', err);
    if(!cancelled){setLoadError(true);setLoading(false);}

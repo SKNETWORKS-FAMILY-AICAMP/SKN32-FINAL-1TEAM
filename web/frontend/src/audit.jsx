@@ -1,6 +1,7 @@
 import React from 'react';
 import {createRoot} from 'react-dom/client';
 import Landing from './components/Landing.jsx';
+import Preparation from './components/Preparation.jsx';
 import {WorkspaceShell,Dashboard} from './components/Workspace.jsx';
 import * as W from './features/Workflow.jsx';
 import {FileDeletionsPanel} from './features/Admin.jsx';
@@ -9,7 +10,7 @@ import {useMyPageStore} from './store/useMyPageStore.js';
 import {api} from './api.js';
 import {scoresFromResult} from './features/workflow/utils.js';
 import './styles.css';
-const names=['landing','dashboard','empty','intake','match-progress','match-results','eligibility-gate','eligibility-fail','plan-progress','plan-form','artifact-progress','plan-failed','artifact-failed','artifact-result','artifact-gate-fail','artifact-partial','final-verdict','final-pass','review','admin-file-deletions','plan-form-tagged','final-verdict-tagged','mypage','mypage-empty','intake-filled','intake-profile'];
+const names=['landing','dashboard','empty','intake','match-progress','match-results','eligibility-gate','eligibility-fail','plan-progress','plan-form','artifact-progress','plan-failed','artifact-failed','artifact-result','artifact-gate-fail','artifact-partial','final-verdict','final-pass','review-progress','review','admin-file-deletions','plan-form-tagged','final-verdict-tagged','mypage','mypage-empty','intake-filled','intake-profile'];
 const page=new URLSearchParams(location.search).get('page')||'landing';
 const noop=()=>{};
 // 관리자 파일 삭제 대기열 견본 — 웹 API(SB-311 반영분)가 아직 sb-269에 없어 가짜 응답으로 본다.
@@ -112,5 +113,7 @@ const props={announcement:W.ANNOUNCEMENTS[0],itemInfo:info,onBack:noop,onSubmit:
 const components={'intake':W.IntakeForm,'intake-filled':W.IntakeForm,'intake-profile':W.IntakeForm,'match-progress':W.MatchProgress,'match-results':W.MatchResults,'eligibility-gate':W.EligibilityGate,'eligibility-fail':W.EligibilityGate,'plan-progress':W.PipelineProgress,'plan-form':W.PlanForm,'artifact-progress':W.ArtifactProgress,'artifact-result':W.ArtifactResult,'artifact-gate-fail':W.ArtifactResult,'artifact-partial':W.ArtifactResult,'final-verdict':W.FinalVerdict,'final-verdict-tagged':W.FinalVerdict,'plan-form-tagged':W.PlanForm,'final-pass':W.FinalVerdict,'review':W.ReviewScreen};
 // 완전 실패 카드 — 실제 흐름에선 서버가 status='failed'를 줘야 떠서 로컬 더미로는 재현이 어렵다.
 Object.assign(components,{'plan-failed':p=><W.GenerationFailed onLeave={noop}/>,'artifact-failed':p=><W.GenerationFailed onLeave={noop}/>});
+// 화면 9 '진행' 뒤 최종 결과물 진행 화면(결과 통합 — 조율 2026-10-15). 실제로는 서버 상태를 읽는 GenerationProgress가 감싼다.
+components['review-progress']=p=><Preparation kind="review" onComplete={noop}/>;
 const C=components[page];
 createRoot(document.getElementById('root')).render(<><nav aria-label="화면 검토" style={{padding:10,background:'#fff',display:'flex',flexWrap:'wrap',gap:12,position:'relative',zIndex:100,fontSize:12}}>{names.map(n=><a key={n} href={'?page='+n}>{n}</a>)}</nav>{page==='landing'?<Landing onStart={noop}/>:page.startsWith('mypage')?<WorkspaceShell view="mypage" notifyEnabled onToggleNotify={noop} onHome={noop} onDashboard={noop} onNewProject={noop} onLogout={noop}><MyPage user={{email:'kim@example.com'}} onSaved={noop}/></WorkspaceShell>:page==='admin-file-deletions'?<main className="w-[min(1180px,calc(100%-48px))] mx-auto py-12"><FileDeletionsPanel pushToast={(title,message)=>console.info(title,message)}/></main>:<WorkspaceShell view={page==='empty'?'dashboard':page.replace(/-tagged$|-filled$|-profile$/,'')} notifyEnabled onToggleNotify={noop} onHome={noop} onDashboard={noop} onNewProject={noop} onLogout={noop}>{C?<C {...props}/>:<Dashboard onNewProject={noop} onOpenProject={noop} isNewUser={page==='empty'} onToggleNewUser={noop}/>}</WorkspaceShell>}</>);

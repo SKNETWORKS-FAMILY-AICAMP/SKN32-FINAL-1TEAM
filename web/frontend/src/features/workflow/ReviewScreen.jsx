@@ -1,11 +1,10 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
 import React, {useEffect, useRef, useState} from 'react';
-import {Icon} from '../../components/Icons.jsx';
 import {buildZip,downloadPlanDocx,downloadPrototypeZip,triggerDownload} from '../../dummyDeliverables.js';
 import {downloadDeliverableZip,downloadPlanDocument,downloadPlanHwp,fetchUploadBlob} from '../../api.js';
-import {buildCodeCheckItems,buildGeneralInfo,buildOverview,deliverableNoticesFrom,detectItemCategory,DOC_SCORE_BY_OUTCOME,prototypeFilesOf,reviewParagraphsFrom,scoreInt,shortfallFrom} from './utils.js';
+import {buildCodeCheckItems,buildGeneralInfo,buildOverview,deliverableNoticesFrom,detectItemCategory,DOC_SCORE_BY_OUTCOME,prototypeFilesOf,scoreInt,shortfallFrom} from './utils.js';
 import {printVerificationReport} from './verificationReport.js';
-import {ARTIFACT_SCORE_BY_OUTCOME,DOWNLOAD_FILES,FINAL_THRESHOLD,PLAN_DOCUMENT_SECTIONS_REWORKED,REVIEW_PARAGRAPHS,REVIEW_RETRY_CAP} from './data.js';
+import {ARTIFACT_SCORE_BY_OUTCOME,DOWNLOAD_FILES,FINAL_THRESHOLD,PLAN_DOCUMENT_SECTIONS_REWORKED} from './data.js';
 
 // verdict: GET /result의 VerdictOut. 검증결과서의 "종합 판정"을 서버 점수로 찍기 위해 받는다
 // (없으면 화면 값으로 계산 — verificationReport.js 참고).
@@ -18,8 +17,6 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
   const finalTotal = scores?.total ?? (docScore.raw + artifactScore.autoCheck.raw + artifactScore.crossCheck.raw);
   const passed = finalTotal >= threshold;
   const itemTitle = announcement ? announcement.title : '';
-  // 서버 검수 기록이 있으면 그걸, 없으면 기존 예시 문단(utils.js reviewParagraphsFrom).
-  const paragraphs = reviewParagraphsFrom(plan) || REVIEW_PARAGRAPHS;
   // 아래 고지 4줄. 서버가 준 제출 안내 · 계획서 고지가 있으면 그 문구로(utils.js deliverableNoticesFrom).
   const notices = deliverableNoticesFrom(deliverable);
   // 제출 전에 보완하면 좋은 항목(deliverable.shortfall_items) — 없으면 null이라 칸을 그리지 않는다.
@@ -39,10 +36,6 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
     prototypeFetch.current = { pending, entries: null };
   }, [prototypeKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const planNotice = notices.find((n) => n.label === '계획서')?.text;
-  // 문장 다듬기 항목별 수정 내역(p-02, p-09...)은 대부분의 사용자가 신경 안 쓰는
-  // 세부 정보라, 기본은 접어두고 보고 싶은 사람만 눌러서 펼친다(사용자 지적) —
-  // 항목별로 따로따로 펼치는 게 아니라 토글 하나로 전부 한 번에 나온다.
-  const [showDetails, setShowDetails] = useState(false);
   // 받기 실패 안내 — 카드 이름(DOWNLOAD_FILES name, 전체 다운로드는 'all')마다 한 줄. 실제 프로젝트에서는 실패했을 때
   // 예시 파일로 몰래 바꿔 주지 않고 이 안내를 띄운다(예전엔 계획서 · 프로토타입이 예시 파일로 받아져 진짜인 줄 알았다).
   // 한글(.hwp)은 서버에 rhwp가 있어야만 만들어진다(RHWP_BIN) — 그래서 사유를 따로 적는다.
@@ -171,78 +164,14 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
 
   return (
     <section data-screen="review" className="max-w-3xl mx-auto px-6 py-16">
-      <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide mb-2">문장 다듬기</p>
+      <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide mb-2">최종 결과물</p>
       {/* 공고 제목을 모르면(알림에서 연 프로젝트 · 공고 표에서 빠진 공고) 빈 『』를 그리지 않는다 */}
       {announcement?.title && <p className="text-[14px] text-[var(--muted-fg)] leading-snug mb-1.5">『{announcement.title}』</p>}
-      <h1 className="font-display font-bold text-[26px] md:text-[30px] mb-3">문장을 다듬었어요</h1>
-      <p className="text-[14.5px] text-[var(--muted-fg)] mb-1">사업계획서 문장 형식과 한국어 표현만 다듬는 단계라 점수는 바뀌지 않습니다</p>
+      <h1 className="font-display font-bold text-[26px] md:text-[30px] mb-3">결과물이 준비됐어요</h1>
+      {/* 조율 2026-10-15부터 검수(문장 다듬기)는 흐름에서 빠졌다 — 화면 9 '진행' 뒤 결과 통합만 돌고 바로 이 화면이다.
+          예전엔 이 자리에 문단별 수정 전/후가 있었고, 검수 기록이 없으면 시연용 예시 문단을 대신 보였다. */}
+      <p className="text-[14.5px] text-[var(--muted-fg)] mb-1">계획서 · 프로토타입 · 검증결과서를 아래에서 내려받을 수 있어요</p>
       <p className="text-[12.5px] text-[var(--muted-fg)] mb-8">이 단계부터는 이전 화면으로 돌아갈 수 없습니다</p>
-
-      <button type="button" onClick={() => setShowDetails((v) => !v)} aria-expanded={showDetails}
-        className="flex items-center gap-1.5 text-[13.5px] font-semibold text-[var(--muted-fg)] hover:text-[var(--fg)] transition-colors mb-10">
-        <Icon name="chevron" size={14} className={`transition-transform duration-150 ${showDetails ? 'rotate-90' : ''}`} />
-        수정한 문장 {paragraphs.length}건 {showDetails ? '접기' : '보기'}
-      </button>
-
-      {/* 이 div는 접혀있어도(showDetails=false) DOM에 항상 존재해야 한다 — styles.css의
-          레거시 규칙(.workflow-content [data-screen="review"]>div:first-of-type>div)이
-          "몇 번째 div 자식인지"로 문단 카드를 스타일링하는데, 이 div 자체를 통째로
-          안 그리면 그 자리를 "결과물" 감싸는 div가 대신 차지해서 엉뚱하게 padding:28px가
-          거기 먹혀버린다(사용자 지적: 전체 다운로드가 계속 삐져나옴 — 실제로 이게 원인이었다).
-          그래서 바깥 div는 그대로 두고 안쪽 map만 조건부로 비운다. */}
-      <div className={`flex flex-col gap-4 ${showDetails ? 'mb-10' : ''}`}>
-        {showDetails && paragraphs.map((p) => (
-          <div key={p.id} className={`rounded-2xl border bg-white p-5 ${p.spotlight ? 'border-[var(--primary)]' : 'border-[var(--border)]'}`}>
-            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-              <p className="text-[11px] font-bold text-[var(--muted-fg)] tracking-wide font-mono">{p.id}</p>
-              {!p.spotlight && (
-                <span className="flex-shrink-0 text-[11px] font-semibold text-[var(--ok)] bg-[color-mix(in_srgb,var(--ok)_12%,white)] rounded-full px-2.5 py-1">표현 반영됨</span>
-              )}
-            </div>
-
-            {p.spotlight ? (
-              <React.Fragment>
-                <p className="text-[11px] font-semibold text-[var(--muted-fg)] mb-1.5">원문</p>
-                <p className="text-[13px] leading-relaxed text-[var(--muted-fg)] mb-4">{p.before}</p>
-                <div className="flex flex-col gap-3">
-                  {p.attempts.map((a) => (
-                    <div key={a.try} className={`rounded-xl p-4 ${a.passed ? 'bg-[color-mix(in_srgb,var(--ok)_8%,white)]' : 'bg-[color-mix(in_srgb,var(--danger)_6%,white)]'}`}>
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <span className={`text-[11px] font-semibold rounded-full px-2 py-0.5 ${a.passed ? 'text-[var(--ok)] bg-[color-mix(in_srgb,var(--ok)_16%,white)]' : 'text-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_12%,white)]'}`}>
-                          {a.try}차 시도 · {a.passed ? '핵심 정보 보존 확인' : '핵심 정보 변경 발견'}
-                        </span>
-                        {a.try >= REVIEW_RETRY_CAP && (
-                          <span className="text-[11px] font-semibold text-[var(--muted-fg)]">다시 하기 상한 {REVIEW_RETRY_CAP}회 도달 — 이후 재시도 없음</span>
-                        )}
-                      </div>
-                      <p className="text-[13.5px] leading-relaxed text-[var(--fg)]">{a.after}</p>
-                      {a.issue && <p className="mt-1.5 text-[12px] text-[var(--danger)] leading-relaxed">{a.issue}</p>}
-                    </div>
-                  ))}
-                </div>
-                {/* 검수는 사용자가 누르는 재시도 버튼이 없는 단계다(문단 재시도는 Task 내부에서
-                    자동) — 막을 버튼이 없으니 상한과 상한 도달 시 동작만 밝힌다. */}
-                <p className="mt-3 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">
-                  문장 다듬기는 한 문단당 최대 {REVIEW_RETRY_CAP}회까지 다시 시도해요 — 그래도 숫자·날짜 같은 핵심 정보가 바뀌면 그 문단은 원문을 그대로 두고 멈춥니다.
-                </p>
-              </React.Fragment>
-            ) : (
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div>
-                  <p className="text-[11px] font-semibold text-[var(--muted-fg)] mb-1.5">수정 전</p>
-                  <p className="text-[13px] leading-relaxed text-[var(--muted-fg)]">{p.before}</p>
-                </div>
-                <div>
-                  <p className="text-[11px] font-semibold text-[var(--primary-dim)] mb-1.5">수정 후</p>
-                  <p className="text-[13.5px] leading-relaxed text-[var(--fg)]">{p.after}</p>
-                  {/* 서버 검수 기록에는 왜 고쳤는지(reason)가 같이 온다 — 있으면 붙인다. */}
-                  {p.reason && <p className="mt-1.5 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">{p.reason}</p>}
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
 
       <div className="border-t border-[var(--border)] pt-6">
         <div className="flex items-center justify-between gap-4 flex-wrap mb-6 px-5">
@@ -259,7 +188,7 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
         )}
         {downloadErrors.all && <p role="alert" className="-mt-3 mb-5 px-5 text-[12.5px] leading-relaxed text-[var(--danger)]">{downloadErrors.all}</p>}
         {!passed && (
-          <p className="text-[13px] text-[var(--fg)] mb-4">현재 {scoreInt(finalTotal)}점으로 저장됩니다 — 검수는 표현만 다듬으므로 종합 평가에서 확인한 점수가 그대로 기록됩니다</p>
+          <p className="text-[13px] text-[var(--fg)] mb-4">현재 {scoreInt(finalTotal)}점으로 저장됩니다 — 종합 평가에서 확인한 점수가 그대로 기록됩니다</p>
         )}
 
         {shortfall && (
