@@ -216,9 +216,6 @@ def ops_summary_out(summary, status_counts: dict[str, int]) -> schemas.OpsSummar
                 delta_avg=c.delta, sample_count=c.count)
             for c in summary.layer_changes
         ],
-        token_violation_rate=summary.proofread_reject_rate,
-        token_violation_count=summary.proofread_rejected,
-        token_check_count=summary.proofread_attempts,
     )
 
 
@@ -232,9 +229,6 @@ def agent_ops_summary_out(summary) -> schemas.AgentOpsSummaryOut:
         total_image_tokens=summary.total_image_tokens,
         initial_avg_tokens=_avg_tokens(initial),
         rerun_avg_tokens=_avg_tokens(rerun),
-        token_violation_rate=summary.proofread_reject_rate,
-        token_violation_count=summary.proofread_rejected,
-        token_check_count=summary.proofread_attempts,
     )
 
 

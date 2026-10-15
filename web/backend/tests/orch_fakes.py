@@ -345,8 +345,7 @@ def make_admin_summary(**overrides: Any) -> NS:
     base = dict(
         status_counts={}, doc_avg=None, doc_count=0, total_avg=None, total_count=0, pass_count=0, pass_rate=None,
         pass_threshold=80.0, reworked_runs=0, runs_with_executions=0, rework_rate=None, score_buckets=[],
-        layer_changes=[], triggers=[], total_tokens=0, total_image_tokens=0, proofread_attempts=0, proofread_rejected=0,
-        proofread_reject_rate=None)
+        layer_changes=[], triggers=[], total_tokens=0, total_image_tokens=0)
     base.update(overrides)
     return NS(**base)
 

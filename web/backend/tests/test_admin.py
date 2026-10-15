@@ -804,21 +804,20 @@ def test_agent_ops_summary_splits_initial_and_rerun(admin_client, orch):
     orch.responses['admin_summary'] = lambda: make_admin_summary(
         triggers=[NS(trigger='첫실행', count=10, avg_tokens=100.0), NS(trigger='재작성', count=2, avg_tokens=300.0),
                   NS(trigger='재수행', count=2, avg_tokens=100.0)],
-        total_tokens=1800, proofread_attempts=20, proofread_rejected=5, proofread_reject_rate=25.0)
+        total_tokens=1800)
 
     body = admin_client.get('/admin/agent-ops-summary').json()
 
     assert body['total_executions'] == 14 and body['initial_executions'] == 10 and body['rerun_executions'] == 4
     assert body['initial_avg_tokens'] == 100.0 and body['rerun_avg_tokens'] == 200.0  # 실행 수로 가중한 평균
     assert body['total_tokens'] == 1800 and body['total_image_tokens'] == 0
-    assert (body['token_check_count'], body['token_violation_count'], body['token_violation_rate']) == (20, 5, 25.0)
+    assert not {'token_violation_rate', 'token_violation_count', 'token_check_count'} & set(body)  # SB-399 검수 제거
 
 
 def test_agent_ops_summary_empty(admin_client, orch):
     orch.responses['admin_summary'] = lambda: make_admin_summary()
     body = admin_client.get('/admin/agent-ops-summary').json()
     assert body['total_executions'] == 0 and body['initial_avg_tokens'] is None and body['rerun_avg_tokens'] is None
-    assert body['token_violation_rate'] is None
 
 
 def test_ops_summary_maps_orchestrator_summary_and_counts_unmatched_projects(admin_client, user_client, orch):
@@ -831,8 +830,7 @@ def test_ops_summary_maps_orchestrator_summary_and_counts_unmatched_projects(adm
         score_buckets=[NS(label='80~89점', count=1), NS(label='60점 미만', count=1)],
         layer_changes=[NS(layer='docScore', first_avg=50.0, after_avg=58.0, delta=8.0, count=2),
                        NS(layer='codeCheck', first_avg=None, after_avg=None, delta=None, count=0),
-                       NS(layer='featureMatch', first_avg=10.0, after_avg=12.0, delta=2.0, count=1)],
-        proofread_attempts=8, proofread_rejected=2, proofread_reject_rate=25.0)
+                       NS(layer='featureMatch', first_avg=10.0, after_avg=12.0, delta=2.0, count=1)])
 
     body = admin_client.get('/admin/ops-summary').json()
 
@@ -845,7 +843,7 @@ def test_ops_summary_maps_orchestrator_summary_and_counts_unmatched_projects(adm
     assert set(layers) == {'doc', 'code', 'plan'}
     assert (layers['doc']['round1_avg'], layers['doc']['round2_avg'], layers['doc']['delta_avg']) == (50.0, 58.0, 8.0)
     assert layers['code']['sample_count'] == 0 and layers['plan']['sample_count'] == 1
-    assert (body['token_check_count'], body['token_violation_count'], body['token_violation_rate']) == (8, 2, 25.0)
+    assert not {'token_violation_rate', 'token_violation_count', 'token_check_count'} & set(body)  # SB-399 검수 제거
 
 
 def test_ops_summary_empty_when_no_projects(admin_client, orch):
