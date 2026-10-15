@@ -77,14 +77,17 @@ ViolationType = Literal["서술형", "종결형", "금지표현", "분량초과"
 StyleType = Literal["개조식", "서술형"]
 EndingRule = Literal["단정형", "평서형"]
 ChartType = Literal["bar", "line", "pie"]
+# 단계 8개 — 기준 문서의 '표현검수'는 검수가 흐름에서 빠져 지웠다. 결과 통합 중은 '결과물 · 실행'
 RunStep = Literal[
     "공고선택", "자격확인", "계획서작성", "문서평가", "프로토타입제작",
-    "산출물확인", "종합평가", "표현검수", "결과물",
+    "산출물확인", "종합평가", "결과물",
 ]
 RunProgress = Literal["실행", "재개대기", "사용자대기", "실패", "완료", "중단"]
 ScreenStatus = Literal["진행 중", "확인 필요", "문제 발생", "완료", "중단됨"]
 RunPhase = Literal["setup", "document", "artifact", "review"]
 CallError = Literal["호출실패", "응답지연", "형식오류"]
 ErrorKind = Literal["일시", "입력", "운영"]
-NotificationKind = Literal["문서평가", "산출물확인", "표현검수", "실패"]
+# 새로 쓰는 값은 문서평가 · 산출물확인 · 결과물 · 실패. '결과물'은 기준 문서(시트 4)에 없는 값이라 확장.
+# '표현검수'는 웹 notifications 옛 행 읽기용으로만 남긴다 — 코드는 쓰지 않는다
+NotificationKind = Literal["문서평가", "산출물확인", "결과물", "실패", "표현검수"]
 FailureScope = Literal["실행", "재작성"]

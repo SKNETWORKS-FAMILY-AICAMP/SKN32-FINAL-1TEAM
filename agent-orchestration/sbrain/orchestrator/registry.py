@@ -131,7 +131,7 @@ class TaskSpec:
     outputs: dict[str, str]                      # 출력 필드 → 산출물 키
     primary_output: str                          # AttemptRef.resultRef가 가리킬 출력 필드
     order: int | None = None                     # 시트 2 F열 실행 순서 (합치기 · R-8은 None)
-    counted: bool = False                        # 기획서 4-4 고정 Task 14개에 계상되는지
+    counted: bool = False                        # 기획서 4-4 고정 Task에 계상되는지 (검수 T-P1 · T-P2는 흐름 밖이라 빼서 지금 12개)
     uses_llm: bool = False
     temperature: TempRule | None = None
     failure: FailurePolicy = field(default_factory=FailurePolicy)

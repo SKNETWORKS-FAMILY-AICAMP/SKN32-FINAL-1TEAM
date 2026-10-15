@@ -20,11 +20,12 @@ def test_web_full_flow_runs_all_steps_in_order(clock):
     assert (run.state.step, run.state.progress) == ("결과물", "완료")
     assert executed(app, rid) == [
         "T-C1", "T-C2", "G-01", "T-C3", "T-S1", "T-S2", "T-W1", "T-W2", "T-W3", "M-1", "T-V1", "G-02a",
-        "T-B1", "T-B2", "G-04", "M-3", "T-V2", "G-02b", "G-03", "T-P1", "T-P2", "M-4", "T-C4"]
+        "T-B1", "T-B2", "G-04", "M-3", "T-V2", "G-02b", "T-C4"]   # 검수 · R-8은 흐름 밖
     counted = {s.task_id for s in build_registry().specs() if s.counted}
-    assert len(counted & set(executed(app, rid))) == 14
-    kinds = [n.kind for n in app.store.notifications(rid)]
-    assert kinds == ["문서평가", "산출물확인", "표현검수"]
+    assert len(counted) == 12 and counted <= set(executed(app, rid))   # 계상 Task 12개 모두 실행 (T-P1 · T-P2 계상 안 함)
+    assert not counted & {"T-P1", "T-P2"}
+    kinds = [(n.kind, n.target_step) for n in app.store.notifications(rid)]
+    assert kinds == [("문서평가", 6), ("산출물확인", 8), ("결과물", 11)]
 
 
 def test_onepage_skips_tb1_and_wraps_infographic(clock):
@@ -34,7 +35,7 @@ def test_onepage_skips_tb1_and_wraps_infographic(clock):
     ex = executed(app, rid)
     assert "T-B1" not in ex and "M-2" in ex
     counted = {s.task_id for s in build_registry().specs() if s.counted}
-    assert len(counted & set(ex)) == 13
+    assert counted & set(ex) == counted - {"T-B1"} and len(counted - {"T-B1"}) == 11   # T-B1 없음
     ctx = app.engine.open_context(app.store.load_run(rid))
     proto = ctx.get("prototype")
     assert proto.kind == "svg-onepage"

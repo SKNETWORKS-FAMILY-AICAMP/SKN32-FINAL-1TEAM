@@ -19,6 +19,8 @@
 통로가 없거나, 호출이 실패하거나(재시도를 다 쓴 ToolCallExhausted 포함), 칸 수가 맞지 않으면 None을
 돌려주고 지면은 기본 아이콘으로 나간다. 이미지 실패를 받아 계속하는 것은 조율이 T-B2에만 허용한 예외다 —
 T-B2의 글 호출(tools.llm) 실패는 받지 않고 올려 보낸다(content.py는 예외를 잡지 않는다).
+다만 결제 · 한도 코드로 끝난 소진(ToolCallExhausted.billing_limit, 조율 2026-10-13)은 None 대신 그대로 올린다 —
+기본 아이콘으로 '완료'되지 않고 조율이 재개 대기로 보낸다.
 PNG 읽기 · 쓰기는 표준 라이브러리(zlib)만 쓴다.
 """
 from __future__ import annotations
@@ -344,7 +346,9 @@ def generate(category: str, data: dict, tools) -> dict | None:
                 # 빈 타일은 싣지 않는다 — 그 자리는 기본 아이콘으로 나간다.
                 found = {name: cell for name, cell in zip(names, cells) if not is_blank(rows, cell)}
                 return {"png": base64.b64encode(png).decode("ascii"), "cells": found}
-    except Exception:  # noqa: BLE001 — 그림은 선택 재료다. 실패해도 지면은 나가야 한다.
+    except Exception as exc:  # noqa: BLE001 — 그림은 선택 재료다. 실패해도 지면은 나가야 한다.
+        if getattr(exc, "billing_limit", False):   # 결제 · 한도 소진만은 기본 아이콘 대신 올린다(재개 대기)
+            raise
         return None
     return None
 

@@ -5,9 +5,11 @@
 - bv_reply(request): 목적에 맞는 응답 — 'T-B1 HTML 생성' 코드블록, 'T-B2 인포그래픽 정보 추출' JSON, '사업 분야 판정(색)'
   분야 JSON(outdoor → green), '계획서 대조 요소: …'
   요소 JSON, '계획서 대조: …' 요소 판정 · 세 단계 판정 JSON.
-- BvProvider: 목적(또는 목적 머리말)별 스크립트('timeout' · 'rate_limit' · 'bad_request' · 'boom' · 글자)와 받은 요청 · 최대 동시 수.
+- BvProvider: 목적(또는 목적 머리말)별 스크립트('timeout' · 'rate_limit' · 'bad_request' · 'quota' · 'overloaded' · 'boom' ·
+  글자)와 받은 요청 · 최대 동시 수. 실패 값은 스텁 가짜 호출처와 같은 raise_fake_failure.
 - EchoImage: 가짜 이미지 호출처 — 'echo'(받은 뼈대 그림을 그대로 → 칸 수가 맞다) · 'tiny'(1×1 → 칸 수 불일치) ·
-  'garbage'(PNG 아님 → 그림 해석 오류) · 'timeout' · 'rate_limit'.
+  'garbage'(PNG 아님 → 그림 해석 오류) · 'timeout' · 'rate_limit' · 'quota'(429 + insufficient_quota) ·
+  'overloaded'(503 + server_is_overloaded).
 - bv_tools: 그 Task의 기본 설정(이미지 설정 포함)을 입힌 tools와 메모리 파일 저장소(실행 건 '실행').
 - respond_bv(llm): FakeLLM(task_id별 응답)에 세 Task의 목적별 응답을 단다.
 """
@@ -17,9 +19,8 @@ import json
 import threading
 from typing import Any, Callable
 
-from sbrain.agents.stubs import FakeImage
+from sbrain.agents.stubs import FakeImage, raise_fake_failure
 from sbrain.models.clock import utc_now
-from sbrain.orchestrator.errors import ProviderError
 from sbrain.orchestrator.files import MemoryFileStore
 from sbrain.orchestrator.settings import Settings
 from sbrain.orchestrator.tools import CallSink, ImageResponse, LLMRequest, Tools, ToolsConfig, ToolsContext
@@ -82,7 +83,8 @@ def bv_reply(request: LLMRequest, html: str = HTML, content: dict | None = None,
 
 class BvProvider:
     """목적별로 답하는 가짜 호출처. scripts[목적] · scripts[(목적, 항목 키)] · prefix[목적 머리말]의 결과를 차례로 쓴다 —
-    'timeout' · 'rate_limit'(429) · 'bad_request'(400) · 'boom'(RuntimeError — 재시도 대상이 아닌 오류) · 그 밖의 글자는 응답.
+    'timeout' · 'rate_limit'(429) · 'bad_request'(400) · 'quota'(429 + insufficient_quota — 결제 · 한도) ·
+    'overloaded'(503 + 코드) · 'boom'(RuntimeError — 재시도 대상이 아닌 오류) · 그 밖의 글자는 응답.
     hold가 있으면 응답 전에 그만큼 기다린다(동시 수 재기). 받은 요청과 최대 동시 수를 모은다."""
 
     def __init__(self, html: str = HTML, content: dict | None = None, hold: float = 0.0) -> None:
@@ -109,12 +111,8 @@ class BvProvider:
         try:
             if self.hold:
                 self._wait.wait(self.hold)
-            if outcome == "timeout":
-                raise TimeoutError()
-            if outcome == "rate_limit":
-                raise ProviderError("429", status=429)
-            if outcome == "bad_request":
-                raise ProviderError("400", status=400)
+            if outcome is not None:
+                raise_fake_failure(outcome)   # timeout · rate_limit · bad_request · quota · overloaded 등
             if outcome == "boom":
                 raise RuntimeError("호출처 버그")
             if outcome is not None:
@@ -129,7 +127,8 @@ class BvProvider:
 
 
 class EchoImage:
-    """가짜 이미지 호출처. outcomes를 차례로 쓰고 다 쓰면 default — echo · tiny · garbage · timeout · rate_limit."""
+    """가짜 이미지 호출처. outcomes를 차례로 쓰고 다 쓰면 default — echo · tiny · garbage · timeout · rate_limit · quota ·
+    overloaded."""
 
     def __init__(self, default: str = "echo", outcomes: list[str] | None = None) -> None:
         self.default, self.outcomes = default, list(outcomes or [])
@@ -140,10 +139,7 @@ class EchoImage:
         with self.lock:
             self.requests.append(request)
             outcome = self.outcomes.pop(0) if self.outcomes else self.default
-        if outcome == "timeout":
-            raise TimeoutError()
-        if outcome == "rate_limit":
-            raise ProviderError("429", status=429)
+        raise_fake_failure(outcome)   # timeout · rate_limit · quota · overloaded 등
         if outcome == "tiny":
             return ImageResponse(FakeImage.PNG)
         if outcome == "garbage":

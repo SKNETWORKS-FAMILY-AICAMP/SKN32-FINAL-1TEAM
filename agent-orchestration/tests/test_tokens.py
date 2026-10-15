@@ -4,11 +4,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from conftest import make_app, pre_input, to_screen9, tok
+from conftest import make_app, pre_input, tok
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from sbrain.agents.stubs import StubScenario
 from sbrain.models.clock import utc_now
 from sbrain.orchestrator.errors import FormatError, ToolCallExhausted
 from sbrain.orchestrator.openai_provider import OpenAIProvider
@@ -141,16 +140,3 @@ def test_execution_total_and_admin_views(clock):
             calls = conn.execute(text("SELECT input_tokens FROM orch_call_logs WHERE execution_id = :e"),
                                  {"e": rec.execution_id}).scalar()
         assert tuple(cols) == (200, 80, 60, 20) and calls == 200
-
-
-def test_proofread_sentences_are_summed(clock):
-    app = make_app(clock, StubScenario(tp1_targets=4))
-    app.llm.usage["T-P2"] = V
-    rid = to_screen9(app)
-    app.orchestrator.decide(rid, 9, "진행", confirmed=True)
-    app.orchestrator.advance(rid)
-    tp2 = next(r for r in app.store.executions(rid) if r.task_id == "T-P2")
-    calls = [c for c in app.store.call_logs(rid) if c.task_id == "T-P2"]
-    assert len({c.item_key for c in calls}) == 4                                # 문장별 호출 (병렬)
-    assert tp2.input_tokens == sum(c.input_tokens for c in calls) == 7 * sum(len(c.tries) for c in calls)
-    assert tp2.cached_input_tokens is None

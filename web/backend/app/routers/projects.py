@@ -454,9 +454,10 @@ def start_review(
     current_user: User = Depends(get_current_user),
     gateway: OrchGateway = Depends(require_gateway),
 ):
-    """종합 평가 → 표현 검수(화면 9 → 10). stage='reviewing'으로 진행되고 끝나면 stage='done'.
-    기준 점수에 못 미친 채로 진행하면 검수 뒤에는 되돌릴 수 없어 409 + {confirmation_required, reason, items}로 확인을 받는다 —
-    사용자가 확인하면 body {"confirmed": true}로 다시 부른다. [SB-243 신규 — 엔드포인트 이름은 프론트와 합의해 확정(2026-10-06).]"""
+    """종합 평가 → 결과 통합 → 결과물(화면 9 → 11). 결과 통합이 도는 동안 stage='done' · match_status='in_progress'이고 끝나면
+    match_status='completed'이다. [SB-398] 검수가 흐름에서 빠져(오케스트레이터 2026-10-15) 화면 10을 거치지 않는다 — 옛 실행 건만 stage='reviewing'이다.
+    기준 점수에 못 미친 채로 진행하면 되돌릴 수 없어 409 + {confirmation_required, reason, items}로 확인을 받는다(reason은 '결과 통합 진입 확인') —
+    사용자가 확인하면 body {"confirmed": true}로 다시 부른다. [SB-243 신규 — 엔드포인트 이름은 프론트와 합의해 확정(2026-10-06), 검수 제거 뒤에도 그대로.]"""
     _get_owned_project(db, project_id, current_user)
     confirmed = body.confirmed if body is not None else False
 
@@ -486,23 +487,7 @@ def get_pipeline_result(
             '이 프로젝트엔 아직 계획서가 없습니다 — POST /projects/{id}/plan/start 로 먼저 만들어야 합니다',
         )
     policy = db.query(VerificationPolicy).order_by(VerificationPolicy.policy_id.asc()).first()
-    return mapping.result_out(project_id, outputs, policy, _proofread_originals(gateway, project_id, outputs))
-
-
-def _proofread_originals(gateway: OrchGateway, project_id: int, outputs) -> dict[str, str] | None:
-    """검수 기록이 있을 때 화면 10에서 문장별 검수 전 원문을 읽는다(sentenceId → before) — [SB-297].
-
-    표현 검수가 끝나면 현재 계획서(planDoc)의 문장이 검수 결과 문장으로 바뀌므로, 검수 전 원문은 계획서가 아니라 화면 10에서 읽는다.
-    화면 10은 결과물 · 완료에서만 열린다 — 아직 열 수 없으면(검수 중 등) 계획서가 바뀌기 전이라 None(계획서 문장을 쓴다)."""
-    if not outputs.sentence_results:
-        return None
-    try:
-        screen = gateway.screen(project_id, 10)
-    except OrchError as exc:
-        if exc.code in ('SCREEN_NOT_READY', 'INVALID_STATE'):
-            return None
-        raise
-    return {s.sentence_id: s.before for s in screen.sentences}
+    return mapping.result_out(project_id, outputs, policy)
 
 
 def _plan_texts(gateway: OrchGateway, project_id: int) -> tuple[PlanTexts, list]:

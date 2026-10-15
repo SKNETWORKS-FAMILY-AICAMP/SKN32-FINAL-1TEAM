@@ -15,8 +15,8 @@ STEP_TO_STAGE: dict[str, str | None] = {
     '프로토타입제작': ps.STAGE_PROTOTYPE_BUILDING,
     '산출물확인': ps.STAGE_ARTIFACT_REVIEW,
     '종합평가': ps.STAGE_FINAL_REVIEW_PENDING,
-    '표현검수': ps.STAGE_REVIEWING,
-    '결과물': ps.STAGE_DONE,
+    '표현검수': ps.STAGE_REVIEWING,  # [SB-398] 검수 제거로 새 실행 건에는 없다 — 옛 실행 건 호환
+    '결과물': ps.STAGE_DONE,  # 결과 통합이 도는 동안(진행 중 · 실패)에도 done이다 — 화면은 match_status로 가른다
 }
 
 # 3.2 진행 상태 — progress ↔ 웹 match_status (화면 문구는 ps.status_to_display가 만든다)
@@ -34,8 +34,9 @@ CATEGORY_TO_WEB: dict[str, str] = {'원페이지': 'onepage', '웹개발': 'webd
 
 CLOSED_NOTICE_CODE = 'E-RUN-CLOSED'
 
-# progress_percent를 내려줄 단계. 한 단계 안에서도 오래 걸리는 구간만(웹 기존 규칙 + 표현 검수). 잠정(명세 12절).
-_PERCENT_STEPS = frozenset({'계획서작성', '프로토타입제작', '표현검수'})
+# progress_percent를 내려줄 단계. 한 단계 안에서도 오래 걸리는 구간만(웹 기존 규칙 + 결과 통합). 잠정(명세 12절).
+# [SB-398] 검수가 흐름에서 빠져 결과 통합이 '결과물' 단계에서 돈다 — '표현검수'는 옛 실행 건 호환으로 남겨 둔다.
+_PERCENT_STEPS = frozenset({'계획서작성', '프로토타입제작', '표현검수', '결과물'})
 _RUNNING = frozenset({'실행', '재개대기'})
 
 
@@ -546,9 +547,9 @@ def _violation_note(token_check) -> str | None:
 def proofread_logs_out(outputs, originals: dict[str, str] | None = None) -> list[schemas.ProofreadLogOut]:
     """문장별 시도 기록(모든 계정) → 시도마다 한 줄.
 
-    검수 전 원문(originals: sentenceId → 문장)은 화면 10이 주는 값이다 — 표현 검수가 끝나면 현재 계획서(planDoc)의 문장이
-    채택된 검수 결과 문장으로 바뀌므로 계획서에서 읽으면 "검수 전"이 아니게 된다(SB-297). 화면 10을 읽을 수 없을 때(originals 없음)는
-    검수가 아직 계획서를 바꾸지 않은 때이므로 현재 계획서의 같은 sentenceId 문장을 쓴다."""
+    [SB-397] 검수가 서비스 흐름에서 빠져(오케스트레이터 2026-10-15) 새 실행 건에는 이 기록이 없다 — 검수 기록이 남은 옛 실행 건만 이 값이 나온다.
+    화면 10(검수 전후)이 없어져 검수 전 원문(originals: sentenceId → 문장)을 읽을 곳이 없으므로, 보통은 넘기지 않고 현재 계획서의 같은
+    sentenceId 문장을 원문으로 쓴다(옛 실행 건은 검수 결과 문장일 수 있다)."""
     fallback = {}
     if outputs.plan_doc is not None:
         fallback = {s.sentence_id: s.text for sec in outputs.plan_doc.sections for s in sec.sentences}
@@ -603,7 +604,7 @@ def deliverable_out(outputs) -> schemas.DeliverableOut | None:
 # ── GET /result ───────────────────────────────────────────────────────────────────────
 def result_out(project_id: int, outputs, policy, originals: dict[str, str] | None = None) -> schemas.DemoGenerateResponse:
     """outputs(project_id) → 결과 응답. 계획서(planDoc)가 아직 없으면 호출한 쪽이 404로 답한다(plan_doc 확인 뒤 부른다).
-    originals: 검수 전 원문(화면 10의 sentences[].before) — 검수 기록이 있을 때 호출한 쪽이 읽어 넘긴다."""
+    originals: 검수 전 원문 — 화면 10이 없어져 지금은 넘기는 곳이 없다(None)."""
     plan_doc = outputs.plan_doc
     report = outputs.document_score_report
     plan = schemas.BusinessPlanOut(

@@ -45,10 +45,10 @@ def test_fake_gate_screen_fields_match_real():
     assert set(vars(orch_fakes.make_gate_screen())) == set(reads.GateScreen.model_fields)
 
 
-def test_fake_proofread_screen_fields_match_real():
+def test_proofread_screen_was_removed_from_the_real_orchestrator():
+    """검수 제거(오케스트레이터 2026-10-15) — 화면 10(ProofreadScreen · SentenceChange)이 없어졌다. 다시 생기면 웹이 화면 10을 다시 읽어야 하니 이 테스트가 알려 준다."""
     reads = pytest.importorskip('sbrain.flow.reads')
-    assert set(vars(orch_fakes.make_proofread_screen())) == set(reads.ProofreadScreen.model_fields)
-    assert set(vars(orch_fakes.make_sentence_change('s1', 'x'))) == set(reads.SentenceChange.model_fields)
+    assert not hasattr(reads, 'ProofreadScreen') and not hasattr(reads, 'SentenceChange')
 
 
 def test_fake_gate_and_score_view_fields_match_real():

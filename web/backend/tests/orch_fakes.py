@@ -187,22 +187,6 @@ def make_sentence(i: int, text: str, paragraph_no: int = 1, is_title: bool = Fal
     return NS(sentence_id=f's{i}', text=text, is_title=is_title, paragraph_no=paragraph_no)
 
 
-def make_sentence_change(sentence_id: str, before: str, after: str | None = None, adopted: bool = False, **overrides: Any) -> NS:
-    """화면 10 문장 하나의 전후(SentenceChange)."""
-    base = dict(sentence_id=sentence_id, before=before, after=after, adopted=adopted, kept_reason=None, attempts=[])
-    base.update(overrides)
-    return NS(**base)
-
-
-def make_proofread_screen(sentences: list | None = None, **overrides: Any) -> NS:
-    """화면 10(ProofreadScreen)의 필드."""
-    base = dict(
-        screen=10, project_id=None, run_id='r1', step='결과물', progress='완료', notices=[], format_findings=[],
-        sentences=list(sentences or []), proofread_log=None)
-    base.update(overrides)
-    return NS(**base)
-
-
 def make_section(code: str, title: str, *texts: str, tag: str | None = None, content_type: str = 'section') -> NS:
     """texts마다 문장 하나, 문단 번호는 인자 순서대로 1부터(문단 사이는 줄바꿈으로 이어진다).
 
@@ -361,8 +345,7 @@ def make_admin_summary(**overrides: Any) -> NS:
     base = dict(
         status_counts={}, doc_avg=None, doc_count=0, total_avg=None, total_count=0, pass_count=0, pass_rate=None,
         pass_threshold=80.0, reworked_runs=0, runs_with_executions=0, rework_rate=None, score_buckets=[],
-        layer_changes=[], triggers=[], total_tokens=0, total_image_tokens=0, proofread_attempts=0, proofread_rejected=0,
-        proofread_reject_rate=None)
+        layer_changes=[], triggers=[], total_tokens=0, total_image_tokens=0)
     base.update(overrides)
     return NS(**base)
 

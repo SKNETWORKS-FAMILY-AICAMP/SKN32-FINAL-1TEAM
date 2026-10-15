@@ -4,7 +4,8 @@
   웹 서버와 워커는 별도 프로세스이고(웹팀 합의 2026-09-30), 진행 · 재개는 워커가 부른다.
 - 사전 단계 시작은 두 조각이다 (확장).
   request_start: 웹 요청 안에서 바로 끝난다 — 입력 확인 · 필수 항목 · 프로필 · 동시 실행 확인 후 '대기' 요청을 넣는다.
-  run_start_request: 워커가 부른다 — 사전 단계(R-8? → T-C1 → T-C2)를 돌고 실행 건 생성과 요청 '완료'를 한 번에 저장한다.
+  run_start_request: 워커가 부른다 — 사전 단계(T-C1 → T-C2)를 돌고 실행 건 생성과 요청 '완료'를 한 번에 저장한다.
+  첨부가 있어도 R-8(첨부 문서 텍스트 추출)은 넣지 않는다 — 흐름 밖.
   start_run · start_run_for_project는 두 조각을 차례로 부르는 동기 경로다(테스트 · 시연용).
 - 사용자 명령은 'decision' 산출물로 남겨 추적 기록에서 참조한다.
 - 재작성은 묶음 이름으로 요청받는다(request_rework_for_project, 확장). 같은 화면에서 모으는 시간(잠정 2초) 안의
@@ -44,7 +45,7 @@ from .retention import gather_run_stats
 # 묶음 이름 → 층은 부를 때마다 그때의 표 · 스위치로 읽는다(bundle_layer — 새 묶음 스위치를 켜거나 끄면 접수가 바로 따라간다)
 from .rework_map import BUNDLE_EXECUTABLE, LAYER_SCREENS, TASK_BUNDLE, bundle_layer
 from .sbrain_flow import (
-    CANDIDATE_LIMIT, MORE_BEFORE_POINTERS, REVIEW, SCREEN_STEP, SELECTION_STEPS, STEP_LABEL, STEP_SCREEN, WRITE,
+    CANDIDATE_LIMIT, MORE_BEFORE_POINTERS, RESULT, SCREEN_STEP, SELECTION_STEPS, STEP_LABEL, STEP_SCREEN, WRITE,
     SBrainFlow, bundle_orders, candidate_lists, proto_queue, rework_queue,
 )
 
@@ -176,7 +177,7 @@ class ReworkAccepted:
 
 @dataclass
 class ConfirmationNeeded:
-    """미달 상태로 검수에 들어가거나 실행을 중단할 때 확인받을 내용."""
+    """미달 상태로 결과 통합에 들어가거나 실행을 중단할 때 확인받을 내용."""
     reason: str
     items: dict[str, Any]
 
@@ -270,7 +271,7 @@ class SBrainOrchestrator:
 
     def run_start_request(self, request_id: str, owner: str | None = None,
                           lease_sec: float | None = None) -> StartStatus:
-        """워커가 부른다. 요청을 점유하고 사전 단계(R-8? → T-C1 → T-C2)를 돈다.
+        """워커가 부른다. 요청을 점유하고 사전 단계(T-C1 → T-C2)를 돈다 — 첨부가 있어도 R-8은 넣지 않는다.
 
         후보가 1건 이상이면 실행 건 생성과 요청 '완료'(+run_id)를 한 트랜잭션으로 저장한다.
         아니면 요청 '실패'와 코드(E-C1-TIMEOUT · X-C2-FAIL · E-C2-STALE · E-C2-NOMATCH · E-RUN-CONCURRENT).
@@ -298,7 +299,7 @@ class SBrainOrchestrator:
                   updated_at=now, created_at=now, project_id=req.project_id)
         ctx = self.engine.open_context(run, provisional=True)
         ctx.put("formInput", form, producer="user:start")
-        run.queue = (["R-8"] if form.attachments else []) + ["T-C1", "T-C2"]
+        run.queue = ["T-C1", "T-C2"]
         run.segment, run.segment_total = "PRE", len(run.queue)
         last = self.engine.drain(ctx)
         code = None
@@ -477,7 +478,7 @@ class SBrainOrchestrator:
             report = ctx.get("scoreReport.overall")
             if ctx.get("G-02b.nextAction") != "진행가능" and not confirmed:
                 # 미달 상태로 진행 — 현재 점수 · 남는 미달 항목 · 되돌릴 수 없음을 확인받는다 (4-7)
-                result.append(ConfirmationNeeded("검수 진입 확인", {
+                result.append(ConfirmationNeeded("결과 통합 진입 확인", {
                     "현재 점수": report.total, "기준": report.threshold,
                     "남는 미달 항목": [o.reason for o in ctx.get("G-02b.reworkOrders")],
                     "되돌릴 수 없음": "진행 후에는 다시 만들 수 없습니다",
@@ -486,7 +487,8 @@ class SBrainOrchestrator:
             self._decide(ctx, {"command": "decide", "screen": 9, "action": "진행", "confirmed": confirmed})
             run.check_refs = {}
             run.current_phase = "review"
-            self._enqueue(ctx, list(REVIEW), "REVIEW", "표현검수")
+            # 결과물 구간 — 결과 통합 하나, 도는 동안 (결과물, 실행) (잠정 — 기준 문서의 검수 단계가 빠져 정함)
+            self._enqueue(ctx, list(RESULT), "RESULT", "결과물")
 
     # ── 재작성 요청 (묶음 이름, 확장 — spec 3.2) ──────────
     def request_rework_for_project(self, project_id: int | str, bundle: str) -> ReworkAccepted:

@@ -12,9 +12,24 @@ from pydantic import Field, model_validator
 from ..models.base import SBModel, ext
 
 
+def _default_wait_caps() -> dict[str, float]:
+    # 설정 키별 한 호출의 재시도 대기 합 상한 (잠정) — T-C1은 사용자가 화면 앞에서 기다리고 재개하지 않는 단계라 45초.
+    # 엔진은 설정 키로 찾기만 한다(제한 시간 task_timeouts와 같은 방식) — Task ID는 여기에만 둔다
+    return {"T-C1": 45.0}
+
+
 class RetrySettings(SBModel):
     retry_count: int = 5                 # 재시도 횟수
     retry_interval_sec: float = 2.0      # 재시도 간격 (잠정)
+    # 일시 오류의 늘리는 간격 · 무작위 지연 · Retry-After · 대기 합 상한 (확장 · 잠정). 이 칸이 없는 옛 설정 사본은 기본값으로 읽는다.
+    # n번째 재시도 전 대기 = retry_interval_sec × backoff_multiplier^(n−1) × (1 + 무작위[0, jitter_ratio]) —
+    # 형식 오류 · 파일 창구 · 늘리지 않게 표시한 검색 호출은 retry_interval_sec 고정
+    backoff_multiplier: float = ext(2.0, note="늘리는 간격의 배수 (잠정)")
+    jitter_ratio: float = ext(0.25, note="무작위 지연 비율 — 계산 값 × [0, 비율]을 더함 (잠정)")
+    retry_after_cap_sec: float = ext(60.0, note="Retry-After를 따를 때의 대기 상한 (잠정)")
+    wait_cap_sec: float = ext(90.0, note="한 호출의 재시도 대기 합 기본 상한 — 넘게 되면 남은 재시도 없이 소진 (잠정)")
+    wait_cap_by_key: dict[str, float] = ext(
+        default_factory=_default_wait_caps, note="설정 키별 대기 합 상한 — 없는 키는 waitCapSec (잠정)")
 
 
 class ResumeSettings(SBModel):
@@ -105,7 +120,7 @@ def _default_tasks() -> dict[str, TaskModelSetting]:
     # 옛 Agent별 값을 그 Agent의 Task에 옮겼다. 조율은 OpenAI, 검수는 자체 GPU 서버의 파인튜닝 모델(기획서 5-2 · 5-7).
     # 조율 모델(2026-09-30): gpt-6-luna, 추론 강도 low. 추론 모델이라 온도를 보내지 않는다.
     # T-C1만 추론 강도 medium. T-C1 안의 모든 호출
-    # (분류 · 사양 · 참조 자료 정리)이 이 항목을 쓴다. T-C3 · 지시문 다시 쓰기는 low 그대로.
+    # (분류 · 사양)이 이 항목을 쓴다. T-C3 · 지시문 다시 쓰기는 low 그대로.
     # T-B1 · T-B2 · T-V2는 구현 · 검증-2 담당 요청: gpt-6-luna, 추론 강도 기본값(보내지 않음), 온도 보내지 않음.
     # T-B2 이미지: openai · gpt-image-2.5-flare · medium · 1024x1536 (담당 요청).
     # T-S1 · T-S2 · T-W1 · T-W2 · T-V1은 전략 · 작성 · 검증-1 담당자 execution_contract.json의 apiModel(함수별 모델 —
@@ -192,6 +207,16 @@ PLAN_TABLES_REQUIRED: bool = False
 # 기준 문서가 값을 정하지 않아 임시로 둔 항목 (문서 · 화면에 '잠정'으로 표시)
 PROVISIONAL: dict[str, str] = {
     "retry.retryIntervalSec": "재시도 간격 — 구현하면서 정함",
+    # 호출 실패 처리 (orchestrator/tools.py) — 기준 문서는 '오류 종류와 관계없이 재시도 횟수까지 같은 간격'. 숫자는 잠정
+    "retry.backoffMultiplier": "늘리는 간격의 배수 2 (잠정) — 일시 오류(응답 코드 일시 · 시간 초과 · 연결 오류)의 n번째 재시도 "
+                               "전 대기 = 재시도 간격 × 배수^(n−1) → 2 · 4 · 8 · 16 · 32초. 형식 오류 · 파일 창구 실패 · "
+                               "늘리지 않게 표시한 검색 호출(search(backoff=False))은 재시도 간격 고정",
+    "retry.jitterRatio": "무작위 지연 비율 0.25 (잠정) — 늘리는 간격에 계산 값 × [0, 0.25]를 더한다",
+    "retry.retryAfterCapSec": "Retry-After 대기 상한 60초 (잠정) — 응답이 알려 준 대기와 계산 간격 중 큰 쪽, 최대 60초",
+    "retry.waitCapSec": "한 호출의 재시도 대기 합 상한 90초 (잠정) — 다음 대기를 더하면 넘게 되면 남은 재시도 없이 소진",
+    "retry.waitCapByKey": "설정 키별 대기 합 상한 (잠정) — T-C1 45초(화면 앞에서 기다리고 재개하지 않는 단계), 없는 키는 "
+                          "waitCapSec. 결제 · 한도 코드(errors.BILLING_LIMIT_CODES)와 입력 · 운영 응답 코드 오류는 재시도하지 "
+                          "않는다(한도는 오류 종류 '일시' — 재개 대기)",
     "taskTimeouts": "제한 시간(Task별) — 구현하면서 정함",
     "proofread.concurrency": "검수 동시 처리 수 — 구현하면서 정함",
     "proofread.failureRatioThreshold": "검수 실패 비율 기준 — 구현하면서 정함",
@@ -229,8 +254,10 @@ PROVISIONAL: dict[str, str] = {
     "event.이미지대체": "T-B2가 맞춤 아이콘판을 쓰지 못하고 기본 아이콘으로 대신한 세 경우(이미지 호출 실패 · 칸 수 불일치 · "
                        "그림 해석 오류) — T-B2 실행 기록마다 하나(최종 실패인 이미지 호출이 있거나 출력 iconFallback이 "
                        "참). 설명은 이미지 호출 실패면 'T-B2 이미지 호출 실패 — 기본 아이콘으로 계속', 그 밖(칸 수 불일치 · "
-                       "그림 해석 오류)이면 둘째 문구 'T-B2 맞춤 아이콘 사용 불가 — 기본 아이콘으로 계속'. 사용자 화면에는 "
-                       "알리지 않는다 (spec 4.3)",
+                       "그림 해석 오류)이면 둘째 문구 'T-B2 맞춤 아이콘 사용 불가 — 기본 아이콘으로 계속'. 이미지 호출 실패의 "
+                       "마지막 시도에 오류 코드가 있으면 첫째 문구 끝에 ' (code=<코드>)'를 붙인다. 결제 · 한도 코드로 끝난 "
+                       "이미지 호출은 기본 아이콘으로 대신하지 않고 다시 올려 재개 대기로 가므로 이 사건이 없다(결정 0032). "
+                       "사용자 화면에는 알리지 않는다 (spec 4.3)",
     # 구현 · 검증-2 끼우기 · 산출물층 환산 (spec 6) — 기준 문서에 없음
     "g04.templateText": "G-04 안내 문서(README.md) 템플릿 문구와 빈 슬롯 기본 문구(아이템명 · 공고명이 비었을 때, 진입 파일이 "
                         "없을 때 등) (agents/supervisor/, spec 4.8)",
@@ -254,6 +281,9 @@ PROVISIONAL: dict[str, str] = {
                        "있습니다.'(기준 문서 예시). 아니면 그 줄 · 총점 미달이면 '총점 {표시 점수}점으로 기준 점수 {기준}점에 "
                        "미달합니다.' · 층별 머리줄 '계획서에서 보완이 필요한 항목:' · '프로토타입에서 보완이 필요한 항목:' 아래 "
                        "'- 이름 (점수/배점점): 사유' 줄 · 끝 줄 '제출 전 작성자 본인의 검토가 필요합니다.'",
+    "tc4.runState": "결과 통합(T-C4) 중 단계 '결과물 · 실행', 결과 통합이 실패하면 '결과물 · 실패'(웹 "
+                    "generation_failure_alerts.stage도 '결과물') — 기준 문서의 검수 단계가 빠져 정함(결정 0033, "
+                    "flow/service.py · flow/sbrain_flow.py 구간 RESULT)",
     # 공고 연결 (공고 선택 · 자격 확인 G-01) — 기준 문서에 없음
     "taskTimeouts.G-01": "G-01 제한 시간 30초 — 공고 서버의 공고 상세 · 자격 판정 호출, T-C2와 같음",
     "announcement.bonusEnabled": "가산점 사용 스위치 BONUS_ENABLED 기본 꺼짐 — 공고팀 가산점은 시험 단계(2026-10-06 답변: "
@@ -301,13 +331,19 @@ PROVISIONAL: dict[str, str] = {
                                "문장 나누기(줄 · 문장 끝, sentenceId s-<항목>-<순번>) (agents/partner_sw/outputs.py, spec 4.7)",
     "partnerSw.scoreDigits": "항목 점수 소수 둘째 자리 반올림, 문서층 총점 = 반올림한 항목 점수의 합 "
                              "(agents/partner_sw/verify.py SCORE_DIGITS, spec 4.9)",
+    "intake.startupItemName": "창업아이템명(startupItemName, 결정 0031) = 아이디어 설명(projects.description) 전체의 앞뒤 공백을 "
+                              "지운 뒤 첫 줄(줄바꿈 앞까지)을 다시 앞뒤 공백을 지우고 60자까지 자른 값, 비면 None — 웹이 일반현황 · "
+                              "개요 표에 넣는 값(첫 줄 60자)과 맞추려는 규칙. 설명이 빈 줄로 시작하면 첫 글자 있는 줄을 쓴다(웹 규칙 "
+                              "확인 전) (intake/mapping.py startup_item_name)",
+    "partnerSw.generalStatusFacts": "일반현황 항목(예비창업 2.1.1 · 초기창업 3.1.1)의 F16 · F19 근거 원본 사실에만 '창업아이템명' "
+                                    "(없으면 칸 없음) · '팀구성현황'(팀원마다 직위 = 역할 또는 '팀원', 담당업무 = 역할 또는 '-', "
+                                    "보유역량 = 경력 또는 '-' — 웹 표 모양, 이름 없음. 팀원이 없으면 '팀원 없음(대표자 단독)', 옛 "
+                                    "실행 건(팀원 표 행 None)이면 칸 없음)을 덧붙인다. 사용자 목표 고객이 없으면 원본 사실 · T-S2의 "
+                                    "목표 고객은 '확인 필요' (agents/partner_sw/inputs.py, 결정 0031)",
     "partnerSw.applicantLines": "teamRoleCareers에서 '역할: 경력' 꼴이 아닌 줄은 역할로 보고, 채용 · 장비 · 협력 계획은 한 줄 "
                                 "목록으로 담당자 입력에 싣는다 (agents/partner_sw/inputs.py, spec 4.4)",
     "verify1.redoDetails": "검증-1 재수행 T-V1의 unit은 종류가 섞이면 '섹션', 판정 후보의 사유와 보완 지시는 같은 글, "
                            "재작성 사이클 T-V1 피드백 종류 '재채점' (flow/sbrain_flow.py · agents/stubs.py, spec 4.10 · 4.12)",
-    "taskPlan.referenceSlots": "참조 조각 대응표(Task → 받는 슬롯) — T-S1 문제 · 필요성 · 목표 고객 · 핵심 기능, T-S2 시장 규모 · "
-                               "목표 고객 · 경쟁 · 차별성, T-W1 7개 전부, T-W2 시장 규모 · 수익 모델, T-W3 수익 모델 · 추진 계획, "
-                               "T-B1 핵심 기능, T-B2 문제 · 필요성 · 핵심 기능 · 시장 규모 · 수익 모델 · 추진 계획",
     # 공고 서버 연결 (agents/notice) — 실행 건 설정값이 아니라 워커 프로세스 값 · 고정 문장이다
     "announcement.matchReason": "추천 이유 문장 틀 (spec 4.1.4) — 공고 서버의 band(매우 적합 · 적합 · 참고, 없으면 대체 경로 "
                                 "'마감임박순'일 때 '마감이 가까운 신청 가능 공고입니다')와 지역(전국 · 희망 지역 일치 · 불일치)으로 "
@@ -324,8 +360,9 @@ PROVISIONAL: dict[str, str] = {
     # 워커 운영 로그 (orchestrator/runlog.py · sbrain/worker_log.py) — 워커 프로세스 값이다
     "workerLog.actions": "운영 로그 동작 · 키 이름 — 단계시작(run · project · step · exec · trigger · resumed · attempt) · "
                          "단계끝(run · project · step · exec · status · sec · model · tokens · imageTokens · errorKind · "
-                         "error) · 대기(run · project · point) · 실행끝(run · project · status) · 재개예약(run · project · "
-                         "at · errorKind) · 파일삭제(run · deletion) · 파일삭제실패(run · deletion · errorKind · "
+                         "errorCode · error) · 대기(run · project · point) · 실행끝(run · project · status) · "
+                         "재개예약(run · project · at · errorKind · errorCode — errorCode는 엔진이 받은 재시도 소진의 오류 "
+                         "코드, 없으면 '-') · 파일삭제(run · deletion) · 파일삭제실패(run · deletion · errorKind · "
                          "error · attempts) · 파일삭제포기(run · deletion · attempts). 운영하면서 바꿀 수 있다 "
                          "(orchestrator/runlog.py)",
     "workerLog.errorMax": "단계끝 error 값 길이 상한 200자 (orchestrator/runlog.py ERROR_MAX)",

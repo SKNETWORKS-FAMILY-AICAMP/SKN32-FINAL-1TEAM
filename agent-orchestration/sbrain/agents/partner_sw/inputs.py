@@ -4,6 +4,9 @@
 표뿐이다 — 대표자 이름 · 생년월일 · 성별 · 사업자등록번호 · 기업명 · 지역 · 인증 · 희망 사업 규모 · 자기부담금 · 직업 ·
 지방우대 지역 · 업종(biz_type) · 대표자 유형 · 팀원 이름 · 공고 제목 · 공고 ID는 꺼내지 않는다. 수익모델은 이미 받은 서비스명 ·
 단가만 성장전략 함수에 한정해 전달한다.
+
+: 원본 사실의 목표 고객은 사용자 목표 고객(회사 정보 targetCustomer)이 있으면 그 값, 없으면 '확인 필요'.
+일반현황 항목(2.1.1 · 3.1.1)의 F16 · F19 근거 원본 사실에만 창업아이템명 · 팀구성현황(역할 · 경력 — 이름 없음)을 덧붙인다.
 """
 from __future__ import annotations
 
@@ -17,9 +20,18 @@ APPLICANT_PRE_STARTUP = "예비창업자"   # 우리 신청자 유형 — 예비
 CONFIRM = "확인 필요"                  # 담당자 코드의 빈 값 표기
 UNDECIDED = "미정"                     # 빈 추진기간 표기 (담당자 코드와 같음)
 NONE_TEXT = "없음"                     # 채용 · 장비 · 협력에서 '없음'을 골랐을 때의 한 줄 값 (intake와 같은 글자)
-TARGET_CUSTOMER = CONFIRM              # 원본 사실의 목표 고객 — 늘 '확인 필요' (담당자와 같음, spec 2절)
+TARGET_CUSTOMER = CONFIRM              # 사용자 목표 고객이 없을 때 원본 사실의 목표 고객 — '확인 필요' (담당자와 같음)
 TARGET_HINT_KEY = "targetCustomerHint"  # F02 요청에만 싣는 참고값 칸 (spec 4.4 — 원본 사실 아님)
 ITEM_KEYS = ("description", "output_summary", "tech_field", "target_customer")
+
+# 일반현황 항목 근거 — 담당자 양식 제목 "일반현황 - … (창업아이템명과 팀구성현황은 web에서 수령됨)"인 항목만.
+# 문서 유형별 정확한 항목 번호로 고른다(담당자 general 문서의 1.1.1 같은 번호에 걸리지 않게). 문구는 잠정(partnerSw.generalStatusFacts)
+GENERAL_STATUS_SECTIONS = {PRE_STARTUP: "2.1.1", EARLY_STARTUP: "3.1.1"}
+FACT_STARTUP_ITEM_NAME = "창업아이템명"     # 원본 사실에 더하는 칸 이름 (담당자 양식 제목의 낱말)
+FACT_TEAM_STATUS = "팀구성현황"
+TEAM_POSITION_DEFAULT = "팀원"             # 역할이 비었을 때의 직위 (웹 표와 같음)
+TEAM_EMPTY_CELL = "-"                      # 역할 · 경력이 비었을 때의 담당업무 · 보유역량 (웹 표와 같음)
+TEAM_NONE_TEXT = "팀원 없음(대표자 단독)"   # 팀원 표 행이 빈 목록일 때
 
 SCHEDULE_LABEL = "추진 일정"           # 입력 없음 안내 이름 (spec 4.9)
 BUDGET_LABEL = "사업비 집행계획"
@@ -63,10 +75,16 @@ def duration_months(start: str | None, end: str | None) -> int:
 
 
 # ── 담당자 입력 칸 (spec 4.4) ─────────────────────────────
+def user_target_customer(company: CompanyInfo) -> str | None:
+    """회사 정보의 사용자 목표 고객(확장). 비면 None."""
+    return (company.target_customer or "").strip() or None
+
+
 def project_body(description: str, company: CompanyInfo) -> dict[str, Any]:
-    """POST_projects_body — 아이디어 설명 · 산출물 · 전문기술분야(없으면 주 업종) · 목표 고객('확인 필요')."""
+    """POST_projects_body — 아이디어 설명 · 산출물 · 전문기술분야(없으면 주 업종) · 목표 고객(사용자 값, 없으면 '확인 필요')."""
     return {"description": description, "output_summary": company.output_summary,
-            "tech_field": company.tech_field or company.industry_code, "target_customer": TARGET_CUSTOMER}
+            "tech_field": company.tech_field or company.industry_code,
+            "target_customer": user_target_customer(company) or TARGET_CUSTOMER}
 
 
 def revenue_items(company: CompanyInfo) -> list[dict[str, Any]]:
@@ -83,6 +101,41 @@ def team_input(company: CompanyInfo) -> dict[str, Any]:
     return {"representative": {"capabilities": company.representative_capability,
                                "careers": list(company.representative_career)},
             "members": members}
+
+
+def is_general_status(kind: str, code: str) -> bool:
+    """일반현황 항목(예비창업 2.1.1 · 초기창업 3.1.1)인가 — 문서 유형별 정확한 번호로. T-W1 · T-V1이 같이 쓴다."""
+    return GENERAL_STATUS_SECTIONS.get(kind) == code
+
+
+def general_status_facts(company: CompanyInfo) -> dict[str, Any]:
+    """일반현황 항목 근거의 원본 사실에 더할 두 칸.
+
+    - 창업아이템명: 회사 정보의 창업아이템명. 없으면 칸을 넣지 않는다(AI 요약으로 대신하지 않는다).
+    - 팀구성현황: 팀원 표 행을 웹 표 모양으로 — 한 명마다 {직위: 역할 또는 '팀원', 담당업무: 역할 또는 '-',
+      보유역량: 경력 또는 '-'}(저장 순서, 이름 없음). 빈 목록이면 '팀원 없음(대표자 단독)', None(옛 실행 건)이면 칸을 넣지 않는다.
+    """
+    facts: dict[str, Any] = {}
+    name = (company.startup_item_name or "").strip()
+    if name:
+        facts[FACT_STARTUP_ITEM_NAME] = name
+    rows = company.team_member_rows
+    if rows is not None:
+        facts[FACT_TEAM_STATUS] = [
+            {"직위": r.role or TEAM_POSITION_DEFAULT, "담당업무": r.role or TEAM_EMPTY_CELL,
+             "보유역량": r.experience or TEAM_EMPTY_CELL} for r in rows] or TEAM_NONE_TEXT
+    return facts
+
+
+def with_general_status_facts(source: dict[str, Any], kind: str, code: str, company: CompanyInfo) -> dict[str, Any]:
+    """담당자 section_source 결과에 덧붙인다 — 일반현황 항목일 때만 originalFacts에 두 칸(담당자 함수는 고치지 않음).
+    다른 항목은 그대로 돌려준다."""
+    if not is_general_status(kind, code):
+        return source
+    facts = general_status_facts(company)
+    if facts:
+        source["originalFacts"] = {**(source.get("originalFacts") or {}), **facts}
+    return source
 
 
 def _resource(text: str | None) -> tuple[bool, list[str]]:

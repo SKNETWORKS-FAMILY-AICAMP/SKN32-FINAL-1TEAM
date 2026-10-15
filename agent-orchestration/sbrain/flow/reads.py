@@ -9,12 +9,13 @@
 | 6 문서 평가 | 문서평가 · 사용자대기 | planDoc, scoreReport.document, 표 대체 사유 tableFallbacks(확장, tableOutputs에서), G-02a.failedTaskIds · reworkOrders · nextAction |
 | 8 산출물 확인 | 산출물확인 · 사용자대기 | prototype, infographic, codeCheck, featureMatch, G-02b.reworkOrders(산출물층) |
 | 9 종합 평가 | 종합평가 · 사용자대기 | scoreReport.overall, G-02b.reworkOrders · nextAction, reworkDiff |
-| 10 검수 전후 | 결과물 · 완료 | formatFindings, sentenceResults(문장별 전후 · 시도별 기록), proofreadLog |
 | 11 결과물 | 결과물 · 완료 | deliverable, userMessage, planDoc, prototype, infographic, 표 대체 사유 tableFallbacks(확장) |
 
 - 재작성 목록은 묶음별 남은 기회를 함께 싣는다(묶음 요청 request_rework_for_project와 같은 묶음 이름으로 센다).
 - 대기 지점이 아니거나 아직 없는 화면은 CommandError("SCREEN_NOT_READY"). 화면 3은 작성을 시작한 뒤에는
   INVALID_STATE다(공고 다시 고르기 · 추가 조회와 같은 거절, 3.3).
+- 화면 10(검수 전후)은 검수가 흐름에서 빠져 없앴다 — 어느 상태에서도 INVALID_SCREEN. 결과 조회(outputs)의
+  검수 칸(formatFindings · sentenceResults · proofreadLog)은 기준 문서 타입이라 남기고 늘 빈 값이다.
 - 지금까지 결과(outputs) · 재작성 결과(rework_result)는 실패 · 중단 실행 건이면 CommandError("RUN_NOT_VIEWABLE").
   사용자용 결과에는 관리자용 실패 사유를 싣지 않는다 — 실패는 진행 상태와 안내(E-RUN-FAIL)로만 보인다.
 - 관리자 조회는 메타데이터 · 점수 · 개수만 돌려준다. 산출물 · 입력 · 문장 내용을 싣지 않는다(기획서 4-7 · 6-7).
@@ -32,13 +33,13 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import Field
 
-from ..contracts.tasks import ProofreadAttempt, SentenceResult
+from ..contracts.tasks import SentenceResult
 from ..models import (
     Announcement, AnnouncementCard, BundleUsage, Deliverable, GateResult, Notice, PlanDoc, PlanSection, Prototype,
     ReworkDiff, ReworkOrder, Run,
 )
 from ..models.base import (
-    AgentName, CollectionStatus, FallbackMode, KeptReason, KeptSide, NextAction, RunProgress, SBModel, ext,
+    AgentName, CollectionStatus, FallbackMode, KeptSide, NextAction, RunProgress, SBModel, ext,
 )
 from ..models.clock import UTC_MIN
 from ..models.domain import FILE_NOTE, EvalItem, FormatFinding, Infographic, ProofreadLog
@@ -57,6 +58,7 @@ from ..orchestrator.trace import ExecutionRecord
 # 층별 채점 출처 · 현재 점수는 기록 통계 줄(finalScores · scores)과 같은 정의 하나 — log_stats.py에 있다
 from .log_stats import SCORE_LAYERS, layer_score
 from .log_stats import current_scores as _current_scores
+from .catalog import OUT_OF_FLOW_STEPS
 from .retention import retention_cutoff
 # 묶음 목록 · 층은 부를 때마다 그때의 표 · 스위치로 읽는다(document_bundles · bundle_layer — 불러올 때 굳는 상수를 쓰지 않음)
 from .rework_map import ARTIFACT_BUNDLES, BUNDLE_EXECUTABLE, bundle_layer, document_bundles, order_bundles
@@ -186,26 +188,6 @@ class OverallScreen(Screen):
     rework_diff: list[ReworkDiff]
 
 
-class SentenceChange(SBModel):
-    """검수 대상 문장 하나의 전후 (초안). 채택하지 않았으면 after는 없고 원문이 남는다.
-
-    attempts: T-P2 시도별 기록(SentenceResult.attempts) — 학습 동의와 관계없이 모든 계정에 준다.
-    """
-    sentence_id: str
-    before: str
-    after: str | None
-    adopted: bool
-    kept_reason: KeptReason | None = None
-    attempts: list[ProofreadAttempt] = Field(default_factory=list)
-
-
-class ProofreadScreen(Screen):
-    """10 검수 전후 — 형식 지적, 문장별 전후, 검수 로그."""
-    format_findings: list[FormatFinding]
-    sentences: list[SentenceChange]
-    proofread_log: ProofreadLog
-
-
 class ResultScreen(Screen):
     """11 결과물 — 계획서 표 대체 사유를 별도 데이터로 제공한다."""
     deliverable: Deliverable
@@ -221,6 +203,8 @@ class Outputs(SBModel):
     """outputs 결과 — 진행 중 · 대기 중 · 재개대기 · 완료 실행 건이 지금까지 만든 결과(현재 버전).
 
     없는 것은 None · 빈 목록. 점수 보고서는 화면과 같은 ScoreView(실행 설정 스냅샷 없음)다.
+    검수 칸(format_findings · sentence_results · proofread_log)은 기준 문서 타입이라 남긴다 — 검수가 흐름에서 빠져
+    늘 빈 목록 · None이다.
     rework_usage: 묶음 이름 6개(문서층 4 · 산출물층 2, 원페이지는 실행 파일 제외 — 새 묶음 스위치를 켜면 문서층 6)별 사용 수 ·
     남은 기회.
     rework_limit: 실행 시작 때 고정한 묶음마다의 재작성 상한.
@@ -448,13 +432,11 @@ class AdminSummary(SBModel):
     triggers: list[TriggerStat]
     total_tokens: int = 0                  # 모든 실행 기록의 입력 + 출력 토큰 (글 토큰만)
     total_image_tokens: int = 0            # 모든 실행 기록의 이미지 입력 + 출력 토큰 (확장)
-    proofread_attempts: int = 0            # T-P2 시도 수 (현재 sentenceResults의 attempts)
-    proofread_rejected: int = 0            # 보호 토큰 검사를 통과하지 못한 시도
-    proofread_reject_rate: float | None = None   # proofread_rejected / proofread_attempts × 100
 
 
 class AdminAgentTask(SBModel):
-    """Agent별 등록된 Task 수(규칙 단계 · 합치기 포함), 실행 기록 수, 가장 최근(시작 시각) 실행의 프로젝트 · 상태."""
+    """Agent별 등록된 Task 수(규칙 단계 · 합치기 포함, 흐름 밖 단계 제외), 실행 기록 수, 가장 최근(시작 시각) 실행의
+    프로젝트 · 상태."""
     agent: str
     task_count: int
     task_ids: list[str]
@@ -507,8 +489,7 @@ SCREEN_STATES: dict[int, set[tuple[str, str]]] = {
     6: {("문서평가", "사용자대기")},
     8: {("산출물확인", "사용자대기")},
     9: {("종합평가", "사용자대기")},
-    10: {("결과물", "완료")},
-    11: {("결과물", "완료")},
+    11: {("결과물", "완료")},   # 화면 10(검수 전후)은 없앴다 — INVALID_SCREEN
 }
 
 
@@ -562,9 +543,6 @@ def screen(orch: SBrainOrchestrator, project_id: int | str, number: int) -> Scre
             **base, score=_score(ctx.get("scoreReport.overall")),
             rework_options=_options(ctx, ctx.get("G-02b.reworkOrders")), next_action=ctx.get("G-02b.nextAction"),
             rework_diff=ctx.get("reworkDiff"))
-    if number == 10:
-        return ProofreadScreen(**base, format_findings=ctx.get("formatFindings"),
-                               sentences=_sentence_changes(orch, ctx), proofread_log=ctx.get("proofreadLog"))
     return ResultScreen(**base, deliverable=ctx.get("deliverable"), user_message=ctx.get("userMessage"),
                         plan_doc=ctx.get("planDoc"), prototype=ctx.get("prototype"),
                         infographic=ctx.get("infographic"),
@@ -619,24 +597,6 @@ def _options(ctx: RunContext, orders: list[ReworkOrder]) -> list[ReworkOption]:
         out.append(ReworkOption(order=o, bundles=bundles, remaining=remaining,
                                 selectable=remaining > 0 and not blocked))
     return out
-
-
-def _sentence_changes(orch: SBrainOrchestrator, ctx: RunContext) -> list[SentenceChange]:
-    """검수 전 문장은 T-P1이 읽은 계획서 버전에서 찾는다 (M-4가 새 버전을 만들기 전).
-
-    T-P1 성공 저장에서 실행 건에 적은 참조(Run.proofread_base_ref)를 먼저 본다 — 12개월 처리로 실행 기록이 지워져도
-    같은 문장이 나온다. 이 값이 없던 실행 건은 지금처럼 T-P1 실행 기록의 입력 참조에서 찾는다.
-    """
-    ref = ctx.run.proofread_base_ref
-    if ref is None:
-        tp1 = [r for r in orch.store.executions(ctx.run.run_id) if r.task_id == "T-P1" and r.status == "성공"]
-        ref = next((i for i in tp1[-1].inputs if i.startswith("planDoc@")), None) if tp1 else None
-    before: PlanDoc = ctx.get_ref(ref) if ref else ctx.get("planDoc")
-    text = {s.sentence_id: s.text for sec in before.sections for s in sec.sentences}
-    results: list[SentenceResult] = ctx.get("sentenceResults", default=[])
-    return [SentenceChange(sentence_id=r.sentence_id, before=text.get(r.sentence_id, ""),
-                           after=r.revised.text if r.adopted and r.revised else None, adopted=r.adopted,
-                           kept_reason=r.kept_reason, attempts=list(r.attempts)) for r in results]
 
 
 # ── 지금까지 결과 · 재작성 결과 ─────────────────────────────
@@ -894,16 +854,15 @@ def admin_summary(orch: SBrainOrchestrator) -> AdminSummary:
       센다. 첫 평균 · 재작성 뒤 평균은 소수 1자리, 차이 = 재작성 뒤 평균 - 첫 평균(반올림한 평균끼리, 웹과 같다).
       코드 점검 · 계획서 대조 점수는 실행 건마다 그 실행 건 설정 사본 배점으로 환산한 값이다(spec 4.6).
     - 시도 계기별: 실행 기록 수, 평균 토큰 = (입력 + 출력) 합 / 그 계기의 실행 기록 수(토큰 기록이 없는 실행은 0).
-    - 표현 검수: 실행 건마다 현재 sentenceResults의 시도(attempts) 수 · 보호 토큰 검사 불통과 시도 수,
-      반려 비율 = 반려 / 시도 × 100.
     - 비율은 분모가 0이면 None, 백분율 소수 1자리.
+    - 검수(표현 검수 시도 · 반려) 칸은 없다 — 검수가 흐름에서 빠졌다.
 
     범위: 마지막 활동(updated_at)이 최근 12개월 안인 실행 건과 그 실행 건들의 실행 기록만 센다(admin_runs와 같은 기준
-    시각, retention_cutoff) — 진행 상태별 건수 · 점수 · 재작성 · 층별 변화 · 계기별 · 토큰 · 표현 검수가 모두 같은 범위다.
+    시각, retention_cutoff) — 진행 상태별 건수 · 점수 · 재작성 · 층별 변화 · 계기별 · 토큰이 모두 같은 범위다.
 
     우리 기록으로 셀 수 없어 뺀 것: 실행 건이 없는 프로젝트(웹의 '공고 매칭 전')는 세지 않고, 진행 상태는 웹의 상태
-    표시('판단 대기' 등) 대신 실행 건의 진행 상태로 센다. 완전 삭제한 실행 건은 현재 점수 · 표현 검수 시도를 셀 수 없어
-    그 항목에서 빠진다(채점 이력 · 실행 기록 수 · 토큰은 남는다).
+    표시('판단 대기' 등) 대신 실행 건의 진행 상태로 센다. 완전 삭제한 실행 건은 현재 점수를 셀 수 없어 그 항목에서
+    빠진다(채점 이력 · 실행 기록 수 · 토큰은 남는다).
     """
     runs = orch.store.query_runs(RunFilter(limit=None, updated_since=_admin_since(orch)))
     in_scope = {run.run_id for run in runs}
@@ -916,7 +875,7 @@ def admin_summary(orch: SBrainOrchestrator) -> AdminSummary:
     totals: list[float] = []
     firsts: dict[str, list[float]] = defaultdict(list)
     afters: dict[str, list[float]] = defaultdict(list)
-    reworked = attempts = rejected = 0
+    reworked = 0
     for run in runs:
         status[run.state.progress] += 1
         records = by_run.get(run.run_id, [])
@@ -934,15 +893,6 @@ def admin_summary(orch: SBrainOrchestrator) -> AdminSummary:
             if entries and after and after[-1].execution_id != entries[0].execution_id:
                 firsts[layer].append(entries[0].score)
                 afters[layer].append(after[-1].score)
-        if "sentenceResults" in pointers:
-            try:
-                results = orch.store.get_artifact(run.run_id, "sentenceResults", pointers["sentenceResults"]).value
-            except KeyError:
-                results = []
-            for res in results or []:   # 개수만 센다 — 문장 내용은 읽어 싣지 않는다
-                for a in res.get("attempts", []):
-                    attempts += 1
-                    rejected += 0 if (a.get("tokenCheck") or {}).get("passed") else 1
     threshold = orch.settings.current().scoring.threshold
     passed = sum(1 for t in totals if t >= threshold)
     changes = []
@@ -969,18 +919,23 @@ def admin_summary(orch: SBrainOrchestrator) -> AdminSummary:
         score_buckets=[ScoreBucket(label=label, count=sum(1 for t in totals if lo <= t <= hi))
                        for label, lo, hi in SCORE_BUCKETS],
         layer_changes=changes, triggers=triggers, total_tokens=sum(tokens(r) for r in every),
-        total_image_tokens=sum((r.image_input_tokens or 0) + (r.image_output_tokens or 0) for r in every),
-        proofread_attempts=attempts, proofread_rejected=rejected, proofread_reject_rate=_rate(rejected, attempts))
+        total_image_tokens=sum((r.image_input_tokens or 0) + (r.image_output_tokens or 0) for r in every))
 
 
 def admin_agent_tasks(orch: SBrainOrchestrator) -> list[AdminAgentTask]:
-    """Agent별(기준 문서 Agent 순서) 등록된 단계 수 · 실행 기록 수 · 가장 최근 실행(시작 시각)의 프로젝트 · 상태."""
-    specs = orch.engine.registry.specs()
+    """Agent별(기준 문서 Agent 순서) 등록된 단계 수 · 실행 기록 수 · 가장 최근 실행(시작 시각)의 프로젝트 · 상태.
+
+    흐름 밖 단계(catalog.OUT_OF_FLOW_STEPS — 등록부 줄은 남김)는 세지 않고, 남은 단계가 없는 Agent 줄(검수)은
+    내지 않는다. 실행 기록 수 · 최근 실행은 Agent 이름으로 센다.
+    """
+    specs = [s for s in orch.engine.registry.specs() if s.task_id not in OUT_OF_FLOW_STEPS]
     agents = list(typing.get_args(AgentName))
     agents += [a for a in dict.fromkeys(s.agent for s in specs) if a not in agents]
     out = []
     for agent in agents:
         ids = [s.task_id for s in specs if s.agent == agent]
+        if not ids:
+            continue
         latest = orch.store.list_executions(ExecutionFilter(agent=agent, limit=1))
         out.append(AdminAgentTask(
             agent=agent, task_count=len(ids), task_ids=ids,
@@ -1025,8 +980,8 @@ def admin_retry_file_deletion(orch: SBrainOrchestrator, deletion_id: str, admin_
 __all__ = [
     "AdminAgentTask", "AdminCall", "AdminExecution", "AdminFileDeletion", "AdminRun", "AdminScoreHistory",
     "AdminSummary", "AdminTry", "ArtifactFile", "ArtifactScreen", "CandidatesScreen", "DocumentScreen", "GateScreen",
-    "LayerChange", "Outputs", "OverallScreen", "ProofreadScreen", "ResultScreen", "ReworkFileChange", "ReworkOption",
-    "ReworkResult", "Screen", "ScoreBucket", "ScoreEntry", "ScoreView", "SentenceChange", "TokenTotals", "TriggerStat",
+    "LayerChange", "Outputs", "OverallScreen", "ResultScreen", "ReworkFileChange", "ReworkOption",
+    "ReworkResult", "Screen", "ScoreBucket", "ScoreEntry", "ScoreView", "TokenTotals", "TriggerStat",
     "admin_agent_tasks", "admin_calls", "admin_executions", "admin_file_deletions", "admin_retry_file_deletion",
     "admin_runs", "admin_score_history", "admin_summary", "outputs", "read_artifact_file", "rework_result", "screen",
 ]

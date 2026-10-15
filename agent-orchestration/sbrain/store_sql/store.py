@@ -6,9 +6,8 @@
 |---|---|
 | create_run | 계정 잠금(MySQL GET_LOCK, SQLite는 프로세스 잠금) 안에서 진행 중 실행 건 수를 세고, 실행 건과 첫 기록을 한 트랜잭션으로 저장 |
 | acquire · release | 조건부 UPDATE(점유자가 없거나 같거나 만료된 경우만). 영향 행 수로 성공 판정 |
-| commit | 한 트랜잭션: 점유 확인(아니면 StoreConflict) → 실행 건 행 갱신 + 점유 연장 → 산출물 버전 · 포인터 → 실행 기록(같은 ID는 덮어씀) → 호출 기록 · 피드백 · 비교 · 포인터 이동 · 추적 사건 → 웹 notifications → 학습 동의면 웹 proofread_logs → 실패로 바뀌었으면 generation_failure_alerts |
+| commit | 한 트랜잭션: 점유 확인(아니면 StoreConflict) → 실행 건 행 갱신 + 점유 연장 → 산출물 버전 · 포인터 → 실행 기록(같은 ID는 덮어씀) → 호출 기록 · 피드백 · 비교 · 포인터 이동 · 추적 사건 → 웹 notifications → 실패로 바뀌었으면 generation_failure_alerts |
 | notifications | 웹 notifications에서 실행 건의 project_id로 읽는다 |
-| rejected_attempts | 웹 proofread_logs에서 실행 건의 project_id로 반려된 시도를 읽는다 |
 | add_start_request | 계정 잠금 안에서 진행 중 실행 건 · 대기 · 처리중 요청을 세고 '대기' 요청을 넣는다 |
 | acquire_start_request | 조건부 UPDATE로 '처리중' 점유 ('대기', 또는 점유 만료 · 같은 점유자) |
 | create_run_for_request | 계정 잠금 + 한 트랜잭션: 요청 점유 · 취소 요청 확인 → 실행 건 생성 → 요청 '완료'(+run_id) |
@@ -29,11 +28,9 @@
 - 알림은 웹 notifications에 쓴다. 기준 문서 Notification의 runId 자리에 project_id를 쓰고, project_id가 없는
   실행 건(테스트 · 시연용 직접 시작)은 웹 테이블에 쓰지 않는다. 웹 테이블에 쓸 project_id는 실행 건 행의
   컬럼 값을 쓴다 — 완전 삭제로 NULL이 된 프로젝트에는 쓰지 않는다.
-- 웹 projects에는 쓰지 않는다(진행 컬럼 5개 포함). 웹 테이블 쓰기는 notifications · proofread_logs ·
-  generation_failure_alerts INSERT뿐이고, 모두 단계 저장과 같은 트랜잭션이다.
-- 반려된 시도는 그 프로젝트 주인이 저장하는 순간 학습 데이터 편입에 동의했을 때만(users.ai_training_agreed)
-  proofread_logs에 쓴다. proofread_logs 구조가 아직 바뀌지 않았으면(필요한 컬럼 없음 등) 쓰기만 건너뛰고
-  추적 사건 '검수회수기록생략'을 실행 건마다 한 번 남긴다 — 단계 저장은 되돌리지 않는다.
+- 웹 projects에는 쓰지 않는다(진행 컬럼 5개 포함). 웹 테이블 쓰기는 notifications · generation_failure_alerts
+  INSERT 두 가지뿐이고, 모두 단계 저장과 같은 트랜잭션이다. 웹 proofread_logs는 쓰지도 읽지도 않고, 학습 동의
+  (users.ai_training_agreed)도 읽지 않는다 — 검수가 흐름에서 빠졌다.
 - 저장된 진행 상태가 실패가 아니었는데 이번에 실패면 generation_failure_alerts에 한 행을 쌓는다.
 - 점유 시각은 주입한 시계(now)로 잰다. 여러 서버가 같은 DB를 쓰면 서버 시계가 맞아야 한다(잠정).
 - 시각은 시간대 있는 UTC로 다루고, DB 칸에는 시간대 없는 UTC로 넣는다(schema.UtcDateTime · 웹 표는 web_tables).
@@ -58,7 +55,7 @@ from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import OperationalError
 
-from ..models import Notice, Notification, RejectedAttempt, ReworkComparison, Run
+from ..models import Notice, Notification, ReworkComparison, Run
 from ..models.clock import as_utc, utc_clock, utc_now
 from ..models.run import ACTIVE_PROGRESS
 from ..orchestrator.errors import FileDeletionNotFound, FileDeletionNotGivenUp, ProjectRunExists, StoreConflict
@@ -80,7 +77,6 @@ from .web_tables import WebTables
 PROJECT_CHUNK = 500   # existing_projects가 IN 하나에 싣는 프로젝트 수 (잠정)
 DEADLOCK_TRIES = 3    # MySQL 교착으로 되돌려진 delete_artifacts · retire_run을 다시 하는 횟수 (처음 포함 — 잠정 아님)
 MYSQL_DEADLOCK = 1213
-PROOFREAD_SKIPPED = "검수회수기록생략"   # 웹 proofread_logs 구조가 맞지 않아 반려된 시도를 쓰지 않음 (실행 건마다 한 번)
 
 
 def project_key(project_id: int | str | None) -> int | None:
@@ -125,7 +121,7 @@ class SqlStore:
         conn.execute(insert(RUNS).values(run_id=run.run_id, account_id=run.account_id, project_id=pid,
                                          abort_requested=False, **_run_values(run)))
         batch.run = None
-        self._apply(conn, run.run_id, batch, pid, self._now())
+        self._apply(conn, run.run_id, batch, pid)
         self._alert_on_failure(conn, run, pid, before=None)
         return True
 
@@ -414,12 +410,11 @@ class SqlStore:
                 values["lease_until"] = now + timedelta(seconds=sec)   # 점유 연장
             if values:
                 conn.execute(update(RUNS).where(RUNS.c.run_id == run_id).values(**values))
-            self._apply(conn, run_id, batch, row.project_id, now)
+            self._apply(conn, run_id, batch, row.project_id)
             self._alert_on_failure(conn, batch.run, row.project_id, before=row)
 
-    def _apply(self, conn: Connection, run_id: str, batch: CommitBatch, project_id: int | None,
-               now: datetime) -> None:
-        """now = 이 저장 시각 (웹 proofread_logs.created_at에 넣는다)."""
+    def _apply(self, conn: Connection, run_id: str, batch: CommitBatch, project_id: int | None) -> None:
+        """묶음을 표에 쓴다. 웹 테이블은 notifications INSERT뿐이다(실패 알림은 _alert_on_failure)."""
         if batch.versions:
             conn.execute(insert(ARTIFACT_VERSIONS), [
                 dict(run_id=run_id, artifact_key=v.key, version=v.version, value=v.value, producer=v.producer,
@@ -444,26 +439,6 @@ class SqlStore:
                  record_json=e.dump()) for e in batch.events])
         if batch.notifications and project_id is not None:
             self.web.insert_notifications(conn, project_id, batch.notifications)
-        if batch.rejected_attempts and project_id is not None:
-            self._write_rejected_attempts(conn, run_id, project_id, batch.rejected_attempts, now)
-
-    def _write_rejected_attempts(self, conn: Connection, run_id: str, project_id: int,
-                                 items: list[RejectedAttempt], now: datetime) -> None:
-        """학습 동의 계정이면 웹 proofread_logs에 쓴다(created_at = 저장 시각 now). 구조가 맞지 않으면 건너뛰고
-        사건을 실행 건마다 한 번 남긴다."""
-        if not self.web.training_agreed(conn, project_id):
-            return
-        table, problem = self.web.proofread_logs(conn)
-        if table is not None:
-            self.web.insert_rejected_attempts(conn, table, project_id, items, now)
-            return
-        seen = conn.execute(select(TRACE_EVENTS.c.seq).where(
-            TRACE_EVENTS.c.run_id == run_id, TRACE_EVENTS.c.kind == PROOFREAD_SKIPPED).limit(1)).first()
-        if seen is None:
-            ev = TraceEvent(run_id=run_id, kind=PROOFREAD_SKIPPED, at=now,
-                            detail=f"웹 proofread_logs 구조가 맞지 않아 검수 회수 문단을 쓰지 않음 — {problem}")
-            conn.execute(insert(TRACE_EVENTS).values(run_id=run_id, kind=ev.kind, execution_id=None, cycle_id=None,
-                                                     at=now, record_json=ev.dump()))
 
     def _alert_on_failure(self, conn: Connection, run: Run | None, project_id: int | None,
                           before: Row | None) -> None:
@@ -622,13 +597,6 @@ class SqlStore:
             if pid is None:
                 return []
             return self.web.notifications(conn, pid, run_id)
-
-    def rejected_attempts(self, run_id: str) -> list[RejectedAttempt]:
-        with self.engine.connect() as conn:
-            pid = conn.execute(select(RUNS.c.project_id).where(RUNS.c.run_id == run_id)).scalar()
-            if pid is None:
-                return []
-            return self.web.rejected_attempts(conn, pid, run_id)
 
     # ── 관리자 조회 ───────────────────────────────────
     def list_executions(self, f: ExecutionFilter) -> list[ExecutionRow]:

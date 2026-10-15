@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import mysqldb  # noqa: E402
 from mysqldb import MYSQL, MYSQL_GROUP, group_name, require_mysql, xdist_groups  # noqa: E402
-from webdb import create_web_tables, new_project, set_training_consent  # noqa: E402
+from webdb import create_web_tables, new_project  # noqa: E402
 
 from sbrain import env  # noqa: E402
 from sbrain.agents.stubs import StubScenario  # noqa: E402
@@ -217,25 +217,11 @@ def db(tmp_path):
 _memory_projects = itertools.count(5001)
 
 
-def project_for(app: App, *, agreed: bool = False) -> str:
-    """흐름 테스트용 프로젝트 ID. SqlStore면 웹 projects 행을 만든다(알림이 웹 notifications에 쓰이도록).
-
-    agreed: 프로젝트 주인의 학습 데이터 편입 동의 (웹 users.ai_training_agreed, 메모리 저장소는 따로 기억).
-    """
+def project_for(app: App) -> str:
+    """흐름 테스트용 프로젝트 ID. SqlStore면 웹 projects 행을 만든다(알림이 웹 notifications에 쓰이도록)."""
     if isinstance(app.store, SqlStore):
-        return str(new_project(app.store.engine, agreed=agreed))
-    pid = str(next(_memory_projects))
-    app.store.set_training_consent(pid, agreed)
-    return pid
-
-
-def set_consent(app: App, rid: str, agreed: bool = True) -> None:
-    """실행 건 프로젝트 주인의 학습 데이터 편입 동의를 바꾼다 (웹이 로그인마다 갱신하는 값)."""
-    pid = app.store.load_run(rid).project_id
-    if isinstance(app.store, SqlStore):
-        set_training_consent(app.store.engine, int(pid), agreed)
-    else:
-        app.store.set_training_consent(pid, agreed)
+        return str(new_project(app.store.engine))
+    return str(next(_memory_projects))
 
 
 class Clock:

@@ -14,6 +14,8 @@
   대체 경로 안내(E-C2-EMBED)는 흐름이 fallback_used를 보고 붙인다.
 - 첫 조회와 겹치는 후보 · 내용 바뀜(contentChanged)은 흐름 규칙이다(4.2.2) — 여기서는 늘 False로 둔다.
 - 저장소 · DB · RunContext에 접근하지 않는다. 외부 호출은 tools.search로만 한다.
+- 공고 서버 호출은 모두 tools.search(…, backoff=False)다 — 재시도 간격 2초 고정(늘리는 간격 · 무작위 지연 없음).
+  사용자가 화면 앞에서 기다리는 단계이고, 공고팀에 2초 간격 최대 6번으로 약속했다.
 """
 from __future__ import annotations
 
@@ -240,12 +242,15 @@ def make_tc2(client: NoticeClient) -> Callable[[TC2In, Tools], TC2Out]:
     """공고 서버에 연결한 T-C2 함수를 만든다 — registry.bind("T-C2", make_tc2(client))."""
 
     def run(inp: TC2In, tools: Tools) -> TC2Out:
-        status = tools.search("수집 상태", lambda timeout: parse_status(client.collection_status(timeout)))
+        # backoff=False — 2초 고정 간격 (사용자가 화면에서 기다리고, 공고팀에 2초 간격 최대 6번으로 약속)
+        status = tools.search("수집 상태", lambda timeout: parse_status(client.collection_status(timeout)),
+                              backoff=False)
         if status != "정상":        # 매칭하지 않는다 — 후보 0건 (기준 문서 T-C2 ②, spec 4.1.1)
             return TC2Out(candidates=[], collection_status=status, filtered_count=0, fallback_used=False)
         top = min(inp.top_k, MAX_TOP)
         body = match_request(inp.item_spec, inp.company_info, top=top, offset=inp.offset)
-        result = tools.search("공고 매칭", lambda timeout: parse_match(client.match(body, timeout), top))
+        result = tools.search("공고 매칭", lambda timeout: parse_match(client.match(body, timeout), top),
+                              backoff=False)
         return TC2Out(candidates=result.cards, collection_status=status, filtered_count=result.filtered_count,
                       fallback_used=result.fallback_used, fallback_mode=result.fallback_mode)
 

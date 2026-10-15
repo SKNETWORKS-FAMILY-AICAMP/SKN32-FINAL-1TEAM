@@ -88,7 +88,7 @@ class SentenceResult(SBModel):
     kept_reason: KeptReason | None = None
     final_redo_count: int
     token_check: TokenCheckResult | None = None
-    # 시도별 기록 (시도 순서). 반려된 시도는 학습 동의 계정이면 웹 proofread_logs에도 한 행씩 쓴다
+    # 시도별 기록 (시도 순서). 반려된 시도를 웹 proofread_logs에 쓰는 경로는 흐름 밖 — 지금 쓰지 않음
     attempts: list[ProofreadAttempt] = Field(default_factory=list)
 
 
@@ -237,12 +237,13 @@ class G04Out(SBModel):
 
 class TC4In(SBModel):
     """결과 통합 입력. 계획서 · 프로토타입 · 인포그래픽 · 점수 보고서는 비어 올 수 있다 — 누락은 엔진 입력 확인이
-    아니라 T-C4가 한 오류 코드(E-C4-MISSING)로 판단한다. 검수 로그는 지금처럼 필수(엔진이 막는다)."""
+    아니라 T-C4가 한 오류 코드(E-C4-MISSING)로 판단한다. 검수 로그는 검수가 흐름에서 빠져 늘 None이다 — 누락
+    조건이 아니다."""
     plan_doc: PlanDoc | None = ext(None, note=f"{TC4_NOTE} — 비면 누락(E-C4-MISSING ①)")
     prototype: Prototype | None = ext(None, note=f"{TC4_NOTE} — 비면 누락(E-C4-MISSING ①)")
     infographic: Infographic | None = ext(None, note=f"{TC4_NOTE} — 비면 누락(E-C4-MISSING ①)")
     score_report: ScoreReport | None = ext(None, note=f"{TC4_NOTE} — 비면 누락(E-C4-MISSING ①)")
-    proofread_log: ProofreadLog
+    proofread_log: ProofreadLog | None = ext(None, note="검수가 흐름에서 빠져 늘 비움(결정 0033) — 기준 문서는 필수")
     section_results: list[SectionResult] | None = ext(
         None, note=f"{NEW_TYPE_NOTE} — T-V1 항목 판정(미달 항목 문서층, 결정 0030). None이면 문서층 미달 항목이 없다")
 

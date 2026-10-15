@@ -9,10 +9,8 @@ from orch_fakes import (
     make_gate,
     make_outputs,
     make_plan_doc,
-    make_proofread_screen,
     make_score_view,
     make_section,
-    make_sentence_change,
 )
 
 from app.orch import OrchError
@@ -173,7 +171,6 @@ def test_result_proofread_attempts_become_logs_grouped_by_sentence(authed_client
     plan_doc = make_plan_doc([make_section('1-1', '문제', '원문 문장')])
     plan_doc.sections[0].sentences[0].sentence_id = 's1'
     orch.responses['outputs'] = lambda p: _full_outputs(plan_doc=plan_doc, sentence_results=results)
-    orch.responses['screen'] = lambda p, n: make_proofread_screen([make_sentence_change('s1', '원문 문장')])
 
     logs = _result(authed_client, pid).json()['plan']['proofread_logs']
 
@@ -230,27 +227,18 @@ def _reviewed_outputs(plan_text: str):
     return _full_outputs(plan_doc=plan_doc, sentence_results=results)
 
 
-def test_result_original_text_comes_from_screen_10_not_the_revised_plan(authed_client, orch):
-    """검수가 끝나면 계획서 문장이 검수 결과 문장으로 바뀐다 — 검수 전 원문은 화면 10의 before에서 읽어야 한다."""
+def test_result_never_reads_screen_10_even_for_old_runs_with_proofread_attempts(authed_client, orch):
+    """검수 제거(오케스트레이터 2026-10-15) — 화면 10은 없어졌다(INVALID_SCREEN). 검수 기록이 남은 옛 실행 건도 화면 10을 부르지 않고
+    계획서의 문장을 원문으로 쓴다."""
     pid = _create(authed_client)
-    orch.responses['outputs'] = lambda p: _reviewed_outputs('검수 결과 문장')
-    orch.responses['screen'] = lambda p, n: make_proofread_screen([make_sentence_change('s1', '검수 전 원문 문장', '검수 결과 문장', True)])
+    orch.responses['outputs'] = lambda p: _reviewed_outputs('계획서의 문장')
+    orch.responses['screen'] = OrchError('INVALID_SCREEN', '화면 10은 없어졌다')
 
-    logs = _result(authed_client, pid).json()['plan']['proofread_logs']
+    res = _result(authed_client, pid)
 
-    assert [(log['original_text'], log['corrected_text']) for log in logs] == [('검수 전 원문 문장', '검수 결과 문장')]
-    assert [args for name, args, _ in orch.calls if name == 'screen'] == [(pid, 10)]
-
-
-def test_result_original_text_falls_back_to_plan_while_screen_10_is_closed(authed_client, orch):
-    """화면 10이 아직 열리지 않았으면(검수 중) 계획서가 바뀌기 전이라 계획서 문장이 원문이다."""
-    pid = _create(authed_client)
-    orch.responses['outputs'] = lambda p: _reviewed_outputs('아직 바뀌지 않은 원문')
-    orch.responses['screen'] = OrchError('SCREEN_NOT_READY', '화면 10')
-
-    logs = _result(authed_client, pid).json()['plan']['proofread_logs']
-
-    assert [log['original_text'] for log in logs] == ['아직 바뀌지 않은 원문']
+    assert res.status_code == 200
+    assert [log['original_text'] for log in res.json()['plan']['proofread_logs']] == ['계획서의 문장']
+    assert [name for name, _, _ in orch.calls if name == 'screen'] == []
 
 
 def test_result_does_not_open_screen_10_without_proofread_attempts(authed_client, orch):
@@ -259,14 +247,6 @@ def test_result_does_not_open_screen_10_without_proofread_attempts(authed_client
 
     assert _result(authed_client, pid).status_code == 200
     assert [name for name, _, _ in orch.calls if name == 'screen'] == []
-
-
-def test_result_screen_10_errors_other_than_not_ready_are_not_hidden(authed_client, orch):
-    pid = _create(authed_client)
-    orch.responses['outputs'] = lambda p: _reviewed_outputs('x')
-    orch.responses['screen'] = OrchError('RUN_NOT_FOUND', 'x')
-
-    assert _result(authed_client, pid).status_code == 404
 
 
 # ── 기획서 v1.11 4-5 · 5-4: 통과 필수 조건 결과 · 대조 누락 · 부분 인정 기능 ──────────────────────────────

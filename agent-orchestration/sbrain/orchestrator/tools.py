@@ -6,9 +6,20 @@ tools는 호출마다 재시도 · 제한 시간 · 오류 종류 분류를 맡�
 - 제한 시간: 동기 호출은 강제로 끊을 수 없으므로 호출처(HTTP 클라이언트)의 timeout으로 건다.
   tools는 timeout_sec를 요청에 실어 넘기고, 호출처는 시간이 넘으면 TimeoutError를 올린다.
 - 형식 오류: tools가 기대 스키마(schema)로 검사하고, Task의 parse 함수가 FormatError를 올려도 재시도한다.
-- 여러 스레드에서 동시에 써도 안전하다(T-P2). 재시도 기록은 호출별로 따로 센다.
-- 기준 문서 문구대로 호출 실패는 오류 종류와 관계없이 재시도 횟수까지 다시 보낸다.
+- 여러 스레드에서 동시에 써도 안전하다(Task 안 동시 호출). 재시도 기록은 호출별로 따로 센다.
+- 재시도 규칙(확장 · 잠정 — 기준 문서는 '오류 종류와 관계없이 재시도 횟수까지'): 일시 오류만 재시도 횟수까지 다시 보낸다.
+  - 결제 · 한도 코드(errors.BILLING_LIMIT_CODES — ProviderError.code, 상태 코드와 관계없음)는 재시도하지 않고 '호출실패' ·
+    '일시'로 끝낸다(ToolCallExhausted.billing_limit) — 엔진의 재개 일정으로 기다린다.
+  - 그 밖의 응답 코드 오류가 입력 · 운영(classify_status)이면 재시도하지 않는다. 바로 끝내는 경우(_Immediate)도 그대로다.
+  - 일시 오류의 대기: 응답 코드 일시 · 시간 초과 · 연결 오류 · 파일 창구 밖의 OSError는 늘리는 간격
+    (재시도 간격 × 배수^(n−1) × (1 + 무작위[0, 비율]), n은 몇 번째 재시도인지 — 앞 실패의 종류와 관계없이 센다).
+    형식 오류 · 파일 창구의 모든 실패 · search(backoff=False)는 재시도 간격 고정(무작위 없음).
+  - 응답이 Retry-After(ProviderError.retry_after_sec)를 알려 주면 그 대기는 계산 값과 그 값 중 큰 쪽, 최대 retry_after_cap_sec.
+  - 한 호출의 대기 합은 wait_cap_sec(설정 키별 — 엔진이 찾아 넣음)를 넘지 않는다. 다음 대기를 더하면 넘게 되면 남은 재시도 없이
+    마지막 실패로 소진한다(재시도 횟수보다 우선).
   오류 종류는 재시도를 다 쓴 뒤 재개할지(일시) 실패로 끝낼지(입력 · 운영)를 가른다.
+- 시도 설명(CallTry.detail): 응답 코드 오류는 'status=N', 오류 코드가 있으면 'status=N code=X'(정규식을 통과한 코드만).
+  응답 메시지 · 본문 · 헤더 값은 기록 · 예외 메시지에 넣지 않는다.
 - 토큰 사용량(확장): 호출처가 LLMResponse(text, usage)를 돌려주면 시도마다 사용량을 CallTry에 남긴다.
   스키마 검사 · parse 전에 남겨 형식 오류로 버린 응답의 비용도 기록된다. 호출 합계는 CallLog에 둔다.
   호출처는 문자열만 돌려줘도 된다(사용량 없음).
@@ -26,10 +37,13 @@ tools는 호출마다 재시도 · 제한 시간 · 오류 종류 분류를 맡�
 - 목적 · 항목 칸 길이: 호출 기록(CallLog)의 purpose · item_key는 만들 때 trace.CALL_LOG_TEXT_MAX(DB 칸 길이)로 뒤를 자른다.
   목적별 모델 찾기와 요청 메타데이터는 자르기 전 값이다. 모든 Task · 호출 종류에 같은 규칙(_call 한 곳).
 - 호출별 재시도 횟수(확장, 범용): search(retries=n)는 그 호출만 처음 포함 n + 1번 시도한다. 주지 않으면 설정 retry_count다.
-  엔진은 무슨 호출인지 모른다 — 값은 부르는 쪽이 정한다.
+  엔진은 무슨 호출인지 모른다 — 값은 부르는 쪽이 정한다. search(backoff=False)도 같은 범용 칸이다(간격 고정).
 """
 from __future__ import annotations
 
+import math
+import random
+import re
 import threading
 import time
 import uuid
@@ -41,7 +55,9 @@ from pydantic import BaseModel, ValidationError
 
 from ..models.base import CallError, ErrorKind
 from ..models.files import FileRef, file_name_problem, media_type_problem, size_problem
-from .errors import FileRejected, FormatError, ProviderError, ToolCallExhausted
+from .errors import (
+    BILLING_LIMIT_CODES, FileRejected, FormatError, ProviderError, ToolCallExhausted, clean_error_code,
+)
 from .files import FileConflict, FileMeta, FileMissing, FileStore, sha256_hex
 from .trace import FILE_CALL, CallLog, CallTry, add_tokens, clip_call_text
 
@@ -138,10 +154,29 @@ class ToolsConfig:
     image_timeout_sec: float = 120.0
     # 확장 — 호출 목적 → 모델 (Task 설정의 purposeModels를 엔진이 그대로 옮긴다). 없는 목적은 model로 부른다
     purpose_models: Mapping[str, str] = field(default_factory=dict)
+    # 확장 · 잠정 — 재시도 대기 (Settings.retry를 엔진이 옮긴다). wait_cap_sec은 설정 키로 찾은 그 호출 설정의 대기 합 상한
+    backoff_multiplier: float = 2.0
+    jitter_ratio: float = 0.25
+    retry_after_cap_sec: float = 60.0
+    wait_cap_sec: float = 90.0
 
     def model_for(self, purpose: str) -> str | None:
         """이 목적의 LLM 모델 — 목적별 모델이 있으면 그 값, 없으면 Task 모델."""
         return self.purpose_models.get(purpose, self.model)
+
+
+_DETAIL_CODE = re.compile(r"(?:^|\s)code=(\S+)$")
+
+
+def status_detail(status: int | None, code: str | None) -> str:
+    """응답 코드 오류의 시도 설명(CallTry.detail) — 'status=N', 오류 코드가 있으면 'status=N code=X'."""
+    return f"status={status} code={code}" if code else f"status={status}"
+
+
+def detail_code(detail: str | None) -> str | None:
+    """시도 설명에서 오류 코드를 읽는다(status_detail의 짝). 없거나 정규식을 통과하지 않으면 None."""
+    found = _DETAIL_CODE.search(detail or "")
+    return clean_error_code(found.group(1)) if found else None
 
 
 def classify_status(status: int | None) -> ErrorKind:
@@ -184,6 +219,8 @@ class ToolsContext:
     # 둘 중 하나라도 없으면(사전 단계 · 실행 기록 밖) 파일 창구를 부르는 순간 RuntimeError다
     files: FileStore | None = None
     run_progress: Callable[[], str | None] | None = None
+    # 확장 — 무작위 지연의 난수(0 이상 1 미만). 테스트가 대기 값을 정확히 확인하도록 주입할 수 있다
+    rand: Callable[[], float] = random.random
 
 
 # 파일 창구의 시도 실패 설명 (내용 · 이름 · 키 없음)
@@ -351,12 +388,14 @@ class Tools:
 
         return self._call("llm", purpose, once, usage=lambda: box["usage"], model=model)
 
-    def search(self, purpose: str, fn: Callable[[float], T], *, retries: int | None = None) -> T:
+    def search(self, purpose: str, fn: Callable[[float], T], *, retries: int | None = None,
+               backoff: bool = True) -> T:
         """LLM이 아닌 호출(임베딩 검색 · BM25 등)을 감싼다. fn은 timeout_sec를 받는다.
 
         retries(확장, 범용): 이 호출 하나의 재시도 횟수(처음 포함 retries + 1번). 주지 않으면 설정 retry_count다.
+        backoff(확장, 범용): 거짓이면 일시 오류도 늘리는 간격 · 무작위 지연 없이 재시도 간격 고정으로 기다린다.
         엔진은 무슨 호출인지 모른다 — 값은 부르는 쪽(연결 코드)이 정한다."""
-        return self._call("search", purpose, lambda: fn(self._config.timeout_sec), retries=retries)
+        return self._call("search", purpose, lambda: fn(self._config.timeout_sec), retries=retries, backoff=backoff)
 
     def image(
         self,
@@ -414,9 +453,10 @@ class Tools:
     # ── 재시도 ────────────────────────────────────────
     def _call(self, call_type: str, purpose: str, once: Callable[[], T],
               usage: Callable[[], TokenUsage | None] = lambda: None, model: str | None = None,
-              retries: int | None = None) -> T:
+              retries: int | None = None, backoff: bool = True) -> T:
         """model은 LLM 호출이 실제로 쓴 모델(목적별 모델) — 없으면 Task 모델을 기록한다.
-        retries는 이 호출만의 재시도 횟수 — None이면 설정 retry_count."""
+        retries는 이 호출만의 재시도 횟수 — None이면 설정 retry_count.
+        backoff가 거짓이면(search(backoff=False)) 모든 재시도 대기가 재시도 간격 고정이다. 파일 창구(FILE_CALL)도 고정."""
         cfg, ctx = self._config, self._ctx
         llm, image = call_type == "llm", call_type == "image"
         log = CallLog(
@@ -438,9 +478,14 @@ class Tools:
         error: CallError = "호출실패"
         kind: ErrorKind = "일시"
         detail = ""
+        code: str | None = None          # 마지막 시도의 오류 코드
+        billing = False                  # 결제 · 한도 코드로 끝났는지
+        waited = 0.0                     # 이 호출의 재시도 대기 합
+        fixed_only = call_type == FILE_CALL or not backoff
         total = 1 + (cfg.retry_count if retries is None else max(0, retries))
         for no in range(1, total + 1):
             started = ctx.now()
+            code, retry_after, fixed, stop = None, None, fixed_only, False
             try:
                 result = once()
             except _Immediate as e:   # 재시도하지 않는다
@@ -448,12 +493,17 @@ class Tools:
                 log.tries.append(CallTry(no=no, started_at=started, ended_at=ctx.now(),
                                          outcome=error, error_kind=kind, detail=detail))
                 break
-            except FormatError as e:
-                error, kind, detail = "형식오류", "일시", str(e)
+            except FormatError as e:   # 서버가 바쁜 것이 아니다 — 늘리지 않는다
+                error, kind, detail, fixed = "형식오류", "일시", str(e), True
             except TimeoutError:
                 error, kind, detail = "응답지연", "일시", "timeout"
             except ProviderError as e:
-                error, kind, detail = "호출실패", classify_status(e.status), f"status={e.status}"
+                code, retry_after = e.code, e.retry_after_sec
+                billing = code in BILLING_LIMIT_CODES
+                # 결제 · 한도 코드는 상태 코드와 관계없이 '일시'로 끝낸다(재개 대기). 입력 · 운영은 다시 보내도 같다
+                error, kind = "호출실패", "일시" if billing else classify_status(e.status)
+                detail = status_detail(e.status, code)
+                stop = billing or kind != "일시"
             except (ConnectionError, OSError) as e:
                 error, kind, detail = "호출실패", "일시", type(e).__name__
             else:
@@ -465,14 +515,34 @@ class Tools:
                 return result
             log.tries.append(CallTry(no=no, started_at=started, ended_at=ctx.now(),
                                      outcome=error, error_kind=kind, detail=detail, **_usage_fields(usage())))
-            if no < total and cfg.retry_interval_sec > 0:
-                ctx.sleep(cfg.retry_interval_sec)
+            if stop or no >= total:
+                break
+            wait = self._wait_before_retry(no, fixed=fixed, retry_after=retry_after)
+            if waited + wait > cfg.wait_cap_sec:   # 대기 합 상한이 재시도 횟수보다 우선 — 남은 재시도 없이 소진
+                break
+            if wait > 0:
+                ctx.sleep(wait)
+                waited += wait
         log.final_outcome = "소진"
         log.error, log.error_kind = error, kind
         add_tokens(log, log.tries)
         ctx.sink.add(log)
         raise ToolCallExhausted(error=error, error_kind=kind, tries=len(log.tries),
-                                call_id=log.call_id, detail=detail)
+                                call_id=log.call_id, detail=detail, code=code, billing_limit=billing)
+
+    def _wait_before_retry(self, n: int, *, fixed: bool, retry_after: float | None) -> float:
+        """n번째 재시도 전 대기(초). 고정이면 재시도 간격, 아니면 재시도 간격 × 배수^(n−1) × (1 + 무작위[0, 비율]).
+        Retry-After가 있으면 계산 값과 그 값 중 큰 쪽, 최대 retry_after_cap_sec."""
+        cfg = self._config
+        base = cfg.retry_interval_sec
+        if fixed:
+            wait = base
+        else:
+            wait = base * cfg.backoff_multiplier ** (n - 1)
+            wait *= 1 + self._ctx.rand() * cfg.jitter_ratio
+        if retry_after is not None and math.isfinite(retry_after):
+            wait = min(max(wait, retry_after), cfg.retry_after_cap_sec)
+        return max(wait, 0.0)
 
 
 def _usage_fields(usage: TokenUsage | None) -> dict[str, int | None]:

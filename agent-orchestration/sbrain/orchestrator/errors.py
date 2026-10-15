@@ -1,6 +1,8 @@
 """오류 코드(기능정의서 시트 6)와 Orchestrator 예외."""
 from __future__ import annotations
 
+import math
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -119,12 +121,53 @@ class FormatError(OrchestratorError):
         self.usage = usage
 
 
-class ProviderError(OrchestratorError):
-    """LLM · 검색 호출처가 올리는 오류. status로 오류 종류를 분류한다."""
+# 결제 · 한도 오류 코드 (확장) — 호출처가 알려 준 "재시도해도 풀리지 않는" 결제 · 지출 · 사용 한도 코드 목록. 응답 상태 코드
+# (429 · 400 등)와 관계없이 이 코드면 tools가 재시도하지 않고 오류 종류 '일시'로 끝낸다(엔진의 재개 일정으로 기다림).
+# 이름은 OpenAI 공식 오류 코드 문서(2026-10-13 확인) 그대로다
+BILLING_LIMIT_CODES: frozenset[str] = frozenset({
+    "credit_balance_exhausted",
+    "organization_spend_limit_exceeded",
+    "project_spend_limit_exceeded",
+    "organization_usage_limit_exceeded",
+    "insufficient_quota",
+    "billing_hard_limit_reached",
+})
 
-    def __init__(self, message: str, *, status: int | None = None) -> None:
+# 기록에 남겨도 되는 오류 코드 모양 — 영문 소문자 · 숫자 · 밑줄, 1 ~ 64자. 응답 내용이 아니라 정해진 어휘의 이름만 받는다
+ERROR_CODE_PATTERN = re.compile(r"[a-z0-9_]{1,64}")
+
+
+def clean_error_code(value: Any) -> str | None:
+    """오류 코드 정리 — 모양(ERROR_CODE_PATTERN)에 맞는 글자면 그대로, 아니면 None(없는 것으로 본다).
+    호출처 어댑터가 응답 본문의 코드를 읽을 때도 이 함수로 거른다."""
+    if isinstance(value, str) and ERROR_CODE_PATTERN.fullmatch(value):
+        return value
+    return None
+
+
+def _clean_seconds(value: Any) -> float | None:
+    """Retry-After 초 — 0 이상의 유한한 숫자만 받는다(bool · 글자 · 음수 · NaN · 무한은 None)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = float(value)
+    return value if math.isfinite(value) and value >= 0 else None
+
+
+class ProviderError(OrchestratorError):
+    """LLM · 검색 호출처가 올리는 오류. status로 오류 종류를 분류한다.
+
+    확장 칸(기본값 있음):
+    - code: 응답 본문의 오류 코드. 모양(clean_error_code)에 맞지 않으면 None — 기록(시도 설명)에 남는다.
+    - retry_after_sec: 응답 헤더에서 읽은 다시 보낼 때까지의 초(없으면 None). tools가 다음 대기를 정할 때 쓴다.
+    메시지에는 응답 본문 · 헤더 값을 넣지 않는다(tools는 메시지를 기록하지 않는다).
+    """
+
+    def __init__(self, message: str, *, status: int | None = None, code: str | None = None,
+                 retry_after_sec: float | None = None) -> None:
         super().__init__(message)
         self.status = status
+        self.code = clean_error_code(code)
+        self.retry_after_sec = _clean_seconds(retry_after_sec)
 
 
 class ToolCallExhausted(OrchestratorError):
@@ -133,10 +176,14 @@ class ToolCallExhausted(OrchestratorError):
     partial (확장, 선택): 재시도를 다 쓰기 전까지 Task가 받은 결과. 입력 하나를 PARTIAL로 연결한 Task가 다시 올리며
     싣는다 — 엔진이 재개를 예약할 때만 '<taskId>.partial'로 저장하고, 재개하면 그 입력에 넣는다. 내용이라 예외
     메시지 · str · repr에 넣지 않는다(생성 인자로 super에 넘기지 않음).
+    code (확장): 마지막 시도의 오류 코드(ProviderError.code, 없으면 None). 운영 로그 단계끝 · 재개예약 줄의 errorCode.
+    billing_limit (확장): 결제 · 한도 코드(BILLING_LIMIT_CODES)로 끝났는지. 소진을 받아 대체 경로로 가는 Task는 이 값이
+    참이면 넘어가지 않고 다시 올린다(재개 대기로).
     """
 
     def __init__(self, *, error: CallError, error_kind: ErrorKind, tries: int, call_id: str, detail: str = "",
-                 partial: dict[str, Any] | None = None) -> None:
+                 partial: dict[str, Any] | None = None, code: str | None = None,
+                 billing_limit: bool = False) -> None:
         super().__init__(f"{error}/{error_kind} after {tries} tries: {detail}")
         self.error = error
         self.error_kind = error_kind
@@ -144,6 +191,8 @@ class ToolCallExhausted(OrchestratorError):
         self.call_id = call_id
         self.detail = detail
         self.partial = partial
+        self.code = clean_error_code(code)
+        self.billing_limit = billing_limit
 
 
 class ContractError(OrchestratorError):

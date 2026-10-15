@@ -3,8 +3,7 @@
 MySQL 구현(sbrain/store_sql/store.py SqlStore)과 같은 동작이다. 흐름 테스트를 두 저장소로 함께 돌려 확인한다.
 
 - 시각은 시간대 있는 UTC로 다룬다. 실행 건 JSON의 시각 문자열(옛 값은 시간대 없음 = UTC)은 as_utc로 읽어 비교한다.
-- 반려된 시도는 실행 건에 프로젝트가 있고 그 주인이 학습 데이터 편입에 동의했을 때만 남긴다. 동의 여부는
-  웹 DB 대신 set_training_consent로 받은 값을 저장하는 순간 본다(없으면 동의 안 함).
+- 웹 테이블 대신 남기는 것은 알림(notifications)뿐이다. 반려된 T-P2 시도 · 학습 동의는 다루지 않는다.
 """
 from __future__ import annotations
 
@@ -18,7 +17,7 @@ from datetime import datetime, timedelta
 
 from typing import Any
 
-from ..models import Notice, Notification, RejectedAttempt, ReworkComparison, Run
+from ..models import Notice, Notification, ReworkComparison, Run
 from ..models.clock import UTC_MIN, as_utc, utc_clock, utc_now
 from ..models.run import ACTIVE_PROGRESS
 from .errors import FileDeletionNotFound, FileDeletionNotGivenUp, ProjectRunExists, StoreConflict
@@ -61,8 +60,6 @@ class MemoryStore:
         self._pointer_events: dict[str, list[PointerEvent]] = defaultdict(list)
         self._events: dict[str, list[TraceEvent]] = defaultdict(list)
         self._notifications: dict[str, list[Notification]] = defaultdict(list)
-        self._rejected: dict[str, list[RejectedAttempt]] = defaultdict(list)
-        self._training_consent: dict[str, bool] = {}            # project_id → 주인의 학습 데이터 편입 동의
         self._leases: dict[str, tuple[str, datetime]] = {}
         self._aborts: set[str] = set()
         self._requests: dict[str, StartRequest] = {}             # request_id → 시작 요청 (넣은 순서)
@@ -114,11 +111,6 @@ class MemoryStore:
     def _count_active(self, account_id: str) -> int:
         return sum(1 for r in self._runs.values()
                    if r["accountId"] == account_id and r["state"]["progress"] in ACTIVE_PROGRESS)
-
-    def set_training_consent(self, project_id: int | str, agreed: bool) -> None:
-        """프로젝트 주인의 학습 데이터 편입 동의 (웹 users.ai_training_agreed 대신 — 테스트 · 시연용)."""
-        with self._lock:
-            self._training_consent[str(project_id)] = agreed
 
     def runs_due_for_resume(self, now: datetime) -> list[str]:
         now = as_utc(now)
@@ -348,9 +340,6 @@ class MemoryStore:
         self._comparisons[run_id].extend(batch.comparisons)
         self._events[run_id].extend(batch.events)
         self._notifications[run_id].extend(batch.notifications)
-        pid = self._runs.get(run_id, {}).get("projectId")
-        if batch.rejected_attempts and pid is not None and self._training_consent.get(pid, False):
-            self._rejected[run_id].extend(a.model_copy() for a in batch.rejected_attempts)
 
     # ── 중단 요청 ─────────────────────────────────────
     def request_abort(self, run_id: str) -> None:
@@ -410,10 +399,6 @@ class MemoryStore:
     def notifications(self, run_id: str) -> list[Notification]:
         with self._lock:
             return list(self._notifications[run_id])
-
-    def rejected_attempts(self, run_id: str) -> list[RejectedAttempt]:
-        with self._lock:
-            return list(self._rejected[run_id])
 
     # ── 관리자 조회 ───────────────────────────────────
     def list_executions(self, f: ExecutionFilter) -> list[ExecutionRow]:

@@ -6,8 +6,9 @@ T-C1 입력으로 옮기기 전에 그대로 담는 그릇이다. 필드 이름�
 - JSON 컬럼(ceo_careers · hires · equipment · partners)은 스키마에 키 이름이 없다(프론트 항목 모양
   그대로 저장). 키 이름은 웹 코드(PlanCareerIn 등)에서 확인했고, 여기서는
   안쪽 구조를 검사하지 않고 그대로 담는다. 키 이름으로 옮기는 일은 mapping.py가 한다.
-- 첨부(project_attachments)는 R-8과 함께 다룬다. 지금은 읽지 않는다.
+- 첨부(project_attachments)는 읽지 않는다. 첨부를 다루던 R-8은 흐름에서 빠져 지금 쓰지 않는다.
 - 사업비 · 일정(project_budget_items · project_schedule_items)은 계획서 표의 원본 row다(spec 4.3, 읽기만).
+- 목표 고객(project_plan_inputs.target_customer)은 웹이 더하는 선택 컬럼이다 — 없으면 None.
 """
 from __future__ import annotations
 
@@ -88,6 +89,9 @@ class PlanInputRow(_Row):
     equipment: list[Any] | None = None     # name · status (이름 · 상태)
     no_partners: bool | None = None
     partners: list[Any] | None = None      # name · status (기관명 · 상태)
+    # 목표 고객 — 웹이 005_target_customer.sql로 더하는 선택 컬럼(VARCHAR(200) NULL).
+    # 웹 배포 · 공유 DB 적용 전에는 컬럼이 없다 — 없거나 NULL이면 None (sql_source.OPTIONAL_COLUMNS)
+    target_customer: str | None = None
 
     _parse_json = field_validator(
         "certifications", "ceo_careers", "hires", "equipment", "partners", mode="before",

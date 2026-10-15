@@ -4,8 +4,9 @@
 - 결과는 첫 그림의 b64_json을 풀어 PNG 바이트로 돌려준다(모델 기본 출력 형식이 PNG). 그림이 없으면 형식 오류.
 - size · quality는 요청에 값이 있을 때만 싣는다. request.timeout_sec를 요청 timeout으로 건다.
 - 재시도는 tools가 한다. SDK 자체 재시도는 끈다(max_retries=0).
-- 시간 초과 → TimeoutError, 연결 오류 → ConnectionError, 응답 코드 오류 → ProviderError(status). 글 어댑터와 같다.
-  오류 메시지에 지시문 · 그림을 싣지 않는다.
+- 시간 초과 → TimeoutError, 연결 오류 → ConnectionError, 응답 코드 오류 → ProviderError(status, code, retry_after_sec).
+  글 어댑터와 같다 — 응답 코드 오류는 글 어댑터의 status_error 하나로 만든다(본문 오류 코드 · Retry-After 헤더 읽기, 확장).
+  오류 메시지에 지시문 · 그림 · 본문 · 헤더 값을 싣지 않는다.
 - 토큰 사용량: usage.input_tokens → 입력, usage.output_tokens → 출력. 캐시 · 추론은 없다(None). 사용량이 없으면 None.
 - 클라이언트는 처음 호출할 때 만든다 — 워커 조립 때 키가 없어도 조립이 깨지지 않게(이미지 호출을 쓰는 구현 Task가
   아직 없다). API 키는 OPENAI_API_KEY(환경 변수 → .env)에서 읽는다(sbrain/env.py). 코드에 넣지 않는다.
@@ -20,7 +21,8 @@ from typing import Any
 import openai
 
 from ..env import get_env
-from .errors import FormatError, ProviderError
+from .errors import FormatError
+from .openai_provider import status_error
 from .tools import ImageRequest, ImageResponse, TokenUsage
 
 EDIT_FILE_NAME = "input.png"   # images.edit에 올리는 입력 그림의 파일 이름 (내용 형식을 알리는 용도)
@@ -57,7 +59,7 @@ class OpenAIImageProvider:
         except openai.APIConnectionError as e:
             raise ConnectionError(f"OpenAI 이미지 연결 실패: {type(e).__name__}") from None
         except openai.APIStatusError as e:
-            raise ProviderError(f"OpenAI 이미지 오류 {e.status_code}", status=e.status_code) from None
+            raise status_error(e, "OpenAI 이미지 오류") from None
         usage = _usage(getattr(response, "usage", None))
         data = getattr(response, "data", None) or []
         encoded = getattr(data[0], "b64_json", None) if data else None

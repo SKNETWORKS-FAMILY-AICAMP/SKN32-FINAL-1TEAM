@@ -3,11 +3,8 @@
 컬럼 이름 · 뜻은 웹 스키마(app_schema.sql)와 같고 형식만 SQLite에 맞게 줄였다.
 MySQL 통합 테스트는 실제 app_schema.sql을 쓴다(mysqldb.py).
 
-- proofread_logs는 웹 스키마 변경 뒤의 모양(project_id · model_version 있음, plan_id 없어도 됨)이다.
-  project_id는 NULL 허용 · projects 삭제 때 SET NULL(학습 데이터는 프로젝트를 지워도 남는다). created_at은 있다 —
-  Orchestrator가 저장 시각(UTC)을 직접 넣는다.
-  옛 모양(plan_id NOT NULL, project_id 없음)은 use_old_proofread_logs로 바꿔 시험한다.
-- 학습 동의는 projects.company_id → companies.user_id → users.ai_training_agreed로 읽는다.
+- 웹 스키마를 본뜬 표라 Orchestrator가 더 쓰지 않는 표 · 컬럼(proofread_logs, users.ai_training_agreed)도
+  그대로 둔다. Orchestrator는 proofread_logs를 쓰거나 읽지 않고 학습 동의도 읽지 않는다.
 """
 from __future__ import annotations
 
@@ -78,7 +75,6 @@ def proofread_columns(*, new: bool, fk: bool = False) -> list[Column]:
 
 
 PROOFREAD_LOGS = Table("proofread_logs", META, *proofread_columns(new=True, fk=True))
-OLD_PROOFREAD_LOGS = Table("proofread_logs", MetaData(), *proofread_columns(new=False))   # 웹 스키마 변경 전
 
 POLICIES = Table(
     "verification_policies", META,
@@ -98,12 +94,6 @@ _ids = itertools.count(1001)
 
 def create_web_tables(engine: Engine) -> None:
     META.create_all(engine)
-
-
-def use_old_proofread_logs(engine: Engine) -> None:
-    """SQLite 테스트 DB의 proofread_logs를 웹 스키마 변경 전 모양으로 바꾼다."""
-    PROOFREAD_LOGS.drop(engine)
-    OLD_PROOFREAD_LOGS.create(engine)
 
 
 def new_project(engine: Engine, *, agreed: bool = False) -> int:
@@ -127,26 +117,11 @@ def new_project(engine: Engine, *, agreed: bool = False) -> int:
                             {"c": cid}).lastrowid
 
 
-def set_training_consent(engine: Engine, project_id: int, agreed: bool) -> None:
-    """프로젝트 주인 계정의 학습 데이터 편입 동의(users.ai_training_agreed)를 바꾼다 (웹이 로그인마다 갱신)."""
-    with engine.begin() as conn:
-        conn.execute(text(
-            "UPDATE users SET ai_training_agreed = :a WHERE user_id = (SELECT c.user_id FROM companies c "
-            "JOIN projects p ON p.company_id = c.company_id WHERE p.project_id = :p)"), {"a": agreed, "p": project_id})
-
-
 def project_row(engine: Engine, project_id: int) -> dict[str, Any]:
     """웹 projects 행 전체 (Orchestrator가 바꾸지 않는지 확인용)."""
     with engine.connect() as conn:
         return dict(conn.execute(text("SELECT * FROM projects WHERE project_id = :p"), {"p": project_id})
                     .mappings().one())
-
-
-def proofread_rows(engine: Engine, project_id: int) -> list[dict[str, Any]]:
-    """웹 proofread_logs의 프로젝트 행 (쓴 순서)."""
-    with engine.connect() as conn:
-        return [dict(r) for r in conn.execute(text(
-            "SELECT * FROM proofread_logs WHERE project_id = :p ORDER BY log_id"), {"p": project_id}).mappings()]
 
 
 def count_rows(engine: Engine, table: str) -> int:

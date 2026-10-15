@@ -21,7 +21,10 @@
   넘긴다. 출력을 저장하기 전에 출력 안의 모든 FileRef(중첩 모델 · 목록 · 사전 포함)를 저장소와 대조한다 — 키 첫 마디가 이 실행
   건, 저장소에 있음, 형식 · 크기 · sha256 · 이름이 같음. 어기면 규격 위반(ContractError)이고 메시지에는 수와 규칙 종류만 적는다.
 - 운영 로그 줄(runlog, 로거 sbrain.run): 실행 기록마다 단계시작 · 단계끝, 실행 건의 대기 · 실행끝 · 재개예약. 단계 ID와 실행 건 ·
-  실행 기록 값만 쓴다. 처리기는 워커만 단다 — 그 밖에서는 아무것도 나가지 않는다.
+  실행 기록 값만 쓴다. 처리기는 워커만 단다 — 그 밖에서는 아무것도 나가지 않는다. 단계끝 · 재개예약의 errorCode(확장)는 엔진이
+  그 실행에서 받은 재시도 소진(ToolCallExhausted.code)의 오류 코드다 — 실행 기록 ID로 잠시 들고 있고 모델 칸은 없다.
+- 재시도 대기 설정(확장 · 잠정): 호출 설정(ToolsConfig)에 늘리는 간격 · 무작위 지연 · Retry-After 상한과 설정 키로 찾은 대기 합
+  상한(Settings.retry.wait_cap_by_key, 없으면 wait_cap_sec)을 옮긴다. 키 이름은 보지 않는다.
 """
 from __future__ import annotations
 
@@ -157,6 +160,15 @@ def _dig(obj: Any, path: str) -> Any:
     return obj
 
 
+def _retry_wait(settings: Any, key: str) -> dict[str, float]:
+    """재시도 대기 설정(확장 · 잠정) — 늘리는 간격 · 무작위 지연 · Retry-After 상한과, 설정 키(key)로 찾은 대기 합 상한
+    (wait_cap_by_key, 없으면 wait_cap_sec). 엔진은 키 이름을 보지 않는다(제한 시간 task_timeouts와 같은 방식)."""
+    r = settings.retry
+    return {"backoff_multiplier": r.backoff_multiplier, "jitter_ratio": r.jitter_ratio,
+            "retry_after_cap_sec": r.retry_after_cap_sec,
+            "wait_cap_sec": r.wait_cap_by_key.get(key, r.wait_cap_sec)}
+
+
 class Engine:
     def __init__(
         self,
@@ -198,6 +210,10 @@ class Engine:
         self._step_marks: dict[str, datetime] = {}
         # 운영 로그 재개예약의 오류 종류 — 실행 건 ID → 재개를 예약한 오류 종류 (저장 뒤 줄을 남기며 지운다)
         self._resume_kinds: dict[str, str] = {}
+        # 운영 로그 errorCode (확장) — 실행 기록 ID → 엔진이 받은 재시도 소진의 오류 코드(없으면 None). 그 단계의 처리가
+        # 끝나면 지운다. 재개예약 줄의 값은 실행 건 ID → 그 코드로 옮겨 두었다가 저장 뒤 줄을 남기며 지운다 (모델 칸 없음)
+        self._exhausted_codes: dict[str, str | None] = {}
+        self._resume_codes: dict[str, str | None] = {}
 
     # ── Context ──────────────────────────────────────
     def open_context(self, run: Run, provisional: bool = False, owner: str | None = None) -> RunContext:
@@ -291,8 +307,9 @@ class Engine:
         """저장 뒤 실행 건이 대기 지점에 멈췄거나 · 재개를 예약했거나 · 끝났으면 운영 로그 한 줄."""
         progress = ctx.run.state.progress
         kind = self._resume_kinds.pop(ctx.run.run_id, None)
+        code = self._resume_codes.pop(ctx.run.run_id, None)
         if progress == "재개대기":
-            runlog.resume_scheduled(ctx.run, kind or ctx.run.last_error_kind)
+            runlog.resume_scheduled(ctx.run, kind or ctx.run.last_error_kind, code)
         elif progress == "사용자대기":
             runlog.wait(ctx.run)
         elif progress in ("완료", "실패", "중단"):
@@ -304,8 +321,9 @@ class Engine:
             return
         started = self._step_marks.pop(rec.execution_id, None)
         sec = (self.now() - started).total_seconds() if started else None
+        code = self._exhausted_codes.get(rec.execution_id)   # 이 실행에서 엔진이 받은 재시도 소진의 오류 코드
         run, snap = ctx.run, rec.model_copy()   # 끝난 때의 값 그대로
-        ctx.after_commit(lambda: runlog.step_end(run, snap, sec))
+        ctx.after_commit(lambda: runlog.step_end(run, snap, sec, code))
 
     # ── 단계 실행 ─────────────────────────────────────
     def run_step(self, ctx: RunContext, step_id: str) -> Outcome:
@@ -330,6 +348,7 @@ class Engine:
             try:
                 outputs = self._invoke(ctx, spec, rec, rs)
             except ToolCallExhausted as e:
+                self._exhausted_codes[rec.execution_id] = e.code   # 운영 로그 errorCode (단계끝 · 재개예약)
                 outcome = self._on_exhausted(ctx, spec, rec, rs, e)
                 self._log_step_end(ctx, rec)
                 return outcome
@@ -341,6 +360,7 @@ class Engine:
                 self._log_step_end(ctx, rec)
             finally:
                 self._step_marks.pop(rec.execution_id, None)   # 처리 중 예외가 새도 시작 시각을 남기지 않는다
+                self._exhausted_codes.pop(rec.execution_id, None)
             check = outputs.get("check")
             if check is not None:
                 ctx.run.check_refs[spec.task_id] = ctx.ref(spec.outputs["check"])
@@ -551,13 +571,15 @@ class Engine:
         s = ctx.settings
         return ToolsConfig(agent=spec.agent, provider=None, model=None, temperature=None,
                            timeout_sec=s.task_timeouts.get(spec.task_id, 120.0),
-                           retry_count=s.retry.retry_count, retry_interval_sec=s.retry.retry_interval_sec)
+                           retry_count=s.retry.retry_count, retry_interval_sec=s.retry.retry_interval_sec,
+                           **_retry_wait(s, spec.task_id))
 
     def agent_tools_config(self, ctx: RunContext, agent_name: str, key: str) -> ToolsConfig:
         """설정 키(key)의 설정(호출처 · 모델 · 기본 온도 · 추론 강도 · 이미지 설정)과 제한 시간을 입힌 호출 설정 (Task 온도 규칙
         없음). 호출 기록의 Agent 이름은 agent_name이다. 옛 설정 사본(tasks 없음)이면 agent_name의 Agent별 설정을 쓴다.
         제한 시간은 task_timeouts[key](없으면 120초), 이미지 호출 한 번의 제한 시간은 task_timeouts['<key>.image']다.
-        목적별 모델(Task 설정의 purpose_models, 확장)은 목적 이름을 보지 않고 그대로 옮긴다 — 옛 Agent별 설정에는 없다(빈 사전)."""
+        목적별 모델(Task 설정의 purpose_models, 확장)은 목적 이름을 보지 않고 그대로 옮긴다 — 옛 Agent별 설정에는 없다(빈 사전).
+        재시도 대기 설정(확장)은 _retry_wait — 대기 합 상한은 wait_cap_by_key[key](없으면 wait_cap_sec)."""
         s = ctx.settings
         conf = self.agents.lookup(s, agent_name, key)
         image = conf if isinstance(conf, TaskModelSetting) else None
@@ -572,6 +594,7 @@ class Engine:
             image_size=image.image_size if image else None,
             image_timeout_sec=s.task_timeouts.get(f"{key}{IMAGE_TIMEOUT_SUFFIX}", 120.0),
             purpose_models=dict(image.purpose_models) if image else {},
+            **_retry_wait(s, key),
         )
 
     def _tools_factory(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, sink: CallSink) -> ToolsFactory:
@@ -684,6 +707,8 @@ class Engine:
                 ctx.record_execution(rec)
                 ctx.add_event("재개예약", f"{rec.task_id} {wait} 뒤 재개", execution_id=rec.execution_id)
                 self._resume_kinds[run.run_id] = kind   # 재개예약 줄은 저장 뒤 남긴다 (_log_progress)
+                # errorCode — 엔진이 이 실행에서 받은 소진의 코드. 흐름이 직접 예약한 재개면 받은 소진이 없어 '-'다(지금 그렇게 하는 흐름 코드는 없다)
+                self._resume_codes[run.run_id] = self._exhausted_codes.get(rec.execution_id)
                 return Outcome("resume_wait", record=rec)
             reason = "재개상한초과"
         else:

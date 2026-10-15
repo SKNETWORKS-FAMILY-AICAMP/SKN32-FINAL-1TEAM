@@ -2,7 +2,7 @@
 
 - 다시 쓰기를 끼운 앱(스텁 앱 + 조율 다시 쓰기 함수, 가짜 LLM respond)과 끼우지 않은 스텁 앱 두 경로를 본다.
 - 부르는 때: 재수행 · 재작성 대상에서 한 번씩. 첫 실행 · 반영 실행에서는 부르지 않는다. 문서층 재작성이면 T-W1 · T-W2 · T-W3 각각.
-- 지시문 모양: 틀 · 참조 부분은 바이트 그대로, 안내만 바뀌고, 문제 내용 원문을 Agent 연동 규격 형식대로 덧붙인다.
+- 지시문 모양: 틀 부분은 바이트 그대로, 안내만 바뀌고(참조 자료 부분은 없다), 문제 내용 원문을 Agent 연동 규격 형식대로 덧붙인다.
 - 가리기: 다시 쓰기 요청에는 회사 정보 값이 없고, 대상 Agent가 받는 덧붙임에는 원문이 있다.
 - 재작성 중 재수행(5.4): 두 앱 모두 재작성 블록 + 재수행 블록. Task가 받는 rework_input은 그대로다.
 - 재시도 소진 → 재개대기, 재개 뒤 다시 부름. 다시 쓰기가 성공한 뒤 대상 Task가 소진되면 재개 때 저장한 지시문을 쓴다.
@@ -23,8 +23,7 @@ from sbrain.agents.stubs import FakeLLM
 from sbrain.agents.supervisor.plan import GUIDANCE_MAX_CHARS, PURPOSE_REWRITE
 from sbrain.agents.supervisor.rewrite import MASK_TEXT, mask, rewrite_guidance
 from sbrain.flow.instruction import (
-    FRAME_HEADER, GUIDANCE_HEADER, REFERENCE_HEADER, issues_block, order_block, replace_guidance, sanitize_guidance,
-    split_instruction,
+    FRAME_HEADER, GUIDANCE_HEADER, issues_block, order_block, replace_guidance, sanitize_guidance, split_instruction,
 )
 from sbrain.flow.sbrain_flow import SBrainFlow, default_instruction_builder, rewrite_mask_values
 from sbrain.models import (
@@ -103,7 +102,7 @@ def fail_check_once(app, task_id: str, issues: list[str]) -> None:
 
 
 def with_reference(app) -> None:
-    """T-C3에 참조 자료를 넣는다 — T-S1 지시문에 참조 자료 부분이 붙는다(슬롯 '핵심 기능')."""
+    """T-C3에 참조 자료를 넣는다 — T-C3는 읽지 않아 지시문에 참조 자료 부분이 없다."""
     spec = app.registry.get("T-C3")
     original = spec.fn
     summary = ReferenceSummary(
@@ -146,7 +145,7 @@ def test_stub_app_appends_only(clock):
 
 
 # ── 재수행 · 재작성 대상에서 한 번 ───────────────────────────
-def test_redo_rewrites_guidance_keeps_frame_and_reference_bytes(clock):
+def test_redo_rewrites_guidance_keeps_frame_bytes(clock):
     app = rewrite_app(clock, _scenario(check_fail_times={"T-S1": 1}))
     with_reference(app)
     seen = capture(app, "T-S1")
@@ -154,13 +153,15 @@ def test_redo_rewrites_guidance_keeps_frame_and_reference_bytes(clock):
     assert len(rewrites(app, "T-S1")) == 1 and len(rewrites(app)) == 1
     original = plan_task(app, rid, "T-S1").instruction
     parts = split_instruction(original)
-    assert parts.reference is not None                                  # 참조 자료 부분이 있는 지시문
+    assert "[참조 자료]" not in original and "첨부 조각" not in original   # 참조 자료를 줘도 두 부분뿐
     (first, _), (text, ri) = seen
     assert first == original
     appendix = issues_block("재수행", ["T-S1 검사 불통과 1"])
-    # 틀 · 참조 부분은 한 글자도 바뀌지 않고, 안내만 새 안내, 끝에 재수행 문제 원문
+    # 틀 부분은 한 글자도 바뀌지 않고, 안내만 새 안내, 끝에 재수행 문제 원문
     assert text == (f"{FRAME_HEADER}\n{parts.frame}\n\n{GUIDANCE_HEADER}\n{sanitize_guidance(new_guidance('T-S1'))}"
-                    f"\n\n{REFERENCE_HEADER}\n{parts.reference}{appendix}")
+                    f"{appendix}")
+    head = f"{FRAME_HEADER}\n{parts.frame}\n\n{GUIDANCE_HEADER}\n"
+    assert text.encode().startswith(head.encode()) and original.encode().startswith(head.encode())
     assert text == rewritten(original, "T-S1") + appendix
     assert parts.guidance != sanitize_guidance(new_guidance("T-S1"))
     # Task가 받는 재수행 입력은 그대로다
@@ -467,7 +468,7 @@ def test_instruction_not_rolled_back_on_rework_failure(clock):
     rid = to_screen6(app)
     rework(app, clock, rid, "문제인식")                                    # 성공 — T-W1.instruction@1
     assert app.store.get_pointers(rid)["T-W1.instruction"] == 1
-    app.llm.plan("T-W1", ["ok"] + ["auth"] * 6)                           # 다시 쓰기는 성공, T-W1이 영구 오류
+    app.llm.plan("T-W1", ["ok", "auth"])                                  # 다시 쓰기는 성공, T-W1이 영구 오류(재시도 없음)
     rework(app, clock, rid, "실현가능성")
     run = app.store.load_run(rid)
     assert run.last_rework.status == "실패" and run.state.progress == "사용자대기"

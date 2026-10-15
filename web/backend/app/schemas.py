@@ -1255,17 +1255,12 @@ class AgentTaskOut(BaseModel):
 
 
 class AgentOpsSummaryOut(BaseModel):
-    """GET /admin/agent-ops-summary(에이전트 테스크 탭의 "운영 지표 요약" 아코디언) 응답 —
-    agent_executions/proofread_logs 전체를 집계한 값이다. admin-dashboard.html 목업엔
-    "선별 재수행 대비 전체 재실행" 비교도 있었는데, 이 앱엔 그 구분을 남기는 컬럼이
-    없어서(rerun_type은 initial/rerun 2값뿐 — RefreshToken이 아니라 AgentExecution.
-    rerun_type 컬럼 주석 참고) 만들지 않았다. 대신 실제로 있는 값(최초 실행 대비 재시도
-    실행의 평균 토큰 사용량 차이)만 담는다.
+    """GET /admin/agent-ops-summary(에이전트 테스크 탭의 "운영 지표 요약" 아코디언) 응답 — 오케스트레이터 실행 기록 전체를 집계한 값이다.
+    선별 재수행 대비 전체 재실행 비교는 그 구분을 남기는 컬럼이 없어 만들지 않았고, 대신 실제로 있는 값(최초 실행 대비 재시도 실행의
+    평균 토큰 사용량 차이)만 담는다.
 
-    [2026-09-18] token_violation_rate 추가 — OpsSummaryOut의 것과 같은 계산(전체
-    proofread_logs 중 passed=False 비율, 전체 프로젝트 평균)이다. "운영 현황" 탭과
-    "에이전트 테스크" 탭 양쪽에서 같은 지표를 보여주고 싶어서 두 응답에 각각 넣었다 —
-    모델 버전별 비교는 여전히 못 한다(그 시도를 만든 모델 버전을 남기는 컬럼이 없음)."""
+    [SB-399] 보호 토큰 위반율(token_violation_rate · token_violation_count · token_check_count)은 검수가 서비스 흐름에서 빠져
+    (오케스트레이터 2026-10-15) 없어졌다."""
 
     total_executions: int
     initial_executions: int
@@ -1274,9 +1269,6 @@ class AgentOpsSummaryOut(BaseModel):
     total_image_tokens: int = 0  # [SB-302] 이미지 입력 + 출력 토큰 합. 이미지 호출이 없으면 0
     initial_avg_tokens: float | None = None
     rerun_avg_tokens: float | None = None
-    token_violation_rate: float | None = None
-    token_violation_count: int = 0
-    token_check_count: int = 0
 
 
 class NoticeSourceStatusOut(BaseModel):
@@ -1335,11 +1327,8 @@ class OpsSummaryOut(BaseModel):
     집계값이다 — 쌓인 실행이 적으면 값 대부분이 0/None으로 보일 수 있는데, 그건 "연동이 안 된 것"이
     아니라 "쌓인 실행이 아직 적다"는 뜻이다.
 
-    [2026-09-18] token_violation_rate 추가 — proofread_logs.passed=False(보호 토큰인
-    수치·날짜·고유명사·기능명을 AI가 임의로 삭제·변조한 시도) 비율을 전체 프로젝트
-    기준으로 평균 낸 값이다. 모델 버전(v1/v2/v3)별로 쪼갠 값은 안 만들었다 — 어느
-    검수 모델 버전으로 그 시도가 만들어졌는지 남기는 컬럼이 없어서, 버전별 비교는
-    할 수 없고 "전체 평균 위반율" 하나만 낸다."""
+    [SB-399] 보호 토큰 위반율(token_violation_rate · token_violation_count · token_check_count)은 검수가 서비스 흐름에서 빠져
+    (오케스트레이터 2026-10-15) 없어졌다."""
 
     status_counts: dict[str, int] = Field(default_factory=dict)
     doc_avg: float | None = None
@@ -1354,9 +1343,6 @@ class OpsSummaryOut(BaseModel):
     rerun_rate: float | None = None
     score_buckets: list[ScoreBucketOut] = Field(default_factory=list)
     deviations: list[LayerDeviationOut] = Field(default_factory=list)
-    token_violation_rate: float | None = Field(None, description='proofread_logs 전체 시도 중 passed=False 비율(%), 전체 프로젝트 평균')
-    token_violation_count: int = 0
-    token_check_count: int = 0
 
 
 class RecoveryItemOut(BaseModel):

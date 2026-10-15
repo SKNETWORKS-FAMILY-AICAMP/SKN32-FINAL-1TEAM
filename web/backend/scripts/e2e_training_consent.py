@@ -1,15 +1,17 @@
-"""학습 동의와 검수 회수 문단(proofread_logs)을 실제 흐름으로 확인한다 (SB-262).
+"""학습 동의와 검수 회수 문단(proofread_logs)을 실제 MySQL로 확인한다 (SB-262, 검수 제거 반영 SB-400).
 
     python scripts/e2e_training_consent.py --url mysql+pymysql://root:sbrain-test@127.0.0.1:3307/sbrain_e2e?charset=utf8mb4
 
-e2e_failure_resume.py처럼 워커를 이 프로세스 안에서 돌린다(따로 띄운 워커가 있으면 끈다). 검수(T-P2) 스텁이 일부 문장을 한 번
-반려하게 만들어(StubScenario.tp2_behavior) 워커가 웹 proofread_logs에 행을 쓰는지 본다. 프로젝트 하나를 끝까지(표현 검수까지)
-세 번 돌리므로 몇 분 걸린다. 조율 T-C1 · T-C3는 평소처럼 실제 LLM이라 OPENAI_API_KEY(agent-orchestration/.env)가 필요하다.
+e2e_failure_resume.py처럼 워커를 이 프로세스 안에서 돌린다(따로 띄운 워커가 있으면 끈다). 프로젝트 하나를 결과 통합까지 돌리므로 몇 분 걸린다.
+조율 T-C1 · T-C3는 평소처럼 실제 LLM이라 OPENAI_API_KEY(agent-orchestration/.env)가 필요하다.
 
-  P1 동의한 계정   검수가 끝나면 반려된 시도마다 한 행(pending) → 관리자 라벨링(labeled · excluded) → 학습 반영 표시(trained)
-                   · 라벨링 안 된 행을 섞으면 409 · 반영된 행은 라벨 변경 409 → 동의 철회 → 반영 전 행만 지워짐 → 영구 삭제 → 반영된 행만 남음(연결 끊김)
-  P2 동의 철회 뒤   검수를 시작하기 전에 동의를 철회하면 행이 쓰이지 않음(워커는 저장하는 순간의 동의를 본다)
-  P3 다시 동의      행이 쓰이고 → 일부 라벨링 · 반영 표시 → 계정 탈퇴 → 반영된 행만 남음(P1의 반영된 행도 그대로)
+★ 검수(표현 검수 · 윤문)가 서비스 흐름에서 빠졌다(오케스트레이터 2026-10-15) — 새 워커는 proofread_logs에 행을 쓰지 않고 학습 동의도 읽지 않는다.
+  그래서 예전의 "워커가 반려된 시도마다 행을 쓰는지"는 더 확인하지 않고, 웹에 남아 있는 기능(동의 · 관리자 회수 항목)은 시드로 넣은 행으로 본다.
+
+  P1 동의한 계정   결과 통합까지 돌려도 검수 기록 행이 쓰이지 않음(검수 제거) → 옛 기록 3행을 시드로 넣고 관리자 목록(동의 표시) → 라벨링(labeled · excluded)
+                   → 학습 반영 표시(trained) · 라벨링 안 된 행을 섞으면 409 · 반영된 행은 라벨 변경 409 → 동의 철회 → 반영 전 행만 지워짐
+                   → 영구 삭제 → 반영된 행만 남음(연결만 끊김)
+  P3 다시 동의      새 프로젝트에 옛 기록 3행을 시드로 넣고 일부 라벨링 · 반영 표시 → 계정 탈퇴 → 반영된 행만 남음(P1의 반영된 행도 그대로)
 """
 import argparse
 import contextlib
@@ -26,7 +28,7 @@ results: list[tuple[str, bool, str]] = []
 if hasattr(sys.stdout, 'reconfigure'):  # 콘솔 인코딩(cp949 등)에 없는 문자(— 등)가 있어도 출력이 죽지 않게
     sys.stdout.reconfigure(errors='replace')
 
-TARGETS = 3  # 스텁 T-P1이 검수 대상으로 고르는 문장 수(StubScenario.tp1_targets 기본값)
+TARGETS = 3  # 시드로 넣을 옛 검수 기록 행 수
 
 
 def step(name: str, ok: bool, detail: str = '') -> bool:
@@ -63,7 +65,6 @@ def main() -> int:
     worker = Worker(worker_app, WorkerConfig(poll_sec=0.3, threads=2, lease_sec=60), log=lambda line: None)
     worker_thread = threading.Thread(target=worker.run, name='e2e-worker', daemon=True)
     worker_thread.start()
-    scenario = worker_app.scenario
 
     def j(res):
         try:
@@ -113,7 +114,7 @@ def main() -> int:
                 raise Abort('자격을 통과한 공고를 고르지 못함')
 
             def run_until_review(pid):
-                """계획서 → 프로토타입 → 종합 평가까지. 표현 검수(review/start) 직전에 멈춘다."""
+                """계획서 → 프로토타입 → 종합 평가까지. 결과 통합(review/start) 직전에 멈춘다."""
                 client.post(f'/projects/{pid}/plan/start')
                 wait_stage(pid, 'plan_review_pending', 'user_waiting')
                 client.post(f'/projects/{pid}/prototype/start')
@@ -122,19 +123,22 @@ def main() -> int:
                 if res.status_code != 200:
                     raise Abort(f'종합 평가 진행 실패 {res.status_code} {j(res)}')
 
-            def reject_targets(pid):
-                """검수 대상 문장(앞 TARGETS개)을 첫 시도에서 반려하도록 스텁을 맞춘다. 대상 문장 ID를 돌려준다."""
-                outputs = gateway.outputs(pid)
-                ids = [s.sentence_id for sec in outputs.plan_doc.sections for s in sec.sentences][:TARGETS]
-                scenario.tp2_behavior = {sid: ['violate', 'ok'] for sid in ids}
-                return ids
+            def seed_rows(pid, count=TARGETS):
+                """검수 제거 전에 쌓였을 법한 반려 기록 행을 직접 넣는다(예전에는 워커가 썼다). 넣은 log_id 목록을 돌려준다."""
+                with SessionLocal() as db:
+                    rows = [ProofreadLog(project_id=pid, original_text=f'원문 문장 {k}', corrected_text=f'시도 문장 {k}', attempt_no=1,
+                                         passed=False, violation_type='수치·금액', violation_note='금액 누락', recovery_status='pending',
+                                         model_version='seed-model') for k in range(1, count + 1)]
+                    db.add_all(rows)
+                    db.commit()
+                    return [r.log_id for r in rows]
 
             def finish_review(pid):
                 res = client.post(f'/projects/{pid}/review/start')
                 if res.status_code == 409 and (j(res).get('detail') or {}).get('confirmation_required'):
                     res = client.post(f'/projects/{pid}/review/start', json={'confirmed': True})
                 if res.status_code != 200:
-                    raise Abort(f'표현 검수 시작 실패 {res.status_code} {j(res)}')
+                    raise Abort(f'결과 통합 시작 실패 {res.status_code} {j(res)}')
                 wait_stage(pid, 'done', 'completed')
 
             def logs(project_id=None, log_ids=None):
@@ -193,23 +197,19 @@ def main() -> int:
                 # ── P1: 동의한 계정 ──────────────────────────────
                 p1 = create_selected_project()
                 run_until_review(p1)
-                targets = reject_targets(p1)
-                step('P1. 반려시킬 검수 대상 문장', len(targets) == TARGETS, f'{len(targets)}개')
                 finish_review(p1)
+                step('P1. 검수 제거 — 동의한 계정에도 결과 통합까지 돌려도 검수 기록 행이 쓰이지 않음', len(logs(p1)) == 0 and status(p1).get('match_status') == 'completed',
+                     f"{len(logs(p1))}행, 상태 {status(p1).get('match_status')}")
+                ids = seed_rows(p1)
                 rows = logs(p1)
-                step('P1. 반려된 시도마다 한 행(pending)이 쓰임', len(rows) == TARGETS and all(
-                    r['passed'] is False and r['status'] == 'pending' and r['project_id'] == p1 for r in rows),
+                step('P1. 옛 검수 기록 시드(pending)', len(rows) == TARGETS and all(r['passed'] is False and r['status'] == 'pending' for r in rows),
                      f"{len(rows)}행(기대 {TARGETS}) 상태 {sorted({r['status'] for r in rows})}")
-                step('P1. 행에 위반 종류 · 모델 이름 · 원문 · 시도문이 있음', bool(rows) and all(
-                    r['violation_type'] and r['model_version'] and r['original'] and r['attempt'] for r in rows),
-                     f"위반 종류 {sorted({r['violation_type'] for r in rows})} 모델 {sorted({r['model_version'] for r in rows})}")
                 result = j(client.get(f'/projects/{p1}/result'))
-                attempts = (result.get('plan') or {}).get('proofread_logs') or []
-                step('P1. 사용자 결과의 검수 기록에도 보임', len(attempts) > 0, f'{len(attempts)}건')
-                ids = [r['log_id'] for r in rows]
+                attempts = (result.get('plan') or {}).get('proofread_logs')
+                step('P1. 사용자 결과의 검수 기록 칸은 늘 비어 있음(오케스트레이터가 주지 않음)', attempts == [], f'{attempts}')
                 with as_admin():
                     items = admin_items(p1)
-                    step('P1. 관리자 목록에 보임(동의 표시 포함)', len(items) == TARGETS and all(i['consent'] for i in items),
+                    step('P1. 관리자 목록에 시드 행이 보임(동의 표시 포함)', len(items) == TARGETS and all(i['consent'] for i in items),
                          f"{len(items)}건 동의 {sorted({i['consent'] for i in items})}")
                     a, b, c = ids[0], ids[1], ids[2]
                     r1, r2, r3 = label(a, 'labeled', '정답 문장 A'), label(b, 'labeled', '정답 문장 B'), label(c, 'excluded')
@@ -242,24 +242,12 @@ def main() -> int:
                          f"{[(i['project_id'], i['consent'], i['recovery_status']) for i in items]}")
                 trained_from_p1 = a
 
-                # ── P2: 검수 시작 전에 동의 철회 ─────────────────────
-                step('P2. 다시 동의했다가 새 프로젝트 시작', set_consent(True))
-                p2 = create_selected_project()
-                run_until_review(p2)
-                reject_targets(p2)
-                step('P2. 검수 시작 전에 동의 철회', set_consent(False))
-                finish_review(p2)
-                step('P2. 동의가 없으면 행이 쓰이지 않음(검수는 정상 완료)', len(logs(p2)) == 0 and status(p2).get('match_status') == 'completed',
-                     f'{len(logs(p2))}행, 상태 {status(p2).get("match_status")}')
-
                 # ── P3: 다시 동의 → 라벨링 · 반영 → 탈퇴 ───────────────
-                step('P3. 다시 동의', set_consent(True))
+                step('P3. 다시 동의했다가 새 프로젝트 시작', set_consent(True))
                 p3 = create_selected_project()
-                run_until_review(p3)
-                reject_targets(p3)
-                finish_review(p3)
+                ids3 = seed_rows(p3)
                 rows3 = logs(p3)
-                step('P3. 다시 동의하면 행이 쓰임', len(rows3) == TARGETS, f'{len(rows3)}행')
+                step('P3. 새 프로젝트의 옛 검수 기록 시드', len(rows3) == TARGETS and [r['log_id'] for r in rows3] == ids3, f'{len(rows3)}행')
                 x, y, z = [r['log_id'] for r in rows3][:3]
                 with as_admin():
                     label(x, 'labeled', '정답 X')

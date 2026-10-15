@@ -106,4 +106,4 @@ def test_delete_completed_project(clock):
     res = app.orchestrator.delete_project_data(pid)
     assert res.abort.run_action == "이미끝남" and res.deleted_artifacts
     assert app.store.load_run(rid).state.progress == "완료" and app.store.get_pointers(rid) == {}
-    assert len(app.orchestrator.admin_executions(project_id=pid, limit=100)) == 23   # 관리자 실행 기록은 남는다
+    assert len(app.orchestrator.admin_executions(project_id=pid, limit=100)) == 19   # 관리자 실행 기록은 남는다

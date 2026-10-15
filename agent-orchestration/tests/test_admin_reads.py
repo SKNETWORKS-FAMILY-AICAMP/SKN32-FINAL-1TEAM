@@ -9,23 +9,17 @@ from conftest import executed, make_app, pre_input, project_for, start_and_selec
 from flow_helpers import pid, rework, run_review
 
 from sbrain.agents.stubs import StubScenario
+from sbrain.flow.catalog import OUT_OF_FLOW_STEPS
 from sbrain.orchestrator.errors import CommandError
 from sbrain.orchestrator.settings import ScoringSettings, Settings
 from sbrain.orchestrator.tools import TokenUsage
 
-# 문장별 T-P2 결과: 채택 · 반려 뒤 채택 · 반려 뒤 조기 중단 · 반려만 → 시도 9건, 반려 7건
-BEHAVIOR = {
-    "s-3.1.1-1": ["ok"],
-    "s-3.1.1-2": ["violate", "ok"],
-    "s-3.1.2-1": ["violate", "same", "same"],
-    "s-3.1.2-2": ["violate", "violate", "violate"],
-}
 CONTENT = ("헬스장", "문장", "(윤문)", "변형", "동일 출력", "1억원", "창업지원사업", "김서준")
 
 
 def fixture(clock):
     """완료 A(화면 6 재작성 52 → 60, 총점 86) · 화면 6 대기 B(45) · 실패 C(T-S1 영구 오류) · 공고선택 대기 D."""
-    app = make_app(clock, StubScenario(doc_scores=[52.0, 60.0, 45.0], tp1_targets=4, tp2_behavior=BEHAVIOR))
+    app = make_app(clock, StubScenario(doc_scores=[52.0, 60.0, 45.0]))   # 검수는 흐름 밖
     app.llm.usage["T-C1"] = TokenUsage(input_tokens=100, cached_input_tokens=40, output_tokens=20,
                                        reasoning_tokens=5)
     a = to_screen6(app, "acc-1")
@@ -36,7 +30,7 @@ def fixture(clock):
     run_review(app, a)
     b = to_screen6(app, "acc-2")
     c = start_and_select(app, "acc-3")
-    app.llm.plan("T-S1", ["auth"] * 50)
+    app.llm.plan("T-S1", ["auth"])                                       # 401 — 재시도 없이 영구 오류
     app.orchestrator.start_writing(c)
     app.orchestrator.advance(c)
     d = app.orchestrator.start_run("acc-4", pre_input(), project_id=project_for(app)).run_id
@@ -120,7 +114,6 @@ def test_admin_summary_values(clock):
         assert t.avg_tokens == (round(sum(tokens(r) for r in mine) / len(mine), 1) if mine else None)
     assert s.triggers[1].count > 0 and s.triggers[2].count == 0
     assert s.total_tokens == sum(tokens(r) for r in recs) == 4 * 120               # T-C1만 토큰을 냈다
-    assert (s.proofread_attempts, s.proofread_rejected, s.proofread_reject_rate) == (9, 7, 77.8)
     app.settings.update(Settings(scoring=ScoringSettings(threshold=90)))          # 기준 점수는 지금 설정
     s2 = app.orchestrator.admin_summary()
     assert (s2.pass_count, s2.pass_rate, s2.pass_threshold) == (0, 0.0, 90.0)
@@ -135,14 +128,25 @@ def test_admin_summary_empty(clock):
     assert (s.reworked_runs, s.runs_with_executions, s.rework_rate, s.total_tokens) == (0, 0, None, 0)
     assert all(x.count == 0 for x in s.score_buckets) and all(x.count == 0 for x in s.layer_changes)
     assert all((t.count, t.avg_tokens) == (0, None) for t in s.triggers)
-    assert (s.proofread_attempts, s.proofread_rejected, s.proofread_reject_rate) == (0, 0, None)
+
+
+def test_admin_summary_has_no_proofread_fields(clock):
+    """검수가 흐름에서 빠져 운영 요약에 검수 칸(시도 · 반려 · 반려 비율)이 없다."""
+    app, *_ = fixture(clock)
+    s = app.orchestrator.admin_summary()
+    names = set(type(s).model_fields)
+    assert not {"proofread_attempts", "proofread_rejected", "proofread_reject_rate"} & names
+    d = s.dump()
+    assert not {"proofreadAttempts", "proofreadRejected", "proofreadRejectRate"} & set(d)
+    assert not [k for k in d if "proofread" in k.lower()]
 
 
 def test_admin_agent_tasks(clock):
     app, a, b, c, d = fixture(clock)
     tasks = app.orchestrator.admin_agent_tasks()
-    assert [t.agent for t in tasks] == ["조율", "전략", "작성", "구현", "검증-1", "검증-2", "검수"]
-    specs = app.registry.specs()
+    # 흐름 밖 단계(OUT_OF_FLOW_STEPS — R-8 · G-03 · T-P1 · T-P2 · M-4)는 세지 않고, 남은 단계가 없는 검수 줄은 내지 않는다
+    assert [t.agent for t in tasks] == ["조율", "전략", "작성", "구현", "검증-1", "검증-2"]
+    specs = [s for s in app.registry.specs() if s.task_id not in OUT_OF_FLOW_STEPS]
     recs = records(app, a, b, c, d)
     for t in tasks:
         assert t.task_ids == [s.task_id for s in specs if s.agent == t.agent] and t.task_count == len(t.task_ids)
@@ -150,8 +154,10 @@ def test_admin_agent_tasks(clock):
     by = {t.agent: t for t in tasks}
     assert (by["조율"].recent_project_id, by["조율"].recent_status) == (pid(app, d), "성공")
     assert (by["전략"].recent_project_id, by["전략"].recent_status) == (pid(app, c), "실패")
-    assert (by["검수"].recent_project_id, by["검수"].recent_status) == (pid(app, a), "성공")
-    assert sum(t.task_count for t in tasks) == len(specs)
+    assert sum(t.task_count for t in tasks) == len(specs) == 20
+    ids = {i for t in tasks for i in t.task_ids}
+    assert not ids & {"R-8", "G-03", "T-P1", "T-P2", "M-4"}
+    assert {"R-8", "G-03", "T-P1", "T-P2", "M-4"} <= {s.task_id for s in app.registry.specs()}   # 등록부 줄은 남는다
     no_content(*tasks)
 
 
@@ -177,7 +183,7 @@ def test_admin_runs_and_summary_limited_to_last_twelve_months(clock):
     assert [t.count for t in s.triggers] == [len([r for r in mine if r.trigger == t])
                                              for t in ("첫실행", "재작성", "재수행")]
     assert s.total_tokens == sum(tokens(r) for r in mine)
-    assert (s.proofread_attempts, s.layer_changes[0].count) == (0, 0)            # A의 검수 · 재작성 변화는 범위 밖
+    assert s.layer_changes[0].count == 0                                         # A의 재작성 변화는 범위 밖
     assert len(app.orchestrator.admin_executions(limit=None)) == len(old) + len(mine)   # 실행 기록 조회는 그대로
     assert app.orchestrator.admin_score_history(pid(app, a)).doc_score                  # 점수 이력도 그대로
     app.orchestrator.select_announcement(d, "A01")                               # 다시 움직이면 범위 안으로

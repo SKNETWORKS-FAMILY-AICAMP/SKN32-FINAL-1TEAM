@@ -74,22 +74,25 @@ def step_start(run: Any, rec: Any, *, resumed: bool) -> None:
                        ("attempt", rec.attempt)])
 
 
-def step_end(run: Any, rec: Any, sec: float | None) -> None:
-    """실행 기록 하나의 끝 — 그때의 상태(성공 · 실패 · 재개대기 · 생략 …)와 걸린 시간 · 모델 · 토큰 · 오류."""
+def step_end(run: Any, rec: Any, sec: float | None, error_code: str | None = None) -> None:
+    """실행 기록 하나의 끝 — 그때의 상태(성공 · 실패 · 재개대기 · 생략 …)와 걸린 시간 · 모델 · 토큰 · 오류.
+    error_code(확장)는 엔진이 이 실행에서 받은 재시도 소진의 오류 코드(정규식을 통과한 이름, 없으면 '-')."""
     failed = rec.status not in ("성공", "생략") and rec.error
     _emit(STEP_END, [("run", run.run_id), ("project", run.project_id), ("step", rec.task_id),
                      ("exec", rec.execution_id), ("status", rec.status),
                      ("sec", f"{sec:.1f}" if sec is not None else None), ("model", rec.model),
                      ("tokens", _sum(rec.input_tokens, rec.output_tokens)),
                      ("imageTokens", _sum(rec.image_input_tokens, rec.image_output_tokens)),
-                     ("errorKind", rec.error_kind), ("error", str(rec.error)[:ERROR_MAX] if failed else None)])
+                     ("errorKind", rec.error_kind), ("errorCode", error_code),
+                     ("error", str(rec.error)[:ERROR_MAX] if failed else None)])
 
 
 def step_end_without_record(run: Any, step_id: str, sec: float | None) -> None:
     """실행 기록을 만들지 않는 단계(엔진 내부 단계 등) — 끝 줄만, 기록 값은 '-'."""
     _emit(STEP_END, [("run", run.run_id), ("project", run.project_id), ("step", step_id), ("exec", None),
                      ("status", None), ("sec", f"{sec:.1f}" if sec is not None else None), ("model", None),
-                     ("tokens", None), ("imageTokens", None), ("errorKind", None), ("error", None)])
+                     ("tokens", None), ("imageTokens", None), ("errorKind", None), ("errorCode", None),
+                     ("error", None)])
 
 
 def wait(run: Any) -> None:
@@ -102,9 +105,10 @@ def run_end(run: Any) -> None:
     _emit(RUN_END, [("run", run.run_id), ("project", run.project_id), ("status", run.state.progress)])
 
 
-def resume_scheduled(run: Any, kind: str | None) -> None:
+def resume_scheduled(run: Any, kind: str | None, error_code: str | None = None) -> None:
+    """재개 예약 — error_code(확장)는 엔진이 받은 재시도 소진의 오류 코드(흐름이 예약한 재개 · 코드 없는 소진이면 '-')."""
     _emit(RESUME_SCHEDULED, [("run", run.run_id), ("project", run.project_id), ("at", fmt_utc(run.next_resume_at)),
-                             ("errorKind", kind)])
+                             ("errorKind", kind), ("errorCode", error_code)])
 
 
 # ── 파일 삭제 대기열 (확장) — 식별자는 실행 건 · 대기열 줄 번호까지. 키 · 파일 이름 · 오류 메시지는 넣지 않는다
