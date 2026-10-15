@@ -87,10 +87,10 @@ save_key() {
   local pub_aws pub_local=""
   mkdir -p "$HOME/.ssh"
   pub_aws="$(awsq ec2 describe-key-pairs --key-pair-ids "$OUT_KeyPairId" --include-public-key \
-    --query 'KeyPairs[0].PublicKey' | awk '{print $1" "$2}')"
+    --query 'KeyPairs[0].PublicKey' | awk 'NF {print $1" "$2; exit}')"
   if [ -f "$KEY_FILE" ] && command -v ssh-keygen >/dev/null 2>&1; then
     chmod 600 "$KEY_FILE" 2>/dev/null || true
-    pub_local="$(ssh-keygen -y -f "$KEY_FILE" 2>/dev/null | awk '{print $1" "$2}' || true)"
+    pub_local="$(ssh-keygen -y -f "$KEY_FILE" 2>/dev/null | awk 'NF {print $1" "$2; exit}' || true)"
   fi
   if [ -f "$KEY_FILE" ] && [ "$pub_local" = "$pub_aws" ]; then
     echo "  SSH 키: $KEY_FILE (이미 있음)"

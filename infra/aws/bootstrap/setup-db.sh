@@ -58,11 +58,14 @@ curl -fsS --retry 5 --max-time 60 -o "$WORK/ca.pem" \
 install -m 644 "$WORK/ca.pem" "$CA"
 
 # 비밀값(JSON)을 파일로 받는다. 비밀번호가 명령줄(프로세스 목록)에 드러나지 않게 한다.
+# snap 으로 깐 aws CLI 는 SSM 원격 실행 안에서 표준출력을 파일로 바로 돌리면 오류 없이 0바이트를 쓴다
+# (2026-10-15 실제 서버에서 확인, 파이프로는 정상). 그래서 cat 을 거쳐 저장하고, 비었으면 멈춘다.
 read_secret() {
-  aws secretsmanager get-secret-value --region "$REGION" --secret-id "$1" \
-    --query SecretString --output text > "$2" 2> "$WORK/aws.err" \
+  ( umask 077
+    aws secretsmanager get-secret-value --region "$REGION" --secret-id "$1" \
+      --query SecretString --output text 2> "$WORK/aws.err" | cat > "$2" ) \
     || fail "secret_read $(head -c 300 "$WORK/aws.err" | tr '\n' ' ')"
-  chmod 600 "$2"
+  [ -s "$2" ] || fail "secret_read empty output from aws cli"
 }
 
 # mysql 클라이언트 설정 파일. 비밀번호는 여기에만 두고 명령줄에 넣지 않는다.
