@@ -1,9 +1,10 @@
 # eval/ — 검색 품질 평가
 
 ## 맡는 것
-- 평가셋(topic-v1): `queries.jsonl`(질의 60 — 정상 52·무관 8, `MatchRequest` 모양 + `as_of_date`), `pool.jsonl`(판정 후보, Dense@20 ∪ BM25@10), `llm_judgments.jsonl`, `human_judgments.jsonl`(덧붙이기만), `qrels.jsonl`(최종 정답, `judge` = human / llm / llm_unreviewed), `splits.json`.
+- 평가셋(topic-v1): `queries.jsonl`(질의 66 — 정상 58·무관 8, `MatchRequest` 모양 + `as_of_date`), `pool.jsonl`(판정 후보, Dense@20 ∪ BM25@10), `llm_judgments.jsonl`, `human_judgments.jsonl`(덧붙이기만), `qrels.jsonl`(최종 정답, `judge` = human / llm / llm_unreviewed), `splits.json`.
 - 만들기·판정: `build_pool.py`, `judge_llm.py`(`--plan`으로 비용 먼저), `merge_qrels.py`(qrels + 블라인드 일치율), `label_app.py`·`label.html`(사람 판정 화면, 127.0.0.1:8001, 내부 전용), `relevance_label_pack.py`·`relevance_label_score.py`(Codex 판정 꾸러미·채점).
-- 지표·비교: `evaluate.py`, `metrics_report.py`·`metrics_pdf.py`, `filter_first_eval.py`(정형 필터 선행 전후), `query_ablation.py`(입력 칸 빼기), `weight_eval.py`·`industry_weight_probe.py`, `bonus_rank_eval.py`, `bonus_boostable.py`(입력 조합 탐색에서 가산점이 관측된 열린 공고 — 결정 0015 켜기 전 원문 대조용, `--old`로 예전 계산과 조합 단위 비교(일부러 푼 null → 양수는 "모름→양수"로 따로 셈 — 결정 0019), 원문 대조 목록과 비교한 분류(목록 안·다시 대조 필요·새 후보), `--write-reviewed`로 목록 쓰기 — 결정 0017, `-m eval.bonus_boostable`), `bonus_rank_cases.py`(그 공고들이 검색에 뜨는 가상 신청자로 세기 0·0.2 순위 비교, Codex 재재검수 §8, `-m eval.bonus_rank_cases`), `gate_eval.py`, `region_eval.py`, `match_variants.py`, `search_comparison.py`, `chroma_integrity.py`(DB·npz·Chroma 정합성, 읽기 전용), `jev_judge_probe.py`(외부 채점 시험).
+- 발표용 지표 보고서(2026-10-14): `metrics_report.py`(영역 ①~⑪·ML·한눈에 보기 → `reports/metrics_<UTC>Z/metrics.json`·`summary.md`, `--all`이면 정확도 다시 재기·응답 시간 두 가지·자동 시험까지), `metrics_doc.py`(그 `metrics.json` → `지표_보고서.html`·`지표_보고서.docx`, Word 도구는 `requirements-report.txt`), `metrics_logs.py`(배치 서버 `collect_log.jsonl`·`run.log`를 읽기만 해서 이 PC `data/collect_log.<이름>.jsonl`·`run.<이름>.log` 복사본과 합침, `--snapshot`), `metrics_records.json`(결과 파일 없이 문서에만 있는 측정값을 출처와 함께 옮긴 목록), `filter_first_now.py`(9/28과 같은 질문·정답·기준일 — 모집 상태도 9/15 당시로 맞춰 — 지금 서비스를 다시 잼, `reports/filter_first_now_<UTC>Z/`). `metrics_pdf.py`는 옛 9/30 형식 폴더 전용(새 형식 폴더에서는 아무것도 쓰지 않고 멈춤).
+- 지표·비교: `evaluate.py`, `filter_first_eval.py`(정형 필터 선행 전후, 9/28), `query_ablation.py`(입력 칸 빼기), `weight_eval.py`·`industry_weight_probe.py`, `bonus_rank_eval.py`, `bonus_boostable.py`(입력 조합 탐색에서 가산점이 관측된 열린 공고 — 결정 0015 켜기 전 원문 대조용, `--old`로 예전 계산과 조합 단위 비교(일부러 푼 null → 양수는 "모름→양수"로 따로 셈 — 결정 0019), 원문 대조 목록과 비교한 분류(목록 안·다시 대조 필요·새 후보), `--write-reviewed`로 목록 쓰기 — 결정 0017, `-m eval.bonus_boostable`), `bonus_rank_cases.py`(그 공고들이 검색에 뜨는 가상 신청자로 세기 0·0.2 순위 비교, Codex 재재검수 §8, `-m eval.bonus_rank_cases`), `gate_eval.py`, `region_eval.py`, `match_variants.py`, `search_comparison.py`, `chroma_integrity.py`(DB·npz·Chroma 정합성, 읽기 전용), `jev_judge_probe.py`(외부 채점 시험).
 - 공용 함수: `common.py`(질의 문장 등), `bm25.py`.
 
 ## 맡지 않는 것
@@ -28,5 +29,5 @@
 - 평가용 `NumpyCollection`은 Chroma 없이 벡터를 메모리에서 계산한다(`ids` 인자 없음 → 서비스의 `'vectors'` 경로). 서비스 자체도 2026-10-07부터 `search/memvec.MemoryCollection`(공용 DB 벡터)을 쓴다. 예전 방식(Chroma)과 같은 벡터로 비교하는 도구는 `vector_db_compare.py`.
 
 ## 시험
-- 관련 시험: `tests/test_filter_first_eval.py`, `test_query_ablation.py`, `test_match_variants.py`, `test_search_comparison.py`, `test_chroma_integrity.py`, `test_label_score.py`, `test_bonus_boostable.py`, `test_bonus_rank_cases.py`.
+- 관련 시험: `tests/test_filter_first_eval.py`, `test_filter_first_now.py`, `test_metrics_report.py`, `test_metrics_logs.py`, `test_metrics_doc.py`, `test_query_ablation.py`, `test_match_variants.py`, `test_search_comparison.py`, `test_chroma_integrity.py`, `test_label_score.py`, `test_bonus_boostable.py`, `test_bonus_rank_cases.py`.
 - 반드시 덮을 경우: null 판정 제외, 평가와 서비스가 같은 필터·규칙 결과를 내는지, 정합성 불일치 시 중단.

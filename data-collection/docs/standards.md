@@ -17,7 +17,7 @@
 
 ## 3. 의존성
 
-- `requirements.txt` = 배치 + 공고 서버. `requirements-ml.txt` = 학습 전용(torch는 GPU 판을 따로 설치). 학습 패키지를 `requirements.txt`에 넣지 않는다.
+- `requirements.txt` = 배치 + 공고 서버. `requirements-ml.txt` = 학습 전용(torch는 GPU 판을 따로 설치). `requirements-report.txt` = 발표용 지표 보고서의 Word 만들기 전용(이 PC만, 2026-10-14). 학습·보고서 패키지를 `requirements.txt`에 넣지 않는다.
 - 배치 서버 이미지(`deploy/batch-requirements.txt`)는 배치 PC와 **같은 버전으로 고정**한다. 배치에 새 패키지를 쓰면 두 파일을 함께 고친다.
 - `shared/config.py`는 표준 라이브러리만 쓴다(python-dotenv 등 추가 금지). `--skip-embed`이면 torch·chromadb·sentence-transformers 없이도 배치가 돌아야 한다(이 패키지들은 함수 안에서 import한다).
 

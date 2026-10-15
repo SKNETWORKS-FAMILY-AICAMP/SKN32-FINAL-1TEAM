@@ -179,6 +179,11 @@ def main():
     folder = sys.argv[1] if len(sys.argv) > 1 else sorted(glob.glob(os.path.join(ROOT, 'reports', 'metrics_*')))[-1]
     folder = os.path.abspath(folder)
     data = json.load(open(os.path.join(folder, 'metrics.json'), encoding='utf-8'))
+    if 'headline' in data or 'conditions' in data:
+        # 2026-10-14부터의 새 형식 폴더는 eval/metrics_doc.py 가 HTML·Word 를 만든다.
+        # 이 도구로 그리면 그 HTML 을 덮어쓰므로 아무것도 쓰지 않고 멈춘다(옛 9/30 폴더 전용).
+        sys.exit('새 형식 지표 폴더다 — 이 도구는 옛 9/30 형식 전용이라 아무것도 쓰지 않았다. '
+                 '새 형식은 python -X utf8 -m eval.metrics_doc <폴더> 로 그린다: ' + folder)
     page = build_html(data, data['metrics'])
     html_path = os.path.join(folder, '지표_보고서.html')
     pdf_path = os.path.join(folder, '지표_보고서.pdf')

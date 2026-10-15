@@ -23,6 +23,36 @@
 
 ## 작업 기록
 
+### 2026-10-15 · Claude · 지표 보고서 그래프 23개 + PNG 내보내기
+
+- 요청·목적: 지표 보고서가 숫자 위주라 발표용으로 그래프를 더하고 싶다(사용자). 막바지라 오래 걸려도 꼼꼼히(사용자).
+- 작업 전 상태: 그래프는 한눈에 보기 정확도 2개뿐(`reports/metrics_20261014T113454Z`).
+- 변경 파일: `eval/metrics_report.py`(`metrics.json`에 `charts` 목록 23개 — id·area·title·subtitle·form(line/column/bar/stacked/pairs)·unit·categories·series·highlight·max·reference·errors·note·source·kind·measured_at, 그래프 하나가 실패해도 그것만 빠짐, AI 비용 진행 줄 제외, 요청 안 한 측정은 `expected: true`), `eval/metrics_doc.py`(다섯 형태 SVG·숫자 보기 표·툴팁, Word에 PNG, 결과 폴더 `그래프/NN_<id>.png` 1200px PNG — 제목·설명·출처를 그림 안에), `eval/metrics_logs.py`(파일 닫기), 시험 `tests/test_metrics_report.py`·`test_metrics_doc.py`·`test_metrics_logs.py`.
+- 전후 차이·선택 이유: 색은 시각화 지침 검사기로 고름 — 한 계열은 청록 `#00897b`+회색, 여러 계열은 `#00897b`·`#eb6834`·`#4a3aa7`(색약 모의 포함 모든 짝 통과; 기존 강조색 `#0f5c57`은 채도가 낮아 계열 색으로 불합격). 검토 세 바퀴(데이터 대조·시각화 규칙·발표 쓸모)에서 고친 것: 10/8 AI 비용이 진행 줄 누적까지 더해 $1.251로 나오던 것($0.316으로), 9/30 응답 시간과 "같은 조건" 표현 삭제(검색 방식·공고 수가 다름), c16 같은 단위끼리 한 축, 기준선이 값 글자를 가르지 않게, 업력 분류기는 시험 F1·교차검증 F1 둘 다(순위가 갈림), 정확도 그림에 "정답 1,617쌍 중 1,474쌍(91%)은 AI 참고 정답", 상대 날짜 "오늘" → 10/14, 9/28 대비 0.6%p → "174칸 중 1칸 차이 — 차이를 말할 수 없다"(약점 행은 "참고"로).
+- 검증: `-m eval.metrics_logs --snapshot`(복사본 62줄, 9/14~10/15) 뒤 `-m eval.metrics_report --latency --tests` exit 0 → `reports/metrics_20261015T024738Z/`, 그래프 23 + 한눈에 보기 2 = PNG 25, Word 표 12·그림 25, 자동 시험 1,111개 통과(건너뜀 16), 결과물 IP·URL·키 파일 이름 0건, 이 PC 8000 정리됨, HTML 1280·390 폭 가로 넘침 없음. 정확도는 `filter_first_now_20261014T113101Z`(10/14 다시 잼)를 읽음.
+- 미검증·남은 문제: 글자 폭은 추정값으로 배치(실제 글꼴과 조금 다를 수 있음 — 화면·PNG로는 겹침 없음). 배치 시간 그래프는 서버 첫 실행을 10/3로 보고(10/2 실행은 PC), 1번 영역 지표의 "서버 이전 뒤"는 10/2부터라 하루 차이.
+- 다음 단계: 발표 직전 `--all`로 다시 뽑기(서버 이전 뒤 주소는 환경 변수).
+
+### 2026-10-14 · Claude · 공고 파트 지표 보고서 HTML + Word (발표용)
+
+- 요청·목적: 10/26 발표 준비용으로 우리 파트 지표를 HTML·docx로 "싹". 오늘 한 번, 발표 직전 같은 명령으로 다시. 사용자 결정(계획 문서 `.dryforge/` 저장소 루트): 영역 11개 + 서비스 밖 실험(ML) 별도, 한눈에 보기 큰 숫자 + 전후 그래프, 정확도는 9/28 + 지금 다시 잰 값(다시 잰 값이 앞), 응답 시간은 이 PC·실제 서버 둘 다, 공고 수는 누적·하루 신규 따로, Word는 양식 없이 python-docx, 배치 기록은 서버 이전 전에 이 PC로 복사, 정확도 다시 재기는 모집 상태를 9/15 당시로 맞춤.
+- 작업 전 상태: 9/30 `metrics_report.py`(A~F 영역, PC `data/collect_log.jsonl` 읽음 — 10/2 서버 이전 뒤 PC `data/`가 비어 그대로는 안 돔)·`metrics_pdf.py`(HTML·PDF). 정확도 평가 `filter_first_eval.py`는 옛 Chroma 파일이 필요.
+- 변경 파일: `eval/metrics_report.py`(전면 개편 — 영역 1~11·ML·한눈에 보기, 못 잰 지표는 "측정 못 함"+`missing`(`expected`), 결과물 주소 걸러 내기, `--all`), 새 `eval/metrics_logs.py`(배치 서버 기록 scp 읽기만 + 이 PC 복사본과 합치기 — collect_log는 (run_at, job), run.log는 머리줄 덩어리 단위), 새 `eval/metrics_records.json`(문서에만 있던 측정값 8개를 출처·근거와 함께), 새 `eval/filter_first_now.py`(9/28과 같은 질문 58·정답 1,617쌍·기준일·말뭉치로 지금 서비스를 다시 잼, DB 벡터, 모집 상태 9/15 당시로 되돌리기 142건, 오늘 상태 값도 `summary_today_status`로), 새 `eval/metrics_doc.py`(HTML 오프라인·SVG 그래프 / Word python-docx·맑은 고딕·그래프는 Edge로 PNG), `eval/metrics_pdf.py`(새 형식 폴더에서는 아무것도 안 쓰고 멈춤), 새 `requirements-report.txt`(python-docx 1.1.2, 이 PC만), 시험 4개(`test_metrics_report`·`test_metrics_logs`·`test_metrics_doc`·`test_filter_first_now`), 문서 `eval/AGENTS.md`·`docs/operations.md`·`docs/standards.md`.
+- 전후 차이·선택 이유: 배치 실행 판정을 "1분 미만 = 시험 실행"에서 "dry-run 제외"로 바꿈(서버에서는 새 공고 없는 날 40초에 정상 종료 — 옛 규칙이면 서버 이전 뒤 가동일이 13일 중 7일로 잘못 나옴). 하루 AI 비용은 "예상 약 $" 줄을 빼서 두 번 세지 않음. 정확도: 오늘 모집 상태로 재면 P@3(2) 하한 57.5%였으나 원인은 평가 시점 어긋남(9/15 기준에 오늘 마감 표시) — 마감일이 9/15 이후인 마감 공고 142건을 평가 안에서만 모집 중으로 되돌리면 61.5%(9/28 62.1%). 9/28 뒤 개인·법인 차단은 이 평가에서 1칸, 가산점은 0건만 영향.
+- 검증: 최종 `.\.venv\Scripts\python.exe -X utf8 -m eval.metrics_report --latency --tests` exit 0(정확도는 직전 `--all` 실행의 `filter_first_now_20261014T113101Z`) → `reports/metrics_20261014T113454Z/`, 재지 못한 것 0. 자동 시험 1,059개 통과(건너뜀 16). 결과물에서 IP·URL·키 파일 이름 검색 0건. 이 PC 8000은 도구가 잠시 켰다가 끔. HTML은 Edge로 1280·390 폭 확인(가로 넘침 없음), Word는 다시 읽어 제목 22·표 12·그래프 그림 2. 배치 기록 복사본은 서버 원본과 내용 같음(run.log 줄 단위 비교, collect_log 행 단위 비교). 공용 DB 쓰기 0, OpenAI 0.
+- 미검증·남은 문제: HTML 인쇄 모양은 눈으로 못 봄. 앞선 `--all` 실행 결과 `reports/metrics_20261014T113100Z/`는 그래프 9/28 묶음 이름표가 "지금 서비스"로 나온 판(고치기 전) — 최종은 `113454Z`. 다시 재기 결과 폴더는 3개(`111013Z` 오늘 상태만, `112848Z`·`113101Z` 9/15 상태 맞춤). 리랭커 GPU 메모리는 노트북 출력 4.6GB를 썼다(옛 메모 8.8GB와 다름 — 출처 있는 값을 씀).
+- 다음 단계: 서버 이전 직전 `-m eval.metrics_logs --snapshot`, 발표 직전(10/24~25) 이전 뒤 주소를 환경 변수로 주고 `--all`.
+
+### 2026-10-14 · Claude · 임베딩 CPU vs GPU 비교
+
+- 요청·목적: 배포 EC2를 GPU 인스턴스로 할지 정하려고, 지금 CPU 임베딩과 GPU를 같은 조건으로 비교. 기존에는 CPU 측정값만 있었다.
+- 작업 전 상태: `.venv`는 torch CPU 판. 집 PC에 RTX 3060 12GB가 있으나 GPU 판 torch 환경 없음.
+- 변경 파일: 코드 변경 없음. 결과 폴더 `reports/embedding_cpu_gpu_20261014T082732Z/`(README·결과 JSON·벡터 비교·측정 스크립트 3개·표본 ID). GPU 환경은 저장소 밖(세션 임시 폴더)에 uv로 따로 만듦(torch 2.14.1+cu126).
+- 전후 차이·선택 이유: 서비스와 같은 입력(`build_input`·`build_query`)·모델 리비전·512토큰·정규화로 장치만 바꿔 쟀다. 배치 크기 4(서비스 값)·16·32, GPU는 fp32·fp16 두 가지.
+- 검증: 공고 300건 — CPU 122.5초(건당 408ms), GPU fp32 6.4초(21ms), fp16 2.1~2.5초(7~8ms). 검색어 66개 1건씩 중앙값 — CPU 178.5ms, GPU fp32 21.7ms, fp16 23.1ms. 벡터: GPU fp32 = CPU(코사인 최저 1.000000, 상위 10건 겹침 100%), fp16 코사인 최저 0.99976·겹침 99.4%·1위 100%. GPU 측정 때 ComfyUI 꺼짐(여유 약 11GB).
+- 미검증·남은 문제: AWS T4는 재지 않음(3060과 다름). CPU는 집 PC라 EC2 수치(건당 1~1.2초, 검색어 258~390ms)는 기존 기록과 견줌. 한 번씩만 측정. 요금은 제3자 가격표 기준.
+- 다음 단계: 사용자가 GPU 인스턴스 여부 결정(검수 모델 GPU 필요 여부와 함께).
+
 ### 2026-10-13 · Claude · 개인사업자·법인 "강한 불가" 걸러내기(결정 0021)
 
 - 요청·목적: 사용자 고도화 후보 선택 → 1단계 계산(효과 작음 보고) → "해 보고 결과 테스트". 개인사업자에게 "국내 법인사업자" 전용, 법인에게 "법인 제외" 공고가 추천되던 것을 막는다. OpenAI 비용 없음(배치 11단계 판정을 읽기만).

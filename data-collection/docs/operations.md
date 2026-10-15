@@ -32,6 +32,10 @@ Copy-Item .env.example .env          # 아래 3절 값을 채운다
 | 가점 재추출 계획 | `.\.venv\Scripts\python.exe -X utf8 -m collect.extract_bonus --all --plan` | 없음(부르지 않음) |
 | 내용 지문 저장·비교 | `… -m search.content_version --save <파일>` / `--compare <파일>` | DB 읽기만 |
 | 공유 HTML 다시 만들기 | `.\.venv\Scripts\python.exe -X utf8 share\build_<이름>.py` | 파일만 |
+| 발표용 지표 보고서(HTML·Word) | `.\.venv\Scripts\python.exe -X utf8 -m eval.metrics_report --all` → `reports/metrics_<UTC>Z/`(`지표_보고서.html`·`.docx`·`metrics.json`·`summary.md`). 빠른 확인은 `--all` 없이 | DB 읽기만·OpenAI 0. 배치 서버 기록 복사(읽기만), 이 PC 8000(꺼져 있으면 잠시 켰다 끔 — 켜져 있던 것은 그대로)과 실제 서버에 평가 질의 58개 추천 요청, 정확도 다시 재기(몇 분), 자동 시험 |
+| 배치 기록 복사본 만들기 | `.\.venv\Scripts\python.exe -X utf8 -m eval.metrics_logs --snapshot` → `data/collect_log.<이름>.jsonl`·`data/run.<이름>.log` | 배치 서버 읽기만. 서버 이전 **전에** 한 번 더 돌려 둔다 |
+
+**지표 보고서를 서버 이전 뒤 다시 뽑을 때**(발표 직전 10/24~25쯤): 배치 서버와 실제 공고 서버 주소가 바뀌므로 환경 변수로 알려 준다 — `$env:METRICS_BATCH_HOST='ubuntu@<새 배치 서버>'`, `$env:METRICS_BATCH_KEY='<키 파일 경로>'`, `$env:METRICS_BATCH_NAME='<이름>'`(복사본 파일 이름), `$env:METRICS_SERVER_URL='http://<운영 공고 서버>:8000'`, `$env:METRICS_SERVER_NAME='운영 서버'`. 이전 전 sbrain-web 기록은 `data/collect_log.sbrain-web.jsonl` 복사본이 그대로 합쳐진다(이전 전에 `--snapshot` 한 번 더). 보고서에는 주소가 아니라 이름만 나온다. Word 파일을 만드는 도구는 `pip install -r requirements-report.txt`(이 PC만).
 
 저장소 루트 `.claude/launch.json`에 `search-service`(8000)·`verify-viewer`(8010)가 등록돼 있다.
 

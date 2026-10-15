@@ -33,6 +33,7 @@
 | [operations.md](operations.md) | 설치·명령·환경 변수·서버 배치 운영·되돌리기 |
 | [contracts.md](contracts.md) | 조율 에이전트용 HTTP 창구와 팀원용 DB 테이블 약속 |
 | [tracking/status.md](tracking/status.md) · [tracking/decisions/](tracking/decisions/index.md) · [tracking/findings.md](tracking/findings.md) | 맡은 범위 대비 현황 · 결정 기록 · 아직 못 푼 문제 |
+| [tracking/WEEKLY_SUMMARY_20261014.md](tracking/WEEKLY_SUMMARY_20261014.md) | 주간 정리(10/5~10/14) — 날짜별 한 일·숫자·서버 현황·남은 일 |
 
 ## 2. 하위 폴더
 
