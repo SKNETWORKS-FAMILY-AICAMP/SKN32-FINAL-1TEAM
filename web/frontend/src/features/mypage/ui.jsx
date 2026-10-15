@@ -1,0 +1,287 @@
+// 마이페이지 전용 입력 부품. 색·모서리·포커스 규칙은 IntakeForm과 맞춘다.
+import React, { useEffect, useRef, useState } from 'react';
+import { INDUSTRY_OPTIONS, SIDO } from './derive.js';
+
+const fieldBase = 'w-full border border-[var(--border)] rounded-xl px-3.5 text-[15px] bg-white outline-none focus:border-[var(--primary)] transition-colors placeholder:text-[#b0b8c1] disabled:bg-[var(--muted)]';
+export const inputCls = `${fieldBase} h-11`;
+// 여러 줄 입력칸 — inputCls에 h-auto를 덧붙이면 CSS 생성 순서상 h-11이 이겨서 한 줄 높이로
+// 눌리므로 높이 클래스 없이 따로 둔다. 크기는 rows로 정하고 사용자가 늘리지 못하게 막는다.
+export const textareaCls = `${fieldBase} py-3 resize-none leading-relaxed`;
+
+const TONES = {
+  ok: 'bg-[#e8f7f1] text-[var(--ok)]',
+  info: 'bg-[#e8f1ff] text-[var(--primary-dim)]',
+  warn: 'bg-[#fff4e0] text-[var(--warn)]',
+  danger: 'bg-[#fff0f0] text-[var(--danger)]',
+  muted: 'bg-[var(--muted)] text-[var(--muted-fg)]',
+};
+
+export function Badge({ tone = 'info', children }) {
+  return <span className={`inline-flex items-center h-7 px-2.5 rounded-lg text-[12.5px] font-semibold ${TONES[tone]}`}>{children}</span>;
+}
+
+export function Badges({ items }) {
+  const list = items.filter(Boolean);
+  if (!list.length) return null;
+  return <div className="flex flex-wrap gap-1.5 mt-3">{list.map((b) => <Badge key={b.text} tone={b.tone}>{b.text}</Badge>)}</div>;
+}
+
+// <section>이 아니라 <div>인 이유: styles.css의 레거시 규칙
+// ".workflow-content section input{background:#f2f4f6}"(IntakeForm용)이 태그명만
+// 보고 걸리는 바람에, 여기서도 <section>을 쓰면 흰 배경으로 짜둔 inputCls를 회색으로
+// 덮어써 버렸다(포커스 때만 잠깐 흰색으로 바뀌었다 풀리는 것도 그 규칙의 :focus 예외 때문).
+// 레거시 규칙은 그대로 두고, 여기 태그만 바꿔서 그 선택자에 안 걸리게 한다.
+// 로그인 약관 동의 화면의 [필수] 표기와 같은 모양.
+export function RequiredTag() {
+  return <span className="ml-1.5 text-[12px] font-semibold text-[var(--primary)] align-middle">[필수]</span>;
+}
+
+export function OptionalTag() {
+  return <span className="ml-1.5 text-[12px] font-semibold text-[var(--muted-fg)] align-middle">[선택]</span>;
+}
+
+// id: 제출 시 빠진 필수 항목으로 스크롤할 때의 목적지. error: 그 섹션에 띄울 "작성해 주세요" 안내.
+export function Section({ id, title, desc, required, optional, error, children }) {
+  return (
+    <div id={id} className={`py-8 border-t border-[var(--border)] first:border-t-0 first:pt-0 ${error ? 'section-error' : ''}`}>
+      <h2 className="font-bold text-[17px]">{title}{required && <RequiredTag />}{optional && <OptionalTag />}</h2>
+      {desc && <p className="text-[13.5px] text-[var(--muted-fg)] mt-1">{desc}</p>}
+      {error && <p role="alert" className="mt-2 text-[13px] font-semibold text-[var(--danger)]">{error}</p>}
+      <div className="mt-5">{children}</div>
+    </div>
+  );
+}
+
+// 저장/제출 때 빈 필수 항목({label, anchor})이 이 섹션이면 안내 문구를 돌려준다.
+export const errorFor = (error, anchor) => (error?.anchor === anchor ? `${error.label} 항목을 작성해 주세요` : null);
+
+// 빠진 필수 항목(섹션 id)으로 부드럽게 스크롤하고 그 안의 첫 입력칸에 포커스를 준다.
+export function focusSection(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  // 상단 바·마이페이지 탭 줄(둘 다 sticky)에 가려지지 않게 그만큼 위를 비워 둔다.
+  window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 140, behavior: 'smooth' });
+  el.querySelector('input, textarea, button[aria-haspopup], button[aria-pressed]')?.focus({ preventScroll: true });
+}
+
+export function Field({ label, required, children }) {
+  return (
+    <label className="block min-w-0">
+      <span className="block text-[13px] font-semibold text-[#4e5968] mb-1.5">{label}{required && <RequiredTag />}</span>
+      {children}
+    </label>
+  );
+}
+
+export function TextInput({ label, value, onChange, type = 'text', placeholder, min, max }) {
+  return <Field label={label}><input type={type} value={value} placeholder={placeholder} min={min} max={max} onChange={(e) => onChange(e.target.value)} className={inputCls} /></Field>;
+}
+
+// [2026-09-28] 기간을 자유 텍스트로 받던 칸(대표자 이력 등)을 달력으로 바꾼다. 사람마다
+// '2019.03 – 2023.10'/'19년 3월~23년 10월'처럼 제각각 적어서 사업계획서에 그대로 실리고
+// 정렬·비교도 안 됐다. 저장 형식은 'YYYY-MM ~ YYYY-MM' 문자열 하나로 유지한다 — 서버
+// 스키마(app/schemas.py PlanCareerIn.period: str)와 이미 저장된 프로필을 안 건드리기 위해서다.
+const _MONTH_RE = /(\d{4})[.\-/년\s]*(\d{1,2})/g;
+
+// 예전에 손으로 적어둔 값도 최대한 읽어준다 — 연·월 두 쌍을 찾으면 그걸 시작·종료로 쓴다.
+export function parseMonthRange(value) {
+  if (!value) return { start: '', end: '' };
+  const found = [...String(value).matchAll(_MONTH_RE)].map(
+    ([, y, m]) => `${y}-${String(Number(m)).padStart(2, '0')}`,
+  );
+  return { start: found[0] || '', end: found[1] || '' };
+}
+
+export function formatMonthRange({ start, end }) {
+  if (!start && !end) return '';
+  return `${start} ~ ${end}`.trim();
+}
+
+export function MonthRangeInput({ label, value, onChange }) {
+  const { start, end } = parseMonthRange(value);
+  const set = (key) => (e) => onChange(formatMonthRange({ start, end, [key]: e.target.value }));
+  const reversed = start && end && start > end;
+  return (
+    <div className="min-w-0">
+      <span className="block text-[13px] font-semibold text-[#4e5968] mb-1.5">{label}</span>
+      {/* input은 기본 너비(약 20자) 아래로 안 줄어들어서, min-w-0 없이 flex에 넣으면
+          칸을 넘쳐 옆 항목(증빙 있음) 위로 올라탄다(사용자 지적). */}
+      <div className="flex items-center gap-1.5">
+        <input type="month" aria-label={`${label} 시작`} value={start} onChange={set('start')} className={`${inputCls} min-w-0 flex-1 px-2`} />
+        <span className="flex-shrink-0 text-[var(--muted-fg)]">~</span>
+        <input type="month" aria-label={`${label} 종료`} value={end} onChange={set('end')} className={`${inputCls} min-w-0 flex-1 px-2`} />
+      </div>
+      {reversed && <p className="text-[12px] mt-1 text-[var(--danger)]">종료월이 시작월보다 빨라요.</p>}
+    </div>
+  );
+}
+
+// 모든 드롭다운(성별·시/도·역량 탭의 구분·상태 선택 등)이 같은 모양을 쓰도록 여기 하나로
+// 통일한다 — 네이티브 select는 펼쳤을 때 옵션 목록이 OS 기본 모양(각진 사각형)으로 나와
+// CSS로 못 고치므로, 버튼 + 커스텀 목록으로 직접 그린다.
+export function Select({ label, value, onChange, options, placeholder = '선택' }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <Field label={label}>
+      <div className="relative" ref={ref}>
+        <button type="button" onClick={() => setOpen((o) => !o)} aria-haspopup="listbox" aria-expanded={open}
+          className={`${inputCls} flex items-center justify-between gap-2 text-left ${value ? '' : 'text-[#b0b8c1]'}`}>
+          <span className="truncate">{value || placeholder}</span>
+          <svg className={`w-4 h-4 text-[#8b95a1] shrink-0 transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
+        {open && (
+          <ul role="listbox" className="absolute z-20 left-0 right-0 mt-1.5 max-h-60 overflow-auto rounded-xl border border-[var(--border)] bg-white shadow-lg py-1.5">
+            {options.map((o) => (
+              <li key={o}>
+                <button type="button" role="option" aria-selected={value === o}
+                  onClick={() => { onChange(o); setOpen(false); }}
+                  className={`w-full text-left px-3.5 py-2.5 text-[14.5px] transition-colors ${value === o ? 'bg-[#eef4fe] text-[var(--primary-dim)] font-semibold' : 'text-[var(--fg)] hover:bg-[#f5f7fa]'}`}>
+                  {o}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Field>
+  );
+}
+
+export function Segmented({ options, value, onChange }) {
+  return (
+    <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+      {options.map(([val, label, sub]) => (
+        <button key={val} type="button" aria-pressed={value === val} onClick={() => onChange(val)}
+          className={`rounded-xl border-2 px-3 py-3 text-left transition-[border-color,background-color,scale] duration-150 active:scale-[0.98] ${value === val ? 'border-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_6%,white)]' : 'border-[var(--border)] bg-white hover:border-[#d1d6db]'}`}>
+          <span className={`block text-[14.5px] font-semibold ${value === val ? 'text-[var(--primary-dim)]' : ''}`}>{label}</span>
+          {sub && <span className="block text-[12.5px] text-[var(--muted-fg)] mt-0.5">{sub}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function Check({ checked, onChange, children }) {
+  return (
+    <label className="inline-flex items-center gap-2 text-[14px] text-[#4e5968] cursor-pointer select-none">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="w-4 h-4 accent-[var(--primary)]" />
+      {children}
+    </label>
+  );
+}
+
+// 프로필 로딩·전환은 사용자 수정이 아니므로 값을 초기화하지 않는다.
+// 현재 목록에 없는 기존 업종도 옵션에 포함해 표시하고 재저장할 수 있게 한다.
+export function IndustryField({ label = '주업종', applicantType, value, onChange }) {
+  const selectable = applicantType === 'individual' || applicantType === 'corp';
+  const options = value?.trim() && !INDUSTRY_OPTIONS.includes(value)
+    ? [value, ...INDUSTRY_OPTIONS] : INDUSTRY_OPTIONS;
+  if (selectable) return <Select label={label} value={value} options={options} onChange={onChange} />;
+  return <TextInput label={label} value={value} placeholder="예) 응용 소프트웨어 개발" onChange={onChange} />;
+}
+
+// 펼치기/접기. "불러온 정보를 다 보여주되 한꺼번에 펼쳐두면 혼잡하다"는 요구에 맞춰
+// IntakeForm의 "불러온 정보" 묶음에 쓴다. 기본은 펼친 상태(불러온 직후엔 바로 보이게).
+export function Collapsible({ title, defaultOpen = true, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rounded-2xl border border-[var(--border)] overflow-hidden">
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
+        className="w-full flex items-center justify-between gap-3 px-5 py-4 bg-[#f9fafb] hover:bg-[#f2f4f6] transition-colors">
+        <span className="text-[14.5px] font-bold">{title}</span>
+        <svg className={`w-4 h-4 text-[#8b95a1] shrink-0 transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+      {open && <div className="p-5 flex flex-col gap-6">{children}</div>}
+    </div>
+  );
+}
+
+export function RegionInput({ label, value, onChange }) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
+      <Select label={`${label} 시/도`} value={value.sido} options={SIDO} onChange={(sido) => onChange({ ...value, sido })} />
+      <TextInput label="시/군/구" value={value.sigungu} placeholder="예) 강남구" onChange={(sigungu) => onChange({ ...value, sigungu })} />
+    </div>
+  );
+}
+
+// 칩 토글 + 목록에 없는 항목 직접 추가
+export function ChipSelect({ options, values, onChange }) {
+  const [custom, setCustom] = useState('');
+  const toggle = (v) => onChange(values.includes(v) ? values.filter((x) => x !== v) : [...values, v]);
+  const all = [...options, ...values.filter((v) => !options.includes(v))];
+  const add = () => {
+    const v = custom.trim();
+    if (v && !values.includes(v)) onChange([...values, v]);
+    setCustom('');
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {all.map((o) => (
+        <button key={o} type="button" aria-pressed={values.includes(o)} onClick={() => toggle(o)}
+          className={`h-9 px-3.5 rounded-full text-[14px] font-medium border transition-colors ${values.includes(o) ? 'bg-[var(--primary)] border-[var(--primary)] text-white' : 'bg-white border-[var(--border)] text-[#4e5968] hover:border-[#d1d6db]'}`}>
+          {o}
+        </button>
+      ))}
+      <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="+ 직접 입력"
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} onBlur={add}
+        className="h-9 w-28 px-3 rounded-full border border-dashed border-[#d1d6db] text-[14px] outline-none focus:border-[var(--primary)] focus:w-40 transition-[width,border-color]" />
+    </div>
+  );
+}
+
+// 행 추가/삭제형 목록. fields: [{key,label,type:'text'|'date'|'month'|'select'|'check',options,placeholder}]
+const COLS = { 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3', 4: 'sm:grid-cols-2 md:grid-cols-4' };
+
+export function ListEditor({ items, onChange, fields, cols = 3, addLabel, emptyText, extra }) {
+  const blank = Object.fromEntries(fields.map((f) => [f.key, f.type === 'check' ? false : '']));
+  const update = (i, key, value) => onChange(items.map((row, idx) => (idx === i ? { ...row, [key]: value } : row)));
+  return (
+    <div className="flex flex-col gap-3">
+      {items.length === 0 && emptyText && <p className="text-[13.5px] text-[var(--muted-fg)] bg-white border border-[var(--border)] rounded-xl px-4 py-3.5">{emptyText}</p>}
+      {items.map((row, i) => (
+        <div key={i} className="relative rounded-2xl bg-white border border-[var(--border)] p-4 pr-12">
+          <div className={`grid gap-3 ${COLS[cols]}`}>
+            {fields.map((f) => {
+              const set = (v) => update(i, f.key, v);
+              if (f.type === 'select') return <Select key={f.key} label={f.label} value={row[f.key]} options={f.options} onChange={set} />;
+              if (f.type === 'check') return <div key={f.key} className="flex items-end pb-2.5"><Check checked={!!row[f.key]} onChange={set}>{f.label}</Check></div>;
+              // 달력 두 칸이 들어가는 기간 항목은 한 칸으로는 좁아서 두 칸을 차지한다.
+              if (f.type === 'monthrange') return <div key={f.key} className="min-w-0 md:col-span-2"><MonthRangeInput label={f.label} value={row[f.key]} onChange={set} /></div>;
+              return <TextInput key={f.key} label={f.label} type={f.type || 'text'} value={row[f.key]} placeholder={f.placeholder} onChange={set} />;
+            })}
+          </div>
+          {extra && extra(row)}
+          <button type="button" aria-label="삭제" onClick={() => onChange(items.filter((_, idx) => idx !== i))}
+            className="absolute top-3 right-3 w-8 h-8 grid place-items-center rounded-lg text-[#b0b8c1] hover:text-[var(--danger)] hover:bg-[var(--muted)] transition-colors">
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </div>
+      ))}
+      <button type="button" onClick={() => onChange([...items, blank])}
+        className="h-11 rounded-xl border border-dashed border-[#d1d6db] text-[14px] font-semibold text-[var(--primary)] hover:bg-[#f5f9ff] transition-colors">
+        + {addLabel}
+      </button>
+    </div>
+  );
+}

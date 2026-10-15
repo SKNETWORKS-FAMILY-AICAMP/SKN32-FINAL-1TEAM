@@ -1,0 +1,18 @@
+{"notice_id": "bizinfo:PBLN_000000000123842", "quote": "업력이 2년 이상이며 최근 6개월 또는 전년 대비 매출 감소로 경영 위기에 직면한 소상공인", "rule_says": 1, "model_says": 0, "model_confidence": 0.717, "human": null}
+{"notice_id": "bizinfo:PBLN_000000000126007", "quote": "7년 이내 초기창업 기업 또는 예비창업자(선정 시, 사업자 등록 必)", "rule_says": 0, "model_says": 1, "model_confidence": 0.674, "human": null}
+{"notice_id": "bizinfo:PBLN_000000000120946", "quote": "예비창업자(팀) 또는 7년 이내 창업기업", "rule_says": 0, "model_says": 1, "model_confidence": 0.652, "human": null}
+{"notice_id": "bizinfo:PBLN_000000000120509", "quote": "충남 소재 7년 미만 기술기반 창업기업", "rule_says": 0, "model_says": 1, "model_confidence": 0.643, "human": null}
+{"notice_id": "bizinfo:PBLN_000000000122863", "quote": "공고일 기준 1인 (예비)창업기업 또는 7년 이내 창업자", "rule_says": 0, "model_says": 1, "model_confidence": 0.635, "human": null}
+{"notice_id": "bizinfo:PBLN_000000000125370", "quote": "주관연구개발기관 및 공동연구개발기관 中 국내기업은 접수마감일 현재 사업자등록증 및 법인등기부등본 기준으로 창업 1년 이상 경과하고, 한국산업기술진흥협회가 발급한 “기업부설연구소 인정서*:”를 보유하고 있는 국내 사업자", "rule_says": 1, "model_says": 0, "model_confidence": 0.594, "human": null}
+{"notice_id": "bizinfo:PBLN_000000000125528", "quote": "증축 및 개보수의 경우, 공고일 기준으로 1년 전*부터 영업 중인 업체 * 관광사업 등록증 기준 1년 이상 관광사업자로 영위하여야 함.", "rule_says": 1, "model_says": 0, "model_confidence": 0.584, "human": null}
+{"notice_id": "bizinfo:PBLN_000000000126501", "quote": "과제2(제조업): 설립 10년 이상 노후 시설을 보유한 상시 근로자 30인미만 화재․폭발․누출․질식 위험 보유 영세 사업장(60개사)", "rule_says": 1, "model_says": 0, "model_confidence": 0.568, "human": null}
+{"notice_id": "bizinfo:PBLN_000000000126348", "quote": "- 설립 후 3년 이상 경과하였거나, 국가공인시험분석기관(KOLAS인증포함)으로 인증지원 등을 주업으로 하는 회사ㆍ기관 패키지 지원 - 설립 후 3년 이상 경과, 상근컨설턴트 3인 이상, 최근 1년간 컨설팅실적 5천만 원 이상의 기업으로 이 중 1개 이상 해당하는 컨설팅 전문회사 - 설립 후 3년 이상 경과, 상근컨설턴트 3인 이상, 최근 1년간 컨설팅실적 컨설팅 지원 5천만 원 이상의 기업으로 이 중 1개 이상 해당하는 컨설팅 전문회사", "rule_says": 1, "model_says": 0, "model_confidence": 0.549, "human": null}
+{"notice_id": "bizinfo:PBLN_000000000126317", "quote": "7년 미만 창업기업(신산업 분야 기업은 10년 이내까지 인정)으로,", "rule_says": 0, "model_says": 1, "model_confidence": 0.547, "human": null}
+{"notice_id": "bizinfo:PBLN_000000000126381", "quote": "② 공고일 기준 관내 점포를 임차하여 영업 중인 청년으로 관할 세무서에 사업자등록을 마친 뒤 5년이 경과하지 않은 소상공인", "rule_says": 1, "model_says": 0, "model_confidence": 0.54, "human": null}
+{"notice_id": "bizinfo:PBLN_000000000117563", "quote": "중진공 지정 부실징후기업 또는 업력 5년 초과 기업 중 다음에 해당하는 한계기업 - 2년 연속 적자기업 중 자기자본 전액 잠식 기업 ⑭ - 3년 연속 ‘이자보상배율 1.0미만’기업 (금융비용이 없더라도 영업손실이 발생한 경우 이자보상배(비)율 1.0미만으로 간주) - 중진공 신용위험등급 최하위 등급 ⑮ 현장평가 및 관련서류 제출 미협조 기업", "rule_says": 1, "model_says": 0, "model_confidence": 0.53, "human": null}
+{"notice_id": "bizinfo:PBLN_000000000117510", "quote": "진안군 내에서 1년 이상 사업자로 등록되어 영업 중인 소상공인, 중소기업", "rule_says": 1, "model_says": 0, "model_confidence": 0.529, "human": null}
+{"notice_id": "bizinfo:PBLN_000000000126269", "quote": "예비창업자 또는 5년 이내 창업한 중소기업", "rule_says": 0, "model_says": 1, "model_confidence": 0.525, "human": null}
+{"notice_id": "bizinfo:PBLN_000000000121148", "quote": "③ 1년 이상 사업 운영 중인 업체(2024. 7. 1. 이전 개업한 소상공인)", "rule_says": 1, "model_says": 0, "model_confidence": 0.517, "human": null}
+{"notice_id": "bizinfo:PBLN_000000000120054", "quote": "유통업자는 본사 또는 사업장이 관내 소재한 영업 6월 이상 업체", "rule_says": 1, "model_says": 0, "model_confidence": 0.51, "human": null}
+{"notice_id": "bizinfo:PBLN_000000000126131", "quote": "* 단, 최초신청일 기준 창업·법인설립 3년차 미만인 경우 또는 개인사업자인 경우 자본잠식 검증대상에서 제외", "rule_says": 1, "model_says": 0, "model_confidence": 0.508, "human": null}
+{"notice_id": "bizinfo:PBLN_000000000126172", "quote": "▷ 창업기업(7년 이내) 지원제외", "rule_says": 0, "model_says": 1, "model_confidence": 0.505, "human": null}

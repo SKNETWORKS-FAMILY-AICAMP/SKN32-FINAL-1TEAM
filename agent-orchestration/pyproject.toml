@@ -1,0 +1,30 @@
+# sbrain 패키지 — 웹 서버 프로세스가 설치해 명령 · 조회 함수(build_web)를 불러 쓴다.
+#   pip install -e <이 폴더>        # 개발 중 (코드 변경이 바로 반영)
+#   pip install <이 폴더>           # 배포
+# 의존성은 requirements.txt와 같다(테스트가 확인한다). 워커는 sbrain-worker 또는 python -m sbrain.worker.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sbrain"
+version = "0.1.0"
+description = "S-Brain Agent Orchestration — Orchestrator 뼈대 · 조율 Agent · 워커"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic==2.13.5",
+    "SQLAlchemy==2.1.1",
+    "PyMySQL==1.2.3",
+    "openai==3.20.0",
+    "python-dotenv==1.2.3",
+]
+
+[project.optional-dependencies]
+test = ["pytest==9.1.1"]
+
+[project.scripts]
+sbrain-worker = "sbrain.worker:main"
+
+[tool.setuptools.packages.find]
+include = ["sbrain*"]

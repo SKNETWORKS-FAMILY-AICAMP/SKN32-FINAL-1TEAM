@@ -1,0 +1,95 @@
+{
+  "about": "결과 파일 없이 문서·노트북에만 적혀 있는 측정값을 출처 그대로 옮긴 목록(2026-10-14). eval/metrics_report.py 가 읽는다. 값을 새로 짐작하지 않는다 — 출처를 못 찾은 값은 넣지 않는다. 근거 문장에는 서버 주소·키 파일 이름을 옮기지 않는다.",
+  "records": [
+    {
+      "key": "notice_server_boot",
+      "area": "8",
+      "name": "공고 서버 켜는 시간(시험용 새 서버)",
+      "value": 28,
+      "unit": "sec",
+      "measured_at": "2026-10-12",
+      "where": "시험용 새 서버(배치와 공고 서버를 한 대에, 메모리 4GB)",
+      "source": "docs/WORKLOG.md",
+      "evidence": "2026-10-12 배치 + 공고 서버 한 서버(4GB) 항목: \"공고 서버 28초 1.12GB\""
+    },
+    {
+      "key": "notice_server_memory",
+      "area": "8",
+      "name": "공고 서버 메모리(시험용 새 서버)",
+      "value": 1147,
+      "unit": "mb",
+      "measured_at": "2026-10-12",
+      "where": "시험용 새 서버(배치와 공고 서버를 한 대에, 메모리 4GB)",
+      "source": "docs/WORKLOG.md",
+      "evidence": "2026-10-12 배치 + 공고 서버 한 서버(4GB) 항목: \"공고 서버 28초 1.12GB\" (1.12GB = 약 1,147MB)"
+    },
+    {
+      "key": "batch_peak_memory",
+      "area": "8",
+      "name": "배치 중 서버 최대 메모리(시험용 새 서버)",
+      "value": 1767,
+      "unit": "mb",
+      "measured_at": "2026-10-12",
+      "where": "시험용 새 서버(배치와 공고 서버를 한 대에, 메모리 4GB)",
+      "source": "docs/WORKLOG.md",
+      "evidence": "2026-10-12 배치 + 공고 서버 한 서버(4GB) 항목: \"서버 메모리 최대 1,767MB\""
+    },
+    {
+      "key": "detail_format_errors",
+      "area": "7",
+      "name": "공고 상세 응답 형식 오류",
+      "value": 0,
+      "unit": "count",
+      "target": "0",
+      "checked": 2765,
+      "measured_at": "2026-10-06",
+      "where": "이 PC(공고 서버 코드를 직접 불러 확인)",
+      "source": "docs/WORKLOG.md",
+      "evidence": "2026-10-06 공고 서버 API 02 — 공고 상세·자격 판정 창구 항목: \"공고 상세 2,765건 형식 오류 0\""
+    },
+    {
+      "key": "reranker_query_ms",
+      "area": "ML",
+      "name": "리랭커 질의당 시간(GPU)",
+      "value": 1080,
+      "unit": "ms",
+      "measured_at": "2026-09-16",
+      "where": "집 PC GPU(RTX 3060)",
+      "source": "ml/05_reranker_report.ipynb",
+      "evidence": "출력 \"리랭킹 시간 (GPU) 1080 ms/질의\""
+    },
+    {
+      "key": "reranker_gpu_memory",
+      "area": "ML",
+      "name": "리랭커 GPU 최대 사용량",
+      "value": 4710,
+      "unit": "mb",
+      "measured_at": "2026-09-16",
+      "where": "집 PC GPU(RTX 3060)",
+      "source": "ml/05_reranker_report.ipynb",
+      "evidence": "출력 \"GPU 최대 사용량 4.6 GB\" (4.6GB = 약 4,710MB)"
+    },
+    {
+      "key": "server_price_now",
+      "area": "9",
+      "name": "서버 요금 참고: 지금 서버(t3.medium, 시간당)",
+      "value": 0.052,
+      "unit": "usd",
+      "measured_at": "2026-10-14",
+      "where": "AWS 서울 리전 온디맨드, 제3자 가격표",
+      "source": "reports/embedding_cpu_gpu_20261014T082732Z/README.md",
+      "evidence": "\"t3.medium 시간당 약 $0.052(월 약 $38)\""
+    },
+    {
+      "key": "server_price_gpu",
+      "area": "9",
+      "name": "서버 요금 참고: GPU 서버(g4dn.xlarge, 시간당)",
+      "value": 0.647,
+      "unit": "usd",
+      "measured_at": "2026-10-14",
+      "where": "AWS 서울 리전 온디맨드, 제3자 가격표",
+      "source": "reports/embedding_cpu_gpu_20261014T082732Z/README.md",
+      "evidence": "\"g4dn.xlarge(T4 16GB, 메모리 16GB) 시간당 약 $0.647(월 약 $472)\""
+    }
+  ]
+}

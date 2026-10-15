@@ -1,0 +1,522 @@
+// S-Brain 서비스 DB 스키마 — dbdiagram.io 붙여넣기용 DBML
+// 기준: back/app_schema.sql (schema_version=2) + back/app/models.py (Notice/NoticeCondition)
+// 갱신일: 2026-09-17 (하정원) — 얼굴 인증 삭제, companies.user_id UNIQUE→INDEX,
+// 마이페이지/계획서 양식 컬럼·테이블 신규, match_score_reasons 신규, 읽기 위주 인덱싱,
+// API/DB 정합성 배선, notices/notice_conditions 실측 재검증(2단계: 레포 DDL 직접 확인 →
+// 실제 공유 DB 화면 스크린샷 확인) 전부 반영. 이후 기획서 v1.7·요구사항 정의서 v2·수집
+// 데이터 보고서(2026-09-16) 3개 원본 문서를 직접 대조한 정합성 점검 보고서 결과를 추가
+// 반영(같은 날) — notices.embedding 3컬럼 복원, notice_conditions.uncertain 타입 미확정
+// 표기, 외부 테이블 표기(공백 유무) 통일. 그 직후 하정원님이 실제 DESCRIBE notice_conditions;
+// 결과 스크린샷을 받아와 notice_id PK, amount_max_won 인덱스(MUL), uncertain 타입(json)
+// 모두 확정 — 더 이상 미확정 항목 없음.
+//
+// 2026-09-17 추가 갱신(같은 날 후속) — 실제 서비스를 띄워 저장 로그를 직접 확인하며 발견한
+// 것들: ① user_profiles 테이블 신규(마이페이지 입력값 저장 API, SB-59) — 계정당 1행,
+// GET/PUT /profile/me. ② companies.applicant_type 신규 — IntakeForm.jsx가 필수로 물어보는데
+// 저장이 안 되고 있던 값. ③ companies.start_type / projects.notify_region·notify_industry는
+// IntakeForm.jsx에 입력칸이 아예 없어 항상 고정값만 저장되고 있던 게 실제 INSERT 로그로
+// 확인돼 API에서 제거 — 컬럼은 NULL 허용으로 남겨둠(not null 해제).
+//
+// 사용법: dbdiagram.io 새 다이어그램 만들기 → 이 파일 내용을 통째로 붙여넣기.
+// notices / notice_conditions 는 공고 수집 파이프라인 팀 소유 — 이 저장소는 생성하지 않고
+// FK로만 참조한다(테이블 Note에 표시). notices는 실제 레포 DDL 확인 후 embedding 3컬럼을
+// 수집 데이터 보고서 근거로 다시 복원했다. notice_conditions는 DESCRIBE 결과로 PK·인덱스·
+// uncertain 타입까지 전부 확정된 상태다(테이블 Note 참고).
+
+// ===========================================================================
+// 외부 소유 (공고 수집 파이프라인 팀) — 참고용, 이 저장소는 생성하지 않음
+// ===========================================================================
+
+Table notices [headercolor: #9E9E9E] {
+  id bigint [pk, increment, note: '실제 PK — 이 저장소는 FK 대상으로 notice_id를 쓴다']
+  notice_id varchar(320) [unique, not null, note: '이 저장소가 FK로 참조하는 대상 컬럼. 통합 식별자(source:원본ID)']
+  source varchar(32) [not null, note: 'kstartup 또는 bizinfo']
+  source_id varchar(255) [not null, note: '출처 API 원본 공고 ID — source와 조합해 별도 UNIQUE']
+  schema_version int [not null, note: '정규화 데이터 구조 버전']
+  title text [not null]
+  body longtext [note: '사업 개요(HTML 태그 제거 후 저장)']
+  target_text longtext [note: '지원대상 원문']
+  target_text_status varchar(32) [not null, note: 'available / not_available']
+  target_category text [note: 'API가 제공한 지원대상 분류']
+  exclude_text longtext [note: '제외대상']
+  age_condition_raw text [note: '업력 조건 원문']
+  region text [note: 'API 지원 지역 값']
+  category text
+  subcategory text
+  organizer text [note: 'K-Startup 공고만']
+  supervising_org text [note: '기업마당 소관기관']
+  executing_org text [note: '기업마당 수행기관']
+  apply_start date
+  apply_end date
+  apply_period_raw json [not null, note: '접수기간 원본(출처별 객체/문자열 그대로 보존)']
+  apply_period_type varchar(32) [note: 'fixed/budget_exhaustion/rolling/until_filled/unknown']
+  recruitment_status varchar(32) [not null, note: 'open/closed/unknown']
+  url text
+  apply_url text [note: '지원사업 신청 페이지 URL']
+  attachment_discovery_status varchar(32) [not null, note: 'pending_crawl/api_links_available/not_available']
+  source_updated_at_raw json [not null, note: 'API 원본 수정 시각 값(미제공은 JSON null)']
+  issues json [note: '정규화 경고 목록']
+  raw json [note: '수집 API 원본 응답 전체']
+  embedding mediumblob [note: '[2026-09-17 복원] 공고 요약 임베딩(float32 1024차원, 4096바이트)']
+  embedding_fingerprint varchar(128) [note: '[2026-09-17 복원] 모델·입력구성·차원 지문(예: bge-m3/v1/1024)']
+  embedding_input_sha256 char(64) [note: '[2026-09-17 복원] 임베딩 입력 텍스트 해시 — 같으면 재계산 안 함']
+  snapshot_at datetime [not null, note: '마지막 반영 정규화 파일 생성 시각(UTC)']
+  last_import_id char(32) [not null, note: 'import_runs.run_id 참조 — 마지막 저장 작업']
+  created_at datetime [not null]
+  updated_at datetime [not null]
+
+  Note: '[외부 소유·2026-09-17 정합성 점검 보고서 반영] 1차로 실제 수집 파이프라인 레포(github.com/geunlee00/skn32_test)의 mysql_schema.sql 원본으로 확인하면서 embedding 계열 3컬럼을 "레포에 없다"는 이유로 뺐었으나, 이근준님이 작성한 수집 데이터 보고서(2026-09-16) 원문에 이 3개 컬럼이 실제로 존재하고 2,153건 전량(결측 0건) 채워져 있다고 명시돼 있어 다시 복원함 — 레포 스냅샷이 이 시점 기준 최신이 아니었던 것으로 판단.'
+}
+
+Table notice_conditions [headercolor: #9E9E9E] {
+  notice_id varchar(320) [pk, not null, note: '[2026-09-17 DESCRIBE로 확정] notices 참조, PK 겸 FK(1:1) — DESCRIBE notice_conditions; 결과 Key=PRI로 확정']
+  amount_max_won bigint [note: '[2026-09-17 확인] 최대 지원금액(원) — DESCRIBE상 Key=MUL(비고유 인덱스)']
+  amount_rejected varchar(120) [note: '금액 조건 판정 불가/거부 사유 원문']
+  amount_corrected json [note: 'LLM이 원문 대비 보정한 금액 값']
+  business_type json [note: '신청 가능 사업자 형태']
+  pre_startup_allowed boolean [note: '예비창업자 신청 가능 여부']
+  age_years_min smallint
+  age_years_max smallint
+  age_rejected varchar(80) [note: '업력 조건 판정 불가/거부 사유 원문']
+  age_source_quote text [note: '업력 조건 근거 원문(source_quote와 별도)']
+  no_age_limit boolean [not null, default: false, note: '업력 제한 없음이 명시적으로 확인됐는지']
+  source_quote text [note: '전체 판정 근거 원문']
+  uncertain json [note: '[2026-09-17 DESCRIBE로 확정] json, 필드별 확신도 낮음 표시 — 수집 데이터 보고서(2026-09-16)의 TINYINT 설명은 틀렸던 것으로 결론']
+  prompt_tokens int [note: 'LLM 추출 호출의 입력 토큰 수']
+  completion_tokens int [note: 'LLM 추출 호출의 출력 토큰 수']
+  extractor_version varchar(64) [not null, note: '추출기/프롬프트 버전']
+  input_sha256 char(64) [not null, note: '추출 입력 해시 — 재추출 필요 여부 판단용']
+  extracted_at datetime [not null]
+  updated_at datetime [not null]
+
+  Note: '[외부 소유·2026-09-17 DESCRIBE로 최종 확정] 하정원님이 먼저 공유 DB 화면(스크린샷)으로 컬럼 19개를 확인했고, 정합성 점검 보고서가 uncertain 타입 충돌을 지적한 직후 DESCRIBE notice_conditions; 결과로 재확인 — notice_id PK(Key=PRI), amount_max_won 인덱스(Key=MUL), uncertain 타입(json) 모두 확정. LLM(gpt-4o-mini 추정) 추출 테이블로, 판정 불가/거부 원문·보정값·LLM 토큰 사용량·추출 메타데이터까지 기록.'
+}
+
+// ===========================================================================
+// 사용자 / 회사 / 프로젝트
+// ===========================================================================
+
+Table users [headercolor: #2F5496] {
+  user_id bigint [pk, increment]
+  email varchar(255) [not null, unique]
+  name varchar(100) [not null]
+  google_sub varchar(255) [not null, unique]
+  notify_enabled boolean [not null, default: true]
+  ai_training_agreed boolean [not null, default: false]
+  role varchar(20) [not null, default: 'user']
+  status varchar(20) [not null, default: 'active']
+
+  Note: '2026-09-17: face_verified_at 컬럼 완전 삭제(얼굴 인증 게이트 폐기).'
+}
+
+Table companies [headercolor: #2F5496] {
+  company_id bigint [pk, increment]
+  user_id bigint [not null, note: '2026-09-15: UNIQUE 제거, 일반 인덱스만 유지 — 계정당 여러 프로필 허용']
+  start_type varchar(32) [note: '[2026-09-17 API에서 제거, not null 해제] IntakeForm.jsx에 입력칸이 없어 항상 고정값만 저장되던 것 발견 — 컬럼은 남겨두고 더 이상 값을 받지 않음']
+  applicant_type varchar(20) [note: '신규 2026-09-17 — preliminary/individual/corp, IntakeForm.jsx가 필수로 물어보는데 저장이 안 되고 있던 값']
+  biz_type varchar(100)
+  ceo_name varchar(100)
+  founded_at date
+  company_name varchar(255) [note: '신규 2026-09-17']
+  business_reg_no varchar(32) [note: '신규 2026-09-17']
+  rep_type varchar(20) [note: '신규 2026-09-17']
+  // [2026-09-18 삭제] is_saved_profile/biz_reg_lookup_raw/biz_reg_lookup_checked_at —
+  // 마이페이지 프로필 재사용을 이 테이블에 붙이려던 예전 설계, user_profiles(v2)로 대체됨
+}
+Ref: companies.user_id > users.user_id [delete: cascade]
+
+Table user_profiles [headercolor: #2F5496] {
+  profile_id bigint [pk, increment]
+  user_id bigint [not null, note: '계정당 최대 3행(app/routers/profile.py MAX_PROFILES) — v1(계정당 1행, UNIQUE)에서 2026-09-18 슬롯형으로 개편']
+  name varchar(50) [not null, default: '정보 1', note: '슬롯 이름(사용자가 직접 지음)']
+  basic_json json [not null, note: '기본 정보 탭 원본(프론트 store profile.basic과 1:1)']
+  capability_json json [not null, note: '역량·팀 탭 원본']
+  biz_checked_no char(10) [note: 'POST /biz-check 성공 시 요청이 지정한 슬롯에만 서버가 채움']
+  biz_status_cd char(2) [note: '01 계속사업자 / 02 휴업자 / 03 폐업자']
+  biz_tax_type varchar(50)
+  biz_checked_at datetime
+  created_at datetime [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [not null, note: 'ON UPDATE CURRENT_TIMESTAMP']
+
+  indexes {
+    user_id [name: 'ix_user_profiles_user']
+  }
+
+  Note: '신규 2026-09-17(SB-59), 2026-09-18 v2로 슬롯형 개편(정재희님 프론트 커밋 반영, 계정당 최대 3개) — 판정용 컬럼(applicant_type/birth_date/.../home_sido/hq_sido)과 history_json은 매칭 코드에서 안 쓰이고 새 프론트가 재창업 이력도 안 받아 v2에서 제거. GET/POST /profile, PUT/DELETE /profile/{profile_id}, POST /biz-check 결과는 profile_id가 지정한 슬롯에만 자동 반영.'
+}
+Ref: user_profiles.user_id > users.user_id [delete: cascade]
+
+Table projects [headercolor: #2F5496] {
+  project_id bigint [pk, increment]
+  company_id bigint [not null]
+  description text [not null]
+  created_at datetime [not null, default: `CURRENT_TIMESTAMP`]
+  notify_region varchar(32) [note: '[2026-09-17 API에서 제거, not null 해제] 같은 이유 — IntakeForm.jsx에 입력칸이 없어 항상 고정값만 저장되던 것 발견']
+  notify_industry varchar(32) [note: '[2026-09-17 API에서 제거, not null 해제] 위와 동일']
+  output_summary text [note: '신규 2026-09-17']
+  tech_field varchar(100) [note: '신규 2026-09-17']
+  regional_priority_area varchar(100) [note: '신규 2026-09-17']
+
+  indexes {
+    (company_id, created_at) [name: 'ix_projects_company_created', note: '내 프로젝트 목록(company_id 필터 + created_at DESC)']
+    created_at [name: 'ix_projects_created', note: '관리자 전체 목록(필터 없이 최신순)']
+  }
+}
+Ref: projects.company_id > companies.company_id [delete: cascade]
+
+Table project_attachments [headercolor: #2F5496] {
+  attachment_id bigint [pk, increment]
+  project_id bigint [not null]
+  file_name varchar(255) [not null]
+  file_url varchar(500) [not null]
+  parsed_markdown longtext [note: '신규 2026-09-17 — 파싱 결과 캐시']
+  parse_status varchar(20) [note: '신규 2026-09-17 — pending/ok/parse_error/image_only']
+}
+Ref: project_attachments.project_id > projects.project_id [delete: cascade]
+
+Table team_members [headercolor: #2F5496] {
+  member_id bigint [pk, increment]
+  project_id bigint [not null]
+  name varchar(100) [not null]
+  role varchar(100)
+  experience text
+}
+Ref: team_members.project_id > projects.project_id [delete: cascade]
+
+Table pricing_items [headercolor: #2F5496] {
+  pricing_id bigint [pk, increment]
+  project_id bigint [not null]
+  service_name varchar(255) [not null]
+  unit_price decimal(12,2)
+
+  Note: '사업 아이템 자체의 수익모델 단가 — project_budget_items(사업비 집행계획)와 다른 개념'
+}
+Ref: pricing_items.project_id > projects.project_id [delete: cascade]
+
+Table project_budget_items [headercolor: #C55A11] {
+  budget_item_id bigint [pk, increment]
+  project_id bigint [not null]
+  item_order tinyint [note: 'unsigned, 표시 순서']
+  category varchar(100) [note: '비목']
+  execution_plan text
+  total_amount decimal(14,2)
+  government_amount decimal(14,2)
+  self_cash_amount decimal(14,2)
+  self_in_kind_amount decimal(14,2)
+
+  Note: '신규 테이블 2026-09-17 — 계획서 양식 "사업비 집행계획"'
+}
+Ref: project_budget_items.project_id > projects.project_id [delete: cascade]
+
+Table project_schedule_items [headercolor: #C55A11] {
+  schedule_id bigint [pk, increment]
+  project_id bigint [not null]
+  section varchar(20) [not null, note: 'feasibility/growth']
+  item_order tinyint [note: 'unsigned']
+  category varchar(100)
+  content text
+  period varchar(50)
+  detail text
+
+  Note: '신규 테이블 2026-09-17 — 계획서 양식 "추진일정"(실현가능성/성장전략 통합)'
+}
+Ref: project_schedule_items.project_id > projects.project_id [delete: cascade]
+
+Table project_partners [headercolor: #C55A11] {
+  partner_id bigint [pk, increment]
+  project_id bigint [not null]
+  item_order tinyint [note: 'unsigned']
+  partner_name varchar(255)
+  capability text
+  collaboration_plan text
+  collaboration_timing varchar(100)
+
+  Note: '신규 테이블 2026-09-17 — 계획서 양식 "협력기관"'
+}
+Ref: project_partners.project_id > projects.project_id [delete: cascade]
+
+// ===========================================================================
+// 유사 공고 알림 / 매칭 / 자격요건
+// ===========================================================================
+
+Table notice_alerts [headercolor: #2F5496] {
+  alert_id bigint [pk, increment]
+  project_id bigint [not null]
+  notice_id varchar(320) [not null]
+  similarity_score decimal(5,2) [not null]
+  detected_at datetime [not null, default: `CURRENT_TIMESTAMP`]
+}
+Ref: notice_alerts.project_id > projects.project_id [delete: cascade]
+Ref: notice_alerts.notice_id > notices.notice_id [delete: cascade]
+
+Table match_results [headercolor: #2F5496] {
+  match_id bigint [pk, increment]
+  project_id bigint [not null]
+  notice_id varchar(320) [not null]
+  fit_score decimal(5,2)
+  reason text
+  status varchar(20) [not null, default: 'in_progress']
+  stage varchar(30)
+  progress_percent tinyint [note: 'unsigned, 0~100']
+  archived_at datetime
+  archived_by varchar(20)
+
+  indexes {
+    status [name: 'ix_match_results_status', note: '진행 중 매칭 동시성 체크']
+  }
+}
+Ref: match_results.project_id > projects.project_id [delete: cascade]
+Ref: match_results.notice_id > notices.notice_id [delete: restrict]
+
+Table match_score_reasons [headercolor: #C55A11] {
+  reason_id bigint [pk, increment]
+  match_id bigint [not null]
+  reason_text text [not null]
+  item_code varchar(50)
+  score decimal(5,2)
+  max_score decimal(5,2)
+  evidence_locator varchar(500)
+
+  Note: '신규 테이블 2026-09-17 — 매칭 근거 정량화(plan_score_reasons와 동일 패턴)'
+}
+Ref: match_score_reasons.match_id > match_results.match_id [delete: cascade]
+
+Table eligibility_checks [headercolor: #2F5496] {
+  check_id bigint [pk, increment]
+  match_id bigint [not null]
+  passed boolean [not null]
+  failed_conditions json
+  missing_inputs json
+  undecidable boolean [not null, default: false]
+  checked_at datetime [not null, default: `CURRENT_TIMESTAMP`]
+}
+Ref: eligibility_checks.match_id > match_results.match_id [delete: cascade]
+
+// ===========================================================================
+// 사업계획서(문서층) / 산출물(산출물층) / 최종 판정
+// ===========================================================================
+
+Table business_plans [headercolor: #2F5496] {
+  plan_id bigint [pk, increment]
+  match_id bigint [not null]
+  doc_score decimal(5,2)
+  threshold decimal(5,2)
+}
+Ref: business_plans.match_id > match_results.match_id [delete: cascade]
+
+Table plan_sections [headercolor: #2F5496] {
+  section_id bigint [pk, increment]
+  plan_id bigint [not null]
+  tag varchar(16) [not null, note: 'P/S/S/T']
+  title varchar(255) [not null]
+  body longtext
+
+  indexes {
+    (plan_id, tag) [name: 'ix_plan_sections_plan_tag', note: '초안 중복 태그 체크']
+  }
+}
+Ref: plan_sections.plan_id > business_plans.plan_id [delete: cascade]
+
+Table plan_score_reasons [headercolor: #2F5496] {
+  reason_id bigint [pk, increment]
+  plan_id bigint [not null]
+  reason_text text [not null]
+  item_code varchar(50)
+  score decimal(5,2)
+  max_score decimal(5,2)
+  evidence_locator varchar(500)
+}
+Ref: plan_score_reasons.plan_id > business_plans.plan_id [delete: cascade]
+
+Table artifacts [headercolor: #2F5496] {
+  artifact_id bigint [pk, increment]
+  plan_id bigint [not null]
+  category varchar(32) [not null]
+  infographic_path varchar(500) [not null]
+  executable_path varchar(500)
+  artifact_score decimal(5,2)
+}
+Ref: artifacts.plan_id > business_plans.plan_id [delete: cascade]
+
+Table artifact_score_reasons [headercolor: #2F5496] {
+  reason_id bigint [pk, increment]
+  artifact_id bigint [not null]
+  reason_text text [not null]
+  item_code varchar(50)
+  score decimal(5,2)
+  max_score decimal(5,2)
+  evidence_locator varchar(500)
+}
+Ref: artifact_score_reasons.artifact_id > artifacts.artifact_id [delete: cascade]
+
+Table format_findings [headercolor: #2F5496] {
+  finding_id bigint [pk, increment]
+  plan_id bigint [not null]
+  section_id bigint [note: 'nullable']
+  finding_type varchar(50) [not null]
+  location varchar(500)
+  message text [not null]
+  severity varchar(20)
+  created_at datetime [not null, default: `CURRENT_TIMESTAMP`]
+}
+Ref: format_findings.plan_id > business_plans.plan_id [delete: cascade]
+Ref: format_findings.section_id > plan_sections.section_id [delete: set null]
+
+Table proofread_logs [headercolor: #2F5496] {
+  log_id bigint [pk, increment]
+  plan_id bigint [not null]
+  section_id bigint [note: 'nullable']
+  original_text longtext [not null]
+  corrected_text longtext [not null]
+  reason text
+  created_at datetime [not null, default: `CURRENT_TIMESTAMP`]
+}
+Ref: proofread_logs.plan_id > business_plans.plan_id [delete: cascade]
+Ref: proofread_logs.section_id > plan_sections.section_id [delete: set null]
+
+Table verdicts [headercolor: #2F5496] {
+  verdict_id bigint [pk, increment]
+  plan_id bigint [not null]
+  artifact_id bigint [not null]
+  overall_passed boolean [not null]
+  model_version varchar(50) [not null]
+  first_pass_passed boolean [not null]
+}
+Ref: verdicts.plan_id > business_plans.plan_id [delete: cascade]
+Ref: verdicts.artifact_id > artifacts.artifact_id [delete: cascade]
+
+// ===========================================================================
+// FAQ / 에이전트 실행 / 검증 정책
+// ===========================================================================
+
+Table faqs [headercolor: #2F5496] {
+  faq_id bigint [pk, increment]
+  user_id bigint [not null]
+  question text [not null]
+  answer text
+  is_visible boolean [not null, default: false]
+  answered_at datetime
+  created_at datetime [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (is_visible, created_at) [name: 'ix_faqs_visible_created', note: '공개 FAQ 목록']
+  }
+}
+Ref: faqs.user_id > users.user_id [delete: cascade]
+
+Table agent_executions [headercolor: #2F5496] {
+  execution_id bigint [pk, increment]
+  match_id bigint [note: 'nullable']
+  agent_name varchar(50) [not null]
+  task_key varchar(50)
+  attempt_no int [not null, default: 1, note: 'unsigned']
+  model_used varchar(50) [not null]
+  rerun_type varchar(20) [not null]
+  token_usage int [not null, note: 'unsigned']
+  status varchar(20) [not null]
+  started_at datetime [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (match_id, task_key, attempt_no) [name: 'ix_agent_executions_match_task', note: '재시도/이어하기 최신 시도 조회']
+  }
+}
+Ref: agent_executions.match_id > match_results.match_id [delete: set null]
+
+Table verification_policies [headercolor: #2F5496] {
+  policy_id bigint [pk, increment]
+  doc_weight decimal(5,2) [not null, default: 70]
+  code_weight decimal(5,2) [not null, default: 15]
+  plan_weight decimal(5,2) [not null, default: 15]
+  pass_threshold decimal(5,2) [not null, default: 80]
+  rerun_cap int [not null, default: 3, note: 'unsigned']
+  deviation_cap decimal(5,2) [not null, default: 5]
+  token_retry_cap int [not null, default: 2, note: 'unsigned']
+  updated_at datetime [not null, note: 'ON UPDATE CURRENT_TIMESTAMP']
+
+  Note: '단일 행 제약 — 운영 중 정책은 1행만 유지'
+}
+
+Table verification_checklist_items [headercolor: #2F5496] {
+  check_item_id bigint [pk, increment]
+  name varchar(100) [not null]
+  method text [not null]
+  category varchar(20) [not null]
+  weight decimal(5,2) [not null]
+  enabled boolean [not null, default: true]
+}
+
+Table rubric_items [headercolor: #2F5496] {
+  rubric_item_id bigint [pk, increment]
+  item_code varchar(50) [not null, unique]
+  category varchar(50) [not null]
+  criterion text [not null]
+  max_score decimal(5,2) [not null]
+  enabled boolean [not null, default: true]
+}
+
+Table verification_score_history [headercolor: #2F5496] {
+  history_id bigint [pk, increment]
+  plan_id bigint [not null]
+  layer varchar(20) [not null, note: 'doc/code/plan']
+  score decimal(5,2) [not null]
+  is_rerun boolean [not null, default: false]
+  policy_id bigint [note: 'nullable, 참고용 스냅샷']
+  applied_weight decimal(5,2)
+  applied_pass_threshold decimal(5,2)
+  applied_rerun_cap int [note: 'unsigned']
+  scored_at datetime [not null, default: `CURRENT_TIMESTAMP`]
+}
+Ref: verification_score_history.plan_id > business_plans.plan_id [delete: cascade]
+Ref: verification_score_history.policy_id > verification_policies.policy_id [delete: set null]
+
+// ===========================================================================
+// 외부 참조 FK
+// ===========================================================================
+// [2026-09-17 최종 확인] notice_conditions.notice_id가 PK로 추정되어 1:1 관계 —
+// dbdiagram이 notice_conditions 쪽 필드를 pk(=unique)로 인식해 자동으로 1:1로 그린다.
+// PK라는 점 자체만 키 아이콘까지 확인된 건 아니라 100% 확정은 아님(테이블 Note 참고).
+Ref: notice_conditions.notice_id - notices.notice_id
+
+// ===========================================================================
+// 시각적 그룹 (dbdiagram.io TableGroup)
+// ===========================================================================
+TableGroup pipeline_external {
+  notices
+  notice_conditions
+}
+TableGroup user_company_project {
+  users
+  companies
+  user_profiles
+  projects
+  project_attachments
+  team_members
+  pricing_items
+  project_budget_items
+  project_schedule_items
+  project_partners
+}
+TableGroup matching_eligibility {
+  notice_alerts
+  match_results
+  match_score_reasons
+  eligibility_checks
+}
+TableGroup plan_artifact_verdict {
+  business_plans
+  plan_sections
+  plan_score_reasons
+  artifacts
+  artifact_score_reasons
+  format_findings
+  proofread_logs
+  verdicts
+}
+TableGroup admin_verification {
+  faqs
+  agent_executions
+  verification_policies
+  verification_checklist_items
+  rubric_items
+  verification_score_history
+}

@@ -1,0 +1,446 @@
+"""시트 3 Task 입출력 규격.
+
+- 입력 · 출력 필드는 시트 3의 변수명 그대로다(JSON은 camelCase).
+- 시트 3의 temperature 입력(T-V1 · T-P2)은 Task 입력에서 빼고 tools 설정으로 적용한다.
+  같은 값을 두 곳에 두면 어긋날 수 있기 때문이다.
+- 기준 문서에 없는 입력 · 출력은 ext()로 표시한다.
+- M-1 ~ M-4(합치기)와 R-8은 기준 문서에 Task ID가 없어 구현용 ID를 붙였다.
+"""
+from __future__ import annotations
+
+from datetime import date
+from typing import Any
+
+from pydantic import Field
+
+from ..models import (
+    AnnouncementCard, Announcement, ArtifactScore, ChartSpec, CheckResult,
+    CodeCheckResult, CompanyInfo, Deliverable, DocScore, DocScoreItem,
+    EligibilityRule, EvalItem, FeatureMatchResult, File, FormatFinding,
+    FormatSpec, FormSpec, GateResult, Infographic, ItemSpec, MarketAnalysis,
+    PlanDoc, PlanSection, PreInput, ProofreadLog, ProofreadViolationType, Prototype, ReferenceDoc,
+    ReferenceSummary, RequirementAnalysis, ReworkComparison, ReworkDiff,
+    ReworkInput, ReworkOrder, Rubric, ScoreReport, Sentence, TableSpec,
+    TaskInstruction, TaskPlan, Token, TokenCheckResult, BundleUsage,
+)
+from ..models.base import (
+    Category, CollectionStatus, FallbackMode, KeptReason, Layer, NextAction,
+    SBModel, UserAction, ext,
+)
+
+
+# ── 확장 입력 · 출력 타입 ─────────────────────────────
+class ReworkCycleInfo(SBModel):
+    """확장 — G-02a · G-02b가 재작성 결과를 판정할 때 받는 사이클 정보.
+
+    기준 문서의 G-02 입력에는 재작성 전 점수가 없어 전후 비교 결과를 담을 수 없다.
+    전후 비교(높은 쪽 선택과 되돌리기)는 버전 포인터 조작이라 Orchestrator가 하고,
+    그 결과를 이 입력으로 넘겨 scoreReport.comparisons · carriedOverLayer · reworkDiff에 담게 한다.
+    """
+    cycle_id: str
+    screen: int
+    comparisons: list[ReworkComparison]
+    rescored_layers: list[Layer]
+    carried_over_layer: Layer | None = None
+    reworked_task_ids: list[str]
+    previous_doc_score: DocScore | None = None
+    previous_artifact_score: ArtifactScore | None = None
+
+
+class ProofreadAttempt(SBModel):
+    """확장 — T-P2 시도 하나의 기록 (SentenceResult.attempts).
+
+    시도 = T-P2 함수가 결과를 돌려준 호출 하나. 호출 실패(재시도 소진)는 시도가 아니다.
+    보호 토큰 검사를 통과하지 못한 시도가 '반려된 시도'다(채택하지 않았어도 통과했으면 반려가 아니다).
+    """
+    attempt_no: int = Field(ge=1)               # 문장마다 1부터. T-P2가 재개되어 다시 처리해도 이어서 센다
+    text: str                                   # 시도한 문장
+    adopted: bool
+    token_check: TokenCheckResult               # 통과 여부와 위반 내용(빠진 · 바뀐 · 섞인 보호 토큰)
+    violation_type: ProofreadViolationType | None = None   # 위반 토큰을 보호 토큰 목록과 값으로 맞춘 종류
+
+
+class SentenceResult(SBModel):
+    """확장 — T-P2 문장별 결과를 Task 단위로 모은 산출물(sentenceResults)."""
+    sentence_id: str
+    adopted: bool
+    revised: Sentence | None = None
+    kept_reason: KeptReason | None = None
+    final_redo_count: int
+    token_check: TokenCheckResult | None = None
+    attempts: list[ProofreadAttempt] = ext(
+        default_factory=list,
+        note="시도별 기록 (시도 순서). 반려된 시도는 학습 동의 계정이면 웹 proofread_logs에도 한 행씩 쓴다")
+
+
+# ── 조율 ─────────────────────────────────────────────
+class R8In(SBModel):
+    attachments: list[File]
+
+
+class R8Out(SBModel):
+    reference_docs: list[ReferenceDoc]
+
+
+class TC1In(SBModel):
+    form_input: PreInput
+    reference_docs: list[ReferenceDoc] | None = None
+
+
+class TC1Out(SBModel):
+    item_spec: ItemSpec
+    category: Category
+    company_info: CompanyInfo
+    category_reason: str
+    confidence: float | None = Field(None, ge=0, le=1)
+    reference_summary: ReferenceSummary | None = None
+    category_defaulted: bool = ext(False, note="카테고리 판정 실패로 기본값(웹개발)을 썼는지. 추적 기록용 (시트 2 T-C1 ③)")
+
+
+class TC2In(SBModel):
+    item_spec: ItemSpec
+    company_info: CompanyInfo
+    today: date
+    top_k: int
+    offset: int
+
+
+class TC2Out(SBModel):
+    candidates: list[AnnouncementCard] = Field(max_length=10)
+    collection_status: CollectionStatus
+    filtered_count: int
+    fallback_used: bool
+    fallback_mode: FallbackMode | None = None
+
+
+class G01In(SBModel):
+    """G-01 입력. 기준 문서와 다름: 판정은 공고 서버가 공고 ID로 하므로 eligibility · eligibilityParsed는 비울 수 있고
+    Orchestrator가 넣지 않는다. 대신 고른 공고 ID(announcementId, 확장)를 받는다 (spec 5)."""
+    company_info: CompanyInfo
+    eligibility: EligibilityRule | None = None
+    eligibility_parsed: bool | None = None
+    today: date
+    announcement_id: str = ext(note="고른 공고 ID — 마지막 공고 선택 명령(decision)의 announcementId")
+
+
+class G01Out(SBModel):
+    gate_result: GateResult
+    business_age_years: float | None = None
+    selected_announcement: Announcement = ext(
+        note="자격 확인한 공고의 상세 → 산출물 selectedAnnouncement. 자격 결과 · 업력과 한 번에 저장한다 (spec 4.3.2)")
+
+
+class TC3In(SBModel):
+    selected_announcement: Announcement
+    item_spec: ItemSpec
+    gate_result: GateResult
+    company_info: CompanyInfo
+    reference_summary: ReferenceSummary | None = None
+    business_age_years: float | None = ext(
+        None, note="업력(년) — G-01 출력 businessAgeYears. 예비창업자는 null. companyInfo.businessAgeYears는 T-C1이 "
+                   "비워 두므로 이 값을 쓴다")
+    prior_guidance: dict[str, str] = ext(
+        default_factory=dict,
+        note="재개 때 이어 쓰는 받은 안내(Task ID → 정리된 안내) — 앞 실행이 재시도 소진 전에 받은 것(T-C3.partial). "
+             "엔진이 재개 때만 채운다. 이번 지시 대상이고 빈 문자열이 아닌 것만 쓰고 그 Task는 다시 부르지 않는다")
+
+
+class TC3Out(SBModel):
+    task_plan: TaskPlan
+    task_count: int
+    instruction_set: list[TaskInstruction]
+    form_spec: FormSpec = ext(note="신청자 유형으로 고른 양식 → 산출물 formSpec. 선택 공고의 formSpec 대신 뒷 단계가 읽는다")
+    evaluation_items: list[EvalItem] = ext(note="고른 평가 항목 → 산출물 evaluationItems (T-V1 · 웹 outputs)")
+    rubric: Rubric = ext(note="고른 채점 기준표 → 산출물 rubric (T-V1, G-02a · G-02b의 rubricVersion)")
+
+
+class G02aIn(SBModel):
+    doc_score: DocScore
+    threshold: float
+    rework_usage: list[BundleUsage]
+    selected_orders: list[ReworkOrder] | None = None
+    checks: list[CheckResult] | None = None
+    user_action: UserAction | None = None
+    cycle_info: ReworkCycleInfo | None = ext(None, note="재작성 사이클 정보")
+    settings_snapshot: dict[str, Any] = ext(default_factory=dict, note="판정에 쓴 설정값을 scoreReport에 기록하기 위한 입력 (Run.settingsSnapshot)")
+    rubric_version: str = ext("", note="scoreReport.rubricVersion 기록용 (채점에 쓴 Rubric.version)")
+
+
+class G02aOut(SBModel):
+    score_report: ScoreReport
+    failed_task_ids: list[str]
+    rework_orders: list[ReworkOrder]
+    next_action: NextAction
+
+
+class G02bIn(SBModel):
+    doc_score: DocScore
+    artifact_score: ArtifactScore
+    threshold: float
+    rework_usage: list[BundleUsage]
+    selected_orders: list[ReworkOrder] | None = None
+    checks: list[CheckResult] | None = None
+    user_action: UserAction | None = None
+    cycle_info: ReworkCycleInfo | None = ext(None, note="재작성 사이클 정보")
+    settings_snapshot: dict[str, Any] = ext(default_factory=dict, note="판정에 쓴 설정값을 scoreReport에 기록하기 위한 입력 (Run.settingsSnapshot)")
+    rubric_version: str = ext("", note="scoreReport.rubricVersion 기록용 (채점에 쓴 Rubric.version)")
+
+
+class G02bOut(SBModel):
+    score_report: ScoreReport
+    failed_task_ids: list[str]
+    rework_orders: list[ReworkOrder]
+    next_action: NextAction
+    rework_diff: list[ReworkDiff]
+
+
+class G04In(SBModel):
+    prototype: Prototype
+    infographic: Infographic
+    item_spec: ItemSpec
+    announcement: Announcement
+
+
+class G04Out(SBModel):
+    readme_path: str
+    # 확장 — 실행 · 열람 안내 낱말 자체 검사. 불통과면 재수행 횟수까지 다시 만들고, 끝내 불통과면 관리자 기록 후 계속(점수 밖)
+    check: CheckResult | None = ext(None, note="G-04 자체 검사 — 실행 · 열람 안내 낱말")
+
+
+class TC4In(SBModel):
+    plan_doc: PlanDoc
+    prototype: Prototype
+    infographic: Infographic
+    score_report: ScoreReport
+    proofread_log: ProofreadLog
+
+
+class TC4Out(SBModel):
+    deliverable: Deliverable
+    user_message: str
+
+
+# ── 합치기 (조율 소속 규칙 단계, 구현용 ID) ─────────────────
+class M1In(SBModel):
+    """합치기① — T-W2 · T-W3 결과를 계획서에 합친다. 확정 동작(차트 폐기 등)도 checks로 받는다."""
+    plan_doc: PlanDoc
+    charts: list[ChartSpec]
+    tables: list[TableSpec]
+    chart_check: CheckResult | None = None
+    table_check: CheckResult | None = None
+
+
+class M1Out(SBModel):
+    plan_doc: PlanDoc
+
+
+class M2In(SBModel):
+    """합치기② — 원페이지면 T-B2 산출물을 Prototype(kind='svg-onepage')으로 감싼다."""
+    infographic: Infographic
+    item_spec: ItemSpec
+    feature_list: list[str]
+
+
+class M2Out(SBModel):
+    prototype: Prototype
+
+
+class M3In(SBModel):
+    """합치기③ — G-04가 만든 readmePath를 Prototype에 기입한다."""
+    prototype: Prototype
+    readme_path: str | None = None
+
+
+class M3Out(SBModel):
+    prototype: Prototype
+
+
+class M4In(SBModel):
+    """합치기④ — 채택된 문장을 계획서에 반영하고 ProofreadLog를 집계한다."""
+    plan_doc: PlanDoc
+    sentence_results: list[SentenceResult]
+    target_sentence_ids: list[str]
+    model_version: str
+
+
+class M4Out(SBModel):
+    plan_doc: PlanDoc
+    proofread_log: ProofreadLog
+
+
+# ── 전략 ─────────────────────────────────────────────
+class TS1In(SBModel):
+    item_spec: ItemSpec
+    selected_announcement: Announcement
+    instruction: str
+    rework_input: ReworkInput | None = None
+
+
+class TS1Out(SBModel):
+    requirement_analysis: RequirementAnalysis
+    feature_list: list[str]
+    check: CheckResult
+
+
+class TS2In(SBModel):
+    item_spec: ItemSpec
+    requirement_analysis: RequirementAnalysis
+    selected_announcement: Announcement
+    instruction: str
+    rework_input: ReworkInput | None = None
+
+
+class TS2Out(SBModel):
+    market_analysis: MarketAnalysis
+    numeric_tokens: list[Token]
+    check: CheckResult
+
+
+# ── 작성 ─────────────────────────────────────────────
+class TW1In(SBModel):
+    requirement_analysis: RequirementAnalysis
+    market_analysis: MarketAnalysis
+    selected_announcement: Announcement
+    company_info: CompanyInfo
+    form_spec: FormSpec
+    instruction: str
+    rework_input: ReworkInput | None = None
+
+
+class TW1Out(SBModel):
+    plan_doc: PlanDoc
+    sections: list[PlanSection]
+    feature_list: list[str]
+    check: CheckResult
+
+
+class TW2In(SBModel):
+    plan_doc: PlanDoc
+    market_analysis: MarketAnalysis
+    instruction: str
+    rework_input: ReworkInput | None = None
+
+
+class TW2Out(SBModel):
+    charts: list[ChartSpec]
+    check: CheckResult
+
+
+class TW3In(SBModel):
+    plan_doc: PlanDoc
+    company_info: CompanyInfo
+    selected_announcement: Announcement
+    instruction: str
+    rework_input: ReworkInput | None = None
+
+
+class TW3Out(SBModel):
+    tables: list[TableSpec]
+    check: CheckResult
+
+
+# ── 검증 ─────────────────────────────────────────────
+class TV1In(SBModel):
+    plan_doc: PlanDoc
+    evaluation_items: list[EvalItem]
+    rubric: Rubric
+
+
+class TV1Out(SBModel):
+    doc_score: DocScore
+    items: list[DocScoreItem]
+    variance_flag: bool
+
+
+class TV2In(SBModel):
+    prototype: Prototype
+    infographic: Infographic
+    feature_list: list[str]
+    # 확장 — 기본값 None이지만 Orchestrator는 늘 채운다 (catalog T-V2 입력)
+    plan_doc: PlanDoc | None = ext(None, note="T-B2가 받은 것과 같은 값. 원페이지 대조의 근거")
+
+
+class TV2Out(SBModel):
+    artifact_score: ArtifactScore
+    code_check: CodeCheckResult
+    feature_match: FeatureMatchResult
+    diagnostics: list[str] = ext(default_factory=list, note="관리자 진단 전용. 흐름 제어에 쓰지 않음")
+
+
+# ── 구현 ─────────────────────────────────────────────
+class TB1In(SBModel):
+    feature_list: list[str]
+    item_spec: ItemSpec
+    category: Category
+    instruction: str
+    rework_input: ReworkInput | None = None
+    # 확장 (구현 · 검증-2 담당 요청 8) — 계획서 전체. T-B1은 M-1 · T-V1 · G-02a 뒤에 돌아 늘 값이 있다
+    plan_doc: PlanDoc | None = ext(None, note="기능별 설명의 근거. T-B2 · T-V2와 같은 값")
+
+
+class TB1Out(SBModel):
+    prototype: Prototype
+    implemented_features: list[str]
+    entry_file_path: str
+    check: CheckResult
+
+
+class TB2In(SBModel):
+    plan_doc: PlanDoc
+    item_spec: ItemSpec
+    category: Category
+    instruction: str
+    rework_input: ReworkInput | None = None
+
+
+class TB2Out(SBModel):
+    infographic: Infographic
+    check: CheckResult
+
+
+# ── 검수 ─────────────────────────────────────────────
+class G03In(SBModel):
+    plan_doc: PlanDoc
+    announcement: Announcement
+    company_info: CompanyInfo
+    feature_list: list[str]
+    reference_summary: ReferenceSummary | None = None
+    numeric_tokens: list[Token]
+
+
+class G03Out(SBModel):
+    protected_tokens: list[Token]
+
+
+class TP1In(SBModel):
+    plan_doc: PlanDoc
+    format_spec: FormatSpec
+    protected_tokens: list[Token]
+
+
+class TP1Out(SBModel):
+    format_findings: list[FormatFinding]
+    target_sentence_ids: list[str]
+
+
+class TP2In(SBModel):
+    sentence: Sentence
+    protected_tokens: list[Token]
+    format_findings: list[FormatFinding]
+    format_spec: FormatSpec
+    redo_hint: list[str]
+    redo_count: int
+
+
+class TP2Out(SBModel):
+    revised: Sentence
+    token_check: TokenCheckResult
+    adopted: bool
+    kept_reason: KeptReason | None = None
+    final_redo_count: int
+    next_redo_hint: list[str] = ext(default_factory=list, note="검수 Agent가 위반 유형별로 만든 재수행 지시. Orchestrator가 누적해 다음 호출의 redoHint로 넘긴다 (검수 파트 합의 필요)")
+
+
+def output_types(model: type[SBModel]) -> dict[str, Any]:
+    """출력 모델의 필드별 타입 (산출물 복원용)."""
+    return {name: info.annotation for name, info in model.model_fields.items()}
