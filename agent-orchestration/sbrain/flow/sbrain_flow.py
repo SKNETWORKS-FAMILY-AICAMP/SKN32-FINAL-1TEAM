@@ -1,7 +1,7 @@
 """S-Brain 워크플로 — 구간 · 대기 지점 · 재작성 경로 · 알림 (시트 2 · 5 · 7, 기획서 4-7).
 
 구간(segment)
-  PRE      R-8? → T-C1 → T-C2                         (실행 건 생성 전)
+  PRE      T-C1 → T-C2                                (실행 건 생성 전 — 첨부가 있어도 R-8은 넣지 않는다)
   MORE     T-C2 (offset=10)                           → 3 공고 선택 대기
            첫 조회와 겹친 후보는 빼고 첫 조회 카드를 새 내용으로 바꾼다 — 내용 바뀜 표시 · 막힌 공고 풀기 (after_step).
            어떤 오류든 · 수집 상태 비정상이면 조회 전 후보로 두고 기회를 돌려준다 (on_rescue · after_step, spec 4.2.3)
@@ -13,7 +13,8 @@
            상태는 Run.verify1(Verify1State), 횟수는 redo.verify1RedoCount(항목마다 · 사이클마다)
   PROTO    T-B1* → T-B2 → M-2** → G-04 → M-3 → T-V2 → G-02b              → 8 산출물 확인 대기
            G-04 자체 검사가 끝내 불통과면 관리자 기록 후 계속, T-V2 대조 보류 · 진단은 관리자 기록 (after_step)
-  REVIEW   G-03 → T-P1 → T-P2 → M-4 → T-C4                               → 11 완료
+  RESULT   T-C4                                                          → 11 완료 (도는 동안 결과물 · 실행, 잠정)
+           검수(G-03 · T-P1 · T-P2 · M-4)와 R-8은 흐름 밖이다 — 등록부 줄 · 스텁은 남는다 (catalog.OUT_OF_FLOW_STEPS)
   REWORK6 · REWORK8 · REWORK9  재작성 사이클 (rework_queue 참고) — 묶음 요청을 모으는 시간 동안 모아 한 번에 연다
                                (service.request_rework_for_project, 지시는 bundle_orders)
   * 원페이지면 생략  ** 원페이지만
@@ -33,33 +34,27 @@ G-02b는 T-V2 직후 계산하고(시트 2 "T-V2 종료 직후"), 화면 8을 �
   IMAGE_FALLBACK_DETAIL, 그 밖에 출력 iconFallback이 참이면 ICON_FALLBACK_DETAIL. 필드로만 가르고 사용자 화면에는
   알리지 않는다 D13).
 
-T-P2 시도 기록: 문장마다 T-P2 함수가 결과를 돌려준 호출 하나가 시도다(호출 실패는 시도가 아니다). 시도는 문장 결과
-(sentenceResults)의 attempts에 쌓고, 보호 토큰 검사를 통과하지 못한 시도(반려)는 같은 저장에서 웹 proofread_logs
-후보(RejectedAttempt)로 넘긴다 — 학습 동의 확인과 쓰기는 저장소가 한다. 재개해도 이번에 새로 만든 시도만 넘긴다.
-T-P2 실패 비율: 호출실패 문장 비율이 기준을 넘으면 재개(일시)하고, 재개 상한을 넘었으면 원문 유지한 채 완료한다. 다만
-이번 실행에서 받은 소진 중 오류 종류 '운영'이 하나라도 있으면 재개 상한 확인보다 먼저 실행 실패(영구 오류)로 간다.
+결과물 구간: 화면 9 '진행' 뒤 결과 통합(T-C4) 하나만 돈다. 도는 동안 (결과물, 실행), 실패하면 엔진의 실패 경로
+그대로 (결과물, 실패), 끝나면 (결과물, 완료)와 알림 '결과물' · 화면 11. 결과물 묶음의 검수 기록 칸은 늘 비어 있다.
 """
 from __future__ import annotations
 
-import hashlib
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 from typing import Any, Callable, Protocol
 
 from ..contracts import tasks as c
 from ..models import (
-    AnnouncementCard, CompanyInfo, Notice, Notification, RejectedAttempt, ReworkInput, ReworkOrder, Run,
-    TaskInstruction, Token, TokenCheckResult,
+    AnnouncementCard, CompanyInfo, Notice, Notification, ReworkInput, ReworkOrder, Run, TaskInstruction,
 )
 from ..models.clock import kst_today, utc_clock, utc_now
 from ..models.run import RedoState, Verify1State, make_state
 from ..orchestrator.context import RunContext
 from ..orchestrator.engine import Engine, Outcome, StepFailure, ToolsFactory
-from ..orchestrator.errors import EMBED_DEADLINE_SUFFIX, ContractError, ToolCallExhausted, message
+from ..orchestrator.errors import EMBED_DEADLINE_SUFFIX, ContractError, message
 from ..orchestrator.registry import TaskRegistry, TaskSpec
 from ..orchestrator.settings import REWRITE_SETTING_KEY
-from ..orchestrator.tools import CallSink, Tools, detail_code
+from ..orchestrator.tools import Tools, detail_code
 from ..orchestrator.trace import IMAGE_CALL, CallLog, ExecutionRecord, FeedbackLink
 from .catalog import (
     FIRST_CANDIDATES, FORM_SPEC, INSTRUCTION_SUFFIX, MORE_CANDIDATES, RUBRIC, SECTION_RESULTS, TABLE_OUTPUTS,
@@ -71,7 +66,8 @@ from .rework_map import (
 )
 
 WRITE = ["T-C3", "T-S1", "T-S2", "T-W1", "T-W2", "T-W3", "M-1", "T-V1", "G-02a"]
-REVIEW = ["G-03", "T-P1", "T-P2", "M-4", "T-C4"]
+# 화면 9 '진행' 뒤 결과물 구간 — 결과 통합 하나 (검수 단계는 흐름에서 뺐다)
+RESULT = ["T-C4"]
 CYCLE_END = "CYCLE-END"
 SCREEN_STEP = {6: "문서평가", 8: "산출물확인", 9: "종합평가"}
 STEP_SCREEN = {step: screen for screen, step in SCREEN_STEP.items()}
@@ -176,36 +172,6 @@ def merge_more_candidates(first: list[AnnouncementCard], received: list[Announce
         refreshed.append(card if new is None else new.model_copy(update={
             **{f: getattr(card, f) for f in CARD_KEPT_FIELDS}, "content_changed": card_content_changed(card, new)}))
     return refreshed, [card for card in received if card.announcement_id not in first_ids]
-
-
-# 보호 토큰 종류(시트 4 TokenType) → 웹 proofread_logs.violation_type 표기
-VIOLATION_LABEL = {"날짜": "날짜", "수치금액": "수치·금액", "고유명사": "고유명사", "기능명": "기능명"}
-# 위반 내용 — 종류를 정하는 순서이기도 하다 (빠진 → 바뀐 → 섞인)
-VIOLATION_PARTS = (("빠짐", "missing_tokens"), ("바뀜", "altered_tokens"), ("섞임", "contaminated_tokens"))
-
-
-def violation_type(check: TokenCheckResult, tokens: list[Token]) -> str | None:
-    """위반 토큰을 보호 토큰 목록(G-03)과 값으로 맞춰 처음 맞는 토큰의 종류 (빠진 → 바뀐 → 섞인). 못 맞추면 None."""
-    kind: dict[str, str] = {}
-    for t in tokens:
-        kind.setdefault(t.value, t.type)
-    for _, part in VIOLATION_PARTS:
-        for value in getattr(check, part):
-            if value in kind:
-                return VIOLATION_LABEL[kind[value]]
-    return None
-
-
-def violation_note(check: TokenCheckResult) -> str:
-    """위반 토큰 목록 전체 — '빠짐: 1억원 / 섞임: A, B' (표기 잠정)."""
-    return " / ".join(f"{label}: {', '.join(values)}" for label, part in VIOLATION_PARTS
-                      if (values := getattr(check, part)))
-
-
-def violation_reason(check: TokenCheckResult) -> str:
-    """위반 요약 — '보호 토큰 검사 불통과 (빠짐 1건 · 섞임 2건)' (표기 잠정)."""
-    counts = [f"{label} {len(values)}건" for label, part in VIOLATION_PARTS if (values := getattr(check, part))]
-    return "보호 토큰 검사 불통과" + (f" ({' · '.join(counts)})" if counts else "")
 
 
 def proto_queue(category: str) -> list[str]:
@@ -332,8 +298,6 @@ class SBrainFlow:
     def custom_step(self, step_id: str):
         if step_id == CYCLE_END:
             return self._cycle_end
-        if step_id == "T-P2":
-            return self._run_tp2
         return None
 
     def build_instruction(self, ctx: RunContext, spec: TaskSpec, task: TaskInstruction,
@@ -638,11 +602,7 @@ class SBrainFlow:
 
     def after_step(self, ctx: RunContext, step_id: str, outcome: Outcome) -> None:
         out = outcome.outputs
-        if step_id == "R-8":
-            for doc in out.get("reference_docs", []):
-                if doc.extract_status == "실패":
-                    self._notice(ctx, "E-C1-DOC", 파일명=doc.file_name)
-        elif step_id == "T-C1":
+        if step_id == "T-C1":
             # category 산출물을 저장하는 같은 저장에서 실행 건에도 적는다(사전 단계면 실행 건 생성 저장) — 기록 통계 줄의
             # 카테고리. 완전 삭제 · 12개월 처리가 지우지 않는다
             ctx.run.category = out["category"]
@@ -651,13 +611,6 @@ class SBrainFlow:
                 ctx.add_event("카테고리기본값", f"T-C1 카테고리 판정 실패 — {out['category']}로 기본 처리",
                               refs=[ctx.ref("category")],
                               execution_id=outcome.record.execution_id if outcome.record else None)
-        elif step_id == "T-P1":
-            # 화면 10의 검수 전 문장 = T-P1이 읽은 계획서 버전(M-4가 새 버전을 만들기 전). 실행 기록이 지워져도 찾을 수
-            # 있게 T-P1 성공 저장에서 실행 건에 적는다 (reads._sentence_changes)
-            rec = outcome.record
-            base = next((i for i in rec.inputs if i.startswith("planDoc@")), None) if rec else None
-            if base is not None:
-                ctx.run.proofread_base_ref = base
         elif step_id == "T-C2":
             more = ctx.run.segment == "MORE"
             if more and out["collection_status"] != "정상":
@@ -797,11 +750,12 @@ class SBrainFlow:
             # 재작성으로 검증을 다시 실행한 경우에도 알림. 대상 화면은 요청한 화면 (잠정)
             kind = "문서평가" if screen == 6 or rescored == ["document"] else "산출물확인"
             self._notify(ctx, kind, screen)
-        elif seg == "REVIEW":
+        elif seg == "RESULT":
+            # 결과 통합이 끝났다 — 알림 '결과물'(확장) · 대상 화면 11, 같은 저장 묶음
             run.state = make_state("결과물", "완료")
             run.current_phase = "review"
             run.segment, run.segment_total, run.ended_at = None, 0, self.now()
-            self._notify(ctx, "표현검수", 10)
+            self._notify(ctx, "결과물", 11)
         else:
             raise RuntimeError(f"알 수 없는 구간: {seg}")
 
@@ -933,130 +887,6 @@ class SBrainFlow:
         cyc.rescored_layers = [l for l, ch in (("document", doc_changed), ("artifact", art_changed)) if ch]
         engine.compare_and_keep(ctx, before=before, after=after, basis=basis)
         return Outcome("ok")
-
-    # ── T-P2 문장별 병렬 실행기 ────────────────────────
-    def _run_tp2(self, engine: Engine, ctx: RunContext) -> Outcome:
-        spec = self.registry.get("T-P2")
-        s = ctx.settings
-        rs = ctx.run.redo_state if ctx.run.redo_state and ctx.run.redo_state.task_id == "T-P2" else None
-        resuming = rs is not None and rs.pending_execution_id is not None
-        rs = rs or self.initial_redo_state(ctx, spec)
-        rec = engine.open_execution(ctx, spec, rs)
-        rec.inputs = [ctx.ref(k) for k in ("targetSentenceIds", "protectedTokens", "formatFindings",
-                                           "planDoc", FORM_SPEC) if ctx.has(k)]
-        targets: list[str] = ctx.get("targetSentenceIds")
-        tokens = ctx.get("protectedTokens")
-
-        def finish(results: list[c.SentenceResult], status: str, note: str | None = None) -> Outcome:
-            ref = ctx.put("sentenceResults", results, producer=rec.execution_id)
-            rec.outputs, rec.result_ref, rec.status, rec.ended_at = [ref], ref, status, self.now()
-            rec.output_meta.note = note
-            ctx.record_execution(rec)
-            ctx.record_attempt(rec)
-            ctx.run.redo_state = None
-            return Outcome("ok", {"sentence_results": results}, rec)
-
-        if not targets or not tokens:
-            # 윤문 대상 0건이면 T-P2를 실행하지 않고, 보호 토큰 0건이면 형식 검수만 하고 윤문을 생략한다
-            return finish([], "생략", "윤문 대상 없음" if not targets else "보호 토큰 0건 — 윤문 생략")
-
-        sink = CallSink()
-        try:
-            cfg = engine.tools_config(ctx, spec)
-            rec.model, rec.provider, rec.temperature = cfg.model, cfg.provider, cfg.temperature
-            rec.reasoning_effort = cfg.reasoning_effort
-            tools = engine.make_tools(ctx, spec, rec, cfg, sink)
-            plan = ctx.get("planDoc")
-            sentences = {x.sentence_id: x for sec in plan.sections for x in sec.sentences}
-            fspec = ctx.get(FORM_SPEC).format_spec   # 서술 형식 — T-C3가 고른 양식 (T-C3 spec 4)
-            findings = ctx.get("formatFindings")
-            prior = {r.sentence_id: r for r in ctx.get("sentenceResults", default=[])} if resuming else {}
-            todo = [sid for sid in targets if sid not in prior or prior[sid].kept_reason == "호출실패"]
-            limit = s.redo.proofread_limit
-
-            def one(sid: str) -> tuple[c.SentenceResult, ToolCallExhausted | None]:
-                """문장 하나의 결과와, 호출 실패로 끝났으면 받은 소진(오류 종류는 이번 실행 안에서만 든다 — 모델 칸 없음)."""
-                original = sentences[sid]
-                item_tools = tools.for_item(sid)
-                hint: list[str] = []
-                redo, prev_hash = 0, None
-                mine = [f for f in findings if f.sentence_id == sid]
-                attempts = list(prior[sid].attempts) if sid in prior else []   # 재개면 이전 시도에 이어서 센다
-
-                def result(**kw: Any) -> c.SentenceResult:
-                    return c.SentenceResult(sentence_id=sid, final_redo_count=redo, attempts=attempts, **kw)
-                while True:
-                    try:
-                        out = spec.fn(c.TP2In(sentence=original, protected_tokens=tokens, format_findings=mine,
-                                              format_spec=fspec, redo_hint=list(hint), redo_count=redo), item_tools)
-                    except ToolCallExhausted as e:   # 호출 실패는 시도가 아니다
-                        return result(adopted=False, kept_reason="호출실패"), e
-                    out = out if isinstance(out, c.TP2Out) else c.TP2Out.model_validate(out)
-                    adopted = out.adopted and out.token_check.passed
-                    attempts.append(c.ProofreadAttempt(
-                        attempt_no=len(attempts) + 1, text=out.revised.text, adopted=adopted,
-                        token_check=out.token_check,
-                        violation_type=None if out.token_check.passed else violation_type(out.token_check, tokens)))
-                    if adopted:
-                        return result(adopted=True, revised=out.revised, token_check=out.token_check), None
-                    h = hashlib.sha256(out.revised.text.encode("utf-8")).hexdigest()
-                    if prev_hash is not None and h == prev_hash:
-                        return result(adopted=False, kept_reason="조기중단", token_check=out.token_check), None
-                    if redo >= limit:
-                        return result(adopted=False, kept_reason="검증실패", token_check=out.token_check), None
-                    hint.extend(x for x in out.next_redo_hint if x not in hint)  # 교체하지 않고 누적
-                    prev_hash, redo = h, redo + 1
-
-            # 문장마다 (결과, 소진)을 돌려받아 모은다 — 스레드끼리 같은 값을 고치지 않는다. 순서는 대상 문장 순서
-            with ThreadPoolExecutor(max_workers=max(1, s.proofread.concurrency)) as pool:
-                pairs = dict(zip(todo, pool.map(one, todo)))
-            done = {sid: res for sid, (res, _) in pairs.items()}
-            exhausted = [e for _, e in pairs.values() if e is not None]   # 이번 실행에서 받은 소진 (재개면 다시 돈 문장만)
-            engine.collect_calls(ctx, rec, sink)   # 문장별 호출 토큰을 T-P2 실행 기록에 합산
-        except Exception as e:  # Agent 코드 오류 등
-            engine.collect_calls(ctx, rec, sink)
-            return engine.on_step_error(ctx, spec, rec, e)
-
-        # 반려된 시도는 이번 T-P2 저장(완료 또는 재개 예약)과 같은 묶음으로 넘긴다
-        self._hand_over_rejected(ctx, rec.model, sentences, prior, done)
-        merged = {**prior, **done}
-        results = [merged[sid] for sid in targets if sid in merged]
-        failed = [r for r in results if r.kept_reason == "호출실패"]
-        if failed and len(failed) / len(targets) > s.proofread.failure_ratio_threshold:
-            # 운영 오류(API 키 · 권한 · 없는 모델 등)는 기다려도 풀리지 않는다 — 재개 상한 확인보다 먼저 보고, 하나라도
-            # 있으면 재개 대신 실행 실패(영구 오류 — 재작성 중이면 되돌림). 실행 기록 · 실행 건 칸은 엔진의 다른 소진
-            # 실패(_on_exhausted)와 같게 채운다. 한도 · 일시 · 입력만이면 아래 지금 규칙 그대로 (호출 실패 처리 spec 5)
-            operational = next((e for e in exhausted if e.error_kind == "운영"), None)
-            if operational is not None:
-                rec.status, rec.error, rec.error_kind, rec.ended_at = (
-                    "실패", operational.error, operational.error_kind, self.now())
-                ctx.record_execution(rec)
-                ctx.run.retry_count = max(operational.tries - 1, 0)
-                ctx.run.last_error_kind = operational.error_kind
-                return engine.schedule_resume(ctx, rec, rs, operational.error_kind)
-            if engine.can_resume(ctx) is not None:
-                ref = ctx.put("sentenceResults", results, producer=rec.execution_id)
-                rec.outputs, rec.result_ref = [ref], ref
-                rs.pending_execution_id = rec.execution_id
-                return engine.schedule_resume(ctx, rec, rs, "일시")
-            ctx.add_event("검수재개상한", "실패 비율이 기준을 넘었으나 재개 상한 초과 — 원문 유지한 채 완료",
-                          execution_id=rec.execution_id)
-        return finish(results, "성공")
-
-    @staticmethod
-    def _hand_over_rejected(ctx: RunContext, model: str | None, sentences: dict[str, Any],
-                            prior: dict[str, c.SentenceResult], done: dict[str, c.SentenceResult]) -> None:
-        """이번에 새로 만든 반려된 시도만 저장 묶음에 넘긴다 (이전 저장에서 넘긴 시도는 다시 넘기지 않는다)."""
-        for sid, res in done.items():
-            before = len(prior[sid].attempts) if sid in prior else 0
-            for a in res.attempts[before:]:
-                if a.token_check.passed:
-                    continue
-                ctx.add_rejected_attempt(RejectedAttempt(
-                    run_id=ctx.run.run_id, original_text=sentences[sid].text, corrected_text=a.text,
-                    reason=violation_reason(a.token_check), attempt_no=a.attempt_no,
-                    violation_type=a.violation_type, violation_note=violation_note(a.token_check),
-                    model_version=model))
 
     # ── 도움 함수 ─────────────────────────────────────
     def _wait(self, ctx: RunContext, step: str, phase: str) -> None:

@@ -1,5 +1,6 @@
 """웹이 쓰는 함수 (spec 4) — 진행 상태(view_project) · 여러 프로젝트 보기 · 실행 건이 없는 프로젝트(missing_projects) · 기다리기 · 지금까지 결과 · 재작성 결과,
-project_id로 부르는 명령, 자격 통과 뒤 공고 다시 고르기 (3.3), 화면 10 시도별 기록, 화면 8 · 9 '진행'."""
+project_id로 부르는 명령, 자격 통과 뒤 공고 다시 고르기 (3.3), 화면 8 · 9 '진행'. (흐름을 거친 화면 10 시도별 기록은
+검수가 흐름에서 빠져 지웠다)"""
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -7,7 +8,7 @@ from datetime import timedelta
 
 import pytest
 from conftest import (
-    executed, make_app, project_record, start_and_select, to_screen6, to_screen8, to_screen9,
+    executed, make_app, project_record, start_and_select, to_screen6, to_screen8,
 )
 from flow_helpers import WINDOW, code_of, pid, rework, run_review, started_with_pid
 from webdb import new_project
@@ -227,7 +228,7 @@ def test_wait_project_waits_while_rework_collecting(clock):
 
 # ── outputs ────────────────────────────────────────────
 def test_outputs_accumulate_current_results(clock):
-    app = make_app(clock, StubScenario(tp1_targets=4, tp2_behavior={"s-3.1.1-2": ["violate", "ok"]}))
+    app = make_app(clock)
     assert code_of(lambda: app.orchestrator.outputs(424242)) == "RUN_NOT_FOUND"
     rid, p = started_with_pid(app)
     out = app.orchestrator.outputs(p)
@@ -264,10 +265,10 @@ def test_outputs_accumulate_current_results(clock):
     app.orchestrator.decide(rid, 8, "진행")
     run_review(app, rid)
     out = app.orchestrator.outputs(p)
-    assert out.progress == "완료" and out.deliverable and out.user_message and out.proofread_log
-    assert len(out.format_findings) == 4 and len(out.sentence_results) == 4
-    tried = {r.sentence_id: [(a.attempt_no, a.adopted) for a in r.attempts] for r in out.sentence_results}
-    assert tried["s-3.1.1-2"] == [(1, False), (2, True)]                           # 시도별 기록
+    assert out.progress == "완료" and out.deliverable and out.user_message
+    # 검수가 흐름에서 빠져 검수 결과 칸은 늘 빈 값이다 — 칸은 기준 문서 타입이라 남긴다
+    assert out.proofread_log is None and out.deliverable.proofread_log is None
+    assert (out.format_findings, out.sentence_results) == ([], [])
     assert "failureReason" not in out.model_dump_json(by_alias=True)
 
 
@@ -470,22 +471,7 @@ def test_command_rechecks_state_when_lease_is_taken_in_between(clock, monkeypatc
     assert app.store.load_run(rid).state.step == "계획서작성"
 
 
-# ── 화면 10 시도별 기록 · 화면 8 · 9 '진행' ────────────────
-def test_screen10_includes_attempts(clock):
-    app = make_app(clock, StubScenario(tp1_targets=4, tp2_behavior={"s-3.1.1-2": ["violate", "ok"]}))
-    rid = to_screen9(app)
-    run_review(app, rid)
-    s10 = app.orchestrator.screen(pid(app, rid), 10)
-    ctx = app.engine.open_context(app.store.load_run(rid))
-    results = {r.sentence_id: r.attempts for r in ctx.get("sentenceResults")}
-    assert {c.sentence_id: c.attempts for c in s10.sentences} == results       # 학습 동의와 관계없이
-    change = next(c for c in s10.sentences if c.sentence_id == "s-3.1.1-2")
-    assert [(a.attempt_no, a.adopted, a.token_check.passed) for a in change.attempts] == [
-        (1, False, False), (2, True, True)]
-    dumped = next(s for s in s10.dump()["sentences"] if s["sentenceId"] == "s-3.1.1-2")
-    assert dumped["attempts"][0]["attemptNo"] == 1 and dumped["attempts"][0]["tokenCheck"]["passed"] is False
-
-
+# ── 화면 8 · 9 '진행' ────────────────────────────────────
 def test_decide_screen8_and_9_proceed_unchanged(clock):
     app = make_app(clock, StubScenario(doc_scores=[52.0], art_scores=[(12.0, 7.0)]))
     rid = to_screen8(app)

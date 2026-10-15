@@ -329,7 +329,8 @@ def test_run_closed_notice_by_deadline_or_status(clock):
 
 
 def test_null_dates_and_amounts_flow_to_the_end(clock):
-    """뒤 단계 스텁이 비어 있는 마감일 · 지원 금액에서 멈추지 않는다 — 맥락 값은 null, 보호 토큰은 만들지 않는다."""
+    """뒤 단계 스텁이 비어 있는 마감일 · 지원 금액에서 멈추지 않는다 — 맥락 값은 null. 보호 토큰(G-03)은 흐름 밖이라 없다
+   ."""
     app = make_app(clock, StubScenario(no_deadline_ids={"A01"}, no_amount_ids={"A01"}))
     rid = to_screen9(app)
     app.orchestrator.decide(rid, 9, "진행", confirmed=True)
@@ -341,5 +342,4 @@ def test_null_dates_and_amounts_flow_to_the_end(clock):
     context = ctx.get("taskPlan").tasks[0].context
     assert set(context) == {"formVersion", "applyEnd", "supportAmountMax", "evaluationItems", "formatSpec"}
     assert (context["applyEnd"], context["supportAmountMax"]) == (None, None)
-    tokens = ctx.get("protectedTokens")
-    assert not [t for t in tokens if t.type == "날짜"] and "None" not in [t.value for t in tokens]
+    assert not ctx.has("protectedTokens")

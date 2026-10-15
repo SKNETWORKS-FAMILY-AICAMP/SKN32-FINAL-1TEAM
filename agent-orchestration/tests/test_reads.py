@@ -1,4 +1,6 @@
-"""화면 조회 — 웹이 project_id로 부르는 화면 3 · 4 · 6 · 8 · 9 · 10 · 11과 화면 오류.
+"""화면 조회 — 웹이 project_id로 부르는 화면 3 · 4 · 6 · 8 · 9 · 11과 화면 오류.
+
+화면 10(검수 전후)은 검수가 흐름에서 빠져 없앴다 — 어느 상태에서도 INVALID_SCREEN.
 
 진행 상태(view_project) · project_id 명령은 test_web_functions.py, 관리자 조회는 test_admin_reads.py가 본다.
 """
@@ -9,7 +11,7 @@ from conftest import make_app, start_and_select, to_screen6, to_screen8, to_scre
 from flow_helpers import pid, rework, started_with_pid
 
 from sbrain.agents.stubs import StubScenario
-from sbrain.flow.reads import CandidatesScreen, DocumentScreen
+from sbrain.flow.reads import SCREEN_STATES, CandidatesScreen, DocumentScreen
 from sbrain.orchestrator.errors import CommandError
 
 
@@ -32,7 +34,7 @@ def test_screen_errors(clock):
     app = make_app(clock)
     rid = start_and_select(app)                                                  # 계획서작성 · 사용자대기
     p = pid(app, rid)
-    for number, code in ((6, "SCREEN_NOT_READY"), (5, "INVALID_SCREEN")):
+    for number, code in ((6, "SCREEN_NOT_READY"), (5, "INVALID_SCREEN"), (10, "INVALID_SCREEN")):
         with pytest.raises(CommandError) as e:
             app.orchestrator.screen(p, number)
         assert e.value.code == code
@@ -120,21 +122,31 @@ def test_screen8_and_screen9(clock):
     assert {o.order.layer for o in s9.rework_options} <= {"document", "artifact"}
 
 
-def test_screen10_and_11_after_completion(clock):
-    app = make_app(clock, StubScenario(tp1_targets=4))
+def test_screen11_after_completion(clock):
+    app = make_app(clock)
     rid = to_screen9(app)
     p = pid(app, rid)
     app.orchestrator.decide(rid, 9, "진행", confirmed=True)
     app.orchestrator.advance(rid)
-    s10 = app.orchestrator.screen(p, 10)
-    assert len(s10.sentences) == 4 and s10.proofread_log.total_sentences == 4
-    ctx = app.engine.open_context(app.store.load_run(rid))
-    final = {s.sentence_id: s.text for sec in ctx.get("planDoc").sections for s in sec.sentences}
-    for change in s10.sentences:
-        assert change.before                                                    # 검수 전 문장
-        if change.adopted:
-            assert change.after == final[change.sentence_id] != change.before
     s11 = app.orchestrator.screen(p, 11)
     assert s11.deliverable and s11.user_message and s11.plan_doc.sections
     with pytest.raises(CommandError, match="SCREEN_NOT_READY"):
         app.orchestrator.screen(p, 6)
+
+
+def test_screen10_removed_even_when_completed(clock):
+    """화면 10(검수 전후)은 없다 — 완료 실행 건에서도 INVALID_SCREEN. 검수 결과 칸은 결과 조회에 빈 값으로 남는다."""
+    app = make_app(clock)
+    rid = to_screen9(app)
+    p = pid(app, rid)
+    app.orchestrator.decide(rid, 9, "진행", confirmed=True)
+    app.orchestrator.advance(rid)
+    assert (app.store.load_run(rid).state.step, app.store.load_run(rid).state.progress) == ("결과물", "완료")
+    with pytest.raises(CommandError) as e:
+        app.orchestrator.screen(p, 10)
+    assert e.value.code == "INVALID_SCREEN"
+    assert 10 not in SCREEN_STATES
+    out = app.orchestrator.outputs(p)
+    assert (out.format_findings, out.sentence_results, out.proofread_log) == ([], [], None)
+    d = out.dump()
+    assert (d["formatFindings"], d["sentenceResults"], d["proofreadLog"]) == ([], [], None)   # 칸은 남는다 (기준 문서 타입)

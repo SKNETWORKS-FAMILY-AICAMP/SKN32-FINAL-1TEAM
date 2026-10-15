@@ -1,7 +1,7 @@
 """살아 있는 실행 건 보존 — 12개월 처리로 실행 기록을 옮긴(지운) 뒤에도 사용자용 결과가 같고, 다시 움직이면 이어진다.
 
 - 카테고리는 T-C1 산출물을 저장하는 같은 저장에서 실행 건(Run.category)에 적는다. 완전 삭제 · 기록 옮기기가 지우지 않는다.
-- 화면 10의 검수 전 문장은 T-P1 성공 저장 때 실행 건에 적은 계획서 참조(Run.proofread_base_ref)에서 찾는다.
+- 화면 11 · 지금까지 결과는 기록을 옮긴 뒤에도 같다(검수는 흐름 밖이라 Run.proofread_base_ref를 적지 않는다).
 - 시도 번호는 실행 기록 · Run.attempt_max · Run.attempts 중 가장 큰 값에 이어 매긴다 (실패한 시도도 셈).
 """
 from __future__ import annotations
@@ -40,23 +40,18 @@ def test_category_written_with_tc1_output_and_kept_after_delete(clock):
         assert not app.store.get_pointers(res.run_id)                     # (산출물은 지워졌다)
 
 
-# ── 화면 10 · 지금까지 결과 ───────────────────────────────
-def test_screen10_and_outputs_same_after_records_retired(clock):
-    app = make_app(clock, StubScenario(tp1_targets=4))
+# ── 화면 11 · 지금까지 결과 ───────────────────────────────
+def test_screen11_and_outputs_same_after_records_retired(clock):
+    app = make_app(clock)
     rid = to_screen9(app)
     finish(app, rid)
     p = pid(app, rid)
     run = app.store.load_run(rid)
-    tp1 = [r for r in app.store.executions(rid) if r.task_id == "T-P1" and r.status == "성공"][-1]
-    base = next(i for i in tp1.inputs if i.startswith("planDoc@"))
-    assert run.proofread_base_ref == base                                # T-P1 성공 저장에서 적음
-    ctx = app.engine.open_context(run)
-    assert ctx.ref("planDoc") != base                                    # M-4가 새 버전을 만들었다
-    s10, s11 = app.orchestrator.screen(p, 10).dump(), app.orchestrator.screen(p, 11).dump()
+    # 검수(T-P1)가 흐름에서 빠져 실행 기록이 없고 검수 전 계획서 참조도 적지 않는다
+    assert not [r for r in app.store.executions(rid) if r.task_id == "T-P1"] and run.proofread_base_ref is None
+    s11 = app.orchestrator.screen(p, 11).dump()
     out, view = app.orchestrator.outputs(p).dump(), asdict(app.orchestrator.view(rid))
-    assert any(s["adopted"] for s in s10["sentences"])
     retire(app, rid)
-    assert app.orchestrator.screen(p, 10).dump() == s10                  # 검수 전 문장이 그대로
     assert app.orchestrator.screen(p, 11).dump() == s11
     assert app.orchestrator.outputs(p).dump() == out
     assert asdict(app.orchestrator.view(rid)) == view

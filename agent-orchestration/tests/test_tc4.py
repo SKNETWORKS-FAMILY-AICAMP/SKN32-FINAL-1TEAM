@@ -356,7 +356,7 @@ def test_plain_task_table_is_separate_from_rules_and_llm_tasks():
     spec = build_registry().get("T-C4")
     assert spec.kind == "task" and not spec.uses_llm
     assert all(spec.inputs[f].optional for f in ("plan_doc", "prototype", "infographic", "score_report"))
-    assert not spec.inputs["proofread_log"].optional
+    assert spec.inputs["proofread_log"].optional                 # 검수가 흐름에서 빠져 선택 입력 · 늘 None
     assert (spec.inputs["section_results"].key, spec.inputs["section_results"].optional) == (SECTION_RESULTS, True)
 
 

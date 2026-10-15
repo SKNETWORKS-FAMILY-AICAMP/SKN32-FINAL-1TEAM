@@ -9,7 +9,7 @@
 | pass_threshold | Threshold (scoring.threshold) |
 | rerun_cap | 재수행 횟수 (redo.redoCount) |
 | rework_cap | 재작성 횟수 — 묶음마다 (rework.perBundle) |
-| token_retry_cap | 검수 재수행 횟수 (redo.proofreadRedoCount) |
+| token_retry_cap | 검수 재수행 횟수 (redo.proofreadRedoCount) — 선택 컬럼(WEB_OPTIONAL_COLUMNS). 없으면 코드 기본값(None = 재수행 횟수와 같음) |
 | deviation_cap | 확장 필드에 담아만 둔다 (scoring.deviationCap, 검증-1 연동 전, 잠정) |
 
 - 첫 행(policy_id 최솟값)을 쓴다. 웹도 단일 행을 그렇게 읽는다.
@@ -44,7 +44,8 @@ class DbSettingsProvider(SettingsProvider):
         s.scoring.deviation_cap = float(row["deviation_cap"])
         s.redo.redo_count = int(row["rerun_cap"])
         s.rework.per_bundle = int(row["rework_cap"])
-        s.redo.proofread_redo_count = int(row["token_retry_cap"])
+        if row["token_retry_cap"] is not None:   # 선택 컬럼 — 없으면 코드 기본값 그대로
+            s.redo.proofread_redo_count = int(row["token_retry_cap"])
         return Settings.model_validate(s.dump())
 
     def snapshot(self) -> dict:

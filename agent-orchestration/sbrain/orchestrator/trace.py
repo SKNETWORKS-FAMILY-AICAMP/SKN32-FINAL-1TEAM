@@ -6,7 +6,8 @@
 - 규칙 단계 · 합치기도 기록한다.
 - 재시도는 새 버전을 만들지 않고 호출 로그(CallLog)에 따로 남긴다.
 - 되돌리기는 현재 버전 포인터만 옮기고(PointerEvent) 기록은 지우지 않는다.
-- T-P2는 호출 로그는 문장별(itemKey), 입력 · 출력 이력은 Task 단위로 남긴다.
+- 항목별 호출(tools.for_item — T-V2 항목 등)은 호출 로그에 항목 키(itemKey)를, 입력 · 출력 이력은 Task 단위로 남긴다.
+  T-P2 문장별 호출 기록은 흐름 밖 — 지금 쓰지 않음.
 - 토큰 사용량(확장): 시도마다 응답의 사용량을 남기고(CallTry), 호출(CallLog) · 실행(ExecutionRecord)에 합계를 둔다.
   입력은 캐시 입력을 포함한 전체이고 캐시 입력은 그 일부다. 출력은 추론을 포함한 전체이고 추론은 그 일부다.
   사용량을 주지 않는 호출처면 None이다. 비용(원 · 달러)은 계산하지 않는다.
@@ -114,7 +115,7 @@ class CallLog(SBModel):
     agent: str
     call_type: str                  # llm · search · image · file
     purpose: str
-    item_key: str | None = None     # T-P2 문장 ID 등
+    item_key: str | None = None     # 항목 키(tools.for_item — T-V2 항목 등)
     provider: str | None = None
     model: str | None = None
     temperature: float | None = None

@@ -1,7 +1,8 @@
-"""MySQL 8 통합 — 실제 웹 스키마(app_schema.sql) 위에서 전체 흐름 1회, 완전 삭제 뒤 실행 로그 보존, 검수 회수 문단,
-탈퇴 중 계정 잠금(GET_LOCK).
+"""MySQL 8 통합 — 실제 웹 스키마(app_schema.sql) 위에서 전체 흐름 1회, 완전 삭제 뒤 실행 로그 보존,
+탈퇴 중 계정 잠금(GET_LOCK). (흐름을 거친 검수 회수 문단 행은 검수가 흐름에서 빠져 지웠다)
 
-proofread_logs는 웹팀이 바꿀 모양(project_id · model_version)을 테스트 DB에서만 흉내 낸다(mysqldb.py).
+notifications.kind ENUM에는 테스트 DB에서만 완료 알림 '결과물'을 더한다(mysqldb.py — 웹에 ENUM 변경 요청).
+Orchestrator는 proofread_logs를 쓰거나 읽지 않는다.
 
 SBRAIN_TEST_MYSQL_URL(환경 변수 또는 .env)이 있을 때만 돈다. 로컬 DB는 docker/mysql-test.yml로 띄운다.
 저장소 계약 테스트(test_store_contract.py)도 같은 DB에서 돈다.
@@ -12,14 +13,13 @@ import json
 import threading
 import time
 import uuid
-from decimal import Decimal
 
 import pytest
-from conftest import Clock, executed, make_app, pre_input, set_consent, start_and_select, to_screen6, to_screen9
+from conftest import Clock, executed, make_app, pre_input, start_and_select, to_screen6, to_screen9
 from fakes import item_json
 from mysqldb import MYSQL, WEB_SCHEMA_ENV, require_mysql, web_schema
 from sqlalchemy import text
-from webdb import project_row, proofread_rows
+from webdb import project_row
 
 from sbrain.agents.stubs import FakeLLM, StubScenario
 from sbrain.bootstrap import build_app, build_web
@@ -44,14 +44,14 @@ def test_full_flow_on_mysql():
     app.orchestrator.advance(rid)
     run = app.store.load_run(rid)
     assert (run.state.step, run.state.progress) == ("결과물", "완료")
-    assert len(executed(app, rid)) == 23
-    assert [n.kind for n in app.store.notifications(rid)] == ["문서평가", "산출물확인", "표현검수"]
+    assert len(executed(app, rid)) == 19                                           # 검수 · R-8은 흐름 밖
+    assert [n.kind for n in app.store.notifications(rid)] == ["문서평가", "산출물확인", "결과물"]
     with app.store.engine.connect() as conn:
         pid = conn.execute(text("SELECT project_id FROM orch_runs WHERE run_id = :r"), {"r": rid}).scalar()
         assert str(pid) == run.project_id
         web = conn.execute(text("SELECT kind, target_step FROM notifications WHERE project_id = :p "
                                 "ORDER BY notification_id"), {"p": pid}).all()
-    assert [tuple(r) for r in web] == [("문서평가", 6), ("산출물확인", 8), ("표현검수", 10)]
+    assert [tuple(r) for r in web] == [("문서평가", 6), ("산출물확인", 8), ("결과물", 11)]
     row = project_row(app.store.engine, pid)                                       # 진행 컬럼은 쓰지 않는다
     assert [row[c] for c in ("status", "stage", "progress_percent", "notice_id", "failure_reason")] == [None] * 5
 
@@ -104,23 +104,6 @@ def test_concurrent_rework_requests_merge_on_mysql():
         "T-B1", "T-B2", "G-04", "M-3", "T-V2", "G-02b"]
     run = app.store.load_run(rid)
     assert (run.state.step, run.state.progress, run.last_rework.status) == ("종합평가", "사용자대기", "완료")
-
-
-def test_rejected_attempt_row_on_mysql():
-    """학습 동의 계정의 반려된 시도 → 웹 proofread_logs 한 행 (project_id 외래 키 · 웹 기본값 포함)."""
-    app = mysql_app(StubScenario(tp1_targets=2, tp2_behavior={"s-3.1.1-2": ["violate", "ok"]}))
-    rid = to_screen9(app, account=uuid.uuid4().hex[:12])
-    set_consent(app, rid)
-    app.orchestrator.decide(rid, 9, "진행", confirmed=True)
-    app.orchestrator.advance(rid)
-    assert app.store.load_run(rid).state.progress == "완료"
-    [row] = proofread_rows(app.store.engine, int(app.store.load_run(rid).project_id))
-    assert (row["attempt_no"], row["passed"], row["recovery_status"], row["violation_type"], row["model_version"]) == (
-        1, 0, "pending", "수치·금액", "미정")
-    assert row["original_text"].endswith("문장 2 (1억원)") and row["corrected_text"] == "변형 0"
-    assert (row["plan_id"], row["section_id"], row["score"]) == (None, None, Decimal("100.00"))
-    assert (row["violation_note"], row["reason"]) == ("빠짐: 1억원", "보호 토큰 검사 불통과 (빠짐 1건)")
-    assert [r.attempt_no for r in app.store.rejected_attempts(rid)] == [1]
 
 
 def test_project_delete_keeps_run_log():
@@ -249,6 +232,7 @@ def test_web_and_worker_on_real_web_schema():
     assert (scoring["threshold"], scoring["docLayerMax"], scoring["deviationCap"]) == (80.0, 70.0, 5.0)
     # code_weight → 코드 점검 배점 C, plan_weight → 계획서 대조 배점 P, 산출물층 배점 = C + P (spec 4.6, 웹 기본값 15 · 15)
     assert (scoring["codeCheckMax"], scoring["featureMatchMax"], scoring["artifactLayerMax"]) == (15.0, 15.0, 30.0)
+    assert run.settings_snapshot["redo"]["proofreadRedoCount"] == 2                    # 선택 컬럼 token_retry_cap이 있으면 읽는다
 
 
 def test_plan_tables_on_real_web_schema():

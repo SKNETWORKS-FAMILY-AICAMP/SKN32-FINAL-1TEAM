@@ -6,7 +6,7 @@ tools는 호출마다 재시도 · 제한 시간 · 오류 종류 분류를 맡�
 - 제한 시간: 동기 호출은 강제로 끊을 수 없으므로 호출처(HTTP 클라이언트)의 timeout으로 건다.
   tools는 timeout_sec를 요청에 실어 넘기고, 호출처는 시간이 넘으면 TimeoutError를 올린다.
 - 형식 오류: tools가 기대 스키마(schema)로 검사하고, Task의 parse 함수가 FormatError를 올려도 재시도한다.
-- 여러 스레드에서 동시에 써도 안전하다(T-P2). 재시도 기록은 호출별로 따로 센다.
+- 여러 스레드에서 동시에 써도 안전하다(Task 안 동시 호출). 재시도 기록은 호출별로 따로 센다.
 - 재시도 규칙(확장 · 잠정 — 기준 문서는 '오류 종류와 관계없이 재시도 횟수까지'): 일시 오류만 재시도 횟수까지 다시 보낸다.
   - 결제 · 한도 코드(errors.BILLING_LIMIT_CODES — ProviderError.code, 상태 코드와 관계없음)는 재시도하지 않고 '호출실패' ·
     '일시'로 끝낸다(ToolCallExhausted.billing_limit) — 엔진의 재개 일정으로 기다린다.

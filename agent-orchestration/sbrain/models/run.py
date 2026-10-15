@@ -25,10 +25,10 @@ SCREEN_STATUS: dict[str, ScreenStatus] = {
     "중단": "중단됨",
 }
 
-# 이어하기 복귀 화면 번호 (시트 4 RunState.resumeStep)
+# 이어하기 복귀 화면 번호 (시트 4 RunState.resumeStep). '표현검수'(화면 10)는 검수가 흐름에서 빠져 지웠다
 RESUME_STEP: dict[str, int] = {
     "공고선택": 3, "자격확인": 3, "계획서작성": 5, "문서평가": 6,
-    "프로토타입제작": 7, "산출물확인": 8, "종합평가": 9, "표현검수": 10, "결과물": 11,
+    "프로토타입제작": 7, "산출물확인": 8, "종합평가": 9, "결과물": 11,
 }
 
 ACTIVE_PROGRESS = ("실행", "재개대기", "사용자대기")
@@ -213,7 +213,8 @@ class Run(SBModel):
     stats_parts: int = ext(
         0, note="실행 기록을 통계 줄로 옮긴 횟수. 옮길 때마다 통계 줄 part = 이 값 + 1. 이 값을 쓰는 저장은 "
                 "마지막 활동 시각(updatedAt)을 바꾸지 않는다")
-    proofread_base_ref: str | None = ext(None, note="표현 검수(화면 10) 전 계획서 산출물 '이름@버전'")
+    proofread_base_ref: str | None = ext(
+        None, note="흐름 밖 — 지금 쓰지 않음(결정 0033). 검수 전 계획서 산출물 '이름@버전'을 담던 칸 — 흐름이 채우지 않아 늘 비어 있다")
     attempt_max: dict[str, int] = ext(default_factory=dict, note="Task별 마지막 시도 번호 (Task ID → 시도 번호)")
     verify1: Verify1State | None = ext(
         None, note="새 타입(결정 0024) — 검증-1 fail 재수행 상태. 사이클 끝 · 재작성 실패 되돌리기 · 중단 · 완전 삭제 때 비운다")

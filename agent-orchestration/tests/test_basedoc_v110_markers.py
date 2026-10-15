@@ -92,6 +92,9 @@ STILL_EXTENSION = [
     # 결과 통합 T-C4 실구현 — 미달 항목 · 선택 입력 · 검증-1 판정 입력
     (Deliverable, {"shortfallItems"}),
     (c.TC4In, {"planDoc", "prototype", "infographic", "scoreReport", "sectionResults"}),
+    # 검수가 흐름에서 빠져 늘 비우는 선택 칸
+    (Deliverable, {"proofreadLog"}),
+    (c.TC4In, {"proofreadLog"}),
     # 담당자 입력 바로잡기 — 목표 고객 · 창업아이템명 · 팀원 표 행
     (CompanyInfo, {"targetCustomer", "startupItemName", "teamMemberRows"}),
     (PreInput, {"targetCustomer", "startupItemName", "teamMemberRows"}),

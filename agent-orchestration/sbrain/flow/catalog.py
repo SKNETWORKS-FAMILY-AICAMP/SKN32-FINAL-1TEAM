@@ -36,6 +36,9 @@ FEATURE_ELEMENTS = "featureElements"
 # 산출물 키 중 첫 버전 이후 바뀌면 안 되는 것 (시트 2 T-S1 · T-W1: 확정 후 변경 불가)
 IMMUTABLE_KEYS = frozenset({"featureList"})
 
+# 흐름에서 뺀 단계 — 어느 구간 대기열에도 넣지 않는다. 등록부 줄 · 스텁 · 입출력 타입은 남김
+OUT_OF_FLOW_STEPS = frozenset({"R-8", "G-03", "T-P1", "T-P2", "M-4"})
+
 
 def _check_key(task_id: str) -> str:
     return f"{task_id}.check"
@@ -55,6 +58,7 @@ def build_registry() -> TaskRegistry:
         r.register(TaskSpec(task_id, name, agent, kind, i, o, inputs, outputs, primary, order=order, **kw))
 
     # ── 사전 단계 ─────────────────────────────────────
+    # R-8은 흐름 밖 — 사전 단계 대기열에 넣지 않는다(OUT_OF_FLOW_STEPS). T-C1의 referenceDocs는 선택 입력이라 늘 빈다
     rule("R-8", "첨부 문서 텍스트 추출", "조율", None, c.R8In, c.R8Out,
          {"attachments": art("formInput", "attachments")},
          {"reference_docs": "referenceDocs"}, "reference_docs")
@@ -210,7 +214,9 @@ def build_registry() -> TaskRegistry:
           "rework_orders": "G-02b.reworkOrders", "next_action": "G-02b.nextAction",
           "rework_diff": "reworkDiff"}, "score_report")
 
-    # ── 표현 검수 · 결과 통합 ───────────────────────────
+    # ── 검수(흐름 밖) · 결과 통합 ───────────────────────
+    # G-03 · T-P1 · T-P2 · M-4는 흐름 밖 — 결과물 구간 대기열에 넣지 않는다(OUT_OF_FLOW_STEPS). 줄은 남김.
+    # T-P1 · T-P2는 작업 목록(taskPlan.tasks)에도 없어 고정 Task 계상 표시(counted)를 거짓으로 둔다
     rule("G-03", "보호 토큰 추출", "검수", 17, c.G03In, c.G03Out,
          {"plan_doc": art("planDoc"), "announcement": art(SA), "company_info": art("companyInfo"),
           "feature_list": art("featureList"), "reference_summary": art("referenceSummary", optional=True),
@@ -219,21 +225,25 @@ def build_registry() -> TaskRegistry:
     task("T-P1", "사업계획서 문장 형식 검수", "검수", 18, c.TP1In, c.TP1Out,
          {"plan_doc": art("planDoc"), "format_spec": art(FORM_SPEC, "format_spec"),
           "protected_tokens": art("protectedTokens")},
-         {"format_findings": "formatFindings", "target_sentence_ids": "targetSentenceIds"}, "format_findings")
-    # T-P2는 문장별 병렬 실행이라 전용 실행기(flow)가 부르고, 결과는 sentenceResults로 모은다
+         {"format_findings": "formatFindings", "target_sentence_ids": "targetSentenceIds"}, "format_findings",
+         counted=False)
+    # T-P2는 입력 연결이 없다 — 문장별 병렬 실행기가 흐름에 있었으나 흐름에서 빼며 지웠다
     task("T-P2", "한국어 문장 윤문", "검수", 19, c.TP2In, c.TP2Out, {}, {}, "",
-         temperature=TempRule(max=0.2), failure=FailurePolicy(keep_original_per_item=True), redo=True)
+         temperature=TempRule(max=0.2), failure=FailurePolicy(keep_original_per_item=True), redo=True,
+         counted=False)
     rule("M-4", "합치기④ 검수 결과를 계획서에 반영 · 검수 로그 집계", "조율", None, c.M4In, c.M4Out,
          {"plan_doc": art("planDoc"), "sentence_results": art("sentenceResults"),
           "target_sentence_ids": art("targetSentenceIds"), "model_version": setting("tasks.T-P2.model")},
          {"plan_doc": "planDoc", "proofread_log": "proofreadLog"}, "plan_doc", kind="merge")
     # T-C4 — 결과 통합 실구현은 LLM을 부르지 않는다. 계획서 · 프로토타입 · 인포그래픽 · 점수 보고서는 선택 입력이다 —
-    # 누락은 엔진 입력 확인이 아니라 T-C4가 한 오류 코드(E-C4-MISSING)로 판단해 같은 실패 기록을 남긴다. 검수 로그는 필수.
+    # 누락은 엔진 입력 확인이 아니라 T-C4가 한 오류 코드(E-C4-MISSING)로 판단해 같은 실패 기록을 남긴다. 검수 로그는 검수가
+    # 흐름에서 빠져 선택 입력이고 늘 비어 있다(누락 조건이 아니다).
     # 검증-1 항목 판정(확장 입력, G-02b와 같은 산출물)으로 문서층 미달 항목을 낸다
     task("T-C4", "결과 통합 · 전달", "조율", 20, c.TC4In, c.TC4Out,
          {"plan_doc": art("planDoc", optional=True), "prototype": art("prototype", optional=True),
           "infographic": art("infographic", optional=True),
-          "score_report": art("scoreReport.overall", optional=True), "proofread_log": art("proofreadLog"),
+          "score_report": art("scoreReport.overall", optional=True),
+          "proofread_log": art("proofreadLog", optional=True),
           "section_results": art(SECTION_RESULTS, optional=True)},
          {"deliverable": "deliverable", "user_message": "userMessage"}, "deliverable",
          counted=False, uses_llm=False)

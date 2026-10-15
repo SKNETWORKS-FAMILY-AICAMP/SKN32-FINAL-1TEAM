@@ -5,14 +5,16 @@ MySQL은 SBRAIN_TEST_MYSQL_URL(환경 변수 또는 .env)이 있을 때만 돈�
 """
 from __future__ import annotations
 
+import dataclasses
 import itertools
+import re
 import threading
 from datetime import datetime, timedelta
 
 import pytest
 from conftest import TIMING, Backend, Clock
-from sqlalchemy import select
-from store_helpers import new_run, rejected, uid
+from sqlalchemy import event, select
+from store_helpers import new_run, uid
 from webdb import new_project
 
 from sbrain.models import CycleState, Notice, Notification, ReworkComparison, Run
@@ -33,13 +35,11 @@ def env(any_backend: Backend):
     return any_backend.make_store(clock), clock
 
 
-def project(store: Store, *, agreed: bool = False) -> str:
-    """프로젝트 ID. SqlStore면 웹 projects 행(주인 계정의 학습 동의 = agreed)을 만든다."""
+def project(store: Store) -> str:
+    """프로젝트 ID. SqlStore면 웹 projects 행을 만든다."""
     if isinstance(store, SqlStore):
-        return str(new_project(store.engine, agreed=agreed))
-    pid = uid()
-    store.set_training_consent(pid, agreed)
-    return pid
+        return str(new_project(store.engine))
+    return uid()
 
 
 def created(store: Store, clock: Clock, account: str | None = None, **kw) -> Run:
@@ -273,18 +273,41 @@ def test_run_without_project_has_no_web_notifications(env, any_backend):
     assert store.notifications(run.run_id) == expected
 
 
-def test_rejected_attempts_need_project_and_consent(env):
-    """반려된 시도는 프로젝트 주인이 학습에 동의한 실행 건만, 쓴 순서대로 남는다 (웹 proofread_logs)."""
+_WRITE_SQL = re.compile(r"^\s*(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+[`\"]?(\w+)", re.IGNORECASE)
+
+
+def test_commit_writes_only_notifications_and_failure_alerts_to_web(env, any_backend):
+    """단계 저장의 웹 쓰기는 notifications · generation_failure_alerts INSERT 두 가지뿐이다 — 반려된 T-P2 시도
+    (proofread_logs)도 학습 동의(users.ai_training_agreed) 읽기도 없다. 저장 묶음에도 그 칸이 없다."""
     store, clock = env
-    agreed = created(store, clock, project_id=project(store, agreed=True))
-    refused = created(store, clock, project_id=project(store))
-    no_project = created(store, clock)
-    for run in (agreed, refused, no_project):
-        save(store, run, rejected_attempts=[rejected(run, 1), rejected(run, 2)])
-    save(store, agreed, rejected_attempts=[rejected(agreed, 3)])
-    assert store.rejected_attempts(agreed.run_id) == [rejected(agreed, n) for n in (1, 2, 3)]
-    assert store.rejected_attempts(refused.run_id) == []
-    assert store.rejected_attempts(no_project.run_id) == []
+    assert {f.name for f in dataclasses.fields(CommitBatch)} == {
+        "run", "versions", "pointers", "pointer_events", "executions", "call_logs", "feedback", "comparisons",
+        "events", "notifications"}
+    assert not hasattr(store, "rejected_attempts") and not hasattr(store, "set_training_consent")
+    run = created(store, clock, project_id=project(store))
+    note = Notification(run_id=run.run_id, kind="결과물", target_step=11, created_at=clock(), notification_id="n")
+    failed = run.model_copy(update={"state": make_state("공고선택", "실패"), "failure_reason": "시험 실패"})
+    statements: list[str] = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    if isinstance(store, SqlStore):
+        event.listen(store.engine, "before_cursor_execute", capture)
+    try:
+        save(store, failed, notifications=[note])
+    finally:
+        if isinstance(store, SqlStore):
+            event.remove(store.engine, "before_cursor_execute", capture)
+    assert [(n.kind, n.target_step) for n in store.notifications(run.run_id)] == [("결과물", 11)]
+    if any_backend.kind == "memory":
+        return
+    writes = {(m.group(1).split()[0].upper(), m.group(2)) for s in statements if (m := _WRITE_SQL.match(s))}
+    assert {w for w in writes if not w[1].startswith("orch_")} == {
+        ("INSERT", "notifications"), ("INSERT", "generation_failure_alerts")}
+    dml = [s for s in statements if s.lstrip().upper().startswith(("SELECT", "INSERT", "UPDATE", "DELETE"))]
+    assert dml and not [s for s in dml if "proofread_logs" in s or "ai_training_agreed" in s
+                        or re.search(r"\busers\b", s)]   # 구조 읽기(외래 키를 따라간 SHOW CREATE TABLE)는 빼고 본다
 
 
 # ── 사전 단계 시작 요청 ────────────────────────────────

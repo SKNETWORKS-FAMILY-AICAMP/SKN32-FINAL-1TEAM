@@ -7,7 +7,7 @@ S-Brain의 AI Agent 7개를 정해진 순서대로 부르고, 실패하거나 �
 | 언어 · 버전 | Python 3.12 |
 | 의존성 | `pydantic` (타입 검증 · JSON 변환), `SQLAlchemy` · `PyMySQL` (공유 MySQL — 저장소 · 웹 DB), `openai` (조율 Agent 호출처), `python-dotenv` (`.env` 읽기), `pytest` · `pytest-xdist` · `pytest-cov` (테스트 · 동시 실행 · 범위 측정) |
 | 구현 근거 | S-Brain Agent 기능정의서 v1.10 (기준 문서). 보조 참고: 프로젝트 기획서 v1.11 |
-| 현재 상태 | 뼈대 완성. 조율 **T-C1 · T-C3와 재작성 · 재수행 지시문 다시 쓰기는 실제 구현**(2026-10-04 실제 OpenAI로 확인 — T-C3 지시문 작성을 동시 호출로 바꾼 뒤 작성 시작 → 화면 6이 52초 → 11초), 공고 매칭 **T-C2 · 자격 확인 G-01은 공고 서버(공고팀 HTTP API) 연결 코드 완료** — `SBRAIN_NOTICE_API_URL`을 넣어야 켜지며, 공고팀 운영 서버가 정해지기 전이라 지금은 스텁. 전략 · 작성 · 검증-1(2026-10-10)과 구현 · 검증-2(2026-10-11)는 **담당자 코드 실구현**, 조율 규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4)도 **실구현**(2026-10-11, 산출물층 점수는 그 실행 건 배점으로 환산), 결과 통합 T-C4도 **실구현**(2026-10-13, LLM 없음 — 누락이면 실행 실패, 미달 항목 목록 · 안내 문구, 계획서 파일은 웹이 `planDoc`으로 만듦). 나머지 Agent(검수)와 R-8은 **스텁(가짜 구현)**. 저장소는 **메모리 · 공유 MySQL** 두 가지, **워커 프로세스**(실행 로그 12개월 처리 포함)와 **웹 연동 함수**(시작 요청 · 명령 · 재작성 묶음 요청 · 진행 상태 · 화면 · 결과 조회 · 관리자 조회 · 중단 · 완전 삭제 · 탈퇴)까지 구현. 웹 `projects`에는 쓰지 않는다(2026-10-02). 시각은 모두 UTC, '오늘'은 한국 날짜(2026-10-05). 2026-10-06: 모델 설정을 Task별로, 이미지 호출 `tools.image`, 산출물층 검증 반영(구현 · 검증-2 담당 합의), 워커 운영 로그 파일(선택). 2026-10-07: 공고팀 시험 서버로 연결 확인(가짜 신청 정보), 가산점 꺼 둠, 테스트 정리(동시 실행 기본 · 겹침 · 옛 호환 정리 · 파일 나누기). 2026-10-08: 기준 문서 새 판(기능정의서 v1.10 · 기획서 v1.11) 반영 — 확장 · 잠정 표시 정리(새 판에서 빠진 필드는 확장으로 남김), 웹 함수 `missing_projects`. 같은 날 산출물 파일 참조형(파일 저장소 · `tools.files` · 파일 삭제 대기열 · 파일 읽기 웹 함수 · `SBRAIN_ARTIFACT_ROOT`). 2026-10-13: 전략 · 작성 · 검증-1 담당자 답 반영(SB-360 — 입력 오류 코드 · 실행별 KIET 검색 연결, 스위치 `SBRAIN_KIET_SEARCH` 기본 꺼짐), 표 대체 안내 자리 · 입력 오류 안내 끝 문장, 새 재작성 묶음(일반현황 · 개요 · 그림 — 코드에 넣고 꺼 둠). 같은 날 결과 통합 T-C4 실구현(`deliverable.planDocFile`은 늘 비고 미달 항목 칸 `shortfallItems`가 붙음), 담당자 입력 바로잡기(사용자 목표 고객 · 일반현황 근거에 창업아이템명 · 팀구성현황 · 흐름도 제목 '서비스 흐름도' — 로컬 MySQL 테스트 DB를 켜고 2187 통과 · 건너뜀 0), 호출 실패 처리(결제 · 한도 코드는 재시도 없이 재개 대기, 입력 · 운영 응답 코드 오류는 재시도 없음, 일시 오류는 늘리는 간격 · 무작위 지연 · Retry-After · 대기 합 상한, 공고 서버는 2초 고정, T-P2 운영 오류면 실행 실패 — MySQL 없이 2387 통과 · 61 건너뜀). MySQL 없이 돌리면 MySQL 테스트를 건너뛴다 |
+| 현재 상태 | 뼈대 완성. 조율 **T-C1 · T-C3와 재작성 · 재수행 지시문 다시 쓰기는 실제 구현**(2026-10-04 실제 OpenAI로 확인 — T-C3 지시문 작성을 동시 호출로 바꾼 뒤 작성 시작 → 화면 6이 52초 → 11초), 공고 매칭 **T-C2 · 자격 확인 G-01은 공고 서버(공고팀 HTTP API) 연결 코드 완료** — `SBRAIN_NOTICE_API_URL`을 넣어야 켜지며, 공고팀 운영 서버가 정해지기 전이라 지금은 스텁. 전략 · 작성 · 검증-1(2026-10-10)과 구현 · 검증-2(2026-10-11)는 **담당자 코드 실구현**, 조율 규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4)도 **실구현**(2026-10-11, 산출물층 점수는 그 실행 건 배점으로 환산), 결과 통합 T-C4도 **실구현**(2026-10-13, LLM 없음 — 누락이면 실행 실패, 미달 항목 목록 · 안내 문구, 계획서 파일은 웹이 `planDoc`으로 만듦). 검수 Agent(G-03 · T-P1 · T-P2 · M-4)와 첨부 추출 R-8은 **흐름에서 뺐다**(2026-10-15 — 스텁 · 타입 · 설정 · 등록부 줄 · M-4 함수는 남음, 화면 9 '진행' 뒤에는 T-C4 하나, 화면 10 없음, 웹 테이블 쓰기는 INSERT 둘). 저장소는 **메모리 · 공유 MySQL** 두 가지, **워커 프로세스**(실행 로그 12개월 처리 포함)와 **웹 연동 함수**(시작 요청 · 명령 · 재작성 묶음 요청 · 진행 상태 · 화면 · 결과 조회 · 관리자 조회 · 중단 · 완전 삭제 · 탈퇴)까지 구현. 웹 `projects`에는 쓰지 않는다(2026-10-02). 시각은 모두 UTC, '오늘'은 한국 날짜(2026-10-05). 2026-10-06: 모델 설정을 Task별로, 이미지 호출 `tools.image`, 산출물층 검증 반영(구현 · 검증-2 담당 합의), 워커 운영 로그 파일(선택). 2026-10-07: 공고팀 시험 서버로 연결 확인(가짜 신청 정보), 가산점 꺼 둠, 테스트 정리(동시 실행 기본 · 겹침 · 옛 호환 정리 · 파일 나누기). 2026-10-08: 기준 문서 새 판(기능정의서 v1.10 · 기획서 v1.11) 반영 — 확장 · 잠정 표시 정리(새 판에서 빠진 필드는 확장으로 남김), 웹 함수 `missing_projects`. 같은 날 산출물 파일 참조형(파일 저장소 · `tools.files` · 파일 삭제 대기열 · 파일 읽기 웹 함수 · `SBRAIN_ARTIFACT_ROOT`). 2026-10-13: 전략 · 작성 · 검증-1 담당자 답 반영(SB-360 — 입력 오류 코드 · 실행별 KIET 검색 연결, 스위치 `SBRAIN_KIET_SEARCH` 기본 꺼짐), 표 대체 안내 자리 · 입력 오류 안내 끝 문장, 새 재작성 묶음(일반현황 · 개요 · 그림 — 코드에 넣고 꺼 둠). 같은 날 결과 통합 T-C4 실구현(`deliverable.planDocFile`은 늘 비고 미달 항목 칸 `shortfallItems`가 붙음), 담당자 입력 바로잡기(사용자 목표 고객 · 일반현황 근거에 창업아이템명 · 팀구성현황 · 흐름도 제목 '서비스 흐름도' — 로컬 MySQL 테스트 DB를 켜고 2187 통과 · 건너뜀 0), 호출 실패 처리(결제 · 한도 코드는 재시도 없이 재개 대기, 입력 · 운영 응답 코드 오류는 재시도 없음, 일시 오류는 늘리는 간격 · 무작위 지연 · Retry-After · 대기 합 상한, 공고 서버는 2초 고정, T-P2 운영 오류면 실행 실패 — MySQL 없이 2387 통과 · 61 건너뜀). MySQL 없이 돌리면 MySQL 테스트를 건너뛴다 |
 
 > 이 문서의 파일 경로는 저장소 폴더(`agent-orchestration`) 기준입니다. 기능정의서 · 기획서는 저장소에 포함되지 않습니다.
 
@@ -40,7 +40,7 @@ S-Brain은 **정부지원사업 사업계획서와 프로토타입을 함께 만
 1. 지금 신청할 수 있는 정부지원사업 공고를 찾아 추천하고, 자격요건을 미리 확인합니다.
 2. 선택한 공고에 맞춰 사업계획서(본문 · 표 · 그래프)를 씁니다.
 3. 계획서를 바탕으로 프로토타입(HTML 실행 파일 또는 SVG 원페이지)과 인포그래픽을 만듭니다.
-4. 계획서와 프로토타입을 채점하고, 문장을 다듬은 뒤 결과물을 내려받게 합니다.
+4. 계획서와 프로토타입을 채점하고 결과물을 내려받게 합니다(문장을 다듬는 검수 단계는 2026-10-15에 흐름에서 뺐습니다).
 
 이 작업은 역할이 나뉜 **Agent 7개**가 나눠 맡습니다.
 
@@ -52,7 +52,7 @@ S-Brain은 **정부지원사업 사업계획서와 프로토타입을 함께 만
 | 구현 | 프로토타입(HTML 실행 파일) · 인포그래픽 제작 |
 | 검증-1 | 사업계획서 채점 (문서층) |
 | 검증-2 | 프로토타입 채점 (산출물층) |
-| 검수 | 문장 형식 검수 · 한국어 윤문 |
+| 검수 | 문장 형식 검수 · 한국어 윤문 — 2026-10-15부터 흐름 밖(코드는 남음) |
 
 ### 1.2 Orchestrator는 무엇을 하는가
 
@@ -70,23 +70,22 @@ Orchestrator는 **7개 Agent를 같은 방식으로 등록하고 호출하는 �
 
 ### 1.3 지금 어디까지 되어 있는가
 
-- 20단계 전체 흐름, 사용자 대기 지점, 재수행 · 재개 · 재작성 · 되돌리기, 추적 기록이 동작합니다.
-- **조율 T-C1(요구사항 해석)은 실제 구현**입니다(`agents/supervisor/tc1.py`). 아래에 적은 실구현(T-C3 · 규칙 단계 · T-C4 · 전략 · 작성 · 검증-1 · 구현 · 검증-2 · 공고 연결) 말고 나머지 Agent · 조율 Task(검수 T-P1 · T-P2 · G-03, 조율 R-8)는 스텁이며, 규격에 맞는 더미 결과를 돌려줍니다. 스텁 조립(`build_stub_app`)은 T-C1도 스텁을 쓰고, `bind_supervisor(app.registry)`로 바꿔 끼웁니다. 2026-10-10부터 아이템 해석을 분류(카테고리 · 사유 · 확신도) · 사양(이름 · 요약 · 주 고객 · 핵심 기능 · 핵심어) 두 호출로 나눠 동시에 부르고, T-C1만 추론 강도 medium입니다. 둘 중 하나라도 실패하면 T-C1 전체가 실패합니다. 실제 OpenAI(`gpt-6-luna`)로 두 호출 모두 성공하는 것을 확인했습니다(2026-10-11).
-- **조율 T-C3(작업 분해)도 실제 구현**입니다(`agents/supervisor/tc3.py`). 지시 대상 7번(원페이지 6번)의 안내 호출을 한꺼번에 보내고, 재시도를 다 써 재개하면 받아 둔 안내는 두고 빠진 것만 부릅니다. T-C3 · 다시 쓰기는 2026-10-04 실제 OpenAI로 확인했습니다(작성 시작 → 화면 6이 52.52초 → 11.26초). 신청자 유형으로 양식 · 평가항목 · 채점 기준표 묶음을 고르고(`agents/form_defaults.py` — 2026-10-10부터 전략 · 작성 · 검증-1 담당자 계약의 계획서 항목), 지시문을 받는 Task마다 조율 LLM으로 안내를 써서 지시문(틀 · 안내 · 참조 자료 세 부분)을 만듭니다. 뒷 단계(T-W1 · T-V1 · T-P1 · T-P2 · G-02)는 선택 공고의 양식 필드 대신 이 결과를 읽습니다. 재작성 · 재수행 때는 조율 LLM이 대상 Task 지시문의 안내 부분만 다시 쓰고 문제 내용을 끝에 붙입니다(`agents/supervisor/rewrite.py`, 워커 조립에서만). 설명은 `docs/T-C3_작업분해_구현.md`.
+- 전체 흐름(검수 · R-8을 뺀 단계), 사용자 대기 지점, 재수행 · 재개 · 재작성 · 되돌리기, 추적 기록이 동작합니다.
+- **조율 T-C1(요구사항 해석)은 실제 구현**입니다(`agents/supervisor/tc1.py`). 아래에 적은 실구현(T-C3 · 규칙 단계 · T-C4 · 전략 · 작성 · 검증-1 · 구현 · 검증-2 · 공고 연결) 말고 나머지 Agent · 조율 Task(검수 T-P1 · T-P2 · G-03, 조율 R-8)는 스텁이며, 규격에 맞는 더미 결과를 돌려줍니다. 이 넷과 M-4는 2026-10-15부터 흐름 밖이라 지금 부르는 곳이 없습니다. 스텁 조립(`build_stub_app`)은 T-C1도 스텁을 쓰고, `bind_supervisor(app.registry)`로 바꿔 끼웁니다. 2026-10-10부터 아이템 해석을 분류(카테고리 · 사유 · 확신도) · 사양(이름 · 요약 · 주 고객 · 핵심 기능 · 핵심어) 두 호출로 나눠 동시에 부르고, T-C1만 추론 강도 medium입니다. 둘 중 하나라도 실패하면 T-C1 전체가 실패합니다. 실제 OpenAI(`gpt-6-luna`)로 두 호출 모두 성공하는 것을 확인했습니다(2026-10-11).
+- **조율 T-C3(작업 분해)도 실제 구현**입니다(`agents/supervisor/tc3.py`). 지시 대상 7번(원페이지 6번)의 안내 호출을 한꺼번에 보내고, 재시도를 다 써 재개하면 받아 둔 안내는 두고 빠진 것만 부릅니다. T-C3 · 다시 쓰기는 2026-10-04 실제 OpenAI로 확인했습니다(작성 시작 → 화면 6이 52.52초 → 11.26초). 신청자 유형으로 양식 · 평가항목 · 채점 기준표 묶음을 고르고(`agents/form_defaults.py` — 2026-10-10부터 전략 · 작성 · 검증-1 담당자 계약의 계획서 항목), 지시문을 받는 Task마다 조율 LLM으로 안내를 써서 지시문(틀 · 안내 두 부분 — 참조 자료 부분은 2026-10-15에 지움)을 만듭니다. 작업 목록은 12개(원페이지 11개)입니다. 뒷 단계(T-W1 · T-V1 · G-02)는 선택 공고의 양식 필드 대신 이 결과를 읽습니다. 재작성 · 재수행 때는 조율 LLM이 대상 Task 지시문의 안내 부분만 다시 쓰고 문제 내용을 끝에 붙입니다(`agents/supervisor/rewrite.py`, 워커 조립에서만). 설명은 `docs/T-C3_작업분해_구현.md`.
 - **전략 · 작성 · 검증-1(T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1)은 담당자 코드 실구현**입니다(2026-10-10, `agents/partner_sw/`). 담당자가 준 함수(F01 ~ F19)를 거의 그대로 옮기고 OpenAI 직접 호출 · 파일 읽기 · 시각 · 환경 변수만 우리 규칙으로 바꿨습니다(`partner_sw/VENDORED.md`). 담당자 LLM 호출은 `tools.llm(…, purpose=F번호, json_mode=True)` — 함수마다 모델(`purposeModels`)이 다르고 JSON 객체 응답으로 요청합니다. 계획서는 담당자 양식 항목(예비창업 2.1.1 ~ 2.7.4 = 25개, 초기창업 3.1.1 ~ 3.7.4 = 24개 — 본문 · 표 · 그림)이고 평가항목도 항목마다 하나입니다. 문서층 점수는 담당자 방식(항목 점수 평균 × 문서층 배점 ÷ 100), 편차 검사는 없습니다. T-V1이 fail로 판정한 항목만 자동으로 한 번 다시 쓰고 다시 검증합니다(검증-1 재수행 — 표는 끝내 fail이면 본문 서술로 대체). 사용자 재작성은 고른 묶음의 태그 항목만 다시 만듭니다(항목별 재작성 묶음는 잠정 — `flow/rework_map.py`, 새 묶음 일반현황 · 개요 · 그림은 같은 모듈에 꺼 둠). 스위치(`SBRAIN_KIET_SEARCH`, 기본 꺼짐)를 켜면 T-S1이 실행마다 KIET를 검색해 그 실행의 시장 근거에 더합니다(실패하면 있는 자료로 계속). 워커 조립(`build_app`)이 이 여섯 Task를 실제 OpenAI로 보내고, 스텁 조립은 스텁 그대로이며 `bind_partner_sw(app.registry)`로 바꿔 끼웁니다. 실제 OpenAI로는 아직 확인하지 않았습니다.
 - **구현 · 검증-2(T-B1 실행 파일 · T-B2 인포그래픽 · T-V2 산출물층 검증)도 담당자 코드 실구현**입니다(2026-10-11, `agents/partner_bv/`). 담당자 패키지 둘(`engineering_agent/` · `verification_agent/` — 서로 import하지 않음)을 구조 그대로 옮기고 연결부(파일은 `tools.files`, 자료는 불러올 때 읽은 상수, 경로 대신 파일 내용 · 이름)만 바꿨습니다(`partner_bv/VENDORED.md`). T-B1은 자체 검사(외부 의존 · 샌드박스 · 비밀값)에 걸린 HTML도 `index.html` 진입 파일로 넣어 재수행 때 고치게 하고 끝내 못 고치면 검증-2가 채점합니다(외부 의존은 코드 점검 7번 감점 — 담당자 2026-10-12 판). T-B2는 모든 카테고리에서 SVG(`onepage.svg` · `infographic.svg`)를 넣고, 맞춤 아이콘을 못 쓰면 기본 아이콘으로 계속하며 관리자 사건 '이미지대체'를 남깁니다. **워커에서 T-B2 아이콘 이미지 호출이 실제 OpenAI로 나갑니다**(한 번 약 35원). T-V2는 대조 LLM을 동시에 3개까지 부르고, 확인 요소 목록을 산출물 `featureElements`로 다음 T-V2에 넘깁니다. 코드 점검 항목에 얻은 점수 `earned` · 해당 여부 `applicable`이 붙습니다. 스텁 조립은 스텁 그대로이며 `bind_partner_bv(app.registry)`로 바꿔 끼웁니다. 실제 OpenAI(글 · 이미지)로는 아직 확인하지 않았습니다.
-- **조율 규칙 단계(판정 G-02a · G-02b, 안내 문서 G-04, 합치기 M-1 ~ M-4)는 실구현 한 벌**입니다(2026-10-11, `agents/supervisor/judge.py` · `readme.py` · `merge.py`). 워커 조립과 스텁 조립이 같은 함수를 쓰고, 스텁 조립은 테스트용 실패 흉내만 감쌉니다. G-04는 템플릿으로 `README.md`를 만들고(문구 잠정), G-02b는 기준 점수에 이를 수 없으면 E-G2-UNREACHABLE 안내를 붙입니다.
-- **조율 T-C4(결과 통합)도 실구현**입니다(2026-10-13, `agents/supervisor/tc4.py`). LLM을 부르지 않습니다. 계획서 · 프로토타입 · 인포그래픽 · 점수 보고서 중 하나라도 없거나, 계획서 항목이 0개이거나, 점수 보고서에 검증-2 점수가 없으면 오류 코드 `E-C4-MISSING`으로 실행을 실패시킵니다(진입 파일 없음 · 실행 안내 문서 없음은 실패가 아님). 아니면 결과물 묶음(`deliverable`)에 미달 항목 목록 `shortfallItems`(검증-1 fail 항목 — 총점이 통과여도, 통과 필수 조건 · 만점이 아닌 코드 점검 · 대조 불가 · 빠진 기능 · 부분 인정 기능)를 싣고 안내 문구 `userMessage`를 만듭니다. 계획서 파일은 만들지 않습니다 — `planDocFile`은 늘 비고, 웹이 `planDoc`으로 내려받기 파일을 만듭니다. 워커 조립과 스텁 조립이 같은 함수를 쓰고(`PLAIN_TASKS`), 스텁 조립은 테스트용 실패 흉내만 감쌉니다.
+- **조율 규칙 단계(판정 G-02a · G-02b, 안내 문서 G-04, 합치기 M-1 ~ M-4)는 실구현 한 벌**입니다(2026-10-11, `agents/supervisor/judge.py` · `readme.py` · `merge.py` — M-4는 흐름 밖이라 함수만 남음). 워커 조립과 스텁 조립이 같은 함수를 쓰고, 스텁 조립은 테스트용 실패 흉내만 감쌉니다. G-04는 템플릿으로 `README.md`를 만들고(문구 잠정), G-02b는 기준 점수에 이를 수 없으면 E-G2-UNREACHABLE 안내를 붙입니다.
+- **조율 T-C4(결과 통합)도 실구현**입니다(2026-10-13, `agents/supervisor/tc4.py`). LLM을 부르지 않습니다. 2026-10-15부터 화면 9 '진행' 뒤 이 Task 하나만 돌고(결과물 · 실행 → 결과물 · 완료, 알림 '결과물' · 화면 11), 결과물 묶음의 검수 로그 칸은 늘 비어 있습니다. 계획서 · 프로토타입 · 인포그래픽 · 점수 보고서 중 하나라도 없거나, 계획서 항목이 0개이거나, 점수 보고서에 검증-2 점수가 없으면 오류 코드 `E-C4-MISSING`으로 실행을 실패시킵니다(진입 파일 없음 · 실행 안내 문서 없음은 실패가 아님). 아니면 결과물 묶음(`deliverable`)에 미달 항목 목록 `shortfallItems`(검증-1 fail 항목 — 총점이 통과여도, 통과 필수 조건 · 만점이 아닌 코드 점검 · 대조 불가 · 빠진 기능 · 부분 인정 기능)를 싣고 안내 문구 `userMessage`를 만듭니다. 계획서 파일은 만들지 않습니다 — `planDocFile`은 늘 비고, 웹이 `planDoc`으로 내려받기 파일을 만듭니다. 워커 조립과 스텁 조립이 같은 함수를 쓰고(`PLAIN_TASKS`), 스텁 조립은 테스트용 실패 흉내만 감쌉니다.
 - **산출물층 점수는 그 실행 건의 배점으로 환산**합니다(2026-10-11, `flow/score_scale.py` 한 곳). 검증-2는 코드 점검 · 계획서 대조를 15점씩 돌려주고, 판정 G-02b · 재작성 전후 비교 · 관리자 조회 · 통계 줄이 관리자 배점(웹 `code_weight` · `plan_weight`)으로 환산합니다. 점수 보고서에 층 점수 · 만점 · 코드 점검 항목 줄 환산 칸이 붙습니다.
-- 사전 정보 입력은 웹 백엔드가 DB에 저장한 값을 **프로젝트 ID로 읽어** T-C1에 넣습니다(`intake/`, `start_run_for_project`). 2026-10-10부터 사업비(`project_budget_items`) · 일정(`project_schedule_items`)도 시작 요청 때 읽어 확장 칸 `budgetItems` · `scheduleItems`에 싣습니다(필수 확인 스위치 `PLAN_TABLES_REQUIRED`는 웹 화면 배포 전이라 꺼짐). 테이블 · 컬럼은 웹 스키마(저장소의 `web/backend/app_schema.sql`)와 맞췄습니다. 기준 문서에 자리가 없는 웹 입력값(수익모델 항목 전체, 기업명, 산출물 목표 등)은 확장 필드로 싣습니다. 첨부 문서 텍스트 추출(R-8)은 아직입니다.
+- 사전 정보 입력은 웹 백엔드가 DB에 저장한 값을 **프로젝트 ID로 읽어** T-C1에 넣습니다(`intake/`, `start_run_for_project`). 2026-10-10부터 사업비(`project_budget_items`) · 일정(`project_schedule_items`)도 시작 요청 때 읽어 확장 칸 `budgetItems` · `scheduleItems`에 싣습니다(필수 확인 스위치 `PLAN_TABLES_REQUIRED`는 웹 화면 배포 전이라 꺼짐). 테이블 · 컬럼은 웹 스키마(저장소의 `web/backend/app_schema.sql`)와 맞췄습니다. 기준 문서에 자리가 없는 웹 입력값(수익모델 항목 전체, 기업명, 산출물 목표 등)은 확장 필드로 싣습니다. 첨부 문서 텍스트 추출(R-8)은 흐름 밖이고 첨부(`project_attachments`)는 읽지 않습니다.
 - **공고 매칭(T-C2) · 자격 확인(G-01)은 공고팀 공고 서버의 HTTP API를 부르는 연결 코드**입니다(`agents/notice/`). 추천 순위 · 대체 경로 · 자격 판정 규칙은 공고 서버에 있고, 우리 코드는 부르고 받은 값을 검사 · 변환만 합니다. 워커에 `SBRAIN_NOTICE_API_URL`이 있으면 이 연결로(실제 모드), 없으면 같은 흐름 · 같은 판정 원칙의 스텁으로(스텁 모드) 돕니다. 공고팀이 수집 상태 · 공고 상세 · 자격 판정 API를 아직 주지 않아 지금은 스텁 모드입니다. 켜는 조건은 아래 3절.
 - 공고 선택은 고른 공고 ID만 남기고, 워커의 G-01이 공고 상세와 자격 판정을 함께 받아 한 번에 저장합니다. G-01 · 추가 조회가 어떤 오류로 끝나도 실행은 실패하지 않고 안내와 함께 대기 지점으로 돌아갑니다. 자격 불통과 공고는 그 실행 건에서 막고(`ANNOUNCEMENT_BLOCKED`), 추가 조회에서 내용이 바뀌면 풉니다.
 - OpenAI 호출처 어댑터가 있습니다(`orchestrator/openai_provider.py`). 조율 Agent는 `gpt-6-luna`가 기본값이고, 추론 강도는 T-C1 medium · T-C3 · 지시문 다시 쓰기 low입니다(온도는 보내지 않음). 응답마다 토큰 사용량(입력 · 캐시 입력 · 출력 · 추론)을 기록합니다.
 - **저장소는 두 가지**입니다. 메모리 구현(`MemoryStore`, 테스트 · 시연)과 공유 MySQL 구현(`SqlStore`, `store_sql/`)이 같은 동작을 하며, 흐름 테스트 전체를 두 저장소로 돌려 확인합니다. MySQL 테이블 정의는 `sql/orchestrator_schema.sql`이고 공유 DB 적용은 담당자가 직접 합니다.
 - **워커 프로세스**(`python -m sbrain.worker`)가 시작 요청 · 구간 진행 · 재개를 가져가 처리합니다. 웹 서버와 별도 프로세스로 같은 MySQL을 봅니다(웹팀 합의 2026-09-30).
 - 웹 서버 코드는 웹팀 몫입니다. 웹이 부를 함수(시작 요청 · 명령 · 재작성 묶음 요청 · 진행 상태 · 화면 · 결과 · 재작성 결과 조회 · 관리자 조회 · 중단 · 완전 삭제)와 웹 프로세스 조립(`build_web`)까지 있습니다 — `docs/Orchestrator_웹연동_함수명세.md`.
-- **진행 상태의 원본은 Orchestrator**입니다. 웹 `projects`의 진행 컬럼에는 쓰지 않고, 웹은 함수로 읽습니다. Orchestrator가 쓰는 웹 테이블은 알림(`notifications`) · 관리자 실패 알림(`generation_failure_alerts`) · 검수 회수 문단(`proofread_logs`) INSERT 셋뿐입니다.
-- 표현 검수(T-P2)는 문장마다 **시도별 기록**을 남깁니다. 학습 데이터 편입에 동의한 계정이면 보호 토큰 검사를 통과하지 못한 시도를 웹 `proofread_logs`에 한 행씩 씁니다(웹 스키마 변경 전에는 건너뜀).
+- **진행 상태의 원본은 Orchestrator**입니다. 웹 `projects`의 진행 컬럼에는 쓰지 않고, 웹은 함수로 읽습니다. Orchestrator가 쓰는 웹 테이블은 알림(`notifications`) · 관리자 실패 알림(`generation_failure_alerts`) INSERT 둘뿐입니다(2026-10-15 — 검수 회수 문단 `proofread_logs` 쓰기와 학습 동의 읽기는 지움). 결과 통합이 끝난 알림 '결과물'은 웹 `notifications.kind` ENUM에 웹이 더해야 운영 DB에 저장됩니다 — 웹 스키마 변경 뒤 새 워커를 띄웁니다.
 - **실행 로그 12개월 처리**(`flow/retention.py`, 2026-10-05): 워커가 하루 한 번(여러 대 중 한 대만 — 작업 상태 표 `orch_jobs`), 마지막 활동이 12개월보다 오래된 실행 건의 기록(실행 · 호출 기록 등 여섯 가지)과 끝난 시작 요청을 **식별자 없는 통계 줄**(`orch_log_stats`, 계산은 `flow/log_stats.py`)로 옮기고 지웁니다. 살아 있는 실행 건은 실행 건 줄 · 산출물을 남겨 화면 · 이어 쓰기가 그대로이고, 완전 삭제된 실행 건(포인터 0개)은 줄까지 지웁니다. 관리자 실행 건 목록 · 운영 요약은 최근 12개월만 셉니다.
 - **탈퇴 함수** `delete_account_data(account_id)`(확장): 웹이 프로젝트마다 중단 · 완전 삭제를 마친 뒤 부르면, 그 계정의 실행 건 · 산출물 · 기록 · 시작 요청을 통계 줄(까닭 '탈퇴')로 옮긴 뒤 바로 모두 지웁니다. 처리 중인 일이 있으면 아무것도 지우지 않고 `BUSY`입니다.
 - **산출물 파일은 참조형**입니다(2026-10-08). 실행 HTML · 원페이지 SVG · 인포그래픽 그림 · 차트 그림 · 실행 안내 문서 · 계획서 파일은 DB가 아니라 파일 저장소(`orchestrator/files.py` — 지금 로컬 폴더 `SBRAIN_ARTIFACT_ROOT`, 테스트 · 스텁 조립은 메모리, 운영은 S3 예정)에 두고, 계약 칸에는 파일 참조 `FileRef`(`key` · `name` · `mediaType` · `size` · `sha256`, `models/files.py`)만 싣습니다. Task는 `tools.files.put` · `get`으로만 파일을 넣고 읽고, 엔진이 저장 전에 출력 안의 참조를 저장소와 대조합니다. 허용 형식은 8종(HTML · SVG · PNG · 마크다운 · 워드 · 한글 hwp · hwpx · JSON), 파일 하나는 30MB 이하입니다. 웹은 `read_artifact_file`로 파일을 읽기만 하고, 파일 삭제는 워커가 파일 삭제 대기열(`orch_file_deletions`)로 합니다 — 완전 삭제 · 탈퇴 · 12개월 정리 때 DB를 먼저 지우고 10분(잠정) 뒤부터 지우며, 3번 실패하면 포기로 표시해 관리자 함수로 다시 겁니다.
@@ -101,7 +100,7 @@ Orchestrator는 **7개 Agent를 같은 방식으로 등록하고 호출하는 �
 | 용어 | 뜻 |
 |---|---|
 | **Task** | Agent가 수행하는 작업 하나. `T-S1`(요구사항 분석)처럼 ID로 부릅니다. LLM · 검색을 호출합니다 |
-| **규칙 단계** | LLM을 쓰지 않고 코드로 계산하는 단계 (`G-02a` 문서 평가 판정, `G-03` 보호 토큰 추출 등). `G-01` 자격요건 게이트는 공고 서버를 부르므로 `tools`를 받는 Task로 바뀌었습니다(LLM은 쓰지 않음) |
+| **규칙 단계** | LLM을 쓰지 않고 코드로 계산하는 단계 (`G-02a` 문서 평가 판정, `G-04` 실행 안내 문서 등). `G-01` 자격요건 게이트는 공고 서버를 부르므로 `tools`를 받는 Task로 바뀌었습니다(LLM은 쓰지 않음) |
 | **공고 서버** | 공고팀의 HTTP 서버. 공고 추천 · 수집 상태 · 공고 상세 · 자격 판정을 줍니다. 워커만 부릅니다 |
 | **실제 모드 · 스텁 모드** | 워커에 `SBRAIN_NOTICE_API_URL`이 있을 때 · 없을 때. 실제 모드면 T-C2 · G-01이 공고 서버를 부르고, 스텁 모드면 Orchestrator 안의 스텁 공고로 같은 흐름을 돕니다 |
 | **합치기** | 앞 단계 결과들을 하나로 묶는 규칙 단계 (`M-1` ~ `M-4`). 기준 문서에 ID가 없어 구현용 ID를 붙였습니다 |
@@ -117,7 +116,7 @@ Orchestrator는 **7개 Agent를 같은 방식으로 등록하고 호출하는 �
 | **잠정** | 기준 문서가 값을 정하지 않아 임시로 둔 값. 코드 주석과 문서에 `(잠정)`으로 표시합니다 |
 | **확장** | 기준 문서에 없는 필드. 코드에서 `ext()`로 선언합니다 |
 
-**단계 ID 읽는 법:** `T-C*` 조율 · `T-S*` 전략 · `T-W*` 작성 · `T-B*` 구현 · `T-V1` 검증-1 · `T-V2` 검증-2 · `T-P*` 검수 · `G-*` 규칙 단계 · `M-*` 합치기 · `R-8` 첨부 문서 텍스트 추출(규칙 모듈)
+**단계 ID 읽는 법:** `T-C*` 조율 · `T-S*` 전략 · `T-W*` 작성 · `T-B*` 구현 · `T-V1` 검증-1 · `T-V2` 검증-2 · `T-P*` 검수 · `G-*` 규칙 단계 · `M-*` 합치기 · `R-8` 첨부 문서 텍스트 추출(규칙 모듈). 검수(`G-03` · `T-P*` · `M-4`)와 `R-8`은 흐름 밖입니다(등록부 줄만 남음)
 
 **주석의 출처 표기:** 코드 주석의 "시트 N"은 기준 문서(기능정의서)의 시트 번호, "기획서 N-M"은 기획서의 절 번호입니다.
 
@@ -197,12 +196,12 @@ copy .env.example .env     # macOS / Linux: cp .env.example .env
 ```powershell
 docker compose -f docker/mysql-test.yml up -d --wait     # mysql:8.0(공유 DB와 같은 8.0 계열), 127.0.0.1:3307, 데이터는 메모리에만
 # .env:  SBRAIN_TEST_MYSQL_URL=mysql+pymysql://root:sbrain-test@127.0.0.1:3307/sbrain_test?charset=utf8mb4
-python -m pytest                                          # 건너뜀 없이 전체 (2026-10-13 기준 2448건)
+python -m pytest                                          # 건너뜀 없이 전체 (2026-10-15 기준 2410건)
 docker compose -f docker/mysql-test.yml down              # 끄기
 ```
 
 - 테스트가 그 DB의 테이블을 모두 지우고 새로 만듭니다. 그래서 **로컬 주소이고 DB 이름에 `test`가 들어간 URL만** 받습니다. 공유 DB 주소를 넣지 않습니다.
-- 준비 순서: 테스트용 최소 `notices` → 웹 스키마(`app_schema.sql`, 읽기만 — 위치는 `SBRAIN_TEST_WEB_SCHEMA` 참고) → 테스트 DB에서만 `proofread_logs`를 웹팀이 바꿀 모양으로(`project_id`(NULL 허용, `projects` 삭제 때 SET NULL) · `model_version` 추가) → `sql/orchestrator_schema.sql`.
+- 준비 순서: 테스트용 최소 `notices` → 웹 스키마(`app_schema.sql`, 읽기만 — 위치는 `SBRAIN_TEST_WEB_SCHEMA` 참고) → 테스트 DB에서만 `notifications.kind` ENUM에 '결과물'을 더함(웹 스키마에 아직 없음) → `sql/orchestrator_schema.sql`. 옛 테스트 전용 `proofread_logs` 변경은 지웠습니다(Orchestrator가 쓰지 않음).
 - 표를 지우고 새로 만드는 것은 pytest 프로세스에서 처음 한 번이고, 그 뒤 MySQL 테스트는 같은 표를 함께 씁니다. 대기 시작 요청처럼 워커가 가져갈 일을 남기는 MySQL 테스트는 끝에 취소해야 뒤의 워커 테스트가 깨지지 않습니다. MySQL 테스트를 고쳤으면 그 파일과 전체를 모두 돌립니다.
 
 **워커 실행**
@@ -233,7 +232,7 @@ python -m sbrain.worker --once   # 한 바퀴만 돌고 끝낸다 (점검용)
 pip install -e <이 폴더>
 ```
 
-**Orchestrator 테이블 DDL 다시 만들기** — 테이블 정의(`sbrain/store_sql/schema.py`)를 바꾸면 `python -m sbrain.store_sql.ddl`로 `sql/orchestrator_schema.sql`을 다시 만듭니다(테스트가 둘이 같은지 확인합니다). 테이블은 13개입니다. 2026-10-02에 `orch_runs.collect_until` 컬럼이, 2026-10-05에 표 2개(`orch_log_stats` · `orch_jobs`)와 인덱스 2개(`ix_orch_runs_updated` · `ix_orch_start_requests_status_updated`)가, 2026-10-06에 `orch_executions` 이미지 토큰 칸 2개가, 2026-10-08에 파일 삭제 대기열 표 `orch_file_deletions`가 늘었습니다. 그 전 DDL을 공유 DB에 이미 적용했다면 ALTER(와 새 DDL 다시 실행)가 필요합니다(아직 적용 전이면 DDL 파일만 쓰면 됩니다). 이 변경 전에 만든 개발 · 시연 DB는 시각이 로컬 시각으로 들어 있어(새 코드는 UTC로 읽음) `orch_` 표를 다시 만드는 편이 안전합니다. 2026-10-08에 산출물의 옛 파일 칸(원문 글자 · 경로)을 지웠으므로 그 전에 만든 실행 건은 새 코드가 읽지 못합니다 — 개발 · 시연 DB의 `orch_` 표를 다시 만듭니다.
+**Orchestrator 테이블 DDL 다시 만들기** — 테이블 정의(`sbrain/store_sql/schema.py`)를 바꾸면 `python -m sbrain.store_sql.ddl`로 `sql/orchestrator_schema.sql`을 다시 만듭니다(테스트가 둘이 같은지 확인합니다). 테이블은 13개입니다. 2026-10-02에 `orch_runs.collect_until` 컬럼이, 2026-10-05에 표 2개(`orch_log_stats` · `orch_jobs`)와 인덱스 2개(`ix_orch_runs_updated` · `ix_orch_start_requests_status_updated`)가, 2026-10-06에 `orch_executions` 이미지 토큰 칸 2개가, 2026-10-08에 파일 삭제 대기열 표 `orch_file_deletions`가 늘었습니다. 그 전 DDL을 공유 DB에 이미 적용했다면 ALTER(와 새 DDL 다시 실행)가 필요합니다(아직 적용 전이면 DDL 파일만 쓰면 됩니다). 이 변경 전에 만든 개발 · 시연 DB는 시각이 로컬 시각으로 들어 있어(새 코드는 UTC로 읽음) `orch_` 표를 다시 만드는 편이 안전합니다. 2026-10-08에 산출물의 옛 파일 칸(원문 글자 · 경로)을 지웠으므로 그 전에 만든 실행 건은 새 코드가 읽지 못합니다 — 개발 · 시연 DB의 `orch_` 표를 다시 만듭니다. 2026-10-15에는 DDL 머리 주석만 바뀌었고(구조 그대로), 단계 '표현검수'를 지워 그 단계에 머문 옛 실행 건을 읽지 못하므로 개발 · 시연 DB는 `orch_` 표를 다시 만듭니다.
 
 ---
 
@@ -268,7 +267,7 @@ orch.decide(run_id, 6, "진행")             # 화면 6: 문서 평가 → 진�
 orch.advance(run_id)                       #   → 프로토타입 제작 ~ 검증
 orch.decide(run_id, 8, "진행")             # 화면 8: 산출물 확인 → 진행
 orch.decide(run_id, 9, "진행")             # 화면 9: 종합 평가 → 진행
-orch.advance(run_id)                       #   → 표현 검수 ~ 결과물
+orch.advance(run_id)                       #   → 결과 통합(T-C4) → 결과물
 
 v = orch.view(run_id)
 print(v.step, v.progress, v.screen_status)
@@ -279,14 +278,14 @@ print([r.task_id for r in app.store.executions(run_id)])
 
 ```text
 결과물 완료 완료
-['T-C1', 'T-C2', 'G-01', 'T-C3', 'T-S1', 'T-S2', 'T-W1', 'T-W2', 'T-W3', 'M-1', 'T-V1', 'G-02a', 'T-B1', 'T-B2', 'G-04', 'M-3', 'T-V2', 'G-02b', 'G-03', 'T-P1', 'T-P2', 'M-4', 'T-C4']
+['T-C1', 'T-C2', 'G-01', 'T-C3', 'T-S1', 'T-S2', 'T-W1', 'T-W2', 'T-W3', 'M-1', 'T-V1', 'G-02a', 'T-B1', 'T-B2', 'G-04', 'M-3', 'T-V2', 'G-02b', 'T-C4']
 ```
 
 **보는 법:** 명령(`select_announcement`, `start_writing`, `decide` 등)은 상태를 확인하고 **할 일을 대기열에 넣기만** 합니다. 실제 실행은 `advance`가 다음 대기 지점까지 합니다. 단, `start_run`은 사전 단계를 바로 실행하고, 화면 8의 '진행'은 실행할 단계 없이 화면 9로 넘어가므로 `advance`가 필요 없습니다. 재작성을 요청하면 **모으는 시간(2초, 잠정)** 이 지나야 `advance`가 단계를 돕니다(그 전에는 아무것도 하지 않음).
 
 **운영에서는** 위의 `start_run` · `advance`를 웹이 부르지 않습니다. 웹은 `request_start`(시작 요청)와 `*_for_project` 명령 · 조회만 부르고, 사전 단계 · `advance` · 재개는 워커가 합니다(9절). `start_run`은 두 조각을 차례로 부르는 테스트 · 시연용 동기 경로이고, 웹 조립(`build_web`)에서 부르면 `WEB_NOT_ALLOWED`입니다.
 
-**공유 MySQL과 실제 조율 Task로 조립하기:** `build_app(db_url)`(워커용)이 `SqlStore` · 웹 DB 입력 공급처 · DB 설정 입력 · OpenAI 호출처 · 조율 T-C1 · T-C3 실구현 · 지시문 다시 쓰기를 묶습니다. 다시 쓰기 호출은 대상 Task가 스텁이어도 실제 OpenAI로 갑니다. 공고 서버 주소가 있으면(`notice_api_url` 인자, 주지 않으면 `SBRAIN_NOTICE_API_URL`) T-C2 · G-01도 공고 서버 연결로 바꿉니다. 빈 문자열을 넘기면 환경 변수와 관계없이 스텁입니다. 시험할 때는 `notice_transport`로 가짜 전송을 함께 넘겨 네트워크에 나가지 않게 합니다. 전략 · 작성 · 검증-1(T-S1 ~ T-V1)과 구현 · 검증-2(T-B1 · T-B2 · T-V2)는 담당자 코드 실구현으로 끼우고 실제 OpenAI로 보냅니다 — T-B2 아이콘 이미지 호출도 실제 이미지 호출처로 갑니다. 시험할 때는 `llm`과 `image`(가짜 이미지)를 함께 넘겨 네트워크에 나가지 않게 합니다. 조율 규칙 단계는 실구현이고 LLM을 부르지 않습니다. 나머지 Agent(검수)와 T-C4는 스텁이고, 스텁 Task는 실제 OpenAI를 부르지 않습니다.
+**공유 MySQL과 실제 조율 Task로 조립하기:** `build_app(db_url)`(워커용)이 `SqlStore` · 웹 DB 입력 공급처 · DB 설정 입력 · OpenAI 호출처 · 조율 T-C1 · T-C3 실구현 · 지시문 다시 쓰기를 묶습니다. 다시 쓰기 호출은 대상 Task가 스텁이어도 실제 OpenAI로 갑니다. 공고 서버 주소가 있으면(`notice_api_url` 인자, 주지 않으면 `SBRAIN_NOTICE_API_URL`) T-C2 · G-01도 공고 서버 연결로 바꿉니다. 빈 문자열을 넘기면 환경 변수와 관계없이 스텁입니다. 시험할 때는 `notice_transport`로 가짜 전송을 함께 넘겨 네트워크에 나가지 않게 합니다. 전략 · 작성 · 검증-1(T-S1 ~ T-V1)과 구현 · 검증-2(T-B1 · T-B2 · T-V2)는 담당자 코드 실구현으로 끼우고 실제 OpenAI로 보냅니다 — T-B2 아이콘 이미지 호출도 실제 이미지 호출처로 갑니다. 시험할 때는 `llm`과 `image`(가짜 이미지)를 함께 넘겨 네트워크에 나가지 않게 합니다. 조율 규칙 단계와 T-C4는 실구현이고 LLM을 부르지 않습니다. 검수 Agent는 스텁이지만 흐름 밖이라 돌지 않고, 스텁 Task는 실제 OpenAI를 부르지 않습니다.
 
 **공고 선택 뒤 보는 법:** `select_announcement`는 고른 ID만 남깁니다. 선택 공고(`outputs.selectedAnnouncement`) · `view().announcement_id` · 자격 결과는 `advance`로 G-01이 돈 뒤에 함께 바뀝니다. 사업자(`개인사업자` · `법인`)인데 설립일(`founded_at`)이 없으면 G-01이 E-G1-MISSING으로 공고 선택에 돌려보내므로, 위 예처럼 설립일을 넣어야 작성 시작으로 넘어갑니다.
 
@@ -298,7 +297,7 @@ print([r.task_id for r in app.store.executions(run_id)])
 
 ```mermaid
 flowchart TD
-  PRE["PRE · 사전 단계<br/>(첨부 있으면 R-8) → T-C1 요구사항 해석 → T-C2 공고 매칭"]
+  PRE["PRE · 사전 단계<br/>T-C1 요구사항 해석 → T-C2 공고 매칭"]
   PRE -- "후보 1건 이상 → 실행 건 생성" --> S3(("화면 3<br/>공고 선택"))
   S3 -- "추가 조회 (1회)" --> MORE["MORE · T-C2 추가 10건"] --> S3
   S3 -- 공고 선택 --> GATE["GATE · G-01 자격요건 확인"]
@@ -312,27 +311,27 @@ flowchart TD
   S8 -- 재작성 --> S8
   S8 -- 진행 --> S9(("화면 9<br/>종합 평가"))
   S9 -- 재작성 --> S9
-  S9 -- "진행 (되돌릴 수 없음)" --> REVIEW["REVIEW · 보호 토큰 → 형식 검수 → 윤문 → 합치기 → 결과 통합"]
-  REVIEW --> END(["화면 11 · 결과물"])
+  S9 -- "진행 (되돌릴 수 없음)" --> RESULT["RESULT · 결과 통합 (결과물 · 실행)"]
+  RESULT --> END(["화면 11 · 결과물"])
 ```
 
 | 구간 | 실행하는 단계 (순서대로) | 끝나면 |
 |---|---|---|
-| PRE | `R-8`(첨부가 있을 때) → `T-C1` → `T-C2` | 후보가 있으면 실행 건을 만들고 화면 3 |
+| PRE | `T-C1` → `T-C2`(첨부가 있어도 `R-8`은 넣지 않음) | 후보가 있으면 실행 건을 만들고 화면 3 |
 | MORE | `T-C2` (추가 10건, 1회, 최대 20건). 첫 조회와 겹친 공고는 빼고 첫 조회 카드를 새 내용으로 바꿈(내용 바뀜 표시) | 화면 3 (실패해도 화면 3 — 안내와 함께 기회를 돌려줌) |
 | GATE | `G-01` (공고 상세 + 자격 판정, 한 번에 저장) | 통과면 화면 5, 불통과 · 입력 누락이면 화면 3. G-01이 실패하면 고르기 전 화면(3 또는 5) |
 | WRITE | `T-C3` → `T-S1` → `T-S2` → `T-W1` → `T-W2` → `T-W3` → `M-1` → `T-V1` → [검증-1 재수행: fail 항목만 `T-W1` · `T-W2` → `M-1` → `T-V1`, 끝내 fail인 표는 `T-W3`(대체) → `M-1`] → `G-02a` | 화면 6 |
 | PROTO | `T-B1`\* → `T-B2` → `M-2`\*\* → `G-04` → `M-3` → `T-V2` → `G-02b` | 화면 8 |
-| REVIEW | `G-03` → `T-P1` → `T-P2` → `M-4` → `T-C4` | 화면 11 (완료) |
+| RESULT | `T-C4` — 도는 동안 결과물 · 실행(잠정), 실패하면 결과물 · 실패 | 화면 11 (완료) + 알림 '결과물'(확장) |
 | REWORK6 · 8 · 9 | 사용자가 고른 묶음에 따라 다시 돌릴 단계(같은 화면에서 2초 안에 들어온 묶음 요청의 합집합). 문서층 묶음은 그 묶음 태그의 계획서 항목만 종류별 Task(본문 `T-W1` · 그림 `T-W2` · 표 `T-W3`)로 다시 만들고, `T-V1` 뒤에 검증-1 재수행이 끼워진다 | 요청한 화면 |
 
 \* 카테고리가 '원페이지'면 생략 &nbsp; \*\* '원페이지'일 때만
 
-전체 단계 목록:
+전체 단계 목록(등록부 25단계 — 그중 R-8 · G-03 · T-P1 · T-P2 · M-4는 흐름 밖, `flow/catalog.py` `OUT_OF_FLOW_STEPS`):
 
 | ID | 이름 | 담당 Agent | 종류 |
 |---|---|---|---|
-| R-8 | 첨부 문서 텍스트 추출 | 조율 | 규칙 |
+| R-8 | 첨부 문서 텍스트 추출 (흐름 밖) | 조율 | 규칙 |
 | T-C1 | 요구사항 해석 | 조율 | Task |
 | T-C2 | 공고 매칭 | 조율 | Task (공고 서버 · LLM 없음) |
 | G-01 | 자격요건 게이트 | 조율 | Task (공고 서버 · LLM 없음, 고정 Task 14개에 세지 않음) |
@@ -352,10 +351,10 @@ flowchart TD
 | M-3 | 합치기③ readmeFile을 Prototype에 기입 | 조율 | 합치기 |
 | T-V2 | 프로토타입 검증 | 검증-2 | Task |
 | G-02b | 종합 평가 판정 | 조율 | 규칙 |
-| G-03 | 보호 토큰 추출 | 검수 | 규칙 |
-| T-P1 | 사업계획서 문장 형식 검수 | 검수 | Task |
-| T-P2 | 한국어 문장 윤문 | 검수 | Task |
-| M-4 | 합치기④ 검수 결과 반영 · 검수 로그 집계 | 조율 | 합치기 |
+| G-03 | 보호 토큰 추출 (흐름 밖) | 검수 | 규칙 |
+| T-P1 | 사업계획서 문장 형식 검수 (흐름 밖) | 검수 | Task |
+| T-P2 | 한국어 문장 윤문 (흐름 밖) | 검수 | Task |
+| M-4 | 합치기④ 검수 결과 반영 · 검수 로그 집계 (흐름 밖) | 조율 | 합치기 |
 | T-C4 | 결과 통합 · 전달 | 조율 | Task |
 
 단계별 입력 · 출력, 제한 시간, 실패 정책은 `docs/Agent_연동_규격_초안.md` 6 · 7절에 표로 정리되어 있습니다.
@@ -391,7 +390,7 @@ agent-orchestration/
 │   │   ├── run.py             #   실행 건(Run), 실행 상태, 알림, 재작성 사이클 · 마지막 재작성 결과
 │   │   └── scoring.py         #   점수 · 채점 결과
 │   ├── contracts/
-│   │   └── tasks.py           # Task별 입력 · 출력 규격 (기준 문서 시트 3), T-P2 문장 결과 · 시도 기록
+│   │   └── tasks.py           # Task별 입력 · 출력 규격 (기준 문서 시트 3 — 흐름 밖 단계 것도 남김), T-P2 문장 결과 · 시도 기록 타입
 │   ├── intake/                # 사전 정보 입력 연동 — 웹 DB → PreInput
 │   │   ├── record.py          #   웹 DB 행 그릇 (잠정 규격)
 │   │   ├── mapping.py         #   행 → PreInput 변환, 필수 항목 재확인 (E-C1-REQUIRED)
@@ -413,9 +412,9 @@ agent-orchestration/
 │   │   ├── trace.py           #   추적 기록 타입 (실행 기록 · 호출 로그 · 피드백 연결 등), 호출 기록 목적 · 항목 칸 200자 자르기
 │   │   └── errors.py          #   오류 코드(시트 6)와 예외
 │   ├── flow/                  # S-Brain 고유 규칙
-│   │   ├── catalog.py         #   S-Brain의 Task 등록부 (25개 단계)
-│   │   ├── sbrain_flow.py     #   구간 · 대기 지점 · 재작성 경로 · 알림, 재작성 · 재수행 지시문(다시 쓰기 · 저장), T-P2 병렬 실행
-│   │   ├── instruction.py     #   지시문 세 부분(틀 · 안내 · 참조 자료) 나누기 · 안내 바꾸기 · 문제 내용 덧붙이기
+│   │   ├── catalog.py         #   S-Brain의 Task 등록부 (25개 단계 — 흐름 밖 다섯 OUT_OF_FLOW_STEPS)
+│   │   ├── sbrain_flow.py     #   구간 · 대기 지점 · 재작성 경로 · 알림, 재작성 · 재수행 지시문(다시 쓰기 · 저장), 결과물 구간 RESULT
+│   │   ├── instruction.py     #   지시문 두 부분(틀 · 안내) 나누기 · 안내 바꾸기 · 문제 내용 덧붙이기
 │   │   ├── rework_map.py      #   재작성 · 재수행 대응표 (시트 7), 재작성 묶음 이름, 계획서 항목 → (웹 태그, 묶음) 대응 표 (한 곳, 잠정)
 │   │   ├── service.py         #   명령 창구 SBrainOrchestrator — 시작 요청 · 명령 · 재작성 요청 · 진행 상태 · 중단 · 완전 삭제 · 탈퇴
 │   │   ├── reads.py           #   화면 조회(모양 초안) · 지금까지 결과 · 재작성 결과 · 파일 읽기 · 관리자 조회(최근 12개월 범위, 파일 삭제 대기열)
@@ -427,7 +426,7 @@ agent-orchestration/
 │   │   ├── ddl.py             #   MySQL DDL 파일 생성 (python -m sbrain.store_sql.ddl)
 │   │   ├── db.py              #   접속 엔진 (MySQL · SQLite)
 │   │   ├── store.py           #   SqlStore — 저장소 인터페이스 구현
-│   │   ├── web_tables.py      #   Orchestrator가 읽고 쓰는 웹 테이블 (알림 · 실패 알림 · 검수 회수 문단 INSERT, 학습 동의 · 설정 읽기)
+│   │   ├── web_tables.py      #   Orchestrator가 읽고 쓰는 웹 테이블 (알림 · 실패 알림 INSERT, 설정 읽기 — 선택 컬럼 포함)
 │   │   └── settings_source.py #   DbSettingsProvider — verification_policies를 설정 입력으로
 │   └── agents/
 │       ├── supervisor/        # 조율 Agent 구현 — T-C1 (tc1.py) · T-C3 (tc3.py) · 작업 계획 부품 (plan.py) · 지시문 다시 쓰기 (rewrite.py), 규칙 단계 판정 G-02a · G-02b (judge.py) · 안내 문서 G-04 (readme.py) · 합치기 M-1 ~ M-4 (merge.py), 결과 통합 T-C4 (tc4.py — LLM 없음), bind_supervisor() · bind_rules() · bind_plain_tasks()
@@ -530,7 +529,7 @@ flowchart LR
 
 기록 조회는 `app.store.executions(run_id)`, `app.store.call_logs(run_id)` 등 `Store`의 조회 함수로 합니다.
 
-이 여섯 기록은 실행 건의 마지막 활동 12개월 뒤(워커의 12개월 처리)나 탈퇴 때 식별자 없는 통계 줄(`orch_log_stats`)로 옮기고 지웁니다. 화면 · 시도 번호가 기록 없이도 같도록 실행 건에 카테고리 · 화면 10 비교 기준 버전 · Task별 마지막 시도 번호를 따로 적어 둡니다. 확인용으로 `app.store.log_stats()`가 통계 줄을 돌려줍니다(웹 함수 아님).
+이 여섯 기록은 실행 건의 마지막 활동 12개월 뒤(워커의 12개월 처리)나 탈퇴 때 식별자 없는 통계 줄(`orch_log_stats`)로 옮기고 지웁니다. 화면 · 시도 번호가 기록 없이도 같도록 실행 건에 카테고리 · Task별 마지막 시도 번호를 따로 적어 둡니다(화면 10 비교 기준 버전 칸은 2026-10-15 뒤로 비어 있습니다). 확인용으로 `app.store.log_stats()`가 통계 줄을 돌려줍니다(웹 함수 아님).
 
 ---
 
@@ -541,7 +540,7 @@ flowchart LR
 ### 8.1 지켜야 할 규칙
 
 - **함수 모양:** Task는 `def run(inp: XxxIn, tools: Tools) -> XxxOut`, 규칙 단계 · 합치기는 `def run(inp: XxxIn) -> XxxOut`입니다(파일을 만드는 규칙 단계 `G-04`만 `def run(inp: G04In, files: FileTool) -> G04Out`). 입력 · 출력 타입은 `contracts/tasks.py`에 Task마다 있습니다.
-- **동기 함수**로 만듭니다. 병렬 처리가 필요한 곳(`T-P2`)은 Orchestrator가 합니다.
+- **동기 함수**로 만듭니다. 병렬 처리는 Orchestrator가 하고, Task 안 동시 호출은 정해진 Task(T-C1 · T-C3 · T-W1 · T-W2 · T-V1 · T-V2)만 합니다.
 - **LLM · 검색 호출은 반드시 `tools`로 합니다.** HTTP 클라이언트나 SDK를 Task 안에서 직접 부르지 않습니다. `tools`를 거치지 않으면 재시도 · 제한 시간 · 호출 기록 · 재개가 동작하지 않습니다.
   - `tools.llm(messages, schema=..., parse=..., purpose="...")` — LLM 호출. `schema`(pydantic 모델)를 주면 응답 JSON을 검사해 그 타입으로 돌려줍니다.
   - `tools.search(purpose, fn)` — 임베딩 검색 · BM25처럼 LLM이 아닌 호출. `fn(timeout_sec)` 형태로 부릅니다.
@@ -638,7 +637,7 @@ s.tasks["T-S1"].purpose_models["F06"] = "gpt-6-luna"                            
 app = build_stub_app(settings=s)   # 워커 · 웹 조립(build_app · build_web)도 settings= 를 받습니다
 ```
 
-`temperature` · `reasoning_effort`를 `None`으로 두면 호출에 싣지 않습니다(모델 기본값). T-V1 온도 0 · T-P2 온도 0.2 이하는 기준 문서 규칙이라 설정값보다 앞섭니다.
+`temperature` · `reasoning_effort`를 `None`으로 두면 호출에 싣지 않습니다(모델 기본값). T-V1 온도 0 · T-P2 온도 0.2 이하(T-P2는 흐름 밖)는 기준 문서 규칙이라 설정값보다 앞섭니다.
 
 ### 8.4 실제 LLM 호출처 연결
 
@@ -697,8 +696,8 @@ bind_notice(app.registry, NoticeClient("http://example.invalid:8000", transport=
 | `project_views(project_ids)` | 목록 | 여러 프로젝트의 `view_project`를 한 번에 |
 | `missing_projects(project_ids)` | — | 확장(2026-10-08) — 웹 일괄 작업용. 넘긴 프로젝트 중 실행 건(또는 끝나지 않은 시작 요청)이 없는 것을 받은 값 그대로 · 넘긴 순서로(같은 정수 값은 처음 것 하나). 읽기만, 주인 확인 없음. 숫자가 아닌 값이면 `ValueError`. 웹은 알림 정리(`notifications.project_id`)에 쓴다 |
 | `wait_project(project_id, timeout_sec=60)` | 3 · 4 | 진행이 멈출 때(대기 지점 · 재개대기 · 끝남)까지 기다린 뒤 `view_project`. 제한 시간을 넘기면 그때 상태 |
-| `screen(project_id, n)` | 3 · 4 · 6 · 8 · 9 · 10 · 11 | 화면별 내용(모양 초안, `flow/reads.py`). 대기 지점이 아니면 `SCREEN_NOT_READY`. 화면 10은 문장별 시도 기록 포함 |
-| `outputs(project_id)` | 이어하기 · 9 · 10 · 11 | 지금까지 만든 결과(현재 버전)와 묶음별 남은 기회. 실패 · 중단이면 `RUN_NOT_VIEWABLE` |
+| `screen(project_id, n)` | 3 · 4 · 6 · 8 · 9 · 11 | 화면별 내용(모양 초안, `flow/reads.py`). 대기 지점이 아니면 `SCREEN_NOT_READY`. 화면 10은 2026-10-15에 없앴다(`INVALID_SCREEN`) |
+| `outputs(project_id)` | 이어하기 · 9 · 11 | 지금까지 만든 결과(현재 버전)와 묶음별 남은 기회. 검수 칸(`formatFindings` · `sentenceResults` · `proofreadLog`)은 늘 빈 값. 실패 · 중단이면 `RUN_NOT_VIEWABLE` |
 | `more_candidates_for_project` · `select_announcement_for_project` · `start_writing_for_project` · `decide_for_project` | 3 · 5 · 6 · 8 · 9 | 아래 run_id 명령과 같음. 공고 다시 고르기 · 추가 조회는 자격 통과 뒤에도 작성 시작 전이면 받는다 |
 | `request_rework_for_project(project_id, bundle)` | 6 · 8 · 9 | 재작성 묶음 요청(묶음마다 한 번). 같은 화면에서 2초 안의 요청은 재작성 한 번으로 합친다. 접수만 하고 돌아온다(`ReworkAccepted`) |
 | `rework_result(project_id)` | 9 | 마지막 재작성 한 건의 결과(진행중 · 완료 · 실패, 전후 점수 · 계획서 섹션 · 파일 참조 전후 `beforeFile` · `afterFile`) |
@@ -707,7 +706,7 @@ bind_notice(app.registry, NoticeClient("http://example.invalid:8000", transport=
 | `delete_project_data(project_id)` | — | 완전 삭제 — 산출물 · 남은 입력 사본 삭제, 실행 로그 유지(마지막 활동 12개월 뒤 통계로 옮기고 지움). 산출물 파일은 같은 트랜잭션에 파일 삭제 대기열 줄을 넣어 워커가 나중에 지운다. 워커가 단계를 도는 중이면 `BUSY` |
 | `delete_account_data(account_id)` | — | 탈퇴(확장) — 프로젝트마다 중단 · 완전 삭제를 마친 뒤. 그 계정의 실행 건 · 산출물 · 기록 · 시작 요청을 통계 줄로 옮긴 뒤 모두 지움 → `AccountDeleteResult`. 처리 중인 일 · 점유 겹침 · 계정 잠금 대기 초과면 `BUSY` |
 | `admin_executions(...)` · `admin_calls(execution_id)` | 관리자 | 여러 프로젝트의 실행 기록 · 호출 기록 (메타데이터 · 토큰만, 남은 기록만) |
-| `admin_runs(...)` · `admin_score_history(project_id)` · `admin_summary()` · `admin_agent_tasks()` | 관리자 | 실행 건 목록 · 층별 점수 이력 · 운영 요약 · Agent별 Task (메타데이터 · 점수 · 개수만). 실행 건 목록 · 운영 요약은 최근 12개월 실행 건만 |
+| `admin_runs(...)` · `admin_score_history(project_id)` · `admin_summary()` · `admin_agent_tasks()` | 관리자 | 실행 건 목록 · 층별 점수 이력 · 운영 요약 · Agent별 Task (메타데이터 · 점수 · 개수만). 실행 건 목록 · 운영 요약은 최근 12개월 실행 건만. 운영 요약의 검수 칸은 없고, Agent별 Task는 흐름 밖 단계를 빼고 센다(6줄) |
 | `admin_file_deletions(status=None, limit=50, offset=0)` · `admin_retry_file_deletion(deletion_id, admin_id)` | 관리자 | 확장(2026-10-08) — 파일 삭제 대기열 목록(대기 · 포기, 넣은 시각 최근 순)과 포기한 줄 다시 시도(누른 관리자 ID · 시각 · 횟수를 줄에 남김). 없는 줄 `FILE_DELETION_NOT_FOUND`, 대기 줄 `INVALID_STATE`. 키 · 파일 이름 · 계정은 싣지 않는다 |
 
 **워커 · 내부 · 테스트용**
@@ -719,16 +718,16 @@ bind_notice(app.registry, NoticeClient("http://example.invalid:8000", transport=
 | `more_candidates(run_id)` | 3 | 공고 추가 조회 (1회, 최대 20건) |
 | `select_announcement(run_id, announcement_id)` | 3 | 공고 선택 → 자격요건 확인 대기열 |
 | `start_writing(run_id)` | 5 | 계획서 작성 대기열 |
-| `decide(run_id, screen, action, selected_orders, confirmed)` | 6 · 8 · 9 | `"진행"` 또는 `"재작성"`. 화면 9에서 점수 미달 상태로 진행하면 먼저 확인 요청(`ConfirmationNeeded`)을 돌려줌. `"재작성"`은 산출물층 지시만 받아 묶음 요청으로 바꾼다(문서층 지시는 `INVALID_ORDER`) |
+| `decide(run_id, screen, action, selected_orders, confirmed)` | 6 · 8 · 9 | `"진행"` 또는 `"재작성"`. 화면 9에서 점수 미달 상태로 진행하면 먼저 확인 요청(`ConfirmationNeeded` '결과 통합 진입 확인')을 돌려줌. 화면 9 '진행' 뒤에는 결과 통합(T-C4) 하나가 돈다. `"재작성"`은 산출물층 지시만 받아 묶음 요청으로 바꾼다(문서층 지시는 `INVALID_ORDER`) |
 | `abort(run_id, confirmed)` | — | 확인을 받은 뒤 실행 중단 |
 | `advance(run_id)` | — | 다음 대기 지점까지 실행 |
 | `tick(now)` | — | 재개 시각이 된 실행을 모두 깨움 (테스트 · 시연용 — 워커는 `Engine.resume(run_id)`로 한 건씩) |
 | `view(run_id)` | — | 화면 표시용 상태: 단계 · 진행 상태 · 화면 상태 · 복귀 화면 · 진행률(%) · 현재 작업 한 줄 · 안내 · 알림 |
 
 - 현재 상태에서 받을 수 없는 명령이면 `CommandError`가 납니다 (예: 대기 지점이 아닐 때, 이미 쓴 재작성 기회를 고를 때).
-- 실행 상태는 `step`(공고선택 … 결과물)과 `progress`(실행 · 재개대기 · 사용자대기 · 실패 · 완료 · 중단) 두 축으로 관리합니다. 화면 상태(진행 중 · 확인 필요 · 문제 발생 · 완료 · 중단됨)는 `progress`에서 계산합니다.
+- 실행 상태는 `step`(공고선택 … 결과물, 8개 — '표현검수'는 2026-10-15에 지움)과 `progress`(실행 · 재개대기 · 사용자대기 · 실패 · 완료 · 중단) 두 축으로 관리합니다. 결과 통합이 도는 동안은 결과물 · 실행(잠정)입니다. 화면 상태(진행 중 · 확인 필요 · 문제 발생 · 완료 · 중단됨)는 `progress`에서 계산합니다.
 - **누가 `advance` · `tick`을 부를지:** 워커 프로세스가 공유 MySQL에서 할 일을 가져가(`SKIP LOCKED` + 점유) 처리합니다. 웹은 명령 · 조회 함수만 부릅니다.
-- **웹 테이블 쓰기**는 알림(`notifications`) · 실패 알림(`generation_failure_alerts`) · 검수 회수 문단(`proofread_logs`, 학습 동의 계정의 반려된 T-P2 시도만) INSERT 셋뿐이고, `SqlStore`가 단계 저장과 같은 트랜잭션으로 씁니다. 웹 `projects`(옛 요약 컬럼 `status` · `stage` · `progress_percent` · `notice_id` · `failure_reason` 포함)에는 쓰지 않습니다.
+- **웹 테이블 쓰기**는 알림(`notifications`) · 실패 알림(`generation_failure_alerts`) INSERT 둘뿐이고(검수 회수 문단 `proofread_logs` 쓰기는 2026-10-15에 지움 — 알림 종류 '결과물'은 웹이 ENUM에 더해야 저장됨), `SqlStore`가 단계 저장과 같은 트랜잭션으로 씁니다. 웹 `projects`(옛 요약 컬럼 `status` · `stage` · `progress_percent` · `notice_id` · `failure_reason` 포함)에는 쓰지 않습니다.
 - **공고 선택 · 추가 조회:** 공고 선택은 고른 ID만 남기고 G-01을 넣습니다. 후보에 없으면 `INVALID_ANNOUNCEMENT`, 자격 불통과로 막힌 공고면 `ANNOUNCEMENT_BLOCKED`(화면 3 `blockedAnnouncementIds`)입니다. 선택 공고 · `announcement_id`는 G-01이 성공한 뒤 바뀌므로 웹은 `wait_project`로 기다린 뒤 화면 4를 엽니다. 추가 조회는 첫 조회와 겹친 공고를 `moreCandidates`에서 빼고 첫 조회 카드를 갱신하며(`contentChanged`), 실패하면 기회를 돌려줍니다.
 - **재작성 요청 모으기:** 같은 실행 건 · 같은 화면에서 첫 요청부터 2초(잠정) 안에 들어온 묶음 요청은 재작성 한 번(합집합, 기준 문서 순서)으로 합칩니다. 그동안 워커는 그 실행 건을 가져가지 않습니다. 시간이 지난 뒤 · 재작성 중의 요청은 `INVALID_STATE`, 남은 기회가 없으면 `E-G2-LIMIT`입니다. 미달이 아닌 묶음도 받습니다(확장).
 - 사용자용 결과(`view_project` · `outputs` · `rework_result` · 화면)에는 관리자용 실패 사유가 없습니다. 실패 사유는 관리자 함수(`admin_runs`)와 `generation_failure_alerts`에만 있습니다.
@@ -749,10 +748,10 @@ bind_notice(app.registry, NoticeClient("http://example.invalid:8000", transport=
 | 검증-1 재수행 횟수 (`redo.verify1_redo_count`) | 항목마다 · 사이클마다 1회 | 웹 관리자 칸 없이 코드 기본값(잠정) |
 | 재작성 횟수 | 묶음마다 1회 | 세 화면(6 · 8 · 9)이 같은 횟수를 씀 |
 | 기준 점수 · 층별 배점 | 80점 · 문서층 70 · 산출물층 30(코드 점검 15 + 계획서 대조 15) | 산출물층 점수는 그 실행 건 배점으로 환산(`flow/score_scale.py`). 배점 0은 0 그대로 |
-| 검수 동시 처리 수 | 4 | 잠정 |
-| 검수 실패 비율 기준 | 30% (모든 문장을 본 뒤 판단) | 잠정 |
-| Task별 제한 시간 (호출 한 번) | 대부분 120초, `T-W1` · `T-B1` · `T-B2` 300초, `T-C2` · `G-01` 30초(공고 서버 호출 한 건마다), `T-P2` 60초, `지시문 다시 쓰기` 120초, 이미지 `T-B2.image` 120초 | 잠정 |
-| Task별 모델 · 호출처 · 온도 · 추론 강도 · 이미지 (`Settings.tasks`) | 조율 Task · `지시문 다시 쓰기`는 `openai` · `gpt-6-luna` · 온도 없음, 추론 강도는 T-C1 medium(2026-10-10) · T-C3 · 지시문 다시 쓰기 low. T-B1 · T-B2 · T-V2는 `gpt-6-luna` · 추론 강도 · 온도 보내지 않음, T-B2 이미지 `gpt-image-2.5-flare` · medium · 1024x1536(구현 · 검증-2 담당 요청). T-S1 · T-S2 · T-W1 · T-W2 · T-V1은 담당자 `execution_contract.json`의 함수별 모델(T-S1 `gpt-5.6-terra` · T-S2 `gpt-6.1-sol` · T-W1 `gpt-5.6-sol` · T-W2 `gpt-6-luna` · T-V1 `gpt-5.6-terra` + `purpose_models`). 검수 `gpu-server` · '미정'. 규칙 단계 · 합치기 · T-C2 · G-01 · T-W3 · T-C4는 항목 없음 | 잠정 |
+| 검수 동시 처리 수 | 4 | 잠정 — 검수가 흐름 밖이라 지금 쓰는 곳 없음 |
+| 검수 실패 비율 기준 | 30% (모든 문장을 본 뒤 판단) | 잠정 — 지금 쓰는 곳 없음 |
+| Task별 제한 시간 (호출 한 번) | 대부분 120초, `T-W1` · `T-B1` · `T-B2` 300초, `T-C2` · `G-01` 30초(공고 서버 호출 한 건마다), `T-P2` 60초(흐름 밖), `지시문 다시 쓰기` 120초, 이미지 `T-B2.image` 120초 | 잠정 |
+| Task별 모델 · 호출처 · 온도 · 추론 강도 · 이미지 (`Settings.tasks`) | 조율 Task · `지시문 다시 쓰기`는 `openai` · `gpt-6-luna` · 온도 없음, 추론 강도는 T-C1 medium(2026-10-10) · T-C3 · 지시문 다시 쓰기 low. T-B1 · T-B2 · T-V2는 `gpt-6-luna` · 추론 강도 · 온도 보내지 않음, T-B2 이미지 `gpt-image-2.5-flare` · medium · 1024x1536(구현 · 검증-2 담당 요청). T-S1 · T-S2 · T-W1 · T-W2 · T-V1은 담당자 `execution_contract.json`의 함수별 모델(T-S1 `gpt-5.6-terra` · T-S2 `gpt-6.1-sol` · T-W1 `gpt-5.6-sol` · T-W2 `gpt-6-luna` · T-V1 `gpt-5.6-terra` + `purpose_models`). 검수 `gpu-server` · '미정'(흐름 밖 — 항목만 남음). 규칙 단계 · 합치기 · T-C2 · G-01 · T-W3 · T-C4는 항목 없음 | 잠정 |
 | 동시 호출 | T-W1 · T-V1 4개, T-W2 2개 (`agents/partner_sw/common.py`), T-V2 대조 3개 · 판정 3번 (`agents/partner_bv/verification_agent/llm_judge.py`) | 확정값 — 잠정 아님 |
 | 사업비 · 일정 필수 확인 (`PLAN_TABLES_REQUIRED`) | 꺼짐 | 코드 상수, 웹 화면 배포 뒤 켬(잠정) |
 | 실행별 KIET 검색 (`SBRAIN_KIET_SEARCH`) | 꺼짐 | 워커 환경 변수, 운영 워커에서 켬. 켜면 KIET 검색 호출만 재시도 2번(`KIET_RETRIES`, 처음 포함 최대 3번) · 한 번 최대 25초 · 결과 4건 · 1,200자(잠정) |
@@ -760,9 +759,9 @@ bind_notice(app.registry, NoticeClient("http://example.invalid:8000", transport=
 
 실행 건 설정이 아닌 명령 창구 값(`flow/service.py`)도 있습니다: 재작성 요청을 모으는 시간 2초, 재작성 요청의 점유 재시도 최대 5초, `wait_project` 기본 제한 시간 60초(0.5초마다 다시 읽음) — 모두 잠정이며 관리자 설정으로 바꾸지 않습니다. 12개월 처리 값(한 번에 100건 · 다시 시작 간격 24시간 · 확인 주기 10분 · 작업 점유 = 워커 점유 120초)과 계정 잠금 대기 10초도 같은 성격의 잠정 값입니다. 파일 삭제 대기열 값(첫 시도 지연 10분 · 다시 시도 간격 10분 · 한 번에 20줄)도 잠정이고, 포기 횟수 3 · MySQL 교착 때 다시 하기 3번 · 허용 형식 8종 · 파일 하나 30MB는 정한 값이라 잠정이 아닙니다.
 
-잠정 항목 목록은 `settings.py`의 `PROVISIONAL`에 있습니다(워커 수치 · 명령 창구 값, 공고 연결의 추천 이유 문장 틀 · 모집 상태 모름 처리 · 선택 공고 자리 표시 양식 · X-C2-GONE 문구 · 공고 서버 호출 하나씩, 작업 분해의 양식 묶음 표 · 참조 조각 대응표, `retention.*` · `store.accountLockTimeoutSec`, 파일 `fileDeletion.*` · `fileRead.hashMismatch` · `artifactRoot.workerRequired`, 구현 · 검증-2 · 환산 `g04.templateText` · `scoring.scaledRounding` · `tv2.fileDecode` · `event.이미지대체`, 전략 · 작성 · 검증-1 `partnerSw.inputError` · `partnerSw.kietSearch` · 새 묶음 `reworkMap.generalBundles` 포함). 다른 값으로 돌려 보려면 `build_stub_app(settings=Settings(...))`로 넘깁니다.
+잠정 항목 목록은 `settings.py`의 `PROVISIONAL`에 있습니다(워커 수치 · 명령 창구 값, 공고 연결의 추천 이유 문장 틀 · 모집 상태 모름 처리 · 선택 공고 자리 표시 양식 · X-C2-GONE 문구 · 공고 서버 호출 하나씩, 작업 분해의 양식 묶음 표, 결과 통합 중 단계 `tc4.runState`(참조 조각 대응표는 지움), `retention.*` · `store.accountLockTimeoutSec`, 파일 `fileDeletion.*` · `fileRead.hashMismatch` · `artifactRoot.workerRequired`, 구현 · 검증-2 · 환산 `g04.templateText` · `scoring.scaledRounding` · `tv2.fileDecode` · `event.이미지대체`, 전략 · 작성 · 검증-1 `partnerSw.inputError` · `partnerSw.kietSearch` · 새 묶음 `reworkMap.generalBundles` 포함). 다른 값으로 돌려 보려면 `build_stub_app(settings=Settings(...))`로 넘깁니다.
 
-**관리자 설정 입력:** 워커 · 웹 조립에서는 `DbSettingsProvider`가 웹 `verification_policies` 첫 행을 기본값 위에 덮어씁니다 — `doc_weight` → 문서층 배점, `code_weight` → 코드 점검 배점 C, `plan_weight` → 계획서 대조 배점 P, `code_weight + plan_weight` → 산출물층 배점, `pass_threshold` → 기준 점수, `rerun_cap` → 재수행 횟수, `rework_cap` → 재작성 횟수, `token_retry_cap` → 검수 재수행 횟수, `deviation_cap` → 확장 필드에 담아만 둠(편차 검사를 하지 않아 쓰지 않음, 잠정). 나머지는 코드 기본값입니다(웹팀 답 대기).
+**관리자 설정 입력:** 워커 · 웹 조립에서는 `DbSettingsProvider`가 웹 `verification_policies` 첫 행을 기본값 위에 덮어씁니다 — `doc_weight` → 문서층 배점, `code_weight` → 코드 점검 배점 C, `plan_weight` → 계획서 대조 배점 P, `code_weight + plan_weight` → 산출물층 배점, `pass_threshold` → 기준 점수, `rerun_cap` → 재수행 횟수, `rework_cap` → 재작성 횟수, `token_retry_cap` → 검수 재수행 횟수(선택 컬럼 — 없으면 코드 기본값), `deviation_cap` → 확장 필드에 담아만 둠(편차 검사를 하지 않아 쓰지 않음, 잠정). 나머지는 코드 기본값입니다(웹팀 답 대기).
 
 ---
 
@@ -781,33 +780,32 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 
 | 파일 | 건수 | 확인하는 것 |
 |---|---|---|
-| `test_flow_basic.py` | 20 | 20단계 실행 순서, 원페이지 분기, 대기 지점 상태, 자격요건 불통과 후 재선택, 추가 조회, 사전 단계 오류, 동시 실행 · 프로필 차단, 중단 |
+| `test_flow_basic.py` | 20 | 실행 순서(검수 · R-8 없음), 원페이지 분기, 대기 지점 상태, 자격요건 불통과 후 재선택, 추가 조회, 사전 단계 오류, 동시 실행 · 프로필 차단, 중단 |
 | `test_rework.py` | 49 | 화면 6 · 8 · 9 재작성 경로, 묶음 이름 요청 · 같은 화면 요청 모으기(합집합 · 중복 · 늦은 요청 · 진행 중 요청 · BUSY · 모으는 중 중단), 이름 · 층 · 상태 규칙, 미달 아닌 묶음, 묶음 기회, 점수 하락 시 되돌리기, 재작성 실패 시 모은 묶음 기회 반환 |
 | `test_redo_resume.py` | 16 | 재수행 횟수 · 확정 동작, 재개 후 성공, 재개 상한 초과 실패, 영구 오류, `featureList` 불변 |
 | `test_partial_resume.py` | 14 | 재개 때 받은 결과 이어 쓰기(엔진 장치) — 저장 조건, 재개 때 입력 · 입력 참조, 비거나 연결 없으면 저장 안 함, 영구 오류 · 상한 · 재개 불가 · 흐름에 넘김, 내용이 기록에 없음 |
 | `test_tools.py` | 7 | 호출 단위 재시도, 오류 분류, 형식 오류, 스레드 안전, 로그에 내용 없음, `tools.search(retries=n)` 호출별 재시도 횟수(2026-10-13) |
-| `test_call_failure_tools.py` | 57 | 호출 실패 처리(2026-10-13) — 결제 · 한도 코드 6종(상태 429 · 400) 시도 1번 · '일시' · `billing_limit`, 입력 · 운영 시도 1번, 늘리는 간격 · 주입 난수 · 형식 오류 · 파일 창구 · `backoff=False` 2초 고정, Retry-After · 대기 합 상한(T-C1 45초), 설정 기본값 · 옛 사본, 시도 설명 `status=N code=X` · 응답 메시지 없음, 운영 로그 `errorCode`, 흐름(재개대기 · 사전 단계 T-C1 · T-P2 · 스텁 T-V2) |
+| `test_call_failure_tools.py` | 55 | 호출 실패 처리(2026-10-13) — 결제 · 한도 코드 6종(상태 429 · 400) 시도 1번 · '일시' · `billing_limit`, 입력 · 운영 시도 1번, 늘리는 간격 · 주입 난수 · 형식 오류 · 파일 창구 · `backoff=False` 2초 고정, Retry-After · 대기 합 상한(T-C1 45초), 설정 기본값 · 옛 사본, 시도 설명 `status=N code=X` · 응답 메시지 없음, 운영 로그 `errorCode`, 흐름(재개대기 · 사전 단계 T-C1 · 스텁 T-V2) |
 | `test_call_failure_openai.py` | 80 | OpenAI 글 · 이미지 어댑터가 본문 오류 코드 · `retry-after-ms` · `retry-after`를 `ProviderError`에 싣기, 이상한 값 버림, 메시지에 본문 · 헤더 값 없음 |
 | `test_call_failure_notice.py` | 80 | 공고 서버 네 API — 408 · 429를 뺀 4xx와 3xx 시도 1번, 408 · 429 · 5xx · 연결 오류 · 시간 초과 · 형식 오류 2초 고정 6번, 공고 없음은 그대로 값 |
 | `test_call_failure_partner_bv.py` | 27 | T-V2 대조 LLM · T-B2 이미지 한도 소진 → 재개 대기 · 상한 넘으면 실패 · 재작성 되돌림(대체 없음), 한도 아닌 소진은 대체, '이미지대체' 설명의 ` (code=…)` |
-| `test_call_failure_tp2.py` | 16 | T-P2 — 실패 비율 초과 + 운영 오류 → 실행 실패(재개 상한보다 먼저), 운영 없음 → 재개, 비율 미만 → 완료 |
-| `test_proofread_trace.py` | 24 | `T-P2` 문장 병렬 처리 · 재수행, 시도별 기록, 반려 시도 `proofread_logs` 행(학습 동의 · 재개 때 중복 없음 · 위반 종류), 옛 구조면 건너뜀, 추적 기록 원칙 |
+| `test_result_segment.py` | 10 | 결과물 구간(2026-10-15) — 화면 9 '진행' 뒤 T-C4만 · 결과물 · 실행/완료 · 알림 '결과물', T-C4 실패면 결과물 · 실패, 미달 진행 확인 '결과 통합 진입 확인', 첨부가 있어도 R-8 없음, 흐름 밖 단계의 등록부 줄 · 스텁 남음, 단계 타입 · 잠정 표시. (T-P2 실행기 테스트 `test_proofread_trace.py` · `test_call_failure_tp2.py`는 지웠다) |
 | `test_intake.py` | 57 | 웹 DB 행 → PreInput 변환, 목록 입력 키 이름 변환 · 증빙 표기 · 모르는 키 대체, 확장 필드 · 수익모델 여러 건 · 팀원 없음, 필수 항목 결측 목록, SQL 공급처(SQLite로 웹 스키마 흉내), 사업비 · 일정(두 테이블 · `item_order` 순 · `phase` 컬럼 없음 허용 · 금액 변환 · 총사업비 · `teamRoleCareers` 이름 없음 · 필수 스위치 켬 / 끔), 목표 고객 선택 컬럼(없음 → None · 공백 정리 · 빈 값 · NULL) |
 | `test_partner_inputs_fix.py` | 37 | 담당자 입력 바로잡기(2026-10-13) — 창업아이템명 첫 줄 60자 · 팀원 표 행(저장 순서 · 이름 없음 · 빈 팀원 포함) · 옛 JSON → None, 실구현 · 스텁 T-C1 목표 고객 덮기 · T-C1 LLM 요청에 없음 · 새 칸 값이 기록 · 사건 · 호출 기록 · 관리자 조회에 없음, 담당자 입력의 목표 고객(F02 · F06 · F09 · F10 · F11 · F13 · 원본 사실 · `requirementAnalysis` · 재개), 일반현황 근거(F16 · F19 요청 · 다른 항목에 없음 · 빈 팀 문구 · 칸 없음), 흐름도 제목, 잠정 키 |
-| `test_tc1.py` | 44 | T-C1 아이템 사양 · 회사 정보(확장 필드 포함) 그대로 옮김, 분류 · 사양 두 호출(항목 칸 · 프롬프트 · 동시 실행 · 합치기), T-C1 설정(medium), 카테고리 기본값 · 추적 기록, 호출별 형식 오류 재시도, 분류만 소진 · 실패 순서, DB에서 읽어 시작, 참조 자료 발췌 확인 |
+| `test_tc1.py` | 40 | T-C1 아이템 사양 · 회사 정보(확장 필드 포함) 그대로 옮김, 분류 · 사양 두 호출(항목 칸 · 프롬프트 · 동시 실행 · 합치기), T-C1 설정(medium), 카테고리 기본값 · 추적 기록, 호출별 형식 오류 재시도, 분류만 소진 · 실패 순서, DB에서 읽어 시작, 첨부 문서가 있어도 정리하지 않음 |
 | `test_openai_provider.py` | 7 | OpenAI 요청 모양(추론 강도 · 온도 생략 포함) · 오류 변환 (가짜 클라이언트, 네트워크 없음) |
 | `test_env.py` | 8 | `.env` 읽기(따옴표 · 주석 · BOM · 빈 값), 환경 변수 우선, API 키를 `.env`에서 읽기 |
-| `test_store_contract.py` | 105 | 저장소 계약 — 메모리 · SQLite · MySQL이 같은 동작인지 (점유, 동시 실행 제한, 모으는 중 건너뛰기, 포인터 · 키 순서, 기록 왕복, 반려 시도 조건, 시작 요청 · 끝나면 입력 사본 비우기, 관리자 · 여러 실행 건 조회, 계정 잠금 대기 초과, 기록 옮기기 · 12개월 대상 · 작업 점유, 실행 건 · 끝나지 않은 요청이 있는 프로젝트 `existing_projects`) |
-| `test_store_sql.py` | 16 | DDL 파일 = 생성 결과, 설정 입력(`verification_policies`), 웹 테이블 구조 확인, `proofread_logs` 옛 구조 · 쓰기 오류, 학습 동의 확인 |
+| `test_store_contract.py` | 105 | 저장소 계약 — 메모리 · SQLite · MySQL이 같은 동작인지 (점유, 동시 실행 제한, 모으는 중 건너뛰기, 포인터 · 키 순서, 기록 왕복, 웹 쓰기는 알림 · 실패 알림 INSERT 둘뿐, 시작 요청 · 끝나면 입력 사본 비우기, 관리자 · 여러 실행 건 조회, 계정 잠금 대기 초과, 기록 옮기기 · 12개월 대상 · 작업 점유, 실행 건 · 끝나지 않은 요청이 있는 프로젝트 `existing_projects`) |
+| `test_store_sql.py` | 13 | DDL 파일 = 생성 결과, 설정 입력(`verification_policies` — 선택 컬럼 `token_retry_cap` 없음 · 있음), 웹 테이블 구조 확인 |
 | `test_start_request.py` | 26 | 시작 요청 → 워커 실행, 필수 항목 · 프로필 · 동시 실행, 실패 후 재시도, 취소, 점유 이어받기, 진행 중 작업 확인, 끝난 요청의 입력 사본 비우기 |
-| `test_clock.py` | 20 | 시각 — 도움 함수, 시간대 없는 값은 UTC, DB 칸은 시간대 없는 UTC, 웹 표 시각 · `proofread_logs.created_at`, 웹에 돌려주는 시각 전부 UTC, 한국 날짜(G-01 기준일 · 마감 안내 · 스텁), 워커 로그 UTC |
+| `test_clock.py` | 19 | 시각 — 도움 함수, 시간대 없는 값은 UTC, DB 칸은 시간대 없는 UTC, 웹 표 시각, 웹에 돌려주는 시각 전부 UTC, 한국 날짜(G-01 기준일 · 마감 안내 · 스텁), 워커 로그 UTC |
 | `test_log_stats.py` | 17 | 통계 줄 계산 — 칸 · 고정 키 · 한국 달 · 카테고리 순서 · 층별 점수 · 최종 점수 · Task별 개수, 식별자 · 자유 글 없음, 시작 요청 묶기 |
 | `test_retention.py` | 28 | 12개월 처리 — 기준 시각 · 경계, 진행 중 · 점유 중 건너뜀, 살아 있는 실행 건 · 두 번째 옮김 · 완전 삭제된 실행 건, 시작 요청, 작업 점유 · 종료 신호 · 만료 이어받기, 한 건 실패, 로그 · 요약에 식별자 없음 |
-| `test_retention_preserve.py` | 10 | 기록을 지운 뒤에도 카테고리 · 화면 10 · 재작성 결과 · 시도 번호가 같음 |
+| `test_retention_preserve.py` | 10 | 기록을 지운 뒤에도 카테고리 · 화면 11 · 지금까지 결과 · 재작성 결과 · 시도 번호가 같음 |
 | `test_account_delete.py` | 21 | 탈퇴 — 통계로 옮기고 모두 지움, 대기 요청 취소, `BUSY`(처리중 요청 · 단계 진행 · 점유 겹침 · 잠금 대기 초과), 다시 부르면 0, 잠금 중 새 시작 요청이 끼어들지 않음, 웹 조립에서 부름 |
-| `test_tc3.py` | 55 | 실제 T-C3 — 지시 대상마다 안내 호출(7 · 6번, 동시에 · 결과는 실행 순서), 실패 순서(코드 오류 · 영구 오류 · 일시), 재개 때 빠진 것만 · 누적, 보내는 칸 제한 · 시 · 도만, 참조 조각은 지시문에만, 데이터 격리, LLM 전 확인(자격 · 이력 · E-C3-FORM), 형식 오류 재시도, 재시도 소진 → 재개 |
-| `test_task_plan.py` | 50 | 양식 묶음 표(불변식 · 배점 합 70), Task 목록 · 틀 · 맥락 · 확장 출력, 참조 조각 배정, 스텁 T-C3, 뒷 단계가 T-C3 출력을 읽음, `outputs.evaluationItems` |
-| `test_instruction.py` | 18 | 지시문 세 부분 나누기 · 안내만 바꾸기(틀 · 참조 바이트 보존) · 안내 정리 · 덧붙임 블록 형식 |
+| `test_tc3.py` | 56 | 실제 T-C3 — 지시 대상마다 안내 호출(7 · 6번, 동시에 · 결과는 실행 순서), 실패 순서(코드 오류 · 영구 오류 · 일시), 재개 때 빠진 것만 · 누적, 보내는 칸 제한 · 시 · 도만, 참조 자료는 LLM에도 지시문에도 없음, 데이터 격리, LLM 전 확인(자격 · 이력 · E-C3-FORM), 형식 오류 재시도, 재시도 소진 → 재개 |
+| `test_task_plan.py` | 54 | 양식 묶음 표(불변식 · 배점 합 70), Task 목록(12 · 11개) · 틀 · 고정 문구 그대로 · 맥락 · 확장 출력, 참조 자료를 지시문에 넣지 않음, 스텁 T-C3, 뒷 단계가 T-C3 출력을 읽음, `outputs.evaluationItems` |
+| `test_instruction.py` | 19 | 지시문 두 부분 나누기(참조 자료 부분 없음) · 안내만 바꾸기(틀 바이트 보존) · 안내 정리 · 덧붙임 블록 형식 |
 | `test_rewrite.py` | 38 | 재작성 · 재수행 지시문 다시 쓰기 — 언제 부르나, 문서층 Task마다, 반영 실행은 덧붙이기만, 재작성 중 재수행에 재작성 지시 유지, 가리기, 재개 때 재사용, 호출 기록 위치, 되돌리기 제외 |
 | `test_worker.py` | 18 | 워커 2개 중복 없음(SQLite · MySQL), 점유 만료 이어받기, 단계 사이 중단, 종료 신호, 하트비트, 재개, 모으는 중 가져가지 않음, 12개월 처리(확인 주기 · 개수만 로그 · 종료 신호 · 작업 점유 하트비트 · 웹 조립은 안 돎) |
 | `test_bootstrap.py` | 29 | 조립 — 워커 · 웹 · 스텁 앱, T-C3 · 다시 쓰기 · 전략 · 작성 · 검증-1 실구현 호출만 실제 호출처로(글 · 이미지), 웹 조립 사전 단계 `WEB_NOT_ALLOWED`, 공고 서버 주소 있음 → 실제 T-C2 · G-01 · 없음 · 빈 값 → 스텁, 주소 형식 오류, KIET 검색 스위치(기본 환경이면 꺼짐 · 켜는 값 · 인자가 환경 변수를 이김 — 2026-10-13) |
@@ -819,13 +817,13 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 | `test_notice_tc2.py` | 148 | 실제 T-C2 (가짜 전송) — 보내는 칸 · 시 · 도 17개 바꾸기, 카드 변환 · 가산점(스위치 켜짐 · 꺼짐) · 내용 버전 · 추천 이유 · 받은 순서, 약속한 키 · 유한한 수 검사 |
 | `test_notice_g01.py` | 84 | 실제 G-01 (가짜 전송) — 공고 상세 → 선택 공고, 자격 판정 → 자격 결과 · 업력(사사오입), 공고 없음, 약속 밖 응답 거절 |
 | `test_notice_flow.py` | 10 | 공고 서버 연결 앱의 흐름 — 공고 선택 · 자격 확인 · 추가 조회가 실제 T-C2 · G-01로 끝까지 |
-| `test_reads.py` | 14 | 화면 3 ~ 11 조회 |
-| `test_web_functions.py` | 56 | 진행 상태 새 필드 · 여러 건 · 기다리기, 실행 건이 없는 프로젝트(`missing_projects` — 받은 값 · 순서, 정수 값 중복 제거, 끝나지 않은 요청, 숫자 아닌 값 거절, 웹 조립), 사용자용 결과에 실패 사유 없음, 지금까지 결과, 재작성 결과, 실패 · 중단 뒤 볼 수 없음, 자격 통과 뒤 다시 고르기, 화면 10 시도 기록 |
-| `test_admin_reads.py` | 16 | 관리자 실행 건 목록 · 점수 이력 · 운영 요약 · Agent별 Task, 실행 건 목록 · 운영 요약은 최근 12개월만 |
-| `test_web_writes.py` | 11 | 단계를 저장해도 웹 `projects` 행이 바뀌지 않음, 실패 알림 · 실패 사유 (SQLite · MySQL) |
+| `test_reads.py` | 16 | 화면 3 ~ 11 조회(화면 10은 `INVALID_SCREEN`, 결과의 검수 칸은 빈 값) |
+| `test_web_functions.py` | 54 | 진행 상태 새 필드 · 여러 건 · 기다리기, 실행 건이 없는 프로젝트(`missing_projects` — 받은 값 · 순서, 정수 값 중복 제거, 끝나지 않은 요청, 숫자 아닌 값 거절, 웹 조립), 사용자용 결과에 실패 사유 없음, 지금까지 결과(검수 칸 빈 값), 재작성 결과, 실패 · 중단 뒤 볼 수 없음, 자격 통과 뒤 다시 고르기 |
+| `test_admin_reads.py` | 18 | 관리자 실행 건 목록 · 점수 이력 · 운영 요약(검수 칸 없음) · Agent별 Task(6줄 · 흐름 밖 단계 제외), 실행 건 목록 · 운영 요약은 최근 12개월만 |
+| `test_web_writes.py` | 13 | 단계를 저장해도 웹 `projects` 행이 바뀌지 않음, 실패 알림 · 실패 사유, 읽고 쓰는 웹 테이블 목록, 옛 '표현검수' 알림 행 읽기 (SQLite · MySQL) |
 | `test_tokens.py` | 10 | 토큰 시도별 · 호출 · 실행 합계, OpenAI 매핑, 관리자 조회 |
 | `test_abort_delete.py` | 14 | project_id 중단 · 완전 삭제 |
-| `test_task_settings.py` | 14 | Task별 설정 — 키 집합 = 등록부 task 단계 + `지시문 다시 쓰기`, 기본값 · 잠정, 새 사본에 `agents` 없음, Task마다 자기 모델 · 온도 규칙, 다시 쓰기 자기 항목, M-4 `model_version`, 워커 나누기, 설정값이 실행 시작 때 고정됨 |
+| `test_task_settings.py` | 15 | Task별 설정 — 키 집합 = 등록부 task 단계 + `지시문 다시 쓰기`, 기본값 · 잠정, 새 사본에 `agents` 없음, Task마다 자기 모델 · 온도 규칙, 다시 쓰기 자기 항목, 흐름 밖 M-4 `model_version` · T-P2 온도(등록부 줄로), 워커 나누기, 설정값이 실행 시작 때 고정됨 |
 | `test_image.py` | 27 | `tools.image` 재시도 · 오류 종류 · 편집 / 새로 그리기 · 크기 · 품질 기본값 · 설정 없는 Task 즉시 실패 · 토큰 · 스레드 · 내용 없음, 실행 기록 이미지 토큰 따로 · 재개 때 이어 더함, 관리자 조회, OpenAI 이미지 어댑터(가짜 클라이언트) |
 | `test_artifact_layer.py` | 66 | 산출물층 검증 반영 — 확장 필드, 재작성 사유(통과 필수 조건 · 결함 출처 · 누락 · 부분 인정 · 보류), 스텁 T-V2 1.4판, `planDoc` 입력, 보류 · 진단 사건, G-04 자체 검사, 원페이지 계획서 반영 · 되돌리기, 이전 원문 참조, T-B2 이미지 실패 예외 · '이미지대체' |
 | `test_basedoc_v110_markers.py` | 86 | 기준 문서 v1.10 확장 표시 — 새 판에 들어간 필드는 확장 아님, 새 판에서 빠졌지만 남긴 필드는 확장(note 머리), 아직 기준 문서에 없는 필드는 확장(`SectionResult.inputError` · 표 대체 안내 `tableFallbacks` · `TableFallback`의 `displayReason` 포함, 사전 정보 · 회사 정보 새 칸 셋 · `TeamMemberEntry`), 필수 · 선택 선언 그대로 |
@@ -835,7 +833,7 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 | `test_tc4.py` | 45 | 결과 통합 T-C4(2026-10-13) — 누락 ① 네 산출물 · ② · ④ → 한 오류 `E-C4-MISSING` · 메시지에 내용 없음 · 흐름에서 실행 실패, 진입 파일 없음 · 안내 문서 없음은 실패 아님, 미달 항목 종류마다 넣는 규칙 · 점수 · 이름 · 태그 · 사유 · 순서, 환산 칸이 빈 옛 보고서, 안내 문구, `planDocFile` 비움 · 옛 결과물 묶음 읽기, LLM 호출 없음, 기록 · 사건 · 관리자 조회에 미달 글 없음, 워커 · 스텁 조립이 같은 함수 (메모리 · SQLite 흐름 포함) |
 | `test_file_deletion.py` | 39 | 파일 삭제 대기열 — 완전 삭제 · 탈퇴 · 12개월 정리 때 줄, 실행 건당 줄 하나(대기 그대로 · 포기 → 대기 · 동시 넣기), 워커 지연 · 성공 · 실패 · 포기 · 로그 줄, 여러 워커 동시 처리 없음, 관리자 목록 · 다시 시도(MySQL 포함) |
 | `test_file_access.py` | 22 | 파일 읽기 웹 함수(남의 프로젝트 키 · 실패 실행 건 · 없는 파일 · 저장소 없음 · 형식은 저장 값), 조립(워커 환경 변수 없음 · 상대 경로면 시작 안 함, 웹 읽기 전용 · 상대 경로면 `FILE_STORE_UNAVAILABLE`) |
-| `test_mysql_integration.py` | 10 | 실제 웹 스키마 위 MySQL 8 흐름 · 동시 재작성 요청 합치기 · 반려 시도 행 · 삭제 뒤 로그 보존 · 웹 → 워커 조립 · 탈퇴 중 계정 잠금 유지 · 웹이 프로젝트 행을 지운 뒤 `missing_projects` · 목표 고객 선택 컬럼(없음 → None, `ALTER TABLE` 뒤 값이 사전 정보 · 회사 정보까지) · 웹 스키마 위치 찾기(DB 없이) |
+| `test_mysql_integration.py` | 9 | 실제 웹 스키마 위 MySQL 8 흐름(알림 '결과물'까지 — 테스트 DB만 ENUM에 더함) · 동시 재작성 요청 합치기 · 삭제 뒤 로그 보존 · 웹 → 워커 조립 · 탈퇴 중 계정 잠금 유지 · 웹이 프로젝트 행을 지운 뒤 `missing_projects` · 목표 고객 선택 컬럼(없음 → None, `ALTER TABLE` 뒤 값이 사전 정보 · 회사 정보까지) · 웹 스키마 위치 찾기(DB 없이) |
 
 | `test_sw_contract_fields.py` | 61 | 전략 · 작성 · 검증-1 계약 — 새 타입 · 확장 칸 표시 · 기본값, 등록부 입출력 · 재개 · LLM 표시, 산출물 타입, 함수별 모델 기본값 · 옛 사본, 필수 스위치 · 잠정, 목적별 모델 · `json_mode` · 응답 형식 세 경우 · 길이 한도 잘림 `FormatError`, 스텁 새 출력 · M-1 합치기, 입력 오류 칸 · 표 대체 안내 칸(`reason` · `displayReason`, 확장 표시 · note 0028 · 칸 없는 옛 JSON은 거짓 · 잠정 `partnerSw.inputError` · 스텁 `input_error_items`) |
 | `test_partner_sw_vendor.py` | 34 | 전략 · 작성 · 검증-1 연동 — JSON 응답 정리, 호출 추적 · 재시도, 담당자 KIET 사용자 키워드 갱신 함수(담당자 자체 실행 경로 — 네트워크 없이 가짜로)와 결과 · 이력 upsert, 일반 Task의 파일 접근 제한(허용 목록에 `market_research.py`) |
@@ -848,7 +846,7 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 | `test_scaling_contract_fields.py` · `test_score_scale.py` · `test_supervisor_rules.py` | 25 · 28 · 48 | 계약 확장 칸 · 환산 함수 · 전후 비교 · 관리자 · 통계 줄 환산, 규칙 단계 실구현(판정 · E-G2-UNREACHABLE · G-04 템플릿 · 합치기 · 스텁 실패 흉내) (2026-10-11), 입력 오류 후보 제외 · '묶음 모두' 유지 · 안내 문구 · 순서(2026-10-12) |
 | `test_verify1_flow.py` | 39 | 검증-1 fail 재수행(끼우는 자리 · fail 항목만 · 횟수 · 입력 없음 · 입력 오류(스텁 `input_error_items` — 재수행 · 표 대체 없음, 후보 제외, 안내 한 번) · 표 대체와 사용자용 안내), `Verify1State`, 항목 단위 자체 검사 재수행 · T-W3 재수행 없음, 태그 묶음 재작성, 판정 후보, 항목별 재작성 묶음 표 바꿔 끼우기 |
 
-흐름 테스트(`clock` 고정 장치를 쓰는 테스트)는 **메모리 저장소와 `SqlStore`(SQLite 임시 파일 DB)로 한 번씩** 돕니다(`conftest.py`의 `store_backend`). 위 건수는 이렇게 늘어난 수입니다. 전체 건수는 2026-10-13 호출 실패 처리 작업 뒤 기준이다(전체 2448건 — MySQL 테스트 DB를 켜지 않으면 MySQL 테스트 61건을 건너뜀). 파일별 건수는 2026-10-11 기준이고, `test_basedoc_v110_markers.py` · `test_sw_contract_fields.py` · `test_partner_sw_forms.py` · `test_supervisor_rules.py` · `test_verify1_flow.py` 줄은 2026-10-12 담당자 새 판 · 입력 오류 작업 뒤, `test_tools.py` · `test_bootstrap.py` · `test_partner_sw_vendor.py` · `test_partner_sw_tasks.py` · `test_kiet_search.py` · `test_general_bundles.py` · `test_table_fallback_reason.py` 줄은 2026-10-13 SB-360 반영 작업 뒤 모은 건수다. `test_tc4.py` 줄은 2026-10-13 결과 통합 작업 뒤, `test_call_failure_*.py` 줄은 2026-10-13 호출 실패 처리 작업 뒤 건수다. 담당자 함수의 가짜 응답은 `tests/partner_fake.py`(목적 = F번호별)로 줍니다. 구현 · 검증-2 실구현의 가짜 응답은 `tests/bv_fake.py`(목적별)로 줍니다.
+흐름 테스트(`clock` 고정 장치를 쓰는 테스트)는 **메모리 저장소와 `SqlStore`(SQLite 임시 파일 DB)로 한 번씩** 돕니다(`conftest.py`의 `store_backend`). 위 건수는 이렇게 늘어난 수입니다. 전체 건수는 2026-10-13 호출 실패 처리 작업 뒤 기준이다(전체 2448건 — MySQL 테스트 DB를 켜지 않으면 MySQL 테스트 61건을 건너뜀). 파일별 건수는 2026-10-11 기준이고, `test_basedoc_v110_markers.py` · `test_sw_contract_fields.py` · `test_partner_sw_forms.py` · `test_supervisor_rules.py` · `test_verify1_flow.py` 줄은 2026-10-12 담당자 새 판 · 입력 오류 작업 뒤, `test_tools.py` · `test_bootstrap.py` · `test_partner_sw_vendor.py` · `test_partner_sw_tasks.py` · `test_kiet_search.py` · `test_general_bundles.py` · `test_table_fallback_reason.py` 줄은 2026-10-13 SB-360 반영 작업 뒤 모은 건수다. `test_tc4.py` 줄은 2026-10-13 결과 통합 작업 뒤, `test_call_failure_*.py` 줄은 2026-10-13 호출 실패 처리 작업 뒤 건수다. 2026-10-15 검수 · R-8을 흐름에서 뺀 작업 뒤 전체는 2410건이고, 그때 바뀐 파일(`test_result_segment.py` · `test_flow_basic.py` · `test_call_failure_tools.py` · `test_tc1.py` · `test_tc3.py` · `test_task_plan.py` · `test_instruction.py` · `test_store_contract.py` · `test_store_sql.py` · `test_clock.py` · `test_reads.py` · `test_web_functions.py` · `test_admin_reads.py` · `test_web_writes.py` · `test_task_settings.py` · `test_mysql_integration.py` · `test_retention_preserve.py`) 줄의 건수는 그날 다시 셌다. 담당자 함수의 가짜 응답은 `tests/partner_fake.py`(목적 = F번호별)로 줍니다. 구현 · 검증-2 실구현의 가짜 응답은 `tests/bv_fake.py`(목적별)로 줍니다.
 
 ### 상황을 흉내 내는 법
 
@@ -887,11 +885,10 @@ app.orchestrator.tick(datetime.now(timezone.utc) + timedelta(minutes=15))   # �
 
 **아직 구현하지 않은 것**
 
-- 실제 Agent 구현 (조율 T-C1 · T-C3 · T-C4 · 규칙 단계, 전략 · 작성 · 검증-1, 구현 · 검증-2 말고는 스텁 — 검수 대기, 조율 R-8은 아래 줄)
+- 실제 Agent 구현 (조율 T-C1 · T-C3 · T-C4 · 규칙 단계, 전략 · 작성 · 검증-1, 구현 · 검증-2 말고는 스텁 — 검수 Agent와 조율 R-8은 2026-10-15에 흐름에서 뺐다)
 - 전략 · 작성 · 검증-1 실제 OpenAI 호출 확인(사용자가 한다), 항목별 재작성 묶음 답(담당자 · 웹팀 — 답이 오면 `flow/rework_map.py` 표만 바꿈), 사업비 · 일정 필수 스위치 켜기(웹 배포 뒤), 새 재작성 묶음 켜기(일반현황 · 개요 · 그림 — 코드에 넣고 꺼 둠, 웹 배포 날 켬), 실행별 KIET 검색 켜기(연결은 끝남 · 기본 꺼짐 — 운영 워커에 `SBRAIN_KIET_SEARCH`를 넣어 켬). 계획서 파일(DOCX · HWP · PDF)은 오케스트레이터가 만들지 않는다 — 웹이 `planDoc`으로 내려받기를 만든다(담당자 F20은 구조 묶기만, T-C4는 `planDocFile`을 비움)
 - 결과 통합 웹 반영 — `deliverable.planDocFile`이 늘 비고 미달 항목 칸 `shortfallItems`가 붙은 것을 웹이 받아 보이는 일(웹팀), 전달 보류 화면 · 제출 요건 안내 표시는 웹 화면 담당 답 대기
-- R-8 첨부 문서 텍스트 추출과 웹 DB 첨부(`project_attachments`) 읽기
-- 자체 GPU 서버 호출처 어댑터 (OpenAI는 있음)
+- 검수 · R-8 흐름에서 뺀 뒤 남은 것 — 웹이 `notifications.kind` ENUM에 '결과물'을 더하는 일(그 전에는 새 워커를 띄우지 않음), 화면 10 없앰의 웹 반영, 기준 문서 개정. 검수 · R-8을 다시 넣는 일과 자체 GPU 서버 호출처 어댑터는 정해질 때까지 하지 않는다
 - 공고 서버 실제 연결 켜기 — 연결 코드는 끝났고, 공고팀 시험 서버로 네 API를 확인했다(2026-10-07, 가짜 신청 정보로 23개 확인 모두 통과 — 준비 확인 2개 포함). 운영 서버 위치 · 주소 · 인증이 정해지고 워커 IP를 공고팀에 알린 뒤 켠다. 그 전까지 스텁 모드
 - 가산점 켜기 — 공고팀 가산점이 시험 단계라 스위치(`orchestrator/settings.py` `BONUS_ENABLED`)를 꺼 두었다. 웹 카드의 가산점은 늘 비어 있다. 공고팀이 정리를 알리면 켠다. 고른 뒤 바뀐 모집 상태 반영(지금은 알 수 없음)
 - 공유 DB에 Orchestrator 테이블 적용 — `sql/orchestrator_schema.sql`(표 13개)로 담당자가 직접
@@ -901,15 +898,15 @@ app.orchestrator.tick(datetime.now(timezone.utc) + timedelta(minutes=15))   # �
 
 **공고팀과 맞출 것** — 운영 서버 위치 · 주소, 동시 호출 안전성(그 전까지 워커 1대), 인증 방식(지금은 없음), 가산점 정리, 워커 IP 전달. 네 API 제공 · 공고 없음이 생기는 경우 · 가산점 입력(생년월일은 아직 보내지 않음)은 2026-10-06 답변으로 정리됐다.
 
-**웹팀과 맞출 것** — 화면별 모양(초안), 실패 알림 범위, 완전 삭제 · 탈퇴 중 `BUSY` 처리, 오래 걸리는 웹 요청 제한 시간, 화면의 시각 표시(UTC → 한국 시각). 완전 삭제 · 탈퇴 때 `proofread_logs`는 학습에 반영된 행(`trained`)만 남기고 프로젝트 연결을 끊기로 정했다(웹팀 회신 2026-10-05, 웹이 구현). 함수 약속은 `docs/Orchestrator_웹연동_함수명세.md`
+**웹팀과 맞출 것** — 화면별 모양(초안), 실패 알림 범위, 완전 삭제 · 탈퇴 중 `BUSY` 처리, 오래 걸리는 웹 요청 제한 시간, 화면의 시각 표시(UTC → 한국 시각), 알림 종류 '결과물' ENUM 추가 · 화면 10 없앰. `proofread_logs`는 Orchestrator가 더 쓰지 않는다. 함수 약속은 `docs/Orchestrator_웹연동_함수명세.md`
 
 **타 팀과 합의가 필요한 것** — 자세한 내용은 `docs/Agent_연동_규격_초안.md` 10절
 
 - `tools` 인터페이스(`llm` · `search` · `image` · `files`)와 "Task 안의 호출은 반드시 `tools`로" 규칙 (전 Agent 팀)
 - 산출물 파일 참조형 — 파일 칸이 `FileRef`, 파일 하나에 모두, 진입 파일 이름, T-V2는 파일 창구 실패를 받지 않음 (구현 · 검증-2 담당 · Agent 팀)
-- `G-02a` · `G-02b` 입력 확장(`cycleInfo` 등), `T-P2` 재수행 루프 소유, 지시문 머리말 문구 등
+- `G-02a` · `G-02b` 입력 확장(`cycleInfo` 등), 지시문 머리말 문구 등(`T-P2` 재수행 루프 소유는 검수가 흐름에서 빠져 해당 없음)
 - 사용자 재작성 지시의 묶음 이름(작성 · 구현)
-- 양식 · 평가항목 · 채점 기준표를 작업 분해 결과에서 받는 것, 지시문 세 부분 구성과 안내 다시 쓰기, T-P2 시도별 기록 · 반려된 시도 단위 회수, 판정 지시 없는 묶음의 고정 문구는 기준 문서 v1.10에 들어갔다
+- 양식 · 평가항목 · 채점 기준표를 작업 분해 결과에서 받는 것, 지시문 세 부분 구성과 안내 다시 쓰기, T-P2 시도별 기록 · 반려된 시도 단위 회수, 판정 지시 없는 묶음의 고정 문구는 기준 문서 v1.10에 들어갔다(지시문은 2026-10-15부터 두 부분이고 검수는 흐름 밖이라 기준 문서와 다르다)
 
 **기준 문서에 값이나 규칙이 없어 임시로 정한 것** — 목록은 `docs/Orchestrator_구조와_흐름.md` 11절
 

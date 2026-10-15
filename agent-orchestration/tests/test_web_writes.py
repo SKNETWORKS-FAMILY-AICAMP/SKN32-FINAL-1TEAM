@@ -10,11 +10,12 @@ from datetime import timedelta
 import pytest
 from conftest import Backend, Clock, make_app, pre_input, project_for, start_and_select, to_screen6
 from mysqldb import MYSQL
-from sqlalchemy import text
+from sqlalchemy import insert, text
 from webdb import project_row
 
+from sbrain.models.clock import naive_utc
 from sbrain.orchestrator.store import CommitBatch
-from sbrain.store_sql.web_tables import WEB_COLUMNS
+from sbrain.store_sql.web_tables import WEB_COLUMNS, WEB_OPTIONAL_COLUMNS
 
 
 @pytest.fixture(params=["sql", pytest.param("mysql", marks=MYSQL)])
@@ -80,15 +81,36 @@ def test_project_row_unchanged_through_whole_run(sql_app):
     app.orchestrator.advance(rid)
     assert app.store.load_run(rid).state.progress == "완료"
     assert watch.unchanged()                                                     # 진행 컬럼 5개를 쓰지 않는다
-    assert web_notifications(app, rid) == [("문서평가", 6), ("산출물확인", 8), ("표현검수", 10)]
+    assert web_notifications(app, rid) == [("문서평가", 6), ("산출물확인", 8), ("결과물", 11)]
     assert alerts(app, rid) == []
     assert not [e for e in app.store.events(rid) if e.kind == "공고ID없음"]       # 선택 공고 ID 확인을 하지 않는다
 
 
 def test_web_columns_no_longer_write_projects_or_read_notices():
-    assert WEB_COLUMNS["projects"] == ["project_id", "company_id"]               # 학습 동의 확인용으로 읽기만
-    assert "notices" not in WEB_COLUMNS
-    assert {"users", "companies", "proofread_logs"} <= set(WEB_COLUMNS)
+    """읽고 쓰는 웹 테이블 — 알림 · 실패 알림 · 설정 · 사전 정보(사업비 · 일정)뿐. proofread_logs와 학습 동의를 읽던
+    projects · companies · users는 빠졌다. token_retry_cap은 선택 컬럼."""
+    assert set(WEB_COLUMNS) == {"notifications", "generation_failure_alerts", "verification_policies",
+                                "project_budget_items", "project_schedule_items"}
+    assert not {"projects", "companies", "users", "proofread_logs", "notices"} & set(WEB_COLUMNS)
+    assert "token_retry_cap" not in WEB_COLUMNS["verification_policies"]
+    assert WEB_OPTIONAL_COLUMNS["verification_policies"] == ["token_retry_cap"]
+
+
+def test_old_proofread_notification_kind_is_read_without_error(sql_app):
+    """웹 notifications에 옛 kind '표현검수' 행이 있는 프로젝트도 진행 상태를 읽는다 (읽기용으로 남긴 값)."""
+    app, clock = sql_app
+    rid = start_and_select(app, account())
+    pid = project_of(app, rid)
+    with app.store.engine.begin() as conn:                                       # 웹이 예전에 쓴 행
+        conn.execute(insert(app.store.web.table(conn, "notifications")).values(
+            project_id=pid, kind="표현검수", target_step=10, channel="화면", created_at=naive_utc(clock())))
+    view = app.orchestrator.view_project(pid)
+    assert view.run is not None and view.run.run_id == rid
+    assert [(n.kind, n.target_step) for n in view.run.notifications] == [("표현검수", 10)]
+    assert [n.kind for n in app.orchestrator.view(rid).notifications] == ["표현검수"]
+    [listed] = app.orchestrator.project_views([pid])
+    assert [n.kind for n in listed.run.notifications] == ["표현검수"]
+    app.orchestrator.abort(rid, confirmed=True)                                  # 공유 MySQL DB — 진행 중 실행 건을 남기지 않는다
 
 
 def test_permanent_failure_sets_reason_and_one_alert(sql_app):

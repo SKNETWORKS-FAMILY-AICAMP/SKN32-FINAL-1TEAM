@@ -6,8 +6,8 @@
 --
 -- 적용 순서: 웹 스키마(app_schema.sql) 다음. orch_runs.project_id가 projects(project_id)를 참조한다.
 -- CREATE TABLE IF NOT EXISTS만 있다. 이미 있는 테이블은 바꾸지 않는다.
--- 웹 테이블 구조는 바꾸지 않는다. Orchestrator는 웹 테이블 중 notifications, generation_failure_alerts,
--- proofread_logs에 INSERT만 하고, verification_policies와 학습 동의(users.ai_training_agreed)를 읽는다.
+-- 웹 테이블 구조는 바꾸지 않는다. Orchestrator는 웹 테이블 중 notifications, generation_failure_alerts에
+-- INSERT만 하고, verification_policies를 읽는다.
 
 CREATE TABLE IF NOT EXISTS orch_runs (
 	run_id VARCHAR(64) NOT NULL COMMENT '실행 건 ID (Run.runId)', 

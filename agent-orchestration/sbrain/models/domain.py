@@ -326,7 +326,9 @@ class TaskInstruction(SBModel):
 class TaskPlan(SBModel):
     plan_id: str
     category: Category
-    tasks: list[TaskInstruction] = Field(min_length=13, max_length=14)
+    # 검수 T-P1 · T-P2가 흐름에서 빠져 지금 작업 목록은 12개(원페이지 11개)다. 상한 14는 그 전에 저장된
+    # 실행 건(14 · 13개)을 읽으려고 남긴다
+    tasks: list[TaskInstruction] = Field(min_length=11, max_length=14)
 
 
 # ── 전략 · 작성 ───────────────────────────────────────
@@ -491,9 +493,8 @@ ProofreadViolationType = Literal["날짜", "수치·금액", "고유명사", "�
 class RejectedAttempt(SBModel):
     """확장 — 보호 토큰 검사를 통과하지 못한(반려된) T-P2 시도 하나. 웹 proofread_logs '검수 회수 문단' 한 행.
 
-    문장 내용(원문 · 시도 문장)을 담는다 — 산출물 내용을 기록에 남기지 않는 규칙의 유일한 예외라서
-    웹 proofread_logs에만 쓰고(프로젝트 주인이 학습 데이터 편입에 동의한 경우만), 실행 기록 · 추적 사건 · 로그 ·
-    관리자 조회에는 싣지 않는다.
+    흐름 밖 — 지금 쓰지 않음. 검수(T-P2)가 흐름에서 빠져 흐름이 이 모델을 만들지 않는다 — 타입만 남긴다.
+    문장 내용(원문 · 시도 문장)을 담는 모델이라 웹 proofread_logs 밖(실행 기록 · 추적 사건 · 로그 · 관리자 조회)에는 싣지 않는다.
     """
     run_id: str
     original_text: str
@@ -541,7 +542,8 @@ class Deliverable(SBModel):
     prototype_files: list[FileRef] = ext(note=FILE_NOTE)
     infographic_file: FileRef = ext(note=FILE_NOTE)
     score_report: "ScoreReport"
-    proofread_log: ProofreadLog
+    # 기준 문서는 필수지만 검수가 흐름에서 빠져 늘 비운다 — 값이 있는 옛 실행 건은 그대로 읽힌다
+    proofread_log: ProofreadLog | None = ext(None, note="검수가 흐름에서 빠져 늘 비움(결정 0033)")
     disclaimer: str
     prototype_notice: str
     score_notice: str

@@ -14,10 +14,10 @@ import random
 from types import SimpleNamespace
 
 import pytest
-from conftest import make_app, pre_input, start_and_select, to_screen6, to_screen9
-from flow_helpers import records_of_task, run_review, state
+from conftest import make_app, pre_input, start_and_select, to_screen6
+from flow_helpers import records_of_task, state
 
-from sbrain.agents.stubs import Ack, FakeImage, FakeLLM, StubScenario
+from sbrain.agents.stubs import Ack, FakeImage, FakeLLM
 from sbrain.models.clock import utc_now
 from sbrain.orchestrator.errors import (
     BILLING_LIMIT_CODES, FormatError, ProviderError, ToolCallExhausted, clean_error_code,
@@ -390,23 +390,6 @@ def test_tc1_billing_limit_rolls_back_with_code_line(clock, runlog):
     assert keys[keys.index("errorKind") + 1] == "errorCode"
     assert (end["status"], end["errorKind"], end["errorCode"]) == ("실패", "일시", "insufficient_quota")
     assert lines_of(runlog, "재개예약") == []
-
-
-def test_tp2_quota_over_ratio_resumes(clock, runlog):
-    """T-P2 문장 호출의 한도 소진은 '호출실패'로 원문 유지 — 비율을 넘으면 지금처럼 재개(일시). 재개예약 줄은 흐름이 예약해 '-'."""
-    app = make_app(clock, StubScenario(tp1_targets=4))
-    for sid in ("s-3.1.1-1", "s-3.1.1-2"):
-        app.llm.plan("T-P2", ["quota"], item_key=sid)
-    rid = to_screen9(app)
-    run_review(app, rid)
-    assert state(app, rid) == ("표현검수", "재개대기")
-    tp2 = [c for c in app.store.call_logs(rid) if c.task_id == "T-P2" and c.final_outcome == "소진"]
-    assert len(tp2) == 2 and all(len(c.tries) == 1 for c in tp2)
-    [(_, res)] = lines_of(runlog, "재개예약")
-    assert (res["errorKind"], res["errorCode"]) == ("일시", "-")
-    clock.advance(minutes=16)
-    app.orchestrator.tick(clock.t)
-    assert state(app, rid)[1] == "완료"
 
 
 def test_stub_tv2_billing_limit_resumes(clock):

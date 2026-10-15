@@ -707,7 +707,7 @@ class Engine:
                 ctx.record_execution(rec)
                 ctx.add_event("재개예약", f"{rec.task_id} {wait} 뒤 재개", execution_id=rec.execution_id)
                 self._resume_kinds[run.run_id] = kind   # 재개예약 줄은 저장 뒤 남긴다 (_log_progress)
-                # errorCode — 엔진이 이 실행에서 받은 소진의 코드. 흐름이 예약한 재개(T-P2 등)는 없다('-')
+                # errorCode — 엔진이 이 실행에서 받은 소진의 코드. 흐름이 직접 예약한 재개면 받은 소진이 없어 '-'다(지금 그렇게 하는 흐름 코드는 없다)
                 self._resume_codes[run.run_id] = self._exhausted_codes.get(rec.execution_id)
                 return Outcome("resume_wait", record=rec)
             reason = "재개상한초과"

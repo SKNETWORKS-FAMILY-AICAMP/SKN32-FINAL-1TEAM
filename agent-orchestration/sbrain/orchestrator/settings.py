@@ -120,7 +120,7 @@ def _default_tasks() -> dict[str, TaskModelSetting]:
     # 옛 Agent별 값을 그 Agent의 Task에 옮겼다. 조율은 OpenAI, 검수는 자체 GPU 서버의 파인튜닝 모델(기획서 5-2 · 5-7).
     # 조율 모델(2026-09-30): gpt-6-luna, 추론 강도 low. 추론 모델이라 온도를 보내지 않는다.
     # T-C1만 추론 강도 medium. T-C1 안의 모든 호출
-    # (분류 · 사양 · 참조 자료 정리)이 이 항목을 쓴다. T-C3 · 지시문 다시 쓰기는 low 그대로.
+    # (분류 · 사양)이 이 항목을 쓴다. T-C3 · 지시문 다시 쓰기는 low 그대로.
     # T-B1 · T-B2 · T-V2는 구현 · 검증-2 담당 요청: gpt-6-luna, 추론 강도 기본값(보내지 않음), 온도 보내지 않음.
     # T-B2 이미지: openai · gpt-image-2.5-flare · medium · 1024x1536 (담당 요청).
     # T-S1 · T-S2 · T-W1 · T-W2 · T-V1은 전략 · 작성 · 검증-1 담당자 execution_contract.json의 apiModel(함수별 모델 —
@@ -281,6 +281,9 @@ PROVISIONAL: dict[str, str] = {
                        "있습니다.'(기준 문서 예시). 아니면 그 줄 · 총점 미달이면 '총점 {표시 점수}점으로 기준 점수 {기준}점에 "
                        "미달합니다.' · 층별 머리줄 '계획서에서 보완이 필요한 항목:' · '프로토타입에서 보완이 필요한 항목:' 아래 "
                        "'- 이름 (점수/배점점): 사유' 줄 · 끝 줄 '제출 전 작성자 본인의 검토가 필요합니다.'",
+    "tc4.runState": "결과 통합(T-C4) 중 단계 '결과물 · 실행', 결과 통합이 실패하면 '결과물 · 실패'(웹 "
+                    "generation_failure_alerts.stage도 '결과물') — 기준 문서의 검수 단계가 빠져 정함(결정 0033, "
+                    "flow/service.py · flow/sbrain_flow.py 구간 RESULT)",
     # 공고 연결 (공고 선택 · 자격 확인 G-01) — 기준 문서에 없음
     "taskTimeouts.G-01": "G-01 제한 시간 30초 — 공고 서버의 공고 상세 · 자격 판정 호출, T-C2와 같음",
     "announcement.bonusEnabled": "가산점 사용 스위치 BONUS_ENABLED 기본 꺼짐 — 공고팀 가산점은 시험 단계(2026-10-06 답변: "
@@ -341,9 +344,6 @@ PROVISIONAL: dict[str, str] = {
                                 "목록으로 담당자 입력에 싣는다 (agents/partner_sw/inputs.py, spec 4.4)",
     "verify1.redoDetails": "검증-1 재수행 T-V1의 unit은 종류가 섞이면 '섹션', 판정 후보의 사유와 보완 지시는 같은 글, "
                            "재작성 사이클 T-V1 피드백 종류 '재채점' (flow/sbrain_flow.py · agents/stubs.py, spec 4.10 · 4.12)",
-    "taskPlan.referenceSlots": "참조 조각 대응표(Task → 받는 슬롯) — T-S1 문제 · 필요성 · 목표 고객 · 핵심 기능, T-S2 시장 규모 · "
-                               "목표 고객 · 경쟁 · 차별성, T-W1 7개 전부, T-W2 시장 규모 · 수익 모델, T-W3 수익 모델 · 추진 계획, "
-                               "T-B1 핵심 기능, T-B2 문제 · 필요성 · 핵심 기능 · 시장 규모 · 수익 모델 · 추진 계획",
     # 공고 서버 연결 (agents/notice) — 실행 건 설정값이 아니라 워커 프로세스 값 · 고정 문장이다
     "announcement.matchReason": "추천 이유 문장 틀 (spec 4.1.4) — 공고 서버의 band(매우 적합 · 적합 · 참고, 없으면 대체 경로 "
                                 "'마감임박순'일 때 '마감이 가까운 신청 가능 공고입니다')와 지역(전국 · 희망 지역 일치 · 불일치)으로 "

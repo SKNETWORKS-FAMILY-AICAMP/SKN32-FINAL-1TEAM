@@ -3,7 +3,7 @@
 - 키 집합 = 카탈로그의 task 단계 + '지시문 다시 쓰기'. 규칙 단계 · 합치기에는 항목이 없다.
 - Task마다 자기 항목의 모델이 실행 기록에 남고, 온도 덮어쓰기(TempRule)는 그대로 위에 씌운다.
 - 다시 쓰기는 '지시문 다시 쓰기' 항목의 모델 · 제한 시간을 쓴다(T-C3 값을 빌리지 않는다). Agent 이름은 조율이다.
-- M-4 model_version은 T-P2 항목 값이다.
+- M-4 model_version은 T-P2 항목 값이다(등록부 줄 — 검수는 흐름 밖).
 - 설정 사본은 실행 시작 때 고정된다 — 시작 뒤 설정을 바꿔도 그 실행 건은 시작 때 값으로 돈다.
 - 워커 호출처 나누기: 다시 쓰기는 실제, 스텁 Task(호출처가 openai로 바뀐 T-B1 · T-B2 · T-V2 포함)는 가짜.
 흐름 테스트는 clock · store_backend 장치로 메모리 · SQLite 두 저장소에서 돈다.
@@ -23,9 +23,10 @@ from worker_helpers import (
 from sbrain.agents.stubs import StubScenario
 from sbrain.agents.supervisor.plan import PURPOSE_REWRITE
 from sbrain.agents.supervisor.rewrite import rewrite_guidance
-from sbrain.flow.catalog import build_registry
+from sbrain.flow.catalog import OUT_OF_FLOW_STEPS, build_registry
 from sbrain.models.clock import utc_now
 from sbrain.orchestrator import Settings
+from sbrain.orchestrator.registry import TempRule
 from sbrain.orchestrator.settings import PROVISIONAL, SettingsProvider, TaskModelSetting
 from sbrain.orchestrator.errors import ToolCallExhausted
 from sbrain.orchestrator.tools import NO_LLM_SETTING, CallSink, Tools, ToolsConfig, ToolsContext
@@ -151,23 +152,28 @@ def test_each_task_records_its_own_entry(clock):
         v.model = f"m-{key}"
         v.provider = "미정"
     s.tasks["T-V1"].temperature = 0.7          # TempRule fixed 0 → 0.0
-    s.tasks["T-P2"].temperature = 0.9          # TempRule max 0.2 → 0.2
     s.tasks["T-S2"].reasoning_effort = "high"
-    app = make_app(clock, StubScenario(tp1_targets=2), settings=s)
+    app = make_app(clock, settings=s)
     rid = to_screen9(app)
     run_review(app, rid)
     recs = records(app, rid)
-    for tid in task_ids():
+    for tid in task_ids() - OUT_OF_FLOW_STEPS:   # 검수 Task(T-P1 · T-P2)는 흐름 밖이라 실행 기록이 없다
         assert recs[tid].model == f"m-{tid}", tid
         assert recs[tid].provider == "미정", tid
+    assert not OUT_OF_FLOW_STEPS & set(recs)
     assert recs["T-V1"].temperature == 0.0
-    assert recs["T-P2"].temperature == 0.2
     assert recs["T-S2"].reasoning_effort == "high" and recs["T-S1"].reasoning_effort is None
     assert recs["T-S1"].agent == "전략" and recs["T-B2"].agent == "구현"     # Agent는 Task의 담당 Agent 그대로
-    ctx = app.engine.open_context(app.store.load_run(rid))
-    assert ctx.get("proofreadLog").model_version == "m-T-P2"                 # M-4는 T-P2 항목 값
     for tid in NO_LLM_TASKS:                   # LLM을 부르지 않는 Task는 모델 · 호출처 · 온도가 빈다
         assert (recs[tid].model, recs[tid].provider, recs[tid].temperature) == (None, None, None), tid
+
+
+def test_out_of_flow_tp2_temperature_and_m4_model_version_rows():
+    """흐름 밖 단계의 등록부 줄은 그대로다 — T-P2 온도 규칙(최대 0.2), M-4 model_version은 T-P2 항목 값."""
+    r = build_registry()
+    assert r.get("T-P2").temperature == TempRule(max=0.2)
+    mv = r.get("M-4").inputs["model_version"]
+    assert (mv.kind, mv.key) == ("setting", "tasks.T-P2.model")
 
 
 def test_no_llm_task_ignores_old_snapshot_entry_and_keeps_timeout(clock):
@@ -176,7 +182,7 @@ def test_no_llm_task_ignores_old_snapshot_entry_and_keeps_timeout(clock):
     for k in NO_LLM_TASKS:
         s.tasks[k] = TaskModelSetting(provider="openai", model="gpt-6-luna", temperature=None)
     s.task_timeouts["G-01"] = 12.5
-    app = make_app(clock, StubScenario(tp1_targets=2), settings=s)
+    app = make_app(clock, settings=s)
     rid = to_screen9(app)
     run_review(app, rid)
     recs = records(app, rid)

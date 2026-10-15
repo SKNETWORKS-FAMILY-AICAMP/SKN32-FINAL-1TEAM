@@ -3,10 +3,11 @@
 - 먼저 하는 확인(prepare, LLM을 부르기 전): ① 자격 불통과 ② 대표자 이력 없음 ④ 양식을 고를 수 없음(E-C3-FORM).
   걸리면 TaskPlanError — 재시도 대상이 아니라(FormatError · ToolCallExhausted 아님) 엔진이 운영 오류로 실행 건을
   실패시킨다(사용자에게는 E-RUN-FAIL, 관리자 실패 사유는 'T-C3: …'). 메시지는 사유만 쓴다.
-- Task 목록 · agent · order(시트 1 · 2, 기획서 4-4): 고정 14개, 원페이지는 T-B1을 뺀 13개.
-- 지시문: 지시 대상(instruction 입력을 가진 Task)은 틀 · 안내 · 참조 자료 세 부분(flow/instruction.py), 그 밖은 Task 이름과
-  역할 한 줄의 고정 문구. 틀 · 고정 문구 · 머리말 문구는 잠정이다.
-- 참조 조각은 코드 대응표로 배정한다(첨부 내용을 T-C3의 LLM에 보내지 않는다). 대응표는 잠정이다.
+- Task 목록 · agent · order(시트 1 · 2, 기획서 4-4): 12개, 원페이지는 T-B1을 뺀 11개. 기획서 고정 14개 중 검수
+  T-P1 · T-P2는 흐름에서 빠져 작업 목록에 넣지 않는다(등록부 줄은 남고 계상 표시만 거짓).
+- 지시문: 지시 대상(instruction 입력을 가진 Task)은 틀 · 안내 두 부분(flow/instruction.py), 그 밖은 Task 이름과
+  역할 한 줄의 고정 문구. 틀 · 고정 문구 · 머리말 문구는 잠정이다. 첨부 추출(R-8)이 흐름에서 빠져 참조 자료 부분은
+  없다 — 입력 referenceSummary는 타입에 남지만 읽지 않는다.
 - 맥락은 다섯 키(formVersion · applyEnd · supportAmountMax · evaluationItems · formatSpec)뿐이다.
 - 안내 응답 모델 · 길이 상한 · 표시 태그 격리 · 호출 목적 이름은 실제 T-C3(지시문 작성)와 재작성 · 재수행 다시 쓰기가
   함께 쓴다 — 값이 갈라지지 않게 여기에만 둔다.
@@ -20,11 +21,10 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from ...contracts.tasks import TC3In, TC3Out
-from ...flow.instruction import compose_instruction, isolate, neutralize, reference_block, sanitize_guidance  # noqa: F401
-from ...models import Announcement, ReferenceSummary, TaskInstruction, TaskPlan
+from ...flow.instruction import compose_instruction, isolate, neutralize, sanitize_guidance  # noqa: F401
+from ...models import Announcement, TaskInstruction, TaskPlan
 from ...orchestrator.errors import FormatError
 from ..form_defaults import FormBundle, form_problem, select_form
-from .tc1 import REFERENCE_SLOTS
 
 # 호출 목적 — 실제 T-C3의 안내 작성, 재작성 · 재수행 때 안내 다시 쓰기 (호출 기록 · 호출처 나누기가 이 이름을 쓴다)
 PURPOSE_WRITE = "지시문 작성"
@@ -65,7 +65,8 @@ def clean_guidance(d: GuidanceDraft) -> GuidanceDraft:
 
 
 # ── Task 목록 (시트 1 · 2, 기획서 4-4) ─────────────────────────
-# (taskId, agent, order, 이름, 역할) — order는 시트 2 F열 실행 순서(등록부 order와 같다). 역할 문구는 잠정
+# (taskId, agent, order, 이름, 역할) — order는 시트 2 F열 실행 순서(등록부 order와 같다). 역할 문구는 잠정.
+# 검수 T-P1 · T-P2는 흐름에서 빠져 이 표에 없다 — 등록부의 계상 표시(counted)와 같은 집합이다
 TASK_TABLE: tuple[tuple[str, str, int, str, str], ...] = (
     ("T-C1", "조율", 1, "요구사항 해석", "아이디어 설명으로 아이템 사양 · 카테고리 · 회사 정보를 정리한다."),
     ("T-C2", "조율", 2, "공고 매칭", "아이템과 회사 정보에 맞는 공고 후보를 찾는다."),
@@ -79,8 +80,6 @@ TASK_TABLE: tuple[tuple[str, str, int, str, str], ...] = (
     ("T-B1", "구현", 12, "실행 파일(HTML) 제작", "기능 목록을 구현한 실행 파일을 만든다."),
     ("T-B2", "구현", 13, "인포그래픽 제작", "계획서의 핵심 내용을 인포그래픽으로 만든다."),
     ("T-V2", "검증-2", 15, "프로토타입 검증", "프로토타입의 코드 품질과 기능 대조를 검증한다."),
-    ("T-P1", "검수", 18, "사업계획서 문장 형식 검수", "서술 형식에 맞지 않는 문장을 찾는다."),
-    ("T-P2", "검수", 19, "한국어 문장 윤문", "보호 토큰을 지키며 문장을 다듬는다."),
 )
 _BY_ID = {row[0]: row for row in TASK_TABLE}
 ONEPAGE_SKIP = "T-B1"   # 원페이지는 실행 파일을 만들지 않는다 (기획서 4-4)
@@ -162,27 +161,6 @@ def frame_for(task_id: str, category: str) -> str:
     return _title(task_id) + "\n지켜야 할 규칙\n" + "\n".join(f"- {r}" for r in rules)
 
 
-# ── 참조 조각 배정 (spec 3.5.1, 코드 대응표 — 잠정) ─────────────────
-REFERENCE_SLOTS_BY_TASK: dict[str, tuple[str, ...]] = {
-    "T-S1": ("문제 · 필요성", "목표 고객", "핵심 기능"),
-    "T-S2": ("시장 규모", "목표 고객", "경쟁 · 차별성"),
-    "T-W1": tuple(REFERENCE_SLOTS),   # 7개 슬롯 전부
-    "T-W2": ("시장 규모", "수익 모델"),
-    "T-W3": ("수익 모델", "추진 계획"),
-    "T-B1": ("핵심 기능",),
-    "T-B2": ("문제 · 필요성", "핵심 기능", "시장 규모", "수익 모델", "추진 계획"),
-}
-
-
-def reference_for(task_id: str, summary: ReferenceSummary | None) -> str | None:
-    """그 Task에 배정된 조각의 참조 자료 부분. 참조 자료가 없거나 배정된 조각이 없으면 None(붙이지 않는다)."""
-    if summary is None:
-        return None
-    slots = REFERENCE_SLOTS_BY_TASK.get(task_id, ())
-    excerpts = [e for e in summary.excerpts if e.slot in slots]   # 원래 순서 그대로, 같은 슬롯 여러 개도 모두
-    return reference_block(summary.isolation_note, excerpts) if excerpts else None
-
-
 # ── 맥락 (spec 3.7) ───────────────────────────────────────
 def build_context(announcement: Announcement, bundle: FormBundle) -> dict[str, Any]:
     """모든 지시에 같은 다섯 키. 공고의 마감일 · 지원 금액이 비어 있으면 null이다."""
@@ -217,8 +195,9 @@ def new_plan_id() -> str:
 def assemble(inp: TC3In, bundle: FormBundle, guidance: Mapping[str, str], *, plan_id: str | None = None) -> TC3Out:
     """안내(Task ID → 안내)로 작업 계획과 T-C3 출력을 만든다.
 
-    지시 대상은 틀 · 정리한 안내 · 배정된 참조 자료를 잇고 guidance에 정리한 안내를 담는다(지시문의 안내 부분과 같은 글자).
-    그 밖의 Task는 고정 문구, guidance는 빈 문자열이다. 지시 대상의 안내가 빠지면 ValueError(Task ID만).
+    지시 대상은 틀 · 정리한 안내를 잇고 guidance에 정리한 안내를 담는다(지시문의 안내 부분과 같은 글자).
+    입력 referenceSummary는 읽지 않는다. 그 밖의 Task는 고정 문구, guidance는 빈 문자열이다.
+    지시 대상의 안내가 빠지면 ValueError(Task ID만).
     """
     category = inp.item_spec.category
     missing = [t for t in instructed_tasks(category) if t not in guidance]
@@ -228,8 +207,7 @@ def assemble(inp: TC3In, bundle: FormBundle, guidance: Mapping[str, str], *, pla
     for task_id, agent, order in task_rows(category):
         if is_instructed(task_id):
             text = sanitize_guidance(guidance[task_id])
-            instruction = compose_instruction(frame_for(task_id, category), text,
-                                              reference_for(task_id, inp.reference_summary))
+            instruction = compose_instruction(frame_for(task_id, category), text)
         else:
             text, instruction = "", fixed_instruction(task_id)
         tasks.append(TaskInstruction(task_id=task_id, agent=agent, order=order, instruction=instruction,

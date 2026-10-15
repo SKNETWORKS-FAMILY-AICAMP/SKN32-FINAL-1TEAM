@@ -129,10 +129,11 @@ def test_wait_and_run_end_lines(clock, runlog):
     assert [w["point"] for w in waits] == ["공고선택", "계획서작성", "문서평가", "산출물확인"]
     assert all(list(w) == ["run", "project", "point"] for w in waits)
     assert of(runlog, "실행끝") == [{"run": rid, "project": str(app.store.load_run(rid).project_id), "status": "완료"}]
-    # T-P2 전용 실행기도 실행 기록 하나당 한 쌍
-    tp2 = [r.execution_id for r in app.store.executions(rid) if r.task_id == "T-P2"]
-    assert [s["exec"] for s in of(runlog, "단계시작") if s["step"] == "T-P2"] == tp2
-    assert [e["exec"] for e in of(runlog, "단계끝") if e["step"] == "T-P2"] == tp2
+    # 결과물 구간의 T-C4도 실행 기록 하나당 한 쌍 (T-P2 전용 실행기는 흐름에서 빠졌다)
+    tc4 = [r.execution_id for r in app.store.executions(rid) if r.task_id == "T-C4"]
+    assert len(tc4) == 1
+    assert [s["exec"] for s in of(runlog, "단계시작") if s["step"] == "T-C4"] == tc4
+    assert [e["exec"] for e in of(runlog, "단계끝") if e["step"] == "T-C4"] == tc4
 
 
 def test_resume_scheduled_and_resumed_lines(clock, runlog):

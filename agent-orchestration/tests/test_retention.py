@@ -165,8 +165,8 @@ def test_live_run_moved_again_later_is_part_two(clock):
 
 
 def test_results_unchanged_after_retention(clock):
-    """화면 10 문장 비교 · 지금까지 결과 · 재작성 결과가 기록을 옮긴 뒤에도 같다."""
-    app = make_app(clock, StubScenario(tp1_targets=4))
+    """화면 11 · 지금까지 결과 · 재작성 결과가 기록을 옮긴 뒤에도 같다 (화면 10 문장 비교는 검수가 흐름에서 빠져 뺐다)."""
+    app = make_app(clock)
     done = to_screen9(app, "acc-1")
     finish(app, done)
     app2 = make_app(clock, StubScenario(doc_scores=[52.0, 60.0]))
@@ -176,12 +176,11 @@ def test_results_unchanged_after_retention(clock):
     p, p2 = pid(app, done), pid(app2, reworked)
 
     def snapshot():
-        return (app.orchestrator.screen(p, 10).dump(), app.orchestrator.screen(p, 11).dump(),
+        return (app.orchestrator.screen(p, 11).dump(),
                 app.orchestrator.outputs(p).dump(), asdict(app.orchestrator.view(done)),
                 app2.orchestrator.rework_result(p2).dump(), app2.orchestrator.outputs(p2).dump(),
                 app2.orchestrator.screen(p2, 9).dump())
     before = snapshot()
-    assert any(s["adopted"] for s in before[0]["sentences"])
     assert retain(app, clock).summary.runs == 1 and retain(app2, clock).summary.runs == 1
     assert record_counts(app, done) == [0] * 6 and record_counts(app2, reworked) == [0] * 6
     assert snapshot() == before
