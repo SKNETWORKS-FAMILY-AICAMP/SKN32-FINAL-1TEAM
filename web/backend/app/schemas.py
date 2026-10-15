@@ -1098,7 +1098,7 @@ class PolicyThresholdsIn(BaseModel):
     rerun_cap: int = Field(ge=0)
     rework_cap: int = Field(ge=0)
     deviation_cap: float = Field(ge=0, le=100, allow_inf_nan=False, description='재채점 편차 상한. 현재 쓰이지 않는다 — 오케스트레이터가 편차 검사를 하지 않아(SB-310, varianceFlag는 늘 거짓) 값은 저장만 한다')
-    token_retry_cap: int = Field(ge=0)
+    token_retry_cap: int | None = Field(None, ge=0, description='검수 문단 재시도 상한 — 검수가 흐름에서 빠져(2026-10-15) 오케스트레이터가 읽지 않는다. 선택 입력: 안 보내면 지금 값을 그대로 둔다')
 
 
 class ChecklistItemIn(BaseModel):

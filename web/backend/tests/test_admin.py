@@ -153,6 +153,17 @@ def test_put_policy_thresholds(admin_client):
     assert 'regenerate_cap' not in body  # [SB-245] 없는 기능 — 응답 · 입력에서 뺐다
 
 
+def test_put_policy_thresholds_without_token_retry_cap_keeps_the_current_value(admin_client):
+    """검수가 흐름에서 빠져(오케스트레이터 2026-10-15) token_retry_cap은 선택 입력이다 — 화면이 이 칸을 빼도 저장되고 값은 그대로다."""
+    before = admin_client.get('/admin/policy').json()['token_retry_cap']
+    res = admin_client.put('/admin/policy/thresholds', json={'pass_threshold': 70, 'rerun_cap': 3, 'rework_cap': 2, 'deviation_cap': 8})
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert (body['pass_threshold'], body['rerun_cap'], body['rework_cap']) == (70.0, 3, 2)
+    assert body['token_retry_cap'] == before
+
+
 @pytest.mark.parametrize('field,value', [
     ('pass_threshold', -1), ('pass_threshold', 101),
     ('pass_threshold', ''), ('deviation_cap', -1),

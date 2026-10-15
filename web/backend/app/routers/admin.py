@@ -98,7 +98,8 @@ def save_policy_thresholds(body: PolicyThresholdsIn, db: Session = Depends(get_d
     policy.rerun_cap = body.rerun_cap
     policy.rework_cap = body.rework_cap
     policy.deviation_cap = body.deviation_cap
-    policy.token_retry_cap = body.token_retry_cap
+    if body.token_retry_cap is not None:  # 검수 제거로 선택 입력 — 안 보내면 지금 값을 그대로 둔다
+        policy.token_retry_cap = body.token_retry_cap
     db.commit()
     db.refresh(policy)
     # [SB-338] deviation_cap(재채점 편차 상한)은 저장만 한다 — 오케스트레이터가 편차 검사를 하지 않아(SB-310, 검증-1의
