@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS notices (
     apply_end DATE NULL COMMENT '유효한 접수 종료일, 미확보 또는 고정 종료일 없으면 NULL',
     apply_period_raw JSON NOT NULL COMMENT '접수기간 원본(JSON), 출처별 객체 또는 문자열 보존',
     apply_period_type VARCHAR(32) NOT NULL COMMENT '기간 유형: fixed, budget_exhaustion, rolling, until_filled, unknown',
-    recruitment_status VARCHAR(32) NOT NULL COMMENT 'API 모집 상태: open, closed, unknown, 날짜로 추정하지 않음',
+    recruitment_status VARCHAR(32) NOT NULL COMMENT 'API 모집 상태: open, closed, unknown, 날짜로 추정하지 않음. K-Startup 은 모집 중 목록에서 빠지면 closed',
     url TEXT NULL COMMENT '공고 원문 페이지 URL',
     apply_url TEXT NULL COMMENT '지원사업 신청 페이지 URL, 미제공 시 NULL',
     attachment_discovery_status VARCHAR(32) NOT NULL COMMENT '첨부 탐색 상태: pending_crawl, api_links_available, not_available',

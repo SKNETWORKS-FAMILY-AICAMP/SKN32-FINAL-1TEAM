@@ -254,7 +254,7 @@ class FilterFirstTests(unittest.TestCase):
                 patch.object(app, '_encode', lambda text: [0.0, 0.0, 0.0, 0.0]):
             out = app.match(req)
         self.assertEqual(sorted(st['collection'].asked[0]), ['n001', 'n002'])
-        self.assertEqual(out['dense_path'], 'chroma')
+        self.assertEqual(out['dense_path'], 'memory')
 
 
 class ScoreModeTests(unittest.TestCase):

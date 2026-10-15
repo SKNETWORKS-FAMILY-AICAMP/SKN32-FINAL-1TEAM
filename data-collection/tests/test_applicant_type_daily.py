@@ -61,6 +61,23 @@ class DailyTests(unittest.TestCase):
         self.assertEqual([t['notice_id'] for t in todo], ['b', 'c'])
         self.assertEqual((skipped, deferred), (1, 0))
 
+    def test_other_engine_is_called_again(self):
+        # 엔진이 없는 옛 행(gpt-5.6-luna@medium)은 문서가 같아도 새 엔진으로 다시 뽑는다(결정 0013)
+        old = item('a')
+        existing = {'a': {'notice_id': 'a', 'document_sha256': old['document_sha256'],
+                          'llm': {'pre_founder': {'status': 'allowed'}}}}
+        new_engine = '%s@%s' % (atl.MODEL, atl.EFFORT)
+        self.assertEqual([t['notice_id'] for t in daily.plan([old], existing, 300, engine=new_engine)[0]], ['a'])
+        self.assertEqual(daily.plan([old], existing, 300)[0], [])                 # 엔진을 안 주면 예전처럼
+        existing['a']['engine'] = new_engine
+        self.assertEqual(daily.plan([old], existing, 300, engine=new_engine)[0], [])
+        self.assertEqual(daily.engine_of({}), 'gpt-5.6-luna@medium')
+
+    def test_rows_record_engine(self):
+        self.run_batch([item('x')])
+        rows = daily.read_jsonl(os.path.join(self.tmp, 'results.jsonl'))
+        self.assertEqual(rows[0]['engine'], '%s@%s' % (atl.MODEL, atl.EFFORT))
+
     def test_run_writes_results_and_verifies(self):
         out = self.run_batch([item('x'), item('y')])
         self.assertEqual(out['extracted'], 2)
@@ -149,6 +166,14 @@ class PipelineStatusTests(unittest.TestCase):
         self.assertEqual(dp.stage_warnings_of({'judgments_upload': ok}), [])
         self.assertEqual(dp.stage_warnings_of({'judgments_upload': dict(ok, error='types: 결과 파일이 없다')}),
                          [{'stage': 'judgments_upload', 'error': 'types: 결과 파일이 없다'}])
+        # 2026-09-29: 파일이 크게 줄었다는 경고(올리기는 막지 않음)도 stage_warnings 에 남는다
+        self.assertEqual(dp.stage_warnings_of({'judgments_upload': dict(ok, warning='types: 공고 수 급감')}),
+                         [{'stage': 'judgments_upload', 'warning': 'types: 공고 수 급감'}])
+        self.assertEqual(dp.stage_warnings_of({'judgments_upload': dict(ok, warning=None)}), [])
+        # Codex 재검수 P2-2: 한 표의 오류와 다른 표의 경고가 함께 나면 둘 다 남는다(예전에는 경고가 사라졌다)
+        both = dp.stage_warnings_of({'judgments_upload': {'error': 'types: duplicate', 'warning': 'industries: coverage low'}})
+        self.assertEqual(both, [{'stage': 'judgments_upload', 'error': 'types: duplicate'},
+                                {'stage': 'judgments_upload', 'warning': 'industries: coverage low'}])
 
 
 class ServicePathTests(unittest.TestCase):

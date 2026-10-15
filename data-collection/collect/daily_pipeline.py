@@ -29,6 +29,7 @@
 한 소스가 실패해도 나머지는 갱신하고, 실패한 소스는 직전 데이터를 유지한다.
 
 종료 코드는 daily_job 과 맞춘다. 0 성공 / 1 실패 / 2 부분 실패 / 3 이미 실행 중
+/ 4 수집은 성공, 후처리(5~14단계) 경고
 """
 import argparse
 import hashlib
@@ -152,8 +153,30 @@ def build_normalized(sources, say):
     return out, s
 
 
-def store(path, say):
-    """MySQL 저장. 실패해도 예외를 올리지 않고 (성공여부, 결과) 를 돌려준다."""
+def kstartup_listed(ks):
+    """오늘 새로 받았고 서버 보고 건수와 꼭 맞는 K-Startup 모집 중 목록의 공고 번호 집합. 아니면 None.
+
+    None 이면 저장 단계가 목록에서 빠진 공고를 닫지 않는다(2026-09-30). K-Startup 수집이 실패·거부되면
+    파이프라인은 어제 notices.json 을 그대로 정규화해 저장하므로, 그날 '빠졌다'는 판단을 할 수 없다.
+    """
+    if ks.get('status') != 'ok' or not ks.get('complete'):
+        return None
+    try:
+        with open(daily_job.OUT, encoding='utf-8') as f:
+            payload = json.load(f)
+    except Exception:
+        return None
+    ids = {daily_job.listed_id(r) for r in payload.get('notices') or []} - {None}
+    if not payload.get('complete') or not ids or len(ids) != payload.get('reported_total'):
+        return None
+    return ids
+
+
+def store(path, say, listed=None):
+    """MySQL 저장. 실패해도 예외를 올리지 않고 (성공여부, 결과) 를 돌려준다.
+
+    listed = {출처: 오늘 모집 중 목록의 원본 ID 집합}. 주면 목록에서 빠진 open 공고를 closed 로 바꾼다.
+    """
     from shared import store_mysql
 
     connection = None
@@ -164,7 +187,7 @@ def store(path, say):
         store_mysql.validate_payload(payload)
         connection = store_mysql.connect()
         result = store_mysql.store_payload(
-            connection, payload, hashlib.sha256(content).hexdigest())
+            connection, payload, hashlib.sha256(content).hexdigest(), listed=listed)
         say('  MySQL 저장 %s' % json.dumps(result, ensure_ascii=False)[:160])
         return True, result
     except Exception as exc:
@@ -189,7 +212,7 @@ def run(dry_run=False, skip_store=False, force=False, say=print,
         skip_embed=False, embed_limit=None, skip_upload=False,
         skip_files=False, skip_conditions=False, conditions_limit=None,
         skip_applicant_types=False, applicant_types_limit=None, skip_judgments=False,
-        skip_industries=False, industries_limit=None):
+        skip_industries=False, industries_limit=None, skip_bonus=False, bonus_limit=None):
     try:
         with job_lock.acquire(LOCK):
             return _run(dry_run, skip_store, force, say,
@@ -197,7 +220,7 @@ def run(dry_run=False, skip_store=False, force=False, say=print,
                         skip_embed, embed_limit, skip_upload, skip_files,
                         skip_conditions, conditions_limit,
                         skip_applicant_types, applicant_types_limit, skip_judgments,
-                        skip_industries, industries_limit)
+                        skip_industries, industries_limit, skip_bonus, bonus_limit)
     except job_lock.JobBusy as exc:
         return {'status': 'busy', 'job': 'pipeline', 'error': str(exc)}
 
@@ -207,7 +230,7 @@ def _run(dry_run, skip_store, force, say,
          skip_embed=False, embed_limit=None, skip_upload=False,
          skip_files=False, skip_conditions=False, conditions_limit=None,
          skip_applicant_types=False, applicant_types_limit=None, skip_judgments=False,
-         skip_industries=False, industries_limit=None):
+         skip_industries=False, industries_limit=None, skip_bonus=False, bonus_limit=None):
     started = time.time()
     sources = {}
 
@@ -215,9 +238,10 @@ def _run(dry_run, skip_store, force, say,
     say('K-Startup 수집')
     # 잠금은 이 함수 바깥에서 이미 잡았다. daily_job.run() 을 부르면 같은 잠금을
     # 다시 잡으려다 스스로 busy 가 되므로 잠금 없는 _run() 을 직접 부른다.
-    ks = daily_job._run(skip_embed=True, dry_run=dry_run, force=force, say=say)
+    ks = daily_job._run(dry_run=dry_run, force=force, say=say)
     sources['kstartup'] = {'status': ks['status'], 'count': ks.get('count'),
-                           'new_count': ks.get('new_count'), 'error': ks.get('error')}
+                           'new_count': ks.get('new_count'), 'error': ks.get('error'),
+                           'complete': ks.get('complete')}
     # ── 2. 기업마당 — 실패해도 직전 스냅샷으로 이어간다 ────────────
     say('기업마당 수집')
     biz_path, biz_count, biz_status, biz_why = collect_bizinfo(force, say)
@@ -252,7 +276,14 @@ def _run(dry_run, skip_store, force, say,
         say('--skip-store — DB 저장을 건너뛴다')
     else:
         say('MySQL 저장')
-        stored, store_result = store(norm_path, say)
+        # K-Startup 을 오늘 빠짐없이 받은 날에만 모집 중 목록에서 빠진 공고를 닫는다(2026-09-30)
+        ks_ids = kstartup_listed(ks)
+        if ks_ids is None:
+            say('  K-Startup 목록을 오늘 빠짐없이 받지 못해 모집 종료 처리를 건너뛴다')
+        stored, store_result = store(norm_path, say,
+                                     listed={'kstartup': ks_ids} if ks_ids else None)
+        if stored and store_result.get('closed_missing') is not None:
+            say('  모집 중 목록에서 빠져 모집 종료로 바꾼 K-Startup 공고 %d건' % store_result['closed_missing'])
 
     # ── 5. 첨부 받기·본문 추출 ────────────────────────────────
     # 공고 저장이 끝난 뒤에 한다. 여기서 실패해도 공고 데이터는 이미 최신이다.
@@ -388,12 +419,33 @@ def _run(dry_run, skip_store, force, say,
             from collect import upload_judgments
             parts = upload_judgments.run(say=lambda line: say('  ' + line))
             errors = ['%s: %s' % (k, v['error']) for k, v in parts.items() if v.get('error')]
-            judgments_result = dict(parts, error='; '.join(errors) or None)
+            # 파일이 크게 줄었다는 경고(2026-09-29 — 올리기는 막지 않는다)도 stage_warnings 로 남긴다
+            warnings = ['%s: %s' % (k, v['warning']) for k, v in parts.items() if v.get('warning')]
+            judgments_result = dict(parts, error='; '.join(errors) or None, warning='; '.join(warnings) or None)
         except Exception as exc:
             say('  판정 올리기 실패: %s' % type(exc).__name__)
             judgments_result = {'error': '%s: %s' % (type(exc).__name__, str(exc)[:200])}
     elif skip_judgments or skip_upload:
         say('판정 올리기를 건너뛴다(--skip-judgments 또는 --skip-upload)')
+
+    # ── 14. 공고 가점 뽑기 (LLM, 2026-10-06, docs/notice_api/03_bonus) ──
+    # 조율 창구의 신청자별 가산점이 쓰는 공고 가점(collect/extract_bonus.py → 공용 DB notice_bonus). 열린 공고 중
+    # 첨부 본문이 있는 공고만 본다. 발췌 해시·추출기 버전·공고 내용 지문이 같으면 건너뛰므로 새 공고·바뀐 공고만 부른다.
+    # 상한은 한국 날짜 하루 300건(같은 날 다시 돌려도 합산, data/bonus_daily_calls.json — 2026-10-06 Codex 검수 P2-6).
+    # 가점·우대 말이 없는 공고는 부르지 않고 no_mention 으로 적는다. --skip-upload 도 따른다(공용 DB 쓰기)
+    bonus_result = None
+    if stored and not skip_bonus and not skip_upload:
+        say('가점 추출')
+        try:
+            from collect import extract_bonus
+            bonus_result = extract_bonus.run_batch(
+                limit=bonus_limit if bonus_limit is not None else extract_bonus.DAILY_LIMIT,
+                say=lambda line: say('  ' + line))
+        except Exception as exc:
+            say('  가점 추출 실패: %s' % type(exc).__name__)
+            bonus_result = {'error': '%s: %s' % (type(exc).__name__, str(exc)[:200])}
+    elif skip_bonus or skip_upload:
+        say('가점 추출을 건너뛴다(--skip-bonus 또는 --skip-upload)')
 
     removed = prune('bizinfo') + prune('kstartup')
     if removed:
@@ -402,12 +454,18 @@ def _run(dry_run, skip_store, force, say,
     # 한 소스라도 정상이 아니면 부분 실패로 본다
     degraded = [s for s, v in sources.items() if v['status'] not in ('ok', 'dry-run')]
     ok = not degraded and (stored or dry_run or skip_store)
-    # 후처리(LLM) 경고 — 10·11단계가 실패했거나 일부 호출이 실패했다(2026-09-28 Codex 통합 검수 P2).
+    # 후처리 경고 — 10~14단계(LLM 추출·판정 올리기·가점)가 실패했거나 일부 호출이 실패했거나 경고를 냈다(2026-09-28 Codex 통합 검수 P2).
     # 수집 자체는 끝났으므로 status 는 그대로 둔다. 'partial' 로 바꾸면 수집 상태 판정(search/collection_status.py)이
     # 매칭을 막는다 — 공고 데이터는 새것인데 LLM 후처리만 늦은 것이라 막을 일이 아니다.
     # 대신 로그에 stage_warnings 로 남기고 종료 코드 4 로 알린다(run_daily.bat 이 run.log 에 exit=4 를 남긴다).
-    stage_warnings = stage_warnings_of({'conditions': conditions_result, 'applicant_types': applicant_types_result,
-                                        'industries': industries_result, 'judgments_upload': judgments_result})
+    # 5~9단계(첨부·임베딩·벡터 올리기·첨부 원본 올리기)도 같다(2026-10-13). 전에는 단계가 통째로 실패해도 exit=0 이라
+    # 새 공고가 의미 검색에서 빠지는 날을 아무도 몰랐다. 이 단계들의 결과에는 error 만 있다 — 파일 몇 개를 못 받거나
+    # 못 읽은 것(counts 의 download_fail·parse_error)은 평소 일이라 경고로 올리지 않는다.
+    stage_warnings = stage_warnings_of({'attachments': attach, 'embeddings': embed_result,
+                                        'vector_upload': upload_result, 'file_upload': file_result,
+                                        'conditions': conditions_result, 'applicant_types': applicant_types_result,
+                                        'industries': industries_result, 'judgments_upload': judgments_result,
+                                        'bonus': bonus_result})
 
     return write_log({
         'status': 'ok' if ok else 'partial',
@@ -429,12 +487,18 @@ def _run(dry_run, skip_store, force, say,
         'applicant_types': applicant_types_result,
         'industries': industries_result,
         'judgments_upload': judgments_result,
+        'bonus': bonus_result,
         'elapsed_sec': round(time.time() - started, 1),
     })
 
 
 def stage_warnings_of(results):
-    """{단계: 결과} → [{'stage', 'error'|'failed'}]. 단계 예외·API 키 없음·일부 호출 실패를 모은다."""
+    """{단계: 결과} → [{'stage', 'error'|'failed'|'warning'}]. 단계 예외·API 키 없음·일부 호출 실패·경고를 모은다.
+
+    warning 은 2026-09-29 추가 — 13단계가 결과 파일이 크게 줄어든 것을 알리되 올리기는 막지 않을 때다.
+    한 단계에 error 와 warning 이 함께 있으면 **둘 다** 남긴다(13단계는 한 표의 오류와 다른 표의 경고가 함께 날 수 있다 —
+    2026-09-29 Codex 재검수 P2-2). 같은 단계가 두 줄이 될 수 있다.
+    """
     out = []
     for stage, result in results.items():
         if not result:
@@ -443,6 +507,8 @@ def stage_warnings_of(results):
             out.append({'stage': stage, 'error': result['error']})
         elif result.get('failed'):
             out.append({'stage': stage, 'failed': result['failed']})
+        if result.get('warning'):
+            out.append({'stage': stage, 'warning': result['warning']})
     return out
 
 
@@ -467,6 +533,8 @@ def main():
                     help='신청자 유형 추출(LLM)을 건너뛴다')
     ap.add_argument('--skip-industries', action='store_true', help='업종 추출(LLM)을 건너뛴다')
     ap.add_argument('--industries-limit', type=int, help='이번 날짜의 업종 추출 공고 상한 (기본 300)')
+    ap.add_argument('--skip-bonus', action='store_true', help='공고 가점 추출(LLM, 14단계)을 건너뛴다')
+    ap.add_argument('--bonus-limit', type=int, help='가점을 추출할 공고의 한국 날짜 하루 상한 (기본 300, 같은 날 다시 돌려도 합산)')
     ap.add_argument('--skip-judgments', action='store_true',
                     help='판정(신청자 유형·업종)을 공용 DB 로 올리지 않는다')
     ap.add_argument('--applicant-types-limit', type=int,
@@ -485,7 +553,8 @@ def main():
             skip_applicant_types=args.skip_applicant_types,
             applicant_types_limit=args.applicant_types_limit,
             skip_judgments=args.skip_judgments,
-            skip_industries=args.skip_industries, industries_limit=args.industries_limit)
+            skip_industries=args.skip_industries, industries_limit=args.industries_limit,
+            skip_bonus=args.skip_bonus, bonus_limit=args.bonus_limit)
 
     if r['status'] == 'busy':
         print('이미 수집 작업이 실행 중이다.', file=sys.stderr)
@@ -501,6 +570,9 @@ def main():
         print('  %-10s %-9s %s건%s'
               % (source, v['status'], v.get('count'),
                  ' — ' + v['error'] if v.get('error') else ''))
+    sr = r.get('store_result') or {}
+    if sr.get('closed_missing') is not None:
+        print('  %-10s 모집 중 목록에서 빠진 K-Startup %d건 → closed' % ('모집 종료', sr['closed_missing']))
     a = r.get('attachments') or {}
     if a.get('counts') or a.get('error'):
         print('  %-10s %s' % ('첨부', a.get('error') or
@@ -556,8 +628,8 @@ def main():
         print('\n일부 소스가 갱신되지 않았다. 해당 소스는 직전 데이터를 유지한다.')
         return 2
     if r.get('stage_warnings'):
-        print('\n수집은 끝났지만 후처리(LLM)에 경고가 있다: %s'
-              % ', '.join(w['stage'] for w in r['stage_warnings']))
+        print('\n수집은 끝났지만 후처리(5~14단계)에 경고가 있다: %s'
+              % ', '.join(dict.fromkeys(w['stage'] for w in r['stage_warnings'])))
         return 4
     return 0
 

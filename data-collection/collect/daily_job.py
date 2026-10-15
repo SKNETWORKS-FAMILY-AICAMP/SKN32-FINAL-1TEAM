@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """일일 공고 수집 작업 — 하루 한 번 돌린다.
 
-  python daily_job.py                 수집 + 검증 + 교체 + 임베딩 + 로그
-  python daily_job.py --skip-embed    임베딩 생략 (빠름)
+  python daily_job.py                 수집 + 검증 + 교체 + 로그 (임베딩은 daily_pipeline 6단계)
   python daily_job.py --dry-run       수집만 하고 저장하지 않는다
   python daily_job.py --force         건수 급감 경고를 무시하고 교체
 
@@ -100,6 +99,30 @@ def validate(rows, prev, force):
     return True, ''
 
 
+def listed_id(row):
+    """원본 행의 공고 번호를 DB source_id 와 같은 방식(normalize.text)으로 다듬는다. 못 다듬으면 None.
+
+    목록 비교와 DB 저장이 같은 규칙을 써야 ' 100 ' 같은 입력을 방금 저장한 '100' 과 다른 공고로 보고
+    닫지 않는다(2026-09-30 Codex 검수 P2-1).
+    """
+    from collect import normalize
+    try:
+        return normalize.text(row.get('pbanc_sn')) or None
+    except ValueError:
+        return None
+
+
+def is_complete(rows, total):
+    """받은 목록이 서버가 보고한 모집 중 공고 전부인가.
+
+    fetch_all 은 빈 쪽을 만나면 멈추고 그대로 돌려주고, validate 는 전일 대비 50% 만 본다.
+    그래서 "목록에서 빠진 공고 = 모집 종료"(daily_pipeline → store_mysql) 는 이 값이 True 인 날만 쓴다.
+    고유 공고 번호 수(listed_id 기준)와 받은 행 수가 모두 서버 보고 건수와 같아야 한다(2026-09-30).
+    """
+    ids = {listed_id(r) for r in rows} - {None}
+    return bool(total) and len(rows) == total and len(ids) == total
+
+
 def archive(prev):
     """교체 전 파일을 날짜별로 남긴다. 신규 공고 탐지(INT-ID-001)에도 쓴다."""
     if not prev or not os.path.exists(OUT):
@@ -111,16 +134,6 @@ def archive(prev):
     return os.path.basename(dst)
 
 
-def build_embeddings(notices):
-    """수집 시점에 임베딩을 만들어 둔다 (ANN-ID-005).
-
-    사용자 요청 시점에 만들면 첫 검색이 몇 분씩 걸린다.
-    """
-    import match_bge
-    match_bge.Index(notices)
-    return True
-
-
 def new_notice_ids(rows, prev):
     """전일에 없던 공고. 관심 공고 알림(INT-ID-001)의 입력이 된다."""
     if not prev:
@@ -129,16 +142,16 @@ def new_notice_ids(rows, prev):
     return [r.get('pbanc_sn') for r in rows if r.get('pbanc_sn') not in old]
 
 
-def run(skip_embed=False, dry_run=False, force=False, say=print):
+def run(dry_run=False, force=False, say=print):
     """예약 CLI와 수동 화면에 공통 실행 잠금을 적용한다."""
     try:
         with job_lock.acquire(os.path.join(DATA, 'collection.lock')):
-            return _run(skip_embed, dry_run, force, say)
+            return _run(dry_run, force, say)
     except job_lock.JobBusy as exc:
         return {'status': 'busy', 'stage': 'lock', 'error': str(exc)}
 
 
-def _run(skip_embed=False, dry_run=False, force=False, say=print):
+def _run(dry_run=False, force=False, say=print):
     """수집 한 사이클. 결과를 dict 로 돌려준다.
 
     CLI 와 화면(chat_app.py 의 수동 재수집 버튼)이 같은 코드를 쓰도록 분리했다.
@@ -162,6 +175,9 @@ def _run(skip_embed=False, dry_run=False, force=False, say=print):
                           'prev_count': prev_count,
                           'elapsed_sec': round(time.time() - started, 1)})
     say('수집 %d건 (서버 보고 %d건)' % (len(rows), total))
+    complete = is_complete(rows, total)
+    if not complete:
+        say('  경고: 받은 목록이 서버 보고 건수와 맞지 않는다 — 오늘은 목록에서 빠진 공고를 닫지 않는다')
 
     # ── 2. 검증 ──────────────────────────────────────────────
     ok, why = validate(rows, prev, force)
@@ -175,7 +191,7 @@ def _run(skip_embed=False, dry_run=False, force=False, say=print):
 
     if dry_run:
         return {'status': 'dry-run', 'count': len(rows), 'prev_count': prev_count,
-                'new_count': len(added),
+                'new_count': len(added), 'complete': complete,
                 'elapsed_sec': round(time.time() - started, 1)}
 
     # ── 3. 임시 파일에 쓰고 원자적으로 교체 ──────────────────────
@@ -184,6 +200,7 @@ def _run(skip_embed=False, dry_run=False, force=False, say=print):
         'source': 'K-Startup getAnnouncementInformation01 (rcrt_prgs_yn=Y)',
         'count': len(rows),
         'reported_total': total,
+        'complete': complete,
         'notices': rows,
     }
     os.makedirs(DATA, exist_ok=True)
@@ -194,24 +211,14 @@ def _run(skip_embed=False, dry_run=False, force=False, say=print):
     os.replace(TMP, OUT)          # 같은 볼륨이면 원자적이다
     say('교체 완료%s' % (' (이전본 %s)' % archived if archived else ''))
 
-    # ── 4. 임베딩 ────────────────────────────────────────────
-    embedded, embed_err = False, None
-    if not skip_embed:
-        try:
-            say('임베딩 생성 중… 몇 분 걸린다')
-            embedded = build_embeddings(rows)
-        except Exception as e:
-            embed_err = str(e)
-            say('임베딩 실패: %s (공고 데이터는 교체됐다)' % e)
-
+    # 임베딩은 매일 배치 6단계(shared/embed)가 만든다.
     return write_log({
-        'status': 'ok' if (embedded or skip_embed) else 'partial',
+        'status': 'ok',
         'count': len(rows),
         'prev_count': prev_count,
         'new_count': len(added),
         'reported_total': total,
-        'embedded': embedded,
-        'embed_error': embed_err,
+        'complete': complete,
         'archived': archived,
         'elapsed_sec': round(time.time() - started, 1),
     })
@@ -233,12 +240,11 @@ def recent_logs(n=10):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--skip-embed', action='store_true', help='임베딩 생성을 건너뛴다')
     ap.add_argument('--dry-run', action='store_true', help='수집만 하고 저장하지 않는다')
     ap.add_argument('--force', action='store_true', help='건수 급감 경고를 무시한다')
     args = ap.parse_args()
 
-    r = run(skip_embed=args.skip_embed, dry_run=args.dry_run, force=args.force)
+    r = run(dry_run=args.dry_run, force=args.force)
 
     if r['status'] == 'busy':
         print(r['error'], file=sys.stderr)
@@ -251,7 +257,7 @@ def main():
     print('\n%s — %d건 / 신규 %d건 / %.1f초'
           % (r['status'], r.get('count', 0), r.get('new_count', 0),
              r.get('elapsed_sec', 0)))
-    return 2 if r['status'] == 'partial' else 0
+    return 0
 
 
 if __name__ == '__main__':

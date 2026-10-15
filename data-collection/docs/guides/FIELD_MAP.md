@@ -38,7 +38,7 @@ K-Startup   30개 필드   창업진흥원 · 공공데이터포털
 | `apply_end` | `pbanc_rcpt_end_dt` | `reqstBeginEndDe` 뒷부분 | |
 | `apply_period_raw` | 위 두 값을 그대로 | `reqstBeginEndDe` 원문 | 해석 전 원본 |
 | `apply_period_type` | — | — | 우리가 판정한다. 5종 |
-| `recruitment_status` | `rcrt_prgs_yn` | **—** | `Y`→`open`, `N`→`closed` |
+| `recruitment_status` | `rcrt_prgs_yn` | **—** | `Y`→`open`, `N`→`closed`. 저장 단계가 모집 중 목록에서 빠진 K-Startup 공고를 `closed` 로 바꾼다(2026-09-30, `store_mysql.close_missing`) |
 | `url` | `detl_pg_url` | `pblancUrl` | 공고 상세 페이지 |
 | `apply_url` | `biz_aply_url` | `rceptEngnHmpgUrl` | K-Startup 은 값이 늘 비어 있다 |
 | `source_updated_at_raw` | **—** | `updtPnttm` | 첨부 재수집 판별에 쓴다 |

@@ -54,6 +54,8 @@ cd C:\mok_workspace\SKN32-FINAL-1TEAM\data-collection
 .\.venv\Scripts\python.exe -X utf8 eval\search_comparison.py --check-only   # Chroma 실제 벡터 정합성만 (읽기 전용)
 ```
 
+> `search_comparison.py`·`chroma_integrity.py`는 **Chroma 시절 도구**다. 공고 서버는 2026-10-07부터 Chroma를 쓰지 않는다(결정 0010). 로컬 Chroma(배치 7단계)가 남아 있는 동안만 돈다.
+
 `--check-only` 는 DB(SELECT)·`data/embeddings_v1.npz`·Chroma 를 대조해 `reports/chroma_integrity_<시각>/` 에
 `integrity.json`·`summary.md` 를 남긴다. Chroma 는 원본을 열지 않고 임시 복사본을 연다.
 종료코드 0 통과 · 2 불일치 · 4 확인 실패. 비교 실행(`search_comparison.py`)도 이 검사가 통과해야 검색을 시작한다.

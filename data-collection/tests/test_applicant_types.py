@@ -135,11 +135,11 @@ def rows():
     }
 
 
-def match(applicant_type='예비창업자', table=TABLE, **kw):
+def match(applicant_type='예비창업자', table=TABLE, rows_=None, **kw):
     kw.setdefault('search', 'dense')
     req = app.MatchRequest(applicant_type=applicant_type, founded_at='' if applicant_type == '예비창업자' else '2025-01-01',
-                           idea='창업 지원', top=10, **kw)
-    st = dict(state(rows()), applicant_types=table)
+                           idea='창업 지원', top=20, **kw)
+    st = dict(state(rows_ or rows()), applicant_types=table)
     with patch.dict(app.STATE, st, clear=True), patch.object(app, '_encode', lambda t: [0.0] * 4):
         return app.match(req)
 
@@ -164,11 +164,14 @@ class MatchTests(unittest.TestCase):
         self.assertEqual(out['filter']['excluded'].get('예비창업자 불가(공고 본문)'), 1)
 
     def test_business_applicants_are_untouched(self):
+        # 2026-10-13(결정 0021)부터 개인·법인도 판정표를 쓰지만, 그 유형의 '불가' strong 이 없는 공고는 그대로다
         out = match(applicant_type='법인사업자')
-        self.assertFalse(out['applicant_types']['active'])
+        t = out['applicant_types']
+        self.assertEqual((t['active'], t['blocked'], t['restored'], t['implied_demoted']), (True, 0, 0, 0))
         self.assertIn('불가', ids(out))
         self.assertIn('추정', ids(out))
-        self.assertEqual(ids(out)[:2], ['불가', '약한불가'])     # 순서도 그대로
+        self.assertEqual(ids(out)[:2], ['불가', '약한불가'])     # 순서도 그대로 — 예비창업자 '불가 추정' 뒤로 보내기는 예비창업자만
+        self.assertFalse(any(r['rules']['pre_founder_implied_no'] for r in out['results']))
 
     def test_switch_off_and_missing_table(self):
         for out in (match(use_applicant_types=False), match(table={})):
@@ -210,6 +213,108 @@ class EligibilityTests(unittest.TestCase):
         _out, c = self.gate('보통', table={})
         self.assertIsNone(c['지원대상 유형']['판정'])
         self.assertIn('원문을 확인', c['지원대상 유형']['설명'])
+
+
+# ── 개인사업자·법인 '불가' strong(2026-10-13 결정 0021) ─────────────────────
+ENTITY_TABLE = {'active': True, 'source': 'test', 'notices': {
+    '법인불가': info(('not_mentioned',), corp=('not_allowed', 'strong', '도내 소상공인(법인 제외)')),
+    '개인불가': info(('not_mentioned',), sole=('not_allowed', 'strong', '국내 법인사업자')),
+    '법인약한불가': info(('not_mentioned',), corp=('not_allowed', 'weak', '개인사업자 우대')),
+    '법인세부별': info(('not_mentioned',), varies=True, corp=('not_allowed', 'strong', '2트랙은 개인사업자만')),
+    '법인확인필요': dict(info(('not_mentioned',), corp=('not_allowed', 'strong', '법인 제외')),
+                       unread_corporation='제출서류: 법인인 경우 법인등기부등본'),
+    '법인원문없음': dict(info(('not_mentioned',), corp=('not_allowed', 'strong', '법인 제외')), unverified_corporation=True),
+    '법인가능': info(('not_mentioned',), corp=('allowed', 'strong', '법인 신청 가능')),
+    '추정': info(('implied_no', 'strong', '도내 제조기업')),
+}}
+
+
+def entity_rows():
+    return {nid: notice(nid, age_condition_raw='') for nid in ENTITY_TABLE['notices']}
+
+
+def ematch(applicant_type, table=ENTITY_TABLE, **kw):
+    return match(applicant_type, table=table, rows_=entity_rows(), **kw)
+
+
+class EntityTests(unittest.TestCase):
+    def test_only_strong_common_checked_blocks(self):
+        self.assertEqual(at.entity(ENTITY_TABLE, '법인불가', '법인'), 'blocked')
+        self.assertEqual(at.entity(ENTITY_TABLE, '법인불가', '법인사업자'), 'blocked')     # 예전 화면·시험 값
+        self.assertEqual(at.entity(ENTITY_TABLE, '개인불가', '개인사업자'), 'blocked')
+        self.assertIsNone(at.entity(ENTITY_TABLE, '법인불가', '개인사업자'))               # 다른 유형은 건드리지 않는다
+        for nid in ('법인약한불가', '법인세부별', '법인확인필요', '법인원문없음', '법인가능', '추정', '없는공고'):
+            self.assertIsNone(at.entity(ENTITY_TABLE, nid, '법인'), nid)
+        self.assertIsNone(at.entity(ENTITY_TABLE, '법인불가', '예비창업자'))
+        self.assertIsNone(at.entity(ENTITY_TABLE, '법인불가', '사업자'))                    # 알 수 없는 유형
+        self.assertIsNone(at.entity({}, '법인불가', '법인'))
+        self.assertEqual((at.entity_key('법인'), at.entity_key('법인사업자'), at.entity_key('개인사업자'),
+                          at.entity_key('예비창업자'), at.entity_key('')), ('corporation', 'corporation', 'sole_proprietor',
+                                                                         None, None))
+
+    def test_match_filters_only_that_type(self):
+        out = ematch('법인')
+        got = ids(out)
+        self.assertNotIn('법인불가', got)
+        for nid in ('개인불가', '법인약한불가', '법인세부별', '법인확인필요', '법인원문없음', '법인가능', '추정'):
+            self.assertIn(nid, got, nid)
+        self.assertEqual(out['filter']['excluded'].get('법인 불가(공고 본문)'), 1)
+        t = out['applicant_types']
+        self.assertEqual((t['active'], t['blocked'], t['restored'], t['implied_demoted']), (True, 1, 0, 0))
+        out = ematch('개인사업자')
+        self.assertNotIn('개인불가', ids(out))
+        self.assertIn('법인불가', ids(out))
+        self.assertEqual(out['filter']['excluded'].get('개인사업자 불가(공고 본문)'), 1)
+        # 예비창업자에게는 개인·법인 판정을 쓰지 않는다(예비창업자 규칙만)
+        got = ids(ematch('예비창업자'))
+        self.assertIn('법인불가', got)
+        self.assertIn('개인불가', got)
+
+    def test_switch_off_and_missing_table(self):
+        for out in (ematch('법인', use_applicant_types=False), ematch('법인', table={})):
+            self.assertIn('법인불가', ids(out))
+            self.assertFalse(out['applicant_types']['active'])
+
+    def gate(self, nid, applicant_type):
+        req = app.GateRequest(notice_id=nid, applicant_type=applicant_type, founded_at='2020-01-01')
+        st = dict(state(entity_rows()), applicant_types=ENTITY_TABLE)
+        with patch.dict(app.STATE, st, clear=True):
+            out = app.eligibility(req)
+        return out, {c['조건']: c for c in out['checks']}['지원대상 유형']
+
+    def test_eligibility_screen(self):
+        out, c = self.gate('법인불가', '법인')
+        self.assertIs(c['판정'], False)
+        self.assertIn('법인 신청 불가', c['요구'])
+        self.assertIn('도내 소상공인(법인 제외)', c['설명'])
+        self.assertFalse(out['passed'])
+        _out, c = self.gate('법인불가', '개인사업자')
+        self.assertIsNone(c['판정'])
+        _out, c = self.gate('법인확인필요', '법인')
+        self.assertIsNone(c['판정'])
+        self.assertIn('확인 필요', c['요구'])
+        self.assertIn('법인등기부등본', c['설명'])
+        _out, c = self.gate('법인원문없음', '법인')
+        self.assertIsNone(c['판정'])
+        self.assertIn('확인하지 못했습니다', c['설명'])
+        for nid in ('법인약한불가', '법인세부별', '법인가능'):
+            _out, c = self.gate(nid, '법인')
+            self.assertIsNone(c['판정'], nid)                                   # 가능도 True 로 올리지 않는다
+            self.assertIn('참고', c['요구'], nid)
+
+    def test_filter_and_eligibility_agree(self):
+        # 정형 필터와 자격 판정(지원대상 유형)이 같은 결론 — 공고 × 세 유형 전부
+        from datetime import date
+        from search import eligibility, gate
+        today = date(2026, 10, 13)
+        for nid, row in entity_rows().items():
+            for kind in ('예비창업자', '개인사업자', '법인'):
+                founded = '' if kind == '예비창업자' else '2020-01-01'
+                age = gate.applicant_age(kind, founded, today)
+                keep, _why, _ = app.eligible_with_types(nid, row, age, today, False, ENTITY_TABLE, kind)
+                checks, _ = eligibility.conditions(row, nid, kind, founded, types_table=ENTITY_TABLE, today=today)
+                failed = any(c['판정'] is False for c in checks if c['조건'] in ('지원대상 유형', '업력'))
+                self.assertEqual(keep, not failed, (nid, kind))
 
 
 if __name__ == '__main__':
