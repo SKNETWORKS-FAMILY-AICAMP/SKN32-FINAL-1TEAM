@@ -17,7 +17,9 @@ _payload()가 안 보내도 여전히 201로 성공해야 한다.
 import datetime
 import json
 
-from app.models import Company, Notice, Project
+from orch_fakes import ActiveWork
+
+from app.models import Company
 
 
 def _payload(**overrides):
@@ -59,41 +61,19 @@ def test_two_projects_keep_own_company_info(authed_client, db_session):
     assert {project1['project_id'], project2['project_id']} <= listed_ids
 
 
-def test_concurrency_limit_still_blocks_without_shared_company(authed_client, db_session):
+def test_concurrency_limit_still_blocks_without_shared_company(authed_client, db_session, orch):
+    """[SB-242] 동시 실행 제한은 오케스트레이터가 계정 단위로 판단한다 — 회사 프로필과 무관하다.
+    막힌 요청은 회사 프로필도 새로 만들지 않아야 한다."""
     r1 = authed_client.post('/projects', data=_payload())
     assert r1.status_code == 201, r1.text
     project1_id = r1.json()['project_id']
-
-    # 실제 파이프라인 없이 "진행 중 매칭"만 최소로 흉내낸다 — [2026-09-28, match_results
-    # 테이블 통합] 이제 이 값들은 project 행 자체의 컬럼이고, status는 (match_results와
-    # 달리) 기본값이 없으므로(아직 매칭 전인 프로젝트와 구분하기 위해 nullable) 명시적으로
-    # 'in_progress'를 채워야 한다.
-    notice = Notice(
-        id=1, notice_id='test:PBLN_0001', source='test', title='테스트 공고',
-        target_text=None, category=None, organizer=None, supervising_org=None,
-        executing_org=None, apply_start=None, apply_end=None,
-        recruitment_status='open', url=None,
-    )
-    db_session.add(notice)
-    db_session.flush()
-    project1 = db_session.get(Project, project1_id)
-    project1.notice_id = notice.notice_id
-    project1.fit_score = 80
-    project1.status = 'in_progress'
-    db_session.commit()
+    orch.responses['active_work'] = ActiveWork(project_id=str(project1_id), run_id='r1', step='계획서작성',
+                                               resume_step=5)
 
     r2 = authed_client.post('/projects', data=_payload(ceo_name='다른 사람'))
-    assert r2.status_code == 409, (
-        f'진행 중 매칭이 있는데도 새 프로젝트 생성이 막히지 않았다 — 동시 실행 제한이 '
-        f'User 락 분리 후 깨졌을 수 있다 (status={r2.status_code}, body={r2.text})'
-    )
-
-    # 앞서 만든 회사 프로필이 재사용되지 않고 새로 생겼는지도(막힌 요청은 커밋 전에
-    # 거부되니 두 번째 회사 프로필이 남아있으면 안 된다) 확인.
-    companies_for_user = db_session.query(Company).join(Project, Project.company_id == Company.company_id).filter(
-        Project.project_id == project1_id
-    ).count()
-    assert companies_for_user == 1
+    assert r2.status_code == 409, r2.text
+    assert r2.json()['detail']['active_project_id'] == project1_id
+    assert db_session.query(Company).count() == 1, '막힌 요청이 회사 프로필을 만들었다'
 
 
 def test_applicant_type_is_persisted(authed_client, db_session):

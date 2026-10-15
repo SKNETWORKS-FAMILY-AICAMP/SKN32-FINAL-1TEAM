@@ -115,6 +115,7 @@ def test_create_project_blocked_until_required_consent_completed(client, monkeyp
     r1 = client.post('/projects', data={'payload': payload})
     assert r1.status_code == 403, r1.text
     assert '동의' in r1.json()['detail']
+    assert r1.json()['code'] == 'E-AUTH-CONSENT'
 
     consent_res = client.patch('/auth/consent', json={'termsAgreed': True, 'privacyAgreed': True})
     assert consent_res.status_code == 200
@@ -154,6 +155,7 @@ def test_create_project_blocked_until_profile_created(client, monkeypatch):
     r1 = client.post('/projects', data={'payload': payload})
     assert r1.status_code == 403, r1.text
     assert '프로필' in r1.json()['detail']
+    assert r1.json()['code'] == 'E-AUTH-PROFILE'
 
     r2 = client.post('/profile', json=_MINIMAL_PROFILE_PAYLOAD)
     assert r2.status_code == 201, r2.text
@@ -198,4 +200,4 @@ def test_login_rejects_google_account_without_email(client, monkeypatch):
 
 def test_patch_consent_requires_login(client):
     res = client.patch('/auth/consent', json={'aiTrainingAgreed': True})
-    assert res.status_code == 401
+    assert res.status_code == 401 and res.json()['code'] == 'UNAUTHORIZED'

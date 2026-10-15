@@ -51,7 +51,7 @@ try {
     const old = {profile_id:2, name:'PREVIOUS_USER', basic:{}, capability:{}};
     complete(action === 'loadProfiles' ? [old] : old);
     await pending;
-    assert.equal(store.getState().profiles[0].name, '정보 1');
+    assert.equal(store.getState().profiles[0].name, '프로필 1');
     assert.equal(store.getState().onboarded, false);
   }
 

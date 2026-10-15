@@ -2,9 +2,9 @@
 import json
 
 from fastapi.testclient import TestClient
-from test_generation_async import _create_match
+from orch_fakes import AbortResult, ActiveWork, ProjectView, make_run
 
-from app.models import Artifact, ProjectPlanInput, User
+from app.models import Project, ProjectPlanInput, User
 from app.routers import projects
 
 
@@ -12,53 +12,47 @@ def create(client):
     return client.post('/projects', data={'payload': json.dumps({'description': 'review test'})})
 
 
-def test_finished_generation_allows_new_project(authed_client, db_session, monkeypatch):
-    match = _create_match(authed_client, db_session, 'REVIEW-DONE')
-    match.stage = 'prototype_building'
-    match.status = 'in_progress'
-    match.progress_percent = 90
-    db_session.commit()
-    monkeypatch.setattr(projects, 'DUMMY_GENERATION_STEP_SECONDS', 0)
-    projects._simulate_generation(match.project_id, 'prototype_building', 'done')
-    db_session.refresh(match)
-    assert match.status == 'completed'
-    assert create(authed_client).status_code == 201
+def _running_work(orch, state, project_id):
+    """진행 중인 작업이 project_id 프로젝트인 상태 — abort_project가 불리면 진행 중이 아니게 된다."""
+    orch.responses['active_work'] = lambda account_id: ActiveWork(
+        project_id=str(project_id), run_id='r1', step='계획서작성', resume_step=5) if state['active'] else None
+
+    def abort(pid):
+        state['active'] = False
+        return AbortResult(project_id=str(pid), run_id='r1', run_action='중단')
+
+    orch.responses['abort_project'] = abort
+    orch.responses['view_project'] = lambda pid: ProjectView(str(pid), run=make_run())
 
 
-def test_legacy_done_status_does_not_block(authed_client, db_session):
-    match = _create_match(authed_client, db_session, 'REVIEW-LEGACY')
-    match.stage = 'done'
-    match.status = 'in_progress'
-    db_session.commit()
-    assert create(authed_client).status_code == 201
-
-
-def test_archived_running_project_does_not_block(authed_client, db_session):
-    match = _create_match(authed_client, db_session, 'REVIEW-ARCHIVE')
-    match.stage = 'plan_writing'
-    match.status = 'in_progress'
-    db_session.commit()
+def test_archived_running_project_does_not_block(authed_client, db_session, orch):
+    """휴지통(DELETE)은 오케스트레이터에 중단을 알린 뒤 보관한다 — 그 뒤 새 프로젝트를 만들 수 있다."""
+    pid = create(authed_client).json()['project_id']
+    state = {'active': True}
+    _running_work(orch, state, pid)
     assert create(authed_client).status_code == 409
-    assert authed_client.delete(f'/projects/{match.project_id}').status_code == 204
+    assert authed_client.delete(f'/projects/{pid}').status_code == 204
+    assert ('abort_project', (pid,), {}) in orch.calls
     assert create(authed_client).status_code == 201
+    db_session.expire_all()
+    assert db_session.get(Project, pid).archived_at is not None, '실행 건이 있던 프로젝트는 지우지 않고 보관해야 한다'
 
 
-def test_concurrent_project_blocked_response_supports_abandon_and_restart(authed_client, db_session):
+def test_concurrent_project_blocked_response_supports_abandon_and_restart(authed_client, db_session, orch):
     """[2026-09-27 신규, SB-138] 공식 기능정의서 v1.9 E-RUN-CONCURRENT — 진행 중인 실행이
     있으면 blocked=true와 함께 어느 프로젝트가 막고 있는지(active_project_id) 구조화된
     정보를 내려줘야 프론트가 "이어하기 / 중단 후 새로 시작" 선택 화면을 만들 수 있다.
     "중단 후 새로 시작"은 새 엔드포인트가 아니라 기존 DELETE /projects/{id}를 그대로
     쓴다 — 그 active_project_id로 DELETE를 부르면 다시 새 프로젝트를 만들 수 있어야 한다."""
-    match = _create_match(authed_client, db_session, 'REVIEW-CONCURRENT-BLOCK')
-    match.stage = 'plan_writing'
-    match.status = 'in_progress'
-    db_session.commit()
+    pid = create(authed_client).json()['project_id']
+    state = {'active': True}
+    _running_work(orch, state, pid)
 
     res = create(authed_client)
     assert res.status_code == 409
     body = res.json()['detail']
     assert body['blocked'] is True
-    assert body['active_project_id'] == match.project_id
+    assert body['active_project_id'] == pid
     assert body['active_stage'] == 'plan_writing'
     assert body['active_display_status'] == '진행'
 
@@ -67,21 +61,14 @@ def test_concurrent_project_blocked_response_supports_abandon_and_restart(authed
     assert create(authed_client).status_code == 201
 
 
-def test_waiting_resume_blocks_new_project(authed_client, db_session):
-    """[2026-09-26 회귀] 공식 기능정의서 v1.9 E-RUN-CONCURRENT(R-9) — waiting_resume(자동
-    재개 백오프 대기 중)도 화면상 "진행"으로 보이는 실행 중 상태라 동시 실행 1건 제한에
-    걸려야 한다. 예전엔 ACTIVE_MATCH_STATUSES에 in_progress만 있어서 재개 대기 중에도
-    새 프로젝트를 하나 더 만들 수 있는 버그가 있었다."""
-    match = _create_match(authed_client, db_session, 'REVIEW-WAITING-RESUME')
-    match.stage = 'plan_writing'
-    match.status = 'waiting_resume'
-    db_session.commit()
-    assert create(authed_client).status_code == 409
-
-    # failed는 반대로 제한에서 안 세야 한다(E-RUN-FAIL "계정당 1건 제한에서 세지 않는다").
-    match.status = 'failed'
-    db_session.commit()
+def test_failed_run_does_not_block_new_project(authed_client, orch):
+    """E-RUN-FAIL — 실패한 실행 건은 계정당 1건 제한에서 세지 않는다. 오케스트레이터가 active_work로
+    None을 주면(실패 · 완료 · 중단은 진행 중이 아니다) 새 프로젝트를 만들 수 있다."""
+    pid = create(authed_client).json()['project_id']
+    orch.responses['view_project'] = lambda p: ProjectView(str(p), run=make_run(progress='실패'))
+    orch.responses['active_work'] = None
     assert create(authed_client).status_code == 201
+    assert pid
 
 
 def test_delete_removes_plan_inputs(authed_client, db_session):
@@ -113,31 +100,3 @@ def test_private_uploads(authed_client, login_as, db_session, monkeypatch, tmp_p
     assert other.get('/uploads/untracked.txt').status_code == 404
 
 
-def test_artifact_owner_keeps_preview_access(authed_client, login_as, db_session, monkeypatch, tmp_path):
-    match = _create_match(authed_client, db_session, 'REVIEW-ARTIFACT')
-    artifact = db_session.query(Artifact).join(Artifact.plan).filter_by(project_id=match.project_id).first()
-    artifact.executable_path = '/uploads/preview.html'
-    db_session.commit()
-    monkeypatch.setattr(projects, 'UPLOAD_DIR', str(tmp_path))
-    (tmp_path / 'preview.html').write_text('<h1>Preview</h1>')
-    r = authed_client.get('/uploads/preview.html')
-    assert r.status_code == 200
-    assert r.headers['content-disposition'].startswith('inline')
-    assert r.headers['content-security-policy'] == 'sandbox allow-scripts'
-    assert login_as('stranger@example.com').get('/uploads/preview.html').status_code == 404
-
-
-def test_svg_artifact_served_with_correct_content_type(authed_client, db_session, monkeypatch, tmp_path):
-    """[2026-09-29 신규, 프론트 요청사항 5차 D-3] .svg 인포그래픽이 image/svg+xml로
-    나가야 프론트 미리보기가 image/*로 인식한다 — Starlette 기본 동작(mimetypes.guess_type)은
-    OS(특히 Windows 레지스트리)에 따라 .svg를 못 알아볼 수 있어 명시적으로 지정해야 한다
-    (app/routers/uploads.py _resolve_media_type)."""
-    match = _create_match(authed_client, db_session, 'REVIEW-SVG')
-    artifact = db_session.query(Artifact).join(Artifact.plan).filter_by(project_id=match.project_id).first()
-    artifact.infographic_path = '/uploads/preview.svg'
-    db_session.commit()
-    monkeypatch.setattr(projects, 'UPLOAD_DIR', str(tmp_path))
-    (tmp_path / 'preview.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg"></svg>')
-    r = authed_client.get('/uploads/preview.svg')
-    assert r.status_code == 200
-    assert r.headers['content-type'].startswith('image/svg+xml')

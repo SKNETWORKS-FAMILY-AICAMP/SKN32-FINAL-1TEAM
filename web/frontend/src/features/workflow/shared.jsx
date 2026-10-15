@@ -1,6 +1,7 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
 import React, {useState,useRef,useEffect} from 'react';
 import {listNotifications,listProjects,markNotificationRead} from '../../api.js';
+import {formatKstDate,parseServerTime} from '../../time.js';
 
 export function FloatingInput({inputRef,type,value,onChange,label}){
   return <label className="block text-[14px] text-[var(--muted-fg)]"><span className="block mb-2">{label}</span><input ref={inputRef} type={type} value={value} onChange={onChange} onInput={onChange} onBlur={onChange} className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg)]"/></label>;
@@ -61,20 +62,23 @@ const DISPLAY_FAILED = '문제가 생겨 멈췄다';
 const NOTIFICATION_TEXT = {
   문서평가: '사업계획서 평가가 끝났어요',
   산출물확인: '프로토타입 확인이 필요해요',
-  표현검수: '문장 다듬기가 끝났어요',
+  결과물: '최종 결과물이 준비됐어요',
+  표현검수: '최종 결과물이 준비됐어요', // 옛 완료 알림 행 — 검수가 흐름에서 빠져(조율 2026-10-15) '결과물'과 같은 문구로 보인다
   실패: '작업이 문제로 멈췄어요',
 };
 
 // "3분 전"/"어제" 같은 대략적인 시각 — 초 단위 정확도가 필요한 화면이 아니다.
+// 서버 시각은 UTC라 시간대 표시가 없으면 UTC로 읽는다(time.js) — new Date()에 그대로 넣으면 9시간 어긋난다.
 function formatNotifiedAt(value){
-  const at = new Date(value);
-  if (Number.isNaN(at.getTime())) return '';
+  const at = parseServerTime(value);
+  if (!at) return '';
   const minutes = Math.floor((Date.now() - at.getTime()) / 60000);
   if (minutes < 1) return '방금';
   if (minutes < 60) return `${minutes}분 전`;
   if (minutes < 60 * 24) return `${Math.floor(minutes / 60)}시간 전`;
   if (minutes < 60 * 24 * 7) return `${Math.floor(minutes / (60 * 24))}일 전`;
-  return `${at.getMonth() + 1}.${at.getDate()}`;
+  const [, month, day] = formatKstDate(at).split('-');
+  return `${Number(month)}.${Number(day)}`;
 }
 
 export function progressAlertsFrom(projects){
@@ -121,6 +125,8 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
   // 목록이 "지금 상태"라면 이건 "그동안 무슨 일이 있었는지"다. 읽음 여부가 서버에 저장돼
   // 브라우저를 바꿔도 유지된다(진행 목록의 seen은 localStorage라 이 기기에만 남는다).
   const [history, setHistory] = useState([]);
+  // 진행 알림용으로 받은 내 프로젝트 목록 — 알림 이력을 눌러 열 때 그 프로젝트의 공고 제목(notice_title)을 같이 넘긴다.
+  const [projectRows, setProjectRows] = useState([]);
   const runningKeys = useRef(new Set());
 
   useEffect(() => {
@@ -138,6 +144,7 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
     let timer = null;
     const load = () => listProjects().then((rows) => {
       if (cancelled) return;
+      setProjectRows(rows);
       const next = progressAlertsFrom(rows);
       const finished = next.find((a) => (a.done || a.failed) && runningKeys.current.has(a.key));
       if (finished) setToast(finished);
@@ -174,7 +181,18 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
     markNotificationRead(n.notification_id)
       .then(() => setHistory((rows) => rows.map((r) => (r.notification_id === n.notification_id ? { ...r, read_at: new Date().toISOString() } : r))))
       .catch((err) => console.error('알림을 읽음 처리하지 못했어요', err));
-    onOpenProject?.({ id: n.project_id, matched: true });
+    // 공고 제목을 함께 넘긴다 — 번호만 넘기면 열린 화면(자격 확인 · 계획서 등)에 공고 제목이 비어 보였다.
+    const row = projectRows.find((p) => p.project_id === n.project_id);
+    onOpenProject?.({ id: n.project_id, matched: true, announcementTitle: row?.notice_title || undefined });
+  };
+
+  // 읽음 · 안 읽음을 알림마다 바꾼다(기준 문서 새 판: 읽음은 알림마다 표시 · 해제 가능, '모두 읽음'은 두지 않음).
+  // 서버 저장이 성공한 뒤에만 화면을 바꾼다.
+  const toggleRead = (n) => {
+    const read = n.read_at == null;
+    markNotificationRead(n.notification_id, read)
+      .then(() => setHistory((rows) => rows.map((r) => (r.notification_id === n.notification_id ? { ...r, read_at: read ? new Date().toISOString() : null } : r))))
+      .catch((err) => console.error('알림 읽음 표시를 바꾸지 못했어요', err));
   };
 
   const toggleOpen = () => {
@@ -252,14 +270,20 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
                 <p className="px-4 pt-3 pb-1.5 text-[11.5px] font-bold text-[var(--muted-fg)]">지난 알림</p>
                 <div className="soft-scroll max-h-52 overflow-y-auto divide-y divide-[var(--border)]">
                   {activeHistory.map((n) => (
-                    <button type="button" key={n.notification_id} onClick={() => openHistory(n)}
-                      className="flex w-full items-center gap-2.5 px-4 py-3 text-left hover:bg-[#f9fafb] transition-colors">
-                      {n.read_at == null && <span className="w-1.5 h-1.5 rounded-full bg-[var(--primary)] flex-shrink-0" aria-label="읽지 않음" />}
-                      <span className={'flex-1 min-w-0 text-[12.5px] ' + (n.read_at == null ? 'font-semibold' : 'text-[var(--muted-fg)]')}>
-                        {NOTIFICATION_TEXT[n.kind] || n.kind}
-                      </span>
-                      <span className="flex-shrink-0 text-[11px] text-[var(--muted-fg)]">{formatNotifiedAt(n.created_at)}</span>
-                    </button>
+                    <div key={n.notification_id} className="flex items-center hover:bg-[#f9fafb] transition-colors">
+                      <button type="button" onClick={() => openHistory(n)}
+                        className="flex flex-1 min-w-0 items-center gap-2.5 pl-4 pr-2 py-3 text-left">
+                        {n.read_at == null && <span className="w-1.5 h-1.5 rounded-full bg-[var(--primary)] flex-shrink-0" aria-label="읽지 않음" />}
+                        <span className={'flex-1 min-w-0 text-[12.5px] ' + (n.read_at == null ? 'font-semibold' : 'text-[var(--muted-fg)]')}>
+                          {NOTIFICATION_TEXT[n.kind] || n.kind}
+                        </span>
+                        <span className="flex-shrink-0 text-[11px] text-[var(--muted-fg)]">{formatNotifiedAt(n.created_at)}</span>
+                      </button>
+                      <button type="button" onClick={() => toggleRead(n)}
+                        className="flex-shrink-0 mr-3 rounded-md px-1.5 py-1 text-[10.5px] text-[var(--muted-fg)] hover:bg-[var(--muted)] hover:text-[var(--fg)]">
+                        {n.read_at == null ? '읽음' : '안 읽음'}
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -283,60 +307,6 @@ export function NotificationBell({ enabled, onToggle, onOpenProject, refreshKey 
   );
 }
 
-// 클릭하면 OS 네이티브 파일 탐색창이 뜨는 첨부 위젯 — 실제 <input type="file">을
-// 숨겨두고 버튼으로 그 클릭을 대신 트리거한다.
-// 첨부 상한: 파일당 10MB, 최대 5개(팀 확정 2026-09-29). 서버도 같은 값으로 거절한다
-// (백엔드_요청사항_3차.md B-5) — 여기 검사는 올리기 전에 바로 알려주기 위한 것이다.
-export const ATTACH_MAX_FILES = 5;
-export const ATTACH_MAX_MB = 10;
-export function FileAttach({ files, onAdd, onRemove }){
-  const inputRef = useRef(null);
-  const [notice, setNotice] = useState('');
-  const full = files.length >= ATTACH_MAX_FILES;
-  const add = (picked) => {
-    const tooBig = picked.filter(f => f.size > ATTACH_MAX_MB * 1024 * 1024);
-    const fits = picked.filter(f => f.size <= ATTACH_MAX_MB * 1024 * 1024);
-    const room = Math.max(ATTACH_MAX_FILES - files.length, 0);
-    const accepted = fits.slice(0, room);
-    const messages = [];
-    if (tooBig.length) messages.push(`${tooBig.map(f => f.name).join(', ')} — 파일당 ${ATTACH_MAX_MB}MB까지 올릴 수 있어요.`);
-    if (fits.length > room) messages.push(`파일은 최대 ${ATTACH_MAX_FILES}개까지 첨부할 수 있어요.`);
-    setNotice(messages.join(' '));
-    if (accepted.length) onAdd(accepted);
-  };
-  return (
-    <div className="mt-4">
-      <input ref={inputRef} type="file" multiple className="hidden"
-        onChange={(e) => { add(Array.from(e.target.files)); e.target.value = ''; }} />
-      <button type="button" disabled={full} onClick={() => inputRef.current.click()}
-        className="disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-white px-3.5 py-2 text-[13px] font-semibold text-[var(--muted-fg)] hover:border-[var(--muted-fg)] hover:text-[var(--fg)] transition-[border-color,color,scale] duration-150 ease-out active:scale-[0.96]">
-        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a1.5 1.5 0 0 1-2.12-2.12l8.49-8.48"/>
-        </svg>
-        파일 첨부
-      </button>
-
-      {files.length > 0 && (
-        <ul className="mt-3 flex flex-col gap-2">
-          {files.map((f, i) => (
-            <li key={i} className="flex items-center justify-between gap-3 rounded-lg bg-[var(--muted)] px-3.5 py-2 text-[13px]">
-              <span className="truncate">{f.name}</span>
-              <button type="button" onClick={() => { setNotice(''); onRemove(i); }} aria-label={`${f.name} 삭제`}
-                className="flex-shrink-0 text-[var(--muted-fg)] hover:text-[var(--danger)] transition-[color,scale] duration-150 ease-out active:scale-[0.9]">
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                  <path d="M6 6l12 12M18 6L6 18"/>
-                </svg>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {notice && <p role="alert" className="mt-2 text-[12px] text-[var(--danger)]">{notice}</p>}
-      <p className="mt-2 text-[11.5px] text-[var(--muted-fg)]">사업자등록증·포트폴리오 등 참고자료를 첨부하면 계획서 작성 시 참고합니다 — 선택사항입니다 · 파일당 {ATTACH_MAX_MB}MB, 최대 {ATTACH_MAX_FILES}개 ({files.length}/{ATTACH_MAX_FILES})</p>
-    </div>
-  );
-}
-
 // 기획서 4-1/4-2①: 입력은 대화가 아니라 폼으로, 그것도 한 화면에서 한 번에 받는다 —
 // 자격 판정·계획서 작성에 필요한 항목(신청자 유형·대표자·설립일자·팀·단가·아이디어)을
 // 처음에 모두 모아두면 신청 자격 확인 이후로는 사용자에게 되묻지 않고 끝까지
@@ -347,14 +317,39 @@ export function FileAttach({ files, onAdd, onRemove }){
 // 종합 평가 세 화면이 같은 문구를 쓴다).
 // 상한에 닿은 뒤의 "재작성 상한 N회 도달" 문구는 뺐다 — 항목마다 빨간 글씨가 붙어
 // 화면이 지저분해진다(사용자 지적). 체크박스·버튼 비활성화만으로 막는다.
+// 점수 보고서 안내(입력 확인 필요 · 입력 오류, 조율 10-12 3번) — 화면 6 · 9. 입력 오류 항목은 다시 만들어도 고쳐지지 않는데
+// 점수가 모자라면 재작성 권유도 함께 나온다. 둘이 어긋나 보이지 않게 reworkHint를 주면 "다른 항목은 다시 만들어 올릴 수 있다"를 덧붙인다.
+export function ScoreNotices({ notices, reworkHint = false, className = '' }){
+  if (!notices?.length) return null;
+  return (
+    <div role="status" className={`rounded-xl bg-[#fff9ec] px-4 py-3 text-[12.5px] leading-relaxed text-[#806334] ${className}`}>
+      {notices.map((n) => <p key={n}>{n}</p>)}
+      {reworkHint && <p className="mt-1.5 font-semibold">안내한 항목은 다시 만들어도 바뀌지 않지만, 다른 항목은 다시 만들어 점수를 올릴 수 있어요.</p>}
+    </div>
+  );
+}
+
 export function RerunLeftBadge({ left }){
   return left > 0
     ? <span className="ml-1.5 text-[11.5px] text-[var(--muted-fg)]">· 재작성 {left}회 남음</span>
     : null;
 }
 
-export function formatBonus(value){return `+${Number(value)}`;}
+// 가산점 — null(계산 못 함, "가산점 정보 없음")과 0(해당 가점 없음)은 뜻이 다르다(공고연동_변경사항_웹팀전달.md 1.4).
+// 공고팀이 가산점 기능을 만들기 전에는 모든 공고가 null이다.
+const hasBonus = (value) => value != null && Number.isFinite(Number(value));
+export function formatBonus(value){return hasBonus(value) ? `+${Number(value)}` : '-';}
+// 공고 카드 오른쪽 작은 표시
+export function BonusBadge({value}){
+  if (!hasBonus(value)) return <span className="match-fit is-empty"><b>-</b><span>가산점 정보 없음</span></span>;
+  if (Number(value) === 0) return <span className="match-fit is-zero"><b>0<small>점</small></b><span>해당 가점 없음</span></span>;
+  return <span className="match-fit"><b>{formatBonus(value)}<small>점</small></b><span>가산점</span></span>;
+}
+// 상세 패널의 큰 표시
 export function BonusScore({value}){
+  if (!hasBonus(value)) {
+    return <div className="bonus-score is-empty" role="img" aria-label="가산점 정보 없음"><b>-</b></div>;
+  }
   return (
     <div className="bonus-score" role="img" aria-label={`가산점 ${Number(value)}점`}>
       <b>{formatBonus(value)}</b><span>점</span>
@@ -362,12 +357,6 @@ export function BonusScore({value}){
   );
 }
 
-// [2026-09-15, 프론트 통합 임시 구현] 예전엔 클라이언트에서 evaluateEligibility(공고 조건 3개를
-// 입력값과 비교하는 순수 함수)를 직접 돌렸는데, 이제 MatchResults가 이미 호출해둔
-// POST /generate 응답의 eligibility(EligibilityCheckOut: passed/undecidable/failed_conditions/
-// missing_inputs — app/schemas.py)를 그대로 받아 보여준다. 더미 백엔드(seed_dummy_pipeline.py)는
-// 지금 항상 passed=True를 돌려주므로 실패/미결정 분기는 실제 오케스트레이터가 붙은 뒤에야
-// 흔히 보이게 될 것이다.
 export function RepeatableRow({ values, fields, onChange, onRemove, removable }){
   return (
     <div className="repeatable-row" style={{'--fields':fields.length}}>

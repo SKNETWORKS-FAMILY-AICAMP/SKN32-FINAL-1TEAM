@@ -26,7 +26,7 @@ RESPONSE_MARK = "응답본문표식"
 
 
 class TempServer:
-    """127.0.0.1 임시 공고 서버. 경로별 응답(상태 · 본문 · 지연)을 정하고, 받은 요청과 동시에 처리 중인 요청 수를 남긴다."""
+    """127.0.0.1 임시 공고 서버. 경로별 응답(상태 · 본문 · 지연)을 정하고, 받은 요청과 동시에 처리 중인(응답을 보내기 전) 요청 수를 남긴다."""
 
     def __init__(self) -> None:
         self.routes: dict[tuple[str, str], tuple[int, bytes, float, dict[str, str]]] = {}
@@ -67,8 +67,14 @@ class TempServer:
                     server.active += 1
                     server.max_active = max(server.max_active, server.active)
                 status, raw, delay, headers = server.routes.get((self.command, self.path), (404, b"", 0.0, {}))
+                # 처리 중 = 응답을 보내기 전까지. 응답을 쓴 뒤에 빼면, 응답을 다 받은 클라이언트가 잠금을 풀고 보낸
+                # 다음 요청이 이 스레드가 빼기 전에 들어와 겹친 것처럼 세어진다(느린 CI에서 max_active 2)
                 try:
                     time.sleep(delay)
+                finally:
+                    with server._lock:
+                        server.active -= 1
+                try:
                     self.send_response(status)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
                     self.send_header("Content-Length", str(len(raw)))
@@ -78,9 +84,6 @@ class TempServer:
                     self.wfile.write(raw)
                 except OSError:
                     pass                                   # 클라이언트가 먼저 끊음 (시간 초과 시험)
-                finally:
-                    with server._lock:
-                        server.active -= 1
 
             do_GET = do_POST = _serve
 

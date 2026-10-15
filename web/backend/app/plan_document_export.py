@@ -8,8 +8,8 @@
     항목 자체가 없다 — 대신 "직업(직장명 기재 불가)"/"기업(예정)명" 두 항목만 쓴다.
   - 사업비 집행계획: 초기창업패키지는 정부지원사업비+자기부담사업비(현금/현물) 3분할
     표를 쓰지만, 예비창업패키지는 자기부담금 개념이 없어 정부지원사업비 단일 열 표를
-    쓴다(원본은 1단계/2단계로 표를 나누는데, DB에 "단계" 개념이 없어 여기선 한 표로
-    합쳐 렌더한다 — 없는 구분을 지어내지 않는다는 원칙).
+    쓴다. 원본처럼 1단계/2단계 두 표로 나눈다(사업비 줄의 단계 — project_budget_items.phase,
+    SB-327. 단계가 없는 줄은 1단계 표).
   - 제목: "초기창업패키지 창업기업 사업계획서" vs "예비창업패키지 사업계획서".
 그 외(창업 아이템 개요 요약, PSST 4개 섹션 본문, 사업추진일정, 팀 구성(안), 협력기관)는
 두 양식이 표 구조까지 동일해서 공통으로 쓴다.
@@ -21,11 +21,9 @@
 만든다 — 원본과 글자 그대로 동일한 스타일(폰트·표 테두리 색 등)까지는 보장 못 하지만,
 항목 구성과 순서는 원본 공식 양식과 1:1로 맞춘다.
 
-이 모듈은 지금 당장은 seed_dummy_pipeline.py의 더미 계획서 내용을 채우는 용도로 쓰지만,
-render_plan_docx()가 받는 PlanDocumentData가 실제 Agent가 만들 계획서 내용과 같은
-모양(문제인식/실현가능성/성장전략/팀 구성 4개 섹션 + 각 표)이라, 나중에 진짜 생성
-파이프라인이 붙으면 이 함수에 넘기는 데이터만 더미 대신 실제 값으로 바꾸면 된다 —
-템플릿 코드 자체는 안 바뀐다.
+render_plan_docx() · render_plan_hwp()가 받는 PlanDocumentData는 계획서 내려받기가 채워 넘긴다 — 본문은 오케스트레이터가 만든
+계획서(app/orch/mapping.py section_bodies), 표는 웹에 저장된 입력이다. 옛 더미 계획서(seed_dummy_pipeline.py)는 없어졌다.
+모양(문제인식/실현가능성/성장전략/팀 구성 4개 섹션 + 각 표)이 바뀌지 않는 한 템플릿 코드는 그대로다.
 
 .hwp는 만들지 않는다 — 바이너리 포맷이라 서식을 유지한 채 내용만 써넣는 걸 지원하는
 오픈소스 라이브러리가 사실상 없다(pyhwp는 읽기 전용). 이 .docx를 한글에서 열어
@@ -36,7 +34,9 @@ render_plan_docx()가 받는 PlanDocumentData가 실제 Agent가 만들 계획�
 from __future__ import annotations
 
 import io
+import re
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from docx import Document
 from docx.enum.table import WD_TABLE_ALIGNMENT
@@ -44,7 +44,9 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
-_GUIDE_COLOR = RGBColor(0x1F, 0x4E, 0x79)  # 원본 양식의 '파란색 안내 문구'와 같은 취지 — 작성자 안내용, 제출 전 삭제 대상
+if TYPE_CHECKING:
+    from app.diagram_images import DiagramPicture
+
 _HEADER_FILL = 'E8ECF1'
 
 
@@ -64,6 +66,17 @@ class BudgetLineItem:
     정부지원사업비: str
     자기부담_현금: str = ''
     자기부담_현물: str = ''
+    단계: str = ''  # 예비창업자만 '1단계' · '2단계'(SB-327). 비어 있으면 1단계 표에 들어간다
+
+
+PHASE_SECOND = '2단계'
+
+
+def split_budget_by_phase(rows: list[BudgetLineItem]) -> tuple[list[BudgetLineItem], list[BudgetLineItem]]:
+    """예비창업 사업비 행 → (1단계 표 행, 2단계 표 행). 단계가 없는 행은 1단계 쪽이다."""
+    second = [r for r in rows if r.단계 == PHASE_SECOND]
+    first = [r for r in rows if r.단계 != PHASE_SECOND]
+    return first, second
 
 
 @dataclass
@@ -133,17 +146,158 @@ class PlanDocumentData:
     직업: str = '○○○'
     기업예정명: str = '○○○'
 
+    # [SB-339] 표 항목(개발계획 · 사업비 집행계획 · 전체 일정)의 서술 문장 — 표는 위 행 목록으로 그리고, 서술은 계획서(planDoc)에서 온다
+    # (app/plan_texts.py). docx는 표 아래 문단으로, hwp는 양식에 따로 칸이 없어 그 절의 본문 뒤에 이어 붙는다.
+    실현가능성_일정_서술: str = ''
+    사업비_서술: str = ''          # 예비창업자는 1단계 표의 서술(x.5.3), 그 밖은 사업비 표 하나의 서술
+    사업비_2단계_서술: str = ''    # 예비창업자 2단계 표의 서술(x.5.4)
+    성장전략_일정_서술: str = ''
+    # 예비창업자 단계별 정부지원사업비 합계(표 아래 합계 칸). 단계 입력이 없으면 비어 있다
+    정부지원사업비_1단계: str = ''
+    정부지원사업비_2단계: str = ''
+    # [SB-340] 그림 항목(2.3.6 · 3.3.6)의 서비스 흐름도 · 서비스 구조도(PNG로 바꾼 것, app/diagram_images.py). docx는 개요(요약) 표 아래,
+    # hwp는 맨 뒤에 새로 만든 쪽에 넣는다. 그림이 없으면 문서에 아무것도 더하지 않는다.
+    그림: list[DiagramPicture] = field(default_factory=list)
+    # [SB-354 · 기준 문서 T-C4] 결과물의 인포그래픽(PNG로 바꾼 것)과 첫 장 고지 문구(`deliverable.disclaimer`). docx는 계획서 그림 다음에, hwp는 그림 쪽
+    # 다음의 새 쪽에 인포그래픽을 넣는다. 고지가 비어 있으면(결과물이 아직 없을 때) 기본 문구를 쓴다.
+    인포그래픽: DiagramPicture | None = None
+    고지: str = ''
+
+
+# 계획서 글의 줄 머리 — 담당자 글은 줄마다 "◦ " · "• " · "- " · "① " 같은 글머리를 이미 달고 오고, 마크다운("* ", "**굵게**")이 섞일 때도 있다.
+# 예전에는 그 위에 " ◦ "를 또 붙여 " ◦ ◦ …" · " ◦ - …"가 됐다. 줄의 글머리를 떼고 단계(본문 · 하위)를 가려 문서가 한 번만 단다(docx · hwp 공통).
+_SUBHEADING_RE = re.compile(r'\[[^\[\]]+\]')
+_ITEM_MARK_RE = re.compile(r'^[◦○•●▪■◆◇▶►∙ㅇ*]\s+')
+_SUB_MARK_RE = re.compile(r'^([-–—·])\s+')
+_NUMBER_MARK_RE = re.compile(r'^([①-⑳])\s*|^(\(\d{1,2}\)|\d{1,2}[.)]|[가-하][.)])\s+')
+_BOLD_RE = re.compile(r'\*\*(.+?)\*\*')
+ITEM_MARK, SUB_MARK = '◦', '-'
+
+
+def body_line(line: str, plain_mark: str = ITEM_MARK) -> tuple[str, str, str]:
+    """줄 하나 → (종류, 글머리, 글). 종류는 'heading'("[대표자 보유 역량]"처럼 대괄호 하나로 된 소제목) · 'item'(본문 줄) · 'sub'(하위 줄 "- ") ·
+    'plain'(글머리 없는 줄 — plain_mark가 빈 글일 때만). 글머리 "◦" · "•" · "*"는 본문 줄 "◦"로 모으고, 하위 줄은 "-" · "·"를 그대로
+    ("–" · "—"는 "-"로), "①" · "1." · "가."는 번호를 그대로 글머리로 쓴다. 글머리가 없는 줄은 plain_mark(본문은 "◦")를 단다. "**굵게**"는 글만 남긴다."""
+    text = _BOLD_RE.sub(r'\1', line.strip())
+    if _SUBHEADING_RE.fullmatch(text):
+        return 'heading', '', text
+    kind, mark = '', ''
+    while True:   # "◦ ◦ 글"처럼 겹친 글머리도 모두 뗀다 — 단계 · 글머리는 맨 앞 것
+        if m := _ITEM_MARK_RE.match(text):
+            kind, mark = kind or 'item', mark or ITEM_MARK
+        elif m := _SUB_MARK_RE.match(text):
+            kind, mark = kind or 'sub', mark or ('·' if m.group(1) == '·' else SUB_MARK)
+        else:
+            break
+        text = text[m.end():]
+    if kind:
+        return kind, mark, text.strip()
+    if m := _NUMBER_MARK_RE.match(text):
+        return 'item', m.group(1) or m.group(2), text[m.end():].strip()
+    return ('item', plain_mark, text) if plain_mark else ('plain', '', text)
+
+
+_INDENT_CM = {'item': 0.7, 'sub': 1.3}
+_HANG_CM = 0.5
+
+
+def _write_line(paragraph, line: str, plain_mark: str, size: Pt | None = None) -> None:
+    """줄 하나를 문단에 쓴다. 글머리 줄은 내어쓰기(글머리 뒤 탭 위치 = 왼쪽 들여쓰기)라 줄이 넘어가도 둘째 줄이 글 첫 글자에 맞는다 —
+    예전에는 " ◦ 글"을 그대로 써서 넘어간 줄이 글머리 앞(여백)부터 시작했다. 소제목은 굵게, 글머리 없이 쓴다."""
+    kind, mark, text = body_line(line, plain_mark)
+    if kind in _INDENT_CM:
+        fmt = paragraph.paragraph_format
+        indent = Cm(_INDENT_CM[kind])
+        fmt.left_indent = indent
+        fmt.first_line_indent = -Cm(_HANG_CM)
+        fmt.tab_stops.add_tab_stop(indent)
+        text = f'{mark}\t{text}'
+    run = paragraph.add_run(text)
+    run.bold = kind == 'heading'
+    if size is not None:
+        run.font.size = size
+
+
+def _lines(text: str) -> list[str]:
+    return [line for line in (text or '').replace('\r', '').split('\n') if line.strip()]
+
 
 def _set_cell_text(cell, text: str, bold: bool = False, shade: str | None = None) -> None:
     cell.text = ''
     p = cell.paragraphs[0]
-    run = p.add_run(text)
-    run.bold = bold
-    run.font.size = Pt(10)
+    lines = _lines(text)
+    marked = any(body_line(line, '')[0] != 'plain' for line in lines)
+    if bold or (len(lines) <= 1 and not marked):
+        # 제목 칸 · 글머리 없는 한 줄 값은 그대로(제목 칸의 "사업자 구분\n(모집마감일 기준)"은 칸 안 줄바꿈)
+        run = p.add_run(text)
+        run.bold = bold
+        run.font.size = Pt(10)
+    else:
+        # 여러 줄 값(산출물 · 개요 요약 등)은 줄마다 문단 — 글머리는 한 가지로 모으고 내어쓰기한다. 글머리 없는 줄은 글머리를 달지 않는다
+        for index, line in enumerate(lines):
+            _write_line(p if index == 0 else cell.add_paragraph(), line, plain_mark='', size=Pt(10))
     if shade:
         tc_pr = cell._tc.get_or_add_tcPr()
         shd = tc_pr.makeelement(qn('w:shd'), {qn('w:val'): 'clear', qn('w:color'): 'auto', qn('w:fill'): shade})
         tc_pr.append(shd)
+
+
+TEXT_WIDTH_CM = 17.0   # A4 · 좌우 여백 2cm — 표는 모두 이 폭에 맞춘다
+
+
+# 행을 쪽에서 나누지 않는(cantSplit) 줄 수 상한 — 이보다 긴 칸이 있는 행은 쪽 끝에서 나뉠 수 있다. 개요(요약) 표의 '문제 인식' 같은 칸은 20줄이 넘어,
+# 통째로 다음 쪽으로 넘기면 앞 쪽 아래 절반이 비었다(실제 실행 건 10-13). 짧은 행은 예전처럼 나누지 않는다.
+_KEEP_ROW_MAX_LINES = 6
+_CHAR_CM = 0.37   # 10pt 한글 한 글자 폭(어림) — 영문 · 숫자 · 빈칸은 절반으로 센다
+
+
+def _estimated_lines(text: str, width_cm: float) -> int:
+    """칸 글이 폭 width_cm(칸 안 여백 0.4cm를 뺀다)에서 차지할 줄 수(어림)."""
+    per_line = max(1.0, (width_cm - 0.4) / _CHAR_CM)
+    total = 0
+    for line in (text or '').split('\n'):
+        chars = sum(1.0 if ord(ch) > 0xFF else 0.5 for ch in line)
+        total += max(1, -(-int(chars) // int(per_line)))
+    return total
+
+
+def _layout_table(table, widths_cm: list[float], repeat_header: bool = True) -> None:
+    """표 폭 · 행 배치를 정한다 — 열 폭 고정(합은 본문 폭), 행이 쪽 끝에서 갈라지지 않게(cantSplit — 칸 글이 _KEEP_ROW_MAX_LINES줄보다 긴 행은 나뉠 수 있다),
+    첫 행은 쪽마다 반복(tblHeader).
+
+    열 폭을 안 주면 Word가 열을 모두 같은 폭으로 나눠 '집행 계획' 같은 긴 칸의 글이 한 글자씩 세로로 끊긴다."""
+    table.autofit = False
+    tbl_pr = table._tbl.tblPr
+    layout = tbl_pr.makeelement(qn('w:tblLayout'), {qn('w:type'): 'fixed'})
+    look = tbl_pr.find(qn('w:tblLook'))   # 스키마 순서: tblLayout은 tblLook 앞
+    if look is not None:
+        look.addprevious(layout)
+    else:
+        tbl_pr.append(layout)
+    for column, width in zip(table.columns, widths_cm, strict=True):
+        column.width = Cm(width)
+    for row_index, row in enumerate(table.rows):
+        for cell, width in zip(row.cells, widths_cm, strict=True):
+            cell.width = Cm(width)
+        tr_pr = row._tr.get_or_add_trPr()
+        if max(_estimated_lines(cell.text, width) for cell, width in zip(row.cells, widths_cm, strict=True)) <= _KEEP_ROW_MAX_LINES:
+            tr_pr.append(tr_pr.makeelement(qn('w:cantSplit'), {}))
+        if repeat_header and row_index == 0:
+            tr_pr.append(tr_pr.makeelement(qn('w:tblHeader'), {}))
+            # 머리 줄을 첫 내용 줄과 같은 쪽에 둔다 — 예전에는 쪽 맨 아래에 표 제목과 머리 줄만 남고 내용은 다음 쪽(머리 줄 반복)에서 시작했다
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    paragraph.paragraph_format.keep_with_next = True
+
+
+def _caption(doc: Document, text: str) -> None:
+    """표 · 그림 위의 제목 — 표(그림)와 같은 쪽에 붙고 앞 표와 간격을 둔다."""
+    p = doc.add_paragraph()
+    p.paragraph_format.space_before = Pt(8)
+    p.paragraph_format.keep_with_next = True
+    run = p.add_run(text)
+    run.bold = True
+    run.font.size = Pt(10.5)
 
 
 def _kv_table(doc: Document, rows: list[tuple[str, str]]) -> None:
@@ -157,14 +311,12 @@ def _kv_table(doc: Document, rows: list[tuple[str, str]]) -> None:
         row = table.add_row()
         _set_cell_text(row.cells[0], label, bold=True, shade=_HEADER_FILL)
         _set_cell_text(row.cells[1], value)
+    _layout_table(table, [4.2, TEXT_WIDTH_CM - 4.2], repeat_header=False)
 
 
-def _grid_table(doc: Document, headers: list[str], rows: list[list[str]], caption: str | None = None) -> None:
+def _grid_table(doc: Document, headers: list[str], rows: list[list[str]], caption: str | None = None, widths: list[float] | None = None) -> None:
     if caption:
-        p = doc.add_paragraph()
-        run = p.add_run(caption)
-        run.bold = True
-        run.font.size = Pt(10.5)
+        _caption(doc, caption)
     table = doc.add_table(rows=1, cols=len(headers))
     table.style = 'Table Grid'
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -174,6 +326,7 @@ def _grid_table(doc: Document, headers: list[str], rows: list[list[str]], captio
         cells = table.add_row().cells
         for i, v in enumerate(r):
             _set_cell_text(cells[i], v)
+    _layout_table(table, widths or [TEXT_WIDTH_CM / len(headers)] * len(headers))
 
 
 def _heading(doc: Document, text: str, level: int = 1) -> None:
@@ -182,15 +335,8 @@ def _heading(doc: Document, text: str, level: int = 1) -> None:
         run.font.color.rgb = RGBColor(0, 0, 0)
 
 
-def _guide_note(doc: Document, text: str) -> None:
-    """원본 양식의 '파란색 안내 문구'와 같은 역할 — 실제 제출 전엔 삭제 대상이므로
-    이탤릭+옅은 색으로 구분해서 넣는다(검정 굵은 본문과 섞이지 않도록)."""
-    p = doc.add_paragraph()
-    run = p.add_run(text)
-    run.italic = True
-    run.font.size = Pt(8.5)
-    run.font.color.rgb = _GUIDE_COLOR
-
+_TEAM_WIDTHS = [1.2, 2.8, 3.6, 6.6, 2.8]       # 순번 · 직위 · 담당 업무 · 보유 역량 · 구성 상태
+_SCHEDULE_WIDTHS = [2.6, 5.4, 4.0, 5.0]        # 구분 · 추진 내용 · 추진 기간 · 세부 내용
 
 _TEMPLATE_TITLES = {
     'early_general': '초기창업패키지 창업기업 사업계획서',
@@ -219,6 +365,7 @@ def _add_general_status_early(doc: Document, data: PlanDocumentData) -> None:
         ['정부지원사업비(A)', '자기부담사업비(B) 현금', '자기부담사업비(B) 현물', '총 사업비(C=A+B)'],
         [[data.정부지원사업비, data.자기부담_현금, data.자기부담_현물, data.총사업비]],
         caption='총 사업비 구성 계획',
+        widths=[4.25, 4.25, 4.25, 4.25],
     )
 
 
@@ -234,6 +381,39 @@ def _add_general_status_preliminary(doc: Document, data: PlanDocumentData) -> No
     ])
 
 
+def _picture(doc: Document, picture: DiagramPicture, max_height_cm: float | None = None) -> None:
+    """그림 하나 — 위에 '< 서비스 흐름도 >' 같은 제목을 달고 본문 폭에 맞춰 넣는다(PNG, 가운데). 세로가 max_height_cm를 넘으면 비율을 지켜 줄인다."""
+    _caption(doc, f'< {picture.title} >')
+    width_px, height_px = picture.size_px
+    width_cm = float(_PICTURE_WIDTH_CM)
+    if max_height_cm is not None and width_px and width_cm * height_px / width_px > max_height_cm:
+        width_cm = max_height_cm * width_px / height_px
+    doc.add_picture(io.BytesIO(picture.png), width=Cm(width_cm))
+    doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+
+_PICTURE_WIDTH_CM = 16
+_INFOGRAPHIC_MAX_HEIGHT_CM = 22   # 인포그래픽은 세로로 긴 한 장이라 쪽 높이(여백 뺀 약 25cm)를 넘지 않게 줄인다
+# 기준 문서(기능정의서 T-C4)의 첫 장 고지 — 결과물(deliverable.disclaimer)이 아직 없을 때의 기본 문구
+DEFAULT_DISCLAIMER = '본 문서는 S-Brain이 생성한 초안입니다. 제출 전 작성자 본인의 확인과 수정이 필요합니다.'
+
+
+def _bullets(doc: Document, text: str) -> None:
+    """절 본문 — 줄(계획서의 문단)마다 글머리 문단 하나(hwp 본문과 같은 모양). 글머리는 줄에 붙어 온 것을 떼고 한 번만 단다(body_line)."""
+    for line in _lines(text):
+        _write_line(doc.add_paragraph(), line, plain_mark=ITEM_MARK)
+
+
+def _narrative(doc: Document, text: str) -> None:
+    """표 아래 서술 문장(줄마다 한 문단). 번호 · 글머리가 있는 줄만 내어쓰기하고, 없는 줄은 그대로. 서술이 없으면 아무것도 쓰지 않는다.
+    첫 문단은 표와 조금 띄운다(예전에는 표 아래 선에 글이 붙었다)."""
+    for index, line in enumerate(_lines(text)):
+        paragraph = doc.add_paragraph()
+        if index == 0:
+            paragraph.paragraph_format.space_before = Pt(6)
+        _write_line(paragraph, line, plain_mark='')
+
+
 def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') -> bytes:
     """template: 'early_general'(초기창업패키지 일반형, 기본값) | 'preliminary'(예비창업패키지).
     두 원본 양식(별첨1)을 비교해 실제로 다른 부분(일반현황 항목, 사업비 집행계획 표 구성,
@@ -243,18 +423,28 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
         raise ValueError(f"template은 {tuple(_TEMPLATE_TITLES)} 중 하나여야 합니다: {template!r}")
 
     doc = Document()
+    section = doc.sections[0]
+    section.page_width, section.page_height = Cm(21.0), Cm(29.7)
+    section.left_margin = section.right_margin = Cm(2.0)
+    section.top_margin = section.bottom_margin = Cm(2.0)
     style = doc.styles['Normal']
     style.font.name = '맑은 고딕'
     style.font.size = Pt(10.5)
+    style.element.get_or_add_rPr().get_or_add_rFonts().set(qn('w:eastAsia'), '맑은 고딕')
+    # Word는 한글과 숫자 · 영문 사이에 자동으로 틈을 둬서 "5 건 수행" "1,000,000 원"처럼 벌어져 보인다 — 끈다
+    p_pr = style.element.get_or_add_pPr()
+    for name in ('w:autoSpaceDE', 'w:autoSpaceDN'):
+        p_pr.append(p_pr.makeelement(qn(name), {qn('w:val'): '0'}))
 
     title = doc.add_heading(_TEMPLATE_TITLES[template], level=0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    for run in title.runs:
+        run.font.size = Pt(20)
 
-    _guide_note(
-        doc,
-        '※ 사업계획서는 15페이지 내외로 작성(증빙서류는 제한 없음) · 양식은 변경·삭제 불가, '
-        '이미지·표 삽입은 가능 · 개인정보는 마스킹하여 작성 — 본 문서는 S-Brain이 생성한 초안입니다.',
-    )
+    disclaimer = doc.add_paragraph()
+    disclaimer_run = disclaimer.add_run(data.고지.strip() or DEFAULT_DISCLAIMER)
+    disclaimer_run.bold = True
+    disclaimer_run.font.size = Pt(10.5)
 
     _heading(doc, '□ 일반현황', level=1)
     if template == 'preliminary':
@@ -266,6 +456,7 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
         ['순번', '직위', '담당 업무', '보유 역량(경력 및 학력 등)', '구성 상태'],
         [[t.순번, t.직위, t.담당업무, t.보유역량, t.구성상태] for t in data.팀구성현황],
         caption='팀 구성 현황(대표자 본인 제외)',
+        widths=_TEAM_WIDTHS,
     )
 
     _heading(doc, '□ 창업 아이템 개요(요약)', level=1)
@@ -278,54 +469,71 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
         ('성장전략(Scale-up)', data.요약_성장전략),
         ('팀 구성(Team)', data.요약_팀구성),
     ])
+    for picture in data.그림:
+        _picture(doc, picture)
+    if data.인포그래픽 is not None:
+        _picture(doc, data.인포그래픽, max_height_cm=_INFOGRAPHIC_MAX_HEIGHT_CM)
 
     _heading(doc, '1. 문제 인식(Problem)_창업 아이템의 필요성', level=1)
-    doc.add_paragraph(data.문제인식_본문)
+    _bullets(doc, data.문제인식_본문)
 
     _heading(doc, '2. 실현 가능성(Solution)_창업 아이템의 개발 계획', level=1)
-    doc.add_paragraph(data.실현가능성_본문)
+    _bullets(doc, data.실현가능성_본문)
     _grid_table(
         doc,
         ['구분', '추진 내용', '추진 기간', '세부 내용'],
         [[s.구분, s.추진내용, s.추진기간, s.세부내용] for s in data.실현가능성_일정],
         caption='< 사업추진 일정(협약기간 내) >',
+        widths=_SCHEDULE_WIDTHS,
     )
+    _narrative(doc, data.실현가능성_일정_서술)
     if template == 'preliminary':
-        # 예비창업패키지는 자기부담금 개념이 없어 정부지원사업비 단일 열만 쓴다. 원본
-        # 양식은 이 표를 1단계/2단계로 나누는데, DB(project_budget_items)에 "단계"
-        # 구분이 없어 여기선 한 표로 합쳐 렌더한다(모듈 docstring 참고).
-        _guide_note(doc, '※ 정부지원사업비는 최대 1억원 한도 이내로 작성')
-        _grid_table(
-            doc,
-            ['비목', '산출 근거', '정부지원사업비(원)'],
-            [[b.비목, b.집행계획, b.정부지원사업비] for b in data.사업비_집행계획],
-            caption='< 정부지원사업비 집행계획 >',
-        )
+        # 예비창업패키지는 자기부담금 개념이 없어 정부지원사업비 단일 열만 쓴다. 원본 양식처럼
+        # 1단계 · 2단계 두 표로 나눈다(project_budget_items.phase, SB-327) — 단계가 없는 행은 1단계 표.
+        first, second = split_budget_by_phase(data.사업비_집행계획)
+        for label, rows, total, narrative in (
+            ('1단계', first, data.정부지원사업비_1단계, data.사업비_서술),
+            ('2단계', second, data.정부지원사업비_2단계, data.사업비_2단계_서술),
+        ):
+            _grid_table(
+                doc,
+                ['비목', '산출 근거', '정부지원사업비(원)'],
+                [[b.비목, b.집행계획, b.정부지원사업비] for b in rows] or [['○○', '○○', '○○']],
+                caption=f'< 정부지원사업비 집행계획({label}) >',
+                widths=[2.8, 10.2, 4.0],
+            )
+            if total:
+                doc.add_paragraph(f'{label} 합계: {total}')
+            _narrative(doc, narrative)
     else:
-        _guide_note(doc, '※ 정부지원사업비는 최대 1억원 한도 이내로 작성 · 자기부담사업비는 지방우대 지역 여부에 따라 비율이 다름')
         _grid_table(
             doc,
             ['비목', '집행 계획', '총사업비(ⓐ+ⓑ)', '정부지원사업비(ⓐ)', '자기부담사업비(ⓑ) 현금', '자기부담사업비(ⓑ) 현물'],
             [[b.비목, b.집행계획, b.총사업비, b.정부지원사업비, b.자기부담_현금, b.자기부담_현물] for b in data.사업비_집행계획],
             caption='< 사업비 집행 계획 >',
+            widths=[2.4, 4.6, 2.5, 2.5, 2.5, 2.5],
         )
+        _narrative(doc, data.사업비_서술)
 
     _heading(doc, '3. 성장전략(Scale-up)_사업화 추진 전략', level=1)
-    doc.add_paragraph(data.성장전략_본문)
+    _bullets(doc, data.성장전략_본문)
     _grid_table(
         doc,
         ['구분', '추진 내용', '추진 기간', '세부 내용'],
         [[s.구분, s.추진내용, s.추진기간, s.세부내용] for s in data.성장전략_일정],
         caption='< 사업추진 일정(전체 사업단계) >',
+        widths=_SCHEDULE_WIDTHS,
     )
+    _narrative(doc, data.성장전략_일정_서술)
 
     _heading(doc, '4. 팀 구성(Team)_대표자 및 팀원 구성 계획', level=1)
-    doc.add_paragraph(data.팀구성_본문)
+    _bullets(doc, data.팀구성_본문)
     _grid_table(
         doc,
         ['순번', '직위', '담당 업무', '보유 역량(경력 및 학력 등)', '구성 상태'],
         [[t.순번, t.직위, t.담당업무, t.보유역량, t.구성상태] for t in data.팀구성_안],
         caption='< 팀 구성(안) >',
+        widths=_TEAM_WIDTHS,
     )
     if data.협력기관:
         _grid_table(
@@ -333,6 +541,7 @@ def render_plan_docx(data: PlanDocumentData, template: str = 'early_general') ->
             ['순번', '파트너명', '보유 역량', '협업 방안', '협력 시기'],
             [[p.순번, p.파트너명, p.보유역량, p.협업방안, p.협력시기] for p in data.협력기관],
             caption='< 협력 기관 현황 및 협업 방안 >',
+            widths=[1.2, 3.6, 4.4, 5.0, 2.8],
         )
 
     buf = io.BytesIO()

@@ -25,10 +25,17 @@ function formatDateTime(d) {
 // "종합 판정"은 그 값을 그대로 쓴다 — 화면에서 다시 더하면 서버 판정과 숫자가 어긋날 수 있다.
 export function buildVerificationReportHtml({ projectName, announcementTitle, category, docScore, codeCheckItems, crossCheck, threshold, verdict = null, createdAt = new Date() }) {
   const copy = TYPE_COPY[category === 'onepage' ? 'onepage' : 'standard'];
-  const autoMax = codeCheckItems.reduce((s, it) => s + it.weight, 0);
-  // 진입 파일(1번)이 없으면 나머지 항목 검사가 성립하지 않으므로 자동 검증 점수 전체를 0으로 본다(5-4).
-  const entryMissing = codeCheckItems.some((it) => it.id === 1 && !it.passed);
-  const autoRaw = entryMissing ? 0 : codeCheckItems.reduce((s, it) => s + (it.passed ? it.weight : 0), 0);
+  // 항목마다 얻은 점수 — 서버 값(earned)이 있으면 그대로(부분 점수 포함), 없으면(예시 데이터) 충족이면 배점 전부.
+  // 진입 파일은 검증-2에서 8항목이 아니라 통과 필수 조건이라(어기면 서버가 8칸을 모두 0점으로 준다) 여기서 따로 0점 처리하지 않는다.
+  const earnedOf = (it) => it.earned ?? (it.passed ? it.weight : 0);
+  const round2 = (v) => Math.round(v * 100) / 100;
+  // 묶음 점수는 소수 한 자리(묶음 합계처럼 소수를 더한 값이 37.0099999… · 40.8333…로 찍혔다, 10-13 — 만점이 2.9 · 8.8처럼 작아 정수로는 뜻이 흐려짐).
+  // 총점 · 층 · 소계는 화면과 같게 정수 — 얻은 점수는 내림, 만점은 반올림(utils.js scoreInt · maxInt와 같은 규칙). 항목 배점 · 획득은 두 자리.
+  const score1 = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 10) / 10 : v);
+  const scoreInt = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.floor(v + 1e-6) : v);
+  const maxInt = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : v);
+  const sumMax = round2(codeCheckItems.reduce((s, it) => s + (Number(it.weight) || 0), 0));
+  const sumRaw = round2(codeCheckItems.reduce((s, it) => s + (Number(earnedOf(it)) || 0), 0));
 
   // [2026-09-23, 백엔드 전달사항 10번] VerdictOut의 점수 필드는 전부 nullable이라 한 항목씩
   // 확인하고, 없으면(목업·데모 등 아직 서버 판정이 없는 경우) 지금까지처럼 화면 값으로 센다.
@@ -36,18 +43,24 @@ export function buildVerificationReportHtml({ projectName, announcementTitle, ca
   const vDoc = num(verdict?.doc_score), vDocMax = num(verdict?.doc_max_score);
   const vCode = num(verdict?.code_score), vCodeMax = num(verdict?.code_max_score);
   const vPlan = num(verdict?.plan_match_score), vPlanMax = num(verdict?.plan_match_max_score);
+  // 자동 검증 소계는 서버 값(15점 환산 — '해당 없음' 항목을 빼고 다시 환산한 값)을 먼저 쓴다. 표 칸의 단순 합과 다를 수 있다.
+  const autoRaw = vCode ?? sumRaw;
+  const autoMax = vCodeMax ?? sumMax;
 
   const docRaw = vDoc ?? docScore.raw;
   const docMaxScore = vDocMax ?? docScore.max;
-  // 산출물층 = 자동 검증 + 계획서 대조. 서버 값은 둘 다 있을 때만 쓴다(한쪽만 쓰면 합이 깨진다).
-  const artifactRaw = vCode != null && vPlan != null ? vCode + vPlan : autoRaw + crossCheck.raw;
-  const artifactMax = vCodeMax != null && vPlanMax != null ? vCodeMax + vPlanMax : autoMax + crossCheck.max;
+  // 산출물층 = 자동 검증 + 계획서 대조. 서버가 그 실행 건 배점으로 환산한 산출물층 값(artifact_score · artifact_max_score)을
+  // 먼저 쓰고, 없으면 두 칸의 합(둘 다 있을 때만 — 한쪽만 쓰면 합이 깨진다), 그것도 없으면 화면 값.
+  const artifactRaw = num(verdict?.artifact_score) ?? (vCode != null && vPlan != null ? vCode + vPlan : autoRaw + crossCheck.raw);
+  const artifactMax = num(verdict?.artifact_max_score) ?? (vCodeMax != null && vPlanMax != null ? vCodeMax + vPlanMax : autoMax + crossCheck.max);
   const total = num(verdict?.total_score) ?? docRaw + artifactRaw;
   const passThreshold = num(verdict?.pass_threshold) ?? threshold;
   const passed = total >= passThreshold;
-  const failedItems = codeCheckItems.filter((it) => !it.passed);
+  const failedItems = codeCheckItems.filter((it) => !it.passed && it.applicable !== false);
 
-  const opinion = crossCheck.reasons.length
+  const opinion = crossCheck.withheld
+    ? '계획서와 구현 기능을 대조하지 못했습니다(대조 불가). 이 항목은 0점으로 합산됩니다.'
+    : crossCheck.reasons.length
     ? `사업계획서에 쓴 내용 중 산출물에서 확인되지 않는 항목이 ${crossCheck.reasons.length}건 있습니다.`
     : '사업계획서에 쓴 기능·정보가 산출물에 모두 있습니다.';
   const fixes = [
@@ -56,10 +69,12 @@ export function buildVerificationReportHtml({ projectName, announcementTitle, ca
   ];
   const evidence = failedItems.filter((it) => it.evidence).map((it) => `${it.name}: ${it.evidence}`);
 
-  const docCells = docScore.items.map((it) => `
-      <div class="doc-item"><span>${esc(DOC_ITEM_LABEL[it.name] || it.name)}</span><b>${it.score} / ${it.max}</b></div>`).join('');
+  // 새 모양은 점수 항목이 24개 안팎이라 묶음(일반현황 · 개요 + 4묶음) 합계로 칸을 채운다(utils.js docGroupsFrom).
+  const docRows = docScore.groups || docScore.items;
+  const docCells = docRows.map((it) => `
+      <div class="doc-item"><span>${esc(DOC_ITEM_LABEL[it.label || it.name] || it.label || it.name)}</span><b>${score1(it.score)} / ${score1(it.max)}</b></div>`).join('');
   const checkRows = codeCheckItems.map((it) => `
-        <tr class="${it.passed ? '' : 'fail'}"><td>${esc(it.name)}</td><td class="num">${it.weight}</td><td>${it.passed ? '충족' : '미충족'}</td><td class="num">${it.passed && !entryMissing ? it.weight : 0}</td></tr>`).join('');
+        <tr class="${it.passed ? '' : 'fail'}"><td>${esc(it.name)}</td><td class="num">${round2(Number(it.weight) || 0)}</td><td>${it.applicable === false ? '해당 없음' : it.passed ? '충족' : '미충족'}</td><td class="num">${round2(earnedOf(it))}</td></tr>`).join('');
   const lines = (arr, empty) => (arr.length ? arr.map((t) => `<p>${esc(t)}</p>`).join('') : `<p class="muted">${empty}</p>`);
 
   return `<!doctype html>
@@ -105,23 +120,23 @@ export function buildVerificationReportHtml({ projectName, announcementTitle, ca
   </dl>
   <div class="verdict">
     <div><small>종합 판정</small><div class="result">${passed ? '통과' : '기준 미달'}</div></div>
-    <div class="score">${total}<span>/ 100점</span></div>
-    <div class="parts"><div><span>문서층 (사업계획서)</span><b>${docRaw} / ${docMaxScore}</b></div><div><span>산출물층 (자동 검증 + 계획서 대조)</span><b>${artifactRaw} / ${artifactMax}</b></div></div>
+    <div class="score">${scoreInt(total)}<span>/ 100점</span></div>
+    <div class="parts"><div><span>문서층 (사업계획서)</span><b>${scoreInt(docRaw)} / ${maxInt(docMaxScore)}</b></div><div><span>산출물층 (자동 검증 + 계획서 대조)</span><b>${scoreInt(artifactRaw)} / ${maxInt(artifactMax)}</b></div></div>
   </div>
   <p class="rule">판정 기준 ${passThreshold}점 이상${failedItems.length || crossCheck.reasons.length ? '  |  총점 판정과 별개로 미충족 항목의 보완이 필요합니다.' : ''}</p>
 
   <h2><em>01</em>사업계획서 평가<small>획득 점수 / 배점</small></h2>
-  <div class="doc">${docCells}
+  <div class="doc" style="grid-template-columns: repeat(${Math.max(docRows.length, 1)}, 1fr)">${docCells}
   </div>
 
-  <h2><em>02</em>${copy.autoTitle}<small>${autoRaw} / ${autoMax}점</small></h2>
+  <h2><em>02</em>${copy.autoTitle}<small>${scoreInt(autoRaw)} / ${maxInt(autoMax)}점</small></h2>
   <table>
     <thead><tr><th>점검 항목</th><th class="num">배점</th><th>결과</th><th class="num">획득</th></tr></thead>
     <tbody>${checkRows}
     </tbody>
-  </table>${entryMissing ? '\n  <p class="rule">진입 파일이 없어 나머지 항목 검사가 성립하지 않으므로 자동 검증 점수는 0점으로 처리됩니다.</p>' : ''}
+  </table>
 
-  <h2><em>03</em>계획서 대조 의견 및 보완 사항<small>${crossCheck.raw} / ${crossCheck.max}점</small></h2>
+  <h2><em>03</em>계획서 대조 의견 및 보완 사항<small>${crossCheck.withheld ? '대조 불가 (0점 합산)' : `${scoreInt(crossCheck.raw)} / ${maxInt(crossCheck.max)}점`}</small></h2>
   <dl class="notes">
     <dt>검증 의견</dt><dd>${lines([opinion], '')}</dd>
     <dt>보완 사항</dt><dd>${lines(fixes, '보완이 필요한 항목이 없습니다.')}</dd>

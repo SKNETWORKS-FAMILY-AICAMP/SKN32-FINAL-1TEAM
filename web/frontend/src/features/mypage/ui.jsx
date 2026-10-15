@@ -250,10 +250,12 @@ export function ChipSelect({ options, values, onChange }) {
   );
 }
 
-// 행 추가/삭제형 목록. fields: [{key,label,type:'text'|'date'|'month'|'select'|'check',options,placeholder}]
+// 행 추가/삭제형 목록. fields: [{key,label,type:'text'|'date'|'month'|'select'|'check',options,placeholder,wide}]
+// wide: 글 칸을 넓은 화면(4칸 줄)에서 세 칸으로 넓힌다 — 대표자 이력 '내용'처럼 길게 쓰는 칸.
 const COLS = { 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3', 4: 'sm:grid-cols-2 md:grid-cols-4' };
 
-export function ListEditor({ items, onChange, fields, cols = 3, addLabel, emptyText, extra }) {
+// max를 주면 그 줄 수에 닿았을 때 추가 버튼을 숨긴다.
+export function ListEditor({ items, onChange, fields, cols = 3, addLabel, emptyText, extra, max }) {
   const blank = Object.fromEntries(fields.map((f) => [f.key, f.type === 'check' ? false : '']));
   const update = (i, key, value) => onChange(items.map((row, idx) => (idx === i ? { ...row, [key]: value } : row)));
   return (
@@ -268,7 +270,8 @@ export function ListEditor({ items, onChange, fields, cols = 3, addLabel, emptyT
               if (f.type === 'check') return <div key={f.key} className="flex items-end pb-2.5"><Check checked={!!row[f.key]} onChange={set}>{f.label}</Check></div>;
               // 달력 두 칸이 들어가는 기간 항목은 한 칸으로는 좁아서 두 칸을 차지한다.
               if (f.type === 'monthrange') return <div key={f.key} className="min-w-0 md:col-span-2"><MonthRangeInput label={f.label} value={row[f.key]} onChange={set} /></div>;
-              return <TextInput key={f.key} label={f.label} type={f.type || 'text'} value={row[f.key]} placeholder={f.placeholder} onChange={set} />;
+              const input = <TextInput key={f.key} label={f.label} type={f.type || 'text'} value={row[f.key]} placeholder={f.placeholder} onChange={set} />;
+              return f.wide ? <div key={f.key} className="min-w-0 md:col-span-3">{input}</div> : input;
             })}
           </div>
           {extra && extra(row)}
@@ -278,10 +281,12 @@ export function ListEditor({ items, onChange, fields, cols = 3, addLabel, emptyT
           </button>
         </div>
       ))}
-      <button type="button" onClick={() => onChange([...items, blank])}
-        className="h-11 rounded-xl border border-dashed border-[#d1d6db] text-[14px] font-semibold text-[var(--primary)] hover:bg-[#f5f9ff] transition-colors">
-        + {addLabel}
-      </button>
+      {(max == null || items.length < max) && (
+        <button type="button" onClick={() => onChange([...items, blank])}
+          className="h-11 rounded-xl border border-dashed border-[#d1d6db] text-[14px] font-semibold text-[var(--primary)] hover:bg-[#f5f9ff] transition-colors">
+          + {addLabel}
+        </button>
+      )}
     </div>
   );
 }

@@ -4,8 +4,10 @@
 // 열어야 한다(127.0.0.1로 열면 로그인 자체는 되는데 그 다음 요청에 쿠키가 안 실린다).
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
+// code: 서버 오류 코드(본문 최상위 code — 예: ANNOUNCEMENT_BLOCKED · BUSY · E-G2-LIMIT · CONFIRMATION_REQUIRED). 백엔드가
+// 붙이기 전이거나 코드가 없는 오류면 undefined다 — 그때는 detail 문구로만 안내한다(백엔드 회신 2026-10-06).
 export class ApiError extends Error{
-  constructor(status,detail){super(typeof detail==='string'?detail:JSON.stringify(detail));this.status=status;this.detail=detail}
+  constructor(status,detail,code){super(typeof detail==='string'?detail:JSON.stringify(detail));this.status=status;this.detail=detail;this.code=code}
 }
 
 // Access Token(세션 쿠키)은 30분 만료라, 그 사이 401을 받으면 여기서 조용히 POST /auth/refresh로
@@ -35,7 +37,7 @@ export async function apiFetch(path,{method='GET',body,headers,_retried=false}={
   }
   const text=await res.text();
   const data=text?JSON.parse(text):null;
-  if(!res.ok){throw new ApiError(res.status,data?.detail??data??res.statusText)}
+  if(!res.ok){throw new ApiError(res.status,data?.detail??data??res.statusText,data?.code)}
   return data;
 }
 
@@ -72,7 +74,7 @@ export const deleteProject=(projectId)=>api.delete(`/projects/${projectId}`);
 export const deleteProjectPermanently=(projectId)=>api.delete(`/projects/${projectId}/permanent`);
 
 // [2026-09-28] 헤더 종모양이 쓰는 알림 이력(GET /projects의 진행 상태 요약과는 별개 —
-// "그동안 무슨 일이 있었는지"의 개별 기록). kind: 문서평가/산출물확인/표현검수/실패.
+// "그동안 무슨 일이 있었는지"의 개별 기록). kind: 문서평가/산출물확인/결과물/실패(옛 행은 표현검수도 — 조율 2026-10-15에 검수가 빠졌다).
 export const listNotifications=(unreadOnly=false)=>api.get(`/projects/notifications${unreadOnly?'?unread_only=true':''}`);
 export const markNotificationRead=(notificationId,read=true)=>api.patch(`/projects/notifications/${notificationId}/read`,{read});
 
@@ -100,18 +102,33 @@ export const getMatchCandidates=(projectId)=>api.get(`/projects/${projectId}/mat
 // 공고 다시 찾기 — 프로젝트당 1회(서버가 409로 막음). 이전 후보는 유지하고 10건을 더한다.
 export const rematchCandidates=(projectId)=>api.post(`/projects/${projectId}/match-candidates/rematch`);
 
-// 선택한 공고로 매칭~최종판정까지 한 번에 생성(더미). noticeId 생략하면 서버가 아무 공고나 고른다.
+// 공고 선택 → 자격 확인(화면 3 → 4). 응답 status: ready(eligibility · match) · pending(GET /eligibility로 다시) ·
+// failed(공고 없음 · 공고 서버 오류 — message 안내). 계획서 · 점수(plan · verdict)는 아직 비어 있다. noticeId는 필수다(없으면 422).
 export const generatePipeline=(projectId,noticeId)=>api.post(`/projects/${projectId}/generate`,{notice_id:noticeId||null});
+
+// 화면 8 → 9 ('종합 평가 확인하기'). 실행할 단계 없이 바로 stage='final_review_pending'이 된다. 응답은 ProjectStatusOut.
+// [SB-243 — 이름 확정(백엔드 회신 2026-10-06)]
+export const startFinalReview=(projectId)=>api.post(`/projects/${projectId}/final-review/start`);
+// 화면 9 → 11 (최종 결과물). 결과 통합이 도는 동안 stage='done' · 진행 중, 끝나면 'done' · 'completed'(조율 2026-10-15 — 전에는
+// 표현 검수 stage='reviewing'). 기준 점수에 못 미치면 409 +
+// detail {confirmation_required, reason, items}로 확인을 받는다 — 사용자가 확인하면 confirmed=true로 다시 부른다.
+export const startReview=(projectId,confirmed=false)=>api.post(`/projects/${projectId}/review/start`,{confirmed});
+
+// 자격 확인 결과(화면 4)를 다시 읽는다 — POST /generate가 status='pending'으로 답했을 때, 이어하기로 화면 4를 열 때.
+// 응답 모양은 POST /generate와 같다(DemoGenerateResponse — status · eligibility · match · notices).
+// noticeId: 방금 고른 공고 — 그 공고의 자격 확인이 끝났는지로 답한다. 없으면 지금 자격 결과(이어하기 · 이전 공고로 계속하기).
+// [백엔드 회신 2026-10-06] 화면 5에서 다시 골랐는데 pending이면 notice_id 없이 부를 때 이전 공고 결과가 ready로 왔다.
+export const getEligibility=(projectId,noticeId)=>api.get(`/projects/${projectId}/eligibility${noticeId?`?notice_id=${encodeURIComponent(noticeId)}`:''}`);
 
 // 이미 generatePipeline으로 만들어둔 결과를 재생성 없이 다시 불러온다("이어서 보기").
 export const getProjectResult=(projectId)=>api.get(`/projects/${projectId}/result`);
 
-// 개별 작업 재시도 — task_key: 'strategy'|'writing'|'verify1_rubric'|'verify1_evidence'|
-// 'implement_prototype'|'implement_infographic'|'verify2_static'|'verify2_crosscheck'|
-// 'review_expression'|'review_token_check' (app/schemas.py RetryTaskRequest 참고).
-// bundleId: task_key='writing'일 때 필수(서버가 PSST 4항목 중 하나를 요구 — 안 보내면
-// 400). implement_prototype/infographic은 서버가 고정 매핑을 쓰므로 생략 가능.
+// 재작성 접수 — task_key: 'writing'(계획서 묶음, bundle_id 필수: 문제인식 · 실현가능성 · 성장전략 · 팀 구성) ·
+// 'implement_prototype' · 'implement_infographic'. 나머지 task_key는 400. 접수만 하고 바로 돌아온다(ReworkAcceptedOut —
+// cycle_id · screen · bundles · collect_until · duplicate). 결과는 getReworkResult로(features/workflow/rework.js).
 export const retryTask=(projectId,taskKey,bundleId)=>api.post(`/projects/${projectId}/retry-task`,{task_key:taskKey,...(bundleId?{bundle_id:bundleId}:{})});
+// 마지막 재작성 한 건의 결과(status 진행중 · 완료 · 실패, changed는 예전 retry-task 응답과 같은 모양). 재작성한 적 없으면 404.
+export const getReworkResult=(projectId)=>api.get(`/projects/${projectId}/rework-result`);
 
 // [2026-09-15] 응답이 JSON이 아니라 실제 파일 바이너리인 다운로드 공용 헬퍼 — apiFetch(항상
 // JSON 파싱)를 못 쓰는 GET /projects/{id}/plan-document.docx 가 쓴다.
@@ -128,7 +145,7 @@ async function fetchBlob(path){
     // 에러 본문이 JSON이 아닐 수도 있다(프록시가 낸 HTML 오류 페이지 등) — 그땐 본문/상태 문구를 쓴다.
     let data=null;
     try{data=text?JSON.parse(text):null}catch(e){data=text||null}
-    throw new ApiError(res.status,data?.detail??data??res.statusText);
+    throw new ApiError(res.status,data?.detail??data??res.statusText,data?.code);
   }
   return res.blob();
 }
@@ -139,8 +156,13 @@ async function downloadFile(path,filename){
   const a=document.createElement('a');
   a.href=url;a.download=filename;
   document.body.appendChild(a);a.click();document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // 바로 풀면 브라우저가 저장을 시작하기 전에 주소가 사라질 수 있어 조금 뒤에 푼다.
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+
+// GET /projects/{id}/deliverable.zip (SB-316) — 서버가 묶은 최종 결과물 한 파일: 계획서 워드(plan/business-plan.docx, 그림 포함) ·
+// 계획서 그림 원본(plan/diagrams/) · 실행 파일(prototype/) · 인포그래픽(infographic/). 결과물 화면 '전체 다운로드'가 쓴다.
+export const downloadDeliverableZip=(projectId,filename='S-Brain_결과물.zip')=>downloadFile(`/projects/${projectId}/deliverable.zip`,filename);
 
 // GET /uploads/{filename} — 서버가 만든 산출물 파일(프로토타입 HTML·인포그래픽 이미지).
 // 이 경로는 로그인과 소유권 검사를 거치는데(back/app/routers/uploads.py), 세션 쿠키가

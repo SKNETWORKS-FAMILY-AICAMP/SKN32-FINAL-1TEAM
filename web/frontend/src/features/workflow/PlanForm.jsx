@@ -1,11 +1,12 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import {Icon} from '../../components/Icons.jsx';
 import Preparation from '../../components/Preparation.jsx';
-import {buildGeneralInfo,buildOverview,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf} from './utils.js';
-import {RerunLeftBadge} from './shared.jsx';
-import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_TABLE_EXAMPLE,RERUN_CAP,SCORE_DISCLAIMER,DOC_REWORK_BUNDLES} from './data.js';
-import {ApiError,fetchPlanDocumentPdf,getProjectStatus,retryTask} from '../../api.js';
+import {buildGeneralInfo,buildOverview,bundleScoreOf,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf,scoreInt} from './utils.js';
+import {FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_CHART_EXAMPLE,PLAN_TABLE_EXAMPLE,RERUN_CAP,SCORE_DISCLAIMER,ALL_DOC_BUNDLES,docBundlesFor} from './data.js';
+import {ScoreNotices} from './shared.jsx';
+import {ApiError,fetchPlanDocumentPdf,getProjectStatus} from '../../api.js';
+import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,relabelAfterReject,requestRework,waitRework} from './rework.js';
 
 // 재작성 묶음(PSST 4항목) -> 다시 돌릴 task_key. 묶음 하나를 고르면 그 항목의
 // 본문·차트·표가 함께 다시 만들어지는데(기능정의서 7_재작성·재수행매핑), 서버에는 그
@@ -13,7 +14,7 @@ import {ApiError,fetchPlanDocumentPdf,getProjectStatus,retryTask} from '../../ap
 // 보내서 구분한다(app/pipeline_stages.py WRITING_BUNDLES와 값이 같아야 함) — 그래서
 // 묶음마다 따로 호출해야 하고(task_key로 뭉쳐서 한 번만 부르면 안 됨), 서버가
 // 묶음별 사용 횟수를 정확히 센다.
-const TASK_KEY_BY_LABEL = Object.fromEntries(DOC_REWORK_BUNDLES.map((b) => [b, 'writing']));
+const TASK_KEY_BY_LABEL = Object.fromEntries(ALL_DOC_BUNDLES.map((b) => [b, 'writing']));
 
 // 프로토타입 생성 중인지 확인하는 주기. 진행 중일 때만 돌고 끝나면 멈춘다.
 const STATUS_POLL_MS = 2000;
@@ -34,7 +35,8 @@ export function PipelineProgress({onComplete}){return <Preparation kind="plan" o
 // 항목 번호·영문 병기를 그대로 썼다 — 다운로드 파일(dummyDeliverables.js)뿐 아니라
 // 화면에 계획서를 보여주는 곳(작성 화면/보기 모달/재작성 비교 모달) 전부 이 표기로
 // 통일한다(사용자 지적: 다운로드 파일만 바꾸면 화면이랑 달라 보인다).
-export function GeneralInfoBlock({ itemInfo, itemTitle, sections }) {
+// overview=false면 "창업 아이템 개요(요약)"를 빼고 일반현황 표만 — 새 모양 계획서는 개요 항목이 따로 온다.
+export function GeneralInfoBlock({ itemInfo, itemTitle, sections, overview = true }) {
   const rows = buildGeneralInfo(itemInfo);
   return (
     <div className="flex flex-col gap-5">
@@ -49,10 +51,12 @@ export function GeneralInfoBlock({ itemInfo, itemTitle, sections }) {
           ))}
         </div>
       </div>
+      {overview && (
       <div>
         <p className="text-[12px] font-bold text-[var(--muted-fg)] tracking-wide mb-2">□ 창업 아이템 개요(요약)</p>
         <p className="text-[14px] leading-relaxed text-[var(--fg)]">{buildOverview(itemTitle, sections)}</p>
       </div>
+      )}
     </div>
   );
 }
@@ -126,7 +130,8 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
   // 서버가 채점을 끝냈으면 그 값(scores), 아직이면 기존 고정 표 — utils.js scoresFromResult 참고.
   const docScore = scores?.docScore || DOC_SCORE_BY_OUTCOME[scoreOutcome];
   const threshold = scores?.threshold ?? FINAL_THRESHOLD;
-  const docScoreScaled = docScore.max ? Math.round((docScore.raw / docScore.max) * 100) : 0;
+  // 100점 환산은 내림(utils scoreInt) — 반올림하면 79.6이 '80점 미달'처럼 보인다.
+  const docScoreScaled = docScore.max ? scoreInt((docScore.raw / docScore.max) * 100) : 0;
   const passed = docScoreScaled >= threshold;
   const [confirmProceed, setConfirmProceed] = useState(false);
   const [checkedTasks, setCheckedTasks] = useState([]);
@@ -214,7 +219,9 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
   // 화면에 적는 상한값도 서버가 준 값을 쓴다(관리자가 바꾸면 같이 따라간다).
   const cap = reworkBudget?.cap ?? RERUN_CAP;
   const isCapped = (label) => isRerunCapped(reworkCounts, label, reworkBudget);
-  const allCapped = DOC_REWORK_BUNDLES.every(isCapped);
+  // 다시 만들 수 있는 계획서 묶음 — 서버가 일반현황 · 개요 · 그림 묶음의 기회를 주면 그 둘도(data.js docBundlesFor).
+  const docBundles = docBundlesFor(reworkBudget);
+  const allCapped = docBundles.every(isCapped);
 
   const toggleTask = (label) => {
     if (isCapped(label)) return;
@@ -222,11 +229,37 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
     setCompletedTasks((prev) => prev.filter((t) => t !== label));
   };
 
-  // POST /projects/{id}/retry-task를 실제로 호출한다(app/routers/projects.py retry_task) —
-  // 예전엔 setTimeout으로 스피너만 흉내 내고 서버 호출이 없어 DB에 아무 변화도 안 남았다.
+  // 재작성 — 접수만 하고 바로 돌아온다. 같은 화면에서 2초 안의 요청은 한 번으로 합쳐지고(cycle_id),
+  // 끝날 때까지 GET /rework-result를 확인한다(rework.js). 화면을 나갔다 돌아와도 진행 중이면 이어서 본다.
+  const alive = useRef(true);
+  useEffect(() => () => { alive.current = false; }, []);
+  const finishRework = async (cycleId, picked) => {
+    const result = await waitRework(projectId, cycleId, () => alive.current);
+    if (!result) return;
+    if (result.status === '실패') {
+      window.alert(REWORK_FAILED_MESSAGE);
+    } else {
+      // 실제로 다시 만든 뒤에만 횟수를 센다 — 실패는 서버가 기회를 돌려준다.
+      if (onRework) onRework(picked);
+      setCompletedTasks((prev) => [...new Set([...prev, ...picked])]);
+      // 계획서 본문이 바뀌었으니 오른쪽 미리보기(PDF)도 다시 받는다 — 처음 열 때 한 번만 받아 재작성 전 본문이 남아 있었다.
+      if (alive.current) setPdfRetry((n) => n + 1);
+    }
+    if (onScoresRefresh) await onScoresRefresh();
+    if (alive.current) setRunningTasks([]);
+  };
+  useEffect(() => {
+    if (!projectId) return;
+    findRunningRework(projectId, 6).then((running) => {
+      if (!running || !alive.current) return;
+      const picked = running.bundles.filter((b) => ALL_DOC_BUNDLES.includes(b));
+      setRunningTasks(picked);
+      finishRework(running.cycle_id, picked).catch((err) => console.error('재작성 결과를 불러오지 못했어요', err));
+    }).catch((err) => console.error('재작성 상태를 확인하지 못했어요', err));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
   // 묶음(PSST 항목)마다 서버가 bundle_id로 사용 횟수를 따로 세므로, task_key가 같아도
-  // (전부 'writing') 묶음별로 각각 호출해야 한다 — 하나로 뭉쳐 부르면 서버가 어느 묶음
-  // 몫인지 몰라 나머지 묶음 횟수까지 같이 깎인다.
+  // (전부 'writing') 묶음별로 각각 호출한다 — 하나로 뭉쳐 부르면 다른 묶음 횟수까지 같이 깎인다.
   const handleRewrite = async () => {
     // 프로토타입이 이 계획서로 만들어지는 중이라 지금 본문을 다시 쓰면 둘이 어긋난다.
     if (generating || runningTasks.length > 0) return;
@@ -237,18 +270,22 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
     setRunningTasks(picked);
     setCheckedTasks([]);
     try {
-      if (projectId) await Promise.all(picked.map((label) => retryTask(projectId, TASK_KEY_BY_LABEL[label], label)));
-      // 실제로 재시도가 나간 뒤에만 횟수를 센다 — 실패한 호출로 상한을 깎으면 안 된다.
-      if (onRework) onRework(picked);
-      // 서버가 재채점까지 마친 뒤이므로 결과를 다시 받아 점수를 갱신한다.
-      if (onScoresRefresh) await onScoresRefresh();
-      setCompletedTasks((prev) => [...new Set([...prev, ...picked])]);
+      if (!projectId) { setCompletedTasks((prev) => [...new Set([...prev, ...picked])]); setRunningTasks([]); return; }
+      const req = await requestRework(projectId, picked, TASK_KEY_BY_LABEL);
+      if (req.rejected.length > 0) {
+        // 일부만 거절 — 거절된 묶음은 다시 고를 수 있게 돌려 두고, 접수된 묶음만 진행 중으로 본다.
+        window.alert(rejectedReworkMessage(req.rejected));
+        setCheckedTasks(relabelAfterReject(picked, req.rejected)); // 상한(E-G2-LIMIT) 묶음은 다시 체크하지 않는다
+        setRunningTasks(req.labels);
+      }
+      await finishRework(req.cycleId, req.labels);
     } catch (err) {
       console.error('재작성 요청이 실패했어요', err);
-      window.alert(err.message || '재작성에 실패했어요. 다시 시도해 주세요.');
-      setCheckedTasks(picked);
-    } finally {
+      window.alert(err.rejected?.length > 1 ? rejectedReworkMessage(err.rejected) : (err.message || '재작성에 실패했어요. 다시 시도해 주세요.'));
+      setCheckedTasks(relabelAfterReject(picked, err.rejected));
       setRunningTasks([]);
+      // 상한에 걸렸으면 남은 횟수를 서버에서 다시 받아 그 묶음을 끈다
+      if (err.rejected?.some((r) => r.error?.code === 'E-G2-LIMIT') && onScoresRefresh) onScoresRefresh();
     }
   };
 
@@ -287,41 +324,41 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
           <p className={`text-[12.5px] font-bold mb-1 ${passed ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>
             {passed ? `［내부 기준 ${threshold}점 통과］` : `［내부 기준 ${threshold}점 미달］`}
           </p>
-          <p className="text-[11px] text-[var(--muted-fg)] leading-relaxed">{SCORE_DISCLAIMER}</p>
 
-          {!passed && (
-            <div className="mt-4 rounded-xl bg-[color-mix(in_srgb,var(--danger)_6%,white)] p-4">
-              <p className="text-[12.5px] font-bold text-[var(--danger)] mb-2">점수 미달 사유</p>
-              <ul className="flex flex-col gap-1.5">
-                {docScore.reasons.map((r) => (
-                  <li key={r} className="text-[12.5px] text-[var(--fg)] leading-relaxed">· {r}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <ScoreNotices notices={scores?.notices} reworkHint={!passed} className="mt-5" />
 
+          {/* 항목별 점수와 다시 만들 항목을 한 목록으로 — 예전엔 "점수 미달 사유" 상자와 "다시 준비할 항목" 목록이 같은 묶음
+              이름을 두 번 보여 줬고, 그만큼 칸이 길어져 '프로토타입 생성' 버튼이 화면 밖으로 밀렸다(디자인 점검 10-12).
+              일반현황 · 개요는 다시 만들 수 없는 항목이라 여기엔 넣지 않는다 — 점수 내역 전체는 검증결과서 PDF에 있다. */}
           <div className="mt-5 rounded-xl border border-[var(--border)] p-4">
-            <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-1">다시 준비할 항목</p>
-            <p className="text-[11px] text-[var(--muted-fg)] mb-3">항목을 고르면 그 항목의 본문·그래프·표를 함께 다시 만들어요. 항목마다 {cap}회까지.</p>
-            <div className="flex flex-col gap-2">
-              {DOC_REWORK_BUNDLES.map((label) => {
+            <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-1">항목별 점검</p>
+            <p className="text-[11px] text-[var(--muted-fg)] mb-3">고른 항목은 본문·그래프·표를 함께 다시 만들어요. 항목마다 {cap}회까지.</p>
+            <div className="flex flex-col gap-2.5">
+              {docBundles.map((label) => {
                 const isRunning = runningTasks.includes(label);
                 const isDone = !isRunning && completedTasks.includes(label);
                 const left = rerunLeftOf(reworkCounts, label, reworkBudget);
                 const capped = left <= 0;
+                const bundle = bundleScoreOf(label, docScore);
                 return (
-                  <label key={label} className={`flex items-center gap-2.5 text-[13px] ${isRunning || generating || capped ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>
+                  <label key={label} className={`flex items-start gap-2.5 text-[13px] ${isRunning || generating || capped ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>
                     {isRunning ? (
                       <span className="rewrite-indicator" aria-hidden="true"></span>
                     ) : (
                       <input type="checkbox" checked={checkedTasks.includes(label)} onChange={() => toggleTask(label)}
                         disabled={generating || capped}
-                        className="w-4 h-4 accent-[var(--primary)] disabled:cursor-not-allowed" />
+                        className="flex-shrink-0 mt-0.5 w-4 h-4 accent-[var(--primary)] disabled:cursor-not-allowed" />
                     )}
-                    <span>
-                      {isRunning ? `${label} 재작성 중…` : label}
-                      {isDone && <span className="ml-1.5 text-[11.5px] font-semibold text-[var(--ok)]">✓ 재작성 완료</span>}
-                      {!isRunning && <RerunLeftBadge left={left} />}
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-baseline gap-2">
+                        <span className="font-semibold">{isRunning ? `${label} 재작성 중…` : label}</span>
+                        {!isRunning && left > 0 && <span className="text-[11px] text-[var(--muted-fg)]">{left}회 남음</span>}
+                        {!isRunning && bundle && (
+                          <span className={`ml-auto flex-shrink-0 text-[12px] font-semibold ${bundle.passed ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>{bundle.passed ? '통과' : '미달'}</span>
+                        )}
+                      </span>
+                      {!isRunning && bundle?.summary && <span className="block mt-0.5 text-[11.5px] text-[var(--muted-fg)] leading-snug">{bundle.summary}</span>}
+                      {isDone && <span className="block mt-0.5 text-[11px] font-semibold text-[var(--ok)]">✓ 재작성 완료</span>}
                     </span>
                   </label>
                 );
@@ -364,6 +401,9 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
               </div>
             </div>
           )}
+
+          {/* 점수 안내 문구는 판정을 읽은 뒤에 보면 되는 내용이라 맨 아래로 내렸다 */}
+          <p className="mt-4 text-[11px] text-[var(--muted-fg)] leading-relaxed">{SCORE_DISCLAIMER}</p>
         </aside>
         )}
 
@@ -374,7 +414,8 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
               {/* 공고 제목을 제목 문장 안에 끼워 넣으면(『긴 공고명』 사업계획서) 제목이 길 때
                   줄이 어중간하게 끊기고 뒤 단어만 남아 어색해진다(사용자 지적). 공고명은
                   윗줄에 따로 두고, 제목은 길이가 고정된 짧은 문장만 남긴다. */}
-              <p className="text-[13px] font-semibold text-[var(--primary-dim)] leading-snug mb-1.5">『{announcement ? announcement.title : ''}』</p>
+              {/* 공고 제목을 모르면(알림에서 연 프로젝트 · 공고 표에서 빠진 공고) 빈 『』를 그리지 않는다 */}
+              {announcement?.title && <p className="text-[13px] font-semibold text-[var(--primary-dim)] leading-snug mb-1.5">『{announcement.title}』</p>}
               <h1 className="font-display font-bold text-[23px] mb-1.5">사업계획서</h1>
               <p className="text-[12px] text-[var(--muted-fg)]">{PLAN_AI_NOTICE}</p>
             </div>
@@ -382,7 +423,8 @@ export function PlanForm({ announcement, onGenerate, scoreOutcome = 'fail', item
 
           {/* 공식 양식 그대로 보여주려고 브라우저 내장 PDF 뷰어에 맡긴다 — 페이지 넘김·확대·
               인쇄가 전부 따라온다. 높이를 화면에 맞춰 잡아야 뷰어가 제 몫을 한다. */}
-          <div className="h-[calc(100vh-220px)] min-h-[520px] bg-[var(--muted)]">
+          {/* 못 불러왔을 때는 안내 한 줄뿐이라 화면 높이만 한 빈 회색 상자로 두지 않고 줄인다(불러오는 중에는 그대로 — PDF가 뜰 때 들썩이지 않게). */}
+          <div className={`${pdfUrl || pdfLoading ? 'h-[calc(100vh-220px)] min-h-[520px]' : 'h-[320px]'} bg-[var(--muted)]`}>
             {pdfUrl ? (
               <iframe src={pdfUrl} title="사업계획서 미리보기" className="w-full h-full border-0" />
             ) : (

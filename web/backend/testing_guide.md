@@ -1,199 +1,188 @@
-# S-Brain 백엔드 테스트 방법 정리 (2026-09-14)
+# S-Brain 웹 백엔드 테스트 방법 (2026-10-11 개정, SB-334)
 
-`back/`(repo 루트)에서 실행하는 걸 기준으로 정리했다. 전부 `DB_BACKEND=sqlite`(로컬 `dev.db`) 기준이라 AWS 공유 DB엔 영향 없다.
+`web/backend/`에서 실행하는 걸 기준으로 정리했다. 웹은 이제 오케스트레이터(`agent-orchestration`의 `sbrain`)를 통해서만 실행 건을 만들고 읽는다 —
+예전의 더미 파이프라인(`seed_dummy_pipeline.py`, `app/agents.py`)과 이를 쓰던 `verify_*.py` 스크립트는 없어졌다.
 
 ---
 
 ## 0. 사전 준비 (한 번만)
 
 ```
-cd back
+cd web/backend
 python -m venv venv
 venv\Scripts\activate        # (WSL/맥이면 source venv/bin/activate)
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
+pip install -e ../../agent-orchestration   # 오케스트레이터 계약 테스트용(없으면 계약 테스트만 건너뜀)
 ```
 
-`.env.example`을 복사해서 `.env`로 만들고 `DB_BACKEND=sqlite`로 해둔다. (아래 검증 스크립트들은 스크립트 안에서 `DB_BACKEND=sqlite`를 자동으로 세팅하는 것도 있어서 `.env` 없이도 돌아가지만, `uvicorn`으로 서버를 직접 켤 땐 `.env`가 필요하다.)
+`.env.example`을 복사해서 `.env`로 만든다.
 
 ---
 
-## 1. 서버 없이 바로 되는 것 — 검증 스크립트 4개
-
-전부 스크립트 안에서 `DB_BACKEND=sqlite`를 자동 세팅하고, `dev.db`를 매번 지우고 새로 만들어서 스키마가 항상 최신 상태로 시작한다. 그냥 실행하면 된다.
+## 1. 자동 테스트 (pytest) — 서버 · 워커 · MySQL 없이
 
 ```
-python tests/verify_resume_cases.py       # 이어하기 8케이스 stage/progress_percent 판별 검증
-python tests/verify_status_endpoint.py    # GET /projects/{id}/status API 실제 HTTP 왕복 검증
-python tests/verify_schema_gaps_seed.py   # 이번에 추가한 6개 스키마 항목이 실제로 채워지는지 검증
-python tests/verify_retry_task.py         # POST /projects/{id}/retry-task — 재시도할 때마다 실제로 값이 바뀌는지 검증
+pytest -q
 ```
 
-마지막 줄에 `ALL OK` 또는 `결과: ... 확인.`이 뜨면 통과, 중간에 `assert`가 걸려서 에러 나면 뭔가 깨진 것.
-
-이 4개는 각자 자기만의 임시 `dev.db`를 지우고 새로 만들기 때문에, **2번에서 만든 프로젝트 데이터와는 무관**하다 — 이 스크립트들을 돌리고 나면 2번에서 만든 project_id는 지워진다는 뜻. 순서를 꼭 지킬 필요는 없지만, 같은 `dev.db`를 계속 쓰면서 테스트하고 싶으면 이 4개를 먼저 돌리고 나서 2번을 진행하는 게 깔끔하다.
-
-### 1-1. admin.py는 `verify_admin.py`가 아니라 pytest로 (2026-09-14부터)
-
-`app/routers/admin.py`(정책/체크리스트/진행현황/유저/FAQ/에이전트로그)는 원래 `python verify_admin.py`로 확인했는데, 지금은 `tests/test_admin.py`로 옮겨서 `verify_admin.py`는 지웠다 — 실행은 아래처럼 `pytest`로 한다(`tests/conftest.py`가 `DB_BACKEND=sqlite`로 자동 전환해주는 것도 그대로, 위 4개 스크립트와 달리 `back/dev.db`가 아니라 `back/test.db`라는 별도 파일을 쓰고 테스트가 끝나면 테이블 내용을 비워서 다음 테스트에 안 새게 해준다).
-
-```
-pytest tests/test_admin.py -v
-```
-
-정책 배점 100 검증/체크리스트 가중치 100 검증/`GET /admin/items` 진행현황/유저 승격(얼굴인증 게이트)/FAQ(미답변 조회·답변 저장)/에이전트 실행로그, 그리고 일반 계정 403·정지 계정 401 구분까지 총 11개 테스트로 나뉘어 있다 — `python verify_admin.py` 한 덩어리로 돌리던 것과 확인 내용은 동일하지만, 중간에 하나가 깨져도 나머지가 계속 실행돼서 pytest 리포트에 한 번에 다 보인다는 게 다르다.
-
-나머지 4개(`verify_resume_cases.py` 등)는 실제로 `def test_xxx()` 형태가 아니라 import되는 순간 바로 실행되는 절차형 스크립트라 pytest로 못 옮긴다(수집 단계에서 실행돼버리고, `os.environ['DB_BACKEND']` 전역 세팅과 `sys.exit()` 때문에 다른 테스트까지 깨진다) — 대신 위치만 `tests/`로 옮겨뒀다(2026-09-23). 이름은 `verify_*.py`로 그대로라 pytest 기본 수집 패턴(`test_*.py`)에 안 걸려서 `pytest -q`를 돌려도 같이 실행되지 않는다.
+- `tests/conftest.py`가 `DB_BACKEND=sqlite`로 자동 전환하고 `test.db`(개발용 `dev.db`와 별도)를 매 세션 새로 만든다. 팀 공유 AWS MySQL에는 절대 접속하지 않는다.
+- 모든 테스트에는 가짜 오케스트레이터(`tests/orch_fakes.py`의 `FakeOrch`)가 gateway로 끼워진다. 테스트가 `orch.responses['함수 이름']`으로 원하는 상태를 만들고 `orch.calls`로 어떤 함수를 어떻게 불렀는지 확인한다.
+- `tests/test_orch_fake_contract.py`는 가짜 결과의 필드가 실제 `sbrain`과 같은지, gateway 허용 목록의 함수가 실제로 있는지 확인한다(`sbrain`이 설치돼 있어야 실행).
+- 사업비 · 추진 일정 입력(SB-327)은 `test_budget_phase_column.py`(phase 컬럼), `test_budget_schedule_schema.py`(요청 · 응답 모양), `test_budget_schedule_validation.py`(입력 검사 · 오류 위치), `test_budget_schedule_saving.py`(저장 순서 · 커밋 시점 · 정리), `test_budget_schedule_required.py`(필수 확인 · 스위치)가 본다. 아래 "사업비 · 추진 일정 입력"을 보라.
+- 테스트 파일별로 무엇을 확인하는지는 [`unit_test_doc.md`](unit_test_doc.md)에 정리돼 있다(테스트를 추가하면 그 표도 같이 고친다).
+- 관리자(`tests/test_admin.py`), 재작성(`test_orch_rework.py`), 단계 시작(`test_orch_stages.py`), 결과(`test_orch_result.py`), 삭제 · 보관 규칙(`test_project_permanent_delete.py`, `test_account_deletion.py`, `test_proofread_retention.py`) 등이 있다.
 
 ---
 
-## 2. 실제 흐름으로 테스트 (구글 로그인 없이)
+## 2. 실제 워커 + MySQL로 끝까지 돌려 보기 (로컬)
 
-진짜 구글 로그인(`login_test.html`)은 Google Cloud Console에 origin 등록이 필요해서 지금 당장 안 될 수 있다 — 그거 없이도 아래 3개 스크립트로 전체 흐름을 터미널에서 테스트할 수 있다. 전부 `app/security.py`의 구글 토큰 검증 함수만 가짜로 바꿔서(monkeypatch) 실제 코드 경로(로그인 → 프로젝트 생성 → 상태 조회)는 그대로 태운다.
+SQLite 개발 모드에서는 오케스트레이터를 쓸 수 없어 프로젝트 생성 · 단계 시작 · 결과 조회가 503으로 답한다. 실제 흐름은 MySQL + 워커가 필요하다.
+워커의 Agent 중 조율 T-C1 · T-C3만 실제 구현이고 나머지는 스텁이라(agent-orchestration README 1.3), 이 테스트는 "웹 ↔ 워커 배관과 흐름"을 확인한다(결과물 품질은 보지 않는다).
 
-### 2-1. 프로젝트 생성 (project_id 받기)
+1. **로컬 MySQL** — Docker Desktop을 켜고 `agent-orchestration/`에서 `docker compose -f docker/mysql-test.yml up -d --wait`(127.0.0.1:3307, 데이터는 메모리에만 있음).
+2. **스키마 준비** — `python scripts/prepare_local_mysql.py` : `sbrain_e2e` DB를 지우고 웹 스키마 + orch_ 표를 새로 만든다. 로컬 호스트의 e2e/test DB만 받는다(팀 공유 DB 거부).
+3. **OpenAI 키** — `agent-orchestration/.env`의 `OPENAI_API_KEY`(`.env.example` 참고, 커밋되지 않음).
+4. **워커** — `agent-orchestration/`에서 `SBRAIN_DB_URL=mysql+pymysql://root:sbrain-test@127.0.0.1:3307/sbrain_e2e?charset=utf8mb4`를 주고 `python -m sbrain.worker`.
+   공고 서버 주소(`SBRAIN_NOTICE_API_URL`)가 없으면 스텁 공고 · 스텁 자격 판정으로 돈다.
+5. **E2E** — `python scripts/e2e_worker_flow.py [--rework] [--cleanup]` : 프로젝트 생성 → 공고 후보 → 공고 선택 → 계획서 → 프로토타입 → 종합 평가 → (재작성) → 결과 통합(검수 없음) → 결과 → (영구 삭제)를 워커가 처리하길 기다리며 단계마다 `[OK]/[FAIL]`로 찍는다. 계획서 항목 구조(SB-335)도 본다 — 응답이 항목 번호 · 태그 · 종류를 따로 주는지, 점수 항목 `item_code`가 항목 번호와 맞는지, 그림 주소가 받아지는지, 재작성(`--rework`) 전후와 결과 통합 전후에 항목 구성(번호 · 태그 · 종류)과 그림이 그대로인지, 결과 통합이 끝나면 결과물 안내 글과 미달 항목 칸이 오고 검수 기록이 비어 있고 화면이 결과물(11)이고 '결과물' 알림(`target_step` 11)이 들어가는지(SB-396 ENUM이 실제 MySQL에서 동작하는지 포함). **재작성이 고른 묶음(문제인식 = 태그 `1-1`)의 항목만 바꾸는지 · 바뀐 항목의 `tag` · `title`**은 문장이 실제로 바뀌어야 볼 수 있는데 스텁 작성 Agent는 다시 써도 문장이 같아, 바뀐 항목이 없으면 `[건너뜀]`으로 찍고 확인하지 않는다(통과로 세지 않음 — 실제 Agent로 돌릴 때 확인한다, SB-342).
+
+- **동시 실행 제한 · 중단 (SB-260)** — 같은 준비(1~5) 뒤 `python scripts/e2e_concurrent_abort.py` : 요청 처리 중 · 실행 건이 있을 때의 새 프로젝트 409, 휴지통 중단 뒤 제한 해제, 요청 처리 중 · 단계 진행 중 중단까지 5개 시나리오를 한 계정으로 차례로 본다. 중단이 어느 경로(바로 중단 · 요청 취소 · 중단 요청 후 단계 사이 반영)를 탔는지까지 확인한다. 끝나도 진행 중인 작업은 남지 않아 DB를 다시 준비하지 않고 바로 다시 돌려도 된다(보관된 프로젝트만 쌓인다).
+
+- **재개 · 실패 경로 (SB-261)** — 1~4 준비 뒤(워커는 띄우지 않는다) `python scripts/e2e_failure_resume.py` : 이 스크립트가 워커를 같은 프로세스에서 직접 돌리며 스텁 Agent에 시간 초과 · 공고 서버 오류 · 잘못된 요청을 끼워 넣는다(워커가 따로 떠 있으면 끈다 — 같은 DB를 두 워커가 가져가면 시험이 틀어진다). 사전 단계 실패, 공고 선택 실패 후 재시도, 화면 5에서 다시 고른 공고 실패(SB-275 — `GET /eligibility?notice_id=`), 일시 오류 → 재개 → 성공, 재개 상한 초과 → 실패(관리자 알림 · 사용자 알림), 영구 오류 → 즉시 실패를 본다. **재작성 실패 경로(SB-277)**도 본다 — 화면 6에서 재작성이 영구 오류 · 재개 상한 초과로 실패하면 실행은 실패가 아니고(화면 6 그대로) 계획서가 요청 전과 같고 재작성 기회가 돌아오며 실패 알림(재작성)이 한 건 생기고 `E-RUN-ROLLBACK`이 오는지, 기회가 돌아와 다시 재작성하면 성공하는지. 재시도 · 재개 간격을 짧게 줄여 몇 분 안에 끝난다. 조율 T-C1 · T-C3는 실제 LLM이라 OpenAI 키가 필요하다.
+
+- **삭제 · 탈퇴와 BUSY (SB-259)** — 1~4 준비 뒤(워커는 띄우지 않는다) `python scripts/e2e_delete_withdraw.py` : 같은 프로세스에서 워커를 돌리며 계획서 작성 호출을 붙잡아 "단계를 도는 중"을 만든다. 영구 삭제(쉬는 중 · BUSY 409 → 재시도), 탈퇴(프로젝트 2개 중 하나가 진행 중일 때 BUSY → 재시도, 웹 행 · 산출물 · 실행 건 · 통계 줄), 탈퇴 뒤 재가입, 시작 요청 처리 중 탈퇴를 본다. 다시 돌려도 된다(계정이 매번 새로 만들어진다).
+
+- **산출물 파일 (SB-295 · SB-320)** — 1~4 준비 뒤(워커는 띄우지 않는다) `python scripts/e2e_artifact_files.py` : 워커를 같은 프로세스에서 돌리고 파일 저장소(`SBRAIN_ARTIFACT_ROOT`, 스크립트가 임시 폴더로 잡는다 — 웹과 워커가 같은 폴더를 본다)에 스텁 구현 Agent가 만든 자리채움 파일(`index.html` · `onepage.svg` · `infographic.svg` · `README.md` · `plan.docx`)로 흐름을 본다. 결과의 두 경로가 key 기반 웹 주소인지(SB-314), 받은 파일이 저장소 파일과 바이트가 같은지 · 헤더 · 형식(SB-315), 비로그인 401 · 다른 계정 · 관리자 · 바꾼 key · 경로 이동 · 다른 프로젝트 번호 404, 실행 파일 재작성의 전후 주소와 이전 파일 보존, 종합 평가 · 표현 검수를 마친 뒤 결과물 zip(SB-316), 영구 삭제 · 탈퇴 뒤 관리자 삭제 대기열에 줄이 생기고(SB-318) 워커가 처리하면 저장소 파일이 지워지는지(대기 10분은 이 시험에서만 0으로 줄인다), 원페이지의 두 참조(같은 `onepage.svg`)를 본다. 조율 T-C1이 실제 LLM이라 카테고리를 스스로 고르므로 스크립트가 웹개발 · 원페이지를 강제한다. 스텁 파일은 자리채움이라 내용 품질은 보지 않는다. 계정은 매번 새로 만들어져(탈퇴로 지워짐) 다시 돌려도 된다. 2분쯤 걸린다. 따로 띄운 워커로 `e2e_worker_flow.py`를 돌릴 때는 워커와 이 스크립트에 같은 `SBRAIN_ARTIFACT_ROOT`를 준다(워커는 이 값이 없으면 시작하지 않는다).
+- **학습 동의 · 검수 회수 문단 (SB-262, 검수 제거 반영 SB-400)** — 1~4 준비 뒤(워커는 띄우지 않는다) `python scripts/e2e_training_consent.py` : 워커를 같은 프로세스에서 돌린다. **검수가 서비스 흐름에서 빠져(2026-10-15) 새 워커는 `proofread_logs`에 행을 쓰지 않으므로**, 동의한 계정이 결과 통합까지 돌려도 행이 쓰이지 않는지 확인하고, 웹에 남아 있는 관리자 라벨링 · 학습 반영(trained) 표시, 동의 철회 · 영구 삭제 · 탈퇴 때 반영 전 행만 지워지고 trained 행은 연결만 끊겨 남는 동작은 **시드로 직접 넣은 옛 기록 행**으로 본다. 워커가 동의를 저장 시점에 보는지 확인하던 시나리오(P2)는 워커가 더 읽지 않아 뺐다. 프로젝트를 한 번 끝까지 돌려 1분쯤 걸린다. 다시 돌려도 된다(trained 행은 연결이 끊긴 채 남는다).
+
+- **마이그레이션 리허설 (SB-265)** — 로컬 MySQL만 있으면 된다(워커 불필요) `python scripts/rehearse_migration.py` : 옛 웹 스키마(기본 git `origin/main`의 `app_schema.sql`)로 DB를 만들고 시드 데이터를 넣은 뒤 `migrations/001` → `002` → `004`(SB-328, `project_budget_items.phase` 추가 — 003은 `feature/sb-269-web-final`에만 있어 병합 뒤 002와 004 사이에 넣는다) → `005`(SB-382, `project_plan_inputs.target_customer` 추가, 기존 행은 NULL) → `006`(SB-396, `notifications.kind`에 '결과물' 추가, 기존 알림 행 그대로)를 적용해 더미 표 13개가 사라지고 사업비 행의 `phase`가 NULL로 남고 데이터(사용자 · 프로젝트 · 알림 · 실패 알림 · 검수 기록)가 그대로인지, `proofread_logs`의 `project_id`가 채워졌는지, 마이그레이션을 다시 적용해도 오류가 없는지(멱등), 결과 스키마가 새 `app_schema.sql`과 같은지(표 · 열 형식 · NULL · 기본값 · 인덱스 · 외래 키)를 본다. **공유 DB 사본이 없어 옛 스키마를 git(main)으로 대신한 것**이라, 사본이 생기면 `mysqldump --no-data`로 뜬 스키마를 `--old-schema-file`로 넣어 같은 리허설을 다시 돈다. `--keep`으로 두 DB(`sbrain_test_mig_old` · `_new`)를 남겨 그 위에서 워커 E2E를 돌릴 수도 있다.
+
+- **부하 · 타임아웃 (SB-266)** — 1~4 준비 뒤 **워커를 띄우지 않고** `python scripts/load_check.py` : 워커가 응답하지 않을 때 후보 · 자격 확인 조회가 쌓이면 다른 요청이 막히는지를 서버를 실제로 띄워 HTTP로 잰다(단계별 동시 대기 5 · 15 · 30 · 60개, 그동안 DB를 쓰는 `/auth/me`와 안 쓰는 `/docs`의 지연). 느려지면 종료 코드 1이다. 아래 "부하 · 타임아웃" 참고.
+
+- **사업자 입력 (SB-296)** — 1~4 준비와 워커를 띄운 뒤(e2e_worker_flow.py와 같다) `python scripts/e2e_business_applicant.py` : 개인사업자 · 법인 입력으로 자격 확인 응답의 `business_age_years`가 설립일에서 계산한 값(오케스트레이터와 같은 계산)으로 오고 `can_start_writing`이 통과 여부와 같은지, POST · GET `/eligibility`가 같은지를 본다. 설립일 없는 사업자는 `E-C1-REQUIRED`(설립일자)로 거절되고 프로젝트가 남지 않는지, 예비창업자는 업력이 `None`인지도 본다. 개인사업자 · 법인의 주업종은 드롭다운 9종만 받는다(다른 값은 422).
+
+- **관리자 화면 (SB-263)** — 1~4 준비 뒤(워커는 띄우지 않는다) `python scripts/e2e_admin.py` : 워커를 같은 프로세스에서 돌리며 상태가 다른 프로젝트 네 개(매칭 전 · 실패 · 완료(재작성 포함) · 진행중)를 만들고, 진행 현황 · 정체 · 이력보기 · 보관/복원 · 에이전트 실행 기록 · Task별 보기 · 운영 지표 · 알림 · 사용자 정지 · 체크리스트를 부른다. 숫자는 오케스트레이터 표를 직접 센 값과 맞추고, 관리자 설정(합격선 · 재작성 횟수)이 새 실행에 반영되는지와 일반 사용자의 접근 거부(403)도 본다. 관리자 배점(60 · 10 · 30)을 바꾼 뒤 시작한 실행 건에서 층 만점 · 코드 점검 줄의 합 · 관리자 진행 현황 · 점수 이력의 만점이 그 실행 건 배점으로 오는지, 시작 뒤 배점을 다시 바꿔도 그대로인지, 배점 0은 합이 100이어도 422인지도 본다(문서층은 스텁 문서 점수 52가 들도록 60 이상으로 둔다). 바꾼 설정은 끝에 원래대로 돌린다. 2분쯤 걸리고 다시 돌려도 된다.
+
+- **사업비 · 추진 일정 (SB-333)** — 1~4 준비 뒤 `python scripts/e2e_budget_schedule.py` : 예비창업 · 법인 입력으로 사업비 · 일정이 두 표에 보낸 순서(`item_order`) · 단계(`phase`) · 구분(`section`)과 함께 저장되고, 실제 오케스트레이터가 `request_start`에서 읽어 시작 요청(`orch_start_requests.form_json`)에 같은 사업비 · 일정을 단계 · 범위(`agreement` · `roadmap`)와 함께 담는지 본다. 이어서 오케스트레이터 스위치(`PLAN_TABLES_REQUIRED`)와 웹 스위치(`REQUIRE_BUDGET_SCHEDULE`)를 프로세스 안에서 켜고 끄며 필수 확인이 두 곳에서 같은 `missing` 이름으로 거절하는지(웹이 먼저, 오케스트레이터는 부르지 않음), 협약 이후 일정이 없어도 통과하는지, 예비창업 2단계만 빠지면 `사업비 집행계획(2단계)`로 거절하는지 확인한다(19단계). **워커는 필요 없다**(시작 요청까지만 보고, 대기 요청은 케이스마다 휴지통 삭제로 취소). 오케스트레이터가 이 두 표를 읽는 코드는 SB-310에 있어 **최신 SB-304를 합친 트리**에서 돌려야 한다. 시작 요청 뒤 T-C1 · 전략 · 작성 Agent가 이 값을 쓰는지는 워커와 LLM이 있어야 보이므로 실제 Agent를 연결한 뒤 다시 본다.
+- **실제 OpenAI 없이 돌리기 (SB-343)** — 워커를 같은 프로세스에서 돌리는 스크립트(`e2e_artifact_files` · `e2e_admin` · `e2e_delete_withdraw` · `e2e_failure_resume` · `e2e_training_consent`)는 환경 변수 `E2E_STUB_PARTNER=1`을 주면 전략 · 작성 · 검증-1(T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1)과 구현 · 검증-2(T-B1 · T-B2 · T-V2)를 실구현 대신 스텁으로 둔다(`e2e_worker_flow.use_stub_partner_agents` — 워커 조립이 실구현을 끼우는 곳을 비운다). 실구현은 OpenAI(LLM · 이미지)를 많이 불러(전략 · 작성 · 검증-1만 한 건에 약 76번 · 약 8분 30초) 시간 · 비용이 든다. 조율 T-C1 · T-C3는 그대로 실제 LLM이라 키가 필요하지만 호출은 몇 번뿐이다. 스텁 계획서는 모양(항목 번호 · 그림)만 같고 내용은 자리채움이라 "웹 ↔ 워커 배관 · 파일 · 문서 내려받기"만 확인한다. 실제 Agent 품질까지 보려면 이 변수를 빼고 돌린다(비용 · 시간 주의). 따로 띄운 워커를 쓰는 스크립트(`e2e_worker_flow` · `e2e_concurrent_abort` · `e2e_business_applicant`)는 워커를 `python -m sbrain.worker` 대신 `python scripts/stub_worker.py`로 띄운다(같은 환경 변수 `SBRAIN_DB_URL` · `SBRAIN_ARTIFACT_ROOT`, `E2E_STUB_PARTNER`는 같은 프로세스 워커에만 듣는다).
+- **남은 워커가 있으면 다른 E2E가 실패한다** — 워커를 같은 프로세스에서 돌리는 E2E(`e2e_artifact_files` · `e2e_delete_withdraw` · `e2e_failure_resume` 등)는 같은 DB를 보는 **다른 워커가 떠 있으면** 그 워커가 요청을 가져가 실패한다(2026-10-13: 앞선 실행이 DB 없이 실패한 채 `stub_worker.py`를 남겨 두어 3종이 "워커가 T-W1에 들어가지 않음" · "표현 검수 240초 안에 되지 않음" · "T-C2 오류 → 공고 후보 failed"로 실패했고, 워커를 모두 끄고 다시 돌리자 통과했다). 전체 실행(`run_all_e2e`) 뒤에는 `stub_worker.py` 프로세스가 남지 않았는지 확인하고, 스크립트가 "따로 떠 있는 워커가 있으면 끄세요"라고 하면 그대로 따른다. 이 실패는 코드 문제가 아니다.
+- **실제 호출에 의존하는 E2E가 시간 초과로 실패할 때** — 워커를 같은 프로세스에서 돌리는 E2E(`e2e_artifact_files` · `e2e_admin` · `e2e_delete_withdraw` · `e2e_failure_resume` · `e2e_training_consent`)와 따로 띄운 워커를 쓰는 E2E는 조율 T-C1 · T-C3가 실제 OpenAI를 부르므로, 호출이 시간 안에 끝나지 않으면 사전 단계가 `E-C1-TIMEOUT`으로 실패하고 스크립트가 "공고 후보를 못 받음"으로 멈춘다(2026-10-12 한 번의 전체 실행에서 4종이 이렇게 실패했고, 같은 스크립트를 다시 돌리자 모두 통과했다). 코드 문제가 아니라 외부 호출 지연으로 보이면 `prepare_local_mysql.py`로 DB를 초기화한 뒤 그 스크립트만 다시 돌린다.
+- **스크립트를 반복해서 돌릴 때** — E2E 스크립트는 대부분 같은 로컬 계정(`e2e@example.com`)을 쓰고 실행마다 프로필 슬롯을 하나씩 만든다(`e2e_delete_withdraw.py`는 탈퇴로 계정이 지워져 제외). 계정당 프로필은 3개까지라 같은 DB에서 3번 넘게 돌리면 `POST /profile`이 409로 답하고 스크립트가 첫 단계에서 멈춘다. 이때는 2번(`prepare_local_mysql.py`)을 다시 실행해 DB를 초기화한다. 워커를 따로 띄워 둔 채 초기화하면 남은 요청을 워커가 가져가 시험이 틀어지므로 워커를 끄고 → 초기화 → 워커를 다시 띄운다.
+
+### 브라우저(프론트)로 돌려 보기
+
+위 스크립트는 웹을 `TestClient`로 부르고 구글 로그인을 코드에서 가짜로 바꿔 두므로, 프론트 화면으로 처음부터 끝까지 보려면 웹 서버를 직접 띄워야 한다. 1~4(MySQL · 스키마 · OpenAI 키 · 워커)를 마친 뒤 `web/backend`에서:
 
 ```
-python create_test_project.py
+DB_BACKEND=mysql MYSQL_USER=root MYSQL_PASSWORD=sbrain-test MYSQL_HOST=127.0.0.1 MYSQL_PORT=3307 MYSQL_DATABASE=sbrain_e2e \
+SBRAIN_DB_URL="mysql+pymysql://root:sbrain-test@127.0.0.1:3307/sbrain_e2e?charset=utf8mb4" \
+JWT_SECRET=아무값 GOOGLE_CLIENT_ID=<프론트가 로컬 개발에 쓰는 구글 클라이언트 ID> \
+uvicorn app.main:app --port 8000
 ```
 
+(PowerShell이면 `$env:이름='값'`으로 먼저 지정한다.) CORS는 `localhost:5174` · `127.0.0.1:5174`를 허용한다. 서버 기동(`/docs` 200)과 비로그인 요청의 401 응답까지는 확인했고, 구글 로그인으로 들어가 단계를 끝까지 도는 것은 브라우저로 아직 확인하지 않았다. 로그인은 `GOOGLE_CLIENT_ID`로 구글 토큰을 검증하며 개발용 로그인은 없다.
+
+### 오류 응답 형식 (SB-273)
+
+모든 오류 응답은 `{"detail": ..., "code": "..."}`다. `detail`은 화면에 보이는 문구(문자열)이거나, 확인 요청 · 진행 중 작업 안내처럼 객체이고, `code`로 분기한다.
+
+| code | 어디서 | 상태 |
+|---|---|---|
+| 오케스트레이터 코드 그대로(`BUSY` · `ANNOUNCEMENT_BLOCKED` · `E-G2-LIMIT` · `RUN_NOT_VIEWABLE` · `INVALID_STATE` …) | 오케스트레이터가 거절한 요청 | 404 · 409 · 422 |
+| `E-RUN-CONCURRENT` | 진행 중인 작업이 있을 때 새 프로젝트(`detail`에 `active_project_id` · 단계 · 화면) | 409 |
+| `CONFIRMATION_REQUIRED` | `review/start`에서 기준 점수 미달 확인(`detail.confirmation_required` · `reason` · `items`) | 409 |
+| `E-AUTH-CONSENT` · `E-AUTH-PROFILE` · `E-C1-REQUIRED` | 필수 동의 · 프로필 · 필수 입력 누락. `E-C1-REQUIRED`는 오케스트레이터의 필수 확인과 웹의 사업비 · 일정 필수 확인(SB-332, `REQUIRE_BUDGET_SCHEDULE`을 켰을 때)이 같은 모양(`detail.missing`)으로 낸다 | 403 · 403 · 422 |
+| `ACCOUNT_WITHDRAWING` | 탈퇴 중인 계정이 새 프로젝트를 시작하려 할 때(`POST /projects`) · 시작 실패 뒤 후보를 다시 읽을 때(`GET …/match-candidates`는 `status='failed'`로 같은 code) (SB-298) | 409 |
+| `NOTICE_REQUIRED` · `STAGE_NOT_REACHED` · `PLAN_NOT_READY` · `NOT_REWORKABLE` · `NOT_REWORKED_YET` | 웹이 직접 내는 단계 · 입력 오류 | 400 · 404 · 422 |
+| `UNAUTHORIZED` · `FORBIDDEN` · `NOT_FOUND` · `VALIDATION_ERROR` · `INTERNAL_ERROR` 등 | 그 밖의 오류(상태 코드별 기본 이름) | 401 · 403 · 404 · 422 · 500 |
+
+`WEB_NOT_ALLOWED` · 모르는 오케스트레이터 코드 같은 내부 오류는 내부 이름을 내지 않고 `INTERNAL_ERROR`(500)로 답한다.
+
+### 사업비 · 추진 일정 입력 (SB-327)
+
+사전 정보 입력의 사업비 집행계획 · 추진 일정을 `POST /projects`(payload)로 받아 `project_budget_items` · `project_schedule_items`에 저장한다. 오케스트레이터가 `request_start` 때 이 두 표를 직접 읽는다(웹이 `formInput`으로 보내지 않는다). 단위 테스트는 가짜 오케스트레이터로 확인하고, 실제 오케스트레이터가 저장한 행을 읽는지는 `scripts/e2e_budget_schedule.py`(SB-333)가 확인한다 — 아래 "그 밖의 검증 스크립트".
+
+- **모양** — 요청 payload와 `GET /projects/{id}` 응답에 같은 이름으로 `budget_items[]`(`phase` · `category` · `execution_plan` · `total_amount` · `government_amount` · `self_cash_amount` · `self_in_kind_amount`)와 `schedule_items[]`(`section` · `category` · `content` · `period` · `detail`)가 있다. 순서는 보낸 배열 순서(`item_order` 1부터)이고, 한 목록은 50줄까지다. `section`은 `feasibility`(협약기간 내) · `growth`(협약 이후 전체), `phase`는 `'1단계'` · `'2단계'`다. 금액은 원 단위 정수다.
+- **입력 검사(422 `VALIDATION_ERROR`)** — 금액 네 칸 필수(0 허용, 총사업비만 1 이상, 음수 · 999,999,999,999원 초과 거부), `총사업비 = 정부지원 + 자기부담 현금 + 현물`, 비목 · 집행계획 필수, 일정은 구분 · 추진내용 · 추진기간 필수(세부내용은 비우면 `''`)에 추진기간에 연도 필수. 예비창업자는 줄마다 `phase`가 필요하고 자기부담은 현금 하나(현물 0), 개인사업자 · 법인은 `phase`가 없다. **오류 위치** `detail[].loc`는 표 이름 · 줄 번호(0부터) · 칸이다(예: `["budget_items", 2, "total_amount"]`) — `POST /projects`는 payload 폼 필드를 직접 검증해 `body`가 앞에 붙지 않는다.
+- **저장 시점** — 행은 `request_start`를 부르기 전에 같은 트랜잭션으로 커밋된다(`test_budget_schedule_saving.py`가 별도 연결로 확인). 시작 요청이 거절되거나 탈퇴가 시작되면 프로젝트와 함께 지워진다.
+- **필수 확인(SB-332)** — 환경 변수 `REQUIRE_BUDGET_SCHEDULE=1`일 때만 켜진다(기본 꺼짐). 입력 화면이 배포되기 전에 켜면 모든 계획서 작성이 막히므로 화면 배포 뒤 오케스트레이터의 필수 확인과 같은 시점에 켠다. 켜면 사업비 1건 이상, 예비창업은 1단계 · 2단계 각 1건 이상, 협약기간 내(`feasibility`) 일정 1건 이상이 없을 때 `E-C1-REQUIRED`(422)로 막고 `detail.missing`에 `사업비 집행계획` · `사업비 집행계획(1단계)` · `사업비 집행계획(2단계)` · `추진 일정(협약기간 내)`를 담는다. 협약 이후(`growth`) 일정은 선택이다.
+- **결과물 화면 안내 글(결과 통합 T-C4)** — `GET /result`의 `deliverable`에 `submission_notice`(공고별 제출 요건 확인 안내) · `disclaimer`(계획서 첫 장 고지) · `user_message`(결과 안내 글) · `shortfall_items`(통과 기준에 못 미친 항목 — 층 · 종류 · 항목 번호 · 웹 태그 · 이름 · 점수 · 만점 · 사유, 문서층 → 산출물층 순, SB-371)를 싣는다. 미달 항목이 없거나 이 칸이 없던 옛 실행 건이면 `shortfall_items`는 빈 목록이다. 표를 본문으로 바꾼 fail 항목은 `shortfall_items`와 `table_fallbacks`에 함께 나오므로 화면이 겹쳐 보이지 않게 정리한다. 파일 참조와 점수는 이미 따로 오므로 싣지 않고, 결과물이 아직 없으면 `deliverable`이 `null`, 칸이 비어 있으면 그 칸이 `null`이다(화면이 자기 고정 문구로 대신한다). 단위 테스트(`test_plan_result_shape.py`)로 확인했고 실제 Agent가 채운 문구는 확인하지 못했다.
+- **DB 서버 시간대와 상관없이 UTC(2026-10-13)** — 프로젝트 생성 시각 같은 DB 기본값(`NOW()` · `CURRENT_TIMESTAMP`)은 DB 서버의 시간대를 따르는데, 응답은 시간대 없는 DB 시각을 UTC로 보고 `Z`를 붙인다. 그래서 DB 서버가 한국 시간이면 9시간 앞서 나왔다(프런트 로컬 확인에서 발견). 웹의 DB 연결은 연결마다 `SET time_zone = '+00:00'`을 실행해 세션 시간대를 UTC로 맞춘다(`app/database.py`의 `_connect_args`) — 서버 설정이나 다른 프로세스(오케스트레이터 · 수집 파이프라인)는 바꾸지 않는다. 확인한 것: Docker MySQL의 서버 시간대를 `SET GLOBAL time_zone='+09:00'`으로 바꾼 상태에서 옛 방식 연결은 `NOW()`가 한국 시간(11:11)이었고 웹 연결은 UTC(02:11)였으며, 그 상태로 `e2e_worker_flow`를 돌려 "응답 시각이 UTC · Z이고 실제 시계와 맞음"이 통과했다(프로젝트 생성 시각이 지금과 31초 차이). 이미 한국 시간으로 저장된 로컬 행은 그대로 9시간 앞서 보인다(새로 만든 행부터 맞다). 공유 DB의 시간대가 UTC인지는 확인하지 못했다.
+- **hwp 본문 · 양식 정리** — hwp는 공식 양식 파일을 템플릿으로 채운다. 양식의 칸 안에는 "※ 예시 …" 같은 파란 안내 상자(칸 안에 든 1x1 표)가 있어서 그대로 두면 입력한 값과 겹쳐 가려지므로, 그 상자를 지운 정리본(`*_양식_정리.hwp`)을 쓴다(`scripts/clean_hwp_template.py`: .hwp → .hwpx로 내보내 칸 안 표를 지우고 다시 .hwp로 변환, 예비창업 10개 · 초기창업 12개를 지웠고 쪽 · 문단 · 표 수는 원본과 같다 — 원본 파일은 그대로 있다). 1 ~ 4번 절 본문은 줄마다 " ◦ " 문단으로 쓰고(예전에는 ' / '로 이은 한 문단), 양식의 빈 "-" · "◦" 뼈대 문단은 지운다. 확인한 것: rhwp로 쪽을 그려 본 화면(예비창업 · 개인사업자)과 단위 테스트(`test_hwp_body_paragraphs.py`). **한글 프로그램에서 열어 본 모양은 확인하지 못했다**(rhwp 화면과 같다고 보장할 수 없다). 양식 파일을 새로 받으면 정리본을 다시 만들고 문단 번호(`_BODY_SECTIONS_BY_TEMPLATE`)를 `rhwp dump`로 다시 확인해야 한다.
+- **hwp 표 채우기(행 늘리기 · 칸 줄바꿈 · 비목 · 체크 칸 · 쪽 넘침 · 빈 쪽)** — 입력 줄이 양식의 고정 행(팀 구성 4 · 일정 5 · 사업비 5 · 팀 구성안 · 협력기관 3 등)보다 많으면 마지막 슬롯 행을 .hwpx xml에서 복제해 모두 넣는다(`app/hwpx_rows.py`, rhwp의 `insert-row`는 칸 병합이 풀려 쓰지 않는다). 칸 값의 줄바꿈은 " / "로 잇지 않고 그 칸의 문단으로 나눠 넣는다(`split-paragraph-in-cell`). 행 높이는 칸에 들어갈 글의 줄 수를 어림해 모자라면 늘리고 양식이 필요 이상으로 크면(파란 예시 상자 자리) 줄이며, 칸에 남은 빈 문단은 지우고, 채우는 표는 행 단위로 쪽을 넘길 수 있게 한다. 사업비 표는 첫 두 행에 걸친 비목 칸을 나눠 둘째 항목도 비목을 쓴다. 지원 분야 · 전문기술분야 · 지방우대 칸은 양식의 체크 글머리표(☐)라서 값이 보기 문구와 같거나 별칭('정보통신업')이 들어 있고 보기가 하나뿐일 때만 그 칸의 글머리를 ☑로 바꾼다. 양식 목차 쪽을 지운 뒤 고지 한 줄만 남던 빈 첫 쪽은 쪽 나눔을 꺼서 없앴다(`test_hwp_table_layout.py`, rhwp 실제 확인 포함). docx도 hwp처럼 파란 안내 문구 없이 본문을 줄마다 " ◦ " 문단으로 쓴다. **rhwp로 그려 확인했을 뿐 한컴 오피스(한글)에서 연 확인은 못 했다** — 한글이 행 높이를 자동으로 늘리는지, 아주 긴 표가 쪽을 넘겨 이어지는지(rhwp는 표를 쪽에서 나누지 못해 미리보기에서 잘린다)는 직접 열어 보아야 한다. 행이 많은 문서는 만드는 데 약 8초 걸린다(보통 문서 약 4초).
+- **docx 배치(실제 Word로 열어 확인) · hwp 열 폭(2026-10-13)** — docx는 A4(여백 2cm)에 표 열 폭을 고정(합 17cm: 팀 구성 · 일정 · 사업비 표마다 칸 폭을 따로)하고, 행이 쪽 끝에서 갈라지지 않게(`cantSplit`) 하고, 표 머리를 쪽마다 반복하고, 표 · 그림 제목을 그 표 · 그림과 같은 쪽에 붙이고, 한글과 숫자 사이의 자동 틈을 끈다(예전엔 열이 모두 같은 폭이라 사업비 표 '집행 계획' 칸이 한 글자씩 세로로 끊기고 "5 건 수행"처럼 벌어져 보였다). PC에 Word가 있으면 `Word.Application`(COM)으로 PDF로 바꿔 쪽마다 눈으로 확인할 수 있다(`SaveAs2(경로, 17)`). hwp는 일정 표 '구분' 칸(순번용 3238 → 7000)과 초기창업 사업비 금액 칸(5946 → 7300)을 넓혀 글이 끊기거나 "원"이 다음 줄로 넘어가지 않게 했다(`hwpx_rows.resize_columns`, 표 전체 폭은 그대로). `test_document_layout.py`. 한컴 오피스 자동 실행(COM)은 대화창에서 멈춰 쓰지 못했다 — hwp는 rhwp로 그려 확인하고 한컴 뷰어로는 사람이 연다.
+- **계획서 파일의 인포그래픽 · 첫 장 고지(기준 문서 T-C4, SB-354)** — 결과물(`deliverable`)이 있으면 계획서 파일(docx · hwp · 결과물 zip 안 docx)에 인포그래픽(`infographicFile`의 SVG를 PNG로 바꿔 계획서 그림 다음에, docx는 개요 표 아래 · hwp는 그림 쪽 다음의 새 쪽)과 첫 장 고지(`disclaimer`)를 넣는다. 인포그래픽 SVG는 맞춤 아이콘 · 글꼴을 데이터 주소로 담고 `<use href="#…">`를 쓰므로 그 둘은 허용하고, 바깥 파일 · 주소를 부르는 참조(`http` · `file` · `@import` · `<foreignObject>` · `<script>`)는 그리지 않는다(계획서 그림은 어떤 참조도 허용하지 않아 그대로 엄격). 인포그래픽을 못 받거나 못 바꾸면 그것만 빼고 문서는 만든다. 세로가 너무 긴 인포그래픽은 비율을 지켜 줄인다(docx 세로 22cm, hwp 쪽 높이). 고지는 결과물 값을 쓰고 결과물이 아직 없으면 기본 문구('본 문서는 S-Brain이 생성한 초안입니다. 제출 전 작성자 본인의 확인과 수정이 필요합니다.')를 쓴다 — docx는 안내 문장 아래 굵은 한 줄, hwp는 첫 쪽 맨 앞 문단. 결과물 zip의 인포그래픽 원본은 `infographic/`에만 두고 `plan/diagrams/`에는 다시 넣지 않는다. 실제 인포그래픽(Pretendard 글꼴 · 맞춤 아이콘)은 이 PC에서 직접 만들어 그려 보지 못했고, 글꼴은 서버에 있는 글꼴로 대신 그려지므로 모양이 다를 수 있다. 한글 · 워드에서 연 확인은 하지 못했다.
+- **내려받기 문서의 추진 일정 표(SB-329)** — 일정 한 줄은 입력한 칸 이름 그대로 구분 · 추진 내용 · 추진 기간 · 세부 내용 열에 들어간다(docx 두 표, hwp 표10 · 표17). 세부 내용은 비워도 되는 칸이라 비우면 빈칸이고, 입력한 줄이 없을 때만 자리표시 한 줄('1', '○○', 개발 기간, '○○')이 나온다. 예전에는 구분 열에 순번, 추진 내용 열에 입력한 '구분'이 들어가고 입력한 '추진 내용'은 세부 내용이 있으면 문서에서 빠졌다. 워드 · 한글에서 열어 본 모양은 확인하지 못했다.
+- **협약기간 내 일정 ≤ 개발 종료월(SB-354)** — 개발 종료월(`dev_end_month`)이 있으면 협약기간 내(`feasibility`) 일정 줄의 끝나는 달(추진기간에서 `(20\d{2})[-./~년\s]*(\d{1,2})`로 읽은 가장 늦은 달 — 검증-1과 같은 규칙)이 그보다 늦을 때 프로젝트 생성을 422로 막고 오류 위치를 `schedule_items[i].period`로 준다. 검증-1이 같은 기준으로 그 항목을 '입력 오류'로 실패 처리하고 재작성으로도 고쳐지지 않기 때문이다. 협약 이후(`growth`) 일정 · 개발 종료월이 없는 요청은 검사하지 않는다. 협약기간 최대 개월 수는 따로 막는다(아래 항목).
+- **협약기간 내 일정 개월 수 ≤ 최대 개월 수(2026-10-13, 누리 님 부탁)** — 서비스는 2026년 공고 기준으로 운영하므로 최대 개월 수를 신청자 유형별로 고정한다: 예비창업자 8개월 · 개인사업자 · 법인 10개월(`schemas.AGREEMENT_MAX_MONTHS`). 세는 법은 검증-1과 같다 — 협약기간 내(`feasibility`) 줄만 보고, 추진기간에서 연 · 월을 모두 읽어(월 1 ~ 12만) 가장 이른 달부터 가장 늦은 달까지 첫 달과 끝 달을 모두 센다(2026-03 ~ 2026-10 = 8개월). 넘으면 생성을 422로 막고 오류 위치는 가장 늦은 달이 나온 줄의 `schedule_items[i].period`, `msg`에 한국어 사유를 담는다. 달을 하나도 못 읽거나 신청자 유형이 없으면 검사하지 않는다(`test_schedule_agreement_months.py`).
+- **새 재작성 묶음 · 모르는 묶음 건너뛰기(2026-10-13)** — 재작성 요청은 `일반현황 · 개요`(태그 0-1) · `그림`(0-2)을 문서층 묶음으로 받는다(`pipeline_stages.REWORKABLE_WRITING_BUNDLES`, 오케스트레이터가 켜기 전에는 결과에 나오지 않는다). `GET /result`의 `bundle_usages` · 재작성 접수 · 결과의 묶음 목록은 모르는 묶음 이름을 `KeyError` 대신 건너뛴다(`mapping.known_web_bundle_ids`). 켜는 날 순서: 웹 배포 → 오케스트레이터 켜기 → 웹 프로세스 · 워커 다시 띄우기.
+
+### 부하 · 타임아웃 (SB-266)
+
+후보 · 자격 확인 조회는 워커가 끝내길 최대 25초(`ORCH_WAIT_TIMEOUT_SEC`) 기다린 뒤 `pending`으로 답한다. 이 동안 요청 하나가 서버 작업 스레드와 DB 연결을 하나씩 쓴다. 워커가 느리거나 멈추면 이런 요청이 쌓인다.
+
+`scripts/load_check.py`(워커 없음)로 측정한 결과 — 동시 대기 요청을 늘리며 DB를 쓰는 가벼운 요청(`/auth/me`)의 최대 지연(초):
+
+| 동시 대기 | 수정 전 | 수정 후 |
+|---|---|---|
+| 5 | 0.1 | 0.0 |
+| 15 | **6.1** | 0.2 |
+| 30 | **12.2** | 0.3 |
+| 60 | **36.6** (대기 요청 30개가 풀 시간 초과 500) | 0.4 (60개 모두 200) |
+
+- **원인 1 — DB 연결**: 요청의 DB 세션이 쿼리를 한 번 하면 요청이 끝날 때까지 연결을 붙잡는다. 대기 동안에도 쥐고 있어 웹 DB 연결 풀(기본 5 + 초과 10 = 15개)이 대기 요청으로 찼다. 이제 대기 전에 `db.rollback()`으로 연결을 돌려준다(`projects._release_db`, `tests/test_db_connection_during_wait.py`).
+- **원인 2 — 서버 작업 스레드**: 동기 엔드포인트는 anyio 스레드 풀(기본 40개)에서 돈다. 대기 요청이 40개를 넘으면 DB를 안 쓰는 동기 요청까지 줄을 선다(한도 40으로 되돌려 측정: 동시 대기 60에서 6.8초). 한도를 올려 둔다 — 환경변수 `WEB_THREAD_LIMIT`(기본 200).
+- 워커가 정상이면 대기는 짧게 끝나 이 문제가 드러나지 않는다. 운영에서 워커 장애 때 웹 전체가 멈추지 않게 하려는 수정이다.
+- 아직 점검하지 않은 것: 워커가 살아 있는 상태의 동시 사용자 수(조율이 실제 LLM이라 비용이 든다), 웹 서버를 여러 프로세스로 띄웠을 때의 DB 연결 총합(프로세스 수 × 15개 + 오케스트레이터 연결이 DB `max_connections`를 넘지 않는지), 프록시 · 게이트웨이 제한 시간(25초 대기가 그 안에 끝나는지). 배포 구성이 정해지면 확인한다.
+
+### 산출물 파일 내려 주기 (SB-291 ~ SB-318)
+
+산출물 파일(실행 HTML · 원페이지 SVG · 인포그래픽 · 안내 문서 · 계획서 파일)은 DB가 아니라 오케스트레이터의 파일 저장소에 있고, 결과에는 파일 참조(`FileRef` — `key` · `name` · `mediaType` · `size` · `sha256`)만 실린다(SB-311, 결정 0023). 웹은 파일 위치(폴더 · 경로)를 알지 못한다 — `key`를 풀지도 경로로 쓰지도 않고 `read_artifact_file`에 그대로 넘긴다(운영이 S3로 옮겨도 웹 코드는 그대로다). 예전의 폴더 방식(SB-292~295: `ARTIFACT_DIR`, 웹의 폴더 서빙 · 삭제 · 고아 청소)은 SB-313~317에서 없앴다.
+
+- **환경 변수 `SBRAIN_ARTIFACT_ROOT` (SB-313)**: 파일 저장소 폴더의 **절대 경로**. 웹은 읽기 전용으로 열고(쓰기 · 삭제는 워커), 워커는 이 값이 없으면 시작하지 않는다. 웹과 모든 워커가 같은 폴더를 같은 절대 경로로 봐야 한다. 웹에 값이 없거나 상대 경로면 웹은 뜨지만 파일 내려받기만 503(`FILE_STORE_UNAVAILABLE`)이다. 새 오류 코드: `FILE_NOT_FOUND`(404 — 남의 파일 · 없는 파일 · 내용 불일치를 구분하지 않는다), `FILE_STORE_UNAVAILABLE`(503), `FILE_DELETION_NOT_FOUND`(404).
+- **결과의 파일 칸 (SB-314)**: 결과(`GET /result`의 `infographic_path` · `executable_path`)와 재작성 결과(`files[]` · `changed`)의 응답 필드 이름은 그대로이고, 값만 `/projects/{id}/artifact-files/{key}` 주소로 채운다(`mapping.file_url`). 진입 파일이 `null`이면 실행 경로도 없다. 원페이지는 두 참조가 같은 `onepage.svg`라 인포그래픽 주소만 보이고 실행 경로는 없다(인포그래픽이 비어 와도 진입 파일을 인포그래픽으로 보여 준다). 테스트: `tests/test_artifact_urls.py` · `tests/test_orch_fake_contract.py`(실제 계약에 새 칸이 있는지).
+- **`GET /projects/{project_id}/artifact-files/{key}` (SB-315)** — **프로젝트 소유자만** 받는다(관리자도 못 받는다, 기획서 6-7). 주인 확인 뒤 `read_artifact_file(project_id, key)`를 부르고, 소유자가 아니면 없는 파일과 같은 404를 준다. 내용과 형식(`Content-Type`)은 오케스트레이터가 파일을 넣을 때 기록한 값 그대로이고, `nosniff` · `no-store` · `Content-Security-Policy: sandbox allow-scripts` + 외부 요청 차단 헤더가 붙는다(프론트는 샌드박스 iframe에 넣어 열기 때문에 헤더는 주소를 직접 열 때의 안전장치다). 테스트: `tests/test_artifact_files.py`.
+- **`GET /projects/{project_id}/deliverable.zip` (SB-316)** — 최종 결과물의 프로토타입(진입 파일 · 안내 문서 · 자산) · 인포그래픽은 파일마다 `read_artifact_file`로 받고, **계획서는 파일 참조(`planDocFile`, 자리채움 파일)가 아니라 계획서(`planDoc`)로 웹이 만든 .docx**(`plan/business-plan.docx`, `plan-document.docx`와 같은 파일 — SB-341)를 넣어 웹이 묶는다(폴더 `plan/` · `prototype/` · `infographic/`, 같은 이름은 `_2`). 계획서(`planDoc`)가 없으면 결과물이 있어도 404 `DELIVERABLE_NOT_READY`다. 소유자만. 결과물이 아직 없으면 404 `DELIVERABLE_NOT_READY`, 원본 합계가 100MB를 넘으면 413 `DELIVERABLE_TOO_LARGE`(잠정 — 오케스트레이터가 정한 제한이 아니다), 한 파일이라도 못 받으면 일부만 든 압축을 주지 않고 그 오류로 답한다. 테스트: `tests/test_deliverable_zip.py`.
+- **삭제 (SB-317)**: 프로젝트 영구 삭제 · 탈퇴 때 웹은 파일을 지우지 않는다. 오케스트레이터가 같은 트랜잭션에서 삭제 대기열(`orch_file_deletions`)에 넣고 워커가 10분 뒤부터 지운다(잠정). 3번 실패하면 `포기`가 되고, 포기한 파일은 탈퇴 뒤에도 남을 수 있다(사용자가 인정한 예외). 웹의 폴더 삭제 · 고아 청소 스크립트는 없앴다.
+- **`GET /admin/file-deletions` · `POST /admin/file-deletions/{id}/retry` (SB-318)** — 관리자만. 삭제 대기열 목록(`status`로 `대기` · `포기`, `limit` 1~200 · `offset`)과 `포기`한 줄 다시 시도(누른 관리자 ID는 `user_id` 문자열로 오케스트레이터에 남는다). 없는 줄은 404, 이미 `대기`인 줄은 409. 줄에는 메타데이터만 있다(키 · 파일 이름 · 오류 메시지 · 사용자 없음). 테스트: `tests/test_admin_file_deletions.py`.
+- **호출 종류 `file` (SB-319)**: 웹에는 호출 기록(`admin_calls`)을 내주는 API가 없고 관리자 실행 기록 응답에도 호출 종류가 없어서 바꿀 코드가 없다.
+
+### 응답 시각 (SB-264)
+
+응답의 시각은 모두 **UTC · 끝에 `Z`**다(`2026-10-06T07:14:59Z`, 명세 11.1). 웹 표(DB)에서 읽은 시각은 시간대 표시가 없는 UTC(`utcnow()` · `CURRENT_TIMESTAMP`)라 응답 스키마(`schemas.UtcDatetime`)가 `Z`를 붙여 내보낸다. 화면의 한국 시간 변환은 프론트(`time.js`)가 한다.
+
+- **DB 서버의 시간대가 UTC여야 한다.** `server_default=CURRENT_TIMESTAMP`로 쓰는 열(`created_at` 등)은 DB 시계를 쓴다. 서버가 UTC가 아니면 표시가 그만큼 어긋난다. 확인: `SELECT @@global.time_zone, @@session.time_zone, TIMEDIFF(NOW(), UTC_TIMESTAMP());` — 마지막 값이 `00:00:00`이어야 한다. 로컬 Docker MySQL은 UTC다(확인함). **공유 DB(AWS)는 접속 권한이 있는 사람이 위 쿼리로 확인해야 한다.**
+- `scripts/e2e_worker_flow.py`가 프로젝트 · 알림 시각이 `Z`이고 실제 UTC 시계와 맞는지 본다(개발 컴퓨터가 한국 시간이어도 9시간 어긋나면 실패한다). `tests/test_utc_timestamps.py`는 형식(`Z` · 마이크로초 · 다른 시간대 → UTC)과 API 응답을 본다.
+- 로그 파일의 앞쪽 시각은 서버 로컬 시간이다. 워커 로그(UTC)와 맞출 때는 웹 명령 로그의 `at=`(UTC)를 본다.
+
+### 웹 명령 로그 (SB-303)
+
+웹이 오케스트레이터에 넣은 상태 변경 명령(`request_start` · `abort_project` · `decide_for_project` 등 9개)은 끝날 때마다 웹 로그(`web/backend/logs/web-날짜.log`)에 `cmd`로 시작하는 한 줄을 남긴다. 워커 로그에 줄이 없는 웹 쪽 상태 변경(대기 지점 중단 · 화면 8 진행 …)을 워커 로그와 맞춰 보려는 것이다.
+
 ```
-로그인 성공 (test@example.com)
-프로젝트 생성 완료 — project_id=2
+2026-10-06 16:14:59 | INFO    | cmd at=2026-10-06T07:14:59Z project_id=1 command=abort_project result=ok run_action=중단 step=공고선택 progress=중단 elapsed_ms=94
 ```
 
-같은 `--email`로 다시 실행하면 같은 계정으로 로그인된다(이미 진행 중인 프로젝트가 있으면 409가 나는 게 정상 — 동시 실행 1건 제한). 새 프로젝트를 또 만들고 싶으면 이메일을 바꾼다:
+- `at`은 UTC(`Z`)다. 줄 앞의 시각은 서버 로컬 시간이라, 워커 로그(UTC)와 맞출 때는 `at`을 본다.
+- `result`는 `ok` · `rejected`(시작 요청 거절) · `confirmation_required` · `error`(`code=오케스트레이터 오류 코드`) · `fail`(예상 못 한 예외)이다. `step` · `progress`는 명령 직후의 값이다.
+- 계정 번호 · 산출물 · 입력 내용은 남기지 않는다. 읽기 함수(`view_project` · `screen` · `outputs` …)는 남기지 않는다.
+- `scripts/e2e_worker_flow.py`(화면 8 진행)와 `scripts/e2e_concurrent_abort.py`(중단)가 로그 파일에 줄이 남았는지 확인한다.
 
-```
-python create_test_project.py --email test2@example.com --description "다른 아이디어"
-```
+기존 DB에 스키마 변경을 적용하는 SQL은 `migrations/`에 있다(멱등, MySQL 8). 공유 DB 적용은 팀 합의 뒤에 한다.
 
-### 2-2. 더미 파이프라인 채우기
-
-```
-python seed_dummy_pipeline.py 2
-```
-
-(`2`는 2-1에서 나온 project_id로) 매칭 → 자격판정 → 계획서 → 산출물 → 최종 판정 → 실행 로그까지 전체 체인을 더미값으로 채운다. `--no-files` 붙이면 실제 더미 파일 생성 없이 경로 문자열만 채운다.
-
-### 2-3. 결과 확인
-
-```
-python check_project_status.py 2
-```
-
-```
-GET /projects/2/status -> 200
-{"project_id":2,"screen":11,"stage":"done","progress_percent":100,"match_id":2,"match_status":"completed"}
-```
-
-**주의**: `create_test_project.py`의 로그인은 그 스크립트를 실행한 프로세스 안에서만 유효한 세션이라, 브라우저나 Swagger(`/docs`)에서 직접 `/projects/2/status`를 열면 항상 "로그인이 필요합니다"(401)가 뜬다 — 이건 버그가 아니라 정상 동작이다. 브라우저 없이 확인하려면 `check_project_status.py`처럼 로그인 + 조회를 같이 하는 스크립트를 써야 한다.
-
-`--email`은 `create_test_project.py`에 줬던 것과 같아야 한다(기본값 그대로면 둘 다 안 건드리면 됨). 다른 이메일로 조회하면 일부러 404(본인 프로젝트 아님)가 나오도록 돼 있다 — 소유권 체크 확인용으로도 쓸 수 있다.
-
-### 2-4. 개별 작업 재시도 (`POST /projects/{id}/retry-task`)
-
-기능정의서 cf. 요구사항("재시도해도 같은 결과만 나오면 안 되고, 실제로 결과가 바뀌어야 한다") 대응 API. `login_test.html`이나 로그인된 브라우저 세션으로 Swagger(`/docs`)에서 직접 호출해보는 게 제일 빠르다 — `check_project_status.py`처럼 별도 스크립트로 감쌀 필요 없이, 로그인만 돼 있으면 그대로 호출된다.
-
-Swagger에서 `POST /projects/{project_id}/retry-task`를 찾아 body에 task_key 하나를 넣고 실행한다. `조율`(오케스트레이션 체크포인트 4개 — coordinate_intake 등)만 빼고 나머지 10개 전부 재시도 가능하고, 각각 어느 테이블을 갱신하는지는 다음과 같다(자세한 매핑 근거는 `app/agents.py` 모듈 docstring 참고):
-
-| task_key | agent_name | 갱신 대상 | 응답 `changed` 모양 |
-|---|---|---|---|
-| `strategy` | 전략 | `plan_sections` (`3-1`) | `{"sections": {"3-1": {"before","after"}}}` |
-| `writing` | 작성 | `plan_sections` (`1-1`/`2-1`) | `{"sections": {"1-1": {...}, "2-1": {...}}}` |
-| `verify1_rubric` | 검증-1 | `plan_score_reasons` + `doc_score` | `{"scores": {item_code: {"before","after"}}, "doc_score": {"before","after"}}` |
-| `verify1_evidence` | 검증-1 | 〃 (+ E-V1-EVIDENCE: 근거 없으면 만점 복원) | 〃 |
-| `implement_prototype` | 구현 | `artifacts.executable_path` (+ 새 파일) | `{"executable_path": {"before","after"}}` |
-| `implement_infographic` | 구현 | `artifacts.infographic_path` (+ 새 파일) | `{"infographic_path": {"before","after"}}` |
-| `verify2_static` | 검증-2 | `artifact_score_reasons`(item_code `CHECK-*`) + `artifact_score` | `{"scores": {...}, "artifact_score": {"before","after"}}` |
-| `verify2_crosscheck` | 검증-2 | `artifact_score_reasons`(item_code `FEATURE-*`) + `artifact_score` | 〃 |
-| `review_expression` | 검수 | `format_findings` 새 행 | `{"finding": {"before","after"}}` |
-| `review_token_check` | 검수 | `proofread_logs` 새 행 | `{"corrected_text": {"before","after"}}` |
-
-예시(`writing`):
-
-```json
-{ "task_key": "writing" }
-```
-
-```json
-{
-  "project_id": 2, "match_id": 2, "task_key": "writing",
-  "agent_name": "작성", "attempt_no": 3,
-  "changed": {
-    "sections": {
-      "1-1": { "before": "...", "after": "..." },
-      "2-1": { "before": "...", "after": "..." }
-    }
-  }
-}
-```
-
-**같은 body로 다시 호출해보면** `attempt_no`가 1씩 올라가고, `changed`에 담긴 값이 task_key마다 매번 실제로 달라진다 — 이게 이 API가 확인해야 하는 핵심(고정값 반환이 아니라 실제로 다시 계산/재작성). `implement_prototype`/`implement_infographic`은 값뿐 아니라 `/uploads/`에 더미 파일을 매번 새로 하나씩 만들어서 `executable_path`/`infographic_path` 경로 자체도 같이 바뀐다. `verify1_evidence`는 항목마다 대략 30% 확률로 "근거를 못 찾음"을 흉내내는데, 그 경우 `evidence_locator`가 `null`이 되면서 점수가 만점으로 복원된다(E-V1-EVIDENCE 규칙) — 여러 번 호출해봐야 두 경우를 다 볼 수 있다.
-
-먼저 `python seed_dummy_pipeline.py <project_id>`로 계획서/산출물까지 채워둔 프로젝트여야 호출된다(계획서/산출물이 없으면 404). `category='onepage'`인 산출물에 `implement_prototype`을 호출하면 400이 나는 게 정상(원페이지는 설계상 실행 파일이 없음) — 그런 경우엔 `implement_infographic`만 재시도 가능하다.
-
-`python tests/verify_retry_task.py`가 이 API의 10개 task_key 전부와 정상/오류 케이스를 자동으로 검증해준다(1번 참고).
+- **검수 제거 대응(SB-395)** — 오케스트레이터가 검수(표현 검수 · 윤문)와 첨부 문서 텍스트 추출을 서비스 흐름에서 뺐다(2026-10-15). 웹이 부르는 함수 이름 · 인자 · 오류 코드는 그대로이고 웹에서 달라지는 것은 다음과 같다. 화면 9 '진행'(`POST /projects/{id}/review/start`, 이름 · 응답 그대로) 뒤 곧바로 결과 통합이 돌고 끝나면 결과물(화면 11)이다 — 도는 동안 `stage='done'` · `match_status='in_progress'`이고 진행률(`progress_percent`)이 내려간다(SB-398). 화면 10은 없어져 `/result`가 화면 10을 부르지 않고(검수 기록이 남은 옛 실행 건은 계획서 문장을 원문으로 씀), 가짜 오케스트레이터도 화면 10을 뺐다(SB-397). 관리자 운영 현황 · 운영 지표 요약의 보호 토큰 위반율 칸(`token_violation_rate` · `token_violation_count` · `token_check_count`)은 응답에서 없어졌다(SB-399). `PUT /admin/policy/thresholds`의 `token_retry_cap`(검수 문단 재시도 상한)은 오케스트레이터가 더 읽지 않아 **선택 입력**이다(SB-401) — 안 보내면 지금 값을 그대로 둔다(화면이 이 칸을 뺐다). `proofread_logs` · 학습 동의 · 검수 회수 항목은 오케스트레이터가 더 쓰지 않을 뿐이라 웹에는 그대로 두었다 — 지울지는 팀이 정한 뒤에 한다. 단위 테스트로 확인했고, 새 워커로 실제 한 건을 끝까지 돌린 확인은 아직이다.
+- **알림 종류 '결과물'(SB-396)** — 오케스트레이터가 검수를 서비스 흐름에서 빼면서(2026-10-15) 결과 통합이 끝나면 `kind='결과물'`(`target_step` 11) 알림을 INSERT한다. 웹 DB의 ENUM에 이 값이 없으면 워커의 INSERT가 실패해 그 단계 저장 전체가 되돌려지므로, **웹 스키마(`migrations/006_notification_kind_result.sql`, 멱등)를 먼저 적용한 뒤 워커를 새 코드로 띄운다.** '표현검수'는 옛 알림 행이 남아 있어 ENUM에서 지우지 않고 목록에서도 그대로 읽는다. 마이그레이션 리허설과 단위 테스트(`test_notifications.py`)로 확인했고, 새 워커가 실제로 '결과물' 알림을 넣는 것은 확인하지 못했다.
+- **목표 고객 입력 칸(SB-381)** — 사용자가 직접 입력하는 선택 값(200자 이내)을 `project_plan_inputs.target_customer`에 저장하고 `GET /projects/{id}`의 `plan_input.target_customer`로 돌려준다. 앞뒤 공백은 지우고 비면 NULL로 저장한다. 오케스트레이터가 `request_start` 때 이 컬럼을 읽어 작성 · 검증 AI에 넘기고, 비어 있으면 AI가 "확인 필요"로 쓴다(컬럼이 없어도 오케스트레이터는 오류 없이 돈다). 기존 DB에는 `migrations/005_target_customer.sql`(멱등)을 적용한다 — 마이그레이션 리허설로 확인했고, 입력 화면(SB-385)은 프론트가 만든다. 단위 테스트(`test_project_plan_input.py`)로 저장 · 조회 · 공백 · 길이 제한을 확인했고 오케스트레이터가 값을 실제로 읽는지는 확인하지 못했다.
+- **창업아이템명 규칙(SB-384)** — 일반현황 표의 창업아이템명과 개요 표의 명칭은 같은 값(아이디어 설명의 첫 줄, 60자까지)이다. 예전에는 일반현황이 앞 60자(줄바꿈 포함)여서 여러 줄 설명이면 두 이름이 달랐다. 오케스트레이터도 같은 규칙으로 읽는다.
 
 ---
 
-## 3. 실제 서버 띄워서 테스트 (Swagger, 구글 로그인 포함)
+## 3. 그 밖의 검증 스크립트
 
-```
-uvicorn app.main:app --reload --port 8000
-```
-
-`http://localhost:8000/docs`(Swagger)에서 로그인 없이 되는 API는 바로 호출해볼 수 있다(`127.0.0.1`이 아니라 `localhost`로 — 아래 로그인 테스트와 같은 이유로 세션 쿠키가 안 실려간다). 로그인이 필요한 API(`POST /projects`, `GET /projects/{id}/status` 등)는 실제 구글 로그인이 돼야 브라우저 세션에 쿠키가 생겨서 Swagger에서도 테스트 가능해진다.
-
-### 구글 로그인 + 프로젝트 생성 테스트 (`login_test.html`)
-
-`login_test.html`은 로그인만 하는 게 아니라, 로그인 성공하면 화면에 **프로젝트 만들기 폼**이 나타난다 — 실제 브라우저 세션(쿠키)으로 `POST /projects`까지 그대로 테스트할 수 있다(성공하면 project_id가 나옴 → `python seed_dummy_pipeline.py <project_id>`로 이어가면 됨).
-
-**반드시 웹서버로 띄워서 `http://`로 열어야 한다** — 더블클릭해서 `file://`로 열면 Google Identity Services가 원천적으로 막는다(`file:` origin은 등록 자체가 불가능).
-
-```
-cd tests
-python -m http.server 5174
-```
-
-브라우저에서 **`http://localhost:5174/login_test.html`**로 접속. **`127.0.0.1`이 아니라 꼭 `localhost`로 접속할 것** — 백엔드가 쿠키를 `localhost:8000` 기준으로 내려주는데, 브라우저 SameSite 판정에서 `localhost`와 `127.0.0.1`은 서로 다른 site로 취급돼서, 페이지를 `127.0.0.1`로 열면 로그인 자체는 성공해도 그다음 요청(프로젝트 생성 등)에 쿠키가 안 실려가 버린다(`app/security.py`의 `set_session_cookie` 주석 참고).
-
-그리고 Google Cloud Console → API 및 서비스 → 사용자 인증 정보 → 해당 OAuth 클라이언트 → **승인된 자바스크립트 원본**에 등록(저장 버튼까지 누르기, 반영까지 몇 분~몇 시간 걸릴 수 있음):
-- `http://localhost:5174` (이것만 있으면 됨 — 위 이유로 `127.0.0.1`은 안 씀)
-
-이게 되면 `login_test.html`에서 로그인 → 프로젝트 생성까지 화면에서 바로 확인되고, 그 project_id로 Swagger(`http://localhost:8000/docs`, 이것도 `127.0.0.1` 아니고 `localhost`로)에서도 같은 브라우저 세션이면 `GET /projects/{id}/status`가 바로 된다.
-
----
-
-## 4. (선택) notices 더미 공고 넣기
-
-매칭 로직 테스트하려면 `notices`에 공고가 몇 개는 있어야 한다:
-
-```
-python seed_dummy_notices.py
-```
-
-`recruitment_status`(진행중/마감), `embedding_status`, 그리고 테스트용으로 임시로 추가한 `eligibility_rule`/`form_spec`(G-01/G-02 로직 테스트용 더미, 실제 AWS DB엔 없는 SQLite 전용 컬럼)까지 채워진 공고 6건이 들어간다. 여러 번 실행해도 안전하다(`notice_id` 중복이면 건너뜀).
-
----
-
-## 5. (선택, 로컬에 MySQL/MariaDB 있을 때만) 실제 MySQL로 스키마 검증
-
-```
-python tests/verify_new_schema_mysql.py
-```
-
-로컬에 MariaDB/MySQL 서버가 떠 있고 `sbrain`/`sbrain_pw` 계정에 `sbrain_test` DB가 있어야 돌아간다. 없으면 안 돌려도 된다 — SQLite 기반 검증(1번)으로 로직 자체는 충분히 확인 가능하고, 이건 실제 MySQL 계열 DB에서도 타입/제약이 문제없는지 한 번 더 확인하는 용도다(이미 내가 한 번 돌려서 확인해둠).
-
----
-
-## 요약 — 뭘 언제 쓰나
-
-| 하고 싶은 것 | 쓸 것 |
-|---|---|
-| 스키마/로직이 안 깨졌는지 빠르게 확인 | 1번 (`tests/verify_*.py` 4개) |
-| admin.py(정책/체크리스트/유저/FAQ 등)가 안 깨졌는지 확인 | 1-1번 (`pytest tests/test_admin.py`) |
-| 재시도가 진짜로 값을 바꿔서 반환하는지 확인 | 2-4번 (Swagger) 또는 `tests/verify_retry_task.py` |
-| 화면 테스트용 더미 프로젝트 하나 빨리 만들기 (로그인 안 되는 지금) | 2번 (`create_test_project.py` → `seed_dummy_pipeline.py` → `check_project_status.py`) |
-| 진짜 구글 로그인 플로우 자체를 확인 | 3번 (`login_test.html`, origin 등록 필요) |
-| 매칭/공고 조회 로직 테스트 | 4번 (`seed_dummy_notices.py`) |
-| 실제 MySQL 계열 DB에서도 문제없는지 확인 | 5번 (`tests/verify_new_schema_mysql.py`, 선택) |
+- `python tests/verify_profile_mysql_local.py` — 마이페이지 프로필 API를 로컬 MySQL에서 확인한다.
+- **계획서 내려받기가 계획서 문장을 양식에 채우는 방식(SB-339)** — SB-310 이후 계획서는 양식의 모든 항목을 항목 번호(예비창업자 `2.1.1` ~ `2.7.4`, 개인사업자 · 법인 `3.1.1` ~ `3.7.4`)로 담고, `app/plan_texts.py`가 뒤 두 자리로 별첨1의 글 칸에 옮긴다(`x.2.2` 산출물, `x.3.1` ~ `x.3.5` 요약, `x.4.1` · `x.5.1` · `x.6.1` 본문, `x.7.1` ~ `x.7.4` 팀 구성). 표는 웹에 저장된 입력 행으로 그리고, 표 항목의 서술 문장만 계획서에서 와서 docx는 표 아래, hwp는 그 절 본문 뒤에 들어간다(표를 글자로 옮긴 줄과 단계 미지정 원본 JSON은 뺀다). 항목 번호 모양이 아닌 옛 계획서(`1-1` ~ `4-1`)는 예전처럼 태그로 읽는다. 예비창업 사업비는 줄의 단계(`phase`, SB-327)로 1단계 · 2단계 표를 나눠 채운다(docx는 표 둘, hwp는 표12 · 표14, 단계 없는 줄은 1단계, 표 아래 서술도 단계별). `tests/test_plan_texts.py`가 매핑 · 서술 걸러 내기 · docx 내용을, `tests/test_budget_phase_export.py`가 단계 나누기를 본다.
+- **결과의 계획서 응답 모양(SB-337)** — `GET /result`의 `plan`: `sections[]`는 항목 번호(`section_code`) · 웹 태그(`tag` — `1-1` ~ `4-1`, 일반현황 · 개요처럼 묶음이 없으면 `null`) · 종류(`content_type` — `section` · `table` · `image`)를 각각 다른 칸으로 준다(예전에는 `tag` 칸에 항목 번호가 들어갔다 — 프론트가 바꿨다). 옛 계획서(항목 4개, 번호가 곧 `1-1` ~ `4-1`)는 번호를 태그로 본다. `score_reasons[]`마다 `tag`가 붙는다(`item_code`가 계획서 항목 번호라 같은 번호 항목의 태그, 없으면 `null`) — 묶음별 합계 · 미달 사유용. `diagrams[]`는 그림(서비스 흐름도 → 서비스 구조도 순)의 `diagram_id` · `flow_type` · `title` · `source_ref` · `nodes` · `image_url`(`/projects/{id}/artifact-files/{key}` — 산출물 파일과 같은 방식, 소유자만 받는다)이다. 재작성 결과(`GET /rework-result`)의 `changed.sections`는 키가 항목 번호(예전에는 키가 곧 웹 태그 `1-1`이었다)이고, 항목마다 `before` · `after`(그대로)에 `tag`(웹 태그, 묶음이 없으면 `null`) · `title`을 덧붙여 화면이 묶음 이름을 보일 수 있다. `tests/test_plan_result_shape.py` · `tests/test_orch_rework.py`가 본다.
+- **점수 환산 칸(오케스트레이터 2026-10-11)** — 오케스트레이터가 검증-2 원점수(코드 점검 15 + 계획서 대조 15)를 그 실행 건 배점으로 환산해 점수 보고서(`ScoreView`)에 싣는다(`doc_layer_max` · `code_check_score/max` · `feature_match_score/max` · `artifact_layer_score/max` · `code_check_items`). 웹은 지금 정책(`verification_policies`) 값을 만점으로 붙이지 않고 이 칸을 쓴다 — 관리자가 배점을 바꾼 뒤 '13/10'처럼 어긋나기 때문이다. `GET /result`: `verdict`의 층 점수 · 만점(`doc_max_score` · `code_score/max_score` · `plan_match_score/max_score`)과 새 `artifact_score` · `artifact_max_score`, `plan.doc_max_score`, `plan.artifacts[].artifact_score`(환산 값) · `artifact_max_score`, 코드 점검 줄(`CHECK-…`)은 환산 줄의 `earned`(부분 점수)로 `score`를 채우고 해당 없음이면 `applicable=false`(0 · 0)이다(항목 `score` 합 = `code_score`, `max_score` 합 = `code_max_score`). 환산 칸이 비어 있는 옛 실행 건만 예전처럼 원점수와 지금 정책을 쓴다. 관리자: `GET /admin/items`의 줄에 `doc_score` · `doc_max_score` · `artifact_score` · `artifact_max_score`, `GET /admin/items/{id}/score-history`에 `doc_max` · `code_max` · `plan_max`(그 실행 건 만점). 관리자 층별 배점은 세 칸 모두 0보다 커야 저장된다(0이면 환산 점수가 늘 0). `tests/test_score_scaling.py`(+ `tests/test_admin.py`)가 본다. 화면 8의 층 점수는 `outputs`의 종합 점수 보고서에서 읽는다(화면 8 모양에는 점수 보고서가 없다) — 웹의 `GET /result`는 이미 그렇게 읽는다.
+- **표 대체 사유 · 점수 안내(SB-354)** — 표를 본문 서술로 바꾼 항목은 오케스트레이터가 `Outputs.table_fallbacks`(항목 번호 `section_code` · 담당자 판정 원문 `reason` · 사용자용 안내 `display_reason`)로 따로 준다. 웹은 `GET /result`의 `plan.table_fallbacks[]`로 전하되 사용자에게 보여 줄 `display_reason`만 싣고(원문 `reason`은 내부 진단용이라 싣지 않는다), 항목 번호로 계획서 항목을 찾아 `tag` · `title`을 덧붙인다(계획서에 없는 번호는 둘 다 `null`). 사유는 본문(`sections[].body`)에 섞이지 않고, 바꾼 표가 없으면 빈 목록이다. 내려받기 문서(docx · hwp)는 표를 늘 사용자가 입력한 행으로 그리므로, 표를 바꾼 항목(`x.5.2` · `x.5.3` · `x.5.4` · `x.6.2`)의 서술 줄(`· 열: 값; …`)은 같은 내용이 되풀이되어 쓰지 않는다(바꾸지 않은 표의 서술은 그대로 쓴다). 점수 보고서의 안내('입력 확인 필요' · '입력 오류' 문구)는 문서 평가 보고서 것이 `plan.notices`(화면 6), 종합 평가 보고서 것이 `verdict.notices`(화면 9)로 간다. 단위 테스트(`test_plan_result_shape.py`)는 가짜 오케스트레이터로, 계약 테스트(`test_orch_fake_contract.py`)는 실제 `Outputs` · `TableFallback`과 필드가 같은지로 확인한다 — 실제 Agent가 만든 사유 · 안내 문구는 확인하지 않았다.
+- **계획서 그림(SB-340)** — 그림 항목(예비 `2.3.6` · 초기 `3.3.6`)의 서비스 흐름도 · 서비스 구조도는 `planDoc.diagrams[].imageFile`(SVG 파일 참조)이다. 웹이 `read_artifact_file`로 받아 `resvg-py`로 PNG로 바꿔(`app/diagram_images.py`, 글꼴은 `app/assets/fonts`의 나눔스퀘어라운드 + 시스템 글꼴) docx는 개요(요약) 표 아래에, hwp는 맨 뒤에 새로 만든 쪽에(rhwp `insert-page-break` + `insert-image`) 넣고, 결과물 압축에는 원본 SVG를 `plan/diagrams/`에도 넣는다. 그림 하나를 못 받거나 못 바꾸면 그 그림만 빼고 문서는 만든다(로그에 남음). 화살표(→)는 시스템 글꼴이 그려서 글꼴이 거의 없는 서버에서는 화살표만 빠질 수 있다. `tests/test_diagram_images.py`가 변환 · 순서 · 누락 처리 · docx · zip · hwp 쪽 추가를 보고, 실제 hwp 확인 2건은 `RHWP_BIN`이 있을 때만 돈다.
+- 계획서 `.hwp` 내려받기는 `RHWP_BIN` 설정이 필요하다 — `scripts/README.md` 참고. 서버를 켠 뒤 Swagger(`/docs`)에서 `GET /projects/{id}/plan-document.hwp`를 직접 호출해도 된다.

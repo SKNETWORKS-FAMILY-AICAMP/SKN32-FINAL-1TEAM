@@ -1,8 +1,26 @@
 """Pydantic v2 요청/응답 스키마. app_schema.sql(설계 문서 기준)과 1:1로 대응한다."""
 import datetime
 import re
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, ValidationError, field_validator, model_validator
+from pydantic_core import InitErrorDetails, PydanticCustomError
+
+from app import pipeline_stages as ps
+
+
+def _to_utc_z(value: datetime.datetime) -> str:
+    """[SB-264] 응답 시각은 항상 UTC · 끝에 Z로 내보낸다(명세 11.1 — 서버 시각은 전부 UTC).
+
+    웹 표(DB)에서 읽은 시각은 시간대 표시가 없다(utcnow() · DB 시계로 UTC를 저장한다) — UTC로 보고 Z를 붙인다. 오케스트레이터 값처럼
+    이미 시간대가 있는 값은 UTC로 바꿔 Z를 붙인다. 프론트(time.js)는 시간대 표시가 있든 없든 UTC로 읽어 한국 시간으로 바꾸므로
+    같은 시각이다 — Z를 붙이는 것은 다른 클라이언트가 시간대를 짐작하지 않게 하려는 것이다."""
+    value = value.replace(tzinfo=datetime.UTC) if value.tzinfo is None else value.astimezone(datetime.UTC)
+    return value.isoformat().replace('+00:00', 'Z')
+
+
+# 응답에 나가는 시각 필드의 타입. 요청 바디로 받을 때는 평소처럼 파싱하고, JSON으로 내보낼 때만 위 모양으로 바꾼다.
+UtcDatetime = Annotated[datetime.datetime, PlainSerializer(_to_utc_z, return_type=str, when_used='json')]
 
 
 # ---------------------------------------------------------------------------
@@ -41,11 +59,11 @@ class UserOut(BaseModel):
     ai_training_agreed: bool
     # [2026-09-27 신규] 필수 동의 완료 시각 — NULL이면 아직 동의 전. 설정 화면에서
     # 동의 상태를 보여주거나, 나중에 재동의를 유도할 때 쓴다.
-    terms_agreed_at: datetime.datetime | None = None
-    privacy_agreed_at: datetime.datetime | None = None
+    terms_agreed_at: UtcDatetime | None = None
+    privacy_agreed_at: UtcDatetime | None = None
     # [2026-09-29 신규, 프론트 요청사항 4차 C-1] "만 16세 이상입니다" 동의 완료 시각 —
     # 위 둘과 같은 용도(NULL이면 아직 동의 전).
-    age_confirmed_at: datetime.datetime | None = None
+    age_confirmed_at: UtcDatetime | None = None
     # [2026-09-18 추가, 프론트 담당자 인계서] User 테이블 컬럼이 아니라 요청마다 계산해서 채운다
     # (app/routers/profile.py compute_has_profile) — user_profiles 슬롯 중 하나라도 필수
     # 입력 항목(신청자 유형/대표자 정보/지역/주업종/대표자 이력 1건 이상, biz 유형이면
@@ -146,6 +164,88 @@ class PlanPartnerIn(BaseModel):
     status: str | None = None
 
 
+# [SB-329 · SB-330] 사전 정보 입력의 사업비 집행계획 · 추진 일정 행 — 오케스트레이터가 request_start 때 project_budget_items ·
+# project_schedule_items를 읽어 전략 · 작성 Agent 입력으로 옮긴다. 이름은 DB 컬럼과 같다(변환은 오케스트레이터 몫). 금액은 원 단위
+# 정수다. 항목 순서는 보낸 배열 순서 그대로 저장한다(item_order는 서버가 매긴다).
+# 오류 위치(loc)는 표 이름 · 줄 번호(0부터) · 칸이다 — 예: ("budget_items", 2, "total_amount"). POST /projects는 payload 폼 필드를 직접
+# 검증해 422를 주므로 앞에 "body"가 붙지 않는다. 화면은 이 위치로 해당 칸을 표시한다.
+BudgetPhase = Literal['1단계', '2단계']
+# feasibility = 협약기간 내 일정, growth = 협약 이후 전체 일정(오케스트레이터가 agreement / roadmap으로 바꾼다)
+ScheduleSection = Literal['feasibility', 'growth']
+# 한 프로젝트가 보낼 수 있는 행 수 상한 — item_order 컬럼이 TINYINT(최대 255)이고 화면이 한 표에 쓸 만한 수를 넘는 값은 오입력이다
+MAX_BUDGET_ITEMS = 50
+MAX_SCHEDULE_ITEMS = 50
+# 금액 상한 — DB 컬럼이 DECIMAL(14,2)라 정수부 12자리(원)까지 들어간다. 넘으면 저장하다 DB 오류(500)가 나므로 입력 단계에서 막는다
+MAX_AMOUNT_WON = 999_999_999_999
+_PERIOD_YEAR_RE = re.compile(r'20\d{2}')
+# 추진기간에서 연·월을 읽는 규칙 — 검증-1(agent_validation_1/validation_1.py)이 쓰는 것과 같아야 웹이 통과시킨 일정을 검증-1이 다시 막지 않는다
+_PERIOD_MONTH_RE = re.compile(r'(20\d{2})[-./~년\s]*(\d{1,2})')
+
+
+# 협약기간 최대 개월 수 — 서비스는 2026년 공고 기준으로 운영하므로 신청자 유형별로 고정한다(담당자 확인, 오케스트레이터 2026-10-13 전달: 예비창업패키지 모집
+# 공고 8개월 이내 · 초기창업패키지(일반형) 모집 공고 10개월 이내). 다른 연도 공고는 범위 밖이다. 검증-1이 같은 기준으로 그 항목을 입력 오류로 막는다.
+AGREEMENT_MAX_MONTHS = {'preliminary': 8, 'individual': 10, 'corp': 10}
+
+
+def _period_months(period: str) -> list[tuple[int, int]]:
+    """추진기간 글에서 읽은 (연, 월) 전부. 월이 1 ~ 12가 아닌 것은 검증-1처럼 건너뛴다."""
+    return [(int(y), int(m)) for y, m in _PERIOD_MONTH_RE.findall(period) if 1 <= int(m) <= 12]
+
+
+def _latest_period_month(period: str) -> tuple[int, int] | None:
+    """추진기간 글에서 읽은 가장 늦은 (연, 월). 월이 1 ~ 12가 아닌 것은 검증-1처럼 건너뛰고, 읽을 월이 없으면 None."""
+    months = [(int(y), int(m)) for y, m in _PERIOD_MONTH_RE.findall(period) if 1 <= int(m) <= 12]
+    return max(months) if months else None
+
+
+def _error_detail(loc: tuple, message: str, error_type: str = 'value_error') -> InitErrorDetails:
+    return InitErrorDetails(type=PydanticCustomError(error_type, message), loc=loc, input=None)
+
+
+class BudgetItemIn(BaseModel):
+    """사업비 집행계획 한 줄. 금액 네 칸은 모두 필수이고 0은 허용한다(총사업비만 0보다 커야 한다)."""
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    phase: BudgetPhase | None = Field(None, description="예비창업만 '1단계' · '2단계', 그 밖의 유형은 생략")
+    category: str = Field(..., min_length=1, max_length=100, description='비목(인건비 · 재료비 · 외주용역비 등)')
+    execution_plan: str = Field(..., min_length=1, max_length=2000, description='집행계획')
+    total_amount: int = Field(..., ge=1, le=MAX_AMOUNT_WON, description='총사업비(원)')
+    government_amount: int = Field(..., ge=0, le=MAX_AMOUNT_WON, description='정부지원사업비(원)')
+    self_cash_amount: int = Field(..., ge=0, le=MAX_AMOUNT_WON, description='자기부담금 현금(원)')
+    self_in_kind_amount: int = Field(..., ge=0, le=MAX_AMOUNT_WON, description='자기부담금 현물(원)')
+
+    @model_validator(mode='after')
+    def _total_equals_parts(self) -> 'BudgetItemIn':
+        parts = self.government_amount + self.self_cash_amount + self.self_in_kind_amount
+        if self.total_amount != parts:
+            raise ValidationError.from_exception_data(type(self).__name__, [_error_detail(
+                ('total_amount',), '총사업비는 정부지원사업비 + 자기부담금(현금) + 자기부담금(현물)과 같아야 해요')])
+        return self
+
+
+class ScheduleItemIn(BaseModel):
+    """추진 일정 한 줄. 구분 · 추진내용 · 추진기간은 필수이고 세부내용은 비워도 된다(빈 값은 ''로 저장한다)."""
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    section: ScheduleSection = Field(..., description='feasibility = 협약기간 내, growth = 협약 이후 전체')
+    category: str = Field(..., min_length=1, max_length=100, description='구분')
+    content: str = Field(..., min_length=1, max_length=2000, description='추진내용')
+    period: str = Field(..., min_length=1, max_length=50, description='추진기간(예: 2026.05~2026.07)')
+    detail: str = Field('', max_length=2000, description='세부내용')
+
+    @field_validator('detail', mode='before')
+    @classmethod
+    def _detail_none_is_empty(cls, v):
+        return '' if v is None else v
+
+    @field_validator('period')
+    @classmethod
+    def _period_has_year(cls, v: str) -> str:
+        if not _PERIOD_YEAR_RE.search(v):
+            raise ValueError('추진기간에 연도가 있어야 해요(예: 2026.05~2026.07)')
+        return v
+
+
 _MONTH_RE = re.compile(r'^\d{4}-\d{2}$')
 
 # [2026-09-29 신규, 프론트 요청사항 4차 C-2] 대표자 생년월일이 실제로 받는 최소 나이 —
@@ -157,8 +257,7 @@ MIN_CEO_AGE = 16
 
 
 def _check_min_age(birth_date: datetime.date) -> None:
-    """만 나이가 MIN_CEO_AGE 이상인지 확인한다(생일이 아직 안 지났으면 -1) —
-    seed_dummy_pipeline.py의 _years_since와 같은 계산 방식."""
+    """만 나이가 MIN_CEO_AGE 이상인지 확인한다(생일이 아직 안 지났으면 -1)."""
     today = datetime.date.today()
     age = today.year - birth_date.year
     if (today.month, today.day) < (birth_date.month, birth_date.day):
@@ -230,6 +329,8 @@ class ProjectCreateRequest(BaseModel):
     # 직업 구분만 받음). "아이템 범주"는 여기 안 넣는다 — Agent가 짓는 항목(models.py
     # ProjectPlanInput.occupation 주석 참고).
     occupation: str | None = Field(None, max_length=100, description='예비창업자 직업(직장명 기재 불가)')
+    # [SB-383] 목표 고객 — 사용자가 직접 입력하는 선택 값(예: "동네 소규모 헬스장 운영자"). 비우면 AI가 "확인 필요"로 쓴다.
+    target_customer: str | None = Field(None, max_length=200, description='목표 고객(선택, 200자 이내). 공백뿐이면 비운 것으로 본다')
 
     ceo_birth_date: datetime.date | None = None
     ceo_gender: str | None = Field(None, max_length=10)
@@ -258,6 +359,79 @@ class ProjectCreateRequest(BaseModel):
     no_partners: bool = False
     partners: list[PlanPartnerIn] = Field(default_factory=list)
 
+    # [SB-329] 사업비 집행계획 · 추진 일정 — 배열 순서대로 저장한다(BudgetItemIn · ScheduleItemIn 참고)
+    budget_items: list[BudgetItemIn] = Field(default_factory=list, max_length=MAX_BUDGET_ITEMS)
+    schedule_items: list[ScheduleItemIn] = Field(default_factory=list, max_length=MAX_SCHEDULE_ITEMS)
+
+    @model_validator(mode='after')
+    def _check_budget_phase_by_applicant_type(self) -> 'ProjectCreateRequest':
+        """[SB-330] 사업비 단계는 예비창업자만 쓴다 — 예비창업자는 줄마다 1단계 · 2단계가 있어야 1 · 2단계 표에 들어가고(자기부담은
+        현금 하나로만 받아 현물은 0), 개인사업자 · 법인은 단계가 없다. 오류는 줄 번호와 칸을 위치로 담는다."""
+        errors: list[InitErrorDetails] = []
+        for i, item in enumerate(self.budget_items):
+            if self.applicant_type == 'preliminary':
+                if item.phase is None:
+                    errors.append(_error_detail(('budget_items', i, 'phase'), '예비창업자는 사업비 줄마다 1단계 · 2단계를 골라야 해요'))
+                if item.self_in_kind_amount != 0:
+                    errors.append(_error_detail(
+                        ('budget_items', i, 'self_in_kind_amount'), '예비창업자는 자기부담금을 현금 하나로만 입력해요(현물은 0)'))
+            elif self.applicant_type in ('individual', 'corp') and item.phase is not None:
+                errors.append(_error_detail(('budget_items', i, 'phase'), '개인사업자 · 법인은 사업비 단계를 쓰지 않아요'))
+        if errors:
+            raise ValidationError.from_exception_data(type(self).__name__, errors)
+        return self
+
+    @model_validator(mode='after')
+    def _check_schedule_within_development_period(self) -> 'ProjectCreateRequest':
+        """협약기간 내(feasibility) 일정 줄의 끝나는 달은 개발 종료월(dev_end_month)을 넘을 수 없다 — 검증-1이 같은 기준으로 그 항목을
+        '입력 오류'로 실패 처리하고 재작성으로도 고쳐지지 않는다(F19, SB-354). 협약 이후(growth) 일정은 보지 않고, 개발 종료월이 없으면
+        기준이 없어 검사하지 않는다. 협약기간 최대 개월 수는 따로 막는다(_check_schedule_within_agreement_months)."""
+        if not self.dev_end_month:
+            return self
+        year, month = self.dev_end_month.split('-')
+        deadline = (int(year), int(month))
+        errors: list[InitErrorDetails] = []
+        for i, item in enumerate(self.schedule_items):
+            if item.section != 'feasibility':
+                continue
+            end = _latest_period_month(item.period)
+            if end is not None and end > deadline:
+                errors.append(_error_detail(
+                    ('schedule_items', i, 'period'),
+                    f'협약기간 내 일정의 끝나는 달({end[0]}-{end[1]:02d})이 개발 종료월({self.dev_end_month})보다 늦어요'))
+        if errors:
+            raise ValidationError.from_exception_data(type(self).__name__, errors)
+        return self
+
+    @model_validator(mode='after')
+    def _check_schedule_within_agreement_months(self) -> 'ProjectCreateRequest':
+        """협약기간 내(feasibility) 일정이 협약기간 최대 개월 수(예비창업자 8개월 · 개인사업자 · 법인 10개월)를 넘으면 막는다 — 검증-1과 같은 세는 법:
+        협약기간 내 줄만 보고(growth는 제외), 추진기간에서 연 · 월을 모두 읽어 가장 이른 달부터 가장 늦은 달까지 첫 달과 끝 달을 모두 센다
+        (2026-03 ~ 2026-10 = 8개월). 달을 하나도 못 읽으면 검사하지 않는다. 오류는 가장 늦은 달이 나온 줄의 추진기간 칸에 담는다."""
+        limit = AGREEMENT_MAX_MONTHS.get(self.applicant_type or '')
+        if limit is None:
+            return self
+        readings = [(i, _period_months(item.period)) for i, item in enumerate(self.schedule_items) if item.section == 'feasibility']
+        months = [m for _, found in readings for m in found]
+        if not months:
+            return self
+        first, last = min(months), max(months)
+        count = (last[0] - first[0]) * 12 + (last[1] - first[1]) + 1
+        if count <= limit:
+            return self
+        row = next(i for i, found in readings if last in found)
+        subject = '예비창업자는' if self.applicant_type == 'preliminary' else '개인사업자 · 법인은'
+        raise ValidationError.from_exception_data(type(self).__name__, [_error_detail(
+            ('schedule_items', row, 'period'),
+            f'협약기간 내 일정이 {count}개월({first[0]}-{first[1]:02d} ~ {last[0]}-{last[1]:02d})이에요. {subject} 협약기간이 최대 {limit}개월이에요')])
+
+    @field_validator('target_customer', mode='before')
+    @classmethod
+    def _blank_target_customer_is_none(cls, v):
+        if isinstance(v, str):
+            v = v.strip()
+        return v or None
+
     @field_validator('applicant_type')
     @classmethod
     def _check_applicant_type(cls, v: str | None) -> str | None:
@@ -283,6 +457,17 @@ class ProjectCreateRequest(BaseModel):
             _check_min_age(v)
         return v
 
+    @model_validator(mode='after')
+    def _check_main_industry_of_business(self) -> 'ProjectCreateRequest':
+        """개인사업자 · 법인의 주업종은 드롭다운 9종(pipeline_stages.MAIN_INDUSTRIES)만 저장된다(DB ENUM). 다른 값이 오면 저장하다
+        DB 오류(500)가 나므로 입력 단계에서 422로 막는다. 빈 값은 '없음'으로 본다. 예비창업자의 주업종은 자유 텍스트라 그대로 둔다."""
+        if self.applicant_type in ('individual', 'corp'):
+            if self.main_industry in ('', None):
+                self.main_industry = None
+            elif self.main_industry not in ps.MAIN_INDUSTRIES:
+                raise ValueError(f"개인사업자 · 법인의 주업종은 다음 중 하나여야 합니다: {', '.join(ps.MAIN_INDUSTRIES)}")
+        return self
+
 
 class TeamMemberOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -297,6 +482,28 @@ class PricingItemOut(BaseModel):
     pricing_id: int
     service_name: str
     unit_price: float | None = None
+
+
+class BudgetItemOut(BaseModel):
+    """[SB-329] 사업비 집행계획 한 줄 — BudgetItemIn과 같은 이름 · 모양(item_order 순)."""
+    model_config = ConfigDict(from_attributes=True)
+    phase: BudgetPhase | None = None
+    category: str | None = None
+    execution_plan: str | None = None
+    total_amount: int | None = None
+    government_amount: int | None = None
+    self_cash_amount: int | None = None
+    self_in_kind_amount: int | None = None
+
+
+class ScheduleItemOut(BaseModel):
+    """[SB-329] 추진 일정 한 줄 — ScheduleItemIn과 같은 이름 · 모양(item_order 순)."""
+    model_config = ConfigDict(from_attributes=True)
+    section: ScheduleSection
+    category: str | None = None
+    content: str | None = None
+    period: str | None = None
+    detail: str | None = None
 
 
 class ProjectAttachmentOut(BaseModel):
@@ -328,7 +535,7 @@ class ProjectOut(BaseModel):
     project_id: int
     company_id: int
     description: str
-    created_at: datetime.datetime
+    created_at: UtcDatetime
     output_summary: str | None = None
     tech_field: str | None = None
     regional_priority_area: str | None = None
@@ -350,6 +557,7 @@ class ProjectPlanInputOut(BaseModel):
     ceo_careers: list = Field(default_factory=list)
     ceo_capability: str | None = None
     occupation: str | None = None
+    target_customer: str | None = None
     dev_start_month: str | None = None
     dev_end_month: str | None = None
     budget_scale_manwon: int | None = None
@@ -367,6 +575,9 @@ class ProjectPlanInputOut(BaseModel):
 class ProjectDetailOut(ProjectOut):
     team_members: list[TeamMemberOut] = Field(default_factory=list)
     pricing_items: list[PricingItemOut] = Field(default_factory=list)
+    # [SB-329] 사업비 집행계획 · 추진 일정(item_order 순)
+    budget_items: list[BudgetItemOut] = Field(default_factory=list)
+    schedule_items: list[ScheduleItemOut] = Field(default_factory=list)
     attachments: list[ProjectAttachmentOut] = Field(default_factory=list)
     company: CompanyOut | None = None
     plan_input: ProjectPlanInputOut | None = None
@@ -375,35 +586,63 @@ class ProjectDetailOut(ProjectOut):
 # ---------------------------------------------------------------------------
 # 산출물 데모 생성 (매칭 → 자격게이트 → 사업계획서 → 산출물 → 최종판정)
 # ---------------------------------------------------------------------------
-# [2026-09-15, 프론트 통합 임시 구현] 실제 오케스트레이터(Agent 파이프라인)가 아직
-# 다른 팀원 작업이라(app/agents.py 모듈 docstring 참고) 이 아래 스키마들은
-# seed_dummy_pipeline.py의 더미 로직을 POST /projects/{id}/generate 로 감싼 결과를
-# 표현하는 용도다 — 오케스트레이터가 실제로 붙으면 이 스키마들은 그대로 두고
-# projects.py의 라우터 구현부만 바꾸면 된다(agents.py의 재시도 함수들과 같은 패턴).
+# [SB-243~245] 이 아래 스키마들은 오케스트레이터 결과(app/orch/mapping.py가 만든다)를 화면에 내려주는 응답 모양이다.
+# 처음 더미 파이프라인(seed_dummy_pipeline.py · app/agents.py, 없어짐)에 맞춰 만든 모양을 프론트가 그대로 쓰고 있어서
+# 이름(Demo*)은 그대로 둔다.
 class DemoGenerateRequest(BaseModel):
-    notice_id: str | None = Field(
-        None, description='매칭시킬 공고 notice_id. 생략하면 모집중(open)인 공고 중 하나를 데모용으로 자동 선택한다.',
-    )
+    # [SB-243] 이제 필수다(후보 중 사용자가 고른 공고) — 생략하면 라우터가 422로 답한다. 임시 데모 자동 선택은 없어졌다.
+    notice_id: str | None = Field(None, description='사용자가 고른 공고 notice_id(공고 후보에 있는 값).')
+
+
+class ProceedRequest(BaseModel):
+    """review/start(종합 평가 → 표현 검수) 요청 — 기준 점수에 못 미친 채 진행한다는 사용자의 확인."""
+    confirmed: bool = False
+
+
+class BonusItemOut(BaseModel):
+    name: str
+    points: float
 
 
 class MatchCandidateOut(BaseModel):
-    """GET /projects/{id}/match-candidates 응답 항목 하나 — 아직 match_results에 저장된
-    행이 아니라, notices 테이블에서 후보로 뽑아 화면에 보여주기 위한 임시 값이다(사용자가
-    고르면 그때 POST /projects/{id}/generate 로 실제 match_results 행이 생긴다)."""
+    """GET /projects/{id}/match-candidates 응답 항목 하나 — 오케스트레이터가 공고팀 순위로 뽑은 후보 한 건(화면 3).
+    사용자가 고르면 POST /projects/{id}/generate 로 공고가 확정된다."""
 
     notice_id: str
     title: str
     org: str | None = None
     apply_end: datetime.date | None = None
-    bonus_score: float  # 가산점(만점 기준 없음, 공고마다 다름)
+    # 가산점(만점 기준 없음, 공고마다 다름). None = 계산 못 함("가산점 정보 없음"), 0 = 해당 가점 없음.
+    bonus_score: float | None = None
     reason: str
     url: str | None = None
     batch: int = 1  # 1=첫 매칭, 2=재실행
+    # [SB-242] 오케스트레이터(공고 서버 추천) 카드에서 새로 오는 값 — 모두 선택이라 없어도 된다.
+    rank: int | None = None
+    fit_score: float | None = None  # 0이면 마감 임박순 대체 경로라 적합도를 숨긴다
+    content_changed: bool = False  # 추가 조회에서 다시 나온 공고의 내용이 바뀜
+    apply_period_type: str | None = None
+    bonus_items: list[BonusItemOut] = Field(default_factory=list)
+    source_notice: str | None = None  # 카드마다 출처 고지
+
+
+class OrchNoticeOut(BaseModel):
+    """오케스트레이터 안내(시트 6 오류코드 문구) — 화면에 함께 보여준다."""
+
+    code: str
+    message: str
 
 
 class MatchCandidatesOut(BaseModel):
     candidates: list[MatchCandidateOut]
     rematch_used: bool
+    # [SB-242] 공고 매칭은 워커가 비동기로 돌려 응답이 늦을 수 있다. 'ready' 말고는 candidates가 비어 있고
+    # 프론트가 다시 부른다(pending) 또는 안내만 보여준다(failed · no_match).
+    status: str = 'ready'  # 'ready' | 'pending' | 'failed' | 'no_match'
+    code: str | None = None
+    message: str | None = None
+    notices: list[OrchNoticeOut] = Field(default_factory=list)
+    blocked_notice_ids: list[str] = Field(default_factory=list)  # 자격 불통과로 고를 수 없는 공고 ID
 
 
 class EligibilityCheckOut(BaseModel):
@@ -412,13 +651,43 @@ class EligibilityCheckOut(BaseModel):
     undecidable: bool
     failed_conditions: list | None = None
     missing_inputs: list | None = None
+    # [SB-243] 읽지 못해 통과로 본 조건('지원대상 유형' · '업력') — 진행을 막지 않고 화면 4에 '확인 필요'로 안내한다.
+    unknown_conditions: list = Field(default_factory=list)
+    # [SB-274] 화면 4(자격 확인)의 업력 표시와 작성 시작 버튼. 오케스트레이터 화면 4 값 그대로다.
+    # 업력은 년 단위 소수 한 자리이고 예비창업자 · 업력을 모르면 None이다.
+    business_age_years: float | None = None
+    # 자격 확인을 통과해 작성 단계로 들어갈 수 있는 상태면 True(불통과면 False). 확인 필요 조건(unknown_conditions)이 있어도 통과로 보고
+    # True를 준다 — 공고 데이터의 업력 · 업종 확보율이 낮아 진행을 막지 않는 것이 의도한 결정이다. 기능정의서 v1.9 E-G1-UNPARSED
+    # ("임의 통과를 허용하지 않는다")와는 달랐으나 기준 문서를 이 결정에 맞춰 개정하기로 했다(2026-10-06 회의, 개정본 업로드 예정).
+    can_start_writing: bool = False
 
 
 class PlanSectionOut(BaseModel):
+    """계획서 항목 하나. 항목 번호 · 웹 태그 · 종류를 각각 다른 칸으로 준다(SB-337 — 예전에는 `tag` 칸에 항목 번호가 들어갔다)."""
     model_config = ConfigDict(from_attributes=True)
-    tag: str
+    section_code: str = Field(description="항목 번호 — 예비창업자 2.1.1 ~ 2.7.4, 개인사업자 · 법인 3.1.1 ~ 3.7.4. 점수 항목(score_reasons[].item_code)과 이 번호로 맞춘다")
+    tag: str | None = Field(None, description="웹 태그 '1-1'(문제인식) · '2-1'(실현가능성) · '3-1'(성장전략) · '4-1'(팀 구성). 일반현황 · 개요처럼 묶음이 없으면 null")
+    content_type: str = Field('section', description="'section'(본문) · 'table'(표) · 'image'(그림 — 문장이 없고 plan.diagrams가 그림을 준다)")
     title: str
     body: str | None = None
+
+
+class PlanDiagramOut(BaseModel):
+    """계획서 그림 하나(서비스 흐름도 · 서비스 구조도, SVG) — 주소는 산출물 파일과 같은 방식이다(SB-340 · SB-337)."""
+    diagram_id: str = Field(description="예: '2.3.6-USER_FLOW'")
+    flow_type: str = Field(description="'USER_FLOW'(서비스 흐름도) · 'SERVICE_ARCHITECTURE'(서비스 구조도)")
+    title: str
+    source_ref: str = Field(description="그림이 속한 항목 번호(2.3.6 · 3.3.6) — plan.sections[].section_code와 맞는다")
+    nodes: list[str] = Field(default_factory=list)
+    image_url: str = Field(description="SVG 주소 `/projects/{id}/artifact-files/{key}` — 받은 주소를 그대로 쓴다(소유자만 받는다)")
+
+
+class TableFallbackOut(BaseModel):
+    """표를 본문으로 대체한 항목의 사유 — 화면이 해당 항목에 따로 보여 준다(F17, SB-354). 본문(body)에는 이 사유가 섞이지 않는다."""
+    section_code: str = Field(description="항목 번호 — plan.sections[].section_code와 맞는다")
+    tag: str | None = Field(None, description="그 항목의 웹 태그(계획서에 없는 번호이거나 묶음이 없으면 null)")
+    title: str | None = Field(None, description="그 항목의 제목(계획서에 없는 번호면 null)")
+    display_reason: str = Field(description="사용자에게 보여 줄 쉬운 안내 문구. 담당자 판정 원문(내부 진단용)은 사용자 화면에 내지 않아 싣지 않는다")
 
 
 class ArtifactScoreReasonOut(BaseModel):
@@ -426,18 +695,31 @@ class ArtifactScoreReasonOut(BaseModel):
     reason_text: str
     item_code: str | None = None
     display_name: str | None = None
-    score: float | None = None
-    max_score: float | None = None
+    score: float | None = Field(None, description="그 항목에서 얻은 점수 — 그 실행 건 배점으로 환산한 값(부분 점수 포함). 합이 코드 점검 환산 점수와 같다")
+    max_score: float | None = Field(None, description="그 항목의 만점(환산 배점). 합이 코드 점검 만점과 같다")
+    applicable: bool = Field(True, description="검사할 대상이 있는가. false면 해당 없음 — score 0 · max_score 0이고 reason_text가 이유를 설명한다(만점으로 그리지 않는다)")
+
+
+class GateFailureOut(BaseModel):
+    code: str = Field(description='어긴 통과 필수 조건 — entry(진입 파일) · secret(비밀값) · sandbox(격리 화면 동작)')
+    display_name: str
 
 
 class ArtifactOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    artifact_id: int
+    artifact_id: int | None = None  # [SB-243] 산출물은 오케스트레이터가 갖고 있어 행 번호가 없다
     category: str
     infographic_path: str
     executable_path: str | None = None
-    artifact_score: float | None = None
+    artifact_score: float | None = Field(None, description="산출물층 점수 — 그 실행 건 배점으로 환산한 값(옛 실행 건은 원점수 15점 기준)")
+    artifact_max_score: float | None = Field(None, description="산출물층 만점(코드 점검 만점 + 계획서 대조 만점). 옛 실행 건은 None")
     score_reasons: list[ArtifactScoreReasonOut] = Field(default_factory=list)
+    # 기획서 v1.11 4-5 · 5-4: 산출물 확인 화면은 통과 필수 조건 결과 → 코드 점검 8항목 → 대조 누락 · 부분 인정 기능을 보여 준다.
+    # 필수 조건을 하나라도 어기면 산출물층 30점이 0이 되므로(gate_failures가 비어 있지 않음) 화면이 이유를 알려 줄 수 있어야 한다.
+    gate_failures: list[GateFailureOut] = Field(default_factory=list)
+    # 계획서 대조에서 규칙 · LLM이 미충족으로 본 기능(0점) · 부분으로 본 기능(0.5점). 대조가 보류(withheld)되면 둘 다 빈 목록이다.
+    missing_features: list[str] = Field(default_factory=list)
+    partial_features: list[str] = Field(default_factory=list)
 
 
 class PlanScoreReasonOut(BaseModel):
@@ -447,6 +729,7 @@ class PlanScoreReasonOut(BaseModel):
     display_name: str | None = None
     score: float | None = None
     max_score: float | None = None
+    tag: str | None = Field(None, description="이 점수 항목(item_code = 계획서 항목 번호)이 속한 웹 태그 '1-1' ~ '4-1', 묶음이 없으면 null — 묶음별 합계 · 미달 사유를 낼 때 쓴다")
 
 
 class FormatFindingOut(BaseModel):
@@ -454,6 +737,7 @@ class FormatFindingOut(BaseModel):
     finding_type: str
     message: str
     severity: str | None = None
+    sentence_id: str | None = None  # [SB-243]
 
 
 class ProofreadLogOut(BaseModel):
@@ -468,25 +752,35 @@ class ProofreadLogOut(BaseModel):
     passed: bool
     violation_type: str | None = None
     violation_note: str | None = None
+    # [SB-243] 같은 문장의 시도를 묶는 키(프론트 reviewParagraphsFrom이 section_id로 묶는다) ← sentenceId
+    section_id: str | None = None
 
 
 class BusinessPlanOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    plan_id: int
+    plan_id: int | None = None  # [SB-243] 계획서는 오케스트레이터가 갖고 있어 행 번호가 없다
     doc_score: float | None = None
+    doc_max_score: float | None = Field(None, description="문서층 만점 — 그 실행 건 배점. 옛 실행 건은 None(화면은 verdict.doc_max_score를 쓴다)")
     threshold: float | None = None
     sections: list[PlanSectionOut] = Field(default_factory=list)
+    diagrams: list[PlanDiagramOut] = Field(default_factory=list)
+    table_fallbacks: list[TableFallbackOut] = Field(default_factory=list, description="표를 본문으로 대체한 항목별 사유. 대체한 표가 없으면 빈 목록")
+    notices: list[str] = Field(default_factory=list, description="문서 평가 점수 보고서의 안내(화면 6) — '입력 확인 필요' · '입력 오류' 문구. 없으면 빈 목록")
     score_reasons: list[PlanScoreReasonOut] = Field(default_factory=list)
     artifacts: list[ArtifactOut] = Field(default_factory=list)
     format_findings: list[FormatFindingOut] = Field(default_factory=list)
     proofread_logs: list[ProofreadLogOut] = Field(default_factory=list)
+    # [SB-243] 오케스트레이터 계획서의 차트 · 표 · 기능 목록(구조는 작성 Agent · 프론트와 맞추는 중이라 원본 그대로 싣는다)
+    feature_list: list[str] = Field(default_factory=list)
+    charts: list[dict] = Field(default_factory=list)
+    tables: list[dict] = Field(default_factory=list)
 
 
 class VerdictOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     overall_passed: bool
-    model_version: str
-    first_pass_passed: bool
+    model_version: str | None = None  # [SB-243] 오케스트레이터는 주지 않는다
+    first_pass_passed: bool | None = None  # [SB-243] 오케스트레이터는 주지 않는다
 
     # [2026-09-22 신규, 프론트 전달사항 10번] 검증결과서(front/src/features/workflow/
     # verificationReport.js)의 "종합 판정" 행 — 문서층/자동검증/계획서대조 세 층 점수와
@@ -501,6 +795,13 @@ class VerdictOut(BaseModel):
     code_max_score: float | None = None
     plan_match_score: float | None = None
     plan_match_max_score: float | None = None
+    # [SB-301] 계획서 대조 판정이 보류됐으면 True — 이때 plan_match_score는 0점으로 합산되어 오므로(총점에도 0점이 들어 있다)
+    # 화면은 0점이 아니라 "대조 불가"로 보여 준다. 보류 사유 코드는 사용자에게 내지 않는다(관리자 기록).
+    plan_match_withheld: bool = False
+    # 산출물층(코드 점검 + 계획서 대조) 환산 점수 · 만점 — 옛 실행 건은 None
+    artifact_score: float | None = None
+    artifact_max_score: float | None = None
+    notices: list[str] = Field(default_factory=list, description="종합 평가 점수 보고서의 안내(화면 9) — '입력 확인 필요' · '입력 오류' 문구. 없으면 빈 목록")
     total_score: float | None = None
     pass_threshold: float | None = None
 
@@ -554,30 +855,27 @@ class ProjectStatusOut(BaseModel):
     stage: str | None = None
     progress_percent: int | None = None
     match_status: str | None = None
-    # [2026-09-23 개정] match_status가 'waiting_resume'(자동 재시도 대기 중)이거나
-    # 'failed'(재시도 5회 소진, 확정된 실패)일 때 값이 있다 — 진행 화면에 실패 사유를
-    # 보여주는 용도. 'failed'일 때만 "다시 이어가기" 버튼을 보여주면 된다.
+    # [SB-247] 사용자 응답에서는 항상 None이다 — 실패 사유 원문은 사용자에게 보이지 않고 관리자 API에만 나간다(기존 화면 호환용 필드).
+    # 실패는 match_status='failed'로 안다(확정된 실패 — 새 프로젝트로 다시 시작, 기능정의서 E-RUN-FAIL).
     failure_reason: str | None = None
-    # [2026-09-23 신규, 2026-09-27 개명] 자동 재개 소진 횟수(0~5)와 다음 자동 재개
+    # [2026-09-23 신규, 2026-09-27 개명] 자동 재개 소진 횟수(상한은 설정값)와 다음 자동 재개
     # 예정 시각 — match_status='waiting_resume'일 때만 next_retry_at에 값이 있다.
     # 화면에 "N번째 재개 중" 또는 "다음 재개까지 남은 시간" 같은 걸 보여주고 싶으면
     # 쓰면 된다. [2026-09-27] 필드명을 retry_count -> resume_count로 바로잡았다 —
     # 이 값은 스펙의 Run.resumeCount(재개 횟수)이지 Run.retryCount(호출 재시도 횟수)가
     # 아니다.
     resume_count: int = 0
-    next_retry_at: datetime.datetime | None = None
+    next_retry_at: UtcDatetime | None = None
     # [2026-09-27 신규, SB-139] 공식 기능정의서 v1.9 E-RUN-CLOSED: "이어하기로 돌아왔을
     # 때 선택 공고 마감" — 마감 사실만 알리고 계속 진행할지는 사용자가 정한다(실행을
     # 막지 않는다). 매칭 자체가 없거나(screen=NO_MATCH_SCREEN) 공고 정보를 못 찾으면
     # False.
     notice_closed: bool = False
-    # [2026-09-29 신규, 프론트 요청사항 3차 B-2] 같은 stage에서 "처음부터 다시 생성"이
-    # 연속으로 최종 실패(status='failed' 확정)한 횟수와 그 상한 — 자동 재개(resume_count)
-    # 와 달리 backoff 중간 실패가 아니라 이 시도 전체가 끝내 실패로 확정될 때만 늘고,
-    # 단계가 온전히 성공하면 0으로 돌아간다. regenerate_fail_streak >= regenerate_cap이면
-    # plan/start·prototype/start가 409를 돌려준다.
-    regenerate_fail_streak: int = 0
-    regenerate_cap: int = 2
+    # [SB-272] 재작성 진행 — 기획서 4-7 · 5-8: 재작성 중에는 요청한 화면에서 '진행 중'으로 보이고 이어하기로 돌아와도 그 화면으로 온다.
+    # 재작성 중에도 stage는 재작성 전 단계 그대로이고 match_status는 in_progress이므로, 이 두 값으로 "그 화면에서 재작성 중"을
+    # 가려 버튼을 막고 '진행 중'을 보여 준다(오케스트레이터 RunView 값 그대로, 실행 건이 없으면 None · False).
+    rework_screen: int | None = Field(None, description='재작성 중인 화면(6 · 8 · 9). 재작성 중이 아니면 None')
+    collecting: bool = Field(False, description='재작성 요청을 모으는 중(잠정 2초)이면 True — 모으는 중에도 재작성 중으로 본다')
 
 
 class RetryTaskRequest(BaseModel):
@@ -585,7 +883,8 @@ class RetryTaskRequest(BaseModel):
     단순히 동일한 결과를 반환하는 방식이 아닌, 실제 작업을 다시 수행하도록 구현 /
     재시도에 따라 결과물이 실제로 변경되는 것을 확인할 수 있도록 구현") 대응.
 
-    task_key는 app/models.py의 FIXED_TASK_SEQUENCE에 있는 14개 값 중 '조율'(오케스트레이션
+    task_key는 웹이 쓰는 작업 이름이다 — 사용자가 재작성할 수 있는 건 writing · implement_prototype · implement_infographic뿐이고(app/orch/mapping.py
+    orch_bundle_of), 나머지는 400이다. 아래는 예전 14개 값 중 '조율'(오케스트레이션
     체크포인트 4개 — coordinate_intake/user_decision_doc/user_decision_final/
     coordinate_finalize, 콘텐츠를 만들지 않아 "재시도해도 결과물이 바뀐다"는 개념 자체가
     안 맞는다)만 빼고 나머지 10개를 전부 받는다. 각 값이 실제로 무엇을 다시 만드는지는
@@ -618,44 +917,51 @@ class RetryTaskRequest(BaseModel):
     )
 
 
-class RetryTaskResponse(BaseModel):
+class ReworkAcceptedOut(BaseModel):
+    """POST /projects/{id}/retry-task 응답 — [SB-243~244] 재작성은 이제 접수만 하고 바로 돌아온다. 결과(전후 비교)는
+    진행 상태(GET /status의 rework_screen · collecting · match_status)를 보다가 끝나면 GET /rework-result로 읽는다
+    ([SB-272] 두 필드는 GET /status · GET /projects에 있다)."""
     project_id: int
     task_key: str
-    agent_name: str
-    attempt_no: int
-    changed: dict = Field(
-        ...,
-        description=(
-            '재시도 전/후 값 비교. task_key에 따라 모양이 다르다 — 전략(strategy)은 '
-            "{'canonical_data': {data_key: {'before', 'after'}}}, 작성(writing)은 "
-            "{'sections': {tag: {'before', 'after'}}}, 채점(verify1_*/verify2_*)은 "
-            "{'scores': {item_code: {'before', 'after'}}, 'doc_score' 또는 'artifact_score': "
-            "{'before', 'after'}}, 산출물 재생성(implement_*)은 {'executable_path' 또는 "
-            "'infographic_path': {'before', 'after'}}, 검수(review_expression/"
-            "review_token_check)는 {'finding' 또는 'corrected_text': {'before', 'after'}} 형태. "
-            '어느 모양이든 호출할 때마다 실제로 값이 달라졌는지(=진짜로 다시 수행했는지) '
-            '이 필드로 바로 확인 가능. writing/implement_*는 추가로 '
-            "'version_kept': 'new'|'previous'와 'version_comparison': {'before_score', "
-            "'after_score'}를 담는다 — 재작성 후 점수가 떨어지면 서버가 자동으로 이전 "
-            "버전을 유지하고('previous'), 이때 위 'sections'/'executable_path' 등에 보이는 "
-            "'after' 값은 실제로 반영되지 않은(되돌려진) 시도값이다."
-        ),
-    )
+    bundle_id: str  # 웹 묶음 이름(문제인식 · 실현가능성 · 성장전략 · 팀 구성 · 실행 파일 제작 · 인포그래픽 제작)
+    cycle_id: str  # 같은 화면에서 모으는 시간 안에 들어온 요청은 같은 cycle_id로 합쳐진다
+    screen: int
+    bundles: list[str]  # 지금까지 모인 묶음(웹 이름, 요청 순서)
+    collect_until: UtcDatetime
+    duplicate: bool = False  # 이미 모은 묶음이라 한 번으로 쳤다(기회를 더 쓰지 않음)
 
 
-class AgentExecutionOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    agent_name: str
-    # [2026-09-28 신규] 프론트 요청 2 — 화면이 항목(task_key)별로 몇 번째 시도인지 알아야
-    # 재작성 버튼을 disabled 처리할 수 있는데, 이 응답엔 그 필드가 없었다.
-    task_key: str | None
-    attempt_no: int
-    model_used: str
-    rerun_type: str
-    token_usage: int
+class ReworkFileChangeOut(BaseModel):
+    artifact: str  # 'prototype' | 'infographic'
+    before_path: str | None = None
+    after_path: str | None = None
+
+
+class ReworkResultOut(BaseModel):
+    """GET /projects/{id}/rework-result 응답 — 마지막 재작성 한 건. 재작성한 적이 없으면 404.
+
+    status: '진행중' | '완료' | '실패'. 진행 중이면 공통 필드만 있다. `changed`는 예전 retry-task 응답과 같은 모양
+    (sections · executable_path · infographic_path · version_kept · version_comparison)으로 풀어 둔 값이라 화면이 그대로 쓸 수 있다."""
+    project_id: int
+    cycle_id: str
+    screen: int
+    bundles: list[str]
     status: str
-    started_at: datetime.datetime
-    bundle_id: str | None = None
+    started_at: UtcDatetime
+    ended_at: UtcDatetime | None = None
+    kept: str | None = None  # '전' | '후'
+    basis: str | None = None  # document | artifact | total
+    before_score: float | None = None
+    after_score: float | None = None
+    before_refs: list[str] = Field(default_factory=list)
+    after_refs: list[str] = Field(default_factory=list)
+    plan_before: list[PlanSectionOut] | None = None
+    plan_after: list[PlanSectionOut] | None = None
+    files: list[ReworkFileChangeOut] = Field(default_factory=list)
+    rolled_back: bool = False
+    refunded_bundles: list[str] = Field(default_factory=list)
+    notice_code: str | None = None
+    changed: dict = Field(default_factory=dict)
 
 
 class BundleUsageOut(BaseModel):
@@ -669,27 +975,57 @@ class BundleUsageOut(BaseModel):
     remaining: int
 
 
+class ShortfallItemOut(BaseModel):
+    """미달 항목 한 줄 — 결과물(`deliverable.shortfallItems`)에서 그대로 옮긴다(SB-371). 화면이 묶음(tag)별로 모아 보일 수 있다."""
+    layer: str = Field(description="층 — 'document'(계획서) | 'artifact'(프로토타입 · 산출물)")
+    kind: str = Field(description="종류 — verifyFail · inputError · gateFailure · codeCheck · featureMatchWithheld · missingFeature · partialFeature")
+    code: str | None = Field(None, description="문서층 = 계획서 항목 번호, 코드 점검 = 점검 번호, 통과 필수 조건 = 어긴 조건 코드(entry · secret · sandbox), 그 밖 = null")
+    tag: str | None = Field(None, description="문서층 = 웹 태그(없으면 null), 산출물층 = null")
+    name: str = Field(description="항목 이름 — 계획서 항목 제목 · 점검 이름 · 기능 이름 · 고정 이름")
+    score: float | None = Field(None, description="화면에 보이는 점수. 없으면 null")
+    max_score: float | None = Field(None, description="score의 배점. 없으면 null")
+    reason: str = Field(description="사유 — 검증 판정 글이거나 고정 문구")
+
+
+class DeliverableOut(BaseModel):
+    """결과물 화면(11)에 보일 안내 글 — 오케스트레이터 결과물(`deliverable`)과 안내 문구(`userMessage`)에서 사용자에게 보일 것만 싣는다.
+    파일 참조(planDocFile · prototypeFiles · infographicFile)와 점수 보고서는 이미 따로 오므로(산출물 주소 · verdict) 여기에 싣지 않는다."""
+    submission_notice: str | None = Field(None, description="내려받기 화면에 보일 공고별 제출 요건 확인 안내(`deliverable.submissionNotice`). 없으면 null")
+    disclaimer: str | None = Field(None, description="계획서 첫 장 고지(`deliverable.disclaimer`) — 문서에도 같은 문구가 들어간다")
+    user_message: str | None = Field(None, description="결과 안내 글(`userMessage`) — 통과 기준에 못 미친 항목 안내 등. 없으면 null")
+    shortfall_items: list[ShortfallItemOut] = Field(default_factory=list, description="통과 기준에 못 미친 항목(`deliverable.shortfallItems`) — 문서층 → 산출물층 순. 없으면 빈 목록")
+
+
 class DemoGenerateResponse(BaseModel):
+    """POST /generate(공고 선택 → 자격 확인)와 GET /result(지금까지 결과)가 함께 쓴다.
+
+    [SB-243] 공고를 고른 직후엔 계획서 · 점수가 아직 없어 plan 이하가 비고(plan=None), 자격 확인 결과를 기다리는 중이면
+    status='pending', 공고 서버 오류로 자격 확인을 못 했으면 status='failed'(+ message · notices)로 답한다.
+    예전의 agent_executions 필드는 없어졌다(관리자 조회가 대신한다)."""
     project_id: int
-    match: MatchResultOut
-    eligibility: EligibilityCheckOut
-    plan: BusinessPlanOut
+    status: str = 'ready'  # 'ready' | 'pending' | 'failed'
+    code: str | None = None
+    message: str | None = None
+    notices: list[OrchNoticeOut] = Field(default_factory=list)
+    match: MatchResultOut | None = None
+    eligibility: EligibilityCheckOut | None = None
+    plan: BusinessPlanOut | None = None
     # [2026-09-22 수정, 프론트 전달사항 3번] "GET /result는 프로토타입이 아직 만들어지는
     # 중이어도 완성된 계획서는 돌려줘야 한다" — verdict는 산출물(artifact) 채점까지 끝나야
     # 나오는 값이라, 계획서만 끝나고 프로토타입/검증이 아직인 상태에선 없을 수 있다.
-    # 예전엔 verdict가 없으면(=artifact가 없으면) 통째로 404를 냈는데, 지금 더미
-    # 파이프라인(seed_dummy_pipeline)은 계획서·산출물·판정을 한 번에 만들어서 이 틈이
-    # 안 드러났을 뿐 — 생성이 단계별로 끝나는 실제 흐름에선 이 틈이 그대로 404가 된다.
+    # 예전엔 verdict가 없으면(=artifact가 없으면) 통째로 404를 냈는데, 생성이 단계별로 끝나는
+    # 흐름에선 이 틈이 그대로 404가 되므로 verdict 없이도 계획서를 돌려준다.
     verdict: VerdictOut | None = None
-    agent_executions: list[AgentExecutionOut]
     # [2026-09-28 신규] 프론트 요청 2 — RERUN_CAP 프론트 상수를 없애고 관리자가 상한을
     # 바꾸면 화면도 같이 따라가도록, 상한값과 묶음별 사용/잔여 횟수를 같이 내려준다.
     # [2026-09-28 수정] task_key 단위였던 retry_budget을 bundle_id 단위 bundle_usages로
     # 교체 — writing 하나가 화면상 묶음 3개를 가리키는 문제 때문(app/pipeline_stages.py
     # WRITING_BUNDLES 참고). strategy/verify1_*/verify2_*/review_* 처럼 화면에 "재작성"
     # 버튼이 없는 task_key는 애초에 묶음 개념이 아니라서 이 목록에 안 나온다.
-    rework_cap: int
-    bundle_usages: list[BundleUsageOut]
+    rework_cap: int = 0
+    bundle_usages: list[BundleUsageOut] = Field(default_factory=list)
+    # 결과물 화면 안내 글(결과 통합 T-C4). 결과물(deliverable)이 아직 없으면 null
+    deliverable: DeliverableOut | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -705,7 +1041,7 @@ class ProjectListItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     project_id: int
     description: str
-    created_at: datetime.datetime
+    created_at: UtcDatetime
     notice_id: str | None = None
     notice_title: str | None = None
     match_status: str | None = None
@@ -717,8 +1053,11 @@ class ProjectListItemOut(BaseModel):
     screen: int | None = None
     # [2026-09-27 개명] retry_count -> resume_count (ProjectStatusOut과 같은 이유).
     resume_count: int = 0
-    next_retry_at: datetime.datetime | None = None
-    failure_reason: str | None = None
+    next_retry_at: UtcDatetime | None = None
+    failure_reason: str | None = None  # ProjectStatusOut과 같다 — 사용자 응답에서는 항상 None
+    # [SB-272] ProjectStatusOut과 같은 값(재작성 중인 화면 · 요청 모으는 중)
+    rework_screen: int | None = None
+    collecting: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -732,11 +1071,11 @@ class NotificationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     notification_id: int
     project_id: int
-    kind: str = Field(..., description="'문서평가'/'산출물확인'/'표현검수'/'실패' 중 하나")
+    kind: str = Field(..., description="'문서평가'/'산출물확인'/'결과물'/'실패' 중 하나('표현검수'는 검수 제거(2026-10-15) 전에 쌓인 옛 알림에만 있음)")
     failure_scope: str | None = Field(None, description="kind='실패'일 때만: '실행' 또는 '재작성'")
     target_step: int | None = Field(None, description='알림을 누르면 들어갈 화면 번호. kind=실패면 None(이어하기 목록으로 연결)')
-    created_at: datetime.datetime
-    read_at: datetime.datetime | None = None
+    created_at: UtcDatetime
+    read_at: UtcDatetime | None = None
 
 
 class NotificationReadIn(BaseModel):
@@ -747,21 +1086,19 @@ class NotificationReadIn(BaseModel):
 # 관리자 - 검증 정책 (admin-dashboard.html 대응)
 # ---------------------------------------------------------------------------
 class PolicyScoresIn(BaseModel):
-    doc_weight: float = Field(ge=0, le=100, allow_inf_nan=False)
-    code_weight: float = Field(ge=0, le=100, allow_inf_nan=False)
-    plan_weight: float = Field(ge=0, le=100, allow_inf_nan=False)
+    """층별 배점 — 세 값 모두 0보다 커야 하고 합이 100이다. 오케스트레이터는 0을 기본값으로 바꾸지 않고 0 그대로 써서, 배점 0인 층은
+    환산 점수가 늘 0이고 문서층이 0이면 문서 평가 표시 점수도 0이 된다(오케스트레이터 요청, 2026-10-11)."""
+    doc_weight: float = Field(gt=0, le=100, allow_inf_nan=False)
+    code_weight: float = Field(gt=0, le=100, allow_inf_nan=False)
+    plan_weight: float = Field(gt=0, le=100, allow_inf_nan=False)
 
 
 class PolicyThresholdsIn(BaseModel):
     pass_threshold: float = Field(ge=0, le=100, allow_inf_nan=False)
     rerun_cap: int = Field(ge=0)
     rework_cap: int = Field(ge=0)
-    deviation_cap: float = Field(ge=0, le=100, allow_inf_nan=False)
-    token_retry_cap: int = Field(ge=0)
-    # [2026-09-29 신규, 프론트 요청사항 3차 B-2] "verification_policies에 두면 관리자가
-    # 조절 가능"이라고 요청하신 부분 — DB 컬럼만으로는 관리자 화면에서 실제로 바꿀 방법이
-    # 없어서 다른 상한들과 같은 자리(PUT /admin/policy/thresholds)에 같이 넣는다.
-    regenerate_cap: int = Field(ge=0)
+    deviation_cap: float = Field(ge=0, le=100, allow_inf_nan=False, description='재채점 편차 상한. 현재 쓰이지 않는다 — 오케스트레이터가 편차 검사를 하지 않아(SB-310, varianceFlag는 늘 거짓) 값은 저장만 한다')
+    token_retry_cap: int | None = Field(None, ge=0, description='검수 문단 재시도 상한 — 검수가 흐름에서 빠져(2026-10-15) 오케스트레이터가 읽지 않는다. 선택 입력: 안 보내면 지금 값을 그대로 둔다')
 
 
 class ChecklistItemIn(BaseModel):
@@ -794,40 +1131,38 @@ class VerificationPolicyOut(BaseModel):
     pass_threshold: float
     rerun_cap: int
     rework_cap: int
-    deviation_cap: float
+    deviation_cap: float = Field(description='재채점 편차 상한. 현재 쓰이지 않는다 — 오케스트레이터가 편차 검사를 하지 않아(SB-310, varianceFlag는 늘 거짓) 값은 저장만 한다')
     token_retry_cap: int
-    regenerate_cap: int
 
 
 class ItemOut(BaseModel):
     """GET /admin/items(관리자 대시보드 "진행 현황" 탭) 응답 — 프로젝트 1건당 한 행.
 
-    [2026-09-18 확장] agent_executions/business_plans/artifacts에서 실제로 뽑을 수 있는
-    값(현재 단계·시도 횟수·마지막 갱신 시각·점수·정체 여부·보관 여부)은 이제 채워서
-    내려준다 — 전부 이미 존재하는 실제 테이블에서 계산한 값이지 지어낸 값이 아니다.
+    [SB-245] 값(현재 단계·시도 횟수·마지막 갱신 시각·점수·정체 여부·보관 여부)은 오케스트레이터 조회(관리자 실행 건 · 실행 기록)에서
+    읽는다. 웹 projects 행은 실행 건이 없는 공고 매칭 전 프로젝트와 보관 여부에만 쓴다.
 
-    다만 admin-dashboard.html 목업에 있던 "지금 Agent가 뭘 하고 있는지 설명하는 자연어
-    텍스트", "조율(Supervisor) 진행 상태 서술", "에러 로그"는 여전히 안 내려준다 — 이건
-    실시간으로 도는 오케스트레이터(다른 팀원 작업)의 내부 상태를 그대로 옮겨야 의미가
-    있는 값이라, 지금처럼 오케스트레이터가 없는 상태에서 채우면 전부 지어낸 텍스트가
-    된다. 무작위 더미 텍스트로 채워서 마치 동작하는 것처럼 보이게 하는 것보다, 프론트가
-    "이 필드는 아직 없다"를 명확히 알 수 있는 쪽이 낫다는 원래 판단은 그대로 유지한다.
-    오케스트레이터 연동 시점에 이 스키마에 그 필드들을 추가하면 된다."""
+    admin-dashboard.html 목업에 있던 "지금 Agent가 뭘 하고 있는지 설명하는 자연어 텍스트", "조율(Supervisor) 진행 상태
+    서술", "에러 로그"는 여전히 내려주지 않는다 — 지어낸 텍스트로 채우는 것보다 프론트가 "이 필드는 없다"를 명확히 알 수 있는 쪽이
+    낫다는 원래 판단은 그대로다. 오케스트레이터 조회 결과에서 만들 수 있는 값이 생기면 이 스키마에 추가한다."""
 
     model_config = ConfigDict(from_attributes=True)
     project_id: int
     description: str
     user_name: str
-    created_at: datetime.datetime
+    created_at: UtcDatetime
     match_status: str | None = None
     failure_reason: str | None = None
     stage: str | None = None
     status_label: str = Field(..., description="'공고 매칭 전'/'진행중'/'판단 대기'/'완료'/'중단'/'실패' 중 하나")
-    step: str | None = Field(None, description='마지막으로 실행된 Agent 이름(전략/작성/구현/검증-1/검증-2/검수) — agent_executions 최신 행 기준')
-    attempts: int | None = Field(None, description='같은 단계(step)를 몇 번째 시도 중인지 — agent_executions.attempt_no 최신값')
-    last_updated: datetime.datetime | None = Field(None, description='agent_executions 최신 실행 시각, 없으면 프로젝트 등록 시각')
+    step: str | None = Field(None, description='마지막으로 실행된 Agent 이름(전략/작성/구현/검증-1/검증-2/검수) — 오케스트레이터 실행 기록 최신 행 기준')
+    attempts: int | None = Field(None, description='같은 단계(step)를 몇 번째 시도 중인지 — 오케스트레이터 실행 기록 최신값')
+    last_updated: UtcDatetime | None = Field(None, description='오케스트레이터 실행 건의 마지막 갱신 시각, 없으면 프로젝트 등록 시각')
     stalled: bool = Field(False, description='완료·보관 상태가 아니면서 마지막 갱신 후 48시간 이상 지났는지')
-    score: float | None = Field(None, description='doc_score + artifact_score 합계(둘 다 없으면 None)')
+    score: float | None = Field(None, description='현재 버전의 문서 점수 + 산출물 점수 합계(둘 다 없으면 None)')
+    doc_score: float | None = Field(None, description='문서층 점수(그 실행 건 배점 기준)')
+    doc_max_score: float | None = Field(None, description="문서층 만점 — 그 실행 건 배점. 관리자가 배점을 바꿔도 이 실행 건의 만점은 그대로다(지금 정책 값을 만점으로 쓰지 말 것)")
+    artifact_score: float | None = Field(None, description='산출물층 점수 — 그 실행 건 배점으로 환산한 값')
+    artifact_max_score: float | None = Field(None, description='산출물층 만점(코드 점검 + 계획서 대조) — 그 실행 건 배점')
     archived: bool = False
     # [2026-09-23 신규, 2026-09-27 개명] 생성 작업(계획서/프로토타입) 자동 재개 소진
     # 횟수(0~5)와 마지막 실패 사유 — match_status가 'waiting_resume'/'failed'일 때만
@@ -844,8 +1179,8 @@ class ItemArchiveIn(BaseModel):
 
 
 class GenerationFailureAlertOut(BaseModel):
-    """GET /admin/generation-alerts 응답 — 생성 작업이 status='failed'로 확정될 때마다(자동
-    재시도 5회 소진 또는 입력·운영 같은 영구 오류로 즉시 확정) 한 행씩 쌓이는 관리자 알림
+    """GET /admin/generation-alerts 응답 — 생성 작업이 status='failed'로 확정될 때마다(재개 상한
+    소진 또는 입력·운영 같은 영구 오류로 즉시 확정) 오케스트레이터 워커가 한 행씩 쌓는 관리자 알림
     (generation_failure_alerts)."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -855,12 +1190,8 @@ class GenerationFailureAlertOut(BaseModel):
     resume_count: int
     last_error_kind: str = Field(..., description="'일시'/'입력'/'운영' 중 하나 — 실패 확정 시점의 원인 분류")
     failure_reason: str | None = None
-    created_at: datetime.datetime
-    acknowledged_at: datetime.datetime | None = None
-    # [2026-09-29 신규, 프론트 요청사항 3차 B-4] True면 이 실패가 "처음부터 다시 생성"
-    # 연속 실패 상한까지 도달한 뒤 확정된 것 — 사용자 화면은 이미 재시도 버튼을 거두고
-    # "문제가 기록됐고 확인 후 조치할게요"로 바뀐 상태이므로 관리자가 우선 봐야 한다.
-    regenerate_exhausted: bool = False
+    created_at: UtcDatetime
+    acknowledged_at: UtcDatetime | None = None
 
 
 class GenerationFailureAlertAckIn(BaseModel):
@@ -868,7 +1199,7 @@ class GenerationFailureAlertAckIn(BaseModel):
 
 
 class ScoreHistoryEntryOut(BaseModel):
-    scored_at: datetime.datetime
+    scored_at: UtcDatetime | None = None  # 채점 끝 시각을 모르면 None
     score: float
     is_rerun: bool
 
@@ -881,6 +1212,10 @@ class ItemScoreHistoryOut(BaseModel):
     doc: list[ScoreHistoryEntryOut] = Field(default_factory=list)
     code: list[ScoreHistoryEntryOut] = Field(default_factory=list)
     plan: list[ScoreHistoryEntryOut] = Field(default_factory=list)
+    # 그 실행 건 배점 기준 층별 만점 — 점수 이력은 이 배점으로 환산된 값이라 지금 정책 값 대신 이 만점을 쓴다. 없으면 None
+    doc_max: float | None = None
+    code_max: float | None = None
+    plan_max: float | None = None
 
 
 class NoticeAdminOut(BaseModel):
@@ -920,27 +1255,20 @@ class AgentTaskOut(BaseModel):
 
 
 class AgentOpsSummaryOut(BaseModel):
-    """GET /admin/agent-ops-summary(에이전트 테스크 탭의 "운영 지표 요약" 아코디언) 응답 —
-    agent_executions/proofread_logs 전체를 집계한 값이다. admin-dashboard.html 목업엔
-    "선별 재수행 대비 전체 재실행" 비교도 있었는데, 이 앱엔 그 구분을 남기는 컬럼이
-    없어서(rerun_type은 initial/rerun 2값뿐 — RefreshToken이 아니라 AgentExecution.
-    rerun_type 컬럼 주석 참고) 만들지 않았다. 대신 실제로 있는 값(최초 실행 대비 재시도
-    실행의 평균 토큰 사용량 차이)만 담는다.
+    """GET /admin/agent-ops-summary(에이전트 테스크 탭의 "운영 지표 요약" 아코디언) 응답 — 오케스트레이터 실행 기록 전체를 집계한 값이다.
+    선별 재수행 대비 전체 재실행 비교는 그 구분을 남기는 컬럼이 없어 만들지 않았고, 대신 실제로 있는 값(최초 실행 대비 재시도 실행의
+    평균 토큰 사용량 차이)만 담는다.
 
-    [2026-09-18] token_violation_rate 추가 — OpsSummaryOut의 것과 같은 계산(전체
-    proofread_logs 중 passed=False 비율, 전체 프로젝트 평균)이다. "운영 현황" 탭과
-    "에이전트 테스크" 탭 양쪽에서 같은 지표를 보여주고 싶어서 두 응답에 각각 넣었다 —
-    모델 버전별 비교는 여전히 못 한다(그 시도를 만든 모델 버전을 남기는 컬럼이 없음)."""
+    [SB-399] 보호 토큰 위반율(token_violation_rate · token_violation_count · token_check_count)은 검수가 서비스 흐름에서 빠져
+    (오케스트레이터 2026-10-15) 없어졌다."""
 
     total_executions: int
     initial_executions: int
     rerun_executions: int
-    total_tokens: int
+    total_tokens: int  # 글 토큰만(이미지 토큰은 total_image_tokens)
+    total_image_tokens: int = 0  # [SB-302] 이미지 입력 + 출력 토큰 합. 이미지 호출이 없으면 0
     initial_avg_tokens: float | None = None
     rerun_avg_tokens: float | None = None
-    token_violation_rate: float | None = None
-    token_violation_count: int = 0
-    token_check_count: int = 0
 
 
 class NoticeSourceStatusOut(BaseModel):
@@ -969,8 +1297,8 @@ class ImportRunOut(BaseModel):
     # ImportRun에 매핑만 해두고 응답에는 안 내려주고 있었다 — imported_at(우리 쪽에서
     # 적재한 시각)과 다른 정보라(배치 생성→우리 적재까지 걸린 시간을 보여줄 수 있음) 굳이
     # 숨길 이유가 없어 같이 내려준다.
-    generated_at: datetime.datetime
-    imported_at: datetime.datetime
+    generated_at: UtcDatetime
+    imported_at: UtcDatetime
     accepted_count: int
     input_counts: dict[str, int] = Field(default_factory=dict)
     issue_counts: dict[str, int] = Field(default_factory=dict)
@@ -995,17 +1323,12 @@ class LayerDeviationOut(BaseModel):
 
 
 class OpsSummaryOut(BaseModel):
-    """GET /admin/ops-summary(운영 현황 탭) 응답. 전부 business_plans/artifacts/verdicts/
-    match_results/agent_executions/verification_score_history/proofread_logs 실제
-    집계값이다 — 지금 이 프로젝트들엔 아직 파이프라인이 거의 안 돌아 값 대부분이
-    0/None으로 보일 수 있는데, 그건 "연동이 안 된 것"이 아니라 "쌓인 실행이 아직
-    적다"는 뜻이다(seed_dummy_pipeline.py 등으로 몇 건 만들어보면 채워진다).
+    """GET /admin/ops-summary(운영 현황 탭) 응답. [SB-245] 오케스트레이터 admin_summary(최근 12개월 범위)
+    집계값이다 — 쌓인 실행이 적으면 값 대부분이 0/None으로 보일 수 있는데, 그건 "연동이 안 된 것"이
+    아니라 "쌓인 실행이 아직 적다"는 뜻이다.
 
-    [2026-09-18] token_violation_rate 추가 — proofread_logs.passed=False(보호 토큰인
-    수치·날짜·고유명사·기능명을 AI가 임의로 삭제·변조한 시도) 비율을 전체 프로젝트
-    기준으로 평균 낸 값이다. 모델 버전(v1/v2/v3)별로 쪼갠 값은 안 만들었다 — 어느
-    검수 모델 버전으로 그 시도가 만들어졌는지 남기는 컬럼이 없어서, 버전별 비교는
-    할 수 없고 "전체 평균 위반율" 하나만 낸다."""
+    [SB-399] 보호 토큰 위반율(token_violation_rate · token_violation_count · token_check_count)은 검수가 서비스 흐름에서 빠져
+    (오케스트레이터 2026-10-15) 없어졌다."""
 
     status_counts: dict[str, int] = Field(default_factory=dict)
     doc_avg: float | None = None
@@ -1020,16 +1343,12 @@ class OpsSummaryOut(BaseModel):
     rerun_rate: float | None = None
     score_buckets: list[ScoreBucketOut] = Field(default_factory=list)
     deviations: list[LayerDeviationOut] = Field(default_factory=list)
-    token_violation_rate: float | None = Field(None, description='proofread_logs 전체 시도 중 passed=False 비율(%), 전체 프로젝트 평균')
-    token_violation_count: int = 0
-    token_check_count: int = 0
 
 
 class RecoveryItemOut(BaseModel):
     """GET /admin/recovery-items(관리자 대시보드 "검수 회수 문단" 탭) 응답 — proofread_logs
     중 passed=False(보호 토큰 위반으로 반려된 시도) 1건당 한 행. model_version은 그
-    시도가 속한 plan의 최종 verdicts.model_version(있으면)을 그대로 붙인 것 — 이
-    시도 자체의 모델 버전을 남기는 컬럼은 없어서 근사치다. consent는 그 프로젝트
+    시도를 기록한 행의 model_version이다. consent는 그 프로젝트
     소유자의 "지금 시점" AI 학습 데이터 활용 동의 여부(users.ai_training_agreed)다."""
 
     log_id: int
@@ -1037,12 +1356,17 @@ class RecoveryItemOut(BaseModel):
     project_description: str | None = None
     model_version: str | None = None
     violation_type: str | None = None
-    occurred_at: datetime.datetime
+    occurred_at: UtcDatetime
     consent: bool
     original: str
     attempt: str
     recovery_status: str
     label: str | None = None
+
+
+class RecoveryTrainedIn(BaseModel):
+    """POST /admin/recovery-items/trained 요청 — 학습 데이터로 내보낸 검수 회수 문단의 log_id 목록."""
+    log_ids: list[int] = Field(..., min_length=1, max_length=1000)
 
 
 class RecoveryLabelIn(BaseModel):
@@ -1062,7 +1386,8 @@ class RecoveryLabelIn(BaseModel):
 # ---------------------------------------------------------------------------
 class UserRoleStatusIn(BaseModel):
     role: str | None = Field(None, description="'user' 또는 'admin'")
-    status: str | None = Field(None, description="'active' / 'suspended' / 'dormant'")
+    status: str | None = Field(
+        None, description="'active' / 'suspended' / 'dormant' (조회에는 탈퇴 중인 계정의 'withdrawing'도 나온다 — 관리자가 정하는 값은 앞의 셋)")
 
 
 # ---------------------------------------------------------------------------
@@ -1083,8 +1408,8 @@ class FaqOut(BaseModel):
     question: str
     answer: str | None = None
     is_visible: bool
-    created_at: datetime.datetime
-    answered_at: datetime.datetime | None = None
+    created_at: UtcDatetime
+    answered_at: UtcDatetime | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -1233,3 +1558,23 @@ PROFILE_DEFAULT_BASIC: dict = {
 PROFILE_DEFAULT_CAPABILITY: dict = {
     'careers': [], 'skills': '', 'soloFounder': False, 'team': [], 'hires': [], 'equipment': [], 'partners': [],
 }
+
+
+class FileDeletionOut(BaseModel):
+    """GET /admin/file-deletions · POST /admin/file-deletions/{id}/retry — 산출물 파일 삭제 대기열 한 줄 (SB-318).
+
+    메타데이터만 있다 — 키 · 파일 이름 · 오류 메시지 · 계정 · 프로젝트 ID는 오케스트레이터가 싣지 않는다. 사람을 가리키는 값은
+    retried_by(다시 시도를 누른 관리자 ID)뿐이다. status: '대기'(워커가 곧 지움) · '포기'(3번 실패 — 관리자가 다시 시도할 수 있음),
+    last_error_kind: '일시' · '입력' · '운영' 또는 None."""
+    deletion_id: str
+    run_id: str
+    status: str
+    attempts: int
+    last_error_kind: str | None = None
+    created_at: UtcDatetime
+    next_at: UtcDatetime
+    last_tried_at: UtcDatetime | None = None
+    gave_up_at: UtcDatetime | None = None
+    retried_by: str | None = None
+    retried_at: UtcDatetime | None = None
+    retry_count: int = 0

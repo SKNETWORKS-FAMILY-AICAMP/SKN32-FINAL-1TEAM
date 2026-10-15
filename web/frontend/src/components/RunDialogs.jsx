@@ -12,8 +12,8 @@ const STAGE_LABEL = {
   prototype_building: '프로토타입 제작',
   artifact_review: '산출물 검증',
   final_review_pending: '최종 확인 대기',
-  reviewing: '문장 다듬기',
-  done: '완료',
+  reviewing: '최종 결과물',   // 옛 실행 건 — 검수가 흐름에서 빠져(조율 2026-10-15) 결과물 단계와 같은 이름으로 보인다
+  done: '최종 결과물',          // 결과 통합이 도는 동안에도 stage는 'done'이다
 };
 
 export function RunBlockedDialog({ detail, onResume, onRestart, onClose, busy }){

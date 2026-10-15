@@ -128,3 +128,50 @@ def test_ceo_birth_date_exactly_16_is_accepted(authed_client):
     exactly_16 = today.replace(year=today.year - 16).isoformat()
     r = authed_client.post('/projects', data={'payload': json.dumps(_full_payload(ceo_birth_date=exactly_16))})
     assert r.status_code == 201, r.text
+
+
+def test_business_main_industry_outside_the_dropdown_returns_422_not_a_db_error(authed_client):
+    """개인사업자 · 법인의 주업종은 DB ENUM(드롭다운 9종)이다 — 다른 값은 저장하다 DB 오류(500)가 아니라 입력 단계에서 422로 막는다."""
+    for applicant_type in ('individual', 'corp'):
+        r = authed_client.post('/projects', data={'payload': json.dumps(_full_payload(applicant_type=applicant_type, main_industry='IT'))})
+        assert r.status_code == 422, (applicant_type, r.text)
+        assert r.json()['code'] == 'VALIDATION_ERROR' and '정보·통신' in r.text  # 고를 수 있는 값을 알려 준다
+
+
+def test_business_main_industry_empty_is_stored_as_none(authed_client):
+    r = authed_client.post('/projects', data={'payload': json.dumps(_full_payload(main_industry=''))})
+    assert r.status_code == 201, r.text
+    assert r.json()['plan_input']['main_industry'] is None
+
+
+def test_preliminary_main_industry_stays_free_text(authed_client):
+    r = authed_client.post('/projects', data={'payload': json.dumps(_full_payload(
+        applicant_type='preliminary', main_industry='AI 반려동물 헬스케어'))})
+    assert r.status_code == 201, r.text
+    assert r.json()['plan_input']['main_industry_free'] == 'AI 반려동물 헬스케어'
+
+
+def test_post_projects_persists_target_customer(authed_client):
+    r = authed_client.post('/projects', data={'payload': json.dumps(_full_payload(target_customer='동네 소규모 헬스장 운영자'))})
+    assert r.status_code == 201, r.text
+
+    plan_input = authed_client.get(f"/projects/{r.json()['project_id']}").json()['plan_input']
+    assert plan_input['target_customer'] == '동네 소규모 헬스장 운영자'
+
+
+def test_target_customer_is_optional_and_blank_is_stored_as_null(authed_client):
+    for payload in (_full_payload(), _full_payload(target_customer=''), _full_payload(target_customer='   '), _full_payload(target_customer=None)):
+        r = authed_client.post('/projects', data={'payload': json.dumps(payload)})
+        assert r.status_code == 201, r.text
+        assert authed_client.get(f"/projects/{r.json()['project_id']}").json()['plan_input']['target_customer'] is None
+
+
+def test_target_customer_is_trimmed_and_limited_to_200_chars(authed_client):
+    r = authed_client.post('/projects', data={'payload': json.dumps(_full_payload(target_customer='  소규모 헬스장 운영자  '))})
+    assert authed_client.get(f"/projects/{r.json()['project_id']}").json()['plan_input']['target_customer'] == '소규모 헬스장 운영자'
+
+    r = authed_client.post('/projects', data={'payload': json.dumps(_full_payload(target_customer='가' * 200))})
+    assert r.status_code == 201, r.text
+    r = authed_client.post('/projects', data={'payload': json.dumps(_full_payload(target_customer='가' * 201))})
+    assert r.status_code == 422
+    assert 'target_customer' in r.text

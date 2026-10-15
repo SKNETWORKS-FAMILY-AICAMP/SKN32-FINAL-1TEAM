@@ -1,6 +1,7 @@
 import React,{useState,useEffect,useRef} from 'react';
 import {Brand,Icon} from '../components/Icons.jsx';
 import {api,ApiError} from '../api.js';
+import {formatKstDate,formatKstDateTime,formatKstShort} from '../time.js';
 
 // 관리자 판별은 이제 App.jsx에서 /auth/me가 내려주는 실제 role로 한다(props.user.role).
 // 이 파일 안에서는 이미 관리자로 확인된 사용자만 보고 있다고 가정한다.
@@ -21,9 +22,11 @@ import {api,ApiError} from '../api.js';
 //   실행시킬 방법이 없어 만들지 않았다. "수집 실패 이력"도 "최근 수집 실행 이력"으로
 //   바꿨다 — 실제 배치 기록엔 "실패"가 아니라 데이터 품질 이슈만 있어서다(ImportRunOut
 //   주석 참고).
-// - "운영 현황"의 채점 편차(1회→2회)·"보호 토큰 위반율"은 이제 실제 값이다 —
-//   retry_task가 verification_score_history/proofread_logs에 이력을 남기도록
-//   고쳤다(app/routers/projects.py retry_task, OpsSummaryOut 주석 참고).
+// - "운영 현황"의 채점 편차(1회→2회)는 이제 실제 값이다 — retry_task가
+//   verification_score_history에 이력을 남기도록 고쳤다(OpsSummaryOut 주석 참고).
+// - 검수(표현 검수 · 윤문)는 조율 2026-10-15에 서비스 흐름에서 빠졌다 — 운영 현황 · 운영 지표 요약의
+//   "보호 토큰 위반율", 에이전트 테스크의 '검수' 줄, 판정 기준의 "검수 문단 재시도 상한"을 뺐다.
+//   재시도 상한(token_retry_cap)은 서버가 선택 입력으로 바꿔(SB-401) 저장 요청에도 싣지 않는다.
 // - "검수 회수 문단"은 proofread_logs.passed=False(보호 토큰 위반 반려 시도)를 그대로
 //   라벨링 대기열로 쓴다 — model_version은 그 plan의 최종 verdicts.model_version을
 //   붙인 근사치다(RecoveryItemOut 주석 참고).
@@ -33,6 +36,7 @@ const TABS=[['ann','공고 관리'],['ops','운영 현황'],['progress','진행 
 // (key, 표시 라벨, 배점) — verification_score_history.layer 값과 1:1 대응. ProgressTab의
 // "이력보기" 모달과 OpsTab의 "채점 편차" 카드가 공유한다.
 const DEVIATION_CATEGORIES=[['doc','문서층 검증',70],['code','코드 기준 검증',15],['plan','계획서 대조',15]];
+// 점수 이력 창의 만점은 서버가 주는 그 실행 건 만점(doc_max · code_max · plan_max, 백엔드 응답모양변경 10-11)을 먼저 쓰고, 없으면 위 기본값.
 
 // key는 실제 DB agent_executions.agent_name 값(app/models.py FIXED_TASK_SEQUENCE) — GET
 // /admin/agent-tasks 응답과 매칭하는 데 쓴다. name은 화면 표시용(괄호 설명 포함), work는
@@ -49,13 +53,14 @@ const AGENT_ROWS=[
   {key:'구현',name:'구현',work:'프로토타입 제작 — HTML 실행 파일, 인포그래픽'},
   {key:'검증-1',name:'검증-1 (문서)',work:'문서층 검증. 공개된 평가항목 기준으로 계획서 서술 충족 여부 판정'},
   {key:'검증-2',name:'검증-2 (산출물)',work:'산출물층 검증. 코드 기준 자동 검증과 계획서 대조'},
-  {key:'검수',name:'검수 (표현)',work:'사업계획서 문장 형식 적합성 검수 및 한국어 윤문. 자체 파인튜닝 모델을 사용'},
 ];
 
 // GET /admin/agent-executions 응답(dict 목록, AgentExecutionOut 고정 스키마가 아니라 유연한 형태)을
 // 이 화면 행 모양으로 바꾼다. project(프로젝트명)는 API가 안 내려줘서 project_id로 대신 표시한다.
 const executionRowFromServer=r=>({
-  id:'EXEC-'+r.execution_id,projectId:r.project_id,agent:r.agent_name,tokens:Number(r.token_usage).toLocaleString(),
+  id:'EXEC-'+r.execution_id,projectId:r.project_id,agent:r.agent_name,
+  // [SB-302] 이미지 호출 토큰은 글 토큰(token_usage)과 따로 온다 — 있으면 옆에 붙인다
+  tokens:Number(r.token_usage).toLocaleString()+(Number(r.image_token_usage)>0?' (+이미지 '+Number(r.image_token_usage).toLocaleString()+')':''),
   rerun:r.rerun_type,rerunTone:r.rerun_type==='rerun'?'primary':'muted',
   status:r.status,statusTone:['completed','success','성공'].includes(r.status)?'ok':'danger',
   tone:!['completed','success','성공'].includes(r.status)?'danger':undefined,
@@ -97,7 +102,7 @@ const userRowFromServer=u=>({id:u.user_id,name:u.name,email:u.email,
 // FaqOut엔 작성자 정보가 없어서(faqs 테이블에 user_id는 있지만 관리자 응답에 조인해 내려주지
 // 않음) 목업의 "작성자" 컬럼은 뺐다.
 const faqRowFromServer=(f,idx,total)=>({id:f.faq_id,no:total-idx,question:f.question,
-  date:f.created_at?.slice(0,10),answer:f.answer||'',visible:f.is_visible,answered:f.answer!=null});
+  date:formatKstDate(f.created_at),answer:f.answer||'',visible:f.is_visible,answered:f.answer!=null});
 
 // GET /admin/recovery-items(RecoveryItemOut 목록) -> 이 화면 행 모양. 동의(consent)가
 // False면 백엔드 recovery_status(pending 기본값)와 무관하게 화면 status는 무조건
@@ -105,7 +110,7 @@ const faqRowFromServer=(f,idx,total)=>({id:f.faq_id,no:total-idx,question:f.ques
 // 학습데이터 활용 동의 여부에 따라 자동으로 정해지는 상태이기 때문이다.
 const recoveryItemFromServer=r=>({
   id:r.log_id, project:r.project_description||'(삭제된 프로젝트)', model:r.model_version||'—',
-  violation:r.violation_type||'—', occurredAt:r.occurred_at.slice(0,16).replace('T',' '),
+  violation:r.violation_type||'—', occurredAt:formatKstDateTime(r.occurred_at),
   consent:r.consent, original:r.original, attempt:r.attempt,
   status:r.consent?r.recovery_status:'excluded', label:r.label||'',
 });
@@ -190,16 +195,30 @@ const GEN_STAGE_LABEL={plan_writing:'사업계획서',prototype_building:'프로
 // 생성 완전 실패는 서버가 확정 실패 때마다 쌓는 generation_failure_alerts(GET /admin/generation-alerts)를
 // 쓴다 — "확인" 처리가 서버에 남아서 다른 PC·다른 관리자에게도 같이 사라진다. 알림 행이 없는
 // 예전 실패만 진행 현황(match_status)으로 보충한다.
-function adminAlertsFrom(items,executions,genAlerts=[]){
+// 파일 삭제 대기열 응답 → 줄 목록. 실제 API(SB-318, 10-13 병합)는 목록만 준다(전체 개수 total 없음). 제안했던 {items,total}도 읽는다.
+const fileDeletionRows=res=>Array.isArray(res)?res:res?.items||[];
+// 알림 종이 '포기' 줄을 세려고 한 번에 받는 최대 수(API 상한 200). 다 차면 "200건 이상"으로 적는다.
+const FILE_DELETION_ALERT_LIMIT=200;
+
+function adminAlertsFrom(items,executions,genAlerts=[],fileDeletions=null){
   const alerts=[];
+  // 파일 삭제 포기(조율 8.9) — 워커가 3번 실패한 실행 건 파일. 사용자가 탈퇴한 뒤에도 남을 수 있어 관리자가 다시 걸어야 한다.
+  // 건수나 가장 최근 줄이 바뀌면 키가 달라져 다시 안 읽음 표시가 된다.
+  const gaveUp=fileDeletionRows(fileDeletions);
+  if(gaveUp.length>0){
+    const latest=gaveUp[0];
+    const count=fileDeletions?.total??gaveUp.length;
+    const countText=fileDeletions?.total==null&&gaveUp.length>=FILE_DELETION_ALERT_LIMIT?`${count}건 이상`:`${count}건`;
+    alerts.push({key:`file-deletions:${count}:${latest?.deletion_id??''}`,kind:'실패',title:`파일 삭제 포기 ${countText}`,detail:'워커가 3번 실패해 지우지 못한 산출물 파일이 있어요. 운영 현황의 파일 삭제 대기열에서 다시 시도해 주세요.',project:'파일 삭제 대기열',tab:'ops',time:latest?.gave_up_at||latest?.created_at});
+  }
   const byProject=new Map(items.filter(i=>i.project_id!=null).map(i=>[i.project_id,i]));
   const alertedProjects=new Set(genAlerts.map(a=>a.project_id));
   for(const g of genAlerts){
     if(g.acknowledged_at)continue;
     const item=byProject.get(g.project_id);
     if(item?.archived)continue;
-    // regenerate_exhausted: 사용자가 "다시 생성"을 상한까지 눌러도 실패해 더 할 수 있는 게 없는 건 — 맨 위로(3차 B-4).
-    alerts.push({key:`gen:${g.alert_id}`,alertId:g.alert_id,urgent:!!g.regenerate_exhausted,kind:g.regenerate_exhausted?'조치 필요':'실패',title:`${GEN_STAGE_LABEL[g.stage]||'프로젝트'} 생성 실패${g.regenerate_exhausted?' · 재생성 상한 도달':''}`,detail:`[${g.last_error_kind}] ${g.failure_reason||'실패 원인이 기록되지 않았어요.'}`,project:item?.description||`프로젝트 #${g.project_id}`,projectId:g.project_id,tab:'progress',time:g.created_at});
+    // "처음부터 다시 생성"(regenerate_exhausted · 재생성 상한)은 없는 기능이 돼 서버가 더 주지 않는다(SB-245).
+    alerts.push({key:`gen:${g.alert_id}`,alertId:g.alert_id,kind:'실패',title:`${GEN_STAGE_LABEL[g.stage]||'프로젝트'} 생성 실패`,detail:`[${g.last_error_kind}] ${g.failure_reason||'실패 원인이 기록되지 않았어요.'}`,project:item?.description||`프로젝트 #${g.project_id}`,projectId:g.project_id,tab:'progress',time:g.created_at});
   }
   for(const item of items){
     if(item.archived)continue;
@@ -234,8 +253,10 @@ function AdminNotificationBell({onNavigate}){
   const [error,setError]=useState('');
   useEffect(()=>{
     let cancelled=false,timer;
-    const load=()=>Promise.all([api.get('/admin/items'),api.get('/admin/agent-executions?limit=500'),api.get('/admin/generation-alerts?include_acknowledged=true')])
-      .then(([items,executions,genAlerts])=>{if(!cancelled){setAlerts(adminAlertsFrom(items,executions,genAlerts));setError('')}})
+    // 파일 삭제 대기열은 따로 실패를 삼킨다 — 그 API가 없거나 실패해도 다른 알림은 떠야 한다.
+    const load=()=>Promise.all([api.get('/admin/items'),api.get('/admin/agent-executions?limit=500'),api.get('/admin/generation-alerts?include_acknowledged=true'),
+      api.get(`/admin/file-deletions?status=${encodeURIComponent('포기')}&limit=${FILE_DELETION_ALERT_LIMIT}`).catch(()=>null)])
+      .then(([items,executions,genAlerts,fileDeletions])=>{if(!cancelled){setAlerts(adminAlertsFrom(items,executions,genAlerts,fileDeletions));setError('')}})
       .catch(()=>{if(!cancelled)setError('알림을 불러오지 못했어요.')})
       .finally(()=>{if(!cancelled)timer=setTimeout(load,15000)});
     load();
@@ -314,7 +335,7 @@ export default function AdminDashboard({user,onExit}){
 
       <main className="w-[min(1180px,calc(100%-48px))] mx-auto py-12">
         {tab==='ann'&&<AnnouncementTab/>}
-        {tab==='ops'&&<OpsTab/>}
+        {tab==='ops'&&<OpsTab key={selectedAlert?.tab==='ops'?selectedAlert.key:'ops'} pushToast={pushToast} focusFileDeletions={selectedAlert?.tab==='ops'}/>}
         {tab==='progress'&&<ProgressTab key={selectedAlert?.tab==='progress'?selectedAlert.key:'progress'} focusProjectId={selectedAlert?.tab==='progress'?selectedAlert.projectId:null}/>}
         {tab==='agents'&&<AgentsTab key={selectedAlert?.tab==='agents'?selectedAlert.key:'agents'} focusProjectId={selectedAlert?.tab==='agents'?selectedAlert.projectId:null}/>}
         {tab==='policy'&&<PolicyTab pushToast={pushToast}/>}
@@ -410,8 +431,8 @@ function AnnouncementTab(){
             const inputTotal=Object.values(r.input_counts||{}).reduce((a,b)=>a+b,0);
             return (
             <div key={r.run_id} className="grid grid-cols-[1.2fr_1.2fr_1fr_1fr_1.6fr] text-[13px] border-t border-[var(--border)] items-center">
-              <div className="p-4 text-[var(--muted-fg)]">{r.generated_at?r.generated_at.slice(0,16).replace('T',' '):'-'}</div>
-              <div className="p-4 text-[var(--muted-fg)]">{r.imported_at.slice(0,16).replace('T',' ')}</div>
+              <div className="p-4 text-[var(--muted-fg)]">{formatKstDateTime(r.generated_at)||'-'}</div>
+              <div className="p-4 text-[var(--muted-fg)]">{formatKstDateTime(r.imported_at)}</div>
               <div className="p-4 text-center font-medium">{inputTotal}건</div>
               <div className="p-4 text-center font-medium">{r.accepted_count}건</div>
               <div className={'p-4 '+(issues.length?'text-[var(--warn)]':'text-[var(--muted-fg)]')}>{issues.length?issues.join(', '):'없음'}</div>
@@ -465,7 +486,11 @@ const formatStatusCounts=counts=>{
 };
 const DEVIATION_LAYER_LABEL={doc:'문서층 검증',code:'코드 기준 검증',plan:'계획서 대조'};
 
-function OpsTab(){
+function OpsTab({pushToast,focusFileDeletions=false}){
+  return <div><OpsSummary/><FileDeletionsPanel pushToast={pushToast} focus={focusFileDeletions}/></div>;
+}
+
+function OpsSummary(){
   const [summary,setSummary]=useState(null);
   const [error,setError]=useState('');
   useEffect(()=>{
@@ -482,16 +507,13 @@ function OpsTab(){
   return (
     <div>
       <h1 className="text-[28px] font-bold mb-2">운영 현황</h1>
-      <p className="text-[13px] text-[var(--muted-fg)] mb-8">business_plans·artifacts·verdicts·agent_executions·proofread_logs 실제 집계입니다. 실행 건 하나하나의 현재 진행 상태는 "진행 현황" 탭에서 확인하세요.</p>
+      <p className="text-[13px] text-[var(--muted-fg)] mb-8">business_plans·artifacts·verdicts·agent_executions 실제 집계입니다. 실행 건 하나하나의 현재 진행 상태는 "진행 현황" 탭에서 확인하세요.</p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
         <Card label="전체 프로젝트" value={totalProjects+'건'} sub={formatStatusCounts(summary.status_counts)}/>
         <Card label="문서평가 평균점수" value={summary.doc_avg!=null?summary.doc_avg+'점':'-'} sub={'만점 70점 · '+summary.doc_count+'건 기준'}/>
         <Card label="종합평가 평균점수" value={summary.total_avg!=null?summary.total_avg+'점':'-'} sub={'만점 100점 · 평가가 모두 끝난 '+summary.total_count+'건 기준'}/>
         <Card label="통과율" value={summary.pass_rate!=null?summary.pass_rate+'%':'-'} sub={'통과 '+summary.pass_count+' / '+summary.total_count+'건 (기준 '+summary.pass_threshold+'점)'}/>
         <Card label="재수행 발생률" value={summary.rerun_rate!=null?summary.rerun_rate+'%':'-'} sub={'재수행 발생 '+summary.rerun_matches+' / '+summary.matches_with_execution+'건'}/>
-        <Card label="보호 토큰 위반율" value={summary.token_violation_rate!=null?summary.token_violation_rate+'%':'-'}
-          tone={summary.token_violation_rate>0?'warn':undefined}
-          sub={'위반 '+summary.token_violation_count+' / 검수 시도 '+summary.token_check_count+'건 (전체 프로젝트 평균)'}/>
       </div>
 
       <Panel className="p-5 mb-8">
@@ -521,8 +543,107 @@ function OpsTab(){
   );
 }
 
+// 파일 삭제 대기열(조율 admin_file_deletions · admin_retry_file_deletion, 함수명세 8.9) — 완전 삭제 · 탈퇴 · 12개월
+// 정리 때 DB를 먼저 지우고 워커가 10분 뒤부터 파일을 지운다. 3번 실패하면 '포기'가 되고 관리자가 다시 건다.
+// 웹 API(SB-318): GET 목록 → 줄 목록(전체 개수 없음 — 한 쪽이 꽉 차면 다음 쪽이 있다고 본다), POST 다시 시도 → 바뀐 줄.
+// 줄에는 계정 · 프로젝트 · 파일 이름이 없다 — 실행 건 ID와 다시 시도를 누른 관리자 ID뿐이다.
+const FILE_DELETION_PAGE=50;
+const FILE_DELETION_FILTERS=[['포기','포기'],['대기','대기'],['','전체']];
+const FILE_DELETION_RETRY_ERROR={
+  INVALID_STATE:'이미 다시 지우는 중인 줄이에요. 목록을 새로 읽었어요.',
+  FILE_DELETION_NOT_FOUND:'이미 지워져 없는 줄이에요. 목록을 새로 읽었어요.',
+};
+const FILE_DELETION_COLS='grid grid-cols-[1.5fr_.6fr_.6fr_.7fr_1fr_1fr_1.5fr_104px]';
+
+export function FileDeletionsPanel({pushToast,focus=false}){
+  const [status,setStatus]=useState('포기');
+  const [page,setPage]=useState(0);
+  const [data,setData]=useState(null);
+  const [error,setError]=useState('');
+  const [retrying,setRetrying]=useState(null);
+  const panelRef=useRef(null);
+  const load=()=>{
+    const query=new URLSearchParams({limit:String(FILE_DELETION_PAGE),offset:String(page*FILE_DELETION_PAGE)});
+    if(status)query.set('status',status);
+    setError('');
+    return api.get(`/admin/file-deletions?${query}`).then(setData)
+      .catch(e=>setError(e instanceof ApiError&&e.status===404?'서버에 아직 파일 삭제 대기열 API가 없어요.':'파일 삭제 대기열을 불러오지 못했어요.'));
+  };
+  useEffect(()=>{setData(null);load()},[status,page]);
+  // 알림 종에서 넘어오면 이 표로 내려간다.
+  useEffect(()=>{if(focus)panelRef.current?.scrollIntoView({behavior:'smooth',block:'start'})},[focus]);
+  const changeStatus=next=>{setStatus(next);setPage(0)};
+  const retry=row=>{
+    setRetrying(row.deletion_id);
+    api.post(`/admin/file-deletions/${row.deletion_id}/retry`)
+      .then(updated=>{
+        // 다시 시도한 줄은 바로 '대기'로 바뀐다 — 지우는 데 성공하면 다음에 읽을 때 목록에서 빠진다.
+        setData(d=>d&&fileDeletionRows(d).map(r=>r.deletion_id===row.deletion_id?{...r,...updated}:r));
+        pushToast('다시 시도를 걸었어요','최대 10분 안에 워커가 파일을 다시 지워요. 성공하면 이 줄이 목록에서 빠져요.');
+      })
+      .catch(e=>{
+        const known=FILE_DELETION_RETRY_ERROR[e?.code];
+        pushToast('다시 시도하지 못했어요',known||'잠시 뒤 다시 시도해 주세요.','danger');
+        if(known)load();
+      })
+      .finally(()=>setRetrying(null));
+  };
+  const items=fileDeletionRows(data);
+  // 전체 개수를 주면(옛 제안 모양) 마지막 쪽을 알고, 아니면 이번 쪽이 꽉 찼을 때만 다음 쪽이 있다고 본다.
+  const hasNext=data?.total!=null?(page+1)*FILE_DELETION_PAGE<data.total:items.length>=FILE_DELETION_PAGE;
+  return (
+    <section ref={panelRef} className="mt-12 scroll-mt-24">
+      <div className="flex items-end justify-between gap-3 flex-wrap mb-1">
+        <h2 className="text-[20px] font-bold">파일 삭제 대기열</h2>
+        <div className="flex rounded-lg border border-[var(--border)] overflow-hidden text-[12.5px]" role="group" aria-label="상태로 거르기">
+          {FILE_DELETION_FILTERS.map(([value,label])=>(
+            <button key={label} type="button" aria-pressed={status===value} onClick={()=>changeStatus(value)}
+              className={'px-3 py-1.5 font-semibold '+(status===value?'bg-[var(--fg)] text-white':'bg-white text-[var(--muted-fg)] hover:bg-[var(--muted)]')}>{label}</button>
+          ))}
+        </div>
+      </div>
+      <p className="text-[12px] text-[var(--muted-fg)] mb-4">완전 삭제 · 탈퇴 · 12개월 정리로 지운 실행 건의 산출물 파일이에요. 워커가 10분 뒤부터 지우고, 3번 실패하면 '포기'가 돼요. 포기한 파일은 사용자가 탈퇴한 뒤에도 서버에 남으니 다시 시도해 주세요.</p>
+      <Panel>
+        <div className="overflow-x-auto"><div className="min-w-[880px]">
+          <div className={FILE_DELETION_COLS+' text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]'}>
+            <div className="p-4">실행 건 ID</div><div className="p-4 text-center">상태</div><div className="p-4 text-center">실패 횟수</div><div className="p-4 text-center">마지막 오류</div>
+            <div className="p-4">넣은 시각</div><div className="p-4">포기 · 다음 시도</div><div className="p-4">다시 시도 기록</div><div className="p-4"/>
+          </div>
+          {error?<p className="p-6 text-[13px] text-[var(--danger)] border-t border-[var(--border)]">{error}</p>
+          :data===null?<p className="p-6 text-[13px] text-[var(--muted-fg)] border-t border-[var(--border)]">불러오는 중…</p>
+          :items.length===0?<p className="p-6 text-center text-[13px] text-[var(--muted-fg)] border-t border-[var(--border)]">{status==='포기'?'포기한 파일 삭제가 없어요.':status==='대기'?'지울 차례를 기다리는 파일이 없어요.':'대기열이 비어 있어요.'}</p>
+          :items.map(r=>(
+            <div key={r.deletion_id} className={FILE_DELETION_COLS+' text-[13px] border-t border-[var(--border)] items-center'}>
+              <div className="p-4 font-mono text-[12px] break-all">{r.run_id}</div>
+              <div className={'p-4 text-center font-semibold '+(r.status==='포기'?'text-[var(--danger)]':'text-[var(--muted-fg)]')}>{r.status}</div>
+              <div className="p-4 text-center">{r.attempts}회</div>
+              <div className="p-4 text-center text-[var(--muted-fg)]">{r.last_error_kind?`${r.last_error_kind} 오류`:'-'}</div>
+              <div className="p-4 text-[var(--muted-fg)]">{formatKstDateTime(r.created_at)||'-'}</div>
+              {/* 포기한 줄은 포기 시각, 대기 줄은 워커가 다시 지울 시각(next_at) */}
+              <div className="p-4 text-[var(--muted-fg)]">{r.status==='포기'?formatKstDateTime(r.gave_up_at)||'-':r.next_at?`다음 ${formatKstShort(r.next_at)}`:'-'}</div>
+              <div className="p-4 text-[12px] text-[var(--muted-fg)]">{r.retried_at?`${r.retry_count>0?`${r.retry_count}회 · `:''}관리자 #${r.retried_by} · ${formatKstShort(r.retried_at)}`:'-'}</div>
+              <div className="p-4 text-right">
+                {r.status==='포기'&&<button type="button" disabled={retrying===r.deletion_id} onClick={()=>retry(r)}
+                  className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-[12px] font-semibold hover:bg-[var(--muted)] disabled:opacity-50">{retrying===r.deletion_id?'거는 중':'다시 시도'}</button>}
+              </div>
+            </div>
+          ))}
+        </div></div>
+      </Panel>
+      {data&&(page>0||hasNext)&&(
+        <div className="flex items-center justify-end gap-3 mt-3 text-[12.5px] text-[var(--muted-fg)]">
+          <button type="button" disabled={page===0} onClick={()=>setPage(p=>p-1)} className="rounded-lg border border-[var(--border)] px-3 py-1.5 font-semibold disabled:opacity-40">이전</button>
+          <span>{page+1}쪽</span>
+          <button type="button" disabled={!hasNext} onClick={()=>setPage(p=>p+1)} className="rounded-lg border border-[var(--border)] px-3 py-1.5 font-semibold disabled:opacity-40">다음</button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 // GET /admin/items 응답의 last_updated(ISO)를 "MM-DD HH:mm" 짧은 표기로 바꾼다.
-const shortUpdated=iso=>iso?iso.slice(5,16).replace('T',' '):'-';
+// 서버 시각(UTC)을 한국 시간으로 — 잘라 쓰면 9시간 이른 시각이 보인다(time.js).
+const shortUpdated=iso=>formatKstShort(iso)||'-';
 // 상세 모달의 실행 로그 갱신 주기. 생성은 초 단위로 움직이지 않아 3초면 충분하고,
 // 모달이 열려 있는 동안 + 아직 진행 중일 때만 돈다.
 const EXEC_POLL_MS=3000;
@@ -652,14 +773,14 @@ function ProgressTab({focusProjectId=null}){
         <div className="grid sm:grid-cols-3 gap-4">
           {DEVIATION_CATEGORIES.map(([key,label,max])=>(
             <div key={key}>
-              <p className="text-[12px] font-semibold text-[var(--muted-fg)] mb-2">{label} <span className="font-normal">({max}점 만점)</span></p>
+              <p className="text-[12px] font-semibold text-[var(--muted-fg)] mb-2">{label} <span className="font-normal">({scoreHistory[`${key}_max`]??max}점 만점)</span></p>
               <div className="soft-scroll rounded-xl border border-[var(--border)] divide-y divide-[var(--border)] max-h-64 overflow-y-auto">
                 {(scoreHistory[key]||[]).length===0
                   ?<div className="p-3 text-[12px] text-[var(--muted-fg)]">누적된 이력이 없습니다.</div>
                   :scoreHistory[key].map((e,i,arr)=>(
                     <div key={e.scored_at+i} className="p-2.5">
                       <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-[11.5px] text-[var(--muted-fg)]">{e.scored_at.slice(0,10)}</span>
+                        <span className="text-[11.5px] text-[var(--muted-fg)]">{formatKstDate(e.scored_at)}</span>
                         <span className="font-semibold text-[13px]">
                           {e.is_rerun&&i+1<arr.length&&<span className="text-[var(--muted-fg)] font-normal">{arr[i+1].score}점 → </span>}{e.score}점
                         </span>
@@ -723,8 +844,10 @@ function ProgressTab({focusProjectId=null}){
                         </div>
                         <p className="text-[11.5px] text-[var(--muted-fg)] mt-0.5">
                           {shortUpdated(r.started_at)}
-                          {r.model_used&&<span> · {r.model_used}</span>}
+                          {/* LLM을 부르지 않는 단계(T-C2 · G-01 · T-C4)는 모델이 null로 온다(조율 2026-10-08) */}
+                          <span> · {r.model_used||'모델 없음'}</span>
                           {r.token_usage!=null&&<span> · {Number(r.token_usage).toLocaleString()} tok</span>}
+                          {Number(r.image_token_usage)>0&&<span> · 이미지 {Number(r.image_token_usage).toLocaleString()} tok</span>}
                         </p>
                         {failed&&<p className="text-[11.5px] text-[var(--danger)] mt-1 break-words">
                           {r.error_kind&&<span className="font-semibold">［{r.error_kind}］ </span>}
@@ -811,33 +934,20 @@ function AgentsTab({focusProjectId=null}){
           기본적으로 접어두고 필요할 때만 펼쳐보게 한다. */}
       <details className="admin-accordion mb-8 rounded-2xl border border-[var(--border)] bg-white overflow-hidden">
         <summary className="flex items-center justify-between gap-3 px-5 py-4 text-[13px] font-semibold text-[var(--muted-fg)] cursor-pointer select-none">
-          <span>운영 지표 요약 (실행 세션·토큰 사용량·보호 토큰 위반율)</span>
+          <span>운영 지표 요약 (실행 세션·토큰 사용량)</span>
           <Icon name="chevron" size={16}/>
         </summary>
         <div className="px-5 pb-5 pt-1 border-t border-[var(--border)]">
           {opsSummaryError?<p className="text-[13px] text-[var(--danger)] mb-6 mt-4">{opsSummaryError}</p>
           :opsSummary===null?<p className="text-[13px] text-[var(--muted-fg)] mb-6 mt-4">불러오는 중…</p>
           :<>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6 mt-4">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6 mt-4">
             <Card label="총 실행 세션" value={opsSummary.total_executions+'건'} sub="전체 누적 기준"/>
             <Card label="재시도 실행" value={opsSummary.rerun_executions+'건'} sub={'최초 실행 '+opsSummary.initial_executions+'건'}/>
             <Card label="최초 실행 평균 토큰" value={opsSummary.initial_avg_tokens!=null?Math.round(opsSummary.initial_avg_tokens).toLocaleString():'-'} sub="token_usage 평균"/>
             <Card label="재시도 평균 토큰" value={opsSummary.rerun_avg_tokens!=null?Math.round(opsSummary.rerun_avg_tokens).toLocaleString():'-'} sub="token_usage 평균"/>
+            <Card label="이미지 토큰 합" value={Number(opsSummary.total_image_tokens||0).toLocaleString()} sub="이미지 입력 + 출력"/>
           </div>
-          {/* "선별/전체 재실행" 구분은 여전히 예시가 아니라 "만들지 않음"이다(그 값을
-              남기는 컬럼이 없음, AgentOpsSummaryOut 주석 참고) — 보호 토큰 위반율은
-              2026-09-18부터 proofread_logs.passed 기준 실제 값이다. 모델 버전별
-              비교(v1/v2/v3)는 그 시도를 만든 모델 버전을 남기는 컬럼이 없어서 못 하고,
-              "운영 현황" 탭과 같은 전체 프로젝트 평균 하나만 보여준다. */}
-          <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1">보호 토큰 위반율</p>
-          <p className="text-[11px] text-[var(--muted-fg)] mb-4">검수 시도 중 수치·날짜·고유명사·기능명 등 보호 토큰이 훼손된 채 반려된 비율입니다(전체 프로젝트 평균). 반려된 시도는 "검수 회수 문단" 탭에서 라벨링합니다.</p>
-          <Bar label="전체 평균" pct={opsSummary.token_violation_rate||0}
-            tone={opsSummary.token_violation_rate>0?'warn':'ok'}
-            right={opsSummary.token_violation_rate!=null?opsSummary.token_violation_rate+'%':'-'}
-            sub={opsSummary.token_violation_count+' / '+opsSummary.token_check_count+'건'}/>
-          <p className="mt-3 pt-3 border-t border-[var(--border)] text-[11px] text-[var(--muted-fg)]">
-            <span className="text-[var(--warn)]">⚠</span> 위반 문단은 지시를 보강해 재시도하며, 상한을 넘어서도 남으면 해당 문단만 원문을 유지하고 "검수 회수 문단" 탭에 기록합니다.
-          </p>
           </>}
         </div>
       </details>
@@ -900,10 +1010,8 @@ function AgentsTab({focusProjectId=null}){
 // snake_case로 주고받아서, 화면 안에서는 기존 mock 시절 키(doc/code/plan, threshold/rerun/...)
 // 그대로 쓰고 여기서만 변환한다.
 const policyFromServer=p=>({scores:{doc:p.doc_weight,code:p.code_weight,plan:p.plan_weight},
-  // [2026-09-29] rework_cap(SB-152)이 빠져 있어 저장이 항상 422였다(백엔드 제보). regenerate_cap은
-  // 서버가 GET /admin/policy에 내려줄 때만 칸을 띄우고 보낸다 — 아직 안 내려주는 서버에 빈 값을 보내지 않게.
-  limits:{threshold:p.pass_threshold,rerun:p.rerun_cap,rework:p.rework_cap,tokenRetry:p.token_retry_cap,recheck:p.deviation_cap,
-    ...(p.regenerate_cap!=null?{regenerate:p.regenerate_cap}:{})}});
+  // [2026-09-29] rework_cap(SB-152)이 빠져 있어 저장이 항상 422였다(백엔드 제보).
+  limits:{threshold:p.pass_threshold,rerun:p.rerun_cap,rework:p.rework_cap,recheck:p.deviation_cap}});
 const checklistFromServer=list=>list.map(i=>({id:i.check_item_id,name:i.name,how:i.method,kind:i.category,weight:i.weight,base:i.weight,on:i.enabled}));
 // [2026-09-23, 백엔드 전달사항 10번] 기획서 v1.8 5-4 — 체크리스트는 전체 합이 아니라
 // 산출물 카테고리마다 따로 15점 만점이다(app/routers/admin.py _CHECKLIST_CATEGORY_MAX_SCORE).
@@ -958,6 +1066,8 @@ function PolicyTab({pushToast}){
 
   const saveScores=async()=>{
     if(!Object.values(scores).every(v=>validNumber(v,100))){pushToast('배점을 저장하지 못했습니다','각 배점에 0~100 사이의 숫자를 입력해 주세요.','danger');return}
+    // 배점이 0인 층은 환산 점수가 늘 0이 된다(조율 10-11 6번) — 서버도 세 칸 모두 0보다 커야 받는다.
+    if(!Object.values(scores).every(v=>Number(v)>0)){pushToast('배점을 저장하지 못했습니다','문서층 · 코드 기준 · 계획서 대조 배점은 모두 0보다 커야 합니다.','danger');return}
     if(Math.round(scoreSum*100)!==10000){pushToast('배점을 저장하지 못했습니다','문서층·코드 기준·계획서 대조 배점의 합이 100점이어야 합니다. (현재 '+scoreSum+'점)','danger');return}
     try{
       await api.put('/admin/policy/scores',{doc_weight:Number(scores.doc),code_weight:Number(scores.code),plan_weight:Number(scores.plan)});
@@ -965,13 +1075,12 @@ function PolicyTab({pushToast}){
     }catch(e){pushToast('배점을 저장하지 못했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
   };
   const saveLimits=async()=>{
-    const hasRegenerate=limits.regenerate!==undefined;
-    if(!validNumber(limits.threshold,100)||!validNumber(limits.recheck,100)||!validNumber(limits.rerun,Infinity,true)||!validNumber(limits.rework,Infinity,true)||!validNumber(limits.tokenRetry,Infinity,true)||(hasRegenerate&&!validNumber(limits.regenerate,Infinity,true))){
+    if(!validNumber(limits.threshold,100)||!validNumber(limits.recheck,100)||!validNumber(limits.rerun,Infinity,true)||!validNumber(limits.rework,Infinity,true)){
       pushToast('판정 기준을 저장하지 못했습니다','점수는 0~100, 횟수는 0 이상의 정수로 입력해 주세요. 빈칸은 저장할 수 없습니다.','danger');return;
     }
     try{
-      await api.put('/admin/policy/thresholds',{pass_threshold:Number(limits.threshold),rerun_cap:Number(limits.rerun),rework_cap:Number(limits.rework),deviation_cap:Number(limits.recheck),token_retry_cap:Number(limits.tokenRetry),...(hasRegenerate?{regenerate_cap:Number(limits.regenerate)}:{})});
-      pushToast('판정 기준이 저장되었습니다','통과 Threshold '+limits.threshold+'점 · 재수행 상한 '+limits.rerun+'회 · 재작성 상한 '+limits.rework+'회'+(hasRegenerate?' · 재생성 상한 '+limits.regenerate+'회':'')+' · 검수 재시도 상한 '+limits.tokenRetry+'회 · 재채점 편차 상한 '+limits.recheck+'점으로 반영됩니다.','info');
+      await api.put('/admin/policy/thresholds',{pass_threshold:Number(limits.threshold),rerun_cap:Number(limits.rerun),rework_cap:Number(limits.rework),deviation_cap:Number(limits.recheck)});
+      pushToast('판정 기준이 저장되었습니다','통과 Threshold '+limits.threshold+'점 · 재수행 상한 '+limits.rerun+'회 · 재작성 상한 '+limits.rework+'회로 반영됩니다.','info');
     }catch(e){pushToast('판정 기준을 저장하지 못했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
   };
   const saveItems=async()=>{
@@ -1024,15 +1133,14 @@ function PolicyTab({pushToast}){
         {[['threshold','통과 Threshold','100점 만점 중 이 점수 이상이면 통과로 판정합니다.','점'],
           ['rerun','재수행 횟수 상한','미달 항목이 발생한 Task만 선별 재수행할 때의 최대 횟수입니다.','회'],
           ['rework','재작성 상한','사용자가 결과물 항목(묶음)마다 직접 재작성을 요청할 수 있는 횟수입니다.','회'],
-          ...(limits.regenerate!==undefined?[['regenerate','재생성 상한','서버 문제로 생성이 완전히 실패했을 때 "처음부터 다시 생성"이 연속으로 실패할 수 있는 횟수입니다. 넘으면 사용자 화면에서 버튼이 사라집니다.','회']]:[]),
-          ['tokenRetry','검수 문단 재시도 상한','검수(표현) Task 내부에서 보호 토큰 위반 문단을 재시도하는 최대 횟수입니다.','회'],
-          ['recheck','문서층 재채점 편차 상한','동일 입력을 다시 채점했을 때 총점 편차가 이 값을 넘으면 알림을 띄웁니다.','점']].map(([key,label,desc,unit])=>(
+          // 편차 검사는 하지 않기로 했다(팀 상의 10-10, 조율 varianceFlag 늘 거짓) — 값은 저장 요청에 그대로 싣되 고치지 못하게 둔다.
+          ['recheck','문서층 재채점 편차 상한','같은 계획서를 다시 채점해 비교하는 검사는 비용 때문에 하지 않기로 해서, 이 값은 지금 어디에도 쓰이지 않아요.','점',true]].map(([key,label,desc,unit,unused])=>(
           <div key={key} className="grid grid-cols-[1.6fr_2.4fr_1fr] text-[13px] border-t border-[var(--border)] items-center">
-            <div className="p-4 font-medium">{label}</div>
+            <div className={'p-4 font-medium'+(unused?' text-[var(--muted-fg)]':'')}>{label}{unused&&<span className="ml-2 align-middle rounded-full bg-[var(--muted)] px-2 py-0.5 text-[11px] font-semibold text-[var(--muted-fg)]">현재 적용되지 않음</span>}</div>
             <div className="p-4 text-[var(--muted-fg)]">{desc}</div>
             <div className="p-4 flex items-center justify-center gap-1.5">
-              <input type="number" value={limits[key]} onChange={e=>setLimits(l=>({...l,[key]:e.target.value}))}
-                className="w-14 border border-[var(--border)] rounded-lg px-2 py-1 text-center text-[13px] outline-none focus:border-[var(--primary)]"/>
+              <input type="number" value={limits[key]} disabled={unused} onChange={e=>setLimits(l=>({...l,[key]:e.target.value}))}
+                className="w-14 border border-[var(--border)] rounded-lg px-2 py-1 text-center text-[13px] outline-none focus:border-[var(--primary)] disabled:bg-[var(--muted)] disabled:text-[var(--muted-fg)]"/>
               <span className="text-[12.5px] text-[var(--muted-fg)]">{unit}</span>
             </div>
           </div>
@@ -1080,7 +1188,8 @@ function PolicyTab({pushToast}){
             <button onClick={saveItems} className="rounded-xl bg-[var(--primary)] text-white px-4 py-2 text-[13px] font-semibold hover:bg-[var(--primary-dim)]">검증 항목 저장</button>
           </div>
         </Panel>
-        <p className="mt-2 text-[11px] text-[var(--muted-fg)]">체크를 해제하면 해당 항목은 채점에서 제외되고, 가중치는 <b>같은 묶음 안에서만</b> 다시 배분됩니다. 묶음마다 합계가 {CHECKLIST_CATEGORY_MAX}점이어야 저장됩니다.</p>
+        {/* 검증-2(SB-125)는 아래 셋을 8항목과 따로 '통과 필수 조건'으로 본다 — 하나라도 어기면 산출물층 30점이 모두 0점 */}
+        <p className="mt-2 text-[11px] text-[var(--muted-fg)]">진입 파일 · 비밀값(API 키 등) · 스크립트를 멈추는 저장소 API는 항목이 아니라 <b>통과 필수 조건</b>이에요. 하나라도 어기면 산출물층 점수가 모두 0점이 됩니다.</p>
       </div>
 
       <Panel>

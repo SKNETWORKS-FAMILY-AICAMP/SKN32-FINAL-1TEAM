@@ -112,6 +112,22 @@ export const WRITING_SUBTASKS = ['사업계획서 본문 작성', '그래프 생
 // 바 아래엔 지금 하는 일을 한 줄만 표시한다 — Agent별 단계를 다 나열하면 사용자가
 // 볼 필요 없는 내부 구현이 드러난다.
 export const PSST_OFFICIAL_HEADERS = ['1. 문제 인식 (Problem)', '2. 실현 가능성 (Solution)', '3. 성장전략 (Scale-up)', '4. 팀 구성 (Team)'];
+// 계획서 항목의 웹 태그 → 재작성 묶음 · 공식 머리말(순서가 DOC_REWORK_BUNDLES · PSST_OFFICIAL_HEADERS와 같다).
+// 태그가 없는 항목(null)은 일반현황 · 개요다(백엔드 응답모양변경 10-11 1-1).
+export const PLAN_TAGS = ['1-1', '2-1', '3-1', '4-1'];
+export const GENERAL_SECTION_LABEL = '일반현황 · 개요';
+// 새 재작성 묶음(조율 10-12 5번, 담당자 안) — 일반현황 · 개요(그림 제외)와 그림을 따로 다시 만든다. 기획서 5-6은 검증-1이 fail ·
+// warning으로 본 항목을 재작성 후보로 두는데, 지금 4묶음에는 두 곳이 없어 다시 만들 길이 없었다. 웹 태그 0-1 · 0-2는 웹 프론트
+// 제안이다(백엔드 · 조율 확정 전). 서버가 그 묶음의 기회(bundle_usages)를 줄 때만 화면에 보인다(docBundlesFor) — 그 전에는 지금처럼 4개.
+export const DIAGRAM_BUNDLE_LABEL = '그림';
+export const EXTRA_DOC_BUNDLES = [{ tag: '0-1', label: GENERAL_SECTION_LABEL }, { tag: '0-2', label: DIAGRAM_BUNDLE_LABEL }];
+export const ALL_DOC_BUNDLES = [...EXTRA_DOC_BUNDLES.map((b) => b.label), ...DOC_REWORK_BUNDLES];
+export const docBundlesFor = (budget) => [
+  ...EXTRA_DOC_BUNDLES.filter((b) => budget?.remaining?.[b.label] != null).map((b) => b.label),
+  ...DOC_REWORK_BUNDLES,
+];
+export const bundleOfTag = (tag) => (tag === '0-2' ? DIAGRAM_BUNDLE_LABEL : DOC_REWORK_BUNDLES[PLAN_TAGS.indexOf(tag)] || GENERAL_SECTION_LABEL);
+export const headerOfTag = (tag) => (tag === '0-2' ? DIAGRAM_BUNDLE_LABEL : PSST_OFFICIAL_HEADERS[PLAN_TAGS.indexOf(tag)] || GENERAL_SECTION_LABEL);
 
 export const PLAN_DOCUMENT_SECTIONS = [
   { tag: 'P', title: '문제인식', body: '동네 헬스장은 대부분 수기 장부와 전화로 예약을 받아 운영 부담이 크고, 회원권 잔여 횟수 관리도 수작업에 의존합니다. 인근 헬스장 12개소를 조사한 결과 대부분 같은 문제를 겪고 있었습니다' },
@@ -181,13 +197,9 @@ export const FINAL_THRESHOLD = 80;
 // 지금은 프론트가 세는 값이라 새로고침하면 카운트가 0으로 돌아간다(서버 retry_task는
 // 상한을 검사하지 않고 agent_executions.attempt_no만 올린다).
 export const RERUN_CAP = 1;
-// 검수(표현) Task 내부에서 핵심 정보가 바뀐 문단을 다시 거는 상한
-// (verification_policies.token_retry_cap 기본 2). 사용자가 누르는 버튼이 아니라 Task
-// 내부 자동 재시도라 막을 버튼이 없다 — 화면에는 상한과 상한 도달 시 동작만 밝힌다.
-export const REVIEW_RETRY_CAP = 2;
 
 // 기획서 6-8: "검증 결과 문서와 화면 양쪽에 이 성격을 표기한다" — 지금까지는
-// 표현검수/다운로드 화면에만 있었다. 점수가 실제로 뜨는 화면(문서 평가·종합 평가)
+// 결과물(다운로드) 화면에만 있었다. 점수가 실제로 뜨는 화면(문서 평가·종합 평가)
 // 에도 같은 문구를 단다. 다운로드 화면 고지(DELIVERABLE_NOTICES)와 문구를 맞춘다.
 export const SCORE_DISCLAIMER = '이 점수는 서비스 내부 기준에 따른 값이며 실제 심사 점수가 아닙니다. 80점을 넘었다고 선정을 보장하지 않고, 밑돌았다고 탈락을 뜻하지도 않습니다.';
 // 기획서 6-8: "사업계획서 — 첫 장에 AI 초안 생성 사실과 검토 필요를 표기." 계획서
@@ -227,7 +239,7 @@ export const ARTIFACT_SCORE_BY_OUTCOME = {
     autoCheck: {
       raw: 12, max: 15,
       reasons: [
-        'html 태그에 lang 속성이 없습니다.',
+        '보이는 글자에 "샘플 텍스트" 문구가 남아 있습니다.',
         '예약 버튼의 전경/배경 명도 대비가 2.9:1로 기준(4.5:1) 미만입니다.',
       ],
     },
@@ -245,30 +257,29 @@ export const ARTIFACT_SCORE_BY_OUTCOME = {
   },
 };
 
-// 산출물층 코드 기준 자동 검증 8항목·15점 — 프로젝트 기획서 v1.8 5-4 표의 이름·배점 그대로.
-// 웹개발·AI API는 HTML 실행 파일 기준, 원페이지는 인포그래픽 SVG 지면 기준 체크리스트를 쓴다.
-// 두 쪽 모두 1번(진입 파일) 미충족이면 자동 검증 점수 전체가 0점이다(5-4).
-// (verification_agent/score.py의 원페이지 항목은 아직 v1.8 이전 목록이라 따로 맞춰야 한다.)
+// 산출물층 코드 점검 8항목·15점 — 서버 결과가 없을 때(화면 검토 · 예시)만 쓰는 목록.
+// 검증-2(SB-125) verification_agent/rules/r4.py · r4_onepage.py의 ITEM_DEFS와 같은 이름 · 배점이다.
+// 진입 파일 · 비밀값 · 저장소 API는 8항목이 아니라 통과 필수 조건이다(어기면 산출물층 0점).
 export const CODE_CHECK_ITEMS_BY_CATEGORY = {
   standard: [
-    { id: 1, name: '진입 파일 존재 여부', weight: 3 },
-    { id: 2, name: 'img · svg 대체 텍스트', weight: 2 },
+    { id: 1, name: '동작 연결', weight: 3 },
+    { id: 2, name: 'img·svg 대체 텍스트', weight: 2 },
     { id: 3, name: 'input label 연결', weight: 2 },
-    { id: 4, name: 'html lang 속성', weight: 1 },
-    { id: 5, name: '명도 대비 4.5:1', weight: 2 },
-    { id: 6, name: '제목 계층', weight: 2 },
-    { id: 7, name: '실행·열람 안내 문서', weight: 1 },
-    { id: 8, name: '하드코딩된 비밀값', weight: 2 },
+    { id: 4, name: '명도 대비 4.5:1', weight: 2 },
+    { id: 5, name: '제목 계층', weight: 1 },
+    { id: 6, name: '1440px 폭 안에 들어옴', weight: 2 },
+    { id: 7, name: '스크립트 동작 오류 없음', weight: 2 },
+    { id: 8, name: '임시 문구 없음', weight: 1 },
   ],
   onepage: [
-    { id: 1, name: '진입 파일 존재 여부', weight: 3 },
-    { id: 2, name: '대체 텍스트', weight: 2 },
-    { id: 3, name: '핵심 정보 항목 포함', weight: 2 },
-    { id: 4, name: '명도 대비 4.5:1', weight: 2 },
-    { id: 5, name: '정보 계층', weight: 2 },
-    { id: 6, name: '텍스트 실재성', weight: 2 },
-    { id: 7, name: '최소 글자 크기', weight: 1 },
-    { id: 8, name: '열람 안내 문서', weight: 1 },
+    { id: 1, name: '대체 텍스트', weight: 2 },
+    { id: 2, name: '핵심 정보 6항목', weight: 3 },
+    { id: 3, name: '명도 대비 4.5:1', weight: 2 },
+    { id: 4, name: '정보 계층', weight: 2 },
+    { id: 5, name: '잘림 없음', weight: 2 },
+    { id: 6, name: '지면 밖 넘침 없음', weight: 2 },
+    { id: 7, name: '텍스트 실재성', weight: 1 },
+    { id: 8, name: '최소 글자 크기', weight: 1 },
   ],
 };
 
@@ -277,8 +288,8 @@ export const CODE_CHECK_ITEMS_BY_CATEGORY = {
 // standard 쪽은 시연 로그 steps[9].data.codeCheck.checks를 그대로 옮겼다.
 export const CODE_CHECK_FAILS_BY_OUTCOME = {
   fail: {
-    standard: { 4: 'html 태그에 lang 속성이 없습니다.', 5: '예약 버튼의 전경/배경 명도 대비가 2.9:1로 기준(4.5:1) 미만입니다.' },
-    onepage: { 4: '본문 문구 2건의 글자색/배경 명도 대비가 3.1:1로 기준(4.5:1) 미만입니다.', 7: '각주 글자 크기가 10px로 본문 하한(12px)에 못 미칩니다.' },
+    standard: { 4: '예약 버튼의 전경/배경 명도 대비가 2.9:1로 기준(4.5:1) 미만입니다.', 8: '보이는 글자에 "샘플 텍스트" 문구가 남아 있습니다.' },
+    onepage: { 3: '본문 문구 2건의 글자색/배경 명도 대비가 3.1:1로 기준(4.5:1) 미만입니다.', 8: '각주 글자 크기가 10px로 본문 하한(12px)에 못 미칩니다.' },
   },
   pass: {
     standard: {},
@@ -298,40 +309,6 @@ export const TASK_REWORK_SUMMARY = {
   '인포그래픽 제작': { before: '대체 텍스트 누락', after: '대체 텍스트 보강' },
 };
 
-// FinalVerdict의 재작성-비교 모달에서 쓰는 두 블록 — 계획서 쪽과 프로토타입 쪽을
-// 각각 컴포넌트로 빼서, 두 층을 함께 재작성했을 때(viewerOpen==='both') 모달 하나
-// 안에서 둘 다 이어서 보여줄 수 있게 한다(중복 인라인 JSX 대신).
-// 전/후 문단이 통째로 같은 색이면 어디가 달라졌는지 직접 찾아 읽어야 해서, 코드 비교 도구처럼
-// 바뀐 곳을 짚어준다. 낱말 단위로 가르면 조사만 달라진 자리까지 잘게 칠해져 읽기 어려워서
-// 문장 단위로 비교한다 — 최장 공통 부분수열로 유지/삭제/추가를 가른다.
-export const REVIEW_PARAGRAPHS = [
-  {
-    id: 'p-02',
-    before: '회원 300명 이하 소규모 헬스장은 기존 통합 관리 솔루션의 도입 비용을 감당하기 어렵다.',
-    after: '회원 300명 이하 소규모 헬스장은 기존 통합 관리 솔루션의 도입 비용을 부담하기 어려운 실정이다.',
-  },
-  {
-    id: 'p-09', spotlight: true,
-    before: '본 사업은 2026년 10월 16일 접수 마감 기준으로 사업화자금 1억원 한도 내에서 집행하며, 수업 예약 기능을 최우선으로 구현한다.',
-    attempts: [
-      {
-        try: 1, passed: false,
-        after: '본 사업은 10월 중순 마감에 맞추어 사업화자금 100,000,000원 한도 내에서 집행하며, 수업 예약 기능을 우선 구현한다.',
-        issue: "중요 정보가 변경되었어요 — '2026년 10월 16일' 누락, '1억원'이 '100,000,000원'으로 표기 변경됨",
-      },
-      {
-        try: 2, passed: true,
-        after: '본 사업은 2026년 10월 16일 접수 마감을 기준으로 사업화자금 1억원 한도 내에서 집행하며, 수업 예약 기능을 최우선으로 구현한다.',
-      },
-    ],
-  },
-  {
-    id: 'p-11',
-    before: '대표 김서준은 피트니스 센터를 4년간 운영하며 지점 2곳을 관리하였고, 개발은 웹 프론트엔드 경력 3년의 이하늘이 담당하며, 결제 연동은 외부 개발사와 협력한다.',
-    after: '대표 김서준은 피트니스 센터를 4년간 운영하며 지점 2곳을 관리해 왔고, 개발은 웹 프론트엔드 경력 3년의 이하늘이 맡으며, 결제 연동은 외부 개발사와 협력한다.',
-  },
-];
-
 // 산출물 3종 + 제출 안내 4개 고지(기획서 6-8, 목업 수정 요청서 v3 §5). 문구는
 // 시연 로그 steps[13].data.deliverable을 그대로 옮겼다.
 export const DELIVERABLE_NOTICES = [
@@ -345,28 +322,32 @@ export const DELIVERABLE_NOTICES = [
 // 워드(.docx)와 한글(.hwp) 중 골라 받는다. 둘 다 같은 내용을 서버가 각 형식으로 렌더한 것이고
 // (app/plan_document_export.py / app/hwp_export.py), 한글은 서버에 rhwp가 있어야 한다.
 // 기본 형식(formats[0])이 '전체 다운로드'와 파일명(name)의 확장자에 쓰인다.
+// name은 내려받기 처리(ReviewScreen handleDownload)가 고르는 열쇠, title은 카드 제목, file은 받는 파일 이름이다.
+// 카드 제목이 '사업계획서' · 'prototype.zip' · '검증결과.pdf'로 한글 이름과 파일 이름이 섞여 있어 title을 따로 뒀다.
 export const DOWNLOAD_FILES = [
   {
     name: '사업계획서',
-    desc: '문장 다듬기까지 마친 최종 사업계획서',
+    title: '사업계획서',
+    file: '사업계획서.docx · .hwp',
+    desc: '종합 평가까지 마친 최종 사업계획서',
     formats: [
       { ext: 'docx', label: '워드(.docx)' },
       { ext: 'hwp', label: '한글(.hwp)' },
     ],
   },
-  { name: 'prototype.zip', desc: '실행 파일(index.html)과 인포그래픽을 담은 압축 파일' },
-  { name: '검증결과.pdf', desc: '문서층·산출물층 검증 내역과 대조 결과' },
+  { name: 'prototype.zip', title: '프로토타입', file: 'prototype.zip', desc: '실행 파일(index.html)과 인포그래픽을 담은 압축 파일' },
+  // 검증결과서는 서버 파일이 아니라 화면이 그리는 문서를 인쇄 창으로 연다 — 받는 사람이 'PDF로 저장'을 골라야 파일이 된다.
+  { name: '검증결과.pdf', title: '검증결과서', file: '검증결과.pdf', desc: '문서층·산출물층 검증 내역과 대조 결과', action: 'PDF로 저장',
+    hint: '인쇄 창이 열려요. 대상에서 "PDF로 저장"을 골라 주세요.' },
 ];
 
 // 사업계획서.docx·prototype.zip은 화면의 더미 데이터로 즉석 생성하고(dummyDeliverables.js),
 // 검증결과.pdf는 원페이지형 검증결과서 양식을 인쇄 창으로 연다(verificationReport.js).
 
-// 검수 단계 진입은 되돌릴 수 없다(기획서 4-7) — 종합 평가로 돌아가는 경로를 두지
-// 않는다. 그래서 이 화면에는 뒤로가기 버튼이 없다(다른 모든 파이프라인 화면과의
-// 유일한 차이). 다운로드도 이 화면 하단에 함께 둔다 — 목업 수정 요청서 v3 §3:
-// "검수와 내려받기를 별도 단계로 세지만 화면을 쪼갤 이유는 없다."
-// 점수는 다시 표시하지 않는다 — 검수가 점수를 바꾼 것처럼 보이면 안 되기 때문에,
-// 종합 평가에서 본 점수가 최종이라는 사실이 화면에서도 드러나야 한다(v3 §3).
+// 화면 9 '진행' 뒤(최종 결과물)는 되돌릴 수 없다(기획서 4-7) — 종합 평가로 돌아가는 경로를 두지
+// 않는다. 그래서 결과물 화면에는 뒤로가기 버튼이 없다(다른 모든 파이프라인 화면과의
+// 유일한 차이). 점수는 다시 표시하지 않는다 — 종합 평가에서 본 점수가 최종이라는 사실이
+// 화면에서도 드러나야 한다(v3 §3). 검수(문장 다듬기)는 조율 2026-10-15에 흐름에서 빠졌다.
 export const MY_PROJECTS = [
   { id: 1, name: '동네 헬스장 예약 서비스', announcementTitle: '초기창업패키지', status: '사업계획서 작성중', progress: 65, updatedAt: '2026-09-08', view: 'plan-form' },
   { id: 5, name: '중고거래 안전결제 플랫폼', announcementTitle: '예비창업패키지', status: '제출 완료', progress: 100, updatedAt: '2026-08-20', view: 'review', scoreOutcome: 'pass' },

@@ -1,8 +1,6 @@
-"""Agent 파이프라인 진행 상태(match_results.stage) 상수와, 그 상태를 이어하기 화면
-번호로 변환하는 매핑. 실제 Agent 파이프라인이 각 단계를 처리할 때마다 이 값들로
-match_results.stage(+progress_percent)를 갱신하게 될 것이므로, 값 이름과 의미를
-여기 한 군데에 모아둔다 — seed_dummy_pipeline.py(더미)와 실제 파이프라인 코드,
-그리고 GET /projects/{id}/status(이어하기 조회) 엔드포인트가 전부 이 상수를 같이 쓴다.
+"""Agent 파이프라인 진행 상태 상수와, 그 상태를 이어하기 화면 번호로 변환하는 매핑.
+[SB-247] 진행 상태의 원본은 오케스트레이터(RunView)이고 웹 projects에는 더 이상 저장하지 않는다 — 이 값들은 오케스트레이터
+단계를 웹 응답의 stage · match_status 표기로 바꿀 때(app/orch/mapping.py) 쓰는 이름을 한 군데에 모아 둔 것이다.
 
 기획서 v1.7 4-7절(p.20 "중단 시점 | 복귀 화면" 표, 8케이스) 및 existing_user_resume_test_report.md
 에서 확인한 문제(6/8케이스가 기존 스키마만으로는 서로 구분 안 됨)를 이 stage 필드로 해소한다.
@@ -93,11 +91,9 @@ ERROR_KIND_INPUT = '입력'        # 입력 데이터 자체의 문제 — 재�
 ERROR_KIND_OPERATIONAL = '운영'  # API 연결 끊김·키 만료·크레딧 소진 등 — 사람이 조치해야 함
 ERROR_KINDS = (ERROR_KIND_TRANSIENT, ERROR_KIND_INPUT, ERROR_KIND_OPERATIONAL)
 
-# [주의] 지금 파이프라인은 100% 더미(sleep만 함)라 실제 Agent 호출에서 나는 진짜 오류
-# 유형(예외 클래스, 응답 코드)이 아직 없다 — 그래서 이 분류는 예외 메시지의 키워드로
-# 판단하는 임시 방편이다. 실제 Agent 호출 계층이 생기면, 예외 클래스나 API 응답 코드로
-# 판단하는 훨씬 정확한 방식으로 교체해야 한다(예: 인증 실패 예외 -> 운영, 스키마 검증
-# 실패 예외 -> 입력, 나머지 -> 일시).
+# [참고] 웹은 더 이상 오류를 직접 분류하지 않는다 — 실패 원인 분류(일시 · 입력 · 운영)는 오케스트레이터가 정해 주고
+# 웹은 그 값을 보여 준다(app/orch/admin_mapping.py). 아래 키워드 분류(classify_error_kind)는 옛 더미 파이프라인용이라
+# 지금 웹 코드에서 쓰는 곳이 없다(tests/test_classify_error_kind.py만 확인한다).
 _OPERATIONAL_KEYWORDS = ('api 연결', '연결 끊', '키 만료', '크레딧', 'api key', 'credit', 'connection refused', 'unauthorized')
 _INPUT_KEYWORDS = ('입력값', '형식 오류', 'validation', 'invalid input', 'malformed')
 
@@ -126,20 +122,22 @@ def classify_error_kind(exc: BaseException) -> str:
 # 화면에 사용자가 직접 들어가 있는 상태라 별도 알림이 필요 없다.
 NOTIFICATION_KIND_DOC_REVIEW = '문서평가'
 NOTIFICATION_KIND_ARTIFACT_REVIEW = '산출물확인'
-NOTIFICATION_KIND_PROOFREADING = '표현검수'
+NOTIFICATION_KIND_PROOFREADING = '표현검수'  # [SB-396] 검수가 흐름에서 빠져 새로 만들어지지 않는다 — 옛 알림 행이 남아 있어 목록에서는 읽힌다
+NOTIFICATION_KIND_RESULT = '결과물'  # [SB-396] 결과 통합이 끝났을 때(오케스트레이터 2026-10-15) — 화면 11. 이 값이 없으면 워커의 알림 INSERT가 실패한다
 NOTIFICATION_KIND_FAILURE = '실패'
 NOTIFICATION_KINDS = (
     NOTIFICATION_KIND_DOC_REVIEW,
     NOTIFICATION_KIND_ARTIFACT_REVIEW,
     NOTIFICATION_KIND_PROOFREADING,
+    NOTIFICATION_KIND_RESULT,
     NOTIFICATION_KIND_FAILURE,
 )
 NOTIFICATION_FAILURE_SCOPE_RUN = '실행'
 NOTIFICATION_FAILURE_SCOPE_REWORK = '재작성'
 NOTIFICATION_FAILURE_SCOPES = (NOTIFICATION_FAILURE_SCOPE_RUN, NOTIFICATION_FAILURE_SCOPE_REWORK)
-# [주의] 산출물확인/표현검수는 지금 더미 파이프라인에 해당 stage(artifact_review/
-# reviewing) 전환 자체가 없어서 아직 트리거되지 않는다(GENERATION_STATUS_USER_WAITING/
-# HALTED와 같은 사정) — 실제 검증-2/검수 단계가 붙으면 그때 생성 지점을 추가하면 된다.
+# [참고] 알림 행(문서평가 · 산출물확인 · 결과물 · 실패, 옛 표현검수)은 오케스트레이터 워커가 만든다 — 웹은 읽기와 읽음 처리만 한다.
+# 아래 NOTIFICATION_KIND_TO_TARGET_STEP · STAGE_TO_NOTIFICATION_KIND 표는 옛 더미 파이프라인이 알림을 만들 때 쓰던 것이라
+# 지금 웹 코드에서는 쓰지 않는다.
 NOTIFICATION_CHANNEL_SCREEN = '화면'  # 지금은 이거 하나뿐 — 메일 알림은 향후 도입(4-2 ⑧)
 
 # kind -> 알림을 누르면 들어갈 화면 번호(기획서 4-7 기본 흐름). 문서평가는 검증-1이 끝난
@@ -150,16 +148,16 @@ NOTIFICATION_KIND_TO_TARGET_STEP = {
     NOTIFICATION_KIND_DOC_REVIEW: STAGE_TO_SCREEN[STAGE_PLAN_REVIEW_PENDING],
     NOTIFICATION_KIND_ARTIFACT_REVIEW: STAGE_TO_SCREEN[STAGE_ARTIFACT_REVIEW],
     NOTIFICATION_KIND_PROOFREADING: STAGE_TO_SCREEN[STAGE_REVIEWING],
+    NOTIFICATION_KIND_RESULT: STAGE_TO_SCREEN[STAGE_DONE],
 }
 
-# stage에 도달했을 때 어떤 kind의 알림을 만들지 — _simulate_generation의 성공 경로가
-# done_stage로 이 표를 찾아본다. STAGE_ARTIFACT_REVIEW/STAGE_REVIEWING은 지금 더미
-# 파이프라인의 (running_stage, done_stage) 조합에 아직 안 나오지만, 실제 검증-2/검수
-# 단계가 붙어 나오게 되면 이 표만으로 자동으로 알림이 생긴다(호출부 수정 불필요).
+# stage에 도달했을 때 어떤 kind의 알림을 만들지 — 옛 더미 파이프라인(_simulate_generation, 없어짐)이 done_stage로 이 표를
+# 찾아봤다. 지금은 오케스트레이터 워커가 알림을 만들어 이 표를 쓰는 곳이 없다.
 STAGE_TO_NOTIFICATION_KIND = {
     STAGE_PLAN_REVIEW_PENDING: NOTIFICATION_KIND_DOC_REVIEW,
     STAGE_ARTIFACT_REVIEW: NOTIFICATION_KIND_ARTIFACT_REVIEW,
     STAGE_REVIEWING: NOTIFICATION_KIND_PROOFREADING,
+    STAGE_DONE: NOTIFICATION_KIND_RESULT,
 }
 
 # [2026-09-28 신규] plan_sections.tag를 MySQL 실제 ENUM 컬럼으로 만들기 위한 고정 코드
@@ -200,15 +198,6 @@ BIZ_STATUS_CODE_SUSPENDED = '02'
 BIZ_STATUS_CODE_CLOSED = '03'
 BIZ_STATUS_CODES = (BIZ_STATUS_CODE_ACTIVE, BIZ_STATUS_CODE_SUSPENDED, BIZ_STATUS_CODE_CLOSED)
 
-# [2026-09-28 신규] match_results.stage(=_simulate_generation이 도는 단계) 실패를
-# agent_executions에도 남기기 위한 매핑 — 이 테이블엔 stage 컬럼이 없고 agent_name/
-# task_key로만 구분하므로, 어느 단계가 실패했는지를 FIXED_TASK_SEQUENCE(app/models.py)의
-# 가장 대표적인 task_key로 근사한다(계획서 작성 단계 전체 실패는 '작성'/'writing'으로,
-# 프로토타입 제작 단계 전체 실패는 '구현'/'implement_prototype'으로 기록).
-STAGE_TO_AGENT_TASK = {
-    STAGE_PLAN_WRITING: ('작성', 'writing'),
-    STAGE_PROTOTYPE_BUILDING: ('구현', 'implement_prototype'),
-}
 
 # [2026-09-28 신규] 마이페이지/프로젝트 작성란 "주업종" — front/src/features/mypage/
 # derive.js INDUSTRY_OPTIONS와 동일(개인/법인 전용 드롭다운 9종). 예비창업자는 이
@@ -233,6 +222,15 @@ BUNDLE_PSST_SOLUTION = '실현가능성'
 BUNDLE_PSST_SCALEUP = '성장전략'
 BUNDLE_PSST_TEAM = '팀 구성'
 WRITING_BUNDLES = (BUNDLE_PSST_PROBLEM, BUNDLE_PSST_SOLUTION, BUNDLE_PSST_SCALEUP, BUNDLE_PSST_TEAM)
+
+# [2026-10-13 신규] 오케스트레이터가 새로 두는 재작성 묶음 2개(담당자 · 재희 님 화면 이름 그대로, 계획서 항목 태그 0-1 · 0-2) — 일반현황 · 개요(예비창업 2.1.x · 2.2.x ·
+# 2.3.1 ~ 2.3.5 / 초기창업 3.1.x · 3.2.x · 3.3.1 ~ 3.3.5)와 그림(2.3.6 / 3.3.6). 오케스트레이터가 켜기 전에는 묶음 사용 기록 · 재작성 목록에 나오지 않으므로 웹은
+# 이름만 받아 두면 된다. 켜는 날 순서: 웹 배포 → 오케스트레이터 켜기 → 웹 프로세스 · 워커 다시 띄우기. 문서층 묶음 순서는 이 둘이 맨 앞이다.
+BUNDLE_GENERAL_SUMMARY = '일반현황 · 개요'
+BUNDLE_FIGURES = '그림'
+NEW_WRITING_BUNDLES = (BUNDLE_GENERAL_SUMMARY, BUNDLE_FIGURES)
+# 사용자가 재작성을 요청할 수 있는 문서층(writing) 묶음 전체
+REWORKABLE_WRITING_BUNDLES = (*NEW_WRITING_BUNDLES, *WRITING_BUNDLES)
 
 # [2026-09-29 신규] writing 재시도(app/routers/projects.py retry_task)가 bundle_id를
 # 무시하고 항상 plan_sections의 1-1/2-1만 재생성하던 버그의 수정 — 묶음마다 정확히

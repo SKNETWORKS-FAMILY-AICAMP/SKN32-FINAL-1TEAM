@@ -1,6 +1,6 @@
 """웹서비스 로그 — 팀 로깅 정책("로그는 DB엔 남기지 말자, 로그 파일로 최대한 관리 -> 일자별
 관리, 용량 초과 시 회전, 3일 지나면 삭제") 중 "웹서비스" 담당 분량. Agent/공고 수집 쪽 로그는
-각 담당자가 별도로 만든다 — 이 모듈은 back/logs/ 밑에 파일로만 쌓고, DB 테이블은 전혀 안 쓴다.
+각 담당자가 별도로 만든다 — 이 모듈은 web/backend/logs/ 밑에 파일로만 쌓고, DB 테이블은 전혀 안 쓴다.
 
 표준 라이브러리의 TimedRotatingFileHandler(일자별)와 RotatingFileHandler(용량별)는 하나로
 합쳐 쓸 수 없어서(TimedRotatingFileHandler.doRollover가 하루 안에 여러 번 불리면 같은

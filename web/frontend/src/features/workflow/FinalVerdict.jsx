@@ -1,12 +1,16 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
 import React, {useState,useRef,useEffect} from 'react';
 import {Icon} from '../../components/Icons.jsx';
-import {DiffText,RerunLeftBadge} from './shared.jsx';
+import {DiffText,RerunLeftBadge,ScoreNotices} from './shared.jsx';
 import {GeneralInfoBlock,PlanExtrasBlock} from './PlanForm.jsx';
 import {PrototypeFrame,ResultPreview,useArtifactFile,ArtifactLoadError} from './ArtifactResult.jsx';
-import {detectItemCategory,diffSentences,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf,reworkDiffFromChanged} from './utils.js';
-import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,RERUN_CAP,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,DOC_REWORK_BUNDLES} from './data.js';
-import {retryTask} from '../../api.js';
+import {bundleScoreOf,detectItemCategory,maxInt,scoreInt,diffSentences,planViewFrom,sectionDiffEntries,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf,RESULT_STAGES,isResultReady,isResultRunning} from './utils.js';
+import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,GENERAL_SECTION_LABEL,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,PLAN_TAGS,headerOfTag,RERUN_CAP,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,ALL_DOC_BUNDLES,docBundlesFor} from './data.js';
+import {startReview,getProjectStatus} from '../../api.js';
+import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,relabelAfterReject,requestRework,reworkDiffForLabel,waitRework} from './rework.js';
+
+// 최종 결과물을 만드는 동안 진행 상태를 다시 읽는 간격
+const REVIEW_POLL_MS = 2000;
 
 // 계획서 라벨(WRITING_SUBTASKS)은 전부 '작성' Agent 하나(writing)로, 산출물 라벨은
 // ARTIFACT_SUBTASKS_BY_CATEGORY의 두 항목으로 각각 매핑한다 — app/schemas.py RetryTaskRequest 참고.
@@ -14,19 +18,21 @@ import {retryTask} from '../../api.js';
 // 쪽은 라벨(PSST 항목)을 그대로 bundle_id로 보내 구분한다(PlanForm.jsx의 같은 표
 // 주석 참고) — 그래서 묶음마다 따로 호출해야 한다.
 const TASK_KEY_BY_LABEL = {
-  ...Object.fromEntries(DOC_REWORK_BUNDLES.map((b) => [b, 'writing'])),
+  ...Object.fromEntries(ALL_DOC_BUNDLES.map((b) => [b, 'writing'])),
   '실행 파일 제작': 'implement_prototype', '인포그래픽 제작': 'implement_infographic',
 };
 
 // sectionDiff: 재작성 응답 changed.sections = { '1-1': {before, after}, … }. 있으면 그
 // 실제 전/후를 대조하고, 없으면(서버가 안 줬거나 시연용으로 그릴 때) 기존 고정 문단을 쓴다.
 // "전" 문단은 서버 응답으로만 알 수 있다 — GET /result는 지금 상태(후)만 내려준다.
+// 새 모양(키 = 항목 번호, 값에 tag · title — 백엔드 재작성결과 보충 10-11)은 묶음 머리말 · 항목 제목으로, 옛 모양(키 = 태그)은
+// 공식 머리말로 보인다.
 export function PlanCompareColumns({ itemInfo, announcement, sectionDiff = null }){
   const rows = sectionDiff
-    ? Object.entries(sectionDiff).map(([tag, v], i) => ({
-        title: PLAN_DOCUMENT_SECTIONS[i]?.title || tag,
-        header: PSST_OFFICIAL_HEADERS[i] || tag,
-        parts: diffSentences(v?.before || '', v?.after || ''),
+    ? sectionDiffEntries(sectionDiff).map((e, i) => ({
+        title: e.key,
+        header: e.hasTag ? `${headerOfTag(e.tag)} · ${e.title}` : (PLAN_TAGS.includes(e.key) ? headerOfTag(e.key) : PSST_OFFICIAL_HEADERS[i] || e.key),
+        parts: diffSentences(e.before || '', e.after || ''),
       }))
     : PLAN_DOCUMENT_SECTIONS.map((s, i) => ({
         title: s.title,
@@ -224,12 +230,12 @@ function BookCompare({ pages }){
 }
 
 // 기획서 4-7 유스케이스 표: 종합 평가(9)는 80점 이상이면 바로, 미만이면 확인 절차를
-// 거쳐 항상 문장 다듬기(10)로 이어진다 — "제출 파일 내려받기"가 아니다. 다운로드는
-// 검수 화면에 함께 있다(목업 수정 요청서 v3 §3 — 화면을 쪼갤 이유가 없다).
+// 거쳐 항상 최종 결과물(11)로 이어진다. 조율 2026-10-15부터 검수(문장 다듬기, 화면 10)는
+// 흐름에서 빠졌고 '진행' 뒤에는 결과 통합 하나만 돈다. 다운로드는 결과물 화면에 있다.
 // 목업 수정 요청서 v3 §2: "선택한 층에 따라 뒤에서 도는 게 다르다... 고르지 않은
 // 층의 점수는 그대로 승계된다. 화면에서는 갱신된 총점만 보이면 된다." docOutcome·
 // artifactOutcome은 App 레벨 상태다 — FinalVerdict 안에 지역 상태로 두면 재작성한
-// 뒤 문장 다듬기 화면으로 넘어갈 때(App이 그 상태를 모르니) 갱신된 값이 사라진다.
+// 뒤 결과물 화면으로 넘어갈 때(App이 그 상태를 모르니) 갱신된 값이 사라진다.
 // ARTIFACT_SCORE_BY_OUTCOME.pass가 시연 로그의 실제 재작성 후 값(26/30)과 같아서,
 // 이 방식이 곧 시연 로그의 진행(71→79→86)을 그대로 재현한다(문서층만 재작성:
 // 52+19=71→60+19=79, 둘 다 재작성: →60+26=86).
@@ -341,12 +347,88 @@ export function ArtifactCarousel({ hasExecutable, infoSrc = null, siteSrc = null
   );
 }
 
-export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOutcome, artifactOutcome, setDocOutcome, setArtifactOutcome, projectId, reworkCounts = {}, onRework, scores = null, reworkBudget = null, onScoresRefresh, artifact = null }){
+// 계획서 보기 — 새 모양(utils.js planViewFrom). 일반현황 · 개요 → 그림 → 문제인식 ~ 팀 구성 순서로 묶어 그린다.
+// 그림은 일반현황 칸과 따로 둔다 — 그림을 어느 묶음에 둘지 조율 쪽이 아직 정하는 중이라(백엔드 10-12 답변 3 · 5) 옮기기 쉽게.
+function PlanGroupedView({ view, itemInfo, itemTitle }){
+  const sectionBlock = (s, i) => {
+    // 표를 만들지 못해 본문으로 대신한 항목이면 그 자리에 백엔드가 준 사용자용 안내(display_reason)를 보인다(조율 10-12, 백엔드 10-13).
+    const fallback = view.fallbacks?.[s.section_code];
+    // 표 항목은 내려받는 문서처럼 표로 그리고, 담당자 서술은 그 아래에 둔다(문서와 같은 순서).
+    const table = s.content_type === 'table' ? view.tables?.[s.section_code] : null;
+    return (
+      <div key={s.section_code || `${s.title}-${i}`}>
+        <h3 className="font-display font-bold text-[14px] mb-1">{s.title || s.section_code}</h3>
+        {fallback && (
+          <p className="mb-2 rounded-lg bg-[#fff9ec] px-3 py-2 text-[12px] leading-relaxed text-[#806334]">
+            표를 만들지 못해 내용으로 대신했어요 — {fallback}
+          </p>
+        )}
+        {table && (
+          <div className="mb-2 overflow-x-auto">
+            <table className="w-full border-collapse text-[12.5px] leading-snug">
+              <thead>
+                <tr>{table.headers.map((h, c) => <th key={c} className="border border-[var(--border)] bg-[var(--muted)] px-2.5 py-1.5 text-left font-semibold whitespace-nowrap">{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {table.rows.map((row, r) => (
+                  <tr key={r}>{table.headers.map((_, c) => <td key={c} className="border border-[var(--border)] px-2.5 py-1.5 align-top">{row[c] ?? ''}</td>)}</tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {s.body && <p className={`leading-relaxed whitespace-pre-line ${table ? 'text-[12.5px] text-[var(--muted-fg)]' : 'text-[13px] text-[var(--fg)]'}`}>{s.body}</p>}
+      </div>
+    );
+  };
+  return (
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-4">
+        <h2 className="font-display font-bold text-[15px]">{GENERAL_SECTION_LABEL}</h2>
+        {/* 개요 문장은 서버 항목에 따로 있어서 첫 항목 본문으로 만든 요약은 넣지 않는다(겹친다). */}
+        <GeneralInfoBlock itemInfo={itemInfo} itemTitle={itemTitle} overview={false} />
+        {view.general.map(sectionBlock)}
+      </div>
+      {view.diagrams.length > 0 && (
+        <div className="flex flex-col gap-4">
+          <h2 className="font-display font-bold text-[15px]">그림</h2>
+          {view.diagrams.map((d) => <PlanDiagram key={d.diagram_id || d.image_url} diagram={d} />)}
+        </div>
+      )}
+      {view.bundles.map((b) => (
+        <div key={b.tag} className="flex flex-col gap-4">
+          <h2 className="font-display font-bold text-[15px]">{b.header}</h2>
+          {b.sections.map(sectionBlock)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// 계획서 그림 하나(서비스 흐름도 · 구조도 SVG). 산출물 파일과 같은 주소라 같은 방식으로 받는다. 못 받으면 조용히 뺀다 —
+// 그림은 계획서 본문을 보는 데 꼭 필요하지 않고, 빈 자리나 오류 문구가 본문보다 눈에 띄면 안 된다.
+function PlanDiagram({ diagram }){
+  const [url, failed] = useArtifactFile(diagram.image_url, { expect: 'image' });
+  if (failed || !url) return null;
+  return (
+    <figure className="m-0">
+      <img src={url} alt={diagram.title || '계획서 그림'} className="w-full rounded-lg border border-[var(--border)] bg-white" />
+      {diagram.title && <figcaption className="mt-1.5 text-[12px] text-[var(--muted-fg)] text-center">{diagram.title}</figcaption>}
+    </figure>
+  );
+}
+
+export function FinalVerdict({ announcement, itemInfo, onProceed, docOutcome, artifactOutcome, setDocOutcome, setArtifactOutcome, projectId, reworkCounts = {}, onRework, scores = null, reworkBudget = null, onScoresRefresh, artifact = null, plan = null }){
+  // 서버 계획서(GET /result의 plan.sections · diagrams). 있으면 '계획서 보기'가 이걸 보이고, 없을 때만 예시 계획서.
+  // 예전엔 서버 계획서와 관계없이 늘 예시 계획서(PLAN_DOCUMENT_SECTIONS)를 보였다. 새 모양은 묶음별로 모아 그린다(utils.js planViewFrom).
+  const planView = planViewFrom(plan);
+  const planSections = planView?.legacy ? planView.sections : null;
   // 서버 채점 결과가 있으면 그 값으로 판정한다(utils.js scoresFromResult) — 없으면 기존 고정 표.
   const docScore = scores?.docScore || DOC_SCORE_BY_OUTCOME[docOutcome];
   const artifactScore = scores?.artifactScore || ARTIFACT_SCORE_BY_OUTCOME[artifactOutcome];
   const threshold = scores?.threshold ?? FINAL_THRESHOLD;
-  const artifactRawTotal = artifactScore.autoCheck.raw + artifactScore.crossCheck.raw;
+  // 산출물층 점수 · 만점은 서버가 그 실행 건 배점으로 환산한 값을 먼저 쓴다(관리자가 배점을 바꿔도 13/10처럼 어긋나지 않게).
+  const artifactRawTotal = scores?.artifactLayer?.raw ?? (artifactScore.autoCheck.raw + artifactScore.crossCheck.raw);
   // 서버가 총점을 직접 주면 그 값을 쓴다 — 층별 합이 반올림 때문에 총점과 어긋날 수 있다.
   const finalTotal = scores?.total ?? (docScore.raw + artifactRawTotal);
   const passed = finalTotal >= threshold;
@@ -356,12 +438,17 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
   // E9: 산출물층이 이미 만점이면 프로토타입만 다시 만들어선 기준에 이를 수 없다는 안내.
   // 예전엔 artifactOutcome(서버 overall_passed로 정해지는 pass/fail)만 봐서, 산출물 점수가
   // 4.22/30인데도 "이미 최선까지 재작성했다"고 뜨는 경우가 있었다 — 실제 점수로 판단한다.
-  const artifactMaxTotal = artifactScore.autoCheck.max + artifactScore.crossCheck.max;
+  const artifactMaxTotal = scores?.artifactLayer?.max ?? (artifactScore.autoCheck.max + artifactScore.crossCheck.max);
   const showE9Hint = !passed && artifactMaxTotal > 0 && artifactRawTotal >= artifactMaxTotal;
+  // 다시 만들 수 있는 계획서 묶음 — 서버가 일반현황 · 개요 · 그림 묶음의 기회를 주면 그 둘도(data.js docBundlesFor).
+  const docBundles = docBundlesFor(reworkBudget);
   // 되돌릴 수 없음 확인 절차(시연 로그 steps[10].data.choices[1].confirm)에 쓸 짧은
   // 항목별 미달 요약 — "실현가능성 13/20"처럼 항목명+점수로 간결하게 늘어놓는다.
   const remainingShortfalls = [
-    ...docScore.items.filter((it) => it.score < it.max).map((it) => `${it.name} ${it.score}/${it.max}`),
+    // 새 모양은 항목이 24개 안팎이라 미달 묶음 이름으로 요약한다(묶음 점수는 화면에 보이지 않는다). 다시 만들 수 없는 일반현황 · 개요는 뺀다.
+    ...(docScore.groups
+      ? docScore.groups.filter((g) => docBundles.includes(g.label) && g.score < g.max).map((g) => g.label)
+      : docScore.items.filter((it) => it.score < it.max).map((it) => `${it.name} ${it.score}/${it.max}`)),
     ...artifactScore.autoCheck.reasons,
     ...artifactScore.crossCheck.reasons,
   ];
@@ -370,7 +457,7 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
   const category = artifact?.category || detectItemCategory(itemInfo && itemInfo.item);
   const hasExecutable = category !== 'onepage';
   const allTasks = [
-    ...DOC_REWORK_BUNDLES.map((label) => ({ label, layer: '계획서' })),
+    ...docBundles.map((label) => ({ label, layer: '계획서' })),
     ...(ARTIFACT_SUBTASKS_BY_CATEGORY[category] || ARTIFACT_SUBTASKS_BY_CATEGORY.webdev).map((label) => ({ label, layer: '프로토타입' })),
   ];
 
@@ -382,6 +469,13 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
   // 비교해야 한다(사용자 요청) — 같은 모달을 두 모드로 쓴다.
   const [viewerCompare, setViewerCompare] = useState(false);
   const [confirmProceed, setConfirmProceed] = useState(false);
+  // 서버가 돌려준 미달 확인 내용(409 detail.items — 현재 점수 · 기준 · 남는 미달 항목 · 되돌릴 수 없음). 없으면 화면 값으로 보인다.
+  const [serverConfirm, setServerConfirm] = useState(null);
+  // 최종 결과물 만들기(결과 통합) 진행 — null | {percent} (진행 중) / 오류 문구
+  const [reviewing, setReviewing] = useState(null);
+  const [reviewError, setReviewError] = useState('');
+  const alive = useRef(true);
+  useEffect(() => () => { alive.current = false; }, []);
   const [reworkDiff, setReworkDiff] = useState(null); // null 이전엔 한 번도 재작성 안 함
   const [diffExpanded, setDiffExpanded] = useState(false);
   const [reworkFromTotal, setReworkFromTotal] = useState(null); // 변경 내역 헤더의 "X → Y" 중 X
@@ -414,65 +508,43 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
     if (isCapped(label)) return;
     setCheckedTasks((prev) => (prev.includes(label) ? prev.filter((t) => t !== label) : [...prev, label]));
   };
-  // 실제 재생성 파이프라인은 없는 목업이라, 체크한 항목을 잠깐 "재작성 중"으로
-  // 보여준 뒤 되돌린다 — PlanForm/ArtifactResult와 같은 국소 시뮬레이션 패턴. 완료되면
-  // "변경 내역"을 채운다(고른 항목만이 아니라 전체 Task를 넣어, 승계된(고르지 않은)
-  // 항목도 "변경 없음"으로 함께 보여준다). 목업 수정 요청서 v3 §2가 정확히 "바뀐
-  // 항목을 접힌 형태로 제시하고 펼치면 전후 대비가 나오게 한다"고 못 박아서,
-  // 여기서 자동으로 펼치지 않는다 — 접힌 채로 두고 사용자가 직접 펼쳐야 한다.
-  // 재작성된 층의 결과물은 곧바로 모달로 띄운다(사용자 요청) — 다시 만든 결과가
-  // 실제로 뭐가 나왔는지 계획서·프로토타입 화면으로 바로 보여준다. 두 층을 함께
-  // 골랐을 때 하나만(프로토타입) 보여주고 종합 판정으로 넘어가 버리면 계획서 쪽
-  // 대조 결과를 놓친다(사용자 지적) — viewerOpen을 'both'로 두고, 모달 안에서
-  // 계획서·프로토타입 비교를 위아래로 둘 다 보여준다.
-  // POST /projects/{id}/retry-task 실제 호출(app/routers/projects.py retry_task).
-  // [변경] 응답의 changed(실제 전/후 값)로 "변경 내역"을 채운다 — 예전엔 응답을 버리고
-  // TASK_REWORK_SUMMARY 고정 문구를 썼기 때문에 몇 번을 재작성해도 같은 문장이 나왔다.
-  // 서버가 쓸 만한 전/후를 안 준 task_key는 그때만 고정 문구로 돌아간다.
-  const handleRewrite = async () => {
-    const picked = checkedTasks.filter((label) => !isCapped(label));
-    if (picked.length === 0) return;
+  // 재작성이 끝나면 "변경 내역"을 채운다(고른 항목만이 아니라 전체 Task를 넣어, 승계된(고르지 않은)
+  // 항목도 "변경 없음"으로 함께 보여준다). 목업 수정 요청서 v3 §2가 "바뀐 항목을 접힌 형태로 제시하고
+  // 펼치면 전후 대비가 나오게 한다"고 못 박아서 자동으로 펼치지 않는다.
+  // 재작성된 층의 결과물은 곧바로 모달로 띄운다(사용자 요청). 두 층을 함께 골랐으면 viewerOpen='both'로
+  // 계획서 · 프로토타입 비교를 위아래로 둘 다 보여준다(사용자 지적).
+  // changed = 재작성 결과(GET /rework-result)의 changed — 예전 retry-task 응답과 같은 모양. 서버가 쓸 만한 전/후를
+  // 안 준 항목만 고정 문구(TASK_REWORK_SUMMARY)로 돌아간다.
+  const applyRework = async (picked, changed, fromTotal) => {
     const pickedLayers = new Set(allTasks.filter((t) => picked.includes(t.label)).map((t) => t.layer));
-    const fromTotal = finalTotal; // 재작성 전 총점 — 변경 내역 헤더의 "X → Y" 중 X
-    setRunningTasks(picked);
-    setCheckedTasks([]);
-    // 라벨(묶음)별로 각각 호출한다 — 계획서 묶음 여러 개를 같이 골라도 전부 task_key=
-    // 'writing'이라, 하나로 뭉쳐 부르면 서버가 어느 묶음 몫인지 몰라 나머지 묶음
-    // 사용 횟수까지 같이 깎인다.
-    const changedByLabel = {};
-    try {
-      const responses = projectId
-        ? await Promise.all(picked.map((label) => retryTask(projectId, TASK_KEY_BY_LABEL[label], label)))
-        : [];
-      picked.forEach((label, i) => { changedByLabel[label] = responses[i]?.changed || null; });
-    } catch (err) {
-      console.error('재작성 요청이 실패했어요', err);
-      window.alert(err.message || '재작성에 실패했어요. 다시 시도해 주세요.');
-      setRunningTasks([]);
-      setCheckedTasks(picked);
-      return;
-    }
-    // 실제로 재시도가 나간 뒤에만 횟수를 센다 — 위 catch로 빠진 실패 호출은 세지 않는다.
+    // 실제로 다시 만든 뒤에만 횟수를 센다 — 실패는 서버가 기회를 돌려준다.
     if (onRework) onRework(picked);
     // 서버 재채점 결과를 다시 받아온다(아래 setDocOutcome/setArtifactOutcome은 서버 점수가
     // 없을 때 쓰는 고정 표 경로용 — 실제 점수가 있으면 그쪽이 우선한다).
     if (onScoresRefresh) await onScoresRefresh();
+    if (!alive.current) return;
     setRunningTasks([]);
+    // 원페이지는 계획서를 재작성하면 인포그래픽도 새 계획서로 다시 만들어진다(조율 웹연동 12.6) — 고르지 않았어도
+    // 재작성 결과에 인포그래픽 변경이 있으면 변경으로 보여 주고 비교 화면에도 넣는다.
+    const infographicRebuilt = !picked.includes('인포그래픽 제작') && !!reworkDiffForLabel(changed, '인포그래픽 제작');
     setReworkDiff(allTasks.map(({ label, layer }) => {
-      const changed = picked.includes(label);
-      if (!changed) return { label, layer, before: '변경 없음', after: '변경 없음', changed: false };
-      const fromServer = reworkDiffFromChanged(changedByLabel[label]);
+      const isPicked = picked.includes(label);
+      if (label === '인포그래픽 제작' && infographicRebuilt) {
+        const d = reworkDiffForLabel(changed, label);
+        return { label, note: ' (계획서와 함께 다시 만들어짐)', layer, before: d.before, after: d.after, changed: true, fromServer: true };
+      }
+      if (!isPicked) return { label, layer, before: '변경 없음', after: '변경 없음', changed: false };
+      const fromServer = reworkDiffForLabel(changed, label);
       const summary = fromServer || TASK_REWORK_SUMMARY[label] || { before: '변경 없음', after: '변경 없음' };
       return { label, layer, before: summary.before, after: summary.after, changed: true, fromServer: !!fromServer };
     }));
     setReworkFromTotal(fromTotal);
-    // 계획서 묶음(PSST 항목)을 하나라도 골랐으면 그 응답의 sections로 비교를 그린다 —
-    // 서버는 어느 묶음이든 같은 writing 재작성을 돌리므로 내용은 동일하다.
-    const writingLabel = picked.find((label) => TASK_KEY_BY_LABEL[label] === 'writing');
-    setSectionDiff(writingLabel ? changedByLabel[writingLabel]?.sections || null : null);
+    // 계획서 묶음(PSST 항목)을 하나라도 골랐으면 sections로 비교를 그린다 — 어느 묶음이든 계획서 전체를 다시 만든다.
+    const writingPicked = picked.some((label) => TASK_KEY_BY_LABEL[label] === 'writing');
+    setSectionDiff(writingPicked ? changed?.sections || null : null);
     setReworkedParts({
       plan: pickedLayers.has('계획서'),
-      infographic: picked.includes('인포그래픽 제작'),
+      infographic: picked.includes('인포그래픽 제작') || infographicRebuilt,
       prototype: picked.includes('실행 파일 제작'),
     });
     // 고른 층만 점수를 올린다 — 고르지 않은 층은 그대로 승계된다(v3 §2). ARTIFACT_
@@ -487,11 +559,98 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
     );
   };
 
-  // 기준 이상이면 곧장 검수로, 미달이면 되돌릴 수 없음을 확인받은 뒤에만 검수로 넘어간다(E4).
-  const handleProceedClick = () => {
-    if (passed) { onProceed(); return; }
-    setConfirmProceed(true);
+  // 재작성 — 접수만 하고 바로 돌아온다. 같은 화면에서 2초 안의 요청은 한 번으로 합쳐지고(cycle_id),
+  // 끝날 때까지 GET /rework-result를 확인한다(rework.js). 실패면 서버가 이전 결과로 되돌리고 기회를 돌려준다.
+  const finishRework = async (cycleId, picked, fromTotal) => {
+    const result = await waitRework(projectId, cycleId, () => alive.current);
+    if (!result) return;
+    if (result.status === '실패') {
+      window.alert(REWORK_FAILED_MESSAGE);
+      if (onScoresRefresh) await onScoresRefresh();
+      if (alive.current) setRunningTasks([]);
+      return;
+    }
+    await applyRework(picked, result.changed || null, fromTotal);
   };
+  const handleRewrite = async () => {
+    const picked = checkedTasks.filter((label) => !isCapped(label));
+    if (picked.length === 0) return;
+    const fromTotal = finalTotal; // 재작성 전 총점 — 변경 내역 헤더의 "X → Y" 중 X
+    setRunningTasks(picked);
+    setCheckedTasks([]);
+    try {
+      if (!projectId) { await applyRework(picked, null, fromTotal); return; }
+      // 라벨(묶음)별로 각각 접수한다 — 계획서 묶음은 전부 task_key='writing'이라 묶음 이름으로 구분한다.
+      const req = await requestRework(projectId, picked, TASK_KEY_BY_LABEL);
+      if (req.rejected.length > 0) {
+        // 일부만 거절 — 거절된 묶음은 다시 고를 수 있게 돌려 두고, 접수된 묶음만 진행 중으로 본다.
+        window.alert(rejectedReworkMessage(req.rejected));
+        setCheckedTasks(relabelAfterReject(picked, req.rejected)); // 상한(E-G2-LIMIT) 묶음은 다시 체크하지 않는다
+        setRunningTasks(req.labels);
+      }
+      await finishRework(req.cycleId, req.labels, fromTotal);
+    } catch (err) {
+      console.error('재작성 요청이 실패했어요', err);
+      window.alert(err.rejected?.length > 1 ? rejectedReworkMessage(err.rejected) : (err.message || '재작성에 실패했어요. 다시 시도해 주세요.'));
+      setRunningTasks([]);
+      setCheckedTasks(relabelAfterReject(picked, err.rejected));
+      // 상한에 걸렸으면 남은 횟수를 서버에서 다시 받아 그 묶음을 끈다
+      if (err.rejected?.some((r) => r.error?.code === 'E-G2-LIMIT') && onScoresRefresh) onScoresRefresh();
+    }
+  };
+  // 화면을 다시 열었을 때 이 화면의 재작성이 진행 중이면 '진행 중'으로 이어 본다.
+  useEffect(() => {
+    if (!projectId) return;
+    findRunningRework(projectId, 9).then((running) => {
+      if (!running || !alive.current) return;
+      const picked = running.bundles.filter((b) => allTasks.some((t) => t.label === b));
+      setRunningTasks(picked);
+      finishRework(running.cycle_id, picked, finalTotal).catch((err) => console.error('재작성 결과를 불러오지 못했어요', err));
+    }).catch((err) => console.error('재작성 상태를 확인하지 못했어요', err));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  // 최종 결과물로 진행(화면 9 → 11). 미달인지는 서버(판정 G-02b)가 정한다 — 미달이면 409로 확인 내용을 주므로
+  // 되돌릴 수 없음을 확인받은 뒤 confirmed=true로 다시 부른다(E4, 명세 6.2). 결과 통합(옛 실행 건은 표현 검수)은 워커가
+  // 돌려 시간이 걸리므로 진행 상태를 주기적으로 읽다가 결과물 · 완료가 되면 결과 화면으로 간다 — 결과 통합이 도는 동안에도
+  // stage는 'done'이라 상태가 '완료'인지까지 본다(조율 2026-10-15, utils.js isResultReady).
+  const proceedToReview = async (confirmed) => {
+    if (!projectId) { onProceed(); return; }
+    setReviewError(''); setReviewing({ percent: null });
+    // 받을 수 없는 상태(재작성이 도는 중 등)여도 서버는 200으로 지금 상태만 준다 — 결과 통합(done) · 옛 표현 검수(reviewing)가
+    // 아니면 시작되지 않은 것이라 기다리지 않는다(예전엔 끝나지 않는 '진행 중'에 갇혔다).
+    const notStarted = (s) => !RESULT_STAGES.includes(s?.stage);
+    try {
+      let status = await startReview(projectId, confirmed);
+      setConfirmProceed(false);
+      if (notStarted(status) && status?.match_status !== 'failed') throw new Error('지금은 최종 결과물을 만들 수 없어요. 진행 중인 작업이 끝난 뒤 다시 시도해 주세요.');
+      while (!isResultReady(status)) {
+        if (status?.match_status === 'failed') throw new Error('일시적인 문제로 작업을 완료하지 못했습니다. 새 작업으로 다시 시작해주세요.');
+        if (!isResultRunning(status)) throw new Error('최종 결과물 만들기가 멈췄어요. 잠시 뒤 다시 시도해 주세요.');
+        if (!alive.current) return;
+        setReviewing({ percent: status?.progress_percent ?? null });
+        await new Promise((resolve) => setTimeout(resolve, REVIEW_POLL_MS));
+        if (!alive.current) return;
+        status = await getProjectStatus(projectId);
+      }
+      if (!alive.current) return;
+      await onProceed();
+    } catch (err) {
+      if (!alive.current) return;
+      setReviewing(null);
+      if (err.status === 409 && err.detail?.confirmation_required) {
+        setServerConfirm(err.detail.items || null);
+        setConfirmProceed(true);
+        return;
+      }
+      console.error('최종 결과물로 넘어가지 못했어요', err);
+      setReviewError(err.message || '최종 결과물로 넘어가지 못했어요. 다시 시도해 주세요.');
+    }
+  };
+  const handleProceedClick = () => proceedToReview(false);
+  const confirmScore = serverConfirm?.['현재 점수'] ?? finalTotal;
+  const confirmThreshold = serverConfirm?.['기준'] ?? threshold;
+  const confirmShortfalls = serverConfirm?.['남는 미달 항목'] ?? remainingShortfalls;
 
   // 재작성 대조 모달의 책장 페이지 — 순서는 사업계획서 → 인포그래픽 → 실행 파일 고정,
   // 실제로 재작성한 항목만 페이지로 만든다(reworkedParts, 사용자 지적: 안 고른 항목까지
@@ -510,23 +669,14 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
 
   return (
     <section data-screen="final" className="max-w-3xl mx-auto px-6 py-16">
-      <div className="flex items-center justify-between gap-4 flex-wrap mb-6">
-        <button onClick={onBack} className="text-[13.5px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">
-          ‹ 산출물로 돌아가기
-        </button>
-        <div className="flex items-center gap-4">
-          <button onClick={() => { setViewerCompare(false); setViewerOpen('plan'); }} className="text-[13px] font-semibold text-[var(--fg)] hover:text-[var(--primary)] transition-colors">계획서 보기</button>
-          {hasExecutable && (
-            <button onClick={() => { setViewerCompare(false); setViewerOpen('artifact'); }} className="text-[13px] font-semibold text-[var(--fg)] hover:text-[var(--primary)] transition-colors">프로토타입 열기</button>
-          )}
-        </div>
-      </div>
-
+      {/* 단계 사이 되돌아가기(9 → 8)는 없는 기능이라 '산출물로 돌아가기'를 뺐다(웹연동_변경사항_웹팀전달.md 5절).
+          '계획서 보기' · '프로토타입 열기'는 제목 위 오른쪽에 떠 있어 메뉴처럼 보였다 — 각 점수 카드 안으로 옮겼다. */}
       {(infoFailed || siteFailed) && <ArtifactLoadError />}
       <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide mb-2">종합 평가</p>
-      <p className="text-[14px] text-[var(--muted-fg)] leading-snug mb-1.5">『{announcement ? announcement.title : ''}』</p>
+      {/* 공고 제목을 모르면(알림에서 연 프로젝트 · 공고 표에서 빠진 공고) 빈 『』를 그리지 않는다 */}
+      {announcement?.title && <p className="text-[14px] text-[var(--muted-fg)] leading-snug mb-1.5">『{announcement.title}』</p>}
       <h1 className="font-display font-bold text-[26px] md:text-[30px] mb-3">제출 전 점검 결과예요</h1>
-      <p className="text-[14.5px] text-[var(--muted-fg)] mb-8">사업계획서(문서층 70점)와 프로토타입(산출물층 30점)을 합친 총점입니다</p>
+      <p className="text-[14.5px] text-[var(--muted-fg)] mb-8">사업계획서(문서층 {maxInt(docScore.max)}점)와 프로토타입(산출물층 {maxInt(artifactMaxTotal)}점)을 합친 총점입니다</p>
 
       <div className={`rounded-2xl p-6 flex items-center justify-between gap-4 flex-wrap mb-6 ${passed ? 'bg-[color-mix(in_srgb,var(--ok)_8%,white)] border border-[var(--border)]' : 'bg-[color-mix(in_srgb,var(--danger)_6%,white)] border border-[var(--danger)]'}`}>
         <div>
@@ -536,25 +686,31 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
           </p>
         </div>
         <div className="flex items-end gap-1.5">
-          <p className={`font-display font-bold text-[32px] leading-none ${passed ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>{finalTotal}</p>
+          <p className={`font-display font-bold text-[32px] leading-none ${passed ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>{scoreInt(finalTotal)}</p>
           <p className="text-[13px] text-[var(--muted-fg)] mb-0.5">/ 100점 (내부 기준 {threshold})</p>
         </div>
       </div>
 
-      <div className="grid sm:grid-cols-2 gap-4 mb-6">
+      <div className="grid sm:grid-cols-2 gap-4 mb-3">
         <div className="rounded-2xl border border-[var(--border)] bg-white p-5">
           <p className="text-[12.5px] font-semibold text-[var(--muted-fg)] mb-3">사업계획서 점검</p>
-          <p className="font-display font-bold text-[24px] leading-none mb-1">{docScore.raw} <span className="text-[13px] font-semibold text-[var(--muted-fg)]">/ {docScore.max}점</span></p>
+          <p className="font-display font-bold text-[24px] leading-none mb-1">{scoreInt(docScore.raw)} <span className="text-[13px] font-semibold text-[var(--muted-fg)]">/ {maxInt(docScore.max)}점</span></p>
           <p className="text-[12px] text-[var(--muted-fg)]">공고의 평가항목을 얼마나 충족하는지 확인했어요.</p>
+          <button onClick={() => { setViewerCompare(false); setViewerOpen('plan'); }} className="mt-4 inline-flex items-center gap-1 text-[13px] font-semibold text-[var(--primary)] hover:underline">계획서 보기</button>
         </div>
         <div className="rounded-2xl border border-[var(--border)] bg-white p-5">
           <p className="text-[12.5px] font-semibold text-[var(--muted-fg)] mb-3">프로토타입 점검</p>
-          <p className="font-display font-bold text-[24px] leading-none mb-1">{artifactRawTotal} <span className="text-[13px] font-semibold text-[var(--muted-fg)]">/ 30점</span></p>
-          <p className="text-[12px] text-[var(--muted-fg)]">자동 검증 {artifactScore.autoCheck.raw}/{artifactScore.autoCheck.max} · 계획서 대조 {artifactScore.crossCheck.raw}/{artifactScore.crossCheck.max}</p>
+          <p className="font-display font-bold text-[24px] leading-none mb-1">{scoreInt(artifactRawTotal)} <span className="text-[13px] font-semibold text-[var(--muted-fg)]">/ {maxInt(artifactMaxTotal)}점</span></p>
+          <p className="text-[12px] text-[var(--muted-fg)]">자동 검증 {scoreInt(artifactScore.autoCheck.raw)}/{maxInt(artifactScore.autoCheck.max)} · 계획서 대조 {artifactScore.crossCheck.withheld ? '대조 불가(0점 합산)' : `${scoreInt(artifactScore.crossCheck.raw)}/${maxInt(artifactScore.crossCheck.max)}`}</p>
+          {hasExecutable && (
+            <button onClick={() => { setViewerCompare(false); setViewerOpen('artifact'); }} className="mt-4 inline-flex items-center gap-1 text-[13px] font-semibold text-[var(--primary)] hover:underline">프로토타입 열기</button>
+          )}
         </div>
       </div>
 
       <p className="text-[11px] text-[var(--muted-fg)] leading-relaxed mb-6">{SCORE_DISCLAIMER}</p>
+
+      <ScoreNotices notices={scores?.notices} reworkHint={!passed} className="mb-6" />
 
       {showE9Hint && (
         <div className="rounded-xl border border-[var(--border)] bg-[var(--muted)] p-4 mb-6">
@@ -566,50 +722,61 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
         <div className="rounded-2xl border border-[var(--border)] p-5 mb-6">
           <p className="text-[12.5px] font-bold text-[var(--danger)] mb-1">보완이 필요한 항목</p>
           <p className="text-[11.5px] text-[var(--muted-fg)] mb-3">항목마다 다시 만들기는 {cap}회까지만 가능해요 — 앞 단계에서 쓴 횟수도 함께 셉니다</p>
-          <div className="flex flex-col gap-2.5 mb-4">
-            {allTasks.map(({ label, layer }) => {
-              const isRunning = runningTasks.includes(label);
-              const left = rerunLeftOf(reworkCounts, label, reworkBudget);
-              const capped = left <= 0;
-              // 재작성 대조 모달을 X로 닫고 나면, 방금 체크했던 항목이 실제로 반영됐는지
-              // 구분할 UI가 없었다(사용자 지적) — 가장 최근 재작성에서 바뀐 항목(reworkDiff의
-              // changed:true)에 "방금 재작성함" 배지를 달아준다. 다음 재작성을 돌리면
-              // reworkDiff가 통째로 갱신되니, 배지도 항상 가장 최근 결과만 보여준다.
-              const justReworked = reworkDiff?.find((d) => d.label === label)?.changed;
-              const reasons = taskReasons(label, docScore, artifactScore);
-              return (
-                <label key={label} className={`flex items-start gap-2.5 text-[13px] ${isRunning || capped ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>
-                  {isRunning ? (
-                    <span className="rewrite-indicator" aria-hidden="true"></span>
-                  ) : (
-                    <input type="checkbox" checked={checkedTasks.includes(label)} onChange={() => toggleTask(label)}
-                      disabled={capped}
-                      className="flex-shrink-0 mt-0.5 w-4 h-4 accent-[var(--primary)] disabled:cursor-not-allowed" />
-                  )}
-                  <span>
-                    <span className="flex-shrink-0 text-[11px] font-semibold text-[var(--muted-fg)] mr-1.5">［{layer}］</span>
-                    {isRunning ? `${label} 재작성 중…` : label}
-                    {!isRunning && <RerunLeftBadge left={left} />}
-                    {!isRunning && justReworked && (
-                      <span className="inline-flex items-center gap-0.5 ml-1.5 text-[11px] font-semibold text-[var(--ok)]">
-                        <Icon name="check" size={12}/> 방금 재작성함
+          {/* 층(사업계획서 · 프로토타입)마다 소제목 아래에 묶는다 — 예전엔 줄마다 ［계획서］ · ［프로토타입］ 꼬리표를 달았다. */}
+          {['계획서', '프로토타입'].map((layerName) => (
+            <div key={layerName} className="mb-4">
+              <p className="text-[11.5px] font-bold text-[var(--muted-fg)] mb-2">{layerName === '계획서' ? '사업계획서' : '프로토타입'}</p>
+              <div className="flex flex-col gap-2.5">
+                {allTasks.filter((t) => t.layer === layerName).map(({ label, layer }) => {
+                  const isRunning = runningTasks.includes(label);
+                  const left = rerunLeftOf(reworkCounts, label, reworkBudget);
+                  const capped = left <= 0;
+                  // 재작성 대조 모달을 X로 닫고 나면, 방금 체크했던 항목이 실제로 반영됐는지
+                  // 구분할 UI가 없었다(사용자 지적) — 가장 최근 재작성에서 바뀐 항목(reworkDiff의
+                  // changed:true)에 "방금 재작성함" 배지를 달아준다. 다음 재작성을 돌리면
+                  // reworkDiff가 통째로 갱신되니, 배지도 항상 가장 최근 결과만 보여준다.
+                  const justReworked = reworkDiff?.find((d) => d.label === label)?.changed;
+                  const reasons = taskReasons(label, docScore, artifactScore);
+                  // 계획서 묶음은 통과 · 미달을 이름 옆에 붙인다(예전엔 "［계획서］ 문제인식" 아래에 "［문서층］ 문제인식 12/17"이 또 나왔다).
+                  const bundle = layer === '계획서' ? bundleScoreOf(label, docScore) : null;
+                  return (
+                    <label key={label} className={`flex items-start gap-2.5 text-[13px] ${isRunning || capped ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)] cursor-pointer'}`}>
+                      {isRunning ? (
+                        <span className="rewrite-indicator" aria-hidden="true"></span>
+                      ) : (
+                        <input type="checkbox" checked={checkedTasks.includes(label)} onChange={() => toggleTask(label)}
+                          disabled={capped}
+                          className="flex-shrink-0 mt-0.5 w-4 h-4 accent-[var(--primary)] disabled:cursor-not-allowed" />
+                      )}
+                      <span className="min-w-0 flex-1">
+                        {/* 통과 · 미달은 이름 바로 옆에 — 카드 오른쪽 끝에 두면 넓은 화면에서 이름과 너무 멀어진다 */}
+                        <span className="font-semibold">{isRunning ? `${label} 재작성 중…` : label}</span>
+                        {!isRunning && bundle && (
+                          <span className={`ml-2 text-[12px] font-semibold ${bundle.passed ? 'text-[var(--ok)]' : 'text-[var(--danger)]'}`}>{bundle.passed ? '통과' : '미달'}</span>
+                        )}
+                        {!isRunning && <RerunLeftBadge left={left} />}
+                        {!isRunning && justReworked && (
+                          <span className="inline-flex items-center gap-0.5 ml-1.5 text-[11px] font-semibold text-[var(--ok)]">
+                            <Icon name="check" size={12}/> 방금 재작성함
+                          </span>
+                        )}
+                        {!isRunning && reasons.map((r) => (
+                          <span key={r} className="block text-[12px] text-[var(--muted-fg)] leading-relaxed mt-0.5">{r}</span>
+                        ))}
                       </span>
-                    )}
-                    {!isRunning && reasons.map((r) => (
-                      <span key={r} className="block text-[12px] text-[var(--muted-fg)] mt-0.5">{r}</span>
-                    ))}
-                  </span>
-                </label>
-              );
-            })}
-          </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
           <div className="flex items-center gap-3 flex-wrap">
-            <button onClick={handleRewrite} disabled={allCapped || checkedTasks.length === 0 || runningTasks.length > 0}
+            <button onClick={handleRewrite} disabled={allCapped || checkedTasks.length === 0 || runningTasks.length > 0 || !!reviewing}
               className="rounded-lg border border-[var(--border)] px-4 py-2.5 text-[13.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--bg)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
               선택 항목 다시 만들기
             </button>
-            <button onClick={handleProceedClick}
-              className="rounded-lg px-4 py-2.5 text-[13.5px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">
+            <button onClick={handleProceedClick} disabled={runningTasks.length > 0 || !!reviewing}
+              className="rounded-lg px-4 py-2.5 text-[13.5px] font-semibold text-[var(--primary)] hover:underline disabled:opacity-40 disabled:cursor-not-allowed transition-[scale] duration-150 ease-out active:scale-[0.96]">
               이대로 진행하기
             </button>
           </div>
@@ -622,9 +789,9 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
       {reworkDiff && (
         <div className="rounded-2xl border border-[var(--border)] p-5 mb-6">
           <p className="text-[13px] font-semibold mb-3">
-            {finalTotal}점 · {passed ? '통과' : '미달'}
+            {scoreInt(finalTotal)}점 · {passed ? '통과' : '미달'}
             {reworkFromTotal !== null && reworkFromTotal !== finalTotal && (
-              <span className="text-[var(--muted-fg)] font-normal"> ({reworkFromTotal} → {finalTotal})</span>
+              <span className="text-[var(--muted-fg)] font-normal"> ({scoreInt(reworkFromTotal)} → {scoreInt(finalTotal)})</span>
             )}
           </p>
           <button onClick={() => setDiffExpanded((v) => !v)}
@@ -636,7 +803,7 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
               {reworkDiff.map((d) => (
                 <li key={d.label} className="text-[12.5px] text-[var(--fg)] leading-relaxed">
                   <span className="text-[11px] font-semibold text-[var(--muted-fg)] mr-1.5">［{d.layer}］</span>
-                  {d.label} — {d.changed ? <React.Fragment><span className="text-[var(--muted-fg)]">{d.before}</span> → {d.after}</React.Fragment> : <span className="text-[var(--muted-fg)]">변경 없음</span>}
+                  {d.label}{d.note || ''} — {d.changed ? <React.Fragment><span className="text-[var(--muted-fg)]">{d.before}</span> → {d.after}</React.Fragment> : <span className="text-[var(--muted-fg)]">변경 없음</span>}
                 </li>
               ))}
             </ul>
@@ -648,27 +815,33 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
         <div className="rounded-2xl border border-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_6%,white)] p-5 mb-6">
           <p className="text-[13px] font-bold text-[var(--danger)] mb-3">기준 미달 상태로 진행합니다 — 이 단계부터는 되돌릴 수 없습니다</p>
           <ul className="flex flex-col gap-1.5 mb-4">
-            <li className="text-[12.5px] text-[var(--fg)] leading-relaxed">· 현재 점수 — 총점 {finalTotal}점 · 기준 {FINAL_THRESHOLD}점 미달</li>
-            <li className="text-[12.5px] text-[var(--fg)] leading-relaxed">· 남는 미달 항목 — {remainingShortfalls.join(', ')}</li>
-            <li className="text-[12.5px] text-[var(--fg)] leading-relaxed">· 진행 후에는 다시 만들 수 없습니다. 검수 단계로 넘어가면 이 점수가 그대로 확정됩니다.</li>
+            <li className="text-[12.5px] text-[var(--fg)] leading-relaxed">· 현재 점수 — 총점 {scoreInt(confirmScore)}점 · 기준 {confirmThreshold}점 미달</li>
+            <li className="text-[12.5px] text-[var(--fg)] leading-relaxed">· 남는 미달 항목 — {confirmShortfalls.length > 0 ? confirmShortfalls.join(', ') : '없음'}</li>
+            <li className="text-[12.5px] text-[var(--fg)] leading-relaxed">· 진행 후에는 다시 만들 수 없습니다. 최종 결과물로 넘어가면 이 점수가 그대로 확정됩니다.</li>
           </ul>
           <div className="flex items-center gap-4">
             <button onClick={() => setConfirmProceed(false)}
               className="text-[13px] font-semibold text-[var(--muted-fg)] hover:text-[var(--fg)] transition-[color,scale] duration-150 ease-out active:scale-[0.96]">
               취소
             </button>
-            <button onClick={onProceed}
-              className="text-[13px] font-semibold text-[var(--danger)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">
+            <button onClick={() => proceedToReview(true)} disabled={!!reviewing || runningTasks.length > 0}
+              className="text-[13px] font-semibold text-[var(--danger)] hover:underline disabled:opacity-50 transition-[scale] duration-150 ease-out active:scale-[0.96]">
               그래도 진행하기
             </button>
           </div>
         </div>
       )}
 
+      {reviewing && (
+        <p role="status" className="mb-4 text-[13.5px] text-[var(--muted-fg)]">
+          최종 결과물을 모으고 있어요{reviewing.percent != null ? ` (${reviewing.percent}%)` : ''} — 끝나면 결과물 화면으로 넘어가요.
+        </p>
+      )}
+      {reviewError && <p role="alert" className="mb-4 text-[13.5px] text-[var(--danger)]">{reviewError}</p>}
       {passed && (
-        <button onClick={handleProceedClick}
-          className="w-full rounded-xl bg-[var(--primary)] text-white py-3.5 text-[15px] font-semibold hover:bg-[var(--primary-dim)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
-          검수하기
+        <button onClick={handleProceedClick} disabled={!!reviewing || runningTasks.length > 0}
+          className="w-full rounded-xl bg-[var(--primary)] text-white py-3.5 text-[15px] font-semibold hover:bg-[var(--primary-dim)] disabled:opacity-60 transition-[background-color,scale] duration-150 ease-out active:scale-[0.98]">
+          {reviewing ? '최종 결과물 만드는 중…' : '최종 결과물 만들기'}
         </button>
       )}
 
@@ -694,16 +867,21 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
           {viewerOpen === 'plan' ? (
             <div className="soft-scroll relative bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto p-8 shadow-2xl">
               <p className="text-[11px] text-[var(--muted-fg)] mb-4 pb-4 border-b border-[var(--border)]">{PLAN_AI_NOTICE}</p>
+              {planView && !planView.legacy ? (
+                <PlanGroupedView view={planView} itemInfo={itemInfo} itemTitle={announcement ? announcement.title : ''} />
+              ) : (
               <div className="flex flex-col gap-6">
-                <GeneralInfoBlock itemInfo={itemInfo} itemTitle={announcement ? announcement.title : ''} sections={PLAN_DOCUMENT_SECTIONS} />
-                {PLAN_DOCUMENT_SECTIONS.map((s, i) => (
-                  <div key={s.title}>
-                    <h2 className="font-display font-bold text-[15px] mb-1.5">{PSST_OFFICIAL_HEADERS[i]}</h2>
-                    <p className="text-[13px] leading-relaxed text-[var(--fg)]">{s.body}</p>
+                <GeneralInfoBlock itemInfo={itemInfo} itemTitle={announcement ? announcement.title : ''} sections={planSections || PLAN_DOCUMENT_SECTIONS} />
+                {(planSections || PLAN_DOCUMENT_SECTIONS).map((s, i) => (
+                  <div key={s.tag || s.title}>
+                    <h2 className="font-display font-bold text-[15px] mb-1.5">{planSections ? (s.title || PSST_OFFICIAL_HEADERS[i]) : PSST_OFFICIAL_HEADERS[i]}</h2>
+                    <p className="text-[13px] leading-relaxed text-[var(--fg)] whitespace-pre-line">{s.body}</p>
                   </div>
                 ))}
-                <PlanExtrasBlock size="compact" />
+                {/* 예시 그래프 · 표 — 서버 계획서가 있으면 실제 내용과 섞이지 않게 숨긴다(서버 차트 · 표 표시는 아직 없다) */}
+                {!planSections && <PlanExtrasBlock size="compact" />}
               </div>
+              )}
             </div>
           ) : (
             <div className="relative" style={{ width: 'min(92vw, 900px)' }}>
@@ -748,9 +926,3 @@ export function FinalVerdict({ announcement, itemInfo, onBack, onProceed, docOut
     </section>
   );
 }
-
-// 기획서 4-4/4-7 + 목업 수정 요청서 v3 §3: 검수는 채점 이후 단계라 문단별 전/후
-// 대비만 보여주고 점수는 바꾸지 않는다. 문단 내용은 시연 로그(sbrain_demo_run.json
-// steps[12].data.paragraphs)를 그대로 옮겼다 — p-09가 "강조" 대상으로, 1차 시도가
-// 중요 정보가 변경되었어요(접수 마감일 누락·지원금액 표기 변경)으로 반려되고 2차에서 두 값을
-// 그대로 보존한 채 통과하는 과정을 보여준다.

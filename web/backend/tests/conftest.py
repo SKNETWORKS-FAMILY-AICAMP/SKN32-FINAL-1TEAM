@@ -97,6 +97,21 @@ _MINIMAL_PROFILE_PAYLOAD = {
 }
 
 
+@pytest.fixture(autouse=True)
+def orch():
+    """[SB-242] 모든 테스트에 가짜 오케스트레이터를 gateway로 끼운다 — 라우터가 sbrain · MySQL 없이 돈다.
+    기본은 "진행 중인 작업 없음 · 시작 요청 통과 · 실행 건 없음"이고, 테스트가 orch.responses['함수 이름']을 바꿔
+    원하는 상태를 만든다. 부른 함수는 orch.calls에 쌓인다."""
+    from orch_fakes import FakeOrch, default_responses
+
+    from app.orch import OrchGateway, init_gateway, reset_gateway
+
+    fake = FakeOrch(**default_responses())
+    init_gateway(OrchGateway(fake))
+    yield fake
+    reset_gateway()
+
+
 @pytest.fixture()
 def client(db_session):
     """인증 안 된 TestClient. db_session과 같은 엔진(SQLite 파일)을 보므로, 테스트

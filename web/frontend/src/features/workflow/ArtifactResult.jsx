@@ -5,7 +5,8 @@ import {Icon} from '../../components/Icons.jsx';
 import {SiteMock,RerunLeftBadge} from './shared.jsx';
 import {detectItemCategory,buildCodeCheckItems,isRerunCapped,rerunLeftOf} from './utils.js';
 import {ARTIFACT_CATEGORY_COPY,ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,EXECUTABLE_COPY,PROTOTYPE_PAGE,RERUN_CAP} from './data.js';
-import {retryTask,fetchUploadBlob} from '../../api.js';
+import {fetchUploadBlob,startFinalReview} from '../../api.js';
+import {REWORK_FAILED_MESSAGE,findRunningRework,rejectedReworkMessage,relabelAfterReject,requestRework,waitRework} from './rework.js';
 
 // ARTIFACT_SUBTASKS_BY_CATEGORY(data.js)의 라벨 -> app/schemas.py RetryTaskRequest.task_key.
 const TASK_KEY_BY_LABEL = { '실행 파일 제작': 'implement_prototype', '인포그래픽 제작': 'implement_infographic' };
@@ -28,19 +29,40 @@ export function InfographicMock({ src = null }){
 // expect='image'를 주면 받아온 파일이 실제 이미지인지까지 본다. 서버의 구현 Agent가
 // 인포그래픽도 .html로 만들어 보내는 경우가 있는데(app/agents.py run_implement_agent_retry),
 // 그대로 <img>에 걸면 깨진 이미지 자리만 남고 사용자는 이유를 알 수 없다.
+// LLM이 만든 HTML에서 외부 주소 요청(CDN 스크립트 · 외부 스타일 · 이미지 · fetch 등)을 막는다. sandbox iframe은
+// 로그인 쿠키 · 웹 저장소만 막고 네트워크는 막지 않는다 — 검증-2도 외부 의존을 감점하지 않아(조율 10-11 5번) 화면이
+// 막아야 한다. 문서 맨 앞(head 안)에 CSP meta를 넣는다. 인라인 스크립트 · 스타일과 data: · blob: 자원은 허용한다
+// (구현 Agent는 글꼴 · 아이콘을 data URI로 넣는다).
+export const SANDBOX_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; "
+  + "font-src data:; media-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'";
+export function isolateHtml(html){
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${SANDBOX_CSP}">`;
+  const text = String(html || '');
+  for (const re of [/<head(\s[^>]*)?>/i, /<html(\s[^>]*)?>/i]) {
+    const m = re.exec(text);
+    if (m) return text.slice(0, m.index + m[0].length) + meta + text.slice(m.index + m[0].length);
+  }
+  return meta + text;
+}
+const isHtmlFile = (path, blob) => (blob.type || '').includes('html') || /\.html?$/i.test(String(path).split('?')[0]);
+
 export function useArtifactFile(path, { expect } = {}){
   const [state, setState] = useState({ url: null, failed: false });
   useEffect(() => {
     if (!path) { setState({ url: null, failed: false }); return; }
     let cancelled = false, objectUrl = '';
     setState({ url: null, failed: false });
-    fetchUploadBlob(path).then((blob) => {
+    fetchUploadBlob(path).then(async (fetched) => {
       if (cancelled) return;
-      if (expect === 'image' && blob.type && !blob.type.startsWith('image/')) {
-        console.error('인포그래픽 자리에 이미지가 아닌 파일이 왔어요', path, blob.type);
+      if (expect === 'image' && fetched.type && !fetched.type.startsWith('image/')) {
+        console.error('인포그래픽 자리에 이미지가 아닌 파일이 왔어요', path, fetched.type);
         setState({ url: null, failed: true });
         return;
       }
+      const blob = expect !== 'image' && isHtmlFile(path, fetched)
+        ? new Blob([isolateHtml(await fetched.text())], { type: 'text/html;charset=utf-8' })
+        : fetched;
+      if (cancelled) return;
       objectUrl = URL.createObjectURL(blob);
       setState({ url: objectUrl, failed: false });
     }).catch((err) => {
@@ -58,7 +80,7 @@ export function useArtifactFile(path, { expect } = {}){
 export function ArtifactLoadError(){
   return (
     <p role="alert" className="mb-4 rounded-xl border border-[var(--warn)] bg-[color-mix(in_srgb,var(--warn)_8%,white)] px-4 py-3 text-[12.5px] text-[var(--fg)] leading-relaxed">
-      산출물 파일을 불러오지 못해 예시 화면을 대신 보여주고 있어요. 로그인이 풀렸을 수 있으니 새로고침해 주세요.
+      산출물 파일을 불러오지 못해 예시 화면을 대신 보여주고 있어요. 잠시 뒤 다시 열어 주세요.
     </p>
   );
 }
@@ -110,8 +132,26 @@ export function ResultPreview({kind,onClose,siteSrc=null,infoSrc=null}){
  </dialog>;
 }
 
-export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, scoreOutcome = 'fail', projectId, reworkCounts = {}, onRework, scores = null, reworkBudget = null, onScoresRefresh, artifact = null }){
+export function ArtifactResult({ announcement, itemInfo, onFinalize, scoreOutcome = 'fail', projectId, reworkCounts = {}, onRework, scores = null, reworkBudget = null, onScoresRefresh, artifact = null }){
   const [preview,setPreview]=useState(null);
+  const [finalizing,setFinalizing]=useState(false);
+  const [finalizeError,setFinalizeError]=useState('');
+  // '종합 평가 확인하기' — 서버가 산출물 확인을 끝내고 종합 평가 대기로 넘긴 뒤 화면 9로 간다(명세 6.2 화면 8).
+  // 예전엔 서버 호출 없이 화면만 넘겼다. 이미 넘어간 뒤 다시 눌러도 서버는 지금 상태만 돌려준다.
+  const finalize=async()=>{
+    if(!projectId){onFinalize();return}
+    setFinalizing(true);setFinalizeError('');
+    try{
+      // 이미 실패한 실행에도 200으로 지금 상태를 준다(백엔드 회신) — match_status로 가른다.
+      const status=await startFinalReview(projectId);
+      if(status?.match_status==='failed'){setFinalizeError('일시적인 문제로 작업을 완료하지 못했습니다. 새 작업으로 다시 시작해주세요.');return;}
+      // 받을 수 없는 상태(재작성이 도는 중 등)여도 200으로 지금 상태만 온다 — 종합 평가 대기로 바뀌었을 때만 넘어간다.
+      if(status?.stage!=='final_review_pending'){setFinalizeError('지금은 종합 평가로 넘어갈 수 없어요. 진행 중인 작업이 끝난 뒤 다시 시도해 주세요.');return;}
+      onFinalize();
+    }
+    catch(err){console.error('종합 평가로 넘어가지 못했어요',err);setFinalizeError(err.message||'종합 평가로 넘어가지 못했어요. 다시 시도해 주세요.');}
+    finally{setFinalizing(false)}
+  };
   // 서버가 이미 정한 카테고리(artifact.category)가 있으면 그걸 쓴다 — 없으면(아직 생성
   // 전이라 artifact 자체가 없는 극히 드문 진입 경로에서만) itemInfo 텍스트로 추측한다.
   // 예전엔 항상 추측만 써서, 사용자가 입력한 문구가 onepage 키워드(매장/가게/카페 등)에
@@ -122,9 +162,24 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
   // 서버 채점이 끝났으면 그 값을, 아직이면 기존 고정 표를 쓴다(utils.js scoresFromResult).
   const artifactScore = scores?.artifactScore || ARTIFACT_SCORE_BY_OUTCOME[scoreOutcome];
   const codeCheckItems = scores?.codeCheckItems || buildCodeCheckItems(category, scoreOutcome);
-  const passedItems = codeCheckItems.filter((item) => item.passed);
-  const failedItems = codeCheckItems.filter((item) => !item.passed);
-  const missingFeatures = artifactScore.crossCheck.reasons;
+  // 해당 없음(applicable === false) 항목은 통과 · 미달 어느 쪽에도 세지 않고 통과 목록 끝에 따로 보인다.
+  const [showPassed, setShowPassed] = useState(false);
+  const naItems = codeCheckItems.filter((item) => item.applicable === false);
+  const passedItems = codeCheckItems.filter((item) => item.passed && item.applicable !== false);
+  const failedItems = codeCheckItems.filter((item) => !item.passed && item.applicable !== false);
+  // [SB-239] 서버가 기능 목록을 따로 주면(missing_features · partial_features) 그걸 쓴다 — 예전엔 대조 사유 문장 하나를 통째로 보였다.
+  // 필드가 없는 예전 응답 · 예시 화면은 기존 사유 목록으로.
+  const hasFeatureLists = Array.isArray(artifact?.missing_features);
+  const missingFeatures = hasFeatureLists ? artifact.missing_features : artifactScore.crossCheck.reasons;
+  const partialFeatures = hasFeatureLists ? (artifact.partial_features || []) : [];
+  // 통과 필수 조건(진입 파일 · 비밀값 · 격리 화면 동작) — 하나라도 어기면 산출물층 30점이 0점(기획서 v1.11 4-5 · 5-4)
+  const gateFailures = artifact?.gate_failures || [];
+  // 사용자에게 보일 문구 — 서버 이름(진입 파일 · 비밀값 · 격리 화면 동작)은 개발 용어라 무엇이 문제인지 풀어 쓴다. 모르는 코드는 서버 이름 그대로.
+  const GATE_TEXT = {
+    entry: '산출물 파일이 비어 있거나 열 수 없어요',
+    secret: '코드에 API 키 · 비밀번호처럼 노출되면 안 되는 값이 들어 있어요',
+    sandbox: '미리보기에서 막히는 브라우저 저장 기능을 써서 화면이 동작하지 않아요',
+  };
   const subtasks = ARTIFACT_SUBTASKS_BY_CATEGORY[category] || ARTIFACT_SUBTASKS_BY_CATEGORY.webdev;
   const [checkedTasks, setCheckedTasks] = useState([]);
   const [runningTasks, setRunningTasks] = useState([]);
@@ -150,34 +205,62 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
     setCheckedTasks((prev) => (prev.includes(label) ? prev.filter((t) => t !== label) : [...prev, label]));
     setCompletedTasks((prev) => prev.filter((t) => t !== label));
   };
-  // POST /projects/{id}/retry-task 실제 호출(app/routers/projects.py retry_task) — 예전엔
-  // setTimeout으로 스피너만 흉내 내고 서버 호출이 없어 artifacts 테이블이 안 바뀌었다.
+  // 재작성 — 접수만 하고 바로 돌아온다. 같은 화면에서 2초 안의 요청은 한 번으로 합쳐지고(cycle_id),
+  // 끝날 때까지 GET /rework-result를 확인한다(rework.js). 화면을 나갔다 돌아와도 진행 중이면 이어서 본다.
+  const alive = useRef(true);
+  useEffect(() => () => { alive.current = false; }, []);
+  const finishRework = async (cycleId, picked) => {
+    const result = await waitRework(projectId, cycleId, () => alive.current);
+    if (!result) return;
+    if (result.status === '실패') {
+      window.alert(REWORK_FAILED_MESSAGE);
+    } else {
+      // 실제로 다시 만든 뒤에만 횟수를 센다 — 실패는 서버가 기회를 돌려준다.
+      if (onRework) onRework(picked);
+      setCompletedTasks((prev) => [...new Set([...prev, ...picked])]);
+    }
+    if (onScoresRefresh) await onScoresRefresh();
+    if (alive.current) setRunningTasks([]);
+  };
+  useEffect(() => {
+    if (!projectId) return;
+    findRunningRework(projectId, 8).then((running) => {
+      if (!running || !alive.current) return;
+      const picked = running.bundles.filter((b) => subtasks.includes(b));
+      setRunningTasks(picked);
+      finishRework(running.cycle_id, picked).catch((err) => console.error('재작성 결과를 불러오지 못했어요', err));
+    }).catch((err) => console.error('재작성 상태를 확인하지 못했어요', err));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
   const handleRewrite = async () => {
     const picked = checkedTasks.filter((label) => !isCapped(label));
     if (picked.length === 0) return;
     setRunningTasks(picked);
     setCheckedTasks([]);
-    const taskKeys = [...new Set(picked.map((label) => TASK_KEY_BY_LABEL[label]).filter(Boolean))];
     try {
-      if (projectId) await Promise.all(taskKeys.map((key) => retryTask(projectId, key)));
-      // 실제로 재시도가 나간 뒤에만 횟수를 센다 — 실패한 호출로 상한을 깎지 않는다.
-      if (onRework) onRework(picked);
-      if (onScoresRefresh) await onScoresRefresh();
-      setCompletedTasks((prev) => [...new Set([...prev, ...picked])]);
+      if (!projectId) { setCompletedTasks((prev) => [...new Set([...prev, ...picked])]); setRunningTasks([]); return; }
+      const req = await requestRework(projectId, picked, TASK_KEY_BY_LABEL);
+      if (req.rejected.length > 0) {
+        // 일부만 거절 — 거절된 묶음은 다시 고를 수 있게 돌려 두고, 접수된 묶음만 진행 중으로 본다.
+        window.alert(rejectedReworkMessage(req.rejected));
+        setCheckedTasks(relabelAfterReject(picked, req.rejected)); // 상한(E-G2-LIMIT) 묶음은 다시 체크하지 않는다
+        setRunningTasks(req.labels);
+      }
+      await finishRework(req.cycleId, req.labels);
     } catch (err) {
       console.error('재작성 요청이 실패했어요', err);
-      window.alert(err.message || '재작성에 실패했어요. 다시 시도해 주세요.');
-      setCheckedTasks(picked);
-    } finally {
+      window.alert(err.rejected?.length > 1 ? rejectedReworkMessage(err.rejected) : (err.message || '재작성에 실패했어요. 다시 시도해 주세요.'));
+      setCheckedTasks(relabelAfterReject(picked, err.rejected));
       setRunningTasks([]);
+      // 상한에 걸렸으면 남은 횟수를 서버에서 다시 받아 그 묶음을 끈다
+      if (err.rejected?.some((r) => r.error?.code === 'E-G2-LIMIT') && onScoresRefresh) onScoresRefresh();
     }
   };
 
   return (
     <section data-screen="artifact" className="max-w-6xl mx-auto px-6 py-16">
-      <button onClick={onBack} className="mb-6 text-[13.5px] font-semibold text-[var(--primary)] hover:underline transition-[scale] duration-150 ease-out active:scale-[0.96]">
-        ‹ 사업계획서로 돌아가기
-      </button>
+      {/* 단계 사이 되돌아가기(8 → 6)는 없는 기능이라 '사업계획서로 돌아가기'를 뺐다
+          (웹연동_변경사항_웹팀전달.md 5절). */}
 
       <div className={`grid gap-6 items-start transition-[grid-template-columns] duration-200 ${panelOpen ? 'md:grid-cols-[290px_1fr]' : 'md:grid-cols-[auto_1fr]'}`}>
         {/* 좌측 — 산출물 점검: 합격선은 물론 점수 자체도 표기하지 않는다(사용자 요청) —
@@ -200,44 +283,85 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
           <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1">산출물 점검</p>
           <p className="text-[11.5px] text-[var(--muted-fg)] mb-4">코드 검증과 계획서 대조 결과입니다</p>
 
-          <div className="mb-4">
-            <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-2">코드 검증 8항목</p>
-            {/* 통과·미달이 섞여 있으면 무엇을 고쳐야 하는지 한눈에 안 들어와서 왼쪽 통과, 오른쪽 미달로 나눈다. */}
-            <div className="grid grid-cols-2 gap-x-3">
-              <div className="flex flex-col gap-2">
-                <p className="text-[11px] font-semibold text-[var(--ok)]">통과 {passedItems.length}</p>
-                {passedItems.map((item) => (
-                  <div key={item.id} className="flex items-center gap-1.5 text-[12px] leading-snug">
-                    <span className="flex-shrink-0 w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold bg-[color-mix(in_srgb,var(--ok)_16%,white)] text-[var(--ok)]" aria-hidden="true">✓</span>
-                    <span className="text-[var(--fg)]">{item.name}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="flex flex-col gap-2">
-                <p className="text-[11px] font-semibold text-[var(--danger)]">미달 {failedItems.length}</p>
-                {failedItems.length === 0 ? (
-                  <p className="text-[12px] text-[var(--muted-fg)]">없음</p>
-                ) : failedItems.map((item) => (
-                  <div key={item.id} className="text-[12px] leading-snug">
-                    <div className="flex items-center gap-1.5">
-                      <span className="flex-shrink-0 w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold bg-[color-mix(in_srgb,var(--danger)_12%,white)] text-[var(--danger)]" aria-hidden="true">✕</span>
-                      <span className="text-[var(--fg)]">{item.name}</span>
-                    </div>
-                    <p className="pl-5 mt-0.5 text-[11px] text-[var(--danger)] leading-snug">{item.evidence}</p>
-                  </div>
-                ))}
-              </div>
+          {/* 통과 필수 조건 — 8항목보다 먼저 본다(어기면 8항목 · 계획서 대조가 모두 0점) */}
+          {gateFailures.length > 0 ? (
+            <div role="alert" className="mb-4 rounded-xl border border-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_6%,white)] px-3.5 py-3">
+              <p className="text-[12px] font-bold text-[var(--danger)] mb-1">필수 조건을 통과하지 못했어요</p>
+              <ul className="mb-1.5 flex flex-col gap-0.5">
+                {gateFailures.map((g) => <li key={g.code} className="text-[11.5px] text-[var(--danger)] leading-relaxed">· {GATE_TEXT[g.code] || g.display_name || g.code}</li>)}
+              </ul>
+              <p className="text-[11.5px] text-[var(--fg)] leading-relaxed">필수 조건을 하나라도 어기면 산출물층 점수가 모두 0점이 돼요. {hasExecutable ? '실행 파일' : '인포그래픽'}을 다시 만들어 주세요.</p>
             </div>
+          ) : Array.isArray(artifact?.gate_failures) && (
+            <p className="mb-4 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">필수 조건(파일 정상 · 민감한 값 없음{hasExecutable ? ' · 화면 동작 가능' : ''}) 모두 통과</p>
+          )}
+
+          <div className="mb-5">
+            <div className="flex items-baseline justify-between gap-2 mb-2">
+              <p className="text-[12px] font-bold text-[var(--muted-fg)]">코드 검증 8항목</p>
+              <p className="text-[11.5px] text-[var(--muted-fg)]">
+                <span className="font-semibold text-[var(--ok)]">통과 {passedItems.length}</span>
+                {' · '}<span className={`font-semibold ${failedItems.length ? 'text-[var(--danger)]' : ''}`}>미달 {failedItems.length}</span>
+                {naItems.length > 0 && ` · 해당 없음 ${naItems.length}`}
+              </p>
+            </div>
+            {/* 미달 항목을 위에 이유와 함께 한 줄씩, 통과 · 해당 없음은 접어 둔다 — 예전엔 통과 · 미달을 좁은 두 칸으로 나눠
+                긴 이유가 여러 줄로 꺾이고 빨간 글씨 덩어리가 됐다(디자인 점검 10-12). */}
+            <div className="flex flex-col gap-2.5">
+              {failedItems.map((item) => (
+                <div key={item.id} className="flex items-start gap-2 text-[12.5px] leading-snug">
+                  <span className="flex-shrink-0 mt-px w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold bg-[color-mix(in_srgb,var(--danger)_12%,white)] text-[var(--danger)]" aria-hidden="true">✕</span>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-[var(--fg)]">{item.name}</p>
+                    {item.evidence && <p className="mt-0.5 text-[11.5px] text-[var(--muted-fg)] leading-relaxed">{item.evidence}</p>}
+                  </div>
+                </div>
+              ))}
+              {failedItems.length === 0 && <p className="text-[12.5px] text-[var(--fg)]">모든 항목을 통과했어요.</p>}
+            </div>
+            {(passedItems.length > 0 || naItems.length > 0) && (
+              <button type="button" onClick={() => setShowPassed((v) => !v)} aria-expanded={showPassed}
+                className="mt-3 inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--muted-fg)] hover:text-[var(--fg)] transition-colors">
+                {showPassed ? '통과한 항목 접기' : `통과한 항목 ${passedItems.length}개 보기`}
+                <Icon name="chevron" size={11} style={{ transform: showPassed ? 'rotate(-90deg)' : 'rotate(90deg)' }} />
+              </button>
+            )}
+            {showPassed && (
+              <ul className="mt-2 flex flex-col gap-1.5">
+                {passedItems.map((item) => (
+                  <li key={item.id} className="flex items-center gap-2 text-[12px] text-[var(--fg)]">
+                    <span className="flex-shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold bg-[color-mix(in_srgb,var(--ok)_16%,white)] text-[var(--ok)]" aria-hidden="true">✓</span>
+                    {item.name}
+                  </li>
+                ))}
+                {naItems.map((item) => (
+                  <li key={item.id} title={item.evidence || undefined} className="flex items-center gap-2 text-[12px] text-[var(--muted-fg)]">
+                    <span className="flex-shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold bg-[var(--muted)]" aria-hidden="true">–</span>
+                    {item.name} <span className="text-[11px]">(해당 없음)</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <div className="mb-4">
-            <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-2">계획서 대조 — 누락 기능</p>
-            {missingFeatures.length === 0 ? (
+            <p className="text-[12px] font-bold text-[var(--muted-fg)] mb-2">계획서 대조 — 누락 기능{partialFeatures.length > 0 ? ' · 부분 인정' : ''}</p>
+            {artifactScore.crossCheck.withheld ? (
+              <p className="text-[12.5px] text-[var(--warn)] leading-relaxed">대조 불가 — 계획서와 구현 기능을 대조하지 못했어요. 이 항목은 0점으로 합산돼요.</p>
+            ) : missingFeatures.length === 0 && partialFeatures.length === 0 ? (
               <p className="text-[12.5px] text-[var(--muted-fg)]">누락된 기능 없음</p>
             ) : (
               <ul className="flex flex-col gap-1.5">
                 {missingFeatures.map((r) => (
-                  <li key={r} className="text-[12.5px] text-[var(--danger)] leading-relaxed">· {r}</li>
+                  <li key={'m-' + r} className="flex items-start gap-2 text-[12.5px] text-[var(--fg)] leading-relaxed">
+                    <span className="flex-shrink-0 mt-[7px] w-1.5 h-1.5 rounded-full bg-[var(--danger)]" aria-hidden="true" />{r}
+                  </li>
+                ))}
+                {/* 부분 인정 — 일부 요소만 확인된 기능(점수 일부 인정). 누락과 겹치지 않는다. */}
+                {partialFeatures.map((r) => (
+                  <li key={'p-' + r} className="flex items-start gap-2 text-[12.5px] text-[var(--fg)] leading-relaxed">
+                    <span className="flex-shrink-0 mt-[7px] w-1.5 h-1.5 rounded-full bg-[var(--warn)]" aria-hidden="true" /><span>{r} <span className="text-[11px] font-semibold text-[var(--warn)]">(부분 인정)</span></span>
+                  </li>
                 ))}
               </ul>
             )}
@@ -281,7 +405,8 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
         <div className="flex flex-col">
           {(infoFailed || siteFailed) && <ArtifactLoadError />}
           <p className="text-[13px] font-semibold text-[var(--primary-dim)] tracking-wide mb-2">산출물</p>
-          <p className="text-[14px] text-[var(--muted-fg)] leading-snug mb-1.5">『{announcement ? announcement.title : ''}』</p>
+          {/* 공고 제목을 모르면(알림에서 연 프로젝트 · 공고 표에서 빠진 공고) 빈 『』를 그리지 않는다 */}
+          {announcement?.title && <p className="text-[14px] text-[var(--muted-fg)] leading-snug mb-1.5">『{announcement.title}』</p>}
           <h1 className="font-display font-bold text-[26px] md:text-[30px] mb-3">프로토타입이 준비됐어요</h1>
           <p className="text-[14.5px] text-[var(--muted-fg)] mb-8">
             {hasExecutable ? '사업계획서와 함께 제출할 실행 파일·인포그래픽입니다' : copy.note}
@@ -296,7 +421,7 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
                 <p className="font-bold text-[14.5px] mb-1">인포그래픽</p>
                 <p className="text-[12.5px] text-[var(--muted-fg)] mb-3">사업계획서에 삽입할 요약 인포그래픽입니다</p>
                 <div className="flex items-center justify-between text-[12px] font-mono text-[var(--muted-fg)]">
-                  <span>{(artifact?.infographic_path||'infographic.png').split('/').pop()}</span>
+                  <span>{(artifact?.infographic_path||'infographic.svg').split('/').pop()}</span>
                   <button onClick={()=>setPreview("info")} className="font-semibold text-[var(--primary)] hover:underline">미리보기</button>
                 </div>
               </div>
@@ -325,11 +450,12 @@ export function ArtifactResult({ announcement, itemInfo, onBack, onFinalize, sco
           이 화면엔 합격선이 없으므로(기획서 4-5) 진행을 막는 컨펌 게이트도 두지 않는다. */}
       <div className="mt-10 pt-8 border-t border-[var(--border)] flex items-center justify-between gap-4 flex-wrap">
         <p className="text-[13.5px] text-[var(--muted-fg)]">사업계획서와 이 산출물을 대조한 최종 결과는 종합 평가에서 확인합니다</p>
-        <button onClick={onFinalize}
-          className="rounded-xl bg-[var(--primary)] text-white px-6 py-3 text-[14.5px] font-semibold hover:bg-[var(--primary-dim)] transition-[background-color,scale] duration-150 ease-out active:scale-[0.97] flex-shrink-0">
-          종합 평가 확인하기
+        <button onClick={finalize} disabled={finalizing||runningTasks.length>0}
+          className="rounded-xl bg-[var(--primary)] text-white px-6 py-3 text-[14.5px] font-semibold hover:bg-[var(--primary-dim)] disabled:opacity-60 transition-[background-color,scale] duration-150 ease-out active:scale-[0.97] flex-shrink-0">
+          {finalizing?'넘어가는 중…':'종합 평가 확인하기'}
         </button>
       </div>
+      {finalizeError&&<p role="alert" className="mt-3 text-right text-[13px] text-[var(--danger)]">{finalizeError}</p>}
       {preview&&<ResultPreview kind={preview} onClose={()=>setPreview(null)} siteSrc={siteUrl} infoSrc={infoUrl}/>}
     </section>
   );

@@ -1,10 +1,12 @@
 import React,{useState,useEffect} from 'react';
 import {Brand,Icon} from './Icons.jsx';
 import {NotificationBell} from '../features/Workflow.jsx';
-import {listProjects,deleteProject,deleteProjectPermanently,startPlanGeneration,startPrototypeGeneration} from '../api.js';
+import {listProjects,deleteProject,deleteProjectPermanently} from '../api.js';
+import {formatKstDate} from '../time.js';
+import {isResultReady,isResultRunning} from '../features/workflow/utils.js';
 export const steps=[['intake','아이템 입력'],['match-results','공고 찾기'],['plan-form','사업계획서'],['artifact-result','프로토타입'],['final-verdict','제출 전 점검'],['review','최종 결과물']];
 export function WorkspaceShell({view,user,onHome,onDashboard,onMyPage,onNewProject,onLogout,notifyEnabled,onToggleNotify,onOpenProject,children}){
- const index=['match-progress','eligibility-gate','eligibility-fail'].includes(view)?1:view==='plan-progress'?2:view==='artifact-progress'?3:view==='final-pass'?4:steps.findIndex(x=>x[0]===view);
+ const index=['match-progress','eligibility-gate','eligibility-fail'].includes(view)?1:view==='plan-progress'?2:view==='artifact-progress'?3:view==='final-pass'?4:view==='review-progress'?5:steps.findIndex(x=>x[0]===view);
  // [2026-09-19] nav를 좌측 끝까지 넓히면서 상단 중앙에 빈 공간이 생겨서(사용자 지적),
  // 예전엔 topbar 아래 별도 줄이던 진행 단계(flow-navigation)를 topbar 안 중앙으로
  // 옮겨 그 공간을 쓴다 — 화면마다 줄 하나씩 줄어드는 효과도 겸한다.
@@ -15,18 +17,10 @@ export function WorkspaceShell({view,user,onHome,onDashboard,onMyPage,onNewProje
 // 받아온다. "신규 사용자 보기" 체크박스(사람이 데모용으로 직접 토글하던 것)는 없앴다 —
 // 로딩이 끝났는데 목록이 비어있으면 그게 곧 신규 사용자라는 뜻이라, isNewUser는 실제
 // 데이터에서 그대로 계산한다.
-// [2026-09-19] 더미 파이프라인은 공고를 고르는 순간 계획서·프로토타입·최종판정을 한 번에
-// 다 만들어 stage가 곧장 'done'이 된다(app/routers/projects.py generate_pipeline_result) —
-// 그래서 stage만 보면 사용자가 프로토타입 생성도, 검증도 안 열어봤는데 "준비 완료"로
-// 뜨는 버그가 있었다(사용자 지적: 공고매칭에서 나가면 "진행 중"으로 뜨는데 사업계획서
-// 이후 화면에서 나가면 그걸 인식 못 하고 무조건 완료로 뜸). App.jsx가 화면 전환마다
-// project별로 남겨두는 마지막 화면(localStorage `sbrain-last-view:{id}`, RESUMABLE_VIEWS)을
-// 같이 봐서 실제로 최종 결과물(review) 화면까지 가본 적 있는 프로젝트만 완료로 친다.
-const lastViewKey=(id)=>`sbrain-last-view:${id}`;
-const isActuallyDone=(projectId,stage)=>{
- if(stage!=='done')return false;
- try{return localStorage.getItem(lastViewKey(projectId))==='review'}catch(e){return false}
-};
+// 완료(준비 완료)는 서버 결과물 · 완료(stage 'done' + 상태 '완료')로 본다. 조율 2026-10-15부터 화면 9 '진행' 뒤 결과 통합이
+// 도는 동안에도 stage가 'done'이라(상태만 진행 중) stage만 보면 다 만들기 전에 '준비 완료'가 뜬다. 예전 더미 파이프라인은
+// 공고를 고르는 순간 stage가 곧장 'done'이 돼서 브라우저에 남긴 마지막 화면(localStorage)으로 다시 걸렀는데,
+// 오케스트레이터는 단계를 실제로 밟아 그 우회가 필요 없다.
 const GENERATING_LABEL={plan_writing:'계획서 작성 중',prototype_building:'프로토타입 제작 중'};
 export function Dashboard({onNewProject,onOpenProject}){
  const [query,setQuery]=useState('');const [filter,setFilter]=useState('전체');const [guard,setGuard]=useState(false);
@@ -35,7 +29,6 @@ export function Dashboard({onNewProject,onOpenProject}){
  // "완전히 삭제"는 되돌릴 수 없어서 한 단계를 더 둔다 — 이 값이 그 프로젝트 id면 확인 자리가
  // 완전 삭제 최종 확인으로 바뀐다.
  const [permanentId,setPermanentId]=useState(null);
- const [retryingId,setRetryingId]=useState(null);const [retryError,setRetryError]=useState('');
 
  // 목록을 즉시 다시 받아야 할 때 쓴다(예: 삭제가 409로 거절당해 내 목록이 서버와 어긋났을 때).
  const [reloadKey,setReloadKey]=useState(0);
@@ -49,15 +42,16 @@ export function Dashboard({onNewProject,onOpenProject}){
    setProjects(rows.map(r=>({
     id:r.project_id,
     name:r.description,
-    announcementTitle:r.notice_title||'아직 매칭된 공고가 없어요',
+    // 공고를 골랐는데 제목을 못 찾으면(공고 표에서 빠진 공고 · 로컬 스텁 공고) '매칭된 공고가 없다'고 하지 않는다.
+    announcementTitle:r.notice_title||(r.notice_id?'선택한 공고':'아직 매칭된 공고가 없어요'),
     matched:!!r.notice_title,
-    progress:isActuallyDone(r.project_id,r.stage)?100:0,
+    progress:isResultReady(r)?100:0,
     failed:r.match_status==='failed',failedStage:r.stage,
-    generating:r.match_status!=='failed'&&GENERATING_LABEL[r.stage]?`${GENERATING_LABEL[r.stage]} ${r.progress_percent??0}%`:null,
-    updatedAt:(r.created_at||'').slice(0,10),
+    generating:r.match_status!=='failed'&&GENERATING_LABEL[r.stage]?`${GENERATING_LABEL[r.stage]} ${r.progress_percent??0}%`:isResultRunning(r)?'최종 결과물 만드는 중':null,
+    updatedAt:formatKstDate(r.created_at),
    })));
    setLoading(false);
-   if(rows.some(r=>r.match_status!=='failed'&&GENERATING_LABEL[r.stage]))timer=setTimeout(load,5000);
+   if(rows.some(r=>(r.match_status!=='failed'&&GENERATING_LABEL[r.stage])||isResultRunning(r)))timer=setTimeout(load,5000);
   }).catch(err=>{
    console.error('내 프로젝트 목록을 불러오지 못했어요', err);
    if(!cancelled){setLoadError(true);setLoading(false);}
@@ -69,17 +63,9 @@ export function Dashboard({onNewProject,onOpenProject}){
  const isNewUser=!loading&&!loadError&&projects.length===0;
  const filtered=projects.filter(p=>(p.name+' '+p.announcementTitle).includes(query)&&(filter==='전체'||(filter==='진행 중'?p.progress<100:p.progress===100)));
  const inProgress=projects.find(p=>p.progress<100)||null;
- const start=()=>{if(inProgress)setGuard(true);else onNewProject()};
- const retryProject=async p=>{
-  if(retryingId!=null)return;
-  setRetryError('');setRetryingId(p.id);
-  try{
-   const startTask=p.failedStage==='plan_writing'?startPlanGeneration:startPrototypeGeneration;
-   await startTask(p.id);
-   onOpenProject(p,p.failedStage==='plan_writing'?'plan-progress':'artifact-progress');
-  }catch(err){setRetryError(err.message||'재실행하지 못했어요. 다시 시도해 주세요.');}
-  finally{setRetryingId(null)}
- };
+ // 실패한 프로젝트는 진행 중으로 세지 않는다 — 실패한 작업은 다시 시작할 수 없고 새 작업으로 시작한다
+ // (웹연동_변경사항_웹팀전달.md 3.2 · 5절, E-RUN-FAIL).
+ const start=()=>{if(inProgress&&!inProgress.failed)setGuard(true);else onNewProject()};
 
  // 휴지통 버튼 — 실수로 바로 지워지지 않게 한 번 더 확인을 거친다. 확인 자리에서 둘 중
  // 하나를 고른다(기획서 6-7 "건별 삭제" 대응):
@@ -93,7 +79,6 @@ export function Dashboard({onNewProject,onOpenProject}){
   try{
    await (permanent?deleteProjectPermanently(id):deleteProject(id));
    setProjects(list=>list.filter(p=>p.id!==id));
-   try{localStorage.removeItem(lastViewKey(id))}catch(e){}
   }catch(err){
    console.error('프로젝트를 지우지 못했어요',err);
    // 서버가 409로 거절할 때는 detail에 사유가 온다(예: 생성 중엔 완전 삭제 불가).
@@ -101,6 +86,8 @@ export function Dashboard({onNewProject,onOpenProject}){
    // 시작된 직후처럼 폴링이 아직 안 돈 순간엔 열려 있을 수 있다 — 그 틈으로 눌렀을 때
    // "다시 시도해 주세요"만 뜨면 왜 안 되는지 알 수가 없다. 사유가 오면 그대로 띄운다.
    const detail=typeof err?.detail==='string'?err.detail:null;
+   // BUSY — 워커가 단계를 도는 중이라 지금은 못 지운다(서버는 아무것도 지우지 않았다). 잠시 뒤 다시 누르면 된다.
+   if(err?.code==='BUSY'){window.alert('지금 작업이 진행 중이라 지우지 못했어요. 잠시 뒤 다시 시도해 주세요.');return;}
    window.alert(detail||'프로젝트를 지우지 못했어요. 다시 시도해 주세요.');
    // 거절당했다는 건 내 목록이 서버와 어긋나 있다는 뜻이라 즉시 다시 받아온다.
    if(err?.status===409)reload();
@@ -116,10 +103,9 @@ export function Dashboard({onNewProject,onOpenProject}){
   {loadError&&<p className="workspace-note">프로젝트 목록을 불러오지 못했어요. 새로고침해 주세요.</p>}
 
   {!loading&&inProgress&&<div className={'continue-card'+(inProgress.failed?' is-failed':'')}>
-   <button className="continue-open" onClick={()=>onOpenProject(inProgress)}><span className="continue-icon"><Icon name={inProgress.failed?'close':'file'} size={32}/></span><div><p>{inProgress.failed?'작업이 중단됐어요':'이어서 준비하기'}</p><h2>{inProgress.name}</h2><span>{inProgress.failed?(inProgress.failedStage==='plan_writing'?'사업계획서':'프로토타입')+' 작성 중 실패하였습니다.':inProgress.matched?'계획서·프로토타입 준비를 이어서 진행해요':'공고 선택부터 이어서 진행해요'}</span></div></button>
-   <div className="continue-status"><span>{inProgress.failed?'실패했습니다':inProgress.generating||(inProgress.matched?'진행 중':'매칭 대기 중')}</span>{inProgress.failed?<button type="button" className="continue-retry" disabled={retryingId===inProgress.id} onClick={()=>retryProject(inProgress)}>{retryingId===inProgress.id?'다시 생성하는 중…':'다시 생성'} <Icon name="chevron" size={19}/></button>:<button type="button" onClick={()=>onOpenProject(inProgress)}>이어서 진행하기 <Icon name="chevron" size={19}/></button>}</div>
+   <button className="continue-open" onClick={()=>onOpenProject(inProgress)}><span className="continue-icon"><Icon name={inProgress.failed?'close':'file'} size={32}/></span><div><p>{inProgress.failed?'작업이 중단됐어요':'이어서 준비하기'}</p><h2>{inProgress.name}</h2><span>{inProgress.failed?'일시적인 문제로 작업을 완료하지 못했습니다. 새 작업으로 다시 시작해주세요.':inProgress.matched?'계획서·프로토타입 준비를 이어서 진행해요':'공고 선택부터 이어서 진행해요'}</span></div></button>
+   <div className="continue-status"><span>{inProgress.failed?'실패했습니다':inProgress.generating||(inProgress.matched?'진행 중':'매칭 대기 중')}</span>{inProgress.failed?<button type="button" className="continue-retry" onClick={onNewProject}>새로 시작하기 <Icon name="chevron" size={19}/></button>:<button type="button" onClick={()=>onOpenProject(inProgress)}>이어서 진행하기 <Icon name="chevron" size={19}/></button>}</div>
   </div>}
-  {retryError&&<p role="alert" className="workspace-retry-error">{retryError}</p>}
 
   {guard&&<div className="project-guard" role="status"><div><b>먼저 진행 중인 프로젝트를 확인해 주세요</b><p>한 번에 하나의 프로젝트를 준비할 수 있어요.</p></div><button className="btn small" onClick={()=>onOpenProject(inProgress||projects[0])}>이어서 준비하기</button><button className="btn btn-muted small" onClick={()=>{setGuard(false);onNewProject()}}>중단하고 새로 시작</button><button className="icon-button" aria-label="안내 닫기" onClick={()=>setGuard(false)}><Icon name="close"/></button></div>}
 
@@ -141,7 +127,7 @@ export function Dashboard({onNewProject,onOpenProject}){
          누르는지가 누르기 전에 보인다. */
       <div className="project-row-confirm">
        <span>{permanentId===p.id
-        ?'계획서·프로토타입·첨부까지 모두 지워요. 되돌릴 수 없어요.'
+        ?'입력한 정보·계획서·프로토타입까지 모두 지워요. 되돌릴 수 없어요.'
         :'이 프로젝트를 지울까요?'}</span>
        {/* 생성이 도는 중에 자료를 지우면 서버 백그라운드 작업이 없는 행을 계속 쓴다
            (app/routers/projects.py _simulate_generation) — 끝난 뒤에 지우게 막는다. */}
