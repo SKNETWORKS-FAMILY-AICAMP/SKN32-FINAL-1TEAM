@@ -26,6 +26,7 @@ import {formatKstDate,formatKstDateTime,formatKstShort} from '../time.js';
 //   verification_score_history에 이력을 남기도록 고쳤다(OpsSummaryOut 주석 참고).
 // - 검수(표현 검수 · 윤문)는 조율 2026-10-15에 서비스 흐름에서 빠졌다 — 운영 현황 · 운영 지표 요약의
 //   "보호 토큰 위반율", 에이전트 테스크의 '검수' 줄, 판정 기준의 "검수 문단 재시도 상한"을 뺐다.
+//   재시도 상한(token_retry_cap)은 서버가 선택 입력으로 바꿔(SB-401) 저장 요청에도 싣지 않는다.
 // - "검수 회수 문단"은 proofread_logs.passed=False(보호 토큰 위반 반려 시도)를 그대로
 //   라벨링 대기열로 쓴다 — model_version은 그 plan의 최종 verdicts.model_version을
 //   붙인 근사치다(RecoveryItemOut 주석 참고).
@@ -1010,7 +1011,7 @@ function AgentsTab({focusProjectId=null}){
 // 그대로 쓰고 여기서만 변환한다.
 const policyFromServer=p=>({scores:{doc:p.doc_weight,code:p.code_weight,plan:p.plan_weight},
   // [2026-09-29] rework_cap(SB-152)이 빠져 있어 저장이 항상 422였다(백엔드 제보).
-  limits:{threshold:p.pass_threshold,rerun:p.rerun_cap,rework:p.rework_cap,tokenRetry:p.token_retry_cap,recheck:p.deviation_cap}});
+  limits:{threshold:p.pass_threshold,rerun:p.rerun_cap,rework:p.rework_cap,recheck:p.deviation_cap}});
 const checklistFromServer=list=>list.map(i=>({id:i.check_item_id,name:i.name,how:i.method,kind:i.category,weight:i.weight,base:i.weight,on:i.enabled}));
 // [2026-09-23, 백엔드 전달사항 10번] 기획서 v1.8 5-4 — 체크리스트는 전체 합이 아니라
 // 산출물 카테고리마다 따로 15점 만점이다(app/routers/admin.py _CHECKLIST_CATEGORY_MAX_SCORE).
@@ -1078,7 +1079,7 @@ function PolicyTab({pushToast}){
       pushToast('판정 기준을 저장하지 못했습니다','점수는 0~100, 횟수는 0 이상의 정수로 입력해 주세요. 빈칸은 저장할 수 없습니다.','danger');return;
     }
     try{
-      await api.put('/admin/policy/thresholds',{pass_threshold:Number(limits.threshold),rerun_cap:Number(limits.rerun),rework_cap:Number(limits.rework),deviation_cap:Number(limits.recheck),token_retry_cap:Number(limits.tokenRetry)}); // 검수 재시도 상한 — 화면에서 뺐지만 서버가 아직 받으므로 불러온 값 그대로
+      await api.put('/admin/policy/thresholds',{pass_threshold:Number(limits.threshold),rerun_cap:Number(limits.rerun),rework_cap:Number(limits.rework),deviation_cap:Number(limits.recheck)});
       pushToast('판정 기준이 저장되었습니다','통과 Threshold '+limits.threshold+'점 · 재수행 상한 '+limits.rerun+'회 · 재작성 상한 '+limits.rework+'회로 반영됩니다.','info');
     }catch(e){pushToast('판정 기준을 저장하지 못했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger')}
   };
