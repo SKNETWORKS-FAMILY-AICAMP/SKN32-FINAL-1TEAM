@@ -5,16 +5,19 @@ MySQL은 SBRAIN_TEST_MYSQL_URL(환경 변수 또는 .env)이 있을 때만 돈�
 """
 from __future__ import annotations
 
+import dataclasses
+import itertools
+import re
 import threading
-import uuid
 from datetime import datetime, timedelta
 
 import pytest
-from conftest import Backend, Clock
-from sqlalchemy import select
+from conftest import TIMING, Backend, Clock
+from sqlalchemy import event, select
+from store_helpers import new_run, uid
 from webdb import new_project
 
-from sbrain.models import CycleState, Notice, Notification, RejectedAttempt, ReworkComparison, Run
+from sbrain.models import CycleState, Notice, Notification, ReworkComparison, Run
 from sbrain.models.run import make_state
 from sbrain.orchestrator.errors import ProjectRunExists, StoreConflict
 from sbrain.orchestrator.store import (
@@ -22,6 +25,7 @@ from sbrain.orchestrator.store import (
 )
 from sbrain.orchestrator.trace import CallLog, CallTry, ExecutionRecord, FeedbackLink, PointerEvent, TraceEvent
 from sbrain.store_sql import SqlStore
+from sbrain.store_sql import store as store_sql_store
 from sbrain.store_sql.schema import RUNS
 
 
@@ -31,24 +35,11 @@ def env(any_backend: Backend):
     return any_backend.make_store(clock), clock
 
 
-def uid() -> str:
-    return uuid.uuid4().hex[:12]
-
-
-def project(store: Store, *, agreed: bool = False) -> str:
-    """프로젝트 ID. SqlStore면 웹 projects 행(주인 계정의 학습 동의 = agreed)을 만든다."""
+def project(store: Store) -> str:
+    """프로젝트 ID. SqlStore면 웹 projects 행을 만든다."""
     if isinstance(store, SqlStore):
-        return str(new_project(store.engine, agreed=agreed))
-    pid = uid()
-    store.set_training_consent(pid, agreed)
-    return pid
-
-
-def new_run(clock: Clock, account: str, *, project_id: str | None = None, progress: str = "실행",
-            step: str = "공고선택", **over) -> Run:
-    now = clock()
-    return Run(run_id=uid(), account_id=account, state=make_state(step, progress), current_phase="setup",
-               settings_snapshot={"note": "test"}, updated_at=now, created_at=now, project_id=project_id, **over)
+        return str(new_project(store.engine))
+    return uid()
 
 
 def created(store: Store, clock: Clock, account: str | None = None, **kw) -> Run:
@@ -115,6 +106,7 @@ def test_active_run_limit_per_account(env):
     assert [r.run_id for r in store.list_runs(account)] == [first.run_id, second.run_id]
 
 
+@TIMING
 def test_concurrent_create_run_allows_one(env):
     store, clock = env
     account = uid()
@@ -281,24 +273,41 @@ def test_run_without_project_has_no_web_notifications(env, any_backend):
     assert store.notifications(run.run_id) == expected
 
 
-def rejected(run: Run, no: int) -> RejectedAttempt:
-    return RejectedAttempt(run_id=run.run_id, original_text="원문 (1억원)", corrected_text=f"반려 {no}",
-                           reason="보호 토큰 검사 불통과 (빠짐 1건)", attempt_no=no, violation_type="수치·금액",
-                           violation_note="빠짐: 1억원", model_version="미정")
+_WRITE_SQL = re.compile(r"^\s*(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+[`\"]?(\w+)", re.IGNORECASE)
 
 
-def test_rejected_attempts_need_project_and_consent(env):
-    """반려된 시도는 프로젝트 주인이 학습에 동의한 실행 건만, 쓴 순서대로 남는다 (웹 proofread_logs)."""
+def test_commit_writes_only_notifications_and_failure_alerts_to_web(env, any_backend):
+    """단계 저장의 웹 쓰기는 notifications · generation_failure_alerts INSERT 두 가지뿐이다 — 반려된 T-P2 시도
+    (proofread_logs)도 학습 동의(users.ai_training_agreed) 읽기도 없다. 저장 묶음에도 그 칸이 없다."""
     store, clock = env
-    agreed = created(store, clock, project_id=project(store, agreed=True))
-    refused = created(store, clock, project_id=project(store))
-    no_project = created(store, clock)
-    for run in (agreed, refused, no_project):
-        save(store, run, rejected_attempts=[rejected(run, 1), rejected(run, 2)])
-    save(store, agreed, rejected_attempts=[rejected(agreed, 3)])
-    assert store.rejected_attempts(agreed.run_id) == [rejected(agreed, n) for n in (1, 2, 3)]
-    assert store.rejected_attempts(refused.run_id) == []
-    assert store.rejected_attempts(no_project.run_id) == []
+    assert {f.name for f in dataclasses.fields(CommitBatch)} == {
+        "run", "versions", "pointers", "pointer_events", "executions", "call_logs", "feedback", "comparisons",
+        "events", "notifications"}
+    assert not hasattr(store, "rejected_attempts") and not hasattr(store, "set_training_consent")
+    run = created(store, clock, project_id=project(store))
+    note = Notification(run_id=run.run_id, kind="결과물", target_step=11, created_at=clock(), notification_id="n")
+    failed = run.model_copy(update={"state": make_state("공고선택", "실패"), "failure_reason": "시험 실패"})
+    statements: list[str] = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    if isinstance(store, SqlStore):
+        event.listen(store.engine, "before_cursor_execute", capture)
+    try:
+        save(store, failed, notifications=[note])
+    finally:
+        if isinstance(store, SqlStore):
+            event.remove(store.engine, "before_cursor_execute", capture)
+    assert [(n.kind, n.target_step) for n in store.notifications(run.run_id)] == [("결과물", 11)]
+    if any_backend.kind == "memory":
+        return
+    writes = {(m.group(1).split()[0].upper(), m.group(2)) for s in statements if (m := _WRITE_SQL.match(s))}
+    assert {w for w in writes if not w[1].startswith("orch_")} == {
+        ("INSERT", "notifications"), ("INSERT", "generation_failure_alerts")}
+    dml = [s for s in statements if s.lstrip().upper().startswith(("SELECT", "INSERT", "UPDATE", "DELETE"))]
+    assert dml and not [s for s in dml if "proofread_logs" in s or "ai_training_agreed" in s
+                        or re.search(r"\busers\b", s)]   # 구조 읽기(외래 키를 따라간 SHOW CREATE TABLE)는 빼고 본다
 
 
 # ── 사전 단계 시작 요청 ────────────────────────────────
@@ -447,6 +456,45 @@ def test_latest_start_requests_by_project(env):
     assert {k: v.request_id for k, v in got.items()} == {p1: second.request_id, p2: other.request_id}
     assert got[p1] == store.latest_start_request(p1) and got[p2] == store.latest_start_request(p2)
     assert store.latest_start_requests([]) == {}
+
+
+_numeric_projects = itertools.count(900001)
+
+
+def numeric_project(store: Store) -> int:
+    """정수 프로젝트 ID (existing_projects는 정수를 받는다). SqlStore면 웹 projects 행을 만든다."""
+    if isinstance(store, SqlStore):
+        return new_project(store.engine)
+    return next(_numeric_projects)
+
+
+def test_existing_projects_counts_runs_and_unfinished_requests(env, monkeypatch):
+    store, clock = env
+    monkeypatch.setattr(store_sql_store, "PROJECT_CHUNK", 2)                 # 묻는 개수가 나누는 크기보다 많다
+    ran, waiting, processing, failed, cancelled, never = (numeric_project(store) for _ in range(6))
+    acc = uid()
+    created(store, clock, project_id=str(ran), progress="완료")              # 워커가 가져가지 않는 상태
+    w = start_request(clock, acc, str(waiting))
+    assert store.add_start_request(w, max_active=9) is None
+    pr = start_request(clock, acc, str(processing))
+    assert store.add_start_request(pr, max_active=9) is None
+    assert store.acquire_start_request(pr.request_id, "A", 60)               # 처리중
+    f = start_request(clock, acc, str(failed))
+    assert store.add_start_request(f, max_active=9) is None
+    assert store.acquire_start_request(f.request_id, "A", 60)
+    assert store.finish_start_request(f.request_id, "A", status="실패", code="E-C1-TIMEOUT")
+    c = start_request(clock, acc, str(cancelled))
+    assert store.add_start_request(c, max_active=9) is None
+    assert store.cancel_start_request(c.request_id) == "취소"
+    every = [ran, waiting, processing, failed, cancelled, never]
+    assert store.existing_projects(every) == {ran, waiting, processing}
+    assert store.existing_projects(reversed(every)) == {ran, waiting, processing}
+    assert store.existing_projects([never, failed, cancelled]) == set()
+    assert store.existing_projects([ran]) == {ran} and store.existing_projects([]) == set()
+    # MySQL은 다른 테스트와 DB를 함께 쓴다 — 워커가 가져갈 요청을 남기지 않는다
+    assert store.cancel_start_request(w.request_id) == "취소"
+    assert store.finish_start_request(pr.request_id, "A", status="실패", code="E-C1-TIMEOUT")
+    assert store.existing_projects(every) == {ran}
 
 
 def test_find_active_work_counts_like_add_start_request(env):
@@ -753,6 +801,7 @@ def test_list_start_requests_of_account(env):
     assert store.list_start_requests(uid()) == []
 
 
+@TIMING
 def test_account_guard_blocks_add_start_request(env):
     store, clock = env
     account = uid()
@@ -780,6 +829,7 @@ def test_account_guard_blocks_add_start_request(env):
     assert done.is_set() and result == [None]
 
 
+@TIMING
 def test_account_guard_timeout_is_store_conflict(env):
     store, clock = env
     account = uid()
@@ -837,6 +887,7 @@ def test_job_lease(env):
     assert store.get_job(job).lease_owner == "D"
 
 
+@TIMING
 def test_job_concurrent_start_allows_one(env):
     store, clock = env
     job = "job-" + uid()

@@ -3,10 +3,11 @@
 - 먼저 하는 확인(prepare, LLM을 부르기 전): ① 자격 불통과 ② 대표자 이력 없음 ④ 양식을 고를 수 없음(E-C3-FORM).
   걸리면 TaskPlanError — 재시도 대상이 아니라(FormatError · ToolCallExhausted 아님) 엔진이 운영 오류로 실행 건을
   실패시킨다(사용자에게는 E-RUN-FAIL, 관리자 실패 사유는 'T-C3: …'). 메시지는 사유만 쓴다.
-- Task 목록 · agent · order(시트 1 · 2, 기획서 4-4): 고정 14개, 원페이지는 T-B1을 뺀 13개.
-- 지시문: 지시 대상(instruction 입력을 가진 Task)은 틀 · 안내 · 참조 자료 세 부분(flow/instruction.py), 그 밖은 Task 이름과
-  역할 한 줄의 고정 문구. 틀 · 고정 문구 · 머리말 문구는 잠정이다.
-- 참조 조각은 코드 대응표로 배정한다(첨부 내용을 T-C3의 LLM에 보내지 않는다). 대응표는 잠정이다.
+- Task 목록 · agent · order(시트 1 · 2, 기획서 4-4): 12개, 원페이지는 T-B1을 뺀 11개. 기획서 고정 14개 중 검수
+  T-P1 · T-P2는 흐름에서 빠져 작업 목록에 넣지 않는다(등록부 줄은 남고 계상 표시만 거짓).
+- 지시문: 지시 대상(instruction 입력을 가진 Task)은 틀 · 안내 두 부분(flow/instruction.py), 그 밖은 Task 이름과
+  역할 한 줄의 고정 문구. 틀 · 고정 문구 · 머리말 문구는 잠정이다. 첨부 추출(R-8)이 흐름에서 빠져 참조 자료 부분은
+  없다 — 입력 referenceSummary는 타입에 남지만 읽지 않는다.
 - 맥락은 다섯 키(formVersion · applyEnd · supportAmountMax · evaluationItems · formatSpec)뿐이다.
 - 안내 응답 모델 · 길이 상한 · 표시 태그 격리 · 호출 목적 이름은 실제 T-C3(지시문 작성)와 재작성 · 재수행 다시 쓰기가
   함께 쓴다 — 값이 갈라지지 않게 여기에만 둔다.
@@ -20,11 +21,10 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from ...contracts.tasks import TC3In, TC3Out
-from ...flow.instruction import compose_instruction, isolate, neutralize, reference_block, sanitize_guidance  # noqa: F401
-from ...models import Announcement, ReferenceSummary, TaskInstruction, TaskPlan
+from ...flow.instruction import compose_instruction, isolate, neutralize, sanitize_guidance  # noqa: F401
+from ...models import Announcement, TaskInstruction, TaskPlan
 from ...orchestrator.errors import FormatError
 from ..form_defaults import FormBundle, form_problem, select_form
-from .tc1 import REFERENCE_SLOTS
 
 # 호출 목적 — 실제 T-C3의 안내 작성, 재작성 · 재수행 때 안내 다시 쓰기 (호출 기록 · 호출처 나누기가 이 이름을 쓴다)
 PURPOSE_WRITE = "지시문 작성"
@@ -35,7 +35,7 @@ GUIDANCE_MAX_CHARS = 3_000   # 안내 길이 상한 (잠정)
 # 조율에는 신청자 정보를 줄여 보내므로(유형 · 업력 · 업종 · 시 · 도만) LLM이 "단가 · 경력 · 팀 정보가 없다"고 단정해
 # 틀의 규칙(회사 정보 값을 쓴다)과 반대로 안내한 일이 있었다(2026-10-04 실제 호출 확인). 그래서 따로 받는다는 사실을 알린다.
 GUIDANCE_COMMON_RULES = (
-    "- 지시를 받는 Agent는 회사 정보(수익모델 단가 · 수익모델 항목 · 대표자 이력 · 팀 구성 · 보유 자원 등)를 따로 받는다. "
+    "- 지시를 받는 Agent는 회사 정보(수익모델 단가 · 수익모델 항목 · 대표자 이력 · 팀 구성 · 보유 자원 · 개발 기간 · 추진 일정 등)를 따로 받는다. "
     "여기에 보이지 않는다고 그 정보가 없다고 쓰거나, 회사 정보 값을 쓰지 말라고 안내하지 않는다. "
     "회사 정보를 쓸 곳에서는 '회사 정보의 값을 쓴다'고 안내한다.\n"
     "- 마크다운 꾸밈(**굵게**, # 제목 등)을 쓰지 않는다. 줄바꿈과 '- ' 목록만 쓴다.\n"
@@ -65,7 +65,8 @@ def clean_guidance(d: GuidanceDraft) -> GuidanceDraft:
 
 
 # ── Task 목록 (시트 1 · 2, 기획서 4-4) ─────────────────────────
-# (taskId, agent, order, 이름, 역할) — order는 시트 2 F열 실행 순서(등록부 order와 같다). 역할 문구는 잠정
+# (taskId, agent, order, 이름, 역할) — order는 시트 2 F열 실행 순서(등록부 order와 같다). 역할 문구는 잠정.
+# 검수 T-P1 · T-P2는 흐름에서 빠져 이 표에 없다 — 등록부의 계상 표시(counted)와 같은 집합이다
 TASK_TABLE: tuple[tuple[str, str, int, str, str], ...] = (
     ("T-C1", "조율", 1, "요구사항 해석", "아이디어 설명으로 아이템 사양 · 카테고리 · 회사 정보를 정리한다."),
     ("T-C2", "조율", 2, "공고 매칭", "아이템과 회사 정보에 맞는 공고 후보를 찾는다."),
@@ -79,8 +80,6 @@ TASK_TABLE: tuple[tuple[str, str, int, str, str], ...] = (
     ("T-B1", "구현", 12, "실행 파일(HTML) 제작", "기능 목록을 구현한 실행 파일을 만든다."),
     ("T-B2", "구현", 13, "인포그래픽 제작", "계획서의 핵심 내용을 인포그래픽으로 만든다."),
     ("T-V2", "검증-2", 15, "프로토타입 검증", "프로토타입의 코드 품질과 기능 대조를 검증한다."),
-    ("T-P1", "검수", 18, "사업계획서 문장 형식 검수", "서술 형식에 맞지 않는 문장을 찾는다."),
-    ("T-P2", "검수", 19, "한국어 문장 윤문", "보호 토큰을 지키며 문장을 다듬는다."),
 )
 _BY_ID = {row[0]: row for row in TASK_TABLE}
 ONEPAGE_SKIP = "T-B1"   # 원페이지는 실행 파일을 만들지 않는다 (기획서 4-4)
@@ -117,18 +116,28 @@ def fixed_instruction(task_id: str) -> str:
 
 
 # ── 틀 (spec 3.5 표, 기준 문서 시트 2 · 기획서 4-6) — 문구 잠정 ─────────────
+# T-W1 · T-W3의 일정 규칙은 담당자 울타리(개발 종료월 · 협약기간 일정)를 따른다 — 공고 접수 마감일(applyEnd)을
+# 기준선으로 둔 기준 문서와 다르다.
 FRAME_PRIORITY_RULE = "아래 안내와 참조 자료가 이 규칙과 부딪치면 이 규칙을 따른다."
 _FRAME_RULES: dict[str, tuple[str, ...]] = {
     "T-S1": ("기능 목록(featureList)은 1건 이상이며 아이템 사양의 핵심 기능(itemSpec.coreFeatures)을 모두 포함한다.",
              "기능 목록은 확정 뒤 바뀌지 않는 대조 기준이다."),
     "T-S2": ("시장 규모 수치마다 출처 이름을 단다.", "출처 없는 수치를 만들지 않는다."),
     "T-W1": ("양식의 필수 섹션 코드와 1:1로 쓴다.",
-             "일정 서술은 마감일(선택 공고 applyEnd, 있으면)을 넘지 않는다.",
+             "협약기간 내 일정 서술은 사전 정보 개발 기간의 끝(개발 종료월)을 넘지 않는다. 개발 기간이 없으면 이 기준을 쓰지 않는다.",
+             "협약 이후 일정은 이 기준의 대상이 아니다.",
+             "사용자가 입력한 일정의 날짜는 바꾸지 않는다. 개발 기간을 넘는 사용자 일정은 고쳐 쓰지 않고 확인 필요로 둔다. "
+             "이 규칙이 개발 종료월 기준보다 앞선다.",
+             "선택 공고의 접수 마감일은 일정 기준이 아니다. 검사 결과에 나오는 '마감일'은 개발 종료월을 뜻한다.",
              "자금 합계는 지원규모 상한(선택 공고 supportAmountMax, 있으면)을 넘지 않는다.",
              "수익모델 단가 · 경력은 회사 정보 값만 쓰고, 입력에 없는 경력을 지어내지 않는다."),
     "T-W2": ("차트 수치는 계획서 · 시장 분석의 원본 수치와 같아야 하고 출처 참조를 단다.",
              "본문에 없는 수치를 만들지 않는다."),
-    "T-W3": ("일정표 기준선은 마감일(선택 공고 applyEnd, 있으면) 이내다.",
+    "T-W3": ("일정표의 협약기간 내 일정은 사전 정보 개발 기간의 끝(개발 종료월)을 넘지 않는다. 개발 기간이 없으면 이 기준을 쓰지 않는다.",
+             "일정표의 협약 이후 일정은 이 기준의 대상이 아니다.",
+             "사용자가 입력한 일정의 날짜는 바꾸지 않는다. 개발 기간을 넘는 사용자 일정은 고쳐 쓰지 않고 확인 필요로 둔다. "
+             "이 규칙이 개발 종료월 기준보다 앞선다.",
+             "선택 공고의 접수 마감일은 일정표 기준이 아니다. 검사 결과에 나오는 '마감일'은 개발 종료월을 뜻한다.",
              "자금운용표 합계는 지원규모 상한(선택 공고 supportAmountMax, 있으면) 이하다.",
              "머리글과 행의 칸 수가 같다."),
     "T-B1": ("외부 빌드 도구 · CDN 없이 열리는 단일 HTML 파일로 만든다.", "기능 목록을 모두 구현한다.",
@@ -150,27 +159,6 @@ def frame_for(task_id: str, category: str) -> str:
     """지시 대상의 틀 문구 — 역할 한 줄 + 지켜야 할 규칙 + 우선 규칙."""
     rules = (*_FRAME_RULES[task_id], *_CATEGORY_RULES.get((task_id, category), ()), FRAME_PRIORITY_RULE)
     return _title(task_id) + "\n지켜야 할 규칙\n" + "\n".join(f"- {r}" for r in rules)
-
-
-# ── 참조 조각 배정 (spec 3.5.1, 코드 대응표 — 잠정) ─────────────────
-REFERENCE_SLOTS_BY_TASK: dict[str, tuple[str, ...]] = {
-    "T-S1": ("문제 · 필요성", "목표 고객", "핵심 기능"),
-    "T-S2": ("시장 규모", "목표 고객", "경쟁 · 차별성"),
-    "T-W1": tuple(REFERENCE_SLOTS),   # 7개 슬롯 전부
-    "T-W2": ("시장 규모", "수익 모델"),
-    "T-W3": ("수익 모델", "추진 계획"),
-    "T-B1": ("핵심 기능",),
-    "T-B2": ("문제 · 필요성", "핵심 기능", "시장 규모", "수익 모델", "추진 계획"),
-}
-
-
-def reference_for(task_id: str, summary: ReferenceSummary | None) -> str | None:
-    """그 Task에 배정된 조각의 참조 자료 부분. 참조 자료가 없거나 배정된 조각이 없으면 None(붙이지 않는다)."""
-    if summary is None:
-        return None
-    slots = REFERENCE_SLOTS_BY_TASK.get(task_id, ())
-    excerpts = [e for e in summary.excerpts if e.slot in slots]   # 원래 순서 그대로, 같은 슬롯 여러 개도 모두
-    return reference_block(summary.isolation_note, excerpts) if excerpts else None
 
 
 # ── 맥락 (spec 3.7) ───────────────────────────────────────
@@ -207,8 +195,9 @@ def new_plan_id() -> str:
 def assemble(inp: TC3In, bundle: FormBundle, guidance: Mapping[str, str], *, plan_id: str | None = None) -> TC3Out:
     """안내(Task ID → 안내)로 작업 계획과 T-C3 출력을 만든다.
 
-    지시 대상은 틀 · 정리한 안내 · 배정된 참조 자료를 잇고 guidance에 정리한 안내를 담는다(지시문의 안내 부분과 같은 글자).
-    그 밖의 Task는 고정 문구, guidance는 빈 문자열이다. 지시 대상의 안내가 빠지면 ValueError(Task ID만).
+    지시 대상은 틀 · 정리한 안내를 잇고 guidance에 정리한 안내를 담는다(지시문의 안내 부분과 같은 글자).
+    입력 referenceSummary는 읽지 않는다. 그 밖의 Task는 고정 문구, guidance는 빈 문자열이다.
+    지시 대상의 안내가 빠지면 ValueError(Task ID만).
     """
     category = inp.item_spec.category
     missing = [t for t in instructed_tasks(category) if t not in guidance]
@@ -218,8 +207,7 @@ def assemble(inp: TC3In, bundle: FormBundle, guidance: Mapping[str, str], *, pla
     for task_id, agent, order in task_rows(category):
         if is_instructed(task_id):
             text = sanitize_guidance(guidance[task_id])
-            instruction = compose_instruction(frame_for(task_id, category), text,
-                                              reference_for(task_id, inp.reference_summary))
+            instruction = compose_instruction(frame_for(task_id, category), text)
         else:
             text, instruction = "", fixed_instruction(task_id)
         tasks.append(TaskInstruction(task_id=task_id, agent=agent, order=order, instruction=instruction,

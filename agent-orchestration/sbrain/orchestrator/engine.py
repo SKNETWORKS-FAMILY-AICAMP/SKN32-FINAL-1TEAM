@@ -14,10 +14,17 @@
   모인다(성공 · 재시도 소진 모두). 어느 Agent 설정으로 무엇을 부를지는 Flow가 정한다.
 - S-Brain 고유 규칙(구간 · 대기 지점 · 재작성 경로 · 알림)은 Flow가 맡는다.
 - 선택 확장 지점(흐름에 없으면 기본 동작): Flow.redo_rework_input — 재수행 입력을 저장하기 전에 흐름이 칸을 채운다(기본: 그대로),
-  Flow.after_execution — 실행 기록이 성공으로 저장되는 같은 묶음에서 그 실행의 호출 기록을 본다(기본: 아무것도 안 함).
+  Flow.after_execution — 실행 기록이 성공으로 저장되는 같은 묶음에서 그 실행의 호출 기록을 본다(기본: 아무것도 안 함),
+  Flow.allows_redo — 검사 불통과일 때 재수행을 걸지 정한다(기본: 건다).
 - 시각은 시간대 있는 UTC다. 주입한 시계 · tick(now)의 시간대 없는 값은 UTC로 본다.
+- 파일(확장): 엔진은 파일 저장소를 받아(선택) Task의 tools.files와 파일을 쓰는 규칙 단계(writes_files)의 파일 창구에
+  넘긴다. 출력을 저장하기 전에 출력 안의 모든 FileRef(중첩 모델 · 목록 · 사전 포함)를 저장소와 대조한다 — 키 첫 마디가 이 실행
+  건, 저장소에 있음, 형식 · 크기 · sha256 · 이름이 같음. 어기면 규격 위반(ContractError)이고 메시지에는 수와 규칙 종류만 적는다.
 - 운영 로그 줄(runlog, 로거 sbrain.run): 실행 기록마다 단계시작 · 단계끝, 실행 건의 대기 · 실행끝 · 재개예약. 단계 ID와 실행 건 ·
-  실행 기록 값만 쓴다. 처리기는 워커만 단다 — 그 밖에서는 아무것도 나가지 않는다.
+  실행 기록 값만 쓴다. 처리기는 워커만 단다 — 그 밖에서는 아무것도 나가지 않는다. 단계끝 · 재개예약의 errorCode(확장)는 엔진이
+  그 실행에서 받은 재시도 소진(ToolCallExhausted.code)의 오류 코드다 — 실행 기록 ID로 잠시 들고 있고 모델 칸은 없다.
+- 재시도 대기 설정(확장 · 잠정): 호출 설정(ToolsConfig)에 늘리는 간격 · 무작위 지연 · Retry-After 상한과 설정 키로 찾은 대기 합
+  상한(Settings.retry.wait_cap_by_key, 없으면 wait_cap_sec)을 옮긴다. 키 이름은 보지 않는다.
 """
 from __future__ import annotations
 
@@ -27,14 +34,15 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any, Callable, Literal, Protocol
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from ..models import BundleUsage, CycleState, ReworkComparison, ReworkInput, Run, TaskInstruction
+from ..models import BundleUsage, CycleState, FileRef, ReworkComparison, ReworkInput, Run, TaskInstruction
 from ..models.base import ErrorKind
 from ..models.clock import as_utc, utc_clock, utc_now
 from ..models.run import FAILURE_REASON_MAX, RedoState, ReworkSummary, collecting, make_state
 from .context import ArtifactTypes, ImmutableArtifactError, RunContext
 from .errors import ContractError, ResourceNotFound, ToolCallExhausted
+from .files import FileStore
 from . import runlog
 from .registry import PARTIAL_SUFFIX, AgentRegistry, TaskRegistry, TaskSpec, keeps_partial
 from .settings import TaskModelSetting
@@ -111,6 +119,10 @@ class Flow(Protocol):
         흐름에 보여 준다(선택). 재수행은 실행 기록마다 저장 묶음을 비우므로 실행 기록마다 따질 일은 여기서 한다.
         흐름에 없으면 아무것도 하지 않는다. 사건은 ctx.add_event로 같은 묶음에 넣는다."""
         ...
+    def allows_redo(self, ctx: RunContext, spec: TaskSpec, check: Any) -> bool:
+        """검사(check)가 불통과이고 재수행 횟수가 남았을 때 재수행을 걸지(선택). 거짓이면 그 결과로 단계를 끝낸다.
+        흐름에 없으면 늘 건다."""
+        ...
     def after_step(self, ctx: RunContext, step_id: str, outcome: Outcome) -> None: ...
     def on_queue_empty(self, ctx: RunContext) -> None: ...
     def on_unresumable(self, ctx: RunContext, step_id: str, outcome: Outcome) -> None: ...
@@ -127,10 +139,34 @@ def _no_tools(agent_name: str, key: str) -> Tools:
     raise RuntimeError("호출 도구 없음 — 실행 기록 밖에서 지시문 입력을 만들었다")
 
 
+def _collect_file_refs(obj: Any, found: list[FileRef]) -> None:
+    """값 안의 FileRef를 모두 모은다 — 모델 필드 · 목록 · 튜플 · 집합 · 사전 값을 재귀로 훑는다(등록부 칸 이름을 보지 않는다)."""
+    if isinstance(obj, FileRef):
+        found.append(obj)
+    elif isinstance(obj, BaseModel):
+        for name in type(obj).model_fields:
+            _collect_file_refs(getattr(obj, name), found)
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            _collect_file_refs(v, found)
+    elif isinstance(obj, (list, tuple, set, frozenset)):
+        for v in obj:
+            _collect_file_refs(v, found)
+
+
 def _dig(obj: Any, path: str) -> Any:
     for part in path.split("."):
         obj = obj[part] if isinstance(obj, dict) else getattr(obj, part)
     return obj
+
+
+def _retry_wait(settings: Any, key: str) -> dict[str, float]:
+    """재시도 대기 설정(확장 · 잠정) — 늘리는 간격 · 무작위 지연 · Retry-After 상한과, 설정 키(key)로 찾은 대기 합 상한
+    (wait_cap_by_key, 없으면 wait_cap_sec). 엔진은 키 이름을 보지 않는다(제한 시간 task_timeouts와 같은 방식)."""
+    r = settings.retry
+    return {"backoff_multiplier": r.backoff_multiplier, "jitter_ratio": r.jitter_ratio,
+            "retry_after_cap_sec": r.retry_after_cap_sec,
+            "wait_cap_sec": r.wait_cap_by_key.get(key, r.wait_cap_sec)}
 
 
 class Engine:
@@ -150,6 +186,7 @@ class Engine:
         owner: str = "worker",
         lease_sec: float = 3600,
         image_providers: dict[str, ImageProvider] | None = None,
+        files: FileStore | None = None,
     ) -> None:
         self.store = store
         self.registry = registry
@@ -157,6 +194,8 @@ class Engine:
         self.providers = providers
         # 이미지 호출처 (확장) — 이름은 Task 설정의 image_provider. 없으면 이미지 호출은 '운영' 실패다
         self.image_providers: dict[str, ImageProvider] = image_providers if image_providers is not None else {}
+        # 파일 저장소 (확장) — 없으면 파일 창구를 부르는 순간 오류, 출력에 FileRef가 있으면 규격 위반
+        self.files = files
         self.types = types
         self.agents = agents or AgentRegistry()
         self.immutable_keys = immutable_keys
@@ -171,6 +210,10 @@ class Engine:
         self._step_marks: dict[str, datetime] = {}
         # 운영 로그 재개예약의 오류 종류 — 실행 건 ID → 재개를 예약한 오류 종류 (저장 뒤 줄을 남기며 지운다)
         self._resume_kinds: dict[str, str] = {}
+        # 운영 로그 errorCode (확장) — 실행 기록 ID → 엔진이 받은 재시도 소진의 오류 코드(없으면 None). 그 단계의 처리가
+        # 끝나면 지운다. 재개예약 줄의 값은 실행 건 ID → 그 코드로 옮겨 두었다가 저장 뒤 줄을 남기며 지운다 (모델 칸 없음)
+        self._exhausted_codes: dict[str, str | None] = {}
+        self._resume_codes: dict[str, str | None] = {}
 
     # ── Context ──────────────────────────────────────
     def open_context(self, run: Run, provisional: bool = False, owner: str | None = None) -> RunContext:
@@ -264,8 +307,9 @@ class Engine:
         """저장 뒤 실행 건이 대기 지점에 멈췄거나 · 재개를 예약했거나 · 끝났으면 운영 로그 한 줄."""
         progress = ctx.run.state.progress
         kind = self._resume_kinds.pop(ctx.run.run_id, None)
+        code = self._resume_codes.pop(ctx.run.run_id, None)
         if progress == "재개대기":
-            runlog.resume_scheduled(ctx.run, kind or ctx.run.last_error_kind)
+            runlog.resume_scheduled(ctx.run, kind or ctx.run.last_error_kind, code)
         elif progress == "사용자대기":
             runlog.wait(ctx.run)
         elif progress in ("완료", "실패", "중단"):
@@ -277,8 +321,9 @@ class Engine:
             return
         started = self._step_marks.pop(rec.execution_id, None)
         sec = (self.now() - started).total_seconds() if started else None
+        code = self._exhausted_codes.get(rec.execution_id)   # 이 실행에서 엔진이 받은 재시도 소진의 오류 코드
         run, snap = ctx.run, rec.model_copy()   # 끝난 때의 값 그대로
-        ctx.after_commit(lambda: runlog.step_end(run, snap, sec))
+        ctx.after_commit(lambda: runlog.step_end(run, snap, sec, code))
 
     # ── 단계 실행 ─────────────────────────────────────
     def run_step(self, ctx: RunContext, step_id: str) -> Outcome:
@@ -303,6 +348,7 @@ class Engine:
             try:
                 outputs = self._invoke(ctx, spec, rec, rs)
             except ToolCallExhausted as e:
+                self._exhausted_codes[rec.execution_id] = e.code   # 운영 로그 errorCode (단계끝 · 재개예약)
                 outcome = self._on_exhausted(ctx, spec, rec, rs, e)
                 self._log_step_end(ctx, rec)
                 return outcome
@@ -314,10 +360,12 @@ class Engine:
                 self._log_step_end(ctx, rec)
             finally:
                 self._step_marks.pop(rec.execution_id, None)   # 처리 중 예외가 새도 시작 시각을 남기지 않는다
+                self._exhausted_codes.pop(rec.execution_id, None)
             check = outputs.get("check")
             if check is not None:
                 ctx.run.check_refs[spec.task_id] = ctx.ref(spec.outputs["check"])
-            if spec.redo and check is not None and not check.passed and rs.redo_count < limit:
+            if (spec.redo and check is not None and not check.passed and rs.redo_count < limit
+                    and self._redo_allowed(ctx, spec, check)):
                 rs = self._schedule_redo(ctx, spec, rec, rs, limit)
                 ctx.run.redo_state = rs
                 ctx.commit()
@@ -375,6 +423,9 @@ class Engine:
                 rec.model, rec.provider, rec.temperature = cfg.model, cfg.provider, cfg.temperature
                 rec.reasoning_effort = cfg.reasoning_effort
                 out = spec.fn(model_in, self.make_tools(ctx, spec, rec, cfg, sink))
+            elif spec.writes_files:
+                # 파일을 쓰는 규칙 단계 — 파일 창구만 넘긴다. 설정은 LLM을 부르지 않는 Task와 같다(제한 시간 · 재시도만)
+                out = spec.fn(model_in, self.make_tools(ctx, spec, rec, self._plain_tools_config(ctx, spec), sink).files)
             else:
                 out = spec.fn(model_in)
         finally:
@@ -391,6 +442,7 @@ class Engine:
                 out = spec.output_model.model_validate(out)
             except ValidationError as e:
                 raise ContractError(f"{spec.task_id} 출력 규격 불일치: {e.error_count()}건") from None
+        self.check_file_refs(ctx, spec, out)
         outputs = {name: getattr(out, name) for name in spec.output_model.model_fields}
         out_refs = []
         for fname, key in spec.outputs.items():
@@ -408,6 +460,30 @@ class Engine:
         ctx.record_execution(rec)
         ctx.record_attempt(rec)
         return outputs
+
+    def check_file_refs(self, ctx: RunContext, spec: TaskSpec, out: Any) -> None:
+        """출력 안의 모든 FileRef를 저장소와 대조한다(spec 4.4). 하나라도 어기면 ContractError — 메시지에는 어긴 참조 수와
+        규칙 종류만 적는다(키 · 이름 없음). 같은 실행 건의 앞 실행 기록이 만든 참조를 그대로 넘기는 것은 된다."""
+        refs: list[FileRef] = []
+        _collect_file_refs(out, refs)
+        if not refs:
+            return
+        problems: list[str] = []
+        for ref in refs:
+            if ref.run_id != ctx.run.run_id:
+                problems.append("다른 실행 건")
+                continue
+            if self.files is None:
+                problems.append("파일 저장소 없음")
+                continue
+            meta = self.files.meta(ref.key)
+            if meta is None:
+                problems.append("없는 파일")
+            elif (meta.name, meta.media_type, meta.size, meta.sha256) != (ref.name, ref.media_type, ref.size, ref.sha256):
+                problems.append("저장 값과 다름")
+        if problems:
+            kinds = sorted(set(problems))
+            raise ContractError(f"{spec.task_id} 출력 파일 참조 위반: {len(problems)}건 ({', '.join(kinds)})")
 
     def resolve_inputs(self, ctx: RunContext, spec: TaskSpec, rs: RedoState | None,
                        tools_for: ToolsFactory | None = None) -> tuple[dict[str, Any], list[str]]:
@@ -478,16 +554,32 @@ class Engine:
         return values, refs
 
     def tools_config(self, ctx: RunContext, spec: TaskSpec) -> ToolsConfig:
-        """Task의 호출 설정 — 설정 키는 Task ID, Agent 이름은 담당 Agent. Task 온도 규칙(TempRule)을 위에 씌운다."""
+        """Task의 호출 설정 — 설정 키는 Task ID, Agent 이름은 담당 Agent. Task 온도 규칙(TempRule)을 위에 씌운다.
+        LLM을 부르지 않는 Task(uses_llm=False — T-C2 · G-01 · T-C4 · T-W3)는 Task 설정 표를 보지 않고 모델 없이 제한 시간 ·
+        재시도만 입힌다. 그래서 실행 기록의 모델 · 호출처 · 온도도 비고, 옛 설정 사본에 그 Task 항목이 있어도 쓰지 않는다."""
+        if not spec.uses_llm:
+            return self._plain_tools_config(ctx, spec)
         cfg = self.agent_tools_config(ctx, spec.agent, spec.task_id)
         if spec.temperature:
             cfg = replace(cfg, temperature=spec.temperature.apply(cfg.temperature))
         return cfg
 
+    @staticmethod
+    def _plain_tools_config(ctx: RunContext, spec: TaskSpec) -> ToolsConfig:
+        """Task 설정 표를 보지 않는 호출 설정 — 모델 없이 제한 시간(task_timeouts[단계 ID], 없으면 120초) · 재시도만.
+        LLM을 부르지 않는 Task와 파일을 쓰는 규칙 단계의 파일 창구가 쓴다."""
+        s = ctx.settings
+        return ToolsConfig(agent=spec.agent, provider=None, model=None, temperature=None,
+                           timeout_sec=s.task_timeouts.get(spec.task_id, 120.0),
+                           retry_count=s.retry.retry_count, retry_interval_sec=s.retry.retry_interval_sec,
+                           **_retry_wait(s, spec.task_id))
+
     def agent_tools_config(self, ctx: RunContext, agent_name: str, key: str) -> ToolsConfig:
         """설정 키(key)의 설정(호출처 · 모델 · 기본 온도 · 추론 강도 · 이미지 설정)과 제한 시간을 입힌 호출 설정 (Task 온도 규칙
         없음). 호출 기록의 Agent 이름은 agent_name이다. 옛 설정 사본(tasks 없음)이면 agent_name의 Agent별 설정을 쓴다.
-        제한 시간은 task_timeouts[key](없으면 120초), 이미지 호출 한 번의 제한 시간은 task_timeouts['<key>.image']다."""
+        제한 시간은 task_timeouts[key](없으면 120초), 이미지 호출 한 번의 제한 시간은 task_timeouts['<key>.image']다.
+        목적별 모델(Task 설정의 purpose_models, 확장)은 목적 이름을 보지 않고 그대로 옮긴다 — 옛 Agent별 설정에는 없다(빈 사전).
+        재시도 대기 설정(확장)은 _retry_wait — 대기 합 상한은 wait_cap_by_key[key](없으면 wait_cap_sec)."""
         s = ctx.settings
         conf = self.agents.lookup(s, agent_name, key)
         image = conf if isinstance(conf, TaskModelSetting) else None
@@ -501,6 +593,8 @@ class Engine:
             image_quality=image.image_quality if image else None,
             image_size=image.image_size if image else None,
             image_timeout_sec=s.task_timeouts.get(f"{key}{IMAGE_TIMEOUT_SUFFIX}", 120.0),
+            purpose_models=dict(image.purpose_models) if image else {},
+            **_retry_wait(s, key),
         )
 
     def _tools_factory(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, sink: CallSink) -> ToolsFactory:
@@ -520,12 +614,28 @@ class Engine:
 
     def make_tools(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord,
                    cfg: ToolsConfig, sink: CallSink) -> Tools:
+        run_id = ctx.run.run_id
+        # 사전 단계(임시 Context)에는 파일 창구가 없다 — 부르는 순간 RuntimeError (저장된 실행 건이 아니다)
+        files = None if ctx.provisional else self.files
         return Tools(cfg, ToolsContext(
-            run_id=ctx.run.run_id, execution_id=rec.execution_id, task_id=spec.task_id,
+            run_id=run_id, execution_id=rec.execution_id, task_id=spec.task_id,
             providers=self.providers, sink=sink, now=self.now, sleep=self.sleep, new_id=self.new_id,
-            image_providers=self.image_providers))
+            image_providers=self.image_providers, files=files,
+            run_progress=lambda: self._stored_progress(run_id)))
+
+    def _stored_progress(self, run_id: str) -> str | None:
+        """저장소에서 다시 읽은 실행 건의 진행 상태 (파일 넣기 전 확인). 실행 건이 없으면(완전 삭제 등) None."""
+        try:
+            return self.store.load_run(run_id).state.progress
+        except KeyError:
+            return None
 
     # ── 재수행 ────────────────────────────────────────
+    def _redo_allowed(self, ctx: RunContext, spec: TaskSpec, check: Any) -> bool:
+        """검사 불통과일 때 재수행을 걸지 — 흐름의 선택 확장 지점 allows_redo가 정한다(없으면 늘 건다)."""
+        hook = getattr(self.flow, "allows_redo", None)
+        return True if hook is None else bool(hook(ctx, spec, check))
+
     def _schedule_redo(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord,
                        rs: RedoState, limit: int) -> RedoState:
         check_ref = ctx.ref(spec.outputs["check"])
@@ -597,6 +707,8 @@ class Engine:
                 ctx.record_execution(rec)
                 ctx.add_event("재개예약", f"{rec.task_id} {wait} 뒤 재개", execution_id=rec.execution_id)
                 self._resume_kinds[run.run_id] = kind   # 재개예약 줄은 저장 뒤 남긴다 (_log_progress)
+                # errorCode — 엔진이 이 실행에서 받은 소진의 코드. 흐름이 직접 예약한 재개면 받은 소진이 없어 '-'다(지금 그렇게 하는 흐름 코드는 없다)
+                self._resume_codes[run.run_id] = self._exhausted_codes.get(rec.execution_id)
                 return Outcome("resume_wait", record=rec)
             reason = "재개상한초과"
         else:

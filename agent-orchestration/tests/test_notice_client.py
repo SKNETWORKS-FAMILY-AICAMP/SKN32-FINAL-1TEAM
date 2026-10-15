@@ -15,6 +15,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
+from conftest import TIMING
 
 from sbrain.agents.notice import NOT_FOUND, NoticeClient, UrllibTransport
 from sbrain.orchestrator.errors import FormatError, ProviderError
@@ -37,7 +38,8 @@ class TempServer:
         self.httpd.daemon_threads = True
         self.port = self.httpd.server_address[1]
         self.url = f"http://127.0.0.1:{self.port}"
-        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+        # 끌 때(shutdown) 기다리는 시간 = 반복 확인 간격. 기본 0.5초 → 0.01초 (테스트마다 서버를 따로 띄운다)
+        threading.Thread(target=self.httpd.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
 
     def set(self, method: str, path: str, status: int = 200, body: bytes | dict | list = b"{}",
             delay: float = 0.0, headers: dict[str, str] | None = None) -> None:
@@ -191,6 +193,7 @@ def test_not_found_code_only_counts_for_detail_and_gate(server):
         assert isinstance(e, ProviderError) and e.status == 404
 
 
+@TIMING
 def test_timeout_becomes_timeout_error(server):
     server.set("GET", "/api/collection_status", body={"status": "정상"}, delay=1.5)
     e = caught(lambda: NoticeClient(server.url).collection_status(0.3))
@@ -211,6 +214,7 @@ def test_connection_refused_becomes_connection_error(server):
     assert e.__cause__ is None and e.__suppress_context__
 
 
+@TIMING
 def test_dropped_connection_becomes_connection_error():
     """연결은 됐지만 응답 없이 끊긴 경우도 연결 실패다."""
     listener = socket.socket()
@@ -271,6 +275,7 @@ def test_client_repr_hides_address():
 
 
 # ── 하나씩 보내기 (프로세스 공용 잠금) ──────────────────────
+@TIMING
 def test_one_call_at_a_time_across_clients_and_apis(server):
     for method, path in (("GET", "/api/collection_status"), ("POST", "/api/match"),
                          ("GET", "/api/notices/k%3A1"), ("POST", "/api/notices/k%3A1/eligibility")):

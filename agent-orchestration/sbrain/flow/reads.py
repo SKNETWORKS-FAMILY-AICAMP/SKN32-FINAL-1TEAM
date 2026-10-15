@@ -6,51 +6,65 @@
 |---|---|---|
 | 3 공고 후보 | 공고선택 · 사용자대기, 계획서작성 · 사용자대기(자격 통과 뒤 작성 시작 전, 3.3) | 후보는 sbrain_flow.candidate_lists(첫 조회 candidates@1, 유효한 추가 조회가 있으면 firstCandidates · moreCandidates), collectionStatus, filteredCount, fallbackUsed · fallbackMode, 막힌 공고 blockedAnnouncementIds(Run) |
 | 4 자격 확인 | 공고선택 · 계획서작성 사용자대기, gateResult가 있을 때 | gateResult(확인 필요 unknownConditions면 notices에 E-G1-UNPARSED), businessAgeYears |
-| 6 문서 평가 | 문서평가 · 사용자대기 | planDoc, scoreReport.document, G-02a.failedTaskIds · reworkOrders · nextAction |
+| 6 문서 평가 | 문서평가 · 사용자대기 | planDoc, scoreReport.document, 표 대체 사유 tableFallbacks(확장, tableOutputs에서), G-02a.failedTaskIds · reworkOrders · nextAction |
 | 8 산출물 확인 | 산출물확인 · 사용자대기 | prototype, infographic, codeCheck, featureMatch, G-02b.reworkOrders(산출물층) |
 | 9 종합 평가 | 종합평가 · 사용자대기 | scoreReport.overall, G-02b.reworkOrders · nextAction, reworkDiff |
-| 10 검수 전후 | 결과물 · 완료 | formatFindings, sentenceResults(문장별 전후 · 시도별 기록), proofreadLog |
-| 11 결과물 | 결과물 · 완료 | deliverable, userMessage, planDoc, prototype, infographic |
+| 11 결과물 | 결과물 · 완료 | deliverable, userMessage, planDoc, prototype, infographic, 표 대체 사유 tableFallbacks(확장) |
 
 - 재작성 목록은 묶음별 남은 기회를 함께 싣는다(묶음 요청 request_rework_for_project와 같은 묶음 이름으로 센다).
 - 대기 지점이 아니거나 아직 없는 화면은 CommandError("SCREEN_NOT_READY"). 화면 3은 작성을 시작한 뒤에는
   INVALID_STATE다(공고 다시 고르기 · 추가 조회와 같은 거절, 3.3).
+- 화면 10(검수 전후)은 검수가 흐름에서 빠져 없앴다 — 어느 상태에서도 INVALID_SCREEN. 결과 조회(outputs)의
+  검수 칸(formatFindings · sentenceResults · proofreadLog)은 기준 문서 타입이라 남기고 늘 빈 값이다.
 - 지금까지 결과(outputs) · 재작성 결과(rework_result)는 실패 · 중단 실행 건이면 CommandError("RUN_NOT_VIEWABLE").
   사용자용 결과에는 관리자용 실패 사유를 싣지 않는다 — 실패는 진행 상태와 안내(E-RUN-FAIL)로만 보인다.
 - 관리자 조회는 메타데이터 · 점수 · 개수만 돌려준다. 산출물 · 입력 · 문장 내용을 싣지 않는다(기획서 4-7 · 6-7).
+- 산출물 파일 읽기(read_artifact_file, 확장)는 파일 내용을 ArtifactFile(파이썬 dataclass, JSON으로 바꾸지
+  않음)로 준다. 형식 · 이름은 저장소에 넣을 때 기록한 값이다. 거절 사유(CommandError detail)에 키 · 이름을 넣지 않는다.
+- 파일 삭제 대기열 관리자 조회(admin_file_deletions · admin_retry_file_deletion, 확장)는 줄의 메타데이터만 준다(키 접두어 없음).
 """
 from __future__ import annotations
 
 import typing
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import Field
 
-from ..contracts.tasks import ProofreadAttempt, SentenceResult
+from ..contracts.tasks import SentenceResult
 from ..models import (
     Announcement, AnnouncementCard, BundleUsage, Deliverable, GateResult, Notice, PlanDoc, PlanSection, Prototype,
     ReworkDiff, ReworkOrder, Run,
 )
 from ..models.base import (
-    AgentName, CollectionStatus, FallbackMode, KeptReason, KeptSide, NextAction, RunProgress, SBModel, ext,
+    AgentName, CollectionStatus, FallbackMode, KeptSide, NextAction, RunProgress, SBModel, ext,
 )
 from ..models.clock import UTC_MIN
-from ..models.domain import EvalItem, FormatFinding, Infographic, ProofreadLog
+from ..models.domain import FILE_NOTE, EvalItem, FormatFinding, Infographic, ProofreadLog
+from ..models.files import FileRef, file_key_problem
 from ..models.rework import ReworkComparison
 from ..models.run import ReworkResultStatus
-from ..models.scoring import ArtifactScore, CodeCheckResult, DocScore, FeatureMatchResult, ScoreReport
+from ..models.scoring import (
+    SCALE_NOTE, ArtifactScore, CodeCheck, CodeCheckResult, DocScore, FeatureMatchResult, ScoreReport,
+)
+from ..orchestrator import settings
 from ..orchestrator.context import RunContext, parse_ref
-from ..orchestrator.errors import CommandError, message
-from ..orchestrator.store import ExecutionFilter, RunFilter
+from ..orchestrator.errors import CommandError, FileDeletionNotFound, FileDeletionNotGivenUp, message
+from ..orchestrator.files import FileMissing, sha256_hex
+from ..orchestrator.store import FILE_DELETION_STATUSES, ExecutionFilter, FileDeletion, RunFilter
 from ..orchestrator.trace import ExecutionRecord
 # 층별 채점 출처 · 현재 점수는 기록 통계 줄(finalScores · scores)과 같은 정의 하나 — log_stats.py에 있다
-from .log_stats import SCORE_LAYERS
+from .log_stats import SCORE_LAYERS, layer_score
 from .log_stats import current_scores as _current_scores
+from .catalog import OUT_OF_FLOW_STEPS
 from .retention import retention_cutoff
-from .rework_map import ARTIFACT_BUNDLES, BUNDLE_EXECUTABLE, BUNDLE_LAYER, DOCUMENT_BUNDLES, order_bundles
+# 묶음 목록 · 층은 부를 때마다 그때의 표 · 스위치로 읽는다(document_bundles · bundle_layer — 불러올 때 굳는 상수를 쓰지 않음)
+from .rework_map import ARTIFACT_BUNDLES, BUNDLE_EXECUTABLE, bundle_layer, document_bundles, order_bundles
 from .sbrain_flow import CANDIDATE_LIMIT, candidate_lists
+# 산출물층 환산 (spec 4.6 D11) — 관리자 조회의 코드 점검 · 계획서 대조 · 산출물층 점수는 그 실행 건 설정 사본 배점으로 환산한다
+from .score_scale import ScoreMaxes, score_maxes
 
 if TYPE_CHECKING:
     from .service import SBrainOrchestrator
@@ -70,7 +84,7 @@ class Screen(SBModel):
 class ReworkOption(SBModel):
     """재작성 목록 한 줄 (초안) — 미달 항목의 재작성 지시와 묶음별 남은 기회."""
     order: ReworkOrder
-    bundles: list[str]          # 기회를 세는 묶음 이름 (문서층: 문서층 묶음 4개, 산출물층: Task 묶음)
+    bundles: list[str]          # 기회를 세는 묶음 이름 (문서층: 지시 대상 문서층 묶음, 산출물층: Task 묶음)
     remaining: int              # 남은 기회 (문서층: 4개 중 가장 많이 남은 값, 잠정)
     selectable: bool            # 고를 수 있는지 (기회가 없으면 E-G2-LIMIT, 원페이지는 T-B1 없음)
 
@@ -87,6 +101,29 @@ class ScoreView(SBModel):
     carried_over_layer: str | None = None
     comparisons: list[ReworkComparison] = Field(default_factory=list)
     notices: list[str] = Field(default_factory=list)
+    # 환산 칸 (확장, spec 4.6 · 4.13) — 점수 보고서의 같은 이름 칸을 그대로 옮긴다. 웹은 층 점수 · 만점 · 코드 점검 항목 줄을
+    # 지금 정책 값이 아니라 이 칸으로 그린다. G-02a 보고서는 docLayerMax만 있다
+    doc_layer_max: float | None = ext(None, note=f"{SCALE_NOTE} — 문서층 만점 D")
+    code_check_score: float | None = ext(None, note=f"{SCALE_NOTE} — 코드 점검 환산 점수")
+    code_check_max: float | None = ext(None, note=f"{SCALE_NOTE} — 코드 점검 만점 C")
+    feature_match_score: float | None = ext(None, note=f"{SCALE_NOTE} — 계획서 대조 환산 점수")
+    feature_match_max: float | None = ext(None, note=f"{SCALE_NOTE} — 계획서 대조 만점 P")
+    artifact_layer_score: float | None = ext(None, note=f"{SCALE_NOTE} — 산출물층 환산 점수")
+    artifact_layer_max: float | None = ext(None, note=f"{SCALE_NOTE} — 산출물층 만점 C + P")
+    code_check_items: list[CodeCheck] = ext(default_factory=list, note=f"{SCALE_NOTE} — 코드 점검 항목 줄(환산)")
+
+
+# 표 대체 사유 칸 (확장) — 담당자 10-12 새 판이 더한 화면 칸. 화면 6 · 11 · 결과 조회에 같은 모양으로 싣는다
+TABLE_FALLBACK_NOTE = ("표 대체 안내(결정 0028) — 표를 본문 서술로 바꾼 항목마다 하나(tableOutputs의 tableFallbackUsed 참 · "
+                       "fallbackReason이 빈 글이 아님). fallbackReasonCodes는 분류 코드, displayReason은 사용자 안내이며, "
+                       "계획서 본문 글에는 섞지 않는다")
+# 표 대체 안내의 일반 문구 — 저장된 displayReason이 없는 옛 값이나 알 수 없는 사유 코드에 쓴다.
+TABLE_FALLBACK_DISPLAY_DEFAULT = "표를 검증 기준에 맞춰 완성하지 못해 설명으로 표시합니다. 입력 내용과 생성 결과를 확인해 주세요."
+
+
+# 점수 보고서 → ScoreView로 그대로 옮기는 환산 칸 (파이썬 이름)
+SCALED_SCORE_FIELDS = ("doc_layer_max", "code_check_score", "code_check_max", "feature_match_score",
+                       "feature_match_max", "artifact_layer_score", "artifact_layer_max", "code_check_items")
 
 
 class CandidatesScreen(Screen):
@@ -115,10 +152,20 @@ class GateScreen(Screen):
     can_start_writing: bool
 
 
+class TableFallback(SBModel):
+    """새 타입(확장) — F17 표를 본문으로 대체했을 때 화면에 별도 표시할 항목별 사유."""
+    section_code: str = ext(note="표를 본문 서술로 바꾼 항목 번호")
+    reason: str = ext(note="담당자 fallbackReason 원문 — 내부 진단용, 사용자 화면에는 표시하지 않음")
+    fallback_reason_codes: list[str] = ext(default_factory=list, note="표 대체 사유의 기계 판독 코드 — fallbackReasonCodes "
+                                                                  "(결정 0029 — 담당자 SB-376). 칸이 없는 옛 값은 빈 목록")
+    display_reason: str = ext(note="표 대체 안내(결정 0028) — 사유 코드를 사용자 문구로 바꾼 표시용 안내")
+
+
 class DocumentScreen(Screen):
-    """6 문서 평가 — 계획서 · 환산 점수 · 미달 항목 · 재작성 목록 · 다음 동작."""
+    """6 문서 평가 — 계획서 · 환산 점수 · 미달 항목 · 표 대체 사유 · 재작성 목록 · 다음 동작."""
     plan_doc: PlanDoc
     score: ScoreView
+    table_fallbacks: list[TableFallback] = ext(default_factory=list, note=TABLE_FALLBACK_NOTE)
     failed_task_ids: list[str]
     rework_options: list[ReworkOption]
     next_action: NextAction
@@ -141,33 +188,14 @@ class OverallScreen(Screen):
     rework_diff: list[ReworkDiff]
 
 
-class SentenceChange(SBModel):
-    """검수 대상 문장 하나의 전후 (초안). 채택하지 않았으면 after는 없고 원문이 남는다.
-
-    attempts: T-P2 시도별 기록(SentenceResult.attempts) — 학습 동의와 관계없이 모든 계정에 준다.
-    """
-    sentence_id: str
-    before: str
-    after: str | None
-    adopted: bool
-    kept_reason: KeptReason | None = None
-    attempts: list[ProofreadAttempt] = Field(default_factory=list)
-
-
-class ProofreadScreen(Screen):
-    """10 검수 전후 — 형식 지적, 문장별 전후, 검수 로그."""
-    format_findings: list[FormatFinding]
-    sentences: list[SentenceChange]
-    proofread_log: ProofreadLog
-
-
 class ResultScreen(Screen):
-    """11 결과물."""
+    """11 결과물 — 계획서 표 대체 사유를 별도 데이터로 제공한다."""
     deliverable: Deliverable
     user_message: str
     plan_doc: PlanDoc
     prototype: Prototype
     infographic: Infographic
+    table_fallbacks: list[TableFallback] = ext(default_factory=list, note=TABLE_FALLBACK_NOTE)
 
 
 # ── 지금까지 결과 · 재작성 결과 (확장) ─────────────────────
@@ -175,7 +203,10 @@ class Outputs(SBModel):
     """outputs 결과 — 진행 중 · 대기 중 · 재개대기 · 완료 실행 건이 지금까지 만든 결과(현재 버전).
 
     없는 것은 None · 빈 목록. 점수 보고서는 화면과 같은 ScoreView(실행 설정 스냅샷 없음)다.
-    rework_usage: 묶음 이름 6개(문서층 4 · 산출물층 2, 원페이지는 실행 파일 제외)별 사용 수 · 남은 기회.
+    검수 칸(format_findings · sentence_results · proofread_log)은 기준 문서 타입이라 남긴다 — 검수가 흐름에서 빠져
+    늘 빈 목록 · None이다.
+    rework_usage: 묶음 이름 6개(문서층 4 · 산출물층 2, 원페이지는 실행 파일 제외 — 새 묶음 스위치를 켜면 문서층 6)별 사용 수 ·
+    남은 기회.
     rework_limit: 실행 시작 때 고정한 묶음마다의 재작성 상한.
     """
     project_id: str | None
@@ -189,6 +220,7 @@ class Outputs(SBModel):
     business_age_years: float | None = None
     category: str | None = None
     plan_doc: PlanDoc | None = None
+    table_fallbacks: list[TableFallback] = ext(default_factory=list, note=TABLE_FALLBACK_NOTE)
     doc_score: DocScore | None = None
     document_score_report: ScoreView | None = None     # scoreReport.document (G-02a)
     overall_score_report: ScoreView | None = None      # scoreReport.overall (G-02b)
@@ -210,17 +242,18 @@ class Outputs(SBModel):
 
 
 class ReworkFileChange(SBModel):
-    """재작성으로 바뀐 산출물 파일의 전후 경로 (prototype: 진입 파일, infographic: 이미지)."""
+    """재작성으로 바뀐 산출물 파일의 전후 참조 (prototype: 진입 파일, infographic: 이미지). 파일 내용은 들어 있지 않다 —
+    웹은 참조의 키로 파일을 따로 읽는다."""
     artifact: str
-    before_path: str | None = None
-    after_path: str | None = None
+    before_file: FileRef | None = ext(None, note=FILE_NOTE)
+    after_file: FileRef | None = ext(None, note=FILE_NOTE)
 
 
 class ReworkResult(SBModel):
     """rework_result 결과 — 마지막 재작성 한 건 (Run.lastRework를 화면에 맞게 편 것).
 
     공통: 모은 묶음 · 화면 · 상태(진행중 · 완료 · 실패). 완료면 남긴 쪽 · 전후 점수 · 바뀐 산출물 전후 참조,
-    계획서가 바뀌었으면 전후 섹션 본문, 산출물이 바뀌었으면 전후 파일 경로. 실패면 되돌렸다는 사실 · 돌려준 묶음 ·
+    계획서가 바뀌었으면 전후 섹션 본문, 산출물이 바뀌었으면 전후 파일 참조(내용 없음). 실패면 되돌렸다는 사실 · 돌려준 묶음 ·
     안내 코드만(전후 내용 없음). 실패 원인(관리자용)은 싣지 않는다.
     """
     project_id: str | None
@@ -311,7 +344,9 @@ class AdminRun(SBModel):
 
     current_task: 지금 단계(대기열 맨 앞, 비었으면 마지막으로 돈 단계), agent: 그 담당 Agent(내부 단계 CYCLE-END는 None),
     attempt: 가장 나중에 기록된 실행의 시도 번호.
-    점수는 현재 버전(되돌리기 반영) — 문서층 docScore.total, 산출물층 artifactScore.total, 총점 scoreReport.overall.total.
+    점수는 현재 버전(되돌리기 반영) — 문서층 docScore.total, 산출물층 = 그 버전을 만든 T-V2 출력 요약의 코드 점검 · 대조
+    원점수를 그 실행 건 설정 사본 배점으로 환산한 합, 총점 scoreReport.overall.total.
+    doc_max · artifact_max: 그 실행 건 설정 사본의 문서층 만점 D · 산출물층 만점 C + P.
     failure_reason: 관리자용 실패 사유 (사용자용 결과에는 없다).
     """
     project_id: str | None
@@ -328,6 +363,9 @@ class AdminRun(SBModel):
     resume_count: int
     last_error_kind: str | None = None
     failure_reason: str | None = None
+    # 그 실행 건 설정 사본의 만점 (확장, spec 4.6 · 4.13)
+    doc_max: float | None = ext(None, note=f"{SCALE_NOTE} — 문서층 만점 D (그 실행 건 설정 사본)")
+    artifact_max: float | None = ext(None, note=f"{SCALE_NOTE} — 산출물층 만점 C + P (그 실행 건 설정 사본)")
 
 
 class ScoreEntry(SBModel):
@@ -341,14 +379,18 @@ class ScoreEntry(SBModel):
 class AdminScoreHistory(SBModel):
     """admin_score_history 결과 — 층별 채점 이력, 최근 순 (웹 이력보기와 같은 순서).
 
-    doc_score: 문서층(T-V1 docScore.total), code_check: 코드 점검(T-V2 codeCheck.total),
-    feature_match: 계획서 대조(T-V2 featureMatch.score). 되돌린 채점도 남는다(채점 기록이다).
+    doc_score: 문서층(T-V1 docScore.total), code_check: 코드 점검(T-V2 codeCheck.total을 그 실행 건 배점 C로 환산),
+    feature_match: 계획서 대조(T-V2 featureMatch.score를 그 실행 건 배점 P로 환산). 되돌린 채점도 남는다(채점 기록이다).
     """
     project_id: str | None
     run_id: str
     doc_score: list[ScoreEntry]
     code_check: list[ScoreEntry]
     feature_match: list[ScoreEntry]
+    # 그 실행 건 설정 사본의 만점 (확장, spec 4.6 · 4.13)
+    doc_max: float | None = ext(None, note=f"{SCALE_NOTE} — 문서층 만점 D (그 실행 건 설정 사본)")
+    code_check_max: float | None = ext(None, note=f"{SCALE_NOTE} — 코드 점검 만점 C (그 실행 건 설정 사본)")
+    feature_match_max: float | None = ext(None, note=f"{SCALE_NOTE} — 계획서 대조 만점 P (그 실행 건 설정 사본)")
 
 
 class ScoreBucket(SBModel):
@@ -390,19 +432,54 @@ class AdminSummary(SBModel):
     triggers: list[TriggerStat]
     total_tokens: int = 0                  # 모든 실행 기록의 입력 + 출력 토큰 (글 토큰만)
     total_image_tokens: int = 0            # 모든 실행 기록의 이미지 입력 + 출력 토큰 (확장)
-    proofread_attempts: int = 0            # T-P2 시도 수 (현재 sentenceResults의 attempts)
-    proofread_rejected: int = 0            # 보호 토큰 검사를 통과하지 못한 시도
-    proofread_reject_rate: float | None = None   # proofread_rejected / proofread_attempts × 100
 
 
 class AdminAgentTask(SBModel):
-    """Agent별 등록된 Task 수(규칙 단계 · 합치기 포함), 실행 기록 수, 가장 최근(시작 시각) 실행의 프로젝트 · 상태."""
+    """Agent별 등록된 Task 수(규칙 단계 · 합치기 포함, 흐름 밖 단계 제외), 실행 기록 수, 가장 최근(시작 시각) 실행의
+    프로젝트 · 상태."""
     agent: str
     task_count: int
     task_ids: list[str]
     execution_count: int
     recent_project_id: str | None = None
     recent_status: str | None = None
+
+
+class AdminFileDeletion(SBModel):
+    """확장 — 파일 삭제 대기열 한 줄 (orch_file_deletions). 메타데이터만 — 키 접두어 · 파일 이름 · 오류 메시지 ·
+    계정 · 프로젝트 ID는 싣지 않는다. 사람을 가리키는 값은 retried_by(다시 시도를 누른 관리자 ID)뿐이다.
+
+    status: 대기 · 포기, attempts: 이번 대기 이후 실패한 시도 수, last_error_kind: 일시 · 입력 · 운영.
+    """
+    deletion_id: str
+    run_id: str
+    status: str
+    attempts: int
+    last_error_kind: str | None = None
+    created_at: datetime
+    next_at: datetime
+    last_tried_at: datetime | None = None
+    gave_up_at: datetime | None = None
+    retried_by: str | None = None
+    retried_at: datetime | None = None
+    retry_count: int = 0
+
+
+@dataclass(frozen=True, repr=False)
+class ArtifactFile:
+    """확장 — 산출물 파일 읽기 결과. SBModel이 아니다 — JSON으로 바꾸지 않는다.
+
+    웹은 data를 그대로 응답 본문으로, media_type을 응답 형식으로 쓴다. name · media_type은 저장소에 넣을 때 기록한 값이다
+    (웹이 넘긴 값으로 정하지 않는다). repr에 내용을 싣지 않는다.
+    """
+    name: str
+    media_type: str
+    size: int
+    sha256: str
+    data: bytes
+
+    def __repr__(self) -> str:   # 내용 · 이름이 로그 · 예외에 섞이지 않게
+        return f"ArtifactFile(media_type={self.media_type!r}, size={self.size})"
 
 
 # ── 화면 조회 ──────────────────────────────────────────
@@ -412,8 +489,7 @@ SCREEN_STATES: dict[int, set[tuple[str, str]]] = {
     6: {("문서평가", "사용자대기")},
     8: {("산출물확인", "사용자대기")},
     9: {("종합평가", "사용자대기")},
-    10: {("결과물", "완료")},
-    11: {("결과물", "완료")},
+    11: {("결과물", "완료")},   # 화면 10(검수 전후)은 없앴다 — INVALID_SCREEN
 }
 
 
@@ -437,7 +513,7 @@ def screen(orch: SBrainOrchestrator, project_id: int | str, number: int) -> Scre
     if number == 3:
         first, more = candidate_lists(ctx)
         return CandidatesScreen(
-            **base, candidates=first, more_candidates=more,
+            **base, candidates=_web_cards(first), more_candidates=_web_cards(more),
             more_available=not run.more_used and len(first) + len(more) < CANDIDATE_LIMIT,
             collection_status=ctx.get("collectionStatus"), filtered_count=ctx.get("filteredCount"),
             fallback_used=ctx.get("fallbackUsed"), fallback_mode=ctx.get("fallbackMode", default=None),
@@ -453,6 +529,7 @@ def screen(orch: SBrainOrchestrator, project_id: int | str, number: int) -> Scre
     if number == 6:
         return DocumentScreen(
             **base, plan_doc=ctx.get("planDoc"), score=_score(ctx.get("scoreReport.document")),
+            table_fallbacks=_table_fallbacks(ctx.get("tableOutputs", default={}) or {}),
             failed_task_ids=ctx.get("G-02a.failedTaskIds"),
             rework_options=_options(ctx, ctx.get("G-02a.reworkOrders")), next_action=ctx.get("G-02a.nextAction"))
     if number == 8:
@@ -466,27 +543,47 @@ def screen(orch: SBrainOrchestrator, project_id: int | str, number: int) -> Scre
             **base, score=_score(ctx.get("scoreReport.overall")),
             rework_options=_options(ctx, ctx.get("G-02b.reworkOrders")), next_action=ctx.get("G-02b.nextAction"),
             rework_diff=ctx.get("reworkDiff"))
-    if number == 10:
-        return ProofreadScreen(**base, format_findings=ctx.get("formatFindings"),
-                               sentences=_sentence_changes(orch, ctx), proofread_log=ctx.get("proofreadLog"))
     return ResultScreen(**base, deliverable=ctx.get("deliverable"), user_message=ctx.get("userMessage"),
                         plan_doc=ctx.get("planDoc"), prototype=ctx.get("prototype"),
-                        infographic=ctx.get("infographic"))
+                        infographic=ctx.get("infographic"),
+                        table_fallbacks=_table_fallbacks(ctx.get("tableOutputs", default={}) or {}))
+
+
+def _table_fallbacks(outputs: dict[str, Any]) -> list[TableFallback]:
+    """화면 표시용 목록을 만든다. reason은 진단 원문, fallback_reason_codes는 분류 코드다.
+
+    안내 문구는 T-W3 연결 코드(agents/partner_sw/writing.py)가 사유 코드로 골라 tableOutputs[항목].displayReason에 저장한 것을
+    옮기기만 한다. 여기서는 fallbackReason 문장을 분류하지 않는다. 코드가 없는 옛 값은 일반 문구를 쓴다."""
+    if not isinstance(outputs, dict):
+        return []
+    fallbacks = []
+    for code, output in outputs.items():
+        if not isinstance(output, dict) or not output.get("tableFallbackUsed"):
+            continue
+        reason = str(output.get("fallbackReason", "")).strip()
+        if reason:
+            display = str(output.get("displayReason") or "").strip() or TABLE_FALLBACK_DISPLAY_DEFAULT
+            reason_codes = output.get("fallbackReasonCodes") or []
+            fallbacks.append(TableFallback(section_code=str(code), reason=reason,
+                                           fallback_reason_codes=[str(value) for value in reason_codes],
+                                           display_reason=display))
+    return fallbacks
 
 
 def _score(report: ScoreReport) -> ScoreView:
     return ScoreView(display_score=report.display_score, total=report.total, threshold=report.threshold,
                      passed=report.passed, phase=report.phase, doc_score=report.doc_score,
                      artifact_score=report.artifact_score, carried_over_layer=report.carried_over_layer,
-                     comparisons=list(report.comparisons), notices=list(report.notices))
+                     comparisons=list(report.comparisons), notices=list(report.notices),
+                     **{name: getattr(report, name) for name in SCALED_SCORE_FIELDS})
 
 
 def _options(ctx: RunContext, orders: list[ReworkOrder]) -> list[ReworkOption]:
     """판정 지시를 그대로 보여 주고, 묶음 · 남은 기회는 묶음 요청(request_rework_for_project)과 같은 이름으로 센다.
 
-    산출물층 지시 → 그 Task의 묶음(실행 파일 · 인포그래픽). 문서층 지시 → 문서층 묶음 4개 전부, 남은 기회는 4개 중
-    가장 많이 남은 값(잠정 — 임시 처리에서는 어느 이름으로 요청해도 계획서 전체를 다시 만든다). 고를 수 있음 = 그 값 > 0
-    (원페이지 실행 파일 · 요청할 수 없는 묶음은 고를 수 없음).
+    산출물층 지시 → 그 Task의 묶음(실행 파일 · 인포그래픽). 문서층 지시 → 그 지시의 묶음(targets — 판정은 묶음마다 지시
+    하나를 낸다), 남은 기회는 그 묶음의 남은 기회다(spec 4.11). 고를 수 있음 = 그 값 > 0 (원페이지 실행 파일 · 요청할 수
+    없는 묶음 · 묶음 이름이 없는 지시는 고를 수 없음). 기회를 다 쓴 묶음도 목록에 남는다(고를 수 없게 표시, spec 4.12 ③).
     """
     usage = {u.bundle_id: u.remaining for u in ctx.run.rework_usage}
     per_bundle = ctx.settings.rework.per_bundle
@@ -495,33 +592,16 @@ def _options(ctx: RunContext, orders: list[ReworkOrder]) -> list[ReworkOption]:
     for o in orders:
         bundles = order_bundles(o)
         remaining = max((usage.get(b, per_bundle) for b in bundles), default=per_bundle)
-        blocked = any(b not in BUNDLE_LAYER for b in bundles) or (onepage and BUNDLE_EXECUTABLE in bundles)
+        blocked = (not bundles or any(bundle_layer(b) is None for b in bundles)
+                   or (onepage and BUNDLE_EXECUTABLE in bundles))
         out.append(ReworkOption(order=o, bundles=bundles, remaining=remaining,
                                 selectable=remaining > 0 and not blocked))
     return out
 
 
-def _sentence_changes(orch: SBrainOrchestrator, ctx: RunContext) -> list[SentenceChange]:
-    """검수 전 문장은 T-P1이 읽은 계획서 버전에서 찾는다 (M-4가 새 버전을 만들기 전).
-
-    T-P1 성공 저장에서 실행 건에 적은 참조(Run.proofread_base_ref)를 먼저 본다 — 12개월 처리로 실행 기록이 지워져도
-    같은 문장이 나온다. 이 값이 없던 실행 건은 지금처럼 T-P1 실행 기록의 입력 참조에서 찾는다.
-    """
-    ref = ctx.run.proofread_base_ref
-    if ref is None:
-        tp1 = [r for r in orch.store.executions(ctx.run.run_id) if r.task_id == "T-P1" and r.status == "성공"]
-        ref = next((i for i in tp1[-1].inputs if i.startswith("planDoc@")), None) if tp1 else None
-    before: PlanDoc = ctx.get_ref(ref) if ref else ctx.get("planDoc")
-    text = {s.sentence_id: s.text for sec in before.sections for s in sec.sentences}
-    results: list[SentenceResult] = ctx.get("sentenceResults", default=[])
-    return [SentenceChange(sentence_id=r.sentence_id, before=text.get(r.sentence_id, ""),
-                           after=r.revised.text if r.adopted and r.revised else None, adopted=r.adopted,
-                           kept_reason=r.kept_reason, attempts=list(r.attempts)) for r in results]
-
-
 # ── 지금까지 결과 · 재작성 결과 ─────────────────────────────
 NOT_VIEWABLE = ("실패", "중단")
-FILE_PATHS = {"prototype": "entry_file_path", "infographic": "image_path"}   # 재작성 결과에 보일 파일 경로
+FILE_PATHS = {"prototype": "entry_file", "infographic": "image_file"}   # 재작성 결과에 보일 파일 참조 칸
 
 
 def _viewable_run(orch: SBrainOrchestrator, project_id: int | str) -> Run:
@@ -531,6 +611,18 @@ def _viewable_run(orch: SBrainOrchestrator, project_id: int | str) -> Run:
     if run.state.progress in NOT_VIEWABLE:
         raise CommandError("RUN_NOT_VIEWABLE", f"{project_id}: {run.state.progress}")
     return run
+
+
+def _web_cards(cards: list[AnnouncementCard]) -> list[AnnouncementCard]:
+    """웹으로 나가는 공고 카드 — 가산점 스위치(settings.BONUS_ENABLED, 잠정 · 기본 꺼짐)가 꺼져 있으면 가산점을 비운다.
+
+    화면 3(첫 조회 · 추가 조회)과 결과 조회(outputs)가 이것을 거친다. 이번 변경 전에 가산점 값이 저장된 실행 건도
+    비어 보인다. 저장된 산출물은 건드리지 않고(사본을 고친다), 카드 모양(bonusScore · bonusItems 키)은 그대로다.
+    한도 · 공고 선택 후보 확인(service.py)은 가산점을 보지 않으므로 candidate_lists를 그대로 쓴다.
+    """
+    if settings.BONUS_ENABLED:
+        return cards
+    return [c.model_copy(update={"bonus_score": None, "bonus_items": []}) for c in cards]
 
 
 def outputs(orch: SBrainOrchestrator, project_id: int | str) -> Outputs:
@@ -544,9 +636,10 @@ def outputs(orch: SBrainOrchestrator, project_id: int | str) -> Outputs:
     category = cur("category")
     return Outputs(
         project_id=run.project_id, run_id=run.run_id, step=run.state.step, progress=run.state.progress,
-        candidates=first, more_candidates=more,
+        candidates=_web_cards(first), more_candidates=_web_cards(more),
         selected_announcement=cur("selectedAnnouncement"), gate_result=cur("gateResult"),
         business_age_years=cur("businessAgeYears"), category=category, plan_doc=cur("planDoc"),
+        table_fallbacks=_table_fallbacks(cur("tableOutputs") or {}),
         doc_score=cur("docScore"), document_score_report=_score(document) if document is not None else None,
         overall_score_report=_score(overall) if overall is not None else None,
         prototype=cur("prototype"), infographic=cur("infographic"), code_check=cur("codeCheck"),
@@ -558,13 +651,15 @@ def outputs(orch: SBrainOrchestrator, project_id: int | str) -> Outputs:
 
 
 def _bundle_usage(ctx: RunContext, category: str | None) -> list[BundleUsage]:
-    """묶음 이름 6개의 사용 수 · 남은 기회 (쓴 적 없는 묶음은 상한 그대로). 원페이지는 실행 파일이 없다."""
+    """묶음 이름(지금 표의 문서층 묶음 · 산출물층 2)의 사용 수 · 남은 기회 (쓴 적 없는 묶음은 상한 그대로). 원페이지는 실행
+    파일이 없다. 묶음 목록은 부를 때마다 그때의 표 · 스위치로 정한다 — 새 묶음 스위치를 끄면 그 묶음은 목록에서 빠지고
+    사용 기록(Run.reworkUsage)은 지우지 않는다."""
     used = {u.bundle_id: u for u in ctx.run.rework_usage}
     per_bundle = ctx.settings.rework.per_bundle
-    names = [b for b in (*DOCUMENT_BUNDLES, *ARTIFACT_BUNDLES)
+    names = [b for b in (*document_bundles(), *ARTIFACT_BUNDLES)
              if not (category == "원페이지" and b == BUNDLE_EXECUTABLE)]
     return [used[b].model_copy() if b in used else
-            BundleUsage(bundle_id=b, layer=BUNDLE_LAYER[b], used_count=0, remaining=per_bundle) for b in names]
+            BundleUsage(bundle_id=b, layer=bundle_layer(b), used_count=0, remaining=per_bundle) for b in names]
 
 
 def rework_result(orch: SBrainOrchestrator, project_id: int | str) -> ReworkResult | None:
@@ -595,17 +690,46 @@ def rework_result(orch: SBrainOrchestrator, project_id: int | str) -> ReworkResu
         plan = value("planDoc", version)
         return list(plan.sections) if plan is not None else None
 
-    def path(key: str, version: int | None) -> str | None:
+    def file_ref(key: str, version: int | None) -> FileRef | None:
         obj = value(key, version)
         return getattr(obj, FILE_PATHS[key]) if obj is not None else None
     changed_plan = "planDoc" in before or "planDoc" in after
-    files = [ReworkFileChange(artifact=k, before_path=path(k, before.get(k)), after_path=path(k, after.get(k)))
+    files = [ReworkFileChange(artifact=k, before_file=file_ref(k, before.get(k)), after_file=file_ref(k, after.get(k)))
              for k in FILE_PATHS if k in before or k in after]
     return ReworkResult(
         **base, kept=s.kept, basis=s.basis, before_score=s.before_score, after_score=s.after_score,
         before_refs=list(s.before_refs), after_refs=list(s.after_refs),
         plan_before=sections(before.get("planDoc")) if changed_plan else None,
         plan_after=sections(after.get("planDoc")) if changed_plan else None, files=files)
+
+
+# ── 산출물 파일 읽기 (확장) ─────────────────────────
+def read_artifact_file(orch: SBrainOrchestrator, project_id: int | str, key: str) -> ArtifactFile:
+    """프로젝트 실행 건의 파일 하나 — 웹이 주인 확인을 한 뒤 부른다. 읽기만 한다(점유 없음, 쓰기 · 지우기 없음).
+
+    1. 실행 건 없음 → RUN_NOT_FOUND, 실패 · 중단 → RUN_NOT_VIEWABLE (outputs와 같은 규칙)
+    2. 파일 저장소 설정 없음(웹 조립에 SBRAIN_ARTIFACT_ROOT 없음 · 상대 경로) → FILE_STORE_UNAVAILABLE
+    3. 키 규칙 위반 · 첫 마디가 그 실행 건 ID가 아님 → FILE_NOT_FOUND
+    4. 저장소에 없음 → FILE_NOT_FOUND
+    5. 읽은 내용의 sha256 · 크기가 저장된 값과 다름 → FILE_NOT_FOUND (관리자용 사유는 남기지 않는다, 잠정)
+    거절 사유(detail)에 키 · 이름을 넣지 않는다. 디스크 오류(OSError)는 다른 조회의 저장소 오류처럼 그대로 올라간다.
+    """
+    run = _viewable_run(orch, project_id)
+    files = orch.files
+    if files is None:
+        raise CommandError("FILE_STORE_UNAVAILABLE", "파일 저장소 설정 없음")
+    if file_key_problem(key) is not None or key.split("/", 1)[0] != run.run_id:
+        raise CommandError("FILE_NOT_FOUND", "파일 없음")
+    meta = files.meta(key)
+    if meta is None:
+        raise CommandError("FILE_NOT_FOUND", "파일 없음")
+    try:
+        data = files.read(key)
+    except FileMissing:
+        raise CommandError("FILE_NOT_FOUND", "파일 없음") from None
+    if len(data) != meta.size or sha256_hex(data) != meta.sha256:
+        raise CommandError("FILE_NOT_FOUND", "파일 없음")
+    return ArtifactFile(name=meta.name, media_type=meta.media_type, size=meta.size, sha256=meta.sha256, data=data)
 
 
 # ── 관리자 조회 ────────────────────────────────────────
@@ -649,14 +773,15 @@ SCORE_BUCKETS = (("90~100점", 90, 100), ("80~89점", 80, 89), ("70~79점", 70, 
 TRIGGERS = ("첫실행", "재작성", "재수행")
 
 
-def _score_events(records: list[ExecutionRecord]) -> dict[str, list[ScoreEntry]]:
-    """층별 채점 기록 (오래된 순). 채점 = 성공한 T-V1 · T-V2 실행, 재작성 뒤 = 재작성 사이클 안의 실행(trigger 재작성)."""
+def _score_events(records: list[ExecutionRecord], maxes: ScoreMaxes) -> dict[str, list[ScoreEntry]]:
+    """층별 채점 기록 (오래된 순). 채점 = 성공한 T-V1 · T-V2 실행, 재작성 뒤 = 재작성 사이클 안의 실행(trigger 재작성).
+    코드 점검 · 계획서 대조는 그 실행 건 배점(maxes)으로 환산한 값이다 (통계 줄 scores와 같은 계산 — log_stats.layer_score)."""
     events: dict[str, list[ScoreEntry]] = {layer: [] for layer, _, _ in SCORE_LAYERS}
     for r in records:
         if r.status != "성공":
             continue
-        for layer, task, field in SCORE_LAYERS:
-            score = getattr(r.output_meta, field) if r.task_id == task else None
+        for layer, task, _field in SCORE_LAYERS:
+            score = layer_score(layer, r.output_meta, maxes) if r.task_id == task else None
             if score is not None:
                 events[layer].append(ScoreEntry(scored_at=r.ended_at, score=score, after_rework=r.trigger == "재작성",
                                                 execution_id=r.execution_id))
@@ -688,7 +813,8 @@ def admin_runs(orch: SBrainOrchestrator, *, progress: str | None = None, step: s
     for run in orch.store.query_runs(RunFilter(progress=progress, step=step, limit=limit, offset=offset,
                                                updated_since=_admin_since(orch))):
         records = orch.store.executions(run.run_id)
-        scores = _current_scores(orch.store.get_pointers(run.run_id), records)
+        maxes = score_maxes(run.settings_snapshot)   # 그 실행 건 배점 — 지금 설정이 아니다
+        scores = _current_scores(orch.store.get_pointers(run.run_id), records, maxes=maxes)
         # 지금 Task — 대기열 맨 앞(도는 중 · 다음에 돌 단계, 재개대기면 재개할 단계), 대기열이 비었으면 마지막으로 돈 단계
         task = run.queue[0] if run.queue else run.current_task
         agent = orch.engine.registry.get(task).agent if task and orch.engine.registry.has(task) else None
@@ -697,7 +823,7 @@ def admin_runs(orch: SBrainOrchestrator, *, progress: str | None = None, step: s
             current_task=task, agent=agent, attempt=records[-1].attempt if records else None,
             updated_at=run.updated_at, doc_score=scores["doc"], artifact_score=scores["artifact"],
             total_score=scores["total"], resume_count=run.resume_count, last_error_kind=run.last_error_kind,
-            failure_reason=run.failure_reason))
+            failure_reason=run.failure_reason, doc_max=maxes.doc, artifact_max=maxes.artifact))
     return out
 
 
@@ -705,8 +831,11 @@ def admin_score_history(orch: SBrainOrchestrator, project_id: int | str) -> Admi
     run = orch.store.find_run_by_project(project_id)
     if run is None:
         raise CommandError("RUN_NOT_FOUND", str(project_id))
-    events = _score_events(orch.store.executions(run.run_id))
+    maxes = score_maxes(run.settings_snapshot)   # 그 실행 건 배점 — 지금 설정이 아니다
+    events = _score_events(orch.store.executions(run.run_id), maxes)
     return AdminScoreHistory(project_id=run.project_id, run_id=run.run_id,
+                             doc_max=maxes.doc, code_check_max=maxes.code_check,
+                             feature_match_max=maxes.feature_match,
                              **{field: list(reversed(events[layer])) for layer, field in (
                                  ("docScore", "doc_score"), ("codeCheck", "code_check"),
                                  ("featureMatch", "feature_match"))})
@@ -723,17 +852,17 @@ def admin_summary(orch: SBrainOrchestrator) -> AdminSummary:
     - 재작성 비율 = 재작성 실행 기록이 있는 실행 건 / 실행 기록이 하나라도 있는 실행 건 × 100.
     - 층별 변화: 실행 건마다 그 층의 첫 채점과 마지막 재작성 뒤 채점(재작성 사이클 안의 마지막 채점)이 둘 다 있는 것만
       센다. 첫 평균 · 재작성 뒤 평균은 소수 1자리, 차이 = 재작성 뒤 평균 - 첫 평균(반올림한 평균끼리, 웹과 같다).
+      코드 점검 · 계획서 대조 점수는 실행 건마다 그 실행 건 설정 사본 배점으로 환산한 값이다(spec 4.6).
     - 시도 계기별: 실행 기록 수, 평균 토큰 = (입력 + 출력) 합 / 그 계기의 실행 기록 수(토큰 기록이 없는 실행은 0).
-    - 표현 검수: 실행 건마다 현재 sentenceResults의 시도(attempts) 수 · 보호 토큰 검사 불통과 시도 수,
-      반려 비율 = 반려 / 시도 × 100.
     - 비율은 분모가 0이면 None, 백분율 소수 1자리.
+    - 검수(표현 검수 시도 · 반려) 칸은 없다 — 검수가 흐름에서 빠졌다.
 
     범위: 마지막 활동(updated_at)이 최근 12개월 안인 실행 건과 그 실행 건들의 실행 기록만 센다(admin_runs와 같은 기준
-    시각, retention_cutoff) — 진행 상태별 건수 · 점수 · 재작성 · 층별 변화 · 계기별 · 토큰 · 표현 검수가 모두 같은 범위다.
+    시각, retention_cutoff) — 진행 상태별 건수 · 점수 · 재작성 · 층별 변화 · 계기별 · 토큰이 모두 같은 범위다.
 
     우리 기록으로 셀 수 없어 뺀 것: 실행 건이 없는 프로젝트(웹의 '공고 매칭 전')는 세지 않고, 진행 상태는 웹의 상태
-    표시('판단 대기' 등) 대신 실행 건의 진행 상태로 센다. 완전 삭제한 실행 건은 현재 점수 · 표현 검수 시도를 셀 수 없어
-    그 항목에서 빠진다(채점 이력 · 실행 기록 수 · 토큰은 남는다).
+    표시('판단 대기' 등) 대신 실행 건의 진행 상태로 센다. 완전 삭제한 실행 건은 현재 점수를 셀 수 없어 그 항목에서
+    빠진다(채점 이력 · 실행 기록 수 · 토큰은 남는다).
     """
     runs = orch.store.query_runs(RunFilter(limit=None, updated_since=_admin_since(orch)))
     in_scope = {run.run_id for run in runs}
@@ -746,32 +875,24 @@ def admin_summary(orch: SBrainOrchestrator) -> AdminSummary:
     totals: list[float] = []
     firsts: dict[str, list[float]] = defaultdict(list)
     afters: dict[str, list[float]] = defaultdict(list)
-    reworked = attempts = rejected = 0
+    reworked = 0
     for run in runs:
         status[run.state.progress] += 1
         records = by_run.get(run.run_id, [])
         pointers = orch.store.get_pointers(run.run_id)
-        scores = _current_scores(pointers, records)
+        maxes = score_maxes(run.settings_snapshot)   # 실행 건마다 그 실행 건 배점으로 환산
+        scores = _current_scores(pointers, records, maxes=maxes)
         if scores["doc"] is not None:
             docs.append(scores["doc"])
         if scores["total"] is not None:
             totals.append(scores["total"])
         if any(r.trigger == "재작성" for r in records):
             reworked += 1
-        for layer, entries in _score_events(records).items():
+        for layer, entries in _score_events(records, maxes).items():
             after = [e for e in entries if e.after_rework]
             if entries and after and after[-1].execution_id != entries[0].execution_id:
                 firsts[layer].append(entries[0].score)
                 afters[layer].append(after[-1].score)
-        if "sentenceResults" in pointers:
-            try:
-                results = orch.store.get_artifact(run.run_id, "sentenceResults", pointers["sentenceResults"]).value
-            except KeyError:
-                results = []
-            for res in results or []:   # 개수만 센다 — 문장 내용은 읽어 싣지 않는다
-                for a in res.get("attempts", []):
-                    attempts += 1
-                    rejected += 0 if (a.get("tokenCheck") or {}).get("passed") else 1
     threshold = orch.settings.current().scoring.threshold
     passed = sum(1 for t in totals if t >= threshold)
     changes = []
@@ -798,18 +919,23 @@ def admin_summary(orch: SBrainOrchestrator) -> AdminSummary:
         score_buckets=[ScoreBucket(label=label, count=sum(1 for t in totals if lo <= t <= hi))
                        for label, lo, hi in SCORE_BUCKETS],
         layer_changes=changes, triggers=triggers, total_tokens=sum(tokens(r) for r in every),
-        total_image_tokens=sum((r.image_input_tokens or 0) + (r.image_output_tokens or 0) for r in every),
-        proofread_attempts=attempts, proofread_rejected=rejected, proofread_reject_rate=_rate(rejected, attempts))
+        total_image_tokens=sum((r.image_input_tokens or 0) + (r.image_output_tokens or 0) for r in every))
 
 
 def admin_agent_tasks(orch: SBrainOrchestrator) -> list[AdminAgentTask]:
-    """Agent별(기준 문서 Agent 순서) 등록된 단계 수 · 실행 기록 수 · 가장 최근 실행(시작 시각)의 프로젝트 · 상태."""
-    specs = orch.engine.registry.specs()
+    """Agent별(기준 문서 Agent 순서) 등록된 단계 수 · 실행 기록 수 · 가장 최근 실행(시작 시각)의 프로젝트 · 상태.
+
+    흐름 밖 단계(catalog.OUT_OF_FLOW_STEPS — 등록부 줄은 남김)는 세지 않고, 남은 단계가 없는 Agent 줄(검수)은
+    내지 않는다. 실행 기록 수 · 최근 실행은 Agent 이름으로 센다.
+    """
+    specs = [s for s in orch.engine.registry.specs() if s.task_id not in OUT_OF_FLOW_STEPS]
     agents = list(typing.get_args(AgentName))
     agents += [a for a in dict.fromkeys(s.agent for s in specs) if a not in agents]
     out = []
     for agent in agents:
         ids = [s.task_id for s in specs if s.agent == agent]
+        if not ids:
+            continue
         latest = orch.store.list_executions(ExecutionFilter(agent=agent, limit=1))
         out.append(AdminAgentTask(
             agent=agent, task_count=len(ids), task_ids=ids,
@@ -819,10 +945,43 @@ def admin_agent_tasks(orch: SBrainOrchestrator) -> list[AdminAgentTask]:
     return out
 
 
+def _deletion_row(row: FileDeletion) -> AdminFileDeletion:
+    """대기열 줄 → 관리자 줄. 키 접두어(key_prefix)는 싣지 않는다."""
+    return AdminFileDeletion(
+        deletion_id=row.deletion_id, run_id=row.run_id, status=row.status, attempts=row.attempts,
+        last_error_kind=row.last_error_kind, created_at=row.created_at, next_at=row.next_at,
+        last_tried_at=row.last_tried_at, gave_up_at=row.gave_up_at, retried_by=row.retried_by,
+        retried_at=row.retried_at, retry_count=row.retry_count)
+
+
+def admin_file_deletions(orch: SBrainOrchestrator, *, status: str | None = None, limit: int = 50,
+                         offset: int = 0) -> list[AdminFileDeletion]:
+    """파일 삭제 대기열 목록 — 넣은 시각(created_at) 최근 순. status로 '대기' · '포기'를 거르고 limit · offset으로 나눈다.
+
+    다른 status 값은 ValueError(값은 메시지에 싣지 않는다)."""
+    if status is not None and status not in FILE_DELETION_STATUSES:
+        raise ValueError("status는 '대기' · '포기' 중 하나")
+    return [_deletion_row(r) for r in orch.store.list_file_deletions(status=status, limit=limit, offset=offset)]
+
+
+def admin_retry_file_deletion(orch: SBrainOrchestrator, deletion_id: str, admin_id: str) -> AdminFileDeletion:
+    """'포기'한 줄을 '대기'로 되돌린다 — attempts=0 · next_at=지금 · retried_by=admin_id · retried_at=지금 · retry_count+1을 한
+    트랜잭션으로(저장소 retry_file_deletion). 없는 줄 FILE_DELETION_NOT_FOUND, '대기' 줄 INVALID_STATE (detail에 ID 없음).
+    처리 결과는 워커 운영 로그(파일삭제 · 파일삭제실패 · 파일삭제포기)에 남는다."""
+    try:
+        row = orch.store.retry_file_deletion(deletion_id, str(admin_id))
+    except FileDeletionNotFound:
+        raise CommandError("FILE_DELETION_NOT_FOUND", "없는 줄") from None
+    except FileDeletionNotGivenUp:
+        raise CommandError("INVALID_STATE", "포기한 줄만 다시 시도한다") from None
+    return _deletion_row(row)
+
+
 __all__ = [
-    "AdminAgentTask", "AdminCall", "AdminExecution", "AdminRun", "AdminScoreHistory", "AdminSummary", "AdminTry",
-    "ArtifactScreen", "CandidatesScreen", "DocumentScreen", "GateScreen", "LayerChange", "Outputs", "OverallScreen",
-    "ProofreadScreen", "ResultScreen", "ReworkFileChange", "ReworkOption", "ReworkResult", "Screen", "ScoreBucket",
-    "ScoreEntry", "ScoreView", "SentenceChange", "TokenTotals", "TriggerStat", "admin_agent_tasks", "admin_calls",
-    "admin_executions", "admin_runs", "admin_score_history", "admin_summary", "outputs", "rework_result", "screen",
+    "AdminAgentTask", "AdminCall", "AdminExecution", "AdminFileDeletion", "AdminRun", "AdminScoreHistory",
+    "AdminSummary", "AdminTry", "ArtifactFile", "ArtifactScreen", "CandidatesScreen", "DocumentScreen", "GateScreen",
+    "LayerChange", "Outputs", "OverallScreen", "ResultScreen", "ReworkFileChange", "ReworkOption",
+    "ReworkResult", "Screen", "ScoreBucket", "ScoreEntry", "ScoreView", "TokenTotals", "TriggerStat",
+    "admin_agent_tasks", "admin_calls", "admin_executions", "admin_file_deletions", "admin_retry_file_deletion",
+    "admin_runs", "admin_score_history", "admin_summary", "outputs", "read_artifact_file", "rework_result", "screen",
 ]

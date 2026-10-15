@@ -90,7 +90,7 @@ def test_resume_intervals_double_and_limit_fails_run(clock):
 def test_permanent_error_fails_immediately_with_admin_alert(clock):
     app = make_app(clock)
     rid = start_and_select(app)
-    app.llm.plan("T-C3", ["auth"] * 6)
+    app.llm.plan("T-C3", ["auth"])                                       # 401 — 재시도 없이 영구 오류
     app.orchestrator.start_writing(rid)
     app.orchestrator.advance(rid)
     run = app.store.load_run(rid)

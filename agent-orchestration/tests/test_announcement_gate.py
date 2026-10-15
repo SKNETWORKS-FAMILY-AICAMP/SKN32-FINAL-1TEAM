@@ -9,53 +9,23 @@
 from __future__ import annotations
 
 import inspect
-from datetime import date
 
 import pytest
-from conftest import executed, make_app, pre_input, project_for, to_screen9
+from conftest import executed, make_app, pre_input, to_screen9
+from flow_helpers import code_of, ctx_of, pid, select, started, state
 from webdb import create_web_tables
 
-from sbrain.agents.stubs import StubScenario, make_announcement
+from sbrain.agents.stubs import StubScenario
 from sbrain.bootstrap import build_stub_app, build_web
 from sbrain.contracts import tasks as c
 from sbrain.flow import SBrainOrchestrator
 from sbrain.flow.catalog import artifact_types, build_registry
-from sbrain.models import Announcement, AnnouncementCard, GateResult, Run
-from sbrain.orchestrator.errors import COMMAND_ERROR_CODES, CommandError, message
+from sbrain.models import Announcement, AnnouncementCard
+from sbrain.orchestrator.errors import COMMAND_ERROR_CODES, message
 from sbrain.orchestrator.settings import PROVISIONAL, Settings
 from sbrain.store_sql import SqlStore, create_orchestrator_tables, create_sqlite_engine
 
 GATE_KEYS = ("selectedAnnouncement", "gateResult", "businessAgeYears")
-
-
-def pid(app, rid: str) -> str:
-    return app.store.load_run(rid).project_id
-
-
-def started(app, **form) -> str:
-    res = app.orchestrator.start_run("acc-1", pre_input(**form), project_id=project_for(app))
-    assert res.ok, res
-    return res.run_id
-
-
-def select(app, rid: str, aid: str) -> None:
-    app.orchestrator.select_announcement(rid, aid)
-    app.orchestrator.advance(rid)
-
-
-def ctx_of(app, rid: str):
-    return app.engine.open_context(app.store.load_run(rid))
-
-
-def code_of(fn) -> str:
-    with pytest.raises(CommandError) as e:
-        fn()
-    return e.value.code
-
-
-def state(app, rid: str) -> tuple[str, str]:
-    run = app.store.load_run(rid)
-    return run.state.step, run.state.progress
 
 
 def gate_snapshot(app, rid: str) -> tuple:
@@ -132,8 +102,10 @@ def test_g01_registered_as_task_with_tools():
     exact, _ = artifact_types(build_registry())
     assert exact["selectedAnnouncement"] is Announcement                          # 등록부 출력에서 온다 (겹침 없음)
     assert Settings().task_timeouts["G-01"] == 30.0
-    for key in ("taskTimeouts.G-01", "announcement.unknownStatus", "announcement.formSpec", "notice.X-C2-GONE"):
+    for key in ("taskTimeouts.G-01", "announcement.formSpec"):
         assert key in PROVISIONAL
+    for key in ("announcement.unknownStatus", "notice.X-C2-GONE"):       # 기준 문서 v1.10이 정해 잠정이 아니다
+        assert key not in PROVISIONAL
     fields = c.G01In.model_fields
     assert fields["announcement_id"].is_required() and not fields["eligibility"].is_required()
     assert not fields["eligibility_parsed"].is_required()
@@ -325,34 +297,14 @@ def test_blocked_announcement_is_refused_without_change(clock):
     assert app.orchestrator.screen(p, 3).blocked_announcement_ids == ["A01"]     # 자격 통과 뒤 화면 3에도
 
 
-def test_blocked_list_survives_reload_and_old_json(clock):
+def test_blocked_list_survives_reload_and_new_run_starts_empty(clock):
     app = make_app(clock, StubScenario(gate_fail_ids={"A01", "A02"}))
     rid = started(app)
     select(app, rid, "A01")
     select(app, rid, "A02")
     assert app.store.load_run(rid).blocked_announcement_ids == ["A01", "A02"]   # 저장소에서 다시 읽어도 그대로
-    data = app.store.load_run(rid).dump()
-    data.pop("blockedAnnouncementIds")
-    assert Run.model_validate(data).blocked_announcement_ids == []               # 예전 실행 건 JSON은 빈 목록
     other = make_app(clock)
     assert other.store.load_run(started(other)).blocked_announcement_ids == []  # 새 실행 건은 빈 목록에서 시작
-
-
-def test_old_artifact_json_loads_with_new_defaults():
-    old_card = {"announcementId": "A01", "title": "t", "agency": "a", "applyEnd": "2026-10-01",
-                "supportAmountMax": 1, "fitScore": 0.5, "rank": 1, "displayType": "card", "matchReason": "m",
-                "sourceNotice": "s", "originalUrl": "u"}
-    card = AnnouncementCard.model_validate(old_card)
-    assert (card.apply_period_type, card.content_changed, card.content_version, card.bonus_score,
-            card.bonus_items) == ("모름", False, None, None, [])
-    gate = GateResult.model_validate({"passed": True, "failedConditions": [], "missingInputs": [], "undecidable": False})
-    assert gate.unknown_conditions == []
-    old_ann = make_announcement("A01", date(2026, 9, 26)).dump()
-    old_ann.pop("applyPeriodType")
-    assert Announcement.model_validate(old_ann).apply_period_type == "모름"
-    nullable = Announcement.model_validate({**old_ann, "applyStart": None, "applyEnd": None,
-                                            "supportAmountMax": None, "supportAmountText": None})
-    assert (nullable.apply_end, nullable.support_amount_max) == (None, None)
 
 
 # ── 마감 안내 (4.5) ────────────────────────────────────
@@ -377,7 +329,8 @@ def test_run_closed_notice_by_deadline_or_status(clock):
 
 
 def test_null_dates_and_amounts_flow_to_the_end(clock):
-    """뒤 단계 스텁이 비어 있는 마감일 · 지원 금액에서 멈추지 않는다 — 맥락 값은 null, 보호 토큰은 만들지 않는다."""
+    """뒤 단계 스텁이 비어 있는 마감일 · 지원 금액에서 멈추지 않는다 — 맥락 값은 null. 보호 토큰(G-03)은 흐름 밖이라 없다
+   ."""
     app = make_app(clock, StubScenario(no_deadline_ids={"A01"}, no_amount_ids={"A01"}))
     rid = to_screen9(app)
     app.orchestrator.decide(rid, 9, "진행", confirmed=True)
@@ -389,5 +342,4 @@ def test_null_dates_and_amounts_flow_to_the_end(clock):
     context = ctx.get("taskPlan").tasks[0].context
     assert set(context) == {"formVersion", "applyEnd", "supportAmountMax", "evaluationItems", "formatSpec"}
     assert (context["applyEnd"], context["supportAmountMax"]) == (None, None)
-    tokens = ctx.get("protectedTokens")
-    assert not [t for t in tokens if t.type == "날짜"] and "None" not in [t.value for t in tokens]
+    assert not ctx.has("protectedTokens")

@@ -10,8 +10,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from mysqldb import require_mysql  # noqa: E402
-from webdb import create_web_tables, new_project, set_training_consent  # noqa: E402
+import mysqldb  # noqa: E402
+from mysqldb import MYSQL, MYSQL_GROUP, group_name, require_mysql, xdist_groups  # noqa: E402
+from webdb import create_web_tables, new_project  # noqa: E402
 
 from sbrain import env  # noqa: E402
 from sbrain.agents.stubs import StubScenario  # noqa: E402
@@ -19,8 +20,10 @@ from sbrain.bootstrap import App, build_stub_app  # noqa: E402
 from sbrain.intake import ProjectInputRecord  # noqa: E402
 from sbrain.models import PreInput  # noqa: E402
 from sbrain.orchestrator import MemoryStore  # noqa: E402
+from sbrain.orchestrator import settings  # noqa: E402
 from sbrain.orchestrator.store import Store  # noqa: E402
 from sbrain.store_sql import SqlStore, create_orchestrator_tables, create_sqlite_engine  # noqa: E402
+
 
 # ── 공고 서버 격리 ─────────────────────────────────────
 # 개발 PC의 환경 변수나 agent-orchestration/.env에 SBRAIN_NOTICE_API_URL이 있어도 테스트가 실제 공고 서버를 부르지 않게,
@@ -50,11 +53,117 @@ def _no_real_notice_server(monkeypatch):
     isolate_notice_api(monkeypatch)
 
 
+# ── 실행별 KIET 검색 스위치 격리 (SBRAIN_KIET_SEARCH, 기본 꺼짐) ─────────────
+# 개발 PC의 환경 변수나 agent-orchestration/.env에 켜는 값이 있어도 테스트의 워커 조립(build_app 기본 환경)이 실제 KIET를 부르지 않게,
+# 모든 테스트에서 이 키를 없는 것으로 보고(공고 서버 주소 격리와 같은 방식) 연결 코드의 켜기 상태(워커 프로세스 값)를
+# 테스트마다 꺼진 값으로 되돌린다. 켠 경우는 그 테스트 안에서 검색 함수를 가짜로 바꾼 뒤 켠다(네트워크 없음).
+KIET_SEARCH_KEY = "SBRAIN_KIET_SEARCH"
+
+
+def isolate_kiet_search(monkeypatch: pytest.MonkeyPatch) -> None:
+    """환경 변수와 .env의 SBRAIN_KIET_SEARCH를 없는 것으로 본다 (테스트가 끝나면 monkeypatch가 되돌린다)."""
+    monkeypatch.delenv(KIET_SEARCH_KEY, raising=False)
+    original = env.read_env_file
+    if getattr(original, "without_kiet_search", False):
+        return
+
+    def read_env_file(path=None) -> dict[str, str]:
+        values = original(path)
+        values.pop(KIET_SEARCH_KEY, None)
+        return values
+    read_env_file.without_kiet_search = True
+    read_env_file.without_notice_url = getattr(original, "without_notice_url", False)
+    monkeypatch.setattr(env, "read_env_file", read_env_file)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_kiet_search(monkeypatch):
+    from sbrain.agents.partner_sw import market_research
+
+    isolate_kiet_search(monkeypatch)
+    market_research.set_kiet_search(False)
+    yield
+    market_research.set_kiet_search(False)
+
+
+# ── 실제 OpenAI 이미지 호출 막기 ─────────────────────────────
+# build_app(image=None)은 실제 이미지 호출처(OpenAIImageProvider)를 끼운다. 화면 6 뒤(T-B2 아이콘판)까지 도는 워커 테스트가
+# 가짜 이미지를 빠뜨려도 네트워크로 나가지 않게, 클라이언트를 주입하지 않은 실제 호출처는 클라이언트를 만들지 않고 실패한다.
+# 클라이언트를 주입한 호출처(test_image.py의 가짜 클라이언트)는 그대로 쓴다.
+@pytest.fixture(autouse=True)
+def _no_real_openai_image(monkeypatch):
+    from sbrain.orchestrator.openai_image import OpenAIImageProvider
+
+    def get_client(self):
+        if self._client is None:
+            raise RuntimeError("테스트에서 실제 OpenAI 이미지 클라이언트를 만들지 않는다 — 가짜 이미지(FakeImage)를 끼운다")
+        return self._client
+    monkeypatch.setattr(OpenAIImageProvider, "_get_client", get_client)
+
+
+# ── 파일 저장소 폴더 (SBRAIN_ARTIFACT_ROOT) ─────────────
+# 워커 조립(build_app · worker main)은 이 값이 필수다. 모든 테스트에서 pytest 임시 폴더 아래의 절대 경로로 둔다 — 개발 PC의
+# 환경 변수 · .env 값을 쓰지 않는다(환경 변수가 .env를 이긴다). 폴더는 build_app이 부를 때 만든다. 같은 테스트의 워커 조립 ·
+# 웹 조립은 같은 폴더를 본다. 없거나 상대 경로일 때를 시험하려면 그 테스트 안에서 monkeypatch로 바꾼다.
+ARTIFACT_ROOT_KEY = "SBRAIN_ARTIFACT_ROOT"
+
+
+@pytest.fixture(autouse=True)
+def _artifact_root(monkeypatch, tmp_path):
+    monkeypatch.setenv(ARTIFACT_ROOT_KEY, str(tmp_path / "artifacts"))
+
+
+# ── 동시 실행 묶음 (pytest.ini: 기본 동시 실행, --dist loadgroup) ─────────────
+# 같은 묶음의 테스트는 한 프로세스에서 하나씩 돈다.
+#   MYSQL (mysqldb.py) — MySQL에 닿는 테스트 전부. require_mysql()이 묶음을 확인한다.
+#   TIMING — 시간에 기대는 테스트(워커 신호 · 하트비트 · 스레드 대기 · 짧은 sleep · 경과 시간 검사).
+#            시간 기준(대기 · 제한 시간)은 그대로 두고 묶음으로만 다룬다. 함수에 @TIMING을 붙인다.
+# 한 테스트가 두 묶음에 들면 MySQL 묶음이 이긴다(함수에 붙인 TIMING을 뗀다). 그 밖에 묶음이 둘 이상이면 수집 오류.
+TIMING_GROUP = "timing"
+TIMING = pytest.mark.xdist_group(TIMING_GROUP)
+
+
+@pytest.hookimpl(tryfirst=True)   # pytest-xdist가 묶음 이름을 테스트 ID에 붙이기 전에
+def pytest_collection_modifyitems(items):
+    for item in items:
+        groups = xdist_groups(item)
+        if MYSQL_GROUP in groups and len(groups) > 1:
+            item.own_markers[:] = [m for m in item.own_markers
+                                   if m.name != "xdist_group" or group_name(m) == MYSQL_GROUP]
+            groups = xdist_groups(item)
+        if len(groups) > 1:
+            raise pytest.UsageError(f"테스트가 동시 실행 묶음 여러 개에 들었음 — {item.nodeid}: {sorted(groups)}")
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    """require_mysql()이 실행 중인 테스트의 묶음을 볼 수 있게 한다."""
+    mysqldb.set_current_test(item)
+    try:
+        return (yield)
+    finally:
+        mysqldb.set_current_test(None)
+
+
+# ── 가산점 스위치 (orchestrator/settings.py BONUS_ENABLED, 기본 꺼짐) ─────
+# 실제 T-C2 · 스텁 T-C2 · 웹 조회가 부를 때마다 모듈 속성으로 읽으므로 여기서 바꾸면 모든 곳에 닿는다.
+@pytest.fixture
+def bonus_on(monkeypatch):
+    """가산점을 켠다 — 켜져 있을 때의 동작(읽기 · 검사 · 스텁 가산점 · 웹에 그대로)을 시험한다."""
+    monkeypatch.setattr(settings, "BONUS_ENABLED", True)
+
+
+@pytest.fixture
+def bonus_off(monkeypatch):
+    """가산점을 끈다(기본값과 같다) — 기본값이 바뀌어도 꺼짐 동작 시험이 그대로 꺼짐을 보게 한다."""
+    monkeypatch.setattr(settings, "BONUS_ENABLED", False)
+
+
 # ── 저장소 선택 ────────────────────────────────────────
 # 흐름 테스트(clock을 쓰는 테스트)는 메모리 저장소와 SqlStore(SQLite)로 한 번씩 돈다.
-# 저장소 계약 테스트(any_backend)는 MySQL 8도 돈다 — SBRAIN_TEST_MYSQL_URL이 없으면 건너뜀.
+# 저장소 계약 테스트(any_backend)는 MySQL 8도 돈다 — SBRAIN_TEST_MYSQL_URL이 없으면 건너뜀. mysql은 MySQL 묶음.
 FLOW_STORES = ("memory", "sql")
-CONTRACT_STORES = ("memory", "sql", "mysql")
+CONTRACT_STORES = ("memory", "sql", pytest.param("mysql", marks=MYSQL))
 
 
 def pytest_generate_tests(metafunc):
@@ -96,28 +205,23 @@ def any_backend(request, tmp_path) -> Backend:
     return Backend(request.param, tmp_path)
 
 
+@pytest.fixture
+def db(tmp_path):
+    """워커 · 조립 테스트가 함께 쓰는 SQLite 파일 DB(오케스트레이터 표 + 웹 표 최소 정의). 같은 파일 주소로 웹 앱도 만든다."""
+    engine = create_sqlite_engine(tmp_path / "worker.db", fast=True)
+    create_orchestrator_tables(engine)
+    create_web_tables(engine)
+    return engine
+
+
 _memory_projects = itertools.count(5001)
 
 
-def project_for(app: App, *, agreed: bool = False) -> str:
-    """흐름 테스트용 프로젝트 ID. SqlStore면 웹 projects 행을 만든다(알림이 웹 notifications에 쓰이도록).
-
-    agreed: 프로젝트 주인의 학습 데이터 편입 동의 (웹 users.ai_training_agreed, 메모리 저장소는 따로 기억).
-    """
+def project_for(app: App) -> str:
+    """흐름 테스트용 프로젝트 ID. SqlStore면 웹 projects 행을 만든다(알림이 웹 notifications에 쓰이도록)."""
     if isinstance(app.store, SqlStore):
-        return str(new_project(app.store.engine, agreed=agreed))
-    pid = str(next(_memory_projects))
-    app.store.set_training_consent(pid, agreed)
-    return pid
-
-
-def set_consent(app: App, rid: str, agreed: bool = True) -> None:
-    """실행 건 프로젝트 주인의 학습 데이터 편입 동의를 바꾼다 (웹이 로그인마다 갱신하는 값)."""
-    pid = app.store.load_run(rid).project_id
-    if isinstance(app.store, SqlStore):
-        set_training_consent(app.store.engine, int(pid), agreed)
-    else:
-        app.store.set_training_consent(pid, agreed)
+        return str(new_project(app.store.engine))
+    return str(next(_memory_projects))
 
 
 class Clock:
@@ -218,3 +322,16 @@ def to_screen9(app: App, account: str = "acc-1") -> str:
 
 def executed(app: App, rid: str) -> list[str]:
     return [r.task_id for r in app.store.executions(rid)]
+
+
+# ── 공통 도움 (엔진 · 토큰) ────────────────────────────
+def x_settings() -> dict:
+    """설정 사본 — 시험 Task X의 Task별 설정(조율 Task와 같은 값)을 더한다 (항목이 없으면 KeyError)."""
+    s = settings.Settings()
+    s.tasks["X"] = s.tasks["T-C1"].model_copy()
+    return s.dump()
+
+
+def tok(obj) -> tuple:
+    """토큰 네 값 (입력 · 캐시 입력 · 출력 · 추론)."""
+    return (obj.input_tokens, obj.cached_input_tokens, obj.output_tokens, obj.reasoning_tokens)

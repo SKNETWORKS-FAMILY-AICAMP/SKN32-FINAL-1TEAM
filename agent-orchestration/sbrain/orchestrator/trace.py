@@ -6,10 +6,13 @@
 - 규칙 단계 · 합치기도 기록한다.
 - 재시도는 새 버전을 만들지 않고 호출 로그(CallLog)에 따로 남긴다.
 - 되돌리기는 현재 버전 포인터만 옮기고(PointerEvent) 기록은 지우지 않는다.
-- T-P2는 호출 로그는 문장별(itemKey), 입력 · 출력 이력은 Task 단위로 남긴다.
+- 항목별 호출(tools.for_item — T-V2 항목 등)은 호출 로그에 항목 키(itemKey)를, 입력 · 출력 이력은 Task 단위로 남긴다.
+  T-P2 문장별 호출 기록은 흐름 밖 — 지금 쓰지 않음.
 - 토큰 사용량(확장): 시도마다 응답의 사용량을 남기고(CallTry), 호출(CallLog) · 실행(ExecutionRecord)에 합계를 둔다.
   입력은 캐시 입력을 포함한 전체이고 캐시 입력은 그 일부다. 출력은 추론을 포함한 전체이고 추론은 그 일부다.
   사용량을 주지 않는 호출처면 None이다. 비용(원 · 달러)은 계산하지 않는다.
+- 파일 호출(확장, call_type 'file'): 목적(put · get) · 시도별 결과 · 오류 종류 · 시각만 남긴다. 토큰은 없다.
+  파일 내용 · 이름 · 키는 남기지 않는다(칸을 늘리지 않는다).
 - 이미지 호출 토큰(확장): 호출 기록(call_type 'image')에는 지금 칸에 남기고, 실행 기록에서는 글 토큰 합계에 더하지 않고
   image_input_tokens · image_output_tokens에 따로 더한다 — 단가가 달라 합치면 토큰 수로 비용을 가늠할 수 없다.
 """
@@ -39,8 +42,19 @@ class OutputMeta(SBModel):
 
 TOKEN_FIELDS = ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens")
 IMAGE_CALL = "image"   # 이미지 호출의 call_type
+FILE_CALL = "file"     # 파일 창구(tools.files) 호출의 call_type (확장) — 목적 put · get, 토큰 없음. 크기 · 형식 · 이름 · 키는 남기지 않는다
 # 이미지 호출 기록의 토큰 칸 → 실행 기록의 이미지 토큰 칸 (캐시 · 추론은 따로 두지 않는다)
 IMAGE_TOKEN_FIELDS = (("input_tokens", "image_input_tokens"), ("output_tokens", "image_output_tokens"))
+
+
+# 호출 기록의 목적 · 항목 칸 길이 상한 — DB 칸(orch_call_logs.purpose · item_key)과 같아야 한다(테스트가 지킨다).
+# 호출 기록을 만들 때 넘는 뒤를 자른다. 목적별 모델 찾기 · 요청 메타데이터는 자르기 전 목적을 쓴다 (spec 4.12)
+CALL_LOG_TEXT_MAX = 200
+
+
+def clip_call_text(text: str | None) -> str | None:
+    """호출 기록 목적 · 항목 칸 값 — CALL_LOG_TEXT_MAX자를 넘으면 뒤를 자른다."""
+    return text if text is None or len(text) <= CALL_LOG_TEXT_MAX else text[:CALL_LOG_TEXT_MAX]
 
 
 def _token(what: str):
@@ -99,9 +113,9 @@ class CallLog(SBModel):
     execution_id: str
     task_id: str
     agent: str
-    call_type: str                  # llm · search · image
+    call_type: str                  # llm · search · image · file
     purpose: str
-    item_key: str | None = None     # T-P2 문장 ID 등
+    item_key: str | None = None     # 항목 키(tools.for_item — T-V2 항목 등)
     provider: str | None = None
     model: str | None = None
     temperature: float | None = None

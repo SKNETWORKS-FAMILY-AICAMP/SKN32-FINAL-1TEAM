@@ -78,6 +78,8 @@ def test_delete_removes_artifacts_and_forms_keeps_logs(clock):
     assert after[:2] == before[:2] and after[2] == before[2] + 1               # 실행 로그는 남는다 (+ '중단' 사건)
     run = app.store.load_run(rid)
     assert run.state.progress == "중단" and app.orchestrator.view_project(101).run.progress == "중단"
+    # 완전 삭제만으로는 실행 건 줄 · project_id가 남는다 — 웹이 projects 행을 지우기 전까지 '있음'
+    assert run.project_id == "101" and app.orchestrator.missing_projects([101, "101"]) == []
 
 
 def test_delete_while_step_running_is_busy(clock):
@@ -104,4 +106,4 @@ def test_delete_completed_project(clock):
     res = app.orchestrator.delete_project_data(pid)
     assert res.abort.run_action == "이미끝남" and res.deleted_artifacts
     assert app.store.load_run(rid).state.progress == "완료" and app.store.get_pointers(rid) == {}
-    assert len(app.orchestrator.admin_executions(project_id=pid, limit=100)) == 23   # 관리자 실행 기록은 남는다
+    assert len(app.orchestrator.admin_executions(project_id=pid, limit=100)) == 19   # 관리자 실행 기록은 남는다

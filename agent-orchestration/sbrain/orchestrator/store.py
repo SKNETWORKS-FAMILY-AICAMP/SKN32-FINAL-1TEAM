@@ -8,8 +8,8 @@
 - 산출물 내용은 산출물 저장소에만 있고, 추적 기록은 참조만 갖는다(기획서 6-7).
 - 사전 단계 시작 요청(StartRequest, 확장): 웹이 요청을 넣고(add_start_request) 워커가 점유해(acquire_start_request)
   사전 단계를 돈 뒤, 실행 건 생성과 요청 '완료'를 한 번에 저장한다(create_run_for_request).
-- 반려된 시도(RejectedAttempt, 확장): 내용을 담은 기록이라 실행 건의 주인 계정이 학습 데이터 편입에 동의했을 때만
-  저장한다. 동의 여부는 저장하는 순간 저장소가 확인한다(SQL은 웹 users, 메모리는 set_training_consent로 받은 값).
+- 반려된 T-P2 시도(RejectedAttempt)는 저장하지 않는다 — 검수가 흐름에서 빠져 웹 proofread_logs 쓰기 · 학습 동의
+  확인을 지웠다. 저장 묶음에는 웹에 쓰는 것이 알림(notifications)뿐이고, 실패 알림은 저장소가 정한다.
 - 시작 요청이 끝나면(완료 · 실패 · 취소) 상태를 바꾸는 같은 변경에서 입력 사본(form)을 비운다. 대기 · 처리중은 남긴다.
 - 기록 옮기기(확장): 보관 기간이 지난 실행 건의 기록을 식별자 없는 통계 줄(LogStatsRow)로 옮기고 지운다(retire_run ·
   retire_start_requests). 실행 건 점유를 잡은 쪽만 하고, 마지막 활동 시각을 바꾸지 않는다. 주기 작업은 작업 점유
@@ -25,7 +25,7 @@ from typing import Any, Literal, Protocol
 
 from pydantic import Field
 
-from ..models import Notice, Notification, RejectedAttempt, ReworkComparison, Run
+from ..models import Notice, Notification, ReworkComparison, Run
 from ..models.base import SBModel
 from ..models.clock import as_utc
 from .trace import CallLog, ExecutionRecord, FeedbackLink, PointerEvent, TraceEvent
@@ -68,13 +68,10 @@ class CommitBatch:
     comparisons: list[ReworkComparison] = field(default_factory=list)
     events: list[TraceEvent] = field(default_factory=list)
     notifications: list[Notification] = field(default_factory=list)
-    # 반려된 시도 (확장) — 실행 건에 프로젝트가 있고 주인이 학습에 동의했을 때만 저장된다
-    rejected_attempts: list[RejectedAttempt] = field(default_factory=list)
 
     def is_empty(self) -> bool:
         return not (self.run or self.versions or self.pointers or self.pointer_events or self.executions
-                    or self.call_logs or self.feedback or self.comparisons or self.events or self.notifications
-                    or self.rejected_attempts)
+                    or self.call_logs or self.feedback or self.comparisons or self.events or self.notifications)
 
 
 @dataclass(frozen=True)
@@ -156,6 +153,37 @@ def check_summary(summary: dict[str, int]) -> dict[str, int]:
     return dict(summary)
 
 
+FileDeletionStatus = Literal["대기", "포기"]
+FILE_DELETION_STATUSES: tuple[str, ...] = ("대기", "포기")
+
+
+@dataclass(frozen=True)
+class FileDeletion:
+    """파일 삭제 대기열 한 줄 (확장 — orch_file_deletions). 실행 건 하나의 파일 전체 삭제 요청.
+
+    계정 · 프로젝트 ID, 파일 이름 · 키, 오류 메시지는 없다. 사람을 가리키는 값은 retried_by(관리자 ID)뿐이다.
+    시각은 시간대 있는 UTC다. next_at은 워커가 가져가면 미뤄지고, 그 값이 가져간 표시(성공 · 실패 기록의 확인 값)다.
+    """
+    deletion_id: str
+    run_id: str
+    key_prefix: str                 # '<runId>/'
+    status: FileDeletionStatus
+    attempts: int                   # 이번 대기 이후 실패한 시도 수
+    last_error_kind: str | None     # 일시 · 입력 · 운영
+    created_at: datetime
+    next_at: datetime
+    last_tried_at: datetime | None = None
+    gave_up_at: datetime | None = None
+    retried_by: str | None = None
+    retried_at: datetime | None = None
+    retry_count: int = 0
+
+
+def file_key_prefix(run_id: str) -> str:
+    """실행 건의 파일 키 접두어 — 파일 키의 첫 마디가 실행 건 ID다(models.files 키 규칙)."""
+    return f"{run_id}/"
+
+
 @dataclass(frozen=True)
 class ExecutionRow:
     """여러 실행 건을 거르는 조회의 한 줄 — 실행 기록과 그 실행 건의 프로젝트."""
@@ -228,6 +256,13 @@ class Store(Protocol):
     def latest_start_requests(self, project_ids: Iterable[int | str]) -> dict[str, StartRequest]:
         """여러 프로젝트의 마지막 시작 요청 (확장). 키는 project_id 문자열, 요청이 없는 프로젝트는 빠진다."""
 
+    def existing_projects(self, project_ids: Iterable[int]) -> set[int]:
+        """넘긴 프로젝트 중 실행 건이 있거나 끝나지 않은(대기 · 처리중) 시작 요청이 있는 것 (확장 — missing_projects용).
+
+        실행 건은 find_run_by_project와 같은 기준(실행 건 줄의 project_id)으로 찾는다. 시작 요청을 먼저 보고 실행 건을
+        나중에 본다 — 그 사이에 요청이 실행 건이 되어도 빠뜨리지 않는다. 잠금 없이 읽기만 한다. 개수 제한은 없다.
+        """
+
     def acquire_start_request(self, request_id: str, owner: str, lease_sec: float) -> bool:
         """'대기' 요청, 또는 점유가 만료됐거나 같은 점유자인 '처리중' 요청을 '처리중'으로 점유한다."""
 
@@ -290,7 +325,11 @@ class Store(Protocol):
     def get_artifact(self, run_id: str, key: str, version: int) -> ArtifactVersion: ...
 
     def delete_artifacts(self, run_id: str) -> None:
-        """실행 건 삭제 때 산출물(버전 · 현재 버전 포인터)을 함께 지운다. 추적 기록은 참조만 있어 남는다(6-7)."""
+        """실행 건 삭제 때 산출물(버전 · 현재 버전 포인터)을 함께 지운다. 추적 기록은 참조만 있어 남는다(6-7).
+
+        같은 트랜잭션에서 그 실행 건의 파일 삭제 대기열 줄을 넣는다(enqueue 규칙은 아래 '파일 삭제 대기열'). 산출물이
+        없어도 넣는다.
+        """
 
     # ── 추적 기록 조회 ────────────────────────────────
     def executions(self, run_id: str) -> list[ExecutionRecord]: ...
@@ -306,9 +345,6 @@ class Store(Protocol):
     def events(self, run_id: str) -> list[TraceEvent]: ...
 
     def notifications(self, run_id: str) -> list[Notification]: ...
-
-    def rejected_attempts(self, run_id: str) -> list[RejectedAttempt]:
-        """저장된 반려된 시도 (확장 — 저장한 순서). 동의하지 않았거나 프로젝트가 없어 저장하지 않은 것은 없다."""
 
     # ── 관리자 조회 (확장) ─────────────────────────────
     def list_executions(self, f: ExecutionFilter) -> list[ExecutionRow]:
@@ -339,7 +375,8 @@ class Store(Protocol):
 
         stats가 있으면 통계 줄 하나를 쓰고, 여섯 기록 표(실행 기록 · 호출 기록 · 추적 사건 · 피드백 연결 ·
         재작성 전후 비교 · 포인터 이동)에서 그 실행 건의 줄을 지운다.
-        delete_run이면 산출물 버전 · 포인터와 실행 건 줄도 지운다(웹 테이블은 건드리지 않는다).
+        delete_run이면 산출물 버전 · 포인터와 실행 건 줄도 지우고(웹 테이블은 건드리지 않는다), 같은 트랜잭션에서 파일 삭제
+        대기열 줄을 넣는다.
         아니면 실행 건 줄 · 산출물은 남기고, bump_parts면 Run.stats_parts만 1 올린다 — 마지막 활동 시각
         (updated_at 컬럼 · run_json의 updatedAt)과 점유는 바꾸지 않는다. 점유는 부른 쪽이 푼다.
         """
@@ -386,3 +423,35 @@ class Store(Protocol):
         """종료 신호 — 점유자일 때만 점유를 푼다. last_finished_at · last_summary는 그대로."""
 
     def get_job(self, job_name: str) -> JobState | None: ...
+
+    # ── 파일 삭제 대기열 (확장) ──────────────
+    # 넣기는 delete_artifacts · retire_run(delete_run=True)가 같은 트랜잭션에서 한다(따로 부르는 메서드 없음).
+    #   줄이 없으면 '대기' 줄(next_at = 지금 + file_deletion_delay_sec), '대기' 줄이 있으면 그대로, '포기' 줄이면 '대기'로
+    #   되돌린다(attempts=0, next_at = 지금 + 지연, gave_up_at 비움 — retried_by · retried_at · retry_count는 그대로).
+    #   동시에 두 곳이 넣어 고유 제약(run_id)에 걸려도 오류가 아니다(있는 줄에 같은 규칙).
+    # 저장소는 file_deletion_delay_sec(첫 시도 지연, 기본 600초 잠정) 속성을 갖는다.
+    def claim_file_deletions(self, limit: int, hold_sec: float) -> list[FileDeletion]:
+        """next_at이 지난 '대기' 줄을 최대 limit개 가져간다(next_at 순). 줄마다 조건부 갱신으로 next_at을 지금 + hold_sec로
+        미뤄 한 워커만 가져간다. 돌려주는 줄의 next_at은 미룬 값이다(성공 · 실패 기록의 확인 값)."""
+
+    def finish_file_deletion(self, deletion_id: str, claimed_next_at: datetime) -> bool:
+        """파일을 지웠다 — 가져간 그대로인 줄(대기 · next_at 같음)이면 줄을 지운다. 아니면 False(다른 워커가 이어받음)."""
+
+    def fail_file_deletion(self, deletion_id: str, claimed_next_at: datetime, error_kind: str, *, retry_sec: float,
+                           max_attempts: int) -> FileDeletion | None:
+        """파일 지우기 실패 — attempts +1, last_error_kind · last_tried_at을 적고 next_at = 지금 + retry_sec.
+        attempts가 max_attempts에 이르면 status='포기' · gave_up_at = 지금. 가져간 그대로인 줄이 아니면 None."""
+
+    def get_file_deletion(self, deletion_id: str) -> FileDeletion | None: ...
+
+    def file_deletion_for_run(self, run_id: str) -> FileDeletion | None:
+        """실행 건의 대기열 줄 (실행 건 하나에 많아야 하나)."""
+
+    def list_file_deletions(self, status: str | None = None, limit: int | None = 50,
+                            offset: int = 0) -> list[FileDeletion]:
+        """대기열 줄 목록 — created_at 최근 순(같으면 deletion_id 역순). status로 '대기' · '포기'를 거른다. limit이 None이면 모두."""
+
+    def retry_file_deletion(self, deletion_id: str, admin_id: str) -> FileDeletion:
+        """'포기' 줄을 다시 시도 — 한 트랜잭션으로 status='대기', attempts=0, next_at = 지금, gave_up_at 비움,
+        retried_by = admin_id, retried_at = 지금, retry_count +1. 바뀐 줄을 돌려준다.
+        없는 줄이면 FileDeletionNotFound, '포기'가 아니면 FileDeletionNotGivenUp (아무것도 바꾸지 않음)."""

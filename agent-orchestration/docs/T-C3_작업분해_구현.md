@@ -2,12 +2,12 @@
 
 | 항목 | 내용 |
 |---|---|
-| 작성일 | 2026-10-04 |
-| 기준 문서 | S-Brain Agent 기능정의서 v1.9 — 시트 2 T-C3(R4), 시트 3 R20 ~ R27, 시트 4 TaskPlan · TaskInstruction · FormSpec · EvalItem · Rubric, 시트 6 E-C3-FORM |
-| 참고 | 기획서 v1.10 4-4 · 4-6 · 6-4 |
-| 코드 | `sbrain/agents/supervisor/tc3.py` (실제 T-C3), `agents/supervisor/plan.py` (작업 계획 부품 — 스텁 · 실제 T-C3가 함께 씀), `agents/supervisor/rewrite.py` (재작성 · 재수행 안내 다시 쓰기), `agents/form_defaults.py` (신청자 유형별 양식 표), `flow/instruction.py` (지시문 세 부분 · 덧붙임), `flow/sbrain_flow.py` `SBrainFlow.build_instruction` (언제 다시 쓰는지 · 저장 · 재개), `bootstrap.py` (워커 조립 · 호출처 나누기) |
+| 작성일 | 2026-10-04 (2026-10-08 갱신: 기준 문서 v1.10 반영 — 입출력 확장 표시 정리, 시트 2 T-C3 입력의 업력 표시 해석 — 3 · 7.2 · 8 · 14 · 15절. 2026-10-15 갱신: 검수 · 첨부 추출 R-8을 흐름에서 뺌 — Task 목록 12 · 11개, 지시문 두 부분(참조 자료 부분 · 참조 조각 배정 없앰), `referenceSummary`는 받아도 쓰지 않음 — 1 · 2 · 5 · 6 · 7.5 · 10 · 14절) |
+| 기준 문서 | S-Brain Agent 기능정의서 v1.10 — 시트 2 T-C3 행, 시트 3 T-C3 입출력 행, 시트 4 TaskPlan · TaskInstruction · FormSpec · EvalItem · Rubric, 시트 6 E-C3-FORM |
+| 참고 | 기획서 v1.11 4-4 · 4-6 · 6-4 |
+| 코드 | `sbrain/agents/supervisor/tc3.py` (실제 T-C3), `agents/supervisor/plan.py` (작업 계획 부품 — 스텁 · 실제 T-C3가 함께 씀), `agents/supervisor/rewrite.py` (재작성 · 재수행 안내 다시 쓰기), `agents/form_defaults.py` (신청자 유형별 양식 표), `flow/instruction.py` (지시문 두 부분 · 덧붙임 — 2026-10-15 전에는 세 부분), `flow/sbrain_flow.py` `SBrainFlow.build_instruction` (언제 다시 쓰는지 · 저장 · 재개), `bootstrap.py` (워커 조립 · 호출처 나누기) |
 | 테스트 | `tests/test_task_plan.py` 48건, `test_tc3.py` 55건, `test_partial_resume.py` 15건, `test_instruction.py` 18건, `test_rewrite.py` 39건, `test_worker.py` 28건(그중 T-C3 · 다시 쓰기 조립 5건) — 전체 985건 중 951건 통과 · 34건 건너뜀(MySQL 전용) |
-| 관련 문서 | `기준문서_개정필요사항_T-C3_작업분해.md`(저장소 미포함) (기준 문서와 다르게 구현한 것), `docs/Agent_연동_규격_초안.md` 5.4절 (Agent 팀에 알리는 지시문 모양), `docs/T-C1_요구사항해석_구현.md` (같은 짜임의 앞선 구현 문서) |
+| 관련 문서 | `docs/Agent_연동_규격_초안.md` 5.4절 (Agent 팀에 알리는 지시문 모양), `docs/T-C1_요구사항해석_구현.md` (같은 짜임의 앞선 구현 문서) |
 | 독자 | 조율 Agent · Orchestrator 담당 |
 
 ---
@@ -16,9 +16,9 @@
 
 | 구분 | 내용 |
 |---|---|
-| 구현함 | 실제 T-C3(지시 대상 Task마다 조율 LLM으로 안내 작성), 신청자 유형별 양식 · 평가항목 · 채점 기준표 고르기, 뒷 단계(T-W1 · T-V1 · T-P1 · T-P2 · G-02a · G-02b)가 T-C3 출력을 읽게 연결 변경, 웹 `outputs`에 확장 `evaluationItems`, 재작성 · 재수행 지시문의 안내 부분 다시 쓰기, 재작성 중 재수행에 재작성 지시 남기기, 스텁 T-C3를 새 출력에 맞춤, 워커 조립 |
-| 구현하지 않음 | 신청자 유형별 양식 · 평가항목 · 채점 기준표의 **실제 값**(담당자 회신 대기 — 지금은 잠정 값, 4절), 첨부 텍스트 추출(R-8)과 웹 `project_attachments` 읽기(요청 시까지 보류) |
-| 참고 | 참조 조각 배정 코드(6.4)는 만들었다. R-8이 보류라 지금 실제 실행에는 참조 자료가 들어오지 않는다. 선택 공고(`selectedAnnouncement`)의 `formSpec` · `evaluationItems`는 고치지 않았다 — 자리 표시 값으로 남고 뒷 단계는 읽지 않는다(9절) |
+| 구현함 | 실제 T-C3(지시 대상 Task마다 조율 LLM으로 안내 작성), 신청자 유형별 양식 · 평가항목 · 채점 기준표 고르기, 뒷 단계(T-W1 · T-V1 · T-P1 · T-P2 · G-02a · G-02b — T-P1 · T-P2는 2026-10-15부터 흐름 밖)가 T-C3 출력을 읽게 연결 변경, 웹 `outputs`에 확장 `evaluationItems`, 재작성 · 재수행 지시문의 안내 부분 다시 쓰기, 재작성 중 재수행에 재작성 지시 남기기, 스텁 T-C3를 새 출력에 맞춤, 워커 조립 |
+| 구현하지 않음 | 신청자 유형별 양식 · 평가항목 · 채점 기준표의 **실제 값**(담당자 회신 대기 — 지금은 잠정 값, 4절), 첨부 텍스트 추출(R-8)과 웹 `project_attachments` 읽기(2026-10-15 흐름에서 뺌) |
+| 참고 | 참조 조각 배정 코드(6.4)는 2026-10-15에 지웠다. 입력 `reference_summary`는 타입에 남지만 LLM에도 지시문에도 쓰지 않는다. 선택 공고(`selectedAnnouncement`)의 `formSpec` · `evaluationItems`는 고치지 않았다 — 자리 표시 값으로 남고 뒷 단계는 읽지 않는다(9절) |
 
 ## 2. 흐름
 
@@ -28,8 +28,8 @@ flowchart TD
   P -- 걸림 --> X1["TaskPlanError → 실행 실패<br/>(E-RUN-FAIL, 관리자 실패 사유 'T-C3: …')"]
   P --> L["지시 대상마다 LLM 한 번, 한꺼번에 동시에<br/>tools.for_item(taskId).llm(purpose='지시문 작성')<br/>웹개발 · AI_API 7번, 원페이지 6번"]
   L -- 재시도 소진 --> X2["ToolCallExhausted → 엔진이 T-C3 재개<br/>(받은 안내는 두고 빠진 Task만)"]
-  L --> A["plan.assemble<br/>틀 · 안내 · 참조 자료, 맥락 다섯 키"]
-  A --> O["산출물 taskPlan · taskCount · instructionSet<br/>formSpec · evaluationItems · rubric (확장)"]
+  L --> A["plan.assemble<br/>틀 · 안내, 맥락 다섯 키"]
+  A --> O["산출물 taskPlan · taskCount · instructionSet<br/>formSpec · evaluationItems · rubric"]
   O --> N["T-S1 → T-S2 → T-W1 → … 지시문 = taskPlan의 그 Task 지시문"]
   N -- "검사 불통과 재수행 · 사용자 재작성" --> R["SBrainFlow.build_instruction<br/>조율 다시 쓰기(안내 부분만) + 문제 내용 원문 덧붙임<br/>→ 산출물 'T-S1.instruction' 등"]
 ```
@@ -48,15 +48,15 @@ flowchart TD
 | ③ | 카테고리가 비어 있음 | 해당 없음 — `itemSpec.category`는 허용값 셋만 받는 타입이라 비어 있을 수 없다 | — |
 | ④ | 양식을 고를 수 없음 (4절 불변식) | 실행 실패 (E-C3-FORM) | `E-C3-FORM: <사유 이름>` |
 
-- ①은 정상 흐름에서 생기지 않는다. 작성 시작은 자격 통과일 때만 열린다. 그래서 기준 문서의 "게이트 결과 화면으로 회귀"는 구현하지 않고 버그 대비 확인만 둔다(사용자 확인).
-- ②: 팀 구성원(`team_careers`) 빈 목록은 허용한다('팀원 없음', 사용자 결정 2026-09-30). 수익모델 단가는 타입상 늘 있다.
+- ①은 정상 흐름에서 생기지 않는다. 작성 시작은 자격 통과일 때만 열린다. 그래서 v1.9의 "게이트 결과 화면으로 회귀"는 구현하지 않고 버그 대비 확인만 둔다(사용자 확인). v1.10 시트 2 T-C3 ①은 "분해를 거부하고 실행을 실패로 끝낸다"로 바뀌어 지금 처리와 같다.
+- ②: 팀 구성원(`team_careers`) 빈 목록은 허용한다('팀원 없음'). 수익모델 단가(`revenueUnitPrice` — v1.10에서 빠졌지만 확장으로 남김)는 타입상 늘 있다.
 - ④의 웹 안내는 없다(시트 6 E-C3-FORM "노출 없음").
 
 ## 4. 양식 · 평가항목 · 채점 기준표 고르기 (`agents/form_defaults.py`)
 
 - 신청자 유형(`company_info.applicant_type`)마다 묶음(`FormBundle`) 하나를 둔다. 묶음 = 양식 `FormSpec` + 평가항목 `list[EvalItem]` + 채점 기준표 `Rubric`.
 - 고르는 일은 코드가 한다(`select_form`). LLM은 관여하지 않는다.
-- 표(`FORM_TABLE`)의 값은 **잠정**이다(사용자 결정). 웹이 이미 쓰는 두 계획서 양식(예비창업자 '예비창업패키지', 개인사업자 · 법인 '초기창업패키지(일반형)')의 섹션 구조에 맞췄다.
+- 표(`FORM_TABLE`)의 값은 **잠정**이다. 웹이 이미 쓰는 두 계획서 양식(예비창업자 '예비창업패키지', 개인사업자 · 법인 '초기창업패키지(일반형)')의 섹션 구조에 맞췄다.
 
 | 신청자 유형 | `formVersion` | `applicantTypes` | 섹션 코드 · 제목 |
 |---|---|---|---|
@@ -85,7 +85,7 @@ flowchart TD
 
 ## 5. Task 목록과 순서 (`plan.TASK_TABLE`)
 
-- 목록은 고정이다(시트 1 · 기획서 4-4). 웹개발 · AI_API는 14개, 원페이지는 T-B1을 뺀 13개다.
+- 목록은 고정이다(시트 1 · 기획서 4-4). 웹개발 · AI_API는 12개, 원페이지는 T-B1을 뺀 11개다 — **2026-10-15 바뀜:** 검수 Task(T-P1 · T-P2)가 흐름 밖이라 목록에서 뺐다. 그 전에는 14개 · 13개였다. 기준 문서(원페이지 13, 웹개발 · AI API 14)와 다르다. `TaskPlan.tasks`가 받는 개수는 11 ~ 14개다.
 - `TaskPlan.category`는 `itemSpec.category`, `taskCount`는 목록 길이다. `TaskPlan.planId`는 새로 만든 12자리 16진수다(형식 잠정).
 - `TaskInstruction.order`는 시트 2 F열의 실행 순서 번호이며 등록부(`flow/catalog.py`) `order`와 같다. `instructionSet`은 `TaskPlan.tasks`와 같은 목록이다.
 
@@ -103,14 +103,14 @@ flowchart TD
 | T-B1 | 구현 | 12 | ○ (원페이지 제외) |
 | T-B2 | 구현 | 13 | ○ |
 | T-V2 | 검증-2 | 15 | |
-| T-P1 | 검수 | 18 | |
-| T-P2 | 검수 | 19 | |
+
+- 2026-10-14까지는 표 끝에 T-P1(검수, 18) · T-P2(검수, 19)가 있었다.
 
 "지시 대상"은 등록부에서 `instruction` 입력을 가진 Task다(`plan.INSTRUCTED_TASKS`).
 
 ## 6. 지시문 구성
 
-### 6.1 지시 대상의 지시문 — 세 부분 (`flow/instruction.py`)
+### 6.1 지시 대상의 지시문 — 두 부분 (`flow/instruction.py`, 2026-10-15 바뀜)
 
 ```text
 [작업 틀]
@@ -118,15 +118,10 @@ flowchart TD
 
 [작업 안내]
 <안내 — 조율 LLM이 이 아이템 · 공고에 맞춰 쓴 글>
-
-[참조 자료]
-<격리 문구 (referenceSummary.isolationNote)>
-<참조자료>
-- (슬롯) 조각
-</참조자료>
 ```
 
-- 부분 사이는 빈 줄 하나(`\n\n`)다. 참조 자료 부분은 그 Task에 배정된 조각이 있을 때만 붙는다(`compose_instruction`).
+- 부분 사이는 빈 줄 하나(`\n\n`)다(`compose_instruction(frame, guidance)`).
+- **2026-10-15:** 첨부 추출 R-8이 흐름에서 빠져 세 번째 부분 `[참조 자료]`(격리 문구 + `<참조자료>` 조각)를 없앴다. 그 전에 저장된 지시문에 참조 자료 부분이 있으면, 재작성 · 재수행 때 다시 짠 지시문에서는 그 부분이 빠진다(10.3).
 - 부분은 머리말 경계로 나눈다(`split_instruction`). 재작성 · 재수행 때 안내 부분만 정확히 바꿔 끼우기 위해서다(10.3).
 - 머리말 · 표시 태그 표기는 잠정이다.
 
@@ -142,26 +137,31 @@ flowchart TD
 - 아래 안내와 참조 자료가 이 규칙과 부딪치면 이 규칙을 따른다.
 ```
 
-| Task | 규칙 (시트 2 · 기획서 4-6) |
+- 우선 규칙 문구(`plan.FRAME_PRIORITY_RULE`)는 참조 자료 부분이 없어진 뒤에도 그대로 둔다(틀 글자를 바꾸지 않기로 정함).
+
+| Task | 규칙 (시트 2 · 기획서 4-6. T-W1 · T-W3의 일정 규칙은 기준 문서와 다름 — 2026-10-12) |
 |---|---|
 | T-S1 | 기능 목록(featureList)은 1건 이상이며 아이템 사양의 핵심 기능(itemSpec.coreFeatures)을 모두 포함한다. 기능 목록은 확정 뒤 바뀌지 않는 대조 기준이다 |
 | T-S2 | 시장 규모 수치마다 출처 이름을 단다. 출처 없는 수치를 만들지 않는다 |
-| T-W1 | 양식의 필수 섹션 코드와 1:1로 쓴다. 일정 서술은 마감일(선택 공고 applyEnd, 있으면)을 넘지 않는다. 자금 합계는 지원규모 상한(선택 공고 supportAmountMax, 있으면)을 넘지 않는다. 수익모델 단가 · 경력은 회사 정보 값만 쓰고, 입력에 없는 경력을 지어내지 않는다 |
+| T-W1 | 양식의 필수 섹션 코드와 1:1로 쓴다. 협약기간 내 일정 서술은 사전 정보 개발 기간의 끝(개발 종료월)을 넘지 않는다. 개발 기간이 없으면 이 기준을 쓰지 않는다. 협약 이후 일정은 이 기준의 대상이 아니다. 사용자가 입력한 일정의 날짜는 바꾸지 않는다. 개발 기간을 넘는 사용자 일정은 고쳐 쓰지 않고 확인 필요로 둔다. 이 규칙이 개발 종료월 기준보다 앞선다. 선택 공고의 접수 마감일은 일정 기준이 아니다. 검사 결과에 나오는 '마감일'은 개발 종료월을 뜻한다. 자금 합계는 지원규모 상한(선택 공고 supportAmountMax, 있으면)을 넘지 않는다. 수익모델 단가 · 경력은 회사 정보 값만 쓰고, 입력에 없는 경력을 지어내지 않는다 |
 | T-W2 | 차트 수치는 계획서 · 시장 분석의 원본 수치와 같아야 하고 출처 참조를 단다. 본문에 없는 수치를 만들지 않는다 |
-| T-W3 | 일정표 기준선은 마감일(선택 공고 applyEnd, 있으면) 이내다. 자금운용표 합계는 지원규모 상한(선택 공고 supportAmountMax, 있으면) 이하다. 머리글과 행의 칸 수가 같다 |
+| T-W3 | 일정표의 협약기간 내 일정은 사전 정보 개발 기간의 끝(개발 종료월)을 넘지 않는다. 개발 기간이 없으면 이 기준을 쓰지 않는다. 일정표의 협약 이후 일정은 이 기준의 대상이 아니다. 사용자가 입력한 일정의 날짜는 바꾸지 않는다. 개발 기간을 넘는 사용자 일정은 고쳐 쓰지 않고 확인 필요로 둔다. 이 규칙이 개발 종료월 기준보다 앞선다. 선택 공고의 접수 마감일은 일정표 기준이 아니다. 검사 결과에 나오는 '마감일'은 개발 종료월을 뜻한다. 자금운용표 합계는 지원규모 상한(선택 공고 supportAmountMax, 있으면) 이하다. 머리글과 행의 칸 수가 같다 |
 | T-B1 | 외부 빌드 도구 · CDN 없이 열리는 단일 HTML 파일로 만든다. 기능 목록을 모두 구현한다. 웹개발이면 화면 전환 중심, AI_API면 입력 → 처리 → 출력 흐름 시연 중심으로 보여 준다 |
 | T-B2 | 이미지와 대체 텍스트를 만든다. 도식의 수치는 계획서 원본 수치와 같아야 한다. 원페이지면 이 산출물이 프로토타입 본체다 — SVG로 만들고 핵심 정보 6항목(아이템명 · 목표 고객 · 문제 정의 · 해결 방안 · 수익모델 단가 · 추진 일정 기준선)을 텍스트로 넣는다 |
 
-- 카테고리로 갈리는 규칙은 T-B1 · T-B2뿐이다. "있으면"은 그 값이 `null`이면 그 제약을 쓰지 않는다는 뜻이다.
+- 카테고리로 갈리는 규칙은 T-B1 · T-B2뿐이다. 지원규모 상한의 "있으면"은 그 값이 `null`이면 그 제약을 쓰지 않는다는 뜻이다. 개발 종료월 기준도 같다 — 사전 정보에 개발 기간이 없으면 쓰지 않는다.
+- T-W1 · T-W3의 일정 기준은 공고 접수 마감일(`applyEnd`)이 아니라 개발 종료월이다(2026-10-12). 틀에 `applyEnd`를 싣지 않는다.
 - 역할 한 줄과 규칙 문구는 잠정이다.
 
-### 6.3 지시 대상이 아닌 Task (T-C1 · T-C2 · T-C3 · T-V1 · T-V2 · T-P1 · T-P2)
+### 6.3 지시 대상이 아닌 Task (T-C1 · T-C2 · T-C3 · T-V1 · T-V2)
 
 - 지시문은 Task 이름과 역할 한 줄의 고정 문구다(`plan.fixed_instruction`). 예: `T-V1 사업계획서 검증 — 평가 항목과 채점 기준표로 계획서를 채점한다.`
 - LLM을 부르지 않고 `guidance`는 빈 문자열이다. 문구는 잠정이다.
-- 검수 Task는 지시문 대신 `formatSpec` 입력으로 서술 형식을 받는다. 그 값은 T-C3가 고른 양식에서 온다(9절).
+- 검수 Task(T-P1 · T-P2)는 2026-10-15부터 목록에 없다(흐름 밖). 흐름에 있던 때는 지시문 대신 `formatSpec` 입력으로 서술 형식을 받았다(9절).
 
-### 6.4 참조 조각 배정 (`plan.REFERENCE_SLOTS_BY_TASK`, 잠정)
+### 6.4 참조 조각 배정 — 2026-10-15 없앰
+
+> **지웠다.** `plan.REFERENCE_SLOTS_BY_TASK` · `reference_for` · `PROVISIONAL["taskPlan.referenceSlots"]`가 없다. 입력 `reference_summary`가 들어와도 지시문에 싣지 않는다(`test_tc3.py` `test_reference_summary_goes_neither_to_llm_nor_to_instructions`). 아래는 있던 때의 기록이다.
 
 `referenceSummary`가 있으면 조각(`Excerpt`)의 슬롯으로 지시 대상에 배정한다. 첨부 내용은 T-C3의 LLM에 보내지 않는다.
 
@@ -180,7 +180,7 @@ flowchart TD
 
 ### 6.5 맥락 (`TaskInstruction.context`, `plan.build_context`)
 
-14개(또는 13개) 지시 모두 같은 다섯 키를 갖는다(시트 2 K열). 다른 키는 넣지 않는다. 엔진은 지금처럼 `instruction`만 뒷 단계에 넘기고 `context`는 넘기지 않는다.
+12개(또는 11개 — 2026-10-15 전에는 14개 · 13개) 지시 모두 같은 다섯 키를 갖는다(시트 2 K열). 다른 키는 넣지 않는다. 엔진은 지금처럼 `instruction`만 뒷 단계에 넘기고 `context`는 넘기지 않는다.
 
 | 키 | 값 |
 |---|---|
@@ -194,7 +194,7 @@ flowchart TD
 
 ### 7.1 호출
 
-- 지시 대상마다 따로, 한꺼번에 동시에 부른다(웹개발 · AI_API 7번, 원페이지 6번). 동시 개수는 지시 대상 수다(`tc3.GUIDANCE_CONCURRENCY` = 7, 잠정 — 사용자 결정). 모두 끝날 때까지 기다린 뒤, 결과는 끝난 순서와 상관없이 5절 순서로 조립한다(같은 응답이면 차례로 부를 때와 글자까지 같다). 호출 기록은 끝난 순서로 쌓인다.
+- 지시 대상마다 따로, 한꺼번에 동시에 부른다(웹개발 · AI_API 7번, 원페이지 6번). 동시 개수는 지시 대상 수다(`tc3.GUIDANCE_CONCURRENCY` = 7, 잠정). 모두 끝날 때까지 기다린 뒤, 결과는 끝난 순서와 상관없이 5절 순서로 조립한다(같은 응답이면 차례로 부를 때와 글자까지 같다). 호출 기록은 끝난 순서로 쌓인다.
 - 재개 때는 받아 둔 안내가 확장 입력 `prior_guidance`로 들어온다(12절). 이번 지시 대상이고 비어 있지 않은 것만 쓰고, 빠진 Task만 부른다.
 - `tools.for_item(<taskId>).llm(..., purpose="지시문 작성")` — 호출 기록의 항목 키가 Task ID다. 모델 · 추론 강도 · 제한 시간은 T-C3의 Task 설정을 tools가 입힌다(지금 `gpt-6-luna` · low · 온도 없음 · 제한 시간 120초, 잠정. 2026-10-06 Agent별 설정에서 Task별 설정으로 바뀜).
 
@@ -208,13 +208,13 @@ flowchart TD
 | `[선택 공고]` → `<공고>` | `title` · `agency` · `supportField` · `applyStart` · `applyEnd` · `applyPeriodType` · `supportAmountMax` · `supportAmountText` · `bonusInfo` (빈 값은 `null`) |
 | `[신청자]` → `<신청자>` | `applicantType`, `businessAgeYears`(있을 때만 — 예비창업자는 싣지 않음), `industryCode`(그대로 — 웹 자유 입력일 수 있다), `regionProvince`(`companyInfo.region`의 첫 공백 앞 — 시 · 도만, 비면 빈 값) |
 
-- 업력은 `companyInfo.businessAgeYears`가 아니라 확장 입력 `business_age_years`(G-01 출력)에서 온다. T-C1이 `companyInfo.businessAgeYears`를 비워 두기 때문이다.
+- 업력은 `companyInfo.businessAgeYears`가 아니라 입력 `business_age_years`(G-01 출력 — v1.10 시트 2 · 3 T-C3 입력)에서 온다. T-C1이 `companyInfo.businessAgeYears`를 비워 두기 때문이다. v1.10 시트 2 T-C3 입력에서 '(향후 도입. 도입 전에는 비어 있다)'가 `businessAgeYears` 뒤에 붙어 있는데, 참조 자료 줄의 표시가 잘못 붙은 기준 문서 오기로 보고 업력을 계속 G-01 결과로 채운다.
 
 **보내지 않는 것**
 - 대표자 이름 · 기업명 · 생년월일 · 성별 · 사업자등록번호
 - 수익모델 단가 · 수익모델 항목, 대표자 이력 · 팀 구성원, 시 · 군 · 구
 - 인증 · 채용 계획 · 보유 시설 · 협력 기관 · 자기부담금 · 희망 규모와 그 밖의 확장 필드
-- 자격 결과, 참조 자료 조각, 아이디어 원문
+- 자격 결과, 참조 자료(`reference_summary` — 2026-10-15부터 받아도 쓰지 않음), 아이디어 원문
 - 지시를 받는 Agent들은 회사 정보를 따로 받으므로 지시문에 이 값을 옮길 필요가 없다.
 
 ### 7.3 입력 격리
@@ -228,7 +228,7 @@ flowchart TD
 - 안내는 이 Task가 이 아이템 · 공고에서 무엇에 힘을 줄지를 쓴다. 고른 양식의 섹션 · 평가항목 · 서술 형식을 근거로 삼는다.
 - 입력에 없는 사실 · 수치 · 금액 · 날짜를 지어내지 않는다. `null`이나 빈 값은 없는 것으로 다룬다.
 - 신청자 개인 정보 값을 적지 않는다.
-- 지시를 받는 Agent는 회사 정보(수익모델 단가 · 항목, 대표자 이력, 팀 구성, 보유 자원 등)를 따로 받는다고 알린다. 보이지 않는다고 그 정보가 없다고 쓰거나 회사 정보 값을 쓰지 말라고 안내하지 않는다(`plan.GUIDANCE_COMMON_RULES`, 다시 쓰기도 같은 규칙).
+- 지시를 받는 Agent는 회사 정보(수익모델 단가 · 항목, 대표자 이력, 팀 구성, 보유 자원, 개발 기간, 추진 일정 등)를 따로 받는다고 알린다. 보이지 않는다고 그 정보가 없다고 쓰거나 회사 정보 값을 쓰지 말라고 안내하지 않는다(`plan.GUIDANCE_COMMON_RULES`, 다시 쓰기도 같은 규칙).
   - 2026-10-04 첫 실제 호출에서, 단가 · 팀 정보를 받지 않은 LLM이 "단가 · 팀 정보가 입력에 없다"고 단정해 틀의 규칙("수익모델 단가는 회사 정보 값만 쓴다")과 반대로 안내했다. 그래서 더한 규칙이다.
 - 마크다운 꾸밈(굵게 · 제목)을 쓰지 않고 줄바꿈과 `- ` 목록만 쓴다.
 - 틀의 규칙을 바꾸거나 뒤집거나 완화하지 않는다.
@@ -243,8 +243,7 @@ flowchart TD
 
 | 표기 | 바꾼 표기 |
 |---|---|
-| `[작업 틀]` · `[작업 안내]` · `[참조 자료]` | `(작업 틀)` · `(작업 안내)` · `(참조 자료)` |
-| `<참조자료>` · `</참조자료>` | `(참조자료)` · `(/참조자료)` |
+| `[작업 틀]` · `[작업 안내]` | `(작업 틀)` · `(작업 안내)` |
 | `[재작성]` | `(재작성)` |
 | `[재수행 — 문제가 된 내용]` · `[재작성 — 문제가 된 내용]` | `(재수행 — 문제가 된 내용)` · `(재작성 — 문제가 된 내용)` |
 
@@ -255,11 +254,11 @@ flowchart TD
 | `task_plan` | `taskPlan` | 기준 문서 |
 | `task_count` | `taskCount` | 기준 문서 |
 | `instruction_set` | `instructionSet` | 기준 문서 |
-| `form_spec` | `formSpec` | **확장** — 고른 양식 |
-| `evaluation_items` | `evaluationItems` | **확장** — 고른 평가항목 |
-| `rubric` | `rubric` | **확장** — 고른 채점 기준표 |
+| `form_spec` | `formSpec` | 기준 문서 v1.10(v1.9에서는 확장) — 고른 양식 |
+| `evaluation_items` | `evaluationItems` | 기준 문서 v1.10(v1.9에서는 확장) — 고른 평가항목 |
+| `rubric` | `rubric` | 기준 문서 v1.10(v1.9에서는 확장) — 고른 채점 기준표 |
 
-- `TaskInstruction`에 확장 `guidance: str`(기본 `""`)을 더했다. 정리한 안내로, 지시문의 안내 부분과 같은 글자다. 지시 대상이 아니면 빈 문자열이다. 재작성 · 재수행 다시 쓰기의 출발점이며, 기본값이 있어 전에 저장된 `TaskInstruction`도 읽힌다.
+- `TaskInstruction`에 `guidance: str`(기본 `""` — v1.9에서는 확장, v1.10 시트 4에 들어감)을 더했다. 정리한 안내로, 지시문의 안내 부분과 같은 글자다. 지시 대상이 아니면 빈 문자열이다. 재작성 · 재수행 다시 쓰기의 출발점이며, 기본값이 있어 전에 저장된 `TaskInstruction`도 읽힌다.
 - 새 산출물 세 키는 등록부 출력에서 타입이 오므로 읽으면 해당 모델로 복원된다.
 
 ## 9. 뒷 단계 연결
@@ -271,8 +270,8 @@ T-C3가 고른 값을 뒷 단계가 읽는다. 선택 공고의 같은 이름 �
 | T-W1 `form_spec` | `selectedAnnouncement.form_spec` | `formSpec` |
 | T-V1 `evaluation_items` | `selectedAnnouncement.evaluation_items` | `evaluationItems` |
 | T-V1 `rubric` | 상수 공급처 `rubric` | `rubric` |
-| T-P1 `format_spec` | `selectedAnnouncement.form_spec.format_spec` | `formSpec.format_spec` |
-| T-P2 실행기 `format_spec`과 실행 기록 입력 참조 | `selectedAnnouncement` | `formSpec` |
+| T-P1 `format_spec` (2026-10-15부터 흐름 밖 — 연결만 남음) | `selectedAnnouncement.form_spec.format_spec` | `formSpec.format_spec` |
+| T-P2 실행기 `format_spec`과 실행 기록 입력 참조 | `selectedAnnouncement` | 2026-10-15 실행기를 지워 없음 (전에는 `formSpec`) |
 | G-02a · G-02b `rubric_version`(흐름 값 `rubricVersion`) | 상수 공급처 `rubric.version` | `rubric.version` |
 
 - 선택 공고는 G-01 · 스텁 공고가 붙인 기본 양식(`1-1` · `2-1` · `3-3`)을 그대로 갖는다. 자리 표시 값이며 뒷 단계는 읽지 않는다(`PROVISIONAL["announcement.formSpec"]`).
@@ -280,7 +279,7 @@ T-C3가 고른 값을 뒷 단계가 읽는다. 선택 공고의 같은 이름 �
 
 ## 10. 재작성 · 재수행 지시문 다시 쓰기
 
-기준 문서는 재작성 · 재수행 때 "T-C3를 다시 부르지 않고 기존 taskPlan을 재사용하며, 대상 Task의 지시문만 다시 만든다"고 한다(시트 2 T-C3 H열). 예전에는 Orchestrator가 지시문 끝에 문제 내용을 덧붙이기만 했다. 이제 **조율 LLM이 안내 부분만 다시 쓰고**, 문제 내용 원문을 끝에 덧붙인다(사용자 결정).
+기준 문서는 재작성 · 재수행 때 "T-C3를 다시 부르지 않고 기존 taskPlan을 재사용하며, 대상 Task의 지시문만 다시 만든다"고 한다(시트 2 T-C3 H열). 예전에는 Orchestrator가 지시문 끝에 문제 내용을 덧붙이기만 했다. 이제 **조율 LLM이 안내 부분만 다시 쓰고**, 문제 내용 원문을 끝에 덧붙인다.
 
 ### 10.1 언제 다시 쓰나 (`SBrainFlow.build_instruction`)
 
@@ -300,7 +299,7 @@ T-C3가 고른 값을 뒷 단계가 읽는다. 선택 공고의 같은 이름 �
 
 ### 10.2 다시 쓰기 호출 (`agents/supervisor/rewrite.py` `rewrite_guidance`)
 
-- LLM 호출 한 번, 목적 `지시문 다시 쓰기`. ~~조율 Agent 설정(호출처 · 모델 · 추론 강도)과 T-C3의 제한 시간 설정(잠정)을 쓴다.~~ 2026-10-06 바뀜: 설정 키 `지시문 다시 쓰기`의 Task 설정(호출처 · 모델 · 추론 강도 — 지금 `gpt-6-luna` · low)과 같은 키의 제한 시간(120초, 잠정)을 쓴다. T-C3 값을 빌리지 않는다. 호출 기록의 Agent 이름은 조율이다.
+- LLM 호출 한 번, 목적 `지시문 다시 쓰기`. 설정 키 `지시문 다시 쓰기`의 Task 설정(호출처 · 모델 · 추론 강도 — 지금 `gpt-6-luna` · low)과 같은 키의 제한 시간(120초, 잠정)을 쓴다. T-C3 값을 빌리지 않는다. 호출 기록의 Agent 이름은 조율이다.
 - **보내는 것**
   - 대상 Task ID와 이름
   - 그 Task의 틀 — "바꾸지 말 것"이라는 규칙으로
@@ -315,7 +314,7 @@ T-C3가 고른 값을 뒷 단계가 읽는다. 선택 공고의 같은 이름 �
 - <issue>
 ```
 
-- **문제 내용 가리기**(사용자 결정): 회사 정보의 아래 값과 똑같은 글자를 `[가림]`(잠정)으로 바꾼 뒤 보낸다(`flow/sbrain_flow.py` `rewrite_mask_values`, `rewrite.mask`). 긴 값부터 바꾼다.
+- **문제 내용 가리기**: 회사 정보의 아래 값과 똑같은 글자를 `[가림]`(잠정)으로 바꾼 뒤 보낸다(`flow/sbrain_flow.py` `rewrite_mask_values`, `rewrite.mask`). 긴 값부터 바꾼다.
   - 대표자 이름 · 기업명 · 사업자등록번호
   - 생년월일(ISO 표기)
   - 수익모델 단가(`revenueUnitPrice`와 `revenueItems[].unitPrice` — 숫자만 쓴 표기와 천 단위 쉼표 표기)
@@ -323,12 +322,13 @@ T-C3가 고른 값을 뒷 단계가 읽는다. 선택 공고의 같은 이름 �
   - 2글자 미만 값은 가리지 않는다(잠정).
 - 가리는 것은 문제 내용뿐이다. 원래 안내는 표시 태그로 격리해 보내되 가리지 않는다. 원래 안내는 "신청자 개인 정보 값을 적지 않는다"는 규칙으로 쓴 LLM 출력이기 때문이다.
 - **한계:** 같은 글자만 가린다. 바꿔 쓴 표현(띄어쓰기 · 줄임 · 다른 단위 표기)까지는 막지 못한다.
-- **보내지 않는 것**: 회사 정보의 다른 값, 참조 자료 조각, 산출물 본문(이전 결과는 `이름@버전` 참조로만 알려 주며 내용을 읽어 보내지 않는다).
+- **보내지 않는 것**: 회사 정보의 다른 값, 참조 자료(2026-10-15부터 지시문에 참조 자료 부분이 없다), 산출물 본문(이전 결과는 `이름@버전` 참조로만 알려 주며 내용을 읽어 보내지 않는다).
 - 응답 형식과 정리는 7.5와 같다(`GuidanceDraft` · `clean_guidance`).
 
 ### 10.3 다시 쓴 지시문의 모양 (`flow/instruction.py`)
 
-- 저장된 그 Task 지시문에서 **안내 부분만** 새 안내로 바꾼다(`replace_guidance`). 틀과 참조 자료 부분은 한 글자도 바꾸지 않는다. 틀을 코드에서 다시 만들지 않는다.
+- 저장된 그 Task 지시문에서 **안내 부분만** 새 안내로 바꾼다(`replace_guidance`). 틀 부분은 한 글자도 바꾸지 않는다. 틀을 코드에서 다시 만들지 않는다.
+- 2026-10-15 전에 저장된 지시문에 참조 자료 부분이 있으면, 다시 짠 지시문은 틀 · 새 안내 두 부분이라 참조 자료 부분이 빠진다.
 - 그 뒤에 문제 내용 **원문**(가리지 않은 것)을 Agent 연동 규격의 형식 그대로 덧붙인다(`append_problems`).
 
 | 블록 | 형식 (`\n`은 줄바꿈) |
@@ -340,7 +340,7 @@ T-C3가 고른 값을 뒷 단계가 읽는다. 선택 공고의 같은 이름 �
 재작성 중 재수행의 예(사유 `문제인식 10/20`, 보완 지시 `문제인식 보완`, 검사 문제 `검사 문제`):
 
 ```text
-…(틀 · 다시 쓴 안내 · 참조 자료)
+…(틀 · 다시 쓴 안내)
 
 [재작성] 문제인식 10/20
 문제인식 보완
@@ -361,7 +361,7 @@ T-C3가 고른 값을 뒷 단계가 읽는다. 선택 공고의 같은 이름 �
 - 검사 문제
 ```
 
-### 10.4 재작성 중 재수행 — 재작성 지시를 남긴다 (사용자 결정)
+### 10.4 재작성 중 재수행 — 재작성 지시를 남긴다
 
 - 재작성 사이클에서 대상 Task가 자체 검사에 걸려 재수행하면, 새 재수행 입력(`mode='재수행'`, `order` 없음)만으로는 사용자의 재작성 사유 · 보완 지시가 지시문에서 사라진다.
 - 이때 그 사이클의 그 Task 재작성 지시(`cycle.orders_by_task`)를 함께 쓴다. 다시 쓰기 입력에는 재작성 지시와 재수행 문제를 둘 다 넣고, 덧붙임도 재작성 블록 → 재수행 문제 블록 순서로 둘 다 넣는다.
@@ -386,7 +386,7 @@ T-C3가 고른 값을 뒷 단계가 읽는다. 선택 공고의 같은 이름 �
 
 - 다시 쓰기의 형식 오류는 tools가 재시도한다.
 - 재시도를 다 쓰면 일반 규칙대로 대상 Task를 재개한다. 재개 상한을 넘기면 실행 실패, 재작성 중이면 재작성 실패와 되돌리기다.
-- 덧붙이기로 대신하지 않는다(사용자 결정). `ToolCallExhausted`를 받는 곳을 새로 만들지 않았다.
+- 덧붙이기로 대신하지 않는다. `ToolCallExhausted`를 받는 곳을 새로 만들지 않았다.
 
 ## 11. 조립
 
@@ -406,9 +406,9 @@ T-C3가 고른 값을 뒷 단계가 읽는다. 선택 공고의 같은 이름 �
 |---|---|
 | 3절 확인 ① · ② · ④ | `TaskPlanError` → 실행 실패(재시도 · 재개 없음). 메시지는 사유 · 필드 이름만 |
 | 안내 호출 실패 · 응답 지연 · 형식 오류 | tools가 재시도 |
-| 안내 호출 재시도 소진 · 오류(동시에 보낸 것) | 모두 끝난 뒤 판단한다(사용자 결정). 여러 개면 각각 실행 순서상 앞의 것이고, 올리는 것은 그 호출의 원래 예외 객체다. ① 재시도 소진이 아닌 예외(규격 위반 · 코드 오류) → 운영 오류로 실행 실패, 받은 안내는 버린다 ② 오류 종류가 입력 · 운영인 재시도 소진 → 재개 없이 실행 실패 ③ 모두 일시 → 받은 안내 전체(이전 재개 것 + 이번 것)를 `ToolCallExhausted.partial`에 실어 올린다. 엔진이 T-C3를 재개하며(R-11) 그 값을 `T-C3.partial`로 저장하고(`RedoState.partial_ref`), 재개 때 `prior_guidance`로 돌려준다. 재개가 여러 번이면 쌓인다 |
+| 안내 호출 재시도 소진 · 오류(동시에 보낸 것) | 모두 끝난 뒤 판단한다. 여러 개면 각각 실행 순서상 앞의 것이고, 올리는 것은 그 호출의 원래 예외 객체다. ① 재시도 소진이 아닌 예외(규격 위반 · 코드 오류) → 운영 오류로 실행 실패, 받은 안내는 버린다 ② 오류 종류가 입력 · 운영인 재시도 소진 → 재개 없이 실행 실패 ③ 모두 일시 → 받은 안내 전체(이전 재개 것 + 이번 것)를 `ToolCallExhausted.partial`에 실어 올린다. 엔진이 T-C3를 재개하며(R-11) 그 값을 `T-C3.partial`로 저장하고(`RedoState.partial_ref`), 재개 때 `prior_guidance`로 돌려준다. 재개가 여러 번이면 쌓인다 |
 | 다시 쓰기 재시도 소진 | 대상 Task 재개(10.7) |
-| 이 변경 전에 T-C3를 지난 실행 건 | `formSpec` · `evaluationItems` · `rubric` 산출물이 없어 T-W1 · T-V1 · T-P1 등이 `ContractError`(입력 산출물 없음)로 실패한다. 워커에서 재작성 · 재수행할 때도 지시문에 안내 부분이 없어 `ContractError`(지시문에 안내 부분이 없어 다시 쓸 수 없음)로 실패한다. 공유 DB에는 아직 Orchestrator 테이블을 적용하기 전이라 운영 데이터가 없어 대체 경로는 두지 않았다(사용자 결정) |
+| 이 변경 전에 T-C3를 지난 실행 건 | `formSpec` · `evaluationItems` · `rubric` 산출물이 없어 T-W1 · T-V1 등이 `ContractError`(입력 산출물 없음)로 실패한다. 워커에서 재작성 · 재수행할 때도 지시문에 안내 부분이 없어 `ContractError`(지시문에 안내 부분이 없어 다시 쓸 수 없음)로 실패한다. 공유 DB에는 아직 Orchestrator 테이블을 적용하기 전이라 운영 데이터가 없어 대체 경로는 두지 않았다 |
 
 - 예외 메시지에는 필드 이름 · 개수 · 사유 이름만 쓴다. 프롬프트 · 응답 · 입력 값 · 안내 내용은 넣지 않는다.
 - 안내 · 지시문 · 프롬프트 · 응답은 실행 기록 · 호출 기록 · 추적 사건 · 로그 · 관리자 조회에 넣지 않는다. 산출물(`taskPlan` · `<taskId>.instruction`)로만 저장하고 기록에는 `이름@버전` 참조만 남긴다.
@@ -505,26 +505,25 @@ app.orchestrator.advance(rid)                      # T-C3(실제 7번) → T-S1 
 | 항목 | 잠정값 | 위치 |
 |---|---|---|
 | 신청자 유형별 양식 · 평가항목 · 채점 기준표 | 4절 표 — `예비창업패키지(잠정)` / `초기창업패키지-일반형(잠정)`, 섹션 `1-1` · `2-1` · `3-1` · `4-1`, 평가항목 20 · 20 · 15 · 15, 채점 기준표 `rubric-stub@stub-1` | `agents/form_defaults.py` `FORM_TABLE`, `PROVISIONAL["taskPlan.formTable"]` |
-| 참조 조각 대응표 | 6.4절 표 | `plan.REFERENCE_SLOTS_BY_TASK`, `PROVISIONAL["taskPlan.referenceSlots"]` |
+| 참조 조각 대응표 | **2026-10-15 지움**(6.4) | — |
 | 선택 공고의 양식 필드 | 자리 표시 값(기본 양식 `1-1` · `2-1` · `3-3`) — 뒷 단계는 읽지 않는다 | `agents/form_defaults.py` `default_form_spec`, `PROVISIONAL["announcement.formSpec"]`(문구 고침) |
 | 틀 · 고정 문구 | 역할 한 줄 · 규칙 문구(6.2), 지시 대상이 아닌 Task의 한 줄(6.3) | `plan.TASK_TABLE` · `_FRAME_RULES` · `_CATEGORY_RULES` · `FRAME_PRIORITY_RULE` |
-| 지시문 부분 머리말 · 참조 표시 태그 | `[작업 틀]` · `[작업 안내]` · `[참조 자료]`, `<참조자료>` | `flow/instruction.py` |
+| 지시문 부분 머리말 | `[작업 틀]` · `[작업 안내]` (2026-10-15 `[참조 자료]` · `<참조자료>` 없앰) | `flow/instruction.py` |
 | 안내 길이 상한 | 3,000자 | `plan.GUIDANCE_MAX_CHARS` |
 | `planId` 형식 | 12자리 16진수 | `plan.new_plan_id` |
 | T-C3 프롬프트 문구 · 표시 태그 · 신청자 칸 키 | `<아이템>` · `<공고>` · `<신청자>`, `applicantType` · `businessAgeYears` · `industryCode` · `regionProvince` | `tc3.py` `SYSTEM` · `ITEM_TAG` · `ANNOUNCEMENT_TAG` · `APPLICANT_TAG` · `applicant_fields` |
 | 다시 쓰기 프롬프트 문구 · 표시 태그 | `<원래안내>` · `<문제내용>` | `rewrite.py` `SYSTEM_PROMPT` · `GUIDANCE_TAG` · `PROBLEM_TAG` |
 | 가리기 대체 문구 · 최소 길이 | `[가림]`, 2글자 미만은 가리지 않음 | `rewrite.MASK_TEXT`, `sbrain_flow.MASK_MIN_CHARS` |
-| 다시 쓰기 제한 시간 | ~~T-C3의 제한 시간 설정(지금 120초)~~ 2026-10-06부터 `지시문 다시 쓰기` 키의 제한 시간(120초) — T-C3 값을 빌리지 않음 | `orchestrator/settings.py` `REWRITE_SETTING_KEY` · `task_timeouts` (옛 이름 `sbrain_flow.REWRITE_TIMEOUT_TASK`는 없앰) |
+| 다시 쓰기 제한 시간 | `지시문 다시 쓰기` 키의 제한 시간(120초) — T-C3 값을 빌리지 않음 | `orchestrator/settings.py` `REWRITE_SETTING_KEY` · `task_timeouts` (옛 이름 `sbrain_flow.REWRITE_TIMEOUT_TASK`는 없앰) |
 | 동시 호출 개수 | 7 (지시 대상 수 — 원페이지는 6개만 부름) | `tc3.GUIDANCE_CONCURRENCY` |
 | 스텁 안내 문장 | `{task_id} 스텁 안내 — 이 아이템 · 공고에 맞춘 안내 자리입니다.` | `agents/stubs.py` `STUB_GUIDANCE` |
 
 **확장** (기준 문서에 없는 필드 · 산출물)
 
+2026-10-08: `TC3In.businessAgeYears`, `TC3Out.formSpec` · `evaluationItems` · `rubric`, `TaskInstruction.guidance`는 기준 문서 v1.10에 들어가 이 표에서 뺐다(코드도 `ext()`를 뗐다).
+
 | 대상 | 확장 | 용도 |
 |---|---|---|
-| TC3In | `businessAgeYears` | 업력(년) — G-01 출력. 예비창업자는 `null` |
-| TC3Out | `formSpec` · `evaluationItems` · `rubric` | 신청자 유형으로 고른 양식 · 평가항목 · 채점 기준표 → 같은 이름의 산출물 |
-| TaskInstruction | `guidance` | 정리한 안내 — 지시문의 안내 부분과 같은 글자. 다시 쓰기의 출발점 |
 | RedoState | `instruction_ref` | 다시 쓴 지시문 산출물 참조 — 재개 때 다시 쓰지 않으려고 |
 | TC3In | `prior_guidance` | 재개 때 받아 둔 안내(Task ID → 정리된 안내). 엔진 연결 `PARTIAL`로 들어온다. 처음 실행이면 빈 사전 |
 | RedoState | `partial_ref` | 재개 때 이어 쓸 받은 결과 산출물 참조(엔진 일반 장치, 지금은 T-C3만) |
@@ -539,6 +538,6 @@ app.orchestrator.advance(rid)                      # T-C3(실제 7번) → T-S1 
    - 섹션 코드가 웹 태그(`1-1` · `2-1` · `3-1` · `4-1`)와 달라지면 웹팀에 알린다. 웹의 계획서 내려받기가 이 태그로 본문을 찾는다.
    - 배점 합이 70과 다르거나 섹션 · 평가항목 코드가 바뀌면 어긋날 수 있는 곳: 스텁 T-V1 · G-02의 고정 배점, 문서층 재작성 묶음 이름.
    - 일부 유형만 값이 오면 나머지 유형을 어떻게 할지 정해야 한다.
-2. ~~동시 호출 뒤 실제 OpenAI 재측정~~ — 완료(2026-10-04, 13절). 429 없음. 여러 실행 건이 겹쳐 429가 자주 생기면 `GUIDANCE_CONCURRENCY`(잠정)를 줄인다.
-3. **공고별 양식** — 공고 서버가 공고별 양식 · 평가항목을 주게 되면 유형별 표와 무엇이 우선인지 그때 정한다(`docs/공고서버_API요청_공고팀전달.md` 6 ③).
-4. **기준 문서 개정** — 자격 불통과 시 실행 실패, 양식을 T-C3 출력에 둔 것, 입출력 확장, 다시 쓰기 방식 등은 `기준문서_개정필요사항_T-C3_작업분해.md`(저장소 미포함)에 따로 정리했다.
+2. 동시 호출 뒤 실제 OpenAI 재측정 — 완료(2026-10-04, 13절). 429 없음. 여러 실행 건이 겹쳐 429가 자주 생기면 `GUIDANCE_CONCURRENCY`(잠정)를 줄인다.
+3. **공고별 양식** — 공고 서버가 공고별 양식 · 평가항목을 주게 되면 유형별 표와 무엇이 우선인지 그때 정한다.
+4. **기준 문서 개정** — 자격 불통과 시 실행 실패, 양식을 T-C3 출력에 둔 것, 입출력 확장, 다시 쓰기 방식 등은 기능정의서 v1.10에 반영됐다(2026-10-07판, 시트 8 변경 이력 7번). 신청자 유형별 양식 · 평가항목 · 채점 기준표의 실제 값은 v1.10도 미확정이다.

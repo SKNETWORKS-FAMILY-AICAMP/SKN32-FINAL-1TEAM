@@ -4,7 +4,7 @@
 - DB DATETIME 칸(orch_ 테이블 · 우리가 INSERT하는 웹 표 셋)은 시간대 없는 UTC 값이다. 읽을 때 UTC를 붙인다.
 - 시간대 없는 값(옛 JSON · DB 값, 웹이 넘기는 시각 인자, 테스트가 넘기는 값)은 UTC로 본다.
 - '오늘'은 한국 날짜(UTC+9 고정)다 — G-01 기준일, 마감 안내, 스텁 공고 날짜.
-- proofread_logs.created_at은 DB 기본값이 아니라 단계 저장 시각(UTC)이다. 워커 로그 시각도 UTC(끝에 Z).
+- 워커 로그 시각도 UTC(끝에 Z). (흐름을 거친 proofread_logs 행 시각 확인은 검수가 흐름에서 빠져 지웠다)
 """
 from __future__ import annotations
 
@@ -13,10 +13,10 @@ import re
 from datetime import date, datetime, timedelta
 
 import pytest
-from conftest import Backend, Clock, make_app, set_consent, start_and_select, to_screen6, to_screen9
+from conftest import Backend, Clock, make_app, start_and_select, to_screen6
+from flow_helpers import pid
 from pydantic import BaseModel
 from sqlalchemy import DateTime, text
-from webdb import proofread_rows
 
 import sbrain.worker as worker_mod
 from sbrain.agents.stubs import StubScenario
@@ -27,9 +27,6 @@ from sbrain.store_sql import SqlStore
 from sbrain.orchestrator.store import RunFilter
 from sbrain.store_sql.schema import ORCH_TABLES
 from sbrain.worker import Worker, WorkerConfig
-
-def pid_of(app, rid: str) -> str:
-    return app.store.load_run(rid).project_id
 
 
 def is_time_column(col) -> bool:
@@ -129,7 +126,7 @@ def test_db_datetime_columns_hold_naive_utc(tmp_path):
     app, clock = sql_app(tmp_path, datetime(2026, 9, 26, 18, 0, tzinfo=KST))
     rid = to_screen6(app)                                                    # 알림(화면 6) 생김
     failed = start_and_select(app, "acc-2")
-    app.llm.plan("T-S1", ["auth"] * 50)
+    app.llm.plan("T-S1", ["auth"])                                           # 401 — 재시도 없이 영구 오류
     app.orchestrator.start_writing(failed)
     app.orchestrator.advance(failed)                                         # 실패 → generation_failure_alerts
     assert app.store.load_run(failed).state.progress == "실패"
@@ -170,21 +167,6 @@ def test_notifications_read_from_web_table_carry_utc(tmp_path):
     assert {n.read_at for n in app.store.notifications(rid)} == {datetime(2026, 9, 26, 10, 30, tzinfo=UTC)}
 
 
-def test_proofread_logs_created_at_is_save_time_in_utc(tmp_path):
-    app, clock = sql_app(tmp_path, datetime(2026, 9, 26, 18, 0, tzinfo=KST),
-                         StubScenario(tp1_targets=1, tp2_behavior={"s-1-1-1": ["violate", "ok"]}))
-    rid = to_screen9(app)
-    set_consent(app, rid)
-    before = as_utc(clock.t)
-    app.orchestrator.decide(rid, 9, "진행", confirmed=True)
-    app.orchestrator.advance(rid)
-    after = as_utc(clock.t)
-    [row] = proofread_rows(app.store.engine, int(app.store.load_run(rid).project_id))
-    created = datetime.fromisoformat(str(row["created_at"]))
-    assert created.tzinfo is None                                            # 시간대 없는 UTC
-    assert before <= as_utc(created) <= after                                # DB 기본값(지금)이 아니라 저장 시각
-
-
 # ── 시간대 없는 입력 ───────────────────────────────────
 def test_naive_clock_is_treated_as_utc(store_backend):
     clock = Clock(datetime(2026, 9, 26, 9, 0), store_backend)                # 테스트가 넘기는 시간대 없는 시계
@@ -223,7 +205,7 @@ def test_every_time_in_web_results_is_utc(clock):
     clock.t = datetime(2026, 9, 26, 18, 0, tzinfo=KST)                       # 한국 시각을 주는 시계
     app = make_app(clock, StubScenario(doc_scores=[52.0, 60.0]))
     a = to_screen6(app)
-    p = pid_of(app, a)
+    p = pid(app, a)
     accepted = app.orchestrator.request_rework_for_project(p, "문제인식")
     assert is_utc(accepted.collect_until) and accepted.collect_until.hour == 9
     view = app.orchestrator.view_project(p)
@@ -234,7 +216,7 @@ def test_every_time_in_web_results_is_utc(clock):
     app.llm.plan("T-S2", ["timeout"] * 6)
     app.orchestrator.start_writing(b)
     app.orchestrator.advance(b)
-    pb = pid_of(app, b)
+    pb = pid(app, b)
     waiting = app.orchestrator.view_project(pb)
     assert waiting.run.next_resume_at is not None
     executions = app.orchestrator.admin_executions()
@@ -298,6 +280,6 @@ def test_sql_store_rejects_nothing_naive(tmp_path):
     assert app.store.runs_due_for_resume(datetime(2026, 9, 26, 9, 0)) == []
 
 
-@pytest.mark.parametrize("value", ["2026-09-26T09:00:00", "2026-09-26T09:00:00Z", "2026-09-26T18:00:00+09:00"])
+@pytest.mark.parametrize("value", ["2026-09-26T09:00:00Z", "2026-09-26T18:00:00+09:00"])
 def test_old_and_new_json_times_compare(value):
     assert Notice(code="X", message="m", at=value).at == datetime(2026, 9, 26, 9, tzinfo=UTC)

@@ -2,3 +2,5 @@
 __pycache__/
 .pytest_cache/
 .env
+# 로컬에서 수집하는 KIET 시장 데이터는 저장소·배포 패키지에 포함하지 않는다.
+sbrain/agents/partner_sw/agent_strategy/res/crawling/industry_research/output/

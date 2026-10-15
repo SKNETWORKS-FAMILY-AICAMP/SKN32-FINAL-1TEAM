@@ -1,5 +1,6 @@
 """이미지 호출 tools.image — 재시도 · 제한 시간 · 오류 종류, 편집 / 새로 그리기, 크기 · 품질 기본값, 이미지 설정 없는 Task,
 호출 기록 · 이미지 토큰(글 토큰과 따로), 관리자 조회, 기록에 지시문 · 그림 없음, OpenAI 이미지 어댑터(가짜 클라이언트).
+조립의 이미지 호출처 나누기는 test_bootstrap.py가 본다.
 
 실제 OpenAI는 부르지 않는다 — 가짜 이미지 호출처(FakeImage)와 가짜 SDK 클라이언트만 쓴다.
 """
@@ -13,13 +14,10 @@ from types import SimpleNamespace
 import httpx2
 import openai
 import pytest
-from conftest import make_app, start_and_select
+from conftest import make_app, start_and_select, tok
 from sqlalchemy import text
 
-from sbrain.agents.stubs import FakeImage, FakeLLM
-from sbrain.agents.supervisor import IMPLEMENTED_TASKS
-from sbrain.bootstrap import TaskRoutedImageProvider, build_app, build_stub_app, build_web
-from sbrain.intake import MemoryProjectInputSource
+from sbrain.agents.stubs import FakeImage
 from sbrain.models.clock import utc_now
 from sbrain.orchestrator import Settings
 from sbrain.orchestrator.errors import FormatError, ProviderError, ToolCallExhausted
@@ -30,14 +28,17 @@ from sbrain.orchestrator.tools import (
 from sbrain.orchestrator.trace import CallLog, ExecutionRecord, add_tokens
 from sbrain.store_sql import SqlStore
 
+
 PROMPT = "IMG-SECRET-PROMPT 아이콘을 그려라"
+
+
 INPUT = b"INPUT-IMAGE-MARKER-BYTES"
+
+
 IU = TokenUsage(input_tokens=50, output_tokens=4000)          # 이미지 호출 한 번의 사용량
+
+
 TU = TokenUsage(input_tokens=7, cached_input_tokens=None, output_tokens=3, reasoning_tokens=None)
-
-
-def tok(obj) -> tuple:
-    return (obj.input_tokens, obj.cached_input_tokens, obj.output_tokens, obj.reasoning_tokens)
 
 
 def make_tools(fake: FakeImage | None = None, *, retry: int = 5, model: str | None = "img-model",
@@ -50,7 +51,7 @@ def make_tools(fake: FakeImage | None = None, *, retry: int = 5, model: str | No
                       image_provider="openai" if model else None, image_model=model, image_quality=quality,
                       image_size=size, image_timeout_sec=77.0)
     ctx = ToolsContext(run_id="r", execution_id="e", task_id="T-B2", providers={}, sink=sink, now=utc_now,
-                       sleep=sleeps.append,
+                       sleep=sleeps.append, rand=lambda: 0.0,                 # 무작위 지연 없이 — 간격을 정확히 본다
                        image_providers={"openai": fake} if providers is None else providers)
     return Tools(cfg, ctx), sink, sleeps, fake
 
@@ -65,7 +66,7 @@ def test_retry_then_success_returns_png_and_logs_image_call():
     [log] = sink.drain()
     assert [x.outcome for x in log.tries] == ["응답지연", "호출실패", "성공"]
     assert [x.error_kind for x in log.tries] == ["일시", "일시", None]
-    assert sleeps == [2.0, 2.0]
+    assert sleeps == [2.0, 4.0]                                            # 일시 오류는 늘리는 간격 (무작위 0)
     assert (log.call_type, log.provider, log.model, log.temperature, log.reasoning_effort) == (
         "image", "openai", "img-model", None, None)
     assert log.timeout_sec == 77.0 and log.final_outcome == "성공" and log.purpose == "아이콘"
@@ -74,19 +75,22 @@ def test_retry_then_success_returns_png_and_logs_image_call():
     assert fake.requests[0].metadata["task_id"] == "T-B2" and fake.requests[0].metadata["purpose"] == "아이콘"
 
 
-@pytest.mark.parametrize("outcome, error, kind", [
-    ("bad_request", "호출실패", "입력"), ("auth", "호출실패", "운영"), ("timeout", "응답지연", "일시"),
-    ("rate_limit", "호출실패", "일시"), ("empty", "형식오류", "일시"),
+@pytest.mark.parametrize("outcome, error, kind, tries", [
+    ("bad_request", "호출실패", "입력", 1), ("auth", "호출실패", "운영", 1),     # 입력 · 운영은 재시도하지 않는다
+    ("quota", "호출실패", "일시", 1),                                        # 결제 · 한도도 재시도 없이 '일시'
+    ("timeout", "응답지연", "일시", 3), ("rate_limit", "호출실패", "일시", 3), ("empty", "형식오류", "일시", 3),
 ])
-def test_exhausted_raises_with_kind(outcome, error, kind):
+def test_exhausted_raises_with_kind(outcome, error, kind, tries):
     fake = FakeImage()
-    fake.plan("T-B2", [outcome] * 3)
+    fake.plan("T-B2", [outcome] * tries)
     t, sink, _, _ = make_tools(fake, retry=2)
     with pytest.raises(ToolCallExhausted) as e:
         t.image(PROMPT)
-    assert (e.value.error, e.value.error_kind, e.value.tries) == (error, kind, 3)
+    assert (e.value.error, e.value.error_kind, e.value.tries) == (error, kind, tries)
+    assert e.value.billing_limit is (outcome == "quota")
     [log] = sink.drain()
-    assert log.final_outcome == "소진" and (log.error, log.error_kind) == (error, kind) and len(fake.requests) == 3
+    assert log.final_outcome == "소진" and (log.error, log.error_kind) == (error, kind)
+    assert len(fake.requests) == tries
 
 
 def test_missing_image_provider_is_operation_failure():
@@ -158,7 +162,7 @@ def test_thread_safe_for_item_calls():
 
 def test_no_prompt_or_image_in_log_or_exception():
     fake = FakeImage()
-    fake.plan("T-B2", ["ok", "bad_request", "bad_request"])
+    fake.plan("T-B2", ["ok", "bad_request"])                              # 400은 재시도하지 않는다 — 한 번
     t, sink, _, _ = make_tools(fake, retry=1)
     png = t.image(PROMPT, image=INPUT)
     with pytest.raises(ToolCallExhausted) as e:
@@ -316,49 +320,10 @@ def test_flow_task_without_image_setting_records_failed_call(clock):
     assert img.tries[0].detail == "이미지 모델 설정 없음"
 
 
-# ── 조립 ─────────────────────────────────────────────────
-def image_request(task_id: str) -> ImageRequest:
-    return ImageRequest(provider="openai", model="m", prompt=PROMPT, image=None, size=None, quality=None,
-                        timeout_sec=1.0, metadata={"task_id": task_id, "agent": "구현", "purpose": ""})
-
-
-def test_router_sends_only_implemented_tasks_to_real():
-    real, fake = FakeImage(), FakeImage()
-    router = TaskRoutedImageProvider(real, fake, IMPLEMENTED_TASKS)
-    implemented = sorted(IMPLEMENTED_TASKS)[0]
-    router.create(image_request(implemented))
-    router.create(image_request("T-B2"))                                  # T-B2는 아직 스텁 — 가짜로
-    assert len(real.requests) == 1 and len(fake.requests) == 1
-    assert fake.requests[0].metadata["task_id"] == "T-B2" and "T-B2" not in IMPLEMENTED_TASKS
-
-
-def test_assemblies(tmp_path):
-    stub = build_stub_app()
-    assert set(stub.engine.image_providers) >= {"openai"} and stub.engine.image_providers["openai"] is stub.image
-    url = f"sqlite:///{(tmp_path / 'img.db').as_posix()}"
-    from sbrain.store_sql import create_orchestrator_tables, create_sqlite_engine
-    create_orchestrator_tables(create_sqlite_engine(tmp_path / "img.db"))
-    real = FakeImage()
-    worker = build_app(url, project_inputs=MemoryProjectInputSource(), llm=FakeLLM(), image=real)
-    router = worker.engine.image_providers["openai"]
-    assert isinstance(router, TaskRoutedImageProvider) and router.real is real and router.fake is worker.image
-    web = build_web(url, profile_count=lambda a: 1, project_inputs=MemoryProjectInputSource())
-    assert web.engine.image_providers == {}                               # 웹은 이미지 호출처를 두지 않는다
-
-
-def test_worker_default_image_adapter_does_not_build_client_at_assembly(tmp_path, monkeypatch):
-    """키 없이 조립해도 실제 클라이언트를 만들지 않는다 — 실제 이미지 호출이 처음 나갈 때 만든다."""
-    built = []
-    monkeypatch.setattr(openai, "OpenAI", lambda **kw: built.append(kw))
-    from sbrain.store_sql import create_orchestrator_tables, create_sqlite_engine
-    create_orchestrator_tables(create_sqlite_engine(tmp_path / "img.db"))
-    url = f"sqlite:///{(tmp_path / 'img.db').as_posix()}"
-    app = build_app(url, project_inputs=MemoryProjectInputSource(), llm=FakeLLM())
-    assert isinstance(app.engine.image_providers["openai"].real, OpenAIImageProvider) and built == []
-
-
 # ── OpenAI 이미지 어댑터 (가짜 클라이언트) ──────────────────
 REQ = httpx2.Request("POST", "https://api.openai.com/v1/images/generations")
+
+
 PNG = b"\x89PNG\r\n\x1a\nfake-png-bytes"
 
 
@@ -455,4 +420,3 @@ def test_openai_image_through_tools_retry():
     t, sink, _, _ = make_tools(providers={"openai": p})
     assert t.image(PROMPT) == PNG
     assert [x.outcome for x in sink.drain()[0].tries] == ["응답지연", "성공"] and len(images.generate_calls) == 2
-

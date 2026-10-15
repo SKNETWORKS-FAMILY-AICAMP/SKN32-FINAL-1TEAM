@@ -2,12 +2,14 @@
 
 | verification_policies | Settings |
 |---|---|
-| doc_weight | 문서층 배점 (scoring.docLayerMax) |
-| code_weight + plan_weight | 산출물층 배점 (scoring.artifactLayerMax) |
+| doc_weight | 문서층 배점 D (scoring.docLayerMax) |
+| code_weight | 코드 점검 배점 C (scoring.codeCheckMax, 확장 — spec 4.6) |
+| plan_weight | 계획서 대조 배점 P (scoring.featureMatchMax, 확장 — spec 4.6) |
+| code_weight + plan_weight | 산출물층 배점 C + P (scoring.artifactLayerMax) |
 | pass_threshold | Threshold (scoring.threshold) |
 | rerun_cap | 재수행 횟수 (redo.redoCount) |
 | rework_cap | 재작성 횟수 — 묶음마다 (rework.perBundle) |
-| token_retry_cap | 검수 재수행 횟수 (redo.proofreadRedoCount) |
+| token_retry_cap | 검수 재수행 횟수 (redo.proofreadRedoCount) — 선택 컬럼(WEB_OPTIONAL_COLUMNS). 없으면 코드 기본값(None = 재수행 횟수와 같음) |
 | deviation_cap | 확장 필드에 담아만 둔다 (scoring.deviationCap, 검증-1 연동 전, 잠정) |
 
 - 첫 행(policy_id 최솟값)을 쓴다. 웹도 단일 행을 그렇게 읽는다.
@@ -35,12 +37,15 @@ class DbSettingsProvider(SettingsProvider):
         if row is None:
             return s
         s.scoring.doc_layer_max = float(row["doc_weight"])
-        s.scoring.artifact_layer_max = float(row["code_weight"]) + float(row["plan_weight"])
+        s.scoring.code_check_max = float(row["code_weight"])
+        s.scoring.feature_match_max = float(row["plan_weight"])
+        s.scoring.artifact_layer_max = s.scoring.code_check_max + s.scoring.feature_match_max
         s.scoring.threshold = float(row["pass_threshold"])
         s.scoring.deviation_cap = float(row["deviation_cap"])
         s.redo.redo_count = int(row["rerun_cap"])
         s.rework.per_bundle = int(row["rework_cap"])
-        s.redo.proofread_redo_count = int(row["token_retry_cap"])
+        if row["token_retry_cap"] is not None:   # 선택 컬럼 — 없으면 코드 기본값 그대로
+            s.redo.proofread_redo_count = int(row["token_retry_cap"])
         return Settings.model_validate(s.dump())
 
     def snapshot(self) -> dict:

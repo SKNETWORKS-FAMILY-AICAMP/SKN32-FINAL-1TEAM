@@ -7,7 +7,7 @@
   동시 개수는 지시 대상 수와 같다(GUIDANCE_CONCURRENCY, 잠정). 호출은 tools.for_item(<taskId>).llm(..., purpose='지시문 작성')
   — 모델 · 추론 강도 · 제한 시간은 tools가 조율 설정으로 입힌다. 결과는 끝난 순서와 상관없이 실행 순서(plan.instructed_tasks)로
   조립한다(같은 응답이면 차례로 부른 것과 글자까지 같다). 호출 기록은 끝난 순서로 쌓인다.
-  LLM은 그 Task의 '안내'만 쓴다. 틀(규칙) · 참조 자료 · 맥락 · 고정 문구는 코드가 붙인다(plan.assemble).
+  LLM은 그 Task의 '안내'만 쓴다. 틀(규칙) · 맥락 · 고정 문구는 코드가 붙인다(plan.assemble). 참조 자료 부분은 없다.
 - LLM에 보내는 것은 spec 3.6 목록뿐이다.
   작업(Task ID · 이름 · 틀), 아이템 사양 6칸, 선택 공고 9칸, 고른 양식(버전 · 섹션 · 섹션 글자 수 · 서술 형식 · 평가항목),
   신청자(유형 · 업력 · 주 업종 · 시 · 도). 대표자 이름 · 기업명 · 생년월일 · 성별 · 사업자등록번호 · 단가 · 수익모델 항목 ·
@@ -171,7 +171,7 @@ def form_fields(bundle: FormBundle) -> dict[str, Any]:
 
 
 def applicant_fields(inp: TC3In) -> dict[str, Any]:
-    """신청자 칸은 유형 · 업력(있을 때만 — 예비창업자는 없음) · 주 업종(그대로) · 시 · 도뿐이다 (사용자 결정)."""
+    """신청자 칸은 유형 · 업력(있을 때만 — 예비창업자는 없음) · 주 업종(그대로) · 시 · 도뿐이다."""
     company = inp.company_info
     out: dict[str, Any] = {"applicantType": company.applicant_type}
     if inp.business_age_years is not None:

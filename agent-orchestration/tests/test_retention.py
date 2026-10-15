@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from conftest import make_app, pre_input, project_for, start_and_select, to_screen6, to_screen9
+from flow_helpers import finish, pid, rework
 from sqlalchemy import select
 
 from sbrain.agents.stubs import StubScenario
@@ -23,12 +24,7 @@ from sbrain.store_sql.schema import RUNS
 
 UTC = timezone.utc
 LATER = 400   # 일 — 12개월(달력)을 넘기는 날 수
-WINDOW = 3    # 재작성 모으는 시간(잠정 2초)을 넘기는 초
 SUMMARY_KEYS = {"runs", "deletedRuns", "requests", "skipped"}
-
-
-def pid(app, rid: str) -> str:
-    return app.store.load_run(rid).project_id
 
 
 def retain(app, clock, owner: str = "w", **kw):
@@ -50,19 +46,6 @@ def sql_updated_at(app, rid: str):
             row = conn.execute(select(RUNS.c.updated_at, RUNS.c.run_json).where(RUNS.c.run_id == rid)).first()
         return row.updated_at, row.run_json["updatedAt"]
     return app.store.load_run(rid).dump()["updatedAt"]
-
-
-def rework(app, clock, rid: str, *bundles: str) -> None:
-    for b in bundles:
-        app.orchestrator.request_rework_for_project(pid(app, rid), b)
-    clock.advance(seconds=WINDOW)
-    app.orchestrator.advance(rid)
-
-
-def finish(app, rid: str) -> None:
-    app.orchestrator.decide(rid, 9, "진행", confirmed=True)
-    app.orchestrator.advance(rid)
-    assert app.store.load_run(rid).state.progress == "완료"
 
 
 # ── 기준 시각 ──────────────────────────────────────────
@@ -182,8 +165,8 @@ def test_live_run_moved_again_later_is_part_two(clock):
 
 
 def test_results_unchanged_after_retention(clock):
-    """화면 10 문장 비교 · 지금까지 결과 · 재작성 결과가 기록을 옮긴 뒤에도 같다."""
-    app = make_app(clock, StubScenario(tp1_targets=4))
+    """화면 11 · 지금까지 결과 · 재작성 결과가 기록을 옮긴 뒤에도 같다 (화면 10 문장 비교는 검수가 흐름에서 빠져 뺐다)."""
+    app = make_app(clock)
     done = to_screen9(app, "acc-1")
     finish(app, done)
     app2 = make_app(clock, StubScenario(doc_scores=[52.0, 60.0]))
@@ -193,12 +176,11 @@ def test_results_unchanged_after_retention(clock):
     p, p2 = pid(app, done), pid(app2, reworked)
 
     def snapshot():
-        return (app.orchestrator.screen(p, 10).dump(), app.orchestrator.screen(p, 11).dump(),
+        return (app.orchestrator.screen(p, 11).dump(),
                 app.orchestrator.outputs(p).dump(), asdict(app.orchestrator.view(done)),
                 app2.orchestrator.rework_result(p2).dump(), app2.orchestrator.outputs(p2).dump(),
                 app2.orchestrator.screen(p2, 9).dump())
     before = snapshot()
-    assert any(s["adopted"] for s in before[0]["sentences"])
     assert retain(app, clock).summary.runs == 1 and retain(app2, clock).summary.runs == 1
     assert record_counts(app, done) == [0] * 6 and record_counts(app2, reworked) == [0] * 6
     assert snapshot() == before
@@ -211,12 +193,14 @@ def test_permanently_deleted_run_row_removed_with_category_in_row(clock):
     project = pid(app, rid)
     app.orchestrator.delete_project_data(project)
     assert not app.store.get_pointers(rid) and any(record_counts(app, rid)[:1])  # 산출물만 지워졌다
+    assert app.orchestrator.missing_projects([project]) == []                    # 실행 건 줄이 남아 있음
     clock.advance(days=LATER)
     out = retain(app, clock)
     assert (out.summary.runs, out.summary.deleted_runs, out.summary.skipped) == (1, 1, 0)
     with pytest.raises(KeyError):
         app.store.load_run(rid)                                                  # 실행 건 줄도 지웠다
     assert app.store.find_run_by_project(project) is None
+    assert app.orchestrator.missing_projects([project, int(project)]) == [project]   # 이제 없음
     assert record_counts(app, rid) == [0] * 6
     [row] = app.store.log_stats("실행")
     assert (row.category, row.part, row.data["finalScores"]) == (
@@ -243,7 +227,7 @@ def test_finished_start_requests_counted_and_deleted(clock):
     app = make_app(clock)
     for acc in ("acc-1", "acc-2"):
         assert app.orchestrator.start_run(acc, pre_input(), project_id=project_for(app)).ok
-    app.llm.plan("T-C1", ["auth"] * 20)
+    app.llm.plan("T-C1", ["auth"])                                               # 401 — 재시도 없이 E-C1-TIMEOUT
     failed = app.orchestrator.start_run("acc-3", pre_input(), project_id=project_for(app))
     assert not failed.ok
     app.llm.plan("T-C1", [])
