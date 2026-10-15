@@ -3,7 +3,8 @@
 - 항목마다 담당자 validate_section(규칙 검사, 필요할 때만 LLM 의미 검증 F19)과 담당자 파이프라인의 보정
   (_reconcile_validation · _remove_roadmap_deadline_warnings · _check_agreement_table_overrun · 초기창업 3.5.3 단계 미지정 처리)을
   그대로 적용한 뒤 score_section으로 항목 점수(0 ~ 100)를 낸다. 담당자 결과의 기록용 칸(model · responseId · usage)은 버린다.
-- F19에 넘기는 항목 내용: 본문 = sectionOutputs, 표 = tableOutputs, 그림 = diagramOutputs. 근거는 담당자 section_source.
+- F19에 넘기는 항목 내용: 본문 = sectionOutputs, 표 = tableOutputs, 그림 = diagramOutputs. 근거는 담당자 section_source
+  (일반현황 항목 2.1.1 · 3.1.1만 창업아이템명 · 팀구성현황을 원본 사실에 덧붙임).
 - 입력 없음: 표의 사용자 원본 행이 비었거나 예비창업 사업비에 단계 미지정 행이 있으면 inputMissing 참 · status warning,
   issue는 warning '입력 확인 필요 — <사업비 집행계획 | 추진 일정>'으로 바꾼다.
 - 입력 오류(inputError): 입력 없음 처리 뒤 최종 status가 fail이고 담당자 F19의 `inputErrorCodes`에 입력 오류 코드가 있으면 참이다.
@@ -115,6 +116,8 @@ def run_tv1(inp: TV1In, tools: Tools) -> TV1Out:
         spec = spec_for(specs, code)
         content = copy.deepcopy((contents.get(k) or {}).get(code) or {})
         source = section_source(spec, canonical, original, research)
+        # 일반현황 항목만 — 작성(T-W1)과 같은 창업아이템명 · 팀구성현황을 근거 원본 사실에
+        source = ins.with_general_status_facts(source, kind, code, inp.company_info)
         with partner_call(tools.for_item(code), None):
             validation = py.validate_section(section_spec=spec, content=content, source_data=source)
         validation = _reconcile_validation(spec, content, validation)

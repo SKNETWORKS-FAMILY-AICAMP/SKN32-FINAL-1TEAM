@@ -138,6 +138,7 @@ def test_changed_lines_are_marked():
     for name in ("engineering_agent/builder_html.py", "engineering_agent/file_writer.py",
                  "engineering_agent/html_kit.py", "engineering_agent/infographic/fonts.py",
                  "engineering_agent/infographic/illustrations.py", "engineering_agent/infographic/render.py",
+                 "engineering_agent/infographic/artsheet.py",
                  "engineering_agent/tasks.py", "verification_agent/tasks.py",
                  "verification_agent/llm_judge.py", "verification_agent/rules/gates.py", "verification_agent/score.py"):
         assert name in marked, name

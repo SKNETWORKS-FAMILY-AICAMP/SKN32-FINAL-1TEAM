@@ -16,7 +16,7 @@ def make_tools(llm: FakeLLM, retry: int = 5) -> tuple[Tools, CallSink, list]:
     cfg = ToolsConfig(agent="작성", provider="p", model="m-1", temperature=0.3, timeout_sec=42,
                       retry_count=retry, retry_interval_sec=2.0)
     ctx = ToolsContext(run_id="r", execution_id="e", task_id="T-W1", providers={"p": llm}, sink=sink,
-                       now=utc_now, sleep=sleeps.append)
+                       now=utc_now, sleep=sleeps.append, rand=lambda: 0.0)   # 무작위 지연 0 — 간격을 정확히 본다
     return Tools(cfg, ctx), sink, sleeps
 
 
@@ -27,19 +27,23 @@ def test_retry_then_success_logs_tries_without_content():
     assert tools.llm([{"role": "user", "content": "비밀 본문"}], schema=Ack).ok
     [log] = sink.drain()
     assert [t.outcome for t in log.tries] == ["응답지연", "호출실패", "성공"]
-    assert sleeps == [2.0, 2.0]
+    assert sleeps == [2.0, 4.0]                                            # 일시 오류는 늘리는 간격
     assert "비밀 본문" not in log.model_dump_json()
     assert llm.requests[0].timeout_sec == 42 and llm.requests[0].temperature == 0.3
 
 
 def test_exhausted_raises_with_kind():
     llm = FakeLLM()
-    llm.plan("T-W1", ["bad_request"] * 6)
-    tools, sink, _ = make_tools(llm)
+    llm.plan("T-W1", ["bad_request"])
+    tools, sink, sleeps = make_tools(llm)
     with pytest.raises(ToolCallExhausted) as e:
         tools.llm([], schema=Ack)
-    assert (e.value.error, e.value.error_kind, e.value.tries) == ("호출실패", "입력", 6)
-    assert sink.drain()[0].final_outcome == "소진"
+    assert (e.value.error, e.value.error_kind, e.value.tries) == ("호출실패", "입력", 1)   # 입력 오류는 재시도하지 않는다
+    assert sink.drain()[0].final_outcome == "소진" and sleeps == []
+    llm.plan("T-W1", ["timeout"] * 6)
+    with pytest.raises(ToolCallExhausted) as e:
+        tools.llm([], schema=Ack)
+    assert (e.value.error, e.value.error_kind, e.value.tries) == ("응답지연", "일시", 6)
 
 
 def test_format_error_by_schema_and_by_task_parse():
@@ -88,7 +92,7 @@ def test_search_retries_option_applies_to_that_call_only():
         return fn
     with pytest.raises(ToolCallExhausted) as e:
         tools.search("짧게", down("짧게"), retries=2)
-    assert e.value.tries == 3 and attempts["짧게"] == 3 and sleeps == [2.0, 2.0]
+    assert e.value.tries == 3 and attempts["짧게"] == 3 and sleeps == [2.0, 4.0]   # 연결 오류 — 늘리는 간격
     [log] = sink.drain()
     assert log.final_outcome == "소진" and len(log.tries) == 3
     with pytest.raises(ToolCallExhausted) as e:

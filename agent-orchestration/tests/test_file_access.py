@@ -122,7 +122,7 @@ def test_failed_aborted_and_missing_runs(clock):
     app.orchestrator.abort(rid, confirmed=True)                                   # 중단
     assert code_of(lambda: app.orchestrator.read_artifact_file(p, key)).code == "RUN_NOT_VIEWABLE"
     failed = start_and_select(app, "acc-2")
-    app.llm.plan("T-S1", ["auth"] * 50)                                           # 영구 오류 → 실패
+    app.llm.plan("T-S1", ["auth"])                                                # 영구 오류(재시도 없음) → 실패
     app.orchestrator.start_writing(failed)
     app.orchestrator.advance(failed)
     assert app.store.load_run(failed).state.progress == "실패"

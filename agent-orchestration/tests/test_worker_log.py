@@ -21,7 +21,8 @@ from sbrain.worker_log import (
 )
 
 START_KEYS = ["run", "project", "step", "exec", "trigger", "resumed", "attempt"]
-END_KEYS = ["run", "project", "step", "exec", "status", "sec", "model", "tokens", "imageTokens", "errorKind", "error"]
+END_KEYS = ["run", "project", "step", "exec", "status", "sec", "model", "tokens", "imageTokens", "errorKind", "errorCode",
+            "error"]
 PAIR = re.compile(r'(\w+)=("(?:[^"\\]|\\.)*"|\S+)')
 
 
@@ -102,7 +103,7 @@ def test_step_start_end_lines_and_key_order(clock, runlog):
     assert (first["step"], first["trigger"], first["resumed"], first["attempt"]) == ("T-C1", "첫실행", "아니오", "1")
     end = ends[0]
     assert end["status"] == "성공" and re.fullmatch(r"\d+\.\d", end["sec"])
-    assert end["errorKind"] == "-" and end["error"] == "-" and end["imageTokens"] == "-"
+    assert end["errorKind"] == "-" and end["errorCode"] == "-" and end["error"] == "-" and end["imageTokens"] == "-"
     tc1 = recs[0]
     assert end["model"] == (tc1.model or "-")
     assert end["tokens"] == (str((tc1.input_tokens or 0) + (tc1.output_tokens or 0))
@@ -128,10 +129,11 @@ def test_wait_and_run_end_lines(clock, runlog):
     assert [w["point"] for w in waits] == ["공고선택", "계획서작성", "문서평가", "산출물확인"]
     assert all(list(w) == ["run", "project", "point"] for w in waits)
     assert of(runlog, "실행끝") == [{"run": rid, "project": str(app.store.load_run(rid).project_id), "status": "완료"}]
-    # T-P2 전용 실행기도 실행 기록 하나당 한 쌍
-    tp2 = [r.execution_id for r in app.store.executions(rid) if r.task_id == "T-P2"]
-    assert [s["exec"] for s in of(runlog, "단계시작") if s["step"] == "T-P2"] == tp2
-    assert [e["exec"] for e in of(runlog, "단계끝") if e["step"] == "T-P2"] == tp2
+    # 결과물 구간의 T-C4도 실행 기록 하나당 한 쌍 (T-P2 전용 실행기는 흐름에서 빠졌다)
+    tc4 = [r.execution_id for r in app.store.executions(rid) if r.task_id == "T-C4"]
+    assert len(tc4) == 1
+    assert [s["exec"] for s in of(runlog, "단계시작") if s["step"] == "T-C4"] == tc4
+    assert [e["exec"] for e in of(runlog, "단계끝") if e["step"] == "T-C4"] == tc4
 
 
 def test_resume_scheduled_and_resumed_lines(clock, runlog):
@@ -142,10 +144,11 @@ def test_resume_scheduled_and_resumed_lines(clock, runlog):
     app.orchestrator.advance(rid)
     run = app.store.load_run(rid)
     [res] = of(runlog, "재개예약")
-    assert list(res) == ["run", "project", "at", "errorKind"]
+    assert list(res) == ["run", "project", "at", "errorKind", "errorCode"]
     assert res["errorKind"] == "일시" and res["at"] == run.next_resume_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+    assert res["errorCode"] == "-"                                                 # 시간 초과 — 오류 코드 없음
     end = [e for e in of(runlog, "단계끝") if e["step"] == "T-S2"][-1]
-    assert (end["status"], end["errorKind"]) == ("재개대기", "일시") and end["error"] != "-"
+    assert (end["status"], end["errorKind"], end["errorCode"]) == ("재개대기", "일시", "-") and end["error"] != "-"
     clock.advance(minutes=16)
     app.orchestrator.tick(clock.t)
     again = [s for s in of(runlog, "단계시작") if s["step"] == "T-S2"]
@@ -155,7 +158,7 @@ def test_resume_scheduled_and_resumed_lines(clock, runlog):
 def test_run_failed_line(clock, runlog):
     app = make_app(clock)
     rid = start_and_select(app)
-    app.llm.plan("T-C3", ["auth"] * 6)
+    app.llm.plan("T-C3", ["auth"])                                                 # 401 — 재시도 없이 영구 오류
     app.orchestrator.start_writing(rid)
     app.orchestrator.advance(rid)
     assert of(runlog, "실행끝")[-1]["status"] == "실패"

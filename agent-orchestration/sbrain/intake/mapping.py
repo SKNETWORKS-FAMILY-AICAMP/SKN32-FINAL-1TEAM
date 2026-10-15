@@ -12,6 +12,8 @@
   모르는 키만 있는 항목은 값만 순서대로 잇는다.
 - 사업비 · 일정 · 팀원 역할(budgetItems · scheduleItems · teamRoleCareers — 확장, spec 4.3)도 시작 요청에서 함께 옮긴다.
   필수 확인은 스위치 settings.PLAN_TABLES_REQUIRED(잠정, 기본 꺼짐)가 켜졌을 때만 한다.
+- 목표 고객 · 창업아이템명 · 팀원 표 행(targetCustomer · startupItemName · teamMemberRows — 확장)도 시작 요청에서
+  함께 옮긴다. 선택 칸이라 필수 확인에 넣지 않는다. 값은 기록 · 로그 · 예외 메시지에 싣지 않는다.
 """
 from __future__ import annotations
 
@@ -19,7 +21,7 @@ import re
 from decimal import Decimal
 from typing import Any, Callable
 
-from ..models import BudgetItem, PreInput, RevenueItem, ScheduleItem
+from ..models import BudgetItem, PreInput, RevenueItem, ScheduleItem, TeamMemberEntry
 from ..models.base import ApplicantType
 from ..orchestrator import settings
 from .record import (
@@ -66,6 +68,8 @@ PHASES = ("1단계", "2단계")      # project_budget_items.phase 값 (예비창
 SCHEDULE_SCOPE: dict[str, str] = {"feasibility": "agreement", "growth": "roadmap"}
 
 NONE_TEXT = "없음"  # '해당 없음'을 고른 항목 (시트 4 hiringPlan · facilities · partners)
+STARTUP_ITEM_NAME_MAX = 60   # 창업아이템명 = 아이디어 설명 첫 줄 60자까지 (웹 답 — 잠정 intake.startupItemName)
+_LINE_BREAK = re.compile(r"\r\n|\r|\n")
 PROOF_TEXT = "증빙 있음"  # 대표자 이력에 증빙이 있을 때 붙인다
 
 # 목록 입력 항목의 키 (웹 코드)
@@ -129,6 +133,10 @@ def to_pre_input(record: ProjectInputRecord) -> PreInput:
         "budget_items": [_budget_item(r) for r in record.budget_items],
         "schedule_items": [s for s in (_schedule_item(r) for r in record.schedule_items) if s],
         "team_role_careers": [s for s in (_role_career(m) for m in record.team_members) if s],
+        # 확장 — 담당자 입력 바로잡기. T-C1이 회사 정보로 그대로 옮긴다. 필수 확인에 넣지 않는다(선택 칸)
+        "target_customer": _text(plan.target_customer),
+        "startup_item_name": startup_item_name(project.description),
+        "team_member_rows": [_member_row(m) for m in record.team_members],
     }
     # 팀 구성원은 '팀원 없음'을 고를 수 있어 필수에서 뺀다 (웹팀 확인 2026-09-30)
     required = [
@@ -328,6 +336,25 @@ def _role_career(m: TeamMemberRow) -> str | None:
     if role and exp:
         return f"{role}: {exp}"
     return role or exp
+
+
+def startup_item_name(description: str | None) -> str | None:
+    """창업아이템명 — 설명 전체의 앞뒤 공백을 지운 뒤 첫 줄(줄바꿈 앞까지)을 다시 앞뒤 공백을 지우고 60자까지.
+
+    웹이 일반현황 표 · 개요 표에 넣는 값과 같게 하려는 규칙이다(웹 답 — 첫 줄, 60자까지). 비면 None.
+    설명이 빈 줄로 시작하면 전체 공백 제거로 첫 글자 있는 줄을 쓴다 — 웹과 다를 수 있어 잠정(PROVISIONAL intake.startupItemName).
+    """
+    text = (description or "").strip()
+    if not text:
+        return None
+    first = _LINE_BREAK.split(text, maxsplit=1)[0].strip()
+    return first[:STARTUP_ITEM_NAME_MAX] or None
+
+
+def _member_row(m: TeamMemberRow) -> TeamMemberEntry:
+    """팀원 표 한 행 — 역할 · 경력(앞뒤 공백 제거, 비면 None). 이름은 넣지 않는다. 둘 다 비어도 한 행으로 둔다
+    (웹 표가 그 사람을 '팀원 / - / -'로 보이므로)."""
+    return TeamMemberEntry(role=_text(m.role), experience=_text(m.experience))
 
 
 def _period(start: str | None, end: str | None) -> str | None:

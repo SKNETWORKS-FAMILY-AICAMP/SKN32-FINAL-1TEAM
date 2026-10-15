@@ -1,7 +1,7 @@
 """Orchestration의 T-V2 계약에 맞춘 산출물층 검증 Task."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING   # [S-Brain] Path import 삭제 — 파일은 tools.files로 읽는다(결정 0023)
+from typing import TYPE_CHECKING   # [S-Brain] Path import 삭제 — 파일은 tools.files로 읽는다
 
 from .feature_match import match_features  # [S-Brain] 패키지 상대 import
 from .llm_judge import make_field_judge, make_judge  # [S-Brain] 패키지 상대 import
@@ -102,14 +102,14 @@ def run_tv2(inp: TV2In, tools: Tools) -> TV2Out:
     from sbrain.models import ArtifactScore, CodeCheck, CodeCheckResult, FeatureMatchResult
 
     prototype = inp.prototype
-    # [S-Brain] 파일은 참조(FileRef)로 온다 — tools.files로 읽는다(결정 0023). 진입 파일 없음 = entryFile이 비어 있음.
+    # [S-Brain] 파일은 참조(FileRef)로 온다 — tools.files로 읽는다. 진입 파일 없음 = entryFile이 비어 있음.
     # 파일 창구 실패는 받지 않는다("진입 파일 없음 → 0점"으로 채점하지 않는다). 원페이지는 진입 파일이 인포그래픽 참조와
     # 같으므로(M-2) 같은 키면 한 번만 읽는다.
     entry_ref, image_ref = prototype.entry_file, inp.infographic.image_file                    # [S-Brain]
     source = _read(tools, entry_ref) if entry_ref is not None else ""                          # [S-Brain]
     readme = _read(tools, prototype.readme_file) if prototype.readme_file is not None else None  # [S-Brain]
     svg = source if entry_ref is not None and entry_ref.key == image_ref.key else _read(tools, image_ref)  # [S-Brain]
-    # [S-Brain] 확인 요소 목록(확장 featureElements, spec 4.4) — 입력 사본에 새로 뽑은 것을 더해 출력으로 돌려준다
+    # [S-Brain] 확인 요소 목록(확장 featureElements) — 입력 사본에 새로 뽑은 것을 더해 출력으로 돌려준다
     elements = dict(inp.feature_elements or {})                                                 # [S-Brain]
     raw, feature_raw = score_artifact(
         kind=prototype.kind, entry_file_name=entry_ref.name if entry_ref is not None else None,   # [S-Brain]
@@ -119,10 +119,12 @@ def run_tv2(inp: TV2In, tools: Tools) -> TV2Out:
         plan_text=plan_text_of(inp.plan_doc),
         tools=tools, elements=elements,   # [S-Brain]
     )
+    # earned · applicable은 조율 10-11에 생긴 확장 칸이다. 옛 계약에는 없으므로 있을 때만 싣는다.
+    extended = {"earned", "applicable"} <= set(getattr(CodeCheck, "model_fields", {}))
     checks = [CodeCheck(no=item["id"], name=item["name"], weight=item["weight"],
                         passed=bool(item["passed"]), detail=_detail(item),
                         defect_sources=item["defect_sources"],
-                        earned=item["earned"], applicable=item["applicable"])   # [S-Brain] 계약 칸이 생겼다(spec 4.5)
+                        **({"earned": item["earned"], "applicable": item["applicable"]} if extended else {}))
               for item in raw["items"]]
     code = CodeCheckResult(total=raw["total"], checks=checks, gate_failures=raw["gate_codes"])
     llm_failed = feature_raw.pop("llm_failed", [])

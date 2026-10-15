@@ -407,7 +407,7 @@ def test_rework_failure_rolls_back_and_refunds(clock):
     app = make_app(clock, StubScenario(doc_scores=[52.0]))
     rid = to_screen6(app)
     before = app.store.get_pointers(rid)
-    app.llm.plan("T-W1", ["auth"] * 50)  # 영구 오류
+    app.llm.plan("T-W1", ["auth"])  # 영구 오류 (재시도 없음)
     rework(app, clock, rid, "문제인식")
     run = app.store.load_run(rid)
     assert (run.state.step, run.state.progress, run.rework_screen, run.cycle) == ("문서평가", "사용자대기", None, None)
@@ -424,7 +424,7 @@ def test_rework_failure_refunds_all_collected_bundles(clock):
     [ok] = rework(app, clock, rid, "문제인식")                         # 성공한 재작성
     assert app.store.load_run(rid).last_rework.status == "완료"
     before = app.store.get_pointers(rid)
-    app.llm.plan("T-B1", ["auth"] * 50)                               # 영구 오류
+    app.llm.plan("T-B1", ["auth"])                                    # 영구 오류 (재시도 없음)
     acc = rework(app, clock, rid, "실행 파일", "인포그래픽")
     run = app.store.load_run(rid)
     assert (run.state.step, run.state.progress) == ("종합평가", "사용자대기")

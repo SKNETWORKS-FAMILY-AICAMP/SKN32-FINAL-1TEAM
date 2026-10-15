@@ -318,7 +318,7 @@ def test_start_run_for_project_checks_owner(clock):
         app.orchestrator.start_run_for_project("7", 555)
 
 
-# ── 참조 자료 (Task 함수 단위) ─────────────────────────
+# ── 첨부 정리 없음 (Task 함수 단위) ─────────────────
 DOC_TEXT = """사업 구상서
 국내 피트니스 시장 규모는   2024년 기준 3조 2천억 원이다.
 주요 고객은 회원 200명 이하의 동네 헬스장이다.
@@ -341,88 +341,28 @@ def settings_tools(llm: FakeLLM) -> Tools:
                       reasoning_effort=s.reasoning_effort)
 
 
-def reference_reply(req: LLMRequest) -> str:
-    if req.metadata["purpose"] == PURPOSE:
-        return split_reply()(req)
-    return json.dumps({
-        "excerpts": [
-            {"slot": "시장 규모", "text": "국내 피트니스 시장 규모는 2024년 기준 3조 2천억 원이다."},  # 공백만 다름 → 채택
-            {"slot": "목표 고객", "text": "주요 고객은 전국의 모든 헬스장이다."},                    # 원문에 없음 → 버림
-            {"slot": "팀 · 경력", "text": "사업 구상서"},                                           # 슬롯 밖 → 버림
-        ],
-        "cited_tokens": [
-            {"type": "수치금액", "value": "3조 2천억 원"},
-            {"type": "날짜", "value": "2024년"},
-            {"type": "수치금액", "value": "200명"},      # 채택된 발췌에 없음 → 버림
-            {"type": "금액", "value": "3조"},            # 허용되지 않는 종류 → 버림
-        ],
-    }, ensure_ascii=False)
-
-
 def doc(doc_id: str, text: str, status: str = "성공") -> ReferenceDoc:
     return ReferenceDoc(doc_id=doc_id, file_name=f"{doc_id}.hwpx", format="hwpx", extracted_text=text,
                         extract_status=status, original_discarded_at=datetime(2026, 9, 29))
 
 
-def test_reference_summary_keeps_only_verbatim_excerpts():
+def test_reference_docs_are_not_summarized():
+    """referenceDocs를 줘도 첨부 정리 호출이 없고 referenceSummary는 None — R-8이 흐름 밖.
+    분류 · 사양 두 호출만 T-C1 설정(gpt-6-luna · medium · 온도 없음)으로 나가고, 문서 본문은 어디에도 싣지 않는다."""
     llm = FakeLLM()
-    llm.respond("T-C1", reference_reply)
+    llm.respond("T-C1", split_reply())                             # 두 호출 밖의 항목 칸이면 AssertionError
     inp = TC1In(form_input=pre_input(), reference_docs=[doc("d1", DOC_TEXT), doc("d2", "읽지 못함", "실패")])
-    out = tc1.run(inp, make_tools(llm))
-    rs = out.reference_summary
-    assert rs.doc_ids == ["d1"]
-    assert [(e.slot, e.text) for e in rs.excerpts] == [
-        ("시장 규모", "국내 피트니스 시장 규모는 2024년 기준 3조 2천억 원이다.")]
-    assert [(t.type, t.value, t.count) for t in rs.cited_numbers] == [
-        ("수치금액", "3조 2천억 원", 1), ("날짜", "2024년", 1)]
-    assert rs.isolation_note == tc1.ISOLATION_NOTE
-    # 실패 문서는 부르지 않고, 문서 본문은 아이템 해석 호출에 싣지 않는다
-    ref_calls = [r for r in llm.requests if r.metadata["purpose"] == "참조 자료 정리"]
-    assert [r.metadata["item_key"] for r in ref_calls] == ["d1#1"]
-    assert "<문서 이름=\"d1.hwpx\">" in ref_calls[0].messages[1]["content"]
-    calls = item_calls(llm)
-    assert len(calls) == 2
-    assert all("3조" not in json.dumps(r.messages, ensure_ascii=False) for r in calls)
-    assert out.category == "웹개발"   # 문서 속 지시문은 카테고리에 영향을 주지 못한다
-
-
-def test_reference_calls_use_tc1_setting_medium():
-    """참조 자료 정리도 T-C1 설정(gpt-6-luna · medium · 온도 없음)을 쓴다 (spec 4.1 — 목적별 강도 장치는 없다)."""
-    llm = FakeLLM()
-    llm.respond("T-C1", reference_reply)
-    tc1.run(TC1In(form_input=pre_input(), reference_docs=[doc("d1", DOC_TEXT)]), settings_tools(llm))
-    purposes = Counter(r.metadata["purpose"] for r in llm.requests)
-    assert purposes == Counter({PURPOSE: 2, "참조 자료 정리": 1})
-    assert {(r.model, r.reasoning_effort, r.temperature) for r in llm.requests} == {("gpt-6-luna", "medium", None)}
-
-
-def test_no_usable_docs_means_no_summary():
-    llm = FakeLLM()
-    llm.respond("T-C1", reference_reply)
-    out = tc1.run(TC1In(form_input=pre_input(), reference_docs=[doc("d2", "x", "실패"), doc("d3", "  ")]),
-                  make_tools(llm))
+    out = tc1.run(inp, settings_tools(llm))
     assert out.reference_summary is None
-    assert [r.metadata["purpose"] for r in llm.requests] == [PURPOSE, PURPOSE]
-
-
-def test_long_document_is_split_into_chunks():
-    llm = FakeLLM()
-    llm.respond("T-C1", reference_reply)
-    text = ("가" * 99 + "\n") * (tc1.CHUNK_CHARS // 100 * 2 + 10)
-    tc1.run(TC1In(form_input=pre_input(), reference_docs=[doc("d1", text)]), make_tools(llm))
-    keys = [r.metadata["item_key"] for r in llm.requests if r.metadata["purpose"] == "참조 자료 정리"]
-    assert keys == ["d1#1", "d1#2", "d1#3"]
-    assert all(len(r.messages[1]["content"]) < tc1.CHUNK_CHARS + 200 for r in llm.requests
-               if r.metadata["purpose"] == "참조 자료 정리")
-
-
-def test_reference_call_failure_is_not_swallowed():
-    llm = FakeLLM()
-    llm.respond("T-C1", reference_reply)
-    llm.plan("T-C1", ["timeout", "timeout"], item_key="d1#1")   # 두 해석 호출 성공 → 참조 자료 정리 재시도 소진
-    with pytest.raises(ToolCallExhausted):
-        tc1.run(TC1In(form_input=pre_input(), reference_docs=[doc("d1", DOC_TEXT)]), make_tools(llm))
-    assert Counter(r.metadata["item_key"] for r in llm.requests) == Counter([CLASSIFY, SPEC, "d1#1", "d1#1"])
+    assert Counter(r.metadata["purpose"] for r in llm.requests) == Counter({PURPOSE: 2})
+    assert Counter(r.metadata["item_key"] for r in llm.requests) == Counter([CLASSIFY, SPEC])
+    assert {(r.model, r.reasoning_effort, r.temperature) for r in llm.requests} == {("gpt-6-luna", "medium", None)}
+    text = json.dumps([r.messages for r in llm.requests], ensure_ascii=False)
+    assert "3조" not in text and "d1.hwpx" not in text and "<문서" not in text
+    assert out.category == "웹개발"                                 # 문서 속 지시문은 영향이 없다
+    for name in ("summarize_references", "_reference_messages", "REFERENCE_SYSTEM", "REFERENCE_SLOTS",
+                 "ISOLATION_NOTE", "CHUNK_CHARS", "ReferenceDraft"):
+        assert not hasattr(tc1, name), name
 
 
 # ── 동시 호출 · 실패 고르기 (Task 함수 단위, spec 4.5) ─────────────
@@ -474,7 +414,7 @@ def test_non_transient_exhaustion_wins_over_transient():
     llm = FakeLLM()
     llm.respond("T-C1", split_reply())
     llm.plan("T-C1", ["timeout", "timeout"], item_key=CLASSIFY)   # 일시
-    llm.plan("T-C1", ["auth", "auth"], item_key=SPEC)              # 운영
+    llm.plan("T-C1", ["auth"], item_key=SPEC)                      # 운영 — 재시도 없이 한 번
     with pytest.raises(ToolCallExhausted) as info:
         run_tc1(llm)
     assert (info.value.error_kind, info.value.detail) == ("운영", "status=401")
@@ -495,8 +435,8 @@ def test_same_kind_exhaustion_raises_classify_first():
 def test_two_non_transient_exhaustions_raise_classify_first():
     llm = FakeLLM()
     llm.respond("T-C1", split_reply())
-    llm.plan("T-C1", ["bad_request", "bad_request"], item_key=CLASSIFY)
-    llm.plan("T-C1", ["auth", "auth"], item_key=SPEC)
+    llm.plan("T-C1", ["bad_request"], item_key=CLASSIFY)           # 입력 · 운영 — 재시도 없이 한 번씩
+    llm.plan("T-C1", ["auth"], item_key=SPEC)
     with pytest.raises(ToolCallExhausted) as info:
         run_tc1(llm)
     assert info.value.detail == "status=400" and info.value.partial is None

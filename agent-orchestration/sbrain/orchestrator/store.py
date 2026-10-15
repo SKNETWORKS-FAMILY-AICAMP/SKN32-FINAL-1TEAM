@@ -8,8 +8,8 @@
 - 산출물 내용은 산출물 저장소에만 있고, 추적 기록은 참조만 갖는다(기획서 6-7).
 - 사전 단계 시작 요청(StartRequest, 확장): 웹이 요청을 넣고(add_start_request) 워커가 점유해(acquire_start_request)
   사전 단계를 돈 뒤, 실행 건 생성과 요청 '완료'를 한 번에 저장한다(create_run_for_request).
-- 반려된 시도(RejectedAttempt, 확장): 내용을 담은 기록이라 실행 건의 주인 계정이 학습 데이터 편입에 동의했을 때만
-  저장한다. 동의 여부는 저장하는 순간 저장소가 확인한다(SQL은 웹 users, 메모리는 set_training_consent로 받은 값).
+- 반려된 T-P2 시도(RejectedAttempt)는 저장하지 않는다 — 검수가 흐름에서 빠져 웹 proofread_logs 쓰기 · 학습 동의
+  확인을 지웠다. 저장 묶음에는 웹에 쓰는 것이 알림(notifications)뿐이고, 실패 알림은 저장소가 정한다.
 - 시작 요청이 끝나면(완료 · 실패 · 취소) 상태를 바꾸는 같은 변경에서 입력 사본(form)을 비운다. 대기 · 처리중은 남긴다.
 - 기록 옮기기(확장): 보관 기간이 지난 실행 건의 기록을 식별자 없는 통계 줄(LogStatsRow)로 옮기고 지운다(retire_run ·
   retire_start_requests). 실행 건 점유를 잡은 쪽만 하고, 마지막 활동 시각을 바꾸지 않는다. 주기 작업은 작업 점유
@@ -25,7 +25,7 @@ from typing import Any, Literal, Protocol
 
 from pydantic import Field
 
-from ..models import Notice, Notification, RejectedAttempt, ReworkComparison, Run
+from ..models import Notice, Notification, ReworkComparison, Run
 from ..models.base import SBModel
 from ..models.clock import as_utc
 from .trace import CallLog, ExecutionRecord, FeedbackLink, PointerEvent, TraceEvent
@@ -68,13 +68,10 @@ class CommitBatch:
     comparisons: list[ReworkComparison] = field(default_factory=list)
     events: list[TraceEvent] = field(default_factory=list)
     notifications: list[Notification] = field(default_factory=list)
-    # 반려된 시도 (확장) — 실행 건에 프로젝트가 있고 주인이 학습에 동의했을 때만 저장된다
-    rejected_attempts: list[RejectedAttempt] = field(default_factory=list)
 
     def is_empty(self) -> bool:
         return not (self.run or self.versions or self.pointers or self.pointer_events or self.executions
-                    or self.call_logs or self.feedback or self.comparisons or self.events or self.notifications
-                    or self.rejected_attempts)
+                    or self.call_logs or self.feedback or self.comparisons or self.events or self.notifications)
 
 
 @dataclass(frozen=True)
@@ -348,9 +345,6 @@ class Store(Protocol):
     def events(self, run_id: str) -> list[TraceEvent]: ...
 
     def notifications(self, run_id: str) -> list[Notification]: ...
-
-    def rejected_attempts(self, run_id: str) -> list[RejectedAttempt]:
-        """저장된 반려된 시도 (확장 — 저장한 순서). 동의하지 않았거나 프로젝트가 없어 저장하지 않은 것은 없다."""
 
     # ── 관리자 조회 (확장) ─────────────────────────────
     def list_executions(self, f: ExecutionFilter) -> list[ExecutionRow]:

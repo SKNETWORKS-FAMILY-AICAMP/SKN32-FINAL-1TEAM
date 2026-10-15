@@ -314,7 +314,10 @@ def test_plan_table_labels_are_registered():
 
 # ── SQL 공급처 (SQLite로 웹 DB 흉내 — app_schema.sql의 기본키 · 컬럼 이름) ──
 def web_db(*, drop_column: str | None = None, budget_phase: bool = False, budget_rows: list[dict] | None = None,
-           schedule_rows: list[dict] | None = None, drop_table: str | None = None):
+           schedule_rows: list[dict] | None = None, drop_table: str | None = None,
+           target_customer: bool = False, plan: dict | None = None):
+    """target_customer: 웹 005_target_customer.sql로 더하는 선택 컬럼(project_plan_inputs.target_customer)을 만들지.
+    plan: project_record의 사업 계획 행에 덮어쓸 값."""
     engine = create_engine("sqlite://")
     meta = MetaData()
     Table("companies", meta, Column("company_id", Integer, primary_key=True), Column("user_id", Integer),
@@ -340,6 +343,8 @@ def web_db(*, drop_column: str | None = None, budget_phase: bool = False, budget
                  Column("no_hires", Boolean), Column("hires", JSON), Column("no_equipment", Boolean),
                  Column("equipment", JSON), Column("no_partners", Boolean), Column("partners", JSON),
                  Column("created_at", DateTime)]
+    if target_customer:                                # 웹이 005로 더하는 컬럼 (VARCHAR(200) NULL)
+        plan_cols.append(Column("target_customer", String(200)))
     Table("project_plan_inputs", meta, *[c for c in plan_cols if c.name != drop_column])
     budget_cols = [Column("budget_item_id", Integer, primary_key=True), Column("project_id", Integer),
                    Column("item_order", Integer), Column("category", String(100)), Column("execution_plan", Text),
@@ -354,7 +359,8 @@ def web_db(*, drop_column: str | None = None, budget_phase: bool = False, budget
         if name != drop_table:
             Table(name, meta, *[c for c in cols if c.name != drop_column])
     meta.create_all(engine)
-    rec = project_record()
+    rec = project_record(plan=plan)
+    plan_table_cols = set(meta.tables["project_plan_inputs"].c.keys())
     with engine.begin() as conn:
         conn.execute(insert(meta.tables["companies"]).values(**rec.company.model_dump()))
         conn.execute(insert(meta.tables["projects"]).values(**rec.project.model_dump()))
@@ -367,8 +373,8 @@ def web_db(*, drop_column: str | None = None, budget_phase: bool = False, budget
                                                                  service_name="연 구독", unit_price=350000))
         conn.execute(insert(meta.tables["pricing_items"]).values(pricing_id=3, project_id=101,
                                                                  service_name="월 구독", unit_price=35000))
-        plan = {k: v for k, v in rec.plan_input.model_dump().items() if k != drop_column}
-        conn.execute(insert(meta.tables["project_plan_inputs"]).values(project_id=101, **plan))
+        row = {k: v for k, v in rec.plan_input.model_dump().items() if k in plan_table_cols}
+        conn.execute(insert(meta.tables["project_plan_inputs"]).values(project_id=101, **row))
         for table, rows in (("project_budget_items", budget_rows), ("project_schedule_items", schedule_rows)):
             for row in rows or []:
                 conn.execute(insert(meta.tables[table]).values(**row))
@@ -447,6 +453,32 @@ def test_sql_source_plan_table_missing_column_is_mismatch(column):
 def test_sql_source_plan_table_missing_is_mismatch(table):
     with pytest.raises(SchemaMismatch, match=table):
         SqlProjectInputSource(web_db(drop_table=table)).load(101)
+
+
+# ── 목표 고객 선택 컬럼 (project_plan_inputs.target_customer — 웹 005) ──
+def test_sql_source_without_target_customer_column_reads_none():
+    """웹 배포 · 공유 DB 적용 전 — 컬럼이 없어도 SchemaMismatch가 아니고 None으로 돈다."""
+    rec = SqlProjectInputSource(web_db()).load(101)
+    assert rec.plan_input.target_customer is None
+    f = to_pre_input(rec)
+    assert f.target_customer is None
+
+
+@pytest.mark.parametrize("stored, expected", [
+    ("  동네 헬스장 운영자  ", "동네 헬스장 운영자"),   # 앞뒤 공백 정리
+    ("   ", None),                                    # 비면 None
+    (None, None),                                     # NULL
+])
+def test_sql_source_reads_target_customer_column_when_present(stored, expected):
+    rec = SqlProjectInputSource(web_db(target_customer=True, plan={"target_customer": stored})).load(101)
+    assert rec.plan_input.target_customer == stored
+    assert to_pre_input(rec).target_customer == expected
+
+
+def test_target_customer_column_is_optional_not_required():
+    from sbrain.intake.sql_source import COLUMNS, OPTIONAL_COLUMNS
+    assert "target_customer" not in COLUMNS["plan_inputs"]
+    assert OPTIONAL_COLUMNS["plan_inputs"] == ["target_customer"]
 
 
 def test_plan_tables_are_listed_as_read_only_web_columns():

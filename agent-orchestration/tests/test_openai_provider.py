@@ -82,12 +82,13 @@ def test_status_error_keeps_status():
 
 def test_through_tools_retry_and_classification():
     bad = openai.BadRequestError("bad", response=httpx2.Response(400, request=REQ), body=None)
-    p, comp = provider([None, bad, bad])
+    p, comp = provider([None, bad])
     cfg = ToolsConfig(agent="조율", provider="openai", model="gpt-test", temperature=0.3, timeout_sec=12,
                       retry_count=2, retry_interval_sec=0)
     ctx = ToolsContext(run_id="r", execution_id="e", task_id="T-C1", providers={"openai": p}, sink=CallSink(),
                        now=utc_now, sleep=lambda s: None)
     with pytest.raises(ToolCallExhausted) as e:
         Tools(cfg, ctx).llm([{"role": "user", "content": "x"}], purpose="시험")
-    assert e.value.error_kind == "입력" and len(comp.calls) == 3
-    assert [t.outcome for t in ctx.sink.drain()[0].tries] == ["형식오류", "호출실패", "호출실패"]
+    # 빈 응답(형식 오류)은 재시도, 400(입력)은 재시도하지 않고 끝 — 재시도 횟수가 남아도 두 번
+    assert e.value.error_kind == "입력" and len(comp.calls) == 2
+    assert [t.outcome for t in ctx.sink.drain()[0].tries] == ["형식오류", "호출실패"]

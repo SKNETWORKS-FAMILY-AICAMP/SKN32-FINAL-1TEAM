@@ -55,6 +55,7 @@ from .supervisor.judge import (  # noqa: F401 — 판정 안내 문구는 실구
     INPUT_ERROR_NOTICE, INPUT_MISSING_NOTICE,
 )
 from .supervisor.readme import MARKDOWN_TYPE, README_FILE  # noqa: F401 — 안내 문서 상수는 실구현 한 곳
+from .supervisor.tc1 import with_user_target_customer   # 목표 고객 덮기는 실구현 한 곳
 
 # 스텁 T-V1 평가항목 배점이 없을 때 쓰는 문서층 배점 기본값 (70 ÷ 항목 수)
 DOC_LAYER_MAX = 70.0
@@ -108,8 +109,34 @@ class Ack(BaseModel):
 
 
 # ── 가짜 LLM 호출처 ───────────────────────────────────
+def raise_fake_failure(outcome: str) -> None:
+    """가짜 호출처(글 · 이미지)가 함께 쓰는 실패 결과 값 — 실패 값이 아니면 아무것도 하지 않는다.
+
+    timeout(시간 초과) · rate_limit(429, 코드 없음) · bad_request(400 · 입력) · auth(401 · 운영),
+    quota(429 + insufficient_quota — 결제 · 한도: 재시도 없이 '일시', 확장), rate_limit_wait(429 + rate_limit_exceeded +
+    Retry-After 10초, 확장), overloaded(503 + server_is_overloaded, 확장).
+    """
+    if outcome == "timeout":
+        raise TimeoutError()
+    if outcome == "rate_limit":
+        raise ProviderError("429", status=429)
+    if outcome == "bad_request":
+        raise ProviderError("400", status=400)
+    if outcome == "auth":
+        raise ProviderError("401", status=401)
+    if outcome == "quota":
+        raise ProviderError("429", status=429, code="insufficient_quota")
+    if outcome == "rate_limit_wait":
+        raise ProviderError("429", status=429, code="rate_limit_exceeded", retry_after_sec=10.0)
+    if outcome == "overloaded":
+        raise ProviderError("503", status=503, code="server_is_overloaded")
+
+
 class FakeLLM:
-    """스크립트대로 응답하는 가짜 호출처. script[(task_id, item_key)] = ['timeout', 'ok', ...]."""
+    """스크립트대로 응답하는 가짜 호출처. script[(task_id, item_key)] = ['timeout', 'ok', ...].
+
+    결과: ok · bad_json(형식 오류) · 실패 값(raise_fake_failure — timeout · rate_limit · bad_request · auth · quota ·
+    rate_limit_wait · overloaded). 대기열을 다 쓰면 ok다 — 남은 결과는 같은 Task(· 항목)의 다음 호출이 쓴다."""
 
     def __init__(self) -> None:
         self.script: dict[tuple[str, str | None], list[str]] = {}
@@ -131,14 +158,7 @@ class FakeLLM:
             key = (request.metadata["task_id"], request.metadata.get("item_key"))
             queue = self.script.get(key) or self.script.get((key[0], None)) or []
             outcome = queue.pop(0) if queue else "ok"
-        if outcome == "timeout":
-            raise TimeoutError()
-        if outcome == "rate_limit":
-            raise ProviderError("429", status=429)
-        if outcome == "bad_request":
-            raise ProviderError("400", status=400)
-        if outcome == "auth":
-            raise ProviderError("401", status=401)
+        raise_fake_failure(outcome)
         if outcome == "bad_json":
             return self._with_usage(key[0], "not json")
         responder = self.responders.get(key[0])
@@ -164,7 +184,8 @@ class FakeImage:
     """스크립트대로 응답하는 가짜 이미지 호출처 (확장). script[(task_id, item_key)] = ['timeout', 'ok', ...].
 
     결과는 늘 같은 작은 PNG(1×1)다. usage[task_id]를 주면 응답(빈 그림 응답 포함)에 사용량을 싣는다 — 없으면 None.
-    결과: ok · timeout · rate_limit(429) · bad_request(400) · auth(401) · empty(빈 그림 → 형식 오류).
+    결과: ok · empty(빈 그림 → 형식 오류) · 실패 값(raise_fake_failure — timeout · rate_limit(429) · bad_request(400) ·
+    auth(401) · quota(429 + insufficient_quota) · rate_limit_wait(429 + 코드 + Retry-After 10초) · overloaded(503 + 코드)).
     requests에는 받은 요청을 모은다(시험 확인용 — 메모리에만 있고 기록에 남지 않는다).
     """
     PNG = _tiny_png()
@@ -185,14 +206,7 @@ class FakeImage:
             queue = self.script.get(key) or self.script.get((key[0], None)) or []
             outcome = queue.pop(0) if queue else "ok"
         usage = self.usage.get(key[0])
-        if outcome == "timeout":
-            raise TimeoutError()
-        if outcome == "rate_limit":
-            raise ProviderError("429", status=429)
-        if outcome == "bad_request":
-            raise ProviderError("400", status=400)
-        if outcome == "auth":
-            raise ProviderError("401", status=401)
+        raise_fake_failure(outcome)
         if outcome == "empty":
             raise FormatError("빈 그림", usage=usage)
         return ImageResponse(self.PNG, usage)
@@ -467,7 +481,8 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
         f = inp.form_input
         item = ItemSpec(item_name=f.idea_text[:20], one_line_summary=f.idea_text, target_customer="소상공인",
                         core_features=["회원 등록·조회", "수업 예약"], category=sc.category, keywords=["헬스장"])
-        # companyInfo는 폼 값을 코드로 그대로 옮긴다 (LLM에 맡기지 않음)
+        item = with_user_target_customer(item, f)   # 사용자 목표 고객이 있으면 그 값 (실구현과 같은 함수)
+        # companyInfo는 폼 값을 코드로 그대로 옮긴다 (LLM에 맡기지 않음) — 목표 고객 · 창업아이템명 · 팀원 표 행 포함
         company = CompanyInfo(**{k: getattr(f, k) for k in CompanyInfo.model_fields if hasattr(f, k)})
         return c.TC1Out(item_spec=item, category=sc.category, company_info=company,
                         category_reason="화면 중심 서비스", confidence=0.8)
@@ -721,7 +736,9 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
         try:
             _ask(tools, "대조 보조")
             judged = "htmlParse" if inp.prototype.kind == "html" else "svgTextParse"
-        except ToolCallExhausted:
+        except ToolCallExhausted as e:
+            if e.billing_limit:   # 결제 · 한도 소진은 대체하지 않고 올린다 — 재개 대기 (실구현 T-V2와 같은 규칙)
+                raise
             judged = "htmlParse" if inp.prototype.kind == "html" else "svgTextParse"  # 문자열 대조만으로 산출
         code_total, feat = sc.pick("T-V2", sc.art_scores)
         cc = _code_check(sc, inp.prototype.kind, code_total)

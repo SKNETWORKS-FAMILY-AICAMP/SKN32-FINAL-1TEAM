@@ -4,6 +4,7 @@
 참조 · 글꼴 파일 · 그림 파일을 부르지 않는다). 그리기 규칙만 옮겼다 — 바꾼 곳:
 - 노드 계약이 깨진 출력의 기본 흐름 대체는 뺐다(우리는 F18 응답 검사에서 FormatError로 재시도한다, spec 4.1).
 - 돌려주는 것은 SVG 바이트(utf-8)다. 파일은 Task가 tools.files로 넣는다.
+- 흐름도 제목 'USERFLOW' → '서비스 흐름도'. 구조도 제목 '서비스 구조도'는 그대로.
 """
 from __future__ import annotations
 
@@ -14,6 +15,8 @@ from typing import Any
 SVG_TYPE = "image/svg+xml"
 FILE_NAMES = {"USER_FLOW": "userflow.svg", "SERVICE_ARCHITECTURE": "architecture.svg"}   # 파일 이름 (spec 4.6)
 NOTICE = "AI 생성 명세 기반 개념도 · 상세 설계 검토 필요"
+# 그림 제목 — 흐름도는 담당자 'USERFLOW' 대신 '서비스 흐름도', 구조도는 담당자 그대로
+TITLES = {"USER_FLOW": "서비스 흐름도", "SERVICE_ARCHITECTURE": "서비스 구조도"}
 
 
 def _safe_color(value: Any, fallback: str) -> str:
@@ -53,7 +56,7 @@ def render(output: dict[str, Any]) -> bytes:
     nodes = [str(n) for n in output.get("nodes") or []]
     width = 1100 / max(len(nodes), 1)
     flow_type = output.get("flowType", "USER_FLOW")
-    title = "USERFLOW" if flow_type == "USER_FLOW" else "서비스 구조도"
+    title = TITLES["USER_FLOW"] if flow_type == "USER_FLOW" else TITLES["SERVICE_ARCHITECTURE"]
     visual = output.get("visualStyle") if isinstance(output.get("visualStyle"), dict) else {}
     palette = ([_safe_color(x, "#2563eb") for x in visual.get("palette", [])[:6]]
                if isinstance(visual.get("palette"), list) else None)

@@ -8,6 +8,8 @@
   지시문(T-C3 instruction)은 그 Task의 모든 LLM 호출에 같은 것을 싣는다.
 - 재개(4.13): 받은 결과 키는 F번호다. 재개 때 받은 F번호는 다시 부르지 않고 다음부터 이어 간다. 자료 검색은 값이 정해져
   있어 받은 결과로 남기지 않고 다시 한다.
+- 목표 고객: 원본 사실 item.target_customer는 사용자 목표 고객(없으면 '확인 필요'). 사용자 값이 있으면 F02 결과의
+  targetCustomer를 그 값으로 바꾸고(F02 바로 다음), T-S2(F10 · F11)는 원본 사실의 값을 쓴다.
 - 자체 검사(4.8): T-S1은 F02 coreFeatures가 비면 그 시도에서 바로 itemSpec.coreFeatures를 featureList로 내고 check 불통과
   (final_action 'itemSpec.coreFeatures 승계'). T-S2는 담당자 규칙 검사가 없어 늘 통과.
 """
@@ -92,6 +94,11 @@ def run_ts1(inp: TS1In, tools: Tools) -> TS1Out:
             F02, gpt.analyze_item, provenance={"item_input": item_input, "research_data": dev_ev},
             item_input=f02_input, research_data=dev_ev)),
             {"item_input": item_input, "research_data": dev_ev}))   # 상태 표시도 원본 사실만 — 참고값으로 확정값을 만들지 않는다
+        # 사용자 목표 고객이 있으면 F02 결과의 targetCustomer를 그 값으로 — 그 결과를 읽는 F05 · F06 · F09 · F13 앞,
+        # steps.run 밖이라 재개해 이어 쓴 F02 결과에도 같게 적용된다. 없으면 담당자 결과 그대로
+        user_target = ins.user_target_customer(company)
+        if user_target and isinstance(c["item_spec"], dict):
+            c["item_spec"]["targetCustomer"] = user_target
         requirements = c["item_spec"].get("coreFeatures") or [tech_field]
         c["team_capability"] = steps.run(F05, lambda: compact(_call(
             F05, gpt.analyze_team_capability, team_data=team, item_requirements=requirements)))
@@ -158,7 +165,9 @@ def run_ts2(inp: TS2In, tools: Tools) -> TS2Out:
     market_ev = research.get("market") or EMPTY_EVIDENCE
     competitor_ev = research.get("competitor") or EMPTY_EVIDENCE
     revenue_items = list((sd.get("original_facts") or {}).get("revenueItems") or [])
-    target = ins.TARGET_CUSTOMER
+    # 목표 고객 — 원본 사실(T-S1 project_body)의 값: 사용자 목표 고객, 없으면 '확인 필요'
+    item_facts = (sd.get("original_facts") or {}).get("item") or {}
+    target = str(item_facts.get("target_customer") or "").strip() or ins.TARGET_CUSTOMER
     steps = Steps(inp.prior_results)
     with partner_call(tools, inp.instruction):
         market = steps.run(F03, lambda: compact(_call(
