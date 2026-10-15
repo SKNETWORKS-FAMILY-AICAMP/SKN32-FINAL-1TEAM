@@ -10,7 +10,6 @@ import io
 
 import pytest
 from docx import Document
-from docx.shared import Cm
 
 from app import hwp_export
 from app.plan_document_export import body_line, render_plan_docx

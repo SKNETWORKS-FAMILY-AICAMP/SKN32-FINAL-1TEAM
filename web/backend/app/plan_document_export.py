@@ -280,7 +280,7 @@ def _layout_table(table, widths_cm: list[float], repeat_header: bool = True) -> 
         for cell, width in zip(row.cells, widths_cm, strict=True):
             cell.width = Cm(width)
         tr_pr = row._tr.get_or_add_trPr()
-        if max(_estimated_lines(cell.text, width) for cell, width in zip(row.cells, widths_cm)) <= _KEEP_ROW_MAX_LINES:
+        if max(_estimated_lines(cell.text, width) for cell, width in zip(row.cells, widths_cm, strict=True)) <= _KEEP_ROW_MAX_LINES:
             tr_pr.append(tr_pr.makeelement(qn('w:cantSplit'), {}))
         if repeat_header and row_index == 0:
             tr_pr.append(tr_pr.makeelement(qn('w:tblHeader'), {}))

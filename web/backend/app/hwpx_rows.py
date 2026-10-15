@@ -386,7 +386,7 @@ def shape_paragraphs(section_xml: str, header_xml: str, paragraphs: dict[int, tu
             if len(found) != len(shapes):
                 break
             cell_xml = cell.group(0)
-            for paragraph, shape in reversed(list(zip(found, shapes))):
+            for paragraph, shape in reversed(list(zip(found, shapes, strict=True))):
                 cell_xml = cell_xml[:paragraph.start()] + book.shaped(paragraph.group(0), shape) + cell_xml[paragraph.end():]
             new_row = row_match.group(0)[:cell.start()] + cell_xml + row_match.group(0)[cell.end():]
             section_xml = section_xml[:start] + table[:row_match.start()] + new_row + table[row_match.end():] + section_xml[end:]

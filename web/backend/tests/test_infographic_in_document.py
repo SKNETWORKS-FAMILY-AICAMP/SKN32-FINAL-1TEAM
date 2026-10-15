@@ -45,7 +45,7 @@ def _infographic_svg(height: int = 1400, extra: str = '') -> bytes:
         f'<defs><image id="art" width="40" height="40" href="data:image/png;base64,{_PIXEL}"/></defs>'
         f'<rect width="1000" height="{height}" fill="#f4f6fb"/><use href="#art" x="40" y="40"/>'
         f'<text x="100" y="120" font-size="48" font-family="Pretendard, sans-serif">동네 헬스장 통합 예약</text>{extra}</svg>'
-    ).encode('utf-8')
+    ).encode()
 
 
 INFOGRAPHIC_SVG = _infographic_svg()
@@ -253,7 +253,8 @@ def test_real_hwp_has_the_disclaimer_on_the_first_page_and_the_infographic_on_a_
 
 @pytest.mark.skipif(not _RHWP_AVAILABLE, reason='rhwp 실행 파일이 없다(RHWP_BIN)')
 def test_real_hwp_puts_the_diagrams_and_the_infographic_on_two_separate_pages(authed_client, db_session, tmp_path):
-    from test_diagram_images import BOTH, _gateway as diagram_gateway, _plan_doc
+    from test_diagram_images import BOTH, _plan_doc
+    from test_diagram_images import _gateway as diagram_gateway
 
     pid = _create(authed_client, 'corp')
     data, template = _build_plan_document_data(db_session, db_session.get(Project, pid), PlanTexts())
