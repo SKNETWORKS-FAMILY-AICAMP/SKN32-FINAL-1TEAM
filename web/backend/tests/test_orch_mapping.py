@@ -88,6 +88,23 @@ def test_status_percent_during_rework_and_review():
     assert mapping.project_status_out(7, ProjectView('7', run=review)).progress_percent == 30
 
 
+def test_status_during_result_integration_after_proofreading_was_removed():
+    """[SB-398] 검수 제거(오케스트레이터 2026-10-15) — 화면 9 '진행' 뒤 결과 통합이 '결과물' 단계에서 돈다. stage는 상태와 관계없이 done이라
+    화면은 match_status로 진행 중 · 실패 · 완료를 가르고, 도는 동안 진행률(percent)이 내려간다."""
+    running = make_run(step='결과물', progress='실행', resume_step=11, percent=60)
+    out = mapping.project_status_out(7, ProjectView('7', run=running))
+    assert (out.stage, out.match_status, out.progress_percent) == ('done', 'in_progress', 60)
+
+    waiting = mapping.project_status_out(7, ProjectView('7', run=make_run(step='결과물', progress='재개대기', resume_step=11, percent=60)))
+    assert (waiting.stage, waiting.match_status, waiting.progress_percent) == ('done', 'waiting_resume', 60)
+
+    failed = mapping.project_status_out(7, ProjectView('7', run=make_run(step='결과물', progress='실패', resume_step=11)))
+    assert (failed.stage, failed.match_status, failed.progress_percent) == ('done', 'failed', None)
+
+    done = mapping.project_status_out(7, ProjectView('7', run=make_run(step='결과물', progress='완료', resume_step=11)))
+    assert (done.stage, done.match_status, done.progress_percent) == ('done', 'completed', None)
+
+
 def test_status_resume_wait_exposes_next_retry_and_count():
     # 오케스트레이터 시각은 시간대 있는 UTC다(2026-10-05 변경) — 응답에도 Z가 붙어 브라우저가 한국 시간으로 바꿀 수 있다
     at = datetime(2026, 10, 5, 12, 0, 0, tzinfo=UTC)

@@ -454,9 +454,10 @@ def start_review(
     current_user: User = Depends(get_current_user),
     gateway: OrchGateway = Depends(require_gateway),
 ):
-    """종합 평가 → 표현 검수(화면 9 → 10). stage='reviewing'으로 진행되고 끝나면 stage='done'.
-    기준 점수에 못 미친 채로 진행하면 검수 뒤에는 되돌릴 수 없어 409 + {confirmation_required, reason, items}로 확인을 받는다 —
-    사용자가 확인하면 body {"confirmed": true}로 다시 부른다. [SB-243 신규 — 엔드포인트 이름은 프론트와 합의해 확정(2026-10-06).]"""
+    """종합 평가 → 결과 통합 → 결과물(화면 9 → 11). 결과 통합이 도는 동안 stage='done' · match_status='in_progress'이고 끝나면
+    match_status='completed'이다. [SB-398] 검수가 흐름에서 빠져(오케스트레이터 2026-10-15) 화면 10을 거치지 않는다 — 옛 실행 건만 stage='reviewing'이다.
+    기준 점수에 못 미친 채로 진행하면 되돌릴 수 없어 409 + {confirmation_required, reason, items}로 확인을 받는다(reason은 '결과 통합 진입 확인') —
+    사용자가 확인하면 body {"confirmed": true}로 다시 부른다. [SB-243 신규 — 엔드포인트 이름은 프론트와 합의해 확정(2026-10-06), 검수 제거 뒤에도 그대로.]"""
     _get_owned_project(db, project_id, current_user)
     confirmed = body.confirmed if body is not None else False
 

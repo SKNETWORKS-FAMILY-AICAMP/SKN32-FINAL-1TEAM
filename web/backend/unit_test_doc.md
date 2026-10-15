@@ -28,7 +28,7 @@ ruff check .                                # 정적 검사
 |---|---|
 | `test_orch_gateway.py` | 웹이 부를 수 있는 함수 허용 목록, 오류 변환, 초기화 |
 | `test_orch_errors.py` | 오케스트레이터 오류 코드 → HTTP 상태 · `{detail, code}` 응답 변환 |
-| `test_orch_mapping.py` | 오케스트레이터 값 → 웹 응답 대응표(묶음 이름, 출력 필드 변환) |
+| `test_orch_mapping.py` | 오케스트레이터 값 → 웹 응답 대응표(묶음 이름, 출력 필드 변환), 결과 통합(단계 '결과물') 진행 상태 · 진행률 — stage는 늘 done이고 진행 중 · 재개대기 · 실패 · 완료는 match_status로 가름 (SB-398) |
 | `test_orch_command_log.py` | 웹이 넣은 상태 변경 명령을 웹 로그에 한 줄씩 남김 (SB-303) |
 | `test_orch_fake_contract.py` | 가짜 오케스트레이터가 실제 `sbrain` 필드와 어긋나지 않는지(표 대체 사유의 `fallback_reason_codes` · 결과물 `Deliverable` · 미달 항목 `ShortfallItem` 포함), 화면 10(검수 전후)이 실제 오케스트레이터에서 없어졌는지(SB-397), gateway 허용 함수가 실제로 있는지 |
 
