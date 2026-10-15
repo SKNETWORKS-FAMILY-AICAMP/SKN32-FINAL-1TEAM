@@ -12,7 +12,7 @@
   3. 이 스크립트 실행
 
 흐름: 로그인 → 프로젝트 생성 → 공고 후보 → 공고 선택(자격 확인) → 계획서 작성 → 문서 평가 → 프로토타입 → 산출물 확인 →
-      종합 평가 →(--rework: 재작성)→ 표현 검수 → 결과 →(--cleanup: 영구 삭제)
+      종합 평가 →(--rework: 재작성)→ 결과 통합(화면 9 '진행' 뒤, 검수 없음) → 결과 →(--cleanup: 영구 삭제)
 
 - 로컬 호스트의 e2e/test DB만 받는다(팀 공유 DB 거부). 구글 로그인은 가짜로 바꿔 끼운다(테스트용 계정).
 - 워커의 Agent 중 조율 T-C1 · T-C3만 실제 구현이고 나머지는 스텁이다(agent-orchestration README 1.3) —
@@ -189,12 +189,16 @@ def main() -> int:
 
         def check_notifications(pid: int):
             """이 프로젝트의 알림만 센다(목록 API는 사용자의 모든 프로젝트 알림을 주므로 project_id로 거른다).
-            워커 규칙: 문서평가(6) · 산출물확인(8) · 표현검수(10) 각 1건 + 재작성이 끝날 때마다 1건."""
+            워커 규칙: 문서평가(6) · 산출물확인(8) · 결과물(11) 각 1건 + 재작성이 끝날 때마다 1건 — 검수가 흐름에서 빠져(2026-10-15) 표현검수(10) 알림은 더 없다.
+            '결과물' 알림은 웹 DB의 notifications.kind ENUM에 값이 있어야 들어간다(SB-396, migrations/006)."""
             res = client.get('/projects/notifications')
             mine = [n for n in (j(res) if res.status_code == 200 else []) if n['project_id'] == pid]
             expected = 3 + (1 if args.rework else 0)
-            return (res.status_code == 200 and len(mine) == expected,
-                    f"HTTP {res.status_code} 이 프로젝트 {len(mine)}건(기대 {expected}): {sorted(n['kind'] for n in mine)}")
+            result_notes = [n for n in mine if n['kind'] == '결과물']
+            return (res.status_code == 200 and len(mine) == expected and len(result_notes) == 1 and result_notes[0]['target_step'] == 11
+                    and not [n for n in mine if n['kind'] == '표현검수'],
+                    f"HTTP {res.status_code} 이 프로젝트 {len(mine)}건(기대 {expected}): {sorted(n['kind'] for n in mine)} "
+                    f"결과물 {[(n['kind'], n['target_step']) for n in result_notes]}")
 
         def check_times(pid: int):
             """[SB-264] 응답 시각이 UTC · Z이고 실제 시계와 맞는지 — 서버 로컬 시간(이 컴퓨터는 한국 시간)이나 DB 서버 시간대가 UTC가 아니면
@@ -381,36 +385,35 @@ def main() -> int:
                              for u in j(client.get(f'/projects/{pid}/result')).get('bundle_usages', [])}
                     step('재작성 기회 소진 표시', usage.get('문제인식', (None,))[0] == 1, f'문제인식 (사용, 남음)={usage.get("문제인식")}')
 
-            # 9) 표현 검수 (9 → 10)
+            # 9) 결과 통합 (9 → 11) — 검수가 흐름에서 빠져(2026-10-15) 화면 9 '진행' 뒤 곧바로 결과 통합이 돌고 화면 10은 없다
             before_review = j(client.get(f'/projects/{pid}/result')).get('plan') or {}
             structure_before_review = [(s['section_code'], s['tag'], s['content_type']) for s in before_review.get('sections', [])]
-            before_review_body = chr(10).join(sec.get('body', '') for sec in before_review.get('sections', []))
             res = client.post(f'/projects/{pid}/review/start')
             if res.status_code == 409 and (j(res).get('detail') or {}).get('confirmation_required'):
                 step('기준 미달 확인 요청(409)', j(res).get('code') == 'CONFIRMATION_REQUIRED',
                      f"code={j(res).get('code')} 사유={j(res)['detail'].get('reason')}")
                 res = client.post(f'/projects/{pid}/review/start', json={'confirmed': True})
-            step('표현 검수 시작', res.status_code == 200, f'{res.status_code}')
-            poll('표현 검수', f'/projects/{pid}/status',
+            step('결과 통합 시작(화면 9 진행)', res.status_code == 200, f'{res.status_code}')
+            poll('결과 통합', f'/projects/{pid}/status',
                  lambda b: b.get('stage') == 'done' and b.get('match_status') == 'completed',
                  fail=lambda b: b.get('match_status') in ('failed', 'halted'))
             result = j(client.get(f'/projects/{pid}/result'))
             plan = result.get('plan') or {}
-            step('결과: 검수 · 최종', True,
+            deliverable = result.get('deliverable') or {}
+            step('결과: 결과물 안내 글과 미달 항목 칸이 옴(결과 통합)', bool(deliverable) and isinstance(deliverable.get('shortfall_items'), list),
+                 f"deliverable 칸 {sorted(deliverable)} 미달 항목 {len(deliverable.get('shortfall_items') or [])}건")
+            step('결과: 검수 제거 — 형식 지적 · 검수 기록이 비어 있음',
+                 not plan.get('format_findings') and not plan.get('proofread_logs'),
                  f"형식 지적 {len(plan.get('format_findings', []))}건, 검수 시도 {len(plan.get('proofread_logs', []))}건")
-            # 계획서 항목 구조(SB-342): 표현 검수는 문장만 바꾸므로 항목 구성(번호 · 태그 · 종류)과 그림은 그대로여야 한다
+            final_status = j(client.get(f'/projects/{pid}/status'))
+            step('결과 통합이 끝나면 화면은 결과물(11)', final_status.get('screen') == 11, f"screen={final_status.get('screen')}")
+            # 계획서 항목 구조(SB-342): 결과 통합은 계획서를 바꾸지 않으므로 항목 구성(번호 · 태그 · 종류)과 그림은 그대로여야 한다
             structure_after_review = [(s['section_code'], s['tag'], s['content_type']) for s in plan.get('sections', [])]
-            step('결과: 표현 검수 뒤에도 항목 구성(번호 · 태그 · 종류)이 같음', bool(structure_after_review) and structure_after_review == structure_before_review,
-                 f'검수 전 {len(structure_before_review)}개 후 {len(structure_after_review)}개')
+            step('결과: 결과 통합 뒤에도 항목 구성(번호 · 태그 · 종류)이 같음', bool(structure_after_review) and structure_after_review == structure_before_review,
+                 f'전 {len(structure_before_review)}개 후 {len(structure_after_review)}개')
             empty_items = [s['section_code'] for s in plan.get('sections', []) if s['content_type'] == 'image' and (s.get('body') or '').strip()]
-            step('결과: 그림 항목은 검수 뒤에도 문장이 없고 그림 목록은 그대로', not empty_items and len(plan.get('diagrams') or []) == len(before_review.get('diagrams') or []),
+            step('결과: 그림 항목은 결과 통합 뒤에도 문장이 없고 그림 목록은 그대로', not empty_items and len(plan.get('diagrams') or []) == len(before_review.get('diagrams') or []),
                  f"문장이 생긴 그림 항목 {empty_items} 그림 {len(plan.get('diagrams') or [])}개")
-            # [SB-297] 검수 기록의 '검수 전' 원문은 검수 시작 직전 계획서의 문장이어야 한다(검수가 끝나면 계획서 문장은 결과 문장으로 바뀐다)
-            logs = plan.get('proofread_logs', [])
-            wrong = [log for log in logs if log.get('original_text') and log['original_text'] not in before_review_body]
-            step('결과: 검수 기록의 검수 전 원문이 검수 시작 직전 계획서 문장', bool(logs) and not wrong,
-                 f'검수 시도 {len(logs)}건 중 원문이 다른 것 {len(wrong)}건'
-                 + (f" 예: 원문={wrong[0]['original_text'][:40]!r}" if wrong else ''))
 
             # 10) 목록 · 알림 — 여기서 예외가 나도 뒤 단계(정리)는 계속한다
             check('목록 표시', lambda: check_listing(pid))
