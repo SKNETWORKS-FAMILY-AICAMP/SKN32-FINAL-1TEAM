@@ -1,0 +1,12 @@
+{
+ "run_at": "20261006T013520Z",
+ "extractor_version": "extract_bonus/v3 gpt-5.6-luna medium",
+ "targets": 2057,
+ "called": 667,
+ "no_mention": 1390,
+ "kept": 0,
+ "saved": 2057,
+ "failures": [],
+ "cost_usd": 1.0496,
+ "price_basis": "2026-09-22 OpenAI 표준 단가(추정)"
+}

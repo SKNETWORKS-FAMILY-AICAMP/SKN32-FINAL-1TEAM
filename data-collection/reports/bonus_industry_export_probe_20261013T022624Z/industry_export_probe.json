@@ -1,0 +1,2255 @@
+{
+ "open": 1730,
+ "open_found": 305,
+ "items": [
+  {
+   "notice_id": "bizinfo:PBLN_000000000116966",
+   "title": "[경남] 김해시 2026년 가축분뇨 수집ㆍ운반 수수료 지원사업 신청서 접수 공고",
+   "kind": "업종",
+   "name": "돈사",
+   "points": null,
+   "group": "g2",
+   "program": null,
+   "extra": null,
+   "detail": "돈사",
+   "quote": "❍ 지원 대상자 선정(우선 선정순서 ① ⇒ ② ⇒ ③ 순으로 선정) ① 가축분뇨 배출시설의 규모가 작은 순 ② 돈사 ③ 우사",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000116966",
+   "title": "[경남] 김해시 2026년 가축분뇨 수집ㆍ운반 수수료 지원사업 신청서 접수 공고",
+   "kind": "업종",
+   "name": "우사",
+   "points": null,
+   "group": "g3",
+   "program": null,
+   "extra": null,
+   "detail": "우사",
+   "quote": "❍ 지원 대상자 선정(우선 선정순서 ① ⇒ ② ⇒ ③ 순으로 선정) ① 가축분뇨 배출시설의 규모가 작은 순 ② 돈사 ③ 우사",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000117103",
+   "title": "[대전] 유성구 2026년 소상공인 특례보증 지원사업 공고",
+   "kind": "업종",
+   "name": "신산업 창업 분야",
+   "points": null,
+   "group": "g2",
+   "program": "Track2",
+   "extra": null,
+   "detail": "신산업 창업 분야 우선 지원",
+   "quote": "Track2: 신산업 창업 분야 우선 지원[붙임 2]",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000117356",
+   "title": "[전북] 2026년 중소기업육성자금 융자 지원계획 공고",
+   "kind": "수출",
+   "name": "수출유망중소기업",
+   "points": 3,
+   "group": "g11",
+   "program": null,
+   "extra": "중소벤처기업부장관이 지정한",
+   "detail": "중소벤처기업부장관 지정",
+   "quote": "⑩ 중소벤처기업부장관이 지정한 수출유망중소기업(3점)",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000117751",
+   "title": "[충남] 2026년 중소기업육성자금 융자 지원계획 공고",
+   "kind": "업종",
+   "name": "도 주력산업·미래 성장산업 영위 기업",
+   "points": 5,
+   "group": "g3",
+   "program": null,
+   "extra": null,
+   "detail": "자동차 부품 등",
+   "quote": "자동차 부품 등 도 주력산업과 미래 성장산업",
+   "reason": "점수를 근거에서 확인 못 함"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000117751",
+   "title": "[충남] 2026년 중소기업육성자금 융자 지원계획 공고",
+   "kind": "업종",
+   "name": "지역특화산업 영위 기업",
+   "points": 5,
+   "group": "g7",
+   "program": null,
+   "extra": null,
+   "detail": "중소기업청장 또는 도지사가 지정한 지역특화산업",
+   "quote": "중소기업청장 또는 도지사가 지정한 지역특화산업을 영위하는 기업",
+   "reason": "점수를 근거에서 확인 못 함"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000117751",
+   "title": "[충남] 2026년 중소기업육성자금 융자 지원계획 공고",
+   "kind": "수출",
+   "name": "중기청 수출유망 중소기업",
+   "points": 5,
+   "group": "g9",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "충청남도 유망 중소기업 및 중기청 수출유망 중소기업",
+   "reason": "점수를 근거에서 확인 못 함"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000117751",
+   "title": "[충남] 2026년 중소기업육성자금 융자 지원계획 공고",
+   "kind": "수출",
+   "name": "수출지원 대상 중소기업",
+   "points": 3,
+   "group": "g17",
+   "program": null,
+   "extra": null,
+   "detail": "중소기업수출지원센터장이 지정",
+   "quote": "중소기업수출지원센터장이 지정한 수출지원 대상 중소기업",
+   "reason": "점수를 근거에서 확인 못 함"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000117928",
+   "title": "2026년 중소기업 마케팅지원사업 통합 공고",
+   "kind": "수출",
+   "name": "K-수출전략품목 지정기업",
+   "points": 1,
+   "group": "g4",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "◾K-수출전략품목 지정기업 1점",
+   "reason": "규칙 통과"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000117945",
+   "title": "[경기] 수원시 2026년 중소기업 특례보증 지원계획 공고",
+   "kind": "수출",
+   "name": "수출기업",
+   "points": null,
+   "group": "g5",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "④ 수출기업",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000118204",
+   "title": "2026년 여성기업 육성사업 공고",
+   "kind": "업종",
+   "name": "여성강점 분야 기업",
+   "points": null,
+   "group": "g1",
+   "program": "창업경진대회",
+   "extra": null,
+   "detail": "펨테크, 바이오, 콘텐츠, 패션·뷰티 등",
+   "quote": "펨테크, 바이오, 콘텐츠, 패션·뷰티 등 여성강점 분야 우대",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000118674",
+   "title": "[경기] 2026년 규제샌드박스 지원사업 맞춤형 컨설팅 참여기업 모집 공고",
+   "kind": "업종",
+   "name": "경기도 전략사업 해당 기업",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "글로벌산업(반도체, 미래차), 미래성장동력산업(영상, 데이터, 바이오), 지식기반서비스산업(IT, 전시컨벤션), 지역기반산업(섬유, 가구, 뷰티)",
+   "quote": "※ 경기도 전략사업 우대 : 글로벌산업(반도체, 미래차), 미래성장동력산업(영상, 데이터, 바이오), 지식기반서비스산업(IT, 전시컨벤션), 지역기반산업(섬유, 가구, 뷰티)",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000118729",
+   "title": "2026년 창업-BuS at 경북 참여기업 모집 공고",
+   "kind": "업종",
+   "name": "AI·빅데이터 분야",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "AI·빅데이터 분야",
+   "quote": "중점분야(우대) : AI·빅데이터, 바이오·헬스, 친환경·에너지, 로봇",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000118729",
+   "title": "2026년 창업-BuS at 경북 참여기업 모집 공고",
+   "kind": "업종",
+   "name": "바이오·헬스 분야",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "바이오·헬스 분야",
+   "quote": "중점분야(우대) : AI·빅데이터, 바이오·헬스, 친환경·에너지, 로봇",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000118729",
+   "title": "2026년 창업-BuS at 경북 참여기업 모집 공고",
+   "kind": "업종",
+   "name": "친환경·에너지 분야",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "친환경·에너지 분야",
+   "quote": "중점분야(우대) : AI·빅데이터, 바이오·헬스, 친환경·에너지, 로봇",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000118729",
+   "title": "2026년 창업-BuS at 경북 참여기업 모집 공고",
+   "kind": "업종",
+   "name": "로봇 분야",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "로봇 분야",
+   "quote": "중점분야(우대) : AI·빅데이터, 바이오·헬스, 친환경·에너지, 로봇",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000118786",
+   "title": "2026년 중소기업 K-뷰티론 정책자금 지원계획 공고",
+   "kind": "수출",
+   "name": "수출 실적",
+   "points": null,
+   "group": "g2",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "고용창출 및 수출실적 등을 기업평가 지표에 반영하여 우대",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000119170",
+   "title": "2026년 강원창조경제혁신센터 창업-BuS 프로그램 강원브릿지 화요IR 참여기업 모집 공고",
+   "kind": "업종",
+   "name": "바이오ㆍ헬스 분야",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "강원 7대 전략산업",
+   "quote": "강원 7대 전략산업 우대 : 바이오ㆍ헬스, 반도체, 미래에너지, 미래모빌리티, 방위산업, 기후테크, 푸드테크",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000119170",
+   "title": "2026년 강원창조경제혁신센터 창업-BuS 프로그램 강원브릿지 화요IR 참여기업 모집 공고",
+   "kind": "업종",
+   "name": "반도체 분야",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "강원 7대 전략산업",
+   "quote": "강원 7대 전략산업 우대 : 바이오ㆍ헬스, 반도체, 미래에너지, 미래모빌리티, 방위산업, 기후테크, 푸드테크",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000119170",
+   "title": "2026년 강원창조경제혁신센터 창업-BuS 프로그램 강원브릿지 화요IR 참여기업 모집 공고",
+   "kind": "업종",
+   "name": "미래에너지 분야",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "강원 7대 전략산업",
+   "quote": "강원 7대 전략산업 우대 : 바이오ㆍ헬스, 반도체, 미래에너지, 미래모빌리티, 방위산업, 기후테크, 푸드테크",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000119170",
+   "title": "2026년 강원창조경제혁신센터 창업-BuS 프로그램 강원브릿지 화요IR 참여기업 모집 공고",
+   "kind": "업종",
+   "name": "미래모빌리티 분야",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "강원 7대 전략산업",
+   "quote": "강원 7대 전략산업 우대 : 바이오ㆍ헬스, 반도체, 미래에너지, 미래모빌리티, 방위산업, 기후테크, 푸드테크",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000119170",
+   "title": "2026년 강원창조경제혁신센터 창업-BuS 프로그램 강원브릿지 화요IR 참여기업 모집 공고",
+   "kind": "업종",
+   "name": "방위산업 분야",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "강원 7대 전략산업",
+   "quote": "강원 7대 전략산업 우대 : 바이오ㆍ헬스, 반도체, 미래에너지, 미래모빌리티, 방위산업, 기후테크, 푸드테크",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000119170",
+   "title": "2026년 강원창조경제혁신센터 창업-BuS 프로그램 강원브릿지 화요IR 참여기업 모집 공고",
+   "kind": "업종",
+   "name": "기후테크 분야",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "강원 7대 전략산업",
+   "quote": "강원 7대 전략산업 우대 : 바이오ㆍ헬스, 반도체, 미래에너지, 미래모빌리티, 방위산업, 기후테크, 푸드테크",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000119170",
+   "title": "2026년 강원창조경제혁신센터 창업-BuS 프로그램 강원브릿지 화요IR 참여기업 모집 공고",
+   "kind": "업종",
+   "name": "푸드테크 분야",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "강원 7대 전략산업",
+   "quote": "강원 7대 전략산업 우대 : 바이오ㆍ헬스, 반도체, 미래에너지, 미래모빌리티, 방위산업, 기후테크, 푸드테크",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000119636",
+   "title": "[세종] 2026년 중소기업육성자금 지원계획 변경 공고",
+   "kind": "업종",
+   "name": "지역특화산업 영위",
+   "points": 5,
+   "group": "g9",
+   "program": null,
+   "extra": null,
+   "detail": "중소벤처기업부장관 또는 세종특별자치시장이 지정한 지역특화산업",
+   "quote": "⑨ 중소벤처기업부장관 또는 세종특별자치시장이 지정한 지역특화산업을 영위하는 기업(5점)",
+   "reason": "규칙 통과"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000119636",
+   "title": "[세종] 2026년 중소기업육성자금 지원계획 변경 공고",
+   "kind": "수출",
+   "name": "세계일류상품 육성기업",
+   "points": 3,
+   "group": "g11",
+   "program": null,
+   "extra": null,
+   "detail": "세계일류상품 육성기업",
+   "quote": "⑪ 세계일류상품 육성기업 및 내수기업의 수출 기업화사업 참여기업(3점)",
+   "reason": "규칙 통과"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000119636",
+   "title": "[세종] 2026년 중소기업육성자금 지원계획 변경 공고",
+   "kind": "수출",
+   "name": "내수기업의 수출 기업화사업 참여",
+   "points": 3,
+   "group": "g11",
+   "program": null,
+   "extra": null,
+   "detail": "내수기업의 수출 기업화사업 참여기업",
+   "quote": "⑪ 세계일류상품 육성기업 및 내수기업의 수출 기업화사업 참여기업(3점)",
+   "reason": "규칙 통과"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000119636",
+   "title": "[세종] 2026년 중소기업육성자금 지원계획 변경 공고",
+   "kind": "수출",
+   "name": "수출 지원 대상 중소기업",
+   "points": 3,
+   "group": "g12",
+   "program": null,
+   "extra": null,
+   "detail": "중소기업수출지원센터장이 지정",
+   "quote": "⑫ 중소기업수출지원센터장이 지정한 수출 지원 대상 중소기업(3점)",
+   "reason": "규칙 통과"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000120117",
+   "title": "2026년 소상공인 투자연계 지원사업 립스(LIPS) 프로그램 소상공인 모집 공고",
+   "kind": "수출",
+   "name": "수출 실적",
+   "points": null,
+   "group": "g2",
+   "program": "민간투자 연계형 매칭융자 (LIPSⅠ)",
+   "extra": null,
+   "detail": "직접수출 또는 간접수출",
+   "quote": "❷ 가점사항 <수출실적 증빙> - (직접수출) 수출실적증명원(한국무역통계진흥원, 무역협회) - (간접수출) 수출실적증명원(발행은행, KTNET)",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000120158",
+   "title": "[경기] 양주시 2026년 중소기업 및 소상공인 운전자금 이차보전 지원 공고",
+   "kind": "수출",
+   "name": "경기도 선정 수출기업화 기업",
+   "points": null,
+   "group": "g5",
+   "program": null,
+   "extra": null,
+   "detail": "경기도 선정",
+   "quote": "❍ 경기도 선정 수출기업화 기업",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000120177",
+   "title": "[경기] 2026년 중소기업육성자금 융자지원계획 변경 공고(경기도-IBK기업은행 협약)",
+   "kind": "수출",
+   "name": "수출비중이 높은 기업",
+   "points": null,
+   "group": "g3",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "- 벤처기업 및 기술력이 우수한 기업, 수출비중이 높은 기업",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000120177",
+   "title": "[경기] 2026년 중소기업육성자금 융자지원계획 변경 공고(경기도-IBK기업은행 협약)",
+   "kind": "수출",
+   "name": "수출비중이 높은 기업",
+   "points": null,
+   "group": "g12",
+   "program": "경기도 창업기업 설비투자 특별지원",
+   "extra": null,
+   "detail": null,
+   "quote": "- 벤처기업 및 기술력이 우수한 기업, 수출비중이 높은 기업",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000120238",
+   "title": "[울산] 2026년 중소기업 해외지사화 사업 참가기업 모집 공고",
+   "kind": "수출",
+   "name": "수출초보기업",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "수출실적 최근 2년 수출실적 : 수출초보기업 우대",
+   "reason": "확인할 수 없는 조건 말"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000120238",
+   "title": "[울산] 2026년 중소기업 해외지사화 사업 참가기업 모집 공고",
+   "kind": "수출",
+   "name": "수출유망·강소기업",
+   "points": null,
+   "group": "g2",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "직전년도 직·간접 수출실적: 수출유망·강소기업 우대",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000120903",
+   "title": "[경남] 창원시 2026년 OK FTA 컨설팅 사업 참여기업 모집 공고(경남FTA통상진흥센터)",
+   "kind": "업종",
+   "name": "경남FTA통상진흥센터 중점업종 기업",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": "신청기업 수가 센터 컨설팅 예산을 초과하는 경우",
+   "detail": "경남FTA통상진흥센터 중점업종",
+   "quote": "- 신청기업 수가 센터 컨설팅 예산을 초과하는 경우 우선지원 대상 : FTA미활용기업, 경남FTA통상진흥센터 중점업종 기업, 컨설팅이 긴급하게 필요한 기업(수출신고 완료 후 선적 대기 중 등)",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000121697",
+   "title": "[경북] 2026년 중대재해 예방 사각지대 해소 지원사업 참여기업 모집 공고",
+   "kind": "업종",
+   "name": "위험업종 기업",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "위험업종 기업",
+   "quote": "산업단지 입주기업 및 위험업종 기업 우선 지원",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000121771",
+   "title": "2026년 3차 특허분쟁 대응전략 지원사업 공고",
+   "kind": "업종",
+   "name": "국가전략기술·첨단전략산업 분야",
+   "points": 5,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "- 가점 5점 부여 및 선정평가 시 동점자가 발생한 경우, 국가전략기술·첨단전략산업 분야 우선선정",
+   "reason": "확인할 수 없는 조건 말"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000121771",
+   "title": "2026년 3차 특허분쟁 대응전략 지원사업 공고",
+   "kind": "업종",
+   "name": "국가전략기술·소부장 분야",
+   "points": 5,
+   "group": "g2",
+   "program": "초기대응",
+   "extra": null,
+   "detail": "초기대응",
+   "quote": "- 국가전략기술‧소부장 분야 가점 지원강화 - (초기대응) 연 3회 지원 가능 5점 부여",
+   "reason": "원문에 근거 없음"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000121976",
+   "title": "[경기] 포천시 2026년 지역소공인육성사업 소공인특화지원센터 지원사업 공고",
+   "kind": "수출",
+   "name": "전년도 수출실적 증빙 소공인",
+   "points": 1,
+   "group": "g1",
+   "program": null,
+   "extra": "전년도",
+   "detail": null,
+   "quote": "전년도 수출실적 증빙 소공인",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000122229",
+   "title": "2026년 창업BuS in 세종 수요투자 라운드 참여기업 상시 모집 공고",
+   "kind": "업종",
+   "name": "딥테크 기업",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "AI-빅데이터, GovTech 등 딥테크",
+   "quote": "※ AI-빅데이터, GovTech 등 딥테크 우대",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000122268",
+   "title": "2026년 2차 메카노바이오활성소재 혁신의료기기 실증 기반구축 생물학적 시험평가인증 지원사업 공고(산업혁신기",
+   "kind": "업종",
+   "name": "메카노바이오활성소재 관련 제품 개발",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "메카노바이오활성소재 관련 제품 개발",
+   "quote": "메카노바이오활성소재, 혁신의료기기 관련 제품 개발",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000122268",
+   "title": "2026년 2차 메카노바이오활성소재 혁신의료기기 실증 기반구축 생물학적 시험평가인증 지원사업 공고(산업혁신기",
+   "kind": "업종",
+   "name": "혁신의료기기 관련 제품 개발",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "혁신의료기기 관련 제품 개발",
+   "quote": "메카노바이오활성소재, 혁신의료기기 관련 제품 개발",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000122268",
+   "title": "2026년 2차 메카노바이오활성소재 혁신의료기기 실증 기반구축 생물학적 시험평가인증 지원사업 공고(산업혁신기",
+   "kind": "업종",
+   "name": "3·4등급 의료기기",
+   "points": null,
+   "group": "g2",
+   "program": null,
+   "extra": null,
+   "detail": "3, 4등급 의료기기",
+   "quote": "3, 4등급 의료기기",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000122394",
+   "title": "[제주] 2026년 전기차 사용 후 배터리 실증 지원사업(KC인증) 상시모집 공고",
+   "kind": "수출",
+   "name": "수출유망 중소기업",
+   "points": 1,
+   "group": "g3",
+   "program": null,
+   "extra": "발표평가 시 평가위원 평균점수가 60점 이상인 과제에 한하여",
+   "detail": null,
+   "quote": "◦ 수출유망 중소기업 또는 수출중소기업 1점",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000122394",
+   "title": "[제주] 2026년 전기차 사용 후 배터리 실증 지원사업(KC인증) 상시모집 공고",
+   "kind": "수출",
+   "name": "수출중소기업",
+   "points": 1,
+   "group": "g3",
+   "program": null,
+   "extra": "발표평가 시 평가위원 평균점수가 60점 이상인 과제에 한하여",
+   "detail": null,
+   "quote": "◦ 수출유망 중소기업 또는 수출중소기업 1점",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000122526",
+   "title": "[경북] 2026년 중대재해 예방 사각지대 해소 지원사업 참여기업 모집 변경 공고",
+   "kind": "업종",
+   "name": "위험업종 기업",
+   "points": null,
+   "group": "g3",
+   "program": null,
+   "extra": null,
+   "detail": "위험업종",
+   "quote": "- 산업단지 입주기업 및 위험업종 기업 우선 지원",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000122724",
+   "title": "[충북] 청주시 2026년 2차 공정혁신시뮬레이션센터 구축 및 운영사업 기술지원 수혜기업 모집 연장 공고",
+   "kind": "업종",
+   "name": "반도체‧이차전지 전후방 산업 관련 생산 및 납품 기업",
+   "points": 1,
+   "group": "g3",
+   "program": null,
+   "extra": "증빙제출",
+   "detail": "반도체‧이차전지 전후방 산업 관련 생산 및 납품",
+   "quote": "∘반도체‧이차전지 전후방 산업 관련 생산 및 납품 기업 예(1) 아니오(0)",
+   "reason": "점수를 근거에서 확인 못 함"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000122724",
+   "title": "[충북] 청주시 2026년 2차 공정혁신시뮬레이션센터 구축 및 운영사업 기술지원 수혜기업 모집 연장 공고",
+   "kind": "업종",
+   "name": "뿌리기업",
+   "points": 1,
+   "group": "g4",
+   "program": null,
+   "extra": "확인서제출",
+   "detail": "뿌리기업",
+   "quote": "∘뿌리기업, 여성기업, 장애인기업 예(1) 아니오(0)",
+   "reason": "점수를 근거에서 확인 못 함"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000123173",
+   "title": "[전남] 여수시 2026년 2차 지역산업위기대응 맞춤형 지원사업 공고",
+   "kind": "업종",
+   "name": "위기산업 핵심·전후방 기업",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": "경영위기 현황, 지역 위기산업 내 파급도, 위기 극복 가능성이 높은 기업",
+   "detail": "위기산업 핵심 및 전후방 기업",
+   "quote": "※ 위기산업 핵심 및 전후방 기업 중 경영위기 현황, 지역 위기산업 내 파급도, 위기 극복 가능성이 높은 기업을 우선 선정",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000123800",
+   "title": "2026년 중소기업 정보보호 지원사업 수요기업 모집 공고",
+   "kind": "업종",
+   "name": "지역 전략산업 영위기업",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "해당 지역의 전략산업 영위기업",
+   "quote": "○ (대상) 지역 전략산업 영위기업 및 침해사고 피해기업 우선 선정 ※ 지방자치단체, 지역센터에서 해당 지역의 전략산업을 분석하여 모집대상을 선정하였으며, 해당분야를 우선 지원 예정(해당분야에 해당되지 않은 경우 ‘기타’로 신청 가능*)",
+   "reason": "원문에 근거 없음"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000124043",
+   "title": "2026년 2차 물리ㆍ화학적 시험평가인증 지원사업 공고(메카노바이오활성소재 혁신의료기기 실증 기반구축)",
+   "kind": "업종",
+   "name": "메카노바이오활성소재 혁신의료기기 관련 제품 개발",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "메카노바이오활성소재 혁신의료기기 관련 제품 개발",
+   "quote": "메카노바이오활성소재 혁신의료기기, 인체매식형 의료기기 관련 제품 개발",
+   "reason": "원문에 근거 없음"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000124043",
+   "title": "2026년 2차 물리ㆍ화학적 시험평가인증 지원사업 공고(메카노바이오활성소재 혁신의료기기 실증 기반구축)",
+   "kind": "업종",
+   "name": "인체매식형 의료기기 관련 제품 개발",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "인체매식형 의료기기 관련 제품 개발",
+   "quote": "메카노바이오활성소재 혁신의료기기, 인체매식형 의료기기 관련 제품 개발",
+   "reason": "원문에 근거 없음"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000124043",
+   "title": "2026년 2차 물리ㆍ화학적 시험평가인증 지원사업 공고(메카노바이오활성소재 혁신의료기기 실증 기반구축)",
+   "kind": "업종",
+   "name": "3등급 의료기기",
+   "points": null,
+   "group": "g2",
+   "program": null,
+   "extra": null,
+   "detail": "3등급",
+   "quote": "3, 4등급 의료기기",
+   "reason": "원문에 근거 없음"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000124043",
+   "title": "2026년 2차 물리ㆍ화학적 시험평가인증 지원사업 공고(메카노바이오활성소재 혁신의료기기 실증 기반구축)",
+   "kind": "업종",
+   "name": "4등급 의료기기",
+   "points": null,
+   "group": "g2",
+   "program": null,
+   "extra": null,
+   "detail": "4등급",
+   "quote": "3, 4등급 의료기기",
+   "reason": "원문에 근거 없음"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000124174",
+   "title": "2026년 중소기업 정보보호 특화지원사업 수요기업 모집 공고",
+   "kind": "업종",
+   "name": "관내 전략산업 영위기업",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "관내(인천) 전략산업 영위기업",
+   "quote": "○ (대상) 관내 전략산업 영위기업 또는 침해사고 피해기업 우선 선정",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000124232",
+   "title": "2026년 투ㆍ융자 연계 기술개발사업 지원계획 수정 공고(스케일업 팁스ㆍ글로벌 팁스ㆍ딥테크 챌린지 프로젝트)",
+   "kind": "업종",
+   "name": "ESG 분야 영위 기업",
+   "points": 2,
+   "group": "g8",
+   "program": null,
+   "extra": null,
+   "detail": "기후테크, 소셜벤처 등",
+   "quote": "사회적 가치 기후테크, 소셜벤처 등 ESG 분야 영위 기업 2점",
+   "reason": "규칙 통과"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000124248",
+   "title": "[전북] 무주군 2026년 3차 지역특화형(농식품기업) 스마트공장 구축지원사업 수시모집 공고",
+   "kind": "수출",
+   "name": "「글로벌 강소기업 1,000+」 프로젝트 선정 수출 중소기업",
+   "points": 3,
+   "group": "g4",
+   "program": null,
+   "extra": null,
+   "detail": "「글로벌 강소기업 1,000+」 프로젝트를 통해 선정된 수출 중소기업",
+   "quote": "∙ 「글로벌 강소기업 1,000+」 프로젝트를 통해 선정된 수출 중소기업",
+   "reason": "원문에 근거 없음"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000124706",
+   "title": "[전남광주] 2026년 청년 희망 일자리 지원사업 참여기업 모집 재공고",
+   "kind": "업종",
+   "name": "제조업",
+   "points": 5,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "가점 (10점) ∙ 제조업(5) 또는 사회적경제기업(5)",
+   "reason": "점수를 근거에서 확인 못 함"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000124792",
+   "title": "2026년 인증획득제품 해외 실증 지원사업(추경 포함) 추가 모집 공고",
+   "kind": "수출",
+   "name": "중동지역 진출 기반 보유",
+   "points": 10,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "중동지역 수출실적, 바이어 상담·계약 추진 실적, 현지 파트너 확보 여부",
+   "quote": "∙ (중동시장 진출 기반 보유 여부) 중동지역 - 중동지역 수출실적 보유 여부 10 10 진출 연계성 - 중동지역 바이어 상담·계약 추진 실적 - 중동지역 현지 파트너 확보 여부 등 평가 의견",
+   "reason": "점수를 근거에서 확인 못 함"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000124915",
+   "title": "[대전] 2026년 하반기 중소기업 창업 및 경쟁력강화사업자금 지원 공고",
+   "kind": "업종",
+   "name": "지역특화산업 영위기업",
+   "points": 5,
+   "group": "g8",
+   "program": null,
+   "extra": "해당산업 선정 확인서 첨부",
+   "detail": "중소벤처기업부장관 또는 대전광역시장이 지정한 지역특화산업",
+   "quote": "⑧ 중소벤처기업부장관 또는 대전광역시장이 지정한 지역특화산업을 영위하는 기업(해당산업 선정 확인서 첨부)(5점)",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000124915",
+   "title": "[대전] 2026년 하반기 중소기업 창업 및 경쟁력강화사업자금 지원 공고",
+   "kind": "수출",
+   "name": "수출 지원 대상 중소기업",
+   "points": 3,
+   "group": "g10",
+   "program": null,
+   "extra": "수출유망중소기업 지정서 첨부",
+   "detail": "중소기업수출지원센터장이 지정한 기업",
+   "quote": "⑩ 중소기업수출지원센터장이 지정한 수출 지원 대상 중소기업(수출유망중소기업 지정서 첨부)(3점)",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000124978",
+   "title": "2026년 해외규격인증획득지원사업(전략지원) 참여기업 모집 변경 공고",
+   "kind": "업종",
+   "name": "소재부품장비 강소기업 100",
+   "points": 1,
+   "group": "g2",
+   "program": null,
+   "extra": null,
+   "detail": "소재·부품·장비기업",
+   "quote": "소재·부품·장비기업 : 소재부품장비 강소기업 100, 소부장 전문기업, 소부장 으뜸기업 , 소부장경쟁력위원회 상생모델 지정기업 1",
+   "reason": "점수를 근거에서 확인 못 함"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000124978",
+   "title": "2026년 해외규격인증획득지원사업(전략지원) 참여기업 모집 변경 공고",
+   "kind": "업종",
+   "name": "소부장 전문기업",
+   "points": 1,
+   "group": "g2",
+   "program": null,
+   "extra": null,
+   "detail": "소재·부품·장비기업",
+   "quote": "소재·부품·장비기업 : 소재부품장비 강소기업 100, 소부장 전문기업, 소부장 으뜸기업 , 소부장경쟁력위원회 상생모델 지정기업 1",
+   "reason": "점수를 근거에서 확인 못 함"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000124978",
+   "title": "2026년 해외규격인증획득지원사업(전략지원) 참여기업 모집 변경 공고",
+   "kind": "업종",
+   "name": "소부장 으뜸기업",
+   "points": 1,
+   "group": "g2",
+   "program": null,
+   "extra": null,
+   "detail": "소재·부품·장비기업",
+   "quote": "소재·부품·장비기업 : 소재부품장비 강소기업 100, 소부장 전문기업, 소부장 으뜸기업 , 소부장경쟁력위원회 상생모델 지정기업 1",
+   "reason": "점수를 근거에서 확인 못 함"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000124978",
+   "title": "2026년 해외규격인증획득지원사업(전략지원) 참여기업 모집 변경 공고",
+   "kind": "업종",
+   "name": "소부장경쟁력위원회 상생모델 지정기업",
+   "points": 1,
+   "group": "g2",
+   "program": null,
+   "extra": null,
+   "detail": "소재·부품·장비기업",
+   "quote": "소재·부품·장비기업 : 소재부품장비 강소기업 100, 소부장 전문기업, 소부장 으뜸기업 , 소부장경쟁력위원회 상생모델 지정기업 1",
+   "reason": "점수를 근거에서 확인 못 함"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125569",
+   "title": "2026년 산업재해예방시설자금 융자금 지원사업 수정 공고",
+   "kind": "업종",
+   "name": "건설업 사업장",
+   "points": 18,
+   "group": "g1",
+   "program": null,
+   "extra": "융자금을 신청하는 경우",
+   "detail": "건설업에 해당하는 사업장",
+   "quote": "⑩ 건설업, 기타의사업에 해당하는 사업장이 융자금을 최대18점 - 신청하는 경우",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125569",
+   "title": "2026년 산업재해예방시설자금 융자금 지원사업 수정 공고",
+   "kind": "업종",
+   "name": "기타의 사업 사업장",
+   "points": 18,
+   "group": "g1",
+   "program": null,
+   "extra": "융자금을 신청하는 경우",
+   "detail": "기타의사업에 해당하는 사업장",
+   "quote": "⑩ 건설업, 기타의사업에 해당하는 사업장이 융자금을 최대18점 - 신청하는 경우",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125698",
+   "title": "[전북] 2026년 전북지역기술혁신허브 맞춤형 기술지원 참여기업 모집 상시 통합 공고(전북지역기술혁신허브 비",
+   "kind": "업종",
+   "name": "이차전지 음극소재 관련 매출",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": "매출 등 증빙 가능 시",
+   "detail": "이차전지 음극소재 관련 매출",
+   "quote": "※ 우대사항: 이차전지 음극소재, LFP 재활용 관련 매출 등 증빙 가능 시",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125698",
+   "title": "[전북] 2026년 전북지역기술혁신허브 맞춤형 기술지원 참여기업 모집 상시 통합 공고(전북지역기술혁신허브 비",
+   "kind": "업종",
+   "name": "LFP 재활용 관련 매출",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": "매출 등 증빙 가능 시",
+   "detail": "LFP 재활용 관련 매출",
+   "quote": "※ 우대사항: 이차전지 음극소재, LFP 재활용 관련 매출 등 증빙 가능 시",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125705",
+   "title": "[충북] 2026년 2차 중소기업육성자금 융자(이차보전) 지원계획 변경 공고",
+   "kind": "수출",
+   "name": "수출 기업화사업 참여기업",
+   "points": 3,
+   "group": "g8",
+   "program": "창업및경쟁력강화자금",
+   "extra": null,
+   "detail": "중소기업수출지원센터의 수출 기업화사업 참여",
+   "quote": "ㅇ 중소기업수출지원센터의 수출 기업화사업 참여기업(3점)",
+   "reason": "규칙 통과"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125705",
+   "title": "[충북] 2026년 2차 중소기업육성자금 융자(이차보전) 지원계획 변경 공고",
+   "kind": "수출",
+   "name": "수출유망중소기업",
+   "points": 3,
+   "group": "g9",
+   "program": "창업및경쟁력강화자금",
+   "extra": null,
+   "detail": null,
+   "quote": "ㅇ 수출유망중소기업(3점), PL보험 가입기업(2점), NET, NEP 인증기업(5점)",
+   "reason": "점수를 근거에서 확인 못 함"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125778",
+   "title": "2026년 미래모빌리티 인지부품 기능안전 시험지원 기반구축사업 기술서비스 수혜기업 모집 공고",
+   "kind": "업종",
+   "name": "국내 인지부품 개발 및 생산기업",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "국내 인지부품 개발 및 생산기업",
+   "quote": "※ 국내 인지부품 개발 및 생산기업에 대해 우선 지원",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125856",
+   "title": "[세종] 2026년 2차 중소기업육성자금 지원계획 변경 공고",
+   "kind": "업종",
+   "name": "지역특화산업 영위기업",
+   "points": 5,
+   "group": "g9",
+   "program": null,
+   "extra": null,
+   "detail": "중소벤처기업부장관 또는 세종특별자치시장이 지정한 지역특화산업",
+   "quote": "⑨ 중소벤처기업부장관 또는 세종특별자치시장이 지정한 지역특화산업을 영위하는 기업(5점)",
+   "reason": "규칙 통과"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125856",
+   "title": "[세종] 2026년 2차 중소기업육성자금 지원계획 변경 공고",
+   "kind": "수출",
+   "name": "세계일류상품 육성기업 및 내수기업의 수출 기업화사업 참여기업",
+   "points": 3,
+   "group": "g11",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "⑪ 세계일류상품 육성기업 및 내수기업의 수출 기업화사업 참여기업(3점)",
+   "reason": "규칙 통과"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125856",
+   "title": "[세종] 2026년 2차 중소기업육성자금 지원계획 변경 공고",
+   "kind": "수출",
+   "name": "수출 지원 대상 중소기업",
+   "points": 3,
+   "group": "g12",
+   "program": null,
+   "extra": null,
+   "detail": "중소기업수출지원센터장이 지정",
+   "quote": "⑫ 중소기업수출지원센터장이 지정한 수출 지원 대상 중소기업(3점)",
+   "reason": "규칙 통과"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125856",
+   "title": "[세종] 2026년 2차 중소기업육성자금 지원계획 변경 공고",
+   "kind": "수출",
+   "name": "중소기업육성시책 참여기업",
+   "points": 5,
+   "group": "g13",
+   "program": null,
+   "extra": null,
+   "detail": "해외시장개척, 수출기업인협의회 등",
+   "quote": "⑬ 중소기업육성시책(해외시장개척, 수출기업인협의회 등) 참여기업(5점)",
+   "reason": "규칙 통과"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000125997",
+   "title": "2026년 중소기업제품 전용판매장(면세장) 참여기업 모집 공고",
+   "kind": "수출",
+   "name": "K-수출전략품목 지정기업",
+   "points": 1,
+   "group": "g6",
+   "program": null,
+   "extra": null,
+   "detail": "K-전략품목 포함",
+   "quote": "K-수출전략품목 지정기업 1점 (K-전략품목 포함)",
+   "reason": "원문에 근거 없음"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126223",
+   "title": "[전남광주] 청년 희망 일자리 지원사업 참여기업ㆍ참여청년 모집 재공고(변경)",
+   "kind": "업종",
+   "name": "제조업",
+   "points": 5,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "제조업(5) 또는 사회적경제기업(5)",
+   "reason": "점수를 근거에서 확인 못 함"
+  },
+  {
+   "notice_id": "kstartup:178527",
+   "title": "[안양대학교 창업보육센터] 2026년 하반기 신규 입주기업 모집",
+   "kind": "업종",
+   "name": "ICT 융합 분야",
+   "points": null,
+   "group": "g3",
+   "program": null,
+   "extra": null,
+   "detail": "ICT 융합 관련 분야",
+   "quote": "ICT 융합, AI·AX 관련 분야 우대",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "kstartup:178527",
+   "title": "[안양대학교 창업보육센터] 2026년 하반기 신규 입주기업 모집",
+   "kind": "업종",
+   "name": "AI·AX 분야",
+   "points": null,
+   "group": "g3",
+   "program": null,
+   "extra": null,
+   "detail": "AI·AX 관련 분야",
+   "quote": "ICT 융합, AI·AX 관련 분야 우대",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "kstartup:178835",
+   "title": "2026 명지전문대학 MJC 창업보육(Ⅰ)센터 신규 입주기업 상시모집 안내",
+   "kind": "업종",
+   "name": "AI·디지털전환 기반 기술·서비스 보유 기업",
+   "points": null,
+   "group": "g3",
+   "program": null,
+   "extra": "사업화 및 고용·매출 창출이 기대되는 기업",
+   "detail": "AI·디지털전환(DX) 기반 기술·서비스 보유",
+   "quote": "AI·디지털전환(DX) 기반 기술·서비스를 보유하고 사업화 및 고용·매출 창출이 기대되는 기업",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126336",
+   "title": "[경남] 김해시 2026년 2차 우리동네 맑은공기 패키지 지원사업 참여 사업자 모집 공고",
+   "kind": "업종",
+   "name": "4·5종 사업장 우선",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "4·5종 우선, 예산 충분시 3→1종 순 우선",
+   "quote": "4·5종 우선, 예산 충분시 3→1종 순 우선",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126343",
+   "title": "2026년 3차 물리ㆍ화학적 시험평가인증 지원사업 공고(메카노바이오활성소재 혁신의료기기 실증 기반구축)",
+   "kind": "업종",
+   "name": "메카노바이오활성소재 혁신의료기기 관련 제품 개발",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "메카노바이오활성소재 혁신의료기기 관련 제품 개발",
+   "quote": "메카노바이오활성소재 혁신의료기기, 인체매식형 의료기기 관련 제품 개발",
+   "reason": "원문에 근거 없음"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126343",
+   "title": "2026년 3차 물리ㆍ화학적 시험평가인증 지원사업 공고(메카노바이오활성소재 혁신의료기기 실증 기반구축)",
+   "kind": "업종",
+   "name": "인체매식형 의료기기 관련 제품 개발",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "인체매식형 의료기기 관련 제품 개발",
+   "quote": "메카노바이오활성소재 혁신의료기기, 인체매식형 의료기기 관련 제품 개발",
+   "reason": "원문에 근거 없음"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126343",
+   "title": "2026년 3차 물리ㆍ화학적 시험평가인증 지원사업 공고(메카노바이오활성소재 혁신의료기기 실증 기반구축)",
+   "kind": "업종",
+   "name": "3, 4등급 의료기기",
+   "points": null,
+   "group": "g2",
+   "program": null,
+   "extra": null,
+   "detail": "3, 4등급 의료기기",
+   "quote": "3, 4등급 의료기기",
+   "reason": "원문에 근거 없음"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126426",
+   "title": "[경남] 2026년 ICT 중소기업 정보보호 지원 사업 수요기업 모집 공고",
+   "kind": "업종",
+   "name": "지역 전략산업 영위 기업",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "자동차, 조선, 항공·우주, 나노, 스마트공장 분야",
+   "quote": "○ 지역 전략산업(자동차, 조선, 항공·우주, 나노, 스마트공장) 영위 기업 및 침해사고 피해기업 우선 선정 ※ 지방자치단체, 지역센터에서 해당 지역의 전략산업을 분석하여 모집대상을 선정하였으며, 해당분야를 우선 지원 예정(해당분야에 해당되지 않은 경우 ‘기타’로 신청 가능)",
+   "reason": "앞으로의 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126438",
+   "title": "[경북] 2026년 중대재해 예방 사각지대 해소 지원사업 참여기업 모집 변경 공고",
+   "kind": "업종",
+   "name": "위험업종 기업",
+   "points": null,
+   "group": "g2",
+   "program": null,
+   "extra": null,
+   "detail": "위험업종 기업",
+   "quote": "산업단지 입주기업 및 위험업종 기업 우선 지원",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126498",
+   "title": "2026년 환경성적 산정 지원사업 참여기업 모집 공고",
+   "kind": "업종",
+   "name": "중점제품군",
+   "points": null,
+   "group": "g2",
+   "program": null,
+   "extra": null,
+   "detail": "붙임 참조",
+   "quote": "(가점) 신규 인증 제품·중점제품군* 대상 제품에 별도 가점 부여 * (중점제품군) 붙임 참조",
+   "reason": "원문에 근거 없음"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126600",
+   "title": "2026년 스마트혁신가전 유공자 포상 신청 공고",
+   "kind": "수출",
+   "name": "우수 수출 실적",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": "관련 증빙 자료 제출 시",
+   "detail": "수출 실적이 우수한 경우",
+   "quote": "기술개발 결과로 특허․인증을 취득하였거나 수출 실적이 우수한 경우(관련 증빙 자료 제출 시) 우대",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126642",
+   "title": "[전북] 2026년 중소기업 육성자금 융자 지원계획 수정 공고",
+   "kind": "수출",
+   "name": "수출유망중소기업",
+   "points": 3,
+   "group": "g11",
+   "program": null,
+   "extra": "중소벤처기업부장관이 지정한",
+   "detail": "중소벤처기업부장관 지정",
+   "quote": "중소벤처기업부장관이 지정한 수출유망중소기업(3점)",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126643",
+   "title": "[부산] 2026년 10차 중소기업ㆍ소상공인 자금지원계획 변경 공고",
+   "kind": "수출",
+   "name": "직전년도 10만불 이상 수출기업",
+   "points": 2,
+   "group": "g16",
+   "program": "중소기업 운전·육성(일반)자금",
+   "extra": "직전년도",
+   "detail": "직전년도 10만불 이상 수출",
+   "quote": "직전년도 10만불 이상 수출기업",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126643",
+   "title": "[부산] 2026년 10차 중소기업ㆍ소상공인 자금지원계획 변경 공고",
+   "kind": "업종",
+   "name": "조선해운기자재 기업",
+   "points": 2,
+   "group": "g17",
+   "program": "중소기업 운전·육성(일반)자금",
+   "extra": "조선해운기자재협동조합 회원증",
+   "detail": "조선해운기자재 기업",
+   "quote": "조선해운기자재 기업",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126651",
+   "title": "[경남] 2026년 소상공인 경영대상 시상계획 공고",
+   "kind": "수출",
+   "name": "수출실적 보유",
+   "points": null,
+   "group": "g2",
+   "program": null,
+   "extra": null,
+   "detail": "수출실적 보유 소상공인",
+   "quote": "- 가점사항 : 산업재산권(특허 등), 수출실적 보유 소상공인 등",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126672",
+   "title": "2026년 4차 성능인증(EPC) 신규신청 접수 공고",
+   "kind": "수출",
+   "name": "수출기업",
+   "points": 1,
+   "group": "g1",
+   "program": null,
+   "extra": "최근 3년",
+   "detail": null,
+   "quote": "가점 ○ 벤처기업, Inno-Biz기업, 내일채움공제, 중소기업 특성화고 채용협약기업, 수출기업(최근 3년) 없음 1개 2개 3개이상",
+   "reason": "원문에 근거 없음"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126731",
+   "title": "Plug in : Tokyo #15 참여 스타트업 모집 공고",
+   "kind": "업종",
+   "name": "AX 관련 스타트업",
+   "points": null,
+   "group": "g2",
+   "program": null,
+   "extra": null,
+   "detail": "AX 관련",
+   "quote": "마. 우대사항 : AX 관련 스타트업 우대",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126754",
+   "title": "[대전] 2026년 중소기업 정보보호 지원 사업 수요기업 모집 공고",
+   "kind": "업종",
+   "name": "지역 전략산업 영위기업",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "대전 나노ㆍ반도체, 바이오, 우주, 국방, 양자, 로봇ㆍ드론",
+   "quote": "○ (대상) 지역 전략산업 영위기업 및 침해사고 피해기업 우선 선정",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126793",
+   "title": "[경북] 2027년 농어촌진흥기금 지원사업 공고",
+   "kind": "업종",
+   "name": "스마트팜 조성사업",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "※ 스마트팜 조성사업 및 만39세 이하 청년농 우선 지원토록 추진",
+   "reason": "확인할 수 없는 조건 말"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126795",
+   "title": "[인천] 검단구ㆍ부평구 2026년 7차 중소기업 기술지원단 운영사업 참여기업 모집 공고",
+   "kind": "업종",
+   "name": "뿌리산업",
+   "points": null,
+   "group": "g5",
+   "program": null,
+   "extra": "유효기간 내",
+   "detail": null,
+   "quote": "④ 뿌리산업, 희소금속산업, 모터산업",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126795",
+   "title": "[인천] 검단구ㆍ부평구 2026년 7차 중소기업 기술지원단 운영사업 참여기업 모집 공고",
+   "kind": "업종",
+   "name": "희소금속산업",
+   "points": null,
+   "group": "g6",
+   "program": null,
+   "extra": "유효기간 내",
+   "detail": null,
+   "quote": "④ 뿌리산업, 희소금속산업, 모터산업",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126795",
+   "title": "[인천] 검단구ㆍ부평구 2026년 7차 중소기업 기술지원단 운영사업 참여기업 모집 공고",
+   "kind": "업종",
+   "name": "모터산업",
+   "points": null,
+   "group": "g7",
+   "program": null,
+   "extra": "유효기간 내",
+   "detail": null,
+   "quote": "④ 뿌리산업, 희소금속산업, 모터산업",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126795",
+   "title": "[인천] 검단구ㆍ부평구 2026년 7차 중소기업 기술지원단 운영사업 참여기업 모집 공고",
+   "kind": "수출",
+   "name": "수출 비중 10% 이상 기업",
+   "points": null,
+   "group": "g11",
+   "program": null,
+   "extra": "수출실적증명서 제출; 유효기간 내",
+   "detail": "수출 비중이 총매출액의 10% 이상",
+   "quote": "⑥ 수출 비중이 총매출액의 10% 이상 기업(수출실적증명서)",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126796",
+   "title": "[인천] 2026년 5차 지역상품 공공 조달정보 지원사업 맞춤형 조달 컨설팅 참여 기업 모집 공고",
+   "kind": "수출",
+   "name": "품목별 원산지인증 수출자",
+   "points": 1,
+   "group": "g10",
+   "program": null,
+   "extra": "유효 기간/ 5년간",
+   "detail": null,
+   "quote": "품목별 원산지인증 수출자",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126796",
+   "title": "[인천] 2026년 5차 지역상품 공공 조달정보 지원사업 맞춤형 조달 컨설팅 참여 기업 모집 공고",
+   "kind": "수출",
+   "name": "수출경영자협의회 등록회원",
+   "points": 1,
+   "group": "g14",
+   "program": null,
+   "extra": "유효 기간/ 5년간",
+   "detail": null,
+   "quote": "수출경영자협의회(등록회원)",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126796",
+   "title": "[인천] 2026년 5차 지역상품 공공 조달정보 지원사업 맞춤형 조달 컨설팅 참여 기업 모집 공고",
+   "kind": "업종",
+   "name": "뿌리기업",
+   "points": 1,
+   "group": "g16",
+   "program": null,
+   "extra": "유효 기간/ 5년간",
+   "detail": null,
+   "quote": "뿌리기업",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126826",
+   "title": "[경북] 2026년 중소기업 국내 물류비 지원사업 참여기업 추가 모집 공고",
+   "kind": "수출",
+   "name": "미국 및 중동 14개국 대상 직·간접 수출 중소기업",
+   "points": 5,
+   "group": "g2",
+   "program": null,
+   "extra": null,
+   "detail": "미국 및 중동 14개국 대상 직·간접 수출",
+   "quote": "미국 및 중동 14개국* 대상 직·간접 수출 중소기업 가점 5점 부여",
+   "reason": "규칙 통과"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126845",
+   "title": "[세종] 2026년 일ㆍ생활 균형 우수기업사례 공모전 공고",
+   "kind": "업종",
+   "name": "제조업",
+   "points": 10,
+   "group": "g2",
+   "program": null,
+   "extra": null,
+   "detail": "산업 대분류상 제조업",
+   "quote": "산업 대분류상 제조업 10점",
+   "reason": "규칙 통과"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126888",
+   "title": "2026년 해외 환경프로젝트 타당성조사 지원사업 본타당성조사(다년도) 모집 공고",
+   "kind": "업종",
+   "name": "재생에너지 분야",
+   "points": 2,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "수소 포함",
+   "quote": "- 재생에너지*** (수소포함), 에너지저장장치(ESS), 탄소포집·활용·저장 (CCUS) 분야 중점 지원(가점2점)",
+   "reason": "규칙 통과"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126888",
+   "title": "2026년 해외 환경프로젝트 타당성조사 지원사업 본타당성조사(다년도) 모집 공고",
+   "kind": "업종",
+   "name": "에너지저장장치(ESS) 분야",
+   "points": 2,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "- 재생에너지*** (수소포함), 에너지저장장치(ESS), 탄소포집·활용·저장 (CCUS) 분야 중점 지원(가점2점)",
+   "reason": "규칙 통과"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126888",
+   "title": "2026년 해외 환경프로젝트 타당성조사 지원사업 본타당성조사(다년도) 모집 공고",
+   "kind": "업종",
+   "name": "탄소포집·활용·저장(CCUS) 분야",
+   "points": 2,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "- 재생에너지*** (수소포함), 에너지저장장치(ESS), 탄소포집·활용·저장 (CCUS) 분야 중점 지원(가점2점)",
+   "reason": "규칙 통과"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126912",
+   "title": "[서울] 2026년 중동상황 대응 중소기업 수출위기극복 및 대체시장 개척 심화컨설팅 참여기업 추가 모집 공고",
+   "kind": "수출",
+   "name": "중동 수출 피해 증빙 기업",
+   "points": 3,
+   "group": "g4",
+   "program": null,
+   "extra": null,
+   "detail": "중동 수출 피해 증빙자료 제출",
+   "quote": "· 중동 수출 피해 증빙 기업 3점",
+   "reason": "그 밖 규칙(결합·점수 주인 등)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126919",
+   "title": "2026년 한국농수산식품유통공사 협력사 ESG 지원사업 참여기업 모집 공고",
+   "kind": "업종",
+   "name": "농식품 관련 사업 추진 기업",
+   "points": 2,
+   "group": "g3",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "농식품관련 사업 추진기업 2점",
+   "reason": "규칙 통과"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126927",
+   "title": "2026년 중소기업 정책자금 융자계획 변경 공고",
+   "kind": "수출",
+   "name": "수출 실적",
+   "points": null,
+   "group": "g2",
+   "program": null,
+   "extra": null,
+   "detail": "기업평가 지표에 반영하여 우대",
+   "quote": "◦ 고용창출 및 수출실적 등을 기업평가 지표에 반영하여 우대",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126935",
+   "title": "[경북] 2027년 물산업 선도기업 신규기업 모집 공고",
+   "kind": "수출",
+   "name": "외국어 홈페이지 보유",
+   "points": 1,
+   "group": "g4",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "수출 역량을 갖춘 기업(항목별 각 1점) · 외국어 홈페이지 보유",
+   "reason": "그 밖 규칙(결합·점수 주인 등)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126935",
+   "title": "[경북] 2027년 물산업 선도기업 신규기업 모집 공고",
+   "kind": "수출",
+   "name": "외국어 브로슈어 또는 홍보동영상 보유",
+   "points": 1,
+   "group": "g5",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "수출 역량을 갖춘 기업(항목별 각 1점) · 외국어 브로슈어 또는 홍보동영상 보유",
+   "reason": "원문에 근거 없음"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126935",
+   "title": "[경북] 2027년 물산업 선도기업 신규기업 모집 공고",
+   "kind": "수출",
+   "name": "해외에 대리점, 파트너사, 지사, 법인 보유",
+   "points": 1,
+   "group": "g6",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "수출 역량을 갖춘 기업(항목별 각 1점) · 해외에 대리점, 파트너사, 지사, 법인 보유",
+   "reason": "원문에 근거 없음"
+  },
+  {
+   "notice_id": "kstartup:179386",
+   "title": "2026년 창업-Bus 프로그램「강원브릿지 화요IR」 참여기업 모집",
+   "kind": "업종",
+   "name": "강원 7대 전략산업 분야 기업",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "바이오·헬스, 반도체, 미래에너지, 미래모빌리티, 방위산업, 기후테크, 푸드테크 분야",
+   "quote": "※ 강원 7대 전략산업(바이오·헬스, 반도체, 미래에너지, 미래모빌리티, 방위산업, 기후테크, 푸드테크) 분야 기업 우대",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126974",
+   "title": "2026년 에너지특화기업 지정 신청 공고",
+   "kind": "수출",
+   "name": "에너지산업등 수출 실적",
+   "points": 5,
+   "group": "g1",
+   "program": null,
+   "extra": "공고일 기준 최근 3년 이내 실적",
+   "detail": "직수출 실적",
+   "quote": "신청기업의 에너지산업등의 수출실적 여부 (직수출 실적만 인정) 5 □ 있음 (5점) □ 없음 (0점)",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126977",
+   "title": "[전남광주] 2026년 2차 지역특화형 스마트공장(식품ㆍ바이오) 구축지원사업(기초) 공고",
+   "kind": "수출",
+   "name": "수출 실적증빙 제출 기업",
+   "points": 3,
+   "group": "g2",
+   "program": null,
+   "extra": "공고 접수 마감일 기준 유효한 서류만 인정함",
+   "detail": "최근년도(’25) 수출실적, 직접수출만 인정",
+   "quote": "∘수출 실적증빙 제출 기업 (최대 5점) * 가점항목당 3점, 최대 5점 가점 부여",
+   "reason": "원문에 근거 없음"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000126980",
+   "title": "2026년 4차 중소기업 CBAM대응 인프라구축 사업 참여기업 모집 공고",
+   "kind": "수출",
+   "name": "CBAM 대상 품목 EU 수출 실적",
+   "points": 2,
+   "group": "g1",
+   "program": null,
+   "extra": "‘26년 EU 수출 계약서(예정 포함) 또는 ’25.1월~공고 마감일 기준 직·간접 수출 실적 증빙을 제출",
+   "detail": "CBAM 대상 품목의 EU 수출 실적 제출",
+   "quote": "□ (가점사항) 시급성을 고려하여 CBAM 대상 품목 EU 수출 실적 제출이 가능한 중소기업*은 서류평가 가점(2점) 부여 * ‘26년 EU 수출 계약서(예정 포함) 또는 ’25.1월~공고 마감일 기준 직·간접 수출 실적 증빙을 제출한 기업에 한해 가점을 부여함(붙임5 참고)",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000127009",
+   "title": "[울산ㆍ경남] 2026년 인도네시아 자카르타 K-뷰티ㆍ푸드 소비재 수출상담회 지역 수출컨소시엄 참여기업 모집",
+   "kind": "수출",
+   "name": "서비스 수출 실적 보유기업",
+   "points": 1,
+   "group": "g17",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "ㅇ 중소기업 수출 유공 포상(간접수출 우수) 기업 또는 1점 서비스 수출 실적 보유기업",
+   "reason": "규칙 통과"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000127045",
+   "title": "[전남광주] 2026년 8차 공산품 수출 중소기업 글로벌 경쟁력 강화 긴급지원 사업 대상 모집 변경 공고",
+   "kind": "수출",
+   "name": "중동지역 수출 기업",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "중동지역 수출 기업",
+   "quote": "※ 심사순서 : 중동지역*** 수출 기업 우선 선정 후, 그 외 기업은 이메일 접수순",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000127067",
+   "title": "[전북] 2026년 미국 휴스턴 K-Food 전시ㆍ수출상담회 지역 수출컨소시엄 참여기업 모집 공고",
+   "kind": "수출",
+   "name": "서비스수출 실적 보유기업",
+   "points": 1,
+   "group": "g12",
+   "program": null,
+   "extra": null,
+   "detail": null,
+   "quote": "ㅇ 중소기업 수출 유공 포상(간접수출 우수) 기업 또는 서비스수출 실적 보유기업 1점",
+   "reason": "규칙 통과"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000127090",
+   "title": "[세종] 2026년 3차 중소기업 정보보호 지원 사업 수요기업 모집 재공고",
+   "kind": "업종",
+   "name": "세종시 전략산업 영위기업",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": null,
+   "detail": "세종 스마트시티",
+   "quote": "단, 세종시 전략산업 영위기업 및 침해사고 피해기업 우선 선정",
+   "reason": "확인할 수 없는 조건 말"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000127099",
+   "title": "[경북] 의성군 2026년 3차 바이오테크(식품) 소재산업 생태계 지원 사업의 수혜기업 모집 공고(시군구연고",
+   "kind": "업종",
+   "name": "농촌기업 우선지원",
+   "points": null,
+   "group": "g7",
+   "program": null,
+   "extra": null,
+   "detail": "의성농공단지, 봉양농공단지, 단밀농공단지, 다인농공단지 입주기업이며 농축산물 가공 관련 기업",
+   "quote": "◦ (농촌기업 우선지원) 의성농공단지, 봉양농공단지, 단밀농공단지, 다인농공단지에 입주기업이며 농축산물 가공 관련 기업은 우선지원",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000127100",
+   "title": "[전남] 여수시 2026년 5차 지역산업위기대응 맞춤형 지원사업 모집 공고",
+   "kind": "업종",
+   "name": "위기산업 핵심 및 전후방 기업",
+   "points": null,
+   "group": "g1",
+   "program": null,
+   "extra": "경영위기 현황, 지역 위기산업 내 파급도, 위기 극복 가 능성이 높은 기업",
+   "detail": "경영위기 현황, 지역 위기산업 내 파급도, 위기 극복 가능성이 높은 기업",
+   "quote": "※ 위기산업 핵심 및 전후방 기업 중 경영위기 현황, 지역 위기산업 내 파급도, 위기 극복 가 능성이 높은 기업을 우선 선정",
+   "reason": "AI가 채운 추가 조건"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000127105",
+   "title": "[부산] 2026년 부산스러운 K-bath 소상공인 동반성장 지원사업 관광코스 개발 및 굿즈 상품화 참여기업",
+   "kind": "업종",
+   "name": "로컬 식음료·목욕·웰니스 용품·관광기념품 상품화 실적",
+   "points": null,
+   "group": "g5",
+   "program": "분야2 부산스러운 굿즈 개발",
+   "extra": null,
+   "detail": "로컬 식음료, 목욕·웰니스 용품 또는 관광기념품의 상품화",
+   "quote": "(분야2 부산스러운 굿즈 개발) 로컬 식음료, 목욕·웰니스 용품 또는 관광기념품 의 상품화 또는 납품 실적이 있는 기업",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "bizinfo:PBLN_000000000127105",
+   "title": "[부산] 2026년 부산스러운 K-bath 소상공인 동반성장 지원사업 관광코스 개발 및 굿즈 상품화 참여기업",
+   "kind": "업종",
+   "name": "로컬 식음료·목욕·웰니스 용품·관광기념품 납품 실적",
+   "points": null,
+   "group": "g5",
+   "program": "분야2 부산스러운 굿즈 개발",
+   "extra": null,
+   "detail": "로컬 식음료, 목욕·웰니스 용품 또는 관광기념품의 납품",
+   "quote": "(분야2 부산스러운 굿즈 개발) 로컬 식음료, 목욕·웰니스 용품 또는 관광기념품 의 상품화 또는 납품 실적이 있는 기업",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "kstartup:179463",
+   "title": "2026년 5차 국립공주대학교 창업보육센터 입주기업 모집",
+   "kind": "업종",
+   "name": "공주 지역 특성화 알밤 사업 관련",
+   "points": null,
+   "group": "g2",
+   "program": null,
+   "extra": null,
+   "detail": "공주 지역 특성화 알밤 사업 관련",
+   "quote": "우대사항: 국립공주대학교 학생·교원창업자 / 공주 지역 특성화 알밤 사업 관련 / 지역주력산업 및 전･후방산업 분야* 등",
+   "reason": "점수 없음(우대만)"
+  },
+  {
+   "notice_id": "kstartup:179463",
+   "title": "2026년 5차 국립공주대학교 창업보육센터 입주기업 모집",
+   "kind": "업종",
+   "name": "지역주력산업 및 전･후방산업 분야",
+   "points": null,
+   "group": "g3",
+   "program": null,
+   "extra": null,
+   "detail": "충남 주력산업: (주축산업) 디스플레이부품장비, 탄소저감자동차부품, 고기능성그린바이오 (미래신산업) 수소연료전지 및 발전, 반도체첨단패키징",
+   "quote": "우대사항: 국립공주대학교 학생·교원창업자 / 공주 지역 특성화 알밤 사업 관련 / 지역주력산업 및 전･후방산업 분야* 등 * 충남 주력산업: (주축산업) 디스플레이부품장비, 탄소저감자동차부품, 고기능성그린바이오 (미래신산업) 수소연료전지 및 발전, 반도체첨단패키징",
+   "reason": "점수 없음(우대만)"
+  }
+ ],
+ "moves": {
+  "모두 해당 · 속성 없음": {
+   "counts": {
+    "null→양수": 5
+   },
+   "changed": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000117928",
+     "before": null,
+     "after": 1.0,
+     "title": "2026년 중소기업 마케팅지원사업 통합 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126845",
+     "before": null,
+     "after": 10.0,
+     "title": "[세종] 2026년 일ㆍ생활 균형 우수기업사례 공모전 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126888",
+     "before": null,
+     "after": 2.0,
+     "title": "2026년 해외 환경프로젝트 타당성조사 지원사업 본타당성조사(다년도) 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126919",
+     "before": null,
+     "after": 2.0,
+     "title": "2026년 한국농수산식품유통공사 협력사 ESG 지원사업 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000127009",
+     "before": null,
+     "after": 1.0,
+     "title": "[울산ㆍ경남] 2026년 인도네시아 자카르타 K-뷰티ㆍ푸드 소비재 수출상담회 지역 수출컨소"
+    }
+   ]
+  },
+  "모두 해당 · 여성 · 서울": {
+   "counts": {
+    "null→양수": 5
+   },
+   "changed": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000117928",
+     "before": null,
+     "after": 1.0,
+     "title": "2026년 중소기업 마케팅지원사업 통합 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126845",
+     "before": null,
+     "after": 10.0,
+     "title": "[세종] 2026년 일ㆍ생활 균형 우수기업사례 공모전 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126888",
+     "before": null,
+     "after": 2.0,
+     "title": "2026년 해외 환경프로젝트 타당성조사 지원사업 본타당성조사(다년도) 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126919",
+     "before": null,
+     "after": 2.0,
+     "title": "2026년 한국농수산식품유통공사 협력사 ESG 지원사업 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000127009",
+     "before": null,
+     "after": 1.0,
+     "title": "[울산ㆍ경남] 2026년 인도네시아 자카르타 K-뷰티ㆍ푸드 소비재 수출상담회 지역 수출컨소"
+    }
+   ]
+  },
+  "모두 해당 · 여성기업 · 벤처기업 · 경기 성남시": {
+   "counts": {
+    "양수→양수": 2,
+    "양수→null": 3,
+    "null→양수": 3
+   },
+   "changed": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000117928",
+     "before": 1.0,
+     "after": 2.0,
+     "title": "2026년 중소기업 마케팅지원사업 통합 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000119636",
+     "before": 5.0,
+     "after": null,
+     "title": "[세종] 2026년 중소기업육성자금 지원계획 변경 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000124915",
+     "before": 5.0,
+     "after": null,
+     "title": "[대전] 2026년 하반기 중소기업 창업 및 경쟁력강화사업자금 지원 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125856",
+     "before": 5.0,
+     "after": null,
+     "title": "[세종] 2026년 2차 중소기업육성자금 지원계획 변경 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126845",
+     "before": null,
+     "after": 10.0,
+     "title": "[세종] 2026년 일ㆍ생활 균형 우수기업사례 공모전 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126888",
+     "before": null,
+     "after": 2.0,
+     "title": "2026년 해외 환경프로젝트 타당성조사 지원사업 본타당성조사(다년도) 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126919",
+     "before": null,
+     "after": 2.0,
+     "title": "2026년 한국농수산식품유통공사 협력사 ESG 지원사업 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000127009",
+     "before": 2.0,
+     "after": 3.0,
+     "title": "[울산ㆍ경남] 2026년 인도네시아 자카르타 K-뷰티ㆍ푸드 소비재 수출상담회 지역 수출컨소"
+    }
+   ]
+  },
+  "모두 해당 · 남성 · 장애인기업 · 이노비즈 · 전남광주": {
+   "counts": {
+    "null→양수": 4,
+    "양수→null": 3,
+    "양수→양수": 1
+   },
+   "changed": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000117928",
+     "before": null,
+     "after": 1.0,
+     "title": "2026년 중소기업 마케팅지원사업 통합 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000119636",
+     "before": 5.0,
+     "after": null,
+     "title": "[세종] 2026년 중소기업육성자금 지원계획 변경 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000124915",
+     "before": 5.0,
+     "after": null,
+     "title": "[대전] 2026년 하반기 중소기업 창업 및 경쟁력강화사업자금 지원 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125856",
+     "before": 5.0,
+     "after": null,
+     "title": "[세종] 2026년 2차 중소기업육성자금 지원계획 변경 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126845",
+     "before": null,
+     "after": 10.0,
+     "title": "[세종] 2026년 일ㆍ생활 균형 우수기업사례 공모전 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126888",
+     "before": null,
+     "after": 2.0,
+     "title": "2026년 해외 환경프로젝트 타당성조사 지원사업 본타당성조사(다년도) 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126919",
+     "before": null,
+     "after": 2.0,
+     "title": "2026년 한국농수산식품유통공사 협력사 ESG 지원사업 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000127009",
+     "before": 2.0,
+     "after": 3.0,
+     "title": "[울산ㆍ경남] 2026년 인도네시아 자카르타 K-뷰티ㆍ푸드 소비재 수출상담회 지역 수출컨소"
+    }
+   ]
+  },
+  "모두 해당 아님 · 속성 없음": {
+   "counts": {
+    "null→0": 14
+   },
+   "changed": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000118204",
+     "before": null,
+     "after": 0,
+     "title": "2026년 여성기업 육성사업 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000118674",
+     "before": null,
+     "after": 0,
+     "title": "[경기] 2026년 규제샌드박스 지원사업 맞춤형 컨설팅 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000118729",
+     "before": null,
+     "after": 0,
+     "title": "2026년 창업-BuS at 경북 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000119170",
+     "before": null,
+     "after": 0,
+     "title": "2026년 강원창조경제혁신센터 창업-BuS 프로그램 강원브릿지 화요IR 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000122229",
+     "before": null,
+     "after": 0,
+     "title": "2026년 창업BuS in 세종 수요투자 라운드 참여기업 상시 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000123173",
+     "before": null,
+     "after": 0,
+     "title": "[전남] 여수시 2026년 2차 지역산업위기대응 맞춤형 지원사업 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000124792",
+     "before": null,
+     "after": 0,
+     "title": "2026년 인증획득제품 해외 실증 지원사업(추경 포함) 추가 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125698",
+     "before": null,
+     "after": 0,
+     "title": "[전북] 2026년 전북지역기술혁신허브 맞춤형 기술지원 참여기업 모집 상시 통합 공고(전북"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125778",
+     "before": null,
+     "after": 0,
+     "title": "2026년 미래모빌리티 인지부품 기능안전 시험지원 기반구축사업 기술서비스 수혜기업 모집 공"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126888",
+     "before": null,
+     "after": 0,
+     "title": "2026년 해외 환경프로젝트 타당성조사 지원사업 본타당성조사(다년도) 모집 공고"
+    },
+    {
+     "notice_id": "kstartup:179386",
+     "before": null,
+     "after": 0,
+     "title": "2026년 창업-Bus 프로그램「강원브릿지 화요IR」 참여기업 모집"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126980",
+     "before": null,
+     "after": 0,
+     "title": "2026년 4차 중소기업 CBAM대응 인프라구축 사업 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000127045",
+     "before": null,
+     "after": 0,
+     "title": "[전남광주] 2026년 8차 공산품 수출 중소기업 글로벌 경쟁력 강화 긴급지원 사업 대상 "
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000127100",
+     "before": null,
+     "after": 0,
+     "title": "[전남] 여수시 2026년 5차 지역산업위기대응 맞춤형 지원사업 모집 공고"
+    }
+   ]
+  },
+  "모두 해당 아님 · 여성 · 서울": {
+   "counts": {
+    "null→0": 15
+   },
+   "changed": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000118204",
+     "before": null,
+     "after": 0,
+     "title": "2026년 여성기업 육성사업 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000118674",
+     "before": null,
+     "after": 0,
+     "title": "[경기] 2026년 규제샌드박스 지원사업 맞춤형 컨설팅 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000118729",
+     "before": null,
+     "after": 0,
+     "title": "2026년 창업-BuS at 경북 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000119170",
+     "before": null,
+     "after": 0,
+     "title": "2026년 강원창조경제혁신센터 창업-BuS 프로그램 강원브릿지 화요IR 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000122229",
+     "before": null,
+     "after": 0,
+     "title": "2026년 창업BuS in 세종 수요투자 라운드 참여기업 상시 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000122268",
+     "before": null,
+     "after": 0,
+     "title": "2026년 2차 메카노바이오활성소재 혁신의료기기 실증 기반구축 생물학적 시험평가인증 지원사"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000123173",
+     "before": null,
+     "after": 0,
+     "title": "[전남] 여수시 2026년 2차 지역산업위기대응 맞춤형 지원사업 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000124792",
+     "before": null,
+     "after": 0,
+     "title": "2026년 인증획득제품 해외 실증 지원사업(추경 포함) 추가 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125698",
+     "before": null,
+     "after": 0,
+     "title": "[전북] 2026년 전북지역기술혁신허브 맞춤형 기술지원 참여기업 모집 상시 통합 공고(전북"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125778",
+     "before": null,
+     "after": 0,
+     "title": "2026년 미래모빌리티 인지부품 기능안전 시험지원 기반구축사업 기술서비스 수혜기업 모집 공"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126888",
+     "before": null,
+     "after": 0,
+     "title": "2026년 해외 환경프로젝트 타당성조사 지원사업 본타당성조사(다년도) 모집 공고"
+    },
+    {
+     "notice_id": "kstartup:179386",
+     "before": null,
+     "after": 0,
+     "title": "2026년 창업-Bus 프로그램「강원브릿지 화요IR」 참여기업 모집"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126980",
+     "before": null,
+     "after": 0,
+     "title": "2026년 4차 중소기업 CBAM대응 인프라구축 사업 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000127045",
+     "before": null,
+     "after": 0,
+     "title": "[전남광주] 2026년 8차 공산품 수출 중소기업 글로벌 경쟁력 강화 긴급지원 사업 대상 "
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000127100",
+     "before": null,
+     "after": 0,
+     "title": "[전남] 여수시 2026년 5차 지역산업위기대응 맞춤형 지원사업 모집 공고"
+    }
+   ]
+  },
+  "모두 해당 아님 · 여성기업 · 벤처기업 · 경기 성남시": {
+   "counts": {
+    "null→0": 15
+   },
+   "changed": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000118204",
+     "before": null,
+     "after": 0,
+     "title": "2026년 여성기업 육성사업 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000118674",
+     "before": null,
+     "after": 0,
+     "title": "[경기] 2026년 규제샌드박스 지원사업 맞춤형 컨설팅 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000118729",
+     "before": null,
+     "after": 0,
+     "title": "2026년 창업-BuS at 경북 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000119170",
+     "before": null,
+     "after": 0,
+     "title": "2026년 강원창조경제혁신센터 창업-BuS 프로그램 강원브릿지 화요IR 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000122229",
+     "before": null,
+     "after": 0,
+     "title": "2026년 창업BuS in 세종 수요투자 라운드 참여기업 상시 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000122268",
+     "before": null,
+     "after": 0,
+     "title": "2026년 2차 메카노바이오활성소재 혁신의료기기 실증 기반구축 생물학적 시험평가인증 지원사"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000123173",
+     "before": null,
+     "after": 0,
+     "title": "[전남] 여수시 2026년 2차 지역산업위기대응 맞춤형 지원사업 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000124792",
+     "before": null,
+     "after": 0,
+     "title": "2026년 인증획득제품 해외 실증 지원사업(추경 포함) 추가 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125698",
+     "before": null,
+     "after": 0,
+     "title": "[전북] 2026년 전북지역기술혁신허브 맞춤형 기술지원 참여기업 모집 상시 통합 공고(전북"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125778",
+     "before": null,
+     "after": 0,
+     "title": "2026년 미래모빌리티 인지부품 기능안전 시험지원 기반구축사업 기술서비스 수혜기업 모집 공"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126888",
+     "before": null,
+     "after": 0,
+     "title": "2026년 해외 환경프로젝트 타당성조사 지원사업 본타당성조사(다년도) 모집 공고"
+    },
+    {
+     "notice_id": "kstartup:179386",
+     "before": null,
+     "after": 0,
+     "title": "2026년 창업-Bus 프로그램「강원브릿지 화요IR」 참여기업 모집"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126980",
+     "before": null,
+     "after": 0,
+     "title": "2026년 4차 중소기업 CBAM대응 인프라구축 사업 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000127045",
+     "before": null,
+     "after": 0,
+     "title": "[전남광주] 2026년 8차 공산품 수출 중소기업 글로벌 경쟁력 강화 긴급지원 사업 대상 "
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000127100",
+     "before": null,
+     "after": 0,
+     "title": "[전남] 여수시 2026년 5차 지역산업위기대응 맞춤형 지원사업 모집 공고"
+    }
+   ]
+  },
+  "모두 해당 아님 · 남성 · 장애인기업 · 이노비즈 · 전남광주": {
+   "counts": {
+    "null→0": 15
+   },
+   "changed": [
+    {
+     "notice_id": "bizinfo:PBLN_000000000118204",
+     "before": null,
+     "after": 0,
+     "title": "2026년 여성기업 육성사업 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000118674",
+     "before": null,
+     "after": 0,
+     "title": "[경기] 2026년 규제샌드박스 지원사업 맞춤형 컨설팅 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000118729",
+     "before": null,
+     "after": 0,
+     "title": "2026년 창업-BuS at 경북 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000119170",
+     "before": null,
+     "after": 0,
+     "title": "2026년 강원창조경제혁신센터 창업-BuS 프로그램 강원브릿지 화요IR 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000122229",
+     "before": null,
+     "after": 0,
+     "title": "2026년 창업BuS in 세종 수요투자 라운드 참여기업 상시 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000122268",
+     "before": null,
+     "after": 0,
+     "title": "2026년 2차 메카노바이오활성소재 혁신의료기기 실증 기반구축 생물학적 시험평가인증 지원사"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000123173",
+     "before": null,
+     "after": 0,
+     "title": "[전남] 여수시 2026년 2차 지역산업위기대응 맞춤형 지원사업 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000124792",
+     "before": null,
+     "after": 0,
+     "title": "2026년 인증획득제품 해외 실증 지원사업(추경 포함) 추가 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125698",
+     "before": null,
+     "after": 0,
+     "title": "[전북] 2026년 전북지역기술혁신허브 맞춤형 기술지원 참여기업 모집 상시 통합 공고(전북"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000125778",
+     "before": null,
+     "after": 0,
+     "title": "2026년 미래모빌리티 인지부품 기능안전 시험지원 기반구축사업 기술서비스 수혜기업 모집 공"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126888",
+     "before": null,
+     "after": 0,
+     "title": "2026년 해외 환경프로젝트 타당성조사 지원사업 본타당성조사(다년도) 모집 공고"
+    },
+    {
+     "notice_id": "kstartup:179386",
+     "before": null,
+     "after": 0,
+     "title": "2026년 창업-Bus 프로그램「강원브릿지 화요IR」 참여기업 모집"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000126980",
+     "before": null,
+     "after": 0,
+     "title": "2026년 4차 중소기업 CBAM대응 인프라구축 사업 참여기업 모집 공고"
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000127045",
+     "before": null,
+     "after": 0,
+     "title": "[전남광주] 2026년 8차 공산품 수출 중소기업 글로벌 경쟁력 강화 긴급지원 사업 대상 "
+    },
+    {
+     "notice_id": "bizinfo:PBLN_000000000127100",
+     "before": null,
+     "after": 0,
+     "title": "[전남] 여수시 2026년 5차 지역산업위기대응 맞춤형 지원사업 모집 공고"
+    }
+   ]
+  }
+ }
+}

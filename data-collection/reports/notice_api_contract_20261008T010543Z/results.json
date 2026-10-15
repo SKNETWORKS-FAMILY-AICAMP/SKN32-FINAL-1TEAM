@@ -1,0 +1,882 @@
+{
+ "run_at": "20261008T010543Z",
+ "url": "http://43.201.90.238:8000",
+ "today": "2026-10-08",
+ "sbrain_ref": "origin/feature/SB-87-init-supervisor-integration",
+ "checks": [
+  {
+   "check": "T-C2 법인 · 서울 마포구 · 벤처 offset 0",
+   "ok": true,
+   "detail": "카드 10 · 수집 상태 정상 · 필터 통과 1741 · rank [1, 2, 3, '…'] · 659ms · 보낸 지역 '서울'"
+  },
+  {
+   "check": "T-C2 법인 · 서울 마포구 · 벤처 offset 10",
+   "ok": true,
+   "detail": "카드 10 · 수집 상태 정상 · 필터 통과 1741 · rank [11, 12, 13, '…'] · 607ms · 보낸 지역 '서울'"
+  },
+  {
+   "check": "T-C2 예비창업자 · 광주광역시 · 여성 offset 0",
+   "ok": true,
+   "detail": "카드 10 · 수집 상태 정상 · 필터 통과 1536 · rank [1, 2, 3, '…'] · 575ms · 보낸 지역 '전남광주'"
+  },
+  {
+   "check": "T-C2 예비창업자 · 광주광역시 · 여성 offset 10",
+   "ok": true,
+   "detail": "카드 10 · 수집 상태 정상 · 필터 통과 1536 · rank [11, 12, 13, '…'] · 591ms · 보낸 지역 '전남광주'"
+  },
+  {
+   "check": "T-C2 개인사업자 · 경기도 성남시 · 여성기업·벤처 offset 0",
+   "ok": true,
+   "detail": "카드 10 · 수집 상태 정상 · 필터 통과 1673 · rank [1, 2, 3, '…'] · 651ms · 보낸 지역 '경기'"
+  },
+  {
+   "check": "T-C2 개인사업자 · 경기도 성남시 · 여성기업·벤처 offset 10",
+   "ok": true,
+   "detail": "카드 10 · 수집 상태 정상 · 필터 통과 1673 · rank [11, 12, 13, '…'] · 655ms · 보낸 지역 '경기'"
+  },
+  {
+   "check": "T-C2 법인 · 충청남도 천안시 · 장애인기업 · 오래된 회사 offset 0",
+   "ok": true,
+   "detail": "카드 10 · 수집 상태 정상 · 필터 통과 1536 · rank [1, 2, 3, '…'] · 678ms · 보낸 지역 '충남'"
+  },
+  {
+   "check": "T-C2 법인 · 충청남도 천안시 · 장애인기업 · 오래된 회사 offset 10",
+   "ok": true,
+   "detail": "카드 10 · 수집 상태 정상 · 필터 통과 1536 · rank [11, 12, 13, '…'] · 658ms · 보낸 지역 '충남'"
+  },
+  {
+   "check": "G-01 법인 · 서울 마포구 · 벤처",
+   "ok": true,
+   "detail": "10건 · 통과 10 · 불통과 0 · 확인 필요 있음 10 · 형식 오류 0"
+  },
+  {
+   "check": "G-01 예비창업자 · 광주광역시 · 여성",
+   "ok": true,
+   "detail": "10건 · 통과 10 · 불통과 0 · 확인 필요 있음 0 · 형식 오류 0"
+  },
+  {
+   "check": "G-01 개인사업자 · 경기도 성남시 · 여성기업·벤처",
+   "ok": true,
+   "detail": "10건 · 통과 10 · 불통과 0 · 확인 필요 있음 10 · 형식 오류 0"
+  },
+  {
+   "check": "G-01 법인 · 충청남도 천안시 · 장애인기업 · 오래된 회사",
+   "ok": true,
+   "detail": "10건 · 통과 10 · 불통과 0 · 확인 필요 있음 10 · 형식 오류 0"
+  },
+  {
+   "check": "공고 없음 → ResourceNotFound",
+   "ok": true,
+   "detail": "404 + NOTICE_NOT_FOUND 를 값으로 받아 X-C2-GONE 경로"
+  },
+  {
+   "check": "경로 없음 404 ≠ 공고 없음",
+   "ok": true,
+   "detail": "본문 코드 없는 404 → ProviderError(404)"
+  },
+  {
+   "check": "설립일 없는 사업자 → 판정 API 부르지 않음",
+   "ok": true,
+   "detail": "missing_inputs=['foundedAt']"
+  },
+  {
+   "check": "G-01 모든 공고(가짜 신청자 1명)",
+   "ok": true,
+   "detail": "2861건 · 형식 오류·공고 없음 0 · 통과 2631 · 확인 필요 있음 2861 · 124초(건당 43ms, HTTP 2회)"
+  }
+ ],
+ "log": {
+  "tc2": {
+   "법인 · 서울 마포구 · 벤처/0": {
+    "collection_status": "정상",
+    "filtered_count": 1741,
+    "fallback_used": false,
+    "fallback_mode": null,
+    "cards": 10,
+    "ms": 659,
+    "ranks": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ],
+    "bonus": [
+     null,
+     null,
+     null,
+     0.0,
+     0.0,
+     null,
+     null,
+     0.0,
+     0.0,
+     null
+    ],
+    "region_sent": "서울",
+    "district_sent": "마포구",
+    "calls": 2
+   },
+   "법인 · 서울 마포구 · 벤처/10": {
+    "collection_status": "정상",
+    "filtered_count": 1741,
+    "fallback_used": false,
+    "fallback_mode": null,
+    "cards": 10,
+    "ms": 607,
+    "ranks": [
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20
+    ],
+    "bonus": [
+     0.0,
+     null,
+     null,
+     null,
+     0.0,
+     null,
+     null,
+     null,
+     null,
+     null
+    ],
+    "region_sent": "서울",
+    "district_sent": "마포구",
+    "calls": 2
+   },
+   "예비창업자 · 광주광역시 · 여성/0": {
+    "collection_status": "정상",
+    "filtered_count": 1536,
+    "fallback_used": false,
+    "fallback_mode": null,
+    "cards": 10,
+    "ms": 575,
+    "ranks": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ],
+    "bonus": [
+     null,
+     0.0,
+     null,
+     null,
+     null,
+     0.0,
+     null,
+     null,
+     null,
+     null
+    ],
+    "region_sent": "전남광주",
+    "district_sent": "북구",
+    "calls": 2
+   },
+   "예비창업자 · 광주광역시 · 여성/10": {
+    "collection_status": "정상",
+    "filtered_count": 1536,
+    "fallback_used": false,
+    "fallback_mode": null,
+    "cards": 10,
+    "ms": 591,
+    "ranks": [
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20
+    ],
+    "bonus": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ],
+    "region_sent": "전남광주",
+    "district_sent": "북구",
+    "calls": 2
+   },
+   "개인사업자 · 경기도 성남시 · 여성기업·벤처/0": {
+    "collection_status": "정상",
+    "filtered_count": 1673,
+    "fallback_used": false,
+    "fallback_mode": null,
+    "cards": 10,
+    "ms": 651,
+    "ranks": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ],
+    "bonus": [
+     null,
+     null,
+     0.0,
+     0.0,
+     0.0,
+     0.0,
+     null,
+     0.0,
+     0.0,
+     null
+    ],
+    "region_sent": "경기",
+    "district_sent": "성남시",
+    "calls": 2
+   },
+   "개인사업자 · 경기도 성남시 · 여성기업·벤처/10": {
+    "collection_status": "정상",
+    "filtered_count": 1673,
+    "fallback_used": false,
+    "fallback_mode": null,
+    "cards": 10,
+    "ms": 655,
+    "ranks": [
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20
+    ],
+    "bonus": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     0.0,
+     null,
+     null
+    ],
+    "region_sent": "경기",
+    "district_sent": "성남시",
+    "calls": 2
+   },
+   "법인 · 충청남도 천안시 · 장애인기업 · 오래된 회사/0": {
+    "collection_status": "정상",
+    "filtered_count": 1536,
+    "fallback_used": false,
+    "fallback_mode": null,
+    "cards": 10,
+    "ms": 678,
+    "ranks": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ],
+    "bonus": [
+     0.0,
+     null,
+     null,
+     0.0,
+     0.0,
+     null,
+     0.0,
+     null,
+     null,
+     0.0
+    ],
+    "region_sent": "충남",
+    "district_sent": "천안시",
+    "calls": 2
+   },
+   "법인 · 충청남도 천안시 · 장애인기업 · 오래된 회사/10": {
+    "collection_status": "정상",
+    "filtered_count": 1536,
+    "fallback_used": false,
+    "fallback_mode": null,
+    "cards": 10,
+    "ms": 658,
+    "ranks": [
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20
+    ],
+    "bonus": [
+     null,
+     0.0,
+     null,
+     0.0,
+     null,
+     null,
+     0.0,
+     0.0,
+     null,
+     0.0
+    ],
+    "region_sent": "충남",
+    "district_sent": "천안시",
+    "calls": 2
+   }
+  },
+  "g01": {
+   "법인 · 서울 마포구 · 벤처": [
+    {
+     "id": "kstartup:179430",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형"
+     ],
+     "age_years": 1.6,
+     "title": "[국비지원] AI 기반 서비스 개발·사업화 1인 창업가 캠프 8기 모집",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "kstartup:179284",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형"
+     ],
+     "age_years": 1.6,
+     "title": "용인시산업진흥원 2026년 제4차 창업지원센터 입주기업 모집",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "bizinfo:PBLN_000000000120566",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 1.6,
+     "title": "2026년 지식재산 경영인증 신청 공고",
+     "support_amount_max": null,
+     "bonus_info": true
+    },
+    {
+     "id": "bizinfo:PBLN_000000000121291",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 1.6,
+     "title": "2026년 비즈니스지원단(현장클리닉) 사업 운영계획 공고",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "bizinfo:PBLN_000000000126962",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 1.6,
+     "title": "2026년 10차 정보보호 인증제품 조달청 벤처나라 추천기업 모집 공고(",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "kstartup:177072",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형"
+     ],
+     "age_years": 1.6,
+     "title": "2026년 보건의료빅데이터 창업 인큐베이팅 랩 모집 공고",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "kstartup:178835",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형"
+     ],
+     "age_years": 1.6,
+     "title": "2026 명지전문대학 MJC 창업보육(Ⅰ)센터 신규 입주기업 상시모집 안",
+     "support_amount_max": null,
+     "bonus_info": true
+    },
+    {
+     "id": "bizinfo:PBLN_000000000126686",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 1.6,
+     "title": "2026년 스타트업 원스톱 온라인 심화상담 지원 모집 공고",
+     "support_amount_max": 3000000,
+     "bonus_info": false
+    },
+    {
+     "id": "bizinfo:PBLN_000000000127015",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 1.6,
+     "title": "수성알파시티 기업 전용 5G 기반 통신망 서비스 지원 대상 기업 2차 모",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "bizinfo:PBLN_000000000123844",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 1.6,
+     "title": "[서울] 2026년 하반기 중장년 소상공인 디지털 전환지원 사업 모집 공",
+     "support_amount_max": null,
+     "bonus_info": true
+    }
+   ],
+   "예비창업자 · 광주광역시 · 여성": [
+    {
+     "id": "kstartup:179430",
+     "passed": true,
+     "failed": [],
+     "unknown": [],
+     "age_years": null,
+     "title": "[국비지원] AI 기반 서비스 개발·사업화 1인 창업가 캠프 8기 모집",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "bizinfo:PBLN_000000000126686",
+     "passed": true,
+     "failed": [],
+     "unknown": [],
+     "age_years": null,
+     "title": "2026년 스타트업 원스톱 온라인 심화상담 지원 모집 공고",
+     "support_amount_max": 3000000,
+     "bonus_info": false
+    },
+    {
+     "id": "kstartup:179353",
+     "passed": true,
+     "failed": [],
+     "unknown": [],
+     "age_years": null,
+     "title": "AI 올라운더(기획,개발,마케팅) 창업가육성과정 8기 모집",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "bizinfo:PBLN_000000000125864",
+     "passed": true,
+     "failed": [],
+     "unknown": [],
+     "age_years": null,
+     "title": "2026년 3차 영월군 청년 창업육성 지원사업 수정 공고",
+     "support_amount_max": null,
+     "bonus_info": true
+    },
+    {
+     "id": "kstartup:175366",
+     "passed": true,
+     "failed": [],
+     "unknown": [],
+     "age_years": null,
+     "title": "SK하이닉스청년창업파크 입주기업 모집(상시모집)",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "bizinfo:PBLN_000000000121291",
+     "passed": true,
+     "failed": [],
+     "unknown": [],
+     "age_years": null,
+     "title": "2026년 비즈니스지원단(현장클리닉) 사업 운영계획 공고",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "kstartup:179403",
+     "passed": true,
+     "failed": [],
+     "unknown": [],
+     "age_years": null,
+     "title": "2026년 10월 동네창업학교 교육생 모집 공고",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "kstartup:177072",
+     "passed": true,
+     "failed": [],
+     "unknown": [],
+     "age_years": null,
+     "title": "2026년 보건의료빅데이터 창업 인큐베이팅 랩 모집 공고",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "kstartup:178967",
+     "passed": true,
+     "failed": [],
+     "unknown": [],
+     "age_years": null,
+     "title": "[온라인] AI로 나만의 수익 사이트 만들기｜바이브코딩 실전 클래스",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "kstartup:179284",
+     "passed": true,
+     "failed": [],
+     "unknown": [],
+     "age_years": null,
+     "title": "용인시산업진흥원 2026년 제4차 창업지원센터 입주기업 모집",
+     "support_amount_max": null,
+     "bonus_info": false
+    }
+   ],
+   "개인사업자 · 경기도 성남시 · 여성기업·벤처": [
+    {
+     "id": "kstartup:179430",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형"
+     ],
+     "age_years": 7.4,
+     "title": "[국비지원] AI 기반 서비스 개발·사업화 1인 창업가 캠프 8기 모집",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "bizinfo:PBLN_000000000118204",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 7.4,
+     "title": "2026년 여성기업 육성사업 공고",
+     "support_amount_max": null,
+     "bonus_info": true
+    },
+    {
+     "id": "bizinfo:PBLN_000000000126686",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 7.4,
+     "title": "2026년 스타트업 원스톱 온라인 심화상담 지원 모집 공고",
+     "support_amount_max": 3000000,
+     "bonus_info": false
+    },
+    {
+     "id": "bizinfo:PBLN_000000000121291",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 7.4,
+     "title": "2026년 비즈니스지원단(현장클리닉) 사업 운영계획 공고",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "bizinfo:PBLN_000000000126962",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 7.4,
+     "title": "2026년 10차 정보보호 인증제품 조달청 벤처나라 추천기업 모집 공고(",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "bizinfo:PBLN_000000000127015",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 7.4,
+     "title": "수성알파시티 기업 전용 5G 기반 통신망 서비스 지원 대상 기업 2차 모",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "kstartup:177072",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형"
+     ],
+     "age_years": 7.4,
+     "title": "2026년 보건의료빅데이터 창업 인큐베이팅 랩 모집 공고",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "bizinfo:PBLN_000000000126966",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 7.4,
+     "title": "2026년 정보통신 중소기업 발전 유공자 포상 계획 공고",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "bizinfo:PBLN_000000000116745",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 7.4,
+     "title": "2026년 해외 온라인 위조상품 유통 사전진단 서비스 공고",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "kstartup:178967",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형"
+     ],
+     "age_years": 7.4,
+     "title": "[온라인] AI로 나만의 수익 사이트 만들기｜바이브코딩 실전 클래스",
+     "support_amount_max": null,
+     "bonus_info": false
+    }
+   ],
+   "법인 · 충청남도 천안시 · 장애인기업 · 오래된 회사": [
+    {
+     "id": "bizinfo:PBLN_000000000118350",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 14.8,
+     "title": "2026년 장애인 창업 컨설팅지원 대상자 모집 공고",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "bizinfo:PBLN_000000000120566",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 14.8,
+     "title": "2026년 지식재산 경영인증 신청 공고",
+     "support_amount_max": null,
+     "bonus_info": true
+    },
+    {
+     "id": "bizinfo:PBLN_000000000126673",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 14.8,
+     "title": "2026년 2차 1인 중증장애인기업 보조공학기기 지원사업 모집 공고",
+     "support_amount_max": 5000000,
+     "bonus_info": false
+    },
+    {
+     "id": "bizinfo:PBLN_000000000121291",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 14.8,
+     "title": "2026년 비즈니스지원단(현장클리닉) 사업 운영계획 공고",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "bizinfo:PBLN_000000000126686",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 14.8,
+     "title": "2026년 스타트업 원스톱 온라인 심화상담 지원 모집 공고",
+     "support_amount_max": 3000000,
+     "bonus_info": false
+    },
+    {
+     "id": "bizinfo:PBLN_000000000120282",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 14.8,
+     "title": "2026년 장애인기업 공공판로(공공입찰ㆍMASㆍ이음장터ㆍ벤처나라ㆍ혁신장터",
+     "support_amount_max": null,
+     "bonus_info": true
+    },
+    {
+     "id": "bizinfo:PBLN_000000000127015",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 14.8,
+     "title": "수성알파시티 기업 전용 5G 기반 통신망 서비스 지원 대상 기업 2차 모",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "bizinfo:PBLN_000000000127001",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 14.8,
+     "title": "2026년 극지 데이터 융합 스케일업 프로그램 참여기업 모집 공고",
+     "support_amount_max": null,
+     "bonus_info": false
+    },
+    {
+     "id": "bizinfo:PBLN_000000000122273",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 14.8,
+     "title": "2026년 찾아가는 1:1 디지털 교육 소상공인 모집 공고",
+     "support_amount_max": null,
+     "bonus_info": true
+    },
+    {
+     "id": "bizinfo:PBLN_000000000123363",
+     "passed": true,
+     "failed": [],
+     "unknown": [
+      "지원대상 유형",
+      "업력"
+     ],
+     "age_years": 14.8,
+     "title": "2026년 선도기업 전략직종 직무개발 참여 기업 추가 모집 공고",
+     "support_amount_max": null,
+     "bonus_info": false
+    }
+   ]
+  },
+  "edge": {},
+  "g01_all": {
+   "notices": 2861,
+   "errors": [],
+   "error_count": 0,
+   "passed": 2631,
+   "with_unknown": 2861,
+   "sec": 124.0
+  }
+ },
+ "fake_applicants": [
+  "법인 · 서울 마포구 · 벤처",
+  "예비창업자 · 광주광역시 · 여성",
+  "개인사업자 · 경기도 성남시 · 여성기업·벤처",
+  "법인 · 충청남도 천안시 · 장애인기업 · 오래된 회사"
+ ],
+ "openai_calls": 0,
+ "db_writes": 0
+}

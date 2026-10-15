@@ -1,0 +1,364 @@
+C:\mok_workspace\SKN32-FINAL-1TEAM\data-collection\search\app.py:5: SyntaxWarning: invalid escape sequence '\.'
+  .\.venv\Scripts\python.exe -m search.app       내 PC 에서 (127.0.0.1:8000)
+C:\mok_workspace\SKN32-FINAL-1TEAM\data-collection\tests\test_match_rules.py:4: SyntaxWarning: invalid escape sequence '\.'
+  .\.venv\Scripts\python.exe -X utf8 -m unittest discover -s tests -k test_match_rules -v
+.................................................................................................ssssssssss..........................................................................................................................................................................................................................................................................................................................................usage: run_unit.py [-h] --prompt {v1,v2,v3} [--allow-legacy] [--plan]
+                   [--workers WORKERS] [--previous PREVIOUS] [--resume RESUME]
+                   [--out OUT]
+                   [--model {gpt-4.1-mini,gpt-4o-mini,gpt-5.6-luna,gpt-5.6-sol,gpt-5.6-terra}]
+                   [--reasoning-effort {none,low,medium,high}] [--all]
+                   [--reverify REVERIFY] [--profile {strict,rough}]
+                   [--ids-file IDS_FILE] [--max-chars MAX_CHARS]
+                   [--source {shared,lab}] [--only-new ONLY_NEW]
+                   [--merge-append] [--merge-base MERGE_BASE]
+                   [--merge-override MERGE_OVERRIDE]
+                   [--counterpart COUNTERPART]
+run_unit.py: error: the following arguments are required: --prompt
+....입력 10개 (정상 8 · 무관 2)
+  case01 q001 제조           중소 금형·사출 공장의 불량을 카메라로 자동 검출하는 비전 AI 검사 장 [소재지 보완]
+  case02 q005 IT·SW        중소기업 회계·세무 서류를 자동으로 분류하는 AI SaaS [소재지 보완]
+  case03 q016 외식·소상공인      10년째 운영 중인 한식당, 매출이 줄어 경영 개선과 운영자금이 필요하다 [소재지 보완]
+  case04 q022 콘텐츠          웹툰 IP를 활용한 굿즈와 애니메이션 숏폼 제작
+  case05 q021 수출           산업용 밸브를 생산하며 중동 시장 수출을 확대하려 한다
+  case06 q013 농식품          지역 농산물로 만든 수제 잼과 가공식품 온라인 판매
+  case07 q026 환경·에너지       공장 지붕 태양광과 에너지저장장치를 묶은 에너지 관리 서비스
+  case08 q031 사회적경제        발달장애인을 고용해 친환경 세제를 만드는 사회적기업
+  case09 n001 무관           오늘 날씨가 좋네요 점심 뭐 먹을까
+  case10 n002 무관           주말에 친구들과 캠핑 갈 장소 추천해줘
+
+사전 정합성 검사 (읽기 전용 · 서버·모델을 켜기 전)
+  판정: 불일치 — 서버를 켜지 않고 중단한다:
+  - [npz_chroma · 불일치] 벡터 값이 다른 공고 1건
+색인을 자동으로 다시 만들지 않는다. `--check-only` 로 보고서를 남겨 원인을 본다.
+입력 10개 (정상 8 · 무관 2)
+  case01 q001 제조           중소 금형·사출 공장의 불량을 카메라로 자동 검출하는 비전 AI 검사 장 [소재지 보완]
+  case02 q005 IT·SW        중소기업 회계·세무 서류를 자동으로 분류하는 AI SaaS [소재지 보완]
+  case03 q016 외식·소상공인      10년째 운영 중인 한식당, 매출이 줄어 경영 개선과 운영자금이 필요하다 [소재지 보완]
+  case04 q022 콘텐츠          웹툰 IP를 활용한 굿즈와 애니메이션 숏폼 제작
+  case05 q021 수출           산업용 밸브를 생산하며 중동 시장 수출을 확대하려 한다
+  case06 q013 농식품          지역 농산물로 만든 수제 잼과 가공식품 온라인 판매
+  case07 q026 환경·에너지       공장 지붕 태양광과 에너지저장장치를 묶은 에너지 관리 서비스
+  case08 q031 사회적경제        발달장애인을 고용해 친환경 세제를 만드는 사회적기업
+  case09 n001 무관           오늘 날씨가 좋네요 점심 뭐 먹을까
+  case10 n002 무관           주말에 친구들과 캠핑 갈 장소 추천해줘
+
+사전 정합성 검사 (읽기 전용 · 서버·모델을 켜기 전)
+
+서버와 같은 방식으로 색인·공고를 올린다 (app.boot)
+  DB 1 · Chroma 1 · BM25 1 · 공고정보 1 · ID 집합 동일: chroma False · bm25 True · rows True
+  내용 확인: BM25 불일치 0건 · 벡터 옛 내용 0 · 벡터 없음 0 · Chroma 실제 벡터 통과
+
+정합성 문제로 비교를 중단한다:
+  - db_equals_chroma = False (공고 ID 집합이 다르다)
+색인을 자동으로 다시 만들지 않는다. daily_pipeline 또는 ec2_vecstore 로 먼저 맞춘다.
+표본(seed 20260922) 1건 (모집단 1건) · 첨부 본문 있는 공고 0건 · 모델 gpt-5.6-sol@low · 프롬프트 v3
+예상 입력 약 1077 토큰 · 출력 약 850 토큰(추론 가정 600 포함) · 단가 $4.00/$20.00 · 약 $0.0213 (추정)
+표본(seed 20260922) 2건 (모집단 2건) · 첨부 본문 있는 공고 0건 · 모델 gpt-4o-mini · 프롬프트 v3
+예상 입력 약 2154 토큰 · 출력 약 500 토큰(추론 가정 0 포함) · 단가 $0.15/$0.60 · 약 $0.0006 (추정)
+이전 실행 비교: C:\Users\PLAYDA~1\AppData\Local\Temp\tmpgnuzbeh_\prev · 등급 exact
+# 업종 LLM 추출 표본 (프롬프트 v3) — 2026-10-07T02:11:23+00:00
+
+**정답(사람 판정) 없음.** 확보율·비용·오독 유형을 보는 표본이다. DB 에 쓰지 않았다. **어떤 결과도 탈락 필터에 쓰지 않는다.**
+
+**미완료: 실패 1건.** `--prompt v3 --resume C:\Users\PLAYDA~1\AppData\Local\Temp\tmpgnuzbeh_\run` 로 이어 한다. 아래 집계는 성공한 1건만이다.
+
+| | known | no_limit | unknown |
+|---|---:|---:|---:|
+| 정규식 (lab_conditions) | 0 | 0 | 2 |
+| LLM 이전 실행 (v2) | 2 | 0 | 0 |
+| LLM 이번 (gpt-4o-mini · v3, 검사 후) | 1 | 0 | 0 |
+
+매칭용 판정: 업종 제한 있음 1 · 업종 제한 없음(명시) 0 · 업종 제한 없음(공고에 언급 없음·추정) 0 · 제외 업종만 있음(나머지 업종은 가능) 0 · 조건부·세부사업별(확인 필요) 0 · 확인 필요 0
+known 중 목록 완전(list_complete) 1건 · alias 라벨 0개 · 탈락 필터 사용 가능 0건(사람 정답 전)
+검사에서 내린 것 0건 · 보고 토큰 입력 10 · 출력 2 · 기록 단가 기준 약 $0.0000 (청구액 아님)
+이전 실행과 비교 등급: **exact** — ID·문서 해시 모두 같다
+
+| 공고 | 제목 | 정규식 | 이전 | LLM | 허용(원문 → 라벨) | 목록 완전 | 제외 | 근거 |
+|---|---|---|---|---|---|---|---|---|
+| a | a | None | known | known | 제조업→제조업 | O |  | 신청대상: 제조업 기업 |
+| b | b | None | known | (실패) | | | | |
+결과 → C:\Users\PLAYDA~1\AppData\Local\Temp\tmpgnuzbeh_\run
+실패 1건 — --prompt v3 --resume C:\Users\PLAYDA~1\AppData\Local\Temp\tmpgnuzbeh_\run 로 이어 한다
+표본(seed 20260922) 2건 (모집단 2건) · 첨부 본문 있는 공고 0건 · 모델 gpt-4o-mini · 프롬프트 v3
+재개: 체크포인트 1건 재사용 · 새로 부를 것 1건
+예상 입력 약 1077 토큰 · 출력 약 250 토큰(추론 가정 0 포함) · 단가 $0.15/$0.60 · 약 $0.0003 (추정)
+이전 실행 비교: C:\Users\PLAYDA~1\AppData\Local\Temp\tmpgnuzbeh_\prev · 등급 exact
+# 업종 LLM 추출 표본 (프롬프트 v3) — 2026-10-07T02:11:23+00:00
+
+**정답(사람 판정) 없음.** 확보율·비용·오독 유형을 보는 표본이다. DB 에 쓰지 않았다. **어떤 결과도 탈락 필터에 쓰지 않는다.**
+
+**혼합 실행: 응답 모델이 여러 개다(m, m2).** 재개 사이에 모델이 바뀌었다. 이 결과로 비교를 확정하지 않는다.
+
+| | known | no_limit | unknown |
+|---|---:|---:|---:|
+| 정규식 (lab_conditions) | 0 | 0 | 2 |
+| LLM 이전 실행 (v2) | 2 | 0 | 0 |
+| LLM 이번 (gpt-4o-mini · v3, 검사 후) | 2 | 0 | 0 |
+
+매칭용 판정: 업종 제한 있음 2 · 업종 제한 없음(명시) 0 · 업종 제한 없음(공고에 언급 없음·추정) 0 · 제외 업종만 있음(나머지 업종은 가능) 0 · 조건부·세부사업별(확인 필요) 0 · 확인 필요 0
+known 중 목록 완전(list_complete) 2건 · alias 라벨 0개 · 탈락 필터 사용 가능 0건(사람 정답 전)
+검사에서 내린 것 0건 · 보고 토큰 입력 20 · 출력 4 · 기록 단가 기준 약 $0.0000 (청구액 아님)
+이전 실행과 비교 등급: **exact** — ID·문서 해시 모두 같다
+
+| 공고 | 제목 | 정규식 | 이전 | LLM | 허용(원문 → 라벨) | 목록 완전 | 제외 | 근거 |
+|---|---|---|---|---|---|---|---|---|
+| a | a | None | known | known | 제조업→제조업 | O |  | 신청대상: 제조업 기업 |
+| b | b | None | known | known | 제조업→제조업 | O |  | 신청대상: 제조업 기업 |
+결과 → C:\Users\PLAYDA~1\AppData\Local\Temp\tmpgnuzbeh_\run
+표본(seed 20260922) 2건 (모집단 2건) · 첨부 본문 있는 공고 0건 · 모델 gpt-4o-mini · 프롬프트 v3
+예상 입력 약 2154 토큰 · 출력 약 500 토큰(추론 가정 0 포함) · 단가 $0.15/$0.60 · 약 $0.0006 (추정)
+표본(seed 20260922) 2건 (모집단 2건) · 첨부 본문 있는 공고 0건 · 모델 gpt-4o-mini · 프롬프트 v3
+예상 입력 약 2154 토큰 · 출력 약 500 토큰(추론 가정 0 포함) · 단가 $0.15/$0.60 · 약 $0.0006 (추정)
+이전 실행 비교: C:\Users\PLAYDA~1\AppData\Local\Temp\tmpbiwchjg0\prev · 등급 exact
+# 업종 LLM 추출 표본 (프롬프트 v3) — 2026-10-07T02:11:24+00:00
+
+**정답(사람 판정) 없음.** 확보율·비용·오독 유형을 보는 표본이다. DB 에 쓰지 않았다. **어떤 결과도 탈락 필터에 쓰지 않는다.**
+
+**미완료: 실패 1건.** `--prompt v3 --resume C:\Users\PLAYDA~1\AppData\Local\Temp\tmpbiwchjg0\run` 로 이어 한다. 아래 집계는 성공한 1건만이다.
+
+| | known | no_limit | unknown |
+|---|---:|---:|---:|
+| 정규식 (lab_conditions) | 0 | 0 | 2 |
+| LLM 이전 실행 (v2) | 2 | 0 | 0 |
+| LLM 이번 (gpt-4o-mini · v3, 검사 후) | 1 | 0 | 0 |
+
+매칭용 판정: 업종 제한 있음 1 · 업종 제한 없음(명시) 0 · 업종 제한 없음(공고에 언급 없음·추정) 0 · 제외 업종만 있음(나머지 업종은 가능) 0 · 조건부·세부사업별(확인 필요) 0 · 확인 필요 0
+known 중 목록 완전(list_complete) 1건 · alias 라벨 0개 · 탈락 필터 사용 가능 0건(사람 정답 전)
+검사에서 내린 것 0건 · 보고 토큰 입력 10 · 출력 2 · 기록 단가 기준 약 $0.0000 (청구액 아님)
+이전 실행과 비교 등급: **exact** — ID·문서 해시 모두 같다
+
+| 공고 | 제목 | 정규식 | 이전 | LLM | 허용(원문 → 라벨) | 목록 완전 | 제외 | 근거 |
+|---|---|---|---|---|---|---|---|---|
+| a | a | None | known | known | 제조업→제조업 | O |  | 신청대상: 제조업 기업 |
+| b | b | None | known | (실패) | | | | |...................................................................................[match] 공고 벡터 읽기 실패 — SystemExit: Chroma 색인이 없다
+경고: 공고 벡터를 올리지 못했다 — 의미 검색 없이 시작한다 (SystemExit: Chroma 색인이 없다)
+[match] 임베딩 워밍업 실패 — RuntimeError: model down
+경고: 임베딩 워밍업 실패 — RuntimeError: model down
+.[match] 단어 검색 실패 — ValueError: bm25 down
+.[match] 질의 인코딩 실패 — RuntimeError: model down
+[match] 단어 검색 실패 — ValueError: bm25 down
+.경고: Chroma 필터 검색 실패 — 벡터 25건을 직접 계산한다 (RuntimeError: index broken)
+[match] 의미 검색 실패 — RuntimeError: index broken
+..[match] 질의 인코딩 실패 — RuntimeError: model down
+.[match] 벡터 추가 조회 실패 — RuntimeError: get timeout
+.................................................................................................................................
+결과 → C:\Users\PLAYDA~1\AppData\Local\Temp\tmpbiwchjg0\run
+실패 1건 — --prompt v3 --resume C:\Users\PLAYDA~1\AppData\Local\Temp\tmpbiwchjg0\run 로 이어 한다
+표본(seed 20260922) 2건 (모집단 2건) · 첨부 본문 있는 공고 0건 · 모델 gpt-4o-mini · 프롬프트 v3
+재개: 체크포인트 1건 재사용 · 새로 부를 것 1건
+예상 입력 약 1077 토큰 · 출력 약 250 토큰(추론 가정 0 포함) · 단가 $0.15/$0.60 · 약 $0.0003 (추정)
+이전 실행 비교: C:\Users\PLAYDA~1\AppData\Local\Temp\tmpbiwchjg0\prev · 등급 exact
+# 업종 LLM 추출 표본 (프롬프트 v3) — 2026-10-07T02:11:24+00:00
+
+**정답(사람 판정) 없음.** 확보율·비용·오독 유형을 보는 표본이다. DB 에 쓰지 않았다. **어떤 결과도 탈락 필터에 쓰지 않는다.**
+
+| | known | no_limit | unknown |
+|---|---:|---:|---:|
+| 정규식 (lab_conditions) | 0 | 0 | 2 |
+| LLM 이전 실행 (v2) | 2 | 0 | 0 |
+| LLM 이번 (gpt-4o-mini · v3, 검사 후) | 2 | 0 | 0 |
+
+매칭용 판정: 업종 제한 있음 2 · 업종 제한 없음(명시) 0 · 업종 제한 없음(공고에 언급 없음·추정) 0 · 제외 업종만 있음(나머지 업종은 가능) 0 · 조건부·세부사업별(확인 필요) 0 · 확인 필요 0
+known 중 목록 완전(list_complete) 2건 · alias 라벨 0개 · 탈락 필터 사용 가능 0건(사람 정답 전)
+검사에서 내린 것 0건 · 보고 토큰 입력 20 · 출력 4 · 기록 단가 기준 약 $0.0000 (청구액 아님)
+이전 실행과 비교 등급: **exact** — ID·문서 해시 모두 같다
+
+| 공고 | 제목 | 정규식 | 이전 | LLM | 허용(원문 → 라벨) | 목록 완전 | 제외 | 근거 |
+|---|---|---|---|---|---|---|---|---|
+| a | a | None | known | known | 제조업→제조업 | O |  | 신청대상: 제조업 기업 |
+| b | b | None | known | known | 제조업→제조업 | O |  | 신청대상: 제조업 기업 |
+결과 → C:\Users\PLAYDA~1\AppData\Local\Temp\tmpbiwchjg0\run
+표본(seed 20260922) 2건 (모집단 2건) · 첨부 본문 있는 공고 0건 · 모델 gpt-4o-mini · 프롬프트 v3
+예상 입력 약 2154 토큰 · 출력 약 500 토큰(추론 가정 0 포함) · 단가 $0.15/$0.60 · 약 $0.0006 (추정)
+이전 실행 비교: C:\Users\PLAYDA~1\AppData\Local\Temp\tmpg4ul4nyj\prev · 등급 exact
+# 업종 LLM 추출 표본 (프롬프트 v3) — 2026-10-07T02:11:24+00:00
+
+**정답(사람 판정) 없음.** 확보율·비용·오독 유형을 보는 표본이다. DB 에 쓰지 않았다. **어떤 결과도 탈락 필터에 쓰지 않는다.**
+
+**미완료: 실패 1건.** `--prompt v3 --resume C:\Users\PLAYDA~1\AppData\Local\Temp\tmpg4ul4nyj\run` 로 이어 한다. 아래 집계는 성공한 1건만이다.
+
+| | known | no_limit | unknown |
+|---|---:|---:|---:|
+| 정규식 (lab_conditions) | 0 | 0 | 2 |
+| LLM 이전 실행 (v2) | 2 | 0 | 0 |
+| LLM 이번 (gpt-4o-mini · v3, 검사 후) | 1 | 0 | 0 |
+
+매칭용 판정: 업종 제한 있음 1 · 업종 제한 없음(명시) 0 · 업종 제한 없음(공고에 언급 없음·추정) 0 · 제외 업종만 있음(나머지 업종은 가능) 0 · 조건부·세부사업별(확인 필요) 0 · 확인 필요 0
+known 중 목록 완전(list_complete) 1건 · alias 라벨 0개 · 탈락 필터 사용 가능 0건(사람 정답 전)
+검사에서 내린 것 0건 · 보고 토큰 입력 10 · 출력 2 · 기록 단가 기준 약 $0.0000 (청구액 아님)
+이전 실행과 비교 등급: **exact** — ID·문서 해시 모두 같다
+
+| 공고 | 제목 | 정규식 | 이전 | LLM | 허용(원문 → 라벨) | 목록 완전 | 제외 | 근거 |
+|---|---|---|---|---|---|---|---|---|
+| a | a | None | known | known | 제조업→제조업 | O |  | 신청대상: 제조업 기업 |
+| b | b | None | known | (실패) | | | | |
+결과 → C:\Users\PLAYDA~1\AppData\Local\Temp\tmpg4ul4nyj\run
+실패 1건 — --prompt v3 --resume C:\Users\PLAYDA~1\AppData\Local\Temp\tmpg4ul4nyj\run 로 이어 한다
+표본(seed 20260922) 2건 (모집단 2건) · 첨부 본문 있는 공고 0건 · 모델 gpt-4o-mini · 프롬프트 v3
+예상 입력 약 2154 토큰 · 출력 약 500 토큰(추론 가정 0 포함) · 단가 $0.15/$0.60 · 약 $0.0006 (추정)
+이전 실행 비교: C:\Users\PLAYDA~1\AppData\Local\Temp\tmp2r29l6s8\prev · 등급 exact
+# 업종 LLM 추출 표본 (프롬프트 v3) — 2026-10-07T02:11:24+00:00
+
+**정답(사람 판정) 없음.** 확보율·비용·오독 유형을 보는 표본이다. DB 에 쓰지 않았다. **어떤 결과도 탈락 필터에 쓰지 않는다.**
+
+**미완료: 실패 1건.** `--prompt v3 --resume C:\Users\PLAYDA~1\AppData\Local\Temp\tmp2r29l6s8\run` 로 이어 한다. 아래 집계는 성공한 1건만이다.
+
+| | known | no_limit | unknown |
+|---|---:|---:|---:|
+| 정규식 (lab_conditions) | 0 | 0 | 2 |
+| LLM 이전 실행 (v2) | 2 | 0 | 0 |
+| LLM 이번 (gpt-4o-mini · v3, 검사 후) | 1 | 0 | 0 |
+
+매칭용 판정: 업종 제한 있음 1 · 업종 제한 없음(명시) 0 · 업종 제한 없음(공고에 언급 없음·추정) 0 · 제외 업종만 있음(나머지 업종은 가능) 0 · 조건부·세부사업별(확인 필요) 0 · 확인 필요 0
+known 중 목록 완전(list_complete) 1건 · alias 라벨 0개 · 탈락 필터 사용 가능 0건(사람 정답 전)
+검사에서 내린 것 0건 · 보고 토큰 입력 10 · 출력 2 · 기록 단가 기준 약 $0.0000 (청구액 아님)
+이전 실행과 비교 등급: **exact** — ID·문서 해시 모두 같다
+
+| 공고 | 제목 | 정규식 | 이전 | LLM | 허용(원문 → 라벨) | 목록 완전 | 제외 | 근거 |
+|---|---|---|---|---|---|---|---|---|
+| a | a | None | known | known | 제조업→제조업 | O |  | 신청대상: 제조업 기업 |
+| b | b | None | known | (실패) | | | | |
+결과 → C:\Users\PLAYDA~1\AppData\Local\Temp\tmp2r29l6s8\run
+실패 1건 — --prompt v3 --resume C:\Users\PLAYDA~1\AppData\Local\Temp\tmp2r29l6s8\run 로 이어 한다
+표본(seed 20260922) 1건 (모집단 1건) · 첨부 본문 있는 공고 0건 · 모델 gpt-4o-mini · 프롬프트 v3
+예상 입력 약 1077 토큰 · 출력 약 250 토큰(추론 가정 0 포함) · 단가 $0.15/$0.60 · 약 $0.0003 (추정)
+# Codex 판정 대조 — tmp_tqpv_mj
+
+판정은 **AI 참고 정답**(Codex)이다. 사람 정답이 아니다.
+
+- 판정 수: 신청자 유형 5 · 업종 1
+
+| 확인 | 결과 | 쓰임 |
+|---|---|---|
+| 예비 불가 strong → 판정도 불가 | 1/2 (50%) | 게이트 필터 사용 여부 |
+| └ 판정은 "가능"(신청 가능한 공고를 뺄 오류) | P002 | 0이어야 한다 |
+| B: API 불가·본문 가능 → 판정 가능 | 1/1 (100%) | 본문을 API 보다 우선 |
+| 예비 불가 weak → 판정 불가 | — | 약한 근거 사용 여부 |
+| 개인사업자 불가 strong → 판정 불가 | — | 개인/법인 게이트 |
+| 법인 불가 strong → 판정 불가 | — | 개인/법인 게이트 |
+| 예비 불가 추정 → 판정 불가·추정 | 1/1 (100%) | 순위 신호 사용 여부 |
+| └ 판정은 "가능" | 없음 | |
+| F: LLM 모두 언급 없음인데 판정 불가 | P005 | 놓침 |
+
+유형별 전체 일치: pre_founder 4/5 (80%) · sole_proprietor 4/5 (80%) · corporation 5/5 (100%)
+
+업종 (공고×신청자 대분류): eligible 1 · ineligible 1
+잘못 밀림(eligible): n6(C)
+
+공고 벡터 1건 (공용 DB)
+공고 정보 1건
+공고 내용 지문 1건
+지원 금액 1건
+공고 가점 1건 (내용이 바뀌어 뺌 1 · 추출기 버전이 달라 뺌 1)
+BM25 색인 1건 · 0.0초
+업력 근거 0건 ()
+신청자 유형 0건 (None)
+업종 순위 신호 0건 (None)
+워밍업...
+준비 완료 · 5.5초
+공고 정보 1건
+공고 내용 지문 1건
+지원 금액 1건
+공고 가점 1건 (내용이 바뀌어 뺌 1 · 추출기 버전이 달라 뺌 1)
+BM25 색인 1건 · 0.0초
+업력 근거 0건 ()
+신청자 유형 0건 (None)
+업종 순위 신호 0건 (None)
+워밍업...
+준비 완료 · 0.0초 · 경고 embedding, vector_db
+입력 10개 (정상 8 · 무관 2)
+  case01 q001 제조           중소 금형·사출 공장의 불량을 카메라로 자동 검출하는 비전 AI 검사 장 [소재지 보완]..................................................................................................ssssss.................................................................................................................
+----------------------------------------------------------------------
+Ran 876 tests in 12.709s
+
+OK (skipped=16)
+
+  case02 q005 IT·SW        중소기업 회계·세무 서류를 자동으로 분류하는 AI SaaS [소재지 보완]
+  case03 q016 외식·소상공인      10년째 운영 중인 한식당, 매출이 줄어 경영 개선과 운영자금이 필요하다 [소재지 보완]
+  case04 q022 콘텐츠          웹툰 IP를 활용한 굿즈와 애니메이션 숏폼 제작
+  case05 q021 수출           산업용 밸브를 생산하며 중동 시장 수출을 확대하려 한다
+  case06 q013 농식품          지역 농산물로 만든 수제 잼과 가공식품 온라인 판매
+  case07 q026 환경·에너지       공장 지붕 태양광과 에너지저장장치를 묶은 에너지 관리 서비스
+  case08 q031 사회적경제        발달장애인을 고용해 친환경 세제를 만드는 사회적기업
+  case09 n001 무관           오늘 날씨가 좋네요 점심 뭐 먹을까
+  case10 n002 무관           주말에 친구들과 캠핑 갈 장소 추천해줘
+
+사전 정합성 검사 (읽기 전용 · 서버·모델을 켜기 전)
+
+서버와 같은 방식으로 색인·공고를 올린다 (app.boot)
+  DB 10 · Chroma 10 · BM25 10 · 공고정보 10 · ID 집합 동일: chroma True · bm25 True · rows True
+  내용 확인: BM25 불일치 0건 · 벡터 옛 내용 0 · 벡터 없음 0 · Chroma 실제 벡터 통과
+  case01 q001  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+  case02 q005  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+  case03 q016  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+  case04 q022  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+  case05 q021  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+  case06 q013  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+  case07 q026  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+  case08 q031  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+  case09 n001  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+  case10 n002  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+
+무효 실행으로 처리했다 (비교표를 만들지 않는다):
+  - 실행 시작일 2026-09-18 와 종료일 2026-09-19 가 다르다
+  - 응답들의 적용 날짜가 섞였다: 2026-09-18 · 2026-09-19
+  - 검색 도중 날짜가 바뀐 응답 1건 (case03)
+진단용 원본 → C:\Users\PLAYDA~1\AppData\Local\Temp\tmpm7b0_uzl\search_comparison_20261007T021132Z_INVALID_date_changed
+입력 10개 (정상 8 · 무관 2)
+  case01 q001 제조           중소 금형·사출 공장의 불량을 카메라로 자동 검출하는 비전 AI 검사 장 [소재지 보완]
+  case02 q005 IT·SW        중소기업 회계·세무 서류를 자동으로 분류하는 AI SaaS [소재지 보완]
+  case03 q016 외식·소상공인      10년째 운영 중인 한식당, 매출이 줄어 경영 개선과 운영자금이 필요하다 [소재지 보완]
+  case04 q022 콘텐츠          웹툰 IP를 활용한 굿즈와 애니메이션 숏폼 제작
+  case05 q021 수출           산업용 밸브를 생산하며 중동 시장 수출을 확대하려 한다
+  case06 q013 농식품          지역 농산물로 만든 수제 잼과 가공식품 온라인 판매
+  case07 q026 환경·에너지       공장 지붕 태양광과 에너지저장장치를 묶은 에너지 관리 서비스
+  case08 q031 사회적경제        발달장애인을 고용해 친환경 세제를 만드는 사회적기업
+  case09 n001 무관           오늘 날씨가 좋네요 점심 뭐 먹을까
+  case10 n002 무관           주말에 친구들과 캠핑 갈 장소 추천해줘
+
+사전 정합성 검사 (읽기 전용 · 서버·모델을 켜기 전)
+
+서버와 같은 방식으로 색인·공고를 올린다 (app.boot)
+  DB 10 · Chroma 10 · BM25 10 · 공고정보 10 · ID 집합 동일: chroma True · bm25 True · rows True
+  내용 확인: BM25 불일치 0건 · 벡터 옛 내용 0 · 벡터 없음 0 · Chroma 실제 벡터 통과
+  case01 q001  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+  case02 q005  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+  case03 q016  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+  case04 q022  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+  case05 q021  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+  case06 q013  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+  case07 q026  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+  case08 q031  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+  case09 n001  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+  case10 n002  A dense 5 / hybrid 5 · B dense 5 / hybrid 5
+
+결과 → C:\Users\PLAYDA~1\AppData\Local\Temp\tmp7nlq1cg0\search_comparison_20261007T021132Z
+  comparison.html         67.1 KB
+  comparison.jsonl         7.2 KB
+  human_review.csv         8.3 KB
+  inputs.jsonl             5.1 KB
+  manifest.json            1.4 KB
+  notices.jsonl            0.0 KB
+  responses.jsonl        101.1 KB
+입력 10개 (정상 8 · 무관 2)
+  case01 q001 제조           중소 금형·사출 공장의 불량을 카메라로 자동 검출하는 비전 AI 검사 장 [소재지 보완]
+  case02 q005 IT·SW        중소기업 회계·세무 서류를 자동으로 분류하는 AI SaaS [소재지 보완]
+  case03 q016 외식·소상공인      10년째 운영 중인 한식당, 매출이 줄어 경영 개선과 운영자금이 필요하다 [소재지 보완]
+  case04 q022 콘텐츠          웹툰 IP를 활용한 굿즈와 애니메이션 숏폼 제작
+  case05 q021 수출           산업용 밸브를 생산하며 중동 시장 수출을 확대하려 한다
+  case06 q013 농식품          지역 농산물로 만든 수제 잼과 가공식품 온라인 판매
+  case07 q026 환경·에너지       공장 지붕 태양광과 에너지저장장치를 묶은 에너지 관리 서비스
+  case08 q031 사회적경제        발달장애인을 고용해 친환경 세제를 만드는 사회적기업
+  case09 n001 무관           오늘 날씨가 좋네요 점심 뭐 먹을까
+  case10 n002 무관           주말에 친구들과 캠핑 갈 장소 추천해줘
+
+사전 정합성 검사 (읽기 전용 · 서버·모델을 켜기 전)
+
+서버와 같은 방식으로 색인·공고를 올린다 (app.boot)
+  DB 10 · Chroma 10 · BM25 10 · 공고정보 10 · ID 집합 동일: chroma False · bm25 True · rows True
+  내용 확인: BM25 불일치 0건 · 벡터 옛 내용 0 · 벡터 없음 0 · Chroma 실제 벡터 통과
+
+정합성 문제로 비교를 중단한다:
+  - db_equals_chroma = False (공고 ID 집합이 다르다)
+색인을 자동으로 다시 만들지 않는다. daily_pipeline 또는 ec2_vecstore 로 먼저 맞춘다.
+exit=0

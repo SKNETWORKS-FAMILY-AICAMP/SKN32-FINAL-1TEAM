@@ -1,0 +1,15 @@
+{
+ "run_at": "20261006T011805Z",
+ "model": "gpt-5.6-luna",
+ "effort": "medium",
+ "extractor_version": "extract_bonus/v1 gpt-5.6-luna medium",
+ "seed": 20261006,
+ "pool": 667,
+ "sample": 30,
+ "done": 30,
+ "failures": [],
+ "tokens_in": 96941,
+ "tokens_out": 16613,
+ "cost_usd": 0.0393,
+ "price_basis": "2026-09-22 OpenAI 표준 단가(추정)"
+}

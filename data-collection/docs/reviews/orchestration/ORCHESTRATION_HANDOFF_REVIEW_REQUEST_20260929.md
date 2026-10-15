@@ -45,7 +45,7 @@
 
 | 파일 | 무엇 |
 |---|---|
-| [docs/guides/ORCHESTRATION_HANDOFF.md](../../guides/ORCHESTRATION_HANDOFF.md) | **신규 — 이번 검수 대상.** 조율 개발자에게 줄 함수 설명서 |
+| [docs/guides/ORCHESTRATION_HANDOFF.md](../../archive/ORCHESTRATION_HANDOFF.md) | **신규 — 이번 검수 대상.** 조율 개발자에게 줄 함수 설명서 |
 | [experiments/orchestration_probe.py](../../../experiments/orchestration_probe.py) | **신규.** 설명서 7절 코드 블록을 그대로 꺼내 A·B·C(3절)를 확인한다. 읽기 전용 |
 | `docs/STATUS.md`, `docs/WORKLOG.md`, `docs/README.md` | 기록 |
 
@@ -53,7 +53,7 @@
 
 ## 1. 우선순위 높음 — 함수 설명서 검수
 
-대상: [ORCHESTRATION_HANDOFF.md](../../guides/ORCHESTRATION_HANDOFF.md). 조율 개발자가 이 문서만 보고 연결한다. **틀린 설명이 곧 연결 버그가 된다.**
+대상: [ORCHESTRATION_HANDOFF.md](../../archive/ORCHESTRATION_HANDOFF.md). 조율 개발자가 이 문서만 보고 연결한다. **틀린 설명이 곧 연결 버그가 된다.**
 
 ### 1-1. 설명이 코드와 맞는가
 
@@ -162,7 +162,7 @@
 
 ## 5. 참고 문서
 
-- [함수 설명서](../../guides/ORCHESTRATION_HANDOFF.md) — 검수 대상
+- [함수 설명서](../../archive/ORCHESTRATION_HANDOFF.md) — 검수 대상
 - [판정 테이블 설계](../../guides/JUDGMENT_TABLES.md)
 - [판정 테이블 재검수](../integration/JUDGMENT_TABLES_REVIEW_RECHECK_20260928.md) — 멈춘 P1과 9/29 점검표
 - [기획서 대조](../../PLAN_ALIGNMENT_20260928.md) — 업종·지역은 순위 신호, 수집 범위(C)

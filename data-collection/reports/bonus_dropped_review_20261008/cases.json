@@ -1,0 +1,2961 @@
+[
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000117162",
+  "title": "[경북] 2026년 창업 및 경쟁력강화 사업자금 지원 계획 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000117162",
+  "cap": 5.0,
+  "name": "장애인기업",
+  "kind": "장애인",
+  "points": 3,
+  "extra": null,
+  "quote": "장애인 기업 『장애인기업활동촉진법』에 의한 장애인기업 3",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [
+   "발췌의 표 형식이 깨져 있어 ‘경영혁신형 중소기업’의 배점 및 뒤따르는 육아 관련 항목과의 관계를 확인하기 어렵습니다. 발췌에 직접 확인되는 점수만 반영했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000117162",
+  "title": "[경북] 2026년 창업 및 경쟁력강화 사업자금 지원 계획 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000117162",
+  "cap": 5.0,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 3,
+  "extra": null,
+  "quote": "여성기업 『여성기업지원에 관한 법률』에 의한 여성기업 3",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [
+   "발췌의 표 형식이 깨져 있어 ‘경영혁신형 중소기업’의 배점 및 뒤따르는 육아 관련 항목과의 관계를 확인하기 어렵습니다. 발췌에 직접 확인되는 점수만 반영했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000117162",
+  "title": "[경북] 2026년 창업 및 경쟁력강화 사업자금 지원 계획 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000117162",
+  "cap": 5.0,
+  "name": "수도권지역에서 경북으로 이전하는 기업",
+  "kind": "지역",
+  "points": 5,
+  "extra": "사업장을 도내에 신축 및 이전하는 기업",
+  "quote": "도내 이전기업 사업장을 도내에 신축 및 이전하는 기업 수도권지역에서 이전하는 기업 5",
+  "input": {
+   "region": "경북",
+   "district": ""
+  },
+  "memo": [
+   "발췌의 표 형식이 깨져 있어 ‘경영혁신형 중소기업’의 배점 및 뒤따르는 육아 관련 항목과의 관계를 확인하기 어렵습니다. 발췌에 직접 확인되는 점수만 반영했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000117162",
+  "title": "[경북] 2026년 창업 및 경쟁력강화 사업자금 지원 계획 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000117162",
+  "cap": 5.0,
+  "name": "기타 지역에서 경북으로 이전하는 기업",
+  "kind": "지역",
+  "points": 3,
+  "extra": "사업장을 도내에 신축 및 이전하는 기업",
+  "quote": "도내 이전기업 사업장을 도내에 신축 및 이전하는 기업 기타 지역에서 이전하는 기업 3",
+  "input": {
+   "region": "경북",
+   "district": ""
+  },
+  "memo": [
+   "발췌의 표 형식이 깨져 있어 ‘경영혁신형 중소기업’의 배점 및 뒤따르는 육아 관련 항목과의 관계를 확인하기 어렵습니다. 발췌에 직접 확인되는 점수만 반영했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000117162",
+  "title": "[경북] 2026년 창업 및 경쟁력강화 사업자금 지원 계획 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000117162",
+  "cap": 5.0,
+  "name": "사회적기업",
+  "kind": "인증",
+  "points": 3,
+  "extra": null,
+  "quote": "사회적기업 『사회적기업 육성법』에 의한 사회적기업 3",
+  "input": {
+   "certifications": [
+    "사회적기업"
+   ]
+  },
+  "memo": [
+   "발췌의 표 형식이 깨져 있어 ‘경영혁신형 중소기업’의 배점 및 뒤따르는 육아 관련 항목과의 관계를 확인하기 어렵습니다. 발췌에 직접 확인되는 점수만 반영했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000117162",
+  "title": "[경북] 2026년 창업 및 경쟁력강화 사업자금 지원 계획 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000117162",
+  "cap": 5.0,
+  "name": "벤처기업",
+  "kind": "인증",
+  "points": 3,
+  "extra": null,
+  "quote": "벤처기업 『벤처기업육성에 관한 특별조치법』에 의한 벤처기업 3",
+  "input": {
+   "certifications": [
+    "벤처기업"
+   ]
+  },
+  "memo": [
+   "발췌의 표 형식이 깨져 있어 ‘경영혁신형 중소기업’의 배점 및 뒤따르는 육아 관련 항목과의 관계를 확인하기 어렵습니다. 발췌에 직접 확인되는 점수만 반영했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000118974",
+  "title": "2026년 중소기업 기술침해 손해액 산정 지원사업 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118974",
+  "cap": 5.0,
+  "name": "벤처기업",
+  "kind": "인증",
+  "points": 1,
+  "extra": "유효기간 내 인증서에 한함",
+  "quote": "｢벤처기업육성에 관한 특별조치법｣ 제25조에 따른 벤처기업 1점",
+  "input": {
+   "certifications": [
+    "벤처기업"
+   ]
+  },
+  "memo": [
+   "붙임5의 ‘기타 (최대 2점)’ 항목은 발췌문이 “｢중소기업 사업”에서 끊겨 세부 가점 조건과 점수를 확인할 수 없습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000118974",
+  "title": "2026년 중소기업 기술침해 손해액 산정 지원사업 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118974",
+  "cap": 5.0,
+  "name": "기술혁신형 중소기업(INNO-BIZ)",
+  "kind": "인증",
+  "points": 1,
+  "extra": "유효기간 내 인증서에 한함",
+  "quote": "｢중소기업기술혁신 촉진법｣ 제15조에 따른 기술혁신형 중소기업(INNO-BIZ) 1점",
+  "input": {
+   "certifications": [
+    "이노비즈"
+   ]
+  },
+  "memo": [
+   "붙임5의 ‘기타 (최대 2점)’ 항목은 발췌문이 “｢중소기업 사업”에서 끊겨 세부 가점 조건과 점수를 확인할 수 없습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000118974",
+  "title": "2026년 중소기업 기술침해 손해액 산정 지원사업 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118974",
+  "cap": 5.0,
+  "name": "경영혁신형 중소기업(MAIN-BIZ)",
+  "kind": "인증",
+  "points": 1,
+  "extra": "유효기간 내 인증서에 한함",
+  "quote": "｢중소기업기술혁신 촉진법｣ 제15조의3에 따른 경영혁신형 중소기업(MAIN-BIZ) 1점",
+  "input": {
+   "certifications": [
+    "메인비즈"
+   ]
+  },
+  "memo": [
+   "붙임5의 ‘기타 (최대 2점)’ 항목은 발췌문이 “｢중소기업 사업”에서 끊겨 세부 가점 조건과 점수를 확인할 수 없습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000118974",
+  "title": "2026년 중소기업 기술침해 손해액 산정 지원사업 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118974",
+  "cap": 5.0,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 1,
+  "extra": null,
+  "quote": "｢여성기업지원에 관한 법률｣ 제2조제1호에 따른 여성기업 1점",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [
+   "붙임5의 ‘기타 (최대 2점)’ 항목은 발췌문이 “｢중소기업 사업”에서 끊겨 세부 가점 조건과 점수를 확인할 수 없습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000118974",
+  "title": "2026년 중소기업 기술침해 손해액 산정 지원사업 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118974",
+  "cap": 5.0,
+  "name": "장애인기업",
+  "kind": "장애인",
+  "points": 1,
+  "extra": "｢장애인기업활동 촉진법｣ 제2조 제2호의 각 목을 모두 만족하는 기업(장애인등록증 확인 필)",
+  "quote": "｢장애인기업활동 촉진법｣ 제2조에 따른 장애인기업 1점",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [
+   "붙임5의 ‘기타 (최대 2점)’ 항목은 발췌문이 “｢중소기업 사업”에서 끊겨 세부 가점 조건과 점수를 확인할 수 없습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000119636",
+  "title": "[세종] 2026년 중소기업육성자금 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000119636",
+  "cap": 10.0,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 5,
+  "extra": "여성기업 확인서 첨부",
+  "quote": "② 여성이 소유하거나 경영하는 중소기업(여성기업 확인서 첨부)(5점)",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [
+   "⑱ 녹색기업 인증 항목은 발췌문이 '(5'에서 끊겨 있어 점수 표기가 완전하지 않습니다.",
+   "지역인재 신규채용 항목의 3명 미만 조건은 발췌 앞부분이 누락되어 있어 포함하지 않았습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000119636",
+  "title": "[세종] 2026년 중소기업육성자금 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000119636",
+  "cap": 10.0,
+  "name": "장애인기업",
+  "kind": "장애인",
+  "points": 5,
+  "extra": "장애인기업 확인서 첨부",
+  "quote": "③ 장애인이 소유하거나 경영하는 기업(장애인기업 확인서 첨부)(5점)",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [
+   "⑱ 녹색기업 인증 항목은 발췌문이 '(5'에서 끊겨 있어 점수 표기가 완전하지 않습니다.",
+   "지역인재 신규채용 항목의 3명 미만 조건은 발췌 앞부분이 누락되어 있어 포함하지 않았습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000120512",
+  "title": "[울산] 2026년 1차 통상변화 대응 중소기업 육성자금 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000120512",
+  "cap": 10.0,
+  "name": "가족친화기업",
+  "kind": "인증",
+  "points": 3,
+  "extra": "가족친화기업 인증서 확인",
+  "quote": "가족친화기업 가족친화기업 인증서 확인",
+  "input": {
+   "certifications": [
+    "가족친화기업"
+   ]
+  },
+  "memo": [
+   "사회공헌도 표 발췌에서 ‘1점 매출액의 0.1 % 이하’에 대응하는 항목명이 확인되지 않아 원문에 나온 ‘사회공헌도’로 표시했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000120512",
+  "title": "[울산] 2026년 1차 통상변화 대응 중소기업 육성자금 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000120512",
+  "cap": 10.0,
+  "name": "장애인기업",
+  "kind": "장애인",
+  "points": 3,
+  "extra": "대표자 장애인증명서 확인",
+  "quote": "장애인기업 대표자 장애인증명서 확인",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [
+   "사회공헌도 표 발췌에서 ‘1점 매출액의 0.1 % 이하’에 대응하는 항목명이 확인되지 않아 원문에 나온 ‘사회공헌도’로 표시했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000120512",
+  "title": "[울산] 2026년 1차 통상변화 대응 중소기업 육성자금 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000120512",
+  "cap": 10.0,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 3,
+  "extra": "여성기업 확인증(한국여성경제인협회)",
+  "quote": "여성기업 여성기업 확인증(한국여성경제인협회)",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [
+   "사회공헌도 표 발췌에서 ‘1점 매출액의 0.1 % 이하’에 대응하는 항목명이 확인되지 않아 원문에 나온 ‘사회공헌도’로 표시했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000120512",
+  "title": "[울산] 2026년 1차 통상변화 대응 중소기업 육성자금 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000120512",
+  "cap": 10.0,
+  "name": "울산 기회발전특구 입주기업",
+  "kind": "지역",
+  "points": 3,
+  "extra": "기회발전특구 지정 입주 확인",
+  "quote": "울산 기회발전특구* 입주기업 (울산시) * 산업통상자원부 고시에 따름(기회발전특구 지정 통합고시)",
+  "input": {
+   "region": "울산",
+   "district": ""
+  },
+  "memo": [
+   "사회공헌도 표 발췌에서 ‘1점 매출액의 0.1 % 이하’에 대응하는 항목명이 확인되지 않아 원문에 나온 ‘사회공헌도’로 표시했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000120618",
+  "title": "[충북] 충주시 2026년 중소기업육성기금 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000120618",
+  "cap": null,
+  "name": "관내 주사무소와 공장이 같이 있는 기업",
+  "kind": "지역",
+  "points": 3,
+  "extra": null,
+  "quote": "관내 주사무소와 공장이 같이 있는 기업",
+  "input": {
+   "region": "충북",
+   "district": ""
+  },
+  "memo": [
+   "비제조업 가점 표에는 신규업체 외 항목별 점수가 발췌문에 명시되어 있지 않습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000120618",
+  "title": "[충북] 충주시 2026년 중소기업육성기금 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000120618",
+  "cap": null,
+  "name": "가족친화인증기업",
+  "kind": "인증",
+  "points": 3,
+  "extra": null,
+  "quote": "가족친화인증기업",
+  "input": {
+   "certifications": [
+    "가족친화기업"
+   ]
+  },
+  "memo": [
+   "비제조업 가점 표에는 신규업체 외 항목별 점수가 발췌문에 명시되어 있지 않습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000121208",
+  "title": "2026년 해외지사화사업 참여기업 모집 재수정 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000121208",
+  "cap": 10.0,
+  "name": "청년친화 강소기업",
+  "kind": "인증",
+  "points": 5,
+  "extra": null,
+  "quote": "m (5점) 일자리 으뜸기업 및 청년친화 강소기업 가점",
+  "input": {
+   "certifications": [
+    "청년친화강소기업"
+   ]
+  },
+  "memo": [
+   "산업·지식재산권 및 국내외 규격·인증 보유기업은 한 항목으로 묶여 있어, 둘을 별도 조건으로 분리했으나 둘 다 충족해야 하는지 문구만으로는 명확하지 않습니다.",
+   "일자리 으뜸기업 및 청년친화 강소기업, 가족친화인증 및 대한민국 일·생활균형 우수기업은 한 배점으로 함께 기재되어 각각 같은 group으로 처리했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000121208",
+  "title": "2026년 해외지사화사업 참여기업 모집 재수정 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000121208",
+  "cap": 10.0,
+  "name": "사회적기업",
+  "kind": "인증",
+  "points": 5,
+  "extra": null,
+  "quote": "m (5점) 사회적 경제기업(사회적·예비사회적기업, 협동조합, 소셜벤처)",
+  "input": {
+   "certifications": [
+    "사회적기업"
+   ]
+  },
+  "memo": [
+   "산업·지식재산권 및 국내외 규격·인증 보유기업은 한 항목으로 묶여 있어, 둘을 별도 조건으로 분리했으나 둘 다 충족해야 하는지 문구만으로는 명확하지 않습니다.",
+   "일자리 으뜸기업 및 청년친화 강소기업, 가족친화인증 및 대한민국 일·생활균형 우수기업은 한 배점으로 함께 기재되어 각각 같은 group으로 처리했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000121208",
+  "title": "2026년 해외지사화사업 참여기업 모집 재수정 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000121208",
+  "cap": 10.0,
+  "name": "예비사회적기업",
+  "kind": "인증",
+  "points": 5,
+  "extra": null,
+  "quote": "m (5점) 사회적 경제기업(사회적·예비사회적기업, 협동조합, 소셜벤처)",
+  "input": {
+   "certifications": [
+    "예비사회적기업"
+   ]
+  },
+  "memo": [
+   "산업·지식재산권 및 국내외 규격·인증 보유기업은 한 항목으로 묶여 있어, 둘을 별도 조건으로 분리했으나 둘 다 충족해야 하는지 문구만으로는 명확하지 않습니다.",
+   "일자리 으뜸기업 및 청년친화 강소기업, 가족친화인증 및 대한민국 일·생활균형 우수기업은 한 배점으로 함께 기재되어 각각 같은 group으로 처리했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000121208",
+  "title": "2026년 해외지사화사업 참여기업 모집 재수정 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000121208",
+  "cap": 10.0,
+  "name": "협동조합",
+  "kind": "인증",
+  "points": 5,
+  "extra": null,
+  "quote": "m (5점) 사회적 경제기업(사회적·예비사회적기업, 협동조합, 소셜벤처)",
+  "input": {
+   "certifications": [
+    "협동조합"
+   ]
+  },
+  "memo": [
+   "산업·지식재산권 및 국내외 규격·인증 보유기업은 한 항목으로 묶여 있어, 둘을 별도 조건으로 분리했으나 둘 다 충족해야 하는지 문구만으로는 명확하지 않습니다.",
+   "일자리 으뜸기업 및 청년친화 강소기업, 가족친화인증 및 대한민국 일·생활균형 우수기업은 한 배점으로 함께 기재되어 각각 같은 group으로 처리했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000121208",
+  "title": "2026년 해외지사화사업 참여기업 모집 재수정 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000121208",
+  "cap": 10.0,
+  "name": "소셜벤처",
+  "kind": "인증",
+  "points": 5,
+  "extra": null,
+  "quote": "m (5점) 사회적 경제기업(사회적·예비사회적기업, 협동조합, 소셜벤처)",
+  "input": {
+   "certifications": [
+    "소셜벤처"
+   ]
+  },
+  "memo": [
+   "산업·지식재산권 및 국내외 규격·인증 보유기업은 한 항목으로 묶여 있어, 둘을 별도 조건으로 분리했으나 둘 다 충족해야 하는지 문구만으로는 명확하지 않습니다.",
+   "일자리 으뜸기업 및 청년친화 강소기업, 가족친화인증 및 대한민국 일·생활균형 우수기업은 한 배점으로 함께 기재되어 각각 같은 group으로 처리했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000121208",
+  "title": "2026년 해외지사화사업 참여기업 모집 재수정 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000121208",
+  "cap": 10.0,
+  "name": "가족친화인증",
+  "kind": "인증",
+  "points": 1,
+  "extra": null,
+  "quote": "m (1점) 가족친화인증 & 대한민국 일ž생활균형 우수기업",
+  "input": {
+   "certifications": [
+    "가족친화기업"
+   ]
+  },
+  "memo": [
+   "산업·지식재산권 및 국내외 규격·인증 보유기업은 한 항목으로 묶여 있어, 둘을 별도 조건으로 분리했으나 둘 다 충족해야 하는지 문구만으로는 명확하지 않습니다.",
+   "일자리 으뜸기업 및 청년친화 강소기업, 가족친화인증 및 대한민국 일·생활균형 우수기업은 한 배점으로 함께 기재되어 각각 같은 group으로 처리했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000123160",
+  "title": "[부산] 2026년 9차 중소기업 자금지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123160",
+  "cap": null,
+  "name": "타 시도 전입기업",
+  "kind": "지역",
+  "points": 3,
+  "extra": "사업자번호가 동일할 경우만 인정",
+  "quote": "타 시도 전입기업",
+  "input": {
+   "region": "부산",
+   "district": ""
+  },
+  "memo": [
+   "표 발췌에서 ‘수출·조선해운·벤처기업’ 세부 항목의 점수 배정이 확인되지 않아 항목으로 포함하지 않았습니다.",
+   "‘우대기업 5’의 점수 칸이 여러 세부 항목에 걸친 병합 셀인지 명확하지 않아, 기재된 세부 조건을 각각 별도 group으로 처리했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000123160",
+  "title": "[부산] 2026년 9차 중소기업 자금지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123160",
+  "cap": null,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 3,
+  "extra": "인증 유효기간이 남아있는",
+  "quote": "여성기업지원에 관한 법률 인증 유효기간이 남아있는 여성기업",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [
+   "표 발췌에서 ‘수출·조선해운·벤처기업’ 세부 항목의 점수 배정이 확인되지 않아 항목으로 포함하지 않았습니다.",
+   "‘우대기업 5’의 점수 칸이 여러 세부 항목에 걸친 병합 셀인지 명확하지 않아, 기재된 세부 조건을 각각 별도 group으로 처리했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000123160",
+  "title": "[부산] 2026년 9차 중소기업 자금지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123160",
+  "cap": null,
+  "name": "장애기업",
+  "kind": "장애인",
+  "points": 3,
+  "extra": "인증 유효기간이 남아있는",
+  "quote": "장애기업활동 촉진법에 관한 법률 각3 인증 유효기간이 남아있는 장애기업",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [
+   "표 발췌에서 ‘수출·조선해운·벤처기업’ 세부 항목의 점수 배정이 확인되지 않아 항목으로 포함하지 않았습니다.",
+   "‘우대기업 5’의 점수 칸이 여러 세부 항목에 걸친 병합 셀인지 명확하지 않아, 기재된 세부 조건을 각각 별도 group으로 처리했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000123160",
+  "title": "[부산] 2026년 9차 중소기업 자금지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123160",
+  "cap": null,
+  "name": "가족친화기업",
+  "kind": "인증",
+  "points": 3,
+  "extra": "인증 유효기간이 남아있는",
+  "quote": "가족친화 조성촉진에 관한 법률 인증 유효기간이 남아있는 가족친화기업",
+  "input": {
+   "certifications": [
+    "가족친화기업"
+   ]
+  },
+  "memo": [
+   "표 발췌에서 ‘수출·조선해운·벤처기업’ 세부 항목의 점수 배정이 확인되지 않아 항목으로 포함하지 않았습니다.",
+   "‘우대기업 5’의 점수 칸이 여러 세부 항목에 걸친 병합 셀인지 명확하지 않아, 기재된 세부 조건을 각각 별도 group으로 처리했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000123160",
+  "title": "[부산] 2026년 9차 중소기업 자금지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123160",
+  "cap": null,
+  "name": "이노비즈기업",
+  "kind": "인증",
+  "points": 2,
+  "extra": "인증 유효기간이 남아있는",
+  "quote": "이노비즈기업",
+  "input": {
+   "certifications": [
+    "이노비즈"
+   ]
+  },
+  "memo": [
+   "표 발췌에서 ‘수출·조선해운·벤처기업’ 세부 항목의 점수 배정이 확인되지 않아 항목으로 포함하지 않았습니다.",
+   "‘우대기업 5’의 점수 칸이 여러 세부 항목에 걸친 병합 셀인지 명확하지 않아, 기재된 세부 조건을 각각 별도 group으로 처리했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000124232",
+  "title": "2026년 투ㆍ융자 연계 기술개발사업 지원계획 수정 공고(스케일업 팁스ㆍ글로벌 팁스ㆍ딥테크 챌린지 프로젝트)",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000124232",
+  "cap": 8.0,
+  "name": "벤처기업 인증 또는 이노비즈 인증",
+  "kind": "인증",
+  "points": 1,
+  "extra": null,
+  "quote": "벤처기업 인증 또는 이노비즈 인증을 받은 경우",
+  "input": {
+   "certifications": [
+    "벤처기업"
+   ]
+  },
+  "memo": [
+   "포스트팁스(Post-TIPS) 선정 항목의 개별 배점은 발췌문에서 확인되지 않아 points를 null로 처리했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000124915",
+  "title": "[대전] 2026년 하반기 중소기업 창업 및 경쟁력강화사업자금 지원 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000124915",
+  "cap": 10.0,
+  "name": "과밀억제권역에서 대전 시내로 공장 이전",
+  "kind": "지역",
+  "points": 5,
+  "extra": null,
+  "quote": "① 「수도권정비계획법 시행령」 제9조에 따른 과밀억제권역에서 시내로 공장을 이전하는 중소기업(5점)",
+  "input": {
+   "region": "대전",
+   "district": ""
+  },
+  "memo": [
+   "발췌문에서 ⑭ 항목의 문장과 점수 부분이 잘려 있어 녹색기업 인증 항목은 점수를 확인할 수 없습니다.",
+   "발췌문이 ⑭에서 끊긴 뒤 지역인재 조건으로 이어져 ⑮·⑯ 항목 내용이 누락된 것으로 보입니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000124915",
+  "title": "[대전] 2026년 하반기 중소기업 창업 및 경쟁력강화사업자금 지원 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000124915",
+  "cap": 10.0,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 5,
+  "extra": "여성기업 확인서 첨부",
+  "quote": "② 여성이 소유하거나 경영하는 중소기업(여성기업 확인서 첨부)(5점)",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [
+   "발췌문에서 ⑭ 항목의 문장과 점수 부분이 잘려 있어 녹색기업 인증 항목은 점수를 확인할 수 없습니다.",
+   "발췌문이 ⑭에서 끊긴 뒤 지역인재 조건으로 이어져 ⑮·⑯ 항목 내용이 누락된 것으로 보입니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000124915",
+  "title": "[대전] 2026년 하반기 중소기업 창업 및 경쟁력강화사업자금 지원 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000124915",
+  "cap": 10.0,
+  "name": "장애인기업",
+  "kind": "장애인",
+  "points": 5,
+  "extra": "장애인기업 확인서 첨부",
+  "quote": "③ 장애인이 소유하거나 경영하는 기업(장애인기업 확인서 첨부)(5점)",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [
+   "발췌문에서 ⑭ 항목의 문장과 점수 부분이 잘려 있어 녹색기업 인증 항목은 점수를 확인할 수 없습니다.",
+   "발췌문이 ⑭에서 끊긴 뒤 지역인재 조건으로 이어져 ⑮·⑯ 항목 내용이 누락된 것으로 보입니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000124915",
+  "title": "[대전] 2026년 하반기 중소기업 창업 및 경쟁력강화사업자금 지원 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000124915",
+  "cap": 10.0,
+  "name": "관내 본사 및 사업장(생산공장) 소재 법인",
+  "kind": "지역",
+  "points": 5,
+  "extra": "법인의 경우 관내에 본사 및 사업장(생산공장) 모두를 두는",
+  "quote": "⑤ 법인의 경우 관내에 본사 및 사업장(생산공장) 모두를 두는 기업 (5점)",
+  "input": {
+   "region": "대전",
+   "district": ""
+  },
+  "memo": [
+   "발췌문에서 ⑭ 항목의 문장과 점수 부분이 잘려 있어 녹색기업 인증 항목은 점수를 확인할 수 없습니다.",
+   "발췌문이 ⑭에서 끊긴 뒤 지역인재 조건으로 이어져 ⑮·⑯ 항목 내용이 누락된 것으로 보입니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000125705",
+  "title": "[충북] 2026년 2차 중소기업육성자금 융자(이차보전) 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125705",
+  "cap": null,
+  "name": "과밀억제권역에서 도내로 공장 이전",
+  "kind": "지역",
+  "points": 5,
+  "extra": null,
+  "quote": "ㅇ「수도권정비계획법시행령」제9조에 의한 과밀억제권역에서 도내로 공장을 이전하는 중소기업(5점)",
+  "input": {
+   "region": "충북",
+   "district": ""
+  },
+  "memo": [
+   "발췌문에 별표 1의 평가기준 제목이 없어, 첫 번째 가점 목록의 세부사업을 평가기준 문맥상 창업및경쟁력강화자금으로 연결했습니다.",
+   "청년창업지원자금 산업재산권 및 기타 항목의 점수는 표에서 분리되어 있어 points_source에 배점 조각을 기재했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000125705",
+  "title": "[충북] 2026년 2차 중소기업육성자금 융자(이차보전) 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125705",
+  "cap": null,
+  "name": "여성 소유·경영 기업",
+  "kind": "여성",
+  "points": 3,
+  "extra": "전용단지입주기업 가점과 중복적용 불가",
+  "quote": "ㅇ 여성·장애인이 소유하거나 경영하는 중소기업(3점) ※전용단지입주기업 가점과 중복적용 불가",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [
+   "발췌문에 별표 1의 평가기준 제목이 없어, 첫 번째 가점 목록의 세부사업을 평가기준 문맥상 창업및경쟁력강화자금으로 연결했습니다.",
+   "청년창업지원자금 산업재산권 및 기타 항목의 점수는 표에서 분리되어 있어 points_source에 배점 조각을 기재했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000125705",
+  "title": "[충북] 2026년 2차 중소기업육성자금 융자(이차보전) 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125705",
+  "cap": null,
+  "name": "장애인 소유·경영 기업",
+  "kind": "장애인",
+  "points": 3,
+  "extra": "전용단지입주기업 가점과 중복적용 불가",
+  "quote": "ㅇ 여성·장애인이 소유하거나 경영하는 중소기업(3점) ※전용단지입주기업 가점과 중복적용 불가",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [
+   "발췌문에 별표 1의 평가기준 제목이 없어, 첫 번째 가점 목록의 세부사업을 평가기준 문맥상 창업및경쟁력강화자금으로 연결했습니다.",
+   "청년창업지원자금 산업재산권 및 기타 항목의 점수는 표에서 분리되어 있어 points_source에 배점 조각을 기재했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000125705",
+  "title": "[충북] 2026년 2차 중소기업육성자금 융자(이차보전) 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125705",
+  "cap": null,
+  "name": "벤처기업",
+  "kind": "인증",
+  "points": 3,
+  "extra": null,
+  "quote": "ㅇ 벤처기업, 이노비즈기업, 경영혁신형기업(3점)",
+  "input": {
+   "certifications": [
+    "벤처기업"
+   ]
+  },
+  "memo": [
+   "발췌문에 별표 1의 평가기준 제목이 없어, 첫 번째 가점 목록의 세부사업을 평가기준 문맥상 창업및경쟁력강화자금으로 연결했습니다.",
+   "청년창업지원자금 산업재산권 및 기타 항목의 점수는 표에서 분리되어 있어 points_source에 배점 조각을 기재했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000125705",
+  "title": "[충북] 2026년 2차 중소기업육성자금 융자(이차보전) 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125705",
+  "cap": null,
+  "name": "이노비즈기업",
+  "kind": "인증",
+  "points": 3,
+  "extra": null,
+  "quote": "ㅇ 벤처기업, 이노비즈기업, 경영혁신형기업(3점)",
+  "input": {
+   "certifications": [
+    "이노비즈"
+   ]
+  },
+  "memo": [
+   "발췌문에 별표 1의 평가기준 제목이 없어, 첫 번째 가점 목록의 세부사업을 평가기준 문맥상 창업및경쟁력강화자금으로 연결했습니다.",
+   "청년창업지원자금 산업재산권 및 기타 항목의 점수는 표에서 분리되어 있어 points_source에 배점 조각을 기재했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000125705",
+  "title": "[충북] 2026년 2차 중소기업육성자금 융자(이차보전) 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125705",
+  "cap": null,
+  "name": "도내 본사 및 사업장(생산공장) 소재 기업",
+  "kind": "지역",
+  "points": 5,
+  "extra": "본사 및 사업장(생산공장) 모두 도내",
+  "quote": "ㅇ 도내 본사 및 사업장(생산공장) 모두가 소재한 기업(5점)",
+  "input": {
+   "region": "충북",
+   "district": ""
+  },
+  "memo": [
+   "발췌문에 별표 1의 평가기준 제목이 없어, 첫 번째 가점 목록의 세부사업을 평가기준 문맥상 창업및경쟁력강화자금으로 연결했습니다.",
+   "청년창업지원자금 산업재산권 및 기타 항목의 점수는 표에서 분리되어 있어 points_source에 배점 조각을 기재했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000125705",
+  "title": "[충북] 2026년 2차 중소기업육성자금 융자(이차보전) 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125705",
+  "cap": null,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 10,
+  "extra": "여성·장애인 전용산업단지에 입주",
+  "quote": "ㅇ 여성·장애인 전용산업단지에 입주한 여성기업 또는 장애인기업(10점)",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [
+   "발췌문에 별표 1의 평가기준 제목이 없어, 첫 번째 가점 목록의 세부사업을 평가기준 문맥상 창업및경쟁력강화자금으로 연결했습니다.",
+   "청년창업지원자금 산업재산권 및 기타 항목의 점수는 표에서 분리되어 있어 points_source에 배점 조각을 기재했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000125705",
+  "title": "[충북] 2026년 2차 중소기업육성자금 융자(이차보전) 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125705",
+  "cap": null,
+  "name": "장애인기업",
+  "kind": "장애인",
+  "points": 10,
+  "extra": "여성·장애인 전용산업단지에 입주",
+  "quote": "ㅇ 여성·장애인 전용산업단지에 입주한 여성기업 또는 장애인기업(10점)",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [
+   "발췌문에 별표 1의 평가기준 제목이 없어, 첫 번째 가점 목록의 세부사업을 평가기준 문맥상 창업및경쟁력강화자금으로 연결했습니다.",
+   "청년창업지원자금 산업재산권 및 기타 항목의 점수는 표에서 분리되어 있어 points_source에 배점 조각을 기재했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000125705",
+  "title": "[충북] 2026년 2차 중소기업육성자금 융자(이차보전) 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125705",
+  "cap": null,
+  "name": "여성 소유·경영 기업",
+  "kind": "여성",
+  "points": 5,
+  "extra": null,
+  "quote": "ㅇ 여성이 소유하거나 경영하는 기업, 장애인이 소유하거나 경영하는 기업, 창업보육센터입주 또는 졸업한 기업, 도내에 본사 소재한 기업 중 1 해당(5점)",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [
+   "발췌문에 별표 1의 평가기준 제목이 없어, 첫 번째 가점 목록의 세부사업을 평가기준 문맥상 창업및경쟁력강화자금으로 연결했습니다.",
+   "청년창업지원자금 산업재산권 및 기타 항목의 점수는 표에서 분리되어 있어 points_source에 배점 조각을 기재했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000125705",
+  "title": "[충북] 2026년 2차 중소기업육성자금 융자(이차보전) 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125705",
+  "cap": null,
+  "name": "장애인 소유·경영 기업",
+  "kind": "장애인",
+  "points": 5,
+  "extra": null,
+  "quote": "ㅇ 여성이 소유하거나 경영하는 기업, 장애인이 소유하거나 경영하는 기업, 창업보육센터입주 또는 졸업한 기업, 도내에 본사 소재한 기업 중 1 해당(5점)",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [
+   "발췌문에 별표 1의 평가기준 제목이 없어, 첫 번째 가점 목록의 세부사업을 평가기준 문맥상 창업및경쟁력강화자금으로 연결했습니다.",
+   "청년창업지원자금 산업재산권 및 기타 항목의 점수는 표에서 분리되어 있어 points_source에 배점 조각을 기재했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000125705",
+  "title": "[충북] 2026년 2차 중소기업육성자금 융자(이차보전) 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125705",
+  "cap": null,
+  "name": "도내 본사 소재 기업",
+  "kind": "지역",
+  "points": 5,
+  "extra": null,
+  "quote": "ㅇ 여성이 소유하거나 경영하는 기업, 장애인이 소유하거나 경영하는 기업, 창업보육센터입주 또는 졸업한 기업, 도내에 본사 소재한 기업 중 1 해당(5점)",
+  "input": {
+   "region": "충북",
+   "district": ""
+  },
+  "memo": [
+   "발췌문에 별표 1의 평가기준 제목이 없어, 첫 번째 가점 목록의 세부사업을 평가기준 문맥상 창업및경쟁력강화자금으로 연결했습니다.",
+   "청년창업지원자금 산업재산권 및 기타 항목의 점수는 표에서 분리되어 있어 points_source에 배점 조각을 기재했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000125705",
+  "title": "[충북] 2026년 2차 중소기업육성자금 융자(이차보전) 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125705",
+  "cap": null,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 5,
+  "extra": "여성·장애인 전용산업단지에 입주",
+  "quote": "ㅇ 여성·장애인 전용산업단지에 입주한 여성기업 또는 장애인기업(5점)",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [
+   "발췌문에 별표 1의 평가기준 제목이 없어, 첫 번째 가점 목록의 세부사업을 평가기준 문맥상 창업및경쟁력강화자금으로 연결했습니다.",
+   "청년창업지원자금 산업재산권 및 기타 항목의 점수는 표에서 분리되어 있어 points_source에 배점 조각을 기재했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000125705",
+  "title": "[충북] 2026년 2차 중소기업육성자금 융자(이차보전) 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125705",
+  "cap": null,
+  "name": "장애인기업",
+  "kind": "장애인",
+  "points": 5,
+  "extra": "여성·장애인 전용산업단지에 입주",
+  "quote": "ㅇ 여성·장애인 전용산업단지에 입주한 여성기업 또는 장애인기업(5점)",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [
+   "발췌문에 별표 1의 평가기준 제목이 없어, 첫 번째 가점 목록의 세부사업을 평가기준 문맥상 창업및경쟁력강화자금으로 연결했습니다.",
+   "청년창업지원자금 산업재산권 및 기타 항목의 점수는 표에서 분리되어 있어 points_source에 배점 조각을 기재했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000125856",
+  "title": "[세종] 2026년 2차 중소기업육성자금 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125856",
+  "cap": 10.0,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 5,
+  "extra": "여성기업 확인서 첨부",
+  "quote": "② 여성이 소유하거나 경영하는 중소기업(여성기업 확인서 첨부)(5점)",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [
+   "⑱ 녹색기업 인증 항목의 인용이 ‘(5’에서 끊겨 있어 완전한 원문과 점수 표기를 확인할 수 없습니다.",
+   "地域인재 3명 미만 조건은 발췌가 ‘나 졸업 예정인 사람) 3명 미만(3점)’부터 시작해 조건 문장이 완전하지 않습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000125856",
+  "title": "[세종] 2026년 2차 중소기업육성자금 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125856",
+  "cap": 10.0,
+  "name": "장애인기업",
+  "kind": "장애인",
+  "points": 5,
+  "extra": "장애인기업 확인서 첨부",
+  "quote": "③ 장애인이 소유하거나 경영하는 기업(장애인기업 확인서 첨부)(5점)",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [
+   "⑱ 녹색기업 인증 항목의 인용이 ‘(5’에서 끊겨 있어 완전한 원문과 점수 표기를 확인할 수 없습니다.",
+   "地域인재 3명 미만 조건은 발췌가 ‘나 졸업 예정인 사람) 3명 미만(3점)’부터 시작해 조건 문장이 완전하지 않습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000126643",
+  "title": "[부산] 2026년 10차 중소기업ㆍ소상공인 자금지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126643",
+  "cap": null,
+  "name": "타 시도 전입기업",
+  "kind": "지역",
+  "points": 3,
+  "extra": "사업자번호가 동일할 경우만 인정",
+  "quote": "타 시도 전입기업",
+  "input": {
+   "region": "부산",
+   "district": ""
+  },
+  "memo": [
+   "표 추출문에서 수출·조선해운 관련 행의 배점 칸이 분리되어 보이지 않아, 해당 항목은 같은 구간의 ‘각2’를 배점으로 해석했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000126643",
+  "title": "[부산] 2026년 10차 중소기업ㆍ소상공인 자금지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126643",
+  "cap": null,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 3,
+  "extra": "인증 유효기간이 남아있는",
+  "quote": "여성기업지원에 관한 법률 인증 유효기간이 남아있는 여성기업",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [
+   "표 추출문에서 수출·조선해운 관련 행의 배점 칸이 분리되어 보이지 않아, 해당 항목은 같은 구간의 ‘각2’를 배점으로 해석했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000126643",
+  "title": "[부산] 2026년 10차 중소기업ㆍ소상공인 자금지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126643",
+  "cap": null,
+  "name": "장애기업",
+  "kind": "장애인",
+  "points": 3,
+  "extra": "인증 유효기간이 남아있는",
+  "quote": "장애기업활동 촉진법에 관한 법률 인증 유효기간이 남아있는 장애기업",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [
+   "표 추출문에서 수출·조선해운 관련 행의 배점 칸이 분리되어 보이지 않아, 해당 항목은 같은 구간의 ‘각2’를 배점으로 해석했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000126643",
+  "title": "[부산] 2026년 10차 중소기업ㆍ소상공인 자금지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126643",
+  "cap": null,
+  "name": "가족친화기업",
+  "kind": "인증",
+  "points": 3,
+  "extra": "인증 유효기간이 남아있는",
+  "quote": "가족친화 조성촉진에 관한 법률 인증 유효기간이 남아있는 가족친화기업",
+  "input": {
+   "certifications": [
+    "가족친화기업"
+   ]
+  },
+  "memo": [
+   "표 추출문에서 수출·조선해운 관련 행의 배점 칸이 분리되어 보이지 않아, 해당 항목은 같은 구간의 ‘각2’를 배점으로 해석했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000126643",
+  "title": "[부산] 2026년 10차 중소기업ㆍ소상공인 자금지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126643",
+  "cap": null,
+  "name": "이노비즈기업",
+  "kind": "인증",
+  "points": 2,
+  "extra": "인증 유효기간이 남아있는",
+  "quote": "국내복귀기업,이노비즈기업 각2",
+  "input": {
+   "certifications": [
+    "이노비즈"
+   ]
+  },
+  "memo": [
+   "표 추출문에서 수출·조선해운 관련 행의 배점 칸이 분리되어 보이지 않아, 해당 항목은 같은 구간의 ‘각2’를 배점으로 해석했습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000126892",
+  "title": "[경기] 2026년 중소기업 마케팅 지원사업 해외 오프라인 지원기업 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126892",
+  "cap": null,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 1,
+  "extra": "서류 제출시에만 가산점 부여",
+  "quote": "여성 기업, 장애인 기업",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [
+   "여성기업·장애인기업의 점수는 발췌문에서 항목과 배점이 분리되어 있어, 배점 표기 '- 1 -'를 근거로 1점으로 해석했습니다.",
+   "‘최대 4점’은 착한 기업·주 4.5일 근무 도입·납품 대금 연동제 우수기업 항목에만 연결되어 있어 전체 가점 합계 한도로 설정하지 않았습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "AI 불확실 메모",
+  "notice_id": "bizinfo:PBLN_000000000126892",
+  "title": "[경기] 2026년 중소기업 마케팅 지원사업 해외 오프라인 지원기업 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126892",
+  "cap": null,
+  "name": "장애인기업",
+  "kind": "장애인",
+  "points": 1,
+  "extra": "서류 제출시에만 가산점 부여",
+  "quote": "여성 기업, 장애인 기업",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [
+   "여성기업·장애인기업의 점수는 발췌문에서 항목과 배점이 분리되어 있어, 배점 표기 '- 1 -'를 근거로 1점으로 해석했습니다.",
+   "‘최대 4점’은 착한 기업·주 4.5일 근무 도입·납품 대금 연동제 우수기업 항목에만 연결되어 있어 전체 가점 합계 한도로 설정하지 않았습니다."
+  ],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "앞으로의 조건 말",
+  "notice_id": "bizinfo:PBLN_000000000117356",
+  "title": "[전북] 2026년 중소기업육성자금 융자 지원계획 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000117356",
+  "cap": 5.0,
+  "name": "타지역에서 도내로 공장 이전",
+  "kind": "지역",
+  "points": 5,
+  "extra": "중소기업",
+  "quote": "① 타지역에서 도내로 공장을 이전하는 중소기업(5점)",
+  "input": {
+   "region": "전북",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "앞으로의 조건 말",
+  "notice_id": "bizinfo:PBLN_000000000126642",
+  "title": "[전북] 2026년 중소기업 육성자금 융자 지원계획 수정 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126642",
+  "cap": 5.0,
+  "name": "타지역에서 도내로 공장을 이전하는 중소기업",
+  "kind": "지역",
+  "points": 5,
+  "extra": null,
+  "quote": "타지역에서 도내로 공장을 이전하는 중소기업(5점)",
+  "input": {
+   "region": "전북",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "앞으로의 조건 말",
+  "notice_id": "bizinfo:PBLN_000000000127034",
+  "title": "2026년 대전 웰컴 스테이 지원사업 참가기업 모집 연장 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000127034",
+  "cap": null,
+  "name": "대전지역 이전 실행 착수기업",
+  "kind": "지역",
+  "points": 2,
+  "extra": null,
+  "quote": "대전지역 이전기업 2점 임대차계약 체결 등 이전 실행에 착수한 이전예정기업",
+  "input": {
+   "region": "대전",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "앞으로의 조건 말",
+  "notice_id": "bizinfo:PBLN_000000000127034",
+  "title": "2026년 대전 웰컴 스테이 지원사업 참가기업 모집 연장 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000127034",
+  "cap": null,
+  "name": "대전지역 이전계획 기업",
+  "kind": "지역",
+  "points": 1,
+  "extra": null,
+  "quote": "이전계획서만 제출한 이전예정기업 1점 (임대차계약 등 실행 이전 단계)",
+  "input": {
+   "region": "대전",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "확인 못 하는 조건 말(이상·이하·기준·한함…)",
+  "notice_id": "bizinfo:PBLN_000000000117356",
+  "title": "[전북] 2026년 중소기업육성자금 융자 지원계획 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000117356",
+  "cap": 5.0,
+  "name": "전북 내 본사 및 사업장 보유",
+  "kind": "지역",
+  "points": 5,
+  "extra": null,
+  "quote": "④ 전북특별자치도 안에 본사 및 사업장(생산공장)모두를 두는 기업(5점)",
+  "input": {
+   "region": "전북",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "확인 못 하는 조건 말(이상·이하·기준·한함…)",
+  "notice_id": "bizinfo:PBLN_000000000119754",
+  "title": "2026년 팁스(TIPS) 창업기업 지원계획 수정 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000119754",
+  "cap": null,
+  "name": "벤처기업 인증",
+  "kind": "인증",
+  "points": 1,
+  "extra": null,
+  "quote": "벤처기업 인증 또는 이노비즈 인증을 받은 경우 1점",
+  "input": {
+   "certifications": [
+    "벤처기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "확인 못 하는 조건 말(이상·이하·기준·한함…)",
+  "notice_id": "bizinfo:PBLN_000000000119754",
+  "title": "2026년 팁스(TIPS) 창업기업 지원계획 수정 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000119754",
+  "cap": null,
+  "name": "이노비즈 인증",
+  "kind": "인증",
+  "points": 1,
+  "extra": null,
+  "quote": "벤처기업 인증 또는 이노비즈 인증을 받은 경우 1점",
+  "input": {
+   "certifications": [
+    "이노비즈"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "확인 못 하는 조건 말(이상·이하·기준·한함…)",
+  "notice_id": "bizinfo:PBLN_000000000119754",
+  "title": "2026년 팁스(TIPS) 창업기업 지원계획 수정 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000119754",
+  "cap": null,
+  "name": "벤처기업 인증",
+  "kind": "인증",
+  "points": 1,
+  "extra": null,
+  "quote": "벤처기업 인증 또는 이노비즈 인증을 받은 경우 1점",
+  "input": {
+   "certifications": [
+    "벤처기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "확인 못 하는 조건 말(이상·이하·기준·한함…)",
+  "notice_id": "bizinfo:PBLN_000000000119754",
+  "title": "2026년 팁스(TIPS) 창업기업 지원계획 수정 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000119754",
+  "cap": null,
+  "name": "이노비즈 인증",
+  "kind": "인증",
+  "points": 1,
+  "extra": null,
+  "quote": "벤처기업 인증 또는 이노비즈 인증을 받은 경우 1점",
+  "input": {
+   "certifications": [
+    "이노비즈"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "확인 못 하는 조건 말(이상·이하·기준·한함…)",
+  "notice_id": "bizinfo:PBLN_000000000123291",
+  "title": "[전북] 군산시 2026년 2차 AX얼라이언스 산ㆍ학ㆍ연 종합프로그램 지원 수혜기업 모집 공고(군산국가산업단지 스마트그린 AX실증산단 구축사업)",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123291",
+  "cap": null,
+  "name": "전북 도내 소재 컨소시엄",
+  "kind": "지역",
+  "points": 3,
+  "extra": null,
+  "quote": "해당 과제 컨소시엄이 모두 전북 도내에 소재했을 경우 3",
+  "input": {
+   "region": "전북",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "확인 못 하는 조건 말(이상·이하·기준·한함…)",
+  "notice_id": "bizinfo:PBLN_000000000126046",
+  "title": "2026년 4차 과학기술분야 R&D 대체인력 활용 지원사업 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126046",
+  "cap": null,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 1,
+  "extra": null,
+  "quote": "기관이 여성기업인 경우 1",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "확인 못 하는 조건 말(이상·이하·기준·한함…)",
+  "notice_id": "bizinfo:PBLN_000000000126046",
+  "title": "2026년 4차 과학기술분야 R&D 대체인력 활용 지원사업 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126046",
+  "cap": null,
+  "name": "가족친화인증기관",
+  "kind": "인증",
+  "points": 1,
+  "extra": null,
+  "quote": "기관이 성평등가족부 지정 가족친화인증기관인 경우 1",
+  "input": {
+   "certifications": [
+    "가족친화기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000117751",
+  "title": "[충남] 2026년 중소기업육성자금 융자 지원계획 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000117751",
+  "cap": null,
+  "name": "과밀억제권역에서 충남으로 공장 이전",
+  "kind": "지역",
+  "points": 5,
+  "extra": null,
+  "quote": "「수도권정비계획법시행령」제9조에 의한 과밀억제권역에서 도내로 공장을 이전하는 중소기업",
+  "input": {
+   "region": "충남",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000117751",
+  "title": "[충남] 2026년 중소기업육성자금 융자 지원계획 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000117751",
+  "cap": null,
+  "name": "도내 본사 및 사업장 보유 기업",
+  "kind": "지역",
+  "points": 5,
+  "extra": "개인사업자 제외",
+  "quote": "도내에 본사 및 사업장(생산공장)이 있는 기업(개인사업자 제외)",
+  "input": {
+   "region": "충남",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000117751",
+  "title": "[충남] 2026년 중소기업육성자금 융자 지원계획 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000117751",
+  "cap": null,
+  "name": "가족친화인증기업",
+  "kind": "인증",
+  "points": 5,
+  "extra": null,
+  "quote": "가족친화인증기업",
+  "input": {
+   "certifications": [
+    "가족친화기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000118209",
+  "title": "2026년 중소기업 연구인력지원사업 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118209",
+  "cap": null,
+  "name": "우수 기업부설연구소 보유 기업",
+  "kind": "인증",
+  "points": 3,
+  "extra": "접수마감일 기준 유효기간 내에 있는 지정서",
+  "quote": "「기업부설연구소등의 연구개발 지원에 관한 법률」 제16조제1항에 따라 지정된 우수 기업부설연구소가 소속된 기업",
+  "input": {
+   "certifications": [
+    "기업부설연구소"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000118209",
+  "title": "2026년 중소기업 연구인력지원사업 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118209",
+  "cap": null,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 1,
+  "extra": null,
+  "quote": "여성기업",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000118209",
+  "title": "2026년 중소기업 연구인력지원사업 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118209",
+  "cap": null,
+  "name": "우수 기업부설연구소 보유 기업",
+  "kind": "인증",
+  "points": 3,
+  "extra": "접수마감일 기준 유효기간 내에 있는 지정서",
+  "quote": "「기업부설연구소등의 연구개발 지원에 관한 법률」 제16조제1항에 따라 지정된 우수 기업부설연구소가 소속된 기업",
+  "input": {
+   "certifications": [
+    "기업부설연구소"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000118209",
+  "title": "2026년 중소기업 연구인력지원사업 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118209",
+  "cap": null,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 1,
+  "extra": null,
+  "quote": "여성기업",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000118209",
+  "title": "2026년 중소기업 연구인력지원사업 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118209",
+  "cap": null,
+  "name": "우수 기업부설연구소 보유 기업",
+  "kind": "인증",
+  "points": 3,
+  "extra": "접수마감일 기준 유효기간 내에 있는 지정서",
+  "quote": "「기초연구진흥 및 기술개발지원에 관한 법률」 제14조의6(’26.2.1 이전), 「기업부설연구소등의 연구개발 지원에 관한 법률」 제16조제1항에 따라 지정된 우수 기업부설연구소가 소속된 기업",
+  "input": {
+   "certifications": [
+    "기업부설연구소"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000118209",
+  "title": "2026년 중소기업 연구인력지원사업 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000118209",
+  "cap": null,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 1,
+  "extra": null,
+  "quote": "여성기업",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000119409",
+  "title": "[경남] 2026 중소기업 통ㆍ번역 지원사업 참가업체 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000119409",
+  "cap": null,
+  "name": "청년친화 강소기업",
+  "kind": "인증",
+  "points": 5,
+  "extra": "유효기간 내; 지정기간이 없는 경우 : 선정년도 포함 3년간 유효",
+  "quote": "A. 고용우수기업, 스타기업, 소부장 강소기업, 모범장수기업, 청년친화 강소기업, 경남형 청년친화기업, 도 주관 수출 관련 설문조사 응답기업",
+  "input": {
+   "certifications": [
+    "청년친화강소기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000119739",
+  "title": "2026년 소상공인 온라인판로 지원사업 참여기업 모집공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000119739",
+  "cap": 5.0,
+  "name": "협동조합",
+  "kind": "인증",
+  "points": 5,
+  "extra": "한국사회적기업진흥원 운영 협동조합포털(coop.go.kr)에서 조회되는",
+  "quote": "➃ 한국사회적기업진흥원 운영 협동조합포털(coop.go.kr)에서 조회되는 협동조합",
+  "input": {
+   "certifications": [
+    "협동조합"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000120707",
+  "title": "2026년 구미시 스타트업 제작센터 참여기업 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000120707",
+  "cap": 5.0,
+  "name": "구미시 거주 근로자 비율 50~80% 미만",
+  "kind": "지역",
+  "points": 3,
+  "extra": "4대 보험 가입자 명부(신청일) 기준, 대표자 포함",
+  "quote": "구미시 인구 유입 정책 50% 미만 50~80% 미만 80% 이상 가점 0점 3점 5점",
+  "input": {
+   "region": "경북",
+   "district": "구미시"
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000120707",
+  "title": "2026년 구미시 스타트업 제작센터 참여기업 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000120707",
+  "cap": 5.0,
+  "name": "구미시 거주 근로자 비율 80% 이상",
+  "kind": "지역",
+  "points": 5,
+  "extra": "4대 보험 가입자 명부(신청일) 기준, 대표자 포함",
+  "quote": "구미시 인구 유입 정책 50% 미만 50~80% 미만 80% 이상 가점 0점 3점 5점",
+  "input": {
+   "region": "경북",
+   "district": "구미시"
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000120821",
+  "title": "2026년 디지털커머스 전문기관(소담스퀘어강원) 소상공인 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000120821",
+  "cap": 5.0,
+  "name": "협동조합",
+  "kind": "인증",
+  "points": 5,
+  "extra": "한국사회적기업진흥원 운영 협동조합포털(coop.go.kr)에서 조회되는",
+  "quote": "➃ 한국사회적기업진흥원 운영 협동조합포털(coop.go.kr)에서 조회되는 협동조합",
+  "input": {
+   "certifications": [
+    "협동조합"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000121480",
+  "title": "2026년 TV홈쇼핑 및 데이터홈쇼핑 입점지원사업 소상공인 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000121480",
+  "cap": 5.0,
+  "name": "협동조합",
+  "kind": "인증",
+  "points": 5,
+  "extra": "한국사회적기업진흥원 운영 협동조합포털(coop.go.kr)에서 조회",
+  "quote": "➃ 한국사회적기업진흥원 운영 협동조합포털(coop.go.kr)에서 조회되는 협동조합",
+  "input": {
+   "certifications": [
+    "협동조합"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000122373",
+  "title": "2026년 과천시 중소기업 및 소상공인 육성자금 이자차액보전 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122373",
+  "cap": 10.0,
+  "name": "벤처기업",
+  "kind": "인증",
+  "points": 10,
+  "extra": null,
+  "quote": "벤처기업",
+  "input": {
+   "certifications": [
+    "벤처기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000122373",
+  "title": "2026년 과천시 중소기업 및 소상공인 육성자금 이자차액보전 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122373",
+  "cap": 10.0,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 10,
+  "extra": null,
+  "quote": "여성기업",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000122373",
+  "title": "2026년 과천시 중소기업 및 소상공인 육성자금 이자차액보전 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122373",
+  "cap": 10.0,
+  "name": "장애인기업",
+  "kind": "장애인",
+  "points": 10,
+  "extra": null,
+  "quote": "장애인기업",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000122373",
+  "title": "2026년 과천시 중소기업 및 소상공인 육성자금 이자차액보전 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122373",
+  "cap": 10.0,
+  "name": "가족친화 인증기업",
+  "kind": "인증",
+  "points": 10,
+  "extra": null,
+  "quote": "가족친화 인증기업",
+  "input": {
+   "certifications": [
+    "가족친화기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000122373",
+  "title": "2026년 과천시 중소기업 및 소상공인 육성자금 이자차액보전 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122373",
+  "cap": 10.0,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 10,
+  "extra": null,
+  "quote": "여성기업",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000122373",
+  "title": "2026년 과천시 중소기업 및 소상공인 육성자금 이자차액보전 지원계획 변경 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122373",
+  "cap": 10.0,
+  "name": "장애인기업",
+  "kind": "장애인",
+  "points": 10,
+  "extra": null,
+  "quote": "장애인기업",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000122724",
+  "title": "[충북] 청주시 2026년 2차 공정혁신시뮬레이션센터 구축 및 운영사업 기술지원 수혜기업 모집 연장 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122724",
+  "cap": null,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 1,
+  "extra": "확인서제출",
+  "quote": "∘뿌리기업, 여성기업, 장애인기업 예(1) 아니오(0)",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000122724",
+  "title": "[충북] 청주시 2026년 2차 공정혁신시뮬레이션센터 구축 및 운영사업 기술지원 수혜기업 모집 연장 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122724",
+  "cap": null,
+  "name": "장애인기업",
+  "kind": "장애인",
+  "points": 1,
+  "extra": "확인서제출",
+  "quote": "∘뿌리기업, 여성기업, 장애인기업 예(1) 아니오(0)",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000122968",
+  "title": "2026년 2차 안전일터 조성지원 사업 수정 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122968",
+  "cap": 20.0,
+  "name": "가족친화인증기업",
+  "kind": "인증",
+  "points": 2,
+  "extra": "인증기간 내에 한하여 가점 부여",
+  "quote": "❿성평등가족 부에서 인증한 가족친화인증기업",
+  "input": {
+   "certifications": [
+    "가족친화기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000123858",
+  "title": "2026년 바이오ㆍ메디컬 패키지지원 프로그램 참여기업 모집 공고(특화역량 BI 지원사업)",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123858",
+  "cap": null,
+  "name": "벤처기업",
+  "kind": "인증",
+  "points": 1,
+  "extra": null,
+  "quote": "※ (가점) 벤처·이노비즈·메인비즈 각 1점, 여성기업 3점",
+  "input": {
+   "certifications": [
+    "벤처기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000123858",
+  "title": "2026년 바이오ㆍ메디컬 패키지지원 프로그램 참여기업 모집 공고(특화역량 BI 지원사업)",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123858",
+  "cap": null,
+  "name": "이노비즈",
+  "kind": "인증",
+  "points": 1,
+  "extra": null,
+  "quote": "※ (가점) 벤처·이노비즈·메인비즈 각 1점, 여성기업 3점",
+  "input": {
+   "certifications": [
+    "이노비즈"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000123858",
+  "title": "2026년 바이오ㆍ메디컬 패키지지원 프로그램 참여기업 모집 공고(특화역량 BI 지원사업)",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123858",
+  "cap": null,
+  "name": "메인비즈",
+  "kind": "인증",
+  "points": 1,
+  "extra": null,
+  "quote": "※ (가점) 벤처·이노비즈·메인비즈 각 1점, 여성기업 3점",
+  "input": {
+   "certifications": [
+    "메인비즈"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000123858",
+  "title": "2026년 바이오ㆍ메디컬 패키지지원 프로그램 참여기업 모집 공고(특화역량 BI 지원사업)",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000123858",
+  "cap": null,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 3,
+  "extra": null,
+  "quote": "※ (가점) 벤처·이노비즈·메인비즈 각 1점, 여성기업 3점",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000124300",
+  "title": "AIoT융합부품 성능검증시스템 고도화사업 수혜기업모집 수시 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000124300",
+  "cap": null,
+  "name": "충북도내 기업",
+  "kind": "지역",
+  "points": 3,
+  "extra": null,
+  "quote": "③ 우대가점 : 충북도내 기업 (3점), 청주시 기업 (5점)",
+  "input": {
+   "region": "충북",
+   "district": "청주시"
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000124300",
+  "title": "AIoT융합부품 성능검증시스템 고도화사업 수혜기업모집 수시 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000124300",
+  "cap": null,
+  "name": "청주시 기업",
+  "kind": "지역",
+  "points": 5,
+  "extra": null,
+  "quote": "③ 우대가점 : 충북도내 기업 (3점), 청주시 기업 (5점)",
+  "input": {
+   "region": "충북",
+   "district": "청주시"
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126060",
+  "title": "2026년 5차 소상공인 온라인쇼핑몰 판매지원(온라인쇼핑몰ㆍ로컬상품관) 참여기업 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126060",
+  "cap": 5.0,
+  "name": "협동조합",
+  "kind": "인증",
+  "points": 5,
+  "extra": "한국사회적기업진흥원 운영 협동조합포털(coop.go.kr)에서 조회되는",
+  "quote": "➅ 한국사회적기업진흥원 운영 협동조합포털(coop.go.kr)에서 조회되는 협동조합",
+  "input": {
+   "certifications": [
+    "협동조합"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126362",
+  "title": "[충북] 2026년 2차 미취업청년 취업연계 일경험 지원사업 참여기업 모집 연장 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126362",
+  "cap": null,
+  "name": "가족친화인증기업",
+  "kind": "인증",
+  "points": 1,
+  "extra": null,
+  "quote": "② 가족친화인증기업",
+  "input": {
+   "certifications": [
+    "가족친화기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126362",
+  "title": "[충북] 2026년 2차 미취업청년 취업연계 일경험 지원사업 참여기업 모집 연장 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126362",
+  "cap": null,
+  "name": "청년친화강소기업",
+  "kind": "인증",
+  "points": 1,
+  "extra": null,
+  "quote": "③ 청년친화강소기업",
+  "input": {
+   "certifications": [
+    "청년친화강소기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126384",
+  "title": "2026년 3차 디지털혁신기술국제공동연구사업 신규지원 대상과제 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126384",
+  "cap": 5.0,
+  "name": "우수 기업부설연구소 소속 기업",
+  "kind": "인증",
+  "points": 0.5,
+  "extra": "최근 3년 이내",
+  "quote": "o 최근 3년 이내에 「기초연구진흥 및 기술개발지원에 관한 법률 시행령」 제16조의3에 따라 선정된 우 수 기업부설연구소가 소속된 기업이 연구개발기관에 포함된 연구개발과제(0.5점) 또는 해당 영에 따라 선정된 최우수 기업부설연구소가 소속된 기업이 주관연구개발기관으로 참여한 연구개발과제(1점)",
+  "input": {
+   "certifications": [
+    "기업부설연구소"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126384",
+  "title": "2026년 3차 디지털혁신기술국제공동연구사업 신규지원 대상과제 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126384",
+  "cap": 5.0,
+  "name": "최우수 기업부설연구소 소속 기업",
+  "kind": "인증",
+  "points": 1,
+  "extra": "최근 3년 이내",
+  "quote": "o 최근 3년 이내에 「기초연구진흥 및 기술개발지원에 관한 법률 시행령」 제16조의3에 따라 선정된 우 수 기업부설연구소가 소속된 기업이 연구개발기관에 포함된 연구개발과제(0.5점) 또는 해당 영에 따라 선정된 최우수 기업부설연구소가 소속된 기업이 주관연구개발기관으로 참여한 연구개발과제(1점)",
+  "input": {
+   "certifications": [
+    "기업부설연구소"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126769",
+  "title": "[경기] 광명시 2026년 상권친화형 도시조성 지원사업 사업 소상공인 분야 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126769",
+  "cap": null,
+  "name": "장애인기업",
+  "kind": "장애인",
+  "points": 1,
+  "extra": null,
+  "quote": "- 장애인기업, 여성기업, 1인기업",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126769",
+  "title": "[경기] 광명시 2026년 상권친화형 도시조성 지원사업 사업 소상공인 분야 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126769",
+  "cap": null,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 1,
+  "extra": null,
+  "quote": "- 장애인기업, 여성기업, 1인기업",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126783",
+  "title": "[경기] 2026년 우수 환경서비스업 선정을 위한 신청 접수 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126783",
+  "cap": 10.0,
+  "name": "이노비즈",
+  "kind": "인증",
+  "points": 1,
+  "extra": "각 항목 증빙서류 제출",
+  "quote": "4) 공공기관 인증 : 이노비즈, 메인비즈, 벤처기업, 우수환경산업체, 환경신기술(NET) 등 1",
+  "input": {
+   "certifications": [
+    "이노비즈"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126783",
+  "title": "[경기] 2026년 우수 환경서비스업 선정을 위한 신청 접수 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126783",
+  "cap": 10.0,
+  "name": "메인비즈",
+  "kind": "인증",
+  "points": 1,
+  "extra": "각 항목 증빙서류 제출",
+  "quote": "4) 공공기관 인증 : 이노비즈, 메인비즈, 벤처기업, 우수환경산업체, 환경신기술(NET) 등 1",
+  "input": {
+   "certifications": [
+    "메인비즈"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126783",
+  "title": "[경기] 2026년 우수 환경서비스업 선정을 위한 신청 접수 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126783",
+  "cap": 10.0,
+  "name": "벤처기업",
+  "kind": "인증",
+  "points": 1,
+  "extra": "각 항목 증빙서류 제출",
+  "quote": "4) 공공기관 인증 : 이노비즈, 메인비즈, 벤처기업, 우수환경산업체, 환경신기술(NET) 등 1",
+  "input": {
+   "certifications": [
+    "벤처기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126796",
+  "title": "[인천] 2026년 5차 지역상품 공공 조달정보 지원사업 맞춤형 조달 컨설팅 참여 기업 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126796",
+  "cap": null,
+  "name": "장애인 기업",
+  "kind": "장애인",
+  "points": 1,
+  "extra": "유효 기간/ 5년간",
+  "quote": "장애인 기업",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126796",
+  "title": "[인천] 2026년 5차 지역상품 공공 조달정보 지원사업 맞춤형 조달 컨설팅 참여 기업 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126796",
+  "cap": null,
+  "name": "가족친화기업 인증",
+  "kind": "인증",
+  "points": 1,
+  "extra": "유효 기간/ 5년간",
+  "quote": "가족친화기업 인증",
+  "input": {
+   "certifications": [
+    "가족친화기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126848",
+  "title": "[경북] 포항시 2026년 4차 외국인 근로자 기숙사 환경개선 지원 대상 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126848",
+  "cap": null,
+  "name": "장애인기업",
+  "kind": "장애인",
+  "points": 5,
+  "extra": null,
+  "quote": "정부인증 우대기업 여부 (장애인기업, 여성기업,, 가족친화인증기업 사회적기업, 경상북도 ‘중소기업대상’ 선정기업) (5) ∘우대기업(1개 이상) : 5",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126848",
+  "title": "[경북] 포항시 2026년 4차 외국인 근로자 기숙사 환경개선 지원 대상 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126848",
+  "cap": null,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 5,
+  "extra": null,
+  "quote": "정부인증 우대기업 여부 (장애인기업, 여성기업,, 가족친화인증기업 사회적기업, 경상북도 ‘중소기업대상’ 선정기업) (5) ∘우대기업(1개 이상) : 5",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126848",
+  "title": "[경북] 포항시 2026년 4차 외국인 근로자 기숙사 환경개선 지원 대상 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126848",
+  "cap": null,
+  "name": "가족친화인증기업",
+  "kind": "인증",
+  "points": 5,
+  "extra": null,
+  "quote": "정부인증 우대기업 여부 (장애인기업, 여성기업,, 가족친화인증기업 사회적기업, 경상북도 ‘중소기업대상’ 선정기업) (5) ∘우대기업(1개 이상) : 5",
+  "input": {
+   "certifications": [
+    "가족친화기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126848",
+  "title": "[경북] 포항시 2026년 4차 외국인 근로자 기숙사 환경개선 지원 대상 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126848",
+  "cap": null,
+  "name": "사회적기업",
+  "kind": "인증",
+  "points": 5,
+  "extra": null,
+  "quote": "정부인증 우대기업 여부 (장애인기업, 여성기업,, 가족친화인증기업 사회적기업, 경상북도 ‘중소기업대상’ 선정기업) (5) ∘우대기업(1개 이상) : 5",
+  "input": {
+   "certifications": [
+    "사회적기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126856",
+  "title": "[경북] 울진군 2026년 4차 외국인 근로자 기숙사 등 시설 환경개선 사업 참여기업 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126856",
+  "cap": null,
+  "name": "장애인기업",
+  "kind": "장애인",
+  "points": 5,
+  "extra": null,
+  "quote": "정부인증 우대기업 여부 (장애인기업, 여성기업,, 가족친화인증기업 사회적기업, 경상북도 ‘중소기업대상’ 선정기업) (5) ∘우대기업(1개 이상) : 5",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126856",
+  "title": "[경북] 울진군 2026년 4차 외국인 근로자 기숙사 등 시설 환경개선 사업 참여기업 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126856",
+  "cap": null,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 5,
+  "extra": null,
+  "quote": "정부인증 우대기업 여부 (장애인기업, 여성기업,, 가족친화인증기업 사회적기업, 경상북도 ‘중소기업대상’ 선정기업) (5) ∘우대기업(1개 이상) : 5",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126856",
+  "title": "[경북] 울진군 2026년 4차 외국인 근로자 기숙사 등 시설 환경개선 사업 참여기업 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126856",
+  "cap": null,
+  "name": "가족친화인증기업",
+  "kind": "인증",
+  "points": 5,
+  "extra": null,
+  "quote": "정부인증 우대기업 여부 (장애인기업, 여성기업,, 가족친화인증기업 사회적기업, 경상북도 ‘중소기업대상’ 선정기업) (5) ∘우대기업(1개 이상) : 5",
+  "input": {
+   "certifications": [
+    "가족친화기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126856",
+  "title": "[경북] 울진군 2026년 4차 외국인 근로자 기숙사 등 시설 환경개선 사업 참여기업 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126856",
+  "cap": null,
+  "name": "사회적기업",
+  "kind": "인증",
+  "points": 5,
+  "extra": null,
+  "quote": "정부인증 우대기업 여부 (장애인기업, 여성기업,, 가족친화인증기업 사회적기업, 경상북도 ‘중소기업대상’ 선정기업) (5) ∘우대기업(1개 이상) : 5",
+  "input": {
+   "certifications": [
+    "사회적기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126911",
+  "title": "[경북] 포항시 2026년 3차 경북형(포항) 스마트공장(기초단계) 구축지원사업 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126911",
+  "cap": 5.0,
+  "name": "포항 소재 공급기업",
+  "kind": "지역",
+  "points": 3,
+  "extra": "사업공고일 기준, 공급기업의 소재지가 경상북도 포항시 내 소재하는 경우; 본점 또는 지점이 경북 포항 내 위치하는 경우",
+  "quote": "공급기업 소재지가 ∙ 사업공고일 기준, 공급기업의 소재지가 경상북도 포항시 내 소재하는 경우 포항인 경우 * 본점 또는 지점이 경북 포항 내 위치하는 경우 (사업자등록증명원 제출 必)",
+  "input": {
+   "region": "경북",
+   "district": "포항시"
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126926",
+  "title": "2026년 대구국제기계산업대전 참가지원 모집 공고(생활지원을 위한 서비스로봇 부품 기술지원 기반구축 사업)",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126926",
+  "cap": null,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 1,
+  "extra": null,
+  "quote": "ˑ 여성기업, 장애인기업, 사회적기업",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126926",
+  "title": "2026년 대구국제기계산업대전 참가지원 모집 공고(생활지원을 위한 서비스로봇 부품 기술지원 기반구축 사업)",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126926",
+  "cap": null,
+  "name": "장애인기업",
+  "kind": "장애인",
+  "points": 1,
+  "extra": null,
+  "quote": "ˑ 여성기업, 장애인기업, 사회적기업",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126926",
+  "title": "2026년 대구국제기계산업대전 참가지원 모집 공고(생활지원을 위한 서비스로봇 부품 기술지원 기반구축 사업)",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126926",
+  "cap": null,
+  "name": "사회적기업",
+  "kind": "인증",
+  "points": 1,
+  "extra": null,
+  "quote": "ˑ 여성기업, 장애인기업, 사회적기업",
+  "input": {
+   "certifications": [
+    "사회적기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126982",
+  "title": "2026년 5차 라이브커머스 제작ㆍ운영 사업 참여기업 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126982",
+  "cap": 5.0,
+  "name": "협동조합",
+  "kind": "인증",
+  "points": 5,
+  "extra": "한국사회적기업진흥원 운영 협동조합포털(coop.go.kr)에서 조회되는",
+  "quote": "➅ 한국사회적기업진흥원 운영 협동조합포털(coop.go.kr)에서 조회되는 협동조합",
+  "input": {
+   "certifications": [
+    "협동조합"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126987",
+  "title": "[경북] 2026년 푸드테크 로봇 플래그쉽 지역거점 구축 지원사업 통합 모집 공고(식품로봇 도입 바우처 지원ㆍ식품로봇 특화 NSF시험평가 지원)",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126987",
+  "cap": null,
+  "name": "경상북도 소재 공급기업의 식품로봇 도입",
+  "kind": "지역",
+  "points": 10,
+  "extra": null,
+  "quote": "우대사항(10) - 경상북도 소재 공급기업의 식품로봇 도입 시 10",
+  "input": {
+   "region": "경북",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000126987",
+  "title": "[경북] 2026년 푸드테크 로봇 플래그쉽 지역거점 구축 지원사업 통합 모집 공고(식품로봇 도입 바우처 지원ㆍ식품로봇 특화 NSF시험평가 지원)",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126987",
+  "cap": null,
+  "name": "경상북도 소재 기업",
+  "kind": "지역",
+  "points": 20,
+  "extra": null,
+  "quote": "우대사항 (20) - 경상북도 소재 기업 20",
+  "input": {
+   "region": "경북",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000127014",
+  "title": "[경북] 2026년 지역특화형(방산ㆍ모빌리티) 스마트공장 보급확산 사업(기초단계) 참여기업 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000127014",
+  "cap": 5.0,
+  "name": "경북 소재 공급기업",
+  "kind": "지역",
+  "points": 3,
+  "extra": "사업공고일 기준, 본점 및 지점이 경북 내 위치하는 경우",
+  "quote": "경북 공급기업 소재지가 경북인 경우 ∙ 사업공고일 기준, 공급기업의 소재지가 경상북도 내 소재하는 경우 * 본점 및 지점이 경북 내 위치하는 경우 (사업자등록증 제출 必)",
+  "input": {
+   "region": "경북",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거에 그 점수가 없음/여러 점수",
+  "notice_id": "bizinfo:PBLN_000000000127017",
+  "title": "[전북] 김제시 2026년 4차 미래 Special 차Car세대 성장프로젝트 지원기업 모집 공고(시군구연고산업육성 협업프로젝트)",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000127017",
+  "cap": 3.0,
+  "name": "김제 지역 공급기관(업)과 컨소시엄 구성 기업",
+  "kind": "지역",
+  "points": 1,
+  "extra": "(공급기관(업)을 활용한 간접지원 형태 프로그램 한정)",
+  "quote": "지역 내(김제) 공급기관(업)과 컨소시엄을 구성한 기업 (공급기관(업)을 활용한 간접지원 형태 프로그램 한정)",
+  "input": {
+   "region": "전북",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "\"및·&\" 결합 조건",
+  "notice_id": "bizinfo:PBLN_000000000120238",
+  "title": "[울산] 2026년 중소기업 해외지사화 사업 참가기업 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000120238",
+  "cap": 10.0,
+  "name": "청년친화 강소기업",
+  "kind": "인증",
+  "points": 5,
+  "extra": null,
+  "quote": " (5점) 일자리 으뜸기업 및 청년친화 강소기업",
+  "input": {
+   "certifications": [
+    "청년친화강소기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "\"및·&\" 결합 조건",
+  "notice_id": "bizinfo:PBLN_000000000120238",
+  "title": "[울산] 2026년 중소기업 해외지사화 사업 참가기업 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000120238",
+  "cap": 10.0,
+  "name": "가족친화인증",
+  "kind": "인증",
+  "points": 1,
+  "extra": null,
+  "quote": " (1점) 가족친화인증 & 대한민국 일생활균형 우수기업",
+  "input": {
+   "certifications": [
+    "가족친화기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "추가 조건",
+  "notice_id": "bizinfo:PBLN_000000000122394",
+  "title": "[제주] 2026년 전기차 사용 후 배터리 실증 지원사업(KC인증) 상시모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122394",
+  "cap": 5.0,
+  "name": "INNO-BIZ 기업",
+  "kind": "인증",
+  "points": 1,
+  "extra": "발표평가 시 평가위원 평균점수가 60점 이상인 과제에 한하여",
+  "quote": "◦ 기술(INNO-BIZ), 경영(MAIN-BIZ) 혁신형 중소기업, 벤처기업, 인재육성형 중소기업 1점",
+  "input": {
+   "certifications": [
+    "이노비즈"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "추가 조건",
+  "notice_id": "bizinfo:PBLN_000000000122394",
+  "title": "[제주] 2026년 전기차 사용 후 배터리 실증 지원사업(KC인증) 상시모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122394",
+  "cap": 5.0,
+  "name": "MAIN-BIZ 기업",
+  "kind": "인증",
+  "points": 1,
+  "extra": "발표평가 시 평가위원 평균점수가 60점 이상인 과제에 한하여",
+  "quote": "◦ 기술(INNO-BIZ), 경영(MAIN-BIZ) 혁신형 중소기업, 벤처기업, 인재육성형 중소기업 1점",
+  "input": {
+   "certifications": [
+    "메인비즈"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "추가 조건",
+  "notice_id": "bizinfo:PBLN_000000000122394",
+  "title": "[제주] 2026년 전기차 사용 후 배터리 실증 지원사업(KC인증) 상시모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122394",
+  "cap": 5.0,
+  "name": "벤처기업",
+  "kind": "인증",
+  "points": 1,
+  "extra": "발표평가 시 평가위원 평균점수가 60점 이상인 과제에 한하여",
+  "quote": "◦ 기술(INNO-BIZ), 경영(MAIN-BIZ) 혁신형 중소기업, 벤처기업, 인재육성형 중소기업 1점",
+  "input": {
+   "certifications": [
+    "벤처기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "추가 조건",
+  "notice_id": "bizinfo:PBLN_000000000122394",
+  "title": "[제주] 2026년 전기차 사용 후 배터리 실증 지원사업(KC인증) 상시모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122394",
+  "cap": 5.0,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 1,
+  "extra": "발표평가 시 평가위원 평균점수가 60점 이상인 과제에 한하여",
+  "quote": "◦ 여성기업, 장애인 기업 1점",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "추가 조건",
+  "notice_id": "bizinfo:PBLN_000000000122394",
+  "title": "[제주] 2026년 전기차 사용 후 배터리 실증 지원사업(KC인증) 상시모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122394",
+  "cap": 5.0,
+  "name": "장애인기업",
+  "kind": "장애인",
+  "points": 1,
+  "extra": "발표평가 시 평가위원 평균점수가 60점 이상인 과제에 한하여",
+  "quote": "◦ 여성기업, 장애인 기업 1점",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "추가 조건",
+  "notice_id": "bizinfo:PBLN_000000000122394",
+  "title": "[제주] 2026년 전기차 사용 후 배터리 실증 지원사업(KC인증) 상시모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122394",
+  "cap": 5.0,
+  "name": "가족친화 인증기업",
+  "kind": "인증",
+  "points": 1,
+  "extra": "발표평가 시 평가위원 평균점수가 60점 이상인 과제에 한하여",
+  "quote": "◦ 가족친화 인증기업 1점",
+  "input": {
+   "certifications": [
+    "가족친화기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "추가 조건",
+  "notice_id": "bizinfo:PBLN_000000000122394",
+  "title": "[제주] 2026년 전기차 사용 후 배터리 실증 지원사업(KC인증) 상시모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000122394",
+  "cap": 5.0,
+  "name": "제주테크노파크 입주기업",
+  "kind": "지역",
+  "points": 1,
+  "extra": "발표평가 시 평가위원 평균점수가 60점 이상인 과제에 한하여",
+  "quote": "◦ 제주테크노파크 입주기업 1점",
+  "input": {
+   "region": "제주",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "추가 조건",
+  "notice_id": "bizinfo:PBLN_000000000124940",
+  "title": "2026년 대경권(대구) 지역혁신클러스터육성(비R&D) 기업지원 수혜기업 상시 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000124940",
+  "cap": 5.0,
+  "name": "대구 지역혁신융복합단지 내 이전 및 신규설립 기업",
+  "kind": "지역",
+  "points": 5,
+  "extra": "지원기간 내",
+  "quote": "② 지원기간 내 대구 지역혁신융복합단지 내 이전 및 신규설립(예정) 기업(5점)",
+  "input": {
+   "region": "대구",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "추가 조건",
+  "notice_id": "bizinfo:PBLN_000000000125185",
+  "title": "[강원] 2026년 하반기 중소기업 밀집지역 위기대응 체계 구축사업 Stand-up 맞춤지원 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125185",
+  "cap": null,
+  "name": "밀집지역 내 파급성 인정 기업",
+  "kind": "지역",
+  "points": 5,
+  "extra": "최근 2개 분기 매출 발생 여부, 최근 2년 연속 영업손실 미해당, 종사자 10인 이상, 지역 내 매입 거래처 5개 이상인 기업(증빙자료 필수 제출)",
+  "quote": "(가점) 지역 내 파급성 - 해당 밀집지역 내 파급성(회복 잠재력) 인정 기업 대상 가점 부여 - 인정 기준 : 최근 2개 분기 매출 발생 여부, 최근 2년 연속 영업손실 미해당, 종사자 10인 이상, 지역 내 매입 거래처 5개 이상인 기업(증빙자료 필수 제출) 5",
+  "input": {
+   "region": "강원",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "추가 조건",
+  "notice_id": "bizinfo:PBLN_000000000126384",
+  "title": "2026년 3차 디지털혁신기술국제공동연구사업 신규지원 대상과제 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126384",
+  "cap": 5.0,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 1,
+  "extra": "공동대표의 경 우 모두 여성인 경우로 한함.",
+  "quote": "o 주관연구개발기관의 대표이사가 여성인 기업이 신청(접수마감일 기준)한 경우(1점) ※ 여성기업은 「여성기업지원에 관한 법률 시행령」 제2조(여성기업의 정의)를 따르며, 공동대표의 경 우 모두 여성인 경우로 한함.",
+  "input": {
+   "gender": "여성"
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "추가 조건",
+  "notice_id": "bizinfo:PBLN_000000000126558",
+  "title": "[충북] 2026년 제조 AI 현장 적용 지원 사업 수혜기업 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126558",
+  "cap": null,
+  "name": "충북 내 지역 기업",
+  "kind": "지역",
+  "points": 3,
+  "extra": "컨소시엄 공급기업",
+  "quote": "‣ 컨소시엄 공급기업이 충북 내 지역 기업(3점)",
+  "input": {
+   "region": "충북",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "추가 조건",
+  "notice_id": "bizinfo:PBLN_000000000126642",
+  "title": "[전북] 2026년 중소기업 육성자금 융자 지원계획 수정 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126642",
+  "cap": 5.0,
+  "name": "전북특별자치도 내 본사 및 사업장 보유 기업",
+  "kind": "지역",
+  "points": 5,
+  "extra": "본사 및 사업장(생산공장) 모두",
+  "quote": "전북특별자치도 안에 본사 및 사업장(생산공장)모두를 두는 기업(5점)",
+  "input": {
+   "region": "전북",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거가 원문과 그대로 안 이어짐",
+  "notice_id": "bizinfo:PBLN_000000000125271",
+  "title": "[충남] 2026년 하반기 중소기업 밀집지역 위기대응 체계 구축사업 Stand-up 맞춤지원 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000125271",
+  "cap": null,
+  "name": "지역 내 파급성 인정 기업",
+  "kind": "지역",
+  "points": 5,
+  "extra": "최근 2개 분기 매출 발생 여부, 최근 2년 연속 영업손실 미해당, 종사자 10인 이상, 지역 내 매입 거래처 5개 이상인 기업(증빙자료 필수 제출)",
+  "quote": "해당 밀집지역 내 파급성(회복 잠재력) 인정 기업 대상 가점 부여 - 인정 기준 : 최근 2개 분기 매출 발생 여부, 최근 2년 연속 영업손실 미해당, 종사자 10인 이상, 지역 내 매입 거래처 5개 이상인 기업(증빙자료 필수 제출)",
+  "input": {
+   "region": "충남",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거가 원문과 그대로 안 이어짐",
+  "notice_id": "bizinfo:PBLN_000000000126672",
+  "title": "2026년 4차 성능인증(EPC) 신규신청 접수 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126672",
+  "cap": null,
+  "name": "벤처기업",
+  "kind": "인증",
+  "points": 1,
+  "extra": null,
+  "quote": "가점 ○ 벤처기업, Inno-Biz기업, 내일채움공제, 중소기업 특성화고 채용협약기업, 수출기업(최근 3년) 없음 1개 2개 3개이상",
+  "input": {
+   "certifications": [
+    "벤처기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거가 원문과 그대로 안 이어짐",
+  "notice_id": "bizinfo:PBLN_000000000126672",
+  "title": "2026년 4차 성능인증(EPC) 신규신청 접수 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126672",
+  "cap": null,
+  "name": "Inno-Biz기업",
+  "kind": "인증",
+  "points": 1,
+  "extra": null,
+  "quote": "가점 ○ 벤처기업, Inno-Biz기업, 내일채움공제, 중소기업 특성화고 채용협약기업, 수출기업(최근 3년) 없음 1개 2개 3개이상",
+  "input": {
+   "certifications": [
+    "이노비즈"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거가 원문과 그대로 안 이어짐",
+  "notice_id": "bizinfo:PBLN_000000000126773",
+  "title": "[경남] 2026년 스마트공장 기초구축 지원사업 추가모집 수정 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126773",
+  "cap": 5.0,
+  "name": "경남 소재 공급기업",
+  "kind": "지역",
+  "points": 3,
+  "extra": "사업 신청마감일까지 유효한 서류를 제출한 기업만 인정",
+  "quote": "∘공급기업(본사 기준) 소재지가 경남 (본사 기준) 여부 (3점)",
+  "input": {
+   "region": "경남",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거가 원문과 그대로 안 이어짐",
+  "notice_id": "bizinfo:PBLN_000000000127032",
+  "title": "[서울] 성북구 2026년 길음청년희망스토어 청년창업팀(12호점) 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000127032",
+  "cap": null,
+  "name": "성북구 거주자",
+  "kind": "지역",
+  "points": 5,
+  "extra": "최소 6개월 이상 거주요건",
+  "quote": "성북구 거주자 - 최소 6개월 이상 거주요건 (5점)",
+  "input": {
+   "region": "서울",
+   "district": "성북구"
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "근거가 원문과 그대로 안 이어짐",
+  "notice_id": "bizinfo:PBLN_000000000127034",
+  "title": "2026년 대전 웰컴 스테이 지원사업 참가기업 모집 연장 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000127034",
+  "cap": null,
+  "name": "대전지역 이전 완료기업",
+  "kind": "지역",
+  "points": 3,
+  "extra": "신청일 기준 2026년 내",
+  "quote": "신청일 기준 2026년 내 본사·지점·사무소·공장 등 사업장 일부를 대전광역시에 이전 완료한 기업",
+  "input": {
+   "region": "대전",
+   "district": ""
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "표 밖 증빙 기간 조건",
+  "notice_id": "bizinfo:PBLN_000000000126819",
+  "title": "[충남] 2026년 수원메가쇼 2026 시즌 2 참가 경영체 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126819",
+  "cap": null,
+  "name": "여성기업",
+  "kind": "여성",
+  "points": 5,
+  "extra": "확인서 필수 제출",
+  "quote": "여성기업 또는 가점(5점) 5점 *확인서 필수 제출 장애인기업",
+  "input": {
+   "certifications": [
+    "여성기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ },
+ {
+  "reason": "표 밖 증빙 기간 조건",
+  "notice_id": "bizinfo:PBLN_000000000126819",
+  "title": "[충남] 2026년 수원메가쇼 2026 시즌 2 참가 경영체 모집 공고",
+  "url": "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000126819",
+  "cap": null,
+  "name": "장애인기업",
+  "kind": "장애인",
+  "points": 5,
+  "extra": "확인서 필수 제출",
+  "quote": "여성기업 또는 가점(5점) 5점 *확인서 필수 제출 장애인기업",
+  "input": {
+   "certifications": [
+    "장애인기업"
+   ]
+  },
+  "memo": [],
+  "score_if_relaxed": null
+ }
+]

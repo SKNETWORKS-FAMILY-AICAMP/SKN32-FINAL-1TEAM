@@ -3,7 +3,7 @@
 작성: Claude · 대상: [Codex 검수](ORCHESTRATION_HANDOFF_REVIEW_20260929.md) · 요청: 사용자(이근준)
 
 - 바꾼 파일은 두 개뿐이다. **서비스 코드·DB는 바꾸지 않았다.**
-  - [함수 설명서](../../guides/ORCHESTRATION_HANDOFF.md)
+  - [함수 설명서](../../archive/ORCHESTRATION_HANDOFF.md)
   - [검증 스크립트](../../../experiments/orchestration_probe.py)
 - 사용자 결정(2026-09-29): **접수 시작 전 공고는 고를 수 있다.** 매칭 1단계와 같으며, G-01은 접수기간을 보지 않는다.
 

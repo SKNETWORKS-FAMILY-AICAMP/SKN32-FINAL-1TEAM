@@ -1,0 +1,112 @@
+{
+ "run_at": "2026-10-07T07:38:52.795029+00:00",
+ "model": "gpt-6-luna",
+ "effort": "medium",
+ "seed": 20261007,
+ "balance_usd_reference": 7.86,
+ "db_writes": 0,
+ "sample_cost_usd": 0.1097,
+ "new_full_estimate_usd": 5.372,
+ "stages": {
+  "conditions": {
+   "label": "자격요건",
+   "old_model": "gpt-4o-mini",
+   "population": 2096,
+   "comparable": 2096,
+   "sample": 40,
+   "ok": 40,
+   "failed": [],
+   "seconds": 48.6,
+   "tokens": {
+    "in": 173729,
+    "out": 22749,
+    "reasoning": 0,
+    "per_call_in": 4343,
+    "per_call_out": 569
+   },
+   "sample_cost_usd": 0.0287,
+   "old_rows": 2096,
+   "old_per_call": {
+    "in": 4123,
+    "out": 105
+   },
+   "old_full_cost_usd": 1.429,
+   "new_full_estimate_usd": 1.506
+  },
+  "applicant": {
+   "label": "신청자 유형",
+   "old_model": "gpt-5.6-luna",
+   "population": 2825,
+   "comparable": 2825,
+   "sample": 40,
+   "ok": 40,
+   "failed": [],
+   "seconds": 29.6,
+   "tokens": {
+    "in": 91517,
+    "out": 13309,
+    "reasoning": 7025,
+    "per_call_in": 2288,
+    "per_call_out": 333
+   },
+   "sample_cost_usd": 0.0158,
+   "old_rows": 2825,
+   "old_per_call": {
+    "in": 2317,
+    "out": 298
+   },
+   "old_full_cost_usd": 2.321,
+   "new_full_estimate_usd": 1.116
+  },
+  "industry": {
+   "label": "업종",
+   "old_model": "gpt-5.6-luna",
+   "population": 2825,
+   "comparable": "표본 후보 80건 중 같은 문서 40건",
+   "sample": 40,
+   "ok": 40,
+   "failed": [],
+   "seconds": 45.8,
+   "tokens": {
+    "in": 129147,
+    "out": 23656,
+    "reasoning": 14593,
+    "per_call_in": 3229,
+    "per_call_out": 591
+   },
+   "sample_cost_usd": 0.0247,
+   "old_rows": 2825,
+   "old_per_call": {
+    "in": 2770,
+    "out": 627
+   },
+   "old_full_cost_usd": 3.69,
+   "new_full_estimate_usd": 1.747
+  },
+  "bonus": {
+   "label": "가점",
+   "old_model": "gpt-5.6-luna",
+   "population": 990,
+   "comparable": 968,
+   "sample": 40,
+   "ok": 40,
+   "failed": [],
+   "seconds": 78.2,
+   "tokens": {
+    "in": 181309,
+    "out": 44765,
+    "reasoning": 0,
+    "per_call_in": 4533,
+    "per_call_out": 1119
+   },
+   "sample_cost_usd": 0.0405,
+   "old_rows": 2078,
+   "old_per_call": {
+    "in": 2137,
+    "out": 361
+   },
+   "old_full_cost_usd": 1.789,
+   "new_full_estimate_usd": 1.003
+  }
+ }
+}

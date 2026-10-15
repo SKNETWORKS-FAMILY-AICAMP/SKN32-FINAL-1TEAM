@@ -1,0 +1,21 @@
+{
+ "created_at": "2026-09-30T01:05:56.852712+00:00",
+ "results": "filter_first_eval_20260928T104212Z",
+ "seed": 20260930,
+ "variants": "match_variants_20260930T010314Z",
+ "label_version": "topic-v2",
+ "queries": 58,
+ "items": 448,
+ "targets": 408,
+ "controls": 40,
+ "controls_by_label": {
+  "2": 14,
+  "1": 13,
+  "0": 13
+ },
+ "targets_from_base": 284,
+ "targets_variant_only": 124,
+ "notice_text": "eval.common.notice_text (공용 DB 현재 글, 첨부 앞부분 1200자)",
+ "db_writes": 0,
+ "openai_calls": 0
+}

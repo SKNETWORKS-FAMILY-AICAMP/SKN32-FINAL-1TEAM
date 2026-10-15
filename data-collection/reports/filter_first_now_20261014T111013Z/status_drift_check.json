@@ -1,0 +1,238 @@
+{
+ "corpus": 2084,
+ "status_counts": {
+  "unknown": 1734,
+  "open": 92,
+  "closed": 258
+ },
+ "closed_but_end_after_as_of": 142,
+ "closed_no_end": 0,
+ "variants": {
+  "ff_as_is": {
+   "ineligible_k": 0.0,
+   "p3_lo": 0.574712643678161,
+   "p3_hi": 0.7413793103448276,
+   "ndcg_k": 0.5461409557594907,
+   "unjudged3": 0.16666666666666666,
+   "unjudgedk": 0.3896551724137931
+  },
+  "ff_bonus0": {
+   "ineligible_k": 0.0,
+   "p3_lo": 0.574712643678161,
+   "p3_hi": 0.7413793103448276,
+   "ndcg_k": 0.5461409557594907,
+   "unjudged3": 0.16666666666666666,
+   "unjudgedk": 0.3896551724137931
+  },
+  "ff_entity_off": {
+   "ineligible_k": 0.0,
+   "p3_lo": 0.574712643678161,
+   "p3_hi": 0.7413793103448276,
+   "ndcg_k": 0.546867811300177,
+   "unjudged3": 0.16666666666666666,
+   "unjudgedk": 0.3879310344827586
+  },
+  "ff_bonus0_entity_off": {
+   "ineligible_k": 0.0,
+   "p3_lo": 0.574712643678161,
+   "p3_hi": 0.7413793103448276,
+   "ndcg_k": 0.546867811300177,
+   "unjudged3": 0.16666666666666666,
+   "unjudgedk": 0.3879310344827586
+  },
+  "vo_as_is": {
+   "ineligible_k": 0.3948275862068965,
+   "p3_lo": 0.49425287356321834,
+   "p3_hi": 0.6091954022988506,
+   "ndcg_k": 0.596707845937824,
+   "unjudged3": 0.11494252873563217,
+   "unjudgedk": 0.1603448275862069
+  },
+  "ff_status_fixed": {
+   "ineligible_k": 0.0,
+   "p3_lo": 0.6149425287356322,
+   "p3_hi": 0.7413793103448276,
+   "ndcg_k": 0.5910001064459877,
+   "unjudged3": 0.1264367816091954,
+   "unjudgedk": 0.3241379310344828
+  },
+  "ff_status_fixed_bonus0_entity_off": {
+   "ineligible_k": 0.0,
+   "p3_lo": 0.6149425287356322,
+   "p3_hi": 0.7413793103448276,
+   "ndcg_k": 0.591209486541234,
+   "unjudged3": 0.1264367816091954,
+   "unjudgedk": 0.3241379310344828
+  },
+  "vo_status_fixed": {
+   "ineligible_k": 0.24655172413793106,
+   "p3_lo": 0.49425287356321834,
+   "p3_hi": 0.6091954022988506,
+   "ndcg_k": 0.596707845937824,
+   "unjudged3": 0.11494252873563217,
+   "unjudgedk": 0.1603448275862069
+  },
+  "ff_status_fixed_incl_noend": {
+   "ineligible_k": 0.0,
+   "p3_lo": 0.6149425287356322,
+   "p3_hi": 0.7413793103448276,
+   "ndcg_k": 0.5910001064459877,
+   "unjudged3": 0.1264367816091954,
+   "unjudgedk": 0.3241379310344828
+  },
+  "ff_status_fixed_incl_noend_bonus0_entity_off": {
+   "ineligible_k": 0.0,
+   "p3_lo": 0.6149425287356322,
+   "p3_hi": 0.7413793103448276,
+   "ndcg_k": 0.591209486541234,
+   "unjudged3": 0.1264367816091954,
+   "unjudgedk": 0.3241379310344828
+  },
+  "vo_status_fixed_incl_noend": {
+   "ineligible_k": 0.24655172413793106,
+   "p3_lo": 0.49425287356321834,
+   "p3_hi": 0.6091954022988506,
+   "ndcg_k": 0.596707845937824,
+   "unjudged3": 0.11494252873563217,
+   "unjudgedk": 0.1603448275862069
+  }
+ },
+ "lost_rel2_from_0928_top3": {
+  "filtered:모집 마감 (마감일은 기준일 이후)": 22,
+  "not_in_top50": 1,
+  "ranked_lower": 2
+ },
+ "lost_examples": [
+  {
+   "qid": "q001",
+   "notice_id": "kstartup:179038",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q003",
+   "notice_id": "bizinfo:PBLN_000000000120679",
+   "why": "not_in_top50"
+  },
+  {
+   "qid": "q004",
+   "notice_id": "kstartup:179112",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q005",
+   "notice_id": "kstartup:178831",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q005",
+   "notice_id": "kstartup:179151",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q005",
+   "notice_id": "kstartup:179169",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q006",
+   "notice_id": "kstartup:179214",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q006",
+   "notice_id": "kstartup:179135",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q010",
+   "notice_id": "kstartup:179038",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q015",
+   "notice_id": "kstartup:179134",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q016",
+   "notice_id": "bizinfo:PBLN_000000000117232",
+   "why": "ranked_lower:4"
+  },
+  {
+   "qid": "q032",
+   "notice_id": "bizinfo:PBLN_000000000124842",
+   "why": "ranked_lower:42"
+  },
+  {
+   "qid": "q033",
+   "notice_id": "kstartup:179167",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q035",
+   "notice_id": "kstartup:179054",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q035",
+   "notice_id": "kstartup:179085",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q037",
+   "notice_id": "kstartup:179112",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q038",
+   "notice_id": "kstartup:179049",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q040",
+   "notice_id": "kstartup:178831",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q042",
+   "notice_id": "kstartup:178831",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q042",
+   "notice_id": "kstartup:179135",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q042",
+   "notice_id": "kstartup:179214",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q043",
+   "notice_id": "kstartup:179202",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q046",
+   "notice_id": "kstartup:179134",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q047",
+   "notice_id": "kstartup:179105",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  },
+  {
+   "qid": "q049",
+   "notice_id": "kstartup:179205",
+   "why": "filtered:모집 마감 (마감일은 기준일 이후)"
+  }
+ ],
+ "gained_in_now_top3": {
+  "rel=None": 12,
+  "rel=2": 17,
+  "rel=0": 6,
+  "rel=1": 4
+ }
+}

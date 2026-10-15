@@ -1,6 +1,6 @@
 # 배치가 실행하는 SQL
 
-2026-09-10 기준. 실행 순서대로 적었다.
+2026-09-10 기준으로 쓴 1~9단계 SQL이다. 실행 순서대로 적었다. 10~14단계(LLM 추출·판정 올리기·가점)의 SQL은 [JUDGMENT_TABLES.md](JUDGMENT_TABLES.md)와 `db/`의 변경 SQL, 각 단계 코드를 본다.
 필드가 어느 API 에서 왔는지는 [FIELD_MAP.md](FIELD_MAP.md) 를 본다.
 `%s` 는 PyMySQL 자리표시자다. **값은 전부 파라미터로 넘긴다 — 문자열로 잇지 않는다.**
 
@@ -11,7 +11,7 @@
 공고당 반복    4개 × 1,819건 ≒ 7,300개
 첨부당 반복    5개 × 처리 건수 (보통 수십)
 
-임베딩(6·7단계)은 **읽기만** 합니다. 벡터는 DB 가 아니라 파일과 Chroma 에 저장합니다.
+임베딩(6·7단계)은 **읽기만** 합니다. 벡터는 파일(npz)과 로컬 Chroma에 저장하고, 8단계가 공용 DB notices.embedding 으로 올립니다(공고 서버는 이것을 씀).
 ```
 
 ---
@@ -107,6 +107,18 @@ ON DUPLICATE KEY UPDATE
 
 **`DELETE` 가 없다.** API 목록에서 사라진 공고도 DB 에는 남는다.
 API 가 일시적으로 빠뜨렸을 때 데이터를 잃지 않기 위함이다.
+
+대신 **K-Startup 모집 중 목록에서 빠진 공고는 모집 종료로 표시한다**(2026-09-30). 같은 트랜잭션에서 저장 뒤에 돈다.
+그날 K-Startup 목록을 새로 받았고 받은 건수가 서버 보고 건수와 꼭 맞을 때만 한다(`daily_pipeline.kstartup_listed`).
+목록에 다시 나타나면 위 upsert 가 `open` 으로 되돌린다. 닫은 공고 ID는 `import_runs.report` 의 `closed_missing` 에 남는다.
+
+```sql
+-- 이 목록(snapshot 시각 %s)보다 오래된 open 행만 본다. 더 최신 행은 닫지 않는다
+SELECT id, source_id, notice_id FROM notices
+ WHERE source = 'kstartup' AND recruitment_status = 'open' AND snapshot_at < %s FOR UPDATE;
+-- 오늘 목록에 없는 id 만 골라 500건씩. 시각·실행 ID 도 바꿔 옛 파일 재적재가 되살리지 못하게 한다
+UPDATE notices SET recruitment_status = 'closed', snapshot_at = %s, last_import_id = %s WHERE id IN (%s, ...);
+```
 
 갱신 목록에서 앞 세 컬럼(`notice_id`·`source`·`source_id`)이 빠져 있다.
 **신원이라 바뀌면 안 된다.**
@@ -331,7 +343,7 @@ WHERE notice_id = %s;
 
 ## 8. 벡터 색인 갱신 (7단계)
 
-**SQL 이 아닙니다.** Chroma 는 파일 기반이라 DB 를 건드리지 않습니다.
+**SQL 이 아닙니다.** Chroma 는 파일 기반이라 DB 를 건드리지 않습니다. 2026-10-07부터 공고 서버는 이 색인을 쓰지 않습니다(평가 도구용, 결정 0010).
 
 ```python
 col.upsert(ids=[...], embeddings=[...], metadatas=[{'notice_id': ...}])

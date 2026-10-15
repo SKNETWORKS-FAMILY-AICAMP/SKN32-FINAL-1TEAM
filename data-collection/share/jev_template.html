@@ -1,0 +1,474 @@
+<meta charset="utf-8">
+<title>Jev 채점 시험</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@500;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* 레이아웃: 한 열 보고서. 요약 수치 → 무엇을 했나 → 확신도·분포 → 혼동표 → 쌍별 목록 → 결론 → 한계.
+   색: 기존 AI(gpt-4.1-mini) = --s2, Jev = --s3(순서형 파랑 두 단계), 사람 = --muted(회색 기준) */
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --ink: #111a28;
+  --ink-2: #47526a;
+  --muted: #6b7690;
+  --line: #dde2ea;
+  --grid: #e9edf2;
+  --s1: #86b6ef;
+  --s2: #2a78d6;   /* 기존 AI */
+  --s3: #104281;   /* Jev — 가장 진함 */
+  --range: rgba(42,120,214,.18);
+  --bad: #c2392f;  --bad-bg: #fbe9e7;
+  --good: #1d7a46; --good-bg: #e6f4ec;
+  --font-display: "Hahmlet", "Noto Serif KR", "Apple SD Gothic Neo", serif;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151c; --surface: #181d26; --ink: #eef2f8; --ink-2: #b7c0d0; --muted: #8d97aa;
+    --line: #2a3140; --grid: #232a36;
+    --s1: #184f95; --s2: #3987e5; --s3: #9ec5f4; --range: rgba(57,135,229,.22);
+    --bad: #f08a80; --bad-bg: #3a1f1d; --good: #6fd29a; --good-bg: #173424;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151c; --surface: #181d26; --ink: #eef2f8; --ink-2: #b7c0d0; --muted: #8d97aa;
+  --line: #2a3140; --grid: #232a36;
+  --s1: #184f95; --s2: #3987e5; --s3: #9ec5f4; --range: rgba(57,135,229,.22);
+  --bad: #f08a80; --bad-bg: #3a1f1d; --good: #6fd29a; --good-bg: #173424;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.65; }
+.wrap { max-width: 980px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; display: grid; gap: 44px; }
+h1, h2 { font-family: var(--font-display); font-weight: 700; line-height: 1.25; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(28px, 4.2vw, 40px); }
+h2 { font-size: 22px; }
+h3 { font-size: 15px; font-weight: 600; margin: 0; }
+p { margin: 0; max-width: 68ch; }
+a { color: var(--s2); }
+.eyebrow { font-size: 12px; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.lede { color: var(--ink-2); font-size: 16px; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+section { display: grid; gap: 18px; }
+header { display: grid; gap: 14px; }
+.wrap, section, header, footer, .controls, .plist { grid-template-columns: minmax(0,1fr); }
+footer span { overflow-wrap: anywhere; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--muted); font-size: 13px; }
+.meta span b { color: var(--ink-2); font-weight: 500; }
+
+/* 핵심 결과 */
+.headline { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; flex: none; display: inline-block; }
+.sw2 { background: var(--s2); } .sw3 { background: var(--s3); } .swh { background: var(--muted); }
+
+/* 무엇을 했나 */
+.ways { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+.way { border-top: 3px solid var(--muted); padding-top: 12px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.way.w2 { border-top-color: var(--s2); } .way.w3 { border-top-color: var(--s3); }
+.way h3 { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.way h3 small { color: var(--muted); font-weight: 400; font-size: 12px; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13.5px; color: var(--ink-2); }
+.steps li { display: flex; gap: 8px; }
+.steps li::before { content: "·"; color: var(--muted); flex: none; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--ink-2); }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+
+/* 그래프 카드 */
+.charts { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
+.chart { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 16px 12px; display: grid; gap: 6px; min-width: 0; align-content: start; }
+.chart h3 { font-size: 14.5px; }
+.chart .how { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart .note { font-size: 12.5px; color: var(--ink-2); }
+.holder { min-width: 0; }
+.tag { display: inline-block; font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: var(--grid); color: var(--ink-2); margin-left: 6px; vertical-align: 1px; font-weight: 500; }
+.badge { display: inline-flex; gap: 4px; align-items: center; font-size: 11.5px; padding: 1px 7px; border-radius: 999px; font-weight: 600; }
+.badge.bad { color: var(--bad); background: var(--bad-bg); }
+.badge.ok { color: var(--good); background: var(--good-bg); }
+
+/* 혼동표 */
+table { border-collapse: collapse; font-size: 13px; width: 100%; }
+table.mat { table-layout: fixed; }
+table.mat th, table.mat td { padding: 8px 4px; text-align: center; border: 2px solid var(--surface); }
+table.mat thead th { color: var(--muted); font-weight: 500; font-size: 12px; line-height: 1.3; }
+table.mat th.rh { text-align: left; color: var(--ink-2); font-weight: 500; font-size: 12.5px; line-height: 1.3; width: 26%; }
+table.mat td.cell { font-family: var(--font-mono); font-size: 15px; font-variant-numeric: tabular-nums; }
+table.mat td.diag { box-shadow: inset 0 0 0 2px var(--good); font-weight: 600; }
+table.mat .tot { color: var(--muted); font-family: var(--font-mono); font-size: 12.5px; }
+
+/* 쌍별 목록 */
+.controls { display: grid; gap: 10px; }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.filters button { font: inherit; font-size: 13px; padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-2); cursor: pointer; }
+.filters button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.filters button .num { font-size: 12px; opacity: .8; margin-left: 5px; }
+.filters button:focus-visible, summary:focus-visible, .field select:focus-visible, .field input:focus-visible { outline: 2px solid var(--s2); outline-offset: 2px; }
+.fields { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.field select, .field input { font: inherit; font-size: 13.5px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); max-width: 100%; }
+.field input { width: 280px; }
+.count { color: var(--muted); font-size: 13px; }
+.explain { font-size: 13.5px; color: var(--ink-2); }
+.plist { display: grid; gap: 8px; }
+details.pr { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+details.pr.miss { border-left: 3px solid var(--bad); }
+details.pr > summary { list-style: none; cursor: pointer; padding: 10px 14px 10px 32px; display: grid; gap: 3px; position: relative; }
+details.pr > summary::-webkit-details-marker { display: none; }
+details.pr > summary::before { content: "▸"; position: absolute; left: 13px; top: 10px; color: var(--muted); }
+details.pr[open] > summary::before { content: "▾"; }
+.pt { display: flex; gap: 8px; align-items: baseline; min-width: 0; font-size: 14px; font-weight: 500; }
+.pt .qid { color: var(--muted); font-size: 12px; flex: none; }
+.pt .t { overflow-wrap: anywhere; }
+.idea { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.verd { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; margin-top: 3px; }
+.vv { display: inline-flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.sc { display: inline-flex; gap: 5px; align-items: baseline; border: 1px solid var(--line); border-radius: 6px; padding: 0 7px; font-size: 12.5px; color: var(--ink-2); background: var(--bg); }
+.sc .who { color: var(--muted); font-size: 12px; }
+.sc b { font-family: var(--font-mono); color: var(--ink); font-weight: 600; }
+.conf { color: var(--muted); font-size: 12px; }
+.pbody { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; padding: 0 14px 14px; border-top: 1px solid var(--grid); }
+.pbody > div { min-width: 0; display: grid; gap: 6px; align-content: start; padding-top: 10px; }
+.pbody h4 { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.pbody pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 13px; line-height: 1.55; background: var(--bg); border-radius: 8px; padding: 8px 10px; color: var(--ink); }
+.pbody .src { font-size: 13px; }
+.pb { display: grid; grid-template-columns: 92px minmax(0,1fr) 40px; gap: 6px; align-items: center; font-size: 12.5px; }
+.pb .lb { color: var(--ink-2); white-space: nowrap; }
+.pb .lb.human { font-weight: 600; color: var(--ink); }
+.pb .tr { height: 12px; background: var(--grid); border-radius: 3px; position: relative; overflow: hidden; }
+.pb .fl { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 3px; background: color-mix(in srgb, var(--s3) 38%, var(--surface)); }
+.pb .fl.pick { background: var(--s3); }
+.pb .v { text-align: right; font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); }
+.small { font-size: 12px; color: var(--muted); }
+
+/* 결론 · 한계 */
+.concl { display: grid; gap: 10px; margin: 0; padding: 16px 18px 16px 36px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; font-size: 14.5px; }
+.limits { display: grid; gap: 8px; font-size: 14px; color: var(--ink-2); margin: 0; padding-left: 18px; }
+footer { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 4px; }
+
+@media (max-width: 900px) { .pbody { grid-template-columns: minmax(0,1fr); } }
+@media (max-width: 720px) {
+  .headline, .ways, .charts { grid-template-columns: minmax(0,1fr); }
+  .field, .field input { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">S-Brain 공고 매칭 · 채점 모델 시험</div>
+    <h1>Jev 채점 시험</h1>
+    <p class="lede">평가용 정답표는 "이 공고가 이 창업자의 분야와 맞나"를 AI(gpt-4.1-mini)가 0·1·2점으로 매겨 만들었습니다. 새 모델 <b>Jev</b>가 이 채점을 대신할 수 있는지, 사람이 직접 채점한 143쌍을 정답으로 두고 시험했습니다. 결과는 <b>Jev가 기존 AI보다 사람과 덜 맞았다</b>는 것입니다. 지금 형태로는 기존 채점을 대신하지 못합니다.</p>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section aria-labelledby="h-head">
+    <h2 id="h-head">같은 143쌍에서 사람과 얼마나 맞았나</h2>
+    <div class="legend" aria-hidden="true">
+      <span><span class="sw sw3"></span>Jev (새 모델)</span>
+      <span><span class="sw sw2"></span>기존 AI 채점 (gpt-4.1-mini)</span>
+      <span><svg width="10" height="14"><line x1="5" x2="5" y1="0" y2="14" stroke="var(--ink-2)" stroke-width="1.5" stroke-dasharray="3 2"/></svg>팀이 정해 둔 잠정 기준(참고용)</span>
+    </div>
+    <div class="headline" id="headline"></div>
+    <p class="explain" id="binary"></p>
+  </section>
+
+  <section aria-labelledby="h-ways">
+    <h2 id="h-ways">무엇을 했나</h2>
+    <div class="ways">
+      <div class="way">
+        <h3><span class="sw swh"></span>정답 <small>사람이 직접 채점</small></h3>
+        <ul class="steps">
+          <li>AI 답을 보지 않고 사람이 매긴 창업자–공고 143쌍</li>
+          <li>0 무관 · 1 부분 관련 · 2 딱 맞음</li>
+          <li>다시 본 쌍은 다시 매긴 점수를 정답으로 씀</li>
+        </ul>
+      </div>
+      <div class="way w3">
+        <h3><span class="sw sw3"></span>Jev <small>새 모델 (TypeSafe AI)</small></h3>
+        <ul class="steps">
+          <li>글을 쓰지 않고 정해진 보기(0·1·2) 중 하나를 고름</li>
+          <li>보기마다 확률을 주고, 고른 보기의 확신도를 줌</li>
+          <li>기존 AI와 같은 창업자·공고 글, 같은 채점 기준을 보냄</li>
+        </ul>
+      </div>
+      <div class="way w2">
+        <h3><span class="sw sw2"></span>기존 AI <small>gpt-4.1-mini</small></h3>
+        <ul class="steps">
+          <li>지금 정답표를 만든 채점기</li>
+          <li>같은 쌍에 예전에 받아 둔 답을 그대로 씀(새로 부르지 않음)</li>
+          <li>점수와 함께 이유를 글로 씀</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-more">
+    <h2 id="h-more">어떤 쌍을 잘 맞히고, 어떤 점수를 주나</h2>
+    <div class="charts">
+      <div class="chart">
+        <h3>Jev 확신도 구간별 정확 일치<span class="tag">높을수록 좋음</span></h3>
+        <div class="how">Jev가 스스로 확신한 정도로 쌍을 나누고, 같은 쌍을 기존 AI는 얼마나 맞혔는지 나란히 봅니다. 둘 다 높으면 Jev가 잘했다기보다 원래 쉬운 쌍이 모인 것입니다.</div>
+        <div class="legend" aria-hidden="true"><span><span class="sw sw3"></span>Jev</span><span><span class="sw sw2"></span>기존 AI</span></div>
+        <div class="holder" data-chart="bins"></div>
+        <div class="note" id="bins-note"></div>
+      </div>
+      <div class="chart">
+        <h3>점수를 몇 번 줬나</h3>
+        <div class="how">143쌍에 0·1·2점을 각각 몇 번 줬는지 셉니다. 회색이 사람(정답)입니다.</div>
+        <div class="legend" aria-hidden="true"><span><span class="sw swh"></span>사람</span><span><span class="sw sw2"></span>기존 AI</span><span><span class="sw sw3"></span>Jev</span></div>
+        <div class="holder" data-chart="dist"></div>
+        <div class="note" id="dist-note"></div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-mat">
+    <h2 id="h-mat">어디서 틀렸나</h2>
+    <p class="explain">세로는 사람 정답, 가로는 채점기가 준 점수입니다. 초록 테두리 칸(대각선)이 맞힌 것이고, 나머지는 틀린 것입니다. 색이 진할수록 쌍이 많습니다.</p>
+    <div class="charts" id="mats"></div>
+  </section>
+
+  <section aria-labelledby="h-pairs">
+    <h2 id="h-pairs">쌍별로 보기</h2>
+    <div class="controls">
+      <div class="filters" id="filters" role="group" aria-label="쌍 거르기"></div>
+      <div class="fields">
+        <label class="field"><select id="cf" aria-label="Jev 확신도">
+          <option value="">확신도 전체</option><option value="0">확신도 0.9 이상</option><option value="1">확신도 0.7~0.9</option><option value="2">확신도 0.7 미만</option>
+        </select></label>
+        <label class="field"><input type="search" id="q" placeholder="공고 제목·아이디어·질의 번호 검색" aria-label="공고 제목·아이디어·질의 번호 검색"></label>
+        <span class="count" id="pcount"></span>
+      </div>
+      <p class="explain">"Jev만 틀림"은 기존 AI는 맞혔는데 Jev는 틀린 쌍입니다. 왼쪽 빨간 선은 Jev가 틀린 쌍 표시입니다. 누르면 창업자 정보, Jev의 보기별 확률, 기존 AI의 이유가 펼쳐집니다.</p>
+    </div>
+    <div class="plist" id="pairs"></div>
+  </section>
+
+  <section aria-labelledby="h-concl">
+    <h2 id="h-concl">결론</h2>
+    <ol class="concl" id="concl"></ol>
+  </section>
+
+  <section aria-labelledby="h-lim">
+    <h2 id="h-lim">읽을 때 주의할 점</h2>
+    <ul class="limits" id="limits"></ul>
+  </section>
+
+  <footer>
+    <span id="src"></span>
+    <span>S-Brain SKN32 1팀 · 공고 데이터·매칭 담당</span>
+  </footer>
+</div>
+
+<script>
+const DATA = /*DATA*/null;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const f2 = (v) => Number(v).toFixed(2);
+const pct = (v, d = 1) => (v * 100).toFixed(d) + '%';
+const safeUrl = (u) => /^https:\/\//.test(u || '') ? u : '';
+const NAME = ['무관', '부분 관련', '딱 맞음'];
+const SHORT = ['무관', '부분', '딱 맞음'];
+const COL = { h: 'var(--muted)', l: 'var(--s2)', j: 'var(--s3)' };
+const J = DATA.jev, L = DATA.llm, T = DATA.trust, N = DATA.meta.pairs;
+
+/* 가로 막대 그래프(인라인 SVG, 실제 칸 너비로 그림). groups: [{label, sub, bars:[{name, v, color, text}]}] */
+function bars(W, groups, o) {
+  const Lw = o.labelW || 92, R = o.right || 70, bh = 18, gi = 4, gg = 14;
+  const top = o.ref != null ? 20 : 6;
+  const x = (v) => Lw + (Math.min(v, o.max) / o.max) * (W - Lw - R);
+  let y = top, body = '';
+  for (const g of groups) {
+    const gh = g.bars.length * bh + (g.bars.length - 1) * gi;
+    const cy = y + gh / 2;
+    body += `<text x="${Lw - 10}" y="${g.sub ? cy - 3 : cy + 4}" text-anchor="end" font-size="12" fill="var(--ink-2)">${esc(g.label)}</text>`;
+    if (g.sub) body += `<text x="${Lw - 10}" y="${cy + 12}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="var(--font-mono)">${esc(g.sub)}</text>`;
+    g.bars.forEach((b, i) => {
+      const by = y + i * (bh + gi), w = Math.max(0, x(b.v) - x(0));
+      body += `<g role="img" aria-label="${esc(g.label + ' ' + b.name + ' ' + b.text)}"><title>${esc(g.label + ' · ' + b.name + ': ' + b.text)}</title>`;
+      body += w > 0 ? `<rect x="${x(0)}" y="${by}" width="${w}" height="${bh}" rx="3" fill="${b.color}"/>`
+                    : `<line x1="${x(0)}" x2="${x(0)}" y1="${by}" y2="${by + bh}" stroke="${b.color}" stroke-width="3"/>`;
+      body += `<text x="${x(b.v) + 6}" y="${by + bh / 2 + 4}" font-size="11.5" fill="var(--ink)" font-family="var(--font-mono)" stroke="var(--surface)" stroke-width="4" stroke-linejoin="round" paint-order="stroke">${esc(b.text)}</text></g>`;
+    });
+    y += gh + gg;
+  }
+  const bottom = y - gg;
+  let grid = '';
+  for (const t of o.ticks) {
+    grid += `<line x1="${x(t)}" x2="${x(t)}" y1="${top - 2}" y2="${bottom + 2}" stroke="var(--grid)" stroke-width="1"/>`;
+    grid += `<text x="${x(t)}" y="${bottom + 16}" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--font-mono)">${o.tick(t)}</text>`;
+  }
+  let ref = '';
+  if (o.ref != null) {
+    ref = `<line x1="${x(o.ref)}" x2="${x(o.ref)}" y1="${top - 4}" y2="${bottom + 2}" stroke="var(--ink-2)" stroke-width="1.5" stroke-dasharray="3 2"/>` +
+          `<text x="${x(o.ref)}" y="${top - 8}" text-anchor="middle" font-size="11" fill="var(--ink-2)">${esc(o.refLabel)}</text>`;
+  }
+  const axis = `<line x1="${x(0)}" x2="${x(0)}" y1="${top - 2}" y2="${bottom + 2}" stroke="var(--muted)" stroke-width="1"/>`;
+  const H = bottom + 22;
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${grid}${ref}${body}${axis}</svg>`;
+}
+
+const HEAD = [
+  { k: 'exact', title: '정확 일치', better: '높을수록 좋음', how: '0·1·2점이 사람과 똑같은 비율입니다.', max: 1, ticks: [0, .25, .5, .75, 1], tick: String, fmt: f2, ref: T.exact, refLabel: '기준 ' + f2(T.exact), pass: (v) => v >= T.exact },
+  { k: 'kappa', title: '가중 카파', better: '높을수록 좋음', how: '점수 차이가 클수록 더 크게 벌점을 주는 일치도입니다. 우연히 맞을 몫은 빼고 셉니다(1 = 완전 일치, 0 = 찍은 것과 같음).', max: 1, ticks: [0, .25, .5, .75, 1], tick: String, fmt: f2, ref: T.kappa, refLabel: '기준 ' + f2(T.kappa), pass: (v) => v >= T.kappa },
+  { k: 'swap02', title: '0↔2 뒤바뀜', better: '낮을수록 좋음', how: '사람은 "딱 맞음"인데 "무관"을 줬거나 그 반대인 비율입니다. 가장 큰 실수입니다.', max: 0.1, ticks: [0, .05, .1], tick: (v) => pct(v, 0), fmt: (v) => pct(v) + ' (' + Math.round(v * N) + '쌍)', ref: T.swap02, refLabel: '기준 ' + pct(T.swap02, 0), pass: (v) => v <= T.swap02 },
+];
+
+function renderHead() {
+  const ok = (c, v) => c.pass(v) ? '<span class="badge ok">✓ 기준 충족</span>' : '<span class="badge bad">✕ 기준 미달</span>';
+  $('headline').innerHTML = HEAD.map((c) => `<div class="chart"><h3>${c.title}<span class="tag">${c.better}</span></h3><div class="how">${c.how}</div>
+      <div class="holder" data-chart="head-${c.k}"></div>
+      <div class="note" style="display:flex;flex-wrap:wrap;gap:4px 12px"><span style="display:inline-flex;gap:6px;align-items:center"><span class="sw sw3"></span>Jev ${ok(c, J[c.k])}</span><span style="display:inline-flex;gap:6px;align-items:center"><span class="sw sw2"></span>기존 AI ${ok(c, L[c.k])}</span></div></div>`).join('');
+  $('binary').innerHTML = `점수를 "관련 없음(0) / 관련 있음(1·2)" 둘로만 나눠 봐도 Jev <b class="num">${f2(J.binary)}</b>, 기존 AI <b class="num">${f2(L.binary)}</b>로 Jev가 낮습니다. 잠정 기준은 팀이 정해 둔 참고값이며, 기존 AI도 정확 일치와 0↔2 뒤바뀜 기준에는 못 미칩니다.`;
+}
+
+function drawAll() {
+  document.querySelectorAll('.holder').forEach((h) => {
+    const W = Math.max(240, Math.floor(h.clientWidth));
+    const key = h.dataset.chart;
+    if (key.startsWith('head-')) {
+      const c = HEAD.find((x) => 'head-' + x.k === key);
+      h.innerHTML = bars(W, [
+        { label: 'Jev', bars: [{ name: 'Jev', v: J[c.k], color: COL.j, text: c.fmt(J[c.k]) }] },
+        { label: '기존 AI', bars: [{ name: '기존 AI', v: L[c.k], color: COL.l, text: c.fmt(L[c.k]) }] },
+      ], { max: c.max, ticks: c.ticks, tick: c.tick, ref: c.ref, refLabel: c.refLabel, labelW: 62, right: c.k === 'swap02' ? 92 : 44 });
+    } else if (key === 'bins') {
+      h.innerHTML = bars(W, DATA.bins.map((b) => ({
+        label: b.name, sub: b.n + '쌍',
+        bars: [{ name: 'Jev', v: b.jev, color: COL.j, text: f2(b.jev) }, { name: '기존 AI', v: b.llm, color: COL.l, text: f2(b.llm) }],
+      })), { max: 1, ticks: [0, .25, .5, .75, 1], tick: String, labelW: 76, right: 44 });
+    } else if (key === 'dist') {
+      const d = DATA.dist;
+      h.innerHTML = bars(W, [0, 1, 2].map((v) => ({
+        label: v + ' ' + NAME[v],
+        bars: [{ name: '사람', v: d.human[v], color: COL.h, text: d.human[v] + '번' },
+               { name: '기존 AI', v: d.llm[v], color: COL.l, text: d.llm[v] + '번' },
+               { name: 'Jev', v: d.jev[v], color: COL.j, text: d.jev[v] + '번' }],
+      })), { max: 70, ticks: [0, 20, 40, 60], tick: String, labelW: 84, right: 44 });
+    }
+  });
+}
+
+function renderNotes() {
+  const b = DATA.bins, d = DATA.dist;
+  $('bins-note').innerHTML = `확신도가 높을수록 더 잘 맞긴 합니다(<span class="num">${b.map((x) => f2(x.jev)).join(' → ')}</span>). 하지만 0.9 이상 ${b[0].n}쌍은 기존 AI도 <b class="num">${f2(b[0].llm)}</b>이라, 쉬운 쌍이 몰린 것에 가깝습니다. 확신 높은 쌍만 쓰면 ${N}쌍 중 ${b[0].n}쌍(${pct(b[0].n / N, 0)})만 남습니다.`;
+  $('dist-note').innerHTML = `Jev는 <b>"1 부분 관련"으로 몰립니다</b>. 1을 준 횟수가 Jev ${d.jev[1]}번, 사람 ${d.human[1]}번입니다. "2 딱 맞음"은 사람 ${d.human[2]}번, Jev ${d.jev[2]}번입니다.`;
+}
+
+function renderMats() {
+  const one = (key, name, sw) => {
+    const m = DATA[key].conf, max = Math.max(1, ...m.flat());
+    const right = m[0][0] + m[1][1] + m[2][2];
+    const colTot = [0, 1, 2].map((x) => m[0][x] + m[1][x] + m[2][x]);
+    let rows = '';
+    for (let h = 0; h < 3; h++) {
+      rows += `<tr><th class="rh" scope="row">사람 ${h}<br>${SHORT[h]}</th>`;
+      for (let x = 0; x < 3; x++) {
+        const n = m[h][x], a = Math.round(n / max * 88);
+        const fg = a > 45 ? 'var(--surface)' : 'var(--ink)';
+        rows += `<td class="cell${h === x ? ' diag' : ''}" style="background:color-mix(in srgb, var(--s3) ${a}%, var(--grid));color:${fg}" aria-label="사람 ${h}, ${name} ${x}: ${n}쌍">${n}</td>`;
+      }
+      rows += `<td class="tot">${m[h][0] + m[h][1] + m[h][2]}</td></tr>`;
+    }
+    rows += `<tr><th class="rh" scope="row" style="color:var(--muted)">합계</th>${colTot.map((t) => `<td class="tot">${t}</td>`).join('')}<td class="tot">${N}</td></tr>`;
+    const note = key === 'jev'
+      ? `사람이 2를 준 ${m[2][0] + m[2][1] + m[2][2]}쌍 중 <b>${m[2][1]}쌍</b>을 Jev는 1로 낮췄습니다.`
+      : `기존 AI는 반대로 사람 1인 쌍을 2로 올린 경우(${m[1][2]}쌍)가 가장 많습니다.`;
+    return `<div class="chart"><h3 style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="sw ${sw}"></span>${name}<span class="tag num" style="margin-left:0">${right} / ${N} 맞힘</span></h3>
+      <table class="mat"><thead><tr><th></th><th scope="col">${name}<br>0</th><th scope="col">${name}<br>1</th><th scope="col">${name}<br>2</th><th scope="col">합계</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="note">${note}</div></div>`;
+  };
+  $('mats').innerHTML = one('jev', 'Jev', 'sw3') + one('llm', '기존 AI', 'sw2');
+}
+
+/* 쌍별 목록 */
+const FILTERS = [['jev_only_wrong', 'Jev만 틀림'], ['jev_only_right', 'Jev만 맞음'], ['both_wrong', '둘 다 틀림'], ['all', '전체']];
+const groupOf = (p) => { const jr = p.j === p.h, lr = p.l === p.h; return !jr && lr ? 'jev_only_wrong' : jr && !lr ? 'jev_only_right' : !jr && !lr ? 'both_wrong' : 'both_right'; };
+let PF = 'jev_only_wrong';
+try { const s = localStorage.getItem('jev-filter'); if (FILTERS.some(([k]) => k === s)) PF = s; } catch (e) {}
+const ideaOf = (qid) => ((DATA.queries[qid] || '').match(/사업 아이디어:\s*(.*)/) || [])[1] || '';
+const sc = (who, v) => `<span class="sc"><span class="who">${who}</span><b>${v == null ? '-' : v}</b>${v == null ? '' : NAME[v]}</span>`;
+const mark = (ok) => ok ? '<span class="badge ok">✓ 맞음</span>' : '<span class="badge bad">✕ 틀림</span>';
+
+function renderFilters() {
+  const cnt = (k) => k === 'all' ? DATA.pairs.length : DATA.groups[k] || 0;
+  $('filters').innerHTML = FILTERS.map(([k, n]) => `<button type="button" data-f="${k}" aria-pressed="${k === PF}">${n}<span class="num">${cnt(k)}</span></button>`).join('');
+}
+
+function probs(p) {
+  const names = ['2 딱 맞음', '1 부분 관련', '0 무관', '판단 불가'], vals = [2, 1, 0, null];
+  return p.p.map((v, i) => {
+    if (i === 3 && !v) return '';
+    const pick = vals[i] === p.j, human = vals[i] === p.h;
+    return `<div class="pb"><span class="lb${human ? ' human' : ''}">${names[i]}${human ? ' ◂사람' : ''}</span><div class="tr" role="img" aria-label="${names[i]} ${Math.round(v * 100)}%${pick ? ', Jev가 고른 보기' : ''}"><div class="fl${pick ? ' pick' : ''}" style="width:${(v * 100).toFixed(1)}%"></div></div><span class="v">${Math.round(v * 100)}%</span></div>`;
+  }).join('');
+}
+
+function renderPairs() {
+  const term = $('q').value.trim().toLowerCase(), cf = $('cf').value;
+  const shown = DATA.pairs.filter((p) => {
+    if (PF !== 'all' && groupOf(p) !== PF) return false;
+    if (cf !== '' && String(p.b) !== cf) return false;
+    return !term || (p.t + ' ' + ideaOf(p.q) + ' ' + p.q + ' ' + p.id).toLowerCase().includes(term);
+  });
+  $('pcount').textContent = shown.length + '쌍 표시';
+  $('pairs').innerHTML = shown.map((p) => {
+    const jr = p.j === p.h, lr = p.l === p.h, url = safeUrl(p.u);
+    return `<details class="pr${jr ? '' : ' miss'}"><summary>
+      <span class="pt"><span class="qid num">${esc(p.q)}</span><span class="t">${esc(p.t || p.id)}</span></span>
+      <span class="idea">${esc(ideaOf(p.q))}</span>
+      <span class="verd">
+        <span class="vv">${sc('사람', p.h)}</span>
+        <span class="vv">${sc('Jev', p.j)}<span class="conf num">확신 ${p.c == null ? '-' : f2(p.c)}</span>${mark(jr)}</span>
+        <span class="vv">${sc('기존 AI', p.l)}${mark(lr)}</span>
+      </span></summary>
+      <div class="pbody">
+        <div><h4>창업자 정보 (채점기에 보낸 글)</h4><pre>${esc(DATA.queries[p.q])}</pre>
+          ${url ? `<a class="src" href="${esc(url)}" target="_blank" rel="noopener noreferrer">공고 원문 보기 ↗</a>` : ''}</div>
+        <div><h4>Jev 보기별 확률</h4>${probs(p)}<p class="small">진한 막대가 Jev가 고른 보기, 굵은 글자가 사람 정답입니다. Jev는 이유를 쓰지 않습니다.</p></div>
+        <div><h4>기존 AI의 이유</h4><pre>${esc(p.lr || '-')}</pre>${p.hr ? `<h4>사람 메모</h4><pre>${esc(p.hr)}</pre>` : ''}</div>
+      </div></details>`;
+  }).join('') || '<p class="explain">조건에 맞는 쌍이 없습니다.</p>';
+}
+
+$('filters').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-f]'); if (!b) return;
+  PF = b.dataset.f;
+  try { localStorage.setItem('jev-filter', PF); } catch (err) {}
+  $('filters').querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  renderPairs();
+});
+$('cf').addEventListener('change', renderPairs);
+$('q').addEventListener('input', renderPairs);
+
+function renderText() {
+  const m = DATA.meta, b = DATA.bins;
+  $('meta').innerHTML = [
+    ['실행', m.run_at.slice(0, 10)], ['쌍', m.pairs + '개'], ['질의', m.queries + '개'], ['Jev 오류', m.errors + '건'],
+    ['모델', m.model], ['응답 시간 중앙값', m.median_ms + 'ms'], ['비용', '약 $0.01'],
+  ].map(([a, v]) => `<span>${a} <b class="num">${esc(v)}</b></span>`).join('');
+  $('concl').innerHTML = [
+    `<b>같은 ${N}쌍에서 Jev가 기존 AI보다 사람과 덜 맞았습니다.</b> 정확 일치 <span class="num">${f2(J.exact)}</span> vs <span class="num">${f2(L.exact)}</span>, 가중 카파 <span class="num">${f2(J.kappa)}</span> vs <span class="num">${f2(L.kappa)}</span>. 0↔2 뒤바뀜은 <span class="num">${pct(J.swap02)}</span> vs <span class="num">${pct(L.swap02)}</span>(${Math.round(J.swap02 * N)}쌍 vs ${Math.round(L.swap02 * N)}쌍)로 비슷합니다.`,
+    `<b>Jev는 "1 부분 관련"으로 몰립니다.</b> 1을 ${DATA.dist.jev[1]}번 줬고(사람 ${DATA.dist.human[1]}번), 사람이 "딱 맞음"이라 한 쌍을 1로 낮춘 경우가 ${J.conf[2][1]}쌍입니다.`,
+    `<b>확신도는 순서가 맞게 나오지만, 쓸 만한 곳은 좁습니다.</b> 확신도 0.9 이상 ${b[0].n}쌍의 정확 일치는 Jev <span class="num">${f2(b[0].jev)}</span>, 같은 쌍에서 기존 AI도 <span class="num">${f2(b[0].llm)}</span>입니다. 확신도로 골라 쓰면 ${N}쌍 중 ${b[0].n}쌍만 남습니다.`,
+    `<b>둘을 합쳐도 크게 나아지지 않습니다.</b> Jev와 기존 AI가 같은 답을 낸 ${DATA.same.n}쌍도 사람과 <span class="num">${f2(DATA.same.exact)}</span>만 맞습니다.`,
+    `<b>그래서 지금 형태로는 기존 AI 채점을 대신하지 못합니다.</b> Jev는 빠르고(중앙값 ${m.median_ms}ms) 쌉니다(143쌍 약 $0.01). 다만 이 143쌍에 맞춰 지시문(프롬프트)을 고치면 시험 문제를 보고 공부하는 셈이라 수치를 믿을 수 없게 됩니다. 그래서 고치지 않고 이 결과를 기록으로 남깁니다.`,
+  ].map((t) => `<li>${t}</li>`).join('');
+  $('limits').innerHTML = [
+    `<b>정답은 사람 판정 ${N}쌍입니다.</b> 질의(창업자) ${m.queries}개와 공고를 짝지은 ${N}쌍뿐이라 작은 차이는 우연일 수 있습니다. 0↔2 뒤바뀜의 차이는 1쌍입니다.`,
+    `<b>사람 점수도 흔들립니다.</b> ${N}쌍 중 ${m.rechecked}쌍(${pct(m.rechecked / N, 0)})은 사람이 다시 볼 때 점수를 바꿨고, 이 페이지는 바꾼 점수를 정답으로 씁니다. 처음 점수를 정답으로 쓰면 Jev 정확 일치는 <span class="num">${f2(DATA.blind_only_exact)}</span>입니다. "1 부분 관련"의 경계는 사람에게도 애매합니다.`,
+    `<b>기존 AI 값은 예전에 받아 둔 답입니다.</b> 이번에 새로 부르지 않았습니다. Jev에는 기존 AI와 같은 글과 같은 채점 기준을 보냈습니다.`,
+    `<b>확신도 구간의 쌍 수가 적습니다.</b> ${b.map((x) => x.name + ' ' + x.n + '쌍').join(', ')}입니다.`,
+    `<b>Jev는 이유를 쓰지 않습니다.</b> 왜 틀렸는지는 보기별 확률로만 짐작할 수 있습니다.`,
+    `<b>한 번, 한 가지 지시문으로 본 결과입니다.</b> 모델 버전은 ${esc(m.model)}입니다. 다른 버전이나 지시문에서는 달라질 수 있습니다.`,
+  ].map((t) => `<li>${t}</li>`).join('');
+  $('src').textContent = `출처: data-collection/reports/${m.run} · 실행 ${m.run_at.slice(0, 10)} · Jev 호출 ${m.answered}회(오류 ${m.errors}) · DB 쓰기 0 · 이 페이지를 만들 때 유료 호출 0`;
+}
+
+renderText(); renderHead(); renderNotes(); renderMats(); renderFilters(); renderPairs(); drawAll();
+let lastW = document.body.clientWidth, rz;
+window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { const w = document.body.clientWidth; if (w !== lastW) { lastW = w; drawAll(); } }, 150); });
+</script>

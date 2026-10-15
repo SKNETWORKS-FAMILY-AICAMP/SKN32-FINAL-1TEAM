@@ -1,0 +1,39 @@
+{
+ "tag": "cuda-fp32",
+ "torch": "2.14.1+cu126",
+ "threads": 6,
+ "n_docs": 300,
+ "n_queries": 66,
+ "total_notices": 3016,
+ "gpu": "NVIDIA GeForce RTX 3060",
+ "gpu_free_mb_before": 11003,
+ "load_s": 4.98,
+ "warmup_s": 0.7,
+ "docs": {
+  "4": {
+   "sec": 6.36,
+   "per_doc_ms": 21.2,
+   "full_est_min": 1.07,
+   "gpu_peak_mb": 2242
+  },
+  "16": {
+   "sec": 6.18,
+   "per_doc_ms": 20.6,
+   "full_est_min": 1.04,
+   "gpu_peak_mb": 2447
+  },
+  "32": {
+   "sec": 9.92,
+   "per_doc_ms": 33.1,
+   "full_est_min": 1.66,
+   "gpu_peak_mb": 2719
+  }
+ },
+ "query_ms": {
+  "median": 21.7,
+  "p95": 26.4,
+  "max": 74.5
+ },
+ "rss_mb_now": 1741,
+ "rss_mb_peak": 3305
+}

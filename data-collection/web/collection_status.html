@@ -59,7 +59,8 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const kst = iso => iso ? new Date(iso).toLocaleString('ko-KR', {timeZone:'Asia/Seoul', hour12:false}) : '—';
 const SRC = {kstartup:'K-Startup', bizinfo:'기업마당'};
-const STAGE = {conditions:'자격요건 추출(10단계)', applicant_types:'신청자 유형 추출(11단계)', industries:'업종 추출(12단계)', judgments_upload:'판정 올리기(13단계)'};
+const STAGE = {attachments:'첨부 받기(5단계)', embeddings:'임베딩(6·7단계)', vector_upload:'벡터 올리기(8단계)', file_upload:'첨부 원본 올리기(9단계)',
+  conditions:'자격요건 추출(10단계)', applicant_types:'신청자 유형 추출(11단계)', industries:'업종 추출(12단계)', judgments_upload:'판정 올리기(13단계)', bonus:'가점 추출(14단계)'};
 
 (async () => {
   let d;
@@ -86,9 +87,9 @@ const STAGE = {conditions:'자격요건 추출(10단계)', applicant_types:'신�
       <dt>마지막 저장 성공</dt><dd>${kst(n.last_run_at)} (${n.age_hours ?? '—'}시간 전 · 기준 ${n.max_age_hours}시간)</dd>
       <dt>가장 최근 배치</dt><dd>${n.latest_batch ? `${esc(n.latest_batch.status)} · ${kst(n.latest_batch.run_at)}` : '—'}</dd>
       <dt>출처별</dt><dd>${src}</dd>
-      <dt>후처리(LLM) 경고</dt><dd>${n.latest_batch && (n.latest_batch.stage_warnings || []).length
-        ? n.latest_batch.stage_warnings.map(w => `${esc(STAGE[w.stage] || w.stage)} — ${w.error ? esc(w.error) : `호출 실패 ${w.failed}건`}`).join('<br>')
-          + '<div class="muted">매칭은 막지 않습니다. 공고 데이터는 새것이고, 판정 결과만 갱신이 늦습니다.</div>'
+      <dt>후처리 경고(5~14단계)</dt><dd>${n.latest_batch && (n.latest_batch.stage_warnings || []).length
+        ? n.latest_batch.stage_warnings.map(w => `${esc(STAGE[w.stage] || w.stage)} — ${w.error ? esc(w.error) : w.warning ? '경고: ' + esc(w.warning) : `호출 실패 ${w.failed}건`}`).join('<br>')
+          + '<div class="muted">매칭은 막지 않습니다. 공고 데이터는 새것이고, 경고가 난 단계의 결과(첨부 본문·벡터·판정 등)만 갱신이 늦습니다.</div>'
         : '없음'}</dd>
       <dt>기업마당 스냅샷</dt><dd>${kst(n.bizinfo_snapshot_at)}</dd>
       <dt>저장한 공고 수</dt><dd>${n.stored_counts ? Object.entries(n.stored_counts).map(([k, v]) => `${SRC[k] || k} ${v.toLocaleString()}`).join(' · ') : '—'}</dd>

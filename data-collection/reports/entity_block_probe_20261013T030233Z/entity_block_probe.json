@@ -1,0 +1,519 @@
+{
+ "queries": 58,
+ "blocked": {
+  "sole_proprietor": {
+   "bizinfo:PBLN_000000000126731": {
+    "title": "Plug in : Tokyo #15 참여 스타트업 모집 공고",
+    "evidence": "모집공고일 기준 업력 7년 이내 법인 스타트업",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "kstartup:179073": {
+    "title": "2026년 성장기업 재무·세무 관리개선 바우처 지원사업 제1차 시행계획 공고",
+    "evidence": "국내 중소기업 중 법인사업자",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000125621": {
+    "title": "[대구] 2026년 기업 성장단계별 맞춤형 기술 지원사업 (Track-1) 과제 기업 모집",
+    "evidence": "신청서 접수일 기준 대구 지역(사업자등록증 기준＊) 內에 소재하는 중소·중견기업 중 대구 5대 신산업＊＊ 분야 법인기업",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000126117": {
+    "title": "[대구] 2026년 2차 수성 알파시티 기업 전용 저궤도 위성 통신망 서비스 지원 대상 기",
+    "evidence": "지원대상 : 스마트도시 서비스 및 개발 역량을 보유한 국내 법인사업자",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000126047": {
+    "title": "[경남] 2027년 방산 중소기업 생산성향상 지원사업 수혜기업 추가모집 공고",
+    "evidence": "경상남도 내 본사 또는 주사업장 소재 중소법인체",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000125610": {
+    "title": "2026년 2차 기계장비산업기술개발사업 신규지원 대상과제 공고",
+    "evidence": "주관연구개발기관이 기업인 경우는 접수마감일 현재 법인사업자이어야 하며, 선정평가 개최일 이전에 기업부설연구소(한국산업기술진흥협회 인정서 기준)를 보유하고 있어야 함",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000126187": {
+    "title": "[부산] 2026년 AX 에이지테크 시장확산 지원사업 모집 공고(해양문화도시 기반의 에이지",
+    "evidence": "부산광역시 소재(본사 기준 법인사업자) 에이지테크 분야 중소기업",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000125730": {
+    "title": "[대전] 2026년 사회문제해결형 R&BD 지원사업 시행 공고",
+    "evidence": "해당 기업은 국내 법인에 한하며, 외국소재 기관(기업, 대학, 연구소 등)은 연구개발기관으로 직접 참여불가.",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "kstartup:179135": {
+    "title": "2026 예비창업패키지 INU 창업준비 아카데미(1기) 교육생 모집공고",
+    "evidence": "공고일 기준 신청자 명의의 사업자 등록(개인, 법인)이 없는 자",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "kstartup:179077": {
+    "title": "친환경(GX) 스타트업 오사카 진출 지원 사업 Plug in: Osaka #14 참가 스타",
+    "evidence": "모집공고일 기준 업력 7년 이내 법인 스타트업",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000120275": {
+    "title": "2026년 K-Global 해외진출 지원사업 참여기업 모집 공고",
+    "evidence": "기업공개(IPO) 전 단계의 비상장1) 및 국내 또는 국외 법인사업자2)",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000127015": {
+    "title": "수성알파시티 기업 전용 5G 기반 통신망 서비스 지원 대상 기업 2차 모집 공고",
+    "evidence": "지원대상 : 스마트도시 서비스 및 개발 역량을 보유한 국내 법인사업자",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000126785": {
+    "title": "[경남] 2026년 하반기 예비사회적기업 지정계획 공고",
+    "evidence": "신청자격 : 아래의 예비사회적기업 지정요건을 모두 갖춘 법인‧단체",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000125909": {
+    "title": "[대구] 2026년 5차 대학 테스트베드ㆍ인프라 활용 실증 개발 지원 과제 기업 모집 공고",
+    "evidence": "사업공고일 기준 대구 지역(사업자등록증 기준*) 內 소재하는 중소·중견기업 중 대구 5대 신산업** 분야의 법인기업",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "kstartup:179129": {
+    "title": "BIXPO 2026 스타트업 성장지원 프로그램 참가기업 모집(에너지·기후테크·융복합 분야 ",
+    "evidence": "국내 법인사업자로서 에너지·기후테크·융복합 분야 사업을 영위하는 창업기업",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "kstartup:179471": {
+    "title": "한국과학기술지주 출연(연) 기술사업화 유망기업 투자 대상 공개 모집",
+    "evidence": "공고일 기준 업력 5년 이내 법인기업(2021년 10월 6일 이후 창업)",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "kstartup:179369": {
+    "title": "[투자연계형] 2026 넥스트밸류 그라운드(NextValue Ground)-참여기업 모집",
+    "evidence": "혁신적 기술 솔루션을 보유한 초기 기술기업으로 , 아래 요건을 모두 충족하는 법인 ① 설립 3년 이내 기업 또는 기관투자 유치 이력이 없는 설립 5년 미만 기업 ② 투자 전 기업가치(Pre-money Value) 1",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "kstartup:179472": {
+    "title": "[구리시 청년내일센터] 2026 창업아이디어 경진대회 참가자 모집",
+    "evidence": "사업자등록 및 법인설립 등기를 하지 않은 예비창업자",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000126474": {
+    "title": "[충남] 2026년 2차 AI 기반 태양광 설비 유지보수 솔루션 보급 시범사업 참여기업 모",
+    "evidence": "충청남도 소재 중소(견) 법인 기업(공고일 기준)",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000126204": {
+    "title": "2026년 사업재편 지원사업 기업모집 공고",
+    "evidence": "지원대상 : 업력 4년 이상의 법인인 중소·중견·대기업",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000125353": {
+    "title": "2026년 디지털콘텐츠 융합기업 글로벌 마켓 참가 사업(XR Fair Tokyo Autum",
+    "evidence": "해외 마켓에 판매‧계약‧시연이 가능하고, 수출 이력 보유 또는 수출 예정인 디지털콘텐츠 융합 제품․서비스 보유 국내 중소기업(법인) (컨소시엄 불가)",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000125969": {
+    "title": "[전남광주] 2026년 전남광주통합특별시 예비사회적기업 지정계획(전남권역) 공고",
+    "evidence": "접수일 기준, 예비사회적기업 지정 요건을 모두 갖춘 전남광주특별시 전남권역 소재의 법인・단체",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000126596": {
+    "title": "[강원] 2026년 강원특별자치도 예비사회적기업 지정계획 공고",
+    "evidence": "아래의 예비사회적기업 지정요건을 모두 갖춘 도내 법인·단체",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000121191": {
+    "title": "2026년 산업 분야 온실가스 국제감축사업 공고",
+    "evidence": "신청 자격 국내 법인 또는 기관*을 대상으로 하며 세부 자격은 아래와 같음",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000125455": {
+    "title": "2026년 우수인재 연계 기업인턴십 참여기업 수시모집 공고",
+    "evidence": "콘텐츠 기업으로 한국콘텐츠진흥원 인재양성사업 프로그램 이수자를 대상으로 인턴십을 희망하는 대기업, 중견기업, 중소기업, 스타트업 등 기업(법인사업자)",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000126659": {
+    "title": "[충남] 2026년 제2차 예비사회적기업 지정계획 공고",
+    "evidence": "예비사회적기업 지정요건을 모두 갖춘 법인·단체",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000119802": {
+    "title": "2026년 소상공인(법인사업자) 비즈플러스카드 지원사업 시행 공고",
+    "evidence": "□ (지원대상) ①NCB 595점 ~ 964점이고, ②업력 6개월 이상이며, ③매출액 기준을 충족하는 ④법인사업자",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000125525": {
+    "title": "[충남] 2026년 AI 기반 태양광 설비 유지보수 솔루션 보급 시범사업 참여기업 모집 공",
+    "evidence": "충청남도 소재 중소(견) 법인 기업(공고일 기준)",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000125307": {
+    "title": "2026년 2차 기계장비산업기술개발사업(AI팩토리) 신규지원 대상과제 공고",
+    "evidence": "주관연구개발기관이 기업인 경우는 접수마감일 현재 법인사업자이어야 하며, 선정평가 개최일 이전에 기업부설연구소(한국산업기술진흥협회 인정서 기준)를 보유하고 있어야 함",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "kstartup:179336": {
+    "title": "2026년 투자유치 역량강화 지원사업 참여기업 (추가연장)공고",
+    "evidence": "지역 내 법인창업 여성기업(업력무관) 및 법인창업예정자",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000126372": {
+    "title": "[전북] 군산시 2026년 청년창업플랫폼 예비창업자 모집 공고",
+    "evidence": "공고일 현재 주민등록상 주소지가 군산시로 되어 있는 자로, 외식 창업을 희망하는 만 19세 이상 ~ 39세 이하의 개인 또는 팀으로 사업자 등록이 되지 아니한 자",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000126478": {
+    "title": "해오름 이차전지 기업지원(스케일업) 수혜기업 추가 모집 공고(해오름동맹 첨단이차전지 연대협",
+    "evidence": "지원대상 : 포항시 내에 주사업장(본사,공장,지사,연구소)를 보유하고 있으며, 전담인력이 상주하여 영업활동을 하고 있는 법인사업자",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000125959": {
+    "title": "[대구] 2026년 4차 대학-기업 공동 기술ㆍ제품 기획 지원 과제 기업 모집 공고",
+    "evidence": "신청서 접수일 기준 대구 지역(사업자등록증 기준＊) 內에 소재하는 중소·중견기업 중 대구 5대 신산업＊＊ 분야 법인기업",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000126160": {
+    "title": "[서울] SBA×TikTok 일본 틱톡샵 진출 지원사업 참여기업 모집 공고",
+    "evidence": "일본 틱톡샵 크로스보더 서비스가 런칭 초기 단계로 운영 기준이 유동적인 점을 고려하여, 이번 지원사업은 법인 사업자에 한하여 지원합니다.",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000125910": {
+    "title": "[대구] 2026년 5차 대학 기술 활용 사업화 지원 과제 기업 모집 공고",
+    "evidence": "과제공고일 기준 대구 지역(사업자등록증 기준*) 內에 소재 중인 중소·중견기업 중, 대구 5대 신산업** 분야의 법인기업",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "kstartup:179199": {
+    "title": "2026년 스타트업 96 입주 예비창업자 모집",
+    "evidence": "대전 관내 창업을 희망하는 자 중 공고일 현재(’26. 9. 8. 기준)부터 신청일까지 신청자 명의의 사업자 등록(개인, 법인)이 없고, 입주 후 6개월 이내에 관내 사업자 등록 예정자",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000126847": {
+    "title": "[대구] 2026년 5차 대학-기업 공동 기술ㆍ제품 기획 지원 과제 기업 모집 공고",
+    "evidence": "신청서 접수일 기준 대구 지역(사업자등록증 기준＊) 內에 소재하는 중소·중견기업 중 대구 5대 신산업＊＊ 분야 법인기업",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000125947": {
+    "title": "2026년 AI 기반 주파수 간섭분석 및 전파예측기술 개발사업 신규지원 대상과제 공고",
+    "evidence": "주관연구개발기관으로 신청하는 기업의 경우는 접수마감일 현재 기업부설연구소 또는 연구전담부서를 보유하고 있는 법인사업자여야",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   }
+  },
+  "corporation": {
+   "bizinfo:PBLN_000000000122952": {
+    "title": "2026년 영세 소상공인 중소금융권 금융비용 지원사업 재공고",
+    "evidence": "신청대상 : ’25. 1. 1. ~ 12. 31.까지, 제2금융권*에서 신규(갱신 제외)로 사업자 대출 (가계대출 제외)을 받은 개인사업자(법인사업자제외)로서 5%이상 금리로 대출을 받은 소상공인",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000125410": {
+    "title": "[강원] 양양군 2026년 2차 소상공인 특례보증 지원사업 공고",
+    "evidence": "신청일 기준 양양군에 3개월 이상 사업장*과 주민등록을 두고운영 중인 소상공인 중 개인사업자",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "kstartup:179135": {
+    "title": "2026 예비창업패키지 INU 창업준비 아카데미(1기) 교육생 모집공고",
+    "evidence": "공고일 기준 신청자 명의의 사업자 등록(개인, 법인)이 없는 자",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000121832": {
+    "title": "[강원] 2026년 청년창업자금 무이자 대출지원 사업시행 변경 공고",
+    "evidence": "만18~45세의 청년(법인 제외)",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": true
+   },
+   "bizinfo:PBLN_000000000117624": {
+    "title": "[강원] 속초시 2026년 소상공인 특례보증 지원 계획 공고",
+    "evidence": "속초시에 사업장을 둔 소상공인(※ 중소기업, 법인 제외)",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000123709": {
+    "title": "[강원] 2026년 2차 소상공인 경영안정자금 지원사업 공고",
+    "evidence": "도내 소재 사업장을 둔 소상공인* (개인사업자)",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "kstartup:179472": {
+    "title": "[구리시 청년내일센터] 2026 창업아이디어 경진대회 참가자 모집",
+    "evidence": "사업자등록 및 법인설립 등기를 하지 않은 예비창업자",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000125737": {
+    "title": "[제주] 소상공인 저금리 대환대출 특별보증 한시적 이차보전금 지원 공고",
+    "evidence": "고금리(7%) 기업대출(신용대출에 한함)을 이용중인 중·저신용 도내 소상공인(법인 제외)",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "kstartup:178709": {
+    "title": "2026년 창업진흥원 정책 아이디어 공모전",
+    "evidence": "창업, 지역상생·동반성장 관련 정책 아이디어나 관심이 있는 자(개인)",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000126382": {
+    "title": "[충북] 괴산군 2026년 착한가격업소 신규 지정 공고",
+    "evidence": "관내 소재지를 두고 6개월 이상 영업 중인 자영업자, 개인사업자로서 서민생활과 밀접한 개인서비스요금에 해당하는 업종에 대해 소비자에게 직접 소매단위로 물품·서비스 등의 판매행위를 하는 업소",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000125411": {
+    "title": "[강원] 양양군 2026년 2차 소상공인 특례보증수수료 지원사업 공고",
+    "evidence": "양양군에 사업장을 둔 소상공인(개인사업자)으로 강원신용보증재단을 통해 양양군 특례보증(2차)으로 대출을 실행한 자",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": true
+   },
+   "bizinfo:PBLN_000000000126372": {
+    "title": "[전북] 군산시 2026년 청년창업플랫폼 예비창업자 모집 공고",
+    "evidence": "공고일 현재 주민등록상 주소지가 군산시로 되어 있는 자로, 외식 창업을 희망하는 만 19세 이상 ~ 39세 이하의 개인 또는 팀으로 사업자 등록이 되지 아니한 자",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000119801": {
+    "title": "2026년 소상공인(개인사업자) 비즈플러스카드 지원사업 시행 공고",
+    "evidence": "□ (지원대상) ①NCB 595점 ~ 964점이고, ②업력이 6개월 이상이며, ③매출액 기준을 충족하는 ④개인사업자",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000117597": {
+    "title": "[강원] 태백시 2026년 소상공인 특례보증ㆍ이차보전 지원 계획 공고",
+    "evidence": "법인이 아닌 개인 사업자일 것 (지원대상에서 법인 사업자는 제외)",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": true
+   },
+   "bizinfo:PBLN_000000000117576": {
+    "title": "[충북] 괴산군 2026년 저신용 소상공인 대출이자 지원사업 공고",
+    "evidence": "괴산군에 사업장을 운영하고 있는 소상공인(개인사업자) 중 신용평점 KCB 700점 또는 NICE 749점 이하*인 자",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "kstartup:179199": {
+    "title": "2026년 스타트업 96 입주 예비창업자 모집",
+    "evidence": "대전 관내 창업을 희망하는 자 중 공고일 현재(’26. 9. 8. 기준)부터 신청일까지 신청자 명의의 사업자 등록(개인, 법인)이 없고, 입주 후 6개월 이내에 관내 사업자 등록 예정자",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "bizinfo:PBLN_000000000126760": {
+    "title": "[강원] 2026년 강원특별자치도 소상공인 경영안정 특별자금 지원사업 수정 공고",
+    "evidence": "도내 소재 사업장을 둔 소상공인* (개인사업자)",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   },
+   "kstartup:178930": {
+    "title": "광명업사이클아트센터 2026년 하반기 가상오피스 지원기업 모집",
+    "evidence": "업사이클 및 친환경 분야의 창업 5년 이내 (예비)창업자 중 개인사업자",
+    "unverified": false,
+    "unread_narrow": false,
+    "unread_broad": false
+   }
+  }
+ },
+ "stats": {
+  "개인사업자": {
+   "질의_상위3에_있음": 0,
+   "칸_상위3": 0,
+   "칸_상위3_안전장치뒤": 0,
+   "질의_상위10에_있음": 1,
+   "칸_상위10": 1,
+   "칸_상위10_안전장치뒤": 1,
+   "질의_상위20에_있음": 7,
+   "칸_상위20": 7,
+   "칸_상위20_안전장치뒤": 7
+  },
+  "법인": {
+   "질의_상위3에_있음": 0,
+   "칸_상위3": 0,
+   "칸_상위3_안전장치뒤": 0,
+   "질의_상위10에_있음": 1,
+   "칸_상위10": 1,
+   "칸_상위10_안전장치뒤": 0,
+   "질의_상위20에_있음": 2,
+   "칸_상위20": 3,
+   "칸_상위20_안전장치뒤": 2
+  }
+ },
+ "seen": {
+  "개인사업자": {
+   "bizinfo:PBLN_000000000127015": 4,
+   "bizinfo:PBLN_000000000119802": 2,
+   "bizinfo:PBLN_000000000120275": 1
+  },
+  "법인": {
+   "bizinfo:PBLN_000000000121832": 1,
+   "bizinfo:PBLN_000000000122952": 1,
+   "bizinfo:PBLN_000000000125737": 1
+  }
+ },
+ "examples": [
+  {
+   "qid": "q010",
+   "type": "개인사업자",
+   "rank": 13,
+   "notice_id": "bizinfo:PBLN_000000000127015",
+   "title": "수성알파시티 기업 전용 5G 기반 통신망 서비스 지원 대상 기업 2차 모집 공고",
+   "evidence": "지원대상 : 스마트도시 서비스 및 개발 역량을 보유한 국내 법인사업자"
+  },
+  {
+   "qid": "q014",
+   "type": "개인사업자",
+   "rank": 18,
+   "notice_id": "bizinfo:PBLN_000000000127015",
+   "title": "수성알파시티 기업 전용 5G 기반 통신망 서비스 지원 대상 기업 2차 모집 공고",
+   "evidence": "지원대상 : 스마트도시 서비스 및 개발 역량을 보유한 국내 법인사업자"
+  },
+  {
+   "qid": "q015",
+   "type": "개인사업자",
+   "rank": 7,
+   "notice_id": "bizinfo:PBLN_000000000119802",
+   "title": "2026년 소상공인(법인사업자) 비즈플러스카드 지원사업 시행 공고",
+   "evidence": "□ (지원대상) ①NCB 595점 ~ 964점이고, ②업력 6개월 이상이며, ③매출액 기준을 충족하는 ④법인사업자"
+  },
+  {
+   "qid": "q018",
+   "type": "법인",
+   "rank": 6,
+   "notice_id": "bizinfo:PBLN_000000000121832",
+   "title": "[강원] 2026년 청년창업자금 무이자 대출지원 사업시행 변경 공고",
+   "evidence": "만18~45세의 청년(법인 제외)"
+  },
+  {
+   "qid": "q023",
+   "type": "개인사업자",
+   "rank": 12,
+   "notice_id": "bizinfo:PBLN_000000000120275",
+   "title": "2026년 K-Global 해외진출 지원사업 참여기업 모집 공고",
+   "evidence": "기업공개(IPO) 전 단계의 비상장1) 및 국내 또는 국외 법인사업자2)"
+  },
+  {
+   "qid": "q036",
+   "type": "법인",
+   "rank": 12,
+   "notice_id": "bizinfo:PBLN_000000000122952",
+   "title": "2026년 영세 소상공인 중소금융권 금융비용 지원사업 재공고",
+   "evidence": "신청대상 : ’25. 1. 1. ~ 12. 31.까지, 제2금융권*에서 신규(갱신 제외)로 사업자 대출 (가계대출 제외)을 받은 개인사업자(법인사업자제외)로서 5%이상 금리로 대출을 받은 소상공인"
+  },
+  {
+   "qid": "q036",
+   "type": "법인",
+   "rank": 15,
+   "notice_id": "bizinfo:PBLN_000000000125737",
+   "title": "[제주] 소상공인 저금리 대환대출 특별보증 한시적 이차보전금 지원 공고",
+   "evidence": "고금리(7%) 기업대출(신용대출에 한함)을 이용중인 중·저신용 도내 소상공인(법인 제외)"
+  },
+  {
+   "qid": "q045",
+   "type": "개인사업자",
+   "rank": 13,
+   "notice_id": "bizinfo:PBLN_000000000119802",
+   "title": "2026년 소상공인(법인사업자) 비즈플러스카드 지원사업 시행 공고",
+   "evidence": "□ (지원대상) ①NCB 595점 ~ 964점이고, ②업력 6개월 이상이며, ③매출액 기준을 충족하는 ④법인사업자"
+  },
+  {
+   "qid": "q047",
+   "type": "개인사업자",
+   "rank": 12,
+   "notice_id": "bizinfo:PBLN_000000000127015",
+   "title": "수성알파시티 기업 전용 5G 기반 통신망 서비스 지원 대상 기업 2차 모집 공고",
+   "evidence": "지원대상 : 스마트도시 서비스 및 개발 역량을 보유한 국내 법인사업자"
+  },
+  {
+   "qid": "q056",
+   "type": "개인사업자",
+   "rank": 16,
+   "notice_id": "bizinfo:PBLN_000000000127015",
+   "title": "수성알파시티 기업 전용 5G 기반 통신망 서비스 지원 대상 기업 2차 모집 공고",
+   "evidence": "지원대상 : 스마트도시 서비스 및 개발 역량을 보유한 국내 법인사업자"
+  }
+ ]
+}

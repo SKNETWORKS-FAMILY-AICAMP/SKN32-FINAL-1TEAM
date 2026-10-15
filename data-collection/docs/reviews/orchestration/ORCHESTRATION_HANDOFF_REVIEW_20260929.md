@@ -1,6 +1,6 @@
 # 조율 에이전트 함수 설명서 · 9/29 배치 독립 검수 (2026-09-29)
 
-검수: Codex. 대상은 [검수 요청](ORCHESTRATION_HANDOFF_REVIEW_REQUEST_20260929.md), [함수 설명서](../../guides/ORCHESTRATION_HANDOFF.md), 현재 공고팀 코드와 조율 브랜치 `origin/feature/SB-86-orchestration-flow` (`deb5c81`)다. **현재 예시 A·B·C와 9/29 배치 수치는 확인했다. 실제 조율 연결은 아래 P1이 해결되기 전에는 승인하지 않는다.** 코드·DB·설명서는 수정하지 않았고 공용 DB에는 SELECT만 했다.
+검수: Codex. 대상은 [검수 요청](ORCHESTRATION_HANDOFF_REVIEW_REQUEST_20260929.md), [함수 설명서](../../archive/ORCHESTRATION_HANDOFF.md), 현재 공고팀 코드와 조율 브랜치 `origin/feature/SB-86-orchestration-flow` (`deb5c81`)다. **현재 예시 A·B·C와 9/29 배치 수치는 확인했다. 실제 조율 연결은 아래 P1이 해결되기 전에는 승인하지 않는다.** 코드·DB·설명서는 수정하지 않았고 공용 DB에는 SELECT만 했다.
 
 ## P1 — 연결 전에 해결할 것
 

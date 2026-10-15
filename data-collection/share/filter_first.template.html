@@ -1,0 +1,405 @@
+<meta charset="utf-8">
+<title>공고 매칭 방식 비교</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@500;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* 레이아웃: 한 열 보고서. 요약 → 세 방식 → 수치 그래프(작은 그래프 여러 장) → 예시 → 한계. 표로 보기는 접이식 */
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --ink: #111a28;
+  --ink-2: #47526a;
+  --muted: #6b7690;
+  --line: #dde2ea;
+  --grid: #e9edf2;
+  --s1: #86b6ef;   /* 처음(벡터만) — 순서형 파랑 옅음 */
+  --s2: #2a78d6;   /* 9/22(검색 먼저) */
+  --s3: #104281;   /* 지금(필터 먼저) — 가장 진함 */
+  --range: rgba(42,120,214,.18);
+  --bad: #c2392f;  --bad-bg: #fbe9e7;
+  --good: #1d7a46; --good-bg: #e6f4ec;
+  --font-display: "Hahmlet", "Noto Serif KR", "Apple SD Gothic Neo", serif;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151c; --surface: #181d26; --ink: #eef2f8; --ink-2: #b7c0d0; --muted: #8d97aa;
+    --line: #2a3140; --grid: #232a36;
+    --s1: #184f95; --s2: #3987e5; --s3: #9ec5f4; --range: rgba(57,135,229,.22);
+    --bad: #f08a80; --bad-bg: #3a1f1d; --good: #6fd29a; --good-bg: #173424;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151c; --surface: #181d26; --ink: #eef2f8; --ink-2: #b7c0d0; --muted: #8d97aa;
+  --line: #2a3140; --grid: #232a36;
+  --s1: #184f95; --s2: #3987e5; --s3: #9ec5f4; --range: rgba(57,135,229,.22);
+  --bad: #f08a80; --bad-bg: #3a1f1d; --good: #6fd29a; --good-bg: #173424;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.65; }
+.wrap { max-width: 980px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; display: grid; gap: 44px; }
+h1, h2 { font-family: var(--font-display); font-weight: 700; line-height: 1.25; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(28px, 4.2vw, 40px); }
+h2 { font-size: 22px; }
+h3 { font-size: 15px; font-weight: 600; margin: 0; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font-size: 12px; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.lede { color: var(--ink-2); font-size: 16px; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+section { display: grid; gap: 18px; }
+header { display: grid; gap: 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--muted); font-size: 13px; }
+.meta span b { color: var(--ink-2); font-weight: 500; }
+
+/* 핵심 결과 */
+.headline { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+.hl { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: grid; gap: 4px; min-width: 0; }
+.hl .who { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); font-weight: 500; }
+.hl .big { font-family: var(--font-mono); font-size: 34px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.hl .sub { font-size: 13px; color: var(--muted); }
+.hl.now { border-color: var(--s3); box-shadow: inset 0 0 0 1px var(--s3); }
+.sw { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.sw1 { background: var(--s1); } .sw2 { background: var(--s2); } .sw3 { background: var(--s3); }
+
+/* 세 방식 설명 */
+.ways { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+.way { border-top: 3px solid var(--s1); padding-top: 12px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.way.w2 { border-top-color: var(--s2); } .way.w3 { border-top-color: var(--s3); }
+.way h3 { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.way h3 small { color: var(--muted); font-weight: 400; font-size: 12px; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13.5px; color: var(--ink-2); }
+.steps li { display: flex; gap: 8px; }
+.steps li::before { content: "→"; color: var(--muted); flex: none; }
+.steps li:first-child::before { content: "·"; }
+
+/* 모드 전환 */
+.bar-row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.seg button { font: inherit; font-size: 13px; padding: 6px 12px; border: 0; background: transparent; color: var(--ink-2); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.seg button:focus-visible, summary:focus-visible { outline: 2px solid var(--s2); outline-offset: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--ink-2); }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+
+/* 작은 그래프들 */
+.charts { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
+.chart { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 16px 12px; display: grid; gap: 6px; min-width: 0; }
+.chart h3 { font-size: 14.5px; }
+.chart .how { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart .note { font-size: 12.5px; color: var(--ink-2); }
+.tag { display: inline-block; font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: var(--grid); color: var(--ink-2); margin-left: 6px; vertical-align: 1px; font-weight: 500; }
+.tip { position: fixed; pointer-events: none; z-index: 10; background: var(--ink); color: var(--surface); font-size: 12.5px; line-height: 1.5; padding: 8px 10px; border-radius: 8px; max-width: 280px; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+
+/* 사유 */
+.why { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+.why .col { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.why ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13.5px; }
+.why li { display: flex; justify-content: space-between; gap: 8px; }
+.why .zero { color: var(--good); font-size: 13.5px; }
+
+/* 예시 */
+.ex { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+.ex .col { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; display: grid; gap: 8px; align-content: start; }
+.ex ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; counter-reset: r; }
+.ex li { display: grid; grid-template-columns: 22px minmax(0,1fr); gap: 6px; font-size: 13.5px; line-height: 1.45; counter-increment: r; }
+.ex li::before { content: counter(r); font-family: var(--font-mono); color: var(--muted); font-size: 12px; padding-top: 1px; }
+.ex .t { overflow-wrap: anywhere; }
+.ex .end { color: var(--muted); font-size: 12px; font-family: var(--font-mono); }
+.badge { display: inline-flex; gap: 4px; align-items: center; font-size: 11.5px; padding: 1px 7px; border-radius: 999px; font-weight: 600; margin-right: 4px; }
+.badge.bad { color: var(--bad); background: var(--bad-bg); }
+.badge.ok { color: var(--good); background: var(--good-bg); }
+.query { background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 12px 16px; font-size: 14px; display: grid; gap: 2px; }
+
+/* 표 · 한계 */
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.tbl { overflow-x: auto; margin-top: 12px; }
+table { border-collapse: collapse; font-size: 13px; width: 100%; min-width: 640px; }
+th, td { padding: 7px 8px; border-bottom: 1px solid var(--grid); text-align: right; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+thead th { color: var(--muted); font-weight: 500; font-size: 12px; }
+td.num { font-family: var(--font-mono); }
+.limits { display: grid; gap: 8px; font-size: 14px; color: var(--ink-2); margin: 0; padding-left: 18px; }
+footer { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 4px; }
+
+@media (max-width: 720px) {
+  .headline, .ways, .why, .ex, .charts { grid-template-columns: minmax(0,1fr); }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">S-Brain 공고 매칭 · 평가 결과</div>
+    <h1>공고 매칭 방식 비교</h1>
+    <p class="lede">창업 아이디어를 넣으면 지원사업 공고 10건을 추천합니다. 같은 질의 58개로 추천 방식 세 가지를 비교했습니다. 핵심 결과는 <b>신청할 수 없는 공고가 추천에서 사라졌다</b>는 것입니다. 내용이 맞는 공고의 비율은 줄지 않았습니다.</p>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section aria-labelledby="h-head">
+    <h2 id="h-head">추천 10건 중 신청할 수 없는 공고</h2>
+    <div class="headline" id="headline"></div>
+  </section>
+
+  <section aria-labelledby="h-ways">
+    <h2 id="h-ways">비교한 세 가지 방식</h2>
+    <div class="ways">
+      <div class="way w1">
+        <h3><span class="sw sw1"></span>처음 <small>벡터 유사도만</small></h3>
+        <ul class="steps">
+          <li>아이디어와 공고 요약을 벡터로 바꿈</li>
+          <li>비슷한 순서대로 10건</li>
+          <li>마감·업력·지원대상은 보지 않음</li>
+        </ul>
+      </div>
+      <div class="way w2">
+        <h3><span class="sw sw2"></span>9/22 <small>검색 먼저, 그다음 거르기</small></h3>
+        <ul class="steps">
+          <li>의미 검색 + 단어 검색(BM25)을 합쳐 후보를 뽑음</li>
+          <li>후보 중 마감된 공고를 뺌</li>
+          <li>지역·대상 집단 규칙으로 순서 조정</li>
+        </ul>
+      </div>
+      <div class="way w3">
+        <h3><span class="sw sw3"></span>지금 <small>조건 먼저, 그 안에서 검색</small></h3>
+        <ul class="steps">
+          <li>전체 공고에서 확실히 신청 불가한 공고를 먼저 뺌(마감, 업력, 신청자 유형)</li>
+          <li>남은 공고 안에서만 의미 검색 + 단어 검색</li>
+          <li>지역·대상 집단 규칙으로 순서 조정(빼지 않음)</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-charts">
+    <div class="bar-row">
+      <h2 id="h-charts">지표별 비교</h2>
+      <div class="seg" role="group" aria-label="검색 방식">
+        <button type="button" id="mode-hybrid" data-mode="hybrid" aria-pressed="true">의미 + 단어 검색 (서비스)</button>
+        <button type="button" id="mode-dense" data-mode="dense" aria-pressed="false">의미 검색만</button>
+      </div>
+    </div>
+    <div class="legend" aria-hidden="true">
+      <span><span class="sw sw1"></span>처음(벡터만)</span>
+      <span><span class="sw sw2"></span>9/22(검색 먼저)</span>
+      <span><span class="sw sw3"></span>지금(필터 먼저)</span>
+      <span><span class="sw" style="background:var(--range)"></span>하한~상한(판정 없는 공고를 틀림/맞음으로 볼 때)</span>
+    </div>
+    <div class="charts" id="charts"></div>
+  </section>
+
+  <section aria-labelledby="h-why">
+    <h2 id="h-why">추천에 섞인 신청 불가 공고의 이유</h2>
+    <p class="lede">58개 질의의 상위 10건을 모두 모아 센 수입니다. 공고 하나에 이유가 둘 이상일 수 있습니다.</p>
+    <div class="why" id="why"></div>
+  </section>
+
+  <section aria-labelledby="h-ex">
+    <h2 id="h-ex">예시: 같은 질의, 다른 추천</h2>
+    <div class="query" id="query"></div>
+    <div class="ex" id="ex"></div>
+  </section>
+
+  <section aria-labelledby="h-tbl">
+    <h2 id="h-tbl">전체 수치</h2>
+    <details>
+      <summary>표로 보기 (차이의 95% 구간 포함)</summary>
+      <div class="tbl"><table id="tbl"></table></div>
+      <p style="font-size:12.5px;color:var(--muted);margin-top:10px">95% 구간은 질의별 차이를 2,000번 다시 뽑아 계산했습니다(짝지은 부트스트랩). 구간에 0이 들어 있으면 두 방식의 차이를 확신할 수 없습니다.</p>
+    </details>
+  </section>
+
+  <section aria-labelledby="h-lim">
+    <h2 id="h-lim">읽을 때 주의할 점</h2>
+    <ul class="limits">
+      <li><b>정답 판정은 대부분 AI 판정입니다.</b> 질의–공고 1,617쌍 가운데 사람이 본 것은 일부입니다. 사람 판정 143쌍과 비교한 AI 판정의 일치율은 0.64입니다.</li>
+      <li><b>질의는 58개입니다.</b> 작은 차이는 우연일 수 있습니다. 그래서 9/22와 지금의 내용 적합도 차이는 구간에 0이 들어 있어 "같다"고 봅니다.</li>
+      <li><b>판정 없는 공고가 있습니다.</b> 지금 방식 상위 10건의 32%는 판정이 없습니다. 그래서 하한(틀림으로 봄)과 상한(맞음으로 봄)을 함께 보여 줍니다.</li>
+      <li><b>"처음" 방식은 재현한 결과입니다.</b> 과거 코드를 되살린 것이 아니라, 지금 코드에서 필터와 규칙을 모두 끈 결과입니다.</li>
+      <li><b>기준일은 2026-09-15입니다.</b> 그 전날까지 수집한 공고 2,084건으로 평가했습니다. 그래서 예시의 9월 10일 마감 공고는 "접수 마감"입니다.</li>
+    </ul>
+  </section>
+
+  <footer>
+    <span>출처: data-collection/reports/filter_first_eval_20260928T104212Z · 평가 실행 2026-09-28 · 유료 API 호출 0, DB 쓰기 0</span>
+    <span>S-Brain SKN32 1팀 · 공고 데이터·매칭 담당</span>
+  </footer>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const DATA = /*DATA*/null;
+const NAMES = ['처음(벡터만)', '9/22(검색 먼저)', '지금(필터 먼저)'];
+const SW = ['var(--s1)', 'var(--s2)', 'var(--s3)'];
+const $ = (id) => document.getElementById(id);
+const pct = (v, d = 1) => (v * 100).toFixed(d) + '%';
+const fx = (v, d = 2) => Number(v).toFixed(d);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let MODE = 'hybrid';
+try { const m = localStorage.getItem('mode'); if (m === 'dense' || m === 'hybrid') MODE = m; } catch (e) {}
+
+// 그래프 정의: 한 그래프 = 한 축(같은 단위)
+const CHARTS = [
+  { key: 'ineligible_k', title: '신청 불가 비율', how: '상위 10건 중 확실히 신청할 수 없는 공고(마감, 업력, 신청자 유형)의 비율. 판정 없이 공고 조건으로 셉니다.', better: '낮을수록 좋음', max: 0.3, ticks: [0, .1, .2, .3], fmt: (v) => pct(v), tick: (v) => pct(v, 0) },
+  { key: 'mixed', title: '신청 불가 공고가 섞인 질의', how: '질의 58개 중 상위 10건에 신청 불가 공고가 하나라도 있는 질의 수.', better: '낮을수록 좋음', max: 58, ticks: [0, 20, 40, 58], fmt: (v) => v + ' / 58', tick: (v) => String(v) },
+  { key: 'p3', lo: 'p3_lo', hi: 'p3_hi', title: '내용이 맞는 비율 (상위 3건)', how: '상위 3건 중 아이디어와 "매우 관련"으로 판정된 공고의 비율(P@3).', better: '높을수록 좋음', max: 1, ticks: [0, .25, .5, .75, 1], fmt: (v) => pct(v), tick: (v) => pct(v, 0) },
+  { key: 'u3', lo: 'useful3_lo', hi: 'useful3_hi', title: '쓸모 있는 공고 수 (상위 3건)', how: '상위 3건 중 "내용이 맞고 신청도 가능한" 공고 수. 최대 3.', better: '높을수록 좋음', max: 3, ticks: [0, 1, 2, 3], fmt: (v) => fx(v) + '건', tick: (v) => String(v) },
+  { key: 'u10', lo: 'usefulk_lo', hi: 'usefulk_hi', title: '쓸모 있는 공고 수 (상위 10건)', how: '상위 10건 중 "내용이 맞고 신청도 가능한" 공고 수. 최대 10.', better: '높을수록 좋음', max: 10, ticks: [0, 2, 4, 6, 8, 10], fmt: (v) => fx(v) + '건', tick: (v) => String(v) },
+  { key: 'ndcg_k', title: '순서 품질 (판정된 공고만)', how: '관련 높은 공고가 위에 오는 정도(nDCG@10, 0~1). 판정된 공고끼리만 비교합니다.', better: '높을수록 좋음', max: 1, ticks: [0, .25, .5, .75, 1], fmt: (v) => fx(v, 3), tick: (v) => String(v) },
+];
+
+function valueOf(mode, c, i) {
+  const m = DATA.modes[mode];
+  if (c.key === 'mixed') return { v: m.mixed[i] };
+  if (c.lo) return { v: m.metrics[c.lo].vals[i], hi: m.metrics[c.hi].vals[i], dv: m.metrics[c.lo].d_vec, dvh: m.metrics[c.hi].d_vec };
+  return { v: m.metrics[c.key].vals[i], dv: m.metrics[c.key].d_vec, dold: m.metrics[c.key].d_old };
+}
+
+function chartNote(mode, c) {
+  const m = DATA.modes[mode].metrics;
+  const span = (d, f) => d ? `${d[0] >= 0 ? '+' : ''}${f(d[0])} [${f(d[1])}, ${f(d[2])}]` : '';
+  if (c.key === 'ineligible_k') return `지금 − 처음: ${span(m.ineligible_k.d_vec, (x) => (x*100).toFixed(1) + '%p')}`;
+  if (c.key === 'mixed') return '지금 방식은 58개 질의 모두에서 신청 불가 공고가 0건입니다.';
+  if (c.key === 'p3') return `하한 기준 지금 − 처음: ${span(m.p3_lo.d_vec, (x) => (x*100).toFixed(1) + '%p')} · 지금 − 9/22: ${span(m.p3_lo.d_old, (x) => (x*100).toFixed(1) + '%p')}`;
+  if (c.key === 'u3') return `하한 기준 지금 − 처음: ${span(m.useful3_lo.d_vec, (x) => x.toFixed(2))}`;
+  if (c.key === 'u10') return `하한 기준 지금 − 처음: ${span(m.usefulk_lo.d_vec, (x) => x.toFixed(2))}`;
+  if (c.key === 'ndcg_k') return '세 방식이 거의 같습니다. 순서를 매기는 방식은 크게 바뀌지 않았습니다.';
+  return '';
+}
+
+function drawChart(c) {
+  // 실제 칸 너비로 그린다 — 휴대폰에서 글자가 줄어들지 않게
+  const box = $('charts'), cols = window.matchMedia('(max-width: 720px)').matches ? 1 : 2;
+  const W = Math.max(280, Math.round((box.clientWidth - (cols - 1) * 14) / cols - 34));
+  const L = 64, R = 92, rowH = 34, top = 6, H = top + rowH * 3 + 26;
+  const x = (v) => L + (Math.min(v, c.max) / c.max) * (W - L - R);
+  let g = '';
+  for (const t of c.ticks) {
+    g += `<line x1="${x(t)}" x2="${x(t)}" y1="${top}" y2="${top + rowH * 3}" stroke="var(--grid)" stroke-width="1"/>`;
+    g += `<text x="${x(t)}" y="${H - 6}" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--font-mono)">${c.tick(t)}</text>`;
+  }
+  for (let i = 0; i < 3; i++) {
+    const o = valueOf(MODE, c, i), y = top + rowH * i + 7, h = rowH - 14;
+    g += `<g class="hit" data-i="${i}" tabindex="0" role="img" aria-label="${NAMES[i]} ${c.fmt(o.v)}${o.hi != null ? ' ~ ' + c.fmt(o.hi) : ''}">`;
+    g += `<rect x="0" y="${top + rowH * i}" width="${W}" height="${rowH}" fill="transparent"/>`;
+    g += `<text x="${L - 10}" y="${y + h / 2 + 4}" text-anchor="end" font-size="12" fill="var(--ink-2)">${NAMES[i].replace(/\(.*/, '')}</text>`;
+    if (o.hi != null && o.hi > o.v) g += `<rect x="${x(0)}" y="${y}" width="${Math.max(0, x(o.hi) - x(0))}" height="${h}" rx="4" fill="var(--range)"/>`;
+    const w = Math.max(0, x(o.v) - x(0));
+    if (w > 0) g += `<rect x="${x(0)}" y="${y}" width="${w}" height="${h}" rx="4" fill="${SW[i]}"/>`;
+    else g += `<line x1="${x(0)}" x2="${x(0)}" y1="${y - 2}" y2="${y + h + 2}" stroke="${SW[i]}" stroke-width="3" stroke-linecap="round"/>`;
+    const lx = x(o.hi != null ? Math.max(o.v, o.hi) : o.v) + 6;
+    const lab = o.hi != null ? `${c.fmt(o.v)}~${c.fmt(o.hi).replace('건', '')}` : c.fmt(o.v);
+    g += `<text x="${lx}" y="${y + h / 2 + 4}" font-size="11.5" fill="var(--ink)" font-family="var(--font-mono)">${lab}</text>`;
+    g += `</g>`;
+  }
+  g += `<line x1="${x(0)}" x2="${x(0)}" y1="${top}" y2="${top + rowH * 3}" stroke="var(--muted)" stroke-width="1"/>`;
+  return `<svg viewBox="0 0 ${W} ${H}" aria-hidden="false">${g}</svg>`;
+}
+
+function renderCharts() {
+  $('charts').innerHTML = CHARTS.map((c) => `
+    <div class="chart" data-key="${c.key}">
+      <h3>${c.title}<span class="tag">${c.better}</span></h3>
+      <div class="how">${c.how}</div>
+      ${drawChart(c)}
+      <div class="note num" style="font-family:var(--font-body)">${chartNote(MODE, c)}</div>
+    </div>`).join('');
+  document.querySelectorAll('.chart').forEach((el) => {
+    const c = CHARTS.find((k) => k.key === el.dataset.key);
+    el.querySelectorAll('.hit').forEach((h) => {
+      const show = (ev) => {
+        const i = +h.dataset.i, o = valueOf(MODE, c, i);
+        let t = `<b>${NAMES[i]}</b><br>${c.title}: ${c.fmt(o.v)}`;
+        if (o.hi != null) t = `<b>${NAMES[i]}</b><br>${c.title}<br>하한 ${c.fmt(o.v)} · 상한 ${c.fmt(o.hi)}<br><span style="opacity:.75">하한은 판정 없는 공고를 틀림으로, 상한은 맞음으로 본 값</span>`;
+        tip(t, ev, h);
+      };
+      h.addEventListener('pointerenter', show); h.addEventListener('pointermove', show);
+      h.addEventListener('pointerleave', hideTip); h.addEventListener('focus', show); h.addEventListener('blur', hideTip);
+    });
+  });
+}
+
+function tip(html, ev, el) {
+  const t = $('tip'); t.innerHTML = html; t.hidden = false;
+  let px, py;
+  if (ev && ev.clientX != null) { px = ev.clientX; py = ev.clientY; } else { const r = el.getBoundingClientRect(); px = r.left + r.width / 2; py = r.top; }
+  const w = t.offsetWidth, hgt = t.offsetHeight;
+  t.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, px + 12)) + 'px';
+  t.style.top = Math.max(8, py - hgt - 12) + 'px';
+}
+function hideTip() { $('tip').hidden = true; }
+
+function renderHeadline() {
+  const m = DATA.modes[MODE];
+  $('headline').innerHTML = [0, 1, 2].map((i) => `
+    <div class="hl${i === 2 ? ' now' : ''}">
+      <div class="who"><span class="sw sw${i + 1}"></span>${NAMES[i]}</div>
+      <div class="big">${pct(m.metrics.ineligible_k.vals[i])}</div>
+      <div class="sub">불가 공고가 섞인 질의 <span class="num">${m.mixed[i]} / 58</span></div>
+    </div>`).join('');
+}
+
+function renderWhy() {
+  const m = DATA.modes[MODE];
+  $('why').innerHTML = [0, 1, 2].map((i) => {
+    const ent = Object.entries(m.why[i]).sort((a, b) => b[1] - a[1]);
+    const body = ent.length ? `<ul>${ent.map(([k, v]) => `<li><span>${esc(k)}</span><span class="num">${v}건</span></li>`).join('')}</ul>` : `<div class="zero">✓ 신청 불가 공고 없음</div>`;
+    return `<div class="col"><div class="who" style="display:flex;gap:8px;align-items:center;font-weight:600;font-size:14px"><span class="sw sw${i + 1}"></span>${NAMES[i]}</div>${body}</div>`;
+  }).join('');
+}
+
+function renderExample() {
+  const ex = DATA.example;
+  $('query').innerHTML = `<span class="eyebrow">질의 q001 · 제조 · ${esc(ex.applicant)}</span><span>“${esc(ex.idea)}”</span>`;
+  const col = (key, i, title) => {
+    const rows = ex.lists[key].map((r) => {
+      const b = r.why.length ? r.why.map((w) => `<span class="badge bad">✕ ${esc(w)}</span>`).join('') : '';
+      return `<li><div><span class="t">${esc(r.t)}</span><div>${b}<span class="end">${r.end ? '마감 ' + r.end : '마감일 없음(상시·예산 소진 등)'}</span></div></div></li>`;
+    }).join('');
+    const bad = ex.lists[key].filter((r) => r.why.length).length;
+    return `<div class="col"><div style="display:flex;gap:8px;align-items:center;font-weight:600;font-size:14px;flex-wrap:wrap"><span class="sw sw${i}"></span>${title}<span class="badge ${bad ? 'bad' : 'ok'}">${bad ? '신청 불가 ' + bad + '건' : '✓ 신청 불가 0건'}</span></div><ol>${rows}</ol></div>`;
+  };
+  $('ex').innerHTML = col('vector_only', 1, NAMES[0]) + col('filter_first', 3, NAMES[2]);
+}
+
+function renderTable() {
+  const m = DATA.modes[MODE].metrics;
+  const isPct = (k) => ['ineligible_k', 'p3_lo', 'p3_hi', 'unjudged3', 'unjudgedk'].includes(k);
+  const f = (k, v) => isPct(k) ? pct(v) : fx(v, 3);
+  const d = (k, a) => a ? `${isPct(k) ? (a[0]*100).toFixed(1) : a[0].toFixed(3)} [${isPct(k) ? (a[1]*100).toFixed(1) : a[1].toFixed(3)}, ${isPct(k) ? (a[2]*100).toFixed(1) : a[2].toFixed(3)}]` : '';
+  const better = { lower: '낮을수록', higher: '높을수록', info: '참고' };
+  let h = `<thead><tr><th>지표</th><th>처음</th><th>9/22</th><th>지금</th><th>지금−처음 [95%]</th><th>지금−9/22 [95%]</th><th>좋은 쪽</th></tr></thead><tbody>`;
+  for (const [k, v] of Object.entries(m)) {
+    if (k === 'returned') continue;
+    h += `<tr><td>${esc(v.label)}</td>${v.vals.map((x) => `<td class="num">${f(k, x)}</td>`).join('')}<td class="num">${d(k, v.d_vec)}${isPct(k) ? '%p' : ''}</td><td class="num">${d(k, v.d_old)}${isPct(k) ? '%p' : ''}</td><td>${better[v.better]}</td></tr>`;
+  }
+  const mx = DATA.modes[MODE].mixed;
+  h += `<tr><td>불가 섞인 질의</td>${mx.map((x) => `<td class="num">${x} / 58</td>`).join('')}<td></td><td></td><td>낮을수록</td></tr></tbody>`;
+  $('tbl').innerHTML = h;
+}
+
+function renderMeta() {
+  const mt = DATA.meta;
+  $('meta').innerHTML = [
+    ['기준일', mt.as_of], ['질의', mt.queries + '개'], ['공고', mt.corpus_notices.toLocaleString() + '건'],
+    ['추천 수', '상위 ' + mt.k + '건'], ['정답 판정', mt.qrels_pairs.toLocaleString() + '쌍'], ['평가일', mt.run_at.slice(0, 10)],
+  ].map(([a, b]) => `<span>${a} <b class="num">${esc(b)}</b></span>`).join('');
+}
+
+function renderAll() { renderHeadline(); renderCharts(); renderWhy(); renderTable(); }
+document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => {
+  MODE = b.dataset.mode;
+  document.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  try { localStorage.setItem('mode', MODE); } catch (e) {}
+  renderAll();
+}));
+document.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.mode === MODE)));
+renderMeta(); renderExample(); renderAll();
+let lastW = $('charts').clientWidth, rz;
+window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { const w = $('charts').clientWidth; if (w !== lastW) { lastW = w; renderCharts(); } }, 150); });
+</script>

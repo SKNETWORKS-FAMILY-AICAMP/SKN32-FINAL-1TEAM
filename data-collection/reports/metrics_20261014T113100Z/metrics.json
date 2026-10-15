@@ -1,0 +1,1052 @@
+{
+ "run_at": "2026-10-14T20:33:14+09:00",
+ "conditions": [
+  "공용 DB 조회만(쓰기 없음)",
+  "OpenAI 호출 0",
+  "서버는 읽기만(배치 기록 복사, 추천 요청)",
+  "배치 기록: 이 PC 복사본(sbrain-web), sbrain-web 서버",
+  "판정 기반 수치는 사람·AI 판정을 함께 쓴다(AI 참고 정답 표시)"
+ ],
+ "metrics": [
+  {
+   "area": "1",
+   "name": "누적 공고 수",
+   "value": 3016,
+   "unit": "count",
+   "target": "참고",
+   "detail": "기업마당 2,426, K-Startup 590",
+   "plain": "DB에 쌓인 지원사업 공고 수. 매일 새 공고를 더하고 지우지 않는다.",
+   "source": "공용 DB notices",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "1",
+   "name": "지금 모집 중인 공고 수",
+   "value": 1737,
+   "unit": "count",
+   "target": "참고",
+   "detail": "K-Startup 210 · 기업마당 1,527",
+   "plain": "모집이 끝나지 않았고 마감일도 지나지 않은 공고 수. 추천 대상이 되는 공고다.",
+   "source": "공용 DB notices(모집 종료 아님·마감일 안 지남)",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "1",
+   "name": "하루 평균 신규 공고",
+   "value": 62,
+   "unit": "count",
+   "target": "참고",
+   "detail": "새 공고가 들어온 날 15일 평균 · 최근: 10-07 60, 10-08 36, 10-09 47, 10-13 63, 10-14 45",
+   "plain": "새 공고가 들어온 날 하루에 들어온 공고 수의 평균(최근 30일).",
+   "source": "공용 DB notices.created_at(한국 날짜, 최근 30일)",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "1",
+   "name": "배치 성공률(전체 기간)",
+   "value": 1.0,
+   "unit": "ratio",
+   "target": "1.00",
+   "detail": "27/27회 성공 · 2026-09-14~2026-10-14",
+   "plain": "매일 수집 배치가 오류 없이 끝난 비율(첫 배치부터).",
+   "source": "배치 기록 collect_log(이 PC 복사본(sbrain-web), sbrain-web 서버)",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "1",
+   "name": "배치 가동일 비율(전체 기간)",
+   "value": 0.7419354838709677,
+   "unit": "ratio",
+   "target": "1.00",
+   "detail": "23일/31일 (2026-09-14~2026-10-14) · 서버 이전 전에는 PC가 꺼진 날 돌지 않았다",
+   "plain": "첫 배치부터 지금까지 배치가 실제로 돈 날의 비율. 서버 이전 전에는 PC가 꺼진 날 돌지 않았다.",
+   "source": "배치 기록 collect_log(이 PC 복사본(sbrain-web), sbrain-web 서버)",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "1",
+   "name": "배치 성공률(서버 이전 뒤)",
+   "value": 1.0,
+   "unit": "ratio",
+   "target": "1.00",
+   "detail": "13/13회 성공 · 2026-10-02~2026-10-14",
+   "plain": "배치를 서버로 옮긴 10/2부터 오류 없이 끝난 비율.",
+   "source": "배치 기록 collect_log(이 PC 복사본(sbrain-web), sbrain-web 서버)",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "1",
+   "name": "배치 가동일 비율(서버 이전 뒤)",
+   "value": 1.0,
+   "unit": "ratio",
+   "target": "1.00",
+   "detail": "13일/13일 (2026-10-02~2026-10-14)",
+   "plain": "서버로 옮긴 10/2부터 배치가 실제로 돈 날의 비율.",
+   "source": "배치 기록 collect_log(이 PC 복사본(sbrain-web), sbrain-web 서버)",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "1",
+   "name": "배치 소요 시간(서버 이전 뒤, 중앙값)",
+   "value": 6.6,
+   "unit": "min",
+   "target": "참고",
+   "detail": "최근 0.7, 0.8, 0.7, 8.4, 8.2분",
+   "plain": "하루 배치(수집→정규화→저장→첨부→임베딩→AI 판정)가 끝나는 데 걸린 시간.",
+   "source": "배치 기록 collect_log(이 PC 복사본(sbrain-web), sbrain-web 서버)",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "1",
+   "name": "K-Startup 목록 완전 수집률",
+   "value": 1.0,
+   "unit": "ratio",
+   "target": "1.00",
+   "detail": "40/40회 받은 수 = 서버 보고 수",
+   "plain": "받은 공고 수가 API가 알려 준 총 수와 정확히 같았던 실행의 비율.",
+   "source": "배치 기록 collect_log(이 PC 복사본(sbrain-web), sbrain-web 서버)",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "2",
+   "name": "정규화 거부율(최근 저장)",
+   "value": 0.0,
+   "unit": "ratio",
+   "target": "0",
+   "detail": "0/1,655건 거부",
+   "plain": "두 출처를 공통 형식으로 바꿀 때 필수값이 없어 버린 공고의 비율.",
+   "source": "공용 DB import_runs(최근 저장)",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "2",
+   "name": "접수기간 해석률",
+   "value": 0.9777851458885941,
+   "unit": "ratio",
+   "target": "참고",
+   "detail": "예산 소진 698, 기간 고정 1,992, 상시 155, 모름 67, 선착순 104",
+   "plain": "접수기간 원문을 고정·예산 소진·상시·선착순으로 분류해 낸 비율.",
+   "source": "공용 DB notices.apply_period_type",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "2",
+   "name": "마감일 확보율",
+   "value": 0.6604774535809018,
+   "unit": "ratio",
+   "target": "참고",
+   "detail": "없는 공고는 예산 소진·상시·선착순·정보 없음",
+   "plain": "마감일(날짜)이 있는 공고의 비율. 나머지는 원래 날짜가 없는 공고(예산 소진 등)가 대부분이다.",
+   "source": "공용 DB notices.apply_end",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "2",
+   "name": "첨부 공고문 본문 추출 성공률",
+   "value": 0.9183841714756801,
+   "unit": "ratio",
+   "target": "참고",
+   "detail": "그림만 있음 192, 성공 2,228, 읽기 오류 6",
+   "plain": "첨부 공고문(PDF·HWP 등)에서 글자를 뽑아낸 비율. 이미지 스캔본은 글자가 없다.",
+   "source": "공용 DB attachment_texts(활성 첨부)",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "2",
+   "name": "임베딩 적용률",
+   "value": 1.0,
+   "unit": "ratio",
+   "target": "1.00",
+   "detail": "BGE-M3 1024차원",
+   "plain": "의미 검색용 벡터가 만들어진 공고의 비율.",
+   "source": "공용 DB notices.embedding",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "3",
+   "name": "판정표 적용 범위: 자격요건(금액·형태·업력)",
+   "value": 1.0,
+   "unit": "ratio",
+   "target": "1.00",
+   "detail": "2,228/2,228 (본문 있는 공고 대비)",
+   "plain": "AI가 지원금·사업자 형태·업력을 뽑아 둔 공고의 비율(본문 있는 공고 기준).",
+   "source": "공용 DB notice_conditions",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "3",
+   "name": "판정표 적용 범위: 신청자 유형",
+   "value": 1.0,
+   "unit": "ratio",
+   "target": "1.00",
+   "detail": "3,016/3,016 (전체 공고 대비)",
+   "plain": "AI가 예비창업자·개인사업자·법인 신청 가능 여부를 판정해 둔 공고의 비율.",
+   "source": "공용 DB notice_applicant_types",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "3",
+   "name": "판정표 적용 범위: 업종",
+   "value": 1.0,
+   "unit": "ratio",
+   "target": "1.00",
+   "detail": "3,016/3,016 (전체 공고 대비)",
+   "plain": "AI가 신청 가능 업종을 판정해 둔 공고의 비율.",
+   "source": "공용 DB notice_industries",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "3",
+   "name": "판정표 적용 범위: 가점(열린 기업마당 공고)",
+   "value": 0.9129011132940406,
+   "unit": "ratio",
+   "target": "참고",
+   "detail": "1,394/1,527 (첨부·가점 말이 없는 공고는 읽을 것이 없어 빠질 수 있다)",
+   "plain": "AI가 가점·가산점 항목을 읽어 둔 열린 기업마당 공고의 비율. K-Startup은 첨부를 못 받아 빠진다.",
+   "source": "공용 DB notice_bonus",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "3",
+   "name": "신청자 유형 판정 지문 신선도",
+   "value": 1.0,
+   "unit": "ratio",
+   "target": "1.00",
+   "detail": "지문 다름 0 · 발췌 밖 확인 필요 4 · 3.8초",
+   "plain": "판정이 지금 공고문과 같은 글을 보고 내린 것인지(지문 일치) 확인한 비율.",
+   "source": "판정표 읽기(applicant_types)",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "3",
+   "name": "예비창업자 \"명시 불가\" 판정 정밀도",
+   "value": 1.0,
+   "unit": "ratio",
+   "target": "1.00 (잘못 빼면 안 됨)",
+   "detail": "30/30 · 신청 가능한 공고를 뺄 오류 0건 (Codex 블라인드, AI 참고 정답)",
+   "plain": "\"예비창업자 불가\"로 판정해 추천에서 뺀 공고가 실제로도 불가인 비율. 틀리면 신청 가능한 공고를 잃는다.",
+   "source": "reports/label_pack_20260928/score.json",
+   "kind": "record",
+   "measured_at": "2026-09-28"
+  },
+  {
+   "area": "3",
+   "name": "신청자 유형 판정 일치율(예비창업자)",
+   "value": 0.796,
+   "unit": "ratio",
+   "target": "참고",
+   "detail": "예비창업자 74/93 · 개인사업자 88/93 · 법인 89/93 (AI 참고 정답)",
+   "plain": "신청자 유형 판정이 별도 블라인드 판정과 같은 비율.",
+   "source": "reports/label_pack_20260928/score.json",
+   "kind": "record",
+   "measured_at": "2026-09-28"
+  },
+  {
+   "area": "3",
+   "name": "업종 순위의 부당 밀림(공고)",
+   "value": 0.3235294117647059,
+   "unit": "ratio",
+   "target": "낮을수록 · 서비스 꺼짐",
+   "detail": "11/34 공고 — 그래서 업종 순위는 기본 꺼짐 (AI 참고 정답)",
+   "plain": "업종 신호로 뒤로 밀린 공고 중 밀리면 안 됐던 공고의 비율. 높아서 이 기능은 꺼 두었다.",
+   "source": "reports/label_pack_20260928/score.json",
+   "kind": "record",
+   "measured_at": "2026-09-28"
+  },
+  {
+   "area": "4",
+   "name": "신청 불가@10",
+   "value": 0.0,
+   "unit": "ratio",
+   "target": "0",
+   "detail": "처음(벡터만) 0.247 → 지금 서비스 0.000 · 차이 -0.247 [-0.291, -0.203] · 9/28 평가: 0.243 → 0.000",
+   "plain": "추천 상위 10건 중 마감·업력·신청자 유형 때문에 확실히 신청할 수 없는 공고의 비율.",
+   "source": "filter_first_now_20261014T113101Z · 질의 58 · 판정 1617쌍 · 모집 상태는 2026-09-15 당시로 맞춤(되돌린 공고 142건) · 9/28 기준 filter_first_eval_20260928T104212Z",
+   "kind": "live",
+   "measured_at": "2026-10-14",
+   "compare": {
+    "before": 0.24655172413793106,
+    "after": 0.0,
+    "label_before": "처음(벡터만)",
+    "label_after": "지금 서비스",
+    "reference": {
+     "label": "9/28 평가",
+     "before": 0.24310344827586206,
+     "after": 0.0
+    }
+   }
+  },
+  {
+   "area": "4",
+   "name": "P@3(2) 하한",
+   "value": 0.6149425287356322,
+   "unit": "ratio",
+   "target": "높을수록",
+   "detail": "처음(벡터만) 0.494 → 지금 서비스 0.615 · 차이 +0.121 [+0.034, +0.207] · 9/28 평가: 0.494 → 0.621",
+   "plain": "추천 상위 3건 중 \"딱 맞는 공고\"의 비율. 판정이 없는 칸은 틀린 것으로 센 보수적인 값.",
+   "source": "filter_first_now_20261014T113101Z · 질의 58 · 판정 1617쌍 · 모집 상태는 2026-09-15 당시로 맞춤(되돌린 공고 142건) · 9/28 기준 filter_first_eval_20260928T104212Z",
+   "kind": "live",
+   "measured_at": "2026-10-14",
+   "compare": {
+    "before": 0.49425287356321834,
+    "after": 0.6149425287356322,
+    "label_before": "처음(벡터만)",
+    "label_after": "지금 서비스",
+    "reference": {
+     "label": "9/28 평가",
+     "before": 0.49425287356321834,
+     "after": 0.6206896551724138
+    }
+   }
+  },
+  {
+   "area": "4",
+   "name": "P@3(2) 상한",
+   "value": 0.7413793103448276,
+   "unit": "ratio",
+   "target": "높을수록",
+   "detail": "처음(벡터만) 0.609 → 지금 서비스 0.741 · 차이 +0.132 [+0.052, +0.213] · 9/28 평가: 0.609 → 0.747",
+   "plain": "같은 지표에서 판정이 없는 칸을 맞은 것으로 센 값. 실제 값은 하한과 상한 사이다.",
+   "source": "filter_first_now_20261014T113101Z · 질의 58 · 판정 1617쌍 · 모집 상태는 2026-09-15 당시로 맞춤(되돌린 공고 142건) · 9/28 기준 filter_first_eval_20260928T104212Z",
+   "kind": "live",
+   "measured_at": "2026-10-14",
+   "compare": {
+    "before": 0.6091954022988506,
+    "after": 0.7413793103448276,
+    "label_before": "처음(벡터만)",
+    "label_after": "지금 서비스",
+    "reference": {
+     "label": "9/28 평가",
+     "before": 0.6091954022988506,
+     "after": 0.7471264367816093
+    }
+   }
+  },
+  {
+   "area": "4",
+   "name": "nDCG@10(판정분)",
+   "value": 0.5910001064459877,
+   "unit": "score",
+   "target": "높을수록",
+   "detail": "처음(벡터만) 0.597 → 지금 서비스 0.591 · 차이 -0.006 [-0.048, +0.039] · 9/28 평가: 0.598 → 0.597",
+   "plain": "상위 10건의 순서까지 반영한 점수(0~1). 판정된 공고만으로 계산했다.",
+   "source": "filter_first_now_20261014T113101Z · 질의 58 · 판정 1617쌍 · 모집 상태는 2026-09-15 당시로 맞춤(되돌린 공고 142건) · 9/28 기준 filter_first_eval_20260928T104212Z",
+   "kind": "live",
+   "measured_at": "2026-10-14",
+   "compare": {
+    "before": 0.596707845937824,
+    "after": 0.5910001064459877,
+    "label_before": "처음(벡터만)",
+    "label_after": "지금 서비스",
+    "reference": {
+     "label": "9/28 평가",
+     "before": 0.5984007518683389,
+     "after": 0.5974783627774564
+    }
+   }
+  },
+  {
+   "area": "4",
+   "name": "쓸모@3 하한",
+   "value": 1.8448275862068966,
+   "unit": "count",
+   "target": "높을수록",
+   "detail": "처음(벡터만) 1.069 → 지금 서비스 1.845 · 차이 +0.776 [+0.517, +1.017] · 9/28 평가: 1.103 → 1.862",
+   "plain": "상위 3건 중 \"내용이 맞고 신청도 가능한\" 공고 수(최대 3).",
+   "source": "filter_first_now_20261014T113101Z · 질의 58 · 판정 1617쌍 · 모집 상태는 2026-09-15 당시로 맞춤(되돌린 공고 142건) · 9/28 기준 filter_first_eval_20260928T104212Z",
+   "kind": "live",
+   "measured_at": "2026-10-14",
+   "compare": {
+    "before": 1.0689655172413792,
+    "after": 1.8448275862068966,
+    "label_before": "처음(벡터만)",
+    "label_after": "지금 서비스",
+    "reference": {
+     "label": "9/28 평가",
+     "before": 1.103448275862069,
+     "after": 1.8620689655172413
+    }
+   }
+  },
+  {
+   "area": "4",
+   "name": "상위 10 미판정 비율",
+   "value": 0.3241379310344828,
+   "unit": "ratio",
+   "target": "낮을수록",
+   "detail": "처음(벡터만) 0.160 → 지금 서비스 0.324 · 차이 +0.164 [+0.107, +0.219] · 9/28 평가: 0.155 → 0.321",
+   "plain": "추천 상위 10건 중 아직 사람·AI 판정이 없는 칸의 비율. 높으면 정확도 숫자를 덜 믿어야 한다.",
+   "source": "filter_first_now_20261014T113101Z · 질의 58 · 판정 1617쌍 · 모집 상태는 2026-09-15 당시로 맞춤(되돌린 공고 142건) · 9/28 기준 filter_first_eval_20260928T104212Z",
+   "kind": "live",
+   "measured_at": "2026-10-14",
+   "compare": {
+    "before": 0.1603448275862069,
+    "after": 0.3241379310344828,
+    "label_before": "처음(벡터만)",
+    "label_after": "지금 서비스",
+    "reference": {
+     "label": "9/28 평가",
+     "before": 0.15517241379310345,
+     "after": 0.3206896551724138
+    }
+   }
+  },
+  {
+   "area": "5",
+   "name": "추천 필터 ↔ 자격 판정 결론 다름",
+   "value": 0,
+   "unit": "count",
+   "target": "0",
+   "detail": "17,826회 비교(공고 × 가짜 신청자 6가지)",
+   "plain": "추천에서 빼는 규칙과 조율 쪽 자격 판정이 같은 공고에 다른 결론을 낸 횟수. 0이어야 한다.",
+   "source": "reports/entity_block_after_20261013T031546Z",
+   "kind": "record",
+   "measured_at": "2026-10-13"
+  },
+  {
+   "area": "5",
+   "name": "개인사업자 \"강한 불가\" 공고가 상위 20에 뜬 질의",
+   "value": 0,
+   "unit": "count",
+   "target": "0",
+   "detail": "평가 질의 58개 · 상위 20: 7 → 0 · 상위 10: 1 → 0 (차단 전 → 후)",
+   "plain": "개인사업자에게 \"개인사업자 불가\"가 확실한 공고가 추천 상위 20에 뜬 평가 질의 수.",
+   "source": "reports/entity_block_probe_20261013T030233Z · entity_block_after_20261013T031546Z",
+   "kind": "record",
+   "measured_at": "2026-10-13",
+   "compare": {
+    "before": 7,
+    "after": 0,
+    "label_before": "차단 전",
+    "label_after": "차단 후"
+   }
+  },
+  {
+   "area": "5",
+   "name": "법인 \"강한 불가\" 공고가 상위 20에 뜬 질의",
+   "value": 1,
+   "unit": "count",
+   "target": "0",
+   "detail": "평가 질의 58개 · 상위 20: 2 → 1 · 상위 10: 1 → 1 (차단 전 → 후)",
+   "plain": "법인에게 \"법인 불가\"가 확실한 공고가 추천 상위 20에 뜬 평가 질의 수.",
+   "source": "reports/entity_block_probe_20261013T030233Z · entity_block_after_20261013T031546Z",
+   "kind": "record",
+   "measured_at": "2026-10-13",
+   "compare": {
+    "before": 2,
+    "after": 1,
+    "label_before": "차단 전",
+    "label_after": "차단 후"
+   }
+  },
+  {
+   "area": "6",
+   "name": "열린 공고 중 가점 언급 공고",
+   "value": 323,
+   "unit": "count",
+   "target": "참고",
+   "detail": "열린 공고 1,737건 중",
+   "plain": "지금 모집 중인 공고 가운데 AI가 가점·가산점 항목을 찾아 둔 공고 수.",
+   "source": "공용 DB notice_bonus(status=found)",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "6",
+   "name": "원문 대조를 마친 가산점 공고",
+   "value": 30,
+   "unit": "count",
+   "target": "참고",
+   "detail": "목록 갱신 2026-10-13",
+   "plain": "가산점 계산이 공고 원문과 맞는지 사람이 직접 대조해 목록에 올린 공고 수. 이 공고만 화면·순위에 쓴다.",
+   "source": "search/bonus_reviewed.json",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "6",
+   "name": "가산점 순위 반영 세기",
+   "value": 0.2,
+   "unit": "score",
+   "target": "참고",
+   "detail": "원문 대조를 마친 공고에만 적용(결정 0017)",
+   "plain": "원문 대조를 마친 공고의 가산점을 추천 순위에 얼마나 반영하는지(0~1, 지금 0.2).",
+   "source": "search/app.py 기본값",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "6",
+   "name": "신청자별 가산점이 나오는 공고",
+   "value": 29,
+   "unit": "count",
+   "target": "참고",
+   "detail": "열린 공고 1,730건 중 · 가상 신청자별: 속성 없음 0건, 여성 · 서울 0건, 여성기업 · 벤처기업 · 경기 성남시 20건, 남성 · 장애인기업 · 이노비즈 · 전남광주 19건",
+   "plain": "신청자 입력으로 가산점이 계산되는 열린 공고 수.",
+   "source": "reports/bonus_boostable_20261013T022836Z",
+   "kind": "record",
+   "measured_at": "2026-10-13"
+  },
+  {
+   "area": "6",
+   "name": "K-Startup 모집 중 공고(가산점 늘 비어 있음)",
+   "value": 210,
+   "unit": "count",
+   "target": "참고",
+   "detail": "첨부 공고문 URL 제공을 창업진흥원이 거절(10/14) — 대신할 길 없음",
+   "plain": "K-Startup은 첨부 공고문을 받을 수 없어(제공 거절) 가산점을 계산할 수 없는 공고 수.",
+   "source": "공용 DB notices",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "7",
+   "name": "제공 HTTP 창구 수",
+   "value": 4,
+   "unit": "count",
+   "target": "참고",
+   "detail": "GET /api/collection_status · POST /api/match · GET /api/notices/{notice_id} · POST /api/notices/{notice_id}/eligibility",
+   "plain": "조율 에이전트가 부르는 공고 서버 창구(추천·수집 상태·공고 상세·자격 판정) 수.",
+   "source": "docs/contracts.md",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "7",
+   "name": "연결 계약 시험 통과",
+   "value": 16,
+   "unit": "count",
+   "target": "16",
+   "detail": "조율 쪽 실제 코드로 공고 서버 호출 · 가짜 신청자 4명",
+   "plain": "조율 쪽 실제 코드로 공고 서버를 불러 약속한 응답 형식을 지키는지 본 시험의 통과 수.",
+   "source": "reports/notice_api_contract_20261013T032549Z",
+   "kind": "record",
+   "measured_at": "2026-10-13"
+  },
+  {
+   "area": "7",
+   "name": "자격 판정 응답 형식 오류",
+   "value": 0,
+   "unit": "count",
+   "target": "0",
+   "detail": "2,971건 검사(모든 공고) · 통과 2,690",
+   "plain": "모든 공고에 자격 판정을 요청했을 때 약속과 다른 형식으로 답한 수. 0이어야 한다.",
+   "source": "reports/notice_api_contract_20261013T032549Z",
+   "kind": "record",
+   "measured_at": "2026-10-13"
+  },
+  {
+   "area": "7",
+   "name": "공고 상세 응답 형식 오류",
+   "value": 0,
+   "unit": "count",
+   "target": "0",
+   "detail": "2,765건 검사(모든 공고) · 이 PC(공고 서버 코드를 직접 불러 확인)",
+   "plain": "모든 공고의 상세 정보를 요청했을 때 약속과 다른 형식으로 답한 수. 0이어야 한다.",
+   "source": "docs/WORKLOG.md (2026-10-06 공고 서버 API 02 — 공고 상세·자격 판정 창구 항목: \"공고 상세 2,765건 형식 오류 0\")",
+   "kind": "record",
+   "measured_at": "2026-10-06"
+  },
+  {
+   "area": "8",
+   "name": "추천 응답 시간(이 PC, 중앙값)",
+   "value": 242.2,
+   "unit": "ms",
+   "target": "참고",
+   "detail": "p95 270ms · 최대 287ms · 질의 58개 · 공고 3016건 · 첫 조회 10건",
+   "plain": "추천 요청 하나에 답하는 데 걸린 시간. 이 PC 안에서 잼(9/30과 같은 조건).",
+   "source": "이 PC 공고 서버 /api/match (이 도구가 잠시 켬)",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "8",
+   "name": "추천 응답 시간(실제 서버, 중앙값)",
+   "value": 414.4,
+   "unit": "ms",
+   "target": "참고",
+   "detail": "p95 490ms · 최대 501ms · 질의 58개 · 공고 3016건 · 이 PC에서 인터넷을 거쳐 잼",
+   "plain": "팀원이 실제로 부르는 서버에 추천을 요청해 답을 받기까지 걸린 시간(인터넷 포함 — 실제로 기다리는 시간).",
+   "source": "공개 시험 서버 /api/match",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "8",
+   "name": "공고 서버 켜는 시간(시험용 새 서버)",
+   "value": 28,
+   "unit": "sec",
+   "target": "참고",
+   "detail": "시험용 새 서버(배치와 공고 서버를 한 대에, 메모리 4GB)",
+   "plain": "공고 서버가 켜져서 답할 준비가 될 때까지 걸린 시간.",
+   "source": "docs/WORKLOG.md (2026-10-12 배치 + 공고 서버 한 서버(4GB) 항목: \"공고 서버 28초 1.12GB\")",
+   "kind": "record",
+   "measured_at": "2026-10-12"
+  },
+  {
+   "area": "8",
+   "name": "공고 서버 메모리(시험용 새 서버)",
+   "value": 1147,
+   "unit": "mb",
+   "target": "참고",
+   "detail": "시험용 새 서버(배치와 공고 서버를 한 대에, 메모리 4GB)",
+   "plain": "공고 서버가 켜진 뒤 차지하는 메모리.",
+   "source": "docs/WORKLOG.md (2026-10-12 배치 + 공고 서버 한 서버(4GB) 항목: \"공고 서버 28초 1.12GB\" (1.12GB = 약 1,147MB))",
+   "kind": "record",
+   "measured_at": "2026-10-12"
+  },
+  {
+   "area": "8",
+   "name": "배치 중 서버 최대 메모리(시험용 새 서버)",
+   "value": 1767,
+   "unit": "mb",
+   "target": "참고",
+   "detail": "시험용 새 서버(배치와 공고 서버를 한 대에, 메모리 4GB)",
+   "plain": "매일 배치가 도는 동안 서버 메모리를 가장 많이 쓴 순간의 양. 4GB 서버에 들어가는지 보는 값.",
+   "source": "docs/WORKLOG.md (2026-10-12 배치 + 공고 서버 한 서버(4GB) 항목: \"서버 메모리 최대 1,767MB\")",
+   "kind": "record",
+   "measured_at": "2026-10-12"
+  },
+  {
+   "area": "8",
+   "name": "임베딩 공고 1건(CPU→GPU)",
+   "value": 21.2,
+   "unit": "ms",
+   "target": "참고",
+   "detail": "CPU 408.4 → GPU 21.2 · 집 PC Ryzen 5 5600X ↔ RTX 3060(같은 결과 벡터)",
+   "plain": "공고 글 하나를 검색용 벡터로 바꾸는 시간. 집 PC의 CPU와 GPU로 같은 공고 300건을 잼.",
+   "source": "reports/embedding_cpu_gpu_20261014T082732Z",
+   "kind": "record",
+   "measured_at": "2026-10-14",
+   "compare": {
+    "before": 408.4,
+    "after": 21.2,
+    "label_before": "CPU",
+    "label_after": "GPU"
+   }
+  },
+  {
+   "area": "8",
+   "name": "임베딩 검색어 1건(CPU→GPU)",
+   "value": 21.7,
+   "unit": "ms",
+   "target": "참고",
+   "detail": "CPU 178.5 → GPU 21.7 · 집 PC Ryzen 5 5600X ↔ RTX 3060(같은 결과 벡터)",
+   "plain": "검색어 하나를 벡터로 바꾸는 시간(추천 요청마다 한 번).",
+   "source": "reports/embedding_cpu_gpu_20261014T082732Z",
+   "kind": "record",
+   "measured_at": "2026-10-14",
+   "compare": {
+    "before": 178.5,
+    "after": 21.7,
+    "label_before": "CPU",
+    "label_after": "GPU"
+   }
+  },
+  {
+   "area": "8",
+   "name": "임베딩 전체 다시 만들기(CPU→GPU)",
+   "value": 1.07,
+   "unit": "min",
+   "target": "참고",
+   "detail": "CPU 20.53 → GPU 1.07 · 집 PC Ryzen 5 5600X ↔ RTX 3060(같은 결과 벡터)",
+   "plain": "모든 공고의 벡터를 처음부터 다시 만들 때 걸리는 시간(환산).",
+   "source": "reports/embedding_cpu_gpu_20261014T082732Z",
+   "kind": "record",
+   "measured_at": "2026-10-14",
+   "compare": {
+    "before": 20.53,
+    "after": 1.07,
+    "label_before": "CPU",
+    "label_after": "GPU"
+   }
+  },
+  {
+   "area": "9",
+   "name": "하루 AI 비용",
+   "value": 0.033,
+   "unit": "usd",
+   "target": "참고",
+   "detail": "10-10 $0.000, 10-11 $0.000, 10-12 $0.000, 10-13 $0.082, 10-14 $0.083 · 자격요건 추출 비용은 기록에 금액이 없어 빠짐",
+   "plain": "매일 새 공고를 AI로 판정하는 데 든 비용(최근 배치 평균).",
+   "source": "배치 기록 run.log \"약 $\"(최근 5일)",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "9",
+   "name": "서버 요금 참고: 지금 서버(t3.medium, 시간당)",
+   "value": 0.052,
+   "unit": "usd",
+   "target": "참고",
+   "detail": "AWS 서울 리전 온디맨드, 제3자 가격표",
+   "plain": "지금 쓰는 CPU 서버의 시간당 요금(참고).",
+   "source": "reports/embedding_cpu_gpu_20261014T082732Z/README.md (\"t3.medium 시간당 약 $0.052(월 약 $38)\")",
+   "kind": "record",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "9",
+   "name": "서버 요금 참고: GPU 서버(g4dn.xlarge, 시간당)",
+   "value": 0.647,
+   "unit": "usd",
+   "target": "참고",
+   "detail": "AWS 서울 리전 온디맨드, 제3자 가격표",
+   "plain": "GPU가 달린 서버의 시간당 요금(참고). 지금 서버의 약 12배.",
+   "source": "reports/embedding_cpu_gpu_20261014T082732Z/README.md (\"g4dn.xlarge(T4 16GB, 메모리 16GB) 시간당 약 $0.647(월 약 $472)\")",
+   "kind": "record",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "10",
+   "name": "자동 테스트 수",
+   "value": 1059,
+   "unit": "count",
+   "target": "모두 통과",
+   "detail": "통과 · OK (skipped=16)",
+   "plain": "코드가 바뀔 때마다 돌리는 자동 시험의 수.",
+   "source": "unittest discover -s tests",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "10",
+   "name": "AI 교차 검수 결과 문서 수",
+   "value": 44,
+   "unit": "count",
+   "target": "참고",
+   "detail": "검수 폴더 36 · 조율 창구·가산점 검수 8 (요청·답변 문서 제외)",
+   "plain": "다른 AI(Codex)가 독립적으로 검수·판정한 결과 문서 수. 구현(Claude)과 검수(Codex)를 나눴다.",
+   "source": "docs/reviews/*/ · docs/notice_api/CODEX_*",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "10",
+   "name": "결정 기록 수",
+   "value": 21,
+   "unit": "count",
+   "target": "참고",
+   "detail": "",
+   "plain": "왜 그렇게 정했는지 남긴 설계 결정 문서 수.",
+   "source": "docs/tracking/decisions/",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "11",
+   "name": "판정자 일치율: LLM(gpt-4.1-mini) vs 사람",
+   "value": 0.6433566433566433,
+   "unit": "ratio",
+   "target": "≥0.70",
+   "detail": "가중 카파 0.62 (기준 ≥0.60) · 0↔2 뒤바뀜 7.0% (기준 ≤3%) · n=143",
+   "plain": "관련도 판정을 LLM에 맡겼을 때 사람 판정과 같은 비율. 기준(0.70)에 못 미친다.",
+   "source": "reports/jev_judge_probe_20260928T110603Z",
+   "kind": "record",
+   "measured_at": "2026-09-28"
+  },
+  {
+   "area": "11",
+   "name": "판정자 일치율: Jev vs 사람",
+   "value": 0.5244755244755245,
+   "unit": "ratio",
+   "target": "≥0.70",
+   "detail": "가중 카파 0.47 (기준 ≥0.60) · 0↔2 뒤바뀜 7.7% (기준 ≤3%) · n=143",
+   "plain": "평가 전용 모델 Jev의 판정이 사람 판정과 같은 비율.",
+   "source": "reports/jev_judge_probe_20260928T110603Z",
+   "kind": "record",
+   "measured_at": "2026-09-28"
+  },
+  {
+   "area": "11",
+   "name": "평가 질의 수",
+   "value": 58,
+   "unit": "count",
+   "target": "참고",
+   "detail": "정답 판정 1,617쌍(사람·AI 판정 섞임, AI 참고 정답 포함)",
+   "plain": "추천 정확도 평가에 쓴 질문 수. 많지 않아 숫자가 흔들릴 수 있다.",
+   "source": "eval/queries.jsonl · eval/qrels.jsonl",
+   "kind": "live",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "11",
+   "name": "약점: 신청 불가 0%의 뜻",
+   "value": "같은 규칙으로 거른 결과",
+   "unit": "text",
+   "target": "참고",
+   "detail": "",
+   "plain": "지금 서비스의 신청 불가 0%는 서비스가 추천 전에 같은 규칙으로 걸러 낸 결과다. \"확실히 신청할 수 없는 공고를 추천에서 모두 뺀다\"는 뜻이지, 판정이 틀릴 일이 없다는 뜻은 아니다.",
+   "source": "docs/business-rules.md · eval/filter_first_eval.py",
+   "kind": "record",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "11",
+   "name": "약점: K-Startup 첨부 미수집",
+   "value": "K-Startup 가산점·첨부 정보 없음",
+   "unit": "text",
+   "target": "참고",
+   "detail": "",
+   "plain": "K-Startup은 첨부 공고문 자동 수집이 금지(robots.txt)되고 URL 제공도 거절되어, K-Startup 공고는 가산점과 첨부 기반 정보가 늘 비어 있다.",
+   "source": "docs/tracking/status.md \"막힌 것\"",
+   "kind": "record",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "11",
+   "name": "약점: 업종 순위 꺼짐",
+   "value": "업종 신호는 순위에 안 씀",
+   "unit": "text",
+   "target": "참고",
+   "detail": "",
+   "plain": "업종 판정으로 순위를 조정하면 밀리면 안 될 공고가 밀려(3. AI 판정의 부당 밀림) 기본으로 꺼 두었다.",
+   "source": "docs/tracking/status.md \"만들었지만 완성 아님\"",
+   "kind": "record",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "11",
+   "name": "약점: 매일 09:00~09:20 \"지연\"",
+   "value": "서버 이전 전까지 매일 약 20분",
+   "unit": "text",
+   "target": "참고",
+   "detail": "",
+   "plain": "시험 서버는 09:00 배치 뒤 09:20에 다시 켜져, 그 사이 수집 상태가 \"지연\"으로 나오고 조율 쪽 추천이 0건이 된다(서버 이전 뒤 새벽 순서로 바뀌면 사라짐).",
+   "source": "docs/tracking/findings.md",
+   "kind": "record",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "11",
+   "name": "약점: 하루 AI 비용에서 빠진 것",
+   "value": "자격요건 추출 비용",
+   "unit": "text",
+   "target": "참고",
+   "detail": "",
+   "plain": "배치 기록에 자격요건 추출 금액이 남지 않아 하루 AI 비용에서 빠져 있다.",
+   "source": "배치 기록 run.log",
+   "kind": "record",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "11",
+   "name": "약점: 다시 잰 정확도가 9/28보다 낮음",
+   "value": "상위 3건 적합 62.1% → 61.5%",
+   "unit": "text",
+   "target": "참고",
+   "detail": "",
+   "plain": "같은 질문·같은 정답·같은 기준일로 지금 서비스를 다시 재니 9/28보다 낮게 나왔다. 그대로 적는다. 원인은 4. 추천 정확도의 다시 재기 결과 폴더 설명을 본다.",
+   "source": "reports/filter_first_now_20261014T113101Z/README.md",
+   "kind": "record",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "11",
+   "name": "약점: 평가 시점 어긋남",
+   "value": "오늘 모집 상태로 재면 상위 3건 적합 57.5%",
+   "unit": "text",
+   "target": "참고",
+   "detail": "",
+   "plain": "평가는 9/15 기준인데 공고의 \"모집 중/마감\" 표시는 오늘 값이라, 그대로 재면 그 뒤 마감된 공고가 신청 불가로 빠져 숫자가 낮아진다. 시계는 9/15로 돌려 놓고 가게 팻말만 오늘 것을 건 셈이라, 한눈에 보기는 9/15 당시 모집 상태로 맞춘 값을 쓴다.",
+   "source": "reports/filter_first_now_20261014T113101Z/README.md",
+   "kind": "record",
+   "measured_at": "2026-10-14"
+  },
+  {
+   "area": "ML",
+   "name": "ML 리랭커: 상위 3건 적합(학습 전 → 학습 후)",
+   "value": 0.6862745098039216,
+   "unit": "ratio",
+   "target": "참고",
+   "detail": "하이브리드 0.627 → 리랭커(학습) 0.686 · 시험 질의 17개 · 95% 구간 [0.53, 0.82] — 구간이 넓어 차이를 단정할 수 없다",
+   "plain": "검색 결과를 다시 줄 세우는 모델(리랭커)을 우리 판정으로 학습시킨 전후의 상위 3건 적합 비율.",
+   "source": "ml/data/reranker_results.json",
+   "kind": "record",
+   "measured_at": "2026-09-16",
+   "compare": {
+    "before": 0.6274509803921569,
+    "after": 0.6862745098039216,
+    "label_before": "하이브리드",
+    "label_after": "리랭커(학습)"
+   }
+  },
+  {
+   "area": "ML",
+   "name": "ML 리랭커: nDCG@3(학습 전 → 학습 후)",
+   "value": 0.8616494679695842,
+   "unit": "score",
+   "target": "참고",
+   "detail": "하이브리드 0.718 → 리랭커(학습) 0.862 · 시험 질의 17개",
+   "plain": "같은 실험에서 상위 3건 순서까지 본 점수(0~1).",
+   "source": "ml/data/reranker_results.json",
+   "kind": "record",
+   "measured_at": "2026-09-16",
+   "compare": {
+    "before": 0.718204911966907,
+    "after": 0.8616494679695842,
+    "label_before": "하이브리드",
+    "label_after": "리랭커(학습)"
+   }
+  },
+  {
+   "area": "ML",
+   "name": "리랭커 질의당 시간(GPU)",
+   "value": 1080,
+   "unit": "ms",
+   "target": "참고",
+   "detail": "집 PC GPU(RTX 3060)",
+   "plain": "리랭커가 검색어 하나를 처리하는 시간. GPU에서도 1초가 넘는다.",
+   "source": "ml/05_reranker_report.ipynb (출력 \"리랭킹 시간 (GPU) 1080 ms/질의\")",
+   "kind": "record",
+   "measured_at": "2026-09-16"
+  },
+  {
+   "area": "ML",
+   "name": "리랭커 GPU 최대 사용량",
+   "value": 4710,
+   "unit": "mb",
+   "target": "참고",
+   "detail": "집 PC GPU(RTX 3060)",
+   "plain": "리랭커가 쓴 GPU 메모리의 최대치.",
+   "source": "ml/05_reranker_report.ipynb (출력 \"GPU 최대 사용량 4.6 GB\" (4.6GB = 약 4,710MB))",
+   "kind": "record",
+   "measured_at": "2026-09-16"
+  },
+  {
+   "area": "ML",
+   "name": "ML 업력 분류기 F1(시험)",
+   "value": 0.9206349206349206,
+   "unit": "score",
+   "target": "참고",
+   "detail": "EXP-02(글자 2~4개 + 로지스틱 회귀 (02번에서 쓴 것)) · 정확도 0.940 · 시험 83건(학습 249건) · 실험 6가지 비교",
+   "plain": "공고 문장이 업력 조건인지 가려내는 작은 모델의 시험 점수(0~1).",
+   "source": "ml/data/ml_experiments.json",
+   "kind": "record",
+   "measured_at": "2026-09-16"
+  },
+  {
+   "area": "ML",
+   "name": "ML: 서비스에 안 쓴 이유",
+   "value": "서버 4GB·CPU에 못 올림",
+   "unit": "text",
+   "target": "참고",
+   "detail": "리랭커는 GPU에서도 질의당 1초가 넘고 GPU 메모리가 필요해 4GB CPU 서버에 올리지 못했다. 업력 분류기는 시연 화면에만 쓴다.",
+   "plain": "두 모델은 학습·평가까지 했고 서비스 추천 경로에는 연결하지 않았다.",
+   "source": "ml/AGENTS.md · docs/tracking/decisions/0004-hybrid-search.md",
+   "kind": "record",
+   "measured_at": "2026-09-28"
+  }
+ ],
+ "headline": [
+  {
+   "title": "신청 불가 공고 비율(상위 10건)",
+   "values": [
+    {
+     "label": "지금 서비스",
+     "metric": "신청 불가@10"
+    }
+   ],
+   "chart": "신청 불가@10",
+   "note": "지금 서비스 값이 0%인 것은 서비스가 같은 규칙으로 걸러 낸 결과다(확실히 신청할 수 없는 공고를 추천에서 모두 뺀다는 뜻)."
+  },
+  {
+   "title": "상위 3건 적합 비율",
+   "values": [
+    {
+     "label": "지금 서비스",
+     "metric": "P@3(2) 하한"
+    }
+   ],
+   "chart": "P@3(2) 하한",
+   "note": "지금 다시 잰 값이 9/28 평가(62.1%)보다 0.6%p 낮다 — 그대로 적는다(11. 약점과 한계 참고)."
+  },
+  {
+   "title": "공고 수",
+   "values": [
+    {
+     "label": "누적",
+     "metric": "누적 공고 수"
+    },
+    {
+     "label": "하루 평균 신규",
+     "metric": "하루 평균 신규 공고"
+    }
+   ],
+   "chart": null,
+   "note": "매일 자동 수집(K-Startup·기업마당 공공 API)"
+  },
+  {
+   "title": "첨부 공고문 글자 뽑기",
+   "values": [
+    {
+     "label": "성공률",
+     "metric": "첨부 공고문 본문 추출 성공률"
+    }
+   ],
+   "chart": null,
+   "note": "이미지 스캔본은 글자가 없어 실패로 센다"
+  },
+  {
+   "title": "조율 연결",
+   "values": [
+    {
+     "label": "연결 시험",
+     "metric": "연결 계약 시험 통과"
+    },
+    {
+     "label": "자격 판정 형식 오류",
+     "metric": "자격 판정 응답 형식 오류"
+    }
+   ],
+   "chart": null,
+   "note": "조율 에이전트의 실제 코드로 공고 서버를 불러 확인(최근 기록)"
+  },
+  {
+   "title": "추천 응답 시간",
+   "values": [
+    {
+     "label": "이 PC 기준",
+     "metric": "추천 응답 시간(이 PC, 중앙값)"
+    },
+    {
+     "label": "실제 서버 기준(인터넷 포함)",
+     "metric": "추천 응답 시간(실제 서버, 중앙값)"
+    }
+   ],
+   "chart": null,
+   "note": "이 PC 기준은 9/30과 같은 조건, 실제 서버 기준은 사용자가 실제로 기다리는 시간"
+  },
+  {
+   "title": "하루 AI 비용",
+   "values": [
+    {
+     "label": "최근 배치 평균",
+     "metric": "하루 AI 비용"
+    }
+   ],
+   "chart": null,
+   "note": "자격요건 추출 비용은 기록에 금액이 없어 빠짐"
+  }
+ ],
+ "missing": []
+}

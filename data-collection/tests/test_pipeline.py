@@ -133,6 +133,65 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(r['sources']['bizinfo']['status'], 'ok')
         self.assertIn('kstartup', r['degraded'])
 
+    # ── 모집 종료 처리(2026-09-30) — 저장 단계에 넘기는 목록 ────────────
+    def run_storing(self, collect_result=None, collect_error=None):
+        """저장까지 가되 실제 DB 대신 store 를 가로채 넘긴 목록(listed)을 돌려준다. 뒤 단계는 모두 끈다."""
+        from collect import fetch_bizinfo
+        seen = []
+
+        def fake_store(path, say, listed=None):
+            seen.append(listed)
+            return True, {'processed': 1, 'closed_missing': 0 if listed else None}
+
+        k = (patch.object(daily_job, 'collect', side_effect=collect_error) if collect_error
+             else patch.object(daily_job, 'collect', return_value=collect_result))
+        with k, patch.object(daily_pipeline, 'store', fake_store), \
+                patch.object(fetch_bizinfo, 'fetch_snapshot', self.fake_fetch([biz_row(1)])):
+            r = self.run_pipeline(skip_store=False, skip_attach=True, skip_embed=True, skip_upload=True,
+                                  skip_files=True, skip_conditions=True, skip_applicant_types=True,
+                                  skip_judgments=True, skip_industries=True)
+        self.assertEqual(len(seen), 1)
+        return r, seen[0]
+
+    def test_K_목록이_서버_건수와_맞으면_목록을_넘긴다(self):
+        row2 = dict(KS_ROW, pbanc_sn='2')
+        r, listed = self.run_storing(([KS_ROW, row2], 2))
+        self.assertEqual(listed, {'kstartup': {'1', '2'}})
+        self.assertTrue(r['sources']['kstartup']['complete'])
+
+    def test_K_목록이_서버_건수보다_적으면_닫지_않는다(self):
+        r, listed = self.run_storing(([KS_ROW], 2))
+        self.assertIsNone(listed)
+        self.assertEqual(r['sources']['kstartup']['status'], 'ok')     # 저장은 그대로 한다
+        self.assertFalse(r['sources']['kstartup']['complete'])
+
+    def test_K_목록에_같은_공고가_겹치면_닫지_않는다(self):
+        _, listed = self.run_storing(([KS_ROW, dict(KS_ROW)], 2))
+        self.assertIsNone(listed)
+
+    def test_K_수집이_실패해_어제_파일을_쓰면_닫지_않는다(self):
+        self.run_storing(([KS_ROW], 1))                                  # 어제: 정상 수집으로 파일이 생긴다
+        r, listed = self.run_storing(collect_error=RuntimeError('K 다운'))
+        self.assertEqual(r['sources']['kstartup']['status'], 'error')
+        self.assertIsNone(listed)
+
+    def test_완전한_목록_판단(self):
+        rows = [dict(KS_ROW, pbanc_sn=str(i)) for i in range(3)]
+        self.assertTrue(daily_job.is_complete(rows, 3))
+        self.assertFalse(daily_job.is_complete(rows, 4))                 # 덜 받음
+        self.assertFalse(daily_job.is_complete(rows + [rows[0]], 4))     # 겹침
+        self.assertFalse(daily_job.is_complete([], 0))                   # 서버 보고 0
+        # 공백만 다른 번호는 같은 공고다(DB source_id 와 같은 다듬기 — Codex 검수 P2-1)
+        self.assertFalse(daily_job.is_complete([KS_ROW, dict(KS_ROW, pbanc_sn=' 1 ')], 2))
+
+    def test_목록_번호를_DB_와_같은_방식으로_다듬는다(self):
+        # Codex 검수 P2-1: ' 100 ' 을 그대로 넘기면 방금 '100' 으로 저장한 공고를 목록에 없다고 보고 닫는다
+        _, listed = self.run_storing(([dict(KS_ROW, pbanc_sn=' 100 ')], 1))
+        self.assertEqual(listed, {'kstartup': {'100'}})
+        from collect import normalize
+        self.assertEqual(normalize.normalize_sources([('kstartup', {'notices': [dict(KS_ROW, pbanc_sn=' 100 ')]})])
+                         ['notices'][0]['source_id'], '100')
+
     # ── 안전장치 ────────────────────────────────────────────
     def test_dry_run_은_기존_공고_파일을_교체하지_않는다(self):
         from collect import fetch_bizinfo
@@ -169,6 +228,90 @@ class PipelineTests(unittest.TestCase):
         removed = daily_pipeline.prune('bizinfo', keep=5)
         self.assertEqual(removed, 15)
         self.assertEqual(len(daily_pipeline.snapshots('bizinfo')), 5)
+
+    # ── 5~9단계 실패도 경고(종료 코드 4)로 남는다(2026-10-13) ──────────
+    # 전에는 10~14단계만 경고였다. 첨부 원본 올리기가 표가 없어 실패한 날(10/12 시험 서버)도 exit=0 이었다.
+    def run_middle(self, **fakes):
+        """저장까지 가짜로 성공시키고 5~9단계만 돌린다. LLM 단계(10~14)는 끈다.
+
+        fakes: attach·embed·sync·vectors·files 중 바꿀 것. 값이 예외면 그 단계가 예외를 낸다.
+        기본값은 평소 하루 — 파일 몇 개를 못 받거나 못 읽고, 해시가 다른 파일·공고 없는 벡터가 있다.
+        """
+        from collect import attachment_pipeline, fetch_bizinfo, upload_attachments, upload_vectors
+        from search import vecstore
+        from shared import embed
+        values = {
+            'attach': ({'targets': 46, 'todo': 46,
+                        'counts': {'ok': 34, 'image_only': 6, 'parse_error': 5, 'download_fail': 1}}, None),
+            'embed': {'total': 10, 'kept': 8, 'todo': 2, 'made': 2, 'truncated': 0, 'out': 'x.npz',
+                      'changed_ids': ['kstartup:1', 'bizinfo:PBLN_000000001']},
+            'sync': {'indexed': 10},
+            'vectors': {'local': 10, 'remote': 8, 'todo': 2, 'uploaded': 1, 'skipped_no_notice': 1, 'dim': 1024},
+            'files': {'local': 5, 'remote': 4, 'todo': 1, 'uploaded': 1, 'sent_mb': 0.1, 'hash_mismatch': 1},
+        }
+        values.update(fakes)
+        called = []
+
+        def fake(name):
+            def inner(*a, **k):
+                called.append(name)
+                if isinstance(values[name], BaseException):
+                    raise values[name]
+                return values[name]
+            return inner
+
+        with patch.object(daily_pipeline, 'store', lambda path, say, listed=None: (True, {'processed': 2})), \
+                patch.object(fetch_bizinfo, 'fetch_snapshot', self.fake_fetch([biz_row(1)])), \
+                patch.object(attachment_pipeline, 'daily', fake('attach')), \
+                patch.object(embed, 'run', fake('embed')), \
+                patch.object(vecstore, 'sync', fake('sync')), \
+                patch.object(upload_vectors, 'run', fake('vectors')), \
+                patch.object(upload_attachments, 'run', fake('files')):
+            r = self.run_pipeline(skip_store=False, skip_conditions=True, skip_applicant_types=True,
+                                  skip_judgments=True, skip_industries=True, skip_bonus=True)
+        return r, called
+
+    def test_평소_하루는_5에서_9단계_경고가_없다(self):
+        r, called = self.run_middle()
+        self.assertEqual(called, ['attach', 'embed', 'sync', 'vectors', 'files'])
+        self.assertEqual(r['status'], 'ok')
+        self.assertEqual(r['stage_warnings'], [], '파일 몇 개 실패·해시 불일치·공고 없는 벡터는 평소 일이다')
+
+    def test_5에서_9단계가_통째로_실패하면_그_단계만_경고로_남는다(self):
+        cases = {'attach': 'attachments', 'embed': 'embeddings',
+                 'vectors': 'vector_upload', 'files': 'file_upload'}
+        for fake, stage in cases.items():
+            with self.subTest(stage=stage):
+                r, called = self.run_middle(**{fake: RuntimeError("Table 's_brain.attachment_files' doesn't exist")})
+                self.assertEqual([w['stage'] for w in r['stage_warnings']], [stage])
+                self.assertTrue(r['stage_warnings'][0]['error'].startswith('RuntimeError: '))
+                self.assertEqual(r['status'], 'ok', '공고는 새것이다 — partial 로 바꾸면 매칭이 막힌다')
+                self.assertTrue(r['stored'])
+                self.assertIn('files', called, '앞 단계가 실패해도 뒤 단계는 돈다')
+
+    def test_단계가_돌려준_error_도_경고다(self):
+        r, _ = self.run_middle(files={'uploaded': 0, 'error': 'no_local_files'},
+                               vectors={'uploaded': 0, 'error': 'no_local_vectors'})
+        self.assertEqual(r['stage_warnings'], [{'stage': 'vector_upload', 'error': 'no_local_vectors'},
+                                               {'stage': 'file_upload', 'error': 'no_local_files'}])
+        self.assertEqual(r['status'], 'ok')
+
+    def main_code(self, result):
+        """main() 의 종료 코드. run() 은 result 를 돌려주게 바꾼다."""
+        import io
+        from contextlib import redirect_stdout
+        with patch.object(sys, 'argv', ['daily_pipeline']), \
+                patch.object(daily_pipeline, 'run', return_value=result), \
+                redirect_stdout(io.StringIO()):
+            return daily_pipeline.main()
+
+    def test_첨부_원본_올리기_실패는_종료_코드_4(self):
+        failed, _ = self.run_middle(files=RuntimeError("Table 's_brain.attachment_files' doesn't exist"))
+        self.assertEqual(self.main_code(failed), 4)
+        ok, _ = self.run_middle()
+        self.assertEqual(self.main_code(ok), 0)
+        # 출처 실패(2)가 경고(4)보다 앞선다 — 종료 코드의 뜻은 그대로다
+        self.assertEqual(self.main_code(dict(failed, status='partial')), 2)
 
 
 if __name__ == '__main__':
