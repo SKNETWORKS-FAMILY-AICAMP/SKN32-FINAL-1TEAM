@@ -4,6 +4,7 @@
 
 - 담당: 정재희 · 이슈 `SB-125`
 - 서버 · DB · 화면이 없는 파이썬 함수입니다. 조율(Orchestrator)이 부르고, LLM 호출은 조율이 넘겨 주는 `tools`로만 합니다.
+- 위치: `agent-orchestration/sbrain/agents/partner_bv/verification_agent/` — 맨 아래 "이 폴더의 위치" 참고.
 - 합격 · 불합격은 판정하지 않습니다. 점수를 돌려주면 조율이 문서층 70점과 합쳐 합격선(80점)과 비교합니다.
 
 ## 30점의 구성
@@ -65,7 +66,7 @@ Prototype + Infographic + 기능 목록 + 사업계획서
 
 - LLM은 판정(있음 / 없음, 충족 / 부분 / 미충족)과 이유만 냅니다. 점수는 코드가 계산합니다.
 - **구현 쪽 신고는 근거로 쓰지 않습니다.** 구현 Agent가 낸 `implemented_features`, 산출물 안의 "구현 완료" 같은 문장, 지면에 기능 이름이 적혀 있다는 사실은 인정 근거가 아닙니다. 근거는 계획서 원문과 실제 코드뿐입니다.
-- 뽑은 요소 목록은 저장해 다시 씁니다. 같은 산출물을 다시 채점해도 기준이 흔들리지 않게 하기 위해서입니다.
+- 뽑은 요소 목록은 출력(`featureElements`)으로 내보내고, 같은 실행 건의 다음 채점이 이어 받아 다시 씁니다. 같은 산출물을 다시 채점해도 기준이 흔들리지 않게 하기 위해서입니다.
 - LLM 호출이 실패하면 예외를 내지 않고 규칙 결과로 점수를 냅니다. 다만 결제 · 한도 소진으로 끝난 실패는 대체하지 않고 올려서 조율이 재개를 기다리게 합니다.
 
 ## 출력에 담기는 것
@@ -109,15 +110,22 @@ Prototype + Infographic + 기능 목록 + 사업계획서
 
 ## 테스트
 
-저장소 루트에서 실행합니다(필요한 것은 Python 3.12+와 `pydantic>=2`). 실제 모델은 부르지 않고 가짜 판정 함수를 넣습니다.
+`agent-orchestration` 폴더에서 실행합니다. 실제 모델은 부르지 않습니다.
 
 ```bash
-python -m unittest discover -s tests -t .          # 구현 · 검증-2 함께 188개
-python -m unittest tests.test_llm_judge            # 한 파일만
+python -m pytest tests/test_partner_bv_tasks.py tests/test_partner_bv_flow.py tests/test_partner_bv_vendored.py
 ```
 
-규칙을 고칠 때는 잡아야 하는 사례와 잡으면 안 되는 사례를 둘 다 테스트에 넣습니다.
+| 파일 | 개수 | 보는 것 |
+|---|---|---|
+| `test_partner_bv_tasks.py` | 30 | T-B1 · T-B2 · T-V2를 실제 계약(파일 참조 · `tools.files`)으로 불렀을 때의 입력 · 출력 |
+| `test_partner_bv_flow.py` | 9 | 흐름 안에서: 자체 검사에 걸린 HTML의 재수행과 채점, 외부 의존 · 비밀값 · 저장소 API 감점, 그림 대체, 요소 목록 이어 받기 |
+| `test_partner_bv_vendored.py` | 28 | 옮겨 온 코드 · 자료 파일이 빠짐없이 있고 원본과 맞는지 |
 
-## 서비스에서 도는 곳
+규칙 하나하나를 보던 담당자 단위 테스트(188개)는 원본 폴더와 함께 저장소에서 빠졌습니다. 필요하면 커밋 `155195b`의 `tests/`에서 꺼낼 수 있습니다.
 
-이 폴더는 담당자 원본입니다. 서비스에서는 조율이 이 코드를 `agent-orchestration/sbrain/agents/partner_bv/verification_agent/`로 옮겨 붙여 실행합니다. 옮기면서 파일 읽기는 조율의 파일 저장소(`tools.files`)로, 요소 목록 저장은 로컬 파일(`.cache/elements.json`) 대신 실행 건의 산출물로 바뀝니다. 채점 로직은 같습니다. 바뀐 곳은 [`partner_bv/VENDORED.md`](../agent-orchestration/sbrain/agents/partner_bv/VENDORED.md)에 있습니다.
+## 이 폴더의 위치
+
+이 폴더가 서비스가 실제로 돌리는 코드입니다. 원래 저장소 루트의 `verification_agent/`(담당자 원본)를 조율이 이곳으로 옮겨 붙여 썼고, 2026-10-16에 루트 원본을 지우고 이곳 하나로 합쳤습니다. 앞으로 수정은 이 폴더를 직접 고칩니다.
+
+원본과 달라진 곳은 연결부뿐이고 [`VENDORED.md`](../VENDORED.md)에 모두 적혀 있습니다. 산출물은 경로 대신 파일 참조로 받아 `tools.files`로 읽고, 요소 목록은 로컬 파일(`.cache/`) 대신 실행 건의 산출물로 이어 받습니다. 바로 위 폴더의 `resources.py`(자료 파일을 불러올 때 한 번 읽어 둔 상수)와 `tasks.py`(Task 등록)는 조율의 연결 코드입니다. 지우기 전 원본은 커밋 `155195b`에 남아 있습니다.

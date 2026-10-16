@@ -130,8 +130,8 @@ flowchart LR
 | `web/backend/` | FastAPI 백엔드 — 인증 · 프로젝트 · 화면 API · 계획서 파일 생성 · 관리자 | [README](web/backend/README.md) |
 | `web/frontend/` | React 화면 — 랜딩 · 워크스페이스 · 단계별 화면 · 마이페이지 · 관리자 | [README](web/frontend/README.md) |
 | `data-collection/` | 공고 수집 배치 · 공고 서버(매칭 · 자격 판정) · 평가 | [README](data-collection/README.md) |
-| `engineering_agent/` | 구현 Agent(T-B1 HTML 실행 파일 · T-B2 인포그래픽) 원본 | [README](agent-orchestration/sbrain/agents/partner_bv/engineering_agent/README.md) |
-| `verification_agent/` | 검증-2(T-V2 산출물층 30점 채점) 원본 | [README](agent-orchestration/sbrain/agents/partner_bv/verification_agent/README.md) |
+| `agent-orchestration/sbrain/agents/partner_bv/engineering_agent/` | 구현 Agent(T-B1 HTML 실행 파일 · T-B2 인포그래픽) | [README](agent-orchestration/sbrain/agents/partner_bv/engineering_agent/README.md) |
+| `agent-orchestration/sbrain/agents/partner_bv/verification_agent/` | 검증-2(T-V2 산출물층 30점 채점) | [README](agent-orchestration/sbrain/agents/partner_bv/verification_agent/README.md) |
 | `docs/` | 팀 공용 문서 | [브랜치 · PR 규칙](docs/git-strategy.md) |
 
 비밀값은 각 폴더의 `.env`에 두고 저장소에 올리지 않는다(`.env.example` 참고). PR을 올리면 CI가 PR 제목의 이슈 키(`[SB-번호]`)와 웹 백엔드 · 프론트를 확인한다.

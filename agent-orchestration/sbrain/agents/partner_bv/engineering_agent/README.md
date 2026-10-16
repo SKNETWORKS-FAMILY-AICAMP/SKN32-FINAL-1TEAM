@@ -5,6 +5,7 @@
 - 담당: 정재희 · 이슈 `SB-124`
 - 서버 · DB · 화면이 없는 파이썬 함수입니다. 조율(Orchestrator)이 정해진 순서에 부르고, LLM · 이미지 호출도 조율이 넘겨 주는 `tools`로만 합니다.
 - 채점은 하지 않습니다. 만든 결과는 [검증-2](../verification_agent/README.md)가 채점합니다.
+- 위치: `agent-orchestration/sbrain/agents/partner_bv/engineering_agent/` — 맨 아래 "이 폴더의 위치" 참고.
 
 ## 무엇을 만드나
 
@@ -26,7 +27,8 @@
 기능 목록 + 아이템 정보 + 카테고리 + 지시문 + 사업계획서
  → 프롬프트 조립 (기능마다 계획서가 그 기능을 정의한 줄을 붙인다)
  → LLM 1회 → 응답에서 index.html 코드블록 추출
- → 자체 검사 4개 → 글꼴 · 아이콘 묶음을 넣어 저장
+ → 자체 검사 4개 → 글꼴 · 아이콘 묶음을 넣는다
+ → 연결 코드가 index.html을 파일 저장소에 넣는다 (tools.files)
 ```
 
 - **프롬프트 규칙은 채점 항목과 짝입니다.** 제목 계층 · 입력칸 label · 대체 텍스트 · 명도 대비 · 이벤트 직접 연결 · sandbox · 1440px · id 참조 · 임시 문구 규칙이 검증-2 코드 점검 항목 하나씩에 대응합니다.
@@ -50,7 +52,8 @@
  → 아이템명 · 목표 고객 · 한 줄 소개 · 기능 목록은 입력값으로 덮어쓴다
  → 이미지 모델 1회: 대표 도식 + 항목별 아이콘을 한 장에 그린다
  → 자체 검사 (누락 · 계획서에 없는 숫자 · 지면 폭 넘침)
- → 코드가 구역을 조립해 SVG 저장
+ → 코드가 구역을 조립해 SVG 완성
+ → 연결 코드가 SVG를 파일 저장소에 넣는다 (tools.files)
 ```
 
 - **글자는 전부 코드가 `<text>`로 씁니다.** 이미지 모델은 글자가 섞이면 한글 오타가 나서 그림만 맡깁니다. 그린 한 장은 `<defs>`에 한 번 싣고 구역마다 필요한 칸만 잘라 씁니다.
@@ -64,8 +67,8 @@
 
 | 함수 | 입력 | 출력 |
 |---|---|---|
-| `run_tb1` | `TB1In` — `feature_list` · `item_spec` · `category` · `instruction` · `rework_input` · `plan_doc` | `TB1Out` — `prototype`(HTML 원문) · `check`(통과 여부 · 사유) · `implemented_features`(모델의 자기 신고, 채점 근거 아님) |
-| `run_tb2` | `TB2In` — `plan_doc` · `item_spec` · `category` · `instruction` · `rework_input` | `TB2Out` — `infographic`(SVG · 대체 텍스트) · `check` |
+| `run_tb1` | `TB1In` — `feature_list` · `item_spec` · `category` · `instruction` · `rework_input` · `plan_doc` | `TB1Out` — `prototype`(진입 파일 참조 `entryFile`) · `check`(통과 여부 · 사유) · `implemented_features`(모델의 자기 신고, 채점 근거 아님) |
+| `run_tb2` | `TB2In` — `plan_doc` · `item_spec` · `category` · `instruction` · `rework_input` | `TB2Out` — `infographic`(SVG 파일 참조 `imageFile` · 대체 텍스트) · `check` |
 
 - 입력 · 출력 모델은 조율 패키지(`sbrain.contracts.tasks`)의 것입니다. 품질 미달은 예외가 아니라 `check`에 담겨 정상 반환됩니다.
 - 예외는 "결과를 만들 수 없었다"는 뜻입니다: 모르는 카테고리(`ValueError`), 응답 형식 오류가 재시도 뒤에도 계속됨(`ToolCallExhausted`).
@@ -75,14 +78,14 @@
 | 파일 | 하는 일 |
 |---|---|
 | `tasks.py` | 진입 함수 둘, T-B2 자체 검사 |
-| `builder_html.py` | T-B1 프롬프트 · 응답 파싱 · 자체 검사 호출 · 저장 |
+| `builder_html.py` | T-B1 프롬프트 · 응답 파싱 · 자체 검사 호출 |
 | `html_kit.py` | T-B1 기본 디자인 CSS(대비 4.5:1 이상), 저장 직전에 넣는 글꼴 · 아이콘 묶음 |
-| `gates.py` · `file_writer.py` | T-B1 자체 검사 4개, 코드블록 파싱 · 저장 |
+| `gates.py` · `file_writer.py` | T-B1 자체 검사 4개, 응답에서 코드블록 꺼내기 |
 | `infographic/content.py` · `compose_guide.py` | T-B2 추출 프롬프트 · 응답 스키마, 구역 제목 지시 |
 | `infographic/design.py` · `design_kit.py` | 지면 구성 · 그림체 · 구역 틀 결정 |
 | `infographic/artsheet.py` | 이미지 모델 호출, 그림에서 칸 찾기, 지면에 끼워 넣기 |
 | `infographic/composer.py` · `poster.py` · `showcase.py` | 구역 조립(그림 있음 · 그림 없음 · 기본 지면) |
-| `infographic/layout.py` · `render.py` | 글자 폭 · 줄바꿈 · 넘침 판정, 바깥 틀 채우기 · 저장 |
+| `infographic/layout.py` · `render.py` | 글자 폭 · 줄바꿈 · 넘침 판정, 바깥 틀 채우기 |
 | `infographic/themes.py` · `fonts.py` · `icons.py` · `illustrations.py` | 분야별 색, 글꼴, 기본 아이콘, 대체 일러스트 |
 | `infographic/assets/` · `infographic_templates/` | Pretendard 글꼴(SIL OFL), CC0 일러스트, 카테고리별 SVG 바깥 틀 |
 
@@ -97,15 +100,22 @@
 
 ## 테스트
 
-저장소 루트에서 실행합니다(필요한 것은 Python 3.12+와 `pydantic>=2`). 실제 모델은 부르지 않고, 조율 계약은 `tests/fake_sbrain.py`가 대신합니다.
+`agent-orchestration` 폴더에서 실행합니다. 실제 모델은 부르지 않습니다.
 
 ```bash
-python -m unittest discover -s tests -t .          # 구현 · 검증-2 함께 188개
-python -m tests.preview_infographics               # 예시 데이터로 인포그래픽 미리보기 (그림 없이)
+python -m pytest tests/test_partner_bv_tasks.py tests/test_partner_bv_flow.py tests/test_partner_bv_vendored.py
 ```
 
-미리보기 결과는 `engineering_agent/output/`에 생기고 git에 올라가지 않습니다.
+| 파일 | 개수 | 보는 것 |
+|---|---|---|
+| `test_partner_bv_tasks.py` | 30 | T-B1 · T-B2 · T-V2를 실제 계약(파일 참조 · `tools.files`)으로 불렀을 때의 입력 · 출력 |
+| `test_partner_bv_flow.py` | 9 | 흐름 안에서: 자체 검사에 걸린 HTML의 재수행과 채점, 외부 의존 · 비밀값 · 저장소 API 감점, 그림 대체, 요소 목록 이어 받기 |
+| `test_partner_bv_vendored.py` | 28 | 옮겨 온 코드 · 자료 파일이 빠짐없이 있고 원본과 맞는지 |
 
-## 서비스에서 도는 곳
+규칙 하나하나를 보던 담당자 단위 테스트(188개)는 원본 폴더와 함께 저장소에서 빠졌습니다. 필요하면 커밋 `155195b`의 `tests/`에서 꺼낼 수 있습니다.
 
-이 폴더는 담당자 원본입니다. 서비스에서는 조율이 이 코드를 `agent-orchestration/sbrain/agents/partner_bv/engineering_agent/`로 옮겨 붙여 실행합니다. 옮기면서 파일 저장만 조율의 파일 저장소(`tools.files`)로 바뀌고, 나머지 로직은 같습니다. 바뀐 곳은 [`partner_bv/VENDORED.md`](../agent-orchestration/sbrain/agents/partner_bv/VENDORED.md)에 있습니다. 원본을 고치면 조율 담당에게 알려 다음 판에 옮기게 합니다.
+## 이 폴더의 위치
+
+이 폴더가 서비스가 실제로 돌리는 코드입니다. 원래 저장소 루트의 `engineering_agent/`(담당자 원본)를 조율이 이곳으로 옮겨 붙여 썼고, 2026-10-16에 루트 원본을 지우고 이곳 하나로 합쳤습니다. 앞으로 수정은 이 폴더를 직접 고칩니다.
+
+원본과 달라진 곳은 연결부뿐이고 [`VENDORED.md`](../VENDORED.md)에 모두 적혀 있습니다. 파일 저장이 `tools.files`로 바뀌었고, 글꼴 · 그림 · 템플릿은 `resources.py`에서 읽고, import는 패키지 상대 경로입니다. 바로 위 폴더의 `resources.py`(자료 파일을 불러올 때 한 번 읽어 둔 상수)와 `tasks.py`(Task 등록)는 조율의 연결 코드입니다. 지우기 전 원본은 커밋 `155195b`에 남아 있습니다.
