@@ -56,7 +56,7 @@
 
 | Agent | 담당 업무 | Task |
 |---|---|---|
-| 조율 (Supervisor) | 요구사항 해석, 공고 매칭, 작업 분해, 결과 통합 (+ 자격요건 게이트 · 판정 · 합치기 규칙 단계) | T-C1 · T-C2 · T-C3 · T-C4 |
+| 조율 | 요구사항 해석, 공고 매칭, 작업 분해, 결과 통합 (+ 자격요건 게이트 · 판정 · 합치기 규칙 단계) | T-C1 · T-C2 · T-C3 · T-C4 |
 | 전략 | 요구사항 분석, 목표 시장 분석 | T-S1 · T-S2 |
 | 작성 | 사업계획서 본문 · 그래프 · 표 작성 | T-W1 · T-W2 · T-W3 |
 | 구현 | 프로토타입 제작 — HTML 실행 파일, 인포그래픽 | T-B1 · T-B2 |
@@ -178,7 +178,17 @@ Agent를 실제로 부르지 않고 화면 흐름만 보려면 2번 뒤에 워�
 
 DB 스키마는 `SK 네트웍스 Family AI 32기 1팀 데이터베이스_저장소 설계 문서`를 기준으로 하고, 웹 스키마는 `web/backend/app_schema.sql`, Orchestrator 테이블은 `agent-orchestration/sql/orchestrator_schema.sql`에 있다.
 
-## 팀 구성 (R&R)
+## 팀 구성
+
+| 이름 | 역할 | GitHub |
+| --- | --- | --- |
+| 신누리 | Team Lead · Agent Orchestration | [@4nchez](https://github.com/4nchez) |
+| 박상희 | Business Plan Generation | [@StandOut-0](https://github.com/StandOut-0) |
+| 이근준 | Data & Matching | [@geunlee00](https://github.com/geunlee00) |
+| 정재희 | Prototype & Web | [@jjh430](https://github.com/jjh430) |
+| 하정원 | Agent Orchestration · Web | [@Hajungwon01](https://github.com/Hajungwon01) |
+
+### 역할 및 책임 (R&R)
 
 | 파트 | 담당자 | 담당 업무 |
 |---|---|---|
@@ -221,5 +231,3 @@ DB 스키마는 `SK 네트웍스 Family AI 32기 1팀 데이터베이스_저장�
 - [한국형 웹 콘텐츠 접근성 지침(KWCAG) 2.2](https://a11ykr.github.io/kwcag22/)
 
 ---
-
-세부 화면 흐름, 예외 처리, 관리자 기능 등 이 문서에서 다루지 않은 상세 정책은 `프로젝트_기획서_v1.11.docx`와 `S-Brain_Agent_기능정의서_v1.10.xlsx`를 기준 문서로 한다. 그 뒤에 바뀐 실행 흐름은 [`agent-orchestration/README.md`](agent-orchestration/README.md)가 기준이다.
