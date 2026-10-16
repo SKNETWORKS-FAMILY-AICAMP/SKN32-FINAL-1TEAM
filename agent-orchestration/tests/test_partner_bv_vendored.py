@@ -42,7 +42,8 @@ ENG_DIR = BV_DIR / "engineering_agent"
 VER_DIR = BV_DIR / "verification_agent"
 CODE_DIR = BV_DIR.parent.parent.parent            # 저장소 폴더(agent-orchestration)
 
-OUR_FILES = {"__init__.py", "resources.py", "tasks.py", "VENDORED.md"}
+OUR_FILES = {"__init__.py", "resources.py", "tasks.py", "VENDORED.md",
+             "engineering_agent/README.md", "verification_agent/README.md"}   # 담당자 README(2026-10-16 루트 원본에서 옮김)
 
 _SCENES = ("ai", "city", "conversation", "cook", "delivery", "dev", "growth", "maintenance", "mobile", "monitor",
            "package", "presentation", "robot", "sales", "store", "video", "workers")
