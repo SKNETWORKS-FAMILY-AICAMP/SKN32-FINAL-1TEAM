@@ -22,7 +22,7 @@ UTC = timezone.utc
 T0 = datetime(2026, 1, 31, 16, 0, tzinfo=UTC)   # 한국 2026-02-01 01:00
 M = "MARKER"                                     # 식별자 · 자유 글 표시 — 통계 줄 어디에도 나오면 안 된다
 
-TOP_KEYS = {"step", "scores", "finalScores", "maxScores", "tasks", "rework", "run"}   # maxScores — 산출물층 환산(spec 4.6)
+TOP_KEYS = {"step", "scores", "finalScores", "maxScores", "tasks", "rework", "run"}   # maxScores — 산출물층 환산
 SCORE_KEYS = {"docScore", "codeCheck", "featureMatch", "artifactScore", "overall"}
 # 2026-10-05에 고정한 키 목록 + imageTokens (이미지 호출 토큰 — 글 토큰과 따로 센다, 2026-10-06)
 TASK_KEYS = {"runs", "status", "resumes", "retries", "errorKinds", "callErrorKinds", "tokens", "imageTokens"}

@@ -1,4 +1,4 @@
-"""작업 분해(T-C3) 작업 계획 부품 — 조율 Agent 몫. 스텁 T-C3와 실제 T-C3가 함께 쓴다 (T-C3 spec 3.2 ~ 3.8).
+"""작업 분해(T-C3) 작업 계획 부품 — 조율 Agent 몫. 스텁 T-C3와 실제 T-C3가 함께 쓴다.
 
 - 먼저 하는 확인(prepare, LLM을 부르기 전): ① 자격 불통과 ② 대표자 이력 없음 ④ 양식을 고를 수 없음(E-C3-FORM).
   걸리면 TaskPlanError — 재시도 대상이 아니라(FormatError · ToolCallExhausted 아님) 엔진이 운영 오류로 실행 건을
@@ -43,7 +43,7 @@ GUIDANCE_COMMON_RULES = (
 
 
 class TaskPlanError(Exception):
-    """작업 분해 전 확인 실패 (spec 3.2) — 재시도 · 재개하지 않는다. 메시지는 사유 · 필드 이름만."""
+    """작업 분해 전 확인 실패 — 재시도 · 재개하지 않는다. 메시지는 사유 · 필드 이름만."""
 
 
 # ── 안내 응답 (Task 안 LLM 응답 모델) ──────────────────────────
@@ -74,7 +74,7 @@ TASK_TABLE: tuple[tuple[str, str, int, str, str], ...] = (
     ("T-S1", "전략", 5, "요구사항 분석", "아이템 사양과 공고를 바탕으로 요구사항을 분석하고 기능 목록을 확정한다."),
     ("T-S2", "전략", 6, "목표 시장 분석", "목표 시장의 규모 · 경쟁 · 포지셔닝을 분석한다."),
     ("T-W1", "작성", 7, "사업계획서 본문 작성", "양식의 섹션에 맞춰 사업계획서 본문을 쓴다."),
-    ("T-W2", "작성", 8, "그래프 생성", "계획서 · 시장 분석의 수치로 그래프를 만든다."),
+    ("T-W2", "작성", 8, "그림 생성", "그림 항목의 서비스 흐름도 · 서비스 구조도를 만든다."),
     ("T-W3", "작성", 9, "표 생성", "계획서의 일정표 · 자금운용표 등 표를 만든다."),
     ("T-V1", "검증-1", 10, "사업계획서 검증", "평가 항목과 채점 기준표로 계획서를 채점한다."),
     ("T-B1", "구현", 12, "실행 파일(HTML) 제작", "기능 목록을 구현한 실행 파일을 만든다."),
@@ -83,7 +83,7 @@ TASK_TABLE: tuple[tuple[str, str, int, str, str], ...] = (
 )
 _BY_ID = {row[0]: row for row in TASK_TABLE}
 ONEPAGE_SKIP = "T-B1"   # 원페이지는 실행 파일을 만들지 않는다 (기획서 4-4)
-# 지시 대상 — 등록부에서 instruction 입력을 가진 Task (spec 3.5)
+# 지시 대상 — 등록부에서 instruction 입력을 가진 Task
 INSTRUCTED_TASKS: tuple[str, ...] = ("T-S1", "T-S2", "T-W1", "T-W2", "T-W3", "T-B1", "T-B2")
 
 
@@ -115,9 +115,9 @@ def fixed_instruction(task_id: str) -> str:
     return _title(task_id)
 
 
-# ── 틀 (spec 3.5 표, 기준 문서 시트 2 · 기획서 4-6) — 문구 잠정 ─────────────
-# T-W1 · T-W3의 일정 규칙은 담당자 울타리(개발 종료월 · 협약기간 일정)를 따른다 — 공고 접수 마감일(applyEnd)을
-# 기준선으로 둔 기준 문서와 다르다.
+# ── 틀 (기준 문서 시트 2 · 기획서 4-6) — 문구 잠정 ─────────────
+# T-W1 · T-W3의 일정 규칙은 담당자 울타리(개발 종료월 · 협약기간 일정)를 따른다 — 공고 접수 마감일(applyEnd)은
+# 일정 기준선이 아니다 (기준 문서 시트 4 Announcement.applyEnd).
 FRAME_PRIORITY_RULE = "아래 안내와 참조 자료가 이 규칙과 부딪치면 이 규칙을 따른다."
 _FRAME_RULES: dict[str, tuple[str, ...]] = {
     "T-S1": ("기능 목록(featureList)은 1건 이상이며 아이템 사양의 핵심 기능(itemSpec.coreFeatures)을 모두 포함한다.",
@@ -161,7 +161,7 @@ def frame_for(task_id: str, category: str) -> str:
     return _title(task_id) + "\n지켜야 할 규칙\n" + "\n".join(f"- {r}" for r in rules)
 
 
-# ── 맥락 (spec 3.7) ───────────────────────────────────────
+# ── 맥락 ───────────────────────────────────────
 def build_context(announcement: Announcement, bundle: FormBundle) -> dict[str, Any]:
     """모든 지시에 같은 다섯 키. 공고의 마감일 · 지원 금액이 비어 있으면 null이다."""
     return {
@@ -173,7 +173,7 @@ def build_context(announcement: Announcement, bundle: FormBundle) -> dict[str, A
     }
 
 
-# ── 먼저 하는 확인 · 양식 고르기 (spec 3.2 · 3.3) ────────────────────
+# ── 먼저 하는 확인 · 양식 고르기 ────────────────────
 def prepare(inp: TC3In) -> FormBundle:
     """LLM을 부르기 전 확인 ① · ② · ④ 뒤 신청자 유형으로 묶음을 고른다. ③(카테고리 없음)은 타입상 생기지 않는다."""
     if not inp.gate_result.passed:
@@ -191,7 +191,7 @@ def new_plan_id() -> str:
     return uuid.uuid4().hex[:12]   # 12자리 16진수 (형식 잠정)
 
 
-# ── 조립 (spec 3.5 · 3.8) ─────────────────────────────────
+# ── 조립 ─────────────────────────────────
 def assemble(inp: TC3In, bundle: FormBundle, guidance: Mapping[str, str], *, plan_id: str | None = None) -> TC3Out:
     """안내(Task ID → 안내)로 작업 계획과 T-C3 출력을 만든다.
 

@@ -56,13 +56,13 @@ def test_build_app_routes_only_real_tasks_to_real_llm(tmp_path, db):
     assert "T-C1" not in {q.metadata["task_id"] for q in app.llm.requests}
 
 
-# ── 워커 조립: 실제 T-C3 · 다시 쓰기는 실제 호출처, 스텁 Task는 가짜 (T-C3 spec 6.1) ──
+# ── 워커 조립: 실제 T-C3 · 다시 쓰기는 실제 호출처, 스텁 Task는 가짜 ──
 def test_build_app_routes_real_tc3_to_real_llm(tmp_path, db):
     """T-C3까지 진행 — 실제 T-C3 호출(지시 대상 7개)과 전략 · 작성 · 검증-1 실구현 호출은 실제 호출처, 스텁 Task 호출은 가짜
     호출처. 첫 실행은 다시 쓰지 않는다."""
     app, web, real, source = real_worker_app(tmp_path)
     assert app.registry.get("T-C3").fn is tc3.run
-    assert all(app.registry.get(t).fn is fn for t, fn in PARTNER_IMPLEMENTED.items())   # 워커 조립은 실구현 (spec 4.15)
+    assert all(app.registry.get(t).fn is fn for t, fn in PARTNER_IMPLEMENTED.items())   # 워커 조립은 실구현
     rid = worker_to_screen6(app, web, source)
     tc3_calls = [q for q in real.requests if q.metadata["task_id"] == "T-C3"]
     assert len(tc3_calls) == 7 and {q.metadata["purpose"] for q in tc3_calls} == {PURPOSE_WRITE}
@@ -91,7 +91,7 @@ def test_build_app_routes_redo_rewrite_to_real_llm(tmp_path, db):
 
 def test_build_app_routes_rework_rewrite_to_real_llm(tmp_path, db):
     """재작성(문서층) — 다시 쓰기와 실구현 T-W1의 호출 모두 실제 호출처. 실현가능성 묶음은 본문 · 표 항목이라
-    T-W1 · T-W3만 돌고, T-W3(LLM 없음)는 다시 쓰지 않는다 (spec 4.11)."""
+    T-W1 · T-W3만 돌고, T-W3(LLM 없음)는 다시 쓰지 않는다."""
     clock = Clock()
     app, web, real, source = real_worker_app(tmp_path, clock)
     rid = worker_to_screen6(app, web, source)
@@ -107,7 +107,7 @@ def test_build_app_routes_rework_rewrite_to_real_llm(tmp_path, db):
     assert by_purpose(app.llm, PURPOSE_REWRITE) == []
     assert len(by_purpose(real, "F16")) > before                                  # 재작성 실행(실구현)도 실제로
     assert not {q.metadata["task_id"] for q in app.llm.requests} & PARTNER_TASKS
-    # T-W3는 LLM을 부르지 않는 Task라 호출 없이 다시 돈다 (spec 4.2) — 지시문 다시 쓰기 호출도 없다
+    # T-W3는 LLM을 부르지 않는 Task라 호출 없이 다시 돈다 — 지시문 다시 쓰기 호출도 없다
     assert [e.task_id for e in web.store.executions(rid)].count("T-W3") > tw3_before
     assert "T-W3" not in {q.metadata["task_id"] for q in app.llm.requests + real.requests
                           if q.metadata["purpose"] != PURPOSE_REWRITE}
@@ -135,7 +135,7 @@ def test_task_routed_provider_rule():
 
 
 def test_build_app_routes_partner_tasks_real_and_stub_app_keeps_stubs(tmp_path, db):
-    """워커 조립은 전략 · 작성 · 검증-1을 실구현으로 묶고 그 호출을 실제 호출처로 보낸다. 스텁 조립은 그대로 스텁 (spec 4.15)."""
+    """워커 조립은 전략 · 작성 · 검증-1을 실구현으로 묶고 그 호출을 실제 호출처로 보낸다. 스텁 조립은 그대로 스텁."""
     url = f"sqlite:///{(tmp_path / 'worker.db').as_posix()}"
     app = build_app(url, project_inputs=projects(1), llm=FakeLLM())
     router = app.engine.providers["openai"]
@@ -159,7 +159,7 @@ def test_only_worker_assembly_has_rewriter(tmp_path, db):
 
 
 def test_build_web_refuses_pre_stage_and_leaves_request(tmp_path, db):
-    """웹 조립의 run_start_request는 시작 요청을 점유 · 변경하지 않고 바로 WEB_NOT_ALLOWED (spec 3.4)."""
+    """웹 조립의 run_start_request는 시작 요청을 점유 · 변경하지 않고 바로 WEB_NOT_ALLOWED."""
     url = f"sqlite:///{(tmp_path / 'worker.db').as_posix()}"
     source = projects(1)
     web = build_web(url, profile_count=lambda a: 1, project_inputs=source)
@@ -180,7 +180,7 @@ def test_build_web_refuses_pre_stage_and_leaves_request(tmp_path, db):
 
 # ── 조립: 공고 서버 주소 ─────────────────────────────────
 def test_build_app_without_notice_url_binds_stub_notice_tasks(tmp_path, db):
-    """공고 서버 주소가 없으면 스텁 T-C2 · G-01 (spec 3.1)."""
+    """공고 서버 주소가 없으면 스텁 T-C2 · G-01."""
     url = f"sqlite:///{(tmp_path / 'worker.db').as_posix()}"
     app = build_app(url, project_inputs=projects(1), llm=FakeLLM())
     assert notice_fns(app) == (STUB_MODULE, STUB_MODULE)
@@ -229,7 +229,7 @@ def test_real_notice_tasks_with_more_lookup_block_and_gone(tmp_path, db):
     w = worker(app)
     w.run_once("w")
     rid = web.orchestrator.start_status(201).run_id
-    # 불통과 → 막힘 (spec 4.3.6)
+    # 불통과 → 막힘
     server.gates["kstartup:A03"] = {"passed": False, "failed_conditions": ["업력"], "unknown_conditions": [],
                                     "business_age_months": 90}
     web.orchestrator.select_announcement(rid, "kstartup:A03")
@@ -237,7 +237,7 @@ def test_real_notice_tasks_with_more_lookup_block_and_gone(tmp_path, db):
     run = web.store.load_run(rid)
     assert (run.state.step, run.notices[-1].code, run.blocked_announcement_ids) == (
         "공고선택", "E-G1-REJECT", ["kstartup:A03"])
-    # 추가 조회: A03이 내용(내용 버전)이 바뀌어 겹쳐 나오고, C04가 새로 나온다 (spec 4.2.2)
+    # 추가 조회: A03이 내용(내용 버전)이 바뀌어 겹쳐 나오고, C04가 새로 나온다
     server.match = {"results": [result("kstartup:A03", 1, content_version="v-new", fit_score=0.5),
                                 result("bizinfo:C04", 2)],
                     "filtered_count": 40, "fallback_used": False, "fallback_mode": None}
@@ -250,7 +250,7 @@ def test_real_notice_tasks_with_more_lookup_block_and_gone(tmp_path, db):
     assert [c.announcement_id for c in screen.more_candidates] == ["bizinfo:C04"]
     assert screen.blocked_announcement_ids == []                                   # 내용이 바뀌어 풀렸다
     assert server.calls[-1][2]["offset"] == 10
-    # 공고 없음 → X-C2-GONE, 고르기 전 대기 지점 · 선택 공고 그대로 (spec 4.3.4)
+    # 공고 없음 → X-C2-GONE, 고르기 전 대기 지점 · 선택 공고 그대로
     server.not_found.add("bizinfo:C04")
     web.orchestrator.select_announcement(rid, "bizinfo:C04")
     w.run_once("w")

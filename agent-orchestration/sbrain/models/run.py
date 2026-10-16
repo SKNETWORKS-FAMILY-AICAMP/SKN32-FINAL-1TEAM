@@ -96,7 +96,7 @@ class RedoState(SBModel):
     rework_role: str | None = None
     instruction_ref: str | None = ext(
         None, note="재작성 · 재수행 때 다시 쓴 지시문 산출물 '<taskId>.instruction@버전'. 같은 재작성 · 재수행 입력으로 "
-                   "재개하면 다시 쓰지 않고 이 지시문을 쓴다. 새 입력이면 새 진행 위치라 비어 있다 (T-C3 spec 5.5)")
+                   "재개하면 다시 쓰지 않고 이 지시문을 쓴다. 새 입력이면 새 진행 위치라 비어 있다")
     partial_ref: str | None = ext(
         None, note="재시도 소진으로 재개를 예약할 때 Task가 받은 결과 '<taskId>.partial@버전'. 재개하면 PARTIAL로 연결한 "
                    "입력에 넣는다. 단계 성공 · 재수행 · 다른 단계 · 실행 실패 · 중단이면 재개 위치와 함께 사라진다(산출물은 남음)")
@@ -118,11 +118,11 @@ class CycleState(SBModel):
     started_at: datetime
     comparisons: list[ReworkComparison] = Field(default_factory=list)
     rescored_layers: list[str] = Field(default_factory=list)
-    collect_until: datetime | None = None   # 재작성 요청을 모으는 시간이 끝나는 시각 (첫 요청 + 잠정 2초)
+    collect_until: datetime | None = None   # 재작성 요청을 모으는 시간이 끝나는 시각 (첫 요청 + 2초)
 
 
 class Verify1State(SBModel):
-    """새 타입 — 검증-1 fail 재수행의 흐름 상태 (Run.verify1, 실행 건 줄에 저장, spec 4.10).
+    """새 타입 — 검증-1 fail 재수행의 흐름 상태 (Run.verify1, 실행 건 줄에 저장).
 
     사이클(첫 작성 · 재작성 사이클)이 바뀌면 cycleKey를 바꾸고 나머지를 새로 시작한다. 실행 기록에 기대지 않는다.
     """
@@ -204,7 +204,7 @@ class Run(SBModel):
     blocked_announcement_ids: list[str] = ext(
         default_factory=list,
         note="막힌 공고 ID — 자격 불통과(E-G1-REJECT)가 나온 공고. 공고 선택 명령이 거절한다(ANNOUNCEMENT_BLOCKED). "
-             "G-01 결과 저장과 같은 저장에서 넣고, 추가 조회에서 내용이 바뀌면 뺀다 (spec 4.3.6)")
+             "G-01 결과 저장과 같은 저장에서 넣고, 추가 조회에서 내용이 바뀌면 뺀다")
     notices: list[Notice] = ext(default_factory=list)
     ended_at: datetime | None = ext(None)
     failure_reason: str | None = ext(None, note="실패 사유 '<Task>: <사유> — <오류 요약>' (웹 실패 알림에도 쓴다)")
@@ -214,10 +214,10 @@ class Run(SBModel):
         0, note="실행 기록을 통계 줄로 옮긴 횟수. 옮길 때마다 통계 줄 part = 이 값 + 1. 이 값을 쓰는 저장은 "
                 "마지막 활동 시각(updatedAt)을 바꾸지 않는다")
     proofread_base_ref: str | None = ext(
-        None, note="흐름 밖 — 지금 쓰지 않음(결정 0033). 검수 전 계획서 산출물 '이름@버전'을 담던 칸 — 흐름이 채우지 않아 늘 비어 있다")
+        None, note="흐름 밖 — 지금 쓰지 않음. 검수 전 계획서 산출물 '이름@버전'을 담던 칸 — 흐름이 채우지 않아 늘 비어 있다")
     attempt_max: dict[str, int] = ext(default_factory=dict, note="Task별 마지막 시도 번호 (Task ID → 시도 번호)")
     verify1: Verify1State | None = ext(
-        None, note="새 타입(결정 0024) — 검증-1 fail 재수행 상태. 사이클 끝 · 재작성 실패 되돌리기 · 중단 · 완전 삭제 때 비운다")
+        None, note="새 타입(전략 · 작성 · 검증-1 연동) — 검증-1 fail 재수행 상태. 사이클 끝 · 재작성 실패 되돌리기 · 중단 · 완전 삭제 때 비운다")
 
 
 def progress_percent(run: Run) -> int:

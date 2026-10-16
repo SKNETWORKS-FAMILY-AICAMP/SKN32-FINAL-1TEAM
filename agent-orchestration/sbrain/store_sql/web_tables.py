@@ -5,7 +5,7 @@
 | notifications | 알림 INSERT, 실행 건 알림 조회 |
 | generation_failure_alerts | 실패 확정 알림 INSERT |
 | verification_policies | 첫 행(policy_id 최솟값)을 설정 입력으로 읽기 |
-| project_budget_items · project_schedule_items | 사전 정보(사업비 · 일정, spec 4.3) 읽기만 — 읽는 일은 intake/sql_source.py가 한다. 여기에는 컬럼 목록만 둔다 |
+| project_budget_items · project_schedule_items | 사전 정보(사업비 · 일정) 읽기만 — 읽는 일은 intake/sql_source.py가 한다. 여기에는 컬럼 목록만 둔다 |
 
 - 이 테이블들의 아래 컬럼만 읽고 쓴다. 웹 테이블 쓰기는 notifications · generation_failure_alerts INSERT
   두 가지뿐이다(projects 진행 컬럼은 쓰지 않는다). 그 밖의 웹 테이블 · 컬럼은 건드리지 않는다.
@@ -40,13 +40,13 @@ WEB_COLUMNS: dict[str, list[str]] = {
                                   "failure_reason", "created_at"],
     "verification_policies": ["policy_id", "doc_weight", "code_weight", "plan_weight", "pass_threshold",
                               "rerun_cap", "rework_cap", "deviation_cap"],
-    # 사업비 · 일정 (spec 4.3) — 읽기만. 목록의 원본은 intake/sql_source.py COLUMNS (없으면 SchemaMismatch)
+    # 사업비 · 일정 — 읽기만. 목록의 원본은 intake/sql_source.py COLUMNS (없으면 SchemaMismatch)
     "project_budget_items": INTAKE_COLUMNS["budget_items"],
     "project_schedule_items": INTAKE_COLUMNS["schedule_items"],
 }
 
 # 있으면 읽고 없으면 None으로 보는 웹 컬럼 (없어도 SchemaMismatch가 아님)
-# - project_budget_items.phase: 웹이 더하기로 한 컬럼 (spec 4.3)
+# - project_budget_items.phase: 웹이 더하기로 한 컬럼
 # - verification_policies.token_retry_cap: 검수 재수행 횟수 — 검수가 흐름에서 빠져 웹이 지울 수 있는 컬럼.
 #   없으면 코드 기본값(redo.proofreadRedoCount)을 쓴다 (settings_source.py)
 WEB_OPTIONAL_COLUMNS: dict[str, list[str]] = {

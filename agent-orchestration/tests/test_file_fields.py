@@ -1,4 +1,4 @@
-"""계약 파일 칸의 참조형 교체 (spec 4.5).
+"""계약 파일 칸의 참조형 교체.
 
 - 스텁이 파일을 tools.files(G-04는 파일 창구 인자)로 넣고 참조를 싣는다 — 진입 파일 · 인포그래픽 · 안내 문서
 - M-2 감싸기(인포그래픽 그림 참조 → 진입 파일, 자산 없음), M-3 안내 문서 기입, T-C4 최종 묶음 참조 목록(계획서 파일 칸은
@@ -60,7 +60,7 @@ def capture(app, task_id: str) -> list:
 # ── 계약 · 등록부 ────────────────────────────────────────
 def test_old_fields_are_gone_and_new_fields_shape():
     assert set(Prototype.model_fields) == {"entry_file", "kind", "asset_files", "readme_file", "implemented_features"}
-    # icon_fallback — 기본 아이콘 대체 표시 (확장, spec 4.13 — 파일 칸이 아니다)
+    # icon_fallback — 기본 아이콘 대체 표시 (확장 — 파일 칸이 아니다)
     assert set(Infographic.model_fields) == {"image_file", "format", "alt_text", "icon_fallback"}
     assert Prototype.model_fields["entry_file"].default is None                 # 비면 진입 파일 없음
     assert Prototype.model_fields["asset_files"].is_required()
@@ -131,7 +131,7 @@ def test_web_flow_puts_stub_files_and_carries_refs(clock):
     proto, info = ctx.get("prototype"), ctx.get("infographic")
     assert (proto.entry_file.name, proto.entry_file.media_type) == ("index.html", "text/html")
     assert proto.entry_file == ctx.get("entryFile") and proto.asset_files == []
-    # 인포그래픽은 모든 카테고리 SVG (spec 4.3)
+    # 인포그래픽은 모든 카테고리 SVG
     assert (info.image_file.name, info.image_file.media_type) == ("infographic.svg", "image/svg+xml")
     assert proto.readme_file == ctx.get("readmeFile") and proto.readme_file.name == "README.md"
     assert all(ch.image_file is None for ch in ctx.get("planDoc").charts)         # 차트 그림은 비운다

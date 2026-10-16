@@ -1,4 +1,4 @@
-"""전략 · 작성 · 검증-1 실구현을 흐름에 끼워 돌린다 (spec 4.15, 7절 2번 연결) — 스텁 조립에 bind_partner_sw, 가짜 LLM은
+"""전략 · 작성 · 검증-1 실구현을 흐름에 끼워 돌린다 — 스텁 조립에 bind_partner_sw, 가짜 LLM은
 목적(F번호)별 응답. 메모리 · SQLite 두 저장소(store_backend)에서 돈다. 네트워크 없음.
 """
 from __future__ import annotations
@@ -59,14 +59,14 @@ def test_partner_tasks_run_in_flow_to_screen6(clock):
     logs = app.store.call_logs(rid)
     # 실행별 KIET 검색은 스위치(SBRAIN_KIET_SEARCH)가 꺼져 있으면(기본 · 테스트) 부르지 않는다
     assert {log.purpose for log in logs if log.task_id == "T-S1" and log.call_type == "search"} == {"자료 검색"}
-    # 기록에 산출물 내용이 없다 (spec 4.17)
+    # 기록에 산출물 내용이 없다
     recorded = " ".join([log.model_dump_json() for log in logs] +
                         [r.model_dump_json() for r in app.store.executions(rid)])
     assert BODY_MARK not in recorded
 
 
 def test_doc_layer_max_setting_reaches_tv1(clock):
-    """문서층 배점 D = 설정 사본 scoring.docLayerMax — 관리자가 60으로 바꾸면 60 기준 (spec 4.9)."""
+    """문서층 배점 D = 설정 사본 scoring.docLayerMax — 관리자가 60으로 바꾸면 60 기준."""
     s = Settings()
     s.scoring.doc_layer_max = 60
     app = partner_app(clock, settings=s)

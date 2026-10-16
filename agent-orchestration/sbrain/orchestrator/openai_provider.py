@@ -4,12 +4,12 @@
 - request.timeout_sec를 요청 timeout으로 건다.
 - 시간 초과 → TimeoutError, 연결 오류 → ConnectionError, 응답 코드 오류 → ProviderError(status, code, retry_after_sec).
   빈 응답(거부 포함)은 형식 오류로 보고 tools가 재시도한다.
-- 응답 코드 오류(확장, spec 2.3 · 3절 — status_error, 이미지 어댑터와 같은 함수): 본문의 오류 코드(error.code — 모양에 맞는
+- 응답 코드 오류(확장 — status_error, 이미지 어댑터와 같은 함수): 본문의 오류 코드(error.code — 모양에 맞는
   것만, 아니면 None)와 응답 헤더 retry-after-ms(밀리초 → 초, 우선) · retry-after(초 숫자, 날짜 형식 · 잘못된 값은 None)를
   읽어 싣는다. 결제 · 한도 · 재시도 간격 판단은 tools가 한다. 메시지는 상태 코드만이다(본문 · 메시지 · 헤더 값 없음).
 - 응답 형식: response_schema가 있으면 JSON 스키마 응답 형식(strict=False)으로 요청한다(json_mode보다 우선). 검사는 tools가
   다시 한다. 스키마가 없고 json_mode(확장)가 참이면 JSON 객체 응답 형식(response_format={"type": "json_object"})으로
-  요청한다 — 전략 · 작성 · 검증-1 담당자 llm_runtime.request_json과 같다(spec 4.1). 둘 다 없으면 응답 형식을 싣지 않는다.
+  요청한다 — 전략 · 작성 · 검증-1 담당자 llm_runtime.request_json과 같다. 둘 다 없으면 응답 형식을 싣지 않는다.
 - 길이 한도로 잘린 응답(finish_reason == 'length')은 json_mode와 상관없이 늘 성공으로 보지 않는다 — FormatError(내용 없는
   메시지, 사용량 실음)로 올려 tools가 재시도한다(담당자 request_json과 같게, T-C1 · T-C3 · 다시 쓰기 호출에도 적용).
 - 온도(temperature)와 추론 강도(reasoning_effort)는 요청에 값이 있을 때만 싣는다.

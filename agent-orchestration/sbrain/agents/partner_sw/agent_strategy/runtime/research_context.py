@@ -73,7 +73,7 @@ def refresh_market_sources():
 
 def retrieve(query, domains=('market','development','design'), limit=6, char_budget=6500):
     """[S-Brain] 로컬 자료 검색을 호출 수단의 tools.search(목적 '자료 검색')로 감싼다 — 원래 본문은 _retrieve 그대로.
-    F01(collect_web_data) 안의 호출도 여기를 지난다. 호출 수단(partner_call 블록) 밖이면 RuntimeError (spec 4.1)."""
+    F01(collect_web_data) 안의 호출도 여기를 지난다. 호출 수단(partner_call 블록) 밖이면 RuntimeError."""
     return _search(SEARCH,lambda:_retrieve(query,domains,limit,char_budget))
 
 

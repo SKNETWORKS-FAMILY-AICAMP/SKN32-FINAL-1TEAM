@@ -152,7 +152,7 @@ def company_info_from(form: PreInput) -> CompanyInfo:
     """폼 값을 그대로 옮긴다. 업력(businessAgeYears)은 기준일자가 필요해 T-C2 · G-01이 계산한다.
 
     두 타입이 함께 쓰는 웹 입력값(FormExtension — 수익모델 항목 · 기업명 등)도 그대로 옮겨 계획서 작성까지 전달한다.
-    사업비 · 일정 · 팀원 역할(확장, spec 4.3)도 값 그대로 옮긴다 — T-C1의 LLM 요청에는 싣지 않는다.
+    사업비 · 일정 · 팀원 역할(확장)도 값 그대로 옮긴다 — T-C1의 LLM 요청에는 싣지 않는다.
     목표 고객 · 창업아이템명 · 팀원 표 행(확장)도 같다.
     """
     extension = {k: getattr(form, k) for k in FormExtension.model_fields}

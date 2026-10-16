@@ -1,4 +1,4 @@
-"""산출물층 환산 규칙 (spec 4.6 · D9 ~ D12) — 환산 함수 · 코드 점검 항목 줄 · 점수 보고서 환산 칸 도움 함수,
+"""산출물층 환산 규칙 — 환산 함수 · 코드 점검 항목 줄 · 점수 보고서 환산 칸 도움 함수,
 재작성 전후 비교 · 관리자 조회 · 통계 줄이 그 실행 건 설정 사본 배점으로 환산하는지.
 
 흐름 테스트는 메모리 · SQLite 두 저장소에서 돈다 (clock 픽스처).
@@ -73,7 +73,7 @@ def test_score_maxes_from_settings_snapshot_and_old_snapshot():
     assert score_maxes(old) == ScoreMaxes(70, 15, 15)                       # 칸이 없는 옛 사본 → 15 · 15
     assert score_maxes({"scoring": {}}) == ScoreMaxes(70, 15, 15)
     zero = score_maxes({"scoring": {"docLayerMax": 0, "codeCheckMax": 0, "featureMatchMax": 0}})
-    assert zero == ScoreMaxes(0, 0, 0)                                     # 0은 기본값으로 바꾸지 않는다 (D12)
+    assert zero == ScoreMaxes(0, 0, 0)                                     # 0은 기본값으로 바꾸지 않는다
     m = ScoreMaxes(60, 25, 5)
     assert m.artifact == 30 and m.as_stats() == {"docScore": 60.0, "codeCheck": 25.0, "featureMatch": 5.0}
 
@@ -217,7 +217,7 @@ def test_cycle_end_compares_scaled_artifact_layer(clock, first, second, kept):
     assert app.store.load_run(rid).last_rework.kept == kept
 
 
-# ── 관리자 조회 · 통계 줄 (D11) ─────────────────────────
+# ── 관리자 조회 · 통계 줄 ─────────────────────────
 def scaled_run(clock):
     """C 25 · P 5로 시작한 실행 건 — 산출물층 재작성 한 번(첫 채점 · 재작성 뒤 채점) 뒤 지금 설정을 다르게 바꾼다."""
     app = make_app(clock, StubScenario(art_scores=[(12.0, 3.0), (14.0, 9.0)]), settings=skewed_settings())

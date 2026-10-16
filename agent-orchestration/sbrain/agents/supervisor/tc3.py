@@ -1,4 +1,4 @@
-"""T-C3 작업 분해 — 조율 Agent (시트 2 · 3 · 4, 기획서 4-4 · 4-6, T-C3 spec 3.1 ~ 3.9).
+"""T-C3 작업 분해 — 조율 Agent (시트 2 · 3 · 4, 기획서 4-4 · 4-6).
 
 - 먼저 확인한다(plan.prepare, LLM을 부르기 전): ① 자격 불통과 ② 대표자 이력 없음 ④ 양식을 고를 수 없음(E-C3-FORM).
   걸리면 TaskPlanError를 그대로 올린다 — 재시도 · 재개 없이 실행 실패(관리자 실패 사유 'T-C3: …').
@@ -8,7 +8,7 @@
   — 모델 · 추론 강도 · 제한 시간은 tools가 조율 설정으로 입힌다. 결과는 끝난 순서와 상관없이 실행 순서(plan.instructed_tasks)로
   조립한다(같은 응답이면 차례로 부른 것과 글자까지 같다). 호출 기록은 끝난 순서로 쌓인다.
   LLM은 그 Task의 '안내'만 쓴다. 틀(규칙) · 맥락 · 고정 문구는 코드가 붙인다(plan.assemble). 참조 자료 부분은 없다.
-- LLM에 보내는 것은 spec 3.6 목록뿐이다.
+- LLM에 보내는 것은 정해진 칸뿐이다.
   작업(Task ID · 이름 · 틀), 아이템 사양 6칸, 선택 공고 9칸, 고른 양식(버전 · 섹션 · 섹션 글자 수 · 서술 형식 · 평가항목),
   신청자(유형 · 업력 · 주 업종 · 시 · 도). 대표자 이름 · 기업명 · 생년월일 · 성별 · 사업자등록번호 · 단가 · 수익모델 항목 ·
   이력 · 팀 구성원 · 시 · 군 · 구 · 그 밖의 확장 필드 · 자격 결과 · 참조 조각은 보내지 않는다(지시를 받는 Agent는 회사 정보를
@@ -50,7 +50,7 @@ _DATA_TAGS = (ITEM_TAG, ANNOUNCEMENT_TAG, APPLICANT_TAG)
 # 안내 호출 동시 개수 (잠정) — 지시 대상 수(웹개발 · AI_API 7, 원페이지 6)를 한꺼번에 보낸다. 실제 개수는 min(이 값, 부를 Task 수)
 GUIDANCE_CONCURRENCY = 7
 
-# ── 프롬프트 (spec 3.6 프롬프트 규칙, 문구 잠정) ─────────────────
+# ── 프롬프트 (프롬프트 규칙, 문구 잠정) ─────────────────
 SYSTEM = f"""너는 정부지원사업 사업계획서 · 프로토타입 생성 서비스에서 작업 분해를 맡은 조율 역할이다.
 하위 Agent 하나에게 줄 지시문 가운데 '안내' 부분을 쓴다. 지시문의 틀(그 Task가 지켜야 할 규칙)은 이미 정해져 있다.
 
@@ -122,7 +122,7 @@ def _failure(errors: list[BaseException], received: dict[str, str]) -> BaseExcep
     return first
 
 
-# ── 메시지 (spec 3.6 '보내는 것'만) ──────────────────────────
+# ── 메시지 ('보내는 것'만) ──────────────────────────
 def _task_block(task_id: str, category: str) -> str:
     return (f"[작업]\nTask ID: {task_id}\nTask 이름: {plan.task_name(task_id)}\n"
             f"틀 (바꾸지 않는 규칙):\n{plan.frame_for(task_id, category)}\n\n")
@@ -148,7 +148,7 @@ def item_fields(item: ItemSpec) -> dict[str, Any]:
 
 
 def announcement_fields(a: Announcement) -> dict[str, Any]:
-    """빈 값은 null로 보낸다 (spec 11)."""
+    """빈 값은 null로 보낸다."""
     return {"title": a.title, "agency": a.agency, "supportField": a.support_field,
             "applyStart": a.apply_start.isoformat() if a.apply_start else None,
             "applyEnd": a.apply_end.isoformat() if a.apply_end else None,

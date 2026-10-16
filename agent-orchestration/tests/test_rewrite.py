@@ -1,4 +1,4 @@
-"""재작성 · 재수행 지시문 다시 쓰기 (T-C3 spec 5).
+"""재작성 · 재수행 지시문 다시 쓰기.
 
 - 다시 쓰기를 끼운 앱(스텁 앱 + 조율 다시 쓰기 함수, 가짜 LLM respond)과 끼우지 않은 스텁 앱 두 경로를 본다.
 - 부르는 때: 재수행 · 재작성 대상에서 한 번씩. 첫 실행 · 반영 실행에서는 부르지 않는다. 문서층 재작성이면 T-W1 · T-W2 · T-W3 각각.
@@ -180,8 +180,7 @@ def test_redo_rewrites_guidance_keeps_frame_bytes(clock):
 
 def test_document_rework_rewrites_each_writer_once(clock):
     """계획서 묶음 재작성은 그 묶음 항목의 종류별 Task만 돈다(실현가능성 = 본문 · 표 → T-W1 · T-W3, 그림 없음 → T-W2 안 돎).
-    LLM을 부르는 T-W1만 한 번 다시 쓰고, T-W3(규칙 코드, uses_llm=False)는 덧붙이기만 한다 — 다시 쓰기 LLM 호출이 없다
-    (spec 4.11)."""
+    LLM을 부르는 T-W1만 한 번 다시 쓰고, T-W3(규칙 코드, uses_llm=False)는 덧붙이기만 한다 — 다시 쓰기 LLM 호출이 없다."""
     app = rewrite_app(clock)
     seen = {t: capture(app, t) for t in ("T-W1", "T-W2", "T-W3")}
     rid = to_screen6(app)
@@ -458,7 +457,7 @@ def test_instruction_not_compared_or_reverted_when_score_drops(clock):
     assert comp.kept == "전"
     assert not [r for r in comp.before_refs + comp.after_refs if ".instruction@" in r]
     ptr = app.store.get_pointers(rid)
-    # 문제인식 묶음은 본문 항목뿐 — T-W1만 다시 썼다 (T-W2 · T-W3는 돌지 않았다, spec 4.11)
+    # 문제인식 묶음은 본문 항목뿐 — T-W1만 다시 썼다 (T-W2 · T-W3는 돌지 않았다)
     assert ptr["T-W1.instruction"] == 1 and "T-W2.instruction" not in ptr and "T-W3.instruction" not in ptr
     assert not [e for e in app.store.pointer_events(rid) if e.key.endswith(".instruction")]
 

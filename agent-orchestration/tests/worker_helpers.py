@@ -80,7 +80,7 @@ def real_worker_app(tmp_path, clock=utc_now) -> tuple[App, App, FakeLLM, MemoryP
 
 
 def empty_features_once(real: FakeLLM) -> None:
-    """실제 T-S1의 첫 F02 응답만 기능 목록을 비운다 — 자체 검사 불통과(coreFeatures 승계) → 재수행 한 번 (spec 4.8)."""
+    """실제 T-S1의 첫 F02 응답만 기능 목록을 비운다 — 자체 검사 불통과(coreFeatures 승계) → 재수행 한 번."""
     calls = {"F02": 0}
 
     def reply(request: LLMRequest) -> str:

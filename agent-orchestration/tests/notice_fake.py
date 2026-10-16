@@ -34,7 +34,7 @@ def result(nid: str, rank: int, /, **over) -> dict[str, Any]:
 
 
 def detail(nid: str, **over) -> dict[str, Any]:
-    """공고 상세 (API 3, spec 3.2.1)."""
+    """공고 상세 (API 3)."""
     base = {"notice_id": nid, "title": f"창업지원 {nid}", "organizer": "중소벤처기업부", "supervising_org": "창업진흥원",
             "executing_org": None, "source": "kstartup", "category": "사업화", "apply_start": "2026-09-01",
             "apply_end": "2026-10-31", "apply_period_type": "fixed", "recruitment_status": "open",

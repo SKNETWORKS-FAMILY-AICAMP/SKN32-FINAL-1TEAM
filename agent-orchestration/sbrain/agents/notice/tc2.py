@@ -1,4 +1,4 @@
-"""실제 T-C2 공고 매칭 — 공고 서버의 수집 상태(API 2) · 공고 추천(API 1)으로 후보 카드를 만든다 (spec 4.1).
+"""실제 T-C2 공고 매칭 — 공고 서버의 수집 상태(API 2) · 공고 추천(API 1)으로 후보 카드를 만든다.
 
 1. 수집 상태를 받는다. '정상'이 아니면 매칭하지 않고 후보 0건 · 그 상태 · filtered_count 0 · 대체 경로 없음을 돌려준다.
 2. 정상이면 공고 추천을 top = min(topK, 10) · offset(입력 그대로)으로 부르고 결과를 카드로 바꾼다.
@@ -38,7 +38,7 @@ from .convert import (
 MAX_TOP = 10              # 공고 추천 한 번에 받는 최대 건수 (TC2Out.candidates 상한)
 NONE_TEXT = "없음"        # 사전 정보 '해당 없음' (intake/mapping.py NONE_TEXT와 같은 값)
 
-# 웹 시 · 도(region_sido 드롭다운 17개) → 공고팀 16개 값 (spec 4.1.2 — 웹 값 확인됨, 잠정 아님).
+# 웹 시 · 도(region_sido 드롭다운 17개) → 공고팀 16개 값 (웹 값 확인됨, 잠정 아님).
 # 공고팀은 광주 · 전남을 '전남광주' 한 값으로 묶는다. 표에 없는 값은 ""(지역 순위 조정만 꺼진다).
 REGION_MAP: dict[str, str] = {
     "서울특별시": "서울",
@@ -60,11 +60,11 @@ REGION_MAP: dict[str, str] = {
     "제주특별자치도": "제주",
 }
 
-# 출처 고지 (spec 4.1.3) — 그 밖의 출처는 source 값 그대로
+# 출처 고지 — 그 밖의 출처는 source 값 그대로
 SOURCE_NAMES = {"kstartup": "K-Startup", "bizinfo": "기업마당"}
 SOURCE_NOTICE = "본 AI 요약 정보는 {출처} 공고 내용을 바탕으로 생성되었습니다."
 
-# 추천 이유 문장 틀 (잠정, spec 4.1.4 — orchestrator/settings.py PROVISIONAL announcement.matchReason).
+# 추천 이유 문장 틀 (잠정 — orchestrator/settings.py PROVISIONAL announcement.matchReason).
 # AI를 부르지 않는다. 앞 문장(band · 대체 경로)과 뒷말(지역)을 " · "로 잇는다.
 REASON_BY_BAND = {
     "매우 적합": "아이템 설명과 공고 내용이 매우 비슷합니다",
@@ -107,7 +107,7 @@ def _has_value(text: str | None) -> bool:
 
 
 def match_request(item: ItemSpec, company: CompanyInfo, *, top: int, offset: int) -> dict[str, Any]:
-    """공고 추천 요청 본문 — 순위와 가산점 계산에 쓰이는 칸만 (spec 4.1.2). 가산점 스위치와 상관없이 같다."""
+    """공고 추천 요청 본문 — 순위와 가산점 계산에 쓰이는 칸만. 가산점 스위치와 상관없이 같다."""
     region, district = region_fields(company.region)
     partners = company.partners if _has_value(company.partners) else ""
     return {
@@ -164,7 +164,7 @@ def match_reason(band: str | None, region: str | None, region_match: bool | None
 
 
 def _bonus_items(r: dict[str, Any], where: str) -> list[BonusItem]:
-    """가산점 항목 — 키가 없거나 null이면 빈 목록 (spec 4.1.3). 항목마다 name(문자열) · points(유한한 수)."""
+    """가산점 항목 — 키가 없거나 null이면 빈 목록. 항목마다 name(문자열) · points(유한한 수)."""
     items = r.get("bonus_items")
     if items is None:
         return []
@@ -245,7 +245,7 @@ def make_tc2(client: NoticeClient) -> Callable[[TC2In, Tools], TC2Out]:
         # backoff=False — 2초 고정 간격 (사용자가 화면에서 기다리고, 공고팀에 2초 간격 최대 6번으로 약속)
         status = tools.search("수집 상태", lambda timeout: parse_status(client.collection_status(timeout)),
                               backoff=False)
-        if status != "정상":        # 매칭하지 않는다 — 후보 0건 (기준 문서 T-C2 ②, spec 4.1.1)
+        if status != "정상":        # 매칭하지 않는다 — 후보 0건 (기준 문서 T-C2 ②)
             return TC2Out(candidates=[], collection_status=status, filtered_count=0, fallback_used=False)
         top = min(inp.top_k, MAX_TOP)
         body = match_request(inp.item_spec, inp.company_info, top=top, offset=inp.offset)

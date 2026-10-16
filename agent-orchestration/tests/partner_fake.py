@@ -1,4 +1,4 @@
-"""전략 · 작성 · 검증-1 담당자 함수(F01 ~ F19)의 가짜 LLM 응답 — 목적(F번호)별 (네트워크 없음, spec 7절 2번).
+"""전략 · 작성 · 검증-1 담당자 함수(F01 ~ F19)의 가짜 LLM 응답 — 목적(F번호)별 (네트워크 없음).
 
 - partner_reply(request): 요청 목적(F번호)에 맞는 JSON. F16은 항목 규칙(exactItems · maxLines)과 울타리 featureList를 지켜
   구조 검사를 통과하는 본문을, F18은 요청한 flowType을 돌려준다.

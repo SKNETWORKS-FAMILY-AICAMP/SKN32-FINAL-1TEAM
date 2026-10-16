@@ -1,4 +1,4 @@
-"""공고 서버 HTTP 클라이언트 (spec 3.3) — 127.0.0.1 임시 HTTP 서버(표준 라이브러리)로만 시험한다.
+"""공고 서버 HTTP 클라이언트 — 127.0.0.1 임시 HTTP 서버(표준 라이브러리)로만 시험한다.
 
 - 오류 변환: 시간 초과 TimeoutError, 연결 실패 ConnectionError, HTTP 오류 코드 ProviderError(status),
   JSON 아님 FormatError. 404 + NOTICE_NOT_FOUND(상세 · 판정)는 예외가 아닌 NOT_FOUND 값, 코드 없는 404는 일반 오류.
@@ -148,7 +148,7 @@ def test_notice_id_is_percent_encoded(server):
     assert all("%3A" in p and ":" not in p and "%2F" in p for p in paths)       # ':' · '/'도 경로 한 칸 안에
 
 
-# ── 오류 변환 (spec 3.3) ────────────────────────────────
+# ── 오류 변환 ────────────────────────────────
 @pytest.mark.parametrize("status", [400, 401, 403, 409, 422, 429, 500, 502, 503])
 def test_http_error_status_becomes_provider_error(server, status):
     server.set("GET", "/api/collection_status", status=status, body={"detail": RESPONSE_MARK})

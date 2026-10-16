@@ -7,7 +7,7 @@ T-C1 입력으로 옮기기 전에 그대로 담는 그릇이다. 필드 이름�
   그대로 저장). 키 이름은 웹 코드(PlanCareerIn 등)에서 확인했고, 여기서는
   안쪽 구조를 검사하지 않고 그대로 담는다. 키 이름으로 옮기는 일은 mapping.py가 한다.
 - 첨부(project_attachments)는 읽지 않는다. 첨부를 다루던 R-8은 흐름에서 빠져 지금 쓰지 않는다.
-- 사업비 · 일정(project_budget_items · project_schedule_items)은 계획서 표의 원본 row다(spec 4.3, 읽기만).
+- 사업비 · 일정(project_budget_items · project_schedule_items)은 계획서 표의 원본 row다(읽기만).
 - 목표 고객(project_plan_inputs.target_customer)은 웹이 더하는 선택 컬럼이다 — 없으면 None.
 """
 from __future__ import annotations
@@ -99,7 +99,7 @@ class PlanInputRow(_Row):
 
 
 class BudgetItemRow(_Row):
-    """project_budget_items — 사업비 집행계획 한 row (spec 4.3). 금액은 DECIMAL(14,2) 원, NULL 가능.
+    """project_budget_items — 사업비 집행계획 한 row. 금액은 DECIMAL(14,2) 원, NULL 가능.
 
     phase('1단계' · '2단계')는 웹이 더하기로 한 컬럼이라 아직 웹 스키마에 없다 — 없거나 NULL이면 None.
     """
@@ -113,7 +113,7 @@ class BudgetItemRow(_Row):
 
 
 class ScheduleItemRow(_Row):
-    """project_schedule_items — 추진 일정 한 row (spec 4.3). section: feasibility(협약기간 내) · growth(협약 이후)."""
+    """project_schedule_items — 추진 일정 한 row. section: feasibility(협약기간 내) · growth(협약 이후)."""
     section: str | None = None
     category: str | None = None
     content: str | None = None
@@ -128,6 +128,6 @@ class ProjectInputRecord(_Row):
     team_members: list[TeamMemberRow] = []     # 0행이면 '팀원 없음' (웹이 입력 또는 선택을 강제)
     pricing_items: list[PricingItemRow] = []   # 저장 순서(기본키 순)
     plan_input: PlanInputRow | None = None
-    # 사업비 · 일정 (spec 4.3) — item_order 순(빈 순서는 뒤, 그 안은 기본키 순). 0행이면 입력 없음
+    # 사업비 · 일정 — item_order 순(빈 순서는 뒤, 그 안은 기본키 순). 0행이면 입력 없음
     budget_items: list[BudgetItemRow] = []
     schedule_items: list[ScheduleItemRow] = []

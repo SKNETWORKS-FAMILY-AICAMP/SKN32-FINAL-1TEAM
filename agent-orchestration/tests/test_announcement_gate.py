@@ -1,4 +1,4 @@
-"""공고 선택 · 자격 확인(G-01) — 선택 명령은 ID만, G-01이 공고 상세 · 자격 결과 · 업력을 한 번에 저장 (spec 4.3 · 4.5).
+"""공고 선택 · 자격 확인(G-01) — 선택 명령은 ID만, G-01이 공고 상세 · 자격 결과 · 업력을 한 번에 저장.
 
 - 선택 명령은 고른 공고 ID와 고르기 전 대기 지점만 남기고, Run.announcement_id는 G-01이 성공할 때 바뀐다.
 - G-01이 어떤 오류로 끝나도 실행은 살고, 안내(X-C2-GONE · X-C2-FAIL)와 함께 고르기 전 대기 지점으로 돌아간다.
@@ -102,9 +102,9 @@ def test_g01_registered_as_task_with_tools():
     exact, _ = artifact_types(build_registry())
     assert exact["selectedAnnouncement"] is Announcement                          # 등록부 출력에서 온다 (겹침 없음)
     assert Settings().task_timeouts["G-01"] == 30.0
-    for key in ("taskTimeouts.G-01", "announcement.formSpec"):
-        assert key in PROVISIONAL
-    for key in ("announcement.unknownStatus", "notice.X-C2-GONE"):       # 기준 문서 v1.10이 정해 잠정이 아니다
+    assert "announcement.formSpec" in PROVISIONAL
+    # 기준 문서가 정해 잠정이 아니다 (v1.10 — 모집 상태 모름 · X-C2-GONE, v1.11 — G-01 제한 시간 30초)
+    for key in ("announcement.unknownStatus", "notice.X-C2-GONE", "taskTimeouts.G-01"):
         assert key not in PROVISIONAL
     fields = c.G01In.model_fields
     assert fields["announcement_id"].is_required() and not fields["eligibility"].is_required()
@@ -329,8 +329,7 @@ def test_run_closed_notice_by_deadline_or_status(clock):
 
 
 def test_null_dates_and_amounts_flow_to_the_end(clock):
-    """뒤 단계 스텁이 비어 있는 마감일 · 지원 금액에서 멈추지 않는다 — 맥락 값은 null. 보호 토큰(G-03)은 흐름 밖이라 없다
-   ."""
+    """뒤 단계 스텁이 비어 있는 마감일 · 지원 금액에서 멈추지 않는다 — 맥락 값은 null. 보호 토큰(G-03)은 흐름 밖이라 없다."""
     app = make_app(clock, StubScenario(no_deadline_ids={"A01"}, no_amount_ids={"A01"}))
     rid = to_screen9(app)
     app.orchestrator.decide(rid, 9, "진행", confirmed=True)

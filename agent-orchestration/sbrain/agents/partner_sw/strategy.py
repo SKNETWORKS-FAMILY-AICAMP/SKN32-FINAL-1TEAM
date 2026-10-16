@@ -1,7 +1,7 @@
-"""T-S1 요구사항 분석 · T-S2 목표 시장 분석 — 담당자 전략 함수(F01 ~ F15)를 담당자 run_pipeline 순서대로 부른다 (spec 4.7).
+"""T-S1 요구사항 분석 · T-S2 목표 시장 분석 — 담당자 전략 함수(F01 ~ F15)를 담당자 run_pipeline 순서대로 부른다.
 
 - T-S1 = F01 · F02 · F05 ~ F09 · F13 ~ F15(+ 로컬 자료 검색), T-S2 = F03 · F04 · F10 ~ F12 (담당자 워크플로우 3.1.1).
-  앞 함수 결과를 쓰므로 차례로 부른다(spec 4.14). 담당자 run_pipeline의 단계 함수 호출 · 결과 정리(compact ·
+  앞 함수 결과를 쓰므로 차례로 부른다. 담당자 run_pipeline의 단계 함수 호출 · 결과 정리(compact ·
   _annotate_status · _attach_provenance · 예비창업 단계별 예산)를 그대로 쓰고, 파이프라인을 통째로 부르지 않는다.
 - 호출은 모두 partner_call 블록 안 — LLM은 tools.llm(purpose=F번호, json_mode=True), 자료 검색은 tools.search('자료 검색').
   실행별 KIET 검색(SB-360)은 스위치가 켜져 있을 때만 F01 전에 tools.search('KIET 시장 조사', retries=2)로 한다(market_research).
@@ -33,7 +33,7 @@ from .market_research import KIET_RETRIES, kiet_search_enabled, merge_market_evi
 from .outputs import market_analysis, names, numeric_tokens, requirement_analysis
 from .purposes import F01, F02, F03, F04, F05, F06, F07, F08, F09, F10, F11, F12, F13, F14, F15
 
-FINAL_TS1 = "itemSpec.coreFeatures 승계"   # T-S1 확정 동작 (spec 4.8)
+FINAL_TS1 = "itemSpec.coreFeatures 승계"   # T-S1 확정 동작
 NO_FEATURES = "F02 coreFeatures 없음"       # T-S1 검사 불통과 사유 (내용 없음)
 EMPTY_EVIDENCE: dict[str, Any] = {"sources": [], "issues": []}
 
@@ -56,7 +56,7 @@ def run_ts1(inp: TS1In, tools: Tools) -> TS1Out:
     limits = ins.strategy_limits(kind, end, inp.selected_announcement.support_amount_max, inp.item_spec.core_features)
     project = ins.project_body(description, company)
     item_input = {k: project.get(k) for k in ins.ITEM_KEYS}
-    f02_input = {**item_input, ins.TARGET_HINT_KEY: inp.item_spec.target_customer}   # F02 요청에만 (spec 4.4)
+    f02_input = {**item_input, ins.TARGET_HINT_KEY: inp.item_spec.target_customer}   # F02 요청에만
     team = ins.team_input(company)
     resources = ins.resource_input(company)
     budgets = ins.budget_rows(company, kind)
@@ -148,7 +148,7 @@ def run_ts1(inp: TS1In, tools: Tools) -> TS1Out:
 
     features = names(c["item_spec"].get("coreFeatures"))
     check = CheckResult(passed=True, failures=[])
-    if not features:   # 확정 동작 — 그 시도에서 바로 승계, 빈 featureList를 내지 않는다 (spec 4.8)
+    if not features:   # 확정 동작 — 그 시도에서 바로 승계, 빈 featureList를 내지 않는다
         features = list(inp.item_spec.core_features)
         check = CheckResult(passed=False, failures=[NO_FEATURES], final_action=FINAL_TS1)
     strategy_data = {**c, "research": research, "original_facts": original, "strategy_limits": limits,

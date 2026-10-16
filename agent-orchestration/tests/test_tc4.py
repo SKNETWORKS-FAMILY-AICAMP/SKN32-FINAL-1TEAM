@@ -178,7 +178,8 @@ def test_no_entry_file_and_no_readme_are_not_missing():
     assert out.deliverable.prototype_files == []
 
 
-def test_error_code_registered_as_provisional_extension():
+def test_error_code_registered_and_wording_provisional():
+    # 오류 코드는 기준 문서 시트 6, 오류 글 모양 · 미달 항목 고정 문구 · 안내 문구는 잠정
     e = ERROR_CODES["E-C4-MISSING"]
     assert (e.where, e.message, e.handling) == ("T-C4", "", "실행 실패 · 관리자 알림")
     assert {"tc4.missing", "tc4.shortfall", "tc4.userMessage"} <= set(PROVISIONAL)
@@ -206,14 +207,13 @@ def test_old_deliverable_still_reads():
     assert back.plan_doc_file.name == "plan.docx" and back.shortfall_items == []
 
 
-def test_new_fields_and_type_are_extensions():
-    assert {"planDocFile", "shortfallItems"} <= set(extension_fields(Deliverable))
+def test_fields_and_type_are_in_basedoc_and_optional():
+    # 기능정의서 v1.11에 들어갔다 — 확장 표시 없음. 선택 선언 · 기본값은 그대로
+    assert not {"planDocFile", "shortfallItems"} & set(extension_fields(Deliverable))
     assert Deliverable.model_fields["plan_doc_file"].default is None
-    assert set(extension_fields(ShortfallItem)) == {"layer", "kind", "code", "tag", "name", "score", "maxScore",
-                                                     "reason"}
-    props = Deliverable.model_json_schema(by_alias=True)["properties"]
-    assert "결정 0030" in props["shortfallItems"]["x-note"]
-    assert {"sectionResults", "planDoc", "prototype", "infographic", "scoreReport"} <= set(extension_fields(c.TC4In))
+    assert Deliverable.model_fields["shortfall_items"].default_factory is list
+    assert extension_fields(ShortfallItem) == []
+    assert extension_fields(c.TC4In) == []
     assert all(c.TC4In.model_fields[f].default is None
                for f in ("plan_doc", "prototype", "infographic", "score_report", "section_results"))
 

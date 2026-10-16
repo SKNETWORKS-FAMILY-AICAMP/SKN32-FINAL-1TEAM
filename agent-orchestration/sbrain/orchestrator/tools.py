@@ -7,7 +7,7 @@ tools는 호출마다 재시도 · 제한 시간 · 오류 종류 분류를 맡�
   tools는 timeout_sec를 요청에 실어 넘기고, 호출처는 시간이 넘으면 TimeoutError를 올린다.
 - 형식 오류: tools가 기대 스키마(schema)로 검사하고, Task의 parse 함수가 FormatError를 올려도 재시도한다.
 - 여러 스레드에서 동시에 써도 안전하다(Task 안 동시 호출). 재시도 기록은 호출별로 따로 센다.
-- 재시도 규칙(확장 · 잠정 — 기준 문서는 '오류 종류와 관계없이 재시도 횟수까지'): 일시 오류만 재시도 횟수까지 다시 보낸다.
+- 재시도 규칙(기준 문서 시트 1 재시도 · 재시도 간격): 일시 오류만 재시도 횟수까지 다시 보낸다.
   - 결제 · 한도 코드(errors.BILLING_LIMIT_CODES — ProviderError.code, 상태 코드와 관계없음)는 재시도하지 않고 '호출실패' ·
     '일시'로 끝낸다(ToolCallExhausted.billing_limit) — 엔진의 재개 일정으로 기다린다.
   - 그 밖의 응답 코드 오류가 입력 · 운영(classify_status)이면 재시도하지 않는다. 바로 끝내는 경우(_Immediate)도 그대로다.
@@ -33,7 +33,7 @@ tools는 호출마다 재시도 · 제한 시간 · 오류 종류 분류를 맡�
 - 목적별 모델(확장): llm(purpose=p)는 ToolsConfig.purpose_models에 p가 있으면 그 모델로 부르고 호출 기록의
   model에도 그 모델을 남긴다. 호출처 · 온도 · 추론 강도 · 제한 시간 · 재시도는 Task 설정 그대로다. 목적 이름은 Task가 정하고
   tools · 엔진은 사전을 그대로 쓴다.
-- JSON 객체 응답(확장, spec 4.1): llm(json_mode=True)는 요청(LLMRequest.json_mode)에 실어 보낸다. 호출 기록 칸은 늘리지 않는다.
+- JSON 객체 응답(확장): llm(json_mode=True)는 요청(LLMRequest.json_mode)에 실어 보낸다. 호출 기록 칸은 늘리지 않는다.
 - 목적 · 항목 칸 길이: 호출 기록(CallLog)의 purpose · item_key는 만들 때 trace.CALL_LOG_TEXT_MAX(DB 칸 길이)로 뒤를 자른다.
   목적별 모델 찾기와 요청 메타데이터는 자르기 전 값이다. 모든 Task · 호출 종류에 같은 규칙(_call 한 곳).
 - 호출별 재시도 횟수(확장, 범용): search(retries=n)는 그 호출만 처음 포함 n + 1번 시도한다. 주지 않으면 설정 retry_count다.
@@ -75,7 +75,7 @@ class LLMRequest:
     metadata: dict[str, Any]
     reasoning_effort: str | None = None  # 추론 모델의 추론 강도
     # 확장 — JSON 객체 응답 요청(스키마 없이). 호출처가 response_schema가 없을 때만 JSON 객체 응답 형식으로 요청한다.
-    # 호출 기록에는 칸을 더하지 않는다 (spec 4.1)
+    # 호출 기록에는 칸을 더하지 않는다
     json_mode: bool = False
 
 
@@ -154,7 +154,7 @@ class ToolsConfig:
     image_timeout_sec: float = 120.0
     # 확장 — 호출 목적 → 모델 (Task 설정의 purposeModels를 엔진이 그대로 옮긴다). 없는 목적은 model로 부른다
     purpose_models: Mapping[str, str] = field(default_factory=dict)
-    # 확장 · 잠정 — 재시도 대기 (Settings.retry를 엔진이 옮긴다). wait_cap_sec은 설정 키로 찾은 그 호출 설정의 대기 합 상한
+    # 재시도 대기 (Settings.retry를 엔진이 옮긴다). wait_cap_sec은 설정 키로 찾은 그 호출 설정의 대기 합 상한
     backoff_multiplier: float = 2.0
     jitter_ratio: float = 0.25
     retry_after_cap_sec: float = 60.0
@@ -466,7 +466,7 @@ class Tools:
             task_id=ctx.task_id,
             agent=cfg.agent,
             call_type=call_type,
-            # 기록 칸만 DB 칸 길이로 자른다 — 모델 찾기 · 요청 메타데이터는 원래 목적 그대로 (spec 4.12)
+            # 기록 칸만 DB 칸 길이로 자른다 — 모델 찾기 · 요청 메타데이터는 원래 목적 그대로
             purpose=clip_call_text(purpose),
             item_key=clip_call_text(self._item_key),
             provider=cfg.provider if llm else cfg.image_provider if image else None,

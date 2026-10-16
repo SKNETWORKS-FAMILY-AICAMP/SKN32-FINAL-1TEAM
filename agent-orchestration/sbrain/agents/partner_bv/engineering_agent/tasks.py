@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 # 재실행 때 rework_input의 issues · instruction_delta는 지시문에 다시 붙이지 않는다. 조율이 이미
 # 지시문 끝에 [재수행 — 문제가 된 내용] · [재작성] 블록으로 붙여서 넘긴다(T-C3 다시 쓰기).
 
-# [S-Brain] 산출물 파일은 tools.files로 넣는다(결정 0023) — 진입 파일 이름 · 형식. 이름은 담당자가 저장하던 이름 그대로
+# [S-Brain] 산출물 파일은 tools.files로 넣는다 — 진입 파일 이름 · 형식. 이름은 담당자가 저장하던 이름 그대로
 ENTRY_FILE_NAME = "index.html"   # [S-Brain]
 HTML_MEDIA_TYPE = "text/html"    # [S-Brain]
 SVG_MEDIA_TYPE = "image/svg+xml"  # [S-Brain]
@@ -300,7 +300,7 @@ def run_tb2(inp: TB2In, tools: Tools) -> TB2Out:
     # 아이콘으로 나간다. 아이콘이 있으면 지면 모양이 달라져 글자 칸 폭도 달라지므로, 넘침 검사
     # (_check_content)보다 먼저 만든다.
     content["_art"] = artsheet.generate(inp.category, content, tools)
-    # [S-Brain] 기본 아이콘 대체(spec 4.3) — 지면에 아이콘이 들어갈 항목(artsheet.icon_items)이 있는데 맞춤 아이콘판을 쓰지
+    # [S-Brain] 기본 아이콘 대체 — 지면에 아이콘이 들어갈 항목(artsheet.icon_items)이 있는데 맞춤 아이콘판을 쓰지
     # 못했으면(이미지 호출 재시도 소진 · 칸 수 불일치 · 그림 해석 오류) 참. 흐름이 '이미지대체' 사건에 쓴다
     icon_fallback = content["_art"] is None and bool(artsheet.icon_items(inp.category, content))   # [S-Brain]
 
@@ -311,7 +311,7 @@ def run_tb2(inp: TB2In, tools: Tools) -> TB2Out:
     # 경로에 도달할 수 없다. 기능정의서 T-B2도 재수행 상한을 넘기면 "그대로 보내고
     # 미충족을 점수에 반영한다"이므로, 미달 사실은 CheckResult로만 알린다.
     saved = render_infographic(inp.category, content)
-    # [S-Brain] 저장 경로 대신 tools.files로 넣은 참조(원페이지 onepage.svg, 그 밖 infographic.svg — 결정 0023)
+    # [S-Brain] 저장 경로 대신 tools.files로 넣은 참조(원페이지 onepage.svg, 그 밖 infographic.svg)
     image = tools.files.put(saved["file_name"], saved["source_text"].encode("utf-8"), SVG_MEDIA_TYPE)   # [S-Brain]
     infographic = Infographic(
         image_file=image, format="svg", alt_text=saved["alt_text"], icon_fallback=icon_fallback,   # [S-Brain]

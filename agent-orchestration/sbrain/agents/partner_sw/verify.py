@@ -1,4 +1,4 @@
-"""T-V1 사업계획서 검증 — 담당자 F19(validate_section) + 파이프라인 보정 + 채점(score_section) (spec 4.9).
+"""T-V1 사업계획서 검증 — 담당자 F19(validate_section) + 파이프라인 보정 + 채점(score_section).
 
 - 항목마다 담당자 validate_section(규칙 검사, 필요할 때만 LLM 의미 검증 F19)과 담당자 파이프라인의 보정
   (_reconcile_validation · _remove_roadmap_deadline_warnings · _check_agreement_table_overrun · 초기창업 3.5.3 단계 미지정 처리)을
@@ -10,9 +10,9 @@
 - 입력 오류(inputError): 입력 없음 처리 뒤 최종 status가 fail이고 담당자 F19의 `inputErrorCodes`에 입력 오류 코드가 있으면 참이다.
   issue 문구와 무관하게 구조화된 코드로 판정하며, status · issues · 점수는 담당자 결과 그대로다.
 - 점수: D = 입력 docLayerMax(설정 사본 scoring.docLayerMax, 비면 설정 기본값), N = 항목 수. 항목 점수 = 담당자 점수 × D ÷ 100 ÷ N
-  (소수 둘째 자리 반올림, 잠정), 문서층 총점 = 반올림한 항목 점수의 합(더 반올림하지 않음). varianceFlag는 늘 거짓.
+  (소수 둘째 자리 반올림 — 시트 4 DocScore.total), 문서층 총점 = 반올림한 항목 점수의 합(더 반올림하지 않음). varianceFlag는 늘 거짓.
 - 목표 항목(ReworkInput.targetItems)이 있으면 그 항목만 다시 검증하고 나머지는 baseSectionResults를 그대로 가져온다(verifiedRef도
-  원래 값). 총점은 합친 결과 전체로 다시 낸다. 동시 4개(spec 4.14), 재개 때 받은 판정(키 = 항목 번호)은 다시 하지 않는다.
+  원래 값). 총점은 합친 결과 전체로 다시 낸다. 동시 4개, 재개 때 받은 판정(키 = 항목 번호)은 다시 하지 않는다.
 - T-V1은 지시문을 받지 않는다 — 담당자 호출 수단의 지시문은 None이다.
 """
 from __future__ import annotations
@@ -43,8 +43,8 @@ from .contract import SCORE_POLICY_VERSION
 
 DEFAULT_REF = "planDoc"                    # 검증한 계획서 버전을 받지 못했을 때의 verifiedRef
 NO_DEDUCTION = "감점 없음"                  # 항목 점수 comment — 감점 사유가 없을 때
-INPUT_MISSING = "입력 확인 필요 — {label}"  # 입력 없음 warning (잠정 문구, spec 4.9)
-SCORE_DIGITS = 2                           # 항목 점수 소수 자리 (잠정)
+INPUT_MISSING = "입력 확인 필요 — {label}"  # 입력 없음 warning (잠정 문구)
+SCORE_DIGITS = 2                           # 항목 점수 소수 자리 (시트 4 DocScore.total)
 _STATUSES = ("pass", "warning", "fail")
 _INPUT_ERROR_CODES = frozenset((validation_1.INPUT_ERROR_AGREEMENT_MONTHS_EXCEEDED,
                                 validation_1.INPUT_ERROR_AGREEMENT_AFTER_DEADLINE,
@@ -66,7 +66,7 @@ def input_error(validation: dict[str, Any]) -> bool:
 
 
 def _input_missing(validation: dict[str, Any], label: str) -> dict[str, Any]:
-    """입력 없음 — issue를 버리고 warning '입력 확인 필요 — …'를 앞에 두고 status warning (spec 4.9)."""
+    """입력 없음 — issue를 버리고 warning '입력 확인 필요 — …'를 앞에 두고 status warning."""
     note = INPUT_MISSING.format(label=label)
     out = dict(validation)
     out["issues"] = []

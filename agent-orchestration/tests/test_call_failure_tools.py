@@ -249,9 +249,10 @@ def test_retry_settings_defaults_and_old_snapshot():
     assert old.retry.wait_cap_by_key == {"T-C1": 45.0} and old.retry.wait_cap_sec == 90.0
     again = Settings.model_validate(Settings().dump())
     assert again.retry == Settings().retry
-    for key in ("retry.backoffMultiplier", "retry.jitterRatio", "retry.retryAfterCapSec", "retry.waitCapSec",
-                "retry.waitCapByKey"):
-        assert key in PROVISIONAL and "잠정" in PROVISIONAL[key]
+    # 값은 기준 문서 시트 1 '재시도 간격'이 정해 잠정이 아니다 (기능정의서 v1.11)
+    for key in ("retry.retryIntervalSec", "retry.backoffMultiplier", "retry.jitterRatio", "retry.retryAfterCapSec",
+                "retry.waitCapSec", "retry.waitCapByKey"):
+        assert key not in PROVISIONAL
 
 
 def test_engine_copies_retry_settings_by_key(clock):

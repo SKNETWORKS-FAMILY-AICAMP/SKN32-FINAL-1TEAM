@@ -17,11 +17,11 @@ SA = "selectedAnnouncement"
 FORM_SPEC, EVAL_ITEMS, RUBRIC = "formSpec", "evaluationItems", "rubric"
 # 재작성 · 재수행 때 다시 쓴 지시문 (내부 산출물 <taskId>.instruction, 문자열 — 재작성 비교 · 되돌리기 대상 아님)
 INSTRUCTION_SUFFIX = ".instruction"
-# 추가 조회 결과 (확장, 등록부 밖 — Orchestrator가 만든다, spec 4.2.2). 유효한(성공한) 추가 조회만 그 결과와 같은 저장에서
+# 추가 조회 결과 (확장, 등록부 밖 — Orchestrator가 만든다). 유효한(성공한) 추가 조회만 그 결과와 같은 저장에서
 # 남긴다. 실패한 추가 조회가 남긴 T-C2 출력(candidates 버전)은 화면 · 결과 · 한도 · 공고 선택 어디서도 읽지 않는다.
 FIRST_CANDIDATES = "firstCandidates"   # 첫 조회 목록 — 추가 조회에 다시 나온 카드를 새 내용으로 바꾼 것 (자리 · 순위 그대로)
 MORE_CANDIDATES = "moreCandidates"     # 추가 조회 목록 — 첫 조회와 겹친 공고를 뺀 것 (받은 순서 그대로)
-# 전략 · 작성 · 검증-1 확장 출력 (spec 4.7) — 기준 문서 타입이 없는 확장 출력이라 이 이름을 쓴다
+# 전략 · 작성 · 검증-1 확장 출력 — 기준 문서 타입이 없는 확장 출력이라 이 이름을 쓴다
 STRATEGY_DATA = "strategyData"               # T-S1 — 담당자 전략 함수 결과
 MARKET_STRATEGY_DATA = "marketStrategyData"  # T-S2 — 담당자 시장 함수 결과
 SECTION_OUTPUTS = "sectionOutputs"           # T-W1 — 본문 항목 번호 → F16 결과
@@ -30,7 +30,7 @@ DIAGRAM_OUTPUTS = "diagramOutputs"           # T-W2 — 그림 항목 번호 →
 TABLE_SECTIONS = "tableSections"             # T-W3 — 표 항목 서술 · 대체 본문 (PlanSection)
 TABLE_OUTPUTS = "tableOutputs"               # T-W3 — 표 항목 번호 → F17 결과
 SECTION_RESULTS = "sectionResults"           # T-V1 — 항목별 검증-1 판정 (SectionResult)
-# 구현 · 검증-2 확장 출력 (spec 4.4 · 4.13) — T-V2 확인 요소 목록. 다음 T-V2의 입력으로 이어진다
+# 구현 · 검증-2 확장 출력 — T-V2 확인 요소 목록. 다음 T-V2의 입력으로 이어진다
 FEATURE_ELEMENTS = "featureElements"
 
 # 산출물 키 중 첫 버전 이후 바뀌면 안 되는 것 (시트 2 T-S1 · T-W1: 확정 후 변경 불가)
@@ -74,12 +74,12 @@ def build_registry() -> TaskRegistry:
          {"candidates": "candidates", "collection_status": "collectionStatus",
           "filtered_count": "filteredCount", "fallback_used": "fallbackUsed",
           "fallback_mode": "fallbackMode"}, "candidates",
-         # 추가 조회 구간(MORE)에서는 어떤 오류든 흐름이 받아 공고선택 대기로 돌리고 기회를 돌려준다(spec 4.2.3).
+         # 추가 조회 구간(MORE)에서는 어떤 오류든 흐름이 받아 공고선택 대기로 돌리고 기회를 돌려준다.
          # 사전 단계(PRE, 첫 조회)는 그대로 — 시작 요청이 X-C2-FAIL로 끝난다
          uses_llm=False, failure=FailurePolicy(resumable=False, fallback_in_task=True,
                                                rescue_segments=frozenset({"MORE"})))
     # G-01 — 고른 공고(마지막 decision의 공고 ID)의 상세 받기와 자격 판정을 한 단계에서 한다. 공고 서버를 tools로 부르는
-    # Task(LLM 없음)이다 — 기준 문서 v1.10 시트 2도 공고 서버 호출에 재시도 · 제한 시간을 둔다. 선택 공고 · 자격 결과 · 업력을 한 번에 저장한다(spec 4.3.2).
+    # Task(LLM 없음)이다 — 기준 문서 시트 2도 공고 서버 호출에 재시도 · 제한 시간을 둔다. 선택 공고 · 자격 결과 · 업력을 한 번에 저장한다.
     # 재개하지 않고, 자격 확인 구간(GATE)에서는 어떤 오류든 흐름이 받아 고르기 전 대기 지점으로 돌린다(4.3.4).
     # 고정 Task 14개에 세지 않는다(기획서 4-4).
     task("G-01", "자격요건 게이트", "조율", 3, c.G01In, c.G01Out,
@@ -90,7 +90,7 @@ def build_registry() -> TaskRegistry:
 
     # ── 계획서 작성 ───────────────────────────────────
     # T-C3 — 신청자 유형으로 양식 · 평가 항목 · 채점 기준표를 고르고(출력 formSpec · evaluationItems · rubric),
-    # 뒷 단계(T-W1 · T-V1 · T-P1 · T-P2 · G-02a · G-02b)는 선택 공고의 같은 이름 필드 대신 이 출력을 읽는다 (T-C3 spec 4).
+    # 뒷 단계(T-W1 · T-V1 · T-P1 · T-P2 · G-02a · G-02b)는 선택 공고의 같은 이름 필드 대신 이 출력을 읽는다.
     # 선택 공고의 formSpec · evaluationItems는 자리 표시 값으로 남는다. 업력은 G-01 출력에서 받는다(입력 businessAgeYears)
     # 재개 때는 앞 실행이 받은 안내(T-C3.partial)를 prior_guidance로 받아 빠진 Task만 부른다(엔진 일반 장치 PARTIAL)
     task("T-C3", "작업 분해", "조율", 4, c.TC3In, c.TC3Out,
@@ -99,7 +99,7 @@ def build_registry() -> TaskRegistry:
           "business_age_years": art("businessAgeYears", optional=True), "prior_guidance": PARTIAL},
          {"task_plan": "taskPlan", "task_count": "taskCount", "instruction_set": "instructionSet",
           "form_spec": FORM_SPEC, "evaluation_items": EVAL_ITEMS, "rubric": RUBRIC}, "task_plan")
-    # T-S1 ~ T-V1 확장 입력 · 출력(spec 4.7) — 전략 · 작성 · 검증-1 담당자 함수(F01 ~ F19)를 끼우며 더했다.
+    # T-S1 ~ T-V1 확장 입력 · 출력 — 전략 · 작성 · 검증-1 담당자 함수(F01 ~ F19)를 끼우며 더했다.
     # 직전 결과(base…)는 같은 키의 지금 값(없으면 None)이고, 재개 때 받은 결과는 PARTIAL로 잇는다(T-W3는 규칙 코드라 없음)
     task("T-S1", "요구사항 분석", "전략", 5, c.TS1In, c.TS1Out,
          {"item_spec": art("itemSpec"), "selected_announcement": art(SA), "instruction": INSTR,
@@ -122,14 +122,14 @@ def build_registry() -> TaskRegistry:
           "base_section_outputs": art(SECTION_OUTPUTS, optional=True), "prior_results": PARTIAL},
          {"plan_doc": "planDoc", "sections": "sections", "feature_list": "featureList",
           "check": _check_key("T-W1"), "section_outputs": SECTION_OUTPUTS}, "plan_doc", redo=True)
-    task("T-W2", "그래프 생성", "작성", 8, c.TW2In, c.TW2Out,
+    task("T-W2", "그림 생성", "작성", 8, c.TW2In, c.TW2Out,
          {"plan_doc": art("planDoc"), "market_analysis": art("marketAnalysis"), "instruction": INSTR,
           "rework_input": REWORK, "strategy_data": art(STRATEGY_DATA), "feature_list": art("featureList"),
           "base_diagrams": art(DIAGRAMS, optional=True), "base_diagram_outputs": art(DIAGRAM_OUTPUTS, optional=True),
           "prior_results": PARTIAL},
          {"charts": "charts", "check": _check_key("T-W2"), "diagrams": DIAGRAMS,
           "diagram_outputs": DIAGRAM_OUTPUTS}, "charts", redo=True)
-    # T-W3 — 담당자 F17은 규칙 코드라 LLM을 부르지 않는다(uses_llm=False — Task 설정 항목 없음, spec 4.2).
+    # T-W3 — 담당자 F17은 규칙 코드라 LLM을 부르지 않는다(uses_llm=False — Task 설정 항목 없음).
     # 지시문 입력(instruction)은 작업 계획에 그대로 있다
     task("T-W3", "표 생성", "작성", 9, c.TW3In, c.TW3Out,
          {"plan_doc": art("planDoc"), "company_info": art("companyInfo"), "selected_announcement": art(SA),
@@ -145,7 +145,7 @@ def build_registry() -> TaskRegistry:
           "table_check": art(_check_key("T-W3"), optional=True),
           "diagrams": art(DIAGRAMS), "table_sections": art(TABLE_SECTIONS)},
          {"plan_doc": "planDoc"}, "plan_doc", kind="merge")
-    # T-V1 — 재작성 · 검증-1 재수행 때 다시 검증할 목표 항목을 재작성 · 재수행 입력(REWORK)으로 받는다 (spec 4.7)
+    # T-V1 — 재작성 · 검증-1 재수행 때 다시 검증할 목표 항목을 재작성 · 재수행 입력(REWORK)으로 받는다
     task("T-V1", "사업계획서 검증", "검증-1", 10, c.TV1In, c.TV1Out,
          {"plan_doc": art("planDoc"), "evaluation_items": art(EVAL_ITEMS), "rubric": art(RUBRIC),
           "strategy_data": art(STRATEGY_DATA), "market_strategy_data": art(MARKET_STRATEGY_DATA),
@@ -194,7 +194,7 @@ def build_registry() -> TaskRegistry:
          {"prototype": art("prototype"), "readme_file": art("readmeFile", optional=True)},
          {"prototype": "prototype"}, "prototype", kind="merge")
     # T-V2 — 계획서(확장 입력, T-B2와 같은 값)는 원페이지 대조의 근거라 늘 채운다. 진단(확장 출력)은 관리자 기록 전용이다.
-    # 확인 요소 목록(확장 입출력 featureElements, spec 4.4 · 4.13)은 직전 T-V2 출력을 다음 T-V2 입력으로 잇는다 —
+    # 확인 요소 목록(확장 입출력 featureElements)은 직전 T-V2 출력을 다음 T-V2 입력으로 잇는다 —
     # 첫 T-V2는 산출물이 없어 None이 들어간다(선택 입력)
     task("T-V2", "프로토타입 검증", "검증-2", 15, c.TV2In, c.TV2Out,
          {"prototype": art("prototype"), "infographic": art("infographic"), "feature_list": art("featureList"),
@@ -202,7 +202,7 @@ def build_registry() -> TaskRegistry:
          {"artifact_score": "artifactScore", "code_check": "codeCheck", "feature_match": "featureMatch",
           "diagnostics": "T-V2.diagnostics", "feature_elements": FEATURE_ELEMENTS},
          "artifact_score", failure=FailurePolicy(fallback_in_task=True))
-    # G-02b — 실행 건 카테고리(확장 입력, T-C1 산출물 category)로 산출물 종류를 정한다 (spec 4.7)
+    # G-02b — 실행 건 카테고리(확장 입력, T-C1 산출물 category)로 산출물 종류를 정한다
     rule("G-02b", "종합 평가 판정", "조율", 16, c.G02bIn, c.G02bOut,
          {"doc_score": art("docScore"), "artifact_score": art("artifactScore"),
           "threshold": setting("scoring.threshold"), "rework_usage": run_field("rework_usage"),

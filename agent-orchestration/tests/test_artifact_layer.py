@@ -1,4 +1,4 @@
-"""산출물층 검증 반영 (작업지시 C1 ~ C10 · spec 4 · 3.3).
+"""산출물층 검증 반영.
 
 - 계약 확장 필드 · T-V2 입력(planDoc) · 출력(diagnostics) · G-04 자체 검사
 - 산출물층 미달 → 다시 돌릴 Task (artifact_rework_reasons — 통과 필수 조건 · 결함 출처 · 누락 · 부분 인정 · 보류)
@@ -75,7 +75,7 @@ def score(kind: str, *, failed=None, gate=None, missing=(), partial=(), withheld
     return ArtifactScore(total=cc.total + fm.score, code_check=cc, feature_match=fm)
 
 
-# ── C1 · C7 · spec 4.1 ~ 4.3: 계약 필드 (기준 문서 v1.10에 들어간 것 · 남은 확장) ─────────
+# ── 계약 필드 (기준 문서 v1.10에 들어간 것 · 남은 확장) ─────────
 def test_new_contract_fields_marking():
     from sbrain.models import CheckResult
     # 기준 문서 v1.10에 들어갔다 — 확장 표시 없음
@@ -85,7 +85,7 @@ def test_new_contract_fields_marking():
     assert "planDoc" not in extension_fields(c.TV2In)
     assert "diagnostics" not in extension_fields(c.TV2Out)
     assert "planDoc" not in extension_fields(c.TB1In)
-    assert "previousSourceFile" in extension_fields(ReworkInput)              # 참조형 — 기준 문서와 다름
+    assert "previousSourceFile" not in extension_fields(ReworkInput)          # 참조형 — 기능정의서 v1.11에 들어감
     # 기준 문서에 아직 없다 — 확장
     assert "check" in extension_fields(c.G04Out)
     # 기준 문서는 필수지만 옛 실행 건 호환으로 선택 선언을 지킨다
@@ -113,7 +113,7 @@ def test_catalog_wires_plan_doc_diagnostics_and_g04_check():
     assert g04.failure.on_step_error == "continue"
 
 
-# ── C4 · spec 4.1: 산출물층 미달 → 다시 돌릴 Task ─────────────────
+# ── 산출물층 미달 → 다시 돌릴 Task ─────────────────
 def test_rework_map_tables():
     assert 2 not in CODE_CHECK_TARGET["html"]
     assert set(CODE_CHECK_TARGET["html"].values()) == {"T-B1"}
@@ -167,7 +167,7 @@ def test_flow_does_not_branch_on_findings_text():
     assert artifact_rework_reasons(s, "html") == {}
 
 
-# ── C8 · spec 4: 스텁 T-V2 ───────────────────────────────
+# ── 스텁 T-V2 ───────────────────────────────
 def stub_fn(task_id: str, sc: StubScenario):
     r = build_registry()
     bind_stubs(r, sc)
@@ -339,7 +339,7 @@ def test_onepage_screen9_document_rework_reflects_infographic(clock):
     rid = to_screen9(app)
     rework(app, clock, rid, "성장전략")
     cyc = last_cycle_id(app, rid)
-    # 성장전략 묶음 항목(본문 · 표)만 다시 만든다 — 그림 항목이 없어 T-W2는 돌지 않는다 (spec 4.11)
+    # 성장전략 묶음 항목(본문 · 표)만 다시 만든다 — 그림 항목이 없어 T-W2는 돌지 않는다
     assert cycle_steps(app, rid, cyc) == [
         "T-W1", "T-W3", "M-1", "T-V1", "T-B2", "M-2", "G-04", "M-3", "T-V2", "G-02b"]
     [tb2] = [r for r in records_of_task(app, rid, "T-B2") if r.cycle_id == cyc]
@@ -372,7 +372,7 @@ def test_onepage_document_rework_drop_reverts_plan_infographic_and_prototype(clo
         assert app.store.get_latest_versions(rid)[key] > before[key]      # 새로 만들었다가 되돌렸다
 
 
-# ── spec 4.3: 재실행 때 이전 원문 (참조) ───────────────────
+# ── 재실행 때 이전 원문 (참조) ───────────────────
 def numbered_html(app) -> None:
     """T-B1이 실행마다 다른 진입 파일을 넣는다 — 내용 '<html>원문표지-n</html>'."""
     base, n = app.registry.get("T-B1").fn, [0]
@@ -498,7 +498,7 @@ def test_previous_source_file_not_in_records_or_admin_views(clock):
     assert "원문표지" not in dumped and ref.key not in dumped and ref.sha256 not in dumped
 
 
-# ── spec 3.3: T-B2 이미지 호출 실패 예외 ─────────────────────────
+# ── T-B2 이미지 호출 실패 예외 ─────────────────────────
 def icon_tb2(app) -> None:
     """T-B2가 아이콘을 그리고, 이미지 호출이 재시도를 다 쓰면 기본 아이콘으로 계속한다(담당자 코드와 같은 모양)."""
     base = app.registry.get("T-B2").fn

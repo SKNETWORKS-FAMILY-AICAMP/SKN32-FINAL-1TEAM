@@ -3,8 +3,8 @@
 | verification_policies | Settings |
 |---|---|
 | doc_weight | 문서층 배점 D (scoring.docLayerMax) |
-| code_weight | 코드 점검 배점 C (scoring.codeCheckMax, 확장 — spec 4.6) |
-| plan_weight | 계획서 대조 배점 P (scoring.featureMatchMax, 확장 — spec 4.6) |
+| code_weight | 코드 점검 배점 C (scoring.codeCheckMax, 확장) |
+| plan_weight | 계획서 대조 배점 P (scoring.featureMatchMax, 확장) |
 | code_weight + plan_weight | 산출물층 배점 C + P (scoring.artifactLayerMax) |
 | pass_threshold | Threshold (scoring.threshold) |
 | rerun_cap | 재수행 횟수 (redo.redoCount) |

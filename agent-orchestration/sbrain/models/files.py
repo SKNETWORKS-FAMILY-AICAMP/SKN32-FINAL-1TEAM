@@ -1,9 +1,8 @@
-"""파일 참조 FileRef (확장 타입) — 산출물 파일을 DB 글자 칸에 담지 않고 파일 저장소에 두며, 계약 칸에는 참조만 싣는다.
+"""파일 참조 FileRef (시트 4) — 산출물 파일을 DB 글자 칸에 담지 않고 파일 저장소에 두며, 계약 칸에는 참조만 싣는다.
 
-- 기준 문서 타입에 담을 곳이 없는 참조 타입이라 새 타입으로 둔다.
 - FileRef는 Orchestrator가 파일을 넣을 때(tools.files.put) 만들어 돌려준다. Agent는 받은 값을 그대로 출력에 싣는다.
   엔진이 저장 전에 출력 안의 FileRef를 저장소와 대조한다(실행 건 · 있음 · 형식 · 크기 · sha256).
-- 허용 형식 8종 · 파일 하나 30MB는 사용자가 정한 값이다(잠정이 아님).
+- 허용 형식 8종 · 파일 하나 30MB는 확정값이다(잠정이 아님).
 - 규칙을 어긴 사유 문구에는 이름 · 키 · 내용을 넣지 않는다(어긴 규칙 종류만).
 """
 from __future__ import annotations
@@ -17,7 +16,7 @@ from .base import SBModel
 __all__ = ["ALLOWED_MEDIA_TYPES", "MAX_FILE_BYTES", "MAX_NAME_LEN", "FileRef", "file_key_problem",
            "file_name_problem", "media_type_problem", "size_problem"]
 
-# 허용 형식 (spec 4.2) — 바꾸려면 이 목록에 더한다
+# 허용 형식 — 바꾸려면 이 목록에 더한다
 ALLOWED_MEDIA_TYPES: frozenset[str] = frozenset({
     "text/html",                                                                  # HTML
     "image/svg+xml",                                                              # SVG
@@ -53,7 +52,7 @@ def _segment_problem(seg: str) -> str | None:
 
 
 def file_name_problem(name: str) -> str | None:
-    """파일 이름 규칙(spec 4.1) — 경로가 아닌 이름 하나, 1 ~ 100자, 영문 · 숫자 · '.' · '-' · '_'만, '.'으로 시작 · 끝나지 않음,
+    """파일 이름 규칙 — 경로가 아닌 이름 하나, 1 ~ 100자, 영문 · 숫자 · '.' · '-' · '_'만, '.'으로 시작 · 끝나지 않음,
     확장자를 뺀 이름이 Windows 예약 이름이 아님. 어기면 규칙 종류(이름 없음), 맞으면 None."""
     if not isinstance(name, str):
         return "이름이 글자가 아님"
@@ -61,7 +60,7 @@ def file_name_problem(name: str) -> str | None:
 
 
 def file_key_problem(key: str) -> str | None:
-    """키 규칙(spec 4.1) — '/'로 나눈 마디가 둘 이상이고(첫 마디 = 실행 건 ID, 마지막 마디 = 파일 이름), 마디마다 이름 규칙을
+    """키 규칙 — '/'로 나눈 마디가 둘 이상이고(첫 마디 = 실행 건 ID, 마지막 마디 = 파일 이름), 마디마다 이름 규칙을
     지킨다. 절대 경로 · '..' · '.' · 빈 마디 · 역슬래시 · 드라이브 표시는 이 규칙에 걸린다. 어기면 규칙 종류(키 없음), 맞으면 None."""
     if not isinstance(key, str) or not key:
         return "빈 키"
@@ -88,7 +87,7 @@ def size_problem(size: int) -> str | None:
 
 
 class FileRef(SBModel):
-    """확장 타입 — 파일 참조. JSON 이름: key · name · mediaType · size · sha256.
+    """파일 참조 (시트 4 FileRef). JSON 이름: key · name · mediaType · size · sha256.
 
     key       저장소 안 위치. Orchestrator가 짓는다: '<runId>/<executionId>/<고유값>/<name>'
     name      파일 이름 (예: index.html · onepage.svg · README.md)

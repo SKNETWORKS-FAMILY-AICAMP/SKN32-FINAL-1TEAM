@@ -2,7 +2,7 @@
 
 | 함수 | 쓰는 곳 | 저장소 · 입력 · 설정 | Agent |
 |---|---|---|---|
-| build_stub_app | 테스트 · 시연 | 메모리(또는 주어진 저장소) · 기본 설정 | Task는 스텁, 규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4)는 조율 실구현 + 테스트용 실패 흉내( D14), 가짜 LLM · 가짜 이미지 호출처, 지시문 다시 쓰기 없음(덧붙이기만) |
+| build_stub_app | 테스트 · 시연 | 메모리(또는 주어진 저장소) · 기본 설정 | Task는 스텁, 규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4)는 조율 실구현 + 테스트용 실패 흉내, 가짜 LLM · 가짜 이미지 호출처, 지시문 다시 쓰기 없음(덧붙이기만) |
 | build_app | 워커 (sbrain/worker.py) | 공유 MySQL — SqlStore · SqlProjectInputSource · DbSettingsProvider | 조율 T-C1 · T-C3 실구현과 재작성 · 재수행 지시문 다시 쓰기(OpenAI), 조율 규칙 단계 G-02a · G-02b · G-04 · M-1 ~ M-4 실구현(LLM 없음), 전략 · 작성 · 검증-1 T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1 실구현(담당자 코드 — OpenAI, T-W3는 LLM 없음, T-S1 실행별 KIET 검색은 SBRAIN_KIET_SEARCH가 켜는 값일 때만), 구현 · 검증-2 T-B1 · T-B2 · T-V2 실구현(담당자 코드 — OpenAI), T-C2 · G-01은 SBRAIN_NOTICE_API_URL이 있으면 공고 서버 연결(실제 모드) · 없으면 스텁, 나머지 스텁. 이미지 호출도 구현이 들어온 Task(T-B2 아이콘판)만 실제(OpenAI) |
 | build_web | 웹 서버 | 공유 MySQL — 같음 | 단계를 돌지 않는다 (명령 · 조회만). 공고 서버 · 이미지 호출처를 부르지 않는다 |
 
@@ -80,7 +80,7 @@ class App:
 
 
 class TaskRoutedProvider:
-    """구현이 들어온 호출만 실제 호출처로, 나머지(스텁 Task)는 가짜 호출처로 보낸다 (잠정, T-C3 spec 6.1).
+    """구현이 들어온 호출만 실제 호출처로, 나머지(스텁 Task)는 가짜 호출처로 보낸다 (잠정).
 
     호출처는 Agent마다 정해지므로, 그대로 두면 스텁 Task도 실제 OpenAI를 부른다. 실제 호출처로 보내는 규칙:
     - 호출 기록의 task_id가 real_tasks(구현 Task — 조율 T-C1 · T-C3, 전략 · 작성 · 검증-1 T-S1 ~ T-V1,
@@ -140,7 +140,7 @@ def build_stub_app(
     """스텁 Agent와 메모리 저장소로 뼈대 전체를 조립한다 (테스트 · 시연용).
 
     규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4)와 결과 통합 T-C4는 스텁이 없고 조율 실구현에 테스트용 실패 흉내(raise_in ·
-    G-04 check_fail_times)만 감싼다 — 흐름 테스트가 워커와 같은 규칙을 검사한다 (bind_stubs D14).
+    G-04 check_fail_times)만 감싼다 — 흐름 테스트가 워커와 같은 규칙을 검사한다 (bind_stubs).
 
     project_inputs를 주면 start_run_for_project로 웹 DB에 저장된 사전 정보를 읽어 시작할 수 있다.
     store를 주면 그 저장소를 쓴다(예: SqlStore). 없으면 메모리 저장소.
@@ -174,13 +174,13 @@ def build_app(
       없거나 절대 경로가 아니면 DB에 닿기 전에 RuntimeError(값은 메시지에 싣지 않는다). 폴더가 없으면 만든다.
     - 흐름의 지시문 만들기에 조율 다시 쓰기(rewrite_guidance)를 끼운다 — 재작성 · 재수행 대상의 안내를 다시 쓴다.
     - 전략 · 작성 · 검증-1(T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1)은 담당자 코드 실구현(agents/partner_sw, bind_partner_sw)이고
-      그 LLM 호출도 실제 호출처로 간다(spec 4.15).
+      그 LLM 호출도 실제 호출처로 간다.
     - 구현 · 검증-2(T-B1 · T-B2 · T-V2)도 담당자 코드 실구현(agents/partner_bv, bind_partner_bv)이고 그 LLM 호출은 실제 호출처로,
       T-B2의 이미지 호출(아이콘판)은 실제 이미지 호출처로 간다.
     - 나머지 Agent는 스텁이다. 스텁 Task는 실제 호출처를 부르지 않는다(TaskRoutedProvider). 다시 쓰기 호출은 대상이
       스텁 Task여도 실제 호출처로 간다.
     - 공고 매칭(T-C2) · 자격 확인(G-01): 공고 서버 주소가 있으면 공고 서버 연결(agents/notice, 실제 모드), 없으면 스텁
-      (스텁 모드 — 스텁 G-01이 스텁 공고를 만들고 판정한다, spec 3.1 · 4.6).
+      (스텁 모드 — 스텁 G-01이 스텁 공고를 만들고 판정한다).
       주소는 notice_api_url, 주지 않으면(None) SBRAIN_NOTICE_API_URL(환경 변수 → .env). 빈 문자열이면 스텁이다.
       주소 형식이 틀리면 조립할 때 ValueError다(메시지에 주소를 싣지 않는다).
     - 실행별 KIET 검색(SB-360, 기본 꺼짐): kiet_search, 주지 않으면(None) SBRAIN_KIET_SEARCH(환경 변수 → .env)가 켜는 값
@@ -211,8 +211,8 @@ def build_app(
         project_inputs=project_inputs or SqlProjectInputSource(db), stubs=True, rewriter=rewrite_guidance,
         files=files)
     bind_supervisor(app.registry)
-    bind_partner_sw(app.registry)   # 전략 · 작성 · 검증-1 실구현 (spec 4.15)
-    bind_partner_bv(app.registry)   # 구현 · 검증-2 실구현 T-B1 · T-B2 · T-V2 (impl-verify2 spec 4.10)
+    bind_partner_sw(app.registry)   # 전략 · 작성 · 검증-1 실구현
+    bind_partner_bv(app.registry)   # 구현 · 검증-2 실구현 T-B1 · T-B2 · T-V2
     # 실행별 KIET 검색 스위치 (SB-360) — T-S1 등록은 그대로 두고 연결 코드의 프로세스 값만 정한다
     set_kiet_search(switch_on(get_env(KIET_SEARCH_ENV)) if kiet_search is None else kiet_search)
     notice_url = get_env("SBRAIN_NOTICE_API_URL") if notice_api_url is None else notice_api_url

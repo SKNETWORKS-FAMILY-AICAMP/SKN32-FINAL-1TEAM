@@ -11,7 +11,7 @@
   돌던 단계의 늦은 쓰기가 끝난 뒤에 지운다.
 - 범용이다 — 실행 건 ID와 파일 저장소 창구만 안다. 운영 로그(sbrain.run)에 파일삭제 · 파일삭제실패 · 파일삭제포기 줄을
   남긴다(실행 건 · 대기열 줄 번호까지, 키 · 파일 이름 · 오류 메시지 없음).
-- 잠정 값: FIRST_DELAY_SEC · RETRY_SEC · BATCH_SIZE (PROVISIONAL fileDeletion.*). MAX_ATTEMPTS 3은 사용자가 정한 값이라
+- 잠정 값: FIRST_DELAY_SEC · RETRY_SEC · BATCH_SIZE (PROVISIONAL fileDeletion.*). MAX_ATTEMPTS 3은 확정값이라
   잠정이 아니다.
 """
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""구현 · 검증-2 실구현 Task 등록 (spec 4.10) — 워커 조립(build_app)이 bind_partner_bv로 스텁을 바꿔 끼운다.
+"""구현 · 검증-2 실구현 Task 등록 — 워커 조립(build_app)이 bind_partner_bv로 스텁을 바꿔 끼운다.
 
 - T-B1 실행 파일 · T-B2 인포그래픽(engineering_agent/tasks.py) · T-V2 산출물층 검증(verification_agent/tasks.py) —
   담당자 tasks.py의 Task 함수를 지금 계약(파일 참조 FileRef · tools.files)으로 고친 것이다(VENDORED.md 4절).

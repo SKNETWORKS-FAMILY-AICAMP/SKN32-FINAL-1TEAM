@@ -2,8 +2,7 @@
 
 규칙 단계라 tools를 받지 않는다(LLM 없음 · 파일을 열지 않음). 함수 모양은 run_mN(inp) -> 출력.
 
-- M-1: 차트 · 표를 계획서에 싣고, 표 항목 문장은 tableSections의 같은 항목으로 바꾸며, 그림 목록은 diagrams로 통째로 바꾼다
- .
+- M-1: 차트 · 표를 계획서에 싣고, 표 항목 문장은 tableSections의 같은 항목으로 바꾸며, 그림 목록은 diagrams로 통째로 바꾼다.
 - M-2: 원페이지 인포그래픽 그림 참조를 그대로 진입 파일로 감싼다 — Prototype(kind='svg-onepage', entryFile = 인포그래픽
   imageFile, assetFiles = []). 파일을 열지 않는다(같은 실행 건의 참조).
 - M-3: G-04가 만든 안내 문서 참조(readmeFile)를 Prototype에 끼운다.

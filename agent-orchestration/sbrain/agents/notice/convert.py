@@ -1,7 +1,7 @@
-"""공고 서버 응답 값 검사 · 변환 도움 (spec 3.3 · 4.1.3 · 4.4).
+"""공고 서버 응답 값 검사 · 변환 도움.
 
 - 약속 밖이면 `FormatError`를 올려 tools가 재시도하게 한다. 메시지에는 키 경로(과 목록 자리)만 넣는다 — 값 · 본문은 넣지 않는다.
-- 키 규칙 (spec 3.3 "필요한 키가 없거나 → FormatError"): 우리가 쓰는 키는 모두 **있어야** 한다. 값이 null일 수 있는 키도
+- 키 규칙 ("필요한 키가 없거나 → FormatError"): 우리가 쓰는 키는 모두 **있어야** 한다. 값이 null일 수 있는 키도
   키 자체는 있어야 한다. 키가 없어도 되는 것은 spec이 "키가 없거나"·"없음"으로 정한 것뿐이다 — 추천 결과의
   `content_version` · `bonus_score` · `bonus_items` · `apply_period_type`, 상세의 `bonus_info` · `apply_period_type`.
   이 키에만 `missing_ok=True`를 준다.
@@ -18,7 +18,7 @@ from pydantic import ValidationError
 
 from ...orchestrator.errors import FormatError
 
-# 모집 형태 표기 (applyPeriodType, spec 4.4) — 그 밖의 값 · 없음은 '모름'
+# 모집 형태 표기 (applyPeriodType) — 그 밖의 값 · 없음은 '모름'
 PERIOD_LABELS: dict[str, str] = {
     "fixed": "기간 있음",
     "budget_exhaustion": "예산 소진 시까지",
@@ -159,5 +159,5 @@ def first_text(d: dict[str, Any], keys: tuple[str, ...], where: str, default: st
 
 
 def period_label(value: Any) -> str:
-    """모집 형태 표기 (spec 4.4) — 표에 없는 값 · 없음은 '모름'. 키가 없어도 된다."""
+    """모집 형태 표기 — 표에 없는 값 · 없음은 '모름'. 키가 없어도 된다."""
     return PERIOD_LABELS.get(value, PERIOD_UNKNOWN) if isinstance(value, str) else PERIOD_UNKNOWN

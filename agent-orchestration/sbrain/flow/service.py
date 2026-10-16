@@ -8,12 +8,12 @@
   첨부가 있어도 R-8(첨부 문서 텍스트 추출)은 넣지 않는다 — 흐름 밖.
   start_run · start_run_for_project는 두 조각을 차례로 부르는 동기 경로다(테스트 · 시연용).
 - 사용자 명령은 'decision' 산출물로 남겨 추적 기록에서 참조한다.
-- 재작성은 묶음 이름으로 요청받는다(request_rework_for_project, 확장). 같은 화면에서 모으는 시간(잠정 2초) 안의
+- 재작성은 묶음 이름으로 요청받는다(request_rework_for_project, 확장). 같은 화면에서 모으는 시간(2초) 안의
   요청은 재작성 한 번으로 합치고, 모으는 동안 워커는 그 실행 건을 가져가지 않는다.
 - 웹 조립(build_web)은 allow_pre_stage가 거짓이라 사전 단계를 돌지 않는다 — run_start_request(와 동기 경로)를 부르면
-  시작 요청을 건드리지 않고 바로 CommandError("WEB_NOT_ALLOWED") (spec 3.4).
+  시작 요청을 건드리지 않고 바로 CommandError("WEB_NOT_ALLOWED").
 - 탈퇴(delete_account_data, 확장): 계정 잠금 안에서 중단 · 취소한 뒤 그 계정의 실행 건 · 시작 요청을 통계 줄로 옮기고 지운다.
-- 웹이 쓰는 조회(spec 4): view_project · project_views · missing_projects · wait_project · outputs · rework_result · active_work,
+- 웹이 쓰는 조회: view_project · project_views · missing_projects · wait_project · outputs · rework_result · active_work,
   관리자 admin_runs · admin_score_history · admin_summary · admin_agent_tasks (모양은 flow/reads.py).
 - 산출물 파일(확장): 웹 read_artifact_file(파일 내용 · 형식), 관리자 admin_file_deletions(삭제 대기열 목록) ·
   admin_retry_file_deletion(포기한 줄 다시 시도). 웹 조립에서 부를 수 있다. 웹은 파일을 쓰지도 지우지도 않는다.
@@ -51,9 +51,9 @@ from .sbrain_flow import (
 
 MAX_START_CLAIMS = 3   # 시작 요청을 가져간 횟수 상한 — 넘으면 E-C1-TIMEOUT으로 끝낸다 (잠정)
 COMMAND_LEASE_SEC = 60   # 명령이 잡는 점유 시간
-# 재작성 요청 (잠정 — orchestrator/settings.py PROVISIONAL에도 적는다)
+# 재작성 요청 — 모으는 시간 2초는 기준 문서 시트 1, 점유 다시 시도 시간은 잠정(orchestrator/settings.py PROVISIONAL에도 적는다)
 REWORK_COLLECT_SEC = 2.0            # 같은 화면에서 첫 요청부터 이 시간 안의 요청을 재작성 한 번으로 모은다
-REWORK_LEASE_RETRY_SEC = 5.0        # 요청이 명령 점유를 다시 시도하는 최대 시간 — 넘으면 BUSY
+REWORK_LEASE_RETRY_SEC = 5.0        # 요청이 명령 점유를 다시 시도하는 최대 시간 — 넘으면 BUSY (잠정)
 REWORK_LEASE_RETRY_INTERVAL_SEC = 0.05   # 점유를 다시 시도하는 간격 (내부 조정값, 화면 · 웹과 무관해 PROVISIONAL에는 싣지 않는다)
 # 진행 기다리기 (잠정 — orchestrator/settings.py PROVISIONAL에도 적는다)
 WAIT_TIMEOUT_SEC = 60.0             # wait_project 기본 제한 시간 — 넘기면 그때의 상태를 그대로 준다
@@ -186,7 +186,7 @@ class ConfirmationNeeded:
 class RunView:
     """실행 건 진행 상태 (view_project · project_views · wait_project 안). 사용자용이라 실패 사유는 싣지 않는다.
 
-    확장(spec 4.1): retry_count · resume_count · next_resume_at · last_error_kind(실행 건 값 그대로),
+    확장: retry_count · resume_count · next_resume_at · last_error_kind(실행 건 값 그대로),
     rework_screen(재작성 중인 화면), collecting(재작성 요청을 모으는 중), announcement_id(선택 공고).
     """
     run_id: str
@@ -339,7 +339,7 @@ class SBrainOrchestrator:
         return self._run_now(self._request(account_id, form, project_id))
 
     def _require_pre_stage(self, what: str) -> None:
-        """웹 조립에서는 사전 단계를 돌지 않는다 — 요청을 넣거나 점유하기 전에 거절한다 (spec 3.4)."""
+        """웹 조립에서는 사전 단계를 돌지 않는다 — 요청을 넣거나 점유하기 전에 거절한다."""
         if not self.allow_pre_stage:
             raise CommandError("WEB_NOT_ALLOWED", f"사전 단계는 워커가 돈다 ({what})")
 
@@ -398,7 +398,7 @@ class SBrainOrchestrator:
 
         끝나면 공고선택 · 사용자대기로 돌아간다. 작성을 시작한 뒤에는 INVALID_STATE (워커 점유 중이어도 BUSY 아님).
         한도(1회 · 합계 20건)는 유효한 추가 조회만 센다 — 실패한 추가 조회(어떤 오류 · 수집 상태 비정상)는 기회를 돌려받고
-        한도에도 세지 않는다(spec 4.2.3). decision에 조회 전 T-C2 출력 버전을 남겨 실패하면 흐름이 그리로 돌린다.
+        한도에도 세지 않는다. decision에 조회 전 T-C2 출력 버전을 남겨 실패하면 흐름이 그리로 돌린다.
         """
         def act(ctx: RunContext) -> None:
             first, more = candidate_lists(ctx)
@@ -411,7 +411,7 @@ class SBrainOrchestrator:
         self._command(run_id, ANNOUNCEMENT_STEPS, act)
 
     def select_announcement(self, run_id: str, announcement_id: str) -> None:
-        """공고 선택 — 고른 공고 ID와 고르기 전 대기 지점만 남기고 G-01을 넣는다 (spec 4.3.1).
+        """공고 선택 — 고른 공고 ID와 고르기 전 대기 지점만 남기고 G-01을 넣는다.
 
         - 후보(첫 · 추가 조회)에 없는 공고는 INVALID_ANNOUNCEMENT, 그다음 막힌 공고(자격 불통과)는 ANNOUNCEMENT_BLOCKED.
           거절하면 실행 건을 바꾸지 않는다.
@@ -445,7 +445,7 @@ class SBrainOrchestrator:
                confirmed: bool = False) -> ConfirmationNeeded | None:
         """화면 6 · 8 · 9 '진행' · '재작성'.
 
-        '재작성'은 묶음 요청(request_rework_for_project)과 같은 기준이다(spec 3.2): 산출물층 지시는 그 Task의 묶음
+        '재작성'은 묶음 요청(request_rework_for_project)과 같은 기준이다: 산출물층 지시는 그 Task의 묶음
         이름 요청으로 바꿔 처리하고, 문서층 지시는 거절한다(INVALID_ORDER — 문서층은 묶음 이름으로 요청). 웹은 이 경로를
         쓰지 않는다.
         """
@@ -487,16 +487,16 @@ class SBrainOrchestrator:
             self._decide(ctx, {"command": "decide", "screen": 9, "action": "진행", "confirmed": confirmed})
             run.check_refs = {}
             run.current_phase = "review"
-            # 결과물 구간 — 결과 통합 하나, 도는 동안 (결과물, 실행) (잠정 — 기준 문서의 검수 단계가 빠져 정함)
+            # 결과물 구간 — 결과 통합 하나, 도는 동안 (결과물, 실행) (기준 문서 시트 4 RunState.step)
             self._enqueue(ctx, list(RESULT), "RESULT", "결과물")
 
-    # ── 재작성 요청 (묶음 이름, 확장 — spec 3.2) ──────────
+    # ── 재작성 요청 (묶음 이름, 확장) ──────────
     def request_rework_for_project(self, project_id: int | str, bundle: str) -> ReworkAccepted:
         """웹 재작성 요청 — 고른 묶음마다 한 번씩 부른다. 받기만 하고 바로 돌아온다(접수 결과).
 
         - 화면은 실행 건 상태로 정한다: 문서평가 · 사용자대기 → 6, 산출물확인 · 사용자대기 → 8, 종합평가 · 사용자대기 → 9.
           같은 화면에서 모으는 중이면 그 화면으로 받는다.
-        - 같은 화면에서 첫 요청부터 모으는 시간(잠정 2초) 안에 들어온 요청은 재작성 한 번으로 합친다. 모으는 동안 실행 건은
+        - 같은 화면에서 첫 요청부터 모으는 시간(2초) 안에 들어온 요청은 재작성 한 번으로 합친다. 모으는 동안 실행 건은
           '실행'(화면 '진행 중')이라 '진행' 명령은 받지 않고, 워커는 시간이 지난 뒤 가져가 진행한다.
         - 요청을 받는 순간 그 묶음의 기회를 쓴다. 이미 모은 묶음을 또 요청하면 한 번으로 친다(duplicate).
         오류: RUN_NOT_FOUND · INVALID_STATE(대기 지점이 아님 · 모으는 시간이 끝남 · 진행 중 — 점유를 기다리지 않음) ·
@@ -568,7 +568,7 @@ class SBrainOrchestrator:
         merged = collected + new
         judge = "G-02a" if screen == 6 else "G-02b"
         offered = ctx.get(f"{judge}.reworkOrders", default=[])
-        # 문서층 묶음은 그 묶음 항목의 종류별 Task만 다시 만든다 — 양식(T-C3 formSpec)과 항목별 재작성 묶음 표로 가른다 (spec 4.11)
+        # 문서층 묶음은 그 묶음 항목의 종류별 Task만 다시 만든다 — 양식(T-C3 formSpec)과 항목별 재작성 묶음 표로 가른다
         orders = bundle_orders(merged, offered, ctx.get(FORM_SPEC, default=None))
         dref = self._decide(ctx, {
             "command": "rework", "screen": screen, "action": "재작성", "userAction": "재작성",
@@ -781,7 +781,7 @@ class SBrainOrchestrator:
     def _view(self, run: Run) -> RunView:
         notices = list(run.notices)
         if run.state.progress in ACTIVE_PROGRESS and run.announcement_id:
-            # 마감 안내 (spec 4.5) — 마감일이 지났거나(비어 있으면 보지 않음, 오늘은 한국 날짜), G-01이 상세를 받을 때
+            # 마감 안내 — 마감일이 지났거나(비어 있으면 보지 않음, 오늘은 한국 날짜), G-01이 상세를 받을 때
             # 모집 상태가 '마감'. 알리기만 하고 진행을 막지 않는다
             ctx = self.engine.open_context(run)
             ann = ctx.get("selectedAnnouncement", default=None)

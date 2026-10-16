@@ -1,16 +1,16 @@
-"""양식 · 평가 항목 · 채점 기준표 (잠정) — 선택 공고의 기본 양식과, 작업 분해(T-C3)가 고르는 신청자 유형별 묶음.
+"""양식 · 평가 항목 · 채점 기준표 — 선택 공고의 기본 양식(자리 표시 값)과, 작업 분해(T-C3)가 고르는 신청자 유형별 묶음.
 
 선택 공고의 기본 양식(default_form_spec · default_evaluation_items)
   공고 서버는 양식 · 평가 항목을 주지 않는다. 스텁 공고와 공고 서버 연결(G-01)이 모두 이 자리 표시 값을 붙인다.
-  뒷 단계는 이 값을 읽지 않는다 — 기준은 T-C3가 고른 묶음이다 (T-C3 spec 2.2 · 4, settings PROVISIONAL
+  뒷 단계는 이 값을 읽지 않는다 — 기준은 T-C3가 고른 묶음이다 (settings PROVISIONAL
   announcement.formSpec).
 
 신청자 유형별 묶음(FORM_TABLE) — 시트 2 T-C3 "양식 · 평가항목 · rubric을 신청자 유형에 따라 미리 정해 둔 것 중에서 고른다"
   묶음 = 양식 FormSpec + 평가 항목 list[EvalItem] + 채점 기준표 Rubric. T-C3가 신청자 유형으로 고른다(코드, LLM 아님).
-  전략 · 작성 · 검증-1 담당자 양식으로 만든다(spec 4.6): 예비창업자 → 담당자 문서 유형 pre_startup
+  전략 · 작성 · 검증-1 담당자 양식으로 만든다: 예비창업자 → 담당자 문서 유형 pre_startup
   (2.1.1 ~ 2.7.4, 25개), 개인사업자 · 법인 → early_startup(3.1.1 ~ 3.7.4, 24개). 항목 · 제목 · 종류는 담당자
   execution_contract.json에서 읽는다(손으로 옮겨 적지 않음 — 담당자 새 판을 받으면 저절로 따라간다).
-  - 항목마다 웹 태그(sectionTags)는 flow/rework_map.py의 항목별 재작성 묶음 표에서 끌어낸다(잠정 — 담당자 · 웹 확인 대기).
+  - 항목마다 웹 태그(sectionTags)는 flow/rework_map.py의 항목별 재작성 묶음 표에서 끌어낸다.
   - displayTitle이 있으면 화면 제목 · 평가항목 이름에 쓰고, 없으면 기존 title을 사용한다. 평가항목 description과 작성 지시는
     기존 title을 유지한다. itemCode = 항목 번호, itemName은 화면 제목 앞 40자, maxScore = 기본 문서층 배점 (70) ÷ 항목 수.
     실행 때 쓰는 문서층 배점은 실행 설정(scoring.docLayerMax)이다.
@@ -71,12 +71,12 @@ class FormBundle:
 
 # 평가항목 배점 기준 — 기본 문서층 배점(실행 설정 scoring.docLayerMax의 기본값 70). 항목 배점 = 이 값 ÷ 항목 수
 DOC_LAYER_BASE: float = ScoringSettings().doc_layer_max
-ITEM_NAME_CHARS = 40          # 평가항목 이름 = 항목 제목 앞 40자 (잠정)
+ITEM_NAME_CHARS = 40          # 평가항목 이름 = 항목 제목 앞 40자 (시트 4 EvalItem.itemName)
 PARTNER_RUBRIC_ID = "partner-sw"
 
 
 def _partner_bundle(document_type: str, applicant_types: list[str]) -> FormBundle:
-    """담당자 문서 유형의 계약 항목으로 묶음을 만든다 (spec 4.6)."""
+    """담당자 문서 유형의 계약 항목으로 묶음을 만든다."""
     specs = partner.document_specs(document_type)
     codes = [str(s["sectionId"]) for s in specs]
     # displayTitle은 화면·항목 목록용 짧은 이름이다. 기존 title은 작성 지시와 평가 설명에 보존한다.
@@ -99,10 +99,10 @@ def _partner_bundle(document_type: str, applicant_types: list[str]) -> FormBundl
 _PRE_STARTUP = _partner_bundle(partner.PRE_STARTUP, ["예비창업자"])                 # 예비창업패키지 양식
 _EARLY_STARTUP = _partner_bundle(partner.EARLY_STARTUP, ["개인사업자", "법인"])      # 초기창업패키지 양식
 
-# 신청자 유형 → 묶음 (잠정). 고르는 함수가 부를 때마다 이 표를 읽는다(테스트는 표를 바꿔 끼워 E-C3-FORM을 만든다)
+# 신청자 유형 → 묶음. 고르는 함수가 부를 때마다 이 표를 읽는다(테스트는 표를 바꿔 끼워 E-C3-FORM을 만든다)
 FORM_TABLE: dict[str, FormBundle] = {"예비창업자": _PRE_STARTUP, "개인사업자": _EARLY_STARTUP, "법인": _EARLY_STARTUP}
 
-# 고른 묶음의 불변식 — 어기면 E-C3-FORM: <사유 이름> (시트 6 E-C3-FORM, 사유 이름은 T-C3 spec 3.3)
+# 고른 묶음의 불변식 — 어기면 E-C3-FORM: <사유 이름> (시트 6 E-C3-FORM)
 FORM_PROBLEMS: tuple[str, ...] = ("유형 양식 없음", "유형 불일치", "섹션 없음", "섹션 수 불일치", "평가항목 없음",
                                   "기준표 불일치")
 

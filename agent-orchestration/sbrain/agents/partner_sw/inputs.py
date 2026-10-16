@@ -1,11 +1,11 @@
-"""담당자 입력 만들기 — LLM으로 보내는 칸(spec 4.4) · 표 원본 행(tableData) · 울타리(4.5) · 입력 없음(4.9).
+"""담당자 입력 만들기 — LLM으로 보내는 칸 · 표 원본 행(tableData) · 울타리(4.5) · 입력 없음(4.9).
 
-담당자 normalize_back_input은 쓰지 않고 담당자 입력 모양(2_지금_입력받는값)을 우리 값으로 직접 만든다. 보내는 칸은 spec 4.4
-표뿐이다 — 대표자 이름 · 생년월일 · 성별 · 사업자등록번호 · 기업명 · 지역 · 인증 · 희망 사업 규모 · 자기부담금 · 직업 ·
+담당자 normalize_back_input은 쓰지 않고 담당자 입력 모양(2_지금_입력받는값)을 우리 값으로 직접 만든다. 보내는 칸은 정해진
+칸뿐이다 — 대표자 이름 · 생년월일 · 성별 · 사업자등록번호 · 기업명 · 지역 · 인증 · 희망 사업 규모 · 자기부담금 · 직업 ·
 지방우대 지역 · 업종(biz_type) · 대표자 유형 · 팀원 이름 · 공고 제목 · 공고 ID는 꺼내지 않는다. 수익모델은 이미 받은 서비스명 ·
 단가만 성장전략 함수에 한정해 전달한다.
 
-: 원본 사실의 목표 고객은 사용자 목표 고객(회사 정보 targetCustomer)이 있으면 그 값, 없으면 '확인 필요'.
+원본 사실의 목표 고객은 사용자 목표 고객(회사 정보 targetCustomer)이 있으면 그 값, 없으면 '확인 필요'.
 일반현황 항목(2.1.1 · 3.1.1)의 F16 · F19 근거 원본 사실에만 창업아이템명 · 팀구성현황(역할 · 경력 — 이름 없음)을 덧붙인다.
 """
 from __future__ import annotations
@@ -21,7 +21,7 @@ CONFIRM = "확인 필요"                  # 담당자 코드의 빈 값 표기
 UNDECIDED = "미정"                     # 빈 추진기간 표기 (담당자 코드와 같음)
 NONE_TEXT = "없음"                     # 채용 · 장비 · 협력에서 '없음'을 골랐을 때의 한 줄 값 (intake와 같은 글자)
 TARGET_CUSTOMER = CONFIRM              # 사용자 목표 고객이 없을 때 원본 사실의 목표 고객 — '확인 필요' (담당자와 같음)
-TARGET_HINT_KEY = "targetCustomerHint"  # F02 요청에만 싣는 참고값 칸 (spec 4.4 — 원본 사실 아님)
+TARGET_HINT_KEY = "targetCustomerHint"  # F02 요청에만 싣는 참고값 칸 (원본 사실 아님)
 ITEM_KEYS = ("description", "output_summary", "tech_field", "target_customer")
 
 # 일반현황 항목 근거 — 담당자 양식 제목 "일반현황 - … (창업아이템명과 팀구성현황은 web에서 수령됨)"인 항목만.
@@ -33,11 +33,11 @@ TEAM_POSITION_DEFAULT = "팀원"             # 역할이 비었을 때의 직위
 TEAM_EMPTY_CELL = "-"                      # 역할 · 경력이 비었을 때의 담당업무 · 보유역량 (웹 표와 같음)
 TEAM_NONE_TEXT = "팀원 없음(대표자 단독)"   # 팀원 표 행이 빈 목록일 때
 
-SCHEDULE_LABEL = "추진 일정"           # 입력 없음 안내 이름 (spec 4.9)
+SCHEDULE_LABEL = "추진 일정"           # 입력 없음 안내 이름
 BUDGET_LABEL = "사업비 집행계획"
 PHASE_1, PHASE_2 = "1단계", "2단계"
 
-# 예비창업 울타리의 deadlineScope 문구 — 담당자 normalize_back_input 그대로 (spec 4.5)
+# 예비창업 울타리의 deadlineScope 문구 — 담당자 normalize_back_input 그대로
 DEADLINE_SCOPE = ("협약 종료 기한. 협약기간 일정(implementationSchedule)에만 적용하며, 협약 이후 전체 사업단계 일정"
                   "(fullScaleSchedule)은 이 기한을 넘어도 위반이 아님")
 
@@ -45,7 +45,7 @@ _MONTH = re.compile(r"(20\d{2})\s*[-./년]?\s*(\d{1,2})")
 
 
 def document_type(applicant_type: str) -> str:
-    """신청자 유형 → 담당자 문서 유형 (spec 4.6)."""
+    """신청자 유형 → 담당자 문서 유형."""
     return PRE_STARTUP if applicant_type == APPLICANT_PRE_STARTUP else EARLY_STARTUP
 
 
@@ -74,7 +74,7 @@ def duration_months(start: str | None, end: str | None) -> int:
     return months if months >= 1 else 0
 
 
-# ── 담당자 입력 칸 (spec 4.4) ─────────────────────────────
+# ── 담당자 입력 칸 ─────────────────────────────
 def user_target_customer(company: CompanyInfo) -> str | None:
     """회사 정보의 사용자 목표 고객(확장). 비면 None."""
     return (company.target_customer or "").strip() or None
@@ -157,7 +157,7 @@ def resource_input(company: CompanyInfo) -> dict[str, Any]:
 
 def budget_rows(company: CompanyInfo, kind: str) -> list[dict[str, Any]]:
     """F14에 넘기는 정규화 행(project_budget_items — 담당자 영문 키). None 금액은 담당자 _won처럼 0으로 계산하고, 총사업비가
-    세 금액의 합과 다르면 합으로 다시 내며, 총사업비가 0인 행은 뺀다(표 행에는 남는다, spec 4.4)."""
+    세 금액의 합과 다르면 합으로 다시 내며, 총사업비가 0인 행은 뺀다(표 행에는 남는다)."""
     rows = []
     for b in company.budget_items:
         gov, cash, in_kind = b.government_amount or 0, b.self_cash_amount or 0, b.self_in_kind_amount or 0
@@ -214,7 +214,7 @@ def _budget_table_row(b: BudgetItem, kind: str) -> dict[str, str]:
 
 
 def table_data(company: CompanyInfo, kind: str) -> tuple[dict[str, list[dict[str, str]]], list[dict[str, str]]]:
-    """담당자 F17(table_arguments)이 읽는 tableData(한글 키 · 한글 열)와 예비창업 단계 미지정 사업비 행 (spec 4.4).
+    """담당자 F17(table_arguments)이 읽는 tableData(한글 키 · 한글 열)와 예비창업 단계 미지정 사업비 행.
 
     예비창업: phase '1단계' → budgetPlanStep1, '2단계' → budgetPlanStep2, None → 어느 표에도 넣지 않고 돌려준다
     (2.5.3 표의 rules.unassignedOriginalRows로 보존). 초기창업은 단계 구분이 없다."""
@@ -251,7 +251,7 @@ def is_budget_table(code: str) -> bool:
 
 
 def missing_inputs(company: CompanyInfo, kind: str, table_codes: list[str]) -> dict[str, str]:
-    """입력 없음 표 항목 → 안내 이름(사업비 집행계획 · 추진 일정) (spec 4.9).
+    """입력 없음 표 항목 → 안내 이름(사업비 집행계획 · 추진 일정).
 
     그 표의 사용자 원본 행이 비었거나, 예비창업 사업비에 단계 미지정 행이 있으면(1 · 2단계 표에 넣을 수 없음 —
     2.5.3 · 2.5.4 둘 다, 잠정 · 웹 phase 컬럼 대기) 입력 없음이다."""
@@ -264,7 +264,7 @@ def missing_inputs(company: CompanyInfo, kind: str, table_codes: list[str]) -> d
     return out
 
 
-# ── 울타리 (spec 4.5) ─────────────────────────────────────
+# ── 울타리 ─────────────────────────────────────
 def strategy_limits(kind: str, end_month: str | None, support_max: int | None, features: list[str]) -> dict[str, Any]:
     """deadline = 개발 종료월(없으면 칸 없음), supportLimit = 선택 공고 지원 금액 상한(없으면 칸 없음 — 상한 검사를 하지
     않는다), featureList, 예비창업이면 deadlineScope."""

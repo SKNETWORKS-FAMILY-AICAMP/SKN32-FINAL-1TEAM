@@ -1,5 +1,4 @@
-"""OpenAI 글 · 이미지 어댑터 — 응답 코드 오류에서 본문 오류 코드 · Retry-After 헤더를 읽어 ProviderError에 싣는다
-(spec 2.3 · 3절). 가짜 클라이언트와 직접 만든 SDK 예외로 본다 (네트워크 · 실제 대기 없음)."""
+"""OpenAI 글 · 이미지 어댑터 — 응답 코드 오류에서 본문 오류 코드 · Retry-After 헤더를 읽어 ProviderError에 싣는다. 가짜 클라이언트와 직접 만든 SDK 예외로 본다 (네트워크 · 실제 대기 없음)."""
 from __future__ import annotations
 
 from types import SimpleNamespace

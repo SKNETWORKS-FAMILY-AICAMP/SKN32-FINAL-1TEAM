@@ -1,7 +1,7 @@
-"""담당자 결과 → 우리 계약 (spec 4.7 출력 변환). 매핑 · 문장 나누기 · 수치 토큰 규칙은 잠정이다(settings PROVISIONAL).
+"""담당자 결과 → 우리 계약 (출력 변환). 매핑 · 문장 나누기 · 수치 토큰 규칙은 잠정이다(settings PROVISIONAL).
 
 - 기록용 칸(model · responseId · usage · inputChars · requestedModel · 호출 fallbackReason · 시각)은 산출물에 싣지 않는다 —
-  common.pick이 칸을 골라 싣는다(spec 4.17).
+  common.pick이 칸을 골라 싣는다.
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Any, Iterable
 from ...models import ItemSpec, MarketAnalysis, RequirementAnalysis, Sentence, Token
 from .inputs import CONFIRM
 
-# 산출물에 싣는 담당자 결과 칸 (spec 4.7)
+# 산출물에 싣는 담당자 결과 칸
 SECTION_KEYS = ("generatedText", "facts", "sourceRefs", "needsUserConfirmation", "issues")              # F16
 IMAGE_SPEC_KEYS = ("nodes", "flowType", "visualStyle", "generatedText", "facts", "sourceRefs", "issues")  # F18 그림 하나
 DIAGRAM_OUTPUT_KEYS = ("imageSpecs", "imageTypes", "nodes", "flowType", "visualStyle", "generatedText", "facts",
@@ -26,7 +26,7 @@ _SKIP_KEYS = frozenset({"sourceRef", "sourceRefs", "evidenceRefs", "evidence", "
 
 # 문장 끝 — '다.' · '음.' · '임.' · '함.' · '.' 뒤 공백에서 나눈다. 숫자 뒤 '.'(번호 '1.')에서는 나누지 않는다 (잠정)
 _SENTENCE_END = re.compile(r"(?<=[^\d\s]\.)\s+")
-# 수치 토큰 — 숫자 + 단위(원 · 억 · 만 · % · 명 · 건 · 개) (잠정, spec 4.7)
+# 수치 토큰 — 숫자 + 단위(원 · 억 · 만 · % · 명 · 건 · 개) (잠정)
 _NUMERIC = re.compile(r"\d[\d,]*(?:\.\d+)?\s*(?:억\s*원|만\s*원|억|만|원|%|명|건|개)")
 
 

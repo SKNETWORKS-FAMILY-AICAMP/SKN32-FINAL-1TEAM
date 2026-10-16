@@ -48,7 +48,7 @@ IMAGE_TOKEN_FIELDS = (("input_tokens", "image_input_tokens"), ("output_tokens", 
 
 
 # 호출 기록의 목적 · 항목 칸 길이 상한 — DB 칸(orch_call_logs.purpose · item_key)과 같아야 한다(테스트가 지킨다).
-# 호출 기록을 만들 때 넘는 뒤를 자른다. 목적별 모델 찾기 · 요청 메타데이터는 자르기 전 목적을 쓴다 (spec 4.12)
+# 호출 기록을 만들 때 넘는 뒤를 자른다. 목적별 모델 찾기 · 요청 메타데이터는 자르기 전 목적을 쓴다
 CALL_LOG_TEXT_MAX = 200
 
 

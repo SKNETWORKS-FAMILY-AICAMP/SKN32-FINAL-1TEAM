@@ -6,7 +6,7 @@
 - 테이블 · 컬럼 이름은 웹 스키마(web/backend/app_schema.sql)와 맞췄다 (2026-09-30 확인).
   기본키는 companies.company_id · projects.project_id · team_members.member_id ·
   pricing_items.pricing_id · project_plan_inputs.input_id이다.
-- 사업비 · 일정(project_budget_items · project_schedule_items, spec 4.3)은 item_order 순으로 읽는다.
+- 사업비 · 일정(project_budget_items · project_schedule_items)은 item_order 순으로 읽는다.
   project_budget_items.phase는 아직 웹 스키마에 없는 선택 컬럼이라 있으면 읽고 없으면 None이다(OPTIONAL_COLUMNS).
   project_plan_inputs.target_customer(목표 고객)도 같은 선택 컬럼이다.
 - 웹 테이블은 읽기만 한다.
@@ -34,12 +34,12 @@ class WebDbTables:
     team_members: str = "team_members"
     pricing_items: str = "pricing_items"
     plan_inputs: str = "project_plan_inputs"
-    budget_items: str = "project_budget_items"       # 사업비 집행계획 (spec 4.3)
-    schedule_items: str = "project_schedule_items"   # 추진 일정 (spec 4.3)
+    budget_items: str = "project_budget_items"       # 사업비 집행계획
+    schedule_items: str = "project_schedule_items"   # 추진 일정
 
 
 # 있으면 읽고 없으면 None으로 보는 컬럼 — 없어도 SchemaMismatch가 아니다.
-# project_budget_items.phase는 웹이 더하기로 한 컬럼이라 아직 웹 스키마에 없다 (spec 4.3)
+# project_budget_items.phase는 웹이 더하기로 한 컬럼이라 아직 웹 스키마에 없다
 # project_plan_inputs.target_customer는 웹 005_target_customer.sql이 더하는 컬럼 — 웹 배포 · 공유 DB 적용 전에는 없다
 OPTIONAL_COLUMNS: dict[str, list[str]] = {
     "budget_items": ["phase"],

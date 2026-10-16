@@ -2,19 +2,19 @@
 
 - LLM Task 스텁은 tools.llm을 한 번 이상 불러 tools 경로를 거치게 한다. T-W3는 LLM을 부르지 않는 Task(uses_llm=False)라
   부르지 않는다(부르면 'LLM 설정 없음'으로 바로 실패한다).
-- 전략 · 작성 · 검증-1 확장 출력(strategyData · sectionOutputs · diagrams · tableSections · sectionResults 등, spec 4.7)은
+- 전략 · 작성 · 검증-1 확장 출력(strategyData · sectionOutputs · diagrams · tableSections · sectionResults 등)은
   규격에 맞는 더미로 채운다. 계획서 항목은 formSpec의 항목 · 태그 · 종류를 따른다(태그 · 종류 칸이 비면 태그 없음 · 본문).
   T-W1 · T-W2 · T-W3 · T-V1은 목표 항목(reworkInput.targetItems)만 다시 만들고(판정하고) 나머지는 base… 입력을 그대로 잇는다.
-  T-W3는 fallbackItems의 표를 본문 서술로 대체하고, 자체 검사 불통과면 그 시도에서 바로 대체한다 (spec 4.8 · 4.10).
+  T-W3는 fallbackItems의 표를 본문 서술로 대체하고, 자체 검사 불통과면 그 시도에서 바로 대체한다.
 - 스텁 T-V1은 StubScenario의 항목 판정(fail · warning · 입력 없음 · 입력 오류)을 따른다. 입력 오류(input_error_items, 결정
   0028)는 fail · inputError 참으로 둔다 — 흐름 테스트는 issue 글이 아니라 이 칸으로 입력 오류를 만든다.
 - 규칙 단계(판정 G-02a · G-02b, 안내 문서 G-04, 합치기 M-1 ~ M-4)는 스텁이 없다 — 조율 실구현(agents/supervisor RULES) 한 벌을
-  쓰고 테스트용 실패 흉내만 감싼다( D14): raise_in(코드 오류), G-04 check_fail_times(자체 검사 불통과).
+  쓰고 테스트용 실패 흉내만 감싼다: raise_in(코드 오류), G-04 check_fail_times(자체 검사 불통과).
   흐름 테스트가 워커와 같은 규칙(환산 · E-G2-UNREACHABLE 포함)을 검사한다. 규칙 사본을 여기 두지 않는다.
 - 결과 통합 T-C4도 스텁이 없다 — LLM 없는 조율 Task 실구현(agents/supervisor PLAIN_TASKS) 한 벌을 쓰고 raise_in만 두 인자
   감싸기로 감싼다. 계획서 파일은 만들지 않는다(웹이 planDoc으로 만든다).
 - StubScenario로 점수 · 검사 결과 · 오류를 조절해 흐름 테스트를 만든다.
-- 공고 서버 연결이 없을 때의 T-C2 · G-01(스텁 모드, spec 4.6): 스텁 G-01은 스텁 공고를 직접 만들고 공고 서버 판정과 같은
+- 공고 서버 연결이 없을 때의 T-C2 · G-01(스텁 모드): 스텁 G-01은 스텁 공고를 직접 만들고 공고 서버 판정과 같은
   원칙(확실히 안 되는 경우만 불통과, 읽지 못한 조건은 확인 필요)으로 판정한다. 스텁 공고에는 업력 상한이 없다.
 - 파일(진입 파일 · 인포그래픽 그림 · 그림)은 작은 자리채움 내용을 tools.files로 넣고 받은 참조(FileRef)를
   출력에 싣는다. 안내 문서는 실구현 G-04가 파일 창구 인자로 넣는다. 차트 그림은 비운다. 스텁 T-V2는 파일을
@@ -59,7 +59,7 @@ from .supervisor.tc1 import with_user_target_customer   # 목표 고객 덮기�
 
 # 스텁 T-V1 평가항목 배점이 없을 때 쓰는 문서층 배점 기본값 (70 ÷ 항목 수)
 DOC_LAYER_MAX = 70.0
-# 스텁 T-V1의 입력 없음 warning (실구현은 '입력 확인 필요 — <사업비 집행계획 | 추진 일정>', spec 4.9)
+# 스텁 T-V1의 입력 없음 warning (실구현은 '입력 확인 필요 — <사업비 집행계획 | 추진 일정>')
 STUB_INPUT_MISSING_WARNING = "입력 확인 필요 — 사업비 집행계획 · 추진 일정"
 # 코드 점검 8칸 — 구현 · 검증-2 담당 개정안(1.3판)의 배점 · 이름. 진입 파일 · 비밀값 · sandbox는 통과 필수 조건으로 옮겨
 # 칸에 없다(gate_failures)
@@ -73,7 +73,7 @@ SVG_NAMES = ["대체 텍스트", "핵심 정보 6항목", "명도 대비", "정�
 # 원페이지는 T-B2가 지면을 onepage.svg로 넣고 M-2가 그 참조를 진입 파일로 감싼다
 ENTRY_FILE = "index.html"
 ONEPAGE_FILE = "onepage.svg"
-INFOGRAPHIC_FILE = "infographic.svg"   # 웹개발 · AI API 인포그래픽 (모든 카테고리 SVG, spec 4.3)
+INFOGRAPHIC_FILE = "infographic.svg"   # 웹개발 · AI API 인포그래픽 (모든 카테고리 SVG)
 HTML_TYPE, SVG_TYPE, PNG_TYPE = "text/html", "image/svg+xml", "image/png"
 # 자리채움 내용 — 스텁 파일은 작다. 계획서 파일은 만들지 않는다(웹이 planDoc으로 만든다)
 STUB_HTML = "<!doctype html><html lang='ko'><body>스텁 프로토타입</body></html>".encode()
@@ -83,7 +83,7 @@ _SVG_HEAD = ("<svg xmlns='http://www.w3.org/2000/svg' width='{w}' height='{h}' v
              .format(w=STUB_SVG_SIZE[0], h=STUB_SVG_SIZE[1]))
 _SVG_TEXT = "<text x='{x}' y='{y}' text-anchor='middle'>".format(x=STUB_SVG_SIZE[0] // 2, y=STUB_SVG_SIZE[1] // 2)
 STUB_SVG = f"{_SVG_HEAD}{_SVG_TEXT}원페이지</text></svg>".encode()
-# 스텁 공고 · 카드 값 — 모집 형태 표기(spec 4.4), 가산점
+# 스텁 공고 · 카드 값 — 모집 형태 표기, 가산점
 PERIOD_FIXED = "기간 있음"
 PERIOD_OPEN = "상시·수시"            # 마감일 없는 공고 (no_deadline_ids)
 STUB_BONUS = [BonusItem(name="가점 항목", points=1.0)]
@@ -92,12 +92,12 @@ STUB_BONUS_CHANGED = [BonusItem(name="가점 항목", points=1.0), BonusItem(nam
 MORE_CHANGE_KINDS = ("정보", "버전", "적합도", "가산점")
 # 스텁 T-C3의 안내 — LLM 대신 쓰는 고정 더미 문장
 STUB_GUIDANCE = "{task_id} 스텁 안내 — 이 아이템 · 공고에 맞춘 안내 자리입니다."
-# 전략 · 작성 · 검증-1 확장 출력의 더미 키 (담당자 canonical 키, spec 4.7)
+# 전략 · 작성 · 검증-1 확장 출력의 더미 키 (담당자 canonical 키)
 STRATEGY_KEYS = ("web_data", "item_spec", "team_capability", "development_goal", "development_method", "architecture",
                  "development_plan", "production_plan", "resource_plan", "budget", "schedule", "feasibility_plan",
                  "research", "original_facts")
 MARKET_KEYS = ("market_analysis", "competitor_analysis", "marketing_strategy", "business_model", "growth_strategy")
-# 스텁 그림 — 담당자 F18의 두 그림(서비스 흐름도 · 서비스 구조도)과 파일 이름 (spec 4.6)
+# 스텁 그림 — 담당자 F18의 두 그림(서비스 흐름도 · 서비스 구조도)과 파일 이름
 STUB_DIAGRAMS = (("USER_FLOW", "userflow.svg"), ("SERVICE_ARCHITECTURE", "architecture.svg"))
 STUB_DIAGRAM_SVG = f"{_SVG_HEAD}{_SVG_TEXT}스텁 그림</text></svg>".encode()
 STUB_SCORE_POLICY = "stub-policy-1"   # 스텁 채점 정책 버전 — 채점 기준표 버전이 없을 때
@@ -236,7 +236,7 @@ class StubScenario:
     tp2_behavior: dict[str, list[str]] = field(default_factory=dict)       # 문장별 'ok' · 'violate' · 'same'
     raise_in: set[str] = field(default_factory=set)                         # 코드 오류를 낼 단계
     embed_fail: bool = False                                                # T-C2 임베딩 검색 오류 → BM25단독 대체 경로
-    # ── 공고 · 자격 확인 (spec 4.6) ──
+    # ── 공고 · 자격 확인 ──
     exhaust_in: set[str] = field(default_factory=set)                       # 외부 호출이 재시도를 다 쓰는 단계 (T-C2 · G-01)
     unknown_ids: set[str] = field(default_factory=set)                      # 자격 조건을 읽지 못한 공고 → 확인 필요
     closed_ids: set[str] = field(default_factory=set)                       # 모집 상태 '마감'인 공고
@@ -251,14 +251,14 @@ class StubScenario:
     more_changes: dict[str, set[str]] = field(default_factory=dict)   # 공고 ID → 바꿀 내용: MORE_CHANGE_KINDS
     more_error: str | None = None                           # '코드오류' · '재시도소진'
     more_collection_status: str | None = None               # 추가 조회의 수집 상태 ('정상'이 아니면 후보 0건)
-    # ── 검증-1 항목별 판정 (스텁 T-V1 sectionResults, spec 4.15) — 판정할 때마다 읽는다 ──
+    # ── 검증-1 항목별 판정 (스텁 T-V1 sectionResults) — 판정할 때마다 읽는다 ──
     fail_items: set[str] = field(default_factory=set)            # 판정할 때마다 status fail로 둘 항목 번호
     fail_item_issues: dict[str, list[str]] = field(default_factory=dict)  # 항목별 fail 사유 재현
     warning_items: set[str] = field(default_factory=set)         # status warning으로 둘 항목 번호
     input_missing_items: set[str] = field(default_factory=set)   # 입력 없음(warning · inputMissing)으로 둘 항목 번호
     input_error_items: set[str] = field(default_factory=set)     # 입력 오류(fail · inputError)로 둘 항목 번호
     fail_item_times: dict[str, int] = field(default_factory=dict)  # 항목 → 처음 몇 번의 판정을 fail로 둘지 (그 뒤 pass)
-    # ── 자체 검사 항목 (check.failedItems, spec 4.8) — Task → 불통과로 둘 항목 번호. 비면 항목 없이 불통과 ──
+    # ── 자체 검사 항목 (check.failedItems) — Task → 불통과로 둘 항목 번호. 비면 항목 없이 불통과 ──
     check_fail_items: dict[str, list[str]] = field(default_factory=dict)
     _counters: dict[str, int] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
@@ -276,7 +276,7 @@ class StubScenario:
 
 # ── 데이터 공급 (공고 DB · 상수) ──────────────────────────
 def make_announcement(announcement_id: str, today: date, *, eligible: bool = True) -> Announcement:
-    """스텁 공고 — 업력 상한 없음, 모집 형태 '기간 있음', 양식 · 평가 항목은 기본 양식 (spec 4.6)."""
+    """스텁 공고 — 업력 상한 없음, 모집 형태 '기간 있음', 양식 · 평가 항목은 기본 양식."""
     return Announcement(
         announcement_id=announcement_id, title=f"창업지원사업 {announcement_id}", agency="중소벤처기업부",
         support_field="창업(06)", apply_start=today - timedelta(days=10), apply_end=today + timedelta(days=30),
@@ -306,7 +306,7 @@ def stub_announcement(sc: StubScenario, announcement_id: str, today: date) -> An
 
 def business_age_months(founded_at: date, today: date) -> int:
     """업력 개월 — 공고팀과 같게 센다: (올해 − 설립 연도) × 12 + (이번 달 − 설립 달), 오늘 날짜가 설립일 날짜보다
-    작으면 1을 빼고, 0보다 작으면 0 (spec 4.6)."""
+    작으면 1을 빼고, 0보다 작으면 0."""
     months = (today.year - founded_at.year) * 12 + (today.month - founded_at.month)
     if today.day < founded_at.day:
         months -= 1
@@ -314,7 +314,7 @@ def business_age_months(founded_at: date, today: date) -> int:
 
 
 def stub_gate(company: CompanyInfo, ann: Announcement, today: date) -> tuple[GateResult, float | None]:
-    """스텁 자격 판정 — 공고 서버 판정(spec 3.2.2 · 4.3.2)과 같은 원칙. 확실히 안 되는 경우만 불통과다.
+    """스텁 자격 판정 — 공고 서버 판정과 같은 원칙. 확실히 안 되는 경우만 불통과다.
 
     - 사업자(개인사업자 · 법인)인데 설립일이 없으면 판정하지 않고 missingInputs = ['foundedAt'] (E-G1-MISSING).
     - 조건을 읽지 못했으면(eligibilityParsed 거짓) 통과로 보고, 그 신청자에게 해당하는 조건을 확인 필요로 둔다.
@@ -359,7 +359,7 @@ def _ask(tools: Tools, purpose: str) -> None:
 
 def _check(sc: StubScenario, task_id: str, rework_input, final_action: str, *, immediate: bool = False) -> CheckResult:
     """자체 검사 — check_fail_times[task_id]번까지 불통과. 불통과 항목은 check_fail_items[task_id](failedItems).
-    확정 동작은 마지막 재수행 시도에서 채운다 — immediate면(재수행 없이 바로 확정하는 T-W3, spec 4.8) 그 시도에서."""
+    확정 동작은 마지막 재수행 시도에서 채운다 — immediate면(재수행 없이 바로 확정하는 T-W3) 그 시도에서."""
     fail_times = sc.check_fail_times.get(task_id, 0)
     n = sc.tick(f"check:{task_id}")
     if n < fail_times:
@@ -372,7 +372,7 @@ def _check(sc: StubScenario, task_id: str, rework_input, final_action: str, *, i
 
 
 def _targets(rework_input) -> set[str] | None:
-    """재수행 · 재작성 입력의 목표 항목 — 없거나 비었으면 None(첫 실행 · 모든 항목, spec 4.7)."""
+    """재수행 · 재작성 입력의 목표 항목 — 없거나 비었으면 None(첫 실행 · 모든 항목)."""
     return set(rework_input.target_items) if rework_input is not None and rework_input.target_items else None
 
 
@@ -396,7 +396,7 @@ def _maybe_raise(sc: StubScenario, step: str) -> None:
 
 
 def _doc_score(total: float, maxes: list[tuple[str, float]]) -> DocScore:
-    """문서층 점수 — 평가항목 = 계획서 항목(spec 4.9). 총점(시나리오 doc_scores)을 항목 배점 비율로 나누고(소수 둘째 자리,
+    """문서층 점수 — 평가항목 = 계획서 항목. 총점(시나리오 doc_scores)을 항목 배점 비율로 나누고(소수 둘째 자리,
     마지막 항목이 나머지) 항목 점수 합 = 총점이 되게 한다. 항목이 없으면 항목 없이 총점만."""
     items, acc = [], 0.0
     whole = sum(m for _, m in maxes) or 1.0
@@ -411,7 +411,7 @@ def _code_check(sc: StubScenario, kind: str, code_total: float) -> CodeCheckResu
     """결손 점수를 칸에 나눠 불통과로 표시한다. HTML 2번 불통과면 결함 출처를 채운다(시나리오 alt_defect_sources).
     통과 필수 조건 실패(시나리오 gate_failures)면 칸 검사를 생략한 것으로 보고 모두 불통과 · 합계 0이다."""
     weights, names = (HTML_WEIGHTS, HTML_NAMES) if kind == "html" else (SVG_WEIGHTS, SVG_NAMES)
-    # earned(얻은 점수) = 통과면 배점 · 아니면 0, applicable(해당 여부) = 참 — 스텁은 해당 없음 항목을 만들지 않는다 (spec 4.4)
+    # earned(얻은 점수) = 통과면 배점 · 아니면 0, applicable(해당 여부) = 참 — 스텁은 해당 없음 항목을 만들지 않는다
     if sc.gate_failures:
         detail = f"통과 필수 조건 실패로 검사 생략: {', '.join(sc.gate_failures)}"
         checks = [CodeCheck(no=i + 1, name=names[i], weight=weights[i], passed=False, detail=detail, earned=0,
@@ -494,7 +494,7 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
             raise RuntimeError("T-C2 추가 조회 스텁 오류")
         status = sc.more_collection_status if more and sc.more_collection_status else sc.collection_status
         tools.search("수집 상태", lambda timeout: status)
-        if status != "정상":   # 수집 상태가 정상이 아니면 매칭하지 않는다 — 후보 0건 (spec 4.1.1)
+        if status != "정상":   # 수집 상태가 정상이 아니면 매칭하지 않는다 — 후보 0건
             return c.TC2Out(candidates=[], collection_status=status, filtered_count=0, fallback_used=False)
         mode = None
         try:
@@ -504,7 +504,7 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
         down = "T-C2" in sc.exhaust_in or (more and sc.more_error == "재시도소진")
         tools.search("BM25 검색", lambda timeout: _search_or_fail(down))
         if sc.deadline_fallback:
-            mode = "마감임박순"   # 적합도 0 — 실제 점수가 아니다 (spec 4.1.3)
+            mode = "마감임박순"   # 적합도 0 — 실제 점수가 아니다
         if more and sc.more_ids is not None:
             ids = list(sc.more_ids)
         else:
@@ -516,7 +516,7 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
                         fallback_used=mode is not None, fallback_mode=mode)
 
     def g01(inp: c.G01In, tools: Tools) -> c.G01Out:
-        """스텁 G-01 — 공고 서버 대신 스텁 공고를 만들고 판정한다(spec 4.6). 호출은 실제 구현처럼 상세 · 판정 둘이다."""
+        """스텁 G-01 — 공고 서버 대신 스텁 공고를 만들고 판정한다. 호출은 실제 구현처럼 상세 · 판정 둘이다."""
         _maybe_raise(sc, "G-01")
         aid = inp.announcement_id
         down = "G-01" in sc.exhaust_in
@@ -529,13 +529,13 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
             raise ResourceNotFound("공고 없음 — 공고 상세")
         company = inp.company_info
         if company.applicant_type != PRE_STARTUP and company.founded_at is None:
-            gate, age = stub_gate(company, ann, inp.today)   # 설립일 없는 사업자 — 판정을 부르지 않는다 (spec 4.3.2 ②)
+            gate, age = stub_gate(company, ann, inp.today)   # 설립일 없는 사업자 — 판정을 부르지 않는다
         else:
             gate, age = tools.search("자격 판정", lambda timeout: stub_gate(company, ann, inp.today))
         return c.G01Out(gate_result=gate, business_age_years=age, selected_announcement=ann)
 
     def tc3(inp: c.TC3In, tools: Tools) -> c.TC3Out:
-        """스텁 T-C3 (spec 6.2) — 확인 · 양식 고르기 · Task 목록 · 틀 · 맥락 · 확장 출력은 실제 T-C3와 같은 부품으로 만들고,
+        """스텁 T-C3 — 확인 · 양식 고르기 · Task 목록 · 틀 · 맥락 · 확장 출력은 실제 T-C3와 같은 부품으로 만들고,
         안내만 LLM 대신 고정 더미 문장이다. 확인(① · ② · ④)은 LLM을 부르기 전에 한다."""
         bundle = task_plan.prepare(inp)
         _ask(tools, "작업 분해")
@@ -565,7 +565,7 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
     def tw1(inp: c.TW1In, tools: Tools) -> c.TW1Out:
         """양식의 모든 항목을 양식 순서로 담는다. 본문 항목만 문장을 쓰고(호출 하나씩 — 목적 '섹션 <항목> 작성'), 표 · 그림
         항목은 문장 0개다(표 서술은 T-W3가 만들고 M-1이 바꾼다). 목표 항목(reworkInput.targetItems)이 있으면 그 항목만 다시
-        쓰고 나머지는 직전 계획서 · 항목 결과(base…)를 그대로 싣는다 (spec 4.7)."""
+        쓰고 나머지는 직전 계획서 · 항목 결과(base…)를 그대로 싣는다."""
         feats = list(inp.requirement_analysis.feature_list)
         if sc.tw1_change_features:
             feats = feats + ["임의 기능"]
@@ -594,7 +594,7 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
     def tw2(inp: c.TW2In, tools: Tools) -> c.TW2Out:
         """그림 항목(계획서의 contentType image)마다 두 그림을 SVG 파일로 넣는다(항목마다 호출 하나 — 목적 '그림 <항목> 작성').
         그림 항목이 없으면 빈 목록이다(호출은 '그래프' 하나). 목표 항목이 있으면 그 항목만 다시 그리고 나머지는 직전 그림 ·
-        항목 결과(base…)를 그대로 싣는다 (spec 4.7)."""
+        항목 결과(base…)를 그대로 싣는다."""
         chart = ChartSpec(chart_id="chart-1", type="bar", title="시장 규모", axis_labels=["연도", "억원"],
                           series=[{"x": 2026, "y": 1200}], source_ref="1-1")
         targets = _targets(inp.rework_input)
@@ -631,10 +631,10 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
         """규칙 코드 Task — LLM을 부르지 않는다(uses_llm=False). 표 항목마다 표(tables, sourceRef = 항목 번호) · 서술 문장
         (tableSections) · 결과(tableOutputs)를 낸다.
 
-        - 목표 항목이 있으면 그 표만 다시 만들고 나머지는 직전 표 · 서술 · 결과(base…)를 그대로 싣는다 (spec 4.7).
-        - 표 대체(fallbackItems — 검증-1 재수행 뒤에도 fail인 표, spec 4.10): 그 표를 tables에서 빼고 서술을 대체 본문으로
+        - 목표 항목이 있으면 그 표만 다시 만들고 나머지는 직전 표 · 서술 · 결과(base…)를 그대로 싣는다.
+        - 표 대체(fallbackItems — 검증-1 재수행 뒤에도 fail인 표): 그 표를 tables에서 빼고 서술을 대체 본문으로
           바꾸며 tableOutputs에 tableFallbackUsed · fallbackReason(그 항목 문제를 ' · '로 이은 것)을 남긴다.
-        - 자체 검사 불통과면 재수행 없이 그 시도에서 바로 확정 동작(걸린 표 → 본문 서술 대체, spec 4.8)."""
+        - 자체 검사 불통과면 재수행 없이 그 시도에서 바로 확정 동작(걸린 표 → 본문 서술 대체)."""
         ri = inp.rework_input
         targets = _targets(ri)
         check = _check(sc, "T-W3", ri, "표 제거 · 본문 서술 대체", immediate=True)
@@ -676,7 +676,7 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
         return c.TW3Out(tables=tables, table_sections=sections, table_outputs=outputs, check=check)
 
     def tv1(inp: c.TV1In, tools: Tools) -> c.TV1Out:
-        """문서층 점수와 항목별 판정 (spec 4.9 모양).
+        """문서층 점수와 항목별 판정.
 
         - 평가항목 = 계획서 항목: 총점(시나리오 doc_scores 차례)을 항목 배점(평가항목 maxScore — 없으면 70 ÷ 항목 수)으로
           나눈다(_doc_score). 항목 판정 점수 = 항목 점수 ÷ 배점 × 100.
@@ -724,7 +724,7 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
 
     def tb2(inp: c.TB2In, tools: Tools) -> c.TB2Out:
         _ask(tools, "인포그래픽 제작")
-        # 모든 카테고리에서 SVG (spec 4.3). 원페이지 지면은 M-2가 이 참조를 프로토타입 진입 파일로 감싼다.
+        # 모든 카테고리에서 SVG. 원페이지 지면은 M-2가 이 참조를 프로토타입 진입 파일로 감싼다.
         # 스텁은 아이콘을 그리지 않으므로 기본 아이콘 대체(icon_fallback)는 늘 거짓이다
         name = ONEPAGE_FILE if inp.category == "원페이지" else INFOGRAPHIC_FILE
         image = tools.files.put(name, STUB_SVG, SVG_TYPE)
@@ -744,7 +744,7 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
         cc = _code_check(sc, inp.prototype.kind, code_total)
         if cc.gate_failures:
             # 통과 필수 조건 실패면 코드 점검 · 대조 모두 0 — 모든 기능을 누락으로 둔다 (기준 문서 T-V2 ①
-            # "codeCheck.total=0, featureMatch.score=0", 담당자 코드와 같음, spec 4.4)
+            # "codeCheck.total=0, featureMatch.score=0", 담당자 코드와 같음)
             fm = FeatureMatchResult(score=0, missing_features=list(inp.feature_list), extra_features=[],
                                     findings=[f"통과 필수 조건 실패로 대조 생략: {', '.join(cc.gate_failures)}"],
                                     judged_by=judged)
@@ -760,7 +760,7 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
         if sc.no_tokens:
             return c.G03Out(protected_tokens=[])
         a = inp.announcement
-        # 공고의 금액 표기 · 마감일이 비어 있으면 그 보호 토큰은 만들지 않는다 (spec 5)
+        # 공고의 금액 표기 · 마감일이 비어 있으면 그 보호 토큰은 만들지 않는다
         tokens = ([Token(type="수치금액", value=a.support_amount_text, count=1)] if a.support_amount_text else [])
         tokens += [Token(type="날짜", value=a.apply_end.isoformat(), count=1)] if a.apply_end else []
         tokens += [Token(type="고유명사", value=a.title, count=1),
@@ -796,7 +796,7 @@ def bind_stubs(registry: TaskRegistry, sc: StubScenario, *, now: Callable[[], da
         "T-P1": tp1, "T-P2": tp2,
     }.items():
         registry.bind(tid, fn)
-    # 규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4)는 실구현 한 벌 + 테스트용 실패 흉내 ( D14)
+    # 규칙 단계(G-02a · G-02b · G-04 · M-1 ~ M-4)는 실구현 한 벌 + 테스트용 실패 흉내
     for tid, fn in RULES.items():
         registry.bind(tid, _with_faults(sc, tid, fn))
     # LLM 없는 조율 Task(T-C4)도 실구현 한 벌 + 테스트용 실패 흉내(raise_in) — 두 인자 감싸기
@@ -839,7 +839,7 @@ def _card(sc: StubScenario, aid: str, rank: int, today: date, *, more: bool, fit
 
 def _with_faults(sc: StubScenario, task_id: str, fn: Callable) -> Callable:
     """규칙 단계 실구현을 감싸는 테스트용 실패 흉내 — raise_in에 있으면 코드 오류. G-04는 check_fail_times['G-04']번까지
-    자체 검사 불통과로 바꾼다(실구현이 넣은 안내 문서 참조는 그대로). 규칙은 실구현 그대로다 ( D14)."""
+    자체 검사 불통과로 바꾼다(실구현이 넣은 안내 문서 참조는 그대로). 규칙은 실구현 그대로다."""
     if task_id == "G-04":
         @functools.wraps(fn)
         def g04(inp: c.G04In, files: FileTool) -> c.G04Out:

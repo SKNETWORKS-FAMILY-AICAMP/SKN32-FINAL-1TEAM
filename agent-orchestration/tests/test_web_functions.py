@@ -1,4 +1,4 @@
-"""웹이 쓰는 함수 (spec 4) — 진행 상태(view_project) · 여러 프로젝트 보기 · 실행 건이 없는 프로젝트(missing_projects) · 기다리기 · 지금까지 결과 · 재작성 결과,
+"""웹이 쓰는 함수 — 진행 상태(view_project) · 여러 프로젝트 보기 · 실행 건이 없는 프로젝트(missing_projects) · 기다리기 · 지금까지 결과 · 재작성 결과,
 project_id로 부르는 명령, 자격 통과 뒤 공고 다시 고르기 (3.3), 화면 8 · 9 '진행'. (흐름을 거친 화면 10 시도별 기록은
 검수가 흐름에서 빠져 지웠다)"""
 from __future__ import annotations

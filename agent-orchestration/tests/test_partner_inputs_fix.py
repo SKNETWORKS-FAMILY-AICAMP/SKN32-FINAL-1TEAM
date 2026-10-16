@@ -36,7 +36,7 @@ USER_TARGET = "동네 소규모 헬스장 운영자(사용자입력)"
 NAMES = ("이하늘", "박지우", "최가람", "정다온")
 
 
-# ── 1. 사전 정보 (spec 11절 1) ──────────────────────────────
+# ── 1. 사전 정보 ──────────────────────────────
 @pytest.mark.parametrize("description, expected", [
     ("동네 헬스장 회원 관리 서비스", "동네 헬스장 회원 관리 서비스"),
     ("첫 줄 이름\n둘째 줄 설명\n셋째 줄", "첫 줄 이름"),                       # 여러 줄 — 첫 줄만
@@ -102,7 +102,7 @@ def test_company_info_copies_new_fields_without_sharing_objects():
     assert tc1.company_info_from(pre_input()).team_member_rows is None                # None은 None 그대로
 
 
-# ── 2. 목표 고객 덮기 (spec 11절 2) ─────────────────────────
+# ── 2. 목표 고객 덮기 ─────────────────────────
 def real_app(clock, **kw):
     app = make_app(clock, **kw)
     bind_supervisor(app.registry)
@@ -152,7 +152,7 @@ def test_user_target_customer_overrides_item_spec_and_reaches_company_info(clock
     assert USER_TARGET not in tc1_llm_text(app)                                          # T-C1 LLM 요청에 없음
     if real:
         assert item.item_name == FAKE_ITEM["item_name"]                                  # 아이템 이름은 그대로
-    # 사전 정보 새 칸의 값은 실행 기록 · 사건 · 호출 기록 · 관리자 조회에 없다 (spec 7절 · 10절)
+    # 사전 정보 새 칸의 값은 실행 기록 · 사건 · 호출 기록 · 관리자 조회에 없다
     dumped = records_text(app, res.run_id)
     for value in (USER_TARGET, STARTUP_NAME, TEAM_ROLE, TEAM_EXPERIENCE):
         assert value not in dumped, value
@@ -181,7 +181,7 @@ def test_override_function_is_shared_and_ignores_blank():
     assert stubs.with_user_target_customer is tc1.with_user_target_customer
 
 
-# ── 3 · 4. 담당자 입력 (spec 11절 3 · 4) ──────────────────────
+# ── 3 · 4. 담당자 입력 ──────────────────────
 def chain(applicant: str = "법인", *, target: str | None = None, name: str | None = "헬스온 회원 관리",
           rows: list[TeamMemberEntry] | None = None, monkeypatch=None) -> SimpleNamespace:
     """T-S1 → T-S2 → T-W1 → T-W2 → T-W3 → T-V1 (test_partner_sw_tasks.run_chain과 같은 순서). T-C1이 덮은 뒤처럼
@@ -350,7 +350,7 @@ def test_general_status_sections_are_the_partner_web_sections():
     assert found == {(ins.PRE_STARTUP, "2.1.1"), (ins.EARLY_STARTUP, "3.1.1")}
 
 
-# ── 5. 흐름도 제목 (spec 11절 5) ────────────────────────────
+# ── 5. 흐름도 제목 ────────────────────────────
 def test_diagram_titles():
     flow = render_diagram({"nodes": ["가", "나", "다"], "flowType": "USER_FLOW"}).decode("utf-8")
     arch = render_diagram({"nodes": ["가", "나", "다"], "flowType": "SERVICE_ARCHITECTURE"}).decode("utf-8")
@@ -358,7 +358,7 @@ def test_diagram_titles():
     assert 'font-weight="700" fill="#172033">서비스 구조도</text>' in arch
 
 
-# ── 6. 잠정 (spec 11절 6 — 확장 표시는 test_basedoc_v110_markers.py) ──
+# ── 6. 잠정 (확장 표시는 test_basedoc_v110_markers.py) ──
 def test_provisional_keys_name_rules_and_texts():
     p = settings.PROVISIONAL
     assert "60자" in p["intake.startupItemName"] and "첫 줄" in p["intake.startupItemName"]

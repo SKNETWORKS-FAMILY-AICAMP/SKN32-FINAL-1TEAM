@@ -23,7 +23,7 @@
 - 운영 로그 줄(runlog, 로거 sbrain.run): 실행 기록마다 단계시작 · 단계끝, 실행 건의 대기 · 실행끝 · 재개예약. 단계 ID와 실행 건 ·
   실행 기록 값만 쓴다. 처리기는 워커만 단다 — 그 밖에서는 아무것도 나가지 않는다. 단계끝 · 재개예약의 errorCode(확장)는 엔진이
   그 실행에서 받은 재시도 소진(ToolCallExhausted.code)의 오류 코드다 — 실행 기록 ID로 잠시 들고 있고 모델 칸은 없다.
-- 재시도 대기 설정(확장 · 잠정): 호출 설정(ToolsConfig)에 늘리는 간격 · 무작위 지연 · Retry-After 상한과 설정 키로 찾은 대기 합
+- 재시도 대기 설정(기준 문서 시트 1 재시도 간격): 호출 설정(ToolsConfig)에 늘리는 간격 · 무작위 지연 · Retry-After 상한과 설정 키로 찾은 대기 합
   상한(Settings.retry.wait_cap_by_key, 없으면 wait_cap_sec)을 옮긴다. 키 이름은 보지 않는다.
 """
 from __future__ import annotations
@@ -161,7 +161,7 @@ def _dig(obj: Any, path: str) -> Any:
 
 
 def _retry_wait(settings: Any, key: str) -> dict[str, float]:
-    """재시도 대기 설정(확장 · 잠정) — 늘리는 간격 · 무작위 지연 · Retry-After 상한과, 설정 키(key)로 찾은 대기 합 상한
+    """재시도 대기 설정 — 늘리는 간격 · 무작위 지연 · Retry-After 상한과, 설정 키(key)로 찾은 대기 합 상한
     (wait_cap_by_key, 없으면 wait_cap_sec). 엔진은 키 이름을 보지 않는다(제한 시간 task_timeouts와 같은 방식)."""
     r = settings.retry
     return {"backoff_multiplier": r.backoff_multiplier, "jitter_ratio": r.jitter_ratio,
@@ -462,7 +462,7 @@ class Engine:
         return outputs
 
     def check_file_refs(self, ctx: RunContext, spec: TaskSpec, out: Any) -> None:
-        """출력 안의 모든 FileRef를 저장소와 대조한다(spec 4.4). 하나라도 어기면 ContractError — 메시지에는 어긴 참조 수와
+        """출력 안의 모든 FileRef를 저장소와 대조한다. 하나라도 어기면 ContractError — 메시지에는 어긴 참조 수와
         규칙 종류만 적는다(키 · 이름 없음). 같은 실행 건의 앞 실행 기록이 만든 참조를 그대로 넘기는 것은 된다."""
         refs: list[FileRef] = []
         _collect_file_refs(out, refs)
