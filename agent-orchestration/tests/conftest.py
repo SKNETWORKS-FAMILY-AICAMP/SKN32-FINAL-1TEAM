@@ -17,6 +17,7 @@ from webdb import create_web_tables, new_project  # noqa: E402
 from sbrain import env  # noqa: E402
 from sbrain.agents.stubs import StubScenario  # noqa: E402
 from sbrain.bootstrap import App, build_stub_app  # noqa: E402
+from sbrain.flow import rework_map  # noqa: E402
 from sbrain.intake import ProjectInputRecord  # noqa: E402
 from sbrain.models import PreInput  # noqa: E402
 from sbrain.orchestrator import MemoryStore  # noqa: E402
@@ -157,6 +158,21 @@ def bonus_on(monkeypatch):
 def bonus_off(monkeypatch):
     """가산점을 끈다(기본값과 같다) — 기본값이 바뀌어도 꺼짐 동작 시험이 그대로 꺼짐을 보게 한다."""
     monkeypatch.setattr(settings, "BONUS_ENABLED", False)
+
+
+# ── 코드 스위치 두 개 (배포 값은 켬 — 사업비 · 일정 필수 PLAN_TABLES_REQUIRED · 새 재작성 묶음 GENERAL_BUNDLES_ENABLED) ─────
+# 두 값은 2026-10-16 배포부터 코드에서 켰다. 흐름 테스트 대부분은 사업비 · 일정 없이 시작하고 묶음 4개를 기대하므로 모든 테스트에서
+# 꺼진 값으로 본다(테스트가 끝나면 monkeypatch가 되돌린다). 켠 동작은 각 테스트가 monkeypatch로 켜서 시험한다(test_intake.py ·
+# test_general_bundles.py — 자동 픽스처가 먼저 돌아 테스트의 켜기가 이긴다). 코드에 적힌 값(배포 값)은 불러올 때 읽어 둔
+# CODE_SWITCHES로 확인한다.
+CODE_SWITCHES = {"PLAN_TABLES_REQUIRED": settings.PLAN_TABLES_REQUIRED,
+                 "GENERAL_BUNDLES_ENABLED": rework_map.GENERAL_BUNDLES_ENABLED}
+
+
+@pytest.fixture(autouse=True)
+def _code_switches_off(monkeypatch):
+    monkeypatch.setattr(settings, "PLAN_TABLES_REQUIRED", False)
+    monkeypatch.setattr(rework_map, "GENERAL_BUNDLES_ENABLED", False)
 
 
 # ── 저장소 선택 ────────────────────────────────────────

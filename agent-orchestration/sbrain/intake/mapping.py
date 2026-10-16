@@ -11,7 +11,7 @@
   PlanCareerIn · PlanHireIn · PlanEquipmentIn · PlanPartnerIn)의 키 이름으로 한 줄을 만든다.
   모르는 키만 있는 항목은 값만 순서대로 잇는다.
 - 사업비 · 일정 · 팀원 역할(budgetItems · scheduleItems · teamRoleCareers — 확장, spec 4.3)도 시작 요청에서 함께 옮긴다.
-  필수 확인은 스위치 settings.PLAN_TABLES_REQUIRED(잠정, 기본 꺼짐)가 켜졌을 때만 한다.
+  필수 확인은 스위치 settings.PLAN_TABLES_REQUIRED(잠정, 2026-10-16 배포부터 켬)가 켜졌을 때만 한다.
 - 목표 고객 · 창업아이템명 · 팀원 표 행(targetCustomer · startupItemName · teamMemberRows — 확장)도 시작 요청에서
   함께 옮긴다. 선택 칸이라 필수 확인에 넣지 않는다. 값은 기록 · 로그 · 예외 메시지에 싣지 않는다.
 """
@@ -149,7 +149,7 @@ def to_pre_input(record: ProjectInputRecord) -> PreInput:
     elif applicant == "예비창업자":
         required += ["desired_scale"]
     missing = [f for f in required if values[f] in (None, "", [])]
-    if settings.PLAN_TABLES_REQUIRED:   # 부를 때마다 모듈 속성으로 읽는다 (잠정, 기본 꺼짐 — 꺼져 있으면 비어도 통과)
+    if settings.PLAN_TABLES_REQUIRED:   # 부를 때마다 모듈 속성으로 읽는다 (잠정, 2026-10-16 배포부터 켬 — 꺼져 있으면 비어도 통과)
         missing += _plan_tables_missing(applicant, values["budget_items"], values["schedule_items"])
     if missing:
         raise MissingRequired(missing)

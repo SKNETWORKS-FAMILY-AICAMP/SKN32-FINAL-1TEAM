@@ -39,7 +39,8 @@ class ProjectWatch:
     def __init__(self, app, rid: str) -> None:
         self.app, self.pid = app, project_of(app, rid)
         self.before = project_row(app.store.engine, self.pid)
-        assert self.before["status"] is None and self.before["notice_id"] is None
+        # 최신 웹 스키마는 진행 컬럼을 지웠다(웹 마이그레이션 002) — 옛 스키마 · SQLite 흉내에 있으면 비어 있어야 한다
+        assert self.before.get("status") is None and self.before.get("notice_id") is None
 
     def unchanged(self) -> bool:
         return project_row(self.app.store.engine, self.pid) == self.before

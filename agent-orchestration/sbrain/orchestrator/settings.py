@@ -200,8 +200,9 @@ BONUS_ENABLED: bool = False
 
 # 계획서 표 입력(사업비 · 일정) 필수 확인 스위치 (잠정, PROVISIONAL planTables.required) — 실행별 설정이 아닌 코드 상수다.
 # 시작 요청의 필수 확인이 부를 때마다 settings.PLAN_TABLES_REQUIRED로 읽는다(from-import로 값을 복사하지 않는다 —
-# BONUS_ENABLED와 같은 방식). 꺼져 있으면 사업비 · 일정이 비어도 통과한다. 웹이 입력 화면을 배포한 뒤 켠다 (spec 4.3)
-PLAN_TABLES_REQUIRED: bool = False
+# BONUS_ENABLED와 같은 방식). 꺼져 있으면 사업비 · 일정이 비어도 통과한다. 웹 입력 화면 배포와 함께 2026-10-16 배포부터 켰다
+# (웹 REQUIRE_BUDGET_SCHEDULE과 같은 시점 — 웹 마이그레이션 004의 phase 컬럼이 있어야 한다)
+PLAN_TABLES_REQUIRED: bool = True
 
 
 # 기준 문서가 값을 정하지 않아 임시로 둔 항목 (문서 · 화면에 '잠정'으로 표시)
@@ -235,8 +236,9 @@ PROVISIONAL: dict[str, str] = {
              "옛 설정 사본(agents만)은 빈 사전 · 그 Agent 값 그대로 쓴다",
     "redo.verify1RedoCount": "검증-1 재수행 횟수 1(항목마다 · 사이클마다, 기준 문서 시트 1) — 웹 관리자 칸이 없어 코드 "
                              "기본값으로만 둔다",
-    "planTables.required": "계획서 표 입력(사업비 집행계획 · 추진 일정) 필수 확인 스위치 PLAN_TABLES_REQUIRED 기본 꺼짐 — "
-                           "웹 입력 화면 배포 전이라 비어도 돈다. 배포 뒤 이 한 곳만 켠다(웹팀이 배포를 알려 주기로 함)",
+    "planTables.required": "계획서 표 입력(사업비 집행계획 · 추진 일정) 필수 확인 스위치 PLAN_TABLES_REQUIRED 켬 — "
+                           "웹 입력 화면 배포와 함께 2026-10-16 배포부터 켰다(웹 REQUIRE_BUDGET_SCHEDULE과 같은 시점). "
+                           "끄면 비어도 돈다",
     "planTables.unknownSection": "추진 일정 row의 section이 feasibility · growth 밖이면 그 row를 버린다. 사업비 row의 "
                                  "phase가 '1단계' · '2단계' 밖이면 None(단계 미지정)으로 본다 (intake/mapping.py)",
     "planTables.missingLabels": "필수 스위치가 켜졌을 때의 결측 이름 글자 '사업비 집행계획' · '사업비 집행계획(1단계)' · "
@@ -303,8 +305,8 @@ PROVISIONAL: dict[str, str] = {
                                 "오케스트레이터 쪽에서 정함. 담당자가 대응이 맞다고 확인(2026-10-12)했고, 일반현황 · 개요 · 그림을 "
                                 "새 묶음으로 두자는 담당자 제안을 웹팀에 묻는 중(결정 0028). 답이 오면 flow/rework_map.py 표만 바꾼다. "
                                 "새 묶음 줄은 같은 모듈에 두고 스위치를 켰을 때만 표에 들어간다(reworkMap.generalBundles)",
-    "reworkMap.generalBundles": "새 재작성 묶음 스위치 GENERAL_BUNDLES_ENABLED 기본 꺼짐(flow/rework_map.py 코드 값 — 켜려면 "
-                                "웹 배포 → 코드 값 변경 → 웹 프로세스 · 워커 다시 띄움). 켜면 문서층 묶음 6개, 순서 일반현황 · 개요, "
+    "reworkMap.generalBundles": "새 재작성 묶음 스위치 GENERAL_BUNDLES_ENABLED 켬 — 2026-10-16 배포부터(flow/rework_map.py 코드 값 — "
+                                "바꾸려면 웹 배포 → 코드 값 변경 → 웹 프로세스 · 워커 다시 띄움). 켜면 문서층 묶음 6개, 순서 일반현황 · 개요, "
                                 "그림, 문제인식, 실현가능성, 성장전략, 팀 구성. 이름 '일반현황 · 개요'(2.1.x · 2.2.x · 2.3.1 ~ 2.3.5 / "
                                 "3.1.x · 3.2.x · 3.3.1 ~ 3.3.5, 태그 0-1, T-W1이 다시 만듦) · '그림'(2.3.6 · 3.3.6, 태그 0-2, T-W2가 "
                                 "다시 만듦). 기회는 rework.perBundle, 받는 화면 6 · 9. 판정의 '묶음 모두' 후보에서 그림은 뺀다(그림 "

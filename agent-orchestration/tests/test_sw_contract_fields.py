@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from conftest import make_app, pre_input, to_screen6
+from conftest import CODE_SWITCHES, make_app, pre_input, to_screen6
 
 from sbrain.agents.stubs import StubScenario
 from sbrain.contracts import tasks as c
@@ -248,7 +248,7 @@ def test_snapshot_without_purpose_models_reads():
 
 
 def test_plan_tables_switch_and_provisional():
-    assert settings_mod.PLAN_TABLES_REQUIRED is False
+    assert CODE_SWITCHES["PLAN_TABLES_REQUIRED"] is True                         # 배포 값 (테스트는 conftest가 끈 값)
     assert "planTables.required" in settings_mod.PROVISIONAL
     assert "redo.verify1RedoCount" in settings_mod.PROVISIONAL
     assert "purposeModels" in settings_mod.PROVISIONAL["tasks"]
@@ -301,7 +301,7 @@ def test_provisional_keys_for_partner_1012():
     assert "2026-10-12" in p["reworkMap.sectionBundles"] and "웹팀" in p["reworkMap.sectionBundles"]
     assert "스위치" in p["reworkMap.sectionBundles"]
     general = p["reworkMap.generalBundles"]
-    assert all(word in general for word in ("GENERAL_BUNDLES_ENABLED", "기본 꺼짐", "일반현황 · 개요", "그림", "0-1",
+    assert all(word in general for word in ("GENERAL_BUNDLES_ENABLED", "켬", "일반현황 · 개요", "그림", "0-1",
                                             "0-2", "묶음 모두"))
     kiet = p["partnerSw.kietSearch"]
     assert all(word in kiet for word in ("SBRAIN_KIET_SEARCH", "기본 꺼짐", "25초", "120자"))

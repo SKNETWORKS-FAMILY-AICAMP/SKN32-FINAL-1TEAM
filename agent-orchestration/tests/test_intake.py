@@ -257,8 +257,8 @@ def missing_labels(**over) -> list[str]:
     return e.value.labels
 
 
-def test_switch_off_by_default_allows_empty_plan_tables():
-    assert settings.PLAN_TABLES_REQUIRED is False
+def test_switch_off_allows_empty_plan_tables():
+    assert settings.PLAN_TABLES_REQUIRED is False                               # conftest가 끈 값 (코드 값은 켬)
     assert plan_tables(**PRELIM).budget_items == []
     assert plan_tables().schedule_items == []
 

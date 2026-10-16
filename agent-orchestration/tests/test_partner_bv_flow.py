@@ -121,7 +121,8 @@ def test_tb1_gate_failure_redo_passes_previous_source_then_tv2_scores_it(clock):
     assert score.code_check.gate_failures == []
     [seventh] = [ch for ch in score.code_check.checks if ch.no == 7]
     assert not seventh.passed and score.total > 0
-    assert "abcd" not in recorded(app, rid) and MARK not in recorded(app, rid)
+    # 시험 비밀값 전체로 찾는다 — 'abcd'만 찾으면 무작위 16진수 ID(호출 · 실행 ID)에 우연히 들어가 가끔 실패했다
+    assert "abcd1234efgh5678" not in recorded(app, rid) and MARK not in recorded(app, rid)
 
 
 def test_tb1_unfixed_external_dependency_loses_item_7(clock):
