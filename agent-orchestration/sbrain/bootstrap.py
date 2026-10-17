@@ -6,13 +6,19 @@
 | build_app | 워커 (sbrain/worker.py) | 공유 MySQL — SqlStore · SqlProjectInputSource · DbSettingsProvider | 조율 T-C1 · T-C3 실구현과 재작성 · 재수행 지시문 다시 쓰기(OpenAI), 조율 규칙 단계 G-02a · G-02b · G-04 · M-1 ~ M-4 실구현(LLM 없음), 전략 · 작성 · 검증-1 T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1 실구현(담당자 코드 — OpenAI, T-W3는 LLM 없음, T-S1 실행별 KIET 검색은 SBRAIN_KIET_SEARCH가 켜는 값일 때만), 구현 · 검증-2 T-B1 · T-B2 · T-V2 실구현(담당자 코드 — OpenAI), T-C2 · G-01은 SBRAIN_NOTICE_API_URL이 있으면 공고 서버 연결(실제 모드) · 없으면 스텁, 나머지 스텁. 이미지 호출도 구현이 들어온 Task(T-B2 아이콘판)만 실제(OpenAI) |
 | build_web | 웹 서버 | 공유 MySQL — 같음 | 단계를 돌지 않는다 (명령 · 조회만). 공고 서버 · 이미지 호출처를 부르지 않는다 |
 
-파일 저장소 (확장 — SBRAIN_ARTIFACT_ROOT, 절대 경로만, 기본값 없음):
+파일 저장소 (확장 · 0035 — SBRAIN_ARTIFACT_ROOT 하나, 기본값 없음, 값 확인은 artifact_root_problem 한 곳):
+- 값 모양: 절대 경로 → 로컬 폴더, 's3://<버킷>' · 's3://<버킷>/<접두어>'(스킴은 소문자만, 모양 검사는 store_s3 주소 함수) → S3
+  (버킷 안 접두어 아래). 그 밖(상대 경로 · S3 주소 형식이 틀림)은 쓸 수 없는 값이다.
+- S3면 리전이 필수다 — AWS_REGION, 없으면 AWS_DEFAULT_REGION(get_env — 환경 변수 → .env, AWS 관례 순서)을 S3 클라이언트에 직접
+  넘긴다. 자격 증명은 AWS 기본 순서 그대로다(우리 코드는 AWS 키를 읽거나 넘기지 않는다).
+- AWS 라이브러리(boto3 · botocore)는 S3 저장소를 만들 때만 불러온다 — 로컬 값으로 도는 조립은 불러오지 않는다.
+- 값(경로 · 버킷 · 접두어 · 리전)은 오류 메시지 · 예외 · 워커 화면 줄에 싣지 않는다 — 문제 종류 · 상태 · 오류 코드만.
 | 조립 | 파일 저장소 |
 |---|---|
-| build_stub_app | 메모리(MemoryFileStore) |
-| build_app | 로컬 폴더 — 필수. 없거나 상대 경로면 조립하지 않는다(RuntimeError, 값은 메시지에 싣지 않음). 폴더가 없으면 만든다 |
-| build_web | 로컬 폴더 읽기 전용 — 선택. 엔진에 넘기지 않고 파일 읽기(read_artifact_file)에만 쓴다. 없거나 상대 경로면 그 함수만 FILE_STORE_UNAVAILABLE. 쓰지도 지우지도 않는다 |
-웹과 모든 워커는 같은 폴더를 봐야 한다(같은 서버 또는 공유 폴더).
+| build_stub_app | 메모리(MemoryFileStore) — 값과 관계없다 |
+| build_app | 필수. 로컬 폴더(없으면 만든다) 또는 S3(쓰기 가능 — 조립할 때 시작 확인 check_s3_store를 한 번 한다). 없음 · 상대 경로 · S3 주소 형식 오류 · 리전 없음 · S3 저장소를 만들지 못함(AWS 라이브러리 없음 · 리전 모양)이면 DB에 닿기 전에 RuntimeError, 시작 확인 실패는 S3StartupCheckFailed(RuntimeError — permanent면 워커 종료 코드 2, 아니면 1). 시작 확인을 다시 부르거나 기다리지 않는다 |
+| build_web | 선택 · 읽기 전용 — 로컬 폴더(만들지 않는다) 또는 S3(형식 · 리전이 맞을 때). 엔진에 넘기지 않고 파일 읽기(read_artifact_file)에만 쓴다. 없음 · 상대 경로 · S3 주소 형식 오류 · 리전 없음 · AWS 라이브러리 없음 · S3 저장소를 만들지 못함이면 조립은 되고 그 함수만 FILE_STORE_UNAVAILABLE. 시작 확인을 하지 않고 조립할 때 S3를 부르지 않는다(클라이언트는 처음 읽을 때). 쓰지도 지우지도 않는다(FileStoreReadOnly) |
+웹과 모든 워커는 같은 값을 봐야 한다(같은 폴더 — 같은 서버 또는 공유 폴더, 또는 같은 버킷 · 접두어).
 
 실제 Agent 구현이 나오면 registry.bind(task_id, fn)로 스텁을 교체한다.
 """
@@ -22,7 +28,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from .agents.notice import NoticeClient, Transport, bind_notice
 from .agents.partner_bv.tasks import IMAGE_TASKS as BV_IMAGE_TASKS
@@ -45,10 +51,19 @@ from .orchestrator.files import FileStore, LocalFolderFileStore, MemoryFileStore
 from .orchestrator.registry import TaskRegistry
 from .orchestrator.store import Store
 from .orchestrator.tools import ImageProvider, ImageRequest, LLMProvider, LLMRequest
+from .store_s3.address import is_s3_address, s3_address_problem   # 주소 함수 — AWS 라이브러리를 불러오지 않는다
 
-ARTIFACT_ROOT_ENV = "SBRAIN_ARTIFACT_ROOT"   # 로컬 파일 저장소 폴더 (확장) — 절대 경로만, 기본값 없음
+ARTIFACT_ROOT_ENV = "SBRAIN_ARTIFACT_ROOT"   # 파일 저장소 (확장 · 0035) — 절대 경로 또는 s3://, 기본값 없음
 KIET_SEARCH_ENV = "SBRAIN_KIET_SEARCH"       # 실행별 KIET 검색 스위치 (SB-360, 잠정) — 켜는 값이 없으면 꺼짐
 KIET_SEARCH_ON = frozenset({"1", "true", "yes", "on"})   # (잠정) 켜는 값 — 대소문자 · 앞뒤 공백 무시
+
+# SBRAIN_ARTIFACT_ROOT 값의 문제 종류 (artifact_root_problem이 돌려준다 — 값이 없는 글)
+ROOT_MISSING = "없음"
+ROOT_NOT_ABSOLUTE = "절대 경로가 아님"
+ROOT_NOT_S3_ADDRESS = "S3 주소 형식이 아님"
+# S3 리전을 읽는 환경 변수 — 앞에서부터 (AWS 관례 순서). 값은 S3 클라이언트에 직접 넘긴다
+S3_REGION_ENVS = ("AWS_REGION", "AWS_DEFAULT_REGION")
+S3_REGION_MISSING = f"{ARTIFACT_ROOT_ENV}가 S3인데 AWS_REGION(또는 AWS_DEFAULT_REGION)이 없음"
 
 
 def switch_on(value: str | None) -> bool:
@@ -57,13 +72,26 @@ def switch_on(value: str | None) -> bool:
 
 
 def artifact_root_problem(value: str | None) -> str | None:
-    """SBRAIN_ARTIFACT_ROOT 값의 문제 — '없음' · '절대 경로가 아님', 맞으면 None. 문구에 값을 넣지 않는다.
+    """SBRAIN_ARTIFACT_ROOT 값의 문제 — '없음' · '절대 경로가 아님' · 'S3 주소 형식이 아님', 맞으면 None. 문구에 값을 넣지 않는다.
 
-    상대 경로는 프로세스를 띄운 폴더 기준으로 풀려 웹과 워커가 서로 다른 폴더를 볼 수 있어 '값 없음'과 같게 다룬다."""
+    's3://'(소문자)로 시작하면 S3 주소로 보고 모양을 store_s3 주소 함수(s3_address_problem)로 본다. 그 밖은 절대 경로여야 한다 —
+    상대 경로는 프로세스를 띄운 폴더 기준으로 풀려 웹과 워커가 서로 다른 폴더를 볼 수 있어 '값 없음'과 같게 다룬다.
+    S3일 때의 리전 없음은 여기서 보지 않는다(s3_region — 조립이 따로 본다)."""
     if not value:
-        return "없음"
+        return ROOT_MISSING
+    if is_s3_address(value):
+        return ROOT_NOT_S3_ADDRESS if s3_address_problem(value) is not None else None
     if not Path(value).is_absolute():
-        return "절대 경로가 아님"
+        return ROOT_NOT_ABSOLUTE
+    return None
+
+
+def s3_region() -> str | None:
+    """S3 리전 — AWS_REGION, 없으면 AWS_DEFAULT_REGION(get_env — 환경 변수 → .env). 둘 다 없으면 None(리전 없음)."""
+    for name in S3_REGION_ENVS:
+        value = get_env(name)
+        if value:
+            return value
     return None
 
 
@@ -163,6 +191,7 @@ def build_app(
     image: ImageProvider | None = None,
     artifact_root: str | None = None,
     kiet_search: bool | None = None,
+    s3_client: Any = None,
 ) -> App:
     """워커 조립 — 공유 MySQL(SqlStore · SqlProjectInputSource · DbSettingsProvider), 조율 T-C1 · T-C3 실구현, OpenAI 호출처.
 
@@ -170,8 +199,16 @@ def build_app(
       (bind_supervisor — 실패 흉내 없이 그대로). LLM을 부르지 않아 호출처 나누기 대상이 아니다.
 
     - db_url이 없으면 SBRAIN_DB_URL(환경 변수 → .env)을 쓴다.
-    - 파일 저장소(확장): 로컬 폴더 artifact_root, 주지 않으면(None) SBRAIN_ARTIFACT_ROOT(환경 변수 → .env). 필수다 —
-      없거나 절대 경로가 아니면 DB에 닿기 전에 RuntimeError(값은 메시지에 싣지 않는다). 폴더가 없으면 만든다.
+    - 파일 저장소(확장 · 0035): artifact_root, 주지 않으면(None) SBRAIN_ARTIFACT_ROOT(환경 변수 → .env). 필수다.
+      DB에 닿기 전에 값을 보고 저장소를 만든다(_worker_files) — 값은 메시지에 싣지 않는다.
+      - 절대 경로면 로컬 폴더(없으면 만든다 — 만들지 못하면 RuntimeError).
+      - 's3://<버킷>[/<접두어>]'면 리전(s3_region — AWS_REGION → AWS_DEFAULT_REGION)을 넣은 쓰기 가능 S3 저장소를 만들고 시작 확인
+        (store_s3.check_s3_store)을 한 번 한다. 리전 없음 · 저장소를 만들지 못함(S3StoreError — AWS 라이브러리 없음 · 리전 모양)은
+        RuntimeError, 시작 확인 실패는 S3StartupCheckFailed(RuntimeError — .permanent: 참이면 설정 오류, 거짓이면 일시). 다시
+        부르거나 기다리지 않는다 — 일시면 워커가 종료 코드 1로 끝나고 systemd가 다시 띄운다.
+      - 없음 · 상대 경로 · S3 주소 형식이 틀림이면 RuntimeError.
+    - s3_client는 시험용 가짜 S3 클라이언트(tests/s3_fake.py)를 끼울 때만 준다. 주면 AWS 라이브러리를 부르지 않는다. 없으면 저장소가
+      처음 쓸 때(시작 확인) store_s3.client.make_s3_client로 만든다.
     - 흐름의 지시문 만들기에 조율 다시 쓰기(rewrite_guidance)를 끼운다 — 재작성 · 재수행 대상의 안내를 다시 쓴다.
     - 전략 · 작성 · 검증-1(T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1)은 담당자 코드 실구현(agents/partner_sw, bind_partner_sw)이고
       그 LLM 호출도 실제 호출처로 간다.
@@ -195,15 +232,7 @@ def build_app(
     from .orchestrator.openai_provider import OpenAIProvider
     from .store_sql import DbSettingsProvider, SqlStore, create_db_engine
 
-    root = get_env(ARTIFACT_ROOT_ENV) if artifact_root is None else artifact_root
-    problem = artifact_root_problem(root)
-    if problem is not None:
-        raise RuntimeError(f"{ARTIFACT_ROOT_ENV}가 {problem} — 환경 변수 또는 agent-orchestration/.env에 파일 저장소 폴더의 절대 경로를 "
-                           "넣는다 (웹과 모든 워커가 같은 폴더)")
-    try:
-        files = LocalFolderFileStore(root, create=True)   # type: ignore[arg-type]  # 위에서 값이 있음을 확인했다
-    except OSError as e:   # 경로가 든 디스크 오류 메시지를 싣지 않는다 — 종류만
-        raise RuntimeError(f"{ARTIFACT_ROOT_ENV} 폴더를 만들지 못함 — {type(e).__name__}") from None
+    files = _worker_files(get_env(ARTIFACT_ROOT_ENV) if artifact_root is None else artifact_root, s3_client)
     db = create_db_engine(_db_url(db_url))
     app = _assemble(
         store=SqlStore(db, now=now), settings=DbSettingsProvider(db, settings), scenario=StubScenario(), now=now,
@@ -233,12 +262,17 @@ def build_web(
     now: Callable[[], datetime] = utc_now,
     project_inputs: ProjectInputSource | None = None,
     artifact_root: str | None = None,
+    s3_client: Any = None,
 ) -> App:
     """웹 서버 조립 — 명령 · 조회 함수만 쓰는 SBrainOrchestrator. LLM 호출처가 없고 단계를 돌지 않는다.
 
-    파일 저장소(확장): artifact_root, 주지 않으면(None) SBRAIN_ARTIFACT_ROOT. 선택이다 — 절대 경로면 읽기 전용으로
-    열어 파일 읽기(read_artifact_file)에만 쓴다(엔진에는 넘기지 않는다, 폴더를 만들지 않는다). 없거나 상대 경로면 조립은 되고
-    read_artifact_file만 FILE_STORE_UNAVAILABLE이다. 웹은 파일을 쓰지도 지우지도 않는다 — 삭제는 모두 워커가 한다.
+    파일 저장소(확장 · 0035): artifact_root, 주지 않으면(None) SBRAIN_ARTIFACT_ROOT. 선택이다 — 절대 경로면 로컬 폴더,
+    's3://<버킷>[/<접두어>]'이고 리전(AWS_REGION → AWS_DEFAULT_REGION)이 있으면 S3를 읽기 전용으로 열어 파일 읽기
+    (read_artifact_file)에만 쓴다(엔진에는 넘기지 않는다, 폴더를 만들지 않는다, 시작 확인을 하지 않고 조립할 때 S3를 부르지
+    않는다 — 클라이언트는 처음 읽을 때 만든다). 없음 · 상대 경로 · S3 주소 형식이 틀림 · 리전 없음 · AWS 라이브러리 없음 · S3
+    저장소를 만들지 못함이면 조립은 되고(웹 서버는 뜬다) read_artifact_file만 FILE_STORE_UNAVAILABLE이다. 웹은 파일을 쓰지도
+    지우지도 않는다(읽기 전용 저장소의 쓰기 · 지우기는 FileStoreReadOnly) — 삭제는 모두 워커가 한다.
+    s3_client는 시험용 가짜 S3 클라이언트를 끼울 때만 준다(build_app과 같음).
 
     profile_count: 계정의 필수 항목을 채운 프로필 수 (0이면 E-AUTH-PROFILE). 웹은 compute_has_profile을 넘긴다(참 = 1).
     웹은 request_start · start_status · 명령 · 조회 · 중단만 부른다. run_start_request · advance · tick은 워커가 부른다.
@@ -248,9 +282,7 @@ def build_web(
     from .intake.sql_source import SqlProjectInputSource
     from .store_sql import DbSettingsProvider, SqlStore, create_db_engine
 
-    root = get_env(ARTIFACT_ROOT_ENV) if artifact_root is None else artifact_root
-    reader = (LocalFolderFileStore(root, read_only=True)   # type: ignore[arg-type]
-              if artifact_root_problem(root) is None else None)
+    reader = _web_file_reader(get_env(ARTIFACT_ROOT_ENV) if artifact_root is None else artifact_root, s3_client)
     db = create_db_engine(_db_url(db_url))
     app = _assemble(
         store=SqlStore(db, now=now), settings=DbSettingsProvider(db, settings), scenario=StubScenario(), now=now,
@@ -259,6 +291,59 @@ def build_web(
     app.engine.stop_requested = lambda: True   # 실수로 advance를 불러도 단계를 돌지 않는다
     app.orchestrator.allow_pre_stage = False   # 사전 단계(run_start_request)는 WEB_NOT_ALLOWED — 워커가 돈다
     return app
+
+
+def _worker_files(root: str | None, s3_client: Any) -> FileStore:
+    """워커 조립의 파일 저장소 (0035) — DB에 닿기 전에 부른다. 메시지에 값(경로 · 버킷 · 접두어 · 리전)을 싣지 않는다."""
+    problem = artifact_root_problem(root)
+    if problem == ROOT_NOT_S3_ADDRESS:   # 문제 종류(s3_address_problem)도 값 없는 글이다
+        raise RuntimeError(f"{ARTIFACT_ROOT_ENV}가 {problem}: {s3_address_problem(root)} — 's3://<버킷>' 또는 "
+                           "'s3://<버킷>/<접두어>'를 넣는다 (웹과 모든 워커가 같은 값)")
+    if problem is not None or root is None:
+        raise RuntimeError(f"{ARTIFACT_ROOT_ENV}가 {problem} — 환경 변수 또는 agent-orchestration/.env에 파일 저장소 폴더의 절대 경로 "
+                           "또는 소문자 's3://<버킷>[/<접두어>]'를 넣는다 (웹과 모든 워커가 같은 값)")
+    if is_s3_address(root):
+        return _worker_s3_store(root, s3_client)
+    try:
+        return LocalFolderFileStore(root, create=True)
+    except OSError as e:   # 경로가 든 디스크 오류 메시지를 싣지 않는다 — 종류만
+        raise RuntimeError(f"{ARTIFACT_ROOT_ENV} 폴더를 만들지 못함 — {type(e).__name__}") from None
+
+
+def _worker_s3_store(address: str, s3_client: Any) -> FileStore:
+    """워커의 S3 저장소(쓰기 가능) + 시작 확인 한 번. AWS 라이브러리는 여기서(저장소를 만들 때) 불러온다.
+
+    - 리전 없음 → RuntimeError(S3_REGION_MISSING).
+    - 저장소를 만들지 못함 → S3StoreError(RuntimeError) 그대로 — AWS 라이브러리 없음('패키지를 다시 설치') · 리전 값 모양.
+    - 시작 확인 실패 → S3StartupCheckFailed(RuntimeError, .permanent) — 메시지는 시작 확인이 만든 그대로('설정 오류: …' ·
+      'S3 시작 확인 실패(일시) — <종류>'). 클라이언트를 만들지 못함 · AWS 라이브러리 없음도 시작 확인이 영구로 돌려준다.
+    다시 부르거나 기다리지 않는다(재시도 규칙은 tools 한 곳 — 워커는 일시면 종료 코드 1로 끝나고 systemd가 다시 띄운다)."""
+    region = s3_region()
+    if region is None:
+        raise RuntimeError(S3_REGION_MISSING)
+    from .store_s3 import S3FileStore, check_s3_store
+
+    store = S3FileStore.from_address(address, region, client=s3_client)
+    check_s3_store(store).raise_if_failed()
+    return store
+
+
+def _web_file_reader(root: str | None, s3_client: Any) -> FileStore | None:
+    """웹 조립의 읽기 전용 파일 저장소 (0035). 쓸 수 없는 값이면 None — read_artifact_file만 FILE_STORE_UNAVAILABLE이고
+    웹 서버는 뜬다. 시작 확인을 하지 않고 S3를 부르지 않는다(클라이언트는 처음 읽을 때 만든다)."""
+    if not root or artifact_root_problem(root) is not None:
+        return None
+    if not is_s3_address(root):
+        return LocalFolderFileStore(root, read_only=True)
+    region = s3_region()
+    if region is None:
+        return None
+    from .store_s3 import S3FileStore, S3StoreError
+
+    try:
+        return S3FileStore.from_address(root, region, read_only=True, client=s3_client)
+    except S3StoreError:   # AWS 라이브러리 없음 · 리전 값 모양 등 — 저장소를 만들지 못함
+        return None
 
 
 def _db_url(db_url: str | None) -> str:

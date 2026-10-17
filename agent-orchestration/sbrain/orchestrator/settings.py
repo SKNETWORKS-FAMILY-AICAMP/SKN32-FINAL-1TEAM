@@ -360,9 +360,32 @@ PROVISIONAL: dict[str, str] = {
     "waitProject.pollSec": "wait_project가 DB를 다시 읽는 간격 0.5초",
     # 산출물 파일 읽기 (flow/reads.py read_artifact_file)
     "fileRead.hashMismatch": "읽은 내용의 sha256 · 크기가 저장된 값과 다르면 FILE_NOT_FOUND로 보고 관리자용 사유는 남기지 않는다",
-    # 조립 (bootstrap.py · worker.py)
-    "artifactRoot.workerRequired": "SBRAIN_ARTIFACT_ROOT가 없거나 절대 경로가 아니면 워커가 시작하지 않는다 "
-                                   "(SBRAIN_DB_URL · OPENAI_API_KEY 없을 때와 같은 방식)",
+    # 조립 (bootstrap.py · worker.py · 0035)
+    "artifactRoot.workerRequired": "SBRAIN_ARTIFACT_ROOT가 없거나 절대 경로 · 형식이 맞는 S3 주소('s3://<버킷>[/<접두어>]')가 "
+                                   "아니면 워커가 시작하지 않는다 (SBRAIN_DB_URL · OPENAI_API_KEY 없을 때와 같은 방식, 종료 "
+                                   "코드 2)",
+    # S3 파일 저장소 (sbrain/store_s3/ · bootstrap.py · worker.py) — 워커 · 웹 프로세스 값이다. 리전을 읽는 순서는 AWS
+    # 관례, 리전 필수 · 시작 확인 범위 · 재시도 간격 · 출력 확인 재시도는 이라 여기 없다
+    "s3Store.clientTimeouts": "S3 클라이언트 시간 제한 — 연결 10초 · 읽기 60초(파일 하나 30MB 이하) (store_s3/client.py "
+                              "CONNECT_TIMEOUT_SEC · READ_TIMEOUT_SEC)",
+    "s3Store.libraryRetries": "AWS 라이브러리 자체 재시도 끔 — 첫 요청 포함 1번(total_max_attempts 1), 재시도 방식 standard "
+                              "고정(설정 파일 · 환경 변수가 바꾸지 못하게) — 재시도는 tools · 대기열 · 시작 확인 규칙대로 "
+                              "(store_s3/client.py TOTAL_MAX_ATTEMPTS · RETRY_MODE)",
+    "s3Store.connectionPool": "S3 클라이언트 연결 수는 라이브러리 기본값(10)을 그대로 쓴다 (store_s3/client.py client_config)",
+    "s3Store.temporaryErrorCodes": "일시로 보는 S3 오류 코드 목록 — 설치된 botocore 표준 재시도의 일시 · 속도 제한 코드와 같게 "
+                                   "(store_s3/errors.py TRANSIENT_ERROR_CODES · THROTTLING_ERROR_CODES)",
+    "s3Store.nameShapes": "버킷 이름 모양(소문자 · 숫자 · '.' · '-', 3 ~ 63자, 소문자 · 숫자로 시작 · 끝, '..' 없음)과 접두어 "
+                          "모양(마디는 영문 · 숫자 · '.' · '-' · '_', '.' · '..' · 빈 마디 금지, 정리한 접두어 200자 이하) "
+                          "(store_s3/address.py PREFIX_MAX_LEN)",
+    "s3Store.contentTypes": "내용 객체의 Content-Type은 넣을 때 정한 형식(mediaType), 메타 객체는 application/json(로컬 폴더 옆 "
+                            "파일과 같은 JSON) (store_s3/store.py META_CONTENT_TYPE)",
+    "s3Store.startupProbe": "워커 시작 확인의 시험 객체 이름 '<접두어>.probe/<고유값>' · 형식 text/plain (store_s3/probe.py "
+                            "PROBE_DIR · PROBE_CONTENT_TYPE)",
+    "s3Store.startupTemporaryExit": "시작 확인 일시 실패(연결 · 시간 초과 · 5xx · 속도 제한 · 자격 증명을 얻지 못함)면 워커 "
+                                    "종료 코드 1 — systemd가 다시 띄운다(영구 실패 · 설정 오류는 2) (sbrain/worker.py main)",
+    # 출력 파일 참조 확인 (orchestrator/tools.py · engine.py)
+    "fileCheck.purpose": "엔진의 출력 파일 참조 확인 호출(파일 호출 기록 call_type 'file')의 목적 이름 check — put · get 옆 값 "
+                         "(orchestrator/tools.py FILE_CHECK_PURPOSE)",
 }
 
 

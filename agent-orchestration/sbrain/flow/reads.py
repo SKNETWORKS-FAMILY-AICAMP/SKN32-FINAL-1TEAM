@@ -707,11 +707,16 @@ def read_artifact_file(orch: SBrainOrchestrator, project_id: int | str, key: str
     """프로젝트 실행 건의 파일 하나 — 웹이 주인 확인을 한 뒤 부른다. 읽기만 한다(점유 없음, 쓰기 · 지우기 없음).
 
     1. 실행 건 없음 → RUN_NOT_FOUND, 실패 · 중단 → RUN_NOT_VIEWABLE (outputs와 같은 규칙)
-    2. 파일 저장소 설정 없음(웹 조립에 SBRAIN_ARTIFACT_ROOT 없음 · 상대 경로) → FILE_STORE_UNAVAILABLE
+    2. 파일 저장소 설정 없음(웹 조립의 SBRAIN_ARTIFACT_ROOT가 없음 · 상대 경로 · S3 주소 형식이 틀림, S3인데 리전 없음, AWS
+       라이브러리 없음 · S3 저장소를 만들지 못함 — bootstrap.build_web) → FILE_STORE_UNAVAILABLE
     3. 키 규칙 위반 · 첫 마디가 그 실행 건 ID가 아님 → FILE_NOT_FOUND
     4. 저장소에 없음 → FILE_NOT_FOUND
     5. 읽은 내용의 sha256 · 크기가 저장된 값과 다름 → FILE_NOT_FOUND (관리자용 사유는 남기지 않는다, 잠정)
-    거절 사유(detail)에 키 · 이름을 넣지 않는다. 디스크 오류(OSError)는 다른 조회의 저장소 오류처럼 그대로 올라간다.
+    거절 사유(detail)에 키 · 이름을 넣지 않는다. 다시 시도하지 않는다 — 저장소 오류는 다른 조회의 저장소 오류처럼 그대로
+    올라간다: 로컬 폴더는 디스크 오류(OSError), S3는 일시 오류(S3TemporaryError — ConnectionError · S3TimeoutError —
+    TimeoutError: 연결 · 시간 초과 · 5xx · 속도 제한 · 자격 증명을 얻지 못함)와 영구 오류(ProviderError — 권한 없음 · 버킷 없음
+    등), 드물게 S3StoreError(RuntimeError — 처음 쓸 때 클라이언트를 만들지 못함 · 표에 없는 라이브러리 오류). 메시지에 버킷 ·
+    접두어 · 키는 없다.
     """
     run = _viewable_run(orch, project_id)
     files = orch.files

@@ -223,8 +223,8 @@ class SBrainOrchestrator:
         files: FileStore | None = None,
     ) -> None:
         self.engine = engine
-        # 파일 읽기(read_artifact_file)가 쓰는 저장소 (확장) — 주지 않으면 엔진의 것. 웹 조립은 읽기 전용 저장소이거나
-        # 없음(SBRAIN_ARTIFACT_ROOT 없음 → FILE_STORE_UNAVAILABLE)
+        # 파일 읽기(read_artifact_file)가 쓰는 저장소 (확장 · 0035) — 주지 않으면 엔진의 것. 웹 조립은 읽기 전용
+        # 저장소(로컬 폴더 또는 S3)이거나 없음(SBRAIN_ARTIFACT_ROOT 없음 · 쓸 수 없는 값 · S3 리전 없음 → FILE_STORE_UNAVAILABLE)
         self.files = files if files is not None else engine.files
         self.flow = flow
         self.store = engine.store

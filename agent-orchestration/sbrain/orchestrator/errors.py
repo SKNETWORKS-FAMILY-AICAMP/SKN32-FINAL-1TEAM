@@ -94,7 +94,9 @@ COMMAND_ERROR_CODES: dict[str, str] = {
     "NOT_ACTIVE": "진행 중이 아닌 실행 건을 중단 (내부 — abort_project가 받는다)",
     # 산출물 파일 (확장) — 메시지(detail)에 키 · 파일 이름 · 계정을 넣지 않는다
     "FILE_NOT_FOUND": "그 실행 건의 파일이 아님 · 키 규칙 위반 · 저장소에 없음 · 내용이 저장 값(sha256)과 다름 (구분하지 않음)",
-    "FILE_STORE_UNAVAILABLE": "파일 저장소 설정 없음 — 웹 조립에 SBRAIN_ARTIFACT_ROOT(절대 경로)가 없음",
+    "FILE_STORE_UNAVAILABLE": "파일 저장소 설정 없음 — 웹 조립의 SBRAIN_ARTIFACT_ROOT(절대 경로 또는 's3://<버킷>[/<접두어>]')가 "
+                              "없거나 형식이 틀림, S3인데 리전(AWS_REGION · AWS_DEFAULT_REGION)이 없음, AWS 라이브러리가 없거나 "
+                              "S3 저장소를 만들지 못함",
     "FILE_DELETION_NOT_FOUND": "없는 파일 삭제 대기열 줄",
 }
 
