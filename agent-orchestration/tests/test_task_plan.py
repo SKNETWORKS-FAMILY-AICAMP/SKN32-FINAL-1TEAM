@@ -289,7 +289,7 @@ def test_frame_priority_rule_text_is_unchanged():
     assert plan.FRAME_PRIORITY_RULE == "아래 안내와 참조 자료가 이 규칙과 부딪치면 이 규칙을 따른다."
 
 
-# ── 안내 응답 부품 (T2 · T3 공용) ─────────────────────────────
+# ── 안내 응답 부품 (공용) ─────────────────────────────
 def test_guidance_draft_checks():
     from sbrain.orchestrator.errors import FormatError
     assert plan.clean_guidance(plan.GuidanceDraft(guidance="  안내 [작업 안내]  ")).guidance == "안내 (작업 안내)"

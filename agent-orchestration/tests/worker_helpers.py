@@ -56,7 +56,7 @@ REWRITE_TARGETS = ("T-S1", "T-S2", "T-W1", "T-W2", "T-W3", "T-B1", "T-B2")
 
 def _guidance_reply(request: LLMRequest) -> str:
     """실제 T-C3(항목 키 = 지시 대상)와 다시 쓰기(task_id = 대상) 호출 모두 안내 하나로 답한다.
-    전략 · 작성 · 검증-1 실구현(T4)의 담당자 함수 호출(목적 = F번호)에는 목적별 가짜 응답으로 답한다."""
+    전략 · 작성 · 검증-1 실구현의 담당자 함수 호출(목적 = F번호)에는 목적별 가짜 응답으로 답한다."""
     if request.metadata.get("purpose") in PURPOSES:
         return partner_reply(request)
     target = request.metadata.get("item_key") or request.metadata["task_id"]

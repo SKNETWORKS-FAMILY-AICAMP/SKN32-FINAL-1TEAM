@@ -435,7 +435,7 @@ def test_stubs_fill_new_outputs(clock):
     form = ctx.get("formSpec")
     assert isinstance(ctx.get("strategyData"), dict) and ctx.get("strategyData")
     assert isinstance(ctx.get("marketStrategyData"), dict) and ctx.get("marketStrategyData")
-    # 양식 = 담당자 항목(법인 → early_startup 24개, T2): 본문 · 표 · 그림 항목별로 나뉜다
+    # 양식 = 담당자 항목(법인 → early_startup 24개): 본문 · 표 · 그림 항목별로 나뉜다
     kinds = dict(zip(form.section_codes, form.section_kinds))
     by_kind = {k: [c for c in form.section_codes if kinds[c] == k] for k in ("section", "table", "image")}
     assert by_kind["table"] and by_kind["image"]

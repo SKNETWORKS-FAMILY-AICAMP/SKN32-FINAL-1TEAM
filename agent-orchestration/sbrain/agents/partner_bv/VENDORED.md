@@ -98,7 +98,7 @@
 
 **'이미지대체' 사건(흐름 쪽):** `flow/sbrain_flow.py` `after_execution`이 T-B2 실행 기록마다 한 번 — 최종 실패인 이미지 호출이 있으면 `IMAGE_FALLBACK_DETAIL`(그 호출의 마지막 시도 설명에 오류 코드가 있으면 끝에 ` (code=…)`), 그 밖에 출력 `iconFallback`이 참이면 `ICON_FALLBACK_DETAIL`(잠정)로 남긴다. 필드로만 가른다.
 
-### 끼워 넣은 글꼴 · 아이콘 빼기 (T3가 쓴다)
+### 끼워 넣은 글꼴 · 아이콘 빼기
 
 - `engineering_agent/html_kit.py` `strip(html)` — 끼워 넣은 글꼴(`<style data-kit="font">`) · 아이콘 묶음(`<svg data-kit="icons">`)을 뺀다. `decorate(html)`는 먼저 `strip`한 뒤 다시 넣는다(거듭 불러도 같음).
 - `engineering_agent/builder_html.py` `user_message(instruction, previous_html)` — 재수행 · 재작성 때 이전 HTML을 `strip`해서 `<이전HTML>` 태그로 싣는다. 이전 원문(`previous_source_file`)을 읽어 `build_prototype_html(…, previous_html=…)`에 넘기면 담당자 코드가 알아서 뺀다.

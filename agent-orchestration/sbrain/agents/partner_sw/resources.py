@@ -6,7 +6,8 @@
 
 예외(담당자 2026-10-12 판): 담당자 갱신 함수(`pipeline.refresh_user_industry_research`, `SBRAIN_AUTO_RESEARCH=1`)를
 부르면 KIET 크롤러가 로컬 JSON을 쓰고 `refresh(path)`로 갱신 자료를 캐시에 반영한다. 이 함수는 우리 실행 흐름(T-S1 · T-S2)에서는
-부르지 않는다(담당자 자체 실행에서만 쓰임) — Task 실행은 디스크를 다시 읽지 않는다. 실행마다 자동 검색은 다음 작업(status 30).
+부르지 않는다(담당자 자체 실행에서만 쓰임) — Task 실행은 디스크를 다시 읽지 않는다. 실행별 KIET 검색(스위치 SBRAIN_KIET_SEARCH —
+market_research.py)은 공유 자료 파일을 쓰지 않는 다른 길이다.
 
 - 키는 partner_sw 폴더 기준 상대 경로다. 담당자 코드가 `Path(__file__).resolve()`로 만든 경로와 그렇지 않은 경로를
   모두 받는다(폴더 밖 경로는 없는 파일).

@@ -5,7 +5,7 @@
 한 번 읽고 실행 중에는 디스크에 닿지 않는다, 검증-2 진입 파일 문구에 이름 · 경로가 없다, 요소 목록은 넘겨받은 사전으로
 읽고 더한다, 대조 LLM은 ToolCallExhausted만 받고 동시 3개까지 부른다, 담당자 고정 문구가 우리 문구와 같다.
 
-담당자 tasks.py 두 개는 T3가 지금 계약(FileRef · tools.files)으로 고쳤다 — Task 함수 시험은 test_partner_bv_tasks.py ·
+담당자 tasks.py 두 개는 지금 계약(FileRef · tools.files)으로 고쳤다 — Task 함수 시험은 test_partner_bv_tasks.py ·
 test_partner_bv_flow.py.
 """
 from __future__ import annotations
@@ -109,7 +109,7 @@ def test_vendored_code_has_no_forbidden_calls():
 
 
 def test_vendored_code_reads_no_files_except_resources():
-    """자료는 resources.py만 읽는다. 담당자 tasks.py 둘도 경로로 읽지 않는다 — 산출물 파일은 tools.files로 (T3)."""
+    """자료는 resources.py만 읽는다. 담당자 tasks.py 둘도 경로로 읽지 않는다 — 산출물 파일은 tools.files로."""
     allowed = {"resources.py"}
     found = [f.relative_to(BV_DIR).as_posix() for f in _py_files()
              if f.relative_to(BV_DIR).as_posix() not in allowed

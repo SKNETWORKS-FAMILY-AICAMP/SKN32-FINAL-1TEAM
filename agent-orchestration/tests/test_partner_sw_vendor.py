@@ -147,7 +147,7 @@ def test_nested_blocks_restore_previous_means():
     assert (len(outer.requests), len(inner.requests)) == (1, 1)
 
 
-# ── 스레드 (T4 동시 호출) ───────────────────────────────────
+# ── 스레드 (동시 호출) ───────────────────────────────────
 def test_submit_carries_call_means_into_threads():
     fake = FakeProvider()
     tools, sink = make_tools(fake)
@@ -405,7 +405,7 @@ def test_market_data_missing_gives_empty_evidence(monkeypatch):
     without_market = tuple(s for s in research_context._SIGNATURE if s[0] != "market")
     monkeypatch.setattr(research_context, "_SIGNATURE", without_market)
     tools, sink = make_tools(FakeProvider())
-    with partner_call(tools):                   # 로컬 자료 검색은 tools.search('자료 검색')로 간다 (T4)
+    with partner_call(tools):                   # 로컬 자료 검색은 tools.search('자료 검색')로 간다
         out = research_context.retrieve("AI 헬스장 회원 관리 시장", domains=("market",))
     assert out["sources"] == [] and out["status"] == "no_relevant_evidence"
     assert out["issues"] == ["첨부 자료에서 해당 주제의 직접 근거를 찾지 못함; 수치·경쟁사 추정 금지"]
