@@ -1,0 +1,6 @@
+# 서버(리눅스)에서 도는 파일이라 윈도우에서 받아도 줄바꿈을 LF 로 둔다.
+# CRLF 가 섞이면 bash 가 "$'\r': command not found" 로 멈춘다.
+*.sh  text eol=lf
+*.yml text eol=lf
+*.env text eol=lf
+*.txt text eol=lf
