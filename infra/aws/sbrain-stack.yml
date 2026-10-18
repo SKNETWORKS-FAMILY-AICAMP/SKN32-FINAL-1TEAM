@@ -260,7 +260,8 @@ Resources:
           Value: !Sub '${AWS::StackName}-db'
 
   # ---------------------------------------------------------------- storage
-  # bootstrap/ holds the DB setup bundle uploaded by up.sh; app/ is for the apps.
+  # bootstrap/ holds the DB setup bundle uploaded by up.sh; deploy/ holds the app
+  # release bundles uploaded by deploy-app.sh; app/ is for the apps.
   DeployBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -401,6 +402,31 @@ Resources:
           - Effect: Allow
             Action: secretsmanager:GetSecretValue
             Resource: !GetAtt DbInstance.MasterUserSecret.SecretArn
+
+  # Only the web server runs the apps (web backend and worker), so only it may
+  # read the app settings that infra/aws/app-env.sh stores in SSM Parameter
+  # Store (/<stack>/app/*, SecureString with the default aws/ssm key) and the
+  # release bundles that infra/aws/deploy-app.sh uploads to deploy/.
+  WebAppPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: read-app-settings-and-releases
+      Roles:
+        - !Ref WebRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: ssm:GetParametersByPath
+            Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}/app'
+          - Effect: Allow
+            Action:
+              - ssm:GetParameter
+              - ssm:GetParameters
+            Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}/app/*'
+          - Effect: Allow
+            Action: s3:GetObject
+            Resource: !Sub '${DeployBucket.Arn}/deploy/*'
 
   WebInstanceProfile:
     Type: AWS::IAM::InstanceProfile
