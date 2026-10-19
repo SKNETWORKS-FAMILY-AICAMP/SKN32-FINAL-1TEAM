@@ -1,7 +1,7 @@
 """실제 T-C2 (공고 서버 연결) — 가짜 전송으로 시험한다. 네트워크에 나가지 않는다.
 
 - 수집 상태 먼저, 보내는 칸(4.1.2) · 시 · 도 바꾸기, 카드 변환(4.1.3) · 추천 이유(4.1.4), 받은 순서 그대로.
-- 가산점 스위치 켜짐 · 꺼짐, 응답 형식 오류(상세에는 키 이름만).
+- 가산점 스위치 켜짐 · 꺼짐, 원문 대조(bonus_verified)된 가산점만, 응답 형식 오류(상세에는 키 이름만).
 - 모든 호출은 tools.search로 한다. ToolCallExhausted는 받지 않고 올려 보낸다.
 """
 from __future__ import annotations
@@ -11,6 +11,7 @@ from datetime import date
 from typing import Any
 
 import pytest
+from conftest import CODE_SWITCHES
 from notice_fake import FAKE_URL, FakeNoticeServer, company, format_detail, item, result, run_tc2, tools_for
 
 from sbrain.agents.notice import NoticeClient, make_tc2, match_request, region_fields
@@ -278,11 +279,44 @@ def test_bad_bonus_is_format_error(over, bonus_on):
     card_error(**over)
 
 
-# ── T-C2: 가산점 스위치 꺼짐 (기본, 공고팀 시험 단계) ──────
-def test_bonus_switch_is_off_by_default_and_provisional():
-    from sbrain.orchestrator import settings
-    assert settings.BONUS_ENABLED is False
+# ── T-C2: 가산점 — 원문 대조된 공고만 (bonus_verified, 공고팀 결정 0018) ──────
+@pytest.mark.parametrize("verified", [False, "missing"])
+def test_bonus_shown_only_when_verified(verified, bonus_on):
+    """원문 대조를 마치지 않은 공고(bonus_verified 거짓 · 키 없음)의 가산점은 카드에 싣지 않는다 — 참이면 싣는다."""
+    server = FakeNoticeServer(ids=())
+    r = result("k:1", 1, bonus_score=3.0, bonus_items=[{"name": "여성기업", "points": 3.0}])
+    if verified == "missing":
+        del r["bonus_verified"]
+    else:
+        r["bonus_verified"] = verified
+    server.match["results"] = [r]
+    card = run_tc2(server).candidates[0]
+    assert (card.bonus_score, card.bonus_items) == (None, [])
+    card = one_card(bonus_score=3.0, bonus_items=[{"name": "여성기업", "points": 3.0}])   # 참(가짜 서버 기본값)
+    assert (card.bonus_score, card.bonus_items) == (3.0, [BonusItem(name="여성기업", points=3.0)])
+
+
+@pytest.mark.parametrize("over", BAD_BONUS)
+def test_unverified_bonus_is_not_read(over, bonus_on):
+    """원문 대조 전 공고의 가산점 값은 읽지 않는다 — 잘못된 모양이어도 형식 오류가 아니다."""
+    card = one_card(bonus_verified=False, **over)
+    assert (card.announcement_id, card.bonus_score, card.bonus_items) == ("kstartup:A01", None, [])
+
+
+@pytest.mark.parametrize("bad", [None, "true", 1, 0, [True]])
+def test_bad_bonus_verified_is_format_error(bad, bonus_on):
+    card_error(bonus_verified=bad)
+
+
+# ── T-C2: 가산점 스위치 (코드 값은 켬 — 2026-10-19 공고팀 허용, 잠정) · 꺼졌을 때 ──────
+def test_bonus_switch_is_on_in_code_and_provisional():
+    assert CODE_SWITCHES["BONUS_ENABLED"] is True
     assert "announcement.bonusEnabled" in PROVISIONAL
+
+
+def test_bonus_off_does_not_read_verified(bonus_off):
+    card = one_card(bonus_verified="not-a-bool")
+    assert (card.bonus_score, card.bonus_items) == (None, [])
 
 
 def test_bonus_off_blanks_cards_but_keeps_keys(bonus_off):
@@ -329,7 +363,7 @@ def test_out_of_contract_card_values_are_format_errors(over):
 
 
 # 키가 없어도 되는 것 ("키가 없거나 null" · "그 밖의 값 · 없음")
-CARD_MAY_OMIT = ("content_version", "bonus_score", "bonus_items", "apply_period_type")
+CARD_MAY_OMIT = ("content_version", "bonus_score", "bonus_items", "bonus_verified", "apply_period_type")
 CARD_MUST_HAVE = ("notice_id", "title", "organizer", "source", "apply_end", "url", "rank", "display_type",
                   "fit_score", "band", "region", "region_match")
 

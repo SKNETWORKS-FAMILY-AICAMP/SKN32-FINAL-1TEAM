@@ -163,8 +163,9 @@ def pytest_runtest_protocol(item, nextitem):
         mysqldb.set_current_test(None)
 
 
-# ── 가산점 스위치 (orchestrator/settings.py BONUS_ENABLED, 기본 꺼짐) ─────
+# ── 가산점 스위치 (orchestrator/settings.py BONUS_ENABLED, 코드 값은 2026-10-19부터 켬 · 테스트 기본값은 꺼짐) ─────
 # 실제 T-C2 · 스텁 T-C2 · 웹 조회가 부를 때마다 모듈 속성으로 읽으므로 여기서 바꾸면 모든 곳에 닿는다.
+# 아래 자동 픽스처(_code_switches_off)가 모든 테스트에서 먼저 끄고, 켠 동작은 bonus_on으로 켜서 시험한다.
 @pytest.fixture
 def bonus_on(monkeypatch):
     """가산점을 켠다 — 켜져 있을 때의 동작(읽기 · 검사 · 스텁 가산점 · 웹에 그대로)을 시험한다."""
@@ -177,19 +178,22 @@ def bonus_off(monkeypatch):
     monkeypatch.setattr(settings, "BONUS_ENABLED", False)
 
 
-# ── 코드 스위치 두 개 (배포 값은 켬 — 사업비 · 일정 필수 PLAN_TABLES_REQUIRED · 새 재작성 묶음 GENERAL_BUNDLES_ENABLED) ─────
-# 두 값은 2026-10-16 배포부터 코드에서 켰다. 흐름 테스트 대부분은 사업비 · 일정 없이 시작하고 묶음 4개를 기대하므로 모든 테스트에서
-# 꺼진 값으로 본다(테스트가 끝나면 monkeypatch가 되돌린다). 켠 동작은 각 테스트가 monkeypatch로 켜서 시험한다(test_intake.py ·
-# test_general_bundles.py — 자동 픽스처가 먼저 돌아 테스트의 켜기가 이긴다). 코드에 적힌 값(배포 값)은 불러올 때 읽어 둔
-# CODE_SWITCHES로 확인한다.
+# ── 코드 스위치 세 개 (배포 값은 켬 — 사업비 · 일정 필수 PLAN_TABLES_REQUIRED · 새 재작성 묶음 GENERAL_BUNDLES_ENABLED ·
+#    가산점 BONUS_ENABLED) ─────
+# 앞의 두 값은 2026-10-16, 가산점은 2026-10-19 배포부터 코드에서 켰다. 흐름 테스트 대부분은 사업비 · 일정 없이 시작하고 묶음 4개와
+# 가산점 없는 카드를 기대하므로 모든 테스트에서 꺼진 값으로 본다(테스트가 끝나면 monkeypatch가 되돌린다). 켠 동작은 각 테스트가
+# monkeypatch · bonus_on으로 켜서 시험한다(test_intake.py · test_general_bundles.py · test_notice_tc2.py — 자동 픽스처가 먼저 돌아
+# 테스트의 켜기가 이긴다). 코드에 적힌 값(배포 값)은 불러올 때 읽어 둔 CODE_SWITCHES로 확인한다.
 CODE_SWITCHES = {"PLAN_TABLES_REQUIRED": settings.PLAN_TABLES_REQUIRED,
-                 "GENERAL_BUNDLES_ENABLED": rework_map.GENERAL_BUNDLES_ENABLED}
+                 "GENERAL_BUNDLES_ENABLED": rework_map.GENERAL_BUNDLES_ENABLED,
+                 "BONUS_ENABLED": settings.BONUS_ENABLED}
 
 
 @pytest.fixture(autouse=True)
 def _code_switches_off(monkeypatch):
     monkeypatch.setattr(settings, "PLAN_TABLES_REQUIRED", False)
     monkeypatch.setattr(rework_map, "GENERAL_BUNDLES_ENABLED", False)
+    monkeypatch.setattr(settings, "BONUS_ENABLED", False)
 
 
 # ── 저장소 선택 ────────────────────────────────────────

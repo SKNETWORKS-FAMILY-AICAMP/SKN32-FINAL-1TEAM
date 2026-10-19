@@ -195,8 +195,9 @@ class Settings(SBModel):
 # 가산점 사용 스위치 (잠정, PROVISIONAL announcement.bonusEnabled) — 실행별 설정(Settings)이 아닌 코드 상수다.
 # 실제 T-C2(agents/notice/tc2.py) · 스텁 T-C2(agents/stubs.py) · 웹 조회(flow/reads.py)가 부를 때마다
 # settings.BONUS_ENABLED로 읽는다(from-import로 값을 복사하지 않는다 — 테스트가 바꾼 값이 모든 곳에 닿게).
-# 꺼져 있으면 가산점을 읽지 · 만들지 · 보이지 않는다. 공고팀이 써도 된다고 하면 이 한 곳만 True로 바꾼다.
-BONUS_ENABLED: bool = False
+# 꺼져 있으면 가산점을 읽지 · 만들지 · 보이지 않는다. 2026-10-19 공고팀이 써도 된다고 해 켰다 — 켜져 있어도 실제 T-C2는
+# 공고 서버가 원문 대조를 마친 공고(bonus_verified 참, 공고팀 결정 0018)의 가산점만 카드에 싣는다(agents/notice/tc2.py).
+BONUS_ENABLED: bool = True
 
 # 계획서 표 입력(사업비 · 일정) 필수 확인 스위치 — 실행별 설정이 아닌 코드 상수다. 켠 값이 기준 문서(시트 6 E-C1-REQUIRED —
 # 사업비 집행계획 1건 이상, 예비창업자는 1단계 · 2단계 각 1건 이상, 추진 일정은 협약기간 내 1건 이상)와 같고, 끄는 것은 되돌리기용이다.
@@ -267,10 +268,11 @@ PROVISIONAL: dict[str, str] = {
                        "미달합니다.' · 층별 머리줄 '계획서에서 보완이 필요한 항목:' · '프로토타입에서 보완이 필요한 항목:' 아래 "
                        "'- 이름 (점수/배점점): 사유' 줄 · 끝 줄 '제출 전 작성자 본인의 검토가 필요합니다.'",
     # 공고 연결 (공고 선택 · 자격 확인 G-01) — 기준 문서에 없음
-    "announcement.bonusEnabled": "가산점 사용 스위치 BONUS_ENABLED 기본 꺼짐 — 공고팀 가산점은 시험 단계(2026-10-06 답변: "
-                                 "화면에 쓰지 말 것). 꺼져 있으면 실제 T-C2는 추천 결과의 bonus_score · bonus_items를 "
-                                 "읽지도 검사하지도 않고, 스텁은 가산점을 만들지 않으며, 웹 카드(화면 3 · 결과 조회)는 저장된 "
-                                 "옛 실행 건까지 늘 bonusScore null · bonusItems []. 공고팀이 정리해 써도 된다고 하면 이 한 곳만 켠다",
+    "announcement.bonusEnabled": "가산점 사용 스위치 BONUS_ENABLED 켬(2026-10-19 공고팀 허용 — 2026-10-06에는 시험 단계라 "
+                                 "꺼 두었다). 실제 T-C2는 공고 서버가 원문 대조를 마친 공고(bonus_verified 참)의 "
+                                 "bonus_score · bonus_items만 읽고, 그 밖의 공고는 null · []로 둔다. 끄면 실제 T-C2는 "
+                                 "가산점을 읽지도 검사하지도 않고, 스텁은 가산점을 만들지 않으며, 웹 카드(화면 3 · 결과 조회)는 "
+                                 "저장된 옛 실행 건까지 늘 bonusScore null · bonusItems []",
     "announcement.formSpec": "선택 공고의 양식 필드(formSpec · evaluationItems) 자리 표시 값 — 기본 양식 1-1 · 2-1 · 3-3 "
                              "(자리 표시 값이고 뒷 단계가 읽지 않는 것은 기준 문서 시트 4 Announcement)",
     # 작업 분해 (T-C3, agents/form_defaults.py · agents/supervisor/plan.py) — 실행 건 설정값이 아니라 코드 표다

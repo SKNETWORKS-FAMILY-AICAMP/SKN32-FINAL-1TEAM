@@ -442,11 +442,11 @@ sequenceDiagram
 
 - 알려진 한계: 옛 설정 사본으로 도는 실행 건은 T-B1 · T-B2 · T-V2가 '미정'(T-V2 온도 0.0)으로 남는다(공유 DB에 옛 사본 실행 건은 없다). `partialFeatures`를 채우지 않는 생산자(옛 산출물 등)에서는 부분 인정만으로 재작성 사유가 나오지 않는다(실구현 T-V2는 채운다). 웹 명령으로 바로 바뀌는 상태는 워커 운영 로그에 없다.
 
-### 11.8 가산점 스위치 (공고팀 시험 단계)
+### 11.8 가산점 스위치 (2026-10-19 켬 — 원문 대조된 공고만)
 
 | 항목 | 값 · 내용 | `PROVISIONAL` 키 | 코드 |
 |---|---|---|---|
-| 가산점 스위치 | 코드 상수 `BONUS_ENABLED = False` — 공고팀 가산점이 시험 단계(화면에 쓰지 말라는 요청). 꺼져 있으면 실제 T-C2가 가산점 키를 읽지도 검사하지도 않고, 스텁 T-C2가 만들지 않으며, 웹 조회(화면 3 · `outputs`)가 저장된 카드까지 `bonusScore` `null` · `bonusItems` `[]`로 낸다. 순위에도 가산점이 들지 않는다. 실행별 설정(`Settings`)이 아니다. 공고팀 정리 뒤 이 한 곳만 바꿔 켠다 | `announcement.bonusEnabled` | `orchestrator/settings.py`, `agents/notice/tc2.py` `to_card`, `agents/stubs.py`, `flow/reads.py` `_web_cards` |
+| 가산점 스위치 | 코드 상수 `BONUS_ENABLED = True` — 2026-10-19 공고팀이 써도 된다고 해 켰다(2026-10-06에는 시험 단계라 화면에 쓰지 말라는 요청으로 꺼 두었다). 켜져 있으면 실제 T-C2가 공고 서버의 `bonus_verified`(원문 대조를 마친 공고, 공고팀 결정 0018)가 참인 결과만 `bonus_score` · `bonus_items`를 읽고 검사하며, 거짓 · 키 없음은 `null` · `[]`로 둔다(그 값은 검사하지 않는다 · `bonus_verified`가 참 · 거짓이 아니면 형식 오류). 끄면 실제 T-C2가 가산점 키를 읽지도 검사하지도 않고, 스텁 T-C2가 만들지 않으며, 웹 조회(화면 3 · `outputs`)가 저장된 카드까지 `bonusScore` `null` · `bonusItems` `[]`로 낸다. 순서는 공고 서버가 정한다(우리 쪽 재정렬 없음). 실행별 설정(`Settings`)이 아니다. 테스트는 꺼진 값으로 돌고 켠 동작은 `bonus_on`으로 시험한다 | `announcement.bonusEnabled` | `orchestrator/settings.py`, `agents/notice/tc2.py` `to_card` · `_bonus_verified`, `agents/stubs.py`, `flow/reads.py` `_web_cards` |
 
 ### 11.9 기준 문서 새 판 · 실행 건이 없는 프로젝트
 

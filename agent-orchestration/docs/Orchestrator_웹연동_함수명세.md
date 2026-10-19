@@ -1152,7 +1152,7 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 
 | 항목 | 값 · 내용 | 표시 |
 |---|---|---|
-| 가산점 스위치 | 공고팀 가산점이 시험 단계라 꺼 둔다. 꺼져 있으면 화면 3 · `outputs`의 모든 카드가 `bonusScore: null` · `bonusItems: []`(이전에 만든 프로젝트 포함, 키는 그대로). 공고팀이 정리를 알리면 켜고 웹팀에 알린다 (`orchestrator/settings.py` `BONUS_ENABLED`) | 잠정 |
+| 가산점 스위치 | 2026-10-19 켰다(공고팀 허용). 켜져 있으면 공고 서버가 원문 대조를 마친 공고(`bonus_verified` 참)의 카드에만 `bonusScore` · `bonusItems`가 들고, 그 밖의 카드는 `bonusScore: null` · `bonusItems: []`다. `bonusScore`는 **확인된 가산점 부분합**이다(받을 수 있는 전체 합계가 아님 — 공고팀 결정 0012). 끄면 화면 3 · `outputs`의 모든 카드가 `null` · `[]`(이전에 만든 프로젝트 포함, 키는 그대로) (`orchestrator/settings.py` `BONUS_ENABLED`) | 잠정 |
 | 그 밖의 공고 값 | 함수 · 필드는 그대로. 화면 표시에 영향 있는 값(`bonusInfo` 사용 가능, `supportAmountText` 늘 `null`, `originalUrl` `""`, 사업자 신청자의 확인 필요, 업력 상한 `null`의 뜻)은 그대로 쓴다 | — |
 
 ## 18. 기준 문서 새 판 · `missing_projects`의 잠정 · 확장 값
@@ -1298,5 +1298,6 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | 2026-10-13 | 새 재작성 묶음(스위치), 표 대체 사유 코드 `fallbackReasonCodes`, 결과 통합 T-C4 실구현(`shortfallItems` · `planDocFile` 늘 `null` · `userMessage`), 목표 고객 · 창업아이템명 · 팀 구성현황 · 흐름도 제목 | 5 · 6.3 · 23 · 24 · 25 |
 | 2026-10-15 | 검수 · 첨부 추출을 흐름에서 뺌 — 화면 10 · 단계 '표현검수' 없음, 결과물 구간 · 알림 '결과물', `proofread_logs` 쓰기 없음, 관리자 검수 칸 지움 | 26 |
 | 2026-10-16 | 배포 스위치 두 개 켬 — 사업비 · 일정 필수 확인(`PLAN_TABLES_REQUIRED`), 새 재작성 묶음 `일반현황 · 개요` · `그림`(`GENERAL_BUNDLES_ENABLED`). 함수 · 결과 칸 모양은 그대로 | 3.1 · 6.3 · 20 · 23 |
+| 2026-10-19 | 가산점 스위치 켬 — 원문 대조된 공고(`bonus_verified` 참)의 카드에만 `bonusScore` · `bonusItems`. 함수 · 결과 칸 모양은 그대로 | 17 |
 | 2026-10-16 | 기준 문서 기능정의서 v1.11 · 기획서 v1.12 반영 — 새 판에 들어간 칸 · 값의 확장 · 잠정 표시만 고침. 함수 · 결과 칸 모양 · 동작은 그대로, 결과물 내려받기 화면 번호는 11 그대로(기준 문서는 10) | 13 ~ 26 |
 | 2026-10-17 | 파일 저장소 S3 — `SBRAIN_ARTIFACT_ROOT`가 `s3://<버킷>[/<접두어>]`도 받고 S3면 `AWS_REGION` 필수, 웹 · 워커 같은 값, 의존성 `boto3` · `botocore`(웹 가상환경 다시 설치), `FILE_STORE_UNAVAILABLE` 경우 늘어남, `read_artifact_file`에서 S3 오류가 올라갈 수 있음, 관리자 호출 기록 `file` 목적 `check`. 함수 이름 · 인자 · 결과 모양은 그대로, 서명 URL은 아직 없음 | 2.1 · 2.2 · 2.3 · 5.5 · 8.2 · 10.2 · 11 · 12 · 19 |

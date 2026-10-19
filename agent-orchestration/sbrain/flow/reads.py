@@ -613,7 +613,7 @@ def _viewable_run(orch: SBrainOrchestrator, project_id: int | str) -> Run:
 
 
 def _web_cards(cards: list[AnnouncementCard]) -> list[AnnouncementCard]:
-    """웹으로 나가는 공고 카드 — 가산점 스위치(settings.BONUS_ENABLED, 잠정 · 기본 꺼짐)가 꺼져 있으면 가산점을 비운다.
+    """웹으로 나가는 공고 카드 — 가산점 스위치(settings.BONUS_ENABLED, 잠정 · 2026-10-19부터 켬)가 꺼져 있으면 가산점을 비운다.
 
     화면 3(첫 조회 · 추가 조회)과 결과 조회(outputs)가 이것을 거친다. 이번 변경 전에 가산점 값이 저장된 실행 건도
     비어 보인다. 저장된 산출물은 건드리지 않고(사본을 고친다), 카드 모양(bonusScore · bonusItems 키)은 그대로다.
