@@ -118,6 +118,14 @@ def test_timeouts_and_provisional():
     assert not {"taskTimeouts", f"taskTimeouts.{REWRITE_KEY}", "taskTimeouts.T-B2.image"} & set(PROVISIONAL)
 
 
+def test_ts1_timeout_300():
+    # T-S1(요구사항 분석)은 본문 작성 · 실행 파일 · 인포그래픽과 같은 300초(운영 F07 시간 초과). 같은 전략 Agent의 T-S2와 나머지 기본값은 120초 그대로
+    t = Settings().task_timeouts
+    assert t["T-S1"] == 300.0 == t["T-W1"] == t["T-B1"] == t["T-B2"]
+    assert all(t[k] == 120.0 for k in ("T-C1", "T-C3", "T-S2", "T-W2", "T-W3", "T-V1", "T-V2", "T-C4"))
+    assert "taskTimeouts.T-S1" not in PROVISIONAL   # 잠정 값이 아니다
+
+
 def test_new_snapshot_has_tasks_and_no_agents():
     snap = SettingsProvider().snapshot()
     assert "tasks" in snap and "agents" not in snap

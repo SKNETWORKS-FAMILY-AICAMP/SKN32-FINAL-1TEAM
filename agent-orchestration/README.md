@@ -761,7 +761,7 @@ bind_notice(app.registry, NoticeClient("http://example.invalid:8000", transport=
 | 재작성 횟수 | 묶음마다 1회 | 세 화면(6 · 8 · 9)이 같은 횟수를 씀 |
 | 기준 점수 · 층별 배점 | 80점 · 문서층 70 · 산출물층 30(코드 점검 15 + 계획서 대조 15) | 산출물층 점수는 그 실행 건 배점으로 환산(`flow/score_scale.py`). 배점 0은 0 그대로 |
 | 검수 동시 처리 수 · 실패 비율 기준 | 4 · 30% | 잠정 — 검수가 흐름 밖이라 지금 쓰는 곳 없음 |
-| Task별 제한 시간 (호출 한 번) | 대부분 120초, `T-W1` · `T-B1` · `T-B2` 300초, `T-C2` · `G-01` 30초(공고 서버 호출 한 건마다), `T-P2` 60초(흐름 밖), `지시문 다시 쓰기` 120초, 이미지 `T-B2.image` 120초 | 기준 문서 값(`T-P2` 60초만 잠정) |
+| Task별 제한 시간 (호출 한 번) | 대부분 120초, `T-S1` · `T-W1` · `T-B1` · `T-B2` 300초, `T-C2` · `G-01` 30초(공고 서버 호출 한 건마다), `T-P2` 60초(흐름 밖), `지시문 다시 쓰기` 120초, 이미지 `T-B2.image` 120초 | 기준 문서 값(`T-P2` 60초만 잠정) |
 | Task별 모델 · 호출처 · 온도 · 추론 강도 · 이미지 (`Settings.tasks`) | 조율 Task · `지시문 다시 쓰기`는 `openai` · `gpt-6-luna` · 온도 없음, 추론 강도는 T-C1 medium · T-C3 · 지시문 다시 쓰기 low. T-B1 · T-B2 · T-V2는 `gpt-6-luna` · 추론 강도 · 온도 보내지 않음, T-B2 이미지 `gpt-image-2.5-flare` · medium · 1024x1536(구현 · 검증-2 담당 요청). T-S1 · T-S2 · T-W1 · T-W2 · T-V1은 담당자 `execution_contract.json`의 함수별 모델(T-S1 `gpt-5.6-terra` · T-S2 `gpt-6.1-sol` · T-W1 `gpt-5.6-sol` · T-W2 `gpt-6-luna` · T-V1 `gpt-5.6-terra` + `purpose_models`). 검수 `gpu-server` · '미정'(흐름 밖 — 항목만 남음). 규칙 단계 · 합치기 · T-C2 · G-01 · T-W3 · T-C4는 항목 없음 | 잠정 |
 | 동시 호출 | T-W1 · T-V1 4개, T-W2 2개 (`agents/partner_sw/common.py`), T-V2 대조 3개 · 판정 3번 (`agents/partner_bv/verification_agent/llm_judge.py`) | 확정값 — 잠정 아님 |
 
