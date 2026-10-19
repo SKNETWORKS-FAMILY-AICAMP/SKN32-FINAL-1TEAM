@@ -103,4 +103,4 @@ sudo ls /var/log/sbrain/deploy/          # 올릴 때마다의 설치 기록
 
 - **첨부 파일 · 웹 요청 로그 · 워커 운영 로그는 웹 서버 디스크에 있다**(`/var/lib/sbrain/web/uploads` · `/var/log/sbrain/`). 코드를 다시 올려도 남지만 서버를 새로 만들면 사라진다. 산출물 파일은 S3에 있다.
 - 웹 서버 한 대가 nginx · 웹 · 워커 · 프론트 빌드를 모두 맡는다. 빌드하는 1~2분 동안은 서버가 바쁘다.
-- 공고 서버 앱은 이 스크립트가 올리지 않는다(공고팀 몫).
+- 공고 서버 앱은 이 스크립트가 올리지 않는다 — [../notice/README.md](../notice/README.md)의 `deploy-notice.sh`로 올린다.

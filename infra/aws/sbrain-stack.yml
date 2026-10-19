@@ -428,6 +428,31 @@ Resources:
             Action: s3:GetObject
             Resource: !Sub '${DeployBucket.Arn}/deploy/*'
 
+  # The notice server runs the notice API and the daily collection batch, so it
+  # may read the notice settings that infra/aws/deploy-notice.sh stores in SSM
+  # Parameter Store (/<stack>/notice/*, SecureString with the default aws/ssm
+  # key) and the bundles it uploads to deploy/notice/. Nothing else in deploy/.
+  NoticeAppPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: read-notice-settings-and-releases
+      Roles:
+        - !Ref NoticeRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: ssm:GetParametersByPath
+            Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}/notice'
+          - Effect: Allow
+            Action:
+              - ssm:GetParameter
+              - ssm:GetParameters
+            Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}/notice/*'
+          - Effect: Allow
+            Action: s3:GetObject
+            Resource: !Sub '${DeployBucket.Arn}/deploy/notice/*'
+
   WebInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:

@@ -134,7 +134,7 @@ sudo cat /etc/sbrain/db.env >> .env
 
 ## 이 스크립트가 하지 않는 일
 
-- **앱 코드 올리기와 실행 설정** (웹 · 공고 서버 · 워커). 서버와 DB까지만 준비한다. 웹 · 워커는 [app/README.md](app/README.md)의 `app-env.sh` · `deploy-app.sh`로 올린다(공고 서버 앱은 공고팀 몫).
+- **앱 코드 올리기와 실행 설정** (웹 · 공고 서버 · 워커). 서버와 DB까지만 준비한다. 웹 · 워커는 [app/README.md](app/README.md)의 `app-env.sh` · `deploy-app.sh`로, 공고 서버 · 매일 배치는 [notice/README.md](notice/README.md)의 `deploy-notice.sh`로 올린다.
 - **기존 팀 EC2 MySQL 데이터 옮기기**. 빈 DB로 시작한다. 옮기지 않으면 매일 배치가 모든 공고를 처음부터 다시 처리한다(LLM 추출 비용 포함).
 - **HTTPS 인증서**. 443은 열어 두기만 한다. 인증서는 `settings.env.local`에 `WEB_DOMAIN`을 적고 DNS를 웹 서버 고정 IP로 연결한 뒤, `deploy-app.sh`가 Let's Encrypt에서 받는다([app/README.md](app/README.md)).
 
@@ -160,3 +160,4 @@ sudo cat /etc/sbrain/db.env >> .env
 | [schema-order.txt](schema-order.txt) | 적용할 SQL 파일과 순서 |
 | [settings.env](settings.env) | 기본 설정 |
 | [lib.sh](lib.sh) | up · down 공통 도우미 |
+| [deploy-notice.sh](deploy-notice.sh) · [notice/](notice/README.md) | 공고 서버 · 매일 배치 올리기 (수집 키 · 데이터 옮기기 포함) |
