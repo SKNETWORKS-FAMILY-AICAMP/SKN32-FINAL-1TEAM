@@ -3,7 +3,7 @@ import React, {useState,useRef,useEffect} from 'react';
 import {Icon} from '../../components/Icons.jsx';
 import {DiffText,RerunLeftBadge,ScoreNotices} from './shared.jsx';
 import {GeneralInfoBlock,PlanExtrasBlock} from './PlanForm.jsx';
-import {PrototypeFrame,ResultPreview,useArtifactFile,ArtifactLoadError} from './ArtifactResult.jsx';
+import {PrototypeFrame,ResultPreview,ZoomImage,useArtifactFile,ArtifactLoadError} from './ArtifactResult.jsx';
 import {bundleScoreOf,detectItemCategory,maxInt,scoreInt,diffSentences,planViewFrom,sectionDiffEntries,taskReasons,DOC_SCORE_BY_OUTCOME,isRerunCapped,rerunLeftOf,RESULT_STAGES,isResultReady,isResultRunning} from './utils.js';
 import {ARTIFACT_SCORE_BY_OUTCOME,ARTIFACT_SUBTASKS_BY_CATEGORY,FINAL_THRESHOLD,GENERAL_SECTION_LABEL,PLAN_AI_NOTICE,PLAN_DOCUMENT_SECTIONS,PLAN_DOCUMENT_SECTIONS_REWORKED,PSST_OFFICIAL_HEADERS,PLAN_TAGS,headerOfTag,RERUN_CAP,SCORE_DISCLAIMER,TASK_REWORK_SUMMARY,ALL_DOC_BUNDLES,docBundlesFor} from './data.js';
 import {startReview,getProjectStatus} from '../../api.js';
@@ -255,9 +255,8 @@ export function ArtifactCarousel({ hasExecutable, infoSrc = null, siteSrc = null
 
   if (!hasExecutable) {
     return (
-      <div className="flex items-center justify-center py-2">
-        <img src={infoSrc || '/infographic-preview.png'} alt={infoSrc ? '인포그래픽' : '인포그래픽 예시'} className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-lg"/>
-      </div>
+      <ZoomImage src={infoSrc || '/infographic-preview.png'} alt={infoSrc ? '인포그래픽' : '인포그래픽 예시'}
+        className="w-full" style={{ height: 'min(90vh, calc(100vh - 64px))' }} boxClassName="rounded-lg shadow-lg"/>
     );
   }
 
@@ -309,13 +308,14 @@ export function ArtifactCarousel({ hasExecutable, infoSrc = null, siteSrc = null
         <div ref={trackRef} className="flex transition-transform duration-300 ease-out" style={{ width: '200%', transform: `translateX(-${slide * 50}%)` }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}>
           <div className="w-1/2 flex-shrink-0 flex items-center justify-center p-2" style={{ height: stageHeight }}>
-            <img src={infoSrc || '/infographic-preview.png'} alt={infoSrc ? '인포그래픽' : '인포그래픽 예시'} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" draggable={false}/>
+            {/* 맞춤 크기에선 끌면 옆으로 넘어가고, 키운 뒤에는 끌면 그림이 움직인다(ZoomImage) */}
+            <ZoomImage src={infoSrc || '/infographic-preview.png'} alt={infoSrc ? '인포그래픽' : '인포그래픽 예시'} className="w-full h-full" boxClassName="rounded-lg shadow-2xl"/>
           </div>
           <div className="w-1/2 flex-shrink-0 flex flex-col items-center justify-center p-2" style={{ height: stageHeight }}>
             {/* 화면이 카드를 꽉 채우도록 배율은 PrototypeFrame이 상자 너비를 재서 계산한다 —
                 고정 배율이면 남는 폭만큼 카드의 흰 배경이 옆에 띠처럼 보인다(사용자 지적). */}
             <div className="relative w-full h-full rounded-xl shadow-2xl bg-white overflow-hidden">
-              <PrototypeFrame className="w-full h-full" src={siteSrc}/>
+              <PrototypeFrame zoomable className="w-full h-full" src={siteSrc}/>
               {/* 프로토타입 화면은 iframe이라 그 위에서 시작한 드래그는 부모로 안 올라온다
                   (다른 문서라 브라우저가 막음). 드래그로 되돌아갈 수 있게 iframe 밖의 손잡이를
                   하나 두되, 줄(row)로 쌓으면 위쪽에 흰 띠가 생기므로 화면 위에 떠 있게 한다. */}
