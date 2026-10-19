@@ -3,7 +3,7 @@ import {Brand,Icon} from './Icons.jsx';
 import {NotificationBell} from '../features/Workflow.jsx';
 import {listProjects,deleteProject,deleteProjectPermanently} from '../api.js';
 import {formatKstDate} from '../time.js';
-import {isResultReady,isResultRunning} from '../features/workflow/utils.js';
+import {isResultReady,isResultRunning,projectNameOf} from '../features/workflow/utils.js';
 export const steps=[['intake','아이템 입력'],['match-results','공고 찾기'],['plan-form','사업계획서'],['artifact-result','프로토타입'],['final-verdict','제출 전 점검'],['review','최종 결과물']];
 export function WorkspaceShell({view,user,onHome,onDashboard,onMyPage,onNewProject,onLogout,notifyEnabled,onToggleNotify,onOpenProject,children}){
  const index=['match-progress','eligibility-gate','eligibility-fail'].includes(view)?1:view==='plan-progress'?2:view==='artifact-progress'?3:view==='final-pass'?4:view==='review-progress'?5:steps.findIndex(x=>x[0]===view);
@@ -41,7 +41,9 @@ export function Dashboard({onNewProject,onOpenProject}){
    if(cancelled)return;
    setProjects(rows.map(r=>({
     id:r.project_id,
-    name:r.description,
+    name:projectNameOf(r.description)||'내 프로젝트',
+    // 검색은 이름(첫 줄)만이 아니라 아이디어 설명 전체에서 찾는다
+    idea:r.description||'',
     // 공고를 골랐는데 제목을 못 찾으면(공고 표에서 빠진 공고 · 로컬 스텁 공고) '매칭된 공고가 없다'고 하지 않는다.
     announcementTitle:r.notice_title||(r.notice_id?'선택한 공고':'아직 매칭된 공고가 없어요'),
     matched:!!r.notice_title,
@@ -61,7 +63,7 @@ export function Dashboard({onNewProject,onOpenProject}){
  },[reloadKey]);
 
  const isNewUser=!loading&&!loadError&&projects.length===0;
- const filtered=projects.filter(p=>(p.name+' '+p.announcementTitle).includes(query)&&(filter==='전체'||(filter==='진행 중'?p.progress<100:p.progress===100)));
+ const filtered=projects.filter(p=>(p.idea+' '+p.announcementTitle).includes(query)&&(filter==='전체'||(filter==='진행 중'?p.progress<100:p.progress===100)));
  const inProgress=projects.find(p=>p.progress<100)||null;
  // 실패한 프로젝트는 진행 중으로 세지 않는다 — 실패한 작업은 다시 시작할 수 없고 새 작업으로 시작한다
  // (웹연동_변경사항_웹팀전달.md 3.2 · 5절, E-RUN-FAIL).
@@ -103,7 +105,7 @@ export function Dashboard({onNewProject,onOpenProject}){
   {loadError&&<p className="workspace-note">프로젝트 목록을 불러오지 못했어요. 새로고침해 주세요.</p>}
 
   {!loading&&inProgress&&<div className={'continue-card'+(inProgress.failed?' is-failed':'')}>
-   <button className="continue-open" onClick={()=>onOpenProject(inProgress)}><span className="continue-icon"><Icon name={inProgress.failed?'close':'file'} size={32}/></span><div><p>{inProgress.failed?'작업이 중단됐어요':'이어서 준비하기'}</p><h2>{inProgress.name}</h2><span>{inProgress.failed?'일시적인 문제로 작업을 완료하지 못했습니다. 새 작업으로 다시 시작해주세요.':inProgress.matched?'계획서·프로토타입 준비를 이어서 진행해요':'공고 선택부터 이어서 진행해요'}</span></div></button>
+   <button className="continue-open" onClick={()=>onOpenProject(inProgress)}><span className="continue-icon"><Icon name={inProgress.failed?'close':'file'} size={32}/></span><div><p>{inProgress.failed?'작업이 중단됐어요':'이어서 준비하기'}</p><h2 title={inProgress.name}>{inProgress.name}</h2><span>{inProgress.failed?'일시적인 문제로 작업을 완료하지 못했습니다. 새 작업으로 다시 시작해주세요.':inProgress.matched?'계획서·프로토타입 준비를 이어서 진행해요':'공고 선택부터 이어서 진행해요'}</span></div></button>
    <div className="continue-status"><span>{inProgress.failed?'실패했습니다':inProgress.generating||(inProgress.matched?'진행 중':'매칭 대기 중')}</span>{inProgress.failed?<button type="button" className="continue-retry" onClick={onNewProject}>새로 시작하기 <Icon name="chevron" size={19}/></button>:<button type="button" onClick={()=>onOpenProject(inProgress)}>이어서 진행하기 <Icon name="chevron" size={19}/></button>}</div>
   </div>}
 
@@ -116,7 +118,7 @@ export function Dashboard({onNewProject,onOpenProject}){
    {filtered.map(p=><div className="project-row" key={p.id}>
      <button className="project-row-main" onClick={()=>onOpenProject(p)}>
       <span className={'project-symbol '+(p.failed?'failed':p.progress===100?'done':'')}><Icon name={p.failed?'close':p.progress===100?'check':'folder'} size={26}/></span>
-      <div className="project-title"><h3>{p.name}</h3><p>{p.announcementTitle}<span>·</span><span className="project-date">{(p.updatedAt||'').replaceAll('-','.')} 수정</span></p></div>
+      <div className="project-title"><h3 title={p.name}>{p.name}</h3><p>{p.announcementTitle}<span>·</span><span className="project-date">{(p.updatedAt||'').replaceAll('-','.')} 수정</span></p></div>
       <span className={'status-pill '+(p.failed?'failed':p.progress===100?'done':'')}>{p.failed?'실패했습니다':p.progress===100?'준비 완료':p.generating||(p.matched?'진행 중':'공고 선택 대기')}</span>
       <Icon name="chevron" size={21}/>
      </button>

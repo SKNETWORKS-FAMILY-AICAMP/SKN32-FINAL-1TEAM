@@ -2,6 +2,7 @@ import React,{useState,useEffect,useRef} from 'react';
 import {Brand,Icon} from '../components/Icons.jsx';
 import {api,ApiError} from '../api.js';
 import {formatKstDate,formatKstDateTime,formatKstShort} from '../time.js';
+import {projectNameOf} from './workflow/utils.js';
 
 // 관리자 판별은 이제 App.jsx에서 /auth/me가 내려주는 실제 role로 한다(props.user.role).
 // 이 파일 안에서는 이미 관리자로 확인된 사용자만 보고 있다고 가정한다.
@@ -204,16 +205,16 @@ function adminAlertsFrom(items,executions,genAlerts=[],fileDeletions=null){
     const item=byProject.get(g.project_id);
     if(item?.archived)continue;
     // "처음부터 다시 생성"(regenerate_exhausted · 재생성 상한)은 없는 기능이 돼 서버가 더 주지 않는다(SB-245).
-    alerts.push({key:`gen:${g.alert_id}`,alertId:g.alert_id,kind:'실패',title:`${GEN_STAGE_LABEL[g.stage]||'프로젝트'} 생성 실패`,detail:`[${g.last_error_kind}] ${g.failure_reason||'실패 원인이 기록되지 않았어요.'}`,project:item?.description||`프로젝트 #${g.project_id}`,projectId:g.project_id,tab:'progress',time:g.created_at});
+    alerts.push({key:`gen:${g.alert_id}`,alertId:g.alert_id,kind:'실패',title:`${GEN_STAGE_LABEL[g.stage]||'프로젝트'} 생성 실패`,detail:`[${g.last_error_kind}] ${g.failure_reason||'실패 원인이 기록되지 않았어요.'}`,project:projectNameOf(item?.description)||`프로젝트 #${g.project_id}`,projectId:g.project_id,tab:'progress',time:g.created_at});
   }
   for(const item of items){
     if(item.archived)continue;
     if(item.match_status==='failed'){
       if(alertedProjects.has(item.project_id))continue;
       const kind=item.stage==='plan_writing'?'사업계획서':item.stage==='prototype_building'?'프로토타입':'프로젝트';
-      alerts.push({key:`project:${item.project_id}:failed`,kind:'실패',title:`${kind} 생성 실패`,detail:item.failure_reason||'실패 원인을 확인해 주세요.',project:item.description,projectId:item.project_id,tab:'progress',time:item.last_updated});
+      alerts.push({key:`project:${item.project_id}:failed`,kind:'실패',title:`${kind} 생성 실패`,detail:item.failure_reason||'실패 원인을 확인해 주세요.',project:projectNameOf(item.description),projectId:item.project_id,tab:'progress',time:item.last_updated});
     }else if(item.stalled){
-      alerts.push({key:`project:${item.project_id}:stalled`,kind:'정체',title:'작업 진행이 멈춰 있습니다',detail:'마지막 갱신 이후 48시간이 지났습니다.',project:item.description,projectId:item.project_id,tab:'progress',time:item.last_updated});
+      alerts.push({key:`project:${item.project_id}:stalled`,kind:'정체',title:'작업 진행이 멈춰 있습니다',detail:'마지막 갱신 이후 48시간이 지났습니다.',project:projectNameOf(item.description),projectId:item.project_id,tab:'progress',time:item.last_updated});
     }
   }
   const latest=new Map();
@@ -227,7 +228,7 @@ function adminAlertsFrom(items,executions,genAlerts=[],fileDeletions=null){
     if(item?.archived)continue;
     // 생성 단계 실패는 agent_executions에도 한 줄 남는다 — 위 생성 실패 알림과 같은 사건이라 겹쳐 띄우지 않는다.
     if(item?.match_status==='failed')continue;
-    alerts.push({key:`task:${row.execution_id}`,kind:'실패',title:`${row.task_key||row.agent_name} Task 오류`,detail:`실행 상태: ${row.status}`,project:item?.description||`프로젝트 #${row.project_id}`,projectId:row.project_id,tab:'agents',time:row.started_at});
+    alerts.push({key:`task:${row.execution_id}`,kind:'실패',title:`${row.task_key||row.agent_name} Task 오류`,detail:`실행 상태: ${row.status}`,project:projectNameOf(item?.description)||`프로젝트 #${row.project_id}`,projectId:row.project_id,tab:'agents',time:row.started_at});
   }
   return alerts.sort((a,b)=>(b.urgent?1:0)-(a.urgent?1:0)||(b.time||'').localeCompare(a.time||''));
 }
@@ -728,7 +729,7 @@ function ProgressTab({focusProjectId=null}){
           return (
             <div key={id} className={'grid grid-cols-[1.7fr_0.8fr_0.85fr_0.6fr_1.15fr_0.9fr_0.85fr_90px] text-[13px] border-t border-[var(--border)] items-center '+
               (isArchived?'opacity-50 ':'')+(['중단','실패'].includes(p.status_label)?'bg-[color-mix(in_srgb,var(--danger)_5%,white)] border-l-4 border-l-[var(--danger)] ':p.status_label==='판단 대기'?'bg-[color-mix(in_srgb,var(--warn)_5%,white)] border-l-4 border-l-[var(--warn)] ':'')}>
-              <div className="p-4 font-medium">{p.description}</div>
+              <div className="p-4 font-medium truncate min-w-0" title={projectNameOf(p.description)}>{projectNameOf(p.description)}</div>
               <div className="p-4 text-center text-[var(--muted-fg)]">{p.user_name}</div>
               <div className="p-4 text-center text-[var(--muted-fg)]">{p.step||'-'}</div>
               <div className="p-4 text-center text-[var(--muted-fg)]">{p.attempts!=null?p.attempts+'회':'-'}</div>
@@ -752,7 +753,7 @@ function ProgressTab({focusProjectId=null}){
       <p className="mt-3 text-[12px] text-[var(--muted-fg)]"><span className="text-[var(--warn)]">●</span> "판단 대기"는 평가 결과가 나와 사용자의 재작성·재제작 선택을 기다리는 정상 상태이며, 오류(중단)가 아닙니다.</p>
       <p className="mt-1.5 text-[12px] text-[var(--muted-fg)]"><span className="text-[var(--warn)]">⏱</span> "정체"는 마지막 갱신으로부터 48시간이 지났는데도 '진행중' 상태가 유지되는 경우입니다.</p>
 
-      {scoreId!=null&&<Modal wide title={(items.find(i=>i.project_id===scoreId)?.description||'')+' 점수 이력'} onClose={()=>{setScoreId(null);setScoreHistory(null)}}>
+      {scoreId!=null&&<Modal wide title={projectNameOf(items.find(i=>i.project_id===scoreId)?.description)+' 점수 이력'} onClose={()=>{setScoreId(null);setScoreHistory(null)}}>
         <p className="text-[12.5px] text-[var(--muted-fg)] mb-4">검증 단계별 이력이 삭제되지 않고 누적됩니다. 최근 변경 순으로 표시됩니다.</p>
         {scoreError?<p role="alert" className="text-[13px] text-[var(--danger)]">{scoreError}</p>:!scoreHistory?<p className="text-[13px] text-[var(--muted-fg)]">불러오는 중…</p>:(
         <div className="grid sm:grid-cols-3 gap-4">
@@ -783,7 +784,7 @@ function ProgressTab({focusProjectId=null}){
       {detail&&(()=>{
         const isArchived=detail.archived;
         return (
-          <Modal title={detail.description} onClose={()=>setDetailId(null)}>
+          <Modal title={projectNameOf(detail.description)} onClose={()=>setDetailId(null)}>
             <p className="text-[12.5px] text-[var(--muted-fg)] mb-5">{detail.user_name} · 현재 점수 {detail.score!=null?detail.score+'점':'—'}</p>
             <div className="grid grid-cols-3 gap-3 mb-5 text-[12.5px]">
               <div className="rounded-xl border border-[var(--border)] p-3"><p className="text-[var(--muted-fg)] mb-1">현재 단계</p><p className="font-semibold text-[14px]">{detail.step||'-'}</p></div>
