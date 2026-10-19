@@ -11,7 +11,7 @@ import {formatKstDate,formatKstDateTime,formatKstShort} from '../time.js';
 // (agent-executions)·Task별 보기(agent-tasks)·운영 지표 요약(agent-ops-summary),
 // "진행 현황"(items+items/{id}/archive+items/{id}/score-history), "공고 관리"
 // (notices+collection-status), "운영 현황"(ops-summary), "검수 회수 문단"
-// (recovery-items) 전부.
+// (recovery-items, 2026-10-19 화면에서 뺌 — 아래) 전부.
 // - "진행 현황"의 "지금 Agent가 뭘 하는지"/"오류 로그"는 여전히 안 내려준다 — 실시간
 //   오케스트레이터 상태를 저장하는 테이블이 없다(app/schemas.py ItemOut 주석 참고).
 // - "에이전트 테스크"의 "배치 기준"(모델 선택) 열은 2026-09-18에 아예 뺐다 — 저장할
@@ -27,11 +27,10 @@ import {formatKstDate,formatKstDateTime,formatKstShort} from '../time.js';
 // - 검수(표현 검수 · 윤문)는 조율 2026-10-15에 서비스 흐름에서 빠졌다 — 운영 현황 · 운영 지표 요약의
 //   "보호 토큰 위반율", 에이전트 테스크의 '검수' 줄, 판정 기준의 "검수 문단 재시도 상한"을 뺐다.
 //   재시도 상한(token_retry_cap)은 서버가 선택 입력으로 바꿔(SB-401) 저장 요청에도 싣지 않는다.
-// - "검수 회수 문단"은 proofread_logs.passed=False(보호 토큰 위반 반려 시도)를 그대로
-//   라벨링 대기열로 쓴다 — model_version은 그 plan의 최종 verdicts.model_version을
-//   붙인 근사치다(RecoveryItemOut 주석 참고).
+// - "검수 회수 문단" 탭은 2026-10-19 화면에서 뺐다 — 검수가 흐름에서 빠져(위 항목) 더 쌓일 회수
+//   문단이 없다. 화면 코드(RecoveryTab)만 지웠고 서버 API(/admin/recovery-items)는 그대로 둔다.
 
-const TABS=[['ann','공고 관리'],['ops','운영 현황'],['progress','진행 현황'],['agents','에이전트 테스크'],['policy','검증 정책'],['recovery','검수 회수 문단'],['users','사용자 관리·FAQ']];
+const TABS=[['ann','공고 관리'],['ops','운영 현황'],['progress','진행 현황'],['agents','에이전트 테스크'],['policy','검증 정책'],['users','사용자 관리·FAQ']];
 
 // (key, 표시 라벨, 배점) — verification_score_history.layer 값과 1:1 대응. ProgressTab의
 // "이력보기" 모달과 OpsTab의 "채점 편차" 카드가 공유한다.
@@ -89,8 +88,6 @@ const REPRODUCIBILITY=[
   ['채점 온도(temperature)','재현성을 위해 0으로 고정되며 변경할 수 없습니다.','0 (고정)','muted'],
 ];
 
-const RECOVERY_LABELS={pending:'라벨링 대기',labeled:'라벨링 완료',excluded:'동의 없음(제외)'};
-
 // GET /admin/users, GET /admin/faqs 응답 -> 이 화면 행 모양. 목업 시절엔 가입일/실행건수/
 // 보관 산출물 컬럼이 있었는데, UserOut엔 그 필드가 없어서(오케스트레이터·프로젝트 집계 쪽
 // 작업 영역) 뺐다. 얼굴 인증(관리자 전환 게이트)은 팀 결정으로 아예 안 하기로 해서
@@ -103,17 +100,6 @@ const userRowFromServer=u=>({id:u.user_id,name:u.name,email:u.email,
 // 않음) 목업의 "작성자" 컬럼은 뺐다.
 const faqRowFromServer=(f,idx,total)=>({id:f.faq_id,no:total-idx,question:f.question,
   date:formatKstDate(f.created_at),answer:f.answer||'',visible:f.is_visible,answered:f.answer!=null});
-
-// GET /admin/recovery-items(RecoveryItemOut 목록) -> 이 화면 행 모양. 동의(consent)가
-// False면 백엔드 recovery_status(pending 기본값)와 무관하게 화면 status는 무조건
-// 'excluded'로 취급한다 — "동의 없음(제외)"는 관리자가 고르는 상태가 아니라 계정의
-// 학습데이터 활용 동의 여부에 따라 자동으로 정해지는 상태이기 때문이다.
-const recoveryItemFromServer=r=>({
-  id:r.log_id, project:r.project_description||'(삭제된 프로젝트)', model:r.model_version||'—',
-  violation:r.violation_type||'—', occurredAt:formatKstDateTime(r.occurred_at),
-  consent:r.consent, original:r.original, attempt:r.attempt,
-  status:r.consent?r.recovery_status:'excluded', label:r.label||'',
-});
 
 const toneText={ok:'text-[var(--ok)]',warn:'text-[var(--warn)]',danger:'text-[var(--danger)]',muted:'text-[var(--muted-fg)]',primary:'text-[var(--primary)]'};
 const toneBg={ok:'bg-[color-mix(in_srgb,var(--ok)_12%,white)] text-[var(--ok)]',warn:'bg-[color-mix(in_srgb,var(--warn)_12%,white)] text-[var(--warn)]',
@@ -339,7 +325,6 @@ export default function AdminDashboard({user,onExit}){
         {tab==='progress'&&<ProgressTab key={selectedAlert?.tab==='progress'?selectedAlert.key:'progress'} focusProjectId={selectedAlert?.tab==='progress'?selectedAlert.projectId:null}/>}
         {tab==='agents'&&<AgentsTab key={selectedAlert?.tab==='agents'?selectedAlert.key:'agents'} focusProjectId={selectedAlert?.tab==='agents'?selectedAlert.projectId:null}/>}
         {tab==='policy'&&<PolicyTab pushToast={pushToast}/>}
-        {tab==='recovery'&&<RecoveryTab pushToast={pushToast}/>}
         {tab==='users'&&<UsersTab pushToast={pushToast}/>}
       </main>
 
@@ -1206,116 +1191,6 @@ function PolicyTab({pushToast}){
         ))}
       </Panel>
       <p className="mt-2 text-[11px] text-[var(--muted-fg)]">이 항목들은 재현성을 위한 고정값이라 별도로 저장할 설정이 없습니다.</p>
-    </div>
-  );
-}
-
-function RecoveryTab({pushToast}){
-  const [items,setItems]=useState(null);
-  const [loadError,setLoadError]=useState('');
-  const [openId,setOpenId]=useState(null);
-  const [draft,setDraft]=useState('');
-  const [filter,setFilter]=useState('전체 상태');
-  const [saving,setSaving]=useState(false);
-
-  useEffect(()=>{
-    api.get('/admin/recovery-items').then(rows=>setItems(rows.map(recoveryItemFromServer)))
-      .catch(e=>setLoadError(e instanceof ApiError?String(e.detail):'회수 문단을 불러오지 못했어요'));
-  },[]);
-
-  const open=id=>{setOpenId(id);setDraft(items.find(i=>i.id===id).label)};
-  const save=async id=>{
-    if(!draft.trim()){pushToast('저장하지 못했습니다','정답 교정문을 입력해주세요.','danger');return}
-    setSaving(true);
-    try{
-      await api.put(`/admin/recovery-items/${id}`,{recovery_status:'labeled',label:draft.trim()});
-      setItems(list=>list.map(it=>it.id===id?{...it,label:draft.trim(),status:'labeled'}:it));
-      setOpenId(null);
-      pushToast('학습 데이터로 저장되었습니다','원문과 정답 교정문 쌍이 재학습 데이터셋 후보에 추가되었습니다.','info');
-    }catch(e){
-      pushToast('저장하지 못했습니다',e instanceof ApiError?String(e.detail):'서버에 연결할 수 없어요','danger');
-    }finally{
-      setSaving(false);
-    }
-  };
-
-  if(loadError)return <div><h1 className="text-[28px] font-bold mb-4">검수 회수 문단</h1><p className="text-[13.5px] text-[var(--danger)]">{loadError}</p></div>;
-  if(items===null)return <div><h1 className="text-[28px] font-bold mb-4">검수 회수 문단</h1><p className="text-[13.5px] text-[var(--muted-fg)]">불러오는 중…</p></div>;
-
-  const filtered=items.filter(it=>filter==='전체 상태'||RECOVERY_LABELS[it.status]===filter);
-  const count=s=>items.filter(i=>i.status===s).length;
-  const openItem=openId!=null?items.find(i=>i.id===openId):null;
-  return (
-    <div>
-      <h1 className="text-[28px] font-bold mb-3">검수 회수 문단</h1>
-      <p className="text-[13px] text-[var(--muted-fg)] mb-8 max-w-3xl leading-relaxed">보호 토큰(수치·날짜·고유명사·기능명)이 훼손된 채 반려된 검수 시도(proofread_logs.passed=False)를 모읍니다. 원문에 정답 교정문을 붙이는 라벨링을 거쳐야 재학습에 쓸 수 있고, 학습 데이터 편입에 동의하지 않은 계정의 문단은 제외됩니다.</p>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-        <Card label="전체 회수 문단" value={items.length+'건'} sub="누적 기준"/>
-        <Card label="라벨링 대기" value={count('pending')+'건'} tone="warn" sub="정답 교정문 미입력"/>
-        <Card label="라벨링 완료" value={count('labeled')+'건'} tone="ok" sub="재학습 데이터셋 후보로 편입"/>
-        <Card label="동의 없음(제외)" value={count('excluded')+'건'} sub="학습 데이터 편입 미동의 계정"/>
-      </div>
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <h2 className="text-[20px] font-bold">회수 문단 목록</h2>
-        <Select value={filter} onChange={setFilter} options={['전체 상태','라벨링 대기','라벨링 완료','동의 없음(제외)']}
-          className="rounded-lg border border-[var(--border)] px-3 py-2 text-[13.5px]"/>
-      </div>
-      <Panel>
-        <div className="grid grid-cols-[1fr_1.6fr_0.8fr_0.9fr_1fr_0.9fr_0.9fr] text-[12.5px] font-semibold text-[var(--muted-fg)] bg-[var(--muted)]">
-          <div className="p-4">문단 ID</div><div className="p-4">발생 프로젝트</div><div className="p-4 text-center">모델 버전</div><div className="p-4 text-center">위반 항목</div>
-          <div className="p-4 text-center">발생일시</div><div className="p-4 text-center">학습 동의</div><div className="p-4 text-center">상태</div>
-        </div>
-        {filtered.length===0&&<p className="p-6 text-center text-[13px] text-[var(--muted-fg)] border-t border-[var(--border)]">회수된 문단이 없습니다.</p>}
-        {filtered.map(it=>(
-          <button key={it.id} onClick={()=>open(it.id)}
-            className={'w-full text-left grid grid-cols-[1fr_1.6fr_0.8fr_0.9fr_1fr_0.9fr_0.9fr] text-[13px] border-t border-[var(--border)] items-center hover:bg-[var(--bg)] '+(it.consent?'':'opacity-60')}>
-            <div className="p-4 font-medium">PARA-{it.id}</div>
-            <div className="p-4 text-[var(--muted-fg)]">{it.project}</div>
-            <div className="p-4 text-center text-[var(--muted-fg)]">{it.model}</div>
-            <div className="p-4 text-center text-[var(--muted-fg)]">{it.violation}</div>
-            <div className="p-4 text-center text-[var(--muted-fg)]">{it.occurredAt.slice(5)}</div>
-            <div className={'p-4 text-center font-semibold '+(it.consent?'text-[var(--ok)]':'text-[var(--muted-fg)]')}>{it.consent?'동의':'미동의'}</div>
-            <div className={'p-4 text-center font-semibold '+(it.status==='labeled'?'text-[var(--ok)]':it.status==='pending'?'text-[var(--warn)]':'text-[var(--muted-fg)]')}>{RECOVERY_LABELS[it.status]}</div>
-          </button>
-        ))}
-      </Panel>
-      <p className="mt-3 text-[11px] text-[var(--muted-fg)]">동의 없음(제외) 행은 열람만 가능하며 저장되지 않습니다.</p>
-
-      {openItem&&(
-          <Modal wide title="문단 라벨링" onClose={()=>setOpenId(null)}>
-            <p className="text-[12.5px] text-[var(--muted-fg)] mb-5">{openItem.project} · 모델 {openItem.model} · {openItem.occurredAt}</p>
-            <div className="grid sm:grid-cols-2 gap-4 mb-4">
-              <div>
-                <p className="text-[12px] font-semibold text-[var(--muted-fg)] mb-1.5">원문 문단</p>
-                <div className="rounded-xl bg-[var(--muted)] p-3.5 text-[13px] leading-relaxed min-h-[88px]">{openItem.original}</div>
-              </div>
-              <div>
-                <p className="text-[12px] font-semibold text-[var(--muted-fg)] mb-1.5">검수 시도 (위반 발생)</p>
-                <div className="rounded-xl bg-[color-mix(in_srgb,var(--danger)_6%,white)] border border-[var(--danger)]/30 p-3.5 text-[13px] leading-relaxed min-h-[88px]">{openItem.attempt}</div>
-              </div>
-            </div>
-            <p className="text-[12px] text-[var(--danger)] font-semibold mb-4">⚠ 보호 토큰 위반: {openItem.violation} 값이 재시도 후에도 소실·변조된 상태로 남았습니다.</p>
-            {openItem.consent?(
-              <>
-                <p className="text-[13px] font-semibold text-[var(--muted-fg)] mb-1.5">정답 교정문 (학습 데이터용)</p>
-                <p className="text-[11px] text-[var(--muted-fg)] mb-2">보호 토큰을 보존하면서 원문 문체를 교정한 정답 문장을 입력합니다.</p>
-                <textarea rows={4} value={draft} onChange={e=>setDraft(e.target.value)} placeholder="정답 교정문을 입력하세요"
-                  className="w-full border border-[var(--border)] rounded-lg p-3 text-[13px] outline-none focus:border-[var(--primary)] resize-none mb-3"/>
-              </>
-            ):(
-              <div className="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3.5 text-[12.5px] text-[var(--muted-fg)] mb-3">
-                이 계정은 교정 이력의 학습 데이터 편입에 동의하지 않았습니다(선택 동의). 열람만 가능하며 라벨링·저장은 할 수 없습니다.
-              </div>
-            )}
-            <div className="flex items-center justify-between gap-4">
-              <span className={'text-[12px] font-semibold px-3 py-1 rounded-full '+(openItem.status==='labeled'?toneBg.ok:openItem.status==='pending'?toneBg.warn:toneBg.muted)}>{RECOVERY_LABELS[openItem.status]}</span>
-              <div className="flex gap-2">
-                <button onClick={()=>setOpenId(null)} className="rounded-xl border border-[var(--border)] px-4 py-2 text-[13px] font-semibold text-[var(--muted-fg)] hover:bg-[var(--bg)]">닫기</button>
-                {openItem.consent&&<button onClick={()=>save(openId)} disabled={saving} className="rounded-xl bg-[var(--primary)] text-white px-4 py-2 text-[13px] font-semibold hover:bg-[var(--primary-dim)] disabled:opacity-50">{saving?'저장 중…':'학습 데이터로 저장'}</button>}
-              </div>
-            </div>
-          </Modal>
-      )}
     </div>
   );
 }
