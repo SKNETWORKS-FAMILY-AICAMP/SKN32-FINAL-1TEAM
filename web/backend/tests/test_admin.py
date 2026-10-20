@@ -16,6 +16,7 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 
 import app.routers.auth as auth_router
 import app.security as security
@@ -922,3 +923,29 @@ def test_admin_score_history_carries_the_run_s_maxima(admin_client, user_client,
     body = admin_client.get(f'/admin/items/{pid}/score-history').json()
 
     assert (body['doc_max'], body['code_max'], body['plan_max']) == (50.0, 20.0, 30.0)
+
+
+def test_notice_list_preserves_unknown_without_fetching_payload(admin_client, db_session):
+    db_session.add(Notice(
+        notice_id='NOTICE-UNKNOWN', source='bizinfo', title='상태 미확인 공고',
+        recruitment_status='unknown', raw={'large': 'x' * 10000}, embedding=b'\x00' * 4096,
+    ))
+    db_session.commit()
+    statements = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith('SELECT') and 'FROM notices' in statement:
+            statements.append(statement)
+
+    engine = db_session.get_bind()
+    event.listen(engine, 'before_cursor_execute', capture)
+    try:
+        result = admin_client.get('/admin/notices', params={'q': '상태 미확인'})
+    finally:
+        event.remove(engine, 'before_cursor_execute', capture)
+    assert result.status_code == 200
+    assert result.json()[0]['recruitment_status'] == 'unknown'
+    assert result.json()[0]['has_embedding'] is True
+    assert len(statements) == 1
+    assert 'notices.raw' not in statements[0]
+    assert 'notices.embedding IS NOT NULL' in statements[0]

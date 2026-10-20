@@ -13,6 +13,7 @@ import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -299,7 +300,10 @@ def list_notices(
     않았다 — notices는 이 앱이 쓰는 게 아니라 다른 팀원의 수집 파이프라인이 다음 배치
     때 다시 채워 넣을 수 있는 테이블이라, 관리자 화면에서 조회 없이 삭제부터 만드는 건
     그 파이프라인과 상의 없이는 위험하다고 판단했다."""
-    query = db.query(Notice).order_by(Notice.id.desc())
+    query = db.query(
+        Notice.notice_id, Notice.title, Notice.source, Notice.apply_start, Notice.apply_end,
+        Notice.recruitment_status, Notice.embedding.isnot(None).label('has_embedding'),
+    ).order_by(Notice.id.desc())
     if q:
         query = query.filter(Notice.title.contains(q))
     rows = query.limit(min(limit, 500)).all()
@@ -311,7 +315,7 @@ def list_notices(
             apply_start=r.apply_start,
             apply_end=r.apply_end,
             recruitment_status=r.recruitment_status,
-            has_embedding=r.embedding is not None,
+            has_embedding=r.has_embedding,
         )
         for r in rows
     ]
@@ -335,11 +339,11 @@ def get_collection_status(db: Session = Depends(get_db), _admin: User = Depends(
     if latest_run is not None:
         latest_input_counts = ((latest_run.report or {}).get('summary') or {}).get('input_counts') or {}
 
-    distinct_sources = [s for (s,) in db.query(Notice.source).distinct().all()]
+    source_counts = db.query(
+        Notice.source, func.count(Notice.id), func.count(Notice.embedding),
+    ).group_by(Notice.source).all()
     sources = []
-    for source in distinct_sources:
-        total = db.query(Notice).filter(Notice.source == source).count()
-        embedded = db.query(Notice).filter(Notice.source == source, Notice.embedding.isnot(None)).count()
+    for source, total, embedded in source_counts:
         sources.append(NoticeSourceStatusOut(
             source=source,
             label=_NOTICE_SOURCE_LABEL.get(source, source),

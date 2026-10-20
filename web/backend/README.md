@@ -91,3 +91,19 @@ ruff check .
 | `__pycache__/`, `.pytest_cache/`, `.ruff_cache/` | 파이썬/pytest/ruff 캐시 | `.gitignore` 처리됨, 지워도 무방 |
 
 `.hwp`/`.pdf` 다운로드(사업계획서 내보내기, `app/hwp_export.py` / `app/pdf_export.py`)는 요청이 올 때마다 임시 파일로 변환해서 응답으로 바로 내려주고 디스크에 남기지 않습니다.
+
+
+## 공고 검색 지연 확인
+
+브라우저 개발자 도구의 Network에서 `POST /projects`와
+`GET /projects/{project_id}/match-candidates`의 시간을 각각 확인합니다.
+API 응답의 `Server-Timing: app;dur=...`는 앱에서 응답 헤더를 준비할 때까지의
+처리 시간(ms)입니다. 업로드·응답 다운로드·프록시·네트워크 지연을 포함한 전체 시간은
+Network의 Timing과 비교합니다. `X-Request-ID`를 `logs/web-YYYY-MM-DD.log`의
+`req_id`와 대조하면 해당 요청의 상태 코드와 `elapsed_ms`를 찾을 수 있습니다.
+인증된 실제 사용자 세션으로 확인하며 로그인 정보나 요청 본문을 로그에 추가하지 않습니다.
+
+관리자 공고 목록은 필요한 컬럼만 조회하며 원본 JSON·본문·임베딩 파일 내용은
+목록 응답을 위해 가져오지 않습니다. 관리자 임베딩 유무는 DB에서 NULL 여부만 계산합니다.
+`recruitment_status=unknown`은 수집 당시 모집 상태를 확보하지 못했다는 원본 값으로
+API에서도 보존합니다. 이를 모집중으로 바꾸거나 날짜만으로 확정하지 않습니다.

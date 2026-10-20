@@ -74,6 +74,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             raise
 
         elapsed_ms = int((time.monotonic() - start) * 1000)
+        response.headers['X-Request-ID'] = request_id
+        timing = f'app;dur={elapsed_ms}'
+        existing_timing = response.headers.get('Server-Timing')
+        response.headers['Server-Timing'] = f'{existing_timing}, {timing}' if existing_timing else timing
         status_code = response.status_code
         path = _route_path(request)
         if status_code >= 500:

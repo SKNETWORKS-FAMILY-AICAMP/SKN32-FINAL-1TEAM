@@ -92,3 +92,13 @@ def test_unauthenticated_request_logs_anon_user_id(client):
     client.get('/projects/999999')
     logged = _tail_since(offset)
     assert 'user_id=anon' in logged
+
+
+def test_response_timing_and_request_id_match_log(client):
+    offset = _log_offset()
+    response = client.get('/health')
+    request_id = response.headers['X-Request-ID']
+    assert len(request_id) == 12
+    elapsed = response.headers['Server-Timing'].removeprefix('app;dur=')
+    assert int(elapsed) >= 0
+    assert f'req_id={request_id}' in _tail_since(offset)
