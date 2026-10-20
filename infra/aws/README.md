@@ -43,7 +43,7 @@ AWS 클라우드 (리전)
 
 | 만드는 것 | 내용 |
 |---|---|
-| 웹 EC2 | `c7i-flex.large`(4GB), Ubuntu 24.04, 고정 IP(탄력적 IP) 연결, nginx 설치 |
+| 웹 EC2 | `m7i-flex.large`(8GB), Ubuntu 24.04, 고정 IP(탄력적 IP) 연결, nginx 설치, 스왑 2GB |
 | 공고 서버 EC2 | `m7i-flex.large`(8GB), 바깥 주소 없음, 내부 고정 주소 `10.20.11.10`, 스왑 2GB |
 | RDS | MySQL 8.4, `db.t4g.micro`, 20GB, 암호화, 1일 백업 |
 | DB 세팅 | `s_brain` DB, [schema-order.txt](schema-order.txt) 순서대로 SQL 10개 적용, 앱 계정 `sbrain_app` |
@@ -112,9 +112,11 @@ sudo cat /etc/sbrain/db.env >> .env
 
 기본값은 [settings.env](settings.env)에 있다. 내 PC에서만 바꿀 값은 같은 폴더에 `settings.env.local`을 만들어 다시 적는다(커밋 안 됨).
 
+서버 종류 · DB 종류처럼 스택 전체에 걸리는 값은 `settings.env`를 고쳐 커밋한다. 같은 계정에서 여러 사람이 `up.sh`를 돌리므로, 한 사람의 `settings.env.local`에만 적으면 다른 사람이 돌릴 때 원래 값으로 되돌아간다(반대로 누군가의 `.local`에 옛 값이 남아 있으면 그 값이 이긴다).
+
 | 값 | 언제 반영되나 |
 |---|---|
-| 서버 종류, DB 종류, DB 용량, SSH 허용 IP | 다시 실행할 때마다 (서버는 잠깐 재시작될 수 있음) |
+| 서버 종류, DB 종류, DB 용량, SSH 허용 IP | 다시 실행할 때마다 (서버는 잠깐 재시작될 수 있음 — 서버 종류를 바꾸면 그 서버를 멈췄다 켠다. 디스크 · 고정 IP는 그대로) |
 | 가용영역, 서버 이미지, 공고 서버 내부 주소 | **처음 만들 때만**. 나중에 바뀌면 서버가 통째로 새로 만들어지기 때문에 막아 두었다 |
 
 ## 테이블이 늘어나면
@@ -144,7 +146,7 @@ sudo cat /etc/sbrain/db.env >> .env
 |---|---|
 | `예전에 실패한 스택이 남아 있습니다` | 처음 만들기가 실패해 AWS가 되돌린 상태. `down.sh` → 원인 고친 뒤 `up.sh` |
 | 만들기 실패 + `vCPU` · `limit` · `quota` 문구 | 계정 한도 부족. AWS 콘솔 Service Quotas에서 늘리거나 서버 종류를 작게 |
-| `... 를 쓸 수 없습니다` (서버 종류) | 그 계정·리전에 없는 종류. `settings.env.local`에서 바꾼다 (프리 플랜은 `c7i-flex.large` · `m7i-flex.large` 등만 허용) |
+| `... 를 쓸 수 없습니다` (서버 종류) | 그 계정·리전에 없는 종류. `settings.env`에서 바꿔 커밋한다 (프리 플랜은 `c7i-flex.large` · `m7i-flex.large` 등만 허용) |
 | DB 세팅 실패 | 표시된 원인을 고친 뒤 `up.sh` 다시 실행. 실패한 파일부터 이어서 한다 |
 | SSH 시간 초과 | 내 IP가 바뀜. `up.sh` 다시 실행 |
 | 서버 첫 부팅 로그를 보고 싶을 때 | 서버에서 `sudo cat /var/log/sbrain-userdata.log` |
