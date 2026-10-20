@@ -157,5 +157,22 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: MySQL 8.4 (테스트용)
+        run: |
+          # 운영 RDS와 같은 8.4. 로컬 docker/mysql-test.yml과 같은 인자(utf8mb4_bin)를 주려고 services 대신 직접 띄운다
+          # 이 실행 안에서만 사는 테스트 DB다(비밀번호는 테스트용 값)
+          docker run -d --name mysql -p 127.0.0.1:3307:3306 \
+            -e MYSQL_ROOT_PASSWORD=sbrain-test -e MYSQL_DATABASE=sbrain_test \
+            --tmpfs /var/lib/mysql mysql:8.4 \
+            --character-set-server=utf8mb4 --collation-server=utf8mb4_bin
+          for i in $(seq 1 60); do
+            docker exec mysql mysqladmin ping -h 127.0.0.1 -uroot -psbrain-test --silent && exit 0
+            sleep 2
+          done
+          docker logs mysql
+          echo "::error::MySQL이 2분 안에 뜨지 않았습니다."
+          exit 1
       - name: Run tests
+        env:
+          SBRAIN_TEST_MYSQL_URL: mysql+pymysql://root:sbrain-test@127.0.0.1:3307/sbrain_test?charset=utf8mb4
         run: python -m pytest
