@@ -394,7 +394,10 @@ def test_flow_completes_without_plan_file_and_without_llm(clock):
     assert d.plan_doc_file is None
     assert not any(k.endswith("/plan.docx") or k.endswith(".docx") for k in app.engine.files.keys())
     [rec] = records_of_task(app, rid, "T-C4")
-    assert [x for x in app.store.call_logs(rid) if x.execution_id == rec.execution_id] == []   # LLM · 파일 호출 없음
+    # LLM · 파일 창구 호출 없음 — 남는 것은 엔진의 출력 파일 확인(참조마다 check)뿐
+    calls = [x for x in app.store.call_logs(rid) if x.execution_id == rec.execution_id]
+    assert {(x.call_type, x.purpose) for x in calls} == {("file", "check")}
+    assert len(calls) == len(d.prototype_files) + 1                                  # 결과물 묶음 참조 — 프로토타입 파일 · 인포그래픽
     assert not rec.model
 
 

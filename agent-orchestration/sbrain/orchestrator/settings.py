@@ -153,12 +153,14 @@ def _default_tasks() -> dict[str, TaskModelSetting]:
 
 
 def _default_timeouts() -> dict[str, float]:
-    # 제한 시간 (호출 한 번, 초) — 시트 1 '제한 시간': 기본 120, 본문 작성 · 실행 파일 · 인포그래픽 300, 공고 매칭 · 자격 확인 30.
-    # 흐름 밖 T-P2(검수, 향후 도입)의 60은 잠정
+    # 제한 시간 (호출 한 번, 초) — 시트 1 '제한 시간': 기본 120, 요구사항 분석 · 본문 작성 · 실행 파일 · 인포그래픽 300,
+    # 공고 매칭 · 자격 확인 30. 흐름 밖 T-P2(검수, 향후 도입)의 60은 잠정.
+    # T-S1(요구사항 분석) 300 — 운영에서 F07(gpt-6.1-sol, 성공 40 ~ 78초)이 120초에 걸려
+    # 처음부터 다시 보내는 일이 생겨(5번 연속 뒤 마지막 시도에 성공한 실행 건도 있음) 본문 작성과 같은 300으로 둔다.
     base = {tid: 120.0 for tid in (
-        "T-C1", "T-C3", "T-S1", "T-S2", "T-W2", "T-W3", "T-V1", "T-V2", "T-P1", "T-C4",
+        "T-C1", "T-C3", "T-S2", "T-W2", "T-W3", "T-V1", "T-V2", "T-P1", "T-C4",
     )}
-    base.update({"T-W1": 300.0, "T-B1": 300.0, "T-B2": 300.0, "T-C2": 30.0, "T-P2": 60.0})
+    base.update({"T-S1": 300.0, "T-W1": 300.0, "T-B1": 300.0, "T-B2": 300.0, "T-C2": 30.0, "T-P2": 60.0})
     base["G-01"] = 30.0   # 공고 서버 상세 · 판정 호출 — T-C2와 같음
     base[REWRITE_SETTING_KEY] = 120.0   # 지시문 다시 쓰기 호출 한 번 — T-C3 값을 빌리지 않는다
     base["T-B2.image"] = 120.0          # T-B2 이미지 호출 한 번 (실측 13 ~ 16초)
@@ -195,8 +197,9 @@ class Settings(SBModel):
 # 가산점 사용 스위치 (잠정, PROVISIONAL announcement.bonusEnabled) — 실행별 설정(Settings)이 아닌 코드 상수다.
 # 실제 T-C2(agents/notice/tc2.py) · 스텁 T-C2(agents/stubs.py) · 웹 조회(flow/reads.py)가 부를 때마다
 # settings.BONUS_ENABLED로 읽는다(from-import로 값을 복사하지 않는다 — 테스트가 바꾼 값이 모든 곳에 닿게).
-# 꺼져 있으면 가산점을 읽지 · 만들지 · 보이지 않는다. 공고팀이 써도 된다고 하면 이 한 곳만 True로 바꾼다.
-BONUS_ENABLED: bool = False
+# 꺼져 있으면 가산점을 읽지 · 만들지 · 보이지 않는다. 2026-10-19 공고팀이 써도 된다고 해 켰다 — 켜져 있어도 실제 T-C2는
+# 공고 서버가 원문 대조를 마친 공고(bonus_verified 참, 공고팀 결정 0018)의 가산점만 카드에 싣는다(agents/notice/tc2.py).
+BONUS_ENABLED: bool = True
 
 # 계획서 표 입력(사업비 · 일정) 필수 확인 스위치 — 실행별 설정이 아닌 코드 상수다. 켠 값이 기준 문서(시트 6 E-C1-REQUIRED —
 # 사업비 집행계획 1건 이상, 예비창업자는 1단계 · 2단계 각 1건 이상, 추진 일정은 협약기간 내 1건 이상)와 같고, 끄는 것은 되돌리기용이다.
@@ -267,10 +270,11 @@ PROVISIONAL: dict[str, str] = {
                        "미달합니다.' · 층별 머리줄 '계획서에서 보완이 필요한 항목:' · '프로토타입에서 보완이 필요한 항목:' 아래 "
                        "'- 이름 (점수/배점점): 사유' 줄 · 끝 줄 '제출 전 작성자 본인의 검토가 필요합니다.'",
     # 공고 연결 (공고 선택 · 자격 확인 G-01) — 기준 문서에 없음
-    "announcement.bonusEnabled": "가산점 사용 스위치 BONUS_ENABLED 기본 꺼짐 — 공고팀 가산점은 시험 단계(2026-10-06 답변: "
-                                 "화면에 쓰지 말 것). 꺼져 있으면 실제 T-C2는 추천 결과의 bonus_score · bonus_items를 "
-                                 "읽지도 검사하지도 않고, 스텁은 가산점을 만들지 않으며, 웹 카드(화면 3 · 결과 조회)는 저장된 "
-                                 "옛 실행 건까지 늘 bonusScore null · bonusItems []. 공고팀이 정리해 써도 된다고 하면 이 한 곳만 켠다",
+    "announcement.bonusEnabled": "가산점 사용 스위치 BONUS_ENABLED 켬(2026-10-19 공고팀 허용 — 2026-10-06에는 시험 단계라 "
+                                 "꺼 두었다). 실제 T-C2는 공고 서버가 원문 대조를 마친 공고(bonus_verified 참)의 "
+                                 "bonus_score · bonus_items만 읽고, 그 밖의 공고는 null · []로 둔다. 끄면 실제 T-C2는 "
+                                 "가산점을 읽지도 검사하지도 않고, 스텁은 가산점을 만들지 않으며, 웹 카드(화면 3 · 결과 조회)는 "
+                                 "저장된 옛 실행 건까지 늘 bonusScore null · bonusItems []",
     "announcement.formSpec": "선택 공고의 양식 필드(formSpec · evaluationItems) 자리 표시 값 — 기본 양식 1-1 · 2-1 · 3-3 "
                              "(자리 표시 값이고 뒷 단계가 읽지 않는 것은 기준 문서 시트 4 Announcement)",
     # 작업 분해 (T-C3, agents/form_defaults.py · agents/supervisor/plan.py) — 실행 건 설정값이 아니라 코드 표다
@@ -360,9 +364,32 @@ PROVISIONAL: dict[str, str] = {
     "waitProject.pollSec": "wait_project가 DB를 다시 읽는 간격 0.5초",
     # 산출물 파일 읽기 (flow/reads.py read_artifact_file)
     "fileRead.hashMismatch": "읽은 내용의 sha256 · 크기가 저장된 값과 다르면 FILE_NOT_FOUND로 보고 관리자용 사유는 남기지 않는다",
-    # 조립 (bootstrap.py · worker.py)
-    "artifactRoot.workerRequired": "SBRAIN_ARTIFACT_ROOT가 없거나 절대 경로가 아니면 워커가 시작하지 않는다 "
-                                   "(SBRAIN_DB_URL · OPENAI_API_KEY 없을 때와 같은 방식)",
+    # 조립 (bootstrap.py · worker.py · 0035)
+    "artifactRoot.workerRequired": "SBRAIN_ARTIFACT_ROOT가 없거나 절대 경로 · 형식이 맞는 S3 주소('s3://<버킷>[/<접두어>]')가 "
+                                   "아니면 워커가 시작하지 않는다 (SBRAIN_DB_URL · OPENAI_API_KEY 없을 때와 같은 방식, 종료 "
+                                   "코드 2)",
+    # S3 파일 저장소 (sbrain/store_s3/ · bootstrap.py · worker.py) — 워커 · 웹 프로세스 값이다. 리전을 읽는 순서는 AWS
+    # 관례, 리전 필수 · 시작 확인 범위 · 재시도 간격 · 출력 확인 재시도는 이라 여기 없다
+    "s3Store.clientTimeouts": "S3 클라이언트 시간 제한 — 연결 10초 · 읽기 60초(파일 하나 30MB 이하) (store_s3/client.py "
+                              "CONNECT_TIMEOUT_SEC · READ_TIMEOUT_SEC)",
+    "s3Store.libraryRetries": "AWS 라이브러리 자체 재시도 끔 — 첫 요청 포함 1번(total_max_attempts 1), 재시도 방식 standard "
+                              "고정(설정 파일 · 환경 변수가 바꾸지 못하게) — 재시도는 tools · 대기열 · 시작 확인 규칙대로 "
+                              "(store_s3/client.py TOTAL_MAX_ATTEMPTS · RETRY_MODE)",
+    "s3Store.connectionPool": "S3 클라이언트 연결 수는 라이브러리 기본값(10)을 그대로 쓴다 (store_s3/client.py client_config)",
+    "s3Store.temporaryErrorCodes": "일시로 보는 S3 오류 코드 목록 — 설치된 botocore 표준 재시도의 일시 · 속도 제한 코드와 같게 "
+                                   "(store_s3/errors.py TRANSIENT_ERROR_CODES · THROTTLING_ERROR_CODES)",
+    "s3Store.nameShapes": "버킷 이름 모양(소문자 · 숫자 · '.' · '-', 3 ~ 63자, 소문자 · 숫자로 시작 · 끝, '..' 없음)과 접두어 "
+                          "모양(마디는 영문 · 숫자 · '.' · '-' · '_', '.' · '..' · 빈 마디 금지, 정리한 접두어 200자 이하) "
+                          "(store_s3/address.py PREFIX_MAX_LEN)",
+    "s3Store.contentTypes": "내용 객체의 Content-Type은 넣을 때 정한 형식(mediaType), 메타 객체는 application/json(로컬 폴더 옆 "
+                            "파일과 같은 JSON) (store_s3/store.py META_CONTENT_TYPE)",
+    "s3Store.startupProbe": "워커 시작 확인의 시험 객체 이름 '<접두어>.probe/<고유값>' · 형식 text/plain (store_s3/probe.py "
+                            "PROBE_DIR · PROBE_CONTENT_TYPE)",
+    "s3Store.startupTemporaryExit": "시작 확인 일시 실패(연결 · 시간 초과 · 5xx · 속도 제한 · 자격 증명을 얻지 못함)면 워커 "
+                                    "종료 코드 1 — systemd가 다시 띄운다(영구 실패 · 설정 오류는 2) (sbrain/worker.py main)",
+    # 출력 파일 참조 확인 (orchestrator/tools.py · engine.py)
+    "fileCheck.purpose": "엔진의 출력 파일 참조 확인 호출(파일 호출 기록 call_type 'file')의 목적 이름 check — put · get 옆 값 "
+                         "(orchestrator/tools.py FILE_CHECK_PURPOSE)",
 }
 
 

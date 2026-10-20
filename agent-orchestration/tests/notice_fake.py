@@ -28,7 +28,7 @@ def result(nid: str, rank: int, /, **over) -> dict[str, Any]:
             "apply_end": "2026-10-31", "apply_period_type": "fixed", "url": f"https://notice.example.invalid/{rank}",
             "rank": rank, "display_type": "card", "fit_score": 0.8, "band": "적합", "region": "서울",
             "region_match": True, "content_version": f"v-{nid}", "bonus_score": 1.0,
-            "bonus_items": [{"name": "청년 창업자", "points": 1.0}]}
+            "bonus_items": [{"name": "청년 창업자", "points": 1.0}], "bonus_verified": True}
     base.update(over)
     return base
 

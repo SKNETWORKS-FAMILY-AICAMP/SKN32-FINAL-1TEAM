@@ -68,13 +68,14 @@ _PERSONAL_INFO_NOTICE_BY_TEMPLATE 참고.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import subprocess
 import tempfile
 import zipfile
 
-from app import hwpx_rows
+from app import hwpx_fit, hwpx_rows
 from app.plan_document_export import (
     DEFAULT_DISCLAIMER,
     BudgetLineItem,
@@ -85,6 +86,8 @@ from app.plan_document_export import (
     body_line,
     split_budget_by_phase,
 )
+
+logger = logging.getLogger(__name__)
 
 RHWP_BIN = os.environ.get('RHWP_BIN') or 'rhwp'
 
@@ -565,7 +568,7 @@ _PICTURE_X = (_A4_WIDTH - _PICTURE_WIDTH) // 2   # 가운데
 _PICTURE_TOP = 8504                              # 위 여백(3cm)
 _PICTURE_GAP = 2000
 _A4_HEIGHT = 84186
-_INFOGRAPHIC_MAX_HEIGHT = _A4_HEIGHT - 2 * _PICTURE_TOP   # 인포그래픽은 한 쪽에 한 장 — 세로가 쪽 높이를 넘으면 비율을 지켜 줄인다
+_INFOGRAPHIC_MAX_HEIGHT = _A4_HEIGHT - 2 * _PICTURE_TOP - hwpx_fit.ATTACHMENT_SHIFT   # 별첨 문구가 들어가도록 그림을 내리는 만큼도 뺀다 — 인포그래픽은 한 쪽에 한 장 — 세로가 쪽 높이를 넘으면 비율을 지켜 줄인다
 
 
 def _append_picture_pages(current_output: str, groups: list, new_tmp) -> str:
@@ -672,6 +675,25 @@ def _append_diagram_page(current_output: str, pictures: list, new_tmp, max_heigh
     return _append_picture_pages(current_output, [(pictures, max_height)], new_tmp)
 
 
+def _fit_layout(current_output: str, labels: list[str], new_tmp) -> str:
+    """서체 · 글자 크기를 통일하고 개요 표가 한 쪽 안에 들어가게 줄이며 별첨 문구를 넣는다(hwpx_fit). .hwpx로 내보내 고친 뒤 다시 .hwp로 바꾼다.
+    그림이 붙은 뒤(맨 끝)에 한다 — 그림 쪽 맨 위 문구가 그림 문단에 매달리기 때문이다. 실패해도 문서 내려받기를 막지 않도록 고치기 전 파일을 그대로 쓴다."""
+    hwpx_path = new_tmp('.hwpx')
+    _run_rhwp(['export-hwpx', current_output, hwpx_path])
+    with zipfile.ZipFile(hwpx_path) as z:
+        names = z.namelist()
+        data_files = {name: z.read(name) for name in names}
+    try:
+        section, header = hwpx_fit.fit_document(data_files['Contents/section0.xml'].decode('utf-8'),
+                                                data_files['Contents/header.xml'].decode('utf-8'), labels)
+    except (ValueError, KeyError, AttributeError, IndexError, StopIteration):
+        logger.exception('hwp 한 쪽 맞춤에 실패해 고치기 전 파일을 그대로 쓴다')
+        return current_output
+    data_files['Contents/section0.xml'] = section.encode('utf-8')
+    data_files['Contents/header.xml'] = header.encode('utf-8')
+    return _convert_hwpx(data_files, names, new_tmp)
+
+
 def render_plan_hwp(data: PlanDocumentData, template: str) -> bytes:
     """실제 .hwp 바이트를 만들어 돌려준다. 템플릿 파일이 없거나 이 template 유형용
     좌표 매핑이 아직 없으면 FileNotFoundError를, rhwp가 실패하면 RuntimeError를 낸다
@@ -747,6 +769,8 @@ def render_plan_hwp(data: PlanDocumentData, template: str) -> bytes:
             [([data.인포그래픽], _INFOGRAPHIC_MAX_HEIGHT)] if data.인포그래픽 is not None else [])
         if picture_pages:
             current_output = _append_picture_pages(current_output, picture_pages, _new_tmp)
+        labels = (['<별첨> 서비스 흐름도 · 서비스 구조도'] if data.그림 else []) + (['<별첨> 인포그래픽'] if data.인포그래픽 is not None else [])
+        current_output = _fit_layout(current_output, labels, _new_tmp)
 
         with open(current_output, 'rb') as f:
             return f.read()

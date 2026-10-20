@@ -20,6 +20,9 @@
 - 파일(확장): 엔진은 파일 저장소를 받아(선택) Task의 tools.files와 파일을 쓰는 규칙 단계(writes_files)의 파일 창구에
   넘긴다. 출력을 저장하기 전에 출력 안의 모든 FileRef(중첩 모델 · 목록 · 사전 포함)를 저장소와 대조한다 — 키 첫 마디가 이 실행
   건, 저장소에 있음, 형식 · 크기 · sha256 · 이름이 같음. 어기면 규격 위반(ContractError)이고 메시지에는 수와 규칙 종류만 적는다.
+  저장소 조회는 파일 호출과 같은 재시도 · 기록(tools._call — 목적 check, 참조 하나에 호출 하나)을 거친다: 일시 오류를
+  다 쓰면 재시도 소진('일시') → 재개, 영구 오류면 재시도 소진('운영') → 실행 실패. 둘 다 단계 오류 처리('계속' 포함)로 가지 않는다.
+  확인 호출 기록은 그 실행 기록의 것이다(저장 묶음 · after_execution의 호출 목록). 엔진은 저장소 종류를 모른다 — 예외 종류로만 가른다.
 - 운영 로그 줄(runlog, 로거 sbrain.run): 실행 기록마다 단계시작 · 단계끝, 실행 건의 대기 · 실행끝 · 재개예약. 단계 ID와 실행 건 ·
   실행 기록 값만 쓴다. 처리기는 워커만 단다 — 그 밖에서는 아무것도 나가지 않는다. 단계끝 · 재개예약의 errorCode(확장)는 엔진이
   그 실행에서 받은 재시도 소진(ToolCallExhausted.code)의 오류 코드다 — 실행 기록 ID로 잠시 들고 있고 모델 칸은 없다.
@@ -406,7 +409,8 @@ class Engine:
         return rec
 
     def _invoke(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, rs: RedoState) -> dict[str, Any]:
-        # 이 실행 기록의 호출 — 입력을 만들며 부른 호출(지시문 다시 쓰기 등)과 Task 함수의 호출. 성공 · 실패 모두 모은다
+        # 이 실행 기록의 호출 — 입력을 만들며 부른 호출(지시문 다시 쓰기 등), Task 함수의 호출, 출력 파일 참조 확인의 호출(check).
+        # 성공 · 실패 모두 모은다 — finally 하나가 입력 모으기부터 출력 저장(확인 포함)까지 감싼다
         sink = CallSink()
         calls: list[CallLog] = []
         try:
@@ -428,21 +432,24 @@ class Engine:
                 out = spec.fn(model_in, self.make_tools(ctx, spec, rec, self._plain_tools_config(ctx, spec), sink).files)
             else:
                 out = spec.fn(model_in)
+            outputs = self.store_outputs(ctx, spec, rec, out, sink=sink)   # 확인 호출도 이 실행 기록의 sink에
         finally:
             calls = self.collect_calls(ctx, rec, sink)
-        outputs = self.store_outputs(ctx, spec, rec, out)
         hook = getattr(self.flow, "after_execution", None)   # 선택 확장 지점 — 이 실행 기록과 같은 저장 묶음
         if hook is not None:
             hook(ctx, spec, rec, calls)
         return outputs
 
-    def store_outputs(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, out: Any) -> dict[str, Any]:
+    def store_outputs(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, out: Any, *,
+                      sink: CallSink | None = None) -> dict[str, Any]:
+        """출력을 모델로 검사하고 파일 참조를 확인(check_file_refs)한 뒤 저장 묶음에 넣는다. sink는 확인 호출 기록을 남길 곳이다 —
+        주지 않으면 확인 호출 기록을 rec의 저장 묶음으로 바로 옮긴다(check_file_refs와 같다)."""
         if not isinstance(out, spec.output_model):
             try:
                 out = spec.output_model.model_validate(out)
             except ValidationError as e:
                 raise ContractError(f"{spec.task_id} 출력 규격 불일치: {e.error_count()}건") from None
-        self.check_file_refs(ctx, spec, out)
+        self.check_file_refs(ctx, spec, out, rec, sink=sink)
         outputs = {name: getattr(out, name) for name in spec.output_model.model_fields}
         out_refs = []
         for fname, key in spec.outputs.items():
@@ -461,26 +468,45 @@ class Engine:
         ctx.record_attempt(rec)
         return outputs
 
-    def check_file_refs(self, ctx: RunContext, spec: TaskSpec, out: Any) -> None:
+    def check_file_refs(self, ctx: RunContext, spec: TaskSpec, out: Any, rec: ExecutionRecord, *,
+                        sink: CallSink | None = None) -> None:
         """출력 안의 모든 FileRef를 저장소와 대조한다. 하나라도 어기면 ContractError — 메시지에는 어긴 참조 수와
-        규칙 종류만 적는다(키 · 이름 없음). 같은 실행 건의 앞 실행 기록이 만든 참조를 그대로 넘기는 것은 된다."""
+        규칙 종류만 적는다(키 · 이름 없음). 같은 실행 건의 앞 실행 기록이 만든 참조를 그대로 넘기는 것은 된다.
+
+        저장소 메타데이터 조회는 참조 하나마다 파일 호출 하나(목적 check)로, 파일 호출과 같은 재시도 규칙을 거친다
+        (tools._call 한 곳 — 엔진이 따로 기다리거나 다시 부르지 않는다). 설정은 LLM을 부르지 않는 단계와 같다(task_timeouts ·
+        재시도, Task 설정 표를 보지 않음). 일시 오류를 다 쓰면 ToolCallExhausted('일시') → 재개할 수 있는 단계면 재개 대기,
+        영구 오류(권한 없음 등)면 ToolCallExhausted('운영') → 실행 실패다 — 둘 다 단계 오류 처리(on_step_error '계속')로 가지
+        않는다. 다른 실행 건 참조 · 저장소 없음은 저장소를 부르지 않는다(호출 없음).
+
+        호출 기록은 rec(이 실행 기록)의 것이다. sink를 주면 거기에 남기고 모으기는 부르는 쪽이 한다(_invoke는 finally에서 모아
+        after_execution에도 넘긴다). 주지 않으면 끝에서 rec의 저장 묶음으로 옮긴다(collect_calls — store_outputs를 거치지 않는
+        전용 실행이 직접 부를 때 — check_file_refs(ctx, spec, out, rec))."""
         refs: list[FileRef] = []
         _collect_file_refs(out, refs)
         if not refs:
             return
+        own = sink is None
+        calls = CallSink() if sink is None else sink
+        tools = self.make_tools(ctx, spec, rec, self._plain_tools_config(ctx, spec), calls)
         problems: list[str] = []
-        for ref in refs:
-            if ref.run_id != ctx.run.run_id:
-                problems.append("다른 실행 건")
-                continue
-            if self.files is None:
-                problems.append("파일 저장소 없음")
-                continue
-            meta = self.files.meta(ref.key)
-            if meta is None:
-                problems.append("없는 파일")
-            elif (meta.name, meta.media_type, meta.size, meta.sha256) != (ref.name, ref.media_type, ref.size, ref.sha256):
-                problems.append("저장 값과 다름")
+        try:
+            for ref in refs:
+                if ref.run_id != ctx.run.run_id:
+                    problems.append("다른 실행 건")
+                    continue
+                if self.files is None:
+                    problems.append("파일 저장소 없음")
+                    continue
+                meta = tools._stored_file_meta(self.files, ref.key)
+                if meta is None:
+                    problems.append("없는 파일")
+                elif ((meta.name, meta.media_type, meta.size, meta.sha256)
+                      != (ref.name, ref.media_type, ref.size, ref.sha256)):
+                    problems.append("저장 값과 다름")
+        finally:
+            if own:
+                self.collect_calls(ctx, rec, calls)
         if problems:
             kinds = sorted(set(problems))
             raise ContractError(f"{spec.task_id} 출력 파일 참조 위반: {len(problems)}건 ({', '.join(kinds)})")

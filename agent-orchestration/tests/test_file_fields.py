@@ -150,7 +150,8 @@ def test_g04_puts_readme_through_file_window_in_its_own_record(clock):
     rid = to_screen8(app)
     [g04] = records_of_task(app, rid, "G-04")
     logs = [x for x in app.store.call_logs(rid) if x.execution_id == g04.execution_id]
-    assert [(x.call_type, x.purpose, x.final_outcome) for x in logs] == [("file", "put", "성공")]
+    assert [(x.call_type, x.purpose, x.final_outcome) for x in logs] == [("file", "put", "성공"),
+                                                                         ("file", "check", "성공")]   # 엔진의 출력 확인
     readme = ctx_of(app, rid).get("readmeFile")
     assert check_stored(app, rid, readme).decode().startswith("# 실행 · 열람 안내")
     # 호출 기록에 파일 이름 · 키 · 내용이 없다

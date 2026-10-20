@@ -2,7 +2,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {buildZip,downloadPlanDocx,downloadPrototypeZip,triggerDownload} from '../../dummyDeliverables.js';
 import {downloadDeliverableZip,downloadPlanDocument,downloadPlanHwp,fetchUploadBlob} from '../../api.js';
-import {buildCodeCheckItems,buildGeneralInfo,buildOverview,deliverableNoticesFrom,detectItemCategory,DOC_SCORE_BY_OUTCOME,prototypeFilesOf,scoreInt,shortfallFrom} from './utils.js';
+import {buildCodeCheckItems,buildGeneralInfo,buildOverview,deliverableNoticesFrom,detectItemCategory,DOC_SCORE_BY_OUTCOME,projectNameOf,prototypeFilesOf,scoreInt,shortfallFrom} from './utils.js';
 import {printVerificationReport} from './verificationReport.js';
 import {ARTIFACT_SCORE_BY_OUTCOME,DOWNLOAD_FILES,FINAL_THRESHOLD,PLAN_DOCUMENT_SECTIONS_REWORKED} from './data.js';
 
@@ -132,7 +132,7 @@ export function ReviewScreen({ announcement, itemInfo, docOutcome = 'fail', arti
       // ArtifactResult.jsx와 같은 이유 — 서버가 정한 artifact.category를 우선 쓴다.
       const category = plan?.artifacts?.[0]?.category || detectItemCategory(itemInfo?.item);
       printVerificationReport({
-        projectName: itemInfo?.item,
+        projectName: projectNameOf(itemInfo?.item),
         announcementTitle: itemTitle,
         category,
         docScore,

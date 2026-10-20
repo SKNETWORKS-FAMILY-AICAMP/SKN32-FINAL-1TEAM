@@ -1,12 +1,14 @@
 """파일 저장소 (확장) — 산출물 파일(실행 HTML · 원페이지 SVG · 그림 · 안내 문서 · 계획서 파일)을 두는 곳.
 
-- 저장소 창구(FileStore)는 쓰기 · 읽기 · 메타데이터 보기 · 접두어째 지우기 넷이다. 구현은 메모리(테스트 · 스텁 조립)와
-  로컬 폴더 둘이다. 운영은 S3 예정이고 같은 창구에 나중에 끼운다.
+- 저장소 창구(FileStore)는 쓰기 · 읽기 · 메타데이터 보기 · 접두어째 지우기 넷이다. 여기 있는 구현은 메모리(테스트 · 스텁
+  조립)와 로컬 폴더 둘이다. 운영용 S3 구현은 같은 창구로 sbrain/store_s3/에 있다 — 엔진은 S3를 모르고 예외
+  종류로만 가른다: 일시 오류는 ConnectionError 계열(시간 초과는 TimeoutError 계열), 영구 오류는 errors.ProviderError(status, code).
 - 키는 models.files의 키 규칙을 따른다('<runId>/<executionId>/<고유값>/<name>'). 저장소도 키 규칙을 다시 검사한다 —
   로컬 폴더 밖으로 나가는 키를 막는다.
 - 쓰기는 불변이다: 같은 키에 같은 내용(메타데이터가 같음)이면 성공(재시도 안전), 다른 내용이면 FileConflict.
 - 없는 키 읽기는 FileMissing(LookupError — OSError가 아니다: tools가 일시 오류로 재시도하지 않게).
-  디스크 오류(OSError)는 그대로 올린다 — tools가 일시 오류로 재시도한다.
+  디스크 오류(OSError)는 그대로 올린다 — tools가 일시 오류로 재시도한다. 재시도 간격은 tools가 예외 종류로 정한다:
+  연결 오류 · 시간 초과(ConnectionError · TimeoutError 계열)는 늘리는 간격, 그 밖의 OSError(로컬 디스크 오류)는 2초 고정.
 - 접두어째 지우기는 여러 번 해도 안전하다(이미 없으면 성공). 파일 삭제는 워커만 한다.
 - 오류 메시지에 키 · 이름 · 경로 · 내용을 넣지 않는다.
 - Task 함수는 이 저장소에 직접 닿지 않는다 — tools.files(넣기 · 읽기)로만 쓴다.
@@ -24,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Protocol
 
-from ..models.files import file_key_problem, file_name_problem
+from ..models.files import file_key_problem, file_prefix_problem
 
 
 @dataclass(frozen=True)
@@ -89,15 +91,11 @@ def _check_key(key: str) -> None:
 
 
 def _prefix_parts(prefix: str) -> list[str]:
-    """접두어('<runId>/' 또는 '<runId>/<executionId>/')를 마디로 나눈다. 마디마다 이름 규칙을 지켜야 한다."""
-    if not isinstance(prefix, str):
-        raise ValueError("접두어 규칙 위반 — 글자가 아님")
-    parts = (prefix[:-1] if prefix.endswith("/") else prefix).split("/")
-    for seg in parts:
-        problem = file_name_problem(seg)
-        if problem is not None:
-            raise ValueError(f"접두어 규칙 위반 — {problem}")
-    return parts
+    """접두어('<runId>/' 또는 '<runId>/<executionId>/')를 마디로 나눈다. 규칙은 models.files.file_prefix_problem 한 곳이다."""
+    problem = file_prefix_problem(prefix)
+    if problem is not None:
+        raise ValueError(f"접두어 규칙 위반 — {problem}")
+    return (prefix[:-1] if prefix.endswith("/") else prefix).split("/")
 
 
 class MemoryFileStore:

@@ -29,6 +29,8 @@ os.environ.setdefault('DB_BACKEND', 'sqlite')
 os.environ.setdefault('SQLITE_PATH', _TEST_DB_PATH)
 os.environ.setdefault('GOOGLE_CLIENT_ID', 'pytest-dummy-client-id')
 os.environ.setdefault('JWT_SECRET', 'pytest-dummy-secret-not-for-production')
+# TestClient는 http://testserver로 요청하므로 Secure 쿠키를 다시 실어 보내지 않는다 — 테스트에서는 끈다(app/security.py COOKIE_SECURE)
+os.environ.setdefault('COOKIE_SECURE', '0')
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

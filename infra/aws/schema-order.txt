@@ -1,0 +1,21 @@
+# DB 세팅 때 이 순서대로 한 번씩 적용하는 SQL 파일 (저장소 루트 기준 경로)
+#
+# - 이미 적용한 파일은 다시 적용하지 않는다. DB 안 infra_schema_history 표에 기록이 남는다.
+# - 이미 적용한 파일의 내용이 나중에 바뀌면 경고만 낸다. 바뀐 부분은 변경 SQL 파일을 새로 만들어 맨 아래에 추가한다.
+# - web/backend/catch_up_local_schema.sql 은 각자 로컬 DB 전용이라 넣지 않는다.
+
+# 공고 수집 (data-collection) — 기본 표 다음에 변경 002~008
+data-collection/db/mysql_schema.sql
+data-collection/db/mysql_migration_002_embedding.sql
+data-collection/db/mysql_migration_003_attachment_files.sql
+data-collection/db/mysql_migration_004_notice_conditions.sql
+data-collection/db/mysql_migration_005_amount_rejected.sql
+data-collection/db/mysql_migration_006_notice_judgments.sql
+data-collection/db/mysql_migration_007_notice_bonus.sql
+data-collection/db/mysql_migration_008_notice_bonus_content_version.sql
+
+# 웹 서비스 — notices(notice_id) 를 참조하므로 공고 표 다음
+web/backend/app_schema.sql
+
+# 조율 에이전트 — projects(project_id) 를 참조하므로 웹 표 다음
+agent-orchestration/sql/orchestrator_schema.sql

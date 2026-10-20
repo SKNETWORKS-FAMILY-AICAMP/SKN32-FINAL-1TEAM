@@ -16,9 +16,14 @@
 - 종료 신호(SIGINT · SIGTERM)를 받으면 새 일을 가져가지 않고, 하던 단계를 끝낸 뒤 점유를 풀고 끝난다.
   남은 단계는 '실행'으로 남아 다른 워커가 이어받는다.
 - 단계 밖 오류(DB 오류 등)는 기록하고, 그 실행 건의 점유를 다시 잡아 두어 점유 시간 뒤에 다시 시도하게 한다 (잠정).
-- 설정: SBRAIN_DB_URL(필수), OPENAI_API_KEY(필수), SBRAIN_ARTIFACT_ROOT(필수, 확장 — 파일 저장소 폴더의 절대 경로.
-  없거나 상대 경로면 시작하지 않는다. 폴더가 없으면 만든다), SBRAIN_WORKER_POLL_SEC · SBRAIN_WORKER_THREADS ·
-  SBRAIN_WORKER_LEASE_SEC(선택). 모두 환경 변수 → agent-orchestration/.env 순서로 읽는다.
+- 설정: SBRAIN_DB_URL(필수), OPENAI_API_KEY(필수), SBRAIN_ARTIFACT_ROOT(필수, 확장 — 파일 저장소 폴더의 절대 경로 또는
+  's3://<버킷>[/<접두어>]'. 없거나 상대 경로 · S3 주소 형식이 틀리면 시작하지 않는다. 폴더가 없으면 만든다. S3면
+  AWS_REGION(없으면 AWS_DEFAULT_REGION)이 필수이고 조립할 때 시작 확인을 한 번 한다 — --once도 지난다),
+  SBRAIN_WORKER_POLL_SEC · SBRAIN_WORKER_THREADS · SBRAIN_WORKER_LEASE_SEC(선택). 모두 환경 변수 → agent-orchestration/.env 순서로 읽는다.
+- 종료 코드: 0 정상, 2 설정 없음 · 설정 오류(다시 띄워도 같음 — systemd RestartPreventExitStatus=2: 값 없음 · 상대 경로 · S3
+  주소 형식 오류 · 리전 없음 · 폴더를 만들지 못함 · S3 시작 확인 영구 실패 · S3 클라이언트를 만들지 못함 · AWS 라이브러리 없음),
+  1 S3 시작 확인 일시 실패(연결 · 시간 초과 · 5xx · 속도 제한 · 자격 증명을 얻지 못함 — systemd가 다시 띄운다, 잠정). 메시지에는
+  종류 · 상태 · 오류 코드만 — 경로 · 버킷 · 접두어 · 리전 값을 싣지 않는다.
 - 로그는 표준 출력에 한 줄씩 — 가져간 일과 끝난 상태, 엔진 · 흐름의 단계 · 실행 건 줄(로거 sbrain.run — 단계시작 · 단계끝 ·
   대기 · 실행끝 · 재개예약). 프롬프트 · 응답 내용은 남기지 않는다. 줄 앞의 시각은 UTC다(끝의 Z — 예: 2026-09-26 09:00:05Z).
   SBRAIN_WORKER_LOG_DIR(선택)을 넣으면 같은 줄을 그 폴더의 날짜 · 순번 파일에도 쓴다. SBRAIN_WORKER_LOG_KEEP_DAYS(선택)는
@@ -285,22 +290,26 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     sys.stdout.reconfigure(errors="replace")
     sys.stderr.reconfigure(errors="replace")
-    from .bootstrap import ARTIFACT_ROOT_ENV, artifact_root_problem, build_app
+    from .bootstrap import ARTIFACT_ROOT_ENV, ROOT_MISSING, ROOT_NOT_ABSOLUTE, artifact_root_problem, build_app
+    from .store_s3.probe import S3StartupCheckFailed   # AWS 라이브러리를 불러오지 않는다
     root_problem = artifact_root_problem(get_env(ARTIFACT_ROOT_ENV))
     missing = [k for k in ("SBRAIN_DB_URL", "OPENAI_API_KEY") if not get_env(k)]
-    if root_problem == "없음":
+    if root_problem == ROOT_MISSING:
         missing.append(ARTIFACT_ROOT_ENV)
     if missing:
         print(f"설정 없음: {', '.join(missing)} — 환경 변수 또는 agent-orchestration/.env에 넣는다 (.env.example 참고)",
               file=sys.stderr)
         return 2
-    if root_problem is not None:   # 상대 경로 — 값 없음과 같게 시작하지 않는다. 경로 값은 싣지 않는다
-        print(f"설정 오류: {ARTIFACT_ROOT_ENV}가 {root_problem} — 웹과 모든 워커가 같은 폴더를 보도록 절대 경로를 넣는다",
-              file=sys.stderr)
+    if root_problem == ROOT_NOT_ABSOLUTE:   # 상대 경로 — 값 없음과 같게 시작하지 않는다. 경로 값은 싣지 않는다
+        print(f"설정 오류: {ARTIFACT_ROOT_ENV}가 {root_problem} — 웹과 모든 워커가 같은 곳을 보도록 절대 경로 또는 "
+              "소문자 's3://<버킷>[/<접두어>]'를 넣는다", file=sys.stderr)
         return 2
     try:
         app = build_app()
-    except RuntimeError as e:   # 파일 저장소 폴더를 만들지 못함 등 — 메시지에 경로 값이 없다
+    except S3StartupCheckFailed as e:   # S3 시작 확인 실패 — 메시지는 시작 확인이 만든 그대로(종류 · 상태 · 오류 코드만)
+        print(str(e), file=sys.stderr)
+        return 2 if e.permanent else 1   # 일시면 1 — 다시 시도하지 않고 끝내 systemd가 다시 띄운다
+    except RuntimeError as e:   # S3 주소 형식 오류 · 리전 없음 · 폴더 · S3 저장소를 만들지 못함 등 — 메시지에 값이 없다
         print(f"설정 오류: {e}", file=sys.stderr)
         return 2
     worker = Worker(app, WorkerConfig.from_env())

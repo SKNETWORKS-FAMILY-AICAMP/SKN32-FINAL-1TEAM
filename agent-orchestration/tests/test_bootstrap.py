@@ -4,10 +4,16 @@
 - 다시 쓰기 함수는 워커 조립에만 붙는다. 웹 조립은 사전 단계 · 공고 서버 · 이미지 호출을 하지 않는다.
 - 공고 서버 주소(SBRAIN_NOTICE_API_URL)가 있으면 실제 T-C2 · G-01, 없거나 빈 값이면 스텁. 가짜 전송만 쓴다(네트워크 없음).
 - 이미지 호출처: 구현 Task만 실제로, 키 없이 조립해도 실제 클라이언트를 만들지 않는다.
+- 파일 저장소: 로컬 폴더 값으로 워커 · 웹을 조립하면 AWS 라이브러리를 불러오지 않는다(S3 값 조립 · 실행 입구는
+  test_file_access.py · test_worker.py).
 """
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
+import textwrap
+from pathlib import Path
 
 import openai
 import pytest
@@ -368,6 +374,35 @@ def test_assemblies(tmp_path):
     assert isinstance(router, TaskRoutedImageProvider) and router.real is real and router.fake is worker.image
     web = build_web(url, profile_count=lambda a: 1, project_inputs=MemoryProjectInputSource())
     assert web.engine.image_providers == {}                               # 웹은 이미지 호출처를 두지 않는다
+
+
+def test_local_root_assemblies_do_not_load_aws_library(tmp_path):
+    """로컬 폴더 값으로 워커 · 웹을 조립하고 워커 모듈을 불러와도 AWS 라이브러리(boto3 · botocore)를 불러오지 않는다 —
+    S3 저장소를 만들 때만 불러온다. 이 프로세스는 가짜 S3가 이미 불러와 두었으므로 새 프로세스에서 본다."""
+    code = textwrap.dedent("""
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, sys.argv[1])
+        import sbrain.worker
+        from sbrain.agents.stubs import FakeImage, FakeLLM
+        from sbrain.bootstrap import artifact_root_problem, build_app, build_web
+        from sbrain.intake import MemoryProjectInputSource
+        from sbrain.store_sql import create_orchestrator_tables, create_sqlite_engine
+        db, root = Path(sys.argv[2]), sys.argv[3]
+        create_orchestrator_tables(create_sqlite_engine(db))
+        url = "sqlite:///" + db.as_posix()
+        assert artifact_root_problem("s3://sbrain-bucket/app") is None
+        app = build_app(url, project_inputs=MemoryProjectInputSource(), llm=FakeLLM(), image=FakeImage(),
+                        artifact_root=root, notice_api_url="", kiet_search=False)
+        web = build_web(url, profile_count=lambda a: 1, project_inputs=MemoryProjectInputSource(), artifact_root=root)
+        print(type(app.engine.files).__name__, type(web.orchestrator.files).__name__,
+              sorted(m for m in sys.modules if m.split(".")[0] in ("boto3", "botocore", "s3transfer")))
+    """)
+    code_dir = Path(__file__).resolve().parent.parent
+    out = subprocess.run([sys.executable, "-c", code, str(code_dir), str(tmp_path / "w.db"), str(tmp_path / "artifacts")],
+                         capture_output=True, text=True, timeout=120, cwd=str(code_dir))
+    assert out.returncode == 0, out.stderr[-2000:]
+    assert out.stdout.strip() == "LocalFolderFileStore LocalFolderFileStore []"
 
 
 def test_worker_default_image_adapter_does_not_build_client_at_assembly(tmp_path, monkeypatch):

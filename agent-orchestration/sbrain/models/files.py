@@ -14,7 +14,7 @@ from pydantic import ConfigDict, field_validator, model_validator
 from .base import SBModel
 
 __all__ = ["ALLOWED_MEDIA_TYPES", "MAX_FILE_BYTES", "MAX_NAME_LEN", "FileRef", "file_key_problem",
-           "file_name_problem", "media_type_problem", "size_problem"]
+           "file_name_problem", "file_prefix_problem", "media_type_problem", "size_problem"]
 
 # 허용 형식 — 바꾸려면 이 목록에 더한다
 ALLOWED_MEDIA_TYPES: frozenset[str] = frozenset({
@@ -71,6 +71,18 @@ def file_key_problem(key: str) -> str | None:
         problem = _segment_problem(seg)
         if problem is not None:
             return f"키 마디 — {problem}"
+    return None
+
+
+def file_prefix_problem(prefix: str) -> str | None:
+    """접두어째 지우기의 접두어 규칙 — '<runId>/' 또는 '<runId>/<executionId>/'처럼 끝의 '/' 하나를 뗀 뒤 '/'로 나눈 마디마다
+    이름 규칙을 지킨다. 저장소(메모리 · 로컬 폴더 · S3)가 모두 이 규칙 하나를 쓴다. 어기면 규칙 종류(접두어 없음), 맞으면 None."""
+    if not isinstance(prefix, str):
+        return "글자가 아님"
+    for seg in (prefix[:-1] if prefix.endswith("/") else prefix).split("/"):
+        problem = _segment_problem(seg)
+        if problem is not None:
+            return problem
     return None
 
 

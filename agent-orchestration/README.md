@@ -88,7 +88,8 @@ Orchestrator는 **7개 Agent를 같은 방식으로 등록하고 호출하는 �
 - **진행 상태의 원본은 Orchestrator**입니다. 웹 `projects`에는 쓰지 않고, 웹은 함수로 읽습니다. Orchestrator가 쓰는 웹 테이블은 알림(`notifications`) · 관리자 실패 알림(`generation_failure_alerts`) INSERT 둘뿐입니다. 결과 통합이 끝난 알림 '결과물'은 웹 `notifications.kind` ENUM에 있어야 운영 DB에 저장됩니다(웹 마이그레이션 006) — 웹 스키마 변경 뒤 새 워커를 띄웁니다.
 - **실행 로그 12개월 처리**(`flow/retention.py`): 워커가 하루 한 번(여러 대 중 한 대만 — 작업 상태 표 `orch_jobs`), 마지막 활동이 12개월보다 오래된 실행 건의 기록(실행 · 호출 기록 등 여섯 가지)과 끝난 시작 요청을 **식별자 없는 통계 줄**(`orch_log_stats`, 계산은 `flow/log_stats.py`)로 옮기고 지웁니다. 살아 있는 실행 건은 실행 건 줄 · 산출물을 남겨 화면 · 이어 쓰기가 그대로이고, 완전 삭제된 실행 건(포인터 0개)은 줄까지 지웁니다. 관리자 실행 건 목록 · 운영 요약은 최근 12개월만 셉니다.
 - **탈퇴 함수** `delete_account_data(account_id)`(확장): 웹이 프로젝트마다 중단 · 완전 삭제를 마친 뒤 부르면, 그 계정의 실행 건 · 산출물 · 기록 · 시작 요청을 통계 줄(까닭 '탈퇴')로 옮긴 뒤 바로 모두 지웁니다. 처리 중인 일이 있으면 아무것도 지우지 않고 `BUSY`입니다.
-- **산출물 파일은 참조형**입니다. 실행 HTML · 원페이지 SVG · 인포그래픽 그림 · 계획서 그림 · 실행 안내 문서는 DB가 아니라 파일 저장소(`orchestrator/files.py` — 지금 로컬 폴더 `SBRAIN_ARTIFACT_ROOT`, 테스트 · 스텁 조립은 메모리, 운영은 S3 예정)에 두고, 계약 칸에는 파일 참조 `FileRef`(`key` · `name` · `mediaType` · `size` · `sha256`, `models/files.py`)만 싣습니다. Task는 `tools.files.put` · `get`으로만 파일을 넣고 읽고, 엔진이 저장 전에 출력 안의 참조를 저장소와 대조합니다. 허용 형식은 8종(HTML · SVG · PNG · 마크다운 · 워드 · 한글 hwp · hwpx · JSON), 파일 하나는 30MB 이하입니다. 웹은 `read_artifact_file`로 파일을 읽기만 하고, 파일 삭제는 워커가 파일 삭제 대기열(`orch_file_deletions`)로 합니다 — 완전 삭제 · 탈퇴 · 12개월 정리 때 DB를 먼저 지우고 10분(잠정) 뒤부터 지우며, 3번 실패하면 포기로 표시해 관리자 함수로 다시 겁니다.
+- **산출물 파일은 참조형**입니다. 실행 HTML · 원페이지 SVG · 인포그래픽 그림 · 계획서 그림 · 실행 안내 문서는 DB가 아니라 파일 저장소(창구 `orchestrator/files.py` — `SBRAIN_ARTIFACT_ROOT` 값 하나로 로컬 폴더(절대 경로) 또는 S3(`s3://<버킷>[/<접두어>]`, 구현 `store_s3/`), 테스트 · 스텁 조립은 메모리)에 두고, 계약 칸에는 파일 참조 `FileRef`(`key` · `name` · `mediaType` · `size` · `sha256`, `models/files.py`)만 싣습니다. Task는 `tools.files.put` · `get`으로만 파일을 넣고 읽고, 엔진이 저장 전에 출력 안의 참조를 저장소와 대조합니다. 허용 형식은 8종(HTML · SVG · PNG · 마크다운 · 워드 · 한글 hwp · hwpx · JSON), 파일 하나는 30MB 이하입니다. 웹은 `read_artifact_file`로 파일을 읽기만 하고, 파일 삭제는 워커가 파일 삭제 대기열(`orch_file_deletions`)로 합니다 — 완전 삭제 · 탈퇴 · 12개월 정리 때 DB를 먼저 지우고 10분(잠정) 뒤부터 지우며, 3번 실패하면 포기로 표시해 관리자 함수로 다시 겁니다.
+- **S3 파일 저장소**(`store_s3/`): `SBRAIN_ARTIFACT_ROOT`가 `s3://<버킷>` · `s3://<버킷>/<접두어>`면 버킷 안 그 접두어 아래에 파일을 둡니다. 리전 `AWS_REGION`(없으면 `AWS_DEFAULT_REGION`)이 필요하고, 자격 증명은 AWS 기본 순서(EC2에서는 서버 IAM 역할)입니다 — 우리 코드는 AWS 키를 읽지 않고 `.env`에 넣지 않습니다. 워커는 시작할 때 시험 객체로 없는 객체 읽기 · 쓰기 · 읽기 · 지우기를 한 번 확인하고(설정 오류 · 영구 실패는 종료 코드 2, 일시 실패는 1), 웹은 확인 없이 읽기 전용으로 엽니다. 파일 호출의 연결 오류 · 시간 초과는 늘리는 간격으로 다시 보내고, 엔진의 출력 파일 확인도 참조마다 파일 호출(`check`)로 재시도 · 기록합니다. AWS 라이브러리(`boto3` · `botocore`)는 S3 저장소를 만들 때만 불러옵니다. 서명 URL은 아직 없습니다.
 - **시각**: 프로세스 안의 시각은 모두 시간대 있는 UTC(`models/clock.py`의 `utc_now()`)이고, 웹에 돌려주는 시각에도 시간대 표시가 붙습니다. DB 시각 칸에는 시간대 없는 UTC가 들어갑니다. 자격 판정 기준일 · 마감 안내처럼 '오늘'이 필요한 판단은 한국 날짜입니다. 시작 요청이 끝나면 입력 사본(`form_json`)을 바로 비웁니다.
 
 ---
@@ -176,7 +177,8 @@ copy .env.example .env     # macOS / Linux: cp .env.example .env
 |---|---|
 | `OPENAI_API_KEY` | OpenAI 호출처 `OpenAIProvider` (8.4). 워커 필수 |
 | `SBRAIN_DB_URL` | 공유 MySQL 접속 URL — 워커 · 웹 조립(`build_web`) 필수 |
-| `SBRAIN_ARTIFACT_ROOT` | 산출물 파일 저장소 폴더의 **절대 경로**(기본값 없음) — 워커 필수(없거나 상대 경로면 시작하지 않음, 폴더가 없으면 만듦), 웹 조립 선택(있으면 읽기 전용, 없거나 상대 경로면 파일 읽기만 `FILE_STORE_UNAVAILABLE`). **웹과 모든 워커가 같은 폴더를 봐야 한다**(같은 서버 또는 공유 폴더). 테스트는 `tests/conftest.py`가 pytest 임시 폴더로 바꿔 둔다 |
+| `SBRAIN_ARTIFACT_ROOT` | 산출물 파일 저장소(기본값 없음) — 로컬 폴더의 **절대 경로**, 또는 S3 `s3://<버킷>` · `s3://<버킷>/<접두어>`(스킴은 소문자만). 워커 필수(없음 · 상대 경로 · S3 주소 형식 오류 · S3인데 리전 없음이면 시작하지 않음, 로컬 폴더가 없으면 만듦, S3면 시작 확인 한 번), 웹 조립 선택(쓸 수 있는 값이면 읽기 전용, 아니면 파일 읽기만 `FILE_STORE_UNAVAILABLE`). **웹과 모든 워커가 같은 값을 봐야 한다**(같은 폴더, 또는 같은 버킷 · 같은 접두어). 테스트는 `tests/conftest.py`가 pytest 임시 폴더로 바꿔 둔다 |
+| `AWS_REGION` | `SBRAIN_ARTIFACT_ROOT`가 S3일 때 필수 — 버킷이 있는 리전(예: `ap-northeast-2`), 없으면 `AWS_DEFAULT_REGION`. 버킷과 같은 리전을 넣는다. AWS 키는 넣지 않는다(서버 IAM 역할) |
 | `SBRAIN_NOTICE_API_URL` | 공고 서버 기본 주소 `http(s)://호스트[:포트][/경로]` (선택) — 워커만 읽는다. 있으면 실제 모드, 비우면 스텁 모드. 실제 주소는 비밀 값처럼 다루고 문서 · 로그에 적지 않는다(예시는 `http://example.invalid:8000`) |
 | `SBRAIN_KIET_SEARCH` | 실행별 KIET 시장 자료 검색 스위치 (선택, **기본 꺼짐**) — 워커만 읽는다. `1` · `true` · `yes` · `on`(대소문자 · 앞뒤 공백 무시, 잠정)이면 T-S1이 실행마다 F01 전에 KIET를 검색해 그 실행의 시장 근거에만 더한다(서버 파일에 쌓지 않음). 실패하면 있는 자료로 계속한다. 운영 워커에만 넣는다 |
 | `SBRAIN_WORKER_POLL_SEC` · `SBRAIN_WORKER_THREADS` · `SBRAIN_WORKER_LEASE_SEC` | 워커 설정 (선택, 기본 1초 · 4 · 120초, 잠정) |
@@ -196,7 +198,7 @@ copy .env.example .env     # macOS / Linux: cp .env.example .env
 ```powershell
 docker compose -f docker/mysql-test.yml up -d --wait     # mysql:8.0(공유 DB와 같은 8.0 계열), 127.0.0.1:3307, 데이터는 메모리에만
 # .env:  SBRAIN_TEST_MYSQL_URL=mysql+pymysql://root:sbrain-test@127.0.0.1:3307/sbrain_test?charset=utf8mb4
-python -m pytest                                          # 건너뜀 없이 전체 2404건
+python -m pytest                                          # 건너뜀 없이 전체 2750건
 docker compose -f docker/mysql-test.yml down              # 끄기
 ```
 
@@ -226,7 +228,7 @@ python -m sbrain.worker --once   # 한 바퀴만 돌고 끝낸다 (점검용)
 - 스텁 ↔ 실제를 바꿀 때는 그 전에 만든 시험 실행 건을 중단하고 새 프로젝트로 새로 시작합니다(스텁 공고 ID는 공고 서버에 없다).
 - 주소 형식이 틀리면 워커가 조립 단계에서 `ValueError`로 시작하지 않습니다(메시지에 주소는 없음). 어느 모드인지는 로그에 나오지 않습니다 — 화면 3 카드 제목이 `공고 A01`처럼 나오면 스텁 모드입니다.
 
-**웹 서버에서 쓰기** — 웹 프로세스는 이 폴더를 패키지로 설치해 `build_web`으로 조립합니다(`pyproject.toml`). 함수 명세는 `docs/Orchestrator_웹연동_함수명세.md`. 산출물 파일을 읽으려면 워커와 같은 폴더를 `SBRAIN_ARTIFACT_ROOT`(또는 `build_web(…, artifact_root=…)`)로 줍니다. 웹은 그 폴더를 읽기만 합니다.
+**웹 서버에서 쓰기** — 웹 프로세스는 이 폴더를 패키지로 설치해 `build_web`으로 조립합니다(`pyproject.toml`). 함수 명세는 `docs/Orchestrator_웹연동_함수명세.md`. 산출물 파일을 읽으려면 워커와 같은 값(같은 폴더의 절대 경로, 또는 같은 `s3://<버킷>/<접두어>`와 `AWS_REGION`)을 `SBRAIN_ARTIFACT_ROOT`(또는 `build_web(…, artifact_root=…)`)로 줍니다. 웹은 그 저장소를 읽기만 합니다. 의존성에 AWS 라이브러리가 있으므로 웹 가상환경도 다시 설치합니다.
 
 ```powershell
 pip install -e <이 폴더>
@@ -369,7 +371,7 @@ agent-orchestration/
 ├── .gitignore                 # Git 제외 목록
 ├── docs/                      # 설계 · 연동 문서 (13절 참고)
 ├── .env.example               # 환경 변수 예시 — .env로 복사해 값을 채운다 (.env는 올리지 않음)
-├── requirements.txt           # 의존성 (pydantic, SQLAlchemy, PyMySQL, openai, python-dotenv, requests, beautifulsoup4, pytest · pytest-xdist · pytest-cov)
+├── requirements.txt           # 의존성 (pydantic, SQLAlchemy, PyMySQL, openai, python-dotenv, requests, beautifulsoup4, boto3 · botocore, pytest · pytest-xdist · pytest-cov)
 ├── pyproject.toml             # 패키지 정의 — 웹 프로세스가 설치해 쓴다, sbrain-worker 명령
 ├── pytest.ini                 # 테스트 설정 (tests 폴더, -q, 기본 동시 실행 -n auto --dist loadgroup)
 ├── sql/
@@ -385,7 +387,7 @@ agent-orchestration/
 │   │   ├── base.py            #   공통 기반 SBModel(시각 필드를 UTC로 맞춤), 확장 표시 ext(), 열거형
 │   │   ├── clock.py           #   시각 — utc_now() · as_utc · naive_utc · utc_clock · 한국 날짜 kst_today · kst_month
 │   │   ├── domain.py          #   입력 · 공고 · 계획서 · 프로토타입 등 업무 타입 (파일 칸은 FileRef)
-│   │   ├── files.py           #   파일 참조 FileRef · 허용 형식 8종 · 30MB · 이름 · 키 규칙
+│   │   ├── files.py           #   파일 참조 FileRef · 허용 형식 8종 · 30MB · 이름 · 키 · 접두어 규칙
 │   │   ├── rework.py          #   CheckResult · ReworkOrder · ReworkInput 등 다시 만들기 관련
 │   │   ├── run.py             #   실행 건(Run), 실행 상태, 알림, 재작성 사이클 · 마지막 재작성 결과
 │   │   └── scoring.py         #   점수 · 채점 결과
@@ -400,7 +402,7 @@ agent-orchestration/
 │   │   ├── engine.py          #   실행 엔진: 대기열 실행, 재수행 · 재개 · 실패, 재작성 사이클
 │   │   ├── registry.py        #   Agent 등록부(Task별 설정 찾기) · Task 등록부(TaskSpec), 입력 연결(Bind)
 │   │   ├── tools.py           #   Task에 넘기는 호출 도구(글 · 검색 · 이미지 · 파일): 재시도 · 제한 시간 · 오류 분류 · 호출 기록
-│   │   ├── files.py           #   파일 저장소 FileStore — 메모리 · 로컬 폴더 (S3는 나중)
+│   │   ├── files.py           #   파일 저장소 창구 FileStore — 메모리 · 로컬 폴더 (S3 구현은 store_s3/)
 │   │   ├── file_deletion.py   #   파일 삭제 대기열 처리 (워커가 부름 — 지연 · 다시 시도 · 3번 실패하면 포기)
 │   │   ├── openai_provider.py #   OpenAI 호출처 어댑터 (LLMProvider 구현)
 │   │   ├── openai_image.py    #   OpenAI 이미지 호출처 어댑터 (ImageProvider 구현, 확장)
@@ -428,6 +430,12 @@ agent-orchestration/
 │   │   ├── store.py           #   SqlStore — 저장소 인터페이스 구현
 │   │   ├── web_tables.py      #   Orchestrator가 읽고 쓰는 웹 테이블 (알림 · 실패 알림 INSERT, 설정 읽기 — 선택 컬럼 포함)
 │   │   └── settings_source.py #   DbSettingsProvider — verification_policies를 설정 입력으로
+│   ├── store_s3/              # S3 파일 저장소 — SBRAIN_ARTIFACT_ROOT가 s3://일 때 (엔진은 모르고 조립만 고름)
+│   │   ├── address.py         #   s3://<버킷>[/<접두어>] 주소 해석 (AWS 라이브러리 없이)
+│   │   ├── store.py           #   S3FileStore — 쓰기 · 읽기 · 메타데이터 · 접두어째 지우기, 읽기 전용(웹)
+│   │   ├── errors.py          #   S3 오류 바꾸기 표 — 일시 S3TemporaryError · S3TimeoutError, 영구 ProviderError, S3StoreError
+│   │   ├── client.py          #   S3 클라이언트 만들기 — AWS 라이브러리를 늦게 불러옴, 라이브러리 재시도 끔 · 시간 제한
+│   │   └── probe.py           #   워커 시작 확인 (없는 객체 읽기 · 쓰기 · 읽기 · 지우기)
 │   └── agents/
 │       ├── supervisor/        # 조율 Agent 구현 — T-C1 (tc1.py) · T-C3 (tc3.py) · 작업 계획 부품 (plan.py) · 지시문 다시 쓰기 (rewrite.py), 규칙 단계 판정 G-02a · G-02b (judge.py) · 안내 문서 G-04 (readme.py) · 합치기 M-1 ~ M-4 (merge.py), 결과 통합 T-C4 (tc4.py — LLM 없음), bind_supervisor() · bind_rules() · bind_plain_tasks()
 │       ├── notice/            # 공고 서버 연결 — 실제 T-C2 · G-01, bind_notice()
@@ -453,7 +461,7 @@ agent-orchestration/
 │       │   └── tasks.py       #   등록 IMPLEMENTED · IMAGE_TASKS · bind_partner_bv
 │       ├── form_defaults.py   # 신청자 유형별 양식 · 평가항목 · 채점 기준표 묶음(FORM_TABLE — 담당자 계약의 계획서 항목), 선택 공고 자리 표시 양식 (모두 잠정)
 │       └── stubs.py           # 스텁 Agent(스텁 T-C2 · G-01 포함 — 규칙 단계 · T-C4는 실구현에 실패 흉내만), 가짜 LLM(FakeLLM), 가짜 이미지(FakeImage), 시나리오(StubScenario)
-└── tests/                     # pytest 테스트 (2404건) — conftest.py(저장소 선택 · 공고 서버 주소 격리 · KIET 검색 스위치 격리 · 코드 스위치 두 개를 꺼진 값으로 · 파일 저장소 폴더 tmp_path · 묶음) · webdb.py · mysqldb.py(MySQL 묶음 확인) · flow_helpers.py · worker_helpers.py · store_helpers.py · notice_fake.py · partner_fake.py(담당자 함수 목적별 가짜 응답) · bv_fake.py(구현 · 검증-2 가짜 응답) · fakes.py 도움 모듈
+└── tests/                     # pytest 테스트 (2750건) — conftest.py(저장소 선택 · 공고 서버 주소 격리 · KIET 검색 스위치 격리 · 코드 스위치 두 개를 꺼진 값으로 · 파일 저장소 폴더 tmp_path · 실제 S3 클라이언트 막기 · 묶음) · webdb.py · mysqldb.py(MySQL 묶음 확인) · flow_helpers.py · worker_helpers.py · store_helpers.py · notice_fake.py · partner_fake.py(담당자 함수 목적별 가짜 응답) · bv_fake.py(구현 · 검증-2 가짜 응답) · s3_fake.py(가짜 S3 클라이언트) · fakes.py 도움 모듈
 ```
 
 **설계 원칙:** `orchestrator/`에는 어떤 서비스에도 쓸 수 있는 범용 장치만 두고, 화면 번호 · 알림 대상 · 재작성 경로 같은 S-Brain 고유 규칙은 `flow/`에만 둡니다. 엔진은 `Flow` 인터페이스(`engine.py`)를 통해서만 S-Brain 규칙을 부릅니다.
@@ -504,7 +512,7 @@ flowchart LR
 
 | 상황 | 누가 | 처리 |
 |---|---|---|
-| LLM · 검색 호출 실패, 응답 지연, 형식 오류(일시 오류) | `Tools` | 같은 호출을 최대 5회 **재시도**. 간격은 2 · 4 · 8 · 16 · 32초에 무작위 지연을 더하고, 응답이 Retry-After를 주면 그만큼(최대 60초), 한 호출 대기 합은 90초(T-C1 45초)까지. 형식 오류 · 파일 창구 · 공고 서버는 2초 고정(기준 문서 시트 1) |
+| LLM · 검색 · 파일 호출 실패, 응답 지연, 형식 오류(일시 오류) | `Tools` | 같은 호출을 최대 5회 **재시도**. 간격은 2 · 4 · 8 · 16 · 32초에 무작위 지연을 더하고, 응답이 Retry-After를 주면 그만큼(최대 60초), 한 호출 대기 합은 90초(T-C1 45초)까지. 형식 오류 · 파일 호출의 디스크 오류 · 공고 서버는 2초 고정(기준 문서 시트 1). 파일 호출의 연결 오류 · 시간 초과(S3 일시 오류 포함)는 늘리는 간격이다(기준 문서는 파일 창구 2초 고정) |
 | 입력 · 운영 응답 코드 오류(400 · 401 · 403 · 404 등), 결제 · 한도 코드(`insufficient_quota` 등) | `Tools` | 다시 보내지 않음. 결제 · 한도는 일시 오류로 보아 아래 재개로 감(충전하면 이어 감) |
 | 재시도를 다 썼고 일시 오류 | `Engine` | 실행을 `재개대기`로 두고 15 → 30 → 60 → 120 → 240분 뒤 실패한 단계부터 **재개** (최대 5번, 총 12시간) |
 | 재개 상한 초과, 또는 영구 오류(입력 · 운영) | `Engine` | 실행 **실패**. 단, 재작성 중이었다면 실행은 계속하고 재작성 전 결과로 되돌린 뒤 재작성 기회를 돌려줌 |
@@ -547,7 +555,7 @@ flowchart LR
   - `tools.llm(messages, schema=..., parse=..., purpose="...", json_mode=False)` — LLM 호출. `schema`(pydantic 모델)를 주면 응답 JSON을 검사해 그 타입으로 돌려줍니다. `json_mode=True`면 JSON 객체 응답 형식으로 요청합니다.
   - `tools.search(purpose, fn, retries=None, backoff=True)` — 임베딩 검색 · BM25 · 공고 서버처럼 LLM이 아닌 호출. `fn(timeout_sec)` 형태로 부릅니다. `retries`로 그 호출만 재시도 횟수를, `backoff=False`로 2초 고정 간격을 고릅니다.
   - `tools.image(prompt, image=None, size=None, quality=None, purpose="...")` — 이미지 호출. 결과는 PNG 바이트입니다. `image`(입력 그림)를 주면 그 그림을 바탕으로 고쳐 그리고, 없으면 새로 그립니다. `size` · `quality`를 비우면 그 Task 설정값(`image_size` · `image_quality`)을 씁니다. 재시도 · 제한 시간 규칙은 `tools.llm`과 같습니다. 이미지 설정이 없는 Task가 부르면 호출하지 않고 바로 실패합니다(지금은 `T-B2`만 설정이 있습니다).
-  - `tools.files.put(name, data, media_type)` · `tools.files.get(ref)` — 파일 넣기 · 읽기. 넣으면 `FileRef`를 돌려주고, 그 값을 그대로 출력 칸(`prototype.entry_file` · `infographic.image_file` 등)에 싣습니다. 파일을 디스크에 직접 쓰거나 읽지 않습니다. 이름은 경로가 아닌 파일 이름 하나(영문 · 숫자 · `.` · `-` · `_`, 100자 이하), 형식은 8종(`text/html` · `image/svg+xml` · `image/png` · `text/markdown` · 워드 · `application/x-hwp` · `application/hwp+zip` · `application/json`), 크기는 30MB 이하입니다. 어기면 `FileRejected`입니다. 읽기는 그 실행 건 파일만 됩니다.
+  - `tools.files.put(name, data, media_type)` · `tools.files.get(ref)` — 파일 넣기 · 읽기. 넣으면 `FileRef`를 돌려주고, 그 값을 그대로 출력 칸(`prototype.entry_file` · `infographic.image_file` 등)에 싣습니다. 파일을 디스크 · 파일 저장소(로컬 폴더 · S3)에 직접 쓰거나 읽지 않습니다 — 저장소가 어디든 Task 코드는 같습니다. 이름은 경로가 아닌 파일 이름 하나(영문 · 숫자 · `.` · `-` · `_`, 100자 이하), 형식은 8종(`text/html` · `image/svg+xml` · `image/png` · `text/markdown` · 워드 · `application/x-hwp` · `application/hwp+zip` · `application/json`), 크기는 30MB 이하입니다. 어기면 `FileRejected`입니다. 읽기는 그 실행 건 파일만 됩니다.
   - HTML · SVG는 그림 등을 안에 넣어(data URI) 파일 하나로 열리게 만듭니다. 진입 파일 이름은 웹개발 · AI API `index.html`, 원페이지 `onepage.svg`입니다.
 - 모델 · 온도 · 추론 강도 · 이미지 모델 · 제한 시간은 `tools`가 그 Task의 설정 항목(`Settings.tasks[Task ID]`)에서 입힙니다. Task가 정하지 않습니다(바꾸는 법은 8.3). LLM을 부르지 않는 Task(T-C2 · G-01 · T-W3 · T-C4)는 항목이 없고 제한 시간 · 재시도만 씁니다.
 - 재시도를 다 쓴 예외(`ToolCallExhausted`)는 대체 경로가 정해진 Task가 아니면 **받지 말고 그대로 올려 보냅니다.** Orchestrator가 재개를 처리합니다. 받는 곳은 `T-V2`(대조 LLM만), `T-B2`(`tools.image`만 — 기본 아이콘으로 계속, 관리자 기록 '이미지대체'), `T-S1`(KIET 검색 호출만), 스텁 `T-C2`입니다. `tools.files`의 예외는 어느 Task도 받지 않습니다 — `T-V2`도 파일을 읽지 못하면 올려 보내고, "진입 파일 없음 → 산출물층 0"으로 채점하지 않습니다. 받는 곳이라도 결제 · 한도 코드로 끝난 예외(`billing_limit`이 참)는 다시 올려 보냅니다 — 크레딧이 떨어진 채 대체 결과로 '완료'되지 않게 합니다.
@@ -746,14 +754,14 @@ bind_notice(app.registry, NoticeClient("http://example.invalid:8000", transport=
 | 설정 | 기본값 | 비고 |
 |---|---|---|
 | 재시도 횟수 · 간격 | 5회 · 2초 | 간격은 잠정 |
-| 재시도 대기(`retry.backoffMultiplier` · `jitterRatio` · `retryAfterCapSec` · `waitCapSec` · `waitCapByKey`) | 배수 2 · 무작위 0 ~ 25% · Retry-After 상한 60초 · 한 호출 대기 합 90초 · T-C1 45초 | 기준 문서 값. 일시 오류만 늘리는 간격, 형식 오류 · 파일 창구 · 공고 서버는 2초 고정 |
+| 재시도 대기(`retry.backoffMultiplier` · `jitterRatio` · `retryAfterCapSec` · `waitCapSec` · `waitCapByKey`) | 배수 2 · 무작위 0 ~ 25% · Retry-After 상한 60초 · 한 호출 대기 합 90초 · T-C1 45초 | 기준 문서 값. 일시 오류만 늘리는 간격, 형식 오류 · 파일 호출의 디스크 오류 · 공고 서버는 2초 고정(파일 호출의 연결 · 시간 초과는 늘리는 간격 — 기준 문서와 다름) |
 | 재개 | 첫 간격 15분, 2배씩, 최대 5번, 총 12시간 | |
 | 재수행 횟수 | 2회 | |
 | 검증-1 재수행 횟수 (`redo.verify1_redo_count`) | 항목마다 · 사이클마다 1회 | 웹 관리자 칸 없이 코드 기본값(잠정) |
 | 재작성 횟수 | 묶음마다 1회 | 세 화면(6 · 8 · 9)이 같은 횟수를 씀 |
 | 기준 점수 · 층별 배점 | 80점 · 문서층 70 · 산출물층 30(코드 점검 15 + 계획서 대조 15) | 산출물층 점수는 그 실행 건 배점으로 환산(`flow/score_scale.py`). 배점 0은 0 그대로 |
 | 검수 동시 처리 수 · 실패 비율 기준 | 4 · 30% | 잠정 — 검수가 흐름 밖이라 지금 쓰는 곳 없음 |
-| Task별 제한 시간 (호출 한 번) | 대부분 120초, `T-W1` · `T-B1` · `T-B2` 300초, `T-C2` · `G-01` 30초(공고 서버 호출 한 건마다), `T-P2` 60초(흐름 밖), `지시문 다시 쓰기` 120초, 이미지 `T-B2.image` 120초 | 기준 문서 값(`T-P2` 60초만 잠정) |
+| Task별 제한 시간 (호출 한 번) | 대부분 120초, `T-S1` · `T-W1` · `T-B1` · `T-B2` 300초, `T-C2` · `G-01` 30초(공고 서버 호출 한 건마다), `T-P2` 60초(흐름 밖), `지시문 다시 쓰기` 120초, 이미지 `T-B2.image` 120초 | 기준 문서 값(`T-P2` 60초만 잠정) |
 | Task별 모델 · 호출처 · 온도 · 추론 강도 · 이미지 (`Settings.tasks`) | 조율 Task · `지시문 다시 쓰기`는 `openai` · `gpt-6-luna` · 온도 없음, 추론 강도는 T-C1 medium · T-C3 · 지시문 다시 쓰기 low. T-B1 · T-B2 · T-V2는 `gpt-6-luna` · 추론 강도 · 온도 보내지 않음, T-B2 이미지 `gpt-image-2.5-flare` · medium · 1024x1536(구현 · 검증-2 담당 요청). T-S1 · T-S2 · T-W1 · T-W2 · T-V1은 담당자 `execution_contract.json`의 함수별 모델(T-S1 `gpt-5.6-terra` · T-S2 `gpt-6.1-sol` · T-W1 `gpt-5.6-sol` · T-W2 `gpt-6-luna` · T-V1 `gpt-5.6-terra` + `purpose_models`). 검수 `gpu-server` · '미정'(흐름 밖 — 항목만 남음). 규칙 단계 · 합치기 · T-C2 · G-01 · T-W3 · T-C4는 항목 없음 | 잠정 |
 | 동시 호출 | T-W1 · T-V1 4개, T-W2 2개 (`agents/partner_sw/common.py`), T-V2 대조 3개 · 판정 3번 (`agents/partner_bv/verification_agent/llm_judge.py`) | 확정값 — 잠정 아님 |
 
@@ -763,10 +771,10 @@ bind_notice(app.registry, NoticeClient("http://example.invalid:8000", transport=
 |---|---|---|
 | 사업비 · 일정 필수 확인 (`orchestrator/settings.py` `PLAN_TABLES_REQUIRED`) | 켬 | 웹 `REQUIRE_BUDGET_SCHEDULE`과 같은 값으로 둔다. 켠 값이 기준 문서와 같고, 끄는 것은 되돌리기용 |
 | 새 재작성 묶음 (`flow/rework_map.py` `GENERAL_BUNDLES_ENABLED`) | 켬 | 문서층 묶음 6개(일반현황 · 개요 · 그림 더함 — 기준 문서와 같음). 바꾸는 순서: 웹 배포 → 코드 값 변경 → 웹 · 워커 다시 띄우기 |
-| 가산점 (`orchestrator/settings.py` `BONUS_ENABLED`) | 꺼짐 | 공고팀 가산점이 시험 단계라 카드의 가산점은 늘 비어 있다(잠정) |
+| 가산점 (`orchestrator/settings.py` `BONUS_ENABLED`) | 켬 | 2026-10-19 공고팀 허용. 공고 서버가 원문 대조를 마친 공고(`bonus_verified` 참)의 가산점만 카드에 싣고, 그 밖의 카드는 비어 있다(잠정) |
 | 실행별 KIET 검색 (`SBRAIN_KIET_SEARCH`) | 꺼짐 | 워커 환경 변수, 운영 워커에서 켬. 켜면 KIET 검색 호출만 재시도 2번(`KIET_RETRIES`, 처음 포함 최대 3번) · 한 번 최대 25초 · 결과 4건 · 1,200자(잠정) |
 
-실행 건 설정이 아닌 명령 창구 값(`flow/service.py`)도 있습니다: 재작성 요청을 모으는 시간 2초(기준 문서 값), 재작성 요청의 점유 재시도 최대 5초, `wait_project` 기본 제한 시간 60초(0.5초마다 다시 읽음 — 이 둘은 잠정). 관리자 설정으로 바꾸지 않습니다. 12개월 처리 값(한 번에 100건 · 다시 시작 간격 24시간 · 확인 주기 10분 · 작업 점유 = 워커 점유 120초)과 계정 잠금 대기 10초도 같은 성격의 잠정 값입니다. 파일 삭제 대기열 값(첫 시도 지연 10분 · 다시 시도 간격 10분 · 한 번에 20줄)도 잠정이고, 포기 횟수 3 · MySQL 교착 때 다시 하기 3번 · 허용 형식 8종 · 파일 하나 30MB는 정한 값이라 잠정이 아닙니다.
+실행 건 설정이 아닌 명령 창구 값(`flow/service.py`)도 있습니다: 재작성 요청을 모으는 시간 2초(기준 문서 값), 재작성 요청의 점유 재시도 최대 5초, `wait_project` 기본 제한 시간 60초(0.5초마다 다시 읽음 — 이 둘은 잠정). 관리자 설정으로 바꾸지 않습니다. 12개월 처리 값(한 번에 100건 · 다시 시작 간격 24시간 · 확인 주기 10분 · 작업 점유 = 워커 점유 120초)과 계정 잠금 대기 10초도 같은 성격의 잠정 값입니다. 파일 삭제 대기열 값(첫 시도 지연 10분 · 다시 시도 간격 10분 · 한 번에 20줄)도 잠정이고, 포기 횟수 3 · MySQL 교착 때 다시 하기 3번 · 허용 형식 8종 · 파일 하나 30MB는 정한 값이라 잠정이 아닙니다. S3 파일 저장소 값(클라이언트 시간 제한 연결 10초 · 읽기 60초, 라이브러리 재시도 끔, 연결 수 라이브러리 기본값, 일시로 보는 S3 오류 코드, 버킷 · 접두어 이름 모양, 형식 표시, 시험 객체 `<접두어>.probe/<고유값>`, 시작 확인 일시 실패의 워커 종료 코드 1)과 출력 파일 확인 호출의 목적 이름 `check`도 잠정입니다(`PROVISIONAL`의 `s3Store.*` · `fileCheck.purpose`).
 
 잠정 항목 목록은 `settings.py`의 `PROVISIONAL`에 있습니다. 설명은 `docs/Orchestrator_구조와_흐름.md` 11절. 다른 값으로 돌려 보려면 `build_stub_app(settings=Settings(...))`로 넘깁니다.
 
@@ -786,8 +794,9 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 - 동시 실행은 `pytest-xdist`, 범위 측정은 `pytest-cov`다. `requirements.txt`로 함께 설치된다.
 - MySQL 테스트는 모두 한 묶음(`mysqldb.MYSQL`)으로 한 프로세스에서만 돈다. 묶음에 넣지 않은 테스트가 MySQL에 닿으면 `require_mysql()`이 바로 실패시킨다. 시간에 기대는 테스트(워커 신호 · 스레드 대기 등)는 `conftest.TIMING` 묶음으로 하나씩 돈다.
 - 두 코드 스위치(`PLAN_TABLES_REQUIRED` · `GENERAL_BUNDLES_ENABLED`)는 `conftest.py` 자동 픽스처가 테스트마다 꺼진 값으로 둔다. 켠 동작은 그 테스트에서 켜고, 코드 값은 `conftest.CODE_SWITCHES`로 확인한다.
-- 여러 파일에서 쓰는 도움 함수는 `tests/flow_helpers.py` · `worker_helpers.py` · `store_helpers.py` · `notice_fake.py` · `partner_fake.py`(담당자 함수 목적 = F번호별 가짜 응답) · `bv_fake.py`(구현 · 검증-2 목적별 가짜 응답) · `fakes.py`와 `conftest.py`에 있다. 테스트 파일끼리는 서로 가져다 쓰지 않는다.
-- 흐름 테스트(`clock` 고정 장치를 쓰는 테스트)는 **메모리 저장소와 `SqlStore`(SQLite 임시 파일 DB)로 한 번씩** 돈다(`conftest.py`의 `store_backend`). 아래 건수는 이렇게 늘어난 수이고, 합은 2404건이다(MySQL 테스트 DB를 켜지 않으면 MySQL 테스트 59건을 건너뜀).
+- 여러 파일에서 쓰는 도움 함수는 `tests/flow_helpers.py` · `worker_helpers.py` · `store_helpers.py` · `notice_fake.py` · `partner_fake.py`(담당자 함수 목적 = F번호별 가짜 응답) · `bv_fake.py`(구현 · 검증-2 목적별 가짜 응답) · `s3_fake.py`(가짜 S3 클라이언트 `FakeS3Client` · `fake_s3_store` · `patch_client_factory`) · `fakes.py`와 `conftest.py`에 있다. 테스트 파일끼리는 서로 가져다 쓰지 않는다.
+- 테스트는 실제 AWS 클라이언트를 만들지 않는다(만들기만 해도 `~/.aws`를 읽는다). `conftest.py` 자동 픽스처가 모든 테스트에서 실제 S3 클라이언트 만들기를 막고, S3 시험은 가짜 S3 클라이언트를 넣는다.
+- 흐름 테스트(`clock` 고정 장치를 쓰는 테스트)는 **메모리 저장소와 `SqlStore`(SQLite 임시 파일 DB)로 한 번씩** 돈다(`conftest.py`의 `store_backend`). 아래 건수는 이렇게 늘어난 수이고, 합은 2750건이다(MySQL 테스트 DB를 켜지 않으면 MySQL 테스트 59건을 건너뜀).
 
 | 파일 | 건수 | 확인하는 것 |
 |---|---|---|
@@ -797,7 +806,7 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 | `test_redo_resume.py` | 16 | 재수행 횟수 · 확정 동작, 재개 후 성공, 재개 상한 초과 실패, 영구 오류, `featureList` 불변 |
 | `test_partial_resume.py` | 14 | 재개 때 받은 결과 이어 쓰기(엔진 장치) — 저장 조건, 재개 때 입력 · 입력 참조, 비거나 연결 없으면 저장 안 함, 영구 오류 · 상한 · 재개 불가 · 흐름에 넘김, 내용이 기록에 없음 |
 | `test_tools.py` | 7 | 호출 단위 재시도, 오류 분류, 형식 오류, 스레드 안전, 로그에 내용 없음, `tools.search(retries=n)` 호출별 재시도 횟수 |
-| `test_call_failure_tools.py` | 55 | 호출 실패 처리 — 결제 · 한도 코드 6종(상태 429 · 400) 시도 1번 · '일시' · `billing_limit`, 입력 · 운영 시도 1번, 늘리는 간격 · 주입 난수 · 형식 오류 · 파일 창구 · `backoff=False` 2초 고정, Retry-After · 대기 합 상한(T-C1 45초), 설정 기본값 · 옛 사본, 시도 설명 `status=N code=X` · 응답 메시지 없음, 운영 로그 `errorCode`, 흐름(재개대기 · 사전 단계 T-C1 · 스텁 T-V2) |
+| `test_call_failure_tools.py` | 55 | 호출 실패 처리 — 결제 · 한도 코드 6종(상태 429 · 400) 시도 1번 · '일시' · `billing_limit`, 입력 · 운영 시도 1번, 늘리는 간격 · 주입 난수 · 형식 오류 · 파일 창구 디스크 오류 · `backoff=False` 2초 고정(파일 창구 시간 초과는 늘리는 간격), Retry-After · 대기 합 상한(T-C1 45초), 설정 기본값 · 옛 사본, 시도 설명 `status=N code=X` · 응답 메시지 없음, 운영 로그 `errorCode`, 흐름(재개대기 · 사전 단계 T-C1 · 스텁 T-V2) |
 | `test_call_failure_openai.py` | 80 | OpenAI 글 · 이미지 어댑터가 본문 오류 코드 · `retry-after-ms` · `retry-after`를 `ProviderError`에 싣기, 이상한 값 버림, 메시지에 본문 · 헤더 값 없음 |
 | `test_call_failure_notice.py` | 80 | 공고 서버 네 API — 408 · 429를 뺀 4xx와 3xx 시도 1번, 408 · 429 · 5xx · 연결 오류 · 시간 초과 · 형식 오류 2초 고정 6번, 공고 없음은 그대로 값 |
 | `test_call_failure_partner_bv.py` | 27 | T-V2 대조 LLM · T-B2 이미지 한도 소진 → 재개 대기 · 상한 넘으면 실패 · 재작성 되돌림(대체 없음), 한도 아닌 소진은 대체, '이미지대체' 설명의 ` (code=…)` |
@@ -819,8 +828,8 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 | `test_task_plan.py` | 54 | 양식 묶음 표(불변식 · 배점 합 70), Task 목록(12 · 11개) · 틀 · 고정 문구 그대로 · 맥락 · 확장 출력, 참조 자료를 지시문에 넣지 않음, 스텁 T-C3, 뒷 단계가 T-C3 출력을 읽음, `outputs.evaluationItems` |
 | `test_instruction.py` | 19 | 지시문 두 부분 나누기(참조 자료 부분 없음) · 안내만 바꾸기(틀 바이트 보존) · 안내 정리 · 덧붙임 블록 형식 |
 | `test_rewrite.py` | 38 | 재작성 · 재수행 지시문 다시 쓰기 — 언제 부르나, 문서층 Task마다, 반영 실행은 덧붙이기만, 재작성 중 재수행에 재작성 지시 유지, 가리기, 재개 때 재사용, 호출 기록 위치, 되돌리기 제외 |
-| `test_worker.py` | 18 | 워커 2개 중복 없음(SQLite · MySQL), 점유 만료 이어받기, 단계 사이 중단, 종료 신호, 하트비트, 재개, 모으는 중 가져가지 않음, 12개월 처리(확인 주기 · 개수만 로그 · 종료 신호 · 작업 점유 하트비트 · 웹 조립은 안 돎) |
-| `test_bootstrap.py` | 29 | 조립 — 워커 · 웹 · 스텁 앱, 실구현 호출만 실제 호출처로(글 · 이미지 · 다시 쓰기), 웹 조립 사전 단계 `WEB_NOT_ALLOWED`, 공고 서버 주소 있음 → 실제 T-C2 · G-01 · 없음 · 빈 값 → 스텁, 주소 형식 오류, KIET 검색 스위치(기본 환경이면 꺼짐 · 켜는 값 · 인자가 환경 변수를 이김) |
+| `test_worker.py` | 28 | 워커 2개 중복 없음(SQLite · MySQL), 점유 만료 이어받기, 단계 사이 중단, 종료 신호, 하트비트, 재개, 모으는 중 가져가지 않음, 12개월 처리(확인 주기 · 개수만 로그 · 종료 신호 · 작업 점유 하트비트 · 웹 조립은 안 돎), 실행 입구의 S3 값(형식 오류 · 리전 없음 · 대문자 스킴 · 클라이언트를 만들지 못함 · AWS 라이브러리 없음은 종료 코드 2, 시작 확인 영구 2 · 일시 1 · 성공이면 `--once` 0, 출력에 버킷 · 접두어 · 리전 없음) |
+| `test_bootstrap.py` | 30 | 조립 — 워커 · 웹 · 스텁 앱, 실구현 호출만 실제 호출처로(글 · 이미지 · 다시 쓰기), 웹 조립 사전 단계 `WEB_NOT_ALLOWED`, 공고 서버 주소 있음 → 실제 T-C2 · G-01 · 없음 · 빈 값 → 스텁, 주소 형식 오류, KIET 검색 스위치(기본 환경이면 꺼짐 · 켜는 값 · 인자가 환경 변수를 이김), 로컬 폴더 값 조립은 AWS 라이브러리를 불러오지 않음(새 프로세스) |
 | `test_announcement_gate.py` | 41 | 공고 선택은 ID만 · G-01이 선택 공고 · 자격 결과 · 업력을 한 번에 저장, 확인 필요(화면 4만 안내), G-01 실패 시 고르기 전 화면 · X-C2-GONE · X-C2-FAIL, 공고 없음 다시 고르기, 막힌 공고 · `ANNOUNCEMENT_BLOCKED`, 마감 안내, 빈 마감일 · 금액으로 끝까지 |
 | `test_more_candidates.py` | 48 | 추가 조회 겹침 빼기 · 첫 조회 카드 갱신 · 내용 바뀜 참 · 거짓, 막힌 공고 풀기, 추가 조회 실패 · 수집 상태 비정상 → 기회 반환 · 화면 3 값 유지, 마감 임박순 안내 문구 |
 | `test_step_rescue.py` | 14 | 엔진의 실패를 흐름에 넘기는 장치(정한 구간의 모든 오류, 다른 구간은 그대로, 흐름이 옮기지 않으면 오류) |
@@ -840,11 +849,13 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 | `test_artifact_layer.py` | 66 | 산출물층 검증 반영 — 확장 필드, 재작성 사유(통과 필수 조건 · 결함 출처 · 누락 · 부분 인정 · 보류), 스텁 T-V2 1.4판, `planDoc` 입력, 보류 · 진단 사건, G-04 자체 검사, 원페이지 계획서 반영 · 되돌리기, 이전 원문 참조, T-B2 이미지 실패 예외 · '이미지대체' |
 | `test_basedoc_v110_markers.py` | 91 | 기준 문서 확장 표시 — 기준 문서(기능정의서 v1.10 · v1.11)에 들어간 필드 · 타입은 확장 아님, 새 판에서 빠졌지만 남긴 필드는 확장(note 머리), 아직 기준 문서에 없는 필드는 확장(새 타입 · 파일 칸의 note 포함), 필수 · 선택 선언 그대로 |
 | `test_worker_log.py` | 31 | 워커 운영 로그 — 단계 · 실행 건 줄과 키 순서, 단계끝은 저장 뒤, 웹 루트 로거로 안 올라감, 계정 번호 · 내용 없음, 웹 조립 출력 없음, 날짜 · 순번 파일 · 날짜 바뀜 · 이어 쓰기, 자동 삭제, 폴더 잠금, 쓰기 실패해도 계속 |
-| `test_files.py` | 120 | 파일 참조 · 저장소 · 파일 창구 — 이름 · 키 · 형식 · 크기 규칙(Windows 예약 이름), 메모리 · 로컬 폴더 저장소, 넣기 거절 · 실행 상태 확인 · 같은 키 재시도 안전 · 다른 실행 건 읽기 거절 · `sha256` 대조, 출력 참조 확인(남의 실행 건 · 없는 키 · 값 위조 → 규격 위반, 앞 실행 기록 참조 → 통과), G-04 `run(inp, files)`, 호출 기록에 내용 · 이름 · 키 없음 |
+| `test_files.py` | 165 | 파일 참조 · 저장소 · 파일 창구 — 이름 · 키 · 접두어 · 형식 · 크기 규칙(Windows 예약 이름), 메모리 · 로컬 폴더 · S3(가짜 S3 클라이언트) 저장소, 넣기 거절 · 실행 상태 확인 · 같은 키 재시도 안전 · 다른 실행 건 읽기 거절 · `sha256` 대조, 출력 참조 확인(남의 실행 건 · 없는 키 · 값 위조 → 규격 위반, 앞 실행 기록 참조 → 통과, 호출 기록 `check` 줄), G-04 `run(inp, files)`, 호출 기록에 내용 · 이름 · 키 없음 |
+| `test_file_call_retry.py` | 51 | 파일 호출 재시도 간격(연결 오류 · 시간 초과는 늘리는 간격, 형식 오류 · 디스크 오류는 2초 고정, `backoff=False` 그대로, 대기 합 상한), 출력 파일 확인 재시도(참조마다 `check` 호출, 일시 뒤 성공 · 다 쓰면 재개 대기 · 영구 오류면 실행 실패 — '계속' 규칙 단계도, 확인 기록이 저장 묶음 · `after_execution`에, 없는 파일 · 값 다름은 규격 위반) |
+| `test_store_s3.py` | 218 | S3 파일 저장소(가짜 S3 클라이언트 — 네트워크 · `~/.aws` 없음) — 주소 해석 · 접두어 · 버킷 이름 규칙, 불러와도 AWS 라이브러리 없음 · 엔진 폴더에 AWS 라이브러리 import 없음, 객체 이름 · 옆 메타 객체 · 쓰기 순서 · 같은 내용 다시 쓰기 · 다른 내용 충돌, 접두어째 지우기(1,000개 넘음 · 쪽 나눔 · 일부 실패), 읽기 전용, 오류 바꾸기 표 · 오류 코드 소문자 밑줄 · 메시지에 버킷 · 키 · ARN 없음, `tools` · 대기열 분류, 클라이언트 늦게 만들기 · 자격 증명 실패 뒤 다시 만들기 · 라이브러리 재시도 끔 · 시간 제한, 시작 확인(성공 · 영구 · 일시), 여러 스레드 |
 | `test_file_fields.py` | 19 | 계약 파일 칸 — 스텁 파일 넣기(스텁 SVG 크기 · viewBox), M-2 감싸기, M-3 · T-C4 참조 목록(`planDocFile` 비움 · 계획서 파일 없음), 진입 파일 없음, `outputs` 모양 |
 | `test_tc4.py` | 45 | 결과 통합 T-C4 — 누락 ① 네 산출물 · ② · ④ → 한 오류 `E-C4-MISSING` · 메시지에 내용 없음 · 흐름에서 실행 실패, 진입 파일 없음 · 안내 문서 없음은 실패 아님, 미달 항목 종류마다 넣는 규칙 · 점수 · 이름 · 태그 · 사유 · 순서, 환산 칸이 빈 옛 보고서, 안내 문구, `planDocFile` 비움 · 옛 결과물 묶음 읽기, LLM 호출 없음, 기록 · 사건 · 관리자 조회에 미달 글 없음, 워커 · 스텁 조립이 같은 함수 (메모리 · SQLite 흐름 포함) |
-| `test_file_deletion.py` | 39 | 파일 삭제 대기열 — 완전 삭제 · 탈퇴 · 12개월 정리 때 줄, 실행 건당 줄 하나(대기 그대로 · 포기 → 대기 · 동시 넣기), 워커 지연 · 성공 · 실패 · 포기 · 로그 줄, 여러 워커 동시 처리 없음, 관리자 목록 · 다시 시도(MySQL 포함) |
-| `test_file_access.py` | 22 | 파일 읽기 웹 함수(남의 프로젝트 키 · 실패 실행 건 · 없는 파일 · 저장소 없음 · 형식은 저장 값), 조립(워커 환경 변수 없음 · 상대 경로면 시작 안 함, 웹 읽기 전용 · 상대 경로면 `FILE_STORE_UNAVAILABLE`) |
+| `test_file_deletion.py` | 47 | 파일 삭제 대기열 — 완전 삭제 · 탈퇴 · 12개월 정리 때 줄, 실행 건당 줄 하나(대기 그대로 · 포기 → 대기 · 동시 넣기), 워커 지연 · 성공 · 실패 · 포기 · 로그 줄, 여러 워커 동시 처리 없음, 관리자 목록 · 다시 시도(MySQL 포함), S3 저장소(실행 건 접두어째 지움, 실패 종류 일시 · 운영 — 규칙은 같음, 로그에 버킷 · 키 없음) |
+| `test_file_access.py` | 35 | 파일 읽기 웹 함수(남의 프로젝트 키 · 실패 실행 건 · 없는 파일 · 저장소 없음 · 형식은 저장 값), 조립(워커 환경 변수 없음 · 상대 경로면 시작 안 함, 웹 읽기 전용 · 상대 경로면 `FILE_STORE_UNAVAILABLE`), S3 값(값 모양, 워커는 쓰기 가능 S3 + 시작 확인 한 번 · 리전 순서 · 리전 없음 · 형식 오류는 DB 전에 멈춤 · 시작 확인 실패, 웹은 워커 파일을 읽고 쓰기 거절 · 처음 읽을 때 클라이언트 · 쓸 수 없는 값이면 `FILE_STORE_UNAVAILABLE`, 잠정 키) |
 | `test_mysql_integration.py` | 9 | 실제 웹 스키마 위 MySQL 8 흐름(알림 '결과물'까지 — 옛 웹 스키마면 테스트 DB만 ENUM에 더함) · 동시 재작성 요청 합치기 · 삭제 뒤 로그 보존 · 웹 → 워커 조립 · 탈퇴 중 계정 잠금 유지 · 웹이 프로젝트 행을 지운 뒤 `missing_projects` · 목표 고객 선택 컬럼(없음 → None, `ALTER TABLE` 뒤 값이 사전 정보 · 회사 정보까지) · 웹 스키마 위치 찾기(DB 없이) |
 | `test_sw_contract_fields.py` | 51 | 전략 · 작성 · 검증-1 계약 — 새 타입 · 확장 칸 표시 · 기본값, 등록부 입출력 · 재개 · LLM 표시, 산출물 타입, 함수별 모델 기본값 · 옛 사본, 필수 스위치 코드 값 · 잠정, 목적별 모델 · `json_mode` · 응답 형식 세 경우 · 길이 한도 잘림 `FormatError`, 스텁 새 출력 · M-1 합치기, 입력 오류 칸 · 표 대체 안내 칸(`reason` · `displayReason`, 확장 표시 · note · 칸 없는 옛 JSON은 거짓 · 잠정 `partnerSw.inputError` · 스텁 `input_error_items`) |
 | `test_partner_sw_vendor.py` | 34 | 전략 · 작성 · 검증-1 연동 — JSON 응답 정리, 호출 추적 · 재시도, 담당자 KIET 사용자 키워드 갱신 함수(담당자 자체 실행 경로 — 네트워크 없이 가짜로)와 결과 · 이력 upsert, 일반 Task의 파일 접근 제한(허용 목록에 `market_research.py`) |
@@ -900,10 +911,11 @@ app.orchestrator.tick(datetime.now(timezone.utc) + timedelta(minutes=15))   # �
 
 - 검수 Agent · 첨부 추출 R-8 — 흐름 밖이다. 다시 넣는 일과 자체 GPU 서버 호출처 어댑터는 정해질 때까지 하지 않는다.
 - 공고 서버 실제 연결 켜기 — 연결 코드는 끝났고 공고팀 시험 서버로 네 API를 확인했다. 운영 서버 위치 · 주소 · 인증이 정해지고 워커 IP를 공고팀에 알린 뒤 켠다. 그 전까지 스텁 모드.
-- 가산점 켜기 — 공고팀 가산점이 시험 단계라 스위치(`BONUS_ENABLED`)를 꺼 두었다. 공고팀이 정리를 알리면 켠다. 고른 뒤 바뀐 모집 상태 반영(지금은 알 수 없음).
+- 고른 뒤 바뀐 모집 상태 반영(지금은 알 수 없음). 가산점 스위치(`BONUS_ENABLED`)는 2026-10-19 켰다(원문 대조된 공고만).
 - 실행별 KIET 검색 켜기 — 연결은 끝났고 기본 꺼짐이다. 운영 워커에 `SBRAIN_KIET_SEARCH`를 넣어 켠다.
 - 공유 DB 적용 — `sql/orchestrator_schema.sql`(표 13개)은 담당자가 직접, 웹 마이그레이션 `004` · `005` · `006`은 웹이 적용한다. 006(`notifications.kind` '결과물')을 적용하기 전에는 새 워커를 띄우지 않는다.
-- 파일 저장소 S3 연결 · 서명 URL — 지금은 웹 · 워커가 함께 보는 로컬 폴더(`SBRAIN_ARTIFACT_ROOT`)만 있다. 같은 저장소 창구(`orchestrator/files.py`)에 끼운다(새 패키지가 필요해 먼저 알린다).
+- 파일 저장소 서명 URL — 웹은 `read_artifact_file`로 내용을 받아 내려준다. 웹팀과 맞춘 뒤 더한다.
+- 실제 S3로 확인 — S3 저장소는 가짜 S3 클라이언트로만 시험했다. 웹 EC2(IAM 역할)에서 워커 `--once`(시작 확인) → 실행 한 건 → 버킷에 객체가 생겼는지 → 완전 삭제 뒤 10분이 지나 지워졌는지 순서로 확인한다.
 - 프로젝트 없는 실행 건(테스트 · 시연용 직접 시작)의 파일 정리 — 완전 삭제를 부르지 않으면 파일이 남는다.
 - 결제 · 한도로 재개 대기에 들어간 실행 건을 충전 직후 바로 재개하는 수단, 그때의 웹 관리자 알림(웹 INSERT 약속을 바꿔야 한다) — 지금은 다음 재개 예약 시각까지 기다리고, 운영 로그 `errorCode` · 관리자 호출 조회로만 알 수 있다.
 - 웹 표의 정리 — 알림은 기준 문서대로 실행 건과 함께 보관 · 함께 지움(웹이 프로젝트를 지울 때 지우고, 남은 것은 `missing_projects`로 찾아 지움), 실패 알림은 웹팀 몫.

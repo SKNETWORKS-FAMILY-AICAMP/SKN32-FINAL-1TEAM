@@ -2,6 +2,7 @@
 import React, {useState,useRef,useEffect} from 'react';
 import {listNotifications,listProjects,markNotificationRead} from '../../api.js';
 import {formatKstDate,parseServerTime} from '../../time.js';
+import {projectNameOf} from './utils.js';
 
 export function FloatingInput({inputRef,type,value,onChange,label}){
   return <label className="block text-[14px] text-[var(--muted-fg)]"><span className="block mb-2">{label}</span><input ref={inputRef} type={type} value={value} onChange={onChange} onInput={onChange} onBlur={onChange} className="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--fg)]"/></label>;
@@ -84,7 +85,7 @@ function formatNotifiedAt(value){
 export function progressAlertsFrom(projects){
   const alerts = [];
   for (const p of projects) {
-    const name = p.description || '내 프로젝트';
+    const name = projectNameOf(p.description) || '내 프로젝트';
     const project = { id: p.project_id, matched: true, announcementTitle: p.notice_title };
     const failed = p.display_status === DISPLAY_FAILED;
     const retryCount = p.retry_count ?? 0;

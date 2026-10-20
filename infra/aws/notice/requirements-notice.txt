@@ -1,0 +1,27 @@
+# 공고 서버(search.app) · 매일 배치(collect.daily_pipeline) 가상환경 — install-notice.sh 가 깐다.
+#
+# torch 는 여기 넣지 않는다. install-notice.sh 가 CPU 판(2.14.0)을 먼저 깐다
+# (기본 저장소의 torch 는 CUDA 판이라 수 GB 더 커진다).
+# 판 번호는 개인 서버에서 매일 배치를 돌리던 판(SB-189 deploy/batch-requirements.txt)과 같다.
+
+# 매일 배치
+requests==2.34.2
+PyMySQL[rsa]==1.2.0
+cryptography==50.0.1
+pdfplumber==0.11.10
+pdfminer.six==20260107
+pypdfium2==5.13.0
+olefile==0.47
+numpy==2.5.3
+sentence-transformers==6.0.1
+transformers==5.17.0
+tokenizers==0.23.2
+safetensors==0.8.0
+huggingface_hub==1.31.0
+chromadb==1.5.9
+openai==3.13.0
+
+# 공고 서버 (data-collection/requirements.txt 와 같은 하한)
+fastapi>=0.110
+uvicorn>=0.27
+pydantic>=2.6

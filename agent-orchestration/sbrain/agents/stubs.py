@@ -818,7 +818,7 @@ def _card(sc: StubScenario, aid: str, rank: int, today: date, *, more: bool, fit
     if changes - set(MORE_CHANGE_KINDS):
         raise ValueError(f"more_changes 종류는 {MORE_CHANGE_KINDS} 중에서: {sorted(changes - set(MORE_CHANGE_KINDS))}")
     no_deadline = aid in sc.no_deadline_ids
-    if not settings.BONUS_ENABLED or aid in sc.null_bonus_ids:   # 가산점 스위치 꺼짐(기본, 잠정)이면 만들지 않는다
+    if not settings.BONUS_ENABLED or aid in sc.null_bonus_ids:   # 가산점 스위치 꺼짐(잠정)이면 만들지 않는다
         bonus = None
     else:
         bonus = STUB_BONUS_CHANGED if "가산점" in changes else STUB_BONUS

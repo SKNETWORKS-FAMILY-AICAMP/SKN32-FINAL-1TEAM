@@ -4,6 +4,8 @@
   실행 건 하나에 줄 하나 — '대기'면 그대로, '포기'면 '대기'로 되돌린다. 동시에 넣어도 오류가 아니다.
 - 워커: 넣은 뒤 10분(잠정)이 지나야 지우고, 성공하면 줄을 지운다. 3번 실패하면 '포기'. 여러 워커가 같은 줄을 처리하지 않는다.
 - 운영 로그 줄에는 실행 건 · 대기열 줄 번호까지만 — 키 · 파일 이름은 없다.
+- S3 저장소(가짜 S3 클라이언트): 워커가 실행 건 접두어째 지우고, 실패 종류는 S3 저장소의 오류 표대로 남는다
+  (일시 → 일시, ProviderError → 운영). 규칙(10분 지연 · 10분 간격 · 3번 포기)은 그대로다.
 
 여러 테스트가 같은 MySQL DB를 쓰므로 실행 건 ID는 테스트마다 새로 만들고, 목록은 자기 줄만 보고 확인한다.
 """
@@ -15,6 +17,7 @@ from datetime import timedelta
 
 import pytest
 from conftest import TIMING, Clock, make_app, start_and_select
+from s3_fake import ACCOUNT_ARN, BUCKET, PREFIX, fake_s3_store
 from store_helpers import new_run, uid
 from worker_helpers import app_on, projects, worker
 
@@ -415,6 +418,61 @@ def test_local_folder_prefix_deleted(tmp_path):
     out = process_file_deletions(store, files)
     assert out.deleted == 2 and store.list_file_deletions(limit=None) == []
     assert not (tmp_path / "artifacts" / rid).exists() and (tmp_path / "artifacts" / other).is_dir()
+
+
+def test_worker_deletes_run_prefix_in_s3_store(db, runlog):
+    clock = Clock()
+    app = app_on(db, projects(0), clock)
+    files, fake = fake_s3_store()
+    app.engine.files = app.orchestrator.files = files                             # 워커 조립의 S3 저장소 (쓰기 가능)
+    rid, other = uid(), uid()
+    put(files, f"{rid}/e1/u1/index.html")
+    put(files, f"{rid}/e2/u2/secret-name.html")
+    put(files, f"{other}/e1/u1/index.html")
+    app.store.delete_artifacts(rid)
+    logs: list[str] = []
+    w = worker(app, logs, lease_sec=60, job_check_sec=0)
+    w.run_once("w")
+    assert len(fake.keys()) == 6 and "delete_objects" not in fake.methods()      # 10분 전에는 지우지 않는다
+    clock.advance(seconds=FIRST_DELAY_SEC + 1)
+    w.run_once("w")
+    assert fake.keys() and {k.removeprefix(PREFIX).split("/")[0] for k in fake.keys()} == {other}   # 그 접두어 아래만
+    assert ("list_objects_v2", f"{PREFIX}{rid}/") in fake.calls
+    assert app.store.file_deletion_for_run(rid) is None                           # 성공 → 줄을 지운다
+    lines = [x for x in runlog if x.startswith("파일삭제")]
+    assert len(lines) == 1 and lines[0].startswith(f"파일삭제 run={rid} deletion=")
+    assert not any(BUCKET in x or "secret-name" in x or PREFIX.rstrip("/") in x for x in runlog + logs)
+
+
+@pytest.mark.parametrize(("setup", "kind", "error"), [
+    (lambda f: f.inject("list_objects_v2", "slow_down"), "일시", "S3TemporaryError"),
+    (lambda f: f.inject("list_objects_v2", "connect_timeout"), "일시", "S3TimeoutError"),
+    (lambda f: f.inject("delete_objects", "internal_error"), "일시", "S3TemporaryError"),
+    (lambda f: f.fail_in_delete("SlowDown"), "일시", "S3TemporaryError"),
+    (lambda f: f.inject("delete_objects", "access_denied"), "운영", "ProviderError"),
+    (lambda f: f.fail_in_delete("AccessDenied"), "운영", "ProviderError"),
+    (lambda f: f.inject("list_objects_v2", "no_such_bucket"), "운영", "ProviderError"),
+])
+def test_s3_deletion_failure_kinds_follow_store_error_table(db, runlog, setup, kind, error):
+    clock = Clock()
+    app = app_on(db, projects(0), clock)
+    files, fake = fake_s3_store()
+    rid = uid()
+    put(files, f"{rid}/e1/u1/index.html")
+    app.store.delete_artifacts(rid)
+    clock.advance(seconds=FIRST_DELAY_SEC + 1)
+    setup(fake)
+    out = process_file_deletions(app.store, files)
+    assert (out.failed, out.deleted) == (1, 0)
+    row = row_of(app.store, rid)
+    assert (row.status, row.attempts, row.last_error_kind) == ("대기", 1, kind)   # 규칙(10분 뒤 다시)은 그대로
+    assert row.next_at == row.last_tried_at + timedelta(seconds=RETRY_SEC)
+    [line] = [x for x in runlog if x.startswith("파일삭제실패 ")]
+    assert line == f"파일삭제실패 run={rid} deletion={row.deletion_id} errorKind={kind} error={error} attempts=1"
+    assert not any(s in x for x in runlog for s in (BUCKET, "arn:", ACCOUNT_ARN, "amazonaws", "index.html"))
+    clock.advance(seconds=RETRY_SEC + 1)
+    assert process_file_deletions(app.store, files).deleted == 1 and fake.keys() == []   # 다음 시도에서 지운다
+    assert app.store.file_deletion_for_run(rid) is None
 
 
 def test_error_kinds_and_constants():
