@@ -174,12 +174,24 @@ def fit_document(section: str, header: str, attachment_labels: list[str]) -> tup
         heights = _row_heights(table, styles, scale, index == overview)
         if index == overview:
             heights = _image_row(table, heights)
+            if sum(heights) > body_height:   # 가장 작은 글자로도 한 쪽을 넘으면 쪽 아래로 넘치지 않게 행 단위로 다음 쪽에 잇는다
+                table = _allow_page_split(table)
         section = section[:start] + _apply_heights(table, heights) + section[end:]
 
     if attachment_labels:
         section = _label_attachments(section, attachment_labels, heading_char)
         section = _mark_overview_images(section)
     return section, header
+
+
+_TABLE_PAGE_BREAK = re.compile(r'(<hp:tbl\b[^>]*?\bpageBreak=")[A-Z]+(")')
+
+
+def _allow_page_split(table: str) -> str:
+    """표를 행 단위로 쪽 경계에서 나눌 수 있게(`pageBreak="CELL"`) 바꾼다 — 한 쪽보다 길어진 표가 쪽 아래로 넘치는 대신 다음 쪽으로 이어진다."""
+    table = _TABLE_PAGE_BREAK.sub(r'\1CELL\2', table, count=1)
+    # '글자처럼 취급'인 표는 글자 한 줄처럼 쪽 경계에서 나뉘지 않는다 — 풀어야 행이 다음 쪽으로 이어진다
+    return re.sub(r'(<hp:pos [^>]*?\btreatAsChar=")1(")', r'\g<1>0\2', table, count=1)
 
 
 def _image_row(table: str, heights: list[int]) -> list[int]:
