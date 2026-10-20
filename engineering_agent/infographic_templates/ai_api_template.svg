@@ -1,6 +1,0 @@
-<svg width="900" height="{{svg_height}}" viewBox="0 0 900 {{svg_height}}" xmlns="http://www.w3.org/2000/svg" font-family="'Malgun Gothic','Apple SD Gothic Neo',sans-serif">
-<title>{{alt_text}}</title>
-<rect x="0" y="0" width="900" height="{{svg_height}}" fill="#FFFFFF"/>
-{{body_block}}
-{{title_block}}
-</svg>

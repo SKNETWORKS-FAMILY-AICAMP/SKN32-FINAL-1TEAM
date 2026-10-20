@@ -1,4 +1,4 @@
-"""구현 · 검증-2 실구현을 흐름에 끼워 돌린다 (impl-verify2 spec 4.2 ~ 4.4 · 4.10 · 4.11, 7절 3 · 4 · 5 · 8 · 9번).
+"""구현 · 검증-2 실구현을 흐름에 끼워 돌린다.
 
 스텁 조립에 bind_partner_bv, 가짜 LLM은 목적별 응답(bv_fake), 가짜 이미지는 스텁 조립의 것(1×1 그림 → 칸 수 불일치) 또는
 EchoImage. 메모리 · SQLite 두 저장소(store_backend)에서 돈다. 네트워크 없음. 워커 조립의 호출처 나누기도 여기서 본다.
@@ -121,7 +121,8 @@ def test_tb1_gate_failure_redo_passes_previous_source_then_tv2_scores_it(clock):
     assert score.code_check.gate_failures == []
     [seventh] = [ch for ch in score.code_check.checks if ch.no == 7]
     assert not seventh.passed and score.total > 0
-    assert "abcd" not in recorded(app, rid) and MARK not in recorded(app, rid)
+    # 시험 비밀값 전체로 찾는다 — 'abcd'만 찾으면 무작위 16진수 ID(호출 · 실행 ID)에 우연히 들어가 가끔 실패했다
+    assert "abcd1234efgh5678" not in recorded(app, rid) and MARK not in recorded(app, rid)
 
 
 def test_tb1_unfixed_external_dependency_loses_item_7(clock):

@@ -220,7 +220,7 @@ def test_exhausted_calls_roll_back_without_run(clock):
 
 
 def test_classify_only_exhausted_fails_whole_tc1(clock):
-    """사양은 받았는데 분류만 재시도를 다 써도 T-C1 전체 실패(E-C1-TIMEOUT) — '웹개발'로 계속 가지 않는다 (spec 4.5)."""
+    """사양은 받았는데 분류만 재시도를 다 써도 T-C1 전체 실패(E-C1-TIMEOUT) — '웹개발'로 계속 가지 않는다."""
     app = real_tc1_app(clock)
     app.llm.respond("T-C1", split_reply())
     app.llm.plan("T-C1", ["timeout"] * 10, item_key=CLASSIFY)
@@ -365,7 +365,7 @@ def test_reference_docs_are_not_summarized():
         assert not hasattr(tc1, name), name
 
 
-# ── 동시 호출 · 실패 고르기 (Task 함수 단위, spec 4.5) ─────────────
+# ── 동시 호출 · 실패 고르기 (Task 함수 단위) ─────────────
 def run_tc1(llm: FakeLLM) -> tc1.TC1Out:
     return tc1.run(TC1In(form_input=pre_input()), make_tools(llm))
 

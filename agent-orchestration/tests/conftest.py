@@ -17,11 +17,13 @@ from webdb import create_web_tables, new_project  # noqa: E402
 from sbrain import env  # noqa: E402
 from sbrain.agents.stubs import StubScenario  # noqa: E402
 from sbrain.bootstrap import App, build_stub_app  # noqa: E402
+from sbrain.flow import rework_map  # noqa: E402
 from sbrain.intake import ProjectInputRecord  # noqa: E402
 from sbrain.models import PreInput  # noqa: E402
 from sbrain.orchestrator import MemoryStore  # noqa: E402
 from sbrain.orchestrator import settings  # noqa: E402
 from sbrain.orchestrator.store import Store  # noqa: E402
+from sbrain.store_s3 import client as _s3_client  # noqa: E402 — AWS 라이브러리는 불러오지 않는다
 from sbrain.store_sql import SqlStore, create_orchestrator_tables, create_sqlite_engine  # noqa: E402
 
 
@@ -113,6 +115,22 @@ def _artifact_root(monkeypatch, tmp_path):
     monkeypatch.setenv(ARTIFACT_ROOT_KEY, str(tmp_path / "artifacts"))
 
 
+# ── 실제 S3 클라이언트 만들기 막기 ─────────────────────
+# S3 저장소(sbrain.store_s3)는 클라이언트를 주입받지 않으면 처음 쓸 때 모듈 수준 함수 sbrain.store_s3.client.make_s3_client로
+# 만든다. 실제 클라이언트는 만들기만 해도 프로젝트 루트 밖(~/.aws)을 읽고 자격 증명을 찾으려 네트워크(EC2 메타데이터)에 닿을 수
+# 있으므로, 모든 테스트에서 이 함수를 부르면 바로 실패하는 것으로 바꿔 끼운다(저장소는 S3StoreError(client)로 올린다).
+# 시험은 가짜 클라이언트를 주입하거나(tests/s3_fake.py fake_s3_store) 이 함수를 가짜를 돌려주는 것으로 바꿔 끼운다
+# (s3_fake.patch_client_factory). 원래 함수는 REAL_MAKE_S3_CLIENT — 넘기는 값만 보는 시험이 세션 클래스를 가짜로 바꾼 뒤 부른다.
+REAL_MAKE_S3_CLIENT = _s3_client.make_s3_client
+
+
+@pytest.fixture(autouse=True)
+def _no_real_s3_client(monkeypatch):
+    def blocked(region):
+        raise RuntimeError("테스트에서 실제 S3 클라이언트를 만들지 않는다 — 가짜 S3 클라이언트(tests/s3_fake.py)를 끼운다")
+    monkeypatch.setattr(_s3_client, "make_s3_client", blocked)
+
+
 # ── 동시 실행 묶음 (pytest.ini: 기본 동시 실행, --dist loadgroup) ─────────────
 # 같은 묶음의 테스트는 한 프로세스에서 하나씩 돈다.
 #   MYSQL (mysqldb.py) — MySQL에 닿는 테스트 전부. require_mysql()이 묶음을 확인한다.
@@ -145,8 +163,9 @@ def pytest_runtest_protocol(item, nextitem):
         mysqldb.set_current_test(None)
 
 
-# ── 가산점 스위치 (orchestrator/settings.py BONUS_ENABLED, 기본 꺼짐) ─────
+# ── 가산점 스위치 (orchestrator/settings.py BONUS_ENABLED, 코드 값은 2026-10-19부터 켬 · 테스트 기본값은 꺼짐) ─────
 # 실제 T-C2 · 스텁 T-C2 · 웹 조회가 부를 때마다 모듈 속성으로 읽으므로 여기서 바꾸면 모든 곳에 닿는다.
+# 아래 자동 픽스처(_code_switches_off)가 모든 테스트에서 먼저 끄고, 켠 동작은 bonus_on으로 켜서 시험한다.
 @pytest.fixture
 def bonus_on(monkeypatch):
     """가산점을 켠다 — 켜져 있을 때의 동작(읽기 · 검사 · 스텁 가산점 · 웹에 그대로)을 시험한다."""
@@ -156,6 +175,24 @@ def bonus_on(monkeypatch):
 @pytest.fixture
 def bonus_off(monkeypatch):
     """가산점을 끈다(기본값과 같다) — 기본값이 바뀌어도 꺼짐 동작 시험이 그대로 꺼짐을 보게 한다."""
+    monkeypatch.setattr(settings, "BONUS_ENABLED", False)
+
+
+# ── 코드 스위치 세 개 (배포 값은 켬 — 사업비 · 일정 필수 PLAN_TABLES_REQUIRED · 새 재작성 묶음 GENERAL_BUNDLES_ENABLED ·
+#    가산점 BONUS_ENABLED) ─────
+# 앞의 두 값은 2026-10-16, 가산점은 2026-10-19 배포부터 코드에서 켰다. 흐름 테스트 대부분은 사업비 · 일정 없이 시작하고 묶음 4개와
+# 가산점 없는 카드를 기대하므로 모든 테스트에서 꺼진 값으로 본다(테스트가 끝나면 monkeypatch가 되돌린다). 켠 동작은 각 테스트가
+# monkeypatch · bonus_on으로 켜서 시험한다(test_intake.py · test_general_bundles.py · test_notice_tc2.py — 자동 픽스처가 먼저 돌아
+# 테스트의 켜기가 이긴다). 코드에 적힌 값(배포 값)은 불러올 때 읽어 둔 CODE_SWITCHES로 확인한다.
+CODE_SWITCHES = {"PLAN_TABLES_REQUIRED": settings.PLAN_TABLES_REQUIRED,
+                 "GENERAL_BUNDLES_ENABLED": rework_map.GENERAL_BUNDLES_ENABLED,
+                 "BONUS_ENABLED": settings.BONUS_ENABLED}
+
+
+@pytest.fixture(autouse=True)
+def _code_switches_off(monkeypatch):
+    monkeypatch.setattr(settings, "PLAN_TABLES_REQUIRED", False)
+    monkeypatch.setattr(rework_map, "GENERAL_BUNDLES_ENABLED", False)
     monkeypatch.setattr(settings, "BONUS_ENABLED", False)
 
 

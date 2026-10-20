@@ -7,11 +7,11 @@
   sql/orchestrator_schema.sql.
   app_schema.sql은 공고 수집 스키마의 notices를 외래 키로 참조하는데 그 스키마는 이 프로젝트에 없어
   notice_id(UNIQUE)만 있는 notices를 먼저 만든다.
-- notifications.kind는 웹 스키마가 아직 ENUM('문서평가','산출물확인','표현검수','실패')라 완료 알림 '결과물'이 들어가지
-  않는다(웹에 ENUM 변경을 요청함). 테스트 DB에서만 ENUM에 '결과물'을 더한다(웹 스키마에 이미 있으면 그대로).
+- notifications.kind: 최신 웹 스키마(웹 마이그레이션 006 반영)에는 완료 알림 '결과물'이 있어 그대로 쓴다. 옛 웹 스키마
+  (ENUM('문서평가','산출물확인','표현검수','실패'))를 읽을 때만 테스트 DB에서 ENUM에 '결과물'을 더한다.
   app_schema.sql 파일은 고치지 않는다. proofread_logs는 Orchestrator가 쓰지 않아 웹 스키마 모양 그대로 둔다.
-- app_schema.sql 위치: 환경 변수(또는 .env) SBRAIN_TEST_WEB_SCHEMA가 있으면 그 파일, 없으면 이 폴더 두 단계 위에서
-  web/backend/app_schema.sql(웹과 같은 저장소에 둔 배치) → 01_원본/web/backend/app_schema.sql(작업 공간 배치) 순서로 찾는다.
+- app_schema.sql 위치: 환경 변수(또는 .env) SBRAIN_TEST_WEB_SCHEMA가 있으면 그 파일, 없으면 이 폴더 두 단계 위의
+  web/backend/app_schema.sql(웹과 같은 저장소에 둔 배치)을 찾는다.
 - MySQL 묶음: 테스트는 기본으로 여러 프로세스에서 동시에 돈다(pytest.ini). MySQL 테스트는 표를 처음 한 번만 새로 만들어
   함께 쓰고, 남긴 일을 끝에 정리하는 규칙이 한 프로세스 안에서만 맞으므로 모두 MYSQL 묶음(xdist_group "mysql")에 넣어
   한 프로세스에서 하나씩 돌린다. 넣는 법: 매개변수면 pytest.param("mysql", marks=MYSQL), 파일 전체면 pytestmark = MYSQL.
@@ -33,8 +33,7 @@ URL_ENV = "SBRAIN_TEST_MYSQL_URL"
 WEB_SCHEMA_ENV = "SBRAIN_TEST_WEB_SCHEMA"
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _BASE = Path(__file__).resolve().parents[2]
-WEB_SCHEMA_CANDIDATES = (_BASE / "web" / "backend" / "app_schema.sql",              # 웹과 같은 저장소
-                         _BASE / "01_원본" / "web" / "backend" / "app_schema.sql")  # 작업 공간
+WEB_SCHEMA_CANDIDATES = (_BASE / "web" / "backend" / "app_schema.sql",)   # 웹과 같은 저장소
 
 TEST_NOTICES = """
 CREATE TABLE IF NOT EXISTS notices (
@@ -126,12 +125,12 @@ def _reset(engine: Engine, database: str) -> None:
         raw.close()
 
 
-RESULT_KIND = "결과물"   # 완료 알림 kind (화면 11) — 웹 ENUM에 더하기를 요청한 값
+RESULT_KIND = "결과물"   # 완료 알림 kind (화면 11) — 웹 마이그레이션 006이 ENUM에 더한 값
 
 
 def _notification_kind_test_change(cur, database: str) -> None:
-    """테스트 전용 — notifications.kind ENUM에 '결과물'을 더한다 (웹 스키마에 아직 없으면). 기존 값('표현검수' 포함)은
-    그대로 둔다 — 옛 행을 읽는 시험에 쓴다. app_schema.sql 파일은 고치지 않는다."""
+    """테스트 전용 — notifications.kind ENUM에 '결과물'을 더한다 (읽은 웹 스키마에 없을 때만 — 옛 사본). 기존 값('표현검수'
+    포함)은 그대로 둔다 — 옛 행을 읽는 시험에 쓴다. app_schema.sql 파일은 고치지 않는다."""
     cur.execute("SELECT column_type, is_nullable FROM information_schema.columns "
                 "WHERE table_schema = %s AND table_name = 'notifications' AND column_name = 'kind'", (database,))
     column_type, nullable = cur.fetchone()

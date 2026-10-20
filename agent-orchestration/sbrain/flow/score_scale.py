@@ -1,4 +1,4 @@
-"""산출물층 환산 규칙 (재량 없음, spec 4.6 D9 ~ D12) — 공식은 이 모듈 한 곳에만 둔다.
+"""산출물층 환산 규칙 (재량 없음) — 공식은 이 모듈 한 곳에만 둔다.
 
 검증-2 원점수(코드 점검 total c · 계획서 대조 score f, 각각 0 ~ 15)를 그 실행 건 설정 사본의 배점
 (D = scoring.docLayerMax · C = scoring.codeCheckMax · P = scoring.featureMatchMax)으로 환산한다.
@@ -12,7 +12,7 @@
 - 반올림(잠정, PROVISIONAL scoring.scaledRounding): 환산 값은 소수 둘째 자리(반올림은 0.5 올림). 항목 줄 환산 배점 합 = C,
   환산 점수 합 = 층 값이 되도록 반올림 차이를 해당 항목 하나에 몰아준다 — 환산 점수 차이는 환산 점수가 환산 배점을 넘지
   않는 항목에. 총점 · 표시 점수는 지금처럼 소수 첫째 자리.
-- 배점 0(D12): C · P · D가 0이면 그 층 환산은 0이다. 0을 기본값(70 · 15)으로 바꾸지 않고, 나눗셈 오류만 막는다.
+- 배점 0: C · P · D가 0이면 그 층 환산은 0이다. 0을 기본값(70 · 15)으로 바꾸지 않고, 나눗셈 오류만 막는다.
   배점 칸이 없는 옛 설정 사본은 기본값(ScoringSettings — 70 · 15 · 15)으로 읽는다.
 
 쓰는 곳: 재작성 전후 비교(sbrain_flow._cycle_end), 판정 G-02b(조율 — 이 모듈을 import한다), 관리자 조회(reads.py),
@@ -190,7 +190,7 @@ def scale_code_check_items(checks: list[CodeCheck], code_check_max: float, *, la
 
 
 def display_score(score: float, layer_max: float) -> float:
-    """표시 점수(100점 환산) = 점수 ÷ 만점 × 100, 소수 첫째 자리. 만점이 0이면 0 (나눗셈 오류를 막는다, D12)."""
+    """표시 점수(100점 환산) = 점수 ÷ 만점 × 100, 소수 첫째 자리. 만점이 0이면 0 (나눗셈 오류를 막는다)."""
     if not layer_max:
         return 0.0
     return round(score / layer_max * 100, DISPLAY_DIGITS)

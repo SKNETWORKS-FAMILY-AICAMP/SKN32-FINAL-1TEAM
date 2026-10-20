@@ -1,0 +1,6 @@
+# up.sh · down.sh 가 실행할 때 만드는 파일 (커밋하지 않는다)
+.build/
+.out/
+
+# 각자 PC 에서만 바꾸는 설정
+settings.env.local

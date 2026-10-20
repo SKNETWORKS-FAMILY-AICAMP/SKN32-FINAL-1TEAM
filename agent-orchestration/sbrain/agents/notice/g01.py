@@ -1,4 +1,4 @@
-"""실제 G-01 자격 확인 — 공고 서버의 공고 상세(API 3)와 자격 판정(API 4)을 한 단계에서 한다 (spec 4.3.2 · 4.4).
+"""실제 G-01 자격 확인 — 공고 서버의 공고 상세(API 3)와 자격 판정(API 4)을 한 단계에서 한다.
 
 1. 공고 상세를 받아 `Announcement`로 바꾼다.
 2. 사업자(개인사업자 · 법인)인데 설립일이 없으면 판정 API를 부르지 않는다 — passed=False, missingInputs=['foundedAt']
@@ -34,20 +34,20 @@ from .convert import (
 )
 
 PRE_STARTUP = "예비창업자"
-CONDITION_NAMES = frozenset({"지원대상 유형", "업력"})   # 판정 조건 이름 (spec 3.2.2)
-# 모집 상태 (spec 4.4) — open → '모집중', closed → '마감', 그 밖(unknown 등) → '모집중' (기준 문서 v1.10 시트 4 Announcement.status)
+CONDITION_NAMES = frozenset({"지원대상 유형", "업력"})   # 판정 조건 이름
+# 모집 상태 — open → '모집중', closed → '마감', 그 밖(unknown 등) → '모집중' (기준 문서 시트 4 Announcement.status)
 STATUS_OPEN, STATUS_CLOSED = "모집중", "마감"
 
 
 def business_age_years(months: int) -> float:
-    """업력(년) = 업력 개월 / 12를 소수 한 자리로 반올림(사사오입, spec 4.3.2). round()는 짝수 맞춤이라 쓰지 않는다."""
+    """업력(년) = 업력 개월 / 12를 소수 한 자리로 반올림(사사오입). round()는 짝수 맞춤이라 쓰지 않는다."""
     return float((Decimal(months) / Decimal(12)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
 
 
 def to_announcement(data: Any, notice_id: str) -> Announcement:
-    """공고 상세 → Announcement (spec 4.4). 양식 · 평가 항목은 기본 양식(잠정), 요약 벡터는 받지 않는다([]).
+    """공고 상세 → Announcement. 양식 · 평가 항목은 기본 양식(잠정), 요약 벡터는 받지 않는다([]).
 
-    spec 3.2.1의 키는 모두 있어야 한다(값은 null일 수 있다). 키가 없어도 되는 것은 bonus_info · apply_period_type뿐.
+    약속한 키는 모두 있어야 한다(값은 null일 수 있다). 키가 없어도 되는 것은 bonus_info · apply_period_type뿐.
     source · url · apply_url은 Announcement에 자리가 없어 쓰지 않지만 약속한 키라 있는지만 본다.
     """
     d = obj(data, "notice")
@@ -140,7 +140,7 @@ def make_g01(client: NoticeClient) -> Callable[[G01In, Tools], G01Out]:
             raise ResourceNotFound("공고 없음 — 공고 상세")
         company = inp.company_info
         business = company.applicant_type != PRE_STARTUP
-        if business and company.founded_at is None:   # 판정 API를 부르지 않는다 (spec 4.3.2 ②)
+        if business and company.founded_at is None:   # 판정 API를 부르지 않는다
             missing = GateResult(passed=False, failed_conditions=[], missing_inputs=["foundedAt"], undecidable=False)
             return G01Out(gate_result=missing, business_age_years=None, selected_announcement=ann)
         body = eligibility_request(company, inp.today)

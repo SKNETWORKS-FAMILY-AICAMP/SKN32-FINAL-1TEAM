@@ -3,16 +3,16 @@
 - 값을 옮기기만 한다. 요약 · 보완 · 추정하지 않는다 (4-6: 수익모델 단가 · 경력은 사용자 입력만 쓴다).
 - 필수 항목이 비어 있으면 MissingRequired를 올린다. 호출한 쪽은 E-C1-REQUIRED로 안내하고
   T-C1을 실행하지 않는다. 폼 제출 단계(웹)의 검사를 다시 한 번 확인하는 자리다.
-- 한 줄 형식 중 기준 문서 v1.10이 정한 것(대표자 이력 · 팀 구성원 · 채용 계획 · 장비 · 협력 · 개발 기간 ·
+- 한 줄 형식 중 기준 문서가 정한 것(대표자 이력 · 팀 구성원 · 채용 계획 · 장비 · 협력 · 개발 기간 ·
   희망 사업화 자금 규모 · 자기부담 0)은 그대로 따른다. 그 밖에 DB 구조와 PreInput 필드가 1:1이 아닌 곳의
   변환 규칙은 기준 문서에 없어 잠정이다. 목록은 docs/T-C1_요구사항해석_구현.md 4절에 있다.
-- 기준 문서 v1.10에서 PreInput에 들어간 웹 입력값(FormExtension — 수익모델 항목 · 기업명 등)도 그대로 싣는다.
+- 기준 문서 PreInput에 있는 웹 입력값(FormExtension — 수익모델 항목 · 기업명 등)도 그대로 싣는다.
 - 목록 입력(대표자 이력 · 채용 계획 · 장비 · 협력 기관)은 웹 코드(
   PlanCareerIn · PlanHireIn · PlanEquipmentIn · PlanPartnerIn)의 키 이름으로 한 줄을 만든다.
   모르는 키만 있는 항목은 값만 순서대로 잇는다.
-- 사업비 · 일정 · 팀원 역할(budgetItems · scheduleItems · teamRoleCareers — 확장, spec 4.3)도 시작 요청에서 함께 옮긴다.
-  필수 확인은 스위치 settings.PLAN_TABLES_REQUIRED(잠정, 기본 꺼짐)가 켜졌을 때만 한다.
-- 목표 고객 · 창업아이템명 · 팀원 표 행(targetCustomer · startupItemName · teamMemberRows — 확장)도 시작 요청에서
+- 사업비 · 일정 · 팀원 역할(budgetItems · scheduleItems · teamRoleCareers)도 시작 요청에서 함께 옮긴다.
+  필수 확인(시트 6 E-C1-REQUIRED)은 스위치 settings.PLAN_TABLES_REQUIRED(2026-10-16 배포부터 켬)가 켜졌을 때만 한다.
+- 목표 고객 · 창업아이템명 · 팀원 표 행(targetCustomer · startupItemName · teamMemberRows)도 시작 요청에서
   함께 옮긴다. 선택 칸이라 필수 확인에 넣지 않는다. 값은 기록 · 로그 · 예외 메시지에 싣지 않는다.
 """
 from __future__ import annotations
@@ -54,21 +54,21 @@ LABELS: dict[str, str] = {
     "partners": "협력 파트너 · 기관",
     "desired_scale": "희망 사업 규모",
     "self_fund_amount": "자기부담금",
-    # 사업비 · 일정 필수 스위치(settings.PLAN_TABLES_REQUIRED)가 켜졌을 때의 결측 이름 (spec 4.3 — 이름 글자는 잠정)
+    # 사업비 · 일정 필수 스위치(settings.PLAN_TABLES_REQUIRED)가 켜졌을 때의 결측 이름 (이름 글자는 잠정)
     "budget_items": "사업비 집행계획",
     "budget_items_phase1": "사업비 집행계획(1단계)",
     "budget_items_phase2": "사업비 집행계획(2단계)",
     "schedule_items_agreement": "추진 일정(협약기간 내)",
 }
 
-# 필수 스위치의 결측 항목 (LABELS 키, 이 순서로 올린다). 단계 둘은 예비창업자만 본다 (spec 4.3 표)
+# 필수 스위치의 결측 항목 (LABELS 키, 이 순서로 올린다). 단계 둘은 예비창업자만 본다
 PLAN_TABLE_FIELDS = ("budget_items", "budget_items_phase1", "budget_items_phase2", "schedule_items_agreement")
 PHASES = ("1단계", "2단계")      # project_budget_items.phase 값 (예비창업만). 그 밖의 값은 None으로 본다 (잠정)
 # project_schedule_items.section → ScheduleItem.scope. 그 밖의 section row는 버린다 (잠정)
 SCHEDULE_SCOPE: dict[str, str] = {"feasibility": "agreement", "growth": "roadmap"}
 
 NONE_TEXT = "없음"  # '해당 없음'을 고른 항목 (시트 4 hiringPlan · facilities · partners)
-STARTUP_ITEM_NAME_MAX = 60   # 창업아이템명 = 아이디어 설명 첫 줄 60자까지 (웹 답 — 잠정 intake.startupItemName)
+STARTUP_ITEM_NAME_MAX = 60   # 창업아이템명 = 아이디어 설명 첫 줄 60자까지 (시트 4 PreInput.startupItemName)
 _LINE_BREAK = re.compile(r"\r\n|\r|\n")
 PROOF_TEXT = "증빙 있음"  # 대표자 이력에 증빙이 있을 때 붙인다
 
@@ -118,7 +118,7 @@ def to_pre_input(record: ProjectInputRecord) -> PreInput:
         "desired_scale": f"{plan.budget_scale_manwon}만원" if not business and plan.budget_scale_manwon is not None else None,
         # 첫 창업 여부 — 받지 않는다 (웹팀 확인 2026-09-30). 새 판(v1.10)에서 빠졌지만 확장으로 남김
         "is_first_startup": None,
-        # FormExtension — 기준 문서 v1.10에서 PreInput에 들어간 웹 입력값
+        # FormExtension — 기준 문서 PreInput에 있는 웹 입력값
         "revenue_items": revenue or [],
         "company_name": _text(company.company_name),
         "biz_type": _text(company.biz_type),
@@ -129,7 +129,7 @@ def to_pre_input(record: ProjectInputRecord) -> PreInput:
         "occupation": _text(plan.occupation),
         "representative_capability": _text(plan.ceo_capability),
         "self_in_kind_resources": _text(plan.self_in_kind_resources),
-        # 확장 — 계획서 표(사업비 · 일정)와 팀원 역할 (spec 4.3). T-C1이 회사 정보로 그대로 옮긴다
+        # 확장 — 계획서 표(사업비 · 일정)와 팀원 역할. T-C1이 회사 정보로 그대로 옮긴다
         "budget_items": [_budget_item(r) for r in record.budget_items],
         "schedule_items": [s for s in (_schedule_item(r) for r in record.schedule_items) if s],
         "team_role_careers": [s for s in (_role_career(m) for m in record.team_members) if s],
@@ -149,7 +149,7 @@ def to_pre_input(record: ProjectInputRecord) -> PreInput:
     elif applicant == "예비창업자":
         required += ["desired_scale"]
     missing = [f for f in required if values[f] in (None, "", [])]
-    if settings.PLAN_TABLES_REQUIRED:   # 부를 때마다 모듈 속성으로 읽는다 (잠정, 기본 꺼짐 — 꺼져 있으면 비어도 통과)
+    if settings.PLAN_TABLES_REQUIRED:   # 부를 때마다 모듈 속성으로 읽는다 (2026-10-16 배포부터 켬 — 꺼져 있으면 비어도 통과)
         missing += _plan_tables_missing(applicant, values["budget_items"], values["schedule_items"])
     if missing:
         raise MissingRequired(missing)
@@ -158,7 +158,8 @@ def to_pre_input(record: ProjectInputRecord) -> PreInput:
 
 def _plan_tables_missing(applicant: ApplicantType | None, budgets: list[BudgetItem],
                          schedules: list[ScheduleItem]) -> list[str]:
-    """사업비 · 일정 최소 기준 (웹팀 답 2026-10-10, spec 4.3 표). 협약 이후 일정 · 일반형은 담당자 답을 기다린다."""
+    """사업비 · 일정 최소 기준 (웹팀 답 2026-10-10). 협약 이후 일정은 선택 입력이다(담당자 답 2026-10-12).
+    담당자 일반형 양식은 우리 신청자 유형에 대응하는 것이 없어 고르지 않는다."""
     ok = {
         "budget_items": bool(budgets),
         "budget_items_phase1": applicant != "예비창업자" or any(b.phase == "1단계" for b in budgets),
@@ -168,7 +169,7 @@ def _plan_tables_missing(applicant: ApplicantType | None, budgets: list[BudgetIt
     return [f for f in PLAN_TABLE_FIELDS if not ok[f]]
 
 
-# ── 변환 규칙 (기준 문서 v1.10이 정한 형식 말고는 잠정) ──────────────────────────────────
+# ── 변환 규칙 (기준 문서가 정한 형식 말고는 잠정) ──────────────────────────────────
 def _text(v: Any) -> str | None:
     if v is None:
         return None
@@ -219,10 +220,9 @@ def _with_notes(head: str | None, notes: list[str]) -> str | None:
 
 
 def _career(c: dict[str, Any]) -> str | None:
-    """대표자 이력 — '구분: 내용 (기간, 증빙 있음)' (기준 문서 v1.10 시트 4 CompanyInfo.representativeCareer).
+    """대표자 이력 — '구분: 내용 (기간, 증빙 있음)' (기준 문서 시트 4 CompanyInfo.representativeCareer).
 
-    구분이 없으면 '내용 (기간)', 기간 · 증빙이 없으면 괄호를 생략한다. 증빙은 참일 때만 붙인다
-   . 증빙 말고는 값이 없는 항목은 뜻이 없어 뺀다.
+    구분이 없으면 '내용 (기간)', 기간 · 증빙이 없으면 괄호를 생략한다. 증빙은 참일 때만 붙인다. 증빙 말고는 값이 없는 항목은 뜻이 없어 뺀다.
     """
     kind, title, period = _describe(c.get("type")), _describe(c.get("title")), _describe(c.get("period"))
     if not (kind or title or period):
@@ -233,7 +233,7 @@ def _career(c: dict[str, Any]) -> str | None:
 
 
 def _hire(h: dict[str, Any]) -> str | None:
-    """채용 계획 — '직무 인원 · 요구역량: … · 채용 시기: …' (기준 문서 v1.10 시트 4 hiringPlan).
+    """채용 계획 — '직무 인원 · 요구역량: … · 채용 시기: …' (기준 문서 시트 4 hiringPlan).
 
     인원(headcount)은 문자열이다. 숫자만 있으면 '명'을 붙이고 아니면 그대로 쓴다. 빈 값은 생략한다.
     """
@@ -246,7 +246,7 @@ def _hire(h: dict[str, Any]) -> str | None:
 
 
 def _named(item: dict[str, Any]) -> str | None:
-    """장비 · 시설, 협력 기관 — '이름 (상태)' (기준 문서 v1.10 시트 4 facilities · partners).
+    """장비 · 시설, 협력 기관 — '이름 (상태)' (기준 문서 시트 4 facilities · partners).
     상태가 없으면 괄호를 생략한다 (잠정 — 기준 문서에 없음)."""
     name, status = _describe(item.get("name")), _describe(item.get("status"))
     return _with_notes(name, [status] if status else [])
@@ -265,7 +265,7 @@ def _named_item(item: Any) -> str | None:
 
 
 def _member(m: TeamMemberRow) -> str | None:
-    """팀 구성원 한 명 → '이름(역할): 경력' (기준 문서 v1.10 시트 4 teamCareers)."""
+    """팀 구성원 한 명 → '이름(역할): 경력' (기준 문서 시트 4 teamCareers)."""
     name, role, exp = _text(m.name), _text(m.role), _text(m.experience)
     head = f"{name}({role})" if name and role else (name or role or "")
     if exp:
@@ -274,7 +274,7 @@ def _member(m: TeamMemberRow) -> str | None:
 
 
 def _revenue_items(rows: list[PricingItemRow]) -> list[RevenueItem] | None:
-    """수익모델 항목 전체(저장 순서). 항목이 없거나 단가가 빈 항목이 있으면 결측 (기준 문서 v1.10 시트 4 revenueItems —
+    """수익모델 항목 전체(저장 순서). 항목이 없거나 단가가 빈 항목이 있으면 결측 (기준 문서 시트 4 revenueItems —
     1건 이상, 항목마다 단가 필수).
 
     단가는 AI가 지어내면 안 되는 값이라(4-6), 단가 없는 항목을 버리지 않고 입력을 막는다.
@@ -295,17 +295,17 @@ def _won(v: Decimal, what: str = "수익모델 단가") -> int:
 
 
 def _won_or_none(v: Decimal | None) -> int | None:
-    """사업비 금액 — NULL은 0으로 보지 않고 None으로 싣는다 (표에서는 뒤 단계가 '확인 필요'로 쓴다, spec 4.3)."""
+    """사업비 금액 — NULL은 0으로 보지 않고 None으로 싣는다 (표에서는 뒤 단계가 '확인 필요'로 쓴다)."""
     return None if v is None else _won(v, "사업비 집행계획 금액")
 
 
 def _budget_item(r: BudgetItemRow) -> BudgetItem:
-    """사업비 집행계획 한 row (spec 4.3). 값을 옮기기만 하고, 금액이 맞지 않으면 총사업비만 다시 낸다.
+    """사업비 집행계획 한 row. 값을 옮기기만 하고, 금액이 맞지 않으면 총사업비만 다시 낸다.
 
     총사업비 ≠ 정부지원 + 자기부담 현금 + 현물이면 총사업비를 세 금액의 합으로 다시 낸다. 단 총사업비와 세 금액이
     모두 있을 때만 비교한다 — 하나라도 None이면 불일치를 판단할 수 없어 총사업비를 그대로 둔다(None이면 None).
     담당자 코드(pipeline.normalize_back_input)와 다른 점: 담당자는 빈 금액을 0으로 더하고 총사업비 0은 건드리지 않지만,
-    여기서는 'NULL 금액은 0으로 보지 않는다'(spec 4.3)를 따라 빈 금액이 있으면 다시 내지 않는다(사용자 확인 2026-10-10 — spec 4.3의 두 규칙이 부딪치는 경우).
+    여기서는 'NULL 금액은 0으로 보지 않는다'를 따라 빈 금액이 있으면 다시 내지 않는다(두 규칙이 부딪치는 경우).
     세 금액 칸은 None 그대로 싣는다. 음수는 웹이 막기로 했다 — 여기서는 그대로 싣는다.
     빈 글자 칸은 빈 글자로 싣는다('확인 필요' · '미정' 표기는 표를 만드는 쪽 몫).
     """
@@ -322,7 +322,7 @@ def _budget_item(r: BudgetItemRow) -> BudgetItem:
 
 
 def _schedule_item(r: ScheduleItemRow) -> ScheduleItem | None:
-    """추진 일정 한 row (spec 4.3). section이 feasibility · growth 밖이면 버린다 (잠정)."""
+    """추진 일정 한 row. section이 feasibility · growth 밖이면 버린다 (잠정)."""
     scope = SCHEDULE_SCOPE.get(_text(r.section) or "")
     if scope is None:
         return None
@@ -331,7 +331,7 @@ def _schedule_item(r: ScheduleItemRow) -> ScheduleItem | None:
 
 
 def _role_career(m: TeamMemberRow) -> str | None:
-    """팀원 한 명 → '역할: 경력' (spec 4.3 — LLM 전송용). 하나만 있으면 그것만, 둘 다 없으면 뺀다. 이름은 넣지 않는다."""
+    """팀원 한 명 → '역할: 경력' (LLM 전송용). 하나만 있으면 그것만, 둘 다 없으면 뺀다. 이름은 넣지 않는다."""
     role, exp = _text(m.role), _text(m.experience)
     if role and exp:
         return f"{role}: {exp}"
@@ -358,14 +358,14 @@ def _member_row(m: TeamMemberRow) -> TeamMemberEntry:
 
 
 def _period(start: str | None, end: str | None) -> str | None:
-    """개발 기간 — 'YYYY-MM ~ YYYY-MM' (기준 문서 v1.10 시트 4 developmentPeriod)."""
+    """개발 기간 — 'YYYY-MM ~ YYYY-MM' (기준 문서 시트 4 developmentPeriod)."""
     start, end = _text(start), _text(end)
     return f"{start} ~ {end}" if start and end else None
 
 
 def _none_or_list(none_selected: bool | None, items: list[Any] | None,
                   describe: Callable[[Any], str | None]) -> str | None:
-    """'없음'을 골랐으면 '없음', 아니면 항목을 '; '로 이은 한 줄. 채용 계획의 '; '는 기준 문서 v1.10(시트 4
+    """'없음'을 골랐으면 '없음', 아니면 항목을 '; '로 이은 한 줄. 채용 계획의 '; '는 기준 문서(시트 4
     hiringPlan)에 있고, 장비 · 시설 · 협력의 이음표는 기준 문서에 없어 같은 것을 쓴다 (잠정)."""
     if none_selected:
         return NONE_TEXT
@@ -375,7 +375,7 @@ def _none_or_list(none_selected: bool | None, items: list[Any] | None,
 def _self_fund(plan: PlanInputRow) -> int | None:
     """자기부담금(원) — 현금 자기부담 가능액(self_cash_limit, 원 단위 — 웹팀 확인 2026-09-30).
 
-    자기부담을 하지 않으면 0 (기준 문서 v1.10 시트 4 selfFundAmount). app_schema.sql 주석의 '만원'은 웹 쪽 주석 수정 대상이다.
+    자기부담을 하지 않으면 0 (기준 문서 시트 4 selfFundAmount). app_schema.sql 주석의 '만원'은 웹 쪽 주석 수정 대상이다.
     """
     if plan.self_funding_allowed is False:
         return 0

@@ -1,4 +1,4 @@
-"""파일 참조(FileRef) · 파일 저장소 · 파일 창구(tools.files) · 엔진의 출력 참조 확인 (spec 4.1 ~ 4.4 · 4.9).
+"""파일 참조(FileRef) · 파일 저장소 · 파일 창구(tools.files) · 엔진의 출력 참조 확인.
 
 - 이름 · 키 · 형식 · 크기 규칙(Windows 예약 이름 포함)
 - 저장소 두 개(메모리 · 로컬 폴더): 같은 키 같은 내용은 성공, 다른 내용은 거절, 없는 키, 접두어째 지우기(여러 번 안전)
@@ -21,7 +21,7 @@ from conftest import Clock, x_settings
 from sbrain.models import FileRef, Run
 from sbrain.models.base import SBModel
 from sbrain.models.files import (
-    ALLOWED_MEDIA_TYPES, MAX_FILE_BYTES, file_key_problem, file_name_problem,
+    ALLOWED_MEDIA_TYPES, MAX_FILE_BYTES, file_key_problem, file_name_problem, file_prefix_problem,
 )
 from sbrain.models.clock import utc_now
 from sbrain.models.run import RedoState, make_state
@@ -81,6 +81,21 @@ def test_invalid_keys(key):
         assert key not in problem
 
 
+@pytest.mark.parametrize("prefix", ["r1/", "r1", "r1/e1/", "run-1/exec_2"])
+def test_valid_prefixes(prefix):
+    assert file_prefix_problem(prefix) is None
+
+
+@pytest.mark.parametrize("prefix", ["", "/", "r1//", "/r1/", "../", "r1/../", "r1/./", ".probe/", "r1\\e1/", "C:/r1/",
+                                    "r1/e 1/", None, 3])
+def test_invalid_prefixes(prefix):
+    # 접두어째 지우기의 규칙 하나 — 메모리 · 로컬 폴더 · S3 저장소가 모두 이 함수를 쓴다(거절 사유에 접두어를 넣지 않는다)
+    problem = file_prefix_problem(prefix)
+    assert problem is not None
+    if isinstance(prefix, str) and prefix.strip("/"):
+        assert prefix not in problem
+
+
 def _ref(**kw) -> dict:
     base = {"key": "r1/e1/u1/index.html", "name": "index.html", "mediaType": HTML, "size": 3, "sha256": SHA_ZERO}
     base.update(kw)
@@ -100,10 +115,13 @@ def test_file_ref_json_names_and_validation():
 
 # ── 저장소 ──────────────────────────────────────────────────
 
-@pytest.fixture(params=["memory", "local"])
+@pytest.fixture(params=["memory", "local", "s3"])
 def file_store(request, tmp_path) -> FileStore:
     if request.param == "memory":
         return MemoryFileStore()
+    if request.param == "s3":   # S3 저장소 + 가짜 S3 클라이언트 (네트워크 없음)
+        from s3_fake import fake_s3_store
+        return fake_s3_store()[0]
     return LocalFolderFileStore(tmp_path / "artifacts", create=True)
 
 
@@ -395,10 +413,13 @@ class TinyFlow:
         pass
 
 
-@pytest.fixture(params=["memory", "local"])
+@pytest.fixture(params=["memory", "local", "s3"])
 def files_for_engine(request, tmp_path) -> FileStore:
     if request.param == "memory":
         return MemoryFileStore()
+    if request.param == "s3":   # S3 저장소 + 가짜 S3 클라이언트 (네트워크 없음)
+        from s3_fake import fake_s3_store
+        return fake_s3_store()[0]
     return LocalFolderFileStore(tmp_path / "engine-files", create=True)
 
 
@@ -447,7 +468,7 @@ def test_output_ref_made_by_put_is_stored(clock, files_for_engine):
     assert isinstance(ref, FileRef) and ref.key.startswith(f"{rid}/{rec.execution_id}/")
     assert files_for_engine.read(ref.key) == b"<html/>"
     logs = store.call_logs(rid)
-    assert [(l.call_type, l.purpose, l.task_id) for l in logs] == [("file", "put", "X")]
+    assert [(l.call_type, l.purpose, l.task_id) for l in logs] == [("file", "put", "X"), ("file", "check", "X")]
     _no_secret(logs, ref.key, "index.html", "<html/>")
     assert rec.input_tokens is None                                         # 파일 호출은 토큰이 없다
 
@@ -528,9 +549,10 @@ def test_rule_step_with_files_flag_gets_file_tool(clock, files_for_engine):
     assert engine.advance(rid) == "사용자대기"
     [rec] = store.executions(rid)
     assert rec.status == "성공" and rec.model is None and rec.step_kind == "rule"
-    [log] = store.call_logs(rid)
+    [log, check] = store.call_logs(rid)                                     # 넣기 · 엔진의 출력 확인
     assert (log.call_type, log.purpose, log.task_id, log.execution_id, log.model) == (
         "file", "put", "G", rec.execution_id, None)
+    assert (check.purpose, check.execution_id) == ("check", rec.execution_id)
     assert seen == [1]
 
     fake = FileRef(key="run3/e/u/README.md", name="README.md", media_type="text/markdown", size=1, sha256=SHA_ZERO)
@@ -553,8 +575,9 @@ def test_rule_step_file_tool_uses_plain_timeout_and_retry(clock, files_for_engin
               settings_snapshot=settings, updated_at=now, created_at=now, queue=["G"], segment="S", segment_total=1)
     assert store.create_run(run, CommitBatch())
     assert engine.advance("run4") == "사용자대기"                          # Task 설정 표에 G 항목이 없어도 된다
-    [log] = store.call_logs("run4")
-    assert (log.timeout_sec, log.model, log.provider) == (7.0, None, None)
+    logs = store.call_logs("run4")                                          # 넣기 · 출력 확인 — 같은 설정
+    assert [l.purpose for l in logs] == ["put", "check"]
+    assert all((l.timeout_sec, l.model, l.provider) == (7.0, None, None) for l in logs)
 
 
 def test_put_refused_when_stored_run_is_not_running(clock, files_for_engine, monkeypatch):

@@ -1,7 +1,8 @@
-"""새 재작성 묶음 '일반현황 · 개요' · '그림' (스위치 — 기본 꺼짐, flow/rework_map.py GENERAL_BUNDLES_ENABLED).
+"""새 재작성 묶음 '일반현황 · 개요' · '그림' (스위치 — 2026-10-16 배포부터 코드에서 켬, flow/rework_map.py GENERAL_BUNDLES_ENABLED).
 
-- 꺼져 있으면 지금과 같다: 묶음 4개, 일반현황 · 개요 · 그림 항목은 태그 · 묶음 없음, 그 이름의 재작성 요청은 INVALID_ORDER.
-- 켜면(테스트에서만 monkeypatch로 켜고 끝나면 되돌린다): 문서층 묶음 6개(일반현황 · 개요, 그림, 문제인식, 실현가능성, 성장전략,
+- 테스트는 꺼진 값으로 돈다(conftest 자동 픽스처 — 코드 값은 CODE_SWITCHES로 확인).
+- 꺼져 있으면 묶음 4개, 일반현황 · 개요 · 그림 항목은 태그 · 묶음 없음, 그 이름의 재작성 요청은 INVALID_ORDER.
+- 켜면(테스트에서는 monkeypatch로 켜고 끝나면 되돌린다): 문서층 묶음 6개(일반현황 · 개요, 그림, 문제인식, 실현가능성, 성장전략,
   팀 구성), 태그 0-1 · 0-2(가장 긴 앞부분 — 2.3.6이 2.3을 이긴다), 새로 고른 양식 · 계획서 항목에 태그, 재작성 요청 접수,
   그림 묶음은 T-W2만 · 일반현황 · 개요는 T-W1만 다시 만든다, 판정의 '묶음 모두' 후보에 그림이 없다, 그림 fail이면 그림 후보.
 - 표를 읽는 곳은 부를 때마다 그때의 표 · 스위치를 본다(켠 뒤 이미 있던 실행 건에도 바로 적용, 끄면 목록 · 접수에서 빠짐).
@@ -10,7 +11,7 @@
 from __future__ import annotations
 
 import pytest
-from conftest import make_app, to_screen6
+from conftest import CODE_SWITCHES, make_app, to_screen6
 from flow_helpers import code_of, ctx_of, cycle_steps, pid, rework, usage_of
 
 from sbrain.agents.form_defaults import select_form
@@ -38,9 +39,14 @@ def sr(code: str, kind: str = "section", status: str = "fail") -> SectionResult:
                          warnings=[f"{code} 경고"] if status == "warning" else [])
 
 
-# ── 스위치 꺼짐 = 지금과 같음 ───────────────────────────────
-def test_switch_is_off_in_code_and_nothing_changes():
-    assert rework_map.GENERAL_BUNDLES_ENABLED is False
+# ── 코드 값 = 켬 (배포 값) ───────────────────────────────
+def test_switch_is_on_in_code():
+    assert CODE_SWITCHES["GENERAL_BUNDLES_ENABLED"] is True
+
+
+# ── 스위치 꺼짐 = 묶음 4개 ───────────────────────────────
+def test_switch_off_nothing_changes():
+    assert rework_map.GENERAL_BUNDLES_ENABLED is False                         # conftest가 끈 값
     assert rework_map.document_bundles() == OLD
     for code in ("2.1.1", "2.2.2", "2.3.5", "2.3.6", "3.1.1", "3.3.6"):
         assert rework_map.section_tag_bundle(code) is None

@@ -1,4 +1,4 @@
-"""T-W1 본문 작성(F16) · T-W2 그림(F18) · T-W3 표(F17) — 담당자 run_pipeline의 항목 반복을 Task 단위로 나눠 부른다 (spec 4.7).
+"""T-W1 본문 작성(F16) · T-W2 그림(F18) · T-W3 표(F17) — 담당자 run_pipeline의 항목 반복을 Task 단위로 나눠 부른다.
 
 - 항목마다 담당자 section_source(근거 · 원본 사실 · 울타리)를 만들고 담당자 함수 · 정리 함수(_strip_section_heading ·
   _normalize_section_output · _normalize_image_output · table_arguments · _table_fallback_text)를 그대로 쓴다.
@@ -6,7 +6,7 @@
   없는 항목은 목표 밖이어도 만든다. 다시 만들 때 담당자 함수에 validationFeedback = 그 항목의 문제 목록, retryInstruction =
   재작성 보완 지시(재수행이면 빈 문자열), previousText = 직전 본문(T-W1)을 넘긴다.
 - 일반현황 항목(2.1.1 · 3.1.1)의 근거 원본 사실에는 창업아이템명 · 팀구성현황을 덧붙인다(inputs.with_general_status_facts — 담당자 양식이 '웹에서 수령'이라고 적은 항목만).
-- T-W1 · T-W2는 동시에 부른다(4개 · 2개, spec 4.14). 결과는 양식 순서로 모은다. 재개 때 받은 결과(키 = 항목 번호 · 그림 ID)는
+- T-W1 · T-W2는 동시에 부른다(4개 · 2개). 결과는 양식 순서로 모은다. 재개 때 받은 결과(키 = 항목 번호 · 그림 ID)는
   다시 부르지 않는다(4.13).
 - T-W3는 규칙 코드다(LLM 없음 — tools를 받지만 llm을 부르지 않는다). 표 검사(requiredColumns · 행 길이)에 걸리면 그 시도에서 바로
   표를 지우고 본문 서술로 대체하고 check 불통과 + final_action(4.8). fallbackItems(검증-1 재수행 뒤에도 fail인 표)도 같은 대체를
@@ -39,7 +39,7 @@ from .outputs import (
 )
 
 FLOWS = ("USER_FLOW", "SERVICE_ARCHITECTURE")   # 그림 항목 하나의 두 그림 (담당자 F18)
-FINAL_TW3 = "표 제거 · 본문 서술 대체"           # T-W3 확정 동작 (spec 4.8)
+FINAL_TW3 = "표 제거 · 본문 서술 대체"           # T-W3 확정 동작
 TABLE_FAIL_DEFAULT = "표 필수 구조 검증 실패"     # 대체 사유가 없을 때 (담당자 코드와 같은 글자)
 TABLE_DISPLAY_DEFAULT = TABLE_FALLBACK_DISPLAY_DEFAULT   # 알 수 없는 코드의 일반 안내 — 화면 조회의 옛 값 문구와 같은 글
 STATUS_POLICY = ["provided", "proposed", "needs_confirmation"]
@@ -185,7 +185,7 @@ def _table_spec(code: str, title: str, spec: dict[str, Any], output: dict[str, A
 
 
 def _table_problems(spec: dict[str, Any], output: dict[str, Any], table: TableSpec | None) -> list[str]:
-    """담당자 표 검사 — 표마다 requiredColumns가 모두 있고 행 길이 = 열 수 (spec 4.8). 문구에 내용 없음."""
+    """담당자 표 검사 — 표마다 requiredColumns가 모두 있고 행 길이 = 열 수. 문구에 내용 없음."""
     required = [str(c) for c in spec.get("rules", {}).get("requiredColumns") or []]
     tables = [t for t in output.get("tables") or [] if isinstance(t, dict)]
     problems = []
@@ -261,16 +261,16 @@ def run_tw3(inp: TW3In, tools: Tools) -> TW3Out:
         spec = spec_for(specs, code)
         args = table_arguments(raw, kind, spec, canonical)
         if kind == ins.PRE_STARTUP and code.endswith(".5.3") and unassigned:
-            # 예비창업 단계 미지정 행 — 어느 단계 표에도 넣지 않고 2.5.3 표의 규칙으로 보존한다 (spec 4.4, 잠정)
+            # 예비창업 단계 미지정 행 — 어느 단계 표에도 넣지 않고 2.5.3 표의 규칙으로 보존한다 (잠정)
             args["rules"].update(unassignedOriginalRows=[dict(r) for r in unassigned],
                                  note="단계 미지정 원본은 별도 보존. 각 단계에 중복 배정하지 않음")
         output = py.generate_table(**args)
         table = _table_spec(code, title, spec, output)
         problems = _table_problems(spec, output, table)
-        if problems:   # 확정 동작 — 그 시도에서 바로 표 → 본문 서술 대체 (spec 4.8)
+        if problems:   # 확정 동작 — 그 시도에서 바로 표 → 본문 서술 대체
             failed[code] = problems
             output = _fallback(output, spec, " · ".join(problems), [FALLBACK_TABLE_STRUCTURE_INVALID])
-        elif code in fallback_items:   # 검증-1 재수행 뒤에도 fail인 표 (spec 4.10) — 판정은 fail 그대로
+        elif code in fallback_items:   # 검증-1 재수행 뒤에도 fail인 표 — 판정은 fail 그대로
             reason = " · ".join(targets.get(code) or (rework.issues if rework is not None else []))
             reason_codes = list((rework.fallback_reason_codes or {}).get(code, [])) if rework is not None else []
             output = _fallback(output, spec, reason, reason_codes or [FALLBACK_VALIDATION_FAILED])

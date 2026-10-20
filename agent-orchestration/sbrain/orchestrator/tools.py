@@ -7,13 +7,14 @@ tools는 호출마다 재시도 · 제한 시간 · 오류 종류 분류를 맡�
   tools는 timeout_sec를 요청에 실어 넘기고, 호출처는 시간이 넘으면 TimeoutError를 올린다.
 - 형식 오류: tools가 기대 스키마(schema)로 검사하고, Task의 parse 함수가 FormatError를 올려도 재시도한다.
 - 여러 스레드에서 동시에 써도 안전하다(Task 안 동시 호출). 재시도 기록은 호출별로 따로 센다.
-- 재시도 규칙(확장 · 잠정 — 기준 문서는 '오류 종류와 관계없이 재시도 횟수까지'): 일시 오류만 재시도 횟수까지 다시 보낸다.
+- 재시도 규칙(기준 문서 시트 1 재시도 · 재시도 간격): 일시 오류만 재시도 횟수까지 다시 보낸다.
   - 결제 · 한도 코드(errors.BILLING_LIMIT_CODES — ProviderError.code, 상태 코드와 관계없음)는 재시도하지 않고 '호출실패' ·
     '일시'로 끝낸다(ToolCallExhausted.billing_limit) — 엔진의 재개 일정으로 기다린다.
   - 그 밖의 응답 코드 오류가 입력 · 운영(classify_status)이면 재시도하지 않는다. 바로 끝내는 경우(_Immediate)도 그대로다.
-  - 일시 오류의 대기: 응답 코드 일시 · 시간 초과 · 연결 오류 · 파일 창구 밖의 OSError는 늘리는 간격
-    (재시도 간격 × 배수^(n−1) × (1 + 무작위[0, 비율]), n은 몇 번째 재시도인지 — 앞 실패의 종류와 관계없이 센다).
-    형식 오류 · 파일 창구의 모든 실패 · search(backoff=False)는 재시도 간격 고정(무작위 없음).
+  - 일시 오류의 대기: 응답 코드 일시 · 시간 초과 · 연결 오류(파일 호출 포함) · 파일 호출 밖의 그 밖의 OSError는
+    늘리는 간격(재시도 간격 × 배수^(n−1) × (1 + 무작위[0, 비율]), n은 몇 번째 재시도인지 — 앞 실패의 종류와 관계없이 센다).
+    형식 오류 · 파일 호출의 그 밖의 실패(연결 · 시간 초과가 아닌 OSError — 로컬 디스크 오류 등, 응답 코드 오류) ·
+    search(backoff=False)는 재시도 간격 고정(무작위 없음). 오류 종류 분류는 대기 간격과 관계없이 같다 — 예외 종류로만 가른다.
   - 응답이 Retry-After(ProviderError.retry_after_sec)를 알려 주면 그 대기는 계산 값과 그 값 중 큰 쪽, 최대 retry_after_cap_sec.
   - 한 호출의 대기 합은 wait_cap_sec(설정 키별 — 엔진이 찾아 넣음)를 넘지 않는다. 다음 대기를 더하면 넘게 되면 남은 재시도 없이
     마지막 실패로 소진한다(재시도 횟수보다 우선).
@@ -30,10 +31,12 @@ tools는 호출마다 재시도 · 제한 시간 · 오류 종류 분류를 맡�
 - 파일 창구(확장): files.put(이름, 내용, 형식) -> FileRef, files.get(FileRef) -> 내용. 저장소 호출은 같은 재시도 ·
   오류 분류(_call)를 거치고 호출 기록은 call_type 'file' · 목적 put · get이다. 이름 · 형식 · 크기 위반, 실행 건이 '실행'이 아닌
   넣기, 다른 실행 건 파일 읽기는 저장소를 부르지 않고 FileRejected다. 파일 내용 · 이름 · 키는 기록 · 예외 메시지에 넣지 않는다.
+  엔진의 출력 파일 참조 확인(Engine.check_file_refs)도 저장소 메타데이터 조회를 같은 _call로 한다 — 목적 check, 참조 하나에
+  호출 하나(Tools._stored_file_meta, 엔진 안쪽 — Task에 주는 파일 창구의 모양(put · get)은 늘리지 않는다).
 - 목적별 모델(확장): llm(purpose=p)는 ToolsConfig.purpose_models에 p가 있으면 그 모델로 부르고 호출 기록의
   model에도 그 모델을 남긴다. 호출처 · 온도 · 추론 강도 · 제한 시간 · 재시도는 Task 설정 그대로다. 목적 이름은 Task가 정하고
   tools · 엔진은 사전을 그대로 쓴다.
-- JSON 객체 응답(확장, spec 4.1): llm(json_mode=True)는 요청(LLMRequest.json_mode)에 실어 보낸다. 호출 기록 칸은 늘리지 않는다.
+- JSON 객체 응답(확장): llm(json_mode=True)는 요청(LLMRequest.json_mode)에 실어 보낸다. 호출 기록 칸은 늘리지 않는다.
 - 목적 · 항목 칸 길이: 호출 기록(CallLog)의 purpose · item_key는 만들 때 trace.CALL_LOG_TEXT_MAX(DB 칸 길이)로 뒤를 자른다.
   목적별 모델 찾기와 요청 메타데이터는 자르기 전 값이다. 모든 Task · 호출 종류에 같은 규칙(_call 한 곳).
 - 호출별 재시도 횟수(확장, 범용): search(retries=n)는 그 호출만 처음 포함 n + 1번 시도한다. 주지 않으면 설정 retry_count다.
@@ -75,7 +78,7 @@ class LLMRequest:
     metadata: dict[str, Any]
     reasoning_effort: str | None = None  # 추론 모델의 추론 강도
     # 확장 — JSON 객체 응답 요청(스키마 없이). 호출처가 response_schema가 없을 때만 JSON 객체 응답 형식으로 요청한다.
-    # 호출 기록에는 칸을 더하지 않는다 (spec 4.1)
+    # 호출 기록에는 칸을 더하지 않는다
     json_mode: bool = False
 
 
@@ -154,7 +157,7 @@ class ToolsConfig:
     image_timeout_sec: float = 120.0
     # 확장 — 호출 목적 → 모델 (Task 설정의 purposeModels를 엔진이 그대로 옮긴다). 없는 목적은 model로 부른다
     purpose_models: Mapping[str, str] = field(default_factory=dict)
-    # 확장 · 잠정 — 재시도 대기 (Settings.retry를 엔진이 옮긴다). wait_cap_sec은 설정 키로 찾은 그 호출 설정의 대기 합 상한
+    # 재시도 대기 (Settings.retry를 엔진이 옮긴다). wait_cap_sec은 설정 키로 찾은 그 호출 설정의 대기 합 상한
     backoff_multiplier: float = 2.0
     jitter_ratio: float = 0.25
     retry_after_cap_sec: float = 60.0
@@ -227,6 +230,8 @@ class ToolsContext:
 FILE_MISSING = "없는 파일"
 FILE_CONFLICT = "같은 키에 다른 내용"
 FILE_HASH_MISMATCH = "sha256 불일치"
+# 엔진의 출력 파일 참조 확인 호출의 목적 이름 (잠정) — 파일 호출 기록(call_type 'file')의 put · get 옆 값
+FILE_CHECK_PURPOSE = "check"
 
 
 # 이미지 모델 설정이 없는 Task의 이미지 호출 — 기록의 설명 칸에 남기는 이유 (CallError 값은 늘리지 않는다)
@@ -450,13 +455,23 @@ class Tools:
 
         return self._call("image", purpose, once, usage=lambda: box["usage"])
 
+    # ── 엔진 안쪽 ─────────────────────────────────────
+    def _stored_file_meta(self, store: FileStore, key: str) -> FileMeta | None:
+        """엔진 안쪽 — 출력 파일 참조 확인(Engine.check_file_refs)의 저장소 메타데이터 조회 한 번.
+
+        파일 호출과 같은 재시도 · 제한 시간 · 오류 분류 · 호출 기록(_call, call_type 'file' · 목적 check)을 거친다 — 참조 하나에
+        호출 하나. 없는 키는 None을 돌려주는 성공한 호출이다(규격 위반 판단은 엔진). Task에 주는 파일 창구(files — put · get)의
+        모양은 늘리지 않는다. 저장소는 엔진이 넘긴다(사전 단계 임시 Context에도 엔진의 저장소로 확인한다)."""
+        return self._call(FILE_CALL, FILE_CHECK_PURPOSE, lambda: store.meta(key))
+
     # ── 재시도 ────────────────────────────────────────
     def _call(self, call_type: str, purpose: str, once: Callable[[], T],
               usage: Callable[[], TokenUsage | None] = lambda: None, model: str | None = None,
               retries: int | None = None, backoff: bool = True) -> T:
         """model은 LLM 호출이 실제로 쓴 모델(목적별 모델) — 없으면 Task 모델을 기록한다.
         retries는 이 호출만의 재시도 횟수 — None이면 설정 retry_count.
-        backoff가 거짓이면(search(backoff=False)) 모든 재시도 대기가 재시도 간격 고정이다. 파일 창구(FILE_CALL)도 고정."""
+        backoff가 거짓이면(search(backoff=False)) 모든 재시도 대기가 재시도 간격 고정이다. 파일 호출(FILE_CALL)은 연결 오류 ·
+        시간 초과(ConnectionError · TimeoutError 계열)만 늘리는 간격이고 그 밖의 실패는 고정이다."""
         cfg, ctx = self._config, self._ctx
         llm, image = call_type == "llm", call_type == "image"
         log = CallLog(
@@ -466,7 +481,7 @@ class Tools:
             task_id=ctx.task_id,
             agent=cfg.agent,
             call_type=call_type,
-            # 기록 칸만 DB 칸 길이로 자른다 — 모델 찾기 · 요청 메타데이터는 원래 목적 그대로 (spec 4.12)
+            # 기록 칸만 DB 칸 길이로 자른다 — 모델 찾기 · 요청 메타데이터는 원래 목적 그대로
             purpose=clip_call_text(purpose),
             item_key=clip_call_text(self._item_key),
             provider=cfg.provider if llm else cfg.image_provider if image else None,
@@ -481,11 +496,13 @@ class Tools:
         code: str | None = None          # 마지막 시도의 오류 코드
         billing = False                  # 결제 · 한도 코드로 끝났는지
         waited = 0.0                     # 이 호출의 재시도 대기 합
-        fixed_only = call_type == FILE_CALL or not backoff
+        fixed_only = not backoff         # search(backoff=False) — 어떤 실패든 고정
+        # 파일 호출은 연결 오류 · 시간 초과만 늘리는 간격(저장소가 바쁨 · 끊김을 알려 준다)이고 나머지는 고정
+        fixed_default = fixed_only or call_type == FILE_CALL
         total = 1 + (cfg.retry_count if retries is None else max(0, retries))
         for no in range(1, total + 1):
             started = ctx.now()
-            code, retry_after, fixed, stop = None, None, fixed_only, False
+            code, retry_after, fixed, stop = None, None, fixed_default, False
             try:
                 result = once()
             except _Immediate as e:   # 재시도하지 않는다
@@ -497,6 +514,7 @@ class Tools:
                 error, kind, detail, fixed = "형식오류", "일시", str(e), True
             except TimeoutError:
                 error, kind, detail = "응답지연", "일시", "timeout"
+                fixed = fixed_only       # 파일 호출도 늘리는 간격
             except ProviderError as e:
                 code, retry_after = e.code, e.retry_after_sec
                 billing = code in BILLING_LIMIT_CODES
@@ -506,6 +524,8 @@ class Tools:
                 stop = billing or kind != "일시"
             except (ConnectionError, OSError) as e:
                 error, kind, detail = "호출실패", "일시", type(e).__name__
+                if isinstance(e, ConnectionError):   # 분류는 같고 대기만 — 파일 호출도 연결 오류는 늘리는 간격
+                    fixed = fixed_only
             else:
                 log.tries.append(CallTry(no=no, started_at=started, ended_at=ctx.now(), outcome="성공",
                                          **_usage_fields(usage())))

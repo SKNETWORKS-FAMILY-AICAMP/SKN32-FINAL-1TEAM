@@ -1,4 +1,4 @@
-"""스텁 공고 · 스텁 G-01 · 스텁 T-C2 (spec 4.6) — 공고 서버가 없을 때 · 테스트에서 쓰는 판정 규칙과 상황 조절."""
+"""스텁 공고 · 스텁 G-01 · 스텁 T-C2 — 공고 서버가 없을 때 · 테스트에서 쓰는 판정 규칙과 상황 조절."""
 from __future__ import annotations
 
 from datetime import date

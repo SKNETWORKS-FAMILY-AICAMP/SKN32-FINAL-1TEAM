@@ -30,7 +30,7 @@ def test_ddl_is_create_if_not_exists_only():
 
 
 def test_stats_and_job_tables_have_no_identifier_columns():
-    """통계 줄 · 작업 상태 표에는 계정 · 프로젝트 · 실행 건 · 실행 · 공고 ID나 자유 글 컬럼이 없다 (spec 4.1 · 5.4)."""
+    """통계 줄 · 작업 상태 표에는 계정 · 프로젝트 · 실행 건 · 실행 · 공고 ID나 자유 글 컬럼이 없다."""
     tables = {t.name: t for t in ORCH_TABLES}
     assert len(ORCH_TABLES) == 13
     stats, jobs = tables["orch_log_stats"], tables["orch_jobs"]
@@ -53,7 +53,7 @@ def test_stats_and_job_tables_have_no_identifier_columns():
 
 
 def test_file_deletion_table_is_minimal_and_outside_records():
-    """파일 삭제 대기열 표 (spec 4.6) — 칸 · 타입 · 고유 제약 · 색인 하나, orch_runs 외래 키 없음, RECORD_TABLES 밖.
+    """파일 삭제 대기열 표 — 칸 · 타입 · 고유 제약 · 색인 하나, orch_runs 외래 키 없음, RECORD_TABLES 밖.
 
     run_id를 갖는 표 중 RECORD_TABLES에 넣지 않는 것은 이 표 하나다(넣으면 12개월 처리 · 탈퇴가 줄을 지워 파일이 남는다).
     """
@@ -99,7 +99,7 @@ def test_settings_from_verification_policies(web_engine):
         conn.execute(insert(POLICIES).values(policy_id=2, pass_threshold=10))   # 첫 행만 쓴다
     s = provider.current()
     assert (s.scoring.doc_layer_max, s.scoring.artifact_layer_max, s.scoring.threshold) == (60, 40, 75)
-    # 코드 점검 배점 C = code_weight, 계획서 대조 배점 P = plan_weight, 산출물층 배점 = C + P (spec 4.6)
+    # 코드 점검 배점 C = code_weight, 계획서 대조 배점 P = plan_weight, 산출물층 배점 = C + P
     assert (s.scoring.code_check_max, s.scoring.feature_match_max) == (12, 28)
     assert {"codeCheckMax": 12, "featureMatchMax": 28, "artifactLayerMax": 40}.items() <= \
         provider.snapshot()["scoring"].items()

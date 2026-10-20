@@ -1,5 +1,5 @@
 // features/Workflow.jsx(2235줄)에서 분리 — 원본 로직/주석은 그대로 옮김.
-import React, {useState,useRef,useEffect} from 'react';
+import React, {useState,useRef,useEffect,useLayoutEffect} from 'react';
 import Preparation from '../../components/Preparation.jsx';
 import {Icon} from '../../components/Icons.jsx';
 import {SiteMock,RerunLeftBadge} from './shared.jsx';
@@ -95,9 +95,141 @@ export function ArtifactProgress({onComplete,itemInfo}){return <Preparation kind
 // 7/15)와 steps[11]/steps[13](재작성 후, 자동검증 15/15·대조 11/15)을 그대로 옮겼다.
 // 대조 사유(누락 기능 2건)도 시연 로그 featureMatch.findings 그대로다 — 계획서
 // 한 벌만으로는 나올 수 없는, 두 산출물을 독립적으로 대조해야만 나오는 지적이다.
-export function PrototypeFrame({ className = '', src = null }){
+// 미리보기 확대 · 축소 — 인포그래픽 글자가 작아 보기 어렵다는 피드백(10-19 웹 테스트)으로 넣었다.
+// 배율 1(100%)은 상자에 맞춘 크기다. [+] · [−]는 아래 단계로 움직이고, Ctrl+휠(터치패드 두 손가락 벌리기도 이것으로 온다)은 단계 사이도 간다.
+const ZOOM_STEPS = [1, 1.5, 2, 3, 4];
+const ZOOM_MAX = ZOOM_STEPS[ZOOM_STEPS.length - 1];
+const clampZoom = (z) => Math.min(ZOOM_MAX, Math.max(1, z));
+const stepZoom = (z, dir) => (dir > 0
+  ? ZOOM_STEPS.find((s) => s > z + 1e-3) ?? ZOOM_MAX
+  : [...ZOOM_STEPS].reverse().find((s) => s < z - 1e-3) ?? 1);
+
+function useBoxSize(ref){
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref]);
+  return size;
+}
+
+// 미리보기 위에 떠 있는 [−] 100% [+] [맞춤] 막대. 여기서 시작한 끌기가 바깥(제출 전 점검의 옆으로 넘기기)으로 올라가지 않게 막는다.
+function ZoomControls({ zoom, onZoom }){
+  const round = 'w-8 h-8 grid place-items-center rounded-full hover:bg-white/15 disabled:opacity-35 disabled:hover:bg-transparent';
+  return (
+    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-0.5 px-1.5 py-1 rounded-full bg-[#191f28]/80 text-white text-[12.5px] shadow-lg backdrop-blur-sm"
+      onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+      <button type="button" className={round} aria-label="축소" disabled={zoom <= 1} onClick={() => onZoom(stepZoom(zoom, -1))}><Icon name="minus" size={16}/></button>
+      <span className="min-w-[46px] text-center tabular-nums" aria-live="polite">{Math.round(zoom * 100)}%</span>
+      <button type="button" className={round} aria-label="확대" disabled={zoom >= ZOOM_MAX} onClick={() => onZoom(stepZoom(zoom, 1))}><Icon name="plus" size={16}/></button>
+      <button type="button" className="h-8 px-3 rounded-full hover:bg-white/15 disabled:opacity-35 disabled:hover:bg-transparent" disabled={zoom <= 1} onClick={() => onZoom(1)}>맞춤</button>
+    </div>
+  );
+}
+
+// 인포그래픽을 확대 · 축소해 본다. 바깥 틀은 부모가 정한 크기를 채우고, 그 안에서 그림이 처음엔 다 보이게 맞춘다.
+// 키우면 보이는 칸이 틀 끝까지 커지고 그 뒤로는 스크롤 · 끌기(마우스)로 옮겨 본다. 두 번 누르면 그 자리를 2배로 키우고, 다시 두 번 누르면 맞춤으로 돌아간다.
+// 그림이 없는 빈 곳을 누르면 onEmptyClick을 부른다 — 미리보기 창은 예전처럼 그림 밖을 누르면 닫힌다.
+// 주소가 바뀌면 배율 · 그림 크기를 처음부터 다시 잡도록 key로 새로 만든다.
+export function ZoomImage(props){ return <ZoomImageInner key={props.src} {...props}/>; }
+function ZoomImageInner({ src, alt, className = '', style, boxClassName = '', onEmptyClick }){
+  const frameRef = useRef(null);
+  const scrollRef = useRef(null);
+  const imgRef = useRef(null);
+  const anchorRef = useRef(null); // 이 점(그림 안 비율 fx · fy, 틀 안 자리 qx · qy)이 배율이 바뀐 뒤에도 같은 자리에 오게 스크롤을 옮긴다
+  const dragRef = useRef(null);
+  const wheelRef = useRef(null);
+  const frame = useBoxSize(frameRef);
+  const [natural, setNatural] = useState(null);
+  const [zoom, setZoom] = useState(1);
+
+  const fit = natural && frame.w && frame.h ? Math.min(frame.w / natural.w, frame.h / natural.h) : 0;
+  const imgW = natural ? natural.w * fit * zoom : 0;
+  const imgH = natural ? natural.h * fit * zoom : 0;
+  const boxW = Math.min(frame.w, imgW);
+  const boxH = Math.min(frame.h, imgH);
+
+  const readNatural = (img) => { if (img?.naturalWidth) setNatural({ w: img.naturalWidth, h: img.naturalHeight }); };
+  useLayoutEffect(() => { if (imgRef.current?.complete) readNatural(imgRef.current); }, []);
+
+  const zoomTo = (next, client) => {
+    const el = scrollRef.current, fr = frameRef.current;
+    const z = clampZoom(next);
+    if (!el || !fr || !imgW || Math.abs(z - zoom) < 1e-3) return;
+    const er = el.getBoundingClientRect(), frr = fr.getBoundingClientRect();
+    const cx = client ? client.x : er.left + er.width / 2;
+    const cy = client ? client.y : er.top + er.height / 2;
+    anchorRef.current = { fx: (el.scrollLeft + cx - er.left) / imgW, fy: (el.scrollTop + cy - er.top) / imgH, qx: cx - frr.left, qy: cy - frr.top };
+    setZoom(z);
+  };
+  useLayoutEffect(() => {
+    const a = anchorRef.current, el = scrollRef.current;
+    if (!a || !el) return;
+    anchorRef.current = null;
+    el.scrollLeft = a.fx * imgW + (frame.w - boxW) / 2 - a.qx;
+    el.scrollTop = a.fy * imgH + (frame.h - boxH) / 2 - a.qy;
+  }, [zoom, imgW, imgH, boxW, boxH, frame.w, frame.h]);
+
+  // React의 onWheel은 passive라 브라우저 화면 확대(Ctrl+휠)를 막을 수 없다 — 직접 단다. 그냥 휠은 스크롤 그대로 둔다.
+  wheelRef.current = (e) => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+    zoomTo(zoom * Math.exp(-dy * 0.0015), { x: e.clientX, y: e.clientY });
+  };
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el) return;
+    const onWheel = (e) => wheelRef.current?.(e);
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  // 스크롤바는 숨긴다(zoom-scroll) — 칸 크기를 그림에 딱 맞춰 두어서, 스크롤바가 자리를 먹으면 반대쪽 스크롤바까지 따라 생긴다.
+  // 맞춤 크기일 땐 끌기를 바깥(옆으로 넘기기)에 양보한다. 키운 뒤에는 끌어서 옮기고, 터치는 브라우저 스크롤을 그대로 쓴다.
+  const onPointerDown = (e) => {
+    if (zoom <= 1) return;
+    e.stopPropagation();
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
+    const el = scrollRef.current;
+    dragRef.current = { x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* 캡처 실패는 무시 */ }
+  };
+  const onPointerMove = (e) => {
+    const d = dragRef.current, el = scrollRef.current;
+    if (!d || !el) return;
+    el.scrollLeft = d.left - (e.clientX - d.x);
+    el.scrollTop = d.top - (e.clientY - d.y);
+  };
+  const endDrag = () => { dragRef.current = null; };
+
+  return (
+    <div ref={frameRef} className={`relative flex items-center justify-center ${className}`} style={style}
+      onClick={(e) => { if (e.target === e.currentTarget) onEmptyClick?.(); }}>
+      <div ref={scrollRef} className={`zoom-scroll select-none ${zoom > 1 ? 'overflow-auto cursor-grab active:cursor-grabbing' : 'overflow-hidden'} ${natural ? boxClassName : ''}`}
+        style={natural ? { width: boxW, height: boxH } : undefined}
+        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}>
+        <img ref={imgRef} src={src} alt={alt} draggable={false} className="block" onLoad={(e) => readNatural(e.currentTarget)}
+          onDoubleClick={(e) => zoomTo(zoom > 1 ? 1 : 2, { x: e.clientX, y: e.clientY })}
+          style={natural ? { width: imgW, height: imgH, maxWidth: 'none' } : { position: 'absolute', width: 0, height: 0, opacity: 0 }}/>
+      </div>
+      {natural && <ZoomControls zoom={zoom} onZoom={(z) => zoomTo(z)}/>}
+    </div>
+  );
+}
+
+// zoomable이면 [−] [+] 막대가 뜨고, 키운 만큼 화면이 넓어져 가로 스크롤도 생긴다. 실제 화면은 iframe이라 그 위의 Ctrl+휠 · 끌기는
+// 부모 문서로 오지 않는다 — 확대 · 축소는 막대로만 하고, 옮기기는 스크롤로 한다.
+export function PrototypeFrame({ className = '', src = null, zoomable = false }){
   const boxRef = useRef(null);
+  const anchorRef = useRef(null);
   const [boxW, setBoxW] = useState(0);
+  const [zoom, setZoom] = useState(1);
   useEffect(() => {
     const el = boxRef.current;
     if (!el) return;
@@ -107,15 +239,37 @@ export function PrototypeFrame({ className = '', src = null }){
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  const scale = boxW ? boxW / PROTOTYPE_PAGE.w : 0;
-  return (
-    <div ref={boxRef} className={`soft-scroll overflow-y-auto overflow-x-hidden ${className}`} style={{ scrollbarGutter: 'auto' }}>
-      <div style={{ width: boxW || '100%', height: PROTOTYPE_PAGE.h * scale }}>
+  const scale = boxW ? boxW / PROTOTYPE_PAGE.w * zoom : 0;
+  // 배율이 바뀌어도 보고 있던 가운데가 그대로 가운데에 오게 한다
+  const zoomTo = (next) => {
+    const el = boxRef.current;
+    const z = clampZoom(next);
+    if (!el || !scale || Math.abs(z - zoom) < 1e-3) return;
+    anchorRef.current = { fx: (el.scrollLeft + el.clientWidth / 2) / (PROTOTYPE_PAGE.w * scale), fy: (el.scrollTop + el.clientHeight / 2) / (PROTOTYPE_PAGE.h * scale) };
+    setZoom(z);
+  };
+  useLayoutEffect(() => {
+    const a = anchorRef.current, el = boxRef.current;
+    if (!a || !el || !scale) return;
+    anchorRef.current = null;
+    el.scrollLeft = a.fx * PROTOTYPE_PAGE.w * scale - el.clientWidth / 2;
+    el.scrollTop = a.fy * PROTOTYPE_PAGE.h * scale - el.clientHeight / 2;
+  }, [zoom, scale]);
+  const page = (
+    <div ref={boxRef} className={`soft-scroll overflow-y-auto ${zoom > 1 ? 'overflow-x-auto' : 'overflow-x-hidden'} ${zoomable ? 'w-full h-full' : className}`} style={{ scrollbarGutter: 'auto' }}>
+      <div style={{ width: scale ? PROTOTYPE_PAGE.w * scale : '100%', height: PROTOTYPE_PAGE.h * scale }}>
         {scale > 0 && (
           <iframe src={src || '/prototype-preview.html'} title={src ? '프로토타입 화면' : '프로토타입 화면 예시'} sandbox="allow-scripts"
             style={{ width: PROTOTYPE_PAGE.w, height: PROTOTYPE_PAGE.h, border: 'none', transform: `scale(${scale})`, transformOrigin: 'top left' }}/>
         )}
       </div>
+    </div>
+  );
+  if (!zoomable) return page;
+  return (
+    <div className={`relative ${className}`}>
+      {page}
+      {boxW > 0 && <ZoomControls zoom={zoom} onZoom={zoomTo}/>}
     </div>
   );
 }
@@ -127,8 +281,9 @@ export function ResultPreview({kind,onClose,siteSrc=null,infoSrc=null}){
    onClick={(e)=>{ if (e.target===ref.current) onClose(); }} aria-label="산출물 미리보기">
    <button onClick={onClose} aria-label="미리보기 닫기" className="result-preview-lightbox-close"><Icon name="close"/></button>
    {kind==='site'
-     ? <PrototypeFrame className="result-preview-lightbox-frame" src={siteSrc}/>
-     : <img src={infoSrc || '/infographic-preview.png'} alt={infoSrc ? '인포그래픽' : '인포그래픽 예시'} className="result-preview-lightbox-img"/>}
+     ? <PrototypeFrame zoomable className="result-preview-lightbox-frame" src={siteSrc}/>
+     : <ZoomImage src={infoSrc || '/infographic-preview.png'} alt={infoSrc ? '인포그래픽' : '인포그래픽 예시'}
+         className="result-preview-lightbox-zoom" boxClassName="result-preview-lightbox-zoombox" onEmptyClick={onClose}/>}
  </dialog>;
 }
 

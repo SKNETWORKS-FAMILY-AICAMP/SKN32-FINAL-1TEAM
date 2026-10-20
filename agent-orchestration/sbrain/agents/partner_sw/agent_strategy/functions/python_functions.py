@@ -10,7 +10,7 @@ def collect_web_data(query: str, source_type: str, target_fields: list[str]) -> 
     if research['sources']:
         analysis=request_json('F01',{'query':query,'target_fields':target_fields,'research_data':research})
         research['analysis']=compact(analysis)
-        # [S-Brain] 기록용 칸(model · responseId · usage · inputChars) 옮기기 삭제 — request_json이 더는 싣지 않는다(spec 4.17)
+        # [S-Brain] 기록용 칸(model · responseId · usage · inputChars) 옮기기 삭제 — request_json이 더는 싣지 않는다
     return research
 # F14 calculate_budget()
 def calculate_budget(items: list[dict], quantity: list[int], unit_price: list[int], phase: str, rules: dict) -> dict:

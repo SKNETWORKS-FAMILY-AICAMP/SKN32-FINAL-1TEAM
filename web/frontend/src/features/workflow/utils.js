@@ -9,6 +9,14 @@ export const MOCK_TODAY = new Date('2026-09-08');
 export const scoreInt = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.floor(v + 1e-6) : v);
 export const maxInt = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : v);
 
+// 프로젝트 이름 — 따로 받는 칸이 없어 아이디어 설명의 첫 줄을 60자까지 쓴다. 설명 전체를 쓰면 길게 적은 만큼 목록 · 알림에 다 나온다.
+// 백엔드가 계획서 창업아이템명을 만드는 규칙(routers/projects.py _item_name)과 같아야 화면 이름과 계획서 이름이 어긋나지 않는다.
+const PROJECT_NAME_MAX = 60;
+export const projectNameOf = (description) => {
+  const line = (description || '').split(/\r?\n|\r/).map((s) => s.trim()).find(Boolean);
+  return line ? Array.from(line).slice(0, PROJECT_NAME_MAX).join('') : '';
+};
+
 export function yearsSince(dateStr){
   const then = new Date(dateStr);
   let years = MOCK_TODAY.getFullYear() - then.getFullYear();

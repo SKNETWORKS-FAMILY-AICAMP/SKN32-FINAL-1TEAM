@@ -1,4 +1,4 @@
-"""실행별 KIET 검색 연결 — 위치(엔진 밖) · 스위치 격리 (SB-360 spec 3.1 · 3.2 · 3.4). 네트워크 없음.
+"""실행별 KIET 검색 연결 — 위치(엔진 밖) · 스위치 격리 (SB-360). 네트워크 없음.
 
 - 연결 코드는 agents/partner_sw/market_research.py에 있고 엔진(orchestrator/)은 담당자 코드 · requests를 불러오지 않는다.
 - 테스트에서는 환경 변수 · .env에 켜는 값이 있어도 스위치가 꺼진다(conftest 자동 장치).

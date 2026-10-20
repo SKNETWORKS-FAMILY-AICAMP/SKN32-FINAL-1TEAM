@@ -1,0 +1,28 @@
+# S-Brain 웹 백엔드(FastAPI) — install-app.sh 가 /etc/systemd/system/ 에 둔다. 서버에서 직접 고치지 않는다(다시 올리면 덮어쓴다).
+# nginx 가 /api/ 를 127.0.0.1:8000 으로 넘긴다(nginx-app.conf). 바깥에서는 8000 에 바로 닿지 않는다.
+[Unit]
+Description=S-Brain web backend (FastAPI behind nginx)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sbrain-web
+Group=sbrain-web
+# config.py · app/ 가 있는 폴더에서 띄운다. /opt/sbrain/current 는 지금 올린 코드(releases/<이름>)를 가리킨다
+WorkingDirectory=/opt/sbrain/current/web/backend
+# 이미 있는 환경 변수가 웹 .env 보다 먼저라(config.py), 서버에는 웹 .env 파일을 두지 않는다
+EnvironmentFile=/etc/sbrain/db.env
+EnvironmentFile=/etc/sbrain/web.env
+# LibreOffice(계획서 PDF)가 쓰는 홈 폴더
+Environment=HOME=/var/lib/sbrain/web
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+UMask=0027
+ExecStart=/opt/sbrain/current/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1 --no-server-header
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

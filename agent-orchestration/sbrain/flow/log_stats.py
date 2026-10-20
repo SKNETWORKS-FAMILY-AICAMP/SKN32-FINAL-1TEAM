@@ -9,7 +9,7 @@
 - 층별 채점 출처(SCORE_LAYERS)와 현재 점수(current_scores)는 관리자 조회(reads.py)와 같은 정의 하나를 쓴다.
   산출물을 읽지 않고 실행 기록의 출력 요약 메타만 본다 — 완전 삭제 뒤에도 셀 수 있다.
 - 코드 점검 · 계획서 대조 · 산출물층 점수는 검증-2 원점수(출력 요약)를 그 실행 건 설정 사본 배점으로 환산해 싣는다
-  (score_scale.py — spec 4.6 D11). 실행 줄 data.maxScores에 그 실행 건 만점(D · C · P)을 함께 싣는다.
+  (score_scale.py). 실행 줄 data.maxScores에 그 실행 건 만점(D · C · P)을 함께 싣는다.
 """
 from __future__ import annotations
 

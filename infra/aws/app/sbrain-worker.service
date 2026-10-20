@@ -1,0 +1,28 @@
+# S-Brain 오케스트레이터 워커 — install-app.sh 가 /etc/systemd/system/ 에 둔다. 서버에서 직접 고치지 않는다(다시 올리면 덮어쓴다).
+# 워커는 1대만 띄운다(공고 서버 호출을 하나씩 보내는 잠금이 프로세스 안에서만 걸린다). 무중단 교체를 쓰지 않는다.
+[Unit]
+Description=S-Brain Orchestrator worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sbrain
+Group=sbrain
+# 운영 로그 파일 640 · 폴더 750
+UMask=0027
+EnvironmentFile=/etc/sbrain/worker.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/sbrain/current/.venv/bin/sbrain-worker
+# SIGTERM 이면 하던 단계를 끝내고 점유를 푼 뒤 끝난다. 한 단계가 몇 분 걸릴 수 있어 넉넉히 기다린다 (잠정)
+KillSignal=SIGTERM
+TimeoutStopSec=900
+Restart=on-failure
+RestartSec=10
+# 설정 없음 · 설정 오류 · S3 시작 확인 영구 실패는 종료 코드 2 — 다시 띄워도 같으므로 되풀이하지 않는다
+# (S3 시작 확인 일시 실패는 종료 코드 1 — 10초 뒤 다시 띄운다)
+RestartPreventExitStatus=2
+
+[Install]
+WantedBy=multi-user.target

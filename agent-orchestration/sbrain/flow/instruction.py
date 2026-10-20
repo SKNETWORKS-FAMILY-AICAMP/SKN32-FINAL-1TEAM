@@ -1,6 +1,6 @@
 """지시문 공용 부품 — Orchestrator 규칙(재량 없음). 작업 분해(T-C3, 조율)와 재작성 · 재수행 지시문 경로(흐름)가 함께 쓴다.
 
-지시 대상(instruction 입력을 가진 Task)의 지시문은 두 부분을 이 순서로 잇는다 (T-C3 spec 3.5).
+지시 대상(instruction 입력을 가진 Task)의 지시문은 두 부분을 이 순서로 잇는다.
 
     [작업 틀]                ← 틀: 코드가 쓰는 고정 문구 (역할 · 기준 문서 규칙)
     <틀>
@@ -12,7 +12,7 @@
 - 부분은 머리말 경계로 나눈다(문자열 일치가 아님). 틀은 코드 문구라 머리말이 없고, 안내는 정리(sanitize_guidance)를 거쳐
   머리말을 흉내 내지 못한다. 그래서 앞에서부터 찾은 첫 안내 머리말이 진짜 경계다.
 - 재작성 · 재수행 때는 저장된 지시문에서 안내 부분만 바꾸고(replace_guidance — 틀 부분의 바이트는 그대로),
-  문제 내용 원문을 Agent 연동 규격 형식 그대로 끝에 덧붙인다(append_problems, spec 5.3 · 5.4).
+  문제 내용 원문을 Agent 연동 규격 형식 그대로 끝에 덧붙인다(append_problems).
 - 머리말 표기는 잠정이다.
 - 예외 메시지에 지시문 · 안내 내용을 넣지 않는다.
 """
@@ -26,7 +26,7 @@ from ..models import ReworkInput, ReworkOrder
 FRAME_HEADER = "[작업 틀]"
 GUIDANCE_HEADER = "[작업 안내]"
 PART_HEADERS: tuple[str, ...] = (FRAME_HEADER, GUIDANCE_HEADER)
-# 문제 내용 덧붙임 머리말 — Agent 연동 규격에 적힌 형식 (spec 5.3)
+# 문제 내용 덧붙임 머리말 — Agent 연동 규격에 적힌 형식
 REWORK_ORDER_MARK = "[재작성]"
 ISSUES_MARK = "[{mode} — 문제가 된 내용]"
 
@@ -60,7 +60,7 @@ def isolate(tag: str, text: str) -> str:
 # ── 안내 정리 ──────────────────────────────────────────
 def sanitize_guidance(text: str) -> str:
     """앞뒤 공백을 지우고, 지시문 부분 머리말 · 덧붙임 머리말과 같은 글자를 같은 길이의 다른 표기로
-    바꾼다 (spec 3.6). 여러 번 해도 결과가 같다."""
+    바꾼다. 여러 번 해도 결과가 같다."""
     out = text.strip()
     for marker, replacement in _GUIDANCE_MARKERS:
         out = out.replace(marker, replacement)
@@ -92,13 +92,13 @@ def extract_guidance(text: str) -> str:
 
 
 def replace_guidance(text: str, new_guidance: str) -> str:
-    """저장된 지시문에서 안내 부분만 새 안내(정리해서)로 바꾼다 — 틀 부분은 한 글자도 바꾸지 않는다 (spec 5.3)."""
+    """저장된 지시문에서 안내 부분만 새 안내(정리해서)로 바꾼다 — 틀 부분은 한 글자도 바꾸지 않는다."""
     parts = split_instruction(text)
     start = len(_FRAME_START) + len(parts.frame) + len(_GUIDANCE_START)
     return text[:start] + sanitize_guidance(new_guidance)
 
 
-# ── 문제 내용 덧붙임 (spec 5.3 · 5.4) ─────────────────────────
+# ── 문제 내용 덧붙임 ─────────────────────────
 def order_block(order: ReworkOrder) -> str:
     """재작성 지시 — '\\n\\n[재작성] {reason}', 보완 지시가 비어 있지 않고 사유와 다르면 '\\n{instructionDelta}'."""
     delta = order.instruction_delta

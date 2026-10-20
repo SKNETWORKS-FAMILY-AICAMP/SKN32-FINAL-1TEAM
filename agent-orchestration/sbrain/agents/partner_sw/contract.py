@@ -1,4 +1,4 @@
-"""담당자 실행 계약 · 채점 정책 · 항목 기준 — 불러올 때 한 번 읽는 상수 (spec 4.6).
+"""담당자 실행 계약 · 채점 정책 · 항목 기준 — 불러올 때 한 번 읽는 상수.
 
 양식 묶음(agents/form_defaults.py)이 계획서 항목 · 제목 · 종류 · 규칙과 채점 기준표를 여기서 끌어낸다(손으로 옮겨 적지 않음).
 담당자 자료 전체(resources)를 읽지 않으려고 이 세 파일만 직접 읽는다 — 담당자 코드(llm_runtime · scoring · validation_1)가
@@ -26,7 +26,7 @@ SCORE_RUBRIC: dict[str, Any] = _json(SCORE_RUBRIC_PATH)
 SCORE_POLICY_VERSION = str(SCORE_RUBRIC["version"])     # 담당자 채점 정책 버전 — 채점 기준표 버전
 CRITERIA_REGISTRY: dict[str, Any] = _json(CRITERIA_REGISTRY_PATH)
 
-# 우리 신청자 유형에 대응하는 담당자 문서 유형 (spec 4.6). 일반형(general)은 데이터로 남지만 고르지 않는다
+# 우리 신청자 유형에 대응하는 담당자 문서 유형. 일반형(general)은 데이터로 남지만 고르지 않는다
 PRE_STARTUP = "pre_startup"
 EARLY_STARTUP = "early_startup"
 

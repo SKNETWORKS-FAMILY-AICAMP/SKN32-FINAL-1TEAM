@@ -1,0 +1,14 @@
+# 매일 한국 09:00 에 notice-batch.service 를 부른다 — install-notice.sh 가 /etc/systemd/system/ 에 둔다.
+# 다음 실행 시각: systemctl list-timers notice-batch.timer
+[Unit]
+Description=Run the S-Brain daily notice batch at 09:00 KST
+
+[Timer]
+OnCalendar=*-*-* 09:00:00 Asia/Seoul
+AccuracySec=1min
+# 서버가 꺼져 있던 날을 켤 때 몰아서 돌리지 않는다
+Persistent=false
+Unit=notice-batch.service
+
+[Install]
+WantedBy=timers.target

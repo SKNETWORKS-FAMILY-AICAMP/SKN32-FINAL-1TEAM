@@ -42,6 +42,10 @@ REFRESH_TOKEN_EXPIRE_DAYS = 14
 SESSION_COOKIE_NAME = 'sbrain_session'  # Access Token 쿠키 — 기존 이름 유지(verify_*.py/tests 참고)
 REFRESH_COOKIE_NAME = 'sbrain_refresh'
 
+# 두 쿠키(Access · Refresh)의 Secure 표시. 배포(HTTPS)에서는 켜 둔다(기본값).
+# 로컬 http 개발 · 테스트(TestClient는 http://testserver라 Secure 쿠키를 다시 보내지 않는다)만 COOKIE_SECURE=0으로 끈다.
+COOKIE_SECURE = (pipeline_config.get('COOKIE_SECURE') or '1').strip().lower() not in ('0', 'false', 'no', 'off')
+
 
 def verify_google_id_token(id_token_str: str) -> dict:
     """구글 ID 토큰을 검증하고 payload(sub, email, name 등)를 반환한다.
@@ -136,7 +140,7 @@ def set_session_cookie(response: Response, token: str) -> None:
         key=SESSION_COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=False,  # TODO: 배포(https) 시 True로 변경
+        secure=COOKIE_SECURE,
         samesite='lax',
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path='/',
@@ -152,7 +156,7 @@ def set_refresh_cookie(response: Response, token: str) -> None:
         key=REFRESH_COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=False,  # TODO: 배포(https) 시 True로 변경
+        secure=COOKIE_SECURE,
         samesite='lax',
         max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
         path='/',

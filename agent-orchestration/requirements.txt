@@ -8,9 +8,12 @@ openai==3.20.0
 # .env 파일에서 환경 변수 읽기 (OPENAI_API_KEY 등) — sbrain/env.py
 python-dotenv==1.2.3
 # 담당자 KIET 시장 자료 크롤러(partner_sw/agent_strategy/runtime/market_crawler.py)의 의존성 — 담당자 판 그대로.
-# 우리 실행 흐름(T-S1 · T-S2)에서는 부르지 않는다(담당자 자체 실행에서만 쓰임). 실행마다 자동 검색은 다음 작업(status 30)
+# 우리 실행 흐름에서는 T-S1의 실행별 KIET 검색(스위치 SBRAIN_KIET_SEARCH를 켰을 때만 — sbrain/agents/partner_sw/market_research.py)이 이 크롤러를 부른다
 requests==2.33.1
 beautifulsoup4==4.14.3
+# 산출물 파일 S3 저장소 — sbrain/store_s3/ (boto3는 S3 호출, botocore는 클라이언트 설정 · 오류 타입을 직접 import)
+boto3==1.43.114
+botocore==1.43.114
 # 테스트 (pytest-xdist: 기본 동시 실행 · pytest-cov: 줄 단위 확인 범위 측정)
 pytest==9.1.1
 pytest-xdist==3.8.0

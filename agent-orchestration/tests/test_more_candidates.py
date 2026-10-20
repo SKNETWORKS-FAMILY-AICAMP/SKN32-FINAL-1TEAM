@@ -1,4 +1,4 @@
-"""공고 추가 조회 규칙 (spec 4.2 · 4.1.3) — 겹침 빼기 · 첫 조회 카드 갱신 · 내용 바뀜 · 막힌 공고 풀기 · 실패 처리.
+"""공고 추가 조회 규칙 — 겹침 빼기 · 첫 조회 카드 갱신 · 내용 바뀜 · 막힌 공고 풀기 · 실패 처리.
 
 - 추가 조회 결과에서 첫 조회와 겹치는 공고는 빼고, 첫 조회 카드는 자리 · 순위 · 표시 그대로 새 내용으로 바꾼다.
 - 내용 바뀜(contentChanged)은 공고 정보(제목 · 기관 · 마감일 · 모집 형태 · 지원 금액 · 링크)가 달라졌거나 두 카드의
@@ -46,7 +46,7 @@ def by_id(cards) -> dict[str, AnnouncementCard]:
 
 
 def screen_values(s3) -> tuple:
-    """추가 조회가 실패하면 그대로여야 하는 화면 3 값 (spec 4.2.3)."""
+    """추가 조회가 실패하면 그대로여야 하는 화면 3 값."""
     return (s3.collection_status, s3.filtered_count, s3.fallback_used, s3.fallback_mode, s3.candidates,
             s3.more_candidates)
 
@@ -74,7 +74,7 @@ def test_more_lookup_rescued_and_result_artifacts_registered():
     assert exact["firstCandidates"] == exact["moreCandidates"] == list[AnnouncementCard]
 
 
-# ── 내용 바뀜 비교 (spec 4.2.2) ──────────────────────────
+# ── 내용 바뀜 비교 ──────────────────────────
 CARD = AnnouncementCard(
     announcement_id="A01", title="공고", agency="기관", apply_end=date(2026, 10, 30), support_amount_max=100,
     fit_score=0.9, rank=1, display_type="card", match_reason="유사", source_notice="출처", original_url="u",
@@ -212,7 +212,7 @@ def test_reappearing_unchanged_announcement_is_not_marked_whatever_its_gate_resu
     assert ids(s3.more_candidates) == ["A11"] and s3.blocked_announcement_ids == ["A01"]   # 내용 그대로면 막힌 채
 
 
-# ── 막힌 공고 풀림 (spec 4.2.2 · 4.3.6) ───────────────────
+# ── 막힌 공고 풀림 ───────────────────
 @pytest.mark.parametrize("again", ["불통과", "통과"])
 def test_changed_blocked_announcement_is_released_in_same_save(clock, again):
     sc = StubScenario(gate_fail_ids={"A01", "A02"}, more_ids=["A01", "A02", "A11"], more_changes={"A01": {"정보"}})
@@ -245,7 +245,7 @@ def test_changed_blocked_announcement_is_released_in_same_save(clock, again):
         assert run.blocked_announcement_ids == ["A02"]
 
 
-# ── 실패 (spec 4.2.3) ───────────────────────────────────
+# ── 실패 ───────────────────────────────────
 def fail_more(sc: StubScenario, app, kind: str) -> Callable[[], None]:
     """추가 조회만 실패하게 한다. 되돌리는 함수를 돌려준다."""
     if kind == "규격위반":
@@ -349,7 +349,7 @@ def test_failed_lookup_cards_are_never_visible_selectable_or_counted(clock):
     assert code_of(lambda: app.orchestrator.select_announcement(rid, "X02")) == "INVALID_ANNOUNCEMENT"
 
 
-# ── 마감 임박순 안내 (spec 4.1.3) ─────────────────────────
+# ── 마감 임박순 안내 ─────────────────────────
 def test_deadline_fallback_notice_gets_suffix(clock):
     app = make_app(clock, StubScenario(deadline_fallback=True))
     res = app.orchestrator.start_run("acc-1", pre_input(), project_id=project_for(app))

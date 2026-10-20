@@ -1,0 +1,26 @@
+# S-Brain 매일 공고 수집 배치(14단계) — install-notice.sh 가 /etc/systemd/system/ 에 둔다. 서버에서 직접 고치지 않는다.
+# notice-batch.timer 가 매일 한국 09:00 에 부른다. 손으로: sudo systemctl start notice-batch (끝날 때까지 기다리지 않으려면 --no-block)
+# 기록: journalctl -u notice-batch · /var/lib/sbrain-notice/data/collect_log.jsonl
+[Unit]
+Description=S-Brain daily notice collection batch (collect.daily_pipeline)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=sbrain-notice
+Group=sbrain-notice
+UMask=0027
+EnvironmentFile=/etc/sbrain/db.env
+EnvironmentFile=/etc/sbrain/notice.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+Environment=HF_HUB_OFFLINE=1
+WorkingDirectory=/opt/sbrain-notice/current/data-collection
+ExecStart=/opt/sbrain-notice/current/.venv/bin/python -X utf8 -m collect.daily_pipeline
+# 종료 코드: 0 성공 · 1 실패 · 2 부분 실패(출처 하나 이상) · 3 이미 실행 중 · 4 수집 성공, 5~14단계 경고 — 1 만 실패로 본다
+SuccessExitStatus=2 3 4
+TimeoutStartSec=6h
+Nice=10
+# 배치가 끝나면(성공 · 실패 모두) 공고 서버를 다시 띄워 새 공고 · 벡터를 메모리에 올린다. 다시 켜는 동안(수십 초) 공고 추천이 멈춘다
+ExecStopPost=+/bin/systemctl --no-block try-restart notice-server.service

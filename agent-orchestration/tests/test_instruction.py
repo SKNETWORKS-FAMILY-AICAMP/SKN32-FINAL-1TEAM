@@ -1,5 +1,5 @@
 """지시문 공용 부품 (flow/instruction.py) — 두 부분(틀 · 안내) 잇기 · 나누기 · 안내만 바꾸기 · 정리 ·
-격리 · 문제 내용 덧붙임 (spec 3.5 · 3.6 · 5.3 · 5.4). 참조 자료 부분은 없다."""
+격리 · 문제 내용 덧붙임. 참조 자료 부분은 없다."""
 from __future__ import annotations
 
 import pytest
@@ -115,7 +115,7 @@ def test_isolate_wraps_and_neutralizes_closing_tag():
     assert out.startswith("<아이템>\n") and out.endswith("\n</아이템>") and out.count("</아이템>") == 1
 
 
-# ── 문제 내용 덧붙임 (5.3 · 5.4) ──────────────────────────
+# ── 문제 내용 덧붙임 ──────────────────────────
 def test_blocks_format():
     assert order_block(order()) == "\n\n[재작성] 문제인식 10/20\n문제인식 보완"
     assert order_block(order(delta="문제인식 10/20")) == "\n\n[재작성] 문제인식 10/20"   # 사유와 같으면 생략

@@ -41,6 +41,8 @@
 
 **옮기지 않은 것:** 원본 사본에 담당자 테스트 · 시험 도구 · `output/` · `.cache/` · `__pycache__`가 없었다(2026-10-08 판). 다음 판에 생기면 옮기지 않는다.
 
+**담당자 README(2026-10-16):** `engineering_agent/README.md` · `verification_agent/README.md` — 담당자가 Git 저장소의 이 자리에 옮겨 둔 것을 바이트 그대로 가져왔다. 코드는 읽지 않고 위 59개에 세지 않는다(파일 목록 테스트는 우리 파일 쪽에 넣어 센다).
+
 ## 3. 바꾼 곳 (연결부만)
 
 바꾼 줄에는 `[S-Brain]` 주석을 달았다. 담당자 코드에서 `grep -n "S-Brain"`으로 모두 찾을 수 있다.
@@ -96,7 +98,7 @@
 
 **'이미지대체' 사건(흐름 쪽):** `flow/sbrain_flow.py` `after_execution`이 T-B2 실행 기록마다 한 번 — 최종 실패인 이미지 호출이 있으면 `IMAGE_FALLBACK_DETAIL`(그 호출의 마지막 시도 설명에 오류 코드가 있으면 끝에 ` (code=…)`), 그 밖에 출력 `iconFallback`이 참이면 `ICON_FALLBACK_DETAIL`(잠정)로 남긴다. 필드로만 가른다.
 
-### 끼워 넣은 글꼴 · 아이콘 빼기 (T3가 쓴다)
+### 끼워 넣은 글꼴 · 아이콘 빼기
 
 - `engineering_agent/html_kit.py` `strip(html)` — 끼워 넣은 글꼴(`<style data-kit="font">`) · 아이콘 묶음(`<svg data-kit="icons">`)을 뺀다. `decorate(html)`는 먼저 `strip`한 뒤 다시 넣는다(거듭 불러도 같음).
 - `engineering_agent/builder_html.py` `user_message(instruction, previous_html)` — 재수행 · 재작성 때 이전 HTML을 `strip`해서 `<이전HTML>` 태그로 싣는다. 이전 원문(`previous_source_file`)을 읽어 `build_prototype_html(…, previous_html=…)`에 넘기면 담당자 코드가 알아서 뺀다.

@@ -48,8 +48,8 @@ def _normalize_section_output(output, spec, source, kind):
     return output
 
 def _normalize_image_output(output, flow_type='USER_FLOW'):
-    """F18 nodes 계약이 깨지면 FormatError — [S-Brain] 원래는 기본 흐름으로 바꿨다. 우리 규칙은 쓸 수 없는 응답을 재시도한다
-    (spec 4.1). 같은 검사가 request_json 응답 검사(tools.llm 재시도 안)에도 있어 보통은 여기까지 오지 않는다."""
+    """F18 nodes 계약이 깨지면 FormatError — [S-Brain] 원래는 기본 흐름으로 바꿨다. 우리 규칙은 쓸 수 없는 응답을 재시도한다.
+    같은 검사가 request_json 응답 검사(tools.llm 재시도 안)에도 있어 보통은 여기까지 오지 않는다."""
     if not isinstance(output,dict):
         raise FormatError('F18 응답 형식 오류')
     if output.get('flowType') != flow_type:
@@ -442,7 +442,7 @@ def _check_agreement_table_overrun(validation, spec, output, source, kind):
     return validation
 
 def run_pipeline(raw,kind,progress=None,render_image=None,max_rewrites=1,execution_scope='full'):
-    # [S-Brain] 실행 시각 · 경과 시간 기록 칸(startedAt · createdAt · completedAt · elapsedSeconds · durationMs) 삭제 (spec 4.1)
+    # [S-Brain] 실행 시각 · 경과 시간 기록 칸(startedAt · createdAt · completedAt · elapsedSeconds · durationMs) 삭제
     if kind not in CONTRACT['documents']:raise ValueError('문서 유형 오류')
     if execution_scope not in {'full','strategy_writing'}:raise ValueError('실행 범위 오류')
     if not isinstance(raw,dict):raise ValueError('입력 JSON은 객체여야 합니다.')
@@ -685,7 +685,7 @@ def _retry_context(raw, result):
 
 
 def retry_sections(raw, prior_result, section_id, retry_instruction='', progress=None, render_image=None, max_rewrites=1):
-    # [S-Brain] 실행 시각 · 경과 시간 기록 칸 삭제 (spec 4.1)
+    # [S-Brain] 실행 시각 · 경과 시간 기록 칸 삭제
     """선택 항목과 직접 표준 입력을 공유하는 항목을 함께 재생성한다."""
     kind=prior_result['documentType']
     plan=impact_plan(kind, section_id)

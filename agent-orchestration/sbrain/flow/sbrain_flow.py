@@ -4,23 +4,23 @@
   PRE      T-C1 → T-C2                                (실행 건 생성 전 — 첨부가 있어도 R-8은 넣지 않는다)
   MORE     T-C2 (offset=10)                           → 3 공고 선택 대기
            첫 조회와 겹친 후보는 빼고 첫 조회 카드를 새 내용으로 바꾼다 — 내용 바뀜 표시 · 막힌 공고 풀기 (after_step).
-           어떤 오류든 · 수집 상태 비정상이면 조회 전 후보로 두고 기회를 돌려준다 (on_rescue · after_step, spec 4.2.3)
+           어떤 오류든 · 수집 상태 비정상이면 조회 전 후보로 두고 기회를 돌려준다 (on_rescue · after_step)
   GATE     G-01                                       → 5 작성 시작 대기 / 3 공고 선택 대기
            G-01이 어떤 오류로 끝나도 실행을 살리고 고르기 전 대기 지점(3 또는 5)으로 돌아간다 (on_rescue)
   WRITE    T-C3 → T-S1 → T-S2 → T-W1 → T-W2 → T-W3 → M-1 → T-V1 → [검증-1 재수행] → G-02a   → 6 문서 평가 대기
-           [검증-1 재수행](spec 4.10): T-V1 바로 뒤에 fail 항목만 T-W1(본문) · T-W2(그림) → M-1 → T-V1(대상만), 끝내 fail인
+           [검증-1 재수행]: T-V1 바로 뒤에 fail 항목만 T-W1(본문) · T-W2(그림) → M-1 → T-V1(대상만), 끝내 fail인
            표는 T-W3(대체) → M-1. 재작성 사이클(화면 6 · 9)에서도 T-V1 바로 뒤(전후 비교 · T-B1 앞)에 같은 것이 끼워진다.
            상태는 Run.verify1(Verify1State), 횟수는 redo.verify1RedoCount(항목마다 · 사이클마다)
   PROTO    T-B1* → T-B2 → M-2** → G-04 → M-3 → T-V2 → G-02b              → 8 산출물 확인 대기
            G-04 자체 검사가 끝내 불통과면 관리자 기록 후 계속, T-V2 대조 보류 · 진단은 관리자 기록 (after_step)
-  RESULT   T-C4                                                          → 11 완료 (도는 동안 결과물 · 실행, 잠정)
+  RESULT   T-C4                                                          → 11 완료 (도는 동안 결과물 · 실행)
            검수(G-03 · T-P1 · T-P2 · M-4)와 R-8은 흐름 밖이다 — 등록부 줄 · 스텁은 남는다 (catalog.OUT_OF_FLOW_STEPS)
   REWORK6 · REWORK8 · REWORK9  재작성 사이클 (rework_queue 참고) — 묶음 요청을 모으는 시간 동안 모아 한 번에 연다
                                (service.request_rework_for_project, 지시는 bundle_orders)
   * 원페이지면 생략  ** 원페이지만
 G-02b는 T-V2 직후 계산하고(시트 2 "T-V2 종료 직후"), 화면 8을 거쳐 화면 9에서 보여준다.
 
-재작성 · 재수행 지시문 (T-C3 spec 5): 대상 Task의 지시문 입력을 build_instruction이 만든다.
+재작성 · 재수행 지시문: 대상 Task의 지시문 입력을 build_instruction이 만든다.
   첫 실행은 taskPlan의 지시문 그대로다. 검사 불통과 재수행 · 사용자 재작성의 대상 · 재작성 중 재수행이면 조율 다시 쓰기
   함수(rewriter, 조립이 끼운다)가 안내 부분만 다시 쓰고, 문제 내용 원문을 덧붙여 <taskId>.instruction으로 저장한다
   (같은 입력으로 재개하면 다시 쓰지 않고 저장한 것을 쓴다). 반영 실행(T-B1)과 다시 쓰기 함수가 없는 조립(스텁)은
@@ -28,11 +28,11 @@ G-02b는 T-V2 직후 계산하고(시트 2 "T-V2 종료 직후"), 화면 8을 �
 
 산출물층 검증 반영: 재실행 때 T-B1에 이전 원문 — 이전 프로토타입 진입 파일의 참조(previous_source_file)를
   준다 — 재작성 대상(initial_redo_state)과 검사 불통과 재수행(redo_rework_input)만. 반영 실행 · 다른 Task는 채우지
-  않고, 진입 파일이 없으면 비운다(검사에 걸린 HTML도 진입 파일이라 넘어간다 D2 · D3).
+  않고, 진입 파일이 없으면 비운다(검사에 걸린 HTML도 진입 파일이라 넘어간다).
   T-B2가 맞춤 아이콘을 못 쓴 세 경우(이미지 호출 재시도 소진 · 칸 수 불일치 · 그림 해석 오류)면 '이미지대체' 사건을
   T-B2 실행 기록마다 하나, 그 실행 기록과 같은 묶음에 남긴다(after_execution — 최종 실패인 이미지 호출이 있으면
   IMAGE_FALLBACK_DETAIL, 그 밖에 출력 iconFallback이 참이면 ICON_FALLBACK_DETAIL. 필드로만 가르고 사용자 화면에는
-  알리지 않는다 D13).
+  알리지 않는다).
 
 결과물 구간: 화면 9 '진행' 뒤 결과 통합(T-C4) 하나만 돈다. 도는 동안 (결과물, 실행), 실패하면 엔진의 실패 경로
 그대로 (결과물, 실패), 끝나면 (결과물, 완료)와 알림 '결과물' · 화면 11. 결과물 묶음의 검수 기록 칸은 늘 비어 있다.
@@ -74,7 +74,7 @@ STEP_SCREEN = {step: screen for screen, step in SCREEN_STEP.items()}
 STEP_LABEL = {CYCLE_END: "재작성 전후 비교"}
 # REWORK_DEFAULT_REASON(판정 지시가 없는 묶음의 재작성 지시 문구)은 rework_map에 있다 — 판정의 '묶음 모두' 후보와 같이 쓴다
 
-# ── 검증-1 fail 재수행 · 항목 단위 재수행 (spec 4.8 · 4.10 · 4.11) ─────────
+# ── 검증-1 fail 재수행 · 항목 단위 재수행 ─────────
 FIRST_CYCLE_KEY = "첫작성"            # Verify1State.cycleKey — 첫 작성 사이클 (재작성 사이클은 그 사이클 ID)
 VERIFY1_ROLE = "검증-1 재수행"         # 검증-1 fail 재수행으로 다시 도는 T-W1 · T-W2 · M-1 · T-V1의 역할
 FALLBACK_ROLE = "표 대체"              # 끝내 fail인 표를 본문 서술로 바꾸는 T-W3 · M-1의 역할
@@ -83,7 +83,7 @@ RESCORE_FEEDBACK = "재채점"            # 재작성 사이클 T-V1에 다시 �
 KIND_UNIT = {"section": "섹션", "image": "차트 1건", "table": "표 1건"}
 TASK_UNIT = {task: KIND_UNIT[kind] for kind, task in KIND_TASK.items()}
 # 자체 검사 재수행을 걸지 않는 Task — 규칙 코드라 같은 입력이면 같은 결과다. 검사에 걸리면 그 시도에서 바로 확정 동작
-# (표 → 본문 서술 대체)을 한다 (spec 4.8). 등록부의 redo 표시는 그대로 둔다
+# (표 → 본문 서술 대체)을 한다. 등록부의 redo 표시는 그대로 둔다
 NO_SELF_REDO = frozenset({"T-W3"})
 # 관리자 사건 종류 · 문구 (잠정 — orchestrator/settings.py PROVISIONAL event.*). 내용 · 지시문은 싣지 않는다
 EVENT_MATCH_WITHHELD = "대조보류"
@@ -93,38 +93,38 @@ EVENT_IMAGE_FALLBACK = "이미지대체"
 EVENT_ALT_SOURCE_MISSING = "대체텍스트출처누락"
 ALT_SOURCE_MISSING_DETAIL = "HTML 2번 미충족인데 defect_sources가 비어 있음 — T-B2로 보냄"
 IMAGE_FALLBACK_DETAIL = "T-B2 이미지 호출 실패 — 기본 아이콘으로 계속"
-ICON_FALLBACK_DETAIL = "T-B2 맞춤 아이콘 사용 불가 — 기본 아이콘으로 계속"   # (잠정) 칸 수 불일치 · 그림 해석 오류 (spec 4.3)
+ICON_FALLBACK_DETAIL = "T-B2 맞춤 아이콘 사용 불가 — 기본 아이콘으로 계속"   # (잠정) 칸 수 불일치 · 그림 해석 오류
 def image_fallback_detail(log: CallLog) -> str:
     """'이미지대체' 첫째 설명 — 최종 실패한 이미지 호출의 마지막 시도 설명에 오류 코드가 있으면 끝에 ' (code=…)'를 붙인다
-    (호출 실패 처리 spec 4절). 코드가 없으면 IMAGE_FALLBACK_DETAIL 그대로. 코드는 정해진 어휘의 이름이라 기록해도 된다.
+    (호출 실패 처리). 코드가 없으면 IMAGE_FALLBACK_DETAIL 그대로. 코드는 정해진 어휘의 이름이라 기록해도 된다.
     시도 설명의 꼴은 tools(status_detail · detail_code)만 안다."""
     code = detail_code(log.tries[-1].detail) if log.tries else None
     return f"{IMAGE_FALLBACK_DETAIL} (code={code})" if code else IMAGE_FALLBACK_DETAIL
-# 이전 원문 참조(previous_source_file)를 채우는 Task와 그 진입 파일 참조가 든 산출물 (spec 4.3 — T-B1만)
+# 이전 원문 참조(previous_source_file)를 채우는 Task와 그 진입 파일 참조가 든 산출물 (T-B1만)
 SOURCE_FILE_TASK, SOURCE_FILE_KEY = "T-B1", "prototype"
 # 공고를 고를 수 있는 대기 지점 — 공고 선택 명령이 decision의 beforeStep에 남기고, G-01이 실패하면 그리로 돌아간다 (4.3.4)
 SELECTION_STEPS = ("공고선택", "계획서작성")
 
 
 def block_announcement(run: Run, announcement_id: str) -> None:
-    """막힌 공고 목록에 넣는다 (자격 불통과, spec 4.3.6). 이미 있으면 그대로 둔다. G-01 결과 저장과 같은 저장에서 부른다."""
+    """막힌 공고 목록에 넣는다 (자격 불통과). 이미 있으면 그대로 둔다. G-01 결과 저장과 같은 저장에서 부른다."""
     if announcement_id not in run.blocked_announcement_ids:
         run.blocked_announcement_ids.append(announcement_id)
 
 
 def unblock_announcement(run: Run, announcement_id: str) -> None:
-    """막힌 공고 목록에서 뺀다 (추가 조회에서 내용이 바뀜, spec 4.2.2 · 4.3.6). 추가 조회 결과 저장과 같은 저장에서 부른다."""
+    """막힌 공고 목록에서 뺀다 (추가 조회에서 내용이 바뀜). 추가 조회 결과 저장과 같은 저장에서 부른다."""
     if announcement_id in run.blocked_announcement_ids:
         run.blocked_announcement_ids.remove(announcement_id)
 
 
-# ── 공고 후보 · 추가 조회 (spec 4.2) ──────────────────────
+# ── 공고 후보 · 추가 조회 ──────────────────────
 CANDIDATE_LIMIT = 20   # 공고 후보 합계 상한 — 첫 조회 + 추가 조회 (추가 조회는 1회)
-# 내용 바뀜을 가르는 공고 정보 필드 (spec 4.2.2 ①) — 적합도 · 추천 이유 · 가산점 · 출처 고지는 보지 않는다
+# 내용 바뀜을 가르는 공고 정보 필드 — 적합도 · 추천 이유 · 가산점 · 출처 고지는 보지 않는다
 CARD_INFO_FIELDS = ("title", "agency", "apply_end", "apply_period_type", "support_amount_max", "original_url")
-# 첫 조회 카드를 추가 조회 카드 내용으로 바꿀 때 그대로 두는 필드 (spec 4.2.2)
+# 첫 조회 카드를 추가 조회 카드 내용으로 바꿀 때 그대로 두는 필드
 CARD_KEPT_FIELDS = ("rank", "display_type")
-# 추가 조회 명령(decision)이 남기는 조회 전 T-C2 출력 포인터 — 실패하면 이 버전으로 돌린다 (spec 4.2.3)
+# 추가 조회 명령(decision)이 남기는 조회 전 T-C2 출력 포인터 — 실패하면 이 버전으로 돌린다
 MORE_BEFORE_POINTERS = "beforePointers"
 
 
@@ -133,7 +133,7 @@ def candidate_lists(ctx: RunContext) -> tuple[list[AnnouncementCard], list[Annou
 
     유효한(성공한) 추가 조회가 있으면 그것이 남긴 두 목록(첫 조회 갱신본 firstCandidates · 겹침을 뺀 moreCandidates),
     없으면 첫 조회(candidates@1)와 빈 목록이다. candidates 버전 범위는 읽지 않는다 — 실패한 추가 조회가 남긴 버전은
-    없던 것으로 본다 (spec 4.2.3).
+    없던 것으로 본다.
     """
     if ctx.has(MORE_CANDIDATES):
         return ctx.get(FIRST_CANDIDATES), ctx.get(MORE_CANDIDATES)
@@ -141,7 +141,7 @@ def candidate_lists(ctx: RunContext) -> tuple[list[AnnouncementCard], list[Annou
 
 
 def card_content_changed(before: AnnouncementCard, after: AnnouncementCard) -> bool:
-    """공고 내용이 바뀌었는지 (spec 4.2.2) — 공고 정보 필드가 다르거나, 두 카드 모두 내용 버전이 있고 서로 다르다.
+    """공고 내용이 바뀌었는지 — 공고 정보 필드가 다르거나, 두 카드 모두 내용 버전이 있고 서로 다르다.
 
     한쪽이라도 내용 버전이 없으면 공고 정보만 본다. 적합도 · 추천 이유 · 가산점만 달라졌으면 거짓이다. 이전 자격 결과
     (공고 없음 · 불통과 · 통과)는 보지 않는다.
@@ -154,7 +154,7 @@ def card_content_changed(before: AnnouncementCard, after: AnnouncementCard) -> b
 
 def merge_more_candidates(first: list[AnnouncementCard], received: list[AnnouncementCard],
                           ) -> tuple[list[AnnouncementCard], list[AnnouncementCard]]:
-    """추가 조회 결과를 첫 조회에 맞춘다 (spec 4.2.2, Orchestrator 규칙 — T-C2 함수는 첫 조회를 모른다).
+    """추가 조회 결과를 첫 조회에 맞춘다 (Orchestrator 규칙 — T-C2 함수는 첫 조회를 모른다).
 
     - 첫 조회와 공고 ID가 같은 카드는 추가 후보에서 뺀다. 첫 조회의 그 카드는 받은 카드 내용(가산점 · 내용 버전 포함)으로
       바꾸고 자리 · 순위 · 표시 방식은 그대로 두며, contentChanged는 card_content_changed로 정한다.
@@ -204,7 +204,7 @@ def bundle_orders(bundles: list[str], offered: list[ReworkOrder], form: Any = No
 
     - 대상(targets)은 그 층에서 모은 묶음 이름이다(기회를 세는 이름과 같다).
     - 산출물층: 그 Task에 대한 판정 지시(사유 · 보완 지시)를 쓴다. 같은 Task 지시가 여럿이면 합친다.
-    - 문서층 (spec 4.11): 고른 묶음들의 항목(항목별 재작성 묶음 표 — rework_map.bundle_items)을 종류별 Task(본문 T-W1 · 그림 T-W2 ·
+    - 문서층: 고른 묶음들의 항목(항목별 재작성 묶음 표 — rework_map.bundle_items)을 종류별 Task(본문 T-W1 · 그림 T-W2 ·
       표 T-W3)가 다시 만든다. 그 종류 항목이 없는 Task는 지시가 없다(부르지 않는다) — 새 묶음 스위치를 켜면 '그림'은 T-W2만,
       '일반현황 · 개요'는 T-W1만이다. 지시는 고른 묶음을 대상으로 한
       판정 지시를 모두 합친 것이고, Task마다 같다. 양식(form)이 없으면(작업 분해 전 · 단위 시험) 세 Task 모두다.
@@ -235,13 +235,13 @@ def _merge_orders(task_id: str, layer: str, targets: list[str], orders: list[Rew
                        instruction_delta="\n".join(deltas) or REWORK_DEFAULT_REASON, layer=layer)
 
 
-# ── 재작성 · 재수행 지시문 (T-C3 spec 5) ──────────────────────
+# ── 재작성 · 재수행 지시문 ──────────────────────
 REWRITE_AGENT = "조율"           # 다시 쓰기 호출 기록의 Agent 이름 — 옛 설정 사본이면 이 Agent 설정으로 부른다
 # 다시 쓰기 호출의 설정 키 — Task별 설정(Settings.tasks)의 '지시문 다시 쓰기' 항목(호출처 · 모델 · 추론 강도)과
-# 같은 키의 제한 시간(잠정 120초)을 쓴다. T-C3 설정과 따로 둔다 (orchestrator/settings.py REWRITE_SETTING_KEY)
+# 같은 키의 제한 시간(120초)을 쓴다. T-C3 설정과 따로 둔다 (orchestrator/settings.py REWRITE_SETTING_KEY)
 REWRITE_KEY = REWRITE_SETTING_KEY
 MASK_MIN_CHARS = 2               # 이보다 짧은 회사 정보 값은 가리지 않는다 (잠정)
-REFLECT_ROLE = "반영"            # 화면 9 계획서 재작성의 T-B1 반영 실행 — 다시 쓰지 않는다 (T-C3 spec 5.1)
+REFLECT_ROLE = "반영"            # 화면 9 계획서 재작성의 T-B1 반영 실행 — 다시 쓰지 않는다
 
 
 class GuidanceRewriter(Protocol):
@@ -255,7 +255,7 @@ class GuidanceRewriter(Protocol):
 
 
 def rewrite_mask_values(info: CompanyInfo) -> list[str]:
-    """다시 쓰기 요청의 문제 내용에서 가릴 회사 정보 값 (T-C3 spec 5.2) — 대표자 이름 · 기업명 · 사업자등록번호, 생년월일(ISO),
+    """다시 쓰기 요청의 문제 내용에서 가릴 회사 정보 값 — 대표자 이름 · 기업명 · 사업자등록번호, 생년월일(ISO),
     수익모델 단가(revenueUnitPrice · revenueItems[].unitPrice — 숫자만 · 천 단위 쉼표 표기), 대표자 이력 · 팀 구성원의 각 항목.
     MASK_MIN_CHARS보다 짧은 값은 뺀다 (잠정). 같은 값은 한 번만."""
     prices = [info.revenue_unit_price, *(item.unit_price for item in info.revenue_items)]
@@ -303,7 +303,7 @@ class SBrainFlow:
     def build_instruction(self, ctx: RunContext, spec: TaskSpec, task: TaskInstruction,
                           rework_input: ReworkInput | None, rs: RedoState,
                           tools_for: ToolsFactory) -> tuple[str, list[str]]:
-        """대상 Task의 지시문 입력 (T-C3 spec 5.1 · 5.3 · 5.4 · 5.5). (지시문, 실행 기록 입력 참조에 더할 산출물 참조)를 돌려준다.
+        """대상 Task의 지시문 입력. (지시문, 실행 기록 입력 참조에 더할 산출물 참조)를 돌려준다.
 
         - 첫 실행(입력 없음): taskPlan의 지시문 그대로.
         - 반영 실행(T-B1, 역할 '반영'): 다시 쓰지 않는다. 반영 블록, 반영 실행 중 재수행이면 반영 블록 → 재수행 블록.
@@ -320,7 +320,7 @@ class SBrainFlow:
         cycle_order = self._cycle_order(ctx, spec.task_id, rework_input, rs)
         carried = reflect_issues(ctx) if reflecting and rework_input.mode == "재수행" else None
         # LLM을 부르지 않는 Task(등록부 uses_llm=False — T-W3 규칙 코드)는 지시문을 읽지 않으므로 다시 쓰지 않는다 — 다시 쓰기
-        # LLM 호출이 생기지 않게 덧붙이기만 한다 (spec 4.10 · 4.11)
+        # LLM 호출이 생기지 않게 덧붙이기만 한다
         if self.rewriter is None or reflecting or not spec.uses_llm:
             return append_problems(base, rework_input, cycle_order=cycle_order, reflect_issues=carried), []
         producer = f"orchestrator:{rs.rework_input_ref}"   # 이 지시문을 만든 재작성 · 재수행 입력
@@ -343,7 +343,7 @@ class SBrainFlow:
 
     @staticmethod
     def _cycle_order(ctx: RunContext, task_id: str, rework_input: ReworkInput, rs: RedoState) -> ReworkOrder | None:
-        """재작성 사이클 안에서 대상 Task가 재수행할 때 그 사이클의 그 Task 재작성 지시 (T-C3 spec 5.4). 아니면 None."""
+        """재작성 사이클 안에서 대상 Task가 재수행할 때 그 사이클의 그 Task 재작성 지시. 아니면 None."""
         cyc = ctx.run.cycle
         if (cyc is None or rs.rework_role != "대상" or rework_input.mode != "재수행" or rework_input.order is not None
                 or task_id not in cyc.orders_by_task):
@@ -374,9 +374,9 @@ class SBrainFlow:
         return obj
 
     def value(self, ctx: RunContext, name: str, spec: TaskSpec) -> Any:
-        if name == "rubricVersion":   # 채점에 쓴 채점 기준표 — T-C3가 고른 것 (T-C3 spec 4)
+        if name == "rubricVersion":   # 채점에 쓴 채점 기준표 — T-C3가 고른 것
             return ctx.get(RUBRIC).version
-        if name == "planDocRef":      # T-V1이 검증하는 계획서 버전 '이름@버전' — SectionResult.verifiedRef (spec 4.7)
+        if name == "planDocRef":      # T-V1이 검증하는 계획서 버전 '이름@버전' — SectionResult.verifiedRef
             return ctx.ref("planDoc") if ctx.has("planDoc") else None
         if name == "cycleInfo":
             cyc = ctx.run.cycle
@@ -394,7 +394,7 @@ class SBrainFlow:
         raise KeyError(name)
 
     def initial_redo_state(self, ctx: RunContext, spec: TaskSpec) -> RedoState:
-        """단계의 첫 진행 위치. 검증-1 재수행 · 표 대체(Run.verify1.phase)를 먼저 보고, 그다음 사용자 재작성 역할이다 (spec 4.10)."""
+        """단계의 첫 진행 위치. 검증-1 재수행 · 표 대체(Run.verify1.phase)를 먼저 보고, 그다음 사용자 재작성 역할이다."""
         redo = self._verify1_redo_state(ctx, spec)
         if redo is not None:
             return redo
@@ -410,18 +410,18 @@ class SBrainFlow:
             source_refs = list(decision.get("sourceRefs", [])) + [cyc.selected_orders_ref]
             prev = ctx.ref(spec.outputs[spec.primary_output]) if ctx.has(spec.outputs[spec.primary_output]) else ""
             issues = [order.reason] + ([order.instruction_delta] if order.instruction_delta else [])
-            # T-B1이면 재작성 직전 prototype 포인터의 진입 파일 참조를 함께 준다 (spec 4.3 — 고쳐 달라는 경우만).
+            # T-B1이면 재작성 직전 prototype 포인터의 진입 파일 참조를 함께 준다 (고쳐 달라는 경우만).
             # 진입 파일이 없으면 비운다
             source = (ctx.get(SOURCE_FILE_KEY).entry_file
                       if tid == SOURCE_FILE_TASK and ctx.has(SOURCE_FILE_KEY) else None)
-            # 문서층 Task면 고른 묶음의 그 종류 항목만 목표 항목으로 준다 (spec 4.11 — 문제 목록 = 직전 issues + warnings)
+            # 문서층 Task면 고른 묶음의 그 종류 항목만 목표 항목으로 준다 (문제 목록 = 직전 issues + warnings)
             targets = self._cycle_targets(ctx, cyc, tid) if order.layer == "document" else {}
             self._attach_rework(ctx, rs, spec, kind="재작성", source_refs=source_refs,
                                 ri=dict(mode="재작성", previous_result_ref=prev, issues=issues, order=order,
                                         previous_source_file=source, target_items=targets),
                                 bundle_id=",".join(order.targets))
         elif role == "재채점" and tid == "T-V1":
-            # 재작성 사이클의 검증-1 — 이 사이클에 다시 만든 항목만 다시 검증하고 나머지는 이어받는다 (spec 4.7 · 4.11).
+            # 재작성 사이클의 검증-1 — 이 사이클에 다시 만든 항목만 다시 검증하고 나머지는 이어받는다.
             # 다시 만든 항목을 흐름 상태(madeItems)에 적는다 — 검증-1 재수행 대상이 이 항목으로 좁혀진다
             made = self._cycle_targets(ctx, cyc, None)
             self._verify1(ctx).made_items = list(made)
@@ -432,7 +432,7 @@ class SBrainFlow:
                                 bundle_id=None)
         elif role == REFLECT_ROLE and tid == "T-B1":
             # 계획서 반영 실행 — T-B1 입력에 계획서(plan_doc)가 있지만, 추적 기록(FeedbackLink)을 위해 계획서 버전을
-            # 알리는 재작성 입력(issues)을 그대로 붙인다. 이전 원문은 채우지 않는다(새 계획서로 새로 만든다, spec 4.3).
+            # 알리는 재작성 입력(issues)을 그대로 붙인다. 이전 원문은 채우지 않는다(새 계획서로 새로 만든다).
             # 원페이지 T-B2 반영에는 아무것도 붙이지 않는다 — T-B2는 planDoc을 직접 받아 첫 제작과 같은 경로다(결정 7)
             plan_ref = ctx.ref("planDoc")
             prev = ctx.ref("prototype") if ctx.has("prototype") else ""
@@ -473,7 +473,7 @@ class SBrainFlow:
             return "판정"
         return REFLECT_ROLE  # T-B1(계획서 반영) · T-B2(원페이지 계획서 반영) · G-04
 
-    # ── 검증-1 fail 재수행 · 재작성 목표 항목 (spec 4.10 · 4.11) ─────────
+    # ── 검증-1 fail 재수행 · 재작성 목표 항목 ─────────
     @staticmethod
     def _cycle_key(ctx: RunContext) -> str:
         return ctx.run.cycle.cycle_id if ctx.run.cycle is not None else FIRST_CYCLE_KEY
@@ -489,14 +489,14 @@ class SBrainFlow:
 
     @staticmethod
     def clear_verify1(run: Run) -> None:
-        """검증-1 재수행 진행 표시를 비운다 — 사이클 끝 · 재작성 실패 되돌리기 · 중단 · 실행 실패 (spec 4.10)."""
+        """검증-1 재수행 진행 표시를 비운다 — 사이클 끝 · 재작성 실패 되돌리기 · 중단 · 실행 실패."""
         if run.verify1 is not None:
             run.verify1.phase = "없음"
             run.verify1.pending_items = {}
 
     @staticmethod
     def _item_issues(ctx: RunContext) -> dict[str, list[str]]:
-        """항목 → 직전 검증-1 issues + warnings (재작성 목표 항목의 문제 목록, spec 4.11). 판정이 없으면 빈 사전."""
+        """항목 → 직전 검증-1 issues + warnings (재작성 목표 항목의 문제 목록). 판정이 없으면 빈 사전."""
         results = ctx.get(SECTION_RESULTS, default=None) or []
         return {r.section_code: list(r.issues) + list(r.warnings) for r in results}
 
@@ -514,7 +514,7 @@ class SBrainFlow:
                 if task_id is None or KIND_TASK[kind] == task_id}
 
     def _verify1_redo_state(self, ctx: RunContext, spec: TaskSpec) -> RedoState | None:
-        """검증-1 재수행 · 표 대체 중이면 그 단계의 진행 위치 (재작성 '대상' 역할보다 먼저, spec 4.10). 아니면 None.
+        """검증-1 재수행 · 표 대체 중이면 그 단계의 진행 위치 (재작성 '대상' 역할보다 먼저). 아니면 None.
 
         - 재수행중: T-W1(본문 대상) · T-W2(그림 대상) · T-V1(대상 전체 — 표 항목은 다시 검증만)은 재수행 입력(mode 재수행 ·
           redoSource 검증-1 · targetItems = 대상 → 직전 issues)을 받고, M-1은 역할만 붙는다.
@@ -561,7 +561,7 @@ class SBrainFlow:
         return rs
 
     def _after_tv1(self, ctx: RunContext, out: dict[str, Any]) -> None:
-        """T-V1 바로 뒤 — 검증-1 fail 재수행 · 표 대체를 그 대기열 맨 앞에 끼운다 (spec 4.10).
+        """T-V1 바로 뒤 — 검증-1 fail 재수행 · 표 대체를 그 대기열 맨 앞에 끼운다.
 
         대상 = 판정 fail · 입력 없음 아님 · 입력 오류 아님 · 이번 사이클에 만든 항목(첫 작성은 모든 항목) · 이미 대체한 표가 아님.
         입력 오류(inputError)는 입력 값이 기준을 벗어나 다시 만들어도 고쳐지지 않으므로 재수행 · 표 대체를 하지 않는다
@@ -614,12 +614,12 @@ class SBrainFlow:
         elif step_id == "T-C2":
             more = ctx.run.segment == "MORE"
             if more and out["collection_status"] != "정상":
-                # 수집 상태가 정상이 아니라 매칭하지 않은 추가 조회 — 실패로 본다 (spec 4.2.3). 첫 조회(PRE)는 시작 요청이
+                # 수집 상태가 정상이 아니라 매칭하지 않은 추가 조회 — 실패로 본다. 첫 조회(PRE)는 시작 요청이
                 # E-C2-STALE로 끝난다(service.run_start_request)
                 self._more_failed(ctx, "E-C2-STALE")
                 return
             if out.get("fallback_used"):
-                # 대체 경로 안내. 마감 임박순이면 문구 끝에 덧붙인다 (spec 4.1.3) — 첫 조회 · 추가 조회 모두
+                # 대체 경로 안내. 마감 임박순이면 문구 끝에 덧붙인다 — 첫 조회 · 추가 조회 모두
                 suffix = EMBED_DEADLINE_SUFFIX if out.get("fallback_mode") == "마감임박순" else ""
                 self._notice(ctx, "E-C2-EMBED", suffix=suffix)
             if more:
@@ -627,7 +627,7 @@ class SBrainFlow:
         elif step_id == "T-V1":
             self._after_tv1(ctx, out)   # 검증-1 fail 재수행 · 표 대체를 끼운다 (같은 저장)
         elif step_id == "M-1":
-            # 표 대체(T-W3 → M-1)가 끝났다 — 판정은 fail 그대로 두고 다시 검증하지 않는다 (spec 4.10)
+            # 표 대체(T-W3 → M-1)가 끝났다 — 판정은 fail 그대로 두고 다시 검증하지 않는다
             state = ctx.run.verify1
             if state is not None and state.phase == "대체중":
                 self.clear_verify1(ctx.run)
@@ -675,11 +675,10 @@ class SBrainFlow:
                           rework_input: ReworkInput) -> ReworkInput:
         """검사 불통과 재수행의 재작성 입력 (엔진 선택 확장 지점).
 
-        - 항목 단위(spec 4.8): 방금 실행의 check.failedItems를 목표 항목(targetItems)으로 옮기고 redoSource '검사'를 적는다 —
+        - 항목 단위: 방금 실행의 check.failedItems를 목표 항목(targetItems)으로 옮기고 redoSource '검사'를 적는다 —
           걸린 항목만 다시 만든다. failedItems가 비었으면 방금 실행이 받은 목표 항목을 그대로 잇는다(재작성 · 검증-1 재수행
           중이면 그 항목, 첫 실행이면 빈 사전 = 모든 항목 — T-S1처럼 항목이 없는 Task). 흐름은 문구가 아니라 이 칸으로 가른다.
-        - T-B1이면 방금 실행이 만든 prototype의 진입 파일 참조를 채운다 — 그 실행이 대상 · 반영 · 첫 실행 중 무엇이었든
-          (spec 4.3). 진입 파일이 없으면 비운다."""
+        - T-B1이면 방금 실행이 만든 prototype의 진입 파일 참조를 채운다 — 그 실행이 대상 · 반영 · 첫 실행 중 무엇이었든. 진입 파일이 없으면 비운다."""
         update: dict[str, Any] = {"redo_source": "검사"}
         check = ctx.get_ref(rework_input.source_refs[0]) if rework_input.source_refs else None
         failed = dict(check.failed_items) if check is not None else {}
@@ -698,13 +697,13 @@ class SBrainFlow:
 
     def allows_redo(self, ctx: RunContext, spec: TaskSpec, check: Any) -> bool:
         """검사 불통과일 때 자체 검사 재수행을 걸지 (엔진 선택 확장 지점 — 없으면 늘 건다). T-W3(규칙 코드)는 같은 입력이면
-        같은 표가 나오므로 걸지 않는다 — Task가 그 시도에서 바로 확정 동작(표 → 본문 서술 대체)을 한다 (spec 4.8)."""
+        같은 표가 나오므로 걸지 않는다 — Task가 그 시도에서 바로 확정 동작(표 → 본문 서술 대체)을 한다."""
         return spec.task_id not in NO_SELF_REDO
 
     def after_execution(self, ctx: RunContext, spec: TaskSpec, rec: ExecutionRecord, calls: list[CallLog]) -> None:
         """실행 기록 하나가 성공으로 저장되는 같은 묶음 (엔진 선택 확장 지점). T-B2 실행에 최종 실패인 이미지 호출이 하나라도
         있거나 출력 인포그래픽의 기본 아이콘 대체(iconFallback)가 참이면 '이미지대체' 사건을 하나 남긴다 — 실행 기록마다
-        (재수행으로 다시 돈 앞선 실행 포함, spec 3.3 · impl-verify2 spec 4.3). 둘 다여도 하나다. 설명은 이미지 호출 실패면
+        (재수행으로 다시 돈 앞선 실행 포함). 둘 다여도 하나다. 설명은 이미지 호출 실패면
         IMAGE_FALLBACK_DETAIL(그 호출의 마지막 시도에 오류 코드가 있으면 끝에 ' (code=…)' — image_fallback_detail), 그 밖(칸 수 불일치 · 그림 해석 오류 — 대체 칸만 참)이면 ICON_FALLBACK_DETAIL. 필드(호출 기록의
         최종 결과 · icon_fallback)로만 가른다. 내용 · 지시문 · 그림은 없다."""
         if spec.task_id != "T-B2":
@@ -722,7 +721,7 @@ class SBrainFlow:
         if seg in ("PRE", "MORE"):
             self._wait(ctx, "공고선택", "setup")
         elif seg == "GATE":
-            # 판정 결과에 따른 다음 상태 (spec 4.3.2). 확인 필요(unknownConditions)는 막지 않는다 — 화면 4에만 안내.
+            # 판정 결과에 따른 다음 상태. 확인 필요(unknownConditions)는 막지 않는다 — 화면 4에만 안내.
             # undecidable은 쓰지 않는다(늘 거짓)
             gate = ctx.get("gateResult")
             if gate.passed and not gate.missing_inputs:
@@ -734,7 +733,7 @@ class SBrainFlow:
                     self._notice(ctx, "E-G1-REJECT", 사유=", ".join(gate.failed_conditions))
                 self._wait(ctx, "공고선택", "setup")
         elif seg == "WRITE":
-            self.clear_verify1(run)   # 첫 작성 사이클 끝 (spec 4.10)
+            self.clear_verify1(run)   # 첫 작성 사이클 끝
             self._wait(ctx, "문서평가", "document")
             self._notify(ctx, "문서평가", 6)
         elif seg == "PROTO":
@@ -744,7 +743,7 @@ class SBrainFlow:
             screen = run.cycle.screen
             rescored = list(run.cycle.rescored_layers)
             assert self.engine is not None
-            self.clear_verify1(run)   # 재작성 사이클 끝 (spec 4.10)
+            self.clear_verify1(run)   # 재작성 사이클 끝
             self.engine.end_cycle(ctx)
             self._wait(ctx, SCREEN_STEP[screen], "document" if screen == 6 else "artifact")
             # 재작성으로 검증을 다시 실행한 경우에도 알림. 대상 화면은 요청한 화면 (잠정)
@@ -769,12 +768,12 @@ class SBrainFlow:
     def on_rescue(self, ctx: RunContext, step_id: str, failure: StepFailure) -> None:
         """실패 정책이 흐름에 넘긴 실패 (등록부 rescue_segments). 실행을 실패시키지 않는다."""
         if step_id == "T-C2" and ctx.run.segment == "MORE":
-            # 추가 조회 실패 (spec 4.2.3) — 재시도 소진 · 코드 오류 · 규격 위반 등 어떤 오류든 X-C2-FAIL(기준 문서 v1.10 시트 2 T-C2 ④).
+            # 추가 조회 실패 — 재시도 소진 · 코드 오류 · 규격 위반 등 어떤 오류든 X-C2-FAIL(기준 문서 시트 2 T-C2 ④).
             # 실패한 T-C2는 산출물을 남기지 않았다
             self._more_failed(ctx, "X-C2-FAIL")
             return
         if step_id == "G-01":
-            # 자격 확인 실패 (spec 4.3.4) — 공고 없음은 X-C2-GONE, 그 밖의 모든 오류는 X-C2-FAIL. 고르기 전 대기 지점으로
+            # 자격 확인 실패 — 공고 없음은 X-C2-GONE, 그 밖의 모든 오류는 X-C2-FAIL. 고르기 전 대기 지점으로
             # 돌아가고, 선택 공고 · 자격 결과 · 업력 · announcement_id는 고르기 전 그대로다(G-01이 아무것도 저장하지 않았다).
             # 막힌 공고 목록에도 넣지 않는다(4.3.6)
             self._notice(ctx, "X-C2-GONE" if failure.kind == "대상없음" else "X-C2-FAIL")
@@ -782,7 +781,7 @@ class SBrainFlow:
             return
         raise RuntimeError(f"흐름이 받지 않는 단계 실패: {step_id}")
 
-    # ── 추가 조회 (spec 4.2.2 · 4.2.3) ─────────────────────
+    # ── 추가 조회 ─────────────────────
     def more_lookup_pointers(self, ctx: RunContext) -> dict[str, int | None]:
         """추가 조회 전 T-C2 출력의 현재 버전 — 추가 조회 명령이 decision에 남기고, 실패하면 이 버전으로 돌린다."""
         return {key: ctx.version(key) for key in self.registry.get("T-C2").outputs.values()}
@@ -832,7 +831,7 @@ class SBrainFlow:
     def on_abort(self, ctx: RunContext) -> None:
         run = ctx.run
         run.queue, run.redo_state, run.cycle, run.rework_screen = [], None, None, None
-        self.clear_verify1(run)   # 중단 — 검증-1 재수행 표시를 비운다 (spec 4.10)
+        self.clear_verify1(run)   # 중단 — 검증-1 재수행 표시를 비운다
         run.state = make_state(run.state.step, "중단")
         run.ended_at = self.now()
         ctx.add_event("중단", "사용자 중단 (Task 사이에서 반영)")
@@ -845,7 +844,7 @@ class SBrainFlow:
     def on_cycle_failed(self, ctx: RunContext, reason: str) -> None:
         screen = ctx.run.cycle.screen
         assert self.engine is not None
-        self.clear_verify1(ctx.run)   # 재작성 실패 되돌리기 (8.6) — 검증-1 재수행 표시를 비운다 (spec 4.10)
+        self.clear_verify1(ctx.run)   # 재작성 실패 되돌리기 (8.6) — 검증-1 재수행 표시를 비운다
         self.engine.end_cycle(ctx)
         self._wait(ctx, SCREEN_STEP[screen], "document" if screen == 6 else "artifact")
         self._notice(ctx, "E-RUN-ROLLBACK")
@@ -861,7 +860,7 @@ class SBrainFlow:
         doc_changed = ctx.pointers.get("docScore") != snap.get("docScore")
         art_changed = ctx.pointers.get("artifactScore") != snap.get("artifactScore")
 
-        # 산출물층은 검증-2 원점수가 아니라 그 실행 건 설정 사본 배점(C · P)으로 환산한 값으로 비교한다 (spec 4.6 D9 —
+        # 산출물층은 검증-2 원점수가 아니라 그 실행 건 설정 사본 배점(C · P)으로 환산한 값으로 비교한다 (
         # 판정 G-02b와 같은 환산 함수). 문서층은 T-V1이 이미 문서층 배점(D)으로 낸 값 그대로다.
         from .score_scale import round_scaled, scale_artifact, score_maxes
         maxes = score_maxes(ctx.settings)

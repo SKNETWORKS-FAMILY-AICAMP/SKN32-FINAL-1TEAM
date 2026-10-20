@@ -1,5 +1,4 @@
-"""전략 · 작성 · 검증-1 실구현 Task (T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1) — 연결 코드 (spec 4.4 · 4.5 · 4.7 · 4.8 · 4.9 ·
-4.13 · 4.14 · 4.17, 7절 2번).
+"""전략 · 작성 · 검증-1 실구현 Task (T-S1 · T-S2 · T-W1 · T-W2 · T-W3 · T-V1) — 연결 코드.
 
 Task 함수를 가짜 tools(목적 = F번호별 가짜 응답, 메모리 파일 저장소)로 직접 부른다. 네트워크 없음.
 """
@@ -113,7 +112,7 @@ def test_chain_calls_partner_functions_and_fills_contracts(applicant, kind, coun
                                        "original_facts", "strategy_limits", "document_type"}
     assert set(r.s2.market_strategy_data) == {"market_analysis", "competitor_analysis", "marketing_strategy",
                                               "business_model", "growth_strategy"}
-    # Task별 담당자 함수 (spec 2절 Task ↔ 함수)
+    # Task별 담당자 함수 (Task ↔ 함수)
     assert {q.metadata["purpose"] for q in requests_of(p, "T-S1")} == {
         "F01", "F02", "F05", "F06", "F07", "F08", "F09", "F13", "F14", "F15"}
     assert [q.metadata["purpose"] for q in requests_of(p, "T-S2")] == ["F03", "F04", "F10", "F11", "F12"]
@@ -322,7 +321,7 @@ def test_kiet_adapter_uses_read_only_crawler_and_normalizes_ephemeral_sources(mo
     assert result["sources"][0]["url"] == "https://www.kiet.re.kr/summary?id=1"
 
 
-# ── 보내는 칸 (spec 4.4) ───────────────────────────────────
+# ── 보내는 칸 ───────────────────────────────────
 @pytest.mark.parametrize("applicant", ["법인", "예비창업자"])
 def test_llm_requests_carry_no_forbidden_values(applicant):
     r = run_chain(applicant, support=50_000_000)
@@ -423,7 +422,7 @@ def test_f18_svg_uses_contrasting_text_for_bright_and_dark_cards():
     assert 'font-weight="600" fill="white">어두운 카드</text>' in svg
 
 
-# ── 울타리 (spec 4.5) ─────────────────────────────────────
+# ── 울타리 ─────────────────────────────────────
 def test_strategy_limits_deadline_support_and_feature_list():
     p = PartnerProvider({"F02": {"coreFeatures": [{"name": "기능A"}, "기능B"], "targetCustomer": "고객",
                                  "deliverables": [], "differentiation": ""}})
@@ -441,7 +440,7 @@ def test_strategy_limits_deadline_support_and_feature_list():
     assert "deadlineScope" not in with_support.s1.strategy_data["strategy_limits"]
 
 
-# ── 표 원본 행 (spec 4.4) ─────────────────────────────────
+# ── 표 원본 행 ─────────────────────────────────
 def test_table_data_maps_rows_to_partner_keys():
     data, unassigned = inputs.table_data(company("법인"), "early_startup")
     assert set(data) == {"실현가능성_일정", "성장전략_일정", "사업비_집행계획"} and unassigned == []
@@ -515,7 +514,7 @@ def test_empty_roadmap_keeps_agreement_schedule_and_passes_local_validation(
     assert not any("필수 표" in issue for issue in result.issues)
 
 
-# ── 그림 (spec 4.6) ───────────────────────────────────────
+# ── 그림 ───────────────────────────────────────
 def test_diagrams_are_svg_files_in_tools_files():
     r = run_chain()
     image_code = next(s.section_code for s in r.w1.plan_doc.sections if s.content_type == "image")
@@ -534,7 +533,7 @@ def test_diagrams_are_svg_files_in_tools_files():
     assert not {"model", "responseId", "usage", "status", "functionId"} & set(out)
 
 
-# ── 점수 (spec 4.9) ───────────────────────────────────────
+# ── 점수 ───────────────────────────────────────
 @pytest.mark.parametrize("d", [None, 60.0])
 def test_score_items_sum_to_total(d):
     r = run_chain(doc_layer_max=d)
@@ -550,7 +549,7 @@ def test_score_items_sum_to_total(d):
     assert all(i.comment for i in items) and r.v1.variance_flag is False
 
 
-# ── 자체 검사 · 확정 동작 (spec 4.8) ─────────────────────────
+# ── 자체 검사 · 확정 동작 ─────────────────────────
 def test_ts1_empty_core_features_inherits_item_spec_in_same_attempt():
     p = PartnerProvider({"F02": {"coreFeatures": [], "targetCustomer": "", "deliverables": [], "differentiation": ""}})
     tools, _, _ = partner_tools(p, "T-S1")
@@ -917,7 +916,7 @@ def test_tw3_fallback_items_from_verify1():
     assert out.table_outputs["3.6.2"] == r.w3.table_outputs["3.6.2"]                   # 나머지는 직전 그대로
 
 
-# ── 목표 항목만 다시 (spec 4.7 · 4.9) ────────────────────────
+# ── 목표 항목만 다시 ────────────────────────
 def test_tw1_rebuilds_only_target_items_with_feedback():
     r = run_chain()
     p = PartnerProvider()
@@ -970,7 +969,7 @@ def test_tv1_reverifies_only_targets_and_keeps_base_results():
     assert out.doc_score.total == float(sum(Decimal(str(i.score)) for i in out.items))
 
 
-# ── 재개 이어 쓰기 (spec 4.13) ──────────────────────────────
+# ── 재개 이어 쓰기 ──────────────────────────────
 def test_ts1_resume_continues_after_received_functions():
     p = PartnerProvider()
     p.scripts["F06"] = ["timeout"] * 3
@@ -1034,7 +1033,7 @@ def test_concurrent_failure_order_prefers_non_exhausted_error():
     assert e.value.error_kind == "입력" and e.value.partial is None                    # ② 일시가 아닌 재시도 소진
 
 
-# ── 동시 호출 (spec 4.14) ──────────────────────────────────
+# ── 동시 호출 ──────────────────────────────────
 def test_concurrency_constants_are_used(monkeypatch):
     seen: list[tuple[str, int]] = []
     real = common.gather
@@ -1069,7 +1068,7 @@ def test_gather_runs_at_most_workers_at_once(workers):
     assert peak[0] == workers
 
 
-# ── 기록 · 예외 메시지에 내용 없음 (spec 4.17) ─────────────────
+# ── 기록 · 예외 메시지에 내용 없음 ─────────────────
 def test_call_logs_and_errors_carry_no_content():
     r = run_chain()
     dumped = " ".join(log.model_dump_json() for sink in r.sinks.values() for log in sink.drain())

@@ -1,4 +1,4 @@
-"""기능정의서 v1.10 시트 4 공통 타입 (Agent 간 계약).
+"""기능정의서 시트 4 공통 타입 (Agent 간 계약).
 
 확장 새 타입: FileRef, BudgetItem · ScheduleItem · DiagramSpec · SectionResult(domain) · Verify1State(run)
 (전략 · 작성 · 검증-1 연동), ShortfallItem(domain — 결과 통합 미달 항목),

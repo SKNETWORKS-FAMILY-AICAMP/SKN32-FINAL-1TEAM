@@ -20,6 +20,8 @@ dependencies = [
     "python-dotenv==1.2.3",
     "requests==2.33.1",
     "beautifulsoup4==4.14.3",
+    "boto3==1.43.114",
+    "botocore==1.43.114",
 ]
 
 [project.optional-dependencies]
@@ -33,13 +35,13 @@ sbrain-worker = "sbrain.worker:main"
 include = ["sbrain*"]
 
 # 전략 · 작성 · 검증-1 담당자 자료(JSON · MD)를 설치본에 넣는다 — 담당자 코드가 불러올 때 읽는 코드의 일부다
-# (spec 4.1 · sbrain/agents/partner_sw/VENDORED.md). 선택적 KIET 갱신에 requests · BeautifulSoup을 쓴다.
+# (sbrain/agents/partner_sw/VENDORED.md). 선택적 KIET 갱신에 requests · BeautifulSoup을 쓴다.
 [tool.setuptools.package-data]
 "sbrain.agents.partner_sw.agent_strategy" = ["res/**/*.json", "res/**/*.md"]
 "sbrain.agents.partner_sw.agent_strategy.runtime" = ["*.json"]
 "sbrain.agents.partner_sw.agent_validation_1" = ["res/**/*.json", "res/**/*.md"]
 # 구현 담당자 자료(글꼴 woff2 — SIL OFL · 대표 그림 SVG — CC0 · 라이선스 · 인포그래픽 템플릿 SVG)도 같다
-# (spec 4.1 · sbrain/agents/partner_bv/VENDORED.md — partner_bv/resources.py가 불러올 때 읽는다).
+# (sbrain/agents/partner_bv/VENDORED.md — partner_bv/resources.py가 불러올 때 읽는다).
 "sbrain.agents.partner_bv.engineering_agent" = [
     "infographic/assets/*.woff2", "infographic/assets/*.txt",
     "infographic/assets/illustrations/*.svg", "infographic/assets/illustrations/*.txt",

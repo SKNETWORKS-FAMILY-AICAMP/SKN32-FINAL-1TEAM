@@ -1,4 +1,4 @@
-"""연결 코드 공통 부품 — 양식 항목 · 담당자 항목 계약 · 문맥 · 목표 항목 · 재개 이어 쓰기 · 동시 호출 (spec 4.7 · 4.13 · 4.14).
+"""연결 코드 공통 부품 — 양식 항목 · 담당자 항목 계약 · 문맥 · 목표 항목 · 재개 이어 쓰기 · 동시 호출.
 
 - 담당자 함수 결과는 산출물 값 안에만 싣는다. 이 모듈의 예외 메시지에는 항목 번호 · 필드 이름 · 개수만 넣는다.
 - 재개 이어 쓰기(4.13): 받은 결과는 '키 → JSON 문자열'(엔진 장치 PARTIAL). 재시도를 다 쓴 호출이 일시 오류면 그때까지
@@ -19,7 +19,7 @@ from ...orchestrator.errors import ToolCallExhausted
 from . import contract
 from .inputs import EARLY_STARTUP, PRE_STARTUP, document_type
 
-# 동시 호출 수 (잠정 아님, spec 4.14)
+# 동시 호출 수 (잠정 아님)
 TW1_CONCURRENCY = 4    # 본문 항목
 TV1_CONCURRENCY = 4    # 항목 검증
 TW2_CONCURRENCY = 2    # 그림 두 개
@@ -106,7 +106,7 @@ def canonical_of(strategy_data: dict[str, Any] | None, market_strategy_data: dic
 
 
 def original_of(strategy_data: dict[str, Any] | None, feature_list: list[str] | None) -> dict[str, Any]:
-    """원본 사실(T-S1 original_facts) 사본. 울타리 featureList는 T-S1이 확정한 featureList로 바꾼다 (spec 4.5)."""
+    """원본 사실(T-S1 original_facts) 사본. 울타리 featureList는 T-S1이 확정한 featureList로 바꾼다."""
     sd = strategy_data or {}
     original = copy.deepcopy(sd.get("original_facts") or {})
     for key in ("item", "period", "team", "resources", "budget", "schedule"):
@@ -125,7 +125,7 @@ def research_of(strategy_data: dict[str, Any] | None) -> list[dict[str, Any]]:
     return [s for s in (sources or []) if isinstance(s, dict) and "sourceRef" in s and "domain" in s]
 
 
-# ── 목표 항목 (spec 4.7) ─────────────────────────────────
+# ── 목표 항목 ─────────────────────────────────
 def targets_of(rework: ReworkInput | None) -> dict[str, list[str]]:
     return dict(rework.target_items) if rework is not None else {}
 
@@ -143,13 +143,13 @@ def made_items(codes: Iterable[str], targets: dict[str, list[str]] | set[str], h
 
 
 def pick(output: dict[str, Any], keys: tuple[str, ...], defaults: dict[str, Any] | None = None) -> dict[str, Any]:
-    """담당자 결과에서 산출물에 싣는 칸만 (기록용 칸 model · responseId · usage · inputChars 등을 버린다, spec 4.17)."""
+    """담당자 결과에서 산출물에 싣는 칸만 (기록용 칸 model · responseId · usage · inputChars 등을 버린다)."""
     base = {"generatedText": "", "facts": [], "sourceRefs": [], "needsUserConfirmation": [], "issues": []}
     base.update(defaults or {})
     return {k: copy.deepcopy(output[k]) if k in output else copy.deepcopy(base.get(k)) for k in keys}
 
 
-# ── 재개 이어 쓰기 (spec 4.13) ───────────────────────────
+# ── 재개 이어 쓰기 ───────────────────────────
 def encode(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False)
 

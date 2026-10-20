@@ -1,4 +1,4 @@
-"""관리자 조회 (spec 4.2) — 실행 건 목록 · 점수 이력 · 운영 요약 · Agent별 Task · 실행 기록 · 호출 기록.
+"""관리자 조회 — 실행 건 목록 · 점수 이력 · 운영 요약 · Agent별 Task · 실행 기록 · 호출 기록.
 메타데이터 · 점수 · 개수만."""
 from __future__ import annotations
 

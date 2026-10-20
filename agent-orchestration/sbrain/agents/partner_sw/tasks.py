@@ -1,4 +1,4 @@
-"""전략 · 작성 · 검증-1 실구현 Task 등록 (spec 4.15) — 워커 조립(build_app)이 bind_partner_sw로 스텁을 바꿔 끼운다.
+"""전략 · 작성 · 검증-1 실구현 Task 등록 — 워커 조립(build_app)이 bind_partner_sw로 스텁을 바꿔 끼운다.
 
 스텁 조립 · 테스트 조립은 그대로 스텁이다. 워커 조립은 이 Task들의 LLM 호출을 실제 호출처로 보낸다(bootstrap.TaskRoutedProvider —
 호출 기록의 task_id가 IMPLEMENTED_TASKS에 있으면 실제). T-W3는 LLM을 부르지 않는다(규칙 코드).

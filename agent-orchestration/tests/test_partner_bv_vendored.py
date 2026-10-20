@@ -1,11 +1,11 @@
-"""구현 · 검증-2 담당자 코드 옮기기 — 연결부 (spec 4.1 · 4.4 일부).
+"""구현 · 검증-2 담당자 코드 옮기기 — 연결부.
 
 옮긴 파일 목록이 원본(2026-10-08 판)과 같다, 금지 호출(OpenAI 직접 · os.getenv · datetime.now · .env · time.sleep ·
 파일 쓰기 · 폴더 만들기)이 남지 않았다, 두 담당자 패키지가 서로 import하지 않는다, 자료(글꼴 · 그림 · 템플릿)를 불러올 때
 한 번 읽고 실행 중에는 디스크에 닿지 않는다, 검증-2 진입 파일 문구에 이름 · 경로가 없다, 요소 목록은 넘겨받은 사전으로
 읽고 더한다, 대조 LLM은 ToolCallExhausted만 받고 동시 3개까지 부른다, 담당자 고정 문구가 우리 문구와 같다.
 
-담당자 tasks.py 두 개는 T3가 지금 계약(FileRef · tools.files)으로 고쳤다 — Task 함수 시험은 test_partner_bv_tasks.py ·
+담당자 tasks.py 두 개는 지금 계약(FileRef · tools.files)으로 고쳤다 — Task 함수 시험은 test_partner_bv_tasks.py ·
 test_partner_bv_flow.py.
 """
 from __future__ import annotations
@@ -42,7 +42,8 @@ ENG_DIR = BV_DIR / "engineering_agent"
 VER_DIR = BV_DIR / "verification_agent"
 CODE_DIR = BV_DIR.parent.parent.parent            # 저장소 폴더(agent-orchestration)
 
-OUR_FILES = {"__init__.py", "resources.py", "tasks.py", "VENDORED.md"}
+OUR_FILES = {"__init__.py", "resources.py", "tasks.py", "VENDORED.md",
+             "engineering_agent/README.md", "verification_agent/README.md"}   # 담당자 README(2026-10-16 루트 원본에서 옮김)
 
 _SCENES = ("ai", "city", "conversation", "cook", "delivery", "dev", "growth", "maintenance", "mobile", "monitor",
            "package", "presentation", "robot", "sales", "store", "video", "workers")
@@ -108,7 +109,7 @@ def test_vendored_code_has_no_forbidden_calls():
 
 
 def test_vendored_code_reads_no_files_except_resources():
-    """자료는 resources.py만 읽는다. 담당자 tasks.py 둘도 경로로 읽지 않는다 — 산출물 파일은 tools.files로 (T3)."""
+    """자료는 resources.py만 읽는다. 담당자 tasks.py 둘도 경로로 읽지 않는다 — 산출물 파일은 tools.files로."""
     allowed = {"resources.py"}
     found = [f.relative_to(BV_DIR).as_posix() for f in _py_files()
              if f.relative_to(BV_DIR).as_posix() not in allowed

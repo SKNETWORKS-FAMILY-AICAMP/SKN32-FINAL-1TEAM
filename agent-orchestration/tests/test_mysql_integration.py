@@ -1,7 +1,8 @@
 """MySQL 8 통합 — 실제 웹 스키마(app_schema.sql) 위에서 전체 흐름 1회, 완전 삭제 뒤 실행 로그 보존,
 탈퇴 중 계정 잠금(GET_LOCK). (흐름을 거친 검수 회수 문단 행은 검수가 흐름에서 빠져 지웠다)
 
-notifications.kind ENUM에는 테스트 DB에서만 완료 알림 '결과물'을 더한다(mysqldb.py — 웹에 ENUM 변경 요청).
+notifications.kind ENUM의 완료 알림 '결과물'은 최신 웹 스키마에 있고, 옛 웹 스키마를 읽을 때만 테스트 DB에서
+더한다(mysqldb.py).
 Orchestrator는 proofread_logs를 쓰거나 읽지 않는다.
 
 SBRAIN_TEST_MYSQL_URL(환경 변수 또는 .env)이 있을 때만 돈다. 로컬 DB는 docker/mysql-test.yml로 띄운다.
@@ -14,6 +15,7 @@ import threading
 import time
 import uuid
 
+import mysqldb
 import pytest
 from conftest import Clock, executed, make_app, pre_input, start_and_select, to_screen6, to_screen9
 from fakes import item_json
@@ -53,7 +55,8 @@ def test_full_flow_on_mysql():
                                 "ORDER BY notification_id"), {"p": pid}).all()
     assert [tuple(r) for r in web] == [("문서평가", 6), ("산출물확인", 8), ("결과물", 11)]
     row = project_row(app.store.engine, pid)                                       # 진행 컬럼은 쓰지 않는다
-    assert [row[c] for c in ("status", "stage", "progress_percent", "notice_id", "failure_reason")] == [None] * 5
+    # 최신 웹 스키마에는 이 컬럼이 없다(웹 마이그레이션 002) — 옛 사본으로 돌면 비어 있어야 한다
+    assert [row.get(c) for c in ("status", "stage", "progress_percent", "notice_id", "failure_reason")] == [None] * 5
 
 
 def test_concurrent_rework_requests_merge_on_mysql():
@@ -230,13 +233,13 @@ def test_web_and_worker_on_real_web_schema():
     assert (form.facilities, form.partners, form.revenue_unit_price) == ("태블릿 (보유)", "없음", 35000)
     scoring = run.settings_snapshot["scoring"]                                           # verification_policies 첫 행
     assert (scoring["threshold"], scoring["docLayerMax"], scoring["deviationCap"]) == (80.0, 70.0, 5.0)
-    # code_weight → 코드 점검 배점 C, plan_weight → 계획서 대조 배점 P, 산출물층 배점 = C + P (spec 4.6, 웹 기본값 15 · 15)
+    # code_weight → 코드 점검 배점 C, plan_weight → 계획서 대조 배점 P, 산출물층 배점 = C + P (웹 기본값 15 · 15)
     assert (scoring["codeCheckMax"], scoring["featureMatchMax"], scoring["artifactLayerMax"]) == (15.0, 15.0, 30.0)
     assert run.settings_snapshot["redo"]["proofreadRedoCount"] == 2                    # 선택 컬럼 token_retry_cap이 있으면 읽는다
 
 
 def test_plan_tables_on_real_web_schema():
-    """사업비 · 일정(spec 4.3) — 실제 웹 스키마의 project_budget_items · project_schedule_items를 item_order 순으로 읽는다.
+    """사업비 · 일정 — 실제 웹 스키마의 project_budget_items · project_schedule_items를 item_order 순으로 읽는다.
     웹 스키마에 아직 phase 컬럼이 없어도 SchemaMismatch가 아니고 None이다. 웹 테이블은 읽기만 한다."""
     engine = require_mysql()
     _, pid = insert_web_project(engine)
@@ -304,12 +307,16 @@ def test_target_customer_column_on_real_web_schema():
 
 
 def test_web_schema_lookup(tmp_path, monkeypatch):
-    """웹 스키마 위치 (DB 없이) — 환경 변수가 먼저, 없으면 웹과 같은 저장소 배치 → 작업 공간 배치 순서."""
-    repo, workspace = tmp_path / "web.sql", tmp_path / "workspace.sql"
-    workspace.write_text("-- workspace", encoding="utf-8")
-    monkeypatch.setattr("mysqldb.WEB_SCHEMA_CANDIDATES", (repo, workspace))
+    """웹 스키마 위치 (DB 없이) — 환경 변수가 먼저, 없으면 후보(웹과 같은 저장소 배치)를 앞에서부터 찾는다."""
+    assert [p.relative_to(mysqldb._BASE).as_posix() for p in mysqldb.WEB_SCHEMA_CANDIDATES] == [
+        "web/backend/app_schema.sql"]
+    repo, latest, old = tmp_path / "web.sql", tmp_path / "latest.sql", tmp_path / "old.sql"
+    old.write_text("-- old", encoding="utf-8")
+    monkeypatch.setattr("mysqldb.WEB_SCHEMA_CANDIDATES", (repo, latest, old))
     monkeypatch.setattr("mysqldb.get_env", lambda name, default=None: None)
-    assert web_schema() == workspace
+    assert web_schema() == old
+    latest.write_text("-- latest", encoding="utf-8")
+    assert web_schema() == latest   # 앞 후보가 먼저
     repo.write_text("-- repo", encoding="utf-8")
     assert web_schema() == repo
     given = tmp_path / "given.sql"

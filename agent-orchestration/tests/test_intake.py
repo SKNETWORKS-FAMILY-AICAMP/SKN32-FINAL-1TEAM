@@ -157,7 +157,7 @@ def test_fractional_unit_price_is_rejected():
     assert "9900" not in str(e.value)          # 신청자 입력값을 예외 메시지에 싣지 않는다
 
 
-# ── 사업비 · 일정 · 팀원 역할 (spec 4.3 — project_budget_items · project_schedule_items · team_members) ──
+# ── 사업비 · 일정 · 팀원 역할 (project_budget_items · project_schedule_items · team_members) ──
 def budget(category="인건비", plan="개발자 1명 채용", total="15000000.00", gov="10000000.00",
            cash="3000000.00", kind="2000000.00", **kw) -> dict:
     """project_budget_items 한 row (DECIMAL 금액은 Decimal, NULL은 None)."""
@@ -257,8 +257,8 @@ def missing_labels(**over) -> list[str]:
     return e.value.labels
 
 
-def test_switch_off_by_default_allows_empty_plan_tables():
-    assert settings.PLAN_TABLES_REQUIRED is False
+def test_switch_off_allows_empty_plan_tables():
+    assert settings.PLAN_TABLES_REQUIRED is False                               # conftest가 끈 값 (코드 값은 켬)
     assert plan_tables(**PRELIM).budget_items == []
     assert plan_tables().schedule_items == []
 
@@ -308,8 +308,7 @@ def test_switch_is_read_on_every_call(monkeypatch):
 def test_plan_table_labels_are_registered():
     assert {LABELS[k] for k in PLAN_TABLE_FIELDS} == {
         "사업비 집행계획", "사업비 집행계획(1단계)", "사업비 집행계획(2단계)", "추진 일정(협약기간 내)"}
-    assert {"planTables.required", "planTables.unknownSection", "planTables.missingLabels"} <= set(
-        settings.PROVISIONAL)
+    assert {"planTables.unknownSection", "planTables.missingLabels"} <= set(settings.PROVISIONAL)
 
 
 # ── SQL 공급처 (SQLite로 웹 DB 흉내 — app_schema.sql의 기본키 · 컬럼 이름) ──

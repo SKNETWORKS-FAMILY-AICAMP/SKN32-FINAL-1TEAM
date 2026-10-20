@@ -1,4 +1,4 @@
-"""산출물 파일 읽기 · 파일 삭제 대기열 관리자 함수 · 파일 저장소 조립 (spec 4.7 · 4.8).
+"""산출물 파일 읽기 · 파일 삭제 대기열 관리자 함수 · 파일 저장소 조립.
 
 - read_artifact_file: 저장된 내용 · 형식(넣을 때 기록한 값), 다른 실행 건 키 · 키 규칙 위반 · 없는 파일 · sha256 불일치는
   FILE_NOT_FOUND, 실패 · 중단 실행 건 RUN_NOT_VIEWABLE, 실행 건 없음 RUN_NOT_FOUND, 저장소 설정 없음 FILE_STORE_UNAVAILABLE.
@@ -7,26 +7,35 @@
   없는 줄 FILE_DELETION_NOT_FOUND.
 - 조립: 워커는 SBRAIN_ARTIFACT_ROOT 필수(없음 · 상대 경로면 시작하지 않음, 값은 메시지에 없음, 폴더를 만든다), 웹은 선택 ·
   읽기 전용(쓰기 · 지우기 거절, 폴더를 만들지 않음), 스텁 조립은 메모리.
+- S3 값('s3://<버킷>[/<접두어>]'): 값 모양, 워커 조립은 리전(AWS_REGION → AWS_DEFAULT_REGION)을 넣은 쓰기 가능
+  S3 저장소 + 시작 확인 한 번(DB에 닿기 전), 형식 오류 · 리전 없음 · 시작 확인 실패는 조립하지 않음(값 없는 메시지), 웹 조립은
+  읽기 전용 S3(조립할 때 S3를 부르지 않음 — 클라이언트는 처음 읽을 때) · 쓸 수 없는 값이면 FILE_STORE_UNAVAILABLE, 웹 읽기의
+  S3 오류는 다시 시도하지 않고 올라감. 가짜 S3 클라이언트(tests/s3_fake.py)만 쓴다.
 흐름 테스트는 메모리 · SQLite 두 저장소에서 돈다 (clock 픽스처). 임시 폴더는 pytest tmp_path만 쓴다. 네트워크 없음.
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
 from conftest import ARTIFACT_ROOT_KEY, Clock, make_app, start_and_select, to_screen8
 from flow_helpers import pid
+from s3_fake import BUCKET, PREFIX, REGION, FakeS3Client, fake_s3_store, patch_client_factory
 from store_helpers import uid
-from worker_helpers import real_worker_app, respond_bv_worker, worker, worker_to_screen6
+from worker_helpers import app_on, projects, real_worker_app, respond_bv_worker, worker, worker_to_screen6
 
 from sbrain import env
+from sbrain import store_sql as store_sql_module
 from sbrain.agents.stubs import FakeLLM
 from sbrain.bootstrap import artifact_root_problem, build_app, build_stub_app, build_web
 from sbrain.flow.reads import AdminFileDeletion, ArtifactFile
 from sbrain.intake import MemoryProjectInputSource
-from sbrain.orchestrator.errors import COMMAND_ERROR_CODES, CommandError
+from sbrain.orchestrator.errors import COMMAND_ERROR_CODES, CommandError, ProviderError
 from sbrain.orchestrator.file_deletion import MAX_ATTEMPTS, RETRY_SEC
 from sbrain.orchestrator.files import FileMeta, FileStoreReadOnly, LocalFolderFileStore, MemoryFileStore, sha256_hex
+from sbrain.orchestrator.settings import PROVISIONAL
+from sbrain.store_s3 import PROBE_DIR, S3FileStore, S3StartupCheckFailed, S3TemporaryError
 from sbrain.worker import main
 
 ROW_KEYS = {"deletionId", "runId", "status", "attempts", "lastErrorKind", "createdAt", "nextAt", "lastTriedAt",
@@ -236,9 +245,210 @@ def test_worker_main_refuses_missing_or_relative_root(tmp_path, db, monkeypatch,
     assert main(["--once"]) == 0 and root.is_dir()
 
 
-def test_stub_app_uses_memory_store():
+def test_stub_app_uses_memory_store(monkeypatch):
     app = build_stub_app()
     assert isinstance(app.engine.files, MemoryFileStore) and app.orchestrator.files is app.engine.files
+    monkeypatch.setenv(ARTIFACT_ROOT_KEY, S3_ROOT)                                # S3 값이어도 스텁 조립은 메모리
+    monkeypatch.setenv("AWS_REGION", REGION)
+    assert isinstance(build_stub_app().engine.files, MemoryFileStore)
+
+
+# ── S3 값 ─────────────────────────────────────────
+S3_ROOT = f"s3://{BUCKET}/app/artifacts"
+REGION_KEYS = ("AWS_REGION", "AWS_DEFAULT_REGION")
+SECRETS = (BUCKET, PREFIX.rstrip("/"), REGION, "arn:", "amazonaws", PROBE_DIR.rstrip("/"))
+
+
+def s3_env(monkeypatch, tmp_path, value: str = S3_ROOT, **regions: str) -> None:
+    """SBRAIN_ARTIFACT_ROOT = value, 리전 환경 변수는 넘긴 것만 둔다(나머지는 없음). agent-orchestration/.env를 읽지 않는다."""
+    no_env_file(monkeypatch, tmp_path)
+    monkeypatch.setenv(ARTIFACT_ROOT_KEY, value)
+    for key in REGION_KEYS:
+        if key in regions:
+            monkeypatch.setenv(key, regions[key])
+        else:
+            monkeypatch.delenv(key, raising=False)
+
+
+def no_db(monkeypatch) -> None:
+    """DB 엔진을 만들면 실패한다 — 조립이 DB에 닿기 전에 멈췄는지 본다."""
+    def refuse(url):
+        raise AssertionError("조립이 DB에 닿았다")
+    monkeypatch.setattr(store_sql_module, "create_db_engine", refuse)
+
+
+def assert_clean(text: str, *extra: str) -> None:
+    for secret in (*SECRETS, *extra):
+        assert secret not in text, secret
+
+
+def worker_app(tmp_path, **kw):
+    return build_app(sqlite_url(tmp_path), project_inputs=MemoryProjectInputSource(), llm=FakeLLM(), **kw)
+
+
+def web_app(tmp_path, **kw):
+    return build_web(sqlite_url(tmp_path), profile_count=lambda a: 1, project_inputs=MemoryProjectInputSource(), **kw)
+
+
+def test_artifact_root_problem_shapes(tmp_path):
+    for value in (str(tmp_path), f"s3://{BUCKET}", f"s3://{BUCKET}/", S3_ROOT, S3_ROOT + "/", f"s3://{BUCKET}//a/b//"):
+        assert artifact_root_problem(value) is None, value
+    assert artifact_root_problem(None) == artifact_root_problem("") == "없음"
+    for value in ("rel/x", f"S3://{BUCKET}", f"s3:/{BUCKET}"):                    # 스킴은 소문자 's3://'만 — 나머지는 경로
+        assert artifact_root_problem(value) == "절대 경로가 아님", value
+    for value in ("s3://", "s3://Secret_Bucket/x", f"s3://{BUCKET}/a//b", f"s3://{BUCKET}/a/../b", "s3://ab",
+                  f"s3://{BUCKET}/" + "p" * 300):
+        problem = artifact_root_problem(value)
+        assert problem == "S3 주소 형식이 아님", value
+        assert_clean(problem, "ecret")                                            # 문구에 값을 넣지 않는다
+
+
+def test_build_app_s3_root_makes_writable_store_after_one_startup_check(tmp_path, db, monkeypatch):
+    s3_env(monkeypatch, tmp_path, AWS_REGION=REGION)
+    fake = FakeS3Client()
+    app = worker_app(tmp_path, s3_client=fake)
+    files = app.engine.files
+    assert isinstance(files, S3FileStore) and not files.read_only and app.orchestrator.files is files
+    assert (files.bucket, files.prefix, files.region) == (BUCKET, PREFIX, REGION)  # 접두어는 정리 · 리전은 직접 넘김
+    assert fake.methods() == ["get_object", "put_object", "get_object", "delete_object"]   # 시작 확인 한 번
+    assert all(name.startswith(PREFIX + PROBE_DIR) for _, name in fake.calls) and fake.keys() == []
+    key = "r1/e1/u1/index.html"                                                   # 워커 저장소는 쓰기 · 읽기 · 지우기
+    put(files, key, b"<html></html>")
+    assert files.read(key) == b"<html></html>" and fake.stored(PREFIX + key).content_type == "text/html"
+    files.delete_prefix("r1/")
+    assert fake.keys() == []
+    bucket_top = worker_app(tmp_path, s3_client=FakeS3Client(), artifact_root=f"s3://{BUCKET}")   # 인자도 받는다
+    assert bucket_top.engine.files.prefix == ""
+
+
+def test_build_app_s3_region_order_and_missing_region(tmp_path, db, monkeypatch):
+    for regions, expected in (({"AWS_REGION": REGION, "AWS_DEFAULT_REGION": "us-east-1"}, REGION),
+                              ({"AWS_DEFAULT_REGION": "us-east-1"}, "us-east-1")):
+        s3_env(monkeypatch, tmp_path, **regions)
+        assert worker_app(tmp_path, s3_client=FakeS3Client()).engine.files.region == expected
+    s3_env(monkeypatch, tmp_path)                                                 # 리전 없음 — DB · S3에 닿기 전에 멈춤
+    no_db(monkeypatch)
+    fake = FakeS3Client()
+    with pytest.raises(RuntimeError) as e:
+        worker_app(tmp_path, s3_client=fake)
+    assert str(e.value).startswith(f"{ARTIFACT_ROOT_KEY}가 S3인데 AWS_REGION(또는 AWS_DEFAULT_REGION)이 없음")
+    assert_clean(str(e.value))
+    assert fake.calls == []
+
+
+def test_build_app_refuses_bad_s3_address_before_db(tmp_path, monkeypatch):
+    no_db(monkeypatch)
+    fake = FakeS3Client()
+    for value in ("s3://Secret_Bucket/app", "s3://secret-bucket/a//b", "s3://secret-bucket/a b", "s3://"):
+        s3_env(monkeypatch, tmp_path, value, AWS_REGION=REGION)
+        with pytest.raises(RuntimeError) as e:
+            worker_app(tmp_path, s3_client=fake)
+        text = str(e.value)
+        assert text.startswith(f"{ARTIFACT_ROOT_KEY}가 S3 주소 형식이 아님"), text
+        assert_clean(text, "ecret")
+    assert fake.calls == []
+
+
+@pytest.mark.parametrize(("inject", "permanent", "head"), [
+    (("put_object", "access_denied"), True, "설정 오류: S3 산출물 위치를 쓸 수 없음(쓰기)"),
+    (("get_object", "no_such_bucket"), True, "설정 오류: S3 산출물 위치를 쓸 수 없음(없는 객체 읽기)"),
+    (("get_object", "service_unavailable"), False, "S3 시작 확인 실패(일시) — "),
+    (("put_object", "connect_timeout"), False, "S3 시작 확인 실패(일시) — 시간 초과"),
+    (("get_object", "no_credentials"), False, "S3 시작 확인 실패(일시) — 자격 증명을 얻지 못함"),
+])
+def test_build_app_startup_check_failure_stops_before_db(tmp_path, monkeypatch, inject, permanent, head):
+    s3_env(monkeypatch, tmp_path, AWS_REGION=REGION)
+    no_db(monkeypatch)
+    fake = FakeS3Client()
+    fake.inject(*inject)
+    with pytest.raises(S3StartupCheckFailed) as e:
+        worker_app(tmp_path, s3_client=fake)
+    assert e.value.permanent is permanent and isinstance(e.value, RuntimeError)
+    assert str(e.value).startswith(head), str(e.value)
+    assert_clean(str(e.value))
+    assert fake.keys() == []                                                      # 시험 객체가 남지 않는다
+    assert fake.methods().count(inject[0]) == 1                                   # 실패한 호출을 다시 부르지 않는다
+
+
+def run_with_file(db, files, data: bytes = b"<html>A</html>") -> tuple[str, str, str]:
+    """SQLite DB에 실행 건을 만들고(스텁 조립) 그 실행 건 키로 파일 하나를 넣는다. (실행 건, 프로젝트, 키)."""
+    app = app_on(db, projects(0))
+    rid = start_and_select(app)
+    key = f"{rid}/e1/u1/index.html"
+    put(files, key, data)
+    return rid, pid(app, rid), key
+
+
+def test_web_s3_reads_worker_files_and_refuses_writes(tmp_path, db, monkeypatch):
+    s3_env(monkeypatch, tmp_path, AWS_REGION=REGION)
+    writer, fake = fake_s3_store()                                                # 워커가 쓴 것과 같은 버킷 · 접두어
+    rid, p, key = run_with_file(db, writer)
+    calls = len(fake.calls)
+    web = web_app(tmp_path, s3_client=fake)
+    assert len(fake.calls) == calls                                               # 조립할 때 S3를 부르지 않는다 (시작 확인 없음)
+    reader = web.orchestrator.files
+    assert isinstance(reader, S3FileStore) and reader.read_only and web.engine.files is None
+    assert (reader.bucket, reader.prefix, reader.region) == (BUCKET, PREFIX, REGION)
+    f = web.orchestrator.read_artifact_file(p, key)
+    assert (f.data, f.media_type, f.name) == (b"<html>A</html>", "text/html", "index.html")
+    with pytest.raises(FileStoreReadOnly):                                        # 웹은 쓰지도 지우지도 않는다
+        put(reader, f"{rid}/e/u/x.html", b"x")
+    with pytest.raises(FileStoreReadOnly):
+        reader.delete_prefix(f"{rid}/")
+    assert not any(m in ("put_object", "delete_object", "delete_objects") for m in fake.methods()[calls:])
+    # 읽기의 S3 오류는 다시 시도하지 않고 그대로 올라간다 — 일시(ConnectionError) · 영구(ProviderError)
+    for error, raised in (("service_unavailable", S3TemporaryError), ("access_denied", ProviderError)):
+        fake.inject("get_object", error)
+        before = fake.methods().count("get_object")
+        with pytest.raises(raised) as e:
+            web.orchestrator.read_artifact_file(p, key)
+        assert fake.methods().count("get_object") == before + 1
+        assert_clean(f"{e.value} {e.value!r}", key)
+    assert web.orchestrator.read_artifact_file(p, key).data == b"<html>A</html>"
+
+
+def test_web_s3_store_makes_client_on_first_read(tmp_path, db, monkeypatch):
+    s3_env(monkeypatch, tmp_path, AWS_DEFAULT_REGION=REGION)
+    fake = FakeS3Client()
+    regions = patch_client_factory(monkeypatch, fake)                             # 주입 없이 — 실제 길처럼 만들기 함수로
+    web = web_app(tmp_path)
+    assert regions == [] and fake.calls == []                                     # 조립할 때 클라이언트를 만들지 않는다
+    assert web.orchestrator.files.meta("r1/e1/u1/index.html") is None
+    assert regions == [REGION]
+
+
+def test_web_s3_unusable_values_only_read_is_unavailable(tmp_path, db, monkeypatch):
+    rid, p, key = run_with_file(db, MemoryFileStore())
+
+    def unavailable(**kw) -> None:
+        web = web_app(tmp_path, **kw)                                             # 조립은 된다 (웹 서버는 뜬다)
+        assert web.orchestrator.files is None and web.engine.files is None
+        e = code_of(lambda: web.orchestrator.read_artifact_file(p, key))
+        assert e.code == "FILE_STORE_UNAVAILABLE"
+        assert_clean(str(e))
+    fake = FakeS3Client()
+    s3_env(monkeypatch, tmp_path)                                                 # 리전 없음
+    unavailable(s3_client=fake)
+    s3_env(monkeypatch, tmp_path, "s3://Secret_Bucket/app", AWS_REGION=REGION)    # S3 주소 형식이 아님
+    unavailable(s3_client=fake)
+    s3_env(monkeypatch, tmp_path, AWS_REGION="not a region!")                     # 저장소를 만들지 못함 (리전 모양)
+    unavailable()
+    s3_env(monkeypatch, tmp_path, AWS_REGION=REGION)
+    monkeypatch.setitem(sys.modules, "boto3", None)                               # AWS 라이브러리가 설치되어 있지 않음
+    unavailable()
+    assert fake.calls == []
+    assert isinstance(web_app(tmp_path, s3_client=fake).orchestrator.files, S3FileStore)   # 주입하면 라이브러리를 부르지 않는다
+
+
+def test_s3_provisional_entries():
+    keys = {"s3Store.clientTimeouts", "s3Store.libraryRetries", "s3Store.connectionPool", "s3Store.temporaryErrorCodes",
+            "s3Store.nameShapes", "s3Store.contentTypes", "s3Store.startupProbe", "s3Store.startupTemporaryExit",
+            "fileCheck.purpose"}
+    assert keys <= set(PROVISIONAL)
+    assert not any("region" in k.lower() for k in PROVISIONAL)                    # 공고 연결 시험과 같은 규칙
+    text = " ".join(PROVISIONAL[k] for k in keys)
+    assert "AWS_DEFAULT_REGION" not in text                                       # 리전 읽는 순서는 AWS 관례 — 잠정 아님
+    assert "s3://" in PROVISIONAL["artifactRoot.workerRequired"]
 
 
 # ── 관리자: 파일 삭제 대기열 ─────────────────────────────────

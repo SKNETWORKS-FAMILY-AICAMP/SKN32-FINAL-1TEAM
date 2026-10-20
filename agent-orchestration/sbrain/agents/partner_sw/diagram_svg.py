@@ -1,8 +1,8 @@
-"""그림 SVG 그리기 — 담당자 시험 서버의 flow_image(app/testing/test_server.py)를 옮긴 것 (spec 4.6).
+"""그림 SVG 그리기 — 담당자 시험 서버의 flow_image(app/testing/test_server.py)를 옮긴 것.
 
 가로 카드 + 화살표, 아래에 안내 문구 'AI 생성 명세 기반 개념도 · 상세 설계 검토 필요'. 그림은 파일 하나로 열린다(외부
 참조 · 글꼴 파일 · 그림 파일을 부르지 않는다). 그리기 규칙만 옮겼다 — 바꾼 곳:
-- 노드 계약이 깨진 출력의 기본 흐름 대체는 뺐다(우리는 F18 응답 검사에서 FormatError로 재시도한다, spec 4.1).
+- 노드 계약이 깨진 출력의 기본 흐름 대체는 뺐다(우리는 F18 응답 검사에서 FormatError로 재시도한다).
 - 돌려주는 것은 SVG 바이트(utf-8)다. 파일은 Task가 tools.files로 넣는다.
 - 흐름도 제목 'USERFLOW' → '서비스 흐름도'. 구조도 제목 '서비스 구조도'는 그대로.
 """
@@ -13,7 +13,7 @@ import re
 from typing import Any
 
 SVG_TYPE = "image/svg+xml"
-FILE_NAMES = {"USER_FLOW": "userflow.svg", "SERVICE_ARCHITECTURE": "architecture.svg"}   # 파일 이름 (spec 4.6)
+FILE_NAMES = {"USER_FLOW": "userflow.svg", "SERVICE_ARCHITECTURE": "architecture.svg"}   # 파일 이름
 NOTICE = "AI 생성 명세 기반 개념도 · 상세 설계 검토 필요"
 # 그림 제목 — 흐름도는 담당자 'USERFLOW' 대신 '서비스 흐름도', 구조도는 담당자 그대로
 TITLES = {"USER_FLOW": "서비스 흐름도", "SERVICE_ARCHITECTURE": "서비스 구조도"}

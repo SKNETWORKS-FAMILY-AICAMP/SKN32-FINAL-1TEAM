@@ -1,4 +1,4 @@
-"""양식 묶음 = 담당자 계약 항목 · 항목별 재작성 묶음 표 한 곳 · 목적 이름 상수 · 패키지 자료 (spec 4.2 · 4.6)."""
+"""양식 묶음 = 담당자 계약 항목 · 항목별 재작성 묶음 표 한 곳 · 목적 이름 상수 · 패키지 자료."""
 from __future__ import annotations
 
 import pathlib
@@ -20,7 +20,7 @@ PARTNER_DIR = CODE_DIR / "sbrain" / "agents" / "partner_sw"
 CASES = [("예비창업자", "pre_startup", 25), ("개인사업자", "early_startup", 24), ("법인", "early_startup", 24)]
 
 
-# ── 양식 묶음 = 담당자 계약 (spec 4.6) ──────────────────────
+# ── 양식 묶음 = 담당자 계약 ──────────────────────
 @pytest.mark.parametrize("applicant,document_type,count", CASES)
 def test_form_bundle_matches_partner_contract(applicant, document_type, count):
     specs = contract.CONTRACT["documents"][document_type]
@@ -103,7 +103,7 @@ def test_display_title_is_used_for_ui_but_full_title_is_preserved(monkeypatch):
     assert bundle.evaluation_items[0].description == full_title
 
 
-# ── 항목별 재작성 묶음 표 한 곳 (spec 4.6) ──────────────────────────────
+# ── 항목별 재작성 묶음 표 한 곳 ──────────────────────────────
 def test_pairing_table_lookup():
     assert section_tag_bundle("2.4.1") == ("1-1", "문제인식")
     assert section_tag_bundle("3.5.3") == ("2-1", "실현가능성")
@@ -142,7 +142,7 @@ def test_changing_pairing_table_changes_section_tags(monkeypatch):
     assert section_bundle("2.3.6") == "실현가능성" and section_bundle("2.3.5") == "문제인식"
 
 
-# ── 목적 이름 (spec 4.2) ────────────────────────────────────
+# ── 목적 이름 ────────────────────────────────────
 def test_purpose_constants_are_f01_to_f19():
     assert purposes.PURPOSES == frozenset(f"F{n:02d}" for n in range(1, 20))
     assert (purposes.F01, purposes.F16, purposes.F19) == ("F01", "F16", "F19")
@@ -158,7 +158,7 @@ def test_partner_llm_functions_are_purposes():
     assert llm_functions <= purposes.PURPOSES
 
 
-# ── 패키지 자료 (spec 4.1) ──────────────────────────────────
+# ── 패키지 자료 ──────────────────────────────────
 def test_package_data_covers_partner_data_files():
     config = tomllib.loads((CODE_DIR / "pyproject.toml").read_text(encoding="utf-8"))
     package_data = config["tool"]["setuptools"]["package-data"]

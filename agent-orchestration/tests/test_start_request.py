@@ -156,7 +156,7 @@ def test_run_created_elsewhere_fails_request(clock):
 
 
 def test_form_copy_is_cleared_when_request_ends(clock):
-    """입력 사본(form)은 요청이 끝나는 모든 경로에서 상태와 함께 비우고, 대기 · 처리중에는 남긴다 (spec 3)."""
+    """입력 사본(form)은 요청이 끝나는 모든 경로에서 상태와 함께 비우고, 대기 · 처리중에는 남긴다."""
     app = app_with(clock, project(101), project(102), project(103), project(104), project(105))
     form = lambda rid: app.store.get_start_request(rid).form                 # noqa: E731
     done = app.orchestrator.request_start("7", 101)

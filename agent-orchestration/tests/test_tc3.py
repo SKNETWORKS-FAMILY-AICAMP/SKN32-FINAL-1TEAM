@@ -1,8 +1,8 @@
-"""T-C3 작업 분해 — 실제 구현을 가짜 호출처(FakeLLM)로 시험한다 (T-C3 spec 3.1 ~ 3.9 · 7 · 12).
+"""T-C3 작업 분해 — 실제 구현을 가짜 호출처(FakeLLM)로 시험한다.
 
 - 지시 대상마다 LLM 한 번(목적 '지시문 작성', 항목 키 = Task ID) — 웹개발 · AI_API 7번, 원페이지 6번, 한꺼번에 보낸다
   (끝난 순서와 상관없이 결과는 실행 순서. 요청 · 호출 기록 순서는 보지 않는다)
-- 보내는 정보는 spec 3.6 목록뿐: 신청자는 유형 · 업력 · 주 업종 · 시 · 도만, 참조 조각은 보내지 않는다
+- 보내는 정보는 정해진 칸뿐: 신청자는 유형 · 업력 · 주 업종 · 시 · 도만, 참조 조각은 보내지 않는다
 - 3.2 확인 ① · ② · ④는 LLM을 부르지 않고 실행 실패(내용 없는 사유)
 - 형식 오류는 tools가 재시도, 재시도 소진은 T-C3 재개 — 모두 일시면 받은 안내를 실어(T-C3.partial) 재개 때 빠진 것만 부른다
 - 일시가 아닌 소진 · 코드 오류가 섞이면 받은 안내를 싣지 않고 실패, 안내 내용은 예외 · 기록에 나오지 않는다
@@ -65,7 +65,7 @@ def start_with(app, **form) -> str:
     return res.run_id
 
 
-# 보내면 안 되는 신청자 값 (spec 3.6 '보내지 않는 것' · 7)
+# 보내면 안 되는 신청자 값
 PRIVATE_FORM = dict(
     representative_name="김서준", birth_date=date(1990, 1, 1), revenue_unit_price=35000,
     revenue_items=[RevenueItem(service_name="월 구독 요금제", unit_price=35000)],
@@ -85,7 +85,7 @@ def test_tc3_is_implemented():
     assert IMPLEMENTED["T-C3"] is tc3.run and "T-C3" in IMPLEMENTED_TASKS
 
 
-# ── 결과 · 호출 (spec 3.4 · 3.5 · 3.6 · 3.8) ─────────────────
+# ── 결과 · 호출 ─────────────────
 @pytest.mark.parametrize("category, calls", [("웹개발", 7), ("AI_API", 7), ("원페이지", 6)])
 def test_one_guidance_call_per_instructed_task(clock, category, calls):
     app = real_tc3_app(clock, StubScenario(category=category))
@@ -136,7 +136,7 @@ def test_supervisor_model_settings_in_request(clock):
     assert (rec.model, rec.reasoning_effort, rec.temperature, rec.status) == ("gpt-6-luna", "low", None, "성공")
 
 
-# ── 보내는 정보 (spec 3.6 · 7) ─────────────────────────────
+# ── 보내는 정보 ─────────────────────────────
 def test_request_carries_only_allowed_applicant_fields(clock):
     app = real_tc3_app(clock)
     rid = start_with(app, **PRIVATE_FORM)
@@ -173,10 +173,10 @@ def test_pre_startup_request_has_no_business_age(clock):
     reqs = tc3_requests(app)
     assert len(reqs) == 7
     text = body(reqs)
-    assert "businessAgeYears" not in text                                  # 업력은 싣지 않는다 (spec 11)
+    assert "businessAgeYears" not in text                                  # 업력은 싣지 않는다
     assert "예비창업자" in text and "부산광역시" in text
     assert ctx_of(app, rid).get("formSpec").form_version == select_form("예비창업자").form_spec.form_version \
-        == "pre_startup@2"                                                  # 담당자 예비창업 양식 (spec 4.6)
+        == "pre_startup@2"                                                  # 담당자 예비창업 양식
 
 
 # ── Task 함수 단위 (격리 · 참조 조각 · 빈 값) ────────────────────
@@ -294,7 +294,7 @@ def test_exhausted_call_is_not_swallowed():
     assert Counter(r.metadata["item_key"] for r in llm.requests) == Counter(INSTRUCTED + ["T-S2"])  # 모두 보낸다
 
 
-# ── 3.2 확인 — 흐름 (spec 3.2 · 3.9) ──────────────────────────
+# ── 3.2 확인 — 흐름 ──────────────────────────
 def _expect_failure(app, rid, text):
     run = app.store.load_run(rid)
     assert run.state.progress == "실패" and run.failure_reason.startswith("T-C3: ")
@@ -314,7 +314,7 @@ def test_missing_career_fails_without_llm(clock):
 
 
 def test_gate_not_passed_fails_without_llm(clock):
-    """정상 흐름에서는 생기지 않는다 — 불통과 결과가 들어온 경우를 흉내 낸다 (버그 대비 확인, spec 3.2 ①)."""
+    """정상 흐름에서는 생기지 않는다 — 불통과 결과가 들어온 경우를 흉내 낸다 (버그 대비 확인)."""
     app = real_tc3_app(clock)
 
     def broken(inp, tools):
@@ -344,7 +344,7 @@ def test_empty_team_passes(clock):
     assert len(tc3_requests(app)) == 7 and ctx_of(app, rid).get("taskPlan") is not None
 
 
-# ── 재시도 · 재개 (spec 3.9) ──────────────────────────────────
+# ── 재시도 · 재개 ──────────────────────────────────
 def test_empty_guidance_is_format_error_and_retried(clock):
     app = real_tc3_app(clock)
     replies = iter([json.dumps({"guidance": "   "}), json.dumps({"guidance": guidance_text("T-S1")},

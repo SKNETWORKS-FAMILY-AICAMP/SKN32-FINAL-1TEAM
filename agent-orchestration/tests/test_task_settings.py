@@ -1,4 +1,4 @@
-"""Task별 모델 설정 (Settings.tasks) — spec 2 · 12-3 'Task별 설정'.
+"""Task별 모델 설정 (Settings.tasks).
 
 - 키 집합 = 카탈로그의 task 단계 + '지시문 다시 쓰기'. 규칙 단계 · 합치기에는 항목이 없다.
 - Task마다 자기 항목의 모델이 실행 기록에 남고, 온도 덮어쓰기(TempRule)는 그대로 위에 씌운다.
@@ -62,9 +62,9 @@ def task_ids() -> set[str]:
     return {s.task_id for s in build_registry().specs() if s.kind == "task" and s.uses_llm}
 
 
-# LLM을 부르지 않는 Task — 모델 항목이 없다 (T-W3는 담당자 F17 규칙 코드 — spec 4.2)
+# LLM을 부르지 않는 Task — 모델 항목이 없다 (T-W3는 담당자 F17 규칙 코드)
 NO_LLM_TASKS = {"T-C2", "G-01", "T-W3", "T-C4"}
-# 전략 · 작성 · 검증-1 담당자 함수별 모델 (Task 모델, purposeModels) — spec 4.2
+# 전략 · 작성 · 검증-1 담당자 함수별 모델 (Task 모델, purposeModels)
 PARTNER_MODELS = {
     "T-S1": ("gpt-5.6-terra", {"F01": "gpt-6-luna", "F05": "gpt-6-luna", "F06": "gpt-5.6-sol", "F07": "gpt-6.1-sol",
                                "F08": "gpt-6.1-sol", "F09": "gpt-5.6-terra", "F13": "gpt-6-luna",
@@ -114,7 +114,16 @@ def test_timeouts_and_provisional():
     s = Settings()
     assert s.task_timeouts[REWRITE_KEY] == 120.0 and s.task_timeouts["T-B2.image"] == 120.0
     assert "tasks" in PROVISIONAL and "agents" not in PROVISIONAL
-    assert f"taskTimeouts.{REWRITE_KEY}" in PROVISIONAL and "taskTimeouts.T-B2.image" in PROVISIONAL
+    # 다시 쓰기 · 이미지 제한 시간 120초는 기준 문서 시트 1 '제한 시간'이 정해 잠정이 아니다
+    assert not {"taskTimeouts", f"taskTimeouts.{REWRITE_KEY}", "taskTimeouts.T-B2.image"} & set(PROVISIONAL)
+
+
+def test_ts1_timeout_300():
+    # T-S1(요구사항 분석)은 본문 작성 · 실행 파일 · 인포그래픽과 같은 300초(운영 F07 시간 초과). 같은 전략 Agent의 T-S2와 나머지 기본값은 120초 그대로
+    t = Settings().task_timeouts
+    assert t["T-S1"] == 300.0 == t["T-W1"] == t["T-B1"] == t["T-B2"]
+    assert all(t[k] == 120.0 for k in ("T-C1", "T-C3", "T-S2", "T-W2", "T-W3", "T-V1", "T-V2", "T-C4"))
+    assert "taskTimeouts.T-S1" not in PROVISIONAL   # 잠정 값이 아니다
 
 
 def test_new_snapshot_has_tasks_and_no_agents():
@@ -235,7 +244,7 @@ def test_worker_routes_rewrite_real_and_stub_tasks_fake(tmp_path, db):
     assert (rw.metadata["task_id"], rw.metadata["agent"]) == ("T-S1", "조율")
     real_tasks = {q.metadata["task_id"] for q in real.requests if q.metadata["purpose"] != PURPOSE_REWRITE}
     assert real_tasks == {"T-C1", "T-C3", "T-S1", "T-S2", "T-W1", "T-W2", "T-V1",
-                          "T-B1", "T-B2", "T-V2"}                           # 구현 Task만 (spec 4.15 · impl-verify2 4.10)
+                          "T-B1", "T-B2", "T-V2"}                           # 구현 Task만
     fake_tasks = {q.metadata["task_id"] for q in app.llm.requests}
     assert not fake_tasks & {"T-B1", "T-B2", "T-V2"}                        # 실구현 호출은 가짜로 가지 않는다
     assert {q.metadata["task_id"] for q in real_image.requests} == {"T-B2"}  # T-B2 아이콘판은 실제 이미지 호출처로

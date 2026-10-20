@@ -2,7 +2,8 @@
 
 - 결제 · 한도 코드 6종은 상태 코드와 관계없이 재시도 없이 '일시'(재개 대기로).
 - 입력 · 운영 응답 코드 오류는 재시도하지 않는다.
-- 일시 오류는 늘리는 간격(2 · 4 · 8 · 16 · 32초 × (1 + 무작위 0 ~ 25%)), 형식 오류 · 파일 창구 · backoff=False 검색은 2초 고정.
+- 일시 오류는 늘리는 간격(2 · 4 · 8 · 16 · 32초 × (1 + 무작위 0 ~ 25%)), 형식 오류 · 파일 창구의 디스크 오류 · backoff=False
+  검색은 2초 고정(파일 창구의 연결 오류 · 시간 초과는 늘리는 간격).
 - Retry-After는 계산 값과 그 값 중 큰 쪽(상한 60초), 한 호출의 대기 합은 90초(T-C1 45초 — 설정 키별) 안.
 - 시도 설명 'status=N code=X', 정규식 밖 코드는 버림, 응답 메시지는 기록 · 예외에 없음.
 네트워크 · 실제 대기 없음(sleep · rand 주입).
@@ -188,12 +189,14 @@ class BrokenStore(MemoryFileStore):
         raise self.error
 
 
-@pytest.mark.parametrize("error", [OSError("disk"), TimeoutError()])
-def test_file_call_failures_wait_fixed(error):
+# 파일 호출 — 디스크 오류는 2초 고정, 시간 초과 · 연결 오류는 늘리는 간격(tests/test_file_call_retry.py)
+@pytest.mark.parametrize("error, waits", [(OSError("disk"), [2.0] * 5),
+                                          (TimeoutError(), [w * 1.225 for w in (2.0, 4.0, 8.0, 16.0, 32.0)])])
+def test_file_call_failure_waits(error, waits):
     tools, sink, sleeps = make_tools(rand=lambda: 0.9, files=BrokenStore(error))
     with pytest.raises(ToolCallExhausted) as e:
         tools.files.put("a.svg", b"<svg/>", "image/svg+xml")
-    assert e.value.tries == 6 and sleeps == [2.0] * 5 and e.value.error_kind == "일시"
+    assert e.value.tries == 6 and sleeps == pytest.approx(waits) and e.value.error_kind == "일시"
 
 
 def test_zero_interval_does_not_sleep():
@@ -249,9 +252,10 @@ def test_retry_settings_defaults_and_old_snapshot():
     assert old.retry.wait_cap_by_key == {"T-C1": 45.0} and old.retry.wait_cap_sec == 90.0
     again = Settings.model_validate(Settings().dump())
     assert again.retry == Settings().retry
-    for key in ("retry.backoffMultiplier", "retry.jitterRatio", "retry.retryAfterCapSec", "retry.waitCapSec",
-                "retry.waitCapByKey"):
-        assert key in PROVISIONAL and "잠정" in PROVISIONAL[key]
+    # 값은 기준 문서 시트 1 '재시도 간격'이 정해 잠정이 아니다 (기능정의서 v1.11)
+    for key in ("retry.retryIntervalSec", "retry.backoffMultiplier", "retry.jitterRatio", "retry.retryAfterCapSec",
+                "retry.waitCapSec", "retry.waitCapByKey"):
+        assert key not in PROVISIONAL
 
 
 def test_engine_copies_retry_settings_by_key(clock):

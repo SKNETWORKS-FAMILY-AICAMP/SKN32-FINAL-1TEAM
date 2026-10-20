@@ -1,16 +1,21 @@
 """워커 — 가져가기 · 점유 · 하트비트 · 종료 신호 · 재개 · 보관 기간 작업, 워커 실행 입구(main).
 
 여러 워커는 같은 DB 파일을 쓰는 앱(프로세스 하나에 해당) 여러 개로 흉내 낸다. 조립은 test_bootstrap.py가 본다.
+실행 입구의 S3 값: 형식 오류 · 리전 없음 · 영구 시작 확인 실패 · 클라이언트를 만들지 못함 · AWS 라이브러리 없음은
+종료 코드 2, 일시 시작 확인 실패는 1, 성공이면 --once가 시작 확인을 지나 0. 메시지에 값(버킷 · 접두어 · 리전)이 없다.
+main에는 인자를 넘길 수 없어 모듈 수준 클라이언트 만들기 함수를 가짜로 바꿔 끼운다(s3_fake.patch_client_factory).
 """
 from __future__ import annotations
 
 import signal
+import sys
 import threading
 import time
 
 import pytest
-from conftest import TIMING, Clock
+from conftest import ARTIFACT_ROOT_KEY, TIMING, Clock
 from mysqldb import MYSQL, require_mysql
+from s3_fake import BUCKET, PREFIX, REGION, FakeS3Client, make_error, patch_client_factory
 from worker_helpers import app_on, projects, start, worker
 
 from sbrain import env
@@ -245,7 +250,7 @@ def test_worker_waits_for_rework_collecting_window(db):
     assert (run.state.step, run.last_rework.status, run.last_rework.bundles) == (
         "문서평가", "완료", ["문제인식", "팀 구성"])
     assert [r.task_id for r in app.store.executions(rid) if r.cycle_id == acc.cycle_id] == [
-        "T-W1", "M-1", "T-V1", "G-02a"]                                          # 두 묶음 모두 본문 항목뿐 (spec 4.11)
+        "T-W1", "M-1", "T-V1", "G-02a"]                                          # 두 묶음 모두 본문 항목뿐
 
 
 def test_error_outside_steps_backs_off(db):
@@ -364,3 +369,96 @@ def test_main_checks_settings_and_runs_once(monkeypatch, tmp_path, db, capsys):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-used")                      # 할 일이 없어 호출하지 않는다
     assert main(["--once"]) == 0
     assert "할 일 없음" in capsys.readouterr().out
+
+
+# ── 실행 입구: S3 값 ─────────────────────────────
+S3_ROOT = f"s3://{BUCKET}/app/artifacts"
+S3_SECRETS = (BUCKET, PREFIX.rstrip("/"), REGION, "arn:", "amazonaws", ".probe", "123456789012")
+
+
+def s3_main_env(monkeypatch, tmp_path, value: str = S3_ROOT, **regions: str) -> None:
+    """main이 읽는 설정 — DB(SQLite 파일) · 키 · SBRAIN_ARTIFACT_ROOT = value, 리전은 넘긴 것만. agent-orchestration/.env를 읽지 않는다."""
+    monkeypatch.setattr(env, "DEFAULT_ENV_FILE", tmp_path / "없음.env")
+    monkeypatch.setenv("SBRAIN_DB_URL", f"sqlite:///{(tmp_path / 'worker.db').as_posix()}")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-used")                      # 할 일이 없어 호출하지 않는다
+    monkeypatch.setenv(ARTIFACT_ROOT_KEY, value)
+    for key in ("AWS_REGION", "AWS_DEFAULT_REGION"):
+        if key in regions:
+            monkeypatch.setenv(key, regions[key])
+        else:
+            monkeypatch.delenv(key, raising=False)
+
+
+def clean_output(out, *extra: str) -> str:
+    text = out.out + out.err
+    for secret in (*S3_SECRETS, *extra):
+        assert secret not in text, secret
+    return out.err
+
+
+def test_main_s3_value_errors_exit_2(monkeypatch, tmp_path, db, capsys):
+    regions = patch_client_factory(monkeypatch, FakeS3Client())
+    for value in ("s3://Secret_Bucket/app", "s3://secret-bucket/a//b"):
+        s3_main_env(monkeypatch, tmp_path, value, AWS_REGION=REGION)
+        assert main(["--once"]) == 2
+        err = clean_output(capsys.readouterr(), "ecret")
+        assert err.startswith(f"설정 오류: {ARTIFACT_ROOT_KEY}가 S3 주소 형식이 아님"), err
+    s3_main_env(monkeypatch, tmp_path)                                            # 리전 없음
+    assert main(["--once"]) == 2
+    err = clean_output(capsys.readouterr())
+    assert err.startswith(f"설정 오류: {ARTIFACT_ROOT_KEY}가 S3인데 AWS_REGION(또는 AWS_DEFAULT_REGION)이 없음"), err
+    assert regions == []                                                          # S3에 닿기 전에 멈춘다
+    s3_main_env(monkeypatch, tmp_path, f"S3://{BUCKET}", AWS_REGION=REGION)       # 대문자 스킴은 상대 경로 — 지금 문구 그대로
+    assert main(["--once"]) == 2
+    assert "절대 경로가 아님" in clean_output(capsys.readouterr())
+
+
+@pytest.mark.parametrize(("setup", "code", "head"), [
+    (lambda f: None, 0, None),
+    (lambda f: f.inject("put_object", "access_denied"), 2, "설정 오류: S3 산출물 위치를 쓸 수 없음(쓰기)"),
+    (lambda f: setattr(f, "list_permission", False), 2, "설정 오류: S3 산출물 위치를 쓸 수 없음(없는 객체 읽기)"),
+    (lambda f: f.inject("get_object", "service_unavailable"), 1, "S3 시작 확인 실패(일시) — 서버 일시 오류"),
+    (lambda f: f.inject("put_object", "read_timeout"), 1, "S3 시작 확인 실패(일시) — 시간 초과"),
+    (lambda f: f.inject("get_object", "slow_down"), 1, "S3 시작 확인 실패(일시) — 속도 제한"),
+    (lambda f: f.inject("get_object", "metadata_retrieval"), 1, "S3 시작 확인 실패(일시) — 자격 증명을 얻지 못함"),
+])
+def test_main_s3_startup_check_exit_codes(monkeypatch, tmp_path, db, capsys, setup, code, head):
+    s3_main_env(monkeypatch, tmp_path, AWS_REGION=REGION)
+    fake = FakeS3Client()
+    setup(fake)
+    regions = patch_client_factory(monkeypatch, fake)
+    assert main(["--once"]) == code
+    out = capsys.readouterr()
+    err = clean_output(out)
+    assert regions == [REGION]                                                    # 리전을 클라이언트에 직접 넘긴다
+    assert fake.methods()[0] == "get_object" and fake.keys() == []                # --once도 조립 단계라 시작 확인을 지난다
+    if head is None:
+        assert err == "" and "할 일 없음" in out.out
+        assert fake.methods()[:4] == ["get_object", "put_object", "get_object", "delete_object"]
+    else:
+        assert err.startswith(head), err
+        assert "할 일 없음" not in out.out                                         # 워커가 돌지 않는다
+
+
+def test_main_s3_credentials_at_client_creation_exit_1(monkeypatch, tmp_path, db, capsys):
+    s3_main_env(monkeypatch, tmp_path, AWS_REGION=REGION)
+
+    def make(region: str):
+        raise make_error("no_credentials")
+    patch_client_factory(monkeypatch, make)
+    assert main(["--once"]) == 1                                                  # systemd가 10초 뒤 다시 띄운다
+    assert clean_output(capsys.readouterr()).startswith("S3 시작 확인 실패(일시) — 자격 증명을 얻지 못함")
+
+
+def test_main_s3_client_or_library_failure_exit_2(monkeypatch, tmp_path, db, capsys):
+    s3_main_env(monkeypatch, tmp_path, AWS_REGION=REGION)                         # 클라이언트를 만들지 못함 — conftest가 막는다
+    assert main(["--once"]) == 2
+    assert clean_output(capsys.readouterr()).startswith("설정 오류: S3 클라이언트를 만들지 못함")
+    s3_main_env(monkeypatch, tmp_path, AWS_REGION="not a region!")                # 리전 값 모양이 틀림
+    assert main(["--once"]) == 2
+    assert clean_output(capsys.readouterr(), "not a region").startswith("설정 오류: S3 리전 값을 쓸 수 없음")
+    s3_main_env(monkeypatch, tmp_path, AWS_REGION=REGION)
+    monkeypatch.setitem(sys.modules, "boto3", None)                               # AWS 라이브러리가 설치되어 있지 않음
+    assert main(["--once"]) == 2
+    err = clean_output(capsys.readouterr())
+    assert err.startswith("설정 오류: AWS 라이브러리(boto3 · botocore)를 불러오지 못함") and "패키지를 다시 설치" in err

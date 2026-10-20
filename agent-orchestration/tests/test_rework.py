@@ -1,5 +1,5 @@
 """재작성 — 묶음 요청 · 모으기(같은 화면의 요청을 한 번에) · 문서층 임시 처리, 화면 6 · 8 · 9 경로, 합치기 포함,
-전후 비교 · 되돌리기, 실패 시 모은 묶음 모두 기회 반환, 마지막 재작성 요약, 추적 기록 (spec 3.2)."""
+전후 비교 · 되돌리기, 실패 시 모은 묶음 모두 기회 반환, 마지막 재작성 요약, 추적 기록."""
 from __future__ import annotations
 
 import time
@@ -35,7 +35,7 @@ def test_merges_on_first_run_and_every_rework_path(clock):
     rid = to_screen6(app)
     assert "M-1" in executed(app, rid)  # 첫 실행
 
-    rework(app, clock, rid, "문제인식")  # 화면 6 — 문제인식 묶음 항목(본문뿐)만 다시 만든다 (spec 4.11)
+    rework(app, clock, rid, "문제인식")  # 화면 6 — 문제인식 묶음 항목(본문뿐)만 다시 만든다
     assert cycle_steps(app, rid, last_cycle_id(app, rid)) == ["T-W1", "M-1", "T-V1", "G-02a"]
 
     app.orchestrator.decide(rid, 6, "진행")
@@ -174,7 +174,7 @@ def test_bundle_name_layer_and_state_rules(clock):
     assert code_of(lambda: request(app, rid, "없는 묶음")) == "INVALID_ORDER"
     assert code_of(lambda: request(app, rid, "2.4")) == "INVALID_ORDER"         # 항목 번호 · 태그로는 받지 않는다
     assert code_of(lambda: request(app, rid, "1-1")) == "INVALID_ORDER"
-    # 문서층 판정 지시의 대상은 묶음 이름 하나다 (spec 4.12)
+    # 문서층 판정 지시의 대상은 묶음 이름 하나다
     assert [o.targets for o in orders(app, rid, "G-02a")] == [["문제인식"], ["실현가능성"], ["성장전략"], ["팀 구성"]]
     app.orchestrator.decide(rid, 6, "진행")
     app.orchestrator.advance(rid)                                    # 화면 8
@@ -333,7 +333,7 @@ def test_final_scores_trace_to_scored_versions(clock):
     m1 = next(r for r in recs if plan_in[0] in r.outputs)
     m3 = next(r for r in recs if proto_in[0] in r.outputs)
     assert (m1.task_id, m3.task_id) == ("M-1", "M-3")
-    # T-V1 기본 설정(gpt-5.6-terra, spec 4.2)은 온도를 보내지 않아 온도 덮어쓰기(fixed 0.0)가 걸리지 않는다 — 기본 온도가
+    # T-V1 기본 설정(gpt-5.6-terra)은 온도를 보내지 않아 온도 덮어쓰기(fixed 0.0)가 걸리지 않는다 — 기본 온도가
     # 있을 때의 덮어쓰기는 test_task_settings.py의 test_each_task_records_its_own_entry가 본다
     assert tv1.model == "gpt-5.6-terra" and tv1.temperature is None
 
@@ -343,7 +343,7 @@ def test_rework_feedback_links_orders_to_target_execution(clock):
     rid = to_screen6(app)
     g02a_exec = next(r for r in app.store.executions(rid) if r.task_id == "G-02a")
     judge_doc = [o for o in orders(app, rid, "G-02a") if o.layer == "document"]
-    assert len(judge_doc) == 4                                        # 80 미만 · 후보 없음 → 묶음 모두 (spec 4.12 ②)
+    assert len(judge_doc) == 4                                        # 80 미만 · 후보 없음 → 묶음 모두
     rework(app, clock, rid, "실현가능성")
     tws = [r for r in app.store.executions(rid) if r.trigger == "재작성" and r.task_id in ("T-W1", "T-W2", "T-W3")]
     assert [r.task_id for r in tws] == ["T-W1", "T-W3"]               # 실현가능성 = 본문 · 표 항목
@@ -356,7 +356,7 @@ def test_rework_feedback_links_orders_to_target_execution(clock):
     ctx = app.engine.open_context(app.store.load_run(rid))
     ri = ctx.get_ref(fb.via_ref)
     assert ri.mode == "재작성" and ri.order.targets == ["실현가능성"]
-    # 고른 묶음을 대상으로 한 판정 지시만 쓴다 (spec 4.11)
+    # 고른 묶음을 대상으로 한 판정 지시만 쓴다
     [mine] = [o for o in judge_doc if o.targets == ["실현가능성"]]
     assert (ri.order.reason, ri.order.instruction_delta) == (mine.reason, mine.instruction_delta)
     # 목표 항목 = 그 묶음의 그 Task 종류 항목 (본문은 T-W1, 표는 T-W3)

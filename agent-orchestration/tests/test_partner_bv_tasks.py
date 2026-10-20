@@ -1,5 +1,5 @@
-"""구현 · 검증-2 실구현 Task 함수 — T-B1 · T-B2 · T-V2를 지금 계약(FileRef · tools.files)으로 직접 부른다 (impl-verify2
-spec 4.2 · 4.3 · 4.4, 7절 3 ~ 5번). 가짜 호출처 · 가짜 이미지 · 메모리 파일 저장소만 쓴다(네트워크 · 디스크 없음).
+"""구현 · 검증-2 실구현 Task 함수 — T-B1 · T-B2 · T-V2를 지금 계약(FileRef · tools.files)으로 직접 부른다.
+가짜 호출처 · 가짜 이미지 · 메모리 파일 저장소만 쓴다(네트워크 · 디스크 없음).
 흐름에 끼운 시험은 test_partner_bv_flow.py.
 """
 from __future__ import annotations

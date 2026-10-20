@@ -1,9 +1,9 @@
-"""결과 통합 T-C4 — 조율 Agent의 Task (기준 문서 시트 2 r18 · 시트 3 r161 ~ 167).
+"""결과 통합 T-C4 — 조율 Agent의 Task (기준 문서 시트 2 T-C4 · 시트 3 T-C4).
 
 LLM · 검색 · 이미지 · 파일 창구를 부르지 않는다(등록 uses_llm=False). 등록 종류가 task라 엔진이 tools와 함께 부르지만 쓰지 않는다.
 계획서 파일(DOCX · HWP · PDF)은 만들지 않는다 — 웹이 planDoc으로 내려받기 파일을 만든다(웹팀 · 담당자 동의).
 
-1. 누락 검사 — 맞는 경우를 모두 모아 ContractError 하나(E-C4-MISSING, 잠정)를 올린다. 엔진이 운영 오류로 실행을 실패시킨다
+1. 누락 검사 — 맞는 경우를 모두 모아 ContractError 하나(E-C4-MISSING, 글 모양은 잠정)를 올린다. 엔진이 운영 오류로 실행을 실패시킨다
    (관리자 알림 · 사용자에게는 E-RUN-FAIL). 메시지에는 경우 번호와 빠진 산출물 키 이름만 싣는다(내용 · 파일 이름 · 키 없음).
    ① 계획서 · 프로토타입 · 인포그래픽 · 점수 보고서 중 없는 것  ② 계획서 항목 0개  ④ 점수 보고서에 검증-2 점수 없음.
    진입 파일 없음은 누락이 아니다(entryFile을 읽지 않는다 — 검증-2가 통과 필수 조건 entry로 판정하면 미달 항목으로 보인다).
@@ -35,7 +35,7 @@ DISCLAIMER = "본 문서는 S-Brain이 생성한 초안입니다. 제출 전 작
 SCORE_NOTICE = "검증 점수는 서비스 내부 기준(rubric 상수)에 따른 값이며 실제 심사 점수가 아닙니다."
 SUBMISSION_NOTICE = "공고에 따라 AI 작성 문서의 제출을 제한하거나 명시를 요구할 수 있습니다. 제출 요건을 확인해주세요."
 
-# 누락 오류 코드 (잠정 · 확장 — orchestrator/errors.py ERROR_CODES)
+# 누락 오류 코드 (시트 6 — orchestrator/errors.py ERROR_CODES)
 MISSING_CODE = "E-C4-MISSING"
 # 누락 경우 번호 (③ '진입 파일 없음'은 누락이 아니라 번호를 쓰지 않는다)
 CASE_ABSENT, CASE_NO_SECTIONS, CASE_NO_ARTIFACT_SCORE = "①", "②", "④"
@@ -143,7 +143,7 @@ def artifact_items(report: ScoreReport) -> list[ShortfallItem]:
 
 
 def shortfall_items(inp: TC4In) -> list[ShortfallItem]:
-    """미달 항목 — 문서층 → 산출물층 (순서는 잠정)."""
+    """미달 항목 — 문서층 → 산출물층 (순서는 시트 4 ShortfallItem.kind)."""
     return document_items(inp.section_results, inp) + artifact_items(inp.score_report)
 
 

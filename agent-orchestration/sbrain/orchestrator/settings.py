@@ -13,23 +13,22 @@ from ..models.base import SBModel, ext
 
 
 def _default_wait_caps() -> dict[str, float]:
-    # 설정 키별 한 호출의 재시도 대기 합 상한 (잠정) — T-C1은 사용자가 화면 앞에서 기다리고 재개하지 않는 단계라 45초.
+    # 설정 키별 한 호출의 재시도 대기 합 상한 — T-C1은 사용자가 화면 앞에서 기다리고 재개하지 않는 단계라 45초(시트 1 재시도 간격).
     # 엔진은 설정 키로 찾기만 한다(제한 시간 task_timeouts와 같은 방식) — Task ID는 여기에만 둔다
     return {"T-C1": 45.0}
 
 
 class RetrySettings(SBModel):
     retry_count: int = 5                 # 재시도 횟수
-    retry_interval_sec: float = 2.0      # 재시도 간격 (잠정)
-    # 일시 오류의 늘리는 간격 · 무작위 지연 · Retry-After · 대기 합 상한 (확장 · 잠정). 이 칸이 없는 옛 설정 사본은 기본값으로 읽는다.
-    # n번째 재시도 전 대기 = retry_interval_sec × backoff_multiplier^(n−1) × (1 + 무작위[0, jitter_ratio]) —
-    # 형식 오류 · 파일 창구 · 늘리지 않게 표시한 검색 호출은 retry_interval_sec 고정
-    backoff_multiplier: float = ext(2.0, note="늘리는 간격의 배수 (잠정)")
-    jitter_ratio: float = ext(0.25, note="무작위 지연 비율 — 계산 값 × [0, 비율]을 더함 (잠정)")
-    retry_after_cap_sec: float = ext(60.0, note="Retry-After를 따를 때의 대기 상한 (잠정)")
-    wait_cap_sec: float = ext(90.0, note="한 호출의 재시도 대기 합 기본 상한 — 넘게 되면 남은 재시도 없이 소진 (잠정)")
-    wait_cap_by_key: dict[str, float] = ext(
-        default_factory=_default_wait_caps, note="설정 키별 대기 합 상한 — 없는 키는 waitCapSec (잠정)")
+    retry_interval_sec: float = 2.0      # 재시도 간격 — 2초부터
+    # 일시 오류의 늘리는 간격 · 무작위 지연 · Retry-After · 대기 합 상한 (시트 1 '재시도 간격'). 이 칸이 없는 옛 설정 사본은
+    # 기본값으로 읽는다. n번째 재시도 전 대기 = retry_interval_sec × backoff_multiplier^(n−1) × (1 + 무작위[0, jitter_ratio]) —
+    # 형식 오류 · 파일 창구 · 늘리지 않게 표시한 검색 호출(공고 서버)은 retry_interval_sec 고정
+    backoff_multiplier: float = 2.0      # 늘리는 간격의 배수
+    jitter_ratio: float = 0.25           # 무작위 지연 비율 — 계산 값 × [0, 비율]을 더함
+    retry_after_cap_sec: float = 60.0    # Retry-After를 따를 때의 대기 상한
+    wait_cap_sec: float = 90.0           # 한 호출의 재시도 대기 합 기본 상한 — 넘게 되면 남은 재시도 없이 소진
+    wait_cap_by_key: dict[str, float] = Field(default_factory=_default_wait_caps)   # 설정 키별 대기 합 상한 — 없는 키는 waitCapSec
 
 
 class ResumeSettings(SBModel):
@@ -66,12 +65,12 @@ class ScoringSettings(SBModel):
     doc_layer_max: float = 70
     artifact_layer_max: float = 30
     deviation_cap: float | None = ext(None, note="문서층 재채점 편차 상한 — 웹 verification_policies 값을 담아만 둔다 (검증-1 연동 전)")
-    # 산출물층 두 항목의 배점 (spec 4.6) — 검증-2 원점수(코드 점검 0 ~ 15 · 계획서 대조 0 ~ 15)를 이 배점으로 환산한다.
-    # 웹 verification_policies.code_weight · plan_weight. 산출물층 배점(artifact_layer_max)은 둘의 합으로 읽는다.
-    # 이 칸이 없는 옛 설정 사본은 15 · 15로 읽는다. 환산 · 판정은 artifact_layer_max를 읽지 않고 C + P를 쓴다
+    # 산출물층 두 항목의 배점(층별 배점 — 코드 점검 · 계획서 대조) — 검증-2 원점수(코드 점검 0 ~ 15 · 계획서 대조 0 ~ 15)를
+    # 이 배점으로 환산한다. 웹 verification_policies.code_weight · plan_weight. 산출물층 배점(artifact_layer_max)은 둘의 합으로
+    # 읽는다. 이 칸이 없는 옛 설정 사본은 15 · 15로 읽는다. 환산 · 판정은 artifact_layer_max를 읽지 않고 C + P를 쓴다
     # (flow/score_scale.py) — artifact_layer_max는 웹 설정을 읽을 때(DbSettingsProvider) C + P로 맞춰 두는 표시용 칸이다
-    code_check_max: float = ext(15, note="코드 점검 배점 C — 웹 verification_policies.code_weight")
-    feature_match_max: float = ext(15, note="계획서 대조 배점 P — 웹 verification_policies.plan_weight")
+    code_check_max: float = 15       # 코드 점검 배점 C — 웹 verification_policies.code_weight
+    feature_match_max: float = 15    # 계획서 대조 배점 P — 웹 verification_policies.plan_weight
 
 
 # 추론 강도 — OpenAI 추론 모델의 reasoning_effort 값 (모델마다 받는 값이 다르다)
@@ -124,7 +123,7 @@ def _default_tasks() -> dict[str, TaskModelSetting]:
     # T-B1 · T-B2 · T-V2는 구현 · 검증-2 담당 요청: gpt-6-luna, 추론 강도 기본값(보내지 않음), 온도 보내지 않음.
     # T-B2 이미지: openai · gpt-image-2.5-flare · medium · 1024x1536 (담당 요청).
     # T-S1 · T-S2 · T-W1 · T-W2 · T-V1은 전략 · 작성 · 검증-1 담당자 execution_contract.json의 apiModel(함수별 모델 —
-    # Task 모델 + 목적(F번호)별 모델 purposeModels), 호출처 openai, 온도 · 추론 강도 보내지 않음 (spec 4.2).
+    # Task 모델 + 목적(F번호)별 모델 purposeModels), 호출처 openai, 온도 · 추론 강도 보내지 않음.
     def supervisor(effort: ReasoningEffort = "low") -> TaskModelSetting:
         return TaskModelSetting(provider="openai", model="gpt-6-luna", temperature=None, reasoning_effort=effort)
 
@@ -154,14 +153,17 @@ def _default_tasks() -> dict[str, TaskModelSetting]:
 
 
 def _default_timeouts() -> dict[str, float]:
-    # 제한 시간 (Task별, 초). 기준 문서: '구현하면서 정함' (잠정)
+    # 제한 시간 (호출 한 번, 초) — 시트 1 '제한 시간': 기본 120, 요구사항 분석 · 본문 작성 · 실행 파일 · 인포그래픽 300,
+    # 공고 매칭 · 자격 확인 30. 흐름 밖 T-P2(검수, 향후 도입)의 60은 잠정.
+    # T-S1(요구사항 분석) 300 — 운영에서 F07(gpt-6.1-sol, 성공 40 ~ 78초)이 120초에 걸려
+    # 처음부터 다시 보내는 일이 생겨(5번 연속 뒤 마지막 시도에 성공한 실행 건도 있음) 본문 작성과 같은 300으로 둔다.
     base = {tid: 120.0 for tid in (
-        "T-C1", "T-C3", "T-S1", "T-S2", "T-W2", "T-W3", "T-V1", "T-V2", "T-P1", "T-C4",
+        "T-C1", "T-C3", "T-S2", "T-W2", "T-W3", "T-V1", "T-V2", "T-P1", "T-C4",
     )}
-    base.update({"T-W1": 300.0, "T-B1": 300.0, "T-B2": 300.0, "T-C2": 30.0, "T-P2": 60.0})
-    base["G-01"] = 30.0   # 공고 서버 상세 · 판정 호출 — T-C2와 같음 (잠정)
-    base[REWRITE_SETTING_KEY] = 120.0   # 지시문 다시 쓰기 호출 한 번 (잠정) — T-C3 값을 빌리지 않는다
-    base["T-B2.image"] = 120.0          # T-B2 이미지 호출 한 번 (잠정 · 조정 가능, 실측 13 ~ 16초)
+    base.update({"T-S1": 300.0, "T-W1": 300.0, "T-B1": 300.0, "T-B2": 300.0, "T-C2": 30.0, "T-P2": 60.0})
+    base["G-01"] = 30.0   # 공고 서버 상세 · 판정 호출 — T-C2와 같음
+    base[REWRITE_SETTING_KEY] = 120.0   # 지시문 다시 쓰기 호출 한 번 — T-C3 값을 빌리지 않는다
+    base["T-B2.image"] = 120.0          # T-B2 이미지 호출 한 번 (실측 13 ~ 16초)
     return base
 
 
@@ -195,56 +197,44 @@ class Settings(SBModel):
 # 가산점 사용 스위치 (잠정, PROVISIONAL announcement.bonusEnabled) — 실행별 설정(Settings)이 아닌 코드 상수다.
 # 실제 T-C2(agents/notice/tc2.py) · 스텁 T-C2(agents/stubs.py) · 웹 조회(flow/reads.py)가 부를 때마다
 # settings.BONUS_ENABLED로 읽는다(from-import로 값을 복사하지 않는다 — 테스트가 바꾼 값이 모든 곳에 닿게).
-# 꺼져 있으면 가산점을 읽지 · 만들지 · 보이지 않는다. 공고팀이 써도 된다고 하면 이 한 곳만 True로 바꾼다.
-BONUS_ENABLED: bool = False
+# 꺼져 있으면 가산점을 읽지 · 만들지 · 보이지 않는다. 2026-10-19 공고팀이 써도 된다고 해 켰다 — 켜져 있어도 실제 T-C2는
+# 공고 서버가 원문 대조를 마친 공고(bonus_verified 참, 공고팀 결정 0018)의 가산점만 카드에 싣는다(agents/notice/tc2.py).
+BONUS_ENABLED: bool = True
 
-# 계획서 표 입력(사업비 · 일정) 필수 확인 스위치 (잠정, PROVISIONAL planTables.required) — 실행별 설정이 아닌 코드 상수다.
+# 계획서 표 입력(사업비 · 일정) 필수 확인 스위치 — 실행별 설정이 아닌 코드 상수다. 켠 값이 기준 문서(시트 6 E-C1-REQUIRED —
+# 사업비 집행계획 1건 이상, 예비창업자는 1단계 · 2단계 각 1건 이상, 추진 일정은 협약기간 내 1건 이상)와 같고, 끄는 것은 되돌리기용이다.
 # 시작 요청의 필수 확인이 부를 때마다 settings.PLAN_TABLES_REQUIRED로 읽는다(from-import로 값을 복사하지 않는다 —
-# BONUS_ENABLED와 같은 방식). 꺼져 있으면 사업비 · 일정이 비어도 통과한다. 웹이 입력 화면을 배포한 뒤 켠다 (spec 4.3)
-PLAN_TABLES_REQUIRED: bool = False
+# BONUS_ENABLED와 같은 방식). 꺼져 있으면 사업비 · 일정이 비어도 통과한다. 웹 입력 화면 배포와 함께 2026-10-16 배포부터 켰다
+# (웹 REQUIRE_BUDGET_SCHEDULE과 같은 시점 — 웹 마이그레이션 004의 phase 컬럼이 있어야 한다)
+PLAN_TABLES_REQUIRED: bool = True
 
 
 # 기준 문서가 값을 정하지 않아 임시로 둔 항목 (문서 · 화면에 '잠정'으로 표시)
 PROVISIONAL: dict[str, str] = {
-    "retry.retryIntervalSec": "재시도 간격 — 구현하면서 정함",
-    # 호출 실패 처리 (orchestrator/tools.py) — 기준 문서는 '오류 종류와 관계없이 재시도 횟수까지 같은 간격'. 숫자는 잠정
-    "retry.backoffMultiplier": "늘리는 간격의 배수 2 (잠정) — 일시 오류(응답 코드 일시 · 시간 초과 · 연결 오류)의 n번째 재시도 "
-                               "전 대기 = 재시도 간격 × 배수^(n−1) → 2 · 4 · 8 · 16 · 32초. 형식 오류 · 파일 창구 실패 · "
-                               "늘리지 않게 표시한 검색 호출(search(backoff=False))은 재시도 간격 고정",
-    "retry.jitterRatio": "무작위 지연 비율 0.25 (잠정) — 늘리는 간격에 계산 값 × [0, 0.25]를 더한다",
-    "retry.retryAfterCapSec": "Retry-After 대기 상한 60초 (잠정) — 응답이 알려 준 대기와 계산 간격 중 큰 쪽, 최대 60초",
-    "retry.waitCapSec": "한 호출의 재시도 대기 합 상한 90초 (잠정) — 다음 대기를 더하면 넘게 되면 남은 재시도 없이 소진",
-    "retry.waitCapByKey": "설정 키별 대기 합 상한 (잠정) — T-C1 45초(화면 앞에서 기다리고 재개하지 않는 단계), 없는 키는 "
-                          "waitCapSec. 결제 · 한도 코드(errors.BILLING_LIMIT_CODES)와 입력 · 운영 응답 코드 오류는 재시도하지 "
-                          "않는다(한도는 오류 종류 '일시' — 재개 대기)",
-    "taskTimeouts": "제한 시간(Task별) — 구현하면서 정함",
+    "taskTimeouts.T-P2": "T-P2(검수 — 흐름 밖, 향후 도입) 제한 시간 60초 — 검수를 도입할 때 정함",
     "proofread.concurrency": "검수 동시 처리 수 — 구현하면서 정함",
     "proofread.failureRatioThreshold": "검수 실패 비율 기준 — 구현하면서 정함",
     "proofread.judgeTiming": "검수 실패 비율 판단 시점 — 구현하면서 정함",
     "tasks": "Task별 모델 · 호출처 · 기본 온도 · 추론 강도 · 이미지 설정, 실행 시작 시점 고정 — Task별로 두는 것은 기준 문서 "
-             "v1.10(시트 1 · Run.settingsSnapshot)에 있고, 값은 기준 문서에 없음 "
-             "(LLM을 부르는 조율 Task · 지시문 다시 쓰기 gpt-6-luna는 사용자 지정 — 추론 강도는 T-C1 medium(사용자 결정 "
-             "2026-10-10, 모델 비교 테스트 — 결정 0025) · T-C3 · 지시문 다시 쓰기 low, LLM을 부르지 않는 T-C2 · G-01 · T-C4는 "
-             "항목 없음(사용자 결정 2026-10-08), T-B1 · T-B2 · T-V2 gpt-6-luna(추론 강도 · "
+             "(시트 1 · Run.settingsSnapshot)에 있고, 값은 기준 문서에 없음 "
+             "(LLM을 부르는 조율 Task · 지시문 다시 쓰기 gpt-6-luna — 추론 강도는 T-C1 medium(모델 비교 테스트로 정함) · "
+             "T-C3 · 지시문 다시 쓰기 low, LLM을 부르지 않는 T-C2 · G-01 · T-C4는 "
+             "항목 없음, T-B1 · T-B2 · T-V2 gpt-6-luna(추론 강도 · "
              "온도 보내지 않음)와 T-B2 이미지 openai · gpt-image-2.5-flare · medium · 1024x1536은 구현 · 검증-2 담당 요청, "
              "T-S1 · T-S2 · T-W1 · T-W2 · T-V1의 Task 모델과 함수별 모델(purposeModels — 호출 목적 F번호 → 모델, 확장)은 "
              "전략 · 작성 · 검증-1 담당자 execution_contract.json의 apiModel(T-S1 gpt-5.6-terra + F01 · F05 · F13 · F14 · "
              "F15 gpt-6-luna · F06 gpt-5.6-sol · F07 · F08 gpt-6.1-sol · F09 gpt-5.6-terra, T-S2 gpt-6.1-sol + F04 "
              "gpt-5.6-terra, T-W1 gpt-5.6-sol, T-W2 gpt-6-luna, T-V1 gpt-5.6-terra — 호출처 openai, 온도 · 추론 강도 "
-             "보내지 않음, 결정 0024), T-W3는 LLM을 부르지 않아 항목 없음, T-P1 · T-P2는 미정). purposeModels가 없는 사본 · "
+             "보내지 않음), T-W3는 LLM을 부르지 않아 항목 없음, T-P1 · T-P2는 미정). purposeModels가 없는 사본 · "
              "옛 설정 사본(agents만)은 빈 사전 · 그 Agent 값 그대로 쓴다",
     "redo.verify1RedoCount": "검증-1 재수행 횟수 1(항목마다 · 사이클마다, 기준 문서 시트 1) — 웹 관리자 칸이 없어 코드 "
                              "기본값으로만 둔다",
-    "planTables.required": "계획서 표 입력(사업비 집행계획 · 추진 일정) 필수 확인 스위치 PLAN_TABLES_REQUIRED 기본 꺼짐 — "
-                           "웹 입력 화면 배포 전이라 비어도 돈다. 배포 뒤 이 한 곳만 켠다(웹팀이 배포를 알려 주기로 함)",
     "planTables.unknownSection": "추진 일정 row의 section이 feasibility · growth 밖이면 그 row를 버린다. 사업비 row의 "
                                  "phase가 '1단계' · '2단계' 밖이면 None(단계 미지정)으로 본다 (intake/mapping.py)",
     "planTables.missingLabels": "필수 스위치가 켜졌을 때의 결측 이름 글자 '사업비 집행계획' · '사업비 집행계획(1단계)' · "
                                 "'사업비 집행계획(2단계)' · '추진 일정(협약기간 내)' (intake/mapping.py LABELS)",
-    f"taskTimeouts.{REWRITE_SETTING_KEY}": "지시문 다시 쓰기 호출 한 번의 제한 시간 120초 — T-C3 값을 빌려 쓰던 것을 따로 둠",
-    "taskTimeouts.T-B2.image": "T-B2 이미지 호출 한 번의 제한 시간 120초 — 조정 가능(실측 13 ~ 16초)",
     "scoring.deviationCap": "문서층 재채점 편차 상한 (확장) — 웹 verification_policies.deviation_cap을 담아만 둔다. "
-                            "편차 검사를 하지 않아(varianceFlag 늘 거짓 — 팀 상의 2026-10-10, 결정 0024) 쓰는 곳 없음",
+                            "편차 검사를 하지 않아(varianceFlag 늘 거짓) 쓰는 곳 없음",
     # 산출물층 검증 · 이미지 관리자 사건 종류 (flow/sbrain_flow.py) — 기준 문서에 없음. 추적 사건으로 남는다(관리자에게 보일 방식 · 조회 함수는 웹팀 결정)
     "event.대조보류": "T-V2 대조 판정 보류(withheld) — 'T-V2 대조 판정 보류 (<보류 사유>) — 0점 합산'. 관리자 알림 표시 방식은 웹팀 몫",
     "event.검증2진단": "T-V2 진단(diagnostics) 한 줄마다 하나 — 관리자 진단 전용, 흐름 제어에 쓰지 않음",
@@ -256,96 +246,76 @@ PROVISIONAL: dict[str, str] = {
                        "참). 설명은 이미지 호출 실패면 'T-B2 이미지 호출 실패 — 기본 아이콘으로 계속', 그 밖(칸 수 불일치 · "
                        "그림 해석 오류)이면 둘째 문구 'T-B2 맞춤 아이콘 사용 불가 — 기본 아이콘으로 계속'. 이미지 호출 실패의 "
                        "마지막 시도에 오류 코드가 있으면 첫째 문구 끝에 ' (code=<코드>)'를 붙인다. 결제 · 한도 코드로 끝난 "
-                       "이미지 호출은 기본 아이콘으로 대신하지 않고 다시 올려 재개 대기로 가므로 이 사건이 없다(결정 0032). "
-                       "사용자 화면에는 알리지 않는다 (spec 4.3)",
-    # 구현 · 검증-2 끼우기 · 산출물층 환산 (spec 6) — 기준 문서에 없음
+                       "이미지 호출은 기본 아이콘으로 대신하지 않고 다시 올려 재개 대기로 가므로 이 사건이 없다. "
+                       "사용자 화면에는 알리지 않는다",
+    # 구현 · 검증-2 끼우기 · 산출물층 환산 — 기준 문서에 없음
     "g04.templateText": "G-04 안내 문서(README.md) 템플릿 문구와 빈 슬롯 기본 문구(아이템명 · 공고명이 비었을 때, 진입 파일이 "
-                        "없을 때 등) (agents/supervisor/, spec 4.8)",
-    "scoring.scaledRounding": "산출물층 환산 값은 소수 둘째 자리 반올림(0.5 올림 — Decimal ROUND_HALF_UP). 코드 점검 항목 줄의 환산 배점 합 = C, 환산 점수 합 = 층 "
-                              "값이 되도록 반올림 차이를 해당 항목 하나에 몰아준다 — 환산 점수 차이는 환산 점수가 환산 배점을 "
-                              "넘지 않는 항목에 (flow/ 환산 규칙 모듈, spec 4.6)",
-    "tv2.fileDecode": "T-V2가 진입 파일 · 안내 문서 · 인포그래픽을 UTF-8로 풀 때 풀 수 없는 바이트는 대체 문자로 바꾼다 "
-                      "(spec 4.4)",
+                        "없을 때 등) (agents/supervisor/)",
+    "scoring.scaledRounding": "산출물층 환산 값의 반올림(소수 둘째 자리, 차이는 한 항목에 — 기준 문서 시트 4 "
+                              "ScoreReport.codeCheckItems) 중 정하지 않은 방식 — 0.5 올림(Decimal ROUND_HALF_UP), 몰아줄 "
+                              "항목은 해당 항목 하나이고 환산 점수 차이는 환산 점수가 환산 배점을 넘지 않는 항목에 "
+                              "(flow/ 환산 규칙 모듈)",
+    "tv2.fileDecode": "T-V2가 진입 파일 · 안내 문서 · 인포그래픽을 UTF-8로 풀 때 풀 수 없는 바이트는 대체 문자로 바꾼다",
     # 결과 통합 T-C4 실구현 (agents/supervisor/tc4.py) — 기준 문서에 없음
-    "tc4.missing": "누락이면 실행 실패 — 오류 코드 E-C4-MISSING(확장 — 사용자 노출 문구 없음, 처리 '실행 실패 · 관리자 알림', "
-                   "사용자에게는 E-RUN-FAIL). 경우 ① 계획서 · 프로토타입 · 인포그래픽 · 점수 보고서 중 없는 것 ② 계획서 항목 "
-                   "0개 ④ 점수 보고서에 검증-2 점수 없음 — 맞는 경우를 모두 모아 'E-C4-MISSING <경우 번호들>: <빠진 산출물 "
-                   "키 이름들>' 한 오류. 진입 파일 없음(③) · 안내 문서 없음은 누락이 아니다",
-    "tc4.shortfall": "미달 항목(shortfallItems) 고정 이름 · 사유와 순서 — 통과 필수 조건 이름 · 사유(entry '진입 파일' · "
+    "tc4.missing": "누락 오류(E-C4-MISSING) 글의 모양 'E-C4-MISSING <경우 번호들>: <빠진 산출물 키 이름들>' — 경우 번호는 "
+                   "① 계획서 · 프로토타입 · 인포그래픽 · 점수 보고서 중 없는 것 ② 계획서 항목 0개 ④ 점수 보고서에 검증-2 점수 "
+                   "없음(누락 조건 자체는 기준 문서 시트 2 T-C4 L열)",
+    "tc4.shortfall": "미달 항목(shortfallItems) 고정 이름 · 사유 — 통과 필수 조건 이름 · 사유(entry '진입 파일' · "
                      "secret '비밀값 노출' · sandbox 'sandbox 제한', 사유는 '… 산출물층이 0점입니다.'), 대조 불가 이름 '계획서 "
                      "대조' · 사유 '계획서 대조를 판정하지 못해 0점으로 합산했습니다(대조 불가).', 빠진 기능 '프로토타입에서 이 "
                      "기능을 찾지 못했습니다.', 부분 인정 기능 '프로토타입에 이 기능의 일부만 있습니다.', detail이 빈 코드 점검 "
-                     "'만점을 받지 못했습니다.', issues가 빈 검증-1 fail 'fail'. 순서는 문서층(판정 목록 순서) → 통과 필수 조건 → "
-                     "코드 점검(번호 순) → 대조 불가 → 빠진 기능 → 부분 인정 기능",
+                     "'만점을 받지 못했습니다.', issues가 빈 검증-1 fail 'fail'(종류 · 순서는 기준 문서 시트 4 ShortfallItem.kind)",
     "tc4.userMessage": "안내 문구(userMessage) — 미달 항목이 없고 총점 통과면 '계획서 · 프로토타입 · 검증 결과를 내려받을 수 "
                        "있습니다.'(기준 문서 예시). 아니면 그 줄 · 총점 미달이면 '총점 {표시 점수}점으로 기준 점수 {기준}점에 "
                        "미달합니다.' · 층별 머리줄 '계획서에서 보완이 필요한 항목:' · '프로토타입에서 보완이 필요한 항목:' 아래 "
                        "'- 이름 (점수/배점점): 사유' 줄 · 끝 줄 '제출 전 작성자 본인의 검토가 필요합니다.'",
-    "tc4.runState": "결과 통합(T-C4) 중 단계 '결과물 · 실행', 결과 통합이 실패하면 '결과물 · 실패'(웹 "
-                    "generation_failure_alerts.stage도 '결과물') — 기준 문서의 검수 단계가 빠져 정함(결정 0033, "
-                    "flow/service.py · flow/sbrain_flow.py 구간 RESULT)",
     # 공고 연결 (공고 선택 · 자격 확인 G-01) — 기준 문서에 없음
-    "taskTimeouts.G-01": "G-01 제한 시간 30초 — 공고 서버의 공고 상세 · 자격 판정 호출, T-C2와 같음",
-    "announcement.bonusEnabled": "가산점 사용 스위치 BONUS_ENABLED 기본 꺼짐 — 공고팀 가산점은 시험 단계(2026-10-06 답변: "
-                                 "화면에 쓰지 말 것). 꺼져 있으면 실제 T-C2는 추천 결과의 bonus_score · bonus_items를 "
-                                 "읽지도 검사하지도 않고, 스텁은 가산점을 만들지 않으며, 웹 카드(화면 3 · 결과 조회)는 저장된 "
-                                 "옛 실행 건까지 늘 bonusScore null · bonusItems []. 공고팀이 정리해 써도 된다고 하면 이 한 곳만 켠다",
-    "announcement.formSpec": "선택 공고의 양식 필드(formSpec · evaluationItems)는 자리 표시 값(기본 양식 1-1 · 2-1 · 3-3) — "
-                             "뒷 단계는 읽지 않고 작업 분해(T-C3)가 고른 양식 · 평가 항목 · 채점 기준표를 쓴다",
+    "announcement.bonusEnabled": "가산점 사용 스위치 BONUS_ENABLED 켬(2026-10-19 공고팀 허용 — 2026-10-06에는 시험 단계라 "
+                                 "꺼 두었다). 실제 T-C2는 공고 서버가 원문 대조를 마친 공고(bonus_verified 참)의 "
+                                 "bonus_score · bonus_items만 읽고, 그 밖의 공고는 null · []로 둔다. 끄면 실제 T-C2는 "
+                                 "가산점을 읽지도 검사하지도 않고, 스텁은 가산점을 만들지 않으며, 웹 카드(화면 3 · 결과 조회)는 "
+                                 "저장된 옛 실행 건까지 늘 bonusScore null · bonusItems []",
+    "announcement.formSpec": "선택 공고의 양식 필드(formSpec · evaluationItems) 자리 표시 값 — 기본 양식 1-1 · 2-1 · 3-3 "
+                             "(자리 표시 값이고 뒷 단계가 읽지 않는 것은 기준 문서 시트 4 Announcement)",
     # 작업 분해 (T-C3, agents/form_defaults.py · agents/supervisor/plan.py) — 실행 건 설정값이 아니라 코드 표다
-    "taskPlan.formTable": "신청자 유형별 양식 · 평가 항목 · 채점 기준표 — 담당자 execution_contract.json에서 만든다(예비창업자 "
-                          "pre_startup 2.1.1 ~ 2.7.4 25개, 개인사업자 · 법인 early_startup 3.1.1 ~ 3.7.4 24개). 평가항목 = 계획서 "
-                          "항목(배점 70 ÷ 항목 수), 평가항목 이름은 화면 제목(담당자 계약 displayTitle — 양식 원래 제목, 없으면 "
-                          "title) 앞 40자, 평가 설명 · 채점 기준의 대신 값은 담당자 title(작성 지시), 채점 기준표 "
-                          "partner-sw@담당자 채점 정책 버전 (agents/form_defaults.py, spec 4.6, 결정 0028)",
-    "reworkMap.sectionBundles": "담당자 항목별 재작성 묶음(2.4 · 3.4 문제인식, 2.5 · 3.5 실현가능성, 2.6 · 3.6 성장전략, "
-                                "2.7 · 3.7 팀 구성, 2.1 ~ 2.3 · 3.1 ~ 3.3 묶음 없음) — 웹 묶음 4개와 담당자 양식 항목을 기준으로 "
-                                "오케스트레이터 쪽에서 정함. 담당자가 대응이 맞다고 확인(2026-10-12)했고, 일반현황 · 개요 · 그림을 "
-                                "새 묶음으로 두자는 담당자 제안을 웹팀에 묻는 중(결정 0028). 답이 오면 flow/rework_map.py 표만 바꾼다. "
-                                "새 묶음 줄은 같은 모듈에 두고 스위치를 켰을 때만 표에 들어간다(reworkMap.generalBundles)",
-    "reworkMap.generalBundles": "새 재작성 묶음 스위치 GENERAL_BUNDLES_ENABLED 기본 꺼짐(flow/rework_map.py 코드 값 — 켜려면 "
-                                "웹 배포 → 코드 값 변경 → 웹 프로세스 · 워커 다시 띄움). 켜면 문서층 묶음 6개, 순서 일반현황 · 개요, "
-                                "그림, 문제인식, 실현가능성, 성장전략, 팀 구성. 이름 '일반현황 · 개요'(2.1.x · 2.2.x · 2.3.1 ~ 2.3.5 / "
-                                "3.1.x · 3.2.x · 3.3.1 ~ 3.3.5, 태그 0-1, T-W1이 다시 만듦) · '그림'(2.3.6 · 3.3.6, 태그 0-2, T-W2가 "
-                                "다시 만듦). 기회는 rework.perBundle, 받는 화면 6 · 9. 판정의 '묶음 모두' 후보에서 그림은 뺀다(그림 "
-                                "항목에 fail · warning이 있을 때만 후보). 켠 뒤 모든 실행 건에 바로 적용, 이미 만든 계획서 태그는 "
-                                "고치지 않음, 다시 끄면 목록 · 접수에서 빠지고 쓴 기록은 남김",
+    "taskPlan.formTable": "신청자 유형별 양식 · 평가 항목 · 채점 기준표(항목 수 · 이름 40자 · 배점 · rubricId · 버전은 기준 문서 "
+                          "시트 4) 중 정하지 않은 것 — 담당자 execution_contract.json에서 만든다. 항목 제목은 담당자 계약 "
+                          "displayTitle(양식 원래 제목, 없으면 title), 평가 설명 · 채점 기준의 대신 값은 담당자 title(작성 지시), "
+                          "점수 구간은 {min 0, max 항목 배점} 하나 (agents/form_defaults.py)",
     "partnerSw.unassignedPhase": "예비창업 사업비 row의 phase가 없으면 1 · 2단계 표 어디에도 넣지 않고 2.5.3 표의 '단계 미지정' "
                                  "줄로 보존, 2.5.3 · 2.5.4를 입력 없음으로 둔다 — 웹 phase 컬럼이 생기면 풀린다 "
-                                 "(agents/partner_sw/inputs.py, spec 4.4)",
-    "partnerSw.inputMissing": "표 입력 없음 판정(그 표의 원본 row가 비면)과 문구 '입력 확인 필요 — <사업비 집행계획 | 추진 일정>', "
-                              "점수 보고서 안내 '입력 확인 필요 — 사업비 집행계획 · 추진 일정을 입력하면 해당 표가 채워집니다.' "
-                              "(agents/partner_sw/verify.py · inputs.py, agents/stubs.py, spec 4.9 · 4.12)",
-    "partnerSw.inputError": "입력 오류(SectionResult.inputError, 결정 0028) — 최종 fail 판정이고 담당자 F19 inputErrorCodes에 "
-                            "입력 오류 코드(AGREEMENT_MONTHS_EXCEEDED · AGREEMENT_SCHEDULE_AFTER_DEADLINE · "
-                            "SUPPORT_LIMIT_EXCEEDED — ① 협약기간 최대 개월 수 초과 ② 협약기간 일정 종료월이 개발 종료월 이후 "
-                            "③ 정부지원사업비가 공고 지원 금액 상한 초과)가 있으면 참(담당자 SB-360 — issue 문구와 무관). 점수 보고서 안내 '입력한 협약기간 일정이나 사업비가 기준(…)을 벗어나 … 이대로 "
-                            "진행하거나, 입력을 고쳐 새로 만들 수 있습니다.'(끝 문장 갱신 2026-10-13) "
+                                 "(agents/partner_sw/inputs.py)",
+    "partnerSw.inputMissing": "입력 없음(SectionResult.inputMissing — 사업비 · 일정 입력이 비어 생긴 표 항목, 기준 문서 시트 7 "
+                              "주석)의 문구 — 판정 warning '입력 확인 필요 — <사업비 집행계획 | 추진 일정>', 점수 보고서 안내 "
+                              "'입력 확인 필요 — 사업비 집행계획 · 추진 일정을 입력하면 해당 표가 채워집니다.' "
+                              "(agents/partner_sw/verify.py · inputs.py, agents/stubs.py)",
+    "partnerSw.inputError": "입력 오류(SectionResult.inputError — 세 기준은 기준 문서 시트 7 주석)를 가르는 담당자 코드와 "
+                            "안내 문구 — 최종 fail 판정이고 담당자 F19 inputErrorCodes에 입력 오류 코드"
+                            "(AGREEMENT_MONTHS_EXCEEDED · AGREEMENT_SCHEDULE_AFTER_DEADLINE · SUPPORT_LIMIT_EXCEEDED)가 있으면 "
+                            "참(담당자 SB-360 — issue 문구와 무관). 점수 보고서 안내 '입력한 협약기간 일정이나 사업비가 "
+                            "기준(…)을 벗어나 … 이대로 진행하거나, 입력을 고쳐 새로 만들 수 있습니다.' "
                             "(agents/partner_sw/verify.py, agents/supervisor/judge.py INPUT_ERROR_NOTICE)",
     "partnerSw.kietSearch": "실행별 KIET 자료 검색 스위치 SBRAIN_KIET_SEARCH 기본 꺼짐(워커 환경 변수). 켜면 T-S1이 검색어로 "
                             "KIET를 찾는다 — 재시도 2회(KIET_RETRIES, 처음 포함 최대 3번) · 한 번 25초, 검색어는 기술 분야(비면 아이디어 "
                             "설명 앞 120자). 검색 실패(크롤러 값 failed · 크롤러 밖 예외)는 호출 기록에 '호출실패'로 남고, 재시도를 다 "
-                            "쓰면 Task를 멈추지 않고 있는 자료로 계속한다(필수 규칙 2 예외). 결과 0건은 실패가 아니다 "
+                            "쓰면 Task를 멈추지 않고 있는 자료로 계속한다(호출 소진을 받는 예외). 결과 0건은 실패가 아니다 "
                             "(agents/partner_sw/market_research.py, agents/partner_sw/strategy.py, bootstrap.build_app)",
     "partnerSw.outputMapping": "담당자 결과 → RequirementAnalysis · MarketAnalysis 매핑, numericTokens(숫자 + 단위 규칙 추출), "
-                               "문장 나누기(줄 · 문장 끝, sentenceId s-<항목>-<순번>) (agents/partner_sw/outputs.py, spec 4.7)",
-    "partnerSw.scoreDigits": "항목 점수 소수 둘째 자리 반올림, 문서층 총점 = 반올림한 항목 점수의 합 "
-                             "(agents/partner_sw/verify.py SCORE_DIGITS, spec 4.9)",
-    "intake.startupItemName": "창업아이템명(startupItemName, 결정 0031) = 아이디어 설명(projects.description) 전체의 앞뒤 공백을 "
-                              "지운 뒤 첫 줄(줄바꿈 앞까지)을 다시 앞뒤 공백을 지우고 60자까지 자른 값, 비면 None — 웹이 일반현황 · "
-                              "개요 표에 넣는 값(첫 줄 60자)과 맞추려는 규칙. 설명이 빈 줄로 시작하면 첫 글자 있는 줄을 쓴다(웹 규칙 "
+                               "문장 나누기(줄 · 문장 끝, sentenceId s-<항목>-<순번>) (agents/partner_sw/outputs.py)",
+    "intake.startupItemName": "창업아이템명(startupItemName, 첫 줄 · 앞뒤 공백 제거 · 60자 — 기준 문서 시트 4) 중 정하지 "
+                              "않은 것 — 설명 전체의 앞뒤 공백을 먼저 지우므로 설명이 빈 줄로 시작하면 첫 글자 있는 줄을 쓴다(웹 규칙 "
                               "확인 전) (intake/mapping.py startup_item_name)",
     "partnerSw.generalStatusFacts": "일반현황 항목(예비창업 2.1.1 · 초기창업 3.1.1)의 F16 · F19 근거 원본 사실에만 '창업아이템명' "
                                     "(없으면 칸 없음) · '팀구성현황'(팀원마다 직위 = 역할 또는 '팀원', 담당업무 = 역할 또는 '-', "
                                     "보유역량 = 경력 또는 '-' — 웹 표 모양, 이름 없음. 팀원이 없으면 '팀원 없음(대표자 단독)', 옛 "
                                     "실행 건(팀원 표 행 None)이면 칸 없음)을 덧붙인다. 사용자 목표 고객이 없으면 원본 사실 · T-S2의 "
-                                    "목표 고객은 '확인 필요' (agents/partner_sw/inputs.py, 결정 0031)",
+                                    "목표 고객은 '확인 필요' (agents/partner_sw/inputs.py)",
     "partnerSw.applicantLines": "teamRoleCareers에서 '역할: 경력' 꼴이 아닌 줄은 역할로 보고, 채용 · 장비 · 협력 계획은 한 줄 "
-                                "목록으로 담당자 입력에 싣는다 (agents/partner_sw/inputs.py, spec 4.4)",
+                                "목록으로 담당자 입력에 싣는다 (agents/partner_sw/inputs.py)",
     "verify1.redoDetails": "검증-1 재수행 T-V1의 unit은 종류가 섞이면 '섹션', 판정 후보의 사유와 보완 지시는 같은 글, "
-                           "재작성 사이클 T-V1 피드백 종류 '재채점' (flow/sbrain_flow.py · agents/stubs.py, spec 4.10 · 4.12)",
+                           "재작성 사이클 T-V1 피드백 종류 '재채점' (flow/sbrain_flow.py · agents/stubs.py)",
     # 공고 서버 연결 (agents/notice) — 실행 건 설정값이 아니라 워커 프로세스 값 · 고정 문장이다
-    "announcement.matchReason": "추천 이유 문장 틀 (spec 4.1.4) — 공고 서버의 band(매우 적합 · 적합 · 참고, 없으면 대체 경로 "
+    "announcement.matchReason": "추천 이유 문장 틀 — 공고 서버의 band(매우 적합 · 적합 · 참고, 없으면 대체 경로 "
                                 "'마감임박순'일 때 '마감이 가까운 신청 가능 공고입니다')와 지역(전국 · 희망 지역 일치 · 불일치)으로 "
                                 "정해진 문장을 ' · '로 잇는다. AI를 부르지 않는다",
     "noticeServer.serialCalls": "공고 서버 호출을 워커 프로세스 안에서 한 번에 하나씩 보낸다(네 API 모두, 프로세스 공용 잠금). "
@@ -387,18 +357,39 @@ PROVISIONAL: dict[str, str] = {
     # 저장소 (orchestrator/store.py) — 메모리 · SQL 저장소가 함께 쓴다
     "store.accountLockTimeoutSec": "계정 잠금 대기 10초 — 넘기면 StoreConflict (orchestrator/store.py "
                                    "ACCOUNT_LOCK_TIMEOUT_SEC)",
-    # 재작성 요청 (flow/service.py) — 실행 건 설정값이 아니라 명령 창구 값이다
-    "reworkRequest.collectSec": "재작성 요청을 모으는 시간 2초 — 같은 화면에서 첫 요청부터 이 시간 안의 요청을 "
-                                "재작성 한 번으로 합친다. 그동안 워커는 그 실행 건을 가져가지 않는다",
+    # 재작성 요청 (flow/service.py) — 실행 건 설정값이 아니라 명령 창구 값이다(모으는 시간 2초는 기준 문서 시트 1)
     "reworkRequest.leaseRetrySec": "재작성 요청의 점유 재시도 최대 5초 — 그래도 못 잡으면 BUSY",
     # 진행 기다리기 (flow/service.py wait_project) — 명령 창구 값이다
     "waitProject.timeoutSec": "wait_project 기본 제한 시간 60초 — 넘기면 그때의 진행 상태를 그대로 준다",
     "waitProject.pollSec": "wait_project가 DB를 다시 읽는 간격 0.5초",
     # 산출물 파일 읽기 (flow/reads.py read_artifact_file)
     "fileRead.hashMismatch": "읽은 내용의 sha256 · 크기가 저장된 값과 다르면 FILE_NOT_FOUND로 보고 관리자용 사유는 남기지 않는다",
-    # 조립 (bootstrap.py · worker.py)
-    "artifactRoot.workerRequired": "SBRAIN_ARTIFACT_ROOT가 없거나 절대 경로가 아니면 워커가 시작하지 않는다 "
-                                   "(SBRAIN_DB_URL · OPENAI_API_KEY 없을 때와 같은 방식)",
+    # 조립 (bootstrap.py · worker.py · 0035)
+    "artifactRoot.workerRequired": "SBRAIN_ARTIFACT_ROOT가 없거나 절대 경로 · 형식이 맞는 S3 주소('s3://<버킷>[/<접두어>]')가 "
+                                   "아니면 워커가 시작하지 않는다 (SBRAIN_DB_URL · OPENAI_API_KEY 없을 때와 같은 방식, 종료 "
+                                   "코드 2)",
+    # S3 파일 저장소 (sbrain/store_s3/ · bootstrap.py · worker.py) — 워커 · 웹 프로세스 값이다. 리전을 읽는 순서는 AWS
+    # 관례, 리전 필수 · 시작 확인 범위 · 재시도 간격 · 출력 확인 재시도는 이라 여기 없다
+    "s3Store.clientTimeouts": "S3 클라이언트 시간 제한 — 연결 10초 · 읽기 60초(파일 하나 30MB 이하) (store_s3/client.py "
+                              "CONNECT_TIMEOUT_SEC · READ_TIMEOUT_SEC)",
+    "s3Store.libraryRetries": "AWS 라이브러리 자체 재시도 끔 — 첫 요청 포함 1번(total_max_attempts 1), 재시도 방식 standard "
+                              "고정(설정 파일 · 환경 변수가 바꾸지 못하게) — 재시도는 tools · 대기열 · 시작 확인 규칙대로 "
+                              "(store_s3/client.py TOTAL_MAX_ATTEMPTS · RETRY_MODE)",
+    "s3Store.connectionPool": "S3 클라이언트 연결 수는 라이브러리 기본값(10)을 그대로 쓴다 (store_s3/client.py client_config)",
+    "s3Store.temporaryErrorCodes": "일시로 보는 S3 오류 코드 목록 — 설치된 botocore 표준 재시도의 일시 · 속도 제한 코드와 같게 "
+                                   "(store_s3/errors.py TRANSIENT_ERROR_CODES · THROTTLING_ERROR_CODES)",
+    "s3Store.nameShapes": "버킷 이름 모양(소문자 · 숫자 · '.' · '-', 3 ~ 63자, 소문자 · 숫자로 시작 · 끝, '..' 없음)과 접두어 "
+                          "모양(마디는 영문 · 숫자 · '.' · '-' · '_', '.' · '..' · 빈 마디 금지, 정리한 접두어 200자 이하) "
+                          "(store_s3/address.py PREFIX_MAX_LEN)",
+    "s3Store.contentTypes": "내용 객체의 Content-Type은 넣을 때 정한 형식(mediaType), 메타 객체는 application/json(로컬 폴더 옆 "
+                            "파일과 같은 JSON) (store_s3/store.py META_CONTENT_TYPE)",
+    "s3Store.startupProbe": "워커 시작 확인의 시험 객체 이름 '<접두어>.probe/<고유값>' · 형식 text/plain (store_s3/probe.py "
+                            "PROBE_DIR · PROBE_CONTENT_TYPE)",
+    "s3Store.startupTemporaryExit": "시작 확인 일시 실패(연결 · 시간 초과 · 5xx · 속도 제한 · 자격 증명을 얻지 못함)면 워커 "
+                                    "종료 코드 1 — systemd가 다시 띄운다(영구 실패 · 설정 오류는 2) (sbrain/worker.py main)",
+    # 출력 파일 참조 확인 (orchestrator/tools.py · engine.py)
+    "fileCheck.purpose": "엔진의 출력 파일 참조 확인 호출(파일 호출 기록 call_type 'file')의 목적 이름 check — put · get 옆 값 "
+                         "(orchestrator/tools.py FILE_CHECK_PURPOSE)",
 }
 
 

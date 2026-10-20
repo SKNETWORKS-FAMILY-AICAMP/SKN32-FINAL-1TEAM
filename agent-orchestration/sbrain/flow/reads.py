@@ -63,7 +63,7 @@ from .retention import retention_cutoff
 # 묶음 목록 · 층은 부를 때마다 그때의 표 · 스위치로 읽는다(document_bundles · bundle_layer — 불러올 때 굳는 상수를 쓰지 않음)
 from .rework_map import ARTIFACT_BUNDLES, BUNDLE_EXECUTABLE, bundle_layer, document_bundles, order_bundles
 from .sbrain_flow import CANDIDATE_LIMIT, candidate_lists
-# 산출물층 환산 (spec 4.6 D11) — 관리자 조회의 코드 점검 · 계획서 대조 · 산출물층 점수는 그 실행 건 설정 사본 배점으로 환산한다
+# 산출물층 환산 — 관리자 조회의 코드 점검 · 계획서 대조 · 산출물층 점수는 그 실행 건 설정 사본 배점으로 환산한다
 from .score_scale import ScoreMaxes, score_maxes
 
 if TYPE_CHECKING:
@@ -101,7 +101,7 @@ class ScoreView(SBModel):
     carried_over_layer: str | None = None
     comparisons: list[ReworkComparison] = Field(default_factory=list)
     notices: list[str] = Field(default_factory=list)
-    # 환산 칸 (확장, spec 4.6 · 4.13) — 점수 보고서의 같은 이름 칸을 그대로 옮긴다. 웹은 층 점수 · 만점 · 코드 점검 항목 줄을
+    # 환산 칸 (확장) — 점수 보고서의 같은 이름 칸을 그대로 옮긴다. 웹은 층 점수 · 만점 · 코드 점검 항목 줄을
     # 지금 정책 값이 아니라 이 칸으로 그린다. G-02a 보고서는 docLayerMax만 있다
     doc_layer_max: float | None = ext(None, note=f"{SCALE_NOTE} — 문서층 만점 D")
     code_check_score: float | None = ext(None, note=f"{SCALE_NOTE} — 코드 점검 환산 점수")
@@ -114,7 +114,7 @@ class ScoreView(SBModel):
 
 
 # 표 대체 사유 칸 (확장) — 담당자 10-12 새 판이 더한 화면 칸. 화면 6 · 11 · 결과 조회에 같은 모양으로 싣는다
-TABLE_FALLBACK_NOTE = ("표 대체 안내(결정 0028) — 표를 본문 서술로 바꾼 항목마다 하나(tableOutputs의 tableFallbackUsed 참 · "
+TABLE_FALLBACK_NOTE = ("표 대체 안내 — 표를 본문 서술로 바꾼 항목마다 하나(tableOutputs의 tableFallbackUsed 참 · "
                        "fallbackReason이 빈 글이 아님). fallbackReasonCodes는 분류 코드, displayReason은 사용자 안내이며, "
                        "계획서 본문 글에는 섞지 않는다")
 # 표 대체 안내의 일반 문구 — 저장된 displayReason이 없는 옛 값이나 알 수 없는 사유 코드에 쓴다.
@@ -127,7 +127,7 @@ SCALED_SCORE_FIELDS = ("doc_layer_max", "code_check_score", "code_check_max", "f
 
 
 class CandidatesScreen(Screen):
-    """3 공고 후보. 자격 정보는 막힌 공고(blockedAnnouncementIds)뿐이다 — 카드에는 싣지 않는다(spec 4.2.2 · 4.3.6).
+    """3 공고 후보. 자격 정보는 막힌 공고(blockedAnnouncementIds)뿐이다 — 카드에는 싣지 않는다.
 
     candidates는 첫 조회(추가 조회에 다시 나온 카드는 새 내용 · contentChanged), moreCandidates는 첫 조회와 겹친 공고를 뺀
     추가 조회 후보다. 실패한 추가 조회는 없던 것으로 본다 — 후보 · 수집 상태 · 대체 경로 표시가 조회 전 그대로다(4.2.3).
@@ -145,7 +145,7 @@ class CandidatesScreen(Screen):
 
 class GateScreen(Screen):
     """4 자격 확인 결과. 확인 필요 조건(gateResult.unknownConditions)이 있으면 notices에 E-G1-UNPARSED를 붙인다 —
-    실행 건 안내 목록에는 쌓지 않고 열 때마다 지금 자격 결과로 다시 만든다(spec 4.3.3)."""
+    실행 건 안내 목록에는 쌓지 않고 열 때마다 지금 자격 결과로 다시 만든다."""
     announcement_id: str | None
     gate_result: GateResult
     business_age_years: float | None = None
@@ -157,8 +157,8 @@ class TableFallback(SBModel):
     section_code: str = ext(note="표를 본문 서술로 바꾼 항목 번호")
     reason: str = ext(note="담당자 fallbackReason 원문 — 내부 진단용, 사용자 화면에는 표시하지 않음")
     fallback_reason_codes: list[str] = ext(default_factory=list, note="표 대체 사유의 기계 판독 코드 — fallbackReasonCodes "
-                                                                  "(결정 0029 — 담당자 SB-376). 칸이 없는 옛 값은 빈 목록")
-    display_reason: str = ext(note="표 대체 안내(결정 0028) — 사유 코드를 사용자 문구로 바꾼 표시용 안내")
+                                                                  "(담당자 SB-376). 칸이 없는 옛 값은 빈 목록")
+    display_reason: str = ext(note="표 대체 안내 — 사유 코드를 사용자 문구로 바꾼 표시용 안내")
 
 
 class DocumentScreen(Screen):
@@ -203,8 +203,7 @@ class Outputs(SBModel):
     """outputs 결과 — 진행 중 · 대기 중 · 재개대기 · 완료 실행 건이 지금까지 만든 결과(현재 버전).
 
     없는 것은 None · 빈 목록. 점수 보고서는 화면과 같은 ScoreView(실행 설정 스냅샷 없음)다.
-    검수 칸(format_findings · sentence_results · proofread_log)은 기준 문서 타입이라 남긴다 — 검수가 흐름에서 빠져
-    늘 빈 목록 · None이다.
+    검수 칸(format_findings · sentence_results · proofread_log)은 기준 문서 타입이라 남긴다 — 검수가 흐름에서 빠져 늘 빈 목록 · None이다.
     rework_usage: 묶음 이름 6개(문서층 4 · 산출물층 2, 원페이지는 실행 파일 제외 — 새 묶음 스위치를 켜면 문서층 6)별 사용 수 ·
     남은 기회.
     rework_limit: 실행 시작 때 고정한 묶음마다의 재작성 상한.
@@ -363,7 +362,7 @@ class AdminRun(SBModel):
     resume_count: int
     last_error_kind: str | None = None
     failure_reason: str | None = None
-    # 그 실행 건 설정 사본의 만점 (확장, spec 4.6 · 4.13)
+    # 그 실행 건 설정 사본의 만점 (확장)
     doc_max: float | None = ext(None, note=f"{SCALE_NOTE} — 문서층 만점 D (그 실행 건 설정 사본)")
     artifact_max: float | None = ext(None, note=f"{SCALE_NOTE} — 산출물층 만점 C + P (그 실행 건 설정 사본)")
 
@@ -387,7 +386,7 @@ class AdminScoreHistory(SBModel):
     doc_score: list[ScoreEntry]
     code_check: list[ScoreEntry]
     feature_match: list[ScoreEntry]
-    # 그 실행 건 설정 사본의 만점 (확장, spec 4.6 · 4.13)
+    # 그 실행 건 설정 사본의 만점 (확장)
     doc_max: float | None = ext(None, note=f"{SCALE_NOTE} — 문서층 만점 D (그 실행 건 설정 사본)")
     code_check_max: float | None = ext(None, note=f"{SCALE_NOTE} — 코드 점검 만점 C (그 실행 건 설정 사본)")
     feature_match_max: float | None = ext(None, note=f"{SCALE_NOTE} — 계획서 대조 만점 P (그 실행 건 설정 사본)")
@@ -520,7 +519,7 @@ def screen(orch: SBrainOrchestrator, project_id: int | str, number: int) -> Scre
             blocked_announcement_ids=list(run.blocked_announcement_ids))
     if number == 4:
         gate = ctx.get("gateResult")
-        if gate.unknown_conditions:   # 확인 필요 — 막지 않는 안내, 화면 4에만 (spec 4.3.3)
+        if gate.unknown_conditions:   # 확인 필요 — 막지 않는 안내, 화면 4에만
             base["notices"] = [*base["notices"],
                                Notice(code="E-G1-UNPARSED", message=message("E-G1-UNPARSED"), at=orch.now())]
         return GateScreen(**base, announcement_id=run.announcement_id, gate_result=gate,
@@ -582,8 +581,8 @@ def _options(ctx: RunContext, orders: list[ReworkOrder]) -> list[ReworkOption]:
     """판정 지시를 그대로 보여 주고, 묶음 · 남은 기회는 묶음 요청(request_rework_for_project)과 같은 이름으로 센다.
 
     산출물층 지시 → 그 Task의 묶음(실행 파일 · 인포그래픽). 문서층 지시 → 그 지시의 묶음(targets — 판정은 묶음마다 지시
-    하나를 낸다), 남은 기회는 그 묶음의 남은 기회다(spec 4.11). 고를 수 있음 = 그 값 > 0 (원페이지 실행 파일 · 요청할 수
-    없는 묶음 · 묶음 이름이 없는 지시는 고를 수 없음). 기회를 다 쓴 묶음도 목록에 남는다(고를 수 없게 표시, spec 4.12 ③).
+    하나를 낸다), 남은 기회는 그 묶음의 남은 기회다. 고를 수 있음 = 그 값 > 0 (원페이지 실행 파일 · 요청할 수
+    없는 묶음 · 묶음 이름이 없는 지시는 고를 수 없음). 기회를 다 쓴 묶음도 목록에 남는다(고를 수 없게 표시).
     """
     usage = {u.bundle_id: u.remaining for u in ctx.run.rework_usage}
     per_bundle = ctx.settings.rework.per_bundle
@@ -614,7 +613,7 @@ def _viewable_run(orch: SBrainOrchestrator, project_id: int | str) -> Run:
 
 
 def _web_cards(cards: list[AnnouncementCard]) -> list[AnnouncementCard]:
-    """웹으로 나가는 공고 카드 — 가산점 스위치(settings.BONUS_ENABLED, 잠정 · 기본 꺼짐)가 꺼져 있으면 가산점을 비운다.
+    """웹으로 나가는 공고 카드 — 가산점 스위치(settings.BONUS_ENABLED, 잠정 · 2026-10-19부터 켬)가 꺼져 있으면 가산점을 비운다.
 
     화면 3(첫 조회 · 추가 조회)과 결과 조회(outputs)가 이것을 거친다. 이번 변경 전에 가산점 값이 저장된 실행 건도
     비어 보인다. 저장된 산출물은 건드리지 않고(사본을 고친다), 카드 모양(bonusScore · bonusItems 키)은 그대로다.
@@ -708,11 +707,16 @@ def read_artifact_file(orch: SBrainOrchestrator, project_id: int | str, key: str
     """프로젝트 실행 건의 파일 하나 — 웹이 주인 확인을 한 뒤 부른다. 읽기만 한다(점유 없음, 쓰기 · 지우기 없음).
 
     1. 실행 건 없음 → RUN_NOT_FOUND, 실패 · 중단 → RUN_NOT_VIEWABLE (outputs와 같은 규칙)
-    2. 파일 저장소 설정 없음(웹 조립에 SBRAIN_ARTIFACT_ROOT 없음 · 상대 경로) → FILE_STORE_UNAVAILABLE
+    2. 파일 저장소 설정 없음(웹 조립의 SBRAIN_ARTIFACT_ROOT가 없음 · 상대 경로 · S3 주소 형식이 틀림, S3인데 리전 없음, AWS
+       라이브러리 없음 · S3 저장소를 만들지 못함 — bootstrap.build_web) → FILE_STORE_UNAVAILABLE
     3. 키 규칙 위반 · 첫 마디가 그 실행 건 ID가 아님 → FILE_NOT_FOUND
     4. 저장소에 없음 → FILE_NOT_FOUND
     5. 읽은 내용의 sha256 · 크기가 저장된 값과 다름 → FILE_NOT_FOUND (관리자용 사유는 남기지 않는다, 잠정)
-    거절 사유(detail)에 키 · 이름을 넣지 않는다. 디스크 오류(OSError)는 다른 조회의 저장소 오류처럼 그대로 올라간다.
+    거절 사유(detail)에 키 · 이름을 넣지 않는다. 다시 시도하지 않는다 — 저장소 오류는 다른 조회의 저장소 오류처럼 그대로
+    올라간다: 로컬 폴더는 디스크 오류(OSError), S3는 일시 오류(S3TemporaryError — ConnectionError · S3TimeoutError —
+    TimeoutError: 연결 · 시간 초과 · 5xx · 속도 제한 · 자격 증명을 얻지 못함)와 영구 오류(ProviderError — 권한 없음 · 버킷 없음
+    등), 드물게 S3StoreError(RuntimeError — 처음 쓸 때 클라이언트를 만들지 못함 · 표에 없는 라이브러리 오류). 메시지에 버킷 ·
+    접두어 · 키는 없다.
     """
     run = _viewable_run(orch, project_id)
     files = orch.files
@@ -763,7 +767,7 @@ def admin_calls(orch: SBrainOrchestrator, execution_id: str) -> list[AdminCall]:
 
 
 def _tokens(obj: Any) -> TokenTotals:
-    """토큰 기록 (작업지시 S6에서 기록 필드가 생긴다 — 그 전에는 모두 None)."""
+    """토큰 기록 (기록 필드가 없던 옛 기록은 모두 None)."""
     return TokenTotals(**{f: getattr(obj, f, None) for f in TokenTotals.model_fields})
 
 
@@ -852,7 +856,7 @@ def admin_summary(orch: SBrainOrchestrator) -> AdminSummary:
     - 재작성 비율 = 재작성 실행 기록이 있는 실행 건 / 실행 기록이 하나라도 있는 실행 건 × 100.
     - 층별 변화: 실행 건마다 그 층의 첫 채점과 마지막 재작성 뒤 채점(재작성 사이클 안의 마지막 채점)이 둘 다 있는 것만
       센다. 첫 평균 · 재작성 뒤 평균은 소수 1자리, 차이 = 재작성 뒤 평균 - 첫 평균(반올림한 평균끼리, 웹과 같다).
-      코드 점검 · 계획서 대조 점수는 실행 건마다 그 실행 건 설정 사본 배점으로 환산한 값이다(spec 4.6).
+      코드 점검 · 계획서 대조 점수는 실행 건마다 그 실행 건 설정 사본 배점으로 환산한 값이다.
     - 시도 계기별: 실행 기록 수, 평균 토큰 = (입력 + 출력) 합 / 그 계기의 실행 기록 수(토큰 기록이 없는 실행은 0).
     - 비율은 분모가 0이면 None, 백분율 소수 1자리.
     - 검수(표현 검수 시도 · 반려) 칸은 없다 — 검수가 흐름에서 빠졌다.

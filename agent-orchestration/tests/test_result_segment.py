@@ -92,5 +92,5 @@ def test_out_of_flow_steps_keep_registry_rows_and_stubs():
 
 def test_result_step_types_and_provisional():
     assert "표현검수" not in RESUME_STEP and RESUME_STEP["결과물"] == 11
-    assert any("결과물 · 실행" in v and "결과물 · 실패" in v for v in PROVISIONAL.values())
+    assert "tc4.runState" not in PROVISIONAL       # 결과 통합 중 '결과물 · 실행'은 기준 문서 시트 4 RunState.step
     assert not any("표현검수" in v for v in PROVISIONAL.values())

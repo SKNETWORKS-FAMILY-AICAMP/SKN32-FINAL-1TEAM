@@ -178,13 +178,13 @@ def _parse_response(fid, config, content):
     if fid=='F19' and result.get('passed') and result.get('issues'):
         raise FormatError('F19 passed=true일 때 issues는 비어 있어야 합니다.')
     # [S-Brain] F18 노드 계약(FIELDS['F18'] — 3~6개 · 각 35자 이하 문자열) 검사를 응답 검사에 더함. 원래는 pipeline의
-    # _normalize_image_output이 기본 흐름으로 바꿨다 — 쓸 수 없는 응답은 재시도한다(spec 4.1)
+    # _normalize_image_output이 기본 흐름으로 바꿨다 — 쓸 수 없는 응답은 재시도한다
     if fid=='F18':
         nodes=result.get('nodes')
         if not isinstance(nodes,list) or not 3 <= len(nodes) <= 6 or not all(isinstance(n,str) and 0 < len(n) <= 35 for n in nodes):
             raise FormatError('F18 nodes 형식 오류')
     # [S-Brain] 기록용 칸(model · requestedModel · fallbackUsed · fallbackReason · responseId · usage · inputChars ·
-    # maxOutputTokens)은 싣지 않는다 — 호출 기록이 따로 남는다(spec 4.17)
+    # maxOutputTokens)은 싣지 않는다 — 호출 기록이 따로 남는다
     result.update(status='generated',functionId=fid,functionName=config['name'])
     return result
 

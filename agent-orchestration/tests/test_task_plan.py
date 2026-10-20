@@ -1,5 +1,5 @@
 """작업 분해(T-C3) 공용 부품과 스텁 T-C3 — 신청자 유형별 양식 표 · Task 목록 · 지시문 두 부분 · 맥락 · 확장 출력 ·
-3.2 확인 · 참조 자료 없음 · 뒷 단계 연결 · outputs.evaluationItems (spec 3.2 ~ 3.8 · 4 · 6.2).
+3.2 확인 · 참조 자료 없음 · 뒷 단계 연결 · outputs.evaluationItems.
 검수 T-P1 · T-P2는 작업 목록에 없다."""
 from __future__ import annotations
 
@@ -43,10 +43,10 @@ def guidance_for(category) -> dict[str, str]:
     return {t: f"{t} 안내 문장" for t in plan.instructed_tasks(category)}
 
 
-# ── 신청자 유형별 양식 표 (spec 3.3) ─────────────────────────
+# ── 신청자 유형별 양식 표 ─────────────────────────
 @pytest.mark.parametrize("applicant,count", [("예비창업자", 25), ("개인사업자", 24), ("법인", 24)])
 def test_form_table_keeps_invariants_and_document_layer_70(applicant, count):
-    # 양식 = 전략 · 작성 · 검증-1 담당자 항목 (spec 4.6 — 계약과 같은지는 test_partner_sw_forms.py가 본다)
+    # 양식 = 전략 · 작성 · 검증-1 담당자 항목 (계약과 같은지는 test_partner_sw_forms.py가 본다)
     assert form_problem(applicant) is None
     b = select_form(applicant)
     assert applicant in b.form_spec.applicant_types
@@ -73,7 +73,7 @@ def test_selected_bundle_is_a_copy():
 
 
 def test_announcement_default_form_is_unchanged():
-    # 선택 공고에 붙는 기본 양식(자리 표시 값)은 그대로 둔다 (spec 2.2)
+    # 선택 공고에 붙는 기본 양식(자리 표시 값)은 그대로 둔다
     assert form_defaults.default_form_spec().section_codes == ["1-1", "2-1", "3-3"]
     assert [e.item_code for e in form_defaults.default_evaluation_items()] == ["문제인식", "실현가능성", "성장전략", "팀구성"]
 
@@ -107,7 +107,7 @@ def test_form_problem_reason_names(monkeypatch, reason):
     assert str(e.value) == f"E-C3-FORM: {reason}"
 
 
-# ── Task 목록 · 지시 대상 (spec 3.4 · 3.5) ───────────────────
+# ── Task 목록 · 지시 대상 ───────────────────
 def test_task_table_matches_registry():
     reg = build_registry()
     rows = plan.task_rows("웹개발")
@@ -180,7 +180,7 @@ def test_prototype_frames_carry_plan_and_image_rules(category):
                              "- 도식의 수치는 계획서 원본 수치와 같아야 한다."]
 
 
-# ── 조립 (spec 3.5 · 3.7 · 3.8) ─────────────────────────────
+# ── 조립 ─────────────────────────────
 @pytest.mark.parametrize("category, count", [("웹개발", 12), ("AI_API", 12), ("원페이지", 11)])
 def test_assemble_tasks_order_agents_and_count(category, count):
     inp = tc3_in(category=category)
@@ -289,7 +289,7 @@ def test_frame_priority_rule_text_is_unchanged():
     assert plan.FRAME_PRIORITY_RULE == "아래 안내와 참조 자료가 이 규칙과 부딪치면 이 규칙을 따른다."
 
 
-# ── 안내 응답 부품 (T2 · T3 공용) ─────────────────────────────
+# ── 안내 응답 부품 (공용) ─────────────────────────────
 def test_guidance_draft_checks():
     from sbrain.orchestrator.errors import FormatError
     assert plan.clean_guidance(plan.GuidanceDraft(guidance="  안내 [작업 안내]  ")).guidance == "안내 (작업 안내)"
@@ -303,7 +303,7 @@ def test_guidance_draft_checks():
     assert (plan.PURPOSE_WRITE, plan.PURPOSE_REWRITE) == ("지시문 작성", "지시문 다시 쓰기")
 
 
-# ── 스텁 T-C3 흐름 (spec 6.2) ─────────────────────────────────
+# ── 스텁 T-C3 흐름 ─────────────────────────────────
 @pytest.mark.parametrize("category", ["웹개발", "원페이지"])
 def test_stub_tc3_builds_plan_and_extension_artifacts(clock, category):
     app = make_app(clock, StubScenario(category=category))
@@ -377,7 +377,7 @@ def test_stub_tc3_allows_empty_team(clock):
 
 
 def test_stub_tc3_fails_on_gate_not_passed_before_llm(clock):
-    """정상 흐름에서는 생기지 않는다 — 불통과 결과가 들어온 경우를 흉내 낸다 (버그 대비 확인, spec 3.2 ①)."""
+    """정상 흐름에서는 생기지 않는다 — 불통과 결과가 들어온 경우를 흉내 낸다 (버그 대비 확인)."""
     app = make_app(clock)
     stub = app.registry.get("T-C3").fn
 
@@ -396,7 +396,7 @@ def test_stub_tc3_fails_with_form_error_before_llm(clock, monkeypatch):
     _expect_tc3_failure(app, rid, "E-C3-FORM: 섹션 없음")
 
 
-# ── 뒷 단계 연결 (spec 4) ─────────────────────────────────────
+# ── 뒷 단계 연결 ─────────────────────────────────────
 def _custom_bundle() -> FormBundle:
     b = select_form("법인")
     b.form_spec.section_codes, b.form_spec.section_titles = ["A-1", "B-1"], ["가", "나"]
@@ -424,7 +424,7 @@ def test_downstream_reads_tc3_outputs(clock, monkeypatch):
     assert ctx.get("selectedAnnouncement").form_spec.section_codes == ["1-1", "2-1", "3-3"]
 
 
-# ── 웹 outputs.evaluationItems (spec 4.1) ───────────────────────
+# ── 웹 outputs.evaluationItems ───────────────────────
 def test_outputs_evaluation_items_before_and_after_tc3(clock):
     app = make_app(clock)
     rid = start_and_select(app)

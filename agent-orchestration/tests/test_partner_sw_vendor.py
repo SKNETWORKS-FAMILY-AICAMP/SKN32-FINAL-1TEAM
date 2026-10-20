@@ -1,7 +1,7 @@
-"""전략 · 작성 · 검증-1 담당자 코드 옮기기 — 연결부 (spec 4.1 · 4.4).
+"""전략 · 작성 · 검증-1 담당자 코드 옮기기 — 연결부.
 
 옮긴 담당자 코드가 가짜 tools로 돈다(네트워크 없음 — 가짜 LLM 응답은 목적 = F번호로 준다), request_json이
-json_mode=True · purpose=F번호로 보내고 메시지 모양이 spec 4.4와 같다, 응답 검사 실패 → FormatError(내용 없음),
+json_mode=True · purpose=F번호로 보내고 메시지 모양이 와 같다, 응답 검사 실패 → FormatError(내용 없음),
 스레드에서도 호출 수단이 닿는다, 자료 파일을 실행 중 열지 않는다, 시장 자료가 없어도 돈다, 금지 호출이 남지 않았다.
 """
 from __future__ import annotations
@@ -75,7 +75,7 @@ def analyze(description="AI 헬스장 회원 관리"):
                             research_data={"sources": []})
 
 
-# ── 호출 수단 · 메시지 모양 (spec 4.1 · 4.4) ─────────────────
+# ── 호출 수단 · 메시지 모양 ─────────────────
 def test_request_json_goes_through_tools_with_json_mode_purpose_and_purpose_model():
     fake = FakeProvider()
     tools, sink = make_tools(fake, purpose_models={"F02": "model-f02"})
@@ -86,7 +86,7 @@ def test_request_json_goes_through_tools_with_json_mode_purpose_and_purpose_mode
     assert req.metadata["purpose"] == "F02" and req.model == "model-f02"
     (log,) = sink.drain()
     assert (log.purpose, log.model, log.final_outcome) == ("F02", "model-f02", "성공")
-    # 담당자 응답 정리 결과 그대로 + 기록용 칸 없음 (spec 4.17)
+    # 담당자 응답 정리 결과 그대로 + 기록용 칸 없음
     assert out["coreFeatures"] == ["회원 관리"] and out["status"] == "generated" and out["functionId"] == "F02"
     assert not {"model", "requestedModel", "fallbackUsed", "fallbackReason", "responseId", "usage",
                 "inputChars", "maxOutputTokens"} & set(out)
@@ -147,7 +147,7 @@ def test_nested_blocks_restore_previous_means():
     assert (len(outer.requests), len(inner.requests)) == (1, 1)
 
 
-# ── 스레드 (T4 동시 호출) ───────────────────────────────────
+# ── 스레드 (동시 호출) ───────────────────────────────────
 def test_submit_carries_call_means_into_threads():
     fake = FakeProvider()
     tools, sink = make_tools(fake)
@@ -405,7 +405,7 @@ def test_market_data_missing_gives_empty_evidence(monkeypatch):
     without_market = tuple(s for s in research_context._SIGNATURE if s[0] != "market")
     monkeypatch.setattr(research_context, "_SIGNATURE", without_market)
     tools, sink = make_tools(FakeProvider())
-    with partner_call(tools):                   # 로컬 자료 검색은 tools.search('자료 검색')로 간다 (T4)
+    with partner_call(tools):                   # 로컬 자료 검색은 tools.search('자료 검색')로 간다
         out = research_context.retrieve("AI 헬스장 회원 관리 시장", domains=("market",))
     assert out["sources"] == [] and out["status"] == "no_relevant_evidence"
     assert out["issues"] == ["첨부 자료에서 해당 주제의 직접 근거를 찾지 못함; 수치·경쟁사 추정 금지"]

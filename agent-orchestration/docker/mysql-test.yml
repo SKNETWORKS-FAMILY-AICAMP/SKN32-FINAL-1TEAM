@@ -1,4 +1,4 @@
-# MySQL 8 통합 테스트용 로컬 DB (작업지시 결정 11). 공유 DB 정보는 이 파일에 넣지 않는다.
+# MySQL 8 통합 테스트용 로컬 DB. 공유 DB 정보는 이 파일에 넣지 않는다.
 #
 # 띄우기 (agent-orchestration 폴더에서):  docker compose -f docker/mysql-test.yml up -d --wait
 # 끄기:                       docker compose -f docker/mysql-test.yml down

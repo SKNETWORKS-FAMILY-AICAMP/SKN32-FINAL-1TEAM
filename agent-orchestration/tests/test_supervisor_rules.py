@@ -1,4 +1,4 @@
-"""조율 규칙 단계 실구현 (impl-verify2 spec 4.7 ~ 4.10 D12 · D14).
+"""조율 규칙 단계 실구현.
 
 - 판정 G-02a · G-02b(agents/supervisor/judge.py): 총점 = 문서층 + 산출물층 환산, 점수 보고서 환산 칸, artifactScore 원점수 그대로,
   E-G2-UNREACHABLE 두 문구(쓰지 않은 묶음의 기회는 설정 사본 rework.perBundle, 쓴 묶음은 reworkUsage.remaining), 통과 필수
@@ -189,7 +189,7 @@ def test_unreachable_does_not_block_or_change_next_action():
     assert {o.targets[0] for o in out.rework_orders if o.layer == "document"} == set(DOCUMENT_BUNDLES)
 
 
-# ── G-02a · 배점 0 (D12) ─────────────────────────────────
+# ── G-02a · 배점 0 ─────────────────────────────────
 def g02a_in(doc_total: float, snap: dict) -> c.G02aIn:
     return c.G02aIn(doc_score=doc(doc_total), threshold=80, rework_usage=[], settings_snapshot=snap)
 

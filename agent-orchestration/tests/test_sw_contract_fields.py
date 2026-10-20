@@ -1,5 +1,4 @@
-"""전략 · 작성 · 검증-1 끼우기 T1 — 계약 칸 · 새 타입 · 설정 · 함수별 모델 · 등록부 연결 · 스텁 새 칸 (spec 4.2 · 4.3 타입 ·
-4.6 칸 · 4.7 · 4.8 칸 · 4.10 상태 칸 · 4.12 입력 · 4.13 연결 · 4.1 JSON 응답).
+"""전략 · 작성 · 검증-1 끼우기 — 계약 칸 · 새 타입 · 설정 · 함수별 모델 · 등록부 연결 · 스텁 새 칸.
 
 동작(재수행 · 재작성 · 후보 규칙)은 바꾸지 않는다 — 칸이 생기고 스텁이 새 칸을 규격대로 채우는지만 본다.
 흐름 테스트는 clock · store_backend 장치로 메모리 · SQLite 두 저장소에서 돈다.
@@ -11,13 +10,13 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from conftest import make_app, pre_input, to_screen6
+from conftest import CODE_SWITCHES, make_app, pre_input, to_screen6
 
 from sbrain.agents.stubs import StubScenario
 from sbrain.contracts import tasks as c
 from sbrain.flow.catalog import artifact_types, build_registry
 from sbrain.models import (
-    BudgetItem, CheckResult, CompanyInfo, DiagramSpec, PlanDoc, PlanSection, PreInput, ReworkInput, Run,
+    BudgetItem, CheckResult, DiagramSpec, PlanDoc, PlanSection, ReworkInput, Run,
     ScheduleItem, SectionResult, Verify1State, extension_fields,
 )
 from sbrain.models.clock import utc_now
@@ -28,7 +27,7 @@ from sbrain.orchestrator.registry import PARTIAL, REWORK
 from sbrain.orchestrator.settings import RedoSettings, Settings, TaskModelSetting
 from sbrain.orchestrator.tools import CallSink, LLMRequest, LLMResponse, TokenUsage, Tools, ToolsConfig, ToolsContext
 
-DECISION = "결정 0024"
+SW_ORIGIN = "전략 · 작성 · 검증-1 연동"   # 연동에서 더한 칸 note의 출처 표시 (SW_NOTE · NEW_TYPE_NOTE)
 
 
 def _note(model, alias: str) -> str:
@@ -41,14 +40,11 @@ def _ref(name: str = "userflow.svg") -> dict:
 
 
 # ── 새 타입 · 확장 칸 ──────────────────────────────────
+# 기준 문서(기능정의서 v1.11)에 들어간 칸(사업비 · 일정 · 계획서 그림 · 항목 판정 · 전략 데이터 등)은 확장이 아니다 —
+# tests/test_basedoc_v110_markers.py가 지킨다. 여기는 아직 기준 문서에 없는 연동 칸만 본다
 NEW_TYPE_FIELDS = [
-    (PreInput, {"budgetItems", "scheduleItems"}),
-    (CompanyInfo, {"budgetItems", "scheduleItems"}),
-    (PlanDoc, {"diagrams"}),
     (Run, {"verify1"}),
-    (c.TV1Out, {"sectionResults"}),
     (c.TV1In, {"baseSectionResults"}),
-    (c.TW2Out, {"diagrams"}),
     (c.TW2In, {"baseDiagrams"}),
     (c.M1In, {"diagrams"}),
     (c.G02aIn, {"sectionResults"}),
@@ -57,29 +53,23 @@ NEW_TYPE_FIELDS = [
 
 
 @pytest.mark.parametrize(("model", "names"), NEW_TYPE_FIELDS, ids=[m.__name__ for m, _ in NEW_TYPE_FIELDS])
-def test_new_type_fields_are_extensions_with_decision_note(model, names):
+def test_new_type_fields_are_extensions_with_origin_note(model, names):
     assert names <= set(extension_fields(model))
-    assert all(DECISION in _note(model, n) for n in names)
+    assert all(SW_ORIGIN in _note(model, n) for n in names)
 
 
 EXT_FIELDS = [
-    (PreInput, {"teamRoleCareers"}),
-    (CompanyInfo, {"teamRoleCareers"}),
-    (PlanSection, {"tag", "contentType"}),
-    (c.TS1In, {"companyInfo", "priorResults"}),
-    (c.TS1Out, {"strategyData"}),
+    (c.TS1In, {"priorResults"}),
     (c.TS2In, {"strategyData", "priorResults"}),
-    (c.TS2Out, {"marketStrategyData"}),
-    (c.TW1In, {"strategyData", "marketStrategyData", "featureList", "basePlanDoc", "baseSectionOutputs",
-               "priorResults"}),
+    (c.TW1In, {"featureList", "basePlanDoc", "baseSectionOutputs", "priorResults"}),
     (c.TW1Out, {"sectionOutputs"}),
     (c.TW2In, {"strategyData", "featureList", "baseDiagramOutputs", "priorResults"}),
     (c.TW2Out, {"diagramOutputs"}),
     (c.TW3In, {"strategyData", "formSpec", "baseTables", "baseTableSections", "baseTableOutputs"}),
     (c.TW3Out, {"tableSections", "tableOutputs"}),
     (c.M1In, {"tableSections"}),
-    (c.TV1In, {"strategyData", "marketStrategyData", "featureList", "formSpec", "sectionOutputs", "tableOutputs",
-               "diagramOutputs", "companyInfo", "selectedAnnouncement", "reworkInput", "priorResults"}),
+    (c.TV1In, {"featureList", "formSpec", "sectionOutputs", "tableOutputs", "diagramOutputs", "companyInfo",
+               "selectedAnnouncement", "reworkInput", "priorResults"}),
     (c.TV1Out, {"scorePolicyVersion"}),
     (CheckResult, {"failedItems"}),
     (ReworkInput, {"targetItems", "redoSource", "unit", "fallbackItems"}),
@@ -92,10 +82,14 @@ def test_added_fields_are_extensions(model, names):
     assert names <= set(extension_fields(model))
 
 
-@pytest.mark.parametrize("model", [BudgetItem, ScheduleItem, DiagramSpec, SectionResult, Verify1State])
-def test_new_types_mark_every_field_as_extension(model):
-    aliases = {info.alias or n for n, info in model.model_fields.items()}
-    assert set(extension_fields(model)) == aliases
+@pytest.mark.parametrize("model", [BudgetItem, ScheduleItem, DiagramSpec, SectionResult])
+def test_basedoc_types_have_no_extensions(model):
+    assert extension_fields(model) == []
+
+
+def test_verify1_state_marks_every_field_as_extension():
+    aliases = {info.alias or n for n, info in Verify1State.model_fields.items()}
+    assert set(extension_fields(Verify1State)) == aliases
 
 
 def test_new_fields_have_defaults_so_old_json_reads():
@@ -248,42 +242,40 @@ def test_snapshot_without_purpose_models_reads():
 
 
 def test_plan_tables_switch_and_provisional():
-    assert settings_mod.PLAN_TABLES_REQUIRED is False
-    assert "planTables.required" in settings_mod.PROVISIONAL
+    assert CODE_SWITCHES["PLAN_TABLES_REQUIRED"] is True                         # 배포 값 (테스트는 conftest가 끈 값)
+    assert "planTables.required" not in settings_mod.PROVISIONAL                # 켠 값이 기준 문서(시트 6 E-C1-REQUIRED)와 같다
+    assert {"planTables.unknownSection", "planTables.missingLabels"} <= set(settings_mod.PROVISIONAL)
     assert "redo.verify1RedoCount" in settings_mod.PROVISIONAL
     assert "purposeModels" in settings_mod.PROVISIONAL["tasks"]
 
 
 # ── 담당자 10-12 새 판 뒷정리 ──────────────────
-DECISION_0028 = "결정 0028"
-
-
-def test_section_result_input_error_is_extension_and_old_json_reads_false():
-    assert "inputError" in extension_fields(SectionResult)
-    assert DECISION_0028 in _note(SectionResult, "inputError")
-    old = {"sectionCode": "3.5.2", "contentType": "table", "status": "fail", "score": 40.0, "verifiedRef": "planDoc@1"}
+def test_section_result_input_error_old_json_reads_false():
+    assert "inputError" not in extension_fields(SectionResult)                  # 기준 문서 시트 4에 들어감
+    old ={"sectionCode": "3.5.2", "contentType": "table", "status": "fail", "score": 40.0, "verifiedRef": "planDoc@1"}
     assert SectionResult.model_validate(old).input_error is False                # 칸이 없는 옛 판정은 거짓
     r = SectionResult.model_validate({**old, "inputError": True})
     assert r.input_error is True and r.dump()["inputError"] is True
 
 
-def test_table_fallbacks_are_extensions_with_decision_note():
+def test_table_fallbacks_are_extensions_with_note():
     from sbrain.flow.reads import DocumentScreen, Outputs, ResultScreen, TableFallback
     for model in (DocumentScreen, ResultScreen, Outputs):
         assert "tableFallbacks" in extension_fields(model), model.__name__
-        assert DECISION_0028 in _note(model, "tableFallbacks"), model.__name__
+        assert _note(model, "tableFallbacks").startswith("표 대체 안내"), model.__name__
         assert model.model_fields["table_fallbacks"].default_factory is list
     assert set(extension_fields(TableFallback)) == {"sectionCode", "reason", "fallbackReasonCodes", "displayReason"}
-    assert DECISION_0028 in _note(TableFallback, "displayReason")
+    assert _note(TableFallback, "displayReason").startswith("표 대체 안내")
 
 
-def test_fallback_reason_codes_are_extensions_and_old_json_reads_empty():
-    # 담당자 SB-376 — 표 대체 사유 코드. 판정 · 재수행 입력 · 화면 칸 모두 확장, 옛 값은 빈 값
+def test_fallback_reason_codes_old_json_reads_empty():
+    # 담당자 SB-376 — 표 대체 사유 코드. 판정 칸은 기준 문서 시트 4에 들어갔고, 재수행 입력 · 화면 칸은 확장.
+    # 옛 값은 빈 값
     from sbrain.flow.reads import TableFallback
-    for model, alias in ((SectionResult, "fallbackReasonCodes"), (ReworkInput, "fallbackReasonCodes"),
-                         (TableFallback, "fallbackReasonCodes")):
+    assert "fallbackReasonCodes" not in extension_fields(SectionResult)
+    for model, alias in ((ReworkInput, "fallbackReasonCodes"), (TableFallback, "fallbackReasonCodes")):
         assert alias in extension_fields(model), model.__name__
-        assert "결정 0029" in _note(model, alias), model.__name__
+        assert "담당자 SB-376" in _note(model, alias), model.__name__
     old = {"sectionCode": "3.5.2", "contentType": "table", "status": "fail", "score": 40.0, "verifiedRef": "planDoc@1"}
     assert SectionResult.model_validate(old).fallback_reason_codes == []
     old_ri = {"mode": "재수행", "previousResultRef": "tables@1", "issues": [], "isFinalAttempt": False}
@@ -298,11 +290,8 @@ def test_provisional_keys_for_partner_1012():
                                                                "입력을 고쳐 새로 만들 수 있습니다"))
     assert "새 프로젝트" not in p["partnerSw.inputError"]                        # 끝 문장 갱신 (잠정 문구)
     assert "displayTitle" in p["taskPlan.formTable"]
-    assert "2026-10-12" in p["reworkMap.sectionBundles"] and "웹팀" in p["reworkMap.sectionBundles"]
-    assert "스위치" in p["reworkMap.sectionBundles"]
-    general = p["reworkMap.generalBundles"]
-    assert all(word in general for word in ("GENERAL_BUNDLES_ENABLED", "기본 꺼짐", "일반현황 · 개요", "그림", "0-1",
-                                            "0-2", "묶음 모두"))
+    # 문서층 재작성 묶음 6개는 기준 문서 시트 7 주석에 들어가 잠정이 아니다 (스위치는 되돌리기용으로 코드에 남음)
+    assert not {"reworkMap.sectionBundles", "reworkMap.generalBundles"} & set(p)
     kiet = p["partnerSw.kietSearch"]
     assert all(word in kiet for word in ("SBRAIN_KIET_SEARCH", "기본 꺼짐", "25초", "120자"))
 
@@ -446,7 +435,7 @@ def test_stubs_fill_new_outputs(clock):
     form = ctx.get("formSpec")
     assert isinstance(ctx.get("strategyData"), dict) and ctx.get("strategyData")
     assert isinstance(ctx.get("marketStrategyData"), dict) and ctx.get("marketStrategyData")
-    # 양식 = 담당자 항목(법인 → early_startup 24개, T2): 본문 · 표 · 그림 항목별로 나뉜다
+    # 양식 = 담당자 항목(법인 → early_startup 24개): 본문 · 표 · 그림 항목별로 나뉜다
     kinds = dict(zip(form.section_codes, form.section_kinds))
     by_kind = {k: [c for c in form.section_codes if kinds[c] == k] for k in ("section", "table", "image")}
     assert by_kind["table"] and by_kind["image"]
