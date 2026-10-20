@@ -33,7 +33,7 @@ def _face_ids(header: str) -> dict[str, str]:
     """언어별 함초롬바탕 글꼴 번호 — 양식 header에 없는 언어는 빠진다."""
     ids: dict[str, str] = {}
     for match in re.finditer(r'<hh:fontface lang="(\w+)"[^>]*>(.*?)</hh:fontface>', header, re.S):
-        font = re.search(r'<hh:font id="(\d+)" face="%s"' % FACE_NAME, match.group(2))
+        font = re.search(rf'<hh:font id="(\d+)" face="{FACE_NAME}"', match.group(2))
         if font:
             ids[match.group(1)] = font.group(1)
     return ids
@@ -57,7 +57,7 @@ def _unify_header(header: str, body_size: int) -> str:
         return header   # 양식에 함초롬바탕이 없으면 서체는 그대로 둔다
 
     def font_ref(match: re.Match) -> str:
-        current = dict(zip(FACE_LANGS, re.findall(r'="(\d+)"', match.group(1))))
+        current = dict(zip(FACE_LANGS, re.findall(r'="(\d+)"', match.group(1)), strict=False))
         return '<hh:fontRef ' + ' '.join(f'{lang.lower()}="{faces.get(lang, current[lang])}"' for lang in FACE_LANGS) + '/>'
 
     return re.sub(r'<hh:fontRef ([^/]*)/>', font_ref, header)
