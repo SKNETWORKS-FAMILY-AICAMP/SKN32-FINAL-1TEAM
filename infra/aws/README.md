@@ -112,7 +112,7 @@ sudo cat /etc/sbrain/db.env >> .env
 
 기본값은 [settings.env](settings.env)에 있다. 내 PC에서만 바꿀 값은 같은 폴더에 `settings.env.local`을 만들어 다시 적는다(커밋 안 됨).
 
-서버 종류 · DB 종류처럼 스택 전체에 걸리는 값은 `settings.env`를 고쳐 커밋한다. 같은 계정에서 여러 사람이 `up.sh`를 돌리므로, 한 사람의 `settings.env.local`에만 적으면 다른 사람이 돌릴 때 원래 값으로 되돌아간다(반대로 누군가의 `.local`에 옛 값이 남아 있으면 그 값이 이긴다).
+서버 종류 · DB 종류처럼 스택 전체에 걸리는 값은 `settings.env`를 고쳐 사용한다. 같은 계정에서 여러 사람이 `up.sh`를 돌리므로, 한 사람의 `settings.env.local`에만 적으면 다른 사람이 돌릴 때 원래 값으로 되돌아간다(반대로 누군가의 `.local`에 옛 값이 남아 있으면 그 값이 이긴다).
 
 | 값 | 언제 반영되나 |
 |---|---|
@@ -146,7 +146,7 @@ sudo cat /etc/sbrain/db.env >> .env
 |---|---|
 | `예전에 실패한 스택이 남아 있습니다` | 처음 만들기가 실패해 AWS가 되돌린 상태. `down.sh` → 원인 고친 뒤 `up.sh` |
 | 만들기 실패 + `vCPU` · `limit` · `quota` 문구 | 계정 한도 부족. AWS 콘솔 Service Quotas에서 늘리거나 서버 종류를 작게 |
-| `... 를 쓸 수 없습니다` (서버 종류) | 그 계정·리전에 없는 종류. `settings.env`에서 바꿔 커밋한다 (프리 플랜은 `c7i-flex.large` · `m7i-flex.large` 등만 허용) |
+| `... 를 쓸 수 없습니다` (서버 종류) | 그 계정·리전에 없는 종류. `settings.env.local`에서 바꾼다 (프리 플랜은 `c7i-flex.large` · `m7i-flex.large` 등만 허용) |
 | DB 세팅 실패 | 표시된 원인을 고친 뒤 `up.sh` 다시 실행. 실패한 파일부터 이어서 한다 |
 | SSH 시간 초과 | 내 IP가 바뀜. `up.sh` 다시 실행 |
 | 서버 첫 부팅 로그를 보고 싶을 때 | 서버에서 `sudo cat /var/log/sbrain-userdata.log` |
