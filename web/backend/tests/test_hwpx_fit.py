@@ -130,6 +130,27 @@ def test_overview_table_stays_on_one_page_and_nothing_overflows(tmp_path, templa
 
 
 @pytest.mark.skipif(not _RHWP_AVAILABLE, reason='rhwp 실행 파일이 없다(RHWP_BIN)')
+@pytest.mark.parametrize('template', ['preliminary', 'early_general'])
+def test_overview_table_too_long_for_one_page_continues_on_the_next_page(tmp_path, template):
+    """가장 작은 글자로도 한 쪽을 넘는 개요 표는 쪽 아래로 넘치지 않고 다음 쪽으로 이어진다('글자처럼 취급'을 풀어 행 단위로 나눈다)."""
+    long_text = '개요 표 칸에 길게 들어가는 요약 글을 흉내 내기 위한 문장입니다. ' * 40
+    data = _data(요약_문제인식='\n'.join([long_text] * 2), 요약_실현가능성=long_text, 요약_성장전략='\n'.join([long_text] * 2), 요약_팀구성=long_text, 아이템_개요=long_text)
+
+    path = _render(tmp_path, data, template)
+
+    assert 'LAYOUT_OVERFLOW' not in _rhwp('export-text', path, '--json')
+
+
+def test_allow_page_split_makes_the_table_splittable_and_keeps_other_tables():
+    table = '<hp:tbl id="1" pageBreak="NONE" repeatHeader="1"><hp:pos treatAsChar="1" vertRelTo="PARA"/></hp:tbl>'
+
+    out = hwpx_fit._allow_page_split(table)
+
+    assert 'pageBreak="CELL"' in out and 'treatAsChar="0"' in out
+    assert hwpx_fit._allow_page_split(out) == out   # 두 번 해도 같다
+
+
+@pytest.mark.skipif(not _RHWP_AVAILABLE, reason='rhwp 실행 파일이 없다(RHWP_BIN)')
 def test_pictures_get_attachment_labels_and_overview_image_cells_point_to_them(tmp_path):
     path = _render(tmp_path, _with_pictures(_big_data('preliminary')), 'preliminary')
 
