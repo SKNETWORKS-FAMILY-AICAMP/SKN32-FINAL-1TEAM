@@ -28,6 +28,7 @@ from app.models import (
     VerificationChecklistItem,
     VerificationPolicy,
 )
+from app.notice_status import korea_today, notice_display_status
 from app.orch import OrchError, OrchGateway, admin_mapping, require_gateway
 from app.proofread_retention import TRAINED
 from app.schemas import (
@@ -302,11 +303,13 @@ def list_notices(
     그 파이프라인과 상의 없이는 위험하다고 판단했다."""
     query = db.query(
         Notice.notice_id, Notice.title, Notice.source, Notice.apply_start, Notice.apply_end,
-        Notice.recruitment_status, Notice.embedding.isnot(None).label('has_embedding'),
+        Notice.recruitment_status, Notice.apply_period_type,
+        Notice.embedding.isnot(None).label('has_embedding'),
     ).order_by(Notice.id.desc())
     if q:
         query = query.filter(Notice.title.contains(q))
     rows = query.limit(min(limit, 500)).all()
+    today = korea_today()
     return [
         NoticeAdminOut(
             notice_id=r.notice_id,
@@ -315,6 +318,9 @@ def list_notices(
             apply_start=r.apply_start,
             apply_end=r.apply_end,
             recruitment_status=r.recruitment_status,
+            display_status=notice_display_status(
+                r.recruitment_status, r.apply_start, r.apply_end, r.apply_period_type, today=today,
+            ),
             has_embedding=r.has_embedding,
         )
         for r in rows

@@ -1235,6 +1235,9 @@ class NoticeAdminOut(BaseModel):
     apply_start: datetime.date | None = None
     apply_end: datetime.date | None = None
     recruitment_status: str
+    display_status: str = Field(
+        ..., description='한국 날짜와 원본 상태로 계산: 마감/접수 예정/모집중/접수기간 내 · 원문 확인/확인 필요',
+    )
     has_embedding: bool = Field(..., description='embedding 컬럼이 채워졌는지(매칭에 쓰일 준비가 됐는지)')
 
 

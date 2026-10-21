@@ -949,3 +949,24 @@ def test_notice_list_preserves_unknown_without_fetching_payload(admin_client, db
     assert len(statements) == 1
     assert 'notices.raw' not in statements[0]
     assert 'notices.embedding IS NOT NULL' in statements[0]
+
+
+def test_notice_display_status_is_calculated_without_changing_source(admin_client, db_session, monkeypatch):
+    import app.routers.admin as admin_router
+
+    today = datetime.date(2026, 10, 21)
+    monkeypatch.setattr(admin_router, 'korea_today', lambda: today)
+    db_session.add(Notice(
+        notice_id='NOTICE-DISPLAY', source='bizinfo', title='표시 상태 검증',
+        recruitment_status='unknown', apply_start=today, apply_end=today,
+        apply_period_type='fixed',
+    ))
+    db_session.commit()
+    response = admin_client.get('/admin/notices', params={'q': '표시 상태 검증'})
+    assert response.status_code == 200
+    row = response.json()[0]
+    assert row['display_status'] == '접수기간 내 · 원문 확인'
+    assert row['recruitment_status'] == 'unknown'
+    db_session.expire_all()
+    notice = db_session.query(Notice).filter_by(notice_id='NOTICE-DISPLAY').one()
+    assert notice.recruitment_status == 'unknown'
