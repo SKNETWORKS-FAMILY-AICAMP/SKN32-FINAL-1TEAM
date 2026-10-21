@@ -51,7 +51,7 @@ def download_artifact_file(
 ):
     owned = (db.query(Project.project_id)
              .join(Company, Company.company_id == Project.company_id)
-             .filter(Project.project_id == project_id, Company.user_id == user.user_id)
+             .filter(Project.project_id == project_id, Company.user_id == user.user_id, Project.archived_at.is_(None))  # [SB-421] 휴지통 프로젝트는 받지 못한다
              .first())
     if owned is None:
         raise CodedHTTPException(404, NOT_FOUND_CODE, user_message_for(NOT_FOUND_CODE))
@@ -103,7 +103,7 @@ def download_deliverable_zip(
 ):
     owned = (db.query(Project.project_id)
              .join(Company, Company.company_id == Project.company_id)
-             .filter(Project.project_id == project_id, Company.user_id == user.user_id)
+             .filter(Project.project_id == project_id, Company.user_id == user.user_id, Project.archived_at.is_(None))  # [SB-421] 휴지통 프로젝트는 받지 못한다
              .first())
     if owned is None:
         raise CodedHTTPException(404, NOT_FOUND_CODE, user_message_for(NOT_FOUND_CODE))

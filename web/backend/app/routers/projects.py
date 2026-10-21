@@ -1065,7 +1065,7 @@ def delete_project(
     만들어졌으면(공고 매칭 이후) 실제로 지우지 않고 projects.archived_at/archived_by에 보관 처리만 한다 —
     이미 만든 계획서·산출물을 보존하고 관리자 대시보드(진행 현황 탭)가 계속 "보관중"으로 조회하게 한다.
     실행 건이 없는 프로젝트(매칭 전)는 남길 데이터가 없으니 입력 사본까지 지우고 실제로 지운다."""
-    project = _get_owned_project(db, project_id, current_user)
+    project = _get_owned_project(db, project_id, current_user, allow_archived=True)
     gateway.abort_project(project_id)
     if gateway.view_project(project_id).run is not None:
         project.archived_at = datetime.datetime.utcnow()
@@ -1102,21 +1102,26 @@ def delete_project_permanently(
     사용자가 다시 누른다. 그 뒤 웹 행을 지운다(실행 건의 project_id는 비워지고 실행 로그는 남는다).
 
     [SB-317] 산출물 파일은 웹이 지우지 않는다 — 오케스트레이터가 삭제 대기열에 넣고 워커가 지운다(SB-311). 보관(휴지통)만 한 프로젝트는 파일이 남는다."""
-    project = _get_owned_project(db, project_id, current_user)
+    project = _get_owned_project(db, project_id, current_user, allow_archived=True)
     gateway.delete_project_data(project_id)
     _delete_project_cascade(db, project)
     return Response(status_code=204)
 
 
-def _get_owned_project(db: Session, project_id: int, user: User) -> Project:
+def _get_owned_project(db: Session, project_id: int, user: User, *, allow_archived: bool = False) -> Project:
     """내 프로젝트만 돌려준다 — 남의 프로젝트는 있는지도 알려 주지 않는 404.
 
     [SB-418] 관리자도 예외가 아니다. 관리자 열람은 /admin/* 의 메타데이터로 한정하고(기획서 6-7), 사용자의 계획서 · 결과 · 산출물 내용을 읽거나
     시작 · 삭제 같은 명령을 내리는 것은 소유자만 한다. 예전에는 `user.role != 'admin'` 예외 때문에 관리자 계정으로 /projects/{id}/... 경로를 부르면
-    남의 프로젝트를 읽고 바꿀 수 있었다."""
+    남의 프로젝트를 읽고 바꿀 수 있었다.
+
+    [SB-421] 휴지통으로 옮긴(archived_at이 있는) 프로젝트는 목록에서 숨겨질 뿐 아니라 이 경로로도 열리지 않는다 — 예전에는 /status 같은 조회가
+    200으로 응답했다. 휴지통에서 다시 지우는 DELETE와 영구 삭제만 `allow_archived=True`로 연다."""
     project = db.get(Project, project_id)
     if project is None or project.company.user_id != user.user_id:
         raise HTTPException(status_code=404, detail='프로젝트를 찾을 수 없습니다')
+    if project.archived_at is not None and not allow_archived:
+        raise HTTPException(status_code=404, detail='프로젝트를 찾을 수 없습니다')   # [SB-421] 휴지통으로 옮긴 프로젝트
     return project
 
 
