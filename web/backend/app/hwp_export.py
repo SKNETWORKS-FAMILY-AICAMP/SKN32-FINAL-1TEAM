@@ -718,12 +718,12 @@ def render_plan_hwp(data: PlanDocumentData, template: str) -> bytes:
         tmp_files.append(path)
         return path
 
-    plan_fd, plan_path = tempfile.mkstemp(suffix='.plan.json')
+    plan_path = _new_tmp('.plan.json')
     try:
         # 입력 줄이 양식의 고정 행보다 많은 표는 행을 먼저 늘리고, 글이 많이 들어가는 행은 높이를 미리 맞춘다(표 번호 · 행 번호는 그대로이고 늘린 행 아래의 행만 밀린다)
         plan_input = _prepare_tables(template_path, steps, _new_tmp, template)
         current_output = _new_tmp()
-        with os.fdopen(plan_fd, 'w', encoding='utf-8') as f:
+        with open(plan_path, 'w', encoding='utf-8') as f:
             json.dump({
                 'planVersion': '1.0',
                 'input': plan_input,
@@ -775,8 +775,12 @@ def render_plan_hwp(data: PlanDocumentData, template: str) -> bytes:
         with open(current_output, 'rb') as f:
             return f.read()
     finally:
-        if os.path.exists(plan_path):
-            os.remove(plan_path)
         for path in tmp_files:
-            if os.path.exists(path):
+            try:
                 os.remove(path)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                # Never replace the conversion exception (or a successful result)
+                # with a secondary cleanup error. Log it for operations instead.
+                logger.warning('HWP 임시 파일 정리 실패', exc_info=True)
