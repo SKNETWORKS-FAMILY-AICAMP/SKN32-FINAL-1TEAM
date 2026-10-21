@@ -403,7 +403,7 @@ export default function App(){
   {view==='mypage'&&<MyPage onSaved={handleProfileSaved} user={user} onAccountDeleted={handleAccountDeleted}/>}
   {view==='dashboard'&&<Dashboard onNewProject={startNewProject} onOpenProject={handleOpenProject}/>}
   {view==='intake'&&<IntakeForm initialValues={itemInfo} onSubmit={handleIntakeSubmit} onBack={()=>setView('dashboard')} backLabel="내 프로젝트로 돌아가기"/>}
-  {view==='match-progress'&&<MatchProgress ready={!!projectId} onComplete={()=>setView('match-results')}/>}
+  {view==='match-progress'&&<MatchProgress projectId={projectId} onLoaded={setMatchCandidates} onComplete={()=>setView('match-results')}/>}
   {view==='match-results'&&<MatchResults projectId={projectId} candidates={matchCandidates} onCandidatesLoaded={setMatchCandidates} onBack={()=>setView(returnToDashboard?'dashboard':'intake')} backLabel={returnToDashboard?'내 프로젝트로 돌아가기':'아이템 정보 다시 입력하기'} onCheckEligibility={handleCheckEligibility}/>}
   {view==='eligibility-gate'&&<EligibilityGate announcement={announcement} eligibility={pipelineResult?.eligibility} notices={pipelineResult?.notices||[]} onProceed={()=>setView('plan-progress')} onLeave={()=>{setMatchCandidates(null);setView('match-results')}}/>}
   {/* 단계가 끝나 다음 화면으로 갈 때마다 결과(GET /result)를 다시 받는다 — 공고 선택(/generate) 응답에는 자격 확인 결과만 있어,

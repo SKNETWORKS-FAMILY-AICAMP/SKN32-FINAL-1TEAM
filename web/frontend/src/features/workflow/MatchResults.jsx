@@ -6,11 +6,41 @@ import {getMatchCandidates,rematchCandidates,generatePipeline,getEligibility,get
 import {BonusScore,BonusBadge} from './shared.jsx';
 import {AI_SUMMARY_SOURCE_NOTICE,RESULTS_SHOWN_COUNT} from './data.js';
 
-export function MatchProgress({onComplete,ready=true}){return <Preparation kind="match" progress={ready?undefined:0} onComplete={onComplete}/>;}
-
 // 후보 응답(MatchCandidatesOut)의 status — 'ready' 말고는 candidates가 비어 있다(백엔드 SB-242).
 //  pending: 공고 매칭이 아직 도는 중 — 잠시 뒤 다시 부른다. failed · no_match: message · notices로 안내만.
 const PENDING_RETRY_MS=1500;
+
+// 공고 매칭 대기 화면. 이 화면에서 바로 후보를 조회하고, 서버가 pending을 끝내 결과(ready · no_match · failed)를 주면
+// 100%를 찍고 목록으로 넘어간다 — 목록은 받은 결과를 그대로 그려서 다시 기다리지 않는다.
+// 예전에는 데모 타이머가 100%를 찍은 뒤에야 목록 화면이 조회를 시작해 "공고를 찾는 중이에요…"를 한 번 더 보였다(배포 후 피드백 10-20).
+// 서버가 진행률을 주지 않아 %는 기다린 시간으로 천천히 올리고, 결과가 오기 전에는 95%를 넘지 않는다.
+// projectId는 프로젝트를 만든 뒤에 들어온다(그 전에는 조회하지 않는다). 조회 자체가 실패하면 그냥 목록으로 넘긴다 — 목록이 다시 조회하고 실패 안내를 보인다.
+const MATCH_WAIT_CAP=95;
+export function MatchProgress({projectId,onLoaded,onComplete}){
+ const [progress,setProgress]=useState(0);
+ const [done,setDone]=useState(false);
+ useEffect(()=>{
+  if(done)return;
+  const t=setInterval(()=>setProgress(p=>p+(MATCH_WAIT_CAP-p)*0.06),300);
+  return()=>clearInterval(t);
+ },[done]);
+ useEffect(()=>{
+  if(!projectId)return;
+  let cancelled=false;let timer=null;
+  const load=()=>getMatchCandidates(projectId).then(data=>{
+   if(cancelled)return;
+   if(data?.status==='pending'){timer=setTimeout(load,PENDING_RETRY_MS);return}
+   onLoaded(data);
+   setDone(true);
+  }).catch(err=>{
+   console.error('매칭 후보를 불러오지 못했어요',err);
+   if(!cancelled)setDone(true);
+  });
+  load();
+  return()=>{cancelled=true;clearTimeout(timer)};
+ },[projectId,onLoaded]);
+ return <Preparation kind="match" progress={done?100:Math.floor(progress)} onComplete={onComplete}/>;
+}
 // 자격 확인을 기다리는 최대 횟수 — 서버가 한 번에 25초까지 기다려 주므로 이 정도면 공고 서버 제한 시간(30초)을 넘는다.
 const ELIGIBILITY_MAX_POLLS=6;
 // 화면 3 안내 가운데 이 화면에 보여 줄 것. 실행 건의 안내는 계속 쌓이는 목록이라(명세 4.1) 지난 추가 조회의 실패 안내가

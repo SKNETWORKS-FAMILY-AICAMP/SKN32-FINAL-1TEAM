@@ -71,6 +71,8 @@ const executionRowFromServer=r=>({
 // 표기용 한글 라벨은 여기서만 붙인다. "공고 수집 현황"/"최근 수집 실행 이력" 카드는
 // GET /admin/collection-status가 담당한다(AnnouncementTab 안에서 직접 매핑).
 const NOTICE_SOURCE_LABEL={kstartup:'K-Startup','k-startup':'K-Startup',bizinfo:'기업마당'};
+// unknown은 수집 때 모집 상태를 얻지 못했다는 원본 값이다 — 백엔드도 모집중으로 바꾸지 않고 그대로 보낸다(SB-410). 화면에는 '확인 필요'로 보인다.
+const RECRUITMENT_STATUS_LABEL={open:'모집중',closed:'마감',unknown:'확인 필요'};
 const noticeRowFromServer=n=>{
   const shortDate=d=>d?d.slice(5).replace('-','.'):null;
   const closed=n.recruitment_status==='closed';
@@ -78,8 +80,8 @@ const noticeRowFromServer=n=>{
     id:n.notice_id,title:n.title,src:NOTICE_SOURCE_LABEL[n.source]||n.source,
     period:n.apply_start&&n.apply_end?`${shortDate(n.apply_start)}~${shortDate(n.apply_end)}`:'-',
     embed:n.has_embedding?'완료':'미생성',embedTone:n.has_embedding?'ok':'warn',
-    status:n.recruitment_status==='open'?'모집중':closed?'마감':n.recruitment_status,
-    statusTone:n.recruitment_status==='open'?'ok':'muted',dim:closed,
+    status:RECRUITMENT_STATUS_LABEL[n.recruitment_status]||n.recruitment_status,
+    statusTone:n.recruitment_status==='open'?'ok':n.recruitment_status==='unknown'?'warn':'muted',dim:closed,
   };
 };
 
@@ -346,8 +348,15 @@ export default function AdminDashboard({user,onExit}){
 }
 
 // GET /admin/collection-status의 issue_counts({"unparsed_period": 53} 등) 딕셔너리를
-// "unparsed_period 53건" 식의 짧은 문자열 목록으로 바꾼다.
-const formatIssueCounts=issues=>Object.entries(issues||{}).map(([k,v])=>`${k} ${v}건`);
+// "접수 기간 해석 실패 53건" 식의 짧은 문자열 목록으로 바꾼다. 코드는 공고 수집(data-collection/collect/normalize.py)이 붙인다 —
+// 여기 없는 새 코드는 원래 값 그대로 보인다.
+const ISSUE_CODE_LABEL={
+  unparsed_period:'접수 기간 해석 실패',
+  reversed_period:'접수 시작일이 마감일보다 늦음',
+  invalid_date:'날짜 형식 오류',
+  invalid_url:'링크 주소 오류',
+};
+const formatIssueCounts=issues=>Object.entries(issues||{}).map(([k,v])=>`${ISSUE_CODE_LABEL[k]||k} ${v}건`);
 
 function AnnouncementTab(){
   const [query,setQuery]=useState('');
