@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
-from conftest import executed, make_app, pre_input, project_for, start_and_select, to_screen6
+from conftest import executed, make_app, pre_input, project_for, start_and_select, to_screen6, to_screen8
 from flow_helpers import pid, rework, run_review
 
 from sbrain.agents.stubs import StubScenario
@@ -225,3 +225,25 @@ def test_admin_calls_with_tries(clock):
     assert (call.call_type, call.final_outcome, call.model) == ("llm", "성공", "gpt-5.6-terra")   # T-S1 기본 모델
     assert [(t.no, t.outcome, t.error_kind) for t in call.tries] == [(1, "응답지연", "일시"), (2, "성공", None)]
     assert call.tokens.output_tokens is None and app.orchestrator.admin_calls("없는-실행") == []
+
+
+def test_artifact_rework_populates_both_admin_deviation_layers(clock):
+    app = make_app(clock)
+    rid = to_screen8(app)
+    before = app.orchestrator.admin_score_history(pid(app, rid))
+    assert len(before.code_check) == len(before.feature_match) == 1
+    assert not before.code_check[0].after_rework and not before.feature_match[0].after_rework
+    initial = {c.layer: c for c in app.orchestrator.admin_summary().layer_changes}
+    assert initial['codeCheck'].count == initial['featureMatch'].count == 0
+
+    rework(app, clock, rid, '실행 파일')
+    history = app.orchestrator.admin_score_history(pid(app, rid))
+    changes = {c.layer: c for c in app.orchestrator.admin_summary().layer_changes}
+    for layer, entries in [('codeCheck', history.code_check), ('featureMatch', history.feature_match)]:
+        assert len(entries) >= 2
+        assert entries[0].after_rework
+        change = changes[layer]
+        assert change.count == 1
+        assert change.first_avg == round(entries[-1].score, 1)
+        assert change.after_avg == round(entries[0].score, 1)
+        assert change.delta == round(change.after_avg - change.first_avg, 1)

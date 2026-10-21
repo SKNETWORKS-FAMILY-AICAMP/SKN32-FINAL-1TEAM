@@ -970,3 +970,60 @@ def test_notice_display_status_is_calculated_without_changing_source(admin_clien
     db_session.expire_all()
     notice = db_session.query(Notice).filter_by(notice_id='NOTICE-DISPLAY').one()
     assert notice.recruitment_status == 'unknown'
+
+
+@pytest.mark.parametrize('mode', ['partial_overweight', 'duplicate', 'unknown_after_valid', 'disable_one'])
+def test_checklist_invalid_updates_preserve_entire_state(admin_client, mode):
+    before = admin_client.get('/admin/checklist').json()
+    row = next(r for r in before if r['enabled'])
+    entry = {'check_item_id': row['check_item_id'], 'weight': row['weight'], 'enabled': True}
+    if mode == 'partial_overweight':
+        payload = [{**entry, 'weight': 15}]
+    elif mode == 'duplicate':
+        payload = [entry, entry]
+    elif mode == 'unknown_after_valid':
+        payload = [{**entry, 'weight': 15}, {**entry, 'check_item_id': 99999999}]
+    else:
+        payload = [{**entry, 'enabled': False}]
+    result = admin_client.put('/admin/checklist', json=payload)
+    assert result.status_code == (404 if mode == 'unknown_after_valid' else 422), result.text
+    assert admin_client.get('/admin/checklist').json() == before
+
+
+def test_checklist_valid_partial_update_includes_untouched_rows(admin_client):
+    before = admin_client.get('/admin/checklist').json()
+    active = [r for r in before if r['enabled'] and r['category'] == before[0]['category']]
+    first, second = active[:2]
+    payload = [
+        {'check_item_id': first['check_item_id'], 'weight': first['weight'] + 0.5, 'enabled': True},
+        {'check_item_id': second['check_item_id'], 'weight': second['weight'] - 0.5, 'enabled': True},
+    ]
+    result = admin_client.put('/admin/checklist', json=payload)
+    assert result.status_code == 200, result.text
+    after = result.json()
+    for old, new in zip(before, after, strict=True):
+        if old['check_item_id'] not in {first['check_item_id'], second['check_item_id']}:
+            assert old == new
+    assert sum(r['weight'] for r in after if r['enabled'] and r['category'] == first['category']) == 15
+
+
+def test_checklist_category_may_be_fully_disabled(admin_client):
+    before = admin_client.get('/admin/checklist').json()
+    category = before[0]['category']
+    payload = [{'check_item_id': r['check_item_id'], 'weight': r['weight'], 'enabled': False}
+               for r in before if r['category'] == category]
+    result = admin_client.put('/admin/checklist', json=payload)
+    assert result.status_code == 200, result.text
+    assert all(not r['enabled'] for r in result.json() if r['category'] == category)
+
+
+def test_ops_summary_maps_code_and_plan_rework_to_display_fields(admin_client, orch):
+    orch.responses['admin_summary'] = lambda: make_admin_summary(layer_changes=[
+        NS(layer='codeCheck', first_avg=10.0, after_avg=12.0, delta=2.0, count=1),
+        NS(layer='featureMatch', first_avg=12.0, after_avg=12.0, delta=0.0, count=1),
+    ])
+    response = admin_client.get('/admin/ops-summary')
+    assert response.status_code == 200, response.text
+    layers = {row['layer']: row for row in response.json()['deviations']}
+    assert layers['code'] == dict(layer='code', round1_avg=10.0, round2_avg=12.0, delta_avg=2.0, sample_count=1)
+    assert layers['plan'] == dict(layer='plan', round1_avg=12.0, round2_avg=12.0, delta_avg=0.0, sample_count=1)
