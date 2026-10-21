@@ -198,7 +198,7 @@ copy .env.example .env     # macOS / Linux: cp .env.example .env
 ```powershell
 docker compose -f docker/mysql-test.yml up -d --wait     # mysql:8.0(공유 DB와 같은 8.0 계열), 127.0.0.1:3307, 데이터는 메모리에만
 # .env:  SBRAIN_TEST_MYSQL_URL=mysql+pymysql://root:sbrain-test@127.0.0.1:3307/sbrain_test?charset=utf8mb4
-python -m pytest                                          # 건너뜀 없이 전체 2750건
+python -m pytest                                          # 건너뜀 없이 전체 2901건
 docker compose -f docker/mysql-test.yml down              # 끄기
 ```
 
@@ -461,7 +461,7 @@ agent-orchestration/
 │       │   └── tasks.py       #   등록 IMPLEMENTED · IMAGE_TASKS · bind_partner_bv
 │       ├── form_defaults.py   # 신청자 유형별 양식 · 평가항목 · 채점 기준표 묶음(FORM_TABLE — 담당자 계약의 계획서 항목), 선택 공고 자리 표시 양식 (모두 잠정)
 │       └── stubs.py           # 스텁 Agent(스텁 T-C2 · G-01 포함 — 규칙 단계 · T-C4는 실구현에 실패 흉내만), 가짜 LLM(FakeLLM), 가짜 이미지(FakeImage), 시나리오(StubScenario)
-└── tests/                     # pytest 테스트 (2750건) — conftest.py(저장소 선택 · 공고 서버 주소 격리 · KIET 검색 스위치 격리 · 코드 스위치 두 개를 꺼진 값으로 · 파일 저장소 폴더 tmp_path · 실제 S3 클라이언트 막기 · 묶음) · webdb.py · mysqldb.py(MySQL 묶음 확인) · flow_helpers.py · worker_helpers.py · store_helpers.py · notice_fake.py · partner_fake.py(담당자 함수 목적별 가짜 응답) · bv_fake.py(구현 · 검증-2 가짜 응답) · s3_fake.py(가짜 S3 클라이언트) · fakes.py 도움 모듈
+└── tests/                     # pytest 테스트 (2901건) — conftest.py(저장소 선택 · 공고 서버 주소 격리 · KIET 검색 스위치 격리 · 코드 스위치 두 개를 꺼진 값으로 · 파일 저장소 폴더 tmp_path · 실제 S3 클라이언트 막기 · 묶음) · webdb.py · mysqldb.py(MySQL 묶음 확인) · flow_helpers.py · worker_helpers.py · store_helpers.py · notice_fake.py · partner_fake.py(담당자 함수 목적별 가짜 응답) · bv_fake.py(구현 · 검증-2 가짜 응답) · s3_fake.py(가짜 S3 클라이언트) · fakes.py 도움 모듈
 ```
 
 **설계 원칙:** `orchestrator/`에는 어떤 서비스에도 쓸 수 있는 범용 장치만 두고, 화면 번호 · 알림 대상 · 재작성 경로 같은 S-Brain 고유 규칙은 `flow/`에만 둡니다. 엔진은 `Flow` 인터페이스(`engine.py`)를 통해서만 S-Brain 규칙을 부릅니다.
@@ -705,7 +705,7 @@ bind_notice(app.registry, NoticeClient("http://example.invalid:8000", transport=
 | `start_status(project_id)` | 2 | 마지막 시작 요청의 상태(대기 · 처리중 · 완료 · 실패 · 취소) · 코드 · 안내 · run_id |
 | `active_work(account_id)` | 2 | 사전 정보를 저장하기 전 동시 실행 확인 — 진행 중인 작업(`ActiveWork`) 또는 `None` |
 | `view_project(project_id)` | — | 실행 건이 있으면 `view()`(재시도 · 재개 횟수, 다음 재개 시각, 재작성 화면, 모으는 중 여부, 선택 공고 포함), 없으면 시작 요청 상태 |
-| `project_views(project_ids)` | 목록 | 여러 프로젝트의 `view_project`를 한 번에 |
+| `project_views(project_ids)` | 목록 | 여러 프로젝트의 `view_project`를 한 번에 — 실행 건 수와 관계없이 연결 1번 · SQL 2 ~ 5문장(상태 구성에 따라 — 공고 고른 진행 중 실행 건이 있으면 4, 실행 건 없는 프로젝트가 섞이면 +1, 빈 목록이면 연결 · 문장 0. 한 시점 읽기) |
 | `missing_projects(project_ids)` | — | 확장 — 웹 일괄 작업용. 넘긴 프로젝트 중 실행 건(또는 끝나지 않은 시작 요청)이 없는 것을 받은 값 그대로 · 넘긴 순서로(같은 정수 값은 처음 것 하나). 읽기만, 주인 확인 없음. 숫자가 아닌 값이면 `ValueError`. 웹은 알림 정리(`notifications.project_id`)에 쓴다 |
 | `wait_project(project_id, timeout_sec=60)` | 3 · 4 | 진행이 멈출 때(대기 지점 · 재개대기 · 끝남)까지 기다린 뒤 `view_project`. 제한 시간을 넘기면 그때 상태 |
 | `screen(project_id, n)` | 3 · 4 · 6 · 8 · 9 · 11 | 화면별 내용(모양 초안, `flow/reads.py`). 대기 지점이 아니면 `SCREEN_NOT_READY`. 화면 10은 없음(`INVALID_SCREEN`) |
@@ -718,7 +718,7 @@ bind_notice(app.registry, NoticeClient("http://example.invalid:8000", transport=
 | `delete_project_data(project_id)` | — | 완전 삭제 — 산출물 · 남은 입력 사본 삭제, 실행 로그 유지(마지막 활동 12개월 뒤 통계로 옮기고 지움). 산출물 파일은 같은 트랜잭션에 파일 삭제 대기열 줄을 넣어 워커가 나중에 지운다. 워커가 단계를 도는 중이면 `BUSY` |
 | `delete_account_data(account_id)` | — | 탈퇴(확장) — 프로젝트마다 중단 · 완전 삭제를 마친 뒤. 그 계정의 실행 건 · 산출물 · 기록 · 시작 요청을 통계 줄로 옮긴 뒤 모두 지움 → `AccountDeleteResult`. 처리 중인 일 · 점유 겹침 · 계정 잠금 대기 초과면 `BUSY` |
 | `admin_executions(...)` · `admin_calls(execution_id)` | 관리자 | 여러 프로젝트의 실행 기록 · 호출 기록 (메타데이터 · 토큰만, 남은 기록만) |
-| `admin_runs(...)` · `admin_score_history(project_id)` · `admin_summary()` · `admin_agent_tasks()` | 관리자 | 실행 건 목록 · 층별 점수 이력 · 운영 요약 · Agent별 Task (메타데이터 · 점수 · 개수만). 실행 건 목록 · 운영 요약은 최근 12개월 실행 건만. Agent별 Task는 흐름 밖 단계를 빼고 센다(6줄) |
+| `admin_runs(...)` · `admin_score_history(project_id)` · `admin_summary()` · `admin_agent_tasks()` | 관리자 | 실행 건 목록 · 층별 점수 이력 · 운영 요약 · Agent별 Task (메타데이터 · 점수 · 개수만). 실행 건 목록 · 운영 요약은 최근 12개월 실행 건만이고, 한 시점 읽기 구간에서 실행 건 목록 · 포인터와 채점 기록 · 마지막 시도 번호 · DB 집계만 읽는다(실행 기록 전부를 읽지 않음, 실행 건 수와 관계없이 SQL `admin_runs` 4(빈 페이지 1) · `admin_summary` 5문장). Agent별 Task는 흐름 밖 단계를 빼고 센다(6줄) |
 | `admin_file_deletions(status=None, limit=50, offset=0)` · `admin_retry_file_deletion(deletion_id, admin_id)` | 관리자 | 확장 — 파일 삭제 대기열 목록(대기 · 포기, 넣은 시각 최근 순)과 포기한 줄 다시 시도(누른 관리자 ID · 시각 · 횟수를 줄에 남김). 없는 줄 `FILE_DELETION_NOT_FOUND`, 대기 줄 `INVALID_STATE`. 키 · 파일 이름 · 계정은 싣지 않는다 |
 
 **워커 · 내부 · 테스트용**
@@ -796,7 +796,7 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 - 두 코드 스위치(`PLAN_TABLES_REQUIRED` · `GENERAL_BUNDLES_ENABLED`)는 `conftest.py` 자동 픽스처가 테스트마다 꺼진 값으로 둔다. 켠 동작은 그 테스트에서 켜고, 코드 값은 `conftest.CODE_SWITCHES`로 확인한다.
 - 여러 파일에서 쓰는 도움 함수는 `tests/flow_helpers.py` · `worker_helpers.py` · `store_helpers.py` · `notice_fake.py` · `partner_fake.py`(담당자 함수 목적 = F번호별 가짜 응답) · `bv_fake.py`(구현 · 검증-2 목적별 가짜 응답) · `s3_fake.py`(가짜 S3 클라이언트 `FakeS3Client` · `fake_s3_store` · `patch_client_factory`) · `fakes.py`와 `conftest.py`에 있다. 테스트 파일끼리는 서로 가져다 쓰지 않는다.
 - 테스트는 실제 AWS 클라이언트를 만들지 않는다(만들기만 해도 `~/.aws`를 읽는다). `conftest.py` 자동 픽스처가 모든 테스트에서 실제 S3 클라이언트 만들기를 막고, S3 시험은 가짜 S3 클라이언트를 넣는다.
-- 흐름 테스트(`clock` 고정 장치를 쓰는 테스트)는 **메모리 저장소와 `SqlStore`(SQLite 임시 파일 DB)로 한 번씩** 돈다(`conftest.py`의 `store_backend`). 아래 건수는 이렇게 늘어난 수이고, 합은 2750건이다(MySQL 테스트 DB를 켜지 않으면 MySQL 테스트 59건을 건너뜀).
+- 흐름 테스트(`clock` 고정 장치를 쓰는 테스트)는 **메모리 저장소와 `SqlStore`(SQLite 임시 파일 DB)로 한 번씩** 돈다(`conftest.py`의 `store_backend`). 아래 건수는 이렇게 늘어난 수이고, 합은 2901건이다(MySQL 테스트 DB를 켜지 않으면 MySQL 테스트 93건을 건너뜀).
 
 | 파일 | 건수 | 확인하는 것 |
 |---|---|---|
@@ -817,6 +817,7 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 | `test_openai_provider.py` | 7 | OpenAI 요청 모양(추론 강도 · 온도 생략 포함) · 오류 변환 (가짜 클라이언트, 네트워크 없음) |
 | `test_env.py` | 8 | `.env` 읽기(따옴표 · 주석 · BOM · 빈 값), 환경 변수 우선, API 키를 `.env`에서 읽기 |
 | `test_store_contract.py` | 105 | 저장소 계약 — 메모리 · SQLite · MySQL이 같은 동작인지 (점유, 동시 실행 제한, 모으는 중 건너뛰기, 포인터 · 키 순서, 기록 왕복, 웹 쓰기는 알림 · 실패 알림 INSERT 둘뿐, 시작 요청 · 끝나면 입력 사본 비우기, 관리자 · 여러 실행 건 조회, 계정 잠금 대기 초과, 기록 옮기기 · 12개월 대상 · 작업 점유, 실행 건 · 끝나지 않은 요청이 있는 프로젝트 `existing_projects`) |
+| `test_store_snapshot.py` | 36 | 한 시점 읽기 구간 — 메모리 · SQLite · MySQL에서 창구 읽기가 하나씩 읽은 값 · 같은 DB 전체의 참조 값과 같음(빈 입력 · 중복 ID · 작은 묶음 크기 · 덮어쓴 기록 · 되돌린 포인터 · 깨진 데이터 `KeyError` · 집계), SELECT 수 고정, 다른 스레드의 쓰기가 구간에서 안 보임, MySQL은 구간 연결만 REPEATABLE READ |
 | `test_store_sql.py` | 13 | DDL 파일 = 생성 결과, 설정 입력(`verification_policies` — 선택 컬럼 `token_retry_cap` 없음 · 있음), 웹 테이블 구조 확인 |
 | `test_start_request.py` | 26 | 시작 요청 → 워커 실행, 필수 항목 · 프로필 · 동시 실행, 실패 후 재시도, 취소, 점유 이어받기, 진행 중 작업 확인, 끝난 요청의 입력 사본 비우기 |
 | `test_clock.py` | 19 | 시각 — 도움 함수, 시간대 없는 값은 UTC, DB 칸은 시간대 없는 UTC, 웹 표 시각, 웹에 돌려주는 시각 전부 UTC, 한국 날짜(G-01 기준일 · 마감 안내 · 스텁), 워커 로그 UTC |
@@ -835,16 +836,18 @@ python -m pytest -k onepage                   # 이름에 onepage가 들어간 �
 | `test_step_rescue.py` | 14 | 엔진의 실패를 흐름에 넘기는 장치(정한 구간의 모든 오류, 다른 구간은 그대로, 흐름이 옮기지 않으면 오류) |
 | `test_gate_stubs.py` | 15 | 스텁 공고 · 스텁 G-01 판정 규칙 · 업력 셈(사사오입) · 스텁 T-C2 카드 · 상황 조절 |
 | `test_notice_client.py` | 40 | 공고 서버 HTTP 클라이언트 (127.0.0.1 임시 서버) — 오류 변환, 공고 없음과 코드 없는 404, 공고 ID 인코딩, 예외에 주소 · 본문 없음, 호출 하나씩 |
-| `test_notice_tc2.py` | 148 | 실제 T-C2 (가짜 전송) — 보내는 칸 · 시 · 도 17개 바꾸기, 카드 변환 · 가산점(스위치 켜짐 · 꺼짐) · 내용 버전 · 추천 이유 · 받은 순서, 약속한 키 · 유한한 수 검사 |
+| `test_notice_tc2.py` | 167 | 실제 T-C2 (가짜 전송) — 보내는 칸 · 시 · 도 17개 바꾸기, 카드 변환 · 가산점(스위치 켜짐 · 꺼짐 · 원문 대조(`bonus_verified`)된 공고만) · 내용 버전 · 추천 이유 · 받은 순서, 약속한 키 · 유한한 수 검사 |
 | `test_notice_g01.py` | 84 | 실제 G-01 (가짜 전송) — 공고 상세 → 선택 공고, 자격 판정 → 자격 결과 · 업력(사사오입), 공고 없음, 약속 밖 응답 거절 |
 | `test_notice_flow.py` | 10 | 공고 서버 연결 앱의 흐름 — 공고 선택 · 자격 확인 · 추가 조회가 실제 T-C2 · G-01로 끝까지 |
 | `test_reads.py` | 16 | 화면 3 ~ 11 조회(화면 10은 `INVALID_SCREEN`, 결과의 검수 칸은 빈 값) |
 | `test_web_functions.py` | 54 | 진행 상태 새 필드 · 여러 건 · 기다리기, 실행 건이 없는 프로젝트(`missing_projects` — 받은 값 · 순서, 정수 값 중복 제거, 끝나지 않은 요청, 숫자 아닌 값 거절, 웹 조립), 사용자용 결과에 실패 사유 없음, 지금까지 결과(검수 칸 빈 값), 재작성 결과, 실패 · 중단 뒤 볼 수 없음, 자격 통과 뒤 다시 고르기 |
-| `test_admin_reads.py` | 18 | 관리자 실행 건 목록 · 점수 이력 · 운영 요약(검수 칸 없음) · Agent별 Task(6줄 · 흐름 밖 단계 제외), 실행 건 목록 · 운영 요약은 최근 12개월만 |
+| `test_progress_views.py` | 30 | 진행 상태 조회가 한 시점 구간 하나에서 읽음 — 섞인 묶음이 프로젝트마다 `view_project`와 같음, 마감 안내 · 시계 자리 그대로, 컨텍스트 · 실행 기록을 읽지 않음, 없는 실행 건 · 깨진 데이터 `KeyError`, 시작 요청 → 실행 건 · 단계 저장 · 공고 다시 고르기가 끼어도 한 순간(세 저장소), SELECT 수 · 연결 1번 |
+| `test_admin_reads.py` | 40 | 관리자 실행 건 목록 · 점수 이력 · 운영 요약(검수 칸 없음) · Agent별 Task(6줄 · 흐름 밖 단계 제외), 실행 건 목록 · 운영 요약은 최근 12개월만, 산출물층 재작성 뒤 코드 점검 · 계획서 대조 층별 변화, 총점 구간 소수 경계(한 구간에만) |
+| `test_admin_snapshot.py` | 43 | 관리자 두 조회가 한 시점 구간에서 채점 기록 · DB 집계만 읽음 — 옛 식 참조 구현과 같은 값(재작성 · 되돌리기 · 재수행 · 12개월 처리 · 완전 삭제 · 탈퇴 뒤), 채점 Task 목록, 시계 한 번, 새 채점 · 되돌리기 · 완전 삭제 · 탈퇴 · 12개월 처리가 끼어도 한 순간(세 저장소), SELECT 수 고정 |
 | `test_web_writes.py` | 13 | 단계를 저장해도 웹 `projects` 행이 바뀌지 않음, 실패 알림 · 실패 사유, 읽고 쓰는 웹 테이블 목록, 옛 '표현검수' 알림 행 읽기 (SQLite · MySQL) |
 | `test_tokens.py` | 8 | 토큰 시도별 · 호출 · 실행 합계, OpenAI 매핑, 관리자 조회 |
 | `test_abort_delete.py` | 14 | project_id 중단 · 완전 삭제 |
-| `test_task_settings.py` | 15 | Task별 설정 — 키 집합 = 등록부 task 단계 + `지시문 다시 쓰기`, 기본값 · 잠정, 새 사본에 `agents` 없음, Task마다 자기 모델 · 온도 규칙, 다시 쓰기 자기 항목, 흐름 밖 M-4 `model_version` · T-P2 온도(등록부 줄로), 워커 나누기, 설정값이 실행 시작 때 고정됨 |
+| `test_task_settings.py` | 16 | Task별 설정 — 키 집합 = 등록부 task 단계 + `지시문 다시 쓰기`, 기본값 · 잠정, T-S1 제한 시간 300초, 새 사본에 `agents` 없음, Task마다 자기 모델 · 온도 규칙, 다시 쓰기 자기 항목, 흐름 밖 M-4 `model_version` · T-P2 온도(등록부 줄로), 워커 나누기, 설정값이 실행 시작 때 고정됨 |
 | `test_image.py` | 28 | `tools.image` 재시도 · 오류 종류 · 편집 / 새로 그리기 · 크기 · 품질 기본값 · 설정 없는 Task 즉시 실패 · 토큰 · 스레드 · 내용 없음, 실행 기록 이미지 토큰 따로 · 재개 때 이어 더함, 관리자 조회, OpenAI 이미지 어댑터(가짜 클라이언트) |
 | `test_artifact_layer.py` | 66 | 산출물층 검증 반영 — 확장 필드, 재작성 사유(통과 필수 조건 · 결함 출처 · 누락 · 부분 인정 · 보류), 스텁 T-V2 1.4판, `planDoc` 입력, 보류 · 진단 사건, G-04 자체 검사, 원페이지 계획서 반영 · 되돌리기, 이전 원문 참조, T-B2 이미지 실패 예외 · '이미지대체' |
 | `test_basedoc_v110_markers.py` | 91 | 기준 문서 확장 표시 — 기준 문서(기능정의서 v1.10 · v1.11)에 들어간 필드 · 타입은 확장 아님, 새 판에서 빠졌지만 남긴 필드는 확장(note 머리), 아직 기준 문서에 없는 필드는 확장(새 타입 · 파일 칸의 note 포함), 필수 · 선택 선언 그대로 |
@@ -920,7 +923,7 @@ app.orchestrator.tick(datetime.now(timezone.utc) + timedelta(minutes=15))   # �
 - 결제 · 한도로 재개 대기에 들어간 실행 건을 충전 직후 바로 재개하는 수단, 그때의 웹 관리자 알림(웹 INSERT 약속을 바꿔야 한다) — 지금은 다음 재개 예약 시각까지 기다리고, 운영 로그 `errorCode` · 관리자 호출 조회로만 알 수 있다.
 - 웹 표의 정리 — 알림은 기준 문서대로 실행 건과 함께 보관 · 함께 지움(웹이 프로젝트를 지울 때 지우고, 남은 것은 `missing_projects`로 찾아 지움), 실패 알림은 웹팀 몫.
 
-**공고팀과 맞출 것** — 운영 서버 위치 · 주소, 동시 호출 안전성(그 전까지 워커 1대), 인증 방식(지금은 없음), 가산점 정리, 워커 IP 전달.
+**공고팀과 맞출 것** — 운영 서버 위치 · 주소, 동시 호출 안전성(그 전까지 워커 1대), 인증 방식(지금은 없음), 워커 IP 전달. 가산점은 2026-10-19 공고팀이 써도 된다고 해 맞췄다(원문 대조된 공고만).
 
 **웹팀과 맞출 것** — `docs/Orchestrator_웹연동_함수명세.md` 12절.
 

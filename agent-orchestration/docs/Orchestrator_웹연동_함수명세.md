@@ -346,7 +346,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 
 **화면 3 · 4**
 
-- **카드(`AnnouncementCard`)** — `announcementId` · `title` · `agency` · `applyEnd`(`null` 가능 — 마감일 없는 공고) · `supportAmountMax`(`null` 가능 — 추천 결과에는 금액이 없어 지금은 늘 `null`) · `fitScore` · `rank` · `displayType` · `matchReason` · `sourceNotice` · `originalUrl`, 그리고 `applyPeriodType`(모집 형태 표기) · `contentChanged`(내용 바뀜) · `contentVersion`(웹은 쓰지 않음) · `bonusScore`(가산점 합계, `null` = 계산 못 함, `0` = 해당 없음) · `bonusItems`(`name` · `points`). 가산점은 스위치가 꺼져 있어 **늘 `null` · `[]`**다(공고팀 가산점 시험 단계, 화면에 쓰지 않음 — 키는 그대로, 17절). `originalUrl`은 `""`일 수 있다. 순서는 `rank` 그대로이며 웹이 다시 정렬하지 않는다.
+- **카드(`AnnouncementCard`)** — `announcementId` · `title` · `agency` · `applyEnd`(`null` 가능 — 마감일 없는 공고) · `supportAmountMax`(`null` 가능 — 추천 결과에는 금액이 없어 지금은 늘 `null`) · `fitScore` · `rank` · `displayType` · `matchReason` · `sourceNotice` · `originalUrl`, 그리고 `applyPeriodType`(모집 형태 표기) · `contentChanged`(내용 바뀜) · `contentVersion`(웹은 쓰지 않음) · `bonusScore`(확인된 가산점 부분합, `null` = 계산 못 함 · 원문 대조 전, `0` = 해당 없음) · `bonusItems`(`name` · `points`). 가산점은 공고 서버가 원문 대조를 마친 공고(`bonus_verified` 참)의 카드에만 들고, 그 밖의 카드는 `null` · `[]`다(2026-10-19 스위치 켬 — 키는 그대로, 17절). `originalUrl`은 `""`일 수 있다. 순서는 `rank` 그대로이며 웹이 다시 정렬하지 않는다.
 - **추가 조회 반영** — 성공한 추가 조회가 있으면 `candidates`는 첫 조회 카드 중 다시 나온 것을 새 내용으로 바꾼 목록(자리 · `rank` · `displayType` 그대로, 내용이 바뀌었으면 `contentChanged` 참)이고, `moreCandidates`는 첫 조회와 겹친 공고를 뺀 목록이다(0건일 수 있다). 실패한 추가 조회는 없던 것으로 본다 — 후보 · `collectionStatus` · `filteredCount` · `fallbackUsed` · `fallbackMode`가 조회 전 그대로다.
 - **`blockedAnnouncementIds`** — 자격 불통과(E-G1-REJECT)가 나온 공고 ID. 그 실행 건에서 고를 수 없다(`ANNOUNCEMENT_BLOCKED`, 6.1). 추가 조회에서 그 공고 카드가 `contentChanged` 참이 되면 빠진다. 공고 없음 · 오류 · 설립일 없음은 들어가지 않는다. 카드에는 자격 정보를 싣지 않는다.
 - **화면 4 확인 필요** — `gateResult.unknownConditions`(`지원대상 유형` · `업력`)가 있으면 `notices`에 E-G1-UNPARSED가 하나 붙는다. 진행을 막지 않고(`canStartWriting` 참), 실행 건 안내 목록에는 쌓지 않아 `view_project`의 `notices`에는 나오지 않는다. 화면 4를 열 때마다 지금 자격 결과로 다시 만든다.
@@ -942,7 +942,7 @@ orch.missing_projects(["abc"])                    # ValueError
 | `totalAvg` · `totalCount` | 현재 총점(`scoreReport.overall.total`)의 평균 · 건수 |
 | `passCount` · `passRate` · `passThreshold` | 총점 ≥ 기준 점수(지금 설정) 건수, 통과 수 / 총점이 있는 실행 건 수 × 100, 지금 기준 점수 |
 | `reworkedRuns` · `runsWithExecutions` · `reworkRate` | 재작성 실행 기록이 있는 실행 건 수, 실행 기록이 하나라도 있는 실행 건 수, 앞 / 뒤 × 100 |
-| `scoreBuckets` | 총점 구간 `90~100점` · `80~89점` · `70~79점` · `60~69점` · `60점 미만`별 건수(`label` · `count`). 정수 경계 양 끝 포함(lo ≤ 총점 ≤ hi) — 웹 지금 계산과 같다 |
+| `scoreBuckets` | 총점 구간 `90~100점` · `80~89점` · `70~79점` · `60~69점` · `60점 미만`별 건수(`label` · `count`). 하한 포함 · 상한 미포함(lo ≤ 총점 < hi)이고 100점은 `90~100점`에 든다 — 59.5 · 89.5 같은 소수 점수도 정확히 한 구간에 든다. 웹 지금 계산과 같다(2026-10-21 — 전에는 정수 경계 양 끝 포함이라 소수 점수가 어느 구간에도 들지 않았다) |
 | `layerChanges` | 층별(`docScore` · `codeCheck` · `featureMatch`) `LayerChange`(`layer` · `firstAvg` · `afterAvg` · `delta` · `count`) — 실행 건마다 그 층의 첫 채점과 마지막 재작성 사이클 안의 마지막 채점(되돌린 사이클 포함)이 둘 다 있는 것만. `delta` = 반올림한 평균끼리의 차이. 코드 점검 · 계획서 대조 점수는 실행 건마다 그 실행 건 배점으로 환산한 값이다 |
 | `triggers` | 시도 계기(첫실행 · 재작성 · 재수행)별 `TriggerStat`(`trigger` · `count` · `avgTokens`) — 평균 토큰 = (입력 + 출력) 합 / 그 계기의 실행 기록 수(토큰 기록이 없는 실행은 0) |
 | `totalTokens` | 모든 실행 기록의 입력 + 출력 토큰(글 토큰만) |
@@ -950,7 +950,7 @@ orch.missing_projects(["abc"])                    # ValueError
 
 - 우리 기록으로 셀 수 없어 뺀 것: 실행 건이 없는 프로젝트(웹의 '공고 매칭 전'), 웹 상태 문구('판단 대기' 등). 완전 삭제한 실행 건은 현재 점수를 셀 수 없어 그 항목에서 빠진다(채점 이력 · 실행 기록 수 · 토큰은 남는다 — 마지막 활동 12개월까지).
 - 웹의 옛 익명화 스크립트(줄은 남기고 식별자만 비움)와 달리 12개월이 지난 실행은 이 숫자에서 빠진다.
-- 실행 기록 전체를 읽고 범위 안 실행 건의 것만 센다. 규모가 커지면 다시 본다.
+- 범위 밖 실행 건의 실행 기록은 읽지 않는다. 건수 · 토큰 합은 DB에서 세고, 점수는 채점 기록만 읽어 계산한다(2026-10-21 — 결과 칸 · 값은 그대로).
 - 검수 시도 칸(`proofreadAttempts` · `proofreadRejected` · `proofreadRejectRate`)은 없다(검수가 흐름 밖, 26절).
 
 ### 8.7 `admin_agent_tasks() -> list[AdminAgentTask]` — "Task별 보기"
@@ -1162,7 +1162,7 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | 기능정의서 v1.11에 들어간 칸 | 파일 참조 `FileRef`와 결과물 파일 칸, 사업비 · 일정 · 목표 고객 · 창업아이템명 · 팀원 표 행, 계획서 항목 태그 · 종류 · 그림, 검증-1 항목 판정, 점수 보고서 환산 칸 · `earned` · `applicable` · `iconFallback`, 미달 항목 `shortfallItems`, 알림 · 단계 '결과물', 재시도 간격 · 제한 시간 · 모으는 시간, 문서층 재작성 묶음 6개 — 19 ~ 26절의 표시를 그에 맞춰 고쳤다. 함수 · 결과 칸 모양 · 동작은 그대로다 | 기준 문서 칸 |
 | 새 판과 다르게 둔 것 | 결과물 내려받기 화면 번호 — 기준 문서는 화면 10(표현 검수 화면을 없애며 당김), Orchestrator · 웹은 **11 그대로**(`screen(…, 11)`, `resumeStep` · 알림 `target_step` 11) | 해석(웹팀과 같은 값) |
 | 새 함수 | `missing_projects(project_ids) -> list` (7.4) | 확장 |
-| 한 번에 묻는 프로젝트 수 | SQL 저장소가 500개씩 나눠 묻는다(`store_sql/store.py` `PROJECT_CHUNK`) — 넘기는 개수에는 제한이 없고 웹에는 영향이 없다 | 잠정(조정값) |
+| 한 번에 묻는 프로젝트 수 | SQL 저장소가 500개씩 나눠 묻는다(`store_sql/store.py` `PROJECT_CHUNK` — `missing_projects`, 진행 상태 · 관리자 실행 건 목록의 묶어 읽기) — 넘기는 개수에는 제한이 없고 웹에는 영향이 없다 | 잠정(조정값) |
 | 새 판에서 빠졌지만 남긴 필드 | 사전 정보 · 회사 정보의 `revenueUnitPrice`(첫 수익모델 항목 단가) · `isFirstStartup`(늘 비어 있음), G-01 입력의 `eligibility` · `eligibilityParsed`(Orchestrator가 넣지 않음). 웹 입력 · 결과 모양은 그대로라 웹이 할 일은 없다 | 확장 |
 | 알림 보관 | 실행 건과 함께 보관 · 실행 건을 지울 때 함께 지움, 읽음은 알림마다(11절) | 기준 문서(시트 4 `Notification`) |
 
@@ -1298,6 +1298,7 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | 2026-10-13 | 새 재작성 묶음(스위치), 표 대체 사유 코드 `fallbackReasonCodes`, 결과 통합 T-C4 실구현(`shortfallItems` · `planDocFile` 늘 `null` · `userMessage`), 목표 고객 · 창업아이템명 · 팀 구성현황 · 흐름도 제목 | 5 · 6.3 · 23 · 24 · 25 |
 | 2026-10-15 | 검수 · 첨부 추출을 흐름에서 뺌 — 화면 10 · 단계 '표현검수' 없음, 결과물 구간 · 알림 '결과물', `proofread_logs` 쓰기 없음, 관리자 검수 칸 지움 | 26 |
 | 2026-10-16 | 배포 스위치 두 개 켬 — 사업비 · 일정 필수 확인(`PLAN_TABLES_REQUIRED`), 새 재작성 묶음 `일반현황 · 개요` · `그림`(`GENERAL_BUNDLES_ENABLED`). 함수 · 결과 칸 모양은 그대로 | 3.1 · 6.3 · 20 · 23 |
-| 2026-10-19 | 가산점 스위치 켬 — 원문 대조된 공고(`bonus_verified` 참)의 카드에만 `bonusScore` · `bonusItems`. 함수 · 결과 칸 모양은 그대로 | 17 |
 | 2026-10-16 | 기준 문서 기능정의서 v1.11 · 기획서 v1.12 반영 — 새 판에 들어간 칸 · 값의 확장 · 잠정 표시만 고침. 함수 · 결과 칸 모양 · 동작은 그대로, 결과물 내려받기 화면 번호는 11 그대로(기준 문서는 10) | 13 ~ 26 |
 | 2026-10-17 | 파일 저장소 S3 — `SBRAIN_ARTIFACT_ROOT`가 `s3://<버킷>[/<접두어>]`도 받고 S3면 `AWS_REGION` 필수, 웹 · 워커 같은 값, 의존성 `boto3` · `botocore`(웹 가상환경 다시 설치), `FILE_STORE_UNAVAILABLE` 경우 늘어남, `read_artifact_file`에서 S3 오류가 올라갈 수 있음, 관리자 호출 기록 `file` 목적 `check`. 함수 이름 · 인자 · 결과 모양은 그대로, 서명 URL은 아직 없음 | 2.1 · 2.2 · 2.3 · 5.5 · 8.2 · 10.2 · 11 · 12 · 19 |
+| 2026-10-19 | 가산점 스위치 켬 — 원문 대조된 공고(`bonus_verified` 참)의 카드에만 `bonusScore` · `bonusItems`. 함수 · 결과 칸 모양은 그대로 | 5.1 · 17 |
+| 2026-10-21 | 운영 요약 총점 구간 경계 — 하한 포함 · 상한 미포함(100점은 `90~100점`), 소수 점수도 한 구간에 든다(웹과 같이). 결과 칸 모양은 그대로 | 8.6 |

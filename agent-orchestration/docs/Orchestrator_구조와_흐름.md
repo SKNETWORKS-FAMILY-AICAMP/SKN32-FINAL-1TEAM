@@ -212,7 +212,7 @@ sequenceDiagram
 | 시작 요청 입력 사본 | `form_json`은 요청이 끝나는 모든 경로(완료 · 실패 · 취소)에서 상태를 바꾸는 같은 UPDATE에서 비운다. 대기 · 처리중만 남는다 |
 | 12개월 처리 · 탈퇴 (`retire_run` · `retire_start_requests`) | 실행 건 하나 = 점유 확인 → 통계 줄 쓰기 → 여섯 기록 표(실행 기록 · 호출 기록 · 추적 사건 · 피드백 연결 · 재작성 전후 비교 · 포인터 이동) 지우기 → (완전 삭제된 실행 건 · 탈퇴면) 산출물 · 포인터 · 실행 건 줄까지 지우기를 한 트랜잭션으로. 살아 있는 실행 건은 실행 건 줄 · 산출물 · 마지막 활동 시각을 그대로 두고 `statsParts`만 올린다. 시작 요청은 (달 · 상태 · 코드)별 개수 줄과 삭제를 한 트랜잭션으로 |
 | 시각 | `DATETIME` 칸에는 시간대 없는 UTC를 넣고 읽을 때 UTC를 붙인다(`schema.py` `UtcDateTime`). 웹 표는 구조를 DB에서 읽어 오므로 `web_tables.py`가 직접 바꾼다 |
-| 접속 | MySQL은 격리 수준 READ COMMITTED(잠정). SQLite(테스트)는 모든 트랜잭션을 `BEGIN IMMEDIATE`로 시작하고 계정 잠금은 프로세스 잠금으로 대신한다(계정 잠금 대기 10초까지 — 넘기면 `StoreConflict`) |
+| 접속 | MySQL은 격리 수준 READ COMMITTED(잠정). 예외는 한 시점 읽기 구간(`read_snapshot`)의 연결 하나다 — 진행 상태 · 관리자 조회가 여러 번 묻더라도 같은 순간을 보게 그 연결만 REPEATABLE READ 한 트랜잭션으로 열고, 돌려주면 기본으로 돌아간다. SQLite(테스트)는 모든 트랜잭션을 `BEGIN IMMEDIATE`로 시작하고 계정 잠금은 프로세스 잠금으로 대신한다(계정 잠금 대기 10초까지 — 넘기면 `StoreConflict`) |
 
 ### 8.2 워커 (`worker.py`)
 
@@ -306,7 +306,7 @@ sequenceDiagram
 | 실패 사유 길이 | 500자 |
 | `deviation_cap` | 웹 `verification_policies` 값을 설정에 담아만 둔다. 편차 검사를 하지 않아 쓰지 않는다(`varianceFlag` 늘 거짓, 11.11) |
 | 설정 입력 | `verification_policies` 첫 행(배점 · Threshold · 재수행 · 재작성 횟수, 선택 컬럼 `token_retry_cap` — 검수 재수행 횟수, 쓰이지 않음). 나머지(재시도 · 재개 · 제한 시간 · Task별 모델)는 코드 기본값 — 웹팀 답 대기 |
-| MySQL 접속 | 격리 수준 READ COMMITTED, 계정 잠금 대기 10초(SQLite · 메모리 저장소도 같은 값, 11.6), 점유 시각은 서버 시계(여러 서버면 시계가 맞아야 한다) |
+| MySQL 접속 | 격리 수준 READ COMMITTED(한 시점 읽기 구간의 연결만 REPEATABLE READ), 계정 잠금 대기 10초(SQLite · 메모리 저장소도 같은 값, 11.6), 점유 시각은 서버 시계(여러 서버면 시계가 맞아야 한다) |
 | 워커의 호출처 나누기 | 구현 Task(조율 T-C1 · T-C3, 전략 · 작성 · 검증-1 T-S1 ~ T-V1, 구현 · 검증-2 T-B1 · T-B2 · T-V2)와 조율의 지시문 다시 쓰기 호출만 실제 OpenAI로, 스텁 Task 자신의 호출은 가짜 호출처로 보낸다(`TaskRoutedProvider`). T-C4는 LLM을 부르지 않는다. 이미지 호출도 같은 방식(`TaskRoutedImageProvider`) — T-B2 이미지 호출이 실제 이미지 호출처로 나간다 |
 | 완전 삭제 중 단계 진행 | 지우지 않고 BUSY — 웹이 다시 부른다 |
 
@@ -459,7 +459,7 @@ sequenceDiagram
 | 확장 표시 목록 | 기준 문서에 들어간 필드는 확장 표시가 없고, 빠졌지만 남긴 필드 · 아직 기준 문서에 없는 필드는 확장이다 | 목록 | `tests/test_basedoc_v110_markers.py` |
 | T-C3 업력 | 시트 2 T-C3 입력의 `businessAgeYears` 뒤 '(향후 도입…)'는 오기로 보고 G-01 결과로 채운다 | 해석 | `flow/catalog.py` |
 | 실행 건이 없는 프로젝트 | `missing_projects(project_ids) -> list` — 웹 일괄 작업이 알림 등 웹 행을 정리할 때 쓴다(알림은 기준 문서대로 실행 건과 함께 보관 · 함께 지움). 저장소 `existing_projects`(시작 요청을 먼저 · 실행 건을 나중에, 잠금 없이) | 확장 | `flow/service.py` · `orchestrator/store.py` · `orchestrator/memory_store.py` · `store_sql/store.py` |
-| 한 번에 묻는 프로젝트 수 | 500 — SQL 저장소가 IN 하나에 싣는 수 | 잠정(조정값) | `store_sql/store.py` `PROJECT_CHUNK` |
+| 한 번에 묻는 프로젝트 수 | 500 — SQL 저장소가 IN 하나에 싣는 프로젝트 · 실행 건 수(`missing_projects`, 한 시점 읽기 구간의 묶어 읽기) | 잠정(조정값) | `store_sql/store.py` `PROJECT_CHUNK` |
 
 ### 11.10 산출물 파일 참조형의 잠정 · 확장
 
@@ -758,7 +758,7 @@ OpenAI 공식 오류 코드 문서를 근거로 호출 실패를 응답 코드 �
 | `test_more_candidates.py` | 추가 조회 겹침 빼기 · 첫 조회 카드 갱신 · 내용 바뀜 참 · 거짓, 막힌 공고 풀기, 오류 · 수집 상태 비정상 때 기회 반환과 화면 3 값 유지, 마감 임박순 안내 |
 | `test_gate_stubs.py` | 스텁 공고 · 스텁 G-01 판정 규칙(업력 상한 없음 · 확인 필요 · 공고 없음 · 설립일 없음) · 업력 계산, 스텁 T-C2 상황 조절 |
 | `test_notice_client.py` | 공고 서버 클라이언트(127.0.0.1 임시 서버) — 시간 초과 · 연결 실패 · HTTP 오류 · JSON 오류 변환, 404 + `NOTICE_NOT_FOUND`와 코드 없는 404 구분, 공고 ID 퍼센트 인코딩, 예외 메시지에 주소 · 본문 없음, 호출 하나씩 |
-| `test_notice_tc2.py` | 실제 T-C2(가짜 전송) — 보내는 칸 · 시 · 도 바꾸기, 카드 변환 · 가산점(스위치 켜짐 · 꺼짐 — 꺼지면 잘못된 모양도 무시) · 내용 버전 · 추천 이유 · 받은 순서, 약속한 키 · 유한한 수 검사 |
+| `test_notice_tc2.py` | 실제 T-C2(가짜 전송) — 보내는 칸 · 시 · 도 바꾸기, 카드 변환 · 가산점(스위치 켜짐 · 꺼짐 — 켜져도 원문 대조(`bonus_verified`)된 공고만, 꺼지거나 대조 전이면 잘못된 모양도 무시) · 내용 버전 · 추천 이유 · 받은 순서, 약속한 키 · 유한한 수 검사 |
 | `test_notice_g01.py` | 실제 G-01(가짜 전송) — 상세 → 선택 공고, 판정 → 자격 결과 · 업력(사사오입, 스텁도 같은 함수), 설립일 없는 사업자, 공고 없음 → `ResourceNotFound`, 약속 밖 응답 거절 |
 | `test_notice_flow.py` | 공고 서버 연결 앱의 흐름(가짜 전송) — 공고 선택 · 자격 확인 · 추가 조회 · 막힌 공고가 실제 T-C2 · G-01로 |
 | `test_clock.py` | 시각 — 도움 함수, 모델이 시간대 없는 값을 UTC로 보고 시간대 표시로 내보냄, DB 칸은 시간대 없는 UTC, 웹 표에서 읽은 알림 시각, 웹 결과의 모든 시각 UTC, 시간대 없는 웹 인자, G-01 기준일 · 마감 안내는 한국 날짜, 워커 로그 UTC, 옛 JSON 시각 비교 |

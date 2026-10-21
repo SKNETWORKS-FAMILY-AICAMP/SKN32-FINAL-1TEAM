@@ -15,6 +15,8 @@
 - 탈퇴(delete_account_data, 확장): 계정 잠금 안에서 중단 · 취소한 뒤 그 계정의 실행 건 · 시작 요청을 통계 줄로 옮기고 지운다.
 - 웹이 쓰는 조회: view_project · project_views · missing_projects · wait_project · outputs · rework_result · active_work,
   관리자 admin_runs · admin_score_history · admin_summary · admin_agent_tasks (모양은 flow/reads.py).
+- 진행 상태 조회(view · view_project · project_views, wait_project의 끝 조회)는 호출 한 번에 저장소의 한 시점 읽기 구간
+  (store.read_snapshot) 하나에서 읽고, 구간을 닫은 뒤 화면 칸을 만든다(성능 측정 C 후속, 2026-10-20).
 - 산출물 파일(확장): 웹 read_artifact_file(파일 내용 · 형식), 관리자 admin_file_deletions(삭제 대기열 목록) ·
   admin_retry_file_deletion(포기한 줄 다시 시도). 웹 조립에서 부를 수 있다. 웹은 파일을 쓰지도 지우지도 않는다.
 """
@@ -37,9 +39,11 @@ from ..orchestrator.engine import Engine
 from ..orchestrator.errors import CommandError, StoreConflict, message
 from ..orchestrator.files import FileStore
 from ..orchestrator.settings import SettingsProvider
-from ..orchestrator.store import FINISHED_REQUEST, PENDING_REQUEST, RunFilter, StartRequest
+from ..orchestrator.store import (
+    FINISHED_REQUEST, PENDING_REQUEST, ArtifactVersion, RunFilter, SnapshotReads, StartRequest,
+)
 from . import reads
-from .catalog import FORM_SPEC
+from .catalog import FORM_SPEC, SA
 from .log_stats import start_request_rows
 from .retention import gather_run_stats
 # 묶음 이름 → 층은 부를 때마다 그때의 표 · 스위치로 읽는다(bundle_layer — 새 묶음 스위치를 켜거나 끄면 접수가 바로 따라간다)
@@ -205,6 +209,22 @@ class RunView:
     rework_screen: int | None = None
     collecting: bool = False
     announcement_id: str | None = None
+
+
+@dataclass(frozen=True)
+class _ViewReads:
+    """진행 상태를 만들려고 한 시점 구간 안에서 읽은 것 (성능 측정 C 후속, 2026-10-20).
+
+    notifications: 넘긴 실행 건마다 알림(모두 키). announcements: 마감 안내를 볼 실행 건(_watches_deadline) 중 선택 공고
+    포인터가 있는 것의 현재 버전.
+    """
+    notifications: dict[str, list[Notification]]
+    announcements: dict[str, ArtifactVersion]
+
+
+def _watches_deadline(run: Run) -> bool:
+    """마감 안내를 볼 실행 건 — 진행 중(실행 · 재개대기 · 사용자대기)이고 공고를 골랐다."""
+    return run.state.progress in ACTIVE_PROGRESS and bool(run.announcement_id)
 
 
 class SBrainOrchestrator:
@@ -775,31 +795,58 @@ class SBrainOrchestrator:
             self.store.release(run_id, owner)   # 지웠으면 할 일 없음
 
     # ── 화면 상태 · 이어하기 ───────────────────────────
+    # 진행 상태 조회(view · view_project · project_views, wait_project의 끝 조회)는 호출 한 번에 한 시점 구간 하나만 연다
+    # (성능 측정 C 후속, 2026-10-20). 구간 안에서는 창구로 DB를 읽기만 하고 — 저장소 일반 메서드 · 실행 건
+    # 컨텍스트(open_context) · 실행 기록 · 최신 버전은 부르지 않는다 — 계산(형식 검사 · 등록부 · 화면 칸)은 구간을 닫은 뒤에 한다.
     def view(self, run_id: str) -> RunView:
-        return self._view(self.store.load_run(run_id))
+        """실행 건 하나의 진행 상태 — 실행 건 · 알림 · 선택 공고를 한 시점 구간 하나에서 읽는다. 없는 실행 건이면 KeyError."""
+        with self.store.read_snapshot() as snap:
+            run = snap.load_run(run_id)
+            seen = self._read_for_views(snap, [run])
+        return self._views([run], seen)[0]
 
-    def _view(self, run: Run) -> RunView:
-        notices = list(run.notices)
-        if run.state.progress in ACTIVE_PROGRESS and run.announcement_id:
+    @staticmethod
+    def _read_for_views(snap: SnapshotReads, runs: list[Run]) -> _ViewReads:
+        """구간 안에서 — 실행 건들의 알림과, 마감 안내를 볼 실행 건(진행 중 · 공고 고름)의 선택 공고 현재 버전을 읽는다.
+
+        목록이 비면 창구가 DB에 문장을 보내지 않는다. 포인터는 있는데 버전 행이 없으면(깨진 데이터) 창구의 KeyError가 그대로
+        올라간다(받지 않는다).
+        """
+        watched = [run.run_id for run in runs if _watches_deadline(run)]
+        return _ViewReads(notifications=snap.notifications_for_runs([run.run_id for run in runs]),
+                          announcements=snap.current_artifacts(SA, watched))
+
+    def _views(self, runs: list[Run], seen: _ViewReads) -> list[RunView]:
+        """구간을 닫은 뒤 — 읽어 둔 값으로 넘긴 순서 · 넘긴 횟수대로 진행 상태를 만든다. 사용자용이라 실패 사유는 싣지 않는다.
+
+        시계는 실행 건마다 이 자리 · 이 순서로만 부른다: 마감일 비교(선택 공고에 마감일이 있을 때만) → 안내 시각(안내를 붙일
+        때만) → collecting. 선택 공고는 RunContext.get과 같은 형식 검사(engine.types)로 모델로 바꾼다.
+        """
+        adapter = self.engine.types.adapter(SA)
+        views: list[RunView] = []
+        for run in runs:
+            notices = list(run.notices)
+            stored = seen.announcements.get(run.run_id) if _watches_deadline(run) else None
+            ann = adapter.validate_python(stored.value) if stored is not None else None
             # 마감 안내 — 마감일이 지났거나(비어 있으면 보지 않음, 오늘은 한국 날짜), G-01이 상세를 받을 때
             # 모집 상태가 '마감'. 알리기만 하고 진행을 막지 않는다
-            ctx = self.engine.open_context(run)
-            ann = ctx.get("selectedAnnouncement", default=None)
             if ann is not None and ((ann.apply_end is not None and ann.apply_end < kst_today(self.now()))
                                     or ann.status == "마감"):
                 notices.append(Notice(code="E-RUN-CLOSED", message=message("E-RUN-CLOSED"), at=self.now()))
-        percent = progress_percent(run)
-        current = run.queue[0] if run.queue else None
-        label = None
-        if current:
-            label = STEP_LABEL.get(current) or self.engine.registry.get(current).name
-        return RunView(run_id=run.run_id, step=run.state.step, progress=run.state.progress,
-                       screen_status=run.state.screen_status, resume_step=run.state.resume_step,
-                       percent=percent, current_label=label, notices=notices,
-                       notifications=self.store.notifications(run.run_id),
-                       retry_count=run.retry_count, resume_count=run.resume_count, next_resume_at=run.next_resume_at,
-                       last_error_kind=run.last_error_kind, rework_screen=run.rework_screen,
-                       collecting=collecting(run, self.now()), announcement_id=run.announcement_id)
+            percent = progress_percent(run)
+            current = run.queue[0] if run.queue else None
+            label = None
+            if current:
+                label = STEP_LABEL.get(current) or self.engine.registry.get(current).name
+            views.append(RunView(
+                run_id=run.run_id, step=run.state.step, progress=run.state.progress,
+                screen_status=run.state.screen_status, resume_step=run.state.resume_step,
+                percent=percent, current_label=label, notices=notices,
+                notifications=list(seen.notifications[run.run_id]),
+                retry_count=run.retry_count, resume_count=run.resume_count, next_resume_at=run.next_resume_at,
+                last_error_kind=run.last_error_kind, rework_screen=run.rework_screen,
+                collecting=collecting(run, self.now()), announcement_id=run.announcement_id))
+        return views
 
     # ── 웹 명령 (project_id로 받는다, 확장) ─────────────
     # 웹은 project_id만 안다. 안에서 실행 건을 찾아 run_id 명령을 부른다. 실행 건이 없으면 RUN_NOT_FOUND.
@@ -825,21 +872,37 @@ class SBrainOrchestrator:
 
     # ── 웹 조회 (project_id로 받는다, 확장) ─────────────
     def view_project(self, project_id: int | str) -> ProjectView:
-        """지금의 view() + 실행 건이 없으면 시작 요청 상태. 둘 다 없으면 run · start가 모두 None."""
-        run = self.store.find_run_by_project(project_id)
+        """지금의 view() + 실행 건이 없으면 시작 요청 상태. 둘 다 없으면 run · start가 모두 None.
+
+        한 시점 구간 하나에서 실행 건을 찾고, 없으면 그 프로젝트의 마지막 시작 요청을 읽는다 — 시작 요청이 실행 건이 되는
+        순간에도 둘 중 한 순간만 보인다. 실행 건이 있으면 그 알림 · 선택 공고도 같은 구간에서 읽는다.
+        """
+        with self.store.read_snapshot() as snap:
+            run = snap.find_run_by_project(project_id)
+            req = snap.latest_start_request(project_id) if run is None else None
+            seen = self._read_for_views(snap, [run] if run is not None else [])
         if run is not None:
-            return ProjectView(str(project_id), run=self._view(run))
-        return ProjectView(str(project_id), start=self.start_status(project_id))
+            return ProjectView(str(project_id), run=self._views([run], seen)[0])
+        return ProjectView(str(project_id), start=self._start_status(req) if req is not None else None)
 
     def project_views(self, project_ids: Iterable[int | str]) -> list[ProjectView]:
-        """여러 프로젝트의 view_project를 한 번에 (확장) — 넘긴 순서대로. 실행 건 · 마지막 시작 요청은 한 번씩 모아 읽는다."""
+        """여러 프로젝트의 view_project를 한 번에 (확장) — 넘긴 순서대로(같은 프로젝트를 다시 넘기면 다시 한 줄).
+
+        한 시점 구간 하나에서 실행 건을 모아 읽고 → 실행 건이 없는 프로젝트의 마지막 시작 요청 → 실행 건들의 알림 · 선택 공고를
+        한 번씩 모아 읽는다. 각 줄은 같은 순간에 그 프로젝트 하나로 부른 view_project와 같다(정수 표준형 ID 기준 — 실행 건은
+        projectId 문자열로 맞춘다). 빈 목록이면 구간을 열지 않고 [].
+        """
         ids = [str(p) for p in project_ids]
         if not ids:
             return []
-        runs = {r.project_id: r for r in self.store.query_runs(RunFilter(project_ids=tuple(ids), limit=None))}
-        missing = [p for p in ids if p not in runs]
-        reqs = self.store.latest_start_requests(missing) if missing else {}
-        return [ProjectView(p, run=self._view(runs[p])) if p in runs else
+        with self.store.read_snapshot() as snap:
+            runs = {r.project_id: r for r in snap.query_runs(RunFilter(project_ids=tuple(ids), limit=None))}
+            missing = [p for p in ids if p not in runs]
+            reqs = snap.latest_start_requests(missing) if missing else {}
+            seen = self._read_for_views(snap, [runs[p] for p in dict.fromkeys(ids) if p in runs])
+        # 진행 상태는 넘긴 순서 · 횟수대로 만든다 — 시계도 프로젝트마다 그 순서로 부른다
+        views = iter(self._views([runs[p] for p in ids if p in runs], seen))
+        return [ProjectView(p, run=next(views)) if p in runs else
                 ProjectView(p, start=self._start_status(reqs[p]) if p in reqs else None) for p in ids]
 
     def missing_projects(self, project_ids: Iterable[int | str]) -> list[int | str]:
@@ -874,6 +937,7 @@ class SBrainOrchestrator:
         멈춤 = 마지막 시작 요청이 대기 · 처리중이 아니고, 실행 건이 '실행'(재작성 요청을 모으는 중 포함)이 아님.
         재개대기 · 사용자대기 · 끝난 상태면 기다리지 않고 바로 준다. 제한 시간(잠정 기본 60초)을 넘기면 그때의 상태를
         그대로 준다(오류 아님). DB를 잠정 0.5초마다 다시 읽고, 다시 읽는 횟수도 제한 시간 / 간격을 넘지 않는다.
+        기다리는 반복(_settled)은 한 시점 구간을 쓰지 않고, 끝에 돌려주는 view_project만 구간 하나에서 읽는다.
         """
         timeout_sec = max(float(timeout_sec), 0.0)
         deadline = self.now() + timedelta(seconds=timeout_sec)

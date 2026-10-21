@@ -55,8 +55,8 @@ from ..orchestrator.errors import CommandError, FileDeletionNotFound, FileDeleti
 from ..orchestrator.files import FileMissing, sha256_hex
 from ..orchestrator.store import FILE_DELETION_STATUSES, ExecutionFilter, FileDeletion, RunFilter
 from ..orchestrator.trace import ExecutionRecord
-# 층별 채점 출처 · 현재 점수는 기록 통계 줄(finalScores · scores)과 같은 정의 하나 — log_stats.py에 있다
-from .log_stats import SCORE_LAYERS, layer_score
+# 층별 채점 출처 · 현재 점수 · 채점 Task 목록은 기록 통계 줄(finalScores · scores)과 같은 정의 하나 — log_stats.py에 있다
+from .log_stats import SCORE_LAYERS, layer_score, scored_task_ids
 from .log_stats import current_scores as _current_scores
 from .catalog import OUT_OF_FLOW_STEPS
 from .retention import retention_cutoff
@@ -794,8 +794,13 @@ def _score_events(records: list[ExecutionRecord], maxes: ScoreMaxes) -> dict[str
     return events
 
 
+def _mean(total: float, count: int) -> float | None:
+    """합 ÷ 수, 소수 1자리. 수가 0이면 None."""
+    return round(total / count, 1) if count else None
+
+
 def _avg(values: list[float]) -> float | None:
-    return round(sum(values) / len(values), 1) if values else None
+    return _mean(sum(values), len(values))
 
 
 def _rate(part: int, whole: int) -> float | None:
@@ -811,20 +816,33 @@ def admin_runs(orch: SBrainOrchestrator, *, progress: str | None = None, step: s
                offset: int = 0) -> list[AdminRun]:
     """여러 프로젝트의 실행 건 (마지막 갱신 최근 순). 진행 상태 · 단계로 거르고 limit · offset으로 나눈다.
 
-    마지막 활동(updated_at)이 최근 12개월 안인 실행 건만 — 기준 시각은 보관 기간 작업과 같은 계산(retention_cutoff).
+    범위: 마지막 활동(updated_at)이 최근 12개월 안인 실행 건만 — 기준 시각은 보관 기간 작업과 같은 계산(retention_cutoff)이고,
+    읽기 조건이라 한 시점 구간을 열기 전에 한 번 구한다(이 호출의 시계 호출은 이것 하나).
+
+    읽는 법(성능 측정 C 후속, 2026-10-20): 호출 한 번에 저장소의 한 시점 읽기 구간(read_snapshot) 하나를 열고 그
+    창구로 실행 건 목록 → 그 실행 건들의 포인터 → 채점 기록(채점 Task — log_stats.scored_task_ids — 의 성공한 실행 기록만,
+    실행 건마다 처음 기록된 순서) → 마지막 시도 번호를 읽는다. 실행 기록 전부를 읽지 않고, 다른 워커의 저장 · 되돌리기 ·
+    완전 삭제 · 탈퇴가 끼어도 한 순간의 값이다. 점수 계산 · 등록부 조회는 구간을 닫은 뒤에 한다. SQL 문장 수는 한 페이지의
+    실행 건이 PROJECT_CHUNK(store_sql) 이하면 실행 건 수와 관계없다. 페이지를 넘기는 호출 사이의 겹침 · 빠짐은 전과 같다.
     """
+    since = _admin_since(orch)
+    tasks = scored_task_ids(orch.engine.registry.specs())
+    with orch.store.read_snapshot() as snap:
+        runs = snap.query_runs(RunFilter(progress=progress, step=step, limit=limit, offset=offset, updated_since=since))
+        ids = [run.run_id for run in runs]
+        pointers = snap.pointers_for_runs(ids)
+        scored = snap.scored_executions(ids, tasks)
+        attempts = snap.last_attempts(ids)
     out = []
-    for run in orch.store.query_runs(RunFilter(progress=progress, step=step, limit=limit, offset=offset,
-                                               updated_since=_admin_since(orch))):
-        records = orch.store.executions(run.run_id)
+    for run in runs:
         maxes = score_maxes(run.settings_snapshot)   # 그 실행 건 배점 — 지금 설정이 아니다
-        scores = _current_scores(orch.store.get_pointers(run.run_id), records, maxes=maxes)
+        scores = _current_scores(pointers[run.run_id], scored[run.run_id], maxes=maxes)
         # 지금 Task — 대기열 맨 앞(도는 중 · 다음에 돌 단계, 재개대기면 재개할 단계), 대기열이 비었으면 마지막으로 돈 단계
         task = run.queue[0] if run.queue else run.current_task
         agent = orch.engine.registry.get(task).agent if task and orch.engine.registry.has(task) else None
         out.append(AdminRun(
             project_id=run.project_id, run_id=run.run_id, step=run.state.step, progress=run.state.progress,
-            current_task=task, agent=agent, attempt=records[-1].attempt if records else None,
+            current_task=task, agent=agent, attempt=attempts.get(run.run_id),
             updated_at=run.updated_at, doc_score=scores["doc"], artifact_score=scores["artifact"],
             total_score=scores["total"], resume_count=run.resume_count, last_error_kind=run.last_error_kind,
             failure_reason=run.failure_reason, doc_max=maxes.doc, artifact_max=maxes.artifact))
@@ -862,36 +880,44 @@ def admin_summary(orch: SBrainOrchestrator) -> AdminSummary:
     - 검수(표현 검수 시도 · 반려) 칸은 없다 — 검수가 흐름에서 빠졌다.
 
     범위: 마지막 활동(updated_at)이 최근 12개월 안인 실행 건과 그 실행 건들의 실행 기록만 센다(admin_runs와 같은 기준
-    시각, retention_cutoff) — 진행 상태별 건수 · 점수 · 재작성 · 층별 변화 · 계기별 · 토큰이 모두 같은 범위다.
+    시각, retention_cutoff — 한 시점 구간을 열기 전에 한 번 구한다) — 진행 상태별 건수 · 점수 · 재작성 · 층별 변화 · 계기별 ·
+    토큰이 모두 같은 범위다. 범위 밖(12개월 전) 실행 건의 기록은 읽지도 세지도 않는다.
+
+    읽는 법(성능 측정 C 후속, 2026-10-20): 호출 한 번에 저장소의 한 시점 읽기 구간(read_snapshot) 하나를 열고 그
+    창구로 범위 안 실행 건 목록 → 범위의 실행 기록 집계(계기별 수 · 글 토큰 합 · 실행 건 수, 이미지 토큰 합, 기록이 있는 실행
+    건 수 — SQL은 DB에서 센다) → 범위의 채점 기록(채점 Task — log_stats.scored_task_ids — 의 성공한 실행 기록만, (시작 시각,
+    기록 순)) → 범위의 포인터를 읽는다. 실행 기록 전부를 읽지 않고, 다른 워커의 저장 · 되돌리기 · 완전 삭제 · 탈퇴 · 12개월
+    처리가 끼어도 한 순간의 값이다. 모두 범위 조건으로 묻는 범위판이라 SQL 문장 수는 실행 건 수와 관계없이 고정이다. 점수 ·
+    층별 변화 계산은 구간을 닫은 뒤에, 기준 점수(지금 설정)는 구간 밖에서 읽는다.
 
     우리 기록으로 셀 수 없어 뺀 것: 실행 건이 없는 프로젝트(웹의 '공고 매칭 전')는 세지 않고, 진행 상태는 웹의 상태
     표시('판단 대기' 등) 대신 실행 건의 진행 상태로 센다. 완전 삭제한 실행 건은 현재 점수를 셀 수 없어 그 항목에서
     빠진다(채점 이력 · 실행 기록 수 · 토큰은 남는다).
     """
-    runs = orch.store.query_runs(RunFilter(limit=None, updated_since=_admin_since(orch)))
-    in_scope = {run.run_id for run in runs}
+    since = _admin_since(orch)
+    tasks = scored_task_ids(orch.engine.registry.specs())
+    with orch.store.read_snapshot() as snap:
+        runs = snap.query_runs(RunFilter(limit=None, updated_since=since))
+        tally = snap.execution_totals_since(since)
+        scored = snap.scored_executions_since(since, tasks)
+        pointers = snap.pointers_since(since)
     by_run: dict[str, list[ExecutionRecord]] = defaultdict(list)
-    for row in orch.store.list_executions(ExecutionFilter(limit=None, order="asc")):
-        if row.record.run_id in in_scope:   # 범위 밖(12개월 전) 실행 건의 기록은 세지 않는다
-            by_run[row.record.run_id].append(row.record)
+    for record in scored:   # (시작 시각, 기록 순) — 실행 건마다 그 순서 그대로
+        by_run[record.run_id].append(record)
     status: Counter[str] = Counter()
     docs: list[float] = []
     totals: list[float] = []
     firsts: dict[str, list[float]] = defaultdict(list)
     afters: dict[str, list[float]] = defaultdict(list)
-    reworked = 0
     for run in runs:
         status[run.state.progress] += 1
         records = by_run.get(run.run_id, [])
-        pointers = orch.store.get_pointers(run.run_id)
         maxes = score_maxes(run.settings_snapshot)   # 실행 건마다 그 실행 건 배점으로 환산
-        scores = _current_scores(pointers, records, maxes=maxes)
+        scores = _current_scores(pointers[run.run_id], records, maxes=maxes)
         if scores["doc"] is not None:
             docs.append(scores["doc"])
         if scores["total"] is not None:
             totals.append(scores["total"])
-        if any(r.trigger == "재작성" for r in records):
-            reworked += 1
         for layer, entries in _score_events(records, maxes).items():
             after = [e for e in entries if e.after_rework]
             if entries and after and after[-1].execution_id != entries[0].execution_id:
@@ -905,16 +931,15 @@ def admin_summary(orch: SBrainOrchestrator) -> AdminSummary:
         delta = round(after_avg - first_avg, 1) if first_avg is not None and after_avg is not None else None
         changes.append(LayerChange(layer=layer, first_avg=first_avg, after_avg=after_avg, delta=delta,
                                    count=len(firsts[layer])))
-    every = [r for records in by_run.values() for r in records]
-
-    def tokens(r: ExecutionRecord) -> int:
-        return (r.input_tokens or 0) + (r.output_tokens or 0)
     triggers = []
-    for trig in TRIGGERS:
-        mine = [r for r in every if r.trigger == trig]
-        triggers.append(TriggerStat(trigger=trig, count=len(mine),
-                                    avg_tokens=_avg([float(tokens(r)) for r in mine])))
-    with_exec = sum(1 for run in runs if by_run.get(run.run_id))
+    for trig in TRIGGERS:   # 기록이 없는 계기는 수 0 · 평균 None
+        stat = tally.by_trigger.get(trig)
+        count = stat.count if stat is not None else 0
+        triggers.append(TriggerStat(trigger=trig, count=count,
+                                    avg_tokens=_mean(stat.text_tokens, count) if stat is not None else None))
+    rework = tally.by_trigger.get("재작성")
+    reworked = rework.runs if rework is not None else 0   # 재작성 실행 기록이 있는 실행 건
+    with_exec = tally.runs_with_executions
     return AdminSummary(
         status_counts={p: status.get(p, 0) for p in typing.get_args(RunProgress)},
         doc_avg=_avg(docs), doc_count=len(docs), total_avg=_avg(totals), total_count=len(totals),
@@ -922,8 +947,8 @@ def admin_summary(orch: SBrainOrchestrator) -> AdminSummary:
         reworked_runs=reworked, runs_with_executions=with_exec, rework_rate=_rate(reworked, with_exec),
         score_buckets=[ScoreBucket(label=label, count=sum(1 for t in totals if lo <= t < hi or (hi == 100 and t == 100)))
                        for label, lo, hi in SCORE_BUCKETS],
-        layer_changes=changes, triggers=triggers, total_tokens=sum(tokens(r) for r in every),
-        total_image_tokens=sum((r.image_input_tokens or 0) + (r.image_output_tokens or 0) for r in every))
+        layer_changes=changes, triggers=triggers, total_tokens=tally.text_tokens,
+        total_image_tokens=tally.image_tokens)
 
 
 def admin_agent_tasks(orch: SBrainOrchestrator) -> list[AdminAgentTask]:

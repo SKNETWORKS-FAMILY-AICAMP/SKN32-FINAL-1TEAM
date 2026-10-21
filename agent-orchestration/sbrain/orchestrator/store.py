@@ -14,6 +14,8 @@
 - 기록 옮기기(확장): 보관 기간이 지난 실행 건의 기록을 식별자 없는 통계 줄(LogStatsRow)로 옮기고 지운다(retire_run ·
   retire_start_requests). 실행 건 점유를 잡은 쪽만 하고, 마지막 활동 시각을 바꾸지 않는다. 주기 작업은 작업 점유
   (try_start_job …)로 여러 워커 중 하나만 돈다.
+- 한 시점 읽기 구간(확장 — 성능 측정 C 후속, 2026-10-20): read_snapshot()이 돌려주는 읽기 창구(SnapshotReads)로
+  부른 읽기는 모두 같은 순간의 DB 상태를 본다. 여러 실행 건을 한 번에 읽는 묶어 읽기는 이 창구에만 있다.
 """
 from __future__ import annotations
 
@@ -191,6 +193,31 @@ class ExecutionRow:
     record: ExecutionRecord
 
 
+# 실행 기록 상태 '성공' — 한 시점 창구의 채점 기록 읽기가 거르는 값(엔진이 성공한 실행 기록에 쓰는 값과 같다)
+EXECUTION_SUCCEEDED = "성공"
+
+
+@dataclass(frozen=True)
+class TriggerTotals:
+    """실행 기록 집계의 계기 하나 (확장 — 한 시점 창구의 execution_totals_since)."""
+    count: int          # 그 계기의 실행 기록 수
+    text_tokens: int    # 글 토큰 합 — 입력 + 출력 (기록에 값이 없으면 0)
+    runs: int           # 그 계기의 실행 기록이 하나라도 있는 실행 건 수
+
+
+@dataclass(frozen=True)
+class ExecutionTotals:
+    """범위 안 실행 건들의 실행 기록 전체 집계 (확장 — 한 시점 창구의 execution_totals_since).
+
+    by_trigger는 기록에 나온 계기 값 그대로 묶는다(첫실행 · 재작성 · 재수행 중 기록이 없는 계기는 키가 없다 — 0으로 채우는
+    일은 부르는 쪽). 재작성 계기 기록이 있는 실행 건 수는 by_trigger['재작성'].runs다.
+    """
+    by_trigger: dict[str, TriggerTotals]
+    text_tokens: int            # 글 토큰 총합 — 입력 + 출력 (없는 값은 0)
+    image_tokens: int           # 이미지 토큰 총합 — 이미지 입력 + 출력 (없는 값은 0)
+    runs_with_executions: int   # 실행 기록이 하나라도 있는 실행 건 수
+
+
 class StartRequest(SBModel):
     """확장 — 사전 단계 시작 요청. 웹 요청 안에서 검사를 통과하면 '대기'로 쌓이고, 워커가 처리한다."""
     request_id: str
@@ -212,7 +239,99 @@ class StartRequest(SBModel):
     finished_at: datetime | None = None
 
 
+class SnapshotReads(Protocol):
+    """한 시점 읽기 구간의 읽기 창구 (확장 — 성능 측정 C 후속, 2026-10-20). Store.read_snapshot()이 돌려준다.
+
+    이 창구로 부른 읽기는 모두 같은 순간의 DB 상태를 본다. 읽기만 있고 쓰기 메서드는 없다. 구간이 끝난 뒤에는 쓰지 않는다
+    (RuntimeError).
+    - 같은 이름의 Store 읽기(load_run · find_run_by_project · query_runs · latest_start_request(s))는 같은 인자 · 같은 값이다.
+    - 묶어 읽기 공통: 같은 실행 건 ID는 한 번만 본다. 없는 실행 건은 빈 값이다. ID 목록이 비면 DB에 문장을 보내지 않는다.
+      SQL 저장소는 ID 목록을 store_sql.store.PROJECT_CHUNK개씩 나눠 묻는다(문장 수는 넘긴 실행 건 수가 아니라 묶음 수만큼).
+    - 범위판(…_since)은 마지막 활동(실행 건 줄 updated_at)이 updated_since 이상(같은 시각 포함)인 실행 건을 조건으로 묻는다
+      — ID 목록을 넘기지 않아 실행 건 수와 관계없이 문장 수가 고정이다. 시간대 없는 값은 UTC로 본다.
+    - 채점 Task 목록(task_ids)은 부르는 쪽(흐름)이 정해 넘긴다 — 저장소는 Task ID를 모른다.
+    """
+
+    def load_run(self, run_id: str) -> Run:
+        """Store.load_run과 같다 (없으면 KeyError)."""
+
+    def find_run_by_project(self, project_id: int | str) -> Run | None:
+        """Store.find_run_by_project와 같다."""
+
+    def query_runs(self, f: RunFilter) -> list[Run]:
+        """Store.query_runs와 같다."""
+
+    def latest_start_request(self, project_id: int | str) -> StartRequest | None:
+        """Store.latest_start_request와 같다."""
+
+    def latest_start_requests(self, project_ids: Iterable[int | str]) -> dict[str, StartRequest]:
+        """Store.latest_start_requests와 같다."""
+
+    def notifications_for_runs(self, run_ids: Iterable[str]) -> dict[str, list[Notification]]:
+        """{실행 건 ID: 알림 목록} — 실행 건마다 Store.notifications(run_id)와 같은 값 · 같은 순서(알림 ID 순).
+
+        넘긴 실행 건은 모두 키로 있다(없는 실행 건 · 알림 없음은 빈 목록). SQL은 실행 건 줄의 project_id로 웹 notifications를
+        읽고(NULL이면 빈 목록), 메모리는 실행 건 ID로 읽는다.
+        """
+
+    def current_artifacts(self, key: str, run_ids: Iterable[str]) -> dict[str, ArtifactVersion]:
+        """{실행 건 ID: key의 현재 버전} — get_artifact(run_id, key, get_pointers(run_id)[key])와 같다.
+
+        그 key의 포인터가 있는 실행 건만 키로 있다. 포인터는 있는데 그 버전 행이 없으면(깨진 데이터) KeyError —
+        get_artifact의 KeyError와 같은 모양((run_id, key, version)).
+        """
+
+    def pointers_for_runs(self, run_ids: Iterable[str]) -> dict[str, dict[str, int]]:
+        """{실행 건 ID: {key: version}} — 실행 건마다 get_pointers(run_id)와 같다. 넘긴 실행 건은 모두 키로(없으면 빈 dict)."""
+
+    def scored_executions(self, run_ids: Iterable[str], task_ids: Iterable[str]) -> dict[str, list[ExecutionRecord]]:
+        """채점 기록 읽기 — ID 목록판. {실행 건 ID: 실행 기록 목록}.
+
+        실행 기록 중 상태가 '성공'이고 Task ID가 task_ids에 드는 것만, 실행 건마다 처음 기록된 순서(executions(run_id)와
+        같은 순서 — 덮어쓴 기록은 처음 자리). 넘긴 실행 건은 모두 키로 있다(없으면 빈 목록). task_ids가 비면 문장 없이 빈 목록.
+        """
+
+    def scored_executions_since(self, updated_since: datetime, task_ids: Iterable[str]) -> list[ExecutionRecord]:
+        """채점 기록 읽기 — 범위판. 마지막 활동이 updated_since 이상인 실행 건들의 실행 기록 중 상태가 '성공'이고 Task ID가
+        task_ids에 드는 것만. 순서는 (시작 시각, 기록 순) — list_executions(ExecutionFilter(order="asc"))와 같다
+        (시작 시각이 없으면 맨 앞). task_ids가 비면 문장 없이 빈 목록."""
+
+    def last_attempts(self, run_ids: Iterable[str]) -> dict[str, int]:
+        """{실행 건 ID: 시도 번호} — 실행 건마다 가장 나중에 기록된 실행 기록(상태 무관)의 attempt.
+
+        executions(run_id)[-1].attempt와 같다(덮어쓴 기록은 처음 기록된 자리). 실행 기록이 없는 실행 건은 키가 없다.
+        """
+
+    def pointers_since(self, updated_since: datetime) -> dict[str, dict[str, int]]:
+        """범위의 포인터 — 마지막 활동이 updated_since 이상인 실행 건마다 get_pointers(run_id)와 같은 값.
+
+        범위 안 실행 건은 모두 키로 있다(포인터가 없으면 빈 dict).
+        """
+
+    def execution_totals_since(self, updated_since: datetime) -> ExecutionTotals:
+        """범위의 실행 기록 집계 — 마지막 활동이 updated_since 이상인 실행 건들의 실행 기록 전체(상태 무관)에서 센다.
+
+        실행 기록 JSON에서 센 값과 같다. SQL은 DB에서 센다(실행 기록 컬럼 — JSON을 풀지 않음).
+        """
+
+
 class Store(Protocol):
+    # ── 한 시점 읽기 구간 (확장 — 성능 측정 C 후속, 2026-10-20) ──
+    def read_snapshot(self) -> AbstractContextManager[SnapshotReads]:
+        """구간 동안 같은 순간의 DB 상태를 보는 읽기 창구를 돌려준다 (컨텍스트 관리자).
+
+        - 메모리: 구간 동안 저장소 잠금(RLock)을 쥔다 — 다른 스레드의 쓰기(와 읽기)는 구간이 끝날 때까지 기다린다.
+        - SQL: 연결 하나를 꺼내 트랜잭션 하나에서 창구의 모든 읽기를 그 연결로 한다. 끝나면(예외 포함) 되돌리고 돌려준다.
+          SQLite는 엔진의 BEGIN IMMEDIATE 그대로라 다른 연결의 트랜잭션(쓰기 · 읽기)이 기다린다. MySQL은 그 연결만
+          REPEATABLE READ로 열어 일관된 읽기를 한다 — 잠그지 않으므로 다른 쓰기는 기다리지 않고, 돌려준 뒤 그 연결은
+          엔진 기본(READ COMMITTED)으로 돌아간다.
+        - 구간 안에서 예외가 나면 트랜잭션을 되돌리고 연결을 돌려준 뒤 그 예외를 그대로 올린다.
+        - 부르는 쪽 규칙: 구간을 겹쳐 열지 않고, 구간 안에서 이 저장소의 일반 메서드를 부르지 않는다(SQLite는 다른 연결이라
+          구간이 끝날 때까지 기다리다 잠금 대기 시간을 넘긴다 · MySQL은 다른 연결이라 다른 순간을 본다 · 메모리는 같은 스레드의
+          쓰기가 잠금을 다시 잡아 구간 안으로 들어와 순간이 섞인다).
+          읽은 값으로 하는 계산은 구간을 닫은 뒤에 한다.
+        """
+
     # ── 실행 건 ───────────────────────────────────────
     def create_run(self, run: Run, batch: CommitBatch, *, max_active: int = 1) -> bool:
         """동시 실행 제한을 확인하고 실행 건과 첫 기록을 원자적으로 만든다. 제한에 걸리면 False.
