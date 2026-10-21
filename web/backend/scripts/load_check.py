@@ -108,7 +108,7 @@ def main() -> int:
             waits.append(timed(s, f'/projects/{pid}/match-candidates'))
 
         waiters = [threading.Thread(target=waiter) for _ in range(level)]
-        probes = [threading.Thread(target=prober, args=('/auth/me', light)), threading.Thread(target=prober, args=('/docs', no_db))]
+        probes = [threading.Thread(target=prober, args=('/auth/me', light)), threading.Thread(target=prober, args=('/health', no_db))]
         for t in waiters:
             t.start()
         time.sleep(0.5)  # 대기 요청이 자리를 잡은 뒤에 가벼운 요청을 보낸다
@@ -129,7 +129,7 @@ def main() -> int:
                      sorted({c for _, c in no_db if c != 200}, key=str), statistics.median([lat for lat, _ in light]) if light else 0.0))
         time.sleep(1.0)
 
-    print(f"{'대기 요청':>8} | {'끝남':>4} {'200':>4} | {'/auth/me 최대(초)':>16} {'중앙값':>7} {'오류':>10} | {'/docs 최대(초)':>13} {'오류':>6}")
+    print(f"{'대기 요청':>8} | {'끝남':>4} {'200':>4} | {'/auth/me 최대(초)':>16} {'중앙값':>7} {'오류':>10} | {'/health 최대(초)':>13} {'오류':>6}")
     problems = []
     for level, done, ok200, light_max, light_bad, docs_max, docs_bad, light_median in rows:
         print(f'{level:>8} | {done:>4} {ok200:>4} | {light_max:>16.2f} {light_median:>7.2f} {str(light_bad[:3]) if light_bad else "-":>10} | {docs_max:>13.2f} {str(docs_bad) if docs_bad else "-":>6}')

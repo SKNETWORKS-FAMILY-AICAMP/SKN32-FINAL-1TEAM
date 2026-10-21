@@ -70,7 +70,7 @@ MySQL 세팅 없이 개인 로컬에서 빠르게 띄워만 보고 싶으면(더
 DB_BACKEND=sqlite uvicorn app.main:app --reload --port 8000
 ```
 
-Swagger 문서: http://127.0.0.1:8000/docs
+Swagger 문서: http://127.0.0.1:8000/docs — 운영 보안상 기본은 닫혀 있어, 로컬에서 보려면 `ENABLE_API_DOCS=1`을 `.env`에 넣고 서버를 다시 띄운다.
 
 ### 4) 테스트 / 린트
 

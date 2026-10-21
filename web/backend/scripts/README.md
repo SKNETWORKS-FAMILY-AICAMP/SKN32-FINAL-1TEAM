@@ -28,6 +28,6 @@ RHWP_BIN=./rhwp.exe
 
 서버(`uvicorn app.main:app --reload`)를 켜고 아래 중 하나로 확인:
 
-- Swagger(`/docs`)에서 `GET /projects/{id}/plan-document.hwp` 직접 호출 — 200이면 성공,
+- Swagger(`/docs`, `.env`에 `ENABLE_API_DOCS=1`을 넣어야 열림)에서 `GET /projects/{id}/plan-document.hwp` 직접 호출 — 200이면 성공,
   500이면 `RHWP_BIN` 경로가 잘못된 것.
  
