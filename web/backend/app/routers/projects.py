@@ -809,13 +809,15 @@ def download_plan_document_hwp(
     (app/hwp_export.py, rhwp CLI 기반). [2026-09-18] 예비창업패키지·초기창업패키지
     (일반형) 둘 다 실제 원본 양식 + 좌표 매핑까지 끝났다 — RHWP_BIN(.env.example
     참고)만 실제 rhwp 실행 파일 경로로 맞추면 이 서버에서도 바로 된다."""
-    from app.hwp_export import render_plan_hwp
+    from app.hwp_export import HwpConversionTimeout, render_plan_hwp
 
     project = _get_owned_project(db, project_id, current_user)
     texts, pictures = _plan_texts(gateway, project_id)
     data, template = _build_plan_document_data(db, project, texts, pictures)
     try:
         hwp_bytes = render_plan_hwp(data, template=template)
+    except HwpConversionTimeout as exc:
+        raise CodedHTTPException(504, 'HWP_CONVERSION_TIMEOUT', str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except RuntimeError as exc:

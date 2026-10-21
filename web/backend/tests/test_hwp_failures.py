@@ -1,10 +1,36 @@
 import json
 import os
+import subprocess
+import sys
+import time
+from types import SimpleNamespace
 
 import pytest
 
 from app import hwp_export as hwp
 from tests.test_hwp_table_layout import _data
+
+
+def test_rhwp_command_has_timeout_and_preserves_success(monkeypatch):
+    seen = {}
+
+    def run(args, **kwargs):
+        seen.update(kwargs)
+        return SimpleNamespace(returncode=0, stdout='ok')
+
+    monkeypatch.setattr(hwp.subprocess, 'run', run)
+    assert hwp._run_rhwp(['inspect']) == 'ok'
+    assert seen['timeout'] == hwp.RHWP_TIMEOUT_SECONDS
+
+
+def test_real_stuck_child_is_terminated_on_timeout(monkeypatch):
+    monkeypatch.setattr(hwp, 'RHWP_BIN', sys.executable)
+    monkeypatch.setattr(hwp, 'RHWP_TIMEOUT_SECONDS', 0.1)
+    start = time.monotonic()
+    with pytest.raises(hwp.HwpConversionTimeout) as exc:
+        hwp._run_rhwp(['-c', 'import time; time.sleep(4)'])
+    assert isinstance(exc.value.__cause__, subprocess.TimeoutExpired)
+    assert time.monotonic() - start < 3
 
 
 @pytest.mark.parametrize('stage', ['prepare', 'run'])
@@ -60,6 +86,21 @@ def test_cleanup_error_does_not_hide_original_failure(monkeypatch, tmp_path, cap
     finally:
         for path in files:
             original_remove(path)
+
+
+def test_download_timeout_returns_structured_504(authed_client, monkeypatch):
+    from tests.test_plan_document_endpoint import _payload
+
+    created = authed_client.post('/projects', data={'payload': json.dumps(_payload())})
+    assert created.status_code == 201
+
+    def timeout(*args, **kwargs):
+        raise hwp.HwpConversionTimeout('conversion timed out')
+
+    monkeypatch.setattr(hwp, 'render_plan_hwp', timeout)
+    response = authed_client.get(f"/projects/{created.json()['project_id']}/plan-document.hwp")
+    assert response.status_code == 504
+    assert response.json()['code'] == 'HWP_CONVERSION_TIMEOUT'
 
 
 def test_successful_export_removes_temporary_files(monkeypatch, tmp_path):

@@ -90,6 +90,15 @@ from app.plan_document_export import (
 logger = logging.getLogger(__name__)
 
 RHWP_BIN = os.environ.get('RHWP_BIN') or 'rhwp'
+# Operational limit per CLI command, independent of Agent call timeout/retry policy.
+RHWP_TIMEOUT_SECONDS = int(os.environ.get('RHWP_TIMEOUT_SECONDS') or '120')
+if RHWP_TIMEOUT_SECONDS <= 0:
+    raise ValueError('RHWP_TIMEOUT_SECONDS는 양의 정수여야 합니다')
+
+
+class HwpConversionTimeout(RuntimeError):
+    """A local rhwp command exceeded its configured runtime limit."""
+
 
 _HWP_TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), 'assets', 'hwp_templates')
 _HWP_TEMPLATE_FILES = {
@@ -549,7 +558,12 @@ def _run_rhwp(args: list[str]) -> str:
     try:
         result = subprocess.run(
             [RHWP_BIN, *args], capture_output=True, text=True, encoding='utf-8', errors='replace',
+            timeout=RHWP_TIMEOUT_SECONDS,
         )
+    except subprocess.TimeoutExpired as exc:
+        raise HwpConversionTimeout(
+            f'HWP 변환 명령이 제한 시간({RHWP_TIMEOUT_SECONDS}초)을 초과했습니다. 잠시 후 다시 시도해 주세요.'
+        ) from exc
     except FileNotFoundError as exc:
         raise FileNotFoundError(
             f"rhwp 실행 파일을 찾을 수 없습니다('{RHWP_BIN}') — RHWP_BIN 환경변수로 경로를 지정하세요"
