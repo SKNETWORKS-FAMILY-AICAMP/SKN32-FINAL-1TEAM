@@ -71,17 +71,19 @@ const executionRowFromServer=r=>({
 // 표기용 한글 라벨은 여기서만 붙인다. "공고 수집 현황"/"최근 수집 실행 이력" 카드는
 // GET /admin/collection-status가 담당한다(AnnouncementTab 안에서 직접 매핑).
 const NOTICE_SOURCE_LABEL={kstartup:'K-Startup','k-startup':'K-Startup',bizinfo:'기업마당'};
-// unknown은 수집 때 모집 상태를 얻지 못했다는 원본 값이다 — 백엔드도 모집중으로 바꾸지 않고 그대로 보낸다(SB-410). 화면에는 '확인 필요'로 보인다.
+// 상태 문구는 백엔드가 한국 날짜 기준 접수기간과 원본 모집 상태로 계산한 display_status를 그대로 쓴다(SB-411):
+// 모집중 · 마감 · 접수 예정 · 접수기간 내 · 원문 확인 · 확인 필요. 원본 recruitment_status(unknown 등)는 화면에 내지 않는다 —
+// display_status가 없는 옛 서버 응답일 때만 원본 값으로 문구를 만든다.
 const RECRUITMENT_STATUS_LABEL={open:'모집중',closed:'마감',unknown:'확인 필요'};
+const NOTICE_STATUS_TONE={'모집중':'ok','접수 예정':'primary','접수기간 내 · 원문 확인':'warn','확인 필요':'warn','마감':'muted'};
 const noticeRowFromServer=n=>{
   const shortDate=d=>d?d.slice(5).replace('-','.'):null;
-  const closed=n.recruitment_status==='closed';
+  const status=n.display_status||RECRUITMENT_STATUS_LABEL[n.recruitment_status]||n.recruitment_status;
   return {
     id:n.notice_id,title:n.title,src:NOTICE_SOURCE_LABEL[n.source]||n.source,
     period:n.apply_start&&n.apply_end?`${shortDate(n.apply_start)}~${shortDate(n.apply_end)}`:'-',
     embed:n.has_embedding?'완료':'미생성',embedTone:n.has_embedding?'ok':'warn',
-    status:RECRUITMENT_STATUS_LABEL[n.recruitment_status]||n.recruitment_status,
-    statusTone:n.recruitment_status==='open'?'ok':n.recruitment_status==='unknown'?'warn':'muted',dim:closed,
+    status,statusTone:NOTICE_STATUS_TONE[status]||'muted',dim:status==='마감',
   };
 };
 
