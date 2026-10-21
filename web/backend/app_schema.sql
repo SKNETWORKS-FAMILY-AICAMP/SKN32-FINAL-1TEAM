@@ -329,7 +329,7 @@ CREATE TABLE IF NOT EXISTS proofread_logs (
     corrected_text LONGTEXT NOT NULL COMMENT '윤문 후 교정문(passed=FALSE면 반려된 시도안)',
     reason TEXT NULL COMMENT '교정 사유',
     attempt_no INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '같은 문장 안에서 몇 번째 시도인지(1=최초)',
-    score DECIMAL(5,2) NOT NULL DEFAULT 100.00 COMMENT '이 시도의 윤문 품질 점수(0~100) — business_plans.doc_score와 같은 형식',
+    score DECIMAL(5,2) NOT NULL DEFAULT 100.00 COMMENT '이 시도의 윤문 품질 점수(0~100, 소수 둘째 자리까지)',
     passed BOOLEAN NOT NULL DEFAULT TRUE COMMENT 'FALSE면 보호 토큰(수치·날짜·고유명사·기능명) 위반으로 반려된 시도',
     violation_note TEXT NULL COMMENT '반려 사유(passed=FALSE일 때만) — 어떤 보호 토큰이 어떻게 바뀌었는지',
     violation_type VARCHAR(20) NULL COMMENT '위반 종류: 날짜/수치·금액/고유명사/기능명 (passed=FALSE일 때만)',
@@ -418,13 +418,13 @@ SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM verification_policies);
 
 -- [2026-09-22 구조 교체, 프론트 전달사항 10번] 기획서 v1.8 5-4 기준(카테고리별 8항목·
 -- 15점 만점)으로 바꿨다 — category는 이제 산출물 카테고리('html'=웹개발·AI API,
--- 'svg'=원페이지) 의미이고, item_no(카테고리 안 1~8번)·item_code(artifact_score_reasons.
--- item_code와 매칭)를 새로 추가했다(models.py VerificationChecklistItem 참고).
+-- 'svg'=원페이지) 의미이고, item_no(카테고리 안 1~8번)·item_code(산출물 점수 보고서의
+-- 항목 코드와 매칭)를 새로 추가했다(models.py VerificationChecklistItem 참고).
 CREATE TABLE IF NOT EXISTS verification_checklist_items (
     check_item_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '코드 기준 자동 검증 항목 고유 식별자',
-    item_code VARCHAR(50) NOT NULL UNIQUE COMMENT 'artifact_score_reasons.item_code와 매칭되는 항목 코드',
+    item_code VARCHAR(50) NOT NULL UNIQUE COMMENT '산출물 채점 결과(점수 보고서)의 항목 코드와 매칭되는 항목 코드',
     item_no TINYINT UNSIGNED NOT NULL COMMENT '카테고리 안에서의 순번(1~8) — 1번은 진입 파일 존재 여부, 미충족 시 해당 카테고리 자동 검증 점수 전체 0점(검증 에이전트가 적용)',
-    category VARCHAR(20) NOT NULL COMMENT "산출물 카테고리: 'html'(웹개발·AI API, artifacts.category의 webdev/aiapi) | 'svg'(원페이지, artifacts.category의 onepage)",
+    category VARCHAR(20) NOT NULL COMMENT "산출물 카테고리: 'html'(웹개발·AI API 카테고리) | 'svg'(원페이지 카테고리)",
     name VARCHAR(100) NOT NULL COMMENT '검증 항목명(예: 진입 파일 존재 여부)',
     method TEXT NOT NULL COMMENT '판정 방식 설명(파싱/계산 기준)',
     weight DECIMAL(5,2) NOT NULL COMMENT '가중치 점수 — 카테고리별 8항목 합계 15점',
@@ -460,7 +460,7 @@ WHERE NOT EXISTS (SELECT 1 FROM verification_checklist_items);
 -- 달리 이쪽은 산출물(코드)이 아니라 계획서 문서를 채점하는 기준이다.
 CREATE TABLE IF NOT EXISTS rubric_items (
     rubric_item_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '채점 기준 항목 고유 식별자',
-    item_code VARCHAR(50) NOT NULL UNIQUE COMMENT 'plan_score_reasons.item_code와 매칭되는 항목 코드',
+    item_code VARCHAR(50) NOT NULL UNIQUE COMMENT '계획서 채점 결과(점수 보고서)의 항목 코드와 매칭되는 항목 코드',
     category VARCHAR(50) NOT NULL COMMENT '분류(예: 문제인식/실현가능성/성장전략)',
     criterion TEXT NOT NULL COMMENT '채점 기준 설명',
     max_score DECIMAL(5,2) NOT NULL COMMENT '배점',

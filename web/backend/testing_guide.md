@@ -175,6 +175,7 @@ uvicorn app.main:app --port 8000
 - **알림 종류 '결과물'(SB-396)** — 오케스트레이터가 검수를 서비스 흐름에서 빼면서(2026-10-15) 결과 통합이 끝나면 `kind='결과물'`(`target_step` 11) 알림을 INSERT한다. 웹 DB의 ENUM에 이 값이 없으면 워커의 INSERT가 실패해 그 단계 저장 전체가 되돌려지므로, **웹 스키마(`migrations/006_notification_kind_result.sql`, 멱등)를 먼저 적용한 뒤 워커를 새 코드로 띄운다.** '표현검수'는 옛 알림 행이 남아 있어 ENUM에서 지우지 않고 목록에서도 그대로 읽는다. 마이그레이션 리허설과 단위 테스트(`test_notifications.py`)로 확인했고, 새 워커가 실제로 '결과물' 알림을 넣는 것은 확인하지 못했다.
 - **목표 고객 입력 칸(SB-381)** — 사용자가 직접 입력하는 선택 값(200자 이내)을 `project_plan_inputs.target_customer`에 저장하고 `GET /projects/{id}`의 `plan_input.target_customer`로 돌려준다. 앞뒤 공백은 지우고 비면 NULL로 저장한다. 오케스트레이터가 `request_start` 때 이 컬럼을 읽어 작성 · 검증 AI에 넘기고, 비어 있으면 AI가 "확인 필요"로 쓴다(컬럼이 없어도 오케스트레이터는 오류 없이 돈다). 기존 DB에는 `migrations/005_target_customer.sql`(멱등)을 적용한다 — 마이그레이션 리허설로 확인했고, 입력 화면(SB-385)은 프론트가 만든다. 단위 테스트(`test_project_plan_input.py`)로 저장 · 조회 · 공백 · 길이 제한을 확인했고 오케스트레이터가 값을 실제로 읽는지는 확인하지 못했다.
 - **창업아이템명 규칙(SB-384)** — 일반현황 표의 창업아이템명과 개요 표의 명칭은 같은 값(아이디어 설명의 첫 줄, 60자까지)이다. 예전에는 일반현황이 앞 60자(줄바꿈 포함)여서 여러 줄 설명이면 두 이름이 달랐다. 오케스트레이터도 같은 규칙으로 읽는다.
+- **낡은 DB 칸 설명 정리(SB-420)** — 지운 옛 표 이름(business_plans · artifacts 등)이 남은 칸 설명 4곳(`proofread_logs.score` · `verification_checklist_items.item_code`/`category` · `rubric_items.item_code`)을 `migrations/007_fix_stale_column_comments.sql`로 고친다(칸 설명만, 멱등). 새 DB는 `app_schema.sql`에 이미 새 문구가 있다. `tests/test_schema_comments.py`가 문구가 같은지 본다 — 실제 DB 실행은 `scripts/rehearse_migration.py`(로컬 MySQL)로 확인.
 
 ---
 
