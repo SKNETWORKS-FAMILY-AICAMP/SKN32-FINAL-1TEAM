@@ -247,3 +247,21 @@ def test_artifact_rework_populates_both_admin_deviation_layers(clock):
         assert change.first_avg == round(entries[-1].score, 1)
         assert change.after_avg == round(entries[0].score, 1)
         assert change.delta == round(change.after_avg - change.first_avg, 1)
+
+
+@pytest.mark.parametrize(('total', 'label'), [
+    (0, '60점 미만'),
+    (59.5, '60점 미만'), (60, '60~69점'), (69.5, '60~69점'),
+    (70, '70~79점'), (79.5, '70~79점'), (80, '80~89점'),
+    (89.5, '80~89점'), (90, '90~100점'), (100, '90~100점'),
+])
+def test_score_distribution_covers_decimal_boundaries_once(clock, total, label, monkeypatch):
+    from sbrain.flow import reads
+
+    app = make_app(clock)
+    to_screen8(app)
+    monkeypatch.setattr(reads, '_current_scores', lambda *a, **k: {'doc': None, 'artifact': None, 'total': total})
+    summary = app.orchestrator.admin_summary()
+    assert summary.total_count == 1
+    assert sum(b.count for b in summary.score_buckets) == 1
+    assert next(b.label for b in summary.score_buckets if b.count) == label

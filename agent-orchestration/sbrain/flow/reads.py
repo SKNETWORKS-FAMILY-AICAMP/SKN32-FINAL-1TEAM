@@ -771,9 +771,9 @@ def _tokens(obj: Any) -> TokenTotals:
     return TokenTotals(**{f: getattr(obj, f, None) for f in TokenTotals.model_fields})
 
 
-# 총점 구간 — 웹 admin.py ops-summary와 같은 경계 · 같은 비교(정수 경계 양 끝 포함, lo ≤ 총점 ≤ hi)
-SCORE_BUCKETS = (("90~100점", 90, 100), ("80~89점", 80, 89), ("70~79점", 70, 79), ("60~69점", 60, 69),
-                 ("60점 미만", 0, 59))
+# 총점 구간 — 하한 포함 · 상한 미포함, 최상위 구간의 100점만 포함한다.
+SCORE_BUCKETS = (("90~100점", 90, 100), ("80~89점", 80, 90), ("70~79점", 70, 80), ("60~69점", 60, 70),
+                 ("60점 미만", 0, 60))
 TRIGGERS = ("첫실행", "재작성", "재수행")
 
 
@@ -852,7 +852,7 @@ def admin_summary(orch: SBrainOrchestrator) -> AdminSummary:
     - 문서층 · 총점 평균: 현재 버전 점수(되돌리기 반영)가 있는 실행 건의 평균, 소수 1자리. 총점은 판정(G-02b)의
       scoreReport.overall.total이다(웹은 doc_score + artifact_score).
     - 통과: 총점 ≥ 기준 점수(지금 설정 scoring.threshold). 통과율 = 통과 수 / 총점이 있는 실행 건 수 × 100.
-    - 총점 구간: 90~100 · 80~89 · 70~79 · 60~69 · 60 미만, 각 구간은 정수 경계 양 끝 포함(lo ≤ 총점 ≤ hi) — 웹과 같다.
+    - 총점 구간: 90~100 · 80~89 · 70~79 · 60~69 · 60 미만, 각 구간은 하한 포함 · 상한 미포함(lo ≤ 총점 < hi, 100점은 최상위 구간에 포함) — 웹과 같다.
     - 재작성 비율 = 재작성 실행 기록이 있는 실행 건 / 실행 기록이 하나라도 있는 실행 건 × 100.
     - 층별 변화: 실행 건마다 그 층의 첫 채점과 마지막 재작성 뒤 채점(재작성 사이클 안의 마지막 채점)이 둘 다 있는 것만
       센다. 첫 평균 · 재작성 뒤 평균은 소수 1자리, 차이 = 재작성 뒤 평균 - 첫 평균(반올림한 평균끼리, 웹과 같다).
@@ -920,7 +920,7 @@ def admin_summary(orch: SBrainOrchestrator) -> AdminSummary:
         doc_avg=_avg(docs), doc_count=len(docs), total_avg=_avg(totals), total_count=len(totals),
         pass_count=passed, pass_rate=_rate(passed, len(totals)), pass_threshold=threshold,
         reworked_runs=reworked, runs_with_executions=with_exec, rework_rate=_rate(reworked, with_exec),
-        score_buckets=[ScoreBucket(label=label, count=sum(1 for t in totals if lo <= t <= hi))
+        score_buckets=[ScoreBucket(label=label, count=sum(1 for t in totals if lo <= t < hi or (hi == 100 and t == 100)))
                        for label, lo, hi in SCORE_BUCKETS],
         layer_changes=changes, triggers=triggers, total_tokens=sum(tokens(r) for r in every),
         total_image_tokens=sum((r.image_input_tokens or 0) + (r.image_output_tokens or 0) for r in every))
