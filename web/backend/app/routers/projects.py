@@ -1109,10 +1109,13 @@ def delete_project_permanently(
 
 
 def _get_owned_project(db: Session, project_id: int, user: User) -> Project:
+    """내 프로젝트만 돌려준다 — 남의 프로젝트는 있는지도 알려 주지 않는 404.
+
+    [SB-418] 관리자도 예외가 아니다. 관리자 열람은 /admin/* 의 메타데이터로 한정하고(기획서 6-7), 사용자의 계획서 · 결과 · 산출물 내용을 읽거나
+    시작 · 삭제 같은 명령을 내리는 것은 소유자만 한다. 예전에는 `user.role != 'admin'` 예외 때문에 관리자 계정으로 /projects/{id}/... 경로를 부르면
+    남의 프로젝트를 읽고 바꿀 수 있었다."""
     project = db.get(Project, project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail='프로젝트를 찾을 수 없습니다')
-    if project.company.user_id != user.user_id and user.role != 'admin':
+    if project is None or project.company.user_id != user.user_id:
         raise HTTPException(status_code=404, detail='프로젝트를 찾을 수 없습니다')
     return project
 
