@@ -308,10 +308,10 @@ def test_bad_bonus_verified_is_format_error(bad, bonus_on):
     card_error(bonus_verified=bad)
 
 
-# ── T-C2: 가산점 스위치 (코드 값은 켬 — 2026-10-19 공고팀 허용, 잠정) · 꺼졌을 때 ──────
-def test_bonus_switch_is_on_in_code_and_provisional():
+# ── T-C2: 가산점 스위치 (코드 값은 켬 — 2026-10-19 공고팀 허용, 켠 값이 기준 문서 시트 4와 같음) · 꺼졌을 때 ──────
+def test_bonus_switch_is_on_in_code_and_not_provisional():
     assert CODE_SWITCHES["BONUS_ENABLED"] is True
-    assert "announcement.bonusEnabled" in PROVISIONAL
+    assert "announcement.bonusEnabled" not in PROVISIONAL   # 원문 대조된 공고만 — 기능정의서 v1.12
 
 
 def test_bonus_off_does_not_read_verified(bonus_off):

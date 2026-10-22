@@ -174,7 +174,7 @@ def bonus_on(monkeypatch):
 
 @pytest.fixture
 def bonus_off(monkeypatch):
-    """가산점을 끈다(기본값과 같다) — 기본값이 바뀌어도 꺼짐 동작 시험이 그대로 꺼짐을 보게 한다."""
+    """가산점을 끈다(테스트 기본값과 같다) — 기본값이 바뀌어도 꺼짐 동작 시험이 그대로 꺼짐을 보게 한다."""
     monkeypatch.setattr(settings, "BONUS_ENABLED", False)
 
 

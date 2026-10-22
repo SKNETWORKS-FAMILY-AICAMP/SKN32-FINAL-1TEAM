@@ -4,7 +4,7 @@
 |---|---|
 | 기준일 | 2026-10-17 — 지금 코드 기준. 날짜별로 바뀐 점은 27절 |
 | 상태 | 함수 이름 · 인자 · 결과 필드 · 오류 코드는 **구현 완료**. 화면 조회(5.1절)의 화면별 모양은 **초안** — 웹팀과 맞춰 고친다 |
-| 근거 | 기능정의서 v1.11(참고: 기획서 v1.12), 웹팀 합의 · 회신 |
+| 근거 | 기능정의서 v1.12(참고: 기획서 v1.13), 웹팀 합의 · 회신 |
 | 코드 | `sbrain/` — 명령 창구 `flow/service.py`(`SBrainOrchestrator`), 화면 · 결과 · 관리자 조회 · 파일 읽기 `flow/reads.py`, 파일 참조 `models/files.py`, 파일 저장소 `orchestrator/files.py`(창구 · 로컬 폴더) · `store_s3/`(S3), 파일 삭제 대기열 처리 `orchestrator/file_deletion.py`, 재작성 묶음 `flow/rework_map.py`, 산출물층 환산 `flow/score_scale.py`, 조립 `bootstrap.py`, 워커 `worker.py`, 웹 테이블 쓰기 `store_sql/web_tables.py`, 시각 `models/clock.py`, 실행 로그 12개월 처리 `flow/retention.py` · 통계 줄 `flow/log_stats.py` |
 | 독자 | 웹팀(백엔드) |
 
@@ -457,7 +457,7 @@ python -m sbrain.worker          # 또는 sbrain-worker. Ctrl+C · SIGTERM으로
 - `docScore.items[]`는 계획서 항목마다 하나다 — `itemCode` · `evidenceLocator` = 항목 번호, `score` = 항목 점수(소수 둘째 자리), `maxScore` = 실행 설정 문서층 배점 ÷ 항목 수, `comment` = 감점 사유(없으면 '감점 없음'). 항목 점수를 더하면 문서층 총점(`total`)이다. 배점은 실행 시작 때 고정한 `verification_policies` 값을 쓴다(관리자가 60으로 바꾸면 그 뒤 실행은 60 기준).
 - `varianceFlag`는 늘 거짓이다(편차 검사를 하지 않는다). 편차 상한(`verification_policies.deviation_cap`)은 읽어 두기만 하고 쓰지 않는다.
 
-**계획서 내려받기는 웹이 만든다** — 계획서 파일은 웹이 `planDoc`으로 만든다(T-C4는 만들지 않는다 — 웹팀 · 전략 · 작성 · 검증-1 담당자 동의, 기준 문서의 "계획서 파일 조립은 조율"과 다르다). 웹은 기준 문서대로 첫 장에 `deliverable.disclaimer`를, 본문에 인포그래픽(`deliverable.infographicFile`)을 넣는다.
+**계획서 내려받기는 웹이 만든다** — 계획서 파일은 웹이 `planDoc`으로 만든다(T-C4는 만들지 않는다 — 웹팀 · 전략 · 작성 · 검증-1 담당자 동의, 기준 문서 시트 2 T-C4 · 시트 4 `Deliverable.planDocFile`도 같다). 웹은 기준 문서대로 첫 장에 `deliverable.disclaimer`를, 본문에 인포그래픽(`deliverable.infographicFile`)을 넣는다.
 
 1. `sections`를 양식 순서대로 잇는다 — 항목 제목 다음에 `sentences[].text`(같은 `paragraphNo`는 한 문단). 웹 계획서 화면처럼 태그별로 모으려면 `tag`로 묶는다.
 2. `contentType = 'table'` 항목은 같은 `sourceRef`의 `tables[]`로 표를 그리고 서술 문장을 함께 둔다(표가 없으면 대체 본문만).
@@ -723,7 +723,7 @@ return Response(content=f.data, media_type=f.media_type)   # 웹 프레임워크
 - 재작성이 실패하면(재개 상한 초과 · 영구 오류) 요청 전 결과로 되돌리고 모은 묶음 모두의 기회를 돌려준다(E-RUN-ROLLBACK, 실행 실패 아님). 알림 `실패`(재작성 범위)가 요청한 화면으로 간다.
 - 첫 실행은 세지 않는다. 화면 9 문서층 재작성 때 함께 도는 T-B1(원페이지면 T-B2)은 `실행 파일` · `인포그래픽` 기회를 쓰지 않는다.
 
-**미달이 아닌 묶음 (기준 문서 v1.10 시트 5 R-6)** — 판정이나 산출물 점검이 미달로 짚지 않은 묶음도 받아 다시 만들고 다시 채점한다. 판정의 다음 동작이 진행가능(통과)이어도 받는다.
+**미달이 아닌 묶음 (기준 문서 v1.10 시트 5 R-6)** — 판정이나 산출물 점검이 미달로 짚지 않은 묶음도 받아 다시 만들고 다시 채점한다. 판정의 다음 동작이 진행가능(통과)이어도 받는다. 다만 화면 9는 통과(진행가능)면 웹이 재작성 목록을 보이지 않는다(기준 문서 시트 5 R-6 · 시트 7 주석 — 화면 6 · 8은 판정과 관계없이 고를 수 있다). Orchestrator는 요청이 오면 그대로 받는다.
 
 **문서층 — 태그 묶음 재작성** — 문서층 묶음 이름 하나를 요청하면 그 이름으로 기회를 세고, **그 묶음의 태그에 속한 항목만** 다시 만든다. 여러 묶음을 모으면 항목은 합집합이다.
 
@@ -1037,7 +1037,6 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | E-G1-MISSING · E-G1-REJECT | `notices` | 자격 확인 판정 보류 · 불통과 |
 | E-G1-UNPARSED | **화면 4 결과의 `notices`에만** | 확인 필요 조건이 있음 — 진행을 막지 않는 안내. 실행 건 안내 목록 · `view_project`에는 없다 |
 | E-RUN-FAIL · E-RUN-ROLLBACK · E-RUN-CLOSED · E-W1-REMOVED | `notices` | 실행 실패(새 작업으로 시작) · 재작성 실패 되돌림 · 공고 마감(조건은 4.1) · 입력에 없는 경력 등 삭제 |
-
 ### 10.2 `CommandError.code`
 
 | 코드 | 뜻 |
@@ -1146,13 +1145,13 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | 관리자 실행 기록 · 운영 요약 | `imageInputTokens` · `imageOutputTokens` · `totalImageTokens`, `callType=image` (8.1 · 8.2 · 8.6) | 확장 |
 | 추적 사건 종류 | `대조보류` · `검증2진단` · `안내문서자체검사실패` · `이미지대체` · `대체텍스트출처누락` (8.8) | 잠정 |
 | `orch_executions` 칸 | `image_input_tokens` · `image_output_tokens` (`BIGINT UNSIGNED`, NULL 허용) | 확장 |
-| Task별 모델 설정 | 모델 · 호출처 · 온도 · 추론 강도 · 이미지 설정을 Task마다 둔다(코드 기본값, 웹 표 없음). T-B2 이미지 모델 `gpt-image-2.5-flare` | Task별로 두는 것은 기준 문서(시트 1 · 시트 4 `Run.settingsSnapshot`), 값은 잠정 |
+| Task별 모델 설정 | 모델 · 호출처 · 온도 · 추론 강도 · 이미지 설정을 Task마다 둔다(코드 기본값, 웹 표 없음). T-B2 이미지 모델 `gpt-image-2.5-flare` | Task별로 두는 것 · 두는 범위(LLM을 부르는 Task마다 — T-C2 · G-01 · T-W3 · T-C4 없음)는 기준 문서(시트 1 · 시트 4 `Run.settingsSnapshot`), 값은 잠정 |
 
-## 17. 가산점 스위치의 잠정 값
+## 17. 가산점 스위치
 
 | 항목 | 값 · 내용 | 표시 |
 |---|---|---|
-| 가산점 스위치 | 2026-10-19 켰다(공고팀 허용). 켜져 있으면 공고 서버가 원문 대조를 마친 공고(`bonus_verified` 참)의 카드에만 `bonusScore` · `bonusItems`가 들고, 그 밖의 카드는 `bonusScore: null` · `bonusItems: []`다. `bonusScore`는 **확인된 가산점 부분합**이다(받을 수 있는 전체 합계가 아님 — 공고팀 결정 0012). 끄면 화면 3 · `outputs`의 모든 카드가 `null` · `[]`(이전에 만든 프로젝트 포함, 키는 그대로) (`orchestrator/settings.py` `BONUS_ENABLED`) | 잠정 |
+| 가산점 스위치 | 2026-10-19 켰다(공고팀 허용). 켜져 있으면 공고 서버가 원문 대조를 마친 공고(`bonus_verified` 참)의 카드에만 `bonusScore` · `bonusItems`가 들고, 그 밖의 카드는 `bonusScore: null` · `bonusItems: []`다. `bonusScore`는 **확인된 가산점 부분합**이다(받을 수 있는 전체 합계가 아님 — 공고팀 결정 0012). 끄면 화면 3 · `outputs`의 모든 카드가 `null` · `[]`(이전에 만든 프로젝트 포함, 키는 그대로) (`orchestrator/settings.py` `BONUS_ENABLED`) | 기준 문서 값(시트 4 `AnnouncementCard.bonusScore` · `bonusItems` — 기능정의서 v1.12). 스위치는 되돌리기용 |
 | 그 밖의 공고 값 | 함수 · 필드는 그대로. 화면 표시에 영향 있는 값(`bonusInfo` 사용 가능, `supportAmountText` 늘 `null`, `originalUrl` `""`, 사업자 신청자의 확인 필요, 업력 상한 `null`의 뜻)은 그대로 쓴다 | — |
 
 ## 18. 기준 문서 새 판 · `missing_projects`의 잠정 · 확장 값
@@ -1160,7 +1159,7 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | 항목 | 값 · 내용 | 표시 |
 |---|---|---|
 | 기능정의서 v1.11에 들어간 칸 | 파일 참조 `FileRef`와 결과물 파일 칸, 사업비 · 일정 · 목표 고객 · 창업아이템명 · 팀원 표 행, 계획서 항목 태그 · 종류 · 그림, 검증-1 항목 판정, 점수 보고서 환산 칸 · `earned` · `applicable` · `iconFallback`, 미달 항목 `shortfallItems`, 알림 · 단계 '결과물', 재시도 간격 · 제한 시간 · 모으는 시간, 문서층 재작성 묶음 6개 — 19 ~ 26절의 표시를 그에 맞춰 고쳤다. 함수 · 결과 칸 모양 · 동작은 그대로다 | 기준 문서 칸 |
-| 새 판과 다르게 둔 것 | 결과물 내려받기 화면 번호 — 기준 문서는 화면 10(표현 검수 화면을 없애며 당김), Orchestrator · 웹은 **11 그대로**(`screen(…, 11)`, `resumeStep` · 알림 `target_step` 11) | 해석(웹팀과 같은 값) |
+| 결과물 내려받기 화면 번호 | **11** — 기능정의서 v1.12도 11이다(10은 표현 검수 화면 자리 — 향후 도입). `screen(…, 11)`, `resumeStep` · 알림 `target_step` 11. 기능정의서 v1.11은 10으로 당겼었다 | 기준 문서 값 |
 | 새 함수 | `missing_projects(project_ids) -> list` (7.4) | 확장 |
 | 한 번에 묻는 프로젝트 수 | SQL 저장소가 500개씩 나눠 묻는다(`store_sql/store.py` `PROJECT_CHUNK` — `missing_projects`, 진행 상태 · 관리자 실행 건 목록의 묶어 읽기) — 넘기는 개수에는 제한이 없고 웹에는 영향이 없다 | 잠정(조정값) |
 | 새 판에서 빠졌지만 남긴 필드 | 사전 정보 · 회사 정보의 `revenueUnitPrice`(첫 수익모델 항목 단가) · `isFirstStartup`(늘 비어 있음), G-01 입력의 `eligibility` · `eligibilityParsed`(Orchestrator가 넣지 않음). 웹 입력 · 결과 모양은 그대로라 웹이 할 일은 없다 | 확장 |
@@ -1270,7 +1269,7 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | 사전 단계 | 요구사항 해석(T-C1) → 공고 매칭(T-C2). 첨부가 있어도 첨부 추출을 돌지 않고 `project_attachments`를 읽지 않는다. E-C1-DOC은 생기지 않는다 (3.1 · 10.1) | 기준 문서 값(향후 도입) |
 | 결과 통합 중 단계 · 상태 | 도는 동안 `결과물` · `실행`, 실패하면 `결과물` · `실패`(실패 알림 `stage`도 '결과물'), 끝나면 `결과물` · `완료` (4.1) | 기준 문서 값(시트 4 `RunState.step`) |
 | 미달 진행 확인 사유 | '결과 통합 진입 확인' (6.2) | 잠정 |
-| 알림 '결과물' | 결과 통합이 끝날 때 대상 화면 11 — 웹 `notifications.kind` ENUM에 '결과물'(웹 마이그레이션 006) (4.4) | 기준 문서 값(화면 번호는 11 그대로 — 18절) |
+| 알림 '결과물' | 결과 통합이 끝날 때 대상 화면 11 — 웹 `notifications.kind` ENUM에 '결과물'(웹 마이그레이션 006) (4.4) | 기준 문서 값(화면 번호 11 — 18절) |
 | `deliverable.proofreadLog` | 선택 칸, 늘 `null` (5.2) | 기준 문서 칸(향후 도입) |
 | `outputs`의 검수 칸 | `formatFindings` · `sentenceResults`는 늘 빈 목록, `proofreadLog`는 늘 `null` — 키는 남는다 (5.2) | — |
 | 화면 10 · 단계 '표현검수' | 없음 — `screen(…, 10)`은 `INVALID_SCREEN`, `step`은 8개 (4.1 · 5.1) | 기준 문서 값(단계 '표현검수'는 검수 도입 때) |
@@ -1302,3 +1301,4 @@ Orchestrator는 실행 건마다 추적 사건(`orch_trace_events`, 종류 칸 `
 | 2026-10-17 | 파일 저장소 S3 — `SBRAIN_ARTIFACT_ROOT`가 `s3://<버킷>[/<접두어>]`도 받고 S3면 `AWS_REGION` 필수, 웹 · 워커 같은 값, 의존성 `boto3` · `botocore`(웹 가상환경 다시 설치), `FILE_STORE_UNAVAILABLE` 경우 늘어남, `read_artifact_file`에서 S3 오류가 올라갈 수 있음, 관리자 호출 기록 `file` 목적 `check`. 함수 이름 · 인자 · 결과 모양은 그대로, 서명 URL은 아직 없음 | 2.1 · 2.2 · 2.3 · 5.5 · 8.2 · 10.2 · 11 · 12 · 19 |
 | 2026-10-19 | 가산점 스위치 켬 — 원문 대조된 공고(`bonus_verified` 참)의 카드에만 `bonusScore` · `bonusItems`. 함수 · 결과 칸 모양은 그대로 | 5.1 · 17 |
 | 2026-10-21 | 운영 요약 총점 구간 경계 — 하한 포함 · 상한 미포함(100점은 `90~100점`), 소수 점수도 한 구간에 든다(웹과 같이). 결과 칸 모양은 그대로 | 8.6 |
+| 2026-10-22 | 기준 문서 기능정의서 v1.12 · 기획서 v1.13 반영 — 표시 · 근거 문구만 고침(결과물 내려받기 화면 번호 11 · 가산점 원문 대조된 공고만 · 화면 9 재작성 목록 · 계획서 파일은 웹이 기준 문서와 같아짐). 함수 · 결과 칸 모양 · 동작은 그대로 | 6.3 · 16 · 17 · 18 |

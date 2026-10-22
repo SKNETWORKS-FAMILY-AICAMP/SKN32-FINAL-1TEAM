@@ -3,8 +3,8 @@
 | 항목 | 내용 |
 |---|---|
 | 기준일 | 2026-10-16 — 지금 코드 기준 |
-| 기준 문서 | S-Brain Agent 기능정의서 v1.11 — 시트 2 T-C3 행, 시트 3 T-C3 입출력 행, 시트 4 TaskPlan · TaskInstruction · FormSpec · EvalItem · Rubric, 시트 6 E-C3-FORM |
-| 참고 | 기획서 v1.12 4-4 · 4-6 · 6-4 |
+| 기준 문서 | S-Brain Agent 기능정의서 v1.12 — 시트 2 T-C3 행, 시트 3 T-C3 입출력 행, 시트 4 TaskPlan · TaskInstruction · FormSpec · EvalItem · Rubric, 시트 6 E-C3-FORM |
+| 참고 | 기획서 v1.13 4-4 · 4-6 · 6-4 |
 | 코드 | `sbrain/agents/supervisor/tc3.py` (실제 T-C3), `agents/supervisor/plan.py` (작업 계획 부품 — 스텁 · 실제 T-C3가 함께 씀), `agents/supervisor/rewrite.py` (재작성 · 재수행 안내 다시 쓰기), `agents/form_defaults.py` (신청자 유형별 양식 표), `flow/instruction.py` (지시문 두 부분 · 덧붙임), `flow/sbrain_flow.py` `SBrainFlow.build_instruction` (언제 다시 쓰는지 · 저장 · 재개), `bootstrap.py` (워커 조립 · 호출처 나누기) |
 | 테스트 | `tests/test_task_plan.py`, `tests/test_tc3.py`, `tests/test_partial_resume.py`, `tests/test_instruction.py`, `tests/test_rewrite.py`, `tests/test_worker.py`(T-C3 · 다시 쓰기 조립) |
 | 관련 문서 | `Agent_연동_규격_초안.md` 5.4절 (Agent 팀에 알리는 지시문 모양), `T-C1_요구사항해석_구현.md` (같은 짜임의 앞선 구현 문서) |
@@ -85,7 +85,7 @@ flowchart TD
 
 ## 5. Task 목록과 순서 (`plan.TASK_TABLE`)
 
-- 목록은 고정이다(시트 1 · 기획서 4-4). 웹개발 · AI_API는 12개, 원페이지는 T-B1을 뺀 11개다. 검수 Task(T-P1 · T-P2)는 흐름 밖이라 목록에 없다 — 기준 문서(원페이지 13, 웹개발 · AI API 14)와 다르다. `TaskPlan.tasks`가 받는 개수는 11 ~ 14개다.
+- 목록은 고정이다(시트 1 · 기획서 4-4). 웹개발 · AI_API는 12개, 원페이지는 T-B1을 뺀 11개다. 검수 Task(T-P1 · T-P2)는 향후 도입이라 목록에 없다 — 기준 문서도 검수 도입 전 실행 Task를 12개(원페이지 11개)로 적는다(시트 1 B4 · 시트 2 T-C3 `taskCount` — 고정 Task 14개 · 원페이지 13개는 검수를 넣은 수). `TaskPlan.tasks`가 받는 개수는 11 ~ 14개다.
 - `TaskPlan.category`는 `itemSpec.category`, `taskCount`는 목록 길이다. `TaskPlan.planId`는 새로 만든 12자리 16진수다(형식 잠정).
 - `TaskInstruction.order`는 시트 2 F열의 실행 순서 번호이며 등록부(`flow/catalog.py`) `order`와 같다. `instructionSet`은 `TaskPlan.tasks`와 같은 목록이다.
 

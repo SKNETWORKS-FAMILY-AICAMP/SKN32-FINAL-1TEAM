@@ -6,10 +6,10 @@
 - 보내는 값은 순위와 가산점 계산에 쓰이는 칸뿐이다(4.1.2 — 성별 · 보유 인증 · 첫 창업 여부는 공고팀 답변상 가산점
   계산에만 쓰인다). 대표자 이름 · 생년월일 · 사업자등록번호 · 자기부담금 · 희망 사업 규모 · 보유 시설 · 그 밖의 확장
   필드는 보내지 않는다. 가산점 스위치가 꺼져 있어도 보내는 칸은 같다.
-- 가산점(bonus_score · bonus_items)은 가산점 스위치(orchestrator/settings.py BONUS_ENABLED, 잠정)가 켜져 있고
-  공고 서버가 원문 대조를 마친 공고라고 알린 결과(bonus_verified 참 — 공고팀 결정 0018)만 읽고 검사한다. 그 밖에는
-  키를 읽지 않고 카드는 bonus_score=None · bonus_items=[]다 — 원문 대조 전 가산점은 화면에 내보내지 않고, 그 값이
-  잘못된 모양이어도 공고 매칭이 실패하지 않는다.
+- 가산점(bonus_score · bonus_items)은 가산점 스위치(orchestrator/settings.py BONUS_ENABLED)가 켜져 있고
+  공고 서버가 원문 대조를 마친 공고라고 알린 결과(bonus_verified 참 — 공고팀 결정 0018)만 읽고 검사한다.
+  그 밖에는 키를 읽지 않고 카드는 bonus_score=None · bonus_items=[]다 — 원문 대조 전 가산점은 화면에 내보내지 않고,
+  그 값이 잘못된 모양이어도 공고 매칭이 실패하지 않는다.
 - 결과 순서와 rank는 받은 그대로 둔다. 적합도 · 가산점으로 다시 정렬하지 않는다.
 - 대체 경로는 공고 서버가 안에서 한다 — 우리 쪽 대체 경로는 없고 ToolCallExhausted를 받지 않고 올려 보낸다.
   대체 경로 안내(E-C2-EMBED)는 흐름이 fallback_used를 보고 붙인다.
@@ -191,7 +191,8 @@ def _bonus_verified(r: dict[str, Any], where: str) -> bool:
 
 
 def to_card(r: Any, where: str, fallback_mode: str | None) -> AnnouncementCard:
-    """추천 결과 한 건 → 카드. 키가 없어도 되는 것은 content_version · bonus_score · bonus_items · apply_period_type뿐.
+    """추천 결과 한 건 → 카드. 키가 없어도 되는 것은 content_version · bonus_score · bonus_items · bonus_verified ·
+    apply_period_type뿐.
 
     가산점 키는 가산점 스위치가 켜져 있고 원문 대조된 결과(bonus_verified 참)일 때만 읽고 검사한다(그 밖은 None · 빈 목록).
     """

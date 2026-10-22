@@ -4,7 +4,7 @@
 |---|---|
 | 상태 | **잠정 규격 — 타 팀 합의 전.** 합의 결과에 따라 바뀔 수 있다 |
 | 기준일 | 2026-10-17 — 지금 코드 기준 |
-| 기준 문서 | S-Brain Agent 기능정의서 v1.11 (시트 1 · 2 · 3 · 4 · 5 · 7), 참고: 프로젝트 기획서 v1.12 |
+| 기준 문서 | S-Brain Agent 기능정의서 v1.12 (시트 1 · 2 · 3 · 4 · 5 · 7), 참고: 프로젝트 기획서 v1.13 |
 | 코드 위치 | `sbrain/` — 입출력 규격 `contracts/tasks.py`, 공통 타입 `models/`(파일 참조 `models/files.py`), 호출 도구 `orchestrator/tools.py`(파일 창구 `FileTool` 포함), 파일 저장소 `orchestrator/files.py`(창구 · 로컬 폴더) · `store_s3/`(S3), Task별 호출 설정 `orchestrator/settings.py`, OpenAI 이미지 어댑터 `orchestrator/openai_image.py`, 공고 서버 연결 `agents/notice/`, 전략 · 작성 · 검증-1 담당자 코드와 연결 코드 `agents/partner_sw/`(옮긴 파일 · 바꾼 곳은 `agents/partner_sw/VENDORED.md`), 구현 · 검증-2 담당자 코드와 연결 코드 `agents/partner_bv/`(옮긴 파일 · 바꾼 곳은 `agents/partner_bv/VENDORED.md`), 조율 Agent `agents/supervisor/`(T-C1 · T-C3 · 지시문 다시 쓰기 · 결과 통합 T-C4, 판정 `judge.py` · 안내 문서 `readme.py` · 합치기 `merge.py`), 산출물층 환산 `flow/score_scale.py` |
 | 검증 방식 | `tests/` 2750건 — 로컬 MySQL 8.0 테스트 DB를 켜면 모두 통과하고, 켜지 않으면 MySQL 테스트만 건너뛴다. 실구현 Task(조율 · 전략 · 작성 · 검증-1 · 구현 · 검증-2)는 가짜 LLM(호출 목적별 응답) · 가짜 이미지 호출처로, 공고 서버 연결은 가짜 전송 · 로컬 임시 서버로, S3 파일 저장소는 가짜 S3 클라이언트로 시험한다. 실제 OpenAI · 공고 서버 · S3 확인은 테스트 밖에서 따로 한다 |
 | 독자 | 전략 · 작성 · 구현 · 검증-1 · 검증-2 · 검수 Agent 구현 담당, 공고팀(G-01 · T-C2), 웹팀(명령 창구 연동) |
@@ -13,17 +13,17 @@
 
 ## 1. 목적
 
-각 Agent의 Task를 Orchestrator(뼈대)에 끼워 넣을 때 지켜야 할 규격을 정한다. 이 문서의 규격을 지키면 Task 함수를 `registry.bind(task_id, fn)` 한 줄로 스텁과 바꿔 끼울 수 있다.
+각 Agent의 Task를 Orchestrator(실행 흐름과 상태를 관리하는 엔진)에 끼워 넣을 때 지켜야 할 규격을 정한다. 이 문서의 규격을 지키면 Task 함수를 `registry.bind(task_id, fn)` 한 줄로 스텁과 바꿔 끼울 수 있다.
 
 ## 2. 용어 — 조율 Agent와 Orchestrator
 
-조율은 7개 Agent 중 하나이고, Orchestrator는 조율을 포함한 모든 Agent를 같은 방식으로 등록하고 호출하는 뼈대다. Orchestrator는 Agent가 아니며 Agent 수(7)에 들어가지 않는다.
+조율은 Agent 6개(조율 1 + 실행 5 — 기준 문서 시트 1. 향후 도입 검수 Agent까지 등록부에는 7개) 중 하나이고, Orchestrator는 조율을 포함한 모든 Agent를 같은 방식으로 등록하고 호출하는 엔진이다. Orchestrator는 Agent가 아니며 Agent 수에 들어가지 않는다.
 
-기준 문서는 흐름 제어를 "조율이 맡는다"고 적었다. 구현에서는 아래와 같이 나눈다. 기준 문서는 시트 1 용어 'Orchestrator(실행 뼈대)'에서 이 나눔을 적었다 — "기준 문서에서 '조율'이 이 규칙을 맡는다고 적힌 곳은 Orchestrator가 수행한다".
+기준 문서는 흐름 제어를 "조율이 맡는다"고 적었다. 구현에서는 아래와 같이 나눈다. 기준 문서는 시트 1 용어 'Orchestrator(실행 흐름과 상태를 관리하는 엔진)'에서 이 나눔을 적었다 — "기준 문서에서 '조율'이 이 규칙을 맡는다고 적힌 곳은 Orchestrator가 수행한다".
 
 | 기준 문서 표현 | 구현 담당 | 근거 |
 |---|---|---|
-| 재수행 루프(횟수 세기와 다시 부르기)는 조율이 | Orchestrator | 시트 1 용어 '재수행' · 'Orchestrator(실행 뼈대)', 시트 7 재수행 표 주석(예외 여섯 곳) |
+| 재수행 루프(횟수 세기와 다시 부르기)는 조율이 | Orchestrator | 시트 1 용어 '재수행' · 'Orchestrator(실행 흐름과 상태를 관리하는 엔진)', 시트 7 재수행 표 주석(예외 여섯 곳) |
 | R-9 실행 상태 관리 · 이어하기 · 동시 실행 제한 | Orchestrator | 시트 5 R-9 |
 | R-11 호출 실패 처리(재시도 · 재개) | 재시도는 tools, 재개는 Orchestrator | 시트 5 R-11 |
 | 재작성 실행(고른 묶음만 다시 돌리기 · 되돌리기 · 기회 반환) | Orchestrator | 시트 5 R-6 |
@@ -1000,7 +1000,7 @@ T-S1이 확정한 featureList는 첫 버전 이후 바뀌지 않는다. T-W1이 
 | ExecutionRecord · CallLog | reasoningEffort | 추론 모델의 추론 강도 기록 |
 | ExecutionRecord | imageInputTokens, imageOutputTokens | 그 실행의 이미지 호출 토큰 합계 — 글 토큰 합계와 따로(4.6) |
 | (신규) ImageRequest · ImageResponse · ImageProvider | — | 이미지 호출처 요청 · 응답 · 어댑터 약속(4.6) |
-| TaskModelSetting | reasoningEffort, imageProvider, imageModel, imageQuality, imageSize | Task별 호출 설정의 추론 강도 · 이미지 설정(7.1). 모델을 Task별로 두는 것은 기준 문서(시트 1 · 시트 4 `Run.settingsSnapshot`)에 있고, 값은 잠정이다 |
+| TaskModelSetting | reasoningEffort, imageProvider, imageModel, imageQuality, imageSize | Task별 호출 설정의 추론 강도 · 이미지 설정(7.1). 모델을 Task별로 두는 것과 그 범위(LLM을 부르는 Task마다 — T-C2 · G-01 · T-W3 · T-C4 없음)는 기준 문서(시트 1 · 시트 4 `Run.settingsSnapshot`)에 있고, 값은 잠정이다 |
 | TaskModelSetting | purposeModels | 호출 목적 → 모델 이름 — 함수별 모델(4.2 · 7.1) |
 | Settings | agents | 옛 설정 사본의 Agent별 설정 — 읽기 전용, Task별 설정이 없는 옛 실행 건만 쓴다 |
 | CallTry · CallLog · ExecutionRecord | inputTokens, cachedInputTokens, outputTokens, reasoningTokens | 토큰 사용량 — 시도별 · 호출 합계 · 실행 합계. 관리자 조회에 보인다 |

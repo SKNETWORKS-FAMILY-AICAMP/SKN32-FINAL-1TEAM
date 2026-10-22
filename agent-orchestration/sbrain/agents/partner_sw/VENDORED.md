@@ -24,7 +24,7 @@
 - `res/prompts/writing_rules.json`, `res/prompts/reference/` (`agent_persona.md` · `section_checklist.md` · `style_guide.md`), `res/prompts/templates/` (`early_startup.md` · `general.md` · `pre_startup.md`)
 - `res/crawling/development_knowledge/output/development_knowledge.json` · `source_manifest.json`
 - `res/crawling/web_trend/output/web_design_trends_2026.json`
-- `res/crawling/industry_research/output/` — KIET 검색 결과·보고서·키워드 이력 저장 위치. 로컬 생성 파일은 Git과 wheel에서 제외함
+- `res/crawling/industry_research/output/` — KIET 검색 결과 · 보고서 · 키워드 이력을 두는 곳. 로컬에서 만든 파일은 Git과 wheel에서 뺌
 - `__init__.py` — **새 파일**(원본은 이름 공간 패키지). 패키지 상대 import · 패키지 자료 배포용
 
 **agent_validation_1/** (코드 4개, 자료 19개)
@@ -49,15 +49,15 @@
 | `runtime/llm_runtime.py` `_parse_response` | 결과의 기록용 칸(`model` · `requestedModel` · `fallbackUsed` · `fallbackReason` · `responseId` · `usage` · `inputChars` · `maxOutputTokens`) 삭제 — `status` · `functionId` · `functionName`만 남김 | 호출 기록이 따로 남는다, 산출물에 싣지 않는다 |
 | `runtime/llm_runtime.py` `_validation_rubric_text` · `_validation_reference_text` · `writing_prompt` | `path.exists()` · `path.read_text()` → `resources.exists()` · `resources.read()` | 자료 파일은 불러올 때 한 번 읽은 상수(Task 실행 중 디스크 안 열기) |
 | `functions/python_functions.py` `collect_web_data` | 기록용 칸(`model` · `responseId` · `usage` · `inputChars`) 옮기기 한 줄 삭제 | `request_json`이 더는 싣지 않는다 |
-| `runtime/research_context.py` | 자료 읽기 `resources.read`, 있는 파일 목록(`_SIGNATURE`)을 불러올 때 한 번 정하고 색인을 미리 만든다. 명시적 KIET 갱신 뒤에만 시장 자료 색인을 다시 만든다 | 보통 Task 실행 중 디스크를 다시 보지 않음. 자료가 비어 있으면 근거 없음으로 처리 |
+| `runtime/research_context.py` | 자료 읽기 `resources.read`, 있는 파일 목록(`_SIGNATURE`)을 불러올 때 한 번 정하고 색인을 미리 만든다. 명시적 KIET 갱신 뒤에만 시장 자료 색인을 다시 만든다 | 보통 Task 실행 중 디스크를 다시 보지 않음. 자료가 비어 있으면 근거 없음으로 다룸 |
 | `runtime/research_context.py` `_index` | 자료 JSON 글자 읽기 `utf-8` → `utf-8-sig`(`resources.read`가 BOM을 뗀다) | 모든 자료 파일을 한 곳(`resources`)에서 같은 방식으로 읽는다. BOM 없는 파일은 결과가 같다 |
 | `runtime/research_context.py` `retrieve` | 원래 본문을 `_retrieve`로 옮기고 `retrieve`는 호출 수단의 `tools.search`(목적 '자료 검색', `calls.search`)로 감싸 부른다 | 로컬 자료 검색도 Task 안의 호출로 기록 · 재시도 · 제한 시간을 거친다. F01(`collect_web_data`) 안의 호출도 여기를 지난다 — F01 함수 본문은 바꾸지 않았다. 검색 호출 안에서 LLM을 부르지 않는다. 호출 수단(`partner_call` 블록) 밖이면 `RuntimeError` |
 | `runtime/llm_runtime.py` `writing_prompt` | `writing_rules.json` 글자 읽기 `utf-8` → `utf-8-sig`(`resources.read`) | 위와 같음 |
 | `runtime/pipeline.py` | `import os` · `time` · `timezone` 삭제, 실행 시각 · 경과 시간 칸(`startedAt` · `createdAt` · `completedAt` · `elapsedSeconds` · `durationMs` · `retryHistory[].timestamp`) 삭제 | 시각은 쓰지 않는다(standards 10절) |
-| `runtime/pipeline.py` `refresh_user_industry_research` | 담당자 `run_pipeline`에서 F01 전에 실행. `SBRAIN_AUTO_RESEARCH=1`일 때만 KIET 사용자 키워드를 검색하고 `raw_kiet_results.json` · `results.json` · `keyword_history.json`을 갱신. 기본값은 건너뜀 | 이 파일 갱신 방식은 담당자 경로에만 해당 |
+| `runtime/pipeline.py` `refresh_user_industry_research` | 담당자 `run_pipeline`에서 F01 전에 실행. `SBRAIN_AUTO_RESEARCH=1`일 때만 KIET 사용자 키워드를 검색하고 `raw_kiet_results.json` · `results.json` · `keyword_history.json`을 갱신. 기본값은 건너뜀 | 이 파일을 갱신하는 방식은 담당자 경로에만 해당 |
 | (담당자 SB-360 판이 엔진 폴더 `sbrain/orchestrator/market_research.py`에 넣은 실행별 KIET 검색) | 우리 연결 코드 `partner_sw/market_research.py`로 옮겼다(4절 — 우리 파일이라 `[S-Brain]` 주석 대상이 아님). 스위치 · 실패 처리 · 재시도 횟수를 더했다 | 엔진은 S-Brain · 담당자 코드 · `requests`를 모르는 범용 실행기다 |
-| `runtime/market_crawler.py` `add_keyword` | 현재 사용자 키워드만 KIET 연구·동향에서 검색하고 세 결과 파일에 upsert | 기존 기준 키워드 결과를 다시 수집하거나 덮어쓰지 않음 |
-| `resources.py` `refresh` · `runtime/research_context.py` `refresh_market_sources` | 명시적 KIET 갱신 뒤 로컬 자료 캐시와 검색 색인을 새로고침 | 일반 Task는 파일을 다시 읽지 않고, 갱신한 실행에서 새 자료를 곧바로 사용 |
+| `runtime/market_crawler.py` `add_keyword` | 현재 사용자 키워드만 KIET 연구 · 동향에서 검색하고 세 결과 파일에 upsert | 이미 있는 기준 키워드의 결과를 다시 수집하거나 덮어쓰지 않음 |
+| `resources.py` `refresh` · `runtime/research_context.py` `refresh_market_sources` | 명시적 KIET 갱신 뒤 로컬 자료 캐시와 검색 색인을 새로고침 | 일반 Task는 파일을 다시 읽지 않고 갱신한 실행에서 새 자료를 곧바로 씀 |
 | `runtime/pipeline.py` `_normalize_image_output` | 노드 계약이 깨지면 기본 흐름 대신 `FormatError`, 딕셔너리가 아니면 `FormatError` | 쓸 수 없는 응답은 재시도 |
 | `runtime/pipeline.py` `_writing_criteria` | 기준 폴더(`Path(__file__).resolve()`)를 모듈 상수 `_ROOT`로, 파일 읽기 `resources.read` | Task 실행 중 디스크 안 보기 |
 | `agent_validation_1/validation_1.py` `_regulation_evidence` | `path.exists()` · `path.read_text()` → `resources` | 같음 |
@@ -66,11 +66,11 @@
 | 자료 `agent_validation_1/res/reference/regulations/예비창업패키지 세부관리기준(2025년).hwp.json` · `초기창업패키지 세부관리기준(2025년).hwp.json` | `error` 칸(변환 도구 hwp5의 경고 문구 — 담당자 PC 설치 경로가 들어 있음)을 `null`로 | 저장소에 담당자 PC 경로를 남기지 않는다. 이 칸은 어느 코드도 읽지 않아 동작이 같다. 다음 판을 받을 때 같은 칸이 다시 채워져 있으면 다시 지운다 |
 
 **바꾸지 않은 것(알려 둘 것)**
-- 응답 정리: 코드 울타리를 제거한 뒤 JSON 객체 추출에 성공하면 파싱 결과를 정상 반환한다. 추출할 JSON 객체가 없으면 `FormatError`를 내어 `tools`가 재시도한다.
-- KIET 크롤러(`runtime/market_crawler.py`)의 직접 HTTP 요청은 고정된 `www.kiet.re.kr` 검색 · 요약 주소에만 보낸다. KIET 조회는 OpenAI 호출이나 토큰 사용량에 포함되지 않는다. 담당자 자동 갱신(`SBRAIN_AUTO_RESEARCH`, 기본 꺼짐)은 우리 실행 흐름이 부르지 않아 워커에 그 값을 넣어도 바뀌지 않는다. 우리 실행 흐름에서 KIET로 나가는 것은 연결 코드 `market_research.py`(`SBRAIN_KIET_SEARCH`를 켰을 때만 — 4절)뿐이고, 크롤러의 `crawl_keyword`만 부르며(`add_keyword` · 파일 저장은 부르지 않음) 크롤러 코드는 고치지 않았다.
+- 응답 정리: 코드 울타리를 뗀 뒤 JSON 객체 추출에 성공하면 파싱 결과를 정상적으로 돌려준다. 추출할 JSON 객체가 없으면 `FormatError`를 내어 `tools`가 재시도한다.
+- KIET 크롤러(`runtime/market_crawler.py`)의 직접 HTTP 요청은 고정된 `www.kiet.re.kr` 검색 · 요약 주소에만 보낸다. KIET 조회는 OpenAI 호출이나 토큰 사용량에 들지 않는다. 담당자 자동 갱신(`SBRAIN_AUTO_RESEARCH`, 기본 꺼짐)은 우리 실행 흐름이 부르지 않아 워커에 그 값을 넣어도 바뀌지 않는다. 우리 실행 흐름에서 KIET로 나가는 것은 연결 코드 `market_research.py`(`SBRAIN_KIET_SEARCH`를 켰을 때만 — 4절)뿐이고, 크롤러의 `crawl_keyword`만 부르며(`add_keyword` · 파일 저장은 부르지 않음) 크롤러 코드는 고치지 않았다.
 - `agent_validation_1/validation_1.py` `validate_section` 결과의 기록용 키(`model` · `responseId` · `usage`)는 그대로 둔다. 연결 코드(`verify.py`)가 판정 · 점수만 `SectionResult`로 옮기고 이 키는 버린다.
 - `scoring.py`의 `documentLayerScore`(`× 0.7`)는 그대로다. 우리 점수는 연결 코드가 실행 설정 `scoring.docLayerMax`로 낸다.
-- `score_section`은 울타리를 `strategy_limits`와 `_strategy_limits` 모두에서 읽는다. 개발 종료월 40점 · 지원금 상한 50점 감점은 본문 문자열을 훑지 않고 F19의 `inputErrorCodes`를 기준으로 적용한다. 따라서 협약 이후 로드맵 날짜는 개발 종료월 감점에 포함되지 않으며, F19 fail 점수 상한 59점은 유지한다.
+- `score_section`은 울타리를 `strategy_limits`와 `_strategy_limits` 모두에서 읽는다. 개발 종료월 40점 · 지원금 상한 50점 감점은 본문 문자열을 훑지 않고 F19의 `inputErrorCodes`를 기준으로 매긴다. 그래서 협약 이후 로드맵 날짜는 개발 종료월 감점에 들지 않으며 F19 fail 점수 상한 59점은 그대로 둔다.
 - 모듈을 불러올 때 읽는 파일(`CONTRACT` · `RUBRIC` · `CRITERIA_REGISTRY` · `SECTION_CRITERIA` · `semantic_review`의 지시문)은 원래도 불러올 때 한 번이라 그대로 두었다.
 - `python_functions.validate_section`의 함수 안 import는 그대로다 — 연결 코드가 `agent_validation_1.validation_1`을 먼저 불러 두면 실행 중 파일을 읽지 않는다.
 
@@ -114,12 +114,12 @@
 
 ### 표 대체 안내 (`writing.py` — 담당자 SB-360의 `displayReason`)
 
-- 표 대체 안내는 원문 `fallbackReason`의 낱말이 아니라 `fallbackReasonCodes`로 고른다. T-W3가 `TABLE_STRUCTURE_INVALID`, `F19_VALIDATION_FAILED` 또는 F19가 전달한 구조화 원인 코드를 `tableOutputs[항목]`에 저장하고, 코드에 따른 `displayReason`도 함께 만든다. 화면 조회는 두 값을 그대로 전달하며 문장을 다시 분류하지 않는다. 코드가 없는 옛 결과는 일반 안내 문구를 사용한다.
+- 표 대체 안내는 원문 `fallbackReason`의 낱말이 아니라 `fallbackReasonCodes`로 고른다. T-W3가 `TABLE_STRUCTURE_INVALID`, `F19_VALIDATION_FAILED` 또는 F19가 전달한 구조화된 원인 코드를 `tableOutputs[항목]`에 저장하고 코드에 따른 `displayReason`도 함께 만든다. 화면 조회는 두 값을 그대로 넘기며 문장을 다시 분류하지 않는다. 코드가 없는 옛 결과는 일반 안내 문구를 쓴다.
 - 2026-10-13 요청 반영: `fallbackReasonCodes`를 T-W3 출력과 `tableFallbacks[]` 응답에 추가했다.
 
 ### 입력 오류 판별 (`verify.py` — 담당자 SB-360부터 issue 글 대신 코드로)
 
-- 담당자 F19는 Python 저비용 검사에서 다음 `inputErrorCodes`를 반환한다. issue 문구와 독립된 구조화 값이며, 의미 검증(LLM)이 비슷한 문구를 내더라도 이 코드는 설정되지 않는다.
+- 담당자 F19는 Python 저비용 검사에서 다음 `inputErrorCodes`를 돌려준다. issue 문구와 독립된 구조화 값이며 의미 검증(LLM)이 비슷한 문구를 내더라도 이 코드는 붙지 않는다.
   - `AGREEMENT_MONTHS_EXCEEDED`: 협약기간 일정이 최대 개월 수 초과
   - `AGREEMENT_SCHEDULE_AFTER_DEADLINE`: 협약 일정 종료월이 개발 종료월 이후
   - `SUPPORT_LIMIT_EXCEEDED`: 정부지원사업비가 지원규모 상한 초과
@@ -160,5 +160,5 @@ def run_one(code):                                                  # 또는 스
 
 ## 6. 저장소 사본에서 뺀 경로
 
-- `sbrain/agents/partner_sw/agent_strategy/res/crawling/industry_research/output/` — 로컬 시장 자료. Git과 wheel에서 제외한다. 파일이 없거나 자동 갱신이 꺼져 있으면 빈 자료로 검색하고 '근거 없음 — 수치 · 경쟁사 추정 금지'를 유지한다.
+- `sbrain/agents/partner_sw/agent_strategy/res/crawling/industry_research/output/` — 로컬 시장 자료. Git과 wheel에서 뺀다. 파일이 없거나 자동 갱신이 꺼져 있으면 빈 자료로 검색하고 '근거 없음 — 수치 · 경쟁사 추정 금지'를 그대로 둔다.
 - 나머지 담당자 자료 파일(작성 규칙 · 검증 기준 · 공고 규정 JSON 등)은 코드의 일부라 사본에 들어간다.
