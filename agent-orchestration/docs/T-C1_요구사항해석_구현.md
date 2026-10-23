@@ -2,7 +2,7 @@
 
 | 항목 | 내용 |
 |---|---|
-| 기준일 | 2026-10-16 — 지금 코드 기준 |
+| 기준일 | 2026-10-23 — 지금 코드 기준 |
 | 기준 문서 | S-Brain Agent 기능정의서 v1.12 — 시트 2 T-C1, 시트 3 T-C1 입출력 행, 시트 4 PreInput · CompanyInfo · RevenueItem · ItemSpec · ReferenceSummary, 시트 6 E-C1-* |
 | 참고 | `web/backend/app_schema.sql` (웹 DB 스키마, 같은 저장소) |
 | 코드 | `sbrain/intake/` (웹 DB → PreInput), `sbrain/agents/supervisor/tc1.py` (T-C1), `sbrain/orchestrator/openai_provider.py` (OpenAI 호출처) |
@@ -28,7 +28,7 @@
 
 ```mermaid
 flowchart TD
-  W["웹 create_project<br/>폼 저장"] --> DB[("웹 DB (공유 MySQL)")]
+  W["웹 create_project<br/>폼 저장"] --> DB[("웹 DB (MySQL)")]
   W -- "account_id, project_id" --> S["request_start<br/>flow/service.py (웹 요청 안)"]
   DB --> L["SqlProjectInputSource.load<br/>intake/sql_source.py"]
   S --> L
@@ -132,8 +132,8 @@ flowchart TD
 - **수익모델 단가:** 항목이 1건 이상이고, 항목마다 단가가 있어야 한다(시트 4 `revenueItems`). 단가 없는 항목을 버리면 수익 항목이 조용히 빠지고, 채우면 AI가 단가를 지어내게 되므로 입력을 막는다.
 - **팀 구성원:** 웹이 팀원을 입력하거나 '팀원 없음'을 반드시 고르게 하므로 필수 검사에서 뺐다. 스키마에 '팀원 없음' 컬럼은 없어 `team_members` 0 row를 팀원 없음으로 본다.
 - **사업비 · 일정:** 코드 스위치 `PLAN_TABLES_REQUIRED`(`sbrain/orchestrator/settings.py`)가 켜져 있을 때만 본다 — 지금 켜져 있고, 켠 값이 기준 문서(시트 6 `E-C1-REQUIRED`)와 같다. 웹 `REQUIRE_BUDGET_SCHEDULE`과 같은 값으로 둔다. 결측 이름은 '사업비 집행계획' · '사업비 집행계획(1단계)' · '사업비 집행계획(2단계)' · '추진 일정(협약기간 내)'이다(글자 잠정). 협약 이후 일정은 선택 입력이다. 스위치를 끄면 비어도 통과하고, 계획서의 그 표는 '확인 필요'로 나간다.
-- 결측이면 `StartCheck(ok=False, code="E-C1-REQUIRED", missing=[…])`를 돌려주고 시작 요청을 넣지 않는다. 안내 예: `필수 항목을 입력해주세요: 수익모델 단가, 성별`(기능정의서 v1.11 문구 — v1.12 시트 6은 웹 문구 '필수 항목이 비어 있어요: {누락 항목}'으로 바뀌었다. 코드 문구는 그대로 둔다 — `기준문서_v1.12_반영점검.md` 3.2)
-- 기준 문서(시트 4)는 기업명(개인사업자 · 법인) · 대표자 역량 · 사업자등록번호(마이페이지)도 필수로 적는다. 웹이 입력 단계에서 막고, 이 재확인 목록에는 넣지 않았다(`기준문서_v1.12_반영점검.md` 3.2).
+- 결측이면 `StartCheck(ok=False, code="E-C1-REQUIRED", missing=[…])`를 돌려주고 시작 요청을 넣지 않는다. 안내 예: `필수 항목을 입력해주세요: 수익모델 단가, 성별`(기능정의서 v1.11 문구 — v1.12 시트 6은 웹 문구 '필수 항목이 비어 있어요: {누락 항목}'으로 바뀌었다. 코드 문구는 그대로 둔다)
+- 기준 문서(시트 4)는 기업명(개인사업자 · 법인) · 대표자 역량 · 사업자등록번호(마이페이지)도 필수로 적는다. 웹이 입력 단계에서 막고, 이 재확인 목록에는 넣지 않았다.
 - 빈 문자열 · 빈 목록도 결측으로 본다(잠정). 첫 창업 여부는 받지 않으므로 확인하지 않는다.
 
 ## 6. T-C1 처리 (`agents/supervisor/tc1.py`)
