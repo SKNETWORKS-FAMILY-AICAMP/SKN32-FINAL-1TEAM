@@ -16,6 +16,7 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 
 import app.routers.auth as auth_router
 import app.security as security
@@ -922,3 +923,107 @@ def test_admin_score_history_carries_the_run_s_maxima(admin_client, user_client,
     body = admin_client.get(f'/admin/items/{pid}/score-history').json()
 
     assert (body['doc_max'], body['code_max'], body['plan_max']) == (50.0, 20.0, 30.0)
+
+
+def test_notice_list_preserves_unknown_without_fetching_payload(admin_client, db_session):
+    db_session.add(Notice(
+        notice_id='NOTICE-UNKNOWN', source='bizinfo', title='상태 미확인 공고',
+        recruitment_status='unknown', raw={'large': 'x' * 10000}, embedding=b'\x00' * 4096,
+    ))
+    db_session.commit()
+    statements = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith('SELECT') and 'FROM notices' in statement:
+            statements.append(statement)
+
+    engine = db_session.get_bind()
+    event.listen(engine, 'before_cursor_execute', capture)
+    try:
+        result = admin_client.get('/admin/notices', params={'q': '상태 미확인'})
+    finally:
+        event.remove(engine, 'before_cursor_execute', capture)
+    assert result.status_code == 200
+    assert result.json()[0]['recruitment_status'] == 'unknown'
+    assert result.json()[0]['has_embedding'] is True
+    assert len(statements) == 1
+    assert 'notices.raw' not in statements[0]
+    assert 'notices.embedding IS NOT NULL' in statements[0]
+
+
+def test_notice_display_status_is_calculated_without_changing_source(admin_client, db_session, monkeypatch):
+    import app.routers.admin as admin_router
+
+    today = datetime.date(2026, 10, 21)
+    monkeypatch.setattr(admin_router, 'korea_today', lambda: today)
+    db_session.add(Notice(
+        notice_id='NOTICE-DISPLAY', source='bizinfo', title='표시 상태 검증',
+        recruitment_status='unknown', apply_start=today, apply_end=today,
+        apply_period_type='fixed',
+    ))
+    db_session.commit()
+    response = admin_client.get('/admin/notices', params={'q': '표시 상태 검증'})
+    assert response.status_code == 200
+    row = response.json()[0]
+    assert row['display_status'] == '접수기간 내 · 원문 확인'
+    assert row['recruitment_status'] == 'unknown'
+    db_session.expire_all()
+    notice = db_session.query(Notice).filter_by(notice_id='NOTICE-DISPLAY').one()
+    assert notice.recruitment_status == 'unknown'
+
+
+@pytest.mark.parametrize('mode', ['partial_overweight', 'duplicate', 'unknown_after_valid', 'disable_one'])
+def test_checklist_invalid_updates_preserve_entire_state(admin_client, mode):
+    before = admin_client.get('/admin/checklist').json()
+    row = next(r for r in before if r['enabled'])
+    entry = {'check_item_id': row['check_item_id'], 'weight': row['weight'], 'enabled': True}
+    if mode == 'partial_overweight':
+        payload = [{**entry, 'weight': 15}]
+    elif mode == 'duplicate':
+        payload = [entry, entry]
+    elif mode == 'unknown_after_valid':
+        payload = [{**entry, 'weight': 15}, {**entry, 'check_item_id': 99999999}]
+    else:
+        payload = [{**entry, 'enabled': False}]
+    result = admin_client.put('/admin/checklist', json=payload)
+    assert result.status_code == (404 if mode == 'unknown_after_valid' else 422), result.text
+    assert admin_client.get('/admin/checklist').json() == before
+
+
+def test_checklist_valid_partial_update_includes_untouched_rows(admin_client):
+    before = admin_client.get('/admin/checklist').json()
+    active = [r for r in before if r['enabled'] and r['category'] == before[0]['category']]
+    first, second = active[:2]
+    payload = [
+        {'check_item_id': first['check_item_id'], 'weight': first['weight'] + 0.5, 'enabled': True},
+        {'check_item_id': second['check_item_id'], 'weight': second['weight'] - 0.5, 'enabled': True},
+    ]
+    result = admin_client.put('/admin/checklist', json=payload)
+    assert result.status_code == 200, result.text
+    after = result.json()
+    for old, new in zip(before, after, strict=True):
+        if old['check_item_id'] not in {first['check_item_id'], second['check_item_id']}:
+            assert old == new
+    assert sum(r['weight'] for r in after if r['enabled'] and r['category'] == first['category']) == 15
+
+
+def test_checklist_category_may_be_fully_disabled(admin_client):
+    before = admin_client.get('/admin/checklist').json()
+    category = before[0]['category']
+    payload = [{'check_item_id': r['check_item_id'], 'weight': r['weight'], 'enabled': False}
+               for r in before if r['category'] == category]
+    result = admin_client.put('/admin/checklist', json=payload)
+    assert result.status_code == 200, result.text
+    assert all(not r['enabled'] for r in result.json() if r['category'] == category)
+
+
+def test_ops_summary_maps_code_and_plan_rework_to_display_fields(admin_client, orch):
+    orch.responses['admin_summary'] = lambda: make_admin_summary(layer_changes=[
+        NS(layer='codeCheck', first_avg=10.0, after_avg=12.0, delta=2.0, count=1),
+        NS(layer='featureMatch', first_avg=12.0, after_avg=12.0, delta=0.0, count=1),
+    ])
+    response = admin_client.get('/admin/ops-summary')
+    assert response.status_code == 200, response.text
+    layers = {row['layer']: row for row in response.json()['deviations']}
+    assert layers['code'] == dict(layer='code', round1_avg=10.0, round2_avg=12.0, delta_avg=2.0, sample_count=1)
+    assert layers['plan'] == dict(layer='plan', round1_avg=12.0, round2_avg=12.0, delta_avg=0.0, sample_count=1)

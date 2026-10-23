@@ -10,6 +10,8 @@
   산출물을 읽지 않고 실행 기록의 출력 요약 메타만 본다 — 완전 삭제 뒤에도 셀 수 있다.
 - 코드 점검 · 계획서 대조 · 산출물층 점수는 검증-2 원점수(출력 요약)를 그 실행 건 설정 사본 배점으로 환산해 싣는다
   (score_scale.py). 실행 줄 data.maxScores에 그 실행 건 만점(D · C · P)을 함께 싣는다.
+- 채점 Task 목록(scored_task_ids)은 관리자 조회가 저장소의 한 시점 창구에서 채점 기록만 읽을 때 넘기는 값이다 — 현재 점수 ·
+  층별 채점이 보는 실행 기록이 이 Task들의 것뿐이라, 이 목록으로 거른 기록에서 낸 점수는 실행 기록 전부에서 낸 점수와 같다.
 """
 from __future__ import annotations
 
@@ -23,6 +25,7 @@ from ..models import ReworkComparison, Run
 from ..models.base import Category, ErrorKind, KeptSide, Trigger
 from ..models.clock import UTC_MIN, kst_month
 from ..orchestrator.errors import COMMAND_ERROR_CODES, ERROR_CODES
+from ..orchestrator.registry import TaskSpec
 from ..orchestrator.store import FINISHED_REQUEST, LogStatsRow, StartRequest
 from ..orchestrator.trace import CallLog, ExecutionRecord, FeedbackLink, OutputMeta, PointerEvent, TraceEvent
 from .score_scale import ScoreMaxes, scale_artifact_scores, score_maxes
@@ -87,6 +90,20 @@ def current_scores(pointers: dict[str, int], records: list[ExecutionRecord], *,
             return None
         return artifact_layer_score(m, maxes) if key == "artifactScore" else m.score
     return {name: score(key) for name, key in CURRENT_SCORE_KEYS}
+
+
+def scored_task_ids(specs: Iterable[TaskSpec]) -> tuple[str, ...]:
+    """채점 Task 목록 — 현재 점수 키(CURRENT_SCORE_KEYS의 산출물 키)를 출력하는 Task(등록부 TaskSpec.outputs의 값)와 층별
+    채점 Task(SCORE_LAYERS)를 합친 것, 등록부 순서 · 중복 없이 (지금 T-V1 · T-V2 · G-02b).
+
+    current_scores · 층별 채점은 이 Task들의 성공한 실행 기록만 본다 — 실행 기록의 outputs는 엔진이 등록부 outputs로만
+    채운다. 관리자 조회(reads.py)가 한 시점 창구의 채점 기록 읽기(scored_executions · scored_executions_since)에 넘긴다
+    (성능 측정 C 후속, 2026-10-20). Task ID를 따로 적지 않고 등록부 · SCORE_LAYERS에서 만든다.
+    """
+    keys = {key for _, key in CURRENT_SCORE_KEYS}
+    ids = [spec.task_id for spec in specs if keys & set(spec.outputs.values())]
+    ids += [task for _, task, _ in SCORE_LAYERS]
+    return tuple(dict.fromkeys(ids))
 
 
 @dataclass(frozen=True)
@@ -228,5 +245,5 @@ def start_request_rows(requests: list[StartRequest], reason: str) -> list[LogSta
 
 __all__ = [
     "CURRENT_SCORE_KEYS", "KIND_REQUEST", "KIND_RUN", "OUTPUT_SCORE_LAYERS", "REASONS", "SCORE_LAYERS", "RunRecords",
-    "artifact_layer_score", "current_scores", "layer_score", "run_stats_row", "start_request_rows",
+    "artifact_layer_score", "current_scores", "layer_score", "run_stats_row", "scored_task_ids", "start_request_rows",
 ]

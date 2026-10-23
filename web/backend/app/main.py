@@ -2,7 +2,7 @@
 
     uvicorn app.main:app --reload --port 8000
 
-Swagger 문서: http://127.0.0.1:8000/docs
+Swagger 문서: http://127.0.0.1:8000/docs — 환경 변수 ENABLE_API_DOCS=1일 때만 열린다(기본은 닫힘, app/api_docs.py).
 (기술스택 선정서 2-3-2 — 6인 팀 인터페이스 합의 비용을 줄이는 용도로 그대로 확인용)
 
 auth/projects/admin/faqs/biz_check/profile 라우터가 전부 등록돼 있다. faqs 라우터(로그인한
@@ -24,19 +24,19 @@ profile 라우터(`GET`/`POST /profile`, `PUT`/`DELETE /profile/{profile_id}`, 2
 import os
 
 import anyio
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
 
-from app.database import get_db, init_sqlite_dev_db
-from app.models import Notice
+from app.api_docs import docs_kwargs
+from app.database import init_sqlite_dev_db
 from app.orch.errors import register_error_handlers
 from app.orch.startup import init_orchestrator
 from app.request_logging import RequestLoggingMiddleware
 from app.routers import admin, artifact_files, auth, biz_check, faqs, profile, projects, uploads
 from app.routers.projects import UPLOAD_DIR
 
-app = FastAPI(title='S-Brain API', version='0.1.0')
+# API 문서 주소는 기본으로 닫는다 — 로그인 없이 관리자 API를 포함한 전체 목록이 보이기 때문(ENABLE_API_DOCS=1일 때만 열림).
+app = FastAPI(title='S-Brain API', version='0.1.0', **docs_kwargs())
 
 # DB_BACKEND=sqlite(.env, 개인 로컬 개발용)일 때만 실제로 테이블을 만든다.
 # DB_BACKEND=mysql(팀 공유 AWS, 기본값)일 때는 아무 일도 안 한다 — 그쪽은 app_schema.sql로 직접 적용.
@@ -96,14 +96,7 @@ def _init_orchestrator_gateway() -> None:
 register_error_handlers(app)
 
 
-@app.get('/test-db')
-def test_db(db: Session = Depends(get_db)):
-    notice = db.query(Notice).filter(Notice.id == 1).first()
-    # for col in notice.table.columns:
-    #     value = getattr(notice, col.name)
-    #     print(col.name, col.type, type(value), repr(value)[:50])
-    print(notice.title)
-    return {"ok": True}
+# /test-db(개발 때 DB 연결 확인용, 로그인 없이 DB를 조회)는 운영에 필요 없어 없앴다 — DB 연결은 로그인 흐름(/auth/me 등)으로 확인한다.
 @app.get('/health')
 def health():
     return {'status': 'ok'}

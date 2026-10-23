@@ -2,8 +2,8 @@
 
 | 항목 | 내용 |
 |---|---|
-| 기준일 | 2026-10-16 — 지금 코드 기준 |
-| 기준 문서 | S-Brain Agent 기능정의서 v1.11 — 시트 2 T-C1, 시트 3 T-C1 입출력 행, 시트 4 PreInput · CompanyInfo · RevenueItem · ItemSpec · ReferenceSummary, 시트 6 E-C1-* |
+| 기준일 | 2026-10-23 — 지금 코드 기준 |
+| 기준 문서 | S-Brain Agent 기능정의서 v1.12 — 시트 2 T-C1, 시트 3 T-C1 입출력 행, 시트 4 PreInput · CompanyInfo · RevenueItem · ItemSpec · ReferenceSummary, 시트 6 E-C1-* |
 | 참고 | `web/backend/app_schema.sql` (웹 DB 스키마, 같은 저장소) |
 | 코드 | `sbrain/intake/` (웹 DB → PreInput), `sbrain/agents/supervisor/tc1.py` (T-C1), `sbrain/orchestrator/openai_provider.py` (OpenAI 호출처) |
 | 테스트 | `tests/test_intake.py`, `tests/test_tc1.py`(메모리 · SQLite 저장소로 한 번씩), `tests/test_partner_inputs_fix.py`(목표 고객 · 창업아이템명 · 팀원 표 행), `tests/test_openai_provider.py`, `tests/test_env.py` |
@@ -28,7 +28,7 @@
 
 ```mermaid
 flowchart TD
-  W["웹 create_project<br/>폼 저장"] --> DB[("웹 DB (공유 MySQL)")]
+  W["웹 create_project<br/>폼 저장"] --> DB[("웹 DB (MySQL)")]
   W -- "account_id, project_id" --> S["request_start<br/>flow/service.py (웹 요청 안)"]
   DB --> L["SqlProjectInputSource.load<br/>intake/sql_source.py"]
   S --> L
@@ -73,7 +73,7 @@ flowchart TD
 | partners | 필수 | `no_partners` · `partners` (`name` · `status` = 기관명 · 상태) | 위와 같음. 예: `OO대학교 (협의 중)` | 위와 같음 |
 | isFirstStartup | 없음 | 없음 | 비움. 웹이 받지 않는다 | 확장(옛 실행 건 호환) |
 | desiredScale | 예비창업자 필수 | `budget_scale_manwon` (만원) | `{값}만원` | 새 판 형식 |
-| businessRegNo | 개인사업자 · 법인 선택 | `companies.business_reg_no` | 예비창업자는 비움 | |
+| businessRegNo | 개인사업자 · 법인 — 마이페이지 필수(작성란에는 입력 칸이 없고 프로필을 불러오면 채워짐, Orchestrator 재확인에는 없음 — 5절) | `companies.business_reg_no` | 예비창업자는 비움 | |
 | selfFundAmount | 개인사업자 · 법인 필수 | `self_funding_allowed` · `self_cash_limit` (원) | 자기부담을 하지 않으면 0, 아니면 `self_cash_limit` | 새 판 형식 |
 | attachments | 선택 | (`project_attachments`) | 읽지 않음 — 첨부 추출(R-8)이 흐름 밖 | |
 
@@ -100,9 +100,11 @@ flowchart TD
 
 수익모델은 여러 건을 모두 `revenueItems`로 싣는다. `revenueUnitPrice`(정수 하나)는 옛 실행 건 호환으로 남겨 첫 항목 단가로 채운다.
 
+- 기준 문서(기능정의서 v1.12 시트 4)가 적은 웹 화면: 업종(`bizType`) · 전문기술분야(`techField`)는 입력 칸이 따로 없고 '주 업종' 한 칸에서 고른다(계획서를 만들 때 지원 분야와 전문기술분야로 나눠 쓴다). 산출물(`outputSummary`)은 사용자에게 받지 않고 작성 Agent가 계획서 항목으로 쓴다. 대표자 유형 · 지방우대 지역 · 직업의 입력 화면은 향후 도입이다(그전에는 계획서에 기본값 '단독' · '해당 없음' · 자리 표시). 기업명은 개인사업자 · 법인 필수, 대표자 역량은 필수다. T-C1은 화면과 관계없이 웹 DB 값을 그대로 옮긴다.
+
 ### 4.3 사업비 · 일정 · 팀 · 목표 고객 · 창업아이템명
 
-기준 문서 타입에 없는 칸이다. `PreInput`과 `CompanyInfo`에 같은 이름으로 있고, T-C1이 그대로 옮긴다.
+기능정의서 v1.11부터 기준 문서 시트 4 칸이다(확장 아님). `PreInput`과 `CompanyInfo`에 같은 이름으로 있고, T-C1이 그대로 옮긴다.
 
 | 필드 (JSON) | 웹 DB 값 | 변환 규칙 |
 |---|---|---|
@@ -130,7 +132,8 @@ flowchart TD
 - **수익모델 단가:** 항목이 1건 이상이고, 항목마다 단가가 있어야 한다(시트 4 `revenueItems`). 단가 없는 항목을 버리면 수익 항목이 조용히 빠지고, 채우면 AI가 단가를 지어내게 되므로 입력을 막는다.
 - **팀 구성원:** 웹이 팀원을 입력하거나 '팀원 없음'을 반드시 고르게 하므로 필수 검사에서 뺐다. 스키마에 '팀원 없음' 컬럼은 없어 `team_members` 0 row를 팀원 없음으로 본다.
 - **사업비 · 일정:** 코드 스위치 `PLAN_TABLES_REQUIRED`(`sbrain/orchestrator/settings.py`)가 켜져 있을 때만 본다 — 지금 켜져 있고, 켠 값이 기준 문서(시트 6 `E-C1-REQUIRED`)와 같다. 웹 `REQUIRE_BUDGET_SCHEDULE`과 같은 값으로 둔다. 결측 이름은 '사업비 집행계획' · '사업비 집행계획(1단계)' · '사업비 집행계획(2단계)' · '추진 일정(협약기간 내)'이다(글자 잠정). 협약 이후 일정은 선택 입력이다. 스위치를 끄면 비어도 통과하고, 계획서의 그 표는 '확인 필요'로 나간다.
-- 결측이면 `StartCheck(ok=False, code="E-C1-REQUIRED", missing=[…])`를 돌려주고 시작 요청을 넣지 않는다. 안내 예: `필수 항목을 입력해주세요: 수익모델 단가, 성별`
+- 결측이면 `StartCheck(ok=False, code="E-C1-REQUIRED", missing=[…])`를 돌려주고 시작 요청을 넣지 않는다. 안내 예: `필수 항목을 입력해주세요: 수익모델 단가, 성별`(기능정의서 v1.11 문구 — v1.12 시트 6은 웹 문구 '필수 항목이 비어 있어요: {누락 항목}'으로 바뀌었다. 코드 문구는 그대로 둔다)
+- 기준 문서(시트 4)는 기업명(개인사업자 · 법인) · 대표자 역량 · 사업자등록번호(마이페이지)도 필수로 적는다. 웹이 입력 단계에서 막고, 이 재확인 목록에는 넣지 않았다.
 - 빈 문자열 · 빈 목록도 결측으로 본다(잠정). 첫 창업 여부는 받지 않으므로 확인하지 않는다.
 
 ## 6. T-C1 처리 (`agents/supervisor/tc1.py`)
@@ -316,11 +319,11 @@ res = app.orchestrator.start_run_for_project(account_id="7", project_id=101)
 | 대상 | 확장 | 용도 |
 |---|---|---|
 | PreInput · CompanyInfo | `revenueUnitPrice` · `isFirstStartup` | v1.10에서 빠졌지만 옛 실행 건 호환으로 남김. 웹 입력값 10종(4.2)과 `RevenueItem`은 v1.10에 있어 확장이 아니다 |
-| PreInput · CompanyInfo | `budgetItems` · `scheduleItems` · `teamRoleCareers` · `teamMemberRows` · `targetCustomer` · `startupItemName` | 4.3 — 계획서 표 · 팀 구성 · 일반현황 근거 · 사용자 목표 고객 |
-| 새 타입 | `BudgetItem` · `ScheduleItem` · `TeamMemberEntry` | 사업비 · 일정 row, 팀원 표 행 |
 | TC1Out | `categoryDefaulted` | 카테고리 기본값 적용 여부 — 추적 기록용 |
 | TaskModelSetting · ExecutionRecord · CallLog | `reasoningEffort` | 추론 모델의 추론 강도 설정 · 기록 |
 | 명령 창구 | `request_start` · `run_start_request` · `start_run_for_project` | 웹 DB에서 읽어 시작(확인 · 워커 실행 · 동기 경로). 프로젝트가 없거나 다른 계정 것이면 `CommandError("PROJECT_NOT_FOUND")` |
+
+- 4.3의 칸(`budgetItems` · `scheduleItems` · `teamRoleCareers` · `teamMemberRows` · `targetCustomer` · `startupItemName`)과 타입 `BudgetItem` · `ScheduleItem` · `TeamMemberEntry`는 기능정의서 v1.11부터 기준 문서 칸 · 타입이라 확장이 아니다(`tests/test_basedoc_v110_markers.py`).
 
 ## 9. 확인 사항
 

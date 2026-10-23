@@ -310,7 +310,7 @@ class TS1In(SBModel):
     company_info: CompanyInfo   # 담당자 입력을 만드는 회사 정보
     prior_results: dict[str, str] = _prior()
     # 회사 정보에 없는 아이디어 설명(ideaText) · 개발 기간(developmentPeriod)을 읽는 사전 정보. LLM에는 정해진 칸만 보낸다.
-    # 기준 문서는 필수이고 흐름이 늘 채운다. 기본값 None은 옛 실행 건 호환용 선언 —
+    # 기준 문서도 선택 선언이고(옛 실행 건을 읽기 위한 선언 — 기능정의서 v1.12) 흐름이 늘 채운다 —
     # 비어 있으면 아이디어 요약(itemSpec.oneLineSummary)을 쓰고 개발 기간은 없는 것으로 본다
     form_input: PreInput | None = None
 

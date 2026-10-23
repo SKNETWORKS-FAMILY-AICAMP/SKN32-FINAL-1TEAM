@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 560" width="1200" height="560" role="img" aria-label="사용자가 한 번 쓰는 흐름: 프로젝트 만들기, 입력 검사, 시작 요청 저장, 워커 실행, 진행 상태 조회, 결과물 내려받기">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#0B6E6E"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="560" rx="20" fill="#F8FAF9"/>
+  <g font-family="'Noto Sans KR','Malgun Gothic','Apple SD Gothic Neo',sans-serif" fill="#151C2C">
+    <text x="40" y="40" font-size="22" font-weight="700">사용자가 한 번 쓰는 흐름</text>
+
+    <!-- row 1 -->
+    <g>
+      <rect x="40" y="80" width="320" height="170" rx="16" fill="#E3F1F0" stroke="#0B6E6E" stroke-width="3"/>
+      <circle cx="78" cy="118" r="20" fill="#0B6E6E"/><text x="78" y="125" font-size="20" font-weight="700" fill="#fff" text-anchor="middle">1</text>
+      <text x="112" y="124" font-size="21" font-weight="700">프로젝트 만들기</text>
+      <text x="64" y="160" font-size="16" fill="#374151">사전 정보 입력 (아이디어 · 사업비 ·</text>
+      <text x="64" y="184" font-size="16" fill="#374151">추진 일정 · 첨부 파일)</text>
+      <text x="64" y="226" font-size="14" font-weight="700" fill="#0B6E6E">POST /projects</text>
+    </g>
+    <g>
+      <rect x="440" y="80" width="320" height="170" rx="16" fill="#E3F1F0" stroke="#0B6E6E" stroke-width="3"/>
+      <circle cx="478" cy="118" r="20" fill="#0B6E6E"/><text x="478" y="125" font-size="20" font-weight="700" fill="#fff" text-anchor="middle">2</text>
+      <text x="512" y="124" font-size="21" font-weight="700">입력 검사</text>
+      <text x="464" y="160" font-size="16" fill="#374151">틀리면 거절하고 프로젝트를 남기지</text>
+      <text x="464" y="184" font-size="16" fill="#374151">않음 (예: 만 16세 미만, 협약기간 초과)</text>
+      <text x="464" y="226" font-size="14" font-weight="700" fill="#0B6E6E">웹 백엔드</text>
+    </g>
+    <g>
+      <rect x="840" y="80" width="320" height="170" rx="16" fill="#FFFFFF" stroke="#C9D1CE" stroke-width="2"/>
+      <circle cx="878" cy="118" r="20" fill="#6B7280"/><text x="878" y="125" font-size="20" font-weight="700" fill="#fff" text-anchor="middle">3</text>
+      <text x="912" y="124" font-size="21" font-weight="700">시작 요청 저장</text>
+      <text x="864" y="160" font-size="16" fill="#374151">조율 함수가 요청을 받아 DB에</text>
+      <text x="864" y="184" font-size="16" fill="#374151">대기 상태로 저장</text>
+      <text x="864" y="226" font-size="14" font-weight="700" fill="#6B7280">조율 함수 · MySQL</text>
+    </g>
+
+    <!-- row 2 -->
+    <g>
+      <rect x="40" y="330" width="320" height="170" rx="16" fill="#FFFFFF" stroke="#C9D1CE" stroke-width="2"/>
+      <circle cx="78" cy="368" r="20" fill="#6B7280"/><text x="78" y="375" font-size="20" font-weight="700" fill="#fff" text-anchor="middle">4</text>
+      <text x="112" y="374" font-size="21" font-weight="700">워커가 실행</text>
+      <text x="64" y="410" font-size="16" fill="#374151">DB에서 일을 가져가 공고 후보 ·</text>
+      <text x="64" y="434" font-size="16" fill="#374151">계획서 · 프로토타입을 차례로 만듦</text>
+      <text x="64" y="476" font-size="14" font-weight="700" fill="#6B7280">워커 + Agent</text>
+    </g>
+    <g>
+      <rect x="440" y="330" width="320" height="170" rx="16" fill="#E3F1F0" stroke="#0B6E6E" stroke-width="3"/>
+      <circle cx="478" cy="368" r="20" fill="#0B6E6E"/><text x="478" y="375" font-size="20" font-weight="700" fill="#fff" text-anchor="middle">5</text>
+      <text x="512" y="374" font-size="21" font-weight="700">진행 상태 조회</text>
+      <text x="464" y="410" font-size="16" fill="#374151">화면이 주기적으로 물어보고, 웹은</text>
+      <text x="464" y="434" font-size="16" fill="#374151">상태를 읽기만 함 (stage · 진행률)</text>
+      <text x="464" y="476" font-size="14" font-weight="700" fill="#0B6E6E">GET /projects/{id}/status</text>
+    </g>
+    <g>
+      <rect x="840" y="330" width="320" height="170" rx="16" fill="#E3F1F0" stroke="#0B6E6E" stroke-width="3"/>
+      <circle cx="878" cy="368" r="20" fill="#0B6E6E"/><text x="878" y="375" font-size="20" font-weight="700" fill="#fff" text-anchor="middle">6</text>
+      <text x="912" y="374" font-size="21" font-weight="700">결과물 내려받기</text>
+      <text x="864" y="410" font-size="16" fill="#374151">docx · pdf · hwp · zip을 요청마다</text>
+      <text x="864" y="434" font-size="16" fill="#374151">새로 만들어 전달 (약 7~10초)</text>
+      <text x="864" y="476" font-size="14" font-weight="700" fill="#0B6E6E">plan-document.* · deliverable.zip</text>
+    </g>
+
+    <!-- arrows -->
+    <g stroke="#0B6E6E" stroke-width="3" fill="none">
+      <line x1="360" y1="165" x2="436" y2="165" marker-end="url(#a)"/>
+      <line x1="760" y1="165" x2="836" y2="165" marker-end="url(#a)"/>
+      <path d="M1000 250 L1000 290 L200 290 L200 326" marker-end="url(#a)"/>
+      <line x1="360" y1="415" x2="436" y2="415" marker-end="url(#a)"/>
+      <line x1="760" y1="415" x2="836" y2="415" marker-end="url(#a)"/>
+    </g>
+    <g font-size="13" fill="#374151">
+      <text x="398" y="152" text-anchor="middle">요청</text>
+      <text x="798" y="152" text-anchor="middle">통과</text>
+      <text x="600" y="282" text-anchor="middle">워커가 일을 가져감</text>
+      <text x="398" y="402" text-anchor="middle">저장</text>
+      <text x="798" y="402" text-anchor="middle">완료 후</text>
+    </g>
+    <g font-size="14" fill="#374151">
+      <rect x="40" y="525" width="22" height="14" rx="3" fill="#E3F1F0" stroke="#0B6E6E" stroke-width="2"/>
+      <text x="70" y="537">초록 칸 = 웹 백엔드가 하는 일</text>
+    </g>
+  </g>
+</svg>

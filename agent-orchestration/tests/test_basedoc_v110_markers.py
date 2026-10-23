@@ -1,4 +1,4 @@
-"""기준 문서 확장 표시 — 기준 문서(기능정의서 v1.10 · v1.11)에 들어간 필드는 ext() 표시가 없고, 새 판에서 빠졌지만 남긴
+"""기준 문서 확장 표시 — 기준 문서에 들어간 필드(기능정의서 v1.10 · v1.11에서 들어가 v1.12도 같음)는 ext() 표시가 없고, 새 판에서 빠졌지만 남긴
 필드와 아직 기준 문서에 없는 필드는 ext()로 표시한다 (extension_fields는 JSON 이름을 돌려준다)."""
 from __future__ import annotations
 
@@ -192,8 +192,9 @@ def test_required_ness_unchanged():
     # 기준 문서는 필수지만 옛 실행 건 호환으로 선택 선언을 지킨다
     assert c.TV2In.model_fields["plan_doc"].default is None
     assert c.TB1In.model_fields["plan_doc"].default is None
-    assert c.TS1In.model_fields["form_input"].default is None
     assert PreInput.model_fields["revenue_items"].default_factory is list
+    # T-S1 formInput은 기준 문서도 선택 선언이다 (기능정의서 v1.12 — 흐름은 늘 채움)
+    assert c.TS1In.model_fields["form_input"].default is None
     # 확장으로 바꿔도 필수 · 기본값은 그대로
     assert PreInput.model_fields["revenue_unit_price"].is_required()
     assert CompanyInfo.model_fields["revenue_unit_price"].is_required()

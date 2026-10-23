@@ -2,7 +2,7 @@
 (판정 G-02a · G-02b, 안내 문서 G-04, 합치기 M-1 ~ M-4)가 있고 나머지 조율 Task(R-8 — 흐름 밖)는 스텁을 쓴다. T-C2 · G-01은 공고 서버
 연결(agents/notice)이다.
 
-조율은 7개 Agent 중 하나다. Orchestrator(뼈대)가 아니다.
+조율은 Agent 중 하나다. Orchestrator(실행 흐름과 상태를 관리하는 엔진)가 아니다.
 
 - IMPLEMENTED: LLM을 부르는 실구현 Task — 워커 조립(build_app)이 이 Task만 실제 호출처(OpenAI)로 보낸다.
 - PLAIN_TASKS: LLM을 부르지 않는 조율 Task 실구현(등록 종류 task — run(inp, tools), tools를 받지만 부르지 않음). 지금 T-C4.

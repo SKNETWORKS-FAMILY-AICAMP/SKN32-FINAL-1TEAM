@@ -110,11 +110,28 @@ def rotate_refresh_token(db: Session, raw_token: str) -> tuple[User, str, str]:
     if user is None or user.status not in SIGN_IN_STATUSES:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='계정을 사용할 수 없습니다')
 
-    new_raw, new_row = issue_refresh_token(db, user.user_id)
-    old.revoked_at = datetime.datetime.utcnow()
-    old.rotated_to_id = new_row.token_id
-    db.commit()
-    return user, issue_access_token(user.user_id), new_raw
+    # Claim the still-valid token with a conditional UPDATE. A stale ORM object or
+    # a second concurrent request cannot consume the same token twice.
+    now = datetime.datetime.utcnow()
+    try:
+        claimed = db.query(RefreshToken).filter(
+            RefreshToken.token_id == old.token_id,
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at > now,
+        ).update({RefreshToken.revoked_at: now}, synchronize_session=False)
+        if claimed != 1:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail='세션이 만료되었습니다. 다시 로그인해 주세요.')
+        new_raw, new_row = issue_refresh_token(db, user.user_id)
+        db.query(RefreshToken).filter(RefreshToken.token_id == old.token_id).update(
+            {RefreshToken.rotated_to_id: new_row.token_id}, synchronize_session=False,
+        )
+        access_token = issue_access_token(user.user_id)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return user, access_token, new_raw
 
 
 def revoke_refresh_token(db: Session, raw_token: str) -> None:

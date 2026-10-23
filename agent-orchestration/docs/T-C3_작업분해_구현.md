@@ -2,9 +2,9 @@
 
 | 항목 | 내용 |
 |---|---|
-| 기준일 | 2026-10-16 — 지금 코드 기준 |
-| 기준 문서 | S-Brain Agent 기능정의서 v1.11 — 시트 2 T-C3 행, 시트 3 T-C3 입출력 행, 시트 4 TaskPlan · TaskInstruction · FormSpec · EvalItem · Rubric, 시트 6 E-C3-FORM |
-| 참고 | 기획서 v1.12 4-4 · 4-6 · 6-4 |
+| 기준일 | 2026-10-23 — 지금 코드 기준 |
+| 기준 문서 | S-Brain Agent 기능정의서 v1.12 — 시트 2 T-C3 행, 시트 3 T-C3 입출력 행, 시트 4 TaskPlan · TaskInstruction · FormSpec · EvalItem · Rubric, 시트 6 E-C3-FORM |
+| 참고 | 기획서 v1.13 4-4 · 4-6 · 6-4 |
 | 코드 | `sbrain/agents/supervisor/tc3.py` (실제 T-C3), `agents/supervisor/plan.py` (작업 계획 부품 — 스텁 · 실제 T-C3가 함께 씀), `agents/supervisor/rewrite.py` (재작성 · 재수행 안내 다시 쓰기), `agents/form_defaults.py` (신청자 유형별 양식 표), `flow/instruction.py` (지시문 두 부분 · 덧붙임), `flow/sbrain_flow.py` `SBrainFlow.build_instruction` (언제 다시 쓰는지 · 저장 · 재개), `bootstrap.py` (워커 조립 · 호출처 나누기) |
 | 테스트 | `tests/test_task_plan.py`, `tests/test_tc3.py`, `tests/test_partial_resume.py`, `tests/test_instruction.py`, `tests/test_rewrite.py`, `tests/test_worker.py`(T-C3 · 다시 쓰기 조립) |
 | 관련 문서 | `Agent_연동_규격_초안.md` 5.4절 (Agent 팀에 알리는 지시문 모양), `T-C1_요구사항해석_구현.md` (같은 짜임의 앞선 구현 문서) |
@@ -85,7 +85,7 @@ flowchart TD
 
 ## 5. Task 목록과 순서 (`plan.TASK_TABLE`)
 
-- 목록은 고정이다(시트 1 · 기획서 4-4). 웹개발 · AI_API는 12개, 원페이지는 T-B1을 뺀 11개다. 검수 Task(T-P1 · T-P2)는 흐름 밖이라 목록에 없다 — 기준 문서(원페이지 13, 웹개발 · AI API 14)와 다르다. `TaskPlan.tasks`가 받는 개수는 11 ~ 14개다.
+- 목록은 고정이다(시트 1 · 기획서 4-4). 웹개발 · AI_API는 12개, 원페이지는 T-B1을 뺀 11개다. 검수 Task(T-P1 · T-P2)는 향후 도입이라 목록에 없다 — 기준 문서도 검수 도입 전 실행 Task를 12개(원페이지 11개)로 적는다(시트 1 B4 · 시트 2 T-C3 `taskCount` — 고정 Task 14개 · 원페이지 13개는 검수를 넣은 수). `TaskPlan.tasks`가 받는 개수는 11 ~ 14개다.
 - `TaskPlan.category`는 `itemSpec.category`, `taskCount`는 목록 길이다. `TaskPlan.planId`는 새로 만든 12자리 16진수다(형식 잠정).
 - `TaskInstruction.order`는 시트 2 F열의 실행 순서 번호이며 등록부(`flow/catalog.py`) `order`와 같다. `instructionSet`은 `TaskPlan.tasks`와 같은 목록이다.
 
@@ -434,7 +434,7 @@ app.orchestrator.start_writing(rid)
 app.orchestrator.advance(rid)                      # T-C3(실제 7번) → T-S1 재수행(다시 쓰기) → … → 화면 6 대기
 ```
 
-- 이 조립은 공유 DB와 공고 서버에 닿지 않는다. 실제 OpenAI로 가는 것은 T-C1 · T-C3 호출과 다시 쓰기 호출뿐이다(전략 · 작성 · 검증-1, 구현 · 검증-2는 스텁).
+- 이 조립은 DB와 공고 서버에 닿지 않는다. 실제 OpenAI로 가는 것은 T-C1 · T-C3 호출과 다시 쓰기 호출뿐이다(전략 · 작성 · 검증-1, 구현 · 검증-2는 스텁).
 - 재작성 다시 쓰기도 보려면 화면 6에서 `app.orchestrator.request_rework_for_project("1", "문제인식")`을 부르고, 모으는 시간(2초)이 지난 뒤 `app.orchestrator.advance(rid)`를 부른다. 그 묶음의 항목을 만드는 Task(T-W1 · T-W2 · T-W3 중 해당하는 것)마다 다시 쓰기가 한 번씩 불린다.
 
 **볼 것**
@@ -448,7 +448,7 @@ app.orchestrator.advance(rid)                      # T-C3(실제 7번) → T-S1 
 | 내용 | 안내가 틀의 규칙을 뒤집지 않는지, 입력에 없는 수치 · 날짜를 지어내지 않는지, 신청자 개인 정보 값이 없는지 |
 
 - 안내 · 지시문 내용은 운영 로그 · 문서에 옮기지 않는다.
-- 공유 DB 워커(`python -m sbrain.worker`)로 확인할 수도 있지만, 그때는 실제 웹 입력이 OpenAI로 간다. 가짜 입력으로 먼저 위 방법을 쓰기를 권한다.
+- DB 워커(`python -m sbrain.worker`)로 확인할 수도 있지만, 그때는 실제 웹 입력이 OpenAI로 간다. 가짜 입력으로 먼저 위 방법을 쓰기를 권한다.
 
 ## 14. 잠정 · 확장 목록
 

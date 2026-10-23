@@ -625,8 +625,8 @@ class ProofreadLog(Base):
     행에는 이 3컬럼이 다 NULL이다(라벨링 대상이 아니므로).
 
     [2026-09-18 추가] score — 그동안 passed(통과/반려) 불리언만 있어서 "재시도할수록
-    실제로 나아지고 있는지"를 숫자로 확인할 방법이 없었다(담당자 지적). business_plans.
-    doc_score/artifacts.artifact_score와 같은 형식(0~100, 소수 둘째 자리까지)으로 맞춘다."""
+    실제로 나아지고 있는지"를 숫자로 확인할 방법이 없었다(담당자 지적). 문서 · 산출물 점수와
+    같은 형식(0~100, 소수 둘째 자리까지)으로 맞춘다."""
     __tablename__ = 'proofread_logs'
 
     log_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -760,10 +760,10 @@ class VerificationChecklistItem(Base):
     구분 없음)이었는데, 기획서 v1.8 5-4 기준(카테고리별 8항목·15점 만점, 산출물
     카테고리마다 다른 항목 구성)으로 바꿨다:
       - category(예전 뜻 '정적분석'/'실행검증')를 '산출물 카테고리' 의미로 재사용한다 —
-        'html'(웹개발·AI API, artifacts.category의 webdev/aiapi가 여기 매핑) |
-        'svg'(원페이지, artifacts.category의 onepage가 매핑). v1.8엔 정적분석/실행검증
+        'html'(웹개발·AI API 카테고리가 여기 매핑) |
+        'svg'(원페이지 카테고리가 매핑). v1.8엔 정적분석/실행검증
         구분 자체가 없어서 옛 의미를 유지할 이유가 없었다.
-      - item_no(카테고리 안에서의 1~8번)와 item_code(artifact_score_reasons.item_code와
+      - item_no(카테고리 안에서의 1~8번)와 item_code(산출물 점수 보고서의 항목 코드와
         매칭 — rubric_items.item_code와 같은 패턴)를 신규 추가했다.
       - 규칙(1번 '진입 파일 존재 여부' 미충족이면 그 카테고리 자동 검증 점수 전체 0점)은
         검증 에이전트가 실제 채점할 때 지켜야 할 규칙이라 여기 스키마엔 없다 — 이 테이블은
@@ -787,12 +787,12 @@ class RubricItem(Base):
     비슷한 성격으로 우리 쪽에 둔다 — EligibilityRule/FormSpec/EvalItem(공고별로 달라지는
     값)과 달리 공고 수집팀과 소유권을 따로 맞출 필요가 없어서 이번에 바로 추가했다.
 
-    plan_score_reasons.item_code가 이 테이블의 item_code를 가리키는 게 원칙이지만,
+    계획서 점수 보고서의 항목 코드가 이 테이블의 item_code를 가리키는 게 원칙이지만,
     아직 문항 체계가 막 생긴 단계라 지금 당장 FK로 강제하진 않는다(문자열만 맞추면 됨)."""
     __tablename__ = 'rubric_items'
 
     rubric_item_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    item_code: Mapped[str] = mapped_column(String(50), unique=True)  # plan_score_reasons.item_code와 매칭
+    item_code: Mapped[str] = mapped_column(String(50), unique=True)  # 계획서 점수 보고서의 항목 코드와 매칭
     category: Mapped[str] = mapped_column(String(50))  # 예: '문제인식' | '실현가능성' | '성장전략'
     criterion: Mapped[str] = mapped_column(Text)  # 채점 기준 설명
     max_score: Mapped[decimal.Decimal] = mapped_column(Numeric(5, 2))

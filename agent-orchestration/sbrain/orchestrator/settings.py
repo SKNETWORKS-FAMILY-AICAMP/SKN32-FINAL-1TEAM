@@ -155,7 +155,7 @@ def _default_tasks() -> dict[str, TaskModelSetting]:
 def _default_timeouts() -> dict[str, float]:
     # 제한 시간 (호출 한 번, 초) — 시트 1 '제한 시간': 기본 120, 요구사항 분석 · 본문 작성 · 실행 파일 · 인포그래픽 300,
     # 공고 매칭 · 자격 확인 30. 흐름 밖 T-P2(검수, 향후 도입)의 60은 잠정.
-    # T-S1(요구사항 분석) 300 — 운영에서 F07(gpt-6.1-sol, 성공 40 ~ 78초)이 120초에 걸려
+    # T-S1(요구사항 분석) 300은 운영에서 F07(gpt-6.1-sol, 성공 40 ~ 78초)이 120초에 걸려
     # 처음부터 다시 보내는 일이 생겨(5번 연속 뒤 마지막 시도에 성공한 실행 건도 있음) 본문 작성과 같은 300으로 둔다.
     base = {tid: 120.0 for tid in (
         "T-C1", "T-C3", "T-S2", "T-W2", "T-W3", "T-V1", "T-V2", "T-P1", "T-C4",
@@ -194,11 +194,12 @@ class Settings(SBModel):
         return self.model_dump(mode="json", by_alias=True, exclude=exclude)
 
 
-# 가산점 사용 스위치 (잠정, PROVISIONAL announcement.bonusEnabled) — 실행별 설정(Settings)이 아닌 코드 상수다.
+# 가산점 사용 스위치 — 실행별 설정(Settings)이 아닌 코드 상수다. 켠 값이 기준 문서(시트 4 AnnouncementCard.bonusScore ·
+# bonusItems — 원문 대조를 마친 공고만, bonusScore = bonusItems 점수의 합)와 같고, 끄는 것은 되돌리기용이다.
 # 실제 T-C2(agents/notice/tc2.py) · 스텁 T-C2(agents/stubs.py) · 웹 조회(flow/reads.py)가 부를 때마다
 # settings.BONUS_ENABLED로 읽는다(from-import로 값을 복사하지 않는다 — 테스트가 바꾼 값이 모든 곳에 닿게).
-# 꺼져 있으면 가산점을 읽지 · 만들지 · 보이지 않는다. 2026-10-19 공고팀이 써도 된다고 해 켰다 — 켜져 있어도 실제 T-C2는
-# 공고 서버가 원문 대조를 마친 공고(bonus_verified 참, 공고팀 결정 0018)의 가산점만 카드에 싣는다(agents/notice/tc2.py).
+# 꺼져 있으면 가산점을 읽지 · 만들지 · 보이지 않는다. 2026-10-19 공고팀이 써도 된다고 해 켰다 — 켜져 있어도
+# 실제 T-C2는 공고 서버가 원문 대조를 마친 공고(bonus_verified 참, 공고팀 결정 0018)의 가산점만 카드에 싣는다(agents/notice/tc2.py).
 BONUS_ENABLED: bool = True
 
 # 계획서 표 입력(사업비 · 일정) 필수 확인 스위치 — 실행별 설정이 아닌 코드 상수다. 켠 값이 기준 문서(시트 6 E-C1-REQUIRED —
@@ -215,8 +216,9 @@ PROVISIONAL: dict[str, str] = {
     "proofread.concurrency": "검수 동시 처리 수 — 구현하면서 정함",
     "proofread.failureRatioThreshold": "검수 실패 비율 기준 — 구현하면서 정함",
     "proofread.judgeTiming": "검수 실패 비율 판단 시점 — 구현하면서 정함",
-    "tasks": "Task별 모델 · 호출처 · 기본 온도 · 추론 강도 · 이미지 설정, 실행 시작 시점 고정 — Task별로 두는 것은 기준 문서 "
-             "(시트 1 · Run.settingsSnapshot)에 있고, 값은 기준 문서에 없음 "
+    "tasks": "Task별 모델 · 호출처 · 기본 온도 · 추론 강도 · 이미지 설정, 실행 시작 시점 고정 — Task별로 두는 것과 두는 범위"
+             "(LLM을 부르는 Task마다 — T-C2 · G-01 · T-W3 · T-C4 없음)는 기준 문서(시트 1 · Run.settingsSnapshot)에 있고, "
+             "값은 기준 문서에 없음 "
              "(LLM을 부르는 조율 Task · 지시문 다시 쓰기 gpt-6-luna — 추론 강도는 T-C1 medium(모델 비교 테스트로 정함) · "
              "T-C3 · 지시문 다시 쓰기 low, LLM을 부르지 않는 T-C2 · G-01 · T-C4는 "
              "항목 없음, T-B1 · T-B2 · T-V2 gpt-6-luna(추론 강도 · "
@@ -270,11 +272,6 @@ PROVISIONAL: dict[str, str] = {
                        "미달합니다.' · 층별 머리줄 '계획서에서 보완이 필요한 항목:' · '프로토타입에서 보완이 필요한 항목:' 아래 "
                        "'- 이름 (점수/배점점): 사유' 줄 · 끝 줄 '제출 전 작성자 본인의 검토가 필요합니다.'",
     # 공고 연결 (공고 선택 · 자격 확인 G-01) — 기준 문서에 없음
-    "announcement.bonusEnabled": "가산점 사용 스위치 BONUS_ENABLED 켬(2026-10-19 공고팀 허용 — 2026-10-06에는 시험 단계라 "
-                                 "꺼 두었다). 실제 T-C2는 공고 서버가 원문 대조를 마친 공고(bonus_verified 참)의 "
-                                 "bonus_score · bonus_items만 읽고, 그 밖의 공고는 null · []로 둔다. 끄면 실제 T-C2는 "
-                                 "가산점을 읽지도 검사하지도 않고, 스텁은 가산점을 만들지 않으며, 웹 카드(화면 3 · 결과 조회)는 "
-                                 "저장된 옛 실행 건까지 늘 bonusScore null · bonusItems []",
     "announcement.formSpec": "선택 공고의 양식 필드(formSpec · evaluationItems) 자리 표시 값 — 기본 양식 1-1 · 2-1 · 3-3 "
                              "(자리 표시 값이고 뒷 단계가 읽지 않는 것은 기준 문서 시트 4 Announcement)",
     # 작업 분해 (T-C3, agents/form_defaults.py · agents/supervisor/plan.py) — 실행 건 설정값이 아니라 코드 표다
@@ -369,7 +366,7 @@ PROVISIONAL: dict[str, str] = {
                                    "아니면 워커가 시작하지 않는다 (SBRAIN_DB_URL · OPENAI_API_KEY 없을 때와 같은 방식, 종료 "
                                    "코드 2)",
     # S3 파일 저장소 (sbrain/store_s3/ · bootstrap.py · worker.py) — 워커 · 웹 프로세스 값이다. 리전을 읽는 순서는 AWS
-    # 관례, 리전 필수 · 시작 확인 범위 · 재시도 간격 · 출력 확인 재시도는 이라 여기 없다
+    # 관례, 리전 필수 · 시작 확인 범위는 확정값, 재시도 간격 · 출력 확인 재시도는 기준 문서 시트 1 값이라 여기 없다
     "s3Store.clientTimeouts": "S3 클라이언트 시간 제한 — 연결 10초 · 읽기 60초(파일 하나 30MB 이하) (store_s3/client.py "
                               "CONNECT_TIMEOUT_SEC · READ_TIMEOUT_SEC)",
     "s3Store.libraryRetries": "AWS 라이브러리 자체 재시도 끔 — 첫 요청 포함 1번(total_max_attempts 1), 재시도 방식 standard "

@@ -24,6 +24,8 @@
 | delete_artifacts · retire_run(delete_run) | 같은 트랜잭션에서 orch_file_deletions에 실행 건 줄을 넣는다 — INSERT … ON DUPLICATE KEY UPDATE(MySQL) · ON CONFLICT(run_id) DO UPDATE(SQLite) 한 문장: 줄이 없으면 '대기', '포기'면 '대기'로 되돌림, '대기'면 그대로. 동시에 넣어도 고유 제약 오류가 나지 않는다 (확장) |
 | claim_file_deletions | next_at이 지난 '대기' 줄을 SELECT … FOR UPDATE SKIP LOCKED로 고르고 줄마다 조건부 UPDATE로 next_at을 미룬다. 미룬 값이 가져간 표시 — finish · fail은 그 값이 그대로일 때만 바꾼다 (확장) |
 | retry_file_deletion | SELECT … FOR UPDATE로 '포기'인지 보고 같은 트랜잭션에서 '대기'로 · 누른 관리자 · 시각 · 횟수를 적는다 (확장) |
+| read_snapshot | 한 시점 읽기 구간 — 연결 하나를 꺼내 트랜잭션 하나에서 창구(SqlSnapshot)의 모든 읽기를 그 연결로 한다. MySQL은 그 연결만 REPEATABLE READ(돌려줄 때 엔진 기본 READ COMMITTED로 되돌아감 — 일관된 읽기라 다른 쓰기를 막지 않는다), SQLite는 엔진의 BEGIN IMMEDIATE 그대로(다른 연결은 기다린다). 끝나면(예외 포함) 되돌리고 돌려준다 (확장, 2026-10-20) |
+| SqlSnapshot 읽기 | 같은 이름 읽기(load_run · find_run_by_project · query_runs · latest_start_request(s))는 Store 메서드와 같은 내부 함수(연결을 받음)를 쓴다. 묶어 읽기는 ID 목록을 PROJECT_CHUNK개씩 IN으로 — 알림은 묶음마다 실행 건 줄의 project_id 한 번 · 웹 notifications 한 번(프로젝트가 있을 때), 현재 버전은 포인터 · 버전 바깥 조인 한 문장, 마지막 시도 번호는 실행 건별 최대 seq 조인 한 문장. 범위판은 실행 건 줄 updated_at 하위 질의 · 조인 한두 문장(집계는 DB에서 센다). 빈 ID 목록은 문장을 보내지 않는다 (확장, 2026-10-20) |
 
 - 알림은 웹 notifications에 쓴다. 기준 문서 Notification의 runId 자리에 project_id를 쓰고, project_id가 없는
   실행 건(테스트 · 시연용 직접 시작)은 웹 테이블에 쓰지 않는다. 웹 테이블에 쓸 project_id는 실행 건 행의
@@ -61,9 +63,9 @@ from ..models.run import ACTIVE_PROGRESS
 from ..orchestrator.errors import FileDeletionNotFound, FileDeletionNotGivenUp, ProjectRunExists, StoreConflict
 from ..orchestrator.file_deletion import FIRST_DELAY_SEC
 from ..orchestrator.store import (
-    ACCOUNT_LOCK_TIMEOUT_SEC, BUSY_PROGRESS, FINISHED_REQUEST, PENDING_REQUEST, ArtifactVersion, CancelOutcome,
-    CommitBatch, CreateOutcome, ExecutionFilter, ExecutionRow, FileDeletion, JobState, LogStatsRow, RunFilter,
-    StartRequest, StartRequestStatus, check_summary, file_key_prefix,
+    ACCOUNT_LOCK_TIMEOUT_SEC, BUSY_PROGRESS, EXECUTION_SUCCEEDED, FINISHED_REQUEST, PENDING_REQUEST, ArtifactVersion,
+    CancelOutcome, CommitBatch, CreateOutcome, ExecutionFilter, ExecutionRow, ExecutionTotals, FileDeletion, JobState,
+    LogStatsRow, RunFilter, StartRequest, StartRequestStatus, TriggerTotals, check_summary, file_key_prefix,
 )
 from ..orchestrator.trace import (
     IMAGE_TOKEN_FIELDS, TOKEN_FIELDS, CallLog, ExecutionRecord, FeedbackLink, PointerEvent, TraceEvent,
@@ -74,7 +76,8 @@ from .schema import (
 )
 from .web_tables import WebTables
 
-PROJECT_CHUNK = 500   # existing_projects가 IN 하나에 싣는 프로젝트 수 (잠정)
+# existing_projects · 한 시점 창구의 묶어 읽기가 IN 하나에 싣는 프로젝트 · 실행 건 수 (잠정) — 부를 때마다 이 모듈 값을 읽는다
+PROJECT_CHUNK = 500
 DEADLOCK_TRIES = 3    # MySQL 교착으로 되돌려진 delete_artifacts · retire_run을 다시 하는 횟수 (처음 포함 — 잠정 아님)
 MYSQL_DEADLOCK = 1213
 
@@ -102,6 +105,26 @@ class SqlStore:
         self.account_lock_timeout: float = ACCOUNT_LOCK_TIMEOUT_SEC   # 계정 잠금 대기 (잠정)
         self.file_deletion_delay_sec: float = FIRST_DELAY_SEC         # 파일 삭제 대기열 — 넣은 뒤 첫 시도까지 (잠정)
 
+    # ── 한 시점 읽기 구간 (확장 — 성능 측정 C 후속, 2026-10-20) ──
+    @contextmanager
+    def read_snapshot(self) -> Iterator[SqlSnapshot]:
+        """연결 하나 · 트랜잭션 하나 — 창구의 모든 읽기를 그 연결로 하고, 끝나면(예외 포함) 되돌리고 돌려준다.
+
+        MySQL은 그 연결만 REPEATABLE READ로 연다(트랜잭션을 열기 전에 건다). SQLAlchemy가 연결을 풀에 돌려줄 때 엔진 기본
+        격리 수준(READ COMMITTED, db.py)으로 되돌리므로 풀의 다른 연결 · 다음 사용은 그대로다. SQLite는 엔진의
+        BEGIN IMMEDIATE 그대로다.
+        """
+        with self.engine.connect() as conn:
+            if self._mysql:
+                conn.execution_options(isolation_level="REPEATABLE READ")
+            trans = conn.begin()
+            view = SqlSnapshot(self, conn)
+            try:
+                yield view
+            finally:
+                view._close()
+                trans.rollback()   # 읽기만 — 되돌린다
+
     # ── 실행 건 ───────────────────────────────────────
     def create_run(self, run: Run, batch: CommitBatch, *, max_active: int = 1) -> bool:
         with self.engine.connect() as conn, self.account_lock(conn, run.account_id):
@@ -127,10 +150,7 @@ class SqlStore:
 
     def load_run(self, run_id: str) -> Run:
         with self.engine.connect() as conn:
-            row = conn.execute(select(RUNS.c.run_json).where(RUNS.c.run_id == run_id)).first()
-        if row is None:
-            raise KeyError(run_id)
-        return Run.model_validate(row.run_json)
+            return _load_run(conn, run_id)
 
     def list_runs(self, account_id: str) -> list[Run]:
         return self._runs_where(RUNS.c.account_id == account_id)
@@ -140,8 +160,9 @@ class SqlStore:
         return runs[0] if runs else None
 
     def find_run_by_project(self, project_id: int | str) -> Run | None:
-        runs = self._runs_where(RUNS.c.project_id == project_key(project_id), limit=1)
-        return runs[0] if runs else None
+        pid = project_key(project_id)   # 정수가 아니면 연결 전에 ValueError
+        with self.engine.connect() as conn:
+            return _run_by_project(conn, pid)
 
     def runs_due_for_resume(self, now: datetime) -> list[str]:
         with self.engine.connect() as conn:
@@ -151,23 +172,11 @@ class SqlStore:
         return [r.run_id for r in rows]
 
     def query_runs(self, f: RunFilter) -> list[Run]:
-        conds: list[Any] = []
-        if f.project_ids is not None:
-            pids = [project_key(p) for p in f.project_ids]
-            if not pids:
-                return []
-            conds.append(RUNS.c.project_id.in_(pids))
-        if f.progress is not None:
-            conds.append(RUNS.c.progress == f.progress)
-        if f.step is not None:
-            conds.append(RUNS.c.step == f.step)
-        if f.updated_since is not None:
-            conds.append(RUNS.c.updated_at >= f.updated_since)
-        order = ([RUNS.c.updated_at.desc(), RUNS.c.run_id.desc()] if f.order == "desc"
-                 else [RUNS.c.updated_at, RUNS.c.run_id])
-        stmt = _paged(select(RUNS.c.run_json).where(*conds).order_by(*order), f.limit, f.offset)
+        stmt = _query_runs_stmt(f)
+        if stmt is None:
+            return []
         with self.engine.connect() as conn:
-            return [Run.model_validate(r.run_json) for r in conn.execute(stmt)]
+            return _select_run_json(conn, stmt)
 
     def find_active_work(self, account_id: str) -> Run | StartRequest | None:
         """add_start_request와 같은 기준 · 같은 순서 (잠금 없이 한 번 읽는다)."""
@@ -183,11 +192,8 @@ class SqlStore:
         return _request_of(pending) if pending is not None else None
 
     def _runs_where(self, *conds: Any, limit: int | None = None) -> list[Run]:
-        stmt = select(RUNS.c.run_json).where(*conds).order_by(RUNS.c.created_at, RUNS.c.run_id)
-        if limit is not None:
-            stmt = stmt.limit(limit)
         with self.engine.connect() as conn:
-            return [Run.model_validate(r.run_json) for r in conn.execute(stmt)]
+            return _select_runs(conn, *conds, limit=limit)
 
     # ── 사전 단계 시작 요청 ────────────────────────────
     def add_start_request(self, req: StartRequest, *, max_active: int = 1) -> Run | StartRequest | None:
@@ -214,24 +220,16 @@ class SqlStore:
         return _request_of(row)
 
     def latest_start_request(self, project_id: int | str) -> StartRequest | None:
-        t = START_REQUESTS
+        pid = project_key(project_id)
         with self.engine.connect() as conn:
-            row = conn.execute(select(t).where(t.c.project_id == project_key(project_id))
-                               .order_by(t.c.created_at.desc(), t.c.request_id.desc()).limit(1)).first()
-        return _request_of(row) if row is not None else None
+            return _latest_start_request(conn, pid)
 
     def latest_start_requests(self, project_ids: Iterable[int | str]) -> dict[str, StartRequest]:
-        t = START_REQUESTS
-        pids = sorted({project_key(p) for p in project_ids})
+        pids = _request_project_keys(project_ids)
         if not pids:
             return {}
         with self.engine.connect() as conn:
-            rows = conn.execute(select(t).where(t.c.project_id.in_(pids))
-                                .order_by(t.c.created_at.desc(), t.c.request_id.desc())).all()
-        latest: dict[str, StartRequest] = {}
-        for row in rows:   # 최근 순 — 프로젝트마다 처음 나온 것이 마지막 요청
-            latest.setdefault(str(row.project_id), _request_of(row))
-        return latest
+            return _latest_start_requests(conn, pids)
 
     def existing_projects(self, project_ids: Iterable[int]) -> set[int]:
         t = START_REQUESTS
@@ -851,6 +849,240 @@ class SqlStore:
         with self.engine.connect() as conn:
             rows = conn.execute(select(table.c.record_json).where(table.c.run_id == run_id).order_by(table.c.seq))
             return [r.record_json for r in rows]
+
+
+class SqlSnapshot:
+    """SqlStore.read_snapshot()의 읽기 창구 (orchestrator.store.SnapshotReads) — 구간의 연결 하나로만 읽는다.
+
+    같은 이름의 읽기는 SqlStore 메서드와 같은 내부 함수(연결을 받음)를 쓴다 — 두 경로의 값이 갈라지지 않게. 묶어 읽기는
+    ID 목록을 PROJECT_CHUNK개씩 IN으로 나눠 묻고, 빈 목록이면 문장을 보내지 않는다. 범위판은 실행 건 줄 updated_at 조건
+    (하위 질의 · 조인)으로 묻는다. 구간이 끝나면 더 읽지 않는다(RuntimeError).
+    """
+
+    def __init__(self, store: SqlStore, conn: Connection) -> None:
+        self._web = store.web
+        self._conn: Connection | None = conn
+
+    def _close(self) -> None:
+        self._conn = None
+
+    def _live(self) -> Connection:
+        if self._conn is None:
+            raise RuntimeError("한 시점 읽기 구간이 이미 끝났다")
+        return self._conn
+
+    # ── 같은 이름의 Store 읽기 ──────────────────────────
+    def load_run(self, run_id: str) -> Run:
+        return _load_run(self._live(), run_id)
+
+    def find_run_by_project(self, project_id: int | str) -> Run | None:
+        conn = self._live()
+        return _run_by_project(conn, project_key(project_id))
+
+    def query_runs(self, f: RunFilter) -> list[Run]:
+        conn = self._live()
+        stmt = _query_runs_stmt(f)
+        return [] if stmt is None else _select_run_json(conn, stmt)
+
+    def latest_start_request(self, project_id: int | str) -> StartRequest | None:
+        conn = self._live()
+        return _latest_start_request(conn, project_key(project_id))
+
+    def latest_start_requests(self, project_ids: Iterable[int | str]) -> dict[str, StartRequest]:
+        conn = self._live()
+        pids = _request_project_keys(project_ids)
+        return _latest_start_requests(conn, pids) if pids else {}
+
+    # ── 묶어 읽기 (실행 건 ID 목록) ──────────────────────
+    def notifications_for_runs(self, run_ids: Iterable[str]) -> dict[str, list[Notification]]:
+        conn, ids = self._live(), _unique(run_ids)
+        out: dict[str, list[Notification]] = {rid: [] for rid in ids}
+        for part in _chunks(ids):
+            # Store.notifications와 같은 기준 — 실행 건 줄의 project_id (직접 시작 · 완전 삭제로 NULL이면 알림 없음)
+            run_of = {r.project_id: r.run_id for r in conn.execute(
+                select(RUNS.c.run_id, RUNS.c.project_id).where(RUNS.c.run_id.in_(part), RUNS.c.project_id.is_not(None)))}
+            if run_of:
+                out.update(self._web.notifications_by_project(conn, run_of))
+        return out
+
+    def current_artifacts(self, key: str, run_ids: Iterable[str]) -> dict[str, ArtifactVersion]:
+        conn, ids = self._live(), _unique(run_ids)
+        p, v = ARTIFACT_POINTERS, ARTIFACT_VERSIONS
+        out: dict[str, ArtifactVersion] = {}
+        for part in _chunks(ids):
+            # 포인터 · 버전 한 문장 — 바깥 조인이라 버전 행이 없는 포인터도 줄로 나온다
+            rows = conn.execute(
+                select(p.c.run_id, p.c.version, v.c.version.label("stored"), v.c.value, v.c.producer, v.c.created_at)
+                .select_from(p.outerjoin(v, and_(v.c.run_id == p.c.run_id, v.c.artifact_key == p.c.artifact_key,
+                                                 v.c.version == p.c.version)))
+                .where(p.c.artifact_key == key, p.c.run_id.in_(part)))
+            for r in rows:
+                if r.stored is None:   # 포인터는 있는데 버전 행이 없다(깨진 데이터) — get_artifact와 같은 KeyError
+                    raise KeyError((r.run_id, key, r.version))
+                out[r.run_id] = ArtifactVersion(r.run_id, key, r.version, r.value, r.producer, r.created_at)
+        return out
+
+    def pointers_for_runs(self, run_ids: Iterable[str]) -> dict[str, dict[str, int]]:
+        conn, ids = self._live(), _unique(run_ids)
+        p = ARTIFACT_POINTERS
+        out: dict[str, dict[str, int]] = {rid: {} for rid in ids}
+        for part in _chunks(ids):
+            for r in conn.execute(select(p.c.run_id, p.c.artifact_key, p.c.version).where(p.c.run_id.in_(part))):
+                out[r.run_id][r.artifact_key] = r.version
+        return out
+
+    def scored_executions(self, run_ids: Iterable[str], task_ids: Iterable[str]) -> dict[str, list[ExecutionRecord]]:
+        conn, ids, tasks = self._live(), _unique(run_ids), _unique(task_ids)
+        t = EXECUTIONS
+        out: dict[str, list[ExecutionRecord]] = {rid: [] for rid in ids}
+        if not tasks:
+            return out
+        for part in _chunks(ids):
+            rows = conn.execute(select(t.c.run_id, t.c.record_json)
+                                .where(t.c.run_id.in_(part), t.c.status == EXECUTION_SUCCEEDED, t.c.task_id.in_(tasks))
+                                .order_by(t.c.seq))
+            for r in rows:   # seq 순 — 실행 건마다 executions(run_id)와 같은 순서
+                out[r.run_id].append(ExecutionRecord.model_validate(r.record_json))
+        return out
+
+    def last_attempts(self, run_ids: Iterable[str]) -> dict[str, int]:
+        conn, ids = self._live(), _unique(run_ids)
+        t = EXECUTIONS
+        out: dict[str, int] = {}
+        for part in _chunks(ids):
+            # 실행 건마다 가장 큰 seq(가장 나중에 기록된 실행 기록 — 덮어써도 처음 자리)의 attempt
+            last = (select(t.c.run_id, func.max(t.c.seq).label("seq")).where(t.c.run_id.in_(part))
+                    .group_by(t.c.run_id).subquery())
+            for r in conn.execute(select(t.c.run_id, t.c.attempt).join(last, t.c.seq == last.c.seq)):
+                out[r.run_id] = r.attempt
+        return out
+
+    # ── 범위판 (마지막 활동 ≥ updated_since) ──────────────
+    def scored_executions_since(self, updated_since: datetime, task_ids: Iterable[str]) -> list[ExecutionRecord]:
+        conn, tasks = self._live(), _unique(task_ids)
+        if not tasks:
+            return []
+        t = EXECUTIONS
+        rows = conn.execute(select(t.c.record_json)
+                            .where(_in_runs_since(t.c.run_id, updated_since), t.c.status == EXECUTION_SUCCEEDED,
+                                   t.c.task_id.in_(tasks))
+                            .order_by(t.c.started_at, t.c.seq))   # list_executions(order="asc")와 같은 순서
+        return [ExecutionRecord.model_validate(r.record_json) for r in rows]
+
+    def pointers_since(self, updated_since: datetime) -> dict[str, dict[str, int]]:
+        conn = self._live()
+        r, p = RUNS, ARTIFACT_POINTERS
+        out: dict[str, dict[str, int]] = {}
+        # 실행 건 줄에서 포인터로 바깥 조인 — 포인터가 없는 범위 안 실행 건도 키로 남긴다
+        for row in conn.execute(select(r.c.run_id, p.c.artifact_key, p.c.version)
+                                .select_from(r.outerjoin(p, p.c.run_id == r.c.run_id))
+                                .where(r.c.updated_at >= updated_since)):
+            pointers = out.setdefault(row.run_id, {})
+            if row.artifact_key is not None:
+                pointers[row.artifact_key] = row.version
+        return out
+
+    def execution_totals_since(self, updated_since: datetime) -> ExecutionTotals:
+        conn = self._live()
+        t = EXECUTIONS
+        scope = _in_runs_since(t.c.run_id, updated_since)
+        # 실행 기록 컬럼으로 센다(JSON을 풀지 않음) — _execution_row가 계기 · 토큰을 실행 기록에서 옮긴 값. 없는 토큰은 0
+        text_tokens = func.coalesce(t.c.input_tokens, 0) + func.coalesce(t.c.output_tokens, 0)
+        image_tokens = func.coalesce(t.c.image_input_tokens, 0) + func.coalesce(t.c.image_output_tokens, 0)
+        by_trigger = {
+            r.trigger: TriggerTotals(count=int(r.n_records), text_tokens=int(r.text_sum or 0), runs=int(r.n_runs))
+            for r in conn.execute(select(t.c.trigger, func.count().label("n_records"),
+                                         func.sum(text_tokens).label("text_sum"),
+                                         func.count(t.c.run_id.distinct()).label("n_runs"))
+                                  .where(scope).group_by(t.c.trigger))}
+        whole = conn.execute(select(func.sum(image_tokens).label("image_sum"),
+                                    func.count(t.c.run_id.distinct()).label("n_runs")).where(scope)).one()
+        return ExecutionTotals(by_trigger=by_trigger, text_tokens=sum(v.text_tokens for v in by_trigger.values()),
+                               image_tokens=int(whole.image_sum or 0), runs_with_executions=int(whole.n_runs))
+
+
+# ── 같은 이름 읽기의 질의 — 연결을 받는다(Store 메서드와 한 시점 창구가 함께 쓴다) ──────────
+def _load_run(conn: Connection, run_id: str) -> Run:
+    row = conn.execute(select(RUNS.c.run_json).where(RUNS.c.run_id == run_id)).first()
+    if row is None:
+        raise KeyError(run_id)
+    return Run.model_validate(row.run_json)
+
+
+def _select_runs(conn: Connection, *conds: Any, limit: int | None = None) -> list[Run]:
+    """조건에 맞는 실행 건 (만든 순)."""
+    stmt = select(RUNS.c.run_json).where(*conds).order_by(RUNS.c.created_at, RUNS.c.run_id)
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    return _select_run_json(conn, stmt)
+
+
+def _select_run_json(conn: Connection, stmt: Select) -> list[Run]:
+    return [Run.model_validate(r.run_json) for r in conn.execute(stmt)]
+
+
+def _run_by_project(conn: Connection, project_id: int | None) -> Run | None:
+    """프로젝트의 실행 건 — project_id는 project_key로 바꾼 값."""
+    runs = _select_runs(conn, RUNS.c.project_id == project_id, limit=1)
+    return runs[0] if runs else None
+
+
+def _query_runs_stmt(f: RunFilter) -> Select | None:
+    """query_runs의 문장. 프로젝트 묶음이 비면 None(문장 없이 빈 목록)."""
+    conds: list[Any] = []
+    if f.project_ids is not None:
+        pids = [project_key(p) for p in f.project_ids]
+        if not pids:
+            return None
+        conds.append(RUNS.c.project_id.in_(pids))
+    if f.progress is not None:
+        conds.append(RUNS.c.progress == f.progress)
+    if f.step is not None:
+        conds.append(RUNS.c.step == f.step)
+    if f.updated_since is not None:
+        conds.append(RUNS.c.updated_at >= f.updated_since)
+    order = ([RUNS.c.updated_at.desc(), RUNS.c.run_id.desc()] if f.order == "desc"
+             else [RUNS.c.updated_at, RUNS.c.run_id])
+    return _paged(select(RUNS.c.run_json).where(*conds).order_by(*order), f.limit, f.offset)
+
+
+def _latest_start_request(conn: Connection, project_id: int | None) -> StartRequest | None:
+    t = START_REQUESTS
+    row = conn.execute(select(t).where(t.c.project_id == project_id)
+                       .order_by(t.c.created_at.desc(), t.c.request_id.desc()).limit(1)).first()
+    return _request_of(row) if row is not None else None
+
+
+def _request_project_keys(project_ids: Iterable[int | str]) -> list[int]:
+    return sorted({project_key(p) for p in project_ids})
+
+
+def _latest_start_requests(conn: Connection, pids: list[int]) -> dict[str, StartRequest]:
+    t = START_REQUESTS
+    rows = conn.execute(select(t).where(t.c.project_id.in_(pids))
+                        .order_by(t.c.created_at.desc(), t.c.request_id.desc())).all()
+    latest: dict[str, StartRequest] = {}
+    for row in rows:   # 최근 순 — 프로젝트마다 처음 나온 것이 마지막 요청
+        latest.setdefault(str(row.project_id), _request_of(row))
+    return latest
+
+
+# ── 한 시점 창구의 묶어 읽기 도움 ──────────────────────────
+def _unique(ids: Iterable[str]) -> list[str]:
+    """같은 ID는 한 번만 (처음 나온 순서)."""
+    return list(dict.fromkeys(ids))
+
+
+def _chunks(ids: list[str]) -> Iterator[list[str]]:
+    """IN 하나에 PROJECT_CHUNK개씩 — 부를 때의 모듈 값을 읽는다(테스트가 바꿔 끼운다). 빈 목록이면 아무것도 내지 않는다."""
+    size = PROJECT_CHUNK
+    for i in range(0, len(ids), size):
+        yield ids[i:i + size]
+
+
+def _in_runs_since(run_id: Any, updated_since: datetime) -> Any:
+    """실행 건 ID 칸이 마지막 활동(실행 건 줄 updated_at) ≥ updated_since인 실행 건 — 하위 질의 (시간대 없는 값은 UTC)."""
+    return run_id.in_(select(RUNS.c.run_id).where(RUNS.c.updated_at >= updated_since))
 
 
 # ── 조회 조건 ─────────────────────────────────────────

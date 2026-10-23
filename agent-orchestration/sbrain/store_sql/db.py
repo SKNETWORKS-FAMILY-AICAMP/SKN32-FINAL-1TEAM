@@ -3,6 +3,8 @@
 - 운영: 공유 MySQL 8. 접속 URL은 환경 변수 · .env에서 받는다(예: SBRAIN_DB_URL). 코드에 넣지 않는다.
   격리 수준은 READ COMMITTED (잠정) — 할 일 가져가기(SKIP LOCKED)와 계정 잠금 뒤 개수 세기가
   항상 최신 확정 값을 보게 하고, 범위 잠금으로 인한 대기를 줄인다.
+  예외: 한 시점 읽기 구간(SqlStore.read_snapshot)의 연결만 그 트랜잭션 동안 REPEATABLE READ — 돌려줄 때 READ COMMITTED로
+  되돌아간다(2026-10-20).
 - 테스트: SQLite 파일 DB. 쓰기 교착을 피하려고 모든 트랜잭션을 BEGIN IMMEDIATE로 시작한다
   (SQLAlchemy 문서의 pysqlite 트랜잭션 처리 방식). 메모리 DB(sqlite://)는 연결마다 따로라 쓰지 않는다.
 """

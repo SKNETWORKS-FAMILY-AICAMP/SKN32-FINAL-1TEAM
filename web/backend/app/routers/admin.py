@@ -10,9 +10,11 @@
 이 필드를 그대로 다룬다.
 """
 import datetime
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -27,6 +29,7 @@ from app.models import (
     VerificationChecklistItem,
     VerificationPolicy,
 )
+from app.notice_status import korea_today, notice_display_status
 from app.orch import OrchError, OrchGateway, admin_mapping, require_gateway
 from app.proofread_retention import TRAINED
 from app.schemas import (
@@ -115,20 +118,27 @@ def get_checklist(db: Session = Depends(get_db), _admin: User = Depends(require_
 
 @router.put('/checklist', response_model=list[ChecklistItemOut])
 def save_checklist(body: list[ChecklistItemIn], db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
-    items = {i.check_item_id: i for i in db.query(VerificationChecklistItem).all()}
-    # [2026-09-22 수정, 프론트 전달사항 10번] v1.8 기준 카테고리(html=웹개발·AI API /
-    # svg=원페이지)별로 8항목·15점 만점이라, 예전 "전체 합 100점" 검증을 "카테고리별 합
-    # 15점" 검증으로 바꿨다 — 다른 카테고리 항목끼리 가중치를 주고받아 맞추는 걸 막는다.
-    enabled_total_by_category: dict[str, float] = {}
+    # Lock in a stable order so concurrent partial updates validate a consistent final state.
+    items = {i.check_item_id: i for i in db.query(VerificationChecklistItem)
+             .order_by(VerificationChecklistItem.check_item_id).with_for_update().all()}
+    changes = {}
     for entry in body:
-        item = items.get(entry.check_item_id)
-        if item is None:
+        if entry.check_item_id in changes:
+            raise HTTPException(status_code=422, detail=f'중복 검증 항목: {entry.check_item_id}')
+        if entry.check_item_id not in items:
             raise HTTPException(status_code=404, detail=f'알 수 없는 검증 항목: {entry.check_item_id}')
-        item.weight = entry.weight
-        item.enabled = entry.enabled
-        if entry.enabled:
+        changes[entry.check_item_id] = entry
+
+    # Validate the complete projected state, including enabled rows omitted from the request.
+    # Do not mutate ORM objects until validation succeeds.
+    enabled_total_by_category: dict[str, Decimal] = {}
+    for item_id, item in items.items():
+        change = changes.get(item_id)
+        enabled = change.enabled if change is not None else item.enabled
+        weight = change.weight if change is not None else item.weight
+        if enabled:
             enabled_total_by_category[item.category] = (
-                enabled_total_by_category.get(item.category, 0.0) + entry.weight
+                enabled_total_by_category.get(item.category, Decimal(0)) + Decimal(str(weight))
             )
 
     bad_categories = {
@@ -142,6 +152,10 @@ def save_checklist(body: list[ChecklistItemIn], db: Session = Depends(get_db), _
             status_code=422,
             detail=f'사용 중인 항목의 카테고리별 가중치 합이 {_CHECKLIST_CATEGORY_MAX_SCORE}점이어야 합니다({detail})',
         )
+
+    for item_id, change in changes.items():
+        items[item_id].weight = change.weight
+        items[item_id].enabled = change.enabled
 
     db.commit()
     items_sorted = db.query(VerificationChecklistItem).order_by(VerificationChecklistItem.check_item_id).all()
@@ -299,10 +313,15 @@ def list_notices(
     않았다 — notices는 이 앱이 쓰는 게 아니라 다른 팀원의 수집 파이프라인이 다음 배치
     때 다시 채워 넣을 수 있는 테이블이라, 관리자 화면에서 조회 없이 삭제부터 만드는 건
     그 파이프라인과 상의 없이는 위험하다고 판단했다."""
-    query = db.query(Notice).order_by(Notice.id.desc())
+    query = db.query(
+        Notice.notice_id, Notice.title, Notice.source, Notice.apply_start, Notice.apply_end,
+        Notice.recruitment_status, Notice.apply_period_type,
+        Notice.embedding.isnot(None).label('has_embedding'),
+    ).order_by(Notice.id.desc())
     if q:
         query = query.filter(Notice.title.contains(q))
     rows = query.limit(min(limit, 500)).all()
+    today = korea_today()
     return [
         NoticeAdminOut(
             notice_id=r.notice_id,
@@ -311,7 +330,10 @@ def list_notices(
             apply_start=r.apply_start,
             apply_end=r.apply_end,
             recruitment_status=r.recruitment_status,
-            has_embedding=r.embedding is not None,
+            display_status=notice_display_status(
+                r.recruitment_status, r.apply_start, r.apply_end, r.apply_period_type, today=today,
+            ),
+            has_embedding=r.has_embedding,
         )
         for r in rows
     ]
@@ -335,11 +357,11 @@ def get_collection_status(db: Session = Depends(get_db), _admin: User = Depends(
     if latest_run is not None:
         latest_input_counts = ((latest_run.report or {}).get('summary') or {}).get('input_counts') or {}
 
-    distinct_sources = [s for (s,) in db.query(Notice.source).distinct().all()]
+    source_counts = db.query(
+        Notice.source, func.count(Notice.id), func.count(Notice.embedding),
+    ).group_by(Notice.source).all()
     sources = []
-    for source in distinct_sources:
-        total = db.query(Notice).filter(Notice.source == source).count()
-        embedded = db.query(Notice).filter(Notice.source == source, Notice.embedding.isnot(None)).count()
+    for source, total, embedded in source_counts:
         sources.append(NoticeSourceStatusOut(
             source=source,
             label=_NOTICE_SOURCE_LABEL.get(source, source),

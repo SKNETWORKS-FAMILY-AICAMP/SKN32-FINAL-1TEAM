@@ -183,3 +183,43 @@ def test_one_typeface_and_a_few_sizes_are_used_in_the_whole_document(tmp_path):
     used = set(re.findall(r'charPrIDRef="(\d+)"', section))
     sizes = {int(h) for i, h in hwpx_fit._CHAR_PR.findall(header) if i in used}
     assert len([s for s in sizes if 800 <= s <= 1050]) == 1   # 본문 · 표 글자는 한 크기
+
+
+@pytest.mark.skipif(not _RHWP_AVAILABLE, reason='rhwp 실행 파일이 없다(RHWP_BIN)')
+@pytest.mark.parametrize('template', ['preliminary', 'early_general'])
+def test_long_team_table_keeps_page_split_in_final_hwp_and_render(tmp_path, template):
+    import json
+    import zipfile
+
+    from app.plan_document_export import TeamRow
+    team = [TeamRow(str(i), f'검증팀원{i}', '업무 '*15, '역량 '*25, '완료') for i in range(1, 31)]
+    path = _render(tmp_path, _data(팀구성현황=team, 팀구성_안=team), template)
+    hwpx = tmp_path / 'final.hwpx'
+    subprocess.run([hwp_export.RHWP_BIN, 'export-hwpx', path, str(hwpx)], check=True, capture_output=True)
+    with zipfile.ZipFile(hwpx) as z:
+        section = z.read('Contents/section0.xml').decode('utf8')
+    found = 0
+    for start, end in hwpx_fit.hwpx_rows.top_level_tables(section):
+        table = section[start:end]
+        if '검증팀원30' in table:
+            found += 1
+            assert 'pageBreak="CELL"' in table.split('>', 1)[0]
+            assert 'treatAsChar="0"' in table
+    assert found == 2
+    result = subprocess.run([hwp_export.RHWP_BIN, 'layout-anomaly', path, '--json'],check=True,capture_output=True,text=True,encoding='utf8')
+    anomalies = json.loads(result.stdout)
+    assert anomalies['offCanvasCount']==0, result.stdout
+    assert '검증팀원30' in _rhwp('export-text',path,'--json')
+
+
+def test_fit_document_splits_only_long_tables_without_an_overview():
+    cell = ('<hp:tc name=""><hp:subList><hp:p id="1" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>팀원</hp:t></hp:run></hp:p></hp:subList>'
+            '<hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="10000" height="15000"/><hp:cellMargin left="510" right="510" top="141" bottom="141"/></hp:tc>')
+    def table(id, rows):
+        return (f'<hp:tbl id="{id}" pageBreak="CELL"><hp:sz width="10000" height="{15000*rows}" heightRelTo="ABSOLUTE"/>'
+                '<hp:pos treatAsChar="1" vertRelTo="PARA"/>' + ('<hp:tr>'+cell+'</hp:tr>')*rows + '</hp:tbl>')
+    section, _ = hwpx_fit.fit_document(table(1, 1) + table(2, 30), _header(1000), [])
+    spans = hwpx_fit.hwpx_rows.top_level_tables(section)
+    assert 'treatAsChar="1"' in section[slice(*spans[0])]
+    assert 'treatAsChar="0"' in section[slice(*spans[1])]
+    assert 'pageBreak="CELL"' in section[slice(*spans[1])]

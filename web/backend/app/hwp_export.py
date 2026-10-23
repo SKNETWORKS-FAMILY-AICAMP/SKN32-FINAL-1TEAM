@@ -61,7 +61,7 @@ _PERSONAL_INFO_NOTICE_BY_TEMPLATE 참고.
     주업종 한 칸에 섞여 와서 routers/projects.py가 가른다. "해당 없음"은 입력이 없을 때 웹이 채우는 기본 문구라 지방우대 보기로 잇지 않는다.
   - [해결됨] 표가 쪽 밖으로 나가던 것: 양식의 개요 표 등은 파란 예시 상자가 있던 자리라 행이 필요 이상으로 커서(7339 ~ 52239) 표가 한 쪽을 넘쳤다. 지금은 칸에 들어갈
     글의 줄 수를 어림해 행 높이를 내용에 맞게 늘리거나(모자랄 때) 줄이고(5000보다 클 때, 3000까지)(hwpx_rows.fit_row_height), 칸에 남은 빈 문단을 지우고(trim_cell_paragraphs),
-    채우는 표는 행 단위로 쪽을 넘길 수 있게 한다(allow_row_page_break). rhwp는 표를 쪽에서 나누지 못해(미리보기에서 잘림) 아주 긴 표는 한글에서 열어 확인해야 한다.
+    채우는 표는 행 단위로 쪽을 넘길 수 있게 한다(allow_row_page_break). 한 쪽보다 긴 표는 최종 높이 보정 때 글자처럼 취급도 해제해 다음 쪽으로 이어지게 한다.
   - [해결됨] 첫 쪽이 고지 한 줄뿐인 빈 쪽이던 것: 양식의 목차 쪽을 지우면 제목 표 앞의 쪽 나눔 때문에 고지만 남았다. 첫 쪽 나눔을 꺼서 제목 표가 고지 뒤에 이어진다
     (hwpx_rows.remove_first_page_break). 그림 · 인포그래픽 쪽은 글이 없어도 그림이 있다.
 """
@@ -90,6 +90,15 @@ from app.plan_document_export import (
 logger = logging.getLogger(__name__)
 
 RHWP_BIN = os.environ.get('RHWP_BIN') or 'rhwp'
+# Operational limit per CLI command, independent of Agent call timeout/retry policy.
+RHWP_TIMEOUT_SECONDS = int(os.environ.get('RHWP_TIMEOUT_SECONDS') or '120')
+if RHWP_TIMEOUT_SECONDS <= 0:
+    raise ValueError('RHWP_TIMEOUT_SECONDS는 양의 정수여야 합니다')
+
+
+class HwpConversionTimeout(RuntimeError):
+    """A local rhwp command exceeded its configured runtime limit."""
+
 
 _HWP_TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), 'assets', 'hwp_templates')
 _HWP_TEMPLATE_FILES = {
@@ -549,7 +558,12 @@ def _run_rhwp(args: list[str]) -> str:
     try:
         result = subprocess.run(
             [RHWP_BIN, *args], capture_output=True, text=True, encoding='utf-8', errors='replace',
+            timeout=RHWP_TIMEOUT_SECONDS,
         )
+    except subprocess.TimeoutExpired as exc:
+        raise HwpConversionTimeout(
+            f'HWP 변환 명령이 제한 시간({RHWP_TIMEOUT_SECONDS}초)을 초과했습니다. 잠시 후 다시 시도해 주세요.'
+        ) from exc
     except FileNotFoundError as exc:
         raise FileNotFoundError(
             f"rhwp 실행 파일을 찾을 수 없습니다('{RHWP_BIN}') — RHWP_BIN 환경변수로 경로를 지정하세요"
@@ -718,12 +732,12 @@ def render_plan_hwp(data: PlanDocumentData, template: str) -> bytes:
         tmp_files.append(path)
         return path
 
-    plan_fd, plan_path = tempfile.mkstemp(suffix='.plan.json')
+    plan_path = _new_tmp('.plan.json')
     try:
         # 입력 줄이 양식의 고정 행보다 많은 표는 행을 먼저 늘리고, 글이 많이 들어가는 행은 높이를 미리 맞춘다(표 번호 · 행 번호는 그대로이고 늘린 행 아래의 행만 밀린다)
         plan_input = _prepare_tables(template_path, steps, _new_tmp, template)
         current_output = _new_tmp()
-        with os.fdopen(plan_fd, 'w', encoding='utf-8') as f:
+        with open(plan_path, 'w', encoding='utf-8') as f:
             json.dump({
                 'planVersion': '1.0',
                 'input': plan_input,
@@ -775,8 +789,12 @@ def render_plan_hwp(data: PlanDocumentData, template: str) -> bytes:
         with open(current_output, 'rb') as f:
             return f.read()
     finally:
-        if os.path.exists(plan_path):
-            os.remove(plan_path)
         for path in tmp_files:
-            if os.path.exists(path):
+            try:
                 os.remove(path)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                # Never replace the conversion exception (or a successful result)
+                # with a secondary cleanup error. Log it for operations instead.
+                logger.warning('HWP 임시 파일 정리 실패', exc_info=True)

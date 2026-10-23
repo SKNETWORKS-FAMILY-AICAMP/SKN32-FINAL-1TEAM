@@ -43,7 +43,7 @@ AWS 클라우드 (리전)
 
 | 만드는 것 | 내용 |
 |---|---|
-| 웹 EC2 | `c7i-flex.large`(4GB), Ubuntu 24.04, 고정 IP(탄력적 IP) 연결, nginx 설치 |
+| 웹 EC2 | `m7i-flex.large`(8GB), Ubuntu 24.04, 고정 IP(탄력적 IP) 연결, nginx 설치, 스왑 2GB |
 | 공고 서버 EC2 | `m7i-flex.large`(8GB), 바깥 주소 없음, 내부 고정 주소 `10.20.11.10`, 스왑 2GB |
 | RDS | MySQL 8.4, `db.t4g.micro`, 20GB, 암호화, 1일 백업 |
 | DB 세팅 | `s_brain` DB, [schema-order.txt](schema-order.txt) 순서대로 SQL 10개 적용, 앱 계정 `sbrain_app` |
@@ -112,9 +112,11 @@ sudo cat /etc/sbrain/db.env >> .env
 
 기본값은 [settings.env](settings.env)에 있다. 내 PC에서만 바꿀 값은 같은 폴더에 `settings.env.local`을 만들어 다시 적는다(커밋 안 됨).
 
+서버 종류 · DB 종류처럼 스택 전체에 걸리는 값은 `settings.env`를 고쳐 사용한다. 같은 계정에서 여러 사람이 `up.sh`를 돌리므로, 한 사람의 `settings.env.local`에만 적으면 다른 사람이 돌릴 때 원래 값으로 되돌아간다(반대로 누군가의 `.local`에 옛 값이 남아 있으면 그 값이 이긴다).
+
 | 값 | 언제 반영되나 |
 |---|---|
-| 서버 종류, DB 종류, DB 용량, SSH 허용 IP | 다시 실행할 때마다 (서버는 잠깐 재시작될 수 있음) |
+| 서버 종류, DB 종류, DB 용량, SSH 허용 IP | 다시 실행할 때마다 (서버는 잠깐 재시작될 수 있음 — 서버 종류를 바꾸면 그 서버를 멈췄다 켠다. 디스크 · 고정 IP는 그대로) |
 | 가용영역, 서버 이미지, 공고 서버 내부 주소 | **처음 만들 때만**. 나중에 바뀌면 서버가 통째로 새로 만들어지기 때문에 막아 두었다 |
 
 ## 테이블이 늘어나면

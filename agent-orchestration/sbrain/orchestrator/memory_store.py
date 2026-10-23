@@ -4,6 +4,8 @@ MySQL 구현(sbrain/store_sql/store.py SqlStore)과 같은 동작이다. 흐름 
 
 - 시각은 시간대 있는 UTC로 다룬다. 실행 건 JSON의 시각 문자열(옛 값은 시간대 없음 = UTC)은 as_utc로 읽어 비교한다.
 - 웹 테이블 대신 남기는 것은 알림(notifications)뿐이다. 반려된 T-P2 시도 · 학습 동의는 다루지 않는다.
+- 한 시점 읽기 구간(read_snapshot — 성능 측정 C 후속, 2026-10-20)은 구간 동안 저장소 잠금(RLock)을 쥔다.
+  창구(MemorySnapshot)는 같은 잠금 안에서 맵을 읽는다 — defaultdict에 키를 만들지 않게 get으로 읽는다.
 """
 from __future__ import annotations
 
@@ -23,9 +25,9 @@ from ..models.run import ACTIVE_PROGRESS
 from .errors import FileDeletionNotFound, FileDeletionNotGivenUp, ProjectRunExists, StoreConflict
 from .file_deletion import FIRST_DELAY_SEC
 from .store import (
-    ACCOUNT_LOCK_TIMEOUT_SEC, BUSY_PROGRESS, FINISHED_REQUEST, PENDING_REQUEST, ArtifactVersion, CancelOutcome,
-    CommitBatch, CreateOutcome, ExecutionFilter, ExecutionRow, FileDeletion, JobState, LogStatsRow, RunFilter,
-    StartRequest, StartRequestStatus, check_summary, file_key_prefix,
+    ACCOUNT_LOCK_TIMEOUT_SEC, BUSY_PROGRESS, EXECUTION_SUCCEEDED, FINISHED_REQUEST, PENDING_REQUEST, ArtifactVersion,
+    CancelOutcome, CommitBatch, CreateOutcome, ExecutionFilter, ExecutionRow, ExecutionTotals, FileDeletion, JobState,
+    LogStatsRow, RunFilter, StartRequest, StartRequestStatus, TriggerTotals, check_summary, file_key_prefix,
 )
 from .trace import CallLog, ExecutionRecord, FeedbackLink, PointerEvent, TraceEvent
 
@@ -72,6 +74,17 @@ class MemoryStore:
         # 파일 삭제 대기열 (확장) — deletion_id → 줄. 실행 건이 지워져도 남는다(기록 표가 아니다)
         self._file_deletions: dict[str, FileDeletion] = {}
         self.file_deletion_delay_sec: float = FIRST_DELAY_SEC   # 넣은 뒤 첫 시도까지 (잠정)
+
+    # ── 한 시점 읽기 구간 (확장 — 성능 측정 C 후속, 2026-10-20) ──
+    @contextmanager
+    def read_snapshot(self) -> Iterator[MemorySnapshot]:
+        """구간 동안 저장소 잠금을 쥔다 — 다른 스레드의 쓰기는 구간이 끝날 때까지 기다린다."""
+        with self._lock:
+            view = MemorySnapshot(self)
+            try:
+                yield view
+            finally:
+                view._close()
 
     # ── 실행 건 ───────────────────────────────────────
     def create_run(self, run: Run, batch: CommitBatch, *, max_active: int = 1) -> bool:
@@ -659,3 +672,119 @@ class MemoryStore:
                         retried_at=now, retry_count=r.retry_count + 1)
             self._file_deletions[deletion_id] = r
             return r
+
+
+class MemorySnapshot:
+    """MemoryStore.read_snapshot()의 읽기 창구 (store.SnapshotReads) — 저장소 잠금을 쥔 구간 안에서만 읽는다.
+
+    같은 이름의 읽기는 저장소 메서드를 그대로 부른다(같은 스레드라 잠금을 다시 잡는다). 묶어 읽기도 같은 잠금 안에서 맵을
+    get으로 읽어 defaultdict에 키를 만들지 않는다. 구간이 끝나면 더 읽지 않는다(RuntimeError).
+    """
+
+    def __init__(self, store: MemoryStore) -> None:
+        self._store: MemoryStore | None = store
+
+    def _close(self) -> None:
+        self._store = None
+
+    def _live(self) -> MemoryStore:
+        if self._store is None:
+            raise RuntimeError("한 시점 읽기 구간이 이미 끝났다")
+        return self._store
+
+    @contextmanager
+    def _reading(self) -> Iterator[MemoryStore]:
+        """저장소 잠금 안에서 맵을 읽는다 — 구간을 연 스레드는 이미 쥔 잠금을 다시 잡는다(RLock)."""
+        store = self._live()
+        with store._lock:
+            yield store
+
+    # ── 같은 이름의 Store 읽기 ──────────────────────────
+    def load_run(self, run_id: str) -> Run:
+        return self._live().load_run(run_id)
+
+    def find_run_by_project(self, project_id: int | str) -> Run | None:
+        return self._live().find_run_by_project(project_id)
+
+    def query_runs(self, f: RunFilter) -> list[Run]:
+        return self._live().query_runs(f)
+
+    def latest_start_request(self, project_id: int | str) -> StartRequest | None:
+        return self._live().latest_start_request(project_id)
+
+    def latest_start_requests(self, project_ids: Iterable[int | str]) -> dict[str, StartRequest]:
+        return self._live().latest_start_requests(project_ids)
+
+    # ── 묶어 읽기 (실행 건 ID 목록) ──────────────────────
+    def notifications_for_runs(self, run_ids: Iterable[str]) -> dict[str, list[Notification]]:
+        with self._reading() as s:
+            return {rid: list(s._notifications.get(rid, ())) for rid in dict.fromkeys(run_ids)}
+
+    def current_artifacts(self, key: str, run_ids: Iterable[str]) -> dict[str, ArtifactVersion]:
+        with self._reading() as s:
+            out: dict[str, ArtifactVersion] = {}
+            for rid in dict.fromkeys(run_ids):
+                version = s._pointers.get(rid, {}).get(key)
+                if version is not None:
+                    out[rid] = s._artifacts[(rid, key, version)]   # 버전이 없으면 KeyError — get_artifact와 같은 모양
+            return out
+
+    def pointers_for_runs(self, run_ids: Iterable[str]) -> dict[str, dict[str, int]]:
+        with self._reading() as s:
+            return {rid: dict(s._pointers.get(rid, {})) for rid in dict.fromkeys(run_ids)}
+
+    def scored_executions(self, run_ids: Iterable[str], task_ids: Iterable[str]) -> dict[str, list[ExecutionRecord]]:
+        tasks = set(task_ids)
+        with self._reading() as s:
+            return {rid: [rec.model_copy(deep=True) for rec in s._executions.get(rid, {}).values()   # 처음 기록된 순서
+                          if rec.status == EXECUTION_SUCCEEDED and rec.task_id in tasks]
+                    for rid in dict.fromkeys(run_ids)}
+
+    def last_attempts(self, run_ids: Iterable[str]) -> dict[str, int]:
+        with self._reading() as s:
+            out: dict[str, int] = {}
+            for rid in dict.fromkeys(run_ids):
+                recs = s._executions.get(rid)
+                if recs:
+                    out[rid] = next(reversed(recs.values())).attempt   # 가장 나중에 기록된 것 (덮어써도 처음 자리)
+            return out
+
+    # ── 범위판 (마지막 활동 ≥ updated_since) ──────────────
+    @staticmethod
+    def _runs_since(s: MemoryStore, updated_since: datetime) -> list[str]:
+        since = as_utc(updated_since)
+        return [rid for rid, r in s._runs.items() if _time(r["updatedAt"]) >= since]
+
+    def scored_executions_since(self, updated_since: datetime, task_ids: Iterable[str]) -> list[ExecutionRecord]:
+        tasks = set(task_ids)
+        with self._reading() as s:
+            rows = [rec for rid in self._runs_since(s, updated_since) for rec in s._executions.get(rid, {}).values()
+                    if rec.status == EXECUTION_SUCCEEDED and rec.task_id in tasks]
+            # list_executions(order="asc")와 같은 순서 — (시작 시각, 처음 기록된 순서), 시작 시각이 없으면 맨 앞
+            rows.sort(key=lambda rec: (rec.started_at or UTC_MIN, s._exec_seq[rec.execution_id]))
+            return [rec.model_copy(deep=True) for rec in rows]
+
+    def pointers_since(self, updated_since: datetime) -> dict[str, dict[str, int]]:
+        with self._reading() as s:
+            return {rid: dict(s._pointers.get(rid, {})) for rid in self._runs_since(s, updated_since)}
+
+    def execution_totals_since(self, updated_since: datetime) -> ExecutionTotals:
+        counts: dict[str, int] = {}
+        tokens: dict[str, int] = {}
+        runs: dict[str, set[str]] = {}
+        image = with_records = 0
+        with self._reading() as s:
+            for rid in self._runs_since(s, updated_since):
+                recs = s._executions.get(rid)
+                if not recs:
+                    continue
+                with_records += 1
+                for rec in recs.values():   # 상태 무관 — 실행 기록 전체
+                    trig = rec.trigger
+                    counts[trig] = counts.get(trig, 0) + 1
+                    tokens[trig] = tokens.get(trig, 0) + (rec.input_tokens or 0) + (rec.output_tokens or 0)
+                    runs.setdefault(trig, set()).add(rid)
+                    image += (rec.image_input_tokens or 0) + (rec.image_output_tokens or 0)
+        return ExecutionTotals(
+            by_trigger={t: TriggerTotals(count=counts[t], text_tokens=tokens[t], runs=len(runs[t])) for t in counts},
+            text_tokens=sum(tokens.values()), image_tokens=image, runs_with_executions=with_records)

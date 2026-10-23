@@ -71,15 +71,19 @@ const executionRowFromServer=r=>({
 // 표기용 한글 라벨은 여기서만 붙인다. "공고 수집 현황"/"최근 수집 실행 이력" 카드는
 // GET /admin/collection-status가 담당한다(AnnouncementTab 안에서 직접 매핑).
 const NOTICE_SOURCE_LABEL={kstartup:'K-Startup','k-startup':'K-Startup',bizinfo:'기업마당'};
+// 상태 문구는 백엔드가 한국 날짜 기준 접수기간과 원본 모집 상태로 계산한 display_status를 그대로 쓴다(SB-411):
+// 모집중 · 마감 · 접수 예정 · 접수기간 내 · 원문 확인 · 확인 필요. 원본 recruitment_status(unknown 등)는 화면에 내지 않는다 —
+// display_status가 없는 옛 서버 응답일 때만 원본 값으로 문구를 만든다.
+const RECRUITMENT_STATUS_LABEL={open:'모집중',closed:'마감',unknown:'확인 필요'};
+const NOTICE_STATUS_TONE={'모집중':'ok','접수 예정':'primary','접수기간 내 · 원문 확인':'warn','확인 필요':'warn','마감':'muted'};
 const noticeRowFromServer=n=>{
   const shortDate=d=>d?d.slice(5).replace('-','.'):null;
-  const closed=n.recruitment_status==='closed';
+  const status=n.display_status||RECRUITMENT_STATUS_LABEL[n.recruitment_status]||n.recruitment_status;
   return {
     id:n.notice_id,title:n.title,src:NOTICE_SOURCE_LABEL[n.source]||n.source,
     period:n.apply_start&&n.apply_end?`${shortDate(n.apply_start)}~${shortDate(n.apply_end)}`:'-',
     embed:n.has_embedding?'완료':'미생성',embedTone:n.has_embedding?'ok':'warn',
-    status:n.recruitment_status==='open'?'모집중':closed?'마감':n.recruitment_status,
-    statusTone:n.recruitment_status==='open'?'ok':'muted',dim:closed,
+    status,statusTone:NOTICE_STATUS_TONE[status]||'muted',dim:status==='마감',
   };
 };
 
@@ -346,8 +350,15 @@ export default function AdminDashboard({user,onExit}){
 }
 
 // GET /admin/collection-status의 issue_counts({"unparsed_period": 53} 등) 딕셔너리를
-// "unparsed_period 53건" 식의 짧은 문자열 목록으로 바꾼다.
-const formatIssueCounts=issues=>Object.entries(issues||{}).map(([k,v])=>`${k} ${v}건`);
+// "접수 기간 해석 실패 53건" 식의 짧은 문자열 목록으로 바꾼다. 코드는 공고 수집(data-collection/collect/normalize.py)이 붙인다 —
+// 여기 없는 새 코드는 원래 값 그대로 보인다.
+const ISSUE_CODE_LABEL={
+  unparsed_period:'접수 기간 해석 실패',
+  reversed_period:'접수 시작일이 마감일보다 늦음',
+  invalid_date:'날짜 형식 오류',
+  invalid_url:'링크 주소 오류',
+};
+const formatIssueCounts=issues=>Object.entries(issues||{}).map(([k,v])=>`${ISSUE_CODE_LABEL[k]||k} ${v}건`);
 
 function AnnouncementTab(){
   const [query,setQuery]=useState('');

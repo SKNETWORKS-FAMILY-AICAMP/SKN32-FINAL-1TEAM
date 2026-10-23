@@ -174,8 +174,9 @@ def fit_document(section: str, header: str, attachment_labels: list[str]) -> tup
         heights = _row_heights(table, styles, scale, index == overview)
         if index == overview:
             heights = _image_row(table, heights)
-            if sum(heights) > body_height:   # 가장 작은 글자로도 한 쪽을 넘으면 쪽 아래로 넘치지 않게 행 단위로 다음 쪽에 잇는다
-                table = _allow_page_split(table)
+        # 긴 팀원·일정·사업비 표도 쪽 나눔과 글자처럼 취급 해제를 함께 적용한다.
+        if sum(heights) > body_height:
+            table = _allow_page_split(table)
         section = section[:start] + _apply_heights(table, heights) + section[end:]
 
     if attachment_labels:

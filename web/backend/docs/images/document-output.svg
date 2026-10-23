@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" width="1200" height="420" role="img" aria-label="문서 출력 흐름: 계획서 데이터를 공식 양식에 채워 docx, pdf, hwp, zip 네 가지로 내려줌">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#0B6E6E"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="420" rx="20" fill="#F8FAF9"/>
+  <g font-family="'Noto Sans KR','Malgun Gothic','Apple SD Gothic Neo',sans-serif" fill="#151C2C">
+    <text x="40" y="40" font-size="22" font-weight="700">문서 출력: 같은 데이터로 네 가지 파일</text>
+
+    <rect x="40" y="130" width="230" height="160" rx="16" fill="#FFFFFF" stroke="#C9D1CE" stroke-width="2"/>
+    <text x="155" y="176" font-size="20" font-weight="700" text-anchor="middle">계획서 데이터</text>
+    <text x="155" y="206" font-size="15" fill="#374151" text-anchor="middle">조율 함수의 결과</text>
+    <text x="155" y="230" font-size="15" fill="#374151" text-anchor="middle">+ 사용자가 입력한 값</text>
+
+    <rect x="350" y="130" width="250" height="160" rx="16" fill="#E3F1F0" stroke="#0B6E6E" stroke-width="3"/>
+    <text x="475" y="176" font-size="20" font-weight="700" text-anchor="middle" fill="#0B6E6E">공식 양식에 채우기</text>
+    <text x="475" y="206" font-size="15" fill="#374151" text-anchor="middle">체크 칸 자동 체크</text>
+    <text x="475" y="230" font-size="15" fill="#374151" text-anchor="middle">정해진 칸에 입력값 채움</text>
+    <text x="475" y="254" font-size="15" fill="#374151" text-anchor="middle">줄 수만큼 표 행 복제</text>
+
+    <!-- outputs -->
+    <rect x="690" y="70" width="230" height="68" rx="12" fill="#FFFFFF" stroke="#0B6E6E" stroke-width="2"/>
+    <text x="805" y="100" font-size="18" font-weight="700" text-anchor="middle">DOCX</text>
+    <text x="805" y="124" font-size="13" fill="#374151" text-anchor="middle">python-docx로 양식 채움</text>
+
+    <rect x="690" y="150" width="230" height="68" rx="12" fill="#FFFFFF" stroke="#0B6E6E" stroke-width="2"/>
+    <text x="805" y="180" font-size="18" font-weight="700" text-anchor="middle">PDF</text>
+    <text x="805" y="204" font-size="13" fill="#374151" text-anchor="middle">DOCX를 LibreOffice로 변환</text>
+
+    <rect x="690" y="230" width="230" height="68" rx="12" fill="#FFFFFF" stroke="#0B6E6E" stroke-width="2"/>
+    <text x="805" y="260" font-size="18" font-weight="700" text-anchor="middle">HWP</text>
+    <text x="805" y="284" font-size="13" fill="#374151" text-anchor="middle">rhwp + 쪽 맞춤(hwpx_fit)</text>
+
+    <rect x="690" y="310" width="230" height="68" rx="12" fill="#FFFFFF" stroke="#0B6E6E" stroke-width="2"/>
+    <text x="805" y="340" font-size="18" font-weight="700" text-anchor="middle">ZIP</text>
+    <text x="805" y="364" font-size="13" fill="#374151" text-anchor="middle">계획서 + 프로토타입 + 인포그래픽</text>
+
+    <rect x="990" y="150" width="170" height="148" rx="16" fill="#FFFFFF" stroke="#C9D1CE" stroke-width="2"/>
+    <text x="1075" y="204" font-size="20" font-weight="700" text-anchor="middle">사용자</text>
+    <text x="1075" y="234" font-size="14" fill="#374151" text-anchor="middle">요청마다 새로 만들어</text>
+    <text x="1075" y="256" font-size="14" fill="#374151" text-anchor="middle">바로 내려받음</text>
+    <text x="1075" y="278" font-size="14" fill="#374151" text-anchor="middle">(약 7~10초)</text>
+
+    <g stroke="#0B6E6E" stroke-width="3" fill="none">
+      <line x1="270" y1="210" x2="346" y2="210" marker-end="url(#a)"/>
+      <path d="M600 210 L645 210 L645 104 L686 104" marker-end="url(#a)"/>
+      <path d="M600 210 L645 210 L645 184 L686 184" marker-end="url(#a)"/>
+      <path d="M600 210 L645 210 L645 264 L686 264" marker-end="url(#a)"/>
+      <path d="M600 210 L645 210 L645 344 L686 344" marker-end="url(#a)"/>
+      <line x1="920" y1="104" x2="940" y2="104"/><line x1="920" y1="184" x2="940" y2="184"/>
+      <line x1="920" y1="264" x2="940" y2="264"/><line x1="920" y1="344" x2="940" y2="344"/>
+      <path d="M940 104 L940 224 L986 224" marker-end="url(#a)"/>
+      <path d="M940 344 L940 224"/>
+    </g>
+    <text x="40" y="404" font-size="13" fill="#4B5563">시간은 운영 서버 측정(각 10회 중앙값, 한 번에 한 건)을 어림한 값입니다. 동시에 받으면 같이 느려집니다.</text>
+  </g>
+</svg>

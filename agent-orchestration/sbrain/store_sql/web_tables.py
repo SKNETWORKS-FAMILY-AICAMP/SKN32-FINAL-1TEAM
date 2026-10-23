@@ -2,7 +2,7 @@
 
 | 테이블 | Orchestrator가 하는 일 |
 |---|---|
-| notifications | 알림 INSERT, 실행 건 알림 조회 |
+| notifications | 알림 INSERT, 실행 건 알림 조회(하나 · 여러 프로젝트 한 문장 — 한 시점 창구) |
 | generation_failure_alerts | 실패 확정 알림 INSERT |
 | verification_policies | 첫 행(policy_id 최솟값)을 설정 입력으로 읽기 |
 | project_budget_items · project_schedule_items | 사전 정보(사업비 · 일정) 읽기만 — 읽는 일은 intake/sql_source.py가 한다. 여기에는 컬럼 목록만 둔다 |
@@ -87,9 +87,23 @@ class WebTables:
         t = self.table(conn, "notifications")
         rows = conn.execute(select(*(t.c[c] for c in WEB_COLUMNS["notifications"]))
                             .where(t.c.project_id == project_id).order_by(t.c.notification_id)).mappings()
-        return [Notification(run_id=run_id, kind=r["kind"], failure_scope=r["failure_scope"],
-                             target_step=r["target_step"], channel=r["channel"], created_at=r["created_at"],
-                             read_at=r["read_at"], notification_id=str(r["notification_id"])) for r in rows]
+        return [_notification(r, run_id) for r in rows]
+
+    def notifications_by_project(self, conn: Connection, run_of: dict[int, str]) -> dict[str, list[Notification]]:
+        """여러 프로젝트의 알림을 한 문장으로 (확장 — 한 시점 창구, 2026-10-20).
+
+        run_of: project_id → 그 프로젝트의 실행 건 ID(실행 건 줄의 project_id — 프로젝트 하나에 실행 건 하나). 실행 건마다
+        notifications(conn, project_id, run_id)와 같은 값 · 같은 순서(알림 ID 순)이고, 알림이 없는 실행 건은 빠진다.
+        run_of를 나누는 일(IN 묶음)은 부르는 쪽이 한다.
+        """
+        t = self.table(conn, "notifications")
+        rows = conn.execute(select(*(t.c[c] for c in WEB_COLUMNS["notifications"]))
+                            .where(t.c.project_id.in_(list(run_of))).order_by(t.c.notification_id)).mappings()
+        out: dict[str, list[Notification]] = {}
+        for r in rows:
+            run_id = run_of[r["project_id"]]
+            out.setdefault(run_id, []).append(_notification(r, run_id))
+        return out
 
     # ── 실패 알림 ─────────────────────────────────────
     def insert_failure_alert(self, conn: Connection, project_id: int, run: Run, at: datetime) -> None:
@@ -111,3 +125,10 @@ class WebTables:
         if row is None:
             return None
         return {**{c: None for c in optional}, **dict(row)}
+
+
+def _notification(r: Any, run_id: str) -> Notification:
+    """웹 notifications 행 하나 → 기준 문서 Notification (runId 자리는 그 실행 건). 알림 읽기 둘이 함께 쓴다."""
+    return Notification(run_id=run_id, kind=r["kind"], failure_scope=r["failure_scope"], target_step=r["target_step"],
+                        channel=r["channel"], created_at=r["created_at"], read_at=r["read_at"],
+                        notification_id=str(r["notification_id"]))
