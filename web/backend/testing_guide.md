@@ -1,4 +1,4 @@
-# S-Brain 웹 백엔드 테스트 방법 (2026-10-11 개정, SB-334)
+# S-Brain 웹 백엔드 테스트 방법 (2026-10-23 개정)
 
 `web/backend/`에서 실행하는 걸 기준으로 정리했다. 웹은 이제 오케스트레이터(`agent-orchestration`의 `sbrain`)를 통해서만 실행 건을 만들고 읽는다 —
 예전의 더미 파이프라인(`seed_dummy_pipeline.py`, `app/agents.py`)과 이를 쓰던 `verify_*.py` 스크립트는 없어졌다.
@@ -11,7 +11,7 @@
 cd web/backend
 python -m venv venv
 venv\Scripts\activate        # (WSL/맥이면 source venv/bin/activate)
-pip install -r requirements-dev.txt
+pip install -r requirements.txt -r requirements-dev.txt pytest ruff   # requirements-dev.txt에는 TestClient용 httpx2뿐이라 pytest · ruff는 따로 설치한다(CI도 같은 방식)
 pip install -e ../../agent-orchestration   # 오케스트레이터 계약 테스트용(없으면 계약 테스트만 건너뜀)
 ```
 
@@ -31,6 +31,7 @@ pytest -q
 - 사업비 · 추진 일정 입력(SB-327)은 `test_budget_phase_column.py`(phase 컬럼), `test_budget_schedule_schema.py`(요청 · 응답 모양), `test_budget_schedule_validation.py`(입력 검사 · 오류 위치), `test_budget_schedule_saving.py`(저장 순서 · 커밋 시점 · 정리), `test_budget_schedule_required.py`(필수 확인 · 스위치)가 본다. 아래 "사업비 · 추진 일정 입력"을 보라.
 - 테스트 파일별로 무엇을 확인하는지는 [`unit_test_doc.md`](unit_test_doc.md)에 정리돼 있다(테스트를 추가하면 그 표도 같이 고친다).
 - 관리자(`tests/test_admin.py`), 재작성(`test_orch_rework.py`), 단계 시작(`test_orch_stages.py`), 결과(`test_orch_result.py`), 삭제 · 보관 규칙(`test_project_permanent_delete.py`, `test_account_deletion.py`, `test_proofread_retention.py`) 등이 있다.
+- 접근 · 공개 범위는 `test_admin_owner_check.py`(관리자도 남의 프로젝트는 404 — SB-418), `test_archived_project_routes.py`(휴지통 프로젝트는 소유자도 404 — SB-421), `test_api_docs_closed.py`(`/docs` · `/openapi.json` 닫힘, `/test-db` 없음 — SB-419)가, DB 칸 설명은 `test_schema_comments.py`(SB-420)가 본다.
 
 ---
 
@@ -55,7 +56,7 @@ SQLite 개발 모드에서는 오케스트레이터를 쓸 수 없어 프로젝�
 - **산출물 파일 (SB-295 · SB-320)** — 1~4 준비 뒤(워커는 띄우지 않는다) `python scripts/e2e_artifact_files.py` : 워커를 같은 프로세스에서 돌리고 파일 저장소(`SBRAIN_ARTIFACT_ROOT`, 스크립트가 임시 폴더로 잡는다 — 웹과 워커가 같은 폴더를 본다)에 스텁 구현 Agent가 만든 자리채움 파일(`index.html` · `onepage.svg` · `infographic.svg` · `README.md` · `plan.docx`)로 흐름을 본다. 결과의 두 경로가 key 기반 웹 주소인지(SB-314), 받은 파일이 저장소 파일과 바이트가 같은지 · 헤더 · 형식(SB-315), 비로그인 401 · 다른 계정 · 관리자 · 바꾼 key · 경로 이동 · 다른 프로젝트 번호 404, 실행 파일 재작성의 전후 주소와 이전 파일 보존, 종합 평가 · 표현 검수를 마친 뒤 결과물 zip(SB-316), 영구 삭제 · 탈퇴 뒤 관리자 삭제 대기열에 줄이 생기고(SB-318) 워커가 처리하면 저장소 파일이 지워지는지(대기 10분은 이 시험에서만 0으로 줄인다), 원페이지의 두 참조(같은 `onepage.svg`)를 본다. 조율 T-C1이 실제 LLM이라 카테고리를 스스로 고르므로 스크립트가 웹개발 · 원페이지를 강제한다. 스텁 파일은 자리채움이라 내용 품질은 보지 않는다. 계정은 매번 새로 만들어져(탈퇴로 지워짐) 다시 돌려도 된다. 2분쯤 걸린다. 따로 띄운 워커로 `e2e_worker_flow.py`를 돌릴 때는 워커와 이 스크립트에 같은 `SBRAIN_ARTIFACT_ROOT`를 준다(워커는 이 값이 없으면 시작하지 않는다).
 - **학습 동의 · 검수 회수 문단 (SB-262, 검수 제거 반영 SB-400)** — 1~4 준비 뒤(워커는 띄우지 않는다) `python scripts/e2e_training_consent.py` : 워커를 같은 프로세스에서 돌린다. **검수가 서비스 흐름에서 빠져(2026-10-15) 새 워커는 `proofread_logs`에 행을 쓰지 않으므로**, 동의한 계정이 결과 통합까지 돌려도 행이 쓰이지 않는지 확인하고, 웹에 남아 있는 관리자 라벨링 · 학습 반영(trained) 표시, 동의 철회 · 영구 삭제 · 탈퇴 때 반영 전 행만 지워지고 trained 행은 연결만 끊겨 남는 동작은 **시드로 직접 넣은 옛 기록 행**으로 본다. 워커가 동의를 저장 시점에 보는지 확인하던 시나리오(P2)는 워커가 더 읽지 않아 뺐다. 프로젝트를 한 번 끝까지 돌려 1분쯤 걸린다. 다시 돌려도 된다(trained 행은 연결이 끊긴 채 남는다).
 
-- **마이그레이션 리허설 (SB-265)** — 로컬 MySQL만 있으면 된다(워커 불필요) `python scripts/rehearse_migration.py` : 옛 웹 스키마(기본 git `origin/main`의 `app_schema.sql`)로 DB를 만들고 시드 데이터를 넣은 뒤 `migrations/001` → `002` → `004`(SB-328, `project_budget_items.phase` 추가 — 003은 `feature/sb-269-web-final`에만 있어 병합 뒤 002와 004 사이에 넣는다) → `005`(SB-382, `project_plan_inputs.target_customer` 추가, 기존 행은 NULL) → `006`(SB-396, `notifications.kind`에 '결과물' 추가, 기존 알림 행 그대로)를 적용해 더미 표 13개가 사라지고 사업비 행의 `phase`가 NULL로 남고 데이터(사용자 · 프로젝트 · 알림 · 실패 알림 · 검수 기록)가 그대로인지, `proofread_logs`의 `project_id`가 채워졌는지, 마이그레이션을 다시 적용해도 오류가 없는지(멱등), 결과 스키마가 새 `app_schema.sql`과 같은지(표 · 열 형식 · NULL · 기본값 · 인덱스 · 외래 키)를 본다. **공유 DB 사본이 없어 옛 스키마를 git(main)으로 대신한 것**이라, 사본이 생기면 `mysqldump --no-data`로 뜬 스키마를 `--old-schema-file`로 넣어 같은 리허설을 다시 돈다. `--keep`으로 두 DB(`sbrain_test_mig_old` · `_new`)를 남겨 그 위에서 워커 E2E를 돌릴 수도 있다.
+- **마이그레이션 리허설 (SB-265)** — 로컬 MySQL만 있으면 된다(워커 불필요) `python scripts/rehearse_migration.py` : 옛 웹 스키마(기본 git `origin/main`의 `app_schema.sql`)로 DB를 만들고 시드 데이터를 넣은 뒤 `migrations/001` → `002` → `004`(SB-328, `project_budget_items.phase` 추가 — 003은 `feature/sb-269-web-final`에만 있어 병합 뒤 002와 004 사이에 넣는다) → `005`(SB-382, `project_plan_inputs.target_customer` 추가, 기존 행은 NULL) → `006`(SB-396, `notifications.kind`에 '결과물' 추가, 기존 알림 행 그대로)를 적용해 더미 표 13개가 사라지고 사업비 행의 `phase`가 NULL로 남고 데이터(사용자 · 프로젝트 · 알림 · 실패 알림 · 검수 기록)가 그대로인지, `proofread_logs`의 `project_id`가 채워졌는지, 마이그레이션을 다시 적용해도 오류가 없는지(멱등), 결과 스키마가 새 `app_schema.sql`과 같은지(표 · 열 형식 · NULL · 기본값 · 인덱스 · 외래 키)를 본다. **공유 DB 사본이 없어 옛 스키마를 git(main)으로 대신한 것**이라, 사본이 생기면 `mysqldump --no-data`로 뜬 스키마를 `--old-schema-file`로 넣어 같은 리허설을 다시 돈다. `--keep`으로 두 DB(`sbrain_test_mig_old` · `_new`)를 남겨 그 위에서 워커 E2E를 돌릴 수도 있다. 리허설 대상은 001 · 002 · 004 · 005 · 006이며 003 · 007은 포함하지 않는다(007은 파일을 직접 실행해 확인).
 
 - **부하 · 타임아웃 (SB-266)** — 1~4 준비 뒤 **워커를 띄우지 않고** `python scripts/load_check.py` : 워커가 응답하지 않을 때 후보 · 자격 확인 조회가 쌓이면 다른 요청이 막히는지를 서버를 실제로 띄워 HTTP로 잰다(단계별 동시 대기 5 · 15 · 30 · 60개, 그동안 DB를 쓰는 `/auth/me`와 안 쓰는 `/docs`의 지연). 느려지면 종료 코드 1이다. 아래 "부하 · 타임아웃" 참고.
 

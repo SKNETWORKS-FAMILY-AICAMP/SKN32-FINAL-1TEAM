@@ -132,7 +132,7 @@ python -m venv .venv
 source .venv/bin/activate
 
 pip install -r requirements.txt
-pip install -r requirements-dev.txt   # 테스트(pytest) · 린트(ruff)를 실행할 때만 필요
+pip install -r requirements-dev.txt pytest ruff   # 테스트 · 린트를 돌릴 때만 필요 (requirements-dev.txt에는 TestClient용 httpx2만 있어 pytest · ruff는 따로 설치)
 ```
 
 ### 2. 환경변수 준비
@@ -529,8 +529,8 @@ ruff check .
 | `stub_worker.py` | Agent 호출 없이 동작하는 스텁 워커 |
 | `e2e_*.py` | 실제 워커 + MySQL 기반 흐름별 E2E (관리자 · 삭제/탈퇴 · 실패 재개 · 동시 중단 · 산출물 파일 · 사업비/일정 등) |
 | `load_check.py` | 부하 · 응답 시간 확인 |
-| `rehearse_migration.py` | 마이그레이션을 로컬 MySQL에 사전 적용 |
-| `clean_hwp_template.py` | hwp 양식 정리 |
+| `rehearse_migration.py` | 옛 스키마에 마이그레이션 001 · 002 · 004 · 005 · 006을 적용해 `app_schema.sql`과 같아지는지 확인 (003 · 007 제외) |
+| `clean_hwp_template.py` | hwp 양식의 예시 상자를 지운 템플릿 생성 |
 
 rhwp 설치 · 확인 절차는 [`scripts/README.md`](scripts/README.md)를 참고하세요.
 
@@ -553,7 +553,7 @@ rhwp 설치 · 확인 절차는 [`scripts/README.md`](scripts/README.md)를 참�
 | `006_notification_kind_result.sql` | 알림 종류에 '결과' 추가 |
 | `007_fix_stale_column_comments.sql` | 지운 옛 표 이름이 남은 칸 설명 4곳 정리 (SB-420). 칸 설명만 변경하며 여러 번 실행해도 안전 |
 
-`007`은 실제 MySQL에서 실행해 확인했습니다. 운영 DB 적용 전에는 `scripts/rehearse_migration.py`로 한 번 더 리허설하세요. 적용 후에는 파일 상단 주석의 확인 쿼리가 0행이면 정리가 끝난 것입니다.
+`007`은 실제 MySQL에서 실행해 확인했습니다. `scripts/rehearse_migration.py`는 001 · 002 · 004 · 005 · 006만 적용하므로 007은 포함하지 않습니다. 운영 DB에는 007 파일을 직접 실행하고, 적용 후 파일 상단 주석의 확인 쿼리가 0행이면 정리가 끝난 것입니다.
 
 `sbrain_schema.dbml`은 ERD용 파일이며 칸 설명이 최신이 아닐 수 있습니다.
 

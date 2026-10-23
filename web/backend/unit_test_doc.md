@@ -2,14 +2,15 @@
 
 웹 백엔드(`web/backend`)의 단위 테스트가 무엇을 확인하는지 정리한 문서입니다. 테스트를 추가하거나 고치면 이 문서의 해당 표도 같은 커밋에서 고칩니다.
 
+- `pytest` · `ruff` · `pytest-cov`는 `requirements-dev.txt`에 없습니다(그 파일에는 TestClient용 `httpx2`만 있음). `pip install -r requirements.txt -r requirements-dev.txt pytest ruff pytest-cov`로 설치합니다.
 - 실행 방법과 E2E 스크립트는 [`testing_guide.md`](testing_guide.md)가 설명합니다. 이 문서는 "어떤 테스트가 무엇을 확인하는지"만 다룹니다.
 - 통과 건수 · 커버리지 같은 측정값은 브랜치마다 달라서 여기에 적지 않습니다. 아래 명령으로 그때그때 잽니다.
 
 ```
-pytest -q                                   # 전체 실행 (약 1분)
+pytest -q                                   # 전체 실행 (환경에 따라 2~3분)
 pytest --collect-only -q | tail -1          # 테스트 건수
-pytest --cov=app --cov-branch -q            # 구문 · 분기 커버리지
-ruff check .                                # 정적 검사
+pytest --cov=app --cov-branch -q            # 구문 · 분기 커버리지 (pytest-cov 별도 설치 필요)
+ruff check .                                # 정적 검사 (ruff 별도 설치 필요)
 ```
 
 ## 1. 방식
@@ -36,7 +37,7 @@ ruff check .                                # 정적 검사
 
 | 테스트 파일 | 확인하는 것 |
 |---|---|
-| `test_orch_stages.py` | 공고 선택 → 자격 확인 → 계획서 · 프로토타입 · 종합 평가 · 검수 시작 |
+| `test_orch_stages.py` | 공고 선택 → 자격 확인 → 계획서 · 프로토타입 · 종합 평가 · 결과 통합(`review/start`)의 시작 명령 (검수 단계는 흐름에서 빠짐, SB-398) |
 | `test_orch_result.py` | `GET /projects/{id}/result` — 계획서 · 판정 · 산출물 · 재작성 기회를 응답으로 변환, 검수 기록이 남은 옛 실행 건도 화면 10을 부르지 않고 계획서 문장을 원문으로 씀 (SB-397) |
 | `test_plan_result_shape.py` | 결과의 계획서 응답 모양 — 항목 번호 · 웹 태그 · 종류를 따로, 옛 4항목 계획서의 태그, 점수 항목의 태그, 그림 주소 · 순서 (SB-337), 표 대체 사유(`table_fallbacks`)의 태그 · 제목 · 사용자용 안내만 싣고 내부 원문은 싣지 않음, 점수 보고서 안내(`plan.notices` · `verdict.notices`) (SB-354), 결과물 안내 글(`deliverable` — 제출 요건 안내 · 고지 · 결과 안내, 없으면 null), 미달 항목(`shortfall_items`)을 순서대로 그대로 · 칸이 없던 옛 실행 건은 빈 목록 · 실제 `ShortfallItem`이 오류 없이 옮겨지는지 (SB-371) |
 | `test_score_scaling.py` | 점수 보고서 환산 칸 — 층 점수 · 만점은 그 실행 건 배점 기준(지금 정책 값 아님), 코드 점검 줄의 부분 점수 · 해당 없음, 항목 합 = 층 점수, 옛 실행 건 대체 값 (오케스트레이터 2026-10-11) |
@@ -66,6 +67,9 @@ ruff check .                                # 정적 검사
 | `test_infographic_in_document.py` | 계획서 파일(docx · hwp · zip 안 docx)에 인포그래픽과 첫 장 고지 넣기 — 데이터 주소 · 안쪽 참조는 허용하고 바깥 참조는 막는 변환(계획서 그림은 그대로 엄격), 못 받거나 못 바꾸면 인포그래픽만 빼고 문서는 만듦, 세로로 긴 그림 줄이기, 고지는 결과물 값(없으면 기본 문구), hwp 실제 생성(첫 쪽 고지 · 그림 쪽과 인포그래픽 쪽 분리) (기준 문서 T-C4, SB-354) |
 | `test_hwp_body_paragraphs.py` | hwp 본문을 줄마다 문단으로 쓰기(절을 큰 번호부터, 뼈대 문단을 먼저 지움), 표 서술 · 단계 머리말, 칸 안 예시 상자를 지우는 스크립트, 정리한 양식 2종이 원본과 같은 구조인지, 실제 hwp에 빈 "-" 글머리 · 예시 안내가 없는지 |
 | `test_hwp_table_layout.py` | hwp 표 채우기 — 입력 줄이 고정 행보다 많으면 행 늘리기(기준 행 복제 · 합계 행 밀림), 칸 줄바꿈을 문단으로 나누기, 사업비 비목 칸 나누기, 업종 · 지방우대 칸 알아보기와 ☑ 체크(글머리 복제), 행 복제 · 높이 · 빈 문단 · 쪽 나눔(hwpx xml), 쪽 밖으로 나가는 표와 빈 쪽이 없는지(rhwp 경고), 주업종을 지원 분야 · 전문기술분야로 가르기, 개요 표 명칭(아이디어 설명의 첫 줄 · 60자까지)과 일반현황 창업아이템명이 같은 값 · 설명이 비면 자리채움 (SB-384), docx의 안내 문구 제거 · 본문 줄 문단 |
+| `test_hwp_paragraph_shapes.py` | hwp 문단 모양 — 본문 글머리 줄의 내어쓰기와 표 칸 목록의 왼쪽 정렬(`hwpx_rows.shape_paragraphs`). rhwp 실제 확인은 실행 파일이 있을 때만 |
+| `test_plan_body_lines.py` | 계획서 본문 줄의 글머리 — 줄에 붙어 온 글머리 위에 ` ◦ `를 또 붙이지 않고 단계(본문 · 하위)를 가려 한 번만 달며, docx는 내어쓰기로 넘어간 줄을 글 첫 글자에 맞춤 |
+| `test_hwp_failures.py` | hwp 변환 실패 처리 — rhwp 명령 제한 시간과 성공 결과 보존, 멈춘 자식 프로세스 종료, 실패 시 핸들 · 임시 파일 정리, 정리 오류가 원래 오류를 가리지 않음, 시간 초과 시 구조화된 504(`HWP_CONVERSION_TIMEOUT`), 성공 시 임시 파일 정리 (SB-415 · SB-416) |
 | `test_hwpx_fit.py` | hwp 한 쪽 맞춤 · 글자 통일 · 별첨 표시 — 서체를 함초롬바탕 하나로 · 본문 크기를 한 크기로(제목은 비율로, 5 ~ 6pt 공백용 글자는 그대로) · 양식에 그 서체가 없으면 서체는 그대로, 행 높이를 내용 어림에 맞추기(원래 높이가 커도 줄이고 내용보다 낮아지지 않게), 그림 쪽 맨 위 `<별첨> …` 문구와 그림 내리기(쪽 수가 다르면 건너뜀), 개요 표가 긴 글에서도 한 쪽에 들어가고 쪽 밖으로 넘치는 칸이 없는지 · 그림이 있을 때 `<별첨 참고>` 두 칸 · 그림이 없으면 별첨 글이 없는지 · 문서 전체 서체 1종 · 본문 크기 1종(rhwp 실제 확인) |
 | `test_document_layout.py` | 내려받는 문서의 배치 — docx A4 · 표 열 폭 고정(합 본문 폭) · 긴 칸이 넓은 열 · 행 쪽 넘김 방지 · 표 머리 반복 · 제목이 표와 같은 쪽 · 한글 숫자 틈 끄기, hwp 일정 표 '구분' · 사업비 금액 칸 폭(열 폭 xml 변경, rhwp 실제 파일 확인) |
 | `test_database_time_zone.py` | 웹의 MySQL 연결이 세션 시간대를 UTC로 맞추는 설정(DB 서버가 한국 시간이어도 생성 시각이 9시간 어긋나지 않게) |
@@ -89,6 +93,10 @@ ruff check .                                # 정적 검사
 | `test_biz_check.py` | 사업자등록번호 검증 |
 | `test_faqs.py` | FAQ · AI 학습 동의 저장 |
 | `test_notifications.py` | 알림 목록 · 읽음 표시, 결과물 알림(화면 11)과 검수 제거 전의 옛 표현검수 알림이 함께 읽히는지, 알림 종류에 '결과물'이 더해졌는지 (SB-396) |
+| `test_admin_file_deletions.py` | 산출물 파일 삭제 대기열 — `GET /admin/file-deletions` 목록, `POST …/{id}/retry`로 포기한 줄 다시 시도 (SB-318) |
+| `test_notice_status.py` | 관리자 공고 표시 상태(`display_status`)의 판정 순서와 한국 날짜(UTC+9) 하루 경계 |
+| `test_refresh_rotation.py` | Refresh Token 회전 — 이미 회전한 토큰의 재사용 거절, 동시 2요청 중 승자 1개, 새 토큰 발급 실패 시 토큰 소모 롤백 |
+| `test_admin_owner_check.py` | 관리자도 남의 프로젝트의 읽기 10종 · 쓰기 9종 경로는 404이고 오케스트레이터로 명령이 나가지 않음, 소유자는 그대로 열림, 관리자 자신의 프로젝트는 일반 사용자처럼 동작, `/admin/items` 메타데이터는 계속 열림 (SB-418) |
 
 ### 삭제 · 탈퇴 · 보관
 
@@ -96,6 +104,7 @@ ruff check .                                # 정적 검사
 |---|---|
 | `test_projects.py` | `DELETE /projects/{id}`(보관) |
 | `test_project_permanent_delete.py` | 완전 삭제 — 오케스트레이터 데이터 먼저, 휴지통 보관 |
+| `test_archived_project_routes.py` | 휴지통(보관) 프로젝트는 소유자에게도 읽기 · 쓰기 경로가 404, 복원하면 다시 열림, 재삭제 · 완전 삭제는 보관된 건에도 됨, `artifact-files` · `deliverable.zip`도 막힘 (SB-421) |
 | `test_account_deletion.py` | 계정 삭제(탈퇴)의 삭제 순서 |
 | `test_account_withdrawing.py` | 탈퇴 중인 계정은 새 실행을 시작할 수 없음 (SB-298) |
 | `test_proofread_retention.py` · `test_review_fixes.py` | 검수 회수 문단 보관 규칙, 완료 · 보관 · 삭제 회귀 |
@@ -114,6 +123,8 @@ ruff check .                                # 정적 검사
 | `test_logging_config.py` · `test_request_logging.py` | 일 단위 로그 회전, 요청 로깅 |
 | `test_utc_timestamps.py` | 응답 시각은 항상 UTC · 끝에 Z (SB-264) |
 | `test_health.py` | 테스트 기반(fixture) 점검 |
+| `test_api_docs_closed.py` | `/docs` · `/redoc` · `/openapi.json` 기본 닫힘, `ENABLE_API_DOCS`로만 열림, `/test-db` 없음 (SB-419) |
+| `test_schema_comments.py` | DB 칸 설명(COMMENT)에 지운 옛 표 이름이 없는지, `app_schema.sql`과 마이그레이션 007의 새 문구가 같은지 (SB-420) |
 
 ## 3. 한계
 
